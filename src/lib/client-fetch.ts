@@ -101,6 +101,13 @@ async function performRefresh(): Promise<SessionRefreshOutcome> {
     return 'unavailable';
   }
 
+  // 本文は使わないが読み切る。認証の応答は no-store なので、読まずに捨てるとブラウザが要求を開いたまま残す
+  try {
+    await response.arrayBuffer?.();
+  } catch {
+    // 読み切れなくても結果の判定には関わらない
+  }
+
   if (response.ok) {
     refreshBlockedUntil = 0;
     return 'refreshed';

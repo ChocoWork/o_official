@@ -174,14 +174,14 @@ describe('ARC-HOME-003 ホームの / にかかる共有の proxy', () => {
       );
     });
 
-    it('ARC-HOME-003 style の属性だけ unsafe-inline で許し、style 要素と link 要素は self と CDN に締める', async () => {
+    it('ARC-HOME-003 style の属性だけ unsafe-inline で許し、style 要素と link 要素は self だけに締める（外の CDN は許さない）', async () => {
       const { proxy } = await loadProxyModule();
 
       const res = proxy(homeRequest());
 
       const csp = directives(res.headers.get('Content-Security-Policy'));
-      expect(csp.get('style-src')).toEqual(["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net']);
-      expect(csp.get('style-src-elem')).toEqual(["'self'", 'https://cdn.jsdelivr.net']);
+      expect(csp.get('style-src')).toEqual(["'self'", "'unsafe-inline'"]);
+      expect(csp.get('style-src-elem')).toEqual(["'self'"]);
     });
 
     it('ARC-HOME-003 CSP と nonce を、ページを描く側へ渡す要求の見出しにも載せる', async () => {

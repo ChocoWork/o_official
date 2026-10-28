@@ -4,7 +4,7 @@ title: シークレット管理方針
 
 # シークレット管理方針（暫定: 手動運用）
 
-> 状態: 既存の運用方針 | 本番設定・手順の適用状況は未確認 | 確認日: 2026-10-02（`ADMIN_API_KEY` の廃止の節は 2026-10-26 に追記）
+> 状態: 既存の運用方針 | 本番設定・手順の適用状況は未確認 | 確認日: 2026-10-02（`ADMIN_API_KEY` の廃止の節は 2026-10-26、ビルドの前に要る環境変数の節は 2026-10-28 に追記）
 
 この文書中の `docs/seq/supabase-service-role-key-rotation-diagrams.md` は現行リポジトリに存在しない旧計画への参照である。自動ローテーションを実施済みとは扱わず、実施前に現在の秘密値の保管場所、権限、手順を確認する。
 ## 概要
@@ -89,6 +89,20 @@ Resend の配達の状態の知らせ（`POST /api/webhook/resend-delivery`）�
 ## CRON_SECRET
 
 定期処理の入口（worker・見回り・照合・Meta の同期）の合言葉です。32文字以上のランダムな値にします。短いと全部の入口が設定の誤りとして断ります。Vercel の環境変数と、本番 DB の Vault（`cron_secret`）にだけ置きます。入れ替えは[手順書](webhook-queue-operations.md)の2に従います。
+
+## ビルドの前に要る環境変数（NEXT_PUBLIC_SITE_URL・NEXT_PUBLIC_SUPABASE_URL）
+
+`NEXT_PUBLIC_*` はビルドの時にコードへ埋め込まれます。本番（Vercel の Production。`VERCEL_ENV=production`）では、次の 2 つが**ビルドの前**に設定されていないと、ビルドが落ちます（`next.config.ts` の先頭の `assertBuildEnv`。2026-10-28、SEC-ABOUT-007、`ADR-0206`）。落ちる文には変数名だけが出て、値は出ません。
+
+| 変数 | 値 | 使われ方 |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SITE_URL` | 本番の https のサイト（末尾に `/` を付けない。例 `https://www.example.com`） | 共有のカードの画像（`og:image`）の基点、注文メールの状況ページのリンクの元、CSRF の許可オリジンの既定（`getSiteUrl`）。未設定だと `http://localhost:3000` に落ちる |
+| `NEXT_PUBLIC_SUPABASE_URL` | 本番の Supabase のプロジェクトの URL（`https://<ref>.supabase.co`） | ブラウザの接続先、CSP の `img-src`・`connect-src` と画像の中継 `remotePatterns` の許す host（自分のプロジェクト 1 つだけ） |
+
+- `NEXT_PUBLIC_SUPABASE_URL` と `SUPABASE_URL`（サーバー側の接続先。署名つき URL はこちらを優先して作る）が**別の origin を指す設定も、ビルドが落ちます**（`VERCEL_ENV` に依らず手元でも）。署名が通っても、画像が CSP と `/_next/image` で止まるためです。2 つとも同じプロジェクトの URL にします。末尾の `/` やパスの違いは無視されます
+- 環境変数をビルドの後に足しても、できたビルドには入りません。設定してから再ビルド・再デプロイします（[注文のメールの手順書](order-email-operations.md)の 5 と同じ）
+- 落ちる条件は `VERCEL_ENV` が `production` のときだけです。手元・Vercel の Preview・E2E の本番ビルド（`NODE_ENV=production` だけ）は、2 つが無くても落ちません
+- 本番のアプリは未デプロイで、Vercel に 2 変数が入っているかは未確認です。初回の配備の前に入れます
 
 ## APP_ALLOWED_ORIGINS
 

@@ -1,6 +1,6 @@
 # ADR-0304 検索の結果の画像は種別ごとの署名つき URL にし、置き場を公開にしない
 
-> 状態: 現行 | 確認日: 2026-10-24 | 対象: `src/features/search/services/search.service.ts`、`src/lib/storage/item-images.ts`・`look-images.ts`（範囲外） | 基準コミット: `4e84d5c5`
+> 状態: 現行 | 確認日: 2026-10-28 | 対象: `src/features/search/services/search.service.ts`、`src/lib/storage/item-images.ts`・`look-images.ts`（範囲外） | 基準コミット: `4e84d5c5`
 
 ## 概要
 
@@ -48,8 +48,8 @@
 #### 結果
 
 - 良くなること: 検索の結果と人気商品の画像が出る（E2E `e2e/FR-SEARCH-007-thumbnail-signed-urls.spec.ts`）
-- 悪くなること: 署名の期限が種別で違う。商品は7日（`item-images.ts`）、ルックとニュースは1時間（`look-images.ts`）。商品を非公開にしても、外に出た URL で最大7日画像が見える（SEC-SEARCH-014 を満たさない）
-- 悪くなること: 署名に失敗した時や道筋を取り出せない時は、元の値をそのまま返す（`item-images.ts`。SEC-SEARCH-015 を満たさない）
+- 悪くなること: 署名の期限は検索から明示して 3600 秒にそろえた（2026-10-28。以前は商品が7日で、非公開にしても外に出た URL で最大7日画像が見えた。SEC-SEARCH-014 を満たした。ADR-0316）。1時間の間は、非公開にしても外に出た URL で画像が見える
+- 悪くなること: 以前は署名に失敗した時や道筋を取り出せない時に元の値をそのまま返していた（`item-images.ts`）。2026-10-28 に `null` を返す形に直した（SEC-SEARCH-015 を満たした。ADR-0316）
 - 公開の道で service role の client を作る。使うのは署名と人気商品だけ（ADR-0305）
 
 ## 未確認事項

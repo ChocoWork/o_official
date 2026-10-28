@@ -40,7 +40,7 @@ export default function AdminItemEditPage() {
         const existingImages =
           (item.image_urls && item.image_urls.length > 0
             ? item.image_urls
-            : [item.image_url]).filter(Boolean);
+            : [item.image_url]).filter((url): url is string => Boolean(url));
 
         const values: ItemFormValues = {
           name: item.name,

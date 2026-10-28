@@ -1,6 +1,6 @@
 # SEARCH の構造設計
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: SEARCH（検索のページ `/search`・検索の窓口 `/api/search`・候補の窓口 `/api/suggest`・ホームの `/?q=` のプレビュー） | 基準コミット: `4facf63b`（作業ツリー）
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: SEARCH（検索のページ `/search`・検索の窓口 `/api/search`・候補の窓口 `/api/suggest`・ホームの `/?q=` のプレビュー） | 基準コミット: `4facf63b`（作業ツリー）
 
 ## 概要
 
@@ -117,7 +117,7 @@ flowchart LR
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FREQ-185-REQ-01（範囲外）、ADR-0304、ADR-0002（範囲外） |
+| 上位 | FREQ-185-REQ-01（範囲外）、SEC-SEARCH-014、SEC-SEARCH-015、SEC-SEARCH-016、ADR-0304、ADR-0316、ADR-0002（範囲外） |
 | 根拠 | 商品・ルック・ニュースの画像の置き場は非公開なので、表に入った値のままでは画像が出ない。置き場を公開に戻さず、応答を作るたびに種別ごとの署名の関数で署名つき URL に置き換える（FREQ-185-REQ-01、ADR-0304・0002） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -125,15 +125,15 @@ flowchart LR
 
 | 種別 | 署名の関数 | 期限 | 署名する値 |
 | --- | --- | --- | --- |
-| 商品 | `signItemImageUrl`（ITEM の共有部品） | 既定の7日。同じ道の URL をサーバーの記憶に持って使い回す | `image_url` |
-| ルック | `signLookImageUrl`（LOOK） | 1時間 | `image_urls` の1枚目 |
-| ニュース | `signNewsImageUrl`（NEWS） | 1時間 | `image_url` |
+| 商品 | `signItemImageUrl`（ITEM の共有部品） | 3600秒（2026-10-28 に7日から直した）。同じ道の URL をサーバーの記憶に持ち、残りが期限の半分以上ある間だけ使い回す | `image_url` |
+| ルック | `signLookImageUrl`（LOOK） | 3600秒（検索が `SEARCH_IMAGE_URL_TTL_SECONDS` を明示して渡す） | `image_urls` の1枚目 |
+| ニュース | `signNewsImageUrl`（NEWS） | 3600秒（検索が `SEARCH_IMAGE_URL_TTL_SECONDS` を明示して渡す） | `image_url` |
 
 - 呼ぶ所: `executeSearch` の中の `signResultImages`。人気商品と3種の結果の両方を、service role の client で署名する。画像の無い行は null のまま
-- 検索は期限を渡さず、共有部品の既定に任せる。商品だけが7日になる（SEC-SEARCH-014 は満たさない）
-- 道にできない値と署名の失敗では元の値を返し、記録しない（SEC-SEARCH-015 は満たさない）
-- 署名する前に、道が決まった場所の下か、URL のホストが自分の置き場かを確かめない（SEC-SEARCH-016 は満たさない）
-- 署名つき URL の入る応答に `Cache-Control` を付けない（SEC-SEARCH-010 は満たさない。API-SEARCH-001）
+- 商品の期限は、検索が `SEARCH_IMAGE_URL_TTL_SECONDS = 3600` を明示して渡す（SEC-SEARCH-014 を満たす。ルックとニュースは元から1時間で、同じ値を明示して渡す。ADR-0316）
+- 商品・ルック・ニュースは、道にできない値と署名の失敗で元の値を返さず `null` を返し、失敗の種類（`invalid_path`・`sign_failed`）だけを記録する（SEC-SEARCH-015 を満たす。ニュースは 2026-10-28。ADR-0316）
+- 商品・ルック・ニュースは、署名する前に共有の `parseOwnObjectPath`（DD-SEARCH-011）で、URL のホストが自分のプロジェクトの origin 1 つで、道が `items/`・`looks/`・`news/` の下の安全な文字かを確かめる（SEC-SEARCH-016 を満たす。ニュースは 2026-10-28。ADR-0316）
+- 署名つき URL の入る応答には `Cache-Control: private, no-store` を窓口が付ける（SEC-SEARCH-010。2026-10-26 から満たす。API-SEARCH-001）
 
 ### ARC-SEARCH-004 人気商品は service role の client で集計の関数を呼び、購入数を落として毎回4件返す
 

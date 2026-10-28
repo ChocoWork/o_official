@@ -80,9 +80,9 @@ export default function Page() {
     "OUTERWEAR",
   ]);
   const carouselImages = [
-    "https://readdy.ai/api/search-image?query=minimalist%20elegant%20fashion%20collection%20display%20clean%20white%20background%20soft%20natural%20lighting%20high%20end%20luxury%20clothing%20simple%20composition%20professional%20photography%20modern%20aesthetic%20premium%20fabric%20textures&width=800&height=500&seq=carousel1&orientation=landscape",
-    "https://readdy.ai/api/search-image?query=stylish%20model%20wearing%20luxury%20streetwear%20outfit%20on%20urban%20background%20professional%20photography%20soft%20lighting&width=800&height=500&seq=carousel2&orientation=landscape",
-    "https://readdy.ai/api/search-image?query=high-end%20black%20leather%20jacket%20product%20shot%20on%20white%20background%20studio%20photography&width=800&height=500&seq=carousel3&orientation=landscape",
+    "/news1.png",
+    "/news2.png",
+    "/news3.png",
   ];
   const [slideIndex, setSlideIndex] = useState(0);
   const [openAccordion, setOpenAccordion] = useState<
@@ -253,21 +253,21 @@ export default function Page() {
   const cardItems = [
     {
       alt: "Minimal Cotton Shirt",
-      src: "https://readdy.ai/api/search-image?query=minimalist%20elegant%20white%20cotton%20shirt%20on%20clean%20white%20background%20professional%20product%20photography%20soft%20natural%20lighting%20high%20end%20fashion%20simple%20composition%20luxury%20fabric%20texture%20studio%20shot&width=400&height=500&seq=card1&orientation=portrait",
+      src: "/placeholder.png",
       category: "TOPS",
       title: "Minimal Cotton Shirt",
       price: "¥18,000",
     },
     {
       alt: "Pleated Skirt",
-      src: "https://readdy.ai/api/search-image?query=elegant%20beige%20pleated%20midi%20skirt%20on%20clean%20white%20background%20professional%20product%20photography%20soft%20natural%20lighting%20high%20end%20fashion%20simple%20composition%20luxury%20fabric%20texture%20studio%20shot&width=400&height=500&seq=card2&orientation=portrait",
+      src: "/placeholder.png",
       category: "BOTTOMS",
       title: "Pleated Skirt",
       price: "¥16,000",
     },
     {
       alt: "Cashmere Blend Coat",
-      src: "https://readdy.ai/api/search-image?query=luxurious%20camel%20cashmere%20wool%20coat%20on%20clean%20white%20background%20professional%20product%20photography%20soft%20natural%20lighting%20high%20end%20fashion%20simple%20composition%20premium%20fabric%20texture%20studio%20shot&width=400&height=500&seq=card3&orientation=portrait",
+      src: "/placeholder.png",
       category: "OUTERWEAR",
       title: "Cashmere Blend Coat",
       price: "¥68,000",
@@ -1599,7 +1599,7 @@ export default function Page() {
                 <Avatar
                   alt="Avatar"
                   fallback=""
-                  src="https://readdy.ai/api/search-image?query=professional%20elegant%20portrait%20photo%20clean%20white%20background%20soft%20natural%20lighting%20minimalist%20aesthetic%20high%20quality%20studio%20photography&width=100&height=100&seq=avatar1&orientation=squarish"
+                  src="/placeholder.png"
                   size={avatarSize}
                 />
                 <p

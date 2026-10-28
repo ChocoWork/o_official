@@ -1,6 +1,6 @@
 # ABOUT の構造設計
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: ABOUT（アバウトページ `/about`） | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: ABOUT（アバウトページ `/about`） | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -14,8 +14,8 @@ ABOUT の領域の構成・画面・画面遷移を、追跡できる項目（`#
 | 画面遷移 | 1 | `FLOW-ABOUT-001` | 入口（ヘッダー・フッター・ホーム）と出口（商品・LOOK） |
 | 状態遷移・API・データ | 0 | — | ABOUT は状態・窓口・表を持たない（理由は「範囲と根拠」） |
 
-- 結論: ABOUT は `src/app/about/page.tsx` の1ファイルで、文をコードに直に持ち、DB・外のサービス・API を呼ばない Server Component。ただし共有の layout の設定で毎回サーバーで描かれ、共有の proxy が守りの見出しとセッションの Cookie を付ける
-- 今の画面は h1・画像・アイコン・CONTACT への CTA を持たない。それを求める FR-ABOUT-005 の h1 の部分・FR-ABOUT-006・FR-ABOUT-007 は、満たす構造が無いので上位につながず、本文に「満たさない」と書いた。今のコードが満たさないセキュリティ要件（SEC-ABOUT-003・SEC-ABOUT-007）も上位につながない
+- 結論: ABOUT は `src/app/about/page.tsx` の1ファイルで、文をコードに直に持ち、DB・外のサービス・API を呼ばない Server Component。ただし共有の layout の設定で毎回サーバーで描かれ、共有の proxy が守りの見出しを付ける（セッションの Cookie は決済の道だけで発行し、`/about` には付けない）
+- 今の画面は h1・画像・アイコン・CONTACT への CTA を持たない。それを求める FR-ABOUT-005 の h1 の部分・FR-ABOUT-006・FR-ABOUT-007 は、満たす構造が無いので上位につながず、本文に「満たさない」と書いた。SEC-ABOUT-003 は 2026-10-28 に満たした（CSP と画像の最適化の許可は共有の `src/proxy.ts`・`next.config.ts` で決まり、DD-HOME-004・ADR-0108 が持つ）が、ABOUT の構造の単位はまだ上位につないでいない（SEC-ABOUT-007 は 2026-10-28 に本番ビルドで必須にして満たしたので、ARC-ABOUT-003 につないだ）
 
 ## 範囲と根拠
 
@@ -43,7 +43,7 @@ ABOUT の領域の構成・画面・画面遷移を、追跡できる項目（`#
 | 全体の layout | `src/app/layout.tsx` | 毎回サーバーで描く設定（CSP の nonce のため）と、サイトの起点（`metadataBase`） |
 | サイトの URL | `src/lib/redirect.ts` の `getSiteUrl` | 環境変数からサイトの起点を作る。無ければ手元の URL に落ちる |
 | 包みの部品 | `src/contexts/Providers.tsx` | ヘッダー・`<main>`（左右の `px-4` と上下の余白）・フッター、カートとログインの文脈 |
-| proxy | `src/proxy.ts` | 全部の道で、セッションの Cookie の発行と守りの見出しを付ける |
+| proxy | `src/proxy.ts` | 全部の道で守りの見出しを付ける。セッションの Cookie は `/cart`・`/checkout`・`/api/checkout` の道だけで発行する |
 | 全体の CSS | `src/styles/globals.css` | `.about-main-text` などの本文の行の間と余白（HOME の ABOUT の区画と共有） |
 | 入口のリンク | `src/components/Header.tsx`、`src/components/Footer.tsx`、`src/app/page.tsx` | `/about` への入口（HOME・AUTH などの領域） |
 
@@ -83,7 +83,7 @@ graph LR
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-ABOUT-002、SEC-ABOUT-004、NFR-SEC-001（範囲外）、NFR-SEC-003（範囲外） |
-| 根拠 | 守りの見出しをページごとに書くと付け忘れが出るため、全部の道に効く `src/proxy.ts` の1か所で付け、ABOUT は自分では重ねない（SEC-ABOUT-002。全体の NFR-SEC-001 の HSTS と NFR-SEC-003 の CSP を ABOUT に当てはめた形）。セッションの Cookie は、どの頁から入ってもカートと閲覧を1つの id に紐づけるために最初の応答で付ける。その応答は要求ごとに描くので、Next の既定で共有のキャッシュに残さない指定が付く見込み（SEC-ABOUT-004、推定・未実測） |
+| 根拠 | 守りの見出しをページごとに書くと付け忘れが出るため、全部の道に効く `src/proxy.ts` の1か所で付け、ABOUT は自分では重ねない（SEC-ABOUT-002。全体の NFR-SEC-001 の HSTS と NFR-SEC-003 の CSP を ABOUT に当てはめた形）。セッションの Cookie は、読み手が決済の流れだけなので、その道（`/cart`・`/checkout`・`/api/checkout`）の最初の応答だけで付け、`/about` には付けない（SEC-PRIVACY-015、`ADR-0355`、2026-10-28）。`/about` の応答は要求ごとに描くので、Next の既定で共有のキャッシュに残さない指定が付く見込み（SEC-ABOUT-004、推定・未実測） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/proxy.ts`、`src/app/layout.tsx`、`next.config.ts`） |
@@ -94,25 +94,24 @@ sequenceDiagram
   participant P as proxy
   participant R as about のページ
   B->>P: GET /about
-  P->>P: セッションの Cookie が無ければ id を作る
-  P->>R: nonce を付けて通す
+  P->>R: nonce を付けて通す（/about ではセッションの Cookie を作らない）
   R-->>P: HTML（毎回サーバーで描く）
-  P-->>B: CSP・nosniff・DENY・HSTS・no-referrer と Set-Cookie
+  P-->>B: CSP・nosniff・DENY・HSTS・no-referrer
 ```
 
 - 道: proxy の対象は全部の道（`src/proxy.ts` の `config.matcher`）。`/about` にも効く
 - 見出し: nonce 付きの CSP、`Referrer-Policy: no-referrer`、`Permissions-Policy`、`X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Strict-Transport-Security`、nonce を載せた `x-nonce`（`src/proxy.ts`）。`X-Powered-By` は Next の設定で出さない（`next.config.ts` の `poweredByHeader`）
-- Cookie: セッションの Cookie が無い要求には、新しい id の Cookie を付ける（`src/proxy.ts`）。`/about` を開くだけで付く（Cookie の扱いは PRIVACY の領域）
-- キャッシュ: `Set-Cookie` を付ける応答に `Cache-Control` を明示しない。要求ごとに描く頁に Next が付ける既定の値に頼る（SEC-ABOUT-004 は満たす見込みだが、確かめていない）
-- CSP の広さ: 全部の頁に同じ1つの方針を付ける（`src/proxy.ts` の CSP を作る処理）。ABOUT が使わない外のオリジンを許す点は SEC-ABOUT-003 を見る。`style-src` の `'unsafe-inline'` は、ABOUT が文字の大きさを `style` の属性で付けていることも理由の1つになっている
+- Cookie: セッションの Cookie の発行は `/cart`・`/checkout`・`/api/checkout` だけ（`src/proxy.ts` の `shouldIssueSessionCookie`。Cookie の扱いは PRIVACY の領域）。`/about` を開いても付かない。結合テスト `tests/integration/api/about-proxy.test.ts` が、`/about` に付かないことと、許可リストの道（`/cart`）に付くことを見る
+- キャッシュ: 応答に `Cache-Control` を明示しない。要求ごとに描く頁に Next が付ける既定の値に頼る（SEC-ABOUT-004 は満たす見込みだが、確かめていない）
+- CSP の広さ: 全部の頁に同じ1つの方針を付ける（`src/proxy.ts` の CSP を作る処理）。ABOUT が使わない外のオリジン（jsDelivr・placehold.co・readdy.ai・`*.supabase.co`）は 2026-10-28 に外した（SEC-ABOUT-003-AC-01、`ADR-0108`）。画像の最適化の許可（`remotePatterns`）も同じ日に、placehold.co・readdy.ai・`*.supabase.co` を外し、本番は自分の Supabase の host 1 つの署名つきの道だけにした（SEC-ABOUT-003-AC-02、`DD-HOME-004`）。`style-src` の `'unsafe-inline'` は、ABOUT が文字の大きさを `style` の属性で付けていることも理由の1つになっている
 - `/about` の応答の見出しを試すテストは無い（同じ見出しの E2E は `/terms` だけを開く）
 
 ### ARC-ABOUT-003 題・説明・OG はページの関数が固定の値で返し、OG の画像は同じサイトの public/ から出す
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | DRV-ABOUT-002、FR-ABOUT-005、FR-ABOUT-008、SEC-ABOUT-001、SEC-ABOUT-005、ADR-0205 |
-| 根拠 | 検索の結果と SNS の共有でブランドの題・説明・写真が出るようにするため（FR-ABOUT-005 の題と説明、DRV-ABOUT-002 の OG）。画像を外の生成のサービスから読むと停止や回数の制限で壊れるので、サイトの `public/` の画像を同じオリジンで出す（FR-ABOUT-008、SEC-ABOUT-001、ADR-0205）。絶対の URL の起点を要求の見出しから作らず設定のサイトの URL だけから作れば、見出しを偽って共有のカードを別のサイトに向けられない（SEC-ABOUT-005） |
+| 上位 | DRV-ABOUT-002、FR-ABOUT-005、FR-ABOUT-008、SEC-ABOUT-001、SEC-ABOUT-005、SEC-ABOUT-007、ADR-0205、ADR-0206 |
+| 根拠 | 検索の結果と SNS の共有でブランドの題・説明・写真が出るようにするため（FR-ABOUT-005 の題と説明、DRV-ABOUT-002 の OG）。画像を外の生成のサービスから読むと停止や回数の制限で壊れるので、サイトの `public/` の画像を同じオリジンで出す（FR-ABOUT-008、SEC-ABOUT-001、ADR-0205）。絶対の URL の起点を要求の見出しから作らず設定のサイトの URL だけから作れば、見出しを偽って共有のカードを別のサイトに向けられない（SEC-ABOUT-005）。設定の漏れで手元の URL が公開の応答に出ないよう、本番のビルドでサイトの URL を必須にする（SEC-ABOUT-007、ADR-0206） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/about/page.tsx`、`src/app/layout.tsx`、`src/lib/redirect.ts`） |
@@ -127,7 +126,7 @@ sequenceDiagram
 
 - 作り: ページのファイルの中の metadata の関数が、引数も読み出しも無く固定の値を返す（ADR-0204）
 - 絶対の URL: OG の画像の道 `/about.png` は、共有の layout の `metadataBase`（`src/app/layout.tsx`）で絶対の URL になる。起点は `getSiteUrl`（`src/lib/redirect.ts`）が環境変数だけから作り、`Host`・`X-Forwarded-Host` を読まない
-- 設定が無い時: サイトの URL の環境変数が1つも無いと、警告も無く手元の URL を起点にする（満たすかは SEC-ABOUT-007 を見る）
+- 設定が無い時: 本番のビルド（`VERCEL_ENV=production`）は、`NEXT_PUBLIC_SITE_URL` と `NEXT_PUBLIC_SUPABASE_URL` が無ければ `next.config.ts` の先頭の確かめ `assertBuildEnv`（`src/lib/build-env-guard.ts`）が落とす（SEC-ABOUT-007、`ADR-0206`、`DD-ABOUT-002`）。`getSiteUrl` は変えない（無い時の既定の `http://localhost:3000` と `NEXT_PUBLIC_VERCEL_URL` の読み方は残る。本番は上の確かめで `NEXT_PUBLIC_SITE_URL` が必ず在るので、`getSiteUrl` はそれを最初に読む）。`NODE_ENV` でなく `VERCEL_ENV` で見るのは、E2E の本番ビルドも `NODE_ENV=production` になり、止めてはいけないため。同じ確かめが、`NEXT_PUBLIC_SUPABASE_URL` と `SUPABASE_URL` が別の origin を指す設定も、環境に依らず落とす（署名つきの画像の host と CSP・`remotePatterns` の許す host を 1 つに揃える。`ADR-0316`）。失敗の文に URL の値は載せない
 - 本文の画像: 本文に画像は無い（SCR-ABOUT-001、ADR-0201）。CSP と画像の最適化の許可の広さは SEC-ABOUT-003 を見る
 - 返さない物: canonical・`og:url`・`og:type`・twitter のカードは返さない（推定。NFR-SEO-003 は canonical も求める）
 - h1: FR-ABOUT-005 のうち h1 の部分は、この構造でも SCR-ABOUT-001 でも満たさない（h1 が無い）

@@ -256,6 +256,7 @@ const Header = () => {
             </Link>
             <Link
               href="/cart"
+              prefetch={false}
               aria-label={cartCount > 0 ? `カート（${cartCount}点）` : "カート"}
               className="icon-frame min-h-11"
             >

@@ -190,7 +190,7 @@ describe('LookDetailPage generateMetadata', () => {
     });
   });
 
-  it('DD-LOOK-030 見つかれば title・説明文・OG の1枚目の画像を返す', async () => {
+  it('DD-LOOK-030 見つかれば title・説明文を返し、署名できる画像がある LOOK の OG の画像は署名を含まない同一オリジンの窓口にする', async () => {
     mockGetPublishedLookById.mockResolvedValue(
       makeLook(7, {
         theme: 'Dawn',
@@ -207,8 +207,9 @@ describe('LookDetailPage generateMetadata', () => {
     expect(metadata.openGraph).toEqual({
       title: 'Dawn | LOOK | Le Fil des Heures',
       description: '朝の着こなし',
-      images: [{ url: 'https://example.test/a.jpg' }],
+      images: [{ url: '/look/7/og' }],
     });
+    expect(JSON.stringify(metadata)).not.toContain('example.test');
   });
 
   it('DD-LOOK-030 説明文が空ならテーマから description を作り、画像0枚なら OG の画像を空にする', async () => {

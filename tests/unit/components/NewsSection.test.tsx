@@ -359,4 +359,14 @@ describe('NewsSection 一覧・公開の切り替え・削除', () => {
       '/admin/news/edit/2',
     ]);
   });
+
+  it('DD-NEWS-060 画像の署名が null の記事は、空の src にせず /placeholder.png を出す', async () => {
+    mockClientFetch.mockResolvedValueOnce(
+      okResponse({ data: [{ ...mockArticles[0], image_url: null }, mockArticles[1]] }),
+    );
+    render(<NewsSection />);
+
+    expect(await screen.findByAltText('テスト記事')).toHaveAttribute('src', '/placeholder.png');
+    expect(screen.getByAltText('別記事')).toHaveAttribute('src', '/test2.jpg');
+  });
 });

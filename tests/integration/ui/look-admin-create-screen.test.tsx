@@ -132,6 +132,14 @@ describe('LOOK の作成の画面', () => {
     expect(screen.getByRole('button', { name: 'キャンセル' })).toBeInTheDocument();
   });
 
+  it('SCR-LOOK-007 商品の画像の署名が null の 1 件は、落ちずに /placeholder.png を出し、他の件は今のまま', async () => {
+    itemsResult = async () => response(true, { data: [{ ...ITEMS[0], image_url: null }, ITEMS[1]] });
+    await renderLoaded();
+
+    expect(screen.getByAltText('リネンシャツ')).toHaveAttribute('src', '/placeholder.png');
+    expect(screen.getByAltText('ウールパンツ')).toHaveAttribute('src', 'https://example.test/signed/102.jpg');
+  });
+
   it('SCR-LOOK-007 作成の画面には画像の置き換えの注意を出さない', async () => {
     await renderLoaded();
 

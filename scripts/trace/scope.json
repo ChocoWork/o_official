@@ -45,7 +45,8 @@
     "src": [
       "src/app/page.tsx",
       "src/features/home/**/*.{ts,tsx}",
-      "src/components/animations/TextReveal.tsx"
+      "src/components/animations/TextReveal.tsx",
+      "src/instrumentation-client.ts"
     ],
     "tests": [
       "tests/unit/**/*home-page*.test.{ts,tsx}",
@@ -54,6 +55,8 @@
       "tests/unit/**/*HomeSection*.test.{ts,tsx}",
       "tests/unit/**/*text-reveal*.test.{ts,tsx}",
       "tests/unit/**/*TextReveal*.test.{ts,tsx}",
+      "tests/unit/app/ui-page.test.tsx",
+      "tests/unit/instrumentation-client.test.ts",
       "tests/unit/**/home/**/*.test.{ts,tsx}",
       "tests/integration/**/*home-page*.test.{ts,tsx}",
       "tests/integration/**/home/**/*.test.{ts,tsx}"
@@ -113,9 +116,11 @@
       "docs/04_DetailDesign/pages/08_about.md"
     ],
     "src": [
-      "src/app/about/**/*.{ts,tsx}"
+      "src/app/about/**/*.{ts,tsx}",
+      "src/lib/build-env-guard.ts"
     ],
     "tests": [
+      "tests/unit/lib/build-env-guard.test.ts",
       "tests/unit/**/about-*.test.{ts,tsx}",
       "tests/unit/**/*About*.test.{ts,tsx}",
       "tests/integration/**/about-*.test.{ts,tsx}",
@@ -167,7 +172,8 @@
       "src/app/search/**/*.{ts,tsx}",
       "src/app/api/search/**/*.ts",
       "src/app/api/suggest/**/*.ts",
-      "src/features/search/**/*.{ts,tsx}"
+      "src/features/search/**/*.{ts,tsx}",
+      "src/lib/storage/safe-object-path.ts"
     ],
     "tests": [
       "tests/unit/**/search-*.test.{ts,tsx}",
@@ -177,7 +183,8 @@
       "tests/unit/**/search/**/*.test.{ts,tsx}",
       "tests/integration/**/search-*.test.{ts,tsx}",
       "tests/integration/**/suggest-*.test.{ts,tsx}",
-      "tests/integration/**/search/**/*.test.{ts,tsx}"
+      "tests/integration/**/search/**/*.test.{ts,tsx}",
+      "tests/unit/lib/storage/safe-object-path.test.ts"
     ],
     "e2e": [
       "e2e/FR-SEARCH-*.spec.ts"
@@ -193,9 +200,11 @@
       "docs/04_DetailDesign/pages/17-1_privacy.md"
     ],
     "src": [
-      "src/app/privacy/**/*.{ts,tsx}"
+      "src/app/privacy/**/*.{ts,tsx}",
+      "src/lib/session-cookie-policy.ts"
     ],
     "tests": [
+      "tests/unit/middleware/proxy-session.test.ts",
       "tests/unit/**/*privacy*.test.{ts,tsx}",
       "tests/unit/**/*Privacy*.test.{ts,tsx}",
       "tests/integration/**/*privacy*.test.{ts,tsx}",
@@ -227,7 +236,8 @@
       "src/components/AuthResultScreen.tsx",
       "src/hooks/useTurnstileWidget.ts",
       "src/lib/format-countdown.ts",
-      "src/features/auth/return-intent/**/*.ts"
+      "src/features/auth/return-intent/**/*.ts",
+      "src/lib/auth-no-store-policy.ts"
     ],
     "tests": [
       "tests/unit/components/{LoginModal,RegisterModal,AuthTabs,AuthResultScreen,VerifyOtpClient,Header}.test.tsx",
@@ -236,6 +246,7 @@
       "tests/unit/app/auth/**/*.test.{ts,tsx}",
       "tests/unit/app/login/**/*.test.{ts,tsx}",
       "tests/unit/features/auth/return-intent/**/*.test.{ts,tsx}",
+      "tests/unit/middleware/proxy-no-store.test.ts",
       "tests/unit/migrations/auth-return-intents*.test.ts",
       "tests/integration/api/auth/**/*.test.{ts,tsx}",
       "tests/integration/api/auth.test.ts",

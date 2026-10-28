@@ -1,6 +1,6 @@
 # 1.6 ルック一覧ページ（LOOK LIST）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: LOOK 一覧 `/look`、ホームの LOOK の区画の部品、公開の LOOK の取り出し、シーズンの決まり、LOOK の画像の署名 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: LOOK 一覧 `/look`、ホームの LOOK の区画の部品、公開の LOOK の取り出し、シーズンの決まり、LOOK の画像の署名 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -18,7 +18,7 @@ LOOK 一覧 `/look` を作るコードの単位ごとに、入出力・正常と
 | `DD-LOOK-069` | `src/app/look/error.tsx` | `/look`・`/look/[id]` の取り出しの失敗を受ける誤りの画面 | なし |
 
 - 結論: 一覧はページのサーバーの中で公開の LOOK を新しい順に 100 件まで、説明文なしで取り（ADR-0159）、部品は渡された LOOK を画面の上でシーズンで絞るだけ。取り出しの失敗は投げて、`error.tsx` の誤りの画面になる（2026-10-26。ホームの区画は空の配列のまま）
-- 画像は表示のたびに service role で署名する。道筋にできない値と署名の失敗では、元の値をそのまま返す（推定）
+- 画像は表示のたびに service role で署名する。署名の前に、道筋が自分の置き場の `looks/` の下の安全な文字か、URL のホストが自分のプロジェクトかを確かめ、道筋にできない値と署名の失敗では元の値を返さず `null`（結果から外す）にする（2026-10-28。SEC-LOOK-007・008）
 - 番号は `DD-LOOK-001`〜`029` をこの頁で使う。今は `001`〜`006` を使い、`007` 以降は空けておく。詳細の頁は `030`〜`059`、管理の頁（[16-3_admin_look.md](16-3_admin_look.md)）は `060`〜`089`。`069` だけは管理の頁の範囲の空きを、一覧と詳細の誤りの画面（`error.tsx`）に使った（詳細の頁の `068` も同じ。2026-10-26）
 
 ## 範囲と根拠
@@ -439,15 +439,15 @@ DRV-LOOK-005、FREQ-185（範囲外、SEARCH）。
 | 関数 | 入力 | 出力 |
 | --- | --- | --- |
 | `extractLookImageObjectPath` | 文字・null・undefined | 置き場の中の道筋か null |
-| `signLookImageUrl` | client、`rawUrl`、`expiresIn`（既定 3600 秒） | 署名つき URL、元の値、null のどれか |
+| `signLookImageUrl` | client、`rawUrl`、`expiresIn`（既定 3600 秒） | 署名つき URL か null（元の値は返さない） |
 | `signLookImageUrls` | client、`rawUrls` の配列、`expiresIn` | null を除いた URL の配列 |
 
 - 置き場の名前は `look-images`。署名は `storage.from('look-images').createSignedUrl(道筋, 期限)`
 
 #### 正常フロー
 
-1. 道筋の取り出し: 空白を除き、`http://`・`https://` で始まらなければ先頭の `/` を外した値を道筋とする。始まれば URL として読み、`/storage/v1/object/` の public・sign・authenticated の `look-images/` の印の後ろを、`decodeURIComponent` して道筋とする
-2. 1つの署名: 値が空なら null。道筋が取れれば署名し、署名つき URL を返す
+1. 道筋の取り出し（署名の前の確かめ。共有の `parseOwnObjectPath`（DD-SEARCH-011）に `{ bucket: 'look-images', prefix: 'looks' }` を渡す）: 空白を除き、`http://`・`https://` で始まらなければ先頭の `/` を 1 つ外した値を道筋の候補とする。始まれば URL として読み、origin が `NEXT_PUBLIC_SUPABASE_URL`（無ければ `SUPABASE_URL`）の origin と一致し、`/storage/v1/object/` の public・sign・authenticated の `look-images/` の印の後ろを `decodeURIComponent` した値を候補とする。候補が `looks/` の下の安全な文字だけ（英数字で始まる英数字と `.`・`_`・`-` の階層）なら道筋、そうでなければ null。管理の後始末が使う `extractLookImageObjectPath`（空白を除き `http(s)://` なら印の後ろを復号して返す、素の道筋は先頭の `/` を全部外す）は確かめを持たず、`isOwnLookImagePath`（共有の `isSafeObjectPath(path, 'looks')` に委譲）と組んで使う
+2. 1つの署名: 値が空なら null。道筋が取れれば署名し、署名つき URL を返す。道筋が取れない時と署名に失敗した時は null を返す
 3. 配列の署名: 全部を同時に署名し、null を除く
 
 #### 異常フロー
@@ -459,12 +459,13 @@ DRV-LOOK-005、FREQ-185（範囲外、SEARCH）。
 | 印の後ろが空 | 道筋は null | `src/lib/storage/look-images.ts` |
 | URL として読めない（例: `http://` だけ） | 道筋は null | `src/lib/storage/look-images.ts` |
 | 署名する値が空 | null（配列では除かれる） | `src/lib/storage/look-images.ts` |
-| 道筋が取れない | 元の値をそのまま返す（SEC-LOOK-008 は満たさない） | `src/lib/storage/look-images.ts` |
-| 署名の失敗・`signedUrl` が空 | 元の値をそのまま返し、記録しない（SEC-LOOK-008 は満たさない） | `src/lib/storage/look-images.ts` |
+| 道筋が取れない（外の host・別のバケット・`..`・`looks/` の外・安全でない文字・壊れた `%`） | null を返し、署名を呼ばない。記録は種類 `invalid_path` だけ（SEC-LOOK-007・008。2026-10-28） | `src/lib/storage/look-images.ts` |
+| 署名の失敗・`signedUrl` が空 | null を返す。記録は種類 `sign_failed` だけ（SEC-LOOK-008。2026-10-28） | `src/lib/storage/look-images.ts` |
 
-- 素の道筋は `..` や `looks/` の外の道でも、そのまま署名する（SEC-LOOK-007 は満たさない）
-- `signLookImageUrls` の説明の文は「値が空のものは結果から除く」と書き、null を除く動きと合う（推定）
-- 食い違い（ユーザーの判断待ち）: `signLookImageUrl` の `@remarks` は「呼び元に壊れた参照を渡さない」と書くが、道筋が取れない値と署名の失敗では元の値を返す。非公開の置き場では元の値は開けない参照になり得るので、SEC-LOOK-008 の「満たさない」と食い違う。どちらに合わせるかは決めていない
+- 道筋・URL・Supabase の誤りの文は記録に書かない（固定の語だけ）
+- 署名が例外を投げた時は投げ上げる（管理の GET が 500 を返す既存の契約。ITEM と違い LOOK では変えない）
+- `signLookImageUrls` は null になった要素を結果から除き、元の値で補わない。`look/server.ts` の一覧・詳細の `imageUrls` はこの結果だけ（`mapLookRowToListItem` は `imageUrls: []` を置き、呼び手が上書きする）
+- 以前は道筋が取れない値と署名の失敗で元の値を返し、`@remarks` の「呼び元に壊れた参照を渡さない」と食い違っていた。2026-10-28 に `@remarks` に合わせて直した（ADR-0316）
 
 #### 状態・永続化
 
@@ -473,7 +474,7 @@ DRV-LOOK-005、FREQ-185（範囲外、SEARCH）。
 #### 認証認可
 
 - 呼び元が service role の client を渡す（公開の取り出し・管理の窓口・検索）。この関数は client の種類を確かめない
-- 期限は既定で 3600 秒。呼び元はどこも期限を渡さない（推定）
+- 期限は既定で 3600 秒。検索だけが `SEARCH_IMAGE_URL_TTL_SECONDS`（3600）を明示して渡し、ほかの呼び元は渡さない
 
 #### テスト観点
 
@@ -481,19 +482,23 @@ DRV-LOOK-005、FREQ-185（範囲外、SEARCH）。
 | --- | --- | --- | --- |
 | 1 | 文字でない・空白 | `null`、`"  "` | null |
 | 2 | 素の道筋 | `"/looks/a.png"` | `looks/a.png` |
-| 3 | 旧い公開の URL | `https://x/storage/v1/object/public/look-images/looks/a%20b.png` | `looks/a b.png` |
-| 4 | sign・authenticated の URL | 2つの形 | 印の後ろの道筋 |
+| 3 | 旧い公開の URL（`extractLookImageObjectPath`） | `https://x/storage/v1/object/public/look-images/looks/a%20b.png` | `looks/a b.png` |
+| 4 | sign・authenticated の URL（`extractLookImageObjectPath`） | 2つの形 | 印の後ろの道筋 |
 | 5 | 印の後ろが空 | `https://x/storage/v1/object/public/look-images/` | null |
 | 6 | 印の無い URL | `https://x/other.png` | null |
 | 7 | 読めない URL | `"http://"` | null |
 | 8 | 署名の成功 | 道筋、client が `signedUrl` を返す | 署名つき URL、期限 3600 |
 | 9 | 期限を渡す | `expiresIn:60` | `createSignedUrl(道筋,60)` |
 | 10 | 空の値 | `""`、`null` | null |
-| 11 | 道筋が取れない | `https://x/other.png` | 元の値 |
-| 12 | 署名の失敗 | client が `error` | 元の値 |
-| 13 | `signedUrl` が空 | `data:{}` | 元の値 |
+| 11 | 道筋が取れない | 外の host・別プロジェクト・別のバケット・`../dir/x.png`・`other/x.png`・符号化した空白 | null。署名を呼ばない |
+| 12 | 署名の失敗 | client が `error` | null |
+| 13 | `signedUrl` が空 | `data:{}`・`data:null` | null |
 | 14 | 配列 | `["looks/a.png", null, ""]` | 署名つき URL 1つだけの配列 |
 | 15 | 配列の期限 | `expiresIn` あり・なし | 渡した期限・3600 で署名 |
+| 16 | 本番の公開 URL | 自分の host の `/object/public/look-images/looks/…`（環境変数が自分の host） | 道筋に直して署名する |
+| 17 | 配列の失敗 | 外の URL・`other/x.png` が混ざる | 外れ、元の値で補わない |
+| 18 | 記録 | 失敗 2 種 | `invalid_path`・`sign_failed` の語だけ。道筋・URL・誤りの文を含まない |
+| 19 | 一覧・詳細 | 署名が全部外れる（`look-server.test.ts`） | `imageUrls` は空。生の `image_urls` が出ない |
 
 ### DD-LOOK-069 LOOK の誤りの画面 error.tsx
 

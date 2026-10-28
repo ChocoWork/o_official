@@ -73,7 +73,6 @@ test.describe('FR-ABOUT-010 /about の HTTP 応答の守り', () => {
   test('SEC-ABOUT-003-AC-01 /about の CSP に cdn.jsdelivr.net・readdy.ai・placehold.co が含まれない', async ({
     request,
   }) => {
-    test.fail(true, 'SEC-ABOUT-003-AC-01 今のコードは満たさない（docs/02_Requirements/areas/about.md）');
     const response = await request.get('/about');
     expect(response.status()).toBe(200);
 
@@ -99,11 +98,9 @@ test.describe('FR-ABOUT-010 /about の HTTP 応答の守り', () => {
   test('SEC-ABOUT-003-AC-02 /_next/image は placehold.co・readdy.ai の画像を取らず 4xx を返す', async ({
     request,
   }) => {
-    test.fail(true, 'SEC-ABOUT-003-AC-02 今のコードは満たさない（docs/02_Requirements/areas/about.md）');
     test.setTimeout(120_000);
 
-    // 注意: SEC-ABOUT-003 を実装するまで remotePatterns が placehold.co・readdy.ai を許すので、
-    // このテストはサーバーから外の 2 ホストへ実際に取りに行く。
+    // remotePatterns は自分のプロジェクトの署名つきの道だけなので、外の 2 ホストへは取りに行かず、設定の段階で 4xx になる。
     const placehold = await request.get(optimize('https://placehold.co/600x400/png'));
     expect(placehold.status()).toBeGreaterThanOrEqual(400);
     expect(placehold.status()).toBeLessThan(500);
@@ -115,7 +112,8 @@ test.describe('FR-ABOUT-010 /about の HTTP 応答の守り', () => {
     expect(readdy.headers()['content-type'] ?? '').not.toMatch(/^image\//i);
   });
 
-  test('SEC-ABOUT-004-AC-01 Cookie を持たない要求の /about は Set-Cookie があり共有のキャッシュに残らない', async ({
+  // /about の応答は Cookie の有無に依らず共有のキャッシュに残らない（Set-Cookie が付くかは SEC-PRIVACY-015 が見る。session_id は決済の道だけで発行する）。
+  test('SEC-ABOUT-004-AC-01 Cookie を持たない要求の /about は共有のキャッシュに残らない', async ({
     playwright,
     baseURL,
   }) => {
@@ -124,9 +122,6 @@ test.describe('FR-ABOUT-010 /about の HTTP 応答の守り', () => {
       const response = await context.get('/about');
       expect(response.status()).toBe(200);
 
-      const cookies = setCookieLines(response);
-      expect(cookies.length).toBeGreaterThan(0);
-      expect(cookies.some((line) => /^session_id=/i.test(line))).toBe(true);
       expectNotSharedCacheable(response);
     } finally {
       await context.dispose();
@@ -137,17 +132,8 @@ test.describe('FR-ABOUT-010 /about の HTTP 応答の守り', () => {
     playwright,
     baseURL,
   }) => {
-    const first = await playwright.request.newContext({ baseURL });
-    let sessionId: string;
-    try {
-      const initial = await first.get('/about');
-      const line = setCookieLines(initial).find((value) => /^session_id=/i.test(value));
-      expect(line).toBeTruthy();
-      sessionId = (line as string).split(';')[0].slice('session_id='.length);
-      expect(sessionId).not.toBe('');
-    } finally {
-      await first.dispose();
-    }
+    // /about は session_id を発行しないので、32 桁の 16 進の値を自分で付けて要求する。
+    const sessionId = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
 
     // Cookie の入れ物を共有しない別の文脈から、セッションの Cookie を明示して要求する。
     const second = await playwright.request.newContext({ baseURL });

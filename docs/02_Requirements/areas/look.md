@@ -1,6 +1,6 @@
 # LOOK の要件
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: LOOK（一覧 `/look`・詳細 `/look/[id]`・ホームの LOOK の区画の部品・管理の LOOK） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: LOOK（一覧 `/look`・詳細 `/look/[id]`・ホームの LOOK の区画の部品・管理の LOOK） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -13,7 +13,7 @@ LOOK の領域の要求・要件・受け入れ条件・派生要件を、追跡
 | 要件 | 81 | 既存の `FREQ-NN-REQ-NN` 67（うち廃止 1）、`FR-LOOK-ALL-001`〜`006`、`FR-LOOK-DETAIL-001`〜`007`、`FR-ADMIN-005` |
 | 受け入れ条件 | 156 | 既存の `FREQ-NN-AC-NN` 129（うち廃止 3）、新しい `FR-…-AC-NN` 27 |
 | 派生要件 | 13 | `DRV-LOOK-001`〜`013` |
-| セキュリティ要件 | 23（受け入れ条件 44） | `SEC-LOOK-001`〜`023`、`SEC-LOOK-NNN-AC-NN`。上位は脅威の文書（`docs/05_Quality/security/threats/look.md`）の `THR-LOOK-001`〜`023` |
+| セキュリティ要件 | 23（受け入れ条件 45） | `SEC-LOOK-001`〜`023`、`SEC-LOOK-NNN-AC-NN`。上位は脅威の文書（`docs/05_Quality/security/threats/look.md`）の `THR-LOOK-001`〜`023` |
 
 - 状態: 写した要求・要件・受け入れ条件のうち、根拠が元の行に書いてある物は「現行」。元の行に理由が無く根拠の「なぜ」を推定で補った物・コードと合わない行・後の行で中身が置き換わった行・新しく起こした項目・実装から読み取った項目は「推定」。後の行が「置換」「取り消し」と明記した物だけを「廃止」にした。どちらが正しいかは決めず、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節に載せた
 - 結論: 公開の LOOK を見る要求は元の文書に無かった（`SR-LOOK-001`・`002` を推定で起こした）。無い LOOK の頁の戻りのリンク（FR-LOOK-DETAIL-004・FREQ-178）と、一覧のモバイルの左右の余白（FREQ-141）はコードと要件が合わず、E2E が赤。LOOK のカードの見た目の行（FREQ-127〜145）は後の行が前の行を置き換えた所が多く、元の行に置き換えの印が無い
@@ -116,7 +116,7 @@ LOOK の領域の要求・要件・受け入れ条件・派生要件を、追跡
 | FR-LOOK-DETAIL-018-no-horizontal-overflow | FREQ-344-AC-01、FREQ-344-AC-03 |
 | FR-LOOK-DETAIL-019-detail-content-and-links-remaining | FR-LOOK-DETAIL-001-AC-02、FR-LOOK-DETAIL-002-AC-02、FR-LOOK-DETAIL-003-AC-02、FR-LOOK-DETAIL-004-AC-01、FR-LOOK-DETAIL-006-AC-02、FREQ-11-AC-01 |
 | FR-LOOK-DETAIL-020-detail-layout-and-nav-remaining | FREQ-176-AC-02、FREQ-180-AC-02、FREQ-181-AC-02、FREQ-181-AC-03、FREQ-182-AC-02、FREQ-183-AC-02、FREQ-183-AC-03、FREQ-344-AC-02、FREQ-289-AC-01、FREQ-289-AC-02 |
-| FR-LOOK-SEC-001-public-visibility | SEC-LOOK-001-AC-01、SEC-LOOK-001-AC-02、SEC-LOOK-006-AC-01、SEC-LOOK-006-AC-02、SEC-LOOK-007-AC-01、SEC-LOOK-008-AC-01、SEC-LOOK-009-AC-01、SEC-LOOK-016-AC-01、SEC-LOOK-017-AC-01 |
+| FR-LOOK-SEC-001-public-visibility | SEC-LOOK-001-AC-01、SEC-LOOK-001-AC-02、SEC-LOOK-006-AC-01、SEC-LOOK-006-AC-02、SEC-LOOK-006-AC-03、SEC-LOOK-007-AC-01、SEC-LOOK-008-AC-01、SEC-LOOK-009-AC-01、SEC-LOOK-016-AC-01、SEC-LOOK-017-AC-01 |
 | FR-LOOK-SEC-002-postgrest-policies | SEC-LOOK-002-AC-01、SEC-LOOK-002-AC-02、SEC-LOOK-003-AC-01、SEC-LOOK-003-AC-02、SEC-LOOK-004-AC-01、SEC-LOOK-004-AC-02、SEC-LOOK-005-AC-01、SEC-LOOK-005-AC-02、SEC-LOOK-010-AC-02、SEC-LOOK-023-AC-01 |
 | FR-LOOK-SEC-003-admin-api-authz | SEC-LOOK-019-AC-01、SEC-LOOK-019-AC-02、SEC-LOOK-019-AC-03、SEC-LOOK-019-AC-04、SEC-LOOK-019-AC-05、SEC-LOOK-018-AC-01、SEC-LOOK-018-AC-02、SEC-LOOK-016-AC-02、SEC-LOOK-016-AC-03、SEC-LOOK-011-AC-01 |
 | FR-LOOK-SEC-004-admin-write-integrity | SEC-LOOK-012-AC-01、SEC-LOOK-012-AC-02、SEC-LOOK-012-AC-03、SEC-LOOK-013-AC-01、SEC-LOOK-013-AC-02、SEC-LOOK-014-AC-01、SEC-LOOK-014-AC-02、SEC-LOOK-020-AC-01、SEC-LOOK-020-AC-02、SEC-LOOK-015-AC-01 |
@@ -1771,7 +1771,7 @@ LOOK 一覧ページでシーズン（ALL / SS / AW）をフィルタでき、de
 
 `generateMetadata` を実装し、ページタイトルと description を設定する。また `Back to Lookbook` リンクと適切な `aria-label` を追加する。
 
-今のコード（推定）: title は「<テーマ> | LOOK | Le Fil des Heures」、description は説明文（空ならテーマから作った文）、OG の画像は1枚目の署名つき URL（DRV-LOOK-005）。前後のリンクの aria-label は「Previous look: <テーマ>」「Next look: <テーマ>」。requirements.md のレビューの注「generateMetadata なし」は古い。
+今のコード（推定）: title は「<テーマ> | LOOK | Le Fil des Heures」、description は説明文（空ならテーマから作った文）、OG の画像は、署名できる画像が 1 枚以上ある LOOK だけ同一オリジンの `/look/<id>/og`（SEC-LOOK-006、ADR-0165。2026-10-28 から。以前は 1 枚目の署名つき URL）。前後のリンクの aria-label は「Previous look: <テーマ>」「Next look: <テーマ>」。requirements.md のレビューの注「generateMetadata なし」は古い。
 
 ### FR-LOOK-DETAIL-007 同じシーズン・関連のコーディネートを薦める節を足す（将来対応）
 
@@ -4014,7 +4014,7 @@ LOOK の画像の道筋を `/storage/v1/object/public/look-images/<道筋>` で�
 | 出どころ | ASVS 未対応付け。`docs/05_Quality/reviews/security/security_review_look.md`、`docs/05_Quality/reviews/security/security_review_look_id.md` |
 | 優先度 | MUST |
 
-署名の期限は1時間以下とし、`/look`・`/look/<id>` の頁と画像の最適化のキャッシュは署名の期限より長く残さない。方針（`revalidate`・`dynamic`・`minimumCacheTTL`）を明示する。`og:image` には期限の切れる署名つき URL を入れない。今のコードは満たさない。
+署名の期限は1時間以下とし、`/look`・`/look/<id>` の頁と画像の最適化のキャッシュは署名の期限より長く残さない。方針（`revalidate`・`dynamic`・`minimumCacheTTL`）を明示する。`og:image` には期限の切れる署名つき URL を入れない。2026-10-28 に満たした。署名の期限は 3600 秒（`look-images.ts`）、画像の最適化のキャッシュは `minimumCacheTTL: 3600`（`next.config.ts`）、頁は根の `layout.tsx` の `dynamic = 'force-dynamic'` で要求ごとに描く。`og:image` は署名を含まない同一オリジンの窓口 `GET /look/<id>/og`（API-LOOK-007。ADR-0165）にした。
 
 #### SEC-LOOK-006-AC-01 非公開にした後に開いた頁に、その LOOK の画像の URL が出ない
 
@@ -4040,6 +4040,18 @@ LOOK を非公開にした後に `/look` と `/look/<id>` を開くと、頁の 
 
 公開の LOOK の `/look/<id>` の `og:image` の値に、署名つき URL の `token` の問い合わせが含まれないこと。
 
+#### SEC-LOOK-006-AC-03 `og:image` の窓口が公開の LOOK の画像だけを短い共有キャッシュで返す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-LOOK-006 |
+| 根拠 | `og:image` を署名つき URL にせず同一オリジンの窓口にした時に、公開の LOOK だけが画像を返し、非公開にした後は返さず、共有キャッシュに識別子が載らないことを確かめるため（ADR-0165） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（手元の Supabase で公開の LOOK を開き、`og:image` の値の道を開いた後に非公開にして開き直す。応答の見出しだけを見るので幅に依らず 1 回） |
+| 出どころ | 実装から推定。ユーザーの決定（Q10。推奨で進めた） |
+
+公開の LOOK の `/look/<id>/og` を開くと、状態 200・`image/*`・`Cache-Control` が `public`・`max-age=300`・`s-maxage=300` を含み、`X-Content-Type-Options: nosniff` で、`Set-Cookie` が無いこと。LOOK を非公開にした後・存在しない id・数でない id は 404 になること。
+
 ### SEC-LOOK-007 署名の前に、画像の道筋を LOOK の画像の形に限る
 
 | 属性 | 値 |
@@ -4051,7 +4063,7 @@ LOOK を非公開にした後に `/look` と `/look/<id>` を開くと、頁の 
 | 出どころ | ASVS 未対応付け。`docs/05_Quality/reviews/security/security_review_look.md` |
 | 優先度 | MUST |
 
-署名する道筋は `looks/` の下の、管理の窓口が作る形（日付の階層と uuid のファイル名）に限る。`..`・制御文字・二重の `/`・先頭の `/` を含む値と、URL のホストが自分の Supabase でない値は署名しない。今のコードは満たさない。
+署名する道筋は `looks/` の下の安全な文字（英数字で始まる英数字と `.`・`_`・`-` の階層）に限る。管理の窓口が作る形（日付の階層と uuid のファイル名）より広いのは、見本や古い行の `looks/e2e/look-1-1.png` のような道筋も署名できるようにするため。`..`・制御文字・空白・二重の `/` を含む値と、URL のホストが自分の Supabase（`NEXT_PUBLIC_SUPABASE_URL`、無ければ `SUPABASE_URL` の origin 1 つ）でない値や別のバケットの値は署名しない。素の道筋の先頭の `/` は 1 つだけ外して通す。2026-10-28 に満たした（共有の `parseOwnObjectPath`（DD-SEARCH-011）を `look-images.ts` の `signLookImageUrl` が署名の前に通す。ADR-0316）。
 
 #### SEC-LOOK-007-AC-01 決まりの外の道筋は署名されない
 
@@ -4076,7 +4088,7 @@ LOOK を非公開にした後に `/look` と `/look/<id>` を開くと、頁の 
 | 出どころ | OWASP ASVS 4.0.3 V4.1.5。`docs/05_Quality/reviews/security/security_review_look.md` |
 | 優先度 | MUST |
 
-道筋にできない値・署名の失敗・関連の取り出しの失敗の時は、元の値を返さず、その画像を外すか代わりの画像（`/placeholder.png`）にし、失敗を記録する。今のコードは満たさない。
+道筋にできない値・署名の失敗・関連の取り出しの失敗の時は、元の値を返さず、その画像を外すか代わりの画像（`/placeholder.png`）にし、失敗を記録する。2026-10-28 に、署名の側を満たした（`signLookImageUrl` は道筋にできない値と署名の失敗で `null` を返し、`signLookImageUrls` が結果から外す。記録は種類 `invalid_path`・`sign_failed` だけで、道筋・URL・Supabase の誤りの文を含めない。`look/server.ts` の一覧・詳細の `imageUrls` は署名した値だけで、生の `image_urls` で補わない）。画像が全部外れた LOOK は画像の無い表示になる。署名が例外を投げた時は従来どおり頁・窓口の失敗になる。
 
 #### SEC-LOOK-008-AC-01 外の URL や署名できない値が画像の読み込み先にならない
 
@@ -4697,7 +4709,7 @@ AC-01 と同じ状態で、aal2 の管理者の session の `/api/admin/looks/<i
 | 状態 | 推定 |
 | 出どころ | `migrations/030_make_look_images_bucket_private.sql`、実装から推定（`src/lib/storage/look-images.ts`） |
 
-一覧・ホーム・詳細・詳細の OG の画像・管理の一覧と1件の取り出しの全部で署名つき URL を出す。画像が無い LOOK は代わりの画像（`/placeholder.png`）を出す。署名に失敗した時は元の値をそのまま返す（SEC の候補）。
+一覧・ホーム・詳細・管理の一覧と1件の取り出しの全部で署名つき URL を出す（詳細の OG の画像は署名つき URL でなく、同一オリジンの `/look/<id>/og`。SEC-LOOK-006、ADR-0165。2026-10-28）。画像が無い LOOK は代わりの画像（`/placeholder.png`）を出す。道筋にできない値と署名の失敗では元の値を返さず、その画像を外す（SEC-LOOK-007・008。2026-10-28）。
 
 ### DRV-LOOK-006 無い LOOK の詳細は同じ URL で状態 200 の画面を返す
 

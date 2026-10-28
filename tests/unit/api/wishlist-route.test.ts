@@ -161,6 +161,21 @@ describe('GET /api/wishlist', () => {
     expect(context.finish).toHaveBeenCalledWith(res);
   });
 
+  test('画像の署名が null（外の URL・署名の失敗）の商品は、元の URL に戻さず image_url を null で返す', async () => {
+    (signItemImageUrl as jest.Mock).mockResolvedValue(null);
+    useDb({
+      wishlist_lines: { data: [lineRows[0]], error: null },
+      items: { data: [{ ...publishedItems[0], image_url: 'https://evil.example/a.png' }], error: null },
+      item_variants: { data: [variantRows[0]], error: null },
+    });
+
+    const res = await GET(get());
+
+    const body = await res.json();
+    expect(body[0].items.image_url).toBeNull();
+    expect(JSON.stringify(body)).not.toContain('evil.example');
+  });
+
   test('wishlist_id で明細を読み、公開中の商品だけを今と同じ形で返して各行に販売中のバリアントを足す', async () => {
     const { supabase, publicSupabase, lines, items, variants } = useDb({
       wishlist_lines: { data: lineRows, error: null },

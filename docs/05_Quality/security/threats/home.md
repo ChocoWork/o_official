@@ -1,6 +1,6 @@
 # HOME の脅威
 
-> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-26 | 対象: ホーム `/` の画面と、ホームが集めて出す商品・LOOK・NEWS・取扱店・検索の窓の道 | 基準コミット: `a03beaff`（本文の `ファイル:行` は、この脅威の文書が日付つきの証拠として残す行番号で、このコミットの内容を指す。コードを読み直す時は関数・部品の名前でたどる）
+> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-28 | 対象: ホーム `/` の画面と、ホームが集めて出す商品・LOOK・NEWS・取扱店・検索の窓の道 | 基準コミット: `a03beaff`（本文の `ファイル:行` は、この脅威の文書が日付つきの証拠として残す行番号で、このコミットの内容を指す。コードを読み直す時は関数・部品の名前でたどる）
 
 ---
 
@@ -12,7 +12,7 @@ HOME（ホーム `/`）の領域で考える脅威を、1つずつ `THR-HOME-NNN
 | --- | --- |
 | 項目の数 | 20（THR-HOME-001〜020）。うち 011・012・019 は検索の窓の話で、持ち主の SEARCH の脅威（THR-SEARCH-006・010・021）へ移して「廃止」で残した |
 | 守りがある物 | 下書きを出さない絞り（001）、枠への埋め込みと守りの見出し（010）、ホームの描画に生の HTML が無い・字は React が逃がす（008）、在庫の実数を直接読ませない（006） |
-| 守りが欠ける・弱い物 | 公開の読みがセッションの権限で動く（002）、DB の管理の権限が aal2 を見ない（003）、原価の列を anon が直接読める（004）、表の権限が広い（005）、商品の画像の署名が7日（007）、使わない CDN の許可（009）、1つの取得の失敗で頁が落ちる（014）、原価の履歴の表が誰にでも開いている（020） |
+| 守りが欠ける・弱い物 | 公開の読みがセッションの権限で動く（002）、DB の管理の権限が aal2 を見ない（003）、原価の列を anon が直接読める（004）、表の権限が広い（005）、商品の画像の署名が7日（007。2026-10-28 に3600秒へ直した）、使わない CDN の許可（009）、1つの取得の失敗で頁が落ちる（014）、原価の履歴の表が誰にでも開いている（020） |
 | 対策の書き先 | 対策のセキュリティ要件 `SEC-HOME-NNN` は要件の文書（`docs/02_Requirements/areas/home.md`）に書く。下の「対策」の欄は読み手のための写し |
 | 状態の付け方 | 全部「推定」。コードで確かめた物も、ユーザーの確認を受けていないので「推定」にした。どれも実行しての確かめはしていない |
 
@@ -128,7 +128,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 在庫の実数、商品の画像の置き場の中の物 |
 | 脅威 | 商品の行の `image_url` を書き換えられる者（管理の権限を持つ人、または THR-HOME-003 の道）が、置き場の別の物をホームの応答に出させる。または在庫の読みの絞りが落ちて、非公開の商品の在庫の有無が出る |
-| 起こり方 | ホームの商品の在庫の有無は service role で `item_variants` を読む（`src/lib/items/availability.ts:61-66`）。絞りは `items.status='published'` の条件だけ。画像の署名も service role で、道筋が置き場の中ならどこでも署名する（`src/lib/storage/item-images.ts:18-53,92-98`）。道筋にできない値と署名の失敗は、元の値をそのまま返す（`:93-94,98,137-140`） |
+| 起こり方 | ホームの商品の在庫の有無は service role で `item_variants` を読む（`src/lib/items/availability.ts:61-66`）。絞りは `items.status='published'` の条件だけ。画像の署名も service role で、道筋が置き場の中ならどこでも署名する（`src/lib/storage/item-images.ts:18-53,92-98`）。道筋にできない値と署名の失敗は、元の値をそのまま返す（`:93-94,98,137-140`）。**2026-10-28 に直した**: `item-images.ts` は署名の前に共有の `parseOwnObjectPath`（DD-SEARCH-011）で、自分のプロジェクトの origin 1 つと `items/` の下の安全な道筋だけを通し、道筋にできない値と署名の失敗は `null` を返す（元の値を返さない。ADR-0316）。ホームのカードは `null` を受けて画像の無いカードで描く |
 | 影響 | 置き場に商品の画像以外の物を置いた時に、それがホームから配られる。外の住所を入れられると、ホームが外の画像を読む |
 | 対策 | SEC-HOME-006 |
 | ASVS | ASVS 未対応付け |
@@ -142,7 +142,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 非公開にした・消した商品の画像 |
 | 脅威 | 前にホームの HTML を受け取った者が、商品を非公開にした後も画像を開く |
-| 起こり方 | 商品の画像の署名は7日有効（`src/lib/storage/item-images.ts:4`）。署名した URL はサーバーの中の表に期限の1分前まで残し、同じ道筋には同じ URL を返す（`:5,7,60-80`）。LOOK・NEWS は1時間（`src/lib/storage/look-images.ts:14`、`src/lib/storage/news-images.ts:4`）。ただし LOOK のカードの関連商品の画像は、LOOK の取得（`src/lib/look/server.ts` の `hydrateLooks`）が ITEM の商品の画像の署名（`signItemImageUrl`）を通すので、同じ7日になる |
+| 起こり方 | 商品の画像の署名は7日有効（`src/lib/storage/item-images.ts:4`）。署名した URL はサーバーの中の表に期限の1分前まで残し、同じ道筋には同じ URL を返す（`:5,7,60-80`）。LOOK・NEWS は1時間（`src/lib/storage/look-images.ts:14`、`src/lib/storage/news-images.ts:4`）。ただし LOOK のカードの関連商品の画像は、LOOK の取得（`src/lib/look/server.ts` の `hydrateLooks`）が ITEM の商品の画像の署名（`signItemImageUrl`）を通すので、同じ7日になる。**2026-10-28 に直した**: 既定の期限を3600秒にした。署名の使い回しは残りが期限の半分以上ある間だけにして、頁に載る URL の残りを1800秒以上に保つ（ADR-0316）。表の件数の上限（THR-HOME-013）は別の項目で、直していない |
 | 影響 | 誤って公開した商品を戻しても、最大7日、画像が見える。署名つき URL は取り消せない |
 | 対策 | SEC-HOME-007 |
 | ASVS | ASVS 未対応付け |
@@ -170,11 +170,11 @@ flowchart LR
 | --- | --- |
 | 守るもの | ホームの画面で動くスクリプトと、閲覧者の情報 |
 | 脅威 | `cdn.jsdelivr.net` の上の物が乗っ取られる・誰でも置ける物を読ませる。差し込みが通った時に、別の Supabase のプロジェクトへ情報を送る |
-| 起こり方 | CSP の `script-src`・`style-src`・`style-src-elem`・`font-src` が `https://cdn.jsdelivr.net` を許す（`src/proxy.ts:96,102,109,123`）が、`src` のどこも CDN を読まない（`src/proxy.ts` のほかに `cdn.jsdelivr` の字が無い）。`connect-src`・`img-src` は `https://*.supabase.co` を全部許す（`src/proxy.ts:71,86`） |
-| 影響 | CDN の乗っ取りで、全部の頁でスクリプトが動く。持ち出しの先が開いている |
+| 起こり方 | 直した（2026-10-28）。以前は CSP の `script-src`・`style-src`・`style-src-elem`・`font-src` が `https://cdn.jsdelivr.net` を許し、`connect-src`・`img-src` は `https://*.supabase.co` を全部許していたが、`src` のどこも CDN を読まなかった。`src/proxy.ts` の `buildCsp` から外し、Supabase は自分のプロジェクトの origin だけにした（`ADR-0108`）。Stripe（`js.stripe.com`・`*.js.stripe.com`）と Turnstile は全頁で許す（Q29。CSP は `next/link` の遷移で変わらず、決済の頁だけに絞ると `/cart` から進んだ時に決済の部品が止まる）。ブラウザ側の zod が `new Function` で `eval` の可否を探り、CSP の違反として記録される件は、`src/instrumentation-client.ts` で zod を `jitless` にして無くした（2026-10-28。SEC-HOME-009-AC-02、`DD-HOME-004`。本番ビルドでの実測は未確認）。CSP に `unsafe-eval` を足さずに済ませるための直し |
+| 影響 | 以前は CDN の乗っ取りで全部の頁でスクリプトが動き、持ち出しの先が開いていた。今は許可先が自分のプロジェクト・Stripe・Turnstile だけ |
 | 対策 | SEC-HOME-009 |
 | ASVS | V14.2.3 |
-| 根拠 | 過去のレビューの Medium の指摘で、今も Open のまま。`src/proxy.ts` は範囲外の共有部品で、全部の頁に同じ CSP がかかる |
+| 根拠 | 過去のレビューの Medium の指摘。`src/proxy.ts` は範囲外の共有部品で、全部の頁に同じ CSP がかかる。Stripe 公式（<https://docs.stripe.com/security/guide>）の一覧に揃えた。本番の Stripe アカウントで Link が有効だと、決済の部品が `link.com` の枠を開こうとして止められる可能性がある（テストモードの `FR-CHECKOUT-025` では出ていない）。本番の前に確かめる |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/security/security_review_home.md:34` |
 
@@ -282,7 +282,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | サーバーの最適化の処理の余力と、画像の出どころ |
 | 脅威 | 第三者が、許可された外の場所や別の Supabase のプロジェクトの画像を `/_next/image` に通させる。許可した外の場所が乗っ取られる |
-| 起こり方 | `next.config.ts:35-78` の `remotePatterns` が `placehold.co`・`readdy.ai`・`public.readdy.ai` と、`*.supabase.co` の public・sign・authenticated の道を全部許す。CSP の `img-src` も `placehold.co`・`readdy.ai` を許す（`src/proxy.ts:82-84`）。ホーム自体は手元の画像だけを使う（`src/app/page.tsx:70`、ABOUT の `/about.png`） |
+| 起こり方 | 過去は `next.config.ts` の `remotePatterns` が `placehold.co`・`readdy.ai`・`public.readdy.ai` と、`*.supabase.co` の public・sign・authenticated の道を全部許していた。2026-10-28 に、CSP の `img-src`（`src/proxy.ts` の `buildCsp`。`ADR-0108`）と `remotePatterns` の両方を絞った。`remotePatterns` は、ビルド時の `NEXT_PUBLIC_SUPABASE_URL` の host 1 つの `/storage/v1/object/sign/**` だけ（手元の Supabase につないだビルドだけ手元の枝を足す）で、最適化した画像のキャッシュ（`minimumCacheTTL`）は 3600 秒（`DD-HOME-004`）。ホーム自体は手元の画像だけを使う（`src/app/page.tsx:70`、ABOUT の `/about.png`）。部品の見本の頁 `/ui` が使っていた readdy.ai の画像 7 か所は、2026-10-28 に `public/` の手元の画像へ替えた（`DD-HOME-004`）ので、許可を外しても `/ui` の画像は止まらない |
 | 影響 | 他人の画像のためにサーバーの処理と費用を使われる。THR-HOME-006 で外の住所を入れられた時に、その画像がホームに出る |
 | 対策 | SEC-HOME-017 |
 | ASVS | V12.6.1 |

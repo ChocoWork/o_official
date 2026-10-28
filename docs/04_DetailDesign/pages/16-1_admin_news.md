@@ -1,6 +1,6 @@
 # 1.16-1 管理画面のニュース（ADMIN NEWS）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: 管理画面の NEWS タブ・記事の作成と編集の画面・管理のニュースの窓口・画像の署名・使われていない Server Action | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: 管理画面の NEWS タブ・記事の作成と編集の画面・管理のニュースの窓口・画像の署名・使われていない Server Action | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -21,8 +21,8 @@
 | `DD-NEWS-071` | 管理のニュースの画像の確かめ・保存名・後始末 | `src/features/news/services/admin-images.ts` の `prepareNewsImage`・`buildNewsImagePath`・`isOwnNewsImagePath`・`removeNewsImages` |
 
 - 結論: 管理の画面は全部が利用者の端末で動く部品で、画面では権限を確かめない。守りは窓口（`DD-NEWS-064`・`065`）の `authorizeAdminPermission`（session・DB の ACL の権限・aal2）に置く。DB の読みは利用者の JWT で RLS に通し、書き込みは認可の後に service role で行う（ADR-0026）
-- 署名に失敗した時の戻り値は、今のコードの動きをそのまま書いた。現状との差は SEC-NEWS-008 の項目に書き、この頁では上位に書かない。存在しない記事への PUT・PATCH・DELETE の応答、画像の中身の確かめ、置き場の画像の後始末は 2026-10-26 に直した（SEC-NEWS-016・017・018。DD-NEWS-071）
-- 単体テストは `NewsForm`・`NewsSection`（分類の表示だけ）・`news-images`（3件）にしかない。分岐を全部通すのに要るテストを各項目の「テスト観点」に挙げた
+- 署名に失敗した時の戻り値は `null`（2026-10-28 から。以前は元の値を返し、SEC-NEWS-008 の項目に現状との差を書いていた）。存在しない記事への PUT・PATCH・DELETE の応答、画像の中身の確かめ、置き場の画像の後始末は 2026-10-26 に直した（SEC-NEWS-016・017・018。DD-NEWS-071）
+- 単体テストは `NewsForm`・`NewsSection`・`news-images`（`news-images.test.ts` は 2026-10-28 に書き直し、20 本余り）・管理の窓口などに限られる。分岐を全部通すのに要るテストを各項目の「テスト観点」に挙げた
 
 ## 範囲と根拠
 
@@ -64,7 +64,7 @@
 | `src/features/news/services/admin-images.ts` | `prepareNewsImage`・`buildNewsImagePath`・`isOwnNewsImagePath`・`removeNewsImages` | DD-NEWS-071 |
 
 - 窓口のファイルは、中の GET・POST などが別々の契約でも、単位がファイルなので1つの `DD-` にまとめた。項目の本文で方法ごとに分けて書く
-- `news-images.ts` の3つは公開の一覧・詳細（`src/features/news/services/public.ts`）と検索（`src/features/search/services/search.service.ts`、範囲外）も使う。公開側の詳細設計は、この頁の `DD-NEWS-067`・`068` を参照し、同じ単位に別の `DD-` を作らない
+- `news-images.ts` の3つは検索（`src/features/search/services/search.service.ts`、範囲外）も使う。公開の一覧・詳細（`src/features/news/services/public.ts`）は 2026-10-26 から署名しない。公開側の詳細設計は、この頁の `DD-NEWS-067`・`068` を参照し、同じ単位に別の `DD-` を作らない
 - 単位にならない物: `src/types/news.ts`（型だけ）、`src/app/actions/news.ts` の `export type NewsArticle`（型だけ）、窓口の中の `getRequestUserAgent`・`logNewsAudit` と `news-images.ts` の `normalizeObjectPath`・`createSignedUrlByPath`（export しない関数。それぞれの項目に含める）
 
 ## 管理の窓口に共通の動き
@@ -127,10 +127,11 @@ SCR-NEWS-003、FLOW-NEWS-002、STATE-NEWS-001（その上は FR-ADMIN-003、DRV-
 | PATCH が OK でない・例外 | 記録して `alert('ステータスの更新に失敗しました')`。読み直さない |
 | 削除の確かめで取り消す | 何も送らない |
 | DELETE が OK でない・例外 | 記録して `alert('記事の削除に失敗しました')`。読み直さない |
+| 記事の `image_url` が `null`（画像の署名ができない） | 空の `src` を `next/image` に渡さず、`/placeholder.png` を出す。他の行は今のまま（波 3 の Task 2。署名の関数が元の値でなく `null` を返す形に変わる前の受け手の直し） |
 | 切り替え・削除の後の読み直しに失敗 | 前の一覧のまま残し、その上に同じ失敗の知らせ（`role="alert"` と「再読み込み」）を出す（変えたのに表示が変わらないことを知らせる） |
 | 「再読み込み」を押す | 「読み込み中...」にして取り直す。成功すれば失敗の印を消して一覧を出す |
 
-- 画像の出し方: 行の画像は署名つき URL を `next/image` に渡し、最適化の中継を通す。中継は `next.config.ts` の `remotePatterns` で `*.supabase.co` のどのプロジェクトの URL も通し（SEC-NEWS-023）、最適化した画像のキャッシュの長さ（`minimumCacheTTL`）の指定が無い（SEC-NEWS-004 の AC-02）。`next.config.ts` は範囲外の共有の設定
+- 画像の出し方: 行の画像は署名つき URL を `next/image` に渡し、最適化の中継を通す。中継は `next.config.ts` の `remotePatterns` で、本番は自分の Supabase の host 1 つの `sign/**` だけを通し（SEC-NEWS-023、`DD-HOME-004`）、最適化した画像のキャッシュの長さ（`minimumCacheTTL`）は 3600 秒にしている（SEC-NEWS-004 の AC-02、`DD-HOME-004`）。`next.config.ts` は範囲外の共有の設定
 
 #### 状態・永続化
 
@@ -157,6 +158,7 @@ SCR-NEWS-003、FLOW-NEWS-002、STATE-NEWS-001（その上は FR-ADMIN-003、DRV-
 - 削除に同意すると DELETE を送り、成功で一覧を読み直す
 - DELETE が OK でない時に「記事の削除に失敗しました」の `alert` が出る
 - 編集のボタンの行き先が `/admin/news/edit/<id>`
+- 記事の `image_url` が `null` の行は `/placeholder.png` を出し、他の行の画像は今のまま
 
 ### DD-NEWS-061 記事の作成・編集のフォーム
 
@@ -594,7 +596,7 @@ ARC-NEWS-003、DATA-NEWS-004
 | URL として読めない・decode できない | `null` |
 | どの印にも合わない URL（外のホストを含む） | `null` |
 
-- ホストが自分の Supabase のプロジェクトか、道が `news/` の下か、`..` を含むかは確かめない（SEC-NEWS-007）
+- ホストが自分の Supabase のプロジェクトか、道が `news/` の下か、`..` を含むかは、この関数では確かめない。署名の前の確かめは `signNewsImageUrl` が共有の `parseOwnObjectPath` で行う（DD-NEWS-068、SEC-NEWS-007）。この関数は管理の後始末（`removeNewsImages`、DD-NEWS-071）が使い、後始末の側が `isOwnNewsImagePath` で絞る
 - URL の検索の部分（署名つき URL の `token`）は捨て、道だけを返す
 
 #### 状態・永続化
@@ -621,26 +623,26 @@ ARC-NEWS-003、DATA-NEWS-004
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | ARC-NEWS-003、DATA-NEWS-004、SEC-NEWS-004 |
-| 根拠 | 置き場を非公開のまま画像を見せるため、読むたびに service role で期限1時間の署名つき URL に置き換え、非公開にした後に画像を開ける時間を期限で区切る（ARC-NEWS-003、DATA-NEWS-004、SEC-NEWS-004）。行の置き換えを1つの関数にまとめ、管理・公開・検索の全部で同じ取り出しと期限を使う。検索の関数 `search_news` が返す記事の `image_url` も、検索の側（範囲外）がこの関数で署名してから返す |
+| 上位 | ARC-NEWS-003、DATA-NEWS-004、SEC-NEWS-004、SEC-NEWS-007、SEC-NEWS-008 |
+| 根拠 | 置き場を非公開のまま画像を見せるため、読むたびに service role で期限1時間の署名つき URL に置き換え、非公開にした後に画像を開ける時間を期限で区切る（ARC-NEWS-003、DATA-NEWS-004、SEC-NEWS-004）。署名は service role で行い置き場の方針が効かないので、署名の前に共有の `parseOwnObjectPath` で自分の置き場の `news/` の下の安全な道筋かを確かめ、確かめに通らない値と署名の失敗は `null` にして元の値を呼び元へ渡さない（SEC-NEWS-007・008、ADR-0316）。行の置き換えを1つの関数にまとめ、管理・公開・検索の全部で同じ取り出しと期限を使う。検索の関数 `search_news` が返す記事の `image_url` も、検索の側（範囲外）がこの関数で署名してから返す |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/lib/storage/news-images.ts`） |
 
 #### 対応要件
 
-ARC-NEWS-003、DATA-NEWS-004、SEC-NEWS-004（AC-01 の期限1時間以下）
+ARC-NEWS-003、DATA-NEWS-004、SEC-NEWS-004（AC-01 の期限1時間以下）、SEC-NEWS-007、SEC-NEWS-008
 
 #### 入出力
 
 | 関数 | 入力 | 出力 |
 | --- | --- | --- |
-| `signNewsImageUrl` | Supabase の client（service role）、`rawUrl: string \| null \| undefined`、`expiresIn`（初めの値 3600 秒） | 署名つき URL、元の値、または `null` |
-| `signNewsImageFields` | Supabase の client、`image_url` を持つ行 | 行の写しで、`image_url` を `signNewsImageUrl` の結果に置き換えた物（ほかの列はそのまま） |
+| `signNewsImageUrl` | Supabase の client（service role）、`rawUrl: string \| null \| undefined`、`expiresIn`（初めの値 3600 秒） | 署名つき URL、または `null` |
+| `signNewsImageFields` | Supabase の client、`image_url` を持つ行 | 行の写しで、`image_url` を `signNewsImageUrl` の結果（署名つき URL か `null`）に置き換えた物（ほかの列はそのまま） |
 
 #### 正常フロー
 
-1. `rawUrl` から道を取り出す（DD-NEWS-067）（`src/lib/storage/news-images.ts`）
+1. `rawUrl` から、共有の `parseOwnObjectPath(rawUrl, { bucket: 'news-images', prefix: 'news' })`（DD-SEARCH-011）で置き場の中の道を取り出す（`src/lib/storage/news-images.ts`）。自分のプロジェクトの origin 1 つの URL か素の道筋で、`news/` の下の安全な文字の時だけ道になる
 2. 置き場 `news-images` で `createSignedUrl(道, expiresIn)` を呼び、`signedUrl` を返す
 3. `signNewsImageFields` は行の `image_url`（無ければ `null`）を1と2で置き換えた写しを返す
 
@@ -649,11 +651,11 @@ ARC-NEWS-003、DATA-NEWS-004、SEC-NEWS-004（AC-01 の期限1時間以下）
 | 条件 | 戻り値 |
 | --- | --- |
 | `rawUrl` が空・`null`・`undefined` | `null` |
-| 道にできない（外の URL など） | 元の `rawUrl` をそのまま返す |
-| 署名の `error` がある・`signedUrl` が無い | 元の `rawUrl` をそのまま返す（記録しない） |
+| 道にできない（外のホスト・別の置き場・`news/` の外・`..`・空白・壊れた `%` など） | `null`（署名を呼ばない。`[news-images] invalid_path` だけ記録する） |
+| 署名の `error` がある・`signedUrl` が無い | `null`（`[news-images] sign_failed` だけ記録する） |
 | `createSignedUrl` が例外を投げる | 例外をそのまま投げる（呼び元の窓口では 500） |
 
-- 失敗の時に元の値を返し、記録もしない（SEC-NEWS-008）。画面には壊れた画像が出る（推定）
+- 失敗の時は元の値を返さず `null` にし、失敗の種類だけを記録する。道筋・URL・Supabase の誤りの文は記録しない（SEC-NEWS-007・008。2026-10-28）。管理の画面は `null` の記事を `/placeholder.png` で描く（`NewsSection`）
 - 出した署名つき URL は、記事を非公開にしても期限まで開ける（STATE-NEWS-001）
 
 #### 状態・永続化
@@ -671,11 +673,14 @@ ARC-NEWS-003、DATA-NEWS-004、SEC-NEWS-004（AC-01 の期限1時間以下）
 - 道から期限 3600 秒の署名つき URL を作る（`expiresIn` を渡さない時）
 - `expiresIn` を渡すとその値で署名する
 - `null`・`undefined`・空の文字で `null`、署名を呼ばない
-- 道にできない外の URL では元の値を返し、署名を呼ばない
-- 署名の `error` がある時と、`data` に `signedUrl` が無い時に元の値を返す
+- 道にできない値（外のホスト・別の置き場・`news/` の外・`..`・二重の `/`・空白）で `null`、署名を呼ばない
+- 自分のプロジェクトの public の URL（本番の形）は道に直して署名する
+- 署名の `error` がある時と、`data` に `signedUrl` が無い時に `null`（元の値を返さない）
+- 失敗の記録が `[news-images] invalid_path`・`[news-images] sign_failed` の固定の語だけで、道筋・URL・誤りの文を含まない
 - `createSignedUrl` が例外を投げると、その例外が出る
 - `signNewsImageFields` が `image_url` だけを置き換え、ほかの列を残す
 - `signNewsImageFields` で `image_url` が無い行は `image_url: null` になり、署名を呼ばない
+- `signNewsImageFields` で外の URL・署名の失敗の行は `image_url: null` になり、ほかの列は残る
 
 ### DD-NEWS-071 管理のニュースの画像の確かめ・保存名・後始末 admin-images
 
@@ -719,7 +724,7 @@ SEC-NEWS-017・018。
 | 別の置き場の URL | 道筋にできないので消さない | `admin-images.ts` |
 | 置き場の削除が `error`・例外 | 名前と符号だけ記録して `'failed'`。投げない | `admin-images.ts` |
 
-- 署名の共有ライブラリが共有の確かめ（`isOwnNewsImagePath` 相当）を持つようになったら、その関数に差し替える（波 3。判断は ADR-0025）
+- `isOwnNewsImagePath` は 2026-10-28 から共有の `isSafeObjectPath(path, 'news')`（`src/lib/storage/safe-object-path.ts`、DD-SEARCH-011）に委譲する。式は同じで動きは変わらない（判断は ADR-0025、ADR-0316）
 
 #### 状態・永続化
 

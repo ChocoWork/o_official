@@ -1,6 +1,6 @@
 # AUTH の要件
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -4941,7 +4941,7 @@ Supabase Auth の設定で、最小の長さを 16、パスワード変更に再
 
 `/api/auth/*` の応答の本文に access token・refresh token と、Supabase の利用者の記録のまるごとを入れない（画面に要る ID・メール・役割だけ）。TOTP の秘密は登録の応答にだけ入れる。`/api/auth/*` の全部の応答に `Cache-Control: no-store` を付ける。
 
-本文の部分は今のコードが満たす（2026-10-26 に直した）。`/api/auth/refresh` の成功の本文は `{ ok: true }` だけ（トークンは HttpOnly の Cookie で渡す）、`/api/auth/otp/verify` の成功の本文は `{ user: { id, email, role }, message }` だけで、`role` はサーバーが `app_metadata.role` から読み `admin`・`supporter` 以外は `user` にする。登録（`register`）の 201（Confirm email が OFF の時だけ通る枝）の本文も `{ user: { id, email } }` だけで、`access_token` と Supabase の利用者の記録（`app_metadata` など）は載せない（2026-10-26 に直した）。`no-store` は満たさない（`src/proxy.ts` に足す。波 3）。
+本文の部分は今のコードが満たす（2026-10-26 に直した）。`/api/auth/refresh` の成功の本文は `{ ok: true }` だけ（トークンは HttpOnly の Cookie で渡す）、`/api/auth/otp/verify` の成功の本文は `{ user: { id, email, role }, message }` だけで、`role` はサーバーが `app_metadata.role` から読み `admin`・`supporter` 以外は `user` にする。登録（`register`）の 201（Confirm email が OFF の時だけ通る枝）の本文も `{ user: { id, email } }` だけで、`access_token` と Supabase の利用者の記録（`app_metadata` など）は載せない（2026-10-26 に直した）。`no-store` も今のコードが満たす（2026-10-28 に直した）。共有の `src/proxy.ts` が `/api/auth` 配下（セグメントの境目で見る。`/api/authx` は含まない）の応答と、その Origin 拒否（403）に `Cache-Control: no-store` を付ける。route が自分で `no-store` を付ける窓口（`confirm`・`login/cancel`・`login/resend`・`me`・`oauth/*`・`password-reset/link`・`password-reset/session`・`post-login`）は同じ値なので、どちらが残っても変わらない（ADR-0415）。
 
 #### SEC-AUTH-022-AC-01 トークンの更新と OTP の検証の応答の本文にトークンが無い
 
@@ -4962,10 +4962,12 @@ Supabase Auth の設定で、最小の長さを 16、パスワード変更に再
 | 上位 | SEC-AUTH-022 |
 | 根拠 | キャッシュに残さないかを見るため |
 | 状態 | 推定 |
-| 確かめ方 | E2E |
+| 確かめ方 | 単体テスト・E2E |
 | 出どころ | 実装から推定 |
 
 `/api/auth/login`・`otp/verify`・`refresh`・`mfa/enroll-totp`・`mfa/verify`・`mfa/status` の応答に `Cache-Control: no-store` が付くこと。
+
+今のコードが満たす（2026-10-28。共有の `src/proxy.ts`。ADR-0415、DD-AUTH-037）。単体テスト `tests/unit/middleware/proxy-no-store.test.ts` が `proxy()` の応答の見出しを、E2E `FR-LOGIN-030` が本番ビルドの実応答（成功・失敗・会員・未ログインの各窓口）を見る。
 
 ### SEC-AUTH-023 Google でのログインは、トークンを JS が読める Cookie に残さない
 

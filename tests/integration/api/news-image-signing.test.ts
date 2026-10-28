@@ -140,14 +140,19 @@ async function listImageUrls(rows: Array<{ id: number; image_url: string | null 
 const BASE = 'https://proj.supabase.co/storage/v1/object';
 
 describe('画像の非公開の置き場と署名つき URL（ARC-NEWS-003）', () => {
+  const envBackup = { ...process.env };
+
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env.ALERT_AUDIT_URL;
+    delete process.env.SUPABASE_URL;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://proj.supabase.co';
     jest.spyOn(console, 'error').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
   afterEach(() => {
+    process.env = { ...envBackup };
     jest.restoreAllMocks();
   });
 
@@ -201,7 +206,7 @@ describe('画像の非公開の置き場と署名つき URL（ARC-NEWS-003）', 
     ['旧 public の URL', `${BASE}/public/news-images/news/old/a.jpg`, 'news/old/a.jpg'],
     ['署名つき URL（token 付き）', `${BASE}/sign/news-images/news/old/b.jpg?token=abc`, 'news/old/b.jpg'],
     ['authenticated の URL', `${BASE}/authenticated/news-images/news/old/c.jpg`, 'news/old/c.jpg'],
-    ['符号化した道の URL', `${BASE}/public/news-images/news/old/%E7%94%BB%E5%83%8F.jpg`, 'news/old/画像.jpg'],
+    ['符号化した道の URL（復号後も安全な文字）', `${BASE}/public/news-images/news/old/photo%2Done.jpg`, 'news/old/photo-one.jpg'],
     ['置き場の名前つきの道', 'news-images/news/old/d.jpg', 'news/old/d.jpg'],
     ['先頭に / のある道', '  /news/old/e.jpg ', 'news/old/e.jpg'],
   ])('ARC-NEWS-003 %s からも置き場の中の道を取り出して署名する', async (_label, raw, path) => {
@@ -215,11 +220,15 @@ describe('画像の非公開の置き場と署名つき URL（ARC-NEWS-003）', 
     ['ほかの置き場の URL', `${BASE}/public/other-bucket/a.jpg`],
     ['置き場の印の後が空の URL', `${BASE}/public/news-images/`],
     ['URL として読めない値', 'https://'],
-  ])('ARC-NEWS-003 %s は道にできないので署名せず元の値を返す', async (_label, raw) => {
+    ['別のホストの URL', 'https://evil.example/storage/v1/object/public/news-images/news/x.png'],
+    ['news/ の外の道筋', 'other/x.png'],
+    ['.. を含む道筋', 'news/../other/x.png'],
+    ['復号すると空白や日本語になる URL', `${BASE}/public/news-images/news/old/%E7%94%BB%E5%83%8F%20a.jpg`],
+  ])('ARC-NEWS-003 %s は道にできないので署名せず、元の値を返さず null にする（SEC-NEWS-007・008）', async (_label, raw) => {
     const urls = await listImageUrls([{ id: 1, image_url: raw }]);
 
     expect(serviceClient.signCalls).toHaveLength(0);
-    expect(urls).toEqual([raw]);
+    expect(urls).toEqual([null]);
   });
 
   it('ARC-NEWS-003 画像の無い行は署名せず null のまま返す', async () => {
@@ -235,13 +244,13 @@ describe('画像の非公開の置き場と署名つき URL（ARC-NEWS-003）', 
   it.each([
     ['署名が error を返す', { data: null, error: { message: 'not found' } }],
     ['署名が URL を返さない', { data: { signedUrl: '' }, error: null }],
-  ])('ARC-NEWS-003 %s の時は元の値をそのまま返す', async (_label, signResult) => {
+  ])('ARC-NEWS-003 %s の時は元の値を返さず null にする（SEC-NEWS-008）', async (_label, signResult) => {
     setup({ newsResult: { data: [{ id: 1, image_url: 'news/x/a.png' }], error: null }, sign: () => signResult });
 
     const body = await (await listRoute.GET(makeRequest())).json();
 
     expect(serviceClient.signCalls).toHaveLength(1);
-    expect(body.data[0].image_url).toBe('news/x/a.png');
+    expect(body.data[0].image_url).toBeNull();
   });
 
   it('ARC-NEWS-003 管理の1件の GET も画像を署名つき URL にして返す', async () => {

@@ -45,8 +45,13 @@ describe('cart-api', () => {
     };
     expect(toCartEntries(plain)).toEqual([{
       id: 'line-1', item_id: 45, variant_id: 1201, quantity: 2, color: null, size: null, fulfillment: null,
-      items: { id: 45, name: 'リネンシャツ', price: 12000, image_url: '' },
+      items: { id: 45, name: 'リネンシャツ', price: 12000, image_url: '/placeholder.png' },
     }]);
+  });
+
+  test.each([[null], [undefined], ['']])('画像が %p の明細は、空の src にせず代わりの絵を入れる', (image) => {
+    const noImage = { ...CART, items: [{ ...CART.items[0], image } as unknown as CartJson['items'][number]] };
+    expect(toCartEntries(noImage)[0].items?.image_url).toBe('/placeholder.png');
   });
 
   test('ゲスト（読める CSRF の Cookie が無い）は合言葉を付けず、印の更新も呼ばない', async () => {

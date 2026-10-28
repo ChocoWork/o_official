@@ -6,6 +6,8 @@ import {
   sessionCookieName,
 } from '@/lib/cookie';
 import { hasExplicitOriginConfig, isAllowedOrigin } from '@/lib/redirect';
+import { shouldSetNoStore } from '@/lib/auth-no-store-policy';
+import { shouldIssueSessionCookie } from '@/lib/session-cookie-policy';
 
 // SameSite=Lax は多層防御であって設計上の制御ではない（OWASP CSRF Cheat Sheet）ので、
 // 状態を変える API は Origin も見る。検査は POST/PUT/PATCH/DELETE 限定なので
@@ -64,11 +66,12 @@ function buildCsp(nonce: string): string {
     }
   })();
 
+  // 許すのは自分のプロジェクトの origin 1 つ（`*.supabase.co` は他人のプロジェクトも許すので入れない）。
+  // 署名つきの画像の URL は `SUPABASE_URL` を優先して作られるので、2 つの変数が別の origin を指す設定はビルドで落とす（next.config.ts）。
   const connectSources = [
     "'self'",
     ...(isDevelopment ? ['ws:', 'wss:'] : []),
     supabaseOrigin,
-    'https://*.supabase.co',
     'https://challenges.cloudflare.com',
     'https://api.stripe.com',
     'https://r.stripe.com',
@@ -79,11 +82,7 @@ function buildCsp(nonce: string): string {
   const imgSources = [
     "'self'",
     'data:',
-    'https://placehold.co',
-    'https://readdy.ai',
-    'https://*.readdy.ai',
     ...(supabaseOrigin ? [supabaseOrigin] : []),
-    'https://*.supabase.co',
     'https://q.stripe.com',
     'https://*.stripe.com',
   ].join(' ');
@@ -93,22 +92,25 @@ function buildCsp(nonce: string): string {
   // 代わりに style-src-elem を分けて <style> / <link> は 'self' のまま締める。
   // 属性セレクタ + background-image で値を抜く CSS exfiltration は攻撃者が
   // <style> を注入できることが前提なので、要素側さえ塞げば成立しない。
-  const styleSources = ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'].join(' ');
+  const styleSources = ["'self'", "'unsafe-inline'"].join(' ');
 
   const styleElemSources = [
     "'self'",
     // dev の Next（Turbopack HMR）は <style> をインラインで差し込む
     ...(isDevelopment ? ["'unsafe-inline'"] : []),
-    'https://cdn.jsdelivr.net',
   ].join(' ');
 
+  // Stripe と Turnstile は全頁で許す。CSP は文書を読み込んだ時に決まり、`next/link` の画面の切り替えでは変わらない。
+  // `/cart` から `Link` で `/checkout` へ進むと `/cart` の CSP のまま `loadStripe` が走るので、`/checkout` だけに絞ると決済が止まる。
+  // 一覧は Stripe 公式（https://docs.stripe.com/security/guide）に揃える。Stripe.js を実際に読むのは決済の頁だけ。
+  // 'strict-dynamic' は Turnstile の <Script> に nonce が付くかを本番ビルドで確かめてからの別件なので入れない。
   const scriptSources = [
     "'self'",
     `'nonce-${nonce}'`,
     ...(isDevelopment ? ["'unsafe-eval'"] : []),
-    'https://cdn.jsdelivr.net',
     'https://challenges.cloudflare.com',
     'https://js.stripe.com',
+    'https://*.js.stripe.com',
   ].join(' ');
 
   return [
@@ -120,9 +122,9 @@ function buildCsp(nonce: string): string {
     `img-src ${imgSources}`,
     `style-src ${styleSources}`,
     `style-src-elem ${styleElemSources}`,
-    "font-src 'self' https://cdn.jsdelivr.net",
+    "font-src 'self'",
     `script-src ${scriptSources}`,
-    "frame-src https://challenges.cloudflare.com https://js.stripe.com https://hooks.stripe.com https://www.google.com https://maps.google.com",
+    "frame-src https://challenges.cloudflare.com https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://www.google.com https://maps.google.com",
     `connect-src ${connectSources}`,
     "manifest-src 'self'",
     'upgrade-insecure-requests',
@@ -203,11 +205,16 @@ function isAllowedOriginRequest(request: NextRequest): boolean {
 }
 
 export function proxy(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
   if (isProtectedStateChangingApiRequest(request) && !isAllowedOriginRequest(request)) {
     const rejection = NextResponse.json({ error: 'Forbidden origin' }, { status: 403 });
-    if (matchesPathSegment(request.nextUrl.pathname, ORDER_STATUS_API_PATH_PREFIX)) {
+    if (matchesPathSegment(pathname, ORDER_STATUS_API_PATH_PREFIX)) {
       rejection.headers.set('Cache-Control', 'no-store');
       rejection.headers.set('Referrer-Policy', 'no-referrer');
+    }
+    // 認証の応答は、route が自分で no-store を付けない窓口（login・refresh・mfa/* ほか）でも付ける（auth-no-store-policy.ts）
+    if (shouldSetNoStore(pathname)) {
+      rejection.headers.set('Cache-Control', 'no-store');
     }
     return rejection;
   }
@@ -225,10 +232,9 @@ export function proxy(request: NextRequest) {
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });
 
-  let sessionId = request.cookies.get(sessionCookieName)?.value;
-  if (!sessionId) {
-    sessionId = generateSessionId();
-    response.cookies.set(sessionCookieName, sessionId, cookieOptionsForSession(SESSION_COOKIE_MAX_AGE));
+  // 既定は配らない。許可リストの道（/cart・/checkout・/api/checkout）だけで、Cookie が無ければ発行する（session-cookie-policy.ts）。
+  if (shouldIssueSessionCookie(pathname) && !request.cookies.get(sessionCookieName)?.value) {
+    response.cookies.set(sessionCookieName, generateSessionId(), cookieOptionsForSession(SESSION_COOKIE_MAX_AGE));
   }
 
   response.headers.set('Content-Security-Policy', csp);
@@ -238,6 +244,9 @@ export function proxy(request: NextRequest) {
   response.headers.set('X-Frame-Options', 'DENY');
   response.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
   response.headers.set('x-nonce', nonce);
+  if (shouldSetNoStore(pathname)) {
+    response.headers.set('Cache-Control', 'no-store');
+  }
 
   return response;
 }

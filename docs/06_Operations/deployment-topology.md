@@ -35,6 +35,7 @@ flowchart LR
 | --- | --- |
 | DB マイグレーションと台帳 | `docs/06_Operations/db-migrations.md`、`.github/workflows/db-migrations.yml` |
 | シークレットと Stripe 同期 | `docs/06_Operations/secrets.md`、`docs/06_Operations/webhook-queue-operations.md`、`README.md` |
+| 本番ビルドの前に要る環境変数 | `NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_SUPABASE_URL` は Vercel の Production に**ビルドの前**に設定する。無い、または `SUPABASE_URL` と別の origin だとビルドが落ちる（`next.config.ts` の `assertBuildEnv`、`ADR-0206`）。詳しくは `docs/06_Operations/secrets.md` の「ビルドの前に要る環境変数」。`VERCEL_ENV=production` の配備だけが対象で、実際の設定は未確認 |
 | 注文証憑の保存・復元確認 | `docs/06_Operations/legal-archive.md` |
 | KPI 旧セットアップ手順 | `docs/06_Operations/kpi-migration-setup.md`。対象環境と現行 DB 手順との整合を確認してから使用する |
 

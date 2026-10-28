@@ -526,7 +526,7 @@ test.describe('FR-LOGIN-036 otp verify and resend pending cookie (HTTP)', () => 
     const reply = await withoutCookie.post('/api/auth/otp/verify', { email: member.email, code });
     expect(reply.status).toBe(401);
     expect(sessionCookiesWritten(reply)).toEqual([]);
-    // session_id は proxy が全部の応答に付ける匿名の閲覧の印（SESSION_COOKIE_NAMES の注記）。ログインの Cookie ではないので数えない
+    // session_id は proxy が /cart などの決済の道で付ける匿名の閲覧の印（SESSION_COOKIE_NAMES の注記）。ログインの Cookie ではないので数えない
     expect((await withoutCookie.jarNames()).filter((name) => name !== 'session_id')).toEqual([]);
   });
 

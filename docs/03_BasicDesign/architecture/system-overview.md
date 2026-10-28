@@ -2,7 +2,7 @@
 
 ## 概要
 
-確認日: 2026-10-03（「Stripe 非同期処理」の行と「Stripe Webhook の処理」の図は、2026-10-07 に確認し直した。「HTTP ジョブ登録」の行は、照合の登録が抜けていたので足し、同じ日に確認し直した）。対象ソース: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`（確認し直した行と図は `b54976d2`。「HTTP ジョブ登録」の行は、保留中の SQL 3本を `0781d3ff` で読んで確かめた）。
+確認日: 2026-10-03（「Stripe 非同期処理」の行と「Stripe Webhook の処理」の図は、2026-10-07 に確認し直した。「HTTP ジョブ登録」の行は、照合の登録が抜けていたので足し、同じ日に確認し直した。「外部表示・リンク」の行の UI 見本の画像と、Proxy の CSP の許可先の記述は、2026-10-28 に直した）。対象ソース: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`（確認し直した行と図は `b54976d2`。「HTTP ジョブ登録」の行は、保留中の SQL 3本を `0781d3ff` で読んで確かめた）。
 
 本書はリポジトリ内で確認した実装と呼び出し経路を示す。ブラウザ、Next.js サーバー、外部サービス、別プロセスの運用スクリプトを区別する。本番配置先、環境変数の値、外部サービスの有効化、適用済み migration、ジョブの稼働は未確認である。
 
@@ -101,11 +101,11 @@ flowchart TB
 | Storage | 商品・NEWS・LOOK画像、`finance-receipts` の証憑保存・署名 URL 発行 | [商品画像](../../../src/app/api/admin/items/route.ts)、[NEWS画像](../../../src/lib/storage/news-images.ts)、[LOOK画像](../../../src/app/api/admin/looks/route.ts)、[証憑](../../../src/app/api/admin/kpi/cost-profit/receipt/route.ts) |
 | 法定保存 | API は export / status のみ。別プロセスの CLI が CSV・既存 DB dump・manifest を Supabase Storage に保存し、S3 bucket / region 設定時は追加保存。この CLI に DB dump 生成処理はない | [run-daily](../../../scripts/legal-archive/run-daily.ts)、[export](../../../src/app/api/cron/legal-archive/export/route.ts)、[status](../../../src/app/api/cron/legal-archive/status/route.ts)、[Supabase保存](../../../src/lib/legal-archive/supabase-storage.ts)、[S3保存](../../../src/lib/legal-archive/s3-storage.ts)、[保存・検証](../../../src/lib/legal-archive/storage.ts) |
 | 監査・rate limit | 監査は DB 保存、`ALERT_AUDIT_URL` 設定時はマスク済み記録を POST。rate limit は DB カウンター | [audit](../../../src/lib/audit.ts)、[rateLimit](../../../src/features/auth/middleware/rateLimit.ts)、[DBカウンター](../../../src/features/auth/ratelimit/index.ts) |
-| 外部表示・リンク | Google Maps iframe / 検索、UI 見本の readdy.ai 画像、SNS・配送追跡リンク。Next Image の許可先には placehold.co / readdy.ai / Supabase がある。許可設定だけでは実際のアクセスを意味しない | [MapView](../../../src/components/ui/MapView/MapView.tsx)、[取扱店](../../../src/features/stockist/components/PublicStockistGrid.tsx)、[UI見本](../../../src/app/ui/page.tsx)、[共有](../../../src/components/ShareButtons.tsx)、[SNS](../../../src/lib/social.ts)、[配送](../../../src/lib/orders/shipping-carriers.ts)、[画像設定](../../../next.config.ts) |
+| 外部表示・リンク | Google Maps iframe / 検索、UI 見本の画像（2026-10-28 に readdy.ai から `public/` の手元の画像へ替えた）、SNS・配送追跡リンク。Next Image の許可先には placehold.co / readdy.ai / Supabase がある。許可設定だけでは実際のアクセスを意味しない | [MapView](../../../src/components/ui/MapView/MapView.tsx)、[取扱店](../../../src/features/stockist/components/PublicStockistGrid.tsx)、[UI見本](../../../src/app/ui/page.tsx)、[共有](../../../src/components/ShareButtons.tsx)、[SNS](../../../src/lib/social.ts)、[配送](../../../src/lib/orders/shipping-carriers.ts)、[画像設定](../../../next.config.ts) |
 
 ## 要求・認可の境界
 
-- Proxy は `/api` の POST / PUT / PATCH / DELETE で Origin / Referer を検査し、CSP 等を付与する。`/api/webhook`、`/api/contact/inbound`、`/api/cron` は除外対象で、各入口の署名または Bearer 検証を使用する。[Proxy](../../../src/proxy.ts)
+- Proxy は `/api` の POST / PUT / PATCH / DELETE で Origin / Referer を検査し、CSP 等を付与する。`/api/webhook`、`/api/contact/inbound`、`/api/cron` は除外対象で、各入口の署名または Bearer 検証を使用する。CSP の許可先は自分のプロジェクトの Supabase・Stripe（全頁）・Turnstile・地図の枠だけで、jsDelivr・placehold.co・readdy.ai・`*.supabase.co` は許さない（2026-10-28、[ADR-0108](../decisions/ADR-0108-csp-own-project-stripe-turnstile-only.md)）。[Proxy](../../../src/proxy.ts)
 - 認証の共通処理は Cookie / Bearer の JWT を `getClaims` で検証し、issuer / audience と `is_auth_session_active` RPC を確認する。管理権限の共通処理は DB の ACL と JWT の AAL2 を追加確認する。公開 API もあるため全要求へのログイン必須を意味しない。[認証](../../../src/lib/auth/authenticate.ts)、[RBAC](../../../src/lib/auth/admin-rbac.ts)、[公開商品API](../../../src/app/api/items/route.ts)
 - service role の処理と利用者 JWT の処理はクライアントが分かれる。認可条件は Route Handler と共通関数で確認する。[クライアント生成](../../../src/lib/supabase/server.ts)、[証憑API](../../../src/app/api/admin/kpi/cost-profit/receipt/route.ts)
 

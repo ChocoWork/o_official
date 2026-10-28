@@ -495,7 +495,7 @@ describe('look detail screen', () => {
     expect(within(desktopNav()).getByRole('link', { name: 'Look list' })).toHaveAttribute('href', '/look');
   });
 
-  it('SCR-LOOK-004 メタの title は「<テーマ> | LOOK | Le Fil des Heures」、description は説明文、OG の画像は1枚目の署名つき URL にする', async () => {
+  it('SCR-LOOK-004 メタの title は「<テーマ> | LOOK | Le Fil des Heures」、description は説明文、OG の画像は署名を含まない同一オリジンの窓口にする', async () => {
     const metadata = await generateMetadata(paramsOf('30'));
 
     expect(metadata.title).toBe('Winter Layers | LOOK | Le Fil des Heures');
@@ -503,7 +503,7 @@ describe('look detail screen', () => {
     expect(metadata.openGraph).toMatchObject({
       title: 'Winter Layers | LOOK | Le Fil des Heures',
       description: 'Layered knit and coat',
-      images: [{ url: 'https://signed.test/look-images/looks/30-a.jpg' }],
+      images: [{ url: '/look/30/og' }],
     });
   });
 

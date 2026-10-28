@@ -280,7 +280,6 @@ test.describe('FR-SEARCH-021 直接入れた行で確かめる検索の守り', 
   });
 
   test(`SEC-SEARCH-016-AC-01: 置き場の決まった場所の外の道筋の商品は、物が実在しても imageUrl が null`, async ({ request }) => {
-    test.fail(true, 'SEC-SEARCH-016 今のコードは満たさない（docs/02_Requirements/areas/search.md）');
     const marker = newMarker();
     const rows = await InjectedRows.open();
     try {
@@ -390,7 +389,6 @@ test.describe('FR-SEARCH-021 直接入れた行で確かめる検索の守り', 
       });
 
       test(`SEC-SEARCH-015-AC-01 ${viewport.name}: 置き場に無い道筋の商品と https://example.com/x.jpg のルックは imageUrl が null で、行に画像が出ない`, async ({ page, request }) => {
-        test.fail(true, 'SEC-SEARCH-015 今のコードは満たさない（docs/02_Requirements/areas/search.md）');
         const marker = newMarker();
         const rows = await InjectedRows.open();
         try {

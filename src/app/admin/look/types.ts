@@ -2,7 +2,8 @@ export type ItemSummary = {
   id: number;
   name: string;
   price: number;
-  image_url: string;
+  /** 署名できない画像は null（元の値を返さない）。商品の選択欄は /placeholder.png を出す */
+  image_url: string | null;
   status: 'private' | 'published';
 };
 

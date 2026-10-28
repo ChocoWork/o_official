@@ -106,7 +106,6 @@ test.describe('FR-NEWS-SEC-003 NEWS の HTTP の守りと回数の制限', () =>
   test.describe.configure({ mode: 'default' });
 
   test(`SEC-NEWS-004-AC-02 署名つき URL の最適化の画像の Cache-Control の max-age が3600以下`, async ({ request }) => {
-    test.fail(true, 'SEC-NEWS-004 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     if (!SUPABASE_URL || !SERVICE_KEY || !isLocalUrl(SUPABASE_URL)) {
       throw new Error('手元の Supabase の住所と service role の鍵が env に無い（この試験は手元の Supabase だけで流す）');
     }
@@ -141,8 +140,6 @@ test.describe('FR-NEWS-SEC-003 NEWS の HTTP の守りと回数の制限', () =>
   });
 
   test(`SEC-NEWS-023-AC-01 別のプロジェクトのホストの URL を渡した /_next/image が 400`, async ({ request }) => {
-    test.fail(true, 'SEC-NEWS-023 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
-
     const otherProjectUrl = 'https://e2e-other-project.supabase.co/storage/v1/object/public/x/y.png';
     const response = await request.get(`/_next/image?url=${encodeURIComponent(otherProjectUrl)}&w=64&q=75`);
 

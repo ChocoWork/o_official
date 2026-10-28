@@ -27,7 +27,8 @@ export type ItemResponse = {
   description: string;
   price: number;
   category: Category;
-  image_url: string;
+  /** 署名できない画像は null（元の値を返さない） */
+  image_url: string | null;
   image_urls?: string[];
   colors: Array<{ name: string; hex: string }>;
   sizes: string[];

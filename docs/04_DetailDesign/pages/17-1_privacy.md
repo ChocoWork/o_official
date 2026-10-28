@@ -1,10 +1,10 @@
 # 1.17-1 プライバシーポリシーの頁（PRIVACY）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: プライバシーポリシー `/privacy`（`src/app/privacy/page.tsx`・`error.tsx`・`revision-date.ts`） | 基準コミット: `4facf63b`
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: プライバシーポリシー `/privacy`（`src/app/privacy/page.tsx`・`error.tsx`・`revision-date.ts`）と、共有の `src/proxy.ts` の `session_id` の発行条件 | 基準コミット: `4facf63b`
 
 ## 概要
 
-プライバシーポリシーの頁を、詳細設計の項目（`DD-PRIVACY-001`〜`003`）で書く。`DD-PRIVACY-002`（誤りの画面）と `DD-PRIVACY-003`（最終改定日）は 2026-10-26 に足した。
+プライバシーポリシーの頁を、詳細設計の項目（`DD-PRIVACY-001`〜`004`）で書く。`DD-PRIVACY-002`（誤りの画面）と `DD-PRIVACY-003`（最終改定日）は 2026-10-26 に、`DD-PRIVACY-004`（`session_id` の発行条件）は 2026-10-28 に足した。
 中身は 2026-10-24 の作業ツリーのコードを読んで起こした今の動きで、ユーザーの確認を受けていないので「推定」にした。文書・要件とコードが食い違う所は決めずに今のコードの動きを書き、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節に載せた。
 
 | ID | 題 | 単位 |
@@ -12,6 +12,7 @@
 | `DD-PRIVACY-001` | プライバシーポリシーの頁の描画と metadata | `src/app/privacy/page.tsx` |
 | `DD-PRIVACY-002` | 設定を読めない時の誤りの画面 | `src/app/privacy/error.tsx` |
 | `DD-PRIVACY-003` | 最終改定日を決める関数 | `src/app/privacy/revision-date.ts` |
+| `DD-PRIVACY-004` | `session_id` の発行条件 | `src/lib/session-cookie-policy.ts` |
 
 - 結論: 頁は Server Component で、request のたびに描く。service role の client でショップの配送の追跡の設定を読み、オンの時だけ「5. 個人情報の取扱いの委託」の一覧に 17TRACK の一文を足す。読めない時は例外を握りつぶさず、頁の描画を失敗にする
 - 範囲の単位は `.tsx` のファイル1つだけなので、詳細設計も1項目にまとめた。前の版の `IMPL-PRIVACY-001`（本文の表示）と `IMPL-PRIVACY-002`（metadata）は、どちらもこの項目の「旧番号」に移した
@@ -23,7 +24,7 @@
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の PRIVACY |
 | 上位の文書 | [PRIVACY の構造設計](../../03_BasicDesign/areas/privacy.md)（`ARC-`・`SCR-`・`FLOW-`・`STATE-`・`DATA-PRIVACY-`）、[PRIVACY の要件](../../02_Requirements/areas/privacy.md)（`SEC-PRIVACY-`） |
-| 関連文書 | [PRIVACY の脅威](../../05_Quality/security/threats/privacy.md)、[ADR-0350](../../03_BasicDesign/decisions/ADR-0350-privacy-request-time-render-fail-closed.md)・[ADR-0351](../../03_BasicDesign/decisions/ADR-0351-privacy-tracking-clause-by-shop-setting.md)・[ADR-0352](../../03_BasicDesign/decisions/ADR-0352-privacy-contact-email-text-and-form.md)・[ADR-0353](../../03_BasicDesign/decisions/ADR-0353-privacy-revision-date-follows-tracking-switch.md)・[ADR-0354](../../03_BasicDesign/decisions/ADR-0354-privacy-error-screen-guidance-only.md) |
+| 関連文書 | [PRIVACY の脅威](../../05_Quality/security/threats/privacy.md)、[ADR-0350](../../03_BasicDesign/decisions/ADR-0350-privacy-request-time-render-fail-closed.md)・[ADR-0351](../../03_BasicDesign/decisions/ADR-0351-privacy-tracking-clause-by-shop-setting.md)・[ADR-0352](../../03_BasicDesign/decisions/ADR-0352-privacy-contact-email-text-and-form.md)・[ADR-0353](../../03_BasicDesign/decisions/ADR-0353-privacy-revision-date-follows-tracking-switch.md)・[ADR-0354](../../03_BasicDesign/decisions/ADR-0354-privacy-error-screen-guidance-only.md)・[ADR-0355](../../03_BasicDesign/decisions/ADR-0355-privacy-session-id-allowlist.md) |
 | 対象のコード | 「実装の単位」の表の1単位 |
 | 引き継いだ文書 | [1.17 プライバシーポリシーページ（PRIVACY）詳細設計](17_privacy.md) の「機能要件対応表」の `IMPL-PRIVACY-001`・`IMPL-PRIVACY-002`。元の文書は、`tests/unit/docs/delivery-status-traceability.test.ts` が配送の追跡の追加の節の文言を固定しているので変えていない |
 | 調べた時点 | 2026-10-24 の作業ツリー。コードを読んで起こした。単体テストの網羅（文・分岐・関数・行とも 100%）は実測した。E2E と DB の結合テストは流していない |
@@ -34,7 +35,7 @@
 | --- | --- | --- |
 | Supabase の client | `src/lib/supabase/server.ts` の `createServiceRoleClient` | 設定の関数を呼ぶ client を作る。URL か service role の鍵が無ければ例外 |
 | 配送の追跡の読み書き（配送の追跡の部品） | `src/lib/orders/tracking/delivery-store.ts` の `getDeliveryTrackingSettings` | DB の関数 `get_delivery_tracking_settings` を呼び、1行で各欄の型が合う時だけ4つの欄で返す。在庫の作業が同じファイルを変えている |
-| 守りの見出しと Cookie | `src/proxy.ts` | CSP（nonce 付き）・枠の禁止・HSTS などを付け、`session_id` の Cookie を発行する。頁は自分では見出しを足さない |
+| 守りの見出しと Cookie | `src/proxy.ts` | CSP（nonce 付き）・枠の禁止・HSTS などを付ける。`session_id` の Cookie は `/cart`・`/checkout`・`/api/checkout` の応答だけで発行し、`/privacy` には付けない（DD-PRIVACY-004）。頁は自分では見出しを足さない |
 | 頁の殻 | `src/app/layout.tsx`、`src/contexts/Providers.tsx` | Header・Footer で包む。`/privacy` の時だけカートの取得を止める |
 | 入口 | `src/components/Footer.tsx` | 全頁のフッターの `a` 要素で `/privacy` を開く |
 
@@ -47,9 +48,10 @@
 | `src/app/privacy/page.tsx` | `<file>` | DD-PRIVACY-001 |
 | `src/app/privacy/error.tsx` | `<file>` | DD-PRIVACY-002 |
 | `src/app/privacy/revision-date.ts` | `<file>` | DD-PRIVACY-003 |
+| `src/lib/session-cookie-policy.ts` | `shouldIssueSessionCookie` | DD-PRIVACY-004 |
 
 - `.tsx` はファイル全体で1つの単位なので、中の metadata の関数・既定の書き出しの頁の関数・字の大きさの定数・委託の一文の定数は、この単位に含める
-- 新しい `@impl` は `IMPL-PRIVACY-101` から振る（前の版の最大が `IMPL-PRIVACY-002` のため）。`error.tsx` は `IMPL-PRIVACY-102`、`revision-date.ts` は `IMPL-PRIVACY-103`（2026-10-26）。ファイルの単位のコメントは、1行目の import より前に置く（委託の一文の定数のコメントは単位のコメントとして読まれない）
+- 新しい `@impl` は `IMPL-PRIVACY-101` から振る（前の版の最大が `IMPL-PRIVACY-002` のため）。`error.tsx` は `IMPL-PRIVACY-102`、`revision-date.ts` は `IMPL-PRIVACY-103`（2026-10-26）、`src/lib/session-cookie-policy.ts` の `shouldIssueSessionCookie` は `IMPL-PRIVACY-104`（2026-10-28。共有の `src/proxy.ts` が呼ぶ。`proxy` 全体は CSP・Origin の検査も持つ共有部品で、範囲の単位にしないので、発行の判定だけを小さな関数に出して範囲に入れた。`scripts/trace/scope.json` の PRIVACY の `src` と、試験 `tests/unit/middleware/proxy-session.test.ts` を `tests` に足した）。ファイルの単位のコメントは、1行目の import より前に置く（委託の一文の定数のコメントは単位のコメントとして読まれない）
 - ファイルの先頭に `@packageDocumentation`・`@impl IMPL-PRIVACY-101`・`@design DD-PRIVACY-001` を、import より前に付けた。コメントだけの変更で、動きは変えていない
 
 ## 詳細設計
@@ -108,7 +110,7 @@
 
 **状態・永続化:** 頁は状態を持たず、書き込みもしない。request のたびに `shop_settings` の `id=1` の行の `delivery_tracking_enabled` を、関数を通して読み直す（DATA-PRIVACY-001）。オン・オフを変えるのは範囲外の管理の窓口（`src/app/api/admin/settings/shop/route.ts`）だけ。`revalidate` などのキャッシュの指定は無く、応答の `Cache-Control` の実際の値は確かめていない（SEC-PRIVACY-007）。関数が返す担当者のメールと件数は使わない（SEC-PRIVACY-002・003）。
 
-**認証認可:** 頁はログインを求めず、閲覧者の session も役も見ない。設定の関数と表は PUBLIC・anon・authenticated から取り上げてあり、service role だけが呼べる（DATA-PRIVACY-002）ので、頁は service role の client で読む。service role は RLS を素通りするので、受け取る欄の絞り込みは頁の側の決まり（`enabled` と `updatedAt` だけを使う）になる。鍵（`TRACKING_17TRACK_API_KEY`）の有無は見ない。守りの見出し（CSP・枠の禁止・HSTS）と `session_id` の Cookie は共有の proxy が付け、頁は重ねない（ARC-PRIVACY-002）。回数の制限は SEC-PRIVACY-004 を参照。
+**認証認可:** 頁はログインを求めず、閲覧者の session も役も見ない。設定の関数と表は PUBLIC・anon・authenticated から取り上げてあり、service role だけが呼べる（DATA-PRIVACY-002）ので、頁は service role の client で読む。service role は RLS を素通りするので、受け取る欄の絞り込みは頁の側の決まり（`enabled` と `updatedAt` だけを使う）になる。鍵（`TRACKING_17TRACK_API_KEY`）の有無は見ない。守りの見出し（CSP・枠の禁止・HSTS）は共有の proxy が付け、頁は重ねない（ARC-PRIVACY-002）。`session_id` の Cookie は `/privacy` には付かない（DD-PRIVACY-004）。回数の制限は SEC-PRIVACY-004 を参照。
 
 **テスト観点:**（`tests/unit/components/PrivacyPage.test.tsx`。connection・`createServiceRoleClient`・`getDeliveryTrackingSettings`・`next/link` を差し替える。ファイルは `docs/02_Requirements/requirements.md` の FREQ-495 の行がリンクしているので動かさない）
 
@@ -220,6 +222,54 @@
 | 3 | 日本時間で 10月27日 0 時（UTC の 10月26日 15時）は 2026年10月27日（UTC の日付のままだと 10月26日になる境目） |
 | 4 | UTC 16:30 は日本時間で翌日になる（2026年10月27日） |
 | 5 | 月・日はゼロ詰めしない（2027年1月5日） |
+
+### DD-PRIVACY-004 `session_id` の発行条件
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | ARC-PRIVACY-002、SEC-PRIVACY-015 |
+| 根拠 | `session_id` を読むのは決済の流れだけ（`checkout-route-guard`・`create-session`・`complete`・`src/lib/supabase/server.ts` の `x-session-id`）。読み手のいない頁に識別子を配ると、方針を読むだけの閲覧者を長く追え、公開で共有キャッシュに載る応答にも識別子が付く。発行を読み手の道に限り、既定は配らない（ADR-0355、ユーザーの決定 Q23） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト・結合テスト |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave3-decisions.md`（Q23）、`docs/superpowers/plans/2026-10-28-wave3-csp-images-session.md` の Task 9 |
+
+**対応要件 ID:** ARC-PRIVACY-002、SEC-PRIVACY-015（その上は ADR-0355）
+
+**入出力:**
+
+| 向き | 中身 |
+| --- | --- |
+| 入力 | 要求の道筋（`request.nextUrl.pathname`）と、要求の Cookie の `session_id` |
+| 出力 | 許可リストの道で、`session_id` が無い時だけ、応答に新しい `session_id` の `Set-Cookie`（32 桁の 16 進、30 日、HttpOnly、SameSite=Lax、本番で Secure）を足す |
+
+**正常フロー:**
+
+1. 許可リスト `SESSION_COOKIE_ISSUE_PATH_PREFIXES = ['/cart', '/checkout', '/api/checkout']` のどれかに、セグメントの境目（完全一致か `<prefix>/`）で当たるかを見る（`src/lib/session-cookie-policy.ts` の `shouldIssueSessionCookie`）
+2. `src/proxy.ts` が、当たり、かつ要求に `session_id` の値が無い時だけ、`generateSessionId()` の値を `cookieOptionsForSession(30 日)` で応答の Cookie に足す
+3. 守りの見出し（CSP・HSTS など）は、発行の有無に関わらず全部の道に付ける
+
+**分岐と異常フロー:**
+
+| 条件 | 動き |
+| --- | --- |
+| 許可リストの道、`session_id` が無い | 発行する |
+| 許可リストの道、`session_id` が既にある | 何もしない |
+| 許可リストの外（`/`・`/about`・`/privacy`・`/terms`・`/news`・`/look`・`/item`・`/api/auth` ほか） | 発行しない。守りの見出しは付く |
+| 境目の外れ（`/cartx`・`/checkoutx`・`/api/checkoutx`・`/apicheckout`） | 発行しない |
+
+**状態・永続化:** 持たない。Cookie の値は応答で渡すだけで、proxy は保存しない。
+
+**認証認可:** 無い。ログインの成功で新しい `session_id` を発行して回す処理（`src/features/auth/services/register.ts`）は別の仕組みで、この項目の対象外。許可リストの外の `/api/auth/*` の応答にも `Set-Cookie` が付く（セッション固定への守り。`FR-CHECKOUT-046` が頼る。ADR-0355 の「結果」）。
+
+**テスト観点:**（`tests/unit/middleware/proxy-session.test.ts`。名前の先頭は `DD-PRIVACY-004`。結合テストは `tests/integration/api/privacy-proxy-headers.test.ts`・`about-proxy.test.ts`、E2E は `e2e/FR-PRIVACY-006`）
+
+| # | 観点 |
+| --- | --- |
+| 1 | `/cart`・`/cart/`・`/checkout`・`/checkout?session_id=…`・`/api/checkout/create-session`・`/api/checkout/complete` で、Cookie の無い要求に発行する（32 桁の 16 進、HttpOnly、Lax、30 日） |
+| 2 | `/`・`/about`・`/privacy`・`/terms`・`/news`・`/look/1`・`/look/1/og`・`/item/1`・`/api/auth/login`・`/api/search`・`/cartx`・`/checkoutx`・`/api/checkoutx`・`/apicheckout` で発行せず、`Set-Cookie` が無く、守りの見出しは付く |
+| 3 | 既に `session_id` がある要求は、どの道でも `Set-Cookie` を付けない |
+| 4 | ほかの Cookie だけがある `/cart` の要求には発行する |
+| 5 | 発行する値は要求ごとに違い、本番だけ Secure が付く |
 
 ## 未確認事項
 

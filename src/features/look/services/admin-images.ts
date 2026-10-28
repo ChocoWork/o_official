@@ -10,6 +10,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { describeErrorForLog } from '@/lib/logging/safe-error';
 import { resolveUploadImageType, type DetectedImageType } from '@/lib/storage/image-signature';
 import { extractLookImageObjectPath } from '@/lib/storage/look-images';
+import { isSafeObjectPath } from '@/lib/storage/safe-object-path';
 
 export const LOOK_IMAGE_BUCKET = 'look-images';
 
@@ -43,8 +44,6 @@ export function buildLookImagePath(extension: string, now: Date = new Date()): s
   return `looks/${now.toISOString().slice(0, 10)}/${crypto.randomUUID()}.${extension}`;
 }
 
-const OWN_LOOK_IMAGE_PATH = /^looks\/[A-Za-z0-9][A-Za-z0-9._-]*(\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/;
-
 /**
  * 自分の置き場の自分の接頭辞（looks/）の下の安全な文字だけの道筋なら true。
  *
@@ -54,7 +53,7 @@ const OWN_LOOK_IMAGE_PATH = /^looks\/[A-Za-z0-9][A-Za-z0-9._-]*(\/[A-Za-z0-9][A-
  * 1本ずつ確かめて、'..'・先頭の '/'・別の接頭辞・URL を消す対象にしない（古い見本は消さない側に倒れる）。
  */
 export function isOwnLookImagePath(path: string): boolean {
-  return OWN_LOOK_IMAGE_PATH.test(path);
+  return isSafeObjectPath(path, 'looks');
 }
 
 /**

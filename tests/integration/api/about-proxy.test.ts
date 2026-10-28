@@ -98,6 +98,17 @@ describe('ABOUT の頁にかかる共有の proxy', () => {
     expect(scriptSrc).not.toContain("'unsafe-inline'");
   });
 
+  it('ARC-ABOUT-002 CSP に使っていない jsDelivr・placehold.co・readdy.ai と全 Supabase プロジェクトの許可を入れない', async () => {
+    const proxy = await loadProxy();
+
+    const csp = proxy(aboutRequest()).headers.get('Content-Security-Policy') ?? '';
+
+    expect(csp).not.toContain('cdn.jsdelivr.net');
+    expect(csp).not.toContain('placehold.co');
+    expect(csp).not.toContain('readdy.ai');
+    expect(csp).not.toContain('*.supabase.co');
+  });
+
   it('ARC-ABOUT-002 応答の x-nonce は CSP の nonce と同じ値で、要求ごとに変わる', async () => {
     const proxy = await loadProxy();
 
@@ -127,10 +138,21 @@ describe('ABOUT の頁にかかる共有の proxy', () => {
     );
   });
 
-  it('ARC-ABOUT-002 セッションの Cookie が無い最初の要求で id を作り Set-Cookie で渡す', async () => {
+  it('ARC-ABOUT-002 /about ではセッションの Cookie を発行せず、守りの見出しは付く（既定は配らない）', async () => {
     const proxy = await loadProxy();
 
     const res = proxy(aboutRequest());
+
+    expect(res.cookies.get(SESSION_COOKIE)).toBeUndefined();
+    expect(res.headers.get('set-cookie')).toBeNull();
+    expect(res.headers.get('Content-Security-Policy')).toBeTruthy();
+    expect(res.headers.get('X-Frame-Options')).toBe('DENY');
+  });
+
+  it('ARC-ABOUT-002 許可リストの道（/cart）では、セッションの Cookie が無い最初の要求で id を作り Set-Cookie で渡す', async () => {
+    const proxy = await loadProxy();
+
+    const res = proxy(aboutRequest({}, '/cart'));
 
     const cookie = res.cookies.get(SESSION_COOKIE);
     expect(cookie?.value).toMatch(/^[0-9a-f]{32}$/);
@@ -143,24 +165,24 @@ describe('ABOUT の頁にかかる共有の proxy', () => {
     expect(res.headers.get('set-cookie')).toContain(`${SESSION_COOKIE}=${cookie?.value}`);
   });
 
-  it('ARC-ABOUT-002 最初の要求ごとに違う id を作る', async () => {
+  it('ARC-ABOUT-002 許可リストの道（/cart）では最初の要求ごとに違う id を作る', async () => {
     const proxy = await loadProxy();
 
-    const first = proxy(aboutRequest()).cookies.get(SESSION_COOKIE)?.value;
-    const second = proxy(aboutRequest()).cookies.get(SESSION_COOKIE)?.value;
+    const first = proxy(aboutRequest({}, '/cart')).cookies.get(SESSION_COOKIE)?.value;
+    const second = proxy(aboutRequest({}, '/cart')).cookies.get(SESSION_COOKIE)?.value;
 
     expect(first).toBeTruthy();
     expect(first).not.toBe(second);
   });
 
-  it('ARC-ABOUT-002 本番では Cookie に Secure を付け、本番以外では付けない', async () => {
+  it('ARC-ABOUT-002 許可リストの道（/cart）では、本番で Cookie に Secure を付け、本番以外では付けない', async () => {
     env().NODE_ENV = 'production';
-    const production = (await loadProxy())(aboutRequest());
+    const production = (await loadProxy())(aboutRequest({}, '/cart'));
     expect(production.cookies.get(SESSION_COOKIE)?.secure).toBe(true);
 
     jest.resetModules();
     env().NODE_ENV = 'test';
-    const nonProduction = (await loadProxy())(aboutRequest());
+    const nonProduction = (await loadProxy())(aboutRequest({}, '/cart'));
     expect(nonProduction.cookies.get(SESSION_COOKIE)?.secure).toBeFalsy();
   });
 
@@ -176,12 +198,14 @@ describe('ABOUT の頁にかかる共有の proxy', () => {
     expect(res.headers.get('X-Frame-Options')).toBe('DENY');
   });
 
-  it('ARC-ABOUT-002 ほかの Cookie だけがある要求ではセッションの id を作る', async () => {
+  it('ARC-ABOUT-002 ほかの Cookie だけがある要求は、許可リストの道（/cart）ならセッションの id を作り、/about なら作らない', async () => {
     const proxy = await loadProxy();
 
-    const res = proxy(aboutRequest({ cookie: 'cart=abc; wishlist=def' }));
+    const cart = proxy(aboutRequest({ cookie: 'cart=abc; wishlist=def' }, '/cart'));
+    const about = proxy(aboutRequest({ cookie: 'cart=abc; wishlist=def' }));
 
-    expect(res.cookies.get(SESSION_COOKIE)?.value).toMatch(/^[0-9a-f]{32}$/);
+    expect(cart.cookies.get(SESSION_COOKIE)?.value).toMatch(/^[0-9a-f]{32}$/);
+    expect(about.cookies.get(SESSION_COOKIE)).toBeUndefined();
   });
 
   it('ARC-ABOUT-002 /about に付く見出しは別の頁（/news）と同じ', async () => {

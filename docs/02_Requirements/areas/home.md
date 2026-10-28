@@ -1,6 +1,6 @@
 # HOME の要件
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: HOME（ホーム `/` のヒーロー・区画の並び・ABOUT の区画・VIEW ALL のボタン・ヒーローの動き） | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: HOME（ホーム `/` のヒーロー・区画の並び・ABOUT の区画・VIEW ALL のボタン・ヒーローの動き） | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -13,7 +13,7 @@ HOME の領域の要求・要件・受け入れ条件・派生要件を、追跡
 | 要件 | 28 | 既存の `FREQ-NN-REQ-NN` 17、`FR-HOME-001`〜`009`、`NFR-HOME-001`〜`002` |
 | 受け入れ条件 | 28 | 既存の `FREQ-NN-AC-NN` 17、新しい `FR-HOME-NNN-AC-01`・`NFR-HOME-NNN-AC-01` 11 |
 | 派生要件 | 6 | `DRV-HOME-001`〜`006` |
-| セキュリティ要件 | 20（うち 3 は廃止） | `SEC-HOME-001`〜`020`（脅威 `THR-HOME-001`〜`020` と1対1。`011`・`012`・`019` は持ち主の SEARCH の要件に移したので「廃止」で残した）、受け入れ条件 `SEC-HOME-NNN-AC-NN` 28（うち 3 は廃止） |
+| セキュリティ要件 | 20（うち 3 は廃止） | `SEC-HOME-001`〜`020`（脅威 `THR-HOME-001`〜`020` と1対1。`011`・`012`・`019` は持ち主の SEARCH の要件に移したので「廃止」で残した）、受け入れ条件 `SEC-HOME-NNN-AC-NN` 29（うち 3 は廃止） |
 
 - 状態: 写した要求の行は「現行」。ただし元の行に理由の記述が無く、根拠の「なぜ」を推定で補った行や上位のつなぎは「推定」。コードと合わない行・新しく起こした項目・実装から読み取った項目も「推定」。どちらが正しいかは決めず、食い違いは各項目の本文と「未確認事項」に書き、`docs/05_Quality/reports/trace-matrix.md` の「食い違い」節（TM-HOME-NN）に載せる
 - 結論: ホームを見る要求は元の文書に無かった（`SR-HOME-001`〜`005` を推定で起こした）。ホームの ITEM・LOOK の表示件数（FREQ-147・148 の元の数と、置き換えた FREQ-276・277）、ヒーローの縦線（FREQ-278 と FREQ-282）、ヒーローに CTA を置くか（付録 D と UI/UX レビューの決定）は、ユーザーに決めてもらう
@@ -71,7 +71,7 @@ HOME の領域の要求・要件・受け入れ条件・派生要件を、追跡
 | FR-HOME-019-hero-thread-loop | FREQ-282-AC-01、FREQ-282-AC-02 |
 | FR-HOME-020-hero-scroll-color | FREQ-283-AC-01 |
 | FR-HOME-021-home-grid-limits-and-links | FREQ-147-AC-02、FREQ-148-AC-01、FREQ-148-AC-02、FREQ-147-AC-03、FREQ-148-AC-03、FR-HOME-003-AC-01、FREQ-280-AC-01 |
-| FR-HOME-022-home-response-hardening | SEC-HOME-008-AC-02、SEC-HOME-009-AC-01、SEC-HOME-010-AC-01、SEC-HOME-017-AC-01、SEC-HOME-009-AC-02、SEC-HOME-010-AC-02、SEC-HOME-015-AC-01、SEC-HOME-016-AC-01、SEC-HOME-017-AC-02、SEC-HOME-018-AC-01 |
+| FR-HOME-022-home-response-hardening | SEC-HOME-008-AC-02、SEC-HOME-009-AC-01、SEC-HOME-010-AC-01、SEC-HOME-017-AC-01、SEC-HOME-009-AC-02、SEC-HOME-010-AC-02、SEC-HOME-015-AC-01、SEC-HOME-016-AC-01、SEC-HOME-017-AC-02、SEC-HOME-018-AC-01、SEC-HOME-009-AC-03 |
 | FR-HOME-023-home-published-only-and-content | SEC-HOME-001-AC-01、SEC-HOME-001-AC-02、SEC-HOME-002-AC-01、SEC-HOME-004-AC-02、SEC-HOME-006-AC-01、SEC-HOME-006-AC-02、SEC-HOME-007-AC-01、SEC-HOME-008-AC-01、SEC-HOME-013-AC-01 |
 | FR-HOME-024-home-table-grants | SEC-HOME-003-AC-01、SEC-HOME-003-AC-02、SEC-HOME-004-AC-01、SEC-HOME-005-AC-01、SEC-HOME-020-AC-01 |
 | NFR-HOME-001-home-performance | NFR-HOME-001-AC-01 |
@@ -1148,7 +1148,7 @@ anon の鍵の insert・update・delete が、どれも権限の誤りで終わ�
 | 出どころ | ASVS 未対応付け。service role の読みが RLS を通らないことから起こした |
 | 優先度 | SHOULD |
 
-在庫の読みは公開済みの商品の id だけで行い、返すのは在庫の有無だけにする。画像の署名は、置き場 `item-images` の商品の画像の道筋だけに行い、道筋にできない値と署名の失敗は画像を出さない（元の値をそのまま返さない）。今のコードは在庫の側を満たし、署名の側を満たさない（TM-HOME-34）。
+在庫の読みは公開済みの商品の id だけで行い、返すのは在庫の有無だけにする。画像の署名は、置き場 `item-images` の商品の画像の道筋だけに行い、道筋にできない値と署名の失敗は画像を出さない（元の値をそのまま返さない）。在庫の側は元から満たす。署名の側は 2026-10-28 に満たした（共有の `item-images.ts` が署名の前に `parseOwnObjectPath`（DD-SEARCH-011）を通し、道筋にできない値と署名の失敗は `null` を返す。ホームのカードは `null` を受けて画像の無いカードで描く。ADR-0316）。
 
 #### SEC-HOME-006-AC-01 下書きの商品の在庫がホームの応答に出ない
 
@@ -1185,7 +1185,7 @@ anon の鍵の insert・update・delete が、どれも権限の誤りで終わ�
 | 出どころ | ASVS 未対応付け。`docs/05_Quality/reviews/security/security_review_home.md` |
 | 優先度 | SHOULD |
 
-ホームに出す商品の画像の署名つき URL の期限は1時間以下にする（値は案）。LOOK のカードの関連商品の画像も、LOOK の取得（`src/lib/look/server.ts` の `hydrateLooks`）が ITEM の同じ署名（`signItemImageUrl`）を通すので、この対象に入る。今のコードは満たさない（TM-HOME-35）。
+ホームに出す商品の画像の署名つき URL の期限は1時間以下にする（値は案）。LOOK のカードの関連商品の画像も、LOOK の取得（`src/lib/look/server.ts` の `hydrateLooks`）が ITEM の同じ署名（`signItemImageUrl`）を通すので、この対象に入る。2026-10-28 に満たした（`item-images.ts` の既定を3600秒にした。署名の使い回しは残りが期限の半分以上ある間だけで、頁に載る URL の残りは1800秒以上。ADR-0316）。
 
 #### SEC-HOME-007-AC-01 ホームの商品の画像の署名の期限が1時間以下
 
@@ -1247,7 +1247,7 @@ anon の鍵の insert・update・delete が、どれも権限の誤りで終わ�
 | 出どころ | OWASP ASVS 4.0.3 V14.2.3。`docs/05_Quality/reviews/security/security_review_home.md` |
 | 優先度 | SHOULD |
 
-CSP の `script-src`・`style-src`・`style-src-elem`・`font-src` に、アプリが読まない外の場所（今は `https://cdn.jsdelivr.net`）を入れない。`connect-src`・`img-src` の Supabase は自分のプロジェクトの場所だけにする。今のコードは満たさない（TM-HOME-37）。
+CSP の `script-src`・`style-src`・`style-src-elem`・`font-src` に、アプリが読まない外の場所（今は `https://cdn.jsdelivr.net`）を入れない。`connect-src`・`img-src` の Supabase は自分のプロジェクトの場所だけにする。使っていない CDN と `https://*.supabase.co` の許可は 2026-10-28 に外した（`src/proxy.ts` の `buildCsp`。`DD-HOME-004`）ので、AC-01 は満たす。AC-03（`/cart` から進んで Stripe の部品が出るまで違反 0 件）は満たす見込み（本番ビルドの E2E で未実測）。AC-02（ブラウザの CSP の違反が 0 件）は、ブラウザ側の zod を `jitless` にして `eval` の探りを無くしたので満たす見込み（2026-10-28。`src/instrumentation-client.ts`、`DD-HOME-004`。本番ビルドでの実測は controller が流す E2E で確かめる）。Stripe（`js.stripe.com`・`*.js.stripe.com`）と Turnstile は全頁で許す。CSP は文書を読み込んだ時に決まり、`next/link` の画面の切り替えでは変わらないので、決済の頁だけに絞ると `/cart` から進んだ時に決済の部品が止まる（ユーザーの決定 Q29、`ADR-0108`）。
 
 #### SEC-HOME-009-AC-01 ホームの応答の CSP に使わない CDN が無い
 
@@ -1272,6 +1272,20 @@ CSP の `script-src`・`style-src`・`style-src-elem`・`font-src` に、アプ�
 | 出どころ | 実装から推定 |
 
 ホームを開いた時に CSP の違反の記録が出ず、h1 のブランド名と5つの節の見出しが表示されること。
+
+ブラウザ側の zod は `jitless` にする。zod 4 はスキーマを作る時に `new Function("")` で eval の可否を探り、CSP が `unsafe-eval` を許さない本番のブラウザでは、この探りが「eval を拒否した」という違反として記録される。探りはスキーマを作る時に走るので、最初の `z.object` より前に `z.config({ jitless: true })` を呼ぶ。Next が全頁のハイドレーションより前にブラウザで 1 回実行する `src/instrumentation-client.ts` に置く（zod を使う入口は 100 を超え、どれがブラウザへ届くかを辿ると漏れで直しが無効になるため）。サーバー側はこのファイルを読まないので変わらない。`FR-CHECKOUT-025` の `eval` の除外は変えない。今のコードは満たす見込み（2026-10-28）。zod の `eval` 以外の違反が残るかは、本番ビルドで `/` を開いて確かめる（E2E の印は外した。赤なら残った違反の種類を見て直す）。
+
+#### SEC-HOME-009-AC-03 カートから決済の頁へ進んでも Stripe の部品が CSP で止められない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-HOME-009 |
+| 根拠 | CSP は文書を読み込んだ時に決まり、`next/link` の画面の切り替えでは変わらない。`/cart` から「ご購入手続きへ」（`Link`）で `/checkout` へ進むと、`/cart` の応答の CSP のまま Stripe.js が読まれる。Stripe の許可を全頁に残した判断（Q29）を、この経路で固定するため |
+| 状態 | 推定 |
+| 確かめ方 | E2E（mobile 390・tablet 768・desktop 1280） |
+| 出どころ | ユーザーの決定 Q29（2026-10-28）。`.superpowers/sdd/2026-10-25-security-gap-fixes/wave3-decisions.md` |
+
+`/cart` を開き「ご購入手続きへ」を押して `/checkout` へ進み、送り先を入れて最終確認の画面で Stripe の決済の部品が出るまでの間、外部リソース（`http(s)` の URL）の CSP の違反が 0 件であること。
 
 ### SEC-HOME-010 ホームの応答に守りの見出しを付ける
 
@@ -1468,7 +1482,7 @@ SEC-SEARCH-010 の受け入れ条件を見る。
 | 出どころ | OWASP ASVS 4.0.3 V12.6.1。`docs/05_Quality/reviews/security/security_review_home.md` |
 | 優先度 | SHOULD |
 
-`next.config.ts` の `remotePatterns` と CSP の `img-src` に、使わない場所（`placehold.co`・`readdy.ai`・`public.readdy.ai`）と、自分のでない Supabase のプロジェクトを入れない。今のコードは満たさない（TM-HOME-45）。
+`next.config.ts` の `remotePatterns` と CSP の `img-src` に、使わない場所（`placehold.co`・`readdy.ai`・`public.readdy.ai`）と、自分のでない Supabase のプロジェクトを入れない。今のコードは満たす（2026-10-28。TM-HOME-45 は解消）。CSP の `img-src` は先に外した（`src/proxy.ts` の `buildCsp`、`ADR-0108`）。`remotePatterns` は、ビルド時の `NEXT_PUBLIC_SUPABASE_URL` の host 1 つの `/storage/v1/object/sign/**`（署名つきの道）だけにした。バケットは非公開なので `public` の道は入れず、`authenticated` の道は `next/image` が認証の見出しを付けられないので入れない。手元の Supabase につないだビルドだけ、手元の枝（`dangerouslyAllowLocalIP` と `/storage/v1/object/**`）を足す。最適化した画像のキャッシュ（`minimumCacheTTL`）は署名の期限と同じ 3600 秒にした（`DD-HOME-004`）。部品の見本の頁 `/ui` が使っていた readdy.ai の画像 7 か所は先に `public/` の手元の画像へ替えた。
 
 #### SEC-HOME-017-AC-01 許していない場所の画像を最適化の中継に通せない
 

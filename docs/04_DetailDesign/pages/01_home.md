@@ -1,6 +1,6 @@
 ﻿# 1.1 ホームページ（HOME）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: ホーム `/` のページ・VIEW ALL のボタン・ブランド名を1文字ずつ出す部品 | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: ホーム `/` のページ・VIEW ALL のボタン・ブランド名を1文字ずつ出す部品 | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -12,18 +12,19 @@
 | `DD-HOME-001` | `src/app/page.tsx` | ホームのページ。7つの取得を並べて待ち、ヒーロー・各区画・ABOUT を並べる。題・説明・OG を返す | `IMPL-HOME-001`〜`003`・`005`〜`011` |
 | `DD-HOME-002` | `src/features/home/components/HomeSectionViewAll.tsx` | ITEM・LOOK・NEWS の区画の下の VIEW ALL のボタン | `IMPL-HOME-004` |
 | `DD-HOME-003` | `src/components/animations/TextReveal.tsx` | 文字列を1文字ずつ出す部品（ヒーローのブランド名） | なし |
+| `DD-HOME-004` | `src/instrumentation-client.ts`（HOME の範囲内。ブラウザ側の zod を `jitless` にする設定。2026-10-28）、`src/app/ui/page.tsx`（範囲外の共有の頁） | CSP の組み立てと外部ドメインを使わない見本ページ。いまは「`/ui` は外部の画像を使わない」と「`buildCsp` の許可先」まで | なし |
 
-- 結論: HOME の3つの単位はどれも分岐が少ない。ページは条件の分岐を持たず、区画の出し分けは各領域の格子の部品が持つ。VIEW ALL のボタンも分岐を持たない。分岐の網羅で手間が要るのは `TextReveal` だけで、そのうち `ref` が空の時の早期の戻りは、単体テストで `React.useRef` を差し替えて通す
-- 番号は `DD-HOME-001`〜`029` をこの頁で使う。今は `001`〜`003` を使い、`004` 以降は空けておく
+- 結論: HOME の4つの単位はどれも分岐が少ない。`DD-HOME-004` の範囲内の単位は分岐の無い設定だけのファイル。ページは条件の分岐を持たず、区画の出し分けは各領域の格子の部品が持つ。VIEW ALL のボタンも分岐を持たない。分岐の網羅で手間が要るのは `TextReveal` だけで、そのうち `ref` が空の時の早期の戻りは、単体テストで `React.useRef` を差し替えて通す
+- 番号は `DD-HOME-001`〜`029` をこの頁で使う。今は `001`〜`004` を使い、`005` 以降は空けておく。`DD-HOME-004` が指す `src/app/ui/page.tsx` と `src/proxy.ts` の `buildCsp` は共有で、HOME の `src` の範囲の外なので `@impl` は付けず、試験の名前の先頭の ID で下とつなぐ。範囲内の単位（`rules.ts` が DD ごとに `@design` で指すものを要る）は `src/instrumentation-client.ts` で、`scripts/trace/scope.json` の HOME の `src` に足し、`@impl IMPL-HOME-104`・`@design DD-HOME-004` を付けた（`IMPL-HOME-101`〜`103` の次。2026-10-28、波 3 の Task 12）
 - 旧版のこの頁の機能要件対応表（`IMPL-HOME-001`〜`011`）は、各項目の「旧番号」に移した。表の中身の古い所（FR-HOME-003 の「不要」、FR-HOME-007 の `sizes="100vw"`、NFR-HOME-001 の「priority 未設定」ほか）は今のコードに合わせて書き直した
 
 ## 範囲と根拠
 
 | 項目 | 内容 |
 | --- | --- |
-| 範囲 | `scripts/trace/scope.json` の HOME の `src`（3ファイル。3つとも `.tsx` なので、単位はファイル1つずつ） |
+| 範囲 | `scripts/trace/scope.json` の HOME の `src`（4ファイル。3つは `.tsx`、1つは設定だけの `.ts` なので、単位はファイル1つずつ） |
 | 上位の文書 | [HOME の構造設計](../../03_BasicDesign/areas/home.md)（`ARC-HOME-`・`SCR-HOME-`・`FLOW-HOME-`・`STATE-HOME-`）、[HOME の要件](../../02_Requirements/areas/home.md)（`FR-HOME-`・`NFR-HOME-`・`SEC-HOME-`・`DRV-HOME-`） |
-| 対象のコード | `src/app/page.tsx`、`src/features/home/components/HomeSectionViewAll.tsx`、`src/components/animations/TextReveal.tsx` |
+| 対象のコード | `src/app/page.tsx`、`src/features/home/components/HomeSectionViewAll.tsx`、`src/components/animations/TextReveal.tsx`、`src/instrumentation-client.ts` |
 | 関連文書 | [ニュース一覧の詳細設計](02_news_list.md)の `DD-NEWS-001`（ホームの NEWS の区画の格子）、[ABOUT の詳細設計](08_about.md)（READ OUR STORY の行き先） |
 | 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない） |
 
@@ -41,7 +42,7 @@
 
 | 部品 | 道 | ホームでの使われ方 |
 | --- | --- | --- |
-| ITEM の取得 | `src/lib/items/public.ts` の `getPublishedItems`（商品）・`getPublishedItemsCount`（総数） | 公開済みの商品8件と総数。署名と在庫の読みは service role |
+| ITEM の取得 | `src/lib/items/public.ts` の `getPublishedItems`（商品）・`getPublishedItemsCount`（総数） | 公開済みの商品8件と総数。署名と在庫の読みは service role。画像の署名は `signItemImageFields`（期限3600秒。道筋にできない値と署名の失敗は `image_url: null`、`image_urls` は無効な要素を除く。DD-SEARCH-011）で、カードは `null` を受けて画像の無いカードで描く |
 | LOOK の取得 | `src/lib/look/server.ts` の `getPublishedLooks`（LOOK）・`getPublishedLooksCount`（総数） | 公開済みの LOOK 8件と総数。画像の署名は service role（`hydrateLooks`） |
 | NEWS の取得 | `src/features/news/services/public.ts` の `getPublishedNews`（記事）・`getPublishedNewsCount`（総数） | 公開済みの記事6件と総数（DD-NEWS-003）。画像の列は選ばず署名しないので service role は使わない（SEC-NEWS-005） |
 | 取扱店の取得 | `src/features/stockist/services/public.ts` の `getHomePublicStockists` | 公開済みの取扱店6件 |
@@ -275,6 +276,118 @@ FREQ-278-REQ-01・04・05、FR-HOME-009（h1 を1つにする）。
 
 - `if (!el) return` は ref が必ず付くので本当の実行では届かない。単体テストで `React.useRef` を、`current` が常に空の参照を返す物に差し替えて通す（13）。分岐の網羅は 100%
 - `tests/unit/home/text-reveal.test.tsx` が試す。E2E は `FR-HOME-018` が span の数・最後の状態・名前・動きを減らす設定を試す
+
+### DD-HOME-004 CSP の組み立てと外部ドメインを使わない見本ページ
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | ARC-HOME-003、SEC-HOME-009、SEC-HOME-017 |
+| 根拠 | CSP の `img-src` と `next.config.ts` の `remotePatterns` は、使わない外の場所（`readdy.ai`・`placehold.co`）を許さない形にする（SEC-HOME-009・017）。許可先を減らす前に、部品の見本の頁 `/ui` がそれらを使っていない状態にしておかないと、`/ui` の画像が CSP と画像の中継で止まる。見本の画像は `public/` の手元の画像にして、外の配信元の停止や差し替えに頼らない（Q6、2026-10-28 の決定） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト |
+| 出どころ | 波 3 の決定 `.superpowers/sdd/2026-10-25-security-gap-fixes/wave3-decisions.md`（Q6）、実装から推定（`src/app/ui/page.tsx`） |
+
+#### 対応要件
+
+SEC-HOME-009-AC-01、SEC-HOME-009-AC-02、SEC-HOME-009-AC-03、SEC-HOME-017-AC-01（`/ui` の側の前提と、`next.config.ts` の `images`、ブラウザ側の zod）。`buildCsp` の組み立ては下の「`buildCsp` の許可先」、`images` は下の「`next.config.ts` の `images`」に書く（2026-10-28）。
+
+#### 入出力
+
+| 項目 | 内容 |
+| --- | --- |
+| 入力 | なし（`/ui` の静的な見本。利用者の入力を受けない） |
+| 出力 | carousel の 3 枚は `/news1.png`・`/news2.png`・`/news3.png`。商品カードの 3 枚と Avatar の 1 枚は `/placeholder.png`。`alt` は変えない |
+| 外の URL | 地図の埋め込み（`https://www.google.com/maps/embed`）だけ。画像の URL は無い |
+
+#### 正常フロー
+
+1. `/ui` を開くと、carousel・商品カード・Avatar の画像が同じオリジンの `public/` から読まれる
+2. 外の画像の配信元（`readdy.ai`）へ要求を送らない
+
+#### 異常フロー
+
+| 場合 | 動き | 道 |
+| --- | --- | --- |
+| 手元の画像が `public/` から消える | 画像が壊れる。外の配信元に戻さない | `src/app/ui/page.tsx` |
+
+- `src/lib/news-data.ts` の `newsData` は `readdy.ai` の住所を持つが、どこからも使われていない（消さずに報告した）
+
+#### `buildCsp` の許可先（共有の `src/proxy.ts`）
+
+`proxy` が全部の頁に同じ CSP を付ける。許可先は次のとおり。Stripe は全頁で同じ（`next/link` の遷移で CSP が変わらないため。`ADR-0108`）。
+
+| 指令 | 許可先 |
+| --- | --- |
+| `script-src` | `'self'`・nonce・（開発のみ `'unsafe-eval'`）・`challenges.cloudflare.com`・`js.stripe.com`・`*.js.stripe.com` |
+| `style-src` / `style-src-elem` / `font-src` | `'self'`・`'unsafe-inline'` / `'self'`（開発のみ `'unsafe-inline'`） / `'self'`。外の CDN は無い |
+| `img-src` | `'self'`・`data:`・自分の Supabase の origin・`q.stripe.com`・`*.stripe.com` |
+| `connect-src` | `'self'`・（開発のみ `ws:`・`wss:`）・自分の Supabase の origin・`challenges.cloudflare.com`・`api.stripe.com`・`r.stripe.com`・`m.stripe.network`・`q.stripe.com` |
+| `frame-src` | `challenges.cloudflare.com`・`js.stripe.com`・`*.js.stripe.com`・`hooks.stripe.com`・`www.google.com`・`maps.google.com` |
+
+- 自分の Supabase の origin は `NEXT_PUBLIC_SUPABASE_URL`、無ければ `SUPABASE_URL`。どちらも無い（または URL として読めない）時は空の項目を入れない
+- jsDelivr・`placehold.co`・`readdy.ai`・`*.supabase.co` は、どの指令にも入れない
+- `'strict-dynamic'` は入れない（Turnstile の `<Script>` に nonce が付くかを本番ビルドで確かめてから別に決める）
+
+#### `next.config.ts` の `images`（共有。2026-10-28）
+
+`/_next/image` が取りに行ってよい先と、最適化した画像のキャッシュの長さを決める。単体試験は `tests/unit/next-config.test.ts`（環境変数を差し替えて設定を読み直す）。
+
+| 場合（ビルド時の `NEXT_PUBLIC_SUPABASE_URL`） | `remotePatterns` | その他 |
+| --- | --- | --- |
+| `https://<project>.supabase.co`（本番） | その host 1 つ・`https`・`port: ''`・`/storage/v1/object/sign/**` の 1 件だけ | なし |
+| `http(s)://localhost` または `127.0.0.1`（手元・E2E） | その `protocol`・`hostname`・`port` の `/storage/v1/object/**` の 1 件だけ | `dangerouslyAllowLocalIP: true` |
+| 無い・URL として読めない | 0 件（例外を投げない。CI のビルド） | なし |
+
+- 全部の場合で `minimumCacheTTL` は 3600 秒。署名つき URL の期限（3600 秒）より長く最適化の結果を持たない（SEC-NEWS-004-AC-02）
+- `public` の道は入れない（本番のバケットは非公開）。`authenticated` の道も入れない（`next/image` は認証の見出しを付けられない）
+- `placehold.co`・`readdy.ai`・`public.readdy.ai`・`*.supabase.co` はどの場合にも入れない（SEC-HOME-017、SEC-ABOUT-003-AC-02、SEC-NEWS-023）
+- 本番の host は `https:` で、手元の枝に当たらない時だけ取る（`new URL` が失敗する値は無い扱い）
+
+#### ブラウザ側の zod（`src/instrumentation-client.ts`。2026-10-28）
+
+zod 4 は、スキーマ（`z.object`）を作る時に `core.globalConfig.jitless` と `util.allowsEval`（`new Function("")` を試す）を評価する（`node_modules/zod/v4/core/schemas.js` の `$ZodObject`）。CSP が `unsafe-eval` を許さないブラウザでは、この探りが違反として記録される（SEC-HOME-009-AC-02）。`jitless` が真なら `allowsEval` は読まれない。
+
+| 項目 | 内容 |
+| --- | --- |
+| 中身 | `z.config({ jitless: true })` を呼ぶ関数 `disableZodEval`（`@impl IMPL-HOME-104`）と、その呼び出し 1 回だけ。他の副作用を持たない。関数に包むのは、トレースの検査が関数の無い `.ts` を単位に数えず、`DD-HOME-004` の「コードの単位」が空になるため |
+| 実行の時 | Next 16 が `src/instrumentation-client.ts` を、アプリのフロントエンドのコードより前に（ハイドレーションの前に）ブラウザで 1 回実行する。最初の `z.object` より前に効く |
+| 置き場所の理由 | zod を使うファイルは 100 を超え、どれがブラウザへ届くかを辿ると 1 つの漏れで直しが無効になる。入口ごとの import を増やさず、1 か所に置く |
+| サーバー側 | このファイルを読まないので変わらない（`typeof window` の分岐も要らない） |
+| 変えないもの | `FR-CHECKOUT-025` の `eval` の除外 |
+
+- 分岐が無い（網羅は 100%）。`tests/unit/instrumentation-client.test.ts` が試す
+- 本番ビルドで効くことは `FR-HOME-022` の「CSP の違反が記録されない」（3 幅）で見る。違反が残り、原因が zod の `eval` なら、このファイルが読まれていないか、`z.config` より前に別の `z.object` が走る経路がある
+
+#### 状態・永続化
+
+- 状態も永続化も無い
+
+#### 認証認可
+
+- 認可なし（公開の見本）。ヘッダーからの導線は AUTH の持ち物（`Header.tsx`）
+
+#### テスト観点
+
+`buildCsp` は `tests/unit/middleware/proxy-csp.test.ts` が `proxy()` を通した見出しで確かめる（`/`・`/privacy`・`/checkout`・`/api/auth/login` の全部で同じ許可先を `toEqual` で固定。外す host が無いこと、Supabase の origin の取り方、本番と開発の違い）。
+
+`/ui` の置き場は `tests/unit/app/ui-page.test.tsx`。ソースの文字列を読んで確かめる（頁を描かない）。
+
+| # | 観点 | 入力 | 期待 |
+| --- | --- | --- | --- |
+| 1 | 外す host | `src/app/ui/page.tsx` の文字列 | `readdy.ai`・`placehold.co` を含まない |
+| 2 | 外の URL | 同上 | `https://` の URL は地図の埋め込みだけ |
+| 3 | 画像の `src` | `src` と `carouselImages` の文字列 | 全部 `/` で始まり、7 か所（carousel 3・商品カード 3・Avatar 1）以上ある |
+
+`src/instrumentation-client.ts` は `tests/unit/instrumentation-client.test.ts`（jsdom。`global.Function` を数える Proxy に差し替えて、`new Function` の呼び出し回数を見る）が試す。
+
+| # | 観点 | 入力 | 期待 |
+| --- | --- | --- | --- |
+| 1 | 対照 | 読み込まずに `z.object({ a: z.string() }).parse(...)` | `new Function` が 1 回以上呼ばれる |
+| 2 | 読み込んだ後 | 読み込んでから同じ手順 | `new Function` が 0 回。`parse` の結果は変わらない |
+| 3 | 設定 | 読み込んだ後の `z.core.globalConfig.jitless` | 真 |
+| 4 | 中身 | ファイルの文字列（コメントを除く） | `import { z } from 'zod';`・`disableZodEval` の定義（`z.config({ jitless: true });` だけを呼ぶ）・その呼び出しの 5 行だけ |
+
+- 画像の中身は試験しない。`/ui` を開く E2E（`FR-UI-001`・`002`・`004`・`005`、`FR-TERMS-005`、`slider-*`）は画像の中身を見ない
 
 ## 未確認事項
 

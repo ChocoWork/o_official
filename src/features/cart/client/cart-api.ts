@@ -1,5 +1,5 @@
 import { getCsrfTokenFromCookie, refreshSessionOnce } from '@/lib/client-fetch';
-import { CART_OPTION_NAMES, type CartJson } from '@/features/cart/types/cart-json';
+import { CART_OPTION_NAMES, CART_PLACEHOLDER_IMAGE, type CartJson } from '@/features/cart/types/cart-json';
 import type { Item } from '@/types/item';
 
 /** カートの画面・決済の画面が使う明細の形（今の画面の部品の形。本計画の決め事 P8） */
@@ -23,7 +23,7 @@ export function toCartEntries(cart: CartJson): CartEntry[] {
     color: line.options_with_values.find((option) => option.name === CART_OPTION_NAMES.color)?.value ?? null,
     size: line.options_with_values.find((option) => option.name === CART_OPTION_NAMES.size)?.value ?? null,
     fulfillment: line.fulfillment,
-    items: { id: line.product_id, name: line.product_title, price: line.price, image_url: line.image ?? '' },
+    items: { id: line.product_id, name: line.product_title, price: line.price, image_url: line.image || CART_PLACEHOLDER_IMAGE },
   }));
 }
 

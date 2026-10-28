@@ -1,6 +1,7 @@
 import {
   getAdjacentPublishedLooks,
   getPublishedLookById,
+  getPublishedLookCoverRaw,
   getPublishedLookList,
   getPublishedLooks,
   getPublishedLooksCount,
@@ -366,6 +367,17 @@ describe("getPublishedLooks", () => {
     expect(looks[0].imageUrls).toEqual([]);
   });
 
+  it("DD-LOOK-003 署名で全部除かれた一覧の行は、生の image_urls で補わず空にする", async () => {
+    results.looks = { data: [listRow(1)], error: null };
+    results.look_items = { data: [], error: null };
+    mockSignLookImageUrls.mockResolvedValue([]);
+
+    const looks = await getPublishedLooks();
+
+    expect(looks[0].imageUrls).toEqual([]);
+    expect(JSON.stringify(looks)).not.toContain("raw-1-a");
+  });
+
   it("DD-LOOK-003 署名した画像に置き換え、行を PublicLook の形に写す", async () => {
     results.looks = { data: [listRow(1), listRow(2)], error: null };
     results.look_items = { data: [], error: null };
@@ -602,6 +614,17 @@ describe("getPublishedLookById", () => {
     expect(look?.imageUrls).toEqual([]);
   });
 
+  it("DD-LOOK-032 署名で全部除かれた詳細は、生の image_urls で補わず空にする", async () => {
+    results.looks = { data: lookRow(1), error: null };
+    results.look_items = { data: [], error: null };
+    mockSignLookImageUrls.mockResolvedValue([]);
+
+    const look = await getPublishedLookById(1);
+
+    expect(look?.imageUrls).toEqual([]);
+    expect(JSON.stringify(look)).not.toContain("raw-1-a");
+  });
+
   it("DD-LOOK-032 画像を署名し、行を PublicLook の形に写して返す", async () => {
     results.looks = { data: lookRow(3), error: null };
     results.look_items = { data: [{ look_id: 3, item_id: 10 }], error: null };
@@ -793,5 +816,61 @@ describe("getAdjacentPublishedLooks", () => {
       code: "57014",
     });
     expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain("timeout");
+  });
+});
+
+describe("getPublishedLookCoverRaw", () => {
+  it("DD-LOOK-071 公開の印と id で匿名の client から image_urls だけを 1 件取り、service role を使わない", async () => {
+    results.looks = { data: { image_urls: ["looks/2026-01-01/a.png"] }, error: null };
+
+    await getPublishedLookCoverRaw(7);
+
+    const looks = buildersFor("looks")[0];
+    expect(callsOf(looks, "select")).toEqual([["image_urls"]]);
+    expect(callsOf(looks, "eq")).toEqual([
+      ["status", "published"],
+      ["id", 7],
+    ]);
+    expect(callsOf(looks, "maybeSingle")).toHaveLength(1);
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+    expect(mockSignLookImageUrls).not.toHaveBeenCalled();
+  });
+
+  it("DD-LOOK-071 署名せず、道筋の確かめに通る最初の生の値を返す", async () => {
+    results.looks = {
+      data: {
+        image_urls: [
+          "https://evil.example/storage/v1/object/public/look-images/looks/x.png",
+          "../x.png",
+          "other/x.png",
+          "looks/2026-01-01/b.png",
+          "looks/2026-01-01/c.png",
+        ],
+      },
+      error: null,
+    };
+
+    await expect(getPublishedLookCoverRaw(7)).resolves.toBe("looks/2026-01-01/b.png");
+  });
+
+  it("DD-LOOK-071 全部が確かめに通らない・配列でない・空なら null", async () => {
+    for (const imageUrls of [["../x.png", "other/y.png"], "looks/a.png", [], null]) {
+      results.looks = { data: { image_urls: imageUrls }, error: null };
+      await expect(getPublishedLookCoverRaw(7)).resolves.toBeNull();
+    }
+  });
+
+  it("DD-LOOK-071 無い・非公開の LOOK は null", async () => {
+    results.looks = { data: null, error: null };
+
+    await expect(getPublishedLookCoverRaw(7)).resolves.toBeNull();
+  });
+
+  it("DD-LOOK-071 DB の失敗は符号だけ記録して null にし、投げない", async () => {
+    results.looks = { data: null, error: { code: "57014", message: "SECRET timeout detail" } };
+
+    await expect(getPublishedLookCoverRaw(7)).resolves.toBeNull();
+
+    expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain("SECRET");
   });
 });

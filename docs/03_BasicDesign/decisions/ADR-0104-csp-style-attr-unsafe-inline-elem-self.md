@@ -1,10 +1,10 @@
 # ADR-0104 本番の CSP は style 属性だけを 'unsafe-inline' で許し、style 要素・link 要素は 'self' のまま締める
 
-> 状態: 現行 | 確認日: 2026-10-24 | 対象: `src/proxy.ts`（共有） | 基準コミット: `a03beaff`
+> 状態: 現行 | 確認日: 2026-10-28 | 対象: `src/proxy.ts`（共有） | 基準コミット: `a03beaff`
 
 ## 概要
 
-本番の CSP の style-src に 'unsafe-inline' を常に入れて React の style 属性を通し、代わりに style-src-elem を分けて style 要素・link 要素は 'self'（と使う CDN）だけに締める。ホームの本番ビルドで style 属性の字の大きさが崩れたことから決めた要求（FREQ-280）による。
+本番の CSP の style-src に 'unsafe-inline' を常に入れて React の style 属性を通し、代わりに style-src-elem を分けて style 要素・link 要素は 'self' だけに締める（2026-10-28 に使っていない CDN の許可を外した。ADR-0108）。ホームの本番ビルドで style 属性の字の大きさが崩れたことから決めた要求（FREQ-280）による。
 
 ## 範囲と根拠
 
@@ -13,7 +13,7 @@
 | 範囲 | `scripts/trace/scope.json` の HOME（コードは共有の `src/proxy.ts` で、HOME の範囲のコードではない） |
 | 対応する ID | FREQ-280-REQ-01、FREQ-280-REQ-02 |
 | 対象のコード | `src/proxy.ts` の `buildCsp`（理由のコメントと `style-src`・`style-src-elem` の許可の組み立て）と、`proxy` が応答の見出しに2つの指示を並べる所 |
-| 関連文書 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-280 の行）、`src/styles/globals.css`（古い CSP の時のコメント） |
+| 関連文書 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-280 の行）、`src/styles/globals.css`（古い CSP の時のコメント）、`ADR-0108`（使っていない CDN の許可を外した。2026-10-28） |
 | 要件の文書 | `docs/02_Requirements/areas/home.md` |
 | 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない） |
 
@@ -35,8 +35,8 @@
 
 #### 決定
 
-- style-src は 'self'・'unsafe-inline'・使う CDN にする（`proxy.ts`）
-- style-src-elem を分け、'self' と使う CDN だけにする。開発のサーバーだけは、画面の差し替えが style 要素を差し込むので 'unsafe-inline' を足す（`proxy.ts`）
+- style-src は 'self'・'unsafe-inline' にする（`proxy.ts`。CDN は 2026-10-28 に外した。ADR-0108）
+- style-src-elem を分け、'self' だけにする（CDN は 2026-10-28 に外した。ADR-0108）。開発のサーバーだけは、画面の差し替えが style 要素を差し込むので 'unsafe-inline' を足す（`proxy.ts`）
 - 2つの指示を本番の応答のヘッダーに並べる（`proxy.ts`）
 
 #### 退けた案

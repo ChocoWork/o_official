@@ -4,7 +4,7 @@
  *
  * 会員は createTestMember で作り、loginAsMember（確認コードの本物のログイン）で本物の Cookie を受け取る。
  * 窓口は Playwright の request（HTTP）で叩き、/auth/callback（消えた画面）だけ画面として開く。
- * - SEC-AUTH-022-AC-01 / SEC-AUTH-022-AC-02 は、現行のコードが満たさないと文書に書いてある（今は赤になるのが想定）。
+ * - SEC-AUTH-022-AC-01（本文）は波 1 で、SEC-AUTH-022-AC-02（/api/auth 配下の Cache-Control: no-store）は波 3 の ADR-0415 で満たすようになった（どちらも通るのが想定。以前の test.fail は外した）。
  * - SEC-AUTH-026-AC-01 は、/auth/callback の画面を消した（404）ことを確かめる（波 1-A、ADR-0412。以前は赤だった試験の反転）。
  * - SEC-AUTH-024-AC-01 の Secure は、AC の文面に無いので確かめない（本番ビルドの手元では付くが、別の AC に分ける）。
  * 通信記録にトークンが残らないよう trace は切る。失敗の報告にもトークンの値を出さない（真偽だけで比べる）。
@@ -232,7 +232,6 @@ for (const viewport of [viewports[2]]) {
       request,
       baseURL,
     }) => {
-      test.fail(true, 'SEC-AUTH-022 今のコードは満たさない（no-store は波 3 の proxy.ts で足す。docs/02_Requirements/areas/auth.md）');
       const origin = originOf(baseURL);
       const url = (path: string) => new URL(path, origin).toString();
       const anonymousHeaders = () => ({ origin, 'x-forwarded-for': uniqueSourceIp() });

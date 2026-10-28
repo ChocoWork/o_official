@@ -1,6 +1,6 @@
 # ABOUT の要件
 
-> 状態: 推定 | 確認日: 2026-10-25 | 対象: ABOUT（アバウトページ `/about`） | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: ABOUT（アバウトページ `/about`） | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -53,10 +53,10 @@ ABOUT の領域の要求・要件・受け入れ条件・派生要件を、追�
 | FR-ABOUT-007-icon-aria-and-image-alt | FR-ABOUT-007-AC-01 | アイコンが0個の今は空で通る |
 | FR-ABOUT-008-static-image-source | FR-ABOUT-008-AC-01 | 画像が0枚の今は空で通る |
 | FR-ABOUT-009-page-layout-and-meta-remaining | FR-ABOUT-004-AC-02・FR-ABOUT-005-AC-02・FR-ABOUT-007-AC-02・SEC-ABOUT-001-AC-01（3つの幅） | 画像が0枚の今は空で通る |
-| FR-ABOUT-010-security-http-contract | SEC-ABOUT-001-AC-02・002-AC-01・003-AC-01・003-AC-02・004-AC-01・004-AC-02・005-AC-01（HTTP だけ。幅に依らない） | SEC-ABOUT-003 の2つは今のコードでは赤 |
+| FR-ABOUT-010-security-http-contract | SEC-ABOUT-001-AC-02・002-AC-01・003-AC-01・003-AC-02・004-AC-01・004-AC-02・005-AC-01（HTTP だけ。幅に依らない） | SEC-ABOUT-003-AC-01・AC-02 は 2026-10-28 に直した（AC-02 の E2E の印は外した。E2E での実測の結果はまだ無い） |
 
 - 3つの幅（390・768・1280）で試すのは 004 と 009。010 は HTTP の応答だけを見るので幅の繰り返しは無い。ほかは desktop だけ
-- E2E で試さない受け入れ条件は SEC-ABOUT-006-AC-01・SEC-ABOUT-007-AC-01。前者は Supabase に届かない状態、後者は環境変数を外してビルドし直した状態が要り、共有の E2E の実行では作れない。代わりに単体テスト（`src/app/about/page.tsx` が読み出しを持たないこと、`getSiteUrl` の挙動）で確かめる
+- E2E で試さない受け入れ条件は SEC-ABOUT-006-AC-01・SEC-ABOUT-007-AC-01。前者は Supabase に届かない状態、後者は環境変数を外してビルドし直した状態が要り、共有の E2E の実行では作れない。代わりに単体テスト（`src/app/about/page.tsx` が読み出しを持たないこと、SEC-ABOUT-007-AC-01 は `tests/unit/lib/build-env-guard.test.ts` の `assertBuildEnv` と `tests/unit/next-config.test.ts` の読み込み。2026-10-28 に付けた）で確かめる
 - 派生要件 `DRV-ABOUT-` の動きを試す E2E は無い
 
 ## 要求
@@ -426,7 +426,9 @@ ABOUT ページの見出しの階層・題・説明が検索エンジンと支�
 
 `/about` の応答の CSP は、ABOUT が読まない `https://cdn.jsdelivr.net`・`https://readdy.ai`・`https://*.readdy.ai`・`https://placehold.co` を許さない。next/image の外の画像の許可（`next.config.ts` の `images.remotePatterns`）も、これらを許さない。頁ごとに CSP を分けるか全体を絞るかは決めていない。
 
-今のコードは満たさない。CSP（`src/proxy.ts`）は全部の頁に同じ1つの方針で、`cdn.jsdelivr.net`（style・style の要素・script・font）と readdy.ai・placehold.co（img）を許す。jsdelivr は `src/` の `.ts`・`.tsx`・`.css` のどこからも読まない（アイコンの字形は `src/styles/globals.css` で自前で読み込む）。`remotePatterns` も placehold.co・readdy.ai・public.readdy.ai を許すので、next/image を通すと `src` が同じオリジンの `/_next/image?url=…` になり、CSP を絞っても止まらない。なお `style-src` の `'unsafe-inline'` の理由の1つに、ABOUT が文字の大きさを `style` の属性で付けていることがある。
+今のコードは、CSP についても `remotePatterns` についても満たす（2026-10-28）。CSP は `src/proxy.ts` の `buildCsp` から `cdn.jsdelivr.net`・readdy.ai・placehold.co・`*.supabase.co` を外した（AC-01。CSP は全部の頁に同じ1つの方針で、`ADR-0108`）。`remotePatterns` は placehold.co・readdy.ai・public.readdy.ai・`*.supabase.co` を外し、本番は自分の Supabase の host 1 つの署名つきの道（`/storage/v1/object/sign/**`）だけにした（AC-02。`DD-HOME-004`）。jsdelivr は `src/` の `.ts`・`.tsx`・`.css` のどこからも読まない（アイコンの字形は `src/styles/globals.css` で自前で読み込む）。`remotePatterns` を絞る前は、next/image を通すと `src` が同じオリジンの `/_next/image?url=…` になり、CSP を絞っても止まらなかった。なお `style-src` の `'unsafe-inline'` の理由の1つに、ABOUT が文字の大きさを `style` の属性で付けていることがある。
+
+CSP から readdy.ai を外す前提として、部品の見本の頁 `/ui` が使っていた readdy.ai の画像 7 か所（carousel 3・商品カード 3・Avatar 1）は、2026-10-28 に `public/` の手元の画像（`/news1.png`〜`/news3.png`・`/placeholder.png`）へ替えた（`DD-HOME-004`）。
 
 #### SEC-ABOUT-003-AC-01 /about の CSP に使わない外のオリジンが無い
 
@@ -457,7 +459,7 @@ ABOUT ページの見出しの階層・題・説明が検索エンジンと支�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-ABOUT-004 |
-| 根拠 | 中身が誰にでも同じ ABOUT でも、初めての閲覧者への応答には閲覧者ごとのセッションの id が載り、どの応答にも要求ごとに変わる CSP の nonce が載るので、共有のキャッシュから別の閲覧者に配られないようにするため。Cookie を持って戻った閲覧者への応答には `Set-Cookie` が付かないので、`Set-Cookie` の有無で分けると nonce が焼き付く。今は Next の既定の動きに頼り、明示も試験も無い。全体の要件に当てはまる行は無い |
+| 根拠 | 中身が誰にでも同じ ABOUT でも、どの応答にも要求ごとに変わる CSP の nonce が載るので、共有のキャッシュから別の閲覧者に配られないようにするため。`Set-Cookie` の有無で分けると nonce が焼き付く。以前は初めての閲覧者への応答に閲覧者ごとのセッションの id も載っていたが、`session_id` は決済の道（`/cart`・`/checkout`・`/api/checkout`）だけで発行するようになり（SEC-PRIVACY-015、2026-10-28）、`/about` の応答には `Set-Cookie` が付かない。それでも nonce が載るので、`Set-Cookie` の有無に依らず共有のキャッシュに残らないことを確かめる。今は Next の既定の動きに頼り、明示も試験も無い。全体の要件に当てはまる行は無い |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | OWASP ASVS 4.0.3 V8.1.1（当てはめは推定） |
@@ -465,24 +467,24 @@ ABOUT ページの見出しの階層・題・説明が検索エンジンと支�
 
 `/about` の全部の応答（`Set-Cookie` の有無に関わらない）は、`Cache-Control` に `private` か `no-store` を持つ。今のコードは Next の既定の動きで満たす見込みだが、本番ビルドの応答を測っておらず、試すテストも無い。
 
-#### SEC-ABOUT-004-AC-01 Cookie を付けた /about の応答が共有のキャッシュに残らない指定を持つ
+#### SEC-ABOUT-004-AC-01 Cookie を持たない要求の /about の応答が共有のキャッシュに残らない指定を持つ
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-ABOUT-004 |
-| 根拠 | Next の既定の動きに頼っている守りが、本番ビルドで実際に効いていることを確かめるため |
+| 根拠 | Next の既定の動きに頼っている守りが、本番ビルドで実際に効いていることを確かめるため。`Set-Cookie` が付くかどうかは確かめない（付かないことは SEC-PRIVACY-015 が持つ。2026-10-28 に直した） |
 | 状態 | 推定 |
 | 確かめ方 | E2E（Cookie を持たない要求で本番ビルドの `/about` を要求する） |
 | 出どころ | 実装から推定 |
 
-Cookie を持たない要求で `/about` を要求した時、応答に `Set-Cookie` があり、`Cache-Control` に `private` か `no-store` が含まれ、`public` と `s-maxage` が含まれないこと。
+Cookie を持たない要求で `/about` を要求した時、`Cache-Control` に `private` か `no-store` が含まれ、`public` と `s-maxage` が含まれないこと。`Set-Cookie` の有無は問わない。
 
 #### SEC-ABOUT-004-AC-02 Cookie を持つ要求への /about の応答も共有のキャッシュに残らない指定を持つ
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-ABOUT-004 |
-| 根拠 | `Set-Cookie` が付かない応答でも CSP の nonce が載るので、戻ってきた閲覧者への応答が共有のキャッシュに残って nonce が使い回されないことを確かめるため |
+| 根拠 | `Set-Cookie` が付かない応答でも CSP の nonce が載るので、戻ってきた閲覧者への応答が共有のキャッシュに残って nonce が使い回されないことを確かめるため。`/about` は `session_id` を発行しないので、試験は 32 桁の 16 進の値を自分で `Cookie` に付けて要求する（2026-10-28） |
 | 状態 | 推定 |
 | 確かめ方 | E2E（セッションの Cookie を付けた要求で本番ビルドの `/about` を要求する） |
 | 出どころ | 実装から推定（`src/proxy.ts`） |
@@ -546,13 +548,13 @@ Cookie を持たない要求で `/about` を要求した時、応答に `Set-Coo
 | 上位 | THR-ABOUT-005 |
 | 根拠 | 本番で環境変数の設定が漏れても、共有のカードの画像が手元の URL や意図しないデプロイごとの URL を指して壊れたまま公開されないようにするため。SEC-ABOUT-005 は見出しの偽りを防ぐ要件で、設定が無い時の振る舞いは別に決める必要がある（このため分けた） |
 | 状態 | 推定 |
-| 確かめ方 | E2E・レビュー |
+| 確かめ方 | 単体テスト・レビュー |
 | 出どころ | ASVS 未対応付け。実装から推定 |
 | 優先度 | SHOULD |
 
 サイトの URL の環境変数が1つも無い時に、`og:image` の絶対の URL の基点が黙って `http://localhost:3000` にならない（警告を出す、または本番では起動を止める）。`NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_BASE_URL`・`BASE_URL` が無く `NEXT_PUBLIC_VERCEL_URL` だけがある時も、基点がデプロイごとの `*.vercel.app` にならない。
 
-今のコードは満たさない。`getSiteUrl`（`src/lib/redirect.ts`）は環境変数が1つも無いと、警告なく既定の手元の URL を返す。上の3つが無く `NEXT_PUBLIC_VERCEL_URL` だけがあると（Vercel が自動で入れる場合）、そのデプロイごとの URL を返す。どちらも、`src/app/layout.tsx` の `metadataBase` がそれを基点にする。本番の環境変数は未確認（本番のアプリは未デプロイ）。
+今のコードは満たす（2026-10-28 に直した）。本番のビルド（`VERCEL_ENV=production`）は、`NEXT_PUBLIC_SITE_URL` と `NEXT_PUBLIC_SUPABASE_URL` のどちらかが無ければ `next.config.ts` の先頭の確かめ `assertBuildEnv`（`src/lib/build-env-guard.ts`）がビルドを落とす（`ADR-0206`、`DD-ABOUT-002`）。本番は `NEXT_PUBLIC_SITE_URL` が必ず在るので、`getSiteUrl`（`src/lib/redirect.ts`）はそれを最初に読み、手元の URL や `NEXT_PUBLIC_VERCEL_URL` には落ちない。`getSiteUrl` 自体は変えていない（`VERCEL_ENV` が production でない手元・preview・E2E の本番ビルドは、無ければ従来どおり既定の手元の URL になる。`NODE_ENV` で見ると E2E の本番ビルドも止まるので使わない）。`NEXT_PUBLIC_VERCEL_URL` の読み方を直すかは別の判断（設計 R9-6）。同じ確かめが、`NEXT_PUBLIC_SUPABASE_URL` と `SUPABASE_URL` が別の origin を指す設定も、環境に依らず落とす（署名つきの画像の host と、CSP・`remotePatterns` が許す host を 1 つに揃えるため。SEC-HOME-017、`ADR-0316`）。本番のアプリは未デプロイで、初回の配備の前に Vercel の Production に 2 変数を設定する（`docs/06_Operations/secrets.md`）。
 
 #### SEC-ABOUT-007-AC-01 設定が無い時に OG の URL が手元の URL にならない
 
@@ -561,10 +563,12 @@ Cookie を持たない要求で `/about` を要求した時、応答に `Set-Coo
 | 上位 | SEC-ABOUT-007 |
 | 根拠 | 設定が漏れた状態を再現して、手元の URL が公開の応答に出ないことを確かめるため |
 | 状態 | 推定 |
-| 確かめ方 | 単体テスト（E2E は不可。`NEXT_PUBLIC_*` はビルドで埋まり、E2E の起動が `NEXT_PUBLIC_SITE_URL` を固定する。`getSiteUrl` を環境変数を外して呼ぶ） |
+| 確かめ方 | 単体テスト（E2E は不可。`NEXT_PUBLIC_*` はビルドで埋まり、E2E の起動が `NEXT_PUBLIC_SITE_URL` を固定する。`tests/unit/lib/build-env-guard.test.ts` が `assertBuildEnv` に環境変数を与え、`tests/unit/next-config.test.ts` が `next.config.ts` の読み込みで落ちることを見る） |
 | 出どころ | 実装から推定 |
 
-サイトの URL の環境変数を1つも設定せずに起動して `/about` を要求した時、`og:image` の URL のホストが `localhost` でないこと。または起動の時点で警告かエラーが出ること。本番で設定した本番のドメインを与えて起動した時は、`og:image` の URL のホストがそのドメインと同じであること。
+サイトの URL の環境変数を1つも設定せずに本番のビルド（`VERCEL_ENV=production`）をした時、ビルドが `NEXT_PUBLIC_SITE_URL` を名指しして落ちること（落とす文に URL の値を載せない）。`NEXT_PUBLIC_SUPABASE_URL` が無い時も同じく落ちること。2 つとも設定した時と、`VERCEL_ENV` が production でない時（`NODE_ENV=production` だけの E2E の本番ビルドを含む）は落ちないこと。本番で設定した本番のドメインを与えて起動した時は、`og:image` の URL のホストがそのドメインと同じであること。
+
+判断: 起動の時点の警告でなくビルドを落とす（`ADR-0206`）。最初の試験は 2026-10-28 に単体で付けた（`DD-ABOUT-002`）。E2E の `og:image` のホストの確かめ（上の最後の文）は、共有の E2E の実行では環境変数を外してビルドし直せないので付けていない。
 
 ## 派生要件
 

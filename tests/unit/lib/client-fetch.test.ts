@@ -330,6 +330,29 @@ describe('clientFetch', () => {
       window.removeEventListener(SESSION_EXPIRED_EVENT, listener);
     });
 
+    // 認証の応答は no-store（SEC-AUTH-022-AC-02）。本文を読まずに捨てるとブラウザが要求を開いたまま残すので、結果に関わらず読み切る
+    test.each([
+      ['200', { ok: true, status: 200 }],
+      ['401', { ok: false, status: 401 }],
+      ['429', { ok: false, status: 429 }],
+    ])('/api/auth/refresh が%sでも本文を読み切って要求を閉じる', async (_label, base) => {
+      const { refreshSessionOnce } = loadFreshClientFetch();
+      const arrayBuffer = jest.fn().mockResolvedValue(new ArrayBuffer(0));
+      (global.fetch as jest.Mock).mockResolvedValueOnce({ ...base, headers: { get: () => null }, arrayBuffer });
+
+      await refreshSessionOnce();
+
+      expect(arrayBuffer).toHaveBeenCalledTimes(1);
+    });
+
+    test('/api/auth/refresh の本文の読み切りに失敗しても結果は変わらない', async () => {
+      const { refreshSessionOnce } = loadFreshClientFetch();
+      const arrayBuffer = jest.fn().mockRejectedValue(new TypeError('body stream already read'));
+      (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, status: 200, arrayBuffer });
+
+      await expect(refreshSessionOnce()).resolves.toBe('refreshed');
+    });
+
     test('/api/auth/refresh の通信が失敗したら unavailable を返す', async () => {
       const { refreshSessionOnce } = loadFreshClientFetch();
       (global.fetch as jest.Mock).mockRejectedValueOnce(new TypeError('Failed to fetch'));

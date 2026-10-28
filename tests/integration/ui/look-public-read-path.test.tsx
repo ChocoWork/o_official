@@ -208,8 +208,8 @@ const LOOK_ITEM_ROWS: Row[] = [
 ];
 
 const ITEM_ROWS: Row[] = [
-  { id: 10, category: 'COAT', name: 'Wool coat', price: 48000, image_url: 'arc-look-coat.jpg', status: 'published' },
-  { id: 11, category: 'BAG', name: 'Secret bag', price: 12000, image_url: 'arc-look-bag.jpg', status: 'private' },
+  { id: 10, category: 'COAT', name: 'Wool coat', price: 48000, image_url: 'items/arc-look-coat.jpg', status: 'published' },
+  { id: 11, category: 'BAG', name: 'Secret bag', price: 12000, image_url: 'items/arc-look-bag.jpg', status: 'private' },
 ];
 
 function queriesOn(table: string): RecordedQuery[] {
@@ -265,7 +265,7 @@ describe('ARC-LOOK-001 public read path', () => {
 
   it('ARC-LOOK-001 service role の client は DB を読まず、LOOK と商品の画像の署名だけに使う', async () => {
     // 商品の画像の署名は道筋ごとに使い回されるので、ほかの試しと重ならない道筋にして署名を必ず通す
-    mockDb.tables.items = [{ ...ITEM_ROWS[0], image_url: 'arc-look-coat-signing.jpg' }, ITEM_ROWS[1]];
+    mockDb.tables.items = [{ ...ITEM_ROWS[0], image_url: 'items/arc-look-coat-signing.jpg' }, ITEM_ROWS[1]];
 
     await renderLookPage();
 
@@ -397,7 +397,8 @@ describe('ARC-LOOK-001 public read path', () => {
   it('ARC-LOOK-001 詳細のメタ情報は公開済みの1件を id で取り、非公開・無い・数でない id は見つからない題にする', async () => {
     const found = await LookDetailPageModule.generateMetadata({ params: Promise.resolve({ id: '2' }) });
     expect(found.title).toBe('Newer theme | LOOK | Le Fil des Heures');
-    expect(found.openGraph.images).toEqual([{ url: 'https://signed.test/look-images/looks/2026/newer-a.jpg?exp=3600' }]);
+    // 共有画像は署名つき URL ではなく、公開の LOOK だけを返す /look/[id]/og（SEC-LOOK-006）
+    expect(found.openGraph.images).toEqual([{ url: '/look/2/og' }]);
 
     const [byIdQuery] = queriesOn('looks');
     expect(byIdQuery.calls).toEqual([

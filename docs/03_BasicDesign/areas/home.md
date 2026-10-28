@@ -1,6 +1,6 @@
 # HOME の構造設計
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: HOME（ホーム `/` のヒーロー・区画の並び・ABOUT の区画・VIEW ALL のボタン・ヒーローの動き） | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: HOME（ホーム `/` のヒーロー・区画の並び・ABOUT の区画・VIEW ALL のボタン・ヒーローの動き） | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -43,9 +43,9 @@ HOME の領域の構成・画面・画面遷移・状態遷移を、追跡でき
 | --- | --- |
 | SEC-HOME-002 | 今のコードが満たさない。公開の読みの client の種類は ARC-HOME-002 に今の動きを書いた |
 | SEC-HOME-003 | 商品の表 `items` の読みの RLS の aal2 の話で、表は ITEM の物。HOME の構造に無い。書き込みの側（AC-02）は `DATA-HOME-001` の権限で満たす。`looks`・`look_items`・`stockists` の分は LOOK・STOCKIST の SEC が持つ |
-| SEC-HOME-006 | 一部だけ満たす。在庫の側は ARC-HOME-002 が持つが、画像の署名の側は ITEM の `src/lib/storage/item-images.ts` の作りで HOME の構造に無い |
-| SEC-HOME-007 | 商品の画像の署名の期限は ITEM の `src/lib/storage/item-images.ts` が決める。HOME の構造に無い |
-| SEC-HOME-009・017 | 今のコードが満たさない。CSP と画像の最適化の許可は、共有の `src/proxy.ts`・`next.config.ts` が全部の頁に1つで持つ（ARC-HOME-003） |
+| SEC-HOME-006 | 満たす（画像の署名の側は 2026-10-28）。在庫の側は ARC-HOME-002 が持つ。画像の署名の側は ITEM の `src/lib/storage/item-images.ts` の作り（共有の `parseOwnObjectPath`、失敗は `null`。DD-SEARCH-011、ADR-0316）で、HOME の構造に無い |
+| SEC-HOME-007 | 満たす（2026-10-28）。商品の画像の署名の期限は ITEM の `src/lib/storage/item-images.ts` が決める（既定3600秒。ADR-0316）。HOME の構造に無い |
+| SEC-HOME-009・017 | 009 の CSP の許可は満たす（2026-10-28。AC-02 のブラウザの `eval` の違反は、ブラウザ側の zod を `jitless` にして無くした。下の「ブラウザ側の zod」。本番ビルドでの実測は未確認）。017 の画像の最適化の許可（`remotePatterns`）も満たす（2026-10-28。下の「画像の中継」）。CSP と画像の最適化の許可は、共有の `src/proxy.ts`・`next.config.ts` が全部の頁に1つで持つ（ARC-HOME-003） |
 | SEC-HOME-011・012・019 | 廃止。検索の窓の話で、SEARCH の SEC-SEARCH-006・010・021 が持つ |
 | SEC-HOME-015 | 取得の失敗の記録と、端末の側の検索の窓の記録の話。記録の作りは各領域の取得の関数と SEARCH の `SearchHomePreview` にあり、HOME の構造に無い |
 | SEC-HOME-013 | 商品の取る件数の部分は 2026-10-26 に満たした（8件。SCR-HOME-004）。署名つき URL を残す表（`signedUrlCache`）の件数の上限と、大量の表示への守り（中継の回数の制限）は満たさないまま残す |
@@ -147,7 +147,7 @@ sequenceDiagram
 
 - 管理者の session でホームを開くと、商品と取扱店は管理者の権限の RLS で読まれ、アプリの `status='published'` の絞りだけが下書きを外す（推定。管理者の RLS の中身は確かめていない。SEC-HOME-002）
 - 在庫は有無だけを渡し、実数は渡さない見込み（SEC-HOME-006 の在庫の側。実数を HTML に出さないかは格子の部品の話で、確かめていない）
-- 画像の署名の道筋の確かめと、署名に失敗した時の扱い（SEC-HOME-006 の署名の側）は、ITEM の `src/lib/storage/item-images.ts` の作り（SEC-HOME-006）。LOOK のカードの関連商品の画像も、`hydrateLooks` がこの署名を通す
+- 画像の署名の道筋の確かめと、署名に失敗した時の扱い（SEC-HOME-006 の署名の側）は、ITEM の `src/lib/storage/item-images.ts` の作り（SEC-HOME-006）。道筋にできない値と署名の失敗は `null` を返し、ホームのカードは画像の無いカードで描く（2026-10-28。ADR-0316）。LOOK のカードの関連商品の画像も、`hydrateLooks` がこの署名を通す
 - `hydrateLooks` は service role の client を try の外で作るので、鍵が無いと LOOK の取得も例外を投げる（SEC-HOME-014）
 - ホームで下書きが出ないことを試すテストは無い（SEC-HOME-001-AC-01・02 は E2E が未作成）
 
@@ -155,18 +155,20 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SEC-HOME-008、SEC-HOME-010、FREQ-280-REQ-01、FREQ-280-REQ-02、ADR-0104、NFR-SEC-001（範囲外）、NFR-SEC-003（範囲外） |
+| 上位 | SEC-HOME-008、SEC-HOME-009、SEC-HOME-010、FREQ-280-REQ-01、FREQ-280-REQ-02、ADR-0104、ADR-0108、NFR-SEC-001（範囲外）、NFR-SEC-003（範囲外） |
 | 根拠 | 守りの見出しを頁ごとに書くと付け忘れが出るため、全部の道に効く `src/proxy.ts` の1か所で付け、ホームは自分では重ねない（SEC-HOME-010。全体の NFR-SEC-001 の HSTS と NFR-SEC-003 の CSP をホームに当てはめた形）。中身の文は React の逃がしで字として描き、CSP の nonce で差し込んだスクリプトを止める2段にする（SEC-HOME-008）。`TextReveal` と区画の字の大きさは style の属性で当てるので、属性だけを `'unsafe-inline'` で許し、style 要素・link 要素は締めたままにする（FREQ-280、ADR-0104） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/proxy.ts`、`src/app/layout.tsx`、`src/app/page.tsx`・`src/components/animations/TextReveal.tsx` の全体） |
 
 - 道: proxy の対象は全部の道（`src/proxy.ts` の `config.matcher`）。`/` にも効く
-- CSP: script は要求ごとの nonce で許す。`style-src` は `'self'`・`'unsafe-inline'`・CDN（`src/proxy.ts` の `buildCsp`）、`style-src-elem` は `'self'` と CDN だけで、開発のサーバーの時だけ `'unsafe-inline'` を足す。`frame-ancestors 'none'`
+- CSP: script は要求ごとの nonce で許す。`style-src` は `'self'`・`'unsafe-inline'`（`src/proxy.ts` の `buildCsp`）、`style-src-elem` は `'self'` だけで、開発のサーバーの時だけ `'unsafe-inline'` を足す。外の CDN（jsDelivr）は許さない（2026-10-28）。`frame-ancestors 'none'`
 - 見出し: `Referrer-Policy: no-referrer`、`X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Strict-Transport-Security`（`src/proxy.ts` の `proxy`）
 - nonce と描き方: nonce が要求ごとに変わるので、共有の layout が静的な生成をやめて毎回サーバーで描く（`src/app/layout.tsx`）。ホームの頁の結果のキャッシュが無いのはこのため
 - 生の HTML: `page.tsx`・`HomeSectionViewAll.tsx`・`TextReveal.tsx` に生の HTML を描く書き方は無い。中身の文（商品名・記事の題など）は各領域の格子の部品が描く（その部品の中は確かめていない）
-- CSP の広さ: 全部の頁に同じ1つの方針で、外の場所の許可もそのまま共有する（SEC-HOME-009）
+- CSP の広さ: 全部の頁に同じ1つの方針で、許可先は自分のプロジェクトの Supabase の origin 1 つ・Stripe（`js.stripe.com`・`*.js.stripe.com`・`hooks.stripe.com`・`api.stripe.com` ほか）・Turnstile・地図の枠だけ。Stripe を全頁に残すのは、CSP が `next/link` の遷移で変わらず、`/cart` から `Link` で `/checkout` へ進むと `/cart` の CSP のままになるため（SEC-HOME-009、`ADR-0108`、`DD-HOME-004`）
+- 画像の中継: `/_next/image` が取りに行ってよい先は、`next.config.ts` の `images.remotePatterns` が決める（共有の設定。全部の頁に1つ）。本番のビルドは、ビルド時の `NEXT_PUBLIC_SUPABASE_URL` の host 1 つの `/storage/v1/object/sign/**`（署名つきの道）だけ。バケットは非公開なので `public` の道は入れず、`authenticated` の道は `next/image` が認証の見出しを付けられないので入れない。`placehold.co`・`readdy.ai`・`public.readdy.ai`・`*.supabase.co`（全プロジェクト）は許さない。手元の Supabase につないだビルド（E2E）だけ、手元の枝（`dangerouslyAllowLocalIP` と `/storage/v1/object/**`）を足す。最適化した画像のキャッシュ `minimumCacheTTL` は 3600 秒で、画像の署名つき URL の期限（3600 秒）を超えない。host は CSP の `img-src` が許す自分のプロジェクトの origin と同じ `NEXT_PUBLIC_SUPABASE_URL` から決める（2つの URL の origin が違う設定は、`next.config.ts` の `assertBuildEnv` がビルドで落とす。`ADR-0206`、`DD-ABOUT-002`）（SEC-HOME-017、`ADR-0108`、`DD-HOME-004`）
+- ブラウザ側の zod: `src/instrumentation-client.ts`（共有の 1 ファイル）が `z.config({ jitless: true })` だけを呼ぶ。Next 16 が全頁のハイドレーションより前にブラウザで 1 回実行するので、zod を使う入口ごとの import は要らない。zod 4 がスキーマを作る時に走らせる `new Function("")` の探りが無くなり、`unsafe-eval` を許さない CSP でも違反が記録されない（SEC-HOME-009-AC-02、`DD-HOME-004`）。サーバー側は読まないので速度は変わらない
 - 試験: `FR-HOME-018` の5つ目が `style-src-elem` と style 属性の効き目（FREQ-280-AC-01・02）を試す。守りの見出しを `/` で試す E2E は無い
 
 ### ARC-HOME-004 題・説明・OG はページの関数が固定の値で返し、ヒーロー画像は描く時に先読みを頼む

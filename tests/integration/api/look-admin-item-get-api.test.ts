@@ -192,6 +192,9 @@ describe('GET /api/admin/looks/[id]（管理の LOOK の1件の取り出し）',
     freezeDateOnly();
     jest.clearAllMocks();
     delete process.env.ALERT_AUDIT_URL;
+    // 信頼する origin は自分のプロジェクト 1 つだけ（parseOwnObjectPath）
+    delete process.env.SUPABASE_URL;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://x.supabase.co';
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   });
@@ -277,7 +280,7 @@ describe('GET /api/admin/looks/[id]（管理の LOOK の1件の取り出し）',
     expect((await nullData.json()).data.linkedItemIds).toEqual([]);
   });
 
-  test('API-LOOK-003 古い公開 URL の画像は置き場の道筋に直して署名し、署名に失敗した画像は元の値のまま返す', async () => {
+  test('API-LOOK-003 古い公開 URL の画像は置き場の道筋に直して署名し、署名に失敗した画像は元の値を返さず落とす', async () => {
     const legacy = 'https://x.supabase.co/storage/v1/object/public/look-images/looks/2025-01-01/old.jpg';
     setup({
       tables: lookTables({ look: { data: { ...lookRow, image_urls: [legacy, 'looks/broken.jpg'] }, error: null } }),
@@ -292,7 +295,7 @@ describe('GET /api/admin/looks/[id]（管理の LOOK の1件の取り出し）',
     const res = await GET(makeRequest(), ctx());
 
     expect(res.status).toBe(200);
-    expect((await res.json()).data.image_urls).toEqual(['https://signed.example/looks/2025-01-01/old.jpg', 'looks/broken.jpg']);
+    expect((await res.json()).data.image_urls).toEqual(['https://signed.example/looks/2025-01-01/old.jpg']);
     expect(client.signed.map((s) => s.path)).toEqual(['looks/2025-01-01/old.jpg', 'looks/broken.jpg']);
   });
 

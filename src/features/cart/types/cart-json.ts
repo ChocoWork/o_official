@@ -1,5 +1,8 @@
 export const CART_OPTION_NAMES = { color: 'カラー', size: 'サイズ' } as const;
 
+/** 画像の署名ができない明細の代わりの絵。next/image は空の src で落ちるので、'' や元の URL は入れない */
+export const CART_PLACEHOLDER_IMAGE = '/placeholder.png';
+
 export type CartJsonLine = {
   key: string;
   id: number;

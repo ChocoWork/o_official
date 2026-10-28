@@ -1,6 +1,6 @@
 # NEWS の要件
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: NEWS（ニュース一覧 `/news`・詳細 `/news/[id]`・ホームの NEWS の区画・管理のニュース） | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: NEWS（ニュース一覧 `/news`・詳細 `/news/[id]`・ホームの NEWS の区画・管理のニュース） | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -1657,7 +1657,7 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 出どころ | ASVS 未対応付け。`docs/05_Quality/reviews/security/security_review_news_id.md:51` |
 | 優先度 | SHOULD |
 
-画像の署名つき URL の期限は1時間以下とする。最適化した画像のキャッシュの長さも、署名の期限を超えないように設定する。期限は今のコードが満たす（`src/lib/storage/news-images.ts` の署名の期限の定数）。キャッシュの長さは設定が無い。
+画像の署名つき URL の期限は1時間以下とする。最適化した画像のキャッシュの長さも、署名の期限を超えないように設定する。期限は今のコードが満たす（`src/lib/storage/news-images.ts` の署名の期限の定数）。キャッシュの長さも今のコードが満たす（`next.config.ts` の `images.minimumCacheTTL` を 3600 秒、AC-02）。ただし署名つき URL は残りが期限の半分以上ある間は使い回すので、最適化した画像は URL の期限より最大でおよそ 1800 秒長く残りうる（AC-02 が見るのはキャッシュの `max-age` が 3600 以下であること。2026-10-28）。
 
 ### SEC-NEWS-004-AC-01 署名つき URL の期限が1時間以下
 
@@ -1682,6 +1682,8 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 出どころ | 実装から推定 |
 
 管理の一覧の画像の `/_next/image` の応答の `Cache-Control` の `max-age` が3600以下であること。
+
+今のコードは満たす（2026-10-28）。`next.config.ts` の `images.minimumCacheTTL` を 3600 秒にした（`DD-HOME-004`、`ADR-0108`）。指定が無い時の既定（4 時間）が署名の期限より長かった。上流の `Cache-Control`（手元の見本は `cacheControl` を指定せずに上げるので Supabase の既定の 3600 秒）と `minimumCacheTTL` の大きいほうが使われるので、どちらも 3600 秒で、応答は 3600 になる見込み。E2E の印は外した。E2E での実測の結果はまだ無い。
 
 ### SEC-NEWS-005 公開の応答に、画面で使わない画像の道筋を載せない
 
@@ -1776,7 +1778,7 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 出どころ | ASVS 未対応付け。`docs/05_Quality/reviews/security/security_review_news.md:90` |
 | 優先度 | MUST |
 
-署名するのは、道筋が `news/` の下にあり（`..` を含まない）、URL の時はホストが自分の Supabase のプロジェクトである物だけ。外れた物は署名しない。公開・管理・検索の全部の署名に当てる。公開の道は署名しなくなった（SEC-NEWS-005）ので、残る署名の経路（検索と管理）の道筋の絞りは今のコードは満たさない（波 1-C）。
+署名するのは、道筋が `news/` の下の安全な文字（英数字で始まる英数字と `.`・`_`・`-` の階層。`..`・空白・二重の `/` を含まない）で、URL の時は origin が自分の Supabase のプロジェクト（`NEXT_PUBLIC_SUPABASE_URL`、無ければ `SUPABASE_URL` の origin 1 つ）で置き場が `news-images` である物だけ。外れた物は署名しない。素の道筋の先頭の `/` は 1 つだけ外して通す。公開・管理・検索の全部の署名に当てる。公開の道は署名しなくなった（SEC-NEWS-005）ので、署名の経路は管理と検索になる。2026-10-28 に満たした（共有の `parseOwnObjectPath`（DD-SEARCH-011）を `news-images.ts` の `signNewsImageUrl` が署名の前に通す。管理の後始末の `isOwnNewsImagePath` も共有の `isSafeObjectPath` に委譲する。ADR-0316）。
 
 ### SEC-NEWS-007-AC-01 news/ の外の道筋には署名しない
 
@@ -1788,7 +1790,7 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 確かめ方 | E2E（手元の Supabase で記事の `image_url` を `other/x.png` に書き換え、`/api/news` を読む） |
 | 出どころ | 実装から推定 |
 
-`image_url` が `news/` の外の記事について、`/api/news` の応答に署名つき URL が含まれないこと。公開の道は署名しない（SEC-NEWS-005）ので、この確かめは `/api/news` から `image_url` を外した後は署名の無いことを読むだけになる。署名の関数が道筋を絞る確かめは、検索と管理の署名を直す波 1-C で単体テストに移す。
+`image_url` が `news/` の外の記事について、`/api/news` の応答に署名つき URL が含まれないこと。公開の道は署名しない（SEC-NEWS-005）ので、この E2E は `/api/news` から `image_url` を外した後は署名の無いことを読むだけになる。署名の関数が道筋を絞る確かめは、2026-10-28 に単体・結合の試験に置いた（`tests/unit/lib/storage/news-images.test.ts` が `news/` の外・`..`・二重の `/`・空白を断り、`tests/integration/api/news-image-signing.test.ts`・`news-admin-item-get-api.test.ts` が管理の応答で `image_url` が `null` になり署名を呼ばないことを見る）。
 
 ### SEC-NEWS-007-AC-02 別のホストの URL には署名しない
 
@@ -1800,7 +1802,7 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 確かめ方 | E2E（記事の `image_url` を別のホストの `/storage/v1/object/public/news-images/news/x.png` に書き換え、`/api/news` を読む） |
 | 出どころ | 実装から推定 |
 
-別のホストの URL の記事について、`/api/news` の応答に自分の置き場の署名つき URL が含まれないこと。公開の道は署名しない（SEC-NEWS-005）ので、`/api/news` では署名の無いことを読むだけになる。署名の関数が別のホストを断る確かめは、検索と管理の署名を直す波 1-C で単体テストに移す。
+別のホストの URL の記事について、`/api/news` の応答に自分の置き場の署名つき URL が含まれないこと。公開の道は署名しない（SEC-NEWS-005）ので、この E2E は `/api/news` では署名の無いことを読むだけになる。署名の関数が別のホスト・別の置き場の URL を断る確かめは、2026-10-28 に単体・結合の試験に置いた（`tests/unit/lib/storage/news-images.test.ts`、`tests/integration/api/news-image-signing.test.ts`）。
 
 ### SEC-NEWS-008 署名に失敗した時は閉じる側へ倒れ、失敗を記録に残す
 
@@ -1813,7 +1815,7 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 出どころ | OWASP ASVS 4.0.3 V4.1.5。`docs/05_Quality/reviews/security/security_review_news_id.md:44,96-97` |
 | 優先度 | MUST |
 
-道筋にできない値と署名の失敗は、元の値ではなく `null` を返す。失敗を、道筋の全部や鍵を含まない形で記録に残す。公開の道は署名しなくなった（SEC-NEWS-005）ので、残る署名の経路（検索と管理）の閉じる側への倒れは今のコードは満たさない（波 1-C）。
+道筋にできない値と署名の失敗は、元の値ではなく `null` を返す。失敗を、道筋の全部や鍵を含まない形で記録に残す。公開の道は署名しなくなった（SEC-NEWS-005）ので、署名の経路は管理と検索になる。2026-10-28 に満たした（`signNewsImageUrl` は道筋にできない値と署名の失敗で `null` を返し、`signNewsImageFields` は `image_url: null` を返す。検索は `imageUrl: null`。記録は種類 `invalid_path`・`sign_failed` だけで、道筋・URL・Supabase の誤りの文を含めない。ADR-0316）。管理の画面は `image_url` が `null` の記事を代わりの画像（`/placeholder.png`）で描く。署名が例外を投げた時は従来どおり窓口の失敗になる。
 
 ### SEC-NEWS-008-AC-01 署名の失敗で元の値を返さない
 
@@ -1825,7 +1827,7 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 確かめ方 | E2E（手元の置き場に無い道筋を持つ記事を入れ、`/api/news` を読む） |
 | 出どころ | 実装から推定 |
 
-署名できない記事について、`/api/news` の応答の `image_url` が null であり、DB の値と同じ文字が含まれないこと。公開の道は `image_url` を返さなくなった（SEC-NEWS-005）ので、`/api/news` では DB の値と同じ文字が含まれないことを読む。署名の失敗で null を返す確かめは、検索と管理の署名を直す波 1-C で行う。
+署名できない記事について、`/api/news` の応答の `image_url` が null であり、DB の値と同じ文字が含まれないこと。公開の道は `image_url` を返さなくなった（SEC-NEWS-005）ので、この E2E は `/api/news` では DB の値と同じ文字が含まれないことを読む。署名の失敗で `null` を返す確かめは、2026-10-28 に単体・結合の試験に置いた（`tests/unit/lib/storage/news-images.test.ts`、管理の一覧と1件の応答は `tests/integration/api/news-image-signing.test.ts`・`news-admin-item-get-api.test.ts`、検索の応答は `tests/integration/api/search-image-signing.test.ts`）。
 
 ### SEC-NEWS-008-AC-02 署名の失敗が記録に1件残る
 
@@ -1837,7 +1839,7 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 確かめ方 | 単体テスト（署名の関数の失敗の道で、記録の出口に渡る引数を捕まえる）。E2E のサーバーは別プロセスで記録を読めないので E2E にしない |
 | 出どころ | 実装から推定 |
 
-署名できない記事を1回読んだ時、署名の失敗の記録が1件出ており、その記録に service role の鍵が含まれないこと。
+署名できない記事を1回読んだ時、署名の失敗の記録が1件出ており、その記録に service role の鍵が含まれないこと。2026-10-28 に単体テストで確かめた（`tests/unit/lib/storage/news-images.test.ts`。`console.warn` の引数が `[news-images] invalid_path` と `[news-images] sign_failed` の固定の語だけで、道筋・URL・Supabase の誤りの文を含まない）。E2E は無い（サーバーが別プロセスで記録を読めない）。
 
 ### SEC-NEWS-009 公開の読み出しに件数の上限と回数の制限を付ける
 
@@ -2441,7 +2443,7 @@ AC-01 の失敗の時のサーバーの記録に、Supabase の鍵・利用者�
 | 出どころ | OWASP ASVS 4.0.3 V12.6.1 |
 | 優先度 | SHOULD |
 
-`next.config.ts` の `remotePatterns` の Supabase の行は、自分のプロジェクトのホストと、使う置き場の道だけを許す。今のコードは満たさない。`next.config.ts` は範囲外の共有の設定なので、NEWS 以外の画像も同じ設定を通る。
+`next.config.ts` の `remotePatterns` の Supabase の行は、自分のプロジェクトのホストと、使う置き場の道だけを許す。今のコードは満たす（2026-10-28）。本番は、ビルド時の `NEXT_PUBLIC_SUPABASE_URL` の host 1 つの `/storage/v1/object/sign/**`（署名つきの道）だけで、`*.supabase.co` と `public`・`authenticated` の道は許さない（`DD-HOME-004`、`ADR-0108`）。`next.config.ts` は範囲外の共有の設定なので、NEWS 以外の画像も同じ設定を通る。
 
 ### SEC-NEWS-023-AC-01 別のプロジェクトの画像を最適化に通さない
 
@@ -2587,7 +2589,7 @@ lg 以上で左のサイドバーを sticky にし、上の位置をヘッダー
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/code/2026-04-18-news-id-security-review.md:45-48`、実装から推定 |
 
-署名の期限は 3600 秒。保存の道・旧 public・sign・authenticated の URL から道を取り出す。道にできない時と署名に失敗した時の扱いは SEC-NEWS-008 に書く（`src/lib/storage/news-images.ts` の署名の関数）。
+署名の期限は 3600 秒（検索も同じ値を明示して渡す）。保存の道・自分のプロジェクトの旧 public・sign・authenticated の URL から道を取り出す（署名の前は共有の `parseOwnObjectPath`。管理の後始末は `extractNewsImageObjectPath`）。道にできない時と署名に失敗した時の扱いは SEC-NEWS-007・008 に書く（`src/lib/storage/news-images.ts` の署名の関数）。
 
 ### DRV-NEWS-009 管理の入力の長さの上限と日付の形
 

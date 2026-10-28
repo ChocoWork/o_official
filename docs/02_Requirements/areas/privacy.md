@@ -1,6 +1,6 @@
 # PRIVACY の要件
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: PRIVACY（プライバシーポリシー `/privacy`） | 基準コミット: `4e84d5c5`
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: PRIVACY（プライバシーポリシー `/privacy`） | 基準コミット: `4e84d5c5`
 
 ## 概要
 
@@ -14,7 +14,7 @@ PRIVACY の領域の要求・要件・受け入れ条件・派生要件を、追
 | 受け入れ条件 | 6 | 既存の `FREQ-100-AC-01`・`02`、`FREQ-101-AC-01`・`02`、新しい `FR-PRIVACY-001-AC-01`・`FR-PRIVACY-002-AC-01` |
 | 派生要件 | 4 | `DRV-PRIVACY-001`〜`004` |
 | セキュリティ要件 | 19 | `SEC-PRIVACY-001`〜`019`（全部「推定」） |
-| セキュリティ要件の受け入れ条件 | 24 | `SEC-PRIVACY-NNN-AC-NN`（各要件の下） |
+| セキュリティ要件の受け入れ条件 | 26 | `SEC-PRIVACY-NNN-AC-NN`（各要件の下） |
 
 - 状態: 全部「推定」。元の行に理由の記述が無く、根拠の「なぜ」を推定で補った。要求の文そのものはユーザーの依頼を写した物で、ユーザーが確かめたら「現行」にする。どちらが正しいかは決めず、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節に載せた
 - 結論: プライバシーポリシーを公表する要求は元の文書に無かった（`SR-PRIVACY-001` を推定で起こした）。FR-PRIVACY-001 の「静的ページ」は今のコード（request のたびに描き、ショップの設定を読む）と合わない。配送の追跡の委託の一文（FREQ-495-AC-05）は持ち主の無い行なので写していない
@@ -57,7 +57,7 @@ FREQ-101 は範囲外の `/terms` にもかかるが、範囲の E2E（`e2e/FR-P
 | FR-PRIVACY-003-additional-legal-sections | FREQ-100-AC-01（窓口のメールも見るが、名前の ID は1つ。FREQ-100-AC-02 は 005） |
 | FR-PRIVACY-004-typography-spacing | FREQ-101-AC-01（6件のうち3件は範囲外の `/terms`。FREQ-101-AC-02 は 005） |
 | FR-PRIVACY-005-policy-text-viewports | FREQ-100-AC-02、FREQ-101-AC-02、FR-PRIVACY-001-AC-01、FR-PRIVACY-002-AC-01（3つの幅）、SEC-PRIVACY-011-AC-01・AC-02、SEC-PRIVACY-017-AC-01、SEC-PRIVACY-019-AC-01 |
-| FR-PRIVACY-006-response-headers-and-cookies | SEC-PRIVACY-007-AC-01、013-AC-01、014-AC-01・AC-02、015-AC-01、016-AC-01 |
+| FR-PRIVACY-006-response-headers-and-cookies | SEC-PRIVACY-007-AC-01、013-AC-01、014-AC-01・AC-02・AC-03、015-AC-01・AC-02、016-AC-01 |
 | FR-PRIVACY-007-settings-postgrest-access | SEC-PRIVACY-001-AC-01・AC-02、010-AC-01・AC-02（手元の Supabase の PostgREST を直接叩く） |
 | FR-PRIVACY-008-tracking-setting-and-read-failure | SEC-PRIVACY-002-AC-01、006-AC-01、011-AC-01（追跡オンの場合）、012-AC-01 |
 | FR-PRIVACY-009-tracking-setting-read-failure | SEC-PRIVACY-005-AC-01、008-AC-01、009-AC-01（サービスロールの実行権を外すので、ほかの spec と同時に流さない） |
@@ -640,13 +640,13 @@ anon の鍵と一般会員の JWT の select が断られるか、行が0件で�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-PRIVACY-007 |
-| 根拠 | 注入した script で偽の方針・偽の窓口を見せられないため。方針の頁は決済を使わず、認証の確かめ（Cloudflare Turnstile）はヘッダーのログインの窓を開いた時にだけ使う。だから決済の配信元と、頁で使わない配信元を許す要が無い。全体の NFR-SEC-003（範囲外）を当てはめた |
+| 根拠 | 注入した script で偽の方針・偽の窓口を見せられないため。使っていない配信元（jsDelivr）を許さない。Stripe.js と Turnstile の許可は全頁に残す（ユーザーの決定 Q29、2026-10-28）。CSP は文書を読み込んだ時に決まり、`next/link` の画面の切り替えでは変わらないので、決済の頁だけに絞ると `/cart` から `Link` で進んだ時に決済の部品が止まる。Stripe 公式も全頁での読み込みを勧める。Stripe.js を実際に読み込むのは今までどおり決済の頁だけ。全体の NFR-SEC-003（範囲外）を当てはめた |
 | 状態 | 推定 |
 | 確かめ方 | E2E・レビュー |
 | 出どころ | OWASP ASVS 4.0.3 V14.4.3。`docs/05_Quality/reviews/security/security_review_privacy.md`（Open、High） |
 | 優先度 | MUST |
 
-`/privacy` の CSP の `script-src` は nonce を求め、この頁で使わない外のドメイン（`js.stripe.com`・`cdn.jsdelivr.net`）を許さない。`challenges.cloudflare.com` は、ヘッダーのログインの窓が Turnstile の script を読むので許したままにする。今のコードは一部満たさない（nonce は満たすが、使わない外のドメインを全頁で同じに許している。`src/proxy.ts`）。
+`/privacy` の CSP の `script-src` は nonce を求め、使っていない外のドメイン（`cdn.jsdelivr.net`）を許さない。`js.stripe.com`・`*.js.stripe.com` は全頁で許す（Q29。上の根拠）。`challenges.cloudflare.com` は、ヘッダーのログインの窓が Turnstile の script を読むので許したままにする。今のコードは満たす（2026-10-28 に `src/proxy.ts` の `buildCsp` から jsDelivr を外し、Stripe の許可を Stripe 公式の一覧に揃えた。`ADR-0108`）。
 
 #### SEC-PRIVACY-014-AC-01 CSP が nonce を求める
 
@@ -665,25 +665,37 @@ anon の鍵と一般会員の JWT の select が断られるか、行が0件で�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-PRIVACY-014 |
-| 根拠 | この頁で使わない外のドメインを、許可先から外したことを確かめるため。ヘッダーのログインが使う Turnstile の `challenges.cloudflare.com` は対象にしない（外すと頁からのログインが壊れる） |
+| 根拠 | 使っていない外のドメインを、許可先から外したことを確かめるため。ヘッダーのログインが使う Turnstile の `challenges.cloudflare.com` は対象にしない（外すと頁からのログインが壊れる）。`js.stripe.com` は Q29 で全頁に残すと決めたので対象にしない（2026-10-28 に要件と試験を直した。以前の文は `js.stripe.com` も含まれないことを求めていた） |
 | 状態 | 推定 |
 | 確かめ方 | E2E（本番ビルドに `/privacy` を GET する） |
-| 出どころ | 実装から推定 |
+| 出どころ | 実装から推定。ユーザーの決定 Q29（2026-10-28） |
 
-`/privacy` の応答の CSP の `script-src` に `js.stripe.com`・`cdn.jsdelivr.net` が含まれないこと。`challenges.cloudflare.com` は含まれてよい。
+`/privacy` の応答の CSP の `script-src` に `cdn.jsdelivr.net` が含まれないこと。`challenges.cloudflare.com` は含まれてよい。
+
+#### SEC-PRIVACY-014-AC-03 CSP が Stripe.js の許可を全頁に残す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-PRIVACY-014 |
+| 根拠 | Q29 の決定を固定するため。`/cart` から `next/link` で `/checkout` へ進んでも文書は読み込み直されず CSP が変わらないので、`/privacy` を含む全頁が Stripe.js の許可を持たないと、誰かが頁ごとに絞った時に決済が止まる |
+| 状態 | 推定 |
+| 確かめ方 | E2E（本番ビルドに `/privacy` を GET する。mobile 390・tablet 768・desktop 1280） |
+| 出どころ | ユーザーの決定 Q29（2026-10-28）。`.superpowers/sdd/2026-10-25-security-gap-fixes/wave3-decisions.md` |
+
+`/privacy` の応答の CSP の `script-src` に `https://js.stripe.com` と `https://*.js.stripe.com` が含まれること。
 
 ### SEC-PRIVACY-015 方針を読むだけの閲覧者に、要らない識別子の Cookie を付けない
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-PRIVACY-008 |
-| 根拠 | `/privacy` ではカートを止めている（`src/contexts/Providers.tsx`）ので、カートのための識別子を付ける要が無い。方針の頁で閲覧を結び付けないため |
+| 根拠 | `/privacy` ではカートを止めている（`src/contexts/Providers.tsx`）ので、カートのための識別子を付ける要が無い。方針の頁で閲覧を結び付けないため。`session_id` を読むのは決済の流れ（`checkout-route-guard`・`create-session`・`complete`・`src/lib/supabase/server.ts` の `x-session-id`）だけなので、発行もその道に限り、既定は配らない（ユーザーの決定 Q23、2026-10-28）。公開で共有キャッシュに載る応答に識別子が付かない効果もある |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
-| 出どころ | ASVS 未対応付け。`docs/05_Quality/reviews/security/security_review_privacy.md`（Open、Medium） |
+| 出どころ | ASVS 未対応付け。`docs/05_Quality/reviews/security/security_review_privacy.md`（Open、Medium）。ユーザーの決定 Q23（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave3-decisions.md`） |
 | 優先度 | MUST |
 
-Cookie の無い閲覧者が `/privacy` を開いても、`session_id` を発行しない。今のコードは満たさない。
+Cookie の無い閲覧者が `/privacy` を開いても、`session_id` を発行しない。発行する道は許可リスト（`/cart`・`/checkout`・`/api/checkout`）だけで、既定は配らない。今のコードは満たす（2026-10-28。`src/lib/session-cookie-policy.ts` の `shouldIssueSessionCookie`、`ADR-0355`、`DD-PRIVACY-004`）。ヘッダーの `/cart` の `Link` は `prefetch={false}` にして、頁を開いただけの先読みで発行されないようにしている。ログインの成功で `session_id` を新しく発行して回す処理（`src/features/auth/services/register.ts`。セッション固定への守りで、`FR-CHECKOUT-046` が頼る）は別の仕組みなので、この要件の対象にしない。
 
 #### SEC-PRIVACY-015-AC-01 初めての閲覧で session_id が発行されない
 
@@ -696,6 +708,18 @@ Cookie の無い閲覧者が `/privacy` を開いても、`session_id` を発行
 | 出どころ | 実装から推定 |
 
 応答に `session_id` の `Set-Cookie` が無く、開いた後の context の Cookie に `session_id` が無いこと。
+
+#### SEC-PRIVACY-015-AC-02 決済の道だけで session_id が発行される
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-PRIVACY-015 |
+| 根拠 | 発行を許可リストに限っても、決済の流れ（`/cart` → `/checkout`）が `session_id` を受け取れることと、他の頁には配らないことを、両側から固定するため（Q23） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（Cookie の無い新しい context で頁を 1 つずつ開く。mobile 390・tablet 768・desktop 1280） |
+| 出どころ | ユーザーの決定 Q23（2026-10-28） |
+
+Cookie の無い新しい context で `/cart`・`/checkout` を開くと `session_id` が発行され（32 桁の 16 進、`HttpOnly`、`SameSite=Lax`）、`/`・`/about`・`/terms`・`/news` を開いても発行されないこと。
 
 ### SEC-PRIVACY-016 全頁で呼ぶ認証の状態の応答に、メールを載せない
 

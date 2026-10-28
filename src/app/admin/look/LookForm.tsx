@@ -454,7 +454,7 @@ export function LookForm({
                     >
                       <div className="aspect-3/4 bg-[#f5f5f5] overflow-hidden relative">
                         <Image
-                          src={item.image_url}
+                          src={item.image_url || "/placeholder.png"}
                           alt={item.name}
                           fill
                           sizes="(max-width: 768px) 50vw, 33vw"

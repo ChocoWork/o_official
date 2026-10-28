@@ -20,9 +20,24 @@ function signedOk() {
   );
 }
 
-const BASE = 'https://example.supabase.co/storage/v1/object';
+const OWN = 'https://example.supabase.co';
+const BASE = `${OWN}/storage/v1/object`;
 
 describe('LOOK の画像の署名の部品', () => {
+  const envBackup = { ...process.env };
+  let warnSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    delete process.env.SUPABASE_URL;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = OWN;
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.env = { ...envBackup };
+    warnSpy.mockRestore();
+  });
+
   describe('extractLookImageObjectPath', () => {
     it.each([
       ['null', null],
@@ -87,13 +102,14 @@ describe('LOOK の画像の署名の部品', () => {
       expect(createSignedUrl).toHaveBeenCalledWith('looks/a.png', 3600);
     });
 
-    it('DD-LOOK-006 古い公開 URL は取り出した道筋で署名し、署名つき URL を返す', async () => {
-      const { supabase, createSignedUrl } = signedOk();
+    it('DD-LOOK-006 自分のプロジェクトの公開 URL（本番の LOOK 画像）は道筋に直して署名し、署名つき URL を返す', async () => {
+      const { supabase, from, createSignedUrl } = signedOk();
 
-      await expect(signLookImageUrl(supabase, `${BASE}/public/look-images/looks/a%20b.png`)).resolves.toBe(
-        'https://example.test/signed/looks/a b.png',
-      );
-      expect(createSignedUrl).toHaveBeenCalledWith('looks/a b.png', 3600);
+      await expect(
+        signLookImageUrl(supabase, `${BASE}/public/look-images/looks/2026-01-01/uuid.jpg`),
+      ).resolves.toBe('https://example.test/signed/looks/2026-01-01/uuid.jpg');
+      expect(from).toHaveBeenCalledWith('look-images');
+      expect(createSignedUrl).toHaveBeenCalledWith('looks/2026-01-01/uuid.jpg', 3600);
     });
 
     it('DD-LOOK-006 渡された期限で署名し、署名つき URL を返す', async () => {
@@ -116,26 +132,50 @@ describe('LOOK の画像の署名の部品', () => {
       expect(createSignedUrl).not.toHaveBeenCalled();
     });
 
-    it('DD-LOOK-006 道筋を取り出せない時は元の値をそのまま返す', async () => {
+    it.each([
+      ['外の host の URL', 'https://evil.example/storage/v1/object/public/look-images/looks/x.png'],
+      ['別のプロジェクトの URL', 'https://other.supabase.co/storage/v1/object/public/look-images/looks/x.png'],
+      ['別のバケットの URL', `${BASE}/public/news-images/news/x.png`],
+      ['置き場の印の無い外の URL', 'https://x/other.png'],
+      ['.. を含む道筋', '../dir/x.png'],
+      ['looks/ の中の ..', 'looks/../other/x.png'],
+      ['置き場の決まった場所の外', 'other/x.png'],
+      ['符号化した空白を含む道筋', `${BASE}/public/look-images/looks/a%20b.png`],
+      ['空白だけ', '   '],
+    ])('DD-LOOK-006 %s は元の値を返さず null で、署名を呼ばない', async (_label, raw) => {
       const { supabase, createSignedUrl } = signedOk();
 
-      await expect(signLookImageUrl(supabase, 'https://x/other.png')).resolves.toBe('https://x/other.png');
-      await expect(signLookImageUrl(supabase, '   ')).resolves.toBe('   ');
+      await expect(signLookImageUrl(supabase, raw)).resolves.toBeNull();
       expect(createSignedUrl).not.toHaveBeenCalled();
     });
 
-    it('DD-LOOK-006 署名に失敗した時は元の値をそのまま返す', async () => {
-      const { supabase } = makeSupabase(() => Promise.resolve({ data: null, error: new Error('boom') }));
+    it.each([
+      ['error が返る', { data: null, error: new Error('boom') }],
+      ['signedUrl が空', { data: {}, error: null }],
+      ['data が空', { data: null, error: null }],
+    ])('DD-LOOK-006 署名に失敗（%s）したら元の値でなく null を返す', async (_label, outcome) => {
+      const { supabase } = makeSupabase(() => Promise.resolve(outcome as SignResult));
 
-      await expect(signLookImageUrl(supabase, 'looks/a.png')).resolves.toBe('looks/a.png');
+      await expect(signLookImageUrl(supabase, 'looks/a.png')).resolves.toBeNull();
     });
 
-    it('DD-LOOK-006 署名つき URL が空で返った時は元の値をそのまま返す', async () => {
-      const { supabase } = makeSupabase(() => Promise.resolve({ data: {}, error: null }));
-      await expect(signLookImageUrl(supabase, 'looks/a.png')).resolves.toBe('looks/a.png');
+    it('DD-LOOK-006 失敗の記録は固定の語だけで、道筋・URL・誤りの文を含まない', async () => {
+      const { supabase } = makeSupabase((path) =>
+        path === 'looks/log-fail.png'
+          ? Promise.resolve({ data: null, error: { message: 'bucket secret detail' } })
+          : Promise.resolve({ data: { signedUrl: 'https://example.test/x' }, error: null }),
+      );
 
-      const { supabase: nullData } = makeSupabase(() => Promise.resolve({ data: null, error: null }));
-      await expect(signLookImageUrl(nullData, 'looks/a.png')).resolves.toBe('looks/a.png');
+      await signLookImageUrl(supabase, 'looks/log-fail.png');
+      await signLookImageUrl(supabase, 'https://evil.example/storage/v1/object/public/look-images/looks/log-invalid.png');
+
+      const logged = warnSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(logged).toContain('sign_failed');
+      expect(logged).toContain('invalid_path');
+      expect(logged).not.toContain('log-fail');
+      expect(logged).not.toContain('log-invalid');
+      expect(logged).not.toContain('evil.example');
+      expect(logged).not.toContain('bucket secret detail');
     });
   });
 
@@ -183,10 +223,14 @@ describe('LOOK の画像の署名の部品', () => {
       await expect(signLookImageUrls(supabase, [])).resolves.toEqual([]);
     });
 
-    it('DD-LOOK-006 署名に失敗した値は元の値のまま結果に残す', async () => {
+    it('DD-LOOK-006 署名に失敗した値・道筋にできない値は結果から除き、元の値を残さない', async () => {
       const { supabase } = makeSupabase(() => Promise.resolve({ data: null, error: new Error('x') }));
+      await expect(signLookImageUrls(supabase, ['looks/a.png'])).resolves.toEqual([]);
 
-      await expect(signLookImageUrls(supabase, ['looks/a.png'])).resolves.toEqual(['looks/a.png']);
+      const { supabase: ok } = signedOk();
+      await expect(
+        signLookImageUrls(ok, ['https://evil.example/x.png', 'other/x.png', 'looks/b.png']),
+      ).resolves.toEqual(['https://example.test/signed/looks/b.png']);
     });
   });
 });

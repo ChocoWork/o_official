@@ -22,7 +22,7 @@ type NewsArticle = {
   title: string;
   category: string;
   published_date: string;
-  image_url: string;
+  image_url: string | null;
   content: string;
   detailed_content: string;
   status: 'private' | 'published';

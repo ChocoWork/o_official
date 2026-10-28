@@ -1,6 +1,6 @@
 # PRIVACY の構造設計
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: PRIVACY（プライバシーポリシー `/privacy`） | 基準コミット: `4e84d5c5`
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: PRIVACY（プライバシーポリシー `/privacy`） | 基準コミット: `4e84d5c5`
 
 ## 概要
 
@@ -36,7 +36,7 @@ PRIVACY の領域の構成・画面・画面遷移・状態遷移・データを
 | --- | --- | --- |
 | Supabase の client | `src/lib/supabase/server.ts` の `createServiceRoleClient` | 設定の関数を呼ぶ client を作る |
 | 配送の追跡の読み書き（配送の追跡の部品） | `src/lib/orders/tracking/delivery-store.ts` の `getDeliveryTrackingSettings` | 設定の関数を呼び、返り値の型を確かめて4つの欄で返す。在庫の作業が同じファイルを変えている |
-| 守りの見出しと Cookie | `src/proxy.ts`（matcher は全部の道） | CSP（nonce 付き）・`X-Frame-Options`・HSTS・`nosniff` を付け、`session_id` の Cookie を発行する |
+| 守りの見出しと Cookie | `src/proxy.ts`（matcher は全部の道） | CSP（nonce 付き）・`X-Frame-Options`・HSTS・`nosniff` を付ける。`session_id` の Cookie は `/cart`・`/checkout`・`/api/checkout` の応答だけで発行し、`/privacy` には付けない |
 | 頁の殻 | `src/app/layout.tsx`、`src/contexts/Providers.tsx` | Header・Footer で包む。`/privacy` ではカートの取得を止める |
 | ログインの状態 | `src/contexts/LoginContext.tsx` | 全頁で `/api/auth/me` を呼ぶ |
 | フッターのリンク | `src/components/Footer.tsx` | `/privacy` への入口 |
@@ -53,7 +53,7 @@ sequenceDiagram
   participant F as get_delivery_tracking_settings
   participant T as shop_settings
   V->>P: GET /privacy
-  P->>P: CSP・守りの見出し・session_id
+  P->>P: CSP・守りの見出し（/privacy では session_id を作らない）
   P->>S: 通す
   S->>S: connection を待つ（request の時に描く）
   S->>C: 作る
@@ -87,18 +87,18 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SEC-PRIVACY-013、NFR-SEC-001（範囲外）、NFR-SEC-003（範囲外） |
+| 上位 | SEC-PRIVACY-013、SEC-PRIVACY-015、ADR-0355、NFR-SEC-001（範囲外）、NFR-SEC-003（範囲外） |
 | 根拠 | 枠への埋め込みの禁止・CSP・HSTS を頁ごとに書くと書き忘れが出るので、全部の道にかかる `src/proxy.ts` の1か所にまとめている（SEC-PRIVACY-013、NFR-SEC-001（範囲外）の HSTS、NFR-SEC-003（範囲外）の CSP）。`/privacy` は自分では見出しを足さない |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/proxy.ts`、`src/app/layout.tsx`、`src/contexts/Providers.tsx`）、`docs/05_Quality/reviews/security/security_review_privacy.md` |
 
 - 見出し: proxy の matcher は全部の道（`/:path*`）。応答に CSP（`frame-ancestors 'none'`、`script-src` は `'self'` と nonce）・`X-Frame-Options: DENY`・`Strict-Transport-Security`・`X-Content-Type-Options: nosniff`・`Referrer-Policy: no-referrer`・`Permissions-Policy` を付ける（SEC-PRIVACY-013 は満たす）
-- CSP の外のドメイン: `script-src` は全頁で同じに `cdn.jsdelivr.net`・`challenges.cloudflare.com`・`js.stripe.com` を許す。`challenges.cloudflare.com` はヘッダーのログインの窓（Turnstile）が使う。使わないドメインを外す形は SEC-PRIVACY-014（上位につないでいない）を参照
-- Cookie: Cookie の無い閲覧者には `session_id` を発行する（`src/proxy.ts`）。SEC-PRIVACY-015 を参照
+- CSP の外のドメイン: `script-src` は全頁で同じに `challenges.cloudflare.com`・`js.stripe.com`・`*.js.stripe.com` を許し、使っていない `cdn.jsdelivr.net` は許さない（2026-10-28）。`challenges.cloudflare.com` はヘッダーのログインの窓（Turnstile）が使う。Stripe を全頁に残すのは、CSP が `next/link` の遷移で変わらないため（ユーザーの決定 Q29、`ADR-0108`、SEC-PRIVACY-014。上位につないでいない）
+- Cookie: `session_id` の発行は許可リストの道（`/cart`・`/checkout`・`/api/checkout`）だけで、既定は配らない（`src/lib/session-cookie-policy.ts` の `shouldIssueSessionCookie`、2026-10-28）。`/privacy` には付かない。ヘッダーの `/cart` の `Link` は `prefetch={false}`（先読みの要求も proxy を通り `/cart` で発行されてしまうため）。`session_id` の読み手は決済の流れだけ（`checkout-route-guard`・`create-session`・`complete`・`src/lib/supabase/server.ts` の `x-session-id`）。ログインの成功で回す発行（`register.ts`）は別の仕組みで残る。SEC-PRIVACY-015、`ADR-0355`、`DD-PRIVACY-004` を参照
 - 殻: root の layout が `Providers` で包み、Header と Footer を出す。`/privacy` の時だけ `CartProvider` を止める（`Providers.tsx`）。どの要件にも無い共有部品の判断で、上位につないでいない
 - ログインの状態: `LoginContext.tsx` が全頁で `/api/auth/me` を呼ぶ。応答はメールを載せない（`id`・役割・`mfaVerified` だけ。SEC-PRIVACY-016、API-AUTH-013）
-- 試験: 結合テスト `tests/integration/api/privacy-proxy-headers.test.ts` が、`/privacy` を通した proxy の応答に枠の禁止・HSTS・`nosniff`・CSP（nonce）が付くこと、`session_id` の発行、proxy が `/privacy` にキャッシュの指定を足さないこと、proxy の対象が全部の道で `/privacy` も外れないことを確かめる。本番ビルドの応答で見出しを試す E2E は無い
+- 試験: 結合テスト `tests/integration/api/privacy-proxy-headers.test.ts` が、`/privacy` を通した proxy の応答に枠の禁止・HSTS・`nosniff`・CSP（nonce）が付くこと、`/privacy` で `session_id` を発行せず許可リストの道（`/cart`）では発行すること、proxy が `/privacy` にキャッシュの指定を足さないこと、proxy の対象が全部の道で `/privacy` も外れないことを確かめる。本番ビルドの応答で見出しを試す E2E は無い
 
 ## 画面
 

@@ -91,6 +91,23 @@ describe('PRIVACY の頁にかかる共有の proxy', () => {
     expect(scriptSrc).not.toContain("'unsafe-inline'");
   });
 
+  it('ARC-PRIVACY-002 script-src は使っていない jsDelivr を許さず、Stripe.js と Turnstile は全頁で許す（Q29）', async () => {
+    env().NODE_ENV = 'production';
+    const proxy = await loadProxy();
+
+    const scriptSrc =
+      directives(proxy(privacyRequest()).headers.get('Content-Security-Policy')).get('script-src') ?? [];
+
+    expect(scriptSrc).not.toContain('https://cdn.jsdelivr.net');
+    expect(scriptSrc).toEqual(
+      expect.arrayContaining([
+        'https://js.stripe.com',
+        'https://*.js.stripe.com',
+        'https://challenges.cloudflare.com',
+      ]),
+    );
+  });
+
   it('ARC-PRIVACY-002 応答の x-nonce は CSP の nonce と同じ値で、要求ごとに変わる', async () => {
     const proxy = await loadProxy();
 
@@ -118,10 +135,21 @@ describe('PRIVACY の頁にかかる共有の proxy', () => {
     );
   });
 
-  it('ARC-PRIVACY-002 セッションの Cookie が無い閲覧者には id を作り Set-Cookie で渡す', async () => {
+  it('ARC-PRIVACY-002 /privacy ではセッションの Cookie を発行せず、守りの見出しは付く（SEC-PRIVACY-015。既定は配らない）', async () => {
     const proxy = await loadProxy();
 
     const res = proxy(privacyRequest());
+
+    expect(res.cookies.get(SESSION_COOKIE)).toBeUndefined();
+    expect(res.headers.get('set-cookie')).toBeNull();
+    expect(res.headers.get('Content-Security-Policy')).toBeTruthy();
+    expect(res.headers.get('X-Frame-Options')).toBe('DENY');
+  });
+
+  it('ARC-PRIVACY-002 許可リストの道（/cart）では、セッションの Cookie が無い閲覧者に id を作り Set-Cookie で渡す', async () => {
+    const proxy = await loadProxy();
+
+    const res = proxy(privacyRequest({}, '/cart'));
 
     const cookie = res.cookies.get(SESSION_COOKIE);
     expect(cookie?.value).toMatch(/^[0-9a-f]{32}$/);
@@ -134,14 +162,14 @@ describe('PRIVACY の頁にかかる共有の proxy', () => {
     expect(res.headers.get('set-cookie')).toContain(`${SESSION_COOKIE}=${cookie?.value}`);
   });
 
-  it('ARC-PRIVACY-002 本番では Cookie に Secure を付け、本番以外では付けない', async () => {
+  it('ARC-PRIVACY-002 許可リストの道（/cart）では、本番で Cookie に Secure を付け、本番以外では付けない', async () => {
     env().NODE_ENV = 'production';
-    const production = (await loadProxy())(privacyRequest());
+    const production = (await loadProxy())(privacyRequest({}, '/cart'));
     expect(production.cookies.get(SESSION_COOKIE)?.secure).toBe(true);
 
     jest.resetModules();
     env().NODE_ENV = 'test';
-    const nonProduction = (await loadProxy())(privacyRequest());
+    const nonProduction = (await loadProxy())(privacyRequest({}, '/cart'));
     expect(nonProduction.cookies.get(SESSION_COOKIE)?.secure).toBeFalsy();
   });
 

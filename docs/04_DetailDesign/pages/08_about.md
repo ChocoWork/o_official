@@ -1,6 +1,6 @@
 ﻿# 1.8 アバウトページ（ABOUT）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: アバウトページ `/about`（`src/app/about/page.tsx`） | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: アバウトページ `/about`（`src/app/about/page.tsx`） | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -10,11 +10,12 @@
 | ID | 単位 | 中身 | 旧番号 |
 | --- | --- | --- | --- |
 | `DD-ABOUT-001` | `src/app/about/page.tsx`（ファイル全体） | 題・説明・OG を返す関数と、5つの区画と CTA 2つを描くページの本体 | `IMPL-ABOUT-001`〜`008` |
+| `DD-ABOUT-002` | `src/lib/build-env-guard.ts` の `assertBuildEnv`（共有の `next.config.ts` が先頭で呼ぶ。2026-10-28） | 本番ビルドで必須の環境変数が無い・2 つの Supabase の URL が別の origin ならビルドを落とす | なし |
 
-- 結論: ABOUT のコードの単位は `src/app/about/page.tsx` の1つだけ（`.tsx` はファイル全体で1つの単位）なので、詳細設計も `DD-ABOUT-001` の1つにまとめた。この単位は文をコードに直に持ち、DB・外のサービス・API を呼ばない
+- 結論: ページのコードの単位は `src/app/about/page.tsx` の1つだけ（`.tsx` はファイル全体で1つの単位）なので、ページの詳細設計は `DD-ABOUT-001` の1つにまとめた。この単位は文をコードに直に持ち、DB・外のサービス・API を呼ばない。`DD-ABOUT-002` はページの外（ビルドの設定）の確かめで、単位は `assertBuildEnv` の1つ
 - ページの中の分岐は1つだけ（最後の原則にだけ下の罫線を引く）。単体テストは `tests/unit/about/about-page.test.tsx` の8件で、この分岐の両方を通す
 - 旧版のこの頁の表（`IMPL-ABOUT-001`〜`008`）は、画像・`Explore More` の節・`/contact` の CTA・アイコンなど今のコードに無い物を「済」としていた。今の動きに書き直し、元の番号は `DD-ABOUT-001` の「旧番号」に移した
-- 番号は `DD-ABOUT-001`〜`029` をこの頁で使う。今は `001` だけを使い、`002` 以降は空けておく
+- 番号は `DD-ABOUT-001`〜`029` をこの頁で使う。今は `001`・`002` を使い、`003` 以降は空けておく
 
 ## 範囲と根拠
 
@@ -22,7 +23,7 @@
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の ABOUT（src は `src/app/about/**/*.{ts,tsx}`） |
 | 上位の文書 | [ABOUT の構造設計](../../03_BasicDesign/areas/about.md)（`ARC-ABOUT-`・`SCR-ABOUT-`・`FLOW-ABOUT-`）、[ABOUT の要件](../../02_Requirements/areas/about.md)（`FR-ABOUT-`・`SEC-ABOUT-`・`DRV-ABOUT-`） |
-| 対象のコード | `src/app/about/page.tsx`（`src/app/about/` にはほかのファイルが無い） |
+| 対象のコード | `src/app/about/page.tsx`（`src/app/about/` にはほかのファイルが無い）、`src/lib/build-env-guard.ts`（`DD-ABOUT-002`。2026-10-28 に ABOUT の範囲へ足した） |
 | 単位の数え方 | `scripts/trace/parse-code.ts` の `parseCodeUnits` を 2026-10-24 に実行し、結果は `<file>` の1件だけ。中の `generateMetadata`・`StoryPage` は単位に数えない |
 | 関連文書 | `docs/03_BasicDesign/ui/screen-list.md`、`docs/03_BasicDesign/ui/design-guide.md`（どちらも別の作業が書き換え中なので触らない） |
 | 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない） |
@@ -124,7 +125,7 @@ graph LR
 | 場合 | 動き | 道 |
 | --- | --- | --- |
 | DB・Supabase・外の API が止まっている | ページは読まないので影響を受けず、同じ中身を出す（SEC-ABOUT-006） | `page.tsx` 全体（読み出しが無い） |
-| サイトの URL の環境変数が1つも無い | 警告なく `http://localhost:3000` を起点に OG の画像の絶対の URL を作る（満たすかは SEC-ABOUT-007 を見る） | `src/lib/redirect.ts`（範囲外）、`layout.tsx` の `metadataBase` |
+| サイトの URL の環境変数が1つも無い | 本番のビルド（`VERCEL_ENV=production`）は `assertBuildEnv` が落とす（SEC-ABOUT-007、`DD-ABOUT-002`）。それ以外（手元・preview・E2E の本番ビルド）は従来どおり、警告なく `http://localhost:3000` を起点に OG の画像の絶対の URL を作る | `src/lib/build-env-guard.ts`、`src/lib/redirect.ts`（範囲外）、`layout.tsx` の `metadataBase` |
 | `X-Forwarded-Host` などを偽った要求 | OG の起点は環境変数だけから作るので変わらない | `src/lib/redirect.ts`（範囲外） |
 | 取り出しの失敗・空 | 起きない（読み出しが無く、原則は固定の3件） | `principles` |
 
@@ -135,7 +136,7 @@ graph LR
 - 状態なし。利用者の端末で動かす指定・サーバーの操作の指定・状態の hook が無く、ページは Server Component のまま描く
 - 永続化なし。DB・ストレージ・ブラウザの保存を使わない。文はコードの中の字で、変えるにはコードを直す（ADR-0204）
 - 包みの `CartProvider`・`LoginProvider` は `/about` でも動くが、ページは使わない
-- `/about` を開くだけで共有の proxy がセッションの Cookie を発行する（`src/proxy.ts`。Cookie の扱いは PRIVACY の領域）。ページは `Cache-Control` を指定しない（SEC-ABOUT-004 は Next の既定の動きに頼る。未実測）
+- `/about` を開いても共有の proxy は `session_id` の Cookie を発行しない（発行は `/cart`・`/checkout`・`/api/checkout` だけ。`src/lib/session-cookie-policy.ts`、DD-PRIVACY-004、ADR-0355。2026-10-28）。ページは `Cache-Control` を指定しない（SEC-ABOUT-004 は共有キャッシュに載らない形を `Cache-Control` だけで見る。E2E は未実測）
 
 #### 認証認可
 
@@ -163,13 +164,74 @@ graph LR
 - 次の観点は単体では試さず、結合テストが見る。h2 が4つで `Brand Philosophy / ブランドの思想`・`WHY WE MAKE / なぜ、つくるのか`・`OUR COMMITMENTS / 取り組み`・`COLLECTION / 商品設計思想` の順（h1 は試さない。TM-ABOUT-01 の判断待ち）、CTA の行き先（`VIEW COLLECTION` が `/item`、`VIEW LOOKBOOK` が `/look`、`/contact` へのリンクは無い）、画像とアイコンを持たない（`img`・`svg`・`picture`・`video`・`i` の要素が0。DRV-ABOUT-003）は SCR-ABOUT-001（`tests/integration/ui/about-screen.test.tsx`）と FLOW-ABOUT-001（`tests/integration/ui/about-flow.test.tsx`）のテストが見る
 - 応答の見出し・Cookie・CSP・`Cache-Control`（SEC-ABOUT-002・003・004）と、OG の絶対の URL（SEC-ABOUT-005）は共有の proxy と layout の動きなので、この単位の単体テストでは試さない（E2E の受け入れ条件で試す）
 
+### DD-ABOUT-002 本番ビルドで必須の環境変数の確かめ assertBuildEnv（next.config.ts の先頭）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | ARC-ABOUT-003、SEC-ABOUT-007 |
+| 根拠 | 本番で環境変数の設定が漏れても、共有のカードの画像・メールの住所が手元の URL やデプロイごとの URL を指したまま公開されないよう、`NEXT_PUBLIC_*` の値が埋まるビルドの時に止める（SEC-ABOUT-007、ARC-ABOUT-003）。判定は `VERCEL_ENV` で行い、`NODE_ENV=production` になる E2E の本番ビルドを止めない。2 つの Supabase の URL が別の origin だと、署名つき URL（`SUPABASE_URL` 優先）と CSP・`remotePatterns`（`NEXT_PUBLIC_SUPABASE_URL` の 1 つ）の許す host が食い違うので、これも落とす（ADR-0206、ADR-0316） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト |
+| 出どころ | 実装から推定（`src/lib/build-env-guard.ts`）。`docs/superpowers/plans/2026-10-28-wave3-csp-images-session.md` の Task 13 |
+
+#### 入出力
+
+| 項目 | 内容 |
+| --- | --- |
+| 入力 | 環境変数の読み取り専用の対応表 `env`（`next.config.ts` は `process.env` を渡す）。読むのは `VERCEL_ENV`・`NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_SUPABASE_URL`・`SUPABASE_URL` |
+| 出力 | 戻り値なし。問題が無ければ何もせず、あれば `Error` を投げてビルド（設定の読み込み）を落とす |
+| 副作用 | なし（記録・書き込み・外への通信をしない） |
+| 呼ぶ所 | `next.config.ts` の先頭の 1 回（`import { assertBuildEnv } from "./src/lib/build-env-guard"`）。`@/` の別名は設定の読み込みで使えないので相対の道で読む。ライブラリは増やさない |
+
+#### 正常フローと分岐
+
+1. `env.VERCEL_ENV === 'production'` なら、`NEXT_PUBLIC_SITE_URL`、次に `NEXT_PUBLIC_SUPABASE_URL` の順に、値が無い・空白だけでないかを見る。最初に見つかった方の変数名を名指しして投げる
+2. `NEXT_PUBLIC_SUPABASE_URL` と `SUPABASE_URL` を `new URL` で読み、両方読めた時だけ `origin` を比べる。違えば両方の変数名を名指しして投げる（`VERCEL_ENV` に依らない）
+3. それ以外は何もしない
+
+| 道 | 条件 | 真の時 | 偽の時 |
+| --- | --- | --- | --- |
+| 必須の確かめ | `VERCEL_ENV` が `production` | 2 変数を順に見て、無ければ投げる | 見ない（`preview`・未設定・`NODE_ENV=production` だけ） |
+| 必須の変数ごと | 値が無い・空白だけ | 変数名を名指しして投げる | 次へ |
+| origin の確かめ | 両方の URL が読めて origin が違う | 両方の変数名を名指しして投げる | 通る（同じ origin、片方だけ、読めない値） |
+
+#### 異常フロー
+
+| 場合 | 動き |
+| --- | --- |
+| 本番のビルドで `NEXT_PUBLIC_SITE_URL` または `NEXT_PUBLIC_SUPABASE_URL` が無い | 変数名を名指しした文で投げ、ビルドが落ちる。配備の前に Vercel の Production に設定する（`docs/06_Operations/secrets.md`） |
+| 2 つの Supabase の URL が別の origin | 両方の変数名を名指しした文で投げる。手元・E2E は同じ host（`scripts/e2e/environment.ts`）なので落ちない |
+| URL として読めない値 | この確かめでは何もしない（読めない値の扱いは既存の動きに任せる） |
+| 例外の文 | 変数名だけを書き、URL の値・host を載せない |
+
+#### 状態・永続化・認証認可
+
+- 状態・永続化なし。ビルドの時に 1 回だけ走る。認可の対象が無い
+- `getSiteUrl`（`src/lib/redirect.ts`）は変えない。投げない（ADR-0206）
+
+#### テスト観点
+
+置き場は `tests/unit/lib/build-env-guard.test.ts`（名前の先頭は `DD-ABOUT-002`）。設定の読み込みの配線は `tests/unit/next-config.test.ts` の 4 件が見る。
+
+| # | 観点 | 入力 | 期待 |
+| --- | --- | --- | --- |
+| 1 | 本番で 2 つとも在る | `VERCEL_ENV=production` と 2 変数 | 通る |
+| 2 | 本番でサイトの URL が無い・空白だけ | 同上から `NEXT_PUBLIC_SITE_URL` を外す／空白にする | `NEXT_PUBLIC_SITE_URL` を名指しして投げる |
+| 3 | 本番で Supabase の URL が無い | 同上から `NEXT_PUBLIC_SUPABASE_URL` を外す | `NEXT_PUBLIC_SUPABASE_URL` を名指しして投げる |
+| 4 | 文に値を載せない | 本番でサイトの URL だけ無い | 文が `NEXT_PUBLIC_SITE_URL` を含み、Supabase の URL の host を含まない |
+| 5 | 本番でない | `VERCEL_ENV` が `preview`・未設定・空、`NODE_ENV=production` だけ | 2 変数が無くても通る |
+| 6 | 別の origin | 2 つの Supabase の URL が別の host、`VERCEL_ENV` 無し | 両方の変数名を名指しして投げる。文に host を載せない |
+| 7 | 同じ origin・別のポート | 末尾の `/`・パスだけが違う／ポートが違う | 前者は通る。後者は投げる |
+| 8 | 手元・片方だけ・読めない値 | `http://127.0.0.1:54321` が両方／片方だけ／`not a url` | どれも通る |
+
 ## 実装の単位
 
-コードの TSDoc に `@design` を書く時はこの表に従う（`@impl` の番号はそこで振る。ABOUT の旧番号の最大は `IMPL-ABOUT-008` なので、新しい番号は `IMPL-ABOUT-101` から）。単位の数え方は `scripts/trace/parse-code.ts` の `parseCodeUnits`（2026-10-24 に実行）。
+コードの TSDoc に `@design` を書く時はこの表に従う（`@impl` の番号はそこで振る。ABOUT の旧番号の最大は `IMPL-ABOUT-008` なので、新しい番号は `IMPL-ABOUT-101` から。`101` は `page.tsx`、`102` は `build-env-guard.ts`）。単位の数え方は `scripts/trace/parse-code.ts` の `parseCodeUnits`（2026-10-24 に実行。`build-env-guard.ts` は 2026-10-28 に足した）。
 
 | ファイル | 単位（symbol） | 詳細設計 |
 | --- | --- | --- |
 | `src/app/about/page.tsx` | `<file>` | DD-ABOUT-001 |
+| `src/lib/build-env-guard.ts` | `assertBuildEnv` | DD-ABOUT-002 |
 
 - `src/app/about/` にほかのファイルは無い（layout・loading・error・OG の画像の生成も無い）
 - `.tsx` はファイル全体が1つの単位なので、`generateMetadata` と `StoryPage` を別の詳細設計に分けても、コードからつながるのは1つだけになる。そのため1つにまとめた
@@ -177,7 +239,7 @@ graph LR
 ## 未確認事項
 
 - `/about` の応答に付く `Cache-Control` の実際の値（SEC-ABOUT-004。本番ビルドで測っていない）
-- 本番のサイトの URL の環境変数の設定と、本番で `/about.png` が取得できるか（本番は未デプロイ）
+- 本番のサイトの URL の環境変数の設定（設定が漏れればビルドが落ちる。`DD-ABOUT-002`）と、本番で `/about.png` が取得できるか（本番は未デプロイ）
 - h1 を足すか、FR-ABOUT-005 の h1 の部分を外すか。CONTACT の CTA（FR-ABOUT-006）とアイコン・画像（FR-ABOUT-007・008）を残すか（要件の文書の未確認事項と同じ）
 - CTA が横に並ぶ境目（コードは 640px、FR-ABOUT-004 の文は 768px）をどちらに合わせるか
 - 「天然繊維100%」（description）と「生地は天然繊維を中心に」（本文）のどちらが正か

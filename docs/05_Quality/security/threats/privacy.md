@@ -1,6 +1,6 @@
 # PRIVACY の脅威
 
-> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-26 | 対象: `/privacy` の画面と、その画面が読むショップの設定（配送の追跡のオン・オフ） | 基準コミット: `973dc336`
+> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-28 | 対象: `/privacy` の画面と、その画面が読むショップの設定（配送の追跡のオン・オフ） | 基準コミット: `973dc336`
 
 ---
 
@@ -50,7 +50,7 @@ flowchart LR
 
 - 実線の矢印はアプリが用意した道、点線はアプリを通らない道。点線の先は権限の取り上げと RLS で断る（THR-PRIVACY-001・005）
 - `/privacy` は回数の制限を通らない（THR-PRIVACY-002）
-- 全部の応答に `src/proxy.ts` が守りの見出しと `session_id` の Cookie を付ける（THR-PRIVACY-007・008）。図では省いた
+- 全部の応答に `src/proxy.ts` が守りの見出しを付ける。`session_id` の Cookie は `/cart`・`/checkout`・`/api/checkout` の応答だけに付く（THR-PRIVACY-007・008）。図では省いた
 
 ---
 
@@ -150,7 +150,7 @@ flowchart LR
 | 影響 | 偽の窓口へ個人情報の請求を送らせる。方針の文を書き換えて見せる |
 | 対策 | SEC-PRIVACY-013、SEC-PRIVACY-014 |
 | ASVS | V14.4.3、V14.4.7 |
-| 根拠 | `src/proxy.ts` が全部の応答に `frame-ancestors 'none'` と `X-Frame-Options: DENY`、nonce つきの CSP、HSTS、`nosniff` を付ける（`src/proxy.ts`、matcher は全部の道）。CSP の許可先が全頁で同じで、この頁で使わない Stripe なども許す点は過去のレビューの Open（High）。Turnstile はヘッダーのログインの窓が使うので、許可先に要る。`/privacy` の見出しを確かめる E2E は無い（Open、Low）。全体の NFR-SEC-001（範囲外）の HSTS と NFR-SEC-003（範囲外）の CSP を当てはめた |
+| 根拠 | `src/proxy.ts` が全部の応答に `frame-ancestors 'none'` と `X-Frame-Options: DENY`、nonce つきの CSP、HSTS、`nosniff` を付ける（`src/proxy.ts`、matcher は全部の道）。CSP の許可先は全頁で同じ。使っていない jsDelivr は 2026-10-28 に外した（`ADR-0108`）。Stripe.js の許可は、`next/link` の遷移で CSP が変わらず決済の頁だけに絞ると `/cart` から進んだ時に決済の部品が止まるので、全頁に残すと決めた（ユーザーの決定 Q29。過去のレビューの Open（High）はこの判断で閉じた）。Turnstile はヘッダーのログインの窓が使うので、許可先に要る。`/privacy` の見出しを確かめる E2E は無い（Open、Low）。全体の NFR-SEC-001（範囲外）の HSTS と NFR-SEC-003（範囲外）の CSP を当てはめた |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/security/security_review_privacy.md` |
 
@@ -160,7 +160,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 閲覧者を追える識別子と、ログイン中の会員のメール |
 | 脅威 | 方針を読みに来ただけの閲覧者に、店が長く残る識別子を付ける。全頁の応答に会員のメールが載る |
-| 起こり方 | (1) Cookie の無い request のたびに `session_id` を発行する（`src/proxy.ts` の `proxy`）。(2) 全頁で動く `LoginProvider` が表示のたびに `/api/auth/me` を呼び（`src/contexts/LoginContext.tsx`）、応答にメールが入っていた（`src/app/api/auth/me/route.ts`。2026-10-26 に外した。`id` は残す） |
+| 起こり方 | (1) 過去は Cookie の無い request のたびに、どの頁でも `session_id` を発行していた（`src/proxy.ts` の `proxy`）。2026-10-28 に、発行を許可リストの道（`/cart`・`/checkout`・`/api/checkout`）だけにした。`session_id` の読み手は決済の流れだけなので、他の頁には配らない（`shouldIssueSessionCookie`、`ADR-0355`、`DD-PRIVACY-004`）。ログインの成功で `session_id` を新しく発行して回す処理（`src/features/auth/services/register.ts`）は別の仕組みで残り、許可リストの外の `/api/auth/*` の応答にも `Set-Cookie` が付く（セッション固定への守り）。(2) 全頁で動く `LoginProvider` が表示のたびに `/api/auth/me` を呼び（`src/contexts/LoginContext.tsx`）、応答にメールが入っていた（`src/app/api/auth/me/route.ts`。2026-10-26 に外した。`id` は残す） |
 | 影響 | 必要の無い識別子で閲覧が結び付けられる。script の注入があった時に、会員のメールを読まれる |
 | 対策 | SEC-PRIVACY-015、SEC-PRIVACY-016 |
 | ASVS | ASVS 未対応付け |

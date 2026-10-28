@@ -23,7 +23,7 @@ interface AdminItem {
   name: string;
   category: string;
   price: number;
-  image_url: string;
+  image_url: string | null;
   status: "private" | "published";
   /** 注文・在庫の記録・決済中のある商品は false（R-44） */
   canDelete?: boolean;

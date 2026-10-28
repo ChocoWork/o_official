@@ -5,7 +5,8 @@ export type Item = {
   name: string;
   description?: string;
   price: number;
-  image_url: string;
+  /** 署名に失敗した画像は null（元の値を返さない）。受け手は null のとき代わりの絵を出す */
+  image_url: string | null;
   image_urls?: string[];
   category: string;
   size?: string;

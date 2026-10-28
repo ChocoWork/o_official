@@ -1,6 +1,6 @@
 # 1.16-3 管理画面の LOOK（ADMIN LOOK）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: 管理画面の LOOK タブの一覧、LOOK の作成・編集の頁、`/api/admin/looks` と `/api/admin/looks/[id]`、管理の監査と回数・量の上限 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: 管理画面の LOOK タブの一覧、LOOK の作成・編集の頁、`/api/admin/looks` と `/api/admin/looks/[id]`、管理の監査と回数・量の上限 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -752,7 +752,7 @@ SEC-LOOK-013・014、DRV-LOOK-009・010・011。
 | 古い見本の道筋（`e2e/look-1-1.png` など。接頭辞が違う。波 2 で見本は `looks/e2e/` に移った。この行は移行前の形の確認） | 消さない側に倒れる | `admin-images.ts` |
 | 置き場の削除が `error`・例外 | 名前と符号だけ記録して `'failed'`。投げない | `admin-images.ts` |
 
-- 署名の共有ライブラリが共有の確かめ（`isOwnLookImagePath` 相当）を持つようになったら、その関数に差し替える（波 3。判断は ADR-0160）
+- `isOwnLookImagePath` は 2026-10-28（波 3）から共有の `isSafeObjectPath(path, 'looks')` に委譲する（式は同じ。DD-SEARCH-011、ADR-0316。判断は ADR-0160）
 
 #### 状態・永続化
 

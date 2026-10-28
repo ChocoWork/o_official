@@ -101,7 +101,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     openGraph: {
       title,
       description,
-      images: look.imageUrls.length > 0 ? [{ url: look.imageUrls[0] }] : [],
+      images: look.imageUrls.length > 0 ? [{ url: `/look/${look.id}/og` }] : [],
     },
   };
 }

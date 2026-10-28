@@ -138,7 +138,8 @@ export async function GET(req: NextRequest) {
     const signedItemsData = await Promise.all(
       (itemsData || []).map(async (item) => ({
         ...item,
-        image_url: (await signItemImageUrl(supabase, item.image_url)) ?? item.image_url,
+        // 署名できない画像は元の値に戻さず null（外の URL を画面に渡さない）
+        image_url: await signItemImageUrl(supabase, item.image_url),
       }))
     );
 

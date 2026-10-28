@@ -1,6 +1,6 @@
 # LOOK の脅威
 
-> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-26 | 対象: LOOK の公開の画面（`/look`・`/look/<id>`）・管理のルックの窓口と画面・画像の置き場 `look-images`・`looks`・`look_items` の DB | 基準コミット: `a03beaff`（作業ツリー。この文書の `ファイル:行` の行番号は、このコミットの作業ツリーを読んだ時の物）
+> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-28 | 対象: LOOK の公開の画面（`/look`・`/look/<id>`）・管理のルックの窓口と画面・画像の置き場 `look-images`・`looks`・`look_items` の DB | 基準コミット: `a03beaff`（作業ツリー。この文書の `ファイル:行` の行番号は、このコミットの作業ツリーを読んだ時の物）
 
 ---
 
@@ -11,8 +11,8 @@ LOOK（ルック・コーディネート）の領域で考える脅威を、1つ
 | 項目 | 内容 |
 | --- | --- |
 | 項目の数 | 23（THR-LOOK-001〜023） |
-| 守りがある物 | 非公開の LOOK を公開の道へ出さない（001）、画面の XSS（017）、管理の窓口の権限と aal2（019。カードの操作ボタンも 2026-10-26 から窓口の `meta.canManage` で出し分け）、管理の窓口の回数・大きさの制限（012）、監査の記録（020）、Origin の確かめ（018）、画像の中身と保存名（013。2026-10-26）、画像の後始末（014。2026-10-26）、管理の入口の id と JSON（016 の管理の分。2026-10-26）、内部の誤りの文言を出さない（021 の管理の分。2026-10-26）、取り出しの失敗の分け方（022 の管理の分。2026-10-26） |
-| 守りが欠ける・弱い物 | 非公開の商品の ID が `look_items` から読める（002）、DB が aal2 を見ない（003）、表の権限が広い（004）、署名の前に道筋を絞らない（007）、署名の失敗で元の値を返す（008）、全件の取得と署名（009）、検索の関数の件数に上限が無い（010）、更新の途中の失敗（015）、DB の段に入力の制約が無い（023）、「新規作成」のボタンが役で出る（019 の残り。波 4） |
+| 守りがある物 | 非公開の LOOK を公開の道へ出さない（001）、署名の前に自分の道筋だけに絞り失敗は `null`（007・008。2026-10-28）、`og:image` を同一オリジンの窓口に（006。2026-10-28）、画面の XSS（017）、管理の窓口の権限と aal2（019。カードの操作ボタンも 2026-10-26 から窓口の `meta.canManage` で出し分け）、管理の窓口の回数・大きさの制限（012）、監査の記録（020）、Origin の確かめ（018）、画像の中身と保存名（013。2026-10-26）、画像の後始末（014。2026-10-26）、管理の入口の id と JSON（016 の管理の分。2026-10-26）、内部の誤りの文言を出さない（021 の管理の分。2026-10-26）、取り出しの失敗の分け方（022 の管理の分。2026-10-26） |
+| 守りが欠ける・弱い物 | 非公開の商品の ID が `look_items` から読める（002）、DB が aal2 を見ない（003）、表の権限が広い（004。波 2 で直した）、全件の取得と署名（009）、検索の関数の件数に上限が無い（010）、更新の途中の失敗（015）、DB の段に入力の制約が無い（023）、「新規作成」のボタンが役で出る（019 の残り。波 4） |
 | 対策の書き先 | 対策のセキュリティ要件 `SEC-LOOK-NNN` は要件の文書（`docs/02_Requirements/areas/look.md`）に書く。下の「対策」の欄は読み手のための写し |
 | 状態の付け方 | どれもコードを読んで起こし、ユーザーの確認を受けていないので「推定」。実行しての確かめはしていない |
 
@@ -131,9 +131,9 @@ flowchart LR
 | --- | --- |
 | 守るもの | 非公開にした・消した LOOK の画像 |
 | 脅威 | 前に頁を受け取った者や、頁を読み込んだ SNS・検索のクローラーが、LOOK を非公開にした後も画像を開く |
-| 起こり方 | 署名つき URL は1時間有効で、LOOK を非公開にしても取り消せない（`src/lib/storage/look-images.ts:12-14`）。詳細の頁は署名つき URL を `og:image` に入れる（`src/app/look/[id]/page.tsx:81`）。一覧のカードは最適化つきの `next/image` に署名つき URL を渡す（`src/features/look/components/PublicLookGrid.tsx:89-105`）ので、最適化の画像のキャッシュにも残りうる（長さの `minimumCacheTTL` は `next.config.ts` に指定が無い）。`/look`・`/look/<id>` は `revalidate`・`dynamic` の方針を書いていない |
+| 起こり方 | 署名つき URL は1時間有効で、LOOK を非公開にしても取り消せない（`src/lib/storage/look-images.ts:12-14`）。詳細の頁は署名つき URL を `og:image` に入れる（`src/app/look/[id]/page.tsx:81`）。一覧のカードは最適化つきの `next/image` に署名つき URL を渡す（`src/features/look/components/PublicLookGrid.tsx:89-105`）ので、最適化の画像のキャッシュにも残りうる（長さの `minimumCacheTTL` は `next.config.ts` に指定が無い）。`/look`・`/look/<id>` は `revalidate`・`dynamic` の方針を書いていない。**2026-10-28 に塞いだ**: `og:image` は署名を含まない同一オリジンの窓口 `GET /look/<id>/og` にした（`src/app/look/[id]/og/route.ts`、API-LOOK-007、ADR-0165）。窓口は公開の LOOK だけの先頭の画像を、検証した道筋のバイトで返し、`Cache-Control: public, max-age=300, s-maxage=300`・`nosniff`・`Set-Cookie` なし。非公開にすると最長 300 秒（共有キャッシュの分）で消える。最適化のキャッシュは `minimumCacheTTL: 3600`（`next.config.ts`）、頁は根の `layout.tsx` の `force-dynamic` で要求ごとに描く。窓口に回数の制限は付けない（公開の LOOK の数に限られ、`s-maxage` で CDN が受ける。クエリの付け替えで置き場を叩かれる量は波 4 で見直す） |
 | 影響 | 誤って公開した LOOK を戻しても、最大1時間（キャッシュに残ればそれ以上）画像が見える。共有された後は画像が切れる |
-| 対策 | SEC-LOOK-006 |
+| 対策 | SEC-LOOK-006（実装済み。ADR-0165） |
 | ASVS | ASVS 未対応付け |
 | 根拠 | 期限つきの署名は過去のレビューで守りとして認められた。頁のキャッシュの方針が無い点は Medium・Low として Open のまま。`og:image` と最適化のキャッシュは2026-10-24 のコードと DB の移行の読み直しで見つけた |
 | 状態 | 推定 |
@@ -145,9 +145,9 @@ flowchart LR
 | --- | --- |
 | 守るもの | 置き場 `look-images` の中の、LOOK の画像でない物 |
 | 脅威 | LOOK の行の `image_urls` を書き換えられる者（管理の権限を持つ人、または THR-LOOK-003 の道）が、置き場の別の物の署名つき URL を公開の頁に出させる |
-| 起こり方 | 署名の前に、道筋が `looks/` の下にあるか、`..` などの区切りを含まないかを確かめない（`src/lib/storage/look-images.ts:21-57`。素の道筋は先頭の `/` を外すだけ `:29-31`、URL の形は復号した道筋をそのまま返す `:45-49`）。service role で署名する（`src/lib/look/server.ts:157-158,240-241`）ので RLS も効かない。検索の結果の画像も同じ関数で署名する（`src/features/search/services/search.service.ts:161`、SEARCH の範囲） |
+| 起こり方 | 従来は、署名の前に道筋が `looks/` の下にあるか、`..` などの区切りを含まないかを確かめず、素の道筋は先頭の `/` を外すだけ、URL の形は復号した道筋をそのまま返していた（`extractLookImageObjectPath`）。service role で署名する（`src/lib/look/server.ts`）ので RLS も効かない。検索の結果の画像も同じ関数で署名する（`src/features/search/services/search.service.ts`、SEARCH の範囲）。**2026-10-28 に塞いだ**: `signLookImageUrl` は共有の `parseOwnObjectPath`（`src/lib/storage/safe-object-path.ts`、DD-SEARCH-011）を通し、自分の origin 1 つ・バケット `look-images`・`looks/` の下の安全な文字だけを署名する（`extractLookImageObjectPath` は管理の後始末だけが使う） |
 | 影響 | 置き場に LOOK の画像以外の物を置いた時に、それが公開の頁から配られる |
-| 対策 | SEC-LOOK-007 |
+| 対策 | SEC-LOOK-007（実装済み。ADR-0316） |
 | ASVS | ASVS 未対応付け |
 | 根拠 | 過去のレビューで High（境界の無さ）と Low（`..` を拒まない）として指摘され、今も残る。今の置き場には LOOK の画像しか置かないので害は小さい（推定） |
 | 状態 | 推定 |
@@ -159,9 +159,9 @@ flowchart LR
 | --- | --- |
 | 守るもの | 置き場の構成と、閲覧者の端末が読み込む先 |
 | 脅威 | DB の `image_urls` が汚れた時や、署名・関連の取り出しが失敗した時に、置き場の素の道筋や外のサイトの URL が頁に出る |
-| 起こり方 | 道筋にできない値は元の値を、署名の失敗は元の値を返す（`src/lib/storage/look-images.ts:89-95`）。一覧は `look_items` の取り出しに失敗すると、署名していない元の道筋のまま LOOK を返す（`src/lib/look/server.ts:185-187`）。詳細のギャラリーと管理の一覧は最適化を通さずに画像を出す（`src/features/look/components/LookImageGallery.tsx:78-85`、`src/components/LookSection.tsx:105-111`）ので、外の URL も `next.config.ts` の許可の表を通らずにそのまま読み込まれる |
+| 起こり方 | 従来は、道筋にできない値も署名の失敗も元の値を返していた（`signLookImageUrl`）。一覧は `look_items` の取り出しに失敗すると署名していない元の道筋のまま LOOK を返す経路があった（今は取り出しの失敗を `failFetch` で投げる）。詳細のギャラリーと管理の一覧は最適化を通さずに画像を出す（`src/features/look/components/LookImageGallery.tsx`、`src/components/LookSection.tsx`）ので、外の URL も `next.config.ts` の許可の表を通らずにそのまま読み込まれる。**2026-10-28 に塞いだ**: `signLookImageUrl` は道筋にできない値と署名の失敗で `null` を返し、`signLookImageUrls` は結果から外す。`look/server.ts` の `mapLookRowToListItem` は生の `image_urls` を載せず `imageUrls: []` にして、呼び手が署名した値だけで埋める。失敗の記録は種類 `invalid_path`・`sign_failed` だけ |
 | 影響 | 置き場の道筋が外に出る。汚れた値が外の URL なら、閲覧者の端末が第三者のサイトへ要求を送る（閲覧の追跡など） |
-| 対策 | SEC-LOOK-008 |
+| 対策 | SEC-LOOK-008（署名の側は実装済み。ADR-0316） |
 | ASVS | V4.1.5 |
 | 根拠 | 署名の fail-open は過去のレビューで Low・Medium として Open のまま。一覧の失敗の時の素の道筋は2026-10-24 のコードと DB の移行の読み直しで見つけた。全体の NFR-SEC-003（範囲外。入力検証）に照らした |
 | 状態 | 推定 |

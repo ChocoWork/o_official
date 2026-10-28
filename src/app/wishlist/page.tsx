@@ -27,7 +27,8 @@ interface WishlistItem {
     id: number;
     name: string;
     price: number;
-    image_url: string;
+    /** 署名できない画像は null。ItemCardMedia が NO IMAGE の枠を出す */
+    image_url: string | null;
     category: string;
     colors?: Array<{ hex: string; name: string }> | string[];
     sizes?: string[];
@@ -146,7 +147,7 @@ function isWishlistItem(value: unknown): value is WishlistItemPayload {
     typeof item.id === "number" &&
     typeof item.name === "string" &&
     typeof item.price === "number" &&
-    typeof item.image_url === "string" &&
+    (typeof item.image_url === "string" || item.image_url === null) &&
     typeof item.category === "string" &&
     isColorList(item.colors) &&
     isSizeList(item.sizes)

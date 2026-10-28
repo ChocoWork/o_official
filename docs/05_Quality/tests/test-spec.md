@@ -1,5 +1,7 @@
 # テスト仕様
 
+> 波 3 確認日: 2026-10-28。開店前のセキュリティの穴 波 3（画像の署名・CSP・`session_id` の発行範囲・`/api/auth` の `no-store`・LOOK の og:image・ビルドの必須の環境変数）の新しい試験と外した `test.fail` 18 行を、下の「開店前のセキュリティの穴 波 3 のテスト」に記載した。本番ビルドの E2E 全件は 183 failed・4828 passed・26 skipped（G-4 の 181 failed から増えたのは商品詳細の揺れ 2 件だけ）。
+
 > G-4 Task 12 確認日: 2026-10-27。返品・キャンセル申し込み・一覧の表示・配送・設定の既存E2E（050・069・070・072・076・079・084〜099・102〜104・119・123と共有の道具）を詳細頁/注文一覧表へ付け替え・整理し、旧い一覧の窓口の差し替え（mockOrderList）とORDERタブを開く道具（openOrderTab）を削除した。旧い410の宿題の仕上げ（走査をe2e・testsへ広げた許可リストの試験）を含む。下のTask 12に現行の期待を記載。本番buildのE2Eはcontroller待ち。
 >
 > G-4 Task 11 確認日: 2026-10-27。詳細の操作122（11case）と返金・取消・要対応・履歴15ファイルを詳細/新一覧へ付け替えた。下のTask 11に現行の期待を記載。本番buildのE2Eはcontroller待ち。
@@ -933,3 +935,69 @@ DB 結合は新しく書いていない。
 ### 旧い410の宿題の仕上げ
 
 `tests/unit/api/admin/legacy-fulfillment-routes-removed.test.ts` の走査を e2e と tests へ広げた。旧い窓口のURLを書いてよい行は404を期待する117（4行）と123（11行）だけ。`LEGACY_FULFILLMENT_DISABLED` の記号は、DBの旧い関数の拒否のDB結合（tests/integration/db）と、止めたstoreの関数・固定の文・その記号を投げる道具の許可リストの試験だけ。`legacy-fulfillment-disabled.ts` のimporterは、e2eに無く、testsは許可リストの5ファイルだけ。モジュールは止めたstoreの関数（fulfillment-store.ts・fulfillment-materials.ts）の試験が使うので残し、使われなくなった `legacyFulfillmentDisabledBody` と型だけを消した。
+
+## 開店前のセキュリティの穴 波 3 のテスト（画像の署名・CSP・Cookie・no-store・og:image・ビルドの必須の環境変数。SEC-HOME・SEARCH・LOOK・NEWS・ABOUT・PRIVACY・AUTH）
+
+確認日: 2026-10-28（この節は波 3 の分。並びは時系列でなく、波 2 の節の後に置く）。波 3 は移行を含まない（本番の DB の変更なし）。単体・結合は各 Task の実装者が対象の範囲で通した。**実測（2026-10-28）**: DB なしの jest 全体は通過（落ち 0）、手元の `npm run db:reset` の後の `npm run test:trace-coverage` は届かない分岐の節に無い 0 件・ずれた 0 件。本番ビルドの E2E 全件（1 回）は 183 failed・4828 passed・26 skipped で、G-4 の 181 failed（`.superpowers/sdd/2026-10-26-group-g4-orders/e2e-results-g4-full.json`）から増えた赤は `FR-ITEM-DETAIL-019`・`020`（単体の再実行で通る揺れ）だけ。外した `test.fail` 18 行と足した E2E は全部緑。
+
+- 1 回目の全件で、ゲストが `/checkout` を開く決済の E2E 17 件が `networkidle` 待ちの時間切れで赤になった。原因は `/api/auth/*` に `no-store` を付けた（SEC-AUTH-022-AC-02）ことで、本文を読まない `fetch` の応答をブラウザが終わらせず、`/api/auth/refresh` の要求が開いたまま残った（`no-store` の無い応答は読まなくても終わる）。`src/lib/client-fetch.ts` の `performRefresh` が結果に関わらず本文を読み切る形に直し、[client-fetch.test.ts](../../../tests/unit/lib/client-fetch.test.ts) に「200・401・429 でも本文を読み切る」「読み切りの失敗は結果を変えない」の 4 本を足した。直した後は 17 件とも緑（1 並列の再実行 215 件通過）。
+
+### 新しく作った試験ファイル
+
+| ファイル | 先頭の ID | 確かめること |
+| --- | --- | --- |
+| [safe-object-path.test.ts](../../../tests/unit/lib/storage/safe-object-path.test.ts)（65 本） | `DD-SEARCH-011` | `parseOwnObjectPath`・`isSafeObjectPath`。自分の origin の `/object/(public\|sign\|authenticated)/<bucket>/` と素の道筋だけを通し、外の host・別プロジェクト・`..`・二重の符号・空白・日本語・接頭辞違いは `null` |
+| [item-images.test.ts](../../../tests/unit/lib/storage/item-images.test.ts)（27 本） | `DD-SEARCH-011` | 商品画像の署名。期限 3600 秒、道筋にできない値・署名失敗（error・空・例外）は `null`、位置を保つ、使い回しの窓は期限の半分、記録は固定語だけ |
+| [ItemDetailImages.test.tsx](../../../tests/unit/components/ItemDetailImages.test.tsx)（2 本） | （補助。ID なし） | `image_url` が null・`image_urls` が空でも商品詳細が落ちず「No Image」、`image_urls` が 2 枚ならサムネイル 2 枚 |
+| [ui-page.test.tsx](../../../tests/unit/app/ui-page.test.tsx)（3 本） | `DD-HOME-004` | `/ui` が `readdy.ai`・`placehold.co` を含まない、`https://` の URL は地図の埋め込みだけ、`src` は手元の画像（`/` 始まり） |
+| [proxy-session.test.ts](../../../tests/unit/middleware/proxy-session.test.ts)（28 本。判定は `src/lib/session-cookie-policy.ts`） | `DD-PRIVACY-004` | `session_id` を発行するのは `/cart`・`/checkout`・`/api/checkout` とその子だけ。`/cartx`・`/checkoutx`・`/apicheckout` などの境目、既にある Cookie、本番の Secure |
+| [proxy-no-store.test.ts](../../../tests/unit/middleware/proxy-no-store.test.ts)（18 本。判定は `src/lib/auth-no-store-policy.ts`） | `DD-AUTH-037` | `/api/auth` と子の全応答（Origin 拒否の 403 を含む）に `Cache-Control: no-store`、付けない側（`/api/authx` など）の境目 |
+| [look-og-route.test.ts（単体）](../../../tests/unit/app/look-og-route.test.ts) | `DD-LOOK-071` | `GET /look/[id]/og`。不正な id・非公開・画像なし・置き場の失敗・先頭の印が画像でないは固定の 404、成功は 200・`public, max-age=300, s-maxage=300`・`nosniff`・`Set-Cookie` なし |
+| [look-og-route.test.ts（結合）](../../../tests/integration/api/look-og-route.test.ts) | `API-LOOK-007` | 窓口＋取り出し＋道筋の確かめ＋種類の検出を本物で通す（`validate-trace` が API-LOOK-007 に結合テストを要求） |
+| [instrumentation-client.test.ts](../../../tests/unit/instrumentation-client.test.ts)（4 本） | `DD-HOME-004` | ブラウザ側の zod を `jitless` にし、`new Function` の探りが走らない（読み込まない時は走る対照を含む） |
+| [build-env-guard.test.ts](../../../tests/unit/lib/build-env-guard.test.ts)（17 本） | `DD-ABOUT-002` | `VERCEL_ENV=production` で `NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_SUPABASE_URL` が無い（空白だけ）とビルドを落とす。`NEXT_PUBLIC_SUPABASE_URL` と `SUPABASE_URL` の origin が違えば環境に依らず落とす |
+| [next-config.test.ts](../../../tests/unit/next-config.test.ts)（13 本、うち波 3 Task 13 で 4 本追加。どの領域の `tests` にも入れていない） | `DD-HOME-004`・`DD-ABOUT-002` | `images` の `remotePatterns` は本番で自分の Supabase の host 1 つ・`https`・`/storage/v1/object/sign/**` の 1 件だけ、`minimumCacheTTL` は 3600、使っていない host を許さない。`next.config.ts` が `assertBuildEnv` を読む配線 |
+
+### 書き換えた・足した試験
+
+| 領域 | ファイル | 変えたこと |
+| --- | --- | --- |
+| ITEM 署名（Task 2・3） | `tests/unit/features/cart/services/cart-view`・`client/cart-api`、`tests/unit/api/wishlist-route`、`tests/unit/components/WishlistPage`・`NewsSection`、`tests/integration/ui/look-admin-create-screen` | 署名が null の画像は元の URL に戻さない。カートは `/placeholder.png`、お気に入りは `image_url: null`、`image_url` が null の 1 件があっても全体を捨てない |
+| 署名（Task 3〜5） | `tests/integration/api/search-image-signing`（ITEM・LOOK・NEWS 各 3 本）、`tests/unit/lib/storage/look-images`・`news-images`、`tests/integration/api/look-image-signing`・`news-image-signing`・`look-admin-item-get-api`・`look-admin-list-api`・`news-admin-item-get-api` | 期限 3600 秒、外の値（他の host・別プロジェクト・`..`・接頭辞違い）は署名を呼ばず `null`、署名の失敗は `null`。「元の値を返す」現状固定を「落とす」に書き換え。記録に道筋・URL・誤りの文を含まない |
+| LOOK（Task 4・11） | `tests/unit/lib/look-server`（Task 4 で 2 本、Task 11 で `getPublishedLookCoverRaw` の 5 本）、`tests/integration/ui/look-public-read-path`、`tests/unit/app/look/look-detail-page`・`tests/integration/ui/look-detail-screen` | 署名で全部外れた時に生の `image_urls` が出ない。関連商品の画像の値を `items/…` に直した（Task 3 の取りこぼし）。`og:image` の期待が `/look/<id>/og` |
+| CSP（Task 7） | `tests/unit/middleware/proxy-csp`（全面書き換え）、`tests/integration/api/home-page-proxy-csp`・`privacy-proxy-headers`・`about-proxy` | jsDelivr・`placehold.co`・`readdy.ai`・`*.supabase.co` が無い。Stripe.js（`js.stripe.com`・`*.js.stripe.com`）と Turnstile は全頁に残る（Q29）。`style-src` は `['self','unsafe-inline']`、`style-src-elem` は `['self']` |
+| Cookie（Task 9） | `tests/integration/api/about-proxy`・`privacy-proxy-headers` | 発行系の試験を `/cart` に移し、`/about`・`/privacy` は `session_id` が付かない試験を足した |
+
+### E2E で足した・書き換えた期待（書いただけ。controller の本番ビルドの実測待ち）
+
+| ファイル（`e2e/FR-...`） | 要件 ID | 内容 |
+| --- | --- | --- |
+| `HOME-022` | `SEC-HOME-009-AC-03`（3 幅。新規） | `/cart` →「ご購入手続きへ」→ `/checkout` → 最終確認 → Stripe の部品が出るまで、外部リソース（`^https?:`）の CSP 違反が 0 件 |
+| `PRIVACY-006` | `SEC-PRIVACY-014-AC-02`（書き換え）・`-AC-03`（3 幅。新規）、`SEC-PRIVACY-015-AC-02`（新規） | `script-src` に `cdn.jsdelivr.net` が無い／`https://js.stripe.com` と `https://*.js.stripe.com` がある（Q29）。`/cart`・`/checkout` で `session_id` が発行され（HttpOnly・Lax・32 桁の 16 進）、`/`・`/about`・`/terms`・`/news` では `networkidle` の後も発行されない。ヘッダーの `/cart` の `Link` は `prefetch={false}` |
+| `ABOUT-010` | `SEC-ABOUT-004-AC-01`・`-AC-02`（書き換え） | AC-01 は `Set-Cookie` の有無を見ず `Cache-Control` だけを見る。AC-02 は固定の 32 桁の値を `Cookie` に付ける形 |
+| `LOOK-SEC-001` | `SEC-LOOK-006-AC-03`（1 回。新規） | 公開の LOOK の `og:image`（`/look/<id>/og`）が 200・`image/*`・`public`+`max-age=300`+`s-maxage=300`・`nosniff`・`Set-Cookie` なし。非公開にした後・存在しない id・数字でない id は 404 |
+| `LOGIN-036` | （注の文のみ） | 注の文を「proxy が `/cart` などの決済の道で付ける」に直した |
+
+### E2E で外した `test.fail`（18 行）
+
+外した行は 9 ファイルの 18 行。**反転して通ることは本番ビルドの E2E で未確認**（controller が実測する。通らなければ印を戻し、残った原因を見る）。
+
+| ファイル（`e2e/FR-...`） | 外した要件 ID | Task |
+| --- | --- | --- |
+| `SEARCH-019` | SEC-SEARCH-014 | 3 |
+| `SEARCH-021` | SEC-SEARCH-016（Task 3）、SEC-SEARCH-015-AC-01（Task 4） | 3・4 |
+| `HOME-023` | SEC-HOME-006-AC-02、SEC-HOME-007-AC-01 | 3 |
+| `LOOK-SEC-001` | SEC-LOOK-007-AC-01、SEC-LOOK-008-AC-01（Task 4）、SEC-LOOK-006-AC-02（Task 11） | 4・11 |
+| `HOME-022` | SEC-HOME-009-AC-01（Task 7）、SEC-HOME-017-AC-01（Task 8）、SEC-HOME-009-AC-02（Task 12。条件つき: 赤なら印を戻し、残った違反の `blockedURI` を見る） | 7・8・12 |
+| `ABOUT-010` | SEC-ABOUT-003-AC-01（Task 7）、SEC-ABOUT-003-AC-02（Task 8） | 7・8 |
+| `PRIVACY-006` | SEC-PRIVACY-014-AC-02（反転でなく期待の書き換え）、SEC-PRIVACY-015-AC-01（3 幅） | 7・9 |
+| `NEWS-SEC-003` | SEC-NEWS-004-AC-02、SEC-NEWS-023-AC-01（AC-02 は手元の置き場の `cache-control` が 3600 か未実測） | 8 |
+| `LOGIN-030` | SEC-AUTH-022-AC-02（desktop の 1 幅。HTTP の試験なので幅は無関係） | 10 |
+
+SEC-NEWS-007・008 の E2E（`FR-NEWS-SEC-001`）は `/api/news` が `image_url` を返さないので元から緑で、署名の関数の確かめは単体・結合に置いた。`SEC-ABOUT-006-AC-01`・`SEC-ABOUT-007-AC-01`（確かめ方は `build-env-guard.test.ts`）・`SEC-NEWS-008-AC-02`（記録に 1 件。単体）は AC に E2E が無く、`baseline.json` の既知の `missing-child` のまま。
+
+### 流していない確認（controller）
+
+- 本番ビルドの E2E（上の外した行・足した行。`next.config.ts` はビルドに焼かれるので、3000 番に残ったアプリを止めてビルドし直す）。`FR-HOME-023:225` は手元の Storage の見本の商品画像、`FR-SEARCH-021` は `NEXT_PUBLIC_SUPABASE_URL` と `SUPABASE_URL` が同じ origin であることが前提。`FR-UI-*`・`slider-*`・`FR-CART-*`（画像 null が `/placeholder.png` になる）が壊れていないこと。
+- `npm run test:trace-coverage`（`safe-object-path.ts`・`session-cookie-policy.ts`・`auth-no-store-policy.ts`・`build-env-guard.ts`・`instrumentation-client.ts` が範囲に入った）、`npm run trace:report`（`TM-HOME-37`・`TM-HOME-54`・`TM-LOOK-51`・`TM-LOOK-66`・`TM-NEWS-54`・`TM-NEWS-55` ほか「満たさない」の記述が古くなる）。
+- 全体の jest（Task 3 の ITEM の fail-closed で、ほかの結合試験の商品画像の値が `items/…` の形でないと赤くなる取りこぼしがないか）。

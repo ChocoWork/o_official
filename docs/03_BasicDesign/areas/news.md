@@ -1,6 +1,6 @@
 # NEWS の構造設計
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: NEWS（ニュース一覧 `/news`・詳細 `/news/[id]`・ホームの NEWS の区画・管理のニュース） | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: NEWS（ニュース一覧 `/news`・詳細 `/news/[id]`・ホームの NEWS の区画・管理のニュース） | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -131,11 +131,11 @@ sequenceDiagram
 
 - 書く: 管理の POST・PUT が service role の client で置き場 `news-images` に上げ、表の `image_url` には署名前の道を入れる（DATA-NEWS-004）。上げる前に中身の先頭の印で種類を確かめ、保存名は日付と乱数と検出した種類の拡張子で作る（`src/features/news/services/admin-images.ts`、SEC-NEWS-017）
 - 後始末: 行を先に変え、その後で使わなくなった画像を service role で消す。削除は消した行の `image_url`、差し替えは古い画像、作成・差し替えの失敗はその要求で上げた新しい画像。消す道筋は `news/` の下の安全な文字だけに確かめ、置き場の失敗は記録するだけで応答は成功のまま返す（ADR-0025、SEC-NEWS-018）
-- 配る: `signNewsImageFields` が行の `image_url` を `signNewsImageUrl` の結果に置き換える。保存の道・旧 public・sign・authenticated の URL から置き場の中の道を取り出し（`extractNewsImageObjectPath`）、期限 3600 秒で署名する
+- 配る: `signNewsImageFields` が行の `image_url` を `signNewsImageUrl` の結果に置き換える。保存の道・旧 public・sign・authenticated の URL から、自分の置き場の `news/` の下の安全な道だけを取り出し（`parseOwnObjectPath`。DD-SEARCH-011。取り出せない値は `null`）、期限 3600 秒で署名する。`extractNewsImageObjectPath` は後始末だけが使う
 - 使う所: 管理の一覧と1件の GET、検索（`src/features/search/services/search.service.ts`、範囲外）。公開の取り出し（一覧・1件）は署名しない
 - 公開の一覧・詳細・ホームは画像を出さない（FREQ-32）ので、`getPublishedNews`・`getPublishedNewsDetailById` は `image_url` を選ばず、署名も service role の client も使わない。型 `PublicNewsArticle` に `image_url` は無い（SEC-NEWS-005。2026-10-26 に満たした）
-- 道にできない値と署名の失敗では元の値を返し、記録しない（SEC-NEWS-008 は満たさない。DRV-NEWS-008 が今の動き）。公開の道は署名しなくなったので、残る署名の経路（検索と管理）だけの話（波 1-C）
-- 署名する前に道が `news/` の下か、URL のホストが自分のプロジェクトかを確かめない（SEC-NEWS-007 は満たさない。残る経路は検索と管理。波 1-C）
+- 道にできない値と署名の失敗では元の値を返さず `null` を返し、`signNewsImageFields` は `image_url: null`、検索は `imageUrl: null` にする。記録は種類（`invalid_path`・`sign_failed`）だけで、道筋・URL・誤りの文は書かない（SEC-NEWS-008 を満たす。2026-10-28。ADR-0316）。管理の一覧は `image_url` が `null` の記事を `/placeholder.png` で描く
+- 署名する前に、共有の `parseOwnObjectPath`（`src/lib/storage/safe-object-path.ts`、DD-SEARCH-011）で、道筋が置き場 `news-images` の `news/` の下の安全な文字か、URL のホストが自分のプロジェクトの origin（`NEXT_PUBLIC_SUPABASE_URL`、無ければ `SUPABASE_URL`）1 つかを確かめる（SEC-NEWS-007 を満たす。2026-10-28。ADR-0316）。`extractNewsImageObjectPath` は管理の後始末だけが使い、`isOwnNewsImagePath` は共有の `isSafeObjectPath` に委譲する
 - 置き場を非公開にする設定は、2026-10-26 から移行 `sec_storage_buckets` が持つ（SEC-NEWS-003。DATA-NEWS-004、ADR-0164）
 
 ### ARC-NEWS-004 共有の proxy が Origin の検査と守りの見出しを全部の応答にかける
@@ -217,7 +217,7 @@ sequenceDiagram
 
 - 置き場: `/admin?tab=NEWS` の中で `NewsSection` を描く（`src/app/admin/page.tsx`、範囲外）。タブと「新規作成」は店長の役の時だけ出す。窓口は権限で守るので、画面は役・窓口は権限と軸が違う（ADR-0007 で初期値ではサポーターに権限が無い）
 - 取り出し: `GET /api/admin/news`（API-NEWS-002）
-- 行: 画像（署名つき URL を `next/image` に渡す）、状態のバッジ（公開中・非公開）、分類の `TagLabel`（outline）、題、公開日、公開・非公開の切り替え、編集（`/admin/news/edit/<id>`）、削除のボタン
+- 行: 画像（署名つき URL を `next/image` に渡す。署名できない記事は `null` で届くので `/placeholder.png` を出す）、状態のバッジ（公開中・非公開）、分類の `TagLabel`（outline）、題、公開日、公開・非公開の切り替え、編集（`/admin/news/edit/<id>`）、削除のボタン
 - 切り替え: 今の状態を反転して `PATCH`（API-NEWS-006）。失敗は `alert`、成功で読み直す
 - 削除: 「この記事を削除してもよろしいですか？」に同意した時だけ `DELETE`（API-NEWS-007）。失敗は `alert`、成功で読み直す
 - 取り出しの失敗は「ニュース記事がありません」にせず、`role="alert"` の「ニュース記事の取得に失敗しました」と「再読み込み」のボタンを出す。切り替えの後の読み直しの失敗は、前の一覧の上に同じ知らせを出す（SEC-NEWS-020）

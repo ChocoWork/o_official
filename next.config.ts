@@ -1,4 +1,8 @@
 import type { NextConfig } from "next";
+import { assertBuildEnv } from "./src/lib/build-env-guard";
+
+// 本番のビルドで必須の環境変数が無い・2 つの Supabase の URL が別の origin なら、ここでビルドを落とす（SEC-ABOUT-007）。
+assertBuildEnv(process.env);
 
 const skipBuildChecks = process.env.NEXT_BUILD_SKIP_CHECKS === '1';
 
@@ -11,6 +15,20 @@ const localSupabaseStorage = (() => {
   try {
     const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '');
     return ['localhost', '127.0.0.1'].includes(url.hostname) ? url : null;
+  } catch {
+    return null;
+  }
+})();
+
+/*
+ * 本番のビルドでは、自分の Supabase プロジェクトの host 1 つだけを next/image の取得元にする
+ * （SEC-HOME-017・SEC-NEWS-023。全プロジェクトを許す *.supabase.co は使わない）。
+ * CSP の img-src と同じ NEXT_PUBLIC_SUPABASE_URL の origin に揃える。
+ */
+const remoteSupabaseHost = (() => {
+  try {
+    const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '');
+    return url.protocol === 'https:' && !localSupabaseStorage ? url.hostname : null;
   } catch {
     return null;
   }
@@ -32,43 +50,21 @@ const nextConfig: NextConfig = {
     : {}),
   images: {
     ...(localSupabaseStorage ? { dangerouslyAllowLocalIP: true } : {}),
+    // 署名つきの URL の最適化の画像は、署名の期限（3600 秒）より長くキャッシュしない。
+    minimumCacheTTL: 3600,
     remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'placehold.co',
-        port: '',
-        pathname: '/**',
-      },
-      {
-        protocol: 'https',
-        hostname: 'readdy.ai',
-        port: '',
-        pathname: '/**',
-      },
-      {
-        protocol: 'https',
-        hostname: 'public.readdy.ai',
-        port: '',
-        pathname: '/**',
-      },
-      {
-        protocol: 'https',
-        hostname: '*.supabase.co',
-        port: '',
-        pathname: '/storage/v1/object/public/**',
-      },
-      {
-        protocol: 'https',
-        hostname: '*.supabase.co',
-        port: '',
-        pathname: '/storage/v1/object/sign/**',
-      },
-      {
-        protocol: 'https',
-        hostname: '*.supabase.co',
-        port: '',
-        pathname: '/storage/v1/object/authenticated/**',
-      },
+      // 本番のバケットは非公開なので、署名つきの道（sign）だけ。public は入れない。
+      // authenticated は next/image が認証の見出しを付けられないので入れない。
+      ...(remoteSupabaseHost
+        ? [
+            {
+              protocol: 'https' as const,
+              hostname: remoteSupabaseHost,
+              port: '',
+              pathname: '/storage/v1/object/sign/**',
+            },
+          ]
+        : []),
       ...(localSupabaseStorage
         ? [
             {

@@ -1,6 +1,6 @@
 # SEARCH の要件
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: SEARCH（検索のページ `/search`・検索の窓口 `/api/search`・候補の窓口 `/api/suggest`・ホームの `/?q=` のプレビュー） | 基準コミット: `973dc336`（作業ツリー）
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: SEARCH（検索のページ `/search`・検索の窓口 `/api/search`・候補の窓口 `/api/suggest`・ホームの `/?q=` のプレビュー） | 基準コミット: `973dc336`（作業ツリー）
 
 ## 概要
 
@@ -1835,7 +1835,7 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で ITEM 検索結果�
 | 出どころ | 実装から推定（NEWS の SEC-NEWS-004（範囲外）の ITEM・LOOK 版） |
 | 優先度 | SHOULD |
 
-検索の応答に入る ITEM・LOOK・NEWS の画像の署名つき URL の期限を、決めた長さ以下（案: 1時間）にする。今のコードは ITEM が7日。
+検索の応答に入る ITEM・LOOK・NEWS の画像の署名つき URL の期限を、決めた長さ以下（案: 1時間）にする。ITEM は 2026-10-28 に満たした（共有の `item-images.ts` の既定を7日から3600秒に直し、検索の側も `SEARCH_IMAGE_URL_TTL_SECONDS = 3600` を明示して渡す。ADR-0316）。LOOK・NEWS は元から1時間で、検索の側が同じ値を明示して渡す。
 
 #### SEC-SEARCH-014-AC-01 検索の応答の画像の URL が1時間で切れる
 
@@ -1860,7 +1860,7 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で ITEM 検索結果�
 | 出どころ | OWASP ASVS 4.0.3 V4.1.5。実装から推定（NEWS の SEC-NEWS-008（範囲外）の ITEM・LOOK 版） |
 | 優先度 | MUST |
 
-検索の応答では、道筋にできない値と署名の失敗の時に `imageUrl` を `null` にする。今のコードは元の値を返す。
+検索の応答では、道筋にできない値と署名の失敗の時に `imageUrl` を `null` にする。ITEM・LOOK・NEWS とも 2026-10-28 に満たした（`signItemImageUrl`・`signLookImageUrl`・`signNewsImageUrl` が元の値を返さず `null` を返す。失敗の記録は種類 `invalid_path`・`sign_failed` だけ）。
 
 #### SEC-SEARCH-015-AC-01 署名できない画像の値は null になる
 
@@ -1885,7 +1885,7 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で ITEM 検索結果�
 | 出どころ | 実装から推定（NEWS の SEC-NEWS-007（範囲外）の ITEM・LOOK 版） |
 | 優先度 | SHOULD |
 
-ITEM・LOOK の画像は、URL のホストが自分の Supabase で、道筋が決まった場所の下にある時だけ署名する。今のコードは確かめない。
+ITEM・LOOK・NEWS の画像は、URL のホストが自分の Supabase で、道筋が決まった場所の下にある時だけ署名する。ITEM は 2026-10-28 に満たした（共有の `parseOwnObjectPath`（DD-SEARCH-011）を `item-images.ts` が署名の前に通す。許す host は `NEXT_PUBLIC_SUPABASE_URL`（無ければ `SUPABASE_URL`）の origin 1 つで、道筋は `items/` の下の安全な文字だけ）。LOOK・NEWS も同日に満たした（`look-images.ts`・`news-images.ts` が同じ関数を、置き場 `look-images`・接頭辞 `looks`、置き場 `news-images`・接頭辞 `news` で通す。ADR-0316）。
 
 #### SEC-SEARCH-016-AC-01 決まった場所の外の道筋には署名しない
 

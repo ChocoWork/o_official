@@ -1,6 +1,6 @@
 ﻿# 1.19 検索ページ（SEARCH）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: 検索のページ `/search`、ホームの `/?q=` のプレビュー、`GET /api/search`・`GET /api/suggest`、取り出しの関数（`search.service.ts`） | 基準コミット: `4facf63b`（作業ツリー）
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: 検索のページ `/search`、ホームの `/?q=` のプレビュー、`GET /api/search`・`GET /api/suggest`、取り出しの関数（`search.service.ts`） | 基準コミット: `4facf63b`（作業ツリー）
 
 ## 概要
 
@@ -19,6 +19,7 @@ SEARCH の範囲のコードの単位ごとに、入出力・正常と異常の�
 | `DD-SEARCH-008` | `getResultTypeLabel`（`search.service.ts`） | 種別の表示名。未使用（削除の判断待ち）で、どこからも使われない | なし |
 | `DD-SEARCH-009` | `searchQuerySchema`（`src/features/search/lib/query-schema.ts`） | 検索と候補の窓口が共有する語の入口の決まり | なし |
 | `DD-SEARCH-010` | `rejectCrossSiteFetch`（`src/features/search/lib/cross-site.ts`） | 外のサイトの頁から読み込まれた要求を 403 で断る | なし |
+| `DD-SEARCH-011` | `parseOwnObjectPath`・`isSafeObjectPath`（`src/lib/storage/safe-object-path.ts`、共有） | 画像の値から、自分のプロジェクトの置き場の接頭辞の下の安全な道筋だけを取り出す。署名の前の確かめ | なし |
 
 - 結論: 検索の画面とホームのプレビューは利用者の端末で動く部品で、2つの窓口を呼ぶ。窓口は入力を確かめ、共有の回数の制限を通してから取り出しの関数を呼ぶ。取り出しの関数は利用者の session の client で DB の検索の関数を、service role の client で人気商品の関数と画像の署名を呼ぶ
 - 失敗の扱いが層ごとに違う。検索は DB の関数が1つでも失敗したら取り出しの関数が `SearchBackendError` を投げて窓口が 500 にし（0件と区別できる）、サジェストは失敗した種別を記録して飛ばし、画面は 200 以外を「検索結果を読み込めませんでした」にする。記録は名前と符号だけ
@@ -32,7 +33,7 @@ SEARCH の範囲のコードの単位ごとに、入出力・正常と異常の�
 | 範囲 | `scripts/trace/scope.json` の SEARCH |
 | 上位の文書 | [SEARCH の構造設計](../../03_BasicDesign/areas/search.md)（`ARC-`・`SCR-`・`FLOW-`・`STATE-`・`API-`・`DATA-SEARCH-`）、[SEARCH の要件](../../02_Requirements/areas/search.md)（`SEC-SEARCH-`・`DRV-SEARCH-`・要件） |
 | 関連文書 | [SEARCH の脅威](../../05_Quality/security/threats/search.md)、[ADR-0300](../../03_BasicDesign/decisions/ADR-0300-search-query-as-rpc-argument.md)〜[ADR-0310](../../03_BasicDesign/decisions/ADR-0310-search-page-client-fetch-url-replace.md)・ADR-0311〜0313、`docs/03_BasicDesign/api/api-spec.md`（別の作業が書き換え中なので触らない） |
-| 対象のコード | 「実装の単位」の表の11単位。`src/features/search/types/search.types.ts` は型だけで単位が無い |
+| 対象のコード | 「実装の単位」の表の13単位。`src/features/search/types/search.types.ts` は型だけで単位が無い |
 | 引き継いだ文書 | この頁の旧版（「機能要件対応表」「実装タスク管理」「API 仕様」の表）の `IMPL-SEARCH-001`〜`005`・`IMPL-SEARCH-API-01`・`IMPL-SEARCH-SUGGEST-01`。旧版の頁を読む試験は無い（`tests/` を `19_search` で検索して0件）ので、この頁をそのまま書き直した |
 | 調べた時点 | 2026-10-24 の作業ツリー。コードは読んだだけで、動かしての確かめはしていない |
 
@@ -42,7 +43,7 @@ SEARCH の範囲のコードの単位ごとに、入出力・正常と異常の�
 | --- | --- | --- |
 | 回数の制限 | `src/features/auth/middleware/rateLimit.ts` の `enforceRateLimit` | 送り元は `x-forwarded-for` の先頭、無ければ `x-real-ip`、どちらも無ければ `127.0.0.1`。超えると 429 と `Retry-After`、数え場所の失敗は 503 と `Retry-After`。超えなければ `undefined` |
 | Supabase の client | `src/lib/supabase/server.ts` の `createClient`・`createServiceRoleClient` | 検索の関数は利用者の session、人気商品の関数と署名は service role |
-| 画像の署名 | `src/lib/storage/item-images.ts`（ITEM、範囲外）・`look-images.ts`（LOOK）・`news-images.ts`（NEWS） | 値が無ければ null、道にできなければ元の値、署名に失敗すれば元の値を返す |
+| 画像の署名 | `src/lib/storage/item-images.ts`（ITEM、範囲外）・`look-images.ts`（LOOK）・`news-images.ts`（NEWS） | 値が無ければ null、道にできなければ null、署名に失敗すれば null を返す（元の値は返さない。2026-10-28。ADR-0316） |
 | 読み上げの文 | `src/components/ui/LiveMessage/LiveMessage.tsx` | 結果の取り出しの失敗の文 |
 | ヘッダーの入口 | `src/components/Header.tsx`（AUTH） | 検索のアイコンが `/search` へ移る |
 | ホームの頁 | `src/app/page.tsx`（HOME） | ヒーローの直後に `SearchHomePreview` を描く |
@@ -82,7 +83,10 @@ graph LR
 | `src/features/search/services/search.service.ts` | `SearchBackendError` | DD-SEARCH-006 |
 | `src/features/search/lib/query-schema.ts` | `searchQuerySchema` | DD-SEARCH-009 |
 | `src/features/search/lib/cross-site.ts` | `rejectCrossSiteFetch` | DD-SEARCH-010 |
+| `src/lib/storage/safe-object-path.ts` | `isSafeObjectPath` | DD-SEARCH-011 |
+| `src/lib/storage/safe-object-path.ts` | `parseOwnObjectPath` | DD-SEARCH-011 |
 
+- `DD-SEARCH-011` の `src/lib/storage/safe-object-path.ts` は LOOK・NEWS・ITEM の署名も通す共有部品だが、`look-images.ts`（`DD-LOOK-006`）・`news-images.ts` と同じく最初の利用者の領域の範囲に入れ、`scripts/trace/scope.json` の SEARCH の `src` と、試験 `tests/unit/lib/storage/safe-object-path.test.ts` を `tests` に足した。DD の「コードの単位」「単体テスト」の検査（`rules.ts`）が範囲内の単位と試験を要るため。`@impl` は `IMPL-SEARCH-129`（`isSafeObjectPath`）・`130`（`parseOwnObjectPath`）
 - `search.types.ts` は `parseCodeUnits` の結果が空で、単位が無い
 - `.tsx` と `route.ts` はファイル全体で1つの単位なので、中の関数（`SearchPageClient.tsx` の `StrokeIcon`・`normalizeTab`・`renderHighlightedText` など、`page.tsx` の metadata の関数）はその単位に含める
 - `search.service.ts` の export しない関数（`normalizeText`・`tokenizeQuery`・`buildSnippet`・`rankText`・`formatLookSeason`・`formatItemPrice`・`mapPopularItem`・`signResultImages`・`getPopularItems`・`labelContainsQuery`）は単位にならない。使う側の項目（DD-SEARCH-006・007）の中で書く
@@ -553,7 +557,7 @@ FR-SEARCH-001・003・004、FREQ-185-REQ-01（NEWS が持つ）、FREQ-186-REQ-0
 
 7. 説明の切り出し（`buildSnippet`、DRV-SEARCH-002）: 元の文を前後の空白を除いて小文字にした中で、語全体が最初に合う位置を探す。合わなければ決めた値。合えば位置の前28字から語の長さと68字の後までを元の文から切り、前を切ったら頭に、後ろを切ったら末尾に「…」を付ける
 8. 数: 種別ごとの数は切った後の数、`all` はその合計
-9. 署名（`signResultImages`）: 3種の結果を service role の client で同時に署名する。画像が無い行はそのまま。種別に合う署名の関数の返り値を `imageUrl` に入れる（ARC-SEARCH-003 の表のとおり、商品は既定の7日、ルック・ニュースは1時間）
+9. 署名（`signResultImages`）: 3種の結果を service role の client で同時に署名する。画像が無い行はそのまま。種別に合う署名の関数の返り値を `imageUrl` に入れる（ARC-SEARCH-003 の表のとおり、3種とも 3600 秒を明示して渡す。道にできない値と署名の失敗は null）
 10. 返す: `empty` は `all` が0の時だけ真
 
 | 種別 | 点の欄（先頭が題） | 説明（`buildSnippet` の元・合わない時の値） | `href` | 画像 | メタ |
@@ -841,6 +845,93 @@ SEC-SEARCH-020（外のサイト側）、ADR-0312。
 | --- | --- | --- | --- |
 | 1 | 通す | 見出し無し・空・`same-origin`・`none` | `null` |
 | 2 | 断る | `cross-site`・`same-site`・`Cross-Site`・`foo` | 403 `{ error: 'Forbidden' }`、`Cache-Control: private, no-store` |
+
+### DD-SEARCH-011 画像の署名の道筋の確かめ parseOwnObjectPath
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | ARC-SEARCH-003、SEC-SEARCH-016 |
+| 根拠 | 署名の前に、道が決まった場所（`items/`・`looks/`・`news/`）の下かと、URL のホストが自分のプロジェクトかを確かめる。確かめなければ、表に外の URL や `..` を含む道が入った時に、service role で別の物を署名してしまう（SEC-SEARCH-016）。許す origin は 1 つだけにして、署名つき URL の host と CSP の `img-src`・`remotePatterns` がずれないようにする（ADR-0316） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト |
+| 出どころ | 実装（`src/lib/storage/safe-object-path.ts`）。`.superpowers/sdd/2026-10-25-security-gap-fixes/wave3-decisions.md`、計画 `docs/superpowers/plans/2026-10-28-wave3-csp-images-session.md` の Task 1 |
+
+#### 対応要件
+
+SEC-SEARCH-016（ほかに LOOK・NEWS の道筋の確かめ SEC-LOOK-007・SEC-NEWS-007 が同じ関数を使う）。
+
+署名する側（`item-images.ts`・`look-images.ts`・`news-images.ts`。3つとも 2026-10-28 に、署名の前にこの関数を通し、取り出せない値と署名の失敗で `null` を返す形にした）が満たす要件で、この関数の外: 公開中の物だけ・署名の期限（SEC-HOME-006・007）、失敗した時に元の値を返さない（SEC-LOOK-008・SEC-NEWS-008）。この関数は取り出せなければ `null` を返すところまで。
+
+#### 入出力
+
+| 項目 | 内容 |
+| --- | --- |
+| 入力 | `parseOwnObjectPath(raw, { bucket, prefix })`。`raw` は素の道筋 / バケット名つきの道筋 / 自分のプロジェクトの Storage の URL。`isSafeObjectPath(path, prefix)` は道筋の文字だけを確かめる（URL は受けない） |
+| 出力 | 取り出せた道筋（`<prefix>/…`）。取り出せなければ `null` |
+| 環境変数 | `NEXT_PUBLIC_SUPABASE_URL`、無ければ `SUPABASE_URL`（CSP の `supabaseOrigin` と同じ `||` の順）。呼ぶたびに読む（試験が差し替えやすいため。`NEXT_PUBLIC_*` はビルドの時に値が埋め込まれるので、実行時に変わる保証ではない） |
+
+#### 正常フロー
+
+1. 文字でない・前後の空白を落として空なら `null`
+2. `http://`・`https://` で始まる値は URL として扱う。`new URL` が失敗する・origin が上の環境変数の origin 1 つと一致しない・環境変数が無い/壊れているなら `null`
+3. URL のパスが `/storage/v1/object/(public|sign|authenticated)/<bucket>/` で**始まる**時だけ、その下を `decodeURIComponent` で戻す（壊れた `%` は `null`）。パスの途中に含むだけの物は拾わない
+4. 素の道筋は先頭の `/` を 1 つだけ外す
+5. `<bucket>/` で始まる道筋はバケット名を外す
+6. `^<prefix>/[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$` に合えば返し、合わなければ `null`（`prefix` は正規表現の特殊文字を逃がす）
+
+#### 異常フロー
+
+| 場合 | 動き |
+| --- | --- |
+| 外の host・別のプロジェクト・userinfo の偽装・プロトコル違い | `null` |
+| 別のバケット・`upload` など許さない種類 | `null` |
+| `..`・`%2e%2e`・二重の符号・`//`・空白・日本語・先頭が `.` の名前・大文字違いの接頭辞 | `null` |
+| `SUPABASE_URL` が `NEXT_PUBLIC_SUPABASE_URL` と別の origin | `SUPABASE_URL` 側の host の URL は `null`（信頼する origin は 1 つ） |
+| 環境変数が両方無い | URL の形は全部 `null`。素の道筋は通る |
+
+- 現行の `extract*ImageObjectPath` との差: 現行は host を見ず、道筋の文字も確かめず、先頭の `/` を全部外す。この関数は host を 1 つに絞り、安全な文字だけを通し、先頭の `/` は 1 つだけ外す。本番の値（`/object/public/<bucket>/<prefix>/…` の自分の host と素の道筋）は全部同じ道筋に直る
+- この関数は何も呼ばない。署名側は `item-images.ts`（ITEM）・`look-images.ts`（LOOK。DD-LOOK-006）・`news-images.ts`（NEWS。DD-NEWS-068）が 2026-10-28 から使っている。LOOK の管理の後始末の `isOwnLookImagePath` は `isSafeObjectPath(path, 'looks')` に、NEWS の後始末の `isOwnNewsImagePath` は `isSafeObjectPath(path, 'news')` に委譲する
+
+#### 署名する側（ITEM。`src/lib/storage/item-images.ts`）の決まり
+
+`item-images.ts` は範囲外の共有部品で、単位にしない（上の対応要件の SEC-SEARCH-014・015・016 と SEC-HOME-006・007 を満たす側）。試験は `tests/unit/lib/storage/item-images.test.ts`。
+
+| 項目 | 決まり |
+| --- | --- |
+| 道筋の確かめ | 署名の前に `parseOwnObjectPath(raw, { bucket: 'item-images', prefix: 'items' })` を通す。本番の `/object/public/item-images/items/…` の自分の URL は道筋に直して署名する |
+| 失敗の戻り | `signItemImageUrl` は、入力が空・道筋にできない・署名に失敗（誤りの戻り・データが空・例外）の**どれでも** `null`。元の値を返さない |
+| 失敗の記録 | `console.warn` に種類 `invalid_path`・`sign_failed` だけ。道筋・URL・Supabase の誤りの文は書かない |
+| 位置 | `signItemImageUrls` は入力と同じ長さ・同じ位置の `Array<string \| null>`。`signItemImageFields` は `image_url` を先頭の要素（無効なら `null`）、`image_urls` を残りから `null` を除いたものにする（`image_url` が無効の時に `image_urls` の先頭が繰り上がらない） |
+| 期限 | 既定は3600秒（`DEFAULT_ITEM_IMAGE_SIGNED_URL_EXPIRY_SECONDS`）。検索は `SEARCH_IMAGE_URL_TTL_SECONDS = 3600`（`search.service.ts`）を明示して渡す |
+| 使い回し | サーバーの記憶にキー `道筋:期限` で持ち、残りが期限の半分以上ある間だけ使い回す（3600秒なら1800秒）。頁に載せた URL が、遅延読み込みで画像を取る前に切れないため。失敗は記憶に入れない |
+| 受け手 | 署名の戻りが `null` でも落ちない（カートは `/placeholder.png`、お気に入りは画像の無いカード、ホーム・LOOK の関連商品・検索は画像を出さない。波 3 の Task 2） |
+
+ADR-0316。
+
+#### 状態・永続化
+
+- なし。記録も書かない（道筋・URL を残さない）
+
+#### 認証認可
+
+- なし。純粋な関数
+
+#### テスト観点
+
+置き場は `tests/unit/lib/storage/safe-object-path.test.ts`。
+
+| # | 観点 | 入力 | 期待 |
+| --- | --- | --- | --- |
+| 1 | 通す | 本番の `object/public` の URL・`object/sign`・`authenticated`・素の道筋・バケット名つき・先頭 `/` 1 つ・`SUPABASE_URL` だけの設定・手元の `http://127.0.0.1:54321` | 道筋 |
+| 2 | 別の host | `evil.example`・別プロジェクト・前置きの偽装・userinfo・`http` | `null` |
+| 3 | 別のバケット・種類 | `look-images` を `item-images` で・`upload`・パスの途中に含むだけ | `null` |
+| 4 | 危ない道筋 | `..`・`%2e%2e`・二重の符号・`//`・空白・日本語・`.hidden`・壊れた `%`・大文字 | `null` |
+| 5 | 空と型 | 空・空白だけ・`null`・`undefined`・数・`javascript:`・`data:` | `null` |
+| 6 | origin は 1 つ | 2 つの変数が別の origin | `SUPABASE_URL` 側は `null`、`NEXT_PUBLIC_SUPABASE_URL` 側は通る |
+| 7 | 環境変数なし/壊れ | 両方無い・URL でない | URL の形は `null`、素の道筋は通る |
+| 8 | 特殊文字 | 接頭辞に `.` | 任意の 1 文字にしない |
+
+署名する側の試験は `tests/unit/lib/storage/item-images.test.ts`（既定の期限3600・本番の `object/public` の URL を道筋に直す・外の host や `..` は `null` で署名を呼ばない・署名の失敗は `null`・記録に道筋や URL を含まない・位置を保つ・使い回しの窓の1799秒と1801秒と3540秒）と `tests/integration/api/search-image-signing.test.ts`（検索の商品の期限が3600・外の値は `null`・署名の失敗は `null`）。
 
 ## 旧版から引き継がなかった節
 

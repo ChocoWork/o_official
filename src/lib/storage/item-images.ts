@@ -1,8 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { parseOwnObjectPath } from '@/lib/storage/safe-object-path';
 
 const ITEM_IMAGES_BUCKET = 'item-images';
-const DEFAULT_SIGNED_URL_EXPIRY_SECONDS = 60 * 60 * 24 * 7;
-const SIGNED_URL_CACHE_BUFFER_SECONDS = 60;
+const ITEM_IMAGES_PREFIX = 'items';
+export const DEFAULT_ITEM_IMAGE_SIGNED_URL_EXPIRY_SECONDS = 60 * 60;
 
 const signedUrlCache = new Map<string, { signedUrl: string; expiresAtMs: number }>();
 
@@ -63,57 +64,80 @@ async function createSignedUrlByPath(
     return cachedEntry.signedUrl;
   }
 
-  const { data, error } = await supabase.storage
-    .from(ITEM_IMAGES_BUCKET)
-    .createSignedUrl(path, expiresIn);
+  let signedUrl: string | undefined;
+  try {
+    const { data, error } = await supabase.storage
+      .from(ITEM_IMAGES_BUCKET)
+      .createSignedUrl(path, expiresIn);
+    signedUrl = error ? undefined : data?.signedUrl;
+  } catch {
+    signedUrl = undefined;
+  }
 
-  if (error || !data?.signedUrl) {
+  if (!signedUrl) {
+    warnSigningFailure('sign_failed');
     return null;
   }
 
-  const safeTtlSeconds = Math.max(1, expiresIn - SIGNED_URL_CACHE_BUFFER_SECONDS);
+  // 使い回すのは残りが期限の半分以上ある間だけにする。頁に載せた URL が、遅延読み込みで画像を取る前に切れないため。
+  const safeTtlSeconds = Math.max(1, expiresIn / 2);
   signedUrlCache.set(cacheKey, {
-    signedUrl: data.signedUrl,
+    signedUrl,
     expiresAtMs: Date.now() + safeTtlSeconds * 1000,
   });
 
-  return data.signedUrl;
+  return signedUrl;
+}
+
+/** 失敗の種類だけを残す。道筋・URL・Supabase の誤りの文は書かない。 */
+function warnSigningFailure(kind: 'invalid_path' | 'sign_failed'): void {
+  console.warn(`[item-images] ${kind}`);
+}
+
+function parseItemImagePath(rawUrl: string | null | undefined): string | null {
+  return parseOwnObjectPath(rawUrl, { bucket: ITEM_IMAGES_BUCKET, prefix: ITEM_IMAGES_PREFIX });
 }
 
 export async function signItemImageUrl(
   supabase: SupabaseClient,
   rawUrl: string | null | undefined,
-  expiresIn: number = DEFAULT_SIGNED_URL_EXPIRY_SECONDS,
+  expiresIn: number = DEFAULT_ITEM_IMAGE_SIGNED_URL_EXPIRY_SECONDS,
 ): Promise<string | null> {
   if (!rawUrl) {
     return null;
   }
 
-  const path = extractItemImageObjectPath(rawUrl);
+  const path = parseItemImagePath(rawUrl);
   if (!path) {
-    return rawUrl;
+    warnSigningFailure('invalid_path');
+    return null;
   }
 
-  const signedUrl = await createSignedUrlByPath(supabase, path, expiresIn);
-  return signedUrl ?? rawUrl;
+  return createSignedUrlByPath(supabase, path, expiresIn);
 }
 
 export async function signItemImageUrls(
   supabase: SupabaseClient,
   rawUrls: Array<string | null | undefined>,
-  expiresIn: number = DEFAULT_SIGNED_URL_EXPIRY_SECONDS,
-): Promise<string[]> {
+  expiresIn: number = DEFAULT_ITEM_IMAGE_SIGNED_URL_EXPIRY_SECONDS,
+): Promise<Array<string | null>> {
   if (rawUrls.length === 0) {
     return [];
   }
 
-  const uniquePaths = Array.from(
-    new Set(
-      rawUrls
-        .map((rawUrl) => extractItemImageObjectPath(rawUrl ?? null))
-        .filter((path): path is string => Boolean(path)),
-    ),
-  );
+  const paths = rawUrls.map((rawUrl) => {
+    if (!rawUrl) {
+      return null;
+    }
+
+    const path = parseItemImagePath(rawUrl);
+    if (!path) {
+      warnSigningFailure('invalid_path');
+    }
+    return path;
+  });
+
+  const uniquePaths = Array.from(new Set(paths.filter((path): path is string => Boolean(path))));
 
   const signedUrlEntries = await Promise.all(
     uniquePaths.map(async (path) => {
@@ -126,26 +150,19 @@ export async function signItemImageUrls(
     signedUrlEntries.filter((entry): entry is readonly [string, string] => entry !== null),
   );
 
-  return rawUrls
-    .map((rawUrl) => {
-      if (!rawUrl) {
-        return null;
-      }
-
-      const path = extractItemImageObjectPath(rawUrl);
-      if (!path) {
-        return rawUrl;
-      }
-
-      return signedUrlByPath.get(path) ?? rawUrl;
-    })
-    .filter((url): url is string => Boolean(url));
+  // 位置を保つ。無効な要素を詰めると、image_url が無効の時に image_urls の先頭が image_url に繰り上がる。
+  return paths.map((path) => (path ? signedUrlByPath.get(path) ?? null : null));
 }
+
+export type SignedItemImageFields<T> = Omit<T, 'image_url' | 'image_urls'> & {
+  image_url: string | null;
+  image_urls: string[];
+};
 
 export async function signItemImageFields<T extends { image_url?: string | null; image_urls?: string[] | null }>(
   supabase: SupabaseClient,
   row: T,
-): Promise<T> {
+): Promise<SignedItemImageFields<T>> {
   const sourceImageUrls = Array.isArray(row.image_urls) ? row.image_urls : [];
   const [nextImageUrl = null, ...nextImageUrls] = await signItemImageUrls(
     supabase,
@@ -155,6 +172,6 @@ export async function signItemImageFields<T extends { image_url?: string | null;
   return {
     ...row,
     image_url: nextImageUrl,
-    image_urls: nextImageUrls,
+    image_urls: nextImageUrls.filter((url): url is string => Boolean(url)),
   };
 }

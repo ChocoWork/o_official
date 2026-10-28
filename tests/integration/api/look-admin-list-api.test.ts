@@ -208,14 +208,14 @@ describe('GET /api/admin/looks（管理の LOOK の一覧）', () => {
     expect(serviceClient.signCalls).toHaveLength(0);
   });
 
-  it('API-LOOK-001 署名に失敗した画像は元の値のまま返し、一覧自体は 200 にする', async () => {
+  it('API-LOOK-001 署名に失敗した画像は元の値を返さず落とし、一覧自体は 200 にする', async () => {
     setup({ sign: () => ({ data: null, error: { message: 'not found' } }) });
 
     const res = await GET(makeRequest());
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.data[0].image_urls).toEqual(['looks/2026-10-20/b.jpg', 'looks/2026-10-20/c.png']);
+    expect(body.data[0].image_urls).toEqual([]);
   });
 
   it('API-LOOK-001 表が null を返した時は空の一覧を 200 で返す', async () => {

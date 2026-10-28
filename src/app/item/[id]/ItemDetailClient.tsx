@@ -488,10 +488,13 @@ export default function ItemDetailClient({ id }: Props) {
       ? item.image_urls[selectedImageIndex]
       : item.image_url;
 
-  const thumbnailImages =
+  // 署名に失敗した画像は null で届く。null の 1 枚を足さず、1 枚も無い時だけ「No Image」の 1 枠を残す
+  const signedThumbnailImages = (
     item.image_urls && item.image_urls.length > 0
       ? item.image_urls
-      : [item.image_url];
+      : [item.image_url]
+  ).filter((url): url is string => Boolean(url));
+  const thumbnailImages = signedThumbnailImages.length > 0 ? signedThumbnailImages : [""];
 
   // 現在選択中のカラー名（alt テキスト用）
   const activeColorName = color || "";

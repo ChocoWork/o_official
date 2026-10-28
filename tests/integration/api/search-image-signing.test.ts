@@ -26,10 +26,12 @@ const { GET } = require('@/app/api/search/route');
 
 type Rows = Record<string, unknown[]>;
 type SignCall = { bucket: string; path: string };
+type ExpiryCall = { bucket: string; expiresIn: number };
 
 // service role の client は人気商品の関数と画像の署名を受け持ち、利用者の client は検索の関数だけを受ける
 function setup(options: { popular?: unknown[]; search?: Rows; signFails?: boolean } = {}) {
   const signCalls: SignCall[] = [];
+  const expiryCalls: ExpiryCall[] = [];
   const serviceRpc = jest.fn(async (name: string) => {
     if (name === 'get_popular_items') return { data: options.popular ?? [], error: null };
     return { data: null, error: { message: `unexpected ${name}` } };
@@ -38,8 +40,9 @@ function setup(options: { popular?: unknown[]; search?: Rows; signFails?: boolea
     rpc: serviceRpc,
     storage: {
       from: (bucket: string) => ({
-        createSignedUrl: jest.fn(async (path: string) => {
+        createSignedUrl: jest.fn(async (path: string, expiresIn: number) => {
           signCalls.push({ bucket, path });
+          expiryCalls.push({ bucket, expiresIn });
           if (options.signFails) return { data: null, error: { message: 'sign failed' } };
           return { data: { signedUrl: `https://signed.example/${bucket}/${path}` }, error: null };
         }),
@@ -51,7 +54,7 @@ function setup(options: { popular?: unknown[]; search?: Rows; signFails?: boolea
   const userClient = { rpc: userRpc, storage: { from: userStorageFrom } };
   createServiceRoleClient.mockResolvedValue(serviceClient);
   createClient.mockResolvedValue(userClient);
-  return { signCalls, serviceRpc, userRpc, userStorageFrom };
+  return { signCalls, expiryCalls, serviceRpc, userRpc, userStorageFrom };
 }
 
 const itemRow = (id: number, image_url: string | null) => ({
@@ -83,15 +86,18 @@ const newsRow = (id: number, image_url: string | null) => ({
 
 describe('結果と人気商品の画像の署名（ARC-SEARCH-003）', () => {
   let errorSpy: jest.SpyInstance;
+  let warnSpy: jest.SpyInstance;
 
   beforeEach(() => {
     jest.clearAllMocks();
     incrementCounter.mockResolvedValue(1);
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
   afterEach(() => {
     errorSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 
   it('ARC-SEARCH-003 商品は置き場 item-images で署名し、署名つき URL を imageUrl に入れる', async () => {
@@ -103,6 +109,49 @@ describe('結果と人気商品の画像の署名（ARC-SEARCH-003）', () => {
     expect(result.items[0].imageUrl).toBe('https://signed.example/item-images/items/sign-item-1.jpg');
   });
 
+  it('ARC-SEARCH-003 商品の署名つき URL の期限は 3600 秒（検索の結果と人気商品）', async () => {
+    const { expiryCalls } = setup({
+      popular: [itemRow(9, 'items/sign-ttl-9.jpg')],
+      search: { search_items: [itemRow(1, 'items/sign-ttl-1.jpg')] },
+    });
+
+    await executeSearch({ query: 'coat' });
+    await executeSearch({ query: '' });
+
+    const itemExpiries = expiryCalls.filter((c) => c.bucket === 'item-images').map((c) => c.expiresIn);
+    expect(itemExpiries.length).toBeGreaterThan(0);
+    expect(itemExpiries.every((seconds) => seconds === 3600)).toBe(true);
+  });
+
+  it('ARC-SEARCH-003 商品の画像が置き場の決まった場所の外・別 host の URL なら、署名を呼ばず imageUrl を null にする', async () => {
+    const { signCalls } = setup({
+      search: {
+        search_items: [
+          itemRow(1, 'other/outside.jpg'),
+          itemRow(2, 'https://example.com/storage/v1/object/public/item-images/items/foreign.jpg'),
+          itemRow(3, 'items/../looks/traversal.jpg'),
+        ],
+      },
+    });
+
+    const result = await executeSearch({ query: 'coat' });
+
+    expect(signCalls).toEqual([]);
+    expect(result.items.map((i: { imageUrl: unknown }) => i.imageUrl)).toEqual([null, null, null]);
+  });
+
+  it('ARC-SEARCH-003 商品の署名に失敗したら元の値でなく imageUrl を null にする', async () => {
+    const { signCalls } = setup({
+      signFails: true,
+      search: { search_items: [itemRow(1, 'items/sign-fail-null.jpg')] },
+    });
+
+    const result = await executeSearch({ query: 'coat' });
+
+    expect(signCalls).toHaveLength(1);
+    expect(result.items[0].imageUrl).toBeNull();
+  });
+
   it('ARC-SEARCH-003 ルックは置き場 look-images で署名し、image_urls の1枚目だけを署名する', async () => {
     const { signCalls } = setup({
       search: { search_looks: [lookRow(1, ['looks/first.jpg', 'looks/second.jpg'])] },
@@ -112,6 +161,84 @@ describe('結果と人気商品の画像の署名（ARC-SEARCH-003）', () => {
 
     expect(signCalls).toEqual([{ bucket: 'look-images', path: 'looks/first.jpg' }]);
     expect(result.looks[0].imageUrl).toBe('https://signed.example/look-images/looks/first.jpg');
+  });
+
+  it('ARC-SEARCH-003 ルックの署名つき URL の期限は 3600 秒', async () => {
+    const { expiryCalls } = setup({ search: { search_looks: [lookRow(1, ['looks/ttl.jpg'])] } });
+
+    await executeSearch({ query: 'coat' });
+
+    expect(expiryCalls.filter((c) => c.bucket === 'look-images')).toEqual([
+      { bucket: 'look-images', expiresIn: 3600 },
+    ]);
+  });
+
+  it('ARC-SEARCH-003 ルックの画像が置き場の決まった場所の外・別 host の URL なら、署名を呼ばず imageUrl を null にする', async () => {
+    const { signCalls } = setup({
+      search: {
+        search_looks: [
+          lookRow(1, ['other/outside.jpg']),
+          lookRow(2, ['https://example.com/storage/v1/object/public/look-images/looks/foreign.jpg']),
+          lookRow(3, ['looks/../items/traversal.jpg']),
+        ],
+      },
+    });
+
+    const result = await executeSearch({ query: 'coat' });
+
+    expect(signCalls).toEqual([]);
+    expect(result.looks.map((l: { imageUrl: unknown }) => l.imageUrl)).toEqual([null, null, null]);
+  });
+
+  it('ARC-SEARCH-003 ルックの署名に失敗したら元の値でなく imageUrl を null にする', async () => {
+    const { signCalls } = setup({
+      signFails: true,
+      search: { search_looks: [lookRow(1, ['looks/sign-fail-null.jpg'])] },
+    });
+
+    const result = await executeSearch({ query: 'coat' });
+
+    expect(signCalls).toHaveLength(1);
+    expect(result.looks[0].imageUrl).toBeNull();
+  });
+
+  it('ARC-SEARCH-003 ニュースの署名つき URL の期限は 3600 秒', async () => {
+    const { expiryCalls } = setup({ search: { search_news: [newsRow(1, 'news/ttl.jpg')] } });
+
+    await executeSearch({ query: 'coat' });
+
+    expect(expiryCalls.filter((c) => c.bucket === 'news-images')).toEqual([
+      { bucket: 'news-images', expiresIn: 3600 },
+    ]);
+  });
+
+  it('ARC-SEARCH-003 ニュースの画像が置き場の決まった場所の外・別 host の URL なら、署名を呼ばず imageUrl を null にする', async () => {
+    const { signCalls } = setup({
+      search: {
+        search_news: [
+          newsRow(1, 'other/outside.jpg'),
+          newsRow(2, 'https://example.com/storage/v1/object/public/news-images/news/foreign.jpg'),
+          newsRow(3, 'news/../items/traversal.jpg'),
+        ],
+      },
+    });
+
+    const result = await executeSearch({ query: 'coat' });
+
+    expect(signCalls).toEqual([]);
+    expect(result.news.map((n: { imageUrl: unknown }) => n.imageUrl)).toEqual([null, null, null]);
+  });
+
+  it('ARC-SEARCH-003 ニュースの署名に失敗したら元の値でなく imageUrl を null にする', async () => {
+    const { signCalls } = setup({
+      signFails: true,
+      search: { search_news: [newsRow(1, 'news/sign-fail-null.jpg')] },
+    });
+
+    const result = await executeSearch({ query: 'coat' });
+
+    expect(signCalls).toHaveLength(1);
+    expect(result.news[0].imageUrl).toBeNull();
   });
 
   it('ARC-SEARCH-003 ニュースは置き場 news-images で署名する', async () => {

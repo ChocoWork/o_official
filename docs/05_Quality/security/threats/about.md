@@ -1,6 +1,6 @@
 # ABOUT の脅威
 
-> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-24 | 対象: ABOUT の頁（`/about`、`src/app/about/page.tsx`）と、その応答に効く共有の守り | 基準コミット: `a03beaff`（本文の `ファイル:行` は、この脅威の文書が日付つきの証拠として残す行番号で、このコミットの内容を指す。コードを読み直す時は関数・部品の名前でたどる）
+> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-28 | 対象: ABOUT の頁（`/about`、`src/app/about/page.tsx`）と、その応答に効く共有の守り | 基準コミット: `a03beaff`（本文の `ファイル:行` は、この脅威の文書が日付つきの証拠として残す行番号で、このコミットの内容を指す。コードを読み直す時は関数・部品の名前でたどる）
 
 ---
 
@@ -71,7 +71,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | ABOUT の頁の見た目と、共有された時の OG の画像（ブランドの印象） |
 | 脅威 | 外の配信元が止まる・中身を差し替える・乗っ取られることで、ABOUT に壊れた画像や別の画像が出る |
-| 起こり方 | 頁か OG の画像を第三者の URL（過去は readdy.ai）から読む時に起こる。今は本文に画像が無く、OG の画像は同じオリジンの `/about.png`（`src/app/about/page.tsx:13`）。ただし CSP の `img-src` は `https://readdy.ai`・`https://*.readdy.ai`・`https://placehold.co` を許したまま（`src/proxy.ts:82-84`）なので、コードに外の URL が戻っても CSP では止まらない。さらに next/image の外の画像の許可（`next.config.ts:35-53`）も placehold.co・readdy.ai・public.readdy.ai を許すので、next/image で外の画像を出すと `src` は頁と同じオリジンの `/_next/image?url=…` になり、CSP を絞っても止まらない |
+| 起こり方 | 頁か OG の画像を第三者の URL（過去は readdy.ai）から読む時に起こる。今は本文に画像が無く、OG の画像は同じオリジンの `/about.png`（`src/app/about/page.tsx:13`）。過去は CSP の `img-src` が `https://readdy.ai`・`https://*.readdy.ai`・`https://placehold.co` を許し、next/image の外の画像の許可（`next.config.ts` の `remotePatterns`）も placehold.co・readdy.ai・public.readdy.ai を許していたので、コードに外の URL が戻っても CSP では止まらず、next/image で出すと `src` は頁と同じオリジンの `/_next/image?url=…` になって CSP を絞っても止まらなかった。2026-10-28 に `img-src`（`src/proxy.ts` の `buildCsp`。`ADR-0108`）と `remotePatterns`（本番は自分の Supabase の host 1 つの署名つきの道だけ。`DD-HOME-004`）の両方から外した |
 | 影響 | ブランドの紹介の頁が崩れる、意図しない画像が出る。外の配信元に閲覧の記録が渡る |
 | 対策 | SEC-ABOUT-001 |
 | ASVS | ASVS 未対応付け（V14.2.3 の SRI が近いが、外に置かない対策とは同じでない） |
@@ -99,7 +99,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 閲覧者の端末と、閲覧の記録 |
 | 脅威 | 将来どこかに差し込みの穴ができた時に、攻撃者が許可された外のオリジンを使ってスクリプト・画像・スタイルを読み込み、情報を持ち出す |
-| 起こり方 | CSP は全部の頁に同じ1つの方針を付ける（`src/proxy.ts:54-131`）。ABOUT が使わない `https://cdn.jsdelivr.net`（style・style の要素・script・font、`src/proxy.ts:96,102,109,123`）、readdy.ai・placehold.co（img、`src/proxy.ts:82-84`）、決済・地図の枠（`src/proxy.ts:125`）も ABOUT の応答で許す。jsdelivr は src の `.ts`・`.tsx`・`.css` のどこからも読まず、アイコンの字形は自前で読み込む（`src/styles/globals.css:3`）。style は要素の style 属性のために `'unsafe-inline'` を常に許し（`src/proxy.ts:91-96`）、ABOUT も文字の大きさを全部 style 属性で付ける（`src/app/about/page.tsx:19-35`） |
+| 起こり方 | CSP は全部の頁に同じ1つの方針を付ける（`src/proxy.ts` の `buildCsp`）。ABOUT が使わない `https://cdn.jsdelivr.net`・readdy.ai・placehold.co・`*.supabase.co` は 2026-10-28 に外した（`ADR-0108`）。Stripe・Turnstile・地図の枠は全頁で許す（Q29。`next/link` の遷移で CSP が変わらないため）ので ABOUT の応答でも許す。以前の jsdelivr は src の `.ts`・`.tsx`・`.css` のどこからも読まず、アイコンの字形は自前で読み込む（`src/styles/globals.css:3`）。style は要素の style 属性のために `'unsafe-inline'` を常に許し（`src/proxy.ts:91-96`）、ABOUT も文字の大きさを全部 style 属性で付ける（`src/app/about/page.tsx:19-35`） |
 | 影響 | 差し込みの穴が別にできた時の持ち出しの道が増える。ABOUT 自体は入力を持たないので、今の影響は小さい |
 | 対策 | SEC-ABOUT-003 |
 | ASVS | V14.4.3 |
@@ -112,8 +112,8 @@ flowchart LR
 | 属性 | 値 |
 | --- | --- |
 | 守るもの | 閲覧者ごとのセッションの id（カート・閲覧の紐づけ）と、要求ごとに変わる CSP の nonce |
-| 脅威 | 本番の前に置く共有のキャッシュ（CDN など）が、初めての閲覧者への `/about` の応答を `Set-Cookie` ごと残し、後の閲覧者に同じセッションの id を配る。Cookie を持って戻った閲覧者への応答は `Set-Cookie` を持たないので残しやすく、残ると HTML と CSP の nonce が焼き付き、誰にでも同じ nonce が配られる |
-| 起こり方 | `src/proxy.ts` は Cookie を持たない要求に、どの頁でもセッションの Cookie を発行する（`src/proxy.ts:228-232`）。ABOUT は中身が誰にでも同じなので、キャッシュに残しやすい頁に見える。`src/app/layout.tsx:22` が毎回サーバーで描く指定をしており、Next はその頁に共有のキャッシュに残させない `Cache-Control` を付ける（推定。実測していない）。`src/proxy.ts`・`next.config.ts` は `Cache-Control` を明示しない（`src/proxy.ts:234-240`、`next.config.ts` に見出しの設定が無い）。nonce は要求ごとに作り、CSP と、要求と応答の `x-nonce` の見出しに載せる（`src/proxy.ts:215-216,224,234,240`） |
+| 脅威 | 本番の前に置く共有のキャッシュ（CDN など）が、初めての閲覧者への `/about` の応答を `Set-Cookie` ごと残し、後の閲覧者に同じセッションの id を配る（2026-10-28 以降、`/about` に `Set-Cookie` は付かないので、この組み合わせは起きない）。Cookie を持って戻った閲覧者への応答は `Set-Cookie` を持たないので残しやすく、残ると HTML と CSP の nonce が焼き付き、誰にでも同じ nonce が配られる |
+| 起こり方 | 過去は `src/proxy.ts` が Cookie を持たない要求に、どの頁でもセッションの Cookie を発行していた。2026-10-28 に、発行を `/cart`・`/checkout`・`/api/checkout` だけにしたので、`/about` の応答に `Set-Cookie` は付かない（`DD-PRIVACY-004`、`ADR-0355`）。要求ごとに変わる nonce が載る点は変わらない。ABOUT は中身が誰にでも同じなので、キャッシュに残しやすい頁に見える。`src/app/layout.tsx:22` が毎回サーバーで描く指定をしており、Next はその頁に共有のキャッシュに残させない `Cache-Control` を付ける（推定。実測していない）。`src/proxy.ts`・`next.config.ts` は `Cache-Control` を明示しない（`src/proxy.ts:234-240`、`next.config.ts` に見出しの設定が無い）。nonce は要求ごとに作り、CSP と、要求と応答の `x-nonce` の見出しに載せる（`src/proxy.ts:215-216,224,234,240`） |
 | 影響 | 複数の閲覧者が同じセッションの id を共有し、カートや閲覧の紐づけが混ざる。セッションの固定の足がかりになる。nonce が固定されると、差し込みの穴が別にできた時に nonce の守りが効かなくなる |
 | 対策 | SEC-ABOUT-004 |
 | ASVS | V8.1.1（当てはめは推定） |
@@ -127,7 +127,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 共有された時の OG の画像と、ブランドの印象 |
 | 脅威 | 攻撃者が要求の `Host`・`X-Forwarded-Host` を偽って OG の画像の URL を自分のサイトに向けさせる。または本番でサイトの URL の設定が漏れ、OG の画像が手元の URL やデプロイごとの URL を指す |
-| 起こり方 | OG の画像 `/about.png`（`src/app/about/page.tsx:13`）は、layout の基点の URL（`src/app/layout.tsx:28`）で絶対の URL になる。基点は環境変数だけから作り、要求の見出しを読まない（`src/lib/redirect.ts:64-72`）ので、見出しの偽りは効かない。環境変数が1つも無い時は `http://localhost:3000` に落ちる（`src/lib/redirect.ts:1,71`）。`NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_BASE_URL`・`BASE_URL` が無く `NEXT_PUBLIC_VERCEL_URL` だけがある時は、その値（Vercel が自動で入れる場合はデプロイごとの `*.vercel.app`）に落ちる（同 `:65`）。Vercel では後者の方が起こりやすい |
+| 起こり方 | OG の画像 `/about.png`（`src/app/about/page.tsx:13`）は、layout の基点の URL（`src/app/layout.tsx:28`）で絶対の URL になる。基点は環境変数だけから作り、要求の見出しを読まない（`src/lib/redirect.ts:64-72`）ので、見出しの偽りは効かない。環境変数が1つも無い時は `http://localhost:3000` に落ちる（`src/lib/redirect.ts:1,71`）。`NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_BASE_URL`・`BASE_URL` が無く `NEXT_PUBLIC_VERCEL_URL` だけがある時は、その値（Vercel が自動で入れる場合はデプロイごとの `*.vercel.app`）に落ちる（同 `:65`）。Vercel では後者の方が起こりやすい。2026-10-28 に、本番のビルド（`VERCEL_ENV=production`）は `NEXT_PUBLIC_SITE_URL` と `NEXT_PUBLIC_SUPABASE_URL` が無ければ落とすようにした（`next.config.ts` の `assertBuildEnv`、`src/lib/build-env-guard.ts`、`ADR-0206`）。本番の公開の応答は `NEXT_PUBLIC_SITE_URL` を基点にし、手元の URL にもデプロイごとの URL にも落ちない。手元・preview・E2E の本番ビルドは従来どおり |
 | 影響 | SNS で共有された ABOUT のカードの画像が出ない。見出しの偽りと共有のキャッシュが重なれば別の画像が配られる（今は見出しから作らないので起きない） |
 | 対策 | SEC-ABOUT-005、SEC-ABOUT-007 |
 | ASVS | ASVS 未対応付け |
@@ -162,9 +162,10 @@ ABOUT のレビューに載ったが、守る物も直す所も ABOUT の範囲�
 | 回数の制限の DB の失敗で素通しにする・数え方が原子的でない | Closed（当時） | 共有部品（`src/features/auth/`） | `security_review_about.md:17-18` |
 | identify の回数の制限の呼び出しの例外で素通しになる余地 | Open（当時）。今は確かめていない | AUTH | `security_review_about.md:36` |
 | `/about` を開くと、包みの `CartProvider`・`LoginProvider` が `/api/cart`・`/api/wishlist`・`/api/auth/me` を自動で呼ぶ（カートは `/privacy` でだけ止める） | 今も呼ぶ（`src/contexts/Providers.tsx:29-30`、`src/contexts/CartContext.tsx:157-164`、`src/features/cart/client/cart-api.ts:64`、`src/contexts/LoginContext.tsx:72,249`）。ABOUT の page.tsx は使わない | CART・AUTH・共有部品 | 実装から推定 |
+| 部品の見本の頁 `/ui` が readdy.ai の画像 7 か所を外から読む（`src/app/ui/page.tsx`） | Closed（2026-10-28）。`public/` の手元の画像（`/news1.png`〜`/news3.png`・`/placeholder.png`）に替えた。CSP の `img-src` と `remotePatterns` から readdy.ai を外す作業の前提 | HOME（`DD-HOME-004`） | `docs/superpowers/plans/2026-10-28-wave3-csp-images-session.md`（Task 6） |
 | 部品の見本の頁 `/ui` への導線がヘッダーに残る | Open のまま。今も `src/components/Header.tsx:24` に `/ui` があり、大きい画面のナビ（`Header.tsx:187`）とドロワー（`Header.tsx:132`）に出る。ABOUT を含む全部の頁に出る | AUTH（`Header.tsx`） | `security_review_about.md:38` |
 | turnstile の失敗の詳細が記録に残る | Open（当時）。今は確かめていない | AUTH | `security_review_about.md:39` |
-| どの頁を開いてもセッションの Cookie を発行する | 今も発行する（`src/proxy.ts:228-232`）。キャッシュとの組み合わせは THR-ABOUT-004 | PRIVACY・共有部品 | 実装から推定 |
+| どの頁を開いてもセッションの Cookie を発行する | Closed（2026-10-28）。発行を `/cart`・`/checkout`・`/api/checkout` だけにした（`src/proxy.ts` の `shouldIssueSessionCookie`、`ADR-0355`）。`/about` には付かない。キャッシュとの組み合わせは THR-ABOUT-004 | PRIVACY・共有部品 | 実装から推定 |
 
 ---
 
@@ -172,6 +173,6 @@ ABOUT のレビューに載ったが、守る物も直す所も ABOUT の範囲�
 
 - `/about` の応答の `Cache-Control` の実際の値（THR-ABOUT-004）。Next の既定の動きとして読んだだけで、本番のビルドの応答を見ていない
 - 本番の前に共有のキャッシュ（CDN など）を置くか、置く時に `Set-Cookie` 付きの応答をどう扱うか（THR-ABOUT-004）。本番のアプリはまだデプロイしていない
-- 本番でサイトの URL の環境変数が設定されるか（THR-ABOUT-005）
+- 本番でサイトの URL の環境変数が設定されるか（THR-ABOUT-005）。設定が漏れればビルドが落ちる（2026-10-28。`ADR-0206`）が、Vercel の Production に実際に入れたかは本番が未デプロイなので未確認。`NEXT_PUBLIC_VERCEL_URL` の読み方を直すかは別の判断
 - 本番のホスティングが頁の要求の回数を絞るか（THR-ABOUT-006）
 - CSP を頁ごとに分けるか、全体の許可を絞るか（THR-ABOUT-003）。ユーザーに決めてもらう

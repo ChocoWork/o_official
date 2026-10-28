@@ -14,10 +14,11 @@ LOOK 詳細 `/look/[id]` を作るコードの単位ごとに、入出力・正�
 | `DD-LOOK-032` | `getPublishedLookById`・`getAdjacentPublishedLooks`（`src/lib/look/server.ts`） | 1件の公開の LOOK を、公開中の関連商品と署名つきの画像付きで返す。前後の LOOK を 1 件ずつ id と題だけ返す。失敗は前者が投げ、後者は握る | なし |
 | `DD-LOOK-033` | `formatLookSeason`（`src/lib/look/public.ts`） | シーズンを「2026 AW」の形の文字にする | なし |
 | `DD-LOOK-068` | `parseLookId`（`src/lib/look/public.ts`） | 詳細の URL の id を正の整数にする。合わなければ null | なし |
+| `DD-LOOK-071` | `GET`（`src/app/look/[id]/og/route.ts`）、`getPublishedLookCoverRaw`（`src/lib/look/server.ts`） | `og:image` の窓口。公開の LOOK の先頭の画像を、検証した道筋のバイトで返す。署名しない | なし |
 
 - 結論: 詳細の本体は道の `id` を `parseLookId` で確かめ、`getPublishedLookById` で現在の LOOK を 1 件取り（説明文あり）、前後は `getAdjacentPublishedLooks` で並びの境目から 1 件ずつ取る（ADR-0159）。一覧の 100 件の写しに頼らないので、101 番目より古い LOOK も開き、説明文が出る。メタも `getPublishedLookById` で 1 件を別に取るので、1回の表示で同じ LOOK の画像を2回署名する（推定）
 - 無い・非公開・形の合わない id は、同じ URL で見出し「Look not found」だけを状態 200 で返す。`/look` への戻りのリンクは無い（推定）。DB の取り出しの失敗は「Look not found」にせず、頁が投げて `src/app/look/error.tsx`（[一覧の頁](06_look_list.md) の DD-LOOK-069）の誤りの画面になる
-- 番号は `DD-LOOK-030`〜`059` をこの頁で使う。今は `030`〜`033` を使い、`034` 以降は空けておく。`068` は管理の頁の範囲の空きを `parseLookId` に使った（`069` の誤りの画面は一覧の頁。2026-10-26）
+- 番号は `DD-LOOK-030`〜`059` をこの頁で使う。今は `030`〜`033` を使い、`034` 以降は空けておく。`068` は管理の頁の範囲の空きを `parseLookId` に使った（`069` の誤りの画面は一覧の頁。2026-10-26）。`071` は `og:image` の窓口（2026-10-28。`070` は管理の画像の頁）
 - 旧版の `FR-LOOK-DETAIL-007`（関連の推薦、WONT）の行は実装の ID が「—」で、コードの単位が無い。項目を作らない
 
 ## 範囲と根拠
@@ -26,7 +27,7 @@ LOOK 詳細 `/look/[id]` を作るコードの単位ごとに、入出力・正�
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の LOOK のうち、詳細のページにかかわる単位 |
 | 上位の文書 | [LOOK の構造設計](../../03_BasicDesign/areas/look.md)（`ARC-`・`SCR-`・`FLOW-`・`DATA-`）、[LOOK の要件](../../02_Requirements/areas/look.md)（`FR-LOOK-DETAIL-`・`FREQ-`・`SEC-LOOK-`・`DRV-LOOK-`） |
-| 対象のコード | `src/app/look/[id]/page.tsx`、`src/features/look/components/LookImageGallery.tsx`、`src/lib/look/server.ts` の `getPublishedLookById`・`getAdjacentPublishedLooks`、`src/lib/look/public.ts` の `formatLookSeason`・`parseLookId` |
+| 対象のコード | `src/app/look/[id]/page.tsx`、`src/features/look/components/LookImageGallery.tsx`、`src/lib/look/server.ts` の `getPublishedLookById`・`getAdjacentPublishedLooks`・`getPublishedLookCoverRaw`、`src/lib/look/public.ts` の `formatLookSeason`・`parseLookId`、`src/app/look/[id]/og/route.ts` |
 | 単位の無いファイル | `src/app/look/[id]/look-detail.css`（`.css` は単位にならない。固定のナビがフッターを覆わないよう、フッターに下の余白を足す） |
 | 関連文書 | [ルック一覧の詳細設計](06_look_list.md)、`docs/03_BasicDesign/ui/screen-list.md` |
 | 旧版のこの頁 | 機能要件対応表（`IMPL-LOOK-DETAIL-001`〜`006`）。対象の `src/components/ui/List.tsx` は今 `src/components/ui/List/List.tsx`。not found の「Back to Lookbook」リンクと、通常の表示の「Back to Lookbook」はコードに無い |
@@ -78,7 +79,7 @@ FR-LOOK-DETAIL-001・002・003・006、FREQ-176・177・180〜183・288・343・
 | 項目 | 内容 |
 | --- | --- |
 | 入力 | `params`（Promise。`id` の文字） |
-| 出力（メタ） | 見つかれば title「<テーマ> \| LOOK \| Le Fil des Heures」、description は説明文（空ならテーマから作った文）、OG の画像は1枚目の署名つき URL（無ければ空の配列）。無ければ title「Look not found \| Le Fil des Heures」と固定の説明 |
+| 出力（メタ） | 見つかれば title「<テーマ> \| LOOK \| Le Fil des Heures」、description は説明文（空ならテーマから作った文）、OG の画像は、署名できる画像が 1 枚以上ある時 `[{ url: "/look/<id>/og" }]`（署名を含まない同一オリジンの窓口。DD-LOOK-071）、無ければ空の配列。無ければ title「Look not found \| Le Fil des Heures」と固定の説明 |
 | 出力（本体） | 見つかれば2列の格子（ギャラリーと情報）・md 以上の3等分のナビ・md 未満の固定のナビ。無ければ見出し「Look not found」だけ |
 | 副作用 | なし |
 
@@ -109,7 +110,7 @@ FR-LOOK-DETAIL-001・002・003・006、FREQ-176・177・180〜183・288・343・
 | 先頭・末尾の LOOK | 無い側を薄い非リンク（md 以上）・`disabled`（md 未満） | `src/app/look/[id]/page.tsx` |
 
 - `id` は `parseLookId` で確かめる。`1e3`・`1.5`・`0`・`01`・前後の空白・17 桁以上は DB を呼ばずに見つからない扱い（SEC-LOOK-016）
-- OG の画像は1時間で切れる署名つき URL（SEC-LOOK-006 は満たさない）
+- OG の画像は署名つき URL でなく `/look/<id>/og`（SEC-LOOK-006。2026-10-28。ADR-0165）。署名が全部外れた LOOK（`imageUrls` が空）は窓口も画像を返せないので、空の配列にする
 
 #### 状態・永続化
 
@@ -129,7 +130,7 @@ FR-LOOK-DETAIL-001・002・003・006、FREQ-176・177・180〜183・288・343・
 | --- | --- | --- | --- |
 | 1 | メタ（正の整数でない id） | `id:"abc"`・`1e3`・`0`・`-1`・`1.5` | `getPublishedLookById` を呼ばず「Look not found」のメタ。取り出しが reject しても投げず固定の題と説明 |
 | 2 | メタ（見つからない） | 1件の取り出しが null | 「Look not found」のメタ |
-| 3 | メタ（見つかる・説明あり・画像あり） | 説明文と画像1枚 | title・description・OG の画像 `[{url}]` |
+| 3 | メタ（見つかる・説明あり・画像あり） | 説明文と画像2枚 | title・description・OG の画像 `[{url:"/look/<id>/og"}]`（署名つき URL は出ない） |
 | 4 | メタ（説明なし・画像なし） | 説明文が空、画像0枚 | テーマから作った description、OG の画像が空 |
 | 5 | 本体（見つからない） | `getPublishedLookById` が null、または id が正の整数でない | 見出し「Look not found」だけ。前後を取らない。id が合わない時は 1 件も取らない |
 | 6 | 本体（真ん中の LOOK） | 前後の両方を返す | 前後の両方が `/look/<id>` のリンク、名前に前後のテーマ。固定のナビは両方 `disabled` でない |
@@ -186,7 +187,7 @@ FR-LOOK-DETAIL-005、FREQ-179・288・289・344、DRV-LOOK-005。
 | 画像が1枚 | サムネイルの列を出さない。送りのボタンも出ない | `src/features/look/components/LookImageGallery.tsx` |
 | スクロールの位置から添字が出せない | 選択を変えない | `src/features/look/components/LookImageGallery.tsx` |
 | 選択の添字が並びの外（描き直しで画像が減った時） | メインの画像は先頭 | `src/features/look/components/LookImageGallery.tsx` |
-| 署名に失敗した元の値 | そのまま読み込む（SEC-LOOK-008 は満たさない） | `src/features/look/components/LookImageGallery.tsx` |
+| 署名に失敗した画像・道筋にできない画像 | 署名の側が外す（`imageUrls` に入らない。元の値は読み込まない。SEC-LOOK-008。2026-10-28）。全部外れたら 0 枚の表示 | `src/lib/storage/look-images.ts` |
 
 #### 状態・永続化
 
@@ -387,6 +388,77 @@ SEC-LOOK-016。
 | 1 | 正の整数 | `'1'`・`'1234567890123456'`（16 桁） | その数 |
 | 2 | 形の合わない値 | `'0'`・`'01'`・`'1.5'`・`'1e3'`・`'-1'`・`' 1'`・`'1 '`・`''`・`'abc'`・`'0x10'`・`'12345678901234567'`（17 桁） | null |
 
+### DD-LOOK-071 og:image の窓口 GET /look/[id]/og と getPublishedLookCoverRaw
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | API-LOOK-007、SEC-LOOK-006 |
+| 根拠 | `og:image` に期限つきの署名つき URL を入れると 1 時間で切れ、クローラーにも残る。署名を含まない同一オリジンの URL にし、公開の LOOK の先頭の画像だけを、検証した道筋のバイトで短く共有キャッシュさせて返す（SEC-LOOK-006、ADR-0165）。種類は置き場の申告でなく先頭の印で決め、非画像を画像として配らない |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト・E2E |
+| 出どころ | ユーザーの決定（Q10。推奨で進めた。2026-10-28）、実装（`src/app/look/[id]/og/route.ts`、`src/lib/look/server.ts`） |
+
+#### 対応要件
+
+SEC-LOOK-006（-AC-02、-AC-03）。
+
+#### 入出力
+
+| 項目 | 内容 |
+| --- | --- |
+| 入力（窓口） | 道の `id`（文字）。`Request` は使わない |
+| 入力（取り出し） | `id`（正の整数） |
+| 出力（取り出し） | 公開の LOOK の `image_urls` のうち、道筋の確かめに通る最初の生の値。無ければ null |
+| 出力（窓口） | 200 のバイト（`Content-Type` は検出した種類、`Cache-Control: public, max-age=300, s-maxage=300`、`X-Content-Type-Options: nosniff`）か、404（本文は固定の `Not Found`、`Cache-Control: no-store`、`nosniff`） |
+
+#### 正常フロー
+
+1. `parseLookId(id)` で正の整数に確かめる
+2. `getPublishedLookCoverRaw(id)` が匿名の client で `looks.image_urls` を `status='published'` と `id` で 1 件読み、`parseOwnObjectPath(raw, { bucket: 'look-images', prefix: 'looks' })` に通る最初の生の値を返す
+3. 窓口がもう一度同じ関数を通して道筋を取り、service role で `look-images` から `download` する
+4. バイトの先頭の印（`detectImageType`）で種類を決め、バイトを返す
+
+#### 異常フロー
+
+| 場合 | 動き | 道 |
+| --- | --- | --- |
+| id が正の整数でない | LOOK を取りに行かず 404 | `src/app/look/[id]/og/route.ts` |
+| 非公開・無い・`image_urls` が配列でない・通る画像が無い | 取り出しが null で 404。置き場を読まない | `src/lib/look/server.ts` |
+| 取り出しの DB の失敗 | 名前と符号だけ記録して null（窓口は 404）。投げない | `src/lib/look/server.ts` |
+| 取り出した値がもう一度の確かめに通らない | 404。置き場を読まない | `src/app/look/[id]/og/route.ts` |
+| `download` が誤りを返す・投げる | 404、記録は `download_failed` だけ | `src/app/look/[id]/og/route.ts` |
+| 先頭の印が画像でない | 404、記録は `not_image` だけ（置き場の `Content-Type` は信じない） | `src/app/look/[id]/og/route.ts` |
+
+- 404 の本文・記録に、道筋・URL・置き場の誤りの文を出さない
+
+#### 状態・永続化
+
+なし。読むだけ。
+
+#### 認証認可
+
+- 認可なし（公開）。session を読まず、`Set-Cookie` を付けない（`session_id` は許可リストの道だけで発行する。ADR-0355）
+- 公開の印は匿名の鍵（RLS）と `status='published'` の両方で絞る。置き場は service role で読むので、道筋の確かめが境界になる（SEC-LOOK-007）
+- 回数の制限は付けない（公開の LOOK の数に限られ、`s-maxage=300` で CDN が受ける。波 4 で見直す）
+
+#### テスト観点
+
+窓口は `getPublishedLookCoverRaw` と `createServiceRoleClient` を差し替えて呼ぶ（`tests/unit/app/look-og-route.test.ts`）。取り出しは匿名の client の連鎖を差し替える（`tests/unit/lib/look-server.test.ts`）。
+
+| # | 観点 | 入力 | 期待 |
+| --- | --- | --- | --- |
+| 1 | 公開の LOOK（PNG） | 取り出しが `looks/…png`、`download` が PNG のバイト | 200、`image/png`、`Cache-Control` がちょうど `public, max-age=300, s-maxage=300`、`nosniff`、バイト一致、`Set-Cookie` なし |
+| 2 | 種類 | JPEG・WebP・GIF の先頭の印 | それぞれの種類 |
+| 3 | 非画像 | 置き場の `Content-Type` が `image/png` でも本文が HTML | 404 |
+| 4 | 不正な id | `abc`・`0`・`-1`・`1.5`・20 桁 | 404。取り出しも `download` も呼ばない |
+| 5 | 非公開・無い | 取り出しが null | 404。`download` を呼ばない |
+| 6 | 確かめに通らない値 | 外の host の URL・`../x.png`・`other/x.png` | 404。`download` を呼ばない |
+| 7 | 置き場の失敗 | `download` が `{ error }`・投げる | 404。本文にも記録にも誤りの文・道筋が出ない |
+| 8 | 404 の見出し | どの 404 でも | `Cache-Control: no-store`、`Set-Cookie` なし |
+| 9 | 取り出しの絞り | 匿名の client | `select('image_urls')`・`eq('status','published')`・`eq('id', id)`・`maybeSingle`。service role と署名を使わない |
+| 10 | 最初の有効な値 | `image_urls` の先頭 3 つが確かめに通らず 4 つ目が通る | 4 つ目の生の値 |
+| 11 | 無効 | 全部確かめに通らない・配列でない・空・DB の失敗 | null（DB の失敗は符号だけ記録） |
+
 ## 実装の単位
 
 コードの TSDoc に `@design` を書く時はこの表に従う（`@impl` の番号はその時に振る）。単位の数え方は `scripts/trace/parse-code.ts` の `parseCodeUnits`（2026-10-24 に実行）。
@@ -399,6 +471,8 @@ SEC-LOOK-016。
 | `src/lib/look/server.ts` | `getAdjacentPublishedLooks` | DD-LOOK-032 |
 | `src/lib/look/public.ts` | `formatLookSeason` | DD-LOOK-033 |
 | `src/lib/look/public.ts` | `parseLookId` | DD-LOOK-068 |
+| `src/lib/look/server.ts` | `getPublishedLookCoverRaw` | DD-LOOK-071 |
+| `src/app/look/[id]/og/route.ts` | `<file>` | DD-LOOK-071 |
 
 - 同じファイルの `getPublishedLookList`・`getPublishedLooks`・`LookFetchError`・`getPublishedLooksCount`（`server.ts`）とシーズンの4つの関数（`public.ts`）は一覧の頁（[06_look_list.md](06_look_list.md)）が扱う
 

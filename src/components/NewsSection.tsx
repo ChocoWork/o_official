@@ -8,6 +8,7 @@
  * 切り替えと削除の後は表示を先に変えず一覧を読み直し、窓口が保存した状態だけを見せる。
  * 消した記事は戻せないので、削除は送る前に確かめのダイアログを挟む。
  * 一覧の取得に失敗した時は「記事が無い」と見せず、失敗の文と再読み込みのボタンを出す。切り替えの後の読み直しに失敗した時は、前の一覧の上に同じ文を出す（SEC-NEWS-020）。
+ * 画像の署名ができない記事は image_url が null で届く。next/image は空の src で落ちるので、その行だけ /placeholder.png を出して一覧を壊さない。
  */
 'use client';
 
@@ -25,7 +26,8 @@ type NewsArticle = {
   published_date: string;
   category: string;
   status: 'private' | 'published';
-  image_url: string;
+  /** 署名できない画像は null（元の値を返さない）。一覧は /placeholder.png を出す */
+  image_url: string | null;
   content: string;
   detailed_content: string;
 };
@@ -135,7 +137,7 @@ export default function NewsSection() {
           <Card key={item.id} className="flex items-center justify-between" size="md">
             <div className="flex items-center space-x-6 flex-1">
               <Image
-                src={item.image_url}
+                src={item.image_url || '/placeholder.png'}
                 alt={item.title}
                 width={96}
                 height={96}

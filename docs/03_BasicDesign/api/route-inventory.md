@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> 波 3 確認日: 2026-10-28。`src/app/api` の外の入口として `GET /look/[id]/og`（`src/app/look/[id]/og/route.ts`）を、表の下の新しい節に足した。`/api/` の外なので Route Handler の数（154ファイル・196メソッド、表は153行・195メソッド）は変えていない。波 3 のほかの入口の追加・削除はなし（`/api/auth` 配下の応答に proxy が `no-store` を付ける変更だけ）。
+
 > G-4 Task 8 確認日: 2026-10-27。G-1 から 410 を返すだけだった旧い発送・仕上がりの 6 パス・7 メソッド（発送の材料の GET・発送・発送の取消・伝票番号の訂正・手動の配達済み・仕上がりの記録と取消）を route ごと削除した。Route Handler は154ファイル・196メソッド、表は153行・195メソッド。窓口が無いので Next は 404 を返し、権限の迂回は増えない。
 
 > G-4 Task 7 確認日: 2026-10-26。旧い一覧の `GET /api/admin/orders`（route.ts）を1ファイル/1メソッド削除した。Route Handler は160ファイル・203メソッド、表は159行・202メソッド。
@@ -200,6 +202,14 @@ G-3 Task 7: 伝票番号の入力・訂正の入口（`POST /api/admin/shipment-
 新2入口は拒否応答も `Cache-Control: no-store`。`PUT` 互換入口は作らない（今回の裁定は POST。承認済み設計の旧 PUT 案は変更しない）。型・catalog は [共有型](../../../src/lib/auth/role-permission-types.ts)・[catalog](../../../src/lib/auth/role-permission-catalog.ts)、画面・再送・表示優先は [管理画面詳細](../../04_DetailDesign/pages/16_admin.md#権限画面g-0--freq-519freq-540-の-g-0-部分)。既存 `PATCH /api/admin/users` は `admin.users.manage`・CSRF・同じ制限と1 RPCで自己役割変更/最後の有効店長/昇格を保護する（Task 2）。業務窓口のAND条件と旧発送/在庫APIの切替は後続 G-1〜G-3。
 
 API単体 [GET](../../../tests/unit/api/admin/permissions-route.test.ts)・[POST](../../../tests/unit/api/admin/role-permissions-route.test.ts)・[PATCH](../../../tests/unit/api/admin/users-route.test.ts) は Task 2、DB結合は Task 1、画面単体は Task 3、実routeの拒否とUI→実DB bridgeのE2Eは Task 4（未実行）。一覧に追加したことは実DB/本番動作の証明ではない。
+
+## `src/app/api` の外の入口（波 3 / 2026-10-28）
+
+頁ではなく画像のバイトを返す Route Handler。パスが `/api/` で始まらず、`src/app/api` の外にあるので、上の表と概要の数（154ファイル・196メソッド、表は153行・195メソッド）には入れない。数を固定する単体試験（`tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts`）は `src/app/api` だけを数える。
+
+| パス | メソッド | 根拠 |
+| --- | --- | --- |
+| `/look/[id]/og` | `GET` | [route.ts](../../../src/app/look/%5Bid%5D/og/route.ts) （公開の LOOK の `og:image` の画像。認可なし・回数の制限なし・`Set-Cookie` なし。200 は `public, max-age=300, s-maxage=300` と `nosniff`、失敗は固定の 404。API-LOOK-007、[ADR-0165](../decisions/ADR-0165-look-og-image-same-origin-route.md)、[API仕様](api-spec.md)の公開情報の表） |
 
 ## 更新と検証
 

@@ -199,14 +199,20 @@ async function listImageUrls(rawUrls: Array<string | null>) {
 const BASE = 'https://proj.supabase.co/storage/v1/object';
 
 describe('画像の非公開の置き場と署名つき URL（ARC-LOOK-003）', () => {
+  const envBackup = { ...process.env };
+
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env.ALERT_AUDIT_URL;
+    // 信頼する origin は自分のプロジェクト 1 つだけ（parseOwnObjectPath）
+    delete process.env.SUPABASE_URL;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://proj.supabase.co';
     jest.spyOn(console, 'error').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
   afterEach(() => {
+    process.env = { ...envBackup };
     jest.restoreAllMocks();
   });
 
@@ -307,7 +313,7 @@ describe('画像の非公開の置き場と署名つき URL（ARC-LOOK-003）', 
       ['旧 public の URL', `${BASE}/public/look-images/looks/old/a.jpg`, 'looks/old/a.jpg'],
       ['署名つき URL（token 付き）', `${BASE}/sign/look-images/looks/old/b.jpg?token=abc`, 'looks/old/b.jpg'],
       ['authenticated の URL', `${BASE}/authenticated/look-images/looks/old/c.jpg`, 'looks/old/c.jpg'],
-      ['符号化した道の URL', `${BASE}/public/look-images/looks/old/%E7%94%BB%E5%83%8F.jpg`, 'looks/old/画像.jpg'],
+      ['符号化した安全な文字の道の URL', `${BASE}/public/look-images/looks/old/%61-b.jpg`, 'looks/old/a-b.jpg'],
       ['先頭に / と空白のある道', '  /looks/old/e.jpg ', 'looks/old/e.jpg'],
     ])('ARC-LOOK-003 %s からも置き場の中の道を取り出して署名する', async (_label, raw, path) => {
       const urls = await listImageUrls([raw]);
@@ -320,11 +326,15 @@ describe('画像の非公開の置き場と署名つき URL（ARC-LOOK-003）', 
       ['ほかの置き場の URL', `${BASE}/public/other-bucket/a.jpg`],
       ['置き場の印の後が空の URL', `${BASE}/public/look-images/`],
       ['URL として読めない値', 'https://'],
-    ])('ARC-LOOK-003 %s は道にできないので署名せず元の値を返す', async (_label, raw) => {
+      ['外の host の URL', 'https://evil.example/storage/v1/object/public/look-images/looks/a.jpg'],
+      ['別のプロジェクトの URL', 'https://other.supabase.co/storage/v1/object/public/look-images/looks/a.jpg'],
+      ['.. で上へ出る道', '../dir/x.png'],
+      ['looks/ の外の道', 'dir/x.png'],
+    ])('ARC-LOOK-003 %s は道にできないので署名せず、元の値を返さず落とす', async (_label, raw) => {
       const urls = await listImageUrls([raw]);
 
       expect(serviceClient.signCalls).toHaveLength(0);
-      expect(urls).toEqual([raw]);
+      expect(urls).toEqual([]);
     });
 
     it('ARC-LOOK-003 空の値は結果から落とし、残りだけを署名して返す', async () => {
@@ -338,7 +348,7 @@ describe('画像の非公開の置き場と署名つき URL（ARC-LOOK-003）', 
       ['署名が error を返す', { data: null, error: { message: 'not found' } }],
       ['署名が URL を返さない', { data: { signedUrl: '' }, error: null }],
       ['署名が data を返さない', { data: null, error: null }],
-    ])('ARC-LOOK-003 %s の時は元の値をそのまま返す', async (_label, signResult) => {
+    ])('ARC-LOOK-003 %s の時は元の値を返さず落とす', async (_label, signResult) => {
       setup({
         lookSelect: {
           data: [{ id: 1, season_year: 2026, season_type: 'SS', theme: 't', theme_description: '', status: 'published', created_at: '', look_items: [], image_urls: ['looks/x/a.png'] }],
@@ -350,7 +360,7 @@ describe('画像の非公開の置き場と署名つき URL（ARC-LOOK-003）', 
       const body = await (await listRoute.GET(makeRequest())).json();
 
       expect(serviceClient.signCalls).toHaveLength(1);
-      expect(body.data[0].image_urls).toEqual(['looks/x/a.png']);
+      expect(body.data[0].image_urls).toEqual([]);
     });
   });
 

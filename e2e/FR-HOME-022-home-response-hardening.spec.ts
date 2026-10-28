@@ -3,11 +3,12 @@ import { test, expect, type APIRequestContext, type Locator, type Page } from '@
 import { createClient } from '@supabase/supabase-js';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import { createTestMember, loginAsMember } from './member-session-helpers';
+import { fillShippingForm, paymentElementFrame, proceedToFinal, seedCart, stubPostalCode } from './checkout-flow-helpers';
 
 // ホームの応答・画像・OG の守りを、利用者の受け取る形（応答の見出し・ブラウザの挙動・画面）で確かめる。
-// 対象: SEC-HOME-008-AC-02 / 009-AC-01 / 009-AC-02 / 010-AC-01 / 010-AC-02 / 015-AC-01 / 016-AC-01 /
+// 対象: SEC-HOME-008-AC-02 / 009-AC-01 / 009-AC-02 / 009-AC-03 / 010-AC-01 / 010-AC-02 / 015-AC-01 / 016-AC-01 /
 //       017-AC-01 / 017-AC-02 / 018-AC-01
-// 今のコードが満たさない（TM-HOME-37・43・44・45・46）ものは、要件どおりに書いて test.fail で印を付けてある（直ると「想定外の成功」で知らせる）。SEC-HOME-009-AC-02 は文書に無い食い違い（zod の eval 探り）で同じく印を付けた。
+// TM-HOME-37・43・44・45・46 は直した（test.fail の印は外した）。SEC-HOME-009-AC-02 の CSP の違反 0 件は、ブラウザ側の zod を src/instrumentation-client.ts で jitless にして eval の探りを無くした（本番ビルドでの実測は未確認）。
 
 // 会員のログインは確認コードとログインの Cookie をブラウザの通信に載せるので、通信記録（trace）を残さない。
 // trace は worker 単位の設定なので、test.describe の中ではなくファイルの最上位に置く（中に置くと読み込みで落ちる）。
@@ -91,7 +92,6 @@ test.describe('FR-HOME-022 home response hardening', () => {
   });
 
   test('SEC-HOME-009-AC-01 the CSP of / has no unused CDN and no wildcard supabase connect-src', async ({ request }) => {
-    test.fail(true, 'SEC-HOME-009 今のコードは満たさない（docs/02_Requirements/areas/home.md）');
     const headers = await readHomeHeaders(request);
     const csp = headers['content-security-policy'];
     expect(csp, 'Content-Security-Policy ヘッダー').toBeTruthy();
@@ -115,7 +115,6 @@ test.describe('FR-HOME-022 home response hardening', () => {
   });
 
   test('SEC-HOME-017-AC-01 /_next/image refuses readdy.ai and another supabase project with 400', async ({ request }) => {
-    test.fail(true, 'SEC-HOME-017 今のコードは満たさない（docs/02_Requirements/areas/home.md）');
     const disallowed = [
       'https://readdy.ai/api/search-image/e2e-home-017.png',
       'https://e2eotherprojectref.supabase.co/storage/v1/object/public/other/e2e-home-017.png',
@@ -146,7 +145,6 @@ test.describe('FR-HOME-022 home response hardening', () => {
       });
 
       test(`SEC-HOME-009-AC-02 ${viewport.name}: no CSP violation is recorded`, async ({ page }) => {
-        test.fail(true, 'SEC-HOME-009 文書に無い食い違い（ユーザーの判断待ち）');
         const consoleCspMessages: string[] = [];
         page.on('console', (message) => {
           const text = message.text();
@@ -170,6 +168,38 @@ test.describe('FR-HOME-022 home response hardening', () => {
         );
         expect(violations, 'securitypolicyviolation').toEqual([]);
         expect(consoleCspMessages, 'CSP に関する端末の記録').toEqual([]);
+      });
+
+      // CSP は文書を読み込んだ時に決まり、next/link の画面の切り替えでは変わらない。/cart の CSP のまま /checkout へ進むので、
+      // /cart から押して進む経路でも Stripe の部品が止められないことを固定する（FR-CHECKOUT-025 は /checkout を直に開く）。
+      test(`SEC-HOME-009-AC-03 ${viewport.name}: going from /cart to /checkout shows the Stripe payment form with no external CSP violation`, async ({ page }) => {
+        test.setTimeout(120_000);
+        await page.addInitScript(() => {
+          const violations: { blocked: string }[] = [];
+          (window as unknown as { __cspViolations: { blocked: string }[] }).__cspViolations = violations;
+          document.addEventListener('securitypolicyviolation', (event) => {
+            violations.push({ blocked: event.blockedURI });
+          });
+        });
+        const seeded = await seedCart(page);
+        if (!seeded.ok) {
+          test.skip(true, seeded.reason);
+        }
+        await stubPostalCode(page);
+
+        await page.goto('/cart');
+        await page.getByRole('link', { name: 'ご購入手続きへ' }).click();
+        await expect(page).toHaveURL(/\/checkout$/);
+        await fillShippingForm(page, 'csp-cart-flow@example.com');
+        await proceedToFinal(page);
+        await paymentElementFrame(page);
+        await page.waitForTimeout(3_000);
+
+        // 画面の切り替えでは文書が変わらないので、記録は /cart から続いている。外部リソース（http(s)）の違反だけを数える
+        const violations = await page.evaluate(
+          () => (window as unknown as { __cspViolations: { blocked: string }[] }).__cspViolations,
+        );
+        expect(violations.filter((violation) => /^https?:/.test(violation.blocked))).toEqual([]);
       });
 
       test(`SEC-HOME-010-AC-02 ${viewport.name}: / does not render its h1 inside an iframe of another origin`, async ({ page, baseURL }) => {

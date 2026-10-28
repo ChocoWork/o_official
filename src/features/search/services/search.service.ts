@@ -171,6 +171,9 @@ function mapPopularItem(item: SearchItemRow): SearchResult {
   };
 }
 
+/** 検索の結果に載せる署名つき URL の期限（秒）。呼び手が明示して、既定の変更に引きずられないようにする（SEC-SEARCH-014）。 */
+export const SEARCH_IMAGE_URL_TTL_SECONDS = 3600;
+
 // 画像バケットは private（migrations 030 / 044）で、配信は署名付き URL が前提。
 // DB に保存されている public URL のままでは 400 になるため、種別ごとの署名関数を通す。
 async function signResultImages(
@@ -185,11 +188,11 @@ async function signResultImages(
 
       let signedUrl: string | null;
       if (result.type === 'item') {
-        signedUrl = await signItemImageUrl(supabase, result.imageUrl);
+        signedUrl = await signItemImageUrl(supabase, result.imageUrl, SEARCH_IMAGE_URL_TTL_SECONDS);
       } else if (result.type === 'look') {
-        signedUrl = await signLookImageUrl(supabase, result.imageUrl);
+        signedUrl = await signLookImageUrl(supabase, result.imageUrl, SEARCH_IMAGE_URL_TTL_SECONDS);
       } else {
-        signedUrl = await signNewsImageUrl(supabase, result.imageUrl);
+        signedUrl = await signNewsImageUrl(supabase, result.imageUrl, SEARCH_IMAGE_URL_TTL_SECONDS);
       }
 
       return { ...result, imageUrl: signedUrl };

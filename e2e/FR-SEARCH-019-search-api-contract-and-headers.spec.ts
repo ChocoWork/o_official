@@ -139,7 +139,6 @@ test.describe('FR-SEARCH-019 検索の窓口の契約と見出し', () => {
   });
 
   test(`SEC-SEARCH-014-AC-01 items・popularItems の imageUrl の署名の期限が発行から 1 時間以内`, async ({ request }) => {
-    test.fail(true, 'SEC-SEARCH-014 今のコードは満たさない（docs/02_Requirements/areas/search.md）');
     const bodies = [
       await searchJson(await request.get('/api/search?q=a')),
       await searchJson(await request.get('/api/search?q=')),

@@ -105,14 +105,19 @@ function auditOps() {
 }
 
 describe('GET /api/admin/news/[id]（管理の記事1件の読み）', () => {
+  const envBackup = { ...process.env };
+
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env.ALERT_AUDIT_URL;
+    delete process.env.SUPABASE_URL;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://x.supabase.co';
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
+    process.env = { ...envBackup };
     jest.restoreAllMocks();
   });
 
@@ -168,25 +173,39 @@ describe('GET /api/admin/news/[id]（管理の記事1件の読み）', () => {
     expect(auditOps()).toHaveLength(0);
   });
 
-  test('API-NEWS-004 公開にしていた頃の public の URL も置き場の中の道を取り出して署名する', async () => {
-    const row = { id: 7, image_url: 'https://x.supabase.co/storage/v1/object/public/news-images/news/old%20name.png' };
+  test('API-NEWS-004 公開にしていた頃の自分の public の URL も置き場の中の道を取り出して署名する', async () => {
+    const row = { id: 7, image_url: 'https://x.supabase.co/storage/v1/object/public/news-images/news/old%2Dname.png' };
     setup({ row: { data: row, error: null } });
 
     const res = await GET(makeRequest(), ctx());
 
     expect(res.status).toBe(200);
-    expect(serviceClient.signs[0].path).toBe('news/old name.png');
+    expect(serviceClient.signs[0].path).toBe('news/old-name.png');
     expect((await res.json()).data.image_url).toBe('https://signed.example/a.jpg');
   });
 
-  test('API-NEWS-004 署名が失敗した時は元の値のまま返す', async () => {
-    const row = { id: 7, image_url: 'news/2026-10-24/a.jpg' };
+  test('API-NEWS-004 署名が失敗した時は元の値を返さず image_url を null にする（SEC-NEWS-008）', async () => {
+    const row = { id: 7, title: 'T', image_url: 'news/2026-10-24/a.jpg' };
     setup({ row: { data: row, error: null }, signResult: { data: null, error: { message: 'not found' } } });
 
     const res = await GET(makeRequest(), ctx());
 
     expect(res.status).toBe(200);
-    expect((await res.json()).data.image_url).toBe('news/2026-10-24/a.jpg');
+    expect((await res.json()).data).toEqual({ id: 7, title: 'T', image_url: null });
+  });
+
+  test.each([
+    ['別のホストの URL', 'https://evil.example/storage/v1/object/public/news-images/news/x.png'],
+    ['news/ の外の道筋', 'other/x.png'],
+    ['.. を含む道筋', 'news/../other/x.png'],
+  ])('API-NEWS-004 %s は署名せず image_url を null にする（SEC-NEWS-007）', async (_label, raw) => {
+    setup({ row: { data: { id: 7, image_url: raw }, error: null } });
+
+    const res = await GET(makeRequest(), ctx());
+
+    expect(res.status).toBe(200);
+    expect(serviceClient.signs).toHaveLength(0);
+    expect((await res.json()).data.image_url).toBeNull();
   });
 
   test('API-NEWS-004 画像の無い行は署名せず image_url を null で返す', async () => {

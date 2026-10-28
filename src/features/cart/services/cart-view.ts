@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { previewFulfillment } from '@/features/checkout/services/checkout-fulfillment.service';
 import { signItemImageUrl } from '@/lib/storage/item-images';
-import { CART_OPTION_NAMES, EMPTY_CART_JSON, type CartJson, type CartJsonLine } from '@/features/cart/types/cart-json';
+import { CART_OPTION_NAMES, CART_PLACEHOLDER_IMAGE, EMPTY_CART_JSON, type CartJson, type CartJsonLine } from '@/features/cart/types/cart-json';
 
 type CartLineRow = {
   id: string;
@@ -80,7 +80,7 @@ export async function buildCartJson(supabase: SupabaseClient, cartId: string | n
         options_with_values: options,
         price: item.price,
         line_price: item.price * row.quantity,
-        image: (await signItemImageUrl(supabase, item.image_url)) ?? item.image_url,
+        image: (await signItemImageUrl(supabase, item.image_url)) ?? CART_PLACEHOLDER_IMAGE,
         url: `/item/${item.id}`,
         fulfillment: fulfillments[index],
       };

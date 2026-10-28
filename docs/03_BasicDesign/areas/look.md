@@ -1,6 +1,6 @@
 # LOOK の構造設計
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: LOOK（一覧 `/look`・詳細 `/look/[id]`・ホームの LOOK の区画の部品・管理の LOOK） | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: LOOK（一覧 `/look`・詳細 `/look/[id]`・ホームの LOOK の区画の部品・管理の LOOK） | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -13,11 +13,11 @@ LOOK の領域の構成・画面・画面遷移・状態遷移・API・データ
 | 画面 | 8 | `SCR-LOOK-001`〜`008` | 一覧、カード、ホームの LOOK の区画、詳細、詳細の画像のギャラリー、管理の LOOK タブ、作成、編集 |
 | 画面遷移 | 2 | `FLOW-LOOK-001`〜`002` | 一覧・詳細・商品の行き来、管理の一覧と作成・編集の行き来 |
 | 状態遷移 | 2 | `STATE-LOOK-001`〜`002` | LOOK の公開の状態、一覧のシーズンの選択 |
-| API | 6 | `API-LOOK-001`〜`006` | 管理の6つの窓口（公開の LOOK の窓口は無い） |
+| API | 7 | `API-LOOK-001`〜`007` | 管理の6つの窓口と、公開の LOOK の `og:image` の窓口 1 本（`GET /look/[id]/og`。2026-10-28） |
 | データ | 6 | `DATA-LOOK-001`〜`006` | LOOK の表、関連の表、RLS と付与、検索の関数（廃止。SEARCH の DATA-SEARCH-001 が持つ）、画像の置き場、権限 |
 
 - 結論: 公開の側は Server Component から匿名の client で DB を読み、RLS とアプリの `status='published'` の2段で公開済みだけを出す。画像の署名だけを service role で行う。管理の側は利用者の端末で動く画面から Route Handler を通し、窓口で session・権限・2要素認証・回数を確かめた上で、DB と置き場を service role で書き換える（NEWS と違い、利用者の JWT で RLS に通さない）
-- 公開の LOOK を返す API（`/api/looks` など）は無い。一覧・詳細・ホームは全部ページのサーバーの中で取り出す
+- 公開の LOOK を返す API（`/api/looks` など）は無い。一覧・詳細・ホームは全部ページのサーバーの中で取り出す。公開の側の窓口は `og:image` の画像のバイトを返す `GET /look/[id]/og` 1 本だけ（API-LOOK-007。2026-10-28）
 - 今のコードが満たさないセキュリティ要件（SEC-LOOK-002〜010・012〜016・020〜023）は、満たす形の構造を持たないので上位につながず、本文に「満たさない」と書いた
 - 一部だけ満たすセキュリティ要件は NEWS と同じ決まりで扱った。項目が受け持つコードの中に満たさない所がある時は上位にせず、満たさない所が共有部品などほかのコードにだけある時は上位にした（例: SEC-LOOK-011 の送り元の取り方は共有の `src/features/auth/middleware/rateLimit.ts` にあるので管理の変更の窓口の上位にする。SEC-LOOK-019 の画面の出し分けは LOOK の画面にあるので、画面の項目の上位にはせず窓口の項目の上位にする）
 - 要件のうち、今のコードと合わないと要件の文書が書いた物（FR-LOOK-ALL-003・FR-LOOK-DETAIL-004・FREQ-139-REQ-01・FREQ-141-REQ-01・FREQ-178-REQ-01・FREQ-180-REQ-01・FREQ-279-REQ-03）と、作らないと決めた FR-LOOK-DETAIL-007 は上位にしていない。ADR-0150〜0158 も同じ決まりで、満たさない要件を上位にせず「結果」に書いた
@@ -27,7 +27,7 @@ LOOK の領域の構成・画面・画面遷移・状態遷移・API・データ
 | 項目 | 内容 |
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の LOOK |
-| 上位の文書 | [LOOK の要件](../../02_Requirements/areas/look.md)（要件・`SEC-LOOK-`・`DRV-LOOK-`）、`docs/03_BasicDesign/decisions/ADR-0150`〜`ADR-0158` |
+| 上位の文書 | [LOOK の要件](../../02_Requirements/areas/look.md)（要件・`SEC-LOOK-`・`DRV-LOOK-`）、`docs/03_BasicDesign/decisions/ADR-0150`〜`ADR-0158`・`ADR-0165` |
 | 対象のコード | `src/app/look/`、`src/app/api/admin/looks/`、`src/app/admin/look/create/page.tsx`・`edit/[id]/page.tsx`・`types.ts`、`src/components/LookSection.tsx`、`src/features/look/`、`src/lib/look/`、`src/lib/storage/look-images.ts` |
 | 対象の DB | `supabase/migrations/20260901102912_remote_schema.sql`（表・RLS・付与・検索の関数）、`supabase/migrations/20261023175712_group_g0_permissions.sql`（権限と `has_permission`）、`supabase/seed.sql`（手元の置き場と見本の LOOK）、旧 `migrations/018_create_looks_and_look_images_bucket.sql`・`030_make_look_images_bucket_private.sql`（今の CI は当てない） |
 | 関連文書 | `docs/03_BasicDesign/ui/screen-list.md`、`docs/03_BasicDesign/api/api-spec.md`、[脅威](../../05_Quality/security/threats/look.md)、[HOME の構造設計](home.md)（ホームの LOOK の件数と VIEW ALL は SCR-HOME-004） |
@@ -79,10 +79,10 @@ graph LR
 | 出どころ | 実装から推定（`src/lib/look/server.ts`、`src/app/look/page.tsx`、`src/app/look/[id]/page.tsx`） |
 
 - 呼ぶ側: `/look`（`src/app/look/page.tsx`）、`/look/[id]`（`src/app/look/[id]/page.tsx`）、ホーム（`src/app/page.tsx`、範囲外）。どれも Server Component で、LOOK を client の部品 `PublicLookGrid`・`LookImageGallery` に渡す
-- 取り出しの関数（`src/lib/look/server.ts`）: `getPublishedLookList`（`/look`。説明文なし・100 件まで・失敗は投げる）、`getPublishedLooks`（ホーム。同じ select・並びで件数は 1〜100 に丸め、失敗は空の配列）、`getPublishedLooksCount`（ホームの総数）、`getPublishedLookById`（詳細の頁とメタ情報の 1 件。説明文あり・失敗は投げる）、`getAdjacentPublishedLooks`（詳細の前後の 1 件ずつ。id と題だけ）。どれも `status='published'` を付け、一覧は `created_at` の降順で同じ時刻は `id` の降順（ADR-0159）
+- 取り出しの関数（`src/lib/look/server.ts`）: `getPublishedLookList`（`/look`。説明文なし・100 件まで・失敗は投げる）、`getPublishedLooks`（ホーム。同じ select・並びで件数は 1〜100 に丸め、失敗は空の配列）、`getPublishedLooksCount`（ホームの総数）、`getPublishedLookById`（詳細の頁とメタ情報の 1 件。説明文あり・失敗は投げる）、`getAdjacentPublishedLooks`（詳細の前後の 1 件ずつ。id と題だけ）、`getPublishedLookCoverRaw`（`og:image` の窓口 API-LOOK-007 用。image_urls のうち道筋の確かめに通る最初の生の値を署名せずに返す。失敗は符号だけ記録して null）。どれも `status='published'` を付け、一覧は `created_at` の降順で同じ時刻は `id` の降順（ADR-0159）
 - 関連: `look_items` から商品の ID を集め、`items` を `status='published'` で絞って取り、取れた商品だけを LOOK に付ける。商品の画像は `signItemImageUrl`（範囲外）で署名する
 - client: DB は `createPublicClient`（匿名の鍵・session なし）。service role は LOOK と商品の画像の署名だけに使う（ARC-LOOK-003）
-- キャッシュ: `revalidate`・`dynamic`・`generateStaticParams` の指定は無い。`searchParams`・`params` を読むので要求ごとに描く（推定。SEC-LOOK-006 の方針の明示は満たさない）
+- キャッシュ: この頁の `revalidate`・`dynamic`・`generateStaticParams` の指定は無い。`params` を読み、根の `layout.tsx` の `dynamic = 'force-dynamic'` で要求ごとに描く（SEC-LOOK-006 の方針の明示は根の指定が受け持つ）
 - 失敗: LOOK・関連・商品のどれかの取り出しが失敗したら、名前と符号だけ記録して `LookFetchError` を投げる（部分的に返さない。2026-10-26。SEC-LOOK-022）。`/look` と詳細の頁は投げたまま `src/app/look/error.tsx`（SCR-LOOK-001）の誤りの画面に任せる。ホーム用の `getPublishedLooks` だけは握って空の配列にし、ホーム全体を落とさない。前後の取り出しの失敗は添え物なので記録だけにしてその側を無しにする。関連の取り出しの失敗で署名していない元の道筋を返す道は、投げる側ではなくなった（署名の共有の直しは SEC-LOOK-008 で別）
 - 件数: 一覧は公開済みを新しい順に 100 件で切る（`PUBLIC_LOOK_LIST_LIMIT`。シーズンの絞り込みは今のまま画面の側で行う。ADR-0159）ので、署名も 100 件分までに収まる。詳細は現在の LOOK を 1 件で取り（頁とメタ情報は別の呼び出しのまま）、前後は並びの境目で 1 件ずつ取る。一覧は説明文を返さない。関連商品の価格・名前・画像はカードが出すので返す（SEC-LOOK-009）
 
@@ -142,9 +142,9 @@ sequenceDiagram
 - 配る: `signLookImageUrls` が配列の全部を `signLookImageUrl` で署名し、null を落とす。`extractLookImageObjectPath` は素の道筋（先頭の `/` を外すだけ）と、旧い public・sign・authenticated の URL の両方から置き場の中の道筋を取り出す。期限は 3600 秒
 - 使う所: 公開の一覧・ホーム・詳細・詳細の `og:image`、管理の一覧と1件の GET、検索（`src/features/search/services/search.service.ts`、範囲外）
 - 画像が無い LOOK は、カードとギャラリーが `/placeholder.png` を出す
-- 道筋にできない値と署名の失敗では元の値を返し、記録しない（SEC-LOOK-008 は満たさない）
-- 署名する前に道筋が `looks/` の下か、`..` を含まないか、URL のホストが自分の Supabase かを確かめない（SEC-LOOK-007 は満たさない）
-- `og:image` に1時間で切れる署名つき URL を入れ、一覧のカードは画像の最適化に署名つき URL を渡す。最適化のキャッシュの長さは指定していない（SEC-LOOK-006 は満たさない）
+- 道筋にできない値と署名の失敗では元の値を返さず `null` を返し、`signLookImageUrls` が結果から外す。記録は種類（`invalid_path`・`sign_failed`）だけで、道筋・URL・誤りの文は書かない。`look/server.ts` の一覧・詳細の `imageUrls` は署名した値だけで、生の `image_urls` で補わない（SEC-LOOK-008 の署名の側を満たす。2026-10-28。ADR-0316）
+- 署名する前に、共有の `parseOwnObjectPath`（`src/lib/storage/safe-object-path.ts`、DD-SEARCH-011）で、道筋が置き場 `look-images` の `looks/` の下の安全な文字か、URL のホストが自分のプロジェクトの origin（`NEXT_PUBLIC_SUPABASE_URL`、無ければ `SUPABASE_URL`）1 つかを確かめる（SEC-LOOK-007 を満たす。2026-10-28。ADR-0316）。`extractLookImageObjectPath` は管理の後始末だけが使い、`isOwnLookImagePath` は共有の `isSafeObjectPath` に委譲する
+- `og:image` には署名つき URL を入れず、同一オリジンの窓口 `/look/<id>/og`（API-LOOK-007）の URL を入れる（2026-10-28。ADR-0165）。一覧のカードは画像の最適化に署名つき URL を渡し、最適化のキャッシュは `minimumCacheTTL: 3600`（`next.config.ts`）で署名の期限と揃える（SEC-LOOK-006）
 
 ## 画面
 
@@ -220,7 +220,7 @@ sequenceDiagram
 - モバイル: md 未満は3列を隠し、同じ3項目を `BottomNavigation`（範囲外）で画面の下に固定する。前後が無い側は `disabled`。固定のナビがフッターを覆わないよう、`look-detail.css` がフッターに下の余白を足す（FREQ-343）。横のスクロールは起こさない（FREQ-344）
 - 「Back to Lookbook」のリンクは通常の表示に無い（FREQ-178 の前半）
 - 無い時: 公開の LOOK に無い・非公開・形の合わない id は、見出し「Look not found」だけを状態 200 で返す（DRV-LOOK-006、ADR-0156）。形の合わない id は DB を呼ばない。`/look` への戻りのリンクは無い（FR-LOOK-DETAIL-004・FREQ-178-REQ-01 は満たさないので上位にしない。E2E FR-LOOK-DETAIL-004・010 が赤）。DB の取り出しの失敗は「Look not found」にせず、頁が投げて `src/app/look/error.tsx` の誤りの画面になる（SEC-LOOK-022。2026-10-26）。前後の取り出しだけが失敗した時は頁を開き、前後を無効の表示にする
-- メタ: title は「<テーマ> | LOOK | Le Fil des Heures」、description は説明文（空ならテーマから作った文）、OG の画像は1枚目の署名つき URL（SEC-LOOK-006 は満たさない）。無い時は「Look not found | Le Fil des Heures」と固定の説明
+- メタ: title は「<テーマ> | LOOK | Le Fil des Heures」、description は説明文（空ならテーマから作った文）、OG の画像は、署名できる画像が 1 枚以上ある LOOK だけ `/look/<id>/og`（相対。`metadataBase` で絶対になる。API-LOOK-007。SEC-LOOK-006）、無ければ空。無い時は「Look not found | Le Fil des Heures」と固定の説明
 - 道の `id` は `parseLookId`（`/^[1-9]\d{0,15}$/` かつ安全な整数）で確かめる。`1e3`・`1.5`・`0`・`01`・前後の空白・17 桁以上は null（SEC-LOOK-016。2026-10-26）
 
 ### SCR-LOOK-005 詳細の画像のギャラリー
@@ -238,7 +238,7 @@ sequenceDiagram
 - タブレット（md〜lg 未満）: スワイプのカルーセルに前送り・次送りのボタン。ボタンは画像の枠の縦の中央、大きさは枠の幅の 4.5%（FREQ-179-REQ-02・288-REQ-02）
 - PC（lg 以上）: 左にサムネイルの縦の列（2枚以上の時だけ。読み上げの名前は「<テーマ> の N枚目を表示」）、右にメインの画像。メインの枠は高さ `min(48rem, 100svh-7rem)` の 2:3（FREQ-179-REQ-03・289）
 - どの幅も、画像が複数の時は画像の下に枚数分の線のインジケータ（FREQ-288-REQ-01）
-- 画像が無い時は `/placeholder.png` の1枚。画像は署名つき URL を `unoptimized` で直接出す（DRV-LOOK-005）。署名に失敗した元の値もそのまま読み込む（SEC-LOOK-008 は満たさない）
+- 画像が無い時は `/placeholder.png` の1枚。画像は署名つき URL を `unoptimized` で直接出す（DRV-LOOK-005）。署名に失敗した画像・道筋にできない画像は外し（元の値は読み込まない。SEC-LOOK-008）、全部外れたら画像の無い表示になる
 
 ### SCR-LOOK-006 管理画面の LOOK タブの一覧
 
@@ -371,7 +371,7 @@ stateDiagram-v2
 - 窓口は `status` を必ず受け取り、省くと 400。行き来に条件は無く、PUT（全体の更新）と PATCH（状態だけ）のどちらでも変えられる。PATCH は前の状態を読まず、同じ状態への変更も成功として監査に残す
 - 公開の日時の列は無く、予約公開も無い。並びは作った日時（DRV-LOOK-001）
 - 削除はどちらの状態からも行を消し、関連の行は外部キーの `ON DELETE CASCADE` で消える。戻す手段は無い。置き場の画像は消さない（SEC-LOOK-014 は満たさない）
-- 公開から非公開にしても、出した署名つき URL は期限（1時間）まで画像を開ける（SEC-LOOK-006 は満たさない）
+- 公開から非公開にしても、出した署名つき URL は期限（1時間）まで画像を開ける（取り消せないので期限で区切る。SEC-LOOK-006）。`og:image` の窓口は非公開にすると 404 になり、共有キャッシュの分（最長 300 秒）で消える（API-LOOK-007）
 
 ### STATE-LOOK-002 一覧のシーズンの選択（ALL・SS・AW）
 
@@ -404,7 +404,7 @@ stateDiagram-v2
 
 ## API
 
-公開の LOOK を返す窓口は無い。下の6つは全部 `/api/admin/looks` の下の Route Handler で、`src/app/api` の全部の `route.ts` を文字として数える試験（`tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts`）の対象に入る。
+公開の LOOK を返す JSON の窓口は無い。API-LOOK-001〜006 は全部 `/api/admin/looks` の下の Route Handler で、`src/app/api` の全部の `route.ts` を文字として数える試験（`tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts`）の対象に入る。API-LOOK-007 は `src/app/look/[id]/og/route.ts`（`src/app/api` の外）で、その試験の数には入らないが、窓口の一覧（`route-inventory.md`）には足す。
 
 ### API-LOOK-001 `GET /api/admin/looks` 管理の LOOK の一覧
 
@@ -535,6 +535,27 @@ stateDiagram-v2
 | 失敗 | 無い LOOK 404、取り出しの DB の失敗 500 `Failed to fetch look`、削除の失敗 500（画像は消さない）、例外 500。監査 `admin.look.delete`（failure）。置き場の削除の失敗は 200 のままで、成功の監査の `metadata` に `image_cleanup`・`orphaned_count` を足す |
 
 - 置き場の画像も消す（SEC-LOOK-014。`api-spec.md` の「画像を削除」と合った）
+
+### API-LOOK-007 `GET /look/[id]/og` 公開の LOOK の og:image の画像
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-LOOK-006、ADR-0165 |
+| 根拠 | `og:image` に期限つきの署名つき URL を入れると、1 時間で切れ、SNS のクローラーにも残る。署名を含まない安定した同一オリジンの URL にし、公開の LOOK の画像だけを短い共有キャッシュで返す（SEC-LOOK-006、ADR-0165） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト・E2E |
+| 出どころ | ユーザーの決定（Q10。推奨で進めた。2026-10-28）、実装（`src/app/look/[id]/og/route.ts`） |
+
+| 項目 | 内容 |
+| --- | --- |
+| 認可 | なし（公開）。session を読まず、`Set-Cookie` を付けない |
+| 回数の制限・監査 | どちらも無い。公開の LOOK の数に限られ、`s-maxage=300` で CDN が受ける。クエリの付け替えで置き場を叩かれる量は波 4 で見直す |
+| 入力 | 道の `id`（`parseLookId` で確かめる。合わなければ LOOK を取りに行かず 404） |
+| 処理 | `getPublishedLookCoverRaw` で公開の LOOK の `image_urls` のうち道筋の確かめに通る最初の 1 枚を取る → もう一度 `parseOwnObjectPath(raw, { bucket: 'look-images', prefix: 'looks' })` を通す → service role で `look-images` から `download` → バイトの先頭の印（`detectImageType`）で種類を決める |
+| 成功 | 200 バイト。`Content-Type`（検出した種類）、`Cache-Control: public, max-age=300, s-maxage=300`、`X-Content-Type-Options: nosniff` |
+| 失敗 | 非公開・無い・不正な id・画像なし・道筋が確かめに通らない・置き場の失敗・先頭の印が画像でない、は全部 404（本文は固定の短い文字、`Cache-Control: no-store`）。記録は固定の種類（`download_failed`・`not_image`）だけで、道筋・置き場の誤りの文は書かない |
+
+- 非公開にした後は、共有キャッシュの分（最長 300 秒）が過ぎれば画像が出なくなる
 
 ## データ
 

@@ -101,3 +101,23 @@ test('削除は会員なら合言葉を付けて DELETE し、一覧から外す
   expect(csrfSent['DELETE /api/wishlist/w1']).toBe('member-token');
   expect(csrfSent['GET /api/wishlist']).toBeNull();
 });
+
+test('画像の署名が null の 1 件があっても、一覧全体を捨てず、その件は NO IMAGE のカードで出す', async () => {
+  const consoleWarn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  wishlistBody = [
+    row(),
+    row({
+      id: 'w2',
+      item_id: 8,
+      items: { id: 8, name: 'ウールパンツ', price: 18000, image_url: null, category: 'PANTS', colors: [], sizes: [] },
+      variants: [],
+    }),
+  ];
+  render(<WishlistPage />);
+
+  expect(await screen.findByText('リネンシャツ')).toBeInTheDocument();
+  expect(await screen.findByText('ウールパンツ')).toBeInTheDocument();
+  expect(screen.getByText('NO IMAGE')).toBeInTheDocument();
+  expect(consoleWarn).not.toHaveBeenCalledWith('Invalid wishlist entries were filtered out', expect.anything());
+  consoleWarn.mockRestore();
+});

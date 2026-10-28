@@ -1,6 +1,6 @@
 # NEWS の脅威
 
-> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-26 | 対象: NEWS の公開の画面・`/api/news`・管理のニュース・画像の置き場・`news_articles` の DB | 基準コミット: `a03beaff`（本文の `ファイル:行` は、この脅威の文書が日付つきの証拠として残す行番号で、このコミットの内容を指す。コードを読み直す時は関数・部品の名前でたどる）
+> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-28 | 対象: NEWS の公開の画面・`/api/news`・管理のニュース・画像の置き場・`news_articles` の DB | 基準コミット: `a03beaff`（本文の `ファイル:行` は、この脅威の文書が日付つきの証拠として残す行番号で、このコミットの内容を指す。コードを読み直す時は関数・部品の名前でたどる）
 
 ---
 
@@ -12,7 +12,7 @@ NEWS（お知らせ）の領域で考える脅威を、1つずつ `THR-NEWS-NNN`
 | --- | --- |
 | 項目の数 | 25（THR-NEWS-001〜025） |
 | 守りがある物 | 下書きを外へ出さない（001）、本文の XSS（012）、管理の権限と aal2（014）、監査の記録（015）、守りの見出し（023）。過去に直った指摘（公開の置き場・回数の制限・service role の素通り・監査の無さ・Cookie の記録）も、守りがある脅威として残した |
-| 穴がありうる物（満たすかどうかは対応する `SEC-NEWS` の本文だけに書く） | DB が aal2 を見ない（002）、署名の失敗で元の値を返す（007）、回数の制限の IP を偽れる（010）、画像の中身と拡張子（016）、画像の消し残し（017）、編集のページの道筋の書き換え（024）、DB の段に入力の制約が無い（025）など |
+| 穴がありうる物（満たすかどうかは対応する `SEC-NEWS` の本文だけに書く） | DB が aal2 を見ない（002）、署名の失敗で元の値を返す（007。2026-10-28 に直した）、回数の制限の IP を偽れる（010）、画像の中身と拡張子（016）、画像の消し残し（017）、編集のページの道筋の書き換え（024）、DB の段に入力の制約が無い（025）など |
 | 対策の書き先 | 対策のセキュリティ要件 `SEC-NEWS-NNN` は要件の文書（`docs/02_Requirements/areas/news.md`）に書く。下の「対策」の欄は読み手のための写し |
 | 状態の付け方 | どの項目もコードとレビューから起こし、ユーザーの確認を受けていないので「推定」（`.claude/skills/documentation-guide/SKILL.md` の 7）。どれも実行しての確かめはしていない |
 
@@ -130,11 +130,11 @@ flowchart LR
 | --- | --- |
 | 守るもの | 置き場 `news-images` の中の、記事の画像でない物 |
 | 脅威 | 記事の行の `image_url` を書き換えられる者（管理の権限を持つ人、または THR-NEWS-002 の道）が、置き場の別の物の署名つき URL を公開の応答に出させる |
-| 起こり方 | 署名の前に、道筋が `news/` の下にあるか、URL のホストが自分の Supabase かを確かめない（`src/lib/storage/news-images.ts:15-52,79-84`）。service role で署名するので RLS も効かない。検索の結果の画像も同じ関数で署名する（`src/features/search/services/search.service.ts:163,190,302-305`） |
+| 起こり方 | 従来は、署名の前に、道筋が `news/` の下にあるか、URL のホストが自分の Supabase かを確かめなかった（`extractNewsImageObjectPath`）。service role で署名するので RLS も効かない。検索の結果の画像も同じ関数で署名する（`src/features/search/services/search.service.ts`）。**2026-10-28 に塞いだ**: `signNewsImageUrl` は共有の `parseOwnObjectPath`（`src/lib/storage/safe-object-path.ts`、DD-SEARCH-011）を通し、自分の origin 1 つ・バケット `news-images`・`news/` の下の安全な文字だけを署名する（`extractNewsImageObjectPath` は管理の後始末だけが使う。ADR-0316） |
 | 影響 | 置き場に記事の画像以外の物を置いた時に、それが公開の応答から配られる |
-| 対策 | SEC-NEWS-007 |
+| 対策 | SEC-NEWS-007（実装済み。ADR-0316） |
 | ASVS | ASVS 未対応付け |
-| 根拠 | 過去のレビューで3回指摘された。今のコードが満たすかは SEC-NEWS-007 を見る。今の置き場には記事の画像しか置かないので害は小さい（推定） |
+| 根拠 | 過去のレビューで3回指摘され、2026-10-28 に直した。今のコードが満たすかは SEC-NEWS-007 を見る。今の置き場には記事の画像しか置かないので害は小さい（推定） |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/security/security_review_news.md:90`、`docs/05_Quality/reviews/security/security_review_news_id.md:95`、`docs/05_Quality/reviews/code/2026-04-29-news-review.md:23-28`、`docs/05_Quality/reviews/code/2026-04-29-news-id-additional-security-review.md:18-21` |
 
@@ -144,11 +144,11 @@ flowchart LR
 | --- | --- |
 | 守るもの | 置き場の中の道筋と、改ざんの兆し |
 | 脅威 | 署名の失敗・道筋の読めない値を、そのまま応答に載せる（開く側へ倒れる） |
-| 起こり方 | 道筋にできない値は元の値を返し（`src/lib/storage/news-images.ts:79-82`）、署名の失敗も元の道筋を返す（`:84-85`）。失敗を記録に残さない（`:63-67`） |
+| 起こり方 | 従来は、道筋にできない値は元の値を返し、署名の失敗も元の道筋を返した。失敗を記録に残さなかった（`signNewsImageUrl`）。**2026-10-28 に塞いだ**: 道筋にできない値と署名の失敗で `null` を返し、`signNewsImageFields` は `image_url: null`、検索は `imageUrl: null` にする。失敗の記録は種類 `invalid_path`・`sign_failed` だけで、道筋・URL・Supabase の誤りの文を含めない（ADR-0316） |
 | 影響 | 非公開の置き場の道筋が外へ出る。DB の値を書き換えられた時に、外の URL がそのまま閲覧者へ渡る。失敗や改ざんに気づけない |
-| 対策 | SEC-NEWS-008 |
+| 対策 | SEC-NEWS-008（実装済み。ADR-0316） |
 | ASVS | V4.1.5 |
-| 根拠 | 過去のレビューの Medium・Low の指摘。今のコードが満たすかは SEC-NEWS-008 を見る。検索の結果の画像にも同じことが言える |
+| 根拠 | 過去のレビューの Medium・Low の指摘で、2026-10-28 に直した。今のコードが満たすかは SEC-NEWS-008 を見る。検索の結果の画像にも同じことが言える |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/security/security_review_news.md:46`、`docs/05_Quality/reviews/security/security_review_news_id.md:44,96-97`、`docs/05_Quality/reviews/code/2026-04-29-news-id-additional-security-review.md:25-33` |
 
@@ -354,7 +354,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | サーバーの最適化の処理の余力と、キャッシュの容量 |
 | 脅威 | 第三者が自分の Supabase のプロジェクトの画像を、このサイトの `/_next/image` に通させる |
-| 起こり方 | `next.config.ts:35,54-71` の `remotePatterns` が `*.supabase.co` の `/storage/v1/object/public/**`・`sign/**`・`authenticated/**` を全部許す。どのプロジェクトの URL でも最適化に通る。最適化した画像のキャッシュの長さ（`minimumCacheTTL`）は指定が無い |
+| 起こり方 | 過去は `next.config.ts` の `remotePatterns` が `*.supabase.co` の `/storage/v1/object/public/**`・`sign/**`・`authenticated/**` を全部許し、どのプロジェクトの URL でも最適化に通った。最適化した画像のキャッシュの長さ（`minimumCacheTTL`）は指定が無かった。2026-10-28 に、本番は自分の host 1 つの `/storage/v1/object/sign/**` だけにし、`minimumCacheTTL` を 3600 秒にした（`DD-HOME-004`、`ADR-0108`）。手元の Supabase につないだビルドだけ手元の枝を足す |
 | 影響 | サーバーの処理と費用を他人の画像のために使われる。THR-NEWS-004 の残り方も長くなる |
 | 対策 | SEC-NEWS-023 |
 | ASVS | V12.6.1 |

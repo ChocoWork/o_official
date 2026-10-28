@@ -4,6 +4,7 @@ import {
 } from "@/lib/supabase/server";
 import { signLookImageUrls } from "@/lib/storage/look-images";
 import { signItemImageUrl } from "@/lib/storage/item-images";
+import { parseOwnObjectPath } from "@/lib/storage/safe-object-path";
 import { describeErrorForLog } from "@/lib/logging/safe-error";
 import type {
   LookSeasonType,
@@ -223,6 +224,43 @@ export async function getPublishedLookById(
 }
 
 /**
+ * 公開の LOOK の image_urls のうち、置き場の道筋の確かめに通る最初の生の値を返す（署名しない）。無い・非公開・確かめに通る物が無い・DB の失敗は null。
+ *
+ * @impl IMPL-LOOK-158
+ * @design DD-LOOK-071
+ * @remarks og:image の窓口が読む。署名つき URL を共有の場に出さないので署名はここでしない。公開の印は匿名の鍵（RLS）と明示の両方で絞る。
+ * 窓口は画像が出せない時に 404 を返すだけでよいので、DB の失敗は符号だけ記録して null にし、投げない。
+ */
+export async function getPublishedLookCoverRaw(id: number): Promise<string | null> {
+  const supabase = await createPublicClient();
+
+  const { data, error } = await supabase
+    .from("looks")
+    .select("image_urls")
+    .eq("status", "published")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to fetch look cover image:", describeErrorForLog(error));
+    return null;
+  }
+
+  const rawUrls: unknown = data?.image_urls;
+  if (!Array.isArray(rawUrls)) {
+    return null;
+  }
+
+  for (const raw of rawUrls) {
+    if (typeof raw === "string" && parseOwnObjectPath(raw, { bucket: "look-images", prefix: "looks" })) {
+      return raw;
+    }
+  }
+
+  return null;
+}
+
+/**
  * 詳細の前後の LOOK を、一覧と同じ並びで 1 件ずつ id と題だけ取る。
  *
  * @impl IMPL-LOOK-156
@@ -393,7 +431,8 @@ function mapLookRowToListItem(row: LookListRow): PublicLookListItem {
     seasonYear: row.season_year,
     seasonType: row.season_type,
     theme: row.theme,
-    imageUrls: Array.isArray(row.image_urls) ? row.image_urls : [],
+    // 生の値は載せない。呼び手が署名した値で必ず上書きする（署名に通らない物は空のまま）。
+    imageUrls: [],
     createdAt: row.created_at,
     linkedItems: [],
   };

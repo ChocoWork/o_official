@@ -11,8 +11,8 @@
  *   @supabase/ssr の同じ読み方で先に確かめる（ホームの画面は管理者かどうかを出さないので、サーバー側の読みは直接は見えない）。
  * - 公開の行を足す試験（006-AC-02・008-AC-01・013-AC-01）は withHomeCatalogLock('exclusive')、公開の並びを比べる試験
  *   （002-AC-01）は 'shared' で、ファイルをまたいで直列にする（ホームは新しい順の先頭 8 件しか描かないため）。
- * - SEC-HOME-006-AC-02（外の画像の住所）・SEC-HOME-007-AC-01（署名の期限）は、今のコードが満たさない（TM-HOME-34・35）ので、
- *   test.fail で印を付けてある（直ると「想定外の成功」で知らせる）。skip しない。SEC-HOME-013-AC-01（取る件数）は商品を8件だけ取るようにしたので印を外した。
+ * - SEC-HOME-006-AC-02（外の画像の住所）・SEC-HOME-007-AC-01（署名の期限）は、画像の署名を道筋の確かめつき・期限 1 時間にしたので
+ *   印を外した（TM-HOME-34・35）。SEC-HOME-013-AC-01（取る件数）は商品を8件だけ取るようにしたので印を外した。
  * JWT が通信記録に残らないよう trace は切る。
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
@@ -200,7 +200,6 @@ for (const vp of VIEWPORTS) {
     });
 
     test(`SEC-HOME-006-AC-02 ${vp.name}: image_url を外の住所にした公開の商品のカードの画像の src に、入れた外の住所が含まれない`, async ({ page }) => {
-      test.fail(true, 'SEC-HOME-006 今のコードは満たさない（docs/02_Requirements/areas/home.md）');
       test.setTimeout(120_000);
       const name = homeTag('s006a2-evil');
       const evilUrl = 'https://evil.example/x.png';
@@ -222,7 +221,6 @@ for (const vp of VIEWPORTS) {
     });
 
     test(`SEC-HOME-007-AC-01 ${vp.name}: ホームの商品のカードの画像と、LOOK のカードの関連商品の画像の署名つき URL の期限が、開いた時から1時間以内`, async ({ page, request, baseURL }) => {
-      test.fail(true, 'SEC-HOME-007 今のコードは満たさない（docs/02_Requirements/areas/home.md）');
       expect(baseURL).toBeTruthy();
       await openHome(page, vp);
       const cardImageSrcs = await page

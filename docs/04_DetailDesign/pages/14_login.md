@@ -1,10 +1,10 @@
 # 1.14 ログインと認証（AUTH）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の窓口 `/api/auth/*`、サイト共通のヘッダーとドロワー、認証の部品 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の窓口 `/api/auth/*`、サイト共通のヘッダーとドロワー、認証の部品 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
-AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`〜`036`）で書く。`DD-AUTH-032`〜`036` はログインの戻り先（2026-10-25、波 1-A）の設計で、コードは同日に書いた。
+AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`〜`037`）で書く。`DD-AUTH-032`〜`036` はログインの戻り先（2026-10-25、波 1-A）の設計で、コードは同日に書いた。`DD-AUTH-037`（`/api/auth` の no-store）は 2026-10-28（波 3）に足した。
 中身は 2026-10-24 の作業ツリーのコードを読んで起こした今の動きで、ユーザーの確認を受けていないので全部「推定」にした。要件・構造設計とコードが食い違う所は決めずに今のコードの動きを書き、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節に載せる。
 
 | 範囲 | ID | 単位 |
@@ -18,6 +18,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | セッションの窓口 | `DD-AUTH-026`〜`028` | `me`・`refresh`・`logout` |
 | TOTP の窓口 | `DD-AUTH-029`〜`031` | `mfa/status`・`mfa/enroll-totp`・`mfa/verify` |
 | 戻り先の部品と窓口 | `DD-AUTH-032`〜`036` | 戻り先の確かめ、控えの保存、控えの開始と解決、`post-login`、入口のリンクの URL（ARC-AUTH-010） |
+| 応答の見出し | `DD-AUTH-037` | 共有の `src/proxy.ts` が `/api/auth` 配下の応答に付ける `Cache-Control: no-store`（判定だけを `src/lib/auth-no-store-policy.ts` の `shouldSetNoStore` に出して範囲に入れた） |
 
 - 結論: 範囲の 33 の単位を 31 の項目へつないだ（`/login/verify` と `/auth/password-reset/verify` は頁と端末の部品の2単位を1項目にした）。各項目に入出力・正常と異常の流れ（分岐ごとに条件と動き）・状態と永続化・認証認可・単体テストの観点を書いた
 - 単体テストは 5 本（`LoginModal`・`AuthResultScreen`・`VerifyOtpClient`・`verified-page`・`logout-guest-shopping`）しか無く、窓口の分岐は結合テスト（`tests/integration/api/auth/**`）だけが通す。分岐の網羅 100% にするには、テスト観点の表の「今のテスト」が無い行を単体テストで足す必要がある
@@ -30,7 +31,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 範囲 | `scripts/trace/scope.json` の AUTH |
 | 上位の文書 | [AUTH の構造設計](../../03_BasicDesign/areas/auth.md)（`ARC-`・`SCR-`・`FLOW-`・`STATE-`・`API-`・`DATA-AUTH-`）、[AUTH の要件](../../02_Requirements/areas/auth.md)（`SEC-AUTH-`） |
 | 関連文書 | [AUTH の脅威](../../05_Quality/security/threats/auth.md)、`docs/03_BasicDesign/decisions/ADR-0400`〜`ADR-0412`、シーケンス [ログイン・追加認証](../sequence/auth-login-mfa.md)・[Google OAuth](../sequence/auth-oauth.md)・[パスワード再設定](../sequence/auth-password-reset.md)・[会員登録・確認](../sequence/auth-registration.md)・[セッション・API認可](../sequence/auth-session.md) |
-| 対象のコード | 「実装の単位」の表の 33 単位 |
+| 対象のコード | 「実装の単位」の表の 33 単位に、2026-10-28 に足した `shouldSetNoStore`（`DD-AUTH-037`）を加えた 34 単位 |
 | 調べた時点 | 2026-10-24 の作業ツリー。コードは読んだだけで、動かしての確かめはしていない |
 | 上位の決め方 | 項目の上位は、その単位が受け持つ構造設計と、その単位のコードが満たす `SEC-AUTH-` だけにした。満たさない `SEC-AUTH-` は上位にせず、本文の「認証認可」に「満たさない」と書いた（構造設計と同じ決め方）。要件・ADR・範囲外の ID は上位に書けないので、本文の「対応要件 ID」の括弧と根拠に書いた |
 
@@ -86,7 +87,9 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | `src/app/api/auth/mfa/enroll-totp/route.ts` | `<file>` | DD-AUTH-030 |
 | `src/app/api/auth/mfa/verify/route.ts` | `<file>` | DD-AUTH-031 |
 | `src/app/api/auth/post-login/route.ts` | `<file>` | DD-AUTH-035 |
+| `src/lib/auth-no-store-policy.ts` | `shouldSetNoStore` | DD-AUTH-037 |
 
+- `src/lib/auth-no-store-policy.ts` の `shouldSetNoStore` は `IMPL-AUTH-223`（2026-10-28）。共有の `src/proxy.ts` が呼ぶ。`proxy` 全体は CSP・Origin の検査も持つ共有部品で、範囲の単位にしないので、`/api/auth` かどうかの判定だけを小さな関数に出して範囲に入れた（`scripts/trace/scope.json` の AUTH の `src` と、試験 `tests/unit/middleware/proxy-no-store.test.ts` を `tests` に足した）。ADR-0415 の置き場所
 - 戻り先の部品（`src/features/auth/return-intent/` の `return-path.ts`・`return-intent-store.ts`・`return-intent-service.ts`・`use-login-href.ts`）は、DD-AUTH-032・033・034・036 につなぐ。単位（symbol）はコードを書く時に確定する（コードはまだ無いので、この表には書かない）
 - `src/app/` の `page`・`route` と `.tsx` はファイル全体で1つの単位なので、中の metadata の関数・Route Handler の関数・小さな関数・定数はその単位に含める。`.ts` の `useTurnstileWidget` と `formatResendCountdown` だけが関数の単位
 - 新しい `@impl` は `IMPL-AUTH-101` から振る（前の版の `IMPL-AUTH-SEC-009` などと字の上で混ざらないようにするため）。33 の単位すべてに `@impl`（`IMPL-AUTH-101`〜`205`）と `@design` を付けた
@@ -942,7 +945,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 **状態・永続化:** 戻り先を控える時だけ `private.auth_return_intents` に 1 行書く（DATA-AUTH-005。Cookie の番号は STATE-AUTH-006）。ほかは DB の表に書かない。Supabase Auth の確認コードの発行と、保留の Cookie（利用者の id・メール・用途・発行の時刻を HMAC で署名した印、STATE-AUTH-001）だけが状態。保留の印の作り方と寿命は共有の `login-2fa-session.ts` が持つ。
 
-**認証認可:** ログインを求めない公開の窓口。Origin は共有の proxy が確かめる。`no-store` を付けない（SEC-AUTH-022 は満たさない）。Supabase Auth を直接呼べばこの窓口を通らずにトークンを得られる（SEC-AUTH-005 は満たさない）。
+**認証認可:** ログインを求めない公開の窓口。Origin は共有の proxy が確かめる。`no-store` は共有の proxy が付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037。2026-10-28）。Supabase Auth を直接呼べばこの窓口を通らずにトークンを得られる（SEC-AUTH-005 は満たさない）。
 
 **テスト観点:**（単体テストは無い。結合 `tests/integration/api/auth/login.test.ts` が 10 件で多くの道を通す）
 
@@ -1011,7 +1014,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 **状態・永続化:** 保留の Cookie を消す。`sessions` の表への行の作成と認証の Cookie は共有の `persistSessionAndCookies`（DATA-AUTH-001・004）。ゲストのカート・お気に入りの合わせ（H）とゲスト注文の紐付け（注文まわりの作り直しで書き換え中）は共有の関数で、この窓口は呼ぶだけ。誤りのコードでは保留を残す（5回までは打ち直せる）。
 
-**認証認可:** 公開の窓口。保留の Cookie が「パスワードを通った」唯一の根拠。応答の本文に Supabase の利用者の記録・トークンを入れない（SEC-AUTH-022 の本文の部分。2026-10-26）。`no-store` を付けない（波 3）。
+**認証認可:** 公開の窓口。保留の Cookie が「パスワードを通った」唯一の根拠。応答の本文に Supabase の利用者の記録・トークンを入れない（SEC-AUTH-022 の本文の部分。2026-10-26）。`no-store` は共有の proxy が付ける（ADR-0415、DD-AUTH-037。2026-10-28）。
 
 **テスト観点:**（単体 `tests/unit/api/auth/otp-verify-route.test.ts`。結合 `tests/integration/api/auth/otp-verify.test.ts`・`otp-sdk-flow.test.ts`・`tests/integration/api/auth-otp-verify-api.test.ts`）
 
@@ -1789,7 +1792,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 **状態・永続化:** 新しい `sessions` の行を作り、前の行を失効させるのは共有の `persistNewSession`（DATA-AUTH-001）。access・refresh・CSRF の Cookie を差し替える（DATA-AUTH-004）。
 
-**認証認可:** 公開の窓口で、refresh の Cookie が根拠。応答の本文に access token と Supabase の利用者の記録を入れない（SEC-AUTH-022 の本文の部分。2026-10-26）。`no-store` は波 3。呼ぶのは共有の `client-fetch`（401 の時だけ、FREQ-316）。
+**認証認可:** 公開の窓口で、refresh の Cookie が根拠。応答の本文に access token と Supabase の利用者の記録を入れない（SEC-AUTH-022 の本文の部分。2026-10-26）。`no-store` は共有の proxy が付ける（ADR-0415、DD-AUTH-037。2026-10-28）。呼ぶのは共有の `client-fetch`（401 の時だけ、FREQ-316）。
 
 **テスト観点:**（単体 `tests/unit/api/auth/refresh-route.test.ts`。結合 `tests/integration/api/auth/refresh.test.ts`・`cookieFlags.test.ts`・`tests/integration/auth-flow.test.ts`）
 
@@ -1920,7 +1923,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 **状態・永続化:** 書かない。読むのは Supabase Auth の要素と AAL だけ。
 
-**認証認可:** ログインした利用者だけ。一般の会員にも答える（特権の判定は答えの中身）。回数の制限が無い。`no-store` を付けない。画面が使うのは `hasVerifiedFactor` と `factors` だけで、ほかの欄は使われない（`src/app/auth/verified/page.tsx`）。
+**認証認可:** ログインした利用者だけ。一般の会員にも答える（特権の判定は答えの中身）。回数の制限が無い。`no-store` は共有の proxy が付ける（ADR-0415、DD-AUTH-037。2026-10-28）。画面が使うのは `hasVerifiedFactor` と `factors` だけで、ほかの欄は使われない（`src/app/auth/verified/page.tsx`）。
 
 **テスト観点:**（単体テストも結合テストも無い）
 
@@ -1991,7 +1994,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 **状態・永続化:** Supabase Auth に TOTP の要素（未確認）を作る。確認は DD-AUTH-031。
 
-**認証認可:** 管理者・サポーターだけ。秘密を登録の応答にだけ入れ、`no-store` を付けない（SEC-AUTH-022 の no-store は波 3）。成否を監査に残す（SEC-AUTH-030。2026-10-26）。通行証の `amr` に 2 段目を通った方法（`otp`・`magiclink`・`totp`・`oauth`・`sso/saml`・`email/signup`）が無ければ断る（SEC-AUTH-031 の局所の守り。2026-10-26）。残る穴: Supabase Auth へ OTP だけを直接送って得た通行証は通る・本人へのメールの通知が無い（波 5）。本物の通行証の `amr` の値は未実測（`magiclink` を数えるのはそのため）。
+**認証認可:** 管理者・サポーターだけ。秘密を登録の応答にだけ入れる。`no-store` は共有の proxy が付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037。2026-10-28）。成否を監査に残す（SEC-AUTH-030。2026-10-26）。通行証の `amr` に 2 段目を通った方法（`otp`・`magiclink`・`totp`・`oauth`・`sso/saml`・`email/signup`）が無ければ断る（SEC-AUTH-031 の局所の守り。2026-10-26）。残る穴: Supabase Auth へ OTP だけを直接送って得た通行証は通る・本人へのメールの通知が無い（波 5）。本物の通行証の `amr` の値は未実測（`magiclink` を数えるのはそのため）。
 
 **テスト観点:**（単体 `tests/unit/api/auth/mfa-enroll-totp-route.test.ts`。結合 `tests/integration/api/auth-mfa-enroll-totp-api.test.ts`・`auth-admin-totp-flow.test.ts`）
 
@@ -2363,6 +2366,55 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 2 | `/login`・`/auth/verified`・`/api/x`・`/unknown` では `/login`。ホーム `/` も `/login` |
 | 3 | 初回の描画が検索条件を含まず、効果の後に含む。道筋が変わると更新する |
 | 4 | 会員だけの頁の 3 つの門が `/login?next=<今の道>`（`account-login-gate.test.tsx`） |
+
+### DD-AUTH-037 `/api/auth` 配下の応答に `Cache-Control: no-store` を付ける（proxy.ts）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | API-AUTH-001、API-AUTH-002、API-AUTH-014、API-AUTH-016、API-AUTH-017、API-AUTH-018、SEC-AUTH-022 |
+| 根拠 | `login`・`otp/verify`・`refresh`・`mfa/*` は窓口が `no-store` を付けず、トークンや TOTP の秘密を含む応答が共有の端末や中継に残る余地があった。窓口ごとの付け忘れを無くすため、共有の proxy が `/api/auth` 配下にまとめて付ける（ADR-0415、SEC-AUTH-022-AC-02） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト・E2E |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/design-final.md`（R10）、`docs/superpowers/plans/2026-10-28-wave3-csp-images-session.md` の Task 10 |
+
+**対応要件 ID:** API-AUTH-001・002・014・016・017・018、SEC-AUTH-022（その上は ADR-0415）
+
+**入出力:**
+
+| 向き | 中身 |
+| --- | --- |
+| 入力 | 要求の道筋（`request.nextUrl.pathname`）と、状態を変える `/api` の要求の Origin |
+| 出力 | 道筋が `/api/auth` か `/api/auth/…` の時、通常の応答と Origin 拒否の 403 の見出しに `Cache-Control: no-store` を足す |
+
+**正常フロー:**
+
+1. Origin の確かめ（状態を変える `/api` の要求）。拒否なら 403 を作る
+2. 道筋が `/api/auth` にセグメントの境目で当たる（`shouldSetNoStore`。`IMPL-AUTH-223`）時、403 の応答に `Cache-Control: no-store` を足して返す
+3. 拒否されなければ nonce と CSP を作り `NextResponse.next()` で応答を作る。`session_id` の発行（DD-PRIVACY-004）と守りの見出しを足したあと、道筋が当たる時だけ `Cache-Control: no-store` を足す
+
+**分岐と異常フロー:**
+
+| 条件 | 動き |
+| --- | --- |
+| `/api/auth/login`・`otp/verify`・`refresh`・`mfa/*`・`me` など `/api/auth/…` | `no-store` を付ける |
+| Origin が違う `/api/auth/…` の `POST` | 403 `Forbidden origin` に `no-store` を付ける |
+| `/api/authx`・`/api/authentication/x`（境目の外れ）、`/api/search`、`/news`、`/` | 付けない |
+| `/api/order-status/…` の Origin 拒否 | 今までどおり `no-store` と `Referrer-Policy: no-referrer`（この項目の対象外） |
+| 窓口が自分で `Cache-Control` を付ける（`confirm`・`me` ほか） | 窓口の値も `no-store` で同じ。どちらが残っても変わらない |
+
+**状態・永続化:** 持たない。
+
+**認証認可:** 無い。見出しを足すだけで、認証の判定は窓口（DD-AUTH-014〜031）が行う。
+
+**テスト観点:**（単体 `tests/unit/middleware/proxy-no-store.test.ts`。名前の先頭は `DD-AUTH-037`。E2E は `e2e/FR-LOGIN-030`）
+
+| # | 観点 |
+| --- | --- |
+| 1 | `login`・`otp/verify`・`refresh`・`mfa/enroll-totp`・`mfa/verify`・`mfa/status`・`me` の応答に `no-store` が付く |
+| 2 | Origin が違う `/api/auth/login` の `POST` の 403 に `no-store` が付き、`/api/authx` の 403 には付かない |
+| 3 | `/api/authx`・`/api/authentication/x`・`/api/search`・`/api/news`・`/news`・`/`・`/about` には付かない |
+| 4 | 注文の状況の Origin 拒否は `no-store` と `Referrer-Policy: no-referrer` のまま |
+| 5 | `/api/auth` でも CSP・`X-Frame-Options`・`X-Content-Type-Options`・`Referrer-Policy` が付く |
 
 ## 引き継がなかった古い番号
 

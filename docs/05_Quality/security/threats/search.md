@@ -1,6 +1,6 @@
 # SEARCH の脅威
 
-> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-26 | 対象: `/search` の画面・ホームの `/?q=` の窓・`/api/search`・`/api/suggest`・検索の DB の関数（`search_items`・`search_looks`・`search_news`・`search_public_*`・`get_popular_items`） | 基準コミット: `973dc336`（作業ツリー。本文の `ファイル:行` の行番号は、この基準コミットの時点のそのファイルの行を指す）
+> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-28 | 対象: `/search` の画面・ホームの `/?q=` の窓・`/api/search`・`/api/suggest`・検索の DB の関数（`search_items`・`search_looks`・`search_news`・`search_public_*`・`get_popular_items`） | 基準コミット: `973dc336`（作業ツリー。本文の `ファイル:行` の行番号は、この基準コミットの時点のそのファイルの行を指す）
 
 ---
 
@@ -12,7 +12,7 @@ SEARCH（サイト内の横断検索）の領域で考える脅威を、1つず�
 | --- | --- |
 | 項目の数 | 21（THR-SEARCH-001〜021） |
 | 守りがある物 | 下書きを出さない（001・002）、検索条件への差し込み（003）、購入数を出さない（009）、Referer での漏れ（012）、表示での XSS（013）。過去に直った指摘（フィルタ文字列の連結・回数の制限の無さ・Cookie の記録・検索の履歴の保存）も、守りがある脅威として残した |
-| 守りが欠ける・弱い物 | （2026-10-26 に 004・005・010・017・018・019・021 と 020 の外のサイト側を直した。以下は直す前の記述。各項目の「起こり方」に直した内容を書いた）入口の確かめの不揃い（004）、送り元を偽れる回数の制限（006）、RPC の直接の呼び出しに件数の上限が無い（007）、使われない関数が PUBLIC に開く（008）、応答に `Cache-Control` が無い（010）、ITEM の署名つき URL が7日（014）、署名の失敗で元の値を返す（015）、失敗が0件に見える（017）、回数の制限で他人を締め出せる（020）、ホームの文に語を入れて偽の知らせを出せる（021）など |
+| 守りが欠ける・弱い物 | （2026-10-26 に 004・005・010・017・018・019・021 と 020 の外のサイト側を直した。2026-10-28 に 014・015・016 を直した（015・016 は ITEM・LOOK・NEWS の 3 つとも）。以下は直す前の記述。各項目の「起こり方」に直した内容を書いた）入口の確かめの不揃い（004）、送り元を偽れる回数の制限（006）、RPC の直接の呼び出しに件数の上限が無い（007）、使われない関数が PUBLIC に開く（008）、応答に `Cache-Control` が無い（010）、ITEM の署名つき URL が7日（014）、署名の失敗で元の値を返す（015）、失敗が0件に見える（017）、回数の制限で他人を締め出せる（020）、ホームの文に語を入れて偽の知らせを出せる（021）など |
 | 対策の書き先 | 対策のセキュリティ要件 `SEC-SEARCH-NNN` は要件の文書（`docs/02_Requirements/areas/search.md`）に書く。下の「対策」の欄は読み手のための写し |
 | 状態の付け方 | 出どころが過去のレビューの指摘で、今のコードでも同じ形を確かめた物は「現行」。実装から起こした物（出どころが「実装から推定」）と、本番の設定や推論に頼る物は「推定」（`.claude/skills/documentation-guide/SKILL.md` の 7）。どれも実行しての確かめはしていない |
 
@@ -244,7 +244,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 非公開にした・消した商品とルックの画像 |
 | 脅威 | 前に検索の応答を受け取った者が、商品を非公開にした後も画像を開く |
-| 起こり方 | 検索の結果の画像は種別ごとの関数で署名する（`src/features/search/services/search.service.ts:147-169`）。ITEM の署名つき URL は7日有効で、同じ道筋なら作った URL をサーバーの記憶に持って誰にでも使い回す（`src/lib/storage/item-images.ts:4-7,55-81`）。LOOK と NEWS は1時間（`src/lib/storage/look-images.ts:14`、`src/lib/storage/news-images.ts:4`）。署名つき URL は取り消せない。画面は `next/image` に渡すので、最適化の画像のキャッシュにも残りうる（`SearchPageClient.tsx:187-193`、中継の設定は THR-NEWS-022（範囲外）） |
+| 起こり方 | 検索の結果の画像は種別ごとの関数で署名する（`src/features/search/services/search.service.ts:147-169`）。ITEM の署名つき URL は7日有効で、同じ道筋なら作った URL をサーバーの記憶に持って誰にでも使い回す（`src/lib/storage/item-images.ts:4-7,55-81`）。LOOK と NEWS は1時間（`src/lib/storage/look-images.ts:14`、`src/lib/storage/news-images.ts:4`）。署名つき URL は取り消せない。画面は `next/image` に渡すので、最適化の画像のキャッシュにも残りうる（`SearchPageClient.tsx:187-193`、中継の設定は THR-NEWS-022（範囲外））。**2026-10-28 に ITEM を直した**: `item-images.ts` の既定の期限を3600秒にし、検索の側も `SEARCH_IMAGE_URL_TTL_SECONDS = 3600` を明示して渡す。署名の使い回しは、残りが期限の半分以上ある間だけにした（頁に載る URL の残りを1800秒以上に保つ。ADR-0316）。画面の最適化のキャッシュ（`next/image`）は別の波（`minimumCacheTTL`）が扱う |
 | 影響 | 誤って公開した商品を戻しても、最大7日（キャッシュに残ればそれ以上）画像が見える |
 | 対策 | SEC-SEARCH-014 |
 | ASVS | ASVS 未対応付け |
@@ -258,7 +258,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 置き場の中の道筋と、改ざんの兆し |
 | 脅威 | 署名の失敗や道筋にできない値を、そのまま検索の応答に載せる（開く側へ倒れる） |
-| 起こり方 | ITEM と LOOK の署名の関数は、道筋を取り出せない値は元の値を返し、署名の失敗も元の値を返す（`src/lib/storage/item-images.ts:92-98`、`src/lib/storage/look-images.ts:89-95`）。失敗を記録に残さない（`item-images.ts:70-72`、`look-images.ts:68-70`）。検索はその値を `imageUrl` として返す（`src/features/search/services/search.service.ts:166`） |
+| 起こり方 | ITEM と LOOK の署名の関数は、道筋を取り出せない値は元の値を返し、署名の失敗も元の値を返す（`src/lib/storage/item-images.ts:92-98`、`src/lib/storage/look-images.ts:89-95`）。失敗を記録に残さない（`item-images.ts:70-72`、`look-images.ts:68-70`）。検索はその値を `imageUrl` として返す（`src/features/search/services/search.service.ts:166`）。**2026-10-28 に ITEM を直した**: `signItemImageUrl` は道筋にできない値と署名の失敗で元の値を返さず `null` を返し、失敗の記録は種類（`invalid_path`・`sign_failed`）だけにした（ADR-0316）。**同日に LOOK と NEWS も直した**: `signLookImageUrl`・`signNewsImageUrl` も同じく `null` を返し、種類だけを記録する |
 | 影響 | 非公開の置き場の道筋や、DB に書かれた外の URL が閲覧者へ渡る。失敗や改ざんに気づけない |
 | 対策 | SEC-SEARCH-015 |
 | ASVS | V4.1.5 |
@@ -272,7 +272,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 置き場 `item-images`・`look-images` の中の、公開の画像でない物 |
 | 脅威 | 商品・ルックの行の画像の値を書き換えられる者（管理の権限を持つ人、または THR-SEARCH-002 の道）が、置き場の別の物の署名つき URL を検索の応答に出させる |
-| 起こり方 | 署名の前に、道筋が決まった場所の下にあるか、URL のホストが自分の Supabase かを確かめない（`src/lib/storage/item-images.ts:9-53`、`src/lib/storage/look-images.ts:21-57`）。service role で署名するので、置き場の RLS も効かない（`search.service.ts:202,314-318`） |
+| 起こり方 | 署名の前に、道筋が決まった場所の下にあるか、URL のホストが自分の Supabase かを確かめない（`src/lib/storage/item-images.ts:9-53`、`src/lib/storage/look-images.ts:21-57`）。service role で署名するので、置き場の RLS も効かない（`search.service.ts:202,314-318`）。**2026-10-28 に ITEM を直した**: `item-images.ts` が署名の前に共有の `parseOwnObjectPath`（DD-SEARCH-011）を通し、許す host は自分のプロジェクトの origin 1 つ、道筋は `items/` の下の安全な文字だけにした（本番の商品画像の値は全部この式に合う）。**同日に LOOK と NEWS も直した**: `look-images.ts`・`news-images.ts` が同じ関数を置き場 `look-images`・接頭辞 `looks`、置き場 `news-images`・接頭辞 `news` で通す（本番の LOOK・NEWS の画像の値も全部この式に合う） |
 | 影響 | 置き場に公開の画像以外の物を置いた時に、それが検索の応答から配られる |
 | 対策 | SEC-SEARCH-016 |
 | ASVS | ASVS 未対応付け |

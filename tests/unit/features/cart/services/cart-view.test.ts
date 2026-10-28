@@ -1,5 +1,6 @@
 import { buildCartJson } from '@/features/cart/services/cart-view';
 import { previewFulfillment } from '@/features/checkout/services/checkout-fulfillment.service';
+import { signItemImageUrl } from '@/lib/storage/item-images';
 
 jest.mock('@/features/checkout/services/checkout-fulfillment.service', () => ({ previewFulfillment: jest.fn() }));
 jest.mock('@/lib/storage/item-images', () => ({ signItemImageUrl: jest.fn(async (_s: unknown, url: string) => `${url}?signed`) }));
@@ -69,6 +70,13 @@ describe('buildCartJson', () => {
       }],
     });
     expect(JSON.stringify(cart)).not.toContain('token');
+  });
+
+  test('画像の署名が null（道筋にできない・署名に失敗）の行は、元の値に戻さず代わりの絵にする', async () => {
+    (signItemImageUrl as jest.Mock).mockResolvedValueOnce(null);
+    const external = line({ item_variants: { ...line().item_variants, items: { ...line().item_variants.items, image_url: 'https://evil.example/a.png' } } });
+    const cart = await buildCartJson(supabaseWith([external]), 'cart-1');
+    expect(cart.items[0].image).toBe('/placeholder.png');
   });
 
   test('色・サイズの無いバリアントは題名が商品名だけ', async () => {

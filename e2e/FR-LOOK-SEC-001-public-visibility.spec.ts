@@ -1,6 +1,6 @@
 /**
  * FR-LOOK-SEC-001 公開の LOOK の見え方（非公開の遮断・画像の URL・外の値・件数と項目・id の形・文字のエスケープ・取り出しの失敗）
- * 対応: SEC-LOOK-001-AC-01 / SEC-LOOK-001-AC-02 / SEC-LOOK-006-AC-01 / SEC-LOOK-006-AC-02 / SEC-LOOK-007-AC-01 /
+ * 対応: SEC-LOOK-001-AC-01 / SEC-LOOK-001-AC-02 / SEC-LOOK-006-AC-01 / SEC-LOOK-006-AC-02 / SEC-LOOK-006-AC-03 / SEC-LOOK-007-AC-01 /
  *       SEC-LOOK-008-AC-01 / SEC-LOOK-009-AC-01 / SEC-LOOK-016-AC-01 / SEC-LOOK-017-AC-01
  *
  * ログインしない公開の道だけを見る。手元の Supabase に足す LOOK は created_at を 2000-01-01、テーマを一意の印つきにし、
@@ -330,7 +330,6 @@ for (const vp of VIEWPORTS) {
 
 test.describe('FR-LOOK-SEC-001 og:image が期限の切れる署名つき URL でない', () => {
   test('SEC-LOOK-006-AC-02: 公開の LOOK の /look/<id> の og:image の値に、署名つき URL の token の問い合わせが含まれない', async ({ request }) => {
-    test.fail(true, 'SEC-LOOK-006-AC-02 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
     test.setTimeout(120_000);
     const theme = uniqueLookTag('og');
     const image = newImagePath();
@@ -344,8 +343,49 @@ test.describe('FR-LOOK-SEC-001 og:image が期限の切れる署名つき URL �
       const html = await response.text();
       expect(normalize(html).includes(theme), '詳細の頁にその公開の LOOK が出ている（制御の確認）').toBe(true);
 
-      for (const value of ogImages(html)) {
+      const values = ogImages(html);
+      expect(values.length, '詳細の頁に og:image が 1 つ以上ある（制御の確認）').toBeGreaterThan(0);
+      for (const value of values) {
         expect(/[?&]token=/.test(value), `og:image の値に token の問い合わせが含まれない（値: ${value.replace(/token=[^&]+/, 'token=…')}）`).toBe(false);
+      }
+    } finally {
+      await fx.cleanup();
+    }
+  });
+
+  test('SEC-LOOK-006-AC-03: 公開の LOOK の og:image（/look/<id>/og）を開くと 200・画像・共有の短いキャッシュ・nosniff で、Set-Cookie が無い。非公開にした後・無い id・数でない id は 404', async ({ request }) => {
+    test.setTimeout(120_000);
+    const theme = uniqueLookTag('og-route');
+    const image = newImagePath();
+    const fx = new LookFixtures();
+    try {
+      await fx.uploadImage(image.path);
+      const id = await fx.addLook({ theme, status: 'published', imageUrls: [image.path] });
+
+      const page = await request.get(`/look/${id}`, { failOnStatusCode: false });
+      expectResponseOk(page, `/look/${id}`);
+      const ogUrls = ogImages(await page.text());
+      const ogUrl = ogUrls.find((value) => new RegExp(`/look/${id}/og$`).test(value));
+      expect(ogUrl, `og:image に /look/${id}/og が入っている（値: ${ogUrls.join(', ')}）`).toBeDefined();
+
+      // 絶対 URL の origin は本番のサイト URL の設定で決まる。窓口そのものは同じ道で開く
+      const og = await request.get(new URL(ogUrl as string, 'http://localhost').pathname, { failOnStatusCode: false });
+      expect(og.status(), '公開の LOOK の og:image は 200').toBe(200);
+      expect(og.headers()['content-type'], '画像の種類で返る').toMatch(/^image\//);
+      const cacheControl = og.headers()['cache-control'] ?? '';
+      expect(cacheControl, 'Cache-Control が public').toMatch(/\bpublic\b/);
+      expect(cacheControl, 'Cache-Control の max-age が 300').toMatch(/\bmax-age=300\b/);
+      expect(cacheControl, 'Cache-Control の s-maxage が 300').toMatch(/\bs-maxage=300\b/);
+      expect(og.headers()['x-content-type-options'], 'nosniff').toBe('nosniff');
+      expect(og.headers()['set-cookie'], '共有キャッシュに載る応答に Set-Cookie が付かない').toBeUndefined();
+
+      await fx.setStatus(id, 'private');
+      const hidden = await request.get(`/look/${id}/og`, { failOnStatusCode: false });
+      expect(hidden.status(), '非公開にした後の og:image は 404').toBe(404);
+
+      for (const path of ['/look/99999999/og', '/look/abc/og']) {
+        const missing = await request.get(path, { failOnStatusCode: false });
+        expect(missing.status(), `${path} は 404`).toBe(404);
       }
     } finally {
       await fx.cleanup();
@@ -359,7 +399,6 @@ test.describe('FR-LOOK-SEC-001 og:image が期限の切れる署名つき URL �
 
 test.describe('FR-LOOK-SEC-001 決まりの外の道筋は署名されない', () => {
   test('SEC-LOOK-007-AC-01: image_urls に ../other/x.png と other/x.png を入れた公開の LOOK の /look/<id> と /look の HTML に、other/x.png を指す署名つき URL が出ない', async ({ request }) => {
-    test.fail(true, 'SEC-LOOK-007-AC-01 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
     test.setTimeout(120_000);
     // 置き場の他の物と重ならないよう、other の下の階層名に試験ごとの印を付ける
     const dir = `other-${randomBytes(4).toString('hex')}`;
@@ -391,7 +430,6 @@ test.describe('FR-LOOK-SEC-001 決まりの外の道筋は署名されない', (
 for (const vp of VIEWPORTS) {
   test.describe(`FR-LOOK-SEC-001 外の URL が画像の読み込み先にならない (${vp.name})`, () => {
     test(`SEC-LOOK-008-AC-01 ${vp.name}: image_urls に外のサイトの URL を入れた公開の LOOK の /look と /look/<id> の画像の src と og:image に、その外のサイトの URL が出ない`, async ({ page }) => {
-      test.fail(true, 'SEC-LOOK-008-AC-01 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
       test.setTimeout(120_000);
       await page.setViewportSize({ width: vp.width, height: vp.height });
       // 外のサイトへは実際に出ない

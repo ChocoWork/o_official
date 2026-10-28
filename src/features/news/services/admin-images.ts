@@ -10,6 +10,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { describeErrorForLog } from '@/lib/logging/safe-error';
 import { resolveUploadImageType, type DetectedImageType } from '@/lib/storage/image-signature';
 import { extractNewsImageObjectPath } from '@/lib/storage/news-images';
+import { isSafeObjectPath } from '@/lib/storage/safe-object-path';
 
 export const NEWS_IMAGE_BUCKET = 'news-images';
 
@@ -43,8 +44,6 @@ export function buildNewsImagePath(extension: string, now: Date = new Date()): s
   return `news/${now.toISOString().slice(0, 10)}/${crypto.randomUUID()}.${extension}`;
 }
 
-const OWN_NEWS_IMAGE_PATH = /^news\/[A-Za-z0-9][A-Za-z0-9._-]*(\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/;
-
 /**
  * 自分の置き場の自分の接頭辞（news/）の下の安全な文字だけの道筋なら true。
  *
@@ -54,7 +53,7 @@ const OWN_NEWS_IMAGE_PATH = /^news\/[A-Za-z0-9][A-Za-z0-9._-]*(\/[A-Za-z0-9][A-Z
  * 1本ずつ確かめて、'..'・先頭の '/'・別の接頭辞・URL を消す対象にしない（古い見本は消さない側に倒れる）。
  */
 export function isOwnNewsImagePath(path: string): boolean {
-  return OWN_NEWS_IMAGE_PATH.test(path);
+  return isSafeObjectPath(path, 'news');
 }
 
 /**
