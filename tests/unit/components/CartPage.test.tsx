@@ -72,6 +72,21 @@ function cartJson(...specs: LineSpec[]): CartJson {
     items_subtotal_price: subtotal,
     total_price: subtotal,
     items,
+    discounts: [],
+    total_discount: 0,
+    discount_provisional: false,
+  };
+}
+
+// 自動割引を足したカート。subtotal は元値のまま、total_price だけが正味額になる
+function withDiscounts(cart: CartJson, discounts: CartJson['discounts'], provisional = false): CartJson {
+  const totalDiscount = discounts.reduce((sum, discount) => sum + discount.amount, 0);
+  return {
+    ...cart,
+    total_price: cart.items_subtotal_price - totalDiscount,
+    discounts,
+    total_discount: totalDiscount,
+    discount_provisional: provisional,
   };
 }
 
@@ -218,6 +233,88 @@ describe('CartPage', () => {
     expect(init).toMatchObject({ method: 'POST' });
     expect(JSON.parse(init.body)).toEqual({ id: '1', quantity: 2 });
     expect(mockUpdateCartCount).toHaveBeenCalled();
+  });
+
+  describe('自動割引の内訳（FREQ-550）', () => {
+    const summaryOf = () => screen.getByText('ORDER SUMMARY').parentElement as HTMLElement;
+
+    it('FREQ-550-AC-01: 広告OFFでもカートには自動割引の名前と額と合計が出る', async () => {
+      (global as any).fetch.mockResolvedValueOnce(okJson(withDiscounts(cartJson(SHIRT, PANTS), [{ name: '春の割引', amount: 2100 }])));
+
+      render(<CartPage />);
+      await screen.findByText('シャツ');
+
+      const summary = within(summaryOf());
+      expect(summary.getByText('小計').parentElement).toHaveTextContent('¥21,000');
+      expect(summary.getByText('割引（春の割引）').closest('li')).toHaveTextContent('割引（春の割引） −¥2,100');
+      expect(summary.getByText('合計（税込）').parentElement).toHaveTextContent('¥18,900');
+      expect(summary.queryByText('見込み')).toBeNull();
+    });
+
+    it('FREQ-548-AC-02: ゲストの初回割引など確定前の額は「見込み」と出す', async () => {
+      (global as any).fetch.mockResolvedValueOnce(okJson(withDiscounts(cartJson(SHIRT), [{ name: '初回の割引', amount: 500 }], true)));
+
+      render(<CartPage />);
+      await screen.findByText('シャツ');
+
+      expect(within(summaryOf()).getByText('見込み')).toBeInTheDocument();
+    });
+
+    it('FREQ-550-AC-01: 割引がなければ割引の行を出さず、合計は小計と同じ', async () => {
+      (global as any).fetch.mockResolvedValueOnce(okJson(cartJson(SHIRT)));
+
+      render(<CartPage />);
+      await screen.findByText('シャツ');
+
+      const summary = within(summaryOf());
+      expect(summary.queryByText(/^割引/)).toBeNull();
+      expect(summary.getByText('合計（税込）').parentElement).toHaveTextContent('¥5,000');
+    });
+
+    it('FREQ-550-AC-01: 数量の変更の応答で割引の額と合計を新しくする', async () => {
+      (global as any).fetch
+        .mockResolvedValueOnce(okJson(withDiscounts(cartJson(SHIRT), [{ name: '春の割引', amount: 500 }])))
+        .mockResolvedValueOnce(okJson(withDiscounts(cartJson({ ...SHIRT, quantity: 2 }), [{ name: '春の割引', amount: 1000 }])));
+
+      render(<CartPage />);
+      await screen.findByText('シャツ');
+      await userEvent.click(screen.getByLabelText('increase'));
+
+      await waitFor(() => expect(within(summaryOf()).getByText('合計（税込）').parentElement).toHaveTextContent('¥9,000'));
+      expect(within(summaryOf()).getByText('割引（春の割引）').closest('li')).toHaveTextContent('−¥1,000');
+    });
+
+    it('FREQ-550-AC-01: 数量の変更の応答を待つ間は、前回の応答の割引と合計を薄く出して更新中と知らせる', async () => {
+      let resolveChange: (value: unknown) => void = () => {};
+      (global as any).fetch
+        .mockResolvedValueOnce(okJson(withDiscounts(cartJson(SHIRT), [{ name: '春の割引', amount: 500 }])))
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveChange = resolve; }));
+
+      render(<CartPage />);
+      await screen.findByText('シャツ');
+      expect(screen.getByTestId('cart-total')).not.toHaveAttribute('aria-busy');
+
+      await userEvent.click(screen.getByLabelText('increase'));
+
+      expect(screen.getByTestId('cart-total')).toHaveAttribute('aria-busy', 'true');
+      expect(screen.getByTestId('cart-discount-rows')).toHaveAttribute('aria-busy', 'true');
+      await waitFor(() => expect((fetch as unknown as jest.Mock).mock.calls.length).toBe(2));
+
+      resolveChange(okJson(withDiscounts(cartJson({ ...SHIRT, quantity: 2 }), [{ name: '春の割引', amount: 1000 }])));
+
+      await waitFor(() => expect(screen.getByTestId('cart-total')).not.toHaveAttribute('aria-busy'));
+      expect(screen.getByTestId('cart-total')).toHaveTextContent('¥9,000');
+    });
+
+    it('FREQ-550-AC-01: 名前にHTMLがあっても実行せず文字として出す', async () => {
+      (global as any).fetch.mockResolvedValueOnce(okJson(withDiscounts(cartJson(SHIRT), [{ name: '<img src=x onerror=alert(1)>', amount: 500 }])));
+
+      const { container } = render(<CartPage />);
+      await screen.findByText('シャツ');
+
+      expect(container.querySelector('img[src="x"]')).toBeNull();
+      expect(within(summaryOf()).getByText(/<img src=x onerror=alert\(1\)>/)).toBeInTheDocument();
+    });
   });
 
   it('削除は同じ窓口に数量0を送り、その明細を画面から外してヘッダーの数を読み直す', async () => {

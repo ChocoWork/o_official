@@ -7,6 +7,8 @@ import { loadStripe, type Appearance } from "@stripe/stripe-js";
 import { CheckoutProvider, PaymentElement, useCheckout } from "@stripe/react-stripe-js/checkout";
 import { Button } from "@/components/ui/Button/Button";
 import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
+import { DiscountBreakdown } from "@/components/DiscountBreakdown";
+import type { DiscountRefusal, DiscountResult } from "@/lib/discounts/discount-types";
 import { mapPaymentMethodLabel } from "@/features/checkout/services/payment-method.service";
 import { formatPostalCodeInput } from "@/features/checkout/utils/postal-code.util";
 import { FINAL_FULFILLMENT_LABELS, FULFILLMENT_HEADINGS } from "@/features/checkout/utils/fulfillment-labels";
@@ -107,6 +109,7 @@ const PAYMENT_TIMING = [
 ] as const;
 
 const PLACE_ORDER_FAILED_MESSAGE = "ご注文を受け付けられませんでした。少し時間をおいてから、もう一度お試しください。";
+const DISCOUNT_RETRY_MESSAGE = "割引の条件が変わりました。もう一度「注文する」を押してください。";
 const PAYMENT_FAILED_MESSAGE = "お支払いを完了できませんでした。もう一度お試しください。";
 
 export type FinalConfirmationStepProps = {
@@ -121,6 +124,10 @@ export type FinalConfirmationStepProps = {
   onPaid(checkoutSessionId: string): void;
   /** 受け付けで断られた。親が理由ごとにカート・入力画面・作り直しへ移す（設計書 6-3） */
   onRejected(rejection: CheckoutRejection): void;
+  /** 入力したコードが条件を失った（409 returnTo=input）。confirm は呼ばない。親が確定した断りを保って入力画面へ戻す */
+  onDiscountCodesInvalid(info: { refusals: readonly DiscountRefusal[]; message: string; definitive: boolean }): void;
+  /** 自動の割引が変わった（200）。confirm は呼ばない。親が新しい決済の画面で最終確認をやり直す */
+  onReconfirmationRequired(): void;
 };
 
 function variantLabel(line: Pick<CheckoutConfirmationLine, "color" | "size">): string {
@@ -177,13 +184,18 @@ function FinalOrderItems({ lines }: { lines: CheckoutConfirmationLine[] }) {
   );
 }
 
-// Stripe の決済の画面の金額をそのまま出す（設計書第4章。小計・割引・送料・合計（税込））
-function FinalOrderTotals() {
+// Stripe の決済の画面の金額をそのまま出す（設計書第4章。小計・割引・送料・合計（税込））。
+// 割引の内訳は、draft に固定した結果の合計が Stripe の割引と一致するときだけ出す（食い違えば Stripe の額の１行）
+function FinalOrderTotals({ discountResult }: { discountResult: DiscountResult | null }) {
   const checkout = useCheckout();
   if (checkout.type !== "success") {
     return null;
   }
   const total = checkout.checkout.total;
+  const breakdown = discountResult !== null && discountResult.discountAmount === total.discount.minorUnitsAmount
+    && discountResult.applied.some((effect) => effect.amount > 0)
+    ? discountResult.applied
+    : null;
 
   return (
     <div className="checkout-rows" style={{ paddingTop: "var(--card-pad)", borderTop: "1px solid rgb(0 0 0 / 0.1)" }}>
@@ -191,12 +203,16 @@ function FinalOrderTotals() {
         <span className="checkout-row-muted">小計</span>
         <span>{total.subtotal.amount}</span>
       </div>
-      {total.discount.minorUnitsAmount > 0 && (
+      {total.discount.minorUnitsAmount > 0 && (breakdown ? (
+        <div style={{ fontSize: "var(--lk-size-sm)" }}>
+          <DiscountBreakdown effects={breakdown} showCodes provisional={false} />
+        </div>
+      ) : (
         <div className="checkout-row">
           <span className="checkout-row-muted">割引</span>
           <span>-{total.discount.amount}</span>
         </div>
-      )}
+      ))}
       <div className="checkout-row">
         <span className="checkout-row-muted">配送料</span>
         <span>{total.shippingRate.minorUnitsAmount === 0 ? "無料" : total.shippingRate.amount}</span>
@@ -216,6 +232,8 @@ function FinalConfirmationContent({
   onEdit,
   onPaid,
   onRejected,
+  onDiscountCodesInvalid,
+  onReconfirmationRequired,
 }: FinalConfirmationStepProps) {
   const checkout = useCheckout();
   const termsHeadingId = useId();
@@ -268,6 +286,20 @@ function FinalConfirmationContent({
       }
       if (outcome.kind === "rejected") {
         onRejected(outcome.rejection);
+        return;
+      }
+      if (outcome.kind === "reconfirmation_required") {
+        onReconfirmationRequired();
+        return;
+      }
+      if (outcome.kind === "discount_codes_invalid") {
+        if (confirmation.promotionCodes.length === 0) {
+          // 入力したコードが無いのに断られた。入力画面へ戻しても直せないので、この画面で理由を出して押し直してもらう
+          // 決済の画面は閉じられているので、押し直すと作り直しの流れに入る。文もそれに合わせる
+          setError(DISCOUNT_RETRY_MESSAGE);
+        } else {
+          onDiscountCodesInvalid({ refusals: outcome.refusals, message: outcome.message, definitive: outcome.definitive });
+        }
         return;
       }
       if (outcome.kind === "error") {
@@ -343,11 +375,13 @@ function FinalConfirmationContent({
             </div>
           </section>
 
-          {confirmation.promotionCode ? (
+          {confirmation.promotionCodes.length > 0 ? (
             <section className="checkout-section">
               <h3 className="checkout-heading font-brand">プロモーションコード</h3>
               <div className="checkout-card">
-                <p>{confirmation.promotionCode}</p>
+                {confirmation.promotionCodes.map((code) => (
+                  <p key={code} style={{ overflowWrap: "anywhere" }}>{code}</p>
+                ))}
               </div>
             </section>
           ) : null}
@@ -422,7 +456,7 @@ function FinalConfirmationContent({
           <div className="checkout-summary md:sticky md:top-32">
             <h2 className="checkout-summary-title">ORDER SUMMARY</h2>
             <FinalOrderItems lines={lines} />
-            <FinalOrderTotals />
+            <FinalOrderTotals discountResult={confirmation.discountResult} />
           </div>
         </div>
       </div>

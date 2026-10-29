@@ -912,3 +912,41 @@ limit 20;
 ゲストのコード拒否は全理由で「このコードは使えません。会員の方はログインしてからお試しください。」、refusalsは入力code/not_eligibleだけ。guest/member・preview/confirmの全refusalsを、理由によらず正規化codeの辞書順にする。member限定も汎用文、guest許可anyoneだけ従来の期限/上限/最低額の文。confirmの本文は「割引の条件が変わりました。入力画面で割引を確かめてください。」。新しい割引経路は入力コード・名前・メールと生のDB/Stripe文・stackを監査とログに載せない。割引以外の失敗は既存のerror_message/error_codeを保ち、Errorのstackはサーバーログだけに残す。割引のcatchから返す409/500/422もno-store。
 
 回数制限は先にIP10/10秒・60/600秒/session10/60秒。previewだけ会員userId10/60秒を追加。getClientIpを使い、メールのbucketを作らない。fallbackの要対応記録失敗でも計算額を返す。DB・provider・画面の確認はcontrollerが行う。
+
+## Hの画面（Task 8、2026-10-29）
+
+対応: FREQ-550-AC-01・AC-02、FREQ-548-AC-02、FREQ-546-AC-01。上の「プロモーションコード欄の見出し」「適用できなかった案内」「割引が付いた注文の確定」の単一コードの記述は、下の複数コードの扱いに置き換える。3幅の表示・折返し・focus・実fetchの完了はTask 11で測る。
+
+### 入力画面
+
+| 部品 | 扱い |
+| --- | --- |
+| [PromoCodeField](../../../src/app/checkout/_components/PromoCodeField.tsx) | props `{codes,onApply,onRemove,error,busy,unusedCodes,buyerKind}`（`defaultCode?`は再入場で確定無効のコードを欄へ戻す任意の追加）。見出し「プロモーションコード」、placeholder「コードを入力」、「適用」、各コードに`{code}を削除`（表示「削除」）。最大5つで、5つ入力済みの間は入力欄の代わりに「コードは5つまで入力できます。」を出す。未採用のコードは`{code}：`＋「このコードは今の割引と一緒には使えません。よりお得な割引を適用しています。」 |
+| 理由の入れ物 | `role="alert"`のLiveMessageを常設し、`aria-invalid`・`aria-describedby`は理由がある間だけ。失敗した「適用」の後は入力を残して欄へフォーカスを戻し、通ったら欄を空にする（親の`busy`の立ち下がりで判断） |
+| ゲストの全拒否 | 理由が「このコードは使えません。会員の方はログインしてからお試しください。」で買い手がゲストの時だけ、リンク「ログインして割引を確かめる」（`/login?next=%2Fcheckout`。コード・メールをURLに入れない）を出す。会員限定は汎用文、公開コードは従来の期限・回数・最低額の文 |
+| [DiscountBreakdown](../../../src/components/DiscountBreakdown.tsx) | 小計の下に「割引（名前） −¥金額」を1効果1行（コードは本人入力のものだけ、見込みは「見込み」）。目安のresultの小計が画面のカートの小計と食い違う時は出さず画面の金額を使う |
+
+画面の状態は`promotionCodes`（有効または未確認のコード）、`discountPreview`（サーバーが全コードを再計算した`DiscountResult`）、確定無効のコードと理由（欄へ戻す）。開いたとき、記録したコードがあれば全コードを`applyPromotionCodes`で1回確かめる間だけ読み込み表示で待たせる。コードが無い間は確認の窓口を呼ばず（回数の枠と成功の監査を使わない）、画面が読む`GET /api/cart`の`discounts`・`discount_provisional`をそのまま内訳に出す（ゲストの初回などは「見込み」）。コードを足す・外す時と、コードがある時の価格変更・カート更新の後だけ、窓口で全コードを再計算する。最後のコードを外した時は窓口を呼ばず、カートの内訳へ戻る。確認の結果は連番で管理し、古い結果で新しい結果を上書きしない。
+
+- 適用: 既存のコード＋入力を送る。確定無効（422の検証済みrefusals）のコードは足さず、他のコードを消さない。429・503・通信の失敗・壊れた本文は足さず、記録を保って失敗の文を出す。同じコードの再入力は送らず「このコードはすでに入力されています。」。
+- 削除: 該当コードだけ外してサーバーで再計算し、別のコードの確定無効で有効なコードを消さない。削除の後は入力欄へフォーカスを移す（押したボタンの行が消えるため）。
+- 確定無効が見つかったら、そのコードだけ除いて残りをもう一度確かめる（最大3回）。
+- 記録は`checkout:promotion-codes`の`{version:1,codes}`だけ（[promotion-memory](../../../src/app/checkout/_lib/promotion-memory.ts)）。旧`checkout:promotion-code`は初回の読取で取り込んで消す。確定無効だけ記録から除き、一時障害では保つ。注文が確定したら消す。
+- 価格の変更（`checkout_amount_mismatch`）・カートの更新（`cart_updated`）の後は、カートを読み直してから全コードを確かめ直す。
+
+### API呼び出し（[checkout-api](../../../src/app/checkout/_lib/checkout-api.ts)）
+
+| 関数 | 扱い |
+| --- | --- |
+| `applyPromotionCodes(codes,guestEmail?)` | `POST /api/checkout/promotion-code`。`{ok:true,result}`か`{ok:false,status,refusals,message,definitive}`。422で検証済みrefusalsがある時だけ`definitive=true`。401・403・429・500・503・通信の失敗・壊れたJSON・形が違う200は`false`。非okの本文も一度読んで分類し、読めない本文は`body.cancel()`で閉じる。ログインの印の更新は既存の1回だけの送り直し |
+| `requestCheckoutConfirmation` | `promotionCodes`を配列で送る（空なら省く）。409のうち`promotion_code_invalid`と`returnTo=input`の`discount_*`を`promotion_code_invalid`の結果（`refusals`・`definitive`付き）にする。refusalsが空なら`definitive=false`で、コードを外さず確かめ直す |
+| `placeOrder` | 409で同じ入力コード用の断りは`discount_codes_invalid`、200の`{reconfirmationRequired:true,returnTo:'confirmation'}`は`reconfirmation_required`。どちらも`confirm`は呼ばない |
+
+### 最終確認画面
+
+[FinalConfirmationStep](../../../src/app/checkout/_components/FinalConfirmationStep.tsx)は入力済みコードを読み取り専用で並べ、変更・削除は出さない。割引の内訳は、draftに固定した`discountResult`の合計がStripeの割引と一致する時だけ「割引（名前） −¥金額」で出し、食い違えばStripeの額の1行を出す。
+
+- 入力コードの409（`returnTo=input`）: `confirm`を呼ばず、入力コードがあれば`onDiscountCodesInvalid({refusals,message,definitive})`で入力画面へ戻す。親は検証済みrefusalsのコードだけを除いて保存から外し、欄にコードと理由を残して残りを確かめ直す。確定した断りは、その後の確認へ戻さない（本人の削除・再入力だけで解く）。住所・選択は保つ。入力コードが無い409は入力画面へ戻さず、この画面に理由を出して押し直せる。
+- 自動割引の変更（200 `reconfirmationRequired`）: `onReconfirmationRequired()`で入力へ戻さず、新しいrequestVersionのcreate-sessionから新しい最終確認へ進み、新しい合計と「割引の内容が変わりました。金額をご確認のうえ、もう一度「注文する」を押してください。」を出す。押し直すまで`confirm`は0回。入力画面を開いただけではSessionを作らない。
+- 入力コードが無い409: place-orderは先にSessionを閉じているので、文は「割引の条件が変わりました。もう一度「注文する」を押してください。」にする（押し直すと作り直しの流れに入る）。
+- ゲストの自動の初回割引: 入力画面の目安は「見込み」（`GET /api/cart`の内訳）。create-sessionで配送先メールで履歴を読み、外れた確定額で最終確認へ進む。受付で変わっても新しい最終確認へ進み、ループしない。

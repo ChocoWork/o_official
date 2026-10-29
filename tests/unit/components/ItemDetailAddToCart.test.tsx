@@ -35,17 +35,20 @@ const ITEM = {
 
 let itemBody: unknown;
 let addResponse: { status: number; body: unknown };
+let adResponse: { status: number; body: unknown };
 
 beforeEach(() => {
   jest.clearAllMocks();
   document.cookie = 'sb-csrf-token=; max-age=0';
   itemBody = ITEM;
   addResponse = { status: 200, body: { items: [] } };
+  adResponse = { status: 200, body: { rows: [] } };
   window.scrollTo = jest.fn() as unknown as typeof window.scrollTo;
   (global as any).fetch = jest.fn(async (input: string) => {
     const json = (status: number, body: unknown) =>
       new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
     if (input === '/api/items/101') return json(200, itemBody);
+    if (input === '/api/discounts/advertisements?itemId=101') return json(adResponse.status, adResponse.body);
     if (input.startsWith('/api/items?')) return json(200, { items: [] });
     if (input === '/api/cart/add') return json(addResponse.status, addResponse.body);
     return json(404, {});
@@ -100,6 +103,59 @@ test('窓口の断り（422）は description をそのまま出す', async () =
   expect(mockUpdateCartCount).not.toHaveBeenCalled();
   expect(consoleError).toHaveBeenCalled();
   consoleError.mockRestore();
+});
+
+describe('割引の案内（FREQ-550-AC-03）', () => {
+  test('個人化したno-storeのAPIから管理文を１行出し、価格と取り消し線は変えない', async () => {
+    adResponse = { body: { rows: [{ discountId: 'd1', text: '春の割引を実施中です' }] }, status: 200 };
+    render(<ItemDetailClient id="101" />);
+
+    expect(await screen.findByTestId('item-discount-advertisement')).toHaveTextContent('春の割引を実施中です');
+    expect(screen.getByTestId('item-detail-price')).toHaveTextContent('¥12,000');
+    expect(screen.getByTestId('item-detail-price').querySelector('s, del')).toBeNull();
+    const call = (global.fetch as jest.Mock).mock.calls.find(([url]) => String(url).startsWith('/api/discounts/advertisements'));
+    expect(call[0]).toBe('/api/discounts/advertisements?itemId=101');
+    expect(call[1]).toMatchObject({ cache: 'no-store' });
+  });
+
+  test('案内がなければ何も出さない', async () => {
+    render(<ItemDetailClient id="101" />);
+    await screen.findByTestId('item-detail-price');
+    await waitFor(() => expect((global.fetch as jest.Mock).mock.calls.some(([url]) => String(url).startsWith('/api/discounts/advertisements'))).toBe(true));
+
+    expect(screen.queryByTestId('item-discount-advertisement')).toBeNull();
+  });
+
+  test('案内にHTMLが入っていても実行せず文字のまま出す', async () => {
+    adResponse = { status: 200, body: { rows: [{ discountId: 'd1', text: '<img src=x onerror=alert(1)>春' }] } };
+    const { container } = render(<ItemDetailClient id="101" />);
+
+    expect(await screen.findByTestId('item-discount-advertisement')).toHaveTextContent('<img src=x onerror=alert(1)>春');
+    expect(container.querySelector('img[src="x"]')).toBeNull();
+  });
+
+  test.each([429, 500])('案内の取得が %s でも商品は表示し、no-storeの応答の本文を読み切る', async (status) => {
+    const drain = jest.fn().mockResolvedValue(new ArrayBuffer(0));
+    (global as any).fetch = jest.fn(async (input: string) => {
+      if (input === '/api/items/101') return new Response(JSON.stringify(ITEM), { status: 200 });
+      if (input.startsWith('/api/discounts/advertisements')) return { ok: false, status, json: async () => ({}), arrayBuffer: drain };
+      return new Response('{}', { status: 404 });
+    });
+    render(<ItemDetailClient id="101" />);
+
+    expect(await screen.findByTestId('item-detail-price')).toHaveTextContent('¥12,000');
+    await waitFor(() => expect(drain).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('item-discount-advertisement')).toBeNull();
+  });
+
+  test('壊れた応答は捨てて何も出さない', async () => {
+    adResponse = { status: 200, body: { rows: [{ discountId: 1, text: 5 }, 'x'] } };
+    render(<ItemDetailClient id="101" />);
+    await screen.findByTestId('item-detail-price');
+    await waitFor(() => expect((global.fetch as jest.Mock).mock.calls.some(([url]) => String(url).startsWith('/api/discounts/advertisements'))).toBe(true));
+
+    expect(screen.queryByTestId('item-discount-advertisement')).toBeNull();
+  });
 });
 
 test('商品の取得が 429（本文は使わない）でも、no-store の応答を開いたまま残さないよう本文を読み切る', async () => {

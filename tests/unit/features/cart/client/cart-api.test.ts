@@ -18,6 +18,9 @@ const CART: CartJson = {
     options_with_values: [{ name: 'カラー', value: 'ブラック' }, { name: 'サイズ', value: 'M' }],
     price: 12000, line_price: 24000, image: '/img.png', url: '/item/45', fulfillment: 'backorder',
   }],
+  discounts: [],
+  total_discount: 0,
+  discount_provisional: false,
 };
 
 function jsonResponse(status: number, body: unknown) {

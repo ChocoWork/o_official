@@ -34,7 +34,7 @@ const context = {
   ensureOwnerId: jest.fn(),
   finish: jest.fn((res: NextResponse) => res),
 };
-const emptyCart = { item_count: 0, currency: 'JPY', items_subtotal_price: 0, total_price: 0, items: [] };
+const emptyCart = { item_count: 0, currency: 'JPY', items_subtotal_price: 0, total_price: 0, items: [], discounts: [], total_discount: 0, discount_provisional: false };
 
 function post(path: string, body: unknown) {
   return new NextRequest(`http://localhost:3000${path}`, {
@@ -102,7 +102,7 @@ describe('POST /api/cart/change', () => {
     expect(supabase.rpc).toHaveBeenCalledWith('cart_change_line', {
       _cart_id: 'cart-1', _line_id: lineId, _quantity: 0,
     });
-    expect(buildCartJson).toHaveBeenCalledWith(supabase, 'cart-1');
+    expect(buildCartJson).toHaveBeenCalledWith(supabase, 'cart-1', { kind: 'guest', normalizedEmail: null });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual(emptyCart);
     expect(context.finish).toHaveBeenCalledWith(res);
@@ -190,7 +190,7 @@ describe('POST /api/cart/change', () => {
 
     const res = await POST(post('/api/cart/change', { id: lineId, quantity: 1 }));
 
-    expect(buildCartJson).toHaveBeenCalledWith(supabase, 'cart-1');
+    expect(buildCartJson).toHaveBeenCalledWith(supabase, 'cart-1', { kind: 'guest', normalizedEmail: null });
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({
       status: 500, message: 'Cart Error',

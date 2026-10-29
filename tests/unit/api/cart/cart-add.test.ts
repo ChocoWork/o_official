@@ -143,10 +143,31 @@ describe('POST /api/cart/add', () => {
     expect(supabase.rpc).toHaveBeenCalledWith('cart_add_lines', {
       _cart_id: 'cart-1', _lines: [{ variant_id: 1201, quantity: 1 }],
     });
-    expect(buildCartJson).toHaveBeenCalledWith(supabase, 'cart-1');
+    expect(buildCartJson).toHaveBeenCalledWith(supabase, 'cart-1', { kind: 'guest', normalizedEmail: null });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ items: [addedLine] });
     expect(context.finish).toHaveBeenCalledWith(res);
+  });
+
+  test('FREQ-546-AC-04: 割引の計算がfallbackでも追加は１回だけで200を返し、会員は本人のbuyerで組み立てる', async () => {
+    const owner = context.owner as { kind: string; userId?: string; tokenHash?: string };
+    const guestOwner = { ...owner };
+    Object.assign(context, { owner: { kind: 'member', userId: 'member-1' } });
+    (buildCartJson as jest.Mock).mockResolvedValueOnce({
+      item_count: 3, currency: 'JPY', items_subtotal_price: 36000, total_price: 33000,
+      items: [otherLine, addedLine], discounts: [{ name: '春の割引', amount: 3000 }], total_discount: 3000, discount_provisional: false,
+    });
+    try {
+      const res = await POST(post('/api/cart/add', { items: [{ id: 1201, quantity: 1 }] }));
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ items: [addedLine] });
+      expect(supabase.rpc).toHaveBeenCalledTimes(1);
+      expect(buildCartJson).toHaveBeenCalledTimes(1);
+      expect(buildCartJson).toHaveBeenCalledWith(supabase, 'cart-1', { kind: 'member', userId: 'member-1' });
+    } finally {
+      Object.assign(context, { owner: guestOwner });
+    }
   });
 
   test.each([
@@ -230,7 +251,7 @@ describe('POST /api/cart/add', () => {
 
     const res = await POST(post('/api/cart/add', { items: [{ id: 1201, quantity: 1 }] }));
 
-    expect(buildCartJson).toHaveBeenCalledWith(supabase, 'cart-1');
+    expect(buildCartJson).toHaveBeenCalledWith(supabase, 'cart-1', { kind: 'guest', normalizedEmail: null });
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({
       status: 500, message: 'Cart Error',

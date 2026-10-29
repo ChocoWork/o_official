@@ -1,5 +1,5 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 jest.mock('next/link', () => {
   return ({ href, children, ...props }: any) => (
@@ -39,7 +39,8 @@ import { reloadPage } from '@/app/checkout/_lib/page-reload';
 const CONFIRMATION = {
   checkoutSessionId: 'cs_test_1',
   clientSecret: 'cs_test_1_secret',
-  promotionCode: 'WELCOME10',
+  promotionCodes: ['WELCOME10'],
+  discountResult: null,
   shipping: {
     email: 'a@example.com',
     fullName: '山田 花子',
@@ -80,6 +81,8 @@ function renderStep(overrides: Partial<React.ComponentProps<typeof FinalConfirma
     onEdit: jest.fn(),
     onPaid: jest.fn(),
     onRejected: jest.fn(),
+    onDiscountCodesInvalid: jest.fn(),
+    onReconfirmationRequired: jest.fn(),
     ...overrides,
   };
   render(<FinalConfirmationStep {...props} />);
@@ -187,6 +190,86 @@ describe('FinalConfirmationStep（設計書 2-3・第4章）', () => {
 
     await waitFor(() => expect(props.onRejected).toHaveBeenCalledWith(rejection));
     expect(mockConfirm).not.toHaveBeenCalled();
+  });
+
+  describe('割引の内訳と入力コード・自動割引の変更（FREQ-550 / FREQ-548）', () => {
+    const effect = (discountId: string, name: string, amount: number, code: string | null = null) =>
+      ({ discountId, codeId: code ? `c-${discountId}` : null, name, code, class: 'order' as const, amount });
+    const result = (applied: ReturnType<typeof effect>[], discountAmount: number) => ({
+      version: 1 as const, subtotalAmount: 21000, shippingAmount: 0 as const, discountAmount, totalAmount: 21000 - discountAmount,
+      applied, allocations: [], unitAmounts: [], unusedCodes: [], provisional: false, calculationMode: 'exact' as const,
+    });
+
+    test('FREQ-550-AC-01: 固定した内訳をStripeの割引と一致させて出し、最終画面ではコードを変更できない', () => {
+      setReady();
+      renderStep({ confirmation: { ...CONFIRMATION, discountResult: result([effect('d1', '春の割引', 1600, 'WELCOME10'), effect('d2', '会員の割引', 500)], 2100) } });
+
+      const summary = screen.getByText('ORDER SUMMARY').parentElement as HTMLElement;
+      const rows = within(summary).getAllByRole('listitem');
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toHaveTextContent('割引（春の割引）');
+      expect(rows[0]).toHaveTextContent('WELCOME10');
+      expect(rows[0]).toHaveTextContent('−¥1,600');
+      expect(rows[1]).toHaveTextContent('割引（会員の割引） −¥500');
+      expect(within(summary).queryByText('見込み')).toBeNull();
+      expect(within(summary).getByText('合計（税込）').parentElement).toHaveTextContent('¥18,900');
+      expect(screen.queryByRole('textbox')).toBeNull();
+      expect(screen.queryByRole('button', { name: /削除|適用/ })).toBeNull();
+    });
+
+    test('FREQ-550-AC-01: 固定した内訳の合計がStripeの割引と合わないときは、Stripeの金額の１行だけを出す', () => {
+      setReady();
+      renderStep({ confirmation: { ...CONFIRMATION, discountResult: result([effect('d1', '春の割引', 1000)], 1000) } });
+
+      const summary = within(screen.getByText('ORDER SUMMARY').parentElement as HTMLElement);
+      expect(summary.queryByText(/割引（春の割引）/)).toBeNull();
+      expect(summary.getByText('割引').parentElement).toHaveTextContent('-¥2,100');
+    });
+
+    test('FREQ-550-AC-02: 入力コードの409(returnTo=input)はconfirmを呼ばず、確定した断りを保って親へ渡す', async () => {
+      setReady();
+      const outcome = {
+        kind: 'discount_codes_invalid', definitive: true, message: '割引の条件が変わりました。入力画面で割引を確かめてください。',
+        refusals: [{ code: 'WELCOME10', reason: 'not_eligible' }],
+      };
+      mockPlaceOrder.mockResolvedValue(outcome);
+      const props = renderStep();
+
+      fireEvent.click(screen.getByRole('button', { name: '注文する' }));
+
+      await waitFor(() => expect(props.onDiscountCodesInvalid).toHaveBeenCalledWith({ refusals: outcome.refusals, message: outcome.message, definitive: true }));
+      expect(mockConfirm).not.toHaveBeenCalled();
+      expect(props.onPaid).not.toHaveBeenCalled();
+      expect(props.onRejected).not.toHaveBeenCalled();
+      expect(window.sessionStorage.getItem('checkout:payment-attempt')).toBeNull();
+    });
+
+    test('FREQ-548-AC-02: 入力コードが無い409は入力画面へ戻さず、この画面に理由を出して押し直せる', async () => {
+      setReady();
+      mockPlaceOrder.mockResolvedValue({ kind: 'discount_codes_invalid', definitive: false, refusals: [], message: '割引の条件が変わりました。入力画面で割引を確かめてください。' });
+      const props = renderStep({ confirmation: { ...CONFIRMATION, promotionCodes: [] } });
+
+      fireEvent.click(screen.getByRole('button', { name: '注文する' }));
+
+      expect(await screen.findByText('割引の条件が変わりました。もう一度「注文する」を押してください。')).toBeInTheDocument();
+      expect(props.onDiscountCodesInvalid).not.toHaveBeenCalled();
+      expect(mockConfirm).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: '注文する' })).toBeEnabled();
+    });
+
+    test('FREQ-548-AC-02: 自動割引の変更(200 reconfirmationRequired)はconfirmを呼ばず、親に新しい最終確認を作らせる', async () => {
+      setReady();
+      mockPlaceOrder.mockResolvedValue({ kind: 'reconfirmation_required' });
+      const props = renderStep();
+
+      fireEvent.click(screen.getByRole('button', { name: '注文する' }));
+
+      await waitFor(() => expect(props.onReconfirmationRequired).toHaveBeenCalledTimes(1));
+      expect(mockConfirm).not.toHaveBeenCalled();
+      expect(props.onDiscountCodesInvalid).not.toHaveBeenCalled();
+      expect(props.onRejected).not.toHaveBeenCalled();
+      expect(window.sessionStorage.getItem('checkout:payment-attempt')).toBeNull();
+    });
   });
 
   test('カードが断られたら理由を出し、受け付け済みのまま同じ画面でやり直せる', async () => {

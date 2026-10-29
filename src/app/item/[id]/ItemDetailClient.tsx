@@ -307,6 +307,35 @@ export default function ItemDetailClient({ id }: Props) {
     fetchItem();
   }, [id]);
 
+  // 割引の案内（FREQ-550）。会員とゲストで結果が違うので、静的な商品データには含めず、個人化した no-store の窓口から取る。
+  // 失敗しても商品は表示する。本文は読み切るか閉じる（回数制限の 429 は no-store で、残すと要求が開いたままになる）。
+  const [discountAds, setDiscountAds] = useState<string[]>([]);
+  useEffect(() => {
+    if (!/^[1-9][0-9]{0,15}$/.test(id)) return;
+    let cancelled = false;
+    const loadAds = async () => {
+      try {
+        const response = await fetch(`/api/discounts/advertisements?itemId=${id}`, { cache: "no-store", credentials: "same-origin" });
+        if (!response.ok) {
+          void response.arrayBuffer?.().catch(() => {});
+          return;
+        }
+        const body: unknown = await response.json().catch(() => null);
+        const rows = typeof body === "object" && body !== null && "rows" in body && Array.isArray(body.rows) ? body.rows : [];
+        const texts = rows.flatMap((row: unknown) =>
+          typeof row === "object" && row !== null && "text" in row && typeof row.text === "string" && row.text.trim() ? [row.text] : [],
+        );
+        if (!cancelled) setDiscountAds(texts);
+      } catch {
+        // 案内が取れなくても、商品の表示と購入には影響させない。
+      }
+    };
+    void loadAds();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
   // 商品データ取得でページ高さが変わると、ブラウザのスクロール復元により
   // 少し下にスクロールした位置で描画されることがある。読み込み直後は最上部に戻す。
   useLayoutEffect(() => {
@@ -846,6 +875,15 @@ export default function ItemDetailClient({ id }: Props) {
                       size={size}
                     />
                   </div>
+                  {discountAds.length > 0 ? (
+                    <p
+                      data-testid="item-discount-advertisement"
+                      className="mt-1 text-[#474747]"
+                      style={{ fontSize: "var(--lk-size-xs)", overflowWrap: "anywhere" }}
+                    >
+                      {discountAds.join(" ")}
+                    </p>
+                  ) : null}
                 </div>
                 {/* FREQ-299: md 以上のウィッシュリストは商品名の右端にハートのみ */}
                 <div

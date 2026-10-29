@@ -6,6 +6,7 @@ import { denyIfCsrfInvalid, openShoppingContext } from '@/features/cart/services
 import { buildCartJson } from '@/features/cart/services/cart-view';
 import { CART_ERROR_DESCRIPTIONS, cartErrorResponse, cartRpcErrorResponse } from '@/features/cart/services/cart-errors';
 import { getClientIp } from '@/lib/request-ip';
+import type { DiscountBuyer } from '@/lib/discounts/discount-types';
 
 // PUBLIC: ゲストのカートを扱うので利用者認証は無い。明細は持ち主のカートの物だけを変えられる（DB の関数が照合する）。
 
@@ -68,7 +69,8 @@ export async function POST(req: NextRequest) {
       user_agent: userAgent,
       metadata: { ...context.auditOwner, quantity: parsed.data.quantity },
     });
-    return context.finish(NextResponse.json(await buildCartJson(supabase, cartId)));
+    const buyer: DiscountBuyer = context.owner?.kind === 'member' ? { kind: 'member', userId: context.owner.userId } : { kind: 'guest', normalizedEmail: null };
+    return context.finish(NextResponse.json(await buildCartJson(supabase, cartId, buyer)));
   } catch (error) {
     console.error('Cart change error:', error);
     return cartErrorResponse(500, CART_ERROR_DESCRIPTIONS.failed);

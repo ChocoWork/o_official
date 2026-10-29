@@ -11,6 +11,7 @@ import { useCart } from "@/contexts/CartContext";
 import { useLogin } from "@/contexts/LoginContext";
 import { clientFetch } from "@/lib/client-fetch";
 import { fetchCartJson, toCartEntries, type CartEntry } from "@/features/cart/client/cart-api";
+import type { CartJson } from "@/features/cart/types/cart-json";
 import { toOrderNumber } from "@/lib/orders/order-number";
 import { formatPhoneNumberInput } from "@/features/account/utils/profile-format.util";
 import {
@@ -27,17 +28,20 @@ import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import { TextField } from "@/components/ui/TextField/TextField";
 import { PREFECTURES } from "@/lib/constants/prefectures";
 import { FinalConfirmationStep } from "@/app/checkout/_components/FinalConfirmationStep";
-import { PromoCodeField } from "@/app/checkout/_components/PromoCodeField";
+import { PROMOTION_CODE_LIMIT_MESSAGE, PromoCodeField } from "@/app/checkout/_components/PromoCodeField";
 import {
-  checkPromotionCodeRequest,
+  applyPromotionCodes,
   completeCheckout,
   requestCheckoutConfirmation,
   resumeCheckout,
   type CheckoutRejection,
-  type PromotionPreview,
+  type PromotionCodesResponse,
 } from "@/app/checkout/_lib/checkout-api";
 import { paymentIncompleteMessage, takePaymentAttempt } from "@/app/checkout/_lib/payment-attempt";
-import { clearPromotionCode, readPromotionCode, rememberPromotionCode } from "@/app/checkout/_lib/promotion-memory";
+import { clearPromotionCodes, readPromotionCodes, writePromotionCodes } from "@/app/checkout/_lib/promotion-memory";
+import { DiscountBreakdown } from "@/components/DiscountBreakdown";
+import { promotionRefusalMessage } from "@/lib/discounts/discount-messages";
+import { MAX_DISCOUNT_CODES, type DiscountEffect, type DiscountRefusal, type DiscountResult } from "@/lib/discounts/discount-types";
 import "./checkout.css";
 
 const CHECKOUT_STEPS = [
@@ -235,16 +239,18 @@ function OrderItems({ cartItems }: { cartItems: CartEntry[] }) {
   );
 }
 
-// 入力画面の金額の内訳（税込み）。割引はサーバーが確かめた目安。最終確認画面は Stripe の金額を出す
+// 入力画面の金額の内訳（税込み）。割引はサーバーが確かめた目安（ゲストの初回など確定前は「見込み」）。最終確認画面は Stripe の金額を出す
 function CartTotals({
   subtotal,
   shipping,
-  discount,
+  discounts,
+  provisional,
   total,
 }: {
   subtotal: number;
   shipping: number;
-  discount: number;
+  discounts: readonly Pick<DiscountEffect, "name" | "code" | "amount">[];
+  provisional: boolean;
   total: number;
 }) {
   return (
@@ -253,12 +259,9 @@ function CartTotals({
         <span className="checkout-row-muted">小計</span>
         <span>¥{subtotal.toLocaleString()}</span>
       </div>
-      {discount > 0 && (
-        <div className="checkout-row">
-          <span className="checkout-row-muted">割引</span>
-          <span>-¥{discount.toLocaleString()}</span>
-        </div>
-      )}
+      <div style={{ fontSize: "var(--lk-size-sm)" }}>
+        <DiscountBreakdown effects={discounts} showCodes provisional={provisional} />
+      </div>
       <div className="checkout-row">
         <span className="checkout-row-muted">配送料</span>
         <span>{shipping === 0 ? "無料" : `¥${shipping.toLocaleString()}`}</span>
@@ -303,6 +306,59 @@ function orderStatusLabel(status: string): string {
   return ORDER_STATUS_LABELS[status] ?? "手続き中";
 }
 
+const PROMOTION_FAILED_MESSAGE = "割引コードを確かめられませんでした。少し時間をおいてから、もう一度お試しください。";
+const DUPLICATE_PROMOTION_MESSAGE = "このコードはすでに入力されています。";
+const RECONFIRMATION_NOTICE = "割引の内容が変わりました。金額をご確認のうえ、もう一度「注文する」を押してください。";
+
+type RejectedPromotion = { code: string; message: string };
+
+/** 複数コードの確認の結果。確定無効のコードは rejected へ移り、codes には残らない。確定ではない失敗では codes を変えず、保存も触らない。 */
+type PromotionEvaluation = {
+  codes: string[];
+  result: DiscountResult | null;
+  rejected: RejectedPromotion[];
+  transientMessage: string | null;
+};
+
+function refusalMessage(refusal: DiscountRefusal, buyerKind: "member" | "guest"): string {
+  if (buyerKind === "member" && refusal.reason === "zero_total") return "このコードでは合計が0円になるため使えません";
+  return promotionRefusalMessage(refusal, buyerKind === "guest" ? "guest" : "public");
+}
+
+async function requestPromotionCodes(codes: readonly string[]): Promise<PromotionCodesResponse> {
+  try {
+    const response = await applyPromotionCodes(codes);
+    if (response && typeof response === "object" && "ok" in response) return response;
+  } catch {
+    // 通信の失敗は、確定ではない失敗として扱う
+  }
+  return { ok: false, status: 0, refusals: [], message: PROMOTION_FAILED_MESSAGE, definitive: false };
+}
+
+/**
+ * 全コードを再検証する。確定無効のコードが見つかったら、そのコードだけを除いてもう一度確かめる（最大3回）。
+ * 別のコードの失敗で、有効なコードは消さない。
+ */
+async function evaluatePromotionCodes(codes: readonly string[], buyerKind: "member" | "guest"): Promise<PromotionEvaluation> {
+  let current = [...codes];
+  const rejected: RejectedPromotion[] = [];
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    // コードが無い時は確認の窓口を呼ばない。自動割引は GET /api/cart の内訳を使う（回数の枠と監査を使わない）
+    if (current.length === 0) return { codes: [], result: null, rejected, transientMessage: null };
+    const response = await requestPromotionCodes(current);
+    if (response.ok) return { codes: current, result: response.result, rejected, transientMessage: null };
+    const refusedCodes = new Set(response.definitive ? response.refusals.map((refusal) => refusal.code.toUpperCase()) : []);
+    const bad = current.filter((code) => refusedCodes.has(code));
+    if (bad.length === 0) return { codes: current, result: null, rejected, transientMessage: response.message };
+    for (const code of bad) {
+      const refusal = response.refusals.find((item) => item.code.toUpperCase() === code);
+      if (refusal) rejected.push({ code, message: refusalMessage(refusal, buyerKind) });
+    }
+    current = current.filter((code) => !refusedCodes.has(code));
+  }
+  return { codes: current, result: null, rejected, transientMessage: PROMOTION_FAILED_MESSAGE };
+}
+
 function CheckoutPageContent() {
   const mdTextStyle: React.CSSProperties = { fontSize: "var(--lk-size-md)" };
 
@@ -319,9 +375,17 @@ function CheckoutPageContent() {
   const tax = checkoutAmounts.taxAmount;
   const total = checkoutAmounts.totalAmount;
 
+  // GET /api/cart が返す自動割引の内訳。入力したコードが無い間は、これを入力画面の目安に使う
+  const [cartDiscount, setCartDiscount] = useState<{ subtotal: number; discounts: CartJson["discounts"]; provisional: boolean } | null>(null);
   const fetchCart = React.useCallback(async () => {
     try {
-      setCartItems(toCartEntries(await fetchCartJson()));
+      const cart = await fetchCartJson();
+      setCartItems(toCartEntries(cart));
+      setCartDiscount(
+        Array.isArray(cart.discounts)
+          ? { subtotal: cart.items_subtotal_price, discounts: cart.discounts, provisional: cart.discount_provisional === true }
+          : null,
+      );
     } catch (err) {
       console.error("カート取得エラー", err);
     } finally {
@@ -346,9 +410,11 @@ function CheckoutPageContent() {
   const [confirmation, setConfirmation] = useState<CheckoutConfirmation | null>(null);
   // 最終確認画面の上に出す案内（PayPay の取りやめ・決済の画面の作り直し・別の画面で進んでいる）
   const [finalNotice, setFinalNotice] = useState<string | null>(null);
-  // 入力画面で適用した割引コード（サーバーが確かめた金額の目安つき。設計書第3章）
-  const [promotion, setPromotion] = useState<PromotionPreview | null>(null);
+  // 入力画面で入力した割引コード（最大5つ。有効か、確かめられていないもの）と、サーバーが全コードを再計算した目安（設計書第3章、グループ H）
+  const [promotionCodes, setPromotionCodes] = useState<string[]>([]);
+  const [discountPreview, setDiscountPreview] = useState<DiscountResult | null>(null);
   const [promotionError, setPromotionError] = useState<string | null>(null);
+  const [promotionBusy, setPromotionBusy] = useState(false);
   const [promotionDefaultCode, setPromotionDefaultCode] = useState("");
   const [promotionFieldRevision, setPromotionFieldRevision] = useState(0);
   const restorePromotionInput = React.useCallback((code: string) => {
@@ -356,6 +422,19 @@ function CheckoutPageContent() {
     // 適用成功で欄が空になるため、同じコードを戻すときも欄を作り直す。
     setPromotionFieldRevision((revision) => revision + 1);
   }, []);
+  // 古い確認の結果で新しい結果を上書きしない（開いたときの確認が、入力中の「適用」より後に返っても捨てる）
+  const previewSequenceRef = useRef(0);
+  // 画面のカートの小計と食い違う目安（カートが変わった後の古い結果）は出さず、画面の金額を使う
+  const previewForCart = discountPreview !== null && discountPreview.subtotalAmount === subtotal ? discountPreview : null;
+  // 入力したコードが無い間の自動割引は、確認の窓口を呼ばず GET /api/cart の内訳を使う（小計が食い違う古い内訳は使わない）
+  const cartAutomatic = promotionCodes.length === 0 && cartDiscount !== null && cartDiscount.subtotal === subtotal ? cartDiscount : null;
+  const shownDiscounts: readonly Pick<DiscountEffect, "name" | "code" | "amount">[] = previewForCart
+    ? previewForCart.applied
+    : (cartAutomatic?.discounts.map((discount) => ({ name: discount.name, code: null, amount: discount.amount })) ?? []);
+  const shownProvisional = previewForCart ? previewForCart.provisional : (cartAutomatic?.provisional ?? false);
+  const shownTotal = previewForCart
+    ? previewForCart.totalAmount
+    : Math.max(0, total - shownDiscounts.reduce((sum, discount) => sum + discount.amount, 0));
   // 「確認へ進む」の処理中
   const [proceeding, setProceeding] = useState(false);
   // 開き直したときの状態をサーバーに聞いている間（決め事 D9）
@@ -748,7 +827,7 @@ function CheckoutPageContent() {
           window.scrollTo({ top: 0 });
           return;
         }
-        clearPromotionCode();
+        clearPromotionCodes();
         setCompletedOrder({ orderId: result.orderId, orderStatus: result.orderStatus, reentered: options.reentered });
         await updateCartCount();
         // 完了画面を読み込み直しても、注文の状態を出せるようにする（決め事 D9。確定の処理は何度呼んでも同じ結果）
@@ -779,7 +858,10 @@ function CheckoutPageContent() {
       setResumeUnavailable(false);
       setResumeNotice(null);
       setConfirmation(next);
-      if (next.promotionCode) rememberPromotionCode({ code: next.promotionCode });
+      // 決済の画面に付いているコードを入力画面にも引き継ぐ（「変更」で戻っても同じコードと金額の目安を出す）
+      setPromotionCodes([...next.promotionCodes]);
+      setDiscountPreview(next.discountResult);
+      if (next.promotionCodes.length > 0) writePromotionCodes(next.promotionCodes);
       setShippingForm((prev) => ({
         ...prev,
         email: next.shipping.email ?? prev.email,
@@ -801,19 +883,63 @@ function CheckoutPageContent() {
     [router],
   );
 
-  const recheckPromotion = React.useCallback(async (code: string) => {
-    const result = await checkPromotionCodeRequest(code);
-    if (result.kind === "applied") {
-      setPromotion(result.preview);
-      setPromotionError(null);
-      rememberPromotionCode({ code: result.preview.code });
+  // 非同期の確認が返ったとき、その時点のログイン状態で断りの文を選ぶ
+  const buyerKindRef = useRef<"member" | "guest">(isLoggedIn ? "member" : "guest");
+  React.useEffect(() => {
+    buyerKindRef.current = isLoggedIn ? "member" : "guest";
+  }, [isLoggedIn]);
+
+  /**
+   * 確認の結果を画面と保存へ反映する。確定無効のコードは保存から除き、先頭のコードと理由を入力欄へ戻す。
+   * 429/503・通信の失敗など確定ではない失敗では、コードも保存も変えず、失敗の文だけを出す。
+   */
+  const commitPromotionCheck = React.useCallback((
+    evaluation: PromotionEvaluation,
+    options: { preset?: RejectedPromotion[]; message?: string | null; keepResult?: DiscountResult | null; restore?: boolean } = {},
+  ) => {
+    const rejected = [...(options.preset ?? []), ...evaluation.rejected];
+    setPromotionCodes(evaluation.codes);
+    setDiscountPreview(evaluation.transientMessage !== null && options.keepResult !== undefined && rejected.length === 0 ? options.keepResult : evaluation.result);
+    if (rejected.length > 0) {
+      writePromotionCodes(evaluation.codes);
+      // 「適用」の最中は、入力欄に打った文字がそのまま残る。欄を作り直すとフォーカスが外れる
+      if (options.restore !== false) restorePromotionInput(rejected[0].code);
+      setPromotionError(rejected[0].message);
+    } else if (evaluation.transientMessage !== null) {
+      setPromotionError(evaluation.transientMessage);
     } else {
-      if (!result.transient) clearPromotionCode();
-      restorePromotionInput(code);
-      setPromotion(null);
-      setPromotionError(result.message);
+      writePromotionCodes(evaluation.codes);
+      setPromotionError(options.message ?? null);
     }
   }, [restorePromotionInput]);
+
+  /** 入力したコード全部をサーバーで再計算して画面へ反映する（開き直し・価格の変更・確認画面からの戻り） */
+  const reverifyPromotions = React.useCallback(async (
+    codes: readonly string[],
+    options: { preset?: RejectedPromotion[]; message?: string | null } = {},
+  ) => {
+    const sequence = ++previewSequenceRef.current;
+    const evaluation = await evaluatePromotionCodes(codes, buyerKindRef.current);
+    if (sequence !== previewSequenceRef.current) return;
+    commitPromotionCheck(evaluation, options);
+  }, [commitPromotionCheck]);
+
+  /** 確認や注文の受け付けで、入力したコードが条件を失った。確定した断りのコードだけを外し、理由を欄に残して残りを確かめ直す */
+  const applyCodeRefusal = React.useCallback(async (
+    codes: readonly string[],
+    info: { refusals: readonly DiscountRefusal[]; message: string; definitive: boolean },
+  ) => {
+    const refused = new Set(info.definitive ? info.refusals.map((refusal) => refusal.code.toUpperCase()) : []);
+    const preset: RejectedPromotion[] = [];
+    for (const code of codes) {
+      const refusal = info.refusals.find((item) => item.code.toUpperCase() === code);
+      if (refused.has(code) && refusal) preset.push({ code, message: refusalMessage(refusal, buyerKindRef.current) });
+    }
+    const remaining = codes.filter((code) => !refused.has(code));
+    // 確定した断りは保存から外す。確かめ直しの前に外し、途中で閉じても復活させない
+    if (preset.length > 0) writePromotionCodes(remaining);
+    await reverifyPromotions(remaining, { preset, message: preset.length === 0 ? info.message : null });
+  }, [reverifyPromotions]);
 
   // 開き直したとき・Stripe の画面から戻ったときに、どこから続けるかをサーバーに聞く（決め事 D9・D10）
   React.useEffect(() => {
@@ -837,9 +963,9 @@ function CheckoutPageContent() {
         const attempt = takePaymentAttempt(result.confirmation.checkoutSessionId);
         adoptConfirmation(result.confirmation);
         setFinalNotice(attempt ? paymentIncompleteMessage(attempt.paymentType) : null);
-        if (result.confirmation.promotionCode) {
-          // 「変更」で入力画面へ戻ったときに、適用済みのコードと金額の目安を出す
-          await recheckPromotion(result.confirmation.promotionCode);
+        if (result.confirmation.promotionCodes.length > 0) {
+          // 「変更」で入力画面へ戻ったときに、入力済みのコードと金額の目安を出す
+          await reverifyPromotions(result.confirmation.promotionCodes);
         }
         return;
       }
@@ -849,14 +975,14 @@ function CheckoutPageContent() {
       if (result.state === "unavailable") {
         setResumeUnavailable(true);
       }
-      const remembered = readPromotionCode();
-      if (remembered) {
+      const remembered = readPromotionCodes();
+      if (remembered.length > 0) {
         // 確かめ直しが終わるまで resuming の読み込み表示を保ち、お客様の入力・適用と重なるのを避ける。
-        await recheckPromotion(remembered.code);
+        await reverifyPromotions(remembered);
       }
       setResuming(false);
     })();
-  }, [searchParams, router, finishOrder, adoptConfirmation, recheckPromotion]);
+  }, [searchParams, router, finishOrder, adoptConfirmation, reverifyPromotions]);
 
   const backToInput = () => {
     setStep(1);
@@ -876,7 +1002,7 @@ function CheckoutPageContent() {
         taxAmount: tax,
         totalAmount: total,
       },
-      promotionCode: promotion?.code ?? null,
+      promotionCodes,
     });
 
     if (result.kind === "confirmation") {
@@ -892,17 +1018,14 @@ function CheckoutPageContent() {
 
     backToInput();
     if (result.kind === "promotion_code_invalid") {
-      // 適用の後にカートが変わるなどで使えなくなった。欄に理由を出す（Review Focus 4）
-      clearPromotionCode();
-      restorePromotionInput(promotion?.code ?? "");
-      setPromotion(null);
-      setPromotionError(result.message);
+      // 適用の後にカートが変わるなどで使えなくなった。確定した断りのコードだけを外し、欄に理由を出す（Review Focus 4）
+      await applyCodeRefusal(promotionCodes, result);
       return;
     }
     if (result.code === "checkout_amount_mismatch") {
       await fetchCart();
-      // 要約は適用時の目安を優先するため、価格変更後はコードも確かめ直して目安を更新する。
-      if (promotion) await recheckPromotion(promotion.code);
+      // 要約は適用時の目安を優先するため、価格変更後は全コードも確かめ直して目安を更新する。
+      await reverifyPromotions(promotionCodes);
       setSessionErrorRetryable(true);
       setSessionErrorCorrelationId(null);
       setCheckoutError("価格が変わりました。金額をご確認のうえ、もう一度「確認へ進む」を押してください。");
@@ -912,7 +1035,7 @@ function CheckoutPageContent() {
       // 買えなくなった明細をサーバーがカートから外した（Shopify の "Your cart has been updated" と同じ）。
       // 画面のカートと割引の目安を読み直し、押し直せるままにする
       await fetchCart();
-      if (promotion) await recheckPromotion(promotion.code);
+      await reverifyPromotions(promotionCodes);
       setSessionErrorRetryable(true);
       setSessionErrorCorrelationId(null);
       setCheckoutError(result.message);
@@ -1006,16 +1129,66 @@ function CheckoutPageContent() {
     window.scrollTo({ top: 0 });
   };
 
-  const handleApplyPromotion = async (code: string): Promise<boolean> => {
-    setPromotionError(null);
-    const result = await checkPromotionCodeRequest(code);
-    if (result.kind === "applied") {
-      setPromotion(result.preview);
-      rememberPromotionCode({ code: result.preview.code });
-      return true;
+  // 最終確認画面の「注文する」で、入力したコードが条件を失った。確定した断りを保って入力画面へ戻す（住所・選択は保つ）
+  const handleDiscountCodesInvalid = (info: { refusals: readonly DiscountRefusal[]; message: string; definitive: boolean }) => {
+    backToInput();
+    void applyCodeRefusal(promotionCodes, info);
+  };
+
+  // 自動の割引が変わった。入力へは戻さず、新しい決済の画面で最終確認をやり直す（新しい合計を出し、押し直すまで注文しない）
+  const handleReconfirmationRequired = async () => {
+    setProceeding(true);
+    try {
+      await proceedToConfirmation(RECONFIRMATION_NOTICE);
+    } catch {
+      backToInput();
+      setCheckoutError("決済の準備に失敗しました。少し時間をおいてから、もう一度お試しください。");
+    } finally {
+      setProceeding(false);
     }
-    setPromotionError(result.message);
-    return false;
+  };
+
+  const handleApplyPromotion = async (code: string): Promise<void> => {
+    const typed = code.trim().toUpperCase();
+    if (promotionCodes.includes(typed)) {
+      setPromotionError(DUPLICATE_PROMOTION_MESSAGE);
+      return;
+    }
+    if (promotionCodes.length >= MAX_DISCOUNT_CODES) {
+      setPromotionError(PROMOTION_CODE_LIMIT_MESSAGE);
+      return;
+    }
+    setPromotionError(null);
+    setPromotionBusy(true);
+    const sequence = ++previewSequenceRef.current;
+    try {
+      const evaluation = await evaluatePromotionCodes([...promotionCodes, typed], buyerKindRef.current);
+      if (sequence !== previewSequenceRef.current) return;
+      if (evaluation.transientMessage !== null) {
+        // 確かめられなかったコードは足さない（入力欄に残して、押し直してもらう）。確定無効になった他のコードだけは外す
+        commitPromotionCheck({ ...evaluation, codes: evaluation.codes.filter((item) => item !== typed) }, { keepResult: discountPreview, restore: false });
+        return;
+      }
+      commitPromotionCheck(evaluation, { restore: false });
+    } finally {
+      setPromotionBusy(false);
+    }
+  };
+
+  const handleRemovePromotion = async (code: string): Promise<void> => {
+    const remaining = promotionCodes.filter((item) => item !== code);
+    setPromotionError(null);
+    setPromotionBusy(true);
+    const sequence = ++previewSequenceRef.current;
+    try {
+      const evaluation = await evaluatePromotionCodes(remaining, buyerKindRef.current);
+      if (sequence !== previewSequenceRef.current) return;
+      // 外したコードは確かめられなくても外したまま。残りの確認が失敗したときも保存は外した後のコードにそろえる
+      if (evaluation.transientMessage !== null) writePromotionCodes(evaluation.codes);
+      commitPromotionCheck(evaluation, { restore: false });
+    } finally {
+      setPromotionBusy(false);
+    }
   };
 
   const handleShippingChange = (
@@ -1655,6 +1828,8 @@ function CheckoutPageContent() {
             onEdit={backToInput}
             onPaid={(checkoutSessionId) => void finishOrder(checkoutSessionId, { reentered: checkoutSessionId !== confirmation.checkoutSessionId })}
             onRejected={(rejection) => void handleRejected(rejection)}
+            onDiscountCodesInvalid={handleDiscountCodesInvalid}
+            onReconfirmationRequired={() => void handleReconfirmationRequired()}
           />
         ) : (
           <>
@@ -1687,22 +1862,20 @@ function CheckoutPageContent() {
                       <PromoCodeField
                         key={promotionFieldRevision}
                         defaultCode={promotionDefaultCode}
-                        applied={promotion}
+                        codes={promotionCodes}
+                        unusedCodes={previewForCart ? previewForCart.unusedCodes.filter((code) => promotionCodes.includes(code)) : []}
                         error={promotionError}
-                        disabled={proceeding}
+                        busy={proceeding || promotionBusy}
+                        buyerKind={isLoggedIn ? "member" : "guest"}
                         onApply={handleApplyPromotion}
-                        onRemove={() => {
-                          clearPromotionCode();
-                          restorePromotionInput("");
-                          setPromotion(null);
-                          setPromotionError(null);
-                        }}
+                        onRemove={handleRemovePromotion}
                       />
                       <CartTotals
-                        subtotal={promotion?.subtotalAmount ?? subtotal}
-                        shipping={promotion?.shippingAmount ?? shipping}
-                        discount={promotion?.discountAmount ?? 0}
-                        total={promotion?.totalAmount ?? total}
+                        subtotal={subtotal}
+                        shipping={shipping}
+                        discounts={shownDiscounts}
+                        provisional={shownProvisional}
+                        total={shownTotal}
                       />
                     </>
                   )}

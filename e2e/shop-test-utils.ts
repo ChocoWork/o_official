@@ -173,6 +173,9 @@ export function toCartJson(items: MockCartItem[]): CartJson {
     items_subtotal_price: subtotal,
     total_price: subtotal,
     items: lines,
+    discounts: [],
+    total_discount: 0,
+    discount_provisional: false,
   };
 }
 

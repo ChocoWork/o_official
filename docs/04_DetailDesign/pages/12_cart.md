@@ -22,6 +22,19 @@
 
 表示の目印は`data-testid="cart-fulfillment"`、`cart-notice`、`cart-stock-changed`。関連テストは[お届けの目安と在庫変化の案内](../../../e2e/FR-CART-022-delivery-estimate-and-stock-notice.spec.ts)。
 
+## 自動割引の内訳（FREQ-550、グループ H）
+
+> 確認日: 2026-10-29。カートは自動割引だけを出す。checkoutで入力したコードはカートへ送らない。下の既存要件表のFR-CART-005・006・009・010の記述は作成時点のもの。
+
+| 項目 | 現行の扱い | 根拠 |
+| --- | --- | --- |
+| 計算 | `GET /api/cart`・`POST /api/cart/add`・`POST /api/cart/change`が同じ`buildCartJson(supabase, cartId, buyer)`でカート全体を組み立てる。本人は会員のuserIdか、それ以外のguest。メールや購入履歴は読まず、guestの初回・1人1回は常に見込み。応答へ`discounts`（正額の効果の`{name,amount}`、コードなし）・`total_discount`・`discount_provisional`を足し、`items_subtotal_price`・単価・`line_price`は元値のまま、`total_price`を正味額にする | [cart-view](../../../src/features/cart/services/cart-view.ts)、[previewAutomaticDiscounts](../../../src/lib/discounts/discount-preview-store.ts)、[型](../../../src/features/cart/types/cart-json.ts) |
+| guard・失敗 | 探索のguardでもfallbackの完全に評価した額を200で表示し、管理要対応へ記録する（既存のrecordDiscountSearchFallback）。割引の計算が失敗しても、カートは割引なしで200を返し、固定ログ`cart_discount_preview_failed`だけを残す。追加の再送や失敗応答にしない | [cart-view](../../../src/features/cart/services/cart-view.ts)、[checkout-discounts.service](../../../src/features/checkout/services/checkout-discounts.service.ts) |
+| 表示 | ORDER SUMMARYの小計の下に、正額の効果を1効果1行で「割引（名前） −¥金額」と出し（[DiscountBreakdown](../../../src/components/DiscountBreakdown.tsx)、コードは出さない）、見込みを含む時は各行に「見込み」を付ける。合計は小計から割引を引いた正味額。数量の変更・削除の応答で新しい内訳に差し替える。応答を待つ間は、割引の行と合計が前回の応答の額なので薄く出し（`aria-busy`）、応答が返って待ちが無くなったら戻す。名前はテキストとして描画し、HTMLを実行しない | [OrderSummary](../../../src/app/cart/_components/OrderSummary.tsx)、[useCartItems](../../../src/app/cart/_hooks/useCartItems.ts)、[cart/page.tsx](../../../src/app/cart/page.tsx) |
+| 広告 | 広告をOFFにしてもカートの割引は隠さない。商品ページの案内は別の窓口（`GET /api/discounts/advertisements`）から出す | [05_item_detail](05_item_detail.md)、[API仕様](../../03_BasicDesign/api/api-spec.md) |
+
+関連テストは[CartPage](../../../tests/unit/components/CartPage.test.tsx)、[cart-view](../../../tests/unit/features/cart/services/cart-view.test.ts)、[cart-add](../../../tests/unit/api/cart/cart-add.test.ts)。3幅の表示・折返しはTask 11で測る。
+
 ## 機能要件対応表
 
 | 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |

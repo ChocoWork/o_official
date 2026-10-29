@@ -16,8 +16,23 @@ export function useCartItems() {
   // 削除・ウィッシュリスト操作の失敗。alert() はページを止めるうえ商品詳細と見た目が揃わないので、
   // 同じ Toast に寄せる。表示はページ側の責務なので、ここは文言を持つだけ。
   const [actionError, setActionError] = useState<string | null>(null);
+  // サーバーが計算した自動割引の内訳（コードは出さない）。数量を変えた応答ごとに新しくする
+  const [discounts, setDiscounts] = useState<CartJson["discounts"]>([]);
+  const [totalDiscount, setTotalDiscount] = useState(0);
+  const [discountProvisional, setDiscountProvisional] = useState(false);
+  // 数量の変更・削除の応答を待っている間は、割引の額が古い（画面の小計だけ先に変わる）
+  const [discountStale, setDiscountStale] = useState(false);
+  const removing = useRef(0);
 
   const { updateCartCount, wishlistedItems, toggleWishlist } = useCart();
+
+  // 応答に割引の欄が無い（古い応答・読めない本文）ときは、今の表示を変えない
+  const applyDiscounts = useCallback((cart: Partial<CartJson> | null | undefined) => {
+    if (!cart || !Array.isArray(cart.items) || !Array.isArray(cart.discounts) || typeof cart.total_discount !== "number") return;
+    setDiscounts(cart.discounts);
+    setTotalDiscount(cart.total_discount);
+    setDiscountProvisional(cart.discount_provisional === true);
+  }, []);
 
   // Refs track debounce/in-flight state without triggering re-renders
   const pendingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -25,12 +40,17 @@ export function useCartItems() {
   const failedDesired = useRef<Record<string, number>>({});
   const confirmedQuantities = useRef<Record<string, number>>({});
   const inFlight = useRef<Set<string>>(new Set());
+  const syncDiscountStale = () => {
+    setDiscountStale(Object.keys(pendingTimers.current).length > 0 || inFlight.current.size > 0 || removing.current > 0);
+  };
 
   const fetchCart = useCallback(async ({ showLoading = false } = {}) => {
     if (showLoading) setLoading(true);
     try {
-      const items = toCartEntries(await fetchCartJson());
+      const cart = await fetchCartJson();
+      const items = toCartEntries(cart);
       setCartItems(items);
+      applyDiscounts(cart);
       confirmedQuantities.current = Object.fromEntries(
         items.map((i) => [i.id, i.quantity])
       );
@@ -42,7 +62,7 @@ export function useCartItems() {
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, []);
+  }, [applyDiscounts]);
 
   useEffect(() => {
     fetchCart({ showLoading: true });
@@ -87,6 +107,7 @@ export function useCartItems() {
       const updatedLine = Array.isArray(body?.items)
         ? toCartEntries(body as CartJson).find((item) => item.id === cartId)
         : undefined;
+      applyDiscounts(body);
       const confirmedQty = updatedLine?.quantity ?? quantity;
       const fulfillment = updatedLine?.fulfillment ?? null;
       confirmedQuantities.current[cartId] = confirmedQty;
@@ -113,11 +134,13 @@ export function useCartItems() {
       inFlight.current.delete(cartId);
       setUpdatingId(null);
       if (lastDesired.current[cartId] !== quantity) scheduleUpdate(cartId);
+      syncDiscountStale();
     }
   };
 
   const handleQuantityChange = (cartId: string, newQuantity: number) => {
     if (newQuantity < 1) return;
+    setDiscountStale(true);
     lastDesired.current[cartId] = newQuantity;
     setCartItems((prev) =>
       prev.map((item) =>
@@ -131,6 +154,7 @@ export function useCartItems() {
     const qty = failedDesired.current[cartId];
     if (typeof qty !== "number") return;
     lastDesired.current[cartId] = qty;
+    setDiscountStale(true);
     setCartItems((prev) =>
       prev.map((item) => (item.id === cartId ? { ...item, quantity: qty } : item))
     );
@@ -145,16 +169,21 @@ export function useCartItems() {
   const handleRemove = async (cartId: string) => {
     setUpdatingId(cartId);
     setActionError(null);
+    removing.current += 1;
+    setDiscountStale(true);
     try {
       // 削除は数量0の変更（Shopify の /cart/change.js と同じ）
       const result = await postCart("/api/cart/change", { id: cartId, quantity: 0 }, "削除に失敗しました");
       if (!result.ok) throw new Error(result.description);
+      applyDiscounts(result.body as Partial<CartJson> | null);
       setCartItems((prev) => prev.filter((item) => item.id !== cartId));
       await updateCartCount();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "エラーが発生しました");
     } finally {
       setUpdatingId(null);
+      removing.current -= 1;
+      syncDiscountStale();
     }
   };
 
@@ -194,6 +223,10 @@ export function useCartItems() {
     hasSyncError: Object.keys(syncErrorByItem).length > 0,
     actionError,
     subtotal,
+    discounts,
+    totalDiscount,
+    discountProvisional,
+    discountStale,
     wishlistedItems,
     handleQuantityChange,
     handleRetryUpdate,

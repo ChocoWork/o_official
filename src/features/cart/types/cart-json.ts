@@ -20,12 +20,21 @@ export type CartJsonLine = {
   fulfillment: 'stock' | 'backorder' | null;
 };
 
+/** カートに出す自動割引の内訳（コードは入れない。入力したコードの割引は決済の画面だけ） */
+export type CartJsonDiscount = { name: string; amount: number };
+
 export type CartJson = {
   item_count: number;
   currency: 'JPY';
+  /** 割引前の小計（単価 × 数量の和） */
   items_subtotal_price: number;
+  /** 割引後の正味額（送料は 0 円） */
   total_price: number;
   items: CartJsonLine[];
+  discounts: CartJsonDiscount[];
+  total_discount: number;
+  /** ゲストの初回・１人１回など、確定前の見込みの額を含むとき true */
+  discount_provisional: boolean;
 };
 
 export const EMPTY_CART_JSON: CartJson = {
@@ -34,4 +43,7 @@ export const EMPTY_CART_JSON: CartJson = {
   items_subtotal_price: 0,
   total_price: 0,
   items: [],
+  discounts: [],
+  total_discount: 0,
+  discount_provisional: false,
 };

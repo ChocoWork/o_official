@@ -1,4 +1,4 @@
-﻿# 1.5 商品詳細ページ（ITEM DETAIL）詳細設計
+# 1.5 商品詳細ページ（ITEM DETAIL）詳細設計
 
 > 状態: 既存設計 | 実装状況は項目ごとに要再照合
 
@@ -104,3 +104,13 @@
 GET /api/items/[id] は returnIneligible: boolean を返す。画面の Item.returnIneligible? が true の時だけ、item-detail-identity の直後に data-testid="item-return-ineligible-note" の段落を出す。false・未指定なら段落も出さない。文は「この商品は、初期不良・誤送を除き、返品・交換をお受けしていません」。購入の操作は止めない。管理 API と FormData のキーは return_ineligible、DB は items.return_ineligible であり、公開の答えと混ぜない。
 
 検証は FREQ-482-AC-04・05。E2E は [FR-ITEM-DETAIL-066](../../../e2e/FR-ITEM-DETAIL-066-return-ineligible.spec.ts)、単体は [ItemDetailReturnIneligible](../../../tests/unit/components/ItemDetailReturnIneligible.test.tsx)。
+
+## 割引の案内（H Task 8 / FREQ-550-AC-03）
+
+商品ページは、静的な商品データ（`GET /api/items/[id]`）とは別に、個人化した`GET /api/discounts/advertisements?itemId=<商品ID>`（`cache: 'no-store'`）から案内を取る。会員とゲストの結果を共有cacheに載せず、ゲストのSSRへ会員向けの案内を埋めない。
+
+- 返るのは有効な自動割引で`advertise`がON、対象の商品、`advertisingText`が空でないものだけ（`{discountId,text}`）。コード割引・停止・期間外・非対象・非公開の商品は空。ゲストにはAを含む会員用の割引を出さない。code・使用数・割当は返さない。
+- 画面は価格の行の下に、`data-testid="item-discount-advertisement"`の段落で管理文を1行出す。価格・取り消し線は変えず、文はReactのテキストとして描画する（HTMLは実行しない）。
+- 取得に失敗しても商品の表示と購入は続ける。非okの応答は本文を読み切る（回数制限の429はno-storeで、残すと要求が開いたままになる）。広告をOFFにしてもカート・checkoutの割引は隠さない。
+
+実装は[ItemDetailClient](../../../src/app/item/[id]/ItemDetailClient.tsx)、窓口は[route](../../../src/app/api/discounts/advertisements/route.ts)、選び方は[discount-preview-store](../../../src/lib/discounts/discount-preview-store.ts)。単体は[ItemDetailAddToCart](../../../tests/unit/components/ItemDetailAddToCart.test.tsx)・[API](../../../tests/unit/api/discount-advertisements-route.test.ts)・[選び方](../../../tests/unit/lib/discounts/discount-preview-store.test.ts)。3幅の折返しはTask 11で測る。

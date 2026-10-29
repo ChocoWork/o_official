@@ -13,6 +13,9 @@ const cartWithCount = (count: number): CartJson => ({
   items_subtotal_price: 0,
   total_price: 0,
   items: [],
+  discounts: [],
+  total_discount: 0,
+  discount_provisional: false,
 });
 
 function Harness() {

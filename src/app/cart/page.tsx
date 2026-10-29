@@ -23,6 +23,10 @@ export default function CartPage() {
     hasSyncError,
     actionError,
     subtotal,
+    discounts,
+    totalDiscount,
+    discountProvisional,
+    discountStale,
     wishlistedItems,
     handleQuantityChange,
     handleRetryUpdate,
@@ -247,7 +251,13 @@ export default function CartPage() {
         </div>
 
         <div>
-          <OrderSummary subtotal={subtotal} />
+          <OrderSummary
+            subtotal={subtotal}
+            discounts={discounts}
+            totalDiscount={totalDiscount}
+            provisional={discountProvisional}
+            updating={discountStale}
+          />
         </div>
       </div>
 

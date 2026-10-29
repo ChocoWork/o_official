@@ -6,6 +6,7 @@ import { denyIfCsrfInvalid, openShoppingContext, type ShoppingContext } from '@/
 import { buildCartJson } from '@/features/cart/services/cart-view';
 import { CART_ERROR_DESCRIPTIONS, cartErrorResponse, cartRpcErrorResponse } from '@/features/cart/services/cart-errors';
 import { getClientIp } from '@/lib/request-ip';
+import type { DiscountBuyer } from '@/lib/discounts/discount-types';
 
 // PUBLIC: ゲストのカートを扱うので利用者認証は無い。会員には CSRF の合言葉を求め、
 // 送信元（Origin）の確かめは src/proxy.ts が掛ける。
@@ -64,7 +65,8 @@ export async function POST(req: NextRequest) {
       user_agent: userAgent,
       metadata: { ...context.auditOwner, lines },
     });
-    const cart = await buildCartJson(supabase, cartId);
+    const buyer: DiscountBuyer = context.owner?.kind === 'member' ? { kind: 'member', userId: context.owner.userId } : { kind: 'guest', normalizedEmail: null };
+    const cart = await buildCartJson(supabase, cartId, buyer);
     const added = new Set(lines.map((line) => line.variant_id));
     return context.finish(NextResponse.json({ items: cart.items.filter((line) => added.has(line.variant_id)) }));
   } catch (error) {

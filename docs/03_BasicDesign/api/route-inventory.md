@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> H Task 8 確認日: 2026-10-29。商品ページの割引の案内を返す `GET /api/discounts/advertisements` を 1 ファイル・1 メソッド追加した。Route Handler は166ファイル・210メソッド、表は165行・209メソッド（`/api/e2e/server-info` を除く）。
+>
 > H Task 7 確認日: 2026-10-29。割引の要対応を確認済みにする `POST /api/admin/order-attention/discounts/[orderId]/resolve` を 1 ファイル・1 メソッド追加した。Route Handler は165ファイル・209メソッド、表は164行・208メソッド（`/api/e2e/server-info` を除く）。
 >
 > H Task 4 確認日: 2026-10-29。割引管理の 9 ファイル・11 メソッド（`/api/admin/discounts` 配下）を追加した（その時点で164ファイル・208メソッド、表は163行・207メソッド）。認可・CSRF・制限・監査の順序と応答は[API仕様](api-spec.md)の「管理:割引（H）」を参照。
@@ -173,6 +175,7 @@
 | `/api/cron/meta-kpi-sync` | `POST` | [route.ts](../../../src/app/api/cron/meta-kpi-sync/route.ts) |
 | `/api/cron/process-stripe-webhooks` | `POST` | [route.ts](../../../src/app/api/cron/process-stripe-webhooks/route.ts) |
 | `/api/cron/stripe-reconcile` | `POST` | [route.ts](../../../src/app/api/cron/stripe-reconcile/route.ts) |
+| `/api/discounts/advertisements` | `GET` | [route.ts](../../../src/app/api/discounts/advertisements/route.ts) （H Task 8: 商品ページの割引の案内） |
 | `/api/items/[id]` | `GET` | [route.ts](../../../src/app/api/items/%5Bid%5D/route.ts) |
 | `/api/items` | `GET` | [route.ts](../../../src/app/api/items/route.ts) |
 | `/api/news` | `GET` | [route.ts](../../../src/app/api/news/route.ts) |
@@ -222,7 +225,7 @@ API単体 [GET](../../../tests/unit/api/admin/permissions-route.test.ts)・[POST
 
 ## `src/app/api` の外の入口（波 3 / 2026-10-28）
 
-頁ではなく画像のバイトを返す Route Handler。パスが `/api/` で始まらず、`src/app/api` の外にあるので、上の表と概要の数（165ファイル・209メソッド、表は164行・208メソッド）には入れない。数を固定する単体試験（`tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts`）は `src/app/api` だけを数える。
+頁ではなく画像のバイトを返す Route Handler。パスが `/api/` で始まらず、`src/app/api` の外にあるので、上の表と概要の数（166ファイル・210メソッド、表は165行・209メソッド）には入れない。数を固定する単体試験（`tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts`）は `src/app/api` だけを数える。
 
 | パス | メソッド | 根拠 |
 | --- | --- | --- |

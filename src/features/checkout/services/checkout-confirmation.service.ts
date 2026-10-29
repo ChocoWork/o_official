@@ -26,12 +26,11 @@ type ConfirmationBase = {
   shipping: CheckoutShippingSnapshot;
   lines: CheckoutConfirmationLine[];
 };
-/** Task 8 migrates existing UI fixtures; new server responses always use the first arm. */
-export type CheckoutConfirmation = ConfirmationBase & ({
-  promotionCodes: readonly string[]; discountResult: DiscountResult | null; promotionCode?: string | null;
-} | {
-  promotionCode: string | null; promotionCodes?: never; discountResult?: never;
-});
+/** 入力したコード全部（採用・未採用とも）と、draft に固定した割引の結果。H 以前の draft は discountResult が null */
+export type CheckoutConfirmation = ConfirmationBase & {
+  promotionCodes: readonly string[];
+  discountResult: DiscountResult | null;
+};
 
 const EMPTY_SHIPPING: CheckoutShippingSnapshot = {
   email: null,

@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { CART_OPTION_NAMES, type CartJson } from '@/features/cart/types/cart-json';
 
 jest.mock('next/link', () => {
@@ -90,13 +90,13 @@ const mockApi = {
   requestCheckoutConfirmation: jest.fn(),
   resumeCheckout: jest.fn(),
   completeCheckout: jest.fn(),
-  checkPromotionCodeRequest: jest.fn(),
+  applyPromotionCodes: jest.fn(),
 };
 jest.mock('@/app/checkout/_lib/checkout-api', () => ({
   requestCheckoutConfirmation: (...args: unknown[]) => mockApi.requestCheckoutConfirmation(...args),
   resumeCheckout: (...args: unknown[]) => mockApi.resumeCheckout(...args),
   completeCheckout: (...args: unknown[]) => mockApi.completeCheckout(...args),
-  checkPromotionCodeRequest: (...args: unknown[]) => mockApi.checkPromotionCodeRequest(...args),
+  applyPromotionCodes: (...args: unknown[]) => mockApi.applyPromotionCodes(...args),
 }));
 
 // 最終確認画面の中身は FinalConfirmationStep のテストで見る。ここは画面の切り替えだけを見る
@@ -138,7 +138,15 @@ const cartJsonOf = (...specs: CartLineSpec[]): CartJson => {
     fulfillment: null,
   }));
   const subtotal = items.reduce((sum, line) => sum + line.line_price, 0);
-  return { item_count: items.length, currency: 'JPY', items_subtotal_price: subtotal, total_price: subtotal, items };
+  return {
+    item_count: items.length, currency: 'JPY', items_subtotal_price: subtotal, total_price: subtotal, items,
+    discounts: [], total_discount: 0, discount_provisional: false,
+  };
+};
+// 自動割引つきのカート（GET /api/cart が返す内訳）。subtotal は元値のまま、total_price だけが正味額になる
+const withCartDiscounts = (cart: CartJson, discounts: CartJson['discounts'], provisional = false): CartJson => {
+  const totalDiscount = discounts.reduce((sum, discount) => sum + discount.amount, 0);
+  return { ...cart, total_price: cart.items_subtotal_price - totalDiscount, discounts, total_discount: totalDiscount, discount_provisional: provisional };
 };
 const SHIRT_LINE: CartLineSpec = { key: 'cart-1', productId: 1, name: 'シャツ', price: 5000, color: 'BLACK', size: 'M' };
 const CART = cartJsonOf(SHIRT_LINE);
@@ -149,8 +157,35 @@ const CONFIRMATION = {
   clientSecret: 's',
   shipping: { ...PROFILE, postalCode: '1500001', prefecture: '東京都', city: '渋谷区', address: '神宮前1-1-1', building: null },
   lines: [],
-  promotionCode: null,
+  promotionCodes: [] as string[],
+  discountResult: null,
 };
+
+// applyPromotionCodes の応答の作り方。subtotal は元値、applied は {name, code, amount}（codeがnullなら自動）
+type AppliedSpec = { name: string; code: string | null; amount: number };
+const previewResult = (applied: AppliedSpec[] = [], options: { subtotal?: number; unused?: string[]; provisional?: boolean } = {}) => {
+  const subtotal = options.subtotal ?? 5000;
+  const discount = applied.reduce((sum, spec) => sum + spec.amount, 0);
+  return {
+    version: 1 as const, subtotalAmount: subtotal, shippingAmount: 0 as const, discountAmount: discount, totalAmount: subtotal - discount,
+    applied: applied.map((spec, index) => ({ discountId: `d${index}`, codeId: spec.code ? `c${index}` : null, name: spec.name, code: spec.code, class: 'order' as const, amount: spec.amount })),
+    allocations: [], unitAmounts: [], unusedCodes: options.unused ?? [], provisional: options.provisional ?? false, calculationMode: 'exact' as const,
+  };
+};
+const previewOk = (applied: AppliedSpec[] = [], options: Parameters<typeof previewResult>[1] = {}) => ({ ok: true, result: previewResult(applied, options) });
+const previewRefused = (codes: string[], message = 'このコードは使えません', reason = 'not_eligible') => ({
+  ok: false, status: 422, definitive: true, message, refusals: codes.map((code) => ({ code, reason })),
+});
+const previewTransient = (message = PROMOTION_FAILED_MESSAGE, status = 503) => ({ ok: false, status, definitive: false, message, refusals: [] });
+const PROMOTION_FAILED_MESSAGE = '割引コードを確かめられませんでした。少し時間をおいてから、もう一度お試しください。';
+const WELCOME10: AppliedSpec = { name: '春の割引', code: 'WELCOME10', amount: 500 };
+const PROMO_KEY = 'checkout:promotion-codes';
+const storedCodes = () => JSON.parse(window.sessionStorage.getItem(PROMO_KEY) ?? 'null');
+// 「プロモーションコード」の入力欄に入れて「適用」を押す
+async function applyCode(code: string) {
+  fireEvent.change(await screen.findByLabelText('プロモーションコード'), { target: { value: code } });
+  fireEvent.click(screen.getByRole('button', { name: '適用' }));
+}
 
 // ログインの変更（グループ C・C7）のテストで使う、もう一人の会員 B と、ゲストが入力した値。
 // どの欄も PROFILE（会員 A）とも互いにも重ならない。B のプロフィールの建物名は空
@@ -320,7 +355,9 @@ describe('決済の画面（グループ F）', () => {
     // clearAllMocks は once の積み残しと mockImplementation を消さない。テストの間に持ち越さない
     mockApi.requestCheckoutConfirmation.mockReset();
     mockApi.completeCheckout.mockReset();
-    mockApi.checkPromotionCodeRequest.mockReset();
+    // 既定は「割引なし」の確認。入力画面は、コードが無ければ確認の窓口を呼ばない
+    mockApi.applyPromotionCodes.mockReset();
+    mockApi.applyPromotionCodes.mockResolvedValue(previewOk());
     window.sessionStorage.clear();
     mockSearch = '';
     mockFinalProps = null;
@@ -391,72 +428,173 @@ describe('決済の画面（グループ F）', () => {
         phone: '03-1111-2222',
       },
       displayedAmounts: { subtotalAmount: 5000, taxAmount: 0, shippingAmount: 0, totalAmount: 5000 },
-      promotionCode: null,
+      promotionCodes: [],
     });
     expect(mockRouter.replace).toHaveBeenCalledWith('/checkout?session_id=cs_test_1');
   });
 
-  test('「確認へ進む」で割引コードが断られたら、欄に理由を出して入力画面に留まる', async () => {
-    mockApi.checkPromotionCodeRequest.mockResolvedValue({
-      kind: 'applied',
-      preview: { code: 'MIN10000', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 },
-    });
+  test('FREQ-548-AC-02: 「確認へ進む」で入力コードが確定して断られたら、欄に理由を出し、そのコードだけを外して入力画面に留まる', async () => {
+    mockApi.applyPromotionCodes.mockResolvedValueOnce(previewOk([{ name: '会員の割引', code: 'MIN10000', amount: 500 }])); // 「適用」
     mockApi.requestCheckoutConfirmation.mockResolvedValue({
       kind: 'promotion_code_invalid',
       message: 'このコードは ¥10,000 以上のご注文で使えます',
+      definitive: true,
+      refusals: [{ code: 'MIN10000', reason: 'minimum_amount', minimumAmount: 10000 }],
     });
     render(<CheckoutPage />);
 
-    fireEvent.change(await screen.findByLabelText('プロモーションコード'), { target: { value: 'MIN10000' } });
-    fireEvent.click(screen.getByRole('button', { name: '適用' }));
-    expect(await screen.findByText('MIN10000')).toBeInTheDocument();
+    await applyCode('MIN10000');
+    expect(await screen.findByRole('button', { name: 'MIN10000を削除' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
 
     expect(await screen.findByText('このコードは ¥10,000 以上のご注文で使えます')).toBeInTheDocument();
-    expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledWith(expect.objectContaining({ promotionCode: 'MIN10000' }));
+    expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledWith(expect.objectContaining({ promotionCodes: ['MIN10000'] }));
     expect(screen.queryByTestId('final-step')).toBeNull();
     expect(screen.getByLabelText('プロモーションコード')).toHaveValue('MIN10000');
-    expect(window.sessionStorage.getItem('checkout:promotion-code')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'MIN10000を削除' })).toBeNull();
+    expect(window.sessionStorage.getItem(PROMO_KEY)).toBeNull();
+    // 確定した断りは、その後の確認へ戻さず、コードが残らないので確認の窓口も呼ばない（「適用」の1回だけ）
+    expect(mockApi.applyPromotionCodes).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/^割引（/)).toBeNull();
   });
 
-  test('適用成功でコードを覚え、削除で記録を消す', async () => {
-    mockApi.checkPromotionCodeRequest.mockResolvedValue({ kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 } });
+  test('FREQ-550-AC-02: 適用成功でコードだけを{version:1,codes}で覚え、削除でそのコードだけを外してサーバーで再計算する', async () => {
+    mockApi.applyPromotionCodes
+      .mockResolvedValueOnce(previewOk([WELCOME10]))
+      .mockResolvedValueOnce(previewOk([WELCOME10, { name: '商品の割引', code: 'SPRING', amount: 300 }]))
+      .mockResolvedValueOnce(previewOk([{ name: '商品の割引', code: 'SPRING', amount: 300 }]));
     render(<CheckoutPage />);
-    fireEvent.change(await screen.findByLabelText('プロモーションコード'), { target: { value: 'welcome10' } });
-    fireEvent.click(screen.getByRole('button', { name: '適用' }));
-    await screen.findByText('WELCOME10');
-    expect(JSON.parse(window.sessionStorage.getItem('checkout:promotion-code') ?? 'null')).toEqual({ code: 'WELCOME10' });
-    fireEvent.click(screen.getByRole('button', { name: '削除' }));
-    expect(window.sessionStorage.getItem('checkout:promotion-code')).toBeNull();
-    expect(screen.getByLabelText('プロモーションコード')).toHaveValue('');
+
+    await applyCode('welcome10');
+    await screen.findByRole('button', { name: 'WELCOME10を削除' });
+    expect(storedCodes()).toEqual({ version: 1, codes: ['WELCOME10'] });
+    await applyCode('spring');
+    await screen.findByRole('button', { name: 'SPRINGを削除' });
+    expect(mockApi.applyPromotionCodes).toHaveBeenLastCalledWith(['WELCOME10', 'SPRING']);
+    expect(storedCodes()).toEqual({ version: 1, codes: ['WELCOME10', 'SPRING'] });
+
+    fireEvent.click(screen.getByRole('button', { name: 'WELCOME10を削除' }));
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'WELCOME10を削除' })).toBeNull());
+    expect(screen.getByRole('button', { name: 'SPRINGを削除' })).toBeInTheDocument();
+    expect(mockApi.applyPromotionCodes).toHaveBeenLastCalledWith(['SPRING']);
+    expect(storedCodes()).toEqual({ version: 1, codes: ['SPRING'] });
+    expect(screen.getByText('合計').parentElement).toHaveTextContent('¥4,700');
   });
 
-  test.each(['none', 'unavailable'])('入力画面を開き直す（%s）と記録したコードを確かめ直して割引を表示する', async (state) => {
+  test('FREQ-550-AC-01: 内訳に割引の名前と額を出し、未採用のコードには理由の文を出す', async () => {
+    mockApi.applyPromotionCodes
+      .mockResolvedValueOnce(previewOk([WELCOME10]))
+      .mockResolvedValueOnce(previewOk([WELCOME10], { unused: ['OTHER5'] }));
+    render(<CheckoutPage />);
+
+    await applyCode('welcome10');
+    await screen.findByRole('button', { name: 'WELCOME10を削除' });
+    await applyCode('other5');
+
+    await screen.findByRole('button', { name: 'OTHER5を削除' });
+    expect(screen.getByText('OTHER5：このコードは今の割引と一緒には使えません。よりお得な割引を適用しています。')).toBeInTheDocument();
+    expect(screen.getByText('割引（春の割引）').closest('li')).toHaveTextContent('−¥500');
+    expect(screen.getByText('小計').parentElement).toHaveTextContent('¥5,000');
+    expect(screen.getByText('合計').parentElement).toHaveTextContent('¥4,500');
+  });
+
+  test('FREQ-550-AC-02: 別のコードが確定して断られても、有効なコードは残す', async () => {
+    mockApi.applyPromotionCodes
+      .mockResolvedValueOnce(previewOk([WELCOME10]))
+      .mockResolvedValueOnce(previewRefused(['BAD10']));
+    window.sessionStorage.setItem(PROMO_KEY, JSON.stringify({ version: 1, codes: ['WELCOME10'] }));
+    render(<CheckoutPage />);
+    await screen.findByRole('button', { name: 'WELCOME10を削除' });
+
+    await applyCode('bad10');
+
+    const input = screen.getByLabelText('プロモーションコード');
+    await waitFor(() => expect(input).toHaveAccessibleDescription('このコードは使えません'));
+    expect(input).toHaveValue('bad10');
+    expect(screen.getByRole('button', { name: 'WELCOME10を削除' })).toBeInTheDocument();
+    expect(storedCodes()).toEqual({ version: 1, codes: ['WELCOME10'] });
+  });
+
+  test('FREQ-550-AC-02: 5つ入力したら入力欄を出さず「コードは5つまで入力できます。」を出す', async () => {
+    const codes = ['A1', 'B2', 'C3', 'D4', 'E5'];
+    window.sessionStorage.setItem(PROMO_KEY, JSON.stringify({ version: 1, codes }));
+    mockApi.applyPromotionCodes.mockResolvedValue(previewOk(codes.map((code) => ({ name: `割引${code}`, code, amount: 100 }))));
+    render(<CheckoutPage />);
+
+    expect(await screen.findByText('コードは5つまで入力できます。')).toBeInTheDocument();
+    expect(screen.queryByLabelText('プロモーションコード')).toBeNull();
+    expect(screen.getAllByRole('button', { name: /を削除$/ })).toHaveLength(5);
+  });
+
+  test('FREQ-550-AC-02: 同じコードをもう一度入れたら理由を出して送らない', async () => {
+    window.sessionStorage.setItem(PROMO_KEY, JSON.stringify({ version: 1, codes: ['WELCOME10'] }));
+    mockApi.applyPromotionCodes.mockResolvedValue(previewOk([WELCOME10]));
+    render(<CheckoutPage />);
+    await screen.findByRole('button', { name: 'WELCOME10を削除' });
+    mockApi.applyPromotionCodes.mockClear();
+
+    await applyCode('welcome10');
+
+    expect(await screen.findByText('このコードはすでに入力されています。')).toBeInTheDocument();
+    expect(mockApi.applyPromotionCodes).not.toHaveBeenCalled();
+  });
+
+  test('FREQ-546-AC-01: コードが無ければ確認の窓口を呼ばず、カートが返す自動割引の内訳を見込みで出す', async () => {
+    jest.mocked(fetch).mockResolvedValue({ ok: true, json: async () => withCartDiscounts(CART, [{ name: '初回の割引', amount: 500 }], true) } as Response);
+    render(<CheckoutPage />);
+
+    expect(await screen.findByText('割引（初回の割引）')).toBeInTheDocument();
+    expect(screen.getByText('見込み')).toBeInTheDocument();
+    expect(screen.getByText('小計').parentElement).toHaveTextContent('¥5,000');
+    expect(screen.getByText('合計').parentElement).toHaveTextContent('¥4,500');
+    expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
+    expect(mockApi.applyPromotionCodes).not.toHaveBeenCalled();
+  });
+  test.each(['none', 'unavailable'])('FREQ-550-AC-02: 入力画面を開き直す（%s）と記録したコードを全部確かめ直して割引を表示する', async (state) => {
+    window.sessionStorage.setItem(PROMO_KEY, JSON.stringify({ version: 1, codes: ['WELCOME10', 'SPRING'] }));
+    mockApi.resumeCheckout.mockResolvedValue({ state });
+    mockApi.applyPromotionCodes.mockResolvedValue(previewOk([WELCOME10, { name: '商品の割引', code: 'SPRING', amount: 300 }]));
+    render(<CheckoutPage />);
+
+    expect(await screen.findByRole('button', { name: 'WELCOME10を削除' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'SPRINGを削除' })).toBeInTheDocument();
+    expect(screen.getByText('合計').parentElement).toHaveTextContent('¥4,200');
+    expect(mockApi.applyPromotionCodes).toHaveBeenCalledTimes(1);
+    expect(mockApi.applyPromotionCodes).toHaveBeenCalledWith(['WELCOME10', 'SPRING']);
+  });
+
+  test('FREQ-550-AC-02: 旧キー checkout:promotion-code のコードは配列へ取り込んで確かめ直し、旧キーを消す', async () => {
     window.sessionStorage.setItem('checkout:promotion-code', JSON.stringify({ code: 'WELCOME10' }));
-    mockApi.resumeCheckout.mockResolvedValue({ state });
-    mockApi.checkPromotionCodeRequest.mockResolvedValue({ kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 } });
+    mockApi.applyPromotionCodes.mockResolvedValue(previewOk([WELCOME10]));
     render(<CheckoutPage />);
-    expect(await screen.findByText('WELCOME10')).toBeInTheDocument();
-    expect(screen.getByText('¥4,500')).toBeInTheDocument();
-    expect(mockApi.checkPromotionCodeRequest).toHaveBeenCalledTimes(1);
-    expect(mockApi.checkPromotionCodeRequest).toHaveBeenCalledWith('WELCOME10');
+
+    expect(await screen.findByRole('button', { name: 'WELCOME10を削除' })).toBeInTheDocument();
+    expect(mockApi.applyPromotionCodes).toHaveBeenCalledWith(['WELCOME10']);
+    expect(window.sessionStorage.getItem('checkout:promotion-code')).toBeNull();
+    expect(storedCodes()).toEqual({ version: 1, codes: ['WELCOME10'] });
   });
 
-  test.each(['none', 'unavailable'])('開き直した記録のコードが使えない（%s）ときは欄と理由を残し、記録を消す', async (state) => {
-    window.sessionStorage.setItem('checkout:promotion-code', JSON.stringify({ code: 'OLD10' }));
+  test.each(['none', 'unavailable'])('FREQ-550-AC-02: 再入場で確定無効のコードだけを保存から除き、欄にコードと理由を残して残りを再検証する（%s）', async (state) => {
+    window.sessionStorage.setItem(PROMO_KEY, JSON.stringify({ version: 1, codes: ['OLD10', 'GOOD10'] }));
     mockApi.resumeCheckout.mockResolvedValue({ state });
-    mockApi.checkPromotionCodeRequest.mockResolvedValue({ kind: 'rejected', message: 'このコードは有効期限が切れています', transient: false });
+    mockApi.applyPromotionCodes
+      .mockResolvedValueOnce(previewRefused(['OLD10'], 'このコードは有効期限が切れています', 'expired'))
+      .mockResolvedValueOnce(previewOk([{ name: '商品の割引', code: 'GOOD10', amount: 300 }]));
     render(<CheckoutPage />);
+
     const input = await screen.findByLabelText('プロモーションコード');
     expect(input).toHaveValue('OLD10');
     expect(input).toHaveAccessibleDescription('このコードは有効期限が切れています');
-    expect(window.sessionStorage.getItem('checkout:promotion-code')).toBeNull();
+    expect(screen.getByRole('button', { name: 'GOOD10を削除' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'OLD10を削除' })).toBeNull();
+    expect(storedCodes()).toEqual({ version: 1, codes: ['GOOD10'] });
+    expect(mockApi.applyPromotionCodes.mock.calls).toEqual([[['OLD10', 'GOOD10']], [['GOOD10']]]);
     expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
   });
 
-  test.each(['resume', 'proceed'])('最終確認の内容にあるコードを覚える（%s）', async (source) => {
-    const confirmation = { ...CONFIRMATION, promotionCode: 'WELCOME10' };
-    mockApi.checkPromotionCodeRequest.mockResolvedValue({ kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 } });
+  test.each(['resume', 'proceed'])('FREQ-550-AC-02: 最終確認の内容にあるコードを覚える（%s）', async (source) => {
+    const confirmation = { ...CONFIRMATION, promotionCodes: ['WELCOME10', 'SPRING'] };
     if (source === 'resume') {
       mockApi.resumeCheckout.mockResolvedValue({ state: 'resume', confirmation });
       render(<CheckoutPage />);
@@ -465,67 +603,72 @@ describe('決済の画面（グループ F）', () => {
       mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'confirmation', confirmation });
       await openFinalStep();
     }
-    await waitFor(() => expect(JSON.parse(window.sessionStorage.getItem('checkout:promotion-code') ?? 'null')).toEqual({ code: 'WELCOME10' }));
+    await waitFor(() => expect(storedCodes()).toEqual({ version: 1, codes: ['WELCOME10', 'SPRING'] }));
   });
 
-  test('最終確認のコードの確かめ直しで使えないときは記録を消し、変更した入力画面にコードと理由を残す', async () => {
-    window.sessionStorage.setItem('checkout:promotion-code', JSON.stringify({ code: 'OLD10' }));
-    mockApi.resumeCheckout.mockResolvedValue({ state: 'resume', confirmation: { ...CONFIRMATION, promotionCode: 'OLD10' } });
-    mockApi.checkPromotionCodeRequest.mockResolvedValue({ kind: 'rejected', message: 'このコードは使えません', transient: false });
+  test('FREQ-550-AC-02: 最終確認のコードの確かめ直しで確定無効なら保存から除き、変更した入力画面にコードと理由を残す', async () => {
+    window.sessionStorage.setItem(PROMO_KEY, JSON.stringify({ version: 1, codes: ['OLD10'] }));
+    mockApi.resumeCheckout.mockResolvedValue({ state: 'resume', confirmation: { ...CONFIRMATION, promotionCodes: ['OLD10'] } });
+    mockApi.applyPromotionCodes
+      .mockResolvedValueOnce(previewRefused(['OLD10']))
+      .mockResolvedValue(previewOk());
     render(<CheckoutPage />);
     await screen.findByTestId('final-step');
     act(() => mockFinalProps.onEdit());
     expect(await screen.findByLabelText('プロモーションコード')).toHaveValue('OLD10');
     expect(screen.getByLabelText('プロモーションコード')).toHaveAccessibleDescription('このコードは使えません');
-    expect(window.sessionStorage.getItem('checkout:promotion-code')).toBeNull();
+    expect(window.sessionStorage.getItem(PROMO_KEY)).toBeNull();
   });
 
-  test.each(['none', 'unavailable', 'resume'])('確かめ直しが一時的に失敗（%s）したら記録を残し、欄にコードと失敗の文を出す', async (state) => {
-    const message = '割引コードを確かめられませんでした。少し時間をおいてから、もう一度お試しください。';
-    window.sessionStorage.setItem('checkout:promotion-code', JSON.stringify({ code: 'WELCOME10' }));
+  test.each([
+    ['none', 503],
+    ['unavailable', 429],
+    ['resume', 503],
+  ])('FREQ-550-AC-02: 確かめ直しが一時的に失敗（%s・HTTP %s）したら保存を残し、コードを並べて失敗の文を出す', async (state, status) => {
+    window.sessionStorage.setItem(PROMO_KEY, JSON.stringify({ version: 1, codes: ['WELCOME10'] }));
     mockApi.resumeCheckout.mockResolvedValue(state === 'resume'
-      ? { state, confirmation: { ...CONFIRMATION, promotionCode: 'WELCOME10' } }
+      ? { state, confirmation: { ...CONFIRMATION, promotionCodes: ['WELCOME10'] } }
       : { state });
-    mockApi.checkPromotionCodeRequest.mockResolvedValue({ kind: 'rejected', message, transient: true });
+    mockApi.applyPromotionCodes.mockResolvedValue(previewTransient(PROMOTION_FAILED_MESSAGE, status as number));
     render(<CheckoutPage />);
     if (state === 'resume') {
       await screen.findByTestId('final-step');
       act(() => mockFinalProps.onEdit());
     }
 
-    expect(await screen.findByLabelText('プロモーションコード')).toHaveValue('WELCOME10');
-    expect(screen.getByLabelText('プロモーションコード')).toHaveAccessibleDescription(message);
-    expect(JSON.parse(window.sessionStorage.getItem('checkout:promotion-code') ?? 'null')).toEqual({ code: 'WELCOME10' });
-    expect(mockApi.checkPromotionCodeRequest).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole('button', { name: '削除' })).toBeNull();
+    expect(await screen.findByRole('button', { name: 'WELCOME10を削除' })).toBeInTheDocument();
+    expect(screen.getByLabelText('プロモーションコード')).toHaveAccessibleDescription(PROMOTION_FAILED_MESSAGE);
+    expect(storedCodes()).toEqual({ version: 1, codes: ['WELCOME10'] });
+    expect(mockApi.applyPromotionCodes).toHaveBeenCalledTimes(1);
   });
 
-  test('記録したコードの確かめ直しが終わるまで、読み込み表示で入力操作を待たせる', async () => {
-    window.sessionStorage.setItem('checkout:promotion-code', JSON.stringify({ code: 'WELCOME10' }));
+  test('FREQ-550-AC-02: 記録したコードの確かめ直しが終わるまで、読み込み表示で入力操作を待たせる', async () => {
+    window.sessionStorage.setItem(PROMO_KEY, JSON.stringify({ version: 1, codes: ['WELCOME10'] }));
     const gate = createDeferred<any>();
-    mockApi.checkPromotionCodeRequest.mockReturnValue(gate.promise);
+    mockApi.applyPromotionCodes.mockReturnValue(gate.promise);
     render(<CheckoutPage />);
-    await waitFor(() => expect(mockApi.checkPromotionCodeRequest).toHaveBeenCalledWith('WELCOME10'));
+    await waitFor(() => expect(mockApi.applyPromotionCodes).toHaveBeenCalledWith(['WELCOME10']));
     expect(screen.queryByLabelText('プロモーションコード')).toBeNull();
     expect(screen.queryByRole('button', { name: '確認へ進む' })).toBeNull();
 
-    await act(async () => gate.resolve({ kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 } }));
+    await act(async () => gate.resolve(previewOk([WELCOME10])));
 
-    expect(await screen.findByText('WELCOME10')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'WELCOME10を削除' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
     expect(mockApi.resumeCheckout).toHaveBeenCalledTimes(1);
-    expect(mockApi.checkPromotionCodeRequest).toHaveBeenCalledTimes(1);
+    expect(mockApi.applyPromotionCodes).toHaveBeenCalledTimes(1);
   });
 
-  test('同じ適用済みコードを2回断られても、毎回そのコードを欄に戻す', async () => {
-    mockApi.checkPromotionCodeRequest.mockResolvedValue({ kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 } });
-    mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'promotion_code_invalid', message: 'このコードは使えません' });
+  test('FREQ-550-AC-02: 同じコードを2回確定して断られても、毎回そのコードを欄に戻す', async () => {
+    mockApi.applyPromotionCodes.mockImplementation(async (codes: string[]) => previewOk(codes.map((code) => ({ name: '春の割引', code, amount: 500 }))));
+    mockApi.requestCheckoutConfirmation.mockResolvedValue({
+      kind: 'promotion_code_invalid', message: 'このコードは使えません', definitive: true, refusals: [{ code: 'WELCOME10', reason: 'not_eligible' }],
+    });
     render(<CheckoutPage />);
     await screen.findByLabelText('プロモーションコード');
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      fireEvent.change(screen.getByLabelText('プロモーションコード'), { target: { value: 'WELCOME10' } });
-      fireEvent.click(screen.getByRole('button', { name: '適用' }));
-      await screen.findByText('WELCOME10');
+      await applyCode('WELCOME10');
+      await screen.findByRole('button', { name: 'WELCOME10を削除' });
       fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
       await screen.findByText('このコードは使えません');
       expect(screen.getByLabelText('プロモーションコード')).toHaveValue('WELCOME10');
@@ -534,18 +677,183 @@ describe('決済の画面（グループ F）', () => {
     expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(2);
   });
 
-  test.each(['completed', 'error'])('注文の完了処理が %s のとき、成功の場合だけコードの記録を消す', async (kind) => {
-    window.sessionStorage.setItem('checkout:promotion-code', JSON.stringify({ code: 'WELCOME10' }));
+  test('FREQ-550-AC-02: 確定の断りがrefusals無し（definitive=false）なら、コードを残して全コードを確かめ直す', async () => {
+    window.sessionStorage.setItem(PROMO_KEY, JSON.stringify({ version: 1, codes: ['WELCOME10'] }));
+    mockApi.applyPromotionCodes.mockResolvedValue(previewOk([WELCOME10]));
+    mockApi.requestCheckoutConfirmation.mockResolvedValue({
+      kind: 'promotion_code_invalid', message: '割引の条件が変わりました。入力画面で割引を確かめてください。', definitive: false, refusals: [],
+    });
+    render(<CheckoutPage />);
+    await screen.findByRole('button', { name: 'WELCOME10を削除' });
+    mockApi.applyPromotionCodes.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+
+    expect(await screen.findByText('割引の条件が変わりました。入力画面で割引を確かめてください。')).toBeInTheDocument();
+    await waitFor(() => expect(mockApi.applyPromotionCodes).toHaveBeenCalledWith(['WELCOME10']));
+    expect(screen.getByRole('button', { name: 'WELCOME10を削除' })).toBeInTheDocument();
+    expect(storedCodes()).toEqual({ version: 1, codes: ['WELCOME10'] });
+  });
+
+  test('FREQ-550-AC-02: 最終確認の入力コード409は確定した断りを保って入力画面へ戻し、確定無効のコードを見込みへ戻さない', async () => {
+    const confirmation = { ...CONFIRMATION, promotionCodes: ['WELCOME10', 'SPRING'] };
+    mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'confirmation', confirmation });
+    mockApi.applyPromotionCodes.mockResolvedValue(previewOk([{ name: '商品の割引', code: 'SPRING', amount: 300 }]));
+    await openFinalStep();
+    mockApi.applyPromotionCodes.mockClear();
+
+    await act(async () => {
+      mockFinalProps.onDiscountCodesInvalid({
+        refusals: [{ code: 'WELCOME10', reason: 'not_eligible' }], message: '割引の条件が変わりました。入力画面で割引を確かめてください。', definitive: true,
+      });
+    });
+
+    expect(await screen.findByLabelText('プロモーションコード')).toHaveValue('WELCOME10');
+    expect(screen.getByLabelText('プロモーションコード')).toHaveAccessibleDescription('このコードは使えません');
+    expect(screen.queryByTestId('final-step')).toBeNull();
+    expect(screen.getByRole('button', { name: 'SPRINGを削除' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'WELCOME10を削除' })).toBeNull();
+    expect(storedCodes()).toEqual({ version: 1, codes: ['SPRING'] });
+    expect(mockApi.applyPromotionCodes.mock.calls).toEqual([[['SPRING']]]);
+    // 住所・選択は保つ
+    expect(screen.getByText('山田 花子')).toBeInTheDocument();
+    expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(1);
+  });
+
+  test('FREQ-548-AC-02: 自動割引の変更(reconfirmation)は入力へ戻さず、新しい決済の画面で最終確認をやり直して新しい合計を出す', async () => {
+    const reconfirmed = { ...CONFIRMATION, checkoutSessionId: 'cs_test_2', discountResult: previewResult([], { subtotal: 5000 }) };
+    mockApi.requestCheckoutConfirmation
+      .mockResolvedValueOnce({ kind: 'confirmation', confirmation: CONFIRMATION })
+      .mockResolvedValueOnce({ kind: 'confirmation', confirmation: reconfirmed });
+    await openFinalStep();
+    expect(screen.getByTestId('final-session')).toHaveTextContent('cs_test_1');
+
+    await act(async () => { mockFinalProps.onReconfirmationRequired(); });
+
+    await waitFor(() => expect(screen.getByTestId('final-session')).toHaveTextContent('cs_test_2'));
+    expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(2);
+    expect(mockApi.requestCheckoutConfirmation.mock.calls[1][0]).toMatchObject({ promotionCodes: [] });
+    expect(screen.queryByLabelText('プロモーションコード')).toBeNull();
+    expect(mockFinalProps.confirmation.discountResult.totalAmount).toBe(5000);
+    expect(screen.getByTestId('final-notice')).toHaveTextContent('割引の内容が変わりました');
+    expect(mockRouter.replace).toHaveBeenLastCalledWith('/checkout?session_id=cs_test_2');
+  });
+
+  test('FREQ-548-AC-02: 戻ってきたguestは自動の初回割引が外れた新総額で確認と支払いへ進みループしない', async () => {
+    mockIsLoggedIn = false;
+    mockProfileStatus = 401;
+    jest.mocked(fetch).mockResolvedValue({ ok: true, json: async () => withCartDiscounts(CART, [{ name: '初回の割引', amount: 500 }], true) } as Response);
+    const confirmed = { ...CONFIRMATION, checkoutSessionId: 'cs_guest_1', discountResult: previewResult([], { subtotal: 5000 }) };
+    const reconfirmed = { ...CONFIRMATION, checkoutSessionId: 'cs_guest_2', discountResult: previewResult([], { subtotal: 5000 }) };
+    mockApi.requestCheckoutConfirmation
+      .mockResolvedValueOnce({ kind: 'confirmation', confirmation: confirmed })
+      .mockResolvedValueOnce({ kind: 'confirmation', confirmation: reconfirmed });
+    render(<CheckoutPage />);
+
+    // previewは見込み（カートの内訳。メールを使わず、確認の窓口も呼ばない）
+    expect(await screen.findByText('割引（初回の割引）')).toBeInTheDocument();
+    expect(screen.getByText('見込み')).toBeInTheDocument();
+    await typeGuestShipping();
+    fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
+    await screen.findByTestId('final-step');
+    // confirm 200: 履歴で初回が外れた確定額
+    expect(mockFinalProps.confirmation.discountResult).toMatchObject({ provisional: false, totalAmount: 5000, discountAmount: 0 });
+
+    // 受付で変わっても、入力へ戻さず新しい最終確認へ進む（ループしない）
+    await act(async () => { mockFinalProps.onReconfirmationRequired(); });
+
+    await waitFor(() => expect(screen.getByTestId('final-session')).toHaveTextContent('cs_guest_2'));
+    expect(mockApi.requestCheckoutConfirmation).toHaveBeenCalledTimes(2);
+    expect(mockApi.requestCheckoutConfirmation.mock.calls[1][0]).toMatchObject({ promotionCodes: [] });
+    expect(screen.queryByLabelText('プロモーションコード')).toBeNull();
+    expect(mockApi.applyPromotionCodes).not.toHaveBeenCalled();
+  });
+
+  test('FREQ-550-AC-02: ゲストの全拒否は同じ文とログインへのリンクを出しmemberの公開codeだけ詳細理由を保つ', async () => {
+    const GUEST_MESSAGE = 'このコードは使えません。会員の方はログインしてからお試しください。';
+    // ゲスト: どの理由でも同じ文。リンクの行き先にコードもメールも入れない
+    mockIsLoggedIn = false;
+    mockProfileStatus = 401;
+    mockApi.applyPromotionCodes.mockResolvedValueOnce(previewRefused(['MEMBER10'], GUEST_MESSAGE));
+    render(<CheckoutPage />);
+
+    await applyCode('member10');
+
+    const input = screen.getByLabelText('プロモーションコード');
+    await waitFor(() => expect(input).toHaveAccessibleDescription(GUEST_MESSAGE));
+    expect(input).toHaveValue('member10');
+    const link = screen.getByRole('link', { name: 'ログインして割引を確かめる' });
+    expect(link).toHaveAttribute('href', '/login?next=%2Fcheckout');
+    expect(link.getAttribute('href')).not.toMatch(/MEMBER10|@/i);
+
+    // 会員: 公開コードは期限の詳細理由を保ち、ゲスト用のリンクは出さない
+    cleanup();
+    mockIsLoggedIn = true;
+    mockProfileStatus = 200;
+    mockApi.applyPromotionCodes.mockResolvedValueOnce(previewRefused(['PUBLIC10'], 'このコードは有効期限が切れています', 'expired'));
+    render(<CheckoutPage />);
+
+    await applyCode('public10');
+
+    await waitFor(() => expect(screen.getByLabelText('プロモーションコード')).toHaveAccessibleDescription('このコードは有効期限が切れています'));
+    expect(screen.queryByRole('link', { name: 'ログインして割引を確かめる' })).toBeNull();
+  });
+
+  test('FREQ-550-AC-02: 再入場はcodeだけ再検証し確定無効だけを除き429と503では保存を保つ', async () => {
+    window.sessionStorage.setItem(PROMO_KEY, JSON.stringify({ version: 1, codes: ['OLD10', 'GOOD10'] }));
+    mockApi.applyPromotionCodes
+      .mockResolvedValueOnce(previewRefused(['OLD10'], 'このコードは有効期限が切れています', 'expired'))
+      .mockResolvedValueOnce(previewOk([{ name: '商品の割引', code: 'GOOD10', amount: 300 }]));
+    render(<CheckoutPage />);
+
+    expect(await screen.findByLabelText('プロモーションコード')).toHaveValue('OLD10');
+    expect(screen.getByRole('button', { name: 'GOOD10を削除' })).toBeInTheDocument();
+    expect(storedCodes()).toEqual({ version: 1, codes: ['GOOD10'] });
+    expect(mockApi.applyPromotionCodes.mock.calls).toEqual([[['OLD10', 'GOOD10']], [['GOOD10']]]);
+
+    for (const status of [429, 503]) {
+      cleanup();
+      window.sessionStorage.setItem(PROMO_KEY, JSON.stringify({ version: 1, codes: ['WELCOME10'] }));
+      mockApi.applyPromotionCodes.mockClear();
+      mockApi.applyPromotionCodes.mockResolvedValueOnce(previewTransient(PROMOTION_FAILED_MESSAGE, status));
+      render(<CheckoutPage />);
+
+      expect(await screen.findByRole('button', { name: 'WELCOME10を削除' })).toBeInTheDocument();
+      expect(storedCodes()).toEqual({ version: 1, codes: ['WELCOME10'] });
+      expect(mockApi.applyPromotionCodes).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  test('FREQ-550-AC-01: 最後のコードを外すと確認の窓口を呼ばず、カートの自動割引の内訳へ戻る', async () => {
+    jest.mocked(fetch).mockResolvedValue({ ok: true, json: async () => withCartDiscounts(CART, [{ name: '会員の割引', amount: 300 }]) } as Response);
+    window.sessionStorage.setItem(PROMO_KEY, JSON.stringify({ version: 1, codes: ['WELCOME10'] }));
+    mockApi.applyPromotionCodes.mockResolvedValueOnce(previewOk([{ name: '会員の割引', code: null, amount: 300 }, WELCOME10]));
+    render(<CheckoutPage />);
+    await screen.findByRole('button', { name: 'WELCOME10を削除' });
+    expect(screen.getByText('合計').parentElement).toHaveTextContent('¥4,200');
+
+    fireEvent.click(screen.getByRole('button', { name: 'WELCOME10を削除' }));
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'WELCOME10を削除' })).toBeNull());
+    expect(mockApi.applyPromotionCodes).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('割引（会員の割引）')).toBeInTheDocument();
+    expect(screen.getByText('合計').parentElement).toHaveTextContent('¥4,700');
+    expect(window.sessionStorage.getItem(PROMO_KEY)).toBeNull();
+    // 削除の後はフォーカスを入力欄へ移す
+    expect(document.activeElement).toBe(screen.getByLabelText('プロモーションコード'));
+  });
+  test.each(['completed', 'error'])('FREQ-550-AC-02: 注文の完了処理が %s のとき、成功の場合だけコードの記録を消す', async (kind) => {
+    window.sessionStorage.setItem(PROMO_KEY, JSON.stringify({ version: 1, codes: ['WELCOME10'] }));
     mockApi.resumeCheckout.mockResolvedValue({ state: 'payment_done', checkoutSessionId: 'cs_test_1' });
     mockApi.completeCheckout.mockResolvedValue(kind === 'completed' ? { kind, orderId: 'a1b2c3d4-0000', orderStatus: 'paid' } : { kind, message: '注文確定に失敗しました' });
     render(<CheckoutPage />);
     if (kind === 'completed') {
       await screen.findByRole('heading', { name: 'ご注文は確定しています' });
-      expect(window.sessionStorage.getItem('checkout:promotion-code')).toBeNull();
+      expect(window.sessionStorage.getItem(PROMO_KEY)).toBeNull();
     } else {
       await screen.findByText('注文確定に失敗しました');
-      expect(JSON.parse(window.sessionStorage.getItem('checkout:promotion-code') ?? 'null')).toEqual({ code: 'WELCOME10' });
-      expect(mockApi.checkPromotionCodeRequest).not.toHaveBeenCalled();
+      expect(storedCodes()).toEqual({ version: 1, codes: ['WELCOME10'] });
+      expect(mockApi.applyPromotionCodes).not.toHaveBeenCalled();
     }
   });
 
@@ -744,66 +1052,65 @@ describe('決済の画面（グループ F）', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
-  test('割引適用中に金額が食い違ったら、カートを読んだ後にコードを1回確かめ直し、要約を新しくする', async () => {
-    const refreshed = { code: 'WELCOME10', subtotalAmount: 7000, shippingAmount: 600, discountAmount: 700, totalAmount: 6900 };
+  test('FREQ-550-AC-02: 割引適用中に金額が食い違ったら、カートを読んだ後に全コードを1回確かめ直し、要約を新しくする', async () => {
     jest.mocked(fetch)
       .mockResolvedValueOnce({ ok: true, json: async () => CART } as Response)
       .mockResolvedValueOnce({ ok: true, json: async () => CART_REPRICED } as Response);
-    mockApi.checkPromotionCodeRequest
-      .mockResolvedValueOnce({ kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 } })
+    mockApi.applyPromotionCodes
+      .mockResolvedValueOnce(previewOk([WELCOME10]))
       .mockImplementationOnce(async () => {
         expect(fetch).toHaveBeenCalledTimes(2);
-        return { kind: 'applied', preview: refreshed };
+        return previewOk([{ ...WELCOME10, amount: 700 }], { subtotal: 7000 });
       });
     mockApi.requestCheckoutConfirmation
       .mockResolvedValueOnce({ kind: 'error', code: 'checkout_amount_mismatch', message: '金額の食い違い', retryable: false, correlationId: null })
       .mockResolvedValueOnce({ kind: 'confirmation', confirmation: CONFIRMATION });
     render(<CheckoutPage />);
-    fireEvent.change(await screen.findByLabelText('プロモーションコード'), { target: { value: 'WELCOME10' } });
-    fireEvent.click(screen.getByRole('button', { name: '適用' }));
-    await screen.findByText('WELCOME10');
+    await applyCode('WELCOME10');
+    await screen.findByRole('button', { name: 'WELCOME10を削除' });
     fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
 
     await screen.findByText('価格が変わりました。金額をご確認のうえ、もう一度「確認へ進む」を押してください。');
-    expect(mockApi.checkPromotionCodeRequest).toHaveBeenCalledTimes(2);
-    expect(mockApi.checkPromotionCodeRequest).toHaveBeenLastCalledWith('WELCOME10');
+    expect(mockApi.applyPromotionCodes).toHaveBeenCalledTimes(2);
+    expect(mockApi.applyPromotionCodes).toHaveBeenLastCalledWith(['WELCOME10']);
     expect(screen.getByText('小計').parentElement).toHaveTextContent('¥7,000');
-    expect(screen.getByText('配送料').parentElement).toHaveTextContent('¥600');
-    expect(screen.getByText('割引').parentElement).toHaveTextContent('-¥700');
-    expect(screen.getByText('合計').parentElement).toHaveTextContent('¥6,900');
+    expect(screen.getByText('配送料').parentElement).toHaveTextContent('無料');
+    expect(screen.getByText('割引（春の割引）').closest('li')).toHaveTextContent('−¥700');
+    expect(screen.getByText('合計').parentElement).toHaveTextContent('¥6,300');
     expect(screen.queryByText('¥4,500')).toBeNull();
-    expect(JSON.parse(window.sessionStorage.getItem('checkout:promotion-code') ?? 'null')).toEqual({ code: 'WELCOME10' });
+    expect(storedCodes()).toEqual({ version: 1, codes: ['WELCOME10'] });
     fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
     await screen.findByTestId('final-step');
     expect(mockApi.requestCheckoutConfirmation.mock.calls[1][0]).toMatchObject({
-      promotionCode: 'WELCOME10', displayedAmounts: { subtotalAmount: 7000, taxAmount: 0, shippingAmount: 0, totalAmount: 7000 },
+      promotionCodes: ['WELCOME10'], displayedAmounts: { subtotalAmount: 7000, taxAmount: 0, shippingAmount: 0, totalAmount: 7000 },
     });
   });
 
-  test.each([false, true])('価格変更後のコードの確かめ直しで断られたら、欄と理由を戻し目安を外す（一時的: %s）', async (transient) => {
-    const message = transient
-      ? '割引コードを確かめられませんでした。少し時間をおいてから、もう一度お試しください。'
-      : 'このコードは有効期限が切れています';
+  test.each([false, true])('FREQ-550-AC-02: 価格変更後のコードの確かめ直しで断られたら、確定ならコードと理由を欄へ戻し、一時的ならコードを残して目安を外す（一時的: %s）', async (transient) => {
+    const message = transient ? PROMOTION_FAILED_MESSAGE : 'このコードは有効期限が切れています';
     jest.mocked(fetch)
       .mockResolvedValueOnce({ ok: true, json: async () => CART } as Response)
       .mockResolvedValueOnce({ ok: true, json: async () => CART_REPRICED } as Response);
-    mockApi.checkPromotionCodeRequest
-      .mockResolvedValueOnce({ kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 } })
-      .mockResolvedValueOnce({ kind: 'rejected', message, transient });
+    mockApi.applyPromotionCodes
+      .mockResolvedValueOnce(previewOk([WELCOME10]))
+      .mockResolvedValueOnce(transient ? previewTransient(message) : previewRefused(['WELCOME10'], message, 'expired'));
     mockApi.requestCheckoutConfirmation.mockResolvedValue({ kind: 'error', code: 'checkout_amount_mismatch', message: '金額の食い違い', retryable: false, correlationId: null });
     render(<CheckoutPage />);
-    fireEvent.change(await screen.findByLabelText('プロモーションコード'), { target: { value: 'WELCOME10' } });
-    fireEvent.click(screen.getByRole('button', { name: '適用' }));
-    await screen.findByText('WELCOME10');
+    await applyCode('WELCOME10');
+    await screen.findByRole('button', { name: 'WELCOME10を削除' });
     fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
 
-    const input = await screen.findByLabelText('プロモーションコード');
-    expect(input).toHaveValue('WELCOME10');
-    expect(input).toHaveAccessibleDescription(message);
-    expect(screen.queryByText('割引')).toBeNull();
+    await waitFor(() => expect(screen.getByLabelText('プロモーションコード')).toHaveAccessibleDescription(message));
+    expect(screen.queryByText(/^割引（/)).toBeNull();
     expect(screen.getByText('合計').parentElement).toHaveTextContent('¥7,000');
-    expect(mockApi.checkPromotionCodeRequest).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(window.sessionStorage.getItem('checkout:promotion-code') ?? 'null')).toEqual(transient ? { code: 'WELCOME10' } : null);
+    if (transient) {
+      expect(screen.getByRole('button', { name: 'WELCOME10を削除' })).toBeInTheDocument();
+      expect(storedCodes()).toEqual({ version: 1, codes: ['WELCOME10'] });
+    } else {
+      expect(screen.getByLabelText('プロモーションコード')).toHaveValue('WELCOME10');
+      expect(screen.queryByRole('button', { name: 'WELCOME10を削除' })).toBeNull();
+      expect(window.sessionStorage.getItem(PROMO_KEY)).toBeNull();
+    }
     expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
   });
 
@@ -838,28 +1145,28 @@ describe('決済の画面（グループ F）', () => {
       expect(mockApi.requestCheckoutConfirmation.mock.calls[1][0].displayedAmounts).toEqual({ subtotalAmount: 5000, taxAmount: 0, shippingAmount: 0, totalAmount: 5000 });
     });
 
-    test('割引適用中なら、カートを読んだ後にコードも確かめ直し、要約の目安を新しくする', async () => {
+    test('FREQ-550-AC-02: 割引適用中なら、カートを読んだ後に全コードも確かめ直し、要約の目安を新しくする', async () => {
       jest.mocked(fetch)
         .mockResolvedValueOnce({ ok: true, json: async () => CART_WITH_PANTS } as Response)
         .mockResolvedValueOnce({ ok: true, json: async () => CART } as Response);
-      mockApi.checkPromotionCodeRequest
-        .mockResolvedValueOnce({ kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 13000, shippingAmount: 0, discountAmount: 1300, totalAmount: 11700 } })
+      mockApi.applyPromotionCodes
+        
+        .mockResolvedValueOnce(previewOk([{ ...WELCOME10, amount: 1300 }], { subtotal: 13000 }))
         .mockImplementationOnce(async () => {
           expect(fetch).toHaveBeenCalledTimes(2);
-          return { kind: 'applied', preview: { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 } };
+          return previewOk([WELCOME10], { subtotal: 5000 });
         });
       mockApi.requestCheckoutConfirmation.mockResolvedValueOnce(cartUpdated);
       render(<CheckoutPage />);
-      fireEvent.change(await screen.findByLabelText('プロモーションコード'), { target: { value: 'WELCOME10' } });
-      fireEvent.click(screen.getByRole('button', { name: '適用' }));
-      await screen.findByText('WELCOME10');
+      await applyCode('WELCOME10');
+      await screen.findByRole('button', { name: 'WELCOME10を削除' });
       fireEvent.click(screen.getByRole('button', { name: '確認へ進む' }));
 
       await screen.findByText(message);
-      expect(mockApi.checkPromotionCodeRequest).toHaveBeenCalledTimes(2);
-      expect(mockApi.checkPromotionCodeRequest).toHaveBeenLastCalledWith('WELCOME10');
+      expect(mockApi.applyPromotionCodes).toHaveBeenCalledTimes(2);
+      expect(mockApi.applyPromotionCodes).toHaveBeenLastCalledWith(['WELCOME10']);
       expect(screen.getByText('小計').parentElement).toHaveTextContent('¥5,000');
-      expect(screen.getByText('割引').parentElement).toHaveTextContent('-¥500');
+      expect(screen.getByText('割引（春の割引）').closest('li')).toHaveTextContent('−¥500');
       expect(screen.getByText('合計').parentElement).toHaveTextContent('¥4,500');
       expect(screen.getByRole('button', { name: '確認へ進む' })).toBeEnabled();
     });

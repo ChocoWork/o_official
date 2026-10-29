@@ -31,7 +31,7 @@ const context = {
   ensureOwnerId: jest.fn(),
   finish: jest.fn((res: NextResponse) => res),
 };
-const emptyCart = { item_count: 0, currency: 'JPY', items_subtotal_price: 0, total_price: 0, items: [] };
+const emptyCart = { item_count: 0, currency: 'JPY', items_subtotal_price: 0, total_price: 0, items: [], discounts: [], total_discount: 0, discount_provisional: false };
 
 describe('GET /api/cart', () => {
   beforeEach(() => {
@@ -63,7 +63,7 @@ describe('GET /api/cart', () => {
 
     const res = await GET(new NextRequest('http://localhost:3000/api/cart'));
 
-    expect(buildCartJson).toHaveBeenCalledWith(supabase, null);
+    expect(buildCartJson).toHaveBeenCalledWith(supabase, null, { kind: 'guest', normalizedEmail: null });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual(emptyCart);
     expect(res.headers.get('Cache-Control')).toBe('no-store');
@@ -85,6 +85,17 @@ describe('GET /api/cart', () => {
     });
   });
 
+  test('FREQ-550-AC-01: 会員の読み込みは検証済みのuserIdを割引の本人として渡す', async () => {
+    const guestOwner = context.owner;
+    Object.assign(context, { owner: { kind: 'member', userId: 'member-1' } });
+    try {
+      await GET(new NextRequest('http://localhost:3000/api/cart'));
+      expect(buildCartJson).toHaveBeenCalledWith(supabase, 'cart-1', { kind: 'member', userId: 'member-1' });
+    } finally {
+      Object.assign(context, { owner: guestOwner });
+    }
+  });
+
   test('持ち主の行があれば組み立てたカートを 200 で返す', async () => {
     const cart = {
       item_count: 1, currency: 'JPY', items_subtotal_price: 12000, total_price: 12000,
@@ -98,7 +109,7 @@ describe('GET /api/cart', () => {
 
     const res = await GET(new NextRequest('http://localhost:3000/api/cart'));
 
-    expect(buildCartJson).toHaveBeenCalledWith(supabase, 'cart-1');
+    expect(buildCartJson).toHaveBeenCalledWith(supabase, 'cart-1', { kind: 'guest', normalizedEmail: null });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual(cart);
     expect(res.headers.get('Cache-Control')).toBe('no-store');

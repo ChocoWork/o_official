@@ -6,7 +6,7 @@ jest.mock('@/lib/client-fetch', () => ({
 }));
 
 import {
-  checkPromotionCodeRequest,
+  applyPromotionCodes,
   completeCheckout,
   placeOrder,
   requestCheckoutConfirmation,
@@ -29,36 +29,38 @@ const SHIPPING = {
   phone: '03-1111-2222',
 };
 const AMOUNTS = { subtotalAmount: 5000, taxAmount: 0, shippingAmount: 0, totalAmount: 5000 };
-const CONFIRMATION = { checkoutSessionId: 'cs_test_1', clientSecret: 's', shipping: {}, lines: [], promotionCode: null };
+const CONFIRMATION = { checkoutSessionId: 'cs_test_1', clientSecret: 's', shipping: {}, lines: [], promotionCodes: [] };
 
 describe('requestCheckoutConfirmation', () => {
   beforeEach(() => mockClientFetch.mockReset());
 
-  test('custom で送り、割引コードは有るときだけ送る', async () => {
+  test('FREQ-550-AC-01: custom で送り、割引コードは有るときだけ配列で送る', async () => {
     mockClientFetch.mockResolvedValue(jsonResponse(200, { confirmation: CONFIRMATION }));
 
-    await requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCode: null });
-    await requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCode: 'WELCOME10' });
+    await requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCodes: [] });
+    await requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCodes: ['WELCOME10', 'SPRING-2'] });
 
     const bodies = mockClientFetch.mock.calls.map((call) => JSON.parse(call[1].body));
     expect(mockClientFetch.mock.calls[0][0]).toBe('/api/checkout/create-session');
     expect(bodies[0]).toEqual({ uiMode: 'custom', shipping: SHIPPING, displayedAmounts: AMOUNTS });
-    expect(bodies[1]).toEqual({ uiMode: 'custom', shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCode: 'WELCOME10' });
+    expect(bodies[1]).toEqual({ uiMode: 'custom', shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCodes: ['WELCOME10', 'SPRING-2'] });
   });
 
   test('応答を画面で使う形に分ける', async () => {
     mockClientFetch
       .mockResolvedValueOnce(jsonResponse(200, { confirmation: CONFIRMATION }))
       .mockResolvedValueOnce(jsonResponse(409, { error: 'order_already_placed', checkoutSessionId: 'cs_paid' }))
-      .mockResolvedValueOnce(jsonResponse(409, { error: 'promotion_code_invalid', message: 'このコードは使えません' }))
+      .mockResolvedValueOnce(jsonResponse(409, { error: 'discount_conditions_changed', returnTo: 'input', definitive: true, message: 'このコードは使えません', refusals: [{ code: 'OLD10', reason: 'not_eligible' }] }))
       .mockResolvedValueOnce(jsonResponse(409, { error: 'cart_updated', retryable: true, message: '次の商品はお求めいただけなくなったため、カートから外しました: A。内容をご確認のうえ、もう一度「確認へ進む」を押してください。' }))
       .mockResolvedValueOnce(jsonResponse(503, { error: 'checkout_session_failed', message: '一時的に…', correlationId: 'c-1', retryable: true }))
       .mockResolvedValueOnce(jsonResponse(400, { error: 'Cart is empty' }));
-    const call = () => requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCode: null });
+    const call = () => requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCodes: [] });
 
     await expect(call()).resolves.toEqual({ kind: 'confirmation', confirmation: CONFIRMATION });
     await expect(call()).resolves.toEqual({ kind: 'order_already_placed', checkoutSessionId: 'cs_paid' });
-    await expect(call()).resolves.toEqual({ kind: 'promotion_code_invalid', message: 'このコードは使えません' });
+    await expect(call()).resolves.toEqual({
+      kind: 'promotion_code_invalid', message: 'このコードは使えません', definitive: true, refusals: [{ code: 'OLD10', reason: 'not_eligible' }],
+    });
     await expect(call()).resolves.toEqual({
       kind: 'error',
       message: '次の商品はお求めいただけなくなったため、カートから外しました: A。内容をご確認のうえ、もう一度「確認へ進む」を押してください。',
@@ -81,7 +83,7 @@ describe('requestCheckoutConfirmation', () => {
     mockClientFetch.mockResolvedValueOnce(jsonResponse(409, { error: 'cart_updated', retryable: true, message }));
 
     await expect(
-      requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCode: null }),
+      requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCodes: [] }),
     ).resolves.toEqual({ kind: 'error', code: 'cart_updated', message, retryable: true, correlationId: null });
   });
 
@@ -89,7 +91,7 @@ describe('requestCheckoutConfirmation', () => {
     mockClientFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
 
     await expect(
-      requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCode: null }),
+      requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCodes: [] }),
     ).resolves.toEqual({
       kind: 'error',
       message: '決済の準備に失敗しました。少し時間をおいてから、もう一度お試しください。',
@@ -106,7 +108,7 @@ describe('requestCheckoutConfirmation', () => {
     }));
 
     await expect(requestCheckoutConfirmation({
-      shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCode: null,
+      shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCodes: [],
     })).resolves.toEqual({
       kind: 'error', code: 'invalid_member_email', message, retryable: false, correlationId: null,
     });
@@ -115,7 +117,7 @@ describe('requestCheckoutConfirmation', () => {
 
 test('金額不一致のエラー記号を画面へ渡す', async () => {
   mockClientFetch.mockResolvedValue(jsonResponse(409, { error: 'checkout_amount_mismatch' }));
-  await expect(requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCode: null }))
+  await expect(requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCodes: [] }))
     .resolves.toMatchObject({ kind: 'error', code: 'checkout_amount_mismatch', retryable: true });
 });
 
@@ -243,45 +245,118 @@ describe('completeCheckout', () => {
   });
 });
 
-describe('checkPromotionCodeRequest', () => {
+const DISCOUNT_RESULT = {
+  version: 1, subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500,
+  applied: [{ discountId: 'd1', codeId: 'c1', name: '春の割引', code: 'WELCOME10', class: 'order', amount: 500 }],
+  allocations: [], unitAmounts: [], unusedCodes: [], provisional: false, calculationMode: 'exact',
+};
+
+describe('applyPromotionCodes（複数コードの確認）', () => {
   beforeEach(() => {
     mockClientFetch.mockReset();
     mockRefreshSessionOnce.mockReset();
   });
 
-  test('適用できれば金額の目安を、できなければ理由を返す', async () => {
-    const preview = { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 };
+  test('FREQ-550-AC-02: コードの配列を送り、成功なら固定の形のresultを返す。guestEmailは渡した時だけ送る', async () => {
+    mockClientFetch.mockResolvedValue(jsonResponse(200, { result: DISCOUNT_RESULT }));
+
+    await expect(applyPromotionCodes(['WELCOME10'])).resolves.toEqual({ ok: true, result: DISCOUNT_RESULT });
+    await applyPromotionCodes([], 'guest@example.com');
+
+    expect(mockClientFetch.mock.calls[0][0]).toBe('/api/checkout/promotion-code');
+    expect(JSON.parse(mockClientFetch.mock.calls[0][1].body)).toEqual({ codes: ['WELCOME10'] });
+    expect(JSON.parse(mockClientFetch.mock.calls[1][1].body)).toEqual({ codes: [], guestEmail: 'guest@example.com' });
+  });
+
+  test('FREQ-550-AC-02: 422で検証済みのrefusalsがあるときだけdefinitive=true', async () => {
+    const refusals = [{ code: 'OLD10', reason: 'expired' }, { code: 'MIN', reason: 'minimum_amount', minimumAmount: 10000 }];
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(422, { error: 'promotion_code_invalid', refusals, message: 'このコードは有効期限が切れています' }));
+
+    await expect(applyPromotionCodes(['OLD10', 'MIN'])).resolves.toEqual({
+      ok: false, status: 422, refusals, message: 'このコードは有効期限が切れています', definitive: true,
+    });
+  });
+
+  test.each([
+    ['refusalsが無い422（50円未満）', 422, { error: 'total_below_minimum', message: 'お支払い金額は50円以上にしてください。' }],
+    ['空のrefusals', 422, { refusals: [], message: 'x' }],
+    ['不正なrefusalsの422', 422, { refusals: [{ code: 5, reason: 'nope' }], message: 'x' }],
+    ['401', 401, { error: 'unauthorized' }],
+    ['403', 403, { refusals: [{ code: 'A', reason: 'not_eligible' }] }],
+    ['429', 429, { refusals: [{ code: 'A', reason: 'not_eligible' }] }],
+    ['500', 500, { error: 'promotion_code_failed' }],
+    ['503', 503, {}],
+  ])('FREQ-550-AC-02: %sは確定ではない失敗（definitive=false）', async (_label, status, body) => {
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(status, body));
+
+    const response = await applyPromotionCodes(['A']);
+
+    expect(response).toMatchObject({ ok: false, status, definitive: false });
+    expect(typeof (response as { message: string }).message).toBe('string');
+  });
+
+  test('FREQ-550-AC-02: 200でも壊れたresultは成功にせず、定型の失敗文を返す', async () => {
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(200, { result: { version: 2 } }));
+
+    await expect(applyPromotionCodes([])).resolves.toEqual({ ok: false, status: 200, refusals: [], message: PROMOTION_FAILED_MESSAGE, definitive: false });
+  });
+
+  test('FREQ-550-AC-02: 通信の失敗は例外にせず確定ではない失敗で返す', async () => {
+    mockClientFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    await expect(applyPromotionCodes(['A'])).resolves.toEqual({ ok: false, status: 0, refusals: [], message: PROMOTION_FAILED_MESSAGE, definitive: false });
+  });
+
+  test('FREQ-550-AC-02: 非okで本文が壊れたJSONなら、読み切れなかった本文を閉じて定型の文にする', async () => {
+    const cancel = jest.fn().mockResolvedValue(undefined);
+    mockClientFetch.mockResolvedValueOnce({ ok: false, status: 429, json: async () => { throw new SyntaxError('bad json'); }, body: { cancel } });
+
+    await expect(applyPromotionCodes(['A'])).resolves.toEqual({ ok: false, status: 429, refusals: [], message: PROMOTION_FAILED_MESSAGE, definitive: false });
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('create-session / place-order の割引コードの断り', () => {
+  beforeEach(() => {
+    mockClientFetch.mockReset();
+    mockRefreshSessionOnce.mockReset();
+  });
+  const input409 = {
+    error: 'discount_conditions_changed', retryable: false, returnTo: 'input', definitive: true,
+    refusals: [{ code: 'WELCOME10', reason: 'not_eligible' }], message: '割引の条件が変わりました。入力画面で割引を確かめてください。',
+  };
+
+  test('FREQ-550-AC-02: create-sessionの409は検証済みrefusalsがあるときだけdefinitive、空なら再確認だけ', async () => {
     mockClientFetch
-      .mockResolvedValueOnce(jsonResponse(200, preview))
-      .mockResolvedValueOnce(jsonResponse(422, { error: 'promotion_code_invalid', message: 'このコードは使えません' }))
-      .mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      .mockResolvedValueOnce(jsonResponse(409, input409))
+      .mockResolvedValueOnce(jsonResponse(409, { ...input409, refusals: [] }));
+    const call = () => requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCodes: ['WELCOME10'] });
 
-    await expect(checkPromotionCodeRequest('welcome10')).resolves.toEqual({ kind: 'applied', preview });
-    await expect(checkPromotionCodeRequest('nope')).resolves.toEqual({ kind: 'rejected', message: 'このコードは使えません', transient: false });
-    await expect(checkPromotionCodeRequest('x')).resolves.toEqual({
-      kind: 'rejected',
-      message: '割引コードを確かめられませんでした。少し時間をおいてから、もう一度お試しください。',
-      transient: true,
-    });
-    expect(JSON.parse(mockClientFetch.mock.calls[0][1].body)).toEqual({ code: 'welcome10' });
+    await expect(call()).resolves.toEqual({ kind: 'promotion_code_invalid', message: input409.message, refusals: input409.refusals, definitive: true });
+    await expect(call()).resolves.toEqual({ kind: 'promotion_code_invalid', message: input409.message, refusals: [], definitive: false });
   });
 
-  test.each([400, 403, 429, 500, 503, 200, 422])('理由つき422以外の失敗（HTTP %s）は一時的な失敗を返す', async (status) => {
-    mockClientFetch.mockResolvedValueOnce(jsonResponse(status, { error: 'failed' }));
+  test('FREQ-550-AC-02: place-orderの入力code用409(returnTo=input)はconfirmへ進まず、割引の断りとして返す', async () => {
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(409, { ...input409, error: 'discount_usage_limit' }));
 
-    await expect(checkPromotionCodeRequest('WELCOME10')).resolves.toEqual({
-      kind: 'rejected',
-      message: '割引コードを確かめられませんでした。少し時間をおいてから、もう一度お試しください。',
-      transient: true,
+    await expect(placeOrder({ checkoutSessionId: 'cs_test_1', inStockVariantIds: [] })).resolves.toEqual({
+      kind: 'discount_codes_invalid', message: input409.message, refusals: input409.refusals, definitive: true,
     });
   });
 
-  test.each([429, 500, 503])('HTTP %sは文があっても一時的な失敗を返す', async (status) => {
-    mockClientFetch.mockResolvedValueOnce(jsonResponse(status, { message: 'しばらくしてからお試しください' }));
+  test('FREQ-548-AC-02: place-orderの200 reconfirmationRequiredは「再確認」として返す', async () => {
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(200, { reconfirmationRequired: true, returnTo: 'confirmation' }));
 
-    await expect(checkPromotionCodeRequest('WELCOME10')).resolves.toEqual({
-      kind: 'rejected', message: 'しばらくしてからお試しください', transient: true,
-    });
+    await expect(placeOrder({ checkoutSessionId: 'cs_test_1', inStockVariantIds: [] })).resolves.toEqual({ kind: 'reconfirmation_required' });
+  });
+
+  test.each([
+    ['returnToが違う', 200, { reconfirmationRequired: true, returnTo: 'input' }],
+    ['trueでない', 200, { reconfirmationRequired: false, returnTo: 'confirmation' }],
+  ])('FREQ-548-AC-02: 再確認の印が不完全（%s）なら受け付けとは扱わない', async (_label, status, body) => {
+    mockClientFetch.mockResolvedValueOnce(jsonResponse(status, body));
+
+    await expect(placeOrder({ checkoutSessionId: 'cs_test_1', inStockVariantIds: [] })).resolves.toMatchObject({ kind: 'error' });
   });
 });
 
@@ -291,7 +366,7 @@ const PROCEED_FAILED_MESSAGE = '決済の準備に失敗しました。少し時
 const PLACE_ORDER_FAILED_MESSAGE = 'ご注文を受け付けられませんでした。少し時間をおいてから、もう一度お試しください。';
 const PROMOTION_LOGIN_EXPIRED_MESSAGE = 'ログインの有効期限が切れました。ログインし直してから、もう一度「適用」を押してください。';
 const PROMOTION_FAILED_MESSAGE = '割引コードを確かめられませんでした。少し時間をおいてから、もう一度お試しください。';
-const PROMOTION_PREVIEW = { code: 'WELCOME10', subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500 };
+const PROMOTION_RESULT = DISCOUNT_RESULT;
 
 // ログインの印が古いと断られた時（401 auth_expired）に印を新しくして送り直す4つの入口（割引コードの「適用」を含む）。
 // 印の更新の結果は3つ: refreshed は1回だけ送り直す。expired（更新の入口が 401）と unavailable（回数の制限・通信の失敗・待ち時間中）は
@@ -300,7 +375,7 @@ const RESEND_ENTRIES = [
   {
     name: 'requestCheckoutConfirmation（create-session）',
     url: '/api/checkout/create-session',
-    call: () => requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCode: null }),
+    call: () => requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCodes: [] }),
     success: jsonResponse(200, { confirmation: CONFIRMATION }),
     succeeded: { kind: 'confirmation', confirmation: CONFIRMATION },
     expired: { kind: 'error', code: 'auth_expired', message: LOGIN_EXPIRED_MESSAGE, retryable: true, correlationId: null },
@@ -334,15 +409,15 @@ const RESEND_ENTRIES = [
     failed: { state: 'none' },
   },
   {
-    name: 'checkPromotionCodeRequest（promotion-code）',
+    name: 'applyPromotionCodes（promotion-code）',
     url: '/api/checkout/promotion-code',
-    call: () => checkPromotionCodeRequest('WELCOME10'),
-    success: jsonResponse(200, PROMOTION_PREVIEW),
-    succeeded: { kind: 'applied', preview: PROMOTION_PREVIEW },
-    // 「適用」は押し直せる。コードが使えないと確定したわけではないので、どちらも一時的な失敗（transient）にして、記憶しているコードを消さない
-    expired: { kind: 'rejected', message: PROMOTION_LOGIN_EXPIRED_MESSAGE, transient: true },
-    unavailable: { kind: 'rejected', message: PROMOTION_FAILED_MESSAGE, transient: true },
-    failed: { kind: 'rejected', message: PROMOTION_FAILED_MESSAGE, transient: true },
+    call: () => applyPromotionCodes(['WELCOME10']),
+    success: jsonResponse(200, { result: PROMOTION_RESULT }),
+    succeeded: { ok: true, result: PROMOTION_RESULT },
+    // 「適用」は押し直せる。コードが使えないと確定したわけではないので、どちらも確定ではない失敗（definitive=false）にして、記憶しているコードを消さない
+    expired: { ok: false, status: 401, refusals: [], message: PROMOTION_LOGIN_EXPIRED_MESSAGE, definitive: false },
+    unavailable: { ok: false, status: 503, refusals: [], message: PROMOTION_FAILED_MESSAGE, definitive: false },
+    failed: { ok: false, status: 0, refusals: [], message: PROMOTION_FAILED_MESSAGE, definitive: false },
   },
 ];
 
@@ -462,7 +537,7 @@ describe('ログインの状態が変わったと断られた時（409 login_cha
     mockClientFetch.mockResolvedValueOnce(jsonResponse(409, { error: 'login_changed', message: LOGIN_CHANGED_MESSAGE }));
 
     await expect(
-      requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCode: null }),
+      requestCheckoutConfirmation({ shipping: SHIPPING, displayedAmounts: AMOUNTS, promotionCodes: [] }),
     ).resolves.toEqual({
       kind: 'error',
       code: 'login_changed',
