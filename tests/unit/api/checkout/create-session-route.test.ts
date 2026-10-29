@@ -82,6 +82,17 @@ jest.mock("@/features/checkout/services/promotion-code.service", () => ({
   checkPromotionCode: (...args: unknown[]) => mockCheckPromotionCode(...args),
 }));
 
+jest.mock('server-only', () => ({}), { virtual: true });
+const mockEvaluateDiscounts = jest.fn();
+const mockClaimDiscountDraft = jest.fn();
+jest.mock('@/features/checkout/services/checkout-discounts.service', () => ({
+  ...jest.requireActual('@/features/checkout/services/checkout-discounts.service'),
+  evaluateCheckoutDiscounts: (...args: unknown[]) => mockEvaluateDiscounts(...args),
+  claimCheckoutDiscountDraft: (...args: unknown[]) => mockClaimDiscountDraft(...args),
+}));
+const mockCoupon = jest.fn().mockResolvedValue('coupon_h');
+jest.mock('@/features/checkout/services/stripe-discount-coupon.service', () => ({ createStripeDiscountCoupon: (...args: unknown[]) => mockCoupon(...args) }));
+
 const mockExpireOpenCheckoutSession = jest.fn();
 jest.mock("@/lib/stripe/checkout-session-expiry", () => ({
   expireOpenCheckoutSession: (...args: unknown[]) => mockExpireOpenCheckoutSession(...args),
@@ -98,6 +109,7 @@ function openSessionExpiresAt(remainingSeconds = 1800): number {
 
 
 let mockClaimResult: { data: unknown; error: unknown } | null = null;
+let mockLastClaimRow: Record<string, unknown> | null = null;
 let mockPaidDraftResult: { data: unknown; error: unknown } = { data: null, error: null };
 const mockPaidDraftEq = jest.fn();
 const mockPaidDraftSelect = jest.fn();
@@ -129,13 +141,19 @@ jest.mock("@/lib/csrfMiddleware", () => ({
 const mockCreate = jest.fn();
 const mockRetrieve = jest.fn();
 const mockExpire = jest.fn();
+const mockDeleteCoupon = jest.fn();
 const mockLogAudit = jest.fn().mockResolvedValue(undefined);
 jest.mock("@/lib/stripe/server", () => ({
   getStripeServerClient: jest.fn().mockReturnValue({
+    coupons: { del: mockDeleteCoupon },
     checkout: {
       sessions: {
-        create: mockCreate,
-        retrieve: mockRetrieve,
+        create: async (...args: unknown[]) => {
+          const params = args[0] as { line_items: Array<{ price_data: { unit_amount: number }; quantity: number }> };
+          const subtotal = params.line_items.reduce((n, l) => n + l.price_data.unit_amount * l.quantity, 0);
+          return { amount_total: subtotal, total_details: { amount_discount: 0 }, ...await mockCreate(...args) };
+        },
+        retrieve: async (...args: unknown[]) => ({ amount_total: 5000, total_details: { amount_discount: 0 }, ...await mockRetrieve(...args) }),
         expire: mockExpire,
       },
     },
@@ -150,6 +168,8 @@ import Stripe from "stripe";
 import { POST } from "@/app/api/checkout/create-session/route";
 import { calculateCheckoutAmountsFromSubtotal } from "@/features/checkout/services/checkout-pricing.service";
 import { getStripeServerClient } from "@/lib/stripe/server";
+import { CheckoutDiscountError } from '@/features/checkout/services/checkout-discounts.service';
+import { DiscountInputError } from '@/lib/discounts/discount-types';
 
 test.each([100, 50000])("最終確認画面の配送料の表示が前提とする配送料0を保つ（小計 %i 円）", (subtotal) => {
   if (calculateCheckoutAmountsFromSubtotal(subtotal).shippingAmount !== 0) {
@@ -231,6 +251,7 @@ describe("POST /api/checkout/create-session", () => {
     mockResolveCheckoutBuyer.mockReset();
     mockResolveCheckoutBuyer.mockResolvedValue({ kind: "guest" });
     mockClaimResult = null;
+    mockLastClaimRow = null;
     mockPaidDraftResult = { data: { buyer_user_id: null }, error: null };
     mockPaidDraftSelect.mockReturnValue({ eq: mockPaidDraftEq });
     mockPaidDraftEq.mockReturnValue({ maybeSingle: () => Promise.resolve(mockPaidDraftResult) });
@@ -245,13 +266,30 @@ describe("POST /api/checkout/create-session", () => {
     mockCloseOtherCheckoutSessions.mockResolvedValue(undefined);
     mockExpireOpenCheckoutSession.mockResolvedValue("expired");
     mockCheckPromotionCode.mockReset();
+    mockCoupon.mockReset().mockResolvedValue('coupon_h');
+    mockDeleteCoupon.mockReset().mockResolvedValue({ deleted: true });
+    mockClaimDiscountDraft.mockReset().mockImplementation(async (_client, claim, result, facts) => {
+      // Adapt existing lifecycle fixtures at the mocked service boundary. The service suite tests the real H RPC.
+      const names: Record<string, string> = { sessionId: '_session_id', requestVersion: '_request_version', requestFingerprint: '_request_fingerprint', checkoutUiMode: '_checkout_ui_mode', checkoutOrigin: '_checkout_origin', paymentMethod: '_payment_method', currency: '_currency', subtotalAmount: '_subtotal_amount', taxAmount: '_tax_amount', shippingAmount: '_shipping_amount', totalAmount: '_total_amount', shippingSnapshot: '_shipping_snapshot', itemsSnapshot: '_items_snapshot', buyerUserId: '_buyer_user_id', cartId: '_cart_id' };
+      const legacy = await mockRpc('claim_checkout_draft', Object.fromEntries(Object.entries(claim).map(([k,v]) => [names[k],v])));
+      if (legacy.error || !legacy.data?.[0]) throw legacy.error ?? new Error('empty claim');
+      const row = { ...legacy.data[0], checkout_request_fingerprint: claim.requestFingerprint, checkout_request_version: claim.requestVersion };
+      mockLastClaimRow = row;
+      return { draftId: row.id, checkoutSessionId: row.checkout_session_id, claimCreated: row.claim_created, discountResult: result,
+        discountSnapshotHash: jest.requireActual('@/features/checkout/services/checkout-discounts.service').checkoutDiscountSnapshotHash(claim.itemsSnapshot, result.unusedCodes, [], facts, result), stripeDiscountCouponId: row.stripe_discount_coupon_id ?? null };
+    });
+    mockEvaluateDiscounts.mockReset().mockImplementation(async (_client, buyer, lines, _codes, at) => {
+      const subtotal = lines.reduce((n: number, l: { unitPrice: number; quantity: number }) => n + l.unitPrice * l.quantity, 0);
+      return { result: { version: 1, subtotalAmount: subtotal, shippingAmount: 0, discountAmount: 0, totalAmount: subtotal, applied: [], allocations: [], unitAmounts: lines.flatMap((l: { lineKey: string; unitPrice: number; quantity: number }) => Array.from({ length: l.quantity }, (_, unitIndex) => ({ lineKey: l.lineKey, unitIndex, paidAmount: l.unitPrice }))), unusedCodes: _codes, provisional: false, calculationMode: 'exact' },
+        facts: { phase: 'confirm', at, buyer, hasPreviousOrder: false, hasFirstOrderReservation: false, priorUnitsByItem: {}, usage: [] }, refusals: [] };
+    });
     mockBuildCheckoutConfirmation.mockImplementation(
       async (_deps: unknown, params: Record<string, unknown>) => ({
         checkoutSessionId: params.checkoutSessionId,
         clientSecret: params.clientSecret,
         shipping: params.shippingSnapshot,
         lines: [],
-        promotionCode: params.promotionCode,
+        promotionCodes: params.promotionCodes, discountResult: params.discountResult,
       }),
     );
     mockRpc.mockImplementation(
@@ -302,7 +340,9 @@ describe("POST /api/checkout/create-session", () => {
 
       if (table === "checkout_drafts") {
         return {
-          select: mockPaidDraftSelect,
+          select: (fields: string) => fields.includes('subtotal_amount') ? { eq: () => ({ maybeSingle: () => {
+            return Promise.resolve({ data: mockLastClaimRow, error: null });
+          } }) } : mockPaidDraftSelect(fields),
           insert: mockDraftInsert,
           delete: jest.fn().mockReturnValue({
             eq: mockDraftDeleteEq,
@@ -331,6 +371,83 @@ describe("POST /api/checkout/create-session", () => {
       ],
       error: null,
     });
+  });
+
+  it('FREQ-548-AC-02: confirmで入力codeが不適合なら確定拒否として入力へ戻しdraftを作らない', async () => {
+    mockEvaluateDiscounts.mockResolvedValue({ result: {}, facts: {}, refusals: [{ code: 'NO', reason: 'not_eligible' }] });
+    const res = await POST(makeRequest({ promotionCodes: ['NO'] })) as unknown as { status: number; body: unknown };
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: 'discount_conditions_changed', retryable: false, returnTo: 'input', definitive: true, refusals: [{ code: 'NO', reason: 'not_eligible' }], message: '割引の条件が変わりました。入力画面で割引を確かめてください。' });
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalledWith('claim_checkout_discount_draft', expect.anything());
+  });
+
+  it('FREQ-548-AC-02: 前に注文のあるゲストは自動の初回割引が外れた額で最終確認へ進める', async () => {
+    mockCreate.mockResolvedValue({ id: 'cs_guest', client_secret: 'secret' });
+    const res = await POST(makeRequest({ promotionCodes: [] })) as unknown as { status: number; body: { confirmation: { discountResult: { totalAmount: number; discountAmount: number } } } };
+    expect(res.status).toBe(200);
+    expect(res.body.confirmation.discountResult).toMatchObject({ totalAmount: 5000, discountAmount: 0 });
+    expect(mockEvaluateDiscounts).toHaveBeenCalledWith(expect.anything(), { kind: 'guest', normalizedEmail: SHIPPING.email }, expect.any(Array), [], expect.any(String), 'confirm');
+  });
+
+  it.each([
+    ['checkout:create-session:ip-10s',10,10], ['checkout:create-session:ip-10m',60,600], ['checkout:create-session',10,60],
+  ])('FREQ-548-AC-02: confirmで変わるゲストの割引にも既存IPとsessionの制限を先に掛ける（%s）', async (endpoint, limit, windowSeconds) => {
+    let count = 0;
+    mockEnforceRateLimit.mockImplementation(async (args: { endpoint: string }) => args.endpoint === endpoint && ++count > limit ? new Response(null, { status: 429, headers: { 'Retry-After': '17' } }) : undefined);
+    mockCreate.mockResolvedValue({ id: 'cs_limit', client_secret: 'secret' });
+    for (let i=0;i<limit;i++) expect((await POST(makeRequest({ promotionCodes: [] }))).status).toBe(200);
+    mockEvaluateDiscounts.mockClear(); mockClaimDiscountDraft.mockClear(); mockCoupon.mockClear();
+    const req = makeRequest({ promotionCodes: [] }); req.headers.set('x-real-ip','203.0.113.19');
+    const denied = await POST(req);
+    expect(denied.status).toBe(429); expect(denied.headers.get('Retry-After')).toBe('17');
+    expect(mockEnforceRateLimit).toHaveBeenLastCalledWith(expect.objectContaining({ endpoint, limit, windowSeconds, ...(endpoint === 'checkout:create-session' ? { subject: 'sess-abc' } : {}) }));
+    expect(mockEvaluateDiscounts).not.toHaveBeenCalled(); expect(mockClaimDiscountDraft).not.toHaveBeenCalled(); expect(mockCoupon).not.toHaveBeenCalled();
+  });
+
+  it('FREQ-546-AC-04: 探索guardでもpreviewとconfirmは200で同じfallback額を固定し要対応へ記録する', async () => {
+    const normal = mockEvaluateDiscounts.getMockImplementation();
+    mockEvaluateDiscounts.mockImplementation(async (...args) => { const v = await normal?.(...args); return { ...v, result: { ...v.result, calculationMode: 'fallback' } }; });
+    mockCreate.mockResolvedValue({ id: 'cs_fallback', client_secret: 'secret' });
+    const res = await POST(makeRequest({ promotionCodes: [] })) as unknown as { status: number; body: { confirmation: { discountResult: unknown } } };
+    expect(res.status).toBe(200); expect(res.body.confirmation.discountResult).toMatchObject({ calculationMode: 'fallback', totalAmount: 5000 });
+    expect(mockClaimDiscountDraft.mock.calls[0][2]).toMatchObject({ calculationMode: 'fallback', totalAmount: 5000 });
+  });
+
+  it('FREQ-548-AC-03: 保存済みcouponと作成済みSessionを固定draftのまま再利用する', async () => {
+    const normal = mockEvaluateDiscounts.getMockImplementation();
+    mockEvaluateDiscounts.mockImplementation(async (...args) => { const v = await normal?.(...args); return { ...v, result: { ...v.result, discountAmount: 500, totalAmount: 4500 } }; });
+    const claim = mockClaimDiscountDraft.getMockImplementation();
+    mockClaimDiscountDraft.mockImplementation(async (...args) => {
+      const frozen = await claim?.(...args);
+      mockLastClaimRow = { ...mockLastClaimRow, stripe_discount_coupon_id: 'coupon_saved' };
+      return { ...frozen, stripeDiscountCouponId: 'coupon_saved' };
+    });
+    const baseRpc = mockRpc.getMockImplementation()!;
+    mockRpc.mockImplementation((name, args) => name === 'claim_checkout_draft'
+      ? Promise.resolve({ data: [makeClaimedDraft(args, { checkout_session_id: 'cs_saved' })], error: null }) : baseRpc(name, args));
+    mockRetrieve.mockResolvedValue({ id: 'cs_saved', status: 'open', expires_at: openSessionExpiresAt(), client_secret: 'secret', amount_total: 4500, total_details: { amount_discount: 500 } });
+    expect((await POST(makeRequest({ promotionCodes: [] }))).status).toBe(200);
+    expect((await POST(makeRequest({ promotionCodes: [] }))).status).toBe(200);
+    expect(mockCoupon).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockDeleteCoupon).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalledWith('retire_unattached_checkout_draft', expect.anything());
+  });
+
+  it.each([
+    [new CheckoutDiscountError(true), 409, 'discount_conditions_changed'],
+    [new CheckoutDiscountError(), 500, 'checkout_session_failed'],
+    [new DiscountInputError('total_below_minimum'), 422, 'total_below_minimum'],
+  ])('FREQ-548-AC-02: 割引例外%sの%s応答にもno-storeを付ける', async (error, status, code) => {
+    mockEvaluateDiscounts.mockRejectedValue(error);
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const res = await POST(makeRequest({})) as unknown as { status: number; headers: Headers; body: { error: string } };
+      expect(res.status).toBe(status);
+      expect(res.body.error).toBe(code);
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
+    } finally { spy.mockRestore(); }
   });
 
   it.each([
@@ -759,7 +876,7 @@ describe("POST /api/checkout/create-session", () => {
           clientSecret: "secret_existing_claim",
           shipping: null,
           lines: [],
-          promotionCode: null,
+          promotionCodes: [], discountResult: expect.any(Object),
         },
       });
     },
@@ -1264,31 +1381,23 @@ describe("POST /api/checkout/create-session", () => {
     },
   );
 
-  it("割引コードはサーバーの割引前の合計で確かめ、discounts で付け、metadata にコードを残す", async () => {
-    mockCheckPromotionCode.mockResolvedValue({
-      ok: true,
-      promotionCodeId: "promo_1",
-      code: "WELCOME10",
-      discountAmount: 500,
-      totalAfterDiscount: 4500,
+  it('FREQ-548-AC-03: 割引合計だけのonce couponを１つ付け旧Stripeコードを検索しない', async () => {
+    const normal = mockEvaluateDiscounts.getMockImplementation();
+    mockEvaluateDiscounts.mockImplementation(async (...args) => {
+      const evaluated = await normal?.(...args);
+      return { ...evaluated, result: { ...evaluated.result, discountAmount: 3000, totalAmount: 2000 } };
     });
-    mockCreate.mockResolvedValue({ id: "cs_new", status: "open", client_secret: "secret_new" });
-
-    const res = (await POST(makeRequest({ uiMode: "custom", promotionCode: "welcome10" }))) as unknown as {
-      status: number;
-      body: { confirmation: Record<string, unknown> };
-    };
-
-    expect(mockCheckPromotionCode).toHaveBeenCalledWith(expect.anything(), {
-      code: "welcome10",
-      preDiscountTotal: 5000,
-      now: expect.any(Date),
-    });
-    const params = mockCreate.mock.calls[0][0] as Record<string, unknown>;
-    expect(params.discounts).toEqual([{ promotion_code: "promo_1" }]);
-    expect(params.metadata).toEqual(expect.objectContaining({ promotion_code: "WELCOME10" }));
+    const rpc = mockRpc.getMockImplementation();
+    mockRpc.mockImplementation((name, args) => name === 'attach_checkout_discount_coupon' ? Promise.resolve({ data: true, error: null }) : rpc?.(name, args));
+    mockCreate.mockResolvedValue({ id: 'cs_new', client_secret: 'secret', amount_total: 2000, total_details: { amount_discount: 3000 } });
+    const res = await POST(makeRequest({ promotionCodes: [' welcome10 ', 'SECOND'] }));
     expect(res.status).toBe(200);
-    expect(res.body.confirmation.promotionCode).toBe("WELCOME10");
+    expect(mockCoupon).toHaveBeenCalledWith(expect.anything(), 'draft-123', expect.stringMatching(/^[a-f0-9]{64}$/), 3000);
+    expect(mockCreate.mock.calls[0][0]).toMatchObject({ discounts: [{ coupon: 'coupon_h' }], line_items: [{ price_data: { unit_amount: 5000 }, quantity: 1 }] });
+    expect(mockCreate.mock.calls[0][0]).not.toHaveProperty('allow_promotion_codes');
+    expect(mockCreate.mock.calls[0][0].metadata).not.toHaveProperty('promotion_code');
+    expect(mockCheckPromotionCode).not.toHaveBeenCalled();
+    expect(mockBuildCheckoutConfirmation.mock.calls[0][1]).toMatchObject({ promotionCodes: ['WELCOME10', 'SECOND'], discountResult: { discountAmount: 3000, totalAmount: 2000 } });
   });
 
   it("割引コードが違えば別の指紋になる（同じ下書き・同じ決済の画面を使い回さない）", async () => {
@@ -1302,7 +1411,7 @@ describe("POST /api/checkout/create-session", () => {
     mockCreate.mockResolvedValue({ id: "cs_new", status: "open", client_secret: "secret_new" });
 
     await POST(makeRequest({ uiMode: "custom" }));
-    await POST(makeRequest({ uiMode: "custom", promotionCode: "WELCOME10" }));
+    await POST(makeRequest({ uiMode: "custom", promotionCodes: ["WELCOME10"] }));
 
     const fingerprints = mockRpc.mock.calls
       .filter(([functionName]) => functionName === "claim_checkout_draft")
@@ -1311,23 +1420,17 @@ describe("POST /api/checkout/create-session", () => {
   });
 
   it("割引コードが使えなくなっていれば 409 で理由を返し、下書きも決済の画面も作らない", async () => {
-    mockCheckPromotionCode.mockResolvedValue({
-      ok: false,
-      reason: "minimum_amount",
-      message: "このコードは ¥10,000 以上のご注文で使えます",
-    });
+    mockEvaluateDiscounts.mockResolvedValue({ result: {}, facts: {}, refusals: [{ code: 'MIN10000', reason: 'not_eligible' }] });
 
-    const res = (await POST(makeRequest({ uiMode: "custom", promotionCode: "MIN10000" }))) as unknown as {
+    const res = (await POST(makeRequest({ uiMode: "custom", promotionCodes: ["MIN10000"] }))) as unknown as {
       status: number;
       body: Record<string, unknown>;
     };
 
     expect(res.status).toBe(409);
     expect(res.body).toEqual({
-      error: "promotion_code_invalid",
-      reason: "minimum_amount",
-      message: "このコードは ¥10,000 以上のご注文で使えます",
-      retryable: false,
+      error: 'discount_conditions_changed', retryable: false, returnTo: 'input', definitive: true,
+      refusals: [{ code: 'MIN10000', reason: 'not_eligible' }], message: '割引の条件が変わりました。入力画面で割引を確かめてください。',
     });
     expect(mockRpc).not.toHaveBeenCalledWith("claim_checkout_draft", expect.anything());
     expect(mockCreate).not.toHaveBeenCalled();
@@ -1436,13 +1539,13 @@ describe("POST /api/checkout/create-session", () => {
 
       expect(res.status).toBe(500);
       expect(consoleError).toHaveBeenCalledWith(
-        'Checkout session creation error:', expect.any(String),
-        { error_message: failure.message, stack: failure.stack },
+        'Checkout session creation error:', expect.any(String), { error_message: failure.message, stack: failure.stack },
       );
       expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
         outcome: 'error', detail: 'Checkout session creation error',
         metadata: {
-          correlation_id: expect.any(String), error_message: failure.message,
+          correlation_id: expect.any(String),
+          error_message: failure.message,
           stripe_type: null, stripe_code: null, stripe_status: null, stripe_request_id: null,
         },
       }));
@@ -1464,13 +1567,13 @@ describe("POST /api/checkout/create-session", () => {
 
       expect(res.status).toBe(500);
       expect(consoleError).toHaveBeenCalledWith(
-        'Checkout session creation error:', expect.any(String),
-        { error_code: '23514', error_message: 'CHECKOUT_DRAFT_BUYER_MISMATCH' },
+        'Checkout session creation error:', expect.any(String), { error_message: 'CHECKOUT_DRAFT_BUYER_MISMATCH', error_code: '23514' },
       );
       expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
         outcome: 'error', detail: 'Checkout session creation error',
         metadata: {
-          correlation_id: expect.any(String), error_code: '23514', error_message: 'CHECKOUT_DRAFT_BUYER_MISMATCH',
+          correlation_id: expect.any(String),
+          error_message: 'CHECKOUT_DRAFT_BUYER_MISMATCH', error_code: '23514',
           stripe_type: null, stripe_code: null, stripe_status: null, stripe_request_id: null,
         },
       }));
@@ -1581,7 +1684,7 @@ describe("POST /api/checkout/create-session", () => {
         checkoutSessionId: "cs_new",
         clientSecret: "secret_new",
         itemsSnapshot: items,
-        promotionCode: null,
+        promotionCodes: [], discountResult: expect.any(Object),
         acceptedOrderId: null,
       }),
     );
@@ -1627,6 +1730,133 @@ describe("POST /api/checkout/create-session", () => {
 
     afterEach(() => {
       consoleError.mockRestore();
+    });
+
+    function useDiscount() {
+      const evaluate = mockEvaluateDiscounts.getMockImplementation()!;
+      mockEvaluateDiscounts.mockImplementation(async (...args) => {
+        const evaluated = await evaluate(...args);
+        return { ...evaluated, result: { ...evaluated.result, discountAmount: 500, totalAmount: 4500 } };
+      });
+      const rpc = mockRpc.getMockImplementation()!;
+      mockRpc.mockImplementation((name, args) => name === 'attach_checkout_discount_coupon'
+        ? Promise.resolve({ data: true, error: null }) : rpc(name, args));
+    }
+
+    it('FREQ-518-AC-01: coupon作成失敗後は未添付draftを退役し次の押下は新しいcoupon冪等キーで成功する', async () => {
+      useDiscount();
+      const createCoupon = jest.fn(async (_params, options) => {
+        // A provider replays the error for the old key; only a new draft can recover.
+        if (options.idempotencyKey.includes('draft-123')) throw apiError();
+        return { id: 'coupon_new' };
+      });
+      const couponService = jest.requireActual('@/features/checkout/services/stripe-discount-coupon.service');
+      mockCoupon.mockImplementation((_stripe, draftId, hash, amount) => couponService.createStripeDiscountCoupon({ coupons: { create: createCoupon } }, draftId, hash, amount));
+      mockCreate.mockResolvedValue({ id: 'cs_new', status: 'open', client_secret: 'secret_new', amount_total: 4500, total_details: { amount_discount: 500 } });
+
+      const failed = await POST(makeRequest({})) as unknown as RouteResponse;
+      expect(failed.status).toBe(503);
+      expect(failed.body).toEqual({ error: 'checkout_session_failed', message: UNAVAILABLE_MESSAGE, correlationId: expect.any(String), retryable: true });
+      expect(retireCalls()).toEqual([['retire_unattached_checkout_draft', {
+        _draft_id: 'draft-123', _session_id: 'sess-abc', _request_version: 3, _request_fingerprint: claimFingerprint(),
+      }]]);
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(mockRpc).not.toHaveBeenCalledWith('attach_checkout_discount_coupon', expect.anything());
+      expect(mockDeleteCoupon).not.toHaveBeenCalled();
+
+      const retried = await POST(makeRequest({})) as unknown as RouteResponse;
+      expect(retried.status).toBe(200);
+      const hash = mockCoupon.mock.calls[0][2];
+      expect(createCoupon.mock.calls.map(c => c[1])).toEqual([
+        { idempotencyKey: 'h-discount:draft-123:' + hash },
+        { idempotencyKey: 'h-discount:draft-456:' + hash },
+      ]);
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+      expect(mockCreate.mock.calls[0][0].discounts).toEqual([{ coupon: 'coupon_new' }]);
+      expect(mockDeleteCoupon).not.toHaveBeenCalled();
+    });
+
+    it('FREQ-548-AC-03: couponのidempotency_key_in_useでは未添付draftも退役させない', async () => {
+      useDiscount();
+      mockCoupon.mockRejectedValueOnce(new Stripe.errors.StripeInvalidRequestError({ type: 'invalid_request_error', code: 'idempotency_key_in_use', message: 'private provider text' }));
+      const res = await POST(makeRequest({})) as unknown as RouteResponse;
+      expect(res.status).toBe(500);
+      expect(res.body).toMatchObject({ error: 'checkout_session_failed', retryable: false });
+      expect(retireCalls()).toEqual([]);
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(mockDeleteCoupon).not.toHaveBeenCalled();
+      expect(JSON.stringify(consoleError.mock.calls)).not.toContain('private provider text');
+      expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('private provider text');
+    });
+
+    it.each([false, true])('FREQ-518-AC-01: coupon失敗の退役がfalseまたは失敗でも元の503を返す（DB失敗=%s）', async dbFails => {
+      useDiscount();
+      retireUnattachedResult = dbFails ? { data: null, error: { code: '57P01', message: 'private DB text' } } : { data: false, error: null };
+      mockCoupon.mockRejectedValueOnce(apiError());
+      const res = await POST(makeRequest({})) as unknown as RouteResponse;
+      expect(res.status).toBe(503);
+      expect(res.body).toEqual({ error: 'checkout_session_failed', message: UNAVAILABLE_MESSAGE, correlationId: expect.any(String), retryable: true });
+      expect(retireCalls()).toHaveLength(1);
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(mockDeleteCoupon).not.toHaveBeenCalled();
+      expect(JSON.stringify(consoleError.mock.calls)).not.toContain('private DB text');
+      expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('private DB text');
+    });
+
+    it.each([false, true])('FREQ-518-AC-01: 割引付きSession失敗後は退役とcoupon削除を試み新draftで押し直せる（削除失敗=%s）', async deleteFails => {
+      useDiscount();
+      mockCoupon.mockResolvedValueOnce('coupon_old').mockResolvedValueOnce('coupon_new');
+      if (deleteFails) mockDeleteCoupon.mockRejectedValueOnce(new Error('secret buyer code email'));
+      mockCreate.mockImplementation(async (_params, options) => {
+        // Stripe remembers the failed response for the old idempotency key.
+        if (options.idempotencyKey.includes('draft-123')) throw apiError();
+        return { id: 'cs_new', status: 'open', client_secret: 'secret_new', amount_total: 4500, total_details: { amount_discount: 500 } };
+      });
+      const failed = await POST(makeRequest({})) as unknown as RouteResponse;
+      expect(failed.status).toBe(503);
+      expect(failed.body).toEqual({ error: 'checkout_session_failed', message: UNAVAILABLE_MESSAGE, correlationId: expect.any(String), retryable: true });
+      expect(retireCalls()).toHaveLength(1);
+      expect(mockDeleteCoupon).toHaveBeenCalledWith('coupon_old');
+      if (deleteFails) expect(consoleError).toHaveBeenCalledWith('discount_coupon_cleanup_failed');
+      expect(JSON.stringify(consoleError.mock.calls)).not.toContain('secret buyer code email');
+      const retried = await POST(makeRequest({})) as unknown as RouteResponse;
+      expect(retried.status).toBe(200);
+      expect(mockCoupon.mock.calls.map(c => c[1])).toEqual(['draft-123', 'draft-456']);
+      expect(mockCreate.mock.calls.map(c => c[0].discounts)).toEqual([[{ coupon: 'coupon_old' }], [{ coupon: 'coupon_new' }]]);
+      expect(mockCreate.mock.calls[0][1].idempotencyKey).not.toBe(mockCreate.mock.calls[1][1].idempotencyKey);
+    });
+
+    it.each([false, true])('FREQ-548-AC-03: 作成直後の割引額不一致はSession失効とdraft退役を試みる（失効失敗=%s）', async expireFails => {
+      useDiscount();
+      if (expireFails) mockExpire.mockRejectedValueOnce(new Error('secret provider text'));
+      mockCreate.mockResolvedValueOnce({ id: 'cs_mismatch', status: 'open', amount_total: 5000, total_details: { amount_discount: 0 } });
+      const res = await POST(makeRequest({})) as unknown as RouteResponse & { headers: Headers };
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({ error: 'checkout_session_failed', message: '割引の処理に失敗しました。', retryable: true });
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
+      expect(mockExpire).toHaveBeenCalledWith('cs_mismatch', {}, { idempotencyKey: 'checkout-session:expire-orphan:v3:draft-123:cs_mismatch' });
+      expect(retireCalls()).toHaveLength(1);
+      expect(mockRpc).not.toHaveBeenCalledWith('attach_checkout_session_to_draft', expect.anything());
+      expect(JSON.stringify(consoleError.mock.calls)).not.toContain('secret provider text');
+    });
+
+    it('FREQ-548-AC-03: 割引付きの同時作成エラーでは退役もcoupon削除もしない', async () => {
+      useDiscount();
+      mockCreate.mockRejectedValueOnce(new Stripe.errors.StripeInvalidRequestError({ type: 'invalid_request_error', code: 'idempotency_key_in_use', message: 'secret provider text' }));
+      expect((await POST(makeRequest({}))).status).toBe(500);
+      expect(retireCalls()).toEqual([]);
+      expect(mockDeleteCoupon).not.toHaveBeenCalled();
+      expect(JSON.stringify(consoleError.mock.calls)).not.toContain('secret provider text');
+      expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('secret provider text');
+    });
+
+    it('FREQ-548-AC-03: 別要求がSessionを付け退役できない時はcouponを削除しない', async () => {
+      useDiscount();
+      retireUnattachedResult = { data: false, error: null };
+      mockCreate.mockRejectedValueOnce(apiError());
+      expect((await POST(makeRequest({}))).status).toBe(503);
+      expect(retireCalls()).toHaveLength(1);
+      expect(mockDeleteCoupon).not.toHaveBeenCalled();
     });
 
     it.each([

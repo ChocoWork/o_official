@@ -1223,3 +1223,13 @@ E2E の補助は `e2e/admin-session-test-utils.ts`（`bindAppSession`・`rebindR
 - DB なしの jest: 807 suites・20345 件通過・0 失敗。`npm run test:trace-coverage` は届かない分岐の節に無い 0 件・ずれた 0 件（`verify/route.ts:143` に届くよう `tests/unit/api/auth/mfa-verify-route.test.ts` へ単体を 1 本足した）。`npm run validate-trace` は基準より増えた 0 件。
 - 本番ビルドの E2E 全件（1 回）は 203 failed・4821 passed・26 skipped。波 4 の 185 failed（`.superpowers/sdd/2026-10-25-security-gap-fixes/e2e-results-wave4-full.json`）と比べて新しい赤を 1 並列で再実行すると 154 件通った。残った 4 件は波 5 に未対応の試験で、直した。`FR-PRIVACY-007:210` ×3（aal1 の管理者が結び付くようになり、窓口が 403 MFA required で断る）、`FR-SEARCH-020:246`（対照を aal2・結び付いた管理者にし、aal1 は非公開の行が見えない確かめを足した）。直した 2 ファイルは 1 並列で 51 件通過。残りは並列の揺れ（`FR-ITEM-DETAIL-019`・`020`・`021`、`NFR-HOME-002`、`FR-HOME-006`・`007`・`008`、`FR-NEWS-ALL-003`・`004`、`FR-LOGIN-038` のタイムアウト、`FR-ADMIN-112` の dialog 幅 1.6px）。
 - 流した物（Task の時点）: `npx tsc --noEmit` 誤り 0、`npm run validate-docs` は既知の 2 件（`2026-10-07-checkout-place-order-payment.md` のリンク切れ）のみ。
+
+## グループH Task 6（2026-10-29）
+
+対象: FREQ-542-AC-03・FREQ-546-AC-04・FREQ-548-AC-01〜03。単体はpromotion-code/create-session/resume route、promotion-code/confirmation/checkout-discounts/stripe-discount-coupon serviceの７本。guestの全拒否同値/メール非照合、public/member文、confirmでautomatic除外/入力code409、既存IP/sessionのlimit+1拒否、固定hashの時刻/生カウンター除外、fallbackと記録失敗、couponパラメータ/再送/0未作成、元単価/実額照合、旧draft復元とK-5を検査する。StripeはSDK mockだけ。
+
+DB用はgroup_h_checkout_draft.integration.test.tsとgroup_h_migration_asserts.integration.test.tsのH3節。行/数量/着/配分/総和/50円、provisional拒否、0円でもversion1、created.discount_amount=0、最初のfacts保持、coupon/hash/CAS、service専用ACL、４DETAILの改ざんを検査する。created.discount_amount=0の永続保証はDBのCHECK/23514試験が根拠で、単体のRPC mockや額の恒等式は根拠にしない。controllerは本文MD5全７本を補完して前回DB試験を実行済み（controller申告）。fix round 1では会員・同一割引の２コード・２行を逆順にしたTS/SQL hash一致を１件追加した。今回の実装者はDBを実行せず、追加ケースはcontrollerが検証する。実provider/production build/E2Eの確認は別の証拠として残す。
+
+fix round 1の単体回帰は、不在/期限切れ/上限超過を混ぜた両入力順のguest応答バイト一致、guest/member・preview/confirmの理由に依らないコード辞書順、割引付きSession失敗の退役/coupon削除/押し直し、削除失敗時の同じ応答と固定ログ、同時作成/退役false時の削除抑止、作成直後の額不一致の失効/退役、割引catchのno-store、既存診断ログと監査の保持、resumeの最小列、ロケールに依存しないhashを検査する。controller裁定によりFREQ-518/K-5がbriefの「同じdraftで再送」より優先する。Stripe mockは失敗した旧冪等キーに成功を返さず、新draftのキーだけ成功させる。
+
+fix round 2ではcoupon作成失敗も対象にし、未添付draft退役→新draft IDのcoupon冪等キー→成功を本物のcoupon serviceとStripe SDK mockで検査する。旧couponキーでは失敗を返し続けるmockを使う。coupon ID未取得時の削除なし、idempotency_key_in_useの退役なし、退役false/DB失敗でも元の503を維持することと、resume監査失敗の従来ログ/403維持も単体で検査する。Session添付済みの行を退役させないDB条件は既存RPCのままで、今回DBでは実測しない。

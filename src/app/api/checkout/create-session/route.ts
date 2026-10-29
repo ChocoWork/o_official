@@ -31,11 +31,19 @@ import { cookieOptionsForCsrf, csrfCookieName } from "@/lib/cookie";
 import { getRequestOrigin } from "@/lib/redirect";
 import { expireOpenCheckoutSession } from "@/lib/stripe/checkout-session-expiry";
 import { signItemImageUrl } from "@/lib/storage/item-images";
-import {
-  PROMOTION_CODE_PATTERN,
-  checkPromotionCode,
-  type PromotionCodeCheck,
-} from "@/features/checkout/services/promotion-code.service";
+import { promotionCodesSchema } from "@/features/checkout/services/promotion-code.service";
+import { evaluateCheckoutDiscounts, checkoutDiscountDefinitions, CheckoutDiscountError } from "@/features/checkout/services/checkout-discounts.service";
+import { createStripeDiscountCoupon } from "@/features/checkout/services/stripe-discount-coupon.service";
+import { claimCheckoutDiscountDraft, checkoutDiscountSnapshotHash } from "@/features/checkout/services/checkout-discounts.service";
+import type { CheckoutDiscountClaim } from "@/features/checkout/services/checkout-draft.service";
+import { DiscountInputError, type DiscountFacts, type DiscountResult } from "@/lib/discounts/discount-types";
+import type { DiscountRefusal } from '@/lib/discounts/discount-types';
+
+const MINIMUM_MESSAGE = 'お支払い金額は50円以上にしてください。';
+function discountChangedResponse(refusals: readonly DiscountRefusal[]): NextResponse {
+  return NextResponse.json({ error: 'discount_conditions_changed', retryable: false, returnTo: 'input', definitive: true, refusals,
+    message: '割引の条件が変わりました。入力画面で割引を確かめてください。' }, { status: 409, headers: { 'Cache-Control': 'no-store' } });
+}
 import { buildCheckoutConfirmation } from "@/features/checkout/services/checkout-confirmation.service";
 import {
   closeOtherCheckoutSessions,
@@ -61,6 +69,7 @@ function hasRotatedCsrfToken(value: unknown): value is CsrfRotateResult {
 }
 
 function applyRotatedCsrfCookie(response: NextResponse, csrfResult: unknown) {
+  response.headers.set('Cache-Control', 'no-store');
   if (!hasRotatedCsrfToken(csrfResult)) {
     return response;
   }
@@ -85,7 +94,7 @@ const createSessionSchema = z.object({
   shipping: checkoutShippingSchema,
   displayedAmounts: checkoutDisplayedAmountsSchema,
   // 入力画面で「適用」したコード。ここでもう一度確かめてから決済の画面に付ける（設計書第3章）
-  promotionCode: z.string().trim().regex(PROMOTION_CODE_PATTERN).optional(),
+  promotionCodes: promotionCodesSchema.default([]),
 });
 
 type ReusableCheckoutDraftRow = {
@@ -111,6 +120,9 @@ type ClaimedCheckoutDraftRow = ReusableCheckoutDraftRow & {
   checkout_ui_mode: "custom";
   checkout_origin: string;
   claim_created: boolean;
+  discount_result: DiscountResult;
+  discount_snapshot_hash: string;
+  stripe_discount_coupon_id: string | null;
 };
 
 type CheckoutDraftAttachmentResult = {
@@ -190,7 +202,7 @@ function buildCheckoutRequestFingerprint(params: {
   totalAmount: number;
   itemsSnapshot: CheckoutDraftItemSnapshot[];
   shippingSnapshot: CheckoutShippingSnapshot;
-  promotionCodeId: string | null;
+  discountSnapshotHash: string;
   buyerUserId: string | null;
 }): string {
   const canonical = JSON.stringify({
@@ -204,7 +216,7 @@ function buildCheckoutRequestFingerprint(params: {
     totalAmount: params.totalAmount,
     itemsSnapshot: params.itemsSnapshot,
     shippingSnapshot: params.shippingSnapshot,
-    promotionCodeId: params.promotionCodeId,
+    discountSnapshotHash: params.discountSnapshotHash,
     buyerUserId: params.buyerUserId,
   });
 
@@ -344,22 +356,24 @@ async function retireUnattachedDraft(params: {
   requestFingerprint: string;
   ip: string | null;
   userAgent: string | null;
-}): Promise<void> {
+}): Promise<boolean> {
   let failed: boolean;
+  let retired = false;
   try {
-    const { error } = await supabase.rpc("retire_unattached_checkout_draft", {
+    const { data, error } = await supabase.rpc("retire_unattached_checkout_draft", {
       _draft_id: params.draftId,
       _session_id: params.sessionId,
       _request_version: params.requestVersion,
       _request_fingerprint: params.requestFingerprint,
     });
     failed = Boolean(error);
+    retired = !error && data === true;
   } catch {
     failed = true;
   }
 
   if (!failed) {
-    return;
+    return retired;
   }
 
   console.error("Failed to retire unattached checkout draft:", params.draftId);
@@ -378,6 +392,7 @@ async function retireUnattachedDraft(params: {
   } catch (logAuditError) {
     console.error("Failed to log checkout draft retirement error:", logAuditError);
   }
+  return false;
 }
 
 async function expireConflictingOpenSession(
@@ -397,46 +412,23 @@ async function expireConflictingOpenSession(
     },
   );
 }
-async function claimCheckoutDraft(params: {
-  sessionId: string;
-  buyerUserId: string | null;
-  /** 下書きを作ったカート（carts.id）。「注文する」の「カートが変わった」の確かめは、このカートの明細で行う */
-  cartId: string;
-  requestFingerprint: string;
-  uiMode: "custom";
-  checkoutOrigin: string;
-  paymentMethod: string;
-  subtotalAmount: number;
-  taxAmount: number;
-  shippingAmount: number;
-  totalAmount: number;
-  shippingSnapshot: CheckoutShippingSnapshot;
-  itemsSnapshot: CheckoutDraftItemSnapshot[];
-}): Promise<ClaimedCheckoutDraftRow> {
-  const { data, error } = await supabase.rpc("claim_checkout_draft", {
-    _session_id: params.sessionId,
-    _request_version: CHECKOUT_REQUEST_VERSION,
-    _request_fingerprint: params.requestFingerprint,
-    _checkout_ui_mode: params.uiMode,
-    _checkout_origin: params.checkoutOrigin,
-    _payment_method: params.paymentMethod,
-    _currency: "jpy",
-    _subtotal_amount: params.subtotalAmount,
-    _tax_amount: params.taxAmount,
-    _shipping_amount: params.shippingAmount,
-    _total_amount: params.totalAmount,
-    _shipping_snapshot: params.shippingSnapshot,
-    _items_snapshot: params.itemsSnapshot,
-    _buyer_user_id: params.buyerUserId,
-    _cart_id: params.cartId,
-  });
+async function claimCheckoutDraft(params: CheckoutDiscountClaim, result: DiscountResult, facts: DiscountFacts): Promise<ClaimedCheckoutDraftRow> {
+  const frozen = await claimCheckoutDiscountDraft(supabase, params, result, facts);
+  // A retry may carry a different selected payment method; the first draft remains canonical.
+  const { data: draft, error } = await supabase.from('checkout_drafts')
+    .select('id, session_id, checkout_session_id, payment_method, currency, subtotal_amount, tax_amount, shipping_amount, total_amount, items_snapshot, shipping_snapshot, shipping_revision, checkout_request_version, checkout_request_fingerprint, checkout_ui_mode, checkout_origin, stripe_discount_coupon_id')
+    .eq('id', frozen.draftId).maybeSingle<ClaimedCheckoutDraftRow>();
+  if (error || !draft || draft.id !== frozen.draftId || draft.session_id !== params.sessionId
+    || draft.checkout_request_version !== params.requestVersion || draft.checkout_request_fingerprint !== params.requestFingerprint
+    || frozen.checkoutSessionId !== null && draft.checkout_session_id !== frozen.checkoutSessionId
+    || frozen.stripeDiscountCouponId !== null && draft.stripe_discount_coupon_id !== frozen.stripeDiscountCouponId) throw new CheckoutDiscountError();
+  return { ...draft, claim_created: frozen.claimCreated,
+    discount_result: frozen.discountResult, discount_snapshot_hash: frozen.discountSnapshotHash, stripe_discount_coupon_id: draft.stripe_discount_coupon_id ?? null };
+}
 
-  const draft = (data as ClaimedCheckoutDraftRow[] | null)?.[0];
-  if (error || !draft) {
-    throw error ?? new Error("Checkout draft claim returned no row");
-  }
-
-  return draft;
+function assertStripeDiscount(session: Stripe.Checkout.Session, result: DiscountResult): void {
+  if (session.amount_total !== result.totalAmount || (session.total_details?.amount_discount ?? 0) !== result.discountAmount)
+    throw new CheckoutDiscountError();
 }
 
 /**
@@ -464,6 +456,7 @@ function toRateLimitedResponse(limited: Response): Response {
 export async function POST(req: NextRequest) {
   const clientIp = getClientIp(req);
   const userAgent = req.headers.get("user-agent");
+  let discountProviderFailure = false;
 
   try {
     const sessionId = req.cookies.get("session_id")?.value;
@@ -541,7 +534,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { paymentMethod, shipping: requestedShipping, uiMode, displayedAmounts, promotionCode } = parsed.data;
+    const { paymentMethod, shipping: requestedShipping, uiMode, displayedAmounts, promotionCodes } = parsed.data;
     // 会員の注文のメールは、画面から送られた値ではなく検証済みのログインのメールにする（設計書 4-2・C7）。
     // 同じブラウザで前の人が入れたメールが、別の会員の注文に混ざらないようにする。
     // ログインのメールは、ゲストが入力したメールと同じ整え（NFKC・前後の空白・小文字、形の確かめ）を通してから使う。
@@ -779,42 +772,6 @@ export async function POST(req: NextRequest) {
       return applyRotatedCsrfCookie(orderAlreadyPlacedResponse(paidCheckoutSessionId), csrfResult);
     }
 
-    let promotion: Extract<PromotionCodeCheck, { ok: true }> | null = null;
-    if (promotionCode) {
-      const checked = await checkPromotionCode(stripe, {
-        code: promotionCode,
-        preDiscountTotal: totalAmount,
-        now: new Date(),
-      });
-      if (!checked.ok) {
-        try {
-          await logAudit({
-            action: "checkout.session.create",
-            outcome: "failure",
-            detail: "Promotion code rejected",
-            ip: clientIp,
-            user_agent: userAgent,
-            metadata: { session_id: sessionId, reason: checked.reason },
-          });
-        } catch (logAuditError) {
-          console.error("Failed to log promotion code rejection:", logAuditError);
-        }
-        return applyRotatedCsrfCookie(
-          NextResponse.json(
-            {
-              error: "promotion_code_invalid",
-              reason: checked.reason,
-              message: checked.message,
-              retryable: false,
-            },
-            { status: 409 },
-          ),
-          csrfResult,
-        );
-      }
-      promotion = checked;
-    }
-
     // 最終確認画面の内容を返す前に、同じセッションのほかの決済の画面を閉じる（設計書 2-2・8、決め事 D5）。
     const respondWithConfirmation = async (
       draft: ClaimedCheckoutDraftRow,
@@ -850,7 +807,8 @@ export async function POST(req: NextRequest) {
           clientSecret,
           itemsSnapshot: draft.items_snapshot ?? [],
           shippingSnapshot: draft.shipping_snapshot,
-          promotionCode: promotion?.code ?? null,
+          promotionCodes,
+          discountResult: draft.discount_result,
           acceptedOrderId: null,
         },
       );
@@ -875,6 +833,13 @@ export async function POST(req: NextRequest) {
         };
       }),
     );
+    const discountBuyer = buyerUserId ? { kind: 'member' as const, userId: buyerUserId }
+      : { kind: 'guest' as const, normalizedEmail: shippingSnapshot.email };
+    const evaluated = await evaluateCheckoutDiscounts(supabase, discountBuyer, itemsSnapshot.map(i => ({
+      lineKey: i.source_cart_line_id, itemId: i.item_id, unitPrice: i.item_price, quantity: i.quantity, lineKind: 'order' as const,
+    })), promotionCodes, new Date().toISOString(), 'confirm');
+    if (evaluated.refusals.length) return applyRotatedCsrfCookie(discountChangedResponse(evaluated.refusals), csrfResult);
+    const discountSnapshotHash = checkoutDiscountSnapshotHash(itemsSnapshot, promotionCodes, checkoutDiscountDefinitions(evaluated.facts), evaluated.facts, evaluated.result);
     const checkoutOrigin = getRequestOrigin(req);
     const requestFingerprint = buildCheckoutRequestFingerprint({
       uiMode,
@@ -885,26 +850,29 @@ export async function POST(req: NextRequest) {
       totalAmount,
       itemsSnapshot,
       shippingSnapshot,
-      promotionCodeId: promotion?.promotionCodeId ?? null,
+      discountSnapshotHash,
       buyerUserId,
     });
 
-    const claimParams = {
+    const claimParams: CheckoutDiscountClaim = {
       sessionId,
       buyerUserId,
       cartId,
       requestFingerprint,
-      uiMode,
+      checkoutUiMode: uiMode,
+      requestVersion: CHECKOUT_REQUEST_VERSION,
+      currency: "jpy",
       checkoutOrigin,
       paymentMethod: paymentMethod ?? "stripe_card",
       subtotalAmount,
-      taxAmount,
-      shippingAmount,
+      taxAmount: 0,
+      shippingAmount: 0,
       totalAmount,
       shippingSnapshot,
       itemsSnapshot,
     };
-    let createdDraft = await claimCheckoutDraft(claimParams);
+    let createdDraft = await claimCheckoutDraft(claimParams, evaluated.result, evaluated.facts);
+    if (createdDraft.discount_snapshot_hash !== discountSnapshotHash) throw new CheckoutDiscountError(true);
 
     // RPCの原子的claimとStripeの冪等キーの間で応答が失われても、
     // draftに確定済みのSessionを取得して同じものを返す。
@@ -925,6 +893,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (existingSession.status === "open" && hasReusableTimeLeft(existingSession)) {
+        assertStripeDiscount(existingSession, createdDraft.discount_result);
         if (
           createdDraft.checkout_ui_mode === "custom" &&
           existingSession.client_secret
@@ -990,7 +959,8 @@ export async function POST(req: NextRequest) {
       if (!retired) {
         throw new Error("Expired checkout draft retirement conflicted");
       }
-      createdDraft = await claimCheckoutDraft(claimParams);
+      createdDraft = await claimCheckoutDraft(claimParams, evaluated.result, evaluated.facts);
+      if (createdDraft.discount_snapshot_hash !== discountSnapshotHash) throw new CheckoutDiscountError(true);
     }
 
     if (createdDraft.checkout_session_id) {
@@ -1045,6 +1015,32 @@ export async function POST(req: NextRequest) {
       throw new Error("Claimed checkout draft amount invariant failed");
     }
 
+    let couponId = createdDraft.stripe_discount_coupon_id;
+    if (!couponId && createdDraft.discount_result.discountAmount > 0) {
+      try {
+        couponId = await createStripeDiscountCoupon(stripe, createdDraft.id, createdDraft.discount_snapshot_hash, createdDraft.discount_result.discountAmount);
+      } catch (error) {
+        discountProviderFailure = true;
+        // Coupon errors are cached by their idempotency key too; a retry needs a new draft (K-5).
+        if (!(error instanceof Stripe.errors.StripeError && error.code === 'idempotency_key_in_use')) {
+          await retireUnattachedDraft({
+            draftId: createdDraft.id,
+            sessionId: createdDraft.session_id,
+            requestVersion: createdDraft.checkout_request_version,
+            requestFingerprint: createdDraft.checkout_request_fingerprint,
+            ip: clientIp,
+            userAgent,
+          });
+        }
+        throw error;
+      }
+      try {
+        const { data, error } = await supabase.rpc('attach_checkout_discount_coupon', { _draft_id: createdDraft.id, _snapshot_hash: createdDraft.discount_snapshot_hash, _coupon_id: couponId });
+        if (error || data !== true) throw new CheckoutDiscountError(error?.message === 'GROUP_H_DRAFT_SNAPSHOT_CONFLICT' && error?.code === '22023');
+      } catch (error) {
+        throw error instanceof CheckoutDiscountError ? error : new CheckoutDiscountError();
+      }
+    }
     const checkoutSessionExpiresAt = await reserveCheckoutSessionExpiry(createdDraft.id);
     const selectedPaymentMethod = createdDraft.payment_method ?? "auto";
     const commonSessionParams = {
@@ -1053,13 +1049,11 @@ export async function POST(req: NextRequest) {
       client_reference_id: createdDraft.id,
       expires_at: checkoutSessionExpiresAt,
       // 割引はサーバーが確かめたコードだけを付ける。お客様のブラウザからは付けさせない（設計書第3章）
-      ...(promotion ? { discounts: [{ promotion_code: promotion.promotionCodeId }] } : {}),
+      ...(couponId ? { discounts: [{ coupon: couponId }] } : {}),
       metadata: {
         draft_id: createdDraft.id,
         session_id: createdDraft.session_id,
         selected_payment_method: selectedPaymentMethod,
-        // 最終確認画面と入り直しで、付けたコードを見せる（決め事 D8）
-        ...(promotion ? { promotion_code: promotion.code } : {}),
       },
       payment_intent_data: {
         metadata: {
@@ -1085,6 +1079,7 @@ export async function POST(req: NextRequest) {
         idempotencyKey: checkoutSessionIdempotencyKey(createdDraft.id, checkoutSessionExpiresAt),
       });
     } catch (stripeError) {
+      discountProviderFailure = Boolean(couponId);
       // 同時に押した時（idempotency_key_in_use）は先の方が作っている最中なので、片付けて先の方の成功を潰さない
       if (
         !(
@@ -1092,7 +1087,7 @@ export async function POST(req: NextRequest) {
           stripeError.code === "idempotency_key_in_use"
         )
       ) {
-        await retireUnattachedDraft({
+        const retired = await retireUnattachedDraft({
           draftId: createdDraft.id,
           sessionId: createdDraft.session_id,
           requestVersion: createdDraft.checkout_request_version,
@@ -1100,10 +1095,27 @@ export async function POST(req: NextRequest) {
           ip: clientIp,
           userAgent,
         });
+        // A concurrent request may already have attached a Session. Only delete after confirmed retirement.
+        if (retired && couponId) {
+          try { await stripe.coupons.del(couponId); }
+          catch { console.error('discount_coupon_cleanup_failed'); }
+        }
       }
       throw stripeError;
     }
 
+    try {
+      assertStripeDiscount(session, createdDraft.discount_result);
+    } catch (error) {
+      try { await expireConflictingOpenSession(stripe, session, createdDraft.id); }
+      catch { console.error('discount_session_cleanup_failed'); }
+      await retireUnattachedDraft({
+        draftId: createdDraft.id, sessionId: createdDraft.session_id,
+        requestVersion: createdDraft.checkout_request_version, requestFingerprint: createdDraft.checkout_request_fingerprint,
+        ip: clientIp, userAgent,
+      });
+      throw error;
+    }
     const stored = await storeCheckoutSessionIdOnDraft({
       draftId: createdDraft.id,
       checkoutSessionId: session.id,
@@ -1167,11 +1179,18 @@ export async function POST(req: NextRequest) {
     return await respondWithConfirmation(createdDraft, session.id, session.client_secret);
 
   } catch (error) {
+    if (error instanceof DiscountInputError && error.code === 'total_below_minimum') return NextResponse.json({ error: 'total_below_minimum', message: MINIMUM_MESSAGE }, { status: 422, headers: { 'Cache-Control': 'no-store' } });
+    if (error instanceof CheckoutDiscountError) {
+      if (error.code) return discountChangedResponse([]);
+      console.error('discount_checkout_failed');
+      return NextResponse.json({ error: 'checkout_session_failed', message: error.message, retryable: true }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
+    }
     const classified = classifyCheckoutSessionError(error);
     const correlationId = randomUUID();
 
-    const errorDescription = describeUnexpectedError(error);
-    console.error("Checkout session creation error:", correlationId, {
+    const errorDescription = discountProviderFailure ? {} : describeUnexpectedError(error);
+    if (discountProviderFailure) console.error('checkout_session_failed', correlationId);
+    else console.error('Checkout session creation error:', correlationId, {
       ...errorDescription,
       ...(error instanceof Error ? { stack: error.stack } : {}),
     });

@@ -1,5 +1,6 @@
 /** @jest-environment node */
 import { NextRequest, NextResponse } from 'next/server';
+jest.mock('server-only', () => ({}), { virtual: true });
 
 // jsdom の Response には静的メソッド json() が無い。NextResponse.json が内部で使うため補う。
 if (typeof (Response as unknown as { json?: unknown }).json !== 'function') {
@@ -136,6 +137,58 @@ describe('POST /api/checkout/resume', () => {
     mockPaidDraftResult = { data: { buyer_user_id: null }, error: null };
     mockOrderResult = { data: null, error: null };
     mockBuildCheckoutConfirmation.mockResolvedValue({ checkoutSessionId: 'cs_test_abc', clientSecret: 'x', shipping: SHIPPING, lines: [], promotionCode: 'WELCOME10' });
+  });
+
+  test('FREQ-548-AC-02: resumeは固定した複数コードと内訳を復元し旧draftも読める', async () => {
+    const discountResult = { version: 1, subtotalAmount: 5000, shippingAmount: 0, discountAmount: 500, totalAmount: 4500,
+      applied: [{ discountId: 'd', codeId: 'c', name: 'Saved', code: 'FIRST', class: 'order', amount: 500 }], allocations: [], unitAmounts: [], unusedCodes: ['SECOND'], provisional: false, calculationMode: 'exact' };
+    mockDraftResult = { data: { ...DRAFT, discount_engine_version: 1, discount_result: discountResult }, error: null };
+    mockRetrieve.mockResolvedValue({ id: 'cs_test_abc', status: 'open', client_secret: 'secret', amount_total: 4500, total_details: { amount_discount: 500 }, metadata: { session_id: 'sess-abc', draft_id: 'draft-1', promotion_code: 'WRONG' } });
+    expect((await POST(makeRequest({ checkoutSessionId: 'cs_test_abc' }))).status).toBe(200);
+    expect(mockBuildCheckoutConfirmation.mock.calls[0][1]).toMatchObject({ promotionCodes: ['FIRST','SECOND'], discountResult });
+    mockDraftResult = { data: { ...DRAFT, discount_engine_version: null, discount_result: null }, error: null };
+    expect((await POST(makeRequest({ checkoutSessionId: 'cs_test_abc' }))).status).toBe(200);
+    expect(mockBuildCheckoutConfirmation.mock.calls[1][1]).toMatchObject({ promotionCodes: ['WRONG'], discountResult: null });
+  });
+
+  test('FREQ-548-AC-02: resumeは使う固定列だけを読む', async () => {
+    await POST(makeRequest({ checkoutSessionId: 'cs_test_abc' }));
+    expect(mockDraftQueries[0][0]).toEqual(['select', ['id, session_id, checkout_session_id, buyer_user_id, status, items_snapshot, shipping_snapshot, discount_engine_version, discount_result']]);
+  });
+
+  test('FREQ-518-AC-01: 割引以外のresumeエラーは従来の種類とcodeをログに残す', async () => {
+    const error = { code: '40001', message: 'checkout read failed' };
+    mockDraftResult = { data: null, error };
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const res = await POST(makeRequest({ checkoutSessionId: 'cs_test_abc' }));
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: 'resume_failed' });
+      expect(spy).toHaveBeenCalledWith('Checkout resume error:', error);
+    } finally { spy.mockRestore(); }
+  });
+
+  test('FREQ-548-AC-02: 新しい固定割引の不一致は固定のログだけを残す', async () => {
+    mockDraftResult = { data: { ...DRAFT, discount_engine_version: 1, discount_result: null }, error: null };
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const res = await POST(makeRequest({ checkoutSessionId: 'cs_test_abc' }));
+      expect(res.status).toBe(500);
+      expect(spy.mock.calls).toEqual([['checkout_resume_failed']]);
+    } finally { spy.mockRestore(); }
+  });
+
+  test('FREQ-518-AC-01: resumeの監査書込み失敗は従来のログと元の例外を残し403を保つ', async () => {
+    const logError = new Error('audit write failed');
+    mockRetrieve.mockResolvedValue({ id: 'cs_test_abc', status: 'open', metadata: { session_id: 'another-session' } });
+    mockLogAudit.mockRejectedValueOnce(logError);
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const res = await POST(makeRequest({ checkoutSessionId: 'cs_test_abc' }));
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: 'forbidden' });
+      expect(spy.mock.calls).toEqual([['Failed to log resume audit:', logError]]);
+    } finally { spy.mockRestore(); }
   });
 
   test.each([
@@ -329,7 +382,7 @@ describe('POST /api/checkout/resume', () => {
       clientSecret: 'cs_test_abc_secret',
       itemsSnapshot: ITEMS,
       shippingSnapshot: SHIPPING,
-      promotionCode: 'WELCOME10',
+      promotionCodes: ['WELCOME10'], discountResult: null,
       acceptedOrderId: null,
     });
     await expect(res.json()).resolves.toEqual({

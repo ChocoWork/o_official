@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { DiscountFacts, DiscountResult } from '@/lib/discounts/discount-types';
 
 /** 決済の画面の下書きの買い手。ゲストは null、下書きが無い時は undefined（買い手を比べられない）。 */
 export async function buyerOfCheckoutSession(
@@ -271,7 +272,23 @@ export type CheckoutDraftRow = {
   shipping_snapshot: CheckoutShippingSnapshot | null;
   items_snapshot: CheckoutDraftItemsSnapshot | null;
   status: string;
+  discount_engine_version?: number | null;
+  discount_result?: DiscountResult | null;
+  discount_facts?: DiscountFacts | null;
+  discount_snapshot_hash?: string | null;
+  stripe_discount_coupon_id?: string | null;
 };
+
+export type CheckoutDiscountClaim = {
+  sessionId: string; requestVersion: number; requestFingerprint: string; checkoutUiMode: 'custom'; checkoutOrigin: string;
+  paymentMethod: StripeCheckoutPaymentMethod; currency: 'jpy'; subtotalAmount: number; taxAmount: 0; shippingAmount: 0; totalAmount: number;
+  shippingSnapshot: CheckoutShippingSnapshot; itemsSnapshot: CheckoutDraftItemsSnapshot; buyerUserId: string | null; cartId: string;
+};
+export type CheckoutDiscountDraft = {
+  draftId: string; checkoutSessionId: string | null; claimCreated: boolean; discountResult: DiscountResult;
+  discountSnapshotHash: string; stripeDiscountCouponId: string | null;
+};
+
 
 export function isStripeCheckoutPaymentMethod(
   value: unknown

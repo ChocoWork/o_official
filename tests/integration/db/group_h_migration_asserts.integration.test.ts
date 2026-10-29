@@ -51,6 +51,54 @@ describe('H1 source contract (no DB)', () => {
 const h2Path = path.join(directory, '20261029130100_group_h_discounts_admin.sql');
 const h2 = fs.existsSync(h2Path) ? fs.readFileSync(h2Path, 'utf8') : '';
 const h2Assert = h2.split('-- H2_FINAL_ASSERT_BEGIN\n')[1]?.split('-- H2_FINAL_ASSERT_END')[0] ?? '';
+
+const h3Path = path.join(directory, '20261029130200_group_h_discounts_checkout.sql');
+const h3 = fs.existsSync(h3Path) ? fs.readFileSync(h3Path, 'utf8') : '';
+const h3Assert = h3.split('-- H3_FINAL_ASSERT_BEGIN\n')[1]?.split('-- H3_FINAL_ASSERT_END')[0] ?? '';
+
+describe('H3 source contract (controller only)', () => {
+  test('FREQ-548-AC-02: H3はLFと単一取引と固定額0のCHECKと４つの末尾assertを持つ', () => {
+    expect(h3).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(h3.startsWith('BEGIN;\n')).toBe(true);
+    expect(h3.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(h3.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(h3.trimEnd()).toMatch(/-- H3_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect(h3).toContain("CHECK (status <> 'created' OR discount_engine_version IS DISTINCT FROM 1 OR discount_amount = 0)");
+    for (const detail of ['h3_draft_freeze','h3_coupon_binding','h3_public_acl','h3_amount_checks']) expect(h3Assert).toContain(`'${detail}'`);
+    expect(h3Assert.split('$h3_final$')).toHaveLength(3);
+    expect(h3Assert).not.toMatch(/<>\s*CASE\b/i);
+    expect(h3).not.toMatch(/(?:proacl|relacl)\s*::\s*text/i);
+    expect(h3).not.toMatch(/(?:GRANT|REVOKE)[^;]*USAGE\s+ON\s+SCHEMA\s+private/i);
+  });
+});
+
+describeLocalDb('H3 semantic final assertions (controller only)', db => {
+  beforeEach(async () => { await db().query('begin'); await db().query('select pg_advisory_xact_lock(190521,1)'); });
+  afterEach(async () => { await db().query('rollback'); });
+  async function attempt(change = ''): Promise<AssertFailure | null> {
+    await db().query('savepoint h3_assert');
+    let failure: AssertFailure | null = null;
+    try { if (change) await db().query(change); await db().query(h3Assert); }
+    catch (caught) { const e = caught as AssertFailure; failure = { code: e.code, message: e.message === 'GROUP_H_MIGRATION_ASSERTION_FAILED' ? e.message : 'H_UNEXPECTED_DB_ERROR', detail: e.detail }; }
+    finally { await db().query('rollback to savepoint h3_assert'); await db().query('release savepoint h3_assert'); }
+    return failure;
+  }
+  test('FREQ-548-AC-02: H3末尾assertは無改変で通る（controllerの本文MD5補完後）', async () => { expect(h3Assert).not.toBe(''); expect(await attempt()).toBeNull(); });
+  test.each([
+    ['alter table public.checkout_drafts disable trigger h3_checkout_frozen','h3_draft_freeze'],
+    ['grant execute on function public.claim_checkout_discount_draft(jsonb,jsonb,jsonb) to anon','h3_public_acl'],
+    ['alter function public.attach_checkout_discount_coupon(uuid,text,text) security definer','h3_public_acl'],
+    ['create function public.claim_checkout_discount_draft(text) returns jsonb language sql as $$select null::jsonb$$','h3_public_acl'],
+    ['alter table public.checkout_drafts drop constraint checkout_drafts_h3_created_amount','h3_amount_checks'],
+    ['alter table public.checkout_drafts drop constraint checkout_drafts_h3_coupon','h3_amount_checks'],
+    [`do $tamper$ begin execute replace(pg_get_functiondef('private.attach_checkout_discount_coupon(uuid,text,text)'::regprocedure),
+      'v_draft.discount_snapshot_hash IS DISTINCT FROM _snapshot_hash','false'); end $tamper$`,'h3_coupon_binding'],
+    [`do $tamper$ begin execute replace(pg_get_functiondef('private.group_h_validate_checkout_discount(jsonb,jsonb,jsonb)'::regprocedure),
+      'OR v_total<50','OR v_total<0'); end $tamper$`,'h3_amount_checks'],
+  ])('FREQ-548-AC-02: H3改ざんを%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual({ code: 'P0001', message: 'GROUP_H_MIGRATION_ASSERTION_FAILED', detail });
+  });
+});
 describe('H2 source contract (controller also runs this)', () => {
   test('FREQ-543-AC-01: H2末尾assertは専用dollarタグ１組で閉じIF内のCASEを括弧で囲む', () => {
     const parts = h2Assert.split('$h2_final$');

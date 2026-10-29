@@ -1,3 +1,5 @@
+import type { DiscountResult } from '@/lib/discounts/discount-types';
+import { CheckoutDiscountError } from '@/features/checkout/services/checkout-discounts.service';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
@@ -30,6 +32,8 @@ type DraftRow = {
   checkout_session_id: string | null;
   buyer_user_id: string | null;
   status: string;
+  discount_engine_version: number | null;
+  discount_result: DiscountResult | null;
   items_snapshot: CheckoutDraftItemSnapshot[] | null;
   shipping_snapshot: CheckoutShippingSnapshot | null;
 };
@@ -106,7 +110,7 @@ export async function POST(req: NextRequest) {
     const draftId = getDraftIdFromStripeMetadata(session.metadata);
     const { data: draft, error: draftError } = draftId ? await supabase
       .from('checkout_drafts')
-      .select('id, session_id, checkout_session_id, buyer_user_id, status, items_snapshot, shipping_snapshot')
+      .select('id, session_id, checkout_session_id, buyer_user_id, status, items_snapshot, shipping_snapshot, discount_engine_version, discount_result')
       .eq('id', draftId)
       .maybeSingle<DraftRow>() : { data: null, error: null };
     if (draftError) {
@@ -131,6 +135,10 @@ export async function POST(req: NextRequest) {
       return none();
     }
 
+    if (draft.discount_engine_version != null && draft.discount_engine_version !== 1) throw new CheckoutDiscountError();
+
+    if (draft.discount_engine_version === 1 && (!draft.discount_result || session.amount_total !== draft.discount_result.totalAmount
+      || (session.total_details?.amount_discount ?? 0) !== draft.discount_result.discountAmount)) throw new CheckoutDiscountError();
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .select('id')
@@ -147,13 +155,17 @@ export async function POST(req: NextRequest) {
         clientSecret: session.client_secret,
         itemsSnapshot: draft.items_snapshot ?? [],
         shippingSnapshot: draft.shipping_snapshot,
-        promotionCode: session.metadata?.promotion_code ?? null,
+        promotionCodes: draft.discount_engine_version === 1
+          ? [...new Set([...(draft.discount_result?.applied.flatMap(e => e.code ? [e.code] : []) ?? []), ...(draft.discount_result?.unusedCodes ?? [])])]
+          : session.metadata?.promotion_code ? [session.metadata.promotion_code] : [],
+        discountResult: draft.discount_engine_version === 1 ? draft.discount_result : null,
         acceptedOrderId: order?.id ?? null,
       },
     );
     return guard.finish(NextResponse.json({ state: 'resume', confirmation }));
   } catch (error) {
-    console.error('Checkout resume error:', error);
+    if (error instanceof CheckoutDiscountError) console.error('checkout_resume_failed');
+    else console.error('Checkout resume error:', error);
     return guard.finish(NextResponse.json({ error: 'resume_failed' }, { status: 500 }));
   }
 }

@@ -431,7 +431,7 @@ sequenceDiagram
     participant S as Stripe
 
     C->>A: 同じcheckout要求を並行送信
-    A->>D: claim_checkout_draft(fingerprint)
+    A->>D: claim_checkout_discount_draft(claim, result, facts)
     D-->>A: 同じdraft ID
     A->>S: Session作成(draft ID由来の冪等キー)
     S-->>A: 同じCheckout Session
@@ -737,7 +737,7 @@ Stripe 公式（無料の注文）に「無料注文のフルフィルメント�
 | ------------------------------ | -------- | --------------------------------------- | ------------------- | ----------------------------- |
 | `/api/checkout/create-session` | POST     | 「確認へ進む」で配送先7項目を求め（欠落は400 shipping_incomplete）、customのみの下書きと Stripe セッション（30分で失効）を作り、最終確認画面の内容を返す（hostedは400）。ログインを買い手として確かめて下書きに記録する（印が古ければ401 auth_expired、確かめられなければ503。支払い済みの画面の買い手が違えば409 login_changed） | 任意（ゲスト/会員） | `{ confirmation }` |
 | `/api/checkout/complete`       | POST     | Webhook/サーバ確認後に注文を確定。ログインは確かめず、注文の持ち主には触れない（グループ C） | 任意                | `{ orderId, status }`         |
-| `/api/checkout/promotion-code` | POST     | 割引コードの「適用」。サーバーが使えるかを確かめ、割引後の金額を返す | 任意（ゲスト/会員） | `{ code, subtotalAmount, shippingAmount, discountAmount, totalAmount }` |
+| `/api/checkout/promotion-code` | POST     | 割引コードの「適用」。サーバーが使えるかを確かめ、割引後の金額を返す | 任意（ゲスト/会員） | `{ result:DiscountResult }` |
 | `/api/checkout/place-order`    | POST     | 「注文する」の受け付け。ログインを確かめ、決済の画面がこの `session_id` の印のものでなければ403 forbiddenで断り（この画面は閉じない。ログインで印が新しくなった時など。画面は login_changed と同じ扱い）、下書きの買い手と違えば決済の画面を閉じて409 login_changedで断る（401 auth_expired・503は何も変えず返す）。同じなら、注文を作る処理の中で持ち主を書く。別の完了済み画面ならpayment_doneでその注文へ進み（買い手が違う画面は返さない）、本人のカート行が消えていればcart_changedで断る（押し直しではpayment_in_progressの注文だけ）。注文を作り在庫を確保する。残り10分未満は閉じず409 session_expiredと記録。前の画面は作り直しのD5か30分の時間切れで閉じる。作り直しの「確認へ進む」自体が買えない商品・金額の食い違いなどで断られたときは閉じる処理まで進まないため、30分の時間切れと Stripe の知らせ・見回りで閉じる。別の画面のpayment_done・cart_changed（受付済みの押し直しを含む）・supersededではこの画面を閉じ、失効成功時に照合して、受付済みなら放棄・在庫返却し、理由とIDを記録する。後始末の失敗はログに残し応答を変えない | 任意（ゲスト/会員） | `{ orderId, orderStatus }` |
 | `/api/checkout/resume`         | POST     | 決済の画面を開き直したときに、どこから続けるかを返す。ログインを確かめ、下書きの買い手が違えば none を返す（401 auth_expired・503は何も変えず返す） | 任意（ゲスト/会員） | `{ state: "none" }` ／ `{ state: "payment_done", checkoutSessionId }` ／ `{ state: "resume", confirmation }` |
 | `/api/webhook/stripe`          | POST     | Stripe Webhook 受信・署名検証・冪等処理 | Stripe 署名         | `200` or `400`                |
@@ -892,3 +892,23 @@ limit 20;
 数量の上限はアプリ側（`MAX_CART_ITEM_QUANTITY`）とゲスト用関数の 1..20 で担保する。
 
 **列を落とす前に関数を作り直す。** plpgsql の本体は依存関係として追跡されないため、参照が残っていても `DROP COLUMN` は成功し、実行時に初めて壊れる。同じマイグレーション（トランザクション）の中で、作り直し → 削除の順に並べる。
+
+## Hのcheckout接続（Task 6、2026-10-29）
+
+対応: FREQ-542-AC-03・FREQ-546-AC-04・FREQ-548-AC-01〜03。下のAPI契約は上のグループFの単一Stripeコードを置き換える。画面の複数コード/記憶/内訳への切替はTask 8で、Task 6の単体通過は画面の完走を意味しない。
+
+| 時点 | サーバーの動作 |
+| --- | --- |
+| 適用/preview | strict `{codes,guestEmail?}`。正規化後0〜5コードをDBで読む。guestEmailは形式検査後に捨て、本人メール/過去注文/本人回数を照合しない。メール条件は入力後も見込み。200 `{result}`、検索guardもfallback額で200 |
+| 確認へ進む/confirm | 検証済みuserId、guestは正規化済み配送先メールで初めて履歴を読む。automatic不適合は外して新しい額で最終確認へ進む。入力code不適合だけは409/definitive=true/returnTo=inputで断り、draftは作らない |
+| 金額の固定 | DB価格/source_cart_line_idからengineへ渡す。表示額とdraft.total_amountは割引前同士を比較する。H3へ15引数のcamelCase claim/result/factsを渡し、result/facts/version1/hashを同じ取引で保存。createdのdiscount_amountは0、割引0でも固定する |
+| 再送 | 指紋v3に割引snapshotのSHA256を含める。hashは全行/単価/数量、正規化コード、候補id/version、資格の事実、resultを含み、観測時刻と生の使用カウンターを除く。同hashは最初のresult/factsを返す |
+| Stripe | 元単価のline_itemsへ合計割引のcouponを１つ付ける。amount_off/currency jpy/duration once/max_redemptions 1、metadataはcheckout_draft_idだけ、キーはh-discount:draftId:hash。0円はcouponを作らない。保存済みcouponを使い回す |
+| Session失敗 | controller裁定（fix round 1）によりFREQ-518/K-5を優先し、briefの「同じdraftで再送」を置き換える。割引の有無によらず、idempotency_key_in_use以外の作成失敗はretire_unattached_checkout_draftで退役を試みる。退役がtrueの時だけ未使用couponをbest effortで削除し、削除失敗はdiscount_coupon_cleanup_failedだけをログに残し応答を変えない。押し直しは新draftと新coupon、新しい冪等キーになる。既存Sessionは元の固定draftで再利用する |
+| coupon作成失敗 | fix round 2ではcouponのprovider失敗もK-5と同じ条件で未添付draftの退役を試みる。idempotency_key_in_useでは退役せず、Session添付済みならDBが更新を拒む。coupon IDは返っていないため削除しない。応答はそのまま、押し直しは新draftのh-discountキーでcouponを作る |
+| 作成額の不一致 | 新Sessionの実額が固定結果と違えば、expireConflictingOpenSessionによる失効と未添付draftの退役を試みて固定500を返す。Sessionをdraftへ保存しない。画像の署名と既存の期限切れ/二重支払い/所有者の処理を保つ |
+| 入り直し | Hは固定resultからpromotionCodes/discountResultを復元してStripe実額を比べる。旧NULL draftだけmetadataの旧codeを配列0〜1件へ変え、discountResult=null |
+
+ゲストのコード拒否は全理由で「このコードは使えません。会員の方はログインしてからお試しください。」、refusalsは入力code/not_eligibleだけ。guest/member・preview/confirmの全refusalsを、理由によらず正規化codeの辞書順にする。member限定も汎用文、guest許可anyoneだけ従来の期限/上限/最低額の文。confirmの本文は「割引の条件が変わりました。入力画面で割引を確かめてください。」。新しい割引経路は入力コード・名前・メールと生のDB/Stripe文・stackを監査とログに載せない。割引以外の失敗は既存のerror_message/error_codeを保ち、Errorのstackはサーバーログだけに残す。割引のcatchから返す409/500/422もno-store。
+
+回数制限は先にIP10/10秒・60/600秒/session10/60秒。previewだけ会員userId10/60秒を追加。getClientIpを使い、メールのbucketを作らない。fallbackの要対応記録失敗でも計算額を返す。DB・provider・画面の確認はcontrollerが行う。

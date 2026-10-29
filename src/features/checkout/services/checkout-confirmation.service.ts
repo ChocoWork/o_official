@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { DiscountResult } from '@/lib/discounts/discount-types';
 import type {
   CheckoutDraftItemSnapshot,
   CheckoutShippingSnapshot,
@@ -19,13 +20,18 @@ export type CheckoutConfirmationLine = {
 };
 
 /** 最終確認画面に出す内容。決済の画面（Stripe の Checkout Session）の中身と同じものを見せる */
-export type CheckoutConfirmation = {
+type ConfirmationBase = {
   checkoutSessionId: string;
   clientSecret: string;
   shipping: CheckoutShippingSnapshot;
   lines: CheckoutConfirmationLine[];
-  promotionCode: string | null;
 };
+/** Task 8 migrates existing UI fixtures; new server responses always use the first arm. */
+export type CheckoutConfirmation = ConfirmationBase & ({
+  promotionCodes: readonly string[]; discountResult: DiscountResult | null; promotionCode?: string | null;
+} | {
+  promotionCode: string | null; promotionCodes?: never; discountResult?: never;
+});
 
 const EMPTY_SHIPPING: CheckoutShippingSnapshot = {
   email: null,
@@ -65,7 +71,8 @@ export async function buildCheckoutConfirmation(
     clientSecret: string;
     itemsSnapshot: CheckoutDraftItemSnapshot[];
     shippingSnapshot: CheckoutShippingSnapshot | null;
-    promotionCode: string | null;
+    promotionCodes: readonly string[];
+    discountResult: DiscountResult | null;
     acceptedOrderId: string | null;
   },
 ): Promise<CheckoutConfirmation> {
@@ -126,6 +133,7 @@ export async function buildCheckoutConfirmation(
     clientSecret: params.clientSecret,
     shipping: params.shippingSnapshot ?? EMPTY_SHIPPING,
     lines,
-    promotionCode: params.promotionCode,
+    promotionCodes: params.promotionCodes,
+    discountResult: params.discountResult,
   };
 }

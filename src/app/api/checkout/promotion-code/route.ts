@@ -1,99 +1,56 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { getStripeServerClient } from '@/lib/stripe/server';
 import { logAudit } from '@/lib/audit';
 import { findCartIdForBuyer } from '@/features/cart/services/shopping-context';
 import { checkoutBuyerFailureResponse, resolveCheckoutBuyer } from '@/features/checkout/services/checkout-buyer';
 import { loadCheckoutCart } from '@/features/checkout/services/checkout-cart.service';
-import { describeUnexpectedError } from '@/features/checkout/services/checkout-error.service';
 import { PROMOTION_CODE_GUARD, guardCheckoutPost } from '@/features/checkout/services/checkout-route-guard';
-import { PROMOTION_CODE_PATTERN, checkPromotionCode } from '@/features/checkout/services/promotion-code.service';
+import { checkoutPromotionRefusalMessage, promotionCodesSchema, publicDiscountRefusals } from '@/features/checkout/services/promotion-code.service';
+import { evaluateCheckoutDiscounts } from '@/features/checkout/services/checkout-discounts.service';
+import { DiscountInputError, type DiscountBuyer } from '@/lib/discounts/discount-types';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
-
-const requestSchema = z.object({ code: z.string().trim().regex(PROMOTION_CODE_PATTERN) }).strict();
-
+const requestSchema = z.object({ codes: promotionCodesSchema, guestEmail: z.string().email().max(254).optional() }).strict().transform(({ codes }) => ({ codes }));
 const FAILED_MESSAGE = '割引コードを確かめられませんでした。少し時間をおいてから、もう一度お試しください。';
 
-// PUBLIC: ゲスト購入を許可する公開 Route。守りは guardCheckoutPost（Cookie・回数の制限・CSRF）。
-// 割引コードの「適用」（グループ F 設計書第3章）。サーバーが Stripe に問い合わせ、今のカートで使えるかを確かめる。
-// 決済の画面にコードを付けるのは「確認へ進む」（create-session）で、ここは確かめと割引後の金額の目安だけ。
+// PUBLIC: guest preview never uses typed email for identity/history. Only verified app sessions identify members.
 export async function POST(req: NextRequest) {
   const guard = await guardCheckoutPost(req, PROMOTION_CODE_GUARD);
-  if (!guard.ok) {
-    return guard.response;
-  }
-
-  const audit = async (
-    outcome: 'success' | 'failure' | 'error',
-    detail: string,
-    metadata: Record<string, unknown> = {},
-  ) => {
-    try {
-      await logAudit({
-        action: 'checkout.promotion_code.check',
-        outcome,
-        detail,
-        ip: guard.clientIp,
-        user_agent: guard.userAgent,
-        metadata: { session_id: guard.sessionId, ...metadata },
-      });
-    } catch (logError) {
-      console.error('Failed to log promotion code audit:', logError);
-    }
+  if (!guard.ok) return guard.response;
+  const finish = (response: NextResponse) => { response.headers.set('Cache-Control', 'no-store'); return guard.finish(response); };
+  const audit = async (outcome: 'success' | 'failure' | 'error', metadata: Record<string, unknown>) => {
+    try { await logAudit({ action: 'checkout.promotion_code.check', outcome, detail: 'discount_code_check', ip: guard.clientIp, user_agent: guard.userAgent,
+      metadata: { session_id: guard.sessionId, ...metadata } }); } catch { console.error('discount_audit_failed'); }
   };
-
   try {
     const parsed = requestSchema.safeParse(await req.json().catch(() => null));
-    if (!parsed.success) {
-      return guard.finish(
-        NextResponse.json({ error: 'invalid_request', message: 'このコードは使えません' }, { status: 400 }),
-      );
-    }
-
-    // カートは session_id ではなく持ち主（確かめた買い手）で引く。create-session と同じ規則（カートの引き継ぎ設計書 第7章）
+    if (!parsed.success) return finish(NextResponse.json({ error: 'invalid_request', message: 'このコードは使えません' }, { status: 400 }));
     const buyer = await resolveCheckoutBuyer(req);
-    if (buyer.kind === 'expired' || buyer.kind === 'unavailable') {
-      return guard.finish(checkoutBuyerFailureResponse(buyer.kind));
+    if (buyer.kind === 'expired' || buyer.kind === 'unavailable') return finish(checkoutBuyerFailureResponse(buyer.kind));
+    if (buyer.kind === 'member') {
+      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
+      const limited = await enforceRateLimit({ request: req, endpoint: 'checkout:promotion-code:member', subject: buyer.userId, limit: 10, windowSeconds: 60 });
+      if (limited) { limited.headers.set('Cache-Control', 'no-store'); return limited; }
     }
-    // 買えない明細（取り扱い終了・非公開）は金額に入れず、断りもしない。カートの画面に出ている明細だけで確かめる
+    const discountBuyer: DiscountBuyer = buyer.kind === 'member' ? { kind: 'member', userId: buyer.userId } : { kind: 'guest', normalizedEmail: null };
     const cart = await loadCheckoutCart(supabase, await findCartIdForBuyer(supabase, req, buyer));
-    if (cart.kind === 'empty') {
-      return guard.finish(
-        NextResponse.json({ error: 'cart_empty', message: 'ご購入いただける商品がありません。' }, { status: 400 }),
-      );
+    if (cart.kind === 'empty') return finish(NextResponse.json({ error: 'cart_empty', message: 'ご購入いただける商品がありません。' }, { status: 400 }));
+    const evaluated = await evaluateCheckoutDiscounts(supabase, discountBuyer, cart.cartRows.map(l => ({ lineKey: l.id, itemId: l.item_id,
+      unitPrice: cart.itemMap.get(l.item_id)?.price ?? 0, quantity: l.quantity, lineKind: 'order' as const })), parsed.data.codes, new Date().toISOString(), 'preview');
+    const refusals = publicDiscountRefusals(discountBuyer, evaluated.refusals, [], evaluated.facts);
+    // The service already masks restricted member codes; preserve its public member refusals.
+    const visible = discountBuyer.kind === 'guest' ? refusals : evaluated.refusals;
+    if (visible.length) {
+      await audit('failure', { refusal_count: visible.length });
+      return finish(NextResponse.json({ error: 'promotion_code_invalid', refusals: visible, message: checkoutPromotionRefusalMessage(discountBuyer, visible[0]) }, { status: 422 }));
     }
-
-    const result = await checkPromotionCode(getStripeServerClient(), {
-      code: parsed.data.code,
-      preDiscountTotal: cart.amounts.totalAmount,
-      now: new Date(),
-    });
-    if (!result.ok) {
-      await audit('failure', 'Promotion code rejected', { reason: result.reason });
-      return guard.finish(
-        NextResponse.json(
-          { error: 'promotion_code_invalid', reason: result.reason, message: result.message },
-          { status: 422 },
-        ),
-      );
-    }
-
-    await audit('success', 'Promotion code accepted', { promotion_code_id: result.promotionCodeId });
-    return guard.finish(
-      NextResponse.json({
-        code: result.code,
-        subtotalAmount: cart.amounts.subtotalAmount,
-        shippingAmount: cart.amounts.shippingAmount,
-        discountAmount: result.discountAmount,
-        totalAmount: result.totalAfterDiscount,
-      }),
-    );
+    await audit('success', { discount_ids: evaluated.result.applied.map(e => e.discountId), code_ids: evaluated.result.applied.flatMap(e => e.codeId ? [e.codeId] : []), applied_count: evaluated.result.applied.length });
+    return finish(NextResponse.json({ result: evaluated.result }));
   } catch (error) {
-    console.error('Promotion code check error:', error);
-    // PostgREST の失敗は Error ではない素のオブジェクトで投げられるので、message・code だけ取り出す（details・hint は残さない）
-    await audit('error', 'Promotion code check failed', describeUnexpectedError(error));
-    return guard.finish(NextResponse.json({ error: 'promotion_code_failed', message: FAILED_MESSAGE }, { status: 500 }));
+    if (error instanceof DiscountInputError && error.code === 'total_below_minimum') return finish(NextResponse.json({ error: 'total_below_minimum', message: 'お支払い金額は50円以上にしてください。' }, { status: 422 }));
+    console.error('discount_code_check_failed');
+    await audit('error', { result_code: 'discount_failed' });
+    return finish(NextResponse.json({ error: 'promotion_code_failed', message: FAILED_MESSAGE }, { status: 500 }));
   }
 }

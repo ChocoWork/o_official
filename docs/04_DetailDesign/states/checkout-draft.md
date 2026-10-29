@@ -71,3 +71,21 @@ stateDiagram-v2
 ## 未確認事項
 
 本番の状態制約・保持jobの適用と実行、実データの保持期間は未確認。グループ F の移行（`20261007133711`）は 2026-10-07 に本番へ当てた。グループ C の移行（`20261008055720`）は 2026-10-08 に本番へ当てた。SQLコメントにある決済前の受付APIは、グループ F の `place-order`（最終確認画面の「注文する」）として実装済み。支払いの後に注文が無いときの作成は、引き続き照合器からの呼び出しを根拠とした。
+
+## Hの割引固定（Task 6、2026-10-29）
+
+対応: FREQ-542-AC-03・FREQ-548-AC-02/03。H3のDB試験と実providerはcontroller確認待ち。
+
+| 状態/操作 | 保持する値 |
+| --- | --- |
+| created/version1 | discount_result・discount_facts・discount_engine_version=1・discount_snapshot_hashを同時に固定。割引0円も同じ。discount_amount=0をCHECKで守る。total_amountは割引前、result.totalAmountだけ割引後 |
+| coupon結付け | stripe_discount_coupon_idは旧行NULL。hash一致かつcreatedだけに保存。同じidはtrue、違うid/hash/完成済みはGROUP_H_DRAFT_SNAPSHOT_CONFLICT/22023。保存後は上書きしない |
+| 固定の再送 | 同hashは最初のresult/factsを返し、観測時刻/生カウンターだけが違っても上書きしない。固定済みhashが違う要求は拒否する。行/数量/着/配分/総和/50円を検査し、provisionalと未確認guest factsを拒否 |
+| completed | 既存の受付/照合がStripeの実割引をdiscount_amountへ書き戻す。40000+0=37000+3000で割引前同士の照合が成立。使用の予約/確定はTask 7 |
+| 旧NULL draft | ４固定欄とcoupon欄はNULLのまま。resumeはmetadataの旧promotion_codeを１要素（無ければ空）のpromotionCodesへ変え、discountResult=null。Hの固定を補完しない |
+| Stripe作成失敗 | controller裁定（fix round 1）ではFREQ-518/K-5を優先し、briefの「同じdraftで再送」を置き換える。割引の有無によらずidempotency_key_in_use以外はretire_unattached_checkout_draftの既存条件でcreated→failedを試みる。退役がtrueの時だけcouponをbest effortで削除し、失敗はdiscount_coupon_cleanup_failedだけを記録して応答を変えない。押し直しでは新draftと新coupon、新しい冪等キーを使う。退役失敗/falseの時はcouponを削除しない |
+| coupon作成失敗 | fix round 2ではcouponのprovider失敗にも同じretire_unattached_checkout_draftを使い、未添付のcreated→failedを試みる。idempotency_key_in_useは除外し、同時の要求がSessionを付けた行は更新しない。coupon ID未取得のため削除はない。退役false/失敗でも元の応答を保ち、退役後の押し直しは新draft IDのcoupon冪等キーになる |
+| Stripe作成直後の額不一致 | 新Sessionを失効させ未添付draftの退役を試み、固定500/no-store。Sessionをdraftへ添付しない。片付け失敗でも元の失敗応答を保つ |
+| Session作成済みの再送 | 既存Sessionは自身の固定draft/result/couponと共に再利用する。違う割引を既存Sessionへ付けない。期限切れSessionの既存退役は維持 |
+
+claim_checkout_discount_draftは既存15引数claim_checkout_draftへ委譲し、同じ取引で固定する。G共通→H目録の鍵を先に取る。ゲストのcart所有権はrouteの既存findCartIdForBuyerが専用Cookieで確認し、H3はguest所有行であることとsnapshot行がそのcartに属することを検査する（15引数にはguest tokenがない）。

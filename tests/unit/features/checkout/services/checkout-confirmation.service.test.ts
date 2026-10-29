@@ -73,7 +73,7 @@ describe('buildCheckoutConfirmation', () => {
         clientSecret: 'cs_test_1_secret',
         itemsSnapshot: ITEMS,
         shippingSnapshot: SHIPPING,
-        promotionCode: 'WELCOME10',
+        promotionCodes: ['WELCOME10'], discountResult: null,
         acceptedOrderId: null,
       },
     );
@@ -87,7 +87,7 @@ describe('buildCheckoutConfirmation', () => {
       checkoutSessionId: 'cs_test_1',
       clientSecret: 'cs_test_1_secret',
       shipping: SHIPPING,
-      promotionCode: 'WELCOME10',
+      promotionCodes: ['WELCOME10'], discountResult: null,
       lines: [
         {
           itemId: 1,
@@ -128,7 +128,7 @@ describe('buildCheckoutConfirmation', () => {
         clientSecret: 'cs_test_1_secret',
         itemsSnapshot: ITEMS,
         shippingSnapshot: SHIPPING,
-        promotionCode: null,
+        promotionCodes: [], discountResult: null,
         acceptedOrderId: 'order-1',
       },
     );
@@ -154,7 +154,7 @@ describe('buildCheckoutConfirmation', () => {
         clientSecret: 'secret',
         itemsSnapshot: [ITEMS[0]],
         shippingSnapshot: null,
-        promotionCode: null,
+        promotionCodes: [], discountResult: null,
         acceptedOrderId: null,
       },
     );
@@ -185,7 +185,7 @@ describe('buildCheckoutConfirmation', () => {
           clientSecret: 's',
           itemsSnapshot: ITEMS,
           shippingSnapshot: SHIPPING,
-          promotionCode: null,
+          promotionCodes: [], discountResult: null,
           acceptedOrderId: 'order-1',
         },
       ),

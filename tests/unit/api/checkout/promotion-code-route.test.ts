@@ -1,315 +1,103 @@
 /** @jest-environment node */
 import { NextRequest, NextResponse } from 'next/server';
-
-// jest の共通の初期設定（tests/setupRequestPolyfill.js）が Response を node-fetch のものに差し替え、静的な json() が無い。NextResponse.json が内部で使うため補う
-if (typeof (Response as unknown as { json?: unknown }).json !== 'function') {
-  (Response as unknown as { json: unknown }).json = (body: unknown, init?: ResponseInit) =>
-    new Response(JSON.stringify(body), {
-      ...init,
-      headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
-    });
-}
-
+if (typeof (Response as unknown as { json?: unknown }).json !== 'function') (Response as unknown as { json: unknown }).json = (b: unknown, i?: ResponseInit) => new Response(JSON.stringify(b), i);
+jest.mock('server-only', () => ({}), { virtual: true });
 const mockGuard = jest.fn();
-jest.mock('@/features/checkout/services/checkout-route-guard', () => ({
-  PROMOTION_CODE_GUARD: { ipLimits: [], sessionLimit: { endpoint: 'x', limit: 1, windowSeconds: 1 } },
-  guardCheckoutPost: (...args: unknown[]) => mockGuard(...args),
-}));
-
-const mockLoadCheckoutCart = jest.fn();
-const mockRemoveCartLines = jest.fn();
-jest.mock('@/features/checkout/services/checkout-cart.service', () => ({
-  loadCheckoutCart: (...args: unknown[]) => mockLoadCheckoutCart(...args),
-  // 割引コードの確かめはカートを変えない。呼ばれていないことを確かめるために差し替えておく
-  removeCartLines: (...args: unknown[]) => mockRemoveCartLines(...args),
-}));
-
-// カートは session_id ではなく、確かめた買い手（持ち主）から引く（カートの引き継ぎ設計書 第7章）
-const mockResolveCheckoutBuyer = jest.fn();
-jest.mock('@/features/checkout/services/checkout-buyer', () => ({
-  ...jest.requireActual('@/features/checkout/services/checkout-buyer'),
-  resolveCheckoutBuyer: (...args: unknown[]) => mockResolveCheckoutBuyer(...args),
-}));
-
-const mockFindCartIdForBuyer = jest.fn();
-jest.mock('@/features/cart/services/shopping-context', () => ({
-  findCartIdForBuyer: (...args: unknown[]) => mockFindCartIdForBuyer(...args),
-}));
-
-const mockCheckPromotionCode = jest.fn();
-jest.mock('@/features/checkout/services/promotion-code.service', () => ({
-  ...jest.requireActual('@/features/checkout/services/promotion-code.service'),
-  checkPromotionCode: (...args: unknown[]) => mockCheckPromotionCode(...args),
-}));
-
-const mockStripe = { promotionCodes: { list: jest.fn() } };
-jest.mock('@/lib/stripe/server', () => ({ getStripeServerClient: () => mockStripe }));
-
-const mockLogAudit = jest.fn().mockResolvedValue(undefined);
-jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockLogAudit(...args) }));
-
-// route が作る Supabase のクライアント。本物の loadCheckoutCart を通す試験だけが、読み込みの結果を差し替える
-const mockSupabaseFrom = jest.fn();
-jest.mock('@supabase/supabase-js', () => ({
-  createClient: jest.fn().mockReturnValue({ from: (...args: unknown[]) => mockSupabaseFrom(...args) }),
-}));
-
+jest.mock('@/features/checkout/services/checkout-route-guard', () => ({ ...jest.requireActual('@/features/checkout/services/checkout-route-guard'), guardCheckoutPost: (...args: unknown[]) => mockGuard(...args) }));
+const mockBuyer = jest.fn();
+jest.mock('@/features/checkout/services/checkout-buyer', () => ({ ...jest.requireActual('@/features/checkout/services/checkout-buyer'), resolveCheckoutBuyer: (...args: unknown[]) => mockBuyer(...args) }));
+const mockCart = jest.fn();
+jest.mock('@/features/checkout/services/checkout-cart.service', () => ({ loadCheckoutCart: (...args: unknown[]) => mockCart(...args) }));
+jest.mock('@/features/cart/services/shopping-context', () => ({ findCartIdForBuyer: jest.fn().mockResolvedValue('cart') }));
+const mockEvaluate = jest.fn();
+jest.mock('@/features/checkout/services/checkout-discounts.service', () => ({ evaluateCheckoutDiscounts: (...args: unknown[]) => mockEvaluate(...args) }));
+const mockLimit = jest.fn();
+jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: (...args: unknown[]) => mockLimit(...args) }));
+const mockAudit = jest.fn();
+jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockAudit(...args) }));
+jest.mock('@supabase/supabase-js', () => ({ createClient: () => ({}) }));
 import { POST } from '@/app/api/checkout/promotion-code/route';
+import { definition, input, line, usage } from '../../lib/discounts/fixtures';
+const result = { version: 1, subtotalAmount: 40000, shippingAmount: 0, discountAmount: 3000, totalAmount: 37000, applied: [], allocations: [], unitAmounts: [], unusedCodes: [], provisional: true, calculationMode: 'exact' };
+const request = (body: unknown) => new NextRequest('http://localhost/api/checkout/promotion-code', { method: 'POST', body: JSON.stringify(body) });
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockGuard.mockResolvedValue({ ok: true, sessionId: 'session', clientIp: '203.0.113.1', userAgent: null, finish: (r: NextResponse) => r });
+  mockBuyer.mockResolvedValue({ kind: 'guest' });
+  mockCart.mockResolvedValue({ kind: 'ok', cartRows: [{ id: 'line', item_id: 1, quantity: 2 }], itemMap: new Map([[1, { price: 20000 }]]) });
+  mockEvaluate.mockReset().mockResolvedValue({ result, facts: { usage: [] }, refusals: [] });
+  mockLimit.mockReset().mockResolvedValue(null);
+});
 
-function makeRequest(body: unknown): NextRequest {
-  return new NextRequest('http://localhost/api/checkout/promotion-code', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-}
-
-const OK_CART = {
-  kind: 'ok',
-  cartRows: [{ id: 'line-1', item_id: 1, quantity: 1, color: 'BLACK', size: 'M', variant_id: 101, variant_active: true }],
-  itemMap: new Map(),
-  amounts: { subtotalAmount: 5000, taxAmount: 0, shippingAmount: 0, totalAmount: 5000 },
-};
-
-describe('POST /api/checkout/promotion-code', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockGuard.mockResolvedValue({
-      ok: true,
-      sessionId: 'sess-abc',
-      clientIp: '203.0.113.5',
-      userAgent: 'jest',
-      finish: (response: NextResponse) => response,
-    });
-    mockLoadCheckoutCart.mockResolvedValue(OK_CART);
-    mockResolveCheckoutBuyer.mockReset().mockResolvedValue({ kind: 'guest' });
-    mockFindCartIdForBuyer.mockReset().mockResolvedValue('cart-1');
-    mockSupabaseFrom.mockReset();
-  });
-
-  test('守りで断られたら、その応答を返す', async () => {
-    const denied = new Response(null, { status: 429 });
-    mockGuard.mockResolvedValue({ ok: false, response: denied });
-
-    const res = await POST(makeRequest({ code: 'WELCOME10' }));
-
-    expect(res).toBe(denied);
-    expect(mockLoadCheckoutCart).not.toHaveBeenCalled();
-  });
-
-  test('コードに使えない文字があれば 400', async () => {
-    const res = await POST(makeRequest({ code: 'SALE 10' }));
-
-    expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_request' });
-    expect(mockCheckPromotionCode).not.toHaveBeenCalled();
-  });
-
-  test('カートが空なら 400', async () => {
-    mockLoadCheckoutCart.mockResolvedValue({ kind: 'empty' });
-
-    const res = await POST(makeRequest({ code: 'WELCOME10' }));
-
-    expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ error: 'cart_empty' });
-  });
-
-  test('持ち主のカートが無ければ（印の無いゲストなど）、カートの ID を null で渡して 400', async () => {
-    mockFindCartIdForBuyer.mockResolvedValue(null);
-    mockLoadCheckoutCart.mockResolvedValue({ kind: 'empty' });
-
-    const res = await POST(makeRequest({ code: 'WELCOME10' }));
-
-    expect(mockLoadCheckoutCart).toHaveBeenCalledWith(expect.anything(), null);
-    expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ error: 'cart_empty' });
-    expect(mockCheckPromotionCode).not.toHaveBeenCalled();
-  });
-
-  test.each([
-    { kind: 'expired', status: 401, body: { error: 'auth_expired' } },
-    { kind: 'unavailable', status: 503, body: { error: 'Service temporarily unavailable' } },
-  ])('買い手が $kind なら $status を返し、カートも割引コードの確かめにも進まない', async ({ kind, status, body }) => {
-    mockResolveCheckoutBuyer.mockResolvedValue({ kind });
-    const finish = jest.fn((response: NextResponse) => response);
-    mockGuard.mockResolvedValue({ ok: true, sessionId: 'sess-abc', clientIp: '203.0.113.5', userAgent: 'jest', finish });
-
-    const res = await POST(makeRequest({ code: 'WELCOME10' }));
-
-    expect(res.status).toBe(status);
-    await expect(res.json()).resolves.toEqual(body);
-    if (kind === 'unavailable') expect(res.headers.get('Retry-After')).toBe('30');
-    expect(finish).toHaveBeenCalledTimes(1);
-    expect(mockFindCartIdForBuyer).not.toHaveBeenCalled();
-    expect(mockLoadCheckoutCart).not.toHaveBeenCalled();
-    expect(mockCheckPromotionCode).not.toHaveBeenCalled();
-  });
-
-  test('持ち主のカートを引けなければ 500 で、時間をおいて試すよう案内する', async () => {
-    mockFindCartIdForBuyer.mockRejectedValue(new Error('db down'));
-    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
-
-    try {
-      const res = await POST(makeRequest({ code: 'WELCOME10' }));
-
-      expect(res.status).toBe(500);
-      await expect(res.json()).resolves.toMatchObject({ error: 'promotion_code_failed' });
-      expect(mockLoadCheckoutCart).not.toHaveBeenCalled();
-      expect(mockLogAudit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: 'checkout.promotion_code.check',
-          outcome: 'error',
-          metadata: { session_id: 'sess-abc', error_message: 'db down' },
-        }),
-      );
-    } finally {
-      consoleError.mockRestore();
-    }
-  });
-
-  // 取り扱いを終えた色・サイズ、非公開・無い商品の明細は、カートの画面（GET /api/cart）に出ない。
-  // 割引コードの確かめはそれで断らず、画面に出ている明細だけの金額で確かめ、カートは変えない（設計書 6-1）。本物の loadCheckoutCart を通す
-  test('買えない明細があっても 409 にせず、買える明細だけの金額で確かめる。カートは変えない', async () => {
-    const lineOf = (id: string, itemId: number, variantId: number, quantity: number, isActive: boolean) => ({
-      id,
-      quantity,
-      item_variants: { id: variantId, item_id: itemId, is_active: isActive, item_colors: null, item_sizes: null },
-    });
-    const cartLines = [
-      lineOf('line-1', 1, 101, 1, true),
-      lineOf('line-2', 2, 201, 3, false),
-      lineOf('line-3', 3, 301, 1, true),
-      lineOf('line-4', 4, 401, 1, true),
-    ];
-    const items = [
-      { id: 1, name: 'シャツ', price: 5000, image_url: null, status: 'published' },
-      { id: 2, name: '終了したパンツ', price: 8000, image_url: null, status: 'published' },
-      { id: 3, name: '非公開のコート', price: 30000, image_url: null, status: 'private' },
-    ];
-    const deleteLines = jest.fn();
-    const linesQuery = {
-      select: jest.fn().mockReturnThis(),
-      eq: jest.fn().mockResolvedValue({ data: cartLines, error: null }),
-      delete: deleteLines,
-    };
-    const itemsQuery = { select: jest.fn().mockReturnThis(), in: jest.fn().mockResolvedValue({ data: items, error: null }) };
-    mockSupabaseFrom.mockImplementation((table: string) => (table === 'cart_lines' ? linesQuery : itemsQuery));
-    mockLoadCheckoutCart.mockImplementationOnce(
-      jest.requireActual('@/features/checkout/services/checkout-cart.service').loadCheckoutCart,
-    );
-    mockCheckPromotionCode.mockResolvedValue({
-      ok: true,
-      promotionCodeId: 'promo_1',
-      code: 'WELCOME10',
-      discountAmount: 500,
-      totalAfterDiscount: 4500,
-    });
-
-    const res = await POST(makeRequest({ code: 'WELCOME10' }));
-
-    expect(res.status).toBe(200);
-    expect(mockCheckPromotionCode).toHaveBeenCalledWith(mockStripe, {
-      code: 'WELCOME10',
-      preDiscountTotal: 5000,
-      now: expect.any(Date),
-    });
-    await expect(res.json()).resolves.toMatchObject({ subtotalAmount: 5000, totalAmount: 4500 });
-    expect(mockRemoveCartLines).not.toHaveBeenCalled();
-    expect(deleteLines).not.toHaveBeenCalled();
-  });
-
-  test('サーバーの割引前の合計で確かめ、使えれば割引後の金額を返す', async () => {
-    mockCheckPromotionCode.mockResolvedValue({
-      ok: true,
-      promotionCodeId: 'promo_1',
-      code: 'WELCOME10',
-      discountAmount: 500,
-      totalAfterDiscount: 4500,
-    });
-
-    const req = makeRequest({ code: ' welcome10 ' });
-    const res = await POST(req);
-
-    // カートは session_id ではなく、確かめた買い手のカートで読む
-    expect(mockResolveCheckoutBuyer).toHaveBeenCalledWith(req);
-    expect(mockFindCartIdForBuyer).toHaveBeenCalledWith(expect.anything(), req, { kind: 'guest' });
-    expect(mockLoadCheckoutCart).toHaveBeenCalledWith(expect.anything(), 'cart-1');
-    expect(mockCheckPromotionCode).toHaveBeenCalledWith(mockStripe, {
-      code: 'welcome10',
-      preDiscountTotal: 5000,
-      now: expect.any(Date),
-    });
-    expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({
-      code: 'WELCOME10',
-      subtotalAmount: 5000,
-      shippingAmount: 0,
-      discountAmount: 500,
-      totalAmount: 4500,
-    });
-  });
-
-  test('使えなければ 422 で理由の文言を返し、監査ログには理由の記号だけを残す', async () => {
-    mockCheckPromotionCode.mockResolvedValue({
-      ok: false,
-      reason: 'zero_total',
-      message: 'このコードでは合計が0円になるため使えません',
-    });
-
-    const res = await POST(makeRequest({ code: 'FREE' }));
-
+test('FREQ-548-AC-01: 未ログインの使えないコードは全理由が同じ文と理由で存在を区別できない', async () => {
+  for (const reason of ['not_found','not_eligible','expired','usage_limit','minimum_amount','zero_total']) {
+    mockEvaluate.mockResolvedValue({ result, facts: { usage: [] }, refusals: [{ code: 'CODE', reason, minimumAmount: 10000 }] });
+    const res = await POST(request({ codes: ['CODE'] }));
     expect(res.status).toBe(422);
-    await expect(res.json()).resolves.toEqual({
-      error: 'promotion_code_invalid',
-      reason: 'zero_total',
-      message: 'このコードでは合計が0円になるため使えません',
+    expect(await res.json()).toEqual({ error: 'promotion_code_invalid', refusals: [{ code: 'CODE', reason: 'not_eligible' }], message: 'このコードは使えません。会員の方はログインしてからお試しください。' });
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
+  }
+  expect(JSON.stringify(mockAudit.mock.calls)).not.toMatch(/CODE|minimumAmount|email/);
+});
+
+test('FREQ-548-AC-01: ゲストの見込みは別のメールでも同じ応答で注文の有無が分からない', async () => {
+  const bodies: unknown[] = [];
+  for (const guestEmail of ['paid@example.test','none@example.test','expired@example.test',undefined]) {
+    const res = await POST(request({ codes: [' code ', 'CODE'], ...(guestEmail ? { guestEmail } : {}) }));
+    expect(res.status).toBe(200); bodies.push(await res.json());
+  }
+  expect(bodies).toEqual(Array(4).fill({ result }));
+  for (const call of mockEvaluate.mock.calls) expect(call.slice(1)).toEqual([{ kind: 'guest', normalizedEmail: null }, [{ lineKey: 'line', itemId: 1, unitPrice: 20000, quantity: 2, lineKind: 'order' }], ['CODE'], expect.any(String), 'preview']);
+  expect(JSON.stringify(mockAudit.mock.calls)).not.toMatch(/CODE|@/);
+});
+
+test('FREQ-548-AC-01: 不在と期限切れと上限超過を混ぜても入力の両順でゲスト応答の全バイトが一致する', async () => {
+  const bodies: string[] = [];
+  for (const reason of ['not_found', 'expired', 'usage_limit'] as const) {
+    mockEvaluate.mockImplementation(async (_client, buyer, lines, codes, at, phase) => {
+      const d = definition('spring', { method: 'code', ...(reason === 'expired' ? { endsAt: '2026-10-28T00:00:00Z' } : { usageLimit: 1 }) });
+      const facts = { ...input([], [line('line')]).facts, at, phase, buyer, hasPreviousOrder: null, hasFirstOrderReservation: null,
+        usage: reason === 'not_found' ? [] : [usage(d, { buyerUses: null, confirmed: 1 })] };
+      const rpc = jest.fn().mockResolvedValue({ data: { discounts: reason === 'not_found' ? [] : [d], facts,
+        refusals: reason === 'not_found' ? [{ code: 'SPRING', reason }, { code: 'ZZZZZZ', reason }] : [{ code: 'ZZZZZZ', reason: 'not_found' }] }, error: null });
+      return jest.requireActual('@/features/checkout/services/checkout-discounts.service').evaluateCheckoutDiscounts({ rpc }, buyer, lines, codes, at, phase);
     });
-    expect(mockLogAudit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: 'checkout.promotion_code.check',
-        outcome: 'failure',
-        metadata: { session_id: 'sess-abc', reason: 'zero_total' },
-      }),
-    );
-  });
-
-  // PostgREST の失敗は Error ではない素のオブジェクトで投げられる。メッセージを取りこぼさず、details・hint は残さない
-  test('カートの読み込みの素の PostgREST エラーも、監査には code と message だけを残す', async () => {
-    mockLoadCheckoutCart.mockRejectedValue({
-      code: '42P01', message: 'relation does not exist', details: '監査に残さない詳細', hint: '監査に残さないヒント',
-    });
-    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
-
-    try {
-      const res = await POST(makeRequest({ code: 'WELCOME10' }));
-
-      expect(res.status).toBe(500);
-      await expect(res.json()).resolves.toMatchObject({ error: 'promotion_code_failed' });
-      expect(consoleError).toHaveBeenCalled();
-      expect(mockLogAudit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: 'checkout.promotion_code.check',
-          outcome: 'error',
-          metadata: { session_id: 'sess-abc', error_message: 'relation does not exist', error_code: '42P01' },
-        }),
-      );
-    } finally {
-      consoleError.mockRestore();
+    for (const codes of [['spring', 'ZZZZZZ'], ['ZZZZZZ', 'spring']]) {
+      const res = await POST(request({ codes }));
+      expect(res.status).toBe(422);
+      bodies.push(await res.text());
     }
-  });
+  }
+  expect(new Set(bodies).size).toBe(1);
+  expect(JSON.parse(bodies[0])).toEqual({ error: 'promotion_code_invalid', refusals: [{ code: 'SPRING', reason: 'not_eligible' }, { code: 'ZZZZZZ', reason: 'not_eligible' }], message: 'このコードは使えません。会員の方はログインしてからお試しください。' });
+});
 
-  test('Stripe に問い合わせられなければ 500 で、時間をおいて試すよう案内する', async () => {
-    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
-    mockCheckPromotionCode.mockRejectedValue(new Error('stripe down'));
+test('FREQ-548-AC-01: 会員制限は検証済みuserIdを使い履歴を読む前に拒否する', async () => {
+  mockBuyer.mockResolvedValue({ kind: 'member', userId: 'member', email: 'hidden@example.test' });
+  mockLimit.mockResolvedValue(new Response(null, { status: 429, headers: { 'Retry-After': '60' } }));
+  const res = await POST(request({ codes: [] }));
+  expect(res.status).toBe(429); expect(res.headers.get('Retry-After')).toBe('60');
+  expect(mockLimit).toHaveBeenCalledWith(expect.objectContaining({ endpoint: 'checkout:promotion-code:member', subject: 'member', limit: 10, windowSeconds: 60 }));
+  expect(mockCart).not.toHaveBeenCalled(); expect(mockEvaluate).not.toHaveBeenCalled();
+});
 
-    const res = await POST(makeRequest({ code: 'WELCOME10' }));
+test.each([{ codes: ['A B'] }, { codes: [] , guestEmail: 'bad' }, { codes: [], unknown: 1 }, { code: 'OLD' }])('FREQ-548-AC-01: 不正形式は400で計算しない %j', async body => {
+  expect((await POST(request(body))).status).toBe(400); expect(mockEvaluate).not.toHaveBeenCalled();
+});
 
-    expect(res.status).toBe(500);
-    await expect(res.json()).resolves.toEqual({
-      error: 'promotion_code_failed',
-      message: '割引コードを確かめられませんでした。少し時間をおいてから、もう一度お試しください。',
-    });
-    expect(consoleError).toHaveBeenCalled();
-    consoleError.mockRestore();
-  });
+test.each([['expired',401],['unavailable',503]])('FREQ-548-AC-01: 認証%sは%sでカートを読まない', async (kind, status) => {
+  mockBuyer.mockResolvedValue({ kind }); const res = await POST(request({ codes: [] })); expect(res.status).toBe(status); expect(mockCart).not.toHaveBeenCalled();
+});
+
+test('FREQ-548-AC-01: 守りと空カートと一時失敗を区別する', async () => {
+  const denied = new Response(null, { status: 429 }); mockGuard.mockResolvedValueOnce({ ok: false, response: denied }); expect(await POST(request({ codes: [] }))).toBe(denied);
+  mockCart.mockResolvedValueOnce({ kind: 'empty' }); expect((await POST(request({ codes: [] }))).status).toBe(400);
+  const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  mockEvaluate.mockRejectedValue(new Error('secret code/email')); const res = await POST(request({ codes: [] }));
+  expect(res.status).toBe(500); expect(await res.json()).toMatchObject({ error: 'promotion_code_failed' }); expect(JSON.stringify(mockAudit.mock.calls)).not.toContain('secret'); spy.mockRestore();
+});
+
+test('FREQ-546-AC-04: fallbackも200で返し記録失敗で拒否へ変えない', async () => {
+  mockEvaluate.mockResolvedValue({ result: { ...result, calculationMode: 'fallback' }, facts: { usage: [] }, refusals: [] });
+  const res = await POST(request({ codes: [] })); expect(res.status).toBe(200); expect(await res.json()).toEqual({ result: { ...result, calculationMode: 'fallback' } });
 });

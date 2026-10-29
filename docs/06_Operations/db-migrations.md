@@ -1131,3 +1131,13 @@ private本体26・public入口13を追加する。全publicはSQL/INVOKER・serv
 末尾assertの失敗は `GROUP_H_MIGRATION_ASSERTION_FAILED / P0001`。DETAILは `h2_functions`・`h2_public_acl`・`h2_permission_checks`・`h2_admin_requests`・`h2_code_unique`・`h2_automatic_lock`・`h2_stackable_cap`・`h2_set_items_disjoint`・`h2_search_attention`・`h2_reads_stable`。関数/ACL/本文指紋/余分なoverload/列/一意/triggerの属性を検査する。H1のassertはsavepoint内でH2追加列だけを一時的に外して当時の形を検査し、rollbackで戻す。
 
 実装者のTypeScript・対象５ファイルESLintはexit 0。DBのRED/GREENは実測していない。controllerは未実装DBのRED、最終SQLでのfresh reset、既存itemsのanon/authenticated smoke各200、H管理/context/並行とH1/共通assert・G-0回帰、全13 public入口の実PostgREST（service成功、anon/authenticated拒否）を実施する。並行はpg_blocking_pids/pg_locksで待ちを観測して３連続。実受付との解除競合と現在の注文を除いた予約再検査はTask 7。Graphify updateはcontrollerが最終変更後・commit前に１回、commit後hook確認もcontrollerが担当する。[Task 3レポート](../../.superpowers/sdd/2026-10-29-group-h-promotions/task-3-report.md)に署名・鍵・エラー・各テストと懸念を記す。
+
+## グループH Task 6: checkout割引固定（controllerのDB確認待ち）
+
+確認日2026-10-29。移行は[20261029130200_group_h_discounts_checkout.sql](../../supabase/migrations/20261029130200_group_h_discounts_checkout.sql)。サイズ 34,677 bytes、MD5 `11d59bfef03fbadb26ad5b4bc98b4827`（末尾 assert の関数7本の本文の指紋は controller が手元の DB で計算して埋めた）。UTF-8/BOMなし/LF/ASCII、BEGIN→H3末尾assert→NOTIFY→COMMIT。既存行への補完/清掃は無い。H1/H2は変更しない。
+
+private本体７（整数検査/canonical JSON/hash/全固定検査/不変trigger/claim/coupon結付け）、public入口２。postgres所有、private DEFINER、public INVOKER、空search_path。入口と対応privateだけservice_roleへEXECUTEを与え、内部helperはservice_roleからもREVOKE。createdかつversion1のdiscount_amount=0とcoupon整合のCHECK、固定済み写しの変更禁止triggerを追加する。
+
+H3_FINAL_ASSERTのDETAILはh3_draft_freeze・h3_coupon_binding・h3_public_acl・h3_amount_checks。失敗はGROUP_H_MIGRATION_ASSERTION_FAILED/P0001。関数署名/属性/本文、余分なoverload、意味上のACL、trigger、列、CHECKを検査する。本文MD5全７本はcontrollerがDBでmd5(replace(prosrc, CR, ''))を計算して補完済み。fix round 1ではH3本文と補完値を変更していない。以後本文を変えた関数だけ期待値を00000000000000000000000000000000へ戻し、controllerが補完してからfresh resetする。署名一覧は[Task 6レポート](../../.superpowers/sdd/2026-10-29-group-h-promotions/task-6-report.md)。
+
+実装者は単体/TypeScript/ESLintだけを確認し、DBテスト・CLI・Docker・本番・実Stripeは実行しない。controllerはH1〜H3/旧owner-cart-draft回帰、全入口のservice成功/anon・authenticated拒否をPostgRESTでも確認する。Task 7の予約/確定/遅い入金は別途実装する。

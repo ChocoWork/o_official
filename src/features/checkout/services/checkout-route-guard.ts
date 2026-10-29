@@ -166,6 +166,7 @@ export async function guardCheckoutPost(req: NextRequest, config: CheckoutGuardC
     clientIp: getClientIp(req),
     userAgent: req.headers.get('user-agent'),
     finish(response) {
+      response.headers.set('Cache-Control', 'no-store');
       if (hasRotatedCsrfToken(csrfResult)) {
         response.cookies.set({ name: csrfCookieName, value: csrfResult.rotatedCsrfToken, ...cookieOptionsForCsrf(0) });
       }
