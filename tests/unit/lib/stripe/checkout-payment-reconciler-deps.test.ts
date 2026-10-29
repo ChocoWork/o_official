@@ -129,9 +129,9 @@ describe('createSupabaseReconcilerDatabase', () => {
   it('受付 RPC の GROUP_G_LOCK_SET_CHANGED（40001）は一時的な失敗（db_unavailable）にして再試行させる', async () => {
     const { client } = fakeClient({ rpc: () => ({ data: null, error: { message: 'GROUP_G_LOCK_SET_CHANGED', code: '40001' } }) });
 
-    await expect(createSupabaseReconcilerDatabase(client).placeOrder({
+    await expect(createSupabaseReconcilerDatabase(client).placeReconciledOrder({
       draftId: 'draft-1', checkoutSessionId: 'cs_1', cartSessionId: 'cart-1', amountTotal: 4000, amountDiscount: 0,
-      currency: 'jpy', sessionCreatedAt: new Date('2026-10-24T00:00:00.000Z'), paymentIntentId: null,
+      currency: 'jpy', sessionCreatedAt: new Date('2026-10-24T00:00:00.000Z'), paymentIntentId: null, paymentState: 'paid',
     })).rejects.toMatchObject({ name: 'ReconcileTransientError', code: 'db_unavailable' });
   });
 
@@ -156,25 +156,27 @@ describe('createSupabaseReconcilerDatabase', () => {
       checkoutSessionId: 'cs_1',
       cartSessionId: 'cart-1',
       amountTotal: 4000,
+      paymentState: 'paid' as const,
       amountDiscount: 1000,
       currency: 'jpy',
       sessionCreatedAt: new Date('2026-09-27T02:00:00.000Z'),
       paymentIntentId: 'pi_1',
     };
 
-    expect(await database.placeOrder({ draftId: 'draft-ok', ...args })).toEqual({
+    expect(await database.placeReconciledOrder({ draftId: 'draft-ok', ...args })).toEqual({
       placed: true,
       orderId: 'order-1',
       orderStatus: 'payment_in_progress',
       created: true,
     });
-    expect(await database.placeOrder({ draftId: 'draft-ng', ...args })).toEqual({ placed: false, rejection: 'item_unavailable' });
-    expect(rpc).toHaveBeenCalledWith('place_order_from_checkout_draft', {
+    expect(await database.placeReconciledOrder({ draftId: 'draft-ng', ...args })).toEqual({ placed: false, rejection: 'item_unavailable' });
+    expect(rpc).toHaveBeenCalledWith('place_reconciled_order_from_checkout_draft', {
       _draft_id: 'draft-ok',
       _checkout_session_id: 'cs_1',
       _cart_session_id: 'cart-1',
       _stripe_amount_total: 4000,
       _stripe_amount_discount: 1000,
+      _stripe_payment_state: 'paid',
       _stripe_currency: 'jpy',
       _checkout_session_created_at: '2026-09-27T02:00:00.000Z',
       _payment_intent_id: 'pi_1',

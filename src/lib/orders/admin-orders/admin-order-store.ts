@@ -5,6 +5,31 @@ import { ORDER_STATUSES } from '@/lib/orders/order-payment-types';
 import { ADMIN_ORDER_ERRORS, ADMIN_ORDER_TEXT, ORDER_ITEM_EXPORT_MAX_ROWS, ORDER_ITEM_PAGE_SIZE, ORDER_ITEM_STATUS_ORDER, type AdminOrderDetailCore, type AdminOrderExportRow, type AdminOrderItemFilters, type AdminOrderItemPage, type OrderHistoryItemStateEntry } from './admin-order-types';
 import { adminOrderBlockedReasonsSchema, adminOrderExportRowSchema, adminOrderIntegerSchema as integer, adminOrderTimestampSchema as timestamp, parseOrderItemListResult, toFilterPayload } from './admin-order-query';
 import { itemStateHistoryDbRowSchema, mapItemStateHistoryRows } from './admin-order-history';
+import { AdminDiscountStoreError } from '@/lib/discounts/admin-discount-store';
+import { GROUP_H_ERRORS, type GroupHErrorCode } from '@/lib/discounts/admin-discount-types';
+
+const discountAttentionRow = z.object({ orderId: z.string().uuid(), kind: z.enum(['discount_limit_exceeded', 'discount_reconciliation_recovered']), openedAt: z.string().datetime({ offset: true }) }).strict();
+async function discountAttentionRpc(client: SupabaseClient, name: string, args: Record<string, unknown>): Promise<unknown> {
+  let response;
+  try { response = await client.rpc(name, args); } catch { throw new AdminDiscountStoreError(); }
+  if (response.error) {
+    const { message, code } = response.error;
+    throw new AdminDiscountStoreError(Object.hasOwn(GROUP_H_ERRORS, message) && GROUP_H_ERRORS[message as GroupHErrorCode][0] === code ? message : null, code);
+  }
+  return response.data as unknown;
+}
+export async function listAdminDiscountAttention(client: SupabaseClient, actorId: string, limit = 100) {
+  const raw = await discountAttentionRpc(client, 'list_admin_discount_attention', { _limit: limit, _actor_id: actorId });
+  const result = z.object({ rows: z.array(discountAttentionRow).max(100), truncated: z.boolean() }).strict().safeParse(raw);
+  if (!result.success) throw new AdminDiscountStoreError();
+  return result.data;
+}
+export async function resolveAdminDiscountAttention(client: SupabaseClient, actorId: string, orderId: string) {
+  const raw = await discountAttentionRpc(client, 'admin_resolve_discount_attention', { _order_id: orderId, _actor_id: actorId });
+  const result = z.object({ resolved: z.boolean() }).strict().safeParse(raw);
+  if (!result.success) throw new AdminDiscountStoreError();
+  return result.data;
+}
 
 /** messageとSQLSTATEが一致した業務エラーだけを保持する。DBの文・causeは持たない。 */
 export class AdminOrderError extends Error {
@@ -56,6 +81,7 @@ const detailSchema = z.object({
     paymentExceptions: z.array(z.object({ id: z.string().uuid(), reason: z.string(), detectionCount: integer.positive(), firstDetectedAt: timestamp })),
     review: z.object({ reason: z.string(), markedAt: timestamp.nullable() }).nullable(),
     deliveries: z.array(z.object({ fulfillmentId: z.string().uuid(), kind: z.string(), openedAt: timestamp })),
+    discounts: z.array(discountAttentionRow).max(1).optional(),
   }),
   permissions: z.object({ read: z.boolean(), manage: z.boolean(), refund: z.boolean(), return: z.boolean(), allocate: z.boolean(), shippingRead: z.boolean() }),
 });

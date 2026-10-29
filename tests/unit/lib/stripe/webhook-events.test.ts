@@ -99,7 +99,7 @@ describe('Stripe webhook durable queue calls', () => {
   });
 
   describe('webhookFailureCause（失敗に残す原因の記号）', () => {
-    it.each(['stripe_unavailable', 'db_unavailable', 'not_converged'] as const)('照合の一時的な失敗 %s はその記号', (code) => {
+    it.each(['stripe_unavailable', 'db_unavailable', 'not_converged', 'discount_reconciliation_contract_violation'] as const)('照合の一時的な失敗 %s はその記号', (code) => {
       expect(webhookFailureCause(new ReconcileTransientError(code))).toBe(code);
     });
 

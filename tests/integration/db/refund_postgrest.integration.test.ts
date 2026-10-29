@@ -34,6 +34,12 @@ let mockRouteClient: unknown;
 jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn(async () => mockRouteClient) }));
 // 要対応の窓口が配送の要対応の読み込み（server 専用の部品）を使うため、試験の場では server-only の印を空にする
 jest.mock('server-only', () => ({}), { virtual: true });
+// H Task 7: the route also reads discount attention for the authorized actor; this suite's authorization stub has no actor,
+// and it only checks the refund rows, so the discount attention read returns nothing here.
+jest.mock('@/lib/orders/admin-orders/admin-order-store', () => ({
+  ...jest.requireActual('@/lib/orders/admin-orders/admin-order-store'),
+  listAdminDiscountAttention: jest.fn(async () => ({ rows: [], truncated: false })),
+}));
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { GET as getOrderAttention } from '@/app/api/admin/order-attention/route';

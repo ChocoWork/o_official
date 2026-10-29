@@ -176,11 +176,11 @@ describeLocalDb('H2 admin writers and snapshot reads (controller only)', (db) =>
     expect((await detail(anyone.discountId)).assignments[0].rowId).toBe(rowId);
     expect((await detail(anyone.discountId, 1, 0)).assignments[0].rowId).toBe(rowId);
     // N1: a later redemption of the same person whose uuid is smaller than the earliest one must not change the row id.
-    const later: { id: string }[] = [];
-    for (let i = 0; i < 40 && !later.some(r => r.id < earliest.id); i++) {
-      later.push(await seedHRedemption(db(), anyone.discountId, { codeId: anyCode, email: 'alice@example.invalid', state: 'cancelled', reservedAt: '2031-01-01T00:00:00Z' }));
-    }
-    expect(later.some(r => r.id < earliest.id)).toBe(true);
+    // Deterministic: give the later redemption the smallest possible uuid instead of drawing random ones.
+    const later = await seedHRedemption(db(), anyone.discountId, { codeId: anyCode, email: 'alice@example.invalid', state: 'cancelled', reservedAt: '2031-01-01T00:00:00Z' });
+    const smallest = '00000000-0000-4000-8000-000000000000';
+    await db().query('update public.discount_redemptions set id=$2 where id=$1', [later.id, smallest]);
+    expect(smallest < earliest.id).toBe(true);
     expect((await detail(anyone.discountId)).assignments.map(r => r.rowId)).toEqual([rowId]);
     expect((await detail(anyone.discountId, 1, 0)).assignments[0].rowId).toBe(rowId);
   });

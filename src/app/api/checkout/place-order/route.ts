@@ -19,6 +19,8 @@ import {
 } from '@/features/checkout/services/checkout-route-guard';
 import { findPaidCheckoutSession, reconcileCheckoutSession } from '@/features/checkout/services/checkout-session-lifecycle.service';
 import { resolveCheckoutBuyer, checkoutBuyerFailureResponse, buyerUserIdOf } from '@/features/checkout/services/checkout-buyer';
+import { evaluateCheckoutDiscounts } from '@/features/checkout/services/checkout-discounts.service';
+import type { DiscountBuyer, DiscountRefusal } from '@/lib/discounts/discount-types';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
@@ -48,7 +50,7 @@ const REJECTION_MESSAGES: Record<RejectionCode, string> = {
 };
 
 /** 受付 RPC の理由コードを、画面の案内の理由に読み替える（決め事 D12） */
-const REJECTION_BY_RPC: Record<PlaceOrderRejection, RejectionCode> = {
+const REJECTION_BY_RPC: Partial<Record<PlaceOrderRejection, RejectionCode>> = {
   draft_not_found: 'superseded',
   item_unavailable: 'item_unavailable',
   amount_mismatch: 'price_changed',
@@ -69,6 +71,8 @@ type DraftRow = {
   buyer_user_id: string | null;
   created_at: string;
   items_snapshot: CheckoutDraftItemSnapshot[] | null;
+  discount_facts?: { usage?: Array<{ code?: string | null }> } | null;
+  shipping_snapshot?: { email?: string | null } | null;
 };
 
 type PlaceOrderRow = {
@@ -81,13 +85,37 @@ type PlaceOrderRow = {
 async function loadDraft(draftId: string): Promise<DraftRow | null> {
   const { data, error } = await supabase
     .from('checkout_drafts')
-    .select('id, session_id, checkout_session_id, buyer_user_id, created_at, items_snapshot')
+    .select('id, session_id, checkout_session_id, buyer_user_id, created_at, items_snapshot, discount_facts, shipping_snapshot')
     .eq('id', draftId)
     .maybeSingle<DraftRow>();
   if (error) {
     throw error;
   }
   return data;
+}
+
+/**
+ * 割引の業務拒否で入力画面へ戻す時の、使えなくなった入力 code だけの拒否（固定 draft と同じ買い手・明細・code で確認の計算をやり直す）。
+ * 理由の秘匿は既存の公開用の規則（guest・限定 code は not_eligible）に従う。計算が失敗した時や何も拒否しない時は、入力 code 全部を not_eligible にする。
+ */
+async function refusedTypedCodes(draft: DraftRow): Promise<DiscountRefusal[]> {
+  const typed = [...new Set((draft.discount_facts?.usage ?? []).flatMap(u => typeof u.code === 'string' ? [u.code] : []))].sort();
+  const fallback: DiscountRefusal[] = typed.map(code => ({ code, reason: 'not_eligible' }));
+  if (typed.length === 0) return fallback;
+  try {
+    const email = draft.shipping_snapshot?.email;
+    const buyer: DiscountBuyer = draft.buyer_user_id
+      ? { kind: 'member', userId: draft.buyer_user_id }
+      : { kind: 'guest', normalizedEmail: typeof email === 'string' ? email.trim().toLowerCase() : null };
+    const lines = (draft.items_snapshot ?? []).map(i => ({
+      lineKey: i.source_cart_line_id, itemId: i.item_id, unitPrice: i.item_price, quantity: i.quantity, lineKind: 'order' as const,
+    }));
+    const evaluated = await evaluateCheckoutDiscounts(supabase, buyer, lines, typed, new Date().toISOString(), 'confirm');
+    const refused = evaluated.refusals.filter(r => typed.includes(r.code)).sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
+    return refused.length > 0 ? refused : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 /** 後から別のタブで「確認へ進む」を押していれば、そちらを優先する（設計書 8） */
@@ -286,7 +314,44 @@ export async function POST(req: NextRequest) {
     }
 
     if (row.rejection) {
+      if (row.rejection === 'discount_automatic_changed') {
+        let expiry: Awaited<ReturnType<typeof expireOpenCheckoutSession>>;
+        try {
+          expiry = await expireOpenCheckoutSession(stripe, checkoutSessionId);
+        } catch {
+          return guard.finish(NextResponse.json({ error: 'session_expiry_failed' }, { status: 503 }));
+        }
+        if (expiry === 'not_open') {
+          // 失効と実入金が競合した。再計算せず、既存の「支払い済み」の応答に揃える（画面は confirm を呼ばない）
+          try {
+            const reconciled = await reconcileCheckoutSession(checkoutSessionId);
+            if (reconciled.orderId && (reconciled.orderStatus === 'paid' || reconciled.orderStatus === 'pending')) {
+              return guard.finish(NextResponse.json({ error: 'payment_done', checkoutSessionId }, { status: 409 }));
+            }
+          } catch (reconcileError) {
+            console.error('Failed to reconcile the raced checkout session:', reconcileError);
+          }
+          return guard.finish(NextResponse.json({ error: 'payment_state_changed' }, { status: 503 }));
+        }
+        if (expiry !== 'expired') return guard.finish(NextResponse.json({ error: 'session_expiry_failed' }, { status: 503 }));
+        try {
+          await reconcileCheckoutSession(checkoutSessionId);
+        } catch (reconcileError) {
+          // 古い Session は既に閉じている。見回りが仕上げるので、再確認の応答は変えない
+          console.error('Failed to reconcile the expired checkout session:', reconcileError);
+        }
+        await audit('failure', 'Place order automatic discount changed', { orderId: null, result: row.rejection });
+        return guard.finish(NextResponse.json({ reconfirmationRequired: true, returnTo: 'confirmation' }));
+      }
+      if (row.rejection.startsWith('discount_')) {
+        await expireRejectedCheckoutSession(stripe, checkoutSessionId);
+        await audit('failure', 'Place order discount rejected', { orderId: null, result: row.rejection });
+        return guard.finish(NextResponse.json({ error: row.rejection, retryable: false, returnTo: 'input', definitive: true,
+          refusals: await refusedTypedCodes(draft),
+          message: '割引の条件が変わりました。入力画面で割引を確かめてください。' }, { status: 409 }));
+      }
       const code = REJECTION_BY_RPC[row.rejection];
+      if (!code) throw new Error('Unexpected acceptance rejection');
       const metadata = {
         ...ref, draft_id: draft.id, rpc_rejection: row.rejection,
         ...(code === 'login_changed' ? { draft_buyer_user_id: draft.buyer_user_id ?? null, buyer_user_id: buyerUserId } : {}),

@@ -64,6 +64,7 @@ export type AdminOrderDetailCore = {
     paymentExceptions: Array<{ id: string; reason: string; detectionCount: number; firstDetectedAt: string }>;
     review: { reason: string; markedAt: string | null } | null;
     deliveries: Array<{ fulfillmentId: string; kind: string; openedAt: string }>;
+    discounts?: import('@/lib/orders/order-payment-types').DiscountAttention[];
   };
   permissions: { read: boolean; manage: boolean; refund: boolean; return: boolean; allocate: boolean; shippingRead: boolean };
 };

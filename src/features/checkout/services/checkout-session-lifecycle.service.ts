@@ -51,12 +51,12 @@ export async function findPaidCheckoutSession(
 /**
  * 照合関数を既定の依存で呼ぶ。メールなどの部品を入口の読み込みに巻き込まないよう、呼んだときに読み込む。
  */
-export async function reconcileCheckoutSession(checkoutSessionId: string): Promise<void> {
+export async function reconcileCheckoutSession(checkoutSessionId: string): Promise<import('@/lib/stripe/checkout-payment-reconciler').ReconcileResult> {
   const [{ reconcileCheckoutPayment }, { createDefaultReconcilerDeps }] = await Promise.all([
     import('@/lib/stripe/checkout-payment-reconciler'),
     import('@/lib/stripe/checkout-payment-reconciler-deps'),
   ]);
-  await reconcileCheckoutPayment(await createDefaultReconcilerDeps(), { checkoutSessionId });
+  return reconcileCheckoutPayment(await createDefaultReconcilerDeps(), { checkoutSessionId });
 }
 
 /**

@@ -122,13 +122,13 @@ export function createSupabaseReconcilerDatabase(client: SupabaseClient): Reconc
       return null;
     },
 
-    async placeOrder(args) {
+    async placeReconciledOrder(args) {
       const row = await callRpc<{
         order_id: string | null;
         order_status: OrderStatus | null;
         created: boolean;
         rejection: string | null;
-      }>('place_order_from_checkout_draft', {
+      }>('place_reconciled_order_from_checkout_draft', {
         _draft_id: args.draftId,
         _checkout_session_id: args.checkoutSessionId,
         _cart_session_id: args.cartSessionId,
@@ -137,16 +137,18 @@ export function createSupabaseReconcilerDatabase(client: SupabaseClient): Reconc
         _stripe_currency: args.currency,
         _checkout_session_created_at: args.sessionCreatedAt.toISOString(),
         _payment_intent_id: args.paymentIntentId,
+        _stripe_payment_state: args.paymentState,
       });
 
       if (row?.order_id && row.order_status) {
         return { placed: true, orderId: row.order_id, orderStatus: row.order_status, created: row.created === true };
       }
       const rejection = row?.rejection;
+      if (typeof rejection === 'string' && rejection.startsWith('discount_')) throw new ReconcileTransientError('discount_reconciliation_contract_violation');
       if (isPlaceOrderRejection(rejection)) {
         return { placed: false, rejection };
       }
-      throw new Error('Unexpected place_order_from_checkout_draft result');
+      throw new Error('Unexpected place_reconciled_order_from_checkout_draft result');
     },
 
     async markOrderPaid(args) {

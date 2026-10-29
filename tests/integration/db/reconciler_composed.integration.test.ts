@@ -34,7 +34,7 @@ jest.mock('@/lib/audit', () => ({ logAudit: jest.fn().mockResolvedValue(undefine
 // 照合がメールの worker の判定（状況のリンクの準備の server 専用の部品を含む）を使うため、試験の場では server-only の印を空にする
 jest.mock('server-only', () => ({}), { virtual: true });
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import sendMail from '@/lib/mail';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import { PAYMENT_EXCEPTION_REASON_LABELS } from '@/lib/orders/order-payment-types';
@@ -147,6 +147,7 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
   const ENV_KEYS = ['MAIL_FROM_ADDRESS', 'SHOP_ALERT_EMAIL'] as const;
   let savedEnv: Record<string, string | undefined> = {};
   let database: ReconcilerDatabase;
+  let acceptanceClient: SupabaseClient;
   let mailer: ReconcilerMailer;
   let refund: RefundServiceDeps;
 
@@ -158,6 +159,7 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
     const client = createClient(apiUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
     });
+    acceptanceClient = client;
     database = createSupabaseReconcilerDatabase(client);
     mailer = createReconcilerMailer();
     // 自動の返金の部品。この試験は自動の返金を試さない（設定がオフ）ので、使われるのは store だけ。取消後の入金で、
@@ -191,20 +193,22 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
 
   /** 受付 RPC（本物）で、支払い手続き中の注文と在庫の確保を先に作っておく */
   async function placeOrThrow(draft: DraftFixture): Promise<string> {
-    const placed = await database.placeOrder({
-      draftId: draft.draftId,
-      checkoutSessionId: draft.checkoutSessionId,
-      cartSessionId: draft.cartSessionId,
-      amountTotal: draft.totalAmount,
-      amountDiscount: 0,
-      currency: 'jpy',
-      sessionCreatedAt: new Date(),
-      paymentIntentId: null,
+    // 照合の予備処理は place_reconciled_order_from_checkout_draft へ移った。ここは「注文する」と同じ通常の受付で準備する
+    const { data, error } = await acceptanceClient.rpc('place_order_from_checkout_draft', {
+      _draft_id: draft.draftId,
+      _checkout_session_id: draft.checkoutSessionId,
+      _cart_session_id: draft.cartSessionId,
+      _stripe_amount_total: draft.totalAmount,
+      _stripe_amount_discount: 0,
+      _stripe_currency: 'jpy',
+      _checkout_session_created_at: new Date().toISOString(),
+      _payment_intent_id: null,
     });
-    if (!placed.placed) {
-      throw new Error(`place_order_from_checkout_draft rejected the fixture: ${placed.rejection}`);
+    const row = (data as Array<{ order_id: string | null; rejection: string | null }> | null)?.[0];
+    if (error || !row?.order_id) {
+      throw new Error(`place_order_from_checkout_draft rejected the fixture: ${row?.rejection ?? error?.code ?? 'no row'}`);
     }
-    return placed.orderId;
+    return row.order_id;
   }
 
   /** 照合関数の依存。Stripe の現在値だけを world.snapshot で差し替える。DB と店への要対応メールの組み立ては本物 */

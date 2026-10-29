@@ -336,6 +336,7 @@ export default function AdminOrderItemListSection(): React.JSX.Element {
           onRetryReturnRefund={userRole === 'admin' ? (orderId) => router.push(`/admin/orders/${orderId}?open=returns`) : undefined}
           onOpenDeliveryHistory={(orderId) => router.push(`/admin/orders/${orderId}#order-history`)}
           onResolveDelivery={canManageDelivery ? attentionInbox.onResolveDelivery : undefined}
+          onResolveDiscount={canManageDelivery ? attentionInbox.onResolveDiscount : undefined}
         />
         {attentionInbox.errorBanner ? (
           <p role="alert" className="lk-text-sm text-red-700 font-acumin">{attentionInbox.errorBanner}</p>

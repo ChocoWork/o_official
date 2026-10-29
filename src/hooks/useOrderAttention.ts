@@ -47,6 +47,7 @@ export function useOrderAttention({ enabled, onChanged }: UseOrderAttentionOptio
     try {
       const response = await clientFetch('/api/admin/order-attention', { cache: 'no-store' });
       if (!response.ok) {
+        await response.arrayBuffer?.().catch(() => undefined);
         throw new Error(`Failed to fetch order attention: ${response.status}`);
       }
       const json = (await response.json()) as { data?: Partial<AdminOrderAttention> };
@@ -91,6 +92,7 @@ export function useOrderAttention({ enabled, onChanged }: UseOrderAttentionOptio
       const response = await request();
       if (!response.ok) {
         if (response.status === 403) {
+          await response.arrayBuffer?.().catch(() => undefined);
           throw new Error('この操作の権限がありません。');
         }
         if (response.status === 503) {
@@ -173,6 +175,11 @@ export function useOrderAttention({ enabled, onChanged }: UseOrderAttentionOptio
       { readableStatuses: [400, 404, 409], rateLimitedMessage: RATE_LIMITED_MESSAGE },
     );
 
+  const onResolveDiscount = (orderId: string) => void runAttentionAction(orderId,
+    () => clientFetch(`/api/admin/order-attention/discounts/${orderId}/resolve`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}), cache: 'no-store',
+    }), '確認済みにしました。', { readableStatuses: [400, 404, 409], rateLimitedMessage: RATE_LIMITED_MESSAGE });
+
   return {
     attention,
     errorMessage,
@@ -184,5 +191,6 @@ export function useOrderAttention({ enabled, onChanged }: UseOrderAttentionOptio
     onResolve,
     onCancelAndResolve,
     onResolveDelivery,
+    onResolveDiscount,
   };
 }

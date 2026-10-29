@@ -72,7 +72,29 @@ const emailsOf = (h: { world: { enqueued: EnqueuedEmail[] } }, kind: EnqueuedEma
 const mockStartAutomaticRefund = startAutomaticRefund as jest.MockedFunction<typeof startAutomaticRefund>;
 const mockResolveBySystem = resolvePaymentExceptionBySystem as jest.MockedFunction<typeof resolvePaymentExceptionBySystem>;
 const mockRecordPaidAmount = recordCancelledOrderPaidAmount as jest.MockedFunction<typeof recordCancelledOrderPaidAmount>;
-const ACCEPTED: RefundSubmitResult = { kind: 'accepted', refundId: 'refund-1', status: 'pending', amount: 5000, replayed: false };
+
+test.each([PAID, { kind: 'awaiting_payment' } as StripePaymentState])('FREQ-549-AC-04: reconcilerは取得したpaidとawaitingの両fallbackを割引再確認で拒否しない入口へ送る (%j)', async state => {
+  const h = harness({ stripe: snapshot(state) });
+  const place = jest.spyOn(h.deps.database, 'placeReconciledOrder');
+  await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+  expect(place).toHaveBeenCalledWith(expect.objectContaining({ paymentState: state.kind }));
+});
+
+test('FREQ-549-AC-04: 照合入口が誤ってdiscount_*を返したら例外を作らず一時の契約エラーでqueueに再試行させる', async () => {
+  const h = harness({ stripe: snapshot(PAID) });
+  jest.spyOn(h.database, 'placeReconciledOrder').mockResolvedValueOnce({ placed: false, rejection: 'discount_stopped' });
+  await expect(reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' }))
+    .rejects.toMatchObject({ name: 'ReconcileTransientError', code: 'discount_reconciliation_contract_violation' });
+  expect(h.database.markOrderPaid).not.toHaveBeenCalled();
+});
+
+test('FREQ-549-AC-04: 未知額の旧来の拒否はdiscountの契約違反にせずorder_not_creatableの要対応にする', async () => {
+  const h = harness({ stripe: snapshot(PAID) });
+  jest.spyOn(h.database, 'placeReconciledOrder').mockResolvedValueOnce({ placed: false, rejection: 'amount_mismatch' });
+  const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+  expect(result).toMatchObject({ kind: 'needs_action' });
+});
+const ACCEPTED: RefundSubmitResult ={ kind: 'accepted', refundId: 'refund-1', status: 'pending', amount: 5000, replayed: false };
 
 /**
  * ショップの設定の見本。既定は両方オフ（自動の返金は動かない）。実際の既定（①オン）と違うのは、自動の返金と
@@ -114,7 +136,7 @@ function harness(init: {
     async findOrder() {
       return world.order ? { ...world.order } : null;
     },
-    async placeOrder(args) {
+    async placeReconciledOrder(args) {
       if (!world.order) {
         world.order = {
           id: 'order-new',
@@ -242,7 +264,7 @@ describe('reconcileCheckoutPayment', () => {
 
     const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
 
-    expect(h.database.placeOrder).toHaveBeenCalledWith({
+    expect(h.database.placeReconciledOrder).toHaveBeenCalledWith({
       draftId: 'draft-1',
       checkoutSessionId: 'cs_1',
       cartSessionId: 'cart-1',
@@ -251,6 +273,7 @@ describe('reconcileCheckoutPayment', () => {
       currency: 'jpy',
       sessionCreatedAt: SESSION_CREATED_AT,
       paymentIntentId: 'pi_1',
+      paymentState: 'paid',
     });
     expect(emailsOf(h, 'paid')).toEqual([{ orderId: 'order-new', kind: 'paid', variant: 'order_confirmed' }]);
     expect(result).toMatchObject({ kind: 'ok', action: { type: 'place_and_mark_paid' }, orderId: 'order-new', orderStatus: 'paid' });
@@ -285,12 +308,12 @@ describe('reconcileCheckoutPayment', () => {
       detail: 'Checkout draft shipping snapshot is incomplete',
       metadata: expect.objectContaining({ missing_shipping_fields: ['address'] }),
     }));
-    expect(h.database.placeOrder).toHaveBeenCalled();
+    expect(h.database.placeReconciledOrder).toHaveBeenCalled();
   });
 
   it('受付 RPC が断ったら要対応にし、店とお客様に知らせる', async () => {
     const h = harness({ stripe: snapshot(PAID) });
-    jest.spyOn(h.database, 'placeOrder').mockResolvedValueOnce({ placed: false, rejection: 'item_unavailable' });
+    jest.spyOn(h.database, 'placeReconciledOrder').mockResolvedValueOnce({ placed: false, rejection: 'item_unavailable' });
 
     const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
 
@@ -327,7 +350,7 @@ describe('reconcileCheckoutPayment', () => {
 
   it('送信権を取れなければ店にもお客様にも送らない（二重に知らせない）', async () => {
     const h = harness({ stripe: snapshot(PAID) });
-    jest.spyOn(h.database, 'placeOrder').mockResolvedValue({ placed: false, rejection: 'item_unavailable' });
+    jest.spyOn(h.database, 'placeReconciledOrder').mockResolvedValue({ placed: false, rejection: 'item_unavailable' });
     jest.spyOn(h.database, 'claimExceptionNotification').mockResolvedValue(false);
 
     await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
@@ -581,7 +604,7 @@ describe('reconcileCheckoutPayment', () => {
 
       const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
 
-      expect(h.database.placeOrder).toHaveBeenCalledTimes(1);
+      expect(h.database.placeReconciledOrder).toHaveBeenCalledTimes(1);
       expect(h.database.markOrderPaid).toHaveBeenCalledTimes(1);
       expect(emailsOf(h, 'paid')).toHaveLength(1);
       expect(emailsOf(h, 'paid')).toEqual([{ orderId: 'order-new', kind: 'paid', variant: 'order_confirmed' }]);
@@ -739,7 +762,7 @@ describe('reconcileCheckoutPayment', () => {
     const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
 
     expect(result).toMatchObject({ kind: 'ok', action: { type: 'record_only', note: 'zero_amount' }, orderId: null });
-    expect(h.database.placeOrder).not.toHaveBeenCalled();
+    expect(h.database.placeReconciledOrder).not.toHaveBeenCalled();
     expect(h.audit).toHaveBeenCalledWith(expect.objectContaining({ detail: 'ok:record_only:zero_amount' }));
   });
 
@@ -1398,7 +1421,7 @@ describe('自動の返金①②（グループ E-2 設計書 6-4・本計画 P7�
       '注文を作れない支払い（注文が無い）',
       () => {
         const h = harness({ stripe: snapshot(PAID) });
-        jest.spyOn(h.database, 'placeOrder').mockResolvedValueOnce({ placed: false, rejection: 'item_unavailable' });
+        jest.spyOn(h.database, 'placeReconciledOrder').mockResolvedValueOnce({ placed: false, rejection: 'item_unavailable' });
         return h;
       },
     ],

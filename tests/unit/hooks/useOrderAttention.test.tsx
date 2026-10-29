@@ -164,6 +164,36 @@ describe('useOrderAttention: 操作', () => {
     expect(onChanged).toHaveBeenCalledTimes(1);
   });
 
+  it('FREQ-549-AC-04: 割引の「確認済みにする」は空の本文を送り、知らせを出して、欄と onChanged を読み直す', async () => {
+    const onChanged = jest.fn();
+    const { result } = await ready(onChanged);
+    const before = attentionReads();
+
+    await trigger(result, () => result.current.onResolveDiscount(ORDER_ID));
+
+    expect(mockFetch).toHaveBeenCalledWith(`/api/admin/order-attention/discounts/${ORDER_ID}/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+      cache: 'no-store',
+    });
+    expect(result.current.noticeMessage).toBe('確認済みにしました。');
+    expect(attentionReads()).toBe(before + 1);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('FREQ-549-AC-04: 割引の確認が断られたら非okの本文を読み切り、知らせを出さない', async () => {
+    const { result } = await ready(jest.fn());
+    const arrayBuffer = jest.fn(async () => new ArrayBuffer(0));
+    postAnswer = () => Promise.resolve({ ok: false, status: 403, arrayBuffer, json: async () => ({}) });
+
+    await trigger(result, () => result.current.onResolveDiscount(ORDER_ID));
+
+    expect(arrayBuffer).toHaveBeenCalledTimes(1);
+    expect(result.current.noticeMessage).toBeNull();
+    expect(result.current.errorMessage).toBe('この操作の権限がありません。');
+  });
+
   it('FREQ-539-AC-05: 返事を待つ間に onChanged の関数が替わっても、返事の後は今の関数を呼ぶ', async () => {
     const first = jest.fn();
     const second = jest.fn();

@@ -69,6 +69,16 @@ test('FREQ-537-AC-05: 詳細の内訳・負の調整額・12状態・権限を�
   const data = detailCore(); rpc.mockResolvedValue({ data: { ...data, privateValue: 'PRIVATE' }, error: null });
   expect(await getAdminOrderDetailCore(client, 'actor', id)).toEqual(data);
 });
+test('FREQ-549-AC-04: 詳細の割引の要対応は2 kindだけを1件まで通し、余分な欄と未知の kind は500にする', async () => {
+  const discount = { orderId: id, kind: 'discount_limit_exceeded', openedAt: '2026-10-29T01:02:03.456+00:00' };
+  const data = detailCore(); Object.assign(data.attention, { discounts: [discount] });
+  rpc.mockResolvedValue({ data, error: null });
+  expect((await getAdminOrderDetailCore(client, 'actor', id)).attention.discounts).toEqual([discount]);
+  for (const bad of [{ ...discount, kind: 'discount_other' }, { ...discount, extra: 1 }]) {
+    rpc.mockResolvedValue({ data: { ...data, attention: { ...data.attention, discounts: [bad] } }, error: null });
+    await expect(getAdminOrderDetailCore(client, 'actor', id)).rejects.toBeDefined();
+  }
+});
 test.each(['quantity', 'lineAmount', 'status', 'statusRank', 'permission', 'amount', 'order', 'shipTo', 'attention'])('FREQ-540-AC-13: 詳細の不正な欄%sを500にする', async (field) => {
   const data = detailCore();
   if (field === 'quantity') data.rows[0].quantity = 0;

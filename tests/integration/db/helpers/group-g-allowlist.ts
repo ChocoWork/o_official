@@ -117,10 +117,20 @@ export const G4_ALLOWLIST: readonly string[] = Object.freeze([
 ]);
 
 /**
+ * グループ H の移行 group_h_discounts_acceptance（H4）が持つ書き手の一覧（G4 の76本 + 入金照合用の受付
+ * private.place_reconciled_order_from_checkout_draft の1本 = 77本）。redemption だけを書く H の helper は G の一覧に混ぜない。
+ * 今の DB の書き手の一覧はこれと同じ。G の末尾の確かめを今の DB で流す試験は、流す前に自分の時点の一覧（G4_ALLOWLIST など）へ入れ替える。
+ */
+export const H4_ALLOWLIST: readonly string[] = Object.freeze([
+  ...G4_ALLOWLIST,
+  'private.place_reconciled_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,text)',
+]);
+
+/**
  * 今の DB の書き手の一覧。「今の DB の一覧が固定の集合や本数と等しい」ことを確かめる生きた検査は、すべてこの定数に向ける。
  * 次の段階が本数を足す時は、この指し先だけを新しい一覧へ付け替える（時点の再実行が使う G3C/G3D/G4_ALLOWLIST は変えない）。
  */
-export const CURRENT_ALLOWLIST: readonly string[] = G4_ALLOWLIST;
+export const CURRENT_ALLOWLIST: readonly string[] = H4_ALLOWLIST;
 
 /** 書き手の閉じた一覧を、渡した一覧へ置き換える文（関数の所有者・SECURITY DEFINER・search_path 空は移行と同じ） */
 export function replaceAllowlistSql(entries: readonly string[]): string {

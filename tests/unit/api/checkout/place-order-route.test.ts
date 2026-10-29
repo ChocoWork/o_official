@@ -45,6 +45,11 @@ jest.mock('@/features/checkout/services/checkout-fulfillment.service', () => ({
   previewFulfillment: (...args: unknown[]) => mockPreviewFulfillment(...args),
 }));
 
+const mockEvaluateDiscounts = jest.fn();
+jest.mock('@/features/checkout/services/checkout-discounts.service', () => ({
+  evaluateCheckoutDiscounts: (...args: unknown[]) => mockEvaluateDiscounts(...args),
+}));
+
 const mockLogAudit = jest.fn().mockResolvedValue(undefined);
 jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockLogAudit(...args) }));
 
@@ -150,6 +155,7 @@ describe('POST /api/checkout/place-order', () => {
     jest.clearAllMocks();
     mockExpireOpenCheckoutSession.mockReset();
     mockReconcileCheckoutSession.mockReset();
+    mockEvaluateDiscounts.mockReset().mockRejectedValue(new Error('evaluation unavailable'));
     mockDraftQueries.length = 0;
     mockResolveCheckoutBuyer.mockReset().mockResolvedValue({ kind: 'guest' });
     process.env.STRIPE_SECRET_KEY = 'sk_test_dummy';
@@ -175,6 +181,80 @@ describe('POST /api/checkout/place-order', () => {
 
   afterAll(() => {
     process.env.STRIPE_SECRET_KEY = ORIGINAL_KEY;
+  });
+
+  test.each(['discount_usage_limit', 'discount_once_per_customer', 'discount_expired', 'discount_stopped', 'discount_first_order_changed', 'discount_prior_units_changed', 'discount_not_eligible'])('FREQ-549-AC-01: 通常place-orderの割引拒否はconfirmを呼ばず入力へ戻す (%s)', async rejection => {
+    mockDraftResult = { data: { ...DRAFT, discount_facts: { usage: [{ code: 'MY-CODE' }, { code: null }] } }, error: null };
+    mockRpc.mockResolvedValue({ data: [{ order_id: null, order_status: null, created: false, rejection }], error: null });
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: rejection, retryable: false, returnTo: 'input', definitive: true,
+      refusals: [{ code: 'MY-CODE', reason: 'not_eligible' }], message: '割引の条件が変わりました。入力画面で割引を確かめてください。' });
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+  });
+
+  test('FREQ-549-AC-01: 入力codeの片方だけ使えない時は、確認の計算で拒否された入力codeだけを返す', async () => {
+    mockDraftResult = { data: { ...DRAFT, buyer_user_id: 'user-1', shipping_snapshot: { email: ' A@Example.com ' },
+      discount_facts: { usage: [{ code: 'CODE-B' }, { code: 'CODE-A' }, { code: null }] } }, error: null };
+    mockResolveCheckoutBuyer.mockResolvedValue({ kind: 'member', userId: 'user-1' });
+    mockRpc.mockResolvedValue({ data: [{ order_id: null, order_status: null, created: false, rejection: 'discount_usage_limit' }], error: null });
+    mockEvaluateDiscounts.mockResolvedValue({ result: {}, facts: {}, refusals: [{ code: 'CODE-A', reason: 'not_eligible' }, { code: 'OTHER', reason: 'not_found' }] });
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(409);
+    expect((await res.json()).refusals).toEqual([{ code: 'CODE-A', reason: 'not_eligible' }]);
+    expect(mockEvaluateDiscounts).toHaveBeenCalledWith(expect.anything(), { kind: 'member', userId: 'user-1' },
+      [expect.objectContaining({ lineKey: 'cart-1', itemId: 1, unitPrice: 5000, quantity: 1, lineKind: 'order' }), expect.objectContaining({ lineKey: 'cart-2', quantity: 2 })],
+      ['CODE-A', 'CODE-B'], expect.any(String), 'confirm');
+  });
+
+  test('FREQ-549-AC-01: 確認の計算が失敗した時や何も拒否しない時は、入力code全部をnot_eligibleにする', async () => {
+    mockDraftResult = { data: { ...DRAFT, shipping_snapshot: { email: 'g@example.com' }, discount_facts: { usage: [{ code: 'CODE-B' }, { code: 'CODE-A' }] } }, error: null };
+    mockRpc.mockResolvedValue({ data: [{ order_id: null, order_status: null, created: false, rejection: 'discount_expired' }], error: null });
+    const all = [{ code: 'CODE-A', reason: 'not_eligible' }, { code: 'CODE-B', reason: 'not_eligible' }];
+    const failed = await POST(makeRequest(VALID_BODY));
+    expect((await failed.json()).refusals).toEqual(all);
+    expect(mockEvaluateDiscounts).toHaveBeenCalledWith(expect.anything(), { kind: 'guest', normalizedEmail: 'g@example.com' }, expect.anything(), ['CODE-A', 'CODE-B'], expect.any(String), 'confirm');
+    mockEvaluateDiscounts.mockResolvedValue({ result: {}, facts: {}, refusals: [] });
+    const none = await POST(makeRequest(VALID_BODY));
+    expect((await none.json()).refusals).toEqual(all);
+  });
+
+  test('FREQ-549-AC-01: 自動割引だけの条件変更は入力へ戻さず新しい最終確認を表示し支払いを待つ', async () => {
+    mockRpc.mockResolvedValue({ data: [{ order_id: null, order_status: null, created: false, rejection: 'discount_automatic_changed' }], error: null });
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ reconfirmationRequired: true, returnTo: 'confirmation' });
+    expect(mockExpireOpenCheckoutSession).toHaveBeenCalledWith(expect.anything(), 'cs_test_abc');
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+  });
+
+  test('FREQ-549-AC-01: 自動変更の失効と実入金が競合したら再計算せず照合の注文を返す', async () => {
+    mockRpc.mockResolvedValue({ data: [{ order_id: null, order_status: null, created: false, rejection: 'discount_automatic_changed' }], error: null });
+    mockExpireOpenCheckoutSession.mockResolvedValue('not_open');
+    mockReconcileCheckoutSession.mockResolvedValue({ kind: 'ok', orderId: 'order-paid', orderStatus: 'paid' });
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'payment_done', checkoutSessionId: 'cs_test_abc' });
+  });
+
+  test('FREQ-549-AC-01: 失効の後の照合が失敗しても再確認を返し、監査は残す', async () => {
+    mockRpc.mockResolvedValue({ data: [{ order_id: null, order_status: null, created: false, rejection: 'discount_automatic_changed' }], error: null });
+    mockReconcileCheckoutSession.mockRejectedValue(new Error('reconcile unavailable'));
+    const silence = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const res = await POST(makeRequest(VALID_BODY));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ reconfirmationRequired: true, returnTo: 'confirmation' });
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ orderId: null, result: 'discount_automatic_changed' }) }));
+    } finally { silence.mockRestore(); }
+  });
+
+  test('FREQ-549-AC-01: 自動変更のSession失効に失敗したら再確認の成功を返さない', async () => {
+    mockRpc.mockResolvedValue({ data: [{ rejection: 'discount_automatic_changed' }], error: null });
+    mockExpireOpenCheckoutSession.mockRejectedValue(new Error('expiry unavailable'));
+    const silence = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try { const res = await POST(makeRequest(VALID_BODY)); expect(res.status).toBe(503); expect(await res.json()).not.toHaveProperty('reconfirmationRequired'); }
+    finally { silence.mockRestore(); }
   });
 
   test('受付 RPC の GROUP_G_LOCK_SET_CHANGED（40001）は、DB の文を出さず「時間をおいてもう一度」の 500 にする', async () => {

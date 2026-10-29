@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/Button/Button';
 import { Dialog } from '@/components/ui/Dialog/Dialog';
 import { TextAreaField } from '@/components/ui/TextAreaField/TextAreaField';
 import OrderCancelDialog, { type OrderCancelValues } from '@/components/OrderCancelDialog';
+import { toOrderNumber } from '@/lib/orders/order-number';
 import {
   ADMIN_NOTE_MAX_LENGTH,
+  DISCOUNT_ATTENTION_LABELS,
   type AttentionException,
   type OrderAttention,
 } from '@/lib/orders/order-payment-types';
@@ -31,6 +33,7 @@ type AttentionInboxProps = {
   onOpenDeliveryHistory?: (orderId: string) => void;
   /** 配送の要対応を対応済みにする（要対応の番号を渡す）。管理の権限（店長とサポート）が無い人には渡さない（ボタンを出さない） */
   onResolveDelivery?: (attentionId: string) => void;
+  onResolveDiscount?: (orderId: string) => void;
 };
 
 function formatDateTime(value: string | null): string {
@@ -58,6 +61,7 @@ export default function AttentionInbox({
   onRetryReturnRefund,
   onOpenDeliveryHistory,
   onResolveDelivery,
+  onResolveDiscount,
 }: AttentionInboxProps) {
   const headingId = useId();
   const [resolving, setResolving] = useState<AttentionException | null>(null);
@@ -68,7 +72,8 @@ export default function AttentionInbox({
 
   // 配送の組は、開いている行が無ければ出さない（追跡オフの間は窓口が空で返す）。窓口が付けない昔の形は、無い組と同じに扱う
   const deliveries = attention?.deliveries ?? [];
-  if (!attention || (attention.exceptions.length === 0 && attention.reviews.length === 0 && deliveries.length === 0)) {
+  const discounts = attention?.discounts ?? [];
+  if (!attention || (attention.exceptions.length === 0 && attention.reviews.length === 0 && deliveries.length === 0 && discounts.length === 0)) {
     return null;
   }
   const deliveryCount = attention.counts.deliveries ?? deliveries.length;
@@ -76,7 +81,7 @@ export default function AttentionInbox({
   return (
     <section aria-labelledby={headingId} className="space-y-4 border border-black/15 p-4">
       <h2 id={headingId} className="font-acumin lk-text-sm text-black">
-        要対応 {attention.counts.exceptions}件・要確認 {attention.counts.reviews}件{deliveries.length > 0 ? `・配送 ${deliveryCount}件` : ''}
+        要対応 {attention.counts.exceptions}件・要確認 {attention.counts.reviews}件{deliveries.length > 0 ? `・配送 ${deliveryCount}件` : ''}{discounts.length > 0 ? `・割引 ${attention.counts.discounts ?? discounts.length}件` : ''}
       </h2>
 
       {attention.exceptions.length > 0 ? (
@@ -222,6 +227,15 @@ export default function AttentionInbox({
           </ul>
         </div>
       ) : null}
+
+      {discounts.length > 0 ? <div className="space-y-2">
+        <h3 className="font-acumin lk-text-3xs tracking-widest text-[#474747]">割引</h3>
+        <ul className="divide-y divide-black/10">{discounts.map(item => <li key={item.orderId} className="flex flex-wrap items-center justify-between gap-2 py-2">
+          <div><p>{DISCOUNT_ATTENTION_LABELS[item.kind]}</p><a className="underline" href={`/admin/orders/${item.orderId}`}>注文 {toOrderNumber(item.orderId)}</a><p>{formatDateTime(item.openedAt)}</p></div>
+          {onResolveDiscount ? <Button variant="primary" size="sm" disabled={processingIds.includes(item.orderId)} onClick={() => onResolveDiscount(item.orderId)}>確認済みにする</Button> : null}
+        </li>)}</ul>
+        {attention.discountsTruncated ? <p>ほかにも割引の要対応があります。</p> : null}
+      </div> : null}
 
       <Dialog open={resolving !== null} onClose={() => setResolving(null)} title="解決済みにする">
         <form

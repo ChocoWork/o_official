@@ -19,7 +19,8 @@ import { G2_ALLOWLIST, CURRENT_ALLOWLIST } from './helpers/group-g-allowlist';
  * （G-2 の Task 9 で閉じた。書き手は65本のまま）に、G-3 Task 4 で発送票の下書きの保存 private.admin_save_shipment_slip_draft と
  * 破棄 private.admin_discard_shipment_slip_draft の2本、Task 5でconsume・register・confirmの3本、Task 6で restore・cancel の2本、Task 7 で
  * 伝票番号の後入力・訂正 private.admin_update_shipment_slip_tracking、手動の配達済み private.admin_mark_shipment_slip_delivered、出荷日訂正 private.admin_correct_shipment_date の3本を足した75本に、
- * G-4 Task 4 で割当の入替 private.admin_swap_order_allocations を足した76本（以降の Task が書き手を足すたびに本数が増える）。
+ * G-4 Task 4 で割当の入替 private.admin_swap_order_allocations を足した76本に、グループ H Task 7 で入金照合用の受付
+ * private.place_reconciled_order_from_checkout_draft を足した77本（以降の Task が書き手を足すたびに本数が増える）。
  * 走査する表には G-2 の発注書の9表を足した（TABLES）。
  * G-2 Task 9（FREQ-540-AC-08）: 新しい書込み関数9本とその公開入口9本・内部の道具4本・読取4本の構造（private・SECURITY DEFINER・
  * search_path 空・EXECUTE の集合）と、各本体が共通の押さえ lock_group_g_purchase_orders を発注書の表・item_variants・
@@ -104,6 +105,7 @@ const ALLOWLIST = [
   'private.admin_mark_shipment_slip_delivered(uuid,integer,date,boolean,uuid,uuid)',
   'private.admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid)',
   'private.admin_swap_order_allocations(uuid,uuid,uuid,integer,text,uuid,uuid)',
+  'private.place_reconciled_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,text)',
 ];
 
 const STOPPED = ALLOWLIST.slice(47, 53);
@@ -620,8 +622,8 @@ describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の�
     const entries = procs.filter((proc) => proc.schema === 'public' && proc.name === SWAP_WRITER);
     expect({ bodies: bodies.length, entries: entries.length }).toEqual({ bodies: 1, entries: 1 });
     expect(bodies[0].identity).toBe('_order_id uuid, _taker_order_item_id uuid, _donor_order_item_id uuid, _quantity integer, _reason text, _actor_id uuid, _request_key uuid');
-    // 走査が本体を書き手として見つけ（空振りで通らない）、一覧の末尾（76本目）に載っている。入口は何も書かず、一覧に載らない
-    expect({ definer: bodies[0].secdef, allowed: allow.has(bodies[0].key), writer: isDirectWriter(bodies[0]), last: ALLOWLIST.at(-1) })
+    // 走査が本体を書き手として見つけ（空振りで通らない）、一覧の76本目（H4 が77本目を足した）に載っている。入口は何も書かず、一覧に載らない
+    expect({ definer: bodies[0].secdef, allowed: allow.has(bodies[0].key), writer: isDirectWriter(bodies[0]), last: ALLOWLIST[75] })
       .toEqual({ definer: true, allowed: true, writer: true, last: 'private.admin_swap_order_allocations(uuid,uuid,uuid,integer,text,uuid,uuid)' });
     expect({ delegate: isPublicDelegate(entries[0], allow, procs), writer: isDirectWriter(entries[0]), allowed: allow.has(entries[0].key) })
       .toEqual({ delegate: true, writer: false, allowed: false });

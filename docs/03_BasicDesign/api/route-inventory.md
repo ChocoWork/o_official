@@ -1,6 +1,8 @@
 # APIルート一覧
 
-> H Task 4 確認日: 2026-10-29。割引管理の 9 ファイル・11 メソッド（`/api/admin/discounts` 配下）を追加した。Route Handler は164ファイル・208メソッド、表は163行・207メソッド（`/api/e2e/server-info` を除く）。認可・CSRF・制限・監査の順序と応答は[API仕様](api-spec.md)の「管理:割引（H）」を参照。
+> H Task 7 確認日: 2026-10-29。割引の要対応を確認済みにする `POST /api/admin/order-attention/discounts/[orderId]/resolve` を 1 ファイル・1 メソッド追加した。Route Handler は165ファイル・209メソッド、表は164行・208メソッド（`/api/e2e/server-info` を除く）。
+>
+> H Task 4 確認日: 2026-10-29。割引管理の 9 ファイル・11 メソッド（`/api/admin/discounts` 配下）を追加した（その時点で164ファイル・208メソッド、表は163行・207メソッド）。認可・CSRF・制限・監査の順序と応答は[API仕様](api-spec.md)の「管理:割引（H）」を参照。
 >
 > 波 4 確認日: 2026-10-28。取扱店の作成の頁が入口で権限を確かめる窓口 `GET /api/admin/stockists/access`（`src/app/api/admin/stockists/access/route.ts`）を 1 ファイル・1 メソッド追加した。Route Handler は155ファイル・197メソッド、表は154行・196メソッド（`/api/e2e/server-info` を除く）。波 4 のほかの入口の追加・削除はなし（送り元の IP の取り出し、回数の制限の 429・503 への `no-store`、監査への IP の追加は応答の形と表の列を変えない）。
 
@@ -28,6 +30,7 @@
 | `/api/admin/orders/[id]/allocations/swap` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/allocations/swap/route.ts) （G-4 Task 5: `admin.orders.allocate` + `admin.orders.read`、CSRF→IP/actor各30回/600秒→strict本文→入替→監査。200直接結果、全応答no-store） |
 | `/api/admin/orders/[id]/allocations/swap-candidates` | `GET` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/allocations/swap-candidates/route.ts) （G-4 Task 5: 同じ2権限、UUIDの `orderItemId` だけをqueryで受ける。200 `{data}`、候補最大50行、回数制限なし、全応答no-store） |
 | `/api/admin/order-attention/deliveries/[attentionId]/resolve` | `POST` | [route.ts](../../../src/app/api/admin/order-attention/deliveries/%5BattentionId%5D/resolve/route.ts) |
+| `/api/admin/order-attention/discounts/[orderId]/resolve` | `POST` | [route.ts](../../../src/app/api/admin/order-attention/discounts/%5BorderId%5D/resolve/route.ts) （H Task 7: `admin.orders.manage`、CSRF→IP/actor各30回/600秒→空object→確認済み→監査。200 `{data:{resolved}}`） |
 | `/api/webhook/17track` | `POST` | [route.ts](../../../src/app/api/webhook/17track/route.ts) |
 | `/api/orders/[id]/return-request` | `GET`, `POST` | [route.ts](../../../src/app/api/orders/%5Bid%5D/return-request/route.ts) |
 | `/api/orders/[id]/return-request/photos` | `POST` | [route.ts](../../../src/app/api/orders/%5Bid%5D/return-request/photos/route.ts) |
@@ -219,7 +222,7 @@ API単体 [GET](../../../tests/unit/api/admin/permissions-route.test.ts)・[POST
 
 ## `src/app/api` の外の入口（波 3 / 2026-10-28）
 
-頁ではなく画像のバイトを返す Route Handler。パスが `/api/` で始まらず、`src/app/api` の外にあるので、上の表と概要の数（164ファイル・208メソッド、表は163行・207メソッド）には入れない。数を固定する単体試験（`tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts`）は `src/app/api` だけを数える。
+頁ではなく画像のバイトを返す Route Handler。パスが `/api/` で始まらず、`src/app/api` の外にあるので、上の表と概要の数（165ファイル・209メソッド、表は164行・208メソッド）には入れない。数を固定する単体試験（`tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts`）は `src/app/api` だけを数える。
 
 | パス | メソッド | 根拠 |
 | --- | --- | --- |

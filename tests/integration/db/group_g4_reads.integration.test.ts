@@ -525,7 +525,7 @@ describeLocalDb('G-4 reads: item rows, amounts, filters, export, detail and hist
     expect((await list({ email,attention: true })).totalOrders).toBe(1); // Delivery attention alone.
     await db().query("update public.order_fulfillment_attention set resolved_at=now(),resolution='auto' where fulfillment_id=$1 and resolved_at is null",[f.shipments[0]]);
     expect((await list({ email,attention: true })).rows).toEqual([]);
-    expect((await detail(f.orderId)).attention).toEqual({ paymentExceptions: [],review: null,deliveries: [] });
+    expect((await detail(f.orderId)).attention).toEqual({ paymentExceptions: [],review: null,deliveries: [],discounts: [] });
     for (const read of [detail,history]) expect(await flow.rejected(() => read(randomUUID())))
       .toEqual({ code: 'P0002',message: 'GROUP_G_ORDER_NOT_FOUND' });
     const hidden = await mixed({ quantity: 1,status: 'payment_in_progress' });

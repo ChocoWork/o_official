@@ -86,6 +86,7 @@ describe('店への知らせのメールの文面', () => {
     'stripe_unavailable',
     'db_unavailable',
     'not_converged',
+    'discount_reconciliation_contract_violation',
     'lease_expired',
     'invalid_payload',
     'unexpected_error',

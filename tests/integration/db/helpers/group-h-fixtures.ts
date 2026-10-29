@@ -3,11 +3,15 @@ import type { OrderStatus } from '@/lib/orders/order-payment-types';
 import type { PgClient } from './local-db';
 import { createCatalogFixture } from './order-fixtures';
 import type { DiscountDefinition } from '@/lib/discounts/discount-types';
+import { calculateDiscounts } from '@/lib/discounts/discount-engine';
+import type { DiscountFacts, DiscountRefusal } from '@/lib/discounts/discount-types';
+import type { CheckoutDiscountClaim, CheckoutDiscountDraft } from '@/features/checkout/services/checkout-draft.service';
+import { createHash } from 'node:crypto';
 
 export type DiscountSeed = Omit<DiscountDefinition, 'id' | 'version'> & { code?: string; userIds?: readonly string[] };
 export type HOrderSeed = {
   lines: readonly { itemPrice: number; quantity: number; discounts: readonly { discountId: string; amount: number }[];
-    unitAmounts: readonly number[] }[];
+    unitAmounts: readonly number[]; catalog?: HCatalog }[];
   legacy: boolean; buyerUserId?: string; email?: string; paidAt?: string | null; status?: OrderStatus;
 };
 
@@ -101,7 +105,7 @@ export async function seedHOrderUnits(client: PgClient, input: HOrderSeed): Prom
     input.buyerUserId ?? null, input.paidAt === undefined ? new Date().toISOString() : input.paidAt, input.email ?? 'h@example.invalid'])).rows[0].id as string;
   const orderItemIds: string[] = [];
   for (const line of input.lines) {
-    const catalog = await createCatalogFixture(client);
+    const catalog = line.catalog ?? await createCatalogFixture(client);
     const itemId = (await client.query(`insert into public.order_items
       (order_id,item_id,item_name,item_price,quantity,line_total,variant_id,fulfillment_type)
       values($1,$2,'H fixture',$3,$4,$5,$6,'backorder') returning id`,
@@ -138,4 +142,53 @@ export async function withH1PermissionBaseline(client: PgClient, assertSql: stri
         r.permissions_version-case when r.code='admin' then 1 else 0 end) order by r.id) from public.roles r),
       'h_permissions',0,'h_grants',0)`);
   await client.query(assertSql);
+}
+
+export type HCatalog = Awaited<ReturnType<typeof createCatalogFixture>>;
+
+/**
+ * Real frozen H3 material; the acceptance tests never fabricate frozen JSON or disable guards.
+ * `lines` defaults to one line of 2 units at 20000; pass catalogs created earlier to target items from a discount definition.
+ */
+export async function seedHCheckout(client: PgClient, input: { discountId?: string; code?: string; userId?: string; email?: string;
+  lines?: readonly { catalog?: HCatalog; quantity: number }[] } = {}) {
+  const sessionId = `h4-${randomUUID()}`, checkoutSessionId = `cs_test_h4${randomUUID().replaceAll('-', '')}`;
+  // create-session stores the shipping email trimmed and lower-cased (checkoutShippingSchema); do the same here.
+  const email = (input.email ?? `h4-${randomUUID()}@example.invalid`).trim().toLowerCase();
+  // A member owns one cart (carts_user_id_key); a second draft for the same member reuses it.
+  const cartId = (input.userId ? (await client.query('select id from public.carts where user_id=$1', [input.userId])).rows[0]?.id as string | undefined : undefined)
+    ?? (await client.query('insert into public.carts(user_id,guest_token_hash) values($1,$2) returning id',
+      [input.userId ?? null, input.userId ? null : createHash('sha256').update(sessionId).digest('hex')])).rows[0].id as string;
+  const specs = input.lines ?? [{ quantity: 2 }];
+  const built: { catalog: HCatalog; lineId: string; quantity: number }[] = [];
+  for (const spec of specs) {
+    const catalog = spec.catalog ?? await createCatalogFixture(client);
+    await client.query('update public.items set price=20000 where id=$1', [catalog.itemId]);
+    const lineId = (await client.query('insert into public.cart_lines(cart_id,variant_id,quantity) values($1,$2,$3) returning id', [cartId, catalog.variantId, spec.quantity])).rows[0].id as string;
+    built.push({ catalog, lineId, quantity: spec.quantity });
+  }
+  const catalog = built[0].catalog;
+  const subtotal = built.reduce((sum, line) => sum + 20000 * line.quantity, 0);
+  const context = await hRpc<{ discounts: DiscountDefinition[]; facts: DiscountFacts; refusals: DiscountRefusal[] }>(client,
+    'get_checkout_discount_context', [input.userId ?? null, email, input.code ? [input.code] : [], built.map(line => line.catalog.itemId), new Date(), 'confirm']);
+  const discounts = input.discountId ? context.discounts.filter(d => d.id === input.discountId) : [];
+  const facts: DiscountFacts = { ...context.facts, usage: context.facts.usage.filter(u => discounts.some(d => d.id === u.discountId)) };
+  const result = calculateDiscounts({ lines: built.map(line => ({ lineKey: line.lineId, itemId: line.catalog.itemId, unitPrice: 20000, quantity: line.quantity, lineKind: 'order' as const })),
+    codes: input.code ? [input.code] : [], discounts, facts });
+  const claim: CheckoutDiscountClaim = { sessionId, requestVersion: 1, requestFingerprint: `v1:${'b'.repeat(64)}`, checkoutUiMode: 'custom', checkoutOrigin: 'https://shop.example.invalid', paymentMethod: 'stripe_card', currency: 'jpy', subtotalAmount: subtotal, taxAmount: 0, shippingAmount: 0, totalAmount: subtotal,
+    shippingSnapshot: { email, fullName: 'Fixture', kanaName: null, postalCode: '1000001', prefecture: 'Tokyo', city: 'City', address: '1-1', building: null, phone: '0312345678' },
+    itemsSnapshot: built.map(line => ({ source_cart_line_id: line.lineId, item_id: line.catalog.itemId, item_name: 'Fixture', item_price: 20000, quantity: line.quantity, line_total: 20000 * line.quantity, color: 'BLACK', size: 'M', item_image_url: null })),
+    buyerUserId: input.userId ?? null, cartId };
+  await client.query('set local role service_role');
+  const saved = (await client.query('select public.claim_checkout_discount_draft($1::jsonb,$2::jsonb,$3::jsonb) result', [JSON.stringify(claim), JSON.stringify(result), JSON.stringify(facts)])).rows[0].result as CheckoutDiscountDraft;
+  await client.query('reset role');
+  await client.query('update public.checkout_drafts set checkout_session_id=$2 where id=$1', [saved.draftId, checkoutSessionId]);
+  return { ...saved, checkoutSessionId, sessionId, paymentIntentId: `pi_${checkoutSessionId.slice(3)}`, result, facts, claim, catalog, catalogs: built.map(line => line.catalog), userId: input.userId ?? null };
+}
+export async function acceptHCheckout(client: PgClient, f: Awaited<ReturnType<typeof seedHCheckout>>, state?: 'paid' | 'awaiting_payment') {
+  await client.query('set local role service_role');
+  const fn = state ? 'place_reconciled_order_from_checkout_draft' : 'place_order_from_checkout_draft';
+  const args = [f.draftId, f.checkoutSessionId, f.sessionId, f.result.totalAmount, f.result.discountAmount, 'jpy', new Date(), f.paymentIntentId, ...(state ? [state] : [[], f.userId])];
+  const row = (await client.query(`select * from public.${fn}(${args.map((_, i) => `$${i + 1}`).join(',')})`, args)).rows[0] as { order_id: string | null; order_status: OrderStatus | null; created: boolean; rejection: string | null };
+  await client.query('reset role'); return row;
 }

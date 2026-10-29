@@ -1075,3 +1075,46 @@ sequenceDiagram
 [詳細頁の部品の単体](../../../tests/unit/components/AdminOrderDetailSection.test.tsx)・[入替dialogの単体](../../../tests/unit/components/AllocationSwapDialog.test.tsx)で検証する。DB・実ブラウザ・E2Eはcontroller担当（未実行）。
 
 **入口（G-4 Task 8）**: 詳細の頁へは、注文一覧表の行・要対応の欄に加えて、荷作り表の注文ID（`PackingSection`）と発送票の注文番号（`ShipmentSlipSection`。同梱する品物の表・追加の候補・発送票の確認の見出し・確定済みの票の「注文ごとの発送」の4か所）の Link（`/admin/orders/[id]`）から入る。荷作り表から注文の履歴を dialog で開く入口は撤去した。詳細の「発送」の欄からは、発送が属する発送票へ Link（`/admin/shipment-slips/[id]`）で戻れる。履歴は詳細の頁の「変更履歴」の欄（`OrderHistoryPanel`。`OrderHistoryDialog` から改名し、dialog の形を畳んだ）が `GET /api/admin/orders/[id]/history` を読み、画面の切り替えと再送の流れは変えない。
+
+## SQ-ADMIN-16: 割引の予約・入金の確定・上限超過の要対応（H Task 7 / FREQ-549）
+
+確認日: 2026-10-29。割引の使用（[redemption の状態](../states/discount-redemptions.md)）が、注文の受付・入金・未入金終了と**同じ取引で**動く順序と、遅れた入金を受けた時に要対応の欄へ 1 件だけ出る流れ。実装は [H4 移行](../../../supabase/migrations/20261029130300_group_h_discounts_acceptance.sql)。金額・在庫・FIFO・カートの削除・メールの順は今までのまま、割引の手順を足すだけ。
+
+```mermaid
+sequenceDiagram
+  actor Buyer as お客様
+  participant Route as POST /api/checkout/place-order
+  participant Place as place_order_from_checkout_draft
+  participant Rec as 照合（reconciler）
+  participant Fb as place_reconciled_order_from_checkout_draft
+  participant Paid as mark_order_paid / awaiting / release
+  participant Admin as 管理者（/admin/orders#attention）
+
+  Buyer->>Route: 注文する
+  Route->>Place: Stripe の実額と Session
+  Note over Place: G共通鍵 → H目録 → 本人鍵 → 割引id鍵 → G在庫の鍵
+  Place->>Place: 固定draftの額・本人を照合し、入力codeと自動割引を再確認
+  alt 入力codeが使えない
+    Place-->>Route: rejection（discount_*）、注文・在庫・予約は0
+    Route-->>Buyer: 409 入力へ戻す
+  else 自動割引だけ条件を失った
+    Place-->>Route: rejection=discount_automatic_changed
+    Route->>Route: 古い未払いSessionを失効
+    Route-->>Buyer: 200 reconfirmationRequired（新しい最終確認）
+  else 受け付ける
+    Place->>Place: 注文・在庫・割引の配分と1着の額・正額の使用予約（reserved）を同じ取引で書く
+    Place-->>Route: 注文（payment_in_progress）
+  end
+  Rec->>Fb: 受付を通らない paid / awaiting_payment（実額と固定結果）
+  Fb->>Fb: 現在の割引条件では拒否せず、注文・予約（reconciliation_fallback）を作る
+  Paid->>Paid: 入金 settle(true): reserved/cancelled → confirmed（超過・fallback なら印）
+  Paid->>Paid: 未入金終了 settle(false): reserved → cancelled（入金済みなら何もしない）
+  Admin->>Admin: 割引の上限を超えた注文／割引の条件を確認する注文 → 確認済みにする（表示だけ閉じる）
+```
+
+- **業務拒否は書かない**: 入力 code の拒否は例外ではなく `rejection` 列で返し、注文・在庫 hold・使用・コピーを 1 行も作らない。自動割引だけが条件を失った時はコード側を変えず、route が古い Session を失効して新しい固定額の最終確認を表示する。失効に失敗したら古い clientSecret で決済させず 503。失効が実入金と競合したら再計算せず照合の注文を返す。
+- **照合は拒否しない**: `place_reconciled_order_from_checkout_draft`（service_role のみ、状態は `paid` / `awaiting_payment`）は金額・通貨・所有者・固定 snapshot を保つが、現在の回数・1 人 1 回・期間・停止・割当・初回・着数では拒否しない。誤って `discount_*` が返ったら `discount_reconciliation_contract_violation` の一時エラーでキューが再試行し、既存の 9 回で dead になり運用警告へ残る（成功扱いにも無限再試行にもしない）。
+- **確定と取消**: `mark_order_paid`・`record_cancelled_order_paid_amount` の実入金は `confirmed` へ、`release_stock_for_unpaid_order` の未入金終了は `cancelled` へ。入金済みの注文は取消・返金・返品で `confirmed` を戻さない。
+- **要対応**: 上限・1 人 1 回・単発 code の超過は `discount_limit_exceeded`（「割引の上限を超えた注文」）、予約なし・取消後・fallback の回復は `discount_reconciliation_recovered`（「割引の条件を確認する注文」）。1 注文 1 件で、配送・支払いの要対応とは別の欄に出し、発送を止めない。「確認済みにする」は `POST /api/admin/order-attention/discounts/[orderId]/resolve`（`admin.orders.manage`）。
+
+[Route](../../../tests/unit/api/checkout/place-order-route.test.ts)・[reconciler](../../../tests/unit/lib/stripe/checkout-payment-reconciler.test.ts)・[attention route](../../../tests/unit/api/admin/discount-attention-route.test.ts)・[画面](../../../tests/unit/components/AttentionInbox.test.tsx)の単体で検証する。DB・並行・E2E は controller 担当（未実行）。

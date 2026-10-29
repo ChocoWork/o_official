@@ -59,8 +59,12 @@ function refundLookupQuery() {
   };
 }
 
+// 割引の要対応の一覧は専用の入口。ほかのRPC（メールの送信状態・返金の返せる額）の試験の答えとは分けて差し替える
+const mockDiscountAttentionRpc = jest.fn();
 const mockServiceClient = {
-  rpc: (...args: unknown[]) => mockRpc(...args),
+  rpc: (name: string, ...rest: unknown[]) => (name === 'list_admin_discount_attention'
+    ? mockDiscountAttentionRpc(name, ...rest)
+    : mockRpc(name, ...rest)),
   from: (table: string) => ({
     select: (columns: string) => {
       mockSelectColumns.push(columns);
@@ -184,9 +188,31 @@ beforeEach(() => {
   mockExpireOpenCheckoutSession.mockResolvedValue('expired');
   mockReadCheckoutPayment.mockResolvedValue({ state: { kind: 'missing' }, voucherExpiresAt: null });
   mockRpc.mockResolvedValue({ data: [{ paused: false, reason: null }], error: null });
+  mockDiscountAttentionRpc.mockReset().mockResolvedValue({ data: { rows: [], truncated: false }, error: null });
 });
 
 describe('GET /api/admin/order-attention', () => {
+  it('FREQ-549-AC-04: 割引の要対応を専用の入口からactorと上限100で読み、no-storeで他の組と同じ欄へ返す', async () => {
+    const row = { orderId: ORDER_ID, kind: 'discount_limit_exceeded', openedAt: '2026-10-29T01:02:03.456+00:00' };
+    mockDiscountAttentionRpc.mockResolvedValue({ data: { rows: [row], truncated: true }, error: null });
+    const res = (await getAttention(new Request('http://localhost/api/admin/order-attention'))) as unknown as RouteResponse & { headers?: unknown };
+    expect(res.status).toBe(200);
+    expect(mockDiscountAttentionRpc).toHaveBeenCalledWith('list_admin_discount_attention', { _limit: 100, _actor_id: 'admin-1' });
+    expect(res.body.data).toMatchObject({ discounts: [row], discountsTruncated: true, counts: { discounts: 1 } });
+  });
+
+  it('FREQ-549-AC-04: 割引の要対応の一覧を断られたら中身を出さず500にする', async () => {
+    mockDiscountAttentionRpc.mockResolvedValue({ data: null, error: { code: '42501', message: 'GROUP_H_FORBIDDEN' } });
+    const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const res = (await getAttention(new Request('http://localhost/api/admin/order-attention'))) as unknown as RouteResponse;
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({ error: 'Internal server error' });
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it.each(['config_api_key', 'config_sender_domain', 'config_provider', 'quota_daily', 'quota_monthly', null] as const)(
     '送信を止めている時は理由 %s の名前を履歴と同じ表から返す', async (reason) => {
       mockRpc.mockResolvedValue({ data: [{ paused: true, reason }], error: null });
@@ -211,7 +237,7 @@ describe('GET /api/admin/order-attention', () => {
       const res = (await getAttention(new Request('http://localhost/api/admin/order-attention'))) as unknown as RouteResponse;
       expect(res.status).toBe(200);
       expect(res.body.data.emailSending).toBeNull();
-      expect(res.body.data.counts).toEqual({ exceptions: 0, reviews: 1, deliveries: 0 });
+      expect(res.body.data.counts).toEqual({ exceptions: 0, reviews: 1, deliveries: 0, discounts: 0 });
       expect(res.body.data.reviews).toHaveLength(1);
       expect(warn.mock.calls).toEqual([['[admin.order-attention] Failed to fetch email sending state', 'OrderEmailStoreError', '08006']]);
     } finally {
@@ -282,7 +308,7 @@ describe('GET /api/admin/order-attention', () => {
     const res = (await getAttention(new Request('http://localhost/api/admin/order-attention'))) as unknown as RouteResponse;
 
     expect(res.status).toBe(200);
-    expect(res.body.data.counts).toEqual({ exceptions: 2, reviews: 1, deliveries: 0 });
+    expect(res.body.data.counts).toEqual({ exceptions: 2, reviews: 1, deliveries: 0, discounts: 0 });
     expect(res.body.data.exceptions[0]).toEqual({
       id: EXCEPTION_ID,
       reason: 'order_not_creatable',

@@ -121,6 +121,7 @@ const { reconcileCheckoutPayment: reconcileForReal } = jest.requireActual('@/lib
   reconcileCheckoutPayment: (deps: ReconcilerDeps, input: ReconcileInput) => Promise<ReconcileResult>;
 };
 
+/** 照合用の受付（place_reconciled_order_from_checkout_draft）の引数。状態は取得した Stripe の状態（paid / awaiting_payment）だけ */
 function placeArgs(draft: DraftFixture, sessionCreatedAt: Date) {
   return {
     draftId: draft.draftId,
@@ -130,16 +131,31 @@ function placeArgs(draft: DraftFixture, sessionCreatedAt: Date) {
     amountDiscount: 0,
     currency: 'jpy',
     sessionCreatedAt,
-    paymentIntentId: null,
+    paymentIntentId: `pi_pgrst_${uniqueSuffix()}`,
+    paymentState: 'awaiting_payment' as const,
   };
 }
 
-async function placeOrThrow(database: ReconcilerDatabase, draft: DraftFixture, sessionCreatedAt: Date): Promise<string> {
-  const placed = await database.placeOrder(placeArgs(draft, sessionCreatedAt));
-  if (!placed.placed) {
-    throw new Error(`place_order_from_checkout_draft rejected the fixture: ${placed.rejection}`);
+/**
+ * 支払い手続き中の注文を作る準備。通常の受付（place_order_from_checkout_draft、お客様の「注文する」と同じ入口）を PostgREST で呼ぶ。
+ * 照合関数の予備処理は place_reconciled_order_from_checkout_draft へ移ったので、準備はこちらで行い、照合用の入口は別に確かめる。
+ */
+async function placeOrThrow(client: SupabaseClient, draft: DraftFixture, sessionCreatedAt: Date): Promise<string> {
+  const { data, error } = await client.rpc('place_order_from_checkout_draft', {
+    _draft_id: draft.draftId,
+    _checkout_session_id: draft.checkoutSessionId,
+    _cart_session_id: draft.cartSessionId,
+    _stripe_amount_total: draft.totalAmount,
+    _stripe_amount_discount: 0,
+    _stripe_currency: 'jpy',
+    _checkout_session_created_at: sessionCreatedAt.toISOString(),
+    _payment_intent_id: null,
+  });
+  const row = (data as Array<{ order_id: string | null; rejection: string | null }> | null)?.[0];
+  if (error || !row?.order_id) {
+    throw new Error(`place_order_from_checkout_draft rejected the fixture: ${row?.rejection ?? error?.code ?? 'no row'}`);
   }
-  return placed.orderId;
+  return row.order_id;
 }
 
 async function sweep(): Promise<SweepResponse> {
@@ -281,10 +297,10 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
 
     // 金額が違えば注文を作らず理由を返す（照合関数はこれを要対応 order_not_creatable にする）
     expect(
-      await database.placeOrder({ ...placeArgs(draft, new Date()), amountTotal: draft.totalAmount + 1 }),
+      await database.placeReconciledOrder({ ...placeArgs(draft, new Date()), amountTotal: draft.totalAmount + 1 }),
     ).toEqual({ placed: false, rejection: 'amount_mismatch' });
 
-    const orderId = await placeOrThrow(database, draft, new Date());
+    const orderId = await placeOrThrow(client, draft, new Date());
     expect(await database.findOrder({ checkoutSessionId: draft.checkoutSessionId, paymentIntentId: null })).toEqual({
       id: orderId,
       status: 'payment_in_progress',
@@ -322,7 +338,7 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
   test('受付 → 入金待ち → 払込期限切れ: 入金待ちにする RPC と在庫を戻す RPC の引数名が通る', async () => {
     const draft = await newDraft();
     const paymentIntentId = `pi_pgrst_${uniqueSuffix()}`;
-    const orderId = await placeOrThrow(database, draft, new Date());
+    const orderId = await placeOrThrow(client, draft, new Date());
 
     expect(await database.markOrderAwaitingPayment({ orderId, paymentIntentId, sourceEventId: null })).toEqual({
       updated: true,
@@ -386,7 +402,7 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
   test('要対応: 入金の RPC が先に作った金額の違いを、照合の初めての記録が同じ行で is_new=true として受け取り、再送は false（G-1 Task 7）', async () => {
     const draft = await newDraft();
     const paymentIntentId = `pi_pgrst_${uniqueSuffix()}`;
-    const orderId = await placeOrThrow(database, draft, new Date());
+    const orderId = await placeOrThrow(client, draft, new Date());
 
     expect(await database.markOrderPaid({
       orderId,
@@ -424,7 +440,7 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
     ['全額', PRICE, 'cancelled', 0],
   ])('照合: 入金済みにした注文に%s返金済みの分があれば、返金投影の RPC で注文へ反映する（返金額 %i。結果の状態は %s、注文確定メールは %i 通）', async (_name, amountRefunded, expectedStatus, expectedMails) => {
     const draft = await newDraft();
-    const orderId = await placeOrThrow(database, draft, new Date());
+    const orderId = await placeOrThrow(client, draft, new Date());
     const deps = composedDeps(draft, `pi_pgrst_${uniqueSuffix()}`, amountRefunded);
 
     const result = await reconcileForReal(deps, { checkoutSessionId: draft.checkoutSessionId });
@@ -495,10 +511,10 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
       expect(before.status).toBe(200);
 
       // 開いてから30分を1秒超えた支払い手続き中は候補、30分ちょうどは候補でない（比べ方は lt）
-      await placeOrThrow(database, await newDraft(), new Date(now - CHECKOUT_SESSION_VALIDITY_MS - 1000));
-      await placeOrThrow(database, await newDraft(), new Date(now - CHECKOUT_SESSION_VALIDITY_MS));
+      await placeOrThrow(client, await newDraft(), new Date(now - CHECKOUT_SESSION_VALIDITY_MS - 1000));
+      await placeOrThrow(client, await newDraft(), new Date(now - CHECKOUT_SESSION_VALIDITY_MS));
       // 入金待ちは開いてからの時間にかかわらず候補、入金済みは候補でない
-      const awaitingOrderId = await placeOrThrow(database, await newDraft(), new Date(now));
+      const awaitingOrderId = await placeOrThrow(client, await newDraft(), new Date(now));
       expect(
         await database.markOrderAwaitingPayment({
           orderId: awaitingOrderId,
@@ -506,7 +522,7 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
           sourceEventId: null,
         }),
       ).toEqual({ updated: true });
-      const paidOrderId = await placeOrThrow(database, await newDraft(), new Date(now - 2 * CHECKOUT_SESSION_VALIDITY_MS));
+      const paidOrderId = await placeOrThrow(client, await newDraft(), new Date(now - 2 * CHECKOUT_SESSION_VALIDITY_MS));
       expect(
         await database.markOrderPaid({
           orderId: paidOrderId,

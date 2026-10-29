@@ -3,6 +3,19 @@ import AttentionInbox from '@/components/AttentionInbox';
 import type { OrderAttention } from '@/lib/orders/order-payment-types';
 import type { DeliveryAttentionItem } from '@/lib/orders/tracking/delivery-types';
 
+test('FREQ-549-AC-04: fallbackを確定した時だけ２kindの要対応を１欄へ出す', () => {
+  const resolve = jest.fn();
+  const attention: OrderAttention = { exceptions: [], reviews: [], counts: { exceptions: 0, reviews: 0, discounts: 2 }, discounts: [
+    { orderId: 'order-limit', kind: 'discount_limit_exceeded', openedAt: '2026-10-29T00:00:00Z' },
+    { orderId: 'order-recovered', kind: 'discount_reconciliation_recovered', openedAt: '2026-10-29T01:00:00Z' },
+  ] };
+  render(<AttentionInbox attention={attention} processingIds={[]} onReview={jest.fn()} onResolve={jest.fn()} onCancelAndResolve={jest.fn()} onResolveDiscount={resolve} />);
+  expect(screen.getByText('割引の上限を超えた注文')).toBeInTheDocument();
+  expect(screen.getByText('割引の条件を確認する注文')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /ORD-ORDER-LI/ })).toHaveAttribute('href', '/admin/orders/order-limit');
+  fireEvent.click(screen.getAllByRole('button', { name: '確認済みにする' })[0]); expect(resolve).toHaveBeenCalledWith('order-limit');
+});
+
 const ATTENTION: OrderAttention = {
   exceptions: [
     {

@@ -3,7 +3,7 @@ import { getDraftIdFromStripeMetadata } from '@/features/checkout/services/check
 import { resolvePaymentMethodFromSession } from '@/features/checkout/services/payment-method.service';
 import type { StripePaymentState } from '@/lib/stripe/checkout-payment-decision';
 
-export type ReconcileTransientCode = 'stripe_unavailable' | 'db_unavailable' | 'not_converged';
+export type ReconcileTransientCode = 'stripe_unavailable' | 'db_unavailable' | 'not_converged' | 'discount_reconciliation_contract_violation';
 
 /**
  * 照合の一時的な失敗（設計書 5-1）。呼び出し元はイベントを失敗にし、キューが間隔を空けて再試行する。

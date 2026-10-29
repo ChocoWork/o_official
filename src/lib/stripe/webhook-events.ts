@@ -119,6 +119,7 @@ export type WebhookFailureCause =
   | 'stripe_unavailable'
   | 'db_unavailable'
   | 'not_converged'
+  | 'discount_reconciliation_contract_violation'
   | 'lease_expired'
   | 'invalid_payload'
   | 'unexpected_error';
@@ -131,7 +132,7 @@ export class InvalidWebhookPayloadError extends Error {
   }
 }
 
-const RECONCILE_TRANSIENT_CAUSES: ReadonlySet<string> = new Set(['stripe_unavailable', 'db_unavailable', 'not_converged']);
+const RECONCILE_TRANSIENT_CAUSES: ReadonlySet<string> = new Set(['stripe_unavailable', 'db_unavailable', 'not_converged', 'discount_reconciliation_contract_violation']);
 
 export function webhookFailureCause(error: unknown): WebhookFailureCause {
   if (error instanceof InvalidWebhookPayloadError) return 'invalid_payload';

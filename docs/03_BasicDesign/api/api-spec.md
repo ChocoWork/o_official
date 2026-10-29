@@ -1,6 +1,8 @@
 # API仕様（現行実装）
 
-> H Task 4 確認日: 2026-10-29。割引管理の 9 ファイル・11 メソッドを「管理:割引（H）」の節に足した（164ファイル・208組、E2E 用を除く163ファイル・207組）。
+> H Task 7 確認日: 2026-10-29。割引の要対応を確認済みにする `POST /api/admin/order-attention/discounts/[orderId]/resolve` を「受付・入金照合・割引の要対応の契約（H Task 7）」に足した（165ファイル・209組、E2E 用を除く164ファイル・208組）。
+>
+> H Task 4 確認日: 2026-10-29。割引管理の 9 ファイル・11 メソッドを「管理:割引（H）」の節に足した（その時点で164ファイル・208組、E2E 用を除く163ファイル・207組）。
 >
 > 波 4 確認日: 2026-10-28。取扱店の作成の頁の入口の窓口 `GET /api/admin/stockists/access` を「管理:商品・LOOK・NEWS・STOCKIST」の表に足した（155ファイル・197組、E2E 用を除く154ファイル・196組）。回数の制限の 429・503 に `Cache-Control: private, no-store` を付け、回数の鍵と管理の監査のIPを[getClientIp](../../../src/lib/request-ip.ts)に揃えた（共通境界の記述）。取扱店の管理の窓口の順序を「送り元の枠 → 認可 → 操作者の枠 → CSRF」に変えた。管理の問い合わせ・利用者・色見本・監査ログ・LOOK・ニュースの監査にも行為者のメール・IP・ブラウザの名乗りが入る（応答は変わらない）。`GET /api/admin/looks` の `meta.canManage` は認可1回の結果の権限の集合から決まる（応答の形は同じ）。
 
@@ -18,7 +20,7 @@
 
 ## 概要
 
-現行Route Handlerの入力、認証・認可、応答、主要な失敗分岐と副作用を記録する。164ファイル、明示exportされた208組（E2E 用の `/api/e2e/server-info` を除く163ファイル・207組を本書で記す。H Task 4 で割引管理の9ファイル・11メソッドを追加した。波4で`GET /api/admin/stockists/access`を1入口追加した。G-4 Task 8 で旧い発送・仕上がりの6ファイル・7メソッドを削除した。G-0 の2入口を 2026-10-24 に、G-2 Task 3 の在庫一覧表の入口と Task 4 の発注の作成の入口と Task 5 の発注一覧表・発注書の詳細の入口と Task 6 の発注先・メモの訂正（`PATCH /api/admin/purchase-orders/[id]`）・数量の確定と訂正・残りの打切りの入口と Task 7 の受け取り・受け取りの取消の入口と Task 8 の取引書類の原本の6入口と G-3 Task 3 の荷作り表・発送票の読取の3入口（`GET /api/admin/packing`・`GET /api/admin/shipment-slips`・`GET /api/admin/shipment-slips/[id]`）と G-3 Task 4 の発送票の下書きの3入口（`POST /api/admin/shipment-slips`・`POST /api/admin/shipment-slips/[id]/draft`・`POST /api/admin/shipment-slips/[id]/discard`）と G-3 Task 5 の発送確定の入口（`POST /api/admin/shipment-slips/[id]/confirm`）と G-3 Task 6 の発送の取消の入口（`POST /api/admin/shipment-slips/[id]/cancel`）と G-3 Task 7 の伝票番号の入力・訂正の入口（`POST /api/admin/shipment-slips/[id]/tracking`）と手動の配達済みの入口（`POST /api/admin/shipment-slips/[id]/delivered`）と 波1-A の Google ログイン開始の POST（`POST /api/auth/oauth/start`）とログインの後の行き先の POST（`POST /api/auth/post-login`）を 2026-10-25 に反映）のHTTPメソッド・パスを対象とする。実装と実装が呼ぶschema/helperを根拠とし、未実装の契約は追加しない。DB・Stripe・Supabase Auth・メール等の実環境での成功や設定状態を保証する文書ではない。
+現行Route Handlerの入力、認証・認可、応答、主要な失敗分岐と副作用を記録する。165ファイル、明示exportされた209組（E2E 用の `/api/e2e/server-info` を除く164ファイル・208組を本書で記す。H Task 7 で割引の要対応の確認済みの1ファイル・1メソッドを足した。H Task 4 で割引管理の9ファイル・11メソッドを追加した。波4で`GET /api/admin/stockists/access`を1入口追加した。G-4 Task 8 で旧い発送・仕上がりの6ファイル・7メソッドを削除した。G-0 の2入口を 2026-10-24 に、G-2 Task 3 の在庫一覧表の入口と Task 4 の発注の作成の入口と Task 5 の発注一覧表・発注書の詳細の入口と Task 6 の発注先・メモの訂正（`PATCH /api/admin/purchase-orders/[id]`）・数量の確定と訂正・残りの打切りの入口と Task 7 の受け取り・受け取りの取消の入口と Task 8 の取引書類の原本の6入口と G-3 Task 3 の荷作り表・発送票の読取の3入口（`GET /api/admin/packing`・`GET /api/admin/shipment-slips`・`GET /api/admin/shipment-slips/[id]`）と G-3 Task 4 の発送票の下書きの3入口（`POST /api/admin/shipment-slips`・`POST /api/admin/shipment-slips/[id]/draft`・`POST /api/admin/shipment-slips/[id]/discard`）と G-3 Task 5 の発送確定の入口（`POST /api/admin/shipment-slips/[id]/confirm`）と G-3 Task 6 の発送の取消の入口（`POST /api/admin/shipment-slips/[id]/cancel`）と G-3 Task 7 の伝票番号の入力・訂正の入口（`POST /api/admin/shipment-slips/[id]/tracking`）と手動の配達済みの入口（`POST /api/admin/shipment-slips/[id]/delivered`）と 波1-A の Google ログイン開始の POST（`POST /api/auth/oauth/start`）とログインの後の行き先の POST（`POST /api/auth/post-login`）を 2026-10-25 に反映）のHTTPメソッド・パスを対象とする。実装と実装が呼ぶschema/helperを根拠とし、未実装の契約は追加しない。DB・Stripe・Supabase Auth・メール等の実環境での成功や設定状態を保証する文書ではない。
 
 | 読み方 | 内容 |
 | --- | --- |
@@ -27,7 +29,7 @@
 | 入出力定義 | I/N/L/S/T/O/F/Pなどの再利用schema、応答の詳細と根拠へのリンク |
 | 入口の所在 | [APIルート一覧](route-inventory.md)（所在表） |
 
-表中の`?`は任意項目、`|`は選択肢。JSONに単一の共通envelopeはない。`{data:...}`、配列、直接object、`{success:true}`、`{ok:true}`を各実装どおりに区別する。表のエラー欄に加え、その行の共通認証・Origin・CSRFの応答が適用される。Next.jsが自動提供するHEAD/OPTIONSは208組に含めない。
+表中の`?`は任意項目、`|`は選択肢。JSONに単一の共通envelopeはない。`{data:...}`、配列、直接object、`{success:true}`、`{ok:true}`を各実装どおりに区別する。表のエラー欄に加え、その行の共通認証・Origin・CSRFの応答が適用される。Next.jsが自動提供するHEAD/OPTIONSは209組に含めない。
 
 ## 共通境界
 
@@ -1007,3 +1009,17 @@ Stripeは元単価のline_itemsと`discounts:[{coupon:id}]`。couponは合計額
 割引catchの409（hash衝突）/500/422（total_below_minimum）もCache-Control: no-store。新しい割引由来のDB/Stripe失敗は固定ログで生の文とstackを出さない。割引以外のcheckout失敗はTask 6前のerror_message/error_codeと監査を保ち、Errorのstackはサーバーログだけ。resumeの割引以外の失敗も従来のログを保つ。
 
 resumeはversion1の固定resultからコード配列と内訳を返し、実額不一致は500。旧NULL draftだけmetadataのpromotion_codeを0〜1件配列へ変え、discountResult=nullとする。新confirmationの単一promotionCodeキーは廃止（画面と記憶の切替はTask 8）。認証・CSRF・429/503の共通本文は維持する。
+
+### 受付・入金照合・割引の要対応の契約（H Task 7、2026-10-29）
+
+対応: FREQ-549-AC-01〜05。単体はmock、DB（受付・予約・並行）はcontroller確認待ち。
+
+POST `/api/checkout/place-order`（受付RPC `place_order_from_checkout_draft` は引数・戻り型を保つ）。入力codeだけが使えなくなった時（`discount_usage_limit`・`discount_once_per_customer`・`discount_expired`・`discount_stopped`・`discount_first_order_changed`・`discount_prior_units_changed`・`discount_not_eligible`）は注文・在庫・使用を作らず409 `{error:<rejection>,retryable:false,returnTo:'input',definitive:true,refusals:[{code,reason:'not_eligible'}],message:'割引の条件が変わりました。入力画面で割引を確かめてください。'}`。refusalsは本人が入力したコードだけで、理由の違いは返さない。自動割引だけが条件を失った時（DB内部の`discount_automatic_changed`）は409にせず、古い未払いSessionを`expireOpenCheckoutSession`で失効して200 `{reconfirmationRequired:true,returnTo:'confirmation'}`を返す。失効に失敗したら503 `session_expiry_failed`で、古いclientSecretの決済を許さない。失効が既に支払い済み・入金待ちと競合した時は再計算せず照合の注文`{orderId,orderStatus}`を返す。画面が`reconfirmationRequired`から新しいrequestVersionでcreate-sessionを呼び直す部分はTask 8。金額・通貨・0円・価格・カート・ログインの旧拒否は変えない。
+
+照合は`public.place_reconciled_order_from_checkout_draft`（service_roleのみ、状態は`paid`・`awaiting_payment`の2値）で受ける。通常のrouteは呼ばない。金額・通貨・所有者・固定snapshotの確認は保ち、現在の割引条件（回数・１人１回・期間・停止・割当・初回・前回着数）では拒否しない。`ReconcilerDatabase.placeReconciledOrder`がこの入口を呼び、誤って`discount_*`が返ったら`ReconcileTransientError('discount_reconciliation_contract_violation')`にしてキューが再試行する（既存の`stripe_webhook_max_attempts()`=9回でdead）。
+
+GET `/api/admin/order-attention`（`admin.orders.read`）は`discounts:{orderId,kind,openedAt}[]`・`discountsTruncated:boolean`・`counts.discounts`を追加し、成功・失敗とも`Cache-Control: no-store`。`kind`は`discount_limit_exceeded`（「割引の上限を超えた注文」）か`discount_reconciliation_recovered`（「割引の条件を確認する注文」）。GET `/api/admin/orders/[id]`の`attention.discounts`も同じ形で最大1件。
+
+| method/path | 権限と回数（送信元・管理者のそれぞれ） | 入力 → 応答の data |
+| --- | --- | --- |
+| POST `/api/admin/order-attention/discounts/[orderId]/resolve` | `admin.orders.manage` → CSRF → IP → actor、`admin:orders:discount-attention-resolve` 30回/600秒 | `{}` → `{resolved:boolean}`。金額と使用履歴は変えず、出荷も止めない。監査はorderIdと結果だけ |

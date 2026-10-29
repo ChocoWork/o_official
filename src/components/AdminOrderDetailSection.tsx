@@ -20,7 +20,7 @@ import { hasReturnsToShow, returnButtonLabel } from '@/lib/orders/admin-orders/a
 import { ATTENTION_NETWORK_ERROR_MESSAGE, CANCEL_REQUEST_RESOLVED_NOTICE, CANCEL_REQUEST_RESOLVE_FAILED_MESSAGE, fetchAdminOrderDetail, PAID_CANCEL_NOTICES, readSafeOrderActionError, REFUND_NOTICES, STRIPE_UNAVAILABLE_MESSAGE, type PendingCancelResolve } from '@/lib/orders/admin-orders/admin-order-client';
 import { ADMIN_ORDER_TEXT, type AdminOrderDetail, type OrderItem } from '@/lib/orders/admin-orders/admin-order-types';
 import { toOrderNumber } from '@/lib/orders/order-number';
-import { PAYMENT_EXCEPTION_REASON_LABELS, REVIEW_REASON_LABELS } from '@/lib/orders/order-payment-types';
+import { PAYMENT_EXCEPTION_REASON_LABELS, REVIEW_REASON_LABELS, DISCOUNT_ATTENTION_LABELS } from '@/lib/orders/order-payment-types';
 import { PARTIALLY_SHIPPED_LABEL } from '@/lib/orders/order-progress';
 import { PAYMENT_STATUS_LABELS } from '@/lib/orders/payment-status';
 import type { RefundAcceptedResponse } from '@/lib/orders/refund/refund-types';
@@ -202,7 +202,7 @@ function OrderDetail({ orderId }: { orderId: string }): React.JSX.Element {
   const number = toOrderNumber(orderId);
   const canRefund = permissions.refund && summary.canRefund;
   const canCancel = summary.cancelKind === 'unpaid' ? permissions.manage : summary.cancelKind === 'paid' && permissions.refund;
-  const hasAttention = Boolean(attention.review || attention.paymentExceptions.length || attention.deliveries.length);
+  const hasAttention = Boolean(attention.review || attention.paymentExceptions.length || attention.deliveries.length || attention.discounts?.length);
   return (
     <div className="w-full min-w-0 space-y-8 break-words">
       <div className="flex flex-wrap items-center justify-between gap-3"><h1>注文 {number}</h1>{back}</div>
@@ -260,7 +260,8 @@ function OrderDetail({ orderId }: { orderId: string }): React.JSX.Element {
           {attention.review ? <div><h3>要確認</h3><p>{dictionaryLabel(REVIEW_REASON_LABELS, attention.review.reason, '要確認')}</p>{permissions.manage ? <Button variant="secondary" disabled={reviewSubmitting} onClick={() => void handleReviewOrder()}>確認済みにする</Button> : null}</div> : null}
           {attention.paymentExceptions.map((exception) => <p key={exception.id}>{dictionaryLabel(PAYMENT_EXCEPTION_REASON_LABELS, exception.reason, '支払いの要対応')}（検知 {exception.detectionCount}回）</p>)}
           {attention.deliveries.map((delivery) => <p key={`${delivery.fulfillmentId}:${delivery.kind}`}>{dictionaryLabel(DELIVERY_ATTENTION_LABELS, delivery.kind, '配送の要対応')}</p>)}
-          {attention.paymentExceptions.length || attention.deliveries.length ? <Link className="underline" href="/admin/orders#attention">要対応の一覧で対応する</Link> : null}
+          {(attention.discounts ?? []).map(discount => <p key={discount.orderId}>{DISCOUNT_ATTENTION_LABELS[discount.kind]}</p>)}
+          {attention.paymentExceptions.length || attention.deliveries.length || attention.discounts?.length ? <Link className="underline" href="/admin/orders#attention">要対応の一覧で対応する</Link> : null}
         </>}
       </section>
       <OrderHistoryPanel key={`${orderId}:${historyVersion}`} orderId={orderId} />

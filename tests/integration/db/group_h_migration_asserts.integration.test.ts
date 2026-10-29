@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describeLocalDb } from './helpers/local-db';
 import { withH1PermissionBaseline } from './helpers/group-h-fixtures';
+import { G4_ALLOWLIST, H4_ALLOWLIST, replaceAllowlistSql } from './helpers/group-g-allowlist';
 import { MAX_AUTOMATIC_DISCOUNTS, MAX_STACKABLE_AUTOMATIC_PER_CLASS } from '@/lib/discounts/discount-types';
 
 const directory = path.join(process.cwd(), 'supabase/migrations');
@@ -50,7 +51,12 @@ describe('H1 source contract (no DB)', () => {
 
 const h2Path = path.join(directory, '20261029130100_group_h_discounts_admin.sql');
 const h2 = fs.existsSync(h2Path) ? fs.readFileSync(h2Path, 'utf8') : '';
-const h2Assert = h2.split('-- H2_FINAL_ASSERT_BEGIN\n')[1]?.split('-- H2_FINAL_ASSERT_END')[0] ?? '';
+// H4 は get_checkout_discount_context の本文を置き換えた（初回の有料履歴の規則）。H2 の末尾 assert が持つ本文の指紋は H2 当時のものなので、
+// この試験は H2 の指紋だけを「今の本文の指紋」へ置き換えて流す。今の本文の指紋そのものは H4 の末尾 assert が固定する。
+const H2_CONTEXT_MD5 = 'e95df5ff839cd450e6243d4220491742';
+const CURRENT_CONTEXT_MD5_SQL = "(SELECT pg_catalog.md5(pg_catalog.replace(f.prosrc,E'\\r','')) FROM pg_catalog.pg_proc AS f "
+  + "WHERE f.oid='private.get_checkout_discount_context(uuid,text,text[],bigint[],timestamptz,text)'::regprocedure)";
+const h2Assert = (h2.split('-- H2_FINAL_ASSERT_BEGIN\n')[1]?.split('-- H2_FINAL_ASSERT_END')[0] ?? '').replace(`'${H2_CONTEXT_MD5}'`, CURRENT_CONTEXT_MD5_SQL);
 
 const h3Path = path.join(directory, '20261029130200_group_h_discounts_checkout.sql');
 const h3 = fs.existsSync(h3Path) ? fs.readFileSync(h3Path, 'utf8') : '';
@@ -248,6 +254,120 @@ describeLocalDb('H1 semantic final assertions: controller only', (db) => {
     [`delete from public.role_permissions rp using public.roles r,public.permissions p where rp.role_id=r.id and rp.permission_id=p.id
       and r.code='supporter' and p.code='admin.orders.read'`, 'h1_existing_dml_allowlist'],
   ])('FREQ-542-AC-01: H1改ざん %s はP0001とDETAIL=%sで拒否する', async (change, detail) => {
+    expect(await attempt(change)).toEqual({ code: 'P0001', message: 'GROUP_H_MIGRATION_ASSERTION_FAILED', detail });
+    expect(await attempt()).toBeNull();
+  });
+});
+
+const h4Path = path.join(directory, '20261029130300_group_h_discounts_acceptance.sql');
+const h4 = fs.existsSync(h4Path) ? fs.readFileSync(h4Path, 'utf8') : '';
+const h4Assert = h4.split('-- H4_FINAL_ASSERT_BEGIN\n')[1]?.split('-- H4_FINAL_ASSERT_END')[0] ?? '';
+/** 名前の関数ひとつの定義（CREATE [OR REPLACE] FUNCTION から本文の閉じ $$; まで） */
+const h4Function = (name: string): string => new RegExp(`CREATE (?:OR REPLACE )?FUNCTION private\\.${name}\\([\\s\\S]*?\\n\\$\\$;`).exec(h4)?.[0] ?? '';
+
+describe('H4 source contract (controller only)', () => {
+  test('FREQ-549-AC-01: H4はASCII・BOMなしLF・単一取引と固定の末尾assertを持ち既存の行を書き換えない', () => {
+    expect(h4).not.toBe('');
+    expect(h4).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(h4.startsWith('BEGIN;\n')).toBe(true);
+    expect(h4.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(h4.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(h4.trimEnd()).toMatch(/-- H4_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    for (const detail of ['h4_acceptance', 'h4_member_lock', 'h4_redemption_lifecycle', 'h4_reconciled_recovery', 'h4_attention',
+      'h4_writer_allowlist', 'h4_public_acl']) expect(h4Assert).toContain(`'${detail}'`);
+    expect(h4Assert.split('$h4_final$')).toHaveLength(3);
+    expect(h4Assert).toContain("ERRCODE='P0001'");
+    expect(h4).not.toMatch(/DROP FUNCTION/i);
+    expect(h4).not.toMatch(/(?:proacl|relacl)\s*::\s*text/i);
+    expect(h4).not.toMatch(/(?:GRANT|REVOKE)[^;]*USAGE\s+ON\s+SCHEMA\s+private/i);
+    const outside = h4.replace(/CREATE(?: OR REPLACE)? FUNCTION[\s\S]*?\n\$\$;/g, '').replace(/DO \$h4_final\$[\s\S]*?\$h4_final\$;/, '');
+    expect([...outside.matchAll(/\b(INSERT INTO|UPDATE|DELETE FROM|TRUNCATE)\s+(?:public|private)\./g)]).toEqual([]);
+  });
+
+  test.each(['place_order_from_checkout_draft', 'place_reconciled_order_from_checkout_draft', 'mark_order_paid', 'mark_order_awaiting_payment',
+    'release_stock_for_unpaid_order', 'record_cancelled_order_paid_amount'])('FREQ-549-AC-01: %sはG共通鍵の後にH目録・本人鍵・割引id鍵を取ってからGの在庫の鍵へ進む', (name) => {
+    const body = h4Function(name);
+    expect(body).not.toBe('');
+    expect(body.indexOf('private.group_h_lock_acceptance(')).toBeGreaterThan(0);
+    expect(body.indexOf('private.group_h_lock_acceptance(')).toBeLessThan(body.indexOf('private.lock_group_g_inventory('));
+    // Hの鍵より前にGの共通鍵を飛ばして行を読まない
+    expect(body.slice(0, body.indexOf('private.group_h_lock_acceptance(')))
+      .not.toMatch(/FROM public\.(?:orders|order_items|order_item_allocations)\b[^;]*FOR UPDATE/);
+  });
+
+  test('FREQ-549-AC-01: 受付は在庫・注文を書く前に割引を再確認し、業務拒否では何も書かずに返す', () => {
+    const body = h4Function('place_order_from_checkout_draft');
+    const recheck = body.indexOf('private.group_h_recheck_discount_facts(');
+    expect(recheck).toBeGreaterThan(body.indexOf('preview_checkout_fulfillment('));
+    expect(recheck).toBeLessThan(body.indexOf('INSERT INTO public.orders'));
+    expect(body.indexOf('private.group_h_copy_order_discounts(')).toBeGreaterThan(body.indexOf('INSERT INTO public.stock_movements'));
+    expect(body.indexOf('private.group_h_reserve_redemptions(')).toBeGreaterThan(body.indexOf('private.group_h_copy_order_discounts('));
+    // 通常の受付は照合入口の2値や fallback の印を持たない
+    expect(body).not.toContain('reconciliation_fallback');
+    expect(h4Function('place_reconciled_order_from_checkout_draft')).not.toContain('group_h_recheck_discount_facts');
+  });
+
+  test('FREQ-549-AC-05: 結付けはG共通鍵の後に本人キーを辞書順・割引idを昇順で取り、注文の行ロックより前に使用の本人を会員へ付け替えない', () => {
+    const body = h4Function('link_guest_orders');
+    const common = body.indexOf('pg_catalog.pg_advisory_xact_lock(190521, 1)');
+    expect(common).toBeGreaterThan(0);
+    expect(body.indexOf("private.group_h_lock(v_h_ids,ARRAY['guest:'||v_email,'member:'||_user_id::text])")).toBeGreaterThan(common);
+    expect(body.indexOf('FOR UPDATE')).toBeGreaterThan(body.indexOf('private.group_h_lock('));
+    expect(body.indexOf('UPDATE public.discount_redemptions')).toBeGreaterThan(body.indexOf('RETURNING o.id'));
+    expect(body).not.toMatch(/usage_limit|discount_redemptions[^;]*state\s*=/);
+  });
+});
+
+describeLocalDb('H4 semantic final assertions (controller only)', db => {
+  beforeEach(async () => { await db().query('begin'); await db().query('select pg_advisory_xact_lock(190521,1)'); });
+  afterEach(async () => { await db().query('rollback'); });
+  /** H4 の本体が最初に G の76本を固定した temp 表を、H4 より前の許可一覧から作り直してから末尾 assert だけを流す */
+  async function attempt(change = ''): Promise<AssertFailure | null> {
+    await db().query('savepoint h4_assert'); let failure: AssertFailure | null = null;
+    try {
+      await db().query('create temp table group_h4_writer_baseline on commit drop as select to_regprocedure(s)::oid as oid from unnest($1::text[]) as s', [G4_ALLOWLIST]);
+      if (change) await db().query(change);
+      await db().query(h4Assert);
+    } catch (caught) {
+      const e = caught as AssertFailure;
+      failure = { code: e.code, message: e.message === 'GROUP_H_MIGRATION_ASSERTION_FAILED' ? e.message : 'H_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint h4_assert'); await db().query('release savepoint h4_assert'); }
+    return failure;
+  }
+  const replaceBody = (signature: string, from: string, to: string) => `do $x$ begin execute replace(pg_get_functiondef('${signature}'::regprocedure), '${from}', '${to}'); end $x$`;
+
+  test('FREQ-549-AC-01: H4末尾assertは無改変で通る（controllerの本文MD5補完後）', async () => { expect(h4Assert).not.toBe(''); expect(await attempt()).toBeNull(); });
+  test('FREQ-549-AC-01: 許可一覧は G4 の76本 + 照合入口の1本の77本で、redemptionだけを書く helper を混ぜない', () => {
+    expect(G4_ALLOWLIST).toHaveLength(76);
+    expect(H4_ALLOWLIST).toHaveLength(77);
+    expect(H4_ALLOWLIST.slice(0, 76)).toEqual([...G4_ALLOWLIST]);
+    expect(H4_ALLOWLIST.filter((entry) => entry.includes('group_h_'))).toEqual([]);
+  });
+  test.each([
+    [replaceBody('private.group_h_assert_acceptance_locks(uuid,uuid)', '190523', '190529'), 'h4_member_lock'],
+    [replaceBody('private.group_h_lock_acceptance(uuid,uuid)', '190524', '190529'), 'h4_member_lock'],
+    [replaceBody('private.group_h_recheck_discount_facts(uuid,uuid)', 'discount_first_order_changed', 'discount_first_order_x'), 'h4_member_lock'],
+    [replaceBody('private.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,bigint[],uuid)',
+      "v_h_recheck->>''kind''<>''valid''", "v_h_recheck->>''kind''<>''valid_x''"), 'h4_acceptance'],
+    [replaceBody('private.group_h_copy_order_discounts(uuid,uuid,jsonb)', 'GROUP_H_ARGUMENT_INVALID', 'GROUP_H_ARGUMENT_X'), 'h4_acceptance'],
+    [replaceBody('private.group_h_settle_redemptions(uuid,boolean)', "state=''cancelled''", "state=''reserved''"), 'h4_redemption_lifecycle'],
+    [replaceBody('private.group_h_reserve_redemptions(uuid,uuid)', 'ON CONFLICT(order_id,discount_id) DO NOTHING', ''), 'h4_redemption_lifecycle'],
+    [replaceBody('private.mark_order_paid(uuid,public.order_status,text,integer,text,boolean,text,text)',
+      'PERFORM private.group_h_settle_redemptions(_order_id,true);', ''), 'h4_redemption_lifecycle'],
+    [replaceBody('private.place_reconciled_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,text)',
+      "NOT IN (''paid'',''awaiting_payment'')", "NOT IN (''paid'',''awaiting_payment'',''unpaid'')"), 'h4_reconciled_recovery'],
+    [replaceBody('private.record_cancelled_order_paid_amount(uuid,text,integer)',
+      'PERFORM private.group_h_settle_redemptions(_order_id,true);', ''), 'h4_reconciled_recovery'],
+    [replaceBody('private.group_h_discount_attention_rows(uuid)', 'AND r.attention_resolved_at IS NULL', ''), 'h4_attention'],
+    [replaceBody('private.get_admin_order_detail(uuid,uuid)', "''discounts'',private.group_h_discount_attention_rows(_order_id),", ''), 'h4_attention'],
+    [replaceAllowlistSql(G4_ALLOWLIST), 'h4_writer_allowlist'],
+    [replaceAllowlistSql([...H4_ALLOWLIST, 'private.group_h_settle_redemptions(uuid,boolean)']), 'h4_writer_allowlist'],
+    ['grant execute on function private.group_h_settle_redemptions(uuid,boolean) to service_role', 'h4_public_acl'],
+    ['grant execute on function public.place_reconciled_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,text) to anon', 'h4_public_acl'],
+    ['grant execute on function private.place_reconciled_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,text) to authenticated', 'h4_public_acl'],
+    ['alter function public.list_admin_discount_attention(integer,uuid) security definer', 'h4_public_acl'],
+    ['create function public.group_h_settle_redemptions(uuid,boolean) returns jsonb language sql as $$select null::jsonb$$', 'h4_public_acl'],
+  ])('FREQ-549-AC-01: H4改ざん %s はP0001とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual({ code: 'P0001', message: 'GROUP_H_MIGRATION_ASSERTION_FAILED', detail });
     expect(await attempt()).toBeNull();
   });

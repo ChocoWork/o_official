@@ -78,9 +78,18 @@ export const PLACE_ORDER_REJECTIONS = [
   'stock_changed',
   'cart_changed',
   'login_changed',
+  'discount_usage_limit', 'discount_once_per_customer', 'discount_expired', 'discount_stopped',
+  'discount_first_order_changed', 'discount_prior_units_changed', 'discount_not_eligible', 'discount_automatic_changed',
 ] as const;
 
 export type PlaceOrderRejection = (typeof PLACE_ORDER_REJECTIONS)[number];
+
+export type DiscountAttentionKind = 'discount_limit_exceeded' | 'discount_reconciliation_recovered';
+export const DISCOUNT_ATTENTION_LABELS: Readonly<Record<DiscountAttentionKind, string>> = {
+  discount_limit_exceeded: '割引の上限を超えた注文',
+  discount_reconciliation_recovered: '割引の条件を確認する注文',
+};
+export type DiscountAttention = { orderId: string; kind: DiscountAttentionKind; openedAt: string };
 
 /** 入金済みにしたときのメールの書き分け（設計書 5-4）。送信権はどれも paid */
 export type PaidEmailVariant = 'order_confirmed' | 'payment_received' | 'payment_received_after_expiry';
@@ -133,5 +142,7 @@ export type OrderAttention = {
   exceptions: AttentionException[];
   reviews: AttentionReview[];
   deliveries?: import('@/lib/orders/tracking/delivery-types').DeliveryAttentionItem[];
-  counts: { exceptions: number; reviews: number; deliveries?: number };
+  discounts?: DiscountAttention[];
+  discountsTruncated?: boolean;
+  counts: { exceptions: number; reviews: number; deliveries?: number; discounts?: number };
 };

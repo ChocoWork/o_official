@@ -8,6 +8,7 @@ import { getOrderEmailSendState, OrderEmailStoreError, type OrderEmailStore } fr
 import { refundFailureReasonLabel } from '@/lib/orders/refund/refund-messages';
 import { listOrderRefundSummaries, type RefundStore } from '@/lib/orders/refund/refund-store';
 import { DeliveryStoreError, getDeliveryTrackingSettings, listDeliveryAttention } from '@/lib/orders/tracking/delivery-store';
+import { listAdminDiscountAttention } from '@/lib/orders/admin-orders/admin-order-store';
 import {
   PAYMENT_EXCEPTION_REASON_LABELS,
   REVIEW_REASON_LABELS,
@@ -154,6 +155,7 @@ export async function GET(request: Request) {
 
   try {
     const supabase = await createServiceRoleClient();
+    const discountAttention = await listAdminDiscountAttention(supabase, authz.userId, MAX_ITEMS);
     const deliverySettings = await getDeliveryTrackingSettings(supabase);
     const deliveryAttention = deliverySettings.enabled ? await listDeliveryAttention(supabase, MAX_ITEMS) : { items: [], total: 0 };
     const [exceptionsResult, reviewsResult] = await Promise.all([
@@ -177,7 +179,7 @@ export async function GET(request: Request) {
 
     if (exceptionsResult.error || reviewsResult.error) {
       console.error('[admin.order-attention] Failed to fetch', ...safeErrorFields(exceptionsResult.error ?? reviewsResult.error));
-      return NextResponse.json({ error: 'Failed to fetch order attention' }, { status: 500 });
+      return NextResponse.json({ error: 'Failed to fetch order attention' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
     }
 
     const exceptionRows = (exceptionsResult.data ?? []) as unknown as ExceptionRow[];
@@ -245,19 +247,22 @@ export async function GET(request: Request) {
       exceptions,
       reviews,
       deliveries: deliveryAttention.items,
+      discounts: discountAttention.rows,
+      discountsTruncated: discountAttention.truncated,
       emailSending,
       counts: {
         exceptions: exceptionsResult.count ?? exceptions.length,
         reviews: reviewsResult.count ?? reviews.length,
         deliveries: deliveryAttention.total,
+        discounts: discountAttention.rows.length,
       },
     };
-    return NextResponse.json({ data });
+    return NextResponse.json({ data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     console.error('GET /api/admin/order-attention error:', ...safeErrorFields(error));
     if (error instanceof DeliveryStoreError) {
-      return NextResponse.json({ error: '配送の記録を読み込めませんでした。' }, { status: 500 });
+      return NextResponse.json({ error: '配送の記録を読み込めませんでした。' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
     }
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
   }
 }

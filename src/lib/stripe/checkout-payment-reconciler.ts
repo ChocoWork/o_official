@@ -72,7 +72,7 @@ export type PlaceOrderResult =
 /** 照合が使う DB の操作。実体は Supabase の RPC（checkout-payment-reconciler-deps.ts） */
 export interface ReconcilerDatabase {
   findOrder(ref: { checkoutSessionId: string | null; paymentIntentId: string | null }): Promise<ReconcilerOrder | null>;
-  placeOrder(args: {
+  placeReconciledOrder(args: {
     draftId: string;
     checkoutSessionId: string;
     cartSessionId: string;
@@ -81,6 +81,7 @@ export interface ReconcilerDatabase {
     currency: string;
     sessionCreatedAt: Date;
     paymentIntentId: string | null;
+    paymentState: 'paid' | 'awaiting_payment';
   }): Promise<PlaceOrderResult>;
   markOrderPaid(args: {
     orderId: string;
@@ -358,6 +359,12 @@ async function placeAndMark(
     };
   }
 
+  // 照合の入口はStripeから取得した状態(paid/awaiting_payment)とPaymentIntentを渡す。ずれたら注文を作らずキューで再試行する。
+  // 金額の食い違いはここで断らず、従来どおり受付の金額確認(amount_mismatch)と入金の金額確認(paid_amount_mismatch)に任せる。
+  if (snapshot.state.kind !== state || !paymentIntentId) {
+    throw new ReconcileTransientError('discount_reconciliation_contract_violation');
+  }
+
   const contact = await deps.database.findDraftContact(draftId);
   if (contact && contact.missingShippingFields.length > 0) {
     // 配送先の欠落（FREQ-365）。支払いは成立しているので注文は作り、出荷前に気づけるよう記録する
@@ -372,7 +379,7 @@ async function placeAndMark(
     });
   }
 
-  const placed = await deps.database.placeOrder({
+  const placed = await deps.database.placeReconciledOrder({
     draftId,
     checkoutSessionId,
     cartSessionId,
@@ -381,9 +388,11 @@ async function placeAndMark(
     currency,
     sessionCreatedAt,
     paymentIntentId,
+    paymentState: state,
   });
 
   if (!placed.placed) {
+    if (placed.rejection.startsWith('discount_')) throw new ReconcileTransientError('discount_reconciliation_contract_violation');
     return {
       kind: 'done',
       result: await raiseException(deps, input, snapshot, null, 'order_not_creatable', placed.rejection, { contact, state }),

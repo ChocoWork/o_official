@@ -268,6 +268,16 @@ describe('POST /api/checkout/complete', () => {
     expect(mockScheduleOrderEmailDelivery).not.toHaveBeenCalled();
   });
 
+  test('FREQ-549-AC-04: 照合の割引の契約違反は注文を作らず503にし、戻り先の画面から成功を返さない', async () => {
+    mockReconcile.mockRejectedValue(new ReconcileTransientError('discount_reconciliation_contract_violation'));
+
+    const res = await post();
+
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ error: 'Temporarily unavailable' });
+    expect(mockScheduleOrderEmailDelivery).not.toHaveBeenCalled();
+  });
+
   test('ログインしていても注文の持ち主を書かず、ログインの確かめを呼ばない', async () => {
     const request = makeRequest({ checkoutSessionId: 'cs_test' });
     request.headers.set('Authorization', 'Bearer token-1');
