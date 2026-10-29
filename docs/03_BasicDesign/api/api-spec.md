@@ -1,5 +1,7 @@
 # API仕様（現行実装）
 
+> H Task 10 確認日: 2026-10-29。窓口の追加・削除はない（Route Handler の数は変わらない）。`GET /api/orders/[id]`（会員の注文詳細）の答えに注文時の割引の内訳 `discounts`、`GET /api/admin/orders/[id]` の `data` に管理用の内訳 `discounts` を足した。詳しくは末尾の「注文の割引の内訳（H Task 10）」。
+>
 > H Task 8 確認日: 2026-10-29。商品ページの割引の案内を返す `GET /api/discounts/advertisements` を「公開情報」の節に1ファイル・1メソッド足し、`GET /api/cart`・`POST /api/cart/add`・`POST /api/cart/change` の応答（カート全体）に自動割引の内訳 `discounts`・`total_discount`・`discount_provisional` を足した（166ファイル・210組、E2E 用を除く165ファイル・209組）。
 >
 > H Task 7 確認日: 2026-10-29。割引の要対応を確認済みにする `POST /api/admin/order-attention/discounts/[orderId]/resolve` を「受付・入金照合・割引の要対応の契約（H Task 7）」に足した（165ファイル・209組、E2E 用を除く164ファイル・208組）。
@@ -1026,3 +1028,18 @@ GET `/api/admin/order-attention`（`admin.orders.read`）は`discounts:{orderId,
 | method/path | 権限と回数（送信元・管理者のそれぞれ） | 入力 → 応答の data |
 | --- | --- | --- |
 | POST `/api/admin/order-attention/discounts/[orderId]/resolve` | `admin.orders.manage` → CSRF → IP → actor、`admin:orders:discount-attention-resolve` 30回/600秒 | `{}` → `{resolved:boolean}`。金額と使用履歴は変えず、出荷も止めない。監査はorderIdと結果だけ |
+
+### 注文の割引の内訳（H Task 10、2026-10-29）
+
+対応: FREQ-552-AC-01〜03。単体はmock。DB（内訳・投影・ACL・末尾assert）はcontrollerが手元のDB（fresh reset）で確認済み（H・G-4・注文状況・メールの27 suite 741/741）。本番適用・実メールの配信は未確認。
+
+内訳の元は受付で固定した使用の写し（`discount_redemptions.name_snapshot`・`code_snapshot`・`amount`・`class_snapshot`）と行別配分（`order_line_discount_allocations`）だけ。現在の`discounts.name`や再計算は使わない。内部関数`private.order_discount_breakdown(_order_id) RETURNS jsonb`（誰にもEXECUTEを与えない、STABLE）が`{rows,legacy}`を作る。rowsは正額の使用だけを商品→注文の順（同じ分類は割引id）に`{name,amount,discountId,code,lineAllocations:[{orderItemId,amount}]}`で持ち、取消済みの使用も注文時の内訳として残す。合計が`orders.discount_amount`と食い違う壊れたデータは`GROUP_H_ORDER_BREAKDOWN_INVALID`（55000）で拒む。正額の使用がない旧注文は`discount_amount>0`なら`{rows:[{name:'discount',amount:<旧割引>,discountId:null,code:null,lineAllocations:[]}],legacy:true}`、0円なら`{rows:[],legacy:true}`（`discount`はASCIIの印で、表示の「割引」への変換は`src/lib/discounts/discount-types.ts`の1か所）。
+
+| 面 | 取り方 | 持つもの | 持たないもの |
+| --- | --- | --- | --- |
+| 確認メール | `loadOrderEmailMaterial`が注文全体のメール（発送・返金・返品の番号がない時）で割引額が正の注文だけ`get_order_discount_breakdown`を読み、`toCustomerOrderDiscounts`で投影 | 小計の次（送料の前）に`割引（名前）: -￥額`を割引ごとに1行（旧注文は`割引: -￥額`、0円は省く）。名前の改行は空白 | コード・割当・割引id・会員情報。本文は文字だけでHTML部はない |
+| 会員の注文詳細 `GET /api/orders/[id]` | 既存の所有確認（`id`+`user_id`）の後だけ`getOrderDiscountBreakdown`（割引額が正の時のみ）。読めない・壊れた時は500 `{error:'Failed to fetch order detail'}`（no-store） | `discounts:[{name,amount}]`（旧注文は名前「割引」の合計1行、0円は空）。画面は旧い「クーポン値引き」の1行を「割引（名前）」の行へ置き換えた | コード・割当・割引id。他人の注文は404のままでstoreを呼ばない |
+| 公開の注文状況 | 既存の確認印（トークン/セッション）を通った材料 `public.get_order_status_public_material` に`discounts:[{name,amount}]`を足した（同じ署名・SECURITY DEFINER・STABLE・service_roleのみ） | 名前と額の2キー（旧注文の名前は表示で「割引」に変換） | コード・割引id・配分・本人キー。DBが余計なキーを返してもstoreは名前と額の2つだけを写す |
+| 管理の注文詳細 `GET /api/admin/orders/[id]` | 既存の`admin.orders.read`。`private.get_admin_order_detail`の`discounts`（上のrowsそのまま）。`admin.discounts.read`は要らない | 名前・コード・額・行別配分。旧注文は`discountId:null`の合計1行 | storeは内訳の合計が`amounts.discount`と、配分の合計が各割引の額と一致しない材料を500にする |
+
+完全な内訳の入口は`public.get_order_discount_breakdown(_order_id uuid)`（SECURITY INVOKERのSQL委譲、service_roleのみ。anon・authenticatedは拒否）で、`getOrderDiscountBreakdown(client,orderId)`（`src/lib/discounts/order-discount-store.ts`、server-only）が返り値をzodで検査する。呼ぶ側が先に認可する。不在の注文は`GROUP_H_ORDER_NOT_FOUND`（P0002）、NULLは`GROUP_H_ARGUMENT_INVALID`（22023）。H6の末尾assertのDETAILは`h6_order_breakdown`・`h6_customer_projection`・`h6_admin_projection`・`h6_public_acl`。

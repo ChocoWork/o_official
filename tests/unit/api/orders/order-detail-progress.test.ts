@@ -28,7 +28,8 @@ const mockOwnerQuery = {
   not: jest.fn(),
   maybeSingle: jest.fn(),
 };
-const mockServiceClient = { from: jest.fn() };
+const mockServiceRpc = jest.fn();
+const mockServiceClient = { from: jest.fn(), rpc: (...args: unknown[]) => mockServiceRpc(...args) };
 const mockCreateServiceRoleClient = jest.fn();
 jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(async () => ({ from: () => mockOwnerQuery })),
@@ -212,7 +213,7 @@ describe('GET /api/orders/[id] の発送と進み具合（グループ E-1）', 
     setup({ order: orderRow({ order_items: [STOCK_ITEM, MADE_ITEM, EXCHANGE_ITEM] }),
       lines: [stockLine(), madeLine(), exchangeLine()], fulfillments: [fulfillment()], refunds: [refundRow()] });
     jest.mocked(signItemImageUrl).mockResolvedValueOnce('fixed-image').mockResolvedValueOnce(null).mockResolvedValueOnce(null);
-    const expectedJsonBeforeRefactor = '{"id":"a1b2c3d4-1111-4222-8333-444455556666","orderNumber":"ORD-A1B2C3D4","orderDate":"2026/10/01 09:00","status":"paid","progress":{"key":"in_production","label":"受注生産中","partiallyShipped":false,"steps":[{"key":"payment","label":"お支払い","state":"done"},{"key":"in_production","label":"受注生産中","state":"current"},{"key":"ready","label":"発送準備中","state":"todo"},{"key":"in_transit","label":"配送中","state":"todo"},{"key":"delivered","label":"配達済み","state":"todo"}]},"subtotalAmount":"￥82,000","shippingAmount":"無料","discountAmount":"￥0","totalAmount":"￥82,000","paymentMethod":"-","shippingFullName":"山田 花子","shippingEmail":"hanako@example.com","shippingPhone":"090-1111-2222","shippingAddress":"〒1500001 東京都 渋谷区 神宮前1-2-3","shipments":[{"id":"ful-1","number":1,"shippedAt":"2026-10-05T15:30:00.000Z","carrier":"yamato","carrierLabel":"ヤマト運輸","trackingNumber":"1234-5678-9012","trackingUrl":"https://toi.kuronekoyamato.co.jp/cgi-bin/tneko?number=1234-5678-9012","deliveredAt":null,"items":[{"orderItemId":"line-stock","name":"リネンシャツ","color":"白","size":"M","quantity":2,"lineKind":"order"}]}],"refunds":[{"id":"refund-1","date":"2026/10/12","amount":"￥12,000","status":"completed","customerActionDeadline":null}],"refundTotal":null,"returnSection":null,"items":[{"id":"line-stock","itemId":10,"variantId":101,"name":"リネンシャツ","imageUrl":"fixed-image","color":"白","size":"M","quantity":2,"amount":"￥24,000","lineKind":"order","shippedQuantity":0,"refundedQuantity":0,"readyQuantity":2,"inProductionQuantity":0},{"id":"line-made","itemId":11,"variantId":111,"name":"ウールコート","imageUrl":null,"color":"黒","size":"L","quantity":1,"amount":"￥58,000","lineKind":"order","shippedQuantity":0,"refundedQuantity":0,"readyQuantity":0,"inProductionQuantity":1},{"id":"line-exchange","itemId":10,"variantId":102,"name":"リネンシャツ","imageUrl":null,"color":"白","size":"L","quantity":1,"amount":"￥0","lineKind":"exchange","shippedQuantity":0,"refundedQuantity":0,"readyQuantity":1,"inProductionQuantity":0}]}';
+    const expectedJsonBeforeRefactor = '{"id":"a1b2c3d4-1111-4222-8333-444455556666","orderNumber":"ORD-A1B2C3D4","orderDate":"2026/10/01 09:00","status":"paid","progress":{"key":"in_production","label":"受注生産中","partiallyShipped":false,"steps":[{"key":"payment","label":"お支払い","state":"done"},{"key":"in_production","label":"受注生産中","state":"current"},{"key":"ready","label":"発送準備中","state":"todo"},{"key":"in_transit","label":"配送中","state":"todo"},{"key":"delivered","label":"配達済み","state":"todo"}]},"subtotalAmount":"￥82,000","shippingAmount":"無料","discountAmount":"￥0","totalAmount":"￥82,000","discounts":[],"paymentMethod":"-","shippingFullName":"山田 花子","shippingEmail":"hanako@example.com","shippingPhone":"090-1111-2222","shippingAddress":"〒1500001 東京都 渋谷区 神宮前1-2-3","shipments":[{"id":"ful-1","number":1,"shippedAt":"2026-10-05T15:30:00.000Z","carrier":"yamato","carrierLabel":"ヤマト運輸","trackingNumber":"1234-5678-9012","trackingUrl":"https://toi.kuronekoyamato.co.jp/cgi-bin/tneko?number=1234-5678-9012","deliveredAt":null,"items":[{"orderItemId":"line-stock","name":"リネンシャツ","color":"白","size":"M","quantity":2,"lineKind":"order"}]}],"refunds":[{"id":"refund-1","date":"2026/10/12","amount":"￥12,000","status":"completed","customerActionDeadline":null}],"refundTotal":null,"returnSection":null,"items":[{"id":"line-stock","itemId":10,"variantId":101,"name":"リネンシャツ","imageUrl":"fixed-image","color":"白","size":"M","quantity":2,"amount":"￥24,000","lineKind":"order","shippedQuantity":0,"refundedQuantity":0,"readyQuantity":2,"inProductionQuantity":0},{"id":"line-made","itemId":11,"variantId":111,"name":"ウールコート","imageUrl":null,"color":"黒","size":"L","quantity":1,"amount":"￥58,000","lineKind":"order","shippedQuantity":0,"refundedQuantity":0,"readyQuantity":0,"inProductionQuantity":1},{"id":"line-exchange","itemId":10,"variantId":102,"name":"リネンシャツ","imageUrl":null,"color":"白","size":"L","quantity":1,"amount":"￥0","lineKind":"exchange","shippedQuantity":0,"refundedQuantity":0,"readyQuantity":1,"inProductionQuantity":0}]}';
     const { body: actual } = await getDetail();
     expect(JSON.stringify(actual)).toBe(expectedJsonBeforeRefactor);
   });
@@ -254,6 +255,67 @@ describe('GET /api/orders/[id] の発送と進み具合（グループ E-1）', 
     expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
     expect(mockListLines).not.toHaveBeenCalled();
     expect(mockListFulfillments).not.toHaveBeenCalled();
+  });
+
+  describe('割引の内訳（FREQ-552）', () => {
+    const DISCOUNT_ID = '22222222-2222-4222-8222-222222222222';
+    const breakdown = {
+      rows: [{ name: '秋の割引', amount: 1500, discountId: DISCOUNT_ID, code: 'AUTUMN', lineAllocations: [{ orderItemId: '44444444-4444-4444-8444-444444444444', amount: 1500 }] }],
+      legacy: false,
+    };
+    const discounted = () => orderRow({ discount_amount: 1500, total_amount: 80500 });
+
+    test('FREQ-552-AC-02: 持ち主の確かめを通った後にだけ内訳を読み、名前と額だけを返す（コード・割当・割引idは出さない）', async () => {
+      setup({ order: discounted() });
+      mockServiceRpc.mockResolvedValue({ data: breakdown, error: null });
+
+      const response = await getDetail();
+
+      expect(response.status).toBe(200);
+      expect(mockServiceRpc).toHaveBeenCalledTimes(1);
+      expect(mockServiceRpc).toHaveBeenCalledWith('get_order_discount_breakdown', { _order_id: ORDER_ID });
+      expect(response.body.discounts).toEqual([{ name: '秋の割引', amount: 1500 }]);
+      expect(JSON.stringify(response.body)).not.toMatch(/AUTUMN|lineAllocations|discountId|22222222/);
+      expect(response.headers['Cache-Control']).toBe('no-store');
+    });
+
+    test('FREQ-552-AC-02: 他のお客様の注文は 404 のままで内訳のstoreを呼ばない', async () => {
+      setup({ order: null });
+
+      const response = await getDetail();
+
+      expect(response.status).toBe(404);
+      expect(mockServiceRpc).not.toHaveBeenCalled();
+    });
+
+    test('FREQ-552-AC-01: 旧注文は名前「割引」の合計1行、割引0円の注文はDBを呼ばず空', async () => {
+      setup({ order: discounted() });
+      mockServiceRpc.mockResolvedValue({ data: { rows: [{ name: 'discount', amount: 1500, discountId: null, code: null, lineAllocations: [] }], legacy: true }, error: null });
+      expect((await getDetail()).body.discounts).toEqual([{ name: '割引', amount: 1500 }]);
+
+      mockServiceRpc.mockClear();
+      setup();
+      const zero = await getDetail();
+      expect(zero.body.discounts).toEqual([]);
+      expect(mockServiceRpc).not.toHaveBeenCalled();
+    });
+
+    test.each([
+      ['DBの失敗', { data: null, error: { message: 'leaked-secret relation private.x', code: '42501' } }],
+      ['壊れた材料', { data: { rows: [{ name: '', amount: 1 }], legacy: false }, error: null }],
+    ])('FREQ-552-AC-03: 内訳が読めない(%s)時は 500 で、生のエラーを出さず偽の「割引なし」にしない', async (_label, result) => {
+      setup({ order: discounted() });
+      mockServiceRpc.mockResolvedValue(result);
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const response = await getDetail();
+
+        expect(response.status).toBe(500);
+        expect(response.body).toEqual({ error: 'Failed to fetch order detail' });
+        expect(response.headers['Cache-Control']).toBe('no-store');
+        expect(loggedText(consoleError)).not.toContain('leaked-secret');
+      } finally { consoleError.mockRestore(); }
+    });
   });
 
   it('持ち主の確かめの読み取りが失敗したら 500 で、service_role を使わない', async () => {

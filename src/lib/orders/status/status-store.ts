@@ -1,5 +1,6 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { MAX_DISCOUNT_AMOUNT } from '@/lib/discounts/discount-types';
 import type {
   CustomerOrderItemRow,
   CustomerOrderPrivateInput,
@@ -344,6 +345,18 @@ function toRefund(value: unknown): CustomerOrderPublicMaterial['refundRows'][num
   };
 }
 
+/**
+ * 公開してよい割引の項目は名前と正額だけ。DB が余計なキー（コード・割当・割引id・会員情報）を返しても名指しした2つ以外は持ち帰らない。
+ * 旧注文のSQLの印（名前 discount）はここでは変えない（表示の名前への変換は toCustomerOrderDiscounts の1か所）
+ */
+function toDiscount(value: unknown): CustomerOrderPublicMaterial['discounts'][number] {
+  const operation = PUBLIC_MATERIAL_OPERATION;
+  const discount = row(value, operation);
+  const name = text(discount.name, operation);
+  if (name.length === 0) fail(operation);
+  return { name, amount: integer(discount.amount, operation, 1, MAX_DISCOUNT_AMOUNT) };
+}
+
 function toPublicMaterial(value: unknown): CustomerOrderPublicMaterial {
   const operation = PUBLIC_MATERIAL_OPERATION;
   const root = row(value, operation);
@@ -369,6 +382,7 @@ function toPublicMaterial(value: unknown): CustomerOrderPublicMaterial {
     deliveryDetail: toDeliveryDetail(root.delivery_detail),
     deliverySummary: { activeCount, deliveredCount },
     refundRows: list(root.refund_rows, operation).map(toRefund),
+    discounts: list(root.discounts, operation).map(toDiscount),
   };
 }
 

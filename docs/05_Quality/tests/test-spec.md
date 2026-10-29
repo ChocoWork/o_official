@@ -1272,4 +1272,22 @@ FREQ-551-AC-01〜04。単体のREDはrefund-allocation/refund-materialsの66件�
 
 新DB: [group_h_refunds](../../../tests/integration/db/group_h_refunds.integration.test.ts)・[group_h_refund_concurrency](../../../tests/integration/db/group_h_refund_concurrency.integration.test.ts)・[group_h_order_amounts](../../../tests/integration/db/group_h_order_amounts.integration.test.ts)。既存order_refund_records/results・order_return_receipts/request_reviews・group_g4_readsへH回帰を追加し、group_h_migration_assertsへH5の属性/ACL/旧分岐/単位guard/状態金額の改ざん拒否を追加する。H1の過去のassertは取引内だけでH5の列/guardを当時へ戻して確認する。
 
+## グループH Task 10（2026-10-29）
+
+FREQ-552-AC-01〜03（確認メール・会員詳細・公開の注文状況・管理詳細の割引の内訳）。単体は実装者が実測し、DBはcontrollerのみが実行する。メールの配信成功は未測定でTask 12へ渡す（composeの文字列試験とは別）。
+
+| 試験 | 内容 |
+| --- | --- |
+| [order-discount-store](../../../tests/unit/lib/discounts/order-discount-store.test.ts) | `getOrderDiscountBreakdown`がRPC名と引数、行の厳密な検査（余計なキー・0円・小数・int上限・割引idの重複・旧注文の形の混在・配分）を行い、DBの失敗も例外も固定の`OrderDiscountStoreError`にして生の文を出さない。表示の変換（SQLの印`discount`→「割引」、`割引（名前）`、改行の空白化、顧客向け投影が名前と額だけで0円を落とす） |
+| [order-email-compose](../../../tests/unit/lib/orders/email/order-email-compose.test.ts) | 確認メールの小計→割引ごとの行→送料→合計、入金待ちも同じ、0円を出さない、旧注文は`割引: -￥額`1行、名前の改行・記号が行を崩さずコードが本文に出ない。材料の読み込みは割引額が正の注文全体のメールだけ`get_order_discount_breakdown`を読み、顧客向けに名前と額へ投影、読めない・壊れた時は`OrderEmailMaterialError`（発送・返金のメールは読まない） |
+| [customer-order-view](../../../tests/unit/lib/orders/customer-order-view.test.ts) | 公開と会員の画面の`discounts`が同じ名前と正額、旧注文の印を「割引」に変え、材料に余計なキーがあっても名前と額の2キーだけ |
+| [status-store](../../../tests/unit/lib/orders/status/status-store.test.ts) | 公開材料の`discounts`を名前と額だけ写し、コード・割引id・配分・user_idを持ち込まず、null・オブジェクト・空の名前・0/負/小数の額を固定エラーにする。「割引」の文を固定文の試験へ反映 |
+| [order-detail-progress](../../../tests/unit/api/orders/order-detail-progress.test.ts) | 会員の注文詳細routeが所有確認の後だけ内訳を読み（他人の注文は404でstoreを呼ばない）、名前と額だけを返し、割引0円はDBを呼ばず、読めない・壊れた時は500（no-store、生のエラーをログに出さない） |
+| [AccountOrderDetailPage](../../../tests/unit/components/AccountOrderDetailPage.test.tsx)・[OrderStatusPublic](../../../tests/unit/features/order-status/OrderStatusPublic.test.tsx) | 「クーポン値引き」を出さず「割引（名前）」を1つずつ、順は小計→送料→割引→支払金額、旧注文は「割引」1行、0円・内訳のない古い答えは行を出さない、名前はHTMLとして実行しない |
+| [admin-order-store](../../../tests/unit/lib/orders/admin-orders/admin-order-store.test.ts)・[AdminOrderDetailSection](../../../tests/unit/components/AdminOrderDetailSection.test.tsx) | 管理詳細がコードと行別配分つきの内訳を保持し、合計が`amounts.discount`と・配分の合計が各割引の額と一致しない材料は500。画面は名前・コード・額と行別の配分、旧注文は配分なしの「割引」1行 |
+| [group_h_order_views](../../../tests/integration/db/group_h_order_views.integration.test.ts)（DB。controllerが実行） | 2効果の注文、割引の改名後も注文時の名前、0円の除外、取消済みの使用、旧注文とその0円、合計の食い違いの拒否、実際の受付と入金を通した注文、公開材料のキー（2キーだけ）、管理詳細（orders.readだけの担当）、権限なし、service_roleだけのACL |
+| [group_h_migration_asserts](../../../tests/integration/db/group_h_migration_asserts.integration.test.ts)（DB・controller） | H6のASCII/LF・単一取引・本文がG3/H4からの1か所だけの差であるsource契約（DB不要）と、末尾assertの無改変通過・実行時例外のDETAIL・属性/ACL/本文の改ざんの固定DETAIL。H4のassertは`get_admin_order_detail`の指紋だけH6のファイルに固定された値を読んで置き換えて流す（今の本文から作り直さないので、本文を変えれば落ちる） |
+
+実装者の実行結果: 変更した範囲と全単体（`tests/unit`）が成功、`npx.cmd tsc --noEmit --incremental false`と変更したts/tsxの`npx.cmd eslint`は終了コード0。DB試験・supabase CLI・Docker・Playwright・サーバーは実行していない。controllerの確認（2026-10-30）: fresh reset した手元のDBで、H・G-4・注文状況・メールの27 suite 741/741が成功。実メールの配信と実ブラウザの表示は未確認。
+
 DB試験は作成のみ、実行はcontroller。安い返金の失敗後に高い返金が成功済みでも安い単位を再試行して総和37,000円、同requestKey再送、外部pending→failed、数量不明の部分額、無料単位、交換、相談後の即返金、状態別合計と旧33/33/34を確認する。単体/tsc/ESLintの実測と未確認の境界は[Task 9レポート](../../../.superpowers/sdd/2026-10-29-group-h-promotions/task-9-report.md)に記録する。DB/Stripe/メール配送/E2Eの成功を単体の結果から主張しない。

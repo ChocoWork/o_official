@@ -1,5 +1,6 @@
 // File: src/features/order-status/components/OrderStatusPublic.tsx
 import { Fragment } from 'react';
+import { formatOrderDiscountAmount, orderDiscountLabel } from '@/lib/discounts/discount-types';
 import { OrderItemRow } from '@/features/account/components/OrderItemRow';
 import { OrderReturnsSection } from '@/features/account/returns/OrderReturnsSection';
 import { formatMonthDay, itemLabel } from '@/features/account/returns/return-request-model';
@@ -95,8 +96,14 @@ export function OrderStatusPublic({ view }: { view: CustomerOrderPublicView }): 
       {view.returnSection ? <OrderReturnsSection orderId={view.id} section={view.returnSection} readOnly /> : null}
 
       <section className="border border-black/10 p-5 sm:p-8 space-y-4"><h2>{TEXT.amounts.heading}</h2>
-        <dl className="space-y-2">{[[TEXT.amounts.subtotal, view.subtotalAmount], [TEXT.amounts.shipping, view.shippingAmount], [TEXT.amounts.discount, view.discountAmount], [TEXT.amounts.total, view.totalAmount]].map(([label, amount]) => (
-          <div key={label} className="flex flex-wrap justify-between gap-2"><dt className="account-label">{label}</dt><dd className="account-value">{amount}</dd></div>
+        <dl className="space-y-2">{[
+          { key: 'subtotal', label: TEXT.amounts.subtotal, amount: view.subtotalAmount },
+          { key: 'shipping', label: TEXT.amounts.shipping, amount: view.shippingAmount },
+          // 注文時に固定した割引を1つずつ。旧注文は合計だけの「割引」1行、0円は出さない
+          ...view.discounts.map((discount, index) => ({ key: `discount-${index}`, label: orderDiscountLabel(discount.name), amount: formatOrderDiscountAmount(discount.amount) })),
+          { key: 'total', label: TEXT.amounts.total, amount: view.totalAmount },
+        ].map(({ key, label, amount }) => (
+          <div key={key} className="flex flex-wrap justify-between gap-2"><dt className="account-label">{label}</dt><dd className="account-value">{amount}</dd></div>
         ))}</dl>
       </section>
     </div>

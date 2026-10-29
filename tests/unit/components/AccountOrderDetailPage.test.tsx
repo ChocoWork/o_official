@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import AccountOrderDetailPage from '@/app/account/orders/[id]/page';
 
 jest.mock('next/link', () => ({ href, children, ...props }: any) => (
@@ -80,6 +80,36 @@ function stepItems() {
 describe('お客様の注文の画面（グループ E-1）', () => {
   beforeEach(() => {
     mockClientFetch.mockReset();
+  });
+
+  describe('割引の内訳（FREQ-552）', () => {
+    const amounts = () => within(screen.getByRole('heading', { name: '支払金額' }).closest('section') as HTMLElement);
+
+    it('FREQ-552-AC-01: 注文時の名前と額を「割引（名前）」で1つずつ出し、「クーポン値引き」は出さない。順は小計→送料→割引→支払金額', async () => {
+      await renderPage(order({ discountAmount: '-¥2,000', totalAmount: '¥22,000', discounts: [{ name: '秋の割引', amount: 1500 }, { name: '会員の割引', amount: 500 }] }));
+
+      expect(amounts().getAllByRole('term').map((term) => term.textContent)).toEqual(['小計', '送料', '割引（秋の割引）', '割引（会員の割引）', '支払金額']);
+      expect(screen.getAllByTestId('order-discount-row').map((row) => row.textContent)).toEqual(['割引（秋の割引）-￥1,500', '割引（会員の割引）-￥500']);
+      expect(screen.queryByText('クーポン値引き')).not.toBeInTheDocument();
+    });
+
+    it('FREQ-552-AC-01: 旧注文は合計だけの「割引」1行、0円や内訳のない古い答えでは割引の行を出さない', async () => {
+      await renderPage(order({ discountAmount: '-¥1,000', discounts: [{ name: '割引', amount: 1000 }] }));
+      expect(screen.getAllByTestId('order-discount-row').map((row) => row.textContent)).toEqual(['割引-￥1,000']);
+      cleanup();
+      await renderPage(order({ discounts: [] }));
+      expect(screen.queryByTestId('order-discount-row')).not.toBeInTheDocument();
+      expect(document.body.textContent).not.toContain('割引');
+      cleanup();
+      await renderPage(order());
+      expect(screen.queryByTestId('order-discount-row')).not.toBeInTheDocument();
+    });
+
+    it('FREQ-552-AC-02: 名前は文字として出し、コード・割当・割引idは画面にない', async () => {
+      await renderPage(order({ discounts: [{ name: '<b>太字</b>', amount: 300 }] }));
+      expect(screen.getByText('割引（<b>太字</b>）')).toBeVisible();
+      expect(document.querySelector('dl b')).toBeNull();
+    });
   });
 
   it('在庫の品だけの注文は4段で、今の段に aria-current が付き、済んだ段だけ塗る。状態の言葉も出る', async () => {

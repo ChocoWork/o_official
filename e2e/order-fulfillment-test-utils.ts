@@ -210,6 +210,7 @@ export function adminOrderDetail(overrides: OrderDetailOverrides): AdminOrderDet
       refundedAmount: 0, refundAttachedToRows: 0, refundNotAttached: 0, refundProcessingAmount: 0,
       ...amounts,
     },
+    discounts: [],
     rows: detailRows,
     attention: { paymentExceptions: [], review: null, deliveries: [], ...attention },
     permissions: { ...ADMIN_DETAIL_PERMISSIONS, ...permissions },

@@ -43,6 +43,34 @@ export type ProductPlan = {
 };
 export type DiscountSearchGuard = { maxProductPlans: number; maxCombinations: number };
 
+/** What a customer-facing surface may show for one discount on an order: the name frozen at acceptance and its amount. */
+export type OrderDiscountBreakdown = { name: string; amount: number };
+/** Admin-only view of one frozen discount. `discountId === null` only for a legacy (pre-H) order's single total row. */
+export type AdminOrderDiscountBreakdown = OrderDiscountBreakdown & {
+  discountId: string | null; code: string | null; lineAllocations: { orderItemId: string; amount: number }[];
+};
+/** ASCII name sentinel that `private.order_discount_breakdown` returns for a legacy order's total; shown as the plain label below. */
+export const LEGACY_ORDER_DISCOUNT_NAME = 'discount';
+export const LEGACY_ORDER_DISCOUNT_LABEL = '割引';
+
+/** The single place that turns the SQL sentinel into the display name. */
+export function displayOrderDiscountName(name: string): string {
+  return name === LEGACY_ORDER_DISCOUNT_NAME ? LEGACY_ORDER_DISCOUNT_LABEL : name;
+}
+/** Row label: "割引" for a legacy total, otherwise "割引（名前）". Newlines in a name never break a line-based surface. */
+export function orderDiscountLabel(name: string): string {
+  const shown = displayOrderDiscountName(name).replace(/\s+/g, ' ').trim();
+  return shown === LEGACY_ORDER_DISCOUNT_LABEL ? LEGACY_ORDER_DISCOUNT_LABEL : `${LEGACY_ORDER_DISCOUNT_LABEL}（${shown}）`;
+}
+/** "-￥1,500": the same notation as the order detail and the confirmation e-mail. */
+export function formatOrderDiscountAmount(amount: number): string {
+  return `-${new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(amount)}`;
+}
+/** Customer projection: name and amount only (extra keys are dropped), positive amounts only, sentinel shown as the label. */
+export function toCustomerOrderDiscounts(rows: readonly { name: string; amount: number }[]): OrderDiscountBreakdown[] {
+  return rows.filter(row => row.amount > 0).map(row => ({ name: displayOrderDiscountName(row.name), amount: row.amount }));
+}
+
 export const MAX_DISCOUNT_CODES = 5;
 export const MAX_AUTOMATIC_DISCOUNTS = 25;
 export const MAX_STACKABLE_AUTOMATIC_PER_CLASS = 6;

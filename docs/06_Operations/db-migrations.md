@@ -1163,3 +1163,15 @@ H4_FINAL_ASSERTのDETAILは `h4_acceptance`・`h4_member_lock`・`h4_redemption_
 H5 assertは `GROUP_H_MIGRATION_ASSERTION_FAILED / P0001`、DETAILは `h5_unit_claims`・`h5_refund_amounts`・`h5_return_amounts`・`h5_legacy_fallback`・`h5_status_amounts`・`h5_public_acl`。fix round 2の11本はcontrollerが補完済み。fix round 4では `private.group_h_return_unit_dispositions(uuid)` と `private.group_h_release_return_units(uuid)` だけ `00000000000000000000000000000000` に戻した（[Task 9レポート](../../.superpowers/sdd/2026-10-29-group-h-promotions/task-9-report.md)）。controllerがDBの `md5(replace(prosrc, E'\r', ''))` から該当2本を補完する。各検査前のDETAIL・fp alias・EXISTSの括弧修正を保持し、実行時エラーのHINTはSQLSTATEだけを返す。
 
 controller手順: 未適用DBでRED→MD5補完→fresh reset→H1〜H5 assertと新DB3本・既存refund/return/G-4回帰→並行3連続（pg_blocking_pids/pg_locksでG鍵待ちを観測）→既存public入口のPostgREST service成功/anon・authenticated拒否。実装者はDB・CLI・Docker・Playwright・serverを実行しない。最終SQLのコンパイル・DB上の金額/数量/ACL/ロック/例外・本番適用は未確認。
+
+## グループH Task 10: 注文の割引の内訳（H6、手元のDBで確認済み・本番未適用）
+
+移行は[20261029130500_group_h_discounts_views.sql](../../supabase/migrations/20261029130500_group_h_discounts_views.sql)。サイズ 23,567 bytes、MD5 `4a67ff2236d71f764401b6beba486365`（末尾 assert の関数4本の本文の指紋は controller が手元の DB で計算して埋めた）。ASCII/BOMなし/LF、BEGIN→baseline→新関数3本→既存2関数のCREATE OR REPLACE→ACL→H6_FINAL_ASSERT→NOTIFY→COMMIT。既存移行は編集しない。業務データの補完/清掃/再投入はしない（読み取りだけで、新しい列・表・権限もない）。
+
+新しい関数は3本。`private.order_discount_breakdown(uuid)`（STABLE、内部のみ。service_roleにもEXECUTEを与えない）、`private.get_order_discount_breakdown(uuid)`と`public.get_order_discount_breakdown(uuid)`（public入口はSECURITY INVOKERのSQL委譲、service_roleのみ）。受付で固定した使用の写し（名前・コード・額・分類）と行別配分だけから、商品→注文→割引idの順の`{rows,legacy}`を作る。額の合計が`orders.discount_amount`と食い違えば`GROUP_H_ORDER_BREAKDOWN_INVALID`（55000）。正額の使用がない旧注文は`discount_amount>0`なら名前の印`discount`の合計1行、0円なら空。
+
+既存の置き換えは2本（署名・戻り型・所有者・SECURITY・volatility・search_path・ACLを保ちOID不変）。`public.get_order_status_public_material(uuid)`はG3の本文に`discounts:[{name,amount}]`の1か所だけを足し（名前と額の2キーだけ。コード・割引id・配分は読まない）、`private.get_admin_order_detail(uuid,uuid)`はH4の本文に`discounts`（上のrowsそのまま）の1行だけを足す（権限は`admin.orders.read`のまま）。
+
+H6 assertは `GROUP_H_MIGRATION_ASSERTION_FAILED / P0001`、DETAILは `h6_order_breakdown`・`h6_customer_projection`・`h6_admin_projection`・`h6_public_acl`。本文の指紋（`md5(replace(prosrc, E'\r', ''))`）の4本（`private.order_discount_breakdown(uuid)`・`private.get_order_discount_breakdown(uuid)`・`public.get_order_status_public_material(uuid)`・`private.get_admin_order_detail(uuid,uuid)`）は、controllerが手元のDBで計算して移行の末尾assertへ埋めた（値は移行のとおり）。assertの`position(x IN y)`は`pg_catalog.strpos`に直した。H4のassertが持つ`get_admin_order_detail`の旧い指紋は、[group_h_migration_asserts](../../tests/integration/db/group_h_migration_asserts.integration.test.ts)がH6のファイルに固定された値を読んで置き換えて流す。今の本文から指紋を作り直す形にはしていないので、本文を変えればH4のassertも落ちる（H6のファイルから値が取れない時も落ちる）。
+
+controllerの確認（2026-10-30）: fresh reset した手元のDBで、H・G-4・注文状況・メールの27 suite 741/741が成功。本番適用、実メールの配信、実ブラウザの表示は未確認。

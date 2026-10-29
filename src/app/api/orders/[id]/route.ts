@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
+import { getOrderDiscountBreakdown } from '@/lib/discounts/order-discount-store';
 import { signItemImageUrl } from '@/lib/storage/item-images';
 import { HIDDEN_ORDER_STATUS_FILTER } from '@/lib/orders/order-payment-types';
 import { buildCustomerOrderDetailView } from '@/lib/orders/customer-order-view';
@@ -133,6 +134,22 @@ export async function GET(
 		return NextResponse.json({ error: 'Failed to fetch order detail' }, { status: 500, headers: NO_STORE_HEADERS });
 	}
 
+	// 注文時に固定した割引の名前と額（グループ H）。持ち主の確かめを通った後だけ読み、名前と額以外（コード・割当・割引id）は
+	// ここで落とす。割引のない注文はDBを呼ばない。読めない・壊れた答えは隠さず 500（偽の「割引なし」にしない）
+	let discounts: Array<{ name: string; amount: number }> = [];
+	if (data.discount_amount > 0) {
+		try {
+			discounts = (await getOrderDiscountBreakdown(serviceSupabase, data.id)).rows.map(({ name, amount }) => ({ name, amount }));
+		} catch (discountError) {
+			console.error(
+				'Order discount fetch error:',
+				discountError instanceof Error ? discountError.name : 'UnknownError',
+				(discountError as { operation?: unknown })?.operation ?? null,
+			);
+			return NextResponse.json({ error: 'Failed to fetch order detail' }, { status: 500, headers: NO_STORE_HEADERS });
+		}
+	}
+
 	// 返品・交換の欄（グループ E-3 段2）。読めなくても注文の答えは返し、欄だけ null にする（画面は欄を出さない）。
 	// 持ち主の確かめはこの窓口で済んでいる。DB の関数は、お客様に隠す状態の注文なら null で答える
 	let returnSection: CustomerOrderReturns | null = null;
@@ -156,7 +173,7 @@ export async function GET(
 	}
 
 	const view = await buildCustomerOrderDetailView({
-		order: data, lineRows, fulfillments, deliverySummary, deliveryDetail, refundRows, returnSection, paymentMethod,
+		order: data, lineRows, fulfillments, deliverySummary, deliveryDetail, refundRows, returnSection, discounts, paymentMethod,
 		trackingKeyConfigured: isDeliveryTrackingKeyConfigured(process.env),
 		signImage: (path) => signItemImageUrl(serviceSupabase, path),
 	});

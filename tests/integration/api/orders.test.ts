@@ -434,6 +434,14 @@ describe('GET /api/orders/[id]', () => {
 			}
 			// 配送の記録（追跡オフ・発送なし）。配列のままだと「答えが読めない」誤りになり、窓口が 500 にする
 			if (name === 'get_order_delivery_detail') return { data: { enabled: false, fulfillments: [] }, error: null };
+			// 割引の内訳（H Task 10）。この注文は割引1,000円の旧注文なので、DB は合計だけの1行（名前は印の discount）を返す。
+			// 配列のままだと「答えが読めない」誤りになり、窓口が 500 にする
+			if (name === 'get_order_discount_breakdown') {
+				return {
+					data: { rows: [{ name: 'discount', amount: 1000, discountId: null, code: null, lineAllocations: [] }], legacy: true },
+					error: null,
+				};
+			}
 			return { data: [], error: null };
 		});
 
@@ -504,6 +512,7 @@ describe('GET /api/orders/[id]', () => {
 			shippingAmount: expect.stringMatching(/^[¥￥]500$/),
 			discountAmount: expect.stringMatching(/^-[¥￥]1,000$/),
 			totalAmount: expect.stringMatching(/^[¥￥]11,500$/),
+			discounts: [{ name: '割引', amount: 1000 }],
 			paymentMethod: 'クレジットカード',
 			items: [
 				expect.objectContaining({
@@ -518,7 +527,7 @@ describe('GET /api/orders/[id]', () => {
 		});
 		expect(rpc).toHaveBeenCalledWith('list_order_refunds', { _order_id: 'order-1' });
 		// 共通化前に通した全文。省略キー・null・配列順・キー順も固定する（画像は固定mock）。
-		const expectedJsonBeforeRefactor = '{"id":"order-1","orderNumber":"ORD-ORDER-1","orderDate":"2026/04/01 09:00","status":"paid","progress":{"key":"ready","label":"発送準備中","partiallyShipped":false,"steps":[{"key":"payment","label":"お支払い","state":"done"},{"key":"ready","label":"発送準備中","state":"current"},{"key":"in_transit","label":"配送中","state":"todo"},{"key":"delivered","label":"配達済み","state":"todo"}]},"subtotalAmount":"￥12,000","shippingAmount":"￥500","discountAmount":"-￥1,000","totalAmount":"￥11,500","paymentMethod":"クレジットカード","shippingFullName":"山田 花子","shippingEmail":"user@example.com","shippingPhone":"090-1111-2222","shippingAddress":"〒1500001 東京都 渋谷区 神宮前1-2-3 青山ハイツ 101","shipments":[],"refunds":[{"id":"refund-1","date":"2026/04/02","amount":"￥500","status":"completed","customerActionDeadline":null}],"refundTotal":null,"returnSection":{"returns":[],"cancelRequests":[],"availability":{"returns":"none","endedOn":null,"cancel":false}},"items":[{"id":"line-1","itemId":10,"variantId":null,"name":"Silk Blouse","imageUrl":"https://cdn.example.com/signed-image.jpg","color":"Black","size":"M","quantity":1,"amount":"￥12,000","shippedQuantity":0,"refundedQuantity":0,"readyQuantity":1,"inProductionQuantity":0}]}';
+		const expectedJsonBeforeRefactor = '{"id":"order-1","orderNumber":"ORD-ORDER-1","orderDate":"2026/04/01 09:00","status":"paid","progress":{"key":"ready","label":"発送準備中","partiallyShipped":false,"steps":[{"key":"payment","label":"お支払い","state":"done"},{"key":"ready","label":"発送準備中","state":"current"},{"key":"in_transit","label":"配送中","state":"todo"},{"key":"delivered","label":"配達済み","state":"todo"}]},"subtotalAmount":"￥12,000","shippingAmount":"￥500","discountAmount":"-￥1,000","totalAmount":"￥11,500","discounts":[{"name":"割引","amount":1000}],"paymentMethod":"クレジットカード","shippingFullName":"山田 花子","shippingEmail":"user@example.com","shippingPhone":"090-1111-2222","shippingAddress":"〒1500001 東京都 渋谷区 神宮前1-2-3 青山ハイツ 101","shipments":[],"refunds":[{"id":"refund-1","date":"2026/04/02","amount":"￥500","status":"completed","customerActionDeadline":null}],"refundTotal":null,"returnSection":{"returns":[],"cancelRequests":[],"availability":{"returns":"none","endedOn":null,"cancel":false}},"items":[{"id":"line-1","itemId":10,"variantId":null,"name":"Silk Blouse","imageUrl":"https://cdn.example.com/signed-image.jpg","color":"Black","size":"M","quantity":1,"amount":"￥12,000","shippedQuantity":0,"refundedQuantity":0,"readyQuantity":1,"inProductionQuantity":0}]}';
 		expect(JSON.stringify(body)).toBe(expectedJsonBeforeRefactor);
 		expect(rpc).toHaveBeenCalledWith('get_customer_order_returns', { _order_id: 'order-1', _customer_id: 'user-1' });
 		expect(rpc).toHaveBeenCalledWith('list_order_delivery_summaries', { _order_ids: ['order-1'] });

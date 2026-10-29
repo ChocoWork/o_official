@@ -299,7 +299,7 @@ describeLocalDb('integration: 注文状況のリンク・本人確認・公開�
       [order.orderId, ORDER_STATUS_PRIVATE_SENTINEL],
     );
     const material = await publicMaterial(db(), order.orderId);
-    expect(Object.keys(material).sort()).toEqual(['order', 'line_rows', 'fulfillments', 'delivery_detail', 'delivery_summary', 'refund_rows'].sort());
+    expect(Object.keys(material).sort()).toEqual(['order', 'line_rows', 'fulfillments', 'delivery_detail', 'delivery_summary', 'refund_rows', 'discounts'].sort());
     const keys = (value: Record<string, unknown>) => Object.keys(value).sort();
     expect(keys(material.order)).toEqual([
       'id', 'created_at', 'status', 'subtotal_amount', 'shipping_amount', 'discount_amount', 'total_amount', 'currency', 'order_items',

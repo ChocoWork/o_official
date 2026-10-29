@@ -58,7 +58,7 @@ function publicInput(): CustomerOrderPublicInput {
         { trackingVersion: 2, status: 'out_for_delivery', happenedAt: '2026-10-22T01:00:00Z', recordedAt: '2026-10-22T01:00:02Z' },
       ],
     }] },
-    deliverySummary: { activeCount: 1, deliveredCount: 0 }, refundRows: [], returnSection: null,
+    deliverySummary: { activeCount: 1, deliveredCount: 0 }, refundRows: [], returnSection: null, discounts: [],
     trackingKeyConfigured: true, signImage: jest.fn(async (path: string | null) => path === null ? null : 'fixed-image'),
   };
 }
@@ -119,7 +119,7 @@ test('公開型と公開の答えに個人情報のキーを持たない', async
   const forbidden = ['paymentMethod', 'shipping', 'shipping_full_name', 'shipping_email', 'shipping_phone', 'shipping_postal_code',
     'shipping_prefecture', 'shipping_city', 'shipping_address', 'shipping_building', 'shippingFullName', 'shippingEmail',
     'shippingPhone', 'shippingAddress', 'contactEmail', 'trackingNumber', 'trackingUrl', 'returnAddress', 'customerActionDeadline',
-    'actorEmail', 'providerSubStatus', 'registration', 'trackingChanges', 'phone'];
+    'actorEmail', 'providerSubStatus', 'registration', 'trackingChanges', 'phone', 'discountId', 'lineAllocations'];
   const recursiveForbiddenKeys = keysOf(publicView).filter((key) => forbidden.includes(key));
   expect(recursiveForbiddenKeys).toEqual([]);
   expect(keysOf(publicView.returnSection?.returns[0].sentBack)).not.toContain('carrier');
@@ -142,6 +142,35 @@ test('公開型と公開の答えに個人情報のキーを持たない', async
   expect(publicView.returnSection?.returns[0].returnAddress).toBeUndefined();
   // @ts-expect-error 公開の送り返しに業者は存在しない
   expect(publicView.returnSection?.returns[0].sentBack[0].carrier).toBeUndefined();
+});
+
+describe('割引の内訳（FREQ-552）', () => {
+  test('FREQ-552-AC-01: 公開と会員の画面は同じ名前と正額を割引として持ち、0円と重複を出さず旧注文のSQLの印を「割引」に変える', async () => {
+    const input = publicInput();
+    input.order = { ...input.order, discount_amount: 2000 };
+    input.discounts = [{ name: '秋の割引', amount: 1500 }, { name: '無料', amount: 0 }, { name: 'discount', amount: 500 }];
+    const publicView = await buildCustomerOrderPublicView(input);
+    expect(publicView.discounts).toEqual([{ name: '秋の割引', amount: 1500 }, { name: '割引', amount: 500 }]);
+    const detail = await buildCustomerOrderDetailView({ ...detailInput(), order: { ...detailInput().order, discount_amount: 2000 }, discounts: input.discounts });
+    expect(detail.discounts).toEqual(publicView.discounts);
+    // 画面のキー順は元のAPIに合わせ、discounts は合計の次
+    expect(Object.keys(detail).slice(Object.keys(detail).indexOf('totalAmount'), Object.keys(detail).indexOf('totalAmount') + 2)).toEqual(['totalAmount', 'discounts']);
+  });
+
+  test('FREQ-552-AC-02: 公開の割引は名前と額の2項目だけで、材料に余計なキーがあっても持ち込まない', async () => {
+    const input = publicInput();
+    input.discounts = [{ name: '秋の割引', amount: 1500, code: 'SECRETCODE', discountId: 'd1', lineAllocations: [{ orderItemId: 'i', amount: 1500 }], userId: 'u1' } as never];
+    const view = await buildCustomerOrderPublicView(input);
+    expect(view.discounts).toEqual([{ name: '秋の割引', amount: 1500 }]);
+    expect(Object.keys(view.discounts[0])).toEqual(['name', 'amount']);
+    expect(JSON.stringify(view)).not.toMatch(/SECRETCODE|discountId|lineAllocations|u1/);
+  });
+
+  test('FREQ-552-AC-01: 割引のない注文は空の配列で、割引の合計の表示(discountAmount)は変わらない', async () => {
+    const view = await buildCustomerOrderPublicView(publicInput());
+    expect(view.discounts).toEqual([]);
+    expect(view.discountAmount).toBe('￥0');
+  });
 });
 
 test('配送の現版だけを出し取消と登録前と鍵無しを隠す', async () => {

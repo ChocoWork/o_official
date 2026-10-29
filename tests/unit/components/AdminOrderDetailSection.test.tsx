@@ -25,6 +25,7 @@ function fixture(): AdminOrderDetail {
   return {
     order: { id, status: 'paid', createdAt: '2026-10-20T01:00:00Z', paidAt: '2026-10-20T02:00:00Z', customerKind: 'guest', customerName: 'テスト顧客', customerEmail: null, currency: 'jpy', shipTo: { fullName: 'テスト顧客', postalCode: null, prefecture: null, city: null, address: null, building: null, phone: null } },
     amounts: { productNet: 12800, discount: 100, shipping: 500, total: 13300, paidAmount: 13300, refundedAmount: 1000, refundAttachedToRows: 800, refundNotAttached: 200, refundProcessingAmount: 300 },
+    discounts: [],
     rows: [{ orderItemId: 'b1b2c3d4-1111-4222-8333-444455556666', itemName: 'ブラウス', color: '白', size: 'M', isExchange: false, status: 'in_production', statusRank: 3, quantity: 1, unitPrice: 12900, lineAmount: 12800, refundAmount: 800, blockedReasons: ['stock_shortage'] }],
     permissions: { read: true, manage: true, refund: true, return: true, allocate: true, shippingRead: true },
     attention: { paymentExceptions: [], review: null, deliveries: [] }, fulfillments: [], slips: [],
@@ -50,6 +51,59 @@ it('FREQ-539-AC-01: 7つの欄を順に表示しAPIの情報と金額を出す',
   const amounts = screen.getByRole('region', { name: '支払いと返金' }); for (const value of ['¥13,300', '¥1,000', '¥300', '¥200']) expect(amounts).toHaveTextContent(value);
   expect(screen.getByRole('region', { name: '品物' })).toHaveTextContent('¥12,800');
   expect(screen.getByRole('link', { name: '注文一覧表へ戻る' })).toHaveAttribute('href', '/admin/orders');
+});
+describe('割引の内訳（FREQ-552）', () => {
+  const ITEM = 'b1b2c3d4-1111-4222-8333-444455556666';
+  const breakdown = () => within(screen.getByRole('region', { name: '割引の内訳' }));
+
+  it('FREQ-552-AC-03: 複数の割引を名前・コード・額と行別の配分で出し、配分の合計は各割引の額と一致する', async () => {
+    detail.amounts.discount = 2000;
+    detail.discounts = [
+      { name: '秋の割引', amount: 1500, discountId: '22222222-2222-4222-8222-222222222222', code: 'AUTUMN', lineAllocations: [{ orderItemId: ITEM, amount: 1500 }] },
+      { name: '会員の割引', amount: 500, discountId: '33333333-3333-4333-8333-333333333333', code: null, lineAllocations: [{ orderItemId: ITEM, amount: 300 }, { orderItemId: 'ffffffff-ffff-4fff-8fff-ffffffffffff', amount: 200 }] },
+    ];
+    await open();
+
+    const rows = screen.getAllByTestId('order-discount-breakdown');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent('割引（秋の割引）');
+    expect(within(rows[0]).getByTestId('order-discount-code')).toHaveTextContent('AUTUMN');
+    expect(rows[0]).toHaveTextContent('-¥1,500');
+    expect(within(rows[0]).getByRole('list', { name: '行別の割引額' })).toHaveTextContent('ブラウス（白 / M）-¥1,500');
+    expect(rows[1]).toHaveTextContent('割引（会員の割引）');
+    expect(within(rows[1]).queryByTestId('order-discount-code')).not.toBeInTheDocument();
+    expect(within(rows[1]).getByRole('list', { name: '行別の割引額' })).toHaveTextContent('ブラウス（白 / M）-¥300');
+    expect(within(rows[1]).getByRole('list', { name: '行別の割引額' })).toHaveTextContent('品物-¥200');
+    // 割引の欄は支払いと返金の中で、合計の割引と別に内訳として出る
+    expect(screen.getByRole('region', { name: '支払いと返金' })).toContainElement(breakdown().getByRole('heading', { name: '割引の内訳' }));
+  });
+
+  it('FREQ-552-AC-03: 旧注文は合計だけの「割引」1行（配分なし）、0円や内訳の無い答えでは欄を出さない', async () => {
+    detail.discounts = [{ name: 'discount', amount: 100, discountId: null, code: null, lineAllocations: [] }];
+    const { unmount } = render(<AdminOrderDetailSection orderId={id} />);
+    await screen.findByRole('heading', { name: '注文情報' });
+    const row = screen.getByTestId('order-discount-breakdown');
+    expect(row).toHaveTextContent('割引-¥100');
+    expect(row).not.toHaveTextContent('割引（');
+    expect(within(row).queryByRole('list')).not.toBeInTheDocument();
+    unmount();
+    detail.discounts = [];
+    await open();
+    expect(screen.queryByRole('region', { name: '割引の内訳' })).not.toBeInTheDocument();
+  });
+
+  it('FREQ-552-AC-03: 名前が旧注文の印と同じ「discount」でも、割引idがある現行の割引は「割引（discount）」で出す', async () => {
+    detail.discounts = [{ name: 'discount', amount: 100, discountId: '22222222-2222-4222-8222-222222222222', code: null, lineAllocations: [] }];
+    await open();
+    expect(screen.getByTestId('order-discount-breakdown')).toHaveTextContent('割引（discount）');
+  });
+
+  it('FREQ-552-AC-02: 割引の名前はHTMLとして実行せず文字で出す', async () => {
+    detail.discounts = [{ name: '<i>x</i>', amount: 100, discountId: '22222222-2222-4222-8222-222222222222', code: null, lineAllocations: [] }];
+    await open();
+    expect(screen.getByTestId('order-discount-breakdown')).toHaveTextContent('割引（<i>x</i>）');
+    expect(document.querySelector('[data-testid="order-discount-breakdown"] i')).toBeNull();
+  });
 });
 it('FREQ-539-AC-02: サポーターの旗は支払い済み取消と返金を隠し返品受取と申請を残す', async () => {
   detail.permissions.refund = false; await open();

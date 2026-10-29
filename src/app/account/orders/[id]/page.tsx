@@ -16,6 +16,7 @@ import {
   OrderItemRow,
   type OrderLineItem,
 } from "@/features/account/components/OrderItemRow";
+import { formatOrderDiscountAmount, orderDiscountLabel, type OrderDiscountBreakdown } from "@/lib/discounts/discount-types";
 import { useReorder } from "@/features/account/hooks/useReorder";
 import { OrderReturnsSection } from "@/features/account/returns/OrderReturnsSection";
 import type { CustomerOrderReturns } from "@/lib/orders/returns/customer-return-types";
@@ -89,6 +90,8 @@ type OrderDetail = {
   subtotalAmount: string;
   shippingAmount: string;
   discountAmount: string;
+  /** 注文時に固定した割引の名前と正額（グループ H）。旧注文は名前「割引」の合計1行、0円は空。古い形の答えには無い（省ける）ので、その時は行を出さない */
+  discounts?: OrderDiscountBreakdown[];
   totalAmount: string;
   paymentMethod: string;
   shippingAddress: string;
@@ -601,14 +604,16 @@ export default function AccountOrderDetailPage() {
                     {order.shippingAmount}
                   </dd>
                 </div>
-                <div className="flex items-baseline justify-between">
-                  <dt className="text-[#474747]" style={bodyStyle}>
-                    クーポン値引き
-                  </dt>
-                  <dd className="text-black" style={bodyStyle}>
-                    {order.discountAmount}
-                  </dd>
-                </div>
+                {(order.discounts ?? []).map((discount, index) => (
+                  <div key={`${index}|${discount.name}`} data-testid="order-discount-row" className="flex items-baseline justify-between">
+                    <dt className="text-[#474747]" style={bodyStyle}>
+                      {orderDiscountLabel(discount.name)}
+                    </dt>
+                    <dd className="text-black" style={bodyStyle}>
+                      {formatOrderDiscountAmount(discount.amount)}
+                    </dd>
+                  </div>
+                ))}
                 <div className="flex items-baseline justify-between border-t border-black/10 pt-3">
                   <dt className="text-black" style={bodyStyle}>
                     支払金額

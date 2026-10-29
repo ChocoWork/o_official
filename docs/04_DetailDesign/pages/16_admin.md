@@ -1153,3 +1153,15 @@ Task 5 fix round 1（2026-10-29）: 一覧は「使った回数」と「上限�
 割り当て表は取得成功時だけ頁と行を更新する。取得中はaria-busyと状態の文、失敗は「割り当てを読み込めませんでした。」と「読み直す」を出す。使用済みの409は表を読み直す。409後の読取失敗は「最新の情報を読み込めませんでした。」とし、成功後の文と分ける。窓のTabを閉じ込め、閉じると入口へ、入口が消えた時は詳細の見出しへフォーカスを戻す。日時は瞬間で比べ、表示の分を変えなければDBの秒・秒未満を保つ。
 
 対象の服の選択には現状admin.items.readも必要。admin.discounts.manageを付与する際に併せて確認する。割引専用の服一覧APIへの変更は本修正の対象外。
+
+## 注文の詳細の割引の内訳（H Task 10 / FREQ-552）
+
+確認日: 2026-10-29。`AdminOrderDetailSection`の「支払いと返金」に、既存の合計の行（「割引」）とは別に、注文時に固定した割引の内訳を出す。読み出しは既存の`GET /api/admin/orders/[id]`の`discounts`で、権限は`admin.orders.read`のまま（設定管理の`admin.discounts.read`は要らない）。
+
+| 項目 | 内容 |
+| --- | --- |
+| 欄 | 割引が1件以上ある時だけ、見出し「割引の内訳」（`aria-label="割引の内訳"`）。0円・内訳のない古い答えでは欄ごと出さない |
+| 1件の行 | `割引（名前）`＋コード（あれば等幅）と額（`-￥1,500`）。旧注文（`discountId`が`null`）は名前の印を「割引」に変えた合計1行で、行別の配分もコードもない |
+| 行別の配分 | その割引が効いた商品の行を`品名（色 / サイズ）`と額で並べる（`aria-label="行別の割引額"`）。詳細の行に無い商品は「品物」。配分の合計は割引の額と一致し、`amounts.discount`は内訳の合計と一致する（食い違う材料は窓口が500にする） |
+| 表示の安全 | 名前とコードは文字として出し、HTMLは実行しない。折り返しは`break-words`で長い名前に耐える |
+| 試験 | 単体 [AdminOrderDetailSection](../../../tests/unit/components/AdminOrderDetailSection.test.tsx)・[admin-order-store](../../../tests/unit/lib/orders/admin-orders/admin-order-store.test.ts)。3幅（390/768/1280px）の表示・実DB・E2EはTask 11 |

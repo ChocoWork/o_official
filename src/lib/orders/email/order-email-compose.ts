@@ -1,4 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { orderDiscountLabel, toCustomerOrderDiscounts, type OrderDiscountBreakdown } from '@/lib/discounts/discount-types';
+import { getOrderDiscountBreakdown } from '@/lib/discounts/order-discount-read';
 import type { OrderEmailDeliveryMaterial } from '@/lib/orders/email/order-email-delivery-material';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import {
@@ -279,6 +281,11 @@ export type OrderEmailMaterial = {
   orderReturn: OrderEmailReturnMaterial | null;
   /** 申し込みのメール6種類の時だけ読む（loadRequestEmailMaterial）。ほかの種類は null（グループ E-3 段2） */
   request: OrderEmailRequestMaterial | null;
+  /**
+   * 注文確認・入金待ちなど注文全体のメールで使う、注文時に固定した割引の名前と額（グループ H。名前と正額だけで、コード・割当・会員情報は持たない）。
+   * 割引が0円の注文と、ほかの種類のメールは []。無い（古い材料）時は []（割引の行は注文の割引額の合計だけの「割引」1行）
+   */
+  discounts?: OrderDiscountBreakdown[];
   /** 配送メール3種類だけ、送る直前に現在の発送と版を読む（E-4 C-6） */
   delivery?: OrderEmailDeliveryMaterial;
   /** 状況のリンクのURL（E-5 P12・P21）。worker が新しいお客様向け本文の時だけ足す */
@@ -314,7 +321,8 @@ export type OrderEmailMaterialTable =
   | 'list_order_returns'
   | 'order_return_photos'
   | 'order_cancel_requests'
-  | 'order_cancel_request_lines';
+  | 'order_cancel_request_lines'
+  | 'get_order_discount_breakdown';
 
 /** 材料を読めなかった（DB の失敗）。worker は一時的な失敗としてやり直す。table は読んだ表か、DB の関数の名前 */
 export class OrderEmailMaterialError extends Error {
@@ -1027,7 +1035,22 @@ export async function loadOrderEmailMaterial(
     }
   }
 
-  return { order, items: items as ConfirmationItem[], fulfillment, refund, orderReturn, request: null };
+  // 割引の内訳は、注文全体のメール（発送・返金・返品の材料を読まない時）で割引のある注文だけ読む。読めなければ一時的な失敗としてやり直す
+  const discounts =
+    fulfillmentId === null && refundId === null && returnId === null && returnReceiptId === null && (order.discount_amount ?? 0) > 0
+      ? await loadDiscountsForEmail(store, orderId)
+      : [];
+
+  return { order, items: items as ConfirmationItem[], fulfillment, refund, orderReturn, request: null, discounts };
+}
+
+/** 注文時に固定した割引の名前と額（顧客向けの投影）。DB の文は持ち帰らない */
+async function loadDiscountsForEmail(store: Pick<SupabaseClient, 'rpc'>, orderId: string): Promise<OrderDiscountBreakdown[]> {
+  try {
+    return toCustomerOrderDiscounts((await getOrderDiscountBreakdown(store, orderId)).rows);
+  } catch {
+    throw new OrderEmailMaterialError('get_order_discount_breakdown');
+  }
 }
 
 type RequestReturnRow = { number: number; decline_message: string | null };
@@ -1234,7 +1257,7 @@ export async function loadRequestEmailMaterial(
   if (!request) {
     return null;
   }
-  return { order, items: [], fulfillment: null, refund: null, orderReturn: null, request };
+  return { order, items: [], fulfillment: null, refund: null, orderReturn: null, request, discounts: [] };
 }
 
 export function greeting(fullName: string | null): string {
@@ -1261,8 +1284,20 @@ function hasStockAndBackorder(items: ConfirmationItem[]): boolean {
   return items.some((item) => item.fulfillment_type === 'stock') && items.some((item) => item.fulfillment_type === 'backorder');
 }
 
+/**
+ * 割引の行。注文時に固定した内訳があれば「割引（名前）: -￥額」を1つずつ（0円は出さない）、旧注文（内訳なし）は合計だけの「割引: -￥額」。
+ * メールは本文が文字だけなので、名前の改行は空白にして行を崩さない（orderDiscountLabel）。コード・割当は材料に無い
+ */
+function discountLines(discounts: readonly OrderDiscountBreakdown[], discountAmount: number, currency: string): string[] {
+  const shown = discounts.filter((discount) => discount.amount > 0);
+  if (shown.length > 0) {
+    return shown.map((discount) => `${orderDiscountLabel(discount.name)}: -${formatCurrency(discount.amount, currency)}`);
+  }
+  return discountAmount > 0 ? [`割引: -${formatCurrency(discountAmount, currency)}`] : [];
+}
+
 function composeConfirmation(
-  { order, items }: OrderEmailMaterial,
+  { order, items, discounts = [] }: OrderEmailMaterial,
   state: 'paid' | 'awaiting_payment',
   leadLines: string[],
 ): ComposedOrderEmail {
@@ -1301,9 +1336,9 @@ function composeConfirmation(
     ...(showSplitShipmentNotice ? ['', SPLIT_SHIPMENT_NOTICE] : []),
     '',
     `小計: ${formatCurrency(order.subtotal_amount, order.currency)}`,
+    // 値引があるときだけ、割引ごとに1行を小計の次（送料の前）に出す。書き方は注文詳細（/api/orders/[id]）と同じ「-￥1,000」（FREQ-396・FREQ-552）
+    ...discountLines(discounts, discountAmount, order.currency),
     `送料: ${order.shipping_amount > 0 ? formatCurrency(order.shipping_amount, order.currency) : '無料'}`,
-    // 値引があるときだけ出す。書き方は注文詳細（/api/orders/[id]）と同じ「-￥1,000」（FREQ-396）
-    ...(discountAmount > 0 ? [`割引: -${formatCurrency(discountAmount, order.currency)}`] : []),
     `合計: ${formatCurrency(order.total_amount, order.currency)}`,
     '',
     'お届け先:',

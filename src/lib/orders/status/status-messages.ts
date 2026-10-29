@@ -58,7 +58,6 @@ export const ORDER_STATUS_TEXT = {
     heading: '支払金額',
     subtotal: '小計',
     shipping: '送料',
-    discount: 'クーポン値引き',
     total: '支払金額',
   },
   refunds: {

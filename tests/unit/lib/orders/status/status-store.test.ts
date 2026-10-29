@@ -407,6 +407,7 @@ const MATERIAL_JSON = {
   },
   delivery_summary: { active_count: 1, delivered_count: 0 },
   refund_rows: [{ refund_id: REFUND_1, created_at: '2026-10-23T01:00:00+00:00', amount: 1000, status: 'succeeded' }],
+  discounts: [{ name: '秋の割引', amount: 1500 }, { name: 'discount', amount: 500 }],
 };
 const MATERIAL = {
   order: MATERIAL_JSON.order,
@@ -438,6 +439,7 @@ const MATERIAL = {
   },
   deliverySummary: { activeCount: 1, deliveredCount: 0 },
   refundRows: [{ refundId: REFUND_1, createdAt: '2026-10-23T01:00:00+00:00', amount: 1000, status: 'succeeded' }],
+  discounts: [{ name: '秋の割引', amount: 1500 }, { name: 'discount', amount: 500 }],
 };
 
 // ---- 返品 ----
@@ -562,12 +564,23 @@ describe('公開の読み出し', () => {
     leaky.delivery_detail.fulfillments[0].events[0].actor_email = PRIVATE_SENTINEL;
     leaky.refund_rows[0].payment_method_type = PRIVATE_SENTINEL;
     leaky.refund_rows[0].note = PRIVATE_SENTINEL;
+    leaky.discounts[0].code = PRIVATE_SENTINEL;
+    leaky.discounts[0].discountId = PRIVATE_SENTINEL;
+    leaky.discounts[1].lineAllocations = [{ orderItemId: PRIVATE_SENTINEL, amount: 1 }];
+    leaky.discounts[1].user_id = PRIVATE_SENTINEL;
     const { store } = makeStore({ rpc: { get_order_status_public_material: { data: leaky } } });
 
     const material = await loadOrderStatusPublicMaterial(store, ORDER_ID);
 
     expect(material).toEqual(MATERIAL);
     expect(JSON.stringify(material).includes(PRIVATE_SENTINEL)).toBe(false);
+  });
+
+  test('FREQ-552-AC-02: 公開材料の割引は名前と額だけを写し、無い・空の配列はそのまま空として返す', async () => {
+    const { store } = makeStore({ rpc: { get_order_status_public_material: { data: MATERIAL_JSON } } });
+    expect((await loadOrderStatusPublicMaterial(store, ORDER_ID))?.discounts).toEqual([{ name: '秋の割引', amount: 1500 }, { name: 'discount', amount: 500 }]);
+    const empty = makeStore({ rpc: { get_order_status_public_material: { data: changed(MATERIAL_JSON, ['discounts'], []) } } });
+    expect((await loadOrderStatusPublicMaterial(empty.store, ORDER_ID))?.discounts).toEqual([]);
   });
 
   test('公開の返品は返送先と送り返しの業者・伝票番号のキーを持たない。DBが返しても写さない', async () => {
@@ -614,7 +627,7 @@ describe('公開の読み出し', () => {
       ['文字列', 'text'],
       ['数値', 123],
       ['空のオブジェクト', {}],
-      ...(['order', 'line_rows', 'fulfillments', 'delivery_detail', 'delivery_summary', 'refund_rows'] as const).map(
+      ...(['order', 'line_rows', 'fulfillments', 'delivery_detail', 'delivery_summary', 'refund_rows', 'discounts'] as const).map(
         (key): [string, unknown] => [`${key} が無い`, changed(MATERIAL_JSON, [key], REMOVE)],
       ),
       ['order.id', changed(MATERIAL_JSON, ['order', 'id'], 'not-a-uuid')],
@@ -668,6 +681,15 @@ describe('公開の読み出し', () => {
       ['refund_rows amount', changed(MATERIAL_JSON, ['refund_rows', 0, 'amount'], '1000')],
       ['refund_rows created_at', changed(MATERIAL_JSON, ['refund_rows', 0, 'created_at'], null)],
       ['refund_rows refund_id', changed(MATERIAL_JSON, ['refund_rows', 0, 'refund_id'], 'x')],
+      ['discounts null', changed(MATERIAL_JSON, ['discounts'], null)],
+      ['discounts オブジェクト', changed(MATERIAL_JSON, ['discounts'], {})],
+      ['discounts name 数値', changed(MATERIAL_JSON, ['discounts', 0, 'name'], 5)],
+      ['discounts name 空', changed(MATERIAL_JSON, ['discounts', 0, 'name'], '')],
+      ['discounts amount 文字列', changed(MATERIAL_JSON, ['discounts', 0, 'amount'], '1500')],
+      ['discounts amount 0', changed(MATERIAL_JSON, ['discounts', 0, 'amount'], 0)],
+      ['discounts amount 小数', changed(MATERIAL_JSON, ['discounts', 0, 'amount'], 1.5)],
+      ['discounts amount 負', changed(MATERIAL_JSON, ['discounts', 0, 'amount'], -1)],
+      ['discounts 行が文字列', changed(MATERIAL_JSON, ['discounts', 0], 'x')],
     ];
 
     const accepted: string[] = [];
@@ -1127,7 +1149,6 @@ describe('固定文', () => {
       text.amounts.heading,
       text.amounts.subtotal,
       text.amounts.shipping,
-      text.amounts.discount,
       text.amounts.total,
       text.refunds.heading,
       text.refunds.processing,
@@ -1161,7 +1182,7 @@ describe('固定文', () => {
       '支払金額',
       '小計',
       '送料',
-      'クーポン値引き',
+      // グループ H（FREQ-552）で「クーポン値引き」の固定文を外した（割引の行は注文時の内訳から作る）。ほかの文は一字も変えない
       '支払金額',
       'ご返金',
       '手続き中',

@@ -6,6 +6,7 @@ import { ADMIN_ORDER_ERRORS, ADMIN_ORDER_TEXT, ORDER_ITEM_EXPORT_MAX_ROWS, ORDER
 import { adminOrderBlockedReasonsSchema, adminOrderExportRowSchema, adminOrderIntegerSchema as integer, adminOrderTimestampSchema as timestamp, parseOrderItemListResult, toFilterPayload } from './admin-order-query';
 import { itemStateHistoryDbRowSchema, mapItemStateHistoryRows } from './admin-order-history';
 import { AdminDiscountStoreError } from '@/lib/discounts/admin-discount-store';
+import { orderDiscountRowsSchema } from '@/lib/discounts/order-discount-read';
 import { GROUP_H_ERRORS, type GroupHErrorCode } from '@/lib/discounts/admin-discount-types';
 
 const discountAttentionRow = z.object({ orderId: z.string().uuid(), kind: z.enum(['discount_limit_exceeded', 'discount_reconciliation_recovered']), openedAt: z.string().datetime({ offset: true }) }).strict();
@@ -76,6 +77,7 @@ const detailSchema = z.object({
     shipTo: z.object({ fullName: nullableText, postalCode: nullableText, prefecture: nullableText, city: nullableText, address: nullableText, building: nullableText, phone: nullableText }),
   }),
   amounts: z.object({ productNet: money, discount: money, shipping: money, total: money, paidAmount: money.nullable(), refundedAmount: money, refundAttachedToRows: money, refundNotAttached: integer, refundProcessingAmount: money }),
+  discounts: orderDiscountRowsSchema,
   rows: z.array(adminOrderExportRowSchema.omit({ orderId: true, orderCreatedAt: true, customerName: true, customerEmail: true }).extend({ statusRank: integer.min(1).max(12), blockedReasons: adminOrderBlockedReasonsSchema }).refine((row) => ORDER_ITEM_STATUS_ORDER[row.statusRank - 1] === row.status)),
   attention: z.object({
     paymentExceptions: z.array(z.object({ id: z.string().uuid(), reason: z.string(), detectionCount: integer.positive(), firstDetectedAt: timestamp })),
@@ -84,7 +86,10 @@ const detailSchema = z.object({
     discounts: z.array(discountAttentionRow).max(1).optional(),
   }),
   permissions: z.object({ read: z.boolean(), manage: z.boolean(), refund: z.boolean(), return: z.boolean(), allocate: z.boolean(), shippingRead: z.boolean() }),
-});
+}).refine((detail) =>
+  // 内訳の合計は注文の割引額と一致し、現行の割引は行別の配分の合計がその割引の額と一致する（旧注文の合計1行は配分を持たない）
+  detail.discounts.reduce((sum, row) => sum + row.amount, 0) === detail.amounts.discount
+  && detail.discounts.every((row) => row.discountId === null || row.lineAllocations.reduce((sum, line) => sum + line.amount, 0) === row.amount));
 export async function getAdminOrderDetailCore(client: SupabaseClient, actorId: string, orderId: string): Promise<AdminOrderDetailCore> {
   const data = await callRpc(client, 'get_admin_order_detail', { _order_id: orderId, _actor_id: actorId });
   return guarded(() => detailSchema.parse(data));

@@ -1,3 +1,4 @@
+import type { OrderDiscountBreakdown } from '@/lib/discounts/discount-types';
 import type { OrderStatus } from '@/lib/orders/order-payment-types';
 import type { OrderProgress, OrderProgressStep } from '@/lib/orders/order-progress';
 import type { OrderFulfillmentHistoryRow, OrderLineFulfillmentRow } from '@/lib/orders/fulfillment/fulfillment-store';
@@ -37,7 +38,11 @@ export type PublicCustomerOrderReturns = Omit<CustomerOrderReturns, 'returns'> &
 export type CustomerOrderPublicView = {
   id: string; orderNumber: string; orderDate: string; status: CustomerOrderPublicRow['status'];
   progress: OrderProgress & { steps: OrderProgressStep[] | null };
-  subtotalAmount: string; shippingAmount: string; discountAmount: string; totalAmount: string;
+  subtotalAmount: string; shippingAmount: string;
+  /** 割引の合計の文字。画面は discounts の内訳を使う。API の約束として互換のために残す */
+  discountAmount: string; totalAmount: string;
+  /** 注文時に固定した割引の名前と正額だけ（グループ H。コード・割当・割引id・会員情報は持たない）。旧注文は名前「割引」の合計1行、0円なら空 */
+  discounts: OrderDiscountBreakdown[];
   shipments: Array<Omit<CustomerOrderShipment, 'trackingNumber' | 'trackingUrl'>>;
   refunds: Array<Omit<CustomerOrderRefund, 'customerActionDeadline'>>; refundTotal: string | null;
   returnSection: PublicCustomerOrderReturns | null; items: CustomerOrderItem[];
@@ -69,6 +74,8 @@ export type PublicRefundMaterial = Pick<OrderRefundRow, 'refundId' | 'createdAt'
 export type CustomerOrderPublicMaterial = {
   order: CustomerOrderPublicRow; lineRows: OrderLineFulfillmentRow[]; fulfillments: PublicFulfillmentMaterial[];
   deliveryDetail: PublicDeliveryMaterial; deliverySummary: { activeCount: number; deliveredCount: number }; refundRows: PublicRefundMaterial[];
+  /** DB が公開してよい名前と額だけを返す（SQL の旧注文の印は表示の名前に変える前の形） */
+  discounts: OrderDiscountBreakdown[];
 };
 export type CustomerOrderPublicInput = CustomerOrderPublicMaterial & {
   returnSection: PublicCustomerOrderReturns | null; trackingKeyConfigured: boolean;
@@ -86,5 +93,7 @@ export type CustomerOrderDetailInput = {
   order: CustomerOrderPublicRow & CustomerOrderPrivateInput['order']; lineRows: OrderLineFulfillmentRow[];
   fulfillments: OrderFulfillmentHistoryRow[]; deliverySummary: OrderDeliverySummary | undefined;
   deliveryDetail: OrderDeliveryDetail; refundRows: OrderRefundRow[]; returnSection: CustomerOrderReturns | null;
+  /** 持ち主の確認を通した後で読んだ割引の名前と額（コード等は route で落とす） */
+  discounts: OrderDiscountBreakdown[];
   paymentMethod: string | null; trackingKeyConfigured: boolean; signImage: CustomerOrderPublicInput['signImage'];
 };

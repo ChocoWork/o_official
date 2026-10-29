@@ -15,6 +15,7 @@ import { BannerAlert } from '@/components/ui/BannerAlert/BannerAlert';
 import { Button } from '@/components/ui/Button/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge/StatusBadge';
 import { clientFetch } from '@/lib/client-fetch';
+import { LEGACY_ORDER_DISCOUNT_LABEL } from '@/lib/discounts/discount-types';
 import { ALLOCATION_SWAP_TEXT } from '@/lib/inventory/allocation-swap-types';
 import { hasReturnsToShow, returnButtonLabel } from '@/lib/orders/admin-orders/admin-order-actions';
 import { ATTENTION_NETWORK_ERROR_MESSAGE, CANCEL_REQUEST_RESOLVED_NOTICE, CANCEL_REQUEST_RESOLVE_FAILED_MESSAGE, fetchAdminOrderDetail, PAID_CANCEL_NOTICES, readSafeOrderActionError, REFUND_NOTICES, STRIPE_UNAVAILABLE_MESSAGE, type PendingCancelResolve } from '@/lib/orders/admin-orders/admin-order-client';
@@ -32,6 +33,16 @@ import { DELIVERY_ATTENTION_LABELS } from '@/lib/orders/tracking/delivery-messag
 const yen = (value: number | null): string => value === null ? '-' : `¥${value.toLocaleString('ja-JP')}`;
 function dateTime(value: string): string {
   return new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+}
+/** 旧注文は discountId が null の行だけ。名前が印と同じ「discount」の現行の割引を旧注文の見た目にしない */
+function discountRowLabel(discount: AdminOrderDetail['discounts'][number]): string {
+  return discount.discountId === null ? LEGACY_ORDER_DISCOUNT_LABEL : `割引（${discount.name.replace(/\s+/g, ' ').trim()}）`;
+}
+/** 行別の割引額の行の見出し。品名（色 / サイズ）。詳細の行に無ければ「品物」 */
+function allocationLineLabel(row: Pick<AdminOrderDetail['rows'][number], 'itemName' | 'color' | 'size'> | undefined): string {
+  if (!row) return '品物';
+  const variant = [row.color, row.size].filter(Boolean).join(' / ');
+  return variant ? `${row.itemName}（${variant}）` : row.itemName;
 }
 function dictionaryLabel(labels: Record<string, string>, key: string, fallback: string): string {
   return Object.hasOwn(labels, key) ? labels[key] : fallback;
@@ -199,6 +210,7 @@ function OrderDetail({ orderId }: { orderId: string }): React.JSX.Element {
   const back = <Button href="/admin/orders" variant="secondary">{ADMIN_ORDER_TEXT.back}</Button>;
   if (!detail) return <div className="min-w-0 space-y-4">{back}{phase === 'loading' ? <p>{ADMIN_ORDER_TEXT.detailLoading}</p> : <BannerAlert message={phase === 'forbidden' ? ADMIN_ORDER_TEXT.detailForbidden : phase === 'notFound' ? ADMIN_ORDER_TEXT.detailNotFound : ADMIN_ORDER_TEXT.detailFailed} />}{phase === 'error' ? <Button onClick={() => void reload()}>{ADMIN_ORDER_TEXT.reload}</Button> : null}</div>;
   const { order, summary, permissions, amounts, attention } = detail;
+  const discounts = detail.discounts ?? [];
   const number = toOrderNumber(orderId);
   const canRefund = permissions.refund && summary.canRefund;
   const canCancel = summary.cancelKind === 'unpaid' ? permissions.manage : summary.cancelKind === 'paid' && permissions.refund;
@@ -226,6 +238,30 @@ function OrderDetail({ orderId }: { orderId: string }): React.JSX.Element {
         <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)]">{([
           ['商品の正味額', amounts.productNet], ['割引', amounts.discount], ['送料', amounts.shipping], ['合計', amounts.total], ['受け取った額', amounts.paidAmount], ['返金済み（成功）', amounts.refundedAmount], ['返金の手続き中', amounts.refundProcessingAmount], ['送料・調整額の返金', amounts.refundNotAttached],
         ] as const).map(([label, amount]) => <Amount key={label} label={label} value={yen(amount)} />)}</dl>
+        {discounts.length > 0 ? (
+          <section aria-label="割引の内訳" className="min-w-0 space-y-2">
+            <h3>割引の内訳</h3>
+            <ul className="min-w-0 space-y-3">{discounts.map((discount, index) => (
+              <li key={`${discount.discountId ?? 'legacy'}|${index}`} data-testid="order-discount-breakdown" className="min-w-0 space-y-1">
+                <p className="flex flex-wrap justify-between gap-x-3">
+                  <span className="min-w-0 break-words">{discountRowLabel(discount)}{discount.code ? <> <span data-testid="order-discount-code" className="font-mono">{discount.code}</span></> : null}</span>
+                  <span className="tabular-nums">-{yen(discount.amount)}</span>
+                </p>
+                {discount.lineAllocations.length > 0 ? (
+                  <ul aria-label="行別の割引額" className="min-w-0 space-y-1 pl-4">{discount.lineAllocations.map((allocation) => {
+                    const line = detail.rows.find((row) => row.orderItemId === allocation.orderItemId);
+                    return (
+                      <li key={allocation.orderItemId} className="flex flex-wrap justify-between gap-x-3">
+                        <span className="min-w-0 break-words">{allocationLineLabel(line)}</span>
+                        <span className="tabular-nums">-{yen(allocation.amount)}</span>
+                      </li>
+                    );
+                  })}</ul>
+                ) : null}
+              </li>
+            ))}</ul>
+          </section>
+        ) : null}
         <div className="flex flex-wrap gap-2"><StatusBadge>{summary.paymentStatusKey ? PAYMENT_STATUS_LABELS[summary.paymentStatusKey] : summary.paymentStatus}</StatusBadge>{summary.refundPending ? <StatusBadge tone="warning">返金の手続き中</StatusBadge> : null}{summary.refundFailed ? <StatusBadge tone="danger">返金の失敗</StatusBadge> : null}</div>
         <div className="flex flex-wrap gap-3">{canRefund ? <Button variant="secondary" onClick={() => handleRefundOrder(orderId)}>返金</Button> : null}{canCancel ? <Button variant="secondary" onClick={handleCancelOrder}>キャンセル</Button> : null}</div>
         {summary.cancelBlockedUntil ? <p>払込票の期限切れが確定するまで取り消せません（払込期限 {dateTime(summary.cancelBlockedUntil)}）</p> : null}

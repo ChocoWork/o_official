@@ -59,6 +59,8 @@ export type AdminOrderDetailCore = {
     shipTo: { fullName: string | null; postalCode: string | null; prefecture: string | null; city: string | null; address: string | null; building: string | null; phone: string | null };
   };
   amounts: { productNet: number; discount: number; shipping: number; total: number; paidAmount: number | null; refundedAmount: number; refundAttachedToRows: number; refundNotAttached: number; refundProcessingAmount: number };
+  /** 注文時に固定した割引の内訳（コード・行別の配分つき。orders.read で読める）。旧注文は discountId が null の合計1行（名前はSQLの印）、0円は空 */
+  discounts: import('@/lib/discounts/discount-types').AdminOrderDiscountBreakdown[];
   rows: Array<Pick<AdminOrderItemRow, 'orderItemId' | 'itemName' | 'color' | 'size' | 'isExchange' | 'status' | 'quantity' | 'unitPrice' | 'lineAmount' | 'refundAmount' | 'blockedReasons'> & { statusRank: number }>;
   attention: {
     paymentExceptions: Array<{ id: string; reason: string; detectionCount: number; firstDetectedAt: string }>;

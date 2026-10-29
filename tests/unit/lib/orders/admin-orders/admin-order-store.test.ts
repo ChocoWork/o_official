@@ -61,6 +61,7 @@ function detailCore() {
   return {
     order: { id, status: 'paid', createdAt: row.orderCreatedAt, paidAt: null, customerKind: 'guest', customerName: null, customerEmail: null, currency: 'jpy', shipTo: { fullName: null, postalCode: null, prefecture: null, city: null, address: null, building: null, phone: null } },
     amounts: { productNet: 100, discount: 0, shipping: 10, total: 110, paidAmount: 110, refundedAmount: 0, refundAttachedToRows: 0, refundNotAttached: -10, refundProcessingAmount: 0 },
+    discounts: [] as unknown[],
     rows: [{ orderItemId: id, itemName: '品物', color: null, size: null, isExchange: false, status: 'ready', statusRank: 4, quantity: 1, unitPrice: 100, lineAmount: 100, refundAmount: 0, blockedReasons: [] }],
     attention: { paymentExceptions: [], review: null, deliveries: [] }, permissions: { read: true, manage: false, refund: false, return: true, allocate: false, shippingRead: false },
   };
@@ -78,6 +79,51 @@ test('FREQ-549-AC-04: 詳細の割引の要対応は2 kindだけを1件まで通
     rpc.mockResolvedValue({ data: { ...data, attention: { ...data.attention, discounts: [bad] } }, error: null });
     await expect(getAdminOrderDetailCore(client, 'actor', id)).rejects.toBeDefined();
   }
+});
+describe('割引の内訳（FREQ-552）', () => {
+  const DISCOUNT_A = '22222222-2222-4222-8222-222222222222';
+  const DISCOUNT_B = '33333333-3333-4333-8333-333333333333';
+  const ITEM_2 = '55555555-5555-4555-8555-555555555555';
+  const withDiscounts = (discounts: unknown[], discount: number) => {
+    const data = detailCore(); data.discounts = discounts; data.amounts.discount = discount; return data;
+  };
+  const multiple = () => [
+    { name: '秋の割引', amount: 1500, discountId: DISCOUNT_A, code: 'AUTUMN', lineAllocations: [{ orderItemId: id, amount: 1000 }, { orderItemId: ITEM_2, amount: 500 }] },
+    { name: '会員の割引', amount: 500, discountId: DISCOUNT_B, code: null, lineAllocations: [{ orderItemId: id, amount: 500 }] },
+  ];
+
+  test('FREQ-552-AC-03: 管理詳細は複数の割引のコードと行別の配分を持ち、合計は注文の割引額と一致する', async () => {
+    const data = withDiscounts(multiple(), 2000);
+    rpc.mockResolvedValue({ data, error: null });
+    const detail = await getAdminOrderDetailCore(client, 'actor', id);
+    expect(detail.discounts).toEqual(multiple());
+    expect(detail.discounts.reduce((sum, row) => sum + row.amount, 0)).toBe(detail.amounts.discount);
+    expect(detail.discounts.every((row) => row.lineAllocations.reduce((sum, line) => sum + line.amount, 0) === row.amount)).toBe(true);
+  });
+
+  test('FREQ-552-AC-03: 旧注文は配分のない合計1行(SQLの名前の印)、0円は空で通る', async () => {
+    const legacy = [{ name: 'discount', amount: 700, discountId: null, code: null, lineAllocations: [] }];
+    rpc.mockResolvedValue({ data: withDiscounts(legacy, 700), error: null });
+    expect((await getAdminOrderDetailCore(client, 'actor', id)).discounts).toEqual(legacy);
+    rpc.mockResolvedValue({ data: withDiscounts([], 0), error: null });
+    expect((await getAdminOrderDetailCore(client, 'actor', id)).discounts).toEqual([]);
+  });
+
+  test.each([
+    ['内訳の合計が割引額と違う', () => withDiscounts(multiple(), 1999)],
+    ['割引額があるのに内訳が空', () => withDiscounts([], 100)],
+    ['行別の配分の合計が割引の額と違う', () => withDiscounts([{ ...multiple()[0], lineAllocations: [{ orderItemId: id, amount: 1 }] }], 1500)],
+    ['discountsが無い', () => { const data = detailCore() as Record<string, unknown>; delete data.discounts; return data; }],
+    ['行に余計なキー', () => withDiscounts([{ ...multiple()[1], userId: 'u1' }], 500)],
+    ['同じ割引idが2行', () => withDiscounts([multiple()[1], multiple()[1]], 1000)],
+    ['旧注文の行と現行の行が混ざる', () => withDiscounts([...multiple(), { name: 'discount', amount: 1, discountId: null, code: null, lineAllocations: [] }], 2001)],
+  ])('FREQ-552-AC-03: 壊れた材料(%s)は500で、中身を出さない', async (_label, build) => {
+    rpc.mockResolvedValue({ data: build(), error: null });
+    const failure = await getAdminOrderDetailCore(client, 'actor', id).catch((e: unknown) => e);
+    expect(failure).toBeInstanceOf(AdminOrderError);
+    expect(failure).toMatchObject({ status: 500, message: '注文の情報を読み込めませんでした。' });
+    expect(JSON.stringify(failure)).not.toMatch(/AUTUMN|u1|2222/);
+  });
 });
 test.each(['quantity', 'lineAmount', 'status', 'statusRank', 'permission', 'amount', 'order', 'shipTo', 'attention'])('FREQ-540-AC-13: 詳細の不正な欄%sを500にする', async (field) => {
   const data = detailCore();

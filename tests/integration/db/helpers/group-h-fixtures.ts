@@ -57,7 +57,8 @@ export async function seedHRedemption(client: PgClient, discountId: string, inpu
 }): Promise<{ id: string; orderId: string }> {
   const order = await seedHOrderUnits(client, { legacy: true, buyerUserId: input.userId, email: input.email,
     status: input.state === 'confirmed' ? 'paid' : 'pending', paidAt: input.state === 'confirmed' ? new Date().toISOString() : null,
-    lines: [{ itemPrice: 1000, quantity: 1, discounts: [], unitAmounts: [] }] });
+    // The redemption below records 100 yen, so the order carries the same discount (H6 checks the two agree).
+    lines: [{ itemPrice: 1000, quantity: 1, discounts: [{ discountId, amount: 100 }], unitAmounts: [] }] });
   const email = input.email?.trim().toLowerCase() ?? `h-${randomUUID()}@example.invalid`;
   const identity = input.userId ? `member:${input.userId}` : `guest:${email}`;
   const row = (await client.query(`insert into public.discount_redemptions

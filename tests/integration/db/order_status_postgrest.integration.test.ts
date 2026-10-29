@@ -74,7 +74,7 @@ describeLocalDb('integration: 注文状況の新RPCを実際のPostgRESTに通�
     expect(verified[0].verify_until === after[0].verify_until).toBe(true);
     expect(verified[0].failed_attempts).toBe(2);
     const material = await rpc('get_order_status_public_material', { _order_id: order.orderId });
-    expect(Object.keys(material).sort()).toEqual(['order', 'line_rows', 'fulfillments', 'delivery_detail', 'delivery_summary', 'refund_rows'].sort());
+    expect(Object.keys(material).sort()).toEqual(['order', 'line_rows', 'fulfillments', 'delivery_detail', 'delivery_summary', 'refund_rows', 'discounts'].sort());
     expect(material.order.id).toBe(order.orderId);
     expect(material.order.order_items).toHaveLength(1);
     expect(material.line_rows).toHaveLength(1);

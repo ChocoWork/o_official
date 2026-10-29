@@ -20,6 +20,7 @@ function view(): CustomerOrderPublicView {
       items: [{ orderItemId: 'item', name: 'リネン', color: '白', size: 'M', quantity: 1, lineKind: 'exchange' }] }],
     refunds: [{ id: 'refund', date: '2026/10/22', amount: '¥100', status: 'processing' }, { id: 'refund2', date: '2026/10/22', amount: '¥100', status: 'completed' }], refundTotal: '¥200',
     subtotalAmount: '¥300', shippingAmount: '¥50', discountAmount: '-¥10', totalAmount: '¥340', returnSection: null,
+    discounts: [{ name: '秋の割引', amount: 10 }],
   };
 }
 
@@ -30,12 +31,46 @@ test('公開欄には進み具合と商品と金額を出し個人情報の文�
   for (const text of ['注文番号 ORD-1234ABCD', 'ご注文日 2026/10/22 09:00', '一部発送済み', '数量: 3', '返金済み 1点', '白 / M']) expect(screen.getByText(text)).toBeVisible();
   expect(document.body.textContent?.includes('PRIVATE_SENTINEL')).toBe(false);
   for (const name of ['発送準備中の商品', '受注生産中の商品', 'ご注文商品', '支払金額', 'ご返金']) expect(screen.getByRole('heading', { name })).toBeVisible();
-  for (const text of ['小計', '送料', 'クーポン値引き', '手続き中', '完了', 'ご返金の合計', '発送日', '配送業者', 'ヤマト運輸', '配送に遅れや問題が出ています。詳しくは配送業者のページをご確認ください', '最後の更新 2026/10/22 08:30']) expect(screen.getByText(text)).toBeVisible();
+  for (const text of ['小計', '送料', '割引（秋の割引）', '手続き中', '完了', 'ご返金の合計', '発送日', '配送業者', 'ヤマト運輸', '配送に遅れや問題が出ています。詳しくは配送業者のページをご確認ください', '最後の更新 2026/10/22 08:30']) expect(screen.getByText(text)).toBeVisible();
   expect(screen.getByRole('list', { name: '配送ステータス' }).querySelector('[aria-current="step"]')).toHaveTextContent('発送準備中');
   expect(screen.getByRole('region', { name: '配送情報（1回目）' })).toBeVisible();
   expect(screen.getByRole('heading', { name: '配送の移り変わり' })).toBeVisible();
   expect(screen.queryByRole('link', { name: '配送状況を確認する' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: '再度購入' })).not.toBeInTheDocument();
+});
+
+describe('割引の内訳（FREQ-552）', () => {
+  const amountsSection = () => within(screen.getByRole('heading', { name: '支払金額' }).closest('section') as HTMLElement);
+
+  test('FREQ-552-AC-01: 注文時の名前と額を1つずつ「割引（名前）」で出し、「クーポン値引き」は出さず、順は小計→送料→割引→支払金額', () => {
+    const data = view(); data.discounts = [{ name: '秋の割引', amount: 1500 }, { name: '会員の割引', amount: 500 }];
+    render(<OrderStatusPublic view={data} />);
+    const labels = amountsSection().getAllByRole('term').map((term) => term.textContent);
+    expect(labels).toEqual(['小計', '送料', '割引（秋の割引）', '割引（会員の割引）', '支払金額']);
+    const values = amountsSection().getAllByRole('definition').map((definition) => definition.textContent);
+    expect(values.slice(2, 4)).toEqual(['-￥1,500', '-￥500']);
+    expect(screen.queryByText('クーポン値引き')).not.toBeInTheDocument();
+  });
+
+  test('FREQ-552-AC-01: 旧注文は合計だけの「割引」1行、0円の割引は行ごと出さない', () => {
+    const legacy = view(); legacy.discounts = [{ name: '割引', amount: 1000 }];
+    const { unmount } = render(<OrderStatusPublic view={legacy} />);
+    expect(amountsSection().getAllByRole('term').map((term) => term.textContent)).toEqual(['小計', '送料', '割引', '支払金額']);
+    expect(amountsSection().getByText('-￥1,000')).toBeVisible();
+    unmount();
+    const none = view(); none.discounts = [];
+    render(<OrderStatusPublic view={none} />);
+    expect(amountsSection().getAllByRole('term').map((term) => term.textContent)).toEqual(['小計', '送料', '支払金額']);
+    expect(document.body.textContent).not.toMatch(/割引/);
+  });
+
+  test('FREQ-552-AC-02: 名前はHTMLとして実行せず文字で出し、コードや割当の文字は画面に無い', () => {
+    const data = { ...view(), discounts: [{ name: '<img src=x onerror=alert(1)>', amount: 100, code: 'SECRETCODE', lineAllocations: [{ orderItemId: 'i', amount: 100 }] }] } as unknown as CustomerOrderPublicView;
+    const { container } = render(<OrderStatusPublic view={data} />);
+    expect(screen.getByText('割引（<img src=x onerror=alert(1)>）')).toBeVisible();
+    expect(container.querySelector('img[src="x"]')).toBeNull();
+    expect(document.body.textContent?.includes('SECRETCODE')).toBe(false);
+  });
 });
 
 test.each(Object.entries(DELIVERY_STATUS_LABELS))('配送%sのラベルを保つ', (status, label) => {

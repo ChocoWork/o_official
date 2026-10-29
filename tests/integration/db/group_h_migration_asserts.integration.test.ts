@@ -344,7 +344,14 @@ describeLocalDb('H1 semantic final assertions: controller only', (db) => {
 
 const h4Path = path.join(directory, '20261029130300_group_h_discounts_acceptance.sql');
 const h4 = fs.existsSync(h4Path) ? fs.readFileSync(h4Path, 'utf8') : '';
-const h4Assert = h4.split('-- H4_FINAL_ASSERT_BEGIN\n')[1]?.split('-- H4_FINAL_ASSERT_END')[0] ?? '';
+// H6 は get_admin_order_detail の本文を置き換えた（割引の内訳）。H4 の末尾 assert が持つ本文の指紋は H4 当時のものなので、
+// この試験は H4 の指紋だけを「今の本文の指紋」へ置き換えて流す。今の本文の指紋そのものは H6 の末尾 assert が固定する。
+const H4_ADMIN_DETAIL_MD5 = '87d26678c21c1d51f9beb469f681c398';
+// The pinned fingerprint comes from the H6 file (not from the live body), so tampering with the body is still detected.
+const h6ForH4 = fs.existsSync(path.join(directory, '20261029130500_group_h_discounts_views.sql'))
+  ? fs.readFileSync(path.join(directory, '20261029130500_group_h_discounts_views.sql'), 'utf8') : '';
+const CURRENT_ADMIN_DETAIL_MD5_SQL = `'${/\('private\.get_admin_order_detail\(uuid,uuid\)'[^\n]*'([0-9a-f]{32})'\)/.exec(h6ForH4)?.[1] ?? 'missing'}'`;
+const h4Assert = (h4.split('-- H4_FINAL_ASSERT_BEGIN\n')[1]?.split('-- H4_FINAL_ASSERT_END')[0] ?? '').replace(`'${H4_ADMIN_DETAIL_MD5}'`, CURRENT_ADMIN_DETAIL_MD5_SQL);
 /** 名前の関数ひとつの定義（CREATE [OR REPLACE] FUNCTION から本文の閉じ $$; まで） */
 const h4Function = (name: string): string => new RegExp(`CREATE (?:OR REPLACE )?FUNCTION private\\.${name}\\([\\s\\S]*?\\n\\$\\$;`).exec(h4)?.[0] ?? '';
 
@@ -451,6 +458,135 @@ describeLocalDb('H4 semantic final assertions (controller only)', db => {
     ['alter function public.list_admin_discount_attention(integer,uuid) security definer', 'h4_public_acl'],
     ['create function public.group_h_settle_redemptions(uuid,boolean) returns jsonb language sql as $$select null::jsonb$$', 'h4_public_acl'],
   ])('FREQ-549-AC-01: H4改ざん %s はP0001とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual({ code: 'P0001', message: 'GROUP_H_MIGRATION_ASSERTION_FAILED', detail });
+    expect(await attempt()).toBeNull();
+  });
+});
+
+const h6Path = path.join(directory, '20261029130500_group_h_discounts_views.sql');
+const h6 = fs.existsSync(h6Path) ? fs.readFileSync(h6Path, 'utf8') : '';
+const h6Assert = h6.split('-- H6_FINAL_ASSERT_BEGIN\n')[1]?.split('-- H6_FINAL_ASSERT_END')[0] ?? '';
+const h6Baseline = h6.match(/CREATE TEMP TABLE h6_function_baseline[\s\S]*?\]::oid\[\]\);/)?.[0] ?? '';
+/** 名前の関数ひとつの定義（CREATE [OR REPLACE] FUNCTION <schema>.<name>( から本文の閉じ $$; まで）。先頭は完全な定義の1つだけ */
+const h6Definition = (source: string, header: string): string => {
+  const start = source.indexOf(header);
+  return start < 0 ? '' : source.slice(start, source.indexOf('\n$$;', start) + '\n$$;'.length);
+};
+
+describe('H6 source contract (controller only)', () => {
+  test('FREQ-552-AC-02: H6はASCII・BOMなしLF・単一取引と固定の末尾assertを持ち既存の行を書き換えない', () => {
+    expect(h6).not.toBe('');
+    expect(h6).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(h6.startsWith('BEGIN;\n')).toBe(true);
+    expect(h6.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(h6.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(h6.trimEnd()).toMatch(/-- H6_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    for (const detail of ['h6_order_breakdown', 'h6_customer_projection', 'h6_admin_projection', 'h6_public_acl']) expect(h6Assert).toContain(`'${detail}'`);
+    expect(h6Baseline).not.toBe('');
+    expect(h6Assert).toContain("ERRCODE='P0001'");
+    expect(h6).not.toMatch(/DROP FUNCTION/i);
+    expect(h6).not.toMatch(/(?:proacl|relacl)\s*::\s*text/i);
+    expect(h6).not.toMatch(/(?:GRANT|REVOKE)[^;]*USAGE\s+ON\s+SCHEMA\s+private/i);
+    const outside = h6.replace(/CREATE(?: OR REPLACE)? FUNCTION[\s\S]*?\n\$\$;/g, '').replace(/DO \$h6_final\$[\s\S]*?\$h6_final\$;/, '');
+    expect([...outside.matchAll(/\b(INSERT INTO|UPDATE|DELETE FROM|TRUNCATE)\s+(?:public|private)\./g)]).toEqual([]);
+  });
+
+  test('FREQ-552-AC-02: 公開の状況材料はG3の本文に discounts の1か所だけを足し、名前と額以外の列を読まない', () => {
+    const g3 = fs.readFileSync(path.join(directory, '20261025070821_group_g3_shipping_reads.sql'), 'utf8');
+    const header = 'CREATE OR REPLACE FUNCTION public.get_order_status_public_material(_order_id uuid)';
+    const before = h6Definition(g3, header);
+    const after = h6Definition(h6, header);
+    expect(before).not.toBe('');
+    const tail = "    ), '[]'::jsonb)\n  );\nEND;\n$$;";
+    expect(before.endsWith(tail)).toBe(true);
+    const added = ",\n    'discounts', COALESCE((\n      SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('name', x.value->>'name', 'amount', (x.value->>'amount')::integer)\n"
+      + "        ORDER BY x.ordinality)\n      FROM pg_catalog.jsonb_array_elements(private.order_discount_breakdown(_order_id)->'rows') WITH ORDINALITY AS x(value, ordinality)\n    ), '[]'::jsonb)\n  );\nEND;\n$$;";
+    expect(after).toBe(before.slice(0, before.length - tail.length) + "    ), '[]'::jsonb)" + added);
+    expect(after).not.toMatch(/code_snapshot|discount_redemptions|order_line_discount_allocations|lineAllocations|discountId|identity_key|normalized_email/);
+  });
+
+  test('FREQ-552-AC-03: 管理詳細はH4の本文に discounts の1行だけを足し、権限は orders.read のまま', () => {
+    const h4Text = fs.readFileSync(path.join(directory, '20261029130300_group_h_discounts_acceptance.sql'), 'utf8');
+    const header = 'CREATE OR REPLACE FUNCTION private.get_admin_order_detail(_order_id uuid, _actor_id uuid) RETURNS jsonb';
+    const before = h6Definition(h4Text, header);
+    const after = h6Definition(h6, header);
+    expect(before).not.toBe('');
+    const added = "    'discounts',COALESCE(private.order_discount_breakdown(_order_id)->'rows','[]'::jsonb),\n";
+    const anchor = "    'rows',COALESCE((SELECT pg_catalog.jsonb_agg(";
+    expect(before.split(anchor)).toHaveLength(2);
+    expect(after).toBe(before.replace(anchor, () => added + anchor));
+    expect(after).toContain("private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.orders.read'])");
+    expect(after).not.toMatch(/admin\.discounts\./);
+  });
+
+  test('FREQ-552-AC-02: 内部の内訳関数は誰にも EXECUTE を与えず、完全な内訳の入口は service_role だけの委譲にする', () => {
+    expect(h6).toContain('REVOKE ALL ON FUNCTION private.order_discount_breakdown(uuid) FROM PUBLIC, anon, authenticated, service_role;');
+    expect(h6).not.toMatch(/GRANT EXECUTE ON FUNCTION private\.order_discount_breakdown/);
+    expect(h6).toContain('GRANT EXECUTE ON FUNCTION private.get_order_discount_breakdown(uuid) TO service_role;');
+    expect(h6).toContain('GRANT EXECUTE ON FUNCTION public.get_order_discount_breakdown(uuid) TO service_role;');
+    expect(h6).not.toMatch(/GRANT EXECUTE ON FUNCTION[^;]*\bTO\b[^;]*\b(?:PUBLIC|anon|authenticated)\b/);
+    expect(h6).toMatch(/CREATE FUNCTION public\.get_order_discount_breakdown\(_order_id uuid\) RETURNS jsonb\nLANGUAGE sql STABLE SECURITY INVOKER SET search_path = ''/);
+    expect(h6).not.toMatch(/CREATE(?: OR REPLACE)? FUNCTION public\.order_discount_breakdown/);
+  });
+});
+
+describeLocalDb('H6 semantic final assertions (controller only; fill body MD5s first)', db => {
+  beforeEach(async () => { await db().query('begin'); await db().query('select pg_advisory_xact_lock(190521,1)'); });
+  afterEach(async () => { await db().query('rollback'); });
+  async function attempt(change = '', assertionSql = h6Assert): Promise<AssertFailure | null> {
+    await db().query('savepoint h6_assert');
+    try {
+      await db().query('set local role postgres');
+      await db().query(h6Baseline); if (change) await db().query(change); await db().query(assertionSql); return null;
+    } catch (caught) {
+      const e = caught as AssertFailure;
+      return { code: e.code, message: e.message === 'GROUP_H_MIGRATION_ASSERTION_FAILED' ? e.message : 'H_UNEXPECTED_DB_ERROR', detail: e.detail, ...(e.hint ? { hint: e.hint } : {}) };
+    } finally { await db().query('rollback to savepoint h6_assert'); await db().query('release savepoint h6_assert'); }
+  }
+  const replaceBody = (signature: string, from: string, to: string) =>
+    `do $x$ begin execute replace(pg_get_functiondef('${signature}'::regprocedure), '${from}', '${to}'); end $x$`;
+  const MATERIAL = 'public.get_order_status_public_material(uuid)';
+  const ADMIN = 'private.get_admin_order_detail(uuid,uuid)';
+  const BREAKDOWN = 'private.order_discount_breakdown(uuid)';
+
+  test('FREQ-552-AC-02: H6末尾assertは無改変で通る（controllerの本文MD5補完後）', async () => { expect(h6Assert).not.toBe(''); expect(await attempt()).toBeNull(); });
+
+  test.each(['h6_order_breakdown', 'h6_customer_projection', 'h6_admin_projection', 'h6_public_acl'])(
+    'FREQ-552-AC-02: %sの実行時例外も現在のDETAILとSQLSTATEだけで包む', async detail => {
+      const marker = `v_detail:='${detail}';`;
+      expect(h6Assert).toContain(marker);
+      expect(await attempt('', h6Assert.replace(marker, `${marker} PERFORM 1/0;`)))
+        .toEqual({ code: 'P0001', message: 'GROUP_H_MIGRATION_ASSERTION_FAILED', detail, hint: 'sqlstate=22012' });
+    });
+
+  test.each([
+    // 旧注文の合計1行(SQLの名前の印)の欠落・改名・別の入れ替えは、内訳の本文の指紋が拒む
+    [replaceBody(BREAKDOWN, "''discount''", "''discount_x''"), 'h6_order_breakdown'],
+    [replaceBody(BREAKDOWN, 'AND a.amount > 0', ''), 'h6_order_breakdown'],
+    [replaceBody(BREAKDOWN, "RETURN pg_catalog.jsonb_build_object(''rows'', ''[]''::jsonb, ''legacy'', true);", 'RETURN NULL;'), 'h6_order_breakdown'],
+    ['alter function private.order_discount_breakdown(uuid) volatile', 'h6_order_breakdown'],
+    ['alter function private.get_order_discount_breakdown(uuid) security invoker', 'h6_order_breakdown'],
+    // 公開投影へのコード・配分の追加
+    [replaceBody(MATERIAL, "''name'', x.value->>''name''", "''name'', x.value->>''name'', ''code'', x.value->>''code''"), 'h6_customer_projection'],
+    [replaceBody(MATERIAL, "''amount'', (x.value->>''amount'')::integer", "''amount'', (x.value->>''amount'')::integer, ''lineAllocations'', x.value->''lineAllocations''"), 'h6_customer_projection'],
+    ['alter function public.get_order_status_public_material(uuid) volatile', 'h6_customer_projection'],
+    // 管理詳細の内訳の欠落
+    [replaceBody(ADMIN, "''discounts'',COALESCE(private.order_discount_breakdown(_order_id)->''rows'',''[]''::jsonb),", ''), 'h6_admin_projection'],
+    [replaceBody(ADMIN, "ARRAY[''admin.orders.read'']", "ARRAY[''admin.discounts.read'']"), 'h6_admin_projection'],
+    ['alter function private.get_admin_order_detail(uuid,uuid) volatile', 'h6_admin_projection'],
+    // 入口のACL
+    ['grant execute on function private.order_discount_breakdown(uuid) to service_role', 'h6_public_acl'],
+    ['grant execute on function public.get_order_discount_breakdown(uuid) to anon', 'h6_public_acl'],
+    ['grant execute on function public.get_order_discount_breakdown(uuid) to authenticated', 'h6_public_acl'],
+    ['grant execute on function private.get_order_discount_breakdown(uuid) to authenticated', 'h6_public_acl'],
+    ['revoke execute on function public.get_order_discount_breakdown(uuid) from service_role', 'h6_public_acl'],
+    ['grant execute on function public.get_order_status_public_material(uuid) to anon', 'h6_public_acl'],
+    ['alter function public.get_order_discount_breakdown(uuid) security definer', 'h6_public_acl'],
+    ['create function public.order_discount_breakdown(uuid) returns jsonb language sql as $$select null::jsonb$$', 'h6_public_acl'],
+    // An extra overload of the public entry (e.g. a (text) version opened to anon) is refused too.
+    ['create function public.get_order_discount_breakdown(text) returns jsonb language sql as $$select null::jsonb$$', 'h6_public_acl'],
+    ['create function private.get_order_status_public_material(uuid) returns jsonb language sql as $$select null::jsonb$$', 'h6_public_acl'],
+  ])('FREQ-552-AC-02: H6改ざん %s はP0001とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual({ code: 'P0001', message: 'GROUP_H_MIGRATION_ASSERTION_FAILED', detail });
     expect(await attempt()).toBeNull();
   });

@@ -63,7 +63,7 @@ function material(overrides: Partial<OrderEmailMaterial['order']> = {}): OrderEm
     items: [{ item_name: 'コート', color: 'BLACK', size: 'M', quantity: 1, line_total: 10000, fulfillment_type: 'backorder' }],
     fulfillment: null,
     refund: null,
-    orderReturn: null, request: null,
+    orderReturn: null, request: null, discounts: [],
     orderStatusUrl: STATUS_URL,
   };
 }
@@ -149,6 +149,74 @@ describe('composeOrderEmail', () => {
       kind: 'paid', variant: 'order_confirmed', paymentExpiredSent: false,
     });
     expect(email?.text).toContain('割引: -￥1,000');
+  });
+
+  describe('割引の内訳（FREQ-552）', () => {
+    const confirmed = { kind: 'paid', variant: 'order_confirmed', paymentExpiredSent: false } as const;
+    const awaiting = { kind: 'awaiting_payment', variant: null, paymentExpiredSent: false } as const;
+    const withDiscounts = (discounts: OrderEmailMaterial['discounts'], discountAmount: number): OrderEmailMaterial => ({
+      ...material({ discount_amount: discountAmount, total_amount: 10000 - discountAmount }), discounts,
+    });
+
+    it('FREQ-552-AC-01: 確認メールは小計→割引ごとの行→送料→合計の順に「割引（名前）: -￥額」を出す', () => {
+      const email = composeOrderEmail(withDiscounts([{ name: '秋の割引', amount: 1500 }, { name: '会員の割引', amount: 500 }], 2000), confirmed);
+
+      expect(email?.text).toContain(['小計: ￥10,000', '割引（秋の割引）: -￥1,500', '割引（会員の割引）: -￥500', '送料: 無料', '合計: ￥8,000'].join('\n'));
+      const lines = (email?.text ?? '').split('\n');
+      const at = (prefix: string) => lines.findIndex((line) => line.startsWith(prefix));
+      expect(at('小計')).toBeLessThan(at('割引（秋の割引）'));
+      expect(at('割引（秋の割引）')).toBeLessThan(at('割引（会員の割引）'));
+      expect(at('割引（会員の割引）')).toBeLessThan(at('送料'));
+      expect(at('送料')).toBeLessThan(at('合計'));
+      expect(lines).toContain('割引（秋の割引）: -￥1,500');
+      expect(lines).toContain('割引（会員の割引）: -￥500');
+      // 内訳があるときは合計だけの旧行を重ねて出さない
+      expect(lines.filter((line) => /^割引/.test(line))).toHaveLength(2);
+      expect(lines).not.toContain('割引: -￥2,000');
+    });
+
+    it('FREQ-552-AC-01: 入金待ちの確認メールにも同じ内訳を出す', () => {
+      const email = composeOrderEmail({ ...withDiscounts([{ name: '秋の割引', amount: 1000 }], 1000), order: { ...material().order, status: 'pending', discount_amount: 1000, total_amount: 9000 } }, awaiting);
+      expect(email?.text).toContain('割引（秋の割引）: -￥1,000');
+    });
+
+    it('FREQ-552-AC-01: 0円の割引は出さず、全部0円なら割引の行そのものを出さない', () => {
+      const email = composeOrderEmail(withDiscounts([{ name: '無料の割引', amount: 0 }, { name: '秋の割引', amount: 700 }], 700), confirmed);
+      expect(email?.text).toContain('割引（秋の割引）: -￥700');
+      expect(email?.text).not.toContain('無料の割引');
+      const none = composeOrderEmail(withDiscounts([{ name: '無料の割引', amount: 0 }], 0), confirmed);
+      expect((none?.text ?? '').split('\n').some((line) => line.startsWith('割引'))).toBe(false);
+    });
+
+    it('FREQ-552-AC-01: 旧注文は合計だけの「割引: -￥額」1行(内訳が名前「割引」)', () => {
+      const email = composeOrderEmail(withDiscounts([{ name: '割引', amount: 1000 }], 1000), confirmed);
+      expect((email?.text ?? '').split('\n').filter((line) => line.startsWith('割引'))).toEqual(['割引: -￥1,000']);
+    });
+
+    it('FREQ-552-AC-02: 名前の改行や記号は行を崩さず、コードや割当は本文に出ない', () => {
+      const hostile = { name: '秋\n小計: ￥0 <b>x</b>', amount: 300, discountId: 'd1', code: 'SECRETCODE', lineAllocations: [{ orderItemId: 'i1', amount: 300 }] };
+      const email = composeOrderEmail(withDiscounts([hostile as never], 300), confirmed);
+      const lines = (email?.text ?? '').split('\n');
+      expect(lines).toContain('割引（秋 小計: ￥0 <b>x</b>）: -￥300');
+      expect(lines.filter((line) => line.startsWith('小計'))).toEqual(['小計: ￥10,000']);
+      expect(email?.text).not.toMatch(/SECRETCODE|d1|i1/);
+    });
+
+    it('FREQ-552-AC-01: 注文時の名前の写しをそのまま使い、同じ材料なら再生成しても同じ文面になる', () => {
+      const discounts = [{ name: '注文時の名前', amount: 1000 }];
+      expect(composeOrderEmail(withDiscounts(discounts, 1000), confirmed)).toEqual(composeOrderEmail(withDiscounts(discounts, 1000), confirmed));
+      expect(composeOrderEmail(withDiscounts(discounts, 1000), confirmed)?.text).toContain('割引（注文時の名前）: -￥1,000');
+    });
+
+    it('FREQ-552-AC-02: 発送・期限切れなど割引を書かないメールの本文は変わらない', () => {
+      const base = { ...withDiscounts([], 1000), fulfillment: shipment() };
+      for (const request of [SHIPPED, { kind: 'payment_expired', variant: null, paymentExpiredSent: true } as unknown as ComposeRequest]) {
+        const without = composeOrderEmail(base, request);
+        const withName = composeOrderEmail({ ...base, discounts: [{ name: '秋の割引', amount: 1000 }] }, request);
+        expect(withName).toEqual(without);
+        expect(withName?.text).not.toContain('秋の割引');
+      }
+    });
   });
 
   it('入金時に在庫を確保し直せなかった注文には、お届けの目安を出さない', () => {
@@ -934,7 +1002,7 @@ describe('loadOrderEmailMaterial', () => {
     order: unknown; orderError?: unknown; items?: unknown; itemsError?: unknown;
     fulfillment?: unknown; fulfillmentError?: unknown; lines?: unknown; linesError?: unknown;
     refund?: unknown; refundError?: unknown; refundLines?: unknown; refundLinesError?: unknown;
-    unshipped?: unknown; unshippedError?: unknown;
+    unshipped?: unknown; unshippedError?: unknown; discounts?: unknown; discountsError?: unknown;
   }) {
     const orderSelect = jest.fn(() => ({ eq: () => ({ maybeSingle: async () => ({ data: results.order, error: results.orderError ?? null }) }) }));
     const itemFilters: Array<[string, unknown]> = [];
@@ -980,7 +1048,9 @@ describe('loadOrderEmailMaterial', () => {
         return { data: results.refundLines ?? null, error: results.refundLinesError ?? null };
       },
     }));
-    const rpc = jest.fn(async () => ({ data: results.unshipped ?? [], error: results.unshippedError ?? null }));
+    const rpc = jest.fn(async (name: string) => name === 'get_order_discount_breakdown'
+      ? { data: results.discounts ?? null, error: results.discountsError ?? null }
+      : { data: results.unshipped ?? [], error: results.unshippedError ?? null });
     const from = jest.fn((table: string) => {
       if (table === 'orders') {
         return { select: orderSelect };
@@ -1019,7 +1089,7 @@ describe('loadOrderEmailMaterial', () => {
     const db = store({ order, items });
 
     await expect(loadOrderEmailMaterial(db.client, ORDER_ID)).resolves.toEqual({
-      order, items, fulfillment: null, refund: null, orderReturn: null, request: null,
+      order, items, fulfillment: null, refund: null, orderReturn: null, request: null, discounts: [],
     });
     const columns = (db.orderSelect.mock.calls[0] as unknown as [string])[0].split(',').map((column) => column.trim());
     expect(columns).toEqual([
@@ -1037,6 +1107,53 @@ describe('loadOrderEmailMaterial', () => {
     expect(db.from).not.toHaveBeenCalledWith('order_return_lines');
     expect(db.from).not.toHaveBeenCalledWith('order_return_receipts');
     expect(db.rpc).not.toHaveBeenCalled();
+  });
+
+  describe('割引の内訳の読み込み（FREQ-552）', () => {
+    const DISCOUNT_ID = '22222222-2222-4222-8222-222222222222';
+    const ITEM = '44444444-4444-4444-8444-444444444444';
+    const discounted = { ...material().order, discount_amount: 2000, total_amount: 8000 };
+    const breakdown = { rows: [
+      { name: '秋の割引', amount: 1500, discountId: DISCOUNT_ID, code: 'AUTUMN', lineAllocations: [{ orderItemId: ITEM, amount: 1500 }] },
+      { name: '会員の割引', amount: 500, discountId: '33333333-3333-4333-8333-333333333333', code: null, lineAllocations: [] },
+    ], legacy: false };
+
+    it('FREQ-552-AC-01: 割引のある注文確認の材料は名前と額だけを持ち、コード・割当・割引idを持ち込まない', async () => {
+      const db = store({ order: discounted, items: material().items, discounts: breakdown });
+
+      const loaded = await loadOrderEmailMaterial(db.client, ORDER_ID);
+
+      expect(loaded?.discounts).toEqual([{ name: '秋の割引', amount: 1500 }, { name: '会員の割引', amount: 500 }]);
+      expect(JSON.stringify(loaded)).not.toMatch(/AUTUMN|lineAllocations|discountId|33333333/);
+      expect(db.rpc).toHaveBeenCalledTimes(1);
+      expect(db.rpc).toHaveBeenCalledWith('get_order_discount_breakdown', { _order_id: ORDER_ID });
+    });
+
+    it('FREQ-552-AC-01: 旧注文は合計だけの1行(名前は「割引」)、割引0円の注文はDBを呼ばず空', async () => {
+      const legacy = { rows: [{ name: 'discount', amount: 2000, discountId: null, code: null, lineAllocations: [] }], legacy: true };
+      expect((await loadOrderEmailMaterial(store({ order: discounted, items: material().items, discounts: legacy }).client, ORDER_ID))?.discounts)
+        .toEqual([{ name: '割引', amount: 2000 }]);
+      const zero = store({ order: material().order, items: material().items });
+      expect((await loadOrderEmailMaterial(zero.client, ORDER_ID))?.discounts).toEqual([]);
+      expect(zero.rpc).not.toHaveBeenCalled();
+    });
+
+    it('FREQ-552-AC-01: 発送・返金のメールは割引を読まない（種類と送信回数を増やさない）', async () => {
+      const db = store({ order: discounted, items: material().items, fulfillment: FULFILLMENT_ROW, lines: FULFILLMENT_LINE_ROWS });
+      const loaded = await loadOrderEmailMaterial(db.client, ORDER_ID, FULFILLMENT_ID);
+      expect(loaded?.discounts).toEqual([]);
+      expect(db.rpc).not.toHaveBeenCalledWith('get_order_discount_breakdown', expect.anything());
+    });
+
+    it('FREQ-552-AC-03: 割引の内訳が読めない・壊れている時は一時的な失敗として投げ、DBの文を出さない', async () => {
+      for (const results of [{ discountsError: { message: 'leaked-secret' } }, { discounts: { rows: [{ name: '', amount: 1 }], legacy: false } }, { discounts: null }]) {
+        const failure = await loadOrderEmailMaterial(store({ order: discounted, items: material().items, ...results }).client, ORDER_ID)
+          .catch((caught: unknown) => caught);
+        expect(failure).toBeInstanceOf(OrderEmailMaterialError);
+        expect(failure).toMatchObject({ table: 'get_order_discount_breakdown' });
+        expect((failure as Error).message).not.toContain('leaked-secret');
+      }
+    });
   });
 
   it('発送の番号があれば、その発送の配送業者・伝票番号・商品を読む（注文の番号でも絞る）', async () => {
@@ -1059,7 +1176,7 @@ describe('loadOrderEmailMaterial', () => {
         ],
       },
       refund: null,
-      orderReturn: null, request: null,
+      orderReturn: null, request: null, discounts: [],
     });
     expect(db.fulfillmentSelect).toHaveBeenCalledWith('number, shipping_carrier, tracking_number, completes_order, cancelled_at');
     expect(db.fulfillmentFilters).toEqual([['id', FULFILLMENT_ID], ['order_id', ORDER_ID]]);
@@ -1160,7 +1277,7 @@ describe('loadOrderEmailMaterial', () => {
         ],
         stillShipping: true,
       },
-      orderReturn: null, request: null,
+      orderReturn: null, request: null, discounts: [],
     });
     expect(db.refundSelect).toHaveBeenCalledWith(
       'status, amount, shipping_amount, payment_method_type, customer_action_expires_at, cancel_reason',

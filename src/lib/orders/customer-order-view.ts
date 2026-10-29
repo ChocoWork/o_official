@@ -1,3 +1,4 @@
+import { toCustomerOrderDiscounts } from '@/lib/discounts/discount-types';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import { buildOrderProgressSteps, deriveOrderProgress } from '@/lib/orders/order-progress';
 import { SHIPPING_CARRIERS, isShippingCarrierId } from '@/lib/orders/shipping-carriers';
@@ -112,6 +113,8 @@ export async function buildCustomerOrderPublicView(input: CustomerOrderPublicInp
     subtotalAmount: formatCurrency(order.subtotal_amount, order.currency), shippingAmount: order.shipping_amount > 0 ? formatCurrency(order.shipping_amount, order.currency) : '無料',
     discountAmount: order.discount_amount > 0 ? `-${formatCurrency(order.discount_amount, order.currency)}` : formatCurrency(0, order.currency),
     totalAmount: formatCurrency(order.total_amount, order.currency),
+    // 名前と正額だけ。旧注文のSQLの印は「割引」に変え、0円と余計な項目（コード・割当など）はここで落とす
+    discounts: toCustomerOrderDiscounts(input.discounts),
     shipments: toShipments(input), refunds, refundTotal, returnSection: toPublicReturns(input.returnSection),
     items: await Promise.all((order.order_items ?? []).map(async (item) => {
       const line = lineByItemId.get(item.id);
@@ -153,7 +156,7 @@ export async function buildCustomerOrderDetailView(input: CustomerOrderDetailInp
   return {
     id: publicView.id, orderNumber: publicView.orderNumber, orderDate: publicView.orderDate, status: publicView.status,
     progress: publicView.progress, subtotalAmount: publicView.subtotalAmount, shippingAmount: publicView.shippingAmount,
-    discountAmount: publicView.discountAmount, totalAmount: publicView.totalAmount,
+    discountAmount: publicView.discountAmount, totalAmount: publicView.totalAmount, discounts: publicView.discounts,
     paymentMethod: privateView.paymentMethod, shippingFullName: privateView.shipping.fullName,
     shippingEmail: privateView.contactEmail, shippingPhone: privateView.shipping.phone,
     shippingAddress: [input.order.shipping_postal_code ? `〒${input.order.shipping_postal_code}` : '',
