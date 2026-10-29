@@ -2226,3 +2226,24 @@ service_role の権限は移行が明示する（後の REVOKE で消えない�
 ### 会員の表の RESTRICTIVE の方針（M2）
 
 `profiles`・`orders`・`order_items` に各 1 本、名前は `require app bound live session`。`AS RESTRICTIVE FOR ALL TO authenticated`・`USING` と `WITH CHECK` とも `(SELECT private.is_app_bound_live_session())`。既存の PERMISSIVE な方針（`auth.uid() = user_id` など）に重なり、結び付いた生きた session でない authenticated は 0 行・更新 0 行になる。**anon には付けない**（ゲストの注文は `app.session_id` で読み、その道は変えない）。`carts`・`wishlists`・`checkout_drafts`・`contact_*`・`refresh_token_history`・`postal_code_cache` は既に全拒否、`user_roles` は `has_permission('admin.users.read')` を通る。**会員の行を返す新しい表を足したら、同じ方針を足す。**
+
+
+## 割引の記録基盤（H1 / FREQ-542・543）
+
+2026-10-29追加。[H1移行](../../../supabase/migrations/20261029130000_group_h_discounts_foundation.sql)は実装済みで、手元の DB reset・結合試験は controller が通過を確かめた（2026-10-29、単体＋DB 結合 21,184 通過・0 失敗）。本番は未適用。既存のER集計はその時点の履歴とし、以下の7表を追加する。
+
+| 表 | 主キーと関連 | 主な守り |
+| --- | --- | --- |
+| discounts | UUID id、created_by/updated_by→auth.users | 名称1〜100、種類/方法/値/対象/最低条件/対象者、％1〜99、円1以上かつ最低額>値、期間、guest/自動/広告/repeatの組合せ、要求キー一意、版1以上 |
+| discount_items | (discount_id,item_id)、割引→discounts、服→items | product/excludeまたはrepeat,set/includeだけ。セットは遅延検査で2〜10種類 |
+| discount_codes | UUID id、discount_id→discounts、assigned_user_id→auth.users | C照合の大文字ASCIIコード1〜64が全体で一意。assignedはguest不可。共有と単発の束を混ぜず、束の接尾辞は紛らわしい文字を除いた4〜8字 |
+| discount_assignments | UUID id、(discount_id,code_id)→discount_codes、user_id→auth.users | (code_id,user_id)一意。共有assignedだけ。退会でNULLになった割当の行を他人へ再使用しない |
+| discount_redemptions | UUID id、discount_id→discounts、(discount_id,code_id)→discount_codes、order_id→orders、user_id/attention_resolved_by→auth.users | (order_id,discount_id)一意、reserved/confirmed/cancelled、額0以上、写し/照合回復/要対応。本人のconfirmed全体への一意制約は置かない |
+| order_line_discount_allocations | (order_item_id,discount_id)、orders/order_items/discountsを参照 | 額0以上、明細のorder_id一致、INSERT後UPDATE/DELETE/TRUNCATE禁止 |
+| order_line_unit_amounts | (order_item_id,unit_index)、orders/order_itemsを参照 | index/額0以上、数量ぶんの0始まり連続index、支払額の和=行合計−割引の和を遅延検査。INSERT後UPDATE/DELETE/TRUNCATE禁止 |
+
+業務FKは全てON DELETE RESTRICT。auth.usersへのFKだけNULL可・ON DELETE SET NULLで、退会後も割引・使用・支払額を保持する。割当先NULLのassigned codeを誰でも使えるcodeへ変えない。全7表はRLS有効、PUBLIC/anon/authenticated/service_roleに表・列の直接権限を与えない。
+
+checkout_draftsのdiscount_result/discount_facts/discount_engine_version/discount_snapshot_hashは全NULLまたは全存在。既存行へ補完しない。結果はversion=1のobjectでallocations/unitAmountsがarray、factsはobject、engine_version=1、hashは小文字SHA256 hex64。行ごとの厳密な金額はTask 6で扱う。
+
+private.order_line_discounts(uuid)は保存allocationが1件でもある注文の通常行をLEFT JOINし、対象外は0を返す。保存がない注文は旧累積丸めの本文を保ち、交換行は常に0。controller裁定により従来のSQL/STABLE/SECURITY INVOKERを保ち、search_pathは空、PUBLIC/anon/authenticated/service_roleのEXECUTEは無い。呼出元のDEFINER本体を通し、新public入口は作らない。privateの不変/関連/行総和/設定検査helperとH保存の有無を読むgroup_h_order_has_units(uuid)はpostgres所有・DEFINER・空search_pathで、service_roleも直接実行不可。order_itemsの遅延検査はorder_id/quantity/line_total/line_kindのUPDATEだけで、WHENは旧/新の注文にHの着別金額がある時だけイベントを作る。設定検査も使用列だけのUPDATEに絞り、会員FKのNULL化では起動しない。H1のGET/SET目録は32件へ広げ、既存public INVOKER入口・固定2権限・版・要求キー・監査を保つ。注文の行配分/着別金額のorder_idを含め、FK読取を支える明示索引は15本。

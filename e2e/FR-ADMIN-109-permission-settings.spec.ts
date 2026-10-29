@@ -5,10 +5,11 @@
  * 画面 → 窓口の差し替え（bridge）→ 手元の DB の関数、の道で確かめる（e2e/permission-settings-test-utils.ts）。
  * 本物の窓口（GET /api/admin/permissions・POST /api/admin/role-permissions）の認可・MFA・CSRF・回数の制限・操作の監査は通らない。
  * それらは Task 2 の単体（permissions-route・role-permissions-route）、DB の権限・トリガー・別接続の競合は Task 1 の DB 結合が確かめる。
- * 表と版は手元の DB の共有の状態なので、場面ごとに lock を取り、終わりに 30 コードの中の付与と版を元へ戻す。
+ * 表と版は手元の DB の共有の状態なので、場面ごとに lock を取り、終わりに共有目録の中の付与と版を元へ戻す。
  */
 import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
 import type { RolePermissionChange } from '@/lib/auth/role-permission-types';
+import { ROLE_PERMISSION_CATALOG } from '@/lib/auth/role-permission-catalog';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { dialogHeaderClose } from './admin-test-utils';
 import { UUID_PATTERN, viewports } from './order-fulfillment-test-utils';
@@ -192,7 +193,7 @@ for (const viewport of viewports) {
     test('分野ごとに30行・店長とサポーターの2列で出て、最初は店長30・サポーター8・一般利用者0。固定2行はスイッチが無く、新しい役割の入力も無い。画面ははみ出さず、表の中だけ横に動く', async ({ page }) => {
       // FREQ-519-AC-01・AC-02（画面）・AC-06
       await withPermissionScenario(async (client) => {
-        // DB の最初の値（30 コードの中）
+        // DB の最初の値（共有目録の中）
         expect((await readRolePermissionState(client, 'admin')).permissionCodes).toEqual(sorted(MANAGED_PERMISSION_CODES));
         expect((await readRolePermissionState(client, 'supporter')).permissionCodes).toEqual(sorted(SUPPORTER_INITIAL_CODES));
         expect((await readRolePermissionState(client, 'user')).permissionCodes).toEqual([]);
@@ -221,15 +222,16 @@ for (const viewport of viewports) {
           await expect(toggle(page, 'サポーター', label)).toHaveCount(0);
         }
 
-        // スイッチは 28 行 × 2 役割。店長は全部オン、サポーターは決まった 8 つだけオン
-        await expect(page.getByRole('switch')).toHaveCount(56);
+        // 固定以外の目録行 × 2 役割。店長は全部オン、サポーターは決まった 8 つだけオン
+        const editableCount = ROLE_PERMISSION_CATALOG.filter((permission) => !permission.fixed).length;
+        await expect(page.getByRole('switch')).toHaveCount(editableCount * 2);
         const admin = page.getByRole('switch', { name: /^店長：/ });
         const supporter = page.getByRole('switch', { name: /^サポーター：/ });
-        await expect(admin).toHaveCount(28);
-        await expect(supporter).toHaveCount(28);
+        await expect(admin).toHaveCount(editableCount);
+        await expect(supporter).toHaveCount(editableCount);
         const checkedNames = (switches: Locator) => switches.evaluateAll((items) =>
           items.filter((item) => item.getAttribute('aria-checked') === 'true').map((item) => item.getAttribute('aria-label')));
-        expect(await checkedNames(admin)).toHaveLength(28);
+        expect(await checkedNames(admin)).toHaveLength(editableCount);
         expect(await checkedNames(supporter)).toEqual(SUPPORTER_INITIAL_SWITCHES);
         // 読み上げの名前は「役割：操作」。スイッチの横に操作の文字を出さない（操作は行の見出しだけ）
         await expect(toggle(page, 'サポーター', SHIP_READ)).toBeVisible();

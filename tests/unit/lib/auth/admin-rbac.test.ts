@@ -524,8 +524,10 @@ describe('authorizeAdminPermission', () => {
 });
 
 describe('legacyPermissionMap', () => {
-  it('初期値は店長30・サポーター指定8・一般0だけ', () => {
-    expect(legacyPermissionMap.admin.size).toBe(30);
+  it('FREQ-543-AC-01: 初期値は店長32・サポーター指定8・一般0だけ', () => {
+    expect(legacyPermissionMap.admin.size).toBe(32);
+    expect(legacyPermissionMap.admin.has('admin.discounts.read')).toBe(true);
+    expect(legacyPermissionMap.admin.has('admin.discounts.manage')).toBe(true);
     expect([...legacyPermissionMap.supporter].sort()).toEqual([
       'admin.contact.manage', 'admin.contact.read', 'admin.orders.manage', 'admin.orders.read',
       'admin.orders.return', 'admin.shipping.manage', 'admin.shipping.read', 'admin.users.read',

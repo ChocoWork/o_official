@@ -1,4 +1,53 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { FIXED_PERMISSION_CODES, ROLE_PERMISSION_CATALOG, getMissingPermissionDependencies } from '@/lib/auth/role-permission-catalog';
+
+const h1Sql = fs.readFileSync(path.join(process.cwd(), 'supabase/migrations/20261029130000_group_h_discounts_foundation.sql'), 'utf8');
+
+test('FREQ-542-AC-01: H1の旧表triggerは関係列とH保存注文だけを検査し読取はINVOKERを保つ', () => {
+  expect(/h1_order_items_sum AFTER UPDATE OF order_id,quantity,line_total,line_kind ON public\.order_items[\s\S]*?WHEN \(private\.group_h_order_has_units\(OLD\.order_id\) OR private\.group_h_order_has_units\(NEW\.order_id\)\)/.test(h1Sql)).toBe(true);
+  const reader = h1Sql.match(/CREATE OR REPLACE FUNCTION private\.order_line_discounts[\s\S]*?\n\$\$;/)?.[0];
+  expect(reader).toContain('SECURITY INVOKER');
+  expect(h1Sql).toContain("pg_catalog.md5(pg_catalog.replace(p.prosrc,E'\\r',''))");
+  expect(h1Sql).toContain('IF NOT FOUND THEN RETURN NULL; END IF;');
+});
+
+test('FREQ-542-AC-01: H1は注文と会員と服のFK読取を支える索引を持つ', () => {
+  for (const [table, column] of [['order_line_discount_allocations', 'order_id'], ['order_line_unit_amounts', 'order_id'],
+    ['discounts', 'created_by'], ['discounts', 'updated_by'], ['discount_items', 'item_id'],
+    ['discount_codes', 'assigned_user_id'], ['discount_assignments', 'user_id'], ['discount_redemptions', 'user_id'],
+    ['discount_redemptions', 'attention_resolved_by'], ['discount_assignments', 'discount_id'], ['order_line_discount_allocations', 'discount_id']]) {
+    expect(new RegExp(`CREATE INDEX \\w+ ON public\\.${table}\\(${column}\\);`).test(h1Sql)).toBe(true);
+  }
+});
+
+test('FREQ-542-AC-01: H1の明示CHECK名は列CHECKの自動名と衝突しない', () => {
+  const collisions: string[] = [];
+  const tables = [...h1Sql.matchAll(/CREATE (?:TEMP )?TABLE ((?:public\.)?\w+)\s*\(([\s\S]*?)\)(?: ON COMMIT DROP)?;/g)];
+  expect(tables.length).toBeGreaterThanOrEqual(15);
+  for (const table of tables) {
+    const name = table[1];
+    const definition = table[2];
+    const implicit = [...definition.matchAll(/^\s*(\w+)\s+(?:text|integer|bigint|smallint|uuid|boolean|jsonb|timestamptz)\b[^\n]*\bCHECK\s*\(/gm)]
+      .map((column) => `${name.replace(/^public\./, '')}_${column[1]}_check`);
+    const explicit = [...definition.matchAll(/\bCONSTRAINT (\w+) CHECK\b/g)].map((constraint) => constraint[1]);
+    const seen = new Set<string>();
+    for (const constraint of [...implicit, ...explicit]) {
+      if (seen.has(constraint)) collisions.push(`${name}.${constraint}`);
+      seen.add(constraint);
+    }
+  }
+  expect(collisions).toEqual([]);
+});
+
+test('FREQ-542-AC-01: H1末尾assertの一時表FKは永続表を参照しない', () => {
+  const assertion = h1Sql.split('-- H1_FINAL_ASSERT_BEGIN')[1];
+  const temporaryTables = [...assertion.matchAll(/CREATE TEMP TABLE \w+ \(([\s\S]*?)\) ON COMMIT DROP;/g)];
+  expect(temporaryTables.length).toBeGreaterThanOrEqual(8);
+  const permanentReferences = temporaryTables.flatMap((table) =>
+    [...table[1].matchAll(/REFERENCES ((?:public|auth)\.\w+)/g)].map((reference) => reference[1]));
+  expect(permanentReferences).toEqual([]);
+});
 
 // Task 1 の表示表。実装側の配列から期待値を生成しない。
 const ROWS = [
@@ -32,26 +81,28 @@ const ROWS = [
   ['発送', '票の下書き/品物選択・発送・伝票訂正・手動配達済み・発送取消', 'admin.shipping.manage'],
   ['発送', '確定後の出荷日訂正', 'admin.shipping.correct_date'],
   ['権限管理', '権限設定の閲覧・保存', 'admin.permissions.manage'],
+  ['割引', '割引の閲覧', 'admin.discounts.read'],
+  ['割引', '割引の管理', 'admin.discounts.manage'],
 ] as const;
 
-test('全30行の表示順・分野・ラベルと固定2件・準備中0件を返す', () => {
-  expect(ROLE_PERMISSION_CATALOG).toHaveLength(30);
+test('FREQ-543-AC-01: 全32行の表示順・分野・ラベルと固定2件・準備中0件を返す', () => {
+  expect(ROLE_PERMISSION_CATALOG).toHaveLength(32);
   expect(ROLE_PERMISSION_CATALOG.map(({ area, label, code }) => [area, label, code])).toEqual(ROWS);
   expect(FIXED_PERMISSION_CODES).toEqual(['admin.users.manage', 'admin.permissions.manage']);
   expect(ROLE_PERMISSION_CATALOG.filter((p) => p.fixed).map((p) => p.code)).toEqual(['admin.users.manage', 'admin.permissions.manage']);
 });
 
 // G-4 の割り当て入替も公開済み。準備中は無い。
-test('FREQ-540-AC-06: upcoming（準備中）は0件で全30コードが公開済み', () => {
+test('FREQ-540-AC-06: upcoming（準備中）は0件で全32コードが公開済み', () => {
   expect(ROLE_PERMISSION_CATALOG.filter((p) => p.upcoming).map((p) => p.code)).toEqual([]);
-  expect(ROLE_PERMISSION_CATALOG.filter((p) => !p.upcoming)).toHaveLength(30);
+  expect(ROLE_PERMISSION_CATALOG.filter((p) => !p.upcoming)).toHaveLength(32);
   for (const code of ['admin.stock.read', 'admin.stock.manage', 'admin.purchase_orders.read', 'admin.purchase_orders.manage',
     'admin.receiving.manage', 'admin.shipping.read', 'admin.shipping.manage', 'admin.shipping.correct_date', 'admin.permissions.manage']) {
     expect(ROLE_PERMISSION_CATALOG.find((p) => p.code === code)?.upcoming).toBe(false);
   }
 });
 
-test('依存のある7行だけに指定順の必要コードを表示する', () => {
+test('FREQ-543-AC-01: 依存のある8行だけに指定順の必要コードを表示する', () => {
   expect(Object.fromEntries(ROLE_PERMISSION_CATALOG.filter((p) => p.requires.length).map((p) => [p.code, p.requires]))).toEqual({
     'admin.stock.manage': ['admin.stock.read'],
     'admin.orders.allocate': ['admin.orders.read'],
@@ -60,6 +111,7 @@ test('依存のある7行だけに指定順の必要コードを表示する', (
     'admin.shipping.read': ['admin.orders.read'],
     'admin.shipping.manage': ['admin.shipping.read', 'admin.orders.manage', 'admin.orders.read'],
     'admin.shipping.correct_date': ['admin.shipping.read', 'admin.orders.read'],
+    'admin.discounts.manage': ['admin.discounts.read'],
   });
 });
 

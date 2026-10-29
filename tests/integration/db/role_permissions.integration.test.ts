@@ -6,7 +6,7 @@ import { createLiveAppSession, jwtClaims } from './helpers/app-session';
 import { describeLocalDb } from './helpers/local-db';
 
 // Controller only: disposable local DB; no integration execution by the implementer.
-const catalog = [
+const g0Catalog = [
   'admin.users.read', 'admin.users.manage', 'admin.items.read', 'admin.items.manage',
   'admin.news.read', 'admin.news.manage', 'admin.looks.read', 'admin.looks.manage',
   'admin.stockists.read', 'admin.stockists.manage', 'admin.orders.read', 'admin.orders.manage',
@@ -16,6 +16,7 @@ const catalog = [
   'admin.purchase_orders.manage', 'admin.receiving.manage', 'admin.shipping.read',
   'admin.shipping.manage', 'admin.shipping.correct_date', 'admin.permissions.manage',
 ].sort();
+const catalog = [...g0Catalog, 'admin.discounts.read', 'admin.discounts.manage'].sort();
 const supporterCodes = [
   'admin.users.read', 'admin.orders.read', 'admin.orders.manage', 'admin.contact.read',
   'admin.contact.manage', 'admin.orders.return', 'admin.shipping.read', 'admin.shipping.manage',
@@ -141,7 +142,7 @@ describeLocalDb('integration: G0 role permissions', (db) => {
       when 'supporter' then 'Support' else 'User' end where code in ('admin','supporter','user')`);
     const identities = (await db().query(`select 'role' as kind,id,code,name from public.roles
       where code in ('admin','supporter','user') union all
-      select 'permission',id,code,name from public.permissions where code=any($1::text[]) order by kind,code`, [catalog])).rows;
+      select 'permission',id,code,name from public.permissions where code=any($1::text[]) order by kind,code`, [g0Catalog])).rows;
     await db().query("insert into public.permissions(code,name) values ('test.g0.preserved','preserved')");
     await db().query("insert into public.roles(code,name) values ('test_g0_other','other')");
     for (const role of ['admin', 'supporter', 'user']) await grant(role, 'test.g0.preserved');
@@ -154,20 +155,20 @@ describeLocalDb('integration: G0 role permissions', (db) => {
     // Production-like gaps: admin lacks non-fixed G0 grants, supporter lacks the shipping pair.
     await db().query(`delete from public.role_permissions rp using public.roles r, public.permissions p
       where rp.role_id=r.id and rp.permission_id=p.id and p.code=any($1::text[]) and not (p.code=any($2::text[]))
-        and (r.code='admin' or (r.code='supporter' and p.code like 'admin.shipping.%'))`, [catalog, fixed]);
+        and (r.code='admin' or (r.code='supporter' and p.code like 'admin.shipping.%'))`, [g0Catalog, fixed]);
     await db().query(seed);
     await db().query(seed); // seed reconciliation remains idempotent, with the fixed guard enabled.
     const grants = (await db().query(`select r.code,array_agg(p.code order by p.code) as codes
       from public.roles r join public.role_permissions rp on rp.role_id=r.id
       join public.permissions p on p.id=rp.permission_id where p.code=any($1::text[])
-      group by r.code order by r.code`, [catalog])).rows;
+      group by r.code order by r.code`, [g0Catalog])).rows;
     expect(grants).toEqual([
-      { code: 'admin', codes: catalog }, { code: 'supporter', codes: supporterCodes },
+      { code: 'admin', codes: g0Catalog }, { code: 'supporter', codes: supporterCodes },
       { code: 'test_g0_other', codes: ['admin.items.read'] },
     ]);
     expect((await db().query(`select 'role' as kind,id,code,name from public.roles
       where code in ('admin','supporter','user') union all
-      select 'permission',id,code,name from public.permissions where code=any($1::text[]) order by kind,code`, [catalog])).rows).toEqual(identities);
+      select 'permission',id,code,name from public.permissions where code=any($1::text[]) order by kind,code`, [g0Catalog])).rows).toEqual(identities);
     expect((await db().query(`select r.code from public.role_permissions rp join public.roles r on r.id=rp.role_id
       join public.permissions p on p.id=rp.permission_id where p.code='test.g0.preserved' order by r.code`)).rows)
       .toEqual([{ code: 'admin' }, { code: 'supporter' }, { code: 'user' }]);

@@ -33,7 +33,9 @@ export type PermissionCode =
   | 'admin.shipping.read'
   | 'admin.shipping.manage'
   | 'admin.shipping.correct_date'
-  | 'admin.permissions.manage';
+  | 'admin.permissions.manage'
+  | 'admin.discounts.read'
+  | 'admin.discounts.manage';
 
 type AuthzSuccess = {
   ok: true;
@@ -100,6 +102,8 @@ export const legacyPermissionMap: Record<AppRole, Set<PermissionCode>> = {
     'admin.shipping.manage',
     'admin.shipping.correct_date',
     'admin.permissions.manage',
+    'admin.discounts.read',
+    'admin.discounts.manage',
   ]),
   supporter: new Set<PermissionCode>([
     'admin.orders.read',

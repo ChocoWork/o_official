@@ -9,7 +9,7 @@
  *
  * 権限の表（role_permissions）と版（roles.permissions_version）は手元の DB の共有の状態なので、
  * withPermissionScenario が advisory lock（190520, 0）で別のプロセス・別のファイルの試験と直列にし、
- * 終わりに 30 コードの中の付与と版を差分で元へ戻す。固定2行と 30 コードの外には触れない。
+ * 終わりに共有目録の中の付与と版を差分で元へ戻す。固定2行と目録の外には触れない。
  * 追記の表（role_permission_events・private.role_permission_requests）は消さずに request_key で絞る（残りは db reset で消える）。
  * 実メール・外部のサービスは呼ばない。
  */
@@ -95,7 +95,7 @@ async function snapshotOf(client: PgClient): Promise<Snapshot> {
   return { grants: grants.rows, versions: versions.rows };
 }
 
-/** 30 コードの中の付与と版だけを、差分で元へ戻す。店長の固定2行は消さない（30 コードの外とほかの役割も触れない） */
+/** 共有目録の中の付与と版だけを、差分で元へ戻す。店長の固定2行は消さない（目録の外とほかの役割も触れない） */
 async function restoreSnapshot(client: PgClient, snapshot: Snapshot): Promise<void> {
   await client.query('begin');
   try {
@@ -135,7 +135,7 @@ async function restoreSnapshot(client: PgClient, snapshot: Snapshot): Promise<vo
 
 /**
  * 権限の設定の場面を、手元の DB の接続1本で行う。
- * 1. session lock（190520, 0）を取ってから、30 コードの中の付与と版を控える
+ * 1. session lock（190520, 0）を取ってから、共有目録の中の付与と版を控える
  * 2. run を流す（bridge と試験の DB の読み取りは、この接続を使う）
  * 3. finally で控えへ差分で戻し、さらに内側の finally で lock を外す。接続は withLocalDb が閉じる
  */
@@ -272,7 +272,7 @@ export async function mockUserSession(page: Page): Promise<void> {
 
 export type RolePermissionDbState = { version: string; permissionCodes: PermissionCode[] };
 
-/** その役割の、30 コードの中の付与（JS の sort の順にそろえる。DB の照合順に頼らない）と版 */
+/** その役割の、共有目録の中の付与（JS の sort の順にそろえる。DB の照合順に頼らない）と版 */
 export async function readRolePermissionState(client: PgClient, role: PermissionRole | 'user'): Promise<RolePermissionDbState> {
   const result = await client.query(
     `select r.permissions_version::text as version,

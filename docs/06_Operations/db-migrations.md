@@ -1102,3 +1102,18 @@ Task 10 Fix round 1（2026-10-26、レビューの指摘対応）: 変えた移�
 | 当てた文の照合 | `20261025053324`: 文 71・`md5(array_to_string(statements, E'\n'))` `ca4164428adabd1d850063a308adadfb`。`20261025070821`: 文 60・`cc393b1065d9579c9bcdf615f16edffe`。`20261025100130`: 文 50・`b9866f41de2c69d3bbea5ae355771c43`。`20261025134538`: 文 31・`e25bc6b68302a3fac4515a58b73684d9`。本番と手元の `db reset` の履歴で一致 |
 | 適用後の形の照合（本番と手元で同じ値） | G-3 の6表と `order_fulfillments`・`order_fulfillment_lines` の8表（RLS・強制 RLS・3役割の表の権限）、列の型と NOT NULL、制約75（遅延の有無と定義）、public・private の方針186、トリガー158（有効・関数・遅延）、public 198・private 197 の関数（定義〔CR を除く〕・`SECURITY DEFINER`・設定・3役割の EXECUTE。手元にだけある別セッションの2関数は除く）の指紋が全部一致。置き換えた9つの定義の MD5 も手元の最新と一致。書き手の一覧75本。`role_permissions` は店長30・サポーター8 のまま |
 | 適用後の件数 | G-3 の6表はすべて0行。データを変える文は無い。本番で試験の票は作っていない |
+
+
+## グループ H Task 1: 割引の記録基盤（手元で確認済み・本番未適用）
+
+controller の実測（2026-10-29、手元の Supabase を reset）: H の結合試験 group_h_foundation・group_h_migration_asserts と role_permissions・order_return_receipts・order_items_variant が 140/140。単体＋DB 結合の全件 21,184 通過・0 失敗、G-0 版からの清掃 12/12。本番への適用は H の最後にオーナーへ尋ねる。
+
+確認日: 2026-10-29。[20261029130000_group_h_discounts_foundation.sql](../../supabase/migrations/20261029130000_group_h_discounts_foundation.sql)（65,616 bytes、MD5 `44865ba525e083311c977b1b270e9f6a`、UTF-8/BOMなし/LF/ASCII。fix round 2後）。本番未適用。controllerのfix round 1後のfresh reset・全体実行は21,167件通過と既存baselineに対する新規3失敗を報告した。fix round 2でUIの件数、行別読取のINVOKER、無関係な明細更新の遅延イベントを修正し、最終SQLでのcontroller再実行待ち。実装者はDB試験・reset・Supabase CLIを実行していない。採番はcontroller指定で、Hの予約範囲20261029130000〜20261029135959に入り、波5の20261029120100より後に並ぶ。
+
+7表とcheckout_draftsの4欄を追加し、既存draftへ補完しない。private.order_line_discounts(uuid)は保存allocationがある注文ではその合計、ない注文では従来の累積丸めを返す。交換行は0。controller裁定でSTABLE/INVOKER・空search_pathを保ち、service_roleにも直接EXECUTEを与えない。表の直接権限はservice_roleからも外す。内部helperはpostgres所有・DEFINER・空search_pathで、service_roleにもEXECUTEを与えない。既存order_itemsへのH triggerは関係4列とH着別金額のある注文だけに絞る。H設定のtriggerは会員FKのSET NULLでは起動しない。明示索引は15本。
+
+SQL/TSの目録は32件。H1の既存表DMLはpermissionsの2行登録、adminだけへの2件付与、adminのpermissions_version+1だけ。移行前の一時baselineにH以外のpermission行・全付与・全役割の版を控え、末尾assertで差分を検査する。既にHの登録/付与がある場合は停止し、削除や再投入で合わせない。
+
+末尾assertは `GROUP_H_MIGRATION_ASSERTION_FAILED / P0001`。DETAILは `h1_tables`・`h1_draft_columns`・`h1_constraints`・`h1_rls_acl`・`h1_immutable`・`h1_line_reader`・`h1_permission_catalogs`・`h1_permission_seed`・`h1_existing_dml_allowlist`。独立した一時表で期待するCHECK/FK/列をPostgresに解析させ、実カタログとの比較で確認する。期待FKの参照先も一時表を使い、schema/表/列名へ正規化して比較する。triggerの対象列とWHEN/参照helperも検査し、関数本文のMD5はCRを除いて計算する。
+
+実装者の静的確認はTypeScript/対象ESLint15ファイルがexit 0、RolePermissionsSectionを含む指定Jestが10 suites・313 tests通過（fix round 2後）。修正後のDB・末尾assert・会員削除・既存items読取/RLS回帰とFR-ADMIN-109 E2Eはcontrollerが実測する。Graphify更新も共通制約どおりcontrollerが最終コード変更後・commit前に1回行う。[実装レポート](../../.superpowers/sdd/2026-10-29-group-h-promotions/task-1-report.md)に対象ファイルと未検証境界を記す。

@@ -14,6 +14,31 @@ const matrix = () => ({ permissionCodes: codes, roles: [{ code: 'admin', version
 const change: RolePermissionChange = { roleCode: 'supporter', permissionCodes: ['admin.shipping.manage'], expectedVersion: '9007199254740993', requestKey: '10000000-0000-4000-8000-000000000001' };
 beforeEach(() => rpc.mockReset());
 
+test('FREQ-543-AC-01: 32件とchangedCount=32を受け入れる', async () => {
+  expect(codes).toHaveLength(32);
+  expect(codes).toEqual(expect.arrayContaining(['admin.discounts.read', 'admin.discounts.manage']));
+  rpc.mockResolvedValue({ data: { role: { ...role, permissionCodes: codes }, changedCount: 32 }, error: null });
+  expect((await setRolePermissions(client, 'actor', change)).changedCount).toBe(32);
+});
+
+test('FREQ-543-AC-01: 別々の33コードを認識する目録でも配列上限で保存戻り値を拒む', async () => {
+  const extended = [...codes, 'admin.cap_probe'];
+  expect(new Set(extended).size).toBe(33);
+  // A 33-code catalog isolates the defensive array cap from membership and duplicate checks.
+  jest.doMock('@/lib/auth/role-permission-catalog', () => ({ ROLE_PERMISSION_CATALOG: [
+    ...ROLE_PERMISSION_CATALOG, { ...ROLE_PERMISSION_CATALOG[0], code: 'admin.cap_probe' },
+  ] }));
+  try {
+    await jest.isolateModulesAsync(async () => {
+      const store = await import('@/lib/auth/role-permission-store');
+      rpc.mockResolvedValue({ data: { role: { ...role, permissionCodes: ['admin.cap_probe'] }, changedCount: 1 }, error: null });
+      expect((await store.setRolePermissions(client, 'actor', change)).role.permissionCodes).toEqual(['admin.cap_probe']);
+      rpc.mockResolvedValue({ data: { role: { ...role, permissionCodes: extended }, changedCount: 32 }, error: null });
+      await expect(store.setRolePermissions(client, 'actor', change)).rejects.toMatchObject({ code: null });
+    });
+  } finally { jest.dontMock('@/lib/auth/role-permission-catalog'); }
+});
+
 test('GETは認可actorだけをRPCへ渡し、表示定義と役割名を付け、bigint精度を保つ', async () => {
   rpc.mockResolvedValue({ data: matrix(), error: null });
   const result = await getPermissionsMatrix(client, 'actor');
@@ -85,7 +110,7 @@ test.each([
   { role: { ...role, permissionCodes: ['admin.users.read', 'admin.users.read'] }, changedCount: 1 },
   { role: { ...role, code: 'admin' }, changedCount: 1 },
   { role: { ...role, version: '9223372036854775808' }, changedCount: 1 },
-  { role, changedCount: -1 }, { role, changedCount: 0.5 }, { role, changedCount: 31 },
+  { role, changedCount: -1 }, { role, changedCount: 0.5 }, { role, changedCount: 33 },
 ])('不正な保存戻り値%jは内部失敗', async (data) => {
   rpc.mockResolvedValue({ data, error: null });
   await expect(setRolePermissions(client, 'actor', change)).rejects.toMatchObject({ code: null });

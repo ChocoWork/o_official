@@ -13,6 +13,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 import { requireCsrfOrDeny } from '@/lib/csrfMiddleware';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
+import { ROLE_PERMISSION_CATALOG } from '@/lib/auth/role-permission-catalog';
 
 const rpc = jest.fn();
 const CHANGE = { roleCode: 'supporter', permissionCodes: ['admin.shipping.manage'], expectedVersion: '0', requestKey: '10000000-0000-4000-8000-000000000001' };
@@ -30,6 +31,44 @@ beforeEach(() => {
   rpc.mockResolvedValue({ data: SAVED, error: null });
 });
 afterEach(() => jest.restoreAllMocks());
+
+test('FREQ-543-AC-01: 32コードは保存できる', async () => {
+  const codes = ROLE_PERMISSION_CATALOG.map((p) => p.code);
+  expect(codes).toHaveLength(32);
+  const role = { code: 'admin', version: '1', permissionCodes: codes };
+  rpc.mockResolvedValue({ data: { role, changedCount: 32 }, error: null });
+  const response = await POST(request({ ...CHANGE, roleCode: 'admin', permissionCodes: codes }));
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ data: { role: { ...role, label: '店長' }, changedCount: 32 } });
+});
+
+test('FREQ-543-AC-01: 別々の33コードを認識する目録でも配列上限でRPC前に拒否する', async () => {
+  const extended = [...ROLE_PERMISSION_CATALOG.map((p) => p.code), 'admin.cap_probe'];
+  expect(new Set(extended).size).toBe(33);
+  jest.doMock('@/lib/auth/role-permission-catalog', () => ({ ROLE_PERMISSION_CATALOG: [
+    ...ROLE_PERMISSION_CATALOG, { ...ROLE_PERMISSION_CATALOG[0], code: 'admin.cap_probe' },
+  ] }));
+  try {
+    await jest.isolateModulesAsync(async () => {
+      const auth = await import('@/lib/auth/admin-rbac');
+      const csrf = await import('@/lib/csrfMiddleware');
+      const database = await import('@/lib/supabase/server');
+      const audit = await import('@/lib/audit');
+      (auth.authorizeAdminPermission as jest.Mock).mockResolvedValue({ ok: true, userId: 'authorized-actor', role: 'admin', actorEmail: null });
+      (csrf.requireCsrfOrDeny as jest.Mock).mockResolvedValue(undefined);
+      (database.createServiceRoleClient as jest.Mock).mockResolvedValue({ rpc });
+      (audit.logAudit as jest.Mock).mockResolvedValue(undefined);
+      const route = await import('@/app/api/admin/role-permissions/route');
+      rpc.mockResolvedValueOnce({ data: { role: { ...SAVED.role, permissionCodes: ['admin.cap_probe'] }, changedCount: 1 }, error: null });
+      expect((await route.POST(request({ ...CHANGE, permissionCodes: ['admin.cap_probe'] }))).status).toBe(200);
+      rpc.mockClear();
+      const rejected = await route.POST(request({ ...CHANGE, permissionCodes: extended }));
+      expect(rejected.status).toBe(400);
+      expect(await rejected.json()).toEqual({ error: '入力を確かめてください。', code: 'ROLE_PERMISSION_ARGUMENT_INVALID' });
+      expect(rpc).not.toHaveBeenCalled();
+    });
+  } finally { jest.dontMock('@/lib/auth/role-permission-catalog'); }
+});
 
 test.each([undefined, { rotatedCsrfToken: 'legacy' }])('CSRF成功%jは通過し、依存を自動付与せず200・許可した監査だけ', async (csrf) => {
   (requireCsrfOrDeny as jest.Mock).mockResolvedValue(csrf);
@@ -100,7 +139,7 @@ test.each([
   null, [], {}, { ...CHANGE, actorId: 'spoof' }, { ...CHANGE, roleId: 1 }, { ...CHANGE, extra: true },
   { ...CHANGE, roleCode: 'user' }, { ...CHANGE, roleCode: 'other' },
   { ...CHANGE, permissionCodes: ['other.permission'] }, { ...CHANGE, permissionCodes: ['admin.users.read', 'admin.users.read'] },
-  { ...CHANGE, permissionCodes: Array(31).fill('admin.users.read') }, { ...CHANGE, permissionCodes: null },
+  { ...CHANGE, permissionCodes: Array.from({ length: 33 }, (_, index) => `admin.cap_${index}`) }, { ...CHANGE, permissionCodes: null },
   { ...CHANGE, permissionCodes: [null] }, { ...CHANGE, requestKey: 'invalid' },
   ...['00', '01', '-1', '+1', '1.0', '1e2', ' 1', '1 ', '1\n', '0\r\n', '9223372036854775808', '', 'PRIVATE'].map((expectedVersion) => ({ ...CHANGE, expectedVersion })),
   { ...CHANGE, expectedVersion: 1 },

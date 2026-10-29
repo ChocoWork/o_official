@@ -35,6 +35,8 @@ const rows: readonly (readonly [PermissionCode, string, string])[] = [
   ['admin.shipping.manage', '発送', '票の下書き/品物選択・発送・伝票訂正・手動配達済み・発送取消'],
   ['admin.shipping.correct_date', '発送', '確定後の出荷日訂正'],
   ['admin.permissions.manage', '権限管理', '権限設定の閲覧・保存'],
+  ['admin.discounts.read', '割引', '割引の閲覧'],
+  ['admin.discounts.manage', '割引', '割引の管理'],
 ];
 
 // 準備中の権限は無い。割り当ての入れ替え〔admin.orders.allocate〕は G-4 で公開した
@@ -48,6 +50,7 @@ const dependencies: Partial<Record<PermissionCode, PermissionCode[]>> = {
   'admin.shipping.read': ['admin.orders.read'],
   'admin.shipping.manage': ['admin.shipping.read', 'admin.orders.manage', 'admin.orders.read'],
   'admin.shipping.correct_date': ['admin.shipping.read', 'admin.orders.read'],
+  'admin.discounts.manage': ['admin.discounts.read'],
 };
 
 export const ROLE_PERMISSION_CATALOG: readonly PermissionDefinition[] = rows.map(([code, area, label]) => ({
