@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createLiveAppSession, jwtClaims } from './helpers/app-session';
 import { describeLocalDb } from './helpers/local-db';
 
 // Controller only: disposable local DB; no integration execution by the implementer.
@@ -27,6 +28,8 @@ describeLocalDb('integration: G0 role permissions', (db) => {
   let supporter: string;
   let user: string;
   let seed: string;
+  // has_permission は aal2 とアプリに結び付いた生きた session を求める（SEC-AUTH-010-AC-03）。利用者ごとの session
+  let liveSessions: Map<string, { sessionId: string }>;
 
   beforeAll(() => {
     const directory = path.join(process.cwd(), 'supabase/migrations');
@@ -39,6 +42,7 @@ describeLocalDb('integration: G0 role permissions', (db) => {
   });
   beforeEach(async () => {
     await db().query('begin');
+    liveSessions = new Map();
     admin = await member('admin');
     secondAdmin = await member('admin');
     supporter = await member('supporter');
@@ -56,6 +60,7 @@ describeLocalDb('integration: G0 role permissions', (db) => {
       `insert into public.user_roles (user_id, role_id)
        select $1, id from public.roles where code = $2`, [id, role],
     );
+    liveSessions.set(id, await createLiveAppSession(db(), id));
     return id;
   }
   async function asRole<T>(role: string, run: () => Promise<T>): Promise<T> {
@@ -378,6 +383,8 @@ describeLocalDb('integration: G0 role permissions', (db) => {
 
   test('uses ACL instead of role shortcuts in RLS', async () => {
     async function allowed(id: string, code: string) {
+      // auth.jwt() が空だと aal が無く false になる。aal2 と結び付いた生きた session を持つ claims を入れる
+      await db().query("select set_config('request.jwt.claims',$1,true)", [JSON.stringify(jwtClaims(id, liveSessions.get(id)!))]);
       await db().query("select set_config('request.jwt.claim.sub',$1,true)", [id]);
       return asRole('authenticated', async () => (await db().query('select public.has_permission($1) as allowed', [code])).rows[0].allowed);
     }
@@ -394,6 +401,7 @@ describeLocalDb('integration: G0 role permissions', (db) => {
       expect(await allowed(id, code)).toBe(false);
       await db().query('update public.user_roles set expires_at=null where user_id=$1', [id]);
     }
+    await db().query("select set_config('request.jwt.claims','',true)");
     await db().query("select set_config('request.jwt.claim.sub','',true)");
     expect(await asRole('authenticated', async () => (await db().query("select public.has_permission('admin.items.manage') as allowed")).rows[0].allowed)).toBe(false);
   });

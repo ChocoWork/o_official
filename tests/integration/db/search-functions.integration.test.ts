@@ -1,5 +1,6 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
+import { createLiveAppSession, jwtClaims } from './helpers/app-session';
 import { describeLocalDb } from './helpers/local-db';
 import { readMigration } from '../../helpers/staged-supabase';
 
@@ -151,7 +152,8 @@ describeLocalDb('integration: search_news / search_public_news', (db) => {
     const published = await insertArticle({ title: `${token} published` });
     const hidden = await insertArticle({ title: `${token} hidden`, status: 'private' });
     const admin = await adminUser();
-    const adminClaims = { sub: admin, role: 'authenticated' };
+    // has_permission は aal2 と、アプリに結び付いた生きた session を求める（SEC-AUTH-010-AC-03）
+    const adminClaims = jwtClaims(admin, await createLiveAppSession(db(), admin));
 
     // 店長は RLS では非公開の行を読めるので、返さないのは関数の中の絞り込みによる
     expect(await rowsAs('authenticated', adminClaims, 'select id from public.news_articles where id = $1', [hidden]))
@@ -442,7 +444,8 @@ describeLocalDb('integration: search_items / search_looks / search_public_items 
     const published = await subject.insert({ title: `${token} published` });
     const hidden = await subject.insert({ title: `${token} hidden`, status: 'private' });
     const admin = await adminUser();
-    const adminClaims = { sub: admin, role: 'authenticated' };
+    // has_permission は aal2 と、アプリに結び付いた生きた session を求める（SEC-AUTH-010-AC-03）
+    const adminClaims = jwtClaims(admin, await createLiveAppSession(db(), admin));
 
     // 店長は RLS では非公開の行を読めるので、返さないのは関数の中の絞り込みによる
     expect(await rowsAs('authenticated', adminClaims, `select id from public.${name} where id = $1`, [hidden]))

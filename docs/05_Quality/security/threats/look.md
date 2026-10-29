@@ -1,6 +1,6 @@
 # LOOK の脅威
 
-> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-28 | 対象: LOOK の公開の画面（`/look`・`/look/<id>`）・管理のルックの窓口と画面・画像の置き場 `look-images`・`looks`・`look_items` の DB | 基準コミット: `a03beaff`（作業ツリー。この文書の `ファイル:行` の行番号は、このコミットの作業ツリーを読んだ時の物）
+> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-29 | 対象: LOOK の公開の画面（`/look`・`/look/<id>`）・管理のルックの窓口と画面・画像の置き場 `look-images`・`looks`・`look_items` の DB | 基準コミット: `a03beaff`（作業ツリー。この文書の `ファイル:行` の行番号は、このコミットの作業ツリーを読んだ時の物）
 
 ---
 
@@ -89,7 +89,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 非公開の LOOK と、LOOK・関連商品の中身の正しさ |
 | 脅威 | `admin.looks.read`・`admin.looks.manage` を持つ人の、2要素認証を済ませていない（`aal1`）session を手に入れた者が、非公開の LOOK を読み、LOOK と関連商品を書き換える・消す |
-| 起こり方 | パスワードだけで得た `aal1` の JWT で、管理の窓口を通らず PostgREST の `looks`・`look_items` を直接叩く。RLS の `has_permission` は役割と権限の表だけを見て、`aal` も session の生き死にも見ない（`remote_schema.sql:3512-3526,3546-3565`、`supabase/migrations/20261023175712_group_g0_permissions.sql:186-216`）。**書き込みの側は 2026-10-26 に直した**: 移行 `sec_grants_admin_tables` が anon・authenticated から `looks`・`look_items` の INSERT・UPDATE・DELETE を外したので、`aal1` の JWT でも PostgREST から書けない（権限の誤り `42501`。この移行を当てた DB でだけ満たす。ADR-0414）。読みの側（非公開の LOOK を読める）は `has_permission` の `aal2` の確かめを足すまで残る（波 5） |
+| 起こり方 | パスワードだけで得た `aal1` の JWT で、管理の窓口を通らず PostgREST の `looks`・`look_items` を直接叩く。RLS の `has_permission` は役割と権限の表だけを見て、`aal` も session の生き死にも見ない（`remote_schema.sql:3512-3526,3546-3565`、`supabase/migrations/20261023175712_group_g0_permissions.sql:186-216`）。**書き込みの側は 2026-10-26 に直した**: 移行 `sec_grants_admin_tables` が anon・authenticated から `looks`・`look_items` の INSERT・UPDATE・DELETE を外したので、`aal1` の JWT でも PostgREST から書けない（権限の誤り `42501`。この移行を当てた DB でだけ満たす。ADR-0414）。読みの側（非公開の LOOK を読める）は、波 5 の移行 M2 が `has_permission` に `aal2` と結び付いた生きた session の確かめを足して塞ぐ（2026-10-29 に書いた。controller が当てるまで未適用。当てた DB で満たす。ADR-0418） |
 | 影響 | 2要素認証の守りが管理の窓口だけになる。直接の書き込みは、管理の窓口の回数の制限・画像の確かめ・紐づける商品の確かめ・監査の記録（`src/features/look/services/admin-audit.ts:7-30`）を全部通らない。`image_urls` に好きな道筋を入れられるので、THR-LOOK-007 の入口にもなる。入力の形を DB で確かめない点は THR-LOOK-023 |
 | 対策 | SEC-LOOK-003 |
 | ASVS | V4.3.1 |

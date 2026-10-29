@@ -1,6 +1,6 @@
 # 試験の穴
 
-> 状態: 自動生成 | 生成日: 2026-10-28 | 対象: NEWS・HOME・LOOK・ABOUT・STOCKIST・SEARCH・PRIVACY・AUTH・ADMIN
+> 状態: 自動生成 | 生成日: 2026-10-29 | 対象: NEWS・HOME・LOOK・ABOUT・STOCKIST・SEARCH・PRIVACY・AUTH・ADMIN
 
 ## 概要
 
@@ -58,11 +58,11 @@
 | FREQ-335-AC-03 1回送ると verifyOtp が type email で1回だけ呼ばれる | E2E | `docs/02_Requirements/areas/auth.md:3767` |
 | FREQ-515-AC-01 管理画面のユーザー一覧で選んだ役割で送られ、失敗したら元の役割に戻る | E2E | `docs/02_Requirements/areas/auth.md:3858` |
 | FREQ-515-AC-03 お知らせの作成・編集で選んだカテゴリーで保存される | E2E | `docs/02_Requirements/areas/auth.md:3884` |
-| SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | E2E | `docs/02_Requirements/areas/auth.md:4483` |
-| SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | E2E | `docs/02_Requirements/areas/auth.md:4652` |
-| SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:4738` |
-| SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:4875` |
-| SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:4991` |
+| SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | E2E | `docs/02_Requirements/areas/auth.md:4519` |
+| SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | E2E | `docs/02_Requirements/areas/auth.md:4700` |
+| SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:4786` |
+| SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:4923` |
+| SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:5039` |
 | FREQ-508-AC-03 流し直しても付与が重ならず、ほかの結び付きが残り、「監査ログの閲覧」の名前で登録される | E2E | `docs/02_Requirements/areas/admin.md:206` |
 | SEC-ADMIN-003-AC-02 管理の表の権限が anon・authenticated に無い | E2E | `docs/02_Requirements/areas/admin.md:422` |
 | SEC-ADMIN-010-AC-01 監査ログの行を書き換えると検知の確かめで分かる | E2E | `docs/02_Requirements/areas/admin.md:642` |
@@ -126,7 +126,7 @@
 | e2e | `e2e/FR-LOOK-DETAIL-007-related-recommendations-wont.spec.ts:4` | FR-LOOK-DETAIL-007-AC-01 | FR-LOOK-DETAIL-007-AC-01 詳細に同じシーズンか関連のコーディネートを薦める節が出る（現フェーズ対象外のため未実装） |
 | integration | `tests/integration/ui/auth-header-visibility.test.tsx:95` | ARC-AUTH-008 | ARC-AUTH-008 CSS が印の true の時にヘッダーの高さを、false の時に 0 を --site-header-offset に入れる（計算後の CSS で確かめる手段が要る） |
 | integration | `tests/integration/ui/auth-header-visibility.test.tsx:96` | ARC-AUTH-008 | ARC-AUTH-008 共有のレイアウトが html の初期値に data-header-visible="true" を持つ（レイアウトを描いて確かめる手段が要る） |
-| integration | `tests/integration/db/auth_grants_inventory.integration.test.ts:383` | DATA-AUTH-006 | DATA-AUTH-006 anon の TRUNCATE を既知の例外の表からも外す（他領域の波で直す） |
+| integration | `tests/integration/db/auth_grants_inventory.integration.test.ts:384` | DATA-AUTH-006 | DATA-AUTH-006 anon の TRUNCATE を既知の例外の表からも外す（他領域の波で直す） |
 
 ## 届かない分岐
 
@@ -180,4 +180,4 @@
 - `src/lib/look/server.ts:423` `hydrateLooks` の `signedImageUrlsMap.get(row.id) ?? []` の右側は通らない。全ての LOOK の行を `signedImageUrlsMap` に先に入れてから `map` するため。確認: 未
 - `src/app/api/admin/revoke-user-sessions/route.ts:94` `POST` の `audit` の引数 `extra` の既定値 `= {}` は通らない。呼び出し5か所が全部 `{ resource_id: ... }` を渡し、この関数はファイルの中だけで使うため。確認: 未
 - `src/app/api/admin/users/mfa/reset/route.ts:92` `POST` の `audit` の `metadata ? { metadata } : {}` の偽の側は通らない。呼び出し9か所が全部 `metadata` を渡し、この関数はファイルの中だけで使うため。確認: 未
-- `src/app/api/auth/mfa/enroll-totp/route.ts:128` `POST` の未確認の要素を外した後の監査の `unenrollResult?.error` の `unenrollResult` が `null` の側は通らない。supabase-js の `mfa.unenroll` は `{ data, error }` の形を必ず返し、`null` を返さないため（型を満たすための `?.`）。確認: 未
+- `src/app/api/auth/mfa/enroll-totp/route.ts:139` `POST` の未確認の要素を外した後の監査の `unenrollResult?.error` の `unenrollResult` が `null` の側は通らない。supabase-js の `mfa.unenroll` は `{ data, error }` の形を必ず返し、`null` を返さないため（型を満たすための `?.`）。確認: 未

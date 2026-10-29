@@ -267,7 +267,6 @@ test.describe('FR-LOOK-SEC-002 anon と一般会員の look_items の直接の�
 
 test.describe('FR-LOOK-SEC-002 aal1 の JWT で PostgREST を直接叩く', () => {
   test('SEC-LOOK-003-AC-01 admin.looks.read を持つ利用者の aal1 の JWT で looks を select した時、非公開の LOOK が結果に含まれない', async ({ request }) => {
-    test.fail(true, 'SEC-LOOK-003-AC-01 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
     const actor = await aal1Admin();
     expect(actor.aal).toBe('aal1');
     await withFixture('SEC003A', async (fx) => {

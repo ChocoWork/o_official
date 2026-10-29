@@ -1,5 +1,6 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
+import { createLiveAppSession, jwtClaims } from '../helpers/app-session';
 import { describeLocalDb } from '../helpers/local-db';
 
 /**
@@ -82,9 +83,22 @@ const byCodeUnit = (a: Policy, b: Policy): number => (a.policyname < b.policynam
 
 describeLocalDb('integration: 管理の表の RLS と付与', (db) => {
   let context: Context;
+  // 会員（権限の無い authenticated）にも aal2 と結び付いた生きた session を持たせ、断る理由が「権限が無いこと」だけになるようにする
+  let liveSessions: Map<string, { sessionId: string }>;
 
   beforeEach(async () => {
     await db().query('begin');
+    liveSessions = new Map();
+    // 取引の中で、savepoint に巻き戻されない所に作る
+    for (const denied of DENIED_ACTORS) {
+      if (!denied.sub) continue;
+      await db().query(
+        `insert into auth.users (id, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+         values ($1, '{}', '{}', now(), now())`,
+        [denied.sub],
+      );
+      liveSessions.set(denied.sub, await createLiveAppSession(db(), denied.sub));
+    }
     const marker = `integration-admin-rls-${randomUUID()}`;
     const userId = randomUUID();
     await db().query(
@@ -110,7 +124,10 @@ describeLocalDb('integration: 管理の表の RLS と付与', (db) => {
   }
 
   async function enter(actor: Actor): Promise<void> {
-    const claims = actor.sub ? JSON.stringify({ sub: actor.sub, role: actor.role, aal: 'aal2' }) : '';
+    const session = actor.sub ? liveSessions.get(actor.sub) : undefined;
+    const claims = actor.sub
+      ? JSON.stringify(session ? { ...jwtClaims(actor.sub, session), role: actor.role } : { sub: actor.sub, role: actor.role, aal: 'aal2' })
+      : '';
     await db().query("select set_config('request.jwt.claims', $1, true)", [claims]);
     await db().query("select set_config('request.jwt.claim.sub', $1, true)", [actor.sub ?? '']);
     await db().query(`set local role ${actor.role}`);

@@ -5,6 +5,7 @@
  * @impl IMPL-AUTH-205
  * @design DD-AUTH-031
  * @remarks 確認が通ると Supabase が aal2 のトークン対を返す。Cookie と sessions 行へ書き戻さないとブラウザは aal1 のままで、認可側の判定を通れない。書き戻しの保存に失敗しても、aal2 はトークン自体が持つので配る。
+ * ただし旗が有効な間、生存の確認は結び付いた sessions 行を求めるので、新しい行へ検証済みの claims.session_id を引き継ぐ（trustedAuthSessionId）。書き戻しに失敗すると次の要求から 401 になり、再ログインになる。
  * 6 桁のコードは総当たりされうるので、IP の枠に加えて利用者単位の枠（5 回 / 600 秒）を置く。枠の鍵は検証済みの claims.sub だけを使う（本文の値だと他人の枠を潰せる）。確かめの結果は成功も失敗も監査に残し、コードと Supabase の誤りの文は残さない。
  */
 
@@ -127,9 +128,11 @@ export async function POST(request: Request) {
       ? await findSessionByRefreshHash(previousRefreshToken)
       : null;
 
-    // DB 記録に失敗しても、発行済みトークンは必ず配る。aal2 はトークン自体が持っており、
-    // 認可はトークンを見るので sessions 行が無くても正しく動く。逆にここで 500 を返すと、
-    // 既に無効化された旧 refresh token だけがブラウザに残る。
+    // DB 記録に失敗しても、発行済みトークンは必ず配る。aal2 はトークン自体が持つ。逆にここで 500 を返すと、
+    // 既に無効化された旧 refresh token だけがブラウザに残る。結び付きは、authenticateRequest を通った
+    // （検証済み・結び付き済み）claims.session_id を trustedAuthSessionId として渡す。persistNewSession は、これがある時だけ
+    // 新しい行を結び付ける。保存する値は新しい token の session_id（読めなければ渡した値）で、無い時は結び付けない。
+    // 前の行の auth_session_id は使わない。
     try {
       await persistNewSession(response, {
         accessToken: verifyResult.data.access_token,
@@ -137,6 +140,7 @@ export async function POST(request: Request) {
         userId: user.id,
         previousSessionId: previousSession?.id ?? null,
         previousRefreshToken,
+        trustedAuthSessionId: auth.claims.session_id ?? null,
       });
       await logAudit({ action: 'mfa_verify', actor_id: user.id, outcome: 'success', detail: 'verified' });
     } catch (persistError) {

@@ -4,13 +4,14 @@
  * @packageDocumentation
  * @impl IMPL-AUTH-201
  * @design DD-AUTH-027
- * @remarks access token は寿命が短いので、Supabase の token 交換で新しい対へ替える。門番は Supabase の token 交換で、自前の sessions 表は補助に留める。それぞれの理由は、その行のコメントに書いた。
+ * @remarks access token は寿命が短いので、Supabase の token 交換で新しい対へ替える。旗 AUTH_REQUIRE_APP_SESSION が有効な間は、アプリのログインで結び付いた行（auth_session_id を持つ行）の続きにだけ更新を許す。結び付いていない session の refresh token を、更新で結び付いた session に洗わせないため。旗が無効な間は従来どおり Supabase の token 交換が門番で、自前の sessions 表は補助に留める。それぞれの理由は、その行のコメントに書いた。
  */
 
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { logAudit } from '@/lib/audit';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
+import { isAppSessionRequired } from '@/lib/auth/app-session';
 
 async function clearAuthCookies(response: NextResponse) {
   const {
@@ -38,10 +39,27 @@ export async function POST(request: Request) {
     }
 
     const sessionService = await import('@/features/auth/services/session');
-    const session = await sessionService.findSessionByRefreshHash(refreshToken);
+    const requireBound = isAppSessionRequired();
 
-    // 自前テーブルは監査用。行が無いことは「失効の証拠が無い」だけなので拒否しない
+    // 旗が有効な間は、行の引きの失敗（DB の 5xx・タイムアウト・複数行）を「行が無い」と取り違えない。
+    // 取り違えると下で unbound_session になり、一時的な DB の不調で結び付いた利用者の Cookie を消して再ログインに追い込む。
+    // 失敗なら GoTrue を呼ばず（refresh token を消費させず）、Cookie を残して 503 を返す。クライアントは後で再試行できる。
+    let session: Awaited<ReturnType<typeof sessionService.findSessionByRefreshHash>>;
+    try {
+      session = await sessionService.findSessionByRefreshHash(refreshToken, { throwOnError: requireBound });
+    } catch (lookupErr) {
+      if (!(lookupErr instanceof Error) || lookupErr.name !== 'SessionLookupError') throw lookupErr;
+      await logAudit({
+        action: 'refresh',
+        outcome: 'error',
+        detail: 'session_lookup_failed',
+      });
+      return NextResponse.json({ error: 'Session lookup failed' }, { status: 503 });
+    }
+
+    // 旗が無効な間の自前テーブルは監査用。行が無いことは「失効の証拠が無い」だけなので拒否しない
     // （取りこぼしで正当なユーザーを締め出さない）。実際の門番は Supabase の token 交換。
+    // 旗が有効な間は下で、結び付いた行が無い refresh token を断つ。
     if (!session) {
       console.warn('[auth.refresh] no local session row for the presented refresh token');
     }
@@ -58,6 +76,23 @@ export async function POST(request: Request) {
       });
 
       const denied = NextResponse.json({ error: 'Session revoked' }, { status: 401 });
+      await clearAuthCookies(denied);
+      return denied;
+    }
+
+    // 結び付いていない session の refresh token で更新させない（DD-AUTH-039）。
+    // 通すと、anon キーで取った password や OTP の session が、更新を経て結び付いた session に洗われる。
+    // 行の書き込みに失敗して hash がずれた利用者もここで再ログインになる。意図した変更。
+    // GoTrue を呼ぶ前に断ち、refresh token を消費させない。監査に残すのは固定の符号だけ。
+    if (requireBound && !session?.auth_session_id) {
+      await logAudit({
+        action: 'refresh',
+        actor_id: session?.user_id,
+        outcome: 'failure',
+        detail: 'unbound_session',
+      });
+
+      const denied = NextResponse.json({ error: 'Session not bound' }, { status: 401 });
       await clearAuthCookies(denied);
       return denied;
     }
@@ -117,6 +152,8 @@ export async function POST(request: Request) {
         userId: session?.user_id || user?.id,
         previousSessionId: session?.id ?? null,
         previousRefreshToken: refreshToken,
+        // 前の行が結び付いている時だけ引き継ぐ。新しい token の session_id を確認なしに保存しない。
+        trustedAuthSessionId: session?.auth_session_id ?? null,
       });
       await logAudit({
         action: 'refresh',

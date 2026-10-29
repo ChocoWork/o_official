@@ -1,4 +1,5 @@
 /** @jest-environment node */
+import { createLiveAppSession, jwtClaims } from './helpers/app-session';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
 import { createCatalogFixture, uniqueSuffix } from './helpers/order-fixtures';
 
@@ -86,6 +87,8 @@ describeLocalDb('integration: 店内の注文の列を利用者の Data API か�
     let ownerId: string;
     let sessionId: string;
     let orderId: string;
+    // 会員の orders・order_items の方針は、aal2 とアプリに結び付いた生きた session を求める（SEC-AUTH-005-AC-02）
+    let ownerAppSession: { sessionId: string };
 
     // 持ち主の注文は orders.user_id が profiles への外部キーなので、実在の auth.users を使う
     // （profiles は auth.users への挿入で自動で作られる）。afterAll は describeLocalDb が接続を閉じる前に動く
@@ -99,6 +102,8 @@ describeLocalDb('integration: 店内の注文の列を利用者の Data API か�
         [`order-internal-columns-${suffix}@example.com`],
       );
       ownerId = user.rows[0].id as string;
+      // afterAll の auth.users の削除で、auth.sessions と public.sessions の行も ON DELETE CASCADE で消える
+      ownerAppSession = await createLiveAppSession(db(), ownerId);
       sessionId = `fx-internal-${suffix}`;
 
       const order = await db().query(
@@ -160,7 +165,7 @@ describeLocalDb('integration: 店内の注文の列を利用者の Data API か�
 
     test('ログイン中の持ち主は、自分の注文の店内以外の列を読めて、店内の列は読めない（42501）', async () => {
       await expectCustomerReadsOrder('authenticated', {
-        'request.jwt.claims': JSON.stringify({ sub: ownerId, role: 'authenticated' }),
+        'request.jwt.claims': JSON.stringify(jwtClaims(ownerId, ownerAppSession)),
       });
     });
 

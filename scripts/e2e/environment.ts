@@ -57,9 +57,14 @@ export function computeFake17TrackBuild(): string {
  * この定数は `buildE2EOverrides` の中だけで混ぜる。`buildE2EOverrides` は手元の Supabase の状態を読んだ後にだけ呼ばれ、
  * 混ぜた後の環境は `assertSafeE2EEnv`（`findUnsafeE2ESettings`）が通す。Supabase の住所が手元でなければ、その見張りが
  * `CLIENT_IP_HEADER` の有無に関わらず止める。だから旗が効くのは手元の Supabase の時だけで、専用の見張りは足さない。
+ *
+ * `AUTH_REQUIRE_APP_SESSION` は、アプリのログインを通った（自前の sessions に結び付いた）session だけを受ける旗（ADR-0419）。
+ * アプリの既定は有効だが、手元の `.env.local` に `off` が残っていると E2E が結び付きの強制を通らずに緑になるので、`on` に固定する。
+ * 固定の鍵の一覧は `computeServerFingerprint` に入るので、旗を足した時に古い 3000 番のアプリは使い回されない。
  */
 export const E2E_FIXED_ENV: Readonly<Record<string, string>> = {
   CLIENT_IP_HEADER: 'x-real-ip',
+  AUTH_REQUIRE_APP_SESSION: 'on',
   MAIL_PROVIDER: 'local',
   MAIL_FROM_ADDRESS: 'no-reply@e2e.test',
   CONTACT_TO_EMAIL: 'shop@e2e.test',

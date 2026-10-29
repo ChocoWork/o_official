@@ -407,6 +407,19 @@ describe('authorizeAdminPermission', () => {
       });
     });
 
+    // 結び付き込みの生存の確かめは checkAuthSessionLiveness の中で切り替わる。admin-rbac は名前・引数を
+    // 変えずに呼ぶだけで、結び付いていない session（liveness が revoked）は ACL が有っても 401 になる。
+    it('DD-AUTH-039 結び付いていない session は ACL を持っていても 401 で、session_id を渡して確かめる', async () => {
+      (checkAuthSessionLiveness as jest.Mock).mockResolvedValue('revoked');
+      grantCodes('admin.stockists.manage');
+
+      const result = await authorizeAdminPermission('admin.stockists.manage', mockRequest);
+
+      expect(checkAuthSessionLiveness).toHaveBeenCalledWith('session-1');
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.response.status).toBe(401);
+    });
+
     it('足りない権限の 403 は、reason=permission と足りない最初のコードを持つ', async () => {
       grantCodes('admin.stockists.read');
 

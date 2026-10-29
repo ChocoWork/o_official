@@ -7,10 +7,13 @@
  * 3. aal2 が要る時は、その session の auth.mfa_amr_claims に totp の行を足して refresh する。
  *    Auth は session の amr から aal を数えるので、refresh で返る JWT が aal2 になる
  *    （auth.sessions の aal 列だけを書き換えても JWT は aal1 のまま）
+ * 4. 既定では、アプリのログインを通った session と同じ形で public.sessions に結び付けた行を作る（bindAppSession。DD-AUTH-039）。
+ *    アプリは AUTH_REQUIRE_APP_SESSION が有効（既定）の間、自前の sessions に結び付かない session の通行証を 401 にするため。
+ *    結び付けない通行証（攻撃側の対照）は { bindApp: false } で作る
  * 管理 API は Authorization: Bearer の JWT をそのまま読むので、Cookie もアプリのログインも要らない。
  * 作った利用者・session は消さない（db reset で消える）。JWT・パスワードは失敗の文面に出さない。
  */
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createClient, type Session } from '@supabase/supabase-js';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
@@ -29,6 +32,13 @@ export type AdminSessionActor = {
   refreshToken: string;
   /** accessToken の期限（UNIX 秒） */
   expiresAt: number;
+  /** public.sessions に結び付いた行があるか（elevateAdminSessionToAal2 が行の refresh_token_hash を合わせるかを決める） */
+  appBound: boolean;
+};
+
+export type AdminSessionOptions = {
+  /** false なら public.sessions の行を作らない（アプリを通らずに取った通行証を真似る攻撃側の対照）。既定は true */
+  bindApp?: boolean;
 };
 
 type LocalAuthEnv = { url: string; anonKey: string; serviceRoleKey: string };
@@ -90,10 +100,66 @@ async function raiseSessionToAal2(db: PgClient, env: LocalAuthEnv, sessionId: st
 }
 
 /**
+ * refresh token の sha256（16 進）。src/lib/hash.ts の tokenHashSha256 と同じ値（単体の試験が一致を確かめる）。
+ * hash.ts は argon2 の native module を読むので、Playwright の道具からは引かない。
+ */
+function refreshTokenHash(refreshToken: string): string {
+  return createHash('sha256').update(refreshToken).digest('hex');
+}
+
+/**
+ * アプリのログインが作る sessions の行と同じ形の行を作り、通行証の session_id に結び付ける（DD-AUTH-039）。手元の DB だけ。
+ * 手元の Supabase の環境でなければ投げる（既存の補助と同じ見張り）。token の sub が userId と合わない・session_id が無い通行証には作らない。
+ * 失敗の文面に token・session_id を出さない。
+ */
+export async function bindAppSession(
+  db: PgClient,
+  input: { userId: string; accessToken: string; refreshToken: string },
+): Promise<{ authSessionId: string }> {
+  localAuthEnv();
+  let claims: JwtClaims;
+  try {
+    claims = readClaims(input.accessToken);
+  } catch {
+    throw new Error('結び付ける通行証の JWT が読めない');
+  }
+  if (!claims.session_id || !claims.sub) throw new Error('結び付ける通行証に session_id か sub が無い');
+  if (claims.sub !== input.userId) throw new Error('結び付ける通行証の利用者が合わない');
+  const inserted = await db.query(
+    `insert into public.sessions (user_id, refresh_token_hash, csrf_token_hash, auth_session_id, expires_at, last_seen_at)
+     values ($1::uuid, $2, $3, $4::uuid, now() + interval '7 days', now())`,
+    [input.userId, refreshTokenHash(input.refreshToken), refreshTokenHash(randomBytes(32).toString('hex')), claims.session_id],
+  );
+  if (inserted.rowCount !== 1) throw new Error('結び付けた sessions の行を作れない');
+  return { authSessionId: claims.session_id };
+}
+
+/** 昇格などで refresh token が変わった時に、結び付いた行の refresh_token_hash を合わせる */
+export async function rebindRefreshToken(
+  db: PgClient,
+  input: { authSessionId: string; refreshToken: string },
+): Promise<void> {
+  localAuthEnv();
+  const updated = await db.query(
+    `update public.sessions set refresh_token_hash = $1
+      where auth_session_id = $2::uuid and revoked_at is null`,
+    [refreshTokenHash(input.refreshToken), input.authSessionId],
+  );
+  if (updated.rowCount !== 1) throw new Error('refresh token を合わせる sessions の行が 1 行ではない');
+}
+
+/**
  * 役割つきの利用者を作り、その session の JWT を返す。
  * auth.users の role（app_metadata）と有効な user_roles（active・期限なし）を同じ役割で作る（createPermissionActor と同じ）。
+ * 通行証を作って aal を確かめた後、既定ではアプリの sessions に結び付ける（昇格後の refresh token で行を作る）。
  */
-export async function createAdminSessionActor(db: PgClient, role: AdminSessionRole, aal: AdminSessionAal): Promise<AdminSessionActor> {
+export async function createAdminSessionActor(
+  db: PgClient,
+  role: AdminSessionRole,
+  aal: AdminSessionAal,
+  options: AdminSessionOptions = {},
+): Promise<AdminSessionActor> {
+  const bindApp = options.bindApp ?? true;
   const env = localAuthEnv();
   const email = `e2e-admin-session-${role}-${randomUUID().slice(0, 8)}@example.com`;
   const password = `E2e-${randomBytes(12).toString('hex')}!`;
@@ -126,7 +192,20 @@ export async function createAdminSessionActor(db: PgClient, role: AdminSessionRo
   if (claims.sub !== userId || claims.session_id !== sessionId) throw new Error('作った JWT の利用者か session が合わない');
   if (claims.aal !== aal) throw new Error(`作った JWT の aal が ${aal} ではない（${claims.aal ?? '無し'}）`);
   if (!claims.exp) throw new Error('JWT に exp が無い');
-  return { userId, email, role, aal, sessionId, accessToken: tokens.access_token, refreshToken: tokens.refresh_token, expiresAt: claims.exp };
+  if (bindApp) {
+    await bindAppSession(db, { userId, accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
+  }
+  return {
+    userId,
+    email,
+    role,
+    aal,
+    sessionId,
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token,
+    expiresAt: claims.exp,
+    appBound: bindApp,
+  };
 }
 
 /**
@@ -140,6 +219,8 @@ export async function elevateAdminSessionToAal2(db: PgClient, actor: AdminSessio
   const claims = readClaims(tokens.access_token);
   if (claims.sub !== actor.userId || claims.session_id !== actor.sessionId) throw new Error('上げた JWT の利用者か session が合わない');
   if (claims.aal !== 'aal2' || !claims.exp) throw new Error(`上げた JWT の aal が aal2 ではない（${claims.aal ?? '無し'}）`);
+  // 昇格の refresh で token が替わるので、結び付いた行の refresh_token_hash も合わせる（session_id は変わらない）
+  if (actor.appBound) await rebindRefreshToken(db, { authSessionId: actor.sessionId, refreshToken: tokens.refresh_token });
   return { ...actor, aal: 'aal2', accessToken: tokens.access_token, refreshToken: tokens.refresh_token, expiresAt: claims.exp };
 }
 

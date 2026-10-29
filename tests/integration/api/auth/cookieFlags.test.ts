@@ -125,6 +125,7 @@ describe('Auth cookie flags (integration, mocked)', () => {
       previous_refresh_token_hash: null,
       quarantined: false,
       revoked_at: null,
+      auth_session_id: '4c36ef0b-0332-42d8-b210-3326fc20c240',
     };
     const fromMock = jest.fn(() => ({
       select: jest.fn().mockReturnValue({

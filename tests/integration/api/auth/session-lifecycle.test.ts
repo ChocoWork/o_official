@@ -59,6 +59,8 @@ type SessionRow = {
   refresh_token_hash: string;
   csrf_token_hash: string;
   revoked_at: string | null;
+  /** 結び付いた GoTrue の session_id（DD-AUTH-039）。旗が有効な間、refresh は結び付いた行の続きにだけ通る。 */
+  auth_session_id: string | null;
 };
 
 type AuthSession = { userId: string; refreshToken: string; alive: boolean };
@@ -118,6 +120,7 @@ const signIn = async (userId = 'user-1') => {
     refresh_token_hash: await hash(refreshToken),
     csrf_token_hash: await hash(csrfToken),
     revoked_at: null,
+    auth_session_id: authSessionId,
   });
   world.jar.set('sb-access-token', issueAccessToken(authSessionId));
   world.jar.set('sb-refresh-token', refreshToken);
@@ -260,6 +263,7 @@ const callLogout = async () => {
 describe('ログインの状態の流れ（me・refresh・logout を続けて呼ぶ）', () => {
   beforeEach(() => {
     resetWorld();
+    delete process.env.AUTH_REQUIRE_APP_SESSION;
     process.env.SUPABASE_URL = 'https://supabase.example';
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc_key';
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -305,6 +309,9 @@ describe('ログインの状態の流れ（me・refresh・logout を続けて呼
     expect(world.rows).toHaveLength(2);
     expect(world.rows[0].revoked_at).toEqual(expect.any(String));
     expect(world.rows[1].revoked_at).toBeNull();
+    // 新しい行は前の行の続きとして結び付く（refresh で session_id は変わらない）
+    expect(world.rows[1].auth_session_id).toBe(world.rows[0].auth_session_id);
+    expect(world.rows[1].auth_session_id).not.toBeNull();
 
     const me = await callMe();
     expect((await me.json()).authenticated).toBe(true);
@@ -352,7 +359,21 @@ describe('ログインの状態の流れ（me・refresh・logout を続けて呼
     expect(world.jar.has('sb-refresh-token')).toBe(false);
   });
 
-  test('ARC-AUTH-009 自前の行が無くても、logout で切ったサーバーのセッションの refresh token は Supabase に断られて Cookie が消える', async () => {
+  test('ARC-AUTH-009 自前の行が無い refresh token は、Supabase へ行く前に 401 で断られて Cookie が消える', async () => {
+    const { refreshToken: stolen } = await signIn();
+    world.rows.length = 0;
+    world.jar.set('sb-refresh-token', stolen);
+
+    const replay = await callRefresh();
+
+    expect(replay.status).toBe(401);
+    expect(world.tokenCalls).toBe(0);
+    expect(world.jar.has('sb-refresh-token')).toBe(false);
+    expect(world.jar.has('sb-access-token')).toBe(false);
+  });
+
+  test('ARC-AUTH-009 旗が無効で自前の行が無くても、logout で切ったサーバーのセッションの refresh token は Supabase に断られて Cookie が消える', async () => {
+    process.env.AUTH_REQUIRE_APP_SESSION = 'off';
     const { refreshToken: stolen } = await signIn();
     await callLogout();
     world.rows.length = 0;

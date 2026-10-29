@@ -216,7 +216,6 @@ test.describe('FR-ADMIN-MISC-005 色見本と管理の表への直接の道', ()
   });
 
   test(`SEC-ADMIN-002-AC-02 /api/admin/revoke-user-sessions で失効させた人の、期限の残る JWT では色見本を select しても行が1件も返らない`, async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-ADMIN-002-AC-02 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     if (!baseURL || !isLocalUrl(baseURL)) throw new Error('手元のアプリの baseURL が無い');
     const revoker = await sharedAdminAal2();
     await withDb(async (db) => {

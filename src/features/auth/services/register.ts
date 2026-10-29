@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { logAudit } from '@/lib/audit';
 import type { GuestShoppingTokens } from '@/features/cart/services/guest-shopping-token';
+import { isAppSessionRequired, readAuthSessionId } from '@/lib/auth/app-session';
 
 type PersistSession = {
   access_token: string;
@@ -51,6 +52,16 @@ export async function persistSessionAndCookies(
     const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 
     const accessToken = session.access_token ?? '';
+
+    // アプリのログインを通った session だけを受けるため、GoTrue の session_id を自前の行へ残す（DD-AUTH-039）。
+    // 旗が有効なのに読めなければ、結び付かない行を作らず Cookie も渡さない。
+    const authSessionId = readAuthSessionId(accessToken);
+    if (!authSessionId && isAppSessionRequired()) {
+      const msg = 'auth_session_id_missing';
+      console.warn('persistSessionAndCookies: access token has no usable session_id', context);
+      await logAudit({ action: 'auth.session.persist', outcome: 'error', detail: msg, actor_id: context.actor_id, actor_email: context.actor_email });
+      return { ok: false, error: msg };
+    }
 
     try {
       res.cookies.set({
@@ -106,6 +117,7 @@ export async function persistSessionAndCookies(
           user_id: user?.id,
           refresh_token_hash: refreshHash,
           csrf_token_hash: csrfHash,
+          auth_session_id: authSessionId,
           expires_at: expiresAt,
           last_seen_at: new Date().toISOString(),
         },

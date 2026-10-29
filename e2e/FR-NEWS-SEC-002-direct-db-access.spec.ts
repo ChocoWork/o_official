@@ -261,7 +261,6 @@ test.describe(`FR-NEWS-SEC-002 anon と一般会員の直接の読み出し`, ()
 
 test.describe(`FR-NEWS-SEC-002 aal1 の JWT で PostgREST を直接叩く`, () => {
   test(`SEC-NEWS-002-AC-01 admin.news.read を持つ利用者の aal1 の JWT で select した時、非公開の記事が結果に含まれない`, async ({ page }) => {
-    test.fail(true, 'SEC-NEWS-002 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     const actor = await aal1Admin();
     expect(actor.aal).toBe('aal1');
     const privateTitle = tag('SEC002-PRIVATE');
@@ -361,7 +360,6 @@ test.describe(`FR-NEWS-SEC-002 aal1 の JWT で PostgREST を直接叩く`, () =
 
 test.describe(`FR-NEWS-SEC-002 ログアウトした session の token で PostgREST を直接叩く`, () => {
   test(`SEC-NEWS-002-AC-03 admin.news.read を持つ利用者の token をログアウトの後（token の期限の前）に使った select の結果に、非公開の記事が含まれない`, async ({ page }) => {
-    test.fail(true, 'SEC-NEWS-002 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     // 対照を取れるよう aal2 の session を使う（aal1 だと、ログアウトの前から非公開の記事が読めない形でも通ってしまう）
     const actor = await newActor('aal2');
     expect(actor.aal).toBe('aal2');

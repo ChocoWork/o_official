@@ -5,6 +5,7 @@ import type { JwtPayload, SupabaseClient } from '@supabase/supabase-js';
 import { accessCookieName } from '@/lib/cookie';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { extractAuthToken } from '@/lib/auth/request-token';
+import { isAppSessionRequired } from '@/lib/auth/app-session';
 
 /**
  * 認証ポリシー層。「このリクエストは誰か」だけを答える。
@@ -23,7 +24,12 @@ export type VerifiedAccessToken =
    * 呼び出し側は `unavailable` を 503 + Retry-After として返すこと。
    * どちらもアクセスは拒否するので fail-closed は保たれる。
    */
-  | { ok: false; reason: 'missing' | 'invalid' | 'revoked' | 'unavailable' };
+  | { ok: false; reason: 'missing' | 'invalid' | 'unavailable' }
+  /**
+   * `claims` は署名検証済みの値で、`revoked` の時だけ付く。結び付いていない session を断る窓口が、
+   * 行為者を監査に残すために使う（authorization の根拠には使わない）。
+   */
+  | { ok: false; reason: 'revoked'; claims?: JwtPayload };
 
 /** セッションの生存確認の結果。「生きている」「失効した」「確認できない」の3値。 */
 export type SessionLiveness = 'active' | 'revoked' | 'unavailable';
@@ -119,7 +125,17 @@ export async function verifyAccessToken(
  * 強制失効済みの access token も exp までは暗号的には「正しい」ため、これが要る。
  *   https://supabase.com/docs/guides/auth/sessions
  *
+ * 旗 AUTH_REQUIRE_APP_SESSION が有効な間（既定）は、GoTrue の生存に加えて、アプリのログインを
+ * 通って作られた session（自前の sessions に失効していない結び付いた行がある）であることを
+ * 求める（RPC is_app_session_active）。公開の anon キーで直に取った password や OTP だけの
+ * 通行証は GoTrue 側では生きているが、アプリを通っていないので行が無く、ここで断られる。
+ * 旗が無効な間は GoTrue の生存だけを見る従来の RPC（is_auth_session_active）。
+ *
  * RPC が落ちたときは `unavailable` を返す。`revoked` に丸めないこと（型の定義を参照）。
+ * 自前の行の引きの失敗も RPC の誤りとして同じ `unavailable` になり、「結び付いていない」とは取り違えない。
+ *
+ * 名前・引数・戻り値を変えないのは、窓口と管理の認可がこの関数を同じ形で呼び、多数の試験が差し替えているため。
+ * 切り替えは中の RPC 名だけで、admin-rbac も自動で結び付きを求める（DD-AUTH-039、ADR-0417・0419）。
  *
  * React の cache() で包み、リクエストスコープが効く経路（Server Components 等）では
  * 同一リクエスト内の重複呼び出しを 1 回にまとめる。Route Handler ではスコープが
@@ -136,7 +152,8 @@ export const checkAuthSessionLiveness = cache(
 
     try {
       const service = await createServiceRoleClient();
-      const { data, error } = await service.rpc('is_auth_session_active', { p_session_id: sessionId });
+      const rpcName = isAppSessionRequired() ? 'is_app_session_active' : 'is_auth_session_active';
+      const { data, error } = await service.rpc(rpcName, { p_session_id: sessionId });
 
       if (error) {
         console.error('[auth.checkAuthSessionLiveness] RPC error:', error);
@@ -159,6 +176,9 @@ export const checkAuthSessionLiveness = cache(
  * Supabase 公式が getClaims を推奨しており（"Prefer this method over
  * GoTrueClient.getUser which always sends a request to the Auth server for each JWT."）、
  * こちらへ一本化した。失効検知は上の RPC が担う。
+ *
+ * 失効（結び付いていない session を含む）の時は `revoked` に署名検証済みの claims を付けて返す。
+ * 確認できなかった時（`unavailable`）には付けない。
  */
 export async function authenticateRequest(request?: Request): Promise<VerifiedAccessToken> {
   const verified = await verifyAccessToken(request);
@@ -167,8 +187,11 @@ export async function authenticateRequest(request?: Request): Promise<VerifiedAc
   }
 
   const liveness = await checkAuthSessionLiveness(verified.claims.session_id);
+  if (liveness === 'unavailable') {
+    return { ok: false, reason: 'unavailable' };
+  }
   if (liveness !== 'active') {
-    return { ok: false, reason: liveness === 'unavailable' ? 'unavailable' : 'revoked' };
+    return { ok: false, reason: 'revoked', claims: verified.claims };
   }
 
   return verified;

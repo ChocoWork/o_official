@@ -2,19 +2,26 @@
  * FR-LOGIN-031 Supabase Auth・PostgREST を直接呼ぶ道（アプリの窓口を通らない道）でも、2段階のログイン・DB の権限・登録の決まりが飛ばせない
  * 対応: SEC-AUTH-005-AC-01 / SEC-AUTH-005-AC-02 / SEC-AUTH-010-AC-01 / SEC-AUTH-011-AC-01 / SEC-AUTH-012-AC-01
  *       SEC-AUTH-015-AC-01 / SEC-AUTH-015-AC-02 / SEC-AUTH-028-AC-02
+ *       SEC-AUTH-005-AC-03 / SEC-AUTH-005-AC-05 / SEC-AUTH-030-AC-03 / SEC-AUTH-031-AC-02 / SEC-AUTH-010-AC-03
  *
  * 手元の Supabase（GoTrue の /auth/v1、PostgREST の /rest/v1）を anon の鍵と、パスワードだけで得た JWT で直接叩く。
  * アプリの窓口（/api/auth/me・/api/profile・/api/orders・/api/admin/users）は Bearer で叩く。画面は開かない。
  * HTTP の試験なので結果は画面の幅で変わらない。1つの幅（desktop）だけ流す（DB の書き込みと回数の制限の枠を3倍にしない）。
  *
- * 既知の赤: SEC-AUTH-005・010-AC-01・012・015 は、2026-10-24 時点で文書に載せた「今のコードは満たさない」点
- * （docs/02_Requirements/areas/auth.md）。SEC-AUTH-028-AC-02 は満たす。AC ごとに describe を分け、赤を互いに混ぜない。
+ * 既知の赤: SEC-AUTH-012・015 は、2026-10-24 時点で文書に載せた「今のコードは満たさない」点（docs/02_Requirements/areas/auth.md）。
+ * SEC-AUTH-005-AC-02・005-AC-03 の PostgREST の側・010-AC-01・010-AC-03 は、DB の移行 M2（波 5。has_permission に aal2 と結び付いた生きた session を求め、
+ * profiles・orders・order_items に RESTRICTIVE の方針を足す）を当てた DB で通る（test.fail は外した。M2 を当てていない DB では赤）。
+ * SEC-AUTH-005-AC-01・03・05、SEC-AUTH-030-AC-03、SEC-AUTH-031-AC-02 は波 5 でアプリの窓口が満たす（旗 AUTH_REQUIRE_APP_SESSION は E2E で固定の on）。
+ * SEC-AUTH-028-AC-02 は満たす。AC ごとに describe を分け、赤を互いに混ぜない。
  * （012 は G-2 の移行 20261024153505 が anon・authenticated の EXECUTE を外すので、その移行を当てた DB では緑になる。
  *  011 は移行 sec_grants_hardening が認証の表の権限を外すので、その移行を当てた DB では緑になる）
  *
  * 前提: 手元の Supabase（npm run db:start）と手元の E2E アプリ。会員・管理者は auth.admin.createUser で既知のパスワードつきで作る。
  * GoTrue のログイン・登録の枠（5 分で 30 回、全部の E2E で共有）を節約するため、読むだけの試験で使う会員・管理者は worker ごとに1回だけ
  * ログインして使い回す。書き換える試験（015-AC-02・028-AC-02）は試験ごとに会員を作る（028-AC-02 はアプリの窓口を通して JWT を得る）。
+ * 波 5 の試験（005-AC-03・031-AC-02）は、アプリを通らない「OTP だけの通行証」を anon の鍵で /auth/v1/otp → 受け箱の8桁のコード →
+ * /auth/v1/verify の順に直接呼んで得る（amr に otp が付く。パスワードは使わない）。この通行証は GoTrue には本物として通るが、
+ * 自前の sessions に結び付いた行が無いので、アプリは断る。攻撃側の通行証は結び付けない。対照の会員・管理者（005-AC-03・010-AC-03）だけは createAdminSessionActor で結び付けて使う（「読めない」が権限の無さのせいでないことの確かめ）。
  * 後始末: 足した注文は消す。利用者は残る（db reset で消える）。役割 admin を付けた利用者は user_roles を無効にする。
  * JWT・パスワードが通信記録に残らないよう trace は切る。失敗の文面にも出さない。
  */
@@ -23,7 +30,9 @@ import { createClient } from '@supabase/supabase-js';
 import { Client } from 'pg';
 import { expect, test, type APIResponse } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
-import { createTestMember, loginAsMember } from './member-session-helpers';
+import type { PgClient } from '../tests/integration/db/helpers/local-db';
+import { createAdminSessionActor, elevateAdminSessionToAal2 } from './admin-session-test-utils';
+import { createTestMember, loginAsMember, readLatestCode, readMailpitMessages } from './member-session-helpers';
 
 test.use({ trace: 'off' });
 
@@ -81,6 +90,7 @@ type JwtClaims = {
   sub?: string;
   aal?: string;
   session_id?: string;
+  amr?: Array<{ method?: string }>;
   app_metadata?: { role?: string };
   user_metadata?: { role?: string };
 };
@@ -95,7 +105,7 @@ const newPassword = (): string => `E2e-${randomBytes(12).toString('hex')}!`;
 const newEmail = (label: string): string =>
   `e2e-auth031-${label}-${Date.now().toString(36)}${randomBytes(3).toString('hex')}@example.com`;
 
-/** 役割 admin を付けた利用者。afterAll で user_roles を無効にする */
+/** 役割 admin を付けた利用者と、対照に使う役割 user の利用者。afterAll で user_roles を無効にする */
 const adminUserIds: string[] = [];
 type TokenReply = { access_token?: string; refresh_token?: string };
 
@@ -115,8 +125,8 @@ async function requestToken(grantType: 'password' | 'refresh_token', body: Recor
   return { accessToken: reply.access_token, refreshToken: reply.refresh_token };
 }
 
-/** 既知のパスワードで作った利用者が、パスワードだけで（OTP を通らずに）得た JWT を持つ */
-async function createSignedInActor(label: string, options: { admin?: boolean } = {}): Promise<Actor> {
+/** 既知のパスワードで利用者を作るだけ（通行証は取らない）。admin なら役割 admin も付ける */
+async function createUnsignedActor(label: string, options: { admin?: boolean } = {}): Promise<Omit<Actor, 'accessToken' | 'refreshToken'>> {
   requireLocalEnv();
   const email = newEmail(label);
   const password = newPassword();
@@ -145,8 +155,52 @@ async function createSignedInActor(label: string, options: { admin?: boolean } =
     });
     adminUserIds.push(userId);
   }
-  const tokens = await requestToken('password', { email, password });
-  return { userId, email, password, ...tokens };
+  return { userId, email, password };
+}
+
+/** 既知のパスワードで作った利用者が、パスワードだけで（OTP を通らずに）得た JWT を持つ */
+async function createSignedInActor(label: string, options: { admin?: boolean } = {}): Promise<Actor> {
+  const created = await createUnsignedActor(label, options);
+  const tokens = await requestToken('password', { email: created.email, password: created.password });
+  return { ...created, ...tokens };
+}
+
+/** GoTrue の送り元の枠（IP ごと）を全部の E2E で使い切らないよう、試験ごとに別の値を付ける */
+const uniqueForwardedFor = (): string => `10.${randomBytes(1)[0]}.${randomBytes(1)[0]}.${randomBytes(1)[0]}`;
+
+/** アプリの窓口を叩く時の、回数の制限を試験ごとに分ける送り元（手元の E2E サーバーだけで効く。CLIENT_IP_HEADER=x-real-ip） */
+const uniqueSourceIp = (): string => `198.18.${randomBytes(1)[0]}.${(randomBytes(1)[0] % 253) + 1}`;
+
+/**
+ * アプリを通らずに、anon の鍵で /auth/v1/otp → 受け箱の8桁のコード → /auth/v1/verify を直接呼んで得た通行証。
+ * パスワードは使わない。amr は otp になる。Node から呼ぶので JWT・コードが通信記録に載らない。
+ */
+async function requestOtpOnlyTokens(email: string): Promise<{ accessToken: string; refreshToken: string }> {
+  requireLocalEnv();
+  const previousMessageIds = new Set((await readMailpitMessages(email)).map((message) => message.ID));
+  const headers = { apikey: ANON_KEY, 'content-type': 'application/json', 'x-forwarded-for': uniqueForwardedFor() };
+  const sent = await fetch(`${SUPABASE_URL}/auth/v1/otp`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ email, create_user: false }),
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => {
+    throw new Error('手元の Auth の /otp の要求に失敗した');
+  });
+  if (!sent.ok) throw new Error(`手元の Auth の /otp が通らない: ${sent.status}`);
+  const code = await readLatestCode(email, previousMessageIds);
+  const verified = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
+    method: 'POST',
+    headers: { ...headers, 'x-forwarded-for': uniqueForwardedFor() },
+    body: JSON.stringify({ type: 'email', email, token: code }),
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => {
+    throw new Error('手元の Auth の /verify の要求に失敗した');
+  });
+  if (!verified.ok) throw new Error(`手元の Auth の /verify が通らない: ${verified.status}`);
+  const reply = (await verified.json().catch(() => ({}))) as TokenReply;
+  if (!reply.access_token || !reply.refresh_token) throw new Error('手元の Auth の /verify の応答に token が無い');
+  return { accessToken: reply.access_token, refreshToken: reply.refresh_token };
 }
 
 /** 読むだけの試験で使い回す。ログインの枠を使い切らないよう worker ごとに1回だけ作る */
@@ -155,9 +209,25 @@ let sharedAdminPromise: Promise<Actor> | null = null;
 const sharedMember = (): Promise<Actor> => (sharedMemberPromise ??= createSignedInActor('member'));
 const sharedAdmin = (): Promise<Actor> => (sharedAdminPromise ??= createSignedInActor('admin', { admin: true }));
 
+/** 管理者が DB の ACL で admin.orders.read を持つこと（権限が無くて読めないのでは試験にならない） */
+async function expectHoldsOrdersRead(userId: string): Promise<void> {
+  await withDb(async (db) => {
+    const held = await db.query(
+      `select count(*)::int as n
+         from public.user_roles ur
+         join public.role_permissions rp on rp.role_id = ur.role_id
+         join public.permissions p on p.id = rp.permission_id
+        where ur.user_id = $1::uuid and ur.active = true and (ur.expires_at is null or ur.expires_at > now())
+          and p.code = 'admin.orders.read'`,
+      [userId],
+    );
+    expect(held.rows[0].n, '管理者が持つ admin.orders.read（準備）').toBeGreaterThan(0);
+  });
+}
+
 /** 会員本人の profiles と注文が実在することを保つ（無いと「読めない」が空の表のせいで成り立つ） */
 const ownedRowsByUser = new Map<string, Promise<string>>();
-function ensureOwnedRows(member: Actor): Promise<string> {
+function ensureOwnedRows(member: Pick<Actor, 'userId'>): Promise<string> {
   const existing = ownedRowsByUser.get(member.userId);
   if (existing) return existing;
   const seeded = withDb(
@@ -232,7 +302,6 @@ for (const viewport of viewports) {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
     test(`SEC-AUTH-005-AC-01 直接の password grant で得た JWT を Bearer で送ると、/api/auth/me が authenticated: false を返し、会員の窓口が 401 を返す (${viewport.name})`, async ({ request, baseURL }) => {
-      test.fail(true, 'SEC-AUTH-005 今のコードは満たさない（docs/02_Requirements/areas/auth.md）');
       requireLocalApp(baseURL);
       const member = await sharedMember();
 
@@ -256,7 +325,6 @@ for (const viewport of viewports) {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
     test(`SEC-AUTH-005-AC-02 同じ JWT で PostgREST の profiles・orders を select した結果に、本人の profiles と注文の行が含まれない (${viewport.name})`, async ({ request }) => {
-      test.fail(true, 'SEC-AUTH-005 今のコードは満たさない（docs/02_Requirements/areas/auth.md）');
       const member = await sharedMember();
       await ensureOwnedRows(member);
 
@@ -273,6 +341,122 @@ for (const viewport of viewports) {
   });
 }
 
+for (const viewport of viewports) {
+  test.describe(`SEC-AUTH-005-AC-03 メール OTP だけで取った通行証でもアプリの会員の窓口が通らない (${viewport.name})`, () => {
+    test.use({ viewport: { width: viewport.width, height: viewport.height } });
+
+    test(`SEC-AUTH-005-AC-03 パスワード無しで /auth/v1/otp と /auth/v1/verify を直接呼んで得た通行証を Bearer か Cookie で送ると、/api/auth/me が authenticated: false を返し、会員の窓口が 401 を返す (${viewport.name})`, async ({ request, baseURL }) => {
+      requireLocalApp(baseURL);
+      const user = await createUnsignedActor('otponly');
+      const tokens = await requestOtpOnlyTokens(user.email);
+
+      // 準備: この通行証は Auth 自身には本物として通り、amr に otp が付く（amr ではアプリのログインを通ったかを区別できない）
+      const claims = claimsOf(tokens.accessToken);
+      expect(claims.sub, '通行証の利用者（準備）').toBe(user.userId);
+      expect(claims.amr?.some((entry) => entry.method === 'otp'), '通行証の amr に otp がある（準備）').toBe(true);
+      const direct = await request.get(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: ANON_KEY, ...bearer(tokens.accessToken) } });
+      expect(direct.status(), 'Auth 自身の /auth/v1/user（準備）').toBe(200);
+
+      const me = await request.get('/api/auth/me', { headers: bearer(tokens.accessToken) });
+      expect(await jsonOf(me), '/api/auth/me の応答').toMatchObject({ authenticated: false });
+
+      const profile = await request.get('/api/profile', { headers: bearer(tokens.accessToken) });
+      expect(profile.status(), '会員の窓口 /api/profile の status（Bearer）').toBe(401);
+      const orders = await request.get('/api/orders', { headers: bearer(tokens.accessToken) });
+      expect(orders.status(), '会員の窓口 /api/orders の status（Bearer）').toBe(401);
+
+      // Cookie で送っても同じ（アプリの Cookie の名前で access token を渡す）
+      const viaCookie = await request.get('/api/profile', { headers: { Cookie: `sb-access-token=${tokens.accessToken}` } });
+      expect(viaCookie.status(), '会員の窓口 /api/profile の status（Cookie）').toBe(401);
+    });
+  });
+}
+
+for (const viewport of viewports) {
+  test.describe(`SEC-AUTH-005-AC-03 メール OTP だけで取った通行証では PostgREST から profiles と注文が読めない (${viewport.name})`, () => {
+    test.use({ viewport: { width: viewport.width, height: viewport.height } });
+
+    test(`SEC-AUTH-005-AC-03 パスワード無しで /auth/v1/otp と /auth/v1/verify を直接呼んで得た通行証で PostgREST の profiles・orders を select した結果に、本人の profiles と注文の行が含まれない (${viewport.name})`, async ({ request }) => {
+      // 対照: アプリのログインと同じ形で結び付けた会員は、同じ表で自分の行が読める（「読めない」が空の表や権限の無さのせいではないことの確かめ）
+      const bound = await withDb((db) => createAdminSessionActor(db as unknown as PgClient, 'user', 'aal1'));
+      adminUserIds.push(bound.userId);
+      await ensureOwnedRows(bound);
+      const boundProfiles = await request.get(`${SUPABASE_URL}/rest/v1/profiles?select=user_id&user_id=eq.${bound.userId}`, {
+        headers: postgrestHeaders(bound.accessToken),
+      });
+      expect(await selectedRows(boundProfiles, '結び付いた会員の profiles'), '結び付いた会員の本人の profiles の行').toHaveLength(1);
+      const boundOrders = await request.get(`${SUPABASE_URL}/rest/v1/orders?select=id,user_id&user_id=eq.${bound.userId}`, {
+        headers: postgrestHeaders(bound.accessToken),
+      });
+      expect(await selectedRows(boundOrders, '結び付いた会員の orders'), '結び付いた会員の本人の注文の行').toHaveLength(1);
+
+      const user = await createUnsignedActor('otponlydb');
+      await ensureOwnedRows(user);
+      const tokens = await requestOtpOnlyTokens(user.email);
+
+      // 準備: この通行証は Auth 自身には本物として通り、amr に otp が付く
+      const claims = claimsOf(tokens.accessToken);
+      expect(claims.sub, '通行証の利用者（準備）').toBe(user.userId);
+      expect(claims.amr?.some((entry) => entry.method === 'otp'), '通行証の amr に otp がある（準備）').toBe(true);
+      const direct = await request.get(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: ANON_KEY, ...bearer(tokens.accessToken) } });
+      expect(direct.status(), 'Auth 自身の /auth/v1/user（準備）').toBe(200);
+
+      const profiles = await request.get(`${SUPABASE_URL}/rest/v1/profiles?select=user_id&user_id=eq.${user.userId}`, {
+        headers: postgrestHeaders(tokens.accessToken),
+      });
+      expect(await selectedRows(profiles, 'OTP だけの通行証の profiles'), 'OTP だけの通行証に見えた本人の profiles の行').toEqual([]);
+      const orders = await request.get(`${SUPABASE_URL}/rest/v1/orders?select=id,user_id&user_id=eq.${user.userId}`, {
+        headers: postgrestHeaders(tokens.accessToken),
+      });
+      expect(await selectedRows(orders, 'OTP だけの通行証の orders'), 'OTP だけの通行証に見えた本人の注文の行').toEqual([]);
+    });
+  });
+}
+
+for (const viewport of viewports) {
+  test.describe(`SEC-AUTH-005-AC-05 結び付いていない session の refresh token では更新が通らず、結び付いた session に洗えない (${viewport.name})`, () => {
+    test.use({ viewport: { width: viewport.width, height: viewport.height } });
+
+    test(`SEC-AUTH-005-AC-05 password grant の refresh token を sb-refresh-token の Cookie に入れて /api/auth/refresh を叩くと 401 になり、認証の Cookie が消え、その session に結び付いた行ができない (${viewport.name})`, async ({ request, baseURL }) => {
+      requireLocalApp(baseURL);
+      const origin = new URL(baseURL ?? '').origin;
+      // 試験ごとに利用者と session を作る（更新を試みる対象の session を他の試験と分ける）
+      const member = await createSignedInActor('washing');
+      const authSessionId = claimsOf(member.accessToken).session_id;
+      expect(authSessionId, 'password grant の通行証の session_id（準備）').toBeTruthy();
+
+      const refreshed = await request.post(new URL('/api/auth/refresh', origin).toString(), {
+        headers: { origin, 'x-real-ip': uniqueSourceIp(), Cookie: `sb-refresh-token=${member.refreshToken}` },
+        failOnStatusCode: false,
+        maxRedirects: 0,
+      });
+      expect(refreshed.status(), '/api/auth/refresh の status').toBe(401);
+      // 本文は読み切る（読まない呼び手は要求を開いたままにする）。新しい token 対を返していない
+      const body = (await jsonOf(refreshed)) as Record<string, unknown> | null;
+      expect(body !== null && 'access_token' in body, '応答の本文に access_token が無い').toBe(false);
+
+      // 認証の 3 つの Cookie を消す Set-Cookie（値が空）が付く
+      const cleared = new Set(
+        refreshed
+          .headersArray()
+          .filter((header) => header.name.toLowerCase() === 'set-cookie')
+          .map((header) => header.value.split(';')[0] ?? '')
+          .filter((pair) => pair.endsWith('=') && pair.length > 1)
+          .map((pair) => pair.slice(0, -1)),
+      );
+      for (const name of ['sb-refresh-token', 'sb-access-token', 'sb-csrf-token']) {
+        expect(cleared.has(name), `${name} を消す Set-Cookie が付く`).toBe(true);
+      }
+
+      // 洗われていれば、この session_id に結び付いた行が自前の sessions にできる
+      await withDb(async (db) => {
+        const bound = await db.query('select count(*)::int as n from public.sessions where auth_session_id = $1::uuid', [authSessionId]);
+        expect(bound.rows[0].n, 'この session に結び付いた sessions の行').toBe(0);
+      });
+    });
+  });
+}
+
 // ---- SEC-AUTH-010 ----
 
 for (const viewport of viewports) {
@@ -280,25 +464,13 @@ for (const viewport of viewports) {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
     test(`SEC-AUTH-010-AC-01 admin の役割の利用者の aal1 の JWT で PostgREST の orders を select した結果に、その管理者以外の注文の行が含まれない (${viewport.name})`, async ({ request }) => {
-      test.fail(true, 'SEC-AUTH-010 今のコードは満たさない（docs/02_Requirements/areas/auth.md）');
       const admin = await sharedAdmin();
       const member = await sharedMember();
       const foreignOrderId = await ensureOwnedRows(member);
 
       // 準備: aal1 の JWT であり、この管理者は注文を読む権限を DB の ACL で持つ（権限が無くて読めないのでは試験にならない）
       expect(claimsOf(admin.accessToken).aal, '管理者の JWT の aal').toBe('aal1');
-      await withDb(async (db) => {
-        const held = await db.query(
-          `select count(*)::int as n
-             from public.user_roles ur
-             join public.role_permissions rp on rp.role_id = ur.role_id
-             join public.permissions p on p.id = rp.permission_id
-            where ur.user_id = $1::uuid and ur.active = true and (ur.expires_at is null or ur.expires_at > now())
-              and p.code = 'admin.orders.read'`,
-          [admin.userId],
-        );
-        expect(held.rows[0].n, '管理者が持つ admin.orders.read（準備）').toBeGreaterThan(0);
-      });
+      await expectHoldsOrdersRead(admin.userId);
 
       const specific = await request.get(`${SUPABASE_URL}/rest/v1/orders?select=id,user_id&id=eq.${foreignOrderId}`, {
         headers: postgrestHeaders(admin.accessToken),
@@ -310,6 +482,42 @@ for (const viewport of viewports) {
         { headers: postgrestHeaders(admin.accessToken) },
       );
       expect(await selectedRows(others, '管理者以外の注文'), 'aal1 の管理者に見えた管理者以外の注文の行').toEqual([]);
+    });
+  });
+}
+
+for (const viewport of viewports) {
+  test.describe(`SEC-AUTH-010-AC-03 結び付いた admin でも aal1 の JWT では他人の注文が読めず、同じ人の aal2 の JWT では読める (${viewport.name})`, () => {
+    test.use({ viewport: { width: viewport.width, height: viewport.height } });
+
+    test(`SEC-AUTH-010-AC-03 アプリのログインと同じ形で結び付けた admin の aal1 の JWT で PostgREST の orders を select した結果に他人の注文の行が含まれず、同じ session を aal2 に上げた JWT では含まれる (${viewport.name})`, async ({ request }) => {
+      const member = await sharedMember();
+      const foreignOrderId = await ensureOwnedRows(member);
+      // 結び付けた（生きた session がある）admin。aal1 の JWT と、同じ session を上げた aal2 の JWT。違いは aal だけ
+      const aal1Admin = await withDb((db) => createAdminSessionActor(db as unknown as PgClient, 'admin', 'aal1'));
+      adminUserIds.push(aal1Admin.userId);
+      const aal2Admin = await withDb((db) => elevateAdminSessionToAal2(db as unknown as PgClient, aal1Admin));
+      expect(aal1Admin.appBound, '管理者の通行証が結び付いている（準備）').toBe(true);
+      expect(claimsOf(aal1Admin.accessToken).aal, '一方の JWT の aal').toBe('aal1');
+      expect(claimsOf(aal2Admin.accessToken).aal, 'もう一方の JWT の aal').toBe('aal2');
+      expect(claimsOf(aal1Admin.accessToken).session_id, '二つの JWT は同じ session').toBe(claimsOf(aal2Admin.accessToken).session_id);
+      await expectHoldsOrdersRead(aal1Admin.userId);
+
+      // 対照: aal2 の JWT では他人の注文が読める（権限・結び付き・生存は揃っている。止めているのは aal だけ）
+      const viaAal2 = await request.get(`${SUPABASE_URL}/rest/v1/orders?select=id,user_id&id=eq.${foreignOrderId}`, {
+        headers: postgrestHeaders(aal2Admin.accessToken),
+      });
+      expect((await selectedRows(viaAal2, 'aal2 の管理者の他人の注文')).map((row) => row.id), 'aal2 の管理者に見えた他人の注文').toEqual([foreignOrderId]);
+
+      const viaAal1 = await request.get(`${SUPABASE_URL}/rest/v1/orders?select=id,user_id&id=eq.${foreignOrderId}`, {
+        headers: postgrestHeaders(aal1Admin.accessToken),
+      });
+      expect(await selectedRows(viaAal1, 'aal1 の管理者の他人の注文'), 'aal1 の管理者に見えた他人の注文の行').toEqual([]);
+      const others = await request.get(
+        `${SUPABASE_URL}/rest/v1/orders?select=id,user_id&or=(user_id.is.null,user_id.neq.${aal1Admin.userId})&limit=5`,
+        { headers: postgrestHeaders(aal1Admin.accessToken) },
+      );
+      expect(await selectedRows(others, 'aal1 の管理者の他人の注文（絞らない）'), 'aal1 の管理者に見えた管理者以外の注文の行').toEqual([]);
     });
   });
 }
@@ -439,6 +647,90 @@ for (const viewport of viewports) {
       expect(response.status(), '直接のパスワード変更の status').toBeLessThan(500);
       expect(JSON.stringify(await jsonOf(response)), '再認証を求める誤りの文面').toMatch(/reauthentication/i);
       expect(await readHash(), '変更後のパスワードのハッシュ').toBe(before);
+    });
+  });
+}
+
+// ---- SEC-AUTH-030・031（波 5: 結び付けの拒否と、初めての TOTP の登録） ----
+
+/** 監査の行を文字列にした物。トークン・session_id の値が入っていないかを、値そのものを出さずに真偽で比べるため */
+const auditRowTexts = (db: Client, where: string, params: unknown[]): Promise<string[]> =>
+  db
+    .query(`select to_jsonb(a)::text as row_text from public.audit_logs a where ${where}`, params)
+    .then((result) => result.rows.map((row) => row.row_text as string));
+
+for (const viewport of viewports) {
+  test.describe(`SEC-AUTH-030-AC-03 結び付けで断った更新が固定の符号だけで監査に残る (${viewport.name})`, () => {
+    test.use({ viewport: { width: viewport.width, height: viewport.height } });
+
+    test(`SEC-AUTH-030-AC-03 結び付いていない refresh token での更新を断ると、audit_logs に refresh・failure・unbound_session の行が増え、その行にトークンと session_id の値が無い (${viewport.name})`, async ({ request, baseURL }) => {
+      requireLocalApp(baseURL);
+      const origin = new URL(baseURL ?? '').origin;
+      const member = await createSignedInActor('unbound-audit');
+      const authSessionId = claimsOf(member.accessToken).session_id ?? '';
+      expect(authSessionId, 'password grant の通行証の session_id（準備）').not.toBe('');
+      const startedAt = await withDb(async (db) => (await db.query('select now() as t')).rows[0].t as Date);
+
+      const refreshed = await request.post(new URL('/api/auth/refresh', origin).toString(), {
+        headers: { origin, 'x-real-ip': uniqueSourceIp(), Cookie: `sb-refresh-token=${member.refreshToken}` },
+        failOnStatusCode: false,
+        maxRedirects: 0,
+      });
+      expect(refreshed.status(), '/api/auth/refresh の status').toBe(401);
+      await jsonOf(refreshed); // 本文は読み切る
+
+      const texts = await withDb((db) =>
+        auditRowTexts(db, `action = 'refresh' and outcome = 'failure' and detail = 'unbound_session' and created_at >= $1`, [startedAt]),
+      );
+      expect(texts.length, '断りの監査の行（refresh・failure・unbound_session）').toBeGreaterThanOrEqual(1);
+      for (const text of texts) {
+        expect.soft(text.includes(member.refreshToken), '監査の行に refresh token の値が無い').toBe(false);
+        expect.soft(text.includes(member.accessToken), '監査の行に access token の値が無い').toBe(false);
+        expect.soft(text.includes(authSessionId), '監査の行に session_id の値が無い').toBe(false);
+      }
+    });
+  });
+}
+
+for (const viewport of viewports) {
+  test.describe(`SEC-AUTH-031-AC-02 メール OTP だけで取った通行証では初めての TOTP の登録が 401 で断られる (${viewport.name})`, () => {
+    test.use({ viewport: { width: viewport.width, height: viewport.height } });
+
+    test(`SEC-AUTH-031-AC-02 TOTP の無い管理者が /auth/v1/otp と /auth/v1/verify を直接呼んで得た通行証で /api/auth/mfa/enroll-totp を叩くと、401 になり、要素が作られず、mfa_enroll・denied・app_session_required の行が監査に 1 つ増える (${viewport.name})`, async ({ request, baseURL }) => {
+      requireLocalApp(baseURL);
+      const origin = new URL(baseURL ?? '').origin;
+      // 役割 admin を付けた利用者（afterAll で user_roles を無効にする）。TOTP は登録しない
+      const admin = await createUnsignedActor('otpadmin', { admin: true });
+      const tokens = await requestOtpOnlyTokens(admin.email);
+      const claims = claimsOf(tokens.accessToken);
+      const authSessionId = claims.session_id ?? '';
+      expect(authSessionId, '通行証の session_id（準備）').not.toBe('');
+      expect(claims.aal, '通行証の aal（準備）').toBe('aal1');
+      expect(claims.amr?.some((entry) => entry.method === 'otp'), '通行証の amr に otp がある（準備。amr の確かめでは断れない通行証）').toBe(true);
+      const factorCount = (): Promise<number> =>
+        withDb(async (db) => {
+          const result = await db.query('select count(*)::int as n from auth.mfa_factors where user_id = $1::uuid', [admin.userId]);
+          return result.rows[0].n as number;
+        });
+      expect(await factorCount(), '登録の前は要素が無い（準備）').toBe(0);
+
+      const response = await request.post(new URL('/api/auth/mfa/enroll-totp', origin).toString(), {
+        headers: { ...bearer(tokens.accessToken), origin, 'x-real-ip': uniqueSourceIp() },
+        data: {},
+        failOnStatusCode: false,
+        maxRedirects: 0,
+      });
+      expect(response.status(), '/api/auth/mfa/enroll-totp の status（403 ではなく、結び付けの断りの 401）').toBe(401);
+      await jsonOf(response); // 本文は読み切る
+      expect(await factorCount(), '要素が作られない').toBe(0);
+
+      const texts = await withDb((db) =>
+        auditRowTexts(db, `actor_id::text = $1 and action = 'mfa_enroll' and outcome = 'denied' and detail = 'app_session_required'`, [admin.userId]),
+      );
+      expect(texts.length, '断りの監査の行（mfa_enroll・denied・app_session_required）が 1 つ').toBe(1);
+      expect.soft(texts[0]?.includes(tokens.accessToken), '監査の行に access token の値が無い').toBe(false);
+      expect.soft(texts[0]?.includes(tokens.refreshToken), '監査の行に refresh token の値が無い').toBe(false);
+      expect.soft(texts[0]?.includes(authSessionId), '監査の行に session_id の値が無い').toBe(false);
     });
   });
 }

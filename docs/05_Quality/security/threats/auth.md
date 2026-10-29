@@ -1,6 +1,6 @@
 # AUTH の脅威
 
-> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-28 | 対象: ログイン・メール OTP・会員登録・パスワード再設定・Google のログイン・TOTP・ログアウト・トークンの更新・ヘッダー、その裏の Supabase Auth と `sessions`・`password_reset_tokens`・`profiles` の DB | 基準コミット: `973dc336`（読んだのは作業ツリー。本文の `ファイル:行` の行番号は、この基準コミットのコードを指す）
+> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-29 | 対象: ログイン・メール OTP・会員登録・パスワード再設定・Google のログイン・TOTP・ログアウト・トークンの更新・ヘッダー、その裏の Supabase Auth と `sessions`・`password_reset_tokens`・`profiles` の DB | 基準コミット: `973dc336`（読んだのは作業ツリー。本文の `ファイル:行` の行番号は、この基準コミットのコードを指す）
 
 ---
 
@@ -12,7 +12,8 @@ AUTH（ログインと認証、ヘッダー）の領域で考える脅威を、1
 | --- | --- |
 | 項目の数 | 33（THR-AUTH-001〜033） |
 | 守りがある物 | パスワードと OTP の総当たり（001・002）、OTP だけのログイン（003）、保留の延長（004）、漏洩・短いパスワード（014）、列挙の応答（016）、再設定のリンク（018）、メールの住所の差し替え（019）、パスワード変更・ログアウト後のセッション（020・021）、Cookie の属性（024）、CSRF（025）、ヘッダーの出し分け（028）、応答の本文のトークンとキャッシュ（022。2026-10-28 に proxy の no-store まで直した） |
-| 守りが欠ける・弱い物 | Supabase Auth を直接呼んでメール OTP を飛ばす（005）、メールの確認のリンクの入口（006・007）、TOTP の総当たり（009）、DB が aal2 を見ない（010）、表の権限（011）、回数の制限の IP（013）、直接の登録・変更（015）、トークンを JS に渡す（023）、ログインの後の送り先の open redirect（026。画面は消し、確かめの部品に置き換える作業中）、本番の設定（029）、監査の抜け（030）、会員登録の宛先単位の制限（016）、認証の関数を anon・authenticated が呼べる（012、本番は未確認）、ログアウト時に refresh の Cookie が無いと Supabase のセッションを切らない（021）、初めての TOTP の登録の乗っ取り（031）、戻り先の控えの番号の盗み・使い回し（032。控えを作る作業中）、新しい表・関数に広い権限が自動で付く（033。決まりと試験を足した。試験は手元の DB でまだ流していない） |
+| 波 5 で塞いだ物 | Supabase Auth を直接呼んでメール OTP を飛ばす（005）と、aal1 の JWT で DB を触る（010）。アプリの窓口は 2026-10-29 に塞いだ（アプリのログインを通った結び付いた session だけを通す。ADR-0417・0419）。DB は移行 M2 を当てた DB で塞がる（ADR-0418。M2 は controller が当てるまで未適用）。残る危険は、パスワードとメールの受信箱の両方を盗まれ、正規の 2 段を踏まれる場合（会員。管理者は TOTP が上乗せ） |
+| 守りが欠ける・弱い物 | メールの確認のリンクの入口（006・007）、TOTP の総当たり（009）、表の権限（011）、回数の制限の IP（013）、直接の登録・変更（015）、トークンを JS に渡す（023）、ログインの後の送り先の open redirect（026。画面は消し、確かめの部品に置き換える作業中）、本番の設定（029）、監査の抜け（030）、会員登録の宛先単位の制限（016）、認証の関数を anon・authenticated が呼べる（012、本番は未確認）、ログアウト時に refresh の Cookie が無いと Supabase のセッションを切らない（021）、初めての TOTP の登録の乗っ取り（031）、戻り先の控えの番号の盗み・使い回し（032。控えを作る作業中）、新しい表・関数に広い権限が自動で付く（033。決まりと試験を足した。試験は手元の DB でまだ流していない） |
 | 対策の書き先 | 対策のセキュリティ要件 `SEC-AUTH-NNN` は要件の文書（`docs/02_Requirements/areas/auth.md`）に書く。下の「対策」の欄は読み手のための写し |
 | 状態の付け方 | 全部「推定」。実装と過去のレビューから起こし、ユーザーの確認を受けていないため（`.claude/skills/documentation-guide/SKILL.md` の 7）。コードで確かめた物も、本番の設定・ライブラリの既定・推論に頼る物も同じ。どれも実行しての確かめはしていない |
 
@@ -114,6 +115,7 @@ flowchart LR
 | 守るもの | 2段階のログイン、会員の情報（`profiles` の氏名・電話・住所）と注文の履歴 |
 | 脅威 | 会員のパスワードを知った攻撃者が、公開の anon キーで Supabase Auth を直接呼び、メール OTP を通らずに会員の JWT を得る。メールを読める攻撃者は、パスワード無しの OTP・マジックリンクで JWT を得る |
 | 起こり方 | anon キーは画面に配る公開の値。`/auth/v1/token?grant_type=password` を直接呼べば、パスワードだけで access token と refresh token が返る（Supabase Auth の標準の動き）。アプリの認証は JWT の署名・期限・iss・aud と session の生存だけを見て、どの方法でログインしたか（`amr`）を見ない（`src/lib/auth/authenticate.ts:97-108,139,163`）。PostgREST も同じ JWT を受け、`profiles` の本人の行（`supabase/migrations/20260901102912_remote_schema.sql:3691-3710`）と本人の注文（`:3635`）を返す。Turnstile・アプリの回数の制限も通らない |
+| 対処の状況 | 波 5 の Task 3（2026-10-29）で、アプリの窓口側は塞いだ。認証の確かめ（`authenticateRequest`）と管理の認可（`admin-rbac` の `checkAuthSessionLiveness`）が、アプリのログインを通った session（自前の `sessions` に GoTrue の `session_id` を残した失効していない行があり、GoTrue 側でも生きている）だけを通す（RPC `is_app_session_active`。旗 `AUTH_REQUIRE_APP_SESSION` が有効な間。既定。ADR-0417・0419）。OTP だけで直に取った通行証も断る（`amr` に `otp` が付くため `amr` では断れない）。更新（`refresh`）は結び付いた行の続きにだけ通し、前の行が無い・`auth_session_id` が空の refresh token は GoTrue を呼ぶ前に 401 にする（結び付いていない session が更新で結び付いた session に洗われるのを防ぐ。SEC-AUTH-005-AC-05）。アプリを通らず任意の session（パスワードだけ・OTP だけ・anon キーで作った物）の通行証で PostgREST の直叩きをする道は、移行 M2（`has_permission` と会員の表の RESTRICTIVE の方針）を当てた DB で塞がる（2026-10-29 に E2E の `test.fail` を外した。M2 は controller が当てるまで未適用）。本物の `mfa.verify` の前後で `session_id` が変わらないことは本番の前の確認として残る（手元の補助では変わらないと実測した。2026-10-29、Task 0）。残る危険は、パスワードとメールの受信箱の両方を盗まれた攻撃者が正規の 2 段（パスワード → メール OTP）を踏む場合で、会員の 2 段はアプリ独自の方針（NIST の AAL2 ではない）であり防げない。管理者は TOTP が上乗せになる。本人へのログインの通知メールは波 5 の別件。E2E は Task 5（2026-10-29）で書いた（`FR-LOGIN-031`：password grant・OTP だけの通行証が窓口で 401、PostgREST で 0 行（M2 の後）、refresh で洗えない。`FR-LOGIN-030`：本物のログインの session が更新・ログアウトの前後で期待どおり。流すのは controller） |
 | 影響 | FREQ-58・FR-LOGIN-007 の「パスワードとメール OTP の2段階」が、アプリの窓口を通る人にしか効かない。パスワードの漏れだけで、会員の個人情報と注文の履歴に届く。管理は aal2 を求めるので守られる（`src/lib/auth/admin-rbac.ts:240-249`）。ただし DB の側は THR-AUTH-010 |
 | 対策 | SEC-AUTH-005 |
 | ASVS | V4.1.1（当てはめは推定） |
@@ -183,7 +185,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 管理の権限で読み書きできる表（注文・明細・商品・ルック・ニュース・取扱店・会計など） |
 | 脅威 | 管理者・サポーターのパスワード（とメール）を手に入れた攻撃者が、TOTP を通らない `aal1` の JWT で、アプリの窓口を通らず PostgREST から表を読み書きする |
-| 起こり方 | THR-AUTH-005 の直接の呼び出しで `aal1` の JWT を得る。RLS の `has_permission` は ACL の表だけを見て JWT の `aal` を見ない（`supabase/migrations/20261023175712_group_g0_permissions.sql:186-216`。移行のどこにも `aal` の字が無い）。例: 注文の読み書きの方針（`20260901102912_remote_schema.sql:3640-3658`） |
+| 起こり方 | THR-AUTH-005 の直接の呼び出しで `aal1` の JWT を得る。RLS の `has_permission` は ACL の表だけを見て JWT の `aal` を見ない（`supabase/migrations/20261023175712_group_g0_permissions.sql:186-216`。移行のどこにも `aal` の字が無い）。例: 注文の読み書きの方針（`20260901102912_remote_schema.sql:3640-3658`）。2026-10-29（波 5 の Task 6）に、移行 M2 `sec_has_permission_aal2_member_rls`（`supabase/pending-wave5/`。未適用）を書いた。`has_permission` の本体に「`aal` が `aal2`」と「結び付いた生きた session」（ADR-0417・0418）を足し、これを使う約 100 の方針が書き換えなしで従う。`has_permission` を使わず `auth.uid() = user_id` で本人の行を返す `profiles`・`orders`・`order_items` には、結び付いた生きた session を求める RESTRICTIVE の方針を足す。M2 を当てるまで、この穴は開いたまま。当てた瞬間に、結び付いていない session は DB で 0 行・権限なしになり、旗では戻せない（戻すのは移行の ROLLBACK）。残る危険: パスワードとメールの受信箱の両方を盗まれた攻撃者がアプリの正規のログインを踏む場合（管理者は TOTP が上乗せ） |
 | 影響 | 管理の TOTP（FREQ-540（範囲外））の守りが、アプリの窓口だけになる。パスワードの漏れだけで、全会員の注文の読み出しや改ざんに届く。直接の書き換えはアプリの監査にも残らない |
 | 対策 | SEC-AUTH-010 |
 | ASVS | V4.3.1 |
@@ -477,7 +479,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 管理者・サポーターの3段目（TOTP、aal2）と、その先の管理の操作 |
 | 脅威 | 管理者・サポーターのパスワードを手に入れた攻撃者が、持ち主より先に自分の認証アプリを TOTP として登録し、aal2 になる |
-| 起こり方 | `/api/auth/mfa/enroll-totp` は認証と役割（admin・supporter）だけを見て、aal を見ない（`src/app/api/auth/mfa/enroll-totp/route.ts:51-66`）。確かめ済みの TOTP が無ければ aal1 のトークンだけで登録でき（`:74-115`）、`/auth/verified` も TOTP の無い管理者に自動で登録させる。aal1 のトークンは Supabase Auth を直接呼ぶ password grant で得られ、メール OTP も要らない（THR-AUTH-005）。持ち主が登録の途中で残した未確認の要素も、同じ aal1 で外せる（`:99-104`）。2026-10-26 に局所の守りを足した: 通行証の `amr` に 2 段目を通った方法が無ければ 403 で断り、監査に残す。残る穴は、Supabase Auth へ OTP だけを直接送って得た通行証（`amr` に `otp` が付く）が通ること（波 5） |
+| 起こり方 | `/api/auth/mfa/enroll-totp` は認証と役割（admin・supporter）だけを見て、aal を見ない（`src/app/api/auth/mfa/enroll-totp/route.ts:51-66`）。確かめ済みの TOTP が無ければ aal1 のトークンだけで登録でき（`:74-115`）、`/auth/verified` も TOTP の無い管理者に自動で登録させる。aal1 のトークンは Supabase Auth を直接呼ぶ password grant で得られ、メール OTP も要らない（THR-AUTH-005）。持ち主が登録の途中で残した未確認の要素も、同じ aal1 で外せる（`:99-104`）。2026-10-26 に局所の守りを足した: 通行証の `amr` に 2 段目を通った方法が無ければ 403 で断り、監査に残す。残った穴だった、Supabase Auth へ OTP だけを直接送って得た通行証（`amr` に `otp` が付く）が通ることは、2026-10-29（波 5 の Task 3）に塞いだ。認証の確かめがアプリのログインを通った結び付いた session だけを通すので、`enroll-totp` はその通行証に 401 を返し、`mfa_enroll`（`denied`、`app_session_required`）を監査に残す（SEC-AUTH-031-AC-02。旗が有効な間）。本人へのメールの通知は残る |
 | 影響 | 攻撃者の認証アプリで aal2 になり、管理の操作（注文・会計・権限の画面）に届く（`src/lib/auth/admin-rbac.ts:240-249` は aal2 だけを見る）。持ち主は後から自分の TOTP を登録できない |
 | 対策 | SEC-AUTH-031 |
 | ASVS | ASVS 未対応付け（初めての登録の経路を直接扱う項目が無い） |

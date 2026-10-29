@@ -3,7 +3,7 @@
  * 対応: FREQ-186-AC-02 / SEC-SEARCH-002-AC-01 / SEC-SEARCH-007-AC-01 / SEC-SEARCH-008-AC-01 / SEC-SEARCH-009-AC-01
  *
  * 手元の Supabase（NEXT_PUBLIC_SUPABASE_URL が localhost）の PostgREST（/rest/v1/rpc/<関数>）を、anon の鍵・一般会員の JWT・
- * 管理の読み取りの権限を持つ人の aal1 の JWT（パスワードのログインだけで得た本物）で直接叩く。画面は開かない
+ * 管理の読み取りの権限を持つ人の aal1・aal2 の JWT（どちらもアプリの sessions に結び付けた本物。aal2 は同じ session を TOTP 済みに上げたもの）で直接叩く。画面は開かない
  * （HTTP の試験なので幅で結果は変わらない。幅のくり返しはせず AC ごとに1本だけ流す）。
  *
  * - FREQ-186-AC-02 / SEC-SEARCH-009-AC-01: get_popular_items の EXECUTE（pg の has_function_privilege）と、anon・一般会員の直接の呼び出しの断り。
@@ -24,7 +24,7 @@ import { Client } from 'pg';
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
-import { createAdminSessionActor } from './admin-session-test-utils';
+import { createAdminSessionActor, elevateAdminSessionToAal2 } from './admin-session-test-utils';
 
 test.use({ trace: 'off' });
 
@@ -94,12 +94,16 @@ function memberToken(): Promise<string> {
   return memberTokenPromise;
 }
 
-let adminAal1Promise: Promise<{ userId: string; accessToken: string }> | null = null;
-function adminAal1(): Promise<{ userId: string; accessToken: string }> {
+// 同じ利用者・同じ（アプリに結び付いた）session の aal1 と aal2 の JWT。M2 の has_permission は aal2 と生きた結び付きを求めるので、
+// 非公開の行が見える対照は aal2、見えない側は aal1
+type AdminTokens = { userId: string; aal1Token: string; aal2Token: string };
+let adminAal1Promise: Promise<AdminTokens> | null = null;
+function adminTokens(): Promise<AdminTokens> {
   adminAal1Promise ??= withDb(async (db) => {
-    const actor = await createAdminSessionActor(db as unknown as PgClient, 'admin', 'aal1');
-    createdUserIds.push(actor.userId);
-    return { userId: actor.userId, accessToken: actor.accessToken };
+    const aal1 = await createAdminSessionActor(db as unknown as PgClient, 'admin', 'aal1');
+    createdUserIds.push(aal1.userId);
+    const aal2 = await elevateAdminSessionToAal2(db as unknown as PgClient, aal1);
+    return { userId: aal1.userId, aal1Token: aal1.accessToken, aal2Token: aal2.accessToken };
   });
   return adminAal1Promise;
 }
@@ -243,12 +247,13 @@ test.describe('FR-SEARCH-020 検索の DB の関数への直接の道', () => {
     }
   });
 
-  test(`SEC-SEARCH-002-AC-01 非公開の商品・ルック・お知らせは、anon・一般会員・管理の読み取りの権限を持つ人の aal1 の JWT のどれで search_items/looks/news を呼んでも返らない`, async ({ request }) => {
-    const admin = await adminAal1();
+  test(`SEC-SEARCH-002-AC-01 非公開の商品・ルック・お知らせは、anon・一般会員・管理の読み取りの権限を持つ人の aal1・aal2 の JWT のどれで search_items/looks/news を呼んでも返らない`, async ({ request }) => {
+    const admin = await adminTokens();
     const callers = [
       { name: 'anon の鍵', bearer: ANON_KEY },
       { name: '一般会員の JWT', bearer: await memberToken() },
-      { name: '管理者(admin.items.read・admin.looks.read・admin.news.read)の aal1 の JWT', bearer: admin.accessToken },
+      { name: '管理者(admin.items.read・admin.looks.read・admin.news.read)の aal1 の JWT', bearer: admin.aal1Token },
+      { name: '管理者(同上)の aal2 の JWT', bearer: admin.aal2Token },
     ];
 
     await withFixture('002', { publishedItems: 1, privateItems: 1, publishedLooks: 1, privateLooks: 1, publishedNews: 1, privateNews: 1 }, async (fixture, db) => {
@@ -263,11 +268,14 @@ test.describe('FR-SEARCH-020 検索の DB の関数への直接の道', () => {
       );
       expect(held.rows[0].n, '管理者が持つ閲覧の権限の数').toBe(3);
 
-      // 対照: 管理の読み取りの権限を持つ aal1 の JWT は、表を直接読むと非公開の行が見える（関数の絞りだけが守っていることの確かめ）
+      // 対照: 結び付いた aal2 の管理者は、表を直接読むと非公開の行が見える（has_permission が通る。関数の絞りだけが守っていることの確かめ）。
+      // aal1 の JWT は M2 の has_permission が断るので、同じ行が見えない
       for (const [table, id] of [['items', fixture.items.private[0]], ['looks', fixture.looks.private[0]], ['news_articles', fixture.news.private[0]]] as const) {
-        const control = await selectRows(request, table, id, admin.accessToken);
-        expect(control.status, `対照: 管理者の aal1 の JWT で ${table} を読む status`).toBe(200);
-        expect(idsOf(control), `対照: 管理者の aal1 の JWT で見える ${table} の非公開の行`).toEqual([id]);
+        const control = await selectRows(request, table, id, admin.aal2Token);
+        expect(control.status, `対照: 管理者の aal2 の JWT で ${table} を読む status`).toBe(200);
+        expect(idsOf(control), `対照: 管理者の aal2 の JWT で見える ${table} の非公開の行`).toEqual([id]);
+        const aal1 = await selectRows(request, table, id, admin.aal1Token);
+        expect(idsOf(aal1), `管理者の aal1 の JWT で見える ${table} の非公開の行（無い）`).toEqual([]);
       }
 
       for (const caller of callers) {

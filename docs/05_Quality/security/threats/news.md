@@ -1,6 +1,6 @@
 # NEWS の脅威
 
-> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-28 | 対象: NEWS の公開の画面・`/api/news`・管理のニュース・画像の置き場・`news_articles` の DB | 基準コミット: `a03beaff`（本文の `ファイル:行` は、この脅威の文書が日付つきの証拠として残す行番号で、このコミットの内容を指す。コードを読み直す時は関数・部品の名前でたどる）
+> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-29 | 対象: NEWS の公開の画面・`/api/news`・管理のニュース・画像の置き場・`news_articles` の DB | 基準コミット: `a03beaff`（本文の `ファイル:行` は、この脅威の文書が日付つきの証拠として残す行番号で、このコミットの内容を指す。コードを読み直す時は関数・部品の名前でたどる）
 
 ---
 
@@ -74,7 +74,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 非公開の記事と、記事の中身の正しさ |
 | 脅威 | `admin.news.read`・`admin.news.manage` を持つ人の、2要素認証を済ませていない（`aal1`）session、またはログアウト・失効の後も期限の残る access token を手に入れた者が、下書きを読み、記事を書き換える・消す |
-| 起こり方 | パスワードだけで得た `aal1` の JWT で、アプリの窓口を通らず PostgREST の `news_articles` を直接叩く。RLS の `has_permission` は ACL だけを見て `aal` を見ない（`remote_schema.sql:3578-3597`、`supabase/migrations/20261023175712_group_g0_permissions.sql:186-216`。移行のどこにも `aal` の記述が無い）。同じ `has_permission` は session が生きているかも見ず、`auth.uid()` と ACL の表だけで決める。ログアウトした・管理者が失効させた session の access token でも、期限が切れるまでは PostgREST で同じ読み書きができる（推定）。**書き込みの側は 2026-10-26 に直した**: 移行 `sec_grants_admin_tables` が anon・authenticated から `news_articles` の INSERT・UPDATE・DELETE を外したので、`aal1` の JWT でも失効の後の token でも PostgREST から書けない（権限の誤り `42501`。この移行を当てた DB でだけ満たす。ADR-0414）。管理の窓口の書き込みは、移行の前に service role へ移した（ADR-0026）。読みの側は `has_permission` の `aal2` と session の生存の確かめを足すまで残る（波 5） |
+| 起こり方 | パスワードだけで得た `aal1` の JWT で、アプリの窓口を通らず PostgREST の `news_articles` を直接叩く。RLS の `has_permission` は ACL だけを見て `aal` を見ない（`remote_schema.sql:3578-3597`、`supabase/migrations/20261023175712_group_g0_permissions.sql:186-216`。移行のどこにも `aal` の記述が無い）。同じ `has_permission` は session が生きているかも見ず、`auth.uid()` と ACL の表だけで決める。ログアウトした・管理者が失効させた session の access token でも、期限が切れるまでは PostgREST で同じ読み書きができる（推定）。**書き込みの側は 2026-10-26 に直した**: 移行 `sec_grants_admin_tables` が anon・authenticated から `news_articles` の INSERT・UPDATE・DELETE を外したので、`aal1` の JWT でも失効の後の token でも PostgREST から書けない（権限の誤り `42501`。この移行を当てた DB でだけ満たす。ADR-0414）。管理の窓口の書き込みは、移行の前に service role へ移した（ADR-0026）。読みの側は、波 5 の移行 M2 が `has_permission` に `aal2` と結び付いた生きた session の確かめを足して塞ぐ（2026-10-29 に書いた。controller が当てるまで未適用。当てた DB で満たす。ログアウトした session は `auth.sessions` の行が消えるので偽になる。ADR-0418） |
 | 影響 | 2要素認証の守りがアプリの窓口だけになる。パスワードが漏れると下書きの漏れ・記事の改ざん・消去に届く。直接の書き換えは監査の記録にも残らない（THR-NEWS-015） |
 | 対策 | SEC-NEWS-002 |
 | ASVS | V4.3.1 |

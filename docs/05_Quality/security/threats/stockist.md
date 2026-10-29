@@ -1,6 +1,6 @@
 # STOCKIST の脅威
 
-> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-28 | 対象: 公開の取扱店（`/stockist`・ホームの取扱店の節）・管理の取扱店（`/admin/stockist/**`・`/api/admin/stockists/**`）・`stockists` の DB | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり。取扱店のファイルは含まない。本文の `ファイル:行` の行番号は、この基準コミットの時点のコードを指す）
+> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-29 | 対象: 公開の取扱店（`/stockist`・ホームの取扱店の節）・管理の取扱店（`/admin/stockist/**`・`/api/admin/stockists/**`）・`stockists` の DB | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり。取扱店のファイルは含まない。本文の `ファイル:行` の行番号は、この基準コミットの時点のコードを指す）
 
 ---
 
@@ -88,7 +88,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 取扱店のデータの正しさと、管理の操作の監査の網羅 |
 | 脅威 | `admin.stockists.read`・`admin.stockists.manage` を持つ人の、2要素認証を済ませていない（`aal1`）session、または失効させた session の access token を手に入れた者が、非公開の店舗を読み、店舗を作る・書き換える・消す |
-| 起こり方 | 公開の anon キーと手に入れた JWT で、アプリの窓口を通らず PostgREST の `stockists` を直接叩く。RLS の判定 `has_permission` は ACL だけを見て、`aal` も session が有効かも見ない（`remote_schema.sql:3765-3784`、`supabase/migrations/20261023175712_group_g0_permissions.sql:186-215`）。access token の期限までは、失効させた session の token でも通る（推定）。**書き込みの側は 2026-10-26 に直した**: 移行 `sec_grants_admin_tables` が anon・authenticated から `stockists` の INSERT・UPDATE・DELETE を外したので、`aal1` の JWT でも失効させた session の token でも PostgREST から書けない（権限の誤り `42501`。この移行を当てた DB でだけ満たす。ADR-0414）。管理の窓口の書き込みは、移行の前に service role へ移した（ADR-0267）。読みの側（非公開の店を読める）は `has_permission` の `aal2` と session の生存の確かめを足すまで残る（波 5） |
+| 起こり方 | 公開の anon キーと手に入れた JWT で、アプリの窓口を通らず PostgREST の `stockists` を直接叩く。RLS の判定 `has_permission` は ACL だけを見て、`aal` も session が有効かも見ない（`remote_schema.sql:3765-3784`、`supabase/migrations/20261023175712_group_g0_permissions.sql:186-215`）。access token の期限までは、失効させた session の token でも通る（推定）。**書き込みの側は 2026-10-26 に直した**: 移行 `sec_grants_admin_tables` が anon・authenticated から `stockists` の INSERT・UPDATE・DELETE を外したので、`aal1` の JWT でも失効させた session の token でも PostgREST から書けない（権限の誤り `42501`。この移行を当てた DB でだけ満たす。ADR-0414）。管理の窓口の書き込みは、移行の前に service role へ移した（ADR-0267）。読みの側（非公開の店を読める）は、波 5 の移行 M2 が `has_permission` に `aal2` と結び付いた生きた session の確かめを足して塞ぐ（2026-10-29 に書いた。controller が当てるまで未適用。当てた DB で満たす。ADR-0418） |
 | 影響 | 2要素認証と session の失効の守りが、アプリの窓口だけになる。パスワードが漏れると店舗の改ざん・消去に届く。直接の書き換えは回数の制限・CSRF・監査（`logAudit`）を全部通らないので、跡も残らない |
 | 対策 | SEC-STOCKIST-003 |
 | ASVS | V4.3.1 |

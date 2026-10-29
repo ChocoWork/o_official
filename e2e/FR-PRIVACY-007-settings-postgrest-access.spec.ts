@@ -12,6 +12,8 @@ import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
+import type { PgClient } from '../tests/integration/db/helpers/local-db';
+import { bindAppSession } from './admin-session-test-utils';
 import { deliveryViewports, setTrackingFlagDirect, withDeliveryScenario } from './delivery-tracking-test-utils';
 
 test.use({ trace: 'off' });
@@ -43,7 +45,7 @@ function postgrestHeaders(bearer: string | null): Record<string, string> {
 
 const createdUserIds: string[] = [];
 
-async function signedInUser(kind: 'member' | 'admin'): Promise<{ userId: string; accessToken: string }> {
+async function signedInUser(kind: 'member' | 'admin'): Promise<{ userId: string; accessToken: string; refreshToken: string }> {
   requireLocalEnv();
   const email = `e2e-privacy007-${kind}-${Date.now().toString(36)}${randomBytes(3).toString('hex')}@example.com`;
   const password = `E2e-${randomBytes(12).toString('hex')}!`;
@@ -64,12 +66,12 @@ async function signedInUser(kind: 'member' | 'admin'): Promise<{ userId: string;
     throw new Error(`手元の利用者でログインできない（status: ${signedIn.error?.status ?? '不明'}）`);
   }
   createdUserIds.push(created.data.user.id);
-  return { userId: created.data.user.id, accessToken: signedIn.data.session.access_token };
+  return { userId: created.data.user.id, accessToken: signedIn.data.session.access_token, refreshToken: signedIn.data.session.refresh_token };
 }
 
 // 利用者は worker ごとに1回だけ作る（ログインの回数の制限を使い切らない）
 let memberPromise: ReturnType<typeof signedInUser> | null = null;
-let adminPromise: Promise<{ userId: string; accessToken: string }> | null = null;
+let adminPromise: Promise<{ userId: string; accessToken: string; refreshToken: string }> | null = null;
 
 function memberCredential(): Promise<Credential> {
   memberPromise ??= signedInUser('member');
@@ -83,8 +85,11 @@ function memberCredential(): Promise<Credential> {
 
 const anonCredential = (): Credential => ({ name: 'anon の鍵', headers: postgrestHeaders(null), bearer: null, userId: null });
 
-/** admin.settings.manage を持つ役割（admin）を有効に割り当てた、aal1 の管理者。割り当ては場面の DB 接続で行う */
-async function aal1AdminCredential(db: { query: (sql: string, params?: unknown[]) => Promise<{ rowCount: number | null }> }): Promise<Credential> {
+/**
+ * admin.settings.manage を持つ役割（admin）を有効に割り当てた、aal1 の管理者。割り当てと結び付けは場面の DB 接続で行う。
+ * アプリの sessions に結び付ける（wave 5: 結び付かない通行証は窓口が 401 で断る）ので、窓口の 403 が「aal1 だから断る」ことを示す。
+ */
+async function aal1AdminCredential(db: PgClient): Promise<Credential> {
   adminPromise ??= (async () => {
     const user = await signedInUser('admin');
     const assigned = await db.query(
@@ -93,6 +98,7 @@ async function aal1AdminCredential(db: { query: (sql: string, params?: unknown[]
       [user.userId],
     );
     if (assigned.rowCount !== 1) throw new Error('役割 admin の行が手元の DB に無い');
+    await bindAppSession(db, user);
     return user;
   })();
   const user = await adminPromise;

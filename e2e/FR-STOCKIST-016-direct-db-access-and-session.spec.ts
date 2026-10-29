@@ -9,7 +9,7 @@
  * - SEC-STOCKIST-003-AC-02/03: 書き込みは窓口の service role だけで、利用者の JWT の insert・update・delete は表の権限の段で断られる（sec_grants_admin_tables）
  * - SEC-STOCKIST-003-AC-03: aal2 の session を auth.sessions から消した後、残った access token で update を送る（失効の前も後も変わらない）
  * 足した行は finally で消す。JWT・パスワードが通信記録に残らないよう trace は切る。
- * - ファイルの中は serial にしない（003-AC-01 は波 5 まで赤の見込みで、serial だと最初の失敗で残りが流れず、赤の中身が隠れる）。
+ * - ファイルの中は serial にしない（赤が出た時に、最初の失敗で残りが流れず赤の中身が隠れるのを避ける）。003-AC-01 は波 5 の移行 M2（has_permission に aal2 と結び付いた生きた session を求める）を当てた DB で通る。
  * - 003-AC-01〜03 は画面を描かない HTTP だけの試験なので、幅ごとには繰り返さず各 AC に1本（FR-STOCKIST-014・015 と同じ扱い）。
  * - 002-AC-01 は他の試験が足した公開の行に左右されないよう、E2E-STK- で始まらない店（見本）の名前の並びで比べる。
  *   非公開の行はホームの「最初の 6 件」に入る小さい id で足し、公開の絞りが壊れた時にホームにも出るようにする。
@@ -222,7 +222,6 @@ for (const vp of VIEWPORTS) {
 
 test.describe('FR-STOCKIST-016 aal1 の JWT で PostgREST を直接叩く', () => {
   test('SEC-STOCKIST-003-AC-01 admin.stockists.read を持つ利用者の aal1 の JWT で select した時、非公開の店が結果に含まれない', async ({ request }) => {
-    test.fail(true, 'SEC-STOCKIST-003 今のコードは満たさない（docs/02_Requirements/areas/stockist.md）');
     const actor = await aal1Admin();
     expect(actor.aal).toBe('aal1');
     const privateName = tag();

@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createLiveAppSession, jwtClaims } from '../helpers/app-session';
 import { describeLocalDb } from '../helpers/local-db';
 
 /**
@@ -92,10 +93,12 @@ describeLocalDb('integration: 範囲の窓口の権限の印と初めの割り�
 
   /** authenticated の JWT で has_permission を呼び、6つの印の結果を返す。 */
   async function hasPermissionsAs(sub: string): Promise<Record<string, boolean>> {
+    // has_permission は aal2 とアプリに結び付いた生きた session を求める（SEC-AUTH-010-AC-03）
+    const session = await createLiveAppSession(db(), sub);
     await db().query('savepoint as_actor');
     try {
       await db().query("select set_config('request.jwt.claims', $1, true)", [
-        JSON.stringify({ sub, role: 'authenticated', aal: 'aal2' }),
+        JSON.stringify(jwtClaims(sub, session)),
       ]);
       await db().query("select set_config('request.jwt.claim.sub', $1, true)", [sub]);
       await db().query('set local role authenticated');

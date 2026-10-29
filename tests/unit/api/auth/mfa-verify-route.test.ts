@@ -63,6 +63,7 @@ const mockPersist = persistNewSession as jest.Mock;
 const mockLogAudit = logAudit as jest.Mock;
 
 const FACTOR_ID = '11111111-1111-4111-8111-111111111111';
+const AUTH_SESSION_ID = '4c36ef0b-0332-42d8-b210-3326fc20c240';
 
 const challenge = jest.fn();
 const verify = jest.fn();
@@ -85,7 +86,7 @@ function validRequest(overrides: Record<string, unknown> = {}) {
 function authAs(role?: unknown) {
   mockAuthenticate.mockResolvedValue({
     ok: true,
-    claims: { sub: 'user-1', app_metadata: role === undefined ? undefined : { role } },
+    claims: { sub: 'user-1', session_id: AUTH_SESSION_ID, app_metadata: role === undefined ? undefined : { role } },
   });
 }
 
@@ -133,6 +134,7 @@ describe('POST /api/auth/mfa/verify', () => {
       userId: 'user-1',
       previousSessionId: 'sess-1',
       previousRefreshToken: 'old-refresh',
+      trustedAuthSessionId: AUTH_SESSION_ID,
     });
     expect(cookieGet).toHaveBeenCalledWith('sb-refresh-token');
     expect(mockRateLimit).toHaveBeenCalledWith(
@@ -408,6 +410,22 @@ describe('POST /api/auth/mfa/verify', () => {
       res,
       expect.objectContaining({ previousSessionId: null, previousRefreshToken: 'old-refresh' }),
     );
+  });
+
+  it('DD-AUTH-039 検証済みの claims.session_id を trustedAuthSessionId として渡す（新しい token の値や前の行の値ではない）', async () => {
+    mockFindSession.mockResolvedValue({ id: 'sess-1', auth_session_id: '99999999-9999-4999-8999-999999999999' });
+
+    const { res } = await call(validRequest());
+
+    expect(mockPersist).toHaveBeenCalledWith(res, expect.objectContaining({ trustedAuthSessionId: AUTH_SESSION_ID }));
+  });
+
+  it('DD-AUTH-039 claims.session_id が無ければ trustedAuthSessionId は null で渡す（結び付けない）', async () => {
+    mockAuthenticate.mockResolvedValue({ ok: true, claims: { sub: 'user-1', app_metadata: { role: 'admin' } } });
+
+    const { res } = await call(validRequest());
+
+    expect(mockPersist).toHaveBeenCalledWith(res, expect.objectContaining({ trustedAuthSessionId: null }));
   });
 
   it('DD-AUTH-031 書き戻しが投げても固定の符号で mfa_verify の error を残して 200 を返す（誤りの文は残さない）', async () => {

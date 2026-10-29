@@ -1,6 +1,6 @@
 # AUTH の要件
 
-> 状態: 推定 | 確認日: 2026-10-28 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-10-29 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -13,7 +13,7 @@ AUTH の領域の要求・要件・受け入れ条件・派生要件を、追跡
 | 要件 | 107 | 既存の `FREQ-NN-REQ-NN` 94（うち廃止 1）、`FR-LOGIN-001`〜`008`、新しい `FR-AUTH-001`〜`005`（`001`〜`004` は振り替え） |
 | 受け入れ条件 | 165 | 既存の `FREQ-NN-AC-NN` 138（うち廃止 2）、新しい `<要件ID>-AC-NN` 27（`FR-…-AC-NN` 23（`FR-AUTH-005-AC-01`〜`07` を含む）、`FREQ-330-REQ-02-AC-01`、`FREQ-316-REQ-01`〜`03-AC-01`） |
 | 派生要件 | 9 | `DRV-AUTH-001`〜`009` |
-| セキュリティ要件 | 33 | `SEC-AUTH-001`〜`033`（上位は脅威の文書 `docs/05_Quality/security/threats/auth.md` の同じ番号）。受け入れ条件 `SEC-AUTH-NNN-AC-NN` 54。全部「推定」 |
+| セキュリティ要件 | 33 | `SEC-AUTH-001`〜`033`（上位は脅威の文書 `docs/05_Quality/security/threats/auth.md` の同じ番号）。受け入れ条件 `SEC-AUTH-NNN-AC-NN` 62。全部「推定」 |
 
 - 状態: 写した要求・要件の行は、元の行に理由の記述がある物だけ「現行」。元の行に理由が無く、根拠の「なぜ」を推定で補った行は「推定」。写した受け入れ条件は元の文のままなので「現行」。後の行が置き換えたのに廃止の印が無い行・コードと合わない行・新しく起こした項目・実装から読み取った項目も「推定」。行の中に廃止と書いてある FREQ-62 だけを「廃止」にした。食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節に載せる
 - 結論: ログインの入口・パスワードの再設定・管理者の TOTP を求める元の要求は表に無かった（`SR-AUTH-001`〜`003` を推定で起こした）。`/register` を求める FR-LOGIN-004・FREQ-59・61 と、角丸の見た目の FREQ-64・70 は、後の行が置き換えたのに印が無い。廃止にするかはユーザーに決めてもらう
@@ -4337,13 +4337,13 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-005 |
-| 根拠 | 2段目の守りがアプリの窓口だけにあると、公開の anon キーでパスワードだけの JWT を得られ、会員の個人情報と注文に届く（FREQ-58・FR-LOGIN-007）。全体の NFR-SEC-005（範囲外）・NFR-SEC-008（範囲外）に当てはめた |
+| 根拠 | 2段目の守りがアプリの窓口だけにあると、公開の anon キーでパスワードだけの JWT を得られ、会員の個人情報と注文に届く（FREQ-58・FR-LOGIN-007）。同じく、公開の anon キーで `/auth/v1/otp` と `/auth/v1/verify` を直に呼ぶと、パスワード無しで OTP だけの通行証が取れる（`amr` に `otp` が付き、`amr` ではアプリのログインを通ったかを区別できない。AC-03）。全体の NFR-SEC-005（範囲外）・NFR-SEC-008（範囲外）に当てはめた |
 | 状態 | 推定 |
 | 確かめ方 | E2E・レビュー |
 | 出どころ | OWASP ASVS 4.0.3 V4.1.1（当てはめは推定） |
 | 優先度 | MUST |
 
-アプリの認証と、会員の情報・注文を返す RLS は、メール OTP を通ったログインの JWT だけを会員の JWT として受ける。または Supabase Auth の側で、パスワードだけ・OTP だけでトークンを出さないようにする。どちらで塞ぐかは決めていない（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」に載せる）。今のコードは満たさない。
+アプリの認証と、会員の情報・注文を返す RLS は、アプリのログイン（パスワード → メール OTP）を通って作られた session の通行証だけを会員の通行証として受ける。アプリを通らずに Supabase Auth を直接呼んで取った通行証（パスワードだけ・OTP だけ）は、受けない。波 5 で、アプリのログインを通って作られた session（自前の `sessions` に GoTrue の `session_id` を残した行がある）だけを受ける形に決めた（ADR-0417。会員の 2 段はアプリ独自の方針で、NIST の AAL2 ではない）。旗 `AUTH_REQUIRE_APP_SESSION` が有効な間（既定。ADR-0419）、アプリの窓口は満たす（AC-01・AC-03・AC-04・AC-05。2026-10-29、Task 3 の読む側。E2E は Task 5 で書いた。流すのは controller）。DB（PostgREST）の側（AC-02・AC-03）は、移行 M2（`has_permission` と会員の表の方針）を当てた DB で満たす（2026-10-29 に AC-02 の E2E の `test.fail` を外し、AC-03 の PostgREST の試験を足した。M2 は controller が当てるまで未適用）。
 
 #### SEC-AUTH-005-AC-01 Supabase Auth の password grant で得た JWT ではアプリの会員の窓口が通らない
 
@@ -4364,10 +4364,46 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | 上位 | SEC-AUTH-005 |
 | 根拠 | アプリを通らない DB の道でも守られるかを見るため |
 | 状態 | 推定 |
-| 確かめ方 | E2E（同じ JWT で PostgREST の `profiles`・`orders` を select する） |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`。同じ JWT で PostgREST の `profiles`・`orders` を select する。M2 を当てた手元の DB で通る） |
 | 出どころ | 実装から推定 |
 
 直接の password grant で得た JWT の select の結果に、本人の `profiles` と注文の行が含まれないこと。
+
+#### SEC-AUTH-005-AC-03 メール OTP だけ（アプリを通らない）で取った通行証でも、アプリの会員の窓口は通らない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-005 |
+| 根拠 | 公開の anon キーで `/auth/v1/otp` と `/auth/v1/verify` を直に呼ぶと、パスワード無しで通行証が取れ、`amr` に `otp` が付く。`amr` ではアプリのログインを通ったかを区別できないので、結び付いた session かどうかで断る（ADR-0417） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`authenticateRequest` が結び付いていない session を `revoked` で返す）・E2E（`e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`。手元の Supabase の `/auth/v1/otp` と受け箱のコードと `/auth/v1/verify` で通行証を取り、`/api/auth/me`・`/api/profile`・`/api/orders` を Bearer と Cookie で叩く。同じファイルの別の試験が、同じ形の通行証で PostgREST の `profiles`・`orders` を select して 0 行になることを、結び付けた会員が同じ表で自分の行を読める対照つきで見る。PostgREST の側は M2 を当てた DB で通る） |
+| 出どころ | `docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md`（Task 3、Review Focus 2） |
+
+旗 `AUTH_REQUIRE_APP_SESSION` が有効な間（既定）、アプリを通らずに OTP だけで取った通行証を Bearer か Cookie で送ると、`/api/auth/me` は `authenticated: false`、`/api/profile`・`/api/orders` などの会員の窓口は 401 を返すこと。PostgREST の `profiles`・`orders` を同じ通行証で select した結果も、本人の行が 0 行になること（移行 M2 の会員の表の方針。AC-02 と同じ線）。
+
+#### SEC-AUTH-005-AC-04 アプリのログインで得た session は、会員の窓口・更新・ログアウトの前後で期待どおりに通り、断られる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-005 |
+| 根拠 | 結び付けの強制（ADR-0417・0419）が、正しい利用者を締め出さないことを見るため。アプリのログインで作った session だけが通り、更新はその続きに引き継がれ、ログアウトの後は写した access token でも通らない |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-030-session-cookies-and-responses.spec.ts`。本物のログイン → `/api/profile` 200 → `POST /api/auth/refresh` 200 → `/api/profile` 200 → ログアウト → 写した access token を Bearer で送って 401） |
+| 出どころ | `docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md`（Task 5） |
+
+旗 `AUTH_REQUIRE_APP_SESSION` が有効な間（既定）、アプリのログイン（パスワード → メール OTP）で作られた session は `/api/profile` を通し、`POST /api/auth/refresh` の後の session でも通すこと。ログアウトの後は、ログアウトの前に写しておいた access token（その時点まで有効だった物）を Bearer で送っても `/api/profile` が 401 を返すこと。
+
+#### SEC-AUTH-005-AC-05 結び付いていない session の refresh token では更新が通らず、更新で結び付いた session に洗えない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-005 |
+| 根拠 | 更新を門番なしで通すと、アプリを通らずに取ったパスワードだけ・OTP だけの session の refresh token を `POST /api/auth/refresh` に出すだけで、結び付いた session に洗えてしまう。結び付けの強制（ADR-0417・0419）の抜け道を塞ぐため |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト・結合テスト・E2E（`e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`。手元の Supabase の password grant の refresh token を Cookie に入れて `POST /api/auth/refresh` を叩き、401・Cookie の削除・その session に結び付いた `sessions` の行が無いことを見る） |
+| 出どころ | `docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md`（Task 2、P10・P11） |
+
+旗 `AUTH_REQUIRE_APP_SESSION` が有効な間（既定）、refresh token の行が無い・その行の `auth_session_id` が空・その行が失効済みのどれかなら、`POST /api/auth/refresh` は Supabase の token 交換を呼ばずに 401 を返し、認証の 3 つの Cookie を消すこと。結び付いた行の続きの更新だけが通り、新しい行は前の行の `auth_session_id` を引き継ぐこと。新しい token の `session_id` を前の行の確認なしに保存しないこと。監査には固定の符号（`unbound_session`・`session_revoked`）だけを残し、トークンと `session_id` の値を残さない。旗が無効な間は従来どおりで、行が無くても更新できる。
 
 ### SEC-AUTH-006 メールの確認のリンクの入口は、会員登録の確認だけを受ける
 
@@ -4542,7 +4578,7 @@ Google の戻りの直後（aal1）に管理の窓口を叩くと 403 になり�
 | 出どころ | OWASP ASVS 4.0.3 V4.3.1。実装から推定（2026-10-24 の DB の移行の読み直し） |
 | 優先度 | MUST |
 
-`has_permission` を使う RLS の方針（または `has_permission` 自体）は、JWT の `aal` が `aal2` でなければ権限なしとして扱う。今のコードは満たさない。
+`has_permission` を使う RLS の方針（または `has_permission` 自体）は、JWT の `aal` が `aal2` でなければ権限なしとして扱う。波 5 で、さらに「アプリの session に結び付いた生きた session」も求める形に決めた（AC-03、ADR-0418）。本体は `has_permission` の 1 本で、これを使う約 100 の方針は書き換えずに従う。移行 M2 `sec_has_permission_aal2_member_rls`（2026-10-29 に書いた。controller が当てるまで未適用）を当てた DB で満たす（AC-01・AC-03 の E2E の `test.fail` は 2026-10-29 に外した）。
 
 #### SEC-AUTH-010-AC-01 aal1 の管理者の JWT で、他人の注文が読めない
 
@@ -4551,7 +4587,7 @@ Google の戻りの直後（aal1）に管理の窓口を叩くと 403 になり�
 | 上位 | SEC-AUTH-010 |
 | 根拠 | DB の段だけで3段目が効くかを、アプリを通さずに見るため |
 | 状態 | 推定 |
-| 確かめ方 | E2E（手元の Supabase で admin の役割の利用者の aal1 の JWT を作り、PostgREST の `orders` を select する） |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`。手元の Supabase で admin の役割の利用者の aal1 の JWT を作り、PostgREST の `orders` を select する。M2 を当てた DB で通る） |
 | 出どころ | 実装から推定 |
 
 aal1 の JWT の select の結果に、その管理者以外の注文の行が含まれないこと。
@@ -4567,6 +4603,18 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 | 出どころ | 実装から推定 |
 
 同じ管理者の aal2 の JWT の select の結果に、他人の注文の行が含まれること。
+
+#### SEC-AUTH-010-AC-03 has_permission は aal2 で、結び付いた生きた session の時だけ真になる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-010 |
+| 根拠 | `aal2` の検査だけでは、アプリを通らずに作った任意の session（パスワードだけ・メール OTP だけ・anon キーで作った物）の通行証に `aal` を持たせる道が残り、本物の管理者でなくても session が生きている限り通る。DB でも「アプリが作った生きた session」を求めれば、API の窓口（ADR-0417）と同じ基準になる。公開の読みの方針（`status = 'published' OR has_permission(...)`）は RESTRICTIVE にせず、`has_permission` が偽になるだけにして、一般の会員が公開の行を読むのを止めない（ADR-0418） |
+| 状態 | 推定 |
+| 確かめ方 | DB 結合テスト（`tests/integration/db/auth_has_permission_aal2.integration.test.ts`。手元の使い捨て DB で M2 を当てた後に controller が流す）、移行の文面の単体テスト（`tests/unit/migrations/sec-has-permission-aal2.test.ts`）。E2E は `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`（アプリのログインと同じ形で結び付けた admin の aal1 の JWT では他人の注文が読めず、同じ session を aal2 に上げた JWT では読める。止めているのが aal だけであることを示す）。ほかの領域の DB の直接の道の E2E（`FR-ADMIN-MISC-005`・`FR-HOME-024`・`FR-LOOK-SEC-002`・`FR-NEWS-SEC-002`・`FR-STOCKIST-016`）も、M2 を当てた DB で `test.fail` 無しで通る |
+| 出どころ | `docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md`（Task 6、P14・P15）、`.superpowers/sdd/2026-10-25-security-gap-fixes/wave5-decisions.md`（Q2 案 B） |
+
+`public.has_permission(permission_code)` は、`auth.uid()` があり、JWT の `aal` が `aal2` で、その利用者に ACL の権限があり、さらに JWT の `session_id` が「`auth.sessions` に生きている行があり、自前の `sessions` に同じ `auth_session_id` と利用者の失効していない行がある」時だけ真を返す。`aal1`・`aal` が無い・`session_id` が無い・uuid の形でない・結び付いていない・失効した・`auth.sessions` に行が無い、のどれでも偽を返し、例外は出さない。ACL の無い利用者は常に偽。あわせて、会員の本人の行を返す表（`profiles`・`orders`・`order_items`）は、`authenticated` が結び付いた生きた session を持たなければ 0 行になる（書き込みも 0 行）。anon がゲストの注文を `app.session_id` で読む道は変えない。
 
 ### SEC-AUTH-011 認証の表は anon・authenticated に表の権限を付けない
 
@@ -5209,7 +5257,7 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | 出どころ | OWASP ASVS 4.0.3 V7.1.3 |
 | 優先度 | SHOULD |
 
-ログイン・OTP・TOTP の確認と登録・会員登録・再設定・ログアウト・トークンの更新は、成功と失敗を `audit_logs` に残す。個人情報は伏せてから書く。ログインから再設定・ログアウト・更新までは今のコードが満たす。TOTP の確認（`mfa_verify`）と登録（`mfa_enroll`）の成功の監査は、2026-10-26 に入った。AC-01 はこのコードで行が増えるが、手元の Supabase で TOTP が無効（ENV）なので E2E は通らない。再設定の後の失効の失敗は満たさない。
+ログイン・OTP・TOTP の確認と登録・会員登録・再設定・ログアウト・トークンの更新は、成功と失敗を `audit_logs` に残す。個人情報は伏せてから書く。ログインから再設定・ログアウト・更新までは今のコードが満たす。TOTP の確認（`mfa_verify`）と登録（`mfa_enroll`）の成功の監査は、2026-10-26 に入った。AC-01 はこのコードで行が増えるが、手元の Supabase で TOTP が無効（ENV）なので E2E は通らない。再設定の後の失効の失敗は満たさない。結び付けの拒否（`refresh` の `unbound_session` など、`enroll-totp` の `app_session_required`）の監査は 2026-10-29（波 5）に入った（AC-03）。
 
 #### SEC-AUTH-030-AC-01 TOTP の登録と確認の成功が監査に残る
 
@@ -5235,6 +5283,18 @@ TOTP の登録と確認の後に、`audit_logs` に利用者の ID と成功の�
 
 誤ったパスワードでログインした後に、`audit_logs` に失敗の行が1つ増え、その行に送ったパスワードの字が無いこと。
 
+#### SEC-AUTH-030-AC-03 結び付けの拒否が固定の符号だけで監査に残る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-030 |
+| 根拠 | 結び付いていない session（アプリを通らずに取った通行証）の更新と初めての TOTP の登録の試みを追えるようにしつつ、トークンや `session_id` を記録に入れないため。計画（`wave5-session-binding-aal2-db.md`）は `SEC-AUTH-030-AC-02` の番号で起こしていたが、AC-02 は既にログインの失敗の監査に使われているので AC-03 にした |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`refresh` の `unbound_session`・`enroll-totp` の `app_session_required`）・E2E（`e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`。`refresh` の `unbound_session` は SEC-AUTH-030-AC-03 の試験が、`mfa_enroll` の `app_session_required` は SEC-AUTH-031-AC-02 の試験の中で `audit_logs` を読み、行にトークンと `session_id` の値が無いことを見る） |
+| 出どころ | `docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md`（Task 2・3） |
+
+結び付けで断った時に、`audit_logs` に固定の符号（`refresh` の `unbound_session`・`session_lookup_failed`、`mfa_enroll` の `app_session_required`）だけを持つ行が 1 つ増え、その行にトークン・Cookie の値・`session_id` の値・Supabase の誤りの文が無いこと。`mfa_enroll` の行は行為者が分かる時（署名検証済みの claims がある時）だけ書く。
+
 ### SEC-AUTH-031 管理者・サポーターの初めての TOTP の登録は、本人の確かめを済ませた経路に限る
 
 | 属性 | 値 |
@@ -5248,9 +5308,9 @@ TOTP の登録と確認の後に、`audit_logs` に利用者の ID と成功の�
 
 `/api/auth/mfa/enroll-totp` の初めての登録は、メール OTP を通ったログインの session（または管理側で発行・確認した登録の経路）からだけ受ける。登録と未確認の要素の取り外しは監査に残し、本人へメールで知らせる。
 
-局所の守りは今のコードが満たす（2026-10-26 に直した）。通行証の `amr` に 2 段目を通った方法（`otp`・`magiclink`・`totp`・`oauth`・`sso/saml`・`email/signup` のどれか）が 1 つもなければ 403 で断り、`mfa_enroll`（`denied`、detail `second_factor_required`）を監査に残す。`password` だけで得た通行証は数えない。登録の成功は `mfa_enroll`（`success`、detail `totp_factor_enrolled`、resource_id は要素の ID）、未確認の要素の取り外しは `mfa_factor_remove` で残す（`enroll` の字を含めない）。
+局所の守りは今のコードが満たす（2026-10-26 に直した）。通行証の `amr` に 2 段目を通った方法（`otp`・`magiclink`・`totp`・`oauth`・`sso/saml`・`email/signup` のどれか）が 1 つもなければ 403 で断り、`mfa_enroll`（`denied`、detail `second_factor_required`）を監査に残す。`password` だけで得た通行証は数えない（メールの数字は `otp` で記録されることを 2026-10-29 に実測した）。登録の成功は `mfa_enroll`（`success`、detail `totp_factor_enrolled`、resource_id は要素の ID）、未確認の要素の取り外しは `mfa_factor_remove` で残す（`enroll` の字を含めない）。
 
-残る穴は満たさない。Supabase Auth へ OTP だけを直接送って得た通行証は `amr` に `otp` が付くので通る（自前の session への結び付けは波 5。Q30(a)）。本人へのメールの通知も満たさない（波 5。Q30）。
+波 5 の Task 3（2026-10-29）で、Supabase Auth へ OTP だけを直接送って得た通行証（`amr` に `otp` が付く）も断る。認証の確かめ（`authenticateRequest`）が、アプリのログインを通った結び付いた session だけを通す（旗 `AUTH_REQUIRE_APP_SESSION` が有効な間。既定。ADR-0417・0419）。結び付いていない通行証は 401 で、行為者が分かれば `mfa_enroll`（`denied`、detail `app_session_required`）を監査に残す。`amr` の確かめは二重の守りとして残す。本人へのメールの通知は満たさない（波 5 の別件。Q30）。
 
 #### SEC-AUTH-031-AC-01 メール OTP を通っていない aal1 の session では初めての TOTP を登録できない
 
@@ -5263,6 +5323,18 @@ TOTP の登録と確認の後に、`audit_logs` に利用者の ID と成功の�
 | 出どころ | 実装から推定 |
 
 TOTP をまだ登録していない管理者が、メール OTP を通らずに得た access token で `/api/auth/mfa/enroll-totp` を呼ぶと断られ、要素が作られないこと。登録の成功と断りが監査に残ること。
+
+#### SEC-AUTH-031-AC-02 メール OTP だけ（アプリを通らない）で取った通行証では、初めての TOTP の登録が 401 で断られ、断りが監査に残る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-031 |
+| 根拠 | `amr` に `otp` が付くので、AC-01 の `amr` の確かめでは、アプリを通らずに OTP だけを直接送って得た通行証を断れない。結び付いた session かどうかで断る（ADR-0417） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`enroll-totp` が `revoked`＋claims で 401 を返し、`app_session_required` を 1 行だけ書く）・E2E（`e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`。TOTP の無い管理者で、`/auth/v1/otp` と受け箱のコードと `/auth/v1/verify` で通行証を取り、`enroll-totp` を叩く。要素の一覧より前の確かめなので TOTP が無効な手元でも通る） |
+| 出どころ | `docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md`（Task 3、Review Focus 2） |
+
+旗 `AUTH_REQUIRE_APP_SESSION` が有効な間（既定）、アプリを通らず OTP だけで取った通行証で `/api/auth/mfa/enroll-totp` を呼ぶと 401 が返り、要素が作られないこと。`audit_logs` に `mfa_enroll`・`denied`・detail `app_session_required` の行が 1 つ増え、トークンと `session_id` の値を含まないこと。
 
 ### SEC-AUTH-032 戻り先の控えは、番号だけを HttpOnly の Cookie に持ち、表には番号のハッシュだけを持つ
 
@@ -5420,11 +5492,11 @@ refresh の Cookie が無い時と、自前の表の行に明示の失効の印�
 - FREQ-239（フッターと管理の中身を含む）と FREQ-309 を AUTH が持つことの確認（持ち主の割り当ての表に無い行で、ヘッダーが AUTH の範囲なので AUTH が持った）
 - ログインの E2E が書く `FREQ-66-AC-00`・`FREQ-70-AC-05〜08`・`FREQ-93`・`FREQ-94-AC-01〜03` の元の要件
 - セキュリティ要件の回数の制限の値（SEC-AUTH-009・013）と OTP の期限の値（SEC-AUTH-029）。今のコードと手元の設定から取った案
-- Supabase Auth を直接呼ぶ道（SEC-AUTH-005・006・015）を、Auth Hook・ダッシュボードの設定・アプリの `amr` の確かめのどれで塞ぐか、受け入れるか
+- Supabase Auth を直接呼ぶ道（SEC-AUTH-006・015）を、Auth Hook・ダッシュボードの設定・アプリの `amr` の確かめのどれで塞ぐか、受け入れるか。SEC-AUTH-005 は 2026-10-29（波 5）に、アプリの session に結び付ける形で決めた（ADR-0417。Supabase 側の設定は見つからず、塞げない前提でサーバー側の受け入れ条件で守る）。会員の 2 段（パスワード＋メール OTP）はアプリ独自の方針で NIST SP 800-63B-4 の AAL2 ではない（メールは out-of-band に使えない。3.1.3.1）。管理者の TOTP が AAL2 側。パスワードとメールの受信箱の両方を盗まれた場合（正規の 2 段を踏める）は、この守りでは防げない
 - 本番の DB で、認証の6つの関数に anon・authenticated の EXECUTE が残っているか（SEC-AUTH-012）。残っていれば移行で外す
 - Google のログインにメール OTP を求めるか（SEC-AUTH-008。FR-LOGIN-007 と食い違う）
 - ログアウトの CSRF の印（SEC-AUTH-025）を ADR-0019（範囲外）の方針と揃えるか
 - FREQ-382（advisor の `auth_rls_initplan` の直し）が AUTH の表（`sessions`・`password_reset_tokens`）の RLS にかかわるか。かかわるなら写す
 - FREQ-316・327・515 を AUTH が持つこと（全領域の持ち主の割り当ての 2026-10-24 の裁定）。行の中の管理画面・お問い合わせ・お知らせの分（FREQ-327-REQ-04、FREQ-515-AC-01・03）も丸ごと写した。受け入れ条件の無かった FREQ-316-REQ-01〜03 には AC を推定で起こした
 - 初めての TOTP の登録（SEC-AUTH-031）・メールの差し替えの二重の確認（SEC-AUTH-015）の守りを、どの形で入れるか（2026-10-24 の見直しで足した。会員登録の宛先単位の制限（SEC-AUTH-016）は 2026-10-26 に 5 回／時で入れた）
-- 本物の通行証の `amr` の値（2026-10-26 に足した。SEC-AUTH-031）。ログイン後（メール OTP の `verifyOtp({ type: 'email' })`）に GoTrue が `otp` と `magiclink` のどちらで記録するか、`mfa/verify` と更新の後も 2 段目の記録が残るかが未実測。局所の守りは `otp`・`magiclink` などのどれかがあれば通す形にした。実測は E2E で行い、管理者が最初の TOTP を登録できなければ `src/app/api/auth/mfa/enroll-totp/route.ts` の `hasSecondFactorAmr` の確かめだけを戻す
+- 本物の通行証の `amr` の値（2026-10-26 に足した。SEC-AUTH-031）。2026-10-29（波 5 の Task 0）に手元の Supabase で実測した。メールの数字（`verifyOtp({ type: 'email' })`）は `otp` で記録され（`magiclink` ではない）、更新で `token_refresh` は足されず、`session_id` も `amr` も変わらない。`mfa_amr_claims` に `totp` の行を足して更新すると JWT の `aal` は `aal2`、`amr` は `[password, totp]` になる。局所の守りは `otp`・`magiclink` などのどれかがあれば通す形のまま残す（二重の守り）。残る未確認は、本物の `mfa.verify`（手元は TOTP が無効）の前後で `session_id` が変わらないこと。配備前の preview で管理者 1 人が TOTP を通し、`mfa/verify` の応答の access token の `session_id` が直前と同じかを確かめる（ADR-0417、DD-AUTH-039）

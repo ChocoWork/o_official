@@ -5,6 +5,9 @@ import { POST as resend } from '@/app/api/auth/login/resend/route';
 import { createLoginTwoFactorSessionToken } from '@/features/auth/services/login-2fa-session';
 import { accessCookieName, refreshCookieName, csrfCookieName, loginTwoFactorSessionCookieName } from '@/lib/cookie';
 
+// GoTrue の access token の形（DD-AUTH-039）。AUTH_REQUIRE_APP_SESSION が既定で有効なので、ログインの保存には session_id が要る。
+const FAKE_USER_TOKEN = `fake-user-token.${Buffer.from(JSON.stringify({ session_id: '4c36ef0b-0332-42d8-b210-3326fc20c240' })).toString('base64url')}.s`;
+
 jest.mock('next/headers', () => ({ cookies: jest.fn(), headers: jest.fn() }));
 jest.mock('@/lib/orders/link-guest-orders', () => ({ linkGuestOrdersByEmail: jest.fn() }));
 
@@ -40,7 +43,7 @@ describe('OTP route with real SDK, session persistence, audit and rate limiter',
         || (failAudit && path.endsWith('/audit_logs'));
       const body = denied ? { message: 'test database failure', code: '42501' }
         : path.endsWith('/verify') ? {
-            access_token: 'fake-user-token', refresh_token: 'fake-refresh-token',
+            access_token: FAKE_USER_TOKEN, refresh_token: 'fake-refresh-token',
             expires_in: 3600, token_type: 'bearer',
             user: { id: 'test-user', email: 'one@example.invalid' },
           }
@@ -75,7 +78,7 @@ describe('OTP route with real SDK, session persistence, audit and rate limiter',
   test('API-AUTH-002 OTP success persists hashed credentials and issues cookies; subsequent resend remains usable', async () => {
     const response = await verifyRequest();
     expect(response.status).toBe(200);
-    expect(response.cookies.get(accessCookieName)?.value).toBe('fake-user-token');
+    expect(response.cookies.get(accessCookieName)?.value).toBe(FAKE_USER_TOKEN);
     expect(response.cookies.get(refreshCookieName)?.value).toBe('fake-refresh-token');
     expect(response.cookies.get(csrfCookieName)?.value).toBeTruthy();
     expect(response.cookies.get(loginTwoFactorSessionCookieName)?.maxAge).toBe(0);
@@ -101,7 +104,7 @@ describe('OTP route with real SDK, session persistence, audit and rate limiter',
     failAudit = true;
     const response = await verifyRequest();
     expect(response.status).toBe(200);
-    expect(response.cookies.get(accessCookieName)?.value).toBe('fake-user-token');
+    expect(response.cookies.get(accessCookieName)?.value).toBe(FAKE_USER_TOKEN);
     expect(console.warn).toHaveBeenCalledWith('Failed to write audit log');
   });
 

@@ -6,6 +6,7 @@
  * @design DD-AUTH-030
  * @remarks 検証済みの要素が既にある時は、再取得を許すと乗っ取られた通常セッションで要素を差し替えられるため断る（再設定は aal2 のセッションが要る）。QR は画面がそのまま画像の src に入れるため、SVG の文字列は data URI に直して返す。
  * 初めての登録は、通行証の amr に 2 段目（メール OTP など）を通った方法がある時だけ許す。パスワードだけで得た通行証で、攻撃者が自分の認証アプリを先に結び付けるのを防ぐため。登録の結果は監査に残し、秘密の値とトークンは残さない。
+ * amr だけでは、Supabase Auth へ OTP だけを直に送って得た通行証（amr に otp が付く）を断れない。そのため認証の確かめ（authenticateRequest）が、アプリのログインを通った session だけを通す（自前の sessions に結び付いた行が要る。ADR-0417）。結び付いていない通行証は 401 で、行為者が分かれば app_session_required の断りを監査に残す。amr の確かめは二重の守りとして残す。
  */
 
 import { NextResponse } from 'next/server';
@@ -59,6 +60,16 @@ export async function POST(request: Request) {
     const auth = await authenticateRequest(request);
 
     if (!auth.ok) {
+      // アプリのログインを通っていない session（OTP だけで直に取った通行証など）の断りは、
+      // 行為者が分かる時だけ監査に残す。残すのは固定の符号だけで、session_id やトークンは残さない。
+      if (auth.reason === 'revoked' && auth.claims) {
+        await logAudit({
+          action: 'mfa_enroll',
+          actor_id: auth.claims.sub,
+          outcome: 'denied',
+          detail: 'app_session_required',
+        });
+      }
       return authFailureResponse(auth.reason);
     }
 

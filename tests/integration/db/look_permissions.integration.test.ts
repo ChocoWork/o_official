@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createLiveAppSession, jwtClaims } from './helpers/app-session';
 import { describeLocalDb } from './helpers/local-db';
 
 /**
@@ -18,6 +19,8 @@ const LOOK_PERMISSIONS = ['admin.looks.manage', 'admin.looks.read'];
 
 describeLocalDb('integration: look permissions', (db) => {
   let seed: string;
+  // has_permission は aal2 とアプリに結び付いた生きた session を求める（SEC-AUTH-010-AC-03）。利用者ごとの session
+  let liveSessions: Map<string, { sessionId: string }>;
 
   beforeAll(() => {
     const directory = path.join(process.cwd(), 'supabase/migrations');
@@ -30,6 +33,7 @@ describeLocalDb('integration: look permissions', (db) => {
   });
   beforeEach(async () => {
     await db().query('begin');
+    liveSessions = new Map();
   });
   afterEach(async () => {
     await db().query('rollback');
@@ -51,11 +55,14 @@ describeLocalDb('integration: look permissions', (db) => {
         [id, role, options.active ?? true, options.expired ?? false],
       );
     }
+    liveSessions.set(id, await createLiveAppSession(db(), id));
     return id;
   }
 
   function claimsOf(id: string, appRole?: string): Claims {
-    return { sub: id, role: 'authenticated', ...(appRole ? { app_metadata: { role: appRole } } : {}) };
+    const session = liveSessions.get(id);
+    if (!session) throw new Error(`member() で作った利用者ではない: ${id}`);
+    return { ...jwtClaims(id, session), ...(appRole ? { app_metadata: { role: appRole } } : {}) };
   }
 
   async function grant(role: string, code: string) {

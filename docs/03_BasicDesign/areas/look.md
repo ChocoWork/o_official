@@ -1,6 +1,6 @@
 # LOOK の構造設計
 
-> 状態: 推定 | 確認日: 2026-10-28 | 対象: LOOK（一覧 `/look`・詳細 `/look/[id]`・ホームの LOOK の区画の部品・管理の LOOK） | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-10-29 | 対象: LOOK（一覧 `/look`・詳細 `/look/[id]`・ホームの LOOK の区画の部品・管理の LOOK） | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -18,7 +18,8 @@ LOOK の領域の構成・画面・画面遷移・状態遷移・API・データ
 
 - 結論: 公開の側は Server Component から匿名の client で DB を読み、RLS とアプリの `status='published'` の2段で公開済みだけを出す。画像の署名だけを service role で行う。管理の側は利用者の端末で動く画面から Route Handler を通し、窓口で session・権限・2要素認証・回数を確かめた上で、DB と置き場を service role で書き換える（NEWS と違い、利用者の JWT で RLS に通さない）
 - 公開の LOOK を返す API（`/api/looks` など）は無い。一覧・詳細・ホームは全部ページのサーバーの中で取り出す。公開の側の窓口は `og:image` の画像のバイトを返す `GET /look/[id]/og` 1 本だけ（API-LOOK-007。2026-10-28）
-- 今のコードが満たさないセキュリティ要件（SEC-LOOK-002〜010・012〜016・020〜023）は、満たす形の構造を持たないので上位につながず、本文に「満たさない」と書いた
+- SEC-LOOK-003 は、波 5（2026-10-29）の移行 M2 を当てた DB で満たす（`has_permission` が aal2 と結び付いた生きた session を求める。AUTH の DATA-AUTH-008・ADR-0418。M2 は controller が当てるまで未適用）。構造は AUTH が持つので、ここでは上位につながない
+- 今のコードが満たさないセキュリティ要件（SEC-LOOK-002・004〜010・012〜016・020〜023）は、満たす形の構造を持たないので上位につながず、本文に「満たさない」と書いた
 - 一部だけ満たすセキュリティ要件は NEWS と同じ決まりで扱った。項目が受け持つコードの中に満たさない所がある時は上位にせず、満たさない所が共有部品などほかのコードにだけある時は上位にした（例: SEC-LOOK-011 の送り元の取り方は共有の `src/features/auth/middleware/rateLimit.ts` にあるので管理の変更の窓口の上位にする。SEC-LOOK-019 の画面の出し分けは LOOK の画面にあるので、画面の項目の上位にはせず窓口の項目の上位にする）
 - 要件のうち、今のコードと合わないと要件の文書が書いた物（FR-LOOK-ALL-003・FR-LOOK-DETAIL-004・FREQ-139-REQ-01・FREQ-141-REQ-01・FREQ-178-REQ-01・FREQ-180-REQ-01・FREQ-279-REQ-03）と、作らないと決めた FR-LOOK-DETAIL-007 は上位にしていない。ADR-0150〜0158 も同じ決まりで、満たさない要件を上位にせず「結果」に書いた
 
@@ -629,7 +630,7 @@ stateDiagram-v2
 
 - 使われ方: 公開の取り出し（ARC-LOOK-001）は anon の方針で読む。管理の窓口（ARC-LOOK-002）は service role で、管理の方針を通らない。authenticated 向けの管理の読みの方針は、PostgREST を直接叩く道だけに効く（推定。`trace-matrix.md` の「食い違い」節を参照）。書き込みの方針（`manage by permission insert・update・delete`）は、2026-10-26 から authenticated に INSERT・UPDATE・DELETE の権限が無いので働かない。消さずに、権限を戻された時の二重の守りとして残す（ADR-0414）
 - `look_items` の読み出しは、2026-10-26 の移行 `sec_rls_predicates_and_constraints` から、親の LOOK の公開に加えて紐づく商品の公開も見る。非公開の商品の `item_id` は、anon も権限の無い会員も読めない（SEC-LOOK-002 を満たす）。以前の方針名は `Anyone can view look items for published looks`・`authenticated look items read`。管理の読みの枝（`has_permission('admin.looks.read')`）は変えず、波 5 の aal2 で直す。商品の部分問い合わせは `items` の列権限（`id`・`status` は許可内）で動く
-- `has_permission` は DB の ACL の表だけで決め、aal と session を見ない。権限を持つ人が aal1 の JWT で PostgREST を直接叩くと、非公開の読みができる（推定。SEC-LOOK-003-AC-01 は満たさない。波 5 で直す）。書き換えは 2026-10-26 から付与が無く、権限の誤り（`42501`）で断られる（SEC-LOOK-003-AC-02 を満たす）
+- `has_permission` は DB の ACL の表に加え、波 5 の移行 M2（DATA-AUTH-008）を当てると aal2 と結び付いた生きた session を求める。権限を持つ人が aal1 の JWT で PostgREST を直接叩いても、非公開の読みはできない（推定。SEC-LOOK-003-AC-01 を満たす。M2 は controller が当てるまで未適用）。書き換えは 2026-10-26 から付与が無く、権限の誤り（`42501`）で断られる（SEC-LOOK-003-AC-02 を満たす）
 - 付与: anon・authenticated に SELECT だけを付ける。INSERT・UPDATE・DELETE・TRUNCATE・TRIGGER・REFERENCES・MAINTAIN は付けない（2026-10-26 の移行 `sec_grants_admin_tables`。ADR-0414）。service_role には ALL を明示する。管理の書き込みは全部 service role の窓口で行う。以前は 8 権限を全部付け、守りは RLS の1段だけだった（SEC-LOOK-004 を満たす）
 - 確かめ: `tests/integration/db/look_grants_admin_tables.integration.test.ts`（移行の形と、役を替えた書き込みが権限の誤りになること。5 表ぶんの移行の形はここに置く）、`look_rls.integration.test.ts`
 

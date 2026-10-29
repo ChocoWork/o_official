@@ -2190,3 +2190,39 @@ service_role の権限は移行が明示する（後の REVOKE で消えない�
 ### 置き場の設定（`storage.buckets`）
 
 表ではないが、移行 130600 が設定を持つ。`look-images`・`news-images` は `public = false`・`file_size_limit = 5242880`（5 MiB）・`allowed_mime_types = image/jpeg・image/png・image/webp・image/gif`。本番に既にあるので `ON CONFLICT (id) DO UPDATE` で 3 つの設定を合わせる（既存のファイルは触らず、5 MiB 超の既存ファイルは残る）。`storage.objects` に置き場を名指しする方針は作らない（anon・authenticated は置き場に何もできず、読み書きは service role と署名付き URL だけ）。`item-images` は対象外で触らない。手元の見本 `supabase/seed.sql` の行は `ON CONFLICT DO NOTHING`、見本の画像の道筋は `items/e2e/`・`looks/e2e/`・`news/e2e/` の形。
+
+## 波 5 のアプリの session への結び付けと `has_permission` の aal2（SEC-AUTH-005・010 ほか / 2026-10-29）
+
+確認日: 2026-10-29。**M1 `20261029120000_sec_app_session_binding` は本番適用済み（2026-10-29）。M2 `20261029120100_sec_has_permission_aal2_member_rls` は本番未適用**（手元は `db:reset` で当てる）。適用の手順・事前の確認・ロールバックは [db-migrations.md](../../06_Operations/db-migrations.md) の波 5 の節。根拠は [ADR-0417](../decisions/ADR-0417-auth-bind-app-session-to-gotrue-session-id.md)・[ADR-0418](../decisions/ADR-0418-auth-has-permission-requires-aal2-and-bound-session.md)、領域の設計は [auth.md](../areas/auth.md) の `DATA-AUTH-007`・`DATA-AUTH-008`。
+
+### 列と索引（M1）
+
+| 対象 | 内容 |
+| --- | --- |
+| `public.sessions.auth_session_id` | `uuid` / NULL 可。GoTrue の `auth.sessions.id`（JWT の `session_id` クレーム）。アプリのログインを通って作られた行だけが持つ。既存の行は NULL のまま（「アプリが結んでいない行」の意味で、本番の 48 行は結ばれていない）。FK は張らない（`auth.sessions` はアプリが管理しない表）。refresh と、補助の totp の amr を足した refresh では GoTrue の `session_id` が変わらない（Task 0 の実測。本物の `mfa.verify` は preview で確かめる）ので、`persistNewSession` が前の行の値を引き継ぐ。表は 15 列から **16 列** |
+| 索引 `sessions_auth_session_id_live_idx` | 部分（`WHERE revoked_at IS NULL AND auth_session_id IS NOT NULL`）・**一意にしない**（新しい行を先に入れて古い行を後で失効させるので、一瞬 2 行が同じ id を持つ） |
+
+### 関数（M1）
+
+いずれも SECURITY DEFINER・`search_path ''`・所有者 postgres。
+
+| 関数 | EXECUTE | 内容 |
+| --- | --- | --- |
+| `private.app_session_is_live(uuid)` | postgres だけ | `auth_session_id` が一致する自前の行が失効しておらず、かつ `auth.sessions` の行が生きている（`not_after` を過ぎていない）時に true。`sessions.expires_at` は使わない（書き手で意味が違う） |
+| `public.is_app_session_active(uuid)` | postgres・service_role | 読む側（`authenticateRequest`）の RPC。旗 `AUTH_REQUIRE_APP_SESSION` が有効の時だけ `is_auth_session_active` の代わりに呼ぶ。`auth_grants_inventory` に追加 |
+| `private.is_app_bound_live_session()` | postgres・authenticated・service_role | RLS 用。JWT の `session_id` を形の検査の後で uuid にして `app_session_is_live` を呼ぶ。`session_id` が無い・不正でも false で、例外にならない |
+
+### `public.has_permission(text)` の契約（M2）
+
+関数 1 つの置き換え（`CREATE OR REPLACE`。所有者と EXECUTE は保たれ、GRANT・REVOKE は書かない）で、`has_permission` を呼ぶ約 100 本の方針に効く。前の契約は ACL の表だけを見ていた。新しい契約は、次の順に判定して最初に外れた所で false。
+
+1. `auth.uid()` が空 → false（変更なし）
+2. `claims.aal` が `aal2` でない（無ければ aal1 扱い）→ false。ACL の表を引く前に判定するので、会員と anon は表を引かない
+3. ACL に `permission_code` が無い → false（G-0 の `SELECT EXISTS` を一字一句そのまま）
+4. ACL が真の時だけ `private.app_session_is_live(claims.session_id)`。結び付いていない・失効・`auth.sessions` の行が無い・`session_id` が無い・形が悪い → false
+
+`private.group_g_actor_has_permissions(_actor_id, …)` は `auth.uid()` に依らず service_role から呼ぶので、G-2／G-3／G-4 の書き手は変わらない。公開の読みの `(status = 'published' OR has_permission(...))` は OR の側が合わなくなるだけで、一般の会員は公開済みを読み続ける。
+
+### 会員の表の RESTRICTIVE の方針（M2）
+
+`profiles`・`orders`・`order_items` に各 1 本、名前は `require app bound live session`。`AS RESTRICTIVE FOR ALL TO authenticated`・`USING` と `WITH CHECK` とも `(SELECT private.is_app_bound_live_session())`。既存の PERMISSIVE な方針（`auth.uid() = user_id` など）に重なり、結び付いた生きた session でない authenticated は 0 行・更新 0 行になる。**anon には付けない**（ゲストの注文は `app.session_id` で読み、その道は変えない）。`carts`・`wishlists`・`checkout_drafts`・`contact_*`・`refresh_token_history`・`postal_code_cache` は既に全拒否、`user_roles` は `has_permission('admin.users.read')` を通る。**会員の行を返す新しい表を足したら、同じ方針を足す。**

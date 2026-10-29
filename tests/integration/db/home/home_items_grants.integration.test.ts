@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { readMigration } from '../../../helpers/staged-supabase';
+import { createLiveAppSession, jwtClaims } from '../helpers/app-session';
 import { describeLocalDb } from '../helpers/local-db';
 
 /**
@@ -112,8 +113,12 @@ describeLocalDb('integration: items の列権限・原価の履歴・認証の�
   type Outcome = { rows: any[]; rowCount: number } | { code: string };
   type Role = 'anon' | 'authenticated' | 'service_role';
 
+  // has_permission と会員の表の方針は aal2 とアプリに結び付いた生きた session を求める（SEC-AUTH-010-AC-03）。利用者ごとの session
+  let liveSessions: Map<string, { sessionId: string }>;
+
   beforeEach(async () => {
     await db().query('begin');
+    liveSessions = new Map();
   });
   afterEach(async () => {
     await db().query('rollback');
@@ -161,10 +166,15 @@ describeLocalDb('integration: items の列権限・原価の履歴・認証の�
         [id, role],
       );
     }
+    liveSessions.set(id, await createLiveAppSession(db(), id));
     return id;
   }
 
-  const claimsOf = (id: string) => ({ sub: id, role: 'authenticated', aal: 'aal2' });
+  const claimsOf = (id: string) => {
+    const session = liveSessions.get(id);
+    if (!session) throw new Error(`insertUser で作った利用者ではない: ${id}`);
+    return jwtClaims(id, session);
+  };
 
   async function privileges(role: string, relation: string, list: string[]): Promise<string[]> {
     const result = await db().query(

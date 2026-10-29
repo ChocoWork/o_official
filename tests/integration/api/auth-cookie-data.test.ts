@@ -1,4 +1,6 @@
 export {};
+// GoTrue の access token の形（DD-AUTH-039）。AUTH_REQUIRE_APP_SESSION が既定で有効なので、ログインの保存には session_id が要る。
+const ACCESS_1 = `access-1.${Buffer.from(JSON.stringify({ session_id: '4c36ef0b-0332-42d8-b210-3326fc20c240' })).toString('base64url')}.s`;
 jest.mock('server-only', () => ({}), { virtual: true });
 
 jest.mock('next/server', () => ({
@@ -167,7 +169,7 @@ describe('認証の Cookie は用途ごとに名前・寿命・属性を分け�
 
     test('DATA-AUTH-004 確認コードの検証に成功すると、access・refresh・CSRF は 7 日、端末の印は 30 日で出し、保留の印は捨てる', async () => {
       setNodeEnv('production');
-      const session = { access_token: 'access-1', refresh_token: 'refresh-1', expires_at: Date.now() + 3600 };
+      const session = { access_token: ACCESS_1, refresh_token: 'refresh-1', expires_at: Date.now() + 3600 };
       createPublicClient.mockResolvedValue({
         auth: { verifyOtp: jest.fn().mockResolvedValue({ data: { session, user: { id: 'u1', email: 'user@example.com' } }, error: null }) },
       });

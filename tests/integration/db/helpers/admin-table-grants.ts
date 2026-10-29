@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createLiveAppSession, jwtClaims } from './app-session';
 import type { PgClient } from './local-db';
 
 /**
@@ -65,7 +66,10 @@ export function adminTableTools(db: () => PgClient) {
     return result.rows[0];
   }
 
-  /** manage の権限を持つ管理者（店長の役）を作る。DB は aal を見ないので、クレームに aal2 を入れて管理者の窓口と同じ入り口を再現する */
+  /**
+   * manage の権限を持つ管理者（店長の役）を作る。has_permission は aal2 とアプリに結び付いた生きた session を求める
+   * （SEC-AUTH-010-AC-03）ので、session を作って aal2 と session_id を入れ、管理者の窓口と同じ入り口を再現する
+   */
   async function insertAdmin(): Promise<Claims> {
     const id = randomUUID();
     await db().query(
@@ -79,7 +83,7 @@ export function adminTableTools(db: () => PgClient) {
        on conflict (user_id, role_id) do update set active = true, expires_at = null`,
       [id],
     );
-    return { sub: id, role: 'authenticated', aal: 'aal2' };
+    return jwtClaims(id, await createLiveAppSession(db(), id));
   }
 
   /** 権限を何も持たない一般会員（ログイン済み、aal1）を作り、その JWT のクレームを返す。DB の `auth.uid()` が NULL にならない形で公開の読みを確かめる */

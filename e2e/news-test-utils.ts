@@ -7,12 +7,15 @@
  * 3. aal2 が要る時は、その session の auth.mfa_amr_claims に totp の行を足してから refresh し、
  *    GoTrue に aal2 の token を発行させる（署名は本物の GoTrue の鍵）。
  * 窓口の認可は token の署名・session の生存・DB の ACL・aal を本物のまま確かめる（差し替えない）。
+ * 通行証は既定でアプリの sessions に結び付ける（signInWithPassword の bindApp。DD-AUTH-039）。
  */
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import type { PermissionCode } from '@/lib/auth/admin-rbac';
+import { bindAppSession } from './admin-session-test-utils';
+import { withLocalDb } from './order-email-test-utils';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
@@ -156,7 +159,7 @@ function decodeClaims(accessToken: string): { aal?: string; session_id?: string 
 export async function signInWithPassword(
   email: string,
   password: string,
-  options: { elevateWith?: PgClient } = {},
+  options: { elevateWith?: PgClient; bindApp?: boolean } = {},
 ): Promise<SignedInSession> {
   requireLocalEnv();
   // Auth の回数の制限を他の試験と取り合わないよう、この呼び出しだけの送り元（x-forwarded-for）を付ける。
@@ -182,6 +185,13 @@ export async function signInWithPassword(
     }
     session = refreshed.data.session;
     if (decodeClaims(session.access_token).aal !== 'aal2') throw new Error('refresh した token の aal が aal2 ではない');
+  }
+  // アプリの sessions に結び付ける（DD-AUTH-039）。アプリは結び付かない session の通行証を 401 にする。
+  // 結び付けない通行証（攻撃側の対照）は bindApp: false。行を作る処理は admin-session-test-utils の bindAppSession に 1 つだけ置く
+  if (options.bindApp ?? true) {
+    const binding = { userId: signedIn.data.user?.id ?? '', accessToken: session.access_token, refreshToken: session.refresh_token };
+    if (options.elevateWith) await bindAppSession(options.elevateWith, binding);
+    else await withLocalDb((db) => bindAppSession(db, binding));
   }
   return { accessToken: session.access_token, aal: decodeClaims(session.access_token).aal ?? '不明' };
 }

@@ -181,6 +181,58 @@ describe('POST /api/auth/mfa/enroll-totp', () => {
     },
   );
 
+  // 結び付いていない session（アプリを通らずに取った OTP だけの通行証など）は authenticateRequest が
+  // revoked で返す。断りは行為者つきで監査に残し、値（session_id・トークン）は残さない。
+  it('DD-AUTH-039 SEC-AUTH-031-AC-02 結び付いていない session（revoked＋claims）は 401 で、app_session_required を監査に 1 行だけ残す', async () => {
+    mockAuthenticate.mockResolvedValue({
+      ok: false,
+      reason: 'revoked',
+      claims: {
+        sub: 'user-1',
+        session_id: '11111111-2222-3333-4444-555555555555',
+        app_metadata: { role: 'admin' },
+        amr: [{ method: 'otp', timestamp: 0 }],
+      },
+    });
+
+    const { status } = await call(jsonRequest({}));
+
+    expect(mockFailure).toHaveBeenCalledWith('revoked');
+    expect(status).toBe(401);
+    expect(listFactors).not.toHaveBeenCalled();
+    expect(enroll).not.toHaveBeenCalled();
+    expect(unenroll).not.toHaveBeenCalled();
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith({
+      action: 'mfa_enroll',
+      actor_id: 'user-1',
+      outcome: 'denied',
+      detail: 'app_session_required',
+    });
+    expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('11111111-2222');
+  });
+
+  it('DD-AUTH-039 revoked でも claims が無ければ断りの監査は書かない（行為者が分からない）', async () => {
+    mockAuthenticate.mockResolvedValue({ ok: false, reason: 'revoked' });
+
+    const { status } = await call(jsonRequest({}));
+
+    expect(status).toBe(401);
+    expect(mockLogAudit).not.toHaveBeenCalled();
+    expect(listFactors).not.toHaveBeenCalled();
+  });
+
+  it.each(['missing', 'invalid', 'unavailable'])(
+    'DD-AUTH-039 確かめが通らない時（%s）は app_session_required の監査を書かない',
+    async (reason) => {
+      mockAuthenticate.mockResolvedValue({ ok: false, reason });
+
+      await call(jsonRequest({}));
+
+      expect(mockLogAudit).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([['user'], ['owner'], [undefined]])(
     'DD-AUTH-030 一般の会員・知らない役割・役割が無い時（%p）は 403',
     async (role) => {

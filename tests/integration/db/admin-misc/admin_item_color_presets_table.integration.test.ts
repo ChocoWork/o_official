@@ -1,5 +1,6 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
+import { createLiveAppSession, jwtClaims } from '../helpers/app-session';
 import { describeLocalDb } from '../helpers/local-db';
 
 /**
@@ -20,9 +21,12 @@ describeLocalDb('integration: 色見本の表 item_color_presets', (db) => {
   let plainUser: string;
   let reader: string;
   let manager: string;
+  // has_permission は aal2 とアプリに結び付いた生きた session を求める（SEC-AUTH-010-AC-03）。利用者ごとの session
+  let liveSessions: Map<string, { sessionId: string }>;
 
   beforeEach(async () => {
     await db().query('begin');
+    liveSessions = new Map();
     marker = `integration-color-${randomUUID()}`;
 
     // 既存の役の割り当てに左右されないよう、この試験だけの役を作って権限を1つずつ付ける
@@ -60,6 +64,7 @@ describeLocalDb('integration: 色見本の表 item_color_presets', (db) => {
        values ($1, '{}', '{}', now(), now())`,
       [id],
     );
+    liveSessions.set(id, await createLiveAppSession(db(), id));
     for (const roleId of roleIds) {
       await db().query(
         'insert into public.user_roles (user_id, role_id, active) values ($1, $2::bigint, true)',
@@ -70,7 +75,10 @@ describeLocalDb('integration: 色見本の表 item_color_presets', (db) => {
   }
 
   async function enter(actor: Actor): Promise<void> {
-    const claims = actor.sub ? JSON.stringify({ sub: actor.sub, role: actor.role, aal: 'aal2' }) : '';
+    const session = actor.sub ? liveSessions.get(actor.sub) : undefined;
+    const claims = actor.sub
+      ? JSON.stringify(session ? { ...jwtClaims(actor.sub, session), role: actor.role } : { sub: actor.sub, role: actor.role, aal: 'aal2' })
+      : '';
     await db().query("select set_config('request.jwt.claims', $1, true)", [claims]);
     await db().query("select set_config('request.jwt.claim.sub', $1, true)", [actor.sub ?? '']);
     await db().query(`set local role ${actor.role}`);

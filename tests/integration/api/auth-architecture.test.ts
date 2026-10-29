@@ -1,4 +1,6 @@
 export {};
+// GoTrue の access token の形（DD-AUTH-039）。AUTH_REQUIRE_APP_SESSION が既定で有効なので、ログインの保存には session_id が要る。
+const SECRET_ACCESS = `secret-access.${Buffer.from(JSON.stringify({ session_id: '4c36ef0b-0332-42d8-b210-3326fc20c240' })).toString('base64url')}.s`;
 jest.mock('server-only', () => ({}), { virtual: true });
 
 jest.mock('next/server', () => ({
@@ -91,7 +93,7 @@ describe('認証の全体の作り（ARC-AUTH-001）', () => {
     createPublicClient.mockResolvedValue({
       auth: {
         signInWithPassword: jest.fn().mockResolvedValue({
-          data: { session: { access_token: 'secret-access', refresh_token: 'secret-refresh' }, user: { id: 'u1', email: 'user@example.com' } },
+          data: { session: { access_token: SECRET_ACCESS, refresh_token: 'secret-refresh' }, user: { id: 'u1', email: 'user@example.com' } },
           error: null,
         }),
         signInWithOtp: jest.fn().mockResolvedValue({ error: null }),
@@ -110,7 +112,7 @@ describe('認証の全体の作り（ARC-AUTH-001）', () => {
   });
 
   test('ARC-AUTH-001 確認コードの検証に成功すると、トークンは HttpOnly の Cookie に入り、本文には出ない', async () => {
-    const session = { access_token: 'secret-access', refresh_token: 'secret-refresh', expires_at: Date.now() + 3600 };
+    const session = { access_token: SECRET_ACCESS, refresh_token: 'secret-refresh', expires_at: Date.now() + 3600 };
     const user = { id: 'u1', email: 'user@example.com' };
     createPublicClient.mockResolvedValue({
       auth: { verifyOtp: jest.fn().mockResolvedValue({ data: { session, user }, error: null }) },
@@ -131,7 +133,7 @@ describe('認証の全体の作り（ARC-AUTH-001）', () => {
     expect(serialized).not.toContain('secret-access');
     expect(serialized).not.toContain('secret-refresh');
 
-    expect(res.cookies.get('sb-access-token')).toEqual(expect.objectContaining({ value: 'secret-access', httpOnly: true }));
+    expect(res.cookies.get('sb-access-token')).toEqual(expect.objectContaining({ value: SECRET_ACCESS, httpOnly: true }));
     expect(res.cookies.get('sb-refresh-token')).toEqual(expect.objectContaining({ value: 'secret-refresh', httpOnly: true }));
     expect(res.cookies.get('sb-csrf-token')).toEqual(expect.objectContaining({ httpOnly: false }));
     // sessions の表には refresh token そのものでなくハッシュだけを控える。

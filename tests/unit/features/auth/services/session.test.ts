@@ -133,4 +133,126 @@ describe('session service', () => {
       }),
     ).rejects.toThrow('revoke boom');
   });
+
+  describe('auth_session_id の引き継ぎ（DD-AUTH-039）', () => {
+    const TRUSTED = '11111111-1111-4111-8111-111111111111';
+    const FROM_TOKEN = '22222222-2222-4222-8222-222222222222';
+    const jwt = (payload: Record<string, unknown>) =>
+      `h.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.s`;
+
+    function setupInsert() {
+      mockTokenHash.mockResolvedValue('hashed');
+      const insert = jest.fn().mockResolvedValue({ error: null });
+      const from = jest.fn().mockReturnValue({ insert, update: jest.fn() });
+      mockCreateClient.mockResolvedValue({ from });
+      return insert;
+    }
+
+    test('DD-AUTH-039 trustedAuthSessionId が無ければ、token に session_id があっても auth_session_id は null（洗濯しない）', async () => {
+      const insert = setupInsert();
+      const { response } = makeResponse();
+      await sessionService.persistNewSession(response, {
+        accessToken: jwt({ session_id: FROM_TOKEN }),
+        refreshToken: 'r',
+        userId: 'user1',
+      });
+      expect(insert.mock.calls[0][0][0].auth_session_id).toBeNull();
+    });
+
+    test('DD-AUTH-039 trustedAuthSessionId が null でも auth_session_id は null', async () => {
+      const insert = setupInsert();
+      const { response } = makeResponse();
+      await sessionService.persistNewSession(response, {
+        accessToken: jwt({ session_id: FROM_TOKEN }),
+        refreshToken: 'r',
+        userId: 'user1',
+        trustedAuthSessionId: null,
+      });
+      expect(insert.mock.calls[0][0][0].auth_session_id).toBeNull();
+    });
+
+    test('DD-AUTH-039 trustedAuthSessionId があれば、新しい token の session_id を入れる', async () => {
+      const insert = setupInsert();
+      const { response } = makeResponse();
+      await sessionService.persistNewSession(response, {
+        accessToken: jwt({ session_id: FROM_TOKEN }),
+        refreshToken: 'r',
+        userId: 'user1',
+        trustedAuthSessionId: TRUSTED,
+      });
+      expect(insert.mock.calls[0][0][0].auth_session_id).toBe(FROM_TOKEN);
+    });
+
+    test('DD-AUTH-039 trustedAuthSessionId があり token に session_id が無ければ、trustedAuthSessionId を入れる', async () => {
+      const insert = setupInsert();
+      const { response } = makeResponse();
+      await sessionService.persistNewSession(response, {
+        accessToken: 'opaque',
+        refreshToken: 'r',
+        userId: 'user1',
+        trustedAuthSessionId: TRUSTED,
+      });
+      expect(insert.mock.calls[0][0][0].auth_session_id).toBe(TRUSTED);
+    });
+
+    test('DD-AUTH-039 findSessionByRefreshHash は auth_session_id も引いて返す', async () => {
+      const fakeHash = 'ef'.repeat(32);
+      mockTokenHash.mockReturnValue(fakeHash);
+      const maybeSingle = jest.fn().mockResolvedValue({
+        data: { id: 's', user_id: 'u', refresh_token_hash: fakeHash, revoked_at: null, auth_session_id: TRUSTED },
+        error: null,
+      });
+      const select = jest.fn().mockReturnValue({ eq: jest.fn().mockReturnValue({ maybeSingle }) });
+      mockCreateClient.mockResolvedValue({ from: jest.fn().mockReturnValue({ select }) });
+
+      const res = await sessionService.findSessionByRefreshHash(fakeHash);
+      expect(select.mock.calls[0][0]).toContain('auth_session_id');
+      expect(res?.auth_session_id).toBe(TRUSTED);
+    });
+
+    test('DD-AUTH-039 行の auth_session_id が NULL なら null を返す', async () => {
+      const fakeHash = 'ab'.repeat(32);
+      const maybeSingle = jest.fn().mockResolvedValue({
+        data: { id: 's', user_id: 'u', refresh_token_hash: fakeHash, revoked_at: null, auth_session_id: null },
+        error: null,
+      });
+      const select = jest.fn().mockReturnValue({ eq: jest.fn().mockReturnValue({ maybeSingle }) });
+      mockCreateClient.mockResolvedValue({ from: jest.fn().mockReturnValue({ select }) });
+
+      const res = await sessionService.findSessionByRefreshHash(fakeHash);
+      expect(res?.auth_session_id).toBeNull();
+    });
+
+    describe('引きの失敗（DD-AUTH-039）', () => {
+      const fakeHash = 'ab'.repeat(32);
+      let consoleError: jest.SpyInstance;
+
+      beforeEach(() => {
+        consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+        const maybeSingle = jest.fn().mockResolvedValue({ data: null, error: { message: 'PGRST116 multiple rows' } });
+        const select = jest.fn().mockReturnValue({ eq: jest.fn().mockReturnValue({ maybeSingle }) });
+        mockCreateClient.mockResolvedValue({ from: jest.fn().mockReturnValue({ select }) });
+      });
+
+      afterEach(() => consoleError.mockRestore());
+
+      test('DD-AUTH-039 既定では DB のエラーを null で返す（MFA 昇格はこちらを使う）', async () => {
+        await expect(sessionService.findSessionByRefreshHash(fakeHash)).resolves.toBeNull();
+      });
+
+      test('DD-AUTH-039 throwOnError なら DB のエラーを name が SessionLookupError の Error で投げる', async () => {
+        await expect(sessionService.findSessionByRefreshHash(fakeHash, { throwOnError: true })).rejects.toMatchObject({
+          name: 'SessionLookupError',
+        });
+      });
+
+      test('DD-AUTH-039 throwOnError でも、行が無い（エラーなし）は null で返す', async () => {
+        const maybeSingle = jest.fn().mockResolvedValue({ data: null, error: null });
+        const select = jest.fn().mockReturnValue({ eq: jest.fn().mockReturnValue({ maybeSingle }) });
+        mockCreateClient.mockResolvedValue({ from: jest.fn().mockReturnValue({ select }) });
+
+        await expect(sessionService.findSessionByRefreshHash(fakeHash, { throwOnError: true })).resolves.toBeNull();
+      });
+    });
+  });
 });

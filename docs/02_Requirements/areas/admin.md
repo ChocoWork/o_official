@@ -1,6 +1,6 @@
 # ADMIN の要件
 
-> 状態: 推定 | 確認日: 2026-10-28 | 対象: ADMIN（管理のそのほか。利用者の作成・セッションの強制失効・2要素のリセット・監査ログの読み出しと掃除・問い合わせの管理・商品の色見本） | 基準コミット: `4facf63b`
+> 状態: 推定 | 確認日: 2026-10-29 | 対象: ADMIN（管理のそのほか。利用者の作成・セッションの強制失効・2要素のリセット・監査ログの読み出しと掃除・問い合わせの管理・商品の色見本） | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -362,13 +362,13 @@ FR-ADMIN-009 の文から起こした。今のコードで満たすかを「状�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-ADMIN-002、THR-ADMIN-016 |
-| 根拠 | 2要素認証と強制失効の守りがアプリの窓口だけにあると、パスワードの漏れや失効の後の JWT で PostgREST から色見本に届く。窓口と同じ線を DB にも引く。NEWS の SEC-NEWS-002（範囲外）と同じ形で、`has_permission` を変えるのは権限と割当の作業。全体の NFR-SEC-008（範囲外。RBAC）を当てはめた |
+| 根拠 | 2要素認証と強制失効の守りがアプリの窓口だけにあると、パスワードの漏れや失効の後の JWT で PostgREST から色見本に届く。窓口と同じ線を DB にも引く。NEWS の SEC-NEWS-002（範囲外）と同じ形で、`has_permission` は AUTH の SEC-AUTH-010 が波 5 で変える。全体の NFR-SEC-008（範囲外。RBAC）を当てはめた |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | OWASP ASVS 4.0.3 V4.3.1 |
 | 優先度 | MUST |
 
-`item_color_presets` の RLS が通すのは、ACL の権限に加えて JWT の `aal` が `aal2` で、session が有効な要求だけ。読みの側（AC-02）は今のコードは満たさない（食い違いは trace-matrix.md の「食い違い」節の TM-ADMIN-43。波 5 の `has_permission` の aal2 と session で直す）。書き込みの側（AC-01）は、2026-10-26 から anon・authenticated に `item_color_presets` の INSERT・UPDATE・DELETE の権限が無い（ADR-0414）ので、aal1 の JWT でも PostgREST から書けず満たす（この移行を当てた DB でだけ満たす）。同じ移行で anon の SELECT も外した（読む方針が authenticated 向けの1本だけで、anon が読める行は元から0件）。
+`item_color_presets` の RLS が通すのは、ACL の権限に加えて JWT の `aal` が `aal2` で、session が有効な要求だけ。読みの側（AC-02）は、波 5 の移行 M2（`has_permission` に aal2 と結び付いた生きた session を求める。SEC-AUTH-010-AC-03、ADR-0418）を当てた DB で満たす（2026-10-29 に E2E の `test.fail` を外した。食い違いだった TM-ADMIN-43 は M2 で解消する。M2 は controller が当てるまで未適用）。書き込みの側（AC-01）は、2026-10-26 から anon・authenticated に `item_color_presets` の INSERT・UPDATE・DELETE の権限が無い（ADR-0414）ので、aal1 の JWT でも PostgREST から書けず満たす（この移行を当てた DB でだけ満たす）。同じ移行で anon の SELECT も外した（読む方針が authenticated 向けの1本だけで、anon が読める行は元から0件）。
 
 #### SEC-ADMIN-002-AC-01 aal1 の JWT で色見本を直接書けない
 

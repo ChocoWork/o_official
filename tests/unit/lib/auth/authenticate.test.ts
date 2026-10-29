@@ -36,10 +36,22 @@ describe('verifyAccessToken / authenticateRequest', () => {
     mod = await import('@/lib/auth/authenticate');
   });
 
+  const originalFlag = process.env.AUTH_REQUIRE_APP_SESSION;
+
   beforeEach(() => {
     getClaimsMock.mockReset();
     rpcMock.mockReset();
     rpcMock.mockResolvedValue({ data: true, error: null });
+    // 旗は既定で有効（ADR-0419）。各テストが必要な時だけ書き換える。
+    delete process.env.AUTH_REQUIRE_APP_SESSION;
+  });
+
+  afterAll(() => {
+    if (originalFlag === undefined) {
+      delete process.env.AUTH_REQUIRE_APP_SESSION;
+    } else {
+      process.env.AUTH_REQUIRE_APP_SESSION = originalFlag;
+    }
   });
 
   describe('verifyAccessToken（暗号検証のみ）', () => {
@@ -135,9 +147,33 @@ describe('verifyAccessToken / authenticateRequest', () => {
 
       const result = await mod.authenticateRequest(requestWith({ cookie: 'sb-access-token=t' }));
 
-      expect(rpcMock).toHaveBeenCalledWith('is_auth_session_active', { p_session_id: 'session-1' });
+      expect(rpcMock).toHaveBeenCalledWith('is_app_session_active', { p_session_id: 'session-1' });
       expect(result.ok).toBe(true);
     });
+
+    test('DD-AUTH-039 旗が未設定（既定で有効）なら、結び付き込みの is_app_session_active で確かめる', async () => {
+      delete process.env.AUTH_REQUIRE_APP_SESSION;
+      getClaimsMock.mockResolvedValue({ data: { claims: buildClaims() }, error: null });
+
+      await mod.authenticateRequest(requestWith({ cookie: 'sb-access-token=t' }));
+
+      expect(rpcMock).toHaveBeenCalledTimes(1);
+      expect(rpcMock).toHaveBeenCalledWith('is_app_session_active', { p_session_id: 'session-1' });
+    });
+
+    test.each(['off', 'OFF', '0', 'false'])(
+      'DD-AUTH-039 旗が %s なら、従来の is_auth_session_active で確かめる',
+      async (flag) => {
+        process.env.AUTH_REQUIRE_APP_SESSION = flag;
+        getClaimsMock.mockResolvedValue({ data: { claims: buildClaims() }, error: null });
+
+        const result = await mod.authenticateRequest(requestWith({ cookie: 'sb-access-token=t' }));
+
+        expect(rpcMock).toHaveBeenCalledTimes(1);
+        expect(rpcMock).toHaveBeenCalledWith('is_auth_session_active', { p_session_id: 'session-1' });
+        expect(result.ok).toBe(true);
+      },
+    );
 
     test('セッションが失効していれば revoked を返す', async () => {
       getClaimsMock.mockResolvedValue({ data: { claims: buildClaims() }, error: null });
@@ -145,7 +181,19 @@ describe('verifyAccessToken / authenticateRequest', () => {
 
       const result = await mod.authenticateRequest(requestWith({ cookie: 'sb-access-token=t' }));
 
-      expect(result).toEqual({ ok: false, reason: 'revoked' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toBe('revoked');
+    });
+
+    // 結び付いていない session（アプリを通らずに取った通行証）は RPC が false を返す。
+    // 呼び手（enroll-totp）が断りを監査に残せるよう、署名検証済みの claims を付ける。
+    test('DD-AUTH-039 結び付いていない session は revoked で、署名検証済みの claims を付ける', async () => {
+      getClaimsMock.mockResolvedValue({ data: { claims: buildClaims() }, error: null });
+      rpcMock.mockResolvedValue({ data: false, error: null });
+
+      const result = await mod.authenticateRequest(requestWith({ cookie: 'sb-access-token=t' }));
+
+      expect(result).toEqual({ ok: false, reason: 'revoked', claims: buildClaims() });
     });
 
     // 「失効している」と「失効しているか確認できなかった」を混ぜない。
@@ -161,6 +209,16 @@ describe('verifyAccessToken / authenticateRequest', () => {
       expect(result).toEqual({ ok: false, reason: 'unavailable' });
     });
 
+    // 確かめられなかっただけの時は、行為者の断りを書かせない（claims を付けない）。
+    test('DD-AUTH-039 RPC が例外を投げたら unavailable で、claims は付けない', async () => {
+      getClaimsMock.mockResolvedValue({ data: { claims: buildClaims() }, error: null });
+      rpcMock.mockRejectedValue(new Error('network down'));
+
+      const result = await mod.authenticateRequest(requestWith({ cookie: 'sb-access-token=t' }));
+
+      expect(result).toEqual({ ok: false, reason: 'unavailable' });
+    });
+
     test('session_id クレームが無ければ拒否する', async () => {
       getClaimsMock.mockResolvedValue({
         data: { claims: { ...buildClaims(), session_id: undefined } },
@@ -169,7 +227,18 @@ describe('verifyAccessToken / authenticateRequest', () => {
 
       const result = await mod.authenticateRequest(requestWith({ cookie: 'sb-access-token=t' }));
 
-      expect(result).toEqual({ ok: false, reason: 'revoked' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toBe('revoked');
+      expect(rpcMock).not.toHaveBeenCalled();
+    });
+
+    test('DD-AUTH-039 署名の検証に失敗した時は claims を付けない（missing・invalid）', async () => {
+      const missing = await mod.authenticateRequest(requestWith({}));
+      expect(missing).toEqual({ ok: false, reason: 'missing' });
+
+      getClaimsMock.mockResolvedValue({ data: null, error: { message: 'bad signature' } });
+      const invalid = await mod.authenticateRequest(requestWith({ cookie: 'sb-access-token=t' }));
+      expect(invalid).toEqual({ ok: false, reason: 'invalid' });
       expect(rpcMock).not.toHaveBeenCalled();
     });
   });

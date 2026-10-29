@@ -95,7 +95,6 @@ async function readItemRows(ids: number[], names: string[]): Promise<ItemRow[]> 
 
 test.describe('FR-HOME-024 admin ロールの aal1 の JWT で items を直接読む', () => {
   test('SEC-HOME-003-AC-01: admin.items.read を持つ利用者の aal1 の JWT で select した時、下書きの商品の行が結果に含まれない', async ({ request }) => {
-    test.fail(true, 'SEC-HOME-003 今のコードは満たさない（docs/02_Requirements/areas/home.md）');
     test.setTimeout(180_000);
     requireLocalSupabase();
 

@@ -50,6 +50,8 @@ const { logAudit } = require('@/lib/audit');
 const { createServiceRoleClient } = require('@/lib/supabase/server');
 
 const AUTH_COOKIE_NAMES = ['sb-access-token', 'sb-refresh-token', 'sb-csrf-token'];
+// 結び付いた行（DD-AUTH-039）。AUTH_REQUIRE_APP_SESSION は既定で有効なので、更新は結び付いた行の続きにだけ通る。
+const AUTH_SESSION_ID = '4c36ef0b-0332-42d8-b210-3326fc20c240';
 
 const callRefresh = () =>
   refreshHandler(new Request('http://localhost:3000/api/auth/refresh', { method: 'POST' }));
@@ -114,7 +116,13 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
     logAudit.mockResolvedValue(undefined);
     enforceRateLimit.mockResolvedValue(undefined);
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue(undefined) });
-    sessionService.findSessionByRefreshHash.mockResolvedValue({ id: 'sess1', user_id: 'u1', revoked_at: null });
+    delete process.env.AUTH_REQUIRE_APP_SESSION;
+    sessionService.findSessionByRefreshHash.mockResolvedValue({
+      id: 'sess1',
+      user_id: 'u1',
+      revoked_at: null,
+      auth_session_id: AUTH_SESSION_ID,
+    });
     installServiceClient();
     delete process.env.SUPABASE_URL;
     delete process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -206,7 +214,7 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
     // 新しい行を足し、古い行に失効の印を付ける
     expect(chain.insert).toHaveBeenCalledTimes(1);
     expect(chain.insert.mock.calls[0][0][0]).toEqual(
-      expect.objectContaining({ user_id: 'u1', quarantined: false }),
+      expect.objectContaining({ user_id: 'u1', quarantined: false, auth_session_id: AUTH_SESSION_ID }),
     );
     expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({ revoked_at: expect.any(String) }));
     expect(chain.updateEq).toHaveBeenCalledWith('id', 'sess1');
@@ -222,7 +230,23 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
     expect(logAudit).toHaveBeenCalledWith({ action: 'refresh', actor_id: 'u1', outcome: 'success' });
   });
 
-  test('API-AUTH-014 自前の行が無くても拒否せず、Supabase の交換結果の利用者で続ける', async () => {
+  test('API-AUTH-014 自前の行が無い refresh token は 401 で、Supabase へ行かせず認証 Cookie を消す', async () => {
+    setRefreshCookie('old-refresh');
+    setSupabaseEnv();
+    sessionService.findSessionByRefreshHash.mockResolvedValue(null);
+    fetchSpy.mockResolvedValue(tokenResponse());
+
+    const res: any = await callRefresh();
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'Session not bound' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expectAuthCookiesCleared(res);
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'refresh', detail: 'unbound_session' }));
+  });
+
+  test('API-AUTH-014 旗が無効なら、自前の行が無くても拒否せず、Supabase の交換結果の利用者で続ける', async () => {
+    process.env.AUTH_REQUIRE_APP_SESSION = 'off';
     setRefreshCookie('old-refresh');
     setSupabaseEnv();
     sessionService.findSessionByRefreshHash.mockResolvedValue(null);
@@ -233,7 +257,9 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
 
     expect(res.status).toBe(200);
     expect(consoleWarnSpy).toHaveBeenCalled();
-    expect(chain.insert.mock.calls[0][0][0]).toEqual(expect.objectContaining({ user_id: 'u-from-supabase' }));
+    expect(chain.insert.mock.calls[0][0][0]).toEqual(
+      expect.objectContaining({ user_id: 'u-from-supabase', auth_session_id: null }),
+    );
     // 差し替える古い行が無いので失効の更新はしない
     expect(chain.update).not.toHaveBeenCalled();
   });

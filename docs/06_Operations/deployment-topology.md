@@ -49,4 +49,13 @@ flowchart LR
 | 最初の preview での実測（配備の前に必ず） | preview の URL に、偽の `x-real-ip: 203.0.113.7` と偽の `x-forwarded-for: 203.0.113.8` と偽の `x-vercel-forwarded-for: 203.0.113.9` を付けて `GET` を送り、アプリが受け取る送り元（監査の行の `ip`、または回数の制限の枠）が偽の値ではなく、リクエスト元の実際の IP になることを確かめる。偽の値が通るなら配備を止める。結果は日付つきでこの節に書く |
 | 状態 | 本番は未デプロイで、Vercel が見出しを上書きすることは未実測 |
 
+## アプリの session への結び付けの旗（2026-10-29、ADR-0419）
+
+| 項目 | 内容 |
+| --- | --- |
+| 前提 | 環境変数 `AUTH_REQUIRE_APP_SESSION` は、アプリのログインを通って自前の `sessions` に結び付いた session だけを受ける旗。既定で有効（`off`・`0`・`false` の時だけ無効）。本番には設定しない |
+| E2E | E2E の固定の環境（`E2E_FIXED_ENV`）が `AUTH_REQUIRE_APP_SESSION=on` を入れる。混ぜる場所と見張りは `CLIENT_IP_HEADER` と同じ（`buildE2EOverrides` の中だけ。旗の専用の見張りは足さない）。詳しくは[シークレット管理方針](secrets.md)の `AUTH_REQUIRE_APP_SESSION` |
+| 配備の順 | 移行 M1（列と関数）→ アプリのコード → 全員が再ログイン → 移行 M2（DB の `has_permission` と会員の表の方針）。M2 を先に当てると、結び付いていない session の通行証は PostgREST で 0 行になる |
+| 状態 | 本番は未デプロイ。旗を外した配備の手順は未確認 |
+
 本番構成を確定する際は、ホスティング管理画面、GitHub Actions 実行履歴、Supabase の migration・cron・Storage の状態、Stripe の Webhook 設定、メール提供元の設定を別途照合する。

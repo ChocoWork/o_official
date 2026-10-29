@@ -1,5 +1,7 @@
 # テスト仕様
 
+> 波 5 確認日: 2026-10-29。開店前のセキュリティの穴 波 5（アプリの session への結び付け・`has_permission` の aal2 と結び付いた生きた session・会員の表の方針）の新しい試験と外した `test.fail` 9 行を、下の「開店前のセキュリティの穴 波 5 のテスト」に記載した。DB 結合は 146 suites・4377 件通過・0 失敗、本番ビルドの E2E 全件は 203 failed・4821 passed・26 skipped（波 4 の 185 failed と比べて新しい赤は 1 並列の再実行で 154 件通り、残り 4 件は波 5 に未対応の試験で直した。ほかは並列の揺れ）。
+
 > 波 4 確認日: 2026-10-28。開店前のセキュリティの穴 波 4（送り元の IP の取り出し・回数の鍵・管理の監査の IP・取扱店の認可の拒否の監査・管理画面の CONTACT タブ）の新しい試験と外した `test.fail` 16 行を、下の「開店前のセキュリティの穴 波 4 のテスト」に記載した。本番ビルドの E2E 全件は 185 failed・4832 passed・26 skipped（波 3 の 183 failed と比べて新しく赤になった 10 ファイルは 1 並列の再実行で 200 件とも通った。並列の揺れ）。
 
 > 波 3 確認日: 2026-10-28。開店前のセキュリティの穴 波 3（画像の署名・CSP・`session_id` の発行範囲・`/api/auth` の `no-store`・LOOK の og:image・ビルドの必須の環境変数）の新しい試験と外した `test.fail` 18 行を、下の「開店前のセキュリティの穴 波 3 のテスト」に記載した。本番ビルドの E2E 全件は 183 failed・4828 passed・26 skipped（G-4 の 181 failed から増えたのは商品詳細の揺れ 2 件だけ）。
@@ -1106,3 +1108,75 @@ SEC-NEWS-007・008 の E2E（`FR-NEWS-SEC-001`）は `/api/news` が `image_url`
 - LOOK の管理の一覧（`LookSection.tsx` の 3 か所）と G の画面 2 か所（`useOrderAttention.ts`・`customer-return-client.ts`）に、no-store の 429・503 の本文を読み切る 1 行を足した。ほかの G/H の 11 か所は G-1 への引き継ぎ（台帳の「波 4 の注」）。
 - 流していない物: DB 結合（`tests/integration/db`）。波 4 は DB を変えないが、`rate_limit_counters.ip` に `null` が入る経路は fake client の結合でしか確かめていない。
 - 参考（流す前の見立て）。部分実行は `npx playwright test e2e/FR-LOGIN e2e/FR-PWRESET e2e/FR-SIGNUP e2e/FR-SEARCH e2e/FR-NEWS-SEC-003 e2e/FR-NEWS-SEC-005 e2e/FR-WISHLIST-011 e2e/FR-STOCKIST e2e/FR-ADMIN-MISC e2e/FR-ADMIN-029 e2e/FR-ADMIN-123 e2e/FR-LOOK-SEC-001 e2e/FR-LOOK-SEC-002 e2e/FR-LOOK-SEC-003 e2e/FR-LOOK-SEC-004 e2e/FR-LOOK-SEC-005 e2e/FR-LOOK-DETAIL-019 e2e/FR-LOOK-ADMIN-001 e2e/FR-ACCOUNT-035 e2e/FR-ACCOUNT-036 e2e/FR-CHECKOUT-005 e2e/FR-CHECKOUT-025 e2e/FR-CHECKOUT-046 e2e/FR-HOME-022`、そのあと全件を波 3 の全件（183 failed）と比べる。新しい赤の見立て: ①429（`x-real-ip` の書き換え忘れ。見出しの無い要求の枠が `ip null` の 1 つにまとまった）、②503（`ip` に文字列が入った）、③`networkidle` が止まる（`no-store` の 429・503 の本文を読まない呼び手）、④CONTACT タブでメニューの並びを見る試験、⑤監査の `ip` が空。
+
+## 開店前のセキュリティの穴 波 5 のテスト（アプリの session への結び付け・`has_permission` の aal2 と結び付いた生きた session・会員の表の方針。SEC-AUTH・ADMIN・HOME・LOOK・NEWS・STOCKIST）
+
+確認日: 2026-10-29（この節は波 5 の分。並びは時系列でなく、波 4 の節の後に置く）。波 5 は移行 2 本を含む。M1 `20261029120000_sec_app_session_binding` は本番適用済み（2026-10-29）、M2 `20261029120100_sec_has_permission_aal2_member_rls` は本番未適用（[移行運用](../../06_Operations/db-migrations.md)の波 5 の節）。単体・結合（DB なし）は各 Task の実装者が対象の範囲で通した。`npm run db:reset`（M1・M2 を `supabase/migrations` に置いた状態）の後で DB 結合と本番ビルドの E2E 全件を流し、実測した（下の「実測（2026-10-29）」）。
+
+### 新しく作った試験ファイル
+
+| ファイル | 先頭の ID | 確かめること |
+| --- | --- | --- |
+| [sec-app-session-binding.test.ts](../../../tests/unit/migrations/sec-app-session-binding.test.ts)（19 本） | `DATA-AUTH-007` | M1 の SQL の静的な確かめ。列・部分で一意でない索引・関数 3 本の属性（SECURITY DEFINER・`search_path ''`・所有者）と ACL・末尾の自己検査・ROLLBACK。`supabase/migrations`／`supabase/pending-wave5` のどちらにあっても読める |
+| [sec-has-permission-aal2.test.ts](../../../tests/unit/migrations/sec-has-permission-aal2.test.ts)（16 本） | `DATA-AUTH-008` | M2 の SQL の静的な確かめ。`has_permission` の ACL の `SELECT EXISTS` が G-0 の本体と空白を除き一字一句同じ、検査の順（uid → aal2 → ACL → 生きた session）、`search_path ''`、GRANT・REVOKE を書かない、方針 3 本、自己検査、ROLLBACK が G-0 の本体と一致 |
+| [app-session.test.ts](../../../tests/unit/lib/auth/app-session.test.ts) | `DD-AUTH-039` | `isAppSessionRequired`（既定で有効、`off`・`0`・`false` で無効）と `readAuthSessionId`（署名を確かめない読みで `session_id` を取り、形が悪ければ `null`） |
+| [admin-session-test-utils.test.ts](../../../tests/unit/e2e/admin-session-test-utils.test.ts)（13 本） | （E2E の補助。ID なし） | `bindAppSession`（形・sha256 が `tokenHashSha256` と一致・sub 不一致／`session_id` 無し／手元以外で投げて何も書かない・失敗の文面に token が出ない）、`rebindRefreshToken`、`createAdminSessionActor` の既定の結び付け・`bindApp:false`・aal 不一致で行を残さない、昇格で行を再結び付け |
+| [auth_app_session_binding.integration.test.ts](../../../tests/integration/db/auth_app_session_binding.integration.test.ts)（DB 結合） | `DATA-AUTH-007` | 生きた結び付いた session で `is_app_session_active`／`private.app_session_is_live`／`private.is_app_bound_live_session` が true、結び付いていない・失効・`auth.sessions` の行が無い・形の悪い `session_id` で false（例外にならない）、既存の行（`auth_session_id` NULL）は結び付かない、列の権限・索引。2026-10-29 に通過 |
+| [auth_has_permission_aal2.integration.test.ts](../../../tests/integration/db/auth_has_permission_aal2.integration.test.ts)（DB 結合） | `DATA-AUTH-008` | `has_permission` が aal2＋結び付き＋生存で true、aal1・aal 無し・`session_id` 無し・形が悪い 4 通り・結び付いていない・失効後・`auth.sessions` 削除後で false、ACL の無い会員は false、EXECUTE 権限、公開の読み（published）が aal1 会員で止まらない、会員の 3 表（`profiles`・`orders`・`order_items`）の RESTRICTIVE（結び付き: 読めて更新できる／bind なし・失効・`session_id` 無し: 0 行・更新 0 行／anon の `app.session_id` の注文は読める／aal2 の管理者は他人の注文を読め、aal1 の結び付いた管理者は読めない）、aal1 会員は session の行が無くても例外なく false。M2 を当てた手元の DB でだけ意味がある。2026-10-29 に通過 |
+| [app-session.ts](../../../tests/integration/db/helpers/app-session.ts) | （補助。ID なし） | `createLiveAppSession`（`auth.sessions` と `public.sessions` に生きた行を作る）・`jwtClaims`（`aal`・`session_id` つきの claims）。DB 結合 Task 1・6・7 が共用し、行を作る処理の写しを作らない |
+
+### 足した・書き換えた試験（単体・結合。DB なし）
+
+| ファイル | 先頭の ID／対象 | 変えたこと |
+| --- | --- | --- |
+| `tests/unit/features/auth/services/session.test.ts` | `DD-AUTH-027` | `persistNewSession` は trusted がある時だけ `readAuthSessionId(新 token) ?? trusted`、無ければ `null`。`findSessionByRefreshHash` の `throwOnError`（既定は `null`、`throwOnError` は `SessionLookupError`、行なしは `null`） |
+| `tests/unit/services/register.test.ts` | `DD-AUTH-039` | `persistSessionAndCookies` が `auth_session_id` を insert。旗が有効で `session_id` が読めない時は Cookie も insert もせず `ok:false`（`auth_session_id_missing`） |
+| `tests/unit/api/auth/refresh-route.test.ts` | `DD-AUTH-027` | 旗が有効で行なし・`auth_session_id` 空は GoTrue を呼ばず 401 `Session not bound`・3 Cookie を消す・監査 `unbound_session`。引きの失敗は 503 `Session lookup failed`（Cookie を残す）。旗 `off` は従来どおり 200 |
+| `tests/unit/api/auth/mfa-verify-route.test.ts` | `DD-AUTH-039` | 昇格で `trustedAuthSessionId: auth.claims.session_id` を渡して行を引き継ぐ |
+| `tests/unit/lib/auth/authenticate.test.ts` | `DD-AUTH-039` | `checkAuthSessionLiveness` が旗で RPC 名を替える（既定は `is_app_session_active`、`off` は `is_auth_session_active`）。`revoked` に署名検証済みの claims が付く（`unavailable`・`missing`・`invalid` には付かない）。`session_id` 無しは RPC を呼ばず `revoked` |
+| `tests/unit/api/auth/mfa-enroll-totp-route.test.ts` | `DD-AUTH-039` | 結び付いていない通行証は 401・一覧も登録もしない・監査 `mfa_enroll`/`denied`/`app_session_required` が 1 行（`session_id` を含まない）。claims 無しの `revoked` と `missing`・`invalid`・`unavailable` は監査を書かない |
+| `tests/unit/lib/auth/admin-rbac.test.ts` | `DD-AUTH-039` | 結び付いていない session は ACL を持っていても 401 |
+| `tests/unit/scripts/e2e/environment.test.ts`（3 本追加） | （E2E の環境） | `AUTH_REQUIRE_APP_SESSION: 'on'` が固定され親の `off` を上書き、旗の値が印を変える、手元でない Supabase は既存の見張りが止める |
+| `tests/integration/api/auth/{refresh,session-lifecycle,cookieFlags,otp-sdk-flow}.test.ts`、`tests/integration/api/{auth-architecture,auth-cookie-data,auth-login-two-step}.test.ts`、`tests/integration/auth-flow.test.ts` | `DD-AUTH-027`・`DD-AUTH-039` | 旗が既定で有効になるため、fixture を直した（access token に `session_id` を持つ偽 JWT、sessions 行に `auth_session_id`）。「行が無くても refresh が通る」系は旗 `off` の枝に移し、有効の側（401・GoTrue 未呼び出し）の試験を足した |
+
+### 書き換えた DB 結合（`tests/integration/db`。2026-10-29 に通過）
+
+方法は共通で、`helpers/app-session.ts` の `createLiveAppSession`・`jwtClaims` で claims に `aal`・`session_id` を足し、`auth.sessions` と `public.sessions` に生きた行を作る。`group_g*`（54 ファイル）は一字も変えない（`git diff --stat -- 'tests/integration/db/group_g*'` が空であることを Task 10 で確かめる）。
+
+| ファイル | 変えたこと |
+| --- | --- |
+| `auth_sessions_table.integration.test.ts`（`DATA-AUTH-001`） | `public.sessions` の列の集合を 16 列に（`auth_session_id` を足した） |
+| `auth_grants_inventory.integration.test.ts`（`DATA-AUTH-006`） | `FUNCTION_EXPECTATIONS` に `public.is_app_session_active` を足した（`private` の 2 関数は足さない） |
+| `search-functions.integration.test.ts`・`admin-misc/admin_item_color_presets_table`・`admin-misc/admin_permission_seed`・`admin-misc/admin_rls_policy`・`home/home_items_grants`・`look_permissions`・`news_permissions`・`stockist_permissions`・`role_permissions`・`order_internal_columns` | claims を結び付いた aal2 の通行証にした（`role_permissions` は末尾の「sub が空」の対照で `request.jwt.claims` も空に戻す。`order_internal_columns` は持ち主の claims を `jwtClaims` に） |
+| `look_rls`・`news_articles_rls`・`stockist_rls` | aal1 の 1 本ずつを反転。「DB は aal を見ないので aal1 でも非公開を読める」を「DB は aal2 を求めるので、結び付いた生きた session があっても aal1 の JWT では公開済みしか読めず、書き込みは 42501（SEC-AUTH-010-AC-03）」に。**M2 を当てた後でないと落ちる**（当てる前は想定内の赤） |
+| `helpers/admin-table-grants.ts`（補助）と、それを使う `look_grants_admin_tables`・`news_grants_admin_tables`・`stockist_grants_admin_tables`・`admin-misc/admin_item_color_presets_grants` | `insertAdmin()` が結び付いた session を作る。4 本は本体の変更なし |
+
+### E2E で足した・反転した期待（2026-10-29 に緑。FR-PRIVACY-007・FR-SEARCH-020 の直しは下の「実測」）
+
+| ファイル（`e2e/FR-...`） | 要件 ID | 内容 |
+| --- | --- | --- |
+| `LOGIN-031` | `SEC-AUTH-005-AC-03`（新規） | anon の鍵で `/auth/v1/otp` → `/auth/v1/verify` を直に呼んだ OTP だけの通行証（amr に otp）で、`/api/auth/me` は `authenticated:false`、`/api/profile`・`/api/orders` は Bearer で 401、Cookie でも 401。PostgREST の側は結び付けた会員を対照に、`profiles`・`orders` が 0 行（M2） |
+| `LOGIN-031` | `SEC-AUTH-005-AC-05`（新規） | password grant の refresh token を `sb-refresh-token` の Cookie に入れた `POST /api/auth/refresh` が 401・3 Cookie を消す・本文に access token 無し・`public.sessions` に行が 0 |
+| `LOGIN-031` | `SEC-AUTH-030-AC-03`（新規） | 上の断りで `audit_logs` に refresh/failure/unbound_session の行が増え、行に refresh token・access token・`session_id` の値が無い |
+| `LOGIN-031` | `SEC-AUTH-031-AC-02`（新規） | TOTP 無しの admin の OTP だけの通行証で `enroll-totp` が 401（403 ではない）、`auth.mfa_factors` 0 のまま、`mfa_enroll`/`denied`/`app_session_required` の行がちょうど 1 つ |
+| `LOGIN-031` | `SEC-AUTH-010-AC-03`（新規） | 結び付けた admin の aal1 の JWT と、同じ session を昇格した aal2 の JWT。aal2 は他人の注文を読め、aal1 は読めない（違いは aal だけ） |
+| `LOGIN-031` | `SEC-AUTH-005-AC-01`・`-AC-02`、`SEC-AUTH-010-AC-01`（`test.fail` を外した） | AC-01: password grant の JWT ではアプリの会員の窓口が 401。AC-02: 同じ JWT で PostgREST の `profiles`・`orders` に本人の行が含まれない（M2）。010-AC-01: admin の aal1 の JWT で `orders` に他人の行が含まれない（M2） |
+| `LOGIN-030` | `SEC-AUTH-005-AC-04`（新規） | 本物のログイン → `/api/profile` 200 → `/api/auth/refresh` 200 を繰り返しても 200 → 写した access token の Bearer も 200 → ログアウト 200 → 同じ Bearer が 401 |
+| `ADMIN-MISC-005` | `SEC-ADMIN-002-AC-02`（`test.fail` を外した） | `/api/admin/revoke-user-sessions` で失効させた人の、期限の残る JWT では色見本を select しても行が 1 件も返らない（M2） |
+| `HOME-024` | `SEC-HOME-003-AC-01`（`test.fail` を外した） | `admin.items.read` を持つ利用者の aal1 の JWT で select しても、下書きの商品の行が含まれない（M2） |
+| `LOOK-SEC-002` | `SEC-LOOK-003-AC-01`（`test.fail` を外した） | `admin.looks.read` を持つ利用者の aal1 の JWT で `looks` を select しても、非公開の LOOK が含まれない（M2） |
+| `NEWS-SEC-002` | `SEC-NEWS-002-AC-01`・`-AC-03`（`test.fail` を外した） | AC-01: `admin.news.read` を持つ利用者の aal1 の JWT で、非公開の記事が含まれない。AC-03: aal2 の session をログアウトした後（token の期限の前）の select に非公開の記事が含まれない（M2） |
+| `STOCKIST-016` | `SEC-STOCKIST-003-AC-01`（`test.fail` を外した） | `admin.stockists.read` を持つ利用者の aal1 の JWT で select しても、非公開の店が含まれない（M2） |
+
+E2E の補助は `e2e/admin-session-test-utils.ts`（`bindAppSession`・`rebindRefreshToken`・`createAdminSessionActor` の `bindApp` 既定 true）、`e2e/news-test-utils.ts`（`signInWithPassword` の `bindApp`）、`FR-STOCKIST-014` の自前の `sessions` の insert に `auth_session_id` を足した 3 行。
+
+### E2E で外した `test.fail`（9 行）
+
+外した行は 6 ファイルの 9 行（`FR-LOGIN-031` 3・`FR-ADMIN-MISC-005`・`FR-HOME-024`・`FR-LOOK-SEC-002`・`FR-NEWS-SEC-002` 2・`FR-STOCKIST-016`）。`grep -rnE "test\.fail" e2e | grep -E "SEC-(AUTH-005|AUTH-010|ADMIN-002|LOOK-003|NEWS-002|STOCKIST-003|HOME-003)"` は 0 件。残る `test.fail`: `FR-LOGIN-032:402,488`（ENV の印）、`FR-LOOK-SEC-004:303`（SEC-LOOK-012-AC-03）。反転して通ることは M2 を当てた手元の DB での本番ビルドの E2E で確かめる（M2 を当てる前は赤になるのが期待どおり）。
+
+### 実測（2026-10-29）
+
+- DB 結合: `npm run db:reset`（M1・M2 を `supabase/migrations` に置いた状態）の後で `tests/integration/db` は 146 suites・4377 件通過・0 失敗（13 suites・14 件 skipped、1 todo）。reset せずに流した 1 回目は G の g3／g4 の suites が赤だった。前の実行の残りのデータが原因で、reset し直すと緑になった。`news_articles_rls` に「aal1・結び付いていない・失効した読み手は公開済みの行しか見えない」の否定の 1 件を足した。
+- DB なしの jest: 807 suites・20345 件通過・0 失敗。`npm run test:trace-coverage` は届かない分岐の節に無い 0 件・ずれた 0 件（`verify/route.ts:143` に届くよう `tests/unit/api/auth/mfa-verify-route.test.ts` へ単体を 1 本足した）。`npm run validate-trace` は基準より増えた 0 件。
+- 本番ビルドの E2E 全件（1 回）は 203 failed・4821 passed・26 skipped。波 4 の 185 failed（`.superpowers/sdd/2026-10-25-security-gap-fixes/e2e-results-wave4-full.json`）と比べて新しい赤を 1 並列で再実行すると 154 件通った。残った 4 件は波 5 に未対応の試験で、直した。`FR-PRIVACY-007:210` ×3（aal1 の管理者が結び付くようになり、窓口が 403 MFA required で断る）、`FR-SEARCH-020:246`（対照を aal2・結び付いた管理者にし、aal1 は非公開の行が見えない確かめを足した）。直した 2 ファイルは 1 並列で 51 件通過。残りは並列の揺れ（`FR-ITEM-DETAIL-019`・`020`・`021`、`NFR-HOME-002`、`FR-HOME-006`・`007`・`008`、`FR-NEWS-ALL-003`・`004`、`FR-LOGIN-038` のタイムアウト、`FR-ADMIN-112` の dialog 幅 1.6px）。
+- 流した物（Task の時点）: `npx tsc --noEmit` 誤り 0、`npm run validate-docs` は既知の 2 件（`2026-10-07-checkout-place-order-payment.md` のリンク切れ）のみ。

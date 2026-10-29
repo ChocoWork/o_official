@@ -4,7 +4,7 @@ title: シークレット管理方針
 
 # シークレット管理方針（暫定: 手動運用）
 
-> 状態: 既存の運用方針 | 本番設定・手順の適用状況は未確認 | 確認日: 2026-10-02（`ADMIN_API_KEY` の廃止の節は 2026-10-26、ビルドの前に要る環境変数の節と `CLIENT_IP_HEADER` の節は 2026-10-28 に追記）
+> 状態: 既存の運用方針 | 本番設定・手順の適用状況は未確認 | 確認日: 2026-10-02（`ADMIN_API_KEY` の廃止の節は 2026-10-26、ビルドの前に要る環境変数の節と `CLIENT_IP_HEADER` の節は 2026-10-28、`AUTH_REQUIRE_APP_SESSION` の節は 2026-10-29 に追記）
 
 この文書中の `docs/seq/supabase-service-role-key-rotation-diagrams.md` は現行リポジトリに存在しない旧計画への参照である。自動ローテーションを実施済みとは扱わず、実施前に現在の秘密値の保管場所、権限、手順を確認する。
 ## 概要
@@ -120,6 +120,22 @@ Resend の配達の状態の知らせ（`POST /api/webhook/resend-delivery`）�
 - E2E では、旗は `buildE2EOverrides` の中だけで混ざる。その環境は手元の Supabase の状態を読んだ後に作り、`findUnsafeE2ESettings` が Supabase の住所を条件なしで検査する（手元でなければ止める）。旗の専用の見張りは足していない
 - `TRUST_PROXY_HEADERS` は別の意味（`x-forwarded-host`・`x-forwarded-proto` からオリジンを作ってよいか。`src/lib/redirect.ts`）で、この旗に使い回さない
 - 前段に Cloudflare などの中継を置く時は、段数を決める `TRUSTED_PROXY_HOPS` の設計を足す（今回は作らない）。詳しくは[配置構成](deployment-topology.md)
+
+## AUTH_REQUIRE_APP_SESSION（アプリのログインに結び付いた session だけを受ける旗。秘密ではない）
+
+> 確認日: 2026-10-29 | 対象: `src/lib/auth/app-session.ts` の `isAppSessionRequired` | 設計判断: [ADR-0419](../03_BasicDesign/decisions/ADR-0419-auth-require-app-session-flag-default-on.md)
+
+公開の anon キーだけで取れるパスワードだけ・メール OTP だけの通行証を、会員の窓口が受けないための旗。アプリのログイン（パスワード → メール OTP → 必要なら TOTP）を通ると、自前の `sessions` に GoTrue の `session_id` を残した行ができる。旗が有効な間、窓口と `refresh` はその行に結び付いた session だけを通す。値が `off`・`0`・`false`（大小文字を区別せず、前後の空白は無視）の時だけ無効で、未設定・空・その他は有効（既定）。
+
+| 環境 | 扱い |
+| --- | --- |
+| 本番 | 設定しない（既定で有効）。`off` は段階の切替えと緊急の時だけ。外すと、結び付いていない session の通行証が窓口を通る |
+| E2E（手元の Supabase） | `scripts/e2e/environment.ts` の `E2E_FIXED_ENV` が `AUTH_REQUIRE_APP_SESSION=on` に固定する。手元の `.env.local` に `off` が残っていても上書きする。固定の鍵はサーバーの印（`computeServerFingerprint`）に入るので、旗が違う古い 3000 番のアプリは使い回されない。E2E の通行証は `e2e/admin-session-test-utils.ts` の `bindAppSession` が結び付ける |
+| 手元の開発・単体の試験 | 置かない（既定で有効）。単体も実際の結び付けの道を通す。無効の分岐は、その試験の中で値を明示して確かめる |
+
+- 旗が切り替えるのは読む側（生存の確認と `refresh` の強制）だけ。書く側（ログイン・更新・昇格が `auth_session_id` を残すこと）は旗に関係なく常に書く。DB 側の守り（`has_permission` と会員の表の方針）に旗は無い
+- 有効にした時（または初めて配備した時）、`auth_session_id` を持たない既存の session は使えなくなり、全員が再ログインになる
+- 移行 M1（`sessions.auth_session_id` 列と生存の関数）が当たっていないと、書く側が全ログインを落とし、読む側が全要求を 503 にする
 
 ## APP_ALLOWED_ORIGINS
 

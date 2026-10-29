@@ -46,7 +46,7 @@
 
 - 良くなること: 店長が権限の画面（FREQ-519（範囲外））で閲覧と管理を別々に付け外しできる
 - 悪くなること: 管理の画面のタブは権限ではなく役で出し分ける（`src/app/admin/page.tsx`）。FREQ-519-REQ-01（範囲外） はこれを画面に出すと決めている
-- 悪くなること: DB の段は aal を見ない（ADR-0005、SEC-NEWS-002）
+- 悪くなること: DB の段は aal を見ない（ADR-0005、SEC-NEWS-002）（2026-10-29 追記: 波 5 の移行 M2 を当てると、DB の `has_permission` が aal2 と結び付いた生きた session を求めるので、この点は直る。ADR-0418。M2 は controller が当てるまで未適用）
 - 古い文書は役の名前と権限が合わない（`docs/04_DetailDesign/pages/16_admin.md` の `editor`・「supporter ✅」）
 
 ## 未確認事項

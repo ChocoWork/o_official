@@ -1,5 +1,6 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
+import { createLiveAppSession, jwtClaims } from './helpers/app-session';
 import { describeLocalDb } from './helpers/local-db';
 
 /**
@@ -25,9 +26,12 @@ describeLocalDb('integration: looks・look_items の RLS と付与', (db) => {
   let reader: string;
   let manager: string;
   let manageOnly: string;
+  // has_permission は aal2 とアプリに結び付いた生きた session を求める（SEC-AUTH-010-AC-03）。利用者ごとの session
+  let liveSessions: Map<string, { sessionId: string }>;
 
   beforeEach(async () => {
     await db().query('begin');
+    liveSessions = new Map();
     marker = `integration-look-rls-${randomUUID()}`;
     publishedLook = await insertLook('published');
     privateLook = await insertLook('private');
@@ -105,11 +109,16 @@ describeLocalDb('integration: looks・look_items の RLS と付与', (db) => {
         [id, roleId, assignment.active, assignment.expired],
       );
     }
+    liveSessions.set(id, await createLiveAppSession(db(), id));
     return id;
   }
 
   async function enter(actor: Actor): Promise<void> {
-    const claims = actor.sub ? JSON.stringify({ sub: actor.sub, role: actor.role, aal: actor.aal ?? 'aal2' }) : '';
+    const session = actor.sub ? liveSessions.get(actor.sub) : undefined;
+    const aal = actor.aal === 'aal1' ? 'aal1' : 'aal2';
+    const claims = actor.sub
+      ? JSON.stringify(session ? { ...jwtClaims(actor.sub, session, aal), role: actor.role } : { sub: actor.sub, role: actor.role, aal })
+      : '';
     await db().query("select set_config('request.jwt.claims', $1, true)", [claims]);
     await db().query("select set_config('request.jwt.claim.sub', $1, true)", [actor.sub ?? '']);
     await db().query(`set local role ${actor.role}`);
@@ -411,10 +420,10 @@ describeLocalDb('integration: looks・look_items の RLS と付与', (db) => {
     expect(await visibleLinks(actor)).toHaveLength(1);
   });
 
-  test('DATA-LOOK-003 DB は aal を見ないので、aal1 の JWT でも権限があれば非公開を読めるが、書き込みは権限の誤り（42501）で断られる', async () => {
+  test('DATA-LOOK-003 DB は aal2 を求めるので、結び付いた生きた session があっても aal1 の JWT では権限があっても公開済みしか読めず、書き込みは権限の誤り（42501）で断られる（SEC-AUTH-010-AC-03）', async () => {
     const actor: Actor = { role: 'authenticated', sub: manager, aal: 'aal1' };
 
-    expect(await visibleLooks(actor)).toEqual([publishedLook, privateLook].sort(byNumber));
+    expect(await visibleLooks(actor)).toEqual([publishedLook]);
     expect(await errorCodeAs(actor, setLookStatusSql, [privateLook, 'published'])).toBe('42501');
     expect(await statusOf(privateLook)).toBe('private');
   });

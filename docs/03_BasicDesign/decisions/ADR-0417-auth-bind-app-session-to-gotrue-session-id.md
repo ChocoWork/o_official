@@ -1,6 +1,6 @@
 # ADR-0417 アプリの session に結び付ける（自前の sessions に GoTrue の session_id を残す）
 
-> 状態: 現行（決定と、移行 M1 `sec_app_session_binding` の文面・試験まで。アプリの書く側・読む側・旗・DB の `has_permission` と会員の表の方針は波 5 の後続のタスクで入れる。M1 は `supabase/pending-wave5/` にあり、本番へは未適用） | 確認日: 2026-10-29 | 対象: `public.sessions.auth_session_id`、`private.app_session_is_live`、`public.is_app_session_active`、`private.is_app_bound_live_session` | 基準コミット: `0daeb6dc`（作業ツリー）
+> 状態: 現行（決定、移行 M1 `sec_app_session_binding`（手元と本番に当て済み）、アプリの書く側・読む側・旗まで入った。DB の `has_permission` と会員の表の方針は移行 M2 で ADR-0418 が担い、未適用） | 確認日: 2026-10-29 | 対象: `public.sessions.auth_session_id`、`private.app_session_is_live`、`public.is_app_session_active`、`private.is_app_bound_live_session`、`persistSessionAndCookies`・`persistNewSession`・`refresh`・`mfa/verify`・`authenticateRequest` | 基準コミット: `cc53258f`（作業ツリー）
 
 ## 概要
 
@@ -12,10 +12,10 @@
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の AUTH |
 | 対応する ID | SEC-AUTH-005、SEC-AUTH-010、SEC-AUTH-031、DATA-AUTH-007 |
-| 対象のコード | 移行 `20261029120000_sec_app_session_binding.sql`（列・部分索引・関数 3 本）。アプリの書く側（`register.ts` の `persistSessionAndCookies`、`session.ts` の `persistNewSession`、`refresh`・`mfa/verify`）と読む側（`authenticate.ts`）は後続のタスク |
+| 対象のコード | 移行 `20261029120000_sec_app_session_binding.sql`（列・部分索引・関数 3 本）。アプリの書く側（`register.ts` の `persistSessionAndCookies`、`session.ts` の `persistNewSession`、`refresh`・`mfa/verify`。DD-AUTH-039）と読む側（`authenticate.ts` の `checkAuthSessionLiveness`、`enroll-totp` の断りの監査） |
 | 関連文書 | [AUTH の要件](../../02_Requirements/areas/auth.md)、[AUTH の脅威](../../05_Quality/security/threats/auth.md)、[AUTH の構造設計](../areas/auth.md)（DATA-AUTH-007）、`docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md`、`.superpowers/sdd/2026-10-25-security-gap-fixes/wave5-decisions.md`（Q30）、`wave5-q30-research.md` |
-| 試験 | `tests/unit/migrations/sec-app-session-binding.test.ts`、`tests/integration/db/auth_app_session_binding.integration.test.ts`（DB 結合は手元の DB でまだ流していない） |
-| 調べた時点 | 2026-10-29（移行の文面の単体の試験は流した。DB の試験・Task 0 の実測（refresh と TOTP の昇格で `session_id` が変わらないこと）は controller が流す） |
+| 試験 | `tests/unit/migrations/sec-app-session-binding.test.ts`、`tests/integration/db/auth_app_session_binding.integration.test.ts`（DB 結合は controller が流す）、`tests/unit/lib/auth/app-session.test.ts`・`authenticate.test.ts`・`tests/unit/api/auth/refresh-route.test.ts` ほか（DD-AUTH-039 のテスト観点）、E2E `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`・`FR-LOGIN-030-session-cookies-and-responses.spec.ts`（controller が流す） |
+| 調べた時点 | 2026-10-29（単体の試験は流した。Task 0 の実測は controller が手元の Supabase で流し、refresh と TOTP の昇格の補助で `session_id` が変わらないことを確かめた。DB 結合と E2E は controller が流す） |
 
 ## 判断
 
@@ -57,12 +57,13 @@
 #### 結果
 
 - 良くなること: アプリを通らない通行証は、窓口で 401、PostgREST で 0 行になる。session の失効（ログアウト・強制失効・パスワード再設定）が自前の行と GoTrue の両方で効く
-- 悪くなること: 有効化の時に既存の session は全部無効になり、全員が再ログインになる。生存の確認が `auth.sessions` と `public.sessions` の 2 表の結合になる（索引で抑える）。refresh の流れは、結び付いていない session を洗って結び付けてしまわないよう、前の行を確かめる作りに変わる（後続のタスク）
-- 前提: refresh と TOTP の昇格で GoTrue の `session_id` が変わらないこと。波 5 の Task 0 で実測し、変わるなら設計を見直す
+- 悪くなること: 有効化の時に既存の session は全部無効になり、全員が再ログインになる。生存の確認が `auth.sessions` と `public.sessions` の 2 表の結合になる（索引で抑える）。refresh の流れは、結び付いていない session を洗って結び付けてしまわないよう、前の行を確かめる作りに変わった（旗が有効な間、前の行が無い・結び付いていない refresh token は Supabase を呼ぶ前に 401。DD-AUTH-039、SEC-AUTH-005-AC-05）。行の書き込みに失敗して hash がずれた利用者も再ログインになる
+- 残る危険: パスワードとメールの受信箱の両方を盗まれた攻撃者は、正規の 2 段を踏めるので防げない（管理者は TOTP が上乗せ）。本人へのログインの通知メールは別件
+- 前提: refresh と TOTP の昇格で GoTrue の `session_id` が変わらないこと。波 5 の Task 0（2026-10-29、手元の Supabase）で、password grant・更新 2 回・`totp` の amr を足した後の更新の 4 本が同じ `session_id` で、`auth.sessions` の行も 1 つのままだと実測した。本物の `mfa.verify` は手元が TOTP 無効で流せないので、配備前の preview で確かめる
 - 見直す条件: RLS の検索が重いと実測で分かった時（(c) を上乗せ）。refresh で `session_id` が変わると分かった時
 
 ## 未確認事項
 
-- refresh と TOTP の昇格の前後で `session_id` が変わらないこと（Task 0 の実測）。ローカルは TOTP が無効で本物の `mfa.verify` が流せないので、本物の昇格は配備前の preview で 1 回確かめる
-- `amr` の方法名（`otp` か `magiclink` か）の実測（`src/lib/auth/amr.ts` の注の直し）
-- 移行 M1 の DB 結合試験と本番への適用（controller の手順。本番のアプリは未デプロイ）
+- 本物の `mfa.verify`（ローカルは TOTP が無効）の前後で `session_id` が変わらないこと。配備前の preview で管理者 1 人が TOTP を通して 1 回確かめる。変わると `mfa/verify` が渡す `trustedAuthSessionId` の前提が崩れる
+- 本番の GoTrue の `auth.sessions` の `not_after`（time-box）の設定。短いと再ログインが増える
+- 方法の名前は実測済み（2026-10-29）。メールの数字は `otp` で記録され、`magiclink` ではない。更新で `token_refresh` は足されない（`src/lib/auth/amr.ts` の注に反映した）

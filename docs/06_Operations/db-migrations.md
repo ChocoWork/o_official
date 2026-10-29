@@ -1,6 +1,6 @@
 # DB マイグレーション運用
 
-> 波 5 確認日: 2026-10-29。アプリの session への結び付けの移行 M1（`20261029120000`）を追記した（「波 5 アプリの session への結び付けの移行 M1」の節）。2026-10-29 に本番へ適用済み。M2 は未適用。
+> 波 5 確認日: 2026-10-29。アプリの session への結び付けの移行 M1（`20261029120000`）を追記した（「波 5 アプリの session への結び付けの移行 M1」の節）。2026-10-29 に本番へ適用済み。M2（`20261029120100`、`has_permission` の aal2 と会員の表の方針）を同じ日に追記した（「波 5 `has_permission` の aal2 と会員の表の方針の移行 M2」の節）。**M2 は本番未適用**（オーナーの決定が要る）。
 
 > 波 2 確認日: 2026-10-27。権限・検索・制約・置き場の移行 6 本（`20261026130100`〜`130600`）を追記した（「波 2 権限・検索・制約・置き場の移行 6 本」の節）。2026-10-27 に本番へ適用済み（G-4 と一緒に）。以後の移行は GRANT を明示する決まりも同じ節に書いた。
 
@@ -287,6 +287,64 @@ M2（`has_permission` と `profiles`・`orders`・`order_items` の RESTRICTIVE 
 - `get_advisors`（security）に新しい項目なし。
 
 手元は `npm run db:reset` のあと `tests/integration/db` 全体で 145 suite 通過・13 skip・4355 件通過・0 失敗。Task 0 の実測（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave5-task0-report.md`）で、GoTrue の `session_id` は refresh しても変わらない。
+
+## 波 5 `has_permission` の aal2 と会員の表の方針の移行 M2（本番未適用）
+
+確認日: 2026-10-29。**状態: 本番未適用。** ファイルは [20261029120100_sec_has_permission_aal2_member_rls.sql](../../supabase/migrations/20261029120100_sec_has_permission_aal2_member_rls.sql)（計画 Task 6・10、ADR-0418、DATA-AUTH-008）。手元では `supabase/migrations/` に置いて `db reset` で当てる（`supabase/pending-wave5/` に同じ内容の写しがある。本番の適用の前に写しを消す）。**M1 と違い、こちらが効く。** 当てた瞬間から、結び付いていない既存の session は会員の表を 0 行しか読めず、`has_permission` は aal2 と結び付いた生きた session でなければ false になる。
+
+変えるもの:
+
+| 物 | 内容 |
+| --- | --- |
+| `public.has_permission(text)` | `CREATE OR REPLACE`。順序は uid が空なら false → `claims.aal` が `aal2` でなければ false（無ければ aal1 扱い）→ ACL（G-0 の `SELECT EXISTS` を一字一句そのまま）→ ACL が真の時だけ `private.app_session_is_live(claims.session_id)`（形の検査の後で uuid にする。形が悪ければ例外でなく false）。所有者・EXECUTE（authenticated・service_role・postgres、anon は不可）は `CREATE OR REPLACE` で保たれるので GRANT・REVOKE は書かない。`SET search_path = ''` は書き直す |
+| 方針 `require app bound live session`（`public.profiles`） | `AS RESTRICTIVE FOR ALL TO authenticated`・USING と WITH CHECK とも `(SELECT private.is_app_bound_live_session())`。先に `DROP POLICY IF EXISTS` |
+| 同（`public.orders`） | 同上。ゲストの注文の `app.session_id` の道（anon）は変えない |
+| 同（`public.order_items`） | 同上 |
+
+`has_permission` を呼ぶ方針は約 100 本あり、本体の置き換えだけで全部に効く。`(status = 'published' OR has_permission(...))` の形の公開の読みは RESTRICTIVE にせず、OR の側が合わなくなるだけなので、一般の会員は公開済みを読み続ける。`private.group_g_actor_has_permissions(_actor_id, …)` は `auth.uid()`・`has_permission` に依らないので、G-2／G-3／G-4 の書き手は変わらない。`carts`・`wishlists`・`checkout_drafts`・`contact_*`・`refresh_token_history`・`postal_code_cache` は既に全拒否で、`user_roles` は `has_permission('admin.users.read')` を通る。**G-4／H が会員の行を返す新しい表を足したら、同じ RESTRICTIVE の方針を足す。**
+
+先頭と末尾の自己検査（失敗は `SEC_WAVE5_MIGRATION_ASSERTION_FAILED`、55000。全体が戻る）: 先頭で M1 の存在（`private.app_session_is_live`・`private.is_app_bound_live_session`・`sessions.auth_session_id`）を確かめ、無ければ何も変えずに止まる。末尾で本体の語と検査の順・所有者／DEFINER／STABLE／`search_path`・EXECUTE（authenticated 可、anon 不可、service_role 可）・3 表に RESTRICTIVE／authenticated／`*` の方針が各 1 本であることを確かめる。
+
+### 本番の事前の確認（読むだけ・Supabase MCP。結果をロールバックの基準として残す）
+
+```sql
+select md5(pg_get_functiondef('public.has_permission(text)'::regprocedure));
+-- 20261023175712 の本体であること（G-0 のとき 418b949c1ec79dfa89ea6454bf81f66a）。M1 は本体を変えない
+select schemaname, tablename, policyname, permissive, roles, cmd, qual, with_check from pg_policies
+  where schemaname = 'public' and tablename in ('profiles', 'orders', 'order_items') order by 2, 3;
+select tablename, policyname from pg_policies where schemaname = 'public'
+  and (qual like '%auth.uid()%' or with_check like '%auth.uid()%' or qual like '%auth.jwt()%') order by 1, 2;
+-- profiles（4）・orders（1）・order_items（1）だけであること。増えていれば同じ方針を足してから当てる
+select count(*) filter (where revoked_at is null and auth_session_id is not null) as bound_live from public.sessions;
+select version from supabase_migrations.schema_migrations order by version desc limit 3;
+-- M1（20261029120000）が入っていて、最後が G-1 の最新であること
+```
+
+あわせて、適用前の `get_advisors`（security・performance）を保存する。
+
+### 適用の順序（順序が命）
+
+1. M1 が本番に当たっていること（2026-10-29 に済み）。
+2. アプリの書く側（ログイン・refresh・MFA 昇格が `auth_session_id` を持つ行を作る・引き継ぐ）と読む側（`is_app_session_active` を呼ぶ）が配備されていること。旗 `AUTH_REQUIRE_APP_SESSION` は設定しない（既定で有効）。段階が要る時は先に `off` で配備し、`select count(*) from public.sessions where auth_session_id is not null and revoked_at is null` で行ができたのを確かめてから外す。
+3. **全員がログインし直す**（開発者・試し用の 4 人・管理者。管理者は TOTP の再登録は不要で、メール OTP → TOTP の通常の流れ）。本番は `auth.users` 8 人・失効していない自前の session 3 本。
+4. **M2 を当てる。** 当て方は G-1 の次の `db push --linked` と一緒か、M2 だけを単独で当てるか。**どちらにするかはオーナーの決定が要る。決まるまでの注意: M2 は今 `supabase/migrations/` にあるので、G-1 の次の `db push --linked` を流すと決定前でも一緒に本番へ当たり、手順 2〜3（配備と全員のログインし直し）の順序が崩れる。G-1 の push の前に dry-run で M2 が入るか見る。単独で当てると決まったら `pending-wave5/` に戻す。** `ls supabase/migrations | tail -3` で最後の時刻を見て、M2 の時刻が M1 と全部の既存の移行より後であることを確かめる（G-4／H／G-1 が後から足していれば付け直す。`db push` は古い時刻を断る。付け直したらファイル名・ヘッダー・試験の参照・ADR・文書を一貫させる）。
+5. 事後（読むだけ）: 当てた文を `schema_migrations` の `md5(statements[1])` でファイルと突き合わせる（空白と `;` を除いて繋いだ md5。M1 の節と同じやり方）、`has_permission` の定義に `aal2` と `app_session_is_live` がある、`pg_policies` に方針 3 本、`get_advisors`（security）に増えた WARN が無い、未ログインの anon とパスワードだけの通行証の `profiles` が 0 行。
+
+### ロールバック
+
+M2 のファイルのヘッダーの `ROLLBACK`（方針 3 本の `DROP POLICY IF EXISTS` と、`has_permission` を G-0 の本体に戻す `CREATE OR REPLACE`。本体は単体で G-0 と突き合わせ済み）。M1 まで戻すなら M2 → M1 の順（M1 のヘッダーの ROLLBACK は関数 3 本・索引・列を DROP する）。**旗 `AUTH_REQUIRE_APP_SESSION` では DB は戻らない**（DB は環境変数を読めない）。アプリの側は旗を `off` にする。
+
+### 手元の確かめ（2026-10-29 に実測済み。本番は未適用）
+
+M1・M2 を `supabase/migrations` に置いて `npm run db:reset` が通り（末尾の自己検査が出ない）、`tests/integration/db` は 146 suites・4377 件通過・0 失敗（13 suites・14 件 skipped、1 todo）。reset せずに流した 1 回目は G の g3／g4 が赤だったが、前の実行の残りのデータが原因で、reset し直すと緑になった（DB 結合は毎回 `db reset` の後で流す）。`news_articles_rls` には「aal1・結び付いていない・失効した読み手は公開済みの行しか見えない」の否定を足した。`group_g*` は一字も変えずに通った。本番ビルドの E2E 全件は 203 failed・4821 passed・26 skipped（波 4 の 185 failed との差は、1 並列の再実行と波 5 に未対応だった試験の直しで説明がついた）。M2 は本番未適用のまま（適用の時期はオーナーの決定。G-1 の次の `db push --linked` と一緒か単独か。コードと M2 が効く時に全員がログインし直す）。内訳は [test-spec](../05_Quality/tests/test-spec.md) の波 5 の節。
+
+### 本番の前の確認（コードでは確かめられない）
+
+- 本物の TOTP の `mfa.verify` の前後で `session_id` が変わらないこと（配備前の preview で管理者 1 人が TOTP を通して実測する。ローカルは TOTP が無効で、Task 0 は補助の amr で代用した）。
+- Google ログイン（`oauth/callback`）の session が結び付くこと。
+- 本番の GoTrue の `auth.sessions` の `not_after`（time-box）の設定。短いと再ログインが増える。
+- `auth.sessions` の主キー引きの性能。aal1 は表を引かずに false、aal2 の管理者だけが 2 回の主キー引き。`get_advisors`（performance）と管理画面の一覧（注文・会計）の応答時間を適用の前後で比べる。重ければ Custom Access Token Hook を上乗せする。
+- 会員の 2 段（パスワード＋メールの OTP）は NIST SP 800-63B の AAL2 ではなくアプリ独自の方針（メールは out-of-band に使えない）。AAL2 にあたるのは管理者の TOTP。パスワードとメールの受信箱の両方を盗まれた場合は破れる。
 
 ## ベースライン化（初回のみ・要 Docker と DB パスワード）
 

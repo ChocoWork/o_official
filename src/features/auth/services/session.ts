@@ -1,6 +1,7 @@
 import type { NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { tokenHashSha256 } from '@/lib/hash';
+import { readAuthSessionId } from '@/lib/auth/app-session';
 
 export const REFRESH_TOKEN_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
@@ -9,6 +10,8 @@ export type Session = {
   user_id: string;
   refresh_token_hash?: string;
   revoked_at?: string | null;
+  /** 結び付いた GoTrue の session_id（DD-AUTH-039）。アプリのログインを通っていない行は null。 */
+  auth_session_id?: string | null;
 };
 
 /**
@@ -16,20 +19,30 @@ export type Session = {
  *
  * revoked_at では絞らない。絞ると失効済み行が「見つからない」＝失効の証拠なし、として
  * 扱われてしまい、呼び出し側の失効判定が静かに無効化される。行は返し、判断は呼び出し側で行う。
+ *
+ * 引きの失敗（DB の 5xx・タイムアウト・複数行の PGRST116）は既定では null で返す（行が無い場合と区別できない）。
+ * throwOnError を渡すと、その失敗を name が SessionLookupError の Error で投げる。refresh は、失敗を「結び付いていない」と
+ * 取り違えて正当な利用者を再ログインに追い込まないために使う。MFA 昇格は GoTrue の検証後に引くので、投げずに null のまま。
  */
-export async function findSessionByRefreshHash(hashOrToken: string): Promise<Session | null> {
+export async function findSessionByRefreshHash(
+  hashOrToken: string,
+  options: { throwOnError?: boolean } = {},
+): Promise<Session | null> {
   const service = await createServiceRoleClient();
   const isLikelyHash = /^[0-9a-f]{64}$/i.test(hashOrToken);
   const lookup = isLikelyHash ? hashOrToken : await tokenHashSha256(hashOrToken);
 
   const { data, error } = await service
     .from('sessions')
-    .select('id, user_id, refresh_token_hash, revoked_at')
+    .select('id, user_id, refresh_token_hash, revoked_at, auth_session_id')
     .eq('refresh_token_hash', lookup)
     .maybeSingle();
 
   if (error) {
     console.error('findSessionByRefreshHash DB error:', error);
+    if (options.throwOnError) {
+      throw Object.assign(new Error('findSessionByRefreshHash: lookup failed'), { name: 'SessionLookupError' });
+    }
     return null;
   }
 
@@ -39,6 +52,7 @@ export async function findSessionByRefreshHash(hashOrToken: string): Promise<Ses
     user_id: data.user_id,
     refresh_token_hash: data.refresh_token_hash,
     revoked_at: data.revoked_at ?? null,
+    auth_session_id: data.auth_session_id ?? null,
   };
 }
 
@@ -51,6 +65,11 @@ export type IssuedSession = {
   /** 差し替え対象の既存セッション行。無ければ新規発行として扱う。 */
   previousSessionId?: string | null;
   previousRefreshToken?: string | null;
+  /**
+   * 呼び出し側が「前の行は結び付いている」と確かめた時の auth_session_id（refresh は前の行の値、MFA 昇格は検証済みの claims.session_id）。
+   * 無い・null なら新しい行は結び付けない。新しい token の session_id を、この確認なしに保存することはしない。
+   */
+  trustedAuthSessionId?: string | null;
 };
 
 /**
@@ -61,8 +80,10 @@ export type IssuedSession = {
  * DB 書き込みに失敗したら throw する。呼び出し側は監査ログに残したうえで
  * **Cookie 付きのレスポンスはそのまま返すこと**。Supabase が新トークンを発行した時点で
  * 旧 refresh token は無効化済みなので、ここで握りつぶして 500 を返すと
- * ユーザーは死んだ refresh token だけを持って詰む。sessions テーブルは監査用であり、
- * 認可の権威ではない。
+ * ユーザーは死んだ refresh token だけを持って詰む。
+ *
+ * sessions の行は、結び付いた行の続きにだけ auth_session_id を引き継ぐ（trustedAuthSessionId）。
+ * 旗が有効な間、生存の確認はこの行の有無を見るので、書き損じると次の要求から 401 になる（DD-AUTH-039）。
  */
 export async function persistNewSession(response: CookieWriter, issued: IssuedSession): Promise<void> {
   const {
@@ -89,6 +110,10 @@ export async function persistNewSession(response: CookieWriter, issued: IssuedSe
   const service = await createServiceRoleClient();
   const previousHash = issued.previousRefreshToken ? await tokenHashSha256(issued.previousRefreshToken) : null;
   const now = new Date().toISOString();
+  // 更新で session_id は変わらない見込み（Task 0 で実測済み）。新しい token の値を優先し、無ければ確かめ済みの値を引き継ぐ。
+  const authSessionId = issued.trustedAuthSessionId
+    ? (readAuthSessionId(issued.accessToken) ?? issued.trustedAuthSessionId)
+    : null;
 
   // insert を先、旧行の revoke を後に行う。insert が落ちたときに旧行を失わないため。
   const { error: insertError } = await service.from('sessions').insert([
@@ -98,6 +123,7 @@ export async function persistNewSession(response: CookieWriter, issued: IssuedSe
       previous_refresh_token_hash: previousHash,
       quarantined: false,
       csrf_token_hash: await tokenHashSha256(csrfToken),
+      auth_session_id: authSessionId,
       // 行が表すのは refresh セッション。access token の寿命を入れると列の意味とずれる。
       // 期限の権威は Supabase 側にあり、この値は監査・セッション一覧の表示用。
       expires_at: new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_SECONDS * 1000).toISOString(),

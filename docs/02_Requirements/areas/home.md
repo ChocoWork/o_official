@@ -1,6 +1,6 @@
 # HOME の要件
 
-> 状態: 推定 | 確認日: 2026-10-28 | 対象: HOME（ホーム `/` のヒーロー・区画の並び・ABOUT の区画・VIEW ALL のボタン・ヒーローの動き） | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-10-29 | 対象: HOME（ホーム `/` のヒーロー・区画の並び・ABOUT の区画・VIEW ALL のボタン・ヒーローの動き） | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -1049,7 +1049,7 @@ mobile（390px）で 3G 相当の回線を模した条件のもと、ホーム�
 | 出どころ | OWASP ASVS 4.0.3 V4.3.1 |
 | 優先度 | MUST |
 
-`items` の RLS のうち `admin.items.read`・`admin.items.manage` で許す方針は、JWT の `aal` が `aal2` の時だけ許す。読みの側は今のコードは満たさない（TM-HOME-31。波 5 の `has_permission` の aal2 で直す）。書き込みの側（AC-02）は、2026-10-26 から authenticated に `items` の INSERT・UPDATE・DELETE の権限が無い（SEC-HOME-005、ADR-0106）ので、aal1 の JWT でも PostgREST から書けず満たす（この移行を当てた DB でだけ満たす）。`looks`・`look_items` は LOOK の SEC-LOOK-003、`stockists` は STOCKIST の SEC-STOCKIST-003 が同じ形で持つ。
+`items` の RLS のうち `admin.items.read`・`admin.items.manage` で許す方針は、JWT の `aal` が `aal2` の時だけ許す。読みの側（AC-01）は、波 5 の移行 M2（`has_permission` に aal2 と結び付いた生きた session を求める。SEC-AUTH-010-AC-03、ADR-0418）を当てた DB で満たす（食い違いだった TM-HOME-31 は M2 で解消する。2026-10-29 に E2E の `test.fail` を外した。M2 は controller が当てるまで未適用）。書き込みの側（AC-02）は、2026-10-26 から authenticated に `items` の INSERT・UPDATE・DELETE の権限が無い（SEC-HOME-005、ADR-0106）ので、aal1 の JWT でも PostgREST から書けず満たす（この移行を当てた DB でだけ満たす）。`looks`・`look_items` は LOOK の SEC-LOOK-003、`stockists` は STOCKIST の SEC-STOCKIST-003 が同じ形で持つ。
 
 #### SEC-HOME-003-AC-01 aal1 の session では下書きの商品を直接読めない
 

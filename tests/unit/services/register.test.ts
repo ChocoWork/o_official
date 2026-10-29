@@ -42,6 +42,11 @@ jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: () => ({ from: () => ({ insert: mockInsert }) }),
 }));
 
+// GoTrue が返す access token の形（署名は見ない）。AUTH_REQUIRE_APP_SESSION が既定で有効なので、session_id が要る。
+const AUTH_SESSION_ID = '4c36ef0b-0332-42d8-b210-3326fc20c240';
+const ACCESS_WITH_SESSION_ID = `h.${Buffer.from(JSON.stringify({ session_id: AUTH_SESSION_ID })).toString('base64url')}.s`;
+const ACCESS_WITHOUT_SESSION_ID = `h.${Buffer.from(JSON.stringify({ sub: 'u' })).toString('base64url')}.s`;
+
 const { persistSessionAndCookies } = require('@/features/auth/services/register');
 
 describe('persistSessionAndCookies', () => {
@@ -55,7 +60,7 @@ describe('persistSessionAndCookies', () => {
 
     mockInsert.mockResolvedValue({ data: [{ id: 'row1' }], error: null });
 
-    const session = { refresh_token: 'r1', expires_at: Date.now() + 1000 };
+    const session = { access_token: ACCESS_WITH_SESSION_ID, refresh_token: 'r1', expires_at: Date.now() + 1000 };
     const user = { id: 'u1', email: 'a@b.c' };
 
     const result = await persistSessionAndCookies(res as NextResponse, session, user);
@@ -71,7 +76,7 @@ describe('persistSessionAndCookies', () => {
 
     mockInsert.mockResolvedValue({ data: null, error: { message: 'dup' } });
 
-    const session = { refresh_token: 'r2', expires_at: Date.now() + 1000 };
+    const session = { access_token: ACCESS_WITH_SESSION_ID, refresh_token: 'r2', expires_at: Date.now() + 1000 };
     const user = { id: 'u2', email: 'x@y.z' };
 
     const result = await persistSessionAndCookies(res as NextResponse, session, user);
@@ -102,7 +107,7 @@ describe('register service', () => {
 
 // ログインでゲストのカートとお気に入りを会員の分へ合わせる（設計書第5章）。
 describe('persistSessionAndCookies: ゲストのカートとお気に入りの引き継ぎ', () => {
-  const session = { refresh_token: 'r1', expires_at: Date.now() + 1000 };
+  const session = { access_token: ACCESS_WITH_SESSION_ID, refresh_token: 'r1', expires_at: Date.now() + 1000 };
   const user = { id: 'u1', email: 'a@b.c' };
 
   beforeEach(() => {
@@ -200,5 +205,44 @@ describe('persistSessionAndCookies: ゲストのカートとお気に入りの�
     await persistSessionAndCookies(res, session, user, { cartToken: null, wishlistToken: null });
     await persistSessionAndCookies(NextResponse.json({}), session, user);
     expect(mergeGuestShoppingIntoMember).not.toHaveBeenCalled();
+  });
+});
+
+describe('persistSessionAndCookies: auth_session_id（DD-AUTH-039）', () => {
+  const user = { id: 'u1', email: 'a@b.c' };
+  const original = process.env.AUTH_REQUIRE_APP_SESSION;
+
+  beforeEach(() => {
+    mockInsert.mockReset();
+    mockInsert.mockResolvedValue({ data: [{ id: 'row1' }], error: null });
+  });
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.AUTH_REQUIRE_APP_SESSION;
+    else process.env.AUTH_REQUIRE_APP_SESSION = original;
+  });
+
+  test('DD-AUTH-039 access token の session_id を auth_session_id として自前の行に入れる', async () => {
+    const result = await persistSessionAndCookies({ cookies: { set: jest.fn() } }, { access_token: ACCESS_WITH_SESSION_ID, refresh_token: 'r1' }, user);
+    expect(result).toEqual({ ok: true });
+    expect(mockInsert.mock.calls[0][0][0].auth_session_id).toBe(AUTH_SESSION_ID);
+  });
+
+  test('DD-AUTH-039 旗が有効で session_id が無い token は insert せず ok: false', async () => {
+    const consoleWarn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const cookieSet = jest.fn();
+    const result = await persistSessionAndCookies({ cookies: { set: cookieSet } }, { access_token: ACCESS_WITHOUT_SESSION_ID, refresh_token: 'r1' }, user);
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('auth_session_id_missing');
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(cookieSet).not.toHaveBeenCalled();
+    consoleWarn.mockRestore();
+  });
+
+  test('DD-AUTH-039 旗が無効なら session_id が無くても null で insert する', async () => {
+    process.env.AUTH_REQUIRE_APP_SESSION = 'off';
+    const result = await persistSessionAndCookies({ cookies: { set: jest.fn() } }, { access_token: ACCESS_WITHOUT_SESSION_ID, refresh_token: 'r1' }, user);
+    expect(result).toEqual({ ok: true });
+    expect(mockInsert.mock.calls[0][0][0].auth_session_id).toBeNull();
   });
 });

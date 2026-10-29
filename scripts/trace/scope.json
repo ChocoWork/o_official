@@ -240,7 +240,8 @@
       "src/lib/format-countdown.ts",
       "src/features/auth/return-intent/**/*.ts",
       "src/lib/auth-no-store-policy.ts",
-      "src/lib/request-ip.ts"
+      "src/lib/request-ip.ts",
+      "src/lib/auth/app-session.ts"
     ],
     "tests": [
       "tests/unit/components/{LoginModal,RegisterModal,AuthTabs,AuthResultScreen,VerifyOtpClient,Header}.test.tsx",
@@ -251,6 +252,7 @@
       "tests/unit/features/auth/return-intent/**/*.test.{ts,tsx}",
       "tests/unit/middleware/proxy-no-store.test.ts",
       "tests/unit/lib/request-ip.test.ts",
+      "tests/unit/lib/auth/app-session.test.ts",
       "tests/unit/migrations/auth-return-intents*.test.ts",
       "tests/integration/api/auth/**/*.test.{ts,tsx}",
       "tests/integration/api/auth.test.ts",

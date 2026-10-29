@@ -14,10 +14,11 @@ AUTH の領域の構成・画面・画面遷移・状態遷移・API・データ
 | 画面遷移 | 4 | `FLOW-AUTH-001`〜`004` | メールとパスワードのログイン、Google のログイン、会員登録、パスワードの再設定 |
 | 状態遷移 | 6 | `STATE-AUTH-001`〜`006` | ログインの保留、再設定の印、`/auth/verified` の画面、再設定のページ、ヘッダーの出し隠し、戻り先の控え |
 | API | 19 | `API-AUTH-001`〜`019` | `/api/auth/*` の 19 本の窓口 |
-| データ | 7 | `DATA-AUTH-001`〜`007` | `sessions` の表、`password_reset_tokens` の表、認証の DB の関数、認証の Cookie、戻り先の控えの表と関数、公開スキーマの権限の一覧、アプリの session への結び付け（`auth_session_id` と生存の判定の関数） |
+| データ | 8 | `DATA-AUTH-001`〜`008` | `sessions` の表、`password_reset_tokens` の表、認証の DB の関数、認証の Cookie、戻り先の控えの表と関数、公開スキーマの権限の一覧、アプリの session への結び付け（`auth_session_id` と生存の判定の関数）、`has_permission` の aal2 と結び付き・会員の本人の行の方針 |
 
 - 結論: 画面は利用者の端末で動く部品で、共有の `LoginContext` かページ自身が `/api/auth/*` を呼ぶ。窓口は Supabase Auth を呼び、結果のトークンを HttpOnly の Cookie に入れ、自前の `sessions` の表に控えを残す。ログインの2段目・再設定・会員登録の守り（保留の署名 Cookie・ボットの確かめ・回数の制限・列挙の対策・16 文字と漏洩の照合）は全部アプリの窓口の中にある
-- 今のコードが満たさないセキュリティ要件（SEC-AUTH-005・006・007・009・010・011・012・013・015・017・023・029・031。SEC-AUTH-022 は 2026-10-28 に満たすようになった）は、満たす形の構造を持たないので上位につながず、本文に「満たさない」と書いた。一部だけ満たす物（SEC-AUTH-008・016・018・020・021・025・026・027・030）は、満たさない所がその項目の受け持つコードにある時は上位にせず、ほかの項目か共有部品にだけある時は上位にした（NEWS・SEARCH の構造設計と同じ決め方）。SEC-AUTH-025・027 は満たさない所を受け持つ項目が共有部品の説明になるので、どこの上位にもしなかった
+- 波 5（2026-10-29）で、SEC-AUTH-005・010・031 は「アプリのログインを通って作られた session だけを受ける」形に決め、アプリの窓口は満たす（ADR-0417・0419、旗 `AUTH_REQUIRE_APP_SESSION` が有効な間）。DB（PostgREST）の側は移行 M2 を当てた DB で満たす（ADR-0418、DATA-AUTH-008。M2 は controller が当てるまで未適用）。この 3 つは DATA-AUTH-007・008（031 は API-AUTH-017 も）が上位につなぎ、下の「満たさない」の一覧からは外した。アプリの窓口の動きは API-AUTH-014・017 と ARC-AUTH-009 に書いた
+- 今のコードが満たさないセキュリティ要件（SEC-AUTH-006・007・009・011・012・013・015・017・023・029。SEC-AUTH-022 は 2026-10-28 に満たすようになった）は、満たす形の構造を持たないので上位につながず、本文に「満たさない」と書いた。一部だけ満たす物（SEC-AUTH-008・016・018・020・021・025・026・027・030）は、満たさない所がその項目の受け持つコードにある時は上位にせず、ほかの項目か共有部品にだけある時は上位にした（NEWS・SEARCH の構造設計と同じ決め方）。SEC-AUTH-025・027 は満たさない所を受け持つ項目が共有部品の説明になるので、どこの上位にもしなかった
 - 共有部品（`src/features/auth/**`・`src/lib/cookie.ts`・`src/lib/auth/*`・`src/contexts/LoginContext.tsx`・`src/proxy.ts` など）は ID を持たないので、根拠と本文にファイルの道で書いた
 
 ## 範囲と根拠
@@ -25,9 +26,9 @@ AUTH の領域の構成・画面・画面遷移・状態遷移・API・データ
 | 項目 | 内容 |
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の AUTH |
-| 上位の文書 | [AUTH の要件](../../02_Requirements/areas/auth.md)（要件・`SEC-AUTH-`・`DRV-AUTH-`）、`docs/03_BasicDesign/decisions/ADR-0400`〜`ADR-0417` |
+| 上位の文書 | [AUTH の要件](../../02_Requirements/areas/auth.md)（要件・`SEC-AUTH-`・`DRV-AUTH-`）、`docs/03_BasicDesign/decisions/ADR-0400`〜`ADR-0419` |
 | 対象のコード | `src/app/login/`（3）、`src/app/auth/`（5）、`src/app/api/auth/`（19）、`src/features/auth/return-intent/`（戻り先の部品。ARC-AUTH-010）、`src/components/Header.tsx`・`LoginModal.tsx`・`RegisterModal.tsx`・`AuthTabs.tsx`・`AuthResultScreen.tsx`、`src/hooks/useTurnstileWidget.ts`、`src/lib/format-countdown.ts` |
-| 対象の DB | `supabase/migrations/20261026010000_auth_return_intents.sql`（戻り先の控えの表と関数 2 本。本番へは未適用）、`supabase/migrations/20260901102912_remote_schema.sql`（`password_reset_tokens`・`sessions` の表）、同 （掃除の関数・方針・付与） |
+| 対象の DB | `supabase/migrations/20261029120000_sec_app_session_binding.sql`（M1。`sessions.auth_session_id` と関数 3 本。手元と本番に当て済み）、`supabase/pending-wave5/20261029120100_sec_has_permission_aal2_member_rls.sql`（M2。`has_permission` の置き換えと会員の表の方針 3 本。未適用）、`supabase/migrations/20261026010000_auth_return_intents.sql`（戻り先の控えの表と関数 2 本。本番へは未適用）、`supabase/migrations/20260901102912_remote_schema.sql`（`password_reset_tokens`・`sessions` の表）、同 （掃除の関数・方針・付与） |
 | 関連文書 | `docs/04_DetailDesign/pages/14_login.md`（表だけで古い記述がある）、`docs/04_DetailDesign/sequence/auth-*.md`、`docs/03_BasicDesign/architecture/auth-structure.md`（過去の初稿）、`docs/03_BasicDesign/api/api-spec.md`・`route-inventory.md`（注文まわりの作り直しが書き換え中なので触らない）、`docs/03_BasicDesign/ui/screen-list.md`・`screen-flow.md`、`docs/superpowers/specs/2026-09-04-login-otp-dedicated-screen-design.md` |
 | 範囲外の上位 | 全体の `NFR-SEC-*`、会員・カートの `FREQ-265`・`FREQ-428`・`FREQ-431`、共有の `FREQ-324`・`FREQ-360`・`FREQ-514` の要件、ITEM の `FREQ-38` は `（範囲外）` を付けて上位に書いた（全領域の持ち主の割り当てで AUTH の持ち物ではない） |
 | 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない） |
@@ -90,7 +91,7 @@ graph LR
 - client: パスワードと OTP の確かめは匿名の client（`createPublicClient`、Cookie の副作用なし）、TOTP は利用者の session の client（`createClient`）、表・関数・管理の操作は service role の client
 - トークン: access token・refresh token・CSRF の印・`session_id` を Cookie に入れ、`sessions` の表に refresh token のハッシュを控える（DATA-AUTH-001・004）
 - 役割: `admin`・`supporter`・`user` の3つ。`app_metadata.role` から読み、無ければ `user`
-- 守りの位置: 2段目・ボットの確かめ・回数の制限・16 文字・漏洩の照合は全部アプリの窓口の中。公開の anon キーで Supabase Auth を直接呼ぶ道は塞がない（SEC-AUTH-005・015 は満たさない）
+- 守りの位置: 2段目・ボットの確かめ・回数の制限・16 文字・漏洩の照合は全部アプリの窓口の中。公開の anon キーで Supabase Auth を直接呼ぶ道は塞がない（SEC-AUTH-015 は満たさない）。ただし直接呼んで得た通行証は、波 5 から窓口が受けない（アプリのログインを通った結び付いた session だけを通す。SEC-AUTH-005、ARC-AUTH-009、ADR-0417）。DB でも移行 M2 を当てると受けない（DATA-AUTH-008）
 
 ### ARC-AUTH-002 ログインはパスワードの確かめとメールの確認コードの2段で、間の保留を署名した短命の Cookie に持つ
 
@@ -135,8 +136,8 @@ sequenceDiagram
 - 流れ: ログインの後に `/auth/verified`（SCR-AUTH-007）が `/api/auth/me` を見て、admin・supporter で aal2 でなければ `/api/auth/mfa/status` で要素の有無を引く。無ければ自動で登録（API-AUTH-017）してQRと秘密を出し、あれば確認（API-AUTH-018）へ進む
 - 確認が通ると Supabase が aal2 のトークン対を返し、窓口が Cookie と `sessions` の表を差し替える（`persistNewSession`）。画面は `post-login`（API-AUTH-019）が返した行き先へ移る（戻り先が無ければ `/admin`）
 - 一般の会員は TOTP の窓口で 403。`/auth/verified` からは `post-login`（API-AUTH-019）が返した行き先へ送る（戻り先が無ければ `/`。管理者・サポーターは `/admin`）
-- 管理の窓口が aal2 を確かめるのは共有の `admin-rbac`。DB の側の RLS は aal2 を見ない（SEC-AUTH-010 は満たさない）
-- TOTP の確認は IP 単位に加えて利用者単位（5 回／600 秒）の回数の制限があり、成否を監査に残す（SEC-AUTH-009。API-AUTH-018。2026-10-26）。初めての登録は通行証の `amr` に 2 段目を通った方法がある時だけ受ける（SEC-AUTH-031。API-AUTH-017。`amr` の値は未実測）
+- 管理の窓口が aal2 を確かめるのは共有の `admin-rbac`。DB の側の RLS は、波 5 の移行 M2 を当てると aal2 と結び付いた生きた session を見る（DATA-AUTH-008。SEC-AUTH-010。M2 は controller が当てるまで未適用）
+- TOTP の確認は IP 単位に加えて利用者単位（5 回／600 秒）の回数の制限があり、成否を監査に残す（SEC-AUTH-009。API-AUTH-018。2026-10-26）。初めての登録は通行証の `amr` に 2 段目を通った方法がある時だけ受ける（SEC-AUTH-031。API-AUTH-017。メールの数字は `otp` で記録されることを 2026-10-29 に実測した）
 - 手元の Supabase は TOTP の登録と確認が無効（`supabase/config.toml`）で、この流れは手元で動かせない
 
 ### ARC-AUTH-004 パスワードの再設定は自前の使い捨ての印で行い、印の消費をパスワードを変える時まで遅らせる
@@ -255,7 +256,7 @@ graph LR
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | DRV-AUTH-007、DRV-AUTH-008、FREQ-320-REQ-02、FREQ-316-REQ-04、FREQ-324-REQ-03（範囲外）、ADR-0406、ADR-0407、ADR-0408 |
+| 上位 | DRV-AUTH-007、DRV-AUTH-008、FREQ-320-REQ-02、FREQ-316-REQ-04、FREQ-324-REQ-03（範囲外）、ADR-0406、ADR-0407、ADR-0408、ADR-0417、ADR-0419 |
 | 根拠 | 画面の出し分けと認可の答えがずれないよう、`me` は認可と同じ根拠（失効の確かめ・aal2）で答え、確かめられない時は未ログインにせず 503 にする（DRV-AUTH-007、FREQ-324（範囲外）、ADR-0408）。access token は短命なので refresh の Cookie で替え、門番は Supabase のトークンの交換にする（DRV-AUTH-008、ADR-0406）。更新を呼ぶのは共有の `client-fetch` が 401 を受けた時だけで、回数の制限に当たらないよう待ち時間を置く（FREQ-316-REQ-04）。ログアウトは盗まれた refresh token を残さないようサーバーのセッションを切り、常に 200 で Cookie を消す（ADR-0407）。access の Cookie の寿命は refresh と同じ7日にし、期限の前に Cookie だけ消えて未ログインに見えるのを防ぐ（FREQ-320-REQ-02） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -272,9 +273,21 @@ stateDiagram-v2
   aal2 --> 未ログイン: logout・refresh の失敗・再設定の完了
 ```
 
-- 状態の名前は利用者から見た状態。サーバーの真の状態は Supabase のセッション（`auth.sessions`）で、自前の `sessions` の表は控え（DATA-AUTH-001）
+- 状態の名前は利用者から見た状態。サーバーの真の状態は Supabase のセッション（`auth.sessions`）。2026-10-29（波 5 の Task 3）から、旗 `AUTH_REQUIRE_APP_SESSION` が有効な間（既定）は、自前の `sessions` に GoTrue の `session_id` を結び付けた失効していない行があることも通す条件にする（アプリのログインを通った session だけを受ける。DATA-AUTH-001・007、ADR-0417・0419、DD-AUTH-039）。`me`・会員と管理の窓口・`enroll-totp` の確かめ（`authenticateRequest`・`admin-rbac`）に効く
+- 結び付けの流れ（波 5。ADR-0417・0419、DD-AUTH-039）。旗 `AUTH_REQUIRE_APP_SESSION` は読む側だけを切り替え、書く側は常に書く。会員の 2 段（パスワード＋メール OTP）は NIST SP 800-63B-4 の AAL2 ではなくアプリ独自の方針の 2 段で、管理者の TOTP が AAL2 側
+- 旗の読み方: `off`・`0`・`false`（大小文字を区別しない）の時だけ無効。未設定・空・その他は有効（既定）。E2E の固定の環境は `on`
 - `me`（API-AUTH-013）・`refresh`（API-AUTH-014）・`logout`（API-AUTH-015）の中身は各 API の項目
 - refresh を呼ぶのは共有の `client-fetch`（401 の時だけ、FREQ-316）
+
+| 場面 | 結び付く／引き継ぐ | 旗が有効な時の扱い |
+| --- | --- | --- |
+| パスワード → メール OTP（`otp/verify`）／Google（`oauth/callback`）／登録の確認のリンク（`confirm`）／登録 201（`register`） | `persistSessionAndCookies` が新しい行に `auth_session_id` を入れる（アプリが作った session） | 通る |
+| 更新（`refresh`） | 前の行が結び付いていれば `persistNewSession` が引き継ぐ。前の行が無い・結び付いていない・失効済みは、Supabase を呼ぶ前に 401（認証の Cookie を消す）。行の引きの失敗は 503 で Cookie を消さない | 結び付いた物だけ更新できる（結び付いていない session を更新で洗って結び付けない） |
+| TOTP の昇格（`mfa/verify`） | `authenticateRequest` を通った `claims.session_id` を `trustedAuthSessionId` に渡して引き継ぐ | 通る |
+| `/auth/v1/token?grant_type=password`・`/auth/v1/otp` → `/auth/v1/verify`（anon キー。アプリを通らない） | 行ができない | 窓口は 401、DB（M2 の後）は 0 行 |
+| ログアウト・強制失効・パスワード再設定 | `revoked_at` を立て、`auth.sessions` を消す（今のまま） | 次の要求から 401（M2 の後は DB も 0 行） |
+
+- 生存の判定は GoTrue の `auth.sessions`（期限の権威）と自前の `sessions`（失効していない行がある）の両方。自前の `expires_at` は見ない（書き手で意味が違う。DATA-AUTH-007）
 - ログアウトは共有の `LoginContext` が呼ぶ（会員ページ・ヘッダーの外）
 
 ### ARC-AUTH-010 戻り先は入口で控え、出口で使い切り、出口でも確かめ直す
@@ -819,7 +832,7 @@ stateDiagram-v2
 
 - パスワードの確かめで得た session は捨てる
 - 戻り先は確認コードを送れた後だけで作る。パスワードの誤り・ボット判定・制限・送信の失敗の応答には戻り先の Cookie を付けない（表の行を水増しさせない）。`next` の形や DB の失敗でログインは止めない
-- 応答の `no-store` は共有の proxy が付ける（SEC-AUTH-022、ADR-0415）。Supabase Auth を直接呼べばこの窓口を通らずにトークンを得られる（SEC-AUTH-005 は満たさない）
+- 応答の `no-store` は共有の proxy が付ける（SEC-AUTH-022、ADR-0415）。Supabase Auth を直接呼べばこの窓口を通らずにトークンを得られるが、そのトークンは窓口が受けない（SEC-AUTH-005。波 5、ADR-0417）
 
 ### API-AUTH-002 POST /api/auth/otp/verify は保留の宛先で確認コードを確かめ、通ったらログインを確定する
 
@@ -1085,10 +1098,10 @@ stateDiagram-v2
 | 項目 | 中身 |
 | --- | --- |
 | 入力 | refresh の Cookie（`sb-refresh-token`） |
-| 順番 | IP の制限 → Cookie → 自前の行を引く（無くても続ける）→ 失効の印なら断る → Supabase Auth のトークンの交換（service role の鍵）→ Cookie と行の差し替え |
+| 順番 | IP の制限 → Cookie → 自前の行を引く（旗が有効な間は引きの失敗を「行が無い」と取り違えない。旗が無効なら無くても続ける）→ 旗が有効なら、行が無い・`auth_session_id` が空なら断る → 失効の印なら断る → Supabase Auth のトークンの交換（service role の鍵）→ Cookie と行の差し替え（新しい行は前の行の `auth_session_id` を引き継ぐ） |
 | 200 | `{ ok: true }` と新しい認証の Cookie（トークンは本文に載せない）。行の保存に失敗しても監査に残して配る |
-| 失敗 | 401（Cookie が無い・失効の印・交換の失敗。後の2つは認証の Cookie を消す）、429（制限）、500（環境変数・例外） |
-| 監査 | `refresh` の failure・error・success |
+| 失敗 | 401（Cookie が無い・結び付いていない行（`Session not bound`）・失効の印・交換の失敗。結び付いていない行・失効の印・交換の失敗は認証の Cookie を消す）、429（制限）、503（旗が有効で行の引きが失敗。`Session lookup failed`。Cookie は消さず、Supabase を呼ばない）、500（環境変数・例外） |
+| 監査 | `refresh` の failure・error・success。結び付けの拒否の符号は `unbound_session`・`session_lookup_failed`（SEC-AUTH-005-AC-05、SEC-AUTH-030-AC-03） |
 
 - 応答の本文に access token と Supabase の利用者の記録を入れない（SEC-AUTH-022 の本文の部分。2026-10-26）。`no-store` は共有の proxy が付ける（2026-10-28、ADR-0415）
 
@@ -1147,13 +1160,13 @@ stateDiagram-v2
 | 項目 | 中身 |
 | --- | --- |
 | 入力 | access の Cookie か Bearer。JSON の `forceReEnroll`（任意。画面は送らない） |
-| 順番 | IP の制限 → 形 → 認証 → 役割 → 2 段目（通行証の `amr`）→ 要素の一覧 → 確かめ済みが有れば 409（`forceReEnroll` なら 403 で、確かめ済みの要素は外さない）→ 未確認の要素を外す → 登録 |
+| 順番 | IP の制限 → 形 → 認証（アプリのログインを通った結び付いた session だけ通る。ADR-0417）→ 役割 → 2 段目（通行証の `amr`）→ 要素の一覧 → 確かめ済みが有れば 409（`forceReEnroll` なら 403 で、確かめ済みの要素は外さない）→ 未確認の要素を外す → 登録 |
 | 200 | 要素の id・QR（data URI に整える）・秘密・URI |
-| 失敗 | 400（形）、403（一般の会員・2 段目を通っていない通行証・確かめ済みがあり作り直しを求めた・`insufficient_aal`）、409（登録済み・名前の衝突）、429（制限）、500（一覧・登録の失敗・例外） |
-| 監査 | `mfa_enroll` の denied（`second_factor_required`）・success（`totp_factor_enrolled`、resource_id は要素の id）、未確認の要素の取り外しは `mfa_factor_remove`。秘密・トークンは残さない |
+| 失敗 | 400（形）、401（認証の失敗。アプリを通らずに取った OTP だけ・パスワードだけの通行証を含む）、403（一般の会員・2 段目を通っていない通行証・確かめ済みがあり作り直しを求めた・`insufficient_aal`）、409（登録済み・名前の衝突）、429（制限）、503（失効を確かめられない）、500（一覧・登録の失敗・例外） |
+| 監査 | `mfa_enroll` の denied（`app_session_required`＝結び付いていない通行証。行為者が分かる時だけ。`second_factor_required`＝2 段目を通っていない通行証）・success（`totp_factor_enrolled`、resource_id は要素の id）、未確認の要素の取り外しは `mfa_factor_remove`。秘密・トークン・`session_id` は残さない |
 
 - 秘密は登録の応答にだけ入れる。`no-store` は共有の proxy が付ける（SEC-AUTH-022、2026-10-28、ADR-0415）
-- 2 段目は `amr` に `otp`・`magiclink`・`totp`・`oauth`・`sso/saml`・`email/signup` のどれかがある通行証だけ（`hasSecondFactorAmr`）。`password` だけの通行証は 403（SEC-AUTH-031 の局所の守り。2026-10-26）。Supabase Auth へ OTP だけを直接送って得た通行証は通る（波 5）。本人へのメールの通知も無い（波 5）。`amr` の実際の値は未実測
+- 2 段目は `amr` に `otp`・`magiclink`・`totp`・`oauth`・`sso/saml`・`email/signup` のどれかがある通行証だけ（`hasSecondFactorAmr`）。`password` だけの通行証は 403（SEC-AUTH-031 の局所の守り。2026-10-26）。Supabase Auth へ OTP だけを直接送って得た通行証（`amr` に `otp` が付く）は、認証の確かめ（`authenticateRequest`）がアプリのログインを通った結び付いた session だけを通すので、2 段目の確かめより前に 401 で断られ、`app_session_required` が監査に残る（SEC-AUTH-031-AC-02、2026-10-29、波 5 Task 3。旗 `AUTH_REQUIRE_APP_SESSION` が有効な間）。`amr` の確かめは二重の守りとして残す。本人へのメールの通知は無い（波 5 の別件）。`amr` の実際の値は 2026-10-29 に手元の Supabase で実測した（メールの数字は `otp`。`magiclink` ではなく、更新でも `token_refresh` は足されない）
 
 ### API-AUTH-018 POST /api/auth/mfa/verify は TOTP のコードを確かめ、aal2 のトークンを Cookie に書き戻す
 
@@ -1358,11 +1371,11 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SEC-AUTH-005、SEC-AUTH-010、SEC-AUTH-031、ADR-0417 |
+| 上位 | SEC-AUTH-005、SEC-AUTH-010、SEC-AUTH-031、ADR-0417、ADR-0419 |
 | 根拠 | anon キーは公開で、パスワードの通行証もメール OTP だけの通行証もアプリを通らずに取れる。`amr` では OTP だけの道を断れないので、アプリが作った session の GoTrue の `session_id` を自前の `sessions` に残し、窓口と DB が「その `session_id` に失効していない行がある」ことを求める（ADR-0417）。この移行（M1）は追加だけで、`has_permission` と方針は触らない（M2 が効く） |
 | 状態 | 推定 |
 | 確かめ方 | 移行の文面の単体テスト（`tests/unit/migrations/sec-app-session-binding.test.ts`）、DB 結合テスト（`tests/integration/db/auth_app_session_binding.integration.test.ts`、`auth_sessions_table`、`auth_grants_inventory`） |
-| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave5-decisions.md`（Q30 案 (a)）、計画 `docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md`（Task 1）、移行 `supabase/pending-wave5/20261029120000_sec_app_session_binding.sql`（本番未適用。controller が `supabase/migrations/` へ動かして当てる） |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave5-decisions.md`（Q30 案 (a)）、計画 `docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md`（Task 1）、移行 `supabase/migrations/20261029120000_sec_app_session_binding.sql`（Task 1B で `pending-wave5/` から動かし、手元と本番に当て済み。2026-10-29） |
 
 | 部品 | 中身 |
 | --- | --- |
@@ -1375,14 +1388,40 @@ stateDiagram-v2
 - `public.is_auth_session_active`（G-2 の ACL 一覧に載る）は変えない。旗が無効の間、アプリは従来どおりこちらを呼ぶ
 - `public.sessions` は anon・authenticated に権限を付けないまま（DATA-AUTH-001）。列も同じ
 - 移行の末尾の確かめ: 失敗は `SEC_WAVE5_MIGRATION_ASSERTION_FAILED`（SQLSTATE 55000、DETAIL は項目名だけ）。列の型、索引が部分で一意でないこと、3 関数の所有者・DEFINER・空の `search_path`・EXECUTE の付き方・PUBLIC に開いていないこと、`sessions` の権限が閉じたままであること
-- 書く・読む: 列を書くのはアプリのログインの確定と更新・昇格（後続の Task 2）、読むのは窓口（Task 3）と M2 の DB の部品。この移行だけでは何も読まない
+- 書く・読む: 列を書くのはアプリのログインの確定（`persistSessionAndCookies`）と更新・昇格（`persistNewSession`）で、旗に関係なく常に書く（ADR-0419）。読むのは窓口（`checkAuthSessionLiveness` が旗の有効な間 `is_app_session_active` を呼ぶ。DD-AUTH-039）と M2 の DB の部品。この移行だけでは何も読まない
 - 戻す: 移行のヘッダーの ROLLBACK（M2 を先に戻してから）
+
+### DATA-AUTH-008 has_permission は aal2 と結び付いた生きた session を求め、会員の本人の行の表は RESTRICTIVE の方針で守る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-005、SEC-AUTH-010、ADR-0418 |
+| 根拠 | API の窓口（ADR-0417）だけが結び付きを求めても、PostgREST は `has_permission` の ACL だけを見て通すので、anon キーで取った通行証が DB から直に管理の表や会員の行に届く。`has_permission` の本体 1 本を直せば、それを使う約 100 の RLS の方針が書き換えなしで従う。`has_permission` を使わず `auth.uid() = user_id` で本人の行を返す表だけは、別の方針で閉じる |
+| 状態 | 推定 |
+| 確かめ方 | 移行の文面の単体テスト（`tests/unit/migrations/sec-has-permission-aal2.test.ts`）、DB 結合テスト（`tests/integration/db/auth_has_permission_aal2.integration.test.ts`。M2 を当てた手元の DB で controller が流す） |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave5-decisions.md`（Q2 案 B）、計画 `docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md`（Task 6、P14・P15）、移行 `supabase/pending-wave5/20261029120100_sec_has_permission_aal2_member_rls.sql`（未適用。M1 の後、アプリの書く側・読む側が出て、ログインし直した後に controller が当てる） |
+
+| 部品 | 中身 |
+| --- | --- |
+| `public.has_permission(text)` の新しい本体 | 順に、(1) `auth.uid()` が空なら偽、(2) JWT の `aal` が `aal2` でなければ偽（`aal` が無いと `aal1` 扱い）、(3) ACL の `EXISTS`（G-0 の本体と同じ。`user_roles`・`roles`・`role_permissions`・`permissions`）が偽なら偽、(4) ACL が真の時だけ `private.app_session_is_live(session_id)`。`session_id` は uuid の形を正規表現で確かめてからキャストし、形が悪い・無い場合は偽で例外を出さない。安い検査を先に置くので、会員（aal1）と anon は ACL の表を引く前に返る |
+| 設定と権限 | `LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''`。`CREATE OR REPLACE` なので所有者と EXECUTE（`authenticated`・`service_role`・`postgres`。`anon` なし）は保たれ、移行は GRANT・REVOKE を書かない |
+| 会員の本人の行の方針 | `profiles`・`orders`・`order_items` の各表に `"require app bound live session"` を 1 本ずつ。`AS RESTRICTIVE FOR ALL TO authenticated USING ((SELECT private.is_app_bound_live_session())) WITH CHECK (同じ式)`。既存の許可の方針と AND で効き、結び付いた生きた session の無い `authenticated` は本人の行も 0 行（書き込みも 0 行）。`anon` には付けない（ゲストの注文は `app.session_id` で読む道のまま） |
+| 公開の読みの方針 | `status = 'published' OR has_permission(...)` の形の方針は RESTRICTIVE にしない。`has_permission` が偽になるだけなので、一般の会員（aal1）は公開の行を今までどおり読む |
+
+- 会員の本人の行を返す表は、この 3 表で全部（`auth.uid()`・`auth.jwt()` を使う方針は他に無い。`carts`・`wishlists`・`checkout_drafts`・`contact_*`・`refresh_token_history`・`postal_code_cache` は直のクライアントを全拒否、`user_roles` は `has_permission('admin.users.read')`）。G-4・H が会員の行を PostgREST に返す表を足したら、同じ方針を足す
+- G の関数（`private.group_g_actor_has_permissions(_actor_id, ...)`）は `auth.uid()` にも `has_permission` にも依らず service role から呼ぶので、書き手は変わらない
+- 移行の冒頭で M1（`app_session_is_live`・`is_app_bound_live_session`・`auth_session_id`）が当たっていることを確かめ、無ければ何も変えずに止める。末尾の確かめ: 失敗は `SEC_WAVE5_MIGRATION_ASSERTION_FAILED`（SQLSTATE 55000、DETAIL は項目名だけ）。本体の語（`'aal2'`・`app_session_is_live`・`user_roles`）と検査の順、所有者・DEFINER・STABLE・空の `search_path`、EXECUTE の付き方、3 表に RESTRICTIVE・`authenticated`・`*` の方針が 1 本ずつ
+- 当てた瞬間に効く。旗 `AUTH_REQUIRE_APP_SESSION` は DB が読まないので、旗では戻せない（ADR-0419）。戻すのは移行のヘッダーの ROLLBACK（G-0 の本体の全文と `DROP POLICY` 3 本）
+- 当てる条件: M1 が済み、アプリの書く側・読む側が出て、全員がログインし直した後。当てると既存の結び付いていない session は DB で 0 行・`has_permission` 偽になる
 
 ## 未確認事項
 
 - 本番の Supabase Auth の設定（Email OTP Expiration 300 秒・8 桁・Confirm email・TOTP の有効・最小の長さ・漏洩の照合・captcha・Redirect URLs に古い `/auth/callback` の許可が残っていないか）。手元の `supabase/config.toml` は OTP 3600 秒・Confirm email 無効・TOTP 無効・最小 6 文字で、構造設計に書いた本番の前提を確かめていない（SEC-AUTH-029）
 - Google のログインの会員に2段目を求めるか（SEC-AUTH-008、FR-LOGIN-007 と食い違う）。決まったら FLOW-AUTH-002・API-AUTH-008 を直す
-- Supabase Auth を直接呼ぶ道（SEC-AUTH-005・015）・確認のリンクの型（SEC-AUTH-006・007）の塞ぎ方。決まったら ARC-AUTH-001・API-AUTH-006 の上位を付け直す
+- Supabase Auth を直接呼ぶ道（SEC-AUTH-015）・確認のリンクの型（SEC-AUTH-006・007）の塞ぎ方。決まったら ARC-AUTH-001・API-AUTH-006 の上位を付け直す。SEC-AUTH-005 は波 5 でアプリの session への結び付けと決めた（ADR-0417）
+- 本物の `mfa.verify`（手元は TOTP が無効）の前後で GoTrue の `session_id` が変わらないこと。手元の補助（`mfa_amr_claims` に `totp` の行を足して更新）では変わらないと実測した（2026-10-29、Task 0）。配備前の preview で管理者 1 人が TOTP を通して確かめる。変わると `mfa/verify` が渡す `trustedAuthSessionId` の前提が崩れる
+- 本番の GoTrue の `auth.sessions` の `not_after`（time-box）の設定。`private.app_session_is_live` は `auth.sessions` の生存も見るので、短いと再ログインが増える
+- `has_permission` が方針の中で行ごとに呼ばれた時の性能（aal2 の管理者だけが 2 回の主キー引き）。M2 を当てる前後で管理画面の一覧（注文・会計）の応答時間を比べる。重いと分かれば Custom Access Token Hook を上乗せする（ADR-0417 の退けた案 (c)）
 - ヘッダーのログインのモーダル・`mfa/status` の使われない欄・`forceReEnroll` を残すか（`unused-code.md` の判断）
 - ヘッダーとドロワーの動き（DRV-AUTH-001〜005）を要件として認めるか。認めれば SCR-AUTH-009・010・STATE-AUTH-005・ARC-AUTH-008 の上位が要件になる
 - 本番の DB で、認証の6つの関数（DATA-AUTH-003）の `proacl` に anon・authenticated が残っているか（SEC-AUTH-012）。手元の DB は移行から作ったので残っている

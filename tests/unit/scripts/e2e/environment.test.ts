@@ -176,6 +176,30 @@ describe('buildE2EOverrides', () => {
     expect(computeServerFingerprint({ ...safeEnv, CLIENT_IP_HEADER: undefined }, 'start')).not.toBe(base);
   });
 
+  it('DD-AUTH-039 結び付けの旗 AUTH_REQUIRE_APP_SESSION=on を E2E の固定の環境に入れ、親の off を上書きする', () => {
+    expect(E2E_FIXED_ENV.AUTH_REQUIRE_APP_SESSION).toBe('on');
+    expect(buildE2EOverrides(status).AUTH_REQUIRE_APP_SESSION).toBe('on');
+    const prepared = prepareE2EEnvironment({
+      baseEnv: { ...dotEnvLocal, AUTH_REQUIRE_APP_SESSION: 'off' },
+      mode: 'start', strict: false, isWorker: false, baseUrl: 'http://localhost:3000',
+      readStatus: () => status, probe: () => ({ kind: 'down' }),
+    }).env;
+    // 手元の .env.local の off で E2E が通ってしまわない
+    expect(prepared.AUTH_REQUIRE_APP_SESSION).toBe('on');
+  });
+
+  it('DD-AUTH-039 AUTH_REQUIRE_APP_SESSION の値の違い・有無はサーバーの印を変える（旗が違う古いアプリを使い回さない）', () => {
+    const base = computeServerFingerprint(safeEnv, 'start');
+    expect(computeServerFingerprint({ ...safeEnv, AUTH_REQUIRE_APP_SESSION: 'off' }, 'start')).not.toBe(base);
+    expect(computeServerFingerprint({ ...safeEnv, AUTH_REQUIRE_APP_SESSION: undefined }, 'start')).not.toBe(base);
+  });
+
+  it('DD-AUTH-039 AUTH_REQUIRE_APP_SESSION が在っても、Supabase が手元でなければ既存の見張りが止める', () => {
+    expect(
+      findUnsafeE2ESettings({ ...safeEnv, AUTH_REQUIRE_APP_SESSION: 'on', NEXT_PUBLIC_SUPABASE_URL: 'https://prodproject.supabase.co' }).join('\n'),
+    ).toContain('NEXT_PUBLIC_SUPABASE_URL');
+  });
+
   it('E2E の定期処理の合言葉は32文字以上', () => {
     expect(E2E_FIXED_ENV.CRON_SECRET.length).toBeGreaterThanOrEqual(32);
   });

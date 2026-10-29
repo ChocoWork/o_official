@@ -200,6 +200,8 @@ async function createActor(scenario: Scenario, kind: ActorKind, aal: Aal): Promi
     }
     session = refreshed.data.session;
   }
+  const authSessionId = decodeClaims(session.access_token).session_id;
+  if (!authSessionId) throw new Error('access token に session_id が無い');
   const issuedAal = decodeClaims(session.access_token).aal;
   if (issuedAal !== aal) throw new Error(`token の aal が ${aal} でない（${issuedAal ?? '不明'}）`);
 
@@ -207,9 +209,9 @@ async function createActor(scenario: Scenario, kind: ActorKind, aal: Aal): Promi
   const refreshToken = randomBytes(32).toString('hex');
   const csrfToken = randomBytes(32).toString('hex');
   await scenario.db.query(
-    `insert into public.sessions (user_id, refresh_token_hash, csrf_token_hash, expires_at)
-     values ($1::uuid, $2, $3, now() + interval '1 hour')`,
-    [userId, sha256Hex(refreshToken), sha256Hex(csrfToken)],
+    `insert into public.sessions (user_id, refresh_token_hash, csrf_token_hash, auth_session_id, expires_at)
+     values ($1::uuid, $2, $3, $4::uuid, now() + interval '1 hour')`,
+    [userId, sha256Hex(refreshToken), sha256Hex(csrfToken), authSessionId],
   );
   return { userId, accessToken: session.access_token, refreshToken, csrfToken };
 }

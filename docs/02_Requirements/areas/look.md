@@ -1,6 +1,6 @@
 # LOOK の要件
 
-> 状態: 推定 | 確認日: 2026-10-28 | 対象: LOOK（一覧 `/look`・詳細 `/look/[id]`・ホームの LOOK の区画の部品・管理の LOOK） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-10-29 | 対象: LOOK（一覧 `/look`・詳細 `/look/[id]`・ホームの LOOK の区画の部品・管理の LOOK） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -3903,7 +3903,7 @@ AC-01 と同じ状態で、権限の無い一般会員の JWT の select の結�
 | 出どころ | OWASP ASVS 4.0.3 V4.3.1 |
 | 優先度 | MUST |
 
-`looks`・`look_items` の RLS のうち `admin.looks.read`・`admin.looks.manage` で許す方針は、JWT の `aal` が `aal2` で、session が生きている時だけ許す。読みの側（AC-01）は今のコードは満たさない（波 5 の `has_permission` の aal2 で直す）。書き込みの側（AC-02）は、2026-10-26 から anon・authenticated に `looks`・`look_items` の INSERT・UPDATE・DELETE の権限が無い（SEC-LOOK-004、ADR-0414）ので、aal1 の JWT でも PostgREST から書けず満たす（この移行を当てた DB でだけ満たす）。
+`looks`・`look_items` の RLS のうち `admin.looks.read`・`admin.looks.manage` で許す方針は、JWT の `aal` が `aal2` で、session が生きている時だけ許す。読みの側（AC-01）は、波 5 の移行 M2（`has_permission` に aal2 と結び付いた生きた session を求める。SEC-AUTH-010-AC-03、ADR-0418）を当てた DB で満たす（2026-10-29 に E2E の `test.fail` を外した。M2 は controller が当てるまで未適用）。書き込みの側（AC-02）は、2026-10-26 から anon・authenticated に `looks`・`look_items` の INSERT・UPDATE・DELETE の権限が無い（SEC-LOOK-004、ADR-0414）ので、aal1 の JWT でも PostgREST から書けず満たす（この移行を当てた DB でだけ満たす）。
 
 #### SEC-LOOK-003-AC-01 aal1 の session では非公開の LOOK を直接読めない
 

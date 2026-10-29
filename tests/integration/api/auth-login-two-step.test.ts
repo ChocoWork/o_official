@@ -63,7 +63,9 @@ const SECRET = 'arc-auth-002-test-secret';
 const PASSWORD = 'correct-horse-battery-staple';
 const CODE = '12345678';
 const USER = { id: 'user-123', email: 'member@example.com', email_confirmed_at: '2026-01-01T00:00:00.000Z' };
-const SESSION = { access_token: 'access-token-value', refresh_token: 'refresh-token-value' };
+// GoTrue の access token の形（DD-AUTH-039）。AUTH_REQUIRE_APP_SESSION が既定で有効なので、ログインの保存には session_id が要る。
+const ACCESS_TOKEN = `access-token-value.${Buffer.from(JSON.stringify({ session_id: '4c36ef0b-0332-42d8-b210-3326fc20c240' })).toString('base64url')}.s`;
+const SESSION = { access_token: ACCESS_TOKEN, refresh_token: 'refresh-token-value' };
 const COOKIE_NAME = 'sb-login-2fa-session';
 
 type Handler = (request: Request) => Promise<any>;

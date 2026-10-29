@@ -1,10 +1,12 @@
 /**
  * FR-LOGIN-030 ログインの後のセッションの Cookie と、認証の窓口の応答（本文・キャッシュ・送り先）
- * 対応: FREQ-320-AC-02 / SEC-AUTH-021-AC-01 / SEC-AUTH-022-AC-01 / SEC-AUTH-022-AC-02 / SEC-AUTH-024-AC-01 / SEC-AUTH-026-AC-01
+ * 対応: FREQ-320-AC-02 / SEC-AUTH-005-AC-04 / SEC-AUTH-021-AC-01 / SEC-AUTH-022-AC-01 / SEC-AUTH-022-AC-02 / SEC-AUTH-024-AC-01 / SEC-AUTH-026-AC-01
  *
  * 会員は createTestMember で作り、loginAsMember（確認コードの本物のログイン）で本物の Cookie を受け取る。
  * 窓口は Playwright の request（HTTP）で叩き、/auth/callback（消えた画面）だけ画面として開く。
  * - SEC-AUTH-022-AC-01（本文）は波 1 で、SEC-AUTH-022-AC-02（/api/auth 配下の Cache-Control: no-store）は波 3 の ADR-0415 で満たすようになった（どちらも通るのが想定。以前の test.fail は外した）。
+ * - SEC-AUTH-005-AC-04（波 5）は、本物のログインで結び付いた session が、会員の窓口・更新・ログアウトの前後で期待どおりに通る／断られることを確かめる。
+ *   アプリを通らない通行証が断られる側は FR-LOGIN-031（SEC-AUTH-005-AC-01・03・05）。
  * - SEC-AUTH-026-AC-01 は、/auth/callback の画面を消した（404）ことを確かめる（波 1-A、ADR-0412。以前は赤だった試験の反転）。
  * - SEC-AUTH-024-AC-01 の Secure は、AC の文面に無いので確かめない（本番ビルドの手元では付くが、別の AC に分ける）。
  * 通信記録にトークンが残らないよう trace は切る。失敗の報告にもトークンの値を出さない（真偽だけで比べる）。
@@ -201,6 +203,42 @@ for (const viewport of [viewports[2]]) {
       expect(refreshed.status()).toBeLessThan(500);
       const body = (await refreshed.json().catch(() => ({}))) as Record<string, unknown>;
       expect('access_token' in body, '更新の応答に新しい access token が無い').toBe(false);
+    });
+
+    test(`SEC-AUTH-005-AC-04 アプリのログインで得た session は会員の窓口を通り、更新の後も通り、ログアウトの後は写した access token でも 401 になる (${viewport.name})`, async ({
+      page,
+      request,
+      baseURL,
+    }) => {
+      const origin = originOf(baseURL);
+      const url = (path: string) => new URL(path, origin).toString();
+      // 応答の本文は読み切ってから status を返す（no-store の応答を開いたままにしない）
+      const statusOf = async (response: APIResponse): Promise<number> => {
+        await response.text();
+        return response.status();
+      };
+      const profileStatus = async () => statusOf(await page.request.get(url('/api/profile'), { maxRedirects: 0 }));
+
+      await loginCapturingOtpVerify(page, 'bound-lifecycle');
+      expect(await profileStatus(), 'ログイン直後の /api/profile').toBe(200);
+
+      // 更新: 結び付いた行の続きなので通り、更新の後の session でも会員の窓口が通る
+      const refreshed = await page.request.post(url('/api/auth/refresh'), {
+        headers: { origin, 'x-real-ip': uniqueSourceIp() },
+        maxRedirects: 0,
+      });
+      expect(await statusOf(refreshed), '更新の status').toBe(200);
+      expect(await profileStatus(), '更新の後の /api/profile').toBe(200);
+
+      // ログアウトの前に access token を写す。生きている間は Bearer でも通る（後の 401 がログアウトのせいだと言うための対照）
+      const copiedAccessToken = (await cookieMap(page, origin)).get(ACCESS_COOKIE)?.value;
+      expect(copiedAccessToken, '更新の後に sb-access-token がある').toBeTruthy();
+      const copiedBearer = { Authorization: `Bearer ${copiedAccessToken}` };
+      expect(await statusOf(await request.get(url('/api/profile'), { headers: copiedBearer })), 'ログアウトの前に写した access token').toBe(200);
+
+      const loggedOut = await logout(page, origin);
+      expect(await statusOf(loggedOut), 'ログアウトは 200').toBe(200);
+      expect(await statusOf(await request.get(url('/api/profile'), { headers: copiedBearer })), 'ログアウトの後に写した access token').toBe(401);
     });
 
     test(`SEC-AUTH-022-AC-01 /api/auth/refresh と /api/auth/otp/verify の応答の本文に access_token・refresh_token・app_metadata の字が無い (${viewport.name})`, async ({

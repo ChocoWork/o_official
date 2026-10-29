@@ -47,6 +47,8 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
   enforceRateLimit: jest.fn().mockResolvedValue(undefined),
 }));
 
+const AUTH_SESSION_ID = '4c36ef0b-0332-42d8-b210-3326fc20c240';
+
 // persistNewSession は本物を使い、Cookie と sessions 行の更新が実際に走ることを検証する。
 jest.mock('@/features/auth/services/session', () => ({
   ...jest.requireActual('@/features/auth/services/session'),
@@ -86,7 +88,7 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
     delete process.env.SUPABASE_URL;
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!(global as any).fetch) (global as any).fetch = jest.fn();
-    sessionService.findSessionByRefreshHash.mockResolvedValue({ id: 'session-1', user_id: 'u-seq', revoked_at: null });
+    sessionService.findSessionByRefreshHash.mockResolvedValue({ id: 'session-1', user_id: 'u-seq', revoked_at: null, auth_session_id: AUTH_SESSION_ID });
   });
 
   test('ARC-AUTH-001 register -> login -> refresh -> logout sequence', async () => {
@@ -108,7 +110,8 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
     // LOGIN step 1: verify password + send email OTP (no session issued yet)
     process.env.JWT_SECRET = 'test-jwt-secret';
     const { createPublicClient } = require('@/lib/supabase/server');
-    const sessionFixture = { access_token: 'a1', refresh_token: 'r1', expires_at: Date.now() + 3600 };
+    // GoTrue の access token の形（DD-AUTH-039）。AUTH_REQUIRE_APP_SESSION が既定で有効なので、ログインの保存には session_id が要る。
+    const sessionFixture = { access_token: `a1.${Buffer.from(JSON.stringify({ session_id: AUTH_SESSION_ID })).toString('base64url')}.s`, refresh_token: 'r1', expires_at: Date.now() + 3600 };
     const userFixture = { id: 'u-seq', email: 'seq@example.com' };
     const fakePublicClient = {
       auth: {
@@ -167,6 +170,7 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
       previous_refresh_token_hash: null,
       quarantined: false,
       revoked_at: null,
+      auth_session_id: AUTH_SESSION_ID,
     };
     const serviceFromMock = jest.fn(() => ({
       select: jest.fn().mockReturnValue({

@@ -84,10 +84,13 @@ const exchangeFailed = (status = 400) => ({
   text: async () => 'invalid_grant',
 });
 
+const AUTH_SESSION_ID = '4c36ef0b-0332-42d8-b210-3326fc20c240';
+
 const sessionRow = (extra: Record<string, unknown> = {}) => ({
   id: 'session-row-1',
   user_id: 'user-from-row',
   revoked_at: null,
+  auth_session_id: AUTH_SESSION_ID,
   ...extra,
 });
 
@@ -106,6 +109,7 @@ describe('POST /api/auth/refresh', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     process.env = { ...originalEnv };
+    delete process.env.AUTH_REQUIRE_APP_SESSION;
     process.env.SUPABASE_URL = 'https://supabase.test';
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://public.supabase.test';
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-key';
@@ -141,13 +145,14 @@ describe('POST /api/auth/refresh', () => {
       limit: 30,
       windowSeconds: 600,
     });
-    expect(mockedFindSession).toHaveBeenCalledWith('old-refresh');
+    expect(mockedFindSession).toHaveBeenCalledWith('old-refresh', { throwOnError: true });
     expect(mockedPersistNewSession).toHaveBeenCalledWith(res, {
       accessToken: 'new-access',
       refreshToken: 'new-refresh',
       userId: 'user-from-row',
       previousSessionId: 'session-row-1',
       previousRefreshToken: 'old-refresh',
+      trustedAuthSessionId: AUTH_SESSION_ID,
     });
     expect(mockedLogAudit).toHaveBeenCalledTimes(1);
     expect(mockedLogAudit).toHaveBeenCalledWith({ action: 'refresh', actor_id: 'user-from-row', outcome: 'success' });
@@ -169,7 +174,8 @@ describe('POST /api/auth/refresh', () => {
     });
   });
 
-  test('DD-AUTH-027 行が無くても交換が成功なら 200 で、警告を残し、利用者の id は応答から取り前の行の id は null', async () => {
+  test('DD-AUTH-027 旗が無効なら、行が無くても交換が成功なら 200 で、警告を残し、利用者の id は応答から取り前の行の id は null', async () => {
+    process.env.AUTH_REQUIRE_APP_SESSION = 'off';
     mockedFindSession.mockResolvedValue(null);
 
     const res = await call();
@@ -182,11 +188,13 @@ describe('POST /api/auth/refresh', () => {
       userId: 'user-from-supabase',
       previousSessionId: null,
       previousRefreshToken: 'old-refresh',
+      trustedAuthSessionId: null,
     });
     expect(mockedLogAudit).toHaveBeenCalledWith({ action: 'refresh', actor_id: undefined, outcome: 'success' });
   });
 
-  test('DD-AUTH-027 行が無く応答にも利用者が無ければ、利用者の id は undefined のまま差し替える', async () => {
+  test('DD-AUTH-027 旗が無効で行が無く応答にも利用者が無ければ、利用者の id は undefined のまま差し替える', async () => {
+    process.env.AUTH_REQUIRE_APP_SESSION = 'off';
     mockedFindSession.mockResolvedValue(null);
     mockedFetch.mockResolvedValue(exchangeOk({ user: undefined }));
 
@@ -331,7 +339,8 @@ describe('POST /api/auth/refresh', () => {
     expect(mockedPersistNewSession).not.toHaveBeenCalled();
   });
 
-  test('DD-AUTH-027 行が無いまま交換が失敗しても 401 で、監査の利用者の id は undefined', async () => {
+  test('DD-AUTH-027 旗が無効で行が無いまま交換が失敗しても 401 で、監査の利用者の id は undefined', async () => {
+    process.env.AUTH_REQUIRE_APP_SESSION = 'off';
     mockedFindSession.mockResolvedValue(null);
     mockedFetch.mockResolvedValue(exchangeFailed(500));
 
@@ -366,7 +375,8 @@ describe('POST /api/auth/refresh', () => {
     });
   });
 
-  test('DD-AUTH-027 行が無いまま差し替えが投げても 200 で、error の監査の利用者の id は undefined', async () => {
+  test('DD-AUTH-027 旗が無効で行が無いまま差し替えが投げても 200 で、error の監査の利用者の id は undefined', async () => {
+    process.env.AUTH_REQUIRE_APP_SESSION = 'off';
     mockedFindSession.mockResolvedValue(null);
     mockedPersistNewSession.mockRejectedValue(new Error('db down'));
 
@@ -425,4 +435,119 @@ describe('POST /api/auth/refresh', () => {
     expect(consoleError).toHaveBeenCalledWith('Refresh handler error:', expect.any(Error));
     expect(mockedPersistNewSession).not.toHaveBeenCalled();
   });
+});
+
+describe('POST /api/auth/refresh 結び付けの強制（DD-AUTH-039）', () => {
+  const originalEnv = { ...process.env };
+  const originalFetch = global.fetch;
+  let consoleError: jest.SpyInstance;
+  let consoleWarn: jest.SpyInstance;
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    process.env = { ...originalEnv };
+    delete process.env.AUTH_REQUIRE_APP_SESSION;
+    process.env.SUPABASE_URL = 'https://supabase.test';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-key';
+    mockedCookies.mockResolvedValue({ get: jest.fn().mockReturnValue({ value: 'old-refresh' }) });
+    mockedEnforceRateLimit.mockResolvedValue(undefined);
+    mockedPersistNewSession.mockResolvedValue(undefined);
+    mockedLogAudit.mockResolvedValue(undefined);
+    mockedFetch.mockResolvedValue(exchangeOk());
+    global.fetch = mockedFetch as unknown as typeof fetch;
+    consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    consoleWarn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    global.fetch = originalFetch;
+    consoleError.mockRestore();
+    consoleWarn.mockRestore();
+  });
+
+  test.each([
+    { label: '前の行が無い', row: null, actor: undefined },
+    { label: '前の行の auth_session_id が NULL', row: sessionRow({ auth_session_id: null }), actor: 'user-from-row' },
+    { label: '前の行の auth_session_id が無い（列を返さない）', row: sessionRow({ auth_session_id: undefined }), actor: 'user-from-row' },
+  ])('DD-AUTH-039 旗が有効で $label なら GoTrue を呼ばず 401 で、3つの Cookie を消し、unbound_session を監査に残す', async ({ row, actor }) => {
+    mockedFindSession.mockResolvedValue(row);
+
+    const res = await call();
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'Session not bound' });
+    expectAuthCookiesCleared(res);
+    expect(mockedFetch).not.toHaveBeenCalled();
+    expect(mockedPersistNewSession).not.toHaveBeenCalled();
+    expect(mockedLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockedLogAudit).toHaveBeenCalledWith({
+      action: 'refresh',
+      actor_id: actor,
+      outcome: 'failure',
+      detail: 'unbound_session',
+    });
+    expect(JSON.stringify(mockedLogAudit.mock.calls)).not.toMatch(/old-refresh|4c36ef0b/);
+  });
+
+  test('DD-AUTH-039 旗が有効で行の引きが失敗（SessionLookupError）なら GoTrue を呼ばず 503 で、Cookie は消さず、session_lookup_failed を監査に残す', async () => {
+    mockedFindSession.mockRejectedValue(Object.assign(new Error('lookup failed'), { name: 'SessionLookupError' }));
+
+    const res = await call();
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: 'Session lookup failed' });
+    expect(res.cookies._cookies).toEqual([]);
+    expect(mockedFindSession).toHaveBeenCalledWith('old-refresh', { throwOnError: true });
+    expect(mockedFetch).not.toHaveBeenCalled();
+    expect(mockedPersistNewSession).not.toHaveBeenCalled();
+    expect(mockedLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockedLogAudit).toHaveBeenCalledWith({ action: 'refresh', outcome: 'error', detail: 'session_lookup_failed' });
+    expect(consoleError).not.toHaveBeenCalledWith('Refresh handler error:', expect.anything());
+  });
+
+  test('DD-AUTH-039 旗が無効なら行の引きに throwOnError を渡さず、引きの失敗（null）でも従来どおり更新する', async () => {
+    process.env.AUTH_REQUIRE_APP_SESSION = 'off';
+    mockedFindSession.mockResolvedValue(null);
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    expect(mockedFindSession).toHaveBeenCalledWith('old-refresh', { throwOnError: false });
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('DD-AUTH-039 旗が有効で前の行が失効済みなら、従来どおり session_revoked で GoTrue を呼ばず 401', async () => {
+    mockedFindSession.mockResolvedValue(sessionRow({ revoked_at: '2026-10-24T00:00:00.000Z' }));
+
+    const res = await call();
+
+    expect(res.status).toBe(401);
+    expect(mockedFetch).not.toHaveBeenCalled();
+    expect(mockedLogAudit).toHaveBeenCalledWith(expect.objectContaining({ detail: 'session_revoked' }));
+  });
+
+  test('DD-AUTH-039 旗が有効で結び付いた行なら更新し、persistNewSession に前の行の auth_session_id を渡す', async () => {
+    mockedFindSession.mockResolvedValue(sessionRow());
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+    expect(mockedPersistNewSession).toHaveBeenCalledWith(res, expect.objectContaining({ trustedAuthSessionId: AUTH_SESSION_ID }));
+  });
+
+  test.each(['off', 'OFF', '0', 'false'])(
+    'DD-AUTH-039 旗が %s なら、結び付いていない行でも従来どおり更新できる（trustedAuthSessionId は null）',
+    async (flag) => {
+      process.env.AUTH_REQUIRE_APP_SESSION = flag;
+      mockedFindSession.mockResolvedValue(sessionRow({ auth_session_id: null }));
+
+      const res = await call();
+
+      expect(res.status).toBe(200);
+      expect(mockedFetch).toHaveBeenCalledTimes(1);
+      expect(mockedPersistNewSession.mock.calls[0][1].trustedAuthSessionId).toBeNull();
+    },
+  );
 });
