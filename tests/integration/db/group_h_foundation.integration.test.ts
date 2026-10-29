@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
 import { createCatalogFixture, createDraft, ensureFixturePaidAllocation, insertReturnRecord } from './helpers/order-fixtures';
 import { seedGroupG1Shipment } from './helpers/group-g1-fixtures';
-import { hDiscount, seedHDiscount, seedHOrderUnits } from './helpers/group-h-fixtures';
+import { dropH2Additions, hDiscount, seedHDiscount, seedHOrderUnits } from './helpers/group-h-fixtures';
 
 const directory = path.join(process.cwd(), 'supabase/migrations');
 const files = fs.readdirSync(directory).filter((name) => name.endsWith('_group_h_discounts_foundation.sql'));
@@ -202,7 +202,12 @@ describeLocalDb('H1 foundation: controller reset required', (db) => {
     const before = (await db().query('select id,code,permissions_version::text as version from public.roles order by id')).rows;
     const grants = (await db().query('select * from public.role_permissions order by role_id,permission_id')).rows;
     await db().query(section('PERMISSION_SEED'));
+    // H1's whole-schema assert predates H2: hide only H2's additions inside a savepoint, run the unmodified assert, then restore them.
+    await db().query('savepoint h1_rerun');
+    await dropH2Additions(db());
     await db().query(section('FINAL_ASSERT'));
+    await db().query('rollback to savepoint h1_rerun');
+    await db().query('release savepoint h1_rerun');
     const after = (await db().query('select id,code,permissions_version::text as version from public.roles order by id')).rows;
     expect(after).toEqual(before.map((r) => ({ ...r, version: (BigInt(r.version) + (r.code === 'admin' ? BigInt(1) : BigInt(0))).toString() })));
     expect((await db().query(`select rp.* from public.role_permissions rp join public.permissions p on p.id=rp.permission_id

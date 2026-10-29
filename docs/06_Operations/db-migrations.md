@@ -1117,3 +1117,17 @@ SQL/TSの目録は32件。H1の既存表DMLはpermissionsの2行登録、admin�
 末尾assertは `GROUP_H_MIGRATION_ASSERTION_FAILED / P0001`。DETAILは `h1_tables`・`h1_draft_columns`・`h1_constraints`・`h1_rls_acl`・`h1_immutable`・`h1_line_reader`・`h1_permission_catalogs`・`h1_permission_seed`・`h1_existing_dml_allowlist`。独立した一時表で期待するCHECK/FK/列をPostgresに解析させ、実カタログとの比較で確認する。期待FKの参照先も一時表を使い、schema/表/列名へ正規化して比較する。triggerの対象列とWHEN/参照helperも検査し、関数本文のMD5はCRを除いて計算する。
 
 実装者の静的確認はTypeScript/対象ESLint15ファイルがexit 0、RolePermissionsSectionを含む指定Jestが10 suites・313 tests通過（fix round 2後）。修正後のDB・末尾assert・会員削除・既存items読取/RLS回帰とFR-ADMIN-109 E2Eはcontrollerが実測する。Graphify更新も共通制約どおりcontrollerが最終コード変更後・commit前に1回行う。[実装レポート](../../.superpowers/sdd/2026-10-29-group-h-promotions/task-1-report.md)に対象ファイルと未検証境界を記す。
+
+## グループ H Task 3: 管理・資格・割り当て表（controllerのDB確認待ち）
+
+確認日: 2026-10-29。[20261029130100_group_h_discounts_admin.sql](../../supabase/migrations/20261029130100_group_h_discounts_admin.sql) は81,141 bytes、MD5 `e597d03cb2db8d5c40b15bc93fa8c70d`（fix round 1）、UTF-8/BOMなし/LF/ASCII。Hの予約範囲内でH1の直後、他セッションの20261029140000以後の移行より前に並ぶ。本番未適用。H1の本文は変更していない。
+
+private本体26・public入口13を追加する。全publicはSQL/INVOKER・service_roleだけEXECUTE、privateはpostgres所有/DEFINER/空search_path。全adminは最後の_actor_idからGの役割権限helperでread/manageを別々に検査し、JWT/aal/sessionを読まない。内部helperはservice_roleからも直接呼べない。書込はG共通→H目録→必要な本人→割引id昇順で直列化し、要求キーはH1のcreation列/admin_requestsへ保存する。新しい業務operation表を作らない。
+
+自動25件・片側でも併用ONの自動各分類６件・併用ONセットの共有item禁止を、未来を含む半開区間で検査する。writerと遅延constraint triggerの両方で守り、SQL/TSの上限一致を試験に固定する。使用後は取消済みも固定対象。注意はservice専用記録・同じ未解決10分窓１回、readで表示、manageの版付きupdateで閉じる。
+
+７表を維持し、discount_assignments.original_user_idを共有退会割当の使用照合用に固定する。discount_codes.unassigned_atは未使用単発割当の解除を表し、退会と区別してcontext/一覧から外す。移行時のDMLは新規H表の補助列補完だけ。顧客名・メール・検索語を監査/eventへ入れない。束の文字は制限された再送結果に保持するが、監査へ転記しない。
+
+末尾assertの失敗は `GROUP_H_MIGRATION_ASSERTION_FAILED / P0001`。DETAILは `h2_functions`・`h2_public_acl`・`h2_permission_checks`・`h2_admin_requests`・`h2_code_unique`・`h2_automatic_lock`・`h2_stackable_cap`・`h2_set_items_disjoint`・`h2_search_attention`・`h2_reads_stable`。関数/ACL/本文指紋/余分なoverload/列/一意/triggerの属性を検査する。H1のassertはsavepoint内でH2追加列だけを一時的に外して当時の形を検査し、rollbackで戻す。
+
+実装者のTypeScript・対象５ファイルESLintはexit 0。DBのRED/GREENは実測していない。controllerは未実装DBのRED、最終SQLでのfresh reset、既存itemsのanon/authenticated smoke各200、H管理/context/並行とH1/共通assert・G-0回帰、全13 public入口の実PostgREST（service成功、anon/authenticated拒否）を実施する。並行はpg_blocking_pids/pg_locksで待ちを観測して３連続。実受付との解除競合と現在の注文を除いた予約再検査はTask 7。Graphify updateはcontrollerが最終変更後・commit前に１回、commit後hook確認もcontrollerが担当する。[Task 3レポート](../../.superpowers/sdd/2026-10-29-group-h-promotions/task-3-report.md)に署名・鍵・エラー・各テストと懸念を記す。

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describeLocalDb } from './helpers/local-db';
 import { withH1PermissionBaseline } from './helpers/group-h-fixtures';
+import { MAX_AUTOMATIC_DISCOUNTS, MAX_STACKABLE_AUTOMATIC_PER_CLASS } from '@/lib/discounts/discount-types';
 
 const directory = path.join(process.cwd(), 'supabase/migrations');
 const files = fs.readdirSync(directory).filter((name) => name.endsWith('_group_h_discounts_foundation.sql'));
@@ -10,7 +11,7 @@ const sql = files.length === 1 ? fs.readFileSync(path.join(directory, files[0]),
 const assertion = sql.split('-- H1_FINAL_ASSERT_BEGIN\n')[1]?.split('-- H1_FINAL_ASSERT_END')[0] ?? '';
 const details = ['h1_tables', 'h1_draft_columns', 'h1_constraints', 'h1_rls_acl', 'h1_immutable', 'h1_line_reader',
   'h1_permission_catalogs', 'h1_permission_seed', 'h1_existing_dml_allowlist'];
-type AssertFailure = { code?: string; message?: string; detail?: string };
+type AssertFailure = { code?: string; message?: string; detail?: string; hint?: string };
 
 describe('H1 source contract (no DB)', () => {
   test('FREQ-542-AC-01: H1はASCII・BOMなしLF・単一取引と固定の末尾assertを持つ', () => {
@@ -44,6 +45,86 @@ describe('H1 source contract (no DB)', () => {
     expect(writes).toEqual(['INSERT INTO pg_temp.group_h_permission_baseline', 'INSERT INTO public.permissions',
       'INSERT INTO public.role_permissions', 'UPDATE public.roles'].sort());
     expect(outsideFunctions).toContain("UPDATE public.roles SET permissions_version=permissions_version+1 WHERE code='admin';");
+  });
+});
+
+const h2Path = path.join(directory, '20261029130100_group_h_discounts_admin.sql');
+const h2 = fs.existsSync(h2Path) ? fs.readFileSync(h2Path, 'utf8') : '';
+const h2Assert = h2.split('-- H2_FINAL_ASSERT_BEGIN\n')[1]?.split('-- H2_FINAL_ASSERT_END')[0] ?? '';
+describe('H2 source contract (controller also runs this)', () => {
+  test('FREQ-543-AC-01: H2末尾assertは専用dollarタグ１組で閉じIF内のCASEを括弧で囲む', () => {
+    const parts = h2Assert.split('$h2_final$');
+    expect(parts).toHaveLength(3);
+    expect(parts[0].trim()).toBe('DO');
+    expect(parts[2].trim()).toBe(';');
+    // PL/pgSQL reads an IF expression until the first THEN at parentheses depth zero.
+    expect(parts[1]).not.toMatch(/<>\s*CASE\b/i);
+  });
+
+  test('FREQ-543-AC-01: H2末尾assertは内部の誤りを別のDETAILとHINTで返し、h2_functionsへ潰さない', () => {
+    expect(h2Assert).toContain("DETAIL='h2_internal'");
+    expect(h2Assert).toContain('HINT=SQLSTATE||');
+    expect(h2Assert).not.toMatch(/COALESCE\(v_detail,\s*'h2_functions'\)/);
+  });
+
+  test('FREQ-547-AC-04: SQLの保存上限はエンジンの25件と分類ごと６件に一致する', () => {
+    expect(h2).toContain(`v_automatic_limit CONSTANT integer := ${MAX_AUTOMATIC_DISCOUNTS};`);
+    expect(h2).toContain(`v_stackable_limit CONSTANT integer := ${MAX_STACKABLE_AUTOMATIC_PER_CLASS};`);
+    expect(h2).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(h2.startsWith('BEGIN;\n')).toBe(true);
+    expect(h2.match(/^BEGIN;$/gm)).toHaveLength(1); expect(h2.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(h2.trimEnd()).toMatch(/-- H2_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect(h2).not.toMatch(/auth\.(?:jwt|uid)|aal|auth\.sessions|CREATE TABLE/i);
+  });
+});
+
+describeLocalDb('H2 semantic final assertions (controller only)', db => {
+  beforeEach(async () => { await db().query('begin'); await db().query('select pg_advisory_xact_lock(190521,1)'); });
+  afterEach(async () => { await db().query('rollback'); });
+  async function attempt(change = '', assertSql = h2Assert) {
+    await db().query('savepoint h2_assert'); let result: AssertFailure | null = null;
+    try { await db().query(`${change};\n${assertSql}`); }
+    catch (caught) { const e = caught as AssertFailure; result = { code: e.code,
+      message: e.message === 'GROUP_H_MIGRATION_ASSERTION_FAILED' ? e.message : 'H_UNEXPECTED_DB_ERROR', detail: e.detail, hint: e.hint }; }
+    finally { await db().query('rollback to savepoint h2_assert'); await db().query('release savepoint h2_assert'); }
+    return result;
+  }
+  test('FREQ-543-AC-01: H2末尾assertは無改変で通る', async () => { expect(h2Assert).not.toBe(''); expect(await attempt()).toBeNull(); });
+  test('FREQ-543-AC-01: assert自身の実行時エラーはh2_internalとHINTのSQLSTATEで返りh2_functionsに見えない', async () => {
+    // ローカルの postgres は役割の名前を変えられないので、assert の写しの最初の BEGIN の直後に 0 での割り算を差し込み、内側の実行時エラーを起こす
+    const injected = h2Assert.replace(/\nBEGIN\n/, '\nBEGIN\n  PERFORM 1/0;\n');
+    expect(injected).not.toBe(h2Assert);
+    const failure = await attempt('', injected);
+    expect(failure).toMatchObject({ code: 'P0001', message: 'GROUP_H_MIGRATION_ASSERTION_FAILED', detail: 'h2_internal' });
+    expect(failure?.hint).toMatch(/^22012: /);
+    expect(failure?.detail).not.toBe('h2_functions');
+  });
+  test.each([
+    ['grant execute on function public.admin_create_discount(jsonb,uuid,uuid) to anon', 'h2_public_acl'],
+    ['alter function public.admin_create_discount(jsonb,uuid,uuid) security definer', 'h2_public_acl'],
+    ['alter function private.get_admin_discount(uuid,integer,integer,uuid) volatile', 'h2_reads_stable'],
+    ['create function public.admin_create_discount(text) returns jsonb language sql as $$select null::jsonb$$', 'h2_functions'],
+    [`do $x$ begin execute replace(pg_get_functiondef('private.group_h_check_catalog()'::regprocedure),
+      'v_stackable_limit CONSTANT integer := 6;', 'v_stackable_limit CONSTANT integer := 7;'); end $x$`, 'h2_stackable_cap'],
+    ['alter table public.discounts disable trigger h2_discounts_catalog', 'h2_stackable_cap'],
+    ['alter table public.discount_items disable trigger h2_items_catalog', 'h2_set_items_disjoint'],
+    [`do $x$ begin execute replace(pg_get_functiondef('private.admin_create_discount(jsonb,uuid,uuid)'::regprocedure),
+      'PERFORM private.group_h_require_permission(_actor_id,', 'PERFORM private.group_h_require_permission(NULL,'); end $x$`, 'h2_permission_checks'],
+    ['grant execute on function public.record_discount_search_fallback(uuid[]) to authenticated', 'h2_public_acl'],
+    ['grant update on public.discount_assignments to service_role', 'h2_public_acl'],
+    ['grant select(original_user_id) on public.discount_assignments to anon', 'h2_public_acl'],
+    ['grant execute on function private.group_h_random_suffix(integer) to service_role', 'h2_public_acl'],
+    ['alter function private.group_h_replay(uuid,text) immutable', 'h2_reads_stable'],
+    [`do $x$ begin execute replace(pg_get_functiondef('private.group_h_replay(uuid,text)'::regprocedure),
+      'v_prior->>''hash''<>_hash', 'false'); end $x$`, 'h2_admin_requests'],
+    ['alter table public.discount_codes drop constraint discount_codes_code_key', 'h2_code_unique'],
+    [`do $x$ begin execute replace(pg_get_functiondef('private.group_h_lock(uuid[],text[])'::regprocedure),
+      '190521,1', '190521,2'); end $x$`, 'h2_automatic_lock'],
+    [`do $x$ begin execute replace(pg_get_functiondef('private.record_discount_search_fallback(uuid[])'::regprocedure),
+      '10 minutes', '1 minute'); end $x$`, 'h2_search_attention'],
+  ])('FREQ-543-AC-01: H2改ざん %s はP0001とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual({ code: 'P0001', message: 'GROUP_H_MIGRATION_ASSERTION_FAILED', detail });
+    expect(await attempt()).toBeNull();
   });
 });
 

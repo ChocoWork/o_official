@@ -2,18 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { OrderStatus } from '@/lib/orders/order-payment-types';
 import type { PgClient } from './local-db';
 import { createCatalogFixture } from './order-fixtures';
+import type { DiscountDefinition } from '@/lib/discounts/discount-types';
 
-// Task 2 owns the production type; keep this fixture contract identical until it exists.
-type DiscountDefinition = {
-  id: string; version: string; name: string; kind: 'order_percent' | 'order_amount' | 'product' | 'repeat' | 'set';
-  method: 'code' | 'automatic'; value: { type: 'percent' | 'amount'; value: number };
-  targetMode: 'all' | 'exclude' | 'include'; itemIds: readonly number[];
-  minimum: { type: 'none'; value: 0 } | { type: 'amount' | 'quantity'; value: number };
-  audience: 'assigned' | 'anyone'; allowGuests: boolean; firstOrderOnly: boolean; usageLimit: number | null;
-  oncePerCustomer: boolean; startsAt: string; endsAt: string | null; stopped: boolean;
-  combinesWithProduct: boolean; combinesWithOrder: boolean; advertise: boolean; advertisingText: string | null;
-  repeatPrevious: boolean; repeatInOrder: boolean;
-};
 export type DiscountSeed = Omit<DiscountDefinition, 'id' | 'version'> & { code?: string; userIds?: readonly string[] };
 export type HOrderSeed = {
   lines: readonly { itemPrice: number; quantity: number; discounts: readonly { discountId: string; amount: number }[];
@@ -28,6 +18,55 @@ export const hDiscount = (overrides: Partial<DiscountSeed> = {}): DiscountSeed =
   stopped: false, combinesWithProduct: false, combinesWithOrder: false, advertise: false, advertisingText: null,
   repeatPrevious: false, repeatInOrder: false, ...overrides,
 });
+
+/** Execute only an explicitly named H entry, as the real service role; no JWT/session fixture. */
+export async function hRpc<T = unknown>(client: PgClient, name: string, args: unknown[]): Promise<T> {
+  if (!/^(admin_(create|update|set|duplicate|assign|unassign|generate)_discount(?:_stopped|_codes)?|list_admin_discounts|get_admin_discount|search_admin_discount_members|get_checkout_discount_context|record_discount_search_fallback|get_admin_discount_activation_context)$/.test(name)) throw new Error('H_RPC_NAME_INVALID');
+  await client.query('set local role service_role');
+  // An error leaves the transaction aborted; hFailure/the race's savepoint restores the role too.
+  const row = (await client.query(`select public.${name}(${args.map((_, i) => `$${i + 1}`).join(',')}) as result`,
+    args.map(v => v !== null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date) ? JSON.stringify(v) : v))).rows[0];
+  await client.query('reset role');
+  return row.result as T;
+}
+
+/** Keep expected diagnostics fixed and recover the transaction without exposing raw DB text. */
+export async function hFailure(client: PgClient, run: () => Promise<unknown>): Promise<{ code?: string; message?: string }> {
+  await client.query('savepoint h_expected_failure');
+  try { await run(); return {}; }
+  catch (caught) { const e = caught as { code?: string; message?: string }; return { code: e.code,
+    message: /^GROUP_H_[A-Z_]+$/.test(e.message ?? '') ? e.message : 'H_UNEXPECTED_DB_ERROR' }; }
+  finally { await client.query('rollback to savepoint h_expected_failure'); await client.query('release savepoint h_expected_failure'); }
+}
+
+/** An actual auth member, never a JWT or customer metadata used for authority. */
+export async function seedHMember(client: PgClient, email = `h-${randomUUID()}@example.invalid`): Promise<string> {
+  const id = randomUUID();
+  await client.query("insert into auth.users(id,email,raw_app_meta_data,raw_user_meta_data) values($1,$2,'{}','{}')", [id, email]);
+  return id;
+}
+
+/** Reservation fixture only: Task 7 replaces the paired race with the real acceptance entry. */
+export async function seedHRedemption(client: PgClient, discountId: string, input: {
+  state: 'reserved' | 'confirmed' | 'cancelled'; codeId?: string; userId?: string; email?: string;
+  reservedAt?: string; firstOrderOnly?: boolean;
+}): Promise<{ id: string; orderId: string }> {
+  const order = await seedHOrderUnits(client, { legacy: true, buyerUserId: input.userId, email: input.email,
+    status: input.state === 'confirmed' ? 'paid' : 'pending', paidAt: input.state === 'confirmed' ? new Date().toISOString() : null,
+    lines: [{ itemPrice: 1000, quantity: 1, discounts: [], unitAmounts: [] }] });
+  const email = input.email?.trim().toLowerCase() ?? `h-${randomUUID()}@example.invalid`;
+  const identity = input.userId ? `member:${input.userId}` : `guest:${email}`;
+  const row = (await client.query(`insert into public.discount_redemptions
+    (discount_id,code_id,order_id,user_id,identity_key,normalized_email,state,reserved_at,confirmed_at,cancelled_at,
+      name_snapshot,code_snapshot,class_snapshot,amount,first_order_only_snapshot)
+    select d.id,$2,$3,$4,$5,$6,$7,$8,case when $7='confirmed' then $8::timestamptz end,
+      case when $7='cancelled' then $8::timestamptz end,d.name,c.code,
+      case when d.kind in ('order_percent','order_amount') then 'order' else 'product' end,100,$9
+    from public.discounts d left join public.discount_codes c on c.id=$2 where d.id=$1 returning id`,
+  [discountId, input.codeId ?? null, order.orderId, input.userId ?? null, identity, email, input.state,
+    input.reservedAt ?? new Date().toISOString(), input.firstOrderOnly ?? false])).rows[0];
+  return { id: row.id as string, orderId: order.orderId };
+}
 
 /** Transaction-owned material, written as postgres; never bypass H guards or disable triggers. */
 export async function seedHDiscount(client: PgClient, input: DiscountSeed): Promise<string> {
@@ -78,8 +117,16 @@ export async function seedHOrderUnits(client: PgClient, input: HOrderSeed): Prom
   return { orderId, orderItemIds };
 }
 
+/** H1 is a historical assertion: remove the H2 additions it never knew. The caller's savepoint must restore them. */
+export async function dropH2Additions(client: PgClient): Promise<void> {
+  await client.query(`drop trigger if exists h2_assignment_identity on public.discount_assignments;
+    alter table public.discount_assignments drop column if exists original_user_id;
+    alter table public.discount_codes drop column if exists unassigned_at`);
+}
+
 /** Pin the pre-H1 permission state BEFORE a caller tampers with the applied catalog. */
 export async function withH1PermissionBaseline(client: PgClient, assertSql: string): Promise<void> {
+  await dropH2Additions(client);
   await client.query(`create temp table group_h_permission_baseline(payload jsonb) on commit drop;
     insert into pg_temp.group_h_permission_baseline(payload) select jsonb_build_object(
       'permissions',coalesce((select jsonb_agg(to_jsonb(p) order by p.id) from public.permissions p

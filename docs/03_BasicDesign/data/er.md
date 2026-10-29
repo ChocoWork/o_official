@@ -2247,3 +2247,18 @@ service_role の権限は移行が明示する（後の REVOKE で消えない�
 checkout_draftsのdiscount_result/discount_facts/discount_engine_version/discount_snapshot_hashは全NULLまたは全存在。既存行へ補完しない。結果はversion=1のobjectでallocations/unitAmountsがarray、factsはobject、engine_version=1、hashは小文字SHA256 hex64。行ごとの厳密な金額はTask 6で扱う。
 
 private.order_line_discounts(uuid)は保存allocationが1件でもある注文の通常行をLEFT JOINし、対象外は0を返す。保存がない注文は旧累積丸めの本文を保ち、交換行は常に0。controller裁定により従来のSQL/STABLE/SECURITY INVOKERを保ち、search_pathは空、PUBLIC/anon/authenticated/service_roleのEXECUTEは無い。呼出元のDEFINER本体を通し、新public入口は作らない。privateの不変/関連/行総和/設定検査helperとH保存の有無を読むgroup_h_order_has_units(uuid)はpostgres所有・DEFINER・空search_pathで、service_roleも直接実行不可。order_itemsの遅延検査はorder_id/quantity/line_total/line_kindのUPDATEだけで、WHENは旧/新の注文にHの着別金額がある時だけイベントを作る。設定検査も使用列だけのUPDATEに絞り、会員FKのNULL化では起動しない。H1のGET/SET目録は32件へ広げ、既存public INVOKER入口・固定2権限・版・要求キー・監査を保つ。注文の行配分/着別金額のorder_idを含め、FK読取を支える明示索引は15本。
+
+## 割引の管理と割り当て表（H2 / FREQ-543・544・546・547）
+
+2026-10-29追加。[H2移行](../../../supabase/migrations/20261029130100_group_h_discounts_admin.sql) は静的検査のみで、DB適用・結合・並行・PostgRESTはcontroller待ち。本番未適用。７表のまま、要求キーはdiscounts.creation_request_key/hashとadmin_requestsを使い、Gの業務operationへ混ぜない。全writerはG共通→H目録→必要な本人キー→割引id昇順で鍵を取る。
+
+| 表・列 | H2での意味 |
+| --- | --- |
+| discounts.admin_requests | actorを含む操作本文のSHA256と元の結果。再送で同じ結果、異本文は固定の競合。名前・メール・検索語は入れない |
+| discounts.search_attention_at/count | guardの未解決注意と累積回数。10分窓で１回、記録は設定版を変えず、manageの版付きupdateで表示だけ閉じる |
+| discount_assignments.original_user_id | 共有assigned行の元の会員ID。FKではなく、退会後もidentity_keyの使用履歴に結ぶ。INSERT時に固定し、以後変更禁止。表示用user_idは従来どおりNULL化 |
+| discount_codes.unassigned_at | 未使用の単発assignedコードを外した時刻。文字と元の割当を保持し、誰でも使えるコードへ変えず、contextと割当表から外す |
+
+割当表は共有assignedが１会員１行、単発assignedが１code１行、anyoneが１code・実使用者１行。予約/確定は最新の有効使用日時と注文を返し、取消だけならunusedで日時/注文はNULL。guestは先頭１字とドメインだけ、壊れたメールは`***`、結び付け済みのguest行は重ねない。氏名の結合は頁の対象だけで行い、１呼出し１snapshot・limit1〜100/offset0以上のjsonbで返す。
+
+自動の25件/分類ごと６件と併用ONセットの共有item禁止は半開区間の全期間を検査し、writerと遅延constraint triggerの両方で守る。SQL定数と純粋エンジン定数の一致は [assert試験](../../../tests/integration/db/group_h_migration_asserts.integration.test.ts) に固定する。checkout contextはSTABLEで、guest previewではメールを捨て、注文/返金/本人回数の読取を実行しない。confirm/acceptanceは同メールの会員注文も含む有料履歴と初回予約を分ける。会員の前回着数は通常行−成功返金、交換/未入金は除く。
