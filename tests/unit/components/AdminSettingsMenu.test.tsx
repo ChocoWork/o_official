@@ -75,7 +75,7 @@ describe('管理画面の左のメニューの SETTINGS', () => {
     render(<AdminPage />);
     const nav = await screen.findByRole('navigation', { name: '管理メニュー' });
 
-    expect(menuLabels(nav)).toEqual(['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'INVENTORY', 'PACKING', 'CONTACT', 'SETTINGS']);
+    expect(menuLabels(nav)).toEqual(['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'INVENTORY', 'PACKING', 'CONTACT', 'DISCOUNT', 'SETTINGS']);
     expect(within(nav).getByRole('button', { name: 'SETTINGS' }).querySelector('i')).toHaveClass('ri-settings-3-line');
   });
 
@@ -105,7 +105,7 @@ describe('管理画面の左のメニューの SETTINGS', () => {
     render(<AdminPage />);
     const nav = await screen.findByRole('navigation', { name: '管理メニュー' });
 
-    expect(menuLabels(nav)).toEqual(['ORDER', 'INVENTORY', 'PACKING', 'CONTACT']);
+    expect(menuLabels(nav)).toEqual(['ORDER', 'INVENTORY', 'PACKING', 'CONTACT', 'DISCOUNT']);
     expect(screen.queryByRole('button', { name: 'SETTINGS' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '権限' })).not.toBeInTheDocument();
   });
@@ -239,7 +239,7 @@ describe('管理画面の左のメニューの PACKING', () => {
     render(<AdminPage />);
     const nav = await screen.findByRole('navigation', { name: '管理メニュー' });
     expect(within(nav).getByRole('button', { name: 'PACKING' }).querySelector('i')).toHaveClass('ri-box-3-line');
-    expect(menuLabels(nav).slice(8, 12)).toEqual(['INVENTORY', 'PACKING', 'CONTACT', 'SETTINGS']);
+    expect(menuLabels(nav).slice(8, 13)).toEqual(['INVENTORY', 'PACKING', 'CONTACT', 'DISCOUNT', 'SETTINGS']);
   });
 
   it.each(['admin', 'supporter'] as const)('FREQ-531-AC-01: %s は URL の tab=PACKING で直接開ける（サポーターは先頭の ORDER に戻されない）', async (role) => {

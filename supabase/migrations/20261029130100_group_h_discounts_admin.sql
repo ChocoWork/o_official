@@ -490,6 +490,10 @@ BEGIN
         AND NOT EXISTS(SELECT 1 FROM public.discount_redemptions AS r WHERE r.code_id=c.id)
   ), page AS (SELECT * FROM all_rows ORDER BY code COLLATE "C",row_id COLLATE "C" LIMIT _assignment_limit OFFSET _assignment_offset)
   SELECT pg_catalog.jsonb_build_object('discount',private.group_h_definition(d.id),
+    'codes',COALESCE((SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+      'codeId',c.id,'code',c.code,'singleUse',c.single_use,'audience',c.audience,
+      'allowGuests',c.allow_guests,'assignedUserId',c.assigned_user_id) ORDER BY c.code COLLATE "C",c.id)
+      FROM public.discount_codes AS c WHERE c.discount_id=d.id),'[]'::jsonb),
     'used',EXISTS(SELECT 1 FROM public.discount_redemptions AS r WHERE r.discount_id=d.id),
     'assignmentTotal',(SELECT pg_catalog.count(*) FROM all_rows),'assignments',COALESCE((
       SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('rowId',p.row_id,'codeId',p.code_id,'code',p.code,'userId',p.user_id,
@@ -600,18 +604,47 @@ $$;
 CREATE FUNCTION private.admin_create_discount(_input jsonb,_request_key uuid,_actor_id uuid) RETURNS jsonb
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
 AS $$
-DECLARE v_id uuid := pg_catalog.gen_random_uuid(); v_hash text; v_prior jsonb; v jsonb; v_identities text[];
+DECLARE v_id uuid := pg_catalog.gen_random_uuid(); v_hash text; v_prior jsonb; v jsonb; v_identities text[]; v_batch jsonb; v_users uuid[]; v_count integer;
 BEGIN
   PERFORM private.group_h_require_permission(_actor_id,'admin.discounts.manage');
   PERFORM private.group_h_lock(ARRAY[]::uuid[],ARRAY[]::text[]);
   v_hash := private.group_h_hash(pg_catalog.jsonb_build_array('create',_input,_actor_id));
   v_prior := private.group_h_replay(_request_key,v_hash); IF v_prior IS NOT NULL THEN RETURN v_prior; END IF;
-  v := private.group_h_candidate(NULL,_input,false);
+  IF _input IS NULL OR pg_catalog.jsonb_typeof(_input)<>'object' THEN RAISE EXCEPTION 'GROUP_H_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+  -- Keep the initial batch in the creation hash, but validate the definition separately.
+  v_batch := _input->'initialBatch';
+  IF _input ? 'initialBatch' THEN
+    IF pg_catalog.jsonb_typeof(v_batch)<>'object' THEN RAISE EXCEPTION 'GROUP_H_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+    IF NOT v_batch ?& ARRAY['prefix','userIds','count']
+      OR EXISTS(SELECT 1 FROM pg_catalog.jsonb_object_keys(v_batch) AS p(key) WHERE key NOT IN ('prefix','userIds','count'))
+      OR pg_catalog.jsonb_typeof(v_batch->'prefix')<>'string'
+      OR pg_catalog.jsonb_typeof(v_batch->'userIds')<>'array'
+      OR pg_catalog.jsonb_typeof(v_batch->'count')<>'number' THEN
+      RAISE EXCEPTION 'GROUP_H_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+    IF v_batch->>'prefix'!~'^[A-Z0-9]([A-Z0-9-]{0,53}[A-Z0-9])?$'
+      OR (v_batch->>'count')!~'^[0-9]{1,3}$'
+      OR pg_catalog.jsonb_array_length(v_batch->'userIds')>100 THEN
+      RAISE EXCEPTION 'GROUP_H_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+    v_count := (v_batch->>'count')::integer;
+    IF v_count NOT BETWEEN 1 AND 100 OR EXISTS(SELECT 1 FROM pg_catalog.jsonb_array_elements(v_batch->'userIds') AS p(x)
+      WHERE pg_catalog.jsonb_typeof(x)<>'string' OR (x#>>'{}')!~*'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') THEN
+      RAISE EXCEPTION 'GROUP_H_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+    SELECT pg_catalog.array_agg(x::uuid ORDER BY x::uuid) INTO v_users FROM pg_catalog.jsonb_array_elements_text(v_batch->'userIds') AS p(x);
+    IF _input->>'method'<>'code' OR _input ? 'code' OR _input ? 'userIds'
+      OR ((_input->>'audience'='assigned') IS DISTINCT FROM (v_users IS NOT NULL))
+      OR (v_users IS NOT NULL AND pg_catalog.cardinality(v_users)<>v_count) THEN
+      RAISE EXCEPTION 'GROUP_H_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+  END IF;
+  v := private.group_h_candidate(NULL,_input-'initialBatch',false);
   IF v ? 'userIds' THEN
     SELECT pg_catalog.array_agg('member:'||x ORDER BY x) INTO v_identities FROM pg_catalog.jsonb_array_elements_text(v->'userIds') AS p(x);
     PERFORM private.group_h_lock(ARRAY[]::uuid[],v_identities);
   END IF;
   PERFORM private.group_h_save(v_id,v,_actor_id,_request_key,v_hash);
+  IF v_batch IS NOT NULL THEN
+    -- An error in generation rolls back the discount, request record and codes together.
+    PERFORM private.admin_generate_discount_codes(v_id,v_batch->>'prefix',v_users,v_count,pg_catalog.gen_random_uuid(),_actor_id);
+  END IF;
   RETURN pg_catalog.jsonb_build_object('discountId',v_id,'version','1','replayed',false);
 END;
 $$;
@@ -944,12 +977,12 @@ BEGIN
     ('group_h_random_suffix(integer)','text','plpgsql','v',false,'6bc37ba1f95f29452bf103421d965355','_length','h2_permission_checks'),
     ('admin_generate_discount_codes(uuid,text,uuid[],integer,uuid,uuid)','jsonb','plpgsql','v',true,'aef0eaf0a72c32e89f1623b2d174d8ea','_discount_id,_prefix,_user_ids,_count,_request_key,_actor_id','h2_permission_checks'),
     ('list_admin_discounts(jsonb,integer,integer,uuid)','jsonb','plpgsql','s',true,'579a26d0087655b73c00c6d9ff641394','_filters,_limit,_offset,_actor_id','h2_permission_checks'),
-    ('get_admin_discount(uuid,integer,integer,uuid)','jsonb','plpgsql','s',true,'9fb111a0d9ca044ae9ae85124bca1c7d','_discount_id,_assignment_limit,_assignment_offset,_actor_id','h2_permission_checks'),
+    ('get_admin_discount(uuid,integer,integer,uuid)','jsonb','plpgsql','s',true,'6f1af538113a0a96150dda16dc0c25f4','_discount_id,_assignment_limit,_assignment_offset,_actor_id','h2_permission_checks'),
     ('search_admin_discount_members(text,integer,uuid)','jsonb','plpgsql','s',true,'6ab884596d0f271a4edd84289a479767','_query,_limit,_actor_id','h2_permission_checks'),
     ('get_admin_discount_activation_context(uuid,jsonb,uuid)','jsonb','plpgsql','s',true,'7eb074e03d0f740340742bd1d3c2a21a','_discount_id,_patch,_actor_id','h2_permission_checks'),
     ('record_discount_search_fallback(uuid[])','void','plpgsql','v',true,'be0f6807e1dad1a05396b9daaa3f2be3','_discount_ids','h2_search_attention'),
     ('group_h_save(uuid,jsonb,uuid,uuid,text)','void','plpgsql','v',false,'6a07cef1925c173e58144e1020e99e7a','_id,_v,_actor_id,_key,_hash','h2_permission_checks'),
-    ('admin_create_discount(jsonb,uuid,uuid)','jsonb','plpgsql','v',true,'7dd513dd43cbbdf7d3f108e4a7b900ad','_input,_request_key,_actor_id','h2_permission_checks'),
+    ('admin_create_discount(jsonb,uuid,uuid)','jsonb','plpgsql','v',true,'0ef7aa2b977e7aa65e85c3905193d590','_input,_request_key,_actor_id','h2_permission_checks'),
     ('admin_update_discount(uuid,jsonb,bigint,uuid,uuid)','jsonb','plpgsql','v',true,'3f13e111b9219e2d74d1e92aa13f0485','_discount_id,_patch,_expected_version,_request_key,_actor_id','h2_permission_checks'),
     ('admin_set_discount_stopped(uuid,boolean,bigint,uuid,uuid)','jsonb','plpgsql','v',true,'d87190dd7a80dd292a8b041960a516fc','_discount_id,_stopped,_expected_version,_request_key,_actor_id','h2_permission_checks'),
     ('admin_duplicate_discount(uuid,uuid,uuid)','jsonb','plpgsql','v',true,'140f3f8d38857ab190c21613ece62169','_discount_id,_request_key,_actor_id','h2_permission_checks'),

@@ -1120,7 +1120,7 @@ SQL/TSの目録は32件。H1の既存表DMLはpermissionsの2行登録、admin�
 
 ## グループ H Task 3: 管理・資格・割り当て表（controllerのDB確認待ち）
 
-確認日: 2026-10-29。[20261029130100_group_h_discounts_admin.sql](../../supabase/migrations/20261029130100_group_h_discounts_admin.sql) は83,509 bytes、MD5 `7e7f9b6b5969a80ddfc28f9357cc6b3e`（Task 4 fix round 1。`get_admin_discount` の rowId を最初の利用の reserved_at→id から作り、`admin_generate_discount_codes` は接頭辞が既存のどのコードとも同じなら CODE_CONFLICT にした。この2関数の本文MD5と末尾の assert の値は controller が再計算する）、UTF-8/BOMなし/LF/ASCII。Hの予約範囲内でH1の直後、他セッションの20261029140000以後の移行より前に並ぶ。本番未適用。H1の本文は変更していない。
+確認日: 2026-10-29。[20261029130100_group_h_discounts_admin.sql](../../supabase/migrations/20261029130100_group_h_discounts_admin.sql) は86,176 bytes、MD5 `a129e4f78e6be0ab774f341124ed54ab`（Task 5 fix round 1 で詳細の読取にコードの一覧を足し、作成の検査を直した。その前の Task 4 fix round 1。`get_admin_discount` の rowId を最初の利用の reserved_at→id から作り、`admin_generate_discount_codes` は接頭辞が既存のどのコードとも同じなら CODE_CONFLICT にした。この2関数の本文MD5と末尾の assert の値は controller が再計算する）、UTF-8/BOMなし/LF/ASCII。Hの予約範囲内でH1の直後、他セッションの20261029140000以後の移行より前に並ぶ。本番未適用。H1の本文は変更していない。
 
 private本体26・public入口13を追加する。全publicはSQL/INVOKER・service_roleだけEXECUTE、privateはpostgres所有/DEFINER/空search_path。全adminは最後の_actor_idからGの役割権限helperでread/manageを別々に検査し、JWT/aal/sessionを読まない。内部helperはservice_roleからも直接呼べない。書込はG共通→H目録→必要な本人→割引id昇順で直列化し、要求キーはH1のcreation列/admin_requestsへ保存する。新しい業務operation表を作らない。
 

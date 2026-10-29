@@ -32,6 +32,21 @@ const caught = async (promise: Promise<unknown>): Promise<AdminDiscountStoreErro
 beforeEach(() => { rpc.mockReset(); });
 
 describe('admin discount store', () => {
+  test('FREQ-547-AC-01: 詳細のcodesは必須で不正なコード情報を500にする', async () => {
+    for (const codes of [undefined, [{}], [{ codeId: code, code: 'AB', singleUse: 'false', audience: 'assigned', allowGuests: false, assignedUserId: null }]]) {
+      rpc.mockResolvedValueOnce({ data: { codes, discount: definition, used: false, assignmentTotal: 0, assignments: [], searchAttention: null }, error: null });
+      expect((await caught(getAdminDiscount(client, actor, id, 1))).status).toBe(500);
+    }
+  });
+
+  test('FREQ-547-AC-04: 初回の束もcreateの1回のRPCへ渡す', async () => {
+    rpc.mockResolvedValueOnce({ data: { discountId: id, version: '1', replayed: false }, error: null });
+    const initialBatch = { prefix: 'FRIEND', userIds: [], count: 2 };
+    await createAdminDiscount(client, actor, { ...input, method: 'code', codeMode: 'batch', initialBatch }, key);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('admin_create_discount', { _input: { ...candidate, method: 'code', initialBatch }, _request_key: key, _actor_id: actor });
+  });
+
   test('FREQ-547-AC-02: storeはSQLSTATEとmessageの組だけを分類し不正JSONは500にする', async () => {
     // 拒否表の全行: messageとSQLSTATEが揃った時だけ固定のコード・状態・文になる
     for (const [message, [sqlstate, status, text]] of Object.entries(GROUP_H_ERRORS)) {
@@ -64,7 +79,7 @@ describe('admin discount store', () => {
     // 不正JSONは500。別操作の戻り値（id違い）も成功にしない
     const bad: [() => Promise<unknown>, unknown[]][] = [
       [() => listAdminDiscounts(client, actor, {}, 1), [null, [], { total: 1 }, { total: 0, rows: [], extra: 1 }, { total: -1, rows: [] }, { total: 1, rows: [{ id }] }]],
-      [() => getAdminDiscount(client, actor, id, 1), [null, {}, { discount: definition }, { discount: { ...definition, id: uuid(77) }, used: false, assignmentTotal: 0, assignments: [], searchAttention: null }, { discount: { ...definition, version: '0' }, used: false, assignmentTotal: 0, assignments: [], searchAttention: null }, { discount: definition, used: false, assignmentTotal: 0, assignments: [{ ...assignment, status: 'weird' }], searchAttention: null }]],
+      [() => getAdminDiscount(client, actor, id, 1), [null, {}, { discount: definition }, { codes: [], discount: { ...definition, id: uuid(77) }, used: false, assignmentTotal: 0, assignments: [], searchAttention: null }, { codes: [], discount: { ...definition, version: '0' }, used: false, assignmentTotal: 0, assignments: [], searchAttention: null }, { codes: [], discount: definition, used: false, assignmentTotal: 0, assignments: [{ ...assignment, status: 'weird' }], searchAttention: null }]],
       [() => duplicateAdminDiscount(client, actor, id, key), [null, 'x', {}, { discountId: id, version: '1', replayed: false }, { discountId: uuid(9), version: 'x', replayed: false }, { discountId: uuid(9), version: '1' }]],
       [() => setAdminDiscountStopped(client, actor, id, true, '3', key), [{ discountId: uuid(9), version: '4', replayed: false }, { discountId: id, version: '4', replayed: 'no' }]],
       [() => assignAdminDiscount(client, actor, id, code, [uuid(5)], key), [{ discountId: id, changedCount: 2, replayed: false }, { discountId: id, changedCount: -1, replayed: false }, { discountId: uuid(9), changedCount: 1, replayed: false }]],
@@ -97,7 +112,7 @@ describe('admin discount store', () => {
     rpc.mockResolvedValueOnce({ data: { total: 1, rows: [{ id, name: '春', kind: 'set', method: 'code', status: 'active', startsAt: '2030-11-01T00:00:00+00:00', endsAt: null, usedCount: 2, usageLimit: 5, searchAttention: { openedAt: '2030-11-01T00:00:00+00:00', count: 1 } }] }, error: null });
     expect(await listAdminDiscounts(client, actor, { status: 'active', query: 'ab' }, 3)).toMatchObject({ total: 1 });
     expect(rpc).toHaveBeenLastCalledWith('list_admin_discounts', { _filters: { status: 'active', query: 'ab' }, _limit: 20, _offset: 40, _actor_id: actor });
-    const detail = { discount: definition, used: true, assignmentTotal: 1, assignments: [assignment], searchAttention: null };
+    const detail = { codes: [{ codeId: code, code: 'AB-1', singleUse: false, audience: 'assigned', allowGuests: false, assignedUserId: null }], discount: definition, used: true, assignmentTotal: 1, assignments: [assignment], searchAttention: null };
     rpc.mockResolvedValueOnce({ data: detail, error: null });
     expect(await getAdminDiscount(client, actor, id, 2)).toEqual(detail);
     expect(rpc).toHaveBeenLastCalledWith('get_admin_discount', { _discount_id: id, _assignment_limit: 20, _assignment_offset: 20, _actor_id: actor });
@@ -115,7 +130,7 @@ describe('admin discount store', () => {
 
   test('FREQ-547-AC-01: 割り当て表のrowIdと順序はDBの値のまま返す', async () => {
     const rows = ['usage:b:2', 'usage:a:9', 'plain'].map((rowId) => ({ ...assignment, rowId }));
-    rpc.mockResolvedValueOnce({ data: { discount: definition, used: true, assignmentTotal: 3, assignments: rows, searchAttention: null }, error: null });
+    rpc.mockResolvedValueOnce({ data: { codes: [], discount: definition, used: true, assignmentTotal: 3, assignments: rows, searchAttention: null }, error: null });
     expect((await getAdminDiscount(client, actor, id, 1)).assignments.map((r) => r.rowId)).toEqual(['usage:b:2', 'usage:a:9', 'plain']);
   });
 

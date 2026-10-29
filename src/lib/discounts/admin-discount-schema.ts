@@ -60,11 +60,18 @@ function definitionIssues(d: Definition): string[] {
   return issues;
 }
 
+const initialBatchSchema = z.object({
+  prefix: prefixSchema, userIds: uniqueUuids(0, MAX_DISCOUNT_BATCH), count: z.number().int().min(1).max(MAX_DISCOUNT_BATCH),
+}).strict().refine((b) => b.userIds.length === 0 || b.userIds.length === b.count);
+
 export const discountCreateInputSchema = z.object({
-  ...fields, code: codeSchema.nullable(), codeMode: z.enum(['shared', 'batch']),
+  ...fields, code: codeSchema.nullable(), codeMode: z.enum(['shared', 'batch']), initialBatch: initialBatchSchema.optional(),
 }).strict().superRefine((d, ctx) => {
   for (const path of definitionIssues(d)) ctx.addIssue({ code: 'custom', message: 'invalid', path: [path] });
-  // automaticはコードを持たない。使い捨ての束は作成後に /codes で作る。共有コードは必須。
+  // 初回の束は割引と同じトランザクションで作る。共有・自動には束を受け付けない。
+  const batch = d.method === 'code' && d.codeMode === 'batch';
+  if (batch !== (d.initialBatch !== undefined)) ctx.addIssue({ code: 'custom', message: 'initialBatch', path: ['initialBatch'] });
+  if (batch && d.initialBatch && ((d.audience === 'assigned') !== (d.initialBatch.userIds.length > 0))) ctx.addIssue({ code: 'custom', message: 'audience', path: ['audience'] });
   if (d.method === 'automatic' && d.code !== null) ctx.addIssue({ code: 'custom', message: 'code', path: ['code'] });
   if (d.method === 'code' && d.codeMode === 'shared' && d.code === null) ctx.addIssue({ code: 'custom', message: 'code', path: ['code'] });
   if (d.method === 'code' && d.codeMode === 'batch' && d.code !== null) ctx.addIssue({ code: 'custom', message: 'code', path: ['code'] });

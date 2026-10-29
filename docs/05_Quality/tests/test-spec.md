@@ -1,5 +1,23 @@
 # テスト仕様
 
+## グループH Task 5 DISCOUNTタブ・一覧・詳細・フォーム・会員の選択（2026-10-29）
+
+一覧は「使った回数」と「上限」を2列に分けた合計7列とする（controller受け入れ）。
+
+React Testing Libraryの単体試験。窓口（`clientFetch`）と画面の移動だけを差し替え、非okは読み切り（`arrayBuffer`）と閉じる（`body.cancel`）を数えられる作り物の応答で試験する。幅（390/768/1280px）・キーボード・実認可の成功・本番buildはTask 11でcontrollerが測り、RTLの成功とは区別する。
+
+| ファイル | 受入条件 | 期待と方法 |
+| --- | --- | --- |
+| `tests/unit/components/DiscountSection.test.tsx` | FREQ-547-AC-01・FREQ-543-AC-03 | 店長のタブがCONTACTの直後にDISCOUNT、supporterも同じ（4→5個）。開くと7列の表と状態・種類・効き方の絞り込み。未付与supporterの403は権限の文、付与後に開き直すと一覧、manageなしは「割引を作る」が出ない。割引名・作成から詳細・作成の頁へ移る |
+| `tests/unit/features/discounts/DiscountList.test.tsx` | FREQ-547-AC-01・FREQ-543-AC-03 | 7列・20行と頁数・3つの絞り込みと検索の問合せ・期間（日本時間と無期限）・空・取得失敗（500/429/503/401）の文と読み直す・403の権限の文（絞り込みも読み直すも出さず本文を閉じる）・計算の要対応の文と件数・manageだけの作成・続けた絞り込みで古い答えが上書きしない |
+| `tests/unit/features/discounts/DiscountAssignments.test.tsx` | FREQ-547-AC-03・AC-05・FREQ-543-AC-03 | 10人は10行・3つの状態・使った日・注文リンク・外すは未使用だけ・guestのマスク・退会/名前なし/未割り当て・頁送り・manageなし/読み直せない間は操作列なし・外すの連打は1回で同じ要求番号の再試行と成功後の新しい番号・401/403/409/429/503の文と読み切り |
+| `tests/unit/features/discounts/DiscountDetail.test.tsx` | FREQ-547-AC-01/02/05・FREQ-543-AC-03 | 設定の要約・止める/再開の期待版と連打・複製から新しい詳細へ・使用済みの説明・変更後に読み直せない時の停止・確認済みにする（manageだけ）・404/403/取得失敗・manageなし→付与後の頁送り/開き直しで操作・自動の割引は表なし・割り当てを足す窓（束は先頭の文字、共有はassign、×とEsc、二重送信、失敗の文） |
+| `tests/unit/features/discounts/DiscountForm.test.tsx` | FREQ-547-AC-02/04 | 既定値・種類別の必須欄と誤りの結び（円引きの最低額、セット2〜10点、リピートのA/B、共有コード、束の先頭の文字と1〜100）・先頭の文字だけをコードに見せない・assignedのguest固定・自動で人の割当欄なし・併用の拒否文を欄に結ぶ・窓口の送信の形・要求番号（再試行は同じ、入力を変えたら新しい）・使用後は許可した欄だけ編集（disabled）と差分だけのPATCH・複製後の新しいコード |
+| `tests/unit/features/discounts/DiscountMemberPicker.test.tsx` | FREQ-547-AC-05 | 2文字から300ms後に探す・追加と取り消し・続けた入力で前を止め古い応答を捨てる・401/403/429/503/500は読み切ってから文を出す・本文を読めない403はcancel・該当なし・100人まで |
+| `tests/unit/components/AdminSideNav.badges.test.tsx`・`AdminSettingsMenu.test.tsx`（変更） | FREQ-547-AC-01・FREQ-525-AC-01 | DISCOUNTをCONTACTの直後に並べた（店長13個、サポーター5個）。期待の並びだけを直し、他の期待は変えない |
+
+Task 5 fix round 1（Codex）: 共有コード＋割り当て0件はcodeIdでassign、束＋0件はcodes。共有コードの現在値、+00:00と秒未満の日時・itemIdsの順序を変えない編集、束のaudienceと会員の不整合のPOST前拒否、initialBatchを含む1回の作成と同じ要求番号の再試行、429/500/503の頁送り失敗時の頁・行の保持と読み直し、窓のTabとフォーカス復帰、409後の読取失敗の文・使用済み409での読取を単体で確かめる。`DiscountFormScreen.test.tsx`で新規作成のmanage確認と失敗後の再読取、`discount-admin-client.test.ts`で実物のResponse/ReadableStreamの401/403/429/503の読了を確かめる。DB試験にはcodesと初回の束の一括保存・拒否時のロールバック・再送を追加するが、controller実行待ち。
+
 ## グループH Task 4 管理API・store・入力と監査（2026-10-29）
 
 mockしたDB（RPC）に対するTypeScript単体試験。認可の実装（`authorizeAdminPermission`）は丸ごとmockせず、その下のトークン検証・session生存・ACL照会と、CSRF・回数制限・DB・監査の各依存を記録して順序を検証する。DBの実行、PostgREST、E2Eはcontroller担当（Task 11）。実装者の実測は jest・tsc・eslint まで。

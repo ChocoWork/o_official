@@ -107,7 +107,7 @@ for (const viewport of viewports) {
 
       const navButtons = page.getByRole('navigation', { name: '管理メニュー' }).getByRole('button');
       // INVENTORY（在庫一覧表・発注一覧表への入口。G-2）は ORDER の次、PACKING（荷作り表。G-3）は INVENTORY の次、CONTACT（問い合わせ。FR-ADMIN-009）は PACKING の次、SETTINGS（ショップの設定）は店長のメニューの最後（グループ E-2）
-      await expect(navButtons).toHaveText(['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'INVENTORY', 'PACKING', 'CONTACT', 'SETTINGS']);
+      await expect(navButtons).toHaveText(['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'INVENTORY', 'PACKING', 'CONTACT', 'DISCOUNT', 'SETTINGS']);
     });
 
     test('KPI タブのサブタブから「コスト & 利益」が消える', async ({ page }) => {

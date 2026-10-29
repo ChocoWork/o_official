@@ -32,8 +32,10 @@ export const GROUP_H_TEXT = {
 /** 保存前の有効数検査が返す固定コード。DB の同名コードと文が一致する。 */
 export type DiscountActivationCode = 'GROUP_H_AUTOMATIC_LIMIT' | 'GROUP_H_STACKABLE_AUTOMATIC_LIMIT' | 'GROUP_H_STACKABLE_SET_ITEM_CONFLICT';
 
-export type DiscountCreateInput = Omit<DiscountDefinition, 'id' | 'version'> & { code: string | null; codeMode: 'shared' | 'batch' };
-export type DiscountPatch = Partial<Omit<DiscountCreateInput, 'codeMode'>> | { acknowledgeSearchAttention: true };
+export type DiscountCreateInput = Omit<DiscountDefinition, 'id' | 'version'> & {
+  code: string | null; codeMode: 'shared' | 'batch'; initialBatch?: { prefix: string; userIds: string[]; count: number };
+};
+export type DiscountPatch = Partial<Omit<DiscountCreateInput, 'codeMode' | 'initialBatch'>> | { acknowledgeSearchAttention: true };
 export type DiscountListStatus = 'scheduled' | 'active' | 'expired' | 'stopped';
 export type DiscountFilters = { status?: DiscountListStatus; kind?: DiscountKind; method?: DiscountMethod; query?: string };
 export type DiscountSearchAttention = { openedAt: string; count: number };
@@ -46,7 +48,11 @@ export type DiscountAssignmentRow = {
   guestEmailMasked: string | null; status: 'unused' | 'reserved' | 'confirmed'; usedAt: string | null; orderId: string | null;
 };
 export type DiscountPermissions = { read: boolean; manage: boolean };
+export type AdminDiscountCode = {
+  codeId: string; code: string; singleUse: boolean; audience: 'assigned' | 'anyone'; allowGuests: boolean; assignedUserId: string | null;
+};
 export type AdminDiscountDetail = {
+  codes: AdminDiscountCode[];
   discount: DiscountDefinition; used: boolean; assignmentTotal: number; assignments: DiscountAssignmentRow[];
   searchAttention: DiscountSearchAttention | null; permissions: DiscountPermissions;
 };

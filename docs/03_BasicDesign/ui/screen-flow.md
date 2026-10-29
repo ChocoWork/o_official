@@ -1,5 +1,7 @@
 # 画面遷移図
 
+> H Task 5 確認日: 2026-10-29。割引の管理で3ルート（`/admin/discounts/new`・`/admin/discounts/[id]`・`/admin/discounts/[id]/edit`）を足し、画面は50ルートになった。導線は末尾の「割引の管理からの導線（H Task 5）」に示す。本文の数え直しは行わない。
+
 > 波 4 確認日: 2026-10-28。画面ルートの数は変えない（47ルート）。`/admin` の CONTACT タブ（同じルート内の表示）を足し、LOOK の「新規作成」から `/admin/look/create` への遷移を権限（`meta.canManage`）で出す形にした。`/admin/stockist/create` は開いた時に `GET /api/admin/stockists/access` で権限を確かめてからフォームを出す。
 
 > G-4 Task 8 確認日: 2026-10-27。画面ルートの数は変えない（47ルート）。荷作り表の注文IDと発送票の頁の注文番号から注文の詳細へ移る導線を、末尾の「荷作り表・発送票からの導線（G-4 Task 8）」に追加した。荷作り表から注文の履歴を dialog で開く導線は撤去した。
@@ -456,3 +458,23 @@ flowchart TD
   D -->|荷作り表を開く| P
   D -->|変更履歴の欄| H["/admin/orders/[id]#order-history"]
 ```
+
+## 割引の管理からの導線（H Task 5 / FREQ-547）
+
+確認日: 2026-10-29。DISCOUNTタブは CONTACT の直後に出る。一覧の絞り込み・検索・頁送りは同じルートの状態で、URLは変わらない。詳細の止める・再開・割り当て・外す・確認済みは同じ画面の中で行い、成功すると詳細を読み直す。
+
+```mermaid
+flowchart TD
+  A["/admin（DISCOUNT タブ。割引の一覧）"] -->|割引名| D["/admin/discounts/[id]（割引の詳細）"]
+  A -->|割引を作る（manage）| N["/admin/discounts/new（割引の作成）"]
+  D -->|一覧に戻る| A
+  D -->|編集（manage）| E["/admin/discounts/[id]/edit（割引の編集）"]
+  D -->|複製（manage）| D2["/admin/discounts/[新しいid]（停止中の詳細）"]
+  D -->|注文を見る| O["/admin/orders/[id]（注文の詳細）"]
+  N -->|保存成功| D
+  E -->|保存成功| D
+  D -->|割り当てを足す| W["会員を選ぶ窓（同じ画面の上）"]
+  W -->|割り当てる・閉じる| D
+```
+
+[タブ単体](../../../tests/unit/components/DiscountSection.test.tsx)・[一覧単体](../../../tests/unit/features/discounts/DiscountList.test.tsx)・[詳細単体](../../../tests/unit/features/discounts/DiscountDetail.test.tsx)・[フォーム単体](../../../tests/unit/features/discounts/DiscountForm.test.tsx)。幅（390/768/1280px）とキーボードの実測はTask 11。

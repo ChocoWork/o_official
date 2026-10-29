@@ -8,7 +8,7 @@ import { hDiscount, hRpc, hFailure, seedHMember, seedHRedemption, seedHDiscount 
 type Created = { discountId: string; version: string; replayed: boolean };
 type Assignment = { rowId: string; codeId: string; code: string; userId: string | null; assigneeDeleted: boolean;
   assigneeName: string | null; guestEmailMasked: string | null; status: string; usedAt: string | null; orderId: string | null };
-type Detail = { discount: { id: string; version: string; stopped: boolean }; used: boolean;
+type Detail = { codes: { codeId: string; code: string; singleUse: boolean; audience: string; allowGuests: boolean; assignedUserId: string | null }[]; discount: { id: string; version: string; stopped: boolean }; used: boolean;
   assignmentTotal: number; assignments: Assignment[]; searchAttention: { openedAt: string; count: number } | null };
 
 describeLocalDb('H2 admin writers and snapshot reads (controller only)', (db) => {
@@ -16,8 +16,43 @@ describeLocalDb('H2 admin writers and snapshot reads (controller only)', (db) =>
   let actor: string;
   beforeEach(async () => { await db().query('begin'); await db().query('select pg_advisory_xact_lock(190521,1)'); actor = await flow.manager(); });
   afterEach(async () => { await db().query('rollback'); });
-  const create = (input = hDiscount(), key = randomUUID()) => hRpc<Created>(db(), 'admin_create_discount', [input, key, actor]);
+  const create = (input: ReturnType<typeof hDiscount> & { initialBatch?: { prefix: string; userIds: string[]; count: number } } = hDiscount(), key = randomUUID()) => hRpc<Created>(db(), 'admin_create_discount', [input, key, actor]);
   const detail = (id: string, limit = 20, offset = 0) => hRpc<Detail>(db(), 'get_admin_discount', [id, limit, offset, actor]);
+
+  test('FREQ-547-AC-01: 詳細は割り当て0件でもコード設定を返し、頁に依存しない', async () => {
+    const code = `SHARED-${randomUUID().toUpperCase()}`;
+    const shared = await create(hDiscount({ code, audience: 'assigned', allowGuests: false }));
+    const read = await detail(shared.discountId);
+    expect(read.assignmentTotal).toBe(0);
+    expect(read.assignments).toEqual([]);
+    expect(read.codes).toEqual([{ codeId: expect.any(String), code, singleUse: false, audience: 'assigned', allowGuests: false, assignedUserId: null }]);
+    expect((await detail(shared.discountId, 1, 20)).codes).toEqual(read.codes);
+    const member = await seedHMember(db());
+    const batch = await create({ ...hDiscount({ audience: 'assigned' }), initialBatch: { prefix: 'MEMBER', userIds: [member], count: 1 } });
+    expect((await detail(batch.discountId)).codes).toEqual([{ codeId: expect.any(String), code: expect.stringMatching(/^MEMBER-/), singleUse: true, audience: 'assigned', allowGuests: false, assignedUserId: member }]);
+  });
+
+  test('FREQ-547-AC-04: 初回の束と割引は原子的に作り、生成拒否なら作成も残らず同じキーで再試行できる', async () => {
+    const prefix = `ATOMIC-${randomUUID().slice(0, 8).toUpperCase()}`;
+    await create(hDiscount({ code: prefix }));
+    const key = randomUUID();
+    const input = { ...hDiscount(), initialBatch: { prefix, userIds: [], count: 2 } };
+    expect(await hFailure(db(), () => create(input, key))).toEqual({ code: '23505', message: 'GROUP_H_CODE_CONFLICT' });
+    expect((await db().query('select count(*)::int n from public.discounts where creation_request_key=$1', [key])).rows[0].n).toBe(0);
+    const retry = { ...input, initialBatch: { prefix: `${prefix}-OK`, userIds: [], count: 2 } };
+    const made = await create(retry, key);
+    expect((await detail(made.discountId)).codes).toHaveLength(2);
+    expect(await create(retry, key)).toEqual({ ...made, replayed: true });
+    expect((await detail(made.discountId)).codes).toHaveLength(2);
+    for (const patch of [
+      { audience: 'assigned' as const, initialBatch: { prefix: 'BAD', userIds: [], count: 1 } },
+      { audience: 'anyone' as const, initialBatch: { prefix: 'BAD', userIds: [await seedHMember(db())], count: 1 } },
+    ]) {
+      const invalidKey = randomUUID();
+      expect(await hFailure(db(), () => create({ ...hDiscount(), ...patch }, invalidKey))).toEqual({ code: '22023', message: 'GROUP_H_ARGUMENT_INVALID' });
+      expect((await db().query('select count(*)::int n from public.discounts where creation_request_key=$1', [invalidKey])).rows[0].n).toBe(0);
+    }
+  });
 
   test('FREQ-547-AC-02: 作成と複製と停止と解除も元の結果を再送しactorや操作が違う要求キーを拒む', async () => {
     const input = hDiscount({ audience: 'assigned', code: `REPLAY-${randomUUID().toUpperCase()}` }); const createKey = randomUUID();

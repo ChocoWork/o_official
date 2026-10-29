@@ -14,6 +14,7 @@ import ItemSection from '@/components/ItemSection';
 import LookSection from '@/components/LookSection';
 import StockistSection from '@/components/StockistSection';
 import ContactSection from '@/components/ContactSection';
+import DiscountSection from '@/components/DiscountSection';
 import UserSection from '@/components/UserSection';
 import ShopSettingsSection from '@/components/ShopSettingsSection';
 import { BannerAlert } from '@/components/ui/BannerAlert/BannerAlert';
@@ -28,8 +29,9 @@ type ForbiddenErrorBody = {
 // INVENTORY（在庫一覧表・発注一覧表への入口）と PACKING（荷作り表への入口）は店長とサポートの人の両方に同じ中身を出す。権限の無い人が開いた先は、各頁の権限の文（窓口と DB が守る）
 // ORDER（注文一覧表への入口。G-4）も同じ。注文の一覧・要対応の欄・各操作は /admin/orders と /admin/orders/[id] にある
 // CONTACT（問い合わせの一覧・返信。FR-ADMIN-009）も店長とサポートの人の両方に出す。権限の無い人は窓口（admin.contact.read/manage）が 403 を返す
-const allAdminTabs: TabType[] = ['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'INVENTORY', 'PACKING', 'CONTACT', 'SETTINGS'];
-const supporterTabs: TabType[] = ['ORDER', 'INVENTORY', 'PACKING', 'CONTACT'];
+// DISCOUNT（割引の一覧。グループ H / FREQ-547）も CONTACT の直後に両方へ出す。権限の無い人（サポートの人の初期）は一覧が権限の文を出し、窓口（admin.discounts.read）が 403 を返す
+const allAdminTabs: TabType[] = ['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'INVENTORY', 'PACKING', 'CONTACT', 'DISCOUNT', 'SETTINGS'];
+const supporterTabs: TabType[] = ['ORDER', 'INVENTORY', 'PACKING', 'CONTACT', 'DISCOUNT'];
 
 function AdminPageContent() {
   const { isLoggedIn, isAuthResolved, userRole, isMfaVerified } = useLogin();
@@ -251,6 +253,8 @@ function AdminPageContent() {
         );
       case 'CONTACT':
         return <ContactSection />;
+      case 'DISCOUNT':
+        return <DiscountSection />;
       default:
         return null;
     }

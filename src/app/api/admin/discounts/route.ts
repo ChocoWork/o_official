@@ -12,7 +12,8 @@ export async function POST(request: Request): Promise<Response> {
   return handleDiscountWrite(request, null, {
     label: 'POST /api/admin/discounts', action: 'admin.discounts.create', withId: false, status: 201, schema: createBodySchema,
     run: (client, actorId, _id, body) => createAdminDiscount(client, actorId, body.input, body.requestKey),
+    codesLimitForBody: (body) => body.input.initialBatch !== undefined,
     resultId: (result) => result.discountId,
-    audit: (result) => ({ replayed: result.replayed }),
+    audit: (result, body) => ({ replayed: result.replayed, ...(body.input.initialBatch ? { generated_count: body.input.initialBatch.count } : {}) }),
   });
 }

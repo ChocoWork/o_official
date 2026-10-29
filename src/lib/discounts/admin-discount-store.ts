@@ -83,6 +83,10 @@ const assignmentSchema = z.object({
   usedAt: timestamp.nullable(), orderId: uuid.nullable(),
 }).strict();
 const detailSchema = z.object({
+  codes: z.array(z.object({
+    codeId: uuid, code: z.string().min(1), singleUse: z.boolean(), audience: z.enum(['assigned', 'anyone']),
+    allowGuests: z.boolean(), assignedUserId: uuid.nullable(),
+  }).strict()),
   discount: definitionSchema, used: z.boolean(), assignmentTotal: count,
   assignments: z.array(assignmentSchema).max(DISCOUNT_PAGE_SIZE), searchAttention: attentionSchema,
 }).strict();

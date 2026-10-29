@@ -9,7 +9,7 @@ import { NO_STORE_CACHE_CONTROL } from '@/lib/http/no-store';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { parseDiscountDetailQuery, parseDiscountListQuery, parseDiscountMemberQuery, uuidSchema } from './admin-discount-schema';
 import { AdminDiscountStoreError, getAdminDiscount, listAdminDiscounts, searchAdminDiscountMembers } from './admin-discount-store';
-import type { DiscountPermissions } from './admin-discount-types';
+import type { AdminDiscountDetail, DiscountPermissions } from './admin-discount-types';
 
 export type DiscountContext = { params: Promise<{ id: string }> };
 export type DiscountAuditAction =
@@ -69,7 +69,8 @@ export async function handleDiscountDetail(request: Request, context: DiscountCo
     const query = parseDiscountDetailQuery(new URL(request.url).searchParams);
     if (!id.success || !query) throw invalid();
     const detail = await getAdminDiscount(await createServiceRoleClient(), authz.userId, id.data, query.page);
-    return json({ data: { ...detail, permissions: permissionsOf(authz.permissions) } }, 200);
+    const data: AdminDiscountDetail = { ...detail, permissions: permissionsOf(authz.permissions) };
+    return json({ data }, 200);
   } catch (error) {
     const failure = asStoreError(error);
     logUnexpected('GET /api/admin/discounts/[id]', failure);
@@ -102,6 +103,7 @@ export type DiscountWriteSpec<B, R> = {
   withId: boolean;
   /** codes の追加制限（admin.discounts.codes）。 */
   codesLimit?: boolean;
+  codesLimitForBody?: (body: B) => boolean;
   schema: z.ZodType<B>;
   status: 200 | 201;
   run: (client: SupabaseClient, actorId: string, id: string | null, body: B) => Promise<R>;
@@ -140,6 +142,10 @@ export async function handleDiscountWrite<B, R>(request: Request, context: Disco
     }
     const body = spec.schema.safeParse(await request.json().catch(() => null));
     if (!body.success) throw invalid();
+    if (spec.codesLimitForBody?.(body.data)) {
+      const limitedCodes = await limitIpAndActor(request, 'admin.discounts.codes', 10, authz.userId);
+      if (limitedCodes) return limitedCodes;
+    }
     const result = await spec.run(await createServiceRoleClient(), authz.userId, discountId, body.data);
     // 書込みは済んでいる。監査の障害で成功を500に変えない（logAudit自身も例外を握る）。
     await audit('success', spec.resultId ? spec.resultId(result) : discountId, spec.audit(result, body.data)).catch(() => {});

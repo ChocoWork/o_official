@@ -21,6 +21,7 @@ const TAB_ICONS: Record<TabType, string> = {
   INVENTORY: "ri-archive-line",
   PACKING: "ri-box-3-line",
   CONTACT: "ri-mail-line",
+  DISCOUNT: "ri-price-tag-3-line",
   SETTINGS: "ri-settings-3-line",
 };
 

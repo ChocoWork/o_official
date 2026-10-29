@@ -57,7 +57,7 @@ const defaultRpc = (name: string): { data: unknown; error: null } => {
     case 'admin_unassign_discount': return { data: { discountId: id, changedCount: 1, replayed: false }, error: null };
     case 'admin_generate_discount_codes': return { data: { discountId: id, batchId: uuid(8), replayed: false, codes: [{ codeId, code: 'SECRETCODE-2345', userId: null }, { codeId: uuid(7), code: 'SECRETCODE-6789', userId: null }] }, error: null };
     case 'list_admin_discounts': return { data: { total: 0, rows: [] }, error: null };
-    case 'get_admin_discount': return { data: { discount: definition, used: false, assignmentTotal: 1, assignments: [assignmentRow], searchAttention: null }, error: null };
+    case 'get_admin_discount': return { data: { codes: [{ codeId, code: 'SHARED', singleUse: false, audience: 'assigned', allowGuests: false, assignedUserId: null }], discount: definition, used: false, assignmentTotal: 1, assignments: [assignmentRow], searchAttention: null }, error: null };
     case 'search_admin_discount_members': return { data: { rows: [{ userId: user1, name: null, email: 'member@example.test' }] }, error: null };
     default: throw new Error(`unexpected rpc ${name}`);
   }
@@ -105,6 +105,31 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 describe('admin discount routes', () => {
+  test('FREQ-547-AC-01: 詳細のcodesと割り当て0件をそのまま返す', async () => {
+    const data = { ...defaultRpc('get_admin_discount').data as object, assignmentTotal: 0, assignments: [] };
+    rpcImpl.mockResolvedValueOnce({ data, error: null });
+    const response = await detailGet(new Request(url(`/${id}`)), ctx());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ data: { ...data, permissions: { read: true, manage: true } } });
+  });
+
+  test('FREQ-547-AC-04: 初回の束は追加制限の後createの1回のRPCへ渡し生成件数だけを監査する', async () => {
+    const initialBatch = { prefix: 'FRIEND', userIds: [], count: 2 };
+    const input = { ...candidate, method: 'code', codeMode: 'batch', code: null, initialBatch };
+    const response = await createPost(new Request(url(), { method: 'POST', body: JSON.stringify({ input, requestKey: key }) }));
+    expect(response.status).toBe(201);
+    expect(seq).toEqual(['auth', 'csrf', 'admin.discounts.write:ip', 'admin.discounts.write:actor', 'admin.discounts.codes:ip', 'admin.discounts.codes:actor', 'rpc:admin_create_discount', 'audit']);
+    expect(rpcImpl).toHaveBeenCalledTimes(1);
+    expect(rpcImpl).toHaveBeenCalledWith('admin_create_discount', { _input: { ...candidate, method: 'code', initialBatch }, _request_key: key, _actor_id: ACTOR });
+    expect(mockAudit).toHaveBeenLastCalledWith(expect.objectContaining({ metadata: { replayed: false, generated_count: 2 } }));
+    const audit = JSON.stringify(mockAudit.mock.calls);
+    expect(audit).not.toContain('FRIEND');
+    rpcImpl.mockClear();
+    const invalid = await createPost(new Request(url(), { method: 'POST', body: JSON.stringify({ input: { ...input, audience: 'assigned' }, requestKey: key }) }));
+    expect(invalid.status).toBe(400);
+    expect(rpcImpl).not.toHaveBeenCalled();
+  });
+
   test('FREQ-543-AC-01: routeは結付いたaal1を403、失効・期限切れのapp sessionを401、確認不能を503で拒否してRPCを呼ばない', async () => {
     // 認可の実装は本物。aal1(結び付いた session)は403 MFA、aal2でも失効/期限切れは401・確認不能は503で、RPCもCSRFも通らない。
     // (失効を403にするのは誤り: authorizeAdminPermissions は失効を401、確認不能を503にする)

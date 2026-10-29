@@ -1133,3 +1133,23 @@ G-1 で止めた旧い発送の入口の案内を、G-3 の発送票へ向ける
 | LOOK の「新規作成」 | `tabRightContent` の `case 'LOOK'`（役で出していた右上の「新規作成」）を削除した。`LookSection` が `GET /api/admin/looks` の `meta.canManage`（成功した認可の権限の集合に `admin.looks.manage` が入るか）が true の時だけ、一覧の上（0件の表示の上も）に「新規作成」（`/admin/look/create`）を出す。窓口は認可を1回に減らした（`AuthzSuccess.permissions` を使う） |
 | 取扱店の作成の頁 | `/admin/stockist/create` は開いた時に `GET /api/admin/stockists/access`（権限 `admin.stockists.manage`）を呼び、通るまで「読み込み中...」、204でフォームを出す。401・403・それ以外は固定の1行を出してフォームは出さない（DD-STOCKIST-040、[16-4_admin_stockist.md](16-4_admin_stockist.md)）。取扱店の編集の頁は同じ確かめを持たない（残り。ruling 10） |
 | 試験 | 単体 [AdminSettingsMenu](../../../tests/unit/components/AdminSettingsMenu.test.tsx)（CONTACT のタブ）・[look-section](../../../tests/unit/components/look-section.test.tsx)・[looks-get-route](../../../tests/unit/api/admin/looks/looks-get-route.test.ts)、結合 [look-admin-list-screen](../../../tests/integration/ui/look-admin-list-screen.test.tsx)、E2E `FR-ADMIN-029`（店長のメニューに CONTACT）・`FR-ADMIN-MISC-006`（FR-ADMIN-009-AC-01・AC-05）・`FR-LOOK-SEC-003`（SEC-LOOK-019-AC-04）。本番ビルドの E2E は controller の実行待ち |
+
+## 割引の管理画面（H Task 5 / FREQ-547・FREQ-543-AC-03）
+
+確認日: 2026-10-29。DISCOUNT タブと、一覧・詳細・作成・編集・会員の選択。窓口は Task 4（`/api/admin/discounts/**`）。権限は `admin.discounts.read`（見る）と `admin.discounts.manage`（作る・変える・止める・割り当てる）で、画面は応答の `permissions.manage` で操作を出し分けるが、守りは窓口とDB。
+
+| 項目 | 内容 |
+| --- | --- |
+| タブの並び | 店長は KPI・ACCOUNTING・NEWS・ITEM・LOOK・STOCKIST・USER・ORDER・INVENTORY・PACKING・CONTACT・DISCOUNT・SETTINGS の13個。サポーターは ORDER・INVENTORY・PACKING・CONTACT・DISCOUNT の5個。`allAdminTabs`・`supporterTabs` の CONTACT の次に足した。印は `ri-price-tag-3-line`。役割名でH権限を補わず、未付与のサポーターは一覧が「割引を見る権限がありません。」を出す |
+| 一覧（`DiscountList`） | 7列（割引名・種類・効き方・状態・期間・使った回数・上限）を20件ずつ。状態（予定・有効・期限切れ・止めた）・種類・効き方の絞り込みと、名前とコードの検索（「探す」）。空は「割引はありません。」、失敗は「割引を読み込めませんでした。」＋「読み直す」、403は「割引を見る権限がありません。」。計算の要対応は「割引の計算を確認してください。（N件）」をread権限にも出す。読みは最後に始めた物の答えだけを使い、非okの本文は読み切る |
+| 詳細（`DiscountDetail`） | 設定の要約。manage権限の人だけ「止める」「再開する」（期待版と要求番号。連打・再試行は同じ番号）、「複製」（停止中の新しい詳細へ移動。新しいコードを設定してから再開。複製はコードを写さないので編集にコード欄が出る。「誰でも」の束の複製も画面からは共有コードを付ける形になる）、「編集」、「割り当てを足す」（使い捨ての束は先頭の文字と会員、共有コードがあれば割り当て0件でも会員だけ（codesのsingleUse=falseとcodeIdで判断））、「確認済みにする」。変更後に読み直せない時は「変更しましたが、最新の情報を読み込めませんでした。」を出して操作を止め、「読み直す」で戻す |
+| 割り当ての表（`DiscountAssignments`） | コード・割り当てた人・状態・使った日・注文。状態は 未使用／使用済み（入金待ち）／使用済み。「外す」は未使用の行だけ。guestは伏せたメールのみ。注文は `/admin/orders/[id]` のLink。20行ずつ |
+| フォーム（`DiscountForm`） | 種類5つ・コード／自動・率／円・対象の服（全部／除く／選ぶ）・最低条件・使える人・ログインしていない人・初回・全体の回数・1人1回・開始／終了（日本時間）・併用2つ・リピートA／B・前もって知らせる／案内文。既定は会員だけ・併用なし・広告なし・セットは自動。使用後は名前・期間・回数の上限・前もって知らせる・案内文だけ（C12）。セットの組数を選ぶ欄は作らない（C22）。誤りは欄ごとに結び、保存の失敗は live region に出す |
+| 会員の選択（`DiscountMemberPicker`） | 2文字から、入力が止まって300msで探す。20人まで・選べるのは100人まで。`AbortController` で前の検索を止め、古い応答は捨てる |
+| 試験 | 単体 [DiscountSection](../../../tests/unit/components/DiscountSection.test.tsx)・[DiscountList](../../../tests/unit/features/discounts/DiscountList.test.tsx)・[DiscountDetail](../../../tests/unit/features/discounts/DiscountDetail.test.tsx)・[DiscountForm](../../../tests/unit/features/discounts/DiscountForm.test.tsx)・[DiscountAssignments](../../../tests/unit/features/discounts/DiscountAssignments.test.tsx)・[DiscountMemberPicker](../../../tests/unit/features/discounts/DiscountMemberPicker.test.tsx)。幅・キーボード・実認可はTask 11 |
+
+Task 5 fix round 1（2026-10-29）: 一覧は「使った回数」と「上限」を2列に分け、合計7列とする（controller受け入れ）。詳細のcodesは割り当て表の頁に関わらず返し、編集で現在の共有コードを表示する。新規の束は使える人と会員の組を送信前に検査し、initialBatch（prefix・userIds・count）を割引と同じPOST・同じDBトランザクションで保存する。生成失敗なら割引も残さず、同じ要求番号・同じ入力で再試行する。新規画面も一覧GETのpermissions.manageを確認する。
+
+割り当て表は取得成功時だけ頁と行を更新する。取得中はaria-busyと状態の文、失敗は「割り当てを読み込めませんでした。」と「読み直す」を出す。使用済みの409は表を読み直す。409後の読取失敗は「最新の情報を読み込めませんでした。」とし、成功後の文と分ける。窓のTabを閉じ込め、閉じると入口へ、入口が消えた時は詳細の見出しへフォーカスを戻す。日時は瞬間で比べ、表示の分を変えなければDBの秒・秒未満を保つ。
+
+対象の服の選択には現状admin.items.readも必要。admin.discounts.manageを付与する際に併せて確認する。割引専用の服一覧APIへの変更は本修正の対象外。

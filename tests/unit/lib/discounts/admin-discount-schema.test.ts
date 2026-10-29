@@ -92,7 +92,10 @@ describe('admin discount schema', () => {
     expect(ok({ ...base, advertise: true, advertisingText: '全品10%オフ' })).toBe(true);
     // コード: 共有は必須、自動と束は持たない。形式と大文字化
     expect(ok({ ...code, code: null })).toBe(false);
-    expect(ok({ ...code, code: null, codeMode: 'batch' })).toBe(true);
+    expect(ok({ ...code, code: null, codeMode: 'batch' })).toBe(false);
+    expect(ok({ ...code, code: null, codeMode: 'batch', initialBatch: { prefix: 'TEST', userIds: [], count: 1 } })).toBe(true);
+    expect(ok({ ...code, code: null, codeMode: 'batch', audience: 'assigned', initialBatch: { prefix: 'TEST', userIds: [], count: 1 } })).toBe(false);
+    expect(ok({ ...code, code: null, codeMode: 'batch', initialBatch: { prefix: 'TEST', userIds: ['00000000-0000-4000-8000-000000000001'], count: 1 } })).toBe(false);
     expect(ok({ ...code, codeMode: 'batch' })).toBe(false);
     expect(ok({ ...base, code: 'SPRING' })).toBe(false);
     expect(ok({ ...code, code: 'bad code' })).toBe(false);
