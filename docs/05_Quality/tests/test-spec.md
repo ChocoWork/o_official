@@ -1,5 +1,15 @@
 # テスト仕様
 
+## グループH Task 4 管理API・store・入力と監査（2026-10-29）
+
+mockしたDB（RPC）に対するTypeScript単体試験。認可の実装（`authorizeAdminPermission`）は丸ごとmockせず、その下のトークン検証・session生存・ACL照会と、CSRF・回数制限・DB・監査の各依存を記録して順序を検証する。DBの実行、PostgREST、E2Eはcontroller担当（Task 11）。実装者の実測は jest・tsc・eslint まで。
+
+| ファイル | 受入条件 | 期待と方法 |
+| --- | --- | --- |
+| `tests/unit/api/admin/discount-routes.test.ts` | FREQ-543-AC-01/02・FREQ-547-AC-04 | 全11メソッドで、結付いたaal1は403、失効・期限切れのapp sessionは401、確認不能は503、不正トークンは401、権限不足は403で、RPC・CSRF・制限・監査を呼ばない。writeの順序（認可→CSRF→IP→actor→入力→RPC→監査、codesは追加制限、IPは request を渡して getClientIp に任せる）と途中拒否、本文のactor偽装/未知キーの400、拒否表15行の本文と監査の結果コード（HTTP 500の固定コードはoutcome error、4xxはfailure）、複製の成功の監査は新しい割引のid、未知の500と秘密の非露出、監査障害でも成功を変えない。readの200/400/403/404/500の全応答no-storeで監査を呼ばない（10.1）、読取の回数制限なし、会員検索のIP60/actor60と順序、共有コードの作成・更新・再開の再送は初回確定後に目録が拒否する本物の順番でも201/200で同じ本文 |
+| `tests/unit/lib/discounts/admin-discount-schema.test.ts` | FREQ-547-AC-01/02/04 | 円引き・率・set・batch・prefix・guest+assignedの境界、patchの空/未知キー/stopped/制御patch、bigint文字列、query、保存前の有効数検査（25件・分類６件・セット共有item・期間±1ms・終わった期間と停止中を数えない・DB409本文と同じ固定コード/文） |
+| `tests/unit/lib/discounts/admin-discount-store.test.ts` | FREQ-547-AC-01/02/04/05 | 拒否表全行のSQLSTATE+message分類（別SQLSTATE/details/hintでは公開しない）、不正JSONと別操作の戻り値は500、RPC名と引数、create/update/resumeは目録を読まずwriterだけを呼ぶ、初回確定後の再送は目録（CODE_CONFLICT・有効数・共有item・使用後固定）が拒否しても元の結果、writerの固定コードと未知の失敗(500)はそのまま、保存前の確認(dry-run)の有効数の拒否、束の戻り値の突合 |
+
 ## グループH Task 2 純粋エンジン（2026-10-29）
 
 I/OなしのTypeScript単体試験。時刻/購入済み着数/利用回数/本人は引数だけを使う。DBによる履歴生成、保存時の期間重複拒否、呼出元のログ/要対応、決済との接続は後続Taskで検証する。

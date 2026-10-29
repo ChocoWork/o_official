@@ -374,8 +374,8 @@ BEGIN
   IF v_discount.method<>'code' OR (_user_ids IS NULL AND v_discount.audience<>'anyone')
     OR EXISTS(SELECT 1 FROM public.discount_codes AS c WHERE c.discount_id=_discount_id AND NOT c.single_use) THEN
     RAISE EXCEPTION 'GROUP_H_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
-  -- The prefix alone must never be a valid code, so no shared code may already equal it.
-  IF EXISTS(SELECT 1 FROM public.discount_codes AS c WHERE NOT c.single_use AND c.code=_prefix) THEN
+  -- The prefix alone must never be a valid code, so no code at all (shared or another batch's) may already equal it.
+  IF EXISTS(SELECT 1 FROM public.discount_codes AS c WHERE c.code=_prefix) THEN
     RAISE EXCEPTION 'GROUP_H_CODE_CONFLICT' USING ERRCODE='23505'; END IF;
   FOR v_i IN 1.._count LOOP
     v_user := CASE WHEN _user_ids IS NULL THEN NULL ELSE _user_ids[v_i] END;
@@ -464,8 +464,9 @@ BEGIN
       pg_catalog.row_number() OVER (PARTITION BY r.code_id,r.person
         ORDER BY CASE WHEN r.state IN ('reserved','confirmed') THEN 0 ELSE 1 END,
           COALESCE(r.confirmed_at,r.reserved_at) DESC,r.id DESC) AS rank,
-      -- The row id comes from a redemption id, never from a hash of the person's email.
-      pg_catalog.first_value(r.id) OVER (PARTITION BY r.code_id,r.person ORDER BY r.id) AS first_redemption_id
+      -- The row id comes from the person's earliest redemption (reserved_at, then id), never from a hash of the person's email
+      -- and never from the smallest uuid, so a later redemption cannot change the id of an existing row.
+      pg_catalog.first_value(r.id) OVER (PARTITION BY r.code_id,r.person ORDER BY r.reserved_at,r.id) AS first_redemption_id
       FROM anyone_person AS r
   ), all_rows AS (
     SELECT a.row_id,a.code_id,a.code,a.user_id,a.deleted,NULL::text AS email,
@@ -941,9 +942,9 @@ BEGIN
     ('admin_assign_discount(uuid,uuid,uuid[],uuid,uuid)','jsonb','plpgsql','v',true,'b73d0427ff38a6060b1d1fcf704e869c','_discount_id,_code_id,_user_ids,_request_key,_actor_id','h2_permission_checks'),
     ('admin_unassign_discount(uuid,uuid,uuid,uuid,uuid)','jsonb','plpgsql','v',true,'2f5ba26e0a9de1b15f518b1657dcbee0','_discount_id,_code_id,_user_id,_request_key,_actor_id','h2_permission_checks'),
     ('group_h_random_suffix(integer)','text','plpgsql','v',false,'6bc37ba1f95f29452bf103421d965355','_length','h2_permission_checks'),
-    ('admin_generate_discount_codes(uuid,text,uuid[],integer,uuid,uuid)','jsonb','plpgsql','v',true,'90b85c8b4d2877046a5236db3ab0c4e6','_discount_id,_prefix,_user_ids,_count,_request_key,_actor_id','h2_permission_checks'),
+    ('admin_generate_discount_codes(uuid,text,uuid[],integer,uuid,uuid)','jsonb','plpgsql','v',true,'aef0eaf0a72c32e89f1623b2d174d8ea','_discount_id,_prefix,_user_ids,_count,_request_key,_actor_id','h2_permission_checks'),
     ('list_admin_discounts(jsonb,integer,integer,uuid)','jsonb','plpgsql','s',true,'579a26d0087655b73c00c6d9ff641394','_filters,_limit,_offset,_actor_id','h2_permission_checks'),
-    ('get_admin_discount(uuid,integer,integer,uuid)','jsonb','plpgsql','s',true,'148e2fc9df369f529d07d9b6d83619d8','_discount_id,_assignment_limit,_assignment_offset,_actor_id','h2_permission_checks'),
+    ('get_admin_discount(uuid,integer,integer,uuid)','jsonb','plpgsql','s',true,'9fb111a0d9ca044ae9ae85124bca1c7d','_discount_id,_assignment_limit,_assignment_offset,_actor_id','h2_permission_checks'),
     ('search_admin_discount_members(text,integer,uuid)','jsonb','plpgsql','s',true,'6ab884596d0f271a4edd84289a479767','_query,_limit,_actor_id','h2_permission_checks'),
     ('get_admin_discount_activation_context(uuid,jsonb,uuid)','jsonb','plpgsql','s',true,'7eb074e03d0f740340742bd1d3c2a21a','_discount_id,_patch,_actor_id','h2_permission_checks'),
     ('record_discount_search_fallback(uuid[])','void','plpgsql','v',true,'be0f6807e1dad1a05396b9daaa3f2be3','_discount_ids','h2_search_attention'),

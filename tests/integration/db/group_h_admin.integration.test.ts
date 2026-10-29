@@ -128,17 +128,25 @@ describeLocalDb('H2 admin writers and snapshot reads (controller only)', (db) =>
     expect((await detail(made.discountId)).assignmentTotal).toBe(9);
     const anyone = await create(hDiscount({ code: `GUEST-${randomUUID().toUpperCase()}`, allowGuests: true }));
     const anyCode = (await db().query('select id from public.discount_codes where discount_id=$1', [anyone.discountId])).rows[0].id as string;
-    const earliest = await seedHRedemption(db(), anyone.discountId, { codeId: anyCode, email: 'alice@example.invalid', state: 'confirmed' });
+    const earliest = await seedHRedemption(db(), anyone.discountId, { codeId: anyCode, email: 'alice@example.invalid', state: 'confirmed', reservedAt: '2029-01-01T00:00:00Z' });
     const latest = await seedHRedemption(db(), anyone.discountId, { codeId: anyCode, email: 'alice@example.invalid', state: 'reserved', reservedAt: '2030-01-01T00:00:00Z' });
     const guestRows = (await detail(anyone.discountId)).assignments;
     expect(guestRows).toHaveLength(1); expect(guestRows[0]).toMatchObject({ guestEmailMasked: 'a***@example.invalid', orderId: latest.orderId });
     expect(JSON.stringify(guestRows)).not.toContain('alice@');
-    // The row id derives from the smallest redemption id of that person, never from a hash of the email.
+    // The row id derives from the person's earliest redemption (reserved_at, then id), never from a hash of the email.
     const rowId = guestRows[0].rowId;
-    expect(rowId).toBe(`usage:${anyCode}:${[earliest.id, latest.id].sort()[0]}`);
+    expect(rowId).toBe(`usage:${anyCode}:${earliest.id}`);
     for (const personal of ['alice@example.invalid', 'guest:alice@example.invalid'])
       expect(rowId).not.toContain(createHash('md5').update(personal).digest('hex'));
     expect((await detail(anyone.discountId)).assignments[0].rowId).toBe(rowId);
+    expect((await detail(anyone.discountId, 1, 0)).assignments[0].rowId).toBe(rowId);
+    // N1: a later redemption of the same person whose uuid is smaller than the earliest one must not change the row id.
+    const later: { id: string }[] = [];
+    for (let i = 0; i < 40 && !later.some(r => r.id < earliest.id); i++) {
+      later.push(await seedHRedemption(db(), anyone.discountId, { codeId: anyCode, email: 'alice@example.invalid', state: 'cancelled', reservedAt: '2031-01-01T00:00:00Z' }));
+    }
+    expect(later.some(r => r.id < earliest.id)).toBe(true);
+    expect((await detail(anyone.discountId)).assignments.map(r => r.rowId)).toEqual([rowId]);
     expect((await detail(anyone.discountId, 1, 0)).assignments[0].rowId).toBe(rowId);
   });
 
@@ -231,7 +239,7 @@ describeLocalDb('H2 admin writers and snapshot reads (controller only)', (db) =>
     await db().query('set constraints all immediate');
   });
 
-  test('FREQ-547-AC-04: コード型はコード無しで有効にできず、束の接頭辞と同じ共有コードは作れない', async () => {
+  test('FREQ-547-AC-04: コード型はコード無しで有効にできず、束の接頭辞と同じ共有コードや別の束のコードを接頭辞にした束は作れない', async () => {
     const invalid = { code: '22023', message: 'GROUP_H_ARGUMENT_INVALID' }, conflict = { code: '23505', message: 'GROUP_H_CODE_CONFLICT' };
     const bare = await create(hDiscount({ stopped: true }));
     expect(await hFailure(db(), () => hRpc(db(), 'get_admin_discount_activation_context', [bare.discountId, { stopped: false }, actor]))).toEqual(invalid);
@@ -241,7 +249,7 @@ describeLocalDb('H2 admin writers and snapshot reads (controller only)', (db) =>
     expect((await hRpc<Created>(db(), 'admin_update_discount', [auto.discountId, { method: 'code', code: `SWITCH-${randomUUID().toUpperCase()}` }, 1, randomUUID(), actor])).version).toBe('2');
     const prefix = `PFX-${randomUUID().slice(0, 8).toUpperCase()}`;
     const owner = await create(hDiscount({ stopped: true }));
-    await hRpc(db(), 'admin_generate_discount_codes', [owner.discountId, prefix, null, 1, randomUUID(), actor]);
+    const firstBatch = await hRpc<{ codes: { code: string }[] }>(db(), 'admin_generate_discount_codes', [owner.discountId, prefix, null, 1, randomUUID(), actor]);
     await hRpc(db(), 'get_admin_discount_activation_context', [owner.discountId, { stopped: false }, actor]);
     expect(await hFailure(db(), () => create(hDiscount({ code: prefix })))).toEqual(conflict);
     expect(await hFailure(db(), () => hRpc(db(), 'admin_update_discount', [bare.discountId, { code: prefix.toLowerCase() }, 1, randomUUID(), actor]))).toEqual(conflict);
@@ -249,6 +257,14 @@ describeLocalDb('H2 admin writers and snapshot reads (controller only)', (db) =>
     await create(hDiscount({ code: shared }));
     const reverse = await create(hDiscount({ stopped: true }));
     expect(await hFailure(db(), () => hRpc(db(), 'admin_generate_discount_codes', [reverse.discountId, shared, null, 1, randomUUID(), actor]))).toEqual(conflict);
+    // N2: a batch prefix equal to any existing code (another batch's single-use code, anyone or assigned) is also CODE_CONFLICT, and nothing is written.
+    const member = await seedHMember(db());
+    const memberBatch = await hRpc<{ codes: { code: string }[] }>(db(), 'admin_generate_discount_codes', [owner.discountId, `MB-${randomUUID().slice(0, 8).toUpperCase()}`, [member], 1, randomUUID(), actor]);
+    const before = (await db().query('select count(*)::int n from public.discount_codes where discount_id=$1', [reverse.discountId])).rows[0].n as number;
+    for (const taken of [firstBatch.codes[0].code, memberBatch.codes[0].code]) {
+      expect(await hFailure(db(), () => hRpc(db(), 'admin_generate_discount_codes', [reverse.discountId, taken, null, 1, randomUUID(), actor]))).toEqual(conflict);
+    }
+    expect((await db().query('select count(*)::int n from public.discount_codes where discount_id=$1', [reverse.discountId])).rows[0].n).toBe(before);
   });
 
   test('FREQ-547-AC-04: 衝突は同じ長さで再生成し32回尽きると束全体を戻す', async () => {

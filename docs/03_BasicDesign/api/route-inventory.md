@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> H Task 4 確認日: 2026-10-29。割引管理の 9 ファイル・11 メソッド（`/api/admin/discounts` 配下）を追加した。Route Handler は164ファイル・208メソッド、表は163行・207メソッド（`/api/e2e/server-info` を除く）。認可・CSRF・制限・監査の順序と応答は[API仕様](api-spec.md)の「管理:割引（H）」を参照。
+>
 > 波 4 確認日: 2026-10-28。取扱店の作成の頁が入口で権限を確かめる窓口 `GET /api/admin/stockists/access`（`src/app/api/admin/stockists/access/route.ts`）を 1 ファイル・1 メソッド追加した。Route Handler は155ファイル・197メソッド、表は154行・196メソッド（`/api/e2e/server-info` を除く）。波 4 のほかの入口の追加・削除はなし（送り元の IP の取り出し、回数の制限の 429・503 への `no-store`、監査への IP の追加は応答の形と表の列を変えない）。
 
 > 波 3 確認日: 2026-10-28。`src/app/api` の外の入口として `GET /look/[id]/og`（`src/app/look/[id]/og/route.ts`）を、表の下の新しい節に足した。`/api/` の外なので Route Handler の数（154ファイル・196メソッド、表は153行・195メソッド）は変えていない。波 3 のほかの入口の追加・削除はなし（`/api/auth` 配下の応答に proxy が `no-store` を付ける変更だけ）。
@@ -48,6 +50,15 @@
 | `/api/admin/contact/templates/[id]` | `DELETE`, `PUT` | [route.ts](../../../src/app/api/admin/contact/templates/%5Bid%5D/route.ts) |
 | `/api/admin/contact/templates` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/contact/templates/route.ts) |
 | `/api/admin/create-user` | `POST` | [route.ts](../../../src/app/api/admin/create-user/route.ts) |
+| `/api/admin/discounts` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/discounts/route.ts) （H Task 4: GET は `admin.discounts.read`（回数制限なし）、POST は `admin.discounts.manage`。FREQ-543/547） |
+| `/api/admin/discounts/[id]` | `GET`, `PATCH` | [route.ts](../../../src/app/api/admin/discounts/%5Bid%5D/route.ts) （H Task 4: GET は read、PATCH は manage） |
+| `/api/admin/discounts/[id]/assign` | `POST` | [route.ts](../../../src/app/api/admin/discounts/%5Bid%5D/assign/route.ts) （H Task 4: manage） |
+| `/api/admin/discounts/[id]/codes` | `POST` | [route.ts](../../../src/app/api/admin/discounts/%5Bid%5D/codes/route.ts) （H Task 4: manage、追加の制限 `admin.discounts.codes`） |
+| `/api/admin/discounts/[id]/duplicate` | `POST` | [route.ts](../../../src/app/api/admin/discounts/%5Bid%5D/duplicate/route.ts) （H Task 4: manage） |
+| `/api/admin/discounts/[id]/resume` | `POST` | [route.ts](../../../src/app/api/admin/discounts/%5Bid%5D/resume/route.ts) （H Task 4: manage） |
+| `/api/admin/discounts/[id]/stop` | `POST` | [route.ts](../../../src/app/api/admin/discounts/%5Bid%5D/stop/route.ts) （H Task 4: manage） |
+| `/api/admin/discounts/[id]/unassign` | `POST` | [route.ts](../../../src/app/api/admin/discounts/%5Bid%5D/unassign/route.ts) （H Task 4: manage） |
+| `/api/admin/discounts/members` | `GET` | [route.ts](../../../src/app/api/admin/discounts/members/route.ts) （H Task 4: manage、`admin.discounts.members` の制限） |
 | `/api/admin/inventory` | `GET` | [route.ts](../../../src/app/api/admin/inventory/route.ts) （G-2: `admin.stock.read`。在庫一覧表。読むだけで `backfill_item_variants` は呼ばない） |
 | `/api/admin/purchase-orders` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/purchase-orders/route.ts) （G-2 Task 4: `POST` は `admin.purchase_orders.manage` ＋ `admin.purchase_orders.read`。発注書の作成。CSRF・回数制限 `admin.purchase_orders.create` の30回/600秒・監査 `admin.purchase_orders.confirm`。在庫は動かさない。G-2 Task 5: `GET` は `admin.purchase_orders.read`。発注一覧表。明細ごとの行を読むだけで、CSRF・回数制限・監査は無い） |
 | `/api/admin/purchase-orders/[id]` | `GET`, `PATCH` | [route.ts](../../../src/app/api/admin/purchase-orders/%5Bid%5D/route.ts) （G-2 Task 5: `GET` は `admin.purchase_orders.read`。発注書1件の詳細。読むだけ。id が uuid でなければ400、無ければ404。G-2 Task 6: `PATCH` は `admin.purchase_orders.manage` ＋ `admin.purchase_orders.read`。発注先・メモの訂正。理由が必須。CSRF・回数制限 `admin.purchase_orders.header.update` の30回/600秒・監査 `admin.purchase_orders.header.update`。版が古ければ409） |
@@ -208,7 +219,7 @@ API単体 [GET](../../../tests/unit/api/admin/permissions-route.test.ts)・[POST
 
 ## `src/app/api` の外の入口（波 3 / 2026-10-28）
 
-頁ではなく画像のバイトを返す Route Handler。パスが `/api/` で始まらず、`src/app/api` の外にあるので、上の表と概要の数（155ファイル・197メソッド、表は154行・196メソッド）には入れない。数を固定する単体試験（`tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts`）は `src/app/api` だけを数える。
+頁ではなく画像のバイトを返す Route Handler。パスが `/api/` で始まらず、`src/app/api` の外にあるので、上の表と概要の数（164ファイル・208メソッド、表は163行・207メソッド）には入れない。数を固定する単体試験（`tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts`）は `src/app/api` だけを数える。
 
 | パス | メソッド | 根拠 |
 | --- | --- | --- |

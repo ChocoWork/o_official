@@ -1,5 +1,7 @@
 # API仕様（現行実装）
 
+> H Task 4 確認日: 2026-10-29。割引管理の 9 ファイル・11 メソッドを「管理:割引（H）」の節に足した（164ファイル・208組、E2E 用を除く163ファイル・207組）。
+>
 > 波 4 確認日: 2026-10-28。取扱店の作成の頁の入口の窓口 `GET /api/admin/stockists/access` を「管理:商品・LOOK・NEWS・STOCKIST」の表に足した（155ファイル・197組、E2E 用を除く154ファイル・196組）。回数の制限の 429・503 に `Cache-Control: private, no-store` を付け、回数の鍵と管理の監査のIPを[getClientIp](../../../src/lib/request-ip.ts)に揃えた（共通境界の記述）。取扱店の管理の窓口の順序を「送り元の枠 → 認可 → 操作者の枠 → CSRF」に変えた。管理の問い合わせ・利用者・色見本・監査ログ・LOOK・ニュースの監査にも行為者のメール・IP・ブラウザの名乗りが入る（応答は変わらない）。`GET /api/admin/looks` の `meta.canManage` は認可1回の結果の権限の集合から決まる（応答の形は同じ）。
 
 > 波 3 確認日: 2026-10-28。公開の `GET /look/[id]/og`（LOOK の `og:image` の画像。`src/app/look/[id]/og/route.ts`）を「公開情報」の表に足した。`src/app/api` の外の窓口なので、下の154ファイル・196組の数には入れない。`session_id` の Cookie は共有の proxy が `/cart`・`/checkout`・`/api/checkout` だけで発行する形にした（共通境界の表）。`/api/auth` 配下は全応答に `Cache-Control: no-store` を共有の proxy が付ける（SEC-AUTH-022-AC-02、ADR-0415）。
@@ -16,7 +18,7 @@
 
 ## 概要
 
-現行Route Handlerの入力、認証・認可、応答、主要な失敗分岐と副作用を記録する。155ファイル、明示exportされた197組（E2E 用の `/api/e2e/server-info` を除く154ファイル・196組を本書で記す。波4で`GET /api/admin/stockists/access`を1入口追加した。G-4 Task 8 で旧い発送・仕上がりの6ファイル・7メソッドを削除した。G-0 の2入口を 2026-10-24 に、G-2 Task 3 の在庫一覧表の入口と Task 4 の発注の作成の入口と Task 5 の発注一覧表・発注書の詳細の入口と Task 6 の発注先・メモの訂正（`PATCH /api/admin/purchase-orders/[id]`）・数量の確定と訂正・残りの打切りの入口と Task 7 の受け取り・受け取りの取消の入口と Task 8 の取引書類の原本の6入口と G-3 Task 3 の荷作り表・発送票の読取の3入口（`GET /api/admin/packing`・`GET /api/admin/shipment-slips`・`GET /api/admin/shipment-slips/[id]`）と G-3 Task 4 の発送票の下書きの3入口（`POST /api/admin/shipment-slips`・`POST /api/admin/shipment-slips/[id]/draft`・`POST /api/admin/shipment-slips/[id]/discard`）と G-3 Task 5 の発送確定の入口（`POST /api/admin/shipment-slips/[id]/confirm`）と G-3 Task 6 の発送の取消の入口（`POST /api/admin/shipment-slips/[id]/cancel`）と G-3 Task 7 の伝票番号の入力・訂正の入口（`POST /api/admin/shipment-slips/[id]/tracking`）と手動の配達済みの入口（`POST /api/admin/shipment-slips/[id]/delivered`）と 波1-A の Google ログイン開始の POST（`POST /api/auth/oauth/start`）とログインの後の行き先の POST（`POST /api/auth/post-login`）を 2026-10-25 に反映）のHTTPメソッド・パスを対象とする。実装と実装が呼ぶschema/helperを根拠とし、未実装の契約は追加しない。DB・Stripe・Supabase Auth・メール等の実環境での成功や設定状態を保証する文書ではない。
+現行Route Handlerの入力、認証・認可、応答、主要な失敗分岐と副作用を記録する。164ファイル、明示exportされた208組（E2E 用の `/api/e2e/server-info` を除く163ファイル・207組を本書で記す。H Task 4 で割引管理の9ファイル・11メソッドを追加した。波4で`GET /api/admin/stockists/access`を1入口追加した。G-4 Task 8 で旧い発送・仕上がりの6ファイル・7メソッドを削除した。G-0 の2入口を 2026-10-24 に、G-2 Task 3 の在庫一覧表の入口と Task 4 の発注の作成の入口と Task 5 の発注一覧表・発注書の詳細の入口と Task 6 の発注先・メモの訂正（`PATCH /api/admin/purchase-orders/[id]`）・数量の確定と訂正・残りの打切りの入口と Task 7 の受け取り・受け取りの取消の入口と Task 8 の取引書類の原本の6入口と G-3 Task 3 の荷作り表・発送票の読取の3入口（`GET /api/admin/packing`・`GET /api/admin/shipment-slips`・`GET /api/admin/shipment-slips/[id]`）と G-3 Task 4 の発送票の下書きの3入口（`POST /api/admin/shipment-slips`・`POST /api/admin/shipment-slips/[id]/draft`・`POST /api/admin/shipment-slips/[id]/discard`）と G-3 Task 5 の発送確定の入口（`POST /api/admin/shipment-slips/[id]/confirm`）と G-3 Task 6 の発送の取消の入口（`POST /api/admin/shipment-slips/[id]/cancel`）と G-3 Task 7 の伝票番号の入力・訂正の入口（`POST /api/admin/shipment-slips/[id]/tracking`）と手動の配達済みの入口（`POST /api/admin/shipment-slips/[id]/delivered`）と 波1-A の Google ログイン開始の POST（`POST /api/auth/oauth/start`）とログインの後の行き先の POST（`POST /api/auth/post-login`）を 2026-10-25 に反映）のHTTPメソッド・パスを対象とする。実装と実装が呼ぶschema/helperを根拠とし、未実装の契約は追加しない。DB・Stripe・Supabase Auth・メール等の実環境での成功や設定状態を保証する文書ではない。
 
 | 読み方 | 内容 |
 | --- | --- |
@@ -25,7 +27,7 @@
 | 入出力定義 | I/N/L/S/T/O/F/Pなどの再利用schema、応答の詳細と根拠へのリンク |
 | 入口の所在 | [APIルート一覧](route-inventory.md)（所在表） |
 
-表中の`?`は任意項目、`|`は選択肢。JSONに単一の共通envelopeはない。`{data:...}`、配列、直接object、`{success:true}`、`{ok:true}`を各実装どおりに区別する。表のエラー欄に加え、その行の共通認証・Origin・CSRFの応答が適用される。Next.jsが自動提供するHEAD/OPTIONSは197組に含めない。
+表中の`?`は任意項目、`|`は選択肢。JSONに単一の共通envelopeはない。`{data:...}`、配列、直接object、`{success:true}`、`{ok:true}`を各実装どおりに区別する。表のエラー欄に加え、その行の共通認証・Origin・CSRFの応答が適用される。Next.jsが自動提供するHEAD/OPTIONSは208組に含めない。
 
 ## 共通境界
 
@@ -367,6 +369,28 @@ G-4 storeはmessageとSQLSTATEの完全一致だけを以下に分類し、`{cod
 
 G-4撤去: 旧発送・発送取消・伝票訂正・手動配達済み・仕上がりの手動記録と取消の窓口は、G-3の発送票へ移行した後、G-4 Task 8 で route ごと撤去しました。以下のE-4記述は撤去前の契約として保持します。
 撤去した窓口は `GET`・`POST /api/admin/orders/[id]/fulfillments`、`POST /api/admin/orders/[id]/fulfillments/[fulfillmentId]/cancel`・`/tracking`・`/delivered`（撤去前の応答は 410 `{code:"LEGACY_FULFILLMENT_DISABLED",error:"旧い発送の操作は終了しました。発送・発送取消・伝票番号の訂正・手動の配達済みは、荷作り表の発送票から行ってください。"}`（`Cache-Control: no-store`））と、`POST /api/admin/orders/[id]/completions`・`/completions/[completionId]/cancel`（撤去前の応答は 410 `{code:"MANUAL_COMPLETION_DISABLED",error:"仕上がりの手動記録・取消は終了しました。在庫の入荷から自動で割り当てます。"}`（`Cache-Control: no-store`））の6パス・7メソッド。route ファイルとメソッドを削除したので、Next は 404 を返す。DB の旧い関数（発送・発送の取消・仕上がりの記録と取消の4関数）は `LEGACY_FULFILLMENT_DISABLED` / `MANUAL_COMPLETION_DISABLED`（55000）で即拒否したまま。DB を呼ばずに投げる store（`fulfillment-materials.ts`・`fulfillment-store.ts`）と 410 の本文の定義（`legacy-fulfillment-disabled.ts`）は src に残る（E2E の付け替え〔G-4 Task 10・12〕の後に消せるか決める）。数は132ファイル・171組（G-1 Task 14）から、G-3・G-4 の追加と削除を経て G-4 Task 8 で154ファイル・196組になった。G-3 で発送系の5メソッドは荷作り表の発送票へ移行した。仕上がりの手動記録と取消の2メソッドは終了のまま再開しない（G-1停止）。旧い一覧の窓口 `GET /api/admin/orders` の canShip・canRecordCompletion は入力にかかわらず false（G-4 Task 7 で窓口ごと削除した）、`GET /api/admin/orders/[id]/history` は仕上がりを読まず履歴の行にもしない（G-1 Task 14）。
+
+## 管理:割引（H）
+
+H Task 4（確認日: 2026-10-29、FREQ-543・547）。actor は認可結果の `userId` だけで、本文・query・見出しからは受け取らない。IP は `getClientIp` だけから取る（`x-forwarded-for` を読まない）。認可は `authorizeAdminPermission`（aal2 と結び付いた生きた session を確認し、満たさなければ 401/403/503 の既存共通本文）。DB は service_role 専用入口の `_actor_id` から役割の権限を別に検査する。全応答に `Cache-Control: private, no-store`。全行の失敗に、認可の共通本文の 401（未認証・失効・期限切れの session）・503（session の確認不能）と、未知の失敗の 500 が付く。write は 認可 → CSRF → IP 制限 → actor 制限（`admin.discounts.write` 各30回/600秒。codes はさらに `admin.discounts.codes` 各10回/600秒）→ id・本文の検証 → store/DB → 監査 の順で、途中で拒否したら以降を呼ばない。本文は zod の `.strict()`（未知キー・空 patch・重複 userIds は 400）。
+
+DB 拒否は message と SQLSTATE の完全一致だけを固定の `{code,error}` にし、未知の失敗は 500 `{error:'割引の処理に失敗しました。'}`。zod 不正は 400 `{code:'GROUP_H_ARGUMENT_INVALID',error:'入力を確かめてください。'}`。固定表は `src/lib/discounts/admin-discount-types.ts` の `GROUP_H_ERRORS`（15行）。create/update/resume は writer を必ず呼ぶ。writer は鍵の下で最初に同じ要求キーの再送を探して元の結果（`replayed:true`）を返し、再送でなければ有効数（自動25件・併用ONの自動は商品側/注文側で各6件・併用ONセットの共有item禁止。終わった期間と停止中は数えない）・コード・使用後の固定項目を同じ固定コードで断る。`get_admin_discount_activation_context` と純粋 schema の保存前の確認（`validateAdminDiscountActivation`）は要求キーを知らず、再送の時に自分が作った行を「コードが使われている」「上限に達した」と数えて断るので、書込みの前提にしない（dry-run として残す）。
+
+監査: action `admin.discounts.create/update/stop/resume/duplicate/assign/unassign/generate_codes`、resource=`discounts`、resource_id=検証済み discountId（不正 id は null。作成と複製の成功は新しくできた割引の id で、複製元は URL の id。複製の失敗は複製元の id）、metadata は `changed_count`・`generated_count`・`replayed`・`result_code` のうち該当するものだけ。コード・名前・メール・userIds・prefix・検索語は載せない。outcome は成功 `success`、HTTP 4xx になる固定コードの拒否 `failure`、未知の失敗と HTTP 500 になる固定コード（`GROUP_H_LOCK_REQUIRED`・`GROUP_H_REFUND_UNIT_MISMATCH` のような内部の失敗）は `error`。読取は監査しない（仕様 10.1）。
+
+| メソッド・パス | 認証・認可 | 入力 | 応答 | 主な失敗（HTTP） | 副作用・補足 / 根拠 |
+| --- | --- | --- | --- | --- | --- |
+| `GET /api/admin/discounts` | RBAC `admin.discounts.read` | Query: `status`・`kind`・`method`・`query`（1〜100字、空は指定なし）・`page`（1〜100000、既定1）のみ。未知キー・重複は 400 | 200 `{data:{total,rows[20まで]},permissions:{read,manage}}` | 400・401・403・500・503 | 回数制限なし。DB `list_admin_discounts` |
+| `POST /api/admin/discounts` | RBAC `admin.discounts.manage`、CSRF | `{input:DiscountCreateInput,requestKey:uuid}`。`codeMode:'shared'` は code 必須、`'batch'` と自動は code を持たない | 201 `{data:{discountId,version,replayed}}`（再送も 201・同じ本文） | 400・401・403・409（code/要求キー/有効数/共有item）・429・500・503 | 再送は DB が元の結果を返す。有効数の検査は writer が鍵の下で行う。DB `admin_create_discount` |
+| `GET /api/admin/discounts/[id]` | RBAC `admin.discounts.read` | Path: UUID。Query: `page`（割り当て表20行/頁）のみ | 200 `{data:{discount,used,assignmentTotal,assignments,searchAttention,permissions}}` | 400・401・403・404・500・503 | 割り当て表の `rowId`（誰でも使えるコードの利用者の行は、その人の最初の利用〔reserved_at、同時刻は id〕から作り、後の利用で変わらない）と順序は DB のまま。`get_admin_discount` |
+| `PATCH /api/admin/discounts/[id]` | RBAC `admin.discounts.manage`、CSRF | `{patch,expectedVersion:bigint文字列,requestKey}`。patch は部分更新（`stopped`・`codeMode` 不可）または `{acknowledgeSearchAttention:true}` 単独 | 200 `{data:{discountId,version,replayed}}` | 400・401・403・404・409（版/使用後/有効数/code）・429・500・503 | 有効数の検査は writer が鍵の下で行う |
+| `POST /api/admin/discounts/[id]/stop` | 同上 | `{expectedVersion,requestKey}` | 200 `{data:{...}}` | 400・401・403・404・409・429・500・503 | 有効数を増やさない |
+| `POST /api/admin/discounts/[id]/resume` | 同上 | `{expectedVersion,requestKey}` | 200 `{data:{...}}` | 400・401・403・404・409（有効数/共有item）・429・500・503 | 有効数の検査は writer が鍵の下で行う。再送は元の結果 |
+| `POST /api/admin/discounts/[id]/duplicate` | 同上 | `{requestKey}` | 201 `{data:{...}}`（停止状態の新しい割引） | 400・401・403・404・409・429・500・503 | 使用・割当・コードは引き継がない。成功の監査の resource_id は新しい割引の id |
+| `POST /api/admin/discounts/[id]/assign` | 同上 | `{codeId,userIds[1〜100・重複なし],requestKey}` | 200 `{data:{discountId,changedCount,replayed}}` | 400・401・403・404・409・429・500・503 | 共有コードへ会員を割り当てる |
+| `POST /api/admin/discounts/[id]/unassign` | 同上 | `{codeId,userId,requestKey}` | 200 `{data:{discountId,changedCount,replayed}}` | 400・401・403・404・409（使用済み）・429・500・503 | 未使用の割り当てだけ解除 |
+| `POST /api/admin/discounts/[id]/codes` | 同上 + codes の追加制限 | `{prefix(大文字化後1〜55字),userIds[0または=count],count 1〜100,requestKey}` | 201 `{data:{discountId,batchId,codes[{codeId,code,userId}],replayed}}` | 400・401・403・404・409（既存のコードと同じ接頭辞を含む）・429・500・503（生成失敗） | userIds が空なら誰でも使える束。接頭辞だけが有効なコードに見えないよう、共有コードか別の束のコードと同じ接頭辞は 409 |
+| `GET /api/admin/discounts/members` | RBAC `admin.discounts.manage` | Query: `query`（2〜100字）のみ | 200 `{data:[{userId,name,email}]}`（20件まで） | 400・401・403・429・500・503 | 認可 → IP/actor 制限（`admin.discounts.members` 各60回/600秒）→ 検証 → DB。CSRF なし |
 
 ## 管理:ショップの設定
 
