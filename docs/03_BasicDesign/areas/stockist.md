@@ -19,7 +19,7 @@ STOCKIST の領域の構成・画面・画面遷移・状態遷移・API・デ�
 - 結論: 公開の側は Server Component が取り出しの関数を直接呼び、公開の店だけを6つの列で返す。公開の API の窓口は無い。管理の側は利用者の端末で動く画面から Route Handler を通し、窓口で権限・2要素認証・回数の制限・CSRF の token を確かめた上で、読みは利用者の JWT の client で RLS に通し、書き込みは service role で行う（ADR-0267）
 - 地方・都道府県の絞り込みは、全部の公開の店をサーバーで1回取り、画面の側で URL の `pref` と住所の先頭の県名を突き合わせて行う
 - DB の表は `type` を NULL 可の列として持ち、管理の作成の窓口は `type` を送らない。移行 `stockists_type_optional`（2026-10-26）で NOT NULL を外したので、`type` は NULL のまま作られる（DATA-STOCKIST-001、API-STOCKIST-002）
-- SEC-STOCKIST-003 は、波 5（2026-10-29）の移行 M2 を当てた DB で満たす（`has_permission` が aal2 と結び付いた生きた session を求める。AUTH の DATA-AUTH-008・ADR-0418。M2 は controller が当てるまで未適用）。構造は AUTH が持つので、ここでは上位につながない
+- SEC-STOCKIST-003 は、波 5（2026-10-29）の移行 M2 を当てた DB で満たす（`has_permission` が aal2 と結び付いた生きた session を求める。AUTH の DATA-AUTH-008・ADR-0418。M2 は 2026-10-29 に本番適用済み）。構造は AUTH が持つので、ここでは上位につながない
 - 今のコードが満たさないセキュリティ要件（SEC-STOCKIST-008・015。002・009・010・011・013・014・018 は 2026-10-26 に、012・019（作成の頁）・020・021 は 2026-10-28 の波 4 に直した）は、満たす形の構造を持たないので上位につながず、本文に「満たさない」と書いた。一部だけ満たす要件は NEWS と同じ決まりで、満たさない所がその項目の受け持つコードにある時は上位にせず、ほかのコードにだけある時は上位にした。SEC-STOCKIST-010・014 は 2026-10-26 に route の包み `withNoStore` と `describeErrorForLog` で満たしたので、API-STOCKIST-001〜006 の上位につなぐ
 
 ## 範囲と根拠
@@ -128,7 +128,7 @@ sequenceDiagram
 - DB: 読み（GET の2つ）は `createClient(request)` で要求の JWT を付け、RLS（DATA-STOCKIST-002）を効かせる。書き込み（POST・PUT・PATCH・DELETE）は、認可・回数の制限・CSRF・入力の確かめの後に `createServiceRoleClient()` を1回作って行う（ADR-0267）。RLS の書き込み方針は権限を外した後も二重の守りとして残る。窓口の認可が書き込みの唯一の守りなので、`authorizeAdminPermission` の位置（本文の検証より前）を変えない。例外（推定）: 認可は期限の猶予を見ずに token を確かめるが、読みの client は期限まで5秒以下の token を送らず、Cookie を読む client に落ちる（`src/lib/auth/request-token.ts`、`src/lib/supabase/server.ts`）。その時は Google OAuth の Cookie（`sb-<ref>-auth-token`）の別の session か、無ければ anon で動く。書き込みは service role の client に移したので、この落ち方の影響を受けない（THR-STOCKIST-013）
 - 監査: 変更の4つは `logAudit`（`src/lib/audit.ts`）を呼ぶ。resource は `stockists`、送り元（共有の `getClientIp`。Vercel の見出しだけで、取れなければ null。ADR-0416）とブラウザの名を残す。GET は監査しない。送り元を信頼できる値から取ること・店名から制御文字を除くこと（SEC-STOCKIST-012）は 2026-10-28（波 4）に満たした（制御文字は共有の `maskAuditEvent` が除く）。0件の変更を成功にしないこと・消した中身を残すこと（SEC-STOCKIST-013）は 2026-10-26 に満たした（PUT・PATCH・DELETE は変えた行を `.select()` で受け取り、0 行は 404 と結果 failure の監査。削除の成功の監査は `metadata.deleted` に id・name・address・status を残す。API-STOCKIST-004〜006）。認可で断った要求のうち、操作者が分かる物（失効した session の 401・権限不足と aal1 の 403）は、窓口が `auditAuthzDenial`（`src/lib/auth/audit-authz-denial.ts`）で失敗の行を 1 つ残す。操作者ごとに 10 分で 20 行まで、21 回目にまとめの 1 行、以降は残さない。token の無い 401・503・500 は残さない（SEC-STOCKIST-021、ADR-0268、DD-STOCKIST-039）
 - 画面のページ: 作成の頁（`/admin/stockist/create`）は、フォームを出す前に `GET /api/admin/stockists/access`（API-STOCKIST-007）で権限を確かめる（SEC-STOCKIST-019、ADR-0269）。編集の頁（`/admin/stockist/edit/[id]`）には入口の確かめが無く、1 件の取得（読みの権限）が通るとフォームを出す。書き込みは窓口が断る
-- DB を直接叩く道: この道は回数の制限・CSRF・監査を通らない。書き込みは、窓口を service role に移し、表の書き込みの権限を外す移行 `sec_grants_admin_tables` を当てて塞いだ（ADR-0267、ADR-0414）。読みは RLS が使う `has_permission` が、波 5 の移行 M2（DATA-AUTH-008）を当てると aal2 と結び付いた生きた session を求めるので、権限を持つ人の aal1 の JWT では直接読めない（推定。SEC-STOCKIST-003 を満たす。M2 は controller が当てるまで未適用）
+- DB を直接叩く道: この道は回数の制限・CSRF・監査を通らない。書き込みは、窓口を service role に移し、表の書き込みの権限を外す移行 `sec_grants_admin_tables` を当てて塞いだ（ADR-0267、ADR-0414）。読みは RLS が使う `has_permission` が、波 5 の移行 M2（DATA-AUTH-008）を当てると aal2 と結び付いた生きた session を求めるので、権限を持つ人の aal1 の JWT では直接読めない（推定。SEC-STOCKIST-003 を満たす。M2 は 2026-10-29 に本番適用済み）
 
 ### ARC-STOCKIST-003 管理の窓口の回数の制限と CSRF の token の確かめを、取扱店の守りの部品にまとめる
 
@@ -634,7 +634,7 @@ stateDiagram-v2
 | admin stockists manage by permission delete | authenticated | DELETE | `has_permission('admin.stockists.manage')` |
 
 - `has_permission` は SECURITY DEFINER・`search_path=''` で、`auth.uid()` が無ければ false、DB の ACL の表（有効で期限内の役割）だけで決める（権限の移行で役の近道を外した）
-- `has_permission` は、波 5 の移行 M2（DATA-AUTH-008）を当てると `aal2` と結び付いた生きた session を求める。権限を持つ人が aal1 の JWT や失効した session の残りの token で PostgREST を直接叩いても、非公開の読みはできない（推定。SEC-STOCKIST-003-AC-01 を満たす。M2 は controller が当てるまで未適用）。書き換えは 2026-10-26 から付与が無く、権限の誤り（`42501`）で断られる（SEC-STOCKIST-003-AC-02・AC-03 を満たす）。書き込みの方針（`manage by permission insert・update・delete`）は働かないが、消さずに二重の守りとして残す（ADR-0414）
+- `has_permission` は、波 5 の移行 M2（DATA-AUTH-008）を当てると `aal2` と結び付いた生きた session を求める。権限を持つ人が aal1 の JWT や失効した session の残りの token で PostgREST を直接叩いても、非公開の読みはできない（推定。SEC-STOCKIST-003-AC-01 を満たす。M2 は 2026-10-29 に本番適用済み）。書き換えは 2026-10-26 から付与が無く、権限の誤り（`42501`）で断られる（SEC-STOCKIST-003-AC-02・AC-03 を満たす）。書き込みの方針（`manage by permission insert・update・delete`）は働かないが、消さずに二重の守りとして残す（ADR-0414）
 - 付与: anon・authenticated に表の SELECT だけを付ける。INSERT・UPDATE・DELETE・TRUNCATE・TRIGGER・REFERENCES・MAINTAIN は付けない。連番 `stockists_id_seq` は anon・authenticated から全部外し、service_role に USAGE・SELECT を明示する（2026-10-26 の移行 `sec_grants_admin_tables`。ADR-0414）。service_role には表の ALL を明示する。管理の窓口の書き込みは認可の後に service role で行う（ADR-0267）。以前は表に 8 権限・連番に SELECT・UPDATE・USAGE を全部付け、守りは RLS の1段だけだった（`remote_schema.sql`。SEC-STOCKIST-008 を満たす）
 - 確かめ: `tests/integration/db/stockist_grants_admin_tables.integration.test.ts`、`stockist_rls.integration.test.ts`
 - PostgREST の行の上限（`max_rows`）は本番の設定を確かめていない（SEC-STOCKIST-018 の件数の上限の分は 2026-10-26 に公開の取り出しで満たした。`max_rows` の設定は残る）

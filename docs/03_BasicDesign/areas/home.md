@@ -17,7 +17,7 @@ HOME の領域の構成・画面・画面遷移・状態遷移を、追跡でき
 | データ | 1 | `DATA-HOME-001` | 商品の表 `items` の列の権限と、原価の履歴の表 `item_cost_history` の方針（表の持ち主は ITEM で、ここは権限の守りだけを持つ） |
 
 - 結論: ホームは `src/app/page.tsx` の Server Component 1つが、ITEM・LOOK・NEWS・取扱店の取得の関数（各領域の物）を一度に呼んで待ち、結果を各領域の格子の部品に渡して並べる。HOME が自分で持つ部品は、VIEW ALL のボタン（`HomeSectionViewAll`）と、ブランド名を1文字ずつ出す部品（`TextReveal`）だけ
-- `SEC-HOME-003` は、波 5（2026-10-29）の移行 M2 を当てた DB で満たす（`has_permission` が aal2 と結び付いた生きた session を求める。AUTH の DATA-AUTH-008・ADR-0418。M2 は controller が当てるまで未適用）。表は ITEM の物で、HOME の構造に無い
+- `SEC-HOME-003` は、波 5（2026-10-29）の移行 M2 を当てた DB で満たす（`has_permission` が aal2 と結び付いた生きた session を求める。AUTH の DATA-AUTH-008・ADR-0418。M2 は 2026-10-29 に本番適用済み）。表は ITEM の物で、HOME の構造に無い
 - 今のコードが満たさない（一部だけ満たす物を含む）セキュリティ要件（`SEC-HOME-002`・`006`・`007`・`009`・`013`〜`018`）は、満たす構造が無いか構造が HOME の外にあるので上位につながず、「範囲と根拠」の表に理由を書いた。満たさない中身は各 `SEC-HOME-` の項目に1度だけ書き、ここでは SEC の ID を指す
 - 置き換わった要件（`FREQ-278-REQ-02`・`06` の threadDraw を1回）も、今の構造が満たさないので上位につながない
 
@@ -43,7 +43,7 @@ HOME の領域の構成・画面・画面遷移・状態遷移を、追跡でき
 | ID | つながなかった理由 |
 | --- | --- |
 | SEC-HOME-002 | 今のコードが満たさない。公開の読みの client の種類は ARC-HOME-002 に今の動きを書いた |
-| SEC-HOME-003 | 商品の表 `items` の読みの RLS の aal2 の話で、表は ITEM の物。HOME の構造に無い。読みの側（AC-01）は波 5 の移行 M2 を当てた DB で満たす（2026-10-29。未適用）。書き込みの側（AC-02）は `DATA-HOME-001` の権限で満たす。`looks`・`look_items`・`stockists` の分は LOOK・STOCKIST の SEC が持つ |
+| SEC-HOME-003 | 商品の表 `items` の読みの RLS の aal2 の話で、表は ITEM の物。HOME の構造に無い。読みの側（AC-01）は波 5 の移行 M2 を当てた DB で満たす（2026-10-29。本番適用済み）。書き込みの側（AC-02）は `DATA-HOME-001` の権限で満たす。`looks`・`look_items`・`stockists` の分は LOOK・STOCKIST の SEC が持つ |
 | SEC-HOME-006 | 満たす（画像の署名の側は 2026-10-28）。在庫の側は ARC-HOME-002 が持つ。画像の署名の側は ITEM の `src/lib/storage/item-images.ts` の作り（共有の `parseOwnObjectPath`、失敗は `null`。DD-SEARCH-011、ADR-0316）で、HOME の構造に無い |
 | SEC-HOME-007 | 満たす（2026-10-28）。商品の画像の署名の期限は ITEM の `src/lib/storage/item-images.ts` が決める（既定3600秒。ADR-0316）。HOME の構造に無い |
 | SEC-HOME-009・017 | 009 の CSP の許可は満たす（2026-10-28。AC-02 のブラウザの `eval` の違反は、ブラウザ側の zod を `jitless` にして無くした。下の「ブラウザ側の zod」。本番ビルドでの実測は未確認）。017 の画像の最適化の許可（`remotePatterns`）も満たす（2026-10-28。下の「画像の中継」）。CSP と画像の最適化の許可は、共有の `src/proxy.ts`・`next.config.ts` が全部の頁に1つで持つ（ARC-HOME-003） |

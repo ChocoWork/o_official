@@ -45,7 +45,7 @@
 
 - 良くなること: 片方が崩れても非公開の記事は出ない（推定）
 - 悪くなること: どちらか片方を外しても今のテストは全部通る。手元の見本の記事は全部公開済みで（`supabase/seed.sql`）、非公開を出さないことを試すテストが無い（SEC-NEWS-001-AC-01・02）
-- 悪くなること: `admin.news.read` を持つ人は aal1 の session でも PostgREST から非公開の記事を読める。RLS が aal を見ないため（SEC-NEWS-002）（2026-10-29 追記: 波 5 の移行 M2 を当てると、DB の `has_permission` が aal2 と結び付いた生きた session を求めるので、この点は直る。ADR-0418。M2 は controller が当てるまで未適用）
+- 悪くなること: `admin.news.read` を持つ人は aal1 の session でも PostgREST から非公開の記事を読める。RLS が aal を見ないため（SEC-NEWS-002）（2026-10-29 追記: 波 5 の移行 M2 を当てると、DB の `has_permission` が aal2 と結び付いた生きた session を求めるので、この点は直る。ADR-0418。M2 は 2026-10-29 に本番適用済み）
 
 ## 未確認事項
 

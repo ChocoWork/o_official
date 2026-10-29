@@ -17,7 +17,7 @@ ADMIN の領域の構成・画面・状態遷移・API・データを、追跡�
 
 - 結論: 範囲の窓口は全部、頭で共有の認可（JWT・session の生存・DB の ACL の権限・aal2）を通し、通った後にだけ service role の client で表と Auth の管理の機能を使う。表の側は、色見本のほかは anon・authenticated の直接の読み書きを方針で断る
 - 画面は利用者の作成の1つだけ。問い合わせの管理画面は 2026-10-28（波 4）に `/admin` の CONTACT のタブとして足した（共有の頁 `src/app/admin/page.tsx` が範囲外の `ContactSection` を開く。店長とサポーターの両方に出す）。監査ログを読む画面は無く、窓口だけがある（FREQ-508-AC-01 と食い違う。TM-ADMIN-02）。だから `SCR-` は作成の画面だけにし、画面遷移（`FLOW-`）は置かなかった（CONTACT のタブの画面は共有の頁の一部で、`SCR-` は共有文書の画面一覧 `screen-list.md` が持つ）
-- SEC-ADMIN-002 は、波 5（2026-10-29）の移行 M2 を当てた DB で満たす（`has_permission` が aal2 と結び付いた生きた session を求める。AUTH の DATA-AUTH-008・ADR-0418。M2 は controller が当てるまで未適用）。構造は AUTH が持つので、ここでは上位につながない
+- SEC-ADMIN-002 は、波 5（2026-10-29）の移行 M2 を当てた DB で満たす（`has_permission` が aal2 と結び付いた生きた session を求める。AUTH の DATA-AUTH-008・ADR-0418。M2 は 2026-10-29 に本番適用済み）。構造は AUTH が持つので、ここでは上位につながない
 - 今のコードが満たさないセキュリティ要件（SEC-ADMIN-007〜010・014〜016・022・023）は、満たす形の構造を持たないので上位につながない。本文では `SEC-ADMIN-NNN を参照` と指すだけにした。どれも受け入れ条件を持つので、下の段が欠けることはない
 - 一部だけ満たす SEC-ADMIN-003 は、満たさない所が項目の中にあるので、どの項目の上位にもしていない
 
@@ -662,7 +662,7 @@ sequenceDiagram
 
 - 以前あった anon の表の付与は、2026-10-26 に外した。anon の select は0件でなく権限の誤り（`42501`）になる
 - 名前の長さの上限（40 字）は窓口だけにある
-- 方針が使う `has_permission` は、波 5 の移行 M2（DATA-AUTH-008）を当てると aal2 と結び付いた生きた session を求めるので、`admin.items.read` を持つ人でも aal1 の JWT や失効の後の JWT では PostgREST から直接読めない（推定。SEC-ADMIN-002-AC-02 を満たす。M2 は controller が当てるまで未適用）。書き込みは 2026-10-26 から付与が無く、権限の誤り（`42501`）で断られる（SEC-ADMIN-002-AC-01 を満たす）
+- 方針が使う `has_permission` は、波 5 の移行 M2（DATA-AUTH-008）を当てると aal2 と結び付いた生きた session を求めるので、`admin.items.read` を持つ人でも aal1 の JWT や失効の後の JWT では PostgREST から直接読めない（推定。SEC-ADMIN-002-AC-02 を満たす。M2 は 2026-10-29 に本番適用済み）。書き込みは 2026-10-26 から付与が無く、権限の誤り（`42501`）で断られる（SEC-ADMIN-002-AC-01 を満たす）
 - 確かめ: `tests/integration/db/admin-misc/admin_item_color_presets_grants.integration.test.ts`、`admin_item_color_presets_table.integration.test.ts`
 - 窓口は service role で読み書きするので、この方針は窓口の道では効かない（ADR-0451）
 

@@ -368,7 +368,7 @@ FR-ADMIN-009 の文から起こした。今のコードで満たすかを「状�
 | 出どころ | OWASP ASVS 4.0.3 V4.3.1 |
 | 優先度 | MUST |
 
-`item_color_presets` の RLS が通すのは、ACL の権限に加えて JWT の `aal` が `aal2` で、session が有効な要求だけ。読みの側（AC-02）は、波 5 の移行 M2（`has_permission` に aal2 と結び付いた生きた session を求める。SEC-AUTH-010-AC-03、ADR-0418）を当てた DB で満たす（2026-10-29 に E2E の `test.fail` を外した。食い違いだった TM-ADMIN-43 は M2 で解消する。M2 は controller が当てるまで未適用）。書き込みの側（AC-01）は、2026-10-26 から anon・authenticated に `item_color_presets` の INSERT・UPDATE・DELETE の権限が無い（ADR-0414）ので、aal1 の JWT でも PostgREST から書けず満たす（この移行を当てた DB でだけ満たす）。同じ移行で anon の SELECT も外した（読む方針が authenticated 向けの1本だけで、anon が読める行は元から0件）。
+`item_color_presets` の RLS が通すのは、ACL の権限に加えて JWT の `aal` が `aal2` で、session が有効な要求だけ。読みの側（AC-02）は、波 5 の移行 M2（`has_permission` に aal2 と結び付いた生きた session を求める。SEC-AUTH-010-AC-03、ADR-0418）を当てた DB で満たす（2026-10-29 に E2E の `test.fail` を外した。食い違いだった TM-ADMIN-43 は M2 で解消する。M2 は 2026-10-29 に本番適用済み）。書き込みの側（AC-01）は、2026-10-26 から anon・authenticated に `item_color_presets` の INSERT・UPDATE・DELETE の権限が無い（ADR-0414）ので、aal1 の JWT でも PostgREST から書けず満たす（この移行を当てた DB でだけ満たす）。同じ移行で anon の SELECT も外した（読む方針が authenticated 向けの1本だけで、anon が読める行は元から0件）。
 
 #### SEC-ADMIN-002-AC-01 aal1 の JWT で色見本を直接書けない
 

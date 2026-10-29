@@ -17,7 +17,7 @@ AUTH の領域の構成・画面・画面遷移・状態遷移・API・データ
 | データ | 8 | `DATA-AUTH-001`〜`008` | `sessions` の表、`password_reset_tokens` の表、認証の DB の関数、認証の Cookie、戻り先の控えの表と関数、公開スキーマの権限の一覧、アプリの session への結び付け（`auth_session_id` と生存の判定の関数）、`has_permission` の aal2 と結び付き・会員の本人の行の方針 |
 
 - 結論: 画面は利用者の端末で動く部品で、共有の `LoginContext` かページ自身が `/api/auth/*` を呼ぶ。窓口は Supabase Auth を呼び、結果のトークンを HttpOnly の Cookie に入れ、自前の `sessions` の表に控えを残す。ログインの2段目・再設定・会員登録の守り（保留の署名 Cookie・ボットの確かめ・回数の制限・列挙の対策・16 文字と漏洩の照合）は全部アプリの窓口の中にある
-- 波 5（2026-10-29）で、SEC-AUTH-005・010・031 は「アプリのログインを通って作られた session だけを受ける」形に決め、アプリの窓口は満たす（ADR-0417・0419、旗 `AUTH_REQUIRE_APP_SESSION` が有効な間）。DB（PostgREST）の側は移行 M2 を当てた DB で満たす（ADR-0418、DATA-AUTH-008。M2 は controller が当てるまで未適用）。この 3 つは DATA-AUTH-007・008（031 は API-AUTH-017 も）が上位につなぎ、下の「満たさない」の一覧からは外した。アプリの窓口の動きは API-AUTH-014・017 と ARC-AUTH-009 に書いた
+- 波 5（2026-10-29）で、SEC-AUTH-005・010・031 は「アプリのログインを通って作られた session だけを受ける」形に決め、アプリの窓口は満たす（ADR-0417・0419、旗 `AUTH_REQUIRE_APP_SESSION` が有効な間）。DB（PostgREST）の側は移行 M2 を当てた DB で満たす（ADR-0418、DATA-AUTH-008。M2 は 2026-10-29 に本番適用済み）。この 3 つは DATA-AUTH-007・008（031 は API-AUTH-017 も）が上位につなぎ、下の「満たさない」の一覧からは外した。アプリの窓口の動きは API-AUTH-014・017 と ARC-AUTH-009 に書いた
 - 今のコードが満たさないセキュリティ要件（SEC-AUTH-006・007・009・011・012・013・015・017・023・029。SEC-AUTH-022 は 2026-10-28 に満たすようになった）は、満たす形の構造を持たないので上位につながず、本文に「満たさない」と書いた。一部だけ満たす物（SEC-AUTH-008・016・018・020・021・025・026・027・030）は、満たさない所がその項目の受け持つコードにある時は上位にせず、ほかの項目か共有部品にだけある時は上位にした（NEWS・SEARCH の構造設計と同じ決め方）。SEC-AUTH-025・027 は満たさない所を受け持つ項目が共有部品の説明になるので、どこの上位にもしなかった
 - 共有部品（`src/features/auth/**`・`src/lib/cookie.ts`・`src/lib/auth/*`・`src/contexts/LoginContext.tsx`・`src/proxy.ts` など）は ID を持たないので、根拠と本文にファイルの道で書いた
 
@@ -28,7 +28,7 @@ AUTH の領域の構成・画面・画面遷移・状態遷移・API・データ
 | 範囲 | `scripts/trace/scope.json` の AUTH |
 | 上位の文書 | [AUTH の要件](../../02_Requirements/areas/auth.md)（要件・`SEC-AUTH-`・`DRV-AUTH-`）、`docs/03_BasicDesign/decisions/ADR-0400`〜`ADR-0419` |
 | 対象のコード | `src/app/login/`（3）、`src/app/auth/`（5）、`src/app/api/auth/`（19）、`src/features/auth/return-intent/`（戻り先の部品。ARC-AUTH-010）、`src/components/Header.tsx`・`LoginModal.tsx`・`RegisterModal.tsx`・`AuthTabs.tsx`・`AuthResultScreen.tsx`、`src/hooks/useTurnstileWidget.ts`、`src/lib/format-countdown.ts` |
-| 対象の DB | `supabase/migrations/20261029120000_sec_app_session_binding.sql`（M1。`sessions.auth_session_id` と関数 3 本。手元と本番に当て済み）、`supabase/pending-wave5/20261029120100_sec_has_permission_aal2_member_rls.sql`（M2。`has_permission` の置き換えと会員の表の方針 3 本。未適用）、`supabase/migrations/20261026010000_auth_return_intents.sql`（戻り先の控えの表と関数 2 本。本番へは未適用）、`supabase/migrations/20260901102912_remote_schema.sql`（`password_reset_tokens`・`sessions` の表）、同 （掃除の関数・方針・付与） |
+| 対象の DB | `supabase/migrations/20261029120000_sec_app_session_binding.sql`（M1。`sessions.auth_session_id` と関数 3 本。手元と本番に当て済み）、`supabase/pending-wave5/20261029120100_sec_has_permission_aal2_member_rls.sql`（M2。`has_permission` の置き換えと会員の表の方針 3 本。2026-10-29 に本番適用済み）、`supabase/migrations/20261026010000_auth_return_intents.sql`（戻り先の控えの表と関数 2 本。本番へは未適用）、`supabase/migrations/20260901102912_remote_schema.sql`（`password_reset_tokens`・`sessions` の表）、同 （掃除の関数・方針・付与） |
 | 関連文書 | `docs/04_DetailDesign/pages/14_login.md`（表だけで古い記述がある）、`docs/04_DetailDesign/sequence/auth-*.md`、`docs/03_BasicDesign/architecture/auth-structure.md`（過去の初稿）、`docs/03_BasicDesign/api/api-spec.md`・`route-inventory.md`（注文まわりの作り直しが書き換え中なので触らない）、`docs/03_BasicDesign/ui/screen-list.md`・`screen-flow.md`、`docs/superpowers/specs/2026-09-04-login-otp-dedicated-screen-design.md` |
 | 範囲外の上位 | 全体の `NFR-SEC-*`、会員・カートの `FREQ-265`・`FREQ-428`・`FREQ-431`、共有の `FREQ-324`・`FREQ-360`・`FREQ-514` の要件、ITEM の `FREQ-38` は `（範囲外）` を付けて上位に書いた（全領域の持ち主の割り当てで AUTH の持ち物ではない） |
 | 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない） |
@@ -136,7 +136,7 @@ sequenceDiagram
 - 流れ: ログインの後に `/auth/verified`（SCR-AUTH-007）が `/api/auth/me` を見て、admin・supporter で aal2 でなければ `/api/auth/mfa/status` で要素の有無を引く。無ければ自動で登録（API-AUTH-017）してQRと秘密を出し、あれば確認（API-AUTH-018）へ進む
 - 確認が通ると Supabase が aal2 のトークン対を返し、窓口が Cookie と `sessions` の表を差し替える（`persistNewSession`）。画面は `post-login`（API-AUTH-019）が返した行き先へ移る（戻り先が無ければ `/admin`）
 - 一般の会員は TOTP の窓口で 403。`/auth/verified` からは `post-login`（API-AUTH-019）が返した行き先へ送る（戻り先が無ければ `/`。管理者・サポーターは `/admin`）
-- 管理の窓口が aal2 を確かめるのは共有の `admin-rbac`。DB の側の RLS は、波 5 の移行 M2 を当てると aal2 と結び付いた生きた session を見る（DATA-AUTH-008。SEC-AUTH-010。M2 は controller が当てるまで未適用）
+- 管理の窓口が aal2 を確かめるのは共有の `admin-rbac`。DB の側の RLS は、波 5 の移行 M2 を当てると aal2 と結び付いた生きた session を見る（DATA-AUTH-008。SEC-AUTH-010。M2 は 2026-10-29 に本番適用済み）
 - TOTP の確認は IP 単位に加えて利用者単位（5 回／600 秒）の回数の制限があり、成否を監査に残す（SEC-AUTH-009。API-AUTH-018。2026-10-26）。初めての登録は通行証の `amr` に 2 段目を通った方法がある時だけ受ける（SEC-AUTH-031。API-AUTH-017。メールの数字は `otp` で記録されることを 2026-10-29 に実測した）
 - 手元の Supabase は TOTP の登録と確認が無効（`supabase/config.toml`）で、この流れは手元で動かせない
 
@@ -1399,7 +1399,7 @@ stateDiagram-v2
 | 根拠 | API の窓口（ADR-0417）だけが結び付きを求めても、PostgREST は `has_permission` の ACL だけを見て通すので、anon キーで取った通行証が DB から直に管理の表や会員の行に届く。`has_permission` の本体 1 本を直せば、それを使う約 100 の RLS の方針が書き換えなしで従う。`has_permission` を使わず `auth.uid() = user_id` で本人の行を返す表だけは、別の方針で閉じる |
 | 状態 | 推定 |
 | 確かめ方 | 移行の文面の単体テスト（`tests/unit/migrations/sec-has-permission-aal2.test.ts`）、DB 結合テスト（`tests/integration/db/auth_has_permission_aal2.integration.test.ts`。M2 を当てた手元の DB で controller が流す） |
-| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave5-decisions.md`（Q2 案 B）、計画 `docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md`（Task 6、P14・P15）、移行 `supabase/pending-wave5/20261029120100_sec_has_permission_aal2_member_rls.sql`（未適用。M1 の後、アプリの書く側・読む側が出て、ログインし直した後に controller が当てる） |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave5-decisions.md`（Q2 案 B）、計画 `docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md`（Task 6、P14・P15）、移行 `supabase/pending-wave5/20261029120100_sec_has_permission_aal2_member_rls.sql`（2026-10-29 に本番へ単独で適用済み。利用者はアプリでログインし直す） |
 
 | 部品 | 中身 |
 | --- | --- |

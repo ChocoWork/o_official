@@ -2193,7 +2193,7 @@ service_role の権限は移行が明示する（後の REVOKE で消えない�
 
 ## 波 5 のアプリの session への結び付けと `has_permission` の aal2（SEC-AUTH-005・010 ほか / 2026-10-29）
 
-確認日: 2026-10-29。**M1 `20261029120000_sec_app_session_binding` は本番適用済み（2026-10-29）。M2 `20261029120100_sec_has_permission_aal2_member_rls` は本番未適用**（手元は `db:reset` で当てる）。適用の手順・事前の確認・ロールバックは [db-migrations.md](../../06_Operations/db-migrations.md) の波 5 の節。根拠は [ADR-0417](../decisions/ADR-0417-auth-bind-app-session-to-gotrue-session-id.md)・[ADR-0418](../decisions/ADR-0418-auth-has-permission-requires-aal2-and-bound-session.md)、領域の設計は [auth.md](../areas/auth.md) の `DATA-AUTH-007`・`DATA-AUTH-008`。
+確認日: 2026-10-29。**M1 `20261029120000_sec_app_session_binding` は本番適用済み（2026-10-29）。M2 `20261029120100_sec_has_permission_aal2_member_rls` も本番適用済み（2026-10-29。単独で適用）**。結び付いた生きた session を持たない JWT は `has_permission` が false で、会員の表も読めない（利用者はアプリでログインし直す）（手元は `db:reset` で当てる）。適用の手順・事前の確認・ロールバックは [db-migrations.md](../../06_Operations/db-migrations.md) の波 5 の節。根拠は [ADR-0417](../decisions/ADR-0417-auth-bind-app-session-to-gotrue-session-id.md)・[ADR-0418](../decisions/ADR-0418-auth-has-permission-requires-aal2-and-bound-session.md)、領域の設計は [auth.md](../areas/auth.md) の `DATA-AUTH-007`・`DATA-AUTH-008`。
 
 ### 列と索引（M1）
 

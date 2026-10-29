@@ -1571,7 +1571,7 @@ ALL を選ぶと、公開済みの記事がすべて表示されること。
 | 出どころ | OWASP ASVS 4.0.3 V4.3.1 |
 | 優先度 | MUST |
 
-`news_articles` の RLS のうち `admin.news.read`・`admin.news.manage` で許す方針は、JWT の `aal` が `aal2` で、JWT の `session_id` の session が生きている（ログアウト・失効していない）時だけ許す。読みの側（AC-01・AC-03）は、波 5 の移行 M2（`has_permission` に aal2 と結び付いた生きた session を求める。SEC-AUTH-010-AC-03、ADR-0418）を当てた DB でどちらも満たす（G-0 の `has_permission`（`supabase/migrations/20261023175712_group_g0_permissions.sql`）は `auth.uid()` と ACL の表だけを見たが、M2 が `aal2` と結び付いた生きた session の検査を足す。ログアウトした session は `auth.sessions` の行が消えるので、結び付きの有無に関わらず偽になる。2026-10-29 に E2E の `test.fail` を外した。M2 は controller が当てるまで未適用）。書き込みの側（AC-02）は、2026-10-26 から anon・authenticated に `news_articles` の INSERT・UPDATE・DELETE の権限が無い（SEC-NEWS-022、ADR-0414）ので、aal1 の JWT でも PostgREST から書けず満たす（この移行を当てた DB でだけ満たす）。管理の窓口の書き込みは認可の後に service role で行う（ADR-0026）。
+`news_articles` の RLS のうち `admin.news.read`・`admin.news.manage` で許す方針は、JWT の `aal` が `aal2` で、JWT の `session_id` の session が生きている（ログアウト・失効していない）時だけ許す。読みの側（AC-01・AC-03）は、波 5 の移行 M2（`has_permission` に aal2 と結び付いた生きた session を求める。SEC-AUTH-010-AC-03、ADR-0418）を当てた DB でどちらも満たす（G-0 の `has_permission`（`supabase/migrations/20261023175712_group_g0_permissions.sql`）は `auth.uid()` と ACL の表だけを見たが、M2 が `aal2` と結び付いた生きた session の検査を足す。ログアウトした session は `auth.sessions` の行が消えるので、結び付きの有無に関わらず偽になる。2026-10-29 に E2E の `test.fail` を外した。M2 は 2026-10-29 に本番適用済み）。書き込みの側（AC-02）は、2026-10-26 から anon・authenticated に `news_articles` の INSERT・UPDATE・DELETE の権限が無い（SEC-NEWS-022、ADR-0414）ので、aal1 の JWT でも PostgREST から書けず満たす（この移行を当てた DB でだけ満たす）。管理の窓口の書き込みは認可の後に service role で行う（ADR-0026）。
 
 ### SEC-NEWS-002-AC-01 aal1 の session では非公開の記事を直接読めない
 

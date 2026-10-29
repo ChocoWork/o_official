@@ -18,7 +18,7 @@ NEWS の領域の構成・画面・画面遷移・状態遷移・API・データ
 
 - 結論: 公開の側は Server Component から anon の client で直接 DB を読み、`/api/news` は今の画面から通らない。管理の側は利用者の端末で動く画面から Route Handler を通し、窓口で session・権限・2要素認証を確かめた上で、読みは利用者の JWT の client で RLS に通し、書き込みは service role で行う（ADR-0026）
 - 状態の値は `private`・`published` の2つだが、DB の初めの値は `'draft'` で CHECK に合わない（STATE-NEWS-001）
-- SEC-NEWS-002 は、波 5（2026-10-29）の移行 M2 を当てた DB で満たす（`has_permission` が aal2 と結び付いた生きた session を求める。AUTH の DATA-AUTH-008・ADR-0418。M2 は controller が当てるまで未適用）。構造は AUTH が持つので、ここでは上位につながない
+- SEC-NEWS-002 は、波 5（2026-10-29）の移行 M2 を当てた DB で満たす（`has_permission` が aal2 と結び付いた生きた session を求める。AUTH の DATA-AUTH-008・ADR-0418。M2 は 2026-10-29 に本番適用済み）。構造は AUTH が持つので、ここでは上位につながない
 - 今のコードが満たさないセキュリティ要件（例: SEC-NEWS-003・008・021）は、満たす形の構造を持たないので上位につながず、本文に「満たさない」と書いた
 - 一部だけ満たすセキュリティ要件は、項目が受け持つコードの中に満たさない所がある時は上位にせず、満たさない所がほかのコードにだけある時は上位にした（例: SEC-NEWS-016 の「0件は 404」を満たさないのは `[id]/route.ts` なので、その窓口の項目の上位にはせず、作成の窓口 API-NEWS-003 の上位にはする）。この決まりは ADR と詳細設計の文書にも同じに当てた
 
@@ -593,8 +593,8 @@ stateDiagram-v2
 | Service role has full access to news articles | service_role | ALL | true |
 
 - `has_permission` は SECURITY DEFINER・`search_path=''` で、`auth.uid()` が無ければ false、DB の ACL の表だけで決める（2026-10-23 の権限の作り直しで、役の近道を外した）。anon の EXECUTE は外してある（`supabase/migrations/20260921011535_harden_security_definer_search_path.sql`）
-- `has_permission` は、波 5 の移行 M2（DATA-AUTH-008）を当てると `aal2` と結び付いた生きた session を求める。権限を持つ人が aal1 の JWT で PostgREST を直接叩いても、ログアウト・失効の後の token でも、非公開の読みはできない（推定。SEC-NEWS-002-AC-01・AC-03 を満たす。M2 は controller が当てるまで未適用）。書き換えは 2026-10-26 から付与が無く、権限の誤り（`42501`）で断られる（SEC-NEWS-002-AC-02 を満たす）。書き込みの方針（`manage by permission insert・update・delete`）は働かないが、消さずに二重の守りとして残す（ADR-0414）
-- session の生存は、M2 を当てれば DB（`has_permission`）が見る。ログアウト・失効の後は期限の残る access token でも非公開の読みができない（推定。SEC-NEWS-002-AC-03 を満たす。M2 は controller が当てるまで未適用。当てる前は DB が見ず、同じ読みができる。書き込みは付与が無く断られる）。窓口は引き続き `checkAuthSessionLiveness` で確かめる（`src/lib/auth/admin-rbac.ts`）
+- `has_permission` は、波 5 の移行 M2（DATA-AUTH-008）を当てると `aal2` と結び付いた生きた session を求める。権限を持つ人が aal1 の JWT で PostgREST を直接叩いても、ログアウト・失効の後の token でも、非公開の読みはできない（推定。SEC-NEWS-002-AC-01・AC-03 を満たす。M2 は 2026-10-29 に本番適用済み）。書き換えは 2026-10-26 から付与が無く、権限の誤り（`42501`）で断られる（SEC-NEWS-002-AC-02 を満たす）。書き込みの方針（`manage by permission insert・update・delete`）は働かないが、消さずに二重の守りとして残す（ADR-0414）
+- session の生存は、M2 を当てれば DB（`has_permission`）が見る。ログアウト・失効の後は期限の残る access token でも非公開の読みができない（推定。SEC-NEWS-002-AC-03 を満たす。M2 は 2026-10-29 に本番適用済み。当てる前は DB が見ず、同じ読みができる。書き込みは付与が無く断られる）。窓口は引き続き `checkAuthSessionLiveness` で確かめる（`src/lib/auth/admin-rbac.ts`）
 - 付与: anon・authenticated に SELECT だけを付ける。INSERT・UPDATE・DELETE・TRUNCATE・TRIGGER・REFERENCES・MAINTAIN は付けない（2026-10-26 の移行 `sec_grants_admin_tables`。ADR-0414）。service_role には ALL を明示する。管理の窓口の書き込みは認可の後に service role で行う（ADR-0026）。以前は 8 権限を全部付け、守りは RLS の1段だけだった（SEC-NEWS-022 を満たす）
 - 確かめ: `tests/integration/db/news_grants_admin_tables.integration.test.ts`、`news_articles_rls.integration.test.ts`
 - PostgREST を直接通った変更は監査に残らない（推定）

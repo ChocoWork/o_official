@@ -4343,7 +4343,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | 出どころ | OWASP ASVS 4.0.3 V4.1.1（当てはめは推定） |
 | 優先度 | MUST |
 
-アプリの認証と、会員の情報・注文を返す RLS は、アプリのログイン（パスワード → メール OTP）を通って作られた session の通行証だけを会員の通行証として受ける。アプリを通らずに Supabase Auth を直接呼んで取った通行証（パスワードだけ・OTP だけ）は、受けない。波 5 で、アプリのログインを通って作られた session（自前の `sessions` に GoTrue の `session_id` を残した行がある）だけを受ける形に決めた（ADR-0417。会員の 2 段はアプリ独自の方針で、NIST の AAL2 ではない）。旗 `AUTH_REQUIRE_APP_SESSION` が有効な間（既定。ADR-0419）、アプリの窓口は満たす（AC-01・AC-03・AC-04・AC-05。2026-10-29、Task 3 の読む側。E2E は Task 5 で書いた。流すのは controller）。DB（PostgREST）の側（AC-02・AC-03）は、移行 M2（`has_permission` と会員の表の方針）を当てた DB で満たす（2026-10-29 に AC-02 の E2E の `test.fail` を外し、AC-03 の PostgREST の試験を足した。M2 は controller が当てるまで未適用）。
+アプリの認証と、会員の情報・注文を返す RLS は、アプリのログイン（パスワード → メール OTP）を通って作られた session の通行証だけを会員の通行証として受ける。アプリを通らずに Supabase Auth を直接呼んで取った通行証（パスワードだけ・OTP だけ）は、受けない。波 5 で、アプリのログインを通って作られた session（自前の `sessions` に GoTrue の `session_id` を残した行がある）だけを受ける形に決めた（ADR-0417。会員の 2 段はアプリ独自の方針で、NIST の AAL2 ではない）。旗 `AUTH_REQUIRE_APP_SESSION` が有効な間（既定。ADR-0419）、アプリの窓口は満たす（AC-01・AC-03・AC-04・AC-05。2026-10-29、Task 3 の読む側。E2E は Task 5 で書いた。流すのは controller）。DB（PostgREST）の側（AC-02・AC-03）は、移行 M2（`has_permission` と会員の表の方針）を当てた DB で満たす（2026-10-29 に AC-02 の E2E の `test.fail` を外し、AC-03 の PostgREST の試験を足した。M2 は 2026-10-29 に本番適用済み）。
 
 #### SEC-AUTH-005-AC-01 Supabase Auth の password grant で得た JWT ではアプリの会員の窓口が通らない
 

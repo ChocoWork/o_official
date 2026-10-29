@@ -727,7 +727,7 @@ STOCKIST 一覧で地方（親）チェックを入れるとその地方配下�
 | 出どころ | OWASP ASVS 4.0.3 V4.3.1 |
 | 優先度 | MUST |
 
-`stockists` の RLS のうち `admin.stockists.read`・`admin.stockists.manage` で許す方針は、JWT の `aal` が `aal2` で、JWT の session が有効な時だけ許す（または管理の書き換えを表の直接の権限から外し、窓口だけの道にする）。読みの側（AC-01）は、波 5 の移行 M2（`has_permission` に aal2 と結び付いた生きた session を求める。SEC-AUTH-010-AC-03、ADR-0418）を当てた DB で満たす（2026-10-29 に E2E の `test.fail` を外した。M2 は controller が当てるまで未適用）。書き込みの側（AC-02・AC-03）は、後者の道を取って満たした。2026-10-26 から anon・authenticated に `stockists` の INSERT・UPDATE・DELETE の権限が無い（SEC-STOCKIST-008、ADR-0414）ので、aal1 の JWT でも、失効させた session の token でも PostgREST から書けない（この移行を当てた DB でだけ満たす）。管理の窓口の書き込みは認可の後に service role で行う（ADR-0267）。
+`stockists` の RLS のうち `admin.stockists.read`・`admin.stockists.manage` で許す方針は、JWT の `aal` が `aal2` で、JWT の session が有効な時だけ許す（または管理の書き換えを表の直接の権限から外し、窓口だけの道にする）。読みの側（AC-01）は、波 5 の移行 M2（`has_permission` に aal2 と結び付いた生きた session を求める。SEC-AUTH-010-AC-03、ADR-0418）を当てた DB で満たす（2026-10-29 に E2E の `test.fail` を外した。M2 は 2026-10-29 に本番適用済み）。書き込みの側（AC-02・AC-03）は、後者の道を取って満たした。2026-10-26 から anon・authenticated に `stockists` の INSERT・UPDATE・DELETE の権限が無い（SEC-STOCKIST-008、ADR-0414）ので、aal1 の JWT でも、失効させた session の token でも PostgREST から書けない（この移行を当てた DB でだけ満たす）。管理の窓口の書き込みは認可の後に service role で行う（ADR-0267）。
 
 ### SEC-STOCKIST-003-AC-01 aal1 の session では非公開の店舗を直接読めない
 

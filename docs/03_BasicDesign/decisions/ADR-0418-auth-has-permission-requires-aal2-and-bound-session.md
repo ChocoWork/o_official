@@ -1,6 +1,6 @@
 # ADR-0418 has_permission に aal2 と結び付いた生きた session を求め、会員の本人の行の表は RESTRICTIVE にする
 
-> 状態: 現行（決定と、移行 M2 `sec_has_permission_aal2_member_rls` の文面・試験まで。M2 は `supabase/pending-wave5/` にあり、本番にも手元の DB にも未適用。controller が M1・アプリのコードの後、全員がログインし直した後に当てる） | 確認日: 2026-10-29 | 対象: `public.has_permission`、`profiles`・`orders`・`order_items` の RLS の方針 | 基準コミット: `cc53258f`（作業ツリー）
+> 状態: 現行（決定と、移行 M2 `sec_has_permission_aal2_member_rls` の文面・試験まで。M2 は 2026-10-29 に本番へ単独で適用済み。事後の確認は db-migrations.md。結び付いた生きた session を持たない JWT は `has_permission` が false で、会員の表も読めない。利用者はアプリでログインし直す） | 確認日: 2026-10-29 | 対象: `public.has_permission`、`profiles`・`orders`・`order_items` の RLS の方針 | 基準コミット: `cc53258f`（作業ツリー）
 
 ## 概要
 
@@ -69,6 +69,6 @@
 
 ## 未確認事項
 
-- M2 の DB 結合試験を手元の使い捨て DB で流した結果（controller が M2 を当てた後に流す）
-- 本番で M2 を当てる時期（G-1 の次の `db push --linked` と一緒の案。順序は M1 → アプリ → 全員が再ログイン → M2）。本番のアプリは未デプロイだが、普段の開発が本番の DB につながるので、当てると開発者も再ログインになる
+- （確かめた 2026-10-29）M2 の DB 結合試験は手元の `db:reset` の後に 146 suites・4377 件通過・0 失敗
+- （決めた 2026-10-29）本番で M2 を当てる時期: オーナーの決定で、G-1 の次の適用を待たずに単独で当てた（`db push --linked`、dry-run で M2 だけを確かめた）。普段の開発が本番の DB につながるので、開発者も再ログインになる
 - G-4・H が会員の行を PostgREST に返す新しい表を足すかどうか（足せば同じ RESTRICTIVE の方針が要る）

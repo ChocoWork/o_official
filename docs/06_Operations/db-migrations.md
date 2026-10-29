@@ -1,6 +1,6 @@
 # DB マイグレーション運用
 
-> 波 5 確認日: 2026-10-29。アプリの session への結び付けの移行 M1（`20261029120000`）を追記した（「波 5 アプリの session への結び付けの移行 M1」の節）。2026-10-29 に本番へ適用済み。M2（`20261029120100`、`has_permission` の aal2 と会員の表の方針）を同じ日に追記した（「波 5 `has_permission` の aal2 と会員の表の方針の移行 M2」の節）。**M2 は本番未適用**（オーナーの決定が要る）。
+> 波 5 確認日: 2026-10-29。アプリの session への結び付けの移行 M1（`20261029120000`）を追記した（「波 5 アプリの session への結び付けの移行 M1」の節）。2026-10-29 に本番へ適用済み。M2（`20261029120100`、`has_permission` の aal2 と会員の表の方針）を同じ日に追記した（「波 5 `has_permission` の aal2 と会員の表の方針の移行 M2」の節）。**M2 も 2026-10-29 に本番へ単独で適用済み**（オーナーの決定。G-1 の次の適用より前。`npx supabase db push --linked`、dry-run は M2 の 1 本だけ）。
 
 > 波 2 確認日: 2026-10-27。権限・検索・制約・置き場の移行 6 本（`20261026130100`〜`130600`）を追記した（「波 2 権限・検索・制約・置き場の移行 6 本」の節）。2026-10-27 に本番へ適用済み（G-4 と一緒に）。以後の移行は GRANT を明示する決まりも同じ節に書いた。
 
@@ -275,7 +275,7 @@ COMMIT;
 
 関数 3 本とも SECURITY DEFINER・`search_path ''`・所有者 postgres。末尾の自己検査（失敗は `SEC_WAVE5_MIGRATION_ASSERTION_FAILED`、55000）が列・索引・関数の属性と ACL・PUBLIC 非公開・`sessions` の anon/authenticated 権限なしを確かめ、失敗すれば全体が戻る。ロールバックは移行ファイルのヘッダーの `ROLLBACK`（関数 3 本・索引・列を DROP。M2 を当てていれば先に M2 を戻す）。
 
-M2（`has_permission` と `profiles`・`orders`・`order_items` の RESTRICTIVE 方針）は後。アプリの書き手（Task 2）はログインのたびに `auth_session_id` を入れるので、M1 は新しいコードより先に当てる。M2 はアプリのコード（Task 2・3）が出た後。
+M2（`has_permission` と `profiles`・`orders`・`order_items` の RESTRICTIVE 方針）は M1 の後に、2026-10-29 に本番へ適用済み。アプリの書き手（Task 2）はログインのたびに `auth_session_id` を入れるので、M1 は新しいコードより先に当てた。
 
 事後の確かめ（読むだけ・Supabase MCP）:
 
@@ -288,9 +288,9 @@ M2（`has_permission` と `profiles`・`orders`・`order_items` の RESTRICTIVE 
 
 手元は `npm run db:reset` のあと `tests/integration/db` 全体で 145 suite 通過・13 skip・4355 件通過・0 失敗。Task 0 の実測（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave5-task0-report.md`）で、GoTrue の `session_id` は refresh しても変わらない。
 
-## 波 5 `has_permission` の aal2 と会員の表の方針の移行 M2（本番未適用）
+## 波 5 `has_permission` の aal2 と会員の表の方針の移行 M2（本番適用済み）
 
-確認日: 2026-10-29。**状態: 本番未適用。** ファイルは [20261029120100_sec_has_permission_aal2_member_rls.sql](../../supabase/migrations/20261029120100_sec_has_permission_aal2_member_rls.sql)（計画 Task 6・10、ADR-0418、DATA-AUTH-008）。手元では `supabase/migrations/` に置いて `db reset` で当てる（`supabase/pending-wave5/` に同じ内容の写しがある。本番の適用の前に写しを消す）。**M1 と違い、こちらが効く。** 当てた瞬間から、結び付いていない既存の session は会員の表を 0 行しか読めず、`has_permission` は aal2 と結び付いた生きた session でなければ false になる。
+確認日: 2026-10-29。**状態: 2026-10-29 に本番適用済み（単独。適用後の確認は下の「本番の事後の確認」）。** ファイルは [20261029120100_sec_has_permission_aal2_member_rls.sql](../../supabase/migrations/20261029120100_sec_has_permission_aal2_member_rls.sql)（計画 Task 6・10、ADR-0418、DATA-AUTH-008）。手元では `supabase/migrations/` に置いて `db reset` で当てる（`supabase/pending-wave5/` に同じ内容の写しがある場合、適用済みなので消してよい）。**M1 と違い、こちらが効く。** 当てた瞬間から、結び付いていない既存の session は会員の表を 0 行しか読めず、`has_permission` は aal2 と結び付いた生きた session でなければ false になる。本番に当たった今、**結び付いた生きた session を持たない利用者の JWT は、`has_permission` が false になり、会員の表（`profiles`・`orders`・`order_items`）の読みも断られる。** 本番の利用者は 8 人（全員試し用。本番のアプリは未配備）で、アプリでログインし直す必要がある。手元の開発は本番の DB を使うので、手元でもログインし直す。
 
 変えるもの:
 
@@ -327,16 +327,25 @@ select version from supabase_migrations.schema_migrations order by version desc 
 1. M1 が本番に当たっていること（2026-10-29 に済み）。
 2. アプリの書く側（ログイン・refresh・MFA 昇格が `auth_session_id` を持つ行を作る・引き継ぐ）と読む側（`is_app_session_active` を呼ぶ）が配備されていること。旗 `AUTH_REQUIRE_APP_SESSION` は設定しない（既定で有効）。段階が要る時は先に `off` で配備し、`select count(*) from public.sessions where auth_session_id is not null and revoked_at is null` で行ができたのを確かめてから外す。
 3. **全員がログインし直す**（開発者・試し用の 4 人・管理者。管理者は TOTP の再登録は不要で、メール OTP → TOTP の通常の流れ）。本番は `auth.users` 8 人・失効していない自前の session 3 本。
-4. **M2 を当てる。** 当て方は G-1 の次の `db push --linked` と一緒か、M2 だけを単独で当てるか。**どちらにするかはオーナーの決定が要る。決まるまでの注意: M2 は今 `supabase/migrations/` にあるので、G-1 の次の `db push --linked` を流すと決定前でも一緒に本番へ当たり、手順 2〜3（配備と全員のログインし直し）の順序が崩れる。G-1 の push の前に dry-run で M2 が入るか見る。単独で当てると決まったら `pending-wave5/` に戻す。** `ls supabase/migrations | tail -3` で最後の時刻を見て、M2 の時刻が M1 と全部の既存の移行より後であることを確かめる（G-4／H／G-1 が後から足していれば付け直す。`db push` は古い時刻を断る。付け直したらファイル名・ヘッダー・試験の参照・ADR・文書を一貫させる）。
+4. **M2 を当てる（2026-10-29 に済み）。** オーナーの決定で、G-1 の次の適用より前に M2 だけを単独で当てた（`npx supabase db push --linked`。直前の dry-run は M2 の 1 本だけを示した）。当てる前の確認は次のとおり。`ls supabase/migrations | tail -3` で最後の時刻を見て、M2 の時刻が M1 と全部の既存の移行より後であることを確かめる（G-4／H／G-1 が後から足していれば付け直す。`db push` は古い時刻を断る。付け直したらファイル名・ヘッダー・試験の参照・ADR・文書を一貫させる）。
 5. 事後（読むだけ）: 当てた文を `schema_migrations` の `md5(statements[1])` でファイルと突き合わせる（空白と `;` を除いて繋いだ md5。M1 の節と同じやり方）、`has_permission` の定義に `aal2` と `app_session_is_live` がある、`pg_policies` に方針 3 本、`get_advisors`（security）に増えた WARN が無い、未ログインの anon とパスワードだけの通行証の `profiles` が 0 行。
+
+### 本番の事後の確認（2026-10-29 に実測済み・読むだけ・Supabase MCP）
+
+- 最新の版が `20261029120100`。
+- `schema_migrations` の `md5(statements[1])`（空白と `;` を除いて繋いだもの）がファイルと一致（`e99566627ad4f56a6cc6da961d2a687e`）。
+- `public.has_permission` の定義に `aal2` の検査と、アプリに結び付いた生きた session の検査（`private.app_session_is_live`）がある。ACL は変わらず（postgres・authenticated・service_role）。これを使う方針は 83 本。適用前の定義の md5 は `418b949c1ec79dfa89ea6454bf81f66a`（`aal2` の検査なし）。
+- RESTRICTIVE の方針 `require app bound live session`（cmd ALL、ロール authenticated、`(SELECT private.is_app_bound_live_session())`）が `profiles`・`orders`・`order_items` にある。
+- `get_advisors`（security）に新しい項目なし。
+- 適用前の本番: 結び付いた生きた session は 0 本。したがって適用の瞬間から、全利用者はアプリでログインし直すまで `has_permission` が false で、会員の表も読めない。
 
 ### ロールバック
 
 M2 のファイルのヘッダーの `ROLLBACK`（方針 3 本の `DROP POLICY IF EXISTS` と、`has_permission` を G-0 の本体に戻す `CREATE OR REPLACE`。本体は単体で G-0 と突き合わせ済み）。M1 まで戻すなら M2 → M1 の順（M1 のヘッダーの ROLLBACK は関数 3 本・索引・列を DROP する）。**旗 `AUTH_REQUIRE_APP_SESSION` では DB は戻らない**（DB は環境変数を読めない）。アプリの側は旗を `off` にする。
 
-### 手元の確かめ（2026-10-29 に実測済み。本番は未適用）
+### 手元の確かめ（2026-10-29 に実測済み。本番へは同日に単独で適用済み）
 
-M1・M2 を `supabase/migrations` に置いて `npm run db:reset` が通り（末尾の自己検査が出ない）、`tests/integration/db` は 146 suites・4377 件通過・0 失敗（13 suites・14 件 skipped、1 todo）。reset せずに流した 1 回目は G の g3／g4 が赤だったが、前の実行の残りのデータが原因で、reset し直すと緑になった（DB 結合は毎回 `db reset` の後で流す）。`news_articles_rls` には「aal1・結び付いていない・失効した読み手は公開済みの行しか見えない」の否定を足した。`group_g*` は一字も変えずに通った。本番ビルドの E2E 全件は 203 failed・4821 passed・26 skipped（波 4 の 185 failed との差は、1 並列の再実行と波 5 に未対応だった試験の直しで説明がついた）。M2 は本番未適用のまま（適用の時期はオーナーの決定。G-1 の次の `db push --linked` と一緒か単独か。コードと M2 が効く時に全員がログインし直す）。内訳は [test-spec](../05_Quality/tests/test-spec.md) の波 5 の節。
+M1・M2 を `supabase/migrations` に置いて `npm run db:reset` が通り（末尾の自己検査が出ない）、`tests/integration/db` は 146 suites・4377 件通過・0 失敗（13 suites・14 件 skipped、1 todo）。reset せずに流した 1 回目は G の g3／g4 が赤だったが、前の実行の残りのデータが原因で、reset し直すと緑になった（DB 結合は毎回 `db reset` の後で流す）。`news_articles_rls` には「aal1・結び付いていない・失効した読み手は公開済みの行しか見えない」の否定を足した。`group_g*` は一字も変えずに通った。本番ビルドの E2E 全件は 203 failed・4821 passed・26 skipped（波 4 の 185 failed との差は、1 並列の再実行と波 5 に未対応だった試験の直しで説明がついた）。M2 はこの後、同日に本番へ単独で適用した（上の「本番の事後の確認」）。内訳は [test-spec](../05_Quality/tests/test-spec.md) の波 5 の節。
 
 ### 本番の前の確認（コードでは確かめられない）
 

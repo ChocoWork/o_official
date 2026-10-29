@@ -1111,7 +1111,7 @@ SEC-NEWS-007・008 の E2E（`FR-NEWS-SEC-001`）は `/api/news` が `image_url`
 
 ## 開店前のセキュリティの穴 波 5 のテスト（アプリの session への結び付け・`has_permission` の aal2 と結び付いた生きた session・会員の表の方針。SEC-AUTH・ADMIN・HOME・LOOK・NEWS・STOCKIST）
 
-確認日: 2026-10-29（この節は波 5 の分。並びは時系列でなく、波 4 の節の後に置く）。波 5 は移行 2 本を含む。M1 `20261029120000_sec_app_session_binding` は本番適用済み（2026-10-29）、M2 `20261029120100_sec_has_permission_aal2_member_rls` は本番未適用（[移行運用](../../06_Operations/db-migrations.md)の波 5 の節）。単体・結合（DB なし）は各 Task の実装者が対象の範囲で通した。`npm run db:reset`（M1・M2 を `supabase/migrations` に置いた状態）の後で DB 結合と本番ビルドの E2E 全件を流し、実測した（下の「実測（2026-10-29）」）。
+確認日: 2026-10-29（この節は波 5 の分。並びは時系列でなく、波 4 の節の後に置く）。波 5 は移行 2 本を含む。M1 `20261029120000_sec_app_session_binding` は本番適用済み（2026-10-29）、M2 `20261029120100_sec_has_permission_aal2_member_rls` も本番適用済み（2026-10-29。[移行運用](../../06_Operations/db-migrations.md)の波 5 の節）。単体・結合（DB なし）は各 Task の実装者が対象の範囲で通した。`npm run db:reset`（M1・M2 を `supabase/migrations` に置いた状態）の後で DB 結合と本番ビルドの E2E 全件を流し、実測した（下の「実測（2026-10-29）」）。
 
 ### 新しく作った試験ファイル
 
