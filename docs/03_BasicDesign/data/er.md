@@ -2240,7 +2240,7 @@ service_role の権限は移行が明示する（後の REVOKE で消えない�
 | discount_assignments | UUID id、(discount_id,code_id)→discount_codes、user_id→auth.users | (code_id,user_id)一意。共有assignedだけ。退会でNULLになった割当の行を他人へ再使用しない |
 | discount_redemptions | UUID id、discount_id→discounts、(discount_id,code_id)→discount_codes、order_id→orders、user_id/attention_resolved_by→auth.users | (order_id,discount_id)一意、reserved/confirmed/cancelled、額0以上、写し/照合回復/要対応。本人のconfirmed全体への一意制約は置かない |
 | order_line_discount_allocations | (order_item_id,discount_id)、orders/order_items/discountsを参照 | 額0以上、明細のorder_id一致、INSERT後UPDATE/DELETE/TRUNCATE禁止 |
-| order_line_unit_amounts | (order_item_id,unit_index)、orders/order_itemsを参照 | index/額0以上、数量ぶんの0始まり連続index、支払額の和=行合計−割引の和を遅延検査。INSERT後UPDATE/DELETE/TRUNCATE禁止 |
+| order_line_unit_amounts | (order_item_id,unit_index)、orders/order_itemsを参照 | index/額0以上、数量ぶんの0始まり連続index、支払額の和=行合計−割引の和を遅延検査。H5ではrefund_id（order_refundsへのFK）/refund_before_shipment/return_line_id（order_return_linesへのFK）だけを内部writerが同じG鍵下で更新可。金額・注文・明細・index・作成日時とDELETE/TRUNCATEは不変 |
 
 業務FKは全てON DELETE RESTRICT。auth.usersへのFKだけNULL可・ON DELETE SET NULLで、退会後も割引・使用・支払額を保持する。割当先NULLのassigned codeを誰でも使えるcodeへ変えない。全7表はRLS有効、PUBLIC/anon/authenticated/service_roleに表・列の直接権限を与えない。
 
@@ -2262,3 +2262,15 @@ private.order_line_discounts(uuid)は保存allocationが1件でもある注文�
 割当表は共有assignedが１会員１行、単発assignedが１code１行、anyoneが１code・実使用者１行。予約/確定は最新の有効使用日時と注文を返し、取消だけならunusedで日時/注文はNULL。guestは先頭１字とドメインだけ、壊れたメールは`***`、結び付け済みのguest行は重ねない。氏名の結合は頁の対象だけで行い、１呼出し１snapshot・limit1〜100/offset0以上のjsonbで返す。
 
 自動の25件/分類ごと６件と併用ONセットの共有item禁止は半開区間の全期間を検査し、writerと遅延constraint triggerの両方で守る。SQL定数と純粋エンジン定数の一致は [assert試験](../../../tests/integration/db/group_h_migration_asserts.integration.test.ts) に固定する。checkout contextはSTABLEで、guest previewではメールを捨て、注文/返金/本人回数の読取を実行しない。confirm/acceptanceは同メールの会員注文も含む有料履歴と初回予約を分ける。会員の前回着数は通常行−成功返金、交換/未入金は除く。
+
+## グループH Task 9: 単位ごとの返金・返品の占有
+
+`order_line_unit_amounts`の1行が1着で、refund_idと発送前/後の組は両方NULLまたは両方値あり。INSERT時のclaim3列はNULLに限る。返品はreturn_line_idで承認時に固定する。返金の親・返品の行・注文・商品の対応を内部関数とguardで確かめる。awaiting_response/pending/succeededは占有、error/failedはrefundの組だけ解放し、同じ返品の待ち単位は保つ。未処理分は取消/却下で解放し、sent_back・missing・refund_waivedは受取記録のAFTER INSERT triggerから同じG鍵・取引内で解放する。交換と成功返金のclaimは保持する。missingの開き直しではG-1が残す待ち数量のclaimを取り直す。
+
+error後のStripe成功は保存した返金額を記録し、残る最安free単位だけを取り直す。数量または額が合わなければrefund_failedの要対応を残す。保存単位額と返金額は変更しない。この履歴を持つ回復行は、要対応が存在する場合に限りclaimの不足・額の不一致をassertで許す。
+
+通常の返金はfreeをpaid_amount ASC,unit_index ASCで取り、同じ明細の発送前を先にする。返品の返金はその返品のclaimを使う。交換の元額は同じ単位の和、交換品自身へH単位や新しい割引を足さない。返品の受取履歴の区間で交換済みの単位を判定し、相談待ちの単位と重ねない。金額列を書き換えず、redemptionsも更新しない。
+
+同じ返品行では返金・交換に安いclaimを残し、sent_back・missing・refund_waivedは高いclaimから解放する。対応付けでは返金しない完了分を高い側へまとめ、既に解放した数も高い側から除く。受取の行順や分けた受取の先後で、17000円の返金が20000円に変わらない。
+
+H判定は単位の存在（割引0も含む）。旧行と交換の計算は従来のhelperを保つ。表・列の直接DMLはservice_roleにも許可しない。移行は[H5](../../../supabase/migrations/20261029130400_group_h_discounts_refunds.sql)、DBの動作確認はcontroller。

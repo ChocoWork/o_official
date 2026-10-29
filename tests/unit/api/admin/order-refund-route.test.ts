@@ -355,7 +355,7 @@ describe('GET /api/admin/orders/[id]/refund（返金の材料）', () => {
       orderItemId: ITEM_1, name: 'シルクブラウス', color: '白', size: 'M', fulfillmentType: 'stock',
       itemPrice: 4000, quantity: 3, lineTotal: 12000, shipped: 0, unshipped: 3,
       refundedBeforeShipment: 0, refundedAfterShipment: 0, shippedRefundable: 0, restockable: 3,
-      lineDiscount: 0, refundedUnits: 0,
+      lineDiscount: 0, availableUnitAmounts: null, refundedUnits: 0,
     }],
     awaitingRefund: null,
   };

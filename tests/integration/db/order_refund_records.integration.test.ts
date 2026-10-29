@@ -1,7 +1,10 @@
 /** @jest-environment node */
 import fs from 'node:fs';
 import path from 'node:path';
+import { seedHOrderUnits } from './helpers/group-h-fixtures';
+import { hRefundFixture } from './helpers/group-h-refund-fixtures';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
+
 import {
   PRICE,
   createCatalogFixture,
@@ -1207,5 +1210,18 @@ describeLocalDb('E-3: 交換の行の割引と人気と返金の支払額',db=>{
     expect((await db().query('select private.return_units_amount($1,1,1) amount',[ex])).rows[0].amount).toBe(4999);
     expect((await db().query('select private.return_units_amount($1,1,2) amount',[ex])).rows[0].amount).toBe(5000);
     expect((await db().query('select private.return_units_amount($1,3,0) amount',[ex])).rows[0].amount).toBe(14999);
+  });
+});
+
+describeLocalDb('H5 refund material regression (controller)', db => {
+  beforeEach(async () => { await db().query('begin'); await db().query('select pg_advisory_xact_lock(190521,1)'); });
+  afterEach(async () => { await db().query('rollback'); });
+  test('FREQ-551-AC-02: H材料は17000/20000で旧材料はnullの18500を保つ', async () => {
+    const f = await hRefundFixture(db());
+    expect((await db().query('select lines from public.load_order_refund_materials($1)', [f.orderId])).rows[0].lines[0].available_unit_amounts).toEqual([17000, 20000]);
+    const old = await seedHOrderUnits(db(), { legacy: true, lines: [{ itemPrice: 20000, quantity: 2,
+      discounts: [{ discountId: crypto.randomUUID(), amount: 3000 }], unitAmounts: [] }] });
+    expect((await db().query('select private.return_units_amount($1,1) n', [old.orderItemIds[0]])).rows[0].n).toBe(18500);
+    expect((await db().query('select lines from public.load_order_refund_materials($1)', [old.orderId])).rows[0].lines[0].available_unit_amounts).toBeNull();
   });
 });

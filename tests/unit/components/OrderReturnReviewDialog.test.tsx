@@ -91,6 +91,12 @@ beforeEach(() => {
 });
 
 describe('OrderReturnReviewDialog の申し込みの中身', () => {
+  it('FREQ-551-AC-01: Hの単位別見込みを持つ返品も同じ内容で承認する', async () => {
+    const { dialog } = await openDialog(returnDetail({ lines: [returnLine({ refundAmountsByCount: [17000, 37000], refundWaitingAmount: 17000 })] }));
+    fireEvent.click(approveButton(dialog));
+    await waitFor(() => expect(postedBodies(APPROVE_URL)).toHaveLength(1));
+    expect(postedBody(APPROVE_URL)).toMatchObject({ lines: [expect.objectContaining({ resolution: 'refund' })] });
+  });
   it('申し込みの日時・品・理由・詳しい内容・ご希望を出す', async () => {
     const { dialog } = await openDialog(
       returnDetail({ lines: [returnLine({ customerNote: '袖のほつれがあります。\n他は問題ありません。' })] }),

@@ -108,6 +108,7 @@ export async function loadRefundMaterials(client: SupabaseClient, orderId: strin
       restockable: Number(line.restockable),
       lineDiscount: Number(line.line_discount),
       refundedUnits: Number(line.refunded_units),
+      availableUnitAmounts: Array.isArray(line.available_unit_amounts) ? line.available_unit_amounts.map(Number) : null,
       // 交換の品の行だけ数を持つ（DB は、ほかの行を null で返す）。Number(null) は 0 になるので、null は null のまま写す
       exchangePaidAmount: line.exchange_paid_amount === null || line.exchange_paid_amount === undefined ? null : Number(line.exchange_paid_amount),
     }];

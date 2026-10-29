@@ -165,6 +165,15 @@ beforeEach(() => {
   mockClientFetch.mockReset();
 });
 
+it('FREQ-551-AC-01: 返品詳細の数量別見込みと入金待ち額と画面とメールは17000円からになる', async () => {
+  const { dialog } = await openDialog(returnDetail({ lines: [{ ...BLOUSE, refundAmountsByCount: [17000, 37000] }] }));
+  receiveUnit(dialog, 0, 'not_restocked');
+  expect(within(dialog).getByRole('radio', { name: '計算どおり ￥17,000 を返金する' })).toBeChecked();
+  expect(amountInput(dialog)).toHaveValue(17000);
+  receiveUnit(dialog, 1, 'not_restocked');
+  expect(amountInput(dialog)).toHaveValue(37000);
+});
+
 describe('OrderReturnReceiveDialog の読み込み', () => {
   it('開くと注文の返品の窓口を読み、読み終えるまでは「読み込み中です...」と「閉じる」だけを出す', async () => {
     let resolveGet: (value: Response) => void = () => {};

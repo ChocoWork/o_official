@@ -28,6 +28,8 @@ export type RefundMaterialLine = {
   itemPrice: number; quantity: number; lineTotal: number; shipped: number; unshipped: number;
   refundedBeforeShipment: number; refundedAfterShipment: number; shippedRefundable: number; restockable: number;
   lineDiscount: number; refundedUnits: number; exchangePaidAmount?: number | null;
+  /** H: active claims excluded, cheapest first. Legacy/exchange: null. */
+  availableUnitAmounts: readonly number[] | null;
 };
 export type RefundMaterials = {
   order: {

@@ -10,20 +10,44 @@ import type { RefundMaterialLine, RefundMaterials } from '@/lib/orders/refund/re
 
 // 割り振りの試験の値。Task 1 の DB 結合テストと同じ値で、TS と SQL の答えが食い違わないことを確かめる（本計画 P4）。
 // 値 A: 注文の割引 1000 円を、商品の小計 6000 円（X）と 3000 円（Y）の割合で割った 667 円と 333 円
-const X = { itemPrice: 3000, quantity: 2, lineDiscount: 667, refundedUnits: 0 } as const;
-const Y = { itemPrice: 1000, quantity: 3, lineDiscount: 333, refundedUnits: 0 } as const;
+const X = { itemPrice: 3000, quantity: 2, lineDiscount: 667, availableUnitAmounts: null, refundedUnits: 0 } as const;
+const Y = { itemPrice: 1000, quantity: 3, lineDiscount: 333, availableUnitAmounts: null, refundedUnits: 0 } as const;
 
 function materialLine(overrides: Partial<RefundMaterialLine> = {}): RefundMaterialLine {
   return {
     orderItemId: 'item-x', name: 'シルクブラウス', color: '白', size: 'M', fulfillmentType: 'stock',
     itemPrice: 3000, quantity: 2, lineTotal: 6000, shipped: 0, unshipped: 2,
     refundedBeforeShipment: 0, refundedAfterShipment: 0, shippedRefundable: 0, restockable: 2,
-    lineDiscount: 667, refundedUnits: 0, ...overrides,
+    lineDiscount: 667, availableUnitAmounts: null, refundedUnits: 0, ...overrides,
   };
 }
 
 /** 値 A の X（在庫の品 3000 円 × 2） */
 const LINE_X = materialLine();
+
+describe('H cheapest paid units', () => {
+  const h = { ...materialLine(), itemPrice: 20000, lineTotal: 40000, lineDiscount: 3000,
+    availableUnitAmounts: [17000, 20000] };
+  it('FREQ-551-AC-01: 20000円の２着で２着目3000円引きなら１着目の返金は17000円で次は20000円', () => {
+    expect(refundLineAmount(h, 1)).toBe(17000);
+    expect(refundLineAmount({ ...h, refundedUnits: 1, availableUnitAmounts: [20000] }, 1)).toBe(20000);
+    expect(refundLineAmount(h, 2)).toBe(37000);
+    expect(estimateRefund([h], [{ orderItemId: h.orderItemId, beforeShipment: true, quantity: 1 }], 0).total).toBe(17000);
+  });
+  it('FREQ-551-AC-02: unit記録の無い旧注文は均等式を保ち交換は元の支払額を使う', () => {
+    expect(refundLineAmount({ ...h, availableUnitAmounts: null }, 1)).toBe(18500);
+    expect(refundLineAmount({ ...h, exchangePaidAmount: 37000, availableUnitAmounts: null }, 1)).toBe(18500);
+    expect(refundLineAmount({ ...h, availableUnitAmounts: [0, 20000] }, 1)).toBe(0);
+    expect(refundLineAmount({ ...h, refundedUnits: 1, availableUnitAmounts: [17000] }, 1)).toBe(17000);
+    expect(refundLineAmount({ ...h, availableUnitAmounts: [] }, 0)).toBe(0);
+    expect(refundLineAmount({ ...h, availableUnitAmounts: [17000] }, 2)).toBeNaN();
+  });
+  it('FREQ-551-AC-02: 利用可能な単位が選択数より少ない見込みは描画用の unavailable を返す', () => {
+    const stale = { ...h, shipped: 2, unshipped: 0, shippedRefundable: 2, availableUnitAmounts: [20000] };
+    expect(estimateRefund([stale], [{ orderItemId: h.orderItemId, beforeShipment: false, quantity: 2 }], 0).total).toBeNaN();
+    expect(refundLineAmount(stale, 1)).toBe(20000);
+  });
+});
 /** 値 A の Y（受注生産の品 1000 円 × 3） */
 const LINE_Y = materialLine({
   orderItemId: 'item-y', name: 'リネンパンツ', color: null, size: null, fulfillmentType: 'backorder',
@@ -73,17 +97,17 @@ describe('unitsDiscount（disc(n) = floor((2·D·n + q) / (2·q))）', () => {
 describe('refundLineAmount（今回の k 個の額 = 単価 · k − (disc(b + k) − disc(b))）', () => {
   it.each([
     ['値 A: X をまだ返していない時に 1 個', X, 1, 2666],
-    ['値 A: X を 1 個返した後に 1 個（最後の返金で合計がぴったり）', { ...X, refundedUnits: 1 }, 1, 2667],
+    ['値 A: X を 1 個返した後に 1 個（最後の返金で合計がぴったり）', { ...X, availableUnitAmounts: null, refundedUnits: 1 }, 1, 2667],
     ['値 A: X を 2 個まとめて', X, 2, 5333],
     ['値 A: Y をまだ返していない時に 2 個', Y, 2, 1778],
-    ['値 A: Y を 2 個返した後に 1 個', { ...Y, refundedUnits: 2 }, 1, 889],
+    ['値 A: Y を 2 個返した後に 1 個', { ...Y, availableUnitAmounts: null, refundedUnits: 2 }, 1, 889],
     ['値 B: 割引が 0 なら 単価 × 数', { ...X, lineDiscount: 0 }, 2, 6000],
   ] as const)('%s → %i', (_name, line, units, expected) => {
     expect(refundLineAmount(line, units)).toBe(expected);
   });
 
   it('1個ずつ順に返しても合計は「単価 × 数 − 割引の合計」になり、まとめて返した額と同じ', () => {
-    const lines = [X, Y, { ...X, lineDiscount: 0 }, { itemPrice: 1000, quantity: 3, lineDiscount: 1, refundedUnits: 0 }];
+    const lines = [X, Y, { ...X, lineDiscount: 0 }, { itemPrice: 1000, quantity: 3, lineDiscount: 1, availableUnitAmounts: null, refundedUnits: 0 }];
 
     for (const base of lines) {
       let oneByOne = 0;
@@ -101,7 +125,7 @@ describe('交換の品の行（グループ E-3、本計画 P22）の額は、�
   // 値 D（Task 3 の DB 結合テストの private.return_units_amount と同じ値。TS と SQL の答えが食い違わないことを確かめる）:
   // 元の支払額 14999、数 3 → A(n) = floor((2·P·n + q) / (2·q)) で A(1) = 5000・A(2) = 9999・A(3) = 14999。
   // 1個ずつ返すと 5000・4999・5000、3個まとめて 14999
-  const EXCHANGE = { itemPrice: 0, quantity: 3, lineDiscount: 0, refundedUnits: 0, exchangePaidAmount: 14999 } as const;
+  const EXCHANGE = { itemPrice: 0, quantity: 3, lineDiscount: 0, availableUnitAmounts: null, refundedUnits: 0, exchangePaidAmount: 14999 } as const;
 
   it.each([
     ['値 D: まだ返していない時に 1 個', 0, 1, 5000],
@@ -145,7 +169,7 @@ describe('estimateRefund（交換の品の行を含む）', () => {
   });
 
   it('前に1個返した交換の品をもう1個選ぶと 4999（前に返した数 refundedUnits から割り振る）', () => {
-    const afterOne = { ...EXCHANGE_LINE, refundedUnits: 1, refundedBeforeShipment: 1, unshipped: 2 };
+    const afterOne = { ...EXCHANGE_LINE, availableUnitAmounts: null, refundedUnits: 1, refundedBeforeShipment: 1, unshipped: 2 };
 
     expect(estimateRefund([afterOne], [{ orderItemId: 'item-ex', beforeShipment: true, quantity: 1 }], 0)).toEqual({
       itemsAmount: 4999, discountAmount: 0, shippingAmount: 0, total: 4999,
@@ -178,7 +202,7 @@ describe('estimateRefund', () => {
   });
 
   it('値 A: 前に 1 個返した X をもう 1 個選ぶと、割引は 333・合計は 2667', () => {
-    const afterOne = materialLine({ refundedUnits: 1, refundedBeforeShipment: 1, unshipped: 1 });
+    const afterOne = materialLine({ availableUnitAmounts: null, refundedUnits: 1, refundedBeforeShipment: 1, unshipped: 1 });
 
     expect(estimateRefund([afterOne], [{ orderItemId: 'item-x', beforeShipment: true, quantity: 1 }], 0)).toEqual({
       itemsAmount: 3000, discountAmount: 333, shippingAmount: 0, total: 2667,
@@ -204,7 +228,7 @@ describe('estimateRefund', () => {
     );
     // 1回目で返した数（X は 1 個、Y は 2 個）を、材料の refundedUnits に入れて読み直した形
     const second = estimateRefund(
-      [materialLine({ refundedUnits: 1, unshipped: 1 }), { ...LINE_Y, refundedUnits: 2, unshipped: 1 }],
+      [materialLine({ availableUnitAmounts: null, refundedUnits: 1, unshipped: 1 }), { ...LINE_Y, availableUnitAmounts: null, refundedUnits: 2, unshipped: 1 }],
       [{ orderItemId: 'item-x', beforeShipment: true, quantity: 1 }, { orderItemId: 'item-y', beforeShipment: true, quantity: 1 }],
       0,
     );
@@ -221,7 +245,7 @@ describe('estimateRefund', () => {
 
     // 発送前の 1 個は b = 0 で 2666。続けて発送後の 1 個は b = 0 + 1 で 2667
     const first = estimateRefund([shippedOne], [beforeShipment], 0);
-    const second = estimateRefund([{ ...shippedOne, refundedUnits: 1 }], [afterShipment], 0);
+    const second = estimateRefund([{ ...shippedOne, availableUnitAmounts: null, refundedUnits: 1 }], [afterShipment], 0);
     expect(first.total).toBe(2666);
     expect(second.total).toBe(2667);
 
@@ -287,13 +311,13 @@ describe('selectsAllUnshipped（発送が0で、残りの未発送を全部、�
   });
 
   it('もう未発送の商品が1つも残っていない注文は false（全部選ぶ物が無い）', () => {
-    const nothingLeft = materials({ lines: [materialLine({ unshipped: 0, refundedBeforeShipment: 2, refundedUnits: 2 })] });
+    const nothingLeft = materials({ lines: [materialLine({ unshipped: 0, refundedBeforeShipment: 2, availableUnitAmounts: null, refundedUnits: 2 })] });
 
     expect(selectsAllUnshipped(nothingLeft, [])).toBe(false);
   });
 
   it('未発送が残っていない商品には選びが要らない（前に全部返した商品があっても、残りを全部選べば true）', () => {
-    const refundedBefore = materialLine({ orderItemId: 'item-done', unshipped: 0, refundedBeforeShipment: 1, refundedUnits: 1 });
+    const refundedBefore = materialLine({ orderItemId: 'item-done', unshipped: 0, refundedBeforeShipment: 1, availableUnitAmounts: null, refundedUnits: 1 });
 
     expect(selectsAllUnshipped(materials({ lines: [refundedBefore, LINE_X] }), [selectAll[0]])).toBe(true);
   });

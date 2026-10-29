@@ -17,9 +17,18 @@ export function unitsDiscount(lineDiscount: number, quantity: number, units: num
  * A(n) = floor((2·P·n + q) / (2·q))（SQL の private.return_units_amount と同じ式。グループ E-3、本計画 P22）
  */
 export function refundLineAmount(
-  line: Pick<RefundMaterialLine, 'itemPrice' | 'quantity' | 'lineDiscount' | 'refundedUnits' | 'exchangePaidAmount'>,
+  line: Pick<RefundMaterialLine, 'itemPrice' | 'quantity' | 'lineDiscount' | 'refundedUnits' | 'exchangePaidAmount' | 'availableUnitAmounts'>,
   units: number,
 ): number {
+  if (line.availableUnitAmounts != null) {
+    const amounts = line.availableUnitAmounts;
+    if (!Number.isInteger(units) || units < 0 || units > amounts.length ||
+      amounts.some((n, i) => !Number.isSafeInteger(n) || n < 0 || n > 2147483647 || (i > 0 && n < amounts[i - 1]))) {
+      // Materials may become stale while a dialog is open. NaN means no estimate; the DB validates claims.
+      return Number.NaN;
+    }
+    return amounts.slice(0, units).reduce((total, amount) => total + amount, 0);
+  }
   const exchangePaid = line.exchangePaidAmount ?? null;
   if (exchangePaid !== null) {
     return (

@@ -129,6 +129,7 @@ export function materialLineOf(
     shippedRefundable: input.shippedRefundable ?? base.shipped - base.refundedAfterShipment,
     restockable: input.restockable ?? (base.fulfillmentType === 'stock' ? unshipped : 0),
     refundedUnits: input.refundedUnits ?? base.refundedBeforeShipment + base.refundedAfterShipment,
+    availableUnitAmounts: input.availableUnitAmounts ?? null,
   };
 }
 

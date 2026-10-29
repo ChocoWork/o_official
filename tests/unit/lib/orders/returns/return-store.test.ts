@@ -1098,6 +1098,13 @@ const CANCELLED_JSON = {
 };
 
 describe('listOrderReturns', () => {
+  it('FREQ-551-AC-01: Hの17000円と37000円の配列と待ち額を再計算せず写す', async () => {
+    const { store } = storeWith({ list_order_returns: { data: [{ ...RETURN_JSON, lines: [{ ...RETURN_JSON.lines[0],
+      refund_amounts_by_count: [17000, 37000], refund_waiting_amount: 17000 }] }] } });
+    expect((await listOrderReturns(store, ORDER_ID))[0].lines[0]).toMatchObject({
+      refundAmountsByCount: [17000, 37000], refundWaitingAmount: 17000,
+    });
+  });
   it('返品の一覧を窓口の形に直す。キーは camelCase、番号の文字（label）は注文の番号と返品の番号から付ける', async () => {
     const { store, rpc } = storeWith({ list_order_returns: { data: [RETURN_JSON] } });
 

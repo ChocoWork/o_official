@@ -24,7 +24,7 @@ const BLOUSE: RefundMaterialLine = {
   orderItemId: 'item-stock', name: 'シルクブラウス', color: '白', size: 'M', fulfillmentType: 'stock',
   itemPrice: 12000, quantity: 2, lineTotal: 24000, shipped: 0, unshipped: 2,
   refundedBeforeShipment: 0, refundedAfterShipment: 0, shippedRefundable: 0, restockable: 2,
-  lineDiscount: 0, refundedUnits: 0,
+  lineDiscount: 0, availableUnitAmounts: null, refundedUnits: 0,
 };
 
 /** 受注生産の品。1つとも未発送 */
@@ -32,7 +32,7 @@ const COAT: RefundMaterialLine = {
   orderItemId: 'item-backorder', name: 'ウールコート', color: '黒', size: 'L', fulfillmentType: 'backorder',
   itemPrice: 30000, quantity: 1, lineTotal: 30000, shipped: 0, unshipped: 1,
   refundedBeforeShipment: 0, refundedAfterShipment: 0, shippedRefundable: 0, restockable: 0,
-  lineDiscount: 0, refundedUnits: 0,
+  lineDiscount: 0, availableUnitAmounts: null, refundedUnits: 0,
 };
 
 /** もう全部送った品。発送済みの商品にだけ出る（未発送の数が 0） */
@@ -40,7 +40,7 @@ const SHIPPED: RefundMaterialLine = {
   orderItemId: 'item-shipped', name: 'レザーベルト', color: '茶', size: null, fulfillmentType: 'stock',
   itemPrice: 9000, quantity: 1, lineTotal: 9000, shipped: 1, unshipped: 0,
   refundedBeforeShipment: 0, refundedAfterShipment: 0, shippedRefundable: 1, restockable: 0,
-  lineDiscount: 0, refundedUnits: 0,
+  lineDiscount: 0, availableUnitAmounts: null, refundedUnits: 0,
 };
 
 /** 何も発送していないカードの注文（ブラウス 2・コート 1・送料 800 で 54,800） */

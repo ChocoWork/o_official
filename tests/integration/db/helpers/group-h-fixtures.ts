@@ -12,7 +12,7 @@ export type DiscountSeed = Omit<DiscountDefinition, 'id' | 'version'> & { code?:
 export type HOrderSeed = {
   lines: readonly { itemPrice: number; quantity: number; discounts: readonly { discountId: string; amount: number }[];
     unitAmounts: readonly number[]; catalog?: HCatalog }[];
-  legacy: boolean; buyerUserId?: string; email?: string; paidAt?: string | null; status?: OrderStatus;
+  legacy: boolean; buyerUserId?: string; email?: string; paidAt?: string | null; status?: OrderStatus; shippingAmount?: number;
 };
 
 export const hDiscount = (overrides: Partial<DiscountSeed> = {}): DiscountSeed => ({
@@ -100,9 +100,9 @@ export async function seedHOrderUnits(client: PgClient, input: HOrderSeed): Prom
   const orderId = (await client.query(`insert into public.orders
     (session_id,checkout_session_id,status,subtotal_amount,shipping_amount,discount_amount,total_amount,currency,
      user_id,paid_at,shipping_email,shipping_full_name,shipping_postal_code,shipping_prefecture,shipping_city,shipping_address,shipping_phone)
-    values($1,$2,$3,$4,0,$5,$6,'jpy',$7,$8,$9,'Fixture','1500001','Tokyo','Tokyo','Fixture','0311112222') returning id`,
-  [`h-${randomUUID()}`, `cs_h_${randomUUID()}`, input.status ?? 'paid', subtotal, discount, subtotal - discount,
-    input.buyerUserId ?? null, input.paidAt === undefined ? new Date().toISOString() : input.paidAt, input.email ?? 'h@example.invalid'])).rows[0].id as string;
+    values($1,$2,$3,$4,$10,$5,$6,'jpy',$7,$8,$9,'Fixture','1500001','Tokyo','Tokyo','Fixture','0311112222') returning id`,
+  [`h-${randomUUID()}`, `cs_h_${randomUUID()}`, input.status ?? 'paid', subtotal, discount, subtotal - discount + (input.shippingAmount ?? 0),
+    input.buyerUserId ?? null, input.paidAt === undefined ? new Date().toISOString() : input.paidAt, input.email ?? 'h@example.invalid', input.shippingAmount ?? 0])).rows[0].id as string;
   const orderItemIds: string[] = [];
   for (const line of input.lines) {
     const catalog = line.catalog ?? await createCatalogFixture(client);
@@ -121,11 +121,20 @@ export async function seedHOrderUnits(client: PgClient, input: HOrderSeed): Prom
   return { orderId, orderItemIds };
 }
 
-/** H1 is a historical assertion: remove the H2 additions it never knew. The caller's savepoint must restore them. */
+/** H1 is a historical assertion: remove later H2/H5 additions. The caller's savepoint must restore them. */
 export async function dropH2Additions(client: PgClient): Promise<void> {
   await client.query(`drop trigger if exists h2_assignment_identity on public.discount_assignments;
     alter table public.discount_assignments drop column if exists original_user_id;
     alter table public.discount_codes drop column if exists unassigned_at`);
+  // Dropping the claim columns also removes H5's dependent FKs, CHECK and indexes.
+  if ((await client.query(`select exists (select 1 from pg_catalog.pg_attribute
+    where attrelid='public.order_line_unit_amounts'::regclass and attname='refund_id' and not attisdropped) present`)).rows[0].present) {
+    await client.query(`drop trigger if exists h5_units_empty_claim on public.order_line_unit_amounts;
+      drop trigger h1_units_immutable on public.order_line_unit_amounts;
+      create trigger h1_units_immutable before update or delete on public.order_line_unit_amounts
+        for each row execute function private.group_h_immutable();
+      alter table public.order_line_unit_amounts drop column refund_id,drop column refund_before_shipment,drop column return_line_id`);
+  }
 }
 
 /** Pin the pre-H1 permission state BEFORE a caller tampers with the applied catalog. */

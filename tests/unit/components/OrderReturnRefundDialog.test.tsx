@@ -145,6 +145,13 @@ beforeEach(() => {
   mockClientFetch.mockReset();
 });
 
+it('FREQ-551-AC-01: Hの返金待ち17000円を均等式で18500円にしない', async () => {
+  const { dialog } = await openDialog(returnDetail({ lines: [{ ...WAITING_BLOUSE,
+    progress: progress({ restocked: 1, processed: 1, refundWaiting: 1 }), refundWaitingAmount: 17000 }] }));
+  expect(amountInput(dialog)).toHaveValue(17000);
+  expect(breakdownRow(dialog, '商品')).toBe('商品￥17,000');
+});
+
 describe('OrderReturnRefundDialog の読み込み', () => {
   it('開くと注文の返品の窓口を読み、読み終えるまでは「読み込み中です...」と「閉じる」だけを出す', async () => {
     let resolveGet: (value: Response) => void = () => {};

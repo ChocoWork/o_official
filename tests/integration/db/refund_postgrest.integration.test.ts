@@ -544,6 +544,7 @@ describeLocalDb('integration: 返金の記録の窓口を実際の PostgREST に
           lineDiscount: 0,
           refundedUnits: 0,
           exchangePaidAmount: null,
+          availableUnitAmounts: null,
         },
       ],
       awaitingRefund: null,

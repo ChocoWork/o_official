@@ -1,5 +1,6 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
+import { hReceive, hRefundFixture, hResult, hReturn } from './helpers/group-h-refund-fixtures';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describeLocalDb } from './helpers/local-db';
@@ -586,5 +587,17 @@ describeLocalDb('G-4 reads: item rows, amounts, filters, export, detail and hist
       for (const role of ['anon','authenticated','service_role']) expect((await db().query(
         "select has_function_privilege($1,$2,'EXECUTE') as ok",[role,`private.${sig}`])).rows[0].ok).toBe(false);
     await db().query(assertion);
+  });
+});
+
+describeLocalDb('H5 G4 row mapping regression (controller)', db => {
+  beforeEach(async () => { await db().query('begin'); }); afterEach(async () => { await db().query('rollback'); });
+  test('FREQ-551-AC-04: 商品返金17000円だけを返品済み行へ付け残りの商品額は20000円', async () => {
+    const f = await hRefundFixture(db(), true); const r = await hReturn(db(), f); await hReceive(db(), f, r);
+    const refund = (await db().query('select * from public.admin_refund_return($1,$2,$3,null,0,null,false)', [r.returnId, f.actor, randomUUID()])).rows[0];
+    await hResult(db(), refund.refund_id, 'succeeded');
+    expect((await db().query('select status,line_amount,refund_amount from private.group_g_order_item_rows($1) order by status', [[f.orderId]])).rows).toEqual([
+      { status: 'returned', line_amount: 17000, refund_amount: 17000 }, { status: 'shipped', line_amount: 20000, refund_amount: 0 },
+    ]);
   });
 });

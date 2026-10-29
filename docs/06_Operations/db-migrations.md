@@ -1153,3 +1153,13 @@ H3_FINAL_ASSERTのDETAILはh3_draft_freeze・h3_coupon_binding・h3_public_acl�
 H4_FINAL_ASSERTのDETAILは `h4_acceptance`・`h4_member_lock`・`h4_redemption_lifecycle`・`h4_reconciled_recovery`・`h4_attention`・`h4_writer_allowlist`・`h4_public_acl`。失敗は `GROUP_H_MIGRATION_ASSERTION_FAILED / P0001`。関数の署名・属性・意味上のACL・public入口の委譲・本文MD5と、書き手の一覧が「H4より前の76本のOID + 照合入口1本」であることを検査する。本文MD5は controller が DB で `md5(replace(prosrc, E'\r', ''))` を計算して補完する。本文を変えた関数だけ `00000000000000000000000000000000` に戻してあり、その一覧は[Task 7レポート](../../.superpowers/sdd/2026-10-29-group-h-promotions/task-7-report.md)の fix round 1 に書く。
 
 実装者は単体/TypeScript/ESLintだけを確認し、DBテスト・CLI・Docker・本番・実Stripeは実行しない。controllerは未実装DBのRED、MD5補完、fresh reset、H4のDB 3 suite+assert、既存のG-1〜G-4回帰（`group_g1_writer_inventory` は77本）、並行の3連続、PostgRESTでの新public入口のservice成功/anon・authenticated拒否、照合入口が通常routeから未使用であることを確認する。
+
+## グループH Task 9: 返金・返品・G-4金額（H5、controllerのDB確認待ち）
+
+移行は[20261029130400_group_h_discounts_refunds.sql](../../supabase/migrations/20261029130400_group_h_discounts_refunds.sql)。サイズ 189,702 bytes、MD5 `aa93b52d78391ca52015dc84275171a9`（末尾 assert の関数の本文の指紋は controller が手元の DB で計算して埋めた。fix round 4 で返品単位の対応付けと解放順の2本を変え、その2本も計算し直し済み）。ASCII/BOMなし/LF、BEGIN→既存関数のCREATE OR REPLACEと単位claim→H5_FINAL_ASSERT→NOTIFY→COMMIT。既存移行は編集しない。業務データの補完/清掃はしない。
+
+新しい列はunit_amountsだけのrefund_id/refund_before_shipment/return_line_id。金額などのimmutable・RLS・直接DML拒否を保ち、G共通鍵下の内部helperだけが関連を変える。使用回数confirmedは戻さない。G writer allowlistは77本のまま（Hの追加helperはGの保護する表を書かない）。既存関数はOID・署名・戻り型・SECURITY・volatility・search_path・ACLを保つ。public.load_order_refund_materialsは既存のSECURITY DEFINER/STABLEの1本を拡張する。
+
+H5 assertは `GROUP_H_MIGRATION_ASSERTION_FAILED / P0001`、DETAILは `h5_unit_claims`・`h5_refund_amounts`・`h5_return_amounts`・`h5_legacy_fallback`・`h5_status_amounts`・`h5_public_acl`。fix round 2の11本はcontrollerが補完済み。fix round 4では `private.group_h_return_unit_dispositions(uuid)` と `private.group_h_release_return_units(uuid)` だけ `00000000000000000000000000000000` に戻した（[Task 9レポート](../../.superpowers/sdd/2026-10-29-group-h-promotions/task-9-report.md)）。controllerがDBの `md5(replace(prosrc, E'\r', ''))` から該当2本を補完する。各検査前のDETAIL・fp alias・EXISTSの括弧修正を保持し、実行時エラーのHINTはSQLSTATEだけを返す。
+
+controller手順: 未適用DBでRED→MD5補完→fresh reset→H1〜H5 assertと新DB3本・既存refund/return/G-4回帰→並行3連続（pg_blocking_pids/pg_locksでG鍵待ちを観測）→既存public入口のPostgREST service成功/anon・authenticated拒否。実装者はDB・CLI・Docker・Playwright・serverを実行しない。最終SQLのコンパイル・DB上の金額/数量/ACL/ロック/例外・本番適用は未確認。

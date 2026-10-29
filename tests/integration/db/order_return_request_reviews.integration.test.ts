@@ -1,5 +1,6 @@
 /** @jest-environment node */
 import { randomUUID } from 'crypto';
+import { hClaims, hRefundFixture, hReturn } from './helpers/group-h-refund-fixtures';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
 import {
   PRICE, createCatalogFixture, createShippedOrderFixture, insertOrderWithLines,
@@ -7,6 +8,7 @@ import {
 } from './helpers/order-fixtures';
 
 jest.setTimeout(30000);
+
 type Row = Record<string, any>;
 type Fx = { orderId: string; itemId: string; variantId: number; returnId: string; lineId: string; actor: string };
 async function fails(db: PgClient, work: () => Promise<unknown>, message: string) {
@@ -507,5 +509,17 @@ describeLocalDb('お店の申し込みの確認（移行 F）', getDb => {
       expect((await db().query(`select has_function_privilege($1,$2::oid,'EXECUTE') allowed`, [role, lock[0].oid])).rows[0].allowed)
         .toBe(false);
     }
+  });
+});
+
+describeLocalDb('H5 return approval regression (controller)', db => {
+  beforeEach(async () => { await db().query('begin'); }); afterEach(async () => { await db().query('rollback'); });
+  test('FREQ-551-AC-01: 別返品の17000円claimを除き次は20000円で取消は未処理claimを解放する', async () => {
+    const f = await hRefundFixture(db(), true); const a = await hReturn(db(), f); const b = await hReturn(db(), f);
+    expect((await hClaims(db(), f.itemId)).map(u => u.return_line_id)).toEqual([a.lineId, b.lineId]);
+    const detail = (await db().query('select private.return_detail_json($1) j', [b.returnId])).rows[0].j;
+    expect(detail.lines[0].refund_amounts_by_count).toEqual([20000]);
+    await db().query('select * from public.admin_cancel_return($1,$2)', [a.returnId, f.actor]);
+    expect((await hClaims(db(), f.itemId)).map(u => u.return_line_id)).toEqual([null, b.lineId]);
   });
 });

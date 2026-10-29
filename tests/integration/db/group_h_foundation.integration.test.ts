@@ -202,7 +202,7 @@ describeLocalDb('H1 foundation: controller reset required', (db) => {
     const before = (await db().query('select id,code,permissions_version::text as version from public.roles order by id')).rows;
     const grants = (await db().query('select * from public.role_permissions order by role_id,permission_id')).rows;
     await db().query(section('PERMISSION_SEED'));
-    // H1's whole-schema assert predates H2: hide only H2's additions inside a savepoint, run the unmodified assert, then restore them.
+    // Hide later H2/H5 additions inside a savepoint, run H1's unmodified assert, then restore them.
     await db().query('savepoint h1_rerun');
     await dropH2Additions(db());
     await db().query(section('FINAL_ASSERT'));

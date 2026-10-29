@@ -27,7 +27,7 @@ const STOCK_LINE: RefundMaterialLine = {
   orderItemId: 'item-stock', name: 'シルクブラウス', color: '白', size: 'M', fulfillmentType: 'stock',
   itemPrice: 12000, quantity: 2, lineTotal: 24000, shipped: 0, unshipped: 2,
   refundedBeforeShipment: 0, refundedAfterShipment: 0, shippedRefundable: 0, restockable: 2,
-  lineDiscount: 0, refundedUnits: 0,
+  lineDiscount: 0, availableUnitAmounts: null, refundedUnits: 0,
 };
 
 /** 受注生産の品。1つとも未発送（在庫は確保していない） */
@@ -35,7 +35,7 @@ const BACKORDER_LINE: RefundMaterialLine = {
   orderItemId: 'item-backorder', name: 'ウールコート', color: '黒', size: 'L', fulfillmentType: 'backorder',
   itemPrice: 30000, quantity: 1, lineTotal: 30000, shipped: 0, unshipped: 1,
   refundedBeforeShipment: 0, refundedAfterShipment: 0, shippedRefundable: 0, restockable: 0,
-  lineDiscount: 0, refundedUnits: 0,
+  lineDiscount: 0, availableUnitAmounts: null, refundedUnits: 0,
 };
 
 /** 何も発送していないカードの注文（ブラウス 2・コート 1・送料 800 で 54,800） */

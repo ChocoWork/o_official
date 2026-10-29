@@ -1,5 +1,7 @@
 /** @jest-environment node */
 import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
+import { hBegin, hClaims, hRefundFixture, hResult } from './helpers/group-h-refund-fixtures';
+
 import { PRICE, createCatalogFixture, movementsOf, reserveFixtureAllocation, shipFixtureOrder, uniqueSuffix, variantStock } from './helpers/order-fixtures';
 
 /**
@@ -1793,5 +1795,16 @@ describeLocalDb('E-3: 返品のメールも既存のリースと履歴で扱う'
       await expectRejected(db(),"select public.skip_order_email($1,$2,'superseded')",[claim.email_id,claim.lease_token],{code:'22023',message:'SUPERSEDE_NOT_ALLOWED'});
       expect((await db().query("select public.skip_order_email($1,$2,'no_recipient') skipped",[claim.email_id,claim.lease_token])).rows[0].skipped).toBe(true);
     }
+  });
+});
+
+describeLocalDb('H5 result release regression (controller)', db => {
+  beforeEach(async () => { await db().query('begin'); }); afterEach(async () => { await db().query('rollback'); });
+  test('FREQ-551-AC-02: errorで安いclaimを解放しStripeで見つかれば同じ額で取り直す', async () => {
+    const f = await hRefundFixture(db(), true); const a = await hBegin(db(), f, 17000);
+    await db().query("select * from public.mark_order_refund_error($1,'stripe_rejected',false)", [a.refund_id]);
+    expect((await hClaims(db(), f.itemId)).every(u => u.refund_id === null)).toBe(true);
+    await hResult(db(), a.refund_id, 'succeeded');
+    expect((await hClaims(db(), f.itemId)).map(u => u.refund_id)).toEqual([a.refund_id, null]);
   });
 });

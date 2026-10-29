@@ -1,10 +1,12 @@
 /** @jest-environment node */
+import { hClaims, hReceive, hRefundFixture, hReturn } from './helpers/group-h-refund-fixtures';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
 import { PRICE, createCatalogFixture, insertOrderWithLines, variantStock, uniqueSuffix, revisionsOf,
   ensureFixturePaidAllocation, shipFixtureOrder } from './helpers/order-fixtures';
 jest.setTimeout(30000);
+
 type Row = Record<string, any>;
 type Fx = { orderId:string; itemId:string; variantId:number; returnId:string; lineId:string; actor:string };
 type RefundFx = Pick<Fx,'orderId'|'itemId'|'actor'>;
@@ -849,5 +851,16 @@ describeLocalDb('Task 4 の見込みの例 R1〜R4 と同じ入力で、受け�
     const r=await receive(db(),f,{choice:'now'});
     expect(r).toMatchObject({refund_id:null,refund_amount:0,refund_status:'waived',fee_due_amount:88});
     expect((await db().query('select count(*)::int n from public.order_refunds where order_id=$1',[f.orderId])).rows[0].n).toBe(0);
+  });
+});
+
+describeLocalDb('H5 return receipt regression (controller)', db => {
+  beforeEach(async () => { await db().query('begin'); }); afterEach(async () => { await db().query('rollback'); });
+  test('FREQ-551-AC-01: 受け取り済みの17000円を残し次の受け取りは20000円になる', async () => {
+    const f = await hRefundFixture(db(), true); const r = await hReturn(db(), f, 2);
+    await hReceive(db(), f, r);
+    const detail = (await db().query('select private.return_detail_json($1) j', [r.returnId])).rows[0].j;
+    expect(detail.lines[0]).toMatchObject({ refund_amounts_by_count: [20000], refund_waiting_amount: 17000 });
+    expect((await hClaims(db(), f.itemId)).map(u => u.return_line_id)).toEqual([r.lineId, r.lineId]);
   });
 });

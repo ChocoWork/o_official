@@ -1261,3 +1261,15 @@ DB用は group_h_acceptance・group_h_redemptions・group_h_acceptance_concurren
 | [order-status-traceability](../../../tests/unit/docs/order-status-traceability.test.ts)・[delivery-status-traceability](../../../tests/unit/docs/delivery-status-traceability.test.ts) | API一覧の数を166ファイル・210組（表は165行・209組）へ | — |
 
 実装者の実行結果（2026-10-29）: 上の単体に既存の関係する範囲（`tests/unit/features/cart`・`tests/unit/api/cart`・`tests/unit/contexts/CartContext.test.tsx`）を加えた22 suite・486件が成功。`npx.cmd tsc --noEmit --incremental false`と変更したファイルの`npx.cmd eslint`は終了コード0。
+
+## グループH Task 9（2026-10-29）
+
+fix round 4（2026-10-30）: [返品結果](../../../tests/integration/db/group_h_refund_outcomes.integration.test.ts)へ数量2・17000/20000円の17ケースを追加。sent_back→返金・返金→sent_back・同時受取の両行順を即返金/相談後返金で検査し、待ち額・返金額17000円、調整0、解放後の通常返金20000円を固定する。missingはG-1の未処理全数を閉じるRPCで、相談→missing→返金、返金→missing、2着missing→開き直し→返金→残りmissingを確認する。交換元17000円の4順序と、waivedの前後2順序も含める。DBは未実行で、controllerが確認する。
+
+fix round 2（2026-10-30）: [返品結果・遅延成功](../../../tests/integration/db/group_h_refund_outcomes.integration.test.ts)にsent_back/missing/waivedの通常返金2着、複数注文一覧と詳細、実PostgRESTのHTTP 200と総額、error→別返金成功→遅延成功（残り1着/0着）、分割配達、交換、取消申請と自動入口を追加。DBはcontrollerのみが実行する。INSERT claim拒否・データ改ざん・検査ごとの実行時DETAILと並行errorも追加。単体は利用可能単位の不足をNaN（見込み不可）で伝え、「すべて選ぶ」から安全に選び直せる経路を検証する。
+
+FREQ-551-AC-01〜04。単体のREDはrefund-allocation/refund-materialsの66件中3件失敗（従来18,500円と単位配列なし）。Hの見込みは[17000,20000]、返品の共通配列は[17000,37000]、1着待ち17,000円、残り20,000円。旧18,500円と交換元額を保つ。refund-storeは内部不整合を500用のstore errorにし、return-store・返品review/receive/refund・メールはDB由来の値を使う。
+
+新DB: [group_h_refunds](../../../tests/integration/db/group_h_refunds.integration.test.ts)・[group_h_refund_concurrency](../../../tests/integration/db/group_h_refund_concurrency.integration.test.ts)・[group_h_order_amounts](../../../tests/integration/db/group_h_order_amounts.integration.test.ts)。既存order_refund_records/results・order_return_receipts/request_reviews・group_g4_readsへH回帰を追加し、group_h_migration_assertsへH5の属性/ACL/旧分岐/単位guard/状態金額の改ざん拒否を追加する。H1の過去のassertは取引内だけでH5の列/guardを当時へ戻して確認する。
+
+DB試験は作成のみ、実行はcontroller。安い返金の失敗後に高い返金が成功済みでも安い単位を再試行して総和37,000円、同requestKey再送、外部pending→failed、数量不明の部分額、無料単位、交換、相談後の即返金、状態別合計と旧33/33/34を確認する。単体/tsc/ESLintの実測と未確認の境界は[Task 9レポート](../../../.superpowers/sdd/2026-10-29-group-h-promotions/task-9-report.md)に記録する。DB/Stripe/メール配送/E2Eの成功を単体の結果から主張しない。

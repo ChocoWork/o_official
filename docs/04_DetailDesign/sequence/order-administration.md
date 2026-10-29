@@ -1118,3 +1118,17 @@ sequenceDiagram
 - **要対応**: 上限・1 人 1 回・単発 code の超過は `discount_limit_exceeded`（「割引の上限を超えた注文」）、予約なし・取消後・fallback の回復は `discount_reconciliation_recovered`（「割引の条件を確認する注文」）。1 注文 1 件で、配送・支払いの要対応とは別の欄に出し、発送を止めない。「確認済みにする」は `POST /api/admin/order-attention/discounts/[orderId]/resolve`（`admin.orders.manage`）。
 
 [Route](../../../tests/unit/api/checkout/place-order-route.test.ts)・[reconciler](../../../tests/unit/lib/stripe/checkout-payment-reconciler.test.ts)・[attention route](../../../tests/unit/api/admin/discount-attention-route.test.ts)・[画面](../../../tests/unit/components/AttentionInbox.test.tsx)の単体で検証する。DB・並行・E2E は controller 担当（未実行）。
+
+## グループH Task 9: 安い単位からの返金・返品・状態別金額
+
+通常返金・支払い済み取消・自動の支払額不一致取消は既存begin_order_refundから同じcoreへ進む。返品の即返金と相談後の返金も同じcoreを使う。G共通鍵→既存の在庫/注文/明細/返品/返金の行の鍵→H単位のclaimの順で扱い、割引の使用を復元しない。送料・手数料・調整額と在庫/FIFOは既存の処理を保つ。
+
+coreは数量を確かめ、最安free（返品なら固定claim）の和を計算し、親のINSERT後に単位をclaimする。見込んだ額とclaimの和を照合してからorder_refund_lines.amountを保存する。外部返金も、残る未発送を行へ当てる従来条件の時だけ同じclaimを使い、数量不明の部分額はadjustmentのまま。結果pending/succeededは保持、failedとmark_order_refund_errorは同じ取引で解放する。同requestKeyは既存の返金と単位を再利用し、新しい要求で失敗した単位を再試行できる。
+
+返品の承認/作成で最安単位を固定する。return_detail_jsonの数量別配列と待ち額を同じclaimとfreeから読み、他返品/返金の占有を除く。受取・返金画面と店へのメールはその配列/待ち額を使う。G-4は成功した発送前claimをcancelled、成功返品をreturned、進行中をGの対応する状態へ置く。残る単位を支払額降順・index昇順でstatus_rank/区間順の残る数へ置き、重複と数量不一致を拒む。状態数量・在庫は変えない。
+
+同じ返品行でsent_back・missing・0円完了と返金・交換が混ざる時は、返金・交換に安いclaimを使い、返金しない完了分は高いclaimから解放する。受取を分けた順序と同時受取の行順に依存しない。17,000/20,000円の2着なら返品の返金は17,000円・調整0、解放した単位の後の通常返金は20,000円とする。
+
+Hの17,000円→20,000円と総和37,000円、旧の18,500円・33/33/34、交換・送料・調整の分離を試験する。DB・実Stripe・メール配送の確認はcontrollerへ残す。
+
+fix round 2: sent_back・missing・0円完了は受取記録と同じ取引で返品claimを解放し、G-1が認める通常返金の数量を保つ。error後の遅延成功は残る最安単位だけをclaimし、額または数量が合わなくても結果を記録して既存refund_failedの要対応を残す。G-4は注文ごとにG-1の区間と返品進捗を1回読み、希望先が埋まった単位をG-1の残る状態へ置く。分割発送のshipped/deliveredも双方を使う。画面は単位不足の見込みを停止して選び直せる表示にし、描画中に例外を投げない。DBが最終的な数量・金額を検証する。

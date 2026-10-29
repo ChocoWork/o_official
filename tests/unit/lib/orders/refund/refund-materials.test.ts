@@ -58,6 +58,14 @@ function stubClient(options: { rpc?: QueryResult; order?: QueryResult; items?: Q
 }
 
 describe('loadRefundMaterials', () => {
+  it('FREQ-551-AC-01: Hのfree単位額は17000円から写し旧注文はnullにする', async () => {
+    const { client } = stubClient({ rpc: { data: [{ ...MATERIAL_ROW, lines: [
+      { ...LINE_X, available_unit_amounts: [17000, 20000] }, LINE_Y,
+    ] }], error: null } });
+    expect((await loadRefundMaterials(client, ORDER_ID))?.lines).toMatchObject([
+      { availableUnitAmounts: [17000, 20000] }, { availableUnitAmounts: null },
+    ]);
+  });
   it('DB の材料・商品の名前・支払い方法をまとめて返す', async () => {
     const { client, rpc, tables } = stubClient();
 
@@ -83,12 +91,12 @@ describe('loadRefundMaterials', () => {
         {
           orderItemId: ITEM_X, name: 'シルクブラウス', color: '白', size: 'M', fulfillmentType: 'stock', itemPrice: 3000, quantity: 2,
           lineTotal: 6000, shipped: 0, unshipped: 2, refundedBeforeShipment: 0, refundedAfterShipment: 0, shippedRefundable: 0,
-          restockable: 2, lineDiscount: 667, refundedUnits: 0, exchangePaidAmount: null,
+          restockable: 2, lineDiscount: 667, refundedUnits: 0, exchangePaidAmount: null, availableUnitAmounts: null,
         },
         {
           orderItemId: ITEM_Y, name: 'リネンパンツ', color: null, size: null, fulfillmentType: 'backorder', itemPrice: 1000, quantity: 3,
           lineTotal: 3000, shipped: 0, unshipped: 3, refundedBeforeShipment: 0, refundedAfterShipment: 0, shippedRefundable: 0,
-          restockable: 0, lineDiscount: 333, refundedUnits: 0, exchangePaidAmount: null,
+          restockable: 0, lineDiscount: 333, refundedUnits: 0, exchangePaidAmount: null, availableUnitAmounts: null,
         },
       ],
       awaitingRefund: null,

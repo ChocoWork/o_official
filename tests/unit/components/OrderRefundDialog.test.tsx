@@ -29,7 +29,7 @@ const STOCK_LINE: RefundMaterialLine = {
   orderItemId: 'item-stock', name: 'シルクブラウス', color: '白', size: 'M', fulfillmentType: 'stock',
   itemPrice: 12000, quantity: 2, lineTotal: 24000, shipped: 0, unshipped: 2,
   refundedBeforeShipment: 0, refundedAfterShipment: 0, shippedRefundable: 0, restockable: 2,
-  lineDiscount: 0, refundedUnits: 0,
+  lineDiscount: 0, availableUnitAmounts: null, refundedUnits: 0,
 };
 
 /** 受注生産の品。1つとも未発送（在庫は確保していない） */
@@ -37,7 +37,7 @@ const BACKORDER_LINE: RefundMaterialLine = {
   orderItemId: 'item-backorder', name: 'ウールコート', color: '黒', size: 'L', fulfillmentType: 'backorder',
   itemPrice: 30000, quantity: 1, lineTotal: 30000, shipped: 0, unshipped: 1,
   refundedBeforeShipment: 0, refundedAfterShipment: 0, shippedRefundable: 0, restockable: 0,
-  lineDiscount: 0, refundedUnits: 0,
+  lineDiscount: 0, availableUnitAmounts: null, refundedUnits: 0,
 };
 
 /** 3つのうち1つを送り済み。発送前（2）と発送済み（1）の両方に出る */
@@ -45,7 +45,7 @@ const PARTLY_SHIPPED_LINE: RefundMaterialLine = {
   orderItemId: 'item-partly', name: 'ウールパンツ', color: null, size: '2', fulfillmentType: 'stock',
   itemPrice: 18000, quantity: 3, lineTotal: 54000, shipped: 1, unshipped: 2,
   refundedBeforeShipment: 0, refundedAfterShipment: 0, shippedRefundable: 1, restockable: 2,
-  lineDiscount: 0, refundedUnits: 0,
+  lineDiscount: 0, availableUnitAmounts: null, refundedUnits: 0,
 };
 
 /** 全部送り済み。発送済みだけに出る */
@@ -53,7 +53,7 @@ const SHIPPED_LINE: RefundMaterialLine = {
   orderItemId: 'item-shipped', name: 'レザーベルト', color: '茶', size: null, fulfillmentType: 'stock',
   itemPrice: 9000, quantity: 1, lineTotal: 9000, shipped: 1, unshipped: 0,
   refundedBeforeShipment: 0, refundedAfterShipment: 0, shippedRefundable: 1, restockable: 0,
-  lineDiscount: 0, refundedUnits: 0,
+  lineDiscount: 0, availableUnitAmounts: null, refundedUnits: 0,
 };
 
 /** 何も発送していないカードの注文（ブラウス 2・コート 1・送料 800 で 54,800） */
@@ -363,6 +363,21 @@ describe('OrderRefundDialog の材料と画面', () => {
 });
 
 describe('OrderRefundDialog の金額', () => {
+  it('FREQ-551-AC-02: H単位が不足する材料でも「すべて選ぶ」で落ちず見込みを停止し選び直せる', async () => {
+    const line = { ...SHIPPED_LINE, itemPrice: 20000, quantity: 2, lineTotal: 40000, shipped: 2,
+      shippedRefundable: 2, lineDiscount: 20000, availableUnitAmounts: [20000] };
+    const { dialog } = await openDialog(materials({ lines: [line], order: { totalAmount: 20000, paidAmount: 20000,
+      refundableAmount: 20000, shippingAmount: 0, refundableShipping: 0, shippedTotal: 2, unshippedTotal: 0 } }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'すべて選ぶ' }));
+    expect(quantityInput(dialog, AFTER, 'レザーベルト（茶）')).toHaveValue(2);
+    expect(within(dialog).getByRole('status')).toHaveTextContent('選んだ数量の返金額を確かめられません。商品を選び直してください。');
+    expect(within(dialog).getByRole('button', { name: '￥0 を返金する' })).toBeDisabled();
+    expect(within(dialog).queryByText(/NaN/)).not.toBeInTheDocument();
+    fireEvent.change(quantityInput(dialog, AFTER, 'レザーベルト（茶）'), { target: { value: '1' } });
+    expect(within(dialog).queryByRole('status')).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: '￥20,000 を返金する' })).toBeEnabled();
+    expect(mockClientFetch).toHaveBeenCalledTimes(1);
+  });
   it('「すべて選ぶ」は、残りの商品の全部（発送前も発送済みも）と送料の全部を入れる', async () => {
     const { dialog } = await openDialog(shippedMaterials());
 

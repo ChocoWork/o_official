@@ -228,7 +228,8 @@ function OrderRefundDialogBody({ orderId, onClose, onRefunded, onUncertain, pref
   const fixedFull = materials ? selectsAllUnshipped(materials, selections) : false;
   const stopped = flow.busy || flow.uncertain;
   const shippingAmount = order && fixedFull ? fullRefundShipping(order) : shippingEntered;
-  const estimate = materials ? estimateRefund(materials.lines, selections, shippingAmount) : null;
+  const calculatedEstimate = materials ? estimateRefund(materials.lines, selections, shippingAmount) : null;
+  const estimate = calculatedEstimate && Number.isFinite(calculatedEstimate.total) ? calculatedEstimate : null;
   const amount =
     order && estimate ? (fixedFull ? order.refundableAmount : Math.min(order.refundableAmount, amountEntered ?? estimate.total)) : 0;
   const breakdownRows: Array<[string, string]> = estimate
@@ -292,7 +293,7 @@ function OrderRefundDialogBody({ orderId, onClose, onRefunded, onUncertain, pref
           submitLabel={`${formatYen(amount)} を返金する`}
           canSubmit={canSubmit}
         >
-          {order && estimate && !awaiting ? (
+          {order && !awaiting ? (
             // 幅が 768px 以上の Dialog は高さを制限しないので、入力の部分だけを縦に動かし、誤りの文とボタンは動かさない
             <div className="space-y-3 md:max-h-[60vh] md:overflow-y-auto md:pr-1">
               <p className="font-acumin lk-text-3xs text-[#474747]">{refundTimingNote(order.paymentMethod)}</p>
@@ -373,6 +374,9 @@ function OrderRefundDialogBody({ orderId, onClose, onRefunded, onUncertain, pref
               {fixedFull ? <p className="font-acumin lk-text-3xs text-[#474747]">{FULL_REFUND_NOTICE}</p> : null}
 
               <div role="group" aria-label="返金の内訳" className="border-t border-[#d4d4d4] pt-3">
+                {calculatedEstimate && !estimate ? (
+                  <p role="status">選んだ数量の返金額を確かめられません。商品を選び直してください。</p>
+                ) : null}
                 <dl className="space-y-1">
                   {breakdownRows.map(([term, value]) => (
                     <div key={term} className="flex justify-between font-acumin lk-text-sm text-black">

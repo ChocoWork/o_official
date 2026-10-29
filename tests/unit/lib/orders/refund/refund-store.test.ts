@@ -147,6 +147,12 @@ const RPC_NAMES = [
 ];
 
 describe('toRefundErrorCode', () => {
+  it('FREQ-551-AC-02: Hの単位不整合は業務拒否へ変えず500用のstore errorにする', async () => {
+    const { store } = storeWith({ begin_order_refund: { error: { message: 'GROUP_H_REFUND_UNIT_MISMATCH', code: '23514' } } });
+    expect(toRefundErrorCode('GROUP_H_REFUND_UNIT_MISMATCH')).toBeNull();
+    await expect(beginOrderRefund(store, BEGIN_INPUT)).rejects.toMatchObject({ name: 'RefundStoreError', code: '23514',
+      message: 'refund store failed: begin_order_refund' });
+  });
   it.each(DB_WORDS)('DB の言葉 %s は %s', (word, code) => {
     expect(toRefundErrorCode(word)).toBe(code);
     // PostgREST は言葉の前後に別の文を足すことがある

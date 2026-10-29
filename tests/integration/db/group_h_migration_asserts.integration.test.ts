@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describeLocalDb } from './helpers/local-db';
 import { withH1PermissionBaseline } from './helpers/group-h-fixtures';
+import { hBegin, hRefundFixture, hResult } from './helpers/group-h-refund-fixtures';
 import { G4_ALLOWLIST, H4_ALLOWLIST, replaceAllowlistSql } from './helpers/group-g-allowlist';
 import { MAX_AUTOMATIC_DISCOUNTS, MAX_STACKABLE_AUTOMATIC_PER_CLASS } from '@/lib/discounts/discount-types';
 
@@ -13,6 +14,88 @@ const assertion = sql.split('-- H1_FINAL_ASSERT_BEGIN\n')[1]?.split('-- H1_FINAL
 const details = ['h1_tables', 'h1_draft_columns', 'h1_constraints', 'h1_rls_acl', 'h1_immutable', 'h1_line_reader',
   'h1_permission_catalogs', 'h1_permission_seed', 'h1_existing_dml_allowlist'];
 type AssertFailure = { code?: string; message?: string; detail?: string; hint?: string };
+
+const h5Path = path.join(directory, '20261029130400_group_h_discounts_refunds.sql');
+const h5 = fs.existsSync(h5Path) ? fs.readFileSync(h5Path, 'utf8') : '';
+const h5Assert = h5.split('-- H5_FINAL_ASSERT_BEGIN\n')[1]?.split('-- H5_FINAL_ASSERT_END')[0] ?? '';
+const h5Baseline = h5.match(/CREATE TEMP TABLE h5_function_baseline[\s\S]*?\]::oid\[\]\);/)?.[0] ?? '';
+describe('H5 source contract (controller only)', () => {
+  test('FREQ-551-AC-02: H5はASCIIとLFと単一取引と６つの固定DETAILを持つ', () => {
+    expect(h5).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(h5.startsWith('BEGIN;\n')).toBe(true);
+    expect(h5.match(/^BEGIN;$/gm)).toHaveLength(1); expect(h5.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(h5.trimEnd()).toMatch(/-- H5_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    for (const detail of ['h5_unit_claims','h5_refund_amounts','h5_return_amounts','h5_legacy_fallback','h5_status_amounts','h5_public_acl']) expect(h5Assert).toContain(`'${detail}'`);
+    expect(h5Baseline).not.toBe('');
+    expect(h5).not.toMatch(/(?:proacl|relacl)\s*::\s*text/i);
+    expect(h5).not.toMatch(/CREATE(?: OR REPLACE)? FUNCTION public\.group_h_/);
+    expect(h5).not.toMatch(/(?:GRANT|REVOKE)[^;]*USAGE\s+ON\s+SCHEMA\s+private/i);
+  });
+});
+describeLocalDb('H5 semantic assertions (controller only; fill body MD5s first)', db => {
+  beforeEach(async () => { await db().query('begin'); await db().query('select pg_advisory_xact_lock(190521,1)'); });
+  afterEach(async () => { await db().query('rollback'); });
+  async function attempt(change = '', assertionSql = h5Assert): Promise<AssertFailure | null> {
+    await db().query('savepoint h5_assert');
+    try {
+      // Owner-only tampering and the migration assertion stay inside the rollback boundary.
+      await db().query('set local role postgres');
+      await db().query(h5Baseline); if (change) await db().query(change); await db().query(assertionSql); return null;
+    }
+    catch (caught) { const e = caught as AssertFailure; return { code: e.code, message: e.message === 'GROUP_H_MIGRATION_ASSERTION_FAILED' ? e.message : 'H_UNEXPECTED_DB_ERROR', detail: e.detail, ...(e.hint ? { hint: e.hint } : {}) }; }
+    finally { await db().query('rollback to savepoint h5_assert'); await db().query('release savepoint h5_assert'); }
+  }
+  test('FREQ-551-AC-02: H5の属性とACLとOIDと本文は無改変なら通る', async () => { expect(await attempt()).toBeNull(); });
+  test.each(['h5_legacy_fallback','h5_unit_claims','h5_public_acl','h5_return_amounts','h5_status_amounts'])(
+    'FREQ-551-AC-02: %sの実行時例外も現在のDETAILとSQLSTATEだけで包む', async detail => {
+      const marker = `v_detail:='${detail}';`;
+      expect(h5Assert).toContain(marker);
+      const sqlWithRuntimeFailure = h5Assert.replace(marker, `${marker} PERFORM 1/0;`);
+      expect(await attempt('', sqlWithRuntimeFailure)).toEqual({ code: 'P0001', message: 'GROUP_H_MIGRATION_ASSERTION_FAILED', detail, hint: 'sqlstate=22012' });
+    });
+  test('FREQ-551-AC-02: claimを別返金へ付け替えるデータ改ざんは単位不一致を検出する', async () => {
+    const f = await hRefundFixture(db(), true);
+    const a = await hBegin(db(), f, 17000);
+    await hResult(db(), a.refund_id, 'pending');
+    const b = await hBegin(db(), f, 20000);
+    await db().query('set constraints all immediate'); await db().query('set constraints all deferred');
+    const change = `alter table public.order_line_unit_amounts disable trigger user;
+      update public.order_line_unit_amounts set refund_id='${b.refund_id}' where refund_id='${a.refund_id}';
+      alter table public.order_line_unit_amounts enable trigger user`;
+    expect(await attempt(change)).toMatchObject({ code: 'P0001', detail: 'h5_unit_claims' });
+    expect(await attempt()).toBeNull();
+  });
+  test('FREQ-551-AC-04: 保存単位額の総和を壊すデータ改ざんは状態金額のDETAILで検出する', async () => {
+    const f = await hRefundFixture(db(), true);
+    await db().query('set constraints all immediate'); await db().query('set constraints all deferred');
+    const change = `alter table public.order_line_unit_amounts disable trigger user;
+      update public.order_line_unit_amounts set paid_amount=paid_amount+1 where order_item_id='${f.itemId}' and unit_index=0;
+      alter table public.order_line_unit_amounts enable trigger user`;
+    expect(await attempt(change)).toMatchObject({ code: 'P0001', detail: 'h5_status_amounts' });
+    expect(await attempt()).toBeNull();
+  });
+  test('FREQ-551-AC-02: INSERTでclaimを持ち込むこともimmutable guardが拒否する', async () => {
+    const f = await hRefundFixture(db(), true);
+    await db().query('savepoint h5_insert_claim');
+    try {
+      await expect(db().query(`insert into public.order_line_unit_amounts(order_id,order_item_id,unit_index,paid_amount,refund_before_shipment)
+        values($1,$2,0,0,false)`, [f.orderId, f.itemId])).rejects.toMatchObject({ code: '55000', message: 'GROUP_H_IMMUTABLE' });
+    } finally { await db().query('rollback to savepoint h5_insert_claim'); await db().query('release savepoint h5_insert_claim'); }
+  });
+  test.each([
+    ['alter table public.order_line_unit_amounts disable trigger h1_units_immutable', 'h5_unit_claims'],
+    ["alter function private.group_h_claim_refund_units(uuid,uuid,integer,boolean,uuid) volatile; create or replace function private.group_h_claim_refund_units(_refund_id uuid,_order_item_id uuid,_quantity integer,_before_shipment boolean,_return_line_id uuid default null) returns integer language plpgsql security definer set search_path='' as $$begin return 0; end;$$", 'h5_unit_claims'],
+    ["create or replace function private.return_units_amount(_order_item_id uuid,_quantity integer,_offset integer default 0) returns integer language plpgsql stable set search_path='' as $$begin return 0; end;$$", 'h5_legacy_fallback'],
+    ["create or replace function private.group_h_return_line_amount(_return_line_id uuid,_quantity integer,_offset integer default 0) returns integer language plpgsql stable security definer set search_path='' as $$begin return 18500; end;$$", 'h5_return_amounts'],
+    ["alter function public.load_order_refund_materials(uuid) volatile", 'h5_refund_amounts'],
+    ["alter function private.group_h_order_unit_status_amounts(uuid) volatile", 'h5_status_amounts'],
+    ['grant update on public.order_line_unit_amounts to service_role', 'h5_public_acl'],
+    ['grant execute on function private.group_h_release_refund_units(uuid) to service_role', 'h5_public_acl'],
+  ])('FREQ-551-AC-02: H5改ざん %s はP0001とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual({ code: 'P0001', message: 'GROUP_H_MIGRATION_ASSERTION_FAILED', detail });
+    expect(await attempt()).toBeNull();
+  });
+});
 
 describe('H1 source contract (no DB)', () => {
   test('FREQ-542-AC-01: H1はASCII・BOMなしLF・単一取引と固定の末尾assertを持つ', () => {

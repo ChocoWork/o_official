@@ -702,6 +702,12 @@ const request =(kind: ComposeRequest['kind'], variant: ComposeRequest['variant']
   kind, variant, paymentExpiredSent,
 });
 
+test.each([17000, 18500])('FREQ-551-AC-01: Hと旧注文の店向けメールはDB由来の待ち額%i円をそのまま使う', amount => {
+  const email = composeOrderEmail({ ...material(), orderReturn: { ...RETURN_BASE, items: [],
+    receipt: { ...RECEIPT_BASE, pendingRefund: { items: [COAT_ITEM], amount } } } }, request('return_refund_pending_shop'));
+  expect(email?.text).toContain(`計算どおりの額: ￥${amount.toLocaleString('ja-JP')}`);
+});
+
 /** お客様向け16種類と、その書き分け・返送方法・返品日数の有無。[試験の名前, 材料, 依頼] */
 const CUSTOMER_MAIL_CASES: Array<[string, OrderEmailMaterial, ComposeRequest]> = [
   ['paid（通常）', material(), request('paid', 'order_confirmed')],

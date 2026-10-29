@@ -89,6 +89,8 @@ type RefundRpcName =
 async function callRpc(store: RefundStore, name: RefundRpcName, args: Record<string, unknown>): Promise<unknown> {
   const { data, error } = await store.rpc(name, args);
   if (error) {
+    // An H unit invariant is an internal failure (500), never a business refusal (4xx).
+    if (error.message === 'GROUP_H_REFUND_UNIT_MISMATCH') throw new RefundStoreError(name, error);
     const code = toRefundErrorCode(error.message);
     throw code ? new RefundOperationError(code) : new RefundStoreError(name, error);
   }

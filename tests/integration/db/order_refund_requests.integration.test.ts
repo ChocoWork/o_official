@@ -1303,12 +1303,12 @@ describeLocalDb('integration: 返金を始める関数と読み出しの関数�
         {
           order_item_id: x, fulfillment_type: 'stock', item_price: 3000, quantity: 2, line_total: 6000, shipped: 0, unshipped: 2,
           refunded_before_shipment: 0, refunded_after_shipment: 0, shipped_refundable: 0, restockable: 2, line_discount: 667,
-          refunded_units: 0, exchange_paid_amount: null,
+          refunded_units: 0, exchange_paid_amount: null, available_unit_amounts: null,
         },
         {
           order_item_id: y, fulfillment_type: 'backorder', item_price: 1000, quantity: 3, line_total: 3000, shipped: 0, unshipped: 3,
           refunded_before_shipment: 0, refunded_after_shipment: 0, shipped_refundable: 0, restockable: 0, line_discount: 333,
-          refunded_units: 0, exchange_paid_amount: null,
+          refunded_units: 0, exchange_paid_amount: null, available_unit_amounts: null,
         },
       ]);
     });
@@ -1345,12 +1345,12 @@ describeLocalDb('integration: 返金を始める関数と読み出しの関数�
         {
           order_item_id: x, fulfillment_type: 'stock', item_price: 3000, quantity: 2, line_total: 6000, shipped: 1, unshipped: 0,
           refunded_before_shipment: 1, refunded_after_shipment: 1, shipped_refundable: 0, restockable: 0, line_discount: 667,
-          refunded_units: 2, exchange_paid_amount: null,
+          refunded_units: 2, exchange_paid_amount: null, available_unit_amounts: null,
         },
         {
           order_item_id: y, fulfillment_type: 'backorder', item_price: 1000, quantity: 3, line_total: 3000, shipped: 0, unshipped: 2,
           refunded_before_shipment: 1, refunded_after_shipment: 0, shipped_refundable: 0, restockable: 0, line_discount: 333,
-          refunded_units: 1, exchange_paid_amount: null,
+          refunded_units: 1, exchange_paid_amount: null, available_unit_amounts: null,
         },
       ]);
     });

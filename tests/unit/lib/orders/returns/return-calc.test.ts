@@ -33,12 +33,12 @@ const NO_FEES = { returnShipping: 0, restocking: 0, exchange: 0, exchangeShippin
 describe('computeReturnRefundPreview（商品の額）', () => {
   it('商品の額の列は E-2 の割り振り（refundLineAmount）の値と同じ。1点ずつ返しても合計が合う', () => {
     const amounts = (line: { itemPrice: number; quantity: number; lineDiscount: number }) =>
-      Array.from({ length: line.quantity }, (_, index) => refundLineAmount({ ...line, refundedUnits: 0 }, index + 1));
+      Array.from({ length: line.quantity }, (_, index) => refundLineAmount({ ...line, availableUnitAmounts: null, refundedUnits: 0 }, index + 1));
 
     expect(amounts({ itemPrice: 3000, quantity: 2, lineDiscount: 667 })).toEqual(X_AMOUNTS);
     expect(amounts({ itemPrice: 1000, quantity: 3, lineDiscount: 333 })).toEqual(Y_AMOUNTS);
     // X を 1 点返した後に、残りの 1 点を返す額は 2667。2666 + 2667 は 2 点まとめて返す額 5333 と同じ
-    expect(refundLineAmount({ itemPrice: 3000, quantity: 2, lineDiscount: 667, refundedUnits: 1 }, 1)).toBe(2667);
+    expect(refundLineAmount({ itemPrice: 3000, quantity: 2, lineDiscount: 667, availableUnitAmounts: null, refundedUnits: 1 }, 1)).toBe(2667);
     expect(2666 + 2667).toBe(X_AMOUNTS[1]);
   });
 
