@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { seedCart } from "./checkout-flow-helpers";
+import { isolateCheckoutIp } from "./checkout-test-utils";
+import { GUEST_REFUSAL } from "./discount-test-utils";
 
 /**
  * FR-CHECKOUT-032 プロモーションコードを適用できなかった案内を読み上げ、入力欄に結びつける
@@ -57,6 +59,7 @@ test.describe("FR-CHECKOUT-032 プロモーションコードを適用できな�
   test.use({ locale: "ja-JP" });
 
   test.beforeEach(async ({ page }) => {
+    await isolateCheckoutIp(page);
     const seeded = await seedCart(page);
     test.skip(!seeded.ok, seeded.ok ? "" : seeded.reason);
   });
@@ -78,8 +81,9 @@ test.describe("FR-CHECKOUT-032 プロモーションコードを適用できな�
 
       // 同じ入れ物に案内が入り、画面にも表示される
       await expect(alert).toHaveCount(1);
-      await expect(alert).toHaveText(/\S/, { timeout: 15000 });
+      await expect(alert).toHaveText(GUEST_REFUSAL, { timeout: 15000 });
       await expect(alert).toBeVisible();
+      await expect(page.getByRole("link", { name: "ログインして割引を確かめる", exact: true })).toHaveAttribute("href", "/login?next=%2Fcheckout");
 
       const hasHorizontalOverflow = await page.evaluate(() => {
         const doc = document.documentElement;
@@ -102,7 +106,7 @@ test.describe("FR-CHECKOUT-032 プロモーションコードを適用できな�
       await applyUnknownCode(page);
 
       const alert = promoAlert(page);
-      await expect(alert).toHaveText(/\S/, { timeout: 15000 });
+      await expect(alert).toHaveText(GUEST_REFUSAL, { timeout: 15000 });
       const message = ((await alert.textContent()) ?? "").trim();
 
       await expect(promoInput(page)).toHaveAttribute("aria-invalid", "true");

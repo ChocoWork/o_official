@@ -15,6 +15,7 @@ import { dialogHeaderClose } from './admin-test-utils';
 import { UUID_PATTERN, viewports } from './order-fulfillment-test-utils';
 import {
   MANAGED_PERMISSION_CODES,
+  DISCOUNT_PERMISSION_CODES,
   SUPPORTER_INITIAL_CODES,
   countPermissionRequests,
   createPermissionActor,
@@ -195,6 +196,9 @@ for (const viewport of viewports) {
       // FREQ-519-AC-01・AC-02（画面）・AC-06
       await withPermissionScenario(async (client) => {
         // DB の最初の値（共有目録の中）
+        expect(MANAGED_PERMISSION_CODES).toHaveLength(32);
+        expect(MANAGED_PERMISSION_CODES).toEqual(expect.arrayContaining([...DISCOUNT_PERMISSION_CODES]));
+        expect(SUPPORTER_INITIAL_CODES.filter(code => DISCOUNT_PERMISSION_CODES.includes(code))).toEqual([]);
         expect((await readRolePermissionState(client, 'admin')).permissionCodes).toEqual(sorted(MANAGED_PERMISSION_CODES));
         expect((await readRolePermissionState(client, 'supporter')).permissionCodes).toEqual(sorted(SUPPORTER_INITIAL_CODES));
         expect((await readRolePermissionState(client, 'user')).permissionCodes).toEqual([]);

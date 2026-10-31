@@ -5,9 +5,11 @@
  */
 import { expect, test } from '@playwright/test';
 import { CHECKOUT_VIEWPORTS, seedCart } from './checkout-flow-helpers';
+import { isolateCheckoutIp, ownDiscountPreview } from './checkout-test-utils';
+import { GUEST_REFUSAL } from './discount-test-utils';
 
 const CODE = 'WELCOME10';
-const INVALID_MESSAGE = 'このコードは有効期限が切れています';
+const INVALID_MESSAGE = GUEST_REFUSAL;
 
 test.describe('FR-CHECKOUT-042 割引コードの復元', () => {
   test.describe.configure({ timeout: 120_000 });
@@ -17,6 +19,7 @@ test.describe('FR-CHECKOUT-042 割引コードの復元', () => {
     for (const invalid of [false, true]) {
       test(`${viewport.name}（${viewport.width}px）開き直しで${invalid ? 'コードと使えない理由' : '割引後の金額'}を表示する`, async ({ page }) => {
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await isolateCheckoutIp(page);
         const seeded = await seedCart(page);
         test.skip(!seeded.ok, seeded.ok ? '' : seeded.reason);
         if (!seeded.ok) return;
@@ -24,12 +27,12 @@ test.describe('FR-CHECKOUT-042 割引コードの復元', () => {
         let checks = 0;
         await page.route('**/api/checkout/promotion-code', async (route) => {
           checks += 1;
-          expect(route.request().postDataJSON()).toEqual({ code: CODE });
+          expect(route.request().postDataJSON()).toEqual({ codes: [CODE] });
           if (invalid && checks > 1) {
-            await route.fulfill({ status: 422, json: { error: 'promotion_code_invalid', reason: 'expired', message: INVALID_MESSAGE } });
+            await route.fulfill({ status: 422, json: { error: 'promotion_code_invalid', refusals: [{ code: CODE, reason: 'not_eligible' }], message: INVALID_MESSAGE } });
             return;
           }
-          await route.fulfill({ json: { code: CODE, subtotalAmount: seeded.price, shippingAmount: 0, discountAmount: discount, totalAmount: seeded.price - discount } });
+          await route.fulfill({ json: { result: ownDiscountPreview(seeded.price, discount, CODE) } });
         });
         await page.goto('/checkout');
         await page.getByLabel('プロモーションコード').fill(CODE);
@@ -45,7 +48,8 @@ test.describe('FR-CHECKOUT-042 割引コードの復元', () => {
           await expect(input).toHaveValue(CODE);
           await expect(input).toHaveAccessibleDescription(INVALID_MESSAGE);
           await expect(page.getByText(INVALID_MESSAGE)).toBeVisible();
-          expect(await page.evaluate(() => sessionStorage.getItem('checkout:promotion-code'))).toBeNull();
+          await expect(page.getByRole('link', { name: 'ログインして割引を確かめる', exact: true })).toHaveAttribute('href', '/login?next=%2Fcheckout');
+          expect(await page.evaluate(() => sessionStorage.getItem('checkout:promotion-codes'))).toBeNull();
         } else {
           // FREQ-423-AC-01。
           await expect(page.locator('.checkout-summary')).toContainText(CODE);

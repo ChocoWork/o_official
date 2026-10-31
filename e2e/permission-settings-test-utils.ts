@@ -29,6 +29,8 @@ const SAVE_LOCK = '190519, 0';
 
 export const MANAGED_PERMISSION_CODES: readonly PermissionCode[] = ROLE_PERMISSION_CATALOG.map((permission) => permission.code);
 export const FIXED_PERMISSION_CODES: readonly PermissionCode[] = ['admin.permissions.manage', 'admin.users.manage'];
+/** H1 adds read/manage; the baseline supporter still has eight grants. */
+export const DISCOUNT_PERMISSION_CODES: readonly PermissionCode[] = ['admin.discounts.read', 'admin.discounts.manage'];
 /** サポーターの最初の 8 コード（Task 1 の表。辞書順） */
 export const SUPPORTER_INITIAL_CODES: readonly PermissionCode[] = [
   'admin.contact.manage',

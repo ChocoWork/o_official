@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { seedCart } from "./checkout-flow-helpers";
+import { isolateCheckoutIp } from "./checkout-test-utils";
 
 /**
  * FR-CHECKOUT-031 プロモーションコードの見出しを入力欄に結びつける
@@ -31,6 +32,7 @@ test.describe("FR-CHECKOUT-031 プロモーションコードの見出しと入�
   test.use({ locale: "ja-JP" });
 
   test.beforeEach(async ({ page }) => {
+    await isolateCheckoutIp(page);
     const seeded = await seedCart(page);
     test.skip(!seeded.ok, seeded.ok ? "" : seeded.reason);
   });

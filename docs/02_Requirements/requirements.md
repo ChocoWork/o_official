@@ -1,5 +1,26 @@
 # 要件定義書
 
+## グループH Task 11 のE2E対応（2026-10-30）
+
+新規12 spec と既存6 spec を本番build・手元Supabaseの390/768/1280pxで確認するために作成した。実装者（Sonnet）が新規12 specと既存6 specをrun-e2e.ps1（workers 1）で全幅流して修正した。2026-11-01 にcontrollerがDBを初期化・本番buildし直して全18ファイルを流した結果は154 passed / 1 failed / 0 skipped（155件）。落ちた1件（CHECKOUT-054 の390px）は通信の切断（ECONNRESET）で、単独では12/12通過。原因（回数制限よけの6.1秒の間隔がサーバーのkeep-aliveの5秒を超え、閉じかけの接続を使い回した）を道具で直し、054・055を流し直して21/21通過。以下はAC全体の検証先の対応であり、E2EだけでDB制約・ロック・監査・providerを証明する表ではない。
+
+| AC | E2Eの対応と分担 |
+| --- | --- |
+| FREQ-542-AC-01・02・03 | [ADMIN-127](../../e2e/FR-ADMIN-127-discount-refund-amounts.spec.ts)・[CHECKOUT-058](../../e2e/FR-CHECKOUT-058-discount-breakdown.spec.ts)で固定額・旧33/33/34・内訳を観測。7表の制約と不変性・交換除外はH1/H3/H4/H5の既存DB試験が主証拠 |
+| FREQ-543-AC-01・02・03 | [ADMIN-126](../../e2e/FR-ADMIN-126-discount-permissions.spec.ts)で実HTTPのaal1=403/失効session=401、actorのDB拒否、付与/剥奪、readだけでは書けないこと。[ADMIN-109](../../e2e/FR-ADMIN-109-permission-settings.spec.ts)で32件。RPC未呼出し・CSRF順序・監査・レート境界はTask 4の単体 |
+| FREQ-544-AC-01・02・03 | [CHECKOUT-054](../../e2e/FR-CHECKOUT-054-own-discount-codes.spec.ts)の資格・期間・回数・最低条件、[CHECKOUT-057](../../e2e/FR-CHECKOUT-057-automatic-repeat-set.spec.ts)のA/B/両方・色サイズ・未入金除外・成功返金後・セット2〜10種 |
+| FREQ-545-AC-01・02・03 | [CHECKOUT-055](../../e2e/FR-CHECKOUT-055-discount-combinations.spec.ts)のC22・50円下限、[CHECKOUT-058](../../e2e/FR-CHECKOUT-058-discount-breakdown.spec.ts)の配分和。整数floorの網羅はTask 2の独立oracleとDB試験 |
+| FREQ-546-AC-01・02・03・04 | [CHECKOUT-055](../../e2e/FR-CHECKOUT-055-discount-combinations.spec.ts)の双方併用・セット競合・同額code未消費・下限。[CART-025](../../e2e/FR-CART-025-automatic-discounts.spec.ts)の50行×20/25自動/5code・guard注入・要対応。200msと探索網羅はTask 2。guard注入はpure計算＋実RPC記録＋表示差し替えであり、サーバー内のguard異常の実HTTP証拠ではない |
+| FREQ-547-AC-01・02 | [ADMIN-124](../../e2e/FR-ADMIN-124-discount-management.spec.ts)で実フォーム作成・CONTACT直後・7列・JST・検索・詳細・停止/再開/複製・使用後の編集制限 |
+| FREQ-547-AC-03・04・05 | [ADMIN-125](../../e2e/FR-ADMIN-125-discount-assignments.spec.ts)で10人10行/3状態/使用日/注文/マスク/未使用解除・1人1code/100件/101拒否。[CHECKOUT-054](../../e2e/FR-CHECKOUT-054-own-discount-codes.spec.ts)で本人・単発・prefix禁止。会員pickerの古い応答・競合、保存時の分類6件とセット重複拒否はTask 3/5の既存DB/RTL |
+| FREQ-548-AC-01・02・03 | [CHECKOUT-054](../../e2e/FR-CHECKOUT-054-own-discount-codes.spec.ts)の同一拒否文/ログインリンク/メール非依存preview/confirm、[CHECKOUT-055](../../e2e/FR-CHECKOUT-055-discount-combinations.spec.ts)のStripe Session合計50円、[CHECKOUT-058](../../e2e/FR-CHECKOUT-058-discount-breakdown.spec.ts)の固定結果。偽額拒否・coupon冪等・旧Stripe code不使用はTask 6の単体/DBとTask 12 provider確認 |
+| FREQ-549-AC-01・02・03・04・05 | [CHECKOUT-056](../../e2e/FR-CHECKOUT-056-discount-reservations.spec.ts)の実HTTP二重受付・予約/取消/確定・fallback・再送/要対応/出荷、[ACCOUNT-045](../../e2e/FR-ACCOUNT-045-discounted-return.spec.ts)の返金後confirmed維持。SQLロック待ち・guest結付け競合はTask 7のDB並行試験を使い、ブラウザー2頁だけでロックを証明しない |
+| FREQ-550-AC-01・02・03 | [CHECKOUT-054](../../e2e/FR-CHECKOUT-054-own-discount-codes.spec.ts)の5code/削除、[CHECKOUT-058](../../e2e/FR-CHECKOUT-058-discount-breakdown.spec.ts)の最終変更不可、[CART-025](../../e2e/FR-CART-025-automatic-discounts.spec.ts)、[ITEM-DETAIL-068](../../e2e/FR-ITEM-DETAIL-068-discount-advertising.spec.ts)。既存[039](../../e2e/FR-CHECKOUT-039-promotion-code-server.spec.ts)/[042](../../e2e/FR-CHECKOUT-042-promotion-code-restore.spec.ts)/[031](../../e2e/FR-CHECKOUT-031-promo-code-label.spec.ts)/[032](../../e2e/FR-CHECKOUT-032-promo-error-a11y.spec.ts)の題は変更せず、復元2回・確定無効の保存除去・focus・常設alert/ariaを保つ。一時障害の保存維持はTask 8の単体 |
+| FREQ-551-AC-01・02・03・04 | [ACCOUNT-045](../../e2e/FR-ACCOUNT-045-discounted-return.spec.ts)で実申請/承認/受取・返金RPC fixture・顧客画面・17000→20000/旧18500/セット残額、[ADMIN-127](../../e2e/FR-ADMIN-127-discount-refund-amounts.spec.ts)でreturned17000/残20000/割引3000/返金17000と旧33/33/34。交換・失敗再試行・外部返金の全順序はTask 9のDB試験 |
+| FREQ-552-AC-01・02・03 | [CHECKOUT-058](../../e2e/FR-CHECKOUT-058-discount-breakdown.spec.ts)の入力/最終/DB/compose・改名後も旧名・正額と配分和、[ADMIN-127](../../e2e/FR-ADMIN-127-discount-refund-amounts.spec.ts)/[ACCOUNT-045](../../e2e/FR-ACCOUNT-045-discounted-return.spec.ts)の管理/会員表示。公開状況の投影・所有権・壊れた材料500はTask 10の単体/DB、実メール配送はTask 12 |
+
+実行条件・差し替え範囲は[テスト仕様](../05_Quality/tests/test-spec.md#グループh-task-11-本番buildと手元supabaseのe2e2026-10-30)、実装者の静的確認は[Task 11レポート](../../.superpowers/sdd/2026-10-29-group-h-promotions/task-11-report.md)に残す。
+
 > G-4 Task 12 確認日: 2026-10-27。旧い注文の一覧を使っていた既存E2E（FR-ADMIN-050・069・070・072・076・079・084〜093・094〜099・102〜104・123 と共有の道具）を、注文の詳細頁（/admin/orders/[id]）と注文一覧表（/admin/orders）へ付け替え、旧い一覧の窓口の差し替え（mockOrderList）とORDERタブを開く道具（openOrderTab）を削除した。FREQ-440・441・458・468・472のE2E参照を移設先（FR-ADMIN-110・121・122）へ付け替え、消した case の移設先は各行と `.superpowers/sdd/2026-10-26-group-g4-orders/e2e-disposition.md` に1行ずつ残した。型・lint・文書単体までを実装者が確認し、本番build・実DB・Mailpit・3幅のE2Eは controller が実測して通過し、2026-10-27 の全件の baseline 比較（G-4 Task 13）で G-4 の spec は全部通過。
 
 > G-4 Task 11 確認日: 2026-10-27。詳細の操作 FR-ADMIN-122（11case×3幅）と既存15ファイルの入口を更新。型・lint・文書単体までを実装者が確認し、本番build・実DB・Mailpit・3幅のE2Eは controller が実測して通過し、2026-10-27 の全件の baseline 比較（G-4 Task 13）で G-4 の spec は全部通過。

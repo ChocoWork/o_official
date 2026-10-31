@@ -1,4 +1,19 @@
 import { expect, type Frame, type Locator, type Page } from '@playwright/test';
+import { randomBytes, randomUUID } from 'node:crypto';
+import type { DiscountResult } from '@/lib/discounts/discount-types';
+
+/** Each legacy display case gets its own local E2E source address; no server limit is disabled. */
+export async function isolateCheckoutIp(page: Page): Promise<void> {
+  const bytes = randomBytes(3);
+  await page.context().setExtraHTTPHeaders({ 'x-real-ip': `10.${bytes[0]}.${bytes[1]}.${bytes[2]}` });
+}
+
+/** Own-discount response for the legacy display/a11y specs; never an eligibility oracle. */
+export function ownDiscountPreview(subtotal: number, amount: number, code: string): DiscountResult {
+  return { version: 1, subtotalAmount: subtotal, shippingAmount: 0, discountAmount: amount, totalAmount: subtotal - amount,
+    applied: amount > 0 ? [{ discountId: randomUUID(), codeId: randomUUID(), name: code, code, class: 'product', amount }] : [],
+    allocations: [], unitAmounts: [], unusedCodes: [], provisional: false, calculationMode: 'exact' };
+}
 
 /**
  * 決済の画面の作成と入り直し、認証の更新への「実サーバ呼び出し」を止める。

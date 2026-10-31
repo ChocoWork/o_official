@@ -31,6 +31,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { expect, type Locator, type Page } from '@playwright/test';
 import { z } from 'zod';
+import { orderDiscountRowsSchema } from '@/lib/discounts/order-discount-read';
 import { buildOrderItemCsv, orderItemCsvFilename } from '@/lib/orders/admin-orders/admin-order-csv';
 import {
   adminOrderBlockedReasonsSchema,
@@ -828,10 +829,12 @@ const orderDetailCoreSchema = z.object({
   amounts: z.object({ productNet: detailMoney, discount: detailMoney, shipping: detailMoney, total: detailMoney,
     paidAmount: detailMoney.nullable(), refundedAmount: detailMoney, refundAttachedToRows: detailMoney,
     refundNotAttached: integer, refundProcessingAmount: detailMoney }),
+  discounts: orderDiscountRowsSchema,
   rows: z.array(adminOrderExportRowSchema.omit({ orderId: true, orderCreatedAt: true, customerName: true, customerEmail: true })
     .extend({ statusRank: integer.min(1).max(12), blockedReasons: adminOrderBlockedReasonsSchema })
     .refine((row) => ORDER_ITEM_STATUS_ORDER[row.statusRank - 1] === row.status)),
   attention: z.object({
+    discounts: z.array(z.object({ orderId: z.string().uuid(), kind: z.enum(['discount_limit_exceeded', 'discount_reconciliation_recovered']), openedAt: timestamp })).optional(),
     paymentExceptions: z.array(z.object({ id: z.string().uuid(), reason: z.string(), detectionCount: integer.positive(), firstDetectedAt: timestamp })),
     review: z.object({ reason: z.string(), markedAt: timestamp.nullable() }).nullable(),
     deliveries: z.array(z.object({ fulfillmentId: z.string().uuid(), kind: z.string(), openedAt: timestamp })),

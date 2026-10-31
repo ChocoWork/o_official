@@ -1,5 +1,38 @@
 # テスト仕様
 
+## グループH Task 11 本番buildと手元SupabaseのE2E（2026-10-30）
+
+### 概要と実行境界
+
+新規12 spec は各390/768/1280pxで23題×3=69件を定義する。既存039/042/031/032のdescribe/test題は1字も変えず、ADMIN-109（32権限）とCART-024（割引欄）も確認する。新規12 specは、実装者（Sonnet）がrun-e2e.ps1（workers 1、本番build、手元Supabase）で1〜4ファイルずつ390/768/1280pxの全幅を流して修正した（結果は.superpowers/sdd/2026-10-29-group-h-promotions/task-11-report.mdの fix round 1・2）。2026-11-01 controllerの実測（DB初期化・本番build、全18ファイル、workers 1、retries 0）: 154 passed / 1 failed / 0 skipped（155件、22.8分）。落ちた1件はCHECKOUT-054 FREQ-548-AC-01の390pxでPOST /api/checkout/promotion-codeのECONNRESET。単独では12/12通過。回数制限よけの6.1秒の間隔がサーバーのkeep-alive（5秒）を超え、閉じかけの接続を使い回したため、discount-test-utils.tsの`api()`と`place()`を`connection: close`にした。直した後の054・055は21/21通過。店全体に効く自動割引を作る新規12 specはplaywright.config.tsのisolated-global（他の全部の後に1ファイルずつ直列）へ移した。ACごとの対応とDB/単体との分担は[要件](../../02_Requirements/requirements.md#グループh-task-11-のe2e対応2026-10-30)に記す。
+
+| spec | 確認内容と作るデータ | 実経路・差し替え |
+| --- | --- | --- |
+| [ADMIN-124](../../../e2e/FR-ADMIN-124-discount-management.spec.ts) | 1割引を画面で作成、複製、検索、停止/再開、注文1件で使用後制限 | 実管理HTTP→RPC。購入の入金だけfixture。期間は日本時間00:30（UTCでは前日15:30）を入れ、保存値と画面の表示で換算を確かめる |
+| [ADMIN-125](../../../e2e/FR-ADMIN-125-discount-assignments.spec.ts) | 10会員/共有code/予約と確定各1件/guest使用、assigned束2件と未割当100件/101拒否 | 実管理・checkout HTTP→RPC。入金fixture |
+| [ADMIN-126](../../../e2e/FR-ADMIN-126-discount-permissions.spec.ts) | supporter付与/剥奪、aal1と失効app session | 実管理HTTPとDB actor検査。権限変更だけ既存withPermissionScenarioの保存・復元経路 |
+| [ADMIN-127](../../../e2e/FR-ADMIN-127-discount-refund-amounts.spec.ts) | 2着+対象外1着（5000円）の42000円、1着返品/17000円返金、対象外の行へ返金0、旧3点100円 | 実申請/承認/受取/詳細HTTP→RPC。返金受付と結果は実public RPC fixture |
+| [CHECKOUT-054](../../../e2e/FR-CHECKOUT-054-own-discount-codes.spec.ts) | guestの6種の拒否、5code、メール変更、paid履歴、assigned/未割当束 | preview/confirm/freeze/受付は実HTTP→RPC。入金fixture。入力から最終確認の実画面あり |
+| [CHECKOUT-055](../../../e2e/FR-CHECKOUT-055-discount-combinations.spec.ts) | J20000/P10000のセット競合、C22、同額automatic/code、50円 | 判定は実preview HTTP→RPC、50円のSessionは実Stripeテストモードでretrieve。入金fixture |
+| [CHECKOUT-056](../../../e2e/FR-CHECKOUT-056-discount-reservations.spec.ts) | 上限/1人1回/初回の2draft、automatic変更、awaiting/取消後回復 | 通常受付は2つの本物のHTTP呼出し。Stripe照合イベント相当の入口・mark-paid/awaitingはpublic RPC fixture（署名webhook/queueの試験ではない） |
+| [CHECKOUT-057](../../../e2e/FR-CHECKOUT-057-automatic-repeat-set.spec.ts) | 同一itemの2variant、A/B/両方・0/1履歴/成功返金・guest、2〜10種セット。セットが他の割引の着を重ねて使わないことの実証は055 AC-01（セットと商品割引の取り合い）が担う | 実preview/confirm/受付HTTP→RPC、入金/返金結果はRPC fixture |
+| [CHECKOUT-058](../../../e2e/FR-CHECKOUT-058-discount-breakdown.spec.ts) | 4000円割引の注文を作成後に改名、DB/確認材料/compose一致 | 実入力/最終/受付HTTP→RPC、入金fixture、composeの本物の読取と純粋compose。メール本文をログへ出さず真偽だけassert。配送は未検証 |
+| [CART-025](../../../e2e/FR-CART-025-automatic-discounts.spec.ts) | 広告OFF/初回guest見込み、50行×20/各分類6/全自動25/入力5code | 通常cart/previewは実HTTP→RPC。guest履歴0はNULL/空の事実で確認し、SQL呼出回数を測ったとはしない。guardだけpure引数へ0を注入し、実public記録RPCを1回、cartの表示を差し替える。実サーバー内guard注入のHTTP証拠ではない |
+| [ITEM-DETAIL-068](../../../e2e/FR-ITEM-DETAIL-068-discount-advertising.spec.ts) | OFF/ON/期限、A/両方、member/guest別context、価格不変 | 実advertisements HTTP→RPC/no-store、商品画面。表示差し替えなし |
+| [ACCOUNT-045](../../../e2e/FR-ACCOUNT-045-discounted-return.spec.ts) | 17000→20000、残るセット片方、旧18500 | 実顧客申請/管理承認/受取/顧客画面。実返金public RPC受付/成功fixture（Stripe refund作成はしない） |
+
+`installDiscountDbBridge`は実Auth Cookieと試験固有IPを置き、ブラウザー側のStripe PaymentIntent confirmだけを固定する。サーバー内のStripe呼出しを差し替える機構は無いため、Session/couponの作成・Session読取・最終画面のSDK初期化は実Stripeテストモードを使う。各specは「注文する」から実入金を行わず、`recordPaid`と返金結果fixtureを明示的に呼ぶ。実Stripe決済・refund・署名webhook・queue・Mailpit配送の成功はこの試験の主張に含めない。Stripe providerの置換だけでサーバー内Sessionまで実行する構成は、今回のFiles内には無い。
+
+表示専用は`mockOwnDiscountPreview(page,result)`と既存039のpreview（zero-total防御と一時的なunknown成功）、042のpreview。031の入力名/placeholder/focusと032の常設alert/ariaは実画面、032のunknownは実自社previewへ流す。039の後段のconfirm拒否は実HTTP。既存4本のguest拒否は全て「このコードは使えません。会員の方はログインしてからお試しください。」と同一のログインリンクにそろえる。zero-totalの従来文はログイン済みmemberの公開code表示caseで保つ。
+
+### controllerの準備と実行
+
+H1〜H6適用済みの手元DB、`scripts/e2e/environment.ts`を通した本番build/port3000、テスト用Stripe鍵（coupon/Session作成と読取が可能）、手元Mailpitを用意する。写真なしでrefundを選べる返品理由を1つ用意する。ACCOUNT-045/ADMIN-127は14314,2の鍵を既存helperで取得して受付ON/期限なし/返送先fixtureを設定し、変更した欄をfinallyで元へ戻す。Hの別ワーカー間は190526,11で自動割引の目録を直列化する。権限の通常試験は190520,0共有、変更試験だけ既存withPermissionScenarioの排他と差分復元を使う。
+
+各scenarioは固有のIP/本人/guestメール/商品/codeを作る。previewは同一本人を6100ms間隔にして既存の10回/分を超えない。レート制限を無効化しない。追加したfetch/page.requestは全statusのbodyを読了し、APIResponseはdisposeする。リトライで失敗を隠さない。後始末は自分の割引を公開RPCで止め、自分の未入金注文を失敗終了し、作ったsession/userだけを削除、Hのuser FKがNULLになることと使用の額/状態/名前の保持をassertする。注文/金額/履歴は削除しない。残った準備中の品は既存order-admin cleanupに登録する。Authの値・宛先・本文・署名URLはログへ出さず、認証を扱う新規spec/039はtraceを無効にする。
+
+まずbrief指定のADMIN-124/CHECKOUT-054を`--workers=1 --retries=0`で実行し、道具の失敗と業務assertを分ける。その後18ファイルを`--workers=1 --retries=0`で実行し、各幅の件数を記録する。純粋計算の200ms・SQLロック待ちはTask 2/7/9の証拠を参照する。Graphifyの最終update/hook確認はglobal-constraintsどおりcontrollerがcommit前後に1回行う。
+
 ## グループH Task 5 DISCOUNTタブ・一覧・詳細・フォーム・会員の選択（2026-10-29）
 
 一覧は「使った回数」と「上限」を2列に分けた合計7列とする（controller受け入れ）。
