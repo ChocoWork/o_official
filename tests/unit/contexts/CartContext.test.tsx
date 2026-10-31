@@ -6,7 +6,7 @@ import type { CartJson } from '@/features/cart/types/cart-json';
 const WISHLISTED_ITEM = 7;
 const NEW_ITEM = 8;
 
-// ヘッダーの数は GET /api/cart の item_count だけを見る（Shopify の /cart.js と同じ）。明細の中身は要らない
+// ヘッダーの数は GET /api/cart?view=count の item_count だけを見る（Shopify の /cart.js と同じ）。明細の中身は要らない
 const cartWithCount = (count: number): CartJson => ({
   item_count: count,
   currency: 'JPY',
@@ -97,7 +97,7 @@ describe('toggleWishlist', () => {
         route = wishlistGet;
       } else if (url === '/api/wishlist' && method === 'POST') {
         route = wishlistPost;
-      } else if (url === '/api/cart' && method === 'GET') {
+      } else if (url === '/api/cart?view=count' && method === 'GET') {
         route = cartGet;
       }
 
@@ -357,14 +357,14 @@ describe('toggleWishlist', () => {
       await waitFor(() => expect(screen.getByTestId('cart-count')).toHaveTextContent('5'));
     });
 
-    test('updateCartCount() は GET /api/cart の item_count を数にする', async () => {
+    test('FREQ-550-AC-01: updateCartCount() は GET /api/cart?view=count の item_count を数にする', async () => {
       await renderLoaded();
       cartGet = { status: 200, body: cartWithCount(7) };
 
       fireEvent.click(screen.getByRole('button', { name: 'update-cart-count' }));
 
       await waitFor(() => expect(screen.getByTestId('cart-count')).toHaveTextContent('7'));
-      expect(calls).toEqual([{ url: '/api/cart', method: 'GET' }]);
+      expect(calls).toEqual([{ url: '/api/cart?view=count', method: 'GET' }]);
     });
 
     test('カートを読めなかった時は、今の数のまま', async () => {
@@ -397,7 +397,7 @@ describe('toggleWishlist', () => {
       expect(calls).toHaveLength(2);
       expect(calls).toEqual(
         expect.arrayContaining([
-          { url: '/api/cart', method: 'GET' },
+          { url: '/api/cart?view=count', method: 'GET' },
           { url: '/api/wishlist', method: 'GET' },
         ]),
       );

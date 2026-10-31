@@ -27,6 +27,12 @@ const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env
 /** 受け付けに要る決済の画面の残り時間（設計書 6-1）。受け付けた後に時間切れで支払えなくならないように */
 const ACCEPT_MIN_REMAINING_SECONDS = 10 * 60;
 
+/** 照合器と同じ診断項目だけをログへ渡し、例外本文やDBの詳細を持ち出さない。 */
+function errorNameAndCode(error: unknown): { name: string; code: string | null } {
+  const code = (error as { code?: unknown } | null)?.code;
+  return { name: error instanceof Error ? error.name : 'UnknownError', code: typeof code === 'string' ? code : null };
+}
+
 const requestSchema = z
   .object({
     checkoutSessionId: z.string().regex(CHECKOUT_SESSION_ID_PATTERN),
@@ -329,7 +335,7 @@ export async function POST(req: NextRequest) {
               return guard.finish(NextResponse.json({ error: 'payment_done', checkoutSessionId }, { status: 409 }));
             }
           } catch (reconcileError) {
-            console.error('Failed to reconcile the raced checkout session:', reconcileError);
+            console.error('Failed to reconcile the raced checkout session:', errorNameAndCode(reconcileError));
           }
           return guard.finish(NextResponse.json({ error: 'payment_state_changed' }, { status: 503 }));
         }
@@ -338,7 +344,7 @@ export async function POST(req: NextRequest) {
           await reconcileCheckoutSession(checkoutSessionId);
         } catch (reconcileError) {
           // 古い Session は既に閉じている。見回りが仕上げるので、再確認の応答は変えない
-          console.error('Failed to reconcile the expired checkout session:', reconcileError);
+          console.error('Failed to reconcile the expired checkout session:', errorNameAndCode(reconcileError));
         }
         await audit('failure', 'Place order automatic discount changed', { orderId: null, result: row.rejection });
         return guard.finish(NextResponse.json({ reconfirmationRequired: true, returnTo: 'confirmation' }));

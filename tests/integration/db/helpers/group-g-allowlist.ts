@@ -126,11 +126,13 @@ export const H4_ALLOWLIST: readonly string[] = Object.freeze([
   'private.place_reconciled_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,text)',
 ]);
 
+// H7 replaces resolve_payment_exception in place; its OID and the 77-member set stay the same.
+export const H7_ALLOWLIST: readonly string[] = H4_ALLOWLIST;
 /**
  * 今の DB の書き手の一覧。「今の DB の一覧が固定の集合や本数と等しい」ことを確かめる生きた検査は、すべてこの定数に向ける。
  * 次の段階が本数を足す時は、この指し先だけを新しい一覧へ付け替える（時点の再実行が使う G3C/G3D/G4_ALLOWLIST は変えない）。
  */
-export const CURRENT_ALLOWLIST: readonly string[] = H4_ALLOWLIST;
+export const CURRENT_ALLOWLIST: readonly string[] = H7_ALLOWLIST;
 
 /** 書き手の閉じた一覧を、渡した一覧へ置き換える文（関数の所有者・SECURITY DEFINER・search_path 空は移行と同じ） */
 export function replaceAllowlistSql(entries: readonly string[]): string {

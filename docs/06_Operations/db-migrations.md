@@ -1175,3 +1175,19 @@ controller手順: 未適用DBでRED→MD5補完→fresh reset→H1〜H5 assert�
 H6 assertは `GROUP_H_MIGRATION_ASSERTION_FAILED / P0001`、DETAILは `h6_order_breakdown`・`h6_customer_projection`・`h6_admin_projection`・`h6_public_acl`。本文の指紋（`md5(replace(prosrc, E'\r', ''))`）の4本（`private.order_discount_breakdown(uuid)`・`private.get_order_discount_breakdown(uuid)`・`public.get_order_status_public_material(uuid)`・`private.get_admin_order_detail(uuid,uuid)`）は、controllerが手元のDBで計算して移行の末尾assertへ埋めた（値は移行のとおり）。assertの`position(x IN y)`は`pg_catalog.strpos`に直した。H4のassertが持つ`get_admin_order_detail`の旧い指紋は、[group_h_migration_asserts](../../tests/integration/db/group_h_migration_asserts.integration.test.ts)がH6のファイルに固定された値を読んで置き換えて流す。今の本文から指紋を作り直す形にはしていないので、本文を変えればH4のassertも落ちる（H6のファイルから値が取れない時も落ちる）。
 
 controllerの確認（2026-10-30）: fresh reset した手元のDBで、H・G-4・注文状況・メールの27 suite 741/741が成功。本番適用、実メールの配信、実ブラウザの表示は未確認。
+
+## グループH Task 12 fix 1: 支払いの例外の解決で未入金の予約を取り消す（H7）
+
+確認日2026-11-01。本番未適用。H1〜H6とG以前の移行は変更しない。
+
+| 移行 | ファイル | サイズ（bytes） | MD5 |
+| --- | --- | --- | --- |
+| H7 | [20261029130600_group_h_payment_exception_cancel.sql](../../supabase/migrations/20261029130600_group_h_payment_exception_cancel.sql) | 14,568 | c79a631430ba20a333ceb83254f8e4f1 |
+
+ASCII/BOMなし/LF、BEGIN→取引内baseline→CREATE OR REPLACE→H7_FINAL_ASSERT→NOTIFY→COMMIT。`private.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)`はG-1の本文に2行だけ追加する。G在庫鍵の前に`group_h_lock_acceptance(NULL, v_order_id)`を呼び、G共通→H目録→本人→割引→G在庫の順を守る。取消経路のUPDATE直後だけ`group_h_settle_redemptions(target.order_id, false)`を呼ぶ。取消なしの解決は予約を保つ。既存業務行の補完・清掃・再投入はない。
+
+private本体とpublic入口の署名・OID・戻り型・引数名/既定値・所有者・SECURITY・volatility・search_path・ACL・コメントを保つ。G-1はこの関数にCOMMENTを設定していないため、H7もCOMMENT文を発行しない。書き手の一覧はH4と同じ77本（`CURRENT_ALLOWLIST`は同じ集合の`H7_ALLOWLIST`を参照）。H4の一覧本体の固定MD5は変えず、予約だけを書くhelperを追加しない。
+
+H7末尾assertの失敗は`GROUP_H_MIGRATION_ASSERTION_FAILED / P0001`、DETAILは`h7_payment_exception_cancel`・`h7_public_acl`・`h7_writer_allowlist`。新しい本体のMD5は、controllerが手元のDBで取引内に本文を当てて`md5(replace(prosrc, E'\r', ''))`を採り（`656d6fc09913ed4865fe2b26029b0fd0`）、末尾assertへ固定した（2026-11-01）。
+
+controller手順: H7未適用DBの新しい取消テストでRED→取引内で新本体のMD5を採取して補完→最終SQLのfresh reset→H1〜H7末尾assertとH受付/遷移/並行、G-1 payment-review/writer-inventoryとG-0〜G-4回帰→public入口のPostgREST service_role成功/anon・authenticated拒否。並行はG鍵待ちを`pg_blocking_pids`/`pg_locks`で観測して3連続。`G1_CLEANUP_SUITE=1`は通常回帰に含めない。実装者はDB・CLI・Docker・server・build・Playwright・実Stripe・本番を実行していない。controllerの実測（2026-11-01）: H7未適用のDBで新しい取消テストが落ちる（RED）→MD5を固定しDBを初期化→group_h_redemptions・group_h_migration_asserts・group_g1_payment_review・group_g1_writer_inventoryの4 suiteが通る。leakproofと所有者の付け替えの改ざんは手元のpostgresが超ユーザーでないため試験から外した（42501。末尾assertは両方を検査する）。

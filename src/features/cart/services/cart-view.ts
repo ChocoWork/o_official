@@ -19,6 +19,29 @@ type CartLineRow = {
   } | null;
 };
 
+type CartCountLineRow = {
+  quantity: number;
+  item_variants: { is_active: boolean; items: { status: string } | null } | null;
+};
+
+function isVisibleCartLine(row: CartCountLineRow): boolean {
+  return row.item_variants?.is_active === true && row.item_variants.items?.status === 'published';
+}
+
+/**
+ * 見出しの件数は明細の公開条件だけで決め、頁を開くたびの割引計算と購入履歴の読取を避ける。
+ * @impl FREQ-550-AC-01
+ * @design docs/04_DetailDesign/pages/12_cart.md
+ */
+export async function buildCartCount(supabase: SupabaseClient, cartId: string | null): Promise<Pick<CartJson, 'item_count'>> {
+  if (!cartId) return { item_count: 0 };
+  const { data, error } = await supabase.from('cart_lines')
+    .select('quantity, item_variants(is_active, items(status))').eq('cart_id', cartId);
+  if (error) throw error;
+  const rows = (data ?? []) as unknown as CartCountLineRow[];
+  return { item_count: rows.filter(isVisibleCartLine).reduce((sum, row) => sum + row.quantity, 0) };
+}
+
 /**
  * カート全体を Shopify の /cart.js と同じ形で組み立てる（設計書 6-1）。印 token は返さない。
  * 非公開の商品と取り扱い終了のバリアントの明細は出さない（本計画の決め事 P14）。並びは入れた日時の新しい順。
@@ -39,9 +62,7 @@ export async function buildCartJson(supabase: SupabaseClient, cartId: string | n
     throw error;
   }
 
-  const rows = ((data ?? []) as unknown as CartLineRow[]).filter(
-    (row) => row.item_variants?.is_active === true && row.item_variants.items?.status === 'published',
-  );
+  const rows = ((data ?? []) as unknown as CartLineRow[]).filter(isVisibleCartLine);
 
   let fulfillments: Array<'stock' | 'backorder' | null> = rows.map(() => null);
   try {

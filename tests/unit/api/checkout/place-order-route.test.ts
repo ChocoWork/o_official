@@ -257,6 +257,24 @@ describe('POST /api/checkout/place-order', () => {
     finally { silence.mockRestore(); }
   });
 
+  test.each(['not_open', 'expired'])('FREQ-549-AC-01: 自動変更の%s後の照合失敗は名前と記号だけをログに残す', async expiry => {
+    mockRpc.mockResolvedValue({ data: [{ rejection: 'discount_automatic_changed' }], error: null });
+    mockExpireOpenCheckoutSession.mockResolvedValue(expiry);
+    const error = Object.assign(new Error('PRIVATE-RECONCILE-MESSAGE'), { code: 'RECONCILE_FAILED', details: 'PRIVATE-DETAILS' });
+    mockReconcileCheckoutSession.mockRejectedValue(error);
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const res = await POST(makeRequest(VALID_BODY));
+      expect(res.status).toBe(expiry === 'expired' ? 200 : 503);
+      expect(await res.json()).toEqual(expiry === 'expired'
+        ? { reconfirmationRequired: true, returnTo: 'confirmation' }
+        : { error: 'payment_state_changed' });
+      expect(logged).toHaveBeenCalledWith(expect.any(String), { name: 'Error', code: 'RECONCILE_FAILED' });
+      for (const args of logged.mock.calls) expect(args).not.toContain(error);
+      expect(JSON.stringify(logged.mock.calls)).not.toMatch(/PRIVATE-RECONCILE-MESSAGE|PRIVATE-DETAILS|stack/);
+    } finally { logged.mockRestore(); }
+  });
+
   test('受付 RPC の GROUP_G_LOCK_SET_CHANGED（40001）は、DB の文を出さず「時間をおいてもう一度」の 500 にする', async () => {
     mockRpc.mockResolvedValue({ data: null, error: { message: 'GROUP_G_LOCK_SET_CHANGED', code: '40001', details: 'PRIVATE-MARKER' } });
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);

@@ -302,6 +302,8 @@ describeLocalDb('G-1 Task 7: payment-review hold, dispatch and both resolvers', 
       where oid = 'private.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)'::regprocedure`)).rows[0].prosrc as string;
     expect(src).not.toMatch(/release_stock_for_unpaid_order/);
     expect(src.indexOf('private.lock_group_g_inventory')).toBeGreaterThan(0);
+    expect(src.indexOf('private.group_h_lock_acceptance(NULL, v_order_id)')).toBeGreaterThan(0);
+    expect(src.indexOf('private.group_h_lock_acceptance(NULL, v_order_id)')).toBeLessThan(src.indexOf('private.lock_group_g_inventory'));
     expect(src.indexOf('private.lock_group_g_inventory')).toBeLessThan(src.indexOf('FOR UPDATE'));
   });
 

@@ -1,4 +1,4 @@
-﻿# 1.12 カートページ（CART）詳細設計
+# 1.12 カートページ（CART）詳細設計
 
 > 状態: 既存設計 | 実装状況は項目ごとに要再照合
 
@@ -28,7 +28,8 @@
 
 | 項目 | 現行の扱い | 根拠 |
 | --- | --- | --- |
-| 計算 | `GET /api/cart`・`POST /api/cart/add`・`POST /api/cart/change`が同じ`buildCartJson(supabase, cartId, buyer)`でカート全体を組み立てる。本人は会員のuserIdか、それ以外のguest。メールや購入履歴は読まず、guestの初回・1人1回は常に見込み。応答へ`discounts`（正額の効果の`{name,amount}`、コードなし）・`total_discount`・`discount_provisional`を足し、`items_subtotal_price`・単価・`line_price`は元値のまま、`total_price`を正味額にする | [cart-view](../../../src/features/cart/services/cart-view.ts)、[previewAutomaticDiscounts](../../../src/lib/discounts/discount-preview-store.ts)、[型](../../../src/features/cart/types/cart-json.ts) |
+| 見出しの件数 | `CartContext`は`GET /api/cart?view=count`から`{item_count}`だけを読む。通常のカートと同じ持ち主の確認と公開条件で数量を合計し、割引・購入履歴・在庫見込み・画像署名を呼ばない。応答は`no-store`。カート全体を読む`GET /api/cart`とそのShopify形式は保持する（2026-11-01、Task 12 fix 1） | [CartContext](../../../src/contexts/CartContext.tsx)、[cart-view](../../../src/features/cart/services/cart-view.ts) |
+| 計算 | `GET /api/cart`・`POST /api/cart/add`・`POST /api/cart/change`が同じ`buildCartJson(supabase, cartId, buyer)`でカート全体を組み立てる。本人は会員のuserIdか、それ以外のguest。会員は検証済みuserIdの購入履歴を使い、guestは入力メールや購入履歴を読まず初回・1人1回を常に見込みにする。応答へ`discounts`（正額の効果の`{name,amount}`、コードなし）・`total_discount`・`discount_provisional`を足し、`items_subtotal_price`・単価・`line_price`は元値のまま、`total_price`を正味額にする | [cart-view](../../../src/features/cart/services/cart-view.ts)、[previewAutomaticDiscounts](../../../src/lib/discounts/discount-preview-store.ts)、[型](../../../src/features/cart/types/cart-json.ts) |
 | guard・失敗 | 探索のguardでもfallbackの完全に評価した額を200で表示し、管理要対応へ記録する（既存のrecordDiscountSearchFallback）。割引の計算が失敗しても、カートは割引なしで200を返し、固定ログ`cart_discount_preview_failed`だけを残す。追加の再送や失敗応答にしない | [cart-view](../../../src/features/cart/services/cart-view.ts)、[checkout-discounts.service](../../../src/features/checkout/services/checkout-discounts.service.ts) |
 | 表示 | ORDER SUMMARYの小計の下に、正額の効果を1効果1行で「割引（名前） −¥金額」と出し（[DiscountBreakdown](../../../src/components/DiscountBreakdown.tsx)、コードは出さない）、見込みを含む時は各行に「見込み」を付ける。合計は小計から割引を引いた正味額。数量の変更・削除の応答で新しい内訳に差し替える。応答を待つ間は、割引の行と合計が前回の応答の額なので薄く出し（`aria-busy`）、応答が返って待ちが無くなったら戻す。名前はテキストとして描画し、HTMLを実行しない | [OrderSummary](../../../src/app/cart/_components/OrderSummary.tsx)、[useCartItems](../../../src/app/cart/_hooks/useCartItems.ts)、[cart/page.tsx](../../../src/app/cart/page.tsx) |
 | 広告 | 広告をOFFにしてもカートの割引は隠さない。商品ページの案内は別の窓口（`GET /api/discounts/advertisements`）から出す | [05_item_detail](05_item_detail.md)、[API仕様](../../03_BasicDesign/api/api-spec.md) |
@@ -46,7 +47,7 @@
 | FR-CART-005 | 注文サマリーは小計・配送料（無料表示）・合計を表示し `/checkout` への遷移ボタンを設置する | IMPL-CART-005 | `src/app/cart/page.tsx` | 小計・配送料「無料」・合計・`Button href="/checkout"` を実装。`total = subtotal`（送料0円） | 済 |
 | FR-CART-006 | プロモーションコード入力欄と適用ボタンを UI に含む | IMPL-CART-006 | `src/app/cart/page.tsx` | `TextField` + `Button「適用」` の UI を設置。コード検証・割引計算ロジックは未実装（プレースホルダー表示のみ） | 済 |
 | FR-CART-007 | カートが空の場合は `EmptyCart` コンポーネントを表示し `/item` への「買い物を続ける」リンクを設ける | IMPL-CART-007 | `src/app/cart/page.tsx`, `src/components/EmptyCart.tsx` | `cartItems.length === 0` 時に `<EmptyCart />` をレンダリング。`/item` リンクあり | 済 |
-| FR-CART-008 | `CartContext` は `/api/cart` からカート件数を取得しヘッダーバッジ表示と動的更新をサポートする | IMPL-CART-008 | `src/contexts/CartContext.tsx`, `src/app/api/cart/route.ts` | `useCart()` から `updateCartCount` / `wishlistedItems` / `toggleWishlist` を呼び出し | 済 |
+| FR-CART-008 | `CartContext` は `/api/cart?view=count` からカート件数を取得しヘッダーバッジ表示と動的更新をサポートする | IMPL-CART-008 | `src/contexts/CartContext.tsx`, `src/app/api/cart/route.ts` | `useCart()` から `updateCartCount` / `wishlistedItems` / `toggleWishlist` を呼び出し | 済 |
 | FR-CART-009 | プロモーションコードのサーバ側バリデーション・割引計算（WONT） | — | — | 「WELCOME10 または SAVE20」のプレースホルダーテキストのみ。現フェーズ対象外 | 未 |
 | FR-CART-010 | 各カートアイテム行に「単価 × 数量 = 小計」を明示し注文サマリーに税・送料・割引行を追加する | IMPL-CART-009 | `src/app/cart/page.tsx` | 単価のみ表示。行サブトータル・税/割引行は未表示 | 未 |
 | FR-CART-011 | 商品ごとの在庫チェックを組み込み「在庫あり / 売り切れ / 残り○点」を表示しチェックアウト前に在庫不足をバリデーションする | IMPL-CART-010 | `src/app/cart/page.tsx` | 在庫チェック・残数表示は未実装 | 未 |

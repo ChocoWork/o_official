@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { openShoppingContext } from '@/features/cart/services/shopping-context';
-import { buildCartJson } from '@/features/cart/services/cart-view';
+import { buildCartCount, buildCartJson } from '@/features/cart/services/cart-view';
 import type { DiscountBuyer } from '@/lib/discounts/discount-types';
 import { CART_ERROR_DESCRIPTIONS, cartErrorResponse } from '@/features/cart/services/cart-errors';
 
@@ -17,8 +17,13 @@ export async function GET(req: NextRequest) {
       return opened.response;
     }
     const { context } = opened;
+    const cartId = await context.findOwnerId();
+    if (req.nextUrl.searchParams.get('view') === 'count') {
+      const count = await buildCartCount(supabase, cartId);
+      return context.finish(NextResponse.json(count, { headers: { 'Cache-Control': 'no-store' } }));
+    }
     const buyer: DiscountBuyer = context.owner?.kind === 'member' ? { kind: 'member', userId: context.owner.userId } : { kind: 'guest', normalizedEmail: null };
-    const cart = await buildCartJson(supabase, await context.findOwnerId(), buyer);
+    const cart = await buildCartJson(supabase, cartId, buyer);
     return context.finish(NextResponse.json(cart, { headers: { 'Cache-Control': 'no-store' } }));
   } catch (error) {
     console.error('Cart GET error:', error);

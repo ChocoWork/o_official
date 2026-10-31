@@ -1324,3 +1324,9 @@ FREQ-552-AC-01〜03（確認メール・会員詳細・公開の注文状況・�
 実装者の実行結果: 変更した範囲と全単体（`tests/unit`）が成功、`npx.cmd tsc --noEmit --incremental false`と変更したts/tsxの`npx.cmd eslint`は終了コード0。DB試験・supabase CLI・Docker・Playwright・サーバーは実行していない。controllerの確認（2026-10-30）: fresh reset した手元のDBで、H・G-4・注文状況・メールの27 suite 741/741が成功。実メールの配信と実ブラウザの表示は未確認。
 
 DB試験は作成のみ、実行はcontroller。安い返金の失敗後に高い返金が成功済みでも安い単位を再試行して総和37,000円、同requestKey再送、外部pending→failed、数量不明の部分額、無料単位、交換、相談後の即返金、状態別合計と旧33/33/34を確認する。単体/tsc/ESLintの実測と未確認の境界は[Task 9レポート](../../../.superpowers/sdd/2026-10-29-group-h-promotions/task-9-report.md)に記録する。DB/Stripe/メール配送/E2Eの成功を単体の結果から主張しない。
+
+## グループH Task 12 fix 1（2026-11-01、I-1・M-1・M-3・M-5）
+
+単体7 suite・148件が成功（修正前は同じ7 suiteで31失敗・117成功）。`group-h-payment-exception-cancel`はG-1の定義との比較で、H7が鍵と予約取消の2行だけを足し、所有者/ACLとASCII/LF/単一取引を保つことを検査する。`cart-view`・`cart-get`・`cart-api`・`CartContext`は`view=count`の件数と公開条件、割引評価なし、通常のShopify形式と自動割引評価の保持を検査する。`place-order-route`は自動変更後の2つの照合失敗で例外本文をログに含めないこと、`discount-attention-route`は403/500のfailure/error監査と固定の結果コード、監査失敗時の元の応答保持を検査する。guard監査の間隔は変更しない。
+
+DB用は既存の[予約の遷移](../../../tests/integration/db/group_h_redemptions.integration.test.ts)に`FREQ-549-AC-03: 支払いの例外の解決で未入金の注文を取り消すと予約は取り消しになり、回数と初回が戻る`と取消なしの対照を追加した。会員の1人1回・初回限定・全体上限1の割当コードで実受付し、例外の公開RPCを通す。cancelledと回数0、初回の再資格、同じ会員の再preview/受付、管理の入金待ち表示の解除を確認する。[末尾assert](../../../tests/integration/db/group_h_migration_asserts.integration.test.ts)のH7節は本文MD5、全属性/ACL/コメント/余分なoverload、77本のOID、未知の例外の秘匿を改ざんして確かめる。G-1 payment-reviewとwriter-inventory、共有のH7_ALLOWLISTも同じOIDのままの契約を検査する。2026-11-01 controllerの実測: H7未適用のDBで新しい取消テストだけが落ちる（RED）。本文MD5（`656d6fc0…`）を固定してDBを初期化した後、予約の遷移・G-1 payment-review・writer-inventory・末尾assert（168/168）が通る（GREEN）。leakproofと所有者の付け替えの改ざんは、手元のpostgresが超ユーザーでないため（42501）試験から外した（末尾assertは両方を検査する）。FR-CART-024を含むPlaywrightはTask 12の全件E2Eで確かめる。

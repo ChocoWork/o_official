@@ -1,4 +1,4 @@
-import { fetchCartJson, findVariantId, postCart, sendShoppingRequest, toCartEntries } from '@/features/cart/client/cart-api';
+import { fetchCartCount, fetchCartJson, findVariantId, postCart, sendShoppingRequest, toCartEntries } from '@/features/cart/client/cart-api';
 import { refreshSessionOnce } from '@/lib/client-fetch';
 import type { CartJson } from '@/features/cart/types/cart-json';
 
@@ -32,6 +32,21 @@ describe('cart-api', () => {
     jest.clearAllMocks();
     document.cookie = 'sb-csrf-token=; max-age=0';
     global.fetch = jest.fn();
+  });
+
+  test('FREQ-550-AC-01: 見出し用の数はview=countから取得し、認証付きでもno-storeにする', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue(jsonResponse(200, { item_count: 7 }));
+    await expect(fetchCartCount()).resolves.toBe(7);
+    expect(global.fetch).toHaveBeenCalledWith('/api/cart?view=count', expect.objectContaining({
+      method: 'GET', credentials: 'same-origin', cache: 'no-store',
+    }));
+  });
+
+  test('FREQ-550-AC-01: 件数の取得失敗は本文を読んで例外にする', async () => {
+    const response = jsonResponse(500, { error: 'unavailable' });
+    (global.fetch as jest.Mock).mockResolvedValue(response);
+    await expect(fetchCartCount()).rejects.toThrow('カートの取得に失敗しました');
+    expect(response.bodyUsed).toBe(true);
   });
 
   test('Shopify の形を今の画面用の形に直す', () => {

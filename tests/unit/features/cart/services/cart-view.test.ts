@@ -1,4 +1,4 @@
-import { buildCartJson } from '@/features/cart/services/cart-view';
+import { buildCartCount, buildCartJson } from '@/features/cart/services/cart-view';
 import { previewFulfillment } from '@/features/checkout/services/checkout-fulfillment.service';
 import { signItemImageUrl } from '@/lib/storage/item-images';
 import { previewAutomaticDiscounts } from '@/lib/discounts/discount-preview-store';
@@ -55,6 +55,25 @@ describe('buildCartJson', () => {
   });
 
   afterEach(() => jest.restoreAllMocks());
+
+  test('FREQ-550-AC-01: 件数だけの取得は公開中の有効な明細だけを数え、割引・在庫見込み・画像署名を呼ばない', async () => {
+    const hidden = line({ item_variants: { ...line().item_variants, items: { ...line().item_variants.items, status: 'private' } } });
+    const inactive = line({ item_variants: { ...line().item_variants, is_active: false } });
+    const supabase = supabaseWith([line(), line({ quantity: 3 }), hidden, inactive, line({ item_variants: null })]);
+
+    await expect(buildCartCount(supabase, 'cart-1')).resolves.toEqual({ item_count: 5 });
+
+    expect(previewAutomaticDiscounts).not.toHaveBeenCalled();
+    expect(previewFulfillment).not.toHaveBeenCalled();
+    expect(signItemImageUrl).not.toHaveBeenCalled();
+  });
+
+  test('FREQ-550-AC-01: 件数だけの取得は持ち主の行がなければ読取なしで0を返す', async () => {
+    const supabase = supabaseWith([]);
+    await expect(buildCartCount(supabase, null)).resolves.toEqual({ item_count: 0 });
+    expect((supabase as { from: jest.Mock }).from).not.toHaveBeenCalled();
+    expect(previewAutomaticDiscounts).not.toHaveBeenCalled();
+  });
 
   test('持ち主が無ければ空のカート', async () => {
     const supabase = supabaseWith([]);

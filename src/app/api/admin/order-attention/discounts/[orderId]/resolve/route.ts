@@ -37,6 +37,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ ord
     result = await resolveAdminDiscountAttention(await createServiceRoleClient(), authz.userId, orderId);
   } catch (error) {
     const known = error instanceof AdminDiscountStoreError ? error : new AdminDiscountStoreError();
+    try {
+      await logAudit({ action: 'admin.orders.discount_attention.resolve', actor_id: authz.userId, resource: 'orders', resource_id: orderId,
+        outcome: known.status >= 500 ? 'error' : 'failure', metadata: { result_code: known.code ?? 'DISCOUNT_FAILED' } });
+    } catch {
+      console.error('discount_attention_resolve_audit_failed');
+    }
     return noStore(NextResponse.json({ error: known.message, ...(known.code ? { code: known.code } : {}) }, { status: known.status }));
   }
   // 確認は既にDBで済んでいる。監査の書込みが失敗しても成功を失敗に変えない（固定の記号だけをログに残す）

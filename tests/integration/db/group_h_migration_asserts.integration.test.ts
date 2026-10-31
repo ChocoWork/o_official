@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describeLocalDb } from './helpers/local-db';
 import { withH1PermissionBaseline } from './helpers/group-h-fixtures';
 import { hBegin, hRefundFixture, hResult } from './helpers/group-h-refund-fixtures';
-import { G4_ALLOWLIST, H4_ALLOWLIST, replaceAllowlistSql } from './helpers/group-g-allowlist';
+import { G4_ALLOWLIST, H4_ALLOWLIST, H7_ALLOWLIST, replaceAllowlistSql } from './helpers/group-g-allowlist';
 import { MAX_AUTOMATIC_DISCOUNTS, MAX_STACKABLE_AUTOMATIC_PER_CLASS } from '@/lib/discounts/discount-types';
 
 const directory = path.join(process.cwd(), 'supabase/migrations');
@@ -590,4 +590,71 @@ describeLocalDb('H6 semantic final assertions (controller only; fill body MD5s f
     expect(await attempt(change)).toEqual({ code: 'P0001', message: 'GROUP_H_MIGRATION_ASSERTION_FAILED', detail });
     expect(await attempt()).toBeNull();
   });
+});
+
+const h7Path = path.join(directory, '20261029130600_group_h_payment_exception_cancel.sql');
+const h7 = fs.existsSync(h7Path) ? fs.readFileSync(h7Path, 'utf8') : '';
+const h7Assert = h7.split('-- H7_FINAL_ASSERT_BEGIN\n')[1]?.split('-- H7_FINAL_ASSERT_END')[0] ?? '';
+const h7Baseline = h7.split('-- H7_BASELINE_BEGIN\n')[1]?.split('-- H7_BASELINE_END')[0] ?? '';
+const H7_RESOLVER = 'private.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)';
+
+describeLocalDb('H7 semantic final assertions (controller only; fill body MD5 first)', db => {
+  beforeEach(async () => { await db().query('begin'); await db().query('select pg_advisory_xact_lock(190521,1)'); });
+  afterEach(async () => { await db().query('rollback'); });
+  async function attempt(change = '', assertionSql = h7Assert): Promise<AssertFailure | null> {
+    await db().query('savepoint h7_assert');
+    try {
+      await db().query(h7Baseline);
+      if (change) await db().query(change);
+      await db().query(assertionSql);
+      return null;
+    } catch (caught) {
+      const e = caught as AssertFailure;
+      return { code: e.code, message: e.message === 'GROUP_H_MIGRATION_ASSERTION_FAILED' ? e.message : 'H_UNEXPECTED_DB_ERROR',
+        detail: e.detail, ...(e.hint ? { hint: e.hint } : {}) };
+    } finally { await db().query('rollback to savepoint h7_assert'); await db().query('release savepoint h7_assert'); }
+  }
+  const rewrite = (from: string, to: string) => `do $rewrite$ begin execute replace(pg_get_functiondef('${H7_RESOLVER}'::regprocedure), $from$${from}$from$, $to$${to}$to$); end $rewrite$`;
+
+  test('FREQ-549-AC-03: H7の固定本文・属性・ACL・コメントと77本のOIDは無改変なら通る', async () => {
+    expect(h7Baseline).not.toBe(''); expect(h7Assert).not.toBe('');
+    expect(await attempt()).toBeNull();
+  });
+  test('FREQ-549-AC-03: H7の本文をCRLFに変えても指紋は変わらない', async () => {
+    expect(await attempt(`do $crlf$ begin execute replace(pg_get_functiondef('${H7_RESOLVER}'::regprocedure), E'\n', E'\r\n'); end $crlf$`)).toBeNull();
+  });
+  test.each([
+    [rewrite('PERFORM private.group_h_lock_acceptance(NULL, v_order_id);', ''), 'h7_payment_exception_cancel'],
+    [rewrite('PERFORM private.group_h_settle_redemptions(target.order_id, false);', ''), 'h7_payment_exception_cancel'],
+    [rewrite('PERFORM private.group_h_settle_redemptions(target.order_id, false);', 'PERFORM private.group_h_settle_redemptions(target.order_id, true);'), 'h7_payment_exception_cancel'],
+    [`alter function ${H7_RESOLVER} security invoker`, 'h7_payment_exception_cancel'],
+    [`alter function ${H7_RESOLVER} stable`, 'h7_payment_exception_cancel'],
+    [`alter function ${H7_RESOLVER} strict`, 'h7_payment_exception_cancel'],
+    // leakproof and owner changes need a superuser the local postgres role is not (42501); the DO block still checks both
+    [`alter function ${H7_RESOLVER} parallel safe`, 'h7_payment_exception_cancel'],
+    [`alter function ${H7_RESOLVER} set search_path=public`, 'h7_payment_exception_cancel'],
+    [rewrite('_cancel_order boolean DEFAULT false', '_cancel_order boolean DEFAULT true'), 'h7_payment_exception_cancel'],
+    [`comment on function ${H7_RESOLVER} is 'tampered'`, 'h7_payment_exception_cancel'],
+    [`grant execute on function ${H7_RESOLVER} to public`, 'h7_public_acl'],
+    [`grant execute on function ${H7_RESOLVER} to anon`, 'h7_public_acl'],
+    [`grant execute on function ${H7_RESOLVER} to authenticated`, 'h7_public_acl'],
+    [`revoke execute on function ${H7_RESOLVER} from service_role`, 'h7_public_acl'],
+    ['alter function public.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean) security definer', 'h7_public_acl'],
+    ['grant execute on function public.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean) to anon', 'h7_public_acl'],
+    ['comment on function public.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean) is \'tampered\'', 'h7_public_acl'],
+    ['create function private.resolve_payment_exception(text) returns void language sql as $$select$$', 'h7_payment_exception_cancel'],
+    ['create function public.resolve_payment_exception(text) returns void language sql as $$select$$', 'h7_public_acl'],
+    [replaceAllowlistSql(H7_ALLOWLIST.filter(s => s !== H7_RESOLVER)), 'h7_writer_allowlist'],
+    [replaceAllowlistSql([...H7_ALLOWLIST, 'private.group_h_settle_redemptions(uuid,boolean)']), 'h7_writer_allowlist'],
+  ])('FREQ-549-AC-03: H7改ざん %s はP0001とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual({ code: 'P0001', message: 'GROUP_H_MIGRATION_ASSERTION_FAILED', detail });
+    expect(await attempt()).toBeNull();
+  });
+  test.each(['h7_payment_exception_cancel', 'h7_public_acl', 'h7_writer_allowlist'])(
+    'FREQ-549-AC-03: H7の%s内の未知の例外はSQLSTATEだけをHINTに残す', async detail => {
+      const marker = `v_detail:='${detail}';`;
+      expect(h7Assert).toContain(marker);
+      expect(await attempt('', h7Assert.replace(marker, `${marker} PERFORM 1/0;`)))
+        .toEqual({ code: 'P0001', message: 'GROUP_H_MIGRATION_ASSERTION_FAILED', detail, hint: 'sqlstate=22012' });
+    });
 });

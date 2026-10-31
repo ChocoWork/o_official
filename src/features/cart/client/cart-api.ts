@@ -68,6 +68,16 @@ export async function fetchCartJson(): Promise<CartJson> {
   return (await response.json()) as CartJson;
 }
 
+/** 見出しは件数だけを読み、カート全体の割引の計算を起動しない。 */
+export async function fetchCartCount(): Promise<number> {
+  const response = await sendShoppingRequest('/api/cart?view=count');
+  const body = await response.json().catch(() => null) as { item_count?: unknown } | null;
+  if (!response.ok || typeof body?.item_count !== 'number' || !Number.isSafeInteger(body.item_count) || body.item_count < 0) {
+    throw new Error('カートの取得に失敗しました');
+  }
+  return body.item_count;
+}
+
 export type CartPostResult = { ok: true; body: unknown } | { ok: false; status: number; description: string };
 
 export async function postCart(

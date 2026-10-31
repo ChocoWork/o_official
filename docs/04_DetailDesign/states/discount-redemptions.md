@@ -10,7 +10,7 @@
 
 ## 範囲と根拠
 
-対応領域: [注文の状態](order-payment.md)、[注文管理シーケンス](../sequence/order-administration.md)、仕様書 [グループ H 割引](../../superpowers/specs/2026-10-28-group-h-promotions-design.md) の 6.2・11.2・16 章。実装は [H4 移行](../../../supabase/migrations/20261029130300_group_h_discounts_acceptance.sql) の `private.group_h_reserve_redemptions`・`private.group_h_settle_redemptions` と、これを呼ぶ `place_order_from_checkout_draft`・`place_reconciled_order_from_checkout_draft`・`mark_order_paid`・`release_stock_for_unpaid_order`・`record_cancelled_order_paid_amount`。
+対応領域: [注文の状態](order-payment.md)、[注文管理シーケンス](../sequence/order-administration.md)、仕様書 [グループ H 割引](../../superpowers/specs/2026-10-28-group-h-promotions-design.md) の 6.2・11.2・16 章。実装は [H4 移行](../../../supabase/migrations/20261029130300_group_h_discounts_acceptance.sql) の `private.group_h_reserve_redemptions`・`private.group_h_settle_redemptions` と、これを呼ぶ `place_order_from_checkout_draft`・`place_reconciled_order_from_checkout_draft`・`mark_order_paid`・`release_stock_for_unpaid_order`・`record_cancelled_order_paid_amount`。支払いの例外の解決による未入金の取消は [H7 移行](../../../supabase/migrations/20261029130600_group_h_payment_exception_cancel.sql) の `private.resolve_payment_exception` から同じH4 helperを呼ぶ（2026-11-01追加。同日、手元のDBで取消と取消なしの両方を確認済み）。
 
 ## 状態定義と図
 
@@ -37,7 +37,7 @@ stateDiagram-v2
 | ST-REDEMPTION-02 | `place_reconciled_order_from_checkout_draft`（`paid` / `awaiting_payment`）。金額・通貨・所有者・固定 snapshot の確認は保つが、現在の回数・1 人 1 回・期間・停止・割当・初回・着数では拒否しない | `reserved` を作り `reconciliation_fallback=true`。通常の受付では立てない |
 | ST-REDEMPTION-03 | `mark_order_awaiting_payment`（`payment_in_progress` → `pending`） | 予約を保つ。要対応は付けない |
 | ST-REDEMPTION-04 | `mark_order_paid` と同じ取引で `group_h_settle_redemptions(order, true)` | `reserved` → `confirmed`、`confirmed_at` を書く。上限・1 人 1 回・単発 code を超えていれば `discount_limit_exceeded`、fallback の行なら `discount_reconciliation_recovered`、どちらでもなければ印なし |
-| ST-REDEMPTION-05 | `release_stock_for_unpaid_order` が `failed` / `abandoned` / 未入金の `cancelled` へ進めた取引。注文が入金済み（`paid`・`shipped` または `paid_amount > 0`）でない | `reserved` → `cancelled`、`cancelled_at` を書く。新しい要対応は出さない。入金済みの注文では何も変えない（paid と expire の順違いでも `confirmed` を戻さない） |
+| ST-REDEMPTION-05 | `release_stock_for_unpaid_order` が `failed` / `abandoned` / 未入金の `cancelled` へ進めた取引、または `resolve_payment_exception(_cancel_order=true)` が `payment_in_progress` / `pending` の注文を取り消した取引。注文が入金済み（`paid`・`shipped` または `paid_amount > 0`）でない | 取消UPDATEの直後に `group_h_settle_redemptions(order, false)` を呼び、`reserved` → `cancelled`、`cancelled_at` を書く。全体・本人・コードの使用回数と初回の予約を戻し、管理の割り当て表も「使用済み（入金待ち）」ではなく未使用になる。新しい要対応は出さない。`_cancel_order=false` は予約を保つ。入金済みの注文では何も変えない（paid と expire の順違いでも `confirmed` を戻さない） |
 | ST-REDEMPTION-06 | `mark_order_paid`（失敗・取消後の入金）または `record_cancelled_order_paid_amount`（取消済み注文への実入金）。実入金は `paid` / `shipped` または `paid_amount > 0` | `cancelled` → `confirmed`。同じ確定処理で `discount_reconciliation_recovered`（超過なら `discount_limit_exceeded`）の印 |
 | ST-REDEMPTION-07 | 予約が無い注文への実入金で、固定 draft が使える | `group_h_reserve_redemptions` で作ってから確定し、fallback の印と回復の要対応を 1 件出す |
 | ST-REDEMPTION-08 | 返品・返金・取消・出荷 | `confirmed` の行は変えない。返金で割引を戻さず、初回の資格も戻さない |

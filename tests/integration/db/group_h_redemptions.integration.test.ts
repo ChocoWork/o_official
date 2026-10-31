@@ -1,7 +1,10 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
-import { acceptHCheckout, hDiscount, hFailure, seedHCheckout, seedHDiscount, seedHMember, seedHRedemption } from './helpers/group-h-fixtures';
+import { acceptHCheckout, hDiscount, hFailure, hRpc, seedHCheckout, seedHDiscount, seedHMember, seedHRedemption } from './helpers/group-h-fixtures';
+import { createPurchaseFlow } from './helpers/purchase-order-flow';
+import { evaluateEligibility } from '@/lib/discounts/discount-eligibility';
+import type { DiscountDefinition, DiscountFacts, DiscountRefusal } from '@/lib/discounts/discount-types';
 
 describeLocalDb('H4 redemption lifecycle (controller only)', db => {
   beforeEach(async () => { await db().query('begin'); await db().query('select pg_advisory_xact_lock(190521,1)'); });
@@ -9,6 +12,83 @@ describeLocalDb('H4 redemption lifecycle (controller only)', db => {
   const states = async (id: string | null) => (await db().query('select state,attention_kind,reconciliation_fallback from public.discount_redemptions where order_id=$1', [id])).rows;
   async function fixture() { const code = `H4-${randomUUID().toUpperCase()}`; const id = await seedHDiscount(db(), hDiscount({ code, allowGuests: true, usageLimit: 1 })); return { id, f: await seedHCheckout(db(), { discountId: id, code }) }; }
   async function paid(orderId: string | null, amount: number, pi: string) { await db().query("select * from public.mark_order_paid($1,'pending',$3,$2,'jpy',true,'payment_received')", [orderId, amount, pi]); }
+
+  async function exceptionReservation() {
+    const actor = await createPurchaseFlow(db).manager();
+    const userId = await seedHMember(db());
+    const code = `H7-${randomUUID().toUpperCase()}`;
+    const id = await seedHDiscount(db(), hDiscount({ code, audience: 'assigned', userIds: [userId],
+      oncePerCustomer: true, firstOrderOnly: true, usageLimit: 1 }));
+    const f = await seedHCheckout(db(), { discountId: id, code, userId });
+    expect(f.result.discountAmount).toBe(4000);
+    const row = await acceptHCheckout(db(), f);
+    expect(row).toMatchObject({ created: true, order_status: 'payment_in_progress', rejection: null });
+    // G-1 payment-review fixtures use the public recorder, with the real Session / PaymentIntent and order.
+    await db().query('set local role service_role');
+    const exception = (await db().query(`select exception_id from public.record_payment_exception(
+      $1,'unexpected_state',null,$1,$2,null,$3)`, [f.checkoutSessionId, f.paymentIntentId, row.order_id])).rows[0].exception_id as string;
+    await db().query('reset role');
+    const detail = () => hRpc<{ assignments: { userId: string | null; status: string; orderId: string | null }[] }>(db(), 'get_admin_discount', [id, 20, 0, actor]);
+    const preview = () => hRpc<{ discounts: DiscountDefinition[]; facts: DiscountFacts; refusals: DiscountRefusal[] }>(db(),
+      'get_checkout_discount_context', [userId, null, [code], [f.catalog.itemId], new Date(), 'preview']);
+    return { actor, userId, code, id, f, row, exception, detail, preview };
+  }
+
+  async function resolveException(exception: string, actor: string, cancel: boolean) {
+    await db().query('set local role service_role');
+    const result = (await db().query(`select resolved,order_id,cancelled_from::text from public.resolve_payment_exception(
+      $1,$2,'Stripe payment checked',$3,'other',false)`, [exception, actor, cancel])).rows[0];
+    await db().query('reset role');
+    return result;
+  }
+
+  test('FREQ-549-AC-03: 支払いの例外の解決で未入金の注文を取り消すと予約は取り消しになり、回数と初回が戻る', async () => {
+    const f = await exceptionReservation();
+    expect(await states(f.row.order_id)).toMatchObject([{ state: 'reserved' }]);
+    expect((await f.detail()).assignments).toEqual([expect.objectContaining({ userId: f.userId, status: 'reserved', orderId: f.row.order_id })]);
+    const before = await f.preview();
+    expect(before.facts).toMatchObject({ hasPreviousOrder: false, hasFirstOrderReservation: true });
+    expect(before.facts.usage.find(u => u.discountId === f.id)).toMatchObject({ reserved: 1, confirmed: 0, buyerUses: 1, codeUses: 1 });
+
+    expect(await resolveException(f.exception, f.actor, true)).toEqual({ resolved: true, order_id: f.row.order_id, cancelled_from: 'payment_in_progress' });
+    expect((await db().query('select status::text,paid_amount from public.orders where id=$1', [f.row.order_id])).rows[0])
+      .toEqual({ status: 'cancelled', paid_amount: null });
+    expect(await states(f.row.order_id)).toMatchObject([{ state: 'cancelled', attention_kind: null }]);
+    expect((await db().query('select cancelled_at is not null as ended from public.discount_redemptions where order_id=$1', [f.row.order_id])).rows).toEqual([{ ended: true }]);
+    const after = await f.preview();
+    expect(after.refusals).toEqual([]);
+    expect(after.facts).toMatchObject({ phase: 'preview', hasPreviousOrder: false, hasFirstOrderReservation: false });
+    const usage = after.facts.usage.find(u => u.discountId === f.id)!;
+    expect(usage).toMatchObject({ reserved: 0, confirmed: 0, buyerUses: 0, codeUses: 0 });
+    expect(evaluateEligibility(after.discounts.find(d => d.id === f.id)!, { discounts: after.discounts, facts: after.facts, codes: [f.code],
+      lines: [{ lineKey: randomUUID(), itemId: f.f.catalog.itemId, unitPrice: 20000, quantity: 2, lineKind: 'order' }] }, usage.codeId))
+      .toEqual({ eligible: true, provisional: false, refusal: null });
+    expect((await f.detail()).assignments).toEqual([expect.objectContaining({ userId: f.userId, status: 'unused', orderId: null })]);
+    const retry = await seedHCheckout(db(), { discountId: f.id, code: f.code, userId: f.userId });
+    expect(retry.result.discountAmount).toBe(4000);
+    expect(retry.facts).toMatchObject({ hasPreviousOrder: false, hasFirstOrderReservation: false });
+    const accepted = await acceptHCheckout(db(), retry);
+    expect(accepted).toMatchObject({ created: true, order_status: 'payment_in_progress', rejection: null });
+    expect(await states(accepted.order_id)).toMatchObject([{ state: 'reserved' }]);
+    await db().query('set constraints all immediate');
+  });
+
+  test('FREQ-549-AC-03: 注文を取り消さない支払いの例外の解決は予約・回数・初回と入金待ち表示を保つ', async () => {
+    const f = await exceptionReservation();
+    const before = await states(f.row.order_id);
+    const timestamps = async () => (await db().query(
+      'select reserved_at,confirmed_at,cancelled_at from public.discount_redemptions where order_id=$1', [f.row.order_id])).rows;
+    const beforeTimestamps = await timestamps();
+    expect(await resolveException(f.exception, f.actor, false)).toEqual({ resolved: true, order_id: f.row.order_id, cancelled_from: null });
+    expect(await states(f.row.order_id)).toEqual(before);
+    expect(await timestamps()).toEqual(beforeTimestamps);
+    expect((await db().query('select status::text from public.orders where id=$1', [f.row.order_id])).rows).toEqual([{ status: 'payment_in_progress' }]);
+    const context = await f.preview();
+    expect(context.facts).toMatchObject({ hasPreviousOrder: false, hasFirstOrderReservation: true });
+    expect(context.facts.usage.find(u => u.discountId === f.id)).toMatchObject({ reserved: 1, confirmed: 0, buyerUses: 1, codeUses: 1 });
+    expect((await f.detail()).assignments).toEqual([expect.objectContaining({ userId: f.userId, status: 'reserved', orderId: f.row.order_id })]);
+    await db().query('set constraints all immediate');
+  });
 
   test('FREQ-549-AC-03: pendingは予約を保ち未入金放棄は取消しpaid後の返品は確定のまま', async () => {
     const { f } = await fixture(); const row = await acceptHCheckout(db(), f);

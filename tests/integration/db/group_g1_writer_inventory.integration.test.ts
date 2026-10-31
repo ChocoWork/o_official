@@ -1,7 +1,7 @@
 /** @jest-environment node */
 import { describeLocalDb, type PgClient } from './helpers/local-db';
 import { createCatalogFixture } from './helpers/order-fixtures';
-import { G2_ALLOWLIST, CURRENT_ALLOWLIST } from './helpers/group-g-allowlist';
+import { G2_ALLOWLIST, H4_ALLOWLIST, H7_ALLOWLIST, CURRENT_ALLOWLIST } from './helpers/group-g-allowlist';
 
 /**
  * G-1 Task 14（FREQ-522-AC-02・FREQ-524・FREQ-540-AC-05）: 書き手の閉じた一覧の構造の確かめ。
@@ -203,6 +203,16 @@ function isPublicDelegate(proc: Proc, allow: Set<string>, procs: Proc[]): boolea
 
 describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の走査）', (db) => {
   beforeEach(async () => { await db().query('begin'); });
+  test('FREQ-549-AC-03: H7の例外解決は同じOIDで77本の書き手に残り、Hの予約helperを一覧へ足さない', async () => {
+    const signature = 'private.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)';
+    expect(H7_ALLOWLIST).toEqual(H4_ALLOWLIST);
+    expect(CURRENT_ALLOWLIST).toEqual(H7_ALLOWLIST);
+    expect(H7_ALLOWLIST).toHaveLength(77);
+    expect(H7_ALLOWLIST.filter(s => s === signature)).toEqual([signature]);
+    expect((await db().query('select $1::regprocedure::oid=any(private.group_g_writer_allowlist()::oid[]) as present', [signature])).rows)
+      .toEqual([{ present: true }]);
+    expect(H7_ALLOWLIST).not.toContain('private.group_h_settle_redemptions(uuid,boolean)');
+  });
   afterEach(async () => { await db().query('rollback'); });
 
   test('一覧はCURRENT_ALLOWLISTと同じ集合で、関数は postgres の SECURITY DEFINER・search_path 空・だれも EXECUTE できない', async () => {

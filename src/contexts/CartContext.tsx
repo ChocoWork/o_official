@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useState, useEffect, useRef } from 'react';
-import { fetchCartJson, sendShoppingRequest } from '@/features/cart/client/cart-api';
+import { fetchCartCount, sendShoppingRequest } from '@/features/cart/client/cart-api';
 
 type WishlistItemResponse = {
   id: string;
@@ -32,8 +32,7 @@ export function CartProvider({ children, enabled = true }: { children: React.Rea
 
   const updateCartCount = useCallback(async () => {
     try {
-      const cart = await fetchCartJson();
-      setCartCount(cart.item_count);
+      setCartCount(await fetchCartCount());
     } catch (error) {
       console.error('Failed to fetch cart count:', error);
     }

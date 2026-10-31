@@ -39,6 +39,32 @@ test('FREQ-549-AC-04: DBの未知の文は応答と監査に載せない', async
   const res = await POST(req(), { params: Promise.resolve({ orderId }) }); expect(res.status).toBe(500);
   expect(JSON.stringify(await res.json())+JSON.stringify(mockAudit.mock.calls)).not.toContain('PRIVATE-MARKER');
 });
+test.each([
+  { dbError: { message: 'GROUP_H_FORBIDDEN', code: '42501', details: 'PRIVATE-MARKER' }, status: 403, outcome: 'failure', resultCode: 'GROUP_H_FORBIDDEN' },
+  { dbError: { message: 'PRIVATE-MARKER', code: 'XX000', details: 'PRIVATE-MARKER' }, status: 500, outcome: 'error', resultCode: 'DISCOUNT_FAILED' },
+])('FREQ-543-AC-02: 割引注意のDB失敗$statusは$outcomeと固定の結果コードだけを監査する', async ({ dbError, status, outcome, resultCode }) => {
+  mockRpc.mockResolvedValue({ data: null, error: dbError });
+  const res = await POST(req(), { params: Promise.resolve({ orderId }) });
+  expect(res.status).toBe(status);
+  expect(res.headers.get('Cache-Control')).toBe('no-store');
+  expect(mockAudit).toHaveBeenCalledTimes(1);
+  expect(mockAudit).toHaveBeenCalledWith({ action: 'admin.orders.discount_attention.resolve', actor_id: 'actor',
+    resource: 'orders', resource_id: orderId, outcome, metadata: { result_code: resultCode } });
+  expect(mockRpc.mock.invocationCallOrder[0]).toBeLessThan(mockAudit.mock.invocationCallOrder[0]);
+  expect(JSON.stringify(await res.json()) + JSON.stringify(mockAudit.mock.calls)).not.toContain('PRIVATE-MARKER');
+});
+
+test('FREQ-543-AC-02: 失敗の監査も書けない時は固定ログだけを残し元の403を返す', async () => {
+  mockRpc.mockResolvedValue({ data: null, error: { message: 'GROUP_H_FORBIDDEN', code: '42501' } });
+  mockAudit.mockRejectedValue(new Error('PRIVATE-MARKER'));
+  const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  try {
+    const res = await POST(req(), { params: Promise.resolve({ orderId }) });
+    expect(res.status).toBe(403);
+    expect(logged).toHaveBeenCalledWith('discount_attention_resolve_audit_failed');
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('PRIVATE-MARKER');
+  } finally { logged.mockRestore(); }
+});
 test('FREQ-549-AC-04: 全ての応答にno-storeが付き、監査はorderIdと結果だけでipを持たない', async () => {
   const ok = await POST(req(), { params: Promise.resolve({ orderId }) });
   expect(ok.headers.get('Cache-Control')).toBe('no-store');

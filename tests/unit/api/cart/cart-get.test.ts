@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GET } from '@/app/api/cart/route';
 import { openShoppingContext } from '@/features/cart/services/shopping-context';
-import { buildCartJson } from '@/features/cart/services/cart-view';
+import { buildCartCount, buildCartJson } from '@/features/cart/services/cart-view';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
 jest.mock('@/features/cart/services/shopping-context', () => ({
   openShoppingContext: jest.fn(),
   denyIfCsrfInvalid: jest.fn(),
 }));
-jest.mock('@/features/cart/services/cart-view', () => ({ buildCartJson: jest.fn() }));
+jest.mock('@/features/cart/services/cart-view', () => ({ buildCartCount: jest.fn(), buildCartJson: jest.fn() }));
 jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn() }));
 jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
 jest.mock('@/lib/audit', () => ({ logAudit: jest.fn() }));
@@ -39,11 +39,25 @@ describe('GET /api/cart', () => {
     (createServiceRoleClient as jest.Mock).mockResolvedValue(supabase);
     (openShoppingContext as jest.Mock).mockResolvedValue({ ok: true, context });
     (buildCartJson as jest.Mock).mockResolvedValue(emptyCart);
+    (buildCartCount as jest.Mock).mockResolvedValue({ item_count: 3 });
     context.findOwnerId.mockResolvedValue('cart-1');
     context.finish.mockImplementation((res: NextResponse) => res);
   });
 
   afterEach(() => jest.restoreAllMocks());
+
+  test('FREQ-550-AC-01: view=countは持ち主を確認して件数だけをno-storeで返し、全体を組み立てない', async () => {
+    const req = new NextRequest('http://localhost:3000/api/cart?view=count');
+    const res = await GET(req);
+    expect(openShoppingContext).toHaveBeenCalledWith(req, 'cart', supabase, { write: false });
+    expect(buildCartCount).toHaveBeenCalledWith(supabase, 'cart-1');
+    expect(buildCartJson).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ item_count: 3 });
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
+    expect(context.finish).toHaveBeenCalledWith(res);
+    expect(context.ensureOwnerId).not.toHaveBeenCalled();
+  });
 
   test('持ち主の確認が 401 ならその応答をそのまま返す', async () => {
     const denied = NextResponse.json({ error: 'session_expired' }, { status: 401 });

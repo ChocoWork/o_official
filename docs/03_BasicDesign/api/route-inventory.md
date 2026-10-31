@@ -156,7 +156,7 @@
 | `/api/auth/register` | `POST` | [route.ts](../../../src/app/api/auth/register/route.ts) |
 | `/api/cart/add` | `POST` | [route.ts](../../../src/app/api/cart/add/route.ts) |
 | `/api/cart/change` | `POST` | [route.ts](../../../src/app/api/cart/change/route.ts) |
-| `/api/cart` | `GET` | [route.ts](../../../src/app/api/cart/route.ts) |
+| `/api/cart` | `GET` | [route.ts](../../../src/app/api/cart/route.ts) （`view=count`は`{item_count}`だけ。同じ持ち主確認・no-store、割引評価なし。指定なしは従来の全体応答） |
 | `/api/checkout/complete` | `POST` | [route.ts](../../../src/app/api/checkout/complete/route.ts) |
 | `/api/checkout/create-session` | `POST` | [route.ts](../../../src/app/api/checkout/create-session/route.ts) |
 | `/api/checkout/payment-intent` | `POST` | [route.ts](../../../src/app/api/checkout/payment-intent/route.ts) |
