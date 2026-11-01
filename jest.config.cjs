@@ -11,6 +11,8 @@ module.exports = {
     '^.+\\.(ts|tsx)$': 'ts-jest',
   },
   testMatch: ['**/tests/**/*.test.(ts|tsx|js)'],
+  // .claude/worktrees に置かれる別の作業ツリーの写しを、この作業ツリーの試験として拾わない
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/.claude/'],
   setupFiles: ['<rootDir>/tests/setupRequestPolyfill.js', '<rootDir>/tests/setupClientIp.js'],
   setupFilesAfterEnv: ['<rootDir>/tests/setupTests.ts'],
   globals: {

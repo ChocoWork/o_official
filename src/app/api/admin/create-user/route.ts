@@ -4,7 +4,7 @@
  * @packageDocumentation
  * @impl IMPL-ADMIN-102
  * @design DD-ADMIN-002
- * @remarks Auth の利用者を作る機能は service role でしか呼べないので、権限と aal2 の確認を通した後にだけ使う。作れた・重なった・失敗したを監査に分けて残し、誰がいつ誰を作ったかをたどれるようにする。管理者が作る利用者にも自分で登録する利用者と同じ16〜128字と漏洩の照合を当て、弱いパスワードの口を管理者の窓口に残さない。作成は管理者単位で10分に20件までに絞る。監査には Auth の誤りの文（メールを含みうる）を入れず、固定の符号だけを残す。全部の行に行為者のメール・送り元の IP（取れなければ null）・ブラウザの名乗りを付け、乗っ取られた管理者の操作を後から追えるようにする（ADR-0462）。
+ * @remarks Auth の利用者を作る機能は service role でしか呼べないので、権限と aal2 の確認を通した後にだけ使う。作れた・重なった・失敗したを監査に分けて残し、誰がいつ誰を作ったかをたどれるようにする。店長がメールを請け合って作るので、確認済み（`email_confirm: true`）で作る（Confirm email が有効でも、その会員がログインできるように）。管理者が作る利用者にも自分で登録する利用者と同じ16〜128字と漏洩の照合を当て、弱いパスワードの口を管理者の窓口に残さない。作成は管理者単位で10分に20件までに絞る。監査には Auth の誤りの文（メールを含みうる）を入れず、固定の符号だけを残す。全部の行に行為者のメール・送り元の IP（取れなければ null）・ブラウザの名乗りを付け、乗っ取られた管理者の操作を後から追えるようにする（ADR-0462）。
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -92,6 +92,9 @@ export async function POST(request: Request) {
     const { data, error } = await supabase.auth.admin.createUser({
       email,
       password,
+      // 店長（aal2）がメールとパスワードを直に決めて作る会員。メールを請け合うので確認済みで作る。
+      // 付けないと、Confirm email が有効な設定で /token が email_not_confirmed になり、その会員は一度もログインできない。
+      email_confirm: true,
       user_metadata: { display_name },
     });
 

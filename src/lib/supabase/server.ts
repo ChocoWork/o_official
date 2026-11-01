@@ -113,7 +113,9 @@ export async function createClient(request?: Request): Promise<SupabaseClient> {
   return supabase;
 }
 
-// 公開ページ用：閲覧者セッションを引き継がない匿名クライアント
+// 公開ページ用：閲覧者セッションを引き継がない匿名クライアント。
+// verifyOtp・exchangeCodeForSession・refresh など、Supabase の captcha が掛からない窓口の呼び出しに使う。
+// captcha が掛かる窓口（/signup・/token（password）・/otp）は createServiceRoleAuthClient（@/lib/auth/service-role-auth-client）で呼ぶ。
 export async function createPublicClient(): Promise<SupabaseClient> {
   const { createClient: createSupabaseClient } = await import('@supabase/supabase-js');
 
@@ -132,7 +134,8 @@ export async function createPublicClient(): Promise<SupabaseClient> {
 
 // サーバサイドの管理操作（マイグレーションやユーザ管理等）に使うサービスロールキーを用いたクライアント
 // SUPABASE_SERVICE_ROLE_KEY を必ず環境変数で設定して使用してください（Secrets 管理下に置くこと）。
-// DB / RPC / admin API 専用。利用者の認証には createPublicClient を使う。
+// DB / RPC / admin API 専用。利用者の認証には使わない（captcha が掛からない窓口は createPublicClient、
+// 掛かる窓口は createServiceRoleAuthClient。こちらで signInWithPassword すると session が残り、DB の権限が混ざる）。
 // persistSession: false でも認証結果はメモリに保持されるため、共有しない。
 export async function createServiceRoleClient(): Promise<SupabaseClient> {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;

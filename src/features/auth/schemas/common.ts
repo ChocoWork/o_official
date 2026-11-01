@@ -31,7 +31,12 @@ export const emailSchema = z
 export const passwordSchema = z
   .string()
   .min(16, { message: 'パスワードは16文字以上で入力してください' })
-  .max(128, { message: 'パスワードは128文字以内で入力してください' });
+  .max(128, { message: 'パスワードは128文字以内で入力してください' })
+  // GoTrue（bcrypt）は 72 バイトまで。超えると Auth が 400 で断り、再設定ではコードを使い切った後に 500 になる。
+  // 文字数ではなく UTF-8 のバイト数で見る（全角は 1 文字 3 バイト）。実質の上限はこちら。
+  .refine((value) => new TextEncoder().encode(value).length <= 72, {
+    message: 'パスワードは72バイト以内にしてください（全角の文字は1文字で3バイトです）',
+  });
 
 export type Email = z.infer<typeof emailSchema>;
 export type Password = z.infer<typeof passwordSchema>;

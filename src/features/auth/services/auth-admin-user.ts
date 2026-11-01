@@ -54,3 +54,26 @@ export async function findAuthUserIdByEmail(
 
   return { status: 'not_found' };
 }
+
+/**
+ * 利用者がメールを確認していないか（email_confirmed_at が空か）を管理 API で確かめる。
+ *
+ * 確認のリンクの有効期限（5 分）を過ぎた未確認の会員が、同じメールで登録し直した時に、
+ * 「すでに登録されています」のメールではなく確認メールを送り直すために使う（SEC-AUTH-016-AC-04）。
+ * 真を返すのは「未確認と確かめられた」時だけ。引けない・誤り・例外は偽に倒し、従来の既存会員の扱いに戻す
+ * （確かめられないのに確認メールを送り直さない）。投げ返さない。
+ * find_auth_user_id_by_email（093）は id しか返さず、変えると移行になるので、確認の有無は別に引く。
+ */
+export async function isAuthUserUnconfirmed(supabase: SupabaseClient, userId: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.auth.admin.getUserById(userId);
+    if (error || !data?.user) {
+      console.error('[auth.isAuthUserUnconfirmed] getUserById failed:', error?.message ?? 'no_user');
+      return false;
+    }
+    return !data.user.email_confirmed_at;
+  } catch (e) {
+    console.error('[auth.isAuthUserUnconfirmed] getUserById threw:', e instanceof Error ? e.name : 'unknown');
+    return false;
+  }
+}

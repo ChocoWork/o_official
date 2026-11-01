@@ -5,9 +5,11 @@
  * @impl IMPL-AUTH-161
  * @design DD-AUTH-016
  * @remarks 公開の窓口でパスワードは要求しない。パスワード検証を通ったことは 2FA Cookie が既に証明しているため、宛先は Cookie から取り、リクエスト本文は一切見ない。本文の email を信じると、他人の宛先へ当社ドメインからメールを送らせる導線になる。
+ * 送信は Supabase の captcha を免除される auth だけの client（サービスの鍵）で行い、再送のたびにウィジェットを要求しない（署名つきの保留の Cookie と二段の枠が前提）。
+ * captcha の拒否は 5xx と監査で気付けるようにする。
  */
 import { NextResponse } from 'next/server';
-import { createPublicClient } from '@/lib/supabase/server';
+import { createServiceRoleAuthClient, isCaptchaRejection } from '@/lib/auth/service-role-auth-client';
 import { logAudit } from '@/lib/audit';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import {
@@ -55,11 +57,28 @@ export async function POST(request: Request) {
   });
   if (rlAccount) return rlAccount;
 
-  const supabase = await createPublicClient();
+  const supabase = await createServiceRoleAuthClient();
   const { error } = await supabase.auth.signInWithOtp({
     email: pending.email,
     options: { shouldCreateUser: false },
   });
+
+  if (isCaptchaRejection(error)) {
+    await logAudit({
+      action: 'login',
+      actor_email: pending.email,
+      outcome: 'error',
+      detail: 'supabase_captcha_rejected',
+      resource_id: pending.userId,
+    });
+    return NextResponse.json(
+      {
+        error:
+          '認証コードの送信に失敗しました。時間をおいて再度お試しください。',
+      },
+      { status: 500 },
+    );
+  }
 
   if (error) {
     await logAudit({

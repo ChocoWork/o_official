@@ -916,6 +916,19 @@ function AccountPageContent() {
                   </div>
                 </form>
               ) : null}
+
+              {!isLoadingProfile ? (
+                <div className="account-actions">
+                  <Button
+                    href="/account/password"
+                    variant="subtle"
+                    size="sm"
+                    className="font-acumin"
+                  >
+                    パスワードを変更
+                  </Button>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
