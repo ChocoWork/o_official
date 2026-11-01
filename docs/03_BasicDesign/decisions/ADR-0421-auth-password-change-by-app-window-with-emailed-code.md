@@ -1,6 +1,6 @@
 # ADR-0421 パスワード変更はアプリの窓口で、現行パスワードとアプリが送るコードを求め、全 session を失効して通知する
 
-> 状態: 現行（アプリ側の窓口と部品と画面は入った。DB の表と関数〔M3〕は手元に適用済み〔2026-11-01 の `db reset`〕で本番は未適用〔Task 11〕、E2E `FR-ACCOUNT-046` は `e2e/` に在る、GoTrue 側の設定は手元に反映済みで本番は Task 11） | 確認日: 2026-11-01 | 対象: `src/app/api/auth/password/change/{start,confirm}/route.ts`、`src/features/auth/services/password-change.ts`、`src/features/auth/schemas/password-change.ts`、`supabase/migrations/20261101120000_sec_password_change_challenges.sql`（DATA-AUTH-009・010） | 基準コミット: `b26d7bb0`（作業ツリー）
+> 状態: 現行（アプリ側の窓口と部品と画面は入った。DB の表と関数〔M3〕は手元に適用済み〔2026-11-01 の `db reset`〕で、本番も 2026-11-01 21:06 頃 JST に適用済み〔Task 11〕、E2E `FR-ACCOUNT-046` は `e2e/` に在る、GoTrue 側の設定は手元に反映済み。本番は未変更で、2026-11-01 に MCP からは変えられないと分かった〔`docs/06_Operations/supabase-auth-config.md` の実施記録〕） | 確認日: 2026-11-01 | 対象: `src/app/api/auth/password/change/{start,confirm}/route.ts`、`src/features/auth/services/password-change.ts`、`src/features/auth/schemas/password-change.ts`、`supabase/migrations/20261101120000_sec_password_change_challenges.sql`（DATA-AUTH-009・010） | 基準コミット: `b26d7bb0`（作業ツリー）
 
 ## 概要
 
@@ -64,7 +64,7 @@
 
 ## 未確認事項
 
-- M3 の時刻 `20261101120000` は暫定。手元へ動かす時と、本番へ当てる時（H の移行の後）に付け直す
+- M3 の時刻 `20261101120000` は、手元へ動かした時に確定し、2026-11-01 21:06 頃 JST に付け直さずそのまま本番へ当てた
 - 本番で DB の試験を流していない。手元で M3 を当てた後に `auth_password_change_challenges` と `auth_grants_inventory` を流して確かめる
 - ASVS V2.7.3 の本文は記憶に基づく記述で、調査文書の引用ではない（上の背景の表に明記した）。原文を確かめる
 - 窓口を実 DB・実 GoTrue で通したことはまだ無い（単体はモック）。M3 を手元へ当てた後の E2E（`FR-ACCOUNT-046`。`e2e/` に在り、全件実行の中で流れる）で確かめる

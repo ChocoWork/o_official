@@ -1521,7 +1521,7 @@ stateDiagram-v2
 | 根拠 | ログイン中の会員が自分でパスワードを変える時、アプリが現行パスワードを確かめた後にメールで 8 桁のコードを送り、変更の確定でもう一度求める（波 6 の決定）。署名つき Cookie だけでは、単回使用・間違いの回数・「新しいコードで前のコードを無効にする」を保てず、並列の推測も数えられない。だから表に置く（計画の ruling 3） |
 | 状態 | 推定 |
 | 確かめ方 | 移行の文面の単体テスト（`tests/unit/migrations/sec-password-change-challenges.test.ts`）、DB 結合テスト（`tests/integration/db/auth_password_change_challenges.integration.test.ts`、`auth_grants_inventory`。M3 を当てた手元の DB で controller が流す） |
-| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`（2026-11-01 のユーザーの答え「パスワードの変更」）、計画 `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 4、ruling 3）、移行 `supabase/migrations/20261101120000_sec_password_change_challenges.sql`（手元は 2026-11-01 の `db reset` で適用済み、本番は未適用〔本番の最新は `20261029130600`〕。当てるのは Task 11。切り替えまでは `supabase/pending-wave6/` に置いていた） |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`（2026-11-01 のユーザーの答え「パスワードの変更」）、計画 `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 4、ruling 3）、移行 `supabase/migrations/20261101120000_sec_password_change_challenges.sql`（手元は 2026-11-01 の `db reset` で適用済み、本番も 2026-11-01 21:06 頃 JST に適用済み〔Task 11。`db push --linked` の dry-run がこの1本だけを示すのを確かめた。本番の `schema_migrations` は 20 文・`md5(array_to_string(statements, E'\n'))` が `721c73726b8723cd8c4c087585eeb318` で手元の db reset の物と同じ。運用の記録は `docs/06_Operations/db-migrations.md`〕。切り替えまでは `supabase/pending-wave6/` に置いていた） |
 
 | 列 | 型 | 中身 |
 | --- | --- | --- |
@@ -1537,7 +1537,7 @@ stateDiagram-v2
 - 索引 `password_change_challenges_open_idx`: `(user_id) WHERE used_at IS NULL`（部分索引。開いている行だけを引く）
 - 触れる者: `service_role` だけ（SELECT・INSERT・UPDATE・DELETE を明示）。`anon`・`authenticated` は権限を持たず、RLS を有効にして方針も全拒否（`password_reset_tokens` と同じ形。`password_change_challenges_deny_anon_all`・`_deny_authenticated_all`・`_service_role_all`）。`ALTER DEFAULT PRIVILEGES` は使わない（ADR-0414）
 - 移行は表を冪等にしない（想定外の既存を黙らせない）。末尾の確かめ: 失敗は `SEC_WAVE6_MIGRATION_ASSERTION_FAILED`（SQLSTATE 55000、DETAIL は項目名だけ）。列の型と NOT NULL、外部キー、部分索引、RLS と方針 3 本、権限
-- 当てる順序: 本番は、パスワード変更の窓口（波 6 の Task 5）と画面（Task 6）を動かす前。窓口が出る前に当てても何も読まれないので安全。時刻 `20261101120000` は手元へ動かした時に確定した（付け直しなし）。本番へは H の移行が届いた後に当てるのが既定（計画の ruling 16）
+- 当てる順序: 本番は、パスワード変更の窓口（波 6 の Task 5）と画面（Task 6）を動かす前。窓口が出る前に当てても何も読まれないので安全。時刻 `20261101120000` は手元へ動かした時に確定した（付け直しなし）。本番へは H の移行が届いた後に当てるのが既定（計画の ruling 16）。**本番へは 2026-11-01 21:06 頃 JST に適用済み**（H の7本の後。照合は `docs/06_Operations/db-migrations.md`）
 - 戻す: 移行のヘッダーの ROLLBACK（窓口と画面を止めてから、関数 2 本と表を落とす）
 
 ### DATA-AUTH-010 issue_password_change_challenge と consume_password_change_challenge は、コードの発行と使い切りを 1 回の取引で行う

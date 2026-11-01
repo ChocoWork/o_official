@@ -1,6 +1,6 @@
 # DB マイグレーション運用
 
-> 波 6 確認日: 2026-11-01。パスワード変更の確認コードの移行 M3（`20261101120000`）を追記した（「波 6 パスワード変更の確認コードの移行 M3」の節）。手元は適用済み、本番は未適用（Task 11 で G-1 に知らせてから当てる）。
+> 波 6 確認日: 2026-11-01。パスワード変更の確認コードの移行 M3（`20261101120000`）を追記した（「波 6 パスワード変更の確認コードの移行 M3」の節）。手元は適用済み、本番も 2026-11-01 21:06 頃 JST に適用済み（Task 11。G-1 に知らせ、dry-run が M3 の1本だけと確かめてから `db push --linked`。照合は同じ節）。
 
 > グループ H 本番適用: 2026-11-01（`20261029130000`〜`20261029130600` の7本。照合は末尾の「グループH 本番適用の記録」）
 
@@ -359,9 +359,9 @@ M1・M2 を `supabase/migrations` に置いて `npm run db:reset` が通り（�
 - `auth.sessions` の主キー引きの性能。aal1 は表を引かずに false、aal2 の管理者だけが 2 回の主キー引き。`get_advisors`（performance）と管理画面の一覧（注文・会計）の応答時間を適用の前後で比べる。重ければ Custom Access Token Hook を上乗せする。
 - 会員の 2 段（パスワード＋メールの OTP）は NIST SP 800-63B の AAL2 ではなくアプリ独自の方針（メールは out-of-band に使えない）。AAL2 にあたるのは管理者の TOTP。パスワードとメールの受信箱の両方を盗まれた場合は破れる。
 
-## 波 6 パスワード変更の確認コードの移行 M3（手元で適用済み・本番未適用）
+## 波 6 パスワード変更の確認コードの移行 M3（手元・本番とも適用済み）
 
-確認日: 2026-11-01。**状態: 手元は 2026-11-01 の `npm run db:reset` で適用済み。本番は未適用（本番の最新は `20261029130600`）。** 本番へは波 6 の Task 11 で、G-1 に知らせてから `npx supabase db push --linked`（オーナーの許可つき）で当てる。ファイルは [20261101120000_sec_password_change_challenges.sql](../../supabase/migrations/20261101120000_sec_password_change_challenges.sql)（14,366 bytes・LF・BOMなし・MD5 `92d7d33f84d56bc44e59be4568cc0314`。計画 `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md` の Task 4、ADR-0421、DATA-AUTH-009・010）。既存の挙動は変えない（表 1 つ・関数 2 つを足すだけ）。
+確認日: 2026-11-01。**状態: 手元は 2026-11-01 の `npm run db:reset` で適用済み。本番も 2026-11-01 21:06 頃 JST に適用済み（波 6 の Task 11。G-1 に知らせ、`npx supabase db push --linked --dry-run` で送るのがこの1本だけと確かめてから `npx supabase db push --linked`。開店までの順番の中の本番 DB 適用の許可による）。** 事後の確かめ: 本番の `schema_migrations` の `20261101120000` は 20 文で `md5(array_to_string(statements, E'\n'))` が `721c73726b8723cd8c4c087585eeb318`、手元の db reset で当てた物と同じ。表は RLS が有効で方針 3 本（anon・authenticated は拒否、service_role だけ）、表の権限は service_role だけ。2 つの関数は SECURITY DEFINER・`search_path=""`・EXECUTE は service_role だけ（anon・authenticated は偽）。security advisors は当てる前後で同じ（INFO 18・WARN 2〔`has_permission`・漏洩パスワードの確認が無効〕）。ファイルは [20261101120000_sec_password_change_challenges.sql](../../supabase/migrations/20261101120000_sec_password_change_challenges.sql)（14,366 bytes・LF・BOMなし・MD5 `92d7d33f84d56bc44e59be4568cc0314`。計画 `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md` の Task 4、ADR-0421、DATA-AUTH-009・010）。既存の挙動は変えない（表 1 つ・関数 2 つを足すだけ）。
 
 足すもの:
 
@@ -1227,7 +1227,7 @@ controller手順: H7未適用DBの新しい取消テストでRED→取引内で�
 
 ## グループH 本番適用の記録（H1〜H7、2026-11-01）
 
-確認日: 2026-11-01。**本番適用済み（2026-11-01 14:35 頃 JST。オーナーの承認の後、controller が `npx supabase db push --linked`）。** 先の dry-run は H1〜H7 の7本だけを示した（別セッションの波 6 の M3 は当時 `supabase/pending-wave6/` にあり送られなかった。M3 は今は `supabase/migrations/20261101120000_sec_password_change_challenges.sql` で、手元は適用済み・本番は未適用）。当てる前に7本のファイルの MD5 が上の各節と同じことを確かめた。
+確認日: 2026-11-01。**本番適用済み（2026-11-01 14:35 頃 JST。オーナーの承認の後、controller が `npx supabase db push --linked`）。** 先の dry-run は H1〜H7 の7本だけを示した（別セッションの波 6 の M3 は当時 `supabase/pending-wave6/` にあり送られなかった。M3 は今は `supabase/migrations/20261101120000_sec_password_change_challenges.sql` で、手元は適用済み。本番へも同じ日の 21:06 頃 JST に別に当てた〔「波 6 パスワード変更の確認コードの移行 M3」の節〕）。当てる前に7本のファイルの MD5 が上の各節と同じことを確かめた。
 
 | 確かめ（本番、読むだけ・件数だけ） | 適用前 | 適用後 |
 | --- | --- | --- |

@@ -1,6 +1,6 @@
 # 本番の Supabase Auth の設定（captcha・パスワード変更・OTP・MFA）
 
-> 状態: 目標の値と手順（本番への適用は未実施） | 確認日: 2026-11-01 | 対象: 本番の Supabase プロジェクト `pjidrgofvaglnuuznnyj` の Auth と PostgREST の設定、手元の `supabase/config.toml` との対応 | 設計判断: [ADR-0420](../03_BasicDesign/decisions/ADR-0420-auth-supabase-captcha-with-service-role-auth-calls.md)（captcha）、[ADR-0421](../03_BasicDesign/decisions/ADR-0421-auth-password-change-by-app-window-with-emailed-code.md)（パスワード変更）
+> 状態: 目標の値と手順（本番への適用は未実施。2026-11-01 に MCP で試して不可。「実際に変えた日・値・戻した物」の実施記録。確認メールの必須だけは本番がすでに目標の値） | 確認日: 2026-11-01 | 対象: 本番の Supabase プロジェクト `pjidrgofvaglnuuznnyj` の Auth と PostgREST の設定、手元の `supabase/config.toml` との対応 | 設計判断: [ADR-0420](../03_BasicDesign/decisions/ADR-0420-auth-supabase-captcha-with-service-role-auth-calls.md)（captcha）、[ADR-0421](../03_BasicDesign/decisions/ADR-0421-auth-password-change-by-app-window-with-emailed-code.md)（パスワード変更）
 
 ## 概要
 
@@ -43,7 +43,7 @@
 | captcha を有効にする | `security_captcha_enabled` | `true` | `[auth.captcha] enabled` | ADR-0420。**段階 B**。アプリが service role で呼ぶ版が動いてから |
 | captcha の提供元 | `security_captcha_provider` | `turnstile` | `[auth.captcha] provider` | 同上 |
 | captcha の秘密 | `security_captcha_secret` | アプリの `TURNSTILE_SECRET_KEY` と**同じ** Cloudflare のウィジェットの秘密 | `secret = "env(SUPABASE_AUTH_CAPTCHA_SECRET)"`（手元は公開のテスト用の値） | 値は文書に書かない。Cloudflare のウィジェットが無ければ作ってから。**Cloudflare のテスト用の秘密（`1x0000…AA`、常に通る）を本番に入れない**（入れるとダミーのトークンで誰でも直接 `/signup`・`/token` を叩け、captcha が無いのと同じ。段階 B の確かめ 5 で測る） |
-| 確認メールを必須にする | `mailer_autoconfirm` | `false` | `[auth.email] enable_confirmations = true` | `SEC-AUTH-016-AC-01`・`FREQ-320-AC-03` |
+| 確認メールを必須にする | `mailer_autoconfirm` | `false` | `[auth.email] enable_confirmations = true` | `SEC-AUTH-016-AC-01`・`FREQ-320-AC-03`。**本番はすでに目標の値**（2026-11-01 に公開の `GET /auth/v1/settings` で `mailer_autoconfirm=false` を確認。変更不要） |
 | メール OTP の期限（秒） | `mailer_otp_exp` | `300` | `otp_expiry` | `SEC-AUTH-029`。アプリの保留の Cookie も 5 分 |
 | メール OTP の桁数 | `mailer_otp_length` | `8` | `otp_length` | アプリの入力が 8 桁を求める |
 | パスワードの最小長 | `password_min_length` | `16` | `minimum_password_length` | アプリの最小長と同じ。`SEC-AUTH-015-AC-01` |
@@ -220,11 +220,35 @@ controller（作業者）が、オーナーの許可のもとで行う。`supaba
 
 ## 実際に変えた日・値・戻した物
 
-未実施。本番の変更を行ったら、日付・変えた項目の前後の値（秘密を除く）・戻した物・手で変えた項目を、この節に足す。
+本番の Auth の設定の変更は未実施。本番の変更を行ったら、日付・変えた項目の前後の値（秘密を除く）・戻した物・手で変えた項目を、この節に足す。
+
+### 2026-11-01 の実施記録（MCP から変えようとして、変えられなかった）
+
+確認日: 2026-11-01。オーナーの依頼は「Supabase の MCP で本番の Auth の設定を変える」。本番の設定は**1 つも変えていない**（書き込みなし）。
+
+| 試み | 結果 |
+| --- | --- |
+| 1. つながっている Supabase の MCP サーバーの道具の一覧 | Auth の設定を読む・変える道具が無い |
+| 2. Supabase 公式の MCP の文書（`https://supabase.com/docs/guides/ai-tools/mcp` の「Available tools」） | データベース・デバッグ・開発・Edge Functions・アカウント・文書・ブランチ・ストレージの道具だけ。設定の更新があるのはストレージだけで、Auth は無い |
+| 3. DB の `auth` スキーマに設定の表があるか | 無い（GoTrue の設定は DB に入っていない） |
+
+読んで分かったこと（読むだけ。書き込みなし）:
+
+- 公開の `GET /auth/v1/settings`（本番）: `disable_signup=false`、`mailer_autoconfirm=false`（**Confirm email はすでにオン**）、`phone_autoconfirm=false`、外部のプロバイダーは `google` と `email` がオン。
+- SQL: `auth.users` は生きている利用者 8 人、うち未確認が 2 人。2 人とも `@example.com` の試験用の会員で、ログインしたことがなく、確認メールも送っていない。実在の客ではないので手当ては要らない（手順 1 の項目 8 の「確認前の利用者の数」の報告はこれ）。
+
+まだ確かめられていない・変えていない項目:
+
+- `password_min_length` 16、`security_update_password_require_reauthentication`・`security_update_password_require_current_password`、`mailer_otp_exp` 300、OTP の桁数 8。
+- パスワード変更の通知と雛形（確認・マジックリンク・パスワード変更）、`secure email change`、TOTP の Enroll・Verify。
+- 漏洩パスワードの確認（security advisors は「無効」と出している）、`sessions_single_per_user`。
+- 段階 B（captcha）: 本番の URL とその Turnstile のウィジェットができるまで見送り（オーナーの決定）。
+
+次の一手（オーナーが選ぶ）: (a) Management API 用の個人アクセストークン（`sbp_...`）を渡して、上の「手順」の「1. 読んで控える」→「2. 段階 A」をスクリプトで流す（使い終えたらトークンをダッシュボードで消す）、または (b) ダッシュボードで、上の「3 回試して通らない時の手順（ダッシュボード）」の表のとおりに変える。**この文書の手順とダッシュボードの表が、変える時に使う手順。** どちらでも、変える前に雛形を変え、確認メールの必須は本番がすでにオンなので触らない。変えた後は、ここに日付と前後の値を足す。
 
 ## 未確認事項
 
-- 本番の Auth の現在値、`sessions_single_per_user` の値、料金プラン、自前 SMTP の設定、確認メールの雛形が今どうなっているか。
+- 本番の Auth の現在値（確認メール必須・新規登録の許可・外部のプロバイダーだけは 2026-11-01 に公開の `GET /auth/v1/settings` で確認済み。残りは未確認）、`sessions_single_per_user` の値、料金プラン、自前 SMTP の設定、確認メールの雛形が今どうなっているか。
 - 本番の `site_url`・`uri_allow_list` と、アプリの確認の戻り先（`/api/auth/confirm`）が受け付けられるか（GoTrue の `isRedirectURLValid` のソース読みに基づく。本番では未確認）。
 - 本番の `sb_secret_` が captcha を免除するか。手元の隔離スタックでは `sb_secret_` も免除された。本番の段階 B の確かめで初めて分かる。
 - `GET` の応答の鍵名（確認メールの雛形の鍵など）。実際の応答で最終確認する。

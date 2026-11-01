@@ -1356,7 +1356,7 @@ DB用は既存の[予約の遷移](../../../tests/integration/db/group_h_redempt
 
 ## 開店前のセキュリティの穴 波 6 のテスト（captcha・パスワード変更・手元の Supabase Auth の設定。SEC-AUTH・ABOUT、FR-AUTH-006）
 
-確認日: 2026-11-01。手元の Supabase を本番の前提にそろえた（`supabase/config.toml`: 確認メール必須・captcha〔Turnstile のテスト用の秘密を `supabase/.env` から〕・最小長 16・`secure_password_change`・TOTP 有効・OTP の期限 300 秒）。移行 M3 `20261101120000_sec_password_change_challenges` は手元だけ適用済み（本番は未適用。[移行運用](../../06_Operations/db-migrations.md)の波 6 の節）。AUTH は範囲内の領域なので、試験の一覧の正本は `npm run trace:report` が作る `docs/05_Quality/reports/` で、ここは範囲外の補助と要点だけを記す。
+確認日: 2026-11-01。手元の Supabase を本番の前提にそろえた（`supabase/config.toml`: 確認メール必須・captcha〔Turnstile のテスト用の秘密を `supabase/.env` から〕・最小長 16・`secure_password_change`・TOTP 有効・OTP の期限 300 秒）。移行 M3 `20261101120000_sec_password_change_challenges` は手元に適用済みで、本番にも 2026-11-01 21:06 頃 JST に適用済み（[移行運用](../../06_Operations/db-migrations.md)の波 6 の節）。本番の Supabase Auth の設定は MCP から変えられず未反映（オーナーが選ぶ。[実施記録](../../06_Operations/supabase-auth-config.md)）。AUTH は範囲内の領域なので、試験の一覧の正本は `npm run trace:report` が作る `docs/05_Quality/reports/` で、ここは範囲外の補助と要点だけを記す。
 
 ### 新しく作った試験ファイル
 
