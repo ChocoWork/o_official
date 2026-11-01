@@ -66,6 +66,9 @@ export type MockItemDetail = {
   }>;
 };
 
+/** カートの窓口。見出しの件数は /api/cart?view=count で取るので、query 付きも同じ模擬が受ける */
+export const CART_API_URL = /\/api\/cart(\?[^/]*)?$/;
+
 export const sampleCartItem = (overrides: Partial<MockCartItem> = {}): MockCartItem => ({
   id: 'cart-1',
   item_id: 101,
@@ -198,7 +201,7 @@ export async function mockCartApis(
   const deleteIds: string[] = [];
   const postBodies: Array<Record<string, unknown>> = [];
 
-  await page.route('**/api/cart', async (route) => {
+  await page.route(CART_API_URL, async (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(toCartJson(cartItems)) });
   });

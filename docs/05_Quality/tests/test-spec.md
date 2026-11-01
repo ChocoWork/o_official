@@ -1330,3 +1330,24 @@ DB試験は作成のみ、実行はcontroller。安い返金の失敗後に高�
 単体7 suite・148件が成功（修正前は同じ7 suiteで31失敗・117成功）。`group-h-payment-exception-cancel`はG-1の定義との比較で、H7が鍵と予約取消の2行だけを足し、所有者/ACLとASCII/LF/単一取引を保つことを検査する。`cart-view`・`cart-get`・`cart-api`・`CartContext`は`view=count`の件数と公開条件、割引評価なし、通常のShopify形式と自動割引評価の保持を検査する。`place-order-route`は自動変更後の2つの照合失敗で例外本文をログに含めないこと、`discount-attention-route`は403/500のfailure/error監査と固定の結果コード、監査失敗時の元の応答保持を検査する。guard監査の間隔は変更しない。
 
 DB用は既存の[予約の遷移](../../../tests/integration/db/group_h_redemptions.integration.test.ts)に`FREQ-549-AC-03: 支払いの例外の解決で未入金の注文を取り消すと予約は取り消しになり、回数と初回が戻る`と取消なしの対照を追加した。会員の1人1回・初回限定・全体上限1の割当コードで実受付し、例外の公開RPCを通す。cancelledと回数0、初回の再資格、同じ会員の再preview/受付、管理の入金待ち表示の解除を確認する。[末尾assert](../../../tests/integration/db/group_h_migration_asserts.integration.test.ts)のH7節は本文MD5、全属性/ACL/コメント/余分なoverload、77本のOID、未知の例外の秘匿を改ざんして確かめる。G-1 payment-reviewとwriter-inventory、共有のH7_ALLOWLISTも同じOIDのままの契約を検査する。2026-11-01 controllerの実測: H7未適用のDBで新しい取消テストだけが落ちる（RED）。本文MD5（`656d6fc0…`）を固定してDBを初期化した後、予約の遷移・G-1 payment-review・writer-inventory・末尾assert（168/168）が通る（GREEN）。leakproofと所有者の付け替えの改ざんは、手元のpostgresが超ユーザーでないため（42501）試験から外した（末尾assertは両方を検査する）。FR-CART-024を含むPlaywrightはTask 12の全件E2Eで確かめる。
+
+## グループH Task 12 本番buildのE2E全件（2026-11-01）
+
+確認日: 2026-11-01。手元のSupabaseを初期化し、本番buildでE2E全件を流した（`E2E_STRICT=1`、retries 0）。比べる元はG-4（`.superpowers/sdd/2026-10-26-group-g4-orders/e2e-results-g4-full.json`、181 failed・4805 passed・26 skipped）。
+
+| 回 | HEAD | failed | passed | skipped | G-4より増えた赤 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 60a92dbb | 207 | 4886 | 26 | 51 |
+| 2（直しの後） | 60a92dbb＋下の直し | 180 | 4913 | 26 | 23 |
+
+- 1回目の新しい赤51件のうち31件はHの変更が原因で、直した。
+  - 見出しの件数を`/api/cart?view=count`で取るようにしたため、`**/api/cart`の模擬が当たらなくなった。模擬の住所を`CART_API_URL`（[shop-test-utils.ts](../../../e2e/shop-test-utils.ts)、query付きも受ける）にそろえた（account-test-utils・HEADER-008・HEADER-009）。
+  - ACCOUNT-013は、割引の内訳を`discounts[]`の行（「割引（名前）」と`-￥`の金額）で出す新しい表示に合わせた。
+  - 割引の詳細の閉じるボタンの`text-2xl`を`lk-text-7xl`にした（FR-UI-004）。
+  - 残る20件は単独で通る並列の揺れだった。
+- 2回目で残った23件（ADMIN-057・ADMIN-112・HEADER-009のdesktop・ITEM-DETAIL-018・LOGIN-032・LOGIN-038・LOOK-ALL-039・NEWS-ALL-001〜003・UI-001・UI-002）は、エラーが`waitForLoadState('networkidle')`の時間切れか、ログインの回数制限だった。
+  - workers 1で単独に流し直した。ADMIN-057・ADMIN-112・HEADER-009・ITEM-DETAIL-018は1本ずつ流し、全部通った。
+  - 残り8ファイルは`--no-deps`でまとめて流し、99件が通った（LOGIN-032の`test.fail`6件は手元のTOTPの設定による既知の落ち）。
+- LOOK-ALL-039の`FREQ-338-AC-02`だけは単独でも`--repeat-each=5`の15回中5回落ちる（幅によらない）。
+  - カードが見えた瞬間に`animation-name`を1回だけ読むため、水和の後に付く`data-reveal="true"`より先に読むと`none`になる。試験側のタイミングの問題で、Hの差分はLOOKとリビールのCSSに触れていない。直しは別の作業に分けた。
+- 単独の流し直しは、Hの12 specを入れた`isolated-global`がchromiumの後片づけの組なので、`--no-deps`を付けないと1ファイルごとに約100件（約20分）が付いてくる。

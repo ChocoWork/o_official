@@ -83,7 +83,7 @@ function Dialog({ title, onClose, children }: { title: string; onClose: () => vo
         }}
         className="relative w-full min-w-0 overflow-y-auto bg-white p-4 pt-14 md:max-h-[90vh] md:max-w-xl md:p-6 md:pt-14"
       >
-        <button type="button" aria-label="閉じる" onClick={onClose} className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center text-2xl leading-none">×</button>
+        <button type="button" aria-label="閉じる" onClick={onClose} className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center lk-text-7xl leading-none">×</button>
         <h2 id="discount-dialog-title" ref={headingRef} tabIndex={-1} className="mb-4 lk-text-lg">{title}</h2>
         {children}
       </div>

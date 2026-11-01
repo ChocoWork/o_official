@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { sampleCartItem, toCartJson } from './shop-test-utils';
+import { CART_API_URL, sampleCartItem, toCartJson } from './shop-test-utils';
 
 /**
  * FREQ-309 ヘッダーのカート点数バッジ（AC-02〜05。AC-01 は FR-HEADER-008）。
@@ -22,7 +22,7 @@ async function openHomeWithCart(
   viewport: { width: number; height: number },
   quantity: number,
 ) {
-  await page.route('**/api/cart', (route) =>
+  await page.route(CART_API_URL, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -48,7 +48,7 @@ test.describe('FR-HEADER-009 header cart badge geometry and nav underline', () =
       expect(single).not.toBeNull();
       expect(Math.abs(single!.width - single!.height)).toBeLessThanOrEqual(1);
 
-      await page.unroute('**/api/cart');
+      await page.unroute(CART_API_URL);
       await openHomeWithCart(page, viewport, 12);
       await expect(badge).toHaveText('12');
       const double = await badge.boundingBox();

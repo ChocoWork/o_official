@@ -6,7 +6,7 @@ import { withReadyProgress } from './order-detail-fixtures';
 // AC-01: 注文番号・注文日時（時刻含む）が表示されること
 // AC-02: 配送ステータス（進捗バー・日本語ラベル）が表示されること
 // AC-03: 注文商品が購入履歴タブと同じ表示（商品名/カラー・サイズ/数量/金額/再購入ボタン）であること
-// AC-04: 小計・送料・クーポン値引き・支払金額の4項目が表示されること
+// AC-04: 小計・送料・割引の内訳（グループ H で「割引（名前）」の行に変わった）・支払金額の4項目が表示されること
 // AC-05: 配送先が表示されること
 // AC-06: 支払方法が表示されること
 
@@ -24,6 +24,8 @@ const orderDetail = {
 	subtotalAmount: '¥12,000',
 	shippingAmount: '¥500',
 	discountAmount: '-¥1,000',
+	// グループ H: 割引は注文時に固定した名前と正額の内訳で返る。行の見出しは「割引（名前）」、額は円記号が全角（Intl の ja-JP）
+	discounts: [{ name: '春のクーポン', amount: 1000 }],
 	totalAmount: '¥11,500',
 	paymentMethod: 'クレジットカード',
 	shippingFullName: '山田 花子',
@@ -82,14 +84,14 @@ for (const viewport of viewports) {
 			await expect(page.getByText('数量: 1')).toBeVisible();
 			await expect(page.getByRole('button', { name: '再度購入' })).toBeVisible();
 
-			// AC-04: 支払金額内訳（小計・送料・クーポン値引き・支払金額）
+			// AC-04: 支払金額内訳（小計・送料・割引の内訳・支払金額）
 			await expect(page.getByText('小計', { exact: true })).toBeVisible();
 			// ¥12,000 は商品金額と小計の2箇所に表示される
 			await expect(page.getByText('¥12,000').first()).toBeVisible();
 			await expect(page.getByText('送料', { exact: true })).toBeVisible();
 			await expect(page.getByText('¥500', { exact: true })).toBeVisible();
-			await expect(page.getByText('クーポン値引き')).toBeVisible();
-			await expect(page.getByText('-¥1,000')).toBeVisible();
+			await expect(page.getByText('割引（春のクーポン）')).toBeVisible();
+			await expect(page.getByText('-￥1,000')).toBeVisible();
 			await expect(page.getByRole('heading', { name: '支払金額' })).toBeVisible();
 			await expect(page.getByText('¥11,500').first()).toBeVisible();
 

@@ -11,6 +11,7 @@
 | `docs/06_Operations/secrets.md` | 秘密値の管理、Stripe 同期 | 値そのものは文書に記録しない |
 | `docs/06_Operations/webhook-queue-operations.md` | Stripe の知らせのキューと定期処理（開店のときの順番・合言葉の入れ替え・知らせが届いたときの調べ方） | 本番は読むだけの SQL で確かめる |
 | [注文のメールの手順書](order-email-operations.md) | 注文のメールの送信・やり直し・一時停止・配達の見回り・店への知らせ | 環境の門、24時間の重複防止、読み取り権限を公開前に確かめる |
+| [割引の手順書](group-h-discounts.md) | 共有・1人用コードの作成、編集、停止・再開、使用回数、要対応の確認 | 未入金で終了した注文は回数を戻し、入金後は返金しても戻さない |
 | `docs/06_Operations/legal-archive.md` | 注文証憑の保存と復元確認 | 保存結果と復元結果を別途確認する |
 | [取引書類の運用](purchase-order-documents.md) | 発注書に添付する見積書・請求書の原本（保存期間・片側だけ失敗した時の見方と再開・`sha256_source`・署名つきリンク） | 入れ物の設定、保存期間の起算点、置き場の WORM は公開前に確かめる |
 | `docs/06_Operations/kpi-migration-setup.md` | KPI 目標管理のセットアップ記録 | 履歴。現行DBへのSQL再実行に使わない |
