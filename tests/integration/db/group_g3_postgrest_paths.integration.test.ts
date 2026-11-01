@@ -3,6 +3,7 @@ jest.mock('server-only', () => ({}), { virtual: true });
 
 import { randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { DUMMY_CAPTCHA_TOKEN } from '../../../e2e/captcha-test-utils';
 import { connectLocalDb, describeLocalDb, isLocalDatabase } from './helpers/local-db';
 import { withGroupG1FixtureTransaction, setOrderStatusForFixture, seedGroupG1Shipment, seedGroupG1Allocation } from './helpers/group-g1-fixtures';
 import { seedGroupG3ReadyOrder, seedGroupG3Slip, attachGroupG3SlipShipment } from './helpers/group-g3-fixtures';
@@ -69,7 +70,7 @@ describeLocalDb('G-3 real supabase-js -> PostgREST -> SQL read paths', (db) => {
     authUserId = created.data.user.id;
     actor = authUserId;
     authenticated = createClient(apiUrl, anonKey, options);
-    const signedIn = await authenticated.auth.signInWithPassword({ email, password });
+    const signedIn = await authenticated.auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
     if (signedIn.error || !signedIn.data.session) throw new Error('G3_AUTH_FIXTURE_SIGN_IN_FAILED');
     await withGroupG1FixtureTransaction(db(), async () => {
       // Reuse the actual authenticated user as the permitted actor; no second auth user is needed.

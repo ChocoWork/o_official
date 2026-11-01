@@ -489,6 +489,8 @@ describe('API-AUTH-012 POST /api/auth/password-reset/confirm - Integration Tests
   test.each([
     ['15 文字', 'a'.repeat(15)],
     ['129 文字', 'a'.repeat(129)],
+    ['73 バイト（GoTrue は 72 バイトまで）', 'a'.repeat(73)],
+    ['日本語 25 文字（75 バイト）', 'あ'.repeat(25)],
     ['new_password が無い', undefined],
     ['new_password が文字列でない', 12345678901234567],
   ])('API-AUTH-012 新しいパスワードが「%s」のときは 400 で、DB も漏洩の照合も見ない', async (_label, value) => {
@@ -500,13 +502,13 @@ describe('API-AUTH-012 POST /api/auth/password-reset/confirm - Integration Tests
     expect(updateUserCalls).toEqual([]);
   });
 
-  test('API-AUTH-012 16 文字ちょうど・128 文字ちょうどは受ける', async () => {
+  test('API-AUTH-012 16 文字ちょうど・72 バイトちょうどは受ける', async () => {
     const short = await handler(build({ new_password: 'a1b2c3d4e5f6g7h8' }));
-    const long = await handler(build({ new_password: 'x'.repeat(128) }));
+    const long = await handler(build({ new_password: 'x'.repeat(72) }));
 
     expect(short.status).toBe(200);
     expect(long.status).toBe(200);
-    expect(updateUserCalls.map((call) => call[1].password.length)).toEqual([16, 128]);
+    expect(updateUserCalls.map((call) => call[1].password.length)).toEqual([16, 72]);
   });
 
   test('API-AUTH-012 確認の欄の値（confirm_password）は受けず、渡されても更新に使わない', async () => {

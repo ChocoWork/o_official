@@ -285,7 +285,7 @@ describe('POST /api/admin/create-user', () => {
       );
     });
 
-    test('API-ADMIN-001 表示名を付帯の情報へ入れ、確認済みの印と役割は渡さない', async () => {
+    test('API-ADMIN-001 表示名を付帯の情報へ入れ、確認済みの印（email_confirm: true）を付けて作り、役割は渡さない', async () => {
       await POST(makeRequest(validBody));
 
       expect(createUser).toHaveBeenCalledTimes(1);
@@ -293,9 +293,9 @@ describe('POST /api/admin/create-user', () => {
       expect(arg).toEqual({
         email: validBody.email,
         password: validBody.password,
+        email_confirm: true,
         user_metadata: { display_name: '新人' },
       });
-      expect(arg).not.toHaveProperty('email_confirm');
       expect(arg).not.toHaveProperty('app_metadata');
     });
 

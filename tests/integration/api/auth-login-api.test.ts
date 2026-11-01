@@ -22,11 +22,12 @@ jest.mock('@/features/auth/return-intent/return-intent-store', () => ({
   createReturnIntent: jest.fn(),
 }));
 
-jest.mock('@/lib/supabase/server', () => {
+jest.mock('@/lib/auth/service-role-auth-client', () => {
   const mockSignInWithPassword = jest.fn();
   const mockSignInWithOtp = jest.fn();
   return {
-    createPublicClient: jest.fn(async () => ({
+    ...jest.requireActual('@/lib/auth/service-role-auth-client'),
+    createServiceRoleAuthClient: jest.fn(async () => ({
       auth: { signInWithPassword: mockSignInWithPassword, signInWithOtp: mockSignInWithOtp },
     })),
     __mockSignInWithPassword: mockSignInWithPassword,
@@ -64,10 +65,10 @@ const { verifyTurnstile } = require('@/lib/turnstile');
 const { logAudit } = require('@/lib/audit');
 const { createReturnIntent } = require('@/features/auth/return-intent/return-intent-store');
 const {
-  createPublicClient,
+  createServiceRoleAuthClient,
   __mockSignInWithPassword,
   __mockSignInWithOtp,
-} = require('@/lib/supabase/server');
+} = require('@/lib/auth/service-role-auth-client');
 /* eslint-enable @typescript-eslint/no-require-imports */
 
 const PASSWORD = 'correct-horse-battery-staple';
@@ -217,7 +218,7 @@ describe('API-AUTH-001 POST /api/auth/login', () => {
 
     expect(res).toBe(limited);
     expect(verifyTurnstile).not.toHaveBeenCalled();
-    expect(createPublicClient).not.toHaveBeenCalled();
+    expect(createServiceRoleAuthClient).not.toHaveBeenCalled();
   });
 
   test('API-AUTH-001 メールの制限に当たればその応答を返し、パスワードを確かめない', async () => {
@@ -259,7 +260,7 @@ describe('API-AUTH-001 POST /api/auth/login', () => {
     const res = await loginHandler(buildRequest('{broken'));
 
     expect(res.status).toBe(500);
-    expect(createPublicClient).not.toHaveBeenCalled();
+    expect(createServiceRoleAuthClient).not.toHaveBeenCalled();
   });
 
   test('API-AUTH-001 Turnstile には本文の印と x-real-ip の IP を渡す', async () => {
@@ -284,10 +285,10 @@ describe('API-AUTH-001 POST /api/auth/login', () => {
     });
   });
 
-  test('API-AUTH-001 パスワードの確かめは匿名の client で行い、確認コードは新しい利用者を作らない設定で送る', async () => {
+  test('API-AUTH-001 パスワードの確かめと確認コードの送信は captcha を免除される auth だけの client（createServiceRoleAuthClient）1 つで行い、確認コードは新しい利用者を作らない設定で送る', async () => {
     await loginHandler(buildRequest(validBody()));
 
-    expect(createPublicClient).toHaveBeenCalledTimes(1);
+    expect(createServiceRoleAuthClient).toHaveBeenCalledTimes(1);
     expect(__mockSignInWithPassword).toHaveBeenCalledWith({ email: USER.email, password: PASSWORD });
     expect(__mockSignInWithOtp).toHaveBeenCalledWith({
       email: USER.email,

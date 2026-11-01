@@ -1,6 +1,7 @@
 /** @jest-environment node */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
+import { DUMMY_CAPTCHA_TOKEN } from '../../../e2e/captcha-test-utils';
 import { describeLocalDb, isLocalDatabase } from './helpers/local-db';
 import {
   createOrderStatusFixture, createOrderStatusReturnsFixture, orderStatusClock, ORDER_STATUS_PRIVATE_SENTINEL,
@@ -182,7 +183,7 @@ describeLocalDb('integration: 注文状況の新RPCを実際のPostgRESTに通�
       const created = await client.auth.admin.createUser({ email, password, email_confirm: true });
       if (created.error || !created.data.user) throw new Error('ORDER_STATUS_AUTH_FIXTURE_CREATE_FAILED');
       userId = created.data.user.id;
-      const signedIn = await authenticated.auth.signInWithPassword({ email, password });
+      const signedIn = await authenticated.auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
       if (signedIn.error || !signedIn.data.session) throw new Error('ORDER_STATUS_AUTH_FIXTURE_SIGN_IN_FAILED');
       const order = await fixture();
       const token = await rpc('ensure_order_status_link', { _order_id: order.orderId });

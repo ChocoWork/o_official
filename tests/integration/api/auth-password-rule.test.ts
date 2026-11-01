@@ -72,7 +72,11 @@ jest.mock('@/lib/supabase/server', () => ({
       },
     },
   })),
-  createClient: jest.fn(async () => ({
+}));
+
+jest.mock('@/lib/auth/service-role-auth-client', () => ({
+  ...jest.requireActual('@/lib/auth/service-role-auth-client'),
+  createServiceRoleAuthClient: jest.fn(async () => ({
     auth: {
       signUp: (...args: any[]) => {
         signUpCalls.push(args);
@@ -178,6 +182,8 @@ describe('ARC-AUTH-007 新しいパスワードは 16 文字以上で漏洩し�
       ['15 文字', 'a'.repeat(15), 'パスワードは16文字以上で入力してください'],
       ['129 文字', 'a'.repeat(129), 'パスワードは128文字以内で入力してください'],
       ['空文字', '', 'パスワードは16文字以上で入力してください'],
+      ['73 バイト', 'a'.repeat(73), 'パスワードは72バイト以内にしてください（全角の文字は1文字で3バイトです）'],
+      ['日本語 25 文字（75 バイト）', 'あ'.repeat(25), 'パスワードは72バイト以内にしてください（全角の文字は1文字で3バイトです）'],
     ])('ARC-AUTH-007 パスワードが「%s」なら受けない', (_label, value, message) => {
       const result = passwordSchema.safeParse(value);
 
@@ -187,7 +193,8 @@ describe('ARC-AUTH-007 新しいパスワードは 16 文字以上で漏洩し�
 
     test.each([
       ['16 文字ちょうど', 'a1b2c3d4e5f6g7h8'],
-      ['128 文字ちょうど', 'x'.repeat(128)],
+      ['72 バイトちょうど', 'x'.repeat(72)],
+      ['日本語 24 文字（72 バイト）', 'あ'.repeat(24)],
     ])('ARC-AUTH-007 パスワードが「%s」なら受ける', (_label, value) => {
       expect(passwordSchema.safeParse(value).success).toBe(true);
     });

@@ -35,7 +35,7 @@ const TABLE_EXPECTATIONS: TableExpectation[] = [
   { group: '管理の読み', tables: ['item_color_presets', 'item_cost_history'], anon: [], authenticated: ['SELECT'] },
   {
     group: '閉じた表',
-    tables: ['sessions', 'password_reset_tokens', 'rate_limit_counters', 'audit_logs', 'audit_logs_backups'],
+    tables: ['sessions', 'password_reset_tokens', 'password_change_challenges', 'rate_limit_counters', 'audit_logs', 'audit_logs_backups'],
     anon: [],
     authenticated: [],
   },
@@ -79,6 +79,8 @@ const FUNCTION_EXPECTATIONS: FunctionExpectation[] = [
   { name: 'search_public_news', anon: false, authenticated: false, postgres: true },
   { name: 'admin_update_look', anon: false, authenticated: false },
   { name: 'is_app_session_active', anon: false, authenticated: false, postgres: true },
+  { name: 'issue_password_change_challenge', anon: false, authenticated: false, postgres: true },
+  { name: 'consume_password_change_challenge', anon: false, authenticated: false, postgres: true },
 ];
 
 const SEQUENCES = ['stockists_id_seq', 'rate_limit_counters_id_seq'];

@@ -38,6 +38,11 @@ jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(),
 }));
 
+jest.mock('@/lib/auth/service-role-auth-client', () => ({
+  ...jest.requireActual('@/lib/auth/service-role-auth-client'),
+  createServiceRoleAuthClient: jest.fn(),
+}));
+
 jest.mock('@/lib/audit', () => ({ logAudit: jest.fn().mockResolvedValue(undefined) }));
 
 jest.mock('@/lib/orders/link-guest-orders', () => ({
@@ -53,6 +58,7 @@ type Handler = (request: Request) => Promise<any>;
 const crypto = require('crypto') as typeof import('crypto');
 const { cookies } = require('next/headers');
 const { createPublicClient, createServiceRoleClient } = require('@/lib/supabase/server');
+const { createServiceRoleAuthClient } = require('@/lib/auth/service-role-auth-client');
 
 const MINUTE = 60;
 const DAY = 24 * 60 * 60;
@@ -147,7 +153,7 @@ describe('認証の Cookie は用途ごとに名前・寿命・属性を分け�
 
   describe('窓口が実際に出す Cookie', () => {
     test('DATA-AUTH-004 ログインの 1 段目は、保留の署名した印を SameSite=Strict・5 分で出し、中身に用途と宛先を持つ', async () => {
-      createPublicClient.mockResolvedValue({
+      createServiceRoleAuthClient.mockResolvedValue({
         auth: {
           signInWithPassword: jest.fn().mockResolvedValue({
             data: { session: { access_token: 'a', refresh_token: 'r' }, user: { id: 'u1', email: 'user@example.com' } },
@@ -193,7 +199,7 @@ describe('認証の Cookie は用途ごとに名前・寿命・属性を分け�
     test('DATA-AUTH-004 認証コードの再送は保留の印を出し直すが、最初の iat を引き継ぐ', async () => {
       const firstIssuedAt = Math.floor(Date.now() / 1000) - 10 * MINUTE;
       const pendingToken = twoFactor().createLoginTwoFactorSessionToken({ userId: 'u1', email: 'user@example.com', issuedAt: firstIssuedAt });
-      createPublicClient.mockResolvedValue({ auth: { signInWithOtp: jest.fn().mockResolvedValue({ error: null }) } });
+      createServiceRoleAuthClient.mockResolvedValue({ auth: { signInWithOtp: jest.fn().mockResolvedValue({ error: null }) } });
       const { POST } = require('@/app/api/auth/login/resend/route') as { POST: Handler };
 
       const res = await POST(postJson('/api/auth/login/resend', {}, cookieHeaderFor('sb-login-2fa-session', pendingToken)));

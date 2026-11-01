@@ -35,6 +35,11 @@ jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(),
 }));
 
+jest.mock('@/lib/auth/service-role-auth-client', () => ({
+  ...jest.requireActual('@/lib/auth/service-role-auth-client'),
+  createServiceRoleAuthClient: jest.fn(),
+}));
+
 jest.mock('@/features/auth/middleware/rateLimit', () => ({
   enforceRateLimit: jest.fn().mockResolvedValue(undefined),
 }));
@@ -55,10 +60,11 @@ describe('Auth API integration (mocked supabase)', () => {
 
   beforeEach(() => {
     // default service client to satisfy audit/logging and password reset inserts
-    const { createServiceRoleClient, createClient, createPublicClient } = require('@/lib/supabase/server');
+    const { createServiceRoleClient, createClient } = require('@/lib/supabase/server');
+    const { createServiceRoleAuthClient } = require('@/lib/auth/service-role-auth-client');
     createServiceRoleClient.mockReturnValue({ from: jest.fn().mockReturnValue({ insert: jest.fn().mockResolvedValue({}) }), rpc: jest.fn().mockResolvedValue({ data: null, error: null }), auth: { admin: { updateUserById: jest.fn().mockResolvedValue({ data: { user: { id: "u1" } }, error: null }) } } });
     createClient.mockResolvedValue({ auth: { signInWithPassword: jest.fn().mockResolvedValue({ data: null, error: null }) } });
-    createPublicClient.mockResolvedValue({ auth: { signInWithPassword: jest.fn().mockResolvedValue({ data: null, error: null }), signInWithOtp: jest.fn().mockResolvedValue({ error: null }) } });
+    createServiceRoleAuthClient.mockResolvedValue({ auth: { signInWithPassword: jest.fn().mockResolvedValue({ data: null, error: null }), signInWithOtp: jest.fn().mockResolvedValue({ error: null }), signUp: jest.fn().mockResolvedValue({ data: { session: null, user: { id: 'u1' } }, error: null }) } });
     process.env.MAIL_FROM_ADDRESS = 'no-reply@example.com';
     process.env.JWT_SECRET = 'test-jwt-secret';
   });
@@ -66,7 +72,7 @@ describe('Auth API integration (mocked supabase)', () => {
   afterEach(() => jest.resetAllMocks());
 
   test('ARC-AUTH-001 login (step 1) verifies password, sends OTP and returns step=otp', async () => {
-    const { createPublicClient } = require('@/lib/supabase/server');
+    const { createServiceRoleAuthClient } = require('@/lib/auth/service-role-auth-client');
     const signInWithOtp = jest.fn().mockResolvedValue({ error: null });
     const fakeClient = {
       auth: {
@@ -77,7 +83,7 @@ describe('Auth API integration (mocked supabase)', () => {
         signInWithOtp,
       },
     };
-    createPublicClient.mockResolvedValue(fakeClient);
+    createServiceRoleAuthClient.mockResolvedValue(fakeClient);
 
     const req = new Request('http://localhost/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'user@example.com', password: 'password123456789' }) });
 
@@ -91,14 +97,14 @@ describe('Auth API integration (mocked supabase)', () => {
   });
 
   test('ARC-AUTH-001 login invalid credentials returns 401', async () => {
-    const { createPublicClient } = require('@/lib/supabase/server');
+    const { createServiceRoleAuthClient } = require('@/lib/auth/service-role-auth-client');
     const fakeClient = {
       auth: {
         signInWithPassword: jest.fn().mockResolvedValue({ data: null, error: { message: 'invalid' } }),
         signInWithOtp: jest.fn().mockResolvedValue({ error: null }),
       },
     };
-    createPublicClient.mockResolvedValue(fakeClient);
+    createServiceRoleAuthClient.mockResolvedValue(fakeClient);
 
     const req = new Request('http://localhost/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'user@example.com', password: 'wrongpass12345678' }) });
 
@@ -108,14 +114,15 @@ describe('Auth API integration (mocked supabase)', () => {
 
   test('ARC-AUTH-001 register は管理の見出し（x-admin-token）を付けても公開の登録で、createUser を呼ばず 202 を返す', async () => {
     process.env.ADMIN_API_KEY = 'adm';
-    const { createServiceRoleClient, createClient } = require('@/lib/supabase/server');
+    const { createServiceRoleClient } = require('@/lib/supabase/server');
+    const { createServiceRoleAuthClient } = require('@/lib/auth/service-role-auth-client');
     const createUser = jest.fn();
     createServiceRoleClient.mockReturnValue({
       rpc: jest.fn().mockResolvedValue({ data: null, error: null }),
       auth: { admin: { createUser } },
     });
     const signUp = jest.fn().mockResolvedValue({ data: { session: null, user: { id: 'u1' } }, error: null });
-    createClient.mockResolvedValue({ auth: { signUp } });
+    createServiceRoleAuthClient.mockResolvedValue({ auth: { signUp } });
 
     const req = new Request('http://localhost/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-token': 'adm' }, body: JSON.stringify({ email: 'new@example.com', password: 'password123456789' }) });
 
@@ -128,9 +135,10 @@ describe('Auth API integration (mocked supabase)', () => {
 
   test('ARC-AUTH-001 register は ADMIN_API_KEY が未設定でも管理の見出しで 500 にならず、公開の登録として 202 を返す', async () => {
     delete process.env.ADMIN_API_KEY;
-    const { createServiceRoleClient, createClient } = require('@/lib/supabase/server');
+    const { createServiceRoleClient } = require('@/lib/supabase/server');
+    const { createServiceRoleAuthClient } = require('@/lib/auth/service-role-auth-client');
     createServiceRoleClient.mockReturnValue({ rpc: jest.fn().mockResolvedValue({ data: null, error: null }) });
-    createClient.mockResolvedValue({ auth: { signUp: jest.fn().mockResolvedValue({ data: { session: null, user: { id: 'u1' } }, error: null }) } });
+    createServiceRoleAuthClient.mockResolvedValue({ auth: { signUp: jest.fn().mockResolvedValue({ data: { session: null, user: { id: 'u1' } }, error: null }) } });
     const req = new Request('http://localhost/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-token': 'anything' }, body: JSON.stringify({ email: 'new@example.com', password: 'password123456789' }) });
 
     const res: any = await registerHandler(req);

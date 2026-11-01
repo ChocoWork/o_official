@@ -7,10 +7,15 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
   enforceRateLimit: jest.fn(),
 }));
 
-jest.mock('@/lib/supabase/server', () => {
+jest.mock('@/lib/supabase/server', () => ({
+  createPublicClient: jest.fn(),
+}));
+
+jest.mock('@/lib/auth/service-role-auth-client', () => {
   const mockSignInWithOtp = jest.fn();
   return {
-    createPublicClient: jest.fn(async () => ({ auth: { signInWithOtp: mockSignInWithOtp } })),
+    ...jest.requireActual('@/lib/auth/service-role-auth-client'),
+    createServiceRoleAuthClient: jest.fn(async () => ({ auth: { signInWithOtp: mockSignInWithOtp } })),
     __mockSignInWithOtp: mockSignInWithOtp,
   };
 });
@@ -58,7 +63,8 @@ jest.mock('next/server', () => ({
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
-const { createPublicClient, __mockSignInWithOtp } = require('@/lib/supabase/server');
+const { createPublicClient } = require('@/lib/supabase/server');
+const { createServiceRoleAuthClient, __mockSignInWithOtp } = require('@/lib/auth/service-role-auth-client');
 const { logAudit } = require('@/lib/audit');
 const {
   readLoginTwoFactorSessionFromCookieHeader,
@@ -132,10 +138,11 @@ describe('POST /api/auth/login/resend (DD-AUTH-016)', () => {
     });
   });
 
-  test('DD-AUTH-016 保留のメールへ匿名 client で未登録を作らずに送る', async () => {
+  test('DD-AUTH-040 保留のメールへ captcha を免除される auth だけの client で未登録を作らずに送る', async () => {
     await POST(buildRequest());
 
-    expect(createPublicClient).toHaveBeenCalledTimes(1);
+    expect(createServiceRoleAuthClient).toHaveBeenCalledTimes(1);
+    expect(createPublicClient).not.toHaveBeenCalled();
     expect(__mockSignInWithOtp).toHaveBeenCalledTimes(1);
     expect(__mockSignInWithOtp).toHaveBeenCalledWith({
       email: PENDING_EMAIL,
@@ -174,7 +181,7 @@ describe('POST /api/auth/login/resend (DD-AUTH-016)', () => {
     expect(res._body.error).toEqual(expect.any(String));
     expect(readLoginTwoFactorSessionFromCookieHeader).toHaveBeenCalledWith(null);
     expect(enforceRateLimit).not.toHaveBeenCalled();
-    expect(createPublicClient).not.toHaveBeenCalled();
+    expect(createServiceRoleAuthClient).not.toHaveBeenCalled();
     expect(__mockSignInWithOtp).not.toHaveBeenCalled();
     expect(logAudit).not.toHaveBeenCalled();
   });
@@ -239,6 +246,26 @@ describe('POST /api/auth/login/resend (DD-AUTH-016)', () => {
     await expect(POST(buildRequest())).rejects.toThrow('store down');
 
     expect(__mockSignInWithOtp).not.toHaveBeenCalled();
+  });
+
+  test('DD-AUTH-040 SEC-AUTH-035-AC-02 送信を captcha が断ったら 500 と supabase_captcha_rejected の監査（誤りの本文は残さない）。保留の Cookie は作り直さない', async () => {
+    __mockSignInWithOtp.mockResolvedValue({
+      error: { code: 'captcha_failed', status: 400, message: 'captcha protection: request disallowed (no captcha_token found)' },
+    });
+
+    const res: any = await POST(buildRequest());
+
+    expect(res.status).toBe(500);
+    expect(res.cookies._cookies).toHaveLength(0);
+    expect(createLoginTwoFactorSessionToken).not.toHaveBeenCalled();
+    expect(logAudit).toHaveBeenCalledTimes(1);
+    expect(logAudit).toHaveBeenCalledWith({
+      action: 'login',
+      actor_email: PENDING_EMAIL,
+      outcome: 'error',
+      detail: 'supabase_captcha_rejected',
+      resource_id: PENDING_USER_ID,
+    });
   });
 
   test('DD-AUTH-016 送信が誤りなら 500 と otp_resend_failed の監査。保留の Cookie は作り直さない', async () => {

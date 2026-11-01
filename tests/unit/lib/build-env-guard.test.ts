@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  *
- * DD-ABOUT-002: 本番のビルドで必須の環境変数（サイトの URL・Supabase の URL）が無ければ落とし、
+ * DD-ABOUT-002: 本番のビルドで必須の環境変数（サイトの URL・Supabase の URL・許可オリジン）が無ければ落とし、
  * 2 つの Supabase の URL が別の origin を指す設定も落とす。落とす時の文に値を載せない。
  */
 import { assertBuildEnv } from "../../../src/lib/build-env-guard";
@@ -10,11 +10,12 @@ const PRODUCTION = {
   VERCEL_ENV: "production",
   NEXT_PUBLIC_SITE_URL: "https://shop.example.com",
   NEXT_PUBLIC_SUPABASE_URL: "https://abcd1234.supabase.co",
+  APP_ALLOWED_ORIGINS: "https://shop.example.com",
 } as const;
 
 describe("assertBuildEnv", () => {
   describe("VERCEL_ENV=production の必須の確かめ", () => {
-    it("DD-ABOUT-002 2 つとも在れば通る", () => {
+    it("DD-ABOUT-002 3 つとも在れば通る", () => {
       expect(() => assertBuildEnv({ ...PRODUCTION })).not.toThrow();
     });
 
@@ -48,8 +49,66 @@ describe("assertBuildEnv", () => {
       expect(message).not.toContain("abcd1234");
     });
 
+    it("DD-ABOUT-002 APP_ALLOWED_ORIGINS が無ければ、変数名を名指しして落とす（SEC-ABOUT-007-AC-02）", () => {
+      const { APP_ALLOWED_ORIGINS: _omitted, ...env } = PRODUCTION;
+      void _omitted;
+
+      expect(() => assertBuildEnv(env)).toThrow(/APP_ALLOWED_ORIGINS/);
+    });
+
+    it("DD-ABOUT-002 APP_ALLOWED_ORIGINS が空白だけでも、変数名を名指しして落とす（SEC-ABOUT-007-AC-02）", () => {
+      expect(() => assertBuildEnv({ ...PRODUCTION, APP_ALLOWED_ORIGINS: "   " })).toThrow(/APP_ALLOWED_ORIGINS/);
+    });
+
+    it("DD-ABOUT-002 APP_ALLOWED_ORIGINS が無い時に落とす文に、ほかの変数の値を載せない（SEC-ABOUT-007-AC-02）", () => {
+      const { APP_ALLOWED_ORIGINS: _omitted, ...env } = PRODUCTION;
+      void _omitted;
+      let message = "";
+      try {
+        assertBuildEnv({ ...env, NEXT_PUBLIC_SITE_URL: "https://zzzz9999.example.com" });
+      } catch (error) {
+        message = (error as Error).message;
+      }
+
+      expect(message).toContain("APP_ALLOWED_ORIGINS");
+      expect(message).not.toContain("zzzz9999");
+      expect(message).not.toContain("abcd1234");
+    });
+
+    it("DD-ABOUT-002 APP_ALLOWED_ORIGINS に www と apex の 2 つを書いても通る（SEC-ABOUT-007-AC-02）", () => {
+      expect(() =>
+        assertBuildEnv({ ...PRODUCTION, APP_ALLOWED_ORIGINS: "https://shop.example.com, https://www.shop.example.com" }),
+      ).not.toThrow();
+    });
+
+    it.each([
+      ["scheme が無い", "example.com"],
+      ["区切りの , だけで項目が空", ","],
+      ["片方の項目が空", "https://shop.example.com,"],
+      ["途中の項目が空", "https://shop.example.com,,https://www.shop.example.com"],
+      ["http の項目", "http://shop.example.com"],
+      ["末尾の / がある", "https://shop.example.com/"],
+      ["パスがある", "https://shop.example.com/shop"],
+      ["読めない項目が混じる", "https://shop.example.com,not a url"],
+    ])("DD-ABOUT-002 APP_ALLOWED_ORIGINS が書き間違い（%s）ならビルドを落とし、文に変数名だけを書く（SEC-ABOUT-007-AC-02）", (_label, value) => {
+      let message = "";
+      try {
+        assertBuildEnv({ ...PRODUCTION, APP_ALLOWED_ORIGINS: value });
+      } catch (error) {
+        message = (error as Error).message;
+      }
+
+      expect(message).toContain("APP_ALLOWED_ORIGINS");
+      expect(message).not.toContain("shop.example.com");
+    });
+
+    it("DD-ABOUT-002 APP_ALLOWED_ORIGINS の形の確かめは本番のビルドだけで行う（preview・手元は書き間違いでも落とさない）", () => {
+      expect(() => assertBuildEnv({ VERCEL_ENV: "preview", APP_ALLOWED_ORIGINS: "example.com" })).not.toThrow();
+      expect(() => assertBuildEnv({ APP_ALLOWED_ORIGINS: "http://localhost:3000" })).not.toThrow();
+    });
+
     it.each([["preview"], [undefined], [""]])(
-      "DD-ABOUT-002 VERCEL_ENV=%s なら、2 つとも無くても通る",
+      "DD-ABOUT-002 VERCEL_ENV=%s なら、3 つとも無くても通る",
       (vercelEnv) => {
         expect(() => assertBuildEnv({ VERCEL_ENV: vercelEnv })).not.toThrow();
       },

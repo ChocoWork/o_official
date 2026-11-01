@@ -25,6 +25,11 @@ jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(),
 }));
 
+jest.mock('@/lib/auth/service-role-auth-client', () => ({
+  ...jest.requireActual('@/lib/auth/service-role-auth-client'),
+  createServiceRoleAuthClient: jest.fn(),
+}));
+
 jest.mock('@/lib/turnstile', () => ({
   verifyTurnstile: jest.fn().mockResolvedValue({ ok: true }),
 }));
@@ -80,8 +85,8 @@ describe('Auth cookie flags (integration, mocked)', () => {
     process.env.JWT_SECRET = 'test-jwt-secret';
 
     // 新フロー: パスワード検証 + OTP 送信のみ（セッション Cookie は発行しない）
-    const { createPublicClient } = require('@/lib/supabase/server');
-    createPublicClient.mockResolvedValue({
+    const { createServiceRoleAuthClient } = require('@/lib/auth/service-role-auth-client');
+    createServiceRoleAuthClient.mockResolvedValue({
       auth: {
         signInWithPassword: jest.fn().mockResolvedValue({ data: { session: { access_token: 'a', refresh_token: 'r', expires_at: new Date().toISOString() }, user: { id: 'u1', email: 'u@example.com' } }, error: null }),
         signInWithOtp: jest.fn().mockResolvedValue({ data: {}, error: null }),

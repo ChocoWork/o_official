@@ -2,6 +2,7 @@
 jest.mock('server-only', () => ({}), { virtual: true });
 import { randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { DUMMY_CAPTCHA_TOKEN } from '../../../e2e/captcha-test-utils';
 import { connectLocalDb, describeLocalDb, isLocalDatabase } from './helpers/local-db';
 import { withGroupG1FixtureTransaction, setOrderStatusForFixture } from './helpers/group-g1-fixtures';
 import { seedGroupG3ReadyOrder } from './helpers/group-g3-fixtures';
@@ -55,7 +56,7 @@ if (!apiUrl || !serviceKey || !anonKey) {
       if (created.error || !created.data.user) throw new Error('G4_AUTH_FIXTURE_CREATE_FAILED');
       actor = created.data.user.id;
       authenticated = createClient(apiUrl, anonKey, options);
-      const signedIn = await authenticated.auth.signInWithPassword({ email, password });
+      const signedIn = await authenticated.auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
       if (signedIn.error || !signedIn.data.session) throw new Error('G4_AUTH_FIXTURE_SIGN_IN_FAILED');
       await withGroupG1FixtureTransaction(db(), async () => {
         await db().query(`insert into public.user_roles(user_id,role_id,active) select $1,id,true from public.roles where code='supporter'`, [actor]);

@@ -19,12 +19,36 @@ describe('passwordSchema', () => {
     expect(passwordSchema.safeParse('a'.repeat(16)).success).toBe(true);
   });
 
-  test('128 文字は通す', () => {
-    expect(passwordSchema.safeParse('a'.repeat(128)).success).toBe(true);
-  });
-
   test('129 文字は拒否する', () => {
     expect(passwordSchema.safeParse('a'.repeat(129)).success).toBe(false);
+  });
+
+  // 2026-11-01 の実測: GoTrue（bcrypt）は 72 バイトまで。73 バイト・日本語 25 文字（75 バイト）は 400 で断る。
+  // 文字数の上限（128）より先に、UTF-8 のバイト数 72 が効く。
+  test('72 バイトの ASCII（72 文字）は通す', () => {
+    expect(passwordSchema.safeParse('a'.repeat(72)).success).toBe(true);
+  });
+
+  test('73 バイトの ASCII は拒否し、バイト数の文言を出す', () => {
+    const result = passwordSchema.safeParse('a'.repeat(73));
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].message).toBe(
+        'パスワードは72バイト以内にしてください（全角の文字は1文字で3バイトです）',
+      );
+    }
+  });
+
+  test('日本語 24 文字（72 バイト）は通す', () => {
+    expect(passwordSchema.safeParse('あ'.repeat(24)).success).toBe(true);
+  });
+
+  test('日本語 25 文字（75 バイト）は拒否する', () => {
+    const result = passwordSchema.safeParse('あ'.repeat(25));
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].message).toContain('72バイト以内');
+    }
   });
 
   // 構成規則を足していないことの回帰ガード。

@@ -7,10 +7,11 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
   enforceRateLimit: jest.fn(),
 }));
 
-jest.mock('@/lib/supabase/server', () => {
+jest.mock('@/lib/auth/service-role-auth-client', () => {
   const mockSignInWithOtp = jest.fn();
   return {
-    createPublicClient: jest.fn(async () => ({
+    ...jest.requireActual('@/lib/auth/service-role-auth-client'),
+    createServiceRoleAuthClient: jest.fn(async () => ({
       auth: { signInWithOtp: mockSignInWithOtp },
     })),
     __mockSignInWithOtp: mockSignInWithOtp,
@@ -62,7 +63,7 @@ jest.mock('next/server', () => ({
 }));
 
 const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
-const { __mockSignInWithOtp } = require('@/lib/supabase/server');
+const { __mockSignInWithOtp } = require('@/lib/auth/service-role-auth-client');
 const {
   readLoginTwoFactorSessionFromCookieHeader,
   createLoginTwoFactorSessionToken,

@@ -171,11 +171,11 @@ describe('POST /api/admin/create-user', () => {
     expect(res.status).toBe(201);
   });
 
-  it('DD-ADMIN-002 パスワードが128文字なら通り、129文字なら 400', async () => {
-    createUser.mockResolvedValue({ data: { user: { id: 'u-128', email: 'new@example.com' } }, error: null });
+  it('DD-ADMIN-002 パスワードが72バイトなら通り、73バイトなら 400（Auth は 72 バイトまで）', async () => {
+    createUser.mockResolvedValue({ data: { user: { id: 'u-72', email: 'new@example.com' } }, error: null });
 
-    const ok = await POST(makeRequest({ ...validBody, password: 'a'.repeat(128) }));
-    const tooLong = await POST(makeRequest({ ...validBody, password: 'a'.repeat(129) }));
+    const ok = await POST(makeRequest({ ...validBody, password: 'a'.repeat(72) }));
+    const tooLong = await POST(makeRequest({ ...validBody, password: 'a'.repeat(73) }));
 
     expect(ok.status).toBe(201);
     expect(tooLong.status).toBe(400);
@@ -291,7 +291,7 @@ describe('POST /api/admin/create-user', () => {
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success', resource_id: undefined }));
   });
 
-  it('DD-ADMIN-002 表示名を渡すと user_metadata.display_name に入り、確認済みの印と役割は渡さない', async () => {
+  it('DD-ADMIN-002 表示名を渡すと user_metadata.display_name に入り、役割は渡さない。メールは確認済みで作る（email_confirm: true）', async () => {
     createUser.mockResolvedValue({ data: { user: { id: 'u-1', email: 'new@example.com' } }, error: null });
 
     await POST(makeRequest(validBody));
@@ -299,8 +299,18 @@ describe('POST /api/admin/create-user', () => {
     expect(createUser).toHaveBeenCalledWith({
       email: 'new@example.com',
       password: 'password-1234-ok',
+      email_confirm: true,
       user_metadata: { display_name: '新人' },
     });
+  });
+
+  it('DD-ADMIN-002 店長が作る会員は email_confirm: true で作り、確認が必須の設定でもログインできる状態にする', async () => {
+    createUser.mockResolvedValue({ data: { user: { id: 'u-1', email: 'new@example.com' } }, error: null });
+
+    await POST(makeRequest(validBody));
+
+    expect(createUser).toHaveBeenCalledTimes(1);
+    expect(createUser.mock.calls[0][0]).toEqual(expect.objectContaining({ email_confirm: true }));
   });
 
   it('DD-ADMIN-002 表示名を省くと user_metadata.display_name は空のまま渡す', async () => {
@@ -311,6 +321,7 @@ describe('POST /api/admin/create-user', () => {
     expect(createUser).toHaveBeenCalledWith({
       email: 'new@example.com',
       password: 'password-1234-ok',
+      email_confirm: true,
       user_metadata: { display_name: undefined },
     });
   });

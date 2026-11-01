@@ -133,8 +133,11 @@ jest.mock('@/lib/mail', () => ({
   __esModule: true,
   default: (...args: unknown[]) => mockSendMail(...args),
 }));
+jest.mock('@/lib/auth/service-role-auth-client', () => ({
+  ...jest.requireActual('@/lib/auth/service-role-auth-client'),
+  createServiceRoleAuthClient: async () => ({ auth: { signUp: (...args: unknown[]) => mockSignUp(...args) } }),
+}));
 jest.mock('@/lib/supabase/server', () => ({
-  createClient: async () => ({ auth: { signUp: (...args: unknown[]) => mockSignUp(...args) } }),
   createServiceRoleClient: async () => ({
     rpc: async () => ({ data: mockState.lookup, error: null }),
   }),

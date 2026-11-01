@@ -33,6 +33,16 @@ jest.mock('@/lib/supabase/server', () => {
   };
 });
 
+// パスワードの確かめと確認コードの送信は captcha を免除される auth だけの client（DD-AUTH-040）。
+// verifyOtp は captcha が掛からないので createPublicClient のまま。同じ mockAuth を共有する。
+jest.mock('@/lib/auth/service-role-auth-client', () => ({
+  ...jest.requireActual('@/lib/auth/service-role-auth-client'),
+  createServiceRoleAuthClient: jest.fn(async () => ({
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    auth: require('@/lib/supabase/server').__mockAuth,
+  })),
+}));
+
 jest.mock('next/server', () => ({
   NextResponse: {
     json: (body: unknown, init?: { status?: number }) => {

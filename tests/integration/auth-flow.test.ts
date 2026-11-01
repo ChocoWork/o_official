@@ -33,6 +33,11 @@ jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(),
 }));
 
+jest.mock('@/lib/auth/service-role-auth-client', () => ({
+  ...jest.requireActual('@/lib/auth/service-role-auth-client'),
+  createServiceRoleAuthClient: jest.fn(),
+}));
+
 jest.mock('next/headers', () => ({
   cookies: jest.fn(),
   // セッション失効の記録で IP / UA を読むために headers() も使う。
@@ -96,9 +101,10 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
     process.env.ADMIN_API_KEY = 'adm';
     const createUser = jest.fn();
     const fakeServiceAdmin = { auth: { admin: { createUser } }, rpc: jest.fn().mockResolvedValue({ data: null, error: null }), from: jest.fn() };
-    const { createServiceRoleClient, createClient } = require('@/lib/supabase/server');
+    const { createServiceRoleClient } = require('@/lib/supabase/server');
+    const { createServiceRoleAuthClient } = require('@/lib/auth/service-role-auth-client');
     createServiceRoleClient.mockReturnValue(fakeServiceAdmin);
-    createClient.mockResolvedValue({ auth: { signUp: jest.fn().mockResolvedValue({ data: { session: null, user: { id: 'u-seq' } }, error: null }) } });
+    createServiceRoleAuthClient.mockResolvedValue({ auth: { signUp: jest.fn().mockResolvedValue({ data: { session: null, user: { id: 'u-seq' } }, error: null }) } });
 
     const regReq = new Request('http://localhost/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-token': 'adm' }, body: JSON.stringify({ email: 'seq@example.com', password: 'password123456789' }) });
     const regRes: any = await registerHandler(regReq);
@@ -110,6 +116,7 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
     // LOGIN step 1: verify password + send email OTP (no session issued yet)
     process.env.JWT_SECRET = 'test-jwt-secret';
     const { createPublicClient } = require('@/lib/supabase/server');
+    // パスワードの確かめと確認コードの送信は auth だけの client、verifyOtp は匿名 client（同じ偽物を共有する）。
     // GoTrue の access token の形（DD-AUTH-039）。AUTH_REQUIRE_APP_SESSION が既定で有効なので、ログインの保存には session_id が要る。
     const sessionFixture = { access_token: `a1.${Buffer.from(JSON.stringify({ session_id: AUTH_SESSION_ID })).toString('base64url')}.s`, refresh_token: 'r1', expires_at: Date.now() + 3600 };
     const userFixture = { id: 'u-seq', email: 'seq@example.com' };
@@ -121,6 +128,7 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
       },
     };
     createPublicClient.mockResolvedValue(fakePublicClient);
+    createServiceRoleAuthClient.mockResolvedValue(fakePublicClient);
 
     const loginReq = new Request('http://localhost/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'seq@example.com', password: 'password123456789' }) });
     const loginRes: any = await loginHandler(loginReq);

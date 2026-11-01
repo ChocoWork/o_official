@@ -12,12 +12,12 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
   enforceRateLimit: jest.fn().mockResolvedValue(undefined),
 }));
 
-// Mock Supabase client (public client: password check + OTP send)
-jest.mock('@/lib/supabase/server', () => {
+// Mock Supabase client (captcha を免除される auth だけの client: password check + OTP send。DD-AUTH-040)
+jest.mock('@/lib/auth/service-role-auth-client', () => {
   const mockSignInWithPassword = jest.fn();
   const mockSignInWithOtp = jest.fn();
 
-  const createMockPublicClient = jest.fn(async () => ({
+  const createMockAuthClient = jest.fn(async () => ({
     auth: {
       signInWithPassword: mockSignInWithPassword,
       signInWithOtp: mockSignInWithOtp,
@@ -25,7 +25,8 @@ jest.mock('@/lib/supabase/server', () => {
   }));
 
   return {
-    createPublicClient: createMockPublicClient,
+    ...jest.requireActual('@/lib/auth/service-role-auth-client'),
+    createServiceRoleAuthClient: createMockAuthClient,
     __mockSignInWithPassword: mockSignInWithPassword,
     __mockSignInWithOtp: mockSignInWithOtp,
   };
@@ -86,7 +87,7 @@ jest.mock('next/server', () => ({
   },
 }));
 
-const { __mockSignInWithPassword, __mockSignInWithOtp } = require('@/lib/supabase/server');
+const { __mockSignInWithPassword, __mockSignInWithOtp } = require('@/lib/auth/service-role-auth-client');
 const { logAudit } = require('@/lib/audit');
 const { createReturnIntent } = require('@/features/auth/return-intent/return-intent-store');
 let loginHandler: any;

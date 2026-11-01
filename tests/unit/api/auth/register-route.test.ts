@@ -27,7 +27,10 @@ jest.mock('@/lib/pwned-password', () => ({
 }));
 jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(),
-  createClient: jest.fn(),
+}));
+jest.mock('@/lib/auth/service-role-auth-client', () => ({
+  ...jest.requireActual('@/lib/auth/service-role-auth-client'),
+  createServiceRoleAuthClient: jest.fn(),
 }));
 jest.mock('@/lib/redirect', () => ({
   ...jest.requireActual('@/lib/redirect'),
@@ -45,7 +48,7 @@ jest.mock('@/lib/site-url-guard', () => ({ isEmailOriginAllowed: jest.fn() }));
 jest.mock('@/lib/ops/site-url-alert', () => ({ notifySiteUrlInvalid: jest.fn() }));
 jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
 jest.mock('@/lib/turnstile', () => ({ verifyTurnstile: jest.fn() }));
-jest.mock('@/features/auth/services/auth-admin-user', () => ({ findAuthUserIdByEmail: jest.fn() }));
+jest.mock('@/features/auth/services/auth-admin-user', () => ({ findAuthUserIdByEmail: jest.fn(), isAuthUserUnconfirmed: jest.fn() }));
 jest.mock('@/features/auth/services/register', () => ({ persistSessionAndCookies: jest.fn() }));
 jest.mock('@/features/cart/services/guest-shopping-token', () => ({ readGuestShoppingTokens: jest.fn() }));
 jest.mock('@/lib/cookie', () => ({
@@ -60,13 +63,14 @@ jest.mock('@/lib/cookie', () => ({
 
 import sendMail from '@/lib/mail';
 import { checkPwnedPassword } from '@/lib/pwned-password';
-import { createServiceRoleClient, createClient } from '@/lib/supabase/server';
+import { createServiceRoleClient } from '@/lib/supabase/server';
+import { createServiceRoleAuthClient } from '@/lib/auth/service-role-auth-client';
 import { logAudit } from '@/lib/audit';
 import { isEmailOriginAllowed } from '@/lib/site-url-guard';
 import { notifySiteUrlInvalid } from '@/lib/ops/site-url-alert';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { verifyTurnstile } from '@/lib/turnstile';
-import { findAuthUserIdByEmail } from '@/features/auth/services/auth-admin-user';
+import { findAuthUserIdByEmail, isAuthUserUnconfirmed } from '@/features/auth/services/auth-admin-user';
 import { createReturnIntent } from '@/features/auth/return-intent/return-intent-store';
 import { persistSessionAndCookies } from '@/features/auth/services/register';
 import { readGuestShoppingTokens } from '@/features/cart/services/guest-shopping-token';
@@ -76,13 +80,14 @@ import { POST } from '@/app/api/auth/register/route';
 const mockSendMail = sendMail as jest.Mock;
 const mockPwned = checkPwnedPassword as jest.Mock;
 const mockCreateServiceRoleClient = createServiceRoleClient as jest.Mock;
-const mockCreateClient = createClient as jest.Mock;
+const mockCreateAuthClient = createServiceRoleAuthClient as jest.Mock;
 const mockLogAudit = logAudit as jest.Mock;
 const mockOriginAllowed = isEmailOriginAllowed as jest.Mock;
 const mockNotifySiteUrlInvalid = notifySiteUrlInvalid as jest.Mock;
 const mockRateLimit = enforceRateLimit as jest.Mock;
 const mockTurnstile = verifyTurnstile as jest.Mock;
 const mockFindUser = findAuthUserIdByEmail as jest.Mock;
+const mockIsUnconfirmed = isAuthUserUnconfirmed as jest.Mock;
 const mockCreateReturnIntent = createReturnIntent as jest.Mock;
 const mockPersist = persistSessionAndCookies as jest.Mock;
 const mockReadTokens = readGuestShoppingTokens as jest.Mock;
@@ -95,6 +100,7 @@ const SESSION = { access_token: 'access-1', refresh_token: 'refresh-1' };
 const NEW_USER = { id: 'user-1', email: 'new@example.com', app_metadata: { role: 'user' }, user_metadata: { display_name: 'x' } };
 
 let signUp: jest.Mock;
+let resend: jest.Mock;
 let createUser: jest.Mock;
 const originalAdminKey = process.env.ADMIN_API_KEY;
 
@@ -122,8 +128,9 @@ describe('POST /api/auth/register', () => {
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     signUp = jest.fn().mockResolvedValue({ data: { session: null, user: NEW_USER }, error: null });
+    resend = jest.fn().mockResolvedValue({ data: {}, error: null });
     createUser = jest.fn().mockResolvedValue({ data: { user: { id: 'admin-1', email: 'new@example.com' } }, error: null });
-    mockCreateClient.mockResolvedValue({ auth: { signUp } });
+    mockCreateAuthClient.mockResolvedValue({ auth: { signUp, resend } });
     mockCreateServiceRoleClient.mockResolvedValue({ auth: { admin: { createUser } } });
     mockRateLimit.mockResolvedValue(undefined);
     mockTurnstile.mockResolvedValue({ ok: true });
@@ -656,6 +663,164 @@ describe('POST /api/auth/register', () => {
       expect(console.warn).toHaveBeenCalledWith('Failed to send already-registered notice:', expect.any(Error));
     });
 
+    // 確認のリンクが切れた未確認の会員の送り直し。要件は SEC-AUTH-016-AC-04（E2E が確かめる。ここは単体）。
+    describe('確認のリンクが切れた未確認の会員', () => {
+      const AUTH_ERROR_FIELDS = { status: 429, message: 'For security purposes, you can only request this after 60 seconds.' };
+
+      beforeEach(() => {
+        mockFindUser.mockResolvedValue({ status: 'found', userId: 'existing-1' });
+        mockIsUnconfirmed.mockResolvedValue(true);
+      });
+
+      it('DD-AUTH-018 未確認なら「すでに登録されています」のメールの代わりに、確認メールを auth.resend で送り直す', async () => {
+        const service = { auth: { admin: { createUser } } };
+        mockCreateServiceRoleClient.mockResolvedValue(service);
+
+        const res: any = await POST(registerRequest());
+
+        expect(mockIsUnconfirmed).toHaveBeenCalledWith(service, 'existing-1');
+        expect(resend).toHaveBeenCalledTimes(1);
+        expect(resend).toHaveBeenCalledWith({
+          type: 'signup',
+          email: 'new@example.com',
+          options: { emailRedirectTo: 'http://localhost:3000/api/auth/confirm' },
+        });
+        expect(signUp).not.toHaveBeenCalled();
+        await runAfterCallbacks();
+        expect(mockSendMail).not.toHaveBeenCalled();
+        expect(res.status).toBe(202);
+        expect(await res.json()).toEqual({ message: 'Confirmation email sent' });
+        expect(mockLogAudit).toHaveBeenCalledWith({
+          action: 'register',
+          actor_email: 'new@example.com',
+          outcome: 'conflict',
+          detail: 'unconfirmed_resent',
+        });
+      });
+
+      it('DD-AUTH-018 未確認の枝も、新規・確認済みの登録済みと本文・状態・控えの Cookie の形が同じ', async () => {
+        const returnIntentCookies = (r: any) =>
+          r.cookies.set.mock.calls.map((call: unknown[]) => call[0]).filter((c: any) => c.name === 'sb-return-intent');
+        mockFindUser.mockResolvedValueOnce({ status: 'not_found' });
+        const fresh: any = await POST(registerRequest());
+        mockIsUnconfirmed.mockResolvedValueOnce(true);
+        const unconfirmed: any = await POST(registerRequest());
+        mockIsUnconfirmed.mockResolvedValueOnce(false);
+        const confirmed: any = await POST(registerRequest());
+
+        const responses = [fresh, unconfirmed, confirmed];
+        expect(responses.map((r) => r.status)).toEqual([202, 202, 202]);
+        expect(await Promise.all(responses.map((r) => r.json()))).toEqual(Array(3).fill({ message: 'Confirmation email sent' }));
+        const shapes = responses.map((r) => {
+          const calls = returnIntentCookies(r);
+          expect(calls).toHaveLength(1);
+          const { value: _value, ...attributes } = calls[0];
+          return attributes;
+        });
+        expect(shapes[1]).toEqual(shapes[0]);
+        expect(shapes[2]).toEqual(shapes[0]);
+      });
+
+      it('DD-AUTH-018 確認済みなら従来どおり resend せず、すでに登録されているメールを送る', async () => {
+        mockIsUnconfirmed.mockResolvedValue(false);
+
+        await POST(registerRequest());
+
+        expect(resend).not.toHaveBeenCalled();
+        expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'conflict', detail: 'already_registered_notified' }));
+        await runAfterCallbacks();
+        expect(mockSendMail).toHaveBeenCalledTimes(1);
+      });
+
+      it('DD-AUTH-018resend が失敗しても応答は 202 のまま、監査に error を残し、「すでに登録」のメールは送らない', async () => {
+        resend.mockResolvedValue({ data: {}, error: AUTH_ERROR_FIELDS });
+
+        const res: any = await POST(registerRequest());
+
+        expect(res.status).toBe(202);
+        expect(await res.json()).toEqual({ message: 'Confirmation email sent' });
+        expect(mockLogAudit).toHaveBeenCalledWith({
+          action: 'register',
+          actor_email: 'new@example.com',
+          outcome: 'error',
+          detail: `unconfirmed_resend_failed: ${AUTH_ERROR_FIELDS.message}`,
+        });
+        await runAfterCallbacks();
+        expect(mockSendMail).not.toHaveBeenCalled();
+      });
+
+      it('DD-AUTH-040 resend を captcha が断った時は、signUp と同じ supabase_captcha_rejected を監査に残す（応答は 202 のまま。有無を明かさない）', async () => {
+        resend.mockResolvedValue({
+          data: {},
+          error: { code: 'captcha_failed', status: 400, message: 'captcha protection: request disallowed (no captcha_token found)' },
+        });
+
+        const res: any = await POST(registerRequest());
+
+        expect(res.status).toBe(202);
+        expect(mockLogAudit).toHaveBeenCalledWith({
+          action: 'register',
+          actor_email: 'new@example.com',
+          outcome: 'error',
+          detail: 'supabase_captcha_rejected',
+        });
+        expect(console.error).toHaveBeenCalledWith('Unconfirmed resend rejected by captcha');
+      });
+
+      it('DD-AUTH-018resend が投げても 202 のまま、監査に error を残す（誤りの本文は残さない）', async () => {
+        resend.mockRejectedValue(new Error('network down with secret'));
+
+        const res: any = await POST(registerRequest());
+
+        expect(res.status).toBe(202);
+        expect(mockLogAudit).toHaveBeenCalledWith({
+          action: 'register',
+          actor_email: 'new@example.com',
+          outcome: 'error',
+          detail: 'unconfirmed_resend_threw',
+        });
+      });
+
+      it('DD-AUTH-018 resend が Error でない値を投げても 202 のまま、ログには名前を unknown とだけ残す', async () => {
+        resend.mockRejectedValue('plain string with secret');
+
+        const res: any = await POST(registerRequest());
+
+        expect(res.status).toBe(202);
+        expect(console.error).toHaveBeenCalledWith('Unconfirmed resend threw:', 'unknown');
+        expect(mockLogAudit).toHaveBeenCalledWith({
+          action: 'register',
+          actor_email: 'new@example.com',
+          outcome: 'error',
+          detail: 'unconfirmed_resend_threw',
+        });
+      });
+
+      it('DD-AUTH-018auth だけの client を作れなくても 202 のまま、監査に error を残す', async () => {
+        mockCreateAuthClient.mockRejectedValue(new Error('SUPABASE_SERVICE_ROLE_KEY and SUPABASE_URL must be set'));
+
+        const res: any = await POST(registerRequest());
+
+        expect(res.status).toBe(202);
+        expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'error', detail: 'unconfirmed_resend_threw' }));
+      });
+
+      it('DD-AUTH-018 未確認の確かめは宛先の枠・控えの作成の後（枠で守られた後だけ送り直す）', async () => {
+        const order: string[] = [];
+        mockRateLimit.mockImplementation(async (arg: { subject?: string }) => {
+          if (arg.subject) order.push('email-limit');
+          return undefined;
+        });
+        mockCreateReturnIntent.mockImplementation(async () => (order.push('intent'), { token: 'S'.repeat(43), maxAgeSeconds: 3600 }));
+        mockIsUnconfirmed.mockImplementation(async () => (order.push('unconfirmed-check'), true));
+        resend.mockImplementation(async () => (order.push('resend'), { data: {}, error: null }));
+
+        await POST(registerRequest());
+
+        expect(order).toEqual(['email-limit', 'intent', 'unconfirmed-check', 'resend']);
+      });
+    });
+
     it('DD-AUTH-018 service role の client で引いた結果をメールとともに渡す', async () => {
       const service = { auth: { admin: { createUser } } };
       mockCreateServiceRoleClient.mockResolvedValue(service);
@@ -715,6 +880,34 @@ describe('POST /api/auth/register', () => {
         expect(mockSendMail).toHaveBeenCalledWith(expect.objectContaining({ to: 'new@example.com' }));
       },
     );
+
+    it('DD-AUTH-040 登録は captcha を免除される auth だけの client で行う', async () => {
+      await POST(registerRequest());
+
+      expect(mockCreateAuthClient).toHaveBeenCalledTimes(1);
+      expect(signUp).toHaveBeenCalledTimes(1);
+    });
+
+    it('DD-AUTH-040 SEC-AUTH-035-AC-02 captcha が断ったら重複にせず 500 Failed to create user と supabase_captcha_rejected の監査（誤りの本文は残さない）', async () => {
+      signUp.mockResolvedValue({
+        data: { session: null, user: null },
+        error: { code: 'captcha_failed', status: 400, message: 'captcha protection: request disallowed (already no captcha_token found)' },
+      });
+
+      const res: any = await POST(registerRequest());
+
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: 'Failed to create user' });
+      expect(mockLogAudit).toHaveBeenCalledTimes(1);
+      expect(mockLogAudit).toHaveBeenCalledWith({
+        action: 'register',
+        actor_email: 'new@example.com',
+        outcome: 'error',
+        detail: 'supabase_captcha_rejected',
+      });
+      await runAfterCallbacks();
+      expect(mockSendMail).not.toHaveBeenCalled();
+    });
 
     it('DD-AUTH-018 登録がほかの誤りなら error を残して 500', async () => {
       signUp.mockResolvedValue({ data: { session: null, user: null }, error: { message: 'rate limited' } });

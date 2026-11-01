@@ -11,11 +11,16 @@ jest.mock('@/lib/turnstile', () => ({
   verifyTurnstile: jest.fn(),
 }));
 
-jest.mock('@/lib/supabase/server', () => {
+jest.mock('@/lib/supabase/server', () => ({
+  createPublicClient: jest.fn(),
+}));
+
+jest.mock('@/lib/auth/service-role-auth-client', () => {
   const mockSignInWithPassword = jest.fn();
   const mockSignInWithOtp = jest.fn();
   return {
-    createPublicClient: jest.fn(async () => ({
+    ...jest.requireActual('@/lib/auth/service-role-auth-client'),
+    createServiceRoleAuthClient: jest.fn(async () => ({
       auth: { signInWithPassword: mockSignInWithPassword, signInWithOtp: mockSignInWithOtp },
     })),
     __mockSignInWithPassword: mockSignInWithPassword,
@@ -52,11 +57,11 @@ jest.mock('@/lib/cookie', () => ({
 
 jest.mock('next/server', () => ({
   NextResponse: {
-    json: (body: unknown, init?: { status?: number }) => ({
+    json: (body: unknown, init?: { status?: number; headers?: Record<string, string> }) => ({
       status: init?.status ?? 200,
       _body: body,
       json: async () => body,
-      headers: new Map<string, string>(),
+      headers: new Map<string, string>(Object.entries(init?.headers ?? {})),
       cookies: {
         _cookies: [] as Array<Record<string, unknown>>,
         set(cookie: Record<string, unknown>) {
@@ -73,7 +78,12 @@ jest.mock('next/server', () => ({
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 const { verifyTurnstile } = require('@/lib/turnstile');
-const { createPublicClient, __mockSignInWithPassword, __mockSignInWithOtp } = require('@/lib/supabase/server');
+const { createPublicClient } = require('@/lib/supabase/server');
+const {
+  createServiceRoleAuthClient,
+  __mockSignInWithPassword,
+  __mockSignInWithOtp,
+} = require('@/lib/auth/service-role-auth-client');
 const { logAudit } = require('@/lib/audit');
 const { createReturnIntent } = require('@/features/auth/return-intent/return-intent-store');
 const { createLoginTwoFactorSessionToken } = require('@/features/auth/services/login-2fa-session');
@@ -158,10 +168,11 @@ describe('POST /api/auth/login (DD-AUTH-014)', () => {
     );
   });
 
-  test('DD-AUTH-014 パスワードの確かめと確認コードの送信は匿名 client で行い、未登録の利用者を作らない', async () => {
+  test('DD-AUTH-040 パスワードの確かめと確認コードの送信は captcha を免除される auth だけの client で行い、未登録の利用者を作らない', async () => {
     await POST(buildRequest({ email: 'User@Example.com', password: PASSWORD, turnstileToken: 't' }));
 
-    expect(createPublicClient).toHaveBeenCalledTimes(1);
+    expect(createServiceRoleAuthClient).toHaveBeenCalledTimes(1);
+    expect(createPublicClient).not.toHaveBeenCalled();
     expect(__mockSignInWithPassword).toHaveBeenCalledWith({ email: EMAIL, password: PASSWORD });
     expect(__mockSignInWithOtp).toHaveBeenCalledWith({ email: EMAIL, options: { shouldCreateUser: false } });
   });
@@ -275,6 +286,137 @@ describe('POST /api/auth/login (DD-AUTH-014)', () => {
 
     expect(res.status).toBe(500);
     expect(__mockSignInWithPassword).not.toHaveBeenCalled();
+  });
+
+  test('DD-AUTH-040 SEC-AUTH-035-AC-02 パスワードの確かめを captcha が断ったら 401 にせず 500 と supabase_captcha_rejected の監査（誤りの本文は残さない）', async () => {
+    __mockSignInWithPassword.mockResolvedValue({
+      data: { session: null, user: null },
+      error: { code: 'captcha_failed', status: 400, message: 'captcha protection: request disallowed (no captcha_token found)' },
+    });
+
+    const res: any = await POST(buildRequest());
+
+    expect(res.status).toBe(500);
+    expect(res._body).toEqual({ error: 'Internal server error' });
+    expect(logAudit).toHaveBeenCalledTimes(1);
+    expect(logAudit).toHaveBeenCalledWith({
+      action: 'login',
+      actor_email: EMAIL,
+      outcome: 'error',
+      detail: 'supabase_captcha_rejected',
+    });
+    expect(__mockSignInWithOtp).not.toHaveBeenCalled();
+    expect(res.cookies._cookies).toHaveLength(0);
+  });
+
+  test('DD-AUTH-040 SEC-AUTH-035-AC-02 確認コードの送信を captcha が断ったら 500 と supabase_captcha_rejected の監査。保留の Cookie を発行しない', async () => {
+    __mockSignInWithOtp.mockResolvedValue({
+      error: { code: 'captcha_failed', status: 400, message: 'captcha protection: request disallowed (no captcha_token found)' },
+    });
+
+    const res: any = await POST(buildRequest());
+
+    expect(res.status).toBe(500);
+    expect(res._body).toEqual({ error: 'Internal server error' });
+    expect(res.cookies._cookies).toHaveLength(0);
+    expect(createLoginTwoFactorSessionToken).not.toHaveBeenCalled();
+    expect(logAudit).toHaveBeenCalledTimes(1);
+    expect(logAudit).toHaveBeenCalledWith({
+      action: 'login',
+      actor_email: EMAIL,
+      outcome: 'error',
+      detail: 'supabase_captcha_rejected',
+      resource_id: USER_ID,
+    });
+  });
+
+  test('DD-AUTH-040 資格情報の誤り（400 Invalid login credentials）は captcha の拒否にせず今までどおり 401', async () => {
+    __mockSignInWithPassword.mockResolvedValue({
+      data: { session: null, user: null },
+      error: { code: 'invalid_credentials', status: 400, message: 'Invalid login credentials' },
+    });
+
+    const res: any = await POST(buildRequest());
+
+    expect(res.status).toBe(401);
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failure', detail: 'Invalid login credentials' }));
+  });
+
+  test('DD-AUTH-014 SEC-AUTH-035-AC-02 GoTrue の回数の制限（429）は 401 にせず 429 と Retry-After と supabase_rate_limited の監査。確認コードは送らない', async () => {
+    __mockSignInWithPassword.mockResolvedValue({
+      data: { session: null, user: null },
+      error: { code: 'over_request_rate_limit', status: 429, message: 'Request rate limit reached' },
+    });
+
+    const res: any = await POST(buildRequest());
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toEqual(expect.stringMatching(/^\d+$/));
+    expect(res._body).toEqual({ error: expect.any(String) });
+    expect(res._body.error).not.toContain('パスワードが正しくありません');
+    expect(logAudit).toHaveBeenCalledTimes(1);
+    expect(logAudit).toHaveBeenCalledWith({
+      action: 'login',
+      actor_email: EMAIL,
+      outcome: 'error',
+      detail: 'supabase_rate_limited',
+    });
+    expect(__mockSignInWithOtp).not.toHaveBeenCalled();
+    expect(res.cookies._cookies).toHaveLength(0);
+  });
+
+  test('DD-AUTH-014 SEC-AUTH-035-AC-02 GoTrue の 5xx は 401 にせず 503 と supabase_unavailable の監査（誤りの本文は残さない）', async () => {
+    __mockSignInWithPassword.mockResolvedValue({
+      data: { session: null, user: null },
+      error: { name: 'AuthApiError', status: 500, message: 'Database error querying schema' },
+    });
+
+    const res: any = await POST(buildRequest());
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get('Retry-After')).toEqual(expect.stringMatching(/^\d+$/));
+    expect(res._body.error).not.toContain('パスワードが正しくありません');
+    expect(logAudit).toHaveBeenCalledTimes(1);
+    expect(logAudit).toHaveBeenCalledWith({
+      action: 'login',
+      actor_email: EMAIL,
+      outcome: 'error',
+      detail: 'supabase_unavailable',
+    });
+    expect(__mockSignInWithOtp).not.toHaveBeenCalled();
+    expect(res.cookies._cookies).toHaveLength(0);
+  });
+
+  test.each([
+    ['status 0 の通信の失敗', { name: 'AuthRetryableFetchError', status: 0, message: 'fetch failed' }],
+    ['AuthRetryableFetchError（status 502）', { name: 'AuthRetryableFetchError', status: 502, message: 'bad gateway' }],
+    ['status が無い AuthRetryableFetchError', { name: 'AuthRetryableFetchError', message: 'fetch failed' }],
+  ])('DD-AUTH-014 SEC-AUTH-035-AC-02 %s は 503 と supabase_unavailable の監査', async (_label, error) => {
+    __mockSignInWithPassword.mockResolvedValue({ data: { session: null, user: null }, error });
+
+    const res: any = await POST(buildRequest());
+
+    expect(res.status).toBe(503);
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'error', detail: 'supabase_unavailable' }));
+    expect(__mockSignInWithOtp).not.toHaveBeenCalled();
+  });
+
+  test('DD-AUTH-014 SEC-AUTH-035-AC-02 未確認のメール（400 email_not_confirmed）は誤ったパスワードと同じ 401・同じ本文で、列挙の手掛かりを作らない', async () => {
+    __mockSignInWithPassword.mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: { code: 'email_not_confirmed', status: 400, message: 'Email not confirmed' },
+    });
+    const unconfirmed: any = await POST(buildRequest());
+
+    __mockSignInWithPassword.mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: { code: 'invalid_credentials', status: 400, message: 'Invalid login credentials' },
+    });
+    const wrong: any = await POST(buildRequest());
+
+    expect(unconfirmed.status).toBe(401);
+    expect(wrong.status).toBe(401);
+    expect(unconfirmed._body).toEqual(wrong._body);
   });
 
   test('DD-AUTH-014 パスワードの誤りは 401 と failure の監査（誤りの文あり）。確認コードは送らない', async () => {

@@ -32,6 +32,10 @@ jest.mock('@/lib/supabase/server', () => ({
   createPublicClient: jest.fn(),
   createServiceRoleClient: jest.fn(),
 }));
+jest.mock('@/lib/auth/service-role-auth-client', () => ({
+  ...jest.requireActual('@/lib/auth/service-role-auth-client'),
+  createServiceRoleAuthClient: jest.fn(),
+}));
 
 jest.mock('@/lib/audit', () => ({ logAudit: jest.fn().mockResolvedValue(undefined) }));
 
@@ -56,6 +60,7 @@ jest.mock('@/lib/pwned-password', () => ({
 type Handler = (request: Request) => Promise<any>;
 
 const { createClient, createPublicClient, createServiceRoleClient } = require('@/lib/supabase/server');
+const { createServiceRoleAuthClient } = require('@/lib/auth/service-role-auth-client');
 const { authenticateRequest } = require('@/lib/auth/authenticate');
 
 const postJson = (path: string, body: unknown, headers: Record<string, string> = {}) =>
@@ -71,26 +76,27 @@ describe('認証の全体の作り（ARC-AUTH-001）', () => {
     process.env.JWT_SECRET = 'test-jwt-secret';
   });
 
-  test('ARC-AUTH-001 ログインの窓口はパスワードの確かめに匿名の client だけを使い、Cookie に触れる client は作らない', async () => {
+  test('ARC-AUTH-001 ログインの窓口はパスワードの確かめに auth だけの client（captcha を免除）だけを使い、Cookie に触れる client は作らない', async () => {
     const signInWithPassword = jest.fn().mockResolvedValue({
       data: { session: { access_token: 'a', refresh_token: 'r' }, user: { id: 'u1', email: 'user@example.com' } },
       error: null,
     });
     const signInWithOtp = jest.fn().mockResolvedValue({ error: null });
-    createPublicClient.mockResolvedValue({ auth: { signInWithPassword, signInWithOtp } });
+    createServiceRoleAuthClient.mockResolvedValue({ auth: { signInWithPassword, signInWithOtp } });
 
     const { POST } = require('@/app/api/auth/login/route') as { POST: Handler };
     const res = await POST(postJson('/api/auth/login', { email: 'user@example.com', password: 'password123456789' }));
 
     expect(res.status).toBe(200);
-    expect(createPublicClient).toHaveBeenCalledTimes(1);
+    expect(createServiceRoleAuthClient).toHaveBeenCalledTimes(1);
+    expect(createPublicClient).not.toHaveBeenCalled();
     expect(createClient).not.toHaveBeenCalled();
     expect(createServiceRoleClient).not.toHaveBeenCalled();
     expect(signInWithPassword).toHaveBeenCalledWith({ email: 'user@example.com', password: 'password123456789' });
   });
 
   test('ARC-AUTH-001 パスワードの段を通っても本文にトークンを返さず、セッションの Cookie も出さない', async () => {
-    createPublicClient.mockResolvedValue({
+    createServiceRoleAuthClient.mockResolvedValue({
       auth: {
         signInWithPassword: jest.fn().mockResolvedValue({
           data: { session: { access_token: SECRET_ACCESS, refresh_token: 'secret-refresh' }, user: { id: 'u1', email: 'user@example.com' } },
@@ -209,6 +215,7 @@ describe('認証の全体の作り（ARC-AUTH-001）', () => {
       expect(json.code).toBe('validation_error');
       expect(Array.isArray(json.detail)).toBe(true);
       expect(createPublicClient).not.toHaveBeenCalled();
+      expect(createServiceRoleAuthClient).not.toHaveBeenCalled();
       expect(createServiceRoleClient).not.toHaveBeenCalled();
       expect(createClient).not.toHaveBeenCalled();
     });

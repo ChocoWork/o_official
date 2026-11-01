@@ -36,6 +36,11 @@ jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(),
 }));
 
+jest.mock('@/lib/auth/service-role-auth-client', () => ({
+  ...jest.requireActual('@/lib/auth/service-role-auth-client'),
+  createServiceRoleAuthClient: jest.fn(),
+}));
+
 jest.mock('@/lib/audit', () => {
   const logAudit = jest.fn().mockResolvedValue(undefined);
   return { __esModule: true, default: logAudit, logAudit };
@@ -63,6 +68,7 @@ type Handler = (request: Request) => Promise<any>;
 
 const { cookies } = require('next/headers');
 const { createClient, createPublicClient, createServiceRoleClient } = require('@/lib/supabase/server');
+const { createServiceRoleAuthClient } = require('@/lib/auth/service-role-auth-client');
 const { logAudit } = require('@/lib/audit');
 const { authenticateRequest, authFailureResponse } = require('@/lib/auth/authenticate');
 const { verifyTurnstile } = require('@/lib/turnstile');
@@ -160,6 +166,7 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
       expect(arg.request).toBeInstanceOf(Request);
       expect(verifyTurnstile).not.toHaveBeenCalled();
       expect(createPublicClient).not.toHaveBeenCalled();
+      expect(createServiceRoleAuthClient).not.toHaveBeenCalled();
       expect(createServiceRoleClient).not.toHaveBeenCalled();
       expect(createClient).not.toHaveBeenCalled();
     });
@@ -179,7 +186,7 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
         expect.objectContaining({ endpoint: 'auth:login', limit: 5, windowSeconds: 600, subject: 'user@example.com' }),
       );
       expect(verifyTurnstile.mock.invocationCallOrder[0]).toBeLessThan(enforceRateLimit.mock.invocationCallOrder[1]);
-      expect(createPublicClient).not.toHaveBeenCalled();
+      expect(createServiceRoleAuthClient).not.toHaveBeenCalled();
     });
 
     test('ARC-AUTH-005 login は Turnstile に落ちたら 403 で止め、メールの枠を数えない（他人の枠を潰させない）', async () => {
@@ -192,7 +199,7 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
       expect(await res.json()).toEqual({ error: 'Bot detection failed' });
       expect(enforceRateLimit).toHaveBeenCalledTimes(1);
       expect(enforceRateLimit.mock.calls[0][0].subject).toBeUndefined();
-      expect(createPublicClient).not.toHaveBeenCalled();
+      expect(createServiceRoleAuthClient).not.toHaveBeenCalled();
       expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'login', outcome: 'failure', detail: 'invalid-input-response' }));
     });
 
@@ -217,11 +224,11 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
 
       expect(res.status).toBe(403);
       expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failure', detail: 'turnstile_not_configured' }));
-      expect(createPublicClient).not.toHaveBeenCalled();
+      expect(createServiceRoleAuthClient).not.toHaveBeenCalled();
     });
 
     test('ARC-AUTH-005 login は Origin の確かめを窓口に持たず、別のサイトの Origin でもここでは断らない（共有の proxy が受け持つ）', async () => {
-      createPublicClient.mockResolvedValue({
+      createServiceRoleAuthClient.mockResolvedValue({
         auth: { signInWithPassword: jest.fn().mockResolvedValue({ data: null, error: { message: 'invalid' } }) },
       });
       const { POST } = require('@/app/api/auth/login/route') as { POST: Handler };
@@ -229,7 +236,7 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
       const res = await POST(request('POST', '/api/auth/login', loginBody, { origin: 'https://evil.example' }));
 
       expect(res.status).toBe(401);
-      expect(createPublicClient).toHaveBeenCalledTimes(1);
+      expect(createServiceRoleAuthClient).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -277,6 +284,7 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
       expect(enforceRateLimit.mock.calls[0][0]).toEqual(expect.objectContaining({ endpoint: 'auth:register', limit: 20, windowSeconds: 3600 }));
       expect(enforceRateLimit.mock.calls[0][0].subject).toBeUndefined();
       expect(createClient).not.toHaveBeenCalled();
+      expect(createServiceRoleAuthClient).not.toHaveBeenCalled();
       expect(createServiceRoleClient).not.toHaveBeenCalled();
     });
 
@@ -296,6 +304,7 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
       expect(verifyTurnstile.mock.invocationCallOrder[0]).toBeLessThan(enforceRateLimit.mock.invocationCallOrder[1]);
       expect(createServiceRoleClient).not.toHaveBeenCalled();
       expect(createClient).not.toHaveBeenCalled();
+      expect(createServiceRoleAuthClient).not.toHaveBeenCalled();
     });
   });
 
@@ -330,7 +339,7 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
         expect.objectContaining({ endpoint: 'auth:login', limit: 5, windowSeconds: 600, subject: 'pending@example.com' }),
       );
       expect(verifyTurnstile).not.toHaveBeenCalled();
-      expect(createPublicClient).not.toHaveBeenCalled();
+      expect(createServiceRoleAuthClient).not.toHaveBeenCalled();
     });
 
     test('ARC-AUTH-005 login/resend は保留の Cookie が無ければ 401 で断り、枠を数えない', async () => {
@@ -376,7 +385,7 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
     test('ARC-AUTH-005 login は枠の数え場所が落ちたら 500 で止まり、パスワードの確かめへ進まない', async () => {
       enforceRateLimit.mockRejectedValue(new Error('counter down'));
       const signInWithPassword = jest.fn().mockResolvedValue({ data: null, error: { message: 'invalid' } });
-      createPublicClient.mockResolvedValue({ auth: { signInWithPassword } });
+      createServiceRoleAuthClient.mockResolvedValue({ auth: { signInWithPassword } });
       const { POST } = require('@/app/api/auth/login/route') as { POST: Handler };
 
       const res = await POST(request('POST', '/api/auth/login', loginBody));

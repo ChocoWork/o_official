@@ -1,5 +1,6 @@
 /** @jest-environment node */
 import { createPublicClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { createServiceRoleAuthClient } from '@/lib/auth/service-role-auth-client';
 
 jest.mock('next/headers', () => ({ cookies: jest.fn(), headers: jest.fn() }));
 
@@ -17,7 +18,7 @@ describe('Supabase SDK authentication isolation', () => {
     global.fetch = jest.fn(async (input, init) => {
       const path = new URL(String(input)).pathname;
       requests.push({ path, authorization: new Headers(init?.headers).get('authorization') });
-      const body = path.endsWith('/verify')
+      const body = (path.endsWith('/verify') || path.endsWith('/token'))
         ? (() => {
             const { email } = JSON.parse(String(init?.body)) as { email: string };
             return {
@@ -64,5 +65,24 @@ describe('Supabase SDK authentication isolation', () => {
     expect(requests.filter(request => request.path.endsWith('/verify'))
       .every(request => request.authorization === 'Bearer fake-public-key')).toBe(true);
     expect((await admin.auth.getSession()).data.session).toBeNull();
+  });
+
+  test('DD-AUTH-040 auth だけのクライアントの signInWithPassword の後も、createServiceRoleClient の DB 要求はサービスの鍵のまま', async () => {
+    const authOnly = await createServiceRoleAuthClient();
+    const admin = await createServiceRoleClient();
+    const signedIn = await authOnly.auth.signInWithPassword({ email: 'one@example.invalid', password: 'x'.repeat(16) });
+    expect(signedIn.error).toBeNull();
+    await admin.from('sessions').select('id');
+    const freshAdmin = await createServiceRoleClient();
+    await freshAdmin.from('sessions').select('id');
+    const rest = requests.filter(request => request.path.startsWith('/rest/'));
+    expect(rest).toHaveLength(2);
+    expect(rest.every(request => request.authorization === 'Bearer fake-service-key')).toBe(true);
+    expect('from' in authOnly).toBe(false);
+    expect('rpc' in authOnly).toBe(false);
+    // サービスの鍵の見出しで動く管理 API（利用者の削除・更新・generateLink）には届かない。
+    expect('admin' in authOnly.auth).toBe(false);
+    expect('mfa' in authOnly.auth).toBe(false);
+    expect((authOnly.auth as unknown as Record<string, unknown>).admin).toBeUndefined();
   });
 });

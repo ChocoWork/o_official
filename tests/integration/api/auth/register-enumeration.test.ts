@@ -61,12 +61,23 @@ jest.mock('@/features/auth/services/register', () => ({
 }));
 
 const signUp = jest.fn();
+const resend = jest.fn();
+const getUserById = jest.fn();
 const rpc = jest.fn();
 const from = jest.fn();
 
+jest.mock('@/lib/auth/service-role-auth-client', () => ({
+  ...jest.requireActual('@/lib/auth/service-role-auth-client'),
+  createServiceRoleAuthClient: async () => ({
+    auth: { signUp: (...a: unknown[]) => signUp(...a), resend: (...a: unknown[]) => resend(...a) },
+  }),
+}));
 jest.mock('@/lib/supabase/server', () => ({
-  createClient: async () => ({ auth: { signUp: (...a: unknown[]) => signUp(...a) } }),
-  createServiceRoleClient: async () => ({ rpc: (...a: unknown[]) => rpc(...a), from: (...a: unknown[]) => from(...a) }),
+  createServiceRoleClient: async () => ({
+    rpc: (...a: unknown[]) => rpc(...a),
+    from: (...a: unknown[]) => from(...a),
+    auth: { admin: { getUserById: (...a: unknown[]) => getUserById(...a) } },
+  }),
 }));
 
 function registerRequest(email: string, extra: Record<string, unknown> = {}) {
@@ -98,6 +109,8 @@ describe('ARC-AUTH-006 会員登録は登録済みかどうかで応答を変え
     sendMail.mockClear();
     logAudit.mockClear();
     signUp.mockReset();
+    resend.mockReset().mockResolvedValue({ data: {}, error: null });
+    getUserById.mockReset().mockResolvedValue({ data: { user: { id: 'existing-1', email_confirmed_at: '2026-11-01T00:00:00Z' } }, error: null });
     rpc.mockReset();
     createReturnIntent.mockReset().mockResolvedValue({ token: 'E'.repeat(43), maxAgeSeconds: 3600 });
     errorSpy.mockImplementation(() => undefined);
@@ -173,6 +186,53 @@ describe('ARC-AUTH-006 会員登録は登録済みかどうかで応答を変え
     expect(logAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'register', outcome: 'conflict', detail: 'already_registered_notified' }),
     );
+  });
+
+  // 要件は SEC-AUTH-016-AC-04（E2E が確かめる。ここは結合）。
+  test('ARC-AUTH-006 確認のリンクが切れた未確認の会員は、通知の代わりに確認メールを送り直し、応答は新規・確認済みと完全に同じ', async () => {
+    rpc.mockResolvedValue({ data: null, error: null });
+    signUp.mockResolvedValue({ data: { session: null, user: { id: 'new-1' } }, error: null });
+    const fresh: any = await handler(registerRequest('new@example.com'));
+    const freshBody = await fresh.json();
+
+    rpc.mockResolvedValue({ data: 'existing-1', error: null });
+    const confirmed: any = await handler(registerRequest('taken@example.com'));
+    afterCallbacks.length = 0;
+    sendMail.mockClear();
+
+    getUserById.mockResolvedValue({ data: { user: { id: 'existing-1', email_confirmed_at: null } }, error: null });
+    const unconfirmed: any = await handler(registerRequest('Stale@Example.com'));
+
+    expect(getUserById).toHaveBeenLastCalledWith('existing-1');
+    expect(resend).toHaveBeenCalledTimes(1);
+    expect(resend).toHaveBeenCalledWith({
+      type: 'signup',
+      email: 'stale@example.com',
+      options: { emailRedirectTo: 'http://localhost:3000/api/auth/confirm' },
+    });
+    expect(unconfirmed.status).toBe(fresh.status);
+    expect(confirmed.status).toBe(fresh.status);
+    expect(await unconfirmed.json()).toEqual(freshBody);
+    expect(await confirmed.json()).toEqual(freshBody);
+    // 「すでに登録されています」のメールは送らない（未確認ではログインできず、案内が行き止まりになる）
+    expect(afterCallbacks).toHaveLength(0);
+    expect(sendMail).not.toHaveBeenCalled();
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'register', outcome: 'conflict', detail: 'unconfirmed_resent' }),
+    );
+  });
+
+  test('ARC-AUTH-006 確認の有無を引けない時は未確認として扱わず、従来どおり通知のメールを送る', async () => {
+    rpc.mockResolvedValue({ data: 'existing-1', error: null });
+    getUserById.mockResolvedValue({ data: { user: null }, error: { message: 'down' } });
+    const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const res: any = await handler(registerRequest('taken@example.com'));
+
+    expect(res.status).toBe(202);
+    expect(resend).not.toHaveBeenCalled();
+    expect(afterCallbacks).toHaveLength(1);
+    error.mockRestore();
   });
 
   test('ARC-AUTH-006 通知のメールが送れなくても応答は同じ 202 で、例外を外へ出さない', async () => {

@@ -11,10 +11,11 @@ jest.mock('@/lib/audit', () => ({
   logAudit: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock('@/lib/supabase/server', () => {
+jest.mock('@/lib/auth/service-role-auth-client', () => {
   const mockSignInWithOtp = jest.fn();
   return {
-    createPublicClient: jest.fn(async () => ({ auth: { signInWithOtp: mockSignInWithOtp } })),
+    ...jest.requireActual('@/lib/auth/service-role-auth-client'),
+    createServiceRoleAuthClient: jest.fn(async () => ({ auth: { signInWithOtp: mockSignInWithOtp } })),
     __mockSignInWithOtp: mockSignInWithOtp,
   };
 });
@@ -49,7 +50,7 @@ import {
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 const { logAudit } = require('@/lib/audit');
-const { createPublicClient, __mockSignInWithOtp } = require('@/lib/supabase/server');
+const { createServiceRoleAuthClient, __mockSignInWithOtp } = require('@/lib/auth/service-role-auth-client');
 /* eslint-enable @typescript-eslint/no-require-imports */
 
 const EMAIL = 'member@example.com';
@@ -102,7 +103,7 @@ describe('API-AUTH-003 POST /api/auth/login/resend', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
     expect(res.headers.get('Cache-Control')).toBe('no-store');
-    expect(createPublicClient).toHaveBeenCalledTimes(1);
+    expect(createServiceRoleAuthClient).toHaveBeenCalledTimes(1);
     expect(__mockSignInWithOtp).toHaveBeenCalledWith({ email: EMAIL, options: { shouldCreateUser: false } });
   });
 
@@ -111,7 +112,7 @@ describe('API-AUTH-003 POST /api/auth/login/resend', () => {
 
     expect(res.status).toBe(401);
     expect(enforceRateLimit).not.toHaveBeenCalled();
-    expect(createPublicClient).not.toHaveBeenCalled();
+    expect(createServiceRoleAuthClient).not.toHaveBeenCalled();
     expect(res.cookies.all()).toHaveLength(0);
   });
 

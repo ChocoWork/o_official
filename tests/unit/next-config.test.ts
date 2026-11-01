@@ -23,6 +23,7 @@ const ENV_KEYS = [
   "NEXT_PUBLIC_SUPABASE_URL",
   "SUPABASE_URL",
   "NEXT_PUBLIC_SITE_URL",
+  "APP_ALLOWED_ORIGINS",
   "VERCEL_ENV",
   "NEXT_BUILD_SKIP_CHECKS",
 ] as const;
@@ -119,14 +120,25 @@ describe("next.config.ts の読み込み時の環境変数の確かめ", () => {
     ).toThrow(/NEXT_PUBLIC_SITE_URL/);
   });
 
-  it("DD-ABOUT-002 VERCEL_ENV=production で 2 つとも在れば、読み込める", () => {
+  it("DD-ABOUT-002 VERCEL_ENV=production で 3 つとも在れば、読み込める", () => {
     const images = loadImages({
       VERCEL_ENV: "production",
       NEXT_PUBLIC_SITE_URL: "https://shop.example.com",
       NEXT_PUBLIC_SUPABASE_URL: "https://abcd1234.supabase.co",
+      APP_ALLOWED_ORIGINS: "https://shop.example.com",
     });
 
     expect(images.remotePatterns).toHaveLength(1);
+  });
+
+  it("DD-ABOUT-002 VERCEL_ENV=production で APP_ALLOWED_ORIGINS が無ければ、読み込みが落ちる（SEC-ABOUT-007-AC-02）", () => {
+    expect(() =>
+      loadImages({
+        VERCEL_ENV: "production",
+        NEXT_PUBLIC_SITE_URL: "https://shop.example.com",
+        NEXT_PUBLIC_SUPABASE_URL: "https://abcd1234.supabase.co",
+      }),
+    ).toThrow(/APP_ALLOWED_ORIGINS/);
   });
 
   it("DD-ABOUT-002 2 つの Supabase の URL が別の origin なら、VERCEL_ENV が無くても読み込みが落ちる", () => {

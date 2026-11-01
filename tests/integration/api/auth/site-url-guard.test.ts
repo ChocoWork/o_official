@@ -20,8 +20,11 @@ const mockSignUp = jest.fn();
 const mockRpc = jest.fn();
 const mockFrom = jest.fn();
 const mockCreateUser = jest.fn();
+jest.mock('@/lib/auth/service-role-auth-client', () => ({
+  ...jest.requireActual('@/lib/auth/service-role-auth-client'),
+  createServiceRoleAuthClient: jest.fn(async () => ({ auth: { signUp: mockSignUp } })),
+}));
 jest.mock('@/lib/supabase/server', () => ({
-  createClient: jest.fn(async () => ({ auth: { signUp: mockSignUp } })),
   createServiceRoleClient: jest.fn(async () => ({ rpc: mockRpc, from: mockFrom, auth: { admin: { createUser: mockCreateUser } } })),
 }));
 
