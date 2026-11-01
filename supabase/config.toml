@@ -178,7 +178,7 @@ enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
 enable_manual_linking = false
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
-minimum_password_length = 6
+minimum_password_length = 16
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
 password_requirements = ""
@@ -210,10 +210,12 @@ token_verifications = 30
 web3 = 30
 
 # Configure one of the supported captcha providers: `hcaptcha`, `turnstile`.
-# [auth.captcha]
-# enabled = true
-# provider = "hcaptcha"
-# secret = ""
+# アプリのサーバーの認証の呼び出し（ログイン・再送・会員登録）は service role の鍵で呼び、管理者免除で通る（ADR-0420）。
+# 秘密は supabase/.env（未追跡。supabase/.env.example を写す）の SUPABASE_AUTH_CAPTCHA_SECRET から読む。本番の秘密をここへ書かない。
+[auth.captcha]
+enabled = true
+provider = "turnstile"
+secret = "env(SUPABASE_AUTH_CAPTCHA_SECRET)"
 
 [auth.email]
 # Allow/disallow new user signups via email to your project.
@@ -222,21 +224,27 @@ enable_signup = true
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
 # If enabled, users need to confirm their email address before signing in.
-enable_confirmations = false
+enable_confirmations = true
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
-secure_password_change = false
+secure_password_change = true
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
 max_frequency = "1s"
 # Number of characters used in the email OTP.
 # アプリの入力（src/features/auth/schemas/otp.ts）が8桁を求めるため。本番のダッシュボードも8桁である前提（開店前に確かめる）。
 otp_length = 8
 # Number of seconds before the email OTP expires (defaults to 1 hour).
-otp_expiry = 3600
+otp_expiry = 300
 
 # ログインの確認コード（signInWithOtp）のメール。アプリは本文のコードを入力させる（本番のメールの型もコードを入れる前提。開店前に確かめる）。手元の E2E が読む。
 [auth.email.template.magic_link]
 subject = "ログインの確認コード"
 content_path = "./supabase/templates/magic_link.html"
+
+# 会員登録の確認メール。アプリの確認の窓口（/api/auth/confirm）は query の token_hash と type=signup を読む。
+# GoTrue の既定の ConfirmationURL（/auth/v1/verify）だと、印が GoTrue で使い切られ fragment で戻るため窓口で落ちる。
+[auth.email.template.confirmation]
+subject = "メールアドレスの確認"
+content_path = "./supabase/templates/confirmation.html"
 
 # Use a production-ready SMTP server
 # [auth.email.smtp]
@@ -254,10 +262,12 @@ content_path = "./supabase/templates/magic_link.html"
 # content_path = "./supabase/templates/invite.html"
 
 # Uncomment to customize notification email template
-# [auth.email.notification.password_changed]
-# enabled = true
-# subject = "Your password has been changed"
-# content_path = "./supabase/templates/password_changed_notification.html"
+# GoTrue 自身の変更通知（直接の PUT /user で変えた時だけ届く。管理 API の変更では届かない）。
+# アプリの通知「パスワードを変更しました」と件名を変えて見分ける。
+[auth.email.notification.password_changed]
+enabled = true
+subject = "パスワードの変更を受け付けました"
+content_path = "./supabase/templates/password_changed_notification.html"
 
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.
@@ -305,8 +315,8 @@ max_enrolled_factors = 10
 
 # Control MFA via App Authenticator (TOTP)
 [auth.mfa.totp]
-enroll_enabled = false
-verify_enabled = false
+enroll_enabled = true
+verify_enabled = true
 
 # Configure MFA via Phone Messaging
 [auth.mfa.phone]
