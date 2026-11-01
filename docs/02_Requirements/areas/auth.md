@@ -1,19 +1,19 @@
 # AUTH の要件
 
-> 状態: 推定 | 確認日: 2026-10-29 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-11-01 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
 AUTH の領域の要求・要件・受け入れ条件・派生要件を、追跡できる項目（`### <ID> <題>` と属性の表）で書く。
-要求の表（`requirements.md`）の AUTH にかかる行を丸ごと写し、上位の無い要件には新しい要求 `SR-AUTH-` を起こし、受け入れ条件の無い要件には `<要件ID>-AC-NN` を起こした。番号が重なっていたドロワーの4行（FREQ-24〜27 の2つ目）は `SR-AUTH-004`〜`007` と `FR-AUTH-001`〜`004` に振り替えた。要件が求めていないのにコードがしている動きは派生要件 `DRV-AUTH-` に書いた。セキュリティ要件は脅威の文書（`THR-AUTH-001`〜`032`）から1対1で起こした。ログインの後の戻り先（2026-10-25）は `SR-AUTH-008`・`FR-AUTH-005` として新しく起こした。
+要求の表（`requirements.md`）の AUTH にかかる行を丸ごと写し、上位の無い要件には新しい要求 `SR-AUTH-` を起こし、受け入れ条件の無い要件には `<要件ID>-AC-NN` を起こした。番号が重なっていたドロワーの4行（FREQ-24〜27 の2つ目）は `SR-AUTH-004`〜`007` と `FR-AUTH-001`〜`004` に振り替えた。要件が求めていないのにコードがしている動きは派生要件 `DRV-AUTH-` に書いた。セキュリティ要件は脅威の文書（`THR-AUTH-001`〜`032`）から1対1で起こした。ログインの後の戻り先（2026-10-25）は `SR-AUTH-008`・`FR-AUTH-005` として新しく起こした。ログイン中の会員のパスワード変更（2026-11-01、波 6）は `SR-AUTH-009`・`FR-AUTH-006`・`SEC-AUTH-034` として新しく起こした。
 
 | 段 | 数 | ID |
 | --- | --- | --- |
-| 要求 | 47 | 既存の `FREQ-` 39（うち廃止 1。FREQ-316・327・515 を含む）、新しい `SR-AUTH-001`〜`008`（うち `004`〜`007` は振り替え） |
-| 要件 | 107 | 既存の `FREQ-NN-REQ-NN` 94（うち廃止 1）、`FR-LOGIN-001`〜`008`、新しい `FR-AUTH-001`〜`005`（`001`〜`004` は振り替え） |
-| 受け入れ条件 | 165 | 既存の `FREQ-NN-AC-NN` 138（うち廃止 2）、新しい `<要件ID>-AC-NN` 27（`FR-…-AC-NN` 23（`FR-AUTH-005-AC-01`〜`07` を含む）、`FREQ-330-REQ-02-AC-01`、`FREQ-316-REQ-01`〜`03-AC-01`） |
+| 要求 | 48 | 既存の `FREQ-` 39（うち廃止 1。FREQ-316・327・515 を含む）、新しい `SR-AUTH-001`〜`009`（うち `004`〜`007` は振り替え） |
+| 要件 | 108 | 既存の `FREQ-NN-REQ-NN` 94（うち廃止 1）、`FR-LOGIN-001`〜`008`、新しい `FR-AUTH-001`〜`006`（`001`〜`004` は振り替え） |
+| 受け入れ条件 | 173 | 既存の `FREQ-NN-AC-NN` 138（うち廃止 2）、新しい `<要件ID>-AC-NN` 35（`FR-…-AC-NN` 30（`FR-AUTH-005-AC-01`〜`07`、`FR-AUTH-006-AC-01`〜`07` を含む）、`FREQ-330-REQ-02-AC-01`、`FREQ-316-REQ-01`〜`03-AC-01`） |
 | 派生要件 | 9 | `DRV-AUTH-001`〜`009` |
-| セキュリティ要件 | 33 | `SEC-AUTH-001`〜`033`（上位は脅威の文書 `docs/05_Quality/security/threats/auth.md` の同じ番号）。受け入れ条件 `SEC-AUTH-NNN-AC-NN` 62。全部「推定」 |
+| セキュリティ要件 | 35 | `SEC-AUTH-001`〜`035`（上位は脅威の文書 `docs/05_Quality/security/threats/auth.md` の同じ番号）。受け入れ条件 `SEC-AUTH-NNN-AC-NN` 71。全部「推定」 |
 
 - 状態: 写した要求・要件の行は、元の行に理由の記述がある物だけ「現行」。元の行に理由が無く、根拠の「なぜ」を推定で補った行は「推定」。写した受け入れ条件は元の文のままなので「現行」。後の行が置き換えたのに廃止の印が無い行・コードと合わない行・新しく起こした項目・実装から読み取った項目も「推定」。行の中に廃止と書いてある FREQ-62 だけを「廃止」にした。食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節に載せる
 - 結論: ログインの入口・パスワードの再設定・管理者の TOTP を求める元の要求は表に無かった（`SR-AUTH-001`〜`003` を推定で起こした）。`/register` を求める FR-LOGIN-004・FREQ-59・61 と、角丸の見た目の FREQ-64・70 は、後の行が置き換えたのに印が無い。廃止にするかはユーザーに決めてもらう
@@ -89,6 +89,7 @@ AUTH の領域の要求・要件・受け入れ条件・派生要件を、追跡
 | FR-LOGIN-026 | FREQ-330-AC-01〜03 |
 | FR-LOGIN-027 | FREQ-334-AC-01〜06（テストごとの対応は名前を付ける時に確かめる） |
 | FR-LOGIN-028 | FREQ-335-AC-02、FREQ-336-AC-05 |
+| FR-LOGIN-031（波 6 で足した分） | SEC-AUTH-015-AC-01・02・04・05（2026-11-01 の切り替えで `e2e/` に当てた。AC-05 は ENV の印）、SEC-AUTH-035-AC-01・02 |
 | FR-HEADER-001〜004 | FR-AUTH-001-AC-01〜FR-AUTH-004-AC-01（注の FREQ-24〜27-AC-01 から振り替え） |
 | FR-HEADER-005・006 | FREQ-28-AC-01、FREQ-29-AC-01 |
 | FR-HEADER-007 | FREQ-239-AC-01〜04 |
@@ -102,6 +103,7 @@ AUTH の領域の要求・要件・受け入れ条件・派生要件を、追跡
 | FR-PWRESET-007 | FREQ-332-AC-01〜03 |
 | FR-PWRESET-008 | FREQ-333-AC-01〜04 |
 | FR-SIGNUP-001 | FREQ-63-AC-01 |
+| FR-ACCOUNT-046（`e2e/FR-ACCOUNT-046-password-change.spec.ts`。波 6 の切り替え〔2026-11-01〕までは `supabase/pending-wave6/e2e/` に `.pending` で待機していた。今は `e2e/` に在り、`scope.json` の AUTH の `e2e` に載っている） | FR-AUTH-006-AC-01〜07、SEC-AUTH-034-AC-01〜04 |
 
 FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-underline-and-dropdown-edges.spec.ts` にある（全領域の持ち主の割り当て）。上の表に無い受け入れ条件には、範囲の E2E が無い。
 
@@ -194,6 +196,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 出どころ | ユーザーの発言 2026-10-25（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`） |
 
 要求の文: 会員だけの頁（`/account`・注文の履歴など）をログインせずに開いた人は、ログインの後にその頁へ戻る。ヘッダーのログインから入った人は、ログインを始めた頁へ戻る。戻り先が無い・確かめに通らない時はホーム `/` へ送る。管理者・サポーターは先に 2 段目（TOTP）を通し、その後で戻り先へ送る。
+
+### SR-AUTH-009 ログイン中の会員が自分でパスワードを変えられる
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | 会員がパスワードを自分で変える窓口がアプリに無く、忘れた時の再設定（SR-AUTH-002）以外に変える道が無かった。Supabase Auth の `/auth/v1/user` を直接呼ぶ道は、`secure_password_change` が session の作成から 24 時間以内なら再認証なしで変えるのを許す（窓は設定で変えられない）。パスワードを変える機能は、現行と新しいパスワードを求め（ASVS 4.0.3 V2.1.5・V2.1.6）、変えた後に他の session を止め（V3.3.3）、本人に通知する（V2.2.3）べき機能で、乗っ取った session の持ち主に本人を締め出させない守りが要る |
+| 状態 | 推定 |
+| 出どころ | ユーザーの発言 2026-11-01（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`「パスワードの変更」。現行パスワード＋新しいパスワード〔16 文字以上〕＋アプリが送るメールの数字、変更の後は全 session を失効、通知のメール、本人ごと 10 分 5 回） |
+
+要求の文: ログイン中の会員が、アカウントの画面から、現行のパスワードを確かめたうえで、新しいパスワードに変えられる。本人の確かめは、現行のパスワードと、登録のメールへ届く確認コードの 2 つ。変えた後はこの端末を含む全部の session を失効し、本人に通知のメールを送る。パスワードの変更を繰り返し試す道（現行パスワードの総当たり・コードの総当たり）は回数で止める。
 
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
@@ -1958,7 +1970,7 @@ OTP 送信後のカウントダウンタイマー（再送信制限）を実装�
 
 2要素認証（2FA）に対応する。標準ユーザーはパスワード + メール OTP、管理者/サポーターは追加で TOTP を要求する。
 
-今のコード（推定）: メールとパスワードの経路は OTP の後に `/api/auth/me` で役割を見て、admin・supporter を `/auth/verified` へ、ほかを `/account` へ送る。`/auth/verified` が TOTP の登録と確認をし、確認が通ると aal2 のトークンを Cookie へ戻す。Google の経路（`/api/auth/oauth/callback`）はメール OTP を通らずにセッションを作る。手元の Supabase は TOTP の登録・確認が無効（`supabase/config.toml`）なので、TOTP の流れは手元で動かせない。
+今のコード（推定）: メールとパスワードの経路は OTP の後に `/api/auth/me` で役割を見て、admin・supporter を `/auth/verified` へ、ほかを `/account` へ送る。`/auth/verified` が TOTP の登録と確認をし、確認が通ると aal2 のトークンを Cookie へ戻す。Google の経路（`/api/auth/oauth/callback`）はメール OTP を通らずにセッションを作る。手元の Supabase は、波 6 の切り替え（2026-11-01。手元だけ）で TOTP の登録・確認を有効にした（`supabase/config.toml` の `[auth.mfa.totp]`。切り替えまでは無効で、TOTP の流れは手元で動かせなかった）。
 
 ### FR-LOGIN-008 メール OTP の有効期限を5分にし、再送の待ちは 60 秒を保つ
 
@@ -2046,6 +2058,19 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 優先度 | MUST |
 
 戻ってよい頁は、公開の `/`・`/item`・`/look`・`/news`・`/stockist`・`/about`・`/search`・`/privacy`・`/contact`、会員の `/account`・`/wishlist`・`/cart`・`/checkout`（それぞれ `/x` と `/x/…`。`/` は完全一致）と、2 段目を済ませた管理者・サポーターだけの `/admin`。戻り先が `/login`・`/register`・`/auth/*`・`/api/*` の時と、確かめに通らない時は `/` へ送る。戻り先はログインを始める POST の時だけサーバーに控え、ログインが確定する所で 1 回だけ使う。管理者・サポーターは 2 段目の後で使い、戻り先が無ければ今までどおり `/admin` へ送る。
+
+### FR-AUTH-006 `/account/password` の 2 段の画面と、パスワード変更の 2 つの窓口
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-009 |
+| 根拠 | SR-AUTH-009 の「現行のパスワードと確認コードで本人を確かめて変える」を、盗んだ session の持ち主がメールの受信箱を持たず、現行パスワードの総当たりもできない形で満たす。窓口を 2 つに分け（`start` で現行パスワードを確かめてコードを送り、`confirm` でコードと新しいパスワードを受ける）、`start` に現行パスワードを要るようにして、本人のメールへコードを撒けないようにする（ADR-0421） |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | ユーザーの発言 2026-11-01（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`）、`docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 5〜7） |
+| 優先度 | MUST |
+
+画面 `/account/password` は、会員ページの「お客様情報」のリンクから入る。1 段目は現行のパスワードを入れて「確認コードをメールに送る」。2 段目は 8 桁の確認コード（有効期限 10 分）と新しいパスワード（16〜128 文字）とその確認を入れて「パスワードを変更する」。成功したらログインの画面へ移る。窓口は `POST /api/auth/password/change/start`（会員の認証と CSRF の印が要る。管理者・サポーターは aal2。現行パスワードを確かめ、8 桁のコードをメールで送り、コードは今の session に結ぶ）と `POST /api/auth/password/change/confirm`（コードを間違えると 5 回で使えなくなる。書式と漏洩の照合を通ってからコードを使い切り、パスワードを更新し、全 session を失効し、認証の Cookie を消し、通知のメールを送る）。どちらも本人ごとに 10 分 5 回、送り元の IP ごとに 10 分 20 回に制限し、結果を監査に残す。Google だけで登録した会員はパスワードを持たないので、1 段目に再設定への案内を誰にでも固定の文で出す。
 
 ## 受け入れ条件
 
@@ -3951,7 +3976,7 @@ POST /api/auth/otp/verify の本文が code のみであること。本文に em
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-LOGIN-004 |
-| 根拠 | FR-LOGIN-004 のうち今も成り立つ「メールとパスワードでアカウントを作り、確認メールで確定する」を確かめる。手元の Supabase は Confirm email が無効で、本番の前提（有効）と違う（状態は推定） |
+| 根拠 | FR-LOGIN-004 のうち今も成り立つ「メールとパスワードでアカウントを作り、確認メールで確定する」を確かめる。手元の Supabase は、波 6 の切り替え（2026-11-01。手元だけ）で Confirm email を有効にし、確認メールの雛形を `token_hash` と `type=signup` を持つ確認の窓口へのリンクにした（`supabase/config.toml` の `enable_confirmations`・`[auth.email.template.confirmation]`。切り替えまでは無効で、本番の前提〔有効〕と違った）（状態は推定） |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | 要件の文から起こした（FR-LOGIN-004） |
@@ -4011,7 +4036,7 @@ POST /api/auth/otp/verify の本文が code のみであること。本文に em
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-LOGIN-007 |
-| 根拠 | FR-LOGIN-007 の管理者・サポーターの分を、`/auth/verified` で TOTP を求められ、通るまで管理画面へ進めないことで確かめる。手元の Supabase は TOTP が無効なので、今は手元で試せない |
+| 根拠 | FR-LOGIN-007 の管理者・サポーターの分を、`/auth/verified` で TOTP を求められ、通るまで管理画面へ進めないことで確かめる。手元の Supabase は、波 6 の切り替え（2026-11-01。手元だけ）で TOTP を有効にした（`supabase/config.toml` の `[auth.mfa.totp]`）。切り替えまでは無効なので手元で試せない |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | 要件の文から起こした（FR-LOGIN-007） |
@@ -4181,6 +4206,90 @@ SNSアイコンのリンク要素が flex かつ items-center justify-center で
 | 出どころ | ユーザーの発言 2026-10-25（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`） |
 
 `POST /api/auth/post-login` を続けて 2 回呼ぶと、2 回目は `/` を返すこと。
+
+### FR-AUTH-006-AC-01 会員ページのリンクから `/account/password` に着き、現行パスワードの欄と送るボタンだけが出る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-006 |
+| 根拠 | FR-AUTH-006 の画面の入口と 1 段目を、3 つの幅で確かめる。コードと新しいパスワードの欄が最初から出ると、現行パスワードを確かめる前にコードを探させてしまう |
+| 状態 | 推定 |
+| 確かめ方 | E2E（mobile 390px・tablet 768px・desktop 1280px） |
+| 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 6・7） |
+
+ログインした会員が `/account?tab=profile` の「パスワードを変更」のリンクを押すと `/account/password` に着き、見出し「パスワードの変更」、現行のパスワードの欄、「確認コードをメールに送る」のボタンが表示されること。確認コードの欄・新しいパスワードの欄・「パスワードを変更する」のボタンは表示されないこと。どの幅でも横にはみ出さないこと。
+
+### FR-AUTH-006-AC-02 正しい手順でパスワードが変わり、古いパスワードは通らず新しいパスワードで入り直せる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-006 |
+| 根拠 | 現行パスワード → メールのコード → 新しいパスワードの 2 段が、画面と窓口の両方で最後まで通ることを確かめる。変わったことは、古いパスワードのログインが 401、新しいパスワードのログインが通ることで見る |
+| 状態 | 推定 |
+| 確かめ方 | E2E（画面の道は 3 つの幅。窓口を直に叩く道は desktop） |
+| 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 7） |
+
+現行のパスワードを入れて送り、メールに届いた 8 桁のコードと新しいパスワード（16 文字以上）を入れると、`confirm` が 200 `{ ok: true }` を返し、画面ではログインの画面へ移ること。その後、`/api/auth/login` に古いパスワードを送ると 401、新しいパスワードを送ると 200（確認コードの段）になること。
+
+### FR-AUTH-006-AC-03 現行パスワードが違うと断られ、コードのメールが届かない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-006 |
+| 根拠 | 盗んだ session の持ち主が、現行パスワードを知らないまま本人のメールへコードを撒けないようにする。誤りの応答は残りの回数を言わない |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 7、Review Focus 3） |
+
+現行のパスワードが違う `start` は 401 `{ error: "現行のパスワードが正しくありません。" }` を返し、確認コードのメールが届かないこと。監査に `password_change_start`・`failure`・`current_password_invalid` が 1 行残り、その行に送ったパスワードが無いこと。
+
+### FR-AUTH-006-AC-04 確認コードが違う・5 回間違えた・送り直した・別の session のコードは使えない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-006 |
+| 根拠 | コードは 8 桁（10 の 8 乗通り）なので、使い捨て・試行回数の上限・最新だけ有効・session への結び付けが無いと、総当たりや使い回しで破られる（Review Focus 4）。使えない理由（違う・期限切れ・5 回超え）は同じ文で答え、残りの回数を言わない |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 7、Review Focus 4） |
+
+違うコードの `confirm` は 401 `{ error: "確認コードが正しくないか、期限が切れています。もう一度コードを送ってください。" }` で、パスワードのハッシュが変わらないこと。同じコードを 5 回間違えた後は、正しいコードでも同じ 401 で、パスワードが変わらないこと（本人ごとの枠が同じ 5 回なので、試験は枠だけを消して確かめる）。`start` を送り直すと前のコードは 401 になり、新しいコードで変わること。別の session（2 回目のログイン）から使ったコードは 401 になり、取った session では 200 になること。
+
+### FR-AUTH-006-AC-05 新しいパスワードが 15 文字・漏洩済みなら 400 で、コードは焼けない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-006 |
+| 根拠 | 書式の検査と漏洩の照合は、コードを使い切るより前に置く。コードは本人確認なので、弱いパスワードで弾かれた人のコードを焼くと、メールを取り直す手間だけが増える（Review Focus 5）。「現行と同じ」の確かめは置かない（`confirm` が現行パスワードの当否を明かす窓口になるため） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（漏洩の照合は本物の HaveIBeenPwned へ出る） |
+| 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 5・7） |
+
+新しいパスワードが 15 文字だと 400 になること。漏洩リストに載るパスワードだと 400 `{ error: "このパスワードは過去の情報流出で公開されています。別のパスワードを設定してください。" }` になり、応答にパスワード本体が出ないこと。どちらの後でも、同じコードと正しい新しいパスワードで変更が 200 になること。
+
+### FR-AUTH-006-AC-06 未ログインは 401、aal1 の管理者は 403 で、コードのメールが届かない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-006 |
+| 根拠 | 窓口は会員の認証が前提。管理者・サポーターは、GoTrue も MFA 済みの利用者に aal2 を求めるので、アプリの窓口も直接の道と同じ強さにする（ruling 17） |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 5・7、Review Focus 7） |
+
+ログインしていない `start`・`confirm` は 401 になること。役割が admin で aal1 の `start` は 403 になり、コードのメールが届かず、監査に `password_change_start`・`denied`・`aal2_required` が 1 行残ること。
+
+### FR-AUTH-006-AC-07 パスワードを持たない会員（Google だけで登録）にも再設定への案内が出て、`start` は区別のつかない 401 になる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-006 |
+| 根拠 | Google だけで登録した会員はパスワードを持たず、`start` は必ず 401 になる。行き止まりにせず、再設定でパスワードを決められると案内する。案内は誰にでも出す固定の文にして、会員がパスワードを持つかを明かさない（列挙の防止） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（画面の案内は 3 つの幅。窓口の応答の比べは desktop） |
+| 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 6・7） |
+
+Google だけで登録した会員が `/account/password` を開くと、1 段目に「Google でログインしていてパスワードを設定していない場合は、先にパスワードの再設定からパスワードを設定してください」の案内が出て、「パスワードの再設定」のリンクが `/auth/password-reset` に着くこと。この会員の `start` は、パスワードを持つ会員が誤ったパスワードを送った時と同じ 401 と本文を返し、コードのメールが届かないこと。
 
 ## セキュリティ要件
 
@@ -4709,18 +4818,20 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 
 二段で満たすこと。①数えの DB の失敗は、制限の部品（`enforceRateLimit`）が自分で 503 と `Retry-After`（`no-store` つき）を返す（`tests/unit/middleware/rateLimit.test.ts`）。②制限の呼び出しそのものが例外を投げた時（作り物が投げた時）は、ログイン・OTP・TOTP・再設定・確認・トークンの更新などの窓口が先へ進まず 5xx（外側の `catch` の 500）で断り、`signInWithPassword`・`verifyOtp`・`mfa.verify`・パスワードの変更などを呼ばないこと。記録だけして先へ進まない。
 
-### SEC-AUTH-014 会員登録と再設定は 16 文字以上・漏洩していないパスワードだけを受ける
+### SEC-AUTH-014 会員登録と再設定は 16 文字以上・72 バイト以内で、漏洩していないパスワードだけを受ける
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-014 |
-| 根拠 | 短い・漏れたパスワードでリスト型攻撃の成功率を上げないため（FREQ-323）。照合先が落ちた時に通すのは、外の障害で登録を止めない判断。全体の NFR-SEC-008（範囲外）に当てはめた |
+| 根拠 | 短い・漏れたパスワードでリスト型攻撃の成功率を上げないため（FREQ-323）。照合先が落ちた時に通すのは、外の障害で登録を止めない判断。全体の NFR-SEC-008（範囲外）に当てはめた。上限を 72 バイトにするのは、GoTrue（bcrypt）が 72 バイトを超えるパスワードを 400 で断り、アプリの 128 文字の上限だけでは再設定の完了でコードを使い切った後に 500 になるため（2026-11-01 の実測は本文） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト・E2E |
 | 出どころ | OWASP ASVS 4.0.3 V2.1.1、V2.1.7、V2.1.9。`docs/02_Requirements/requirements.md` の FREQ-323 の行 |
 | 優先度 | MUST |
 
-`/api/auth/register` と `/api/auth/password-reset/confirm` は、16 文字未満と HIBP で漏洩済みのパスワードを 400 で断り、文字の種類の決まりは課さない。照合先が使えない時は通して監査に残す。今のコードは満たす（`src/features/auth/schemas/common.ts`、`register/route.ts`、`password-reset/confirm/route.ts`）。
+`/api/auth/register` と `/api/auth/password-reset/confirm` は、16 文字未満・UTF-8 で 72 バイトを超える・HIBP で漏洩済みのパスワードを 400 で断り、文字の種類の決まりは課さない。照合先が使えない時は通して監査に残す。今のコードは満たす（`src/features/auth/schemas/common.ts`、`register/route.ts`、`password-reset/confirm/route.ts`）。パスワードの変更（`/api/auth/password/change/confirm`。SEC-AUTH-034）と管理者の利用者作成も同じ部品（`passwordSchema`）で同じ決まりを当てる。
+
+72 バイトの決まり（2026-11-01 追加）: 手元の GoTrue で管理者の `updateUserById` を実測すると、ASCII 72 バイトは 200、73 バイトは 400、日本語 25 文字（UTF-8 で 75 バイト）は 400 `validation_failed`「Password cannot be longer than 72 characters」だった。GoTrue（bcrypt）の上限は文字でなくバイトなので、アプリは文字数（16〜128）に加えて `new TextEncoder().encode(値).length <= 72` を課す（実質の上限はこちら。日本語は 24 文字まで）。画面（再設定・会員登録・パスワード変更）には「パスワードは72バイト以内にしてください（全角の文字は1文字で3バイトです）」を出し、パスワード変更の画面の案内文にも上限を示す。ログインの窓口も同じ部品を使うので、72 バイトを超える入力は 401 でなく 400 になる（そのようなパスワードは作れないので影響しない）。
 
 #### SEC-AUTH-014-AC-01 漏洩済みのパスワードでの会員登録が 400
 
@@ -4757,31 +4868,35 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 | 出どころ | OWASP ASVS 4.0.3 V2.1.1、V2.1.7、V3.7.1 |
 | 優先度 | MUST |
 
-Supabase Auth の設定で、最小の長さを 16、パスワード変更に再認証（`secure_password_change`）、captcha を有効にする。メールの差し替えには新旧両方の確認（`double_confirm_changes`）を ON にする。または直接の登録を止め（Auth Hook など）、登録をアプリの窓口に限る。今の手元の設定は、最小の長さ・再認証・captcha を満たさない。`double_confirm_changes` は手元で true（`supabase/config.toml`）。本番はどれも未確認。
+Supabase Auth の設定で、最小の長さを 16（`minimum_password_length`。構成規則 `password_requirements` は課さない。NIST SP 800-63B-4 3.1.1.2）、パスワード変更に再認証（`secure_password_change`）と現行パスワードの要求（`security_update_password_require_current_password`。本番のダッシュボードか Management API で設定する）、captcha を有効にする。メールの差し替えには新旧両方の確認（`double_confirm_changes`）を ON にする。または直接の登録を止め（Auth Hook など）、登録をアプリの窓口に限る。
+
+手元の設定は 2026-11-01（切り替えの日。手元だけ）に、最小の長さ 16・`secure_password_change`・captcha（`supabase/config.toml`）を本番の前提にそろえた。`double_confirm_changes` は手元で true。「現行パスワードの要求」は Supabase CLI の `config.toml` に鍵が無く手元で設定できない（AC-05 の試験は ENV の印）。本番の設定は未確認で、波 6 の Task 11 が Management API で読んで変える。
+
+`secure_password_change` は、作ってから 24 時間以内の session には再認証を求めない。この窓は設定で変えられない（2026-11-01 に手元の GoTrue で実測）。残る危険は、現行パスワードを知る人が窓の中の session で GoTrue を直に叩いてパスワードを変えることだけで、守りは三つある。ログインにメールのコードが要ること（SEC-AUTH-005）、管理者・サポーターは aal2 が要ること、変更を知らせる GoTrue の通知メールが届くこと。アプリの窓口（`/api/auth/password/change/*`。SEC-AUTH-034）は現行パスワードとメールのコードを求め、全 session を失効する。
 
 #### SEC-AUTH-015-AC-01 直接の `/auth/v1/signup` で 15 文字のパスワードの登録ができない
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-AUTH-015 |
-| 根拠 | アプリを通らない登録でも長さの決まりが効くかを見るため |
+| 根拠 | アプリを通らない登録でも長さの決まりが効くかを見るため。captcha で断られたのか長さで断られたのかを分けるため、ダミーの captcha トークンを付けて呼ぶ（トークン無しは AC-04） |
 | 状態 | 推定 |
-| 確かめ方 | E2E（anon の鍵で `/auth/v1/signup` を直接呼ぶ） |
+| 確かめ方 | E2E（anon の鍵で `/auth/v1/signup` をダミーの captcha トークン付きで直接呼ぶ。手元の最小長 16 が前提。波 6 の切り替え〔2026-11-01〕で `e2e/` に当てた） |
 | 出どころ | 実装から推定 |
 
-15 文字のパスワードの直接の登録が誤りになり、利用者ができないこと。
+15 文字のパスワードの直接の登録が、ダミーの captcha トークン付きで 422（`weak_password`）になり、利用者ができないこと。
 
 #### SEC-AUTH-015-AC-02 直接の `/auth/v1/user` で再認証なしにパスワードを変えられない
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-AUTH-015 |
-| 根拠 | 盗んだ session だけでパスワードを変えさせないかを見るため |
+| 根拠 | 盗んだ session だけでパスワードを変えさせないかを見るため。24 時間以内の session には GoTrue が再認証を求めず、この窓は設定で変えられないので、確かめるのは窓を過ぎた session の側 |
 | 状態 | 推定 |
-| 確かめ方 | E2E |
+| 確かめ方 | E2E（作ってから 25 時間たった session にするため `auth.sessions.created_at` を戻してから呼ぶ。手元の `secure_password_change = true` が前提。波 6 の切り替え〔2026-11-01〕で `e2e/` に当てた） |
 | 出どころ | 実装から推定 |
 
-会員の access token だけで `/auth/v1/user` にパスワードの変更を送ると、再認証を求める誤りになり、パスワードが変わらないこと。
+作ってから 24 時間を過ぎた session の access token だけで `/auth/v1/user` にパスワードの変更を送ると、再認証を求める誤り（400、`reauthentication_needed`）になり、パスワードが変わらないこと。
 
 #### SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る
 
@@ -4795,6 +4910,29 @@ Supabase Auth の設定で、最小の長さを 16、パスワード変更に再
 
 本番の Supabase Auth で `double_confirm_changes` が ON で、会員の access token だけで `/auth/v1/user` にメールの変更を送っても、新旧両方の宛先の確認が済むまでメールが変わらないこと。
 
+#### SEC-AUTH-015-AC-04 トークン無しの直接の `/signup`・`/token`・`/otp` が captcha で断られる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-015 |
+| 根拠 | Supabase の captcha を有効にすると、アプリを通らない直接の呼び出しは captcha のトークン無しでは通らない。アプリのサーバーは管理者資格で呼んで免除を受ける（SEC-AUTH-035）ので、アプリの窓口は塞がらない。アプリの Turnstile・回数の制限・漏洩の照合を飛ばして、ボットが店のドメインから確認のメールを撒く道を閉じる |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`。captcha を有効にした手元の Supabase で通る。波 6 の切り替え〔2026-11-01〕で `e2e/` に当てた） |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`（Q28 案 b'）、`docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 7）、[Supabase CAPTCHA protection](https://supabase.com/docs/guides/auth/auth-captcha) |
+
+anon の鍵で `/auth/v1/signup`・`/auth/v1/token?grant_type=password`・`/auth/v1/otp` を captcha のトークン無しで直接呼ぶと、どれも 400 になり、本文に `captcha` を含み、通行証（`access_token`）も利用者も確認のメールも出ないこと。
+
+#### SEC-AUTH-015-AC-05 現行パスワード無しの直接のパスワード変更が断られる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-015 |
+| 根拠 | `secure_password_change` は 24 時間以内の session に再認証を求めない（設定で変えられない窓）。窓の中の盗まれた session だけでパスワードを変えさせないため、GoTrue に現行パスワードを要求させる（`security_update_password_require_current_password`）。この設定は Supabase CLI の `config.toml` に鍵が無く、手元の Supabase では設定できない |
+| 状態 | 推定 |
+| 確かめ方 | レビュー（本番の Management API の GET で `security_update_password_require_current_password` が true）・E2E（`e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`。手元では設定できないので ENV の印〔`test.fail`〕のまま。本番の設定を手元で再現できるようになったら印を外す） |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-task0-report.md`（E2）、`docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 8、ruling 6）、Management API の公式 OpenAPI |
+
+本番の Supabase Auth で `security_update_password_require_current_password` が true で、会員の access token だけで `/auth/v1/user` に現行パスワード無しのパスワードの変更を送ると、400（`current_password_required`）になり、パスワードが変わらないこと。
 
 ### SEC-AUTH-016 会員登録と再設定は、アカウントの有無で応答の中身と時間を変えない
 
@@ -4844,6 +4982,18 @@ Supabase Auth の設定で、最小の長さを 16、パスワード変更に再
 | 出どころ | `src/app/api/auth/register/route.ts` |
 
 送り元の IP を変えながら同じ登録済みのメールで会員登録を続けると、宛先単位の上限を超えた分が 429 になり、通知のメールが送られないこと。
+
+#### SEC-AUTH-016-AC-04 確認のリンクが切れた未確認の会員が同じメールで登録し直すと、確認メールが送り直され、応答は変わらない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-016 |
+| 根拠 | 波 6 で確認のリンクの有効期限を 5 分にする（`otp_expiry = 300`）と、開かないまま切れた未確認の会員は、ログインできず、「すでに登録されています」の案内にも従えず、自分で抜け出せない。開店前に新しい会員が締め出されるのを防ぐ。応答を変えると未確認の会員の有無が分かるので、列挙対策（SEC-AUTH-016）は保つ |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト・結合テスト（確認の有無の引き方・送り直しの呼び出し・応答と Cookie の同一・失敗時の監査）。E2E `FR-SIGNUP-003`（手元で未確認の会員を作り、同じメールで画面から登録し直すと 202 で、受け箱に確認メールが届き、そのリンクで確認済みになる。3 幅） |
+| 出どころ | `src/app/api/auth/register/route.ts`、`src/features/auth/services/auth-admin-user.ts`、`.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-task-8-review.md` の指摘 1 |
+
+メールを確認していない会員のメールで会員登録を送ると、応答は新規・確認済みの登録済みと同じ 202（本文と戻り先の Cookie の属性の並びも同じ）で、「すでに登録されています」のメールの代わりに確認メールがそのメールへ送り直されること。送り直しが失敗しても応答は変わらず、監査にだけ残ること。確認済みの会員（または確認の有無を引けない時）には、従来どおり「すでに登録されています」のメールだけが送られること。
 
 ### SEC-AUTH-017 管理の会員作成は公開の会員登録の窓口で受けない
 
@@ -5214,13 +5364,13 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-029 |
-| 根拠 | コードは OTP の期限 300 秒、Confirm email が ON、TOTP が使えること、8 桁のコードを前提にする。手元の設定はどれも違い、E2E・結合の結果は本番の前提を確かめていない |
+| 根拠 | コードは OTP の期限 300 秒、Confirm email が ON、TOTP が使えること、8 桁のコードを前提にする。手元の設定は波 6 の切り替えまで違い（OTP 8 桁だけ同じ）、E2E・結合の結果は本番の前提を確かめていなかった |
 | 状態 | 推定 |
 | 確かめ方 | レビュー（開店の準備で本番のダッシュボードを見る）・E2E |
 | 出どころ | 実装から推定 |
 | 優先度 | MUST |
 
-本番の Supabase Auth は、メール OTP の期限 300 秒、OTP 8 桁、Confirm email を ON、TOTP の登録と確認を有効にする。手元の `supabase/config.toml` も同じ値にそろえ、E2E が本番の前提で動くようにする。手元の設定は満たさない。本番は未確認。
+本番の Supabase Auth は、メール OTP の期限 300 秒、OTP 8 桁、Confirm email を ON、TOTP の登録と確認を有効にする。手元の `supabase/config.toml` も同じ値にそろえ、E2E が本番の前提で動くようにする。手元の設定は 2026-11-01（切り替えの日。手元だけ）にそろえた（`enable_confirmations = true`・`otp_expiry = 300`・`otp_length = 8`・`[auth.mfa.totp]` を有効）。`FR-SIGNUP-002`・`FR-LOGIN-024`・`FR-LOGIN-034` の ENV の印はこの切り替えと同時に外した。本番は未確認で、波 6 の Task 11 が Management API で読んで変える。
 
 #### SEC-AUTH-029-AC-01 会員登録の応答が 201 にならない
 
@@ -5257,7 +5407,7 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | 出どころ | OWASP ASVS 4.0.3 V7.1.3 |
 | 優先度 | SHOULD |
 
-ログイン・OTP・TOTP の確認と登録・会員登録・再設定・ログアウト・トークンの更新は、成功と失敗を `audit_logs` に残す。個人情報は伏せてから書く。ログインから再設定・ログアウト・更新までは今のコードが満たす。TOTP の確認（`mfa_verify`）と登録（`mfa_enroll`）の成功の監査は、2026-10-26 に入った。AC-01 はこのコードで行が増えるが、手元の Supabase で TOTP が無効（ENV）なので E2E は通らない。再設定の後の失効の失敗は満たさない。結び付けの拒否（`refresh` の `unbound_session` など、`enroll-totp` の `app_session_required`）の監査は 2026-10-29（波 5）に入った（AC-03）。
+ログイン・OTP・TOTP の確認と登録・会員登録・再設定・ログアウト・トークンの更新は、成功と失敗を `audit_logs` に残す。個人情報は伏せてから書く。ログインから再設定・ログアウト・更新までは今のコードが満たす。TOTP の確認（`mfa_verify`）と登録（`mfa_enroll`）の成功の監査は、2026-10-26 に入った。AC-01 はこのコードで行が増える。手元の Supabase の TOTP は 2026-11-01（切り替えの日。手元だけ）に有効にしたので、E2E の ENV の印は外した。再設定の後の失効の失敗は満たさない。結び付けの拒否（`refresh` の `unbound_session` など、`enroll-totp` の `app_session_required`）の監査は 2026-10-29（波 5）に入った（AC-03）。
 
 #### SEC-AUTH-030-AC-01 TOTP の登録と確認の成功が監査に残る
 
@@ -5385,6 +5535,106 @@ TOTP をまだ登録していない管理者が、メール OTP を通らずに�
 | 優先度 | SHOULD |
 
 以後の移行は、新しい表・列・関数・連番ごとに anon・authenticated・service_role の GRANT・REVOKE を明示する（`REVOKE ALL … FROM PUBLIC, anon, authenticated` のあと、要る役に要る物だけ GRANT し、service_role も明示する）。`ALTER DEFAULT PRIVILEGES` は project 全体に効くので使わず、別の判断にする。公開スキーマの権限の一覧（管理だけが書く表・認証の表・`profiles`・`items` の列・検索と管理の関数・連番・置き場）を DB 結合テスト `tests/integration/db/auth_grants_inventory.integration.test.ts` で確かめる。一覧にも既知の例外にも無い表に、anon か authenticated が書き込み・TRUNCATE を持ったら、その試験が表の名前を出して落ちる。受け入れ条件は作らない（確かめは DB の権限の一覧の結合テストで、E2E の子を持たない。子は構造設計 DATA-AUTH-006）。2026-10-26 に試験を書いた（手元の DB ではまだ流していない。流した最初の結果で、既知の例外の一覧を実態に合わせる）。
+
+### SEC-AUTH-034 パスワード変更は現行パスワードとメールのコードを求め、全 session を失効し、通知し、回数を制限し、監査する
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-034 |
+| 根拠 | session を乗っ取った人がパスワードを変えると、本人を締め出して居座れる。GoTrue の `secure_password_change` は session の作成から 24 時間以内なら再認証なしで変えるのを許し、その窓は設定で変えられない。だからアプリの窓口が、現行パスワードとメールのコードの 2 つを求め、変えた後は全 session を止め、本人に知らせる（ADR-0421）。会員の 2 段（パスワード＋メールのコード）は NIST SP 800-63B-4 の AAL2 ではない（メールは out-of-band の認証器に使えない。3.1.3.1）。アプリ独自の方針で、AAL2 を名乗らない |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-ACCOUNT-046-password-change.spec.ts`）、単体テスト・結合テスト |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`（パスワードの変更）、OWASP ASVS 4.0.3 V2.1.5、V2.1.6、V2.2.3、V3.3.3、NIST SP 800-63B-4 |
+| 優先度 | MUST |
+
+パスワード変更の窓口（`POST /api/auth/password/change/start`・`confirm`）は、現行のパスワードを `start` で確かめ、8 桁のコードを登録のメールへ送り、コードは利用者と今の session に結んで 10 分・使い捨て・5 回の誤りで使えなくする（ハッシュだけを表 `password_change_challenges` に置く。DATA-AUTH-009）。`confirm` は書式と漏洩の照合を通ってからコードを使い切り、パスワードを更新し、この端末を含む全部の session を失効し、認証の Cookie を消し、通知のメールを送る。本人ごとに 10 分 5 回、送り元の IP ごとに 10 分 20 回に制限する。結果は監査（`password_change_start`・`password_change_confirm`）に固定の符号だけで残し、パスワード・コード・トークン・`session_id` の値を残さない。GoTrue 側は `secure_password_change`・現行パスワードの要求・変更の通知・最小長 16 を有効にする（SEC-AUTH-015）。残る危険は、現行パスワードを知る人が GoTrue を直に叩いて変えることだけで、ログインにメールのコードが要るので実害は小さい（THR-AUTH-034）。
+
+#### SEC-AUTH-034-AC-01 変更の後、この端末を含む全 session が失効する
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-034 |
+| 根拠 | 乗っ取った人の session を残さないため（ASVS V3.3.3）。この端末の session も止めて、新しいパスワードで入り直させる |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 7、Review Focus 6） |
+
+`confirm` が 200 を返した後、変更前の access token は `/api/auth/me` で `authenticated: false`、変更前の refresh token は `/api/auth/refresh` で 401 になり、応答は認証の 3 つの Cookie（アクセス・リフレッシュ・CSRF）を消す Set-Cookie を付けること。`public.sessions` に失効していない行が無く、`auth.sessions` の行も 0 であること。
+
+#### SEC-AUTH-034-AC-02 変更の通知のメールがちょうど 1 通届き、パスワードもコードも含まない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-034 |
+| 根拠 | 本人が気付けるようにする（ASVS V2.2.3）。GoTrue 側の変更の通知は件名を分けて別に送る（ruling 9）ので、この AC は件名「パスワードを変更しました」だけを数える |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 7、ruling 9） |
+
+変更の後、件名「パスワードを変更しました」のメールが登録のアドレスへちょうど 1 通届き、本文に新しいパスワード・古いパスワード・確認コードを含まないこと。
+
+#### SEC-AUTH-034-AC-03 回数は本人ごと 10 分 5 回で、送り元を変えても数えられる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-034 |
+| 根拠 | 盗んだ session の持ち主が `start` で現行パスワードを何度でも試せる窓口にしないため。本人ごとの枠は全 IP を合わせて数える（Review Focus 3） |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 5・7） |
+
+同じ会員の `start` を 6 回送ると 6 回目が 429（`Retry-After` つき）になり、送り元の IP（`x-real-ip`）を変えて送っても 429 のままであること。`confirm` も同じであること。
+
+#### SEC-AUTH-034-AC-04 監査に固定の符号だけが残る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-034 |
+| 根拠 | 監査の行にパスワード・コード・トークン・`session_id` を残すと、監査ログの閲覧者や漏洩から資格情報が出る。残すのは固定の符号だけにする |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`audit_logs` を手元の DB の接続で直に読む） |
+| 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 5・7） |
+
+現行パスワードの誤り・`start` の成功・コードの誤り・`confirm` の成功の順に操作すると、`audit_logs` に `password_change_start`・`failure`・`current_password_invalid`、`password_change_start`・`success`・`code_sent`、`password_change_confirm`・`failure`・`code_invalid`、`password_change_confirm`・`success`・`password_changed` の 4 行がこの順で残り、どの行の全部の列にも、送ったパスワード・コード・access token・refresh token・`session_id` の値が現れないこと。
+
+### SEC-AUTH-035 アプリのサーバーの認証の呼び出しは captcha を免除される管理者資格で行い、Supabase の captcha の拒否を利用者の誤りに丸めない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-035 |
+| 根拠 | Supabase の captcha をオンにすると、アプリを通らない直の `/signup`・`/token`・`/otp` はトークン無しで 400 になる（SEC-AUTH-015）。アプリのサーバーが同じ窓口を呼ぶ時は、アプリの Turnstile のトークンが 1 回しか使えず転送できないので、サービスの鍵（管理者資格）で呼んで GoTrue の免除を受ける（ADR-0420）。免除が効かなくなった時に 401 や重複へ丸めると、全員が入れない・登録できない故障が見えなくなる |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト・E2E |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`（Q28 案 b'）、`docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 2）、[Supabase CAPTCHA protection](https://supabase.com/docs/guides/auth/auth-captcha) |
+| 優先度 | MUST |
+
+captcha が掛かる Supabase Auth の窓口（`/signup`・`/token`（password）・`/otp`）をアプリのサーバーが呼ぶのは 6 か所（ログインのパスワードの確かめと確認コードの送信、ログインの確認コードの再送、会員登録、未確認の会員の確認メールの再送、パスワード変更の現行パスワードの確認）で、どれも `createServiceRoleAuthClient()`（`.from()`・`.rpc()` を持たない、毎回作る auth だけの client。DD-AUTH-040）で呼ぶ。アプリ側の Turnstile の検証・順番・回数の制限は変えない。Supabase が captcha を理由に断った時（`captcha_failed`）は、資格情報の誤り（401）にも重複（202）にもせず、5xx と監査 `supabase_captcha_rejected` にする。
+
+#### SEC-AUTH-035-AC-01 Supabase の captcha が有効でも、アプリのログインと会員登録が通る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-035 |
+| 根拠 | 管理者資格の免除が効いているかを見るため。効かないと、captcha をオンにした瞬間に全員が入れなくなる |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts` の試験が、直接の password grant が captcha で 400 になる会員でも、アプリの `/api/auth/login` が 200、`/api/auth/register` が 202 で利用者ができることを見る。既存のログイン・会員登録の spec〔`FR-LOGIN-008` ほか〕も captcha を有効にした手元で通ること。手元の切り替え〔波 6、2026-11-01〕で切り替えた設定のもとで通る〔全件実行の結果は未確認〕）。本番は段階 B の確かめ |
+| 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 0 の GATE、Task 10・11） |
+
+Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（パスワードの確かめと確認コードの送信）・`/api/auth/login/resend`・`/api/auth/register` が、captcha のトークンを Supabase へ渡さずに通ること。
+
+#### SEC-AUTH-035-AC-02 Supabase の captcha の拒否は、ログイン・再送・登録で 5xx と監査 `supabase_captcha_rejected` になる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-035 |
+| 根拠 | 免除が効かなくなった時に、401（パスワードの誤り）や 202（重複）に丸めると監視に上がらない。故障として見せる |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/login-route.test.ts`・`login-resend-route.test.ts`・`register-route.test.ts`、`tests/unit/lib/auth/service-role-auth-client.test.ts`。名前の先頭は `DD-AUTH-040`）。E2E（`e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`）は、最後の文だけを見る（captcha が有効でも、誤ったパスワードのログインが 401 のままで、監査が `login`・`failure` のまま `supabase_captcha_rejected` にならない）。5xx になる側は免除が効かない環境を手元の Supabase に作る手段が無いので、E2E では見られない（免除が効かない時は本番の段階 B の確かめで見つける） |
+| 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 2、Review Focus 2） |
+
+`signInWithPassword`・`signInWithOtp`・`signUp` が `code: 'captcha_failed'`（または status 400 で本文に captcha を含む誤り）を返した時、ログインは 500 `Internal server error`、再送は 500、登録は 500 `Failed to create user` を返し、`audit_logs` に `outcome: 'error'`・`detail: 'supabase_captcha_rejected'` を 1 行残すこと。誤りの本文は監査に残さないこと。ログインでは確認コードも保留の Cookie も出さず、登録では重複の本人通知のメールを送らないこと。資格情報の誤り（400 `Invalid login credentials`）は今までどおり 401 のままであること。
+
+あわせて、ログインのパスワードの確かめ（`/api/auth/login` の `signInWithPassword`）で GoTrue が回数の制限（`status` 429）を返した時は、401 にせず 429 と `Retry-After` を返し、`audit_logs` に `outcome: 'error'`・`detail: 'supabase_rate_limited'` を 1 行残すこと。GoTrue が 5xx・`status` 0・`AuthRetryableFetchError`（通信の失敗）を返した時は 503 と `Retry-After` を返し、`detail: 'supabase_unavailable'` を残すこと。どちらも誤りの本文を監査に残さず、確認コードも保留の Cookie も出さないこと。理由: アプリのサーバーが全員分の GoTrue の呼び出しを少数の出口の IP から送るので、GoTrue の IP ごとの枠（既定 30 回／5 分）を店の全員で分け合う。枠に当たった時や障害で、正しいパスワードの会員が「パスワードが違う」と言われ、監視に `failure` の行しか残らないのを避ける（captcha の拒否を 401 に丸めない理屈と同じ。最終レビュー指摘 2、2026-11-01）。資格情報の誤りと未確認のメール（400 `email_not_confirmed`）は、同じ状態・同じ本文の 401 のままであること（未確認か誤りかを見分けさせない）。この追加分は単体テスト（`tests/unit/api/auth/login-route.test.ts`。名前の先頭は `DD-AUTH-014 SEC-AUTH-035-AC-02`）で確かめ、GoTrue の 429・5xx を手元で起こす手段が無いので E2E では見られない。
 
 ## 派生要件
 

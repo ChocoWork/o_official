@@ -1,5 +1,7 @@
 # DB マイグレーション運用
 
+> 波 6 確認日: 2026-11-01。パスワード変更の確認コードの移行 M3（`20261101120000`）を追記した（「波 6 パスワード変更の確認コードの移行 M3」の節）。手元は適用済み、本番は未適用（Task 11 で G-1 に知らせてから当てる）。
+
 > グループ H 本番適用: 2026-11-01（`20261029130000`〜`20261029130600` の7本。照合は末尾の「グループH 本番適用の記録」）
 
 > 波 5 確認日: 2026-10-29。アプリの session への結び付けの移行 M1（`20261029120000`）を追記した（「波 5 アプリの session への結び付けの移行 M1」の節）。2026-10-29 に本番へ適用済み。M2（`20261029120100`、`has_permission` の aal2 と会員の表の方針）を同じ日に追記した（「波 5 `has_permission` の aal2 と会員の表の方針の移行 M2」の節）。**M2 も 2026-10-29 に本番へ単独で適用済み**（オーナーの決定。G-1 の次の適用より前。`npx supabase db push --linked`、dry-run は M2 の 1 本だけ）。
@@ -356,6 +358,35 @@ M1・M2 を `supabase/migrations` に置いて `npm run db:reset` が通り（�
 - 本番の GoTrue の `auth.sessions` の `not_after`（time-box）の設定。短いと再ログインが増える。
 - `auth.sessions` の主キー引きの性能。aal1 は表を引かずに false、aal2 の管理者だけが 2 回の主キー引き。`get_advisors`（performance）と管理画面の一覧（注文・会計）の応答時間を適用の前後で比べる。重ければ Custom Access Token Hook を上乗せする。
 - 会員の 2 段（パスワード＋メールの OTP）は NIST SP 800-63B の AAL2 ではなくアプリ独自の方針（メールは out-of-band に使えない）。AAL2 にあたるのは管理者の TOTP。パスワードとメールの受信箱の両方を盗まれた場合は破れる。
+
+## 波 6 パスワード変更の確認コードの移行 M3（手元で適用済み・本番未適用）
+
+確認日: 2026-11-01。**状態: 手元は 2026-11-01 の `npm run db:reset` で適用済み。本番は未適用（本番の最新は `20261029130600`）。** 本番へは波 6 の Task 11 で、G-1 に知らせてから `npx supabase db push --linked`（オーナーの許可つき）で当てる。ファイルは [20261101120000_sec_password_change_challenges.sql](../../supabase/migrations/20261101120000_sec_password_change_challenges.sql)（14,366 bytes・LF・BOMなし・MD5 `92d7d33f84d56bc44e59be4568cc0314`。計画 `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md` の Task 4、ADR-0421、DATA-AUTH-009・010）。既存の挙動は変えない（表 1 つ・関数 2 つを足すだけ）。
+
+足すもの:
+
+| 物 | 内容 |
+| --- | --- |
+| 表 `public.password_change_challenges` | 8 列（`id`・`user_id`〔`auth.users` への外部キー、`ON DELETE CASCADE`〕・`auth_session_id`・`code_hash`〔鍵つきハッシュの hex 64 桁。平文のコードは置かない〕・`attempts`・`expires_at`・`used_at`・`created_at`）。部分索引 `password_change_challenges_open_idx`（`user_id`、`used_at IS NULL`）。RLS 有効、方針 3 本（anon・authenticated は全拒否、service_role は全許可。`password_reset_tokens` と同じ形）。`REVOKE ALL FROM PUBLIC, anon, authenticated`、`GRANT SELECT, INSERT, UPDATE, DELETE TO service_role` |
+| `public.issue_password_change_challenge(uuid, uuid, text, integer)` | 利用者・認証 session・ハッシュ・TTL（60〜900 秒）。引数が空・TTL が範囲外・ハッシュが hex 64 桁でない時は 22023。取引内の助言ロックで利用者ごとに直列化し、未使用の行を全部 `used_at = now()` にして、1 日より古い行を消し、新しい行を入れて id を返す |
+| `public.consume_password_change_challenge(uuid, uuid, text)` | 利用者・認証 session・ハッシュ。未使用・期限内の最新の行を `FOR UPDATE` で取り、`none`（行なし・別 session）／`locked`（`attempts` が 5 以上。正しいコードでも拒否）／`ok`（`used_at` を立てる）／`invalid`（`attempts` + 1）を返す。行ロックなので並列の推測でも `attempts` は 5 を超えない |
+
+関数 2 本とも SECURITY DEFINER・`search_path ''`・所有者 postgres・PUBLIC／anon／authenticated から REVOKE・EXECUTE は service_role だけ。末尾の自己検査（失敗は `SEC_WAVE6_MIGRATION_ASSERTION_FAILED`、55000。全体が戻る）が列・索引・RLS・方針・権限・関数の属性と ACL を確かめる。最後に `NOTIFY pgrst, 'reload schema'` を 1 回。表は冪等にしない（想定外の既存の表があれば移行を落とす）。
+
+### 当てる順序
+
+1. 本番の事前の読み取り（読むだけ）: `select max(version) from supabase_migrations.schema_migrations`（`20261029130600` かそれ以降）、`select to_regclass('public.password_change_challenges')` が null、2 関数が無いこと。
+2. G-1（別セッション）に知らせる。`npx supabase db push --linked --dry-run` が M3 の 1 本だけを示すことを確かめる。
+3. **窓口（`POST /api/auth/password/change/start`・`confirm`）と画面（`/account/password`）を本番で動かす前に当てる。** 窓口より先に当てても安全（呼ぶ物が無い）。M3 が無い DB で `start` を叩くと関数が無く 500（`issue_failed`）になる。
+4. 事後（読むだけ）: 当てた文を `schema_migrations` の `md5(statements[1])` でファイルと突き合わせる（空白と `;` を除いて比べる）。表・索引・関数 2 本・ACL が上の表のとおり、anon・authenticated から表も関数も呼べないこと、`get_advisors`（security）に新しい項目が無いこと。
+
+### 失敗したとき・戻すとき
+
+末尾の自己検査が落ちれば取引ごと戻り、台帳にも残らない。当てた後に戻すなら、窓口と画面を止めてから、ファイルのヘッダーの `ROLLBACK`（関数 2 本と表を `DROP`。`consume`→`issue`→表の順）を流す。コードの表は一時的な物（10 分で期限切れ）で、戻して失うのは未使用のコードだけ。
+
+### 手元の確かめ（2026-11-01 に実測済み）
+
+`npm run db:reset` が通り（末尾の自己検査が出ない）、`tests/integration/db` を含む DB 結合の全体は 161 suites 通過・13 skipped・4715 件通過・0 失敗。M3 の専用の結合試験は `tests/integration/db/auth_password_change_challenges.integration.test.ts`、権限の棚卸しは `auth_grants_inventory.integration.test.ts`（表 1・関数 2 の行を足した）。
 
 ## ベースライン化（初回のみ・要 Docker と DB パスワード）
 
@@ -1196,7 +1227,7 @@ controller手順: H7未適用DBの新しい取消テストでRED→取引内で�
 
 ## グループH 本番適用の記録（H1〜H7、2026-11-01）
 
-確認日: 2026-11-01。**本番適用済み（2026-11-01 14:35 頃 JST。オーナーの承認の後、controller が `npx supabase db push --linked`）。** 先の dry-run は H1〜H7 の7本だけを示した（別セッションの波 6 の M3 は `supabase/pending-wave6/` にあり送られない）。当てる前に7本のファイルの MD5 が上の各節と同じことを確かめた。
+確認日: 2026-11-01。**本番適用済み（2026-11-01 14:35 頃 JST。オーナーの承認の後、controller が `npx supabase db push --linked`）。** 先の dry-run は H1〜H7 の7本だけを示した（別セッションの波 6 の M3 は当時 `supabase/pending-wave6/` にあり送られなかった。M3 は今は `supabase/migrations/20261101120000_sec_password_change_challenges.sql` で、手元は適用済み・本番は未適用）。当てる前に7本のファイルの MD5 が上の各節と同じことを確かめた。
 
 | 確かめ（本番、読むだけ・件数だけ） | 適用前 | 適用後 |
 | --- | --- | --- |

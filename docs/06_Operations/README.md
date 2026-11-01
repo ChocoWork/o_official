@@ -9,6 +9,7 @@
 | `docs/06_Operations/deployment-topology.md` | コードから確認できる外部連携と未確認事項 | 本番配置を断定しない |
 | `docs/06_Operations/db-migrations.md` | Supabase CLI による DB 変更と台帳管理 | 対象プロジェクトと適用履歴を確認する |
 | `docs/06_Operations/secrets.md` | 秘密値の管理、Stripe 同期 | 値そのものは文書に記録しない |
+| [Supabase Auth の設定](supabase-auth-config.md) | 本番の Supabase Auth の目標の値（確認メール必須・captcha・最小長 16・OTP 300 秒・TOTP ほか）、段階 A・B の手順、戻し方、手で変える項目 | 手元は 2026-11-01 に切り替え済み、本番は未反映。Management API の変更は一つずつ許可を得て行う |
 | `docs/06_Operations/webhook-queue-operations.md` | Stripe の知らせのキューと定期処理（開店のときの順番・合言葉の入れ替え・知らせが届いたときの調べ方） | 本番は読むだけの SQL で確かめる |
 | [注文のメールの手順書](order-email-operations.md) | 注文のメールの送信・やり直し・一時停止・配達の見回り・店への知らせ | 環境の門、24時間の重複防止、読み取り権限を公開前に確かめる |
 | [割引の手順書](group-h-discounts.md) | 共有・1人用コードの作成、編集、停止・再開、使用回数、要対応の確認 | 未入金で終了した注文は回数を戻し、入金後は返金しても戻さない |

@@ -1,5 +1,7 @@
 # 配置構成
 
+> 状態: 現行（本番は未デプロイ） | 確認日: 2026-11-01 | 対象: 本番の構成と設定の正本の置き場、Supabase Auth の設定の順序
+
 ## 概要
 
 この図はリポジトリのコードとワークフローから確認できる連携経路を表す。アプリの本番ホスティング先、実際の環境変数、外部サービスの契約・稼働状態、ジョブの登録状況はこのリポジトリだけでは確認できない。`README.md` には Vercel デプロイ時の注意があるが、現在の配置先を確定する証拠ではない。
@@ -35,7 +37,8 @@ flowchart LR
 | --- | --- |
 | DB マイグレーションと台帳 | `docs/06_Operations/db-migrations.md`、`.github/workflows/db-migrations.yml` |
 | シークレットと Stripe 同期 | `docs/06_Operations/secrets.md`、`docs/06_Operations/webhook-queue-operations.md`、`README.md` |
-| 本番ビルドの前に要る環境変数 | `NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_SUPABASE_URL` は Vercel の Production に**ビルドの前**に設定する。無い、または `SUPABASE_URL` と別の origin だとビルドが落ちる（`next.config.ts` の `assertBuildEnv`、`ADR-0206`）。詳しくは `docs/06_Operations/secrets.md` の「ビルドの前に要る環境変数」。`VERCEL_ENV=production` の配備だけが対象で、実際の設定は未確認 |
+| 本番の Supabase Auth の設定 | `docs/06_Operations/supabase-auth-config.md`（目標の値・段階 A／B の手順・戻し方。正本は本番の Management API／ダッシュボード。下の節） |
+| 本番ビルドの前に要る環境変数 | `NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_SUPABASE_URL`・`APP_ALLOWED_ORIGINS` は Vercel の Production に**ビルドの前**に設定する。無い、または `NEXT_PUBLIC_SUPABASE_URL` が `SUPABASE_URL` と別の origin だとビルドが落ちる（`next.config.ts` の `assertBuildEnv`、`ADR-0206`、`APP_ALLOWED_ORIGINS` は SEC-ABOUT-007-AC-02）。詳しくは `docs/06_Operations/secrets.md` の「ビルドの前に要る環境変数」。`VERCEL_ENV=production` の配備だけが対象で、実際の設定は未確認 |
 | 注文証憑の保存・復元確認 | `docs/06_Operations/legal-archive.md` |
 | KPI 旧セットアップ手順 | `docs/06_Operations/kpi-migration-setup.md`。対象環境と現行 DB 手順との整合を確認してから使用する |
 
@@ -57,5 +60,15 @@ flowchart LR
 | E2E | E2E の固定の環境（`E2E_FIXED_ENV`）が `AUTH_REQUIRE_APP_SESSION=on` を入れる。混ぜる場所と見張りは `CLIENT_IP_HEADER` と同じ（`buildE2EOverrides` の中だけ。旗の専用の見張りは足さない）。詳しくは[シークレット管理方針](secrets.md)の `AUTH_REQUIRE_APP_SESSION` |
 | 配備の順 | 移行 M1（列と関数）→ アプリのコード → 全員が再ログイン → 移行 M2（DB の `has_permission` と会員の表の方針）。M2 を先に当てると、結び付いていない session の通行証は PostgREST で 0 行になる |
 | 状態 | 本番は未デプロイ。旗を外した配備の手順は未確認 |
+
+## Supabase Auth の設定の正本（2026-11-01、ADR-0420・ADR-0421）
+
+| 項目 | 内容 |
+| --- | --- |
+| 正本 | 本番の Supabase Auth の設定（確認メール・OTP の期限・最小長・captcha・パスワード変更の再認証・変更通知・TOTP）は、リポジトリの `supabase/config.toml` ではなく、**本番の Management API（`PATCH /v1/projects/{ref}/config/auth`）とダッシュボードが正**。`config.toml` は手元の Supabase の設定で、本番へは自動で届かない |
+| `supabase config push` | 流さない。手元の `config.toml` の全体を本番へ押し出し、`site_url` や captcha の秘密、本番だけの値を上書きする。本番は項目を指定した Management API の `PATCH` で変える |
+| 変える前 | 必ず今の値を読んで控える。目標の値、手順、戻し方、3 回試して通らない時のダッシュボードの手順は[本番の Supabase Auth の設定](supabase-auth-config.md) |
+| 順序 | アプリのコード（認証の呼び出しが service role の鍵に変わった版）→ 確認メールの戻り先が Site URL／Redirect URLs に当たることの確認 → 段階 A（captcha 以外。確認メールの雛形は `mailer_autoconfirm: false` と同じ `PATCH` か、その前）→ 段階 B（captcha）。先に captcha をオンにすると、service role の呼び出しに変わっていないアプリのログインが止まる。普段の開発は本番の Supabase につながるので、同じ順序を守る |
+| 状態 | 本番の Auth の現在値は未読。本番は未デプロイ |
 
 本番構成を確定する際は、ホスティング管理画面、GitHub Actions 実行履歴、Supabase の migration・cron・Storage の状態、Stripe の Webhook 設定、メール提供元の設定を別途照合する。

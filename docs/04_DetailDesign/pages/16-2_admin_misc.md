@@ -1,6 +1,6 @@
 # 1.16-2 管理のそのほか（ADMIN）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-28 | 対象: 利用者の作成の画面と窓口・セッションの強制失効・監査ログの読み出しと掃除・2要素のリセット・問い合わせの管理の窓口・返信の宛先の部品・商品の色見本の窓口 | 基準コミット: `4facf63b`
+> 状態: 推定 | 確認日: 2026-11-01 | 対象: 利用者の作成の画面と窓口・セッションの強制失効・監査ログの読み出しと掃除・2要素のリセット・問い合わせの管理の窓口・返信の宛先の部品・商品の色見本の窓口 | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -107,7 +107,7 @@
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SCR-ADMIN-001、ARC-ADMIN-002 |
-| 根拠 | 店長がその場でアカウントを用意する画面（SCR-ADMIN-001）。会員登録と同じ 16 文字の決まりを送る前に見せて、短い入力を早く直せるようにする（窓口も同じ 16〜128 字と漏洩の照合を当てる）。画面は守りを持たず、作れるかは窓口の認可で決まる。送る時は CSRF の印を付けず、proxy の Origin の照合に任せる（ARC-ADMIN-002） |
+| 根拠 | 店長がその場でアカウントを用意する画面（SCR-ADMIN-001）。会員登録と同じ 16 文字の決まりを送る前に見せて、短い入力を早く直せるようにする（窓口も同じ 16〜128 字〔UTF-8 で 72 バイト以内〕と漏洩の照合を当てる）。画面は守りを持たず、作れるかは窓口の認可で決まる。送る時は CSRF の印を付けず、proxy の Origin の照合に任せる（ARC-ADMIN-002） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/admin/create-user/page.tsx`）、`docs/03_BasicDesign/ui/screen-list.md` |
@@ -134,7 +134,7 @@
 | 条件 | 動き |
 | --- | --- |
 | メールが空、またはパスワードが空 | 「メールとパスワードを入力してください」を出し、送らない |
-| パスワードが 16 文字未満 | 「パスワードは16文字以上にしてください」を出し、送らない。窓口も同じ 16〜128 字と漏洩の照合を当てるので、窓口を直に呼んでも短いパスワードでは作れない（SEC-ADMIN-012） |
+| パスワードが 16 文字未満 | 「パスワードは16文字以上にしてください」を出し、送らない。窓口も同じ 16〜128 字（UTF-8 で 72 バイト以内。画面は 72 バイトを見ず、超えると窓口の 400）と漏洩の照合を当てるので、窓口を直に呼んでも短いパスワードでは作れない（SEC-ADMIN-012） |
 | 201 でない | 応答の `error`（英語の固定の文。例 `Email already registered`・`Forbidden`）を出す。本文が読めない・`error` が無ければ「作成に失敗しました」（TM-ADMIN-28） |
 | 通信の例外 | 記録して「ネットワークエラーが発生しました」 |
 
@@ -168,7 +168,7 @@
 
 | 向き | 中身 |
 | --- | --- |
-| 入力 | POST。JSON `{email, password, display_name?}`。`email` はメールの形、`password` は 16〜128 字（`passwordSchema`）、`display_name` は任意で前後の空白を除いて 100 字まで |
+| 入力 | POST。JSON `{email, password, display_name?}`。`email` はメールの形、`password` は 16〜128 字かつ UTF-8 で 72 バイト以内（`passwordSchema`）、`display_name` は任意で前後の空白を除いて 100 字まで |
 | 出力 | 201 `{id, email}`、400 `{error:'Invalid request'}` か `{error:<漏洩したパスワードの固定の文>}`、409 `{error:'Email already registered'}`、429、500 `{error:'Failed to create user'}` か `{error:'Internal server error'}` |
 
 **正常フロー:**（`src/app/api/admin/create-user/route.ts`）
@@ -177,7 +177,7 @@
 2. 認可を通った管理者の id を鍵にして 20 回 / 10 分で数える。超えたら 429（本文は読まない）
 3. 本文を JSON で読み（壊れていれば `null` として扱う）、形を確かめる
 4. パスワードを漏洩の照合（`checkPwnedPassword`）にかける。漏れていれば作らない（異常フロー）。照合が使えなければ監査に残して先へ進む
-5. service role の client で Auth の管理の機能に利用者を作らせる。表示名は利用者の付帯の情報（`user_metadata.display_name`）に入れる。確認済みの印は渡さず、役割も付けない
+5. service role の client で Auth の管理の機能に利用者を作らせる。表示名は利用者の付帯の情報（`user_metadata.display_name`）に入れる。メールは確認済みで作り（`email_confirm: true`。店長がメールを請け合う。付けないと Confirm email が有効な設定で `/token` が `email_not_confirmed` になり、その会員が一度もログインできない。2026-11-01、最終レビュー指摘 1）、役割は付けない
 6. 監査に結果 `success` と作った利用者の id を書き、201 で id とメールを返す。作った結果に利用者が無ければ id とメールは空になる（結果の利用者への省略可能な参照）
 
 **異常フロー:**
@@ -186,7 +186,7 @@
 | --- | --- |
 | 認可の失敗 | 認可の応答をそのまま返す。監査は書かない |
 | 回数の超過 | 限度器の応答（429。限度器が壊れていれば 503）をそのまま返す。作らず、監査も書かない |
-| 本文の JSON が壊れている・形が合わない（パスワードが 16 字未満か 128 字超、表示名が 100 字超を含む） | 監査に結果 `failure`・`Invalid request body` を書き、400。漏洩の照合も作成も呼ばない |
+| 本文の JSON が壊れている・形が合わない（パスワードが 16 字未満か 128 字超か UTF-8 で 72 バイト超、表示名が 100 字超を含む） | 監査に結果 `failure`・`Invalid request body` を書き、400。漏洩の照合も作成も呼ばない |
 | 漏洩したパスワード | 監査に結果 `failure`・`pwned_password` を書き、400（本文は会員登録と同じ固定の文）。作らない |
 | 漏洩の照合が使えない（外の API の時間切れなど） | 監査に結果 `error`・`pwned_check_unavailable:<符号>` を書き、作成へ進む（fail-open） |
 | 作成の誤りで、誤りの文に `already` か `duplicate` を含む（大文字小文字を問わない） | 監査に結果 `conflict`・`email_already_registered`、409。誤りの文は監査に入れず `console.error` へ |
@@ -195,18 +195,19 @@
 
 **状態・永続化:** 書くのは Supabase Auth の利用者（`auth.users`）と `audit_logs` の1行。監査には全部の結果の行に、操作した人のメールと、送り元の IP・ブラウザの名乗りを入れる（ARC-ADMIN-003、ADR-0462。SEC-ADMIN-022）。`detail` は固定の符号のまま（ADR-0461 の流儀）。
 
-**認証認可:** `admin.users.manage`（店長に固定。DATA-ADMIN-006）と aal2。CSRF は proxy の Origin の照合だけ。パスワードは 16〜128 字と漏洩の照合を求める（SEC-ADMIN-012）。回数は認可を通った管理者の id だけを鍵にして数える（SEC-ADMIN-006）。
+**認証認可:** `admin.users.manage`（店長に固定。DATA-ADMIN-006）と aal2。CSRF は proxy の Origin の照合だけ。パスワードは 16〜128 字（UTF-8 で 72 バイト以内）と漏洩の照合を求める（SEC-ADMIN-012）。回数は認可を通った管理者の id だけを鍵にして数える（SEC-ADMIN-006）。
 
 **テスト観点:**（`tests/unit/api/admin/create-user-route.test.ts`）
 
 - 認可が `ok:false` の時は認可の応答を返し、Auth の機能も監査も呼ばない
 - 本文が JSON でない時は 400 で、監査に `failure`（500 にしない）
 - 回数の枠が認可の直後に `{endpoint:'admin:users:create', limit:20, windowSeconds:600, subject:<管理者の id>}` で呼ばれる。超えたら 429 を返して作らない。認可で断った要求は数えない
-- メールの形でない・パスワードが 15 字の時は 400 で、監査に `failure`、漏洩の照合も作成も呼ばない。16 字と 128 字は通り、129 字は 400
+- メールの形でない・パスワードが 15 字の時は 400 で、監査に `failure`、漏洩の照合も作成も呼ばない。16 字と 72 バイト（ASCII の 72 字）は通り、73 バイトは 400（Supabase Auth の上限。128 字ちょうどの ASCII は 72 バイトを超えるので 400）
 - 漏洩したパスワードは 400（固定の文）で、作らず、監査に `pwned_password`（パスワードを含まない）。照合が使えない時は作成へ進み、監査に `pwned_check_unavailable:timeout`
 - 表示名が 101 字の時は 400、前後に空白のある 100 字は切り詰めて通す
 - 作成が成功した時は 201 `{id, email}` で、監査に `success` と id。作成の結果に利用者が無い時も 201 で id とメールが空
-- 表示名を渡すと `user_metadata.display_name` に入る
+- 表示名を渡すと `user_metadata.display_name` に入る。表示名を省いた時は `display_name` が空のまま渡る
+- 作成の呼び出しに `email_confirm: true` が付く（確認が必須の設定でも、その会員がログインできる。2026-11-01、最終レビュー指摘 1）
 - 誤りの文が `User already registered` の時と `duplicate key` の時は 409 で、監査に `conflict`・`email_already_registered`。誤りの文もメールも監査に入らない
 - 誤りの文がほかの時と空の時は 500 `Failed to create user` で、監査に `error`・`create_user_failed`。誤りの文もメールも監査に入らない
 - `createServiceRoleClient` が例外を投げた時は 500 `Internal server error`

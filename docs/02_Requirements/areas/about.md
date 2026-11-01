@@ -1,6 +1,6 @@
 # ABOUT の要件
 
-> 状態: 推定 | 確認日: 2026-10-28 | 対象: ABOUT（アバウトページ `/about`） | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-11-01 | 対象: ABOUT（アバウトページ `/about`） | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -13,7 +13,7 @@ ABOUT の領域の要求・要件・受け入れ条件・派生要件を、追�
 | 要件 | 8 | `FR-ABOUT-001`〜`008` |
 | 受け入れ条件 | 11 | 新しい `FR-ABOUT-NNN-AC-NN` |
 | 派生要件 | 5 | `DRV-ABOUT-001`〜`005` |
-| セキュリティ要件 | 7 | 新しい `SEC-ABOUT-001`〜`007`（上位は `docs/05_Quality/security/threats/about.md` の `THR-ABOUT-001`〜`006`）と、その受け入れ条件10件 `SEC-ABOUT-NNN-AC-NN` |
+| セキュリティ要件 | 7 | 新しい `SEC-ABOUT-001`〜`007`（上位は `docs/05_Quality/security/threats/about.md` の `THR-ABOUT-001`〜`006`）と、その受け入れ条件11件 `SEC-ABOUT-NNN-AC-NN` |
 
 - 状態: 全部「推定」。FR-ABOUT-001〜004 は 2026-08-13 の決定（今の画面を仕様とする）で今の画面に合わせた文だが、決定の理由は出どころに書かれておらず、ユーザーの承認の記録も見つからないので「推定」にした。コードと合わない要件（005〜007）、コードは満たすが E2E の前提（画像が1枚以上ある）と画像を置くかどうかが決まっていない要件（008）、新しく起こした項目、実装から読み取った項目も「推定」。どちらが正しいかは決めず、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節（`TM-ABOUT-`）に載せた
 - 結論: 今の画面は文章と余白だけで、h1・画像・アイコン・CONTACT への導線が無い。h1（FR-ABOUT-005）、CONTACT の CTA（FR-ABOUT-006）、アイコンと画像（FR-ABOUT-007・008）を残すか廃止するかは、ユーザーに決めてもらう
@@ -56,7 +56,7 @@ ABOUT の領域の要求・要件・受け入れ条件・派生要件を、追�
 | FR-ABOUT-010-security-http-contract | SEC-ABOUT-001-AC-02・002-AC-01・003-AC-01・003-AC-02・004-AC-01・004-AC-02・005-AC-01（HTTP だけ。幅に依らない） | SEC-ABOUT-003-AC-01・AC-02 は 2026-10-28 に直した（AC-02 の E2E の印は外した。E2E での実測の結果はまだ無い） |
 
 - 3つの幅（390・768・1280）で試すのは 004 と 009。010 は HTTP の応答だけを見るので幅の繰り返しは無い。ほかは desktop だけ
-- E2E で試さない受け入れ条件は SEC-ABOUT-006-AC-01・SEC-ABOUT-007-AC-01。前者は Supabase に届かない状態、後者は環境変数を外してビルドし直した状態が要り、共有の E2E の実行では作れない。代わりに単体テスト（`src/app/about/page.tsx` が読み出しを持たないこと、SEC-ABOUT-007-AC-01 は `tests/unit/lib/build-env-guard.test.ts` の `assertBuildEnv` と `tests/unit/next-config.test.ts` の読み込み。2026-10-28 に付けた）で確かめる
+- E2E で試さない受け入れ条件は SEC-ABOUT-006-AC-01・SEC-ABOUT-007-AC-01・SEC-ABOUT-007-AC-02。前者は Supabase に届かない状態、後ろ 2 つは環境変数を外してビルドし直した状態が要り、共有の E2E の実行では作れない。代わりに単体テスト（`src/app/about/page.tsx` が読み出しを持たないこと、SEC-ABOUT-007-AC-01・AC-02 は `tests/unit/lib/build-env-guard.test.ts` の `assertBuildEnv` と `tests/unit/next-config.test.ts` の読み込み。AC-01 は 2026-10-28、AC-02 は 2026-11-01 に付けた）で確かめる
 - 派生要件 `DRV-ABOUT-` の動きを試す E2E は無い
 
 ## 要求
@@ -554,7 +554,7 @@ Cookie を持たない要求で `/about` を要求した時、`Cache-Control` �
 
 サイトの URL の環境変数が1つも無い時に、`og:image` の絶対の URL の基点が黙って `http://localhost:3000` にならない（警告を出す、または本番では起動を止める）。`NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_BASE_URL`・`BASE_URL` が無く `NEXT_PUBLIC_VERCEL_URL` だけがある時も、基点がデプロイごとの `*.vercel.app` にならない。
 
-今のコードは満たす（2026-10-28 に直した）。本番のビルド（`VERCEL_ENV=production`）は、`NEXT_PUBLIC_SITE_URL` と `NEXT_PUBLIC_SUPABASE_URL` のどちらかが無ければ `next.config.ts` の先頭の確かめ `assertBuildEnv`（`src/lib/build-env-guard.ts`）がビルドを落とす（`ADR-0206`、`DD-ABOUT-002`）。本番は `NEXT_PUBLIC_SITE_URL` が必ず在るので、`getSiteUrl`（`src/lib/redirect.ts`）はそれを最初に読み、手元の URL や `NEXT_PUBLIC_VERCEL_URL` には落ちない。`getSiteUrl` 自体は変えていない（`VERCEL_ENV` が production でない手元・preview・E2E の本番ビルドは、無ければ従来どおり既定の手元の URL になる。`NODE_ENV` で見ると E2E の本番ビルドも止まるので使わない）。`NEXT_PUBLIC_VERCEL_URL` の読み方を直すかは別の判断（設計 R9-6）。同じ確かめが、`NEXT_PUBLIC_SUPABASE_URL` と `SUPABASE_URL` が別の origin を指す設定も、環境に依らず落とす（署名つきの画像の host と、CSP・`remotePatterns` が許す host を 1 つに揃えるため。SEC-HOME-017、`ADR-0316`）。本番のアプリは未デプロイで、初回の配備の前に Vercel の Production に 2 変数を設定する（`docs/06_Operations/secrets.md`）。
+今のコードは満たす（2026-10-28 に直した。2026-11-01 に許可オリジン `APP_ALLOWED_ORIGINS` も必須に足した。SEC-ABOUT-007-AC-02）。本番のビルド（`VERCEL_ENV=production`）は、`NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_SUPABASE_URL`・`APP_ALLOWED_ORIGINS` のどれかが無ければ `next.config.ts` の先頭の確かめ `assertBuildEnv`（`src/lib/build-env-guard.ts`）がビルドを落とす（`ADR-0206`、`DD-ABOUT-002`）。本番は `NEXT_PUBLIC_SITE_URL` が必ず在るので、`getSiteUrl`（`src/lib/redirect.ts`）はそれを最初に読み、手元の URL や `NEXT_PUBLIC_VERCEL_URL` には落ちない。`getSiteUrl` 自体は変えていない（`VERCEL_ENV` が production でない手元・preview・E2E の本番ビルドは、無ければ従来どおり既定の手元の URL になる。`NODE_ENV` で見ると E2E の本番ビルドも止まるので使わない）。`NEXT_PUBLIC_VERCEL_URL` の読み方を直すかは別の判断（設計 R9-6）。同じ確かめが、`NEXT_PUBLIC_SUPABASE_URL` と `SUPABASE_URL` が別の origin を指す設定も、環境に依らず落とす（署名つきの画像の host と、CSP・`remotePatterns` が許す host を 1 つに揃えるため。SEC-HOME-017、`ADR-0316`）。本番のアプリは未デプロイで、初回の配備の前に Vercel の Production に 3 変数を設定する（`docs/06_Operations/secrets.md`）。
 
 #### SEC-ABOUT-007-AC-01 設定が無い時に OG の URL が手元の URL にならない
 
@@ -569,6 +569,18 @@ Cookie を持たない要求で `/about` を要求した時、`Cache-Control` �
 サイトの URL の環境変数を1つも設定せずに本番のビルド（`VERCEL_ENV=production`）をした時、ビルドが `NEXT_PUBLIC_SITE_URL` を名指しして落ちること（落とす文に URL の値を載せない）。`NEXT_PUBLIC_SUPABASE_URL` が無い時も同じく落ちること。2 つとも設定した時と、`VERCEL_ENV` が production でない時（`NODE_ENV=production` だけの E2E の本番ビルドを含む）は落ちないこと。本番で設定した本番のドメインを与えて起動した時は、`og:image` の URL のホストがそのドメインと同じであること。
 
 判断: 起動の時点の警告でなくビルドを落とす（`ADR-0206`）。最初の試験は 2026-10-28 に単体で付けた（`DD-ABOUT-002`）。E2E の `og:image` のホストの確かめ（上の最後の文）は、共有の E2E の実行では環境変数を外してビルドし直せないので付けていない。
+
+#### SEC-ABOUT-007-AC-02 許可オリジンの設定が無い本番のビルドは落ちる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-ABOUT-007 |
+| 根拠 | Origin の確かめ（SEC-LOOK-018）の許可の一覧を、本番で明示させるため（www と apex など複数のオリジンを含められる）。2026-10-31 のユーザーの決定。`NEXT_PUBLIC_SITE_URL` が必須なので proxy の退避（要求由来の値で比べる）は本番では元から起きず、退避の防止が理由ではない |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（E2E は不可。環境変数を外してビルドし直す状態は共有の E2E の実行では作れない。`tests/unit/lib/build-env-guard.test.ts` が `assertBuildEnv` に環境変数を与え、`tests/unit/next-config.test.ts` が `next.config.ts` の読み込みで落ちることを見る） |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`（2026-10-31 のユーザーの答え）。設計 R17・§6 |
+
+本番のビルド（`VERCEL_ENV=production`）で `APP_ALLOWED_ORIGINS` が無い・空白だけの時、ビルドがその変数名を名指しして落ちること（落とす文にほかの変数の値を載せない）。値がある時も、カンマで分けた各項目が空でなく、`new URL()` で読め、`https:` で、`origin` と一致する形（末尾の `/` もパスも無い）でなければ、同じく変数名だけを書いて落ちること（`example.com`・`,`・`http://…`・`https://…/` など。`redirect.ts` の `parseAllowedOrigins` は読めない項目を黙って捨てるので、書き間違いで許可から落ちても実行時に気付けないため。最終レビュー指摘 7、2026-11-01）。3 変数が正しい形で在る時と、`VERCEL_ENV` が production でない時（`NODE_ENV=production` だけの E2E の本番ビルドを含む）は落ちないこと。`proxy.ts`・`redirect.ts` の読み方は変えない。
 
 ## 派生要件
 

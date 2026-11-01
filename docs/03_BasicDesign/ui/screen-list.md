@@ -1,5 +1,7 @@
 # 画面一覧
 
+> 波 6 確認日: 2026-11-01。パスワード変更の画面 `/account/password` の1ルートを追加し、`src/app/**/page.tsx` は51件になった（顧客向け18・認証・アカウント9・管理・開発補助24）。`/account` のお客様情報のタブに「パスワードを変更」のリンクを足した。本文の「47件」は50件の時点から数え直していなかったので、この行で51件に直した。実測（390/768/1280px）は E2E（`FR-ACCOUNT-046`）が3幅で確かめる。
+>
 > H Task 5 確認日: 2026-10-29。割引の管理画面で3ルート（`/admin/discounts/new`・`/admin/discounts/[id]`・`/admin/discounts/[id]/edit`）を追加し、`src/app/**/page.tsx` は50件になった（顧客向け18・認証・アカウント8・管理・開発補助24）。`/admin` に DISCOUNT タブを CONTACT の直後に足した（adminは13タブ、supporterは5タブ）。実測（390/768/1280px・E2E）はcontroller担当で未実行。
 
 > 波 4 確認日: 2026-10-28。画面ルートの数は変えない（47件）。`/admin` に CONTACT タブを足し（adminは12タブ、supporterは4タブ）、LOOK の「新規作成」を役でなく権限（`meta.canManage`）で一覧が出す形にした。`/admin/stockist/create` は開いた時に `GET /api/admin/stockists/access` で権限を確かめてからフォームを出す。実測（390/768/1280px・E2E）は controller の本番ビルドの実行待ち。
@@ -39,7 +41,7 @@
 | `/terms` | 利用規約 | 規約本文を表示。ページ固有のルートリンクなし | [page.tsx](../../../src/app/terms/page.tsx) |
 | `/legal` | 法定表記 | お問い合わせへのリンク | [page.tsx](../../../src/app/legal/page.tsx) |
 
-## 認証・アカウント画面（8ルート）
+## 認証・アカウント画面（9ルート）
 
 | パス | 画面・役割 | 導線・同一画面内の状態 | 実装 |
 | --- | --- | --- | --- |
@@ -49,6 +51,7 @@
 | `/auth/password-reset` | パスワード再設定 | メール送信、リンクエラー、新パスワード入力、更新完了を同画面に表示。送信・更新完了からログインへ。errorクエリは案内後に除去 | [page.tsx](../../../src/app/auth/password-reset/page.tsx) |
 | `/auth/password-reset/verify` | 再設定リンク確認 | `token` をPOSTで確認し再設定画面へ。token不在・確認失敗もエラー付き再設定URLへ。通信例外では同画面の再試行とログイン案内 | [page.tsx](../../../src/app/auth/password-reset/verify/page.tsx) |
 | `/account` | アカウント情報 | プロフィール・配送先・注文・問い合わせの4タブ。注文詳細へ移動。未ログインは案内リンク、ログアウト成功はホームへ。各編集・返信は同画面 | [page.tsx](../../../src/app/account/page.tsx) |
+| `/account/password` | パスワード変更（波 6 / SEC-AUTH-034） | `/account` のお客様情報のタブのリンクから開く2段（1 現行パスワード → 確認コードをメールに送る、2 8桁のコードと新しいパスワード〔16文字以上・UTF-8で72バイト以内〕）。成功すると全端末の session が失効するので、ログインの状態を引き直して `/login` へ。段1に Google だけの会員向けの案内と `/auth/password-reset` へのリンクを固定で出す。未ログインは案内だけを出し、戻り先つきの `/login` へ。`robots: noindex` | [page.tsx](../../../src/app/account/password/page.tsx)、[フォーム](../../../src/app/account/password/PasswordChangeForm.tsx) |
 | `/account/orders/[id]` | 注文詳細 | 自分の注文を取得し、`/account?tab=orders` に戻る。お問い合わせ、条件付き外部配送追跡へ。再度購入はカート追加後も同画面。商品行の予約注文分岐は下の補足を参照。未ログインは案内リンク | [[id]/page.tsx](../../../src/app/account/orders/%5Bid%5D/page.tsx) |
 | `/account/orders/[id]/return` | 返品・交換のお申し込み | 注文詳細の「返品・交換を申し込む」から開く3段（商品を選ぶ・内容を確かめる・お申し込みの受付）。受付の状態が closed・ended・none の注文は文と「注文の画面に戻る」だけ。未ログインは案内リンク。受け付けた段から注文詳細へ戻れる | [return/page.tsx](../../../src/app/account/orders/%5Bid%5D/return/page.tsx) |
 
@@ -92,7 +95,7 @@
 | 顧客向け18ルート、`/ui` | ログインを必須にするページ表示ガードなし。カート・購入はゲストにも提供 | データ取得・入力検証・決済可否は各APIで判断する。空カートのcheckoutは同じURLに案内を表示 |
 | `/login`・`/login/verify` | 検証待ちCookieの有無・有効性でOTP確認への移動／ログインへの戻りを判断 | メール・パスワードの検証とOTPの検証はAPIで実行する |
 | `/auth/verified` | 未認証は同じURLの案内、一般利用者はアカウントへ、特権ロールはTOTP確認へ | MFA済みの特権ロールは管理へ直行する。未認証案内のリンクは利用者が押して移動する |
-| `/account`・注文詳細 | 認証確認中は読込、未ログインは同じURLのログイン案内。ロール限定なし | [注文詳細API](../../../src/app/api/orders/%5Bid%5D/route.ts)は認証と注文所有者の一致を確認する |
+| `/account`・注文詳細・`/account/password` | 認証確認中は読込、未ログインは同じURLのログイン案内（`/account/password` は戻り先つきの `/login` へ送る案内）。ロール限定なし | [注文詳細API](../../../src/app/api/orders/%5Bid%5D/route.ts)は認証と注文所有者の一致を確認する |
 | `/admin` | 認証確認中は読込。未ログイン・admin/supporter以外は権限なし。MFA未確認は2要素認証案内。いずれも同じURLに留まる | ロールで表示タブ・操作候補が変わり、操作APIでも認可を確認する |
 | 管理の8作成・編集ルート、`/admin/create-user` | ページ・フォーム固有のログイン／ロール／MFA表示ガードなし。編集ページの取得失敗は同じURLのエラー表示 | フォーム表示は操作許可を意味しない。[管理API認可](../../../src/lib/auth/admin-rbac.ts)で認証、セッション、DBのACL権限、AAL2を確認する |
 | `/admin/inventory` | ページ側のログイン／ロール／MFA表示ガードなし。表示可否は窓口 `GET /api/admin/inventory` の返事（200で表、403で「在庫一覧を見る権限がありません。」、MFAなしの403で「2要素認証が必要です」、401で「ログインし直してください。」、その他は読込失敗）で決める | 窓口が `admin.stock.read` を、DBの関数も実行者の権限を確かめる。表の読込は読むだけ。発注の確定（`POST /api/admin/purchase-orders`）は `admin.purchase_orders.manage` ＋ `admin.purchase_orders.read` を窓口とDBの関数の両方が確かめ、ボタン「発注」は役割では隠さない（権限が無い人は確定で「発注を扱う権限がありません。」） |
@@ -129,7 +132,7 @@
 
 ## ルート数とレビュー方法
 
-- `src/app/**/page.tsx` の全47件を棚卸しし、この一覧と[1つの画面遷移図](screen-flow.md#全画面遷移図)に各1件ずつ対応させる。
+- `src/app/**/page.tsx` の全51件を棚卸しし、この一覧と[1つの画面遷移図](screen-flow.md#全画面遷移図)に各1件ずつ対応させる。
 - ページから描画されるコンポーネントのリンク・ルーター操作、認証APIと外部サービスからの戻り先、表示ガード、クエリ更新を確認する。共通ナビは[Providers](../../../src/contexts/Providers.tsx)、[Header](../../../src/components/Header.tsx)、[Footer](../../../src/components/Footer.tsx)を確認する。
 - `error.tsx`、API Route Handler、外部サービス、タブやダイアログは独立した画面ルート数に加えない。詳細ページ間の `[id]` 変更は画面遷移として図示するが、同じルート定義の1件に数える。
 - `AdminTabs`・`AdminSideNav` の型にあるCONTACTは、波4（2026-10-28）から `/admin` の表示タブ配列に含まれる。現在表示するadminの13タブ（INVENTORYはORDERの次、PACKINGはINVENTORYの次、CONTACTはPACKINGの次、DISCOUNTはCONTACTの次、SETTINGSは最後）とsupporterのORDER・INVENTORY・PACKING・CONTACT・DISCOUNTを記録する。

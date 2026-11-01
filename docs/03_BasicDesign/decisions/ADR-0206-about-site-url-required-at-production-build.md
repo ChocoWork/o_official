@@ -1,6 +1,6 @@
 # ADR-0206 サイトの URL は本番ビルドで必須にし、getSiteUrl は投げない
 
-> 状態: 推定 | 確認日: 2026-10-28 | 対象: `next.config.ts`（共有）、`src/lib/build-env-guard.ts` | 基準コミット: `90786822`（作業ツリー）
+> 状態: 推定 | 確認日: 2026-11-01 | 対象: `next.config.ts`（共有）、`src/lib/build-env-guard.ts` | 基準コミット: `90786822`（作業ツリー）
 
 ## 概要
 
@@ -56,7 +56,16 @@
 - 悪くなること: 配備の前に Vercel の Production に `NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_SUPABASE_URL` を設定しておく必要がある（設定する値はビルドの時に埋まるので、設定してからビルドする。`docs/06_Operations/secrets.md`）。Vercel の Preview・手元は影響を受けない
 - 残ること: 確かめは `VERCEL_ENV` が `production` の配備に限る。別のホスティングへ移す時は判定の変数を見直す
 
+#### 追記（2026-11-01）: 必須の変数に `APP_ALLOWED_ORIGINS` を足した（3 変数）
+
+上の本文（概要・決定・結果）は 2 変数の時点の記録。2026-11-01 に、本番のビルドで必須の変数へ `APP_ALLOWED_ORIGINS` を足し、3 変数（`NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_SUPABASE_URL`・`APP_ALLOWED_ORIGINS`）にした。判定（`VERCEL_ENV === 'production'`）、空白だけの扱い、失敗の文に値を載せないことは同じ。
+
+- 理由: Origin の確かめ（SEC-LOOK-018）の許可の一覧を、本番で明示させるため（www と apex など複数のオリジンを含められる）。2026-10-31 のユーザーの決定。`NEXT_PUBLIC_SITE_URL` が必須なので、`hasExplicitOriginConfig`（`src/lib/redirect.ts`）が true になり、proxy の要求由来の値で比べる退避は本番では元から起きない。退避の防止が理由ではない
+- 出どころ: `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`、`SEC-ABOUT-007-AC-02`（`docs/02_Requirements/areas/about.md`）
+- `proxy.ts`・`redirect.ts` の読み方は変えない
+- 値の書式も見る（2026-11-01、最終レビュー指摘 7）: カンマで分けた各項目が空でなく、`new URL()` で読め、`https:` で、`origin` と一致する（末尾の `/` もパスも無い）形でなければ、変数名だけの文で落とす。`redirect.ts` の `parseAllowedOrigins` は読めない項目を黙って捨て、`NEXT_PUBLIC_SITE_URL` で補うので、書き間違いで www と apex の片方が許可から落ちても気付けず、その側の状態を変える API が 403 になる。「本番で一覧を明示させる」決定の狙いが書き間違いで外れるのを防ぐ。見るのは本番のビルドだけで、手元・preview の `http://localhost` などは落とさない
+
 ## 未確認事項
 
-- 本番の Vercel の環境変数に 2 変数が設定されているか（本番は未デプロイ）
+- 本番の Vercel の環境変数に 3 変数（2026-11-01 に `APP_ALLOWED_ORIGINS` を足した）が設定されているか（本番は未デプロイ）
 - `NEXT_PUBLIC_VERCEL_URL` の読み方（`getSiteUrl`）を直すか

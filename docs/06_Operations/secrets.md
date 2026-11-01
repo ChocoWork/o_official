@@ -4,7 +4,7 @@ title: シークレット管理方針
 
 # シークレット管理方針（暫定: 手動運用）
 
-> 状態: 既存の運用方針 | 本番設定・手順の適用状況は未確認 | 確認日: 2026-10-02（`ADMIN_API_KEY` の廃止の節は 2026-10-26、ビルドの前に要る環境変数の節と `CLIENT_IP_HEADER` の節は 2026-10-28、`AUTH_REQUIRE_APP_SESSION` の節は 2026-10-29 に追記）
+> 状態: 既存の運用方針 | 本番設定・手順の適用状況は未確認 | 確認日: 2026-10-02（`ADMIN_API_KEY` の廃止の節は 2026-10-26、ビルドの前に要る環境変数の節と `CLIENT_IP_HEADER` の節は 2026-10-28、`AUTH_REQUIRE_APP_SESSION` の節は 2026-10-29、`APP_ALLOWED_ORIGINS` の必須化と captcha 関連の節は 2026-11-01 に追記）
 
 この文書中の `docs/seq/supabase-service-role-key-rotation-diagrams.md` は現行リポジトリに存在しない旧計画への参照である。自動ローテーションを実施済みとは扱わず、実施前に現在の秘密値の保管場所、権限、手順を確認する。
 ## 概要
@@ -90,19 +90,20 @@ Resend の配達の状態の知らせ（`POST /api/webhook/resend-delivery`）�
 
 定期処理の入口（worker・見回り・照合・Meta の同期）の合言葉です。32文字以上のランダムな値にします。短いと全部の入口が設定の誤りとして断ります。Vercel の環境変数と、本番 DB の Vault（`cron_secret`）にだけ置きます。入れ替えは[手順書](webhook-queue-operations.md)の2に従います。
 
-## ビルドの前に要る環境変数（NEXT_PUBLIC_SITE_URL・NEXT_PUBLIC_SUPABASE_URL）
+## ビルドの前に要る環境変数（NEXT_PUBLIC_SITE_URL・NEXT_PUBLIC_SUPABASE_URL・APP_ALLOWED_ORIGINS）
 
-`NEXT_PUBLIC_*` はビルドの時にコードへ埋め込まれます。本番（Vercel の Production。`VERCEL_ENV=production`）では、次の 2 つが**ビルドの前**に設定されていないと、ビルドが落ちます（`next.config.ts` の先頭の `assertBuildEnv`。2026-10-28、SEC-ABOUT-007、`ADR-0206`）。落ちる文には変数名だけが出て、値は出ません。
+`NEXT_PUBLIC_*` はビルドの時にコードへ埋め込まれます。本番（Vercel の Production。`VERCEL_ENV=production`）では、次の 3 つが**ビルドの前**に設定されていないと、ビルドが落ちます（`next.config.ts` の先頭の `assertBuildEnv`。2026-10-28、SEC-ABOUT-007、`ADR-0206`。`APP_ALLOWED_ORIGINS` は 2026-11-01、SEC-ABOUT-007-AC-02）。落ちる文には変数名だけが出て、値は出ません。
 
 | 変数 | 値 | 使われ方 |
 | --- | --- | --- |
 | `NEXT_PUBLIC_SITE_URL` | 本番の https のサイト（末尾に `/` を付けない。例 `https://www.example.com`） | 共有のカードの画像（`og:image`）の基点、注文メールの状況ページのリンクの元、CSRF の許可オリジンの既定（`getSiteUrl`）。未設定だと `http://localhost:3000` に落ちる |
 | `NEXT_PUBLIC_SUPABASE_URL` | 本番の Supabase のプロジェクトの URL（`https://<ref>.supabase.co`） | ブラウザの接続先、CSP の `img-src`・`connect-src` と画像の中継 `remotePatterns` の許す host（自分のプロジェクト 1 つだけ） |
+| `APP_ALLOWED_ORIGINS` | 状態変更 API の `Origin` / `Referer` を照合する許可オリジンの一覧（カンマ区切り。www と apex など複数可）。詳しくは下の `APP_ALLOWED_ORIGINS` の節 | CSRF の確かめ（`src/proxy.ts`）とリダイレクト先の検証（`src/lib/redirect.ts`）。無いと、設定漏れで許可の一覧が曖昧なまま本番に出るのを防ぐため、ビルドを止める |
 
 - `NEXT_PUBLIC_SUPABASE_URL` と `SUPABASE_URL`（サーバー側の接続先。署名つき URL はこちらを優先して作る）が**別の origin を指す設定も、ビルドが落ちます**（`VERCEL_ENV` に依らず手元でも）。署名が通っても、画像が CSP と `/_next/image` で止まるためです。2 つとも同じプロジェクトの URL にします。末尾の `/` やパスの違いは無視されます
 - 環境変数をビルドの後に足しても、できたビルドには入りません。設定してから再ビルド・再デプロイします（[注文のメールの手順書](order-email-operations.md)の 5 と同じ）
-- 落ちる条件は `VERCEL_ENV` が `production` のときだけです。手元・Vercel の Preview・E2E の本番ビルド（`NODE_ENV=production` だけ）は、2 つが無くても落ちません
-- 本番のアプリは未デプロイで、Vercel に 2 変数が入っているかは未確認です。初回の配備の前に入れます
+- 落ちる条件は `VERCEL_ENV` が `production` のときだけです。手元・Vercel の Preview・E2E の本番ビルド（`NODE_ENV=production` だけ）は、3 つが無くても落ちません
+- 本番のアプリは未デプロイで、Vercel に 3 変数が入っているかは未確認です。初回の配備の前に入れます
 
 ## CLIENT_IP_HEADER（送り元の IP を読む旗。秘密ではない）
 
@@ -149,10 +150,37 @@ APP_ALLOWED_ORIGINS=https://www.example.com,https://example.com
 未設定でも `NEXT_PUBLIC_SITE_URL` / `NEXT_PUBLIC_BASE_URL` / `BASE_URL` /
 `NEXT_PUBLIC_VERCEL_URL` のいずれかがあればそれを使う。どれも無い場合は
 リクエスト由来のオリジンとの一致で判定し、警告を出す（設定漏れだけで全 API が
-403 になるのを避けるため）。**本番では必ず明示すること。**
+403 になるのを避けるため）。これは手元・Preview・テストでの動きで、
+**本番（Vercel の Production。`VERCEL_ENV=production`）では `APP_ALLOWED_ORIGINS` が
+ビルドの前に必須**（無いとビルドが落ちる。2026-11-01、SEC-ABOUT-007-AC-02）。
+Vercel の Production の環境変数に、ビルドの前に入れること。**書式も見る**（2026-11-01）:
+カンマで分けた各項目が `https://host[:port]` の形（空の項目・`http:`・scheme 無し・
+末尾の `/`・パスは、ビルドが落ちる）。`example.com` や `https://example.com/` のような
+書き間違いを、実行時に黙って許可から捨てさせないため。`proxy.ts` と
+`redirect.ts` の読み方（上の退避の動き）は変えていない。
 
 同じ一覧を `getRequestOrigin`（リダイレクト先の検証）も使う。片方だけ設定する、
 という状態は作らないこと。
+
+## TURNSTILE_SECRET_KEY（アプリの Turnstile の検証の秘密。Supabase の captcha にも同じ値）
+
+> 確認日: 2026-11-01 | 対象: `src/lib/turnstile.ts`、Supabase の captcha | 設計判断: [ADR-0420](../03_BasicDesign/decisions/ADR-0420-auth-supabase-captcha-with-service-role-auth-calls.md) | 手順: [本番の Supabase Auth の設定](supabase-auth-config.md)
+
+登録・ログイン・パスワード再設定の申請・お問い合わせで、アプリが Cloudflare の Turnstile を検証する秘密（`NEXT_PUBLIC_TURNSTILE_SITE_KEY` は公開の対）。本番で値が無いと、検証は失敗に倒れる。Vercel の環境変数にだけ置く。
+
+- **同じ Cloudflare のウィジェットの秘密を、Supabase の captcha（本番の `security_captcha_secret`）にも入れる。** 理由: アプリの検証（`TURNSTILE_SECRET_KEY`）と Supabase の検証（直接の `/signup`・`/token` を塞ぐ）が、同じウィジェットが発行したトークンだけを通すようにするため。別の秘密を入れると、片方の検証でトークンが拒まれる。値はこの文書にもチャットにもコミットにも書かない。
+- **本番の Supabase の captcha に、Cloudflare のテスト用の秘密（`1x0000000000000000000000000000000AA`。常に通る）を入れない。** 入れると、ダミーのトークンで誰でも直接 `/signup`・`/token` を叩け、captcha が無いのと同じになる。手元の隔離スタックだけがこの値を使う。段階 B の確かめで、anon にダミーのトークンを付けた `/token` が 400 になることを測る。
+- 手元の `.env.local` と `.env.example` の値は、Cloudflare の公開のテスト用（常に通る）で、本番の秘密ではない。
+- アプリのサーバーが GoTrue を呼ぶ 5 か所（ログイン 2 回・ログイン再送・会員登録・パスワード変更の現行パスワードの確認）は service role の鍵で呼び、GoTrue 側の captcha は免除される。アプリはそこへトークンを転送しない（Turnstile のトークンは 1 回しか使えない）。
+- 本番の Turnstile のウィジェットは未作成の可能性が高い。無ければ、ウィジェットを作ってから、Vercel の `TURNSTILE_SECRET_KEY` と Supabase の captcha に同じ秘密を入れる（Supabase 側は段階 B。先にアプリの検証を有効にする）。
+
+## SUPABASE_AUTH_CAPTCHA_SECRET（手元の Supabase の captcha の秘密。手元だけ）
+
+手元の `supabase/config.toml` の `[auth.captcha] secret = "env(SUPABASE_AUTH_CAPTCHA_SECRET)"` が読む。値は Cloudflare の公開のテスト用 `1x0000000000000000000000000000000AA`（常に通る）。`supabase/.env.example` を `supabase/.env`（`.env*` は未追跡）に写すか、`npm run db:start` の前にシェルで同じ変数を設定する。CLI が `supabase/.env` を読むかは未検証なので、起動後に auth のコンテナの `GOTRUE_SECURITY_CAPTCHA_SECRET` がこの値になっていることを確かめる。**本番の秘密を `config.toml` にも `supabase/.env` にも書かない**（`supabase config push` が本番へ押し出す危険があるため、`config push` は流さない）。
+
+## SUPABASE_ACCESS_TOKEN（Management API 用の個人用トークン。作業者のシェルだけ）
+
+本番の Supabase Auth の設定を `PATCH /v1/projects/{ref}/config/auth` で読み書きする時だけ使う、ダッシュボード（Account → Access Tokens）で作る `sbp_...` のトークン（`auth:write` を含む）。作業者のシェルの環境変数にだけ入れ、ファイル・文書・ログ・報告・コミットに書かない。作業が終わったらダッシュボードで消す。手順は[本番の Supabase Auth の設定](supabase-auth-config.md)。
 
 ## ADMIN_API_KEY（廃止。もう読まない）
 

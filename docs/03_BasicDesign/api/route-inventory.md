@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> 波 6 確認日: 2026-11-01。ログイン中の会員のパスワード変更の窓口 `POST /api/auth/password/change/start`・`POST /api/auth/password/change/confirm` を 2 ファイル・2 メソッド追加した。Route Handler は168ファイル・212メソッド、表は167行・211メソッド（`/api/e2e/server-info` を除く）。新しいページ URL は `/account/password`（Route Handler ではない）。
+>
 > H Task 8 確認日: 2026-10-29。商品ページの割引の案内を返す `GET /api/discounts/advertisements` を 1 ファイル・1 メソッド追加した。Route Handler は166ファイル・210メソッド、表は165行・209メソッド（`/api/e2e/server-info` を除く）。
 >
 > H Task 7 確認日: 2026-10-29。割引の要対応を確認済みにする `POST /api/admin/order-attention/discounts/[orderId]/resolve` を 1 ファイル・1 メソッド追加した。Route Handler は165ファイル・209メソッド、表は164行・208メソッド（`/api/e2e/server-info` を除く）。
@@ -152,6 +154,8 @@
 | `/api/auth/password-reset/link` | `GET`, `POST` | [route.ts](../../../src/app/api/auth/password-reset/link/route.ts) |
 | `/api/auth/password-reset/request` | `POST` | [route.ts](../../../src/app/api/auth/password-reset/request/route.ts) |
 | `/api/auth/password-reset/session` | `GET` | [route.ts](../../../src/app/api/auth/password-reset/session/route.ts) |
+| `/api/auth/password/change/confirm` | `POST` | [route.ts](../../../src/app/api/auth/password/change/confirm/route.ts) （波 6: 会員認証＋CSRF、admin・supporter は aal2 必須。確認コードと新しいパスワードで変更し、全 session を失効する。回数制限 `auth:password_change_confirm` の IP 20回/600秒・本人ごと 5回/600秒、監査 `password_change_confirm`。API-AUTH-021） |
+| `/api/auth/password/change/start` | `POST` | [route.ts](../../../src/app/api/auth/password/change/start/route.ts) （波 6: 会員認証＋CSRF、admin・supporter は aal2 必須。現行パスワードを確かめ、メールに8桁の確認コードを送る。回数制限 `auth:password_change_start` の IP 20回/600秒・本人ごと 5回/600秒、監査 `password_change_start`。API-AUTH-020） |
 | `/api/auth/refresh` | `POST` | [route.ts](../../../src/app/api/auth/refresh/route.ts) |
 | `/api/auth/register` | `POST` | [route.ts](../../../src/app/api/auth/register/route.ts) |
 | `/api/cart/add` | `POST` | [route.ts](../../../src/app/api/cart/add/route.ts) |
@@ -225,7 +229,7 @@ API単体 [GET](../../../tests/unit/api/admin/permissions-route.test.ts)・[POST
 
 ## `src/app/api` の外の入口（波 3 / 2026-10-28）
 
-頁ではなく画像のバイトを返す Route Handler。パスが `/api/` で始まらず、`src/app/api` の外にあるので、上の表と概要の数（166ファイル・210メソッド、表は165行・209メソッド）には入れない。数を固定する単体試験（`tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts`）は `src/app/api` だけを数える。
+頁ではなく画像のバイトを返す Route Handler。パスが `/api/` で始まらず、`src/app/api` の外にあるので、上の表と概要の数（168ファイル・212メソッド、表は167行・211メソッド）には入れない。数を固定する単体試験（`tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts`）は `src/app/api` だけを数える。
 
 | パス | メソッド | 根拠 |
 | --- | --- | --- |

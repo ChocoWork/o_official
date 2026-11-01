@@ -1,6 +1,6 @@
 # ADMIN の構造設計
 
-> 状態: 推定 | 確認日: 2026-10-29 | 対象: ADMIN（管理のそのほか。利用者の作成・セッションの強制失効・2要素のリセット・監査ログの読み出しと掃除・問い合わせの管理の窓口・商品の色見本） | 基準コミット: `4facf63b`
+> 状態: 推定 | 確認日: 2026-11-01 | 対象: ADMIN（管理のそのほか。利用者の作成・セッションの強制失効・2要素のリセット・監査ログの読み出しと掃除・問い合わせの管理の窓口・商品の色見本） | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -194,7 +194,7 @@ sequenceDiagram
 | 出どころ | 実装から推定（`src/app/admin/create-user/page.tsx`、`src/app/admin/layout.tsx`）、`docs/03_BasicDesign/ui/screen-list.md` |
 
 - 作り: 利用者の端末で動くページ（`'use client'`）。見出し「管理者: ユーザ作成」、欄は NAME・EMAIL（メールの型）・PASSWORD（伏せ字）、ボタン「作成」
-- 送る前の確かめ: メールかパスワードが空なら「メールとパスワードを入力してください」、パスワードが 16 文字未満なら「パスワードは16文字以上にしてください」で止める。窓口も同じ 16〜128 字と漏洩の照合を当てる（SEC-ADMIN-012）ので、窓口を直に呼んでも短い・漏れたパスワードでは作れない。画面は 129 字以上・漏洩・表示名 101 字以上の断りを個別には出さず、窓口の 400 の `error` の文（`Invalid request` など）をそのまま出す
+- 送る前の確かめ: メールかパスワードが空なら「メールとパスワードを入力してください」、パスワードが 16 文字未満なら「パスワードは16文字以上にしてください」で止める。窓口も同じ 16〜128 字（UTF-8 で 72 バイト以内。画面は送る前に 72 バイトを見ず、超えると窓口の 400）と漏洩の照合を当てる（SEC-ADMIN-012）ので、窓口を直に呼んでも短い・漏れたパスワードでは作れない。画面は 129 字以上・漏洩・表示名 101 字以上の断りを個別には出さず、窓口の 400 の `error` の文（`Invalid request` など）をそのまま出す
 - 送る: 素の `fetch` で `POST /api/admin/create-user`（API-ADMIN-001）に JSON を送る。送っている間はボタンを押せない
 - 結果: 201 なら「ユーザ作成しました: 」とメールを出し、欄を空にして同じ画面に留まる。ほかは窓口の `error` の文（英語）か「作成に失敗しました」、通信の例外は「ネットワークエラーが発生しました」
 - 入口: 管理画面の左のナビにも、どの画面にもリンクが無い。URL を直に打てば開く（画面遷移の項目を置かない理由）
@@ -249,14 +249,14 @@ stateDiagram-v2
 | --- | --- |
 | 認可 | `admin.users.manage`（店長だけ・固定）。CSRF は proxy の Origin の照合（ARC-ADMIN-002） |
 | 回数 | 認可の後、本文を読む前に、認可を通った管理者の id を鍵にして 20 回 / 10 分。超えたら 429 |
-| 入力 | JSON。`email`（メールの形）、`password`（16〜128 字。会員登録と同じ `passwordSchema`）、`display_name`（任意。前後の空白を除いて 100 字まで）。壊れた JSON も形の誤りとして 400 |
-| 処理 | 形を確かめた後、パスワードを漏洩の照合（`checkPwnedPassword`）にかけ、漏れていれば作らず 400。照合の外の API が使えない時は作成を通す（fail-open）。Auth の管理の機能で利用者を作り、表示名を利用者の付帯の情報に入れる。確認済みの印は渡さず、役割も付けない |
+| 入力 | JSON。`email`（メールの形）、`password`（16〜128 字かつ UTF-8 で 72 バイト以内。会員登録と同じ `passwordSchema`）、`display_name`（任意。前後の空白を除いて 100 字まで）。壊れた JSON も形の誤りとして 400 |
+| 処理 | 形を確かめた後、パスワードを漏洩の照合（`checkPwnedPassword`）にかけ、漏れていれば作らず 400。照合の外の API が使えない時は作成を通す（fail-open）。Auth の管理の機能で利用者を作り、表示名を利用者の付帯の情報に入れる。メールは確認済みで作り（`email_confirm: true`。店長がメールを請け合う。付けないと Confirm email が有効な設定で `email_not_confirmed` になり、その会員が一度もログインできない。2026-11-01、最終レビュー指摘 1）、役割は付けない |
 | 成功 | 201 `{id, email}`。監査は成功と作った id |
 | 失敗 | 形の誤り・壊れた JSON 400 `Invalid request`、漏洩したパスワード 400（会員登録と同じ固定の文）、誤りの文に already か duplicate を含めば 409 `Email already registered`、ほかの誤り 500 `Failed to create user`、429、例外 500 |
 | 監査 | 形の誤り（`Invalid request body`）・漏洩（`pwned_password`）・照合が使えなかった事実（`pwned_check_unavailable:<符号>`）・重なり（`email_already_registered`）・誤り（`create_user_failed`）・成功（ARC-ADMIN-003）。全部の結果の行に行為者のメール・IP・ブラウザの名乗りを入れる（ADR-0462）。Supabase の誤りの文・パスワード・メールは残さない |
 
 - 今のコードが届かない SEC: なし（SEC-ADMIN-022 は 2026-10-28 の波 4 に満たし、全部の結果の監査に行為者のメール・IP・ブラウザの名乗りを入れる）。SEC-ADMIN-006・008・012・013 は 2026-10-26 に満たした。パスワードの扱いの決めは TM-ADMIN-05（ユーザーが 16 文字 + 漏洩の照合を当てると承認）
-- `api-spec.md` は「確認済みの Auth の利用者を作る」と書くが、確認済みの印を渡さない（TM-ADMIN-09）
+- `api-spec.md` は「確認済みの Auth の利用者を作る」と書き、コードも 2026-11-01 から確認済みの印（`email_confirm: true`）を渡す（TM-ADMIN-09 は解消。最終レビュー指摘 1）
 
 ### API-ADMIN-002 `POST /api/admin/revoke-user-sessions` セッションの強制失効
 
@@ -695,7 +695,7 @@ sequenceDiagram
 - 監査ログを読む画面を作るか。作るなら `SCR-`・`FLOW-` を足す（ユーザーの判断。TM-ADMIN-02）。問い合わせの管理画面（CONTACT のタブ）は 2026-10-28（波 4）に作った
 - 利用者の作成の画面に入口を付けるか、画面とページの守りをどうするか（TM-ADMIN-20）
 - 本番の `MAIL_FROM_ADDRESS`・`CONTACT_INBOUND_DOMAIN`・`CONTACT_REPLY_SECRET` と、許可のオリジン（`APP_ALLOWED_ORIGINS` ほか）の設定（本番アプリは未デプロイ）
-- 作った利用者が確認済みになるか（Supabase の既定の設定次第。本番の設定は確かめていない）
+- 本番の `auth.users` に確認前（`email_confirmed_at is null`）の利用者が今いくつあるか（段階 A の前の読み取りで数える。`docs/06_Operations/supabase-auth-config.md`）。これから作る会員は確認済みで作られる
 - 本番の中継（Vercel）が偽の `x-real-ip`・`x-vercel-forwarded-for` を上書きするか（監査ログの IP の確かさ）。最初の preview で実測する。監査ログの IP の保存期間と開示は法令対応の後回しに従い、今は決めない（ADR-0462）
 - 受信の取り込み（範囲外）がお客様の返信で問い合わせの状態を変えるか（STATE-ADMIN-001）
 - 範囲の窓口の結合テスト（`tests/integration/`）は強制失効と監査ログの2本だけで、ほかの構造設計の項目には結合テストが無い。詳細設計（`docs/04_DetailDesign/pages/16-2_admin_misc.md` の DD-ADMIN-001〜015）はあるが、単体テストの名前の ID と、コードの `@impl`・`@design` がまだ無い（`validate-trace` は `missing-child`・`missing-impl` を出し続ける）

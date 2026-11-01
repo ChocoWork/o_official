@@ -1,5 +1,7 @@
 # 画面遷移図
 
+> 波 6 確認日: 2026-11-01。パスワード変更の画面 `/account/password` の1ルートを足し、画面は51ルートになった。導線は末尾の「パスワード変更からの導線（波 6 / FR-AUTH-006）」に示す。本文（概要の「47ルート」と全画面図）の数え直しは行わない。
+>
 > H Task 5 確認日: 2026-10-29。割引の管理で3ルート（`/admin/discounts/new`・`/admin/discounts/[id]`・`/admin/discounts/[id]/edit`）を足し、画面は50ルートになった。導線は末尾の「割引の管理からの導線（H Task 5）」に示す。本文の数え直しは行わない。
 
 > 波 4 確認日: 2026-10-28。画面ルートの数は変えない（47ルート）。`/admin` の CONTACT タブ（同じルート内の表示）を足し、LOOK の「新規作成」から `/admin/look/create` への遷移を権限（`meta.canManage`）で出す形にした。`/admin/stockist/create` は開いた時に `GET /api/admin/stockists/access` で権限を確かめてからフォームを出す。
@@ -478,3 +480,18 @@ flowchart TD
 ```
 
 [タブ単体](../../../tests/unit/components/DiscountSection.test.tsx)・[一覧単体](../../../tests/unit/features/discounts/DiscountList.test.tsx)・[詳細単体](../../../tests/unit/features/discounts/DiscountDetail.test.tsx)・[フォーム単体](../../../tests/unit/features/discounts/DiscountForm.test.tsx)。幅（390/768/1280px）とキーボードの実測はTask 11。
+
+## パスワード変更からの導線（波 6 / FR-AUTH-006）
+
+確認日: 2026-11-01。入口は `/account` のお客様情報のタブにある「パスワードを変更」のリンク。段の切り替え（現行パスワード → コードと新しいパスワード）は同じルートの状態で、URLは変わらない。成功すると全端末の session が失効し、ログインの状態を引き直して `/login` へ移る。設計の正本は `docs/03_BasicDesign/areas/auth.md` の SCR-AUTH-011・FLOW-AUTH-005。
+
+```mermaid
+flowchart TD
+  A["/account（お客様情報）"] -->|パスワードを変更| P["/account/password"]
+  P -->|1 現行パスワード → コードをメールに送る| P
+  P -->|2 コードと新しいパスワード → 変更成功（全 session 失効）| L["/login"]
+  P -->|未ログイン| L
+  P -.->|Google だけの会員の案内: リンク| R["/auth/password-reset"]
+```
+
+[画面の結合試験](../../../tests/integration/ui/auth-password-change.test.tsx)・[フォーム単体](../../../tests/unit/app/account/password/password-change-form.test.tsx)。幅（390/768/1280px）は E2E `FR-ACCOUNT-046` が確かめる。

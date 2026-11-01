@@ -1,6 +1,6 @@
 # ABOUT の脅威
 
-> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-28 | 対象: ABOUT の頁（`/about`、`src/app/about/page.tsx`）と、その応答に効く共有の守り | 基準コミット: `a03beaff`（本文の `ファイル:行` は、この脅威の文書が日付つきの証拠として残す行番号で、このコミットの内容を指す。コードを読み直す時は関数・部品の名前でたどる）
+> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-11-01 | 対象: ABOUT の頁（`/about`、`src/app/about/page.tsx`）と、その応答に効く共有の守り | 基準コミット: `a03beaff`（本文の `ファイル:行` は、この脅威の文書が日付つきの証拠として残す行番号で、このコミットの内容を指す。コードを読み直す時は関数・部品の名前でたどる）
 
 ---
 
@@ -127,7 +127,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 共有された時の OG の画像と、ブランドの印象 |
 | 脅威 | 攻撃者が要求の `Host`・`X-Forwarded-Host` を偽って OG の画像の URL を自分のサイトに向けさせる。または本番でサイトの URL の設定が漏れ、OG の画像が手元の URL やデプロイごとの URL を指す |
-| 起こり方 | OG の画像 `/about.png`（`src/app/about/page.tsx:13`）は、layout の基点の URL（`src/app/layout.tsx:28`）で絶対の URL になる。基点は環境変数だけから作り、要求の見出しを読まない（`src/lib/redirect.ts:64-72`）ので、見出しの偽りは効かない。環境変数が1つも無い時は `http://localhost:3000` に落ちる（`src/lib/redirect.ts:1,71`）。`NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_BASE_URL`・`BASE_URL` が無く `NEXT_PUBLIC_VERCEL_URL` だけがある時は、その値（Vercel が自動で入れる場合はデプロイごとの `*.vercel.app`）に落ちる（同 `:65`）。Vercel では後者の方が起こりやすい。2026-10-28 に、本番のビルド（`VERCEL_ENV=production`）は `NEXT_PUBLIC_SITE_URL` と `NEXT_PUBLIC_SUPABASE_URL` が無ければ落とすようにした（`next.config.ts` の `assertBuildEnv`、`src/lib/build-env-guard.ts`、`ADR-0206`）。本番の公開の応答は `NEXT_PUBLIC_SITE_URL` を基点にし、手元の URL にもデプロイごとの URL にも落ちない。手元・preview・E2E の本番ビルドは従来どおり |
+| 起こり方 | OG の画像 `/about.png`（`src/app/about/page.tsx:13`）は、layout の基点の URL（`src/app/layout.tsx:28`）で絶対の URL になる。基点は環境変数だけから作り、要求の見出しを読まない（`src/lib/redirect.ts:64-72`）ので、見出しの偽りは効かない。環境変数が1つも無い時は `http://localhost:3000` に落ちる（`src/lib/redirect.ts:1,71`）。`NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_BASE_URL`・`BASE_URL` が無く `NEXT_PUBLIC_VERCEL_URL` だけがある時は、その値（Vercel が自動で入れる場合はデプロイごとの `*.vercel.app`）に落ちる（同 `:65`）。Vercel では後者の方が起こりやすい。2026-10-28 に、本番のビルド（`VERCEL_ENV=production`）は `NEXT_PUBLIC_SITE_URL` と `NEXT_PUBLIC_SUPABASE_URL` が無ければ落とすようにした（`next.config.ts` の `assertBuildEnv`、`src/lib/build-env-guard.ts`、`ADR-0206`）。2026-11-01 に許可オリジン `APP_ALLOWED_ORIGINS` も必須に足した（Origin の確かめの許可の一覧を本番で明示させるユーザーの決定による。`NEXT_PUBLIC_SITE_URL` が必須なので proxy の退避は本番では起きない。SEC-ABOUT-007-AC-02）。本番の公開の応答は `NEXT_PUBLIC_SITE_URL` を基点にし、手元の URL にもデプロイごとの URL にも落ちない。手元・preview・E2E の本番ビルドは従来どおり |
 | 影響 | SNS で共有された ABOUT のカードの画像が出ない。見出しの偽りと共有のキャッシュが重なれば別の画像が配られる（今は見出しから作らないので起きない） |
 | 対策 | SEC-ABOUT-005、SEC-ABOUT-007 |
 | ASVS | ASVS 未対応付け |
@@ -173,6 +173,6 @@ ABOUT のレビューに載ったが、守る物も直す所も ABOUT の範囲�
 
 - `/about` の応答の `Cache-Control` の実際の値（THR-ABOUT-004）。Next の既定の動きとして読んだだけで、本番のビルドの応答を見ていない
 - 本番の前に共有のキャッシュ（CDN など）を置くか、置く時に `Set-Cookie` 付きの応答をどう扱うか（THR-ABOUT-004）。本番のアプリはまだデプロイしていない
-- 本番でサイトの URL の環境変数が設定されるか（THR-ABOUT-005）。設定が漏れればビルドが落ちる（2026-10-28。`ADR-0206`）が、Vercel の Production に実際に入れたかは本番が未デプロイなので未確認。`NEXT_PUBLIC_VERCEL_URL` の読み方を直すかは別の判断
+- 本番でサイトの URL と許可オリジンの環境変数が設定されるか（THR-ABOUT-005）。設定が漏れればビルドが落ちる（2026-10-28。許可オリジンは 2026-11-01。`ADR-0206`）が、Vercel の Production に実際に入れたかは本番が未デプロイなので未確認。`NEXT_PUBLIC_VERCEL_URL` の読み方を直すかは別の判断
 - 本番のホスティングが頁の要求の回数を絞るか（THR-ABOUT-006）
 - CSP を頁ごとに分けるか、全体の許可を絞るか（THR-ABOUT-003）。ユーザーに決めてもらう

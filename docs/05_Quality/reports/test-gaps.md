@@ -1,6 +1,6 @@
 # 試験の穴
 
-> 状態: 自動生成 | 生成日: 2026-10-29 | 対象: NEWS・HOME・LOOK・ABOUT・STOCKIST・SEARCH・PRIVACY・AUTH・ADMIN
+> 状態: 自動生成 | 生成日: 2026-11-01 | 対象: NEWS・HOME・LOOK・ABOUT・STOCKIST・SEARCH・PRIVACY・AUTH・ADMIN
 
 ## 概要
 
@@ -32,6 +32,7 @@
 | SEC-LOOK-010-AC-01 大きな件数を求めても上限までしか返らない | E2E | `docs/02_Requirements/areas/look.md:4155` |
 | SEC-ABOUT-006-AC-01 Supabase に届かない状態でも /about が表示される | E2E | `docs/02_Requirements/areas/about.md:532` |
 | SEC-ABOUT-007-AC-01 設定が無い時に OG の URL が手元の URL にならない | E2E | `docs/02_Requirements/areas/about.md:559` |
+| SEC-ABOUT-007-AC-02 許可オリジンの設定が無い本番のビルドは落ちる | E2E | `docs/02_Requirements/areas/about.md:573` |
 | SEC-STOCKIST-008-AC-01 anon・authenticated に表の余分な権限が無い | E2E | `docs/02_Requirements/areas/stockist.md:941` |
 | FREQ-184-AC-01 1280px で左右の2カラム、390・768px で縦積みになり横にはみ出さない | E2E | `docs/02_Requirements/areas/search.md:790` |
 | FREQ-184-AC-02 「N RESULTS」「SORT BY」「RELEVANCE」と、行の種別・題・サムネイル・矢印が出る | E2E | `docs/02_Requirements/areas/search.md:803` |
@@ -43,26 +44,26 @@
 | SEC-PRIVACY-004-AC-01 回数の上限を超えると DB を読まない | E2E | `docs/02_Requirements/areas/privacy.md:363` |
 | SEC-PRIVACY-006-AC-02 鍵が無くても設定がオンなら一文が表示される | E2E | `docs/02_Requirements/areas/privacy.md:425` |
 | SEC-PRIVACY-018-AC-01 運用の文書に迷惑メールの選別と見直しの手順が在る | E2E | `docs/02_Requirements/areas/privacy.md:787` |
-| FREQ-59-AC-01 /register に EMAIL・PASSWORD・PASSWORD（確認）が出る | E2E | `docs/02_Requirements/areas/auth.md:2106` |
-| FREQ-61-AC-02 新規登録タブで PASSWORD（確認）が出て URL が /register になる | E2E | `docs/02_Requirements/areas/auth.md:2158` |
-| FREQ-61-AC-03 /register で新規登録タブが選ばれ、ログインタブで URL が /login になる | E2E | `docs/02_Requirements/areas/auth.md:2171` |
-| FREQ-63-AC-03 「既にアカウントをお持ちの方はこちら」がタブ切替のボタンになる | E2E | `docs/02_Requirements/areas/auth.md:2236` |
-| FREQ-64-AC-01 カードの枠・EMAIL の欄・ログインボタンの角が丸い | E2E | `docs/02_Requirements/areas/auth.md:2249` |
-| FREQ-64-AC-03 カードの枠線が純黒でないグレー | E2E | `docs/02_Requirements/areas/auth.md:2275` |
-| FREQ-64-AC-04 ログインボタンの角が 4px〜12px の中ほどの丸み | E2E | `docs/02_Requirements/areas/auth.md:2288` |
-| FREQ-65-AC-05 タブに区切り線が無い | E2E | `docs/02_Requirements/areas/auth.md:2353` |
-| FREQ-70-AC-01 角丸のカードがあり、送信ボタンの角が 4px〜12px | E2E | `docs/02_Requirements/areas/auth.md:2509` |
-| FREQ-320-AC-01 DB の関数が失敗すると再設定は 500、登録は 503 で、監査が success にならない | E2E | `docs/02_Requirements/areas/auth.md:3143` |
-| FREQ-323-AC-02 HIBP が応答しなくても登録でき、監査に検査不能が残る | E2E | `docs/02_Requirements/areas/auth.md:3208` |
-| FREQ-330-REQ-02-AC-01 ログイン・会員登録・再設定のウィジェットの引き直しが useTurnstileWidget の1か所にある | E2E | `docs/02_Requirements/areas/auth.md:3456` |
-| FREQ-335-AC-03 1回送ると verifyOtp が type email で1回だけ呼ばれる | E2E | `docs/02_Requirements/areas/auth.md:3767` |
-| FREQ-515-AC-01 管理画面のユーザー一覧で選んだ役割で送られ、失敗したら元の役割に戻る | E2E | `docs/02_Requirements/areas/auth.md:3858` |
-| FREQ-515-AC-03 お知らせの作成・編集で選んだカテゴリーで保存される | E2E | `docs/02_Requirements/areas/auth.md:3884` |
-| SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | E2E | `docs/02_Requirements/areas/auth.md:4519` |
-| SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | E2E | `docs/02_Requirements/areas/auth.md:4700` |
-| SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:4786` |
-| SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:4923` |
-| SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:5039` |
+| FREQ-59-AC-01 /register に EMAIL・PASSWORD・PASSWORD（確認）が出る | E2E | `docs/02_Requirements/areas/auth.md:2131` |
+| FREQ-61-AC-02 新規登録タブで PASSWORD（確認）が出て URL が /register になる | E2E | `docs/02_Requirements/areas/auth.md:2183` |
+| FREQ-61-AC-03 /register で新規登録タブが選ばれ、ログインタブで URL が /login になる | E2E | `docs/02_Requirements/areas/auth.md:2196` |
+| FREQ-63-AC-03 「既にアカウントをお持ちの方はこちら」がタブ切替のボタンになる | E2E | `docs/02_Requirements/areas/auth.md:2261` |
+| FREQ-64-AC-01 カードの枠・EMAIL の欄・ログインボタンの角が丸い | E2E | `docs/02_Requirements/areas/auth.md:2274` |
+| FREQ-64-AC-03 カードの枠線が純黒でないグレー | E2E | `docs/02_Requirements/areas/auth.md:2300` |
+| FREQ-64-AC-04 ログインボタンの角が 4px〜12px の中ほどの丸み | E2E | `docs/02_Requirements/areas/auth.md:2313` |
+| FREQ-65-AC-05 タブに区切り線が無い | E2E | `docs/02_Requirements/areas/auth.md:2378` |
+| FREQ-70-AC-01 角丸のカードがあり、送信ボタンの角が 4px〜12px | E2E | `docs/02_Requirements/areas/auth.md:2534` |
+| FREQ-320-AC-01 DB の関数が失敗すると再設定は 500、登録は 503 で、監査が success にならない | E2E | `docs/02_Requirements/areas/auth.md:3168` |
+| FREQ-323-AC-02 HIBP が応答しなくても登録でき、監査に検査不能が残る | E2E | `docs/02_Requirements/areas/auth.md:3233` |
+| FREQ-330-REQ-02-AC-01 ログイン・会員登録・再設定のウィジェットの引き直しが useTurnstileWidget の1か所にある | E2E | `docs/02_Requirements/areas/auth.md:3481` |
+| FREQ-335-AC-03 1回送ると verifyOtp が type email で1回だけ呼ばれる | E2E | `docs/02_Requirements/areas/auth.md:3792` |
+| FREQ-515-AC-01 管理画面のユーザー一覧で選んだ役割で送られ、失敗したら元の役割に戻る | E2E | `docs/02_Requirements/areas/auth.md:3883` |
+| FREQ-515-AC-03 お知らせの作成・編集で選んだカテゴリーで保存される | E2E | `docs/02_Requirements/areas/auth.md:3909` |
+| SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | E2E | `docs/02_Requirements/areas/auth.md:4628` |
+| SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | E2E | `docs/02_Requirements/areas/auth.md:4809` |
+| SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:4901` |
+| SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:5073` |
+| SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:5189` |
 | FREQ-508-AC-03 流し直しても付与が重ならず、ほかの結び付きが残り、「監査ログの閲覧」の名前で登録される | E2E | `docs/02_Requirements/areas/admin.md:206` |
 | SEC-ADMIN-003-AC-02 管理の表の権限が anon・authenticated に無い | E2E | `docs/02_Requirements/areas/admin.md:422` |
 | SEC-ADMIN-010-AC-01 監査ログの行を書き換えると検知の確かめで分かる | E2E | `docs/02_Requirements/areas/admin.md:642` |
@@ -126,7 +127,7 @@
 | e2e | `e2e/FR-LOOK-DETAIL-007-related-recommendations-wont.spec.ts:4` | FR-LOOK-DETAIL-007-AC-01 | FR-LOOK-DETAIL-007-AC-01 詳細に同じシーズンか関連のコーディネートを薦める節が出る（現フェーズ対象外のため未実装） |
 | integration | `tests/integration/ui/auth-header-visibility.test.tsx:95` | ARC-AUTH-008 | ARC-AUTH-008 CSS が印の true の時にヘッダーの高さを、false の時に 0 を --site-header-offset に入れる（計算後の CSS で確かめる手段が要る） |
 | integration | `tests/integration/ui/auth-header-visibility.test.tsx:96` | ARC-AUTH-008 | ARC-AUTH-008 共有のレイアウトが html の初期値に data-header-visible="true" を持つ（レイアウトを描いて確かめる手段が要る） |
-| integration | `tests/integration/db/auth_grants_inventory.integration.test.ts:384` | DATA-AUTH-006 | DATA-AUTH-006 anon の TRUNCATE を既知の例外の表からも外す（他領域の波で直す） |
+| integration | `tests/integration/db/auth_grants_inventory.integration.test.ts:386` | DATA-AUTH-006 | DATA-AUTH-006 anon の TRUNCATE を既知の例外の表からも外す（他領域の波で直す） |
 
 ## 届かない分岐
 
@@ -155,9 +156,9 @@
 - `src/app/api/auth/confirm/route.ts:175` `GET` の成功の監査の `data.user?.email` の `user` が無い側は通らない。理由は 145 行と同じ。確認: 済み
 - `src/app/api/auth/confirm/route.ts:177` `GET` の成功の監査の `data.user?.id` の `user` が無い側は通らない。理由は 145 行と同じ。確認: 済み
 - `src/app/api/auth/otp/verify/route.ts:84` `POST` の入口の判断 `verifyError || !data?.session || !data?.user` の `!data?.user` の `data` が `null` の側は通らない。直前の `!data?.session` が `data` が `null` の時に真になって先に抜けるため。確認: 済み
-- `src/app/api/auth/register/route.ts:197` `POST` の `data.user?.id` の `user` が無い側（セッションの保存が結果を返さなかった時の監査）は通らない。手前の `if (!data.user)` で先に返るため。確認: 済み
-- `src/app/api/auth/register/route.ts:217` `POST` の `data.user?.id` の `user` が無い側（セッションの保存が例外を投げた時の監査）は通らない。理由は 197 行と同じ。確認: 済み
-- `src/app/api/auth/register/route.ts:223` `POST` の `data.user?.id` の `user` が無い側（成功の監査）は通らない。理由は 197 行と同じ。確認: 済み
+- `src/app/api/auth/register/route.ts:237` `POST` の `data.user?.id` の `user` が無い側（セッションの保存が結果を返さなかった時の監査）は通らない。手前の `if (!data.user)` で先に返るため。確認: 済み
+- `src/app/api/auth/register/route.ts:257` `POST` の `data.user?.id` の `user` が無い側（セッションの保存が例外を投げた時の監査）は通らない。理由は 237 行と同じ。確認: 済み
+- `src/app/api/auth/register/route.ts:263` `POST` の `data.user?.id` の `user` が無い側（成功の監査）は通らない。理由は 237 行と同じ。確認: 済み
 - `src/app/auth/password-reset/page.tsx:234` `PasswordResetPage` の `handleResend` の先頭の `siteKey && !turnstileToken` が真の側は通らない。再送のボタンが同じ描画の値（`disabled={loading || (!!siteKey && !turnstileToken)}`）で押せなくなっており、この関数に入る時点で常に偽のため。確認: 済み
 - `src/app/auth/verified/page.tsx:187` `VerifiedPage` の effect の `authBody?.user?.role` の `authBody?.` が `null` の側、三項の真側の `authBody?.` が `null` の側と `user?.` が `undefined` の側（3分岐）は通らない。直前の `authBody?.authenticated === true` を通った後なので `authBody` は `null` でなく、真側に入るには `role` を持つ `user` が要るため。確認: 済み
 - `src/app/auth/verified/page.tsx:188` `VerifiedPage` の effect の `authBody?.user?.mfaVerified` の `authBody?.` が `null` の側は通らない。理由は 187 行と同じ。確認: 済み

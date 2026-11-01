@@ -1,6 +1,6 @@
 # ABOUT の構造設計
 
-> 状態: 推定 | 確認日: 2026-10-28 | 対象: ABOUT（アバウトページ `/about`） | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-11-01 | 対象: ABOUT（アバウトページ `/about`） | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -126,7 +126,7 @@ sequenceDiagram
 
 - 作り: ページのファイルの中の metadata の関数が、引数も読み出しも無く固定の値を返す（ADR-0204）
 - 絶対の URL: OG の画像の道 `/about.png` は、共有の layout の `metadataBase`（`src/app/layout.tsx`）で絶対の URL になる。起点は `getSiteUrl`（`src/lib/redirect.ts`）が環境変数だけから作り、`Host`・`X-Forwarded-Host` を読まない
-- 設定が無い時: 本番のビルド（`VERCEL_ENV=production`）は、`NEXT_PUBLIC_SITE_URL` と `NEXT_PUBLIC_SUPABASE_URL` が無ければ `next.config.ts` の先頭の確かめ `assertBuildEnv`（`src/lib/build-env-guard.ts`）が落とす（SEC-ABOUT-007、`ADR-0206`、`DD-ABOUT-002`）。`getSiteUrl` は変えない（無い時の既定の `http://localhost:3000` と `NEXT_PUBLIC_VERCEL_URL` の読み方は残る。本番は上の確かめで `NEXT_PUBLIC_SITE_URL` が必ず在るので、`getSiteUrl` はそれを最初に読む）。`NODE_ENV` でなく `VERCEL_ENV` で見るのは、E2E の本番ビルドも `NODE_ENV=production` になり、止めてはいけないため。同じ確かめが、`NEXT_PUBLIC_SUPABASE_URL` と `SUPABASE_URL` が別の origin を指す設定も、環境に依らず落とす（署名つきの画像の host と CSP・`remotePatterns` の許す host を 1 つに揃える。`ADR-0316`）。失敗の文に URL の値は載せない
+- 設定が無い時: 本番のビルド（`VERCEL_ENV=production`）は、`NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_SUPABASE_URL`・`APP_ALLOWED_ORIGINS`（2026-11-01 に足した。SEC-ABOUT-007-AC-02）のどれかが無ければ `next.config.ts` の先頭の確かめ `assertBuildEnv`（`src/lib/build-env-guard.ts`）が落とす（SEC-ABOUT-007、`ADR-0206`、`DD-ABOUT-002`）。`APP_ALLOWED_ORIGINS` は値の書式も見る（カンマ区切りの各項目が空でなく、`https:` で、`origin` と一致する形。末尾の `/` やパスは落とす。2026-11-01）。`getSiteUrl` は変えない（無い時の既定の `http://localhost:3000` と `NEXT_PUBLIC_VERCEL_URL` の読み方は残る。本番は上の確かめで `NEXT_PUBLIC_SITE_URL` が必ず在るので、`getSiteUrl` はそれを最初に読む）。`NODE_ENV` でなく `VERCEL_ENV` で見るのは、E2E の本番ビルドも `NODE_ENV=production` になり、止めてはいけないため。同じ確かめが、`NEXT_PUBLIC_SUPABASE_URL` と `SUPABASE_URL` が別の origin を指す設定も、環境に依らず落とす（署名つきの画像の host と CSP・`remotePatterns` の許す host を 1 つに揃える。`ADR-0316`）。失敗の文に URL の値は載せない
 - 本文の画像: 本文に画像は無い（SCR-ABOUT-001、ADR-0201）。CSP と画像の最適化の許可の広さは SEC-ABOUT-003 を見る
 - 返さない物: canonical・`og:url`・`og:type`・twitter のカードは返さない（推定。NFR-SEO-003 は canonical も求める）
 - h1: FR-ABOUT-005 のうち h1 の部分は、この構造でも SCR-ABOUT-001 でも満たさない（h1 が無い）

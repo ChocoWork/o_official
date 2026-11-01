@@ -76,6 +76,8 @@ I/OなしのTypeScript単体試験。時刻/購入済み着数/利用回数/本�
 
 性能は50行×20着、コード所属c=0..5/非併用自動所属u=0..13の84配置、全商品重複形と別item最大セット形を各20回（3360計算）。注文側の併用自動0〜5件/非併用商品自動19〜14件の６配置×２形×20回（240計算）、レビューの6商品auto/1注文auto/18非併用商品auto/5商品codeで5100円となるfixture20回を加え、合計3620計算とする。module読込を除く全計算200ms未満を要求する。商品集合最大2067・組最大157696と３商品の採否2^3=８集合は計算上界で、engine内部の訪問数の実測ではない。consoleもmeasured（呼出回数/時間）とcomputedBoundsを分ける。全商品形の両端は296900/680400円、セットのみ商品側は8400円を手計算の根拠とする。実測/RED→GREEN/型/lintはTask 2レポートに記録する。試作の計測値を製品成功の証拠にしない。
 
+> 波 6 確認日: 2026-11-01。末尾に「開店前のセキュリティの穴 波 6 のテスト」の節を足し、波 3 の節の既知の一覧に `SEC-ABOUT-007-AC-02` を足した。
+>
 > 波 5 確認日: 2026-10-29。開店前のセキュリティの穴 波 5（アプリの session への結び付け・`has_permission` の aal2 と結び付いた生きた session・会員の表の方針）の新しい試験と外した `test.fail` 9 行を、下の「開店前のセキュリティの穴 波 5 のテスト」に記載した。DB 結合は 146 suites・4377 件通過・0 失敗、本番ビルドの E2E 全件は 203 failed・4821 passed・26 skipped（波 4 の 185 failed と比べて新しい赤は 1 並列の再実行で 154 件通り、残り 4 件は波 5 に未対応の試験で直した。ほかは並列の揺れ）。
 
 > 波 4 確認日: 2026-10-28。開店前のセキュリティの穴 波 4（送り元の IP の取り出し・回数の鍵・管理の監査の IP・取扱店の認可の拒否の監査・管理画面の CONTACT タブ）の新しい試験と外した `test.fail` 16 行を、下の「開店前のセキュリティの穴 波 4 のテスト」に記載した。本番ビルドの E2E 全件は 185 failed・4832 passed・26 skipped（波 3 の 183 failed と比べて新しく赤になった 10 ファイルは 1 並列の再実行で 200 件とも通った。並列の揺れ）。
@@ -1074,7 +1076,7 @@ DB 結合は新しく書いていない。
 | `NEWS-SEC-003` | SEC-NEWS-004-AC-02、SEC-NEWS-023-AC-01（AC-02 は手元の置き場の `cache-control` が 3600 か未実測） | 8 |
 | `LOGIN-030` | SEC-AUTH-022-AC-02（desktop の 1 幅。HTTP の試験なので幅は無関係） | 10 |
 
-SEC-NEWS-007・008 の E2E（`FR-NEWS-SEC-001`）は `/api/news` が `image_url` を返さないので元から緑で、署名の関数の確かめは単体・結合に置いた。`SEC-ABOUT-006-AC-01`・`SEC-ABOUT-007-AC-01`（確かめ方は `build-env-guard.test.ts`）・`SEC-NEWS-008-AC-02`（記録に 1 件。単体）は AC に E2E が無く、`baseline.json` の既知の `missing-child` のまま。
+SEC-NEWS-007・008 の E2E（`FR-NEWS-SEC-001`）は `/api/news` が `image_url` を返さないので元から緑で、署名の関数の確かめは単体・結合に置いた。`SEC-ABOUT-006-AC-01`・`SEC-ABOUT-007-AC-01`（確かめ方は `build-env-guard.test.ts`）・`SEC-NEWS-008-AC-02`（記録に 1 件。単体）は AC に E2E が無く、`baseline.json` の既知の `missing-child` のまま。波 6（2026-11-01）で `SEC-ABOUT-007-AC-02`（`APP_ALLOWED_ORIGINS` が本番のビルドで必須。確かめ方は `build-env-guard.test.ts`・`next-config.test.ts`）も同じ理由で既知の一覧に足した（`baseline.json` に意図して 1 件足した。AC-01 と同じで、E2E は本番のビルドをやり直せないため）。
 
 ### 流していない確認（controller）
 
@@ -1351,3 +1353,64 @@ DB用は既存の[予約の遷移](../../../tests/integration/db/group_h_redempt
 - LOOK-ALL-039の`FREQ-338-AC-02`だけは単独でも`--repeat-each=5`の15回中5回落ちる（幅によらない）。
   - カードが見えた瞬間に`animation-name`を1回だけ読むため、水和の後に付く`data-reveal="true"`より先に読むと`none`になる。試験側のタイミングの問題で、Hの差分はLOOKとリビールのCSSに触れていない。直しは別の作業に分けた。
 - 単独の流し直しは、Hの12 specを入れた`isolated-global`がchromiumの後片づけの組なので、`--no-deps`を付けないと1ファイルごとに約100件（約20分）が付いてくる。
+
+## 開店前のセキュリティの穴 波 6 のテスト（captcha・パスワード変更・手元の Supabase Auth の設定。SEC-AUTH・ABOUT、FR-AUTH-006）
+
+確認日: 2026-11-01。手元の Supabase を本番の前提にそろえた（`supabase/config.toml`: 確認メール必須・captcha〔Turnstile のテスト用の秘密を `supabase/.env` から〕・最小長 16・`secure_password_change`・TOTP 有効・OTP の期限 300 秒）。移行 M3 `20261101120000_sec_password_change_challenges` は手元だけ適用済み（本番は未適用。[移行運用](../../06_Operations/db-migrations.md)の波 6 の節）。AUTH は範囲内の領域なので、試験の一覧の正本は `npm run trace:report` が作る `docs/05_Quality/reports/` で、ここは範囲外の補助と要点だけを記す。
+
+### 新しく作った試験ファイル
+
+| ファイル | 先頭の ID | 確かめること |
+| --- | --- | --- |
+| [service-role-auth-client.test.ts](../../../tests/unit/lib/auth/service-role-auth-client.test.ts) | `DD-AUTH-040` | captcha を免除される auth だけの client（セッションを持たない・サービスの鍵）と `isCaptchaRejection`。返す `auth` は 4 関数（`signInWithPassword`・`signInWithOtp`・`signUp`・`resend`）だけで、`admin`・`mfa`・`getSession` に届かない（`supabase-client-isolation.test.ts` も同じ） |
+| [captcha-test-utils.test.ts](../../../tests/unit/e2e/captcha-test-utils.test.ts)（3 本） | `DD-AUTH-040` | E2E・DB 結合の補助 `withDummyCaptcha`（Turnstile のテスト用ダミーのトークンを付ける） |
+| [config-wave6.test.ts](../../../tests/unit/supabase/config-wave6.test.ts)（11 本） | `DD-AUTH-040` | `supabase/config.toml` の目標の値（最小長 16・captcha・確認メール必須・OTP 300 秒・TOTP・確認メールの雛形が `token_hash`・`type=signup` のリンク・自前 SMTP 無し）。波 6 の切り替え〔2026-11-01〕までは `supabase/pending-wave6/config.toml` を読み、今は `supabase/config.toml` を読む |
+| [sec-password-change-challenges.test.ts](../../../tests/unit/migrations/sec-password-change-challenges.test.ts)（22 本） | `DATA-AUTH-009`・`DATA-AUTH-010` | M3 の SQL の静的な確かめ（8 列・部分索引・RLS と方針 3 本・関数 2 本の属性と ACL・自己検査・ROLLBACK） |
+| [auth_password_change_challenges.integration.test.ts](../../../tests/integration/db/auth_password_change_challenges.integration.test.ts)（DB 結合） | `DATA-AUTH-009`・`DATA-AUTH-010` | `issue` の置き換え・`consume` の `ok`／`invalid`／`locked`／`none`、5 回で施錠、別 session・期限切れ、TTL・ハッシュの形の 22023、anon・authenticated の拒否、ハッシュが hex 64 桁、利用者の削除で消える |
+| [password-change-schema.test.ts](../../../tests/unit/features/auth/password-change-schema.test.ts)・[password-change-service.test.ts](../../../tests/unit/features/auth/password-change-service.test.ts) | `DD-AUTH-041` | 入力の形、コードの生成・鍵つきハッシュ・無効化、現行パスワードの確かめの分類〔`invalid`／`unavailable`／`captcha_rejected`〕、メール |
+| [password-change-start-route.test.ts](../../../tests/unit/api/auth/password-change-start-route.test.ts)・[password-change-confirm-route.test.ts](../../../tests/unit/api/auth/password-change-confirm-route.test.ts) | `DD-AUTH-041` | 窓口の順番（回数 → 認証 → CSRF → aal2 → 本人ごとの回数 → 形 → 本体）、応答、監査の符号（`code_invalid`／`code_locked`／`code_unusable` ほか） |
+| [password-change.test.ts](../../../tests/integration/api/auth/password-change.test.ts) | `API-AUTH-020`・`API-AUTH-021` | 開始と確定を本物の部品でつなぐ（DB の関数だけ JS の写し）。鍵つきハッシュの一致、別 session のコードが使えない、5 回の誤りで使えない、弱いパスワードがコードを焼かない、メールの失敗でコードが無効になる |
+| [password-change-form.test.tsx](../../../tests/unit/app/account/password/password-change-form.test.tsx) | `DD-AUTH-042` | 画面の段・送る前の確かめ・窓口の応答の見せ方・401 の更新と送り直し |
+| [auth-password-change.test.tsx](../../../tests/integration/ui/auth-password-change.test.tsx) | `SCR-AUTH-011`・`FLOW-AUTH-005` | 2 段の見え方と遷移（成功で `/login`、未ログインで `/login`、Google だけの会員の案内）、日本語 25 文字（75 バイト）の断り。401 `Unauthorized` で `refreshSessionOnce()` を 1 回だけ呼んで同じ本文を送り直す（5 件: `start`・`confirm` それぞれ更新して 200 で段が進む／`expired`・`unavailable` では送り直さず `/login`／送り直しがまた `Unauthorized` なら更新は 1 回きりで `/login`／`Unauthorized` でない 401 では更新しない） |
+| [FR-ACCOUNT-046-password-change.spec.ts](../../../e2e/FR-ACCOUNT-046-password-change.spec.ts)（E2E 20 本） | `FR-AUTH-006-AC-01`〜`07`、`SEC-AUTH-034-AC-01`〜`04` | 画面の 3 本（AC-01・AC-02・AC-07）は 3 幅、窓口を HTTP で叩く物は desktop だけ。会員は afterAll で消す。5 回誤りの AC は本人ごとの枠を DB で消してから確かめる。`FR-AUTH-006-AC-05` の漏洩の照合は本物の HaveIBeenPwned に出る |
+
+### 足した・書き換えた試験
+
+| ファイル | 先頭の ID／対象 | 変えたこと |
+| --- | --- | --- |
+| `tests/unit/schemas/common.test.ts` ほか、`auth-password-rule`・`auth-password-reset-confirm-api`・`create-user-route`・`password-change-schema` | `SEC-AUTH-014`・`API-AUTH-012` | パスワードの規則に UTF-8 で 72 バイト以内を足した。72 バイト OK／73 バイト NG／日本語 24 文字 OK／25 文字 NG。「128 文字ちょうどは通る」を 72 バイトに直した |
+| `tests/unit/lib/build-env-guard.test.ts`・`tests/unit/next-config.test.ts` | `SEC-ABOUT-007-AC-02` | 本番のビルドは `APP_ALLOWED_ORIGINS` が無い・空白だけで、変数名を挙げて落ちる（ほかの変数の値は文に載せない）。3 変数が揃えば読み込める。書式（`,` で分けた各項目）は、www と apex の 2 項目は通り、scheme 無し・`,` だけ・末尾 `,`・途中の空・`http:`・末尾 `/`・パス・読めない項目混じりの 8 種は host を文に出さずに落ち、preview／手元は落ちない（10 件） |
+| `tests/unit/api/auth/{login-route,login-resend-route,register-route}.test.ts`、`tests/unit/lib/supabase-client-isolation.test.ts` | `DD-AUTH-014`・`016`・`018`・`040` | ログイン 2 回・再送・登録を `createServiceRoleAuthClient` にした。captcha の拒否は 500＋監査 `supabase_captcha_rejected` |
+| `tests/unit/api/auth/register-route.test.ts`・`tests/unit/services/auth-admin-user.test.ts`・`tests/integration/api/auth/register-enumeration.test.ts` | `DD-AUTH-018`・`DD-AUTH-040`・`ARC-AUTH-006` | 確認のリンクが切れた未確認の会員が同じメールで登録し直すと、確認メールを `auth.resend` で送り直す（`isAuthUserUnconfirmed`）。応答・Cookie は新規と同じ 202。確認済みは従来の通知。resend の失敗・captcha の拒否・例外でも 202 のまま（`SEC-AUTH-016-AC-04`） |
+| `tests/unit/api/auth/login-route.test.ts`（6 件） | `DD-AUTH-014`・`SEC-AUTH-035-AC-02` | GoTrue の 429 → 429＋`Retry-After: 60`＋監査 `supabase_rate_limited`、5xx／status 0／`AuthRetryableFetchError` → 503＋`Retry-After: 30`＋監査 `supabase_unavailable`、未確認と誤りは同じ 401・同じ本文（列挙の手掛かりを足さない） |
+| `tests/unit/api/admin/create-user-route.test.ts`・`tests/integration/api/admin-create-user-api.test.ts` | `DD-ADMIN-002` | 管理の会員作成は `email_confirm: true` で作る（確認メール必須の設定で、作った会員が確認前のまま残らない） |
+| `tests/integration/api/` の auth 系（login・login-resend・register・cookieFlags・site-url-guard・auth-architecture・auth-bot-rate-limit など）と `auth-flow`・`auth-register-flow` | `DD-AUTH-040` | サーバーのモックを auth client（`createServiceRoleAuthClient`）のモックへ追従 |
+| `tests/integration/db/auth_grants_inventory.integration.test.ts` | `DATA-AUTH-006` | 「閉じた表」に `password_change_challenges`、関数の期待に `issue_password_change_challenge`・`consume_password_change_challenge` を足した。M3 を当てた DB でしか通らない |
+| `tests/integration/db/{group_g3_postgrest_paths,group_g4_postgrest_paths,order_status_postgrest}.integration.test.ts` | （補助） | `signInWithPassword` にダミーの `captchaToken` |
+
+### E2E で足した・書き換えた期待、外した `test.fail`
+
+| ファイル（`e2e/FR-...`） | 要件 ID | 内容 |
+| --- | --- | --- |
+| `ACCOUNT-046` | 上の表 | 新規 20 本 |
+| `SIGNUP-003` | `SEC-AUTH-016-AC-04`（新規、3 幅）、`FR-LOGIN-004-AC-01` | 未確認の会員の再登録で確認メールが 1 通届き、リンクが開く。会員登録の直後に確認の印を取り直す（再送が前の印を作り直すため）。`FR-LOGIN-004-AC-01` の `test.fail` を外した |
+| `LOGIN-031` | `SEC-AUTH-015-AC-01`（書き換え）、`-AC-02`(ii)、`-AC-04`、`SEC-AUTH-035-AC-01`・`-AC-02` | anon の鍵で `/signup`・`/token`・`/otp` をトークン無しで叩くと 400（本文に captcha）。24 時間を過ぎた session は nonce 無しで 400。アプリのログイン・登録は captcha 有効でも通る。誤ったパスワードは 401 のまま、監査に `supabase_captcha_rejected` が出ない |
+| `LOGIN-031` | `SEC-AUTH-015-AC-05`（(i) 現行パスワード無しは 400） | **`test.fail`（ENV）が残る唯一の物**。本番は Management API の設定で確かめる（開店前） |
+| `LOGIN-024`・`SIGNUP-002`・`LOGIN-034`・`LOGIN-032` | `FREQ-320-AC-03`（LOGIN-024）、`SEC-AUTH-016-AC-01`・`SEC-AUTH-029-AC-01`（SIGNUP-002）、`SEC-AUTH-029-AC-02`（LOGIN-034）、`SEC-AUTH-030-AC-01`・`FREQ-316-REQ-02-AC-01`（LOGIN-032） | 手元の設定の切り替えで `test.fail`（ENV）を外した。登録は既存・未確認のどちらも 202 に揃う、最小長 16、OTP 300 秒、TOTP の登録・確認。`FR-SIGNUP-003` の `FR-LOGIN-004-AC-01`（上の行）と `FR-LOGIN-031` の `SEC-AUTH-015-AC-01`（書き換えて外した）を合わせ、計画の 9 つの印のうち 8 つが外れた |
+
+E2E の補助には、ダミーの `captcha_token` を付けた（`e2e/captcha-test-utils.ts`、`admin-session-test-utils.ts`・`news-test-utils.ts`・`home-grant-test-utils.ts`・`stockist-admin-test-utils.ts` ほか 13 ファイル）。`grep -rnE "test\.fail" e2e | grep -E "ENV"` の残りは `FR-LOGIN-031` の `SEC-AUTH-015-AC-05` の 1 件だけ。
+
+### 実測（2026-11-01）
+
+- DB 結合: `npm run db:reset`（M3 と目標の `config.toml` を載せた状態）の後で、DB 結合の全体は 161 suites 通過・13 skipped・4715 件通過・0 失敗。
+- DB なしの jest（波 6 の対象 17 suites）: 334 件通過（`password-change*`、`config-wave6`、`sec-password-change-challenges`、`service-role-auth-client`、`captcha-test-utils`、`build-env-guard`、`next-config`、`common`、`auth-admin-user`、`register-route`、`register-enumeration`）。`tests/unit/docs/` の件数の試験（`order-status-traceability`・`delivery-status-traceability`）は Route Handler 168 ファイル・212 組に直して 56 件通過。
+- `npm run test:trace-coverage`・`npm run trace:report` は controller が流す（新しい単体・結合が増え、`test-gaps.md` に `SEC-ABOUT-007-AC-02` の行が増える）。
+
+### 実測（2026-11-01、手元）
+
+最終レビューの直し（指摘 1〜8）の後に流した結果。
+
+- 非 DB jest: 全件通過（落ち 0。`.claude/worktrees` の他者の写しは除く）。`tsc` 誤り 0。`validate-trace` は基準より増えた 0。`test:trace-coverage` 通過（届かない分岐の節 49 行のまま）。
+- DB 結合（`db:reset` の後）: 161 suites・4715 通過・0 失敗。
+- E2E 全件（本番ビルド、`db:reset` の後）: 186 failed / 4937 passed / 26 skipped / 5149 件（波 5 は 203 failed / 4821 passed）。前に通って今落ちた 27 と新しい赤 2 は、単独の再実行で通過した（負荷の時間切れ、ログインのコードの回数の枠の 429、Kong の upstream の不正な応答）。`FR-ACCOUNT-046` の 1 本は GoTrue の同じメールへの送信の間隔（手元 1 秒）に当たっていたので、試験に 1.5 秒の間を足した。結果の元は `.superpowers/sdd/2026-10-25-security-gap-fixes/e2e-results-wave6-full.json`。
+- 最後の直しの後の認証の E2E の組（`FR-LOGIN-0*`・`FR-SIGNUP`・`FR-PWRESET`・`FR-ACCOUNT-046`・`FR-ADMIN-MISC-002`・`FR-ABOUT`）: 636 通過・3 失敗（`FR-ABOUT-005-AC-01`・`FR-ABOUT-006-AC-01`・`FR-LOGIN-038` の `SEC-AUTH-032-AC-01`）。どれも波 5 の全件でも赤だった既知の赤。

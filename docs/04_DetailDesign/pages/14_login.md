@@ -1,10 +1,10 @@
 # 1.14 ログインと認証（AUTH）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-29 | 対象: ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の窓口 `/api/auth/*`、サイト共通のヘッダーとドロワー、認証の部品 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-11-01 | 対象: ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の窓口 `/api/auth/*`、サイト共通のヘッダーとドロワー、認証の部品 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
-AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`〜`039`）で書く。`DD-AUTH-032`〜`036` はログインの戻り先（2026-10-25、波 1-A）の設計で、コードは同日に書いた。`DD-AUTH-037`（`/api/auth` の no-store）は 2026-10-28（波 3）に、`DD-AUTH-038`（送り元の IP の取り出し）は 2026-10-28（波 4）に、`DD-AUTH-039`（アプリの session への結び付けの旗と session_id の読み取り、ログイン・更新・昇格の書く側）は 2026-10-29（波 5）に足した。
+AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`〜`042`）で書く。`DD-AUTH-032`〜`036` はログインの戻り先（2026-10-25、波 1-A）の設計で、コードは同日に書いた。`DD-AUTH-037`（`/api/auth` の no-store）は 2026-10-28（波 3）に、`DD-AUTH-038`（送り元の IP の取り出し）は 2026-10-28（波 4）に、`DD-AUTH-039`（アプリの session への結び付けの旗と session_id の読み取り、ログイン・更新・昇格の書く側）は 2026-10-29（波 5）に足した。`DD-AUTH-040`（captcha を免除される auth だけの client と、captcha の拒否の見分け）は 2026-11-01（波 6）に足した。`DD-AUTH-041`（パスワード変更の開始・確定の窓口と部品）も 2026-11-01（波 6 の Task 5）に、`DD-AUTH-042`（パスワード変更の画面）は同日（波 6 の Task 6）に足した。
 中身は 2026-10-24 の作業ツリーのコードを読んで起こした今の動きで、ユーザーの確認を受けていないので全部「推定」にした。要件・構造設計とコードが食い違う所は決めずに今のコードの動きを書き、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節に載せる。
 
 | 範囲 | ID | 単位 |
@@ -21,6 +21,9 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 応答の見出し | `DD-AUTH-037` | 共有の `src/proxy.ts` が `/api/auth` 配下の応答に付ける `Cache-Control: no-store`（判定だけを `src/lib/auth-no-store-policy.ts` の `shouldSetNoStore` に出して範囲に入れた） |
 | 送り元の IP | `DD-AUTH-038` | 共有の `src/lib/request-ip.ts` の `getClientIp`・`getAuditRequestContext`。回数の制限の鍵（共有の `rateLimit.ts`。鍵が取れない時は `null`、429・503 は `no-store`）と監査の IP・Turnstile の `remoteip` が使う |
 | アプリの session への結び付け | `DD-AUTH-039` | 旗 `AUTH_REQUIRE_APP_SESSION` と GoTrue の `session_id` の読み取り（`src/lib/auth/app-session.ts`）。書く側はログインの保存（`persistSessionAndCookies`）・更新（`refresh`）・TOTP の昇格（`mfa/verify`）。読む側は共有の `checkAuthSessionLiveness` が旗で RPC を替える（`is_app_session_active`）ことと、`authenticateRequest` が失効に claims を付けること、`enroll-totp` の断りの監査（波 5 の Task 3） |
+| captcha の免除 | `DD-AUTH-040` | Supabase の captcha が掛かる窓口（`/signup`・`/token`（password）・`/otp`）を呼ぶ 6 か所（ログイン 2 回・ログインの再送・会員登録・未確認の会員の確認メールの再送・パスワード変更の現行パスワードの確認）が使う auth だけの client（`src/lib/auth/service-role-auth-client.ts`）と、captcha の拒否の見分け。窓口の分岐は `DD-AUTH-014`・`016`・`018` に足した（波 6 の Task 2） |
+| パスワード変更 | `DD-AUTH-041` | ログイン中の会員が自分でパスワードを変える 2 本の窓口 `password/change/start`・`password/change/confirm` と、部品（`src/features/auth/services/password-change.ts` のコードの作成・鍵つきのハッシュ・現行パスワードの確かめ・コードの無効化・メール 2 通）。入力の形は `schemas/password-change.ts`（波 6 の Task 5）。画面は `DD-AUTH-042` |
+| パスワード変更の画面 | `DD-AUTH-042` | `/account/password`（`src/app/account/password/page.tsx` の入口と `PasswordChangeForm.tsx` の 2 段の画面）と、アカウントの「お客様情報」の欄からのリンク（波 6 の Task 6） |
 
 - 結論: 範囲の 33 の単位を 31 の項目へつないだ（`/login/verify` と `/auth/password-reset/verify` は頁と端末の部品の2単位を1項目にした）。各項目に入出力・正常と異常の流れ（分岐ごとに条件と動き）・状態と永続化・認証認可・単体テストの観点を書いた
 - 単体テストは 5 本（`LoginModal`・`AuthResultScreen`・`VerifyOtpClient`・`verified-page`・`logout-guest-shopping`）しか無く、窓口の分岐は結合テスト（`tests/integration/api/auth/**`）だけが通す。分岐の網羅 100% にするには、テスト観点の表の「今のテスト」が無い行を単体テストで足す必要がある
@@ -33,7 +36,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 範囲 | `scripts/trace/scope.json` の AUTH |
 | 上位の文書 | [AUTH の構造設計](../../03_BasicDesign/areas/auth.md)（`ARC-`・`SCR-`・`FLOW-`・`STATE-`・`API-`・`DATA-AUTH-`）、[AUTH の要件](../../02_Requirements/areas/auth.md)（`SEC-AUTH-`） |
 | 関連文書 | [AUTH の脅威](../../05_Quality/security/threats/auth.md)、`docs/03_BasicDesign/decisions/ADR-0400`〜`ADR-0412`、シーケンス [ログイン・追加認証](../sequence/auth-login-mfa.md)・[Google OAuth](../sequence/auth-oauth.md)・[パスワード再設定](../sequence/auth-password-reset.md)・[会員登録・確認](../sequence/auth-registration.md)・[セッション・API認可](../sequence/auth-session.md) |
-| 対象のコード | 「実装の単位」の表の 33 単位に、2026-10-28 に足した `shouldSetNoStore`（`DD-AUTH-037`）と、2026-10-28（波 4）に足した `getClientIp`・`getAuditRequestContext`（`DD-AUTH-038`）と、2026-10-29（波 5）に足した `isAppSessionRequired`・`readAuthSessionId`（`DD-AUTH-039`）を加えた 38 単位 |
+| 対象のコード | 「実装の単位」の表の 33 単位に、2026-10-28 に足した `shouldSetNoStore`（`DD-AUTH-037`）と、2026-10-28（波 4）に足した `getClientIp`・`getAuditRequestContext`（`DD-AUTH-038`）と、2026-10-29（波 5）に足した `isAppSessionRequired`・`readAuthSessionId`（`DD-AUTH-039`）と、2026-11-01（波 6）に足した `createServiceRoleAuthClient`・`isCaptchaRejection`（`DD-AUTH-040`）と、2026-11-01（波 6 の Task 5）に足した窓口 2 本・部品 6 関数（`DD-AUTH-041`）と、同じく波 6 の Task 6 に足した頁と画面の 2 ファイル（`DD-AUTH-042`）を加えた 50 単位 |
 | 調べた時点 | 2026-10-24 の作業ツリー。コードは読んだだけで、動かしての確かめはしていない |
 | 上位の決め方 | 項目の上位は、その単位が受け持つ構造設計と、その単位のコードが満たす `SEC-AUTH-` だけにした。満たさない `SEC-AUTH-` は上位にせず、本文の「認証認可」に「満たさない」と書いた（構造設計と同じ決め方）。要件・ADR・範囲外の ID は上位に書けないので、本文の「対応要件 ID」の括弧と根拠に書いた |
 
@@ -94,10 +97,25 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | `src/lib/request-ip.ts` | `getAuditRequestContext` | DD-AUTH-038 |
 | `src/lib/auth/app-session.ts` | `isAppSessionRequired` | DD-AUTH-039 |
 | `src/lib/auth/app-session.ts` | `readAuthSessionId` | DD-AUTH-039 |
+| `src/lib/auth/service-role-auth-client.ts` | `createServiceRoleAuthClient` | DD-AUTH-040 |
+| `src/lib/auth/service-role-auth-client.ts` | `isCaptchaRejection` | DD-AUTH-040 |
+| `src/app/api/auth/password/change/start/route.ts` | `<file>` | DD-AUTH-041 |
+| `src/app/api/auth/password/change/confirm/route.ts` | `<file>` | DD-AUTH-041 |
+| `src/features/auth/services/password-change.ts` | `generatePasswordChangeCode` | DD-AUTH-041 |
+| `src/features/auth/services/password-change.ts` | `hashPasswordChangeCode` | DD-AUTH-041 |
+| `src/features/auth/services/password-change.ts` | `voidPasswordChangeChallenge` | DD-AUTH-041 |
+| `src/features/auth/services/password-change.ts` | `verifyCurrentPassword` | DD-AUTH-041 |
+| `src/features/auth/services/password-change.ts` | `sendPasswordChangeCodeMail` | DD-AUTH-041 |
+| `src/features/auth/services/password-change.ts` | `sendPasswordChangedNotice` | DD-AUTH-041 |
+| `src/app/account/password/page.tsx` | `<file>` | DD-AUTH-042 |
+| `src/app/account/password/PasswordChangeForm.tsx` | `<file>` | DD-AUTH-042 |
 
 - `src/lib/auth-no-store-policy.ts` の `shouldSetNoStore` は `IMPL-AUTH-223`（2026-10-28）。共有の `src/proxy.ts` が呼ぶ。`proxy` 全体は CSP・Origin の検査も持つ共有部品で、範囲の単位にしないので、`/api/auth` かどうかの判定だけを小さな関数に出して範囲に入れた（`scripts/trace/scope.json` の AUTH の `src` と、試験 `tests/unit/middleware/proxy-no-store.test.ts` を `tests` に足した）。ADR-0415 の置き場所
 - `src/lib/request-ip.ts` の `getClientIp`・`getAuditRequestContext` は `IMPL-AUTH-224`・`IMPL-AUTH-225`（2026-10-28、波 4。1 つの `@impl` は 1 つの単位にだけ付けるので 2 つに分けた）。回数の制限の鍵（共有の `rateLimit.ts`）と、取扱店・管理・LOOK・NEWS の監査の IP が呼ぶ共有の関数で、範囲に入れた（`scripts/trace/scope.json` の AUTH の `src` と、試験 `tests/unit/lib/request-ip.test.ts` を `tests` に足した）。ADR-0416 の置き場所
 - `src/lib/auth/app-session.ts` の `isAppSessionRequired`・`readAuthSessionId` は `IMPL-AUTH-226`・`IMPL-AUTH-227`（2026-10-29、波 5。1 つの `@impl` は 1 つの単位にだけ付けるので 2 つに分けた）。ログインの保存・更新・昇格が結び付けの旗と `session_id` の読み取りで使う（`scripts/trace/scope.json` の AUTH の `src` と、試験 `tests/unit/lib/auth/app-session.test.ts` を `tests` に足した）。ADR-0417・0419 の置き場所。`persistSessionAndCookies`・`persistNewSession` は範囲外の共有部品（`src/features/auth/services/`）で、単位にしない
+- `src/lib/auth/service-role-auth-client.ts` の `createServiceRoleAuthClient`・`isCaptchaRejection` は `IMPL-AUTH-228`・`IMPL-AUTH-233`（2026-11-01、波 6。1 つの `@impl` は 1 つの単位にだけ付けるので 2 つに分けた。計画の割当表は 228 を 2 つ分として置いたため、229〜232 を避けて 233 にした）。ログイン（2 回）・再送・登録が captcha を免除される呼び出しに使う（`scripts/trace/scope.json` の AUTH の `src` と、試験 `tests/unit/lib/auth/service-role-auth-client.test.ts` を `tests` に足した）。ADR-0420 の置き場所
+- `src/app/api/auth/password/change/{start,confirm}/route.ts` は `IMPL-AUTH-230`・`IMPL-AUTH-231`、`src/features/auth/services/password-change.ts` の 6 関数は `IMPL-AUTH-229`・`234`〜`238`（2026-11-01、波 6 の Task 5。計画の割当表は部品の全体に `229` を 1 つ置いたが、1 つの `@impl` は 1 つの単位にだけ付けるので 6 つに分けた。`232` は Task 6 の画面に残し、`233` は使用済みなので `234` 以降を使った）。対応は `generatePasswordChangeCode`＝229、`hashPasswordChangeCode`＝234、`voidPasswordChangeChallenge`＝235、`verifyCurrentPassword`＝236、`sendPasswordChangeCodeMail`＝237、`sendPasswordChangedNotice`＝238。`schemas/password-change.ts` は関数の単位を持たない（`z.object` の定数）。`scripts/trace/scope.json` の AUTH の `src` に部品 2 つを、`tests` に `tests/unit/features/auth/password-change*.test.ts` を足した。ADR-0421 の置き場所
+- `src/app/account/password/PasswordChangeForm.tsx` は `IMPL-AUTH-232`、`src/app/account/password/page.tsx` は `IMPL-AUTH-239`（2026-11-01、波 6 の Task 6。計画の割当表は頁を本体と同じ `IMPL-AUTH-232` の「薄い入口」としたが、`validate-trace` は同じ `@impl` を 2 つの単位に付けると `duplicate-impl` にするので、頁に次の空き番号 `239` を付けた。`233`〜`238` は使用済み）。`scripts/trace/scope.json` の AUTH の `src` に `src/app/account/password/**/*.{ts,tsx}` を足した（試験 `tests/integration/ui/auth-password-change.test.tsx` は既存の `tests/integration/ui/auth-*.test.{ts,tsx}` で届く）。`src/app/account/page.tsx` は範囲外の共有部品で、リンクを 1 つ足しただけなので単位にしない
 - 戻り先の部品（`src/features/auth/return-intent/` の `return-path.ts`・`return-intent-store.ts`・`return-intent-service.ts`・`use-login-href.ts`）は、DD-AUTH-032・033・034・036 につなぐ。単位（symbol）はコードを書く時に確定する（コードはまだ無いので、この表には書かない）
 - `src/app/` の `page`・`route` と `.tsx` はファイル全体で1つの単位なので、中の metadata の関数・Route Handler の関数・小さな関数・定数はその単位に含める。`.ts` の `useTurnstileWidget` と `formatResendCountdown` だけが関数の単位
 - 新しい `@impl` は `IMPL-AUTH-101` から振る（前の版の `IMPL-AUTH-SEC-009` などと字の上で混ざらないようにするため）。33 の単位すべてに `@impl`（`IMPL-AUTH-101`〜`205`）と `@design` を付けた
@@ -920,7 +938,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 入力 | `POST /api/auth/login`。JSON の `email`・`password`・`turnstileToken`・`next`（任意。型は縛らず、戻り先の確かめが断る）（形は共有の `LoginRequestSchema`）。送り元の IP（共有の `getClientIp`。DD-AUTH-038）を Turnstile の IP に使う |
 | 出力 200 | `{ step: 'otp', message }` と保留の Cookie `sb-login-2fa-session`（共有の `cookieOptionsForLoginTwoFactor`、5分）、戻り先の Cookie `sb-return-intent`（15 分。`next` が無い・外れた時・控えの作成の失敗は消す側） |
-| 出力の失敗 | 400（形の誤りを `formatZodError` で）、401（「メールアドレスまたはパスワードが正しくありません。」）、403（`Bot detection failed`）、429（回数の制限の応答）、500（確認コードの送信の失敗・例外） |
+| 出力の失敗 | 400（形の誤りを `formatZodError` で）、401（「メールアドレスまたはパスワードが正しくありません。」）、403（`Bot detection failed`）、429（アプリの回数の制限の応答、または GoTrue の回数の制限。後者は `Retry-After` 60 と日本語の文）、500（確認コードの送信の失敗・例外）、503（GoTrue の 5xx・通信の失敗。`Retry-After` 30 と日本語の文） |
 
 **正常フロー:**
 
@@ -928,7 +946,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 2. 本文を JSON で読み、形を確かめる
 3. Turnstile を確かめる
 4. メール単位の制限（`auth:login`、5回／600秒、`subject` はメール）を数える
-5. 匿名の client（`createPublicClient`）でパスワードを確かめる。得た session は使わない
+5. captcha を免除される auth だけの client（`createServiceRoleAuthClient`、DD-AUTH-040）でパスワードを確かめる。得た session は Cookie に渡さず捨てる
 6. 同じ client で確認コードを送る。`shouldCreateUser: false` で新しい利用者を作らない
 7. 戻り先を確かめて控える（`issueReturnIntent`、用途 `login`、DD-AUTH-034）
 8. 利用者の id とメールで保留の印を作り、Cookie に入れ、戻り先の Cookie も付けて 200 を返す
@@ -944,7 +962,11 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | Turnstile が通らない | `login` の failure（`turnstile.error`、無ければ `turnstile_failed`）を残して 403 |
 | メールの制限が応答を返す | その応答を返す |
 | メールの制限の呼び出しが投げる | 握りつぶさず、外側の `catch` の 500 で止まる。パスワードの確かめへ進まない |
-| パスワードの確かめが誤り、または session か user が無い | `login` の failure（誤りの文、無ければ `invalid credentials`）を残して 401。どちらが誤りかは言わない |
+| パスワードの確かめを Supabase の captcha が断った | 401 にせず 500 `Internal server error`。`login` の error（`supabase_captcha_rejected`。誤りの本文は残さない）を残す。確認コードは送らない（DD-AUTH-040） |
+| パスワードの確かめを GoTrue が回数の制限で断った（`status` 429） | 401 にせず 429 と `Retry-After: 60`、本文は「ログインの試行が集中しています。しばらくしてから再度お試しください。」。`login` の error（`supabase_rate_limited`。誤りの本文は残さない）を残す。確認コードは送らない。アプリの全員が少数の出口の IP から GoTrue を呼ぶので、IP ごとの枠を分け合う故障を「パスワードが違う」に丸めない（SEC-AUTH-035-AC-02） |
+| パスワードの確かめで GoTrue の 5xx・`status` 0・`AuthRetryableFetchError` | 401 にせず 503 と `Retry-After: 30`、本文は「ただいまログインを処理できません。時間をおいて再度お試しください。」。`login` の error（`supabase_unavailable`。誤りの本文は残さない）を残す。確認コードは送らない（SEC-AUTH-035-AC-02） |
+| パスワードの確かめが誤り（`invalid_credentials`）・未確認のメール（400 `email_not_confirmed`）、または session か user が無い | `login` の failure（誤りの文、無ければ `invalid credentials`）を残して 401。本文は同じ。どちらが誤りかは言わない（未確認と誤りを見分けさせない） |
+| 確認コードの送信を Supabase の captcha が断った | 500。`login` の error（`supabase_captcha_rejected`）を残す。保留の Cookie を発行しない（DD-AUTH-040） |
 | 確認コードの送信が誤り | `login` の error（`otp_send_failed`）を残して 500 |
 | 送り元の見出し（`x-real-ip`）が無い・空・IP の形でない、または `x-forwarded-for` だけ | Turnstile に IP を渡さない（`null`。`x-forwarded-for` は読まない） |
 | `next` が無い・確かめに外れる・控えの作成が失敗 | ログインは止めず 200。戻り先の Cookie を消す側（外れた時は理由の符号だけ監査） |
@@ -953,7 +975,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 **状態・永続化:** 戻り先を控える時だけ `private.auth_return_intents` に 1 行書く（DATA-AUTH-005。Cookie の番号は STATE-AUTH-006）。ほかは DB の表に書かない。Supabase Auth の確認コードの発行と、保留の Cookie（利用者の id・メール・用途・発行の時刻を HMAC で署名した印、STATE-AUTH-001）だけが状態。保留の印の作り方と寿命は共有の `login-2fa-session.ts` が持つ。
 
-**認証認可:** ログインを求めない公開の窓口。Origin は共有の proxy が確かめる。`no-store` は共有の proxy が付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037。2026-10-28）。Supabase Auth を直接呼べばこの窓口を通らずにトークンを得られる（SEC-AUTH-005 は満たさない）。
+**認証認可:** ログインを求めない公開の窓口。Origin は共有の proxy が確かめる。`no-store` は共有の proxy が付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037。2026-10-28）。Supabase Auth を直接呼べばこの窓口を通らずにトークンを得られる（SEC-AUTH-005 は満たさない）。ただし Supabase の captcha をオンにすると、直の `/token`・`/otp`・`/signup` はトークン無しで 400 になる。この窓口は captcha を免除される管理者資格で呼ぶ（DD-AUTH-040、SEC-AUTH-035）。
 
 **テスト観点:**（単体テストは無い。結合 `tests/integration/api/auth/login.test.ts` が 10 件で多くの道を通す）
 
@@ -971,6 +993,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 10 | `x-real-ip` の有り・無し、`x-forwarded-for` だけの時は `null`（DD-AUTH-038） |
 | 11 | 本文が壊れていて 500 |
 | 12 | `next` が有効で戻り先の Cookie（`Max-Age=900`・HttpOnly・SameSite=Lax）が付く。無い・外れる（`//evil.example`・数値・3000 字）・DB の失敗でも 200 で Cookie は消す側。401・403・500 の応答に Cookie が付かない。本文に番号・道筋が出ない |
+| 13 | 呼ぶ client は `createServiceRoleAuthClient` の 1 回で、`createPublicClient` は呼ばない。パスワードの確かめ・確認コードの送信の captcha の拒否は 500＋`supabase_captcha_rejected`（401 にならず、確認コードも保留の Cookie も出ない）。資格情報の誤り（400）は captcha の拒否にせず 401（DD-AUTH-040） |
+| 14 | パスワードの確かめの GoTrue 429 は 429＋`Retry-After`＋`supabase_rate_limited`、5xx・`status` 0・`AuthRetryableFetchError`（`status` が無くても）は 503＋`Retry-After`＋`supabase_unavailable`。どちらも 401 にならず、確認コードも保留の Cookie も出ない。未確認のメール（400 `email_not_confirmed`）と資格情報の誤りは同じ 401・同じ本文（`login-route.test.ts`。SEC-AUTH-035-AC-02） |
 
 ### DD-AUTH-015 ログインの2段目の窓口（確認コードを確かめてログインを確定する）
 
@@ -1065,7 +1089,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 1. 保留の Cookie を読む（`src/app/api/auth/login/resend/route.ts`）
 2. IP 単位（`auth:login`、50回／600秒）と宛先単位（`auth:login`、5回／600秒、`subject` は保留のメール）を数える。枠の名前はログインと同じ
-3. 匿名の client で保留のメールへ確認コードを送る（`shouldCreateUser: false`）
+3. captcha を免除される auth だけの client（DD-AUTH-040）で保留のメールへ確認コードを送る（`shouldCreateUser: false`）
 4. 200 を作り、`no-store` を付け、元の `iat` を渡して保留の印を作り直す
 5. `login` の `otp_resent` を残して返す
 
@@ -1077,6 +1101,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | IP の制限が応答を返す | その応答を返す。宛先の枠は数えない |
 | 宛先の制限が応答を返す | その応答を返す |
 | 制限の呼び出しが投げる | 握りつぶさず、例外がそのまま届いて送信へ進まない（この窓口は外側の `catch` を持たず、Next.js が 500 にする）。保留の Cookie は作り直さない |
+| 送信を Supabase の captcha が断った | 500。`login` の error（`supabase_captcha_rejected`）を残す。保留の Cookie は作り直さない（DD-AUTH-040） |
 | 送信が誤り | `login` の error（`otp_resend_failed`）を残して 500。保留の Cookie は作り直さない |
 
 **状態・永続化:** 保留の Cookie を作り直すだけ（寿命は5分に戻るが、`iat` から30分の上限は動かない、STATE-AUTH-001）。60秒の再送の待ちは画面だけが持ち、この窓口は数えない。
@@ -1094,6 +1119,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 5 | 制限が投げたら送らない（IP の段・宛先の段のどちらでも） |
 | 6 | 送信の失敗で 500 |
 | 7 | 作り直した印の `iat` が元の印と同じ |
+| 8 | 送信は `createServiceRoleAuthClient` を 1 回呼び、`createPublicClient` は呼ばない。captcha の拒否は 500＋`supabase_captcha_rejected` で保留の Cookie を作り直さない（DD-AUTH-040） |
 
 ### DD-AUTH-017 保留の取り消しの窓口
 
@@ -1171,8 +1197,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 5. 漏洩の照合（共有の `checkPwnedPassword`）
 6. 宛先（メール）単位の制限（`auth:register`、5回／3600秒、subject は形を通った小文字のメール）。控えの作成と既存会員の照会より前
 7. 戻り先を確かめて控える（`issueReturnIntent`、用途 `signup`、`bindTo` は小文字のメール、`alwaysCreate` は真。DD-AUTH-034）。戻り先が無い・外れた時も既定の `/` で作る。得た Cookie の動作を、下の 202 の 3 つの枝すべてに同じ形で付ける
-8. service role の client でメールからアカウントを引く（共有の `findAuthUserIdByEmail`、DATA-AUTH-003）
-9. 無ければ、利用者の session の client で登録する。確認のリンクは `/api/auth/confirm`（クエリを持たない）
+8. service role の client でメールからアカウントを引く（共有の `findAuthUserIdByEmail`、DATA-AUTH-003）。見つかったら `isAuthUserUnconfirmed`（管理 API の `getUserById` の `email_confirmed_at`）で確認の有無を引き、未確認なら `auth.resend({ type: 'signup' })` で確認メールを送り直して 202（SEC-AUTH-016-AC-04。下の分岐の表）
+9. 無ければ、captcha を免除される auth だけの client（DD-AUTH-040）で登録する。確認のリンクは `/api/auth/confirm`（クエリを持たない）
 10. session が無ければ `created_needs_confirmation` を残して 202
 
 **分岐と異常フロー:**
@@ -1193,8 +1219,10 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 漏洩に当たる | failure（`pwned_password`）を残して 400 |
 | 照合先が使えない | error（`pwned_check_unavailable`）を残して続ける |
 | 照会が失敗 | error（`user_lookup_failed`）を残して 503 |
-| 登録済み | conflict（`already_registered_notified`）を残し、応答の外で本人に `/login` のリンクのメールを送り、202 |
+| 登録済み（確認済み、または確認の有無を引けない） | conflict（`already_registered_notified`）を残し、応答の外で本人に `/login` のリンクのメールを送り、202。確認の有無を引けない時（管理 API の誤り・例外）は未確認として扱わず、この枝に倒す |
+| 登録済みで未確認（確認のリンクの期限が切れた会員。SEC-AUTH-016-AC-04） | 「すでに登録されています」のメールは送らず、captcha を免除される auth だけの client（DD-AUTH-040）の `auth.resend({ type: 'signup', email, options: { emailRedirectTo: <今の signUp と同じ /api/auth/confirm> } })` で確認メールを送り直す（宛先単位の制限と控えの作成の後）。conflict（`unconfirmed_resent`）を残して 202。控えの Cookie は他の枝と同じ形。送り直しの誤り（GoTrue の 60 秒の間隔など）は error（`unconfirmed_resend_failed: <文>`）、captcha の拒否は error（`supabase_captcha_rejected`。誤りの本文は残さない）、client を作れない・投げるは error（`unconfirmed_resend_threw`）を残し、どれも応答は 202 のまま（存在と確認の有無を明かさない。登録の captcha の拒否の 500 とは違い、有無が分かるため） |
 | `display_name` が無い | 登録の `data` を付けない |
+| 登録を Supabase の captcha が断った | 重複に丸めず 500 `Failed to create user`。error（`supabase_captcha_rejected`）を残す。本人へのメールは送らない（DD-AUTH-040） |
 | 登録が誤り・文に `already`・`duplicate`（除外の宛先） | conflict を残し、同じ通知と 202 |
 | 登録がほかの誤り | error を残して 500 |
 | session があり user が無い | error（`missing_user_after_signup`）を残して 500 |
@@ -1219,6 +1247,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 5 | 形の誤りで 400 |
 | 6 | `next` の有り・無し・外れ・型が文字列でない（無い・外れでも `/` で控えを作り、`bindTo` は小文字のメール）。古い `redirect_to`・`emailRedirectTo` を送っても読まない。確認のリンク（`emailRedirectTo`）にクエリが無い |
 | 7 | Turnstile の失敗（誤りの文の有り・無し）、`x-real-ip` の有り・無し、`x-forwarded-for` だけの時は `null` |
+| 8 | 登録は `createServiceRoleAuthClient` の 1 回。captcha の拒否は 500＋`supabase_captcha_rejected`（重複の枝に入らず、メールも送らない）。ほかの誤りは今までどおり（DD-AUTH-040） |
 | 8 | 住所の見張りで 503 |
 | 9 | 漏洩で 400、照合先が使えない時に続ける |
 | 10 | 照会の失敗で 503 |
@@ -1228,6 +1257,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 14 | session があり user が無い・保存が成功（201 の本文が `{ user: { id, email } }` だけ）・保存が失敗・保存が投げる・Cookie の消去が投げる |
 | 15 | 公開の経路の中の例外と、本文の壊れ |
 | 16 | 新規・登録済み・重複の例外の 3 枝で、202・本文・戻り先の Cookie の属性の並びが同じ（`next` が無い・外れでも付く）。控えの作成の失敗でも 202 で Cookie は消す側。控えの作成が既存会員の照会より前で、Turnstile の失敗では呼ばれない |
+| 17 | 登録済みで未確認（`isAuthUserUnconfirmed` が真）なら `auth.resend({ type: 'signup', email, options.emailRedirectTo })` を 1 回呼び、通知のメールは送らず、conflict（`unconfirmed_resent`）を残して 202。新規・確認済みと本文・Cookie の属性の並びが同じ。送り直しの誤り・captcha の拒否・投げる・client を作れないは 202 のまま error を残す。確認済み・確認の有無を引けない時は送り直さず従来の通知。順は宛先の枠 → 控え → 未確認の確かめ → 送り直し（`SEC-AUTH-016-AC-04`。単体 `register-route.test.ts`・`auth-admin-user.test.ts`、結合 `register-enumeration.test.ts`） |
 
 ### DD-AUTH-019 確認のメールのリンクの窓口
 
@@ -2595,6 +2625,208 @@ DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permi
 | 7 | 読む側（`authenticate.test.ts`）: 旗が未設定で `is_app_session_active`（`p_session_id` を渡す）、`off`・`OFF`・`0`・`false` で `is_auth_session_active`。偽は `revoked`＋検証済みの claims、RPC の誤り・例外は `unavailable`（claims なし）、`session_id` 無しは RPC を呼ばず `revoked`。`missing`・`invalid` に claims は付かない |
 | 8 | 管理の認可（`admin-rbac.test.ts`）: 結び付いていない session（liveness が `revoked`）は ACL を持っていても 401。`session_id` を渡して確かめる |
 | 9 | `enroll-totp`（`mfa-enroll-totp-route.test.ts`。DD-AUTH-030 観点 17）: `revoked`＋claims は 401 で `app_session_required` を 1 行だけ。claims 無し・他の失敗理由では書かない（`SEC-AUTH-031-AC-02`、`SEC-AUTH-030-AC-03`） |
+
+### DD-AUTH-040 captcha を免除される auth だけの client と、captcha の拒否の見分け
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | ARC-AUTH-002、ARC-AUTH-005、SEC-AUTH-015、SEC-AUTH-035 |
+| 根拠 | anon の鍵は公開なので、アプリを通らずに Supabase Auth の窓口（`/signup`・`/token`（password）・`/otp`）を直に叩けば、アプリの Turnstile・回数の制限・漏洩の確かめが飛ばされる。Supabase の captcha をオンにして直の呼び出しをトークン無しで 400 にし、アプリのサーバーは captcha を免除される管理者資格（サービスの鍵）で同じ窓口を呼ぶ（ADR-0420、案 b'）。アプリの Turnstile のトークンは 1 回しか使えず転送できない。呼び出しがサービスの鍵で session を持った client を DB に使い回すと権限が混ざるので、返すのは `auth` だけにする |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/service-role-auth-client.test.ts`。手元の `supabase/config.toml` の目標の版が captcha・最小長 16・確認メール必須・OTP 300 秒・TOTP 有効・変更通知になっていることは `tests/unit/supabase/config-wave6.test.ts`）。E2E は `SEC-AUTH-015-AC-04` が毎回確かめる（波 6 の Task 7・10） |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`、`wave6-task0-report.md`、`docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md` の Task 2（P1〜P7・P18、ruling 8） |
+
+**対応要件 ID:** SEC-AUTH-035（AC-01・02）、SEC-AUTH-015（AC-04 の本体は GoTrue の captcha。アプリ側の前提がこの項目）（その上は ADR-0420）
+
+**入出力:**
+
+| 向き | 中身 |
+| --- | --- |
+| `createServiceRoleAuthClient`（`IMPL-AUTH-228`） | 入力: 環境変数 `SUPABASE_URL`（無ければ `NEXT_PUBLIC_SUPABASE_URL`）・`SUPABASE_SERVICE_ROLE_KEY`。出力: `{ auth }` だけの client。`auth` は `signInWithPassword`・`signInWithOtp`・`signUp`・`resend` の 4 つの関数（`bind` した物）だけで、`.from()`・`.rpc()`・`.storage`・`auth.admin`・`auth.mfa` などを型にも実体にも持たない（最終レビュー指摘 4、2026-11-01）。毎回新しく作る。auth のオプションは `persistSession: false`・`autoRefreshToken: false`・`detectSessionInUrl: false` |
+| `isCaptchaRejection`（`IMPL-AUTH-233`） | 入力: Supabase の誤り（`code`・`status`・`message`）か null。出力: 真偽 |
+
+**正常フロー:**
+
+1. 呼び手（`login`・`login/resend`・`register`）が、Turnstile・回数の制限など従来の順番を終えた後で `createServiceRoleAuthClient()` を呼ぶ
+2. `signInWithPassword`・`signInWithOtp`・`signUp` を呼ぶ。supabase-js は `Authorization: Bearer <サービスの鍵>` と `apikey` を全部の要求に付けるので、GoTrue は管理者として captcha を免除する（Task 0 の実測で、旧方式の JWT と `sb_secret_` の両方が通ることを確かめた）
+3. 戻り値の session は Cookie に渡さず捨てる（ログイン）／Confirm email が OFF の時だけ従来の分岐（登録）。DB・RPC・管理 API は従来の `createServiceRoleClient` を別の変数で使う
+
+**分岐と異常フロー:**
+
+| 条件 | 動き |
+| --- | --- |
+| URL か鍵が無い | `SUPABASE_SERVICE_ROLE_KEY and SUPABASE_URL must be set for service role client` を throw する（鍵の値を文に載せない。呼び手の外側の `catch` が 500 にする） |
+| `code === 'captcha_failed'` | `isCaptchaRejection` は真 |
+| `status === 400` で `message` に captcha を含む | 真 |
+| 資格情報の誤り（400 `Invalid login credentials`）・`status` が 400 でない・null・undefined | 偽 |
+| ログインの `signInWithPassword` が captcha の拒否 | 401 にせず 500 `Internal server error`。監査 `login`・error・`supabase_captcha_rejected`（誤りの本文は残さない）。確認コードは送らない |
+| ログインの `signInWithPassword` が GoTrue の 429・5xx・通信の失敗 | captcha の拒否と同じ理由で 401 に丸めない。429＋`Retry-After`＋`supabase_rate_limited`、503＋`Retry-After`＋`supabase_unavailable`（DD-AUTH-014。SEC-AUTH-035-AC-02） |
+| ログインの `signInWithOtp` が captcha の拒否 | 500。監査 `login`・error・`supabase_captcha_rejected`（`resource_id` は利用者の id）。保留の Cookie を発行しない |
+| 再送の `signInWithOtp` が captcha の拒否 | 500。監査 `login`・error・`supabase_captcha_rejected`。保留の Cookie を作り直さない |
+| 登録の `signUp` が captcha の拒否 | 500 `Failed to create user`。監査 `register`・error・`supabase_captcha_rejected`。重複（`already`・`duplicate`）の枝に入れず、本人へのメールも送らない |
+
+**状態・永続化:** 無い。GoTrue 側に `signInWithPassword` の session が 1 本残る（ログインは Cookie に渡さず捨てる。アプリの `sessions` に結び付かないので `is_app_session_active` が偽にする。後始末は回す物）。
+
+**認証認可:** captcha の免除は、アプリのサーバーがサービスの鍵を持つことに依る（公式の文書に無い GoTrue の挙動。E2E が毎回確かめる）。`otp/verify`・`confirm`・`oauth/*`・`refresh` の `verifyOtp`・交換・更新は captcha が掛からない窓口なので `createPublicClient` のまま。再送にウィジェットを足さない（署名つきの保留の Cookie と二段の枠が前提）。
+
+**テスト観点:**（単体 `tests/unit/lib/auth/service-role-auth-client.test.ts`・`tests/unit/lib/supabase-client-isolation.test.ts`・`tests/unit/api/auth/login-route.test.ts`・`login-resend-route.test.ts`・`register-route.test.ts`。結合は窓口の既存の試験を auth だけの client の差し替えに追従。名前の先頭は `DD-AUTH-040`）
+
+| # | 観点 |
+| --- | --- |
+| 1 | 返り値に `from`・`rpc`・`storage` が無い。キーは `auth` だけで、`auth` のキーは 4 つの関数だけ（`auth.admin`・`auth.mfa`・`getSession` に届かない。本物の SDK でも束ねた関数を取り出して呼べる）。2 回呼ぶと別のオブジェクト |
+| 2 | URL・鍵が無いと throw し、鍵の値を文に載せない。`SUPABASE_URL` が無ければ `NEXT_PUBLIC_SUPABASE_URL` を使う |
+| 3 | `createClient` へ渡す auth のオプションが 3 つとも false |
+| 4 | `signInWithPassword` の後に `signInWithOtp` を呼んでも、`/token` と `/otp` の `Authorization` が同じサービスの鍵、`apikey` も同じ |
+| 5 | auth だけの client で `signInWithPassword` した後も、`createServiceRoleClient` の DB 要求がサービスの鍵のまま（混ざらない） |
+| 6 | `isCaptchaRejection` の表（captcha_failed 真、400＋captcha 本文 真、資格情報の誤り 偽、401＋captcha 偽、別の code 偽、null・undefined 偽） |
+| 7 | ログイン（2 回）・再送・登録で captcha の拒否が 5xx＋監査になり、401・重複にならない。通常の誤り（401・重複）は今までどおり |
+| 8 | ログイン・再送は `createServiceRoleAuthClient` を 1 回呼び、`createPublicClient` を呼ばない。形の誤り・保留なしでは呼ばない |
+
+### DD-AUTH-041 パスワード変更の開始と確定の窓口と部品
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | API-AUTH-020、API-AUTH-021、ARC-AUTH-005、ARC-AUTH-007、DATA-AUTH-009、DATA-AUTH-010、SEC-AUTH-015、SEC-AUTH-034 |
+| 根拠 | ログイン中の会員が自分でパスワードを変える窓口が無く、再設定でしか変えられなかった。GoTrue の `secure_password_change` は作成から 24 時間以内の session を再認証なしで許し、窓は設定で変えられないので、アプリの窓口で「現行パスワード＋アプリが送るコード＋全 session 失効＋通知＋回数＋監査」を求める（ADR-0421）。2 段にするのは、1 段目に現行パスワードを要して、盗んだ session の持ち主が本人のメールへコードを撒けないようにするため。コードは DB の表に鍵つきのハッシュで置く（DATA-AUTH-009・010） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テストと、2 つの窓口をつないだ結合テスト（`tests/integration/api/auth/password-change.test.ts`。名前の先頭は `API-AUTH-020`・`API-AUTH-021`）。画面の結合テストは `DD-AUTH-042`、E2E は `e2e/FR-ACCOUNT-046-password-change.spec.ts`（波 6 の切り替え〔2026-11-01〕までは `supabase/pending-wave6/e2e/` に待機していた）。DB 結合は M3 を当てた手元の DB で controller が流す |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`、計画 `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md` の Task 5（P5・P13〜P15、ruling 3〜5・17〜20、Review Focus 3〜7） |
+
+**対応要件 ID:** SEC-AUTH-015、SEC-AUTH-034（会員の自己変更・全 session 失効・通知・回数・監査）、FR-AUTH-006（`SR-AUTH-009` の要件。2026-11-01 に `docs/02_Requirements/areas/auth.md` に起こした）
+
+**入出力:**
+
+| 向き | 中身 |
+| --- | --- |
+| `start`（`IMPL-AUTH-230`） | 入力: 認証の Cookie か Bearer、CSRF の見出し、JSON `{ current_password }`（1〜128 文字）。出力: 200 `{ ok: true }`（メールにコード）、または分岐の表の失敗 |
+| `confirm`（`IMPL-AUTH-231`） | 入力: 認証の Cookie か Bearer、CSRF の見出し、JSON `{ code, new_password }`（コードは 8 桁の数字の文字列、新パスワードは 16〜128 文字かつ UTF-8 で 72 バイト以内）。出力: 200 `{ ok: true }` と、アクセス・リフレッシュ・CSRF の Cookie を消す `Set-Cookie`、または分岐の表の失敗 |
+| `generatePasswordChangeCode`（`IMPL-AUTH-229`） | 出力: `crypto.randomInt` の 8 桁（0 埋めの文字列） |
+| `hashPasswordChangeCode`（`IMPL-AUTH-234`） | 入力: 利用者の id、GoTrue の session の id、コード。出力: HMAC-SHA256（鍵 `JWT_SECRET`、入力 `password_change:<利用者>:<session>:<コード>`）の hex 64 桁。`JWT_SECRET` が無ければ throw |
+| `voidPasswordChangeChallenge`（`IMPL-AUTH-235`） | 入力: 控えの id。`password_change_challenges` の `used_at` を、`used_at IS NULL` の時だけ立てる。出力: 成否の真偽（失敗しても throw しない） |
+| `verifyCurrentPassword`（`IMPL-AUTH-236`） | 入力: メール、パスワード。出力: `{ ok: true }` か `{ ok: false, reason: 'invalid' \| 'captcha_rejected' \| 'unavailable' }`。成功したら作られた GoTrue の session を `revoke_auth_session` で消す |
+| `sendPasswordChangeCodeMail`（`IMPL-AUTH-237`） | 入力: 宛先、コード。本文はコード・有効期限 10 分・心当たりが無い時の案内。送れなければ throw |
+| `sendPasswordChangedNotice`（`IMPL-AUTH-238`） | 入力: 宛先。件名「パスワードを変更しました」。再設定の確定と同じ文面 |
+
+**正常フロー:**
+
+1. `start`: IP の制限 → 認証の確かめ（アプリの session に結び付いた生きた session だけ。`email`・`session_id` が必要）→ CSRF の確かめ → admin・supporter なら aal2 を確かめる → 本人ごとの制限 → 本文の形 → `verifyCurrentPassword` → コードを作り `issue_password_change_challenge`（前のコードを無効にして新しい行を入れる。有効期限 600 秒）→ コードのメール → 200
+2. `confirm`: IP の制限 → 認証 → CSRF → aal2 → 本人ごとの制限 → 本文の形 → 漏洩確認 → `consume_password_change_challenge` が `ok` → `auth.admin.updateUserById(<利用者>, { password })` → `revokeAllSessionsForUser`（自前の `sessions` の失効と `revoke_auth_sessions_for_user`）→ 認証 Cookie 3 つを消す → `after` で通知のメール → 監査 `success` → 200
+
+**分岐と異常フロー:**
+
+| 条件 | 動き |
+| --- | --- |
+| IP の枠（600 秒に 20 回）か本人ごとの枠（利用者の id を鍵に 600 秒に 5 回）を超えた | 429（`Retry-After` つき）。本人ごとの枠は認証と CSRF と aal2 の確かめの後に数える（他人の枠を潰せないように）。枠は `start` と `confirm` で別。DB の障害は 503（fail-closed） |
+| 未ログイン・アプリの session に結び付いていない・失効 | `authFailureResponse` の 401（確かめられない時は 503）。CSRF・本人ごとの枠は確かめない |
+| `email` か `session_id` が通行証に無い | 401。コードを結ぶ session が無い |
+| CSRF の確かめが拒否 | その応答（403 か DB の失敗の 500）をそのまま返し、監査の行を書かない |
+| 役割が admin・supporter で `aal` が aal2 でない | 403。監査 `denied`・`aal2_required`。現行パスワードを試さず、コードも送らない・使い切らない |
+| 本文が形に合わない（JSON でない、空、129 文字、コードが 8 桁の数字でない、新パスワードが 16 文字未満など） | 400（`validation_error`）。現行パスワードを試さず、コードを使い切らない |
+| `start`: 現行パスワードが違う | 401「現行のパスワードが正しくありません。」。残りの回数は言わない。コードを発行せずメールも送らない。監査 failure・`current_password_invalid` |
+| `start`: captcha の拒否 | 500。監査 error・`supabase_captcha_rejected`（利用者の誤りに丸めない） |
+| `start`: GoTrue に届かない・予想外の誤り | 503。監査 error・`current_password_check_unavailable` |
+| `start`: コードの発行の RPC が失敗 | 500。メールを送らない。監査 error・`issue_failed` |
+| `start`: メールが送れない | 発行したコードを `voidPasswordChangeChallenge` で無効にし、500。監査 error・`mail_failed`（無効にするのも失敗したら `mail_failed:challenge_void_failed`） |
+| `confirm`: 新パスワードが漏洩している | 400 `PWNED_PASSWORD_MESSAGE`。コードを使い切らない。監査 failure・`pwned_password` |
+| `confirm`: 漏洩確認が外部の障害で使えない | 通す。監査 error・`pwned_check_unavailable:<理由>`（検査が効いていない期間を追う） |
+| `confirm`: コードの使い切りの RPC が失敗 | 500。パスワードを更新しない。監査 error・`consume_failed` |
+| `confirm`: コードが `invalid`・`locked`・`none` | 401（同じ文「確認コードが正しくないか、期限が切れています。もう一度コードを送ってください。」）。更新・失効・通知をしない。監査 failure・`code_invalid`（`invalid`）、`code_locked`（`locked`）、`code_unusable`（`none`） |
+| `confirm`: パスワードの更新が失敗 | 500。失効も通知もしない。コードは焼けたままで、`start` からやり直す。監査 error・`update_failed`（誤りの本文は残さない） |
+| `confirm`: 全 session の失効が失敗 | 200 のまま。監査 error・`revoke_failed`。この端末の Cookie は必ず消し、通知も送る |
+| `confirm`: 通知のメールが失敗 | 応答を変えない（`after` の中で握り、固定の文を console に出す） |
+
+**状態・永続化:** `password_change_challenges` の行（DATA-AUTH-009）を `start` が作り（前の行は `used_at` で無効になる）、`confirm` が使い切る。パスワードそのもの・コードの平文はどこにも保存しない。GoTrue の `auth.users` のパスワードは `updateUserById` で変わる。確かめに作った GoTrue の session は `revoke_auth_session` で消す。
+
+**認証認可:** ログイン中の会員だけ。結び付いた生きた session が前提で（ADR-0417）、コードは今の `session_id` に結ぶ（別の session のコードは使えない）。管理者・サポーターは aal2 が必要（GoTrue が MFA 済みの利用者に aal2 を求めるのと同じ強さ）。`confirm` は GoTrue の `signInWithPassword` も auth だけの client も呼ばない（現行パスワードの当否を明かさない）。監査と応答に残すのは固定の符号だけで、パスワード・コード・トークン・`session_id` の値と Supabase の誤りの本文は残さない。残る危険は「現行パスワードを知る人が GoTrue を直に叩いて変える」だけで、ログインにメールのコードが要るので実害は小さい（ADR-0421）。
+
+**テスト観点:**（単体 `tests/unit/features/auth/password-change-schema.test.ts`・`password-change-service.test.ts`、`tests/unit/api/auth/password-change-start-route.test.ts`・`password-change-confirm-route.test.ts`。名前の先頭は `DD-AUTH-041`）
+
+| # | 観点 |
+| --- | --- |
+| 1 | 入力の形: コードは 8 桁の数字だけ（7 桁・9 桁・英字・全角・数値型は断る）、新パスワードは 15 文字で断り 16 文字と 72 バイトちょうどで通り 73 バイト（日本語 25 文字）で断る、現行パスワードは 1〜128 文字 |
+| 2 | コード: 1000 回作って全部 8 桁。小さい乱数は 0 で埋める。ハッシュは hex 64 桁で、session・利用者・コードが変わると値が変わり、`JWT_SECRET` を替えると変わり、素の sha256 と一致せず、`JWT_SECRET` が無ければ throw |
+| 3 | `voidPasswordChangeChallenge`: `used_at` を立てる更新を `used_at IS NULL` つきで 1 回呼ぶ。更新の失敗・クライアントの作成の失敗でも throw せず false |
+| 4 | `verifyCurrentPassword`: 成功したら session の id で `revoke_auth_session` を呼ぶ。`invalid_credentials` は `invalid`、`captcha_failed` は `captcha_rejected`、投げる・取得の誤り・5xx・クライアントの作成の失敗は `unavailable`。返り値と console にパスワードと誤りの本文を載せない |
+| 5 | メール: コードのメールにコード・10 分・心当たりの案内があり、件名にコードを入れない。送れなければ throw。通知の件名は「パスワードを変更しました」で数字 8 桁を含まない |
+| 6 | `start` の順序: IP の枠が 429 なら認証以降を呼ばない。枠は IP 20 回／本人ごと（利用者の id、5 回）。本人ごとの枠が 429 なら現行パスワードを試さない。未ログインは 401 で CSRF・本人ごとの枠を確かめない。CSRF 拒否は監査せず現行パスワードを試さない（aal1 の管理者でも）。`session_id` が無ければ 401 |
+| 7 | `start` の aal2: aal1 の admin・supporter は 403・監査 `denied`・`verifyCurrentPassword` もコードの発行もメールも呼ばない。aal2 の管理者と、aal1 の一般会員は通る |
+| 8 | `start` の入力と現行パスワード: 形の誤りと JSON でない本文は 400 で現行パスワードを試さない。違う現行パスワードは 401 の固定の文でコードを発行せずメールも送らない。captcha は 500、届かないのは 503 |
+| 9 | `start` のコードとメール: 発行の RPC の失敗は 500 でメールを送らない。メールの失敗は 500 で `voidPasswordChangeChallenge` を呼び、監査の符号は `mail_failed`（無効化が失敗したら `mail_failed:challenge_void_failed`）。成功で発行の RPC にはハッシュだけを渡し、コードの平文を渡さない |
+| 10 | `confirm` の順序と呼ばれない物: 枠・認証・CSRF・aal2 は `start` と同じ。弱い・漏洩したパスワードと形の誤りでは `consume` を呼ばない。`confirm` は `verifyCurrentPassword`・`createServiceRoleAuthClient` を一度も呼ばない |
+| 11 | `confirm` の成功: `consume` → `updateUserById` → `revokeAllSessionsForUser` の順、認証 Cookie 3 つを `Max-Age=0` で消し、`after` で通知のメール、監査 `success`。`consume` には利用者・session・鍵つきハッシュを渡す |
+| 12 | `confirm` の失敗: コードが `invalid`・`locked`・`none` なら 401 の同じ文で更新も失効も通知もしない（監査の符号は `code_invalid`・`code_locked`・`code_unusable`）。`consume` の RPC の失敗は 500。更新の失敗は 500 で失効も Cookie の削除も通知もしない。失効の throw は 200 のまま Cookie を消し通知も送り、監査 `revoke_failed`。通知のメールの失敗は応答を変えない |
+| 13 | 秘密を残さない: 成功・失敗の全部の監査の引数と応答を文字列にして、パスワード（現行・新）・コード・`session_id` の値が現れない |
+
+### DD-AUTH-042 /account/password のパスワード変更の画面（現行パスワード → コードと新パスワード → ログインへ）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SCR-AUTH-011、FLOW-AUTH-005、API-AUTH-020、API-AUTH-021、SEC-AUTH-015、SEC-AUTH-034 |
+| 根拠 | ログイン中の会員が自分でパスワードを変える画面が無く、再設定でしか変えられなかった。窓口を 2 つに分けた順（`start` で現行パスワード、`confirm` でコードと新パスワード）をそのまま画面の 2 段にする。新パスワードの長さと確認欄の一致は送る前に画面で確かめ、コードを送ってから弱いパスワードで弾かれる往復を減らす。Google だけで登録した会員はパスワードを持たず `start` が必ず 401 になるので、段 1 に再設定への案内を誰にでも固定で出して行き止まりにしない（会員がパスワードを持つかを明かさない）。応答は成否によらず本文を読み切る（読まない呼び手が `networkidle` を止める。波 3 の学び） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/app/account/password/password-change-form.test.tsx`。名前の先頭は `DD-AUTH-042`）と結合テスト（`tests/integration/ui/auth-password-change.test.tsx`。名前の先頭は、画面の見え方が `SCR-AUTH-011`、段の移り変わりが `FLOW-AUTH-005`。結合テストの名前は構造設計の ID にする決まり）。3 幅の E2E は Task 7（`FR-ACCOUNT-046`。手元の設定の切り替え後に動かす） |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`、計画 `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md` の Task 6（ruling 4・17・18） |
+
+**対応要件 ID:** SEC-AUTH-015、FR-AUTH-006（`SR-AUTH-009` の要件。2026-11-01 に `docs/02_Requirements/areas/auth.md` に起こした）
+
+**入出力:**
+
+| 向き | 中身 |
+| --- | --- |
+| 入力（頁） | `GET /account/password`。頁（`page.tsx`、`IMPL-AUTH-239`）は題「PASSWORD \| Le Fil des Heures」と検索に載せない指定（`robots: { index: false }`）だけを返し、本体 `PasswordChangeForm`（`IMPL-AUTH-232`、クライアント）を描く |
+| 入力（ログインの状態） | `useLogin()` の `isLoggedIn`・`isAuthResolved`・`refreshAuthState`。今いる頁を戻り先に載せた `/login` の URL は `useLoginHref()` |
+| 出力（段 1「現行のパスワード」） | 現行パスワードの欄（`type=password`・`autocomplete=current-password`）、固定の案内「Google でログインしていてパスワードを設定していない場合は、先にパスワードの再設定からパスワードを設定してください。」と `/auth/password-reset` へのリンク、「確認コードをメールに送る」。`POST /api/auth/password/change/start`（`clientFetch`、本文 `{ current_password }`） |
+| 出力（段 2「確認コードと新しいパスワード」） | 確認コード（`inputMode=numeric`・`autocomplete=one-time-code`・8 文字まで）、新しいパスワード、新しいパスワード（確認）（どちらも `autocomplete=new-password`）、「パスワードを変更する」、「コードを送り直す」。`POST /api/auth/password/change/confirm`（本文 `{ code, new_password }`。確認の欄の値は送らない） |
+| 出力（成功） | 「パスワードを変更しました。全ての端末からログアウトしました。新しいパスワードでログインしてください。」を `LiveMessage`（status）で出し、`refreshAuthState` で状態を引き直してから `router.replace('/login')` |
+| 出力（未ログイン） | 画面の代わりに「パスワードの変更には、ログインが必要です。」と、`/login?next=%2Faccount%2Fpassword` へのボタン |
+| 出力（アカウントの頁） | `src/app/account/page.tsx` のお客様情報のタブに、読み込みが終わった後、「パスワードを変更」のリンク（`/account/password`）を 1 つ出す |
+
+**正常フロー:**
+
+1. `isAuthResolved` が真になるまで「読み込み中...」を出す
+2. 段 1 で現行パスワードを入力して送る。`start` が 200 なら現行パスワードの欄の値を捨て、段 2 へ進む
+3. 段 2 でコード（8 桁の数字）・新パスワード（16 文字以上、72 バイト以内。全角は 1 文字 3 バイト）・確認を入力して送る。送る前に 3 つを画面で確かめる（72 バイトを超えると「パスワードは72バイト以内にしてください（全角の文字は1文字で3バイトです）」）
+4. `confirm` が 200 なら入力欄の値を全部捨て、成功の文を出し、ログインの状態を引き直してから `/login` へ移る（全 session が失効しているため）
+
+**分岐と異常フロー:**
+
+| 条件 | 動き |
+| --- | --- |
+| 未ログイン（`isLoggedIn` が偽）で、成功の直後でもない | ログインの案内だけを出す（フォームを描かない）。成功の直後は状態が外れても成功の文を残す |
+| 現行パスワードが空 | 送らず「現行のパスワードが正しくありません。」 |
+| コードが 8 桁の数字でない | 送らず「確認コードは8桁の数字で入力してください」 |
+| 新パスワードが 16 文字未満 | 送らず「パスワードは16文字以上で入力してください」 |
+| 確認の欄が新パスワードと違う | 送らず「新しいパスワードが一致しません」 |
+| 401 で本文の `error` が `Unauthorized`（未ログイン・access token の失効） | `refreshSessionOnce()` で印を 1 回だけ更新する（`post()`）。`refreshed` なら同じ本文で 1 回だけ送り直し、その応答で改めて分岐する（送り直しがまた `Unauthorized` なら、更新も送り直しもせず次の行）。`expired`・`unavailable` か送り直しもまた `Unauthorized` の時だけ `/login?next=%2Faccount%2Fpassword` へ `router.replace`。窓口の `Unauthorized` は何かを変える前に返り、更新は `session_id` を変えないので、送り直しは二重にならず前のコードも使える（メールを開いてコードを取る間に access token が切れても手続きを捨てない） |
+| 401 でそれ以外 | 窓口の文をそのまま出す（`start`: 現行のパスワードが正しくありません。／`confirm`: 確認コードが正しくないか、期限が切れています。もう一度コードを送ってください。）。残りの回数は言わない。段は変えない |
+| 400 | 窓口の文（漏洩したパスワードなど）か、無ければ「入力に誤りがあります。」。コードは窓口側で焼けていないので、同じコードで直して送り直せる |
+| 403（管理者・サポーターの aal2 不足） | 「二段階認証を完了してから、もう一度お試しください。」 |
+| 429 | 「しばらくしてからお試しください。」 |
+| 上記以外の 4xx・5xx・通信の失敗 | 「処理に失敗しました。時間をおいて、もう一度お試しください。」。窓口の誤りの文は出さない |
+| 「コードを送り直す」 | 段 1 へ戻り、現行パスワード・コード・新パスワード・誤りの文を捨てる。`start` を呼ぶのは現行パスワードを入れ直した時だけ |
+| 二重送信 | 送信中はボタンを無効にし、2 回目の送信を無視する |
+
+**状態・永続化:** 画面の状態（段・入力欄・誤りの文・送信中）だけ。ブラウザの保存領域には何も置かない。パスワードとコードは成功・段の移動で捨てる。
+
+**認証認可:** 画面の判定は表示だけ。認可は窓口（API-AUTH-020・021）が行う。本文は `clientFetch` が CSRF の見出しを付ける。パスワード・コードをログや URL に出さない。
+
+**テスト観点:**（単体 `tests/unit/app/account/password/password-change-form.test.tsx`〔名前の先頭は `DD-AUTH-042`。応答ごとの文の選び方・入力の確かめ・二重送信・成功の後始末と、頁の題と索引の指定〕と、結合 `tests/integration/ui/auth-password-change.test.tsx`。結合の名前の先頭は `SCR-AUTH-011`〔画面の見え方〕か `FLOW-AUTH-005`〔段の移り変わり〕。通信は `clientFetch` を偽物にし、ルーターとログインの状態も偽物）
+
+| # | 観点 |
+| --- | --- |
+| 1 | 最初は現行パスワードの欄と送るボタンだけで、コード・新パスワード・確認の欄は無い（Task 7 の `FR-AUTH-006-AC-01` の結合での裏付け） |
+| 2 | `start` が 200 で段 2 に変わり、現行パスワードの欄が消える。`start` へ送るのは `{ current_password }` だけ |
+| 3 | `start` が 401（現行パスワードの誤り）で窓口の文を出して段 1 に留まり、`/login` へは送らない。401（`Unauthorized`）は印を 1 回更新して同じ本文で 1 回だけ送り直し、更新できない時だけ `/login?next=%2Faccount%2Fpassword` へ送る（観点 13） |
+| 4 | 新パスワードが 15 文字、確認が違う、コードが 8 桁でない、のどれも送らずに画面で断る（`confirm` を呼ばない） |
+| 5 | `confirm` が 200 で成功の文、`refreshAuthState` の呼び出し、`/login` への移動。送るのは `{ code, new_password }` だけ |
+| 6 | `confirm` が 401 で窓口の文（残りの回数を含まない）、400 で窓口の文、429・403・5xx・通信の失敗でそれぞれ固定の文 |
+| 7 | どの応答も `json()` を 1 回呼ぶ（本文を読み切る） |
+| 8 | 欄の属性: `type=password`、`autocomplete` が `current-password`／`new-password`／コードが `one-time-code`、コードが `inputmode=numeric` |
+| 9 | ラベルが入力に結ばれ、アクセシブルな名前で取れる |
+| 10 | 段 1 にだけ Google 向けの案内と `/auth/password-reset` へのリンクがある（Task 7 の `FR-AUTH-006-AC-07` の結合での裏付け） |
+| 11 | 「コードを送り直す」で段 1 へ戻り、入力済みの値が消え、`start` を呼ばない |
+| 12 | アカウントの頁のお客様情報に `/account/password` へのリンクがある。未ログインは画面の代わりにログインの案内（`next` つき） |
+| 13 | 401（`Unauthorized`）で `refreshSessionOnce` が `refreshed` なら同じ本文で 1 回だけ送り直し、200 なら段が進む（`start`・`confirm` とも）。`expired`・`unavailable` なら送り直さず `/login`。送り直しもまた `Unauthorized` なら更新は 1 回きりで `/login`。`Unauthorized` でない 401（現行パスワード・コードの誤り）では更新しない。通信の偽物に `refreshSessionOnce` も足す |
 
 ## 引き継がなかった古い番号
 

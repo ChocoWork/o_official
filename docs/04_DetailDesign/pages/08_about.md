@@ -1,6 +1,6 @@
 ﻿# 1.8 アバウトページ（ABOUT）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-28 | 対象: アバウトページ `/about`（`src/app/about/page.tsx`） | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-11-01 | 対象: アバウトページ `/about`（`src/app/about/page.tsx`） | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -178,20 +178,20 @@ graph LR
 
 | 項目 | 内容 |
 | --- | --- |
-| 入力 | 環境変数の読み取り専用の対応表 `env`（`next.config.ts` は `process.env` を渡す）。読むのは `VERCEL_ENV`・`NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_SUPABASE_URL`・`SUPABASE_URL` |
+| 入力 | 環境変数の読み取り専用の対応表 `env`（`next.config.ts` は `process.env` を渡す）。読むのは `VERCEL_ENV`・`NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_SUPABASE_URL`・`APP_ALLOWED_ORIGINS`・`SUPABASE_URL` |
 | 出力 | 戻り値なし。問題が無ければ何もせず、あれば `Error` を投げてビルド（設定の読み込み）を落とす |
 | 副作用 | なし（記録・書き込み・外への通信をしない） |
 | 呼ぶ所 | `next.config.ts` の先頭の 1 回（`import { assertBuildEnv } from "./src/lib/build-env-guard"`）。`@/` の別名は設定の読み込みで使えないので相対の道で読む。ライブラリは増やさない |
 
 #### 正常フローと分岐
 
-1. `env.VERCEL_ENV === 'production'` なら、`NEXT_PUBLIC_SITE_URL`、次に `NEXT_PUBLIC_SUPABASE_URL` の順に、値が無い・空白だけでないかを見る。最初に見つかった方の変数名を名指しして投げる
+1. `env.VERCEL_ENV === 'production'` なら、`NEXT_PUBLIC_SITE_URL`、`NEXT_PUBLIC_SUPABASE_URL`、`APP_ALLOWED_ORIGINS` の順に、値が無い・空白だけでないかを見る。最初に見つかった方の変数名を名指しして投げる。そのあと `APP_ALLOWED_ORIGINS` をカンマで分け（前後の空白は除く）、各項目が空でない・`new URL()` で読める・`protocol` が `https:`・`new URL(項目).origin` が項目と一致する（末尾の `/` もパスも無い）ことを見る。外れた項目が 1 つでもあれば `APP_ALLOWED_ORIGINS` の書式を名指しして投げる（値は載せない。2026-11-01、最終レビュー指摘 7）
 2. `NEXT_PUBLIC_SUPABASE_URL` と `SUPABASE_URL` を `new URL` で読み、両方読めた時だけ `origin` を比べる。違えば両方の変数名を名指しして投げる（`VERCEL_ENV` に依らない）
 3. それ以外は何もしない
 
 | 道 | 条件 | 真の時 | 偽の時 |
 | --- | --- | --- | --- |
-| 必須の確かめ | `VERCEL_ENV` が `production` | 2 変数を順に見て、無ければ投げる | 見ない（`preview`・未設定・`NODE_ENV=production` だけ） |
+| 必須の確かめ | `VERCEL_ENV` が `production` | 3 変数を順に見て、無ければ投げる | 見ない（`preview`・未設定・`NODE_ENV=production` だけ） |
 | 必須の変数ごと | 値が無い・空白だけ | 変数名を名指しして投げる | 次へ |
 | origin の確かめ | 両方の URL が読めて origin が違う | 両方の変数名を名指しして投げる | 通る（同じ origin、片方だけ、読めない値） |
 
@@ -199,7 +199,8 @@ graph LR
 
 | 場合 | 動き |
 | --- | --- |
-| 本番のビルドで `NEXT_PUBLIC_SITE_URL` または `NEXT_PUBLIC_SUPABASE_URL` が無い | 変数名を名指しした文で投げ、ビルドが落ちる。配備の前に Vercel の Production に設定する（`docs/06_Operations/secrets.md`） |
+| 本番のビルドで `NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_SUPABASE_URL`・`APP_ALLOWED_ORIGINS` のどれかが無い | 変数名を名指しした文で投げ、ビルドが落ちる。配備の前に Vercel の Production に設定する（`docs/06_Operations/secrets.md`）。`APP_ALLOWED_ORIGINS` は Origin の確かめの許可の一覧（www と apex など複数のオリジンを含む）を本番で明示させるユーザーの決定（2026-10-31）で必須にした（SEC-ABOUT-007-AC-02）。`NEXT_PUBLIC_SITE_URL` が必須なので proxy の退避は本番では起きない |
+| 本番のビルドで `APP_ALLOWED_ORIGINS` の項目が書式に外れる（scheme 無し・空の項目・`http:`・末尾の `/`・パス・読めない値） | `APP_ALLOWED_ORIGINS` の書式を名指しした文で投げ、ビルドが落ちる。値は載せない。preview・手元・`NODE_ENV=production` だけの E2E の本番ビルドでは見ない。本番に載せる例は `https://www.example.com,https://example.com`（`docs/06_Operations/secrets.md`） |
 | 2 つの Supabase の URL が別の origin | 両方の変数名を名指しした文で投げる。手元・E2E は同じ host（`scripts/e2e/environment.ts`）なので落ちない |
 | URL として読めない値 | この確かめでは何もしない（読めない値の扱いは既存の動きに任せる） |
 | 例外の文 | 変数名だけを書き、URL の値・host を載せない |
@@ -221,6 +222,7 @@ graph LR
 | 4 | 文に値を載せない | 本番でサイトの URL だけ無い | 文が `NEXT_PUBLIC_SITE_URL` を含み、Supabase の URL の host を含まない |
 | 5 | 本番でない | `VERCEL_ENV` が `preview`・未設定・空、`NODE_ENV=production` だけ | 2 変数が無くても通る |
 | 6 | 別の origin | 2 つの Supabase の URL が別の host、`VERCEL_ENV` 無し | 両方の変数名を名指しして投げる。文に host を載せない |
+| 7 | `APP_ALLOWED_ORIGINS` の書式 | 本番で www と apex の 2 項目は通る。scheme 無し・`,` だけ・末尾が `,`・途中の空の項目・`http:`・末尾の `/`・パス・読めない項目が混じる値は投げる。preview・手元は書き間違いでも通る | `APP_ALLOWED_ORIGINS` を名指しして投げる。文に host を載せない（SEC-ABOUT-007-AC-02） |
 | 7 | 同じ origin・別のポート | 末尾の `/`・パスだけが違う／ポートが違う | 前者は通る。後者は投げる |
 | 8 | 手元・片方だけ・読めない値 | `http://127.0.0.1:54321` が両方／片方だけ／`not a url` | どれも通る |
 
