@@ -78,7 +78,8 @@ test.describe('FR-LOOK-ALL-039 LOOK カードの文字リビールを左→右�
 
       const rise = card.locator('.reveal-rise').first();
 
-      expect(await animationNameOf(rise)).toBe('reveal-rise-x-act');
+      // data-reveal="true" はハイドレーション後に IntersectionObserver が立てるので、立つまで待つ
+      await expect.poll(() => animationNameOf(rise)).toBe('reveal-rise-x-act');
       // アニメーションが終わって定位置に戻るまで待つ
       await expect.poll(() => translateOf(rise), { timeout: 10_000 }).toEqual({ x: 0, y: 0 });
     });
