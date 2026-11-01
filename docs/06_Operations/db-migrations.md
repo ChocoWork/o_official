@@ -1,5 +1,7 @@
 # DB マイグレーション運用
 
+> グループ H 本番適用: 2026-11-01（`20261029130000`〜`20261029130600` の7本。照合は末尾の「グループH 本番適用の記録」）
+
 > 波 5 確認日: 2026-10-29。アプリの session への結び付けの移行 M1（`20261029120000`）を追記した（「波 5 アプリの session への結び付けの移行 M1」の節）。2026-10-29 に本番へ適用済み。M2（`20261029120100`、`has_permission` の aal2 と会員の表の方針）を同じ日に追記した（「波 5 `has_permission` の aal2 と会員の表の方針の移行 M2」の節）。**M2 も 2026-10-29 に本番へ単独で適用済み**（オーナーの決定。G-1 の次の適用より前。`npx supabase db push --linked`、dry-run は M2 の 1 本だけ）。
 
 > 波 2 確認日: 2026-10-27。権限・検索・制約・置き場の移行 6 本（`20261026130100`〜`130600`）を追記した（「波 2 権限・検索・制約・置き場の移行 6 本」の節）。2026-10-27 に本番へ適用済み（G-4 と一緒に）。以後の移行は GRANT を明示する決まりも同じ節に書いた。
@@ -1191,3 +1193,18 @@ private本体とpublic入口の署名・OID・戻り型・引数名/既定値・
 H7末尾assertの失敗は`GROUP_H_MIGRATION_ASSERTION_FAILED / P0001`、DETAILは`h7_payment_exception_cancel`・`h7_public_acl`・`h7_writer_allowlist`。新しい本体のMD5は、controllerが手元のDBで取引内に本文を当てて`md5(replace(prosrc, E'\r', ''))`を採り（`656d6fc09913ed4865fe2b26029b0fd0`）、末尾assertへ固定した（2026-11-01）。
 
 controller手順: H7未適用DBの新しい取消テストでRED→取引内で新本体のMD5を採取して補完→最終SQLのfresh reset→H1〜H7末尾assertとH受付/遷移/並行、G-1 payment-review/writer-inventoryとG-0〜G-4回帰→public入口のPostgREST service_role成功/anon・authenticated拒否。並行はG鍵待ちを`pg_blocking_pids`/`pg_locks`で観測して3連続。`G1_CLEANUP_SUITE=1`は通常回帰に含めない。実装者はDB・CLI・Docker・server・build・Playwright・実Stripe・本番を実行していない。controllerの実測（2026-11-01）: H7未適用のDBで新しい取消テストが落ちる（RED）→MD5を固定しDBを初期化→group_h_redemptions・group_h_migration_asserts・group_g1_payment_review・group_g1_writer_inventoryの4 suiteが通る。leakproofと所有者の付け替えの改ざんは手元のpostgresが超ユーザーでないため試験から外した（42501。末尾assertは両方を検査する）。
+
+## グループH 本番適用の記録（H1〜H7、2026-11-01）
+
+確認日: 2026-11-01。**本番適用済み（2026-11-01 14:35 頃 JST。オーナーの承認の後、controller が `npx supabase db push --linked`）。** 先の dry-run は H1〜H7 の7本だけを示した（別セッションの波 6 の M3 は `supabase/pending-wave6/` にあり送られない）。当てる前に7本のファイルの MD5 が上の各節と同じことを確かめた。
+
+| 確かめ（本番、読むだけ・件数だけ） | 適用前 | 適用後 |
+| --- | --- | --- |
+| 最新の移行 | `20261029120100` | `20261029130600`（`130000`〜`130600` の7本が増えた） |
+| `public.permissions` | 30 | 32（`admin.discounts.read`・`admin.discounts.manage`） |
+| 割引の権限を持つ役割 | なし | admin だけ（2件） |
+| 役割の `permissions_version` | admin v0・supporter v0・user v0 | admin v1・supporter v0・user v0 |
+| `private.resolve_payment_exception` の本文 MD5 | G-1 の本文 | `656d6fc09913ed4865fe2b26029b0fd0`（H7 の末尾 assert と同じ） |
+| `orders`・`checkout_drafts` | 0・0 | 0・0 |
+
+既存のデータへの書き込みは H1 の権限の種（2件・admin への付与2件・admin の版 +1）だけ。各移行の末尾 assert は本番でも通った（落ちれば取引ごと戻り、push が止まる）。
