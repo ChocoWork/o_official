@@ -17,6 +17,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createClient, type Session } from '@supabase/supabase-js';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
+import { withDummyCaptcha } from './captcha-test-utils';
 
 /** 'user' は管理の役割を持たない一般の利用者（user_roles の行はある。管理 API が断ることを見せるための対照） */
 export type AdminSessionRole = 'admin' | 'supporter' | 'user';
@@ -78,7 +79,8 @@ async function requestToken(env: LocalAuthEnv, grantType: 'password' | 'refresh_
   const res = await fetch(`${env.url}/auth/v1/token?grant_type=${grantType}`, {
     method: 'POST',
     headers: { apikey: env.anonKey, 'content-type': 'application/json', 'x-forwarded-for': uniqueSourceIp() },
-    body: JSON.stringify(body),
+    // captcha が有効な Auth に anon の鍵で直に叩く password grant にだけダミーのトークンを付ける（refresh_token は captcha が掛からない）
+    body: JSON.stringify(grantType === 'password' ? withDummyCaptcha(body) : body),
     signal: AbortSignal.timeout(10_000),
   }).catch(() => {
     throw new Error(`手元の Auth の ${grantType} の要求に失敗した`);

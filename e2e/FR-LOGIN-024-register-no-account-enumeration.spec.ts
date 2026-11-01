@@ -10,9 +10,8 @@ import { stubTurnstileScript } from './turnstile-test-utils';
 //
 // 手元の Supabase に本物の会員を作り、登録済みのアドレスで /api/auth/register を叩く。
 // Turnstile は .env.local の常に通る鍵（トークンは適当な文字列でよい）。
-// 注: 手元の supabase/config.toml は enable_confirmations = false なので、未登録のアドレスは 201（その場でログイン）、
-// 登録済みは 202 になり、応答が一致しない。本番と同じ Confirm email ON にするまで、
-// FREQ-320-AC-03 は状態の不一致で失敗する（設定の差。コードの欠陥ではない）。
+// 注: 手元の supabase/config.toml は本番と同じ enable_confirmations = true（波 6 で切り替えた）なので、
+// 未登録のアドレスも登録済みも 202 になり、応答が一致する。
 
 test.use({ trace: 'off' });
 
@@ -101,7 +100,6 @@ test.describe('FR-LOGIN-024 register account enumeration (API contract)', () => 
   // FREQ-320-AC-03: 409 は廃止した。登録済みと未登録で状態・本文が完全に一致する
   // HTTP だけの試験なので画面の幅は結果を変えない（1 本だけ流す）。
   test('FREQ-320-AC-03 a registered and an unregistered address get the same status and body, never 409', async ({ request, baseURL }) => {
-    test.fail(true, 'ENV enable_confirmations=false（会員登録が 201 で即ログインになり、本番の 202 にならない） — 手元の supabase/config.toml が本番と違う');
     const registered = await createTestMember('enum-api');
     const unregisteredEmail = uniqueEmail('unregistered');
     const origin = new URL(baseURL ?? 'http://localhost:3000').origin;

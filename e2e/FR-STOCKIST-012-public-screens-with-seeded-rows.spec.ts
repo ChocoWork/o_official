@@ -15,6 +15,7 @@
 import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { expect, test, type Page } from '@playwright/test';
+import { DUMMY_CAPTCHA_TOKEN } from './captcha-test-utils';
 import {
   openFilterScope,
   randomLowId,
@@ -44,7 +45,7 @@ function memberSession(): Promise<{ userId: string; accessToken: string }> {
     if (created.error || !created.data.user) {
       throw new Error(`手元の一般会員を作れない（status: ${created.error?.status ?? '不明'}）`);
     }
-    const signedIn = await createClient(url, anonKey, clientOptions).auth.signInWithPassword({ email, password });
+    const signedIn = await createClient(url, anonKey, clientOptions).auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
     if (signedIn.error || !signedIn.data.session) {
       throw new Error(`手元の一般会員でログインできない（status: ${signedIn.error?.status ?? '不明'}）`);
     }

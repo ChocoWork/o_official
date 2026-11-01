@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import { createAdminSessionActor, bearerHeaders, type AdminSessionActor } from './admin-session-test-utils';
+import { withDummyCaptcha } from './captcha-test-utils';
 import { withLocalDb } from './order-email-test-utils';
 
 // JWT が Authorization ヘッダーに載るので、通信記録（trace）に残さない。
@@ -88,7 +89,7 @@ async function createAuthUser(email: string, password: string): Promise<string> 
 
 async function passwordLogin(email: string, password: string): Promise<void> {
   const { anonKey } = localAuth();
-  const reply = await goTrue('/token?grant_type=password', { method: 'POST', key: anonKey, json: { email, password } });
+  const reply = await goTrue('/token?grant_type=password', { method: 'POST', key: anonKey, json: withDummyCaptcha({ email, password }) });
   if (reply.status !== 200) throw new Error(`前提: パスワードでログインできること（status ${reply.status}）`);
 }
 

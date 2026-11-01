@@ -2,6 +2,7 @@
   "violations": [
     "missing-child|docs/02_Requirements/areas/about.md|SEC-ABOUT-006-AC-01 に e2e テスト が無い",
     "missing-child|docs/02_Requirements/areas/about.md|SEC-ABOUT-007-AC-01 に e2e テスト が無い",
+    "missing-child|docs/02_Requirements/areas/about.md|SEC-ABOUT-007-AC-02 に e2e テスト が無い",
     "missing-child|docs/02_Requirements/areas/admin.md|FREQ-508-AC-03 に e2e テスト が無い",
     "missing-child|docs/02_Requirements/areas/admin.md|SEC-ADMIN-003-AC-02 に e2e テスト が無い",
     "missing-child|docs/02_Requirements/areas/admin.md|SEC-ADMIN-010-AC-01 に e2e テスト が無い",

@@ -278,7 +278,6 @@ for (const viewport of viewports) {
     });
 
     test(`SEC-AUTH-029-AC-02 送ってから 5 分を過ぎたメール OTP を送ると 401 になる (${viewport.name})`, async ({ page }) => {
-      test.fail(true, 'ENV otp_expiry=3600（5 分を過ぎたメール OTP が通る。本番は 300 秒） — 手元の supabase/config.toml が本番と違う');
       const member = await createMemberWithPassword(`sec029-${viewport.name}`);
       const sourceIp = uniqueSourceIp();
 

@@ -25,6 +25,7 @@ import { expect, test, type APIRequestContext } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { createAdminSessionActor, elevateAdminSessionToAal2 } from './admin-session-test-utils';
+import { DUMMY_CAPTCHA_TOKEN } from './captcha-test-utils';
 
 test.use({ trace: 'off' });
 
@@ -87,7 +88,7 @@ function memberToken(): Promise<string> {
     const created = await createClient(SUPABASE_URL, SERVICE_KEY, clientOptions).auth.admin.createUser({ email, password, email_confirm: true });
     if (created.error || !created.data.user) throw new Error(`手元の会員を作れない（status: ${created.error?.status ?? '不明'}）`);
     createdUserIds.push(created.data.user.id);
-    const signedIn = await createClient(SUPABASE_URL, ANON_KEY, clientOptions).auth.signInWithPassword({ email, password });
+    const signedIn = await createClient(SUPABASE_URL, ANON_KEY, clientOptions).auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
     if (signedIn.error || !signedIn.data.session) throw new Error(`手元の会員でログインできない（status: ${signedIn.error?.status ?? '不明'}）`);
     return signedIn.data.session.access_token;
   })();

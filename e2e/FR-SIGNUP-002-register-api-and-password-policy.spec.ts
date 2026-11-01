@@ -154,16 +154,16 @@ test.describe('FR-SIGNUP-002 register API and password policy', () => {
     expect(await authUserCount(shortEmail)).toBe(0);
 
     // 16 文字は受理される。英小文字だけで、記号も数字も無い。
-    // この AC は長さの決まりを見るので、受理は 202（Confirm email 有効）でも 201（無効の手元の設定でその場でログイン）でもよい
+    // 手元の設定は本番と同じ Confirm email 有効（波 6 で切り替えた）なので、受理は 202
     const exactEmail = uniqueEmail('len16');
     const exact = await postRegister(request, exactEmail, { password: lettersOnlyPassword(16) });
-    expect([201, 202]).toContain(exact.status());
+    expect(exact.status()).toBe(202);
     expect(await authUserCount(exactEmail)).toBe(1);
 
     // 記号や数字を含まない 16 文字以上（24 文字）も受理される
     const longEmail = uniqueEmail('len24');
     const long = await postRegister(request, longEmail, { password: lettersOnlyPassword(24) });
-    expect([201, 202]).toContain(long.status());
+    expect(long.status()).toBe(202);
     expect(await authUserCount(longEmail)).toBe(1);
   });
 
@@ -181,7 +181,6 @@ test.describe('FR-SIGNUP-002 register API and password policy', () => {
 
   // SEC-AUTH-016-AC-01
   test('SEC-AUTH-016-AC-01 registered and unregistered emails get the same status and body', async ({ request }) => {
-    test.fail(true, 'ENV enable_confirmations=false（会員登録が 201 で即ログインになり、本番の 202 にならない） — 手元の supabase/config.toml が本番と違う');
     const registeredEmail = uniqueEmail('enum-registered');
     const unregisteredEmail = uniqueEmail('enum-unregistered');
     await createConfirmedUser(registeredEmail, lettersOnlyPassword(24));
@@ -243,7 +242,6 @@ test.describe('FR-SIGNUP-002 register API and password policy', () => {
 
   // SEC-AUTH-029-AC-01
   test('SEC-AUTH-029-AC-01 registering an unregistered email returns 202 without an access_token', async ({ request }) => {
-    test.fail(true, 'ENV enable_confirmations=false（会員登録が 201 で即ログインになり、本番の 202 にならない） — 手元の supabase/config.toml が本番と違う');
     const email = uniqueEmail('confirm-email');
     const response = await postRegister(request, email, { password: lettersOnlyPassword(24) });
 

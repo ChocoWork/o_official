@@ -12,16 +12,22 @@
  * - SEC-AUTH-007-AC-01・AC-02・AC-03 は、確認の窓口が登録を始めたブラウザ（控えの Cookie の番号と、確認した利用者のメールを
  *   一緒にハッシュした印が登録の控えに当たる）でだけ session を作ることを確かめる。通る。
  * - SEC-AUTH-006-AC-02 は同じブラウザで開けば session を作り 303 で送る守り。通る。
- * - FR-LOGIN-004-AC-01 は Confirm email が有効な前提。手元の supabase/config.toml は無効（enable_confirmations = false）で、
- *   登録するとその場でログインし確認メールも出ない。有効にし、確認メールの文面を
- *   `{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=signup` へのリンクにするまで赤。
+ * - FR-LOGIN-004-AC-01 は Confirm email が有効な前提。手元の supabase/config.toml は波 6 で本番と同じ
+ *   enable_confirmations = true にした。確認メールのリンクは、`token_hash` と `type=signup` を持つ確認の窓口へのリンク
+ *   でなければ、開いても session の Cookie が書かれず赤になる。そのため波 6 は supabase/config.toml に
+ *   [auth.email.template.confirmation]（supabase/templates/confirmation.html。`{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=signup`）
+ *   を足した。GoTrue の既定の ConfirmationURL（/auth/v1/verify）は印を GoTrue が使い切り、fragment で戻すので窓口では読めない。
  * - SEC-AUTH-006-AC-01 は、確認の窓口が type=signup の印だけを受け、magiclink・recovery・email の印では
  *   verifyOtp を呼ばず session の Cookie も書かないこと（窓口で開いた印そのものが GoTrue でまだ使える）を確かめる。通る。
  *
- * 「登録を始めたブラウザ」の作り方（手元で Confirm email が無効でも動く）:
- * 手元で本当に登録を送ると、その場で確認済みになり session が付くので、確認のリンクの印が残らない。
- * そこで未確認の会員と signup の印を管理 API の generateLink で先に作る（本番の確認メールの印と同じ状態）。
+ * 「登録を始めたブラウザ」の作り方（手元の Confirm email の有無（切り替えの前後）どちらでも動く）:
+ * 切り替えの前は、手元で本当に登録を送ると、その場で確認済みになり session が付くので、確認のリンクの印が残らない。
+ * 切り替えの後は、本当の確認メールの印を使えるが、印を取り出す手間と期限（5 分）に左右されない。どちらでも同じ状態になるよう、
+ * 未確認の会員と signup の印を管理 API の generateLink で先に作る（本番の確認メールの印と同じ状態）。
  * そのメールの登録を、Playwright の context（ブラウザ A）の /login の画面から送る（会員がいるので 202 が返る）。
+ * 2026-11-01 から、未確認の会員の登録は確認メールを送り直す（SEC-AUTH-016-AC-04）。送り直しは GoTrue の印を作り直すので、
+ * 先に作った印は使えなくなることがある（送り直しの間隔の枠に当たると印が残るので、時間で結果が変わる）。
+ * 開く印は、登録を送った後に generateLink で作り直した物を使う（reissueSignupToken）。
  * 登録の応答で、アプリが「登録を始めた」目印の Cookie をそのブラウザに置くなら、ブラウザ A の context に入る。
  * 確認のリンクは、同じ context（SEC-AUTH-006-AC-02）か、Cookie の無い別の context（SEC-AUTH-007-AC-01）で開く。
  *
@@ -109,6 +115,15 @@ async function issueTokenHash(admin: SupabaseClient, type: LinkType, label: stri
   return { tokenHash: data.properties.hashed_token, email, userId: created.data.user.id };
 }
 
+/** 登録を送った後の、未確認の会員の今の signup の印を作り直して返す（登録の送り直しが前の印を無効にするため）。 */
+async function reissueSignupToken(admin: SupabaseClient, email: string): Promise<string> {
+  const { data, error } = await admin.auth.admin.generateLink({ type: 'signup', email, password: strongPassword() });
+  if (error || !data.properties?.hashed_token) {
+    throw new Error(`signup の印を作り直せない（status: ${error?.status ?? '不明'}）`);
+  }
+  return data.properties.hashed_token;
+}
+
 async function removeUsers(admin: SupabaseClient, userIds: string[]): Promise<void> {
   for (const id of userIds) {
     try {
@@ -167,7 +182,7 @@ async function expectTokenNotConsumed(
 // ---- Mailpit ----
 
 type MailpitList = { messages?: Array<{ ID: string }> };
-type MailpitMessage = { HTML?: string; Text?: string };
+type MailpitMessage = { HTML?: string; Text?: string; Subject?: string };
 
 function mailUrl(): string {
   const url = process.env.MAIL_LOCAL_URL;
@@ -259,7 +274,6 @@ for (const viewport of viewports) {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
     test('FR-LOGIN-004-AC-01 register tab sends a confirmation mail and its link finishes the signup', async ({ page, request }) => {
-      test.fail(true, 'ENV enable_confirmations=false（手元の Supabase の mailer_autoconfirm が true） — 手元の supabase/config.toml が本番と違う');
       test.setTimeout(120_000);
       const { admin, url, anonKey } = localSupabase();
       const email = uniqueEmail(`ui-${viewport.name}`);
@@ -290,6 +304,35 @@ for (const viewport of viewports) {
         const listed = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
         const created = listed.data?.users.find((user) => user.email === email);
         if (created) await removeUsers(admin, [created.id]);
+      }
+    });
+
+    test('SEC-AUTH-016-AC-04 an unconfirmed member who registers again gets the confirmation mail again and the same 202', async ({ page, request }) => {
+      test.setTimeout(120_000);
+      const { admin } = localSupabase();
+      // 確認のリンクを開かないまま切れた未確認の会員（generateLink はメールを送らない）。
+      const issued = await issueTokenHash(admin, 'signup', `016d-${viewport.name}`);
+      try {
+        // GoTrue の送り直しの間隔（手元は max_frequency = 1s）を空けてから登録し直す。
+        await page.waitForTimeout(2_000);
+        const [registered] = await Promise.all([
+          page.waitForResponse((response) => new URL(response.url()).pathname === '/api/auth/register'),
+          submitSignupFromBrowser(page, issued.email),
+        ]);
+        // 応答は新規の登録と同じ 202（画面も同じ「確認メールを送信しました」）。
+        expect(registered.status()).toBe(202);
+
+        // 受け箱に確認メール（GoTrue の確認の雛形）が届き、そのリンクで登録が終わる。
+        const mail = await latestMailTo(request, issued.email);
+        expect(mail.Subject, '届いたのが確認メールでない').toBe('メールアドレスの確認');
+        await page.goto(confirmLinkOf(mail));
+        await expect
+          .poll(async () => (await admin.auth.admin.getUserById(issued.userId)).data.user?.email_confirmed_at ?? null, {
+            message: '送り直した確認メールのリンクでメールが確認済みにならない',
+          })
+          .toBeTruthy();
+      } finally {
+        await removeUsers(admin, [issued.userId]);
       }
     });
 
@@ -330,7 +373,8 @@ for (const viewport of viewports) {
         expect(before.find((cookie) => cookie.name === ACCESS_COOKIE && cookie.value !== ''), '確認のリンクを開く前に session の Cookie がある').toBeUndefined();
 
         // 同じブラウザ A で確認のリンクを開く。URL の redirect_to は読まれない（別の道を付けて、無視されることも確かめる）。
-        const hop = await openConfirmLinkInBrowser(page, { tokenHash: issued.tokenHash, type: 'signup', redirectTo: '/item' });
+        const tokenHash = await reissueSignupToken(admin, issued.email);
+        const hop = await openConfirmLinkInBrowser(page, { tokenHash, type: 'signup', redirectTo: '/item' });
 
         // 登録を始めたブラウザで type=signup の印を開くと、session の Cookie が書かれ、登録の時に控えた戻り先へ 303 で送られる。
         expect(hop.status()).toBe(303);
@@ -360,7 +404,8 @@ for (const viewport of viewports) {
         // 登録を始めていないブラウザ B で、確認のリンクを開く。
         expect(await otherBrowser.cookies(), 'ブラウザ B に Cookie が残っている').toEqual([]);
         const pageB = await otherBrowser.newPage();
-        const hop = await openConfirmLinkInBrowser(pageB, { tokenHash: issued.tokenHash, type: 'signup' });
+        const tokenHash = await reissueSignupToken(admin, issued.email);
+        const hop = await openConfirmLinkInBrowser(pageB, { tokenHash, type: 'signup' });
 
         // 303 で /login へ送られる。
         expect(hop.status()).toBe(303);
@@ -406,7 +451,8 @@ for (const viewport of viewports) {
 
         // 控えの Cookie を持たないブラウザ B で開く。戻り先は使わず /login へ送る（URL の redirect_to も読まない）。
         const pageB = await otherBrowser.newPage();
-        const hop = await openConfirmLinkInBrowser(pageB, { tokenHash: issued.tokenHash, type: 'signup', redirectTo: RETURN_PATH });
+        const tokenHash = await reissueSignupToken(admin, issued.email);
+        const hop = await openConfirmLinkInBrowser(pageB, { tokenHash, type: 'signup', redirectTo: RETURN_PATH });
         expect(hop.status()).toBe(303);
         const location = hop.headers()['location'];
         expect(location, 'Location が無い').toBeTruthy();

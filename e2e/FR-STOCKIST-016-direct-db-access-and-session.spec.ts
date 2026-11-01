@@ -18,6 +18,7 @@ import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { expect, test, type APIResponse, type Locator, type Page } from '@playwright/test';
 import { createAdminSessionActor, type AdminSessionActor } from './admin-session-test-utils';
+import { DUMMY_CAPTCHA_TOKEN } from './captcha-test-utils';
 import { withLocalDb } from './order-email-test-utils';
 import {
   randomLowId,
@@ -151,7 +152,7 @@ function adminCookieSession(): Promise<Record<string, unknown>> {
       );
       if (assigned.rowCount !== 1) throw new Error('役割 admin の行が手元の DB に無い');
     });
-    const signedIn = await createClient(env().url, env().anonKey, clientOptions).auth.signInWithPassword({ email, password });
+    const signedIn = await createClient(env().url, env().anonKey, clientOptions).auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
     if (signedIn.error || !signedIn.data.session) {
       throw new Error(`手元の管理者でログインできない（status: ${signedIn.error?.status ?? '不明'}）`);
     }

@@ -14,6 +14,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { bindAppSession } from './admin-session-test-utils';
+import { DUMMY_CAPTCHA_TOKEN } from './captcha-test-utils';
 import { deliveryViewports, setTrackingFlagDirect, withDeliveryScenario } from './delivery-tracking-test-utils';
 
 test.use({ trace: 'off' });
@@ -61,7 +62,7 @@ async function signedInUser(kind: 'member' | 'admin'): Promise<{ userId: string;
     throw new Error(`手元の利用者を作れない（status: ${created.error?.status ?? '不明'}）`);
   }
   // パスワードだけのログイン。JWT の aal は aal1 になる（2段階認証は済ませない）
-  const signedIn = await createClient(SUPABASE_URL, ANON_KEY, options).auth.signInWithPassword({ email, password });
+  const signedIn = await createClient(SUPABASE_URL, ANON_KEY, options).auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
   if (signedIn.error || !signedIn.data.session) {
     throw new Error(`手元の利用者でログインできない（status: ${signedIn.error?.status ?? '不明'}）`);
   }

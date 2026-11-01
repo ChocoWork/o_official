@@ -23,6 +23,7 @@ import { expect, test, type APIResponse, type Page } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { setLoginTwoFactorCookie } from './auth-2fa-test-utils';
+import { DUMMY_CAPTCHA_TOKEN } from './captcha-test-utils';
 import { createTestMember, loginAsMember, type TestMember } from './member-session-helpers';
 import { createPaidOrder, uniqueEmail, withLocalDb } from './order-email-test-utils';
 import { viewports } from './order-fulfillment-test-utils';
@@ -399,7 +400,6 @@ for (const viewport of viewports) {
     });
 
     test(`SEC-AUTH-030-AC-01 TOTP の登録と確認の成功が監査に残る (${viewport.name})`, async ({ page }) => {
-      test.fail(true, 'ENV [auth.mfa.totp] の enroll_enabled・verify_enabled=false（TOTP の登録が 500） — 手元の supabase/config.toml が本番と違う');
       const { member } = await loginPrivilegedAsAal1(page, 'login032-030a', 'admin');
       const before = (await auditRowsOf(member.userId, 'mfa')).filter((row) => row.outcome === 'success');
 
@@ -434,7 +434,7 @@ for (const viewport of viewports) {
       }
       const userId = created.data.user.id;
       await withLocalDb((db) => assignRole(db, userId, 'admin'));
-      const signedIn = await createClient(SUPABASE_URL, ANON_KEY, options).auth.signInWithPassword({ email, password });
+      const signedIn = await createClient(SUPABASE_URL, ANON_KEY, options).auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
       if (signedIn.error || !signedIn.data.session) {
         throw new Error(`手元の管理者でパスワードのログインができない（status: ${signedIn.error?.status ?? '不明'}）`);
       }
@@ -485,7 +485,6 @@ for (const viewport of viewports) {
     });
 
     test(`FREQ-316-REQ-02-AC-01 TOTP の確認の後の Cookie の access token が aal2 になり、aal1 のトークンでは管理の窓口が 403 になる (${viewport.name})`, async ({ page }) => {
-      test.fail(true, 'ENV [auth.mfa.totp] の enroll_enabled・verify_enabled=false（TOTP の登録が 500） — 手元の supabase/config.toml が本番と違う');
       await loginPrivilegedAsAal1(page, 'login032-316b', 'admin');
 
       // aal1 のトークンで管理の窓口を呼ぶと 403（MFA required）

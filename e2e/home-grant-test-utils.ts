@@ -16,6 +16,7 @@ import { createClient } from '@supabase/supabase-js';
 import { expect, type APIResponse, type Page } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
+import { withDummyCaptcha } from './captcha-test-utils';
 import { PUBLISHED_ITEM_TOP_AT } from './home-test-utils';
 
 export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
@@ -131,7 +132,7 @@ export async function createMemberActor(): Promise<MemberActor> {
     method: 'POST',
     // 呼ぶごとに別の送り元として数えさせる（admin-session-test-utils の uniqueSourceIp と同じ注記。x-forwarded-for を送り元に数える作りに頼る分離で、効かなくなっても害は無い）
     headers: { apikey: ANON_KEY, 'content-type': 'application/json', 'x-forwarded-for': `10.${[...randomBytes(3)].join('.')}` },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify(withDummyCaptcha({ email, password })),
     signal: AbortSignal.timeout(10_000),
   }).catch(() => {
     throw new Error('手元の Auth のパスワードのログインの要求に失敗した');

@@ -4,8 +4,8 @@
  * ログインは本物の道を通す: 会員の作成（GoTrue） → 確認コードのログイン（/api/auth/login/resend・/api/auth/otp/verify）
  * → aal2 への昇格（下記） → /api/auth/refresh で aal2 のトークンを Cookie に受ける。窓口の認可・MFA の判定は差し替えない。
  *
- * aal2 への昇格だけは、本物の TOTP（/api/auth/mfa/enroll-totp・/api/auth/mfa/verify）を使えない。手元の Supabase は
- * supabase/config.toml の [auth.mfa.totp] enroll_enabled = false・verify_enabled = false で、GoTrue が 422（mfa_totp_enroll_not_enabled）を返すため。
+ * aal2 への昇格だけは、本物の TOTP（/api/auth/mfa/enroll-totp・/api/auth/mfa/verify）を通さない。本物の流れは FR-LOGIN-032 が通す
+ * （手元の Supabase は波 6 から supabase/config.toml の [auth.mfa.totp] を有効にしている）。
  * そこで、GoTrue が aal2 を数える根拠（auth.mfa_amr_claims に authentication_method = 'totp' の行がある session）を DB へ直に足し、
  * 本物の refresh で aal2 のトークンを発行させる（2026-10-25 に手元の GoTrue で aal1 → aal2 になることを確かめた）。
  * TOTP の入力の画面と /api/auth/mfa/* の窓口そのものは、この道具の範囲の外。

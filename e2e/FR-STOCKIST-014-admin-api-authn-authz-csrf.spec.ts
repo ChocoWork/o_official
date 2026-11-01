@@ -29,6 +29,7 @@ import { createClient } from '@supabase/supabase-js';
 import { expect, test, type APIRequestContext, type PlaywrightWorkerArgs } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
+import { DUMMY_CAPTCHA_TOKEN } from './captcha-test-utils';
 import { withLocalDb } from './order-email-test-utils';
 import { withPermissionScenario } from './permission-settings-test-utils';
 
@@ -180,7 +181,7 @@ async function createActor(scenario: Scenario, kind: ActorKind, aal: Aal): Promi
   }
 
   const gotrue = createClient(SUPABASE_URL, ANON_KEY, authOptions);
-  const signedIn = await gotrue.auth.signInWithPassword({ email, password });
+  const signedIn = await gotrue.auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
   if (signedIn.error || !signedIn.data.session) {
     throw new Error(`手元の利用者でログインできない（status: ${signedIn.error?.status ?? '不明'}）`);
   }

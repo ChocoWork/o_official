@@ -1,14 +1,18 @@
 /**
  * FR-LOGIN-031 Supabase Auth・PostgREST を直接呼ぶ道（アプリの窓口を通らない道）でも、2段階のログイン・DB の権限・登録の決まりが飛ばせない
  * 対応: SEC-AUTH-005-AC-01 / SEC-AUTH-005-AC-02 / SEC-AUTH-010-AC-01 / SEC-AUTH-011-AC-01 / SEC-AUTH-012-AC-01
- *       SEC-AUTH-015-AC-01 / SEC-AUTH-015-AC-02 / SEC-AUTH-028-AC-02
+ *       SEC-AUTH-015-AC-01 / SEC-AUTH-015-AC-02 / SEC-AUTH-015-AC-05 / SEC-AUTH-028-AC-02
  *       SEC-AUTH-005-AC-03 / SEC-AUTH-005-AC-05 / SEC-AUTH-030-AC-03 / SEC-AUTH-031-AC-02 / SEC-AUTH-010-AC-03
+ *       SEC-AUTH-015-AC-04 / SEC-AUTH-035-AC-01 / SEC-AUTH-035-AC-02（波 6。手元の Auth の captcha を有効にした設定で通る）
  *
  * 手元の Supabase（GoTrue の /auth/v1、PostgREST の /rest/v1）を anon の鍵と、パスワードだけで得た JWT で直接叩く。
  * アプリの窓口（/api/auth/me・/api/profile・/api/orders・/api/admin/users）は Bearer で叩く。画面は開かない。
  * HTTP の試験なので結果は画面の幅で変わらない。1つの幅（desktop）だけ流す（DB の書き込みと回数の制限の枠を3倍にしない）。
  *
- * 既知の赤: SEC-AUTH-012・015 は、2026-10-24 時点で文書に載せた「今のコードは満たさない」点（docs/02_Requirements/areas/auth.md）。
+ * 既知の赤: SEC-AUTH-012 は、2026-10-24 時点で文書に載せた「今のコードは満たさない」点（docs/02_Requirements/areas/auth.md）。
+ * SEC-AUTH-015-AC-01・AC-02（24 時間を過ぎた session）・AC-04 は、手元の Auth を本番の前提にそろえた設定（波 6。最小長 16・
+ * secure_password_change・captcha）で通る。SEC-AUTH-015-AC-05 の「現行パスワード無しは 400」だけは、CLI の config.toml に鍵が無く
+ * 手元で設定できないので、ENV の印（test.fail）のまま残す（本番の設定は Management API の GET で確かめる）。
  * SEC-AUTH-005-AC-02・005-AC-03 の PostgREST の側・010-AC-01・010-AC-03 は、DB の移行 M2（波 5。has_permission に aal2 と結び付いた生きた session を求め、
  * profiles・orders・order_items に RESTRICTIVE の方針を足す）を当てた DB で通る（test.fail は外した。M2 を当てていない DB では赤）。
  * SEC-AUTH-005-AC-01・03・05、SEC-AUTH-030-AC-03、SEC-AUTH-031-AC-02 は波 5 でアプリの窓口が満たす（旗 AUTH_REQUIRE_APP_SESSION は E2E で固定の on）。
@@ -32,6 +36,7 @@ import { expect, test, type APIResponse } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { createAdminSessionActor, elevateAdminSessionToAal2 } from './admin-session-test-utils';
+import { withDummyCaptcha } from './captcha-test-utils';
 import { createTestMember, loginAsMember, readLatestCode, readMailpitMessages } from './member-session-helpers';
 
 test.use({ trace: 'off' });
@@ -114,7 +119,8 @@ async function requestToken(grantType: 'password' | 'refresh_token', body: Recor
   const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=${grantType}`, {
     method: 'POST',
     headers: { apikey: ANON_KEY, 'content-type': 'application/json' },
-    body: JSON.stringify(body),
+    // captcha が有効な Auth に anon の鍵で直に叩く password grant にだけダミーのトークンを付ける（refresh_token は captcha が掛からない）
+    body: JSON.stringify(grantType === 'password' ? withDummyCaptcha(body) : body),
     signal: AbortSignal.timeout(10_000),
   }).catch(() => {
     throw new Error(`手元の Auth の ${grantType} の要求に失敗した`);
@@ -182,7 +188,7 @@ async function requestOtpOnlyTokens(email: string): Promise<{ accessToken: strin
   const sent = await fetch(`${SUPABASE_URL}/auth/v1/otp`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ email, create_user: false }),
+    body: JSON.stringify(withDummyCaptcha({ email, create_user: false })),
     signal: AbortSignal.timeout(10_000),
   }).catch(() => {
     throw new Error('手元の Auth の /otp の要求に失敗した');
@@ -597,8 +603,9 @@ for (const viewport of viewports) {
   test.describe(`SEC-AUTH-015-AC-01 直接の /auth/v1/signup で 15 文字のパスワードの登録ができない (${viewport.name})`, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
-    test(`SEC-AUTH-015-AC-01 anon の鍵で /auth/v1/signup を直接呼び 15 文字のパスワードで登録すると、誤りになり、利用者ができない (${viewport.name})`, async ({ request }) => {
-      test.fail(true, 'ENV minimum_password_length=6 と captcha 無効（15 文字でも直接の登録が通る） — 手元の supabase/config.toml が本番と違う');
+    test(`SEC-AUTH-015-AC-01 anon の鍵で /auth/v1/signup をダミーの captcha トークン付きで直接呼び 15 文字のパスワードで登録すると、弱いパスワードの誤りになり、利用者ができない (${viewport.name})`, async ({ request }) => {
+      // captcha で断られたのではなく、長さの決まり（minimum_password_length = 16）で断られることを見るため、ダミーのトークンを付ける。
+      // トークン無しで断られることは SEC-AUTH-015-AC-04 が受け持つ。
       requireLocalEnv();
       const email = newEmail('signup15');
       const password = 'Abcdefgh1234!xy';
@@ -606,13 +613,13 @@ for (const viewport of viewports) {
 
       const response = await request.post(`${SUPABASE_URL}/auth/v1/signup`, {
         headers: { apikey: ANON_KEY, 'Content-Type': 'application/json' },
-        data: { email, password },
+        data: withDummyCaptcha({ email, password }),
       });
-      // 429（枠切れ）は決まりで断られたのではない
-      expect(response.status(), '直接の登録の status').toBeGreaterThanOrEqual(400);
-      expect(response.status(), '直接の登録の status').toBeLessThan(500);
+      // 429（枠切れ）・captcha の 400 は長さの決まりで断られたのではない
       expect(response.status(), '直接の登録が枠切れ（429）で断られていない').not.toBe(429);
+      expect(response.status(), '直接の登録の status（弱いパスワード）').toBe(422);
       const body = (await jsonOf(response)) as Record<string, unknown> | null;
+      expect(body?.error_code, '直接の登録の誤りの符号').toBe('weak_password');
       expect(body?.access_token, '登録の応答の access_token').toBeUndefined();
       expect(body?.id, '登録の応答の利用者').toBeUndefined();
 
@@ -628,10 +635,10 @@ for (const viewport of viewports) {
   test.describe(`SEC-AUTH-015-AC-02 直接の /auth/v1/user で再認証なしにパスワードを変えられない (${viewport.name})`, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
-    test(`SEC-AUTH-015-AC-02 会員の access token だけで /auth/v1/user にパスワードの変更を送ると、再認証を求める誤りになり、パスワードが変わらない (${viewport.name})`, async ({ request }) => {
-      test.fail(true, 'ENV secure_password_change=false（再認証なしでパスワードを変えられる） — 手元の supabase/config.toml が本番と違う');
+    test(`SEC-AUTH-015-AC-05 会員の access token だけで /auth/v1/user に現行パスワード無しでパスワードの変更を送ると、現行パスワードを求める誤りになり、パスワードが変わらない (${viewport.name})`, async ({ request }) => {
+      test.fail(true, 'ENV security_update_password_require_current_password は CLI の config.toml に鍵が無く手元で設定できない（本番は Management API の GET で確かめる。SEC-AUTH-015-AC-05）');
       // パスワードを書き換える試験なので、試験ごとに会員を作る
-      const member = await createSignedInActor('pwchange');
+      const member = await createSignedInActor('pwchange-current');
       const readHash = (): Promise<string> =>
         withDb(async (db) => {
           const row = await db.query('select encrypted_password from auth.users where id = $1::uuid', [member.userId]);
@@ -643,10 +650,162 @@ for (const viewport of viewports) {
         headers: { apikey: ANON_KEY, ...bearer(member.accessToken), 'Content-Type': 'application/json' },
         data: { password: newPassword() },
       });
-      expect(response.status(), '直接のパスワード変更の status').toBeGreaterThanOrEqual(400);
-      expect(response.status(), '直接のパスワード変更の status').toBeLessThan(500);
-      expect(JSON.stringify(await jsonOf(response)), '再認証を求める誤りの文面').toMatch(/reauthentication/i);
+      expect(response.status(), '現行パスワード無しの直接のパスワード変更の status').toBe(400);
+      expect(JSON.stringify(await jsonOf(response)), '現行パスワードを求める誤りの文面').toMatch(/current_password_required/i);
       expect(await readHash(), '変更後のパスワードのハッシュ').toBe(before);
+    });
+
+    test(`SEC-AUTH-015-AC-02 作ってから 24 時間を過ぎた session の access token だけで /auth/v1/user にパスワードの変更を送ると、再認証を求める誤りになり、パスワードが変わらない (${viewport.name})`, async ({ request }) => {
+      // secure_password_change = true は、作ってから 24 時間以内の session には再認証を求めない（設定で変えられない窓）。
+      // 古い session の側を見るため、session の作成時刻を 25 時間前に戻す。
+      const member = await createSignedInActor('pwchange-reauth');
+      const sessionId = claimsOf(member.accessToken).session_id;
+      expect(sessionId, 'access token の session_id（準備）').toBeTruthy();
+      const readHash = (): Promise<string> =>
+        withDb(async (db) => {
+          const row = await db.query('select encrypted_password from auth.users where id = $1::uuid', [member.userId]);
+          return row.rows[0].encrypted_password as string;
+        });
+      const before = await readHash();
+      await withDb(async (db) => {
+        const moved = await db.query("update auth.sessions set created_at = now() - interval '25 hours' where id = $1::uuid and user_id = $2::uuid", [
+          sessionId,
+          member.userId,
+        ]);
+        expect(moved.rowCount, '作成時刻を戻した session の数（準備）').toBe(1);
+      });
+
+      const response = await request.put(`${SUPABASE_URL}/auth/v1/user`, {
+        headers: { apikey: ANON_KEY, ...bearer(member.accessToken), 'Content-Type': 'application/json' },
+        data: { password: newPassword() },
+      });
+      expect(response.status(), '直接のパスワード変更の status').toBe(400);
+      expect(await jsonOf(response), '再認証を求める誤りの error_code').toMatchObject({ error_code: 'reauthentication_needed' });
+      expect(await readHash(), '変更後のパスワードのハッシュ').toBe(before);
+    });
+  });
+}
+
+// ---- SEC-AUTH-015-AC-04・SEC-AUTH-035-AC-01（波 6: Supabase の captcha） ----
+// 手元の Auth の captcha を有効にした設定（2026-11-01 の波 6 の切り替えで supabase/config.toml に入れた）で通る。
+
+for (const viewport of viewports) {
+  test.describe(`SEC-AUTH-015-AC-04 トークン無しの直接の /signup・/token・/otp が captcha で断られる (${viewport.name})`, () => {
+    test.use({ viewport: { width: viewport.width, height: viewport.height } });
+
+    test(`SEC-AUTH-015-AC-04 anon の鍵で /auth/v1/signup・/auth/v1/token（password）・/auth/v1/otp を captcha のトークン無しで直接呼ぶと、どれも 400 で本文に captcha を含み、通行証も利用者もメールも出ない (${viewport.name})`, async ({ request }) => {
+      requireLocalEnv();
+      // 実在する会員（既知のパスワード）を使う。400 が「資格情報の誤り」でなく captcha の断りであることを見せるため
+      const existing = await createUnsignedActor('captcha');
+      const signupEmail = newEmail('captcha-signup');
+      const previousExistingIds = new Set((await readMailpitMessages(existing.email)).map((message) => message.ID));
+      const calls = [
+        { path: '/auth/v1/signup', data: { email: signupEmail, password: newPassword() } },
+        { path: '/auth/v1/token?grant_type=password', data: { email: existing.email, password: existing.password } },
+        { path: '/auth/v1/otp', data: { email: existing.email, create_user: false } },
+      ] as const;
+
+      for (const call of calls) {
+        const response = await request.post(`${SUPABASE_URL}${call.path}`, {
+          headers: { apikey: ANON_KEY, 'Content-Type': 'application/json', 'x-forwarded-for': uniqueForwardedFor() },
+          data: call.data,
+        });
+        expect(response.status(), `${call.path} の status`).toBe(400);
+        const text = await response.text();
+        expect(text, `${call.path} の本文が captcha の断り`).toMatch(/captcha/i);
+        const body = (await jsonOf(response)) as Record<string, unknown> | null;
+        expect(body?.access_token, `${call.path} の応答の access_token`).toBeUndefined();
+        expect(body?.id, `${call.path} の応答の利用者`).toBeUndefined();
+      }
+
+      await withDb(async (db) => {
+        const found = await db.query('select count(*)::int as n from auth.users where email = $1', [signupEmail]);
+        expect(found.rows[0].n, '直接の登録の宛先の利用者の行').toBe(0);
+      });
+      // 断られた /otp と /signup は確認コードも確認のメールも出さない
+      const newExistingMails = (await readMailpitMessages(existing.email)).filter((message) => !previousExistingIds.has(message.ID));
+      expect(newExistingMails, '直接の /otp で会員に届いたメール').toHaveLength(0);
+      expect(await readMailpitMessages(signupEmail), '直接の /signup の宛先に届いたメール').toHaveLength(0);
+    });
+  });
+}
+
+for (const viewport of viewports) {
+  test.describe(`SEC-AUTH-035-AC-01 captcha が有効でもアプリのログインと会員登録が通る (${viewport.name})`, () => {
+    test.use({ viewport: { width: viewport.width, height: viewport.height } });
+
+    test(`SEC-AUTH-035-AC-01 直接の password grant が captcha で断られる会員でも、アプリの /api/auth/login は 200（確認コードの段）になり、/api/auth/register は 202 で利用者ができる (${viewport.name})`, async ({ request, baseURL }) => {
+      requireLocalApp(baseURL);
+      const origin = new URL(baseURL ?? '').origin;
+      const turnstileToken = 'test-turnstile-token';
+      const member = await createUnsignedActor('app-login');
+      // 対照: 同じ資格情報の直接の password grant は captcha で断られる（アプリの窓口が管理者資格で通っていることの裏）
+      const direct = await request.post(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+        headers: { apikey: ANON_KEY, 'Content-Type': 'application/json', 'x-forwarded-for': uniqueForwardedFor() },
+        data: { email: member.email, password: member.password },
+      });
+      expect(direct.status(), '直接の password grant の status（準備）').toBe(400);
+
+      const login = await request.post(new URL('/api/auth/login', origin).toString(), {
+        headers: { origin, 'x-real-ip': uniqueSourceIp() },
+        data: { email: member.email, password: member.password, turnstileToken },
+        maxRedirects: 0,
+      });
+      expect(login.status(), 'アプリのログインの status').toBe(200);
+      expect(await jsonOf(login), 'アプリのログインの本文').toMatchObject({ step: 'otp' });
+
+      const registerEmail = newEmail('app-register');
+      try {
+        const register = await request.post(new URL('/api/auth/register', origin).toString(), {
+          headers: { origin, 'x-real-ip': uniqueSourceIp() },
+          data: { email: registerEmail, password: newPassword(), turnstileToken },
+          maxRedirects: 0,
+        });
+        expect(register.status(), 'アプリの会員登録の status').toBe(202);
+        await withDb(async (db) => {
+          const found = await db.query('select count(*)::int as n from auth.users where email = $1', [registerEmail]);
+          expect(found.rows[0].n, '登録した宛先の利用者の行').toBe(1);
+        });
+      } finally {
+        await withDb(async (db) => {
+          await db.query('delete from auth.users where email = $1', [registerEmail]);
+        });
+      }
+    });
+  });
+}
+
+for (const viewport of viewports) {
+  test.describe(`SEC-AUTH-035-AC-02 資格情報の誤りは captcha の拒否に丸められず 401 のまま (${viewport.name})`, () => {
+    test.use({ viewport: { width: viewport.width, height: viewport.height } });
+
+    // captcha の拒否を 5xx と supabase_captcha_rejected にする側は、免除が効かない環境を手元に作れないので単体テストが受け持つ（DD-AUTH-040）。
+    // ここでは captcha が有効な環境で、普通のパスワードの誤りが誤って 5xx や captcha の拒否にならないこと（見分けが逆向きに崩れないこと）を見る。
+    test(`SEC-AUTH-035-AC-02 captcha が有効でも、アプリのログインに誤ったパスワードを送ると 401 で、監査は login・failure のまま supabase_captcha_rejected にならない (${viewport.name})`, async ({ request, baseURL }) => {
+      requireLocalApp(baseURL);
+      const origin = new URL(baseURL ?? '').origin;
+      const member = await createUnsignedActor('captcha-wrong-pw');
+      const wrong = `Wrong-${randomBytes(10).toString('hex')}-Pw!`;
+
+      const login = await request.post(new URL('/api/auth/login', origin).toString(), {
+        headers: { origin, 'x-real-ip': uniqueSourceIp() },
+        data: { email: member.email, password: wrong, turnstileToken: 'test-turnstile-token' },
+        maxRedirects: 0,
+      });
+      expect(login.status(), '誤ったパスワードのログインの status').toBe(401);
+      expect(await login.json(), '誤ったパスワードのログインの本文').toEqual({ error: 'メールアドレスまたはパスワードが正しくありません。' });
+
+      await withDb(async (db) => {
+        const outcomes = await db.query(`select a.outcome from public.audit_logs a where a.actor_email = $1 and a.action = 'login'`, [member.email]);
+        expect(
+          outcomes.rows.map((row) => row.outcome as string),
+          'ログインの監査の outcome（failure の行があり、error の道に落ちていない）',
+        ).toContain('failure');
+        const rows = await auditRowTexts(db, `a.actor_email = $1 and a.action = 'login'`, [member.email]);
+        expect(rows.length, 'ログインの監査の行').toBeGreaterThan(0);
+        expect(rows.some((row) => row.includes('supabase_captcha_rejected')), 'captcha の拒否の符号が無い').toBe(false);
+        expect(rows.some((row) => row.includes(wrong)), '監査の行に送ったパスワードが無い').toBe(false);
+      });
     });
   });
 }

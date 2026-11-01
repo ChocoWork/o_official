@@ -15,6 +15,7 @@ import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import type { PermissionCode } from '@/lib/auth/admin-rbac';
 import { bindAppSession } from './admin-session-test-utils';
+import { DUMMY_CAPTCHA_TOKEN } from './captcha-test-utils';
 import { withLocalDb } from './order-email-test-utils';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
@@ -166,7 +167,7 @@ export async function signInWithPassword(
   // x-forwarded-for を送り元に数える作りに頼る分離で、その作りが変わる（SEC-*-006 の食い違いが直る）と効かなくなる。値が使われなくても害は無い。
   const [a, b, c] = randomBytes(3);
   const gotrue = createClient(SUPABASE_URL, ANON_KEY, { ...AUTH_OPTIONS, global: { headers: { 'x-forwarded-for': `10.${a}.${b}.${c}` } } });
-  const signedIn = await gotrue.auth.signInWithPassword({ email, password });
+  const signedIn = await gotrue.auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
   if (signedIn.error || !signedIn.data.session) {
     throw new Error(`手元の利用者でログインできない（status: ${signedIn.error?.status ?? '不明'}）`);
   }

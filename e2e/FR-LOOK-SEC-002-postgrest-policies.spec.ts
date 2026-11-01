@@ -22,6 +22,7 @@ import { createClient } from '@supabase/supabase-js';
 import { expect, test, type APIResponse } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import { createAdminSessionActor, type AdminSessionActor } from './admin-session-test-utils';
+import { withDummyCaptcha } from './captcha-test-utils';
 import { createTestMember } from './member-session-helpers';
 import { withLocalDb } from './order-email-test-utils';
 
@@ -191,7 +192,7 @@ function memberAccessToken(): Promise<string> {
     const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
       method: 'POST',
       headers: { apikey: ANON_KEY, 'content-type': 'application/json' },
-      body: JSON.stringify({ email: member.email, password }),
+      body: JSON.stringify(withDummyCaptcha({ email: member.email, password })),
       signal: AbortSignal.timeout(10_000),
     }).catch(() => {
       throw new Error('手元の会員の password grant の要求に失敗した');
