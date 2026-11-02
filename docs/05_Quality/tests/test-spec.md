@@ -1335,7 +1335,7 @@ DB用は既存の[予約の遷移](../../../tests/integration/db/group_h_redempt
 
 ## グループH Task 12 本番buildのE2E全件（2026-11-01）
 
-確認日: 2026-11-01。手元のSupabaseを初期化し、本番buildでE2E全件を流した（`E2E_STRICT=1`、retries 0）。比べる元はG-4（`.superpowers/sdd/2026-10-26-group-g4-orders/e2e-results-g4-full.json`、181 failed・4805 passed・26 skipped）。
+確認日: 2026-11-02。手元のSupabaseを初期化し、本番buildでE2E全件を流した（`E2E_STRICT=1`、retries 0）。比べる元はG-4（`.superpowers/sdd/2026-10-26-group-g4-orders/e2e-results-g4-full.json`、181 failed・4805 passed・26 skipped）。
 
 | 回 | HEAD | failed | passed | skipped | G-4より増えた赤 |
 | --- | --- | --- | --- | --- | --- |
@@ -1351,7 +1351,8 @@ DB用は既存の[予約の遷移](../../../tests/integration/db/group_h_redempt
   - workers 1で単独に流し直した。ADMIN-057・ADMIN-112・HEADER-009・ITEM-DETAIL-018は1本ずつ流し、全部通った。
   - 残り8ファイルは`--no-deps`でまとめて流し、99件が通った（LOGIN-032の`test.fail`6件は手元のTOTPの設定による既知の落ち）。
 - LOOK-ALL-039の`FREQ-338-AC-02`だけは単独でも`--repeat-each=5`の15回中5回落ちる（幅によらない）。
-  - カードが見えた瞬間に`animation-name`を1回だけ読むため、水和の後に付く`data-reveal="true"`より先に読むと`none`になる。試験側のタイミングの問題で、Hの差分はLOOKとリビールのCSSに触れていない。直しは別の作業に分けた。
+  - カードが見えた瞬間に`animation-name`を1回だけ読むため、水和の後に付く`data-reveal="true"`より先に読むと`none`になる。試験側のタイミングの問題で、Hの差分はLOOKとリビールのCSSに触れていない。
+  - 2026-11-01 に別の作業で直した（b26d7bb0）。`animation-name`を`expect.poll`で待つようにし、期待値とテスト名は変えていない。本番buildの`--repeat-each=5`で45件すべて通った（そのコミットの記録）。
 - 単独の流し直しは、Hの12 specを入れた`isolated-global`がchromiumの後片づけの組なので、`--no-deps`を付けないと1ファイルごとに約100件（約20分）が付いてくる。
 
 ## 開店前のセキュリティの穴 波 6 のテスト（captcha・パスワード変更・手元の Supabase Auth の設定。SEC-AUTH・ABOUT、FR-AUTH-006）
