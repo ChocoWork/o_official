@@ -9035,7 +9035,7 @@ flowchart TD
 
 - X-3 の行の結論の欄に「画面は対応（最終確認画面「注文内容の最終確認」に第12条の6 の項目を出し、申し込みと同時に支払う。グループ F）。要件を満たすかの最終判断は開店の前に専門家へ」を足す
 - Y-1 の行に「グループ F で解消（確認へ進むでは支払わず、支払いの後の入り直しは注文の状態を出す）」を足す
-- 対処計画の表の「2 | F 支払いを「注文する」で実行する」の行の状態を「実装済み（[設計書](../../../superpowers/specs/2026-10-07-checkout-place-order-payment-design.md)、[実装計画](../../../superpowers/plans/2026-10-07-checkout-place-order-payment.md)）。DB の移行は push の後に本番へ」にする
+- 対処計画の表の「2 | F 支払いを「注文する」で実行する」の行の状態を「実装済み（[設計書](../specs/2026-10-07-checkout-place-order-payment-design.md)、[実装計画](2026-10-07-checkout-place-order-payment.md)）。DB の移行は push の後に本番へ」にする
 
 - [ ] **Step 6: コミット**
 
