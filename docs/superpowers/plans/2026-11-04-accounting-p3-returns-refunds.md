@@ -1,0 +1,702 @@
+# 会計の作り直し 計画3「返品・返金の2段」実装計画
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 出荷前の返金・返品の届いた日・返金の成功／失敗／取り消し・振込での返金を、起きた日に1本ずつ仕訳として保存する。返品は「届いた日」に売上値引・返品と返金待ち（未払金）を立て、返金した日に未払金を消す2段にする。出荷前の返金は着ごとの割り当てを返金の時に保存し、計画2の出荷の仕訳の額が「1着ごとの支払額 − 割り当て」になるようにする。判断待ち（カード会社からの支払いの取り消し）の注文の返金と出荷は、DB の関数の中でも止める。カード会社の取り消しが確定した時の、返品の返金待ち・返金済みとの相殺の仕訳を作り、計画2が止めていた2つの理由（`dispute_refund_overlap`・`dispute_return_refund_pending`）が解ける道を作る。受注高の返金の引き方と、消費税用の返金の一覧を直す・足す。
+
+**Architecture:** 返金・返品の SQL 関数（G-1・H で作った物）は、**最後に1行ずつ「事実を残す」呼び出しを足すだけ**にして、計算の流れは変えない。残す先は計画3が作る追記専用の表（返金の状態の履歴・返金の事実・返品の事実・届いた日の直しの履歴）で、同じトランザクションの中で入る。仕訳は計画2の計上係 `accounting_run_posting` に「返金の係」「返品の係」を足して作る（新しい入口は作らない）。係はこれらの事実の表と Stripe の表を読むだけで、G の表にロックを取らず、印（`buildEventKey`）の一意制約で何回流しても同じ結果にする。**同じ注文の返金・返品の仕訳は、事実が起きた順に1つずつ入れ、前の仕訳が済むまで後のものは待つ**（届く順で額が変わる誤りを避けるため。計画2の dispute の5つの規則と同じ考え方）。出荷前の返金の割り当ては計画2が作った空の表 `accounting_unit_refund_allocations` へ、返金を始める時に書く。判断待ちの止めは `private.accounting_dispute_holds`（計画3が持つ。条件は計画2の読み口と同じ）を返金を始める関数と発送票を確定する関数の中で呼ぶ。
+
+**Tech Stack:** 現行の Next.js `^16.3.6`、React `^19.0.0`、TypeScript `^5`、Supabase Postgres 17・PostgREST、Zod `^4.3.6`、`pg`、Stripe SDK（現行の版）、Jest、React Testing Library、Playwright。依存を増やさない。
+
+**Spec:** [承認済みの設計](../specs/2026-11-03-accounting-redesign-design.md)の 5章の全部、1章の 1-a04〜1-a09・1-a22、4章の 4-e2（返品の返金待ちとの相殺）・4-e3（判断待ちの注文の返金と出荷を DB の中で止める）、2章の 2-c・2-d・2-h（出荷前の返金の割り当て）、8章の 8-d・8-g2・8-h2（返金の引き方）、7章の 7-d・7-e、16章のうち範囲に関わる行（16-sr4・16-sr5・16-sr6）を正本とする。[計画1](2026-11-04-accounting-p1-journal-foundation.md)・[計画2](2026-11-04-accounting-p2-deferred-revenue-stripe.md)が作る物（仕訳の表・入れる関数・印・期間・権限・計上係・割り振りの道具・割り当ての表・判断待ちの読み口）を使う。[今の作りの地図](../../../.superpowers/sdd/2026-11-04-accounting-redesign/recon-report.md)と `recon-part-A.md`〜`recon-part-D.md`（とくに recon-part-C の 1.4・1.5・1.8・1.9）は現状と file:line の手掛かり。形式は計画2と [H の計画](2026-10-29-group-h-promotions.md)を引き継ぐ。設計で決まったことは変えない。決められない所は末尾「未確認事項」に置く。
+
+## 概要
+
+確認日 2026-11-04、基準 `master / 93025d8d`（計画1・2が書かれた時点。計画1・2の実装は未着手）。この文書を書く作業は計画だけで、実装・DB・provider・ブラウザーの成功を表さない。graphify の既存グラフ（36115 ノード）で返金・返品の関数の場所を確かめたが、グラフはその後の編集より古い可能性があるので、結論はソース（`supabase/migrations/20261029130400_group_h_discounts_refunds.sql` ほか）を直接読んで確かめた。
+
+### 7本の計画の中の位置
+
+地図は計画1の「7本の計画の地図」のとおり。計画3は、計画1・2が作った物の上に載る。**返金・返品の SQL 関数を変えてよいのは、この計画だけ。**
+
+| 前の計画から使う物 | 計画3での使い方 |
+| --- | --- |
+| 計画1: `private.accounting_post_journal_core`・`accounting_reverse_journal_core`・`accounting_period_for_event`・`accounting_lock_all`・`accounting_jst_date` | 返金・返品の仕訳の入れ口と取り消し。直接 INSERT しない |
+| 計画1: 印の27種（`pre_shipment_refund`・`return_arrived`・`return_amount_decided`・`return_refund`・`refund_failed`・`refund_abandoned`・`return_arrival_redated`・`reversal`）と `ACCOUNTING_SUB_ACCOUNTS` | 新しい種類は足さない。補助の符号を3つ足す（TS だけ） |
+| 計画2: 計上係 `private.accounting_run_posting`、`PostingRunResult`、`accounting_pending_events`・`accounting_park_event`・`accounting_unpark_event`、`accounting_allocate_amount`、`accounting_unit_refund_allocations`・`accounting_record_unit_refund`、`get_order_dispute_holds`、dispute の係 | 返金の係・返品の係を計上係に足す。割り当てを書く。判断待ちの止めを DB の中で使う。dispute の係の確定（C）に相殺を足し、引かれた時（W）の2つの止めを外す |
+| 計画2: 受注高の読み口（`list_order_intake_events`・`get_intake_reconciliation`）・照合（`get_stripe_balance_reconciliation`） | 返金の引き方（8-d）と例外の行 `return_refund_2130` を直す。「計画3で計上する種類」の差を0にする |
+| 計画2: 計上待ちの理由の表・`ACCOUNTING_ERRORS` の追加 | 理由を2つ、拒否を3つ足す |
+| 計画1・2の S0〜S14 が本番に当たっていること | 計画3の本番適用の前提（Task 14） |
+
+**計画3が受け持たない物:** 14章（返品の条件の表示）は計画4。原価・在庫（9・13章）は計画5。締め・書き出し・適格返還請求書（5-k）は計画6。返品の追跡番号を追跡のサービスに登録する作りは E-4 の追跡をオンにした後（5-a3 の設定だけ作る）。
+
+| Task | 中身 | 移行 | FREQ | 検証 |
+| --- | --- | --- | --- | --- |
+| 1 | 返金・返品の事実の表・届いた日の列と直しの履歴・設定・計上待ちの理由 | S15 return_refund_tables | 575・576 | DB/単体 |
+| 2 | 返送料・交換の手数料・交換の送料を DB で止める（5-b） | S16 return_fee_lock | 578 | DB/単体 |
+| 3 | 返金を始める・結果を記録する関数に事実を残す・割り当てを書く・判断待ちを止める・取り消しの区分を選ぶ | S17 refund_writers | 576・577・579・580 | DB/並行 |
+| 4 | 返品の受け取り・返金の決定に事実を残す・届いた日を選ぶ・直す | S18 return_writers | 575・576・578 | DB/並行 |
+| 5 | 発送票の確定を判断待ちの注文で止める（4-e3） | S19 shipment_hold_guard | 580 | DB |
+| 6 | 返金の係（出荷前の返金・返品の返金・失敗・取り消し・振込）と計上係への追加 | S20 refund_posting | 577・579 | DB/並行 |
+| 7 | 返品の係（届いた日・額の決定・届いた日の直し） | S21 return_posting | 578 | DB/並行 |
+| 8 | カード会社の取り消しの相殺（4-e2）と引かれた時の止めの解除 | S22 dispute_offset | 581 | DB/並行 |
+| 9 | 受注高・照合の返金の引き方と、消費税用の返金の一覧 | S23 intake_tax_reads | 582・583 | DB |
+| 10 | store・route・計上係の呼び出しの追加 | — | 575・579・580・583・584 | 単体 |
+| 11 | 画面（届いた日・取り消しの区分・振込の記録・止めの文・消費税用の一覧） | — | 575・579・580・583・584 | RTL |
+| 12 | 新しい E2E | — | 575〜584 | 本番 build/手元 DB |
+| 13 | 文書の正本の更新 | — | 全部 | validate-docs |
+| 14（controller） | 全体検証・最終レビュー・本番を読む・適用・記録 | — | 全部 | baseline 比較 |
+
+**決めたこと（この計画の細部。設計の決定は変えない。「AI の判断」はオーナーが覆せる）**
+
+- 移行は9本。`supabase/migrations/<ts15>_accounting_p3_return_refund_tables.sql`（S15）、`<ts16>_accounting_p3_return_fee_lock.sql`（S16）、`<ts17>_accounting_p3_refund_writers.sql`（S17）、`<ts18>_accounting_p3_return_writers.sql`（S18）、`<ts19>_accounting_p3_shipment_hold_guard.sql`（S19）、`<ts20>_accounting_p3_refund_posting.sql`（S20）、`<ts21>_accounting_p3_return_posting.sql`（S21）、`<ts22>_accounting_p3_dispute_offset.sql`（S22）、`<ts23>_accounting_p3_intake_tax_reads.sql`（S23）。時刻は計画2の S14 の後に controller が実装時に採番し、S15→S23 の順にする。適用済みの移行は編集しない。移行実行時の DML は、S15 の設定の1行（`accounting_return_options`）だけ（本番の注文は試しだけで0件のため、既存の行は動かない。設計 0-4）。S16〜S23 は関数・制約・権限のほか、既存データを変えない。
+- **返金・返品の関数は流れを変えず、最後に事実を残す呼び出しを足すだけ。** 変える関数は、`private.begin_order_refund_core`・`private.record_group_g_refund_result`・`private.mark_order_refund_error`・`private.record_external_order_refund`（返金）、`private.admin_receive_return`・`private.admin_refund_return`（返品）、`private.admin_confirm_shipment_slip`（発送票。G-3・G-4 の物）の7本。最新の定義は H の移行 `20261029130400_group_h_discounts_refunds.sql`（返金・返品の6本）と、計画2の S6 が番号を取る1行を足した発送票の確定の関数（元は `20261026045859_group_g4_orders_foundation.sql:6`。計画2 Task 1）。発送票の取り消しの関数（`private.admin_cancel_shipment_slip`）も計画2の S6 が番号を取る1行を足すが、計画3は変えない。それぞれ最新の本文を一字も変えずに写し、足す所を `-- ACC_P3_BEGIN` 〜 `-- ACC_P3_END` で囲む。引数・戻り型・SECURITY・`search_path`・ACL は変えない（移行の assert が H5 の `h5_function_baseline` と同じ形で比べる）。**例外は `admin_receive_return` の1つ**: 届いた日を受けるため、末尾に `_arrived_on date DEFAULT NULL` を足す（引数が増えるので古い形を DROP して作り直し、public 入口も同様）。
+- 事実を残す先は、返金・返品の関数と同じトランザクションの追記専用の表。関数が失敗すれば事実も残らない（返金は成功したのに事実が無い、という半端が起きない）。事実を残す道具は INSERT だけで、ロックを取らない（呼び元が G の共通ロックを持っている）。計上係は事実の表と Stripe の表を読むだけで、G の表の行ロックを取らない（計画2の決まり）。
+- 返金の仕訳の日は、Stripe の返金の残高の取引（`stripe_refunds.balance_transaction_id` の行）の `stripe_created_at` を日本時間に直した日（5-d）。額は残高の取引の `abs(amount)`。注文の返金の額（`order_refunds.amount`）と違えば仕訳にせず `amount_mismatch` で止める。残高不足で保留の間は残高の取引が無いので候補にならず、取引ができて同期されると入る。振込で返した時は、画面から振込の日と銀行の取引の番号を入れる（5-d・1-a07。決めたこと 下の振込）。
+- **返金の事実の出荷前の額 P と出荷後の額 Q の分け方（5-g・2-c・8-h2）。設計の本筋のとおり（2026-11-04 controller の決定。確かめ直しの重大②から）:** 返金の明細の `before_shipment` の行の `amount` の合計を P₀、そうでない行の合計を Q₀ とする。送料は0（2-c）。明細の合計と返金の額の差 `adjustment_amount`（符号つき）を A とする。①A > 0（品を決めない額）は **5-g の比**で P と Q に分ける: 重みは、計画2の道具 `private.accounting_unit_values(注文, NULL)`（今。計画2 Task 6 の W の値打ちと同じ1つの式『支払額 − 割り当て』）から [まだの側＝`shipped` が偽で下の規則②の割り当て先に入る着の `value` の合計（この返金で確保した着は割り当て先から外れているので、P₀ をもう一度引かない）, 出荷した側＝`shipped` が真の着の `value` の合計（出荷の仕訳の額と同じ物差し）]、端数は `accounting_allocate_amount`（先頭の重み＝まだの側から足す）。重みの合計が0なら全部 Q。P の分（P_adj）は規則②で、まだ送っていない着へ 2-c の比で割り振る。②A < 0（規約の手数料などで明細より少ない返金）は、P₀ と Q₀ の比で引く（符号を外して分けて符号を戻す）。③どちらも下限0で、片方が足りなければ残りをもう片方から引く。P と Q は必ず0以上で、P + Q = 返金の額 − 送料。この計算は例外を投げず（返金を止めないため）、合わない時は丸めて計上待ち `amount_mismatch`（detail `split`）を置く。`source='return'` は P = 0。**設計 2-4 のお詫び 1,000円（品を指定した一部の額）の例は、今の画面では作れない**（H の返金は着の数で値付けし、明細の無い額は `adjustment_amount` になって比で分かれる。シャツ出荷済み・パンツ未出荷の例ならパンツの出荷は 10,875円で、10,250円にならない）。2-4 の試験は割り当てを直接入れる fixture で 10,250円を固定し、オーナーへの報告に『今の画面では作れない例』と書く。
+- **出荷前の返金の割り当て（2-c）は4つの規則で決める。2026-11-04 AI の判断（確かめの重大-1・4、確かめ直しの新-重大1・3・中4・5、確かめ直し2回目の重大A・C・中D から。着の決め方の誤りが続いたので、1件ずつ直さず規則で書き直した）:**
+  1. **『出荷済みの着』は1つの道具で、G の鍵の中で取った番号から決める。** 計画2 Task 1 の `private.accounting_shipped_units(_order_item_id uuid, _as_of_seq bigint) RETURNS TABLE(unit_index integer, slip_id uuid)`（計画2が作り、計画3は呼ぶだけ）。比べは全部、計画2の順番の番号（sequence `private.accounting_g_fact_seq`。G の鍵 `pg_advisory_xact_lock(190521,1)` を持つ間だけ `private.accounting_take_g_fact_seq()` で取る）で行い、トランザクションの始まりの時刻 `now()`（`confirmed_at`・`cancelled_at`・`created_at`・`started_at`）では比べない。番号を持つ物は、発送票の確定と取り消しの事実（`accounting_g_slip_facts.fact_seq`。計画2の S6 が確定と取り消しの関数に1行ずつ足し、状態を変えた直後に取る）、割り当ての行（`accounting_unit_refund_allocations.fact_seq`。`accounting_record_unit_refund` が取る）、移した差の行（`accounting_refund_transfer_adjusts.fact_seq`。Task 1）、返金の状態の履歴（`accounting_refund_events.fact_seq`。Task 1）。鍵はコミットまで外れないので、番号の順は鍵の順でありコミットの順で、後から始まったトランザクションが先に鍵を取っても入れ替わらない。道具は、発送票ごとに、その確定の番号より前の割り当てで全額になった着を除いて、その品の着を番号の若い順に取る（詳しくは計画2 Task 1）。**出荷の仕訳が入っているかどうかと、H の確保の列は見ない。** 計画2の送る着（その発送票の確定の番号）、計画2 Task 6 の W の値打ち（引かれた時刻を番号に直した物）、計画2の `accounting_record_unit_refund` の検査（今）、計画3の割り当て（今）が、この道具だけを使う。**計画3の書き手（始め・当て直し・戻し・cover）は全部 G の鍵を持って `_as_of_seq` に NULL（今。見えている全部）を渡し、書き口の検査と同じ物差しにする**（返金を始めた時刻では見ない）。
+  2. **H が確保した着にその支払額を当て、書けない時は同じ品の別の着へ移し、差は同じ返金の仕訳で売上へ寄せる。** 明細のある出荷前の返金（P₀）は、H が確保した着 u（`order_line_unit_amounts.refund_id` がこの返金で `refund_before_shipment` が真）に、その着の支払額 `paid(u)` を割り当てる（H は返金の額を確保した着の支払額の合計で決めるので額と着がずれない）。u に書けない時は次の3つで分ける。**(a) u が規則1の道具で出荷済み、または u に他の返金の割り当てがあって `paid(u)` の空きが無い**（H は出荷済みかも割り当ても見ずに安い着を取るため。他の返金の品を決めない額が一部当たった着、借りを返し終えた返金の着など）: u に書かず、同じ品の、出荷済みでなく全額の割り当ても H の出荷前の確保も無い着 t のうち番号の大きい着に、t の残りの値打ち `v = paid(t) − 割り当て(t)` を全部当てる（移す）。**(b) u の空きを埋めているのが、借りが残る返金の割り当ての時**（その返金が `failed`、または Stripe の `canceled` で区分が `abandoned` でない。かつ、その注文の出荷前の借りを立てる返金の P の合計が、結び〔`accounting_refund_settlements.pre_amount`〕と出荷前の振込〔`pre_shipment_refund` の `bank-…`〕の合計より大きい。どれも G の鍵の中で読める事実で、係の仕訳の有無は見ない）: この返金はやり直しかもしれないので移さず、書かずに計上待ち（detail `owed_cover`。下）に置く（やり直しで移すと、残る1着も全額の割り当てになり、その出荷が `units_insufficient` で止まり続けるため。確かめの直し方〔空きが無ければ移す〕に、この1つの例外を足した）。**(c) t が無い:** 書かず計上待ち（detail `allocation_overflow`）と前受金の異常の一覧に出す。移した差 d は『この返金が P₀ の分として書いた割り当ての合計 − P₀』で、書いた時に `accounting_refund_transfer_adjusts`（Task 1。追記専用で、書くたびに1行・番号つき）に残す（事実の表には持たない）。**P を前受金から減らす仕訳（成功の `pre_shipment_refund`、引かれる前の失敗・返すつもりの `refund_failed`〔2150／`refund_owed_pre`〕）に『借方 2150 d／貸方 4010 d』（d < 0 は貸借を逆）の行を足す**（日は仕訳の日。種類と印は今のまま）。仕訳に使う d は、その仕訳のもとの状態の行（`succeeded`・`failed`・`owed`）の番号より前の、この返金の差の行の合計なので、係が流れた時で変わらない。出荷が先でも後でも、前受金は0、売上の累計は同じになる（例: 9,999円と10,001円の2着、u0 を出荷し u0 を返金すると、t = u1 に 10,001円を当て d = +2 で、売上は 9,999 + 2 = 10,001円）。引かれた後に店が返金をやめた時は、成功の仕訳ごと取り消すので d も戻る。引かれる前にやめた時は、t の割り当てと差の行が `release:…:2` の負の行で戻り、t はまた送れる。
+  3. **`error` を抜けた時は、H がその時に取り直した確保に当て直す。H が取り直さない `failed` では、計画3が H と同じ順で着を選ぶ。** `error` に入った時、H は確保を外し（`mark_order_refund_error`）、計画3は `release:<返金の番号>:1` の負の行で割り当てと差の行を戻す（P₀ の分の着は全額の割り当てで送られないので必ず戻る。戻らないのは、品を決めない額 P_adj が一部当たった後に出荷された着の分 s だけ）。抜ける時は、物差しを規則1のとおり今（書き口の検査と同じ）にして、キー `reapply:<返金の番号>` で次のとおり当て直す。**当て直すのは、状態が `error` から抜ける1回だけ**（`record_group_g_refund_result` が読んだ前の状態 `v_current.status` が `error` の時）。H の取り直しの条件 `v_current.errored_at IS NOT NULL`（H :1404）には合わせない。`errored_at` は抜けた後も残るので、H の条件では `error → pending` の時と、その後の `pending → succeeded` の時の2回当たり、2回目に同じキーの行で主キーがぶつかって、Stripe の成功の記録がまるごと戻るため（`error → pending → succeeded` は、Stripe がまず `pending` を返す時のふつうの道）。念のため、書き手はキー `reapply:<返金の番号>` の行がもうあれば何も書かない。
+     - ①`pending`・`succeeded` へ抜ける時: H が `record_group_g_refund_result` で安い順に取り直した確保（`refund_id` がこの返金の着）に、規則2で当てる（前に戻した着へ決め打ちで書き戻さない）。
+     - ②`failed`（Stripe の `canceled` を含む）へ抜ける時: H は確保を外すだけで取り直さない（`record_group_g_refund_result` の `failed` の枝は `group_h_release_refund_units` だけ）。そこで計画3が、H が取り直す時と同じ順（その品の `refund_id` も `return_line_id` も空の着を `paid_amount`、`unit_index` の順）で、返金の明細の出荷前の行の数量ぶん着を選び、選んだ着に規則2を当てる（H の列は変えない）。この扱いは規則と食い違わない: 規則3の決まりは『H の確保と割り当てを重ねない』『前の着へ決め打ちで戻さない』ためで、H が確保を持たない `failed` では重ねる相手が無く、H が取り直すのと同じ順で選ぶので①と同じ着になる。選んだ着は H から見て空いているので、後に別の返金を H が同じ着に取っても、その返金の規則2の (a)・(b) が扱う。借りが残る間は、この割り当てを持ち続ける（規則2の (b)）。
+     - ③品を決めない額 P_adj は、①②のどちらでも『P_adj − この返金の割り当てでまだ生きている正の合計（上の s）』だけを、規則1で出荷済みでなく空きのある着へ割り振り直す（前の着がまだ送れて空きがあればその着から。2-c の比）。だから割り当ての合計は P_adj を超えず、出荷済みの着に残った s を二重に書かない。**s を数える時点:** 当て直しの呼び出しの最初、①②の行を書く前に、書き口の検査と同じ今の物差し（`accounting_shipped_units(品, NULL)`。同じ G の鍵の中）で、この返金の割り当ての、出荷済みの着に残る符号つきの合計（元のキーと `release:` の行を足した物）として数える。`error` の戻しの後なので、出荷済みで戻せなかった P_adj の分だけが残り、①②で書く P₀ の分は入らない（①②の後に数えると P₀ の分まで引いて P_adj が足りなくなる）。
+     - **書く前に、必ず1着の『支払額 − 割り当て』を超えないか確かめ、超える分と出荷済みの着へ書けない分は書かずに計上待ちに置く。割り当てが原因の例外も、COMMIT で落ちる割り当ての超過も、返金・Stripe の結果を記録する関数の中で起こさない**（遅らせて確かめる制約トリガーが COMMIT で落ちると、Stripe の成功の記録がまるごと戻って記録できなくなるため）。書く物差しと書き口の検査の物差しが同じ今の番号なので、書き口が断る着へは書かず、Stripe の成功の記録はどの道でも戻らない。
+  4. **全部の届く順で、最後に前受金が0で売上が支払額の合計になる。** 出荷・返金・発送の取り消し・`error` の届く順、鍵を取る順の入れ替わりを全部試す試験（`FREQ-577-AC-09`。Task 6 の表）で固定する。
+  **品を決めない額（P のうち P₀ を超える分 P_adj）**は、規則1で出荷済みでない着のうち、全額の割り当ても H の出荷前の確保も無い着へ、『支払額 − 割り当て』の比で割り振り、端数は番号の若い着から足す（2-c・2-h）。『返金は番号の大きい端から詰める』は規則2の移し先だけに使う。計画2の送る着は規則1の道具が決め、全額の割り当てを受けた着は道具の中で除かれる。道具は H の確保の列を見ないので、H の確保は、同じトランザクションで書く全額の割り当てを通して除かれる（願い #2）。割り当てはすべて `accounting_record_unit_refund` で書く。書けない分の計上待ちは、種類 `pre_shipment_refund`・表 `accounting_unit_refund_allocations`・番号 `allocation:<返金の id>`・理由 `amount_mismatch`（計上係の待ちと鍵が違うので、返金の仕訳が入っても消えない）。detail は2つ。**`owed_cover`**（規則2の (b)）は次のどれかで自動で閉じる: ①この返金をやり直しとして結ぶ（`admin_settle_owed_by_refund`。前の返金の割り当てが同じ着を持つので、書かずに解決済み）、②空きを埋めていた返金に区分 `abandoned` を選び、その割り当てが戻った時（`admin_decide_refund_cancellation` の中で、規則2でキー `cover:<この返金の id>` として当て直す）、③その注文の出荷前の借りが結びと振込で返し終わった時（`admin_record_refund_bank_transfer` の中で、同じく `cover:` で当て直す。前の返金は振込で返したので着を持ったままで、この返金は規則2の (a) で別の着へ移す）、④借りを、待っている返金でない別の返金との結びで返し終えた時（`admin_settle_owed_by_refund` の終わりで、結びの行を足した後に、同じく `cover:` で当て直す。例: 3着、前の返金 R1 の借りが u0 に残り、R2 は u0 で待ち、R3 が別の着に当たって R1 と R3 を結ぶと、R2 は規則2の (a) で空いている着へ移る。結びは自分の `allocation:` を閉じるだけなので、④が無いと R2 の待ちが永久に残る）。②③④の差 d の行は、差の表にキー `cover:<この返金の id>:<きっかけ>`（②は区分の行の id、③は `bank-<銀行の取引の番号>`、④は `settle-<結びの行の id>`）で残し、②は区分の行の仕訳（Task 6 の 5）、③は振込の仕訳、④は結びの仕訳に『2150 d／4010 d』で足す。**`allocation_overflow`**（規則2の (c) と、1着の上限を超える分）は、注文の着が全部送られたか割り当て済みの時だけ起き、前受金の異常の一覧に残る（着の数と返金の数が合わない操作を人が調べる。お金の動く理由なので手では閉じない。結びが入れば解決済み）。割り当ての戻しは『`error` のまま』と、取り消しの区分で『店が返金をやめた』を選んだ時（と、Stripe に届かなかった `error` の返金をやめると決めた時）の2つだけで、後者は残っている正の合計を `release:<返金の番号>:2` の負の行で戻す（どちらも、差の表の生きている d も同じキーの負の行で戻す）。Stripe が `failed` にしたが『返すつもり』の借りが残る間は戻さない。出荷済みの着の割り当ては戻さない（負の行も断る。出荷の額は『支払額 − 割り当て』で固定されているため）。戻せなかった額 s は、店が返金をやめた時の仕訳に『借方 2150／貸方 4010 s』を足して、前受金が残らないようにする（売上は足し戻した日に立つ）。計画2への直しの願い #1・#2。
+- **返す借り（5-h）:** 返金が失敗した時と、取り消しで「店は返すつもりのまま返せなかった」を選んだ時、返す借りを 2130「未払金」の補助に立てる。補助は出荷前の分が `refund_owed_pre`、出荷後の分が `refund_owed_post`（TS の `ACCOUNTING_SUB_ACCOUNTS` に足す）。返品の返金待ち（`return_refund`）は届いた日の仕訳で立つ物で、これとは別。立て方は ①引かれた後（戻りの残高の取引がある）: 戻りの取引の日に「1160／未払い」（元の返金の仕訳は残す）、②引かれる前（残高の取引が無い）: 決まった日に、出荷前の分は「2150／refund_owed_pre」、出荷後の分は「4020／refund_owed_post」を1回だけ。`source='return'` の返金は届いた日の未払金がすでにあるので、①は「1160／return_refund」、②は何も立てない（5-h「返品の未払金があればそのまま残し」）。**借りを消すのは2つの道だけ**（確かめの重大-5。消し込みの額を補助の残高から出さない）: ①振込の記録（`admin_record_refund_bank_transfer`。額は入力した額で、借りの残高以下でなければ断る）、②『この返金は前の返金のやり直し』と結ぶ操作（`admin_settle_owed_by_refund`。権限 `admin.accounting.entries.correct`。やり直しの返金の仕訳が入った後に、元の返金とやり直しの返金の番号を指定する。額は、元の返金の事実の P・Q のうちまだ結んでいない額と、やり直しの返金の P・Q の小さい方で、事実だけから決まる）。ふつうの返金は借りを読まず、出荷前の分は 2150、出荷後の分は 4020 に入れる。②の仕訳は『借方 2130（`refund_owed_pre`）／貸方 2150』（出荷後は『借方 2130（`refund_owed_post`）／貸方 4020』）で、二重に減らした前受金・売上値引きを戻す。種類 `refund_abandoned`・番号 `[やり直しの返金の id, その返金の `settled` の状態の行の id]`（計画1の印の定義『状態の履歴の行の番号』のとおり）。
+- **額は、届く順で変わらない事実だけから出す（確かめの重大-5・4）:** 計画2の dispute の規則2（今の残高から出す）は、その残高が届く順で変わらない段の時だけ使える。返金の仕訳の額は、返金の事実（P・Q・送料）と Stripe の残高の取引の額だけで決め、他の返金・振込・相殺で動く補助の残高を読まない。返品の返金（`source='return'`）の借方 2130（`return_refund`）は、その返品の額の決定の事実が仕訳になっていれば、その額が未払金として立っているので、残高を見ずに Q を借方に入れる（返送不要の値引きは、額の決定の事実の `covers_amount` が0で `payable_delta` が決めた額になるので、額の決定の仕訳が『4020／2130』で全額を立ててから返金が入る）。待つ順は次の2つだけ: 返品の返金は、その返品の届いた日と額の決定の仕訳が入るまで、失敗の戻りは元の返金の仕訳が入るまで、`refund_prior_unposted` で待つ。同じ注文の返金どうしの順番は決めない（額が他の返金で変わらないため）。**終わりの状態:** Stripe の結果が確定した状態、つまり `order_refunds.status` が `succeeded`・`failed`、または Stripe の `canceled`（区分が選ばれるまで未完）。`requested`・`accepted`（Stripe の結果待ち）と `error` は終わりではない。`error` は `pending`・`succeeded`・`failed` へ進められ、`succeeded` から `failed` へも進められる（`record_group_g_refund_result` の状態の表）。`error` を抜けた返金（→ `pending`・`succeeded`・`failed`）は、規則3のとおり割り当てを `reapply:` で当て直してから（`failed` は H が取り直さないので計画3が H と同じ順で選ぶ）、状態の行が足される。`error` → `succeeded` は成功の仕訳を同じ道で入れる。`succeeded` → `failed` の遅い失敗は、失敗の仕訳（5-h の引かれた後）を足す。確定の待ち（Task 8）は `requested`・`accepted`・`error` を待つ（`error` は Stripe へ届いたか分からず、あとで `succeeded` に進めるので、お金が動いていないとは言えない）。ただし Stripe に届いていない（`stripe_refund_id` が無い）`error` で、店が『やめた』を選んだ物は待たない。
+- **取り消し（canceled）の扱い:** Stripe が返金を `canceled` にした時、店が返金そのものをやめたのか、返すつもりのまま返せなかったのかは、画面で選ぶ（5-h）。選ぶまでは計上待ち（理由 `refund_cancel_undecided`、手では閉じられない。選ぶと自動で入る）。選んだ区分は返金の状態の履歴に、理由・人・要求番号つきで足す（`abandoned`／`owed`）。**店が返金をやめた**: 引かれた後は戻りの取引の日に元の返金の仕訳を取り消す（`accounting_reverse_journal_core`、日は戻りの取引の日）だけで、届いた日の未払金は消さない。引かれる前は仕訳を作らない。割り当てを戻す。受注高は取り消しの日に足し戻る（8-d。計画2の読み口が取り消しの仕訳を全部足すので、自然に合う）。**返すつもり**: 上の「返す借り」。Stripe が `failed`（取り消しでない）にした時は、区分を選ばずに「返すつもり」として扱う（5-h「失敗と…同じ扱い」）。Stripe の `canceled` は `order_refunds.status` では `failed` に畳まれるが、`stripe_status` に `canceled` が残る（CHECK が許す）ので、`record_group_g_refund_result` の `_stripe_status` で `canceled` と `failed` を分ける（今のコードで決まる。失敗の残高の取引の出方だけ、Stripe のテストモードで読んで確かめる。Task 14 Step 6）。
+- **返品の届いた日（5-a）:** `order_return_receipts` に `arrived_on date NOT NULL`（日本時間の日）を足す。既定は受け取りを記録した日（日本時間）。前の日も選べるが、未来の日・返品の申し込み（`order_returns.requested_at`）の日より前・その注文のカード会社の取り消しが確定した日（lost の時刻の日）以前は選べない（`RETURN_ARRIVAL_DATE_INVALID / 22023`。確定済みの相殺の前提を後から変えないため）。受け取りの行は追記専用のまま、直しは `order_return_arrival_corrections`（版・前の日・新しい日・理由・人）に足す。今の届いた日は、最新の直しの新しい日、無ければ受け取りの行の `arrived_on`。5-a2〜5-a5 の設定「返品の届いた日に運送会社の配達日を使う」は `accounting_return_options` に持ち、既定はオフ、切り替えた日と人を残す。返品の追跡番号は追跡のサービスに登録されていないので（E-4 の追跡をオンにするまで）、オンにしても届いた日は自動で入らず、人が入れる（5-a4。未確認事項 #6）。
+- **返品の2段の額（5-b・5-b2・5-c）:** 届いた日の仕訳は、受け取りの時に残した返品の事実（`accounting_return_facts` の `arrival`）の額で作る: 返した品の支払額 G（`refund` で受け取り、送り返さない品の1着ごとの支払額の合計）と、規約で決まった手数料 F（`order_returns.restocking_fee_percent` を G にかけて切り捨て。この計画で返送料・交換の手数料は0に固定する）。行は「4020 G／2130（`return_refund`）G」と「2130（`return_refund`）F／4050 F」（5-3 の例のとおり。1本の仕訳）。返金の額が相談で決まる返品（`refund_choice='consult'`）は、届いた日に見込み（G − F）で立て、額が決まった日（`admin_refund_return`）に、決めた額との差の仕訳を足す（`return_amount_decided`。増えた分は「4020／2130」、減った分は「2130／4020」）。受け取りの時にすぐ返金し（`now`）、規約と違う額を入れた時も、同じ日に同じ形の差の仕訳が入る。検品（`admin_inspect_return`）は在庫の置き場所を決めるだけで額を変えないので、仕訳は足さない（額が変わる検品は今の作りに無い。未確認事項 #2）。品を送り返すだけの受け取り（1-a09）は、届いた日の仕訳の対象に入れないので、仕訳を作らず計上待ちにも残さない（今の作りは受け取りと同時に「送り返す」を選ぶため、取り消す相手の仕訳が無い。会計の結果は設計 5-i と同じ。未確認事項 #2）。
+- **振込で返した時（5-d・1-a07）:** 銀行の取引を取り込む仕組みはまだ無いので、画面から入れる（`admin_record_refund_bank_transfer`）。種類は出荷前の分が `pre_shipment_refund`、そうでない分が `return_refund`、番号は `bank-<入力した銀行の取引の番号>`（`txn_…` の Stripe の取引の番号と重ならないよう前置きを付ける）。同じ番号の2回目は何も足さず、額が違えば `ACCOUNTING_DEDUPE_CONTENT_MISMATCH`。借りを返す形は「未払い／1040」。銀行の日は、その注文のカード会社の取り消しが確定した日（lost の時刻の日本時間の日）以前なら `ACCOUNTING_ARGUMENT_INVALID`（detail `dispute_confirmed`）で断る（確定の相殺の前提を後から変えないため）。
+- **判断待ちの止め（4-e3）:** 返金を始める関数は、`source` が `admin`・`order_cancel`・`return` の時、発送票を確定する関数は全部の注文について、`private.accounting_assert_no_dispute_hold(_order_ids uuid[])` を呼ぶ。1件でも判断待ちがあれば `ACCOUNTING_DISPUTE_HOLD / 55000`（DETAIL は注文の数だけ）で断り、返金の行も Stripe の呼び出しも残さない。`auto_cancelled_order_payment`・`auto_amount_mismatch`（お客様の支払いの異常で自動で返す物）と、Stripe の画面で店が返した物を記録する `record_external_order_refund` は止めない（もう起きたこと・自動の保護のため。カード会社の取り消しと重なった時は4-e2 の相殺で分けて調べる。未確認事項 #11）。受け取りで `now`（すぐ返金）を選ぶと内部で返金を始めるので、判断待ちの注文は受け取りごと断られる。画面は判断待ちの注文では `now` を選べなくする（`consult` なら受け取れる）。route と画面の止め（計画2の出荷の止めの返金版）も入れる。
+- **カード会社の取り消しの相殺（4-e2）:** 引かれた時（W）は、返金や返品の返金待ちがあっても止めない（計画2の2つの止めを外す）。確定（C）で、その dispute の `dispute_pending` の残り S を、次の順で分ける。①返品の返金待ち R（確定の日までの仕訳の、その注文の `return_refund` の未払金の残高）の範囲 `o_pay = min(R, S)` を「2130（`return_refund`）／1470（`dispute_pending`）」で消す。②返金済みの額 Z（確定の日までの出荷後の返金の仕訳、つまり `return_refund` で未払金を消した額と 4020 に入れた額の合計から、すでに相殺に使った額を引いた物）と重なる `o_ref = min(Z, S − o_pay)` を、費用にせず「1470（補助 `dispute_refund_overlap_review` ＝分けて調べる）／1470（`dispute_pending`）」へ移す。③残り `S − o_pay − o_ref` だけを、計画2の確定のとおり原因の科目（無ければ `dispute_confirmed_unassigned`）へ振り替える。**確定は、確定の日までに起きた返金・返品の事実（返金の事実が終わりの状態でない、または仕訳が入っていない、返品の届いた日・額の決定の仕訳が入っていない）がある間は待つ**（理由 `dispute_refund_overlap` が返金、`dispute_return_refund_pending` が返品。どちらもお金の動く理由で手では閉じられない）。確定の日より後の仕訳は相殺に使わない。確定より前に戻る時（R）は相殺しない。確定の後に遅れて取り下げられた時（L）の戻し先は、計画2の規則4に加え、①費用の科目（または `dispute_confirmed_unassigned` から振り替えた科目）→ ②`dispute_refund_overlap_review` → ③返金待ち（`return_refund` の未払金を元に戻す）の順（未確認事項 #7。16-sr6 で税理士に確かめる）。
+- **受注高（8章）:** 計画2の `list_order_intake_events` は、出荷前の返金を `pre_shipment_refund` の仕訳の 2150 の借方として引く作りで、仕訳が入るまで0だった。計画3の仕訳が入ると自然に引かれる。計画3で足すのは、①返す借りにした出荷前の返金（`refund_failed`・2150／`refund_owed_pre`）は借りを立てた日に引かず、振込で返した日（`pre_shipment_refund` の `bank-…`）に引く（8-g2 の例外の行 `return_refund_2130` に出る）、②店が返金をやめた取り消しは取り消しの仕訳が符号の逆で足し戻す（日は戻りの取引の日）、③明細の無い返金の分け方（8-h2）は上の P・Q の分け方。
+- **消費税用の返金の一覧（5-j）:** 読み口 `list_consumption_tax_refunds` を作る。返金した年月日・注文番号・元の売上の品の内容・税率ごとの返金額（`orders` に税の別欄が無いので、衣料の標準税率 10% として税込みの額から税額を出す。未確認事項 #9）・元の売上の日（出荷した日）・元の売上の日と返金した日のそれぞれの課税期間が課税か免税かを出す。元の売上が免税の期間なら「38条の控除の対象外（14-1-6）」、返金した日が課税事業者でなくなった後（期間が `exempt` で、直前の期間が `taxable`）なら「対象外（14-1-7）」として、合計から外す。7年保存の注記を画面に出す。適格返還請求書（5-k）は登録する時で計画6。
+- 通販のカード払いの返金だけを扱う。店頭の返金・現金の返金は作らない（7-i4 と同じ）。
+
+- 2026-11-04 計画3の確かめ直し（1回目）から直した: ①品を決めない額を設計 5-g・2-c の比に戻した（2-4 の例は今の画面で作れない例として報告）。②明細のある出荷前の返金は H が確保した着にその支払額を割り当て、計画2の送る着から確保した着を除く。③返金のやり直しで返品の未払金を二重に立てない（決定の covers を未払金の残りにした）。④`error` を抜けた時の書き戻しを `pending`・`succeeded`・`failed` のどれでも行い、確定の待ちに `error` を足した。⑤結びの表を S20 で作り、`settled` の状態と UNIQUE・ロックを足した。⑥前受金の残高を超える成功の仕訳は待つ。⑦結ばれた着の定義を G の取り消しにそろえた。⑧`get_stripe_balance_reconciliation` の作り直しを戻した。
+
+- 2026-11-04 計画3の確かめ直し（2回目）から直した: 着の決め方を4つの規則で書き直した（1. 『出荷済みの着』は G の事実の時刻の1つの道具 `private.accounting_shipped_units` で決め、計画2の送る着・W の値打ち・割り当ての検査・計画3の割り当ての全部がこれだけを使う。2. 確保した着が出荷済みなら同じ品の別の着へ移し、差は同じ返金の仕訳で『2150／4010』へ寄せる。3. `error` を抜けた時は H が取り直した確保に当て直し、書く前に上限を確かめて、割り当てが原因の例外も COMMIT の失敗も起こさない。4. 出荷・返金・取り消し・error の届く順を全部試す試験 `FREQ-577-AC-09`）。あわせて、5-g の重みの P₀ の二重引きをやめ、結びの条件を『やり直しの返金の成功の事実』に変えて借りの残高以下の検査を足し、`covers_amount` から `error` の返金を除かないようにした。
+
+- 2026-11-04 計画3の確かめ直し（3回目）から直した: 出荷済みかどうかを `now()` の時刻で比べず、G の鍵の中で取る番号で比べる。番号の決め方は次のとおり。①番号は計画2の S6 が作る1本の sequence `private.accounting_g_fact_seq` から、G の鍵 `pg_advisory_xact_lock(190521,1)` を持つ間だけ `private.accounting_take_g_fact_seq()`（鍵を確かめる）で取る。鍵はコミットまで外れないので、番号の順＝鍵の順＝コミットの順。②置き場所は、発送票の確定と取り消しの事実 `accounting_g_slip_facts.fact_seq`（計画2の S6 が2本の G の関数に1行ずつ足し、状態を変えた直後に取る）、割り当て `accounting_unit_refund_allocations.fact_seq`（書く時）、移した差 `accounting_refund_transfer_adjusts.fact_seq`（書く時。S15）、返金の状態の履歴 `accounting_refund_events.fact_seq`（足す時。S15）。③道具 `private.accounting_shipped_units(_order_item_id, _as_of_seq bigint)` は番号だけで比べ、計画3の書き手と書き口の検査は今（NULL）、計画2の送る着はその発送票の確定の番号、W は引かれた時刻を番号に直した物を渡す。あわせて、`error` を抜けた時の当て直しを今の物差しにし、差 d を事実から外して割り当てごとに差の表へ残し（仕訳は状態の行の番号より前の d の合計）、`failed` では H と同じ順で計画3が選ぶ形にし、P_adj の当て直しを生きている分を引いた額にし、事実→割り当ての順を1か所に書き、他の返金の割り当てで空きが無い着も移す（借りが残る返金の着だけは `owed_cover` で待つ）ようにし、W の値打ちを計画2の道具 `private.accounting_unit_values` の1つの式にそろえ、`FREQ-577-AC-09` の表を ⑤⑥ を2つずつに分けて数字で書き、鍵の順の入れ替わりの ⑦ を足した。
+
+- 2026-11-04 計画3の確かめ直し（4回目）から直した: ①本文の比べは計画2の S6 と同じ『囲みを全部除く』式にし、`FREQ-540-AC-14` と計画2の2つの試験を意図して直す試験から外した（直さずに通る）。②`error` の後の当て直しは、前の状態が `error` の時の1回だけにした（H の `errored_at` の条件では `error → pending → succeeded` の2回目で主キーがぶつかるため）。同じキーの行があれば書き手は何もしない。③`owed_cover` の待ちは、待っている返金でない別の返金との結びで借りを返し終えた時も閉じる（④。結びの仕訳に d を足す）。④当て直しで P_adj から引く s は、書く前に、書き口の検査と同じ今の物差しで数える。
+
+## 計画1・2への直しの願い（計画3を書いて分かったこと）
+
+計画1・2は未実装なので、実装前に取り込む。計画のファイルは変えず、ここに書く。
+
+| # | 計画の場所 | 願い |
+| --- | --- | --- |
+| 1 | 計画2 Task 1 の `accounting_unit_refund_allocations` と `private.accounting_record_unit_refund`（**計画2に反映済み**） | `amount` の CHECK を `amount <> 0`（符号つき）にした。主キーは `(order_item_id, unit_index, refund_key)` のままなので、戻す行は別のキー `release:<元の refund_key>:<n>`（負）、書き直しは `reapply:<元の refund_key>`（正）、前の返金の借りが決まった後の当て直しは `cover:<元の refund_key>`（正）で足す。行には G の鍵の中で取る番号 `fact_seq` と `locked_at` を持たせ、書き口が番号を取る。1着ごとの合計を `0 以上・paid_amount 以下` に守る遅延の制約トリガーにした。`accounting_record_unit_refund` は、正の行（元のキーと `reapply:`）を出荷済みの着（`private.accounting_shipped_units`）へは断り、負の行（`release:<元のキー>:<n>`）は、元のキーと `reapply:<元のキー>` の正の合計から `release:<元のキー>:*` の合計を引いた範囲だけ受け、**出荷済みの着への負の行も断る**（出荷の額が固定されているため） |
+| 2 | 計画2 Task 3 の「送る着」の選び方と Task 6 の W の値打ち（**計画2に反映済み**） | 送る着は、番号の小さい着から取る今の順のまま、**全額の割り当てを受けた着を除く**（道具 `private.accounting_shipped_units` が G の鍵の中の番号で決める。H が出荷前の返金として確保した着は、同じトランザクションで書く全額の割り当てを通して除かれる）。明細のある出荷前の返金は、確保した着にその支払額を割り当てる（着ごとの支払額が違っても前受金が残らない）。W の値打ちは、出荷済みも未出荷も『支払額 − 番号までの割り当て』（道具 `private.accounting_unit_values`。計画3の 5-g の重みと同じ式）で、全額の割り当てを受けた着は0になる |
+| 3 | 計画2 Task 6 の `get_order_dispute_holds`・`get_slip_dispute_holds` | **取り下げ（直さない。controller の決定）。** 判断待ちの条件の本体は計画3の Task 3 が `private.accounting_dispute_holds` として自分で持つ。条件は計画2の読み口と同じにし、2つが同じ答えを返すことを試験で固定する |
+| 4 | 計画2 Task 4 の `planned_p3` の数え方 | **取り下げ（要らない）。** 計画3の Task 9 が `get_stripe_balance_reconciliation` を作り直して担う |
+
+計画2のコードを計画3が書き換える所（願いでなく、計画3の Task に入っている）: 計画2の `private.accounting_run_posting` と `PostingRunResult`（返金・返品の件数の鍵を足す。Task 6・10）、dispute の係の W の止め2つを外し C に相殺を足す（Task 8）、`list_order_intake_events`・`get_intake_reconciliation`（Task 9）、`PENDING_REASONS` と `accounting_pending_events` の理由の CHECK（Task 1）、`ACCOUNTING_ERRORS`（Task 10）。
+
+## Global Constraints
+
+計画1の Global Constraints を全部そのまま当てる。違う所は次の3つだけ。
+
+- 要件の FREQ の番号と E2E の番号は、計画2が使った最後の番号の次から。FREQ は 575〜584（計画2は 562〜574。実装時に別セッションとの重なりを確かめる）。E2E のファイルは `e2e/FR-ADMIN-137-…` から 140 まで（計画2は 132〜136）。移行は S15〜S23（計画2は S6〜S14）。試験の題は `FREQ-NNN-AC-NN: …` で始める。
+- 本番への適用の Task（最後の controller の Task 14）の前提: 計画1の移行（S0〜S5）と計画2の移行（S6〜S14）が本番に当たっていること。
+- 本番の注文は試しだけで0件（設計 0-4）。本番では読むだけにし、本番の Stripe は触らない。本番の DB に試しの返金・返品・仕訳を作らない。
+
+計画3で足す決まり（計画1・2の決まりと矛盾しない）:
+
+- 新しい移行は計画2と同じ形（最初の行 `BEGIN;`、末尾 assert → `NOTIFY pgrst, 'reload schema';` → `COMMIT;`、`-- ACC_S15_FINAL_ASSERT_BEGIN/END`〜`ACC_S23_…`、失敗は `ACCOUNTING_MIGRATION_ASSERTION_FAILED / 55000` と固定コード `acc_s15_*`〜`acc_s23_*`）。SQL の日本語は `U&'\XXXX'` 形で、`src/lib/accounting/labels.ts` の `ACCOUNTING_LABELS` から `scripts/accounting/emit-labels.ts` が出す文字列を貼り、試験が TS と一致を確かめる。
+- **既存の関数を作り直す移行（S17・S18・S19）の守り:** ①作り直す関数の最新の定義を一字も変えずに写し、足す所だけ `-- ACC_P3_BEGIN`/`-- ACC_P3_END` で囲む。移行の assert が、囲みを除いた本文が最新の定義と同じこと（除き方は計画2の S6 と同じ式で、`-- ACC_P<数字>_BEGIN` 〜 `_END` の囲みを全部除き、最新の定義の側も同じ式で除いてから、空白を除いて比べる）と、引数・戻り型・属性・ACL・`search_path`・所有者が前と同じことを確かめる（`admin_receive_return` の引数の追加だけは別に期待を書く）。②G の書き手の一覧 `private.group_g_writer_allowlist()` に新しい関数は足さない（足す関数は計画3の表だけに書く）。③G の鍵（`pg_advisory_xact_lock(190521,1)`）を取る順は変えない。事実を残す道具は鍵を取らず、`admin_finance_expenses` の行を書かない（計画1の `FREQ-556-AC-04` の検査に反しない）。④H5 の `h5_function_baseline` と同じ形で、作り直す前後の属性の比べを移行の中で行う。⑤直した関数の既存の試験は、**意図して変えた所**（`admin_receive_return` の引数、判断待ちの拒否、返送料の固定）の期待だけを直し、題は変えない。直した試験は一覧表で報告する。
+- **作り直す関数を触る試験の一覧（実装時に `grep` で数え直し、この一覧との差を報告する）:** `tests/integration/db/group_h_migration_asserts.integration.test.ts`（H5 の関数の基準）、`group_g1_writer_inventory.integration.test.ts`（書き手の一覧。本数は変えない）、`order_refund_records.integration.test.ts`（`order_refunds`・`order_refund_lines` の文のトリガー。計画3は足さない）、`order_return_receipts.integration.test.ts`・`order_return_records.integration.test.ts`・`order_return_actions.integration.test.ts`（受け取りの列・関数の形）、`group_g1_return_exchange.integration.test.ts`・`group_g1_exchange_fee.integration.test.ts`（交換の手数料。Task 2 で直す）、`group_h_*`（返金・返品の金額）、`group_g3_*`・`group_g4_*`（発送票の確定）、`return_postgrest.integration.test.ts`、`order_refund_results.integration.test.ts`、ほか関数を触る `group_g1_cleanup`・`cancel_request`・`refund_cancel`・`return_requests`・`concurrency`・`j19_compat`・`delivery_tracking_admin`・`group_g3_cancel`・`group_g3_tracking`・`group_g3_tracking_parent`・`group_g3_migration_asserts`・`group_g4_migration_asserts`・`group_g4_reads`・`group_g4_swap`・`group_h_refund_outcomes`・`group_h_refund_concurrency`・`group_h_order_amounts`・`order_refund_requests`・`order_return_request_reviews`・`order_state_transition_hardening`。**意図して直す試験**は、H5 の確かめ（`group_h_migration_asserts` の `FREQ-551-AC-02`）の1つで、囲みを除いた本文と新しい MD5 で比べる形に直す（Task 3・4 の Files）。発送票の確定の本文を比べる `group_g4_foundation` の `FREQ-540-AC-14` と、計画2の S6 の確かめ（`acc_s6_g_body_unchanged` を流し直す `accounting_p2_migration_asserts`）・試験（`accounting_p2_posting_tables` の `FREQ-563-AC-03`）は、計画2で初めから囲みを全部除いて比べる形にしたので、S19 が `ACC_P3` の囲みを足しても直さずに通る（Task 5 で直さない）。
+- 計上係の返金の係・返品の係は、計画2の係と同じく、最初に `private.accounting_lock_all(NULL)` で①②を取り、各仕訳を入れる core が③を取る。G の表にも `admin_finance_expenses` にも行ロックを取らない（`FOR SHARE`・`FOR UPDATE` を使わない）。1回の呼び出しは最大 `_limit` 件。候補の選び方は計画2の「係の候補の選び方」のとおり（新しい出来事を先に `_limit` 件、未解決の計上待ちは別枠で10件）。
+- 新しい route は計画1の順序（認可 → CSRF → IP の制限 → actor の制限 → zod → DB 関数 → 監査 → 応答）。読み取りは成功・失敗とも no-store。監査に名前・メール・金額・メモの本文を入れない。
+- 画面の文は、穏やかな日本語・絵文字なし・感嘆符なし。返金の取り消しは「店が返金をやめた」「店は返すつもりのまま返せなかった」と書き、お客様の名前・メール・住所を計上待ちの理由・メモ・監査に入れない。カード会社からの支払いの取り消しの言葉は計画2のとおり。
+- `src/lib/stripe/**`・`src/app/api/webhook/**`・`src/app/api/checkout/**`・`src/lib/checkout/**`・`src/features/checkout/**`・**返金の route**（`src/app/api/admin/orders/[id]/refund/**`・`src/app/api/admin/orders/[id]/status/route.ts`〔支払い済みの注文の取り消し〕・`src/app/api/admin/returns/[returnId]/refund/route.ts`・`…/receive/route.ts`）を触る Task（Task 3・4・10）の最初の行に「controller が別セッションへ先に知らせる」と書く。決済のファイル（`checkout/**`・`lib/checkout/**`・`features/checkout/**`）と `src/lib/stripe/**` は計画3では変えない見込みで、触る必要が出たら止めて controller に知らせる。
+- 実装者は単体/型/lint、controller は reset・DB 結合/並行・PostgREST・build/E2E・provider（Stripe のテストモードを含む）・本番を担当する。計画作成中は Playwright・サーバー・Supabase CLI・Docker・DB 試験・変更系 git・`.env*` の読取をしない。
+
+**共通 verify（後日の controller 手順）:** 計画1・2の共通 verify と同じ（RED → reset → 既存 `items` 読取 smoke → 対象 DB suite → PostgREST で新 public 入口の service_role 成功/anon・authenticated 拒否）。加えて、作り直した関数を触る既存の suite（上の一覧）を、意図して直した所以外は無改造で流して赤くならないこと。返金・返品の係の試験は、DB に注文・返金・返品・Stripe の行を fixture で入れ、`private.*` の係を直接呼んで仕訳を確かめる（ROLLBACK の形）。係の並行の試験と PostgREST の試験だけがコミットする試験で、別の jest 実行で流し、前後に `db reset` する。
+
+## Review Focus
+
+- **返品と返金は2段の日で正しく立ち、前受金が合う:** 返品は届いた日に「4020／2130」と手数料「2130／4050」、返金した日に未払金が消え、相談で決まる額・規約と違う額は決めた日に差の仕訳が入る。出荷前の返金は「2150／1160」で、割り当てを受けた着は出荷の売上から引かれ、全部送るか返金すると前受金が0になる → Task 6 の `FREQ-577-AC-01`〜`AC-07`・Task 7 の `FREQ-578-AC-01`〜`AC-04`。
+- **届く順に頼らず、二重も抜けも無い:** 返金の成功・失敗・取り消し・振込、返品の受け取りと返金の順、届いた日の直しを全部の順で流しても、最後の残高・仕訳の本数・年ごとの利益が同じ。同じ出来事を何度・同時に流しても1本 → Task 6 の `FREQ-579-AC-05`・`AC-06`・Task 7 の `FREQ-578-AC-06`・`AC-07`。
+- **出荷前の返金の割り当てで、計画2の「ずれる」が解ける:** 返金の時に着ごとの割り当てを（確保した着に支払額で）保存し、エラー・取り消しで戻り、エラーの後の成功で書き直され、再試行で二重にならない。計画2のオーナーへの報告の「計画3までは出荷前の返金の売上と前受金がずれる」が、設計 2-4 の例（18,750・10,250・累計 29,000・前受金0）で解ける → Task 3 の `FREQ-577-AC-03`〜`AC-06`・Task 6 の `FREQ-577-AC-03`。
+- **判断待ちの注文の返金と出荷を DB が止める:** 返金を始める関数と発送票の確定が、判断待ちの注文を同じ拒否で断り、何も残さない。route と画面が理由を出す。確定・取り下げの後は通る → Task 3 の `FREQ-580-AC-01`・Task 5 の `FREQ-580-AC-02`・`AC-03`・Task 10・11 の `FREQ-580-AC-04`。
+- **カード会社の取り消しと返品・返金の相殺が二重に費用にせず、届く順で変わらない:** 引かれた時の止めが外れ、確定で返金待ちの範囲だけ未払金を消し、返金済みと重なる分は分けて調べ、残りだけが原因の科目へ。遅れた取り下げは費用 → 調べる → 返金待ちの順に戻る。受注高と照合の説明のつかない差が0、計画2の「計画3で計上する種類」の差が0 → Task 8 の `FREQ-581-AC-01`〜`AC-07`・Task 9 の `FREQ-582-AC-01`〜`AC-06`。
+
+---
+
+## 設計の行から Task への対応
+
+「計画N」は後の計画が作る物。
+
+| 設計の行 | 作る Task | 固定する試験 |
+| --- | --- | --- |
+| 5-a（届いた日の欄・既定は記録した日・前の日も選べる・直した跡） | 1・4・10・11 | 575-AC-01〜02・05 |
+| 5-a2・5-a3・5-a4・5-a5（配達日を使う設定・切り替えの記録・追跡が無ければ人が入れる） | 1・4・10・11 | 575-AC-04 |
+| 5-b（届いた日に 4020／2130。手数料は 2130／4050。返送料などはオフに固定） | 2・7 | 578-AC-01・05 |
+| 5-b2（相談で決まる額は見込みで立て、決まった日に差） | 4・7 | 578-AC-02 |
+| 5-c（検品を終えた日・検品で額が変われば差の仕訳） | 7（今は検品で額が変わらないので、差の仕訳は 5-b2 の道だけ。未確認 #2） | 578-AC-02 |
+| 5-d（返金の残高の取引の日に 2130／1160。保留の間は作らない。振込は振込の日） | 6 | 579-AC-01・04 |
+| 5-e（出荷後の返送不要・お詫びの返金は 4020／1160） | 6 | 579-AC-01 |
+| 5-f（出荷前の返金は 2150／1160） | 3・6 | 577-AC-01〜02 |
+| 5-g（一部だけ出荷した注文の返金の分け方） | 3 | 577-AC-04 |
+| 5-h（返金の失敗と取り消しの分け方・返す借り・戻りの取引の日） | 3・6 | 579-AC-02〜03・06 |
+| 5-i（返品を断って送り返した時の打ち消し） | 7（対象に入れない作りで満たす。未確認 #2） | 578-AC-04 |
+| 5-j（消費税用の返金の一覧） | 9・10・11 | 583-AC-01〜04 |
+| 5-k（適格返還請求書） | 計画6 | — |
+| 1-a04（出荷前の返金） | 3・6 | 577-AC-01〜02・07 |
+| 1-a05（返品の品の到着） | 4・7 | 578-AC-01 |
+| 1-a06（相談・検品で額が決まる） | 4・7 | 578-AC-02 |
+| 1-a07（返品の返金・返送不要の値引き） | 6 | 579-AC-01・04 |
+| 1-a08・1-a08b（返金の失敗・店が返すつもりの取り消し・店が返金をやめた取り消し） | 3・6 | 579-AC-02〜03・06 |
+| 1-a09（返品を断って送り返す決定） | 7 | 578-AC-04 |
+| 1-a22（返品の届いた日の直し） | 4・7 | 575-AC-02、578-AC-03 |
+| 1-d（届く順に頼らない・印・取り消し1回） | 6・7・8 | 579-AC-05〜06、578-AC-06〜07、581-AC-06・08 |
+| 2-c・2-d・2-h（出荷前の返金の割り当て） | 3・6 | 577-AC-03〜06 |
+| 4-e2（返品の返金待ちとの相殺・返金済みと重なる分・遅れた取り下げ） | 8 | 581-AC-01〜07 |
+| 4-e3（判断待ちの注文の返金と出荷の DB の中の止め・route と画面・保留の返金が失敗した時） | 3・5・10・11 | 580-AC-01〜05 |
+| 8-d（出荷前の取り消しだけを引く・取り消しで足し戻す）・8-g2（例外の行）・8-h2（明細の無い返金の分け方） | 9 | 582-AC-01〜06 |
+| 7-d・7-e（2130 の補助・4050） | 6・7（勘定は計画1の一覧にあり、補助の符号は TS に足す） | 578-AC-01 |
+| 16-sr4・16-sr5・16-sr6 | 未確認事項 #8（16-sr4 の返品の見込みは 5-b のまま変えない。16-sr5 の 4050 の欄）・#7（16-sr6 の遅れた取り下げの戻し先） | — |
+| 14章 | 計画4 | — |
+
+---
+
+## 要求と受入条件（`docs/02_Requirements/requirements.md` の6列の表へ足す文）
+
+計画2の最後の番号は FREQ-574。下表の各行を「要求ID／要求内容／要件ID／要件内容／受入条件ID／受入条件内容」の6列へ展開する。要件 ID は `FREQ-NNN-REQ-01`、AC は同じ番号の `FREQ-NNN-AC-NN`。各 Task は、自分が証明する AC の行を同じコミットで足す（要求管理ルール）。Task 13 は全部そろっているかの確かめと体裁だけ。
+
+| 要求 | REQ-01 の要件 | AC | 証明する Task |
+| --- | --- | --- | --- |
+| FREQ-575（返品の届いた日を持ち、直せる） | 受け取りの記録に届いた日（日本時間の日）を持たせ、既定は記録した日、直した跡を残す。配達日を使う設定は既定オフ | AC-01 届いた日が入り既定は記録した日で、未来・申し込みの前・カード会社の取り消しが確定した日以前は断る／AC-02 直すと版・前後の日・理由・人が残り、受け取りの行は変わらない／AC-03 今の届いた日は最新の直し／AC-04 設定は既定オフで切り替えた日と人が残り、追跡に登録されていない間は届いた日を自動で入れない／AC-05 同じ要求番号の再送は前の結果、違う内容は REQUEST_KEY_CONFLICT | 1・4・10・11 |
+| FREQ-576（返金・返品の事実を同じトランザクションで残す） | 返金の状態の履歴・返金の事実・返品の事実を、返金・返品の関数と同じトランザクションで追記専用の表に残す | AC-01 返金の状態が変わるたびに履歴が1行増え、同じ状態の再処理で増えない／AC-02 返金の事実（出荷前の額・出荷後の額・送料・返品との結び）が始める時に1回だけ残り、書き換えられない／AC-03 返品の事実（届いた時の額・手数料・決めた額）が受け取りと返金の決定で残る／AC-04 表の権限（anon・authenticated なし、service_role は SELECT だけ）と追記専用／AC-05 関数が失敗すれば事実も残らない／AC-06 作り直した関数の既存の試験が、意図して変えた所以外は題を変えず通る | 1・3・4 |
+| FREQ-577（出荷前の返金を前受金から減らす） | 出荷前の返金は返金の残高の取引の日に「前受金／Stripe 未収金」を1本入れ、返金を始める時に着ごとの割り当てを保存して出荷の売上から引く | AC-01 成功した出荷前の返金は残高の取引の日に 2150／1160 の1本（印 `pre_shipment_refund:<取引>`）／AC-02 保留の間は仕訳を作らず、取引ができると入る／AC-03 割り当てがあれば出荷の仕訳の額が支払額 − 割り当てになる（18,750・10,250・累計 29,000・前受金0）／AC-04 品を決めない額は出荷した分とまだの分の値打ちの比で分け、まだの着へ残りの値打ちの比で割り振り、端数は番号の若い着。マイナスの調整でも返金が落ちない／AC-05 全額の割り当てを受けた着は出荷の対象から外れる／AC-06 エラー・取り消し（やめた）で割り当てが戻り、エラーを抜けた後（成功・失敗とも）に当て直され（成功は H が取り直した確保へ、失敗は H と同じ順で選んだ着へ。成功の記録は落ちない）、再試行で二重にならない。出荷済みの着の割り当ては戻さず、前受金が残らない／AC-07 同じ返金を何度・同時に流しても1本／AC-08 出荷済みの着は G の鍵の中で取った番号の1つの道具で決まり、確保した着が出荷済みか他の返金の割り当てで空きが無ければ移し、移した差は同じ返金の仕訳で売上へ寄せられる／AC-09 出荷・返金・取り消し・error の届く順と、鍵を取る順に関わらず、最後に前受金が0で売上が支払額の合計（支払額が違う着・1円の端数・1点目だけの割引） | 3・6 |
+| FREQ-578（返品を届いた日と返金の2段で立てる） | 返品は届いた日に 4020／2130（返品の返金）と手数料 2130／4050、額が決まった日に差。返送料・交換の手数料などは DB で止める | AC-01 届いた日に 4020 G／2130 G、2130 F／4050 F の1本／AC-02 相談で決まる額は見込みで立て、決まった日に差の仕訳（増・減）／AC-03 届いた日の直しは古い日の取り消しと直した日の仕訳で、跡をたどれる／AC-04 品を送り返すだけの受け取りは仕訳も計上待ちも作らない／AC-05 返送料・交換の手数料・交換の送料を DB が断る／AC-06 受け取りが返金・出荷より先でも、手数料の割合を後から変えても、入った額が同じ／AC-07 同じ受け取りを何度・同時に流しても1本 | 2・4・7 |
+| FREQ-579（返金の成功・失敗・取り消しを返す借りで残す） | 返品の返金は 2130／1160、出荷後の返送不要・お詫びは 4020／1160。失敗・取り消しは返す借りに立て、振込とやり直しの結びだけで消す | AC-01 返品の返金・出荷後の返金の仕訳の勘定と日／AC-02 失敗は戻りの取引の日に 1160／未払い、引かれる前は出荷前なら 2150／未払い／AC-03 取り消しは区分を選ぶまで計上待ち、選ぶと反映（やめた: 元を取り消すだけ・届いた日の未払金は消さない・割り当てが戻る）／AC-04 振込で返した日に「未払い／普通預金」が1回だけ（銀行の取引の番号で二重を止める）／AC-05 借りを消すのは振込とやり直しの結びだけで、ふつうの返金・振込・遅い失敗の届く順で額が変わらない／AC-06 成功・失敗・取り消し・振込の届く順を全部試して最後の残高が同じ | 3・6・10・11 |
+| FREQ-580（判断待ちの注文の返金と出荷を DB が止める） | 返金を始める関数と発送票の確定が、判断待ちの注文を DB の中で断る | AC-01 返金を始める関数が `ACCOUNTING_DISPUTE_HOLD / 55000` で断り、返金の行も Stripe の呼び出しも残さない（自動の返金・Stripe の画面の返金の記録は除く）／AC-02 発送票の確定が同じ拒否で断り、下書きのまま／AC-03 確定または取り下げの後は通る／AC-04 route と画面が理由を出す／AC-05 判断待ちの前に始まった保留の返金が失敗しても、戻りの取引を確かめ、同じ返金を二重に作らない | 3・5・10・11 |
+| FREQ-581（カード会社の取り消しと返品の返金待ち・返金済みを相殺する） | 引かれた時の止めを外し、確定で返金待ちの範囲だけ未払金を消し、返金済みと重なる分は分けて調べ、残りを原因の科目へ。遅れた取り下げは戻し先の順を決める | AC-01 引かれた時は返金・返品があっても入る／AC-02 確定で返金待ちの範囲だけ 2130／1470 で消す／AC-03 返金済みと重なる分は 1470（調べる）へ移し二重に費用にしない／AC-04 遅れた取り下げは費用 → 調べる → 返金待ちの順に戻る／AC-05 確定の日までの返金・返品が済んでいない間は確定が待ち、確定の日より後の仕訳は相殺に使わない／AC-06 届く順を全部試して最後の残高と年ごとの利益が同じ／AC-07 確定済みの注文の確定の日をまたぐ届いた日の入れ替え・確定の日以前の振込の日を断る／AC-08 返金（成功・遅い失敗）・返品・確定の相殺・振込の届く順を全部試して最後の残高と各仕訳の額が同じ | 8 |
+| FREQ-582（受注高と照らし合わせが返金を正しく扱う） | 出荷前の返金は返金の日に受注高から引き、返す借りにした分は返した日に引き、やめた取り消しは足し戻す。計画2の「計画3で計上する種類」の差を0にする | AC-01 出荷前の返金は残高の取引の日に引く／AC-02 借りにした出荷前の返金は立てた日に引かず、振込の日に引き、例外の行 `return_refund_2130` に出る／AC-03 店が返金をやめた取り消しは戻りの取引の日に足し戻る／AC-04 明細の無い返金は出荷した分とまだの分の値打ちの比で分け、出荷前の分だけが受注高から引かれ、出荷後の分が返品・値引きの行になる／AC-05 2段の照らし合わせの説明のつかない差が0（返品・返金の例）／AC-06 Stripe の残高の照合の「計画3で計上する種類」の差が0 | 9 |
+| FREQ-583（消費税用の返金の一覧を出す） | 返金した年月日・注文番号・元の売上の品の内容・税率ごとの返金額・元の売上と返金の課税期間の課税／免税を出す | AC-01 項目が出る（名前・メールを含まない）／AC-02 免税の売上の返金は対象外（14-1-6）、課税事業者でなくなった後の返金は対象外（14-1-7）として合計から外れる／AC-03 続きの目印つきで最後まで読める／AC-04 7年保存の注記が出る | 9・10・11 |
+| FREQ-584（返品・返金の画面と操作） | 届いた日を選べ、取り消しの区分と振込を記録でき、判断待ちの理由が出る | AC-01 受け取りの画面で届いた日を選べ、既定は今日で未来は選べない／AC-02 取り消しの区分を選べるのは権限のある人だけ／AC-03 振込の記録は未来の日と額0を送る前に止める／AC-04 返金・出荷の画面に判断待ちの理由が出る／AC-05 非 ok の応答の本文を読み切る／AC-06 390/768/1280px で崩れない | 11・12 |
+
+## 共通の型・値・拒否
+
+Task 1・10 が定義し、以降は同じ名前を使う。計画1・2の型（`AccountingPeriod`・`SavedJournalEntry`・`AccountingEventKind`・`PendingReason`・`PostingRunResult` など）はそのまま使う。
+
+| 型/定数 | 正確な契約 |
+| --- | --- |
+| `RefundEventState` | `src/lib/accounting/return-refund-types.ts` の `REFUND_EVENT_STATES`: `requested`・`accepted`・`succeeded`・`failed`・`canceled`・`abandoned`・`owed`・`error`・`settled`（やり直しの結びを、やり直しの返金に残す）。`abandoned`・`owed` は取り消しの区分を選んだ行（理由・人・要求番号つき）。同じ返金に同じ状態は1行まで |
+| `RefundFacts` | `{refundId:string;orderId:string;source:'admin'\|'order_cancel'\|'return'\|'auto_cancelled_order_payment'\|'auto_amount_mismatch'\|'stripe_dashboard'\|'legacy';returnId:string\|null;preShipmentAmount:number;postShipmentAmount:number;shippingAmount:number;startedAt:string}`。`legacy` の古い返金は事実を作らず、計上係の候補に入れない。移した差 d は事実に持たず、`accounting_refund_transfer_adjusts`（Task 1）に割り当てごとに残す |
+| `ReturnFactKind` | `arrival`（届いた日）・`decision`（返金の額の決定）。`arrival` は `{receiptId,goodsAmount,feeAmount}`、`decision` は `{refundId,coversAmount,decidedAmount,payableDelta,decidedOn}` |
+| `PostingRunResult`（計画2）への追加 | `refunds:number`・`returns:number`（`private.accounting_run_posting` の戻りの jsonb にも `refunds`・`returns` を足す。`has_more` の決め方は計画2のとおり） |
+| `PendingReason`（計画2）への追加 | `refund_prior_unposted`（同じ注文の前の返金・返品の仕訳が済むまで待つ。または失敗・取り消しで元の返金の仕訳が無い）、`refund_cancel_undecided`（Stripe の取り消しの区分が未選択）。どちらもお金の動く理由で、手では閉じられない。計画2の `dispute_refund_overlap`・`dispute_return_refund_pending` は、計画3から「確定（C）が、確定の日までの返金・返品の仕訳が済むのを待つ」意味に変わる（手では閉じられないまま） |
+| `ACCOUNTING_SUB_ACCOUNTS`（計画1・2）への追加 | `refund_owed_pre:{accountCode:'2130'}`（出荷前の返金の返す借り）、`refund_owed_post:{accountCode:'2130'}`（出荷後の返金の返す借り）、`dispute_refund_overlap_review:{accountCode:'1470'}`（返金済みと重なる分を分けて調べる） |
+| 上限 | `MAX_REFUND_BANK_NOTE=500`、`MAX_ARRIVAL_REASON=500`、`MAX_TAX_REFUND_PAGE=200` |
+
+**DB と HTTP の拒否表への追加（計画1の `ACCOUNTING_ERRORS` へ足す。Task 10）:**
+
+| DB message / SQLSTATE | HTTP | 日本語本文 |
+| --- | --- | --- |
+| `ACCOUNTING_DISPUTE_HOLD / 55000` | 409 | `カード会社の判断待ちの注文が含まれているため、返金も出荷もできません。`（DETAIL は注文の数だけ。route は `{error:message, code:'DISPUTE_HOLD', orderIds:[…]}` にする） |
+| `ACCOUNTING_REFUND_NOT_CANCELED / 55000` | 409 | `この返金は取り消された状態ではありません。` |
+| `ACCOUNTING_REFUND_CANCEL_DECIDED / 55000` | 409 | `この返金の取り消しの区分は、もう決まっています。` |
+| `ACCOUNTING_ARGUMENT_INVALID / 22023`（既存） | 400 | `入力を確かめてください。`（振込の記録・設定・直しの入力） |
+
+返品の関数側の拒否は返品の既存の表（`RETURN_*`）に足す: `RETURN_ARRIVAL_DATE_INVALID / 22023`（届いた日が未来・申し込みの前・確定した取り消しの日以前）→ HTTP 400 `届いた日を確かめてください。`。返金の関数側の `ACCOUNTING_DISPUTE_HOLD` は `RefundStoreError('dispute_hold')` に写して route が 409 を返す。
+
+---
+
+### Task 1: 返金・返品の事実の表・届いた日の列と直しの履歴・設定・計上待ちの理由
+
+controller が別セッションへ `docs/06_Operations/db-migrations.md`・`docs/03_BasicDesign/data/er.md` の更新を先に知らせる。計画2の Task 1〜14 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-575・576 の自分の AC の行を、同じコミットで6列の表へ足す。要求管理ルール）
+- Create: `supabase/migrations/<ts15>_accounting_p3_return_refund_tables.sql`、`tests/integration/db/accounting_p3_return_refund_tables.integration.test.ts`、`tests/integration/db/accounting_p3_migration_asserts.integration.test.ts`、`tests/integration/db/helpers/accounting-returns-fixtures.ts`、`src/lib/accounting/return-refund-types.ts`、`tests/unit/lib/accounting/return-refund-types.test.ts`
+- Modify: `src/lib/accounting/posting-types.ts`（`PENDING_REASONS` に2つ）、`src/lib/accounting/labels.ts`（返品・返金の言葉）、計画1 Task 4 が `ACCOUNTING_SUB_ACCOUNTS` を定義したファイル（補助3つ）、`tests/unit/lib/accounting/posting-types.test.ts`、`tests/unit/lib/accounting/labels.test.ts`
+- Test: 上の DB 2 suite と単体
+- Read: `supabase/migrations/20261012235910_order_return_records.sql:111-135`（`order_return_receipts`）と `:330-360`（追記専用のトリガー）、`20261011222930_order_refund_records.sql:14-80`（`order_refunds`）、`20261029130400_group_h_discounts_refunds.sql:1-30`（`h5_function_baseline`）、`tests/integration/db/order_return_receipts.integration.test.ts`（列の固定）、計画2 Task 1 の `accounting_pending_events` の理由の CHECK の名前
+
+**Interfaces:**
+- Consumes: 計画1・2の S2・S3・S6 の表と関数（`reject_accounting_mutation`・`accounting_pending_events`・`accounting_park_event`）、`order_returns`・`order_return_receipts`・`order_refunds`・`order_items`。
+- Produces（列）: `order_return_receipts.arrived_on date NOT NULL DEFAULT ((now() AT TIME ZONE 'Asia/Tokyo')::date)`。受け取りの行は追記専用で UPDATE を断るので、埋め戻しはしない。移行の最初に `order_return_receipts` の行数が0であることを確かめ（本番・`db reset` した手元とも0。設計 0-4）、0でなければ `ACCOUNTING_MIGRATION_ASSERTION_FAILED`（DETAIL `acc_s15_receipt_backfill`）で止める。`kind <> 'receive'` の行の `arrived_on` は意味を持たない（記録した日のまま）。
+- Produces（表。すべて `public`、RLS 有効、所有者 postgres、PUBLIC/anon/authenticated に権限なし、service_role は SELECT のみ。書くのは private 関数。追記専用は `reject_accounting_mutation` を UPDATE/DELETE/TRUNCATE に付ける）:
+  - `order_return_arrival_corrections(id uuid PK DEFAULT gen_random_uuid(), receipt_id uuid NOT NULL FK order_return_receipts RESTRICT, version integer NOT NULL CHECK (version >= 1), previous_on date NOT NULL, new_on date NOT NULL CHECK (new_on <> previous_on), reason text NOT NULL CHECK (char_length(reason) BETWEEN 1 AND 500), actor_id uuid NOT NULL, request_key uuid NOT NULL UNIQUE, request_hash text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE (receipt_id, version))`。1-a22 の「届いた日の直しの履歴の行」。印の番号は `id`。
+  - `accounting_return_options(id boolean PK DEFAULT true CHECK (id), use_carrier_delivery_date boolean NOT NULL DEFAULT false, changed_at timestamptz NULL, changed_by uuid NULL, version bigint NOT NULL DEFAULT 1, admin_requests jsonb NOT NULL DEFAULT '{}')`。移行で1行（既定オフ）。5-a2・5-a5。
+  - `accounting_refund_events(id uuid PK DEFAULT gen_random_uuid(), refund_id uuid NOT NULL FK order_refunds RESTRICT, order_id uuid NOT NULL, seq integer NOT NULL CHECK (seq >= 1), state text NOT NULL CHECK (state = ANY (…共通の型の9つ)), stripe_status text NULL CHECK (char_length(stripe_status) <= 64), occurred_at timestamptz NOT NULL DEFAULT now(), actor_id uuid NULL, reason text NULL CHECK (char_length(reason) <= 500), request_key uuid NULL UNIQUE, request_hash text NULL, fact_seq bigint NOT NULL UNIQUE, UNIQUE (refund_id, seq), UNIQUE (refund_id, state), CHECK ((state IN ('abandoned','owed')) = (reason IS NOT NULL AND actor_id IS NOT NULL AND request_key IS NOT NULL)))`。1-a08 の「状態の履歴の行」。印の2つ目の番号は `id`。`occurred_at` はこちらが状態を知った時刻（決まった日の元。Stripe の残高の取引の時刻ではない。比べには使わない）。`fact_seq` は計画2の順番の番号（G の鍵の中で `private.accounting_take_g_fact_seq()` で取る）で、仕訳に使う差 d を『この行の番号より前の差の行の合計』と決めるのに使う。
+  - `accounting_refund_facts(refund_id uuid PK FK order_refunds RESTRICT, order_id uuid NOT NULL, source text NOT NULL, return_id uuid NULL, pre_shipment_amount integer NOT NULL CHECK (>= 0), post_shipment_amount integer NOT NULL CHECK (>= 0), shipping_amount integer NOT NULL CHECK (>= 0), started_at timestamptz NOT NULL DEFAULT now(), created_at timestamptz NOT NULL DEFAULT now(), CHECK ((source = 'return') = (return_id IS NOT NULL)), CHECK (source <> 'return' OR pre_shipment_amount = 0))`。返金を始める時に1回だけ入る（P・Q・送料だけ。差 d は持たない）。`started_at` は記録で、出荷済みかの比べには使わない。
+  - `accounting_refund_transfer_adjusts(refund_id uuid NOT NULL FK order_refunds RESTRICT, adjust_key text NOT NULL CHECK (adjust_key ~ '^[A-Za-z0-9_.:-]{1,200}$'), amount integer NOT NULL CHECK (amount <> 0), fact_seq bigint NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (refund_id, adjust_key))`。規則2で移した差 d を、割り当てを書くたびに1行残す（2026-11-04 確かめ直し3回目の新-重大I から）。キーは割り当てと同じ形: 始めは `<返金の id>`、`error` を抜けた時は `reapply:<返金の id>`、戻しは `release:<返金の id>:<n>`（その時に生きている d の合計の負の行）、前の返金の借りが決まった後は `cover:<返金の id>:<きっかけ>`。`fact_seq` は G の鍵の中で取る番号。
+  - `accounting_return_facts(id uuid PK DEFAULT gen_random_uuid(), return_id uuid NOT NULL FK order_returns RESTRICT, order_id uuid NOT NULL, seq integer NOT NULL CHECK (seq >= 1), kind text NOT NULL CHECK (kind IN ('arrival','decision')), receipt_id uuid NULL FK order_return_receipts RESTRICT, refund_id uuid NULL FK order_refunds RESTRICT, goods_amount integer NOT NULL DEFAULT 0 CHECK (>= 0), fee_amount integer NOT NULL DEFAULT 0 CHECK (>= 0), covers_amount integer NOT NULL DEFAULT 0 CHECK (>= 0), decided_amount integer NULL CHECK (>= 0), payable_delta integer NOT NULL DEFAULT 0, decided_on date NULL, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE (return_id, seq))`。CHECK: `arrival` は `receipt_id` あり・`goods_amount >= fee_amount`・`refund_id` なし、`decision` は `refund_id`・`decided_amount`・`decided_on` あり・`receipt_id` なし。一意: `UNIQUE (receipt_id) WHERE kind = 'arrival'`、`UNIQUE (refund_id) WHERE kind = 'decision'`。
+- Produces（計上待ちの理由）: 計画2の `accounting_pending_events` の `reason` の CHECK（制約の名前は計画2の本文で確かめる）を作り直して `refund_prior_unposted`・`refund_cancel_undecided` を足す（既存の行は変えない DDL）。TS の `PENDING_REASONS` と、理由ごとのやさしい文（Task 11）の対応表にも足す。
+- Produces（ラベル）: `ACCOUNTING_LABELS` に `returnArrived:'返品の到着'`、`returnFeeRevenue:'返品の手数料'`、`refundPreShipment:'出荷前の返金'`、`refundReturn:'返品の返金'`、`refundAfterShipment:'出荷後の返金・値引き'`、`refundOwed:'返金の未払い'`、`refundBankTransfer:'振込での返金'`、`refundCancelled:'返金の取り消し'`、`returnAmountDecided:'返金の額の決定'`、`returnArrivalRedated:'届いた日の直し'`、`disputeOffsetReturn:'返品の返金待ちとの相殺'`、`disputeOffsetReview:'返金済みと重なる分（分けて調べる）'`。`scripts/accounting/emit-labels.ts` の出力を S17 以降の本文に貼る。
+- 計画2の `private.accounting_g_fact_seq`・`private.accounting_take_g_fact_seq()` を使う（S15 は作らない）。`accounting_refund_events`・`accounting_refund_transfer_adjusts` の行は、書く道具が番号を取るので、G の鍵を持たない INSERT はできない。
+- Produces: S15 assert DETAIL `acc_s15_tables`・`acc_s15_constraints`・`acc_s15_immutable`・`acc_s15_rls_acl`・`acc_s15_receipt_column`・`acc_s15_receipt_backfill`・`acc_s15_pending_reason_check`・`acc_s15_existing_dml_allowlist`（DML は設定の1行だけ）。
+
+- [ ] **Step 1: 失敗する試験を書く。** DB の試験は ROLLBACK の形。`FREQ-576-AC-04: 6つの表はanonとauthenticatedに権限が無くservice_roleはSELECTだけ`、`FREQ-576-AC-04: 履歴と事実と移した差の表はUPDATEとDELETEとTRUNCATEを断る`、`FREQ-576-AC-01: 履歴と移した差の行はG の鍵の中で取った番号を持ち、鍵の無い書き込みはGROUP_H_LOCK_REQUIRED`、`FREQ-576-AC-01: 返金の状態は同じ返金に同じ状態を2行入れられず、abandonedとowedは理由・人・要求番号が無いと入らない`、`FREQ-576-AC-02: 返金の事実は返金1件に1行で、返品の返金は出荷前の額が0`、`FREQ-576-AC-03: 返品の事実は届いた日の行と決定の行の形を守り、同じ受け取り・同じ返金に2行入らない`、`FREQ-575-AC-01: 受け取りの行の届いた日は何も渡さなければ記録した日（日本時間）になる`（日本時間の1月1日朝8時で試す）、`FREQ-575-AC-02: 届いた日の直しは版ごとに1行で、前の日と同じ日は入らない`、`FREQ-575-AC-04: 配達日を使う設定は1行だけあり、既定はオフ`、`FREQ-569-AC-01: 計上待ちの理由に refund_prior_unposted と refund_cancel_undecided が通る`（計画2の既存の理由の試験が引き続き通る）、`FREQ-575-AC-01: 受け取りの行の既存の列は変わらず、UPDATEは今も断られる`（`order_return_receipts.integration.test.ts` の列の期待に `arrived_on` を足して通す。**直す期待はこの1列だけ**）。単体: `FREQ-576-AC-01: 返金の状態の一覧はSQLのCHECKと一致する`、`FREQ-569-AC-01: 計上待ちの理由の一覧はSQLのCHECKと一致する`（計画2の試験を2つ足した形に）、`FREQ-578-AC-01: 補助の符号が3つ増え、勘定は2130と1470`、`FREQ-578-AC-01: 返品・返金のラベルはSQLと一致する`。
+- [ ] **Step 2（controller）: RED を測る。** `npx.cmd jest tests/integration/db/accounting_p3_return_refund_tables.integration.test.ts tests/integration/db/accounting_p3_migration_asserts.integration.test.ts --runInBand` と単体。表が無い失敗を記録し、接続の失敗を RED に数えない。
+- [ ] **Step 3: S15 と TS を実装する。** Interfaces どおり。受け取りの行のトリガーの名前は `Read` の行で確かめる。SQL は ASCII、ラベルは生成スクリプトの出力を貼る。
+- [ ] **Step 4（controller）: 共通 verify で GREEN を測る。** 末尾 assert を SAVEPOINT 内で、RLS 無効/追記専用トリガー無効/UNIQUE 欠落/CHECK 欠落/へ1つずつ改ざんして流し、55000 と対応 DETAIL を検査する。`order_return_receipts`・`order_refund_records`・`group_h_migration_asserts` の既存の suite が（`arrived_on` の1列の期待以外）無改造で通る。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 返金・返品の事実の表と届いた日の列を追加する`
+
+### Task 2: 返送料・交換の手数料・交換の送料を DB で止める（5-b）
+
+controller が別セッションへ `shop_return_settings` と返品の設定の画面（`ShopReturnSettingsSection.tsx`）の変更を先に知らせる。Task 1 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-578 の自分の AC の行〔AC-05〕を、同じコミットで6列の表へ足す。要求管理ルール）
+- Create: `supabase/migrations/<ts16>_accounting_p3_return_fee_lock.sql`、`tests/integration/db/accounting_p3_return_fee_lock.integration.test.ts`
+- Modify: `tests/integration/db/accounting_p3_migration_asserts.integration.test.ts`、返送料・交換の手数料を非ゼロで入れている既存の試験（実装時に `grep -rln "exchange_fee\|return_shipping_fee\|shop_label_fee\|exchange_shipping_fee\|exchangeFee\|returnShippingFee\|shopLabelFee" tests e2e src` で数える。2026-11-04 の時点の一覧は「共通」の節。`group_g1_exchange_fee`・`group_g1_return_exchange`・`group_g1_return_requests`・`group_g1_item_states`・`order_return_*`・`return_postgrest`・`order_status_returns`・`delivery_tracking_admin`・`group_g3_reads`、単体の `order-returns-routes`・`shop-settings-route`・返品の画面の単体と fixtures）、設定の route と画面（`src/components/ShopReturnSettingsSection.tsx` と、`shop_label_fee`・`exchange_fee`・`exchange_shipping_fee`・`exchange_fees_enabled` を書く route の zod）
+- Modify（手数料を送る所。送らない・既定0にし、入力欄は無効にして理由を出す）: `src/app/api/admin/orders/[id]/returns/route.ts:57-60`、`src/app/api/admin/returns/[returnId]/approve/route.ts:48-51`、`src/components/OrderReturnCreateForm.tsx`、`src/components/OrderReturnReviewDialog.tsx` と、それぞれの単体
+- Test: 上の DB suite と、直した既存の suite
+- Read: `supabase/migrations/20261012235910_order_return_records.sql:44-53`（`order_returns` の手数料の列）と `:465-505`（`shop_return_settings`）、`20261029130400_group_h_discounts_refunds.sql:2454-2457`（受け取りの手数料の計算）
+
+**Interfaces:**
+- Produces（制約）: `shop_return_settings` に `shop_label_fee = 0`・`exchange_fees_enabled = false`・`exchange_fee = 0`・`exchange_shipping_fee = 0` を守る CHECK。`order_returns` に `return_shipping_fee = 0 AND exchange_fee = 0 AND exchange_shipping_fee = 0` を守る CHECK を `NOT VALID` で足す（既存の行は触らない。新しい行と更新だけにかかる）。割合の手数料（`restocking_fee_enabled`・`restocking_fee_percent`）は残す。DB の拒否は 23514（制約の名前は `acc_p3_fee_lock_*`）で、設定の route は zod の段階で 400 にする（画面の入力欄は無効にし「現在は使えません。仕訳の決まりを決めてから使えます」と出す）。
+- Produces: S16 assert DETAIL `acc_s16_settings_checks`・`acc_s16_returns_checks`・`acc_s16_existing_dml_allowlist`（DML は無い。設定の行が違反していたら ADD CONSTRAINT が失敗して移行が止まる。これが意図）。
+- 注意: 仕組みを使うと決めた時は、先に仕訳の決まりを設計に足してからこの制約を外す（5-b の最後の一文）。
+
+- [ ] **Step 1: 失敗する試験を書く。** `FREQ-578-AC-05: 返送料の定額を0でない値にする設定をDBが断る`、`FREQ-578-AC-05: 交換の手数料・交換の送料・交換の手数料の有効化を断る`、`FREQ-578-AC-05: 返品の行に0でない返送料・交換の手数料・交換の送料を新しく入れると断る`、`FREQ-578-AC-05: 割合の手数料は今のとおり設定でき、受け取りで切り捨てて計算される`、`FREQ-578-AC-05: 設定のrouteは0でない値をzodで400にする`（単体）、`FREQ-578-AC-05: 設定の画面は手数料の入力欄を無効にして理由を出す`（RTL）。既存の試験は、非ゼロの手数料を前提にした期待だけを 0 に直す（題は変えない）。直した試験を `.superpowers/sdd/2026-11-04-accounting-p3/fee-lock-tests.md` に表で残す。
+- [ ] **Step 2（controller）: RED を測る。** 上の DB suite と単体。
+- [ ] **Step 3: S16 と TS を実装する。** 制約の名前は `acc_p3_fee_lock_`、`Read` の行の列名のとおり。
+- [ ] **Step 4（controller）: GREEN を測る。** 共通 verify。加えて直した既存の suite と、返品の E2E（`FR-ADMIN-0*` のうち返品・交換を扱う物。`grep -l "return" e2e` で数える）を production build で流し、題と期待が同じことを確かめる。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 返送料と交換の手数料をDBで止める`
+
+### Task 3: 返金を始める・結果を記録する関数に事実を残す・割り当てを書く・判断待ちを止める・取り消しの区分を選ぶ
+
+controller が別セッションへ返金の関数（`begin_order_refund_core` ほか）・`src/lib/orders/refund/**`・返金の route の変更を先に知らせる。Task 2 のコミット後に始める。決済のファイルは触らない。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-576・577・579・580 のうちこの Task が証明する AC の行を、同じコミットで6列の表へ足す。要求管理ルール）
+- Create: `supabase/migrations/<ts17>_accounting_p3_refund_writers.sql`、`tests/integration/db/accounting_p3_refund_writers.integration.test.ts`、`tests/integration/db/accounting_p3_refund_allocations.integration.test.ts`、`tests/integration/db/accounting_p3_refund_writers_concurrency.integration.test.ts`
+- Modify: `tests/integration/db/accounting_p3_migration_asserts.integration.test.ts`、`tests/integration/db/helpers/accounting-returns-fixtures.ts`（`seedRefundFlow`〔G・H の関数で注文・出荷前／出荷後の返金を作る〕・`seedStripeRefundTxn`〔`stripe_refunds`・`stripe_balance_transactions` を直接入れる〕・`seedDisputeHold`〔`stripe_disputes` を判断待ちにする〕を足す）、作り直す4本の既存の試験（上の一覧。意図して変えた所だけ）。`group_h_migration_asserts.integration.test.ts:35-48`（`FREQ-551-AC-02`。H5 の末尾の確かめを今の DB に流し直す試験で、本文の MD5 を比べるので、4本の本文が変わると落ちる）は『意図して直す試験』に入れ、新しい本文の MD5 と、囲みを除いた本文の比べ方を期待にする
+- Test: 上の DB 3 suite
+- Read: `supabase/migrations/20261029130400_group_h_discounts_refunds.sql` の `begin_order_refund_core`（:641 から。再送の枝・`INSERT INTO public.order_refunds`〔:311 付近〕・`group_h_claim_refund_units`〔:333-343〕・`RETURN QUERY`〔:358〕）、`record_group_g_refund_result`（:1251 から）、`mark_order_refund_error`（:1503）、`record_external_order_refund`（:1065）、`group_h_release_refund_units`（:258）、`20261023211425_group_g1_allocation.sql:4662-4963`（旧版。状態の遷移の読み方）、計画2 Task 1 の `accounting_record_unit_refund`
+
+**Interfaces:**
+- Consumes: Task 1 の表、計画2の `accounting_unit_refund_allocations`・`accounting_record_unit_refund`（願い #1 の形）・`accounting_allocate_amount`・`accounting_shipped_units`・`accounting_unit_values`・`accounting_take_g_fact_seq`、`order_refunds`・`order_refund_lines`・`order_line_unit_amounts`（H の確保の列）、`order_fulfillment_lines`。
+- Produces（道具。入口なし・service_role からも REVOKE。G の鍵を持たない呼び出しは `GROUP_H_LOCK_REQUIRED / 55000` で断る〔`private.group_h_assert_unit_lock()` を呼ぶ〕）:
+  - `private.accounting_record_refund_event(_refund_id uuid, _state text, _stripe_status text DEFAULT NULL, _actor_id uuid DEFAULT NULL, _reason text DEFAULT NULL, _request_key uuid DEFAULT NULL) RETURNS uuid`: `seq` は同じ返金の最大 +1、`fact_seq` は `private.accounting_take_g_fact_seq()` で取る。同じ `(refund_id, state)` が既にあれば何もせず（番号も取らず）既存の `id` を返す。
+  - `private.accounting_split_refund(_refund_id uuid) RETURNS TABLE(pre_amount integer, post_amount integer, shipping_amount integer)`（STABLE）: 概要の「P と Q の分け方」のとおり。例外を投げない（返金を止めないため）。合計が `order_refunds.amount` と合わない時は、丸めて（P = 明細の合計・Q = 残り、下限0）返し、呼ぶ側の `accounting_record_refund_facts` が計上待ち `amount_mismatch`〔detail `split`〕を置く。
+  - `private.accounting_record_refund_facts(_refund_id uuid) RETURNS void`: `accounting_split_refund` を1回だけ呼び、P・Q・送料を `accounting_refund_facts` に1行（`ON CONFLICT DO NOTHING`）。この返金の割り当てを書く前に呼ぶ（下の順）。
+  - **返金を始める時の順（1か所の決まり。新-中J）:** ①H の確保（`group_h_claim_refund_units`。今のまま）→ ②`accounting_record_refund_event(…,'requested')` → ③`accounting_record_refund_facts`（P・Q を分ける。この返金の割り当てはまだ無いので、5-g の重みに自分の割り当てが混ざらない）→ ④`accounting_write_refund_allocations`（③の事実の P から P_adj = P − P₀ を読み、割り当てと差の行を書いて d を返す）。事実に d は入れないので、③と④の順で値が変わることも、主キーがぶつかることも無い。
+  - `private.accounting_write_refund_allocations(_refund_id uuid, _key_prefix text DEFAULT '') RETURNS integer`: 概要の『出荷前の返金の割り当て』の規則1〜3のとおり。物差しは今（`accounting_shipped_units(品, NULL)`。書き口の検査と同じ）。規則2で H が確保した着に支払額を当て（(a) なら移す、(b) なら `owed_cover`、(c) なら `allocation_overflow`）、規則3の③の P_adj を比で割り振る。`_key_prefix` が空なら `refund_key` は `_refund_id::text`（始め）、`'reapply:'` は `error` を抜けた時（返金の状態が `failed` なら H の確保が無いので、規則3の②のとおり H と同じ順で着を選ぶ）、`'cover:'` は `owed_cover` の当て直し。`reapply:`・`cover:` の時、同じ `refund_key`（`reapply:<id>`・`cover:<id>`）の行がもう1行でもあれば、何も書かずに0を返す（2回目の呼び出しで主キーにぶつからない。例外を投げない）。`reapply:` の P_adj から引く s は、何かを書く前に数える（規則3の③）。移した差 d は同じキーで `accounting_refund_transfer_adjusts` に1行（0なら入れない）。書く前に1着の上限を確かめ、超える分と書けない分は計上待ち（番号 `allocation:<返金の id>`）に置く。**例外を投げない**。戻りはこの呼び出しで書いた d。
+  - `private.accounting_release_refund_allocations(_refund_id uuid, _n integer) RETURNS integer`: その返金の正の割り当て（元のキーと `reapply:`・`cover:`）の、まだ戻していない額を、キー `release:<返金の id>:<_n>` の負の行で着ごとに足す（願い #1）。生きている差 d も、同じキーの負の行で差の表に足す。**出荷済みの着（`private.accounting_shipped_units(品, NULL)`）は戻さず**、戻せなかった額の合計を返す（店が返金をやめた時の仕訳〔Task 6〕が『2150／4010』で補う）。P₀ の分の着は全額の割り当てで送られないので必ず戻り、戻らないのは P_adj の分だけ。
+  - `private.accounting_resolve_owed_cover(_order_id uuid, _cause text, _extra_paid integer DEFAULT 0) RETURNS integer`: その注文の `owed_cover` の計上待ちの返金ごとに（規則2の (b) は、出荷前の振込の合計に `_extra_paid`〔まだ仕訳を入れていない今回の振込の額〕を足して見る）、規則2で `accounting_write_refund_allocations(返金, 'cover:')` を呼び、差の行のキーを `cover:<返金の id>:<_cause>` にして、書いた d の合計を返す。当て直せた返金の `allocation:<id>` を解決済みにする。まだ (b) に当たる返金は待ちのまま。`admin_decide_refund_cancellation`（`_cause` は区分の行の id）、`admin_record_refund_bank_transfer`（`bank-<番号>`）、`admin_settle_owed_by_refund`（`settle-<結びの行の id>`。結びの行を足した後なので、(b) の結びの合計に今回の結びが入り、`_extra_paid` は0）が呼ぶ。例外を投げない。
+  - `private.accounting_dispute_holds(_order_ids uuid[]) RETURNS TABLE(order_id uuid, dispute_id text)`（STABLE・DEFINER・入口なし）: 条件は計画2の `get_order_dispute_holds` と同じ（`status in ('needs_response','under_review')` で、引かれた残高の取引があり、戻りの取引が無い。事前の問い合わせ〔`warning_*`〕は数えない）。計画2の読み口は計画2の本文のまま、計画3の道具が別に持つ。
+  - `private.accounting_assert_no_dispute_hold(_order_ids uuid[]) RETURNS void`: `private.accounting_dispute_holds(_order_ids)` に1行でもあれば `ACCOUNTING_DISPUTE_HOLD / 55000`（DETAIL `order_count=<件数>`）。
+- Produces（作り直す4本。**本文は最新の定義のまま**、足す所だけ `-- ACC_P3_BEGIN/END`）:
+  - `private.begin_order_refund_core`: ①`_source IN ('admin','order_cancel','return')` の時、**再送の枝を抜けた後**（既存の返金が見つかった枝は何もせず返す）、`INSERT INTO public.order_refunds` の前に `PERFORM private.accounting_assert_no_dispute_hold(ARRAY[_order_id])`。②H の確保（`group_h_claim_refund_units`）が全部済んだ後、`RETURN QUERY` の前に、上の「返金を始める時の順」の②〜④（`accounting_record_refund_event(v_refund_id,'requested')` → `accounting_record_refund_facts(v_refund_id)` → `accounting_write_refund_allocations(v_refund_id)`）。
+  - `private.record_group_g_refund_result`: 足す所は、状態を変える枝の中の、H の本文（状態の更新と、H の確保の外し・取り直し〔:1401-1429〕）が済んだ後で、その枝の `RETURN` の前。順は、①前の状態 `v_current.status` が `error` で、次の状態が `error` でない時（`pending`・`succeeded`・`failed` のどれへ進んでも、`error` から抜ける1回だけ。H の取り直しの条件 `v_current.errored_at IS NOT NULL` は使わず、H の `ELSIF v_current.errored_at …` の枝の中にも置かない。`errored_at` は残るので、そこに置くと `error → pending → succeeded` の2回目でも呼ばれる）は、`accounting_write_refund_allocations` を `reapply:` のキーで呼ぶ（`pending`・`succeeded` は H が取り直した確保へ、`failed` は計画3が H と同じ順で選んだ着へ。規則3）→ ②`_stripe_status` から `accepted`（受け付けた時。`newly_accepted` が真の時に1回）・`succeeded`（成功）・`failed`（失敗）・`canceled`（Stripe が取り消し）の行を `accounting_record_refund_event` で足す（同じ状態の2回目は何もしない）。状態の行を当て直しの後に足すので、その行の番号より前の差の行に当て直しの d が入る。①は例外も、COMMIT で落ちる割り当ての超過も起こさないので、Stripe の成功の記録を落とさない。`failed`・`canceled` の時、H が `group_h_release_refund_units` で確保を外しても、**割り当ては戻さない**（返す借りが残るため）。
+  - `private.mark_order_refund_error`: 状態を `error` にする所で `accounting_record_refund_event(…,'error')` と `accounting_release_refund_allocations`（Stripe に届く前の失敗でお金は動かない）。
+  - `private.record_external_order_refund`（Stripe の画面で店が返した物の記録。止めない）: 返金の行を新しく入れた時（`v_created` が真）だけ、`requested` の行・`accounting_record_refund_facts`・`accounting_write_refund_allocations` を足す（再送では足さない）。状態の行（`accepted`・`succeeded`・`failed`・`canceled`）は、中で呼ぶ `record_group_g_refund_result` の足し方（`_stripe_status` に合わせる）に任せ、決め打ちしない。
+- Produces（取り消しの区分。private 本体＋service_role 専用の public 入口）: `admin_decide_refund_cancellation(_actor_id uuid, _refund_id uuid, _kind text, _reason text, _request_key uuid) RETURNS jsonb`。権限 `admin.accounting.entries.correct`。`_kind` は `abandoned`（店が返金をやめた）か `owed`（店は返すつもりのまま返せなかった）。理由は1〜500字。ロックは G の共通ロック → `private.accounting_lock_all(NULL)` の順（計画1のロック順①②。`accounting_lock_all` が G の共通ロックを先に取るので、返金の関数〔G → 会計〕とすれ違わず、道具が前提にする G のロックもこれで足りる）。`error` の返金（Stripe に届いていない。`stripe_refund_id` が無い）には `abandoned` だけ選べる。返金の状態が取り消し（`accounting_refund_events` に `canceled` があり、`abandoned`・`owed` が無い）または上の `error` でなければ `ACCOUNTING_REFUND_NOT_CANCELED`、既に区分があれば、同じ要求番号・同じ内容なら前の結果（`replayed:true`）、違えば `ACCOUNTING_REFUND_CANCEL_DECIDED`／`ACCOUNTING_REQUEST_KEY_CONFLICT`。`abandoned` の時は `accounting_release_refund_allocations` を呼び、続けて `accounting_resolve_owed_cover(注文, 区分の行の id)`（戻った着を `owed_cover` で待っていた返金へ当て直す）。仕訳そのものは Task 6 の係が作る（この関数は事実だけを足す）。戻りは `{refund_id, state, event_id, replayed}`。
+- Produces: S17 assert DETAIL `acc_s17_functions`・`acc_s17_function_attrs`・`acc_s17_body_unchanged`（囲みを除いた本文が最新の定義と同じ）・`acc_s17_g_allowlist_unchanged`・`acc_s17_existing_dml_allowlist`（DML は無い）。
+
+- [ ] **Step 1: 失敗する試験を書く。** `FREQ-576-AC-02: 返金を始めると返金の事実が1回だけ入り、同じ要求の再送では増えない`、`FREQ-576-AC-01: 受け付け・成功・失敗・取り消し・エラーのたびに履歴が1行ずつ増え、同じ状態の2回目は増えない`、`FREQ-576-AC-05: 返金を始める途中で失敗すると、事実も履歴も割り当ても残らない`、`FREQ-577-AC-03: 出荷前に1着を返金すると、その着に全額の割り当てが入る`、`FREQ-577-AC-03: 明細なしの出荷前のお詫び1,000円は、設計 5-g の比（出荷済み18,750・未出荷11,250）で出荷前の額375円と出荷後の額625円に分かれ、375円がまだ送っていないパンツの割り当てになる`、`FREQ-577-AC-03: 規則1の道具は、出荷の仕訳が入る前でも後でも、G の鍵の中で取った番号から同じ着を出荷済みとする`、`FREQ-577-AC-09: 後に始まった返金が先に鍵を取っても、送る着と割り当てが重ならない`（2つの接続。発送票の確定のトランザクションを先に始めて鍵の前で待たせ、後に始めた返金が先に鍵を取ってコミットし、その後に確定がコミットする。9,999円と10,001円の例で、u0 に 9,999円の割り当て、送る着は u1、d = 0、売上 10,001円・前受金0。逆の入れ替わり〔返金を先に始め、確定が先に鍵を取る〕では d = +2 で同じ売上と前受金。返金を始める関数も確定の関数も落ちない。並行。3連続）、`FREQ-577-AC-03: 確保した着が出荷済みなら、同じ品の出荷済みでない着へ番号の大きい方から移し、差 d が差の表に番号つきで残る（9,999円と10,001円の例で d = +2）`、`FREQ-577-AC-03: 確保した着に別の返金の品を決めない額が一部当たっていて空きが無ければ、移して差が残り、allocation_overflow にならない（3着 9,999・10,000・10,001円）`、`FREQ-577-AC-03: 確保した着が、借りが残る失敗した返金の割り当てで埋まっていれば移さず owed_cover で待ち、残る1着は送る着に残る`、`FREQ-577-AC-03: owed_cover で待つ返金は、前の返金に区分 abandoned を選ぶと、戻った着へ cover で当て直され、計上待ちが解決済みになる`、`FREQ-577-AC-03: 発送を取り消した直後で取り消しの仕訳がまだ無い着は出荷済みでなく、割り当てが落ちず、送り直しても前受金が合う（取り消しの仕訳の前後の両方）`、`FREQ-577-AC-09: 着の割り当ては、出荷・返金・取り消し・error の届く順に関わらず、最後に前受金が0で売上が支払額の合計`（下の表。Task 6）、`FREQ-577-AC-09: error の間に別の返金が同じ着を取っても、error の間に出荷しても、H が違う着を取り直しても、成功の記録が落ちず、前受金が0で、送る着が足りる`、`FREQ-577-AC-06: error の間に出荷された着へは当て直さず、当て直しは書き口の検査と同じ今の物差しで見るので、成功・失敗の記録が例外で戻らない`、`FREQ-577-AC-06: 品を決めない額が一部当たった着が出荷された後に error を抜けると、当て直す額は P_adj から生きている分を引いた額で、割り当ての合計が P_adj を超えない`、`FREQ-577-AC-06: 仕訳に使う d は状態の行の番号より前の差の行の合計で、係を途中で流しても後で流しても同じ`、`FREQ-577-AC-06: error → pending → succeeded でも当て直しは error を抜けた pending の時の1回だけで、succeeded の記録で reapply の行が増えず主キーが重ならず、成功の記録（状態・succeeded の状態の行・H の取り直し）が落ちない`、`FREQ-577-AC-06: 品を決めない額が一部当たった着が出荷された後に error を抜けると、s は当て直しを書く前に数えるので、明細のある分 P₀ を書いた後でも P_adj から P₀ を引かない`、`FREQ-577-AC-04: 品を決めない額は、出荷した分とまだの分の値打ちの比で出荷前の額と出荷後の額に分かれ、出荷前の額はまだ送っていない着へ残りの値打ちの比で割り振られ、端数は番号の若い着から足される`、`FREQ-577-AC-04: 重みの合計が0の品を決めない額は全部出荷後の額になる`、`FREQ-577-AC-04: シャツ18,750円出荷済み、パンツ2着5,625円ずつ未出荷で、パンツ1着の返金（P₀ = 5,625円）と品を決めない1,000円なら、重みは[5,625, 18,750]で P_adj は231円`、`FREQ-577-AC-04: 規約の手数料などで明細より少ない返金（マイナスの調整）、明細の片方が0のマイナスの調整でも、PとQが0未満にならず返金が落ちない`、`FREQ-577-AC-04: 割り当ての計算が合わない入力でも返金を始める関数は落ちず、計上待ち（allocation_overflow）が置かれる`、`FREQ-577-AC-04: 一部だけ出荷した注文の出荷後の分は割り当てにならず、出荷後の額として事実に残る`、`FREQ-577-AC-05: 全額の割り当てを受けた着は、同じ返金を2回始めようとしても、2回目で割り当てが重ならない`、`FREQ-577-AC-06: エラーになった返金の割り当ては負の行で戻り、その後に成功・失敗のどちらへ進んでも、H が取り直した確保へ reapply の行で当て直される。成功すれば出荷の売上から引かれ、失敗なら借りと割り当てが合う`、`FREQ-577-AC-06: error を抜けて failed になった出荷前の返金は、H が取り直さないので、H と同じ順で選んだ着に割り当てが当て直され（その着が出荷済みなら移して差が失敗の仕訳に入り）、パンツの出荷が前受金不足で止まり続けない`、`FREQ-577-AC-06: 出荷済みの着の割り当ては負の行でも戻せず、店が返金をやめた時の仕訳の2150／4010で前受金が0になる`、`FREQ-577-AC-06: Stripeが失敗にした返金の割り当ては戻らず、再試行の返金は残りの額だけを割り当てて着の支払額を超えない`、`FREQ-577-AC-06: 取り消しの区分で「やめた」を選ぶと割り当てが戻り、「返すつもり」では戻らない`、`FREQ-579-AC-03: 取り消しの区分は取り消された返金だけに選べ、2回目は前の結果、違う内容はCANCEL_DECIDED、同じ要求番号で違う内容はREQUEST_KEY_CONFLICT`、`FREQ-579-AC-03: 取り消しの区分は権限のある人だけが選べる`、`FREQ-580-AC-01: 判断待ちの注文に管理者の返金を始めるとACCOUNTING_DISPUTE_HOLD（55000）で断り、返金の行も履歴も事実も割り当ても残らない`、`FREQ-580-AC-01: 注文の取り消しの返金と返品の返金も同じ拒否になる`、`FREQ-580-AC-01: 自動の返金（支払いの異常）とStripeの画面の返金の記録は断らない`、`FREQ-580-AC-03: 判断待ちが確定または取り下げになると返金を始められる`、`FREQ-580-AC-05: 判断待ちの前に始まった保留の返金がStripeで失敗した時、失敗が記録され、同じ返金を二重に作らない（失敗の返金に戻りの取引の番号が結び付く）`、`FREQ-580-AC-01: 事前の問い合わせ（warning系）は止めない`、`FREQ-576-AC-06: 作り直した4本の既存の試験が、意図して変えた所以外は無改造で通る`、`FREQ-576-AC-05: 作り直した4本の本文は囲みを除いて最新の定義と同じで、属性とACLが前と同じ`、`FREQ-577-AC-07: 同じ返金の結果を同時に記録しても履歴は1行ずつ`、`FREQ-577-AC-07: 取り消しの区分の選択と返金の結果の記録を同時に流しても、止まらず履歴と割り当てが合う`（並行。3連続）。`FREQ-580-AC-01: 判断待ちの条件は計画2の get_order_dispute_holds と同じ答えを返す`。
+- [ ] **Step 2（controller）: RED を測る。** 上の DB suite。関数が無い・拒否されない失敗を記録する。
+- [ ] **Step 3: S17 を実装する。** 最新の定義を一字も変えずに写し、足す所だけを囲む。事実を残す道具は INSERT だけ（ロックを取らない）。`private.group_g_writer_allowlist()` は変えない。
+- [ ] **Step 4（controller）: GREEN を測る。** 共通 verify。加えて、`group_h_*`・`order_refund_*`・`order_return_*`・`group_g1_*` の既存の suite が意図して変えた所以外は無改造で通ること、`group_g1_writer_inventory` の本数が変わらないこと。並行は3連続成功。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 返金の関数に事実を残し割り当てと判断待ちの止めを足す`
+
+### Task 4: 返品の受け取り・返金の決定に事実を残す・届いた日を選ぶ・直す
+
+controller が別セッションへ返品の関数（`admin_receive_return`・`admin_refund_return`）・`src/lib/orders/returns/**`・受け取りの route の変更を先に知らせる。Task 3 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-575・576・578 のうちこの Task が証明する AC の行を、同じコミットで6列の表へ足す。要求管理ルール）
+- Create: `supabase/migrations/<ts18>_accounting_p3_return_writers.sql`、`tests/integration/db/accounting_p3_return_writers.integration.test.ts`、`tests/integration/db/accounting_p3_return_arrival.integration.test.ts`、`tests/integration/db/accounting_p3_return_writers_concurrency.integration.test.ts`
+- Modify: `tests/integration/db/accounting_p3_migration_asserts.integration.test.ts`、`tests/integration/db/helpers/accounting-returns-fixtures.ts`（`seedReturnFlow`〔注文を出荷し、返品を申し込み、承認する〕・`receiveReturn`〔`admin_receive_return` を呼ぶ〕を足す）、受け取りの関数の呼び出しを持つ既存の試験（`order_return_receipts`・`order_return_actions`・`group_g1_return_exchange`・`group_h_*`・`return_postgrest`。`_arrived_on` の引数が増えた形に直す）。`group_h_migration_asserts.integration.test.ts:35-48`（`FREQ-551-AC-02`）も、受け取り・返品の返金の本文の MD5 が変わるので『意図して直す試験』に入れ、新しい MD5 と囲みを除いた比べ方に直す
+- Test: 上の DB 3 suite
+- Read: `20261029130400_group_h_discounts_refunds.sql:2178-2563`（`admin_receive_return`。:2446-2472 の金額の計算、:2480-2483 の受け取りの行、:2502-2506 の返金の開始）、`:2563-2692`（`admin_refund_return`）、`20261023211425_group_g1_allocation.sql:7371`（public 入口）、`:7385`（返金の入口）、`20261012235910_order_return_records.sql:111-135`（受け取りの行）
+
+**Interfaces:**
+- Consumes: Task 1・3 の表と道具、`order_returns`（`requested_at`・`restocking_fee_percent`）、`stripe_disputes`・`private.accounting_dispute_lost_at`（計画2）。
+- Produces（道具。入口なし）:
+  - `private.accounting_return_arrival_on(_receipt_id uuid) RETURNS date`（STABLE）: 最新の直し（`version` の大きい物）の `new_on`、無ければ受け取りの行の `arrived_on`。
+  - `private.accounting_assert_arrival_date(_return_id uuid, _order_id uuid, _arrived_on date) RETURNS void`: 日本時間の今日より後、返品の `requested_at` の日本時間の日より前、その注文のカード会社の取り消しが確定した日（lost の時刻の日本時間の日。`private.accounting_dispute_lost_at`）以前なら `RETURN_ARRIVAL_DATE_INVALID / 22023`（DETAIL `future`・`before_request`・`dispute_confirmed`）。
+  - `private.accounting_record_return_arrival(_receipt_id uuid, _return_id uuid, _order_id uuid, _goods_amount integer, _fee_amount integer) RETURNS void`: `arrival` の事実を1行（`goods_amount` が0なら入れない）。
+  - `private.accounting_record_return_decision(_return_id uuid, _order_id uuid, _refund_id uuid, _decided_amount integer) RETURNS void`: `decision` の事実を1行。`covers_amount` = その返品の未払金の残り ＝ `arrival` の `goods_amount − fee_amount` の合計 ＋ これまでの全部の `decision` の `payable_delta` の合計 − 成功しなかった返金（`failed` と、区分 `abandoned` の `canceled`）を除く返金の `decided_amount` の合計（`error` の返金は終わりでなくあとで成功しうるので除かない。`error` の間にやり直した返品は、前受金の異常の一覧と同じ一覧に出す）（0未満なら0）。返金が失敗してやり直した時に、前の決定の分を二重に立てない（G の鍵の中の事実だけで決まる）、`payable_delta` = `_decided_amount − covers_amount`、`decided_on` = 日本時間の今日。送料が0でない返金は `_decided_amount` に送料を含めない（`order_refunds.amount − shipping_amount`）。
+- Produces（作り直す2本）:
+  - `private.admin_receive_return`: 末尾に `_arrived_on date DEFAULT NULL` を足す（古い形は DROP、public 入口も同様。戻り・属性・ACL は前のまま）。`_arrived_on` が NULL なら受け取りの行の既定（記録した日）に任せる。値があれば、**ロックを取って再送の枝を抜けた後**、受け取りの行の INSERT の前に `accounting_assert_arrival_date` を呼び（確定の後の同じ要求の再送は前の結果を返し、検査とロックの間に確定が入る競り合いも避ける）、INSERT に `arrived_on` を足す。**再送の指紋（`v_fp`）には `_arrived_on` が NULL でない時だけ入れる**（既存の再送を壊さない）。返金の開始（`begin_order_refund_core`）まで済んだ後、`v_goods > 0` なら `accounting_record_return_arrival(v_receipt,_return_id,v_order,v_goods,LEAST(v_fees,v_goods))`、返金を始めた時は続けて `accounting_record_return_decision(_return_id,v_order,v_refund,v_amount − _refund_shipping_amount)`。送り返すだけ・交換だけ・`v_goods = 0` の受け取りは事実を残さない。
+  - `private.admin_refund_return`: 返金を始めた直後に `accounting_record_return_decision`。
+- Produces（届いた日の直しと設定。private 本体＋service_role 専用の public 入口）:
+  - `admin_correct_return_arrival_date(_actor_id uuid, _receipt_id uuid, _new_on date, _reason text, _expected_version integer, _request_key uuid) RETURNS jsonb`。権限 `admin.accounting.entries.correct`。最初に `private.accounting_lock_all(NULL)`。受け取りの行が `kind='receive'` でなければ `ACCOUNTING_NOT_FOUND`。`_expected_version` は今の版（直しが無ければ0）で、違えば `ACCOUNTING_VERSION_CONFLICT`。日の検査は `accounting_assert_arrival_date`。確定した取り消しがある注文では、**元の日か新しい日のどちらかが確定の日以前なら断る**（detail `dispute_confirmed`。確定の相殺の前提を後から変えないため）。同じ日への直しは `ACCOUNTING_ARGUMENT_INVALID`。直しの行を足し、戻りは `{receipt_id, version, previous_on, new_on, correction_id, replayed}`。同じ要求番号・同じ内容は前の結果、違う内容は `ACCOUNTING_REQUEST_KEY_CONFLICT`。
+  - `admin_set_return_arrival_option(_actor_id uuid, _enabled boolean, _expected_version bigint, _request_key uuid) RETURNS jsonb`。権限 `admin.accounting.settings.manage`。切り替えた日と人を残す。版違いは `ACCOUNTING_VERSION_CONFLICT`。
+  - 読み口（STABLE・service_role 専用）: `public.get_return_arrival_option() RETURNS jsonb`、`public.get_return_arrival_info(_receipt_ids uuid[]) RETURNS jsonb`（`[{receipt_id, arrived_on_original, arrived_on_current, version, corrections:[{version,previous_on,new_on,reason,actor_id,created_at}]}]`、200件まで）、`public.get_return_carrier_arrival(_return_id uuid) RETURNS date`（設定がオンで、追跡のサービスに登録された返品の追跡に配達済みの日がある時だけその日。今は返品の追跡を登録していないので常に NULL）。
+- Produces: S18 assert DETAIL `acc_s18_functions`・`acc_s18_function_attrs`・`acc_s18_body_unchanged`・`acc_s18_receive_signature`（引数が1つ増えた期待）・`acc_s18_rls_acl`・`acc_s18_existing_dml_allowlist`（DML は無い）。
+
+- [ ] **Step 1: 失敗する試験を書く。** 設計 5-3 の数字を、手数料の割合を 10% にして固定する（シャツ18,750円の返品。手数料 1,875円。返す額 16,875円）。`FREQ-578-AC-01: 返品を受け取ると返品の事実に届いた時の額18,750円と手数料1,875円が残る`、`FREQ-576-AC-03: 返金を始める受け取りは、事実と、返金の額の決定（16,875円・差0）が同じトランザクションで残る`、`FREQ-578-AC-02: 返品の返金が失敗してやり直した時、前の決定の分を除いた未払金の残りに対する差で決定が立ち、未払金が二重にならない（引かれる前の失敗・引かれた後の失敗の両方）`、`FREQ-578-AC-02: 相談で受け取り、後で14,000円と決めて返金を始めると、決定の事実の差が−2,875円になる`、`FREQ-578-AC-02: 受け取りで規約と違う額（15,000円）を入れて返金を始めると、同じ日に差−1,875円の事実が残る`、`FREQ-578-AC-04: 送り返すだけの受け取りと交換だけの受け取りは事実を残さない`、`FREQ-578-AC-02: 返金の決定の「カバーする額」は、前の決定が済ませた分を引いた残りになる（2回に分けた受け取り）`、`FREQ-575-AC-01: 届いた日を渡さない受け取りは記録した日（日本時間）が入る`、`FREQ-575-AC-01: 前の日を選べるが、未来の日・申し込みの前の日は RETURN_ARRIVAL_DATE_INVALID で断り、受け取りも事実も残らない`、`FREQ-575-AC-01: 注文のカード会社の取り消しが確定した日以前の届いた日は断る`、`FREQ-581-AC-07: 確定済みの注文では、確定の日以前への届いた日の入れ替え（直し）も断る`、`FREQ-575-AC-02: 届いた日を直すと版1・前の日・新しい日・理由・人が残り、受け取りの行は変わらない`、`FREQ-581-AC-07: 確定の相殺が入った後、確定の日以前だった届いた日を後の日へ直すのも断る`、`FREQ-575-AC-01: 確定の後の同じ要求の再送は、検査で断られず前の結果を返す`、`FREQ-575-AC-03: 今の届いた日は最新の直しで、直しを2回すると版2が最新になる`、`FREQ-575-AC-02: 直しの権限が無い人は42501で断られ、版違いはVERSION_CONFLICT`、`FREQ-575-AC-05: 同じ要求番号で同じ内容は前の結果、違う内容はREQUEST_KEY_CONFLICT`、`FREQ-575-AC-04: 配達日の設定は既定オフで、切り替えると日と人が残り、版違いはVERSION_CONFLICT`、`FREQ-575-AC-04: 設定をオンにしても、返品の追跡は登録されていないので届いた日は自動で入らない`、`FREQ-576-AC-06: 受け取りと返金の既存の試験が、_arrived_on の引数以外は無改造で通る`、`FREQ-576-AC-05: 作り直した2本の本文は囲みを除いて最新の定義と同じで、属性とACLが前と同じ（受け取りの引数は1つ増えた期待）`、`FREQ-578-AC-07: 同じ受け取りの再送で事実は増えず、同時に受け取っても1行`（並行。3連続）。
+- [ ] **Step 2（controller）: RED を測る。** 上の DB suite。
+- [ ] **Step 3: S18 を実装する。** 受け取りの関数は引数を1つ足した新しい形を作り、古い形を DROP する移行の順で書く。再送の指紋の変更は NULL の時に前と同じ文字列になること。
+- [ ] **Step 4（controller）: GREEN を測る。** 共通 verify。受け取りの public 入口の PostgREST の試験（`return_postgrest`）が引数1つ増えた形で通る。並行は3連続成功。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 返品の受け取りと返金の決定に事実を残し届いた日を選べるようにする`
+
+### Task 5: 発送票の確定を判断待ちの注文で止める（4-e3）
+
+controller が別セッションへ発送票の確定の関数（G-3・G-4 の物）の変更を先に知らせる。Task 4 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-580 の自分の AC の行〔AC-02・03〕を、同じコミットで6列の表へ足す。要求管理ルール）
+- Create: `supabase/migrations/<ts19>_accounting_p3_shipment_hold_guard.sql`、`tests/integration/db/accounting_p3_shipment_hold_guard.integration.test.ts`
+- Modify: `tests/integration/db/accounting_p3_migration_asserts.integration.test.ts`、`group_g3_*`・`group_g4_*` のうち発送票の確定の関数の本文・属性を固定している試験（意図して変えた所だけ）。`group_g4_foundation.integration.test.ts:57-60`（`FREQ-540-AC-14`）と計画2の `accounting_p2_migration_asserts`・`accounting_p2_posting_tables` の本文の比べは、計画2で囲みを全部除く形にしてあるので直さない（落ちたら、計画2の除き方の誤りとして controller に知らせる）
+- Test: 上の DB suite
+- Read: 計画2の S6 の確定の関数（`20261026045859_group_g4_orders_foundation.sql:6-140` の本文に、番号を取る1行を `-- ACC_P2_BEGIN/END` で足した物。再送の枝・`v_orders` を求める所・「(1) every order is paid」）、`20261025100130_group_g3_shipping_slips.sql`（public 入口）、`tests/integration/db/group_g3_date.integration.test.ts`
+
+**Interfaces:**
+- Produces（作り直す1本）: `private.admin_confirm_shipment_slip`。**再送の枝（`v_existing` が見つかる枝）は変えない。** 下書きの行を読み、注文の一覧 `v_orders` を求め、注文の存在を確かめた後、「(1) every order is paid」の前に `PERFORM private.accounting_assert_no_dispute_hold(v_orders)`。拒否は `ACCOUNTING_DISPUTE_HOLD / 55000`。拒否した時は発送の行も履歴も在庫の動きも発送票の状態も変わらない（下書きのまま）。public 入口は変えない。
+- Produces: S19 assert DETAIL `acc_s19_function_attrs`・`acc_s19_body_unchanged`・`acc_s19_g_allowlist_unchanged`・`acc_s19_existing_dml_allowlist`（DML は無い）。
+
+- [ ] **Step 1: 失敗する試験を書く。** `FREQ-580-AC-02: 判断待ちの注文を含む発送票の確定は ACCOUNTING_DISPUTE_HOLD（55000）で断り、発送票は下書きのままで、発送の行も在庫の動きも増えない`、`FREQ-580-AC-02: 複数の注文を束ねた発送票は、1つでも判断待ちなら全体を断る`、`FREQ-580-AC-03: 判断待ちが確定または取り下げになると、同じ発送票を確定できる`、`FREQ-580-AC-03: 判断待ちの無い発送票の確定は今までどおりで、再送は前の結果を返す（replayed）`、`FREQ-580-AC-02: 事前の問い合わせ（warning系）の注文は止めない`、`FREQ-576-AC-06: 発送票の既存の試験（group_g3・group_g4）と計画2の S6 の本文の確かめが、FREQ-540-AC-14 も含めて無改造で通る`、`FREQ-576-AC-05: 確定の関数の本文は囲みを除いて最新の定義と同じで、属性とACLが前と同じ`。
+- [ ] **Step 2（controller）: RED を測る。** 上の DB suite。
+- [ ] **Step 3: S19 を実装する。** 最新の定義（計画2の S6 の物。`-- ACC_P2_BEGIN/END` の囲みと番号を取る1行も含む）を一字も変えずに写し、1行だけ足す。取り消しの関数は変えない。
+- [ ] **Step 4（controller）: GREEN を測る。** 共通 verify。`group_g3_*`・`group_g4_*`・`group_g1_writer_inventory` の既存の suite を流す。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 発送票の確定を判断待ちの注文で止める`
+
+### Task 6: 返金の係（出荷前の返金・返品の返金・失敗・取り消し・振込）と計上係への追加
+
+controller が別セッションへ計上係の入口（`accounting_run_posting`）の変更を先に知らせる。Task 5 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-577・579 の自分の AC の行を、同じコミットで6列の表へ足す。要求管理ルール）
+- Create: `supabase/migrations/<ts20>_accounting_p3_refund_posting.sql`、`tests/integration/db/accounting_p3_refund_posting.integration.test.ts`、`tests/integration/db/accounting_p3_refund_failures.integration.test.ts`、`tests/integration/db/accounting_p3_refund_order_independence.integration.test.ts`、`tests/integration/db/accounting_p3_refund_concurrency.integration.test.ts`
+- Modify: `tests/integration/db/accounting_p3_migration_asserts.integration.test.ts`、`tests/integration/db/helpers/accounting-returns-fixtures.ts`（`postRefundEvents`〔係を直接呼ぶ〕・`failRefund`・`cancelRefund`を足す）、計画2の `accounting_p2_run_posting.integration.test.ts`（`refunds`・`returns` の鍵が増えた形に）
+- Test: 上の DB 4 suite
+- Read: 計画2 Task 2・3・6 の係（候補・計上待ち・解決の書き方）、`supabase/migrations/20260901102912_remote_schema.sql`（`stripe_refunds`・`stripe_balance_transactions`）、`src/lib/stripe/accounting-sync.ts:109-135`（返金の残高の取引の保存）
+
+**Interfaces:**
+- Consumes: Task 1・3・4 の表と事実、`stripe_refunds`（`balance_transaction_id`・`failure_balance_transaction_id`・`status`）、`stripe_balance_transactions`、`order_refunds`、計画1の core と取り消しの core、計画2の計上待ちの道具。
+- Produces: `private.accounting_post_refund_events(_limit integer) RETURNS jsonb`（`{posted,parked,resolved,reversed}`。入口なし）。擬似コード（試験で決まらない所だけ）:
+  1. 最初に `private.accounting_lock_all(NULL)`。G の表の行ロックは取らない。
+  2. **待つ順（額は他の返金の残高を読まない）:** 返金の仕訳の額は、事実の P・Q と残高の取引の額だけで決める。同じ注文の返金どうしの順番は決めない。待つのは次の2つだけ: `source='return'` の返金は、その返品の `arrival` の事実（自分の `decision` の `seq` より前のもの全部）の仕訳と、`payable_delta <> 0` の `decision` の仕訳が入るまで、`refund_prior_unposted`（detail `why='return_prior'`）で待つ。失敗の戻りは、元の返金の仕訳が入るまで同じ理由（`why='original'`）で待つ。
+  3. **成功（5-d・5-f・5-e・1-a07）:** 返金の状態に `succeeded` があり、`stripe_refunds.balance_transaction_id` の残高の取引が `stripe_balance_transactions` にある物。日 `d = accounting_jst_date(取引.stripe_created_at)`、`d < cutover_on` は `before_cutover`、期間は `accounting_period_for_event(d)`（無ければ `period_missing`）。`abs(取引.amount)` が `order_refunds.amount` と違えば `amount_mismatch`（detail `refund_amount`）。事実の `shipping_amount` が0でなければ `order_not_postable`（detail `shipping`）。事実の P > 0 なら種類 `pre_shipment_refund`・番号 `[取引の id]` の仕訳を1本: 借方 2150（P）、貸方 1160（P）。その返金の d（`accounting_refund_transfer_adjusts` のうち、`succeeded` の状態の行の `fact_seq` より前の行の合計）が0でなければ、同じ仕訳に『借方 2150 d／貸方 4010 d』（d < 0 は貸借を逆）を足す（規則2。状態の行より後の差の行〔やめた時の戻しなど〕は、この仕訳に入れない）。事実の Q > 0 なら種類 `return_refund`・番号 `[取引の id]` の仕訳を1本: `source <> 'return'` は借方 4020（Q）、`source = 'return'` は借方 2130（補助 `return_refund`）Q（額の決定の仕訳が先に未払金を立てているので残高を読まない）、貸方 1160（Q）。行は全部 `order_id` つき。成功の仕訳の 2150 の借方の合計（P + d）が、その注文の前受金の残高（全部の仕訳の `order_id` つき 2150 の貸方−借方）を超える時は、額は変えず `deferred_revenue_short` で待つ（ただし結び〔`admin_settle_owed_by_refund`〕は先に前受金を戻すので、やり直しの返金はそれで通る）（2-a。前受金をマイナスにしない）。`source_table='order_refunds'`・`source_id=返金の id`。成功したら `accounting_unpark_event`。止めた時は `accounting_park_event('pre_shipment_refund'／'return_refund','order_refunds',返金の id,注文,理由,detail)`。
+  4. **失敗（5-h・1-a08）:** 状態に `failed`（Stripe が `canceled` でない失敗）がある物と、`canceled` の後に区分 `owed` が足された物。種類 `refund_failed`、番号 `[返金の id, その状態の行の id]`。(a) `stripe_refunds.balance_transaction_id` が無い（引かれていない）: 日は状態の行の `occurred_at` の日本時間の日。P > 0 なら「2150／2130（補助 `refund_owed_pre`）」P（d が0でなければ『2150 d／4010 d』を足す。d はその状態の行〔`failed` か `owed`〕の `fact_seq` より前の差の行の合計。規則2）、`source <> 'return'` で Q > 0 なら「4020／2130（補助 `refund_owed_post`）」Q。`source = 'return'` は仕訳を作らず `no_revenue` で解決済み（届いた日の未払金がそのまま残る）。借りは**その返金で1回だけ**（印が返金と状態の行で一意）。(b) `balance_transaction_id` があり `failure_balance_transaction_id` の残高の取引がある: 日は戻りの取引の日本時間の日、額 `abs(戻りの取引.amount)`（元の返金の額と違えば `amount_mismatch`）。成功の仕訳（3）が先に入っていなければ `refund_prior_unposted`（detail `why='original'`）で待つ。「1160／2130」を、P は補助 `refund_owed_pre`、`source <> 'return'` の Q は `refund_owed_post`、`source = 'return'` の Q は `return_refund`。(c) `balance_transaction_id` があり戻りの取引がまだ無い: 入れず `refund_prior_unposted`（`why='failure_txn_missing'`）で待つ。
+  5. **取り消し（1-a08b）:** 状態に `canceled` があり `abandoned`・`owed` が無い物は、`refund_cancel_undecided` で計上待ちに置く（detail は返金の番号と取り消しの時刻だけ）。区分が足されたら自動で入る。`owed` は 4 と同じ。`abandoned`: 引かれていない（balance_transaction_id が無い）なら仕訳を作らず、種類 `refund_abandoned`・番号 `[返金の id, 状態の行の id]` を `no_revenue` で解決済みにする。引かれていて戻りの取引がある: 成功の仕訳（`pre_shipment_refund`・`return_refund`。あるだけ）を、`accounting_reverse_journal_core(NULL, 元, ACCOUNTING_LABELS.refundCancelled, 戻りの取引の日, 区分の行の occurred_at)` で取り消す（日は**戻りの取引の日**。元の日ではない。1-a08b）。出荷済みの着で割り当てが戻せなかった額 s があれば、同じ呼び出しで種類 `refund_abandoned`・番号 `[返金の id, 区分の行の id]` の仕訳「借方 2150／貸方 4010 s」を足す（売上は足し戻した日に立つ。引かれる前にやめた時も、s があれば同じ仕訳）。同じ区分の決定で `owed_cover` の返金へ当て直した差（差の表のキー `cover:<その返金の id>:<区分の行の id>` の合計 d′）があれば、同じ仕訳に『借方 2150 d′／貸方 4010 d′』（d′ < 0 は逆）を足す（行は d′ の返金の注文の `order_id` つき。s も d′ も0なら仕訳を作らず `no_revenue`）。届いた日の未払金の仕訳には触らない。戻りの取引がまだ無ければ `refund_prior_unposted`（`why='failure_txn_missing'`）で待つ。
+  6. 候補は SQL の条件で絞る（状態の行がある返金だけ。事実の無い古い返金（`legacy`）と、`succeeded`・`failed`・`canceled` の状態の行が無い返金（`requested`・`accepted`・`error` のまま）は候補に入れない。`error` の後に `succeeded` が足された返金は候補に入る）。
+- Produces（振込）: `admin_record_refund_bank_transfer(_actor_id uuid, _order_id uuid, _origin text, _amount bigint, _bank_date date, _bank_txn_no text, _note text, _request_key uuid) RETURNS jsonb`（private 本体＋public 入口）。権限 `admin.finance.manage`。`_origin` は `pre_shipment`（出荷前の返す借りを返した）・`post_shipment`（出荷後の返す借り）・`return`（返品の返金待ち）。最初に `private.accounting_lock_all(NULL)` を取ってから残高を読む（同時の2回で残高を超えない）。額は正の整数で、対応する未払金の補助の残高（`refund_owed_pre`・`refund_owed_post`・`return_refund`）以下。超えるか、仕訳がまだ入っていない（残高が足りない）時は `ACCOUNTING_EVENT_NOT_POSTABLE`（メッセージに「先に返金・返品の仕訳が入る」旨は画面で補う）。日は日本時間の日（未来は断る）、銀行の取引の番号は `^[A-Za-z0-9_.-]{1,120}$`（前置き `bank-` は関数が付ける）、メモは0〜500字。種類は `pre_shipment`→`pre_shipment_refund`、他→`return_refund`、番号 `['bank-' || 銀行の取引の番号]`、借方 2130（対応する補助）、貸方 1040。`pre_shipment` の時は、仕訳を入れる前に、この振込の額を含めて規則2の (b) を見直し、出荷前の借りを返し終えたなら `accounting_resolve_owed_cover(注文, 'bank-' || 番号)` で `owed_cover` の返金を当て直し、その差 d の合計を同じ仕訳に『借方 2150 d／貸方 4010 d』（d < 0 は逆）で足す（`accounting_resolve_owed_cover` には、この振込の額を (b) の振込の合計に含めて渡す）。同じ番号の2回目は当て直さない。同じ番号の2回目は何も足さず（`created:false`）、額か注文が違えば `ACCOUNTING_DEDUPE_CONTENT_MISMATCH`。同じ要求番号で違う内容は `ACCOUNTING_REQUEST_KEY_CONFLICT`。
+- Produces（やり直しの結び。private 本体＋public 入口）: `admin_settle_owed_by_refund(_actor_id uuid, _owed_refund_id uuid, _paying_refund_id uuid, _request_key uuid) RETURNS jsonb`。権限 `admin.accounting.entries.correct`。最初に `private.accounting_lock_all(NULL)` を取ってから額と残高を読む。条件は、元の返金に借りの仕訳が入っていること（`refund_failed` の仕訳。区分 `owed` だけで借りの仕訳がまだ無い間は結べず `ACCOUNTING_EVENT_NOT_POSTABLE`）と、**やり直しの返金が同じ注文で、成功の事実（状態 `succeeded` と残高の取引）があること**（成功の仕訳が入っていることは求めない。求めると、前受金が戻るまで成功の仕訳が待ち、結びが入れず止まり続けるため）。額は、元の返金の事実の P・Q のうちまだ結んでいない額と、やり直しの返金の P・Q の小さい方（出荷前の分と出荷後の分を別々に）で、**さらに、その注文・その側の借りの補助（`refund_owed_pre`・`refund_owed_post`）の今の残高以下**。超える時（先に振込で返した時など）は `ACCOUNTING_EVENT_NOT_POSTABLE` で断る。人の操作で鍵の中で順に入るので、届く順には頼らない（自動の係の額を残高から出さない決まりとはぶつからない）。仕訳は概要『返す借り』の②で、**日はやり直しの返金の残高の取引の日**（年ごとの利益を結びの操作の日で変えないため）。結びの行は、**S20 が作る**追記専用の表 `accounting_refund_settlements(id uuid PK DEFAULT gen_random_uuid(), owed_refund_id uuid NOT NULL FK order_refunds RESTRICT, paying_refund_id uuid NOT NULL FK order_refunds RESTRICT, pre_amount integer NOT NULL CHECK (>= 0), post_amount integer NOT NULL CHECK (>= 0), actor_id uuid NOT NULL, request_key uuid NOT NULL UNIQUE, request_hash text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE (paying_refund_id))`（RLS・権限・追記専用は Task 1 の表と同じ）に残し、やり直しの返金の `settled` の状態の行（`accounting_refund_events`）も同じ呼び出しで足す。同じやり直しの返金の2回目は何も足さず前の結果を返す（違う元の返金を指定したら `ACCOUNTING_ARGUMENT_INVALID`）。結びが入ったら、やり直しの返金の `allocation:<id>` の計上待ちを自動で解決済みにする。続けて、結びの行を足した後に `accounting_resolve_owed_cover(注文, 'settle-' || 結びの行の id)` を呼び、ほかの `owed_cover` の返金のうち規則2の (b) に当たらなくなった物を当て直し、その差 d（差の表のキー `cover:<返金の id>:settle-<結びの行の id>` の行の合計）を結びの仕訳に『借方 2150 d／貸方 4010 d』（d < 0 は逆）で足す（概要の `owed_cover` の閉じ方の④）。同じやり直しの返金の2回目は当て直さない。違う内容で同じ要求番号は `ACCOUNTING_REQUEST_KEY_CONFLICT`。
+- Produces（計上係の入口の変更）: 計画2の `private.accounting_run_posting` を作り直し、呼ぶ順を **支払い → 出荷 → Stripe → 返品（Task 7）→ 返金（本 Task）→ 取り消し（dispute。Task 8）** にする（確定が返品・返金の仕訳を待つので、同じ呼び出しの中で返品・返金が先に入るようにする）。戻りの jsonb に `refunds`・`returns` を足す（`has_more` の決め方は計画2のとおり。計画2の `{payments,shipments,stripe,disputes,parked,resolved,has_more}` に `refunds`・`returns` を足した形）。public 入口の引数・戻り型は変えない。
+- Produces（読み口。STABLE・service_role 専用）: `public.list_refund_accounting_states(_limit integer DEFAULT 50, _after_at timestamptz DEFAULT NULL, _after_id uuid DEFAULT NULL) RETURNS jsonb`（取り消しの区分待ち・借りが残る返金の一覧: `{refunds:[{refund_id,order_id,order_number,source,state,pre_amount,post_amount,owed_pre,owed_post,canceled_at}],next_after_at,next_after_id}`。名前・メールを含めない）。
+- Produces: S20 assert DETAIL `acc_s20_tables`・`acc_s20_functions`・`acc_s20_function_attrs`・`acc_s20_run_posting`・`acc_s20_reads_stable`・`acc_s20_rls_acl`・`acc_s20_existing_dml_allowlist`（DML は無い）。
+
+- [ ] **Step 1: 失敗する試験を書く。** 設計 2-4・5-3 の例と、手数料の割合 10% の数字を固定する。出荷前: `FREQ-577-AC-01: 成功した出荷前の返金は、返金の残高の取引の日に「前受金／Stripe未収金」の1本で、印は pre_shipment_refund:<取引の番号>、前受金の行に注文番号が付く`、`FREQ-577-AC-01: 日は残高の取引の日本時間の日で、店が成功を記録した時刻や orders.refunded_at を使わない`（取引を12月31日23時UTC、記録を別の日にして）、`FREQ-577-AC-02: 残高不足で保留の間（残高の取引が無い）は仕訳を作らず、取引ができて同期されると次の呼び出しで1本入る`、`FREQ-577-AC-03: 設計 2-4 の数字（パンツに出荷前の割り当て1,000円）を、割り当てを直接入れる fixture で作ると、パンツの出荷の仕訳は10,250円で、売上の累計は29,000円、前受金は0になる`（今の画面ではこの例は作れない。未確認 #3）（計画2の `FREQ-563-AC-02` が計画3の割り当てで通ることの確認。ここで初めて空の表に行が入る）、`FREQ-577-AC-03: 計画2のオーナーへの報告の「ずれる」が解ける: 返金した分だけ売上が多く立つことも、前受金が残ることも無い`、`FREQ-577-AC-05: 全額が返金で当たった着は出荷の仕訳の対象から外れ、その着の数だけ前受金が減っている`、`FREQ-577-AC-07: 同じ返金を何度・同時に流しても1本ずつ`（並行。3連続）。出荷後: `FREQ-579-AC-01: 返品の返金は残高の取引の日に「2130（返品の返金）／Stripe未収金」`、`FREQ-579-AC-01: 返送不要・お詫びの出荷後の返金は「売上値引・返品／Stripe未収金」`、`FREQ-579-AC-01: 返品の届いた日の仕訳が無い返品の返金（返送不要の値引き）は 2130 を負にせず、全額が売上値引・返品に入る`、`FREQ-579-AC-01: 出荷前と出荷後が混ざった返金は pre_shipment_refund と return_refund の2本に分かれ、合計が残高の取引の額と合う`、`FREQ-579-AC-01: 残高の取引の額が返金の額と違えば amount_mismatch で止まり、仕訳を作らない`、`FREQ-579-AC-01: 切り替えより前・期間が無い日は before_cutover・period_missing で止まる`。失敗・取り消し: `FREQ-579-AC-02: 引かれた後に失敗した返金は、戻りの取引の日に「Stripe未収金／返金の未払い」で、元の返金の仕訳は変わらない`、`FREQ-579-AC-02: 引かれる前に失敗した出荷前の返金は、決まった日に「前受金／返金の未払い」を1回だけ立てる`、`FREQ-579-AC-02: 引かれる前に失敗した返品の返金は仕訳を作らず、届いた日の未払金がそのまま残る`、`FREQ-579-AC-02: 戻りの取引がまだ無い失敗は refund_prior_unposted で待ち、取引が同期されると入る`、`FREQ-579-AC-02: 失敗の後に再試行の返金が成功しても、ふつうの返金は借りの残高を読まず前受金を減らす。やり直しと結ぶ操作で、借りと二重に減らした前受金が戻る`、`FREQ-579-AC-03: Stripe が取り消した返金は区分を選ぶまで refund_cancel_undecided で待ち、手では閉じられない`、`FREQ-579-AC-03: 区分「店は返すつもりのまま返せなかった」を選ぶと失敗と同じ借りが立つ`、`FREQ-579-AC-03: 区分「店が返金をやめた」を選ぶと、引かれた後は戻りの取引の日に元の返金の仕訳を取り消すだけで、返品の届いた日の未払金は消えず、割り当てが戻り、新しい借りは立たない`、`FREQ-579-AC-03: 引かれる前にやめたなら仕訳を作らず、割り当てだけが戻る`。振込: `FREQ-579-AC-04: 出荷前の借りを振込で返すと、振込の日に「返金の未払い／普通預金」が1本入り、同じ銀行の取引の番号の2回目は何も足さず、額が違えば DEDUPE_CONTENT_MISMATCH`、`FREQ-579-AC-04: 借りの残高を超える額・未来の日・額0・権限なしを断る`、`FREQ-579-AC-04: 返品の返金待ちを振込で返すと2130（返品の返金）が減る`。順番: `FREQ-579-AC-05: 同じ注文の2つの返金は、入る順が入れ替わっても各仕訳の額が同じ（他の返金の残高を読まない）`、`FREQ-579-AC-05: 結びの操作は元の返金の借りのうち結んでいない額とやり直しの返金の額の小さい方だけを戻し、2回目は何も足さない`、`FREQ-579-AC-02: error の返金が後で成功しても、成功の仕訳が入り、割り当てが書き直され、出荷の売上から引かれる`、`FREQ-579-AC-02: 成功した返金が後で失敗しても、失敗の仕訳（引かれた後）が足される`、`FREQ-579-AC-04: 確定した取り消しの確定の日以前の振込の日は断る`、`FREQ-579-AC-04: 結びの操作と振込を違う要求番号で同時に流しても、借りが二重に消えない`（並行。3連続）、`FREQ-579-AC-04: 借りを先に振込で全額返した後に結ぶと、借りの残高を超えるので断られる`、`FREQ-577-AC-03: 品が2着の注文で、出荷前の返金が引かれる前に失敗し、同じ品をカードでやり直した返金が owed_cover で待ち、結ぶと書かずに解決し、残る1着の出荷が units_insufficient で止まらず、前受金が0`、`FREQ-577-AC-03: owed_cover で待つ返金は、前の返金の借りを振込で返し終えると別の着へ移して当て直され、差が振込の仕訳の2150／4010に入り、前受金が0（3着 9,999・10,000・10,001円で1着を出荷。d = +2）`、`FREQ-577-AC-03: owed_cover で待つ返金は、前の返金の借りを、待っている返金でない別の返金との結びで返し終えると、別の着へ移して当て直され、差が結びの仕訳の2150／4010に入り、計上待ちが解決済みで、前受金が0（3着 9,999・10,000・10,001円。R1 の借りが u0 に残り、R2 は u0 で待ち、R3 が u1 に当たって R1 と R3 を結ぶと、R2 は u2 へ移り d = +2）`、`FREQ-579-AC-04: 借りの仕訳が入る前（区分 owed だけの間）は結べない`、`FREQ-579-AC-05: 品が1つの注文で、出荷前の返金が引かれる前に失敗 → カードでやり直して成功 → 結ぶと、結びが先に前受金を戻し、やり直しの成功の仕訳が入り、止まり続けない（引かれた後の失敗からのやり直しも同じ）`、`FREQ-579-AC-02: error を抜けて failed になった返金（引かれる前・引かれた後）は、割り当てが残ったまま借りが立つ`、`FREQ-579-AC-02: 返品の返金が引かれる前に失敗しても引かれた後に失敗しても、やり直しが成功すれば2130（返品の返金）が0で、4020は18,750円のまま`、`FREQ-577-AC-01: 前受金の残高を超える出荷前の返金の成功の仕訳は deferred_revenue_short で待つ`、`FREQ-577-AC-02: 注文の着が全部送られたか出荷前に返金された後に前受金が残る注文（明細より少ない返金など）は、前受金の異常の一覧に出る`、`FREQ-579-AC-05: 返品の返金は、その返品の届いた日と額の決定の仕訳が入るまで待つ`、`FREQ-579-AC-06: 届く順をすべて試して最後の残高と各仕訳の額が同じ`（下の表。成功・失敗・取り消しの区分・振込・結び・error からの成功を含む）、`FREQ-562-AC-05: 係の入口は支払い・出荷・Stripe・返品・返金・取り消しの順に処理し、戻りに refunds と returns の鍵がある`、`FREQ-569-AC-02: 返金の計上待ちは、直ると次の呼び出しで入り解決済みになる`。
+  `FREQ-579-AC-06` の期待の表（注文30,000円・シャツ18,750円・パンツ11,250円。特に書かない時、返金の対象は出荷前のパンツ1着 11,250円。2130 は補助別、1160・2150 は注文ごとの残高）。同じ行の中で、事実の記録の順（成功の残高の取引の保存・履歴の保存・取り消しの区分・戻りの取引の保存・振込の入力）と係の流れる回数（途中で流す・まとめて流す）をすべて入れ替える。
+  「増減」はその返金の仕訳が入った後の、この注文の残高の増減（借方−貸方でなく、残高が増えれば＋）。2150 は前受金の残高、1160 は Stripe 未収金の残高、1040 は普通預金の残高。
+  | 場合 | `refund_owed_pre` の最後の残高 | 2150 の増減 | 1160 の増減 | 1040 の増減 | 受注高から引く額（日） | 仕訳の本数 |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | 1. 成功のみ | 0 | −11,250 | −11,250 | 0 | −11,250（成功の日） | どの順でも 1 |
+  | 2. 引かれた後に失敗（借り） | 11,250 | −11,250 | 0 | 0 | −11,250（成功の日）、+11,250（戻りの日）。合計0 | どの順でも 2（成功・失敗） |
+  | 3. 2 の後に振込で全額 | 0 | −11,250 | 0 | −11,250 | 上に加えて −11,250（振込の日） | どの順でも 3 |
+  | 4. 引かれる前に失敗（借り） | 11,250 | −11,250 | 0 | 0 | 0（立てた日には引かない） | どの順でも 1 |
+  | 5. 4 の後に再試行の返金が成功し、やり直しと結ぶ | 0 | −11,250 | −11,250 | 0 | −11,250（再試行の成功の日。結びの仕訳は受注高に動かさない） | どの順でも 3（借り・成功・結び） |
+  | 6. 引かれた後に Stripe が取り消し → 返すつもり | 11,250 | −11,250 | 0 | 0 | 2 と同じ | どの順でも 2（成功・借り） |
+  | 7. 引かれた後に Stripe が取り消し → 店が返金をやめた | 0 | 0 | 0 | 0 | −11,250（成功の日）、+11,250（戻りの日）。合計0 | どの順でも 2（成功・取り消し）。割り当てが戻る |
+  | 8. 引かれる前に Stripe が取り消し → 店が返金をやめた | 0 | 0 | 0 | 0 | 0 | 0。割り当てが戻る |
+  | 9. 取り消しのまま（区分未選択） | 0 | 0 | 0 | 0 | 0 | 0。`refund_cancel_undecided` が1件 |
+  | 10. 2つの返金（A: パンツ11,250 が成功、B: シャツ18,750 が引かれる前に失敗） | 18,750（B の分） | −30,000 | −11,250 | 0 | −11,250（A の日）。B は引かない | どの順でも 2（A・B） |
+  | 11. error の返金が後で成功 | 0 | −11,250 | −11,250 | 0 | −11,250（成功の日） | どの順でも 1（割り当ては reapply で書き戻される） |
+  | 12. error の返金が後で failed（引かれる前） | 11,250 | −11,250 | 0 | 0 | 0 | どの順でも 1（借り。割り当ては残る） |
+  | 13. 返品の返金16,875円が引かれる前に失敗 → やり直しが成功（2130〔`return_refund`〕は最後に0、4020 は 18,750 のまま） | 0 | 0 | −16,875 | 0 | 0（返品の返金は動かさない） | どの順でも 2（届いた日・成功） |
+  | 14. 返品の返金16,875円が引かれた後に失敗 → やり直しが成功（同上） | 0 | 0 | −16,875 | 0 | 0 | どの順でも 4（届いた日・成功・失敗・成功） |
+  | 15. 品が1つ（10,000円）の注文で、出荷前の返金が引かれる前に失敗 → カードでやり直しが成功 → 結ぶ | 0（結びの後） | −10,000 | −10,000 | 0 | −10,000（やり直しの成功の日。結びは動かさない） | どの順でも 3（借り・結び・成功。結びが前受金を戻してから成功が入る） |
+  | 16. 同、引かれた後に失敗 → やり直しが成功 → 結ぶ | 0（結びの後） | −10,000 | −10,000 | 0 | −10,000（最初の成功の日）、+10,000（戻りの日）、−10,000（やり直しの成功の日） | どの順でも 4（成功・失敗・結び・成功） |
+  `FREQ-577-AC-09` の期待の表（規則4。出荷・返金・発送の取り消し・`error` の届く順と、鍵を取る順を全部試す。各例で、品は2着 u0・u1（支払額 p0 < p1、Δ = p1 − p0）、1着を出荷し1着を出荷前に返金する。H は安い着 u0 を確保し、返金の額 P = p0。順は G の鍵を取る順。係〔出荷・返金〕は途中で流す・まとめて流すの両方を入れ替える）。
+  | 順 | 起きること | 送る着（出荷の額） | 返金の割り当て | d | 例 a 9,999・10,001（d／売上／前受金） | 例 b 4,999・5,000（1円の端数の割引） | 例 c 9,000・10,000（1点目だけの割引） |
+  | --- | --- | --- | --- | --- | --- | --- | --- |
+  | ① | 出荷 → 出荷の仕訳 → 返金 | u0（p0） | u0 は出荷済みなので u1 に p1 | Δ | +2／10,001／0 | +1／5,000／0 | +1,000／10,000／0 |
+  | ② | 返金 → 出荷 | u1（p1。u0 は確定の番号より前の全額の割り当てで除く） | u0 に p0 | 0 | 0／10,001／0 | 0／5,000／0 | 0／10,000／0 |
+  | ③ | G で出荷 → 返金 → 出荷の仕訳 | ①と同じ（道具は番号で決め、仕訳の有無を見ない） | ①と同じ | Δ | ①と同じ | ①と同じ | ①と同じ |
+  | ④ | 出荷 S1 → 発送の取り消し → 返金 → 送り直し S2 | S1 は u0（仕訳と取り消しで0）、S2 は u1（p1） | 取り消しの番号の後なので u0 は出荷済みでなく、u0 に p0 | 0 | 0／10,001／0 | 0／5,000／0 | 0／10,000／0 |
+  | ⑤-1 | 返金 → `error` → error の間に出荷 → 成功 | u0（p0。error の戻しの番号が確定より前なので u0 は送れる） | error で u0 を戻す → 成功で H が u0 を取り直す → 出荷済みなので u1 に p1（`reapply:`） | Δ | +2／10,001／0 | +1／5,000／0 | +1,000／10,000／0 |
+  | ⑤-2 | 出荷 → 返金 → `error` → 成功 | u0（p0） | 始めに u1 に p1（d = Δ）→ error で割り当てと d を戻す → 成功で H が u0 → 移して u1 に p1 | Δ | +2／10,001／0 | +1／5,000／0 | +1,000／10,000／0 |
+  | ⑥-1 | 返金 → `error` → `failed` → 出荷 → 借りを振込で返す | u1（p1） | error で u0 を戻す → failed で H は取り直さないので、計画3が H と同じ順で u0 を選び p0（`reapply:`） | 0 | 0／10,001／0 | 0／5,000／0 | 0／10,000／0 |
+  | ⑥-2 | 出荷 → 返金 → `error` → `failed` → 借りを振込で返す | u0（p0） | 始めに u1 に p1 → error で戻す → failed で計画3が u0 を選ぶ → 出荷済みなので u1 に p1 | Δ | +2／10,001／0 | +1／5,000／0 | +1,000／10,000／0 |
+  | ⑦-1 | 確定のトランザクションを先に始め、返金が先に鍵を取る（`confirmed_at` の時刻は返金より前） | ②と同じ | ②と同じ | 0 | ②と同じ | ②と同じ | ②と同じ |
+  | ⑦-2 | 返金のトランザクションを先に始め、確定が先に鍵を取る | ①と同じ | ①と同じ（返金を始める関数は落ちない） | Δ | ①と同じ | ①と同じ | ①と同じ |
+  - 確かめ: 前受金の最後 ＝ (p0 + p1) − 出荷の額 − 返金の 2150 の借方（P + d）。①③⑤-1⑤-2⑥-2⑦-2 は (p0 + p1) − p0 − (p0 + Δ) = 0、②④⑥-1⑦-1 は (p0 + p1) − p1 − p0 = 0。売上の累計 ＝ 出荷の額 + d は、どの順でも p1（a 10,001・b 5,000・c 10,000）。
+  - ⑥の返金の 2150 の借方（P + d）は、引かれる前の失敗の仕訳「2150／2130（`refund_owed_pre`）」に入り（d は `failed` の状態の行の番号より前の差の行の合計）、振込で `refund_owed_pre` は0になる。⑥-1 で出荷が error の間（failed の前）に入った時は、failed で選んだ u0 が出荷済みなので u1 に p1 を当て、d = Δ になり、⑥-2 と同じ数字になる。
+  - 支払額が同じ着の品（例: 2着とも10,000円）では d は常に0。
+- [ ] **Step 2（controller）: RED を測る。** 上の DB suite。
+- [ ] **Step 3: S20 を実装する。** 成功・失敗・取り消しの仕訳の組み立て（P と Q の借方の選び方）は1つの plpgsql の関数にまとめ、成功・再試行・振込が同じ関数を使う。待つかどうかの判定（2）も1つの関数にまとめる。`private.accounting_run_posting` は作り直す前の本文を一字も変えずに写し、呼ぶ順と戻りの鍵だけ変える。
+- [ ] **Step 4（controller）: GREEN を測る。** 共通 verify。並行は3連続成功。計画2の係の suite（`accounting_p2_run_posting` ほか）が戻りの鍵の追加以外は無改造で通る。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 返金の成功と失敗と取り消しと振込を仕訳にする`
+
+### Task 7: 返品の係（届いた日・額の決定・届いた日の直し）
+
+controller が別セッションへ先に知らせる（計上係に係を足す）。Task 6 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-578 の自分の AC の行を、同じコミットで6列の表へ足す。要求管理ルール）
+- Create: `supabase/migrations/<ts21>_accounting_p3_return_posting.sql`、`tests/integration/db/accounting_p3_return_posting.integration.test.ts`、`tests/integration/db/accounting_p3_return_redate.integration.test.ts`、`tests/integration/db/accounting_p3_return_concurrency.integration.test.ts`
+- Modify: `tests/integration/db/accounting_p3_migration_asserts.integration.test.ts`、`tests/integration/db/helpers/accounting-returns-fixtures.ts`（`postReturnEvents`・`correctArrival`を足す）
+- Test: 上の DB 3 suite
+- Read: 計画2 Task 3 の (c) 日の直し（取り消し→入れ直しの書き方）、Task 4 の事実の表
+
+**Interfaces:**
+- Consumes: Task 1・4 の返品の事実、`accounting_return_arrival_on`、`order_return_arrival_corrections`、計画1の core と取り消しの core。
+- Produces: `private.accounting_post_return_events(_limit integer) RETURNS jsonb`（`{posted,parked,resolved,reversed,redated}`。入口なし）。擬似コード:
+  1. 最初に `private.accounting_lock_all(NULL)`。行ロックなし。以下 (a)(b)(c) の順に、合わせて `_limit` 件まで。
+  2. **(a) 届いた日（1-a05・5-b）** 候補: `kind='arrival'` の事実で、印 `return_arrived:<受け取りの id>` の仕訳も計上待ちの行も無い物。日 `d = accounting_return_arrival_on(受け取り)`（直しがあれば最新の直しの日で最初から入れる）、切り替え・期間の検査は計画2と同じ。額 G = `goods_amount`、F = `fee_amount`。種類 `return_arrived`、番号 `[受け取りの id]`、説明 `ACCOUNTING_LABELS.returnArrived`、行は ①借方 4020（G、`order_id`）②貸方 2130（補助 `return_refund`、G、`order_id`）、F > 0 なら ③借方 2130（`return_refund`、F）④貸方 4050（F、メモ `returnFeeRevenue`）。`source_table='order_return_receipts'`・`source_id=受け取りの id`。`_source_recorded_at` は受け取りの行の `created_at`。G = 0 の事実は作らない（Task 4）ので `no_revenue` は起きない。成功したら `accounting_unpark_event`。
+  3. **(b) 額の決定（1-a06・5-b2）** 候補: `kind='decision'` で `payable_delta <> 0` の事実で、印 `return_amount_decided:<事実の id>` の仕訳も計上待ちも無い物。その返品の自分より `seq` が小さい `arrival` の仕訳が全部入っていなければ `refund_prior_unposted`（`why='return_prior'`）で待つ。日は `decided_on`。`payable_delta > 0` は「借方 4020／貸方 2130（`return_refund`）」、`< 0` は逆（絶対値）。`payable_delta = 0` の事実は仕訳を作らず `no_revenue` で解決済み。
+  4. **(c) 届いた日の直し（1-a22）** 候補: 取り消されていない `return_arrived`／`return_arrival_redated` の仕訳 E で、その受け取りの最新の直し h の `new_on` ≠ E の日の物。**先に**新しい日の検査（切り替え・期間）を済ませ、止める時は E を取り消さず、種類 `return_arrival_redated`・`source_id=h.id` で計上待ちに置く。通れば E を取り消し（`accounting_reverse_journal_core(NULL, E, h の理由, 元の日, h.created_at)`）、種類 `return_arrival_redated`・番号 `[h.id]`・日 `h.new_on`・E と同じ行で入れ直す。取り消しと入れ直しは同じ呼び出しの中で行う。古い直しが新しい直しに追い越された場合は、古い直しの未解決の計上待ちを自動で解決済みにする。
+  5. 1-a09: 送り返すだけの受け取りには事実が無いので、候補にも計上待ちにもならない（試験で確かめる）。
+- Produces（読み口。STABLE・service_role 専用）: `public.get_return_journal_trace(_receipt_id uuid) RETURNS jsonb`（`{receipt:{id,return_id,arrived_on,created_at},corrections:[{version,previous_on,new_on,reason,actor_id,created_at}],entries:[{entry_id,entry_no,event_kind,entry_date,reverses_entry_id}]}`。1-a22 の「仕訳から直した跡をたどる」）。
+- Produces（計上係の入口）: 計画2・Task 6 の `private.accounting_run_posting` に、返品の係を支払い・出荷・Stripe の後・返金の前で呼ぶ一文を足す（Task 6 で作り直した本文に、呼び出し1行。戻りの `returns` の鍵を入れる）。
+- Produces: S21 assert DETAIL `acc_s21_functions`・`acc_s21_function_attrs`・`acc_s21_run_posting`・`acc_s21_reads_stable`・`acc_s21_existing_dml_allowlist`（DML は無い）。
+
+- [ ] **Step 1: 失敗する試験を書く。** 手数料の割合 10%、シャツ18,750円の返品。`FREQ-578-AC-01: 届いた日に「売上値引・返品18,750／未払金（返品の返金）18,750」と「未払金1,875／返品の手数料の売上1,875」が1本の仕訳で入る`、`FREQ-578-AC-01: 日は受け取りの届いた日で、記録した日（created_at）ではない`（前の日を選んで受け取る）、`FREQ-578-AC-01: 返金を始める受け取りは、返金が成功する前に届いた日の仕訳が入り、未払金（返品の返金）が16,875円残る`、`FREQ-578-AC-01: 返品の返金（Task 6）が入ると未払金が0になり、4020は18,750円、4050は1,875円のまま`、`FREQ-578-AC-02: 相談で受け取ると見込み16,875円で立ち、14,000円と決めた日に「未払金2,875／売上値引・返品2,875」が入って未払金が14,000円になる`、`FREQ-578-AC-02: 規約と違う額15,000円で返金すると、同じ日に「未払金1,875／売上値引・返品1,875」が入る`、`FREQ-578-AC-02: 額が見込みどおりなら決定の仕訳は作らず no_revenue で解決済みになる`、`FREQ-578-AC-03: 届いた日を直すと、古い日の取り消しと直した日の同じ行の仕訳になる（印は reversal:<元> と return_arrival_redated:<直しの番号>）`、`FREQ-578-AC-03: 別の期間にまたがる直しでも、取り消しは元の期間、新しい仕訳は新しい期間に入る`、`FREQ-578-AC-03: 直した先の日が期間の無い日なら period_missing で止まり、元の仕訳は取り消されないまま残る`、`FREQ-578-AC-03: 届いた日を2回直しても、取り消しは1回ずつで最後の日の仕訳だけが残る`、`FREQ-578-AC-03: 仕訳から直した跡（理由・人・前後の日）をたどれる`、`FREQ-578-AC-04: 品を送り返すだけの受け取りと交換だけの受け取りは、仕訳も計上待ちも作らない`、`FREQ-578-AC-04: 同じ受け取りに戻す品と送り返す品が混ざる時、戻す品の額だけで立つ`、`FREQ-578-AC-06: 受け取りの仕訳が支払い・出荷より先に流れても、同じ額で入る`、`FREQ-578-AC-06: 届いた日の仕訳が入った後に手数料の割合の設定を変えても、入った額は変わらない（事実の額で立つため）`、`FREQ-578-AC-06: 額の決定の事実が届いた日の仕訳より先に見つかっても、届いた日の仕訳が入るまで待ち、入った後に入る`、`FREQ-578-AC-06: 届いた日の直しの事実が届いた日の仕訳より先に見つかったら、直した日で最初から立つ`、`FREQ-578-AC-07: 同じ受け取りを何度・同時に流しても1本`（並行。3連続）、`FREQ-576-AC-03: 手数料が支払額と同じ（割合100%）の返品は、4020 G／2130 G と 2130 G／4050 G で未払金が0になる`。
+- [ ] **Step 2（controller）: RED を測る。** 上の DB suite。
+- [ ] **Step 3: S21 を実装する。** (a)(b)(c) の仕訳の組み立ては、届いた日の入れ直しが (a) と同じ行を作るよう、1つの関数にまとめる。
+- [ ] **Step 4（controller）: GREEN を測る。** 共通 verify。並行は3連続成功。計画2・Task 6 の係の suite が無改造で通る。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 返品の届いた日と額の決定と届いた日の直しを仕訳にする`
+
+### Task 8: カード会社の取り消しの相殺（4-e2）と引かれた時の止めの解除
+
+controller が別セッションへ先に知らせる（計画2の dispute の係を作り直す）。Task 7 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-581 の自分の AC の行を、同じコミットで6列の表へ足す。要求管理ルール）
+- Create: `supabase/migrations/<ts22>_accounting_p3_dispute_offset.sql`、`tests/integration/db/accounting_p3_dispute_offset.integration.test.ts`、`tests/integration/db/accounting_p3_dispute_order_independence.integration.test.ts`、`tests/integration/db/accounting_p3_dispute_offset_concurrency.integration.test.ts`
+- Modify: `tests/integration/db/accounting_p3_migration_asserts.integration.test.ts`、`tests/integration/db/helpers/accounting-returns-fixtures.ts`（`seedDisputeFlow`〔引かれた時・確定・取り下げを作る〕を足す）、計画2の `accounting_p2_dispute_posting.integration.test.ts`（引かれた時の止め2つの試験を「止まらず入る」に直す。**直す期待はこの2つだけ**）
+- Test: 上の DB 3 suite
+- Read: 計画2 Task 6 の W・C・R・L・X の規則と本文（作り直す関数の最新の定義は計画2の S11）、設計 4-e2
+
+**Interfaces:**
+- Consumes: Task 6・7 の仕訳、計画2の dispute の表と係、`private.accounting_dispute_lost_at`、`stripe_disputes`。
+- Produces（作り直す1本）: 計画2の `private.accounting_post_dispute_events` を、最新の定義を一字も変えずに写し、次の4か所だけ変える（囲みで示す）。
+  1. **W（引かれた時）の2つの止めを外す:** 「成功した返金がある」→ `dispute_refund_overlap`、「返品の返金待ち 2130 がある」→ `dispute_return_refund_pending` の止めを削る。W の分け方・額・待ちの規則（計画2の規則1）は変えない。
+  2. **C（確定）の待ち:** `private.accounting_dispute_offset_ready(_dispute_id text, _order_id uuid, _lost_on date) RETURNS TABLE(ready boolean, reason text)`（STABLE）を作り、C の前に呼ぶ。`ready` が偽なら C を入れず、`reason` で計上待ちに置く（`dispute_refund_overlap`／`dispute_return_refund_pending`。detail に `why`）。待つ条件: ①その注文の返金で、作った日（日本時間）が確定の日 `_lost_on` 以前の物のうち、状態が `requested`・`accepted`・`error` のまま（`error` は Stripe へ届いたか分からない。Stripe に届いていない〔`stripe_refund_id` が無い〕`error` で店が『やめた』を選んだ物を除く）、または入れる仕訳（Task 6 の 3・4・5）が1つでも入っていない物がある → `dispute_refund_overlap`。②その注文の返品の事実で、今の届いた日（`accounting_return_arrival_on`）が `_lost_on` 以前の物のうち、届いた日・額の決定の仕訳（`payable_delta <> 0`）が入っていない物がある → `dispute_return_refund_pending`。注文に結び付かない取り消し（`order_id` が無い）は待たない（相殺しない）。
+  3. **C の相殺:** 待ちが無ければ、その dispute の `dispute_pending` の今の残高を S とする（計画2の規則2・C のとおり）。R = その注文の 2130（補助 `return_refund`）の残高（`entry_date <= _lost_on` の全部の行〔取り消しも含む〕の貸方−借方）、Z = その注文の出荷後の返金の実額（`entry_date <= _lost_on` の種類 `return_refund` の仕訳〔振込を含む〕の貸方 1160・1040 の合計から借方の同じ口座の合計を引いた物と、`refund_failed` の戻りの分と取り消しの仕訳を符号つきで足した物）から、その注文の補助 `dispute_refund_overlap_review` の今の残高（すでに別の dispute で使った額）を引いた物（0未満は0）。`o_pay = min(max(R,0), S)`、`o_ref = min(Z, S − o_pay)`、`rest = S − o_pay − o_ref`。一つの仕訳（印は計画2のまま `[dispute,'confirmed','lost']`）に、①`o_pay > 0`: 借方 2130（`return_refund`、`order_id`）／貸方 1470（`dispute_pending`）、②`o_ref > 0`: 借方 1470（`dispute_refund_overlap_review`）／貸方 1470（`dispute_pending`）、③`rest > 0`: 計画2のとおり（借方 原因の科目または `dispute_confirmed_unassigned`／貸方 1470〔`dispute_pending`〕）。S = 0 なら計画2のとおり `no_revenue`。**確定の日より後の仕訳は R・Z に入れない。** メモに `offset_pay`・`offset_review` の額（個人の情報を入れない）を残す。
+  4. **L（遅れた取り下げ）の戻し先:** 戻る S の分 S_L を、その dispute の印（`dispute_event:<dispute>:`）の仕訳から、①費用の科目（計画2の規則4。または `dispute_confirmed_unassigned` から振り替えた科目）の今の残高の範囲、②`dispute_refund_overlap_review` のその dispute の残高の範囲、③残りは「2130（`return_refund`）」を貸方に戻す（返金待ちを元に戻す）、の順に貸方へ入れる。借方 1160 は計画2のまま。振り替え（X）が済むまで待つ規則（計画2の規則4）も変えない。
+- Produces: S22 assert DETAIL `acc_s22_functions`・`acc_s22_function_attrs`・`acc_s22_body_unchanged`（囲みを除いた本文が計画2の S11 の最新の定義と同じ）・`acc_s22_existing_dml_allowlist`（DML は無い）。
+
+- [ ] **Step 1: 失敗する試験を書く。** 注文30,000円（シャツ18,750・パンツ11,250）、両方出荷済みで引かれた額 A = 30,000（S = 30,000・U = 0）、原因の科目の設定あり、手数料の割合 10%。`FREQ-581-AC-01: 返品の返金待ちがある注文でも、成功した返金がある注文でも、引かれた時の仕訳は止まらず入る`、`FREQ-581-AC-02: 返品の届いた日の仕訳が入り返金待ちが16,875円ある注文は、確定で「2130（返品の返金）16,875／1470（判断待ち）16,875」と残り13,125円の費用が入る`、`FREQ-581-AC-02: 引かれた額が返金待ちより小さい（S = 10,000）なら10,000円だけ未払金を消し、費用は立たず、未払金が6,875円残る`、`FREQ-581-AC-03: 返品の返金16,875円が済んだ後の確定は、16,875円を「分けて調べる」の補助に移し、費用は13,125円だけ`、`FREQ-581-AC-03: 返金待ち6,875円と返金済み10,000円が混ざる時は、先に返金待ちを消し、次に返金済みと重なる分を移し、残りだけが費用`、`FREQ-581-AC-03: 返品でない出荷後の返金5,000円がある注文は、5,000円が分けて調べる補助に移り、費用は25,000円`、`FREQ-581-AC-03: 別の dispute で使った分は、同じ返金済みの額を二重に使わない`、`FREQ-581-AC-04: 返品の返金待ちを消して確定した後に全額が遅れて取り下げられると、費用の科目13,125円、返金待ち16,875円（未払金を元に戻す）の順に戻り、補助とどの科目も0かの元の状態になる`、`FREQ-581-AC-04: 分けて調べる補助に移した分は、費用の科目の次に戻る`、`FREQ-581-AC-05: 確定の日までに作った返金が保留（Stripeの結果待ち）の間は、確定は dispute_refund_overlap で待ち、手では閉じられず、返金が済むと入る`、`FREQ-581-AC-05: 確定の日までの返品の届いた日の仕訳が入っていない間は dispute_return_refund_pending で待つ`、`FREQ-581-AC-05: 確定の日より後に作った返金・届いた返品は、相殺に使わない`、`FREQ-581-AC-05: 注文に結び付かない取り消しは待たず、相殺もしない`、`FREQ-581-AC-05: 確定の前の取り下げ（R）は相殺しない`、`FREQ-581-AC-06: 届く順がどうでも最後の残高と年ごとの利益が同じ`（下の表）、`FREQ-581-AC-07: 確定済みの注文の確定の日以前への届いた日の入れ替えを断る`（Task 4 と同じ拒否を、ここでも確定した dispute を作って確かめる）、`FREQ-568-AC-07: 計画2の13行の表が（引かれた時の止めを外した後も）そのまま通る`（返金・返品の無い行は結果が変わらない）、`FREQ-581-AC-08: 返金（成功・遅い失敗）・返品・確定の相殺・振込の届く順をすべて試して、最後の残高と各仕訳の額が同じ`（下の2つ目の表）。
+  `FREQ-581-AC-06` の期待の表（上の設定。R は返金待ちの残高、Z は返金済みの額、費用 X は原因の科目、V は分けて調べる補助、2130 は補助 `return_refund` の最後の残高。日付は確定の日 Y 年12月20日、返品の届いた日は特に書かない時 Y 年12月10日）。同じ行の中で、引かれた時・確定・取り下げの知らせの順、返品の届いた日の仕訳・返金の成功・失敗の流れる順、係を途中で流す回数をすべて入れ替える（出来事 4つの全順列24通りと、各出来事の後に係を流す/流さない）。
+  「4020」「4050」「X」は最後の累計（出荷の売上 30,000 は除く）。「利益への影響」は、この dispute と返品・返金が年の利益に与える額で、出荷の売上 30,000 は含めない（計画2の `FREQ-568-AC-07` の「年ごとの利益」と同じ数え方）。
+  | 場合 | 最後の `dispute_pending` | 最後の 2130（`return_refund`） | 最後の V | X | 4020 | 4050 | 年ごとの利益への影響 |
+  | --- | --- | --- | --- | --- | --- | --- | --- |
+  | 1. 返品なし（計画2の行11と同じ） | 0 | 0 | 0 | 30,000 | 0 | 0 | Y: −30,000 |
+  | 2. 返品あり（R = 16,875）、返金前 | 0 | 0 | 0 | 13,125 | 18,750 | 1,875 | Y: −18,750 + 1,875 − 13,125 = −30,000 |
+  | 3. 返品あり、返金済み（Z = 16,875） | 0 | 0 | 16,875 | 13,125 | 18,750 | 1,875 | Y: −30,000（V は費用にしない。調べる前の仮置きで、貸借対照表の資産） |
+  | 4. 返品あり、一部返金済み（R = 6,875・Z = 10,000） | 0 | 0 | 10,000 | 13,125 | 18,750 | 1,875 | Y: −30,000 |
+  | 5. 2 の後に全額取り下げ（L）。戻りは Y+1 年 | 0 | 16,875 | 0 | 0 | 18,750 | 1,875 | Y: −30,000、Y+1: +13,125（返金待ち 16,875 は元に戻るだけ） |
+  | 6. 3 の後に全額取り下げ（L）。戻りは Y+1 年 | 0 | 0 | 0 | 0 | 18,750 | 1,875 | Y: −30,000、Y+1: +13,125（V 16,875 は資産が減るだけ） |
+  | 7. 部分（S = 10,000）、R = 16,875 | 0 | 6,875 | 0 | 0 | 18,750 | 1,875 | Y: −16,875（返品の分だけ。費用は立たない） |
+  | 8. 返品の届いた日が確定の日より後 | 0 | 16,875 | 0 | 30,000 | 18,750 | 1,875 | Y: −30,000、Y+1: −16,875 |
+  | 9. 保留の返金あり（確定の日までに作った） | 待つ間 30,000。返金が済むと 3 と同じ | 同じ | 同じ | 同じ | 同じ | 同じ | 待つ間は仕訳が増えない |
+  | 10. 返金が引かれた後に「店が返金をやめた」→ その後に確定 | 0 | 0 | 0 | 13,125 | 18,750 | 1,875 | 2 と同じ（返金の仕訳が取り消されて返金待ちが戻り、確定で消えるため） |
+  | 11. 返品でない出荷後の返金5,000円 | 0 | 0 | 5,000 | 25,000 | 5,000（返金の分） | 0 | Y: −5,000 − 25,000 = −30,000 |
+  どの行でも仕訳の本数は、事実が同じなら届く順で変わらない（引かれた時・確定・取り下げは1つの出来事に1本まで）。
+  `FREQ-581-AC-08` の期待の表（注文30,000円・両方出荷済み・A = 30,000・原因の科目の設定あり、手数料の割合 10%、返品の届いた日 Y 年12月10日、確定 12月20日）。出来事（返品の届いた日の仕訳・返金の成功〔12月12日〕・遅い失敗〔戻りは12月15日〕・振込・引かれた時・確定）の知らせと係の流れる順を、全順列と各出来事の後に係を流す／流さないで入れ替える。
+  | 場合 | 最後の `dispute_pending` | 最後の 2130（`return_refund`） | 最後の V | X | 仕訳の額（確定） |
+  | --- | --- | --- | --- | --- | --- |
+  | a. 返金16,875成功 → 12月15日に遅い失敗（返金待ち16,875が戻る） → 確定 | 0 | 0 | 0 | 13,125 | 2130 16,875 消し・X 13,125 |
+  | b. 返金16,875成功 → 確定（失敗なし） | 0 | 0 | 16,875 | 13,125 | V 16,875・X 13,125 |
+  | c. 12月14日に振込10,000（返金待ちに対して） → 確定 | 0 | 0 | 10,000 | 13,125 | 2130 6,875 消し・V 10,000・X 13,125 |
+  | d. 確定の後に、確定の日以前の振込の日を入力 | 入力は断られ、上の行の結果は変わらない | | | | |
+  | e. 返金の成功・失敗が確定の知らせより後に同期される（取引の日は確定の日以前） | 待つ間 30,000。同期の後は a と同じ | | | | 待つ間は仕訳が増えない |
+  | f. 返金が error のまま確定の知らせが流れ、あとで成功（取引の日は確定の日以前） | 待つ間 30,000。成功の後は b と同じ | 0 | 16,875 | 13,125 | V 16,875・X 13,125 |
+- [ ] **Step 2（controller）: RED を測る。** 上の DB suite。
+- [ ] **Step 3: S22 を実装する。** 計画2の S11 の最新の定義を写し、囲みの4か所だけ変える。R・Z の計算と戻し先の計算は、それぞれ1つの plpgsql の関数にまとめ、C と L が同じ関数を使う。
+- [ ] **Step 4（controller）: GREEN を測る。** 共通 verify。並行は3連続成功。計画2の dispute の suite（`accounting_p2_dispute_*`）が、止め2つの試験以外は無改造で通る。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): カード会社の取り消しの確定を返品の返金待ちと返金済みと相殺する`
+
+### Task 9: 受注高・照合の返金の引き方と、消費税用の返金の一覧
+
+controller が別セッションへ先に知らせる（計画2の読み口を作り直す）。Task 8 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-582・583 の自分の AC の行を、同じコミットで6列の表へ足す。要求管理ルール）
+- Create: `supabase/migrations/<ts23>_accounting_p3_intake_tax_reads.sql`、`tests/integration/db/accounting_p3_intake_reads.integration.test.ts`、`tests/integration/db/accounting_p3_stripe_reconciliation.integration.test.ts`、`tests/integration/db/accounting_p3_tax_refunds.integration.test.ts`
+- Modify: `tests/integration/db/accounting_p3_migration_asserts.integration.test.ts`、計画2の受注高の試験（`accounting_p2_intake_*`）は直さない（手入力の仕訳の fixture のまま計画3の後も通る。計画2の `FREQ-571-AC-06` の手数料 1,000円の例もそのまま残す）。計画3の係で作る同じ例の試験を新しく足す（`FREQ-582-AC-05`。手数料は 10% の 1,875円。違いはオーナーへの報告に書く）
+- Test: 上の DB 3 suite
+- Read: 計画2 Task 7（受注高の読み口の本文）と Task 4（`get_stripe_balance_reconciliation`）、設計 8-2・8-3・5-j
+
+**Interfaces:**
+- Consumes: Task 6・7・8 の仕訳、計画2 S12・S9 の読み口、`accounting_periods`、`orders`・`order_items`。
+- Produces（作り直す読み口。最新の定義を一字も変えずに写し、足す所だけ囲む）:
+  - `public.list_order_intake_events`: `pre_shipment_cancel`（−）を、種類 `pre_shipment_refund`・`refund_failed` の仕訳と、それらの取り消しの仕訳について、**2150 と 2130（補助 `refund_owed_pre`）の借方−貸方の合計の符号を逆にした額**にする（日は仕訳の日）。成功は −P、振込で借りを返した日は −P、引かれた後の失敗は +P（戻りの日）、引かれる前の失敗（2150／借り）は 0、店が返金をやめた取り消し（成功の仕訳の取り消し）は +P（戻りの日）。種類 `return_refund` の仕訳は受注高を動かさない（出荷後の返金は返品の行）。8-h2 の分け方は Task 3 の事実の P・Q のままで、ここでは再計算しない。
+  - `public.get_intake_reconciliation`: 1段目の例外の行 `return_refund_2130` を、期間の中の 2130（補助 `refund_owed_pre`）の残高の増減の符号を逆にした額にする（`unexplained` の式は変えない。引かれる前の失敗は −P、引かれた後の失敗は −P、振込で返した日は +P で、2150 の動きから受注高の引きを除いた差を説明する）。2段目の例外の行 `dispute_confirmed_by_account` に、確定の仕訳の借方を勘定ごと（2130〔返品の返金待ち〕・1470〔`dispute_refund_overlap_review`〕を含む）に示す。
+  - `public.get_intake_breakdown`（8-h）: 返金の行を内訳に出す。出荷前の返金の行（`pre_shipment_cancel`。Task 9 の符号の規則）と、出荷後の返金の行（`return_refund` の仕訳。受注高には足し引きしない）を別の欄にし、`breakdown_ok`（割引の前の商品の額 − 割引 − 出荷前の取り消し ＝ 受注高）が真のまま保たれる。試験は返金のある期間で `breakdown_ok` が真であること。
+  - `public.get_intake_reconciliation` の 1段目の `sales_before_return` に、種類 `refund_abandoned` の『2150／4010』（Task 6 の店が返金をやめた時の補い）の 4010 を足す（注文番号つきの 4010 のうち出荷とその補い）。
+  - `public.get_stripe_balance_reconciliation`: 計画3が作り直し、`planned_p3` を『`refund` 系の種類の残高の取引のうち、計画3の印（その取引の番号を使う `pre_shipment_refund`・`return_refund` の仕訳、`refund_failed` の仕訳、または解決済みの印）がまだ無い物』と数える。仕訳が入った取引は外れ、「計画3で計上する種類」の差が0になる（計画2の願いにはしない）。
+- Produces（消費税用の返金の一覧。STABLE・service_role 専用・actor なし）:
+  - `public.list_consumption_tax_refunds(_from date, _to date, _limit integer DEFAULT 200, _after_date date DEFAULT NULL, _after_key text DEFAULT NULL) RETURNS jsonb` → `{rows:[{entry_id,line_key,refund_date,order_id,order_number,amount,tax_rate,tax_amount,item_summary,original_sale_date,sale_period_status,refund_period_status,exclusion}],next_after_date,next_after_key,retention_note}`。行は符号つきの帳簿の形: お金が客へ出た日の `+`（種類 `pre_shipment_refund`・`return_refund` の仕訳の貸方 1160・1040 の額。日は仕訳の日＝残高の取引の日または振込の日）、お金が戻った日の `−`（`refund_failed` の引かれた後の戻り、成功の仕訳の取り消し）。`tax_rate` は 10（`orders` に税の別欄が無いので衣料の標準税率とする。未確認 #9）、`tax_amount` は `amount` の絶対値 × 10 ÷ 110 を切り捨てて符号を戻す。`item_summary` は返金の明細の品名×数量（最大5件。無ければ注文の品）。`original_sale_date` はその注文の取り消されていない出荷の仕訳の最も早い日（無ければ NULL）。`sale_period_status`・`refund_period_status` は、それぞれの日を含む期間の `consumption_tax_status`（`taxable` は `consumption_taxable_from` 以後の日だけ）。`exclusion` は ①`before_sale`（元の売上が無い＝出荷前の返金。消費税の返還等に当たらない）②`exempt_sale_14_1_6`（元の売上の期間が免税）③`after_exit_14_1_7`（元の売上の期間が課税で返金した日の期間が免税）④`none`。`key` は `<entry_id>:<line_no>`。名前・メール・住所を含まない。`retention_note` は「消費税法施行令58条の2により7年間保存する」の旨の固定の文。
+  - `public.get_consumption_tax_refund_totals(_from date, _to date) RETURNS jsonb` → `{included_amount,included_tax,excluded_amount,excluded_by:{before_sale,exempt_sale_14_1_6,after_exit_14_1_7}}`（`exclusion='none'` だけが included）。
+- Produces: S23 assert DETAIL `acc_s23_functions`・`acc_s23_function_attrs`・`acc_s23_body_unchanged`・`acc_s23_reads_stable`・`acc_s23_existing_dml_allowlist`（DML は無い）。
+
+- [ ] **Step 1: 失敗する試験を書く。** 設計 8-3 の例を計画3の仕訳で固定する（1/20 に支払い18,750、2/3 に出荷、3/10 に返品が届き〔手数料の割合10%〕、3/12 に返金16,875）。`FREQ-582-AC-05: 1月から3月まで、期首の受注残＋受注高−売上高（返品の前）＝期末の受注残が合い、説明のつかない差は0`、`FREQ-582-AC-05: 3月の売上高（返品の前）0−返品18,750＝帳簿の売上高−18,750、返品の手数料の売上1,875は別の行`（計画2の `FREQ-571-AC-06` とは別に、計画3の係で作る同じ例）、`FREQ-582-AC-01: 出荷前の返金は返金の残高の取引の日の月の受注高から引かれる`、`FREQ-582-AC-02: 引かれる前に失敗して借りにした出荷前の返金は、立てた日の受注高から引かれず、例外の行 return_refund_2130 で説明され、説明のつかない差は0`、`FREQ-582-AC-02: その借りを振込で返した日に受注高から引かれ、例外の行が戻って差は0`、`FREQ-582-AC-02: 引かれた後に失敗した出荷前の返金は、成功の日に引かれ、戻りの日に足し戻され、振込で返した日に引かれる（二重に引かない）`、`FREQ-582-AC-03: 店が返金をやめた取り消しは、戻りの取引の日に足し戻る`、`FREQ-582-AC-04: 出荷前と出荷後が混ざった返金は、出荷前の分だけが受注高から引かれ、出荷後の分は返品の行になる`、`FREQ-582-AC-04: 品を決めない額は、出荷した分とまだの分の値打ちの比で分かれ、出荷前の分だけが受注高から引かれ、出荷後の分が返品の額になる`、`FREQ-582-AC-06: Stripe の残高の照合で、返金系の取引の仕訳が入った後の「計画3で計上する種類」の差が0で、入る前は同じ額が planned_p3 に出る`、`FREQ-582-AC-06: 入金途上1150は足さずに別に出る（計画2の試験が通る）`、`FREQ-571-AC-05: 計画2の受注高・照合の試験が無改造で通る`。消費税用: `FREQ-583-AC-01: 返金した年月日・注文番号・品の内容・税率・税額・元の売上の日が出て、名前・メール・住所の鍵が無い`、`FREQ-583-AC-01: 返金した日は残高の取引の日（振込なら振込の日）`、`FREQ-583-AC-02: 元の売上の期間が免税の返金は exempt_sale_14_1_6 として included の合計から外れる`、`FREQ-583-AC-02: 元の売上が課税で返金した日の期間が免税なら after_exit_14_1_7 として外れる`、`FREQ-583-AC-02: 出荷前の返金は before_sale として外れる`、`FREQ-583-AC-02: 元も返金も課税の期間なら none で合計に入る`、`FREQ-583-AC-02: 引かれた後の失敗の戻りは − の行で出て、同じ返金の + の行と合わせて0になる`、`FREQ-583-AC-03: 続きの目印で最後まで読め、合計が合う（二重にも抜けも無い）`、`FREQ-583-AC-04: 7年保存の注記が応答に含まれる`、`FREQ-583-AC-03: 読み口は STABLE で service_role だけが呼べる`。
+- [ ] **Step 2（controller）: RED を測る。** 上の DB suite。
+- [ ] **Step 3: S23 を実装する。** 作り直す読み口は最新の定義を一字も変えずに写し、足す所を囲む。日はすべて仕訳の `entry_date`（日本時間の日）。読み口は1回で大量に読まない作り（続きの目印）にする。
+- [ ] **Step 4（controller）: GREEN を測る。** 共通 verify（読み口は STABLE の assert）。計画2の受注高・照合の suite が無改造で通る。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 受注高と照合の返金の引き方を直し消費税用の返金の一覧を追加する`
+
+### Task 10: store・route・計上係の呼び出しの追加
+
+controller が別セッションへ返金の route（`src/app/api/admin/orders/[id]/refund/**`）・返品の route（`src/app/api/admin/returns/[returnId]/refund/route.ts`・`…/receive/route.ts`）・`src/lib/orders/refund/**`・`src/lib/orders/returns/**`・`src/lib/orders/shipment-slips/**` の変更を先に知らせる。Task 9 のコミット後に始める。決済のファイルと `src/lib/stripe/**` は触らない。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-575・579・580・583・584 のうちこの Task が証明する AC の行を、同じコミットで6列の表へ足す。要求管理ルール）
+- Create: `src/lib/accounting/return-refund-schema.ts`、`src/lib/accounting/return-refund-store.ts`（`server-only`）、`src/app/api/admin/accounting/return-arrival/route.ts`、`src/app/api/admin/accounting/return-options/route.ts`、`src/app/api/admin/accounting/refund-states/route.ts`、`src/app/api/admin/accounting/refund-cancellations/route.ts`、`src/app/api/admin/accounting/refund-bank-transfers/route.ts`、`src/app/api/admin/accounting/tax-refunds/route.ts`、対応する単体（`tests/unit/lib/accounting/return-refund-store.test.ts`・`return-refund-schema.test.ts`、`tests/unit/api/admin/accounting-return-arrival-route.test.ts`・`accounting-return-options-route.test.ts`・`accounting-refund-cancellations-route.test.ts`・`accounting-refund-bank-transfers-route.test.ts`・`accounting-tax-refunds-route.test.ts`）
+- Modify: `src/lib/accounting/accounting-types.ts`（`ACCOUNTING_ERRORS` に共通の型の節の3行）、`src/lib/accounting/posting-types.ts`・`posting-store.ts`（`PostingRunResult` に `refunds`・`returns`）、`src/lib/accounting/posting-runner.ts`（`safeRunAccountingPosting` の呼び出し元に `refund`・`return` を足す（`manual` は計画2にある））、`src/lib/orders/refund/refund-store.ts`（エラー表に `ACCOUNTING_DISPUTE_HOLD` → `dispute_hold`）、`src/lib/orders/refund/refund-route-support.ts`・`refund-messages.ts`（409 と本文）、`src/app/api/admin/orders/[id]/refund/route.ts`・`refund/confirm/route.ts`・`src/app/api/admin/returns/[returnId]/refund/route.ts`（`dispute_hold` を 409 `{code:'DISPUTE_HOLD',orderIds}` に。応答の後に `after()` で `safeRunAccountingPosting('refund')`）、`src/app/api/admin/orders/[id]/returns/materials/route.ts` と、返金の材料を返す `src/app/api/admin/orders/[id]/refund/route.ts` の GET（応答に `disputeHold:boolean` を足す）、支払い済みの注文の取り消しを返金にする `src/app/api/admin/orders/[id]/status/route.ts`（`submitPaidOrderCancel`。`dispute_hold` を 409 `DISPUTE_HOLD` に）、`src/lib/orders/returns/return-store.ts`・`return-route-support.ts`・`return-types.ts`・`src/app/api/admin/returns/[returnId]/receive/route.ts`（`arrivedOn` を zod〔`YYYY-MM-DD`、省略可〕で受け、`RETURN_ARRIVAL_DATE_INVALID` を 400 に。応答の後に `after()` で `safeRunAccountingPosting('return')`）、`src/lib/orders/shipment-slips/shipment-slip-store.ts`・`src/app/api/admin/shipment-slips/[id]/confirm/route.ts`（DB の `ACCOUNTING_DISPUTE_HOLD` を、計画2の事前の止めと同じ 409 `DISPUTE_HOLD` に）、各 route・store の既存の単体
+- Test: 上の単体
+- Read: 計画2 Task 10 の route の書き方と `accounting-route.ts`（計画1）、`src/lib/orders/refund/refund-store.ts:40-100`（エラー表）、`src/app/api/admin/returns/[returnId]/receive/route.ts`、`src/lib/discounts/admin-discount-route.ts`（書込の順序の手本）
+
+**Interfaces:**
+- Consumes: Task 1〜9 の public 入口（`admin_correct_return_arrival_date`・`get_return_arrival_info`・`get_return_arrival_option`・`admin_set_return_arrival_option`・`list_refund_accounting_states`・`admin_decide_refund_cancellation`・`admin_record_refund_bank_transfer`・`list_consumption_tax_refunds`・`get_consumption_tax_refund_totals`・`get_return_journal_trace`・`get_order_dispute_holds`）。
+- Produces（route。順序: 認可 → CSRF（書込）→ IP の制限 → actor の制限 → zod → store → 監査 → 応答。回数の制限の窓は 600 秒。読み取りは成功・失敗とも no-store）:
+
+| route | 権限 | 中身 |
+| --- | --- | --- |
+| `GET return-arrival?receiptIds=`、`POST return-arrival` | GET: `admin.orders.read`、POST: `admin.accounting.entries.correct` | 届いた日と直しの跡（最大200件）。POST は body `{receiptId,newOn,reason,expectedVersion,requestKey}`。監査 `admin.accounting.return.arrival`（受け取りの番号と結果だけ。理由の本文・日を入れない） |
+| `GET/PUT return-options` | GET: `admin.finance.read`、PUT: `admin.accounting.settings.manage` | 配達日を使う設定（既定オフ）。監査 `admin.accounting.return.option`（結果だけ）。応答に「追跡のサービスに返品の追跡番号を登録できるようになってから使えます」の注意の鍵 |
+| `GET refund-states` | `admin.finance.read` | 取り消しの区分待ち・借りが残る返金の一覧（名前・メールを含めない） |
+| `POST refund-cancellations` | `admin.accounting.entries.correct` | body `{refundId,kind:'abandoned'\|'owed',reason,requestKey}`。監査 `admin.accounting.refund.cancel_decision`（返金の番号と区分だけ） |
+| `POST refund-bank-transfers` | `admin.finance.manage` | body `{orderId,origin,amount,bankDate,bankTxnNo,note,requestKey}`。未来の日・額0・長すぎるメモは zod で400。監査 `admin.accounting.refund.bank`（結果だけ。金額・番号を入れない） |
+| `GET tax-refunds?from=&to=&limit=&afterDate=&afterKey=` | `admin.finance.read` | 一覧と合計（期間は月単位の範囲）。no-store |
+
+- Produces（既存の route の変更）: 返金の route 3本は、DB が `ACCOUNTING_DISPUTE_HOLD` を返したら 409 `{error:'カード会社の判断待ちの注文が含まれているため、返金も出荷もできません。',code:'DISPUTE_HOLD',orderIds:[…]}`（Stripe は呼んでいないので、再試行の対象にしない）。返金の材料の route は `get_order_dispute_holds([注文])` を読み、`disputeHold` を返す。受け取りの route は `arrivedOn` を DB 関数へ渡し、`RETURN_ARRIVAL_DATE_INVALID` を 400 `届いた日を確かめてください。` にする。発送票の確定の route は、DB の拒否も計画2の事前の止めと同じ 409 にする（二重の守り）。
+- Produces（計上係の呼び出し）: 返金の route・受け取りの route・返金の取り消しの区分・振込の記録の各 route は、応答を返した後に `after()` で `safeRunAccountingPosting` を呼ぶ（応答を遅らせない。失敗は握る）。Stripe の知らせの worker は計画2のとおり1回の処理の終わりに1回呼ぶので、返金の結果（`refund.created/updated/failed`）の仕訳はそこで入る。
+
+- [ ] **Step 1: 失敗する試験を書く。** `FREQ-575-AC-01: 受け取りのrouteは arrivedOn を DB へ渡し、省略すると渡さない`、`FREQ-575-AC-01: 届いた日が不正（未来・申し込みの前・確定済み）なら 400 で、store を呼んだ後の副作用が無い`、`FREQ-575-AC-02: 届いた日の直しのrouteは aal1・権限なし・CSRF欠落・429・不正入力で store を呼ばず、理由の本文と日を監査に入れない`、`FREQ-575-AC-04: 設定のPUTは権限のある人だけで、版違いは409`、`FREQ-579-AC-03: 取り消しの区分のrouteは権限のある人だけで、区分と理由が不正なら400、2回目は409`、`FREQ-579-AC-04: 振込の記録のrouteは未来の日・額0・長すぎるメモを断り、同じ要求番号の再送は前の結果`、`FREQ-579-AC-04: 振込の記録の監査に金額・銀行の取引の番号を入れない`、`FREQ-580-AC-01: 返金のroute3本は DISPUTE_HOLD を 409 とコードで返し、再試行しない`、`FREQ-580-AC-04: 返金の材料のrouteが判断待ちの注文で disputeHold を真にする`、`FREQ-580-AC-02: 発送票の確定のrouteは DB の ACCOUNTING_DISPUTE_HOLD も 409 DISPUTE_HOLD にする`、`FREQ-579-AC-06: 返金・受け取り・区分・振込のrouteの後に係が呼ばれ、係の失敗は応答を失敗にしない`、`FREQ-583-AC-01: 消費税用の一覧のrouteは no-store で、応答に名前・メールの鍵が無く、期間と続きの目印を検証する`、`FREQ-583-AC-03: 一覧の続きの目印が不正なら400`、`FREQ-576-AC-06: 返金・返品・発送票の既存のrouteの単体が、エラー表と受け取りの引数の追加以外は無改造で通る`、`FREQ-562-AC-05: 係の結果の型に refunds と returns がある`。
+- [ ] **Step 2: RED を測る。** `npx.cmd jest tests/unit/lib/accounting tests/unit/lib/orders tests/unit/api --runInBand --testPathPattern "accounting|refund|return|shipment-slip"`。
+- [ ] **Step 3: Interfaces どおり実装する。** 書込の route は計画1の `accounting-route.ts` の共通の流れを使う。
+- [ ] **Step 4: GREEN を測る。** 単体、型、lint。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 返品の届いた日と返金の取り消しと振込と消費税用の一覧のAPIを追加する`
+
+### Task 11: 画面（届いた日・取り消しの区分・振込の記録・止めの文・消費税用の一覧）
+
+controller が別セッションへ `OrderReturnReceiveDialog.tsx`・`OrderRefundDialog.tsx`・`OrderReturnRefundDialog.tsx`・`RefundFlowContent.tsx`・`CostProfitSection` 系・`use-cost-profit-model.ts` の対象を先に知らせる。Task 10 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-575・579・580・583・584 の自分の AC の行を、同じコミットで6列の表へ足す。要求管理ルール）
+- Create: `src/components/OrderReturnArrivalDialog.tsx`、`src/components/cost-profit/refund-cancellation-dialog.tsx`、`src/components/cost-profit/refund-bank-transfer-form.tsx`、`src/components/cost-profit/tax-refunds-panel.tsx`、`tests/unit/components/OrderReturnArrivalDialog.test.tsx`、`tests/unit/components/cost-profit/refund-cancellation-dialog.test.tsx`、`refund-bank-transfer-form.test.tsx`、`tax-refunds-panel.test.tsx`
+- Modify: `src/components/OrderReturnReceiveDialog.tsx`（届いた日の入力。既定は今日、未来は選べない。判断待ちの注文では「すぐ返金」を選べなくし理由を出す）、`OrderReturnsDialog.tsx`（届いた日と直した跡を出し、権限のある人に「届いた日を直す」を出す）、`OrderRefundDialog.tsx`・`OrderReturnRefundDialog.tsx`・`RefundFlowContent.tsx`（判断待ちの理由を出して送れなくする）、支払い済みの注文の取り消しの確認の画面（`submitPaidOrderCancel` を呼ぶ画面を `grep -rln submitPaidOrderCancel src` で見つける。同じ止めの文）、`src/components/cost-profit/pending-view.tsx`（計画2。新しい2つの理由のやさしい文と、`refund_cancel_undecided` の行に「取り消しの区分を選ぶ」の操作）、`reconciliation-view.tsx`（消費税用の返金の一覧を足す）、`stripe-settlement-view.tsx`（振込の記録の入力）、`settings-view.tsx`（配達日を使う設定。年の途中で切り替えない注意と、追跡のサービスに登録できるようになってから使える注意）、`src/components/ShopReturnSettingsSection.tsx`（Task 2。手数料の入力欄の無効化の文）、`use-cost-profit-model.ts`、既存の画面の単体
+- Test: 上の RTL
+- Read: Task 10 の route、計画2 Task 11 の `pending-view.tsx`、`src/components/DiscountSection.tsx`（`clientFetch`・非 ok の本文の扱い）
+
+**Interfaces:**
+- Consumes: Task 10 の route（`clientFetch`）。非 ok の応答は本文を読み切るか `response.body?.cancel()` を await する。権限は計画1と同じく、無い利用者にはボタンを出さず読み取りだけにする。
+- Produces: ①受け取りの画面: 「届いた日」（既定は今日。前の日は選べる。未来は選べない）。判断待ちの注文では「すぐ返金」を無効にして『カード会社の判断待ちのため、今は返金できません。受け取りだけ記録できます』と出す。②返品の詳細: 届いた日と直した跡（版・前後の日・理由・人）、権限のある人に「届いた日を直す」（理由必須、確定済みの取り消しがある時は理由つきで断られる）。③返金・返品の返金の画面: 判断待ちの注文では送れず、理由を出す（言葉は計画2の発送票の文と同じ「カード会社の判断待ち」）。④計上待ちのタブ: `refund_prior_unposted`『同じ注文の前の返金の仕訳がまだ入っていません。入ると自動で計上されます。』、`refund_cancel_undecided`『この返金は Stripe 側で取り消されました。店が返金をやめたのか、返すつもりのまま返せなかったのかを選んでください。』と、区分の選択（2つの選択肢と理由。選ぶと反映される旨）。⑤振込の記録: 注文・借りの種類・額・振込の日・銀行の取引の番号・メモ（未来の日と額0は送る前に止める）。⑥照合のタブの「消費税用の返金」: 期間を選び、一覧（返金した日・注文番号・品の内容・税率・税額・元の売上の日・対象外の理由）と合計（含む／外す）、『7年間保存します』の注記。⑦設定: 配達日を使う設定（既定オフ）。
+- Produces: 文は穏やかな日本語・絵文字なし・感嘆符なし。390/768/1280px で崩れない（確かめは Task 12）。
+
+- [ ] **Step 1: 失敗する試験を書く。** `FREQ-584-AC-01: 受け取りの画面で届いた日を選べ、既定は今日で、未来の日は選べない`、`FREQ-584-AC-01: 判断待ちの注文では「すぐ返金」が無効になり理由が出て、相談を選べば受け取れる`、`FREQ-575-AC-02: 返品の詳細に届いた日と直した跡が出る`、`FREQ-584-AC-02: 届いた日を直す操作は権限のある人だけに出て、理由が空なら送れない`、`FREQ-575-AC-01: 確定済みの取り消しがあって断られた時、理由の文が出る`、`FREQ-584-AC-04: 返金の画面は判断待ちの注文で送れず、理由を出す`、`FREQ-580-AC-04: 返金の画面と発送票の確定画面の文が同じ「カード会社の判断待ち」の言葉になる`、`FREQ-569-AC-01: 計上待ちのタブに新しい2つの理由のやさしい文が出て、名前やメールが出ない`、`FREQ-584-AC-02: 取り消しの区分の選択は権限のある人だけに出て、2つの選択肢と理由が必要で、送ると二重に押せない`、`FREQ-579-AC-03: 区分を選ぶと一覧から消える（再取得する）`、`FREQ-584-AC-03: 振込の記録は未来の日と額0を送る前に止める`、`FREQ-579-AC-04: 振込の記録は借りの残高を超える額で出たエラーの文を出す`、`FREQ-583-AC-01: 消費税用の返金の一覧は項目と対象外の理由を出し、名前やメールを出さない`、`FREQ-583-AC-04: 一覧に7年間保存する旨が出る`、`FREQ-575-AC-04: 配達日の設定は既定がオフで、切り替える時に年の途中の注意が出る`、`FREQ-578-AC-05: 返品の設定の画面は手数料の入力欄が無効で理由が出る`（Task 2 の文）、`FREQ-584-AC-05: 非okの応答の本文を読み切る`。
+- [ ] **Step 2: RED を測る。** RTL 8本。
+- [ ] **Step 3: 実装する。** 作る順: ①受け取りの画面 → ②返品の詳細と直しの画面 → ③返金の画面の止め → ④計上待ちの文と区分の選択 → ⑤振込の記録 → ⑥消費税用の一覧 → ⑦設定。各段で RTL が通ることを確かめる。
+- [ ] **Step 4: GREEN を測る。** 単体、型、lint。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 返品の届いた日と返金の取り消しと振込と消費税用の一覧の画面を足す`
+
+### Task 12: 新しい E2E
+
+controller が別セッションへ `docs/05_Quality/tests/test-spec.md` の更新を先に知らせる。
+
+**Files:**
+- Create: `e2e/FR-ADMIN-137-accounting-return-arrival.spec.ts`、`e2e/FR-ADMIN-138-accounting-refund-journals.spec.ts`、`e2e/FR-ADMIN-139-accounting-dispute-holds-offset.spec.ts`、`e2e/FR-ADMIN-140-accounting-return-settings.spec.ts`
+- Modify: `e2e/accounting-test-utils.ts`（計画1・2。`withAccountingScenario` に `seedReturnFlow`・`seedRefundFlow`・`seedDisputeHold`・`receiveReturn`・`runPosting` を足す）、返品・返金・発送票の既存の E2E のうち画面の文・引数が変わった物（期待の文字だけ。題は変えない。`grep -l "return\|refund\|shipment-slip" e2e` で数える）
+- Test: 新規4本＋既存の会計・KPI・返品・返金・発送票の E2E の回帰
+- Read: `e2e/admin-session-test-utils.ts`、`e2e/order-admin-test-utils.ts`、`e2e/accounting-test-utils.ts`（計画1・2）、`e2e/FR-ADMIN-127-discount-refund-amounts.spec.ts`、`e2e/FR-ADMIN-074-refund-dialog.spec.ts`、`e2e/FR-ADMIN-093-return-guards-history.spec.ts`、`e2e/FR-ADMIN-117-shipment-slip-actions.spec.ts`
+
+**Interfaces:**
+- Consumes: S15〜S23・route・画面。実 route の aal2/live-session は `createAdminSessionActor(db,role,aal)`。Stripe は呼ばず、`stripe_*` の行を DB に直接入れる（表示の証拠であり、実 Stripe の証拠ではない）。
+- Produces: E2E は今日の日付だけを使う（切り替えの日を動かせず、G の確定は今日より後の出荷日を断るため）。年をまたぐ例・届いた日を前の日にする例は DB の試験で確かめ、E2E では今日と昨日（`cutover_on` 以後）を使う。試験ごとに固有の IP。仕訳・期間・返金の行は消せないので、計画1・2と同じく `db reset` を前に流し、期間は `seedAccountingPeriod` が作る。
+
+| spec | 新規テストの正確な題と assert（各 390/768/1280px） |
+| --- | --- |
+| ADMIN-137 | `FREQ-575-AC-01: 返品を受け取る時に届いた日（昨日）を選ぶと、計上後の仕訳帳に届いた日の仕訳が出る`、`FREQ-575-AC-02: 届いた日を直すと取り消しと新しい日の仕訳が並び、直した跡が返品の詳細に出る`、`FREQ-578-AC-02: 相談で受け取り、額を決めて返金すると、差の仕訳が決めた日に出る`、`FREQ-584-AC-01: 未来の届いた日は選べない`、`FREQ-584-AC-06: 受け取りの画面・返品の詳細・計上待ちのタブ・消費税用の返金の一覧が3つの幅で横にはみ出さない` |
+| ADMIN-138 | `FREQ-577-AC-03: 出荷前に返金したパンツが出荷の売上から引かれ、出荷の仕訳が10,250円になる（本物のroute）`、`FREQ-579-AC-02: 失敗した返金は返金の未払いに立ち、振込で返すと消える`、`FREQ-579-AC-03: 取り消された返金は計上待ちに出て、「店が返金をやめた」を選ぶと仕訳が取り消される`、`FREQ-583-AC-01: 消費税用の返金の一覧に返金が出て、免税の売上の返金は対象外になる` |
+| ADMIN-139 | `FREQ-580-AC-01: 判断待ちの注文の返金は止まり、理由が出る（本物のroute。DB の拒否）`、`FREQ-580-AC-02: 判断待ちの注文を含む発送票は、事前の止めをすり抜けても DB が止める`、`FREQ-581-AC-02: 返品の返金待ちがある注文の確定で、返金待ちが消えて残りだけ費用になる`、`FREQ-581-AC-03: 返金済みと重なる分は「分けて調べる」に出て、費用にならない` |
+| ADMIN-140 | `FREQ-578-AC-05: 返品の設定の手数料欄は無効で、割合の手数料は設定できる`、`FREQ-575-AC-04: 配達日を使う設定は既定がオフで切り替えられ、サポーターは切り替えられない` |
+
+- [ ] **Step 1: 上表の失敗する試験を書く。** helper をまだ実装しない。表示差し替えと DB 経由の別を test-spec に明記し、実 Stripe の証拠と誤記しない。
+- [ ] **Step 2（controller）: RED を測る。** production build/手元 DB を用意し `npx.cmd playwright test e2e/FR-ADMIN-137-accounting-return-arrival.spec.ts e2e/FR-ADMIN-140-accounting-return-settings.spec.ts --workers=1 --retries=0`。helper 未定義の失敗は道具の RED であり画面の回帰の RED とは言わない。
+- [ ] **Step 3: helper と4本を接続する。** exact な role/name を使い、応答の本文を読み切る。rate-limit を全体で無効にせず IP を分ける。計上は画面の「今すぐ計上」または `runPosting`（DB の入口）で流す。
+- [ ] **Step 4（controller）: GREEN を測る。** `npm.cmd run build` 後、port3000 の production server で新4本と「会計の E2E 回帰の対象」と KPI・返品・返金・発送票の E2E の全部、390/768/1280 を `--retries=0` で流し、件数・pass/fail/skip を実測で記録する。3000番に残った E2E 用でないアプリを先に止める。
+- [ ] **Step 5（controller）: Files だけコミットする。** `test(accounting): 返品の届いた日と返金の仕訳と判断待ちの止めのE2Eを追加する`
+
+### Task 13: 文書の正本の更新
+
+controller が別セッションへ先に知らせる（`db-migrations.md`・`test-spec.md`・台帳・`docs/06_Operations/README.md` は共有の文書）。会計・KPI は `scripts/trace/scope.json` の範囲の外なので、CLAUDE.md の「範囲に入っていない領域」の表に従い、同じコミットで直す。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-575〜584 の6列の行。各 Task が足した物を確かめ、足りない行を足す）、`docs/03_BasicDesign/api/api-spec.md`・`route-inventory.md`（Task 10 の新 route、受け取りの `arrivedOn`、返金の route の 409 `DISPUTE_HOLD`、返金の材料の `disputeHold`）、`docs/03_BasicDesign/data/er.md`（S15 の表、`order_return_receipts.arrived_on`）、`docs/03_BasicDesign/ui/screen-list.md`・`screen-flow.md`（届いた日の直し・取り消しの区分・振込の記録・消費税用の返金）、`docs/03_BasicDesign/architecture/`（返金・返品の事実を残す流れ・計上係の呼ぶ順・鍵の順・判断待ちの止め）、`docs/04_DetailDesign/pages/` の返品・返金・会計の頁・`sequence/`（返金の成功／失敗／取り消し／振込、返品の届いた日と額の決定、カード会社の確定の相殺）・`states/`（返金の状態の履歴、取り消しの区分）・`docs/04_DetailDesign/shared/finance.md`（2130 の補助3つ、1470 の補助、4050）、`docs/05_Quality/tests/test-spec.md`（手で書く）、`docs/06_Operations/db-migrations.md`（S15〜S23 の目的・適用順・assert・戻し方。作り直した関数の一覧と、直した既存の試験の表）、`docs/06_Operations/README.md`、`docs/05_Quality/reviews/code/2026-09-25-working-diff-security-review.md`（台帳の S-2・4-e3・返金の状態欄）
+- Create: `docs/06_Operations/accounting-p3-returns-refunds.md`
+- Test: `npm.cmd run validate-docs`、`npx.cmd jest tests/unit/docs --runInBand`
+
+**Interfaces:**
+- Consumes: Task 1〜12 の確定した名前と route。
+- Produces: `accounting-p3-returns-refunds.md`: ①返金・返品の事実を残す仕組み（作り直した関数・事実の表・失敗した時の見方）、②取り消された返金の扱い（区分の選び方：店が返金をやめた／返すつもりのまま返せなかった、選ぶまで計上待ちに残る、選んだ後の仕訳）、③振込で返した時の記録の手順（借りの種類・銀行の取引の番号・同じ番号は1回）、④判断待ちの注文の返金と出荷が止まること（止まる条件・自動の返金と Stripe の画面の返金は止まらないこと・解けるのは確定か取り下げの後）、⑤カード会社の取り消しが確定した時の相殺の見方（返金待ち・返金済みと重なる分・分けて調べる補助の使い方）、⑥届いた日の直し（確定済みの取り消しがある注文では断られること）、⑦消費税用の返金の一覧の見方と対象外の理由、⑧返送料・交換の手数料を使いたくなった時の手順（先に仕訳の決まりを設計に足す）、⑨本番で試しの返金・返品を作らない決まり。
+- Produces: 各文書の冒頭の確認日の更新。`docs/05_Quality/reports/traceability-report.md` は自動生成なので手で直さず `npm run report:traceability` で作り直す。更新不要と判断した文書は理由を完了報告に1行書く。
+
+- [ ] **Step 1: 文書を直す。** 上の Files の順に、Task 1〜12 の実装の確定後の名前で書く。
+- [ ] **Step 2: 検証する。** `npm.cmd run validate-docs` と `npx.cmd jest tests/unit/docs --runInBand` が通る。`npm.cmd run report:traceability` の生成差分を確認し、要求表から全新 AC の試験まで辿れる。
+- [ ] **Step 3（controller）: Files だけコミットする。** `docs(accounting): 計画3の返品と返金の正本を更新する`
+
+### Task 14（controller）: 全体検証・最終レビュー・本番を読む・適用・記録
+
+controller が別セッションへ `docs/06_Operations/db-migrations.md`・`test-spec.md`・台帳の更新を先に知らせる。**前提: 計画1の S0〜S5 と計画2の S6〜S14 が本番に当たっていること**（当たっていなければここで止め、計画1・2の Task 16 を先に終える）。
+
+**Files:**
+- Create: `.superpowers/sdd/2026-11-04-accounting-p3/progress.md`、`final-review.md`、`production-pre-read.md`、`verification-report.md`、`report-to-owner.md`、`fee-lock-tests.md`（Task 2 の記録）
+- Modify: `docs/06_Operations/db-migrations.md`、`docs/05_Quality/tests/test-spec.md`、`docs/05_Quality/reviews/code/2026-09-25-working-diff-security-review.md`、この計画のチェックボックスと未確認事項。生成レポート/graph は生成手順の出力として確認する
+- Test: 計画3の全単体/DB/並行/PostgREST、計画1・2・G・H・checkout・refund・return・status・email の回帰、E2E 全件
+
+**Interfaces:**
+- Consumes: Task 1〜13 のコミット一覧、計画1・2の Task 16 の記録、最新 E2E baseline（`.superpowers/sdd/2026-10-26-group-g4-orders/e2e-results-g4-full.json` を `flattenPlaywrightJson` で直して渡す）。
+- Produces: `verification-report.md` はコミット/差分範囲/コマンド/RED・GREEN の実測件数/未実行境界/3連続の並行の結果/最新 baseline との差分/作り直した関数の既存の試験で直した所の一覧を残す。`final-review.md` は最終 Opus レビュー（実作業は Codex または Sonnet、レビューは Opus）の対象コミット・指摘・修正コミット・再検証を残す。
+- Produces: **適用の順は S15→S16→…→S23。** push はしない。
+
+- [ ] **Step 1: 検証の判定を先に固定する。** 必須 assert: `FREQ-577-AC-03: 出荷前の返金が出荷の売上から引かれ、前受金が0になる`、`FREQ-578-AC-01: 返品は届いた日に立つ`、`FREQ-579-AC-03: 取り消しの区分で仕訳が決まる`、`FREQ-579-AC-06: 返金の届く順を変えても最後の残高が同じ`、`FREQ-580-AC-01: 判断待ちの注文の返金を DB が止める`、`FREQ-580-AC-02: 判断待ちの注文の出荷の確定を DB が止める`、`FREQ-581-AC-06: カード会社の取り消しの届く順を変えても最後の残高と年ごとの利益が同じ`、`FREQ-582-AC-05: 2段の照らし合わせの説明のつかない差が0`、`FREQ-582-AC-06: 計画3で計上する種類の差が0`、`FREQ-583-AC-02: 免税の売上の返金は対象外`。最新 baseline の commit/build/DB 前提から比較し、古い件数を転記しない。
+- [ ] **Step 2: 追加試験の RED と各 Task の GREEN の証拠を照合する。** 欠けた RED/DB/provider の境界は未実施と書き、必要な再現を手元で実行する。全 SQL を reset して S0〜S23 と G・H の回帰、PostgREST、並行3連続を通す。過去の本文の DB 成功で最終 SQL を検証済みとしない。作り直した7本の関数の既存の試験（`group_h_*`・`group_g1_*`・`group_g3_*`・`group_g4_*`・`order_refund_*`・`order_return_*`）が、意図して直した所以外は無改造で通ることを明記する。
+- [ ] **Step 3: 単体・型・lint・docs・security を最終本文で実行する。** `npx.cmd jest tests/unit --runInBand`、`npx.cmd tsc --noEmit --incremental false`、`npm.cmd run lint`、`npm.cmd run validate-docs`、`npx.cmd jest tests/unit/docs --runInBand`。implement-component/security-check の現行 skill を読んで指定の機械検証を行う。
+- [ ] **Step 4: production build で E2E 全件を実行し baseline と比べる。** `npm.cmd run build` → 既存の E2E 起動手順 → `npx.cmd playwright test --retries=0` → `npm.cmd run e2e:compare`。新規/置換/失敗/skip をファイルと題で説明する。計画3以外の既存の赤は勝手に直さず、前に通って後で落ちたものは単独で再実行して揺れか実装かを切り分ける。3000番に残るアプリは先に止める。
+- [ ] **Step 5: 最終 Opus レビューを受ける。** Review Focus の5行・設計の行の対応表・未確認事項・作り直した関数の差分（囲みの外が変わっていないこと）を渡す。重大/中を直したら影響する DB reset/build/E2E を再実行する。
+- [ ] **Step 6: 本番を先に読む（数だけ。書かない）。** Supabase MCP の `execute_sql` で次を数える: 計画1・2の移行が当たっていること（`accounting_journal_entries`・`accounting_pending_events`・`stripe_disputes` の表があること）、`orders` の払い済みの件数・`order_refunds`・`order_returns`・`order_return_receipts`・`accounting_unit_refund_allocations` の件数（0のはず。試しだけ）、**`shop_return_settings` の `shop_label_fee`・`exchange_fee`・`exchange_shipping_fee`・`exchange_fees_enabled` が 0／偽であること**（S16 の制約が通る前提。違えば適用せず理由とともにオーナーへ示す）、`order_returns` に0でない手数料の行が無いこと、`order_return_receipts` の行数（0であること。S15 の前提）、S15〜S23 のバイト数/MD5/ASCII/1組の取引/末尾 assert。結果は `production-pre-read.md` へ数だけ書く（金額・中身・相手を書かない）。想定と違えば適用せず理由とともにオーナーへ示す。本番の Stripe には触らない。
+- [ ] **Step 7: オーナーへ適用の判断を求める。** `report-to-owner.md` に、使える物、設計の行の対応、実測/未実測、本番を読んだ数、未確認事項、次を載せる: S15〜S23 を適用してよいか。適用で本番の DB に入るのは表・関数・制約・設定の1行だけで、仕訳・返金・返品の行は増えない（本番の注文は0件）。無回答を承認としない。
+- [ ] **Step 8: 承認された範囲だけ適用し、読むだけで確かめる。** 既存の controller 手順で適用する（`supabase/migrations` との名前の一致を `list_migrations` で確かめ、適用した文は `schema_migrations` の `md5(statements[1])` とファイルを突き合わせる。大きい移行は MCP でなく CLI の `db push --linked`。S17〜S19・S22・S23 は既存の関数の作り直しなので特に大きい）。適用後の確かめは**読むだけ**: S15〜S23 の assert の結果、`accounting_return_options` が1行で既定オフ、返金・返品の事実の表が空、`accounting_settings` の設定が変わっていないこと、権限が38件のままであること、作り直した7本の関数の本文の MD5 が手元の期待と同じこと。**本番に書いて確かめることはしない**（仕訳は消せないため）。返金・返品の係・相殺・消費税用の一覧は手元の DB だけで確かめる。失敗は固定 SQLSTATE/DETAIL/適用済みの位置を残して止め、データの戻しを即興で実行しない。
+- [ ] **Step 9: 記録を更新して Files だけコミットし、graph フックの結果を確認する。** 実装コードの最終変更後・commit 前に `graphify update .` を1回だけ完了し、進捗/レビュー/検証/適用の記録を更新して `docs(accounting): 計画3の検証と本番適用結果を記録する` でコミット。commit 後は `graphify hook status` を確認するだけで手動 update を重ねない。未適用なら明記し、push しない。
+
+## 未確認事項
+
+設計として決められなかった所と、実装・本番・外部サービスの読み取りで確かめる所。推測で埋めていない。
+
+| # | 内容 | 確かめる Task / 決め方 |
+| --- | --- | --- |
+| 1 | **設計 5-3 の例の手数料 1,000円は、今の仕組みでは出せない。** 手数料は整数の割合を支払額にかけて切り捨てた額で（`restocking_fee_percent`）、返送料の定額・交換の手数料は DB で止める（5-b）ので、18,750円の返品で 1,000円にはならない。試験は割合 10%（1,875円。返す額 16,875円）で固定した | オーナーに報告。定額の手数料を使うなら、先に設計に仕訳の決まりを足す |
+| 2 | **1-a09（断って送り返す）と 5-c（検品で額が変わる）は、今の作りでは起きない。** 「送り返す」は受け取りと同時に選ぶので届いた日の仕訳の対象に入れず（会計の結果は 5-i と同じ）、検品（`admin_inspect_return`）は在庫の置き場所を決めるだけで額を変えない。取り消しの道具と差の仕訳（`return_amount_decided`）は、相談で決まる額（5-b2）の道として作った。検品で額を変える作りを足す時は、そのときに事実の行を足す | 将来の変更。オーナーの確認 |
+| 3 | **（決まった）品を決めない金額だけの出荷前の返金は今の関数で作れる**（`_lines=[]` で金額だけなら `REFUND_MUST_*` に当たらない）。割り振りは設計 5-g・2-c の比で、設計 2-4 の例（パンツに 1,000円の一部の額）は今の画面では作れない（H の返金は着の数で値付けする） | 決めたことへ移した。オーナーに報告 |
+| 4 | **（決まった）Stripe の `canceled` は `order_refunds.status` では `failed` に畳まれ、`stripe_status` に残る。** `_stripe_status` で分ける。失敗の残高の取引の出方だけ、Stripe のテストモードで読んで確かめる | Task 14 Step 6（読むだけ） |
+| 5 | **事実の記録は返金・返品の関数と同じトランザクション。** 失敗すれば返金・受け取りも失敗する（半端を残さない選択）。事実を残す道具は INSERT だけにして、試験を厚くした。道具に不具合があると返金が止まる | AI の判断。オーナーが覆せる |
+| 6 | **返品の追跡番号は追跡のサービスに登録されていない**（E-4 の追跡をオンにするまで）。5-a3 の設定はオンにしても届いた日を自動で入れず、人が入れる（5-a4）。登録できるようになった時に `get_return_carrier_arrival` を実装する | E-4 の追跡をオンにした後 |
+| 7 | **遅れた取り下げの戻し先（16-sr6）。** 相殺した額をどう戻すかの税理士の確認が済むまで、費用の科目 → 分けて調べる補助 → 返金待ち、の順に戻す（私の判断）。年をまたぐ時の科目も同じ時に決める。相殺に使うのは返品の返金待ち（`return_refund`）だけで、出荷後の返金の借り（`refund_owed_post`）は相殺に使わない | 税理士 |
+| 8 | **16-sr4（収益認識の基準へ変える時の返品）と 16-sr5（4050 の決算書の欄）。** 5-b のまま（届いた日に減らす）で動かし、4050 は計画1の勘定のとおり。欄の扱いは税理士 | 税理士 |
+| 9 | **消費税用の返金の税率。** `orders` に税の別欄が無いので、衣料の標準税率 10% として税込みから税額を出す。軽減税率の品・複数税率の注文を扱う時は、注文の税の内訳を持たせてから直す。「元の売上の品の内容」は返金の明細（無ければ注文の品）の品名×数量 | 税率が複数になる時に設計 |
+| 10 | **確定（lost）した後に、同じ返品へもう一度返金を始めると二重に払う。** 判断待ちの止め（4-e3）は確定で解ける。確定で返金待ちを相殺した返品を、画面で閉じるか警告するかは決めていない（計画3は止めない） | オーナーの確認（開店前） |
+| 11 | **判断待ちの止めの対象外。** 自動の返金（支払いの異常で返す `auto_*`）と、Stripe の画面で店が返した物の記録（`record_external_order_refund`）は止めない。カード会社の取り消しと重なった時は、確定の相殺（Task 8）が分けて調べる | AI の判断。オーナーが覆せる |
+| 12 | **振込で返した時の画面と route は、設計に route の記載が無い。** 5-d の「振込なら振込の日」「1-a07 の振込は銀行の取引の番号」を満たすため足した。銀行の取引の番号は `bank-` の前置きを付けて Stripe の取引の番号と重ならないようにする。銀行の取引の取り込みができたら差し替える | AI の判断。オーナーが覆せる |
+| 13 | **前の返金・返品の仕訳が入らない間、待つ仕訳がある**（返品の返金は届いた日と額の決定の仕訳を、失敗の戻りは元の返金の仕訳を待つ）。同じ注文の返金どうしの順番は決めない。待ちは理由つきで計上待ちに出る（`refund_prior_unposted`） | 運用の文書（Task 13） |
+| 14 | **返送不要の値引き（`return_method='not_required'`）の返金は、届いた日の仕訳が無いので全額を「売上値引・返品」に入れる**（5-e）。失敗した時の借りは、返品の返金待ちの残高を超える分を `refund_owed_post` に立てる | Task 6 の試験 |
+| 15 | **同じ返金が `error` に2回以上入る時と、品を決めない額 P_adj だけの返金のやり直し。** 当て直しのキーが `reapply:<返金の番号>` の1つなので、2回目の `error` を抜けた時は何も書かず、割り当てが戻ったままになる恐れがある。P_adj だけのやり直しの返金の割り当ても、確かめの範囲の外だった（2026-11-04 controller が確かめ直し4回目の後に記録）。起きた時は、出荷の仕訳が `deferred_revenue_short` か前受金の異常の一覧に出て、黙っては抜けない | 実装の Task 3 の前に controller が決める（キーに回数を足すか、2回目の `error` を断るか） |
+
+
+## オーナーへの報告（Task 14 の `report-to-owner.md` に載せる）
+
+- 返品は「届いた日」と「返金した日」の2段で帳簿に載る。届いた日は受け取りの画面で選べ（既定は今日）、後から直せて、直した跡が残る。
+- 出荷前に返金した分は、返金した着の分だけ出荷の売上から引かれる。計画2の報告にあった「計画3までは出荷前の返金の売上と前受金がずれる」は、この計画で解ける。
+- Stripe が取り消した返金は、「店が返金をやめた」か「店は返すつもりのまま返せなかった」かを画面で選ぶ必要がある。選ぶまで計上待ちに残る。返せなかった分は「返金の未払い」に立ち、銀行振込で返した時は画面で振込の日と銀行の取引の番号を入れる。
+- カード会社の判断待ちの注文は、返金も出荷も DB の中で止まる。判断待ちの前に始まった返金・自動の返金・Stripe の画面で返した物の記録は止めない。受け取りで「すぐ返金」は判断待ちの注文では選べない（相談なら受け取れる）。
+- 返送料の定額・交換の手数料・交換の送料は、DB で使えなくした（設計 5-b）。割合の手数料だけ使える。設計の例の手数料 1,000円は割合では出せない（未確認事項 #1）。
+- カード会社の取り消しが確定した時、返品の返金待ちの範囲だけ未払金を消し、返金済みと重なる分は費用にせず「分けて調べる」に移す。遅れて取り下げられた時の戻し先と、年をまたぐ時の科目は、課税事業者になる前に税理士と決める（未確認事項 #7・#8）。
+- 消費税用の返金の一覧を出す。免税の期間の売上の返金・出荷前の返金は対象外として分ける。税率は 10% 固定（未確認事項 #9）。適格返還請求書は計画6。
+- 本番の注文・返金・返品は0件なので移しかえは無い。本番に書いて確かめることはしない。
+- 計画2への直しの願いが2件ある（割り当ての表と送る着の選び方。計画2に反映済み）。設計 2-4 のお詫び 1,000円（品を指定した一部の額）の例は、今の画面（H の返金は着の数で値付けする）では作れない。明細の無い金額は設計どおり比で分けるので、パンツの出荷は 10,875円になる。10,250円の例を画面で作りたいなら、返金の明細に品を指定した一部の額を持たせる（H の関数の変更）決定が要る。明細より少ない額で返した出荷前の注文は、前受金が残れば前受金の異常の一覧に出る（残りを売上などへ移す決まりは未定）。着ごとの支払額が違う品の端数は、返金の仕訳で売上へ寄せるので残らない。
+
+## セルフレビュー（writing-plans）
+
+**仕様の網羅:** 設計の行から Task への対応表で、5章の全部（5-a〜5-k）、1-a04〜1-a09・1-a22、4-e2 の相殺、4-e3 の DB の止め、2-c・2-d・2-h の割り当て、8-d・8-g2・8-h2、16章の範囲の行を、作る Task と固定する試験に結んだ。範囲の外の行（5-k、14章）は「計画N」と書いた。決められない所は未確認事項に置いた。
+
+**型・名前:** `RefundEventState`・`RefundFacts`・`ReturnFactKind`・`private.accounting_record_refund_event`・`accounting_record_refund_facts`・`accounting_write_refund_allocations`・`accounting_release_refund_allocations`・`accounting_resolve_owed_cover`・`accounting_refund_transfer_adjusts`・`accounting_assert_no_dispute_hold`・`accounting_split_refund`・`accounting_return_arrival_on`・`accounting_assert_arrival_date`・`accounting_record_return_arrival`・`accounting_record_return_decision`・`accounting_post_refund_events`・`accounting_post_return_events`・`accounting_dispute_offset_ready`・`admin_decide_refund_cancellation`・`admin_record_refund_bank_transfer`・`admin_correct_return_arrival_date`・`admin_set_return_arrival_option`・`list_consumption_tax_refunds` は、Task 1〜11 で同じ綴り・同じ引数で使う。印は計画1の `buildEventKey` の27種と arity をそのまま使い、新しい種類は足さない（`pre_shipment_refund` 1・`return_arrived` 1・`return_amount_decided` 1・`return_refund` 1・`refund_failed` 2・`refund_abandoned` 2・`return_arrival_redated` 1・`reversal` 1）。権限は計画1の6件と `admin.finance.read/manage`・`admin.orders.read` だけを使い、新しい権限は足さない。計画2の名前（`accounting_run_posting`・`PostingRunResult`・`accounting_park_event`・`accounting_unit_refund_allocations`・`accounting_dispute_holds`〔計画3の Task 3〕・`accounting_dispute_lost_at`・`accounting_allocate_amount`・`accounting_shipped_units(_order_item_id uuid, _as_of_seq bigint)`・`accounting_unit_values(_order_id uuid, _as_of_seq bigint)`・`accounting_take_g_fact_seq()`・`accounting_g_fact_seq_at(_at timestamptz)`・`accounting_g_slip_facts`）はそのまま使った。
+
+**Review Focus の5行:** 1行目は Task 6・7、2行目は Task 6・7・8、3行目は Task 3・6、4行目は Task 3・5・10・11、5行目は Task 8・9 の試験で確かめられる。
+
+**計画1・2への直し:** 願い2件（計画2 Task 1 の割り当ての表と書き手、計画2 Task 3 の送る着の選び方）。どちらも計画2に反映済み。判断待ちの本体と `planned_p3` は計画3の中で担う（願いにしない）。計画2のコードを計画3が書き換える所（計上係・dispute の係・受注高の読み口・計上待ちの理由・拒否の表）は、各 Task の Interfaces に書いた。
