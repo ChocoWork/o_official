@@ -23,7 +23,7 @@
 | 1 | `2026-11-04-accounting-p1-journal-foundation.md`（この文書） | 1・3・7・11章、2-j の移しかえ（A8）、下の「前倒しする物」6つ | なし |
 | 2 | `…-p2-deferred-revenue-stripe.md` | 2・4・6・8章（KPI を含む。カード会社からの支払いの取り消しの表と Webhook も。月の KPI の表 `admin_kpi_monthly_records` は移行にも本番にも無いと 2026-11-04 に本番で確かめたので、ここで扱う） | 1 |
 | 3 | `…-p3-returns-refunds.md` | 5章（返品・返金の状態の履歴の表を含む。返金・返品の SQL 関数の手入れはこの計画だけが行う）。4-e2 の返品の返金待ちとの相殺の仕訳と、4-e3 の判断待ちの注文の返金と出荷の DB の中の止め（出荷の確定の関数の手入れを含む。2026-11-04 controller の決定） | 1・2 |
-| 4 | `…-p4-return-terms-display.md` | 14章（14-f は決済の DB 関数に入るので、別セッションに先に知らせる） | 1・3 |
+| 4 | `…-p4-return-terms-display.md` | 14章（14-f は決済の DB 関数に入るので、別セッションに先に知らせる）。14章（14-a3・14-e）の返品の受付・期限・設定の関数7本（`customer_request_return`・`customer_return_line_states`・`customer_return_availability`・`get_customer_return_request_materials`・`fulfillment_line_returnable`・`get_shop_return_settings`・`admin_update_shop_return_settings`）の手入れは、計画3の後に計画4が行う（計画3の7本とは重ならない。2026-11-04 controller の決定）。計画5〜7はこの7本と計画3の7本を触らない | 1・3 |
 | 5 | `…-p5-inventory-cost.md` | 9・13章（法人の寄附金の勘定と、損金の上限と申告書での調整が要る印〔7-k〕は、13-g2 の時価で使うこの計画で足す。既存の 6320 寄附金は事業の形を問わない手入力用のまま） | 1・2・3 |
 | 6 | `…-p6-closing-records.md` | 10・12章（書き出しの共通の層を作る）。法人の定率法（11-f の既定。償却率は「減価償却資産の耐用年数等に関する省令」の別表の値で、作る時に原文で確かめる）、3-d の「申告の期限を過ぎた期間へは自動で入れず一覧に止める」仕組み、中間申告の要否の判定（前の期の税額が入ってから）もここ | 1〜5 |
 | 7 | `…-p7-freee-mf-copy.md` | 15章 | 1・6 |
