@@ -150,6 +150,11 @@
 
 ほかに確かめた点（願いにしない）: ①計画3の返金・返品の7本と計画4の7本に、計画6が作り直す関数は入っていない。②計画6が作り直す前の計画の物は、計画1の `accounting_post_journal_core`・`accounting_period_for_event`、取り消しを使う計画2 S8・計画3 S20・S21・計画5 S33 の係4本と計上係 S32（Task 3）、計画5の `accounting_opening_inventory`（Task 6）と `accounting_line_tax_marks` の印の CHECK（Task 9）だけで、どれも「最新の定義を写して囲みで足す」形で Task に入れた。③計画1の勘定の数の試験（`journal.test.ts`、計画5 Task 1 の時点で167件）は計画6の Task 9 で169件に直す。④計画2の `PENDING_REASONS` は足さない（締めた期間も `period_missing` で止める）。⑤計画1 Task 10 の画面の知らせ（`periodNotices.filingDeadlinePassed`）は、計画6で「保留」の状態を持つので、Task 20 が同じ画面に解放のボタンを足す。
 
+**前の計画から計画6への引き渡し（2026-11-05）**
+
+- 計画5 Task 11: 実装の最初に controller が計画6 Task 5 の Files・Interfaces の項目17 `packaging_account`（confirm）と Step 1 に、購入時の勘定の違いの試験、および `get_inventory_closing_values.opening_supplies_account_source = setting` の場合の知らせと試験（`FREQ-610-AC-01`）を足す。前の期間の締めの行が無く、今の設定で期首の1350を戻した場合も、勘定の違いの件数が0でも confirm に出し、知らせだけでは締めを止めない（詳細は計画5の「知らせの試験の引き渡し」）。
+- 計画2 Task 1: 実装の最初に controller が計画6 Task 3 の Files へ `tests/integration/db/accounting_p2_posting_tables.integration.test.ts` を足し、`FREQ-569-AC-01` の `detail` の鍵の許可の一覧が `why`・`e_entry_date`・`n_entry_date`・`record_kind`・`record_id` でも通るかを確かめ、個人情報を入れない守りを保って必要な鍵だけを足す。
+
 ## Global Constraints
 
 計画1の Global Constraints を全部そのまま当てる。違う所は次の3つだけ。
