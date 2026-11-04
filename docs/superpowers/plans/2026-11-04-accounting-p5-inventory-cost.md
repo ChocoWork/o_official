@@ -1,0 +1,627 @@
+# 会計の作り直し 計画5「在庫と原価・自家消費」実装計画
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 年末に数える棚卸資産（材料・仕掛品・製品・商品・貯蔵品）の評価と棚卸表を DB とシステムで持ち、在庫の持ち出し（自家消費・人にあげる・宣伝用・貸し出し・貸し出しの戻り・役員への贈与）を印つきで記録して出した日に仕訳を1本保存する。評価の方法は期間の設定で切り替え、承認の記録が無い間は最終仕入原価法（A11）。原価の額は出荷・返品・取り消しの届く順で変わらない形にする。
+
+**Architecture:** 原価は三分法（期首＋仕入高－期末）で決まるので、**出荷ごとの原価の仕訳は作らない**（作ると期末の棚卸高の仕訳と二重になる。13-b も「別の仕訳は作らない」）。代わりに、(1) 原価の回（作った回・仕入れた回）を追記専用の改版つきで持ち、(2) 数量の流れ（入荷・出荷・返品の戻り・交換・持ち出し・調整）を出荷・返品・取り消しの**元の記録から読むだけ**の読み口にし（保存した額を持たないので、届く順で額が変わらない）、(3) 期末の評価額は「数えた数 × 12月31日（法人は期末）までで一番遅い回の単価」を読み口で出す（締めの計画6が使う）。仕訳を作るのは持ち出し（13章）の係だけで、計画2・3の計上係 `accounting_run_posting` に係を1つ足す（新しい入口は作らない）。持ち出しの記録は G の在庫の台帳 `stock_movements` に理由を足して残し（G の書き手の閉じた一覧は 78→80 本）、金額（売値・原価・消費税の区分）は記録した時に固定して残すので、係が流れる時刻や回の登録の順に頼らない。
+
+**Tech Stack:** 現行の Next.js `^16.3.6`、React `^19.0.0`、TypeScript `^5`、Supabase Postgres 17・PostgREST、Zod `^4.3.6`、`pg`、Jest、React Testing Library、Playwright。依存を増やさない。
+
+**Spec:** [承認済みの設計](../specs/2026-11-03-accounting-redesign-design.md)の 9章の全部（9-1〜9-5）と 13章の全部（13-1〜13-5）、1-a17 の原価・在庫の部分、A11、16章のうち範囲に関わる行（16-sr2・sr7・sr8・sr9・sr10、型紙の代、交換で戻る品の原価、受注生産の個別法、開店した年の包装材料、決算書1ページ③欄、令和7年分の様式、源泉徴収の表の入れ替え）を正本とする。[計画1](2026-11-04-accounting-p1-journal-foundation.md)・[計画2](2026-11-04-accounting-p2-deferred-revenue-stripe.md)・[計画3](2026-11-04-accounting-p3-returns-refunds.md)・[計画4](2026-11-04-accounting-p4-return-terms-display.md)の冒頭の地図・Global Constraints・「共通の型・値・拒否」・印の表を正とし、前の計画を変える必要があれば「前の計画への直しの願い」の節に書く（前の計画のファイルは変えない）。[今の作りの地図](../../../.superpowers/sdd/2026-11-04-accounting-redesign/recon-report.md)の `recon-part-C.md`（2章の在庫と原価）・`recon-part-B.md`（1.3・2.4）は現状と file:line の手掛かり。ブランドの前提は [brand.md](../../01_Planning/brand.md)。形式は計画4と [H の計画](2026-10-29-group-h-promotions.md)を引き継ぐ。設計で決まったことは変えない。決められない所は末尾「未確認事項」に置く。
+
+## 概要
+
+確認日 2026-11-04、基準 `master / 86009823`（計画1〜4が書かれた時点。計画1〜4の実装は未着手）。この文書を書く作業は計画だけで、実装・DB・provider・ブラウザーの成功を表さない。graphify の既存グラフ（36168 ノード）で在庫・原価の入口（`stock_movements`・`apply_group_g_stock_movement`・`item_cost_history`・`ProductCostSection`・`year-end.ts`）の場所を確かめたが、グラフは検索の質問に対し候補が多く切れたので、結論は次のソースを直接読んで確かめた: `supabase/migrations/20261023211425_group_g1_allocation.sql`（`stock_movements` の理由 `:498`、整合の制約トリガー `:1544`、一覧 `:1560`、`private.order_line_fulfillment` `:1621`）、`src/lib/finance/accounts.ts`（勘定の一覧）、計画1〜4の本文。
+
+### 今のコードで確かめたこと（計画5の前提）
+
+- **`ready_unshipped` は `paid_allocated` と同じ数。** `private.order_line_fulfillment`（`G1:1621`）の `ready` は `LEAST(paid の割り当ての残り, 未出荷)` で、`in_production` は「未出荷 − ready」。一方 `list_group_g_variant_inventory` の `on_hand` は `stock_quantity + paid_allocated + payment_held`。つまり**出来上がって送っていない着は `on_hand` の中にすでに入っている**。設計 9-b は「縫製中 → 仕掛品」「送っていない → 製品」「作り置き → 製品／商品」を別々の和として書くが、そのまま足すと送っていない着を二重に数える。**計画5の下書きは、物の置き場の数を `on_hand` で1回だけ数え（製品／商品）、仕掛品は `in_production` だけを数える。**（Task 9 の `FREQ-602-AC-02`）
+- **発送で在庫の数は動かない。** 買った時に `stock_quantity` から割り当てへ移り、発送は割り当ての `consume` で `stock_movements` に出ない。だから「出荷した数」は `stock_movements` ではなく発送票の明細（`shipment_slip_lines`、計画2が送った品と数の正とした表）から読む。
+- **`stock_movements` に単価・原価の列は無い。** 原価は `item_cost_history`（読み書きするコードが無い）と `admin_costing_items`（仮名の品・予定数割り）だけ。原価の回の記録は新規に作る。
+- 勘定は `1310` 商品・`1320` 製品・`1330` 材料・`1340` 仕掛品・`1350` 貯蔵品・`1410` 前払金・`4030` 家事消費等・`5010` 期首商品棚卸高・`5015` 期首材料棚卸高・`5020` 仕入高・`5040` 期末商品棚卸高・`5045` 期末材料棚卸高・`5050` 外注加工費・`6060` 広告宣伝費・`6080` 接待交際費・`6190` 役員報酬（法人）・`6320` 寄附金が既にある。**無いもの:** 製品・仕掛品の期首／期末の棚卸高の勘定（9-a）と、法人の時価贈与の寄附金（7-k）。
+
+### 7本の計画の中の位置
+
+地図は計画1の「7本の計画の地図」のとおり。計画5は9・13章を受け持つ。
+
+| 前の計画から使う物 | 計画5での使い方 |
+| --- | --- |
+| 計画1: `accounting_post_journal_core`・`accounting_reverse_journal_core`・`accounting_period_for_event`・`accounting_lock_all`・`accounting_jst_date`・印の作り方 `buildEventKey` | 持ち出しの仕訳の入れ口と取り消し。直接 INSERT しない。**印の種類は足さない**（`owner_use`・`personal_discount`・`compensation_received`・`exchange_movement`・`period_closing_entry` が27種にすでにある。`owner_use` は自家消費・人にあげる・宣伝用・約束付き・役員への贈与の5つを持ち出しの記録の番号で分ける） |
+| 計画1: `ACCOUNTS`・`accounting_accounts`・`ACCOUNTING_SUB_ACCOUNTS`・`ACCOUNTING_ERRORS`・`ACCOUNTING_LABELS` | 勘定を足す（Task 1）。補助の符号・拒否・ラベルを足す |
+| 計画2: `private.accounting_run_posting`・`PostingRunResult`・`accounting_pending_events`・`accounting_park_event`・`accounting_unpark_event`・計上待ちの理由の表・`accounting_shipment_units`・`accounting_shipped_units`・`accounting_g_fact_seq` | 持ち出しの係を計上係に足す（Task 5）。計上待ちの理由を足す。**出荷済みの着の道具は数量の流れの読み口が読むだけ**（計画2・3のコードは変えない） |
+| 計画3: `accounting_return_facts`・`order_return_receipts`・`order_return_receipt_lines`・`accounting_return_arrival_on`・`order_return_arrival_corrections` | 返品の戻りの数量の流れを読む（Task 10）。**計画3の返金・返品の7本と計画4の7本は変えない**。読む口が要る所は新しい読む関数を作る |
+| 計画4: `P4_ALLOWLIST`（G の書き手の78本）・`group-g-allowlist.ts` の付け替えの形・Task 8 の「意図して直す試験」の書き方 | 計画5は `P5_ALLOWLIST`（80本）を足し、同じ形で付け替える（Task 4） |
+| 計画1〜4の S0〜S28 が本番に当たっていること | 計画5の本番適用の前提（Task 16） |
+
+**計画5が受け持たない物:** 締めの仕訳の確定・年の締め・書き出し（計画6）。計画5は「期末の棚卸高の仕訳の行を組む読み口」（`accounting_inventory_closing_lines`）までを出し、`period_closing_entry` として入れるのは計画6。freee・マネーフォワードへの写し（計画7）。減価償却・固定資産（型紙の代の扱いの税理士の確認が済むまで原価に入れない。未確認事項 #3）。
+
+| Task | 中身 | 移行 | FREQ | 検証 |
+| --- | --- | --- | --- | --- |
+| 1 | 評価の規則（純粋な TS）と勘定の追加 | — | 594 | 単体 |
+| 2 | 原価の回・品の印・見積りと確定の改版 | S29 inventory_cost_lots | 595 | DB/単体 |
+| 3 | 評価の方法・承認の記録・設定（包装材料・低価法・3%） | S30 inventory_methods | 596 | DB/単体 |
+| 4 | 在庫の持ち出し（理由6つ・印の表・入口・戻り・取り消し）。G の台帳と書き手の一覧に触る | S31 inventory_withdrawals | 597 | DB/並行 |
+| 5 | 個人の持ち出しの仕訳（自家消費・人にあげる・宣伝用・約束付き・弁償金・個人的な値引き）と計上係への追加 | S32 withdrawal_posting | 598 | DB/並行 |
+| 6 | 法人の贈与・役員への贈与・源泉の表・損金の印 | S33 corporate_gifts | 599 | DB/単体 |
+| 7 | 消費税の区分・年末の一覧・調整の分け・投稿の約束の源泉の欄 | S34 withdrawal_reads | 600 | DB |
+| 8 | 棚卸表の表・版・確認・追記専用 | S35 stocktake_tables | 601 | DB/並行 |
+| 9 | 下書きの作り・前払金と前受金の照合・注意 | S36 stocktake_draft | 602 | DB |
+| 10 | 数量の流れ（出荷・返品の戻り・交換・持ち出し）と、届く順の試験 | S37 stock_flow | 603 | DB/並行 |
+| 11 | 期末の評価の読み口・期首の引き継ぎ・決算書の欄の表 | S38 closing_reads | 604 | DB |
+| 12 | store・route・計上係の呼び出しの追加 | — | 595〜604 | 単体 |
+| 13 | 画面（原価の回・評価の方法・持ち出し・年末の一覧・棚卸表） | — | 595〜604 | RTL |
+| 14 | 新しい E2E | — | 594〜605 | 本番 build/手元 DB |
+| 15 | 文書の正本の更新 | — | 全部 | validate-docs |
+| 16（controller） | 全体検証・最終レビュー・本番を読む・適用・記録 | — | 全部 | baseline 比較 |
+
+**決めたこと（この計画の細部。設計の決定は変えない。「AI の判断」はオーナーが覆せる）**
+
+- 移行は10本。`supabase/migrations/<ts29>_accounting_p5_inventory_cost_lots.sql`（S29）、`<ts30>_accounting_p5_inventory_methods.sql`（S30）、`<ts31>_accounting_p5_inventory_withdrawals.sql`（S31）、`<ts32>_accounting_p5_withdrawal_posting.sql`（S32）、`<ts33>_accounting_p5_corporate_gifts.sql`（S33）、`<ts34>_accounting_p5_withdrawal_reads.sql`（S34）、`<ts35>_accounting_p5_stocktake_tables.sql`（S35）、`<ts36>_accounting_p5_stocktake_draft.sql`（S36）、`<ts37>_accounting_p5_stock_flow.sql`（S37）、`<ts38>_accounting_p5_closing_reads.sql`（S38）。時刻は計画4の S28 の後に controller が実装時に採番し、S29→S38 の順にする。適用済みの移行は編集しない。移行実行時の DML は、S29 の勘定5行と S30 の設定の1行（評価の方法の既定行）だけ（S33 の源泉の表は行を入れない）（本番の注文は試しだけで0件のため、既存の行は動かない。設計 0-4）。
+- **出荷ごとの原価の仕訳は作らない（controller の指示「原価の仕訳を作る」と食い違う点。controller の判断を求める。決められなかった点 #1）。** 理由: 設計は三分法（9-i の決算書は「期首棚卸高＋仕入高－期末棚卸高」の形、13-b は「原価は年末の棚卸で売上原価に入る。別の仕訳は作らない」）。出荷のたびに「売上原価／製品」を立てると、期末に棚卸高の仕訳を入れた時に二重になる。**controller の意図（出荷の日と同じ日・同じ考え方で、届く順に頼らない原価）は、保存した額を持たない数量の流れの読み口（Task 10）で満たす。** 仕訳を作る方が良いと controller が決めるなら、Task 10 の読み口を元に、係を足す形で後から足せる（読み口が数量の正本のまま）。
+- **原価の額は保存しない。** 数量の流れ（出荷・返品の戻り・交換・持ち出し・入荷・調整）は、出荷は発送票の明細と出荷日（計画2の読み方）、返品の戻りは返品の受け取りの行と届いた日（計画3の `accounting_return_arrival_on`）、交換は `order_items.line_kind='exchange'` の出荷、入荷は `purchase_order_receipt_lines`、持ち出しは持ち出しの記録、調整は `stock_movements` の `adjustment` を、読む時に出す。単価は読む時に「その日までで一番遅い回」から出す。届く順で変わるのは回の登録（元の記録の訂正）だけで、それは正しい訂正の効き方。
+- **評価の規則（9-c）は1つの純粋な TS の部品と、それと同じ答えの SQL の関数にする。** 仕入れた品は購入の代価に引取運賃・荷役費・保険・手数料・関税をいつも足し、3% で外せるのは (1)〜(3) だけ。作った品は材料費・労務費・経費（工場の加工代は経費）。最終仕入原価法は同じ種類の品のうち基準日（個人は12月31日、法人は期末）までで一番遅い日の回の1単位の取得価額。同じ日に回が複数あれば回の番号の大きい方（私の判断）。
+- **個別法は承認の記録が無い間は選べない（DB が拒む）。** 設定の既定は最終仕入原価法。2025年・2026年分は設定を変えても最終仕入原価法のまま（承認の記録の「使い始める年」が2027年以後でなければ個別法に切り替えられない）。仕掛品の計算は、2025・2026年分は「年末までに使った材料の額」（9-d2 の材料だけ）で、未確認事項 #1 に残す。
+- **持ち出しの金額は記録した時に固定して残す。** 普段の売値（`items.price`。割引は H の割引で `items.price` を変えない）と原価（その日までで一番遅い回）を、持ち出しの行に写して残す。係はこの行だけを読んで仕訳にするので、係が流れる時刻や回の登録の順で額が変わらない。後から回や売値を直した時は、持ち出しを取り消して入れ直す（1-c）。
+- 在庫の台帳 `stock_movements` の理由は、`owner_use`・`gift`・`promo`・`loan_out`・`loan_return`・`officer_gift` の6つを足す（13-a の「値の名前は作る時に決める」を決めた。AI の判断）。数の符号は、`loan_return` だけ正、ほかは負。**G の整合の制約トリガーの関数と、在庫を動かす関数は作り直さない**（どちらも `reason` を見ない。`apply_group_g_stock_movement` の最新の定義は G1 `:8871`〔共通の鍵を持たない書き込みを断る版〕で、`stock_quantity` に `delta` を足すだけ。整合の関数は `allocation_operation_id` のある行だけを見る〔持ち出しの行は NULL〕。空き在庫からだけ引くのは `item_variants.stock_quantity >= 0` の CHECK が守る）。作り直すのは理由の CHECK だけ（Task 4。G の書き手の閉じた一覧は78→80本）。
+- 勘定を足す（Task 1。番号は実装時に `accounts.ts` で重ならないことを確かめる。AI の判断）: `5011` 期首製品棚卸高・`5016` 期首仕掛品棚卸高・`5041` 期末製品棚卸高・`5046` 期末仕掛品棚卸高（9-a。区分は既存の期首／期末の棚卸高の区分にそろえる）、`6325` 寄附金（時価贈与。法人だけ。7-k）。損金にならない・上限がある印は勘定でなく**仕訳の行の印**（`accounting_line_tax_marks`、Task 6）で持つ（`6190` 役員報酬は普通の役員報酬にも使うため）。
+- 日付は日本時間の日（1-e）。持ち出しの仕訳の日は持ち出した日、個人的な値引きの差は差を決めた日、弁償金は受け取った日（1-a18）。
+- 本番の注文は試しだけで0件（設計 0-4）。本番では読むだけにし、本番の DB に試しの持ち出し・棚卸表を作らない。
+- **売値の正:** 持ち出しの「普段の売値」は `items.price`（`items` にセールの値段の列は無く、H の割引は `discounts`・`discount_codes` の表で持つ）。H の割引の権限は `admin.discounts.manage`（読みは `admin.discounts.read`）、`discount_codes.id` は `uuid`。
+- **`ready_unshipped` と `on_hand`:** 送っていない着は `on_hand` の中にある（G1 `:1640-1643`、G2 `:202`）ので、`on_hand` を1回だけ数える。
+- **`item_cost_history` の既存の制約:** 主キー（`id`）と `item_id` の外部キー（`ON DELETE CASCADE`）だけで、一意の制約は無い（外す物は無い）。本番の行の数は Task 16 で読んで確かめる。
+- **出荷ごとの原価の仕訳を作らない判断は controller が受け入れた**（設計 9-3・9-i・13-b のとおり三分法）。ADR（Task 15）もこの前提で書く。
+- 2026-11-04 計画5の確かめから直した: ①G の在庫を動かす関数と整合の関数は理由を見ないので作り直さず、理由の CHECK だけを直す（重大-1）。②持ち出しの書き口を G の書き手の段取り〔`lock_group_g_inventory`・FIFO・状態の記録〕に通す（重大-2）。③「G の鍵を取らない」を「G の表に行の鍵を取らず書かない」に直した。④計画3・4の移行の確かめの試験を意図して直す試験に足した。⑤個別法は個人は変更承認〔`approval`・`deemed_approval`〕だけで効き、法人は `notice` も効く。個人は2027年以後、法人は事業年度の初日で持ち、打ち消し `withdrawn` を足した。⑥受注生産の品だけ個別法にする範囲 `scope` を足した。⑦仕掛品は `made` の品の縫製に入った着だけ。⑧期首は締めの版が指す棚卸表から（計画5の間は試算）。⑨加工代の勘定は個人 6220／法人 5050。⑩手の入荷 `manual_restock` と期首の数量を決めた。⑪`item_cost_history` の権限は今のまま。⑫値引きの差は後継の無い確定だけを入れる。⑬固定した原価とのずれを知らせる。⑭小-1〜13。
+- 2026-11-04 計画5の確かめ直し（1回目）から直した: ①`group_g_operations` に名前の CHECK は無いので、それを作り直す文と `acc_s31_operations_check` を消した（重大-N1）。②閉じの関数は段取りの①と⑥だけで、一覧の外・80本に決めた（中-N1）。③法人の `notice` は第1期の届け出としてだけ効く（中-N2）。④S33 は計上待ちの理由を足さず、未計算の一覧で知らせる（中-N3）。⑤発注の受け取りの取り消しを `adjustment` から除き、返金に結ばれた調整を別の印にした（中-N4・小-N7）。⑥方法の関数に `scope` を足し、受注生産の着の見分け方を決めた（中-4）。⑦期首の戻りに `is_trial` を足し、AC の文を締めの版に直した（中-6・小-N6）。⑧法人の設定の検査を `first_effective_on` にした（小-6）。⑨回のある品は消せないことを運用の文書の一覧に足した（小-8）。⑩検品待ちを注意に足した（小-10）。⑪古い文を直した（小-N1）。⑫G の在庫の履歴の画面に6つの言葉を足した（小-N2）。⑬鍵の順の違いを書いた（小-N3）。⑭状態の履歴の試験を分けた（小-N4）。⑮打ち消しの行の欄を決めた（小-N5）。
+- 2026-11-04 計画5の確かめ直し（2回目）から直した: ①法人の届け出の検査を CHECK でなく書き口の関数と制約トリガーにし、第1期の申告の期限を出す SQL の関数 `inventory_corporate_first_notice_due`（延長・土日と12月29日〜31日の繰り下げ。祝日は画面で人が確かめる）と、TS の引数 `periodStartsOn`・`corporateFirstPeriod` を足した（中-M1）。②源泉を後から計算する `accounting_compute_officer_withholdings` と、計算に使う値を残す列を足した（中-M2）。③設定の書き口に `_scope` を足し、下書きは `'all'` と `'made_to_order'` を聞いて `fulfillment_type='backorder'` の着に当てる。取り消しの戻りは `note` の固定の文で出し、在庫の履歴の6つの言葉を決めた（中-M3）。④合計の鍵・試算の印・条文の号・受け取りの符号・確かめの一覧を直した（小-M1〜M5）。
+
+## 前の計画への直しの願い（計画5を書いて分かったこと）
+
+**0件（前の計画のファイルは変えない）。** 計画5が前の計画の物を作り直す所は、願いでなく計画5の Task に入れた: 計画3の `private.accounting_run_posting` と `PostingRunResult` に係を1つ足す（Task 5）、計画2の `PENDING_REASONS` と `accounting_pending_events` の理由の CHECK に理由を足す（Task 5）、`ACCOUNTS`・`ACCOUNTING_SUB_ACCOUNTS`・`ACCOUNTING_ERRORS` に足す（Task 1・5・6・12）、G の `stock_movements` の理由の CHECK（Task 4。整合の関数と在庫を動かす関数は作り直さない）。
+
+ほかに確かめた点: ①計画3の返金・返品の7本と計画4の7本に、計画5が作り直す関数は入っていない（計画5は返品の受け取りの行を**読むだけ**）。②計画1の勘定の数の試験（`journal.test.ts`、計画4 Task 4 の時点で162件）は、計画5の Task 1 で数を直す。③`exchange_movement` は27種の印の一つとして残るが、計画5は仕訳を作らない（数量の流れの `flow_key` の前置きに使うだけ）。④計画6への願い（計画6を書く時に取り込む。①〜⑤）: 期末の棚卸高の仕訳は `accounting_inventory_closing_lines(_period_id, _stocktake_id)` の戻りを `period_closing_entry` として入れる／確定した棚卸表の版の番号を印の3つ目に使う／法人の寄附金・役員報酬の行の印 `accounting_line_tax_marks` を申告書の調整の元にする／④締めの版に使った棚卸表の id を持たせ、`accounting_opening_inventory` はそれを読む／⑤10-g の締める前の確かめに計画5の `get_withdrawal_period_pre_close_check`・`get_stocktake_deferred_check`・`list_stocktake_attention` を入れ、9-c7 の法人の会計の切り下げと税の評価損の差を申告書へ出す／①の補足: 引数は `(_period_id, _stocktake_id)`、今の `year-end.ts` の手入力の棚卸の仕訳は計画6で止める（両方入ると二重）、貯蔵品の相手の勘定を決める、印の3つ目は棚卸表の `id` か期間内一意の `version` を決める。
+
+## Global Constraints
+
+計画1の Global Constraints を全部そのまま当てる。違う所は次の3つだけ。
+
+- 要件の FREQ の番号と E2E の番号は、計画4が使った最後の番号の次から。FREQ は 594〜605（計画4は 585〜593、実装時に別セッションとの重なりを確かめる）。移行は S29〜S38（計画4は S24〜S28）。E2E の管理画面は `e2e/FR-ADMIN-142-…` から（計画4は 141 まで）。試験の題は `FREQ-NNN-AC-NN: …` で始める。
+- 本番への適用の Task（最後の controller の Task 16）の前提: 計画1〜4の移行（S0〜S28）が本番に当たっていること。
+- 本番の注文は試しだけで0件（設計 0-4）。本番では読むだけにし、本番の Stripe は触らない。本番の DB に試しの持ち出し・棚卸表・原価の回を作らない。
+
+計画5で足す決まり（計画1〜4の決まりと矛盾しない）:
+
+- 新しい移行は計画3・4と同じ形（最初の行 `BEGIN;`、末尾 assert → `NOTIFY pgrst, 'reload schema';` → `COMMIT;`、`-- ACC_S29_FINAL_ASSERT_BEGIN/END`〜`ACC_S38_…`、失敗は `ACCOUNTING_MIGRATION_ASSERTION_FAILED / 55000` と固定コード `acc_s29_*`〜`acc_s38_*`）。SQL は ASCII、日本語は `U&'\XXXX'` 形（ラベルは `ACCOUNTING_LABELS` から `scripts/accounting/emit-labels.ts` が出す）。
+- **既存の関数・制約を作り直す移行（S31・S32）の守り:** 計画3の Global Constraints「既存の関数を作り直す移行の守り」①〜⑤をそのまま当てる（最新の定義を1字も変えずに写し、足す所を `-- ACC_P5_BEGIN` 〜 `-- ACC_P5_END` で囲む。移行の assert が囲みを全部除いた本文を最新の定義と比べ、引数・戻り型・属性・ACL・`search_path`・所有者が前と同じことを確かめる）。対象は S31 の `stock_movements` の理由の CHECK（DROP して同じ名前 `stock_movements_reason_check` で作り直し、理由の一覧に6つ足すだけ。G1 の assert `:8679` は `LIKE '%allocation_release%'` なので通る）。`group_g_operations` の `operation` は `text NOT NULL` だけで名前の CHECK は無い（足す物は無い。新しい操作の名前3つは段取り⑤で書くだけ。`order_item_state_events.reason` にも CHECK は無い）、S32 の `private.accounting_run_posting`（計画3 S20・S21 が最後に作り直した本文を一字も変えずに写し、呼び出しを1行足す）。**G の書き手の閉じた一覧 `private.group_g_writer_allowlist()` は S31 で作り直し、2本足す（78→80）。**
+- 持ち出しを書く3本の private 関数（記録〔貸し出しの戻りを含む〕・貸し出しの閉じ・取り消し）は、G の書き手の段取り（Task 4）に従い、`private.lock_group_g_inventory` を呼んでから `stock_movements` に書く（閉じは①と⑥だけ）。**その後で会計の鍵（計画1の②→③の順。①は G の鍵として取り済み）を取る**。計画1の決まり（①→②→③→④元の行）からの違いは、G の行の鍵を②より先に取る点だけで、①が排他で全員が最初に取るので止まり合わない（計画3の `admin_decide_refund_cancellation` も G → 会計の同じ形）。`admin_finance_expenses` の行は書かない（計画1 Task 9 の `FREQ-556-AC-04` の確かめに合う）。持ち出しの係（Task 5）は G の表に行の鍵を取らず G の表を書かない（G の共通の鍵は `accounting_lock_all` の①で持つ。計画2・3の係と同じ）。`inventory_withdrawals` の行を読むだけ。
+- 持ち出しの記録の表・原価の回・棚卸表・承認の記録は、計画1の決まりの新しい表（public、RLS 有効、PUBLIC/anon/authenticated に権限なし、service_role は SELECT のみ、書き込みは private 関数。ただし `item_cost_history` は今の権限のまま〔Task 2〕）。追記専用の物は `reject_accounting_mutation` を UPDATE/DELETE/TRUNCATE に付ける。
+- **数量の流れの読み口は、保存した額・保存した数を持たない**（元の記録から読む）。読み口が読む元は、発送票（`shipment_slips`・`shipment_slip_lines`・`shipment_date_history`）、返品（`order_return_receipt_lines`・計画3の届いた日）、仕入れの受け取り（`purchase_order_receipt_lines`・`received_on`）、`stock_movements`、`inventory_withdrawals`。どれにもロックを取らない（`FOR SHARE`・`FOR UPDATE` を使わない）。
+- お客様に見える文は無い（全部管理画面）。画面に出す文は、穏やかな日本語・絵文字なし・感嘆符なし。法令の根拠は設計 9-4・13-4 のとおりで、税理士に確かめる所は画面に「税理士に確かめる」と書く。
+- 決済のファイル（`src/lib/stripe/**`・`src/app/api/webhook/**`・`src/app/api/checkout/**`・`src/lib/checkout/**`・`src/features/checkout/**`）と決済の DB 関数は計画5では触らない。触る必要が出たら止めて controller に知らせる。G の在庫の関数・表・試験を触る Task（Task 4・10）、`src/lib/finance/**`・`CostProfitSection.tsx`・`ProductCostSection.tsx` を触る Task（Task 1・13）、共有の文書を直す Task（Task 4・15・16）、割引の画面を触る Task（Task 5・13）の最初の行に「controller が別セッションへ先に知らせる」と書く。
+- 実装者は単体/型/lint、controller は reset・DB 結合/並行・PostgREST・build/E2E・provider・本番を担当する。計画作成中は Playwright・サーバー・Supabase CLI・Docker・DB 試験・変更系 git・`.env*` の読取をしない。
+
+**共通 verify（後日の controller 手順）:** 計画1〜4の共通 verify と同じ（RED → reset → 既存 `items` 読取 smoke → 対象 DB suite → PostgREST で新 public 入口の service_role 成功/anon・authenticated 拒否）。加えて、作り直した G の関数を触る既存の suite（各 Task に列挙）を、意図して直した所以外は無改造で流して赤くならないこと。**持ち出しの並行の試験と PostgREST の試験だけがコミットする試験**で、別の jest 実行で流し、前後に `db reset` する（持ち出し・棚卸表・原価の回は消せないため）。
+
+## Review Focus
+
+- **評価は A11 のとおり:** 承認の記録が無い間は全部の区分が最終仕入原価法で、個別法は DB が断る。2025年・2026年分は設定を変えても最終仕入原価法のまま。最終仕入原価法は基準日（個人は12月31日、法人は期末）までで一番遅い日の回の単価で、同じ日は回の番号の大きい方。個別法の承認の記録を入れた年からだけ個別法が選べる → Task 1 の `FREQ-594-AC-01`〜`AC-05`・Task 3 の `FREQ-596-AC-01`〜`AC-04`・Task 11 の `FREQ-604-AC-01`。
+- **原価の額が届く順で変わらない:** 出荷・発送の取り消し・出荷日の直し・返品の戻り・返品の届いた日の直し・交換・持ち出し・原価の回の登録（元の日付より後に登録した回を含む）の全部の順番を入れ替えても、数量の流れと期末の評価額が同じ。保存した額が無い。持ち出しの額は記録した時に固定され、係の流れる時刻で変わらない → Task 10 の `FREQ-603-AC-01`〜`AC-06`・Task 5 の `FREQ-598-AC-07`。
+- **持ち出しが1本ずつ・正しい額・正しい区分で仕訳になる:** 自家消費・人にあげる（事業主貸／4030、普段の売値、原価と売値の70%以上でだけ直せる）、宣伝用（広告宣伝費／仕入高、原価）、約束付き（広告宣伝費／売上高、負担の価額）、貸し出し（仕訳なし、戻り、年末に戻っていなければ棚卸の下書きへ）、法人（役員への贈与・寄附金・交際費等の別、損金の印）。0円の注文は作らない。調整（なくした・壊れた）と分かれる。同じ持ち出しは1本、同時にも1本 → Task 4〜7 の `FREQ-597-AC-01`〜`AC-06`・`FREQ-598-AC-01`〜`AC-08`・`FREQ-599-AC-01`〜`AC-06`・`FREQ-600-AC-01`〜`AC-05`。
+- **棚卸表が二重に数えず、確認後は変わらない:** 下書きの数は物の置き場を `on_hand` で1回だけ数え（送っていない着を二重にしない）、仕掛品は縫製中だけ。下書きと数えた数の差が残り、確認の印を付けた版は書き換えず新しい版で直す。工場に預けた生地・運送中・貸し出し中・包装材料・前払金の確認が同じ一覧に載る。前受金の残高と送っていない注文の前受金の残りの合計が照合される → Task 8・9 の `FREQ-601-AC-01`〜`AC-06`・`FREQ-602-AC-01`〜`AC-07`。
+- **帳簿と G を壊さない:** 持ち出しの仕訳以外は仕訳が1本も増えず、借方と貸方が一致し、G の書き手の閉じた一覧は78→80本の付け替えだけ、`stock_movements` の既存の理由と数の動きは無改造で通る。計画2・3の係と返金・返品の7本・計画4の7本の本文は変わらない → Task 4 の `FREQ-597-AC-06`・Task 5 の `FREQ-598-AC-08`・Task 16 の Step 2。
+
+---
+
+## 設計の行から Task への対応
+
+「計画N」は他の計画が作る物。範囲の外の行は計画番号を書く。
+
+| 設計の行 | 作る Task | 固定する試験 |
+| --- | --- | --- |
+| 9-a（5つの区分・製品／仕掛品の期首期末の勘定・タグは材料・包装材料は貯蔵品・前渡金は区分に入れず前払金の確認） | 1（勘定）・8・9 | 594-AC-06、601-AC-01、602-AC-05 |
+| 9-a2（包装材料は開店した年は数える・次の年から数えず経費でよい・設定に残す） | 3・8 | 596-AC-05、601-AC-05 |
+| 9-b（下書きはシステム。縫製中→仕掛品、送っていない→製品、作り置き→製品／商品。品の印。材料と貯蔵品はオーナー。材料の額と加工代を分ける。預け生地・未着品。見積り・確定。税込と税抜） | 2・9 | 595-AC-01〜04、602-AC-01〜03 |
+| 9-b2（売れたが送っていない品は製品。原価も出荷した年） | 9・10 | 602-AC-02、603-AC-02 |
+| 9-b3（下書きと数えた数・差・確認の印・棚卸表の保存7年・置き場所・評価を下げる理由・証拠） | 8 | 601-AC-02〜06 |
+| 9-c（原価に入れる費用。仕入れた品は付随費用をいつも足し、3% で外せるのは (1)〜(3) だけ。工場から店への送料は既定で入れる） | 1・3 | 594-AC-01〜03、596-AC-04 |
+| 9-c2（方法は期間の事業の形・区分ごと。既定は最終仕入原価法） | 3 | 596-AC-01 |
+| 9-c3（回ごとの日と単価。最終仕入原価法は基準日までで一番遅い回。同じ季節の追加の回も分ける） | 1・2 | 594-AC-04、595-AC-01・02 |
+| 9-c4（個別法は届け出・承認の記録がある時だけ。A11） | 3 | 596-AC-02〜03 |
+| 9-c5（受注生産の品の個別法の案。2025・2026年分は最終仕入原価法） | 3・11 | 596-AC-03、604-AC-01 |
+| 9-c6（オーナー自身の手間は原価に入れない） | 1（原価の組み立てが労務費にオーナーを入れない） | 594-AC-07 |
+| 9-c7（原価法でも評価損。個人は施行令104条、法人は指針27項と税の差） | 8・11 | 601-AC-03、604-AC-04 |
+| 9-c8（法人の届け出の期限・低価法・第1期の画面の文） | 3 | 596-AC-06 |
+| 9-d（前払金の残高を工場ごとに確かめる。経費にしない。済んだ作業は仕掛品・製品に入れ未払金。額未定は見積り） | 9 | 602-AC-05 |
+| 9-d2（途中の作業の加工代は確定していない。仕掛品は使った材料だけ） | 1・9 | 594-AC-08、602-AC-05 |
+| 9-e（前受金の残高と送っていない注文の前受金の残りを照らす。受注残の照合） | 9 | 602-AC-06 |
+| 9-f（作り始めた注文が在庫のどこにも無い注意） | 9 | 602-AC-07 |
+| 9-g（返品で戻った品の原価の扱いは税理士に確かめてから決める） | 10（既定は戻った品を数量の流れの戻りとして数え、特別な原価の調整は作らない。未確認 #2） | 603-AC-03 |
+| 9-h（期首は前の期間と事業の形が同じ時だけ引き継ぐ。締めの版が指す棚卸表から〔個人は最新の締めの版、法人は版1の締め〕。計画5の間は試算。第1期は0） | 11 | 604-AC-02〜03 |
+| 9-i（決算書の欄: 4ページ製造原価の計算と1ページの損益。勘定ごとの出し先の表） | 11 | 604-AC-05 |
+| 9-1 の「今の作り」5行 | 1・2・8・9 | 594〜602 |
+| 9-3 の例3行（棚卸資産・前払金・途中の作業） | 9 | 602-AC-05 |
+| 9-5 の比較（受注生産の個別法・オーナーの手間・前受金の照合・使っていない包装材料） | 1・3・9 | 594-AC-07、596-AC-03・05、602-AC-06 |
+| 13-a（持ち出しの理由6つ・印は台帳に・0円の注文は作らない） | 4 | 597-AC-01〜02 |
+| 13-b（個人の自家消費・人にあげる。出した日に仕訳1本。普段の売値・70%以上でだけ直せる。原価は棚卸で） | 5 | 598-AC-01〜02 |
+| 13-c（宣伝用は原価で広告宣伝費／仕入高。原価の形にするのは多くの人への宣伝か見本のみ） | 5 | 598-AC-03 |
+| 13-c2（約束付き投稿は交換。広告宣伝費／売上高。負担の価額。表示の記録。源泉徴収の欄。インボイス区分） | 5・7 | 598-AC-04、600-AC-05 |
+| 13-c3（取引先へのお礼。接待交際費／家事消費等。対象外） | 5 | 598-AC-02 |
+| 13-d（貸し出しは仕訳なし。戻り。年末に戻っていなければ棚卸の下書きへ） | 4・9 | 597-AC-03、602-AC-04 |
+| 13-d2（戻らない・壊れた は調整。弁償金は 4040 雑収入。消費税の区分） | 5・7 | 598-AC-05、600-AC-03 |
+| 13-e（印ごとの欄: 相手・目的・約束の有無・使う人） | 4 | 597-AC-02 |
+| 13-f（年末の一覧。締める前の確かめ。7年残す。源泉・支払調書・社会保険の届出が要る印） | 7 | 600-AC-04 |
+| 13-g（消費税の区分を印ごとに。個人の自家消費はみなしの売上・税抜。法人の役員への贈与は役員報酬／売上高・賞与の源泉・表の入れ替え・納期の特例・安売り判定） | 4・6・7 | 599-AC-01〜04、600-AC-01〜02 |
+| 13-g2（法人の贈与・値引き。寄附金・交際費等／売上高。損金の上限の印） | 6 | 599-AC-05〜06 |
+| 13-h（棚卸の差・壊れた・なくした は調整。印と分ける） | 4・7 | 597-AC-04、600-AC-03 |
+| 13-i（個人的な値引きの印。70%未満の差を事業主貸／4030。法人は 13-g・13-g2） | 5・6 | 598-AC-06〜07、599-AC-06 |
+| 13-1 の「今の作り」4行（理由は調整に紛れる・0円の注文は作れない・勘定はある・一覧は無い） | 4・7 | 597・600 |
+| 13-3 の例6行（売値20,000・原価8,000のシャツ） | 5 | 598-AC-01〜07 |
+| 13-5 の比較（持ち出しの理由・帳簿・額・宣伝用・貸し出し） | 4・5 | 597〜598 |
+| 1-a17（交換の出荷・戻り。売上の仕訳は作らない。原価・在庫は9章） | 10（仕訳は作らず、数量の流れの読み口で出す。決められなかった点 #1） | 603-AC-04 |
+| 1-a18（持ち出し・値引きの差・弁償金の出来事と印） | 5 | 598-AC-01〜08 |
+| 1-a20（棚卸の決算仕訳の印） | 11（行を組む読み口まで。入れるのは計画6） | 604-AC-04 |
+| 16 章の範囲の行（型紙の代・交換で戻る品・個別法・包装材料・③欄・様式・源泉の表） | 未確認事項に置く（#1〜#10） | — |
+| 13-c2 の「課税事業者の間は広告宣伝費の行に 15-c のインボイス区分を付ける」・9-b の「課税への切り替えの期首の在庫の調整（消費税法36条）」 | 計画7（15-c の写し）と課税への切り替えの計画。計画5は税込・税抜・消費税の額の欄（Task 2）と消費税の区分（Task 4）を持つだけ | — |
+| 計画2・3・4・6・7の物 | 計画2〜4・6・7 | — |
+
+---
+
+## 要求と受入条件（`docs/02_Requirements/requirements.md` の6列の表へ足す文）
+
+計画4の最後の番号は FREQ-593。下表の各行を「要求ID／要求内容／要件ID／要件内容／受入条件ID／受入条件内容」の6列へ展開する。要件 ID は `FREQ-NNN-REQ-01`、AC は同じ番号の `FREQ-NNN-AC-NN`。各 Task は、自分が証明する AC の行を同じコミットで足す（要求管理ルール。会計・在庫の要求は `scope.json` の範囲の外なので `requirements.md` に書く）。Task 15 は全部そろっているかの確かめと体裁だけ。
+
+| 要求 | REQ-01 の要件 | AC | 証明する Task |
+| --- | --- | --- | --- |
+| FREQ-594（在庫の評価の規則を1つの部品で持つ） | 取得価額の組み立て・3%・最終仕入原価法の回の選び方・方法の決め方を、TS の純粋な部品と同じ答えの SQL の関数で持つ | AC-01 仕入れた品は購入の代価に引取運賃・荷役費・保険・手数料・関税を必ず足す／AC-02 3% で外せるのは買入事務・検品・整理など(1)〜(3)と工場から店への送料・長い保管だけで、外すのは合計が基準の3%以内の時だけ／AC-03 作った品は材料費・労務費・経費（加工代は経費）で、基準は製造原価／AC-04 最終仕入原価法は基準日までで一番遅い日の回の単価で、同じ日は回の番号の大きい方、基準日より後の回は使わない／AC-05 方法は承認の記録が無ければ最終仕入原価法で、個別法は記録がある時だけ／AC-06 製品・仕掛品の期首期末の棚卸高の勘定が追加され、勘定の数が合う／AC-07 オーナー自身の手間は原価の労務費に入らない／AC-08 仕掛品は使った材料だけで、確定していない加工代を入れない | 1 |
+| FREQ-595（原価の回と品の印を持つ） | 品ごとに作った品か仕入れた品かの印と、作った回・仕入れた回ごとの日・単価・見積り／確定・税込と税抜を、追記専用の改版つきで持つ | AC-01 回は日・材料の額・加工代・付随費用・取得価額を持ち、同じ季節の追加の回も別の行になる／AC-02 改版は新しい行で前の行を書き換えず、1つの回の改版は分かれない／AC-03 見積りの行は確定の行に置き換えられ、年末は見積りのままの行が出る／AC-04 税込と税抜と消費税の額が分けて残り、免税の間は税込で入れると画面に出る／AC-05 印の無い品は棚卸の下書きで止まる | 2 |
+| FREQ-596（評価の方法と承認の記録） | 期間・区分ごとの評価の方法と、届け出・承認の記録を持ち、個別法は記録が無ければ選べない | AC-01 既定は最終仕入原価法で、期間の事業の形と区分ごとに持つ／AC-02 承認の記録が無いと個別法を設定できない／AC-03 2025年・2026年分は個別法を選べず、記録の「使い始める年」以後だけ選べる／AC-04 3% の設定は (1)〜(3) の3種類だけを選べる／AC-05 包装材料の扱い（開店した年は数える・次の年から経費可）が設定に残り、変えたら理由を残す／AC-06 法人の第1期を足す画面に届け出の2つの期限と「個人の届け出は引き継がれない」が出る | 3 |
+| FREQ-597（在庫の持ち出しの記録） | 持ち出しの理由6つを台帳に足し、印・相手・目的・使う人・約束の有無・金額を残して、貸し出しの戻りと取り消しを足す | AC-01 理由6つが台帳に入り、数の符号が正しい／AC-02 印ごとの必須の欄がそろわないと断る（自家消費は使う人、宣伝用は媒体、約束付きは約束の有無）／AC-03 貸し出しは仕訳を作らず、戻すと在庫に戻り、年末に戻っていない物が分かる／AC-04 調整（なくした・壊れた）は持ち出しと分かれる／AC-05 0円の注文は作れず、持ち出しは注文を作らない／AC-06 G の書き手の一覧は80本で既存の台帳の動きは変わらない／AC-07 同じ要求番号の再送は同じ結果で、同時にも1件 | 4 |
+| FREQ-598（個人の持ち出しの仕訳） | 個人の期間の持ち出しを、出した日に印ごとの仕訳1本にする | AC-01 自家消費・人にあげる品は事業主貸／家事消費等で、額は普段の売値／AC-02 額を直せるのは原価以上かつ売値の70%以上で、直したら理由が残る。取引先へのお礼は接待交際費／家事消費等／AC-03 宣伝用は広告宣伝費／仕入高で原価／AC-04 約束付きは広告宣伝費／売上高で負担の価額、表示の記録がある／AC-05 弁償金は雑収入で入金の日／AC-06 個人的な値引きの印のコードで売値の70%未満の注文は一覧に出て、差が事業主貸／家事消費等の1本になる／AC-07 印の無いコード・全体のセール・家族への注文は対象外／AC-08 同じ持ち出しは1本、取り消して入れ直すと元の日の取り消しと新しい仕訳、期間・切り替えの前は止まる | 5 |
+| FREQ-599（法人の贈与・役員への贈与） | 法人の期間の贈与・値引きを、役員・寄附金・交際費等に分けて仕訳にし、損金の印と源泉の表を持つ | AC-01 役員への贈与は役員報酬／売上高で時価、損金にならない印が付く／AC-02 役員への賞与の源泉は年ごとの表と前月の給与から出て、表が無い年は計算を止める／AC-03 納期限は翌月10日（休日なら次の日）、納期の特例の承認があれば7月10日と1月20日／AC-04 役員に値引きで売る時は通達の3つの条件で給与の線と消費税の線を別々に判定する／AC-05 役員以外への私的な贈与は寄附金／売上高、取引先のお礼は接待交際費／売上高で、上限の印が付く／AC-06 法人の期間では 4030 と事業主貸を使わず、個人の70%の目安を使わない | 6 |
+| FREQ-600（消費税の区分と年末の一覧） | 印ごとの消費税の区分と、年末の一覧（13-f）を出し、調整と分ける | AC-01 個人の自家消費はみなしの売上（税抜 = 売値×100/110）、人にあげる品・宣伝用は対象外、貸し出しは取引でない／AC-02 法人の役員への贈与はみなしの売上、それ以外は対象外／AC-03 壊れた・なくした品は対象外、弁償金は品が使えるかで売上と対象外に分かれる／AC-04 年末の一覧に日・品・数・印・原価・売値・入れた額・相手・目的・約束の有無・貸し出し中かが出て、源泉・支払調書・社会保険の届出が要る印が目立つ／AC-05 約束付きの源泉徴収の要否・204条の号・納期限・支払調書の要否の欄が残る | 4・7 |
+| FREQ-601（棚卸表を版つきで残す） | 棚卸表は下書き・数えた数・差・確認の印を持ち、確認後は書き換えず新しい版で直し、7年（法人の欠損金の年は10年）残す | AC-01 5つの区分と前払金の確認が同じ表に載る／AC-02 数えた数が下書きと違えば数えた数が正で差が残る／AC-03 評価を下げる理由・証拠・12月31日の売れる値段の欄があり、値下げだけでは個人の評価損にならないと画面に出る／AC-04 確認の印を付けた版は書き換えず、直しは新しい版／AC-05 包装材料の扱い（数える・数えずに経費）が表に残る／AC-06 追記専用で、anon・authenticated に権限が無く、保存期間が残る | 8 |
+| FREQ-602（棚卸の下書きと照合） | 下書きを作り、前払金と前受金を照らし、在庫の無い注文を注意に出す | AC-01 作った品は製品、仕入れた品は商品に分かれる／AC-02 物の置き場は `on_hand` で1回だけ数え、送っていない着を二重にせず、仕掛品は縫製中だけを数える／AC-03 預けた生地・運送中の未着品が材料の別の行になる／AC-04 年末に戻っていない貸し出しの品が店の在庫のまま入る／AC-05 前払金の残高が工場ごとに出て、12月31日に作業が済んでいない前払いは棚卸資産に入らず、途中の作業は材料だけを仕掛品にする／AC-06 前受金の残高と送っていない注文の前受金の残りの合計が照らされ、差が出る／AC-07 作り始めた注文が材料・仕掛品・製品・前払金のどこにも無ければ注意に出る | 9 |
+| FREQ-603（数量の流れと原価の届く順） | 入荷・出荷・返品の戻り・交換・持ち出し・調整の数量の流れを元の記録から読み、届く順で変わらない | AC-01 全部の届く順で数量の流れと期末の評価額が同じ／AC-02 出荷した年に流れが動き、送っていない品は期末の製品に残る／AC-03 返品で戻った品は届いた日に戻りとして数え、原価の特別な調整は作らない／AC-04 交換の出荷は売上にならず数量の流れだけに出る／AC-05 原価の回を後から（元の日付より後に）登録しても、評価額は基準日までの回で決まる／AC-06 保存した額が無く、読み口がロックを取らない | 10 |
+| FREQ-604（期末の評価と期首） | 期末の棚卸高を方法に従って出し、期首を同じ事業の形からだけ引き継ぎ、決算書の欄を表で持つ | AC-01 評価額は設定の方法に従い、承認の記録が無ければ最終仕入原価法／AC-02 期首は事業の形が同じ時だけ、締めの版が指す棚卸表から取り（計画5の間は試算 `is_trial` を返す）／AC-03 個人から法人の第1期の期首の在庫は0で、事業の形が違う期間の間の写しを DB が断る／AC-04 期末の棚卸高の仕訳の行が区分ごとに組まれ、貸借が合う／AC-05 勘定ごとの決算書の出し先の表が4ページ・1ページに分かれる | 11 |
+| FREQ-605（画面） | 原価の回・評価の方法・持ち出し・年末の一覧・棚卸表の画面を足す | AC-01 各画面が390/768/1280pxで崩れない／AC-02 権限の無い人は書き込めない／AC-03 画面の文に「税理士に確かめる」の所が出る | 13・14 |
+
+---
+
+### Task 1: 評価の規則（純粋な TS）と勘定の追加
+
+controller が別セッションへ `src/lib/finance/accounts.ts`・`docs/04_DetailDesign/shared/finance.md` の変更を先に知らせる。計画4 Task 4 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-594 の AC の行を同じコミットで6列の表へ足す。要求管理ルール）
+- Create: `src/lib/accounting/inventory/inventory-types.ts`、`src/lib/accounting/inventory/acquisition-cost.ts`、`src/lib/accounting/inventory/last-purchase.ts`、`src/lib/accounting/inventory/valuation-method.ts`、`tests/unit/lib/accounting/inventory/acquisition-cost.test.ts`、`tests/unit/lib/accounting/inventory/last-purchase.test.ts`、`tests/unit/lib/accounting/inventory/valuation-method.test.ts`
+- Modify: `src/lib/finance/accounts.ts`（5011・5016・5041・5046・6325 を足す）、`tests/unit/lib/finance/journal.test.ts`（勘定の数を計画4の162から167へ）、`docs/04_DetailDesign/shared/finance.md`（科目の表。表と `accounts.ts` は1対1）、`src/lib/accounting/labels.ts`（ラベルを足す。計画2 Task 1 の物）
+- Test: 上の単体3本と既存の finance 単体
+- Read: `src/lib/finance/accounts.ts:56-61,141-181`、`src/lib/finance/year-end.ts:20-31,73`（今の棚卸の仕訳。計画5は変えず、計画6が置き換える）、`src/lib/finance/product-costing.ts:114`
+
+**Interfaces:**
+- Produces（型。`inventory-types.ts`）: `InventoryCategory = 'material'|'work_in_process'|'product'|'goods'|'supplies'`（9-a の5つ。`product`＝製品、`goods`＝商品）、`ItemOrigin = 'made'|'bought'`、`ValuationMethod = 'last_purchase'|'specific'|'lower_of_cost_or_market'`、`CostLot = {id:number;itemId:number;seasonKey:string;origin:ItemOrigin;lotDate:string;materialCost:number;processingCost:number;purchasePrice:number;incidental:{inbound:number;handling:number;insurance:number;commission:number;duty:number;intake:number;factoryToStore:number;longStorage:number};priceStatus:'estimate'|'final';supersedesId:number|null}`。金額は円の安全整数。
+- Produces（`computeAcquisitionCost(lot, options)`）: 作った品（`origin='made'`）は `materialCost + processingCost + 製造のための経費` を1単位の製造原価にする（工場の加工代は経費。オーナー自身の手間は引数に無く、労務費は専従者給与の届けのある家族分だけ受ける。9-c6）。仕入れた品は `purchasePrice + inbound + handling + insurance + commission + duty` を**必ず**足す（3% でも外さない）。`intake`（買入事務・検収・製造後の検査・整理・選別・手入れ）・`factoryToStore`（工場などから店への送料・荷造費。**既定は原価に入れる**）・`longStorage`（特別の時期に売るための長い保管）の3種類だけは、`options.excludeSmallIncidentals` が真で、この3種類の合計が基準の額（仕入れた品は購入の代価、作った品は製造原価）の3%以内（`<= floor(基準*3/100)`、基準が0なら外さない）の時だけ外す。判定は年ごと・同じ種類の品ごと（呼び出し側が渡す `year`・`kindKey` を結果に載せる）。戻りは `{unitCost:number;included:readonly string[];excluded:readonly string[];basis:number;threePercentApplied:boolean}`。
+- Produces（`selectLastPurchaseLot(lots, asOf)`）: 「同じ種類の品」は品（`item_id` が同じ品）と決める（SQL の `inventory_last_purchase_lot(_item_id, _as_of)` と同じ）。渡された回のうち `lotDate <= asOf` で、**現在の版**（他の回の `supersedesId` に指されていない行）のものを選び、`lotDate` が一番遅い回、同じ日は `id` の大きい方を返す。`asOf` より後の回は使わない。回が無ければ `null`。`asOf` は個人は12月31日、法人は期末（呼び出し側が渡す）。
+- Produces（`resolveValuationMethod({businessType, category, scope, year, periodStartsOn, corporateFirstPeriod, settings, approvals})`（`periodStartsOn` はその期間の初日、`corporateFirstPeriod` は `{startsOn, filingDue} | null`〔法人の最初の期間の初日と、`private.inventory_corporate_first_notice_due` と同じ式で出した第1期の申告の期限。個人は null〕）（`scope` は `'all'|'made_to_order'`。設定と承認の `scope` が合うものだけを見る））: `settings` に区分ごとの方法があれば従うが、`specific` は `approvals` に有効な記録がある時だけ有効で、無ければ `last_purchase` に戻す。有効な記録は、**個人（`soleProprietor`）は `kind IN ('approval','deemed_approval')` で `firstYear<=year` の物だけ**（最初の届け出の期限 2026-03-16 は過ぎており、変えられるのは変更の承認の申請が承認された時だけ。`deemed_approval` は施行令101条5項の「12月31日までに知らせが無ければ承認とみなす」の記録）、**法人の `notice` は第1期の届け出としてだけ効き**（9-c8、法人税法施行令29条2項1号。`first_effective_on` がその法人の最初の期間の初日と同じで、`document_date` が第1期の申告の期限以前の時だけ）、それより後の期は `approval`・`deemed_approval` の時だけ個別法を開ける。`withdrawn` で打ち消された記録は効かない。**2025年・2026年は記録があっても `last_purchase`**（A11。最初の届け出の期限が過ぎたため、承認の記録の `firstYear` は2027以上でなければ記録できない）。`lower_of_cost_or_market` は法人だけ（28条1項。青色の条件なし）。戻りは `{method, reason: 'default'|'approved'|'no_approval'|'before_first_year'|'corporate_low_price'}`。
+- Produces（`workInProcessCost(lot, {processingDelivered})`）: 仕掛品の額。引き渡しを受けていない加工代は入れず、使った材料の額だけ（9-d2）。引き渡しを受けて作業が済んだ分は材料＋加工代（9-d）。
+- Produces（勘定）: `ACCOUNTS` に5件を足す。`{code:'5011',type:'expense',normalSide:'debit',name:'期首製品棚卸高',section:'期首商品（製品）棚卸高',…,scope:'common'}`、`{code:'5016',…name:'期首仕掛品棚卸高',section:'期首商品（製品）棚卸高'…}`（決算書の4ページの「仕掛品の期首棚卸高」に出す勘定は Task 11 の表で分ける）、`{code:'5041',type:'expense',normalSide:'credit',name:'期末製品棚卸高',section:'期末商品（製品）棚卸高'…}`、`{code:'5046',…name:'期末仕掛品棚卸高',…}`、`{code:'6325',type:'expense',normalSide:'debit',name:'寄附金（時価贈与）',section:'経費',…,scope:'corporation'}`（7-k。既存の `6320` 寄附金は事業の形を問わない手入力用のまま）。実装時に `accounts.ts` で5つの番号が重ならないことを確かめ、重なれば近い空き番号にして `finance.md` と報告する。`accounts-contract.test.ts`（計画1 Task 4）の「S2 の勘定の行と `emit-accounts-seed.ts` の出力の一致」を、S2 の行＋S29 が足す5行との一致に直す。**この直しは S29 ができる Task 2 の Files で行う**（Task 1 の時点では S29 が無く、DB 試験が赤くなるため）。
+- Produces（補助の符号）: `ACCOUNTING_SUB_ACCOUNTS` に足さない（持ち出しの仕訳は補助を使わない）。
+
+- [ ] **Step 1: 失敗する単体を書く。** `FREQ-594-AC-01: 仕入れた品は購入の代価に引取運賃・荷役費・保険・手数料・関税を必ず足し、3%以内でも外さない`、`FREQ-594-AC-02: 買入事務・検収・整理と長い保管の合計が購入の代価の3%以内ならその3種類だけ外せ、3%を超えれば全部入れる`（1,000円の仕入れで 30円は外れ、31円は外れない。境界 `floor(1000*3/100)=30`）、`FREQ-594-AC-02: 工場から店への送料は既定で原価に入れる`、`FREQ-594-AC-02: 基準が0なら外さない`、`FREQ-594-AC-03: 作った品は材料費と加工代と製造のための経費の合計で、基準は製造原価`、`FREQ-594-AC-04: 最終仕入原価法は基準日までで一番遅い日の回を選び、同じ日は回の番号の大きい方、基準日より後の回は選ばない`、`FREQ-594-AC-04: 改版された回は新しい版だけを選ぶ`、`FREQ-594-AC-04: 回が無ければnull`、`FREQ-594-AC-04: 別の品の回が混ざった入力では、その品の回だけを選ぶ（固定のベクトルに別の品の回を入れる）`、`FREQ-594-AC-05: 承認の記録が無ければ個別法の設定でも最終仕入原価法に戻る`、`FREQ-594-AC-05: 2026年は承認の記録があっても最終仕入原価法、2027年で記録のfirstYearが2027なら個別法`、`FREQ-594-AC-05: 低価法は法人だけ`、`FREQ-594-AC-07: 作った品の労務費の引数にオーナー自身の手間を渡す道が無い`（型の試験。専従者給与の届けのある家族分だけ受ける）、`FREQ-594-AC-08: 仕掛品の額は使った材料だけで、引き渡しを受けていない加工代は0`、`FREQ-594-AC-06: 勘定は167件で既存の名前と区分が変わらず新しい5件が増える`、`FREQ-594-AC-06: 新しい勘定の符号は重ならない`。
+- [ ] **Step 2: RED を測る。** `npx.cmd jest tests/unit/lib/accounting/inventory tests/unit/lib/finance/journal.test.ts --runInBand`。
+- [ ] **Step 3: Interfaces どおり実装する。** 純粋な関数だけ。I/O なし。TS の関数の答えと同じ値を、Task 2・3・11 の SQL の関数（`private.inventory_acquisition_cost`・`private.inventory_last_purchase_lot`・`private.inventory_valuation_method`）が返すことを、Task 2・3・11 の試験が固定のベクトル（15本）で確かめる。
+- [ ] **Step 4: GREEN を測る。** 上の単体、`npx.cmd jest tests/unit/lib/finance --runInBand`、型・lint。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 在庫の評価の規則と製品・仕掛品の棚卸高の勘定を足す`
+
+### Task 2: 原価の回・品の印・見積りと確定の改版
+
+controller が別セッションへ `docs/06_Operations/db-migrations.md`・`docs/03_BasicDesign/data/er.md` の更新を先に知らせる。Task 1 のコミット後に始める。`item_cost_history` を読み書きするコードは今は無い（recon-part-C 2.3）ので、既存の画面は影響を受けない。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-595）、`tests/integration/db/accounts-contract` 系の試験（計画1 Task 4 の `accounts-contract.test.ts` を S2＋S29 の5行との一致に直す。意図して直す試験）
+- Create: `supabase/migrations/<ts29>_accounting_p5_inventory_cost_lots.sql`、`tests/integration/db/accounting_p5_cost_lots.integration.test.ts`、`tests/integration/db/accounting_p5_migration_asserts.integration.test.ts`、`tests/integration/db/helpers/accounting-inventory-fixtures.ts`（`seedItemWithMark`・`seedCostLot`）
+- Test: 上の DB 2 suite と Task 1 の単体との値の一致
+- Read: `supabase/migrations/20260901102912_remote_schema.sql:557`（`item_cost_history`）、`20261026130200_sec_grants_hardening.sql:74-80`（権限）、`:7`（`items` の原価2列の権限）、recon-part-B 1.3
+
+**Interfaces:**
+- Consumes: 計画1の `reject_accounting_mutation`・`accounting_accounts`（勘定の行）。
+- Produces（表の列の追加）: `item_cost_history`（今: `id bigint`・`item_id`・`season_key`・`pattern_cost`・`mass_production_cost`・`pdf_url`・`created_at`・`updated_at`）に、**設計 9-c3 のとおり**列を足す。足す列は全部 NULL 可で、`lot_kind IS NULL` の行は「昔の行」として評価に使わない。`lot_kind text CHECK (lot_kind IN ('made','bought'))`、`lot_date date`（作った回は出来上がった日、仕入れた回は受け取った日。日本時間の日）、`lot_key text`（回の名前。同じ品・同じ季節の追加の回は別の `lot_key`。`UNIQUE (item_id, lot_key)` を `lot_key IS NOT NULL` の行だけに）、`material_cost integer`、`processing_cost integer`、`purchase_price integer`（仕入れた品の購入の代価）、`incidental jsonb`（Task 1 の付随費用の8つの鍵。鍵は固定、値は0以上の整数）、`unit_cost integer`（1着の取得価額。`computeAcquisitionCost` の結果。CHECK で `lot_kind='made'` なら `material_cost + processing_cost + 経費`、`'bought'` なら `purchase_price + 必ず足す付随費用 + 外さなかった3種類` に一致）、`price_status text CHECK (price_status IN ('estimate','final'))`、`made_to_order boolean NOT NULL DEFAULT false`（受注生産の品にだけ使う回か）、`quote_number text`（元の見積書・請求書の番号。確定は必須）、`tax_inclusive_amount integer`・`tax_exclusive_amount integer`・`consumption_tax_amount integer`（免税の間は税込みで入れ、税抜と消費税の額も分けて持つ。`tax_inclusive_amount = tax_exclusive_amount + consumption_tax_amount`）、`supersedes_id bigint NULL REFERENCES item_cost_history(id) ON DELETE RESTRICT`、`recorded_by uuid`、`recorded_at timestamptz DEFAULT now()`。**実装時に最初に `item_cost_history` の制約を調べ**（`UNIQUE (item_id, season_key)` などがあれば、新しい回の行が入るように外す／部分一意に直す。昔の行は残す）、結果を `changed-tests.md` に書く。
+  - `UNIQUE (supersedes_id)`（`supersedes_id IS NOT NULL` の行だけ。1つの回の改版が分かれない）。
+  - 追記専用: `lot_kind IS NOT NULL` の行は UPDATE/DELETE を断る。**加えて、昔の行（`lot_kind IS NULL`）の `lot_kind` を NULL から値へ変える UPDATE も断る**（service_role が ALL の権限を持つため）。権限は今のまま変えない（`inventory_item_marks` と新しい表だけ新しい決まり）（トリガー `reject_accounting_mutation` を `WHEN (OLD.lot_kind IS NOT NULL)` で）。昔の行（`lot_kind IS NULL`）は今のまま。
+  - **回のある品は消せなくなる**（`item_cost_history.item_id` の外部キーは `ON DELETE CASCADE` だが、回の行の DELETE を断つため。決めたことと運用の文書に書き、品を消す既存の試験・後始末が当たらないか `grep` で数えて報告する）。
+  - 現在の版: `private.inventory_current_lots()`（他の行に `supersedes_id` で指されていない `lot_kind IS NOT NULL` の行）。
+- Produces（品の印）: `inventory_item_marks(item_id bigint PRIMARY KEY, origin_kind text NOT NULL CHECK (origin_kind IN ('made','bought')), set_by uuid, set_at timestamptz NOT NULL DEFAULT now(), version bigint NOT NULL DEFAULT 1)`（`items` に列を足さず、別の表。理由: `items` は匿名にも読ませる表で、原価の側の情報を足さない）。直しの履歴は `inventory_item_mark_revisions(id bigserial PK, item_id, previous_origin, new_origin, reason text NOT NULL CHECK (char_length(reason) BETWEEN 1 AND 500), changed_by uuid, changed_at timestamptz)`（追記専用）。印の変更は版の比べ（`ACCOUNTING_VERSION_CONFLICT`）で守る。
+- Produces（書き口。private 本体＋service_role 専用の public 入口。権限 `admin.finance.manage`）: `admin_set_inventory_item_mark(_actor_id uuid,_item_id bigint,_origin text,_reason text,_expected_version bigint,_request_key uuid) RETURNS jsonb`、`admin_record_inventory_cost_lot(_actor_id uuid,_lot jsonb,_supersedes_id bigint DEFAULT NULL,_request_key uuid DEFAULT NULL) RETURNS jsonb`（`_lot` の鍵は固定。`unit_cost` は DB が `private.inventory_acquisition_cost` で再計算して一致を確かめる。改版は `_supersedes_id` が現在の版である時だけ受け、そうでなければ `ACCOUNTING_VERSION_CONFLICT`。確定への置き換えは `price_status='final'` と `quote_number` 必須。品の印が無い品の回は `INVENTORY_ITEM_MARK_MISSING / 55000`）。同じ要求番号で同じ内容は前の結果、違う内容は `ACCOUNTING_REQUEST_KEY_CONFLICT`。
+- Produces（読み口。STABLE・service_role 専用）: `public.list_inventory_cost_lots(_item_id bigint DEFAULT NULL,_season_key text DEFAULT NULL,_include_superseded boolean DEFAULT false,_limit integer DEFAULT 100,_after_id bigint DEFAULT NULL) RETURNS jsonb`（`MAX_LOT_PAGE=200`）、`public.get_inventory_estimate_lots(_year integer) RETURNS jsonb`（年末に見積りのままの現在の版の行と、請求書が来ていれば置き換えるよう促す印。9-b）。
+- Produces（SQL の関数。Task 1 の TS と同じ答え）: `private.inventory_acquisition_cost(_lot jsonb,_exclude_small boolean) RETURNS jsonb`（IMMUTABLE）、`private.inventory_last_purchase_lot(_item_id bigint,_as_of date) RETURNS bigint`（STABLE。現在の版のうち `lot_date <= _as_of` で一番遅い日、同じ日は `id` の大きい方。**`recorded_at` は見ない**）。入口なし・service_role からも REVOKE。
+- Produces（勘定の行）: S29 の本文で `accounting_accounts` に Task 1 の5件を足す（`-- ACC_ACCOUNTS_P5_BEGIN/END`）。
+- Produces: S29 assert DETAIL `acc_s29_columns`・`acc_s29_constraints`・`acc_s29_immutable`・`acc_s29_rls_acl`・`acc_s29_function_attrs`・`acc_s29_accounts`・`acc_s29_legacy_rows_untouched`（昔の行が変わっていない）・`acc_s29_existing_dml_allowlist`（DML は勘定の5行だけ）。
+
+- [ ] **Step 1: 失敗する試験を書く。** DB は ROLLBACK の形（`describeLocalDb`）。`FREQ-595-AC-01: 回は日と材料の額と加工代と付随費用と取得価額を持ち、同じ品の同じ季節の追加の回は別の行になる`、`FREQ-595-AC-01: unit_cost は規則どおりの値だけ受け、ずれた値は断る`、`FREQ-595-AC-02: 改版は新しい行で前の行は書き換わらず、同じ回の2つ目の改版は断る`、`FREQ-595-AC-02: 現在の版でない行を改版元にすると VERSION_CONFLICT`、`FREQ-595-AC-02: 回の行のUPDATEとDELETEとTRUNCATEを断り、昔の行は今までどおり更新できる`、`FREQ-595-AC-03: 見積りの行は確定の行に置き換えられ、確定には見積書・請求書の番号が要る`、`FREQ-595-AC-03: 年末の見積りのままの行の一覧が出る`、`FREQ-595-AC-04: 税込と税抜と消費税の額が分けて残り、足し合わせが税込と一致しなければ断る`、`FREQ-595-AC-05: 品の印が無い品の回は断る`、`FREQ-595-AC-01: 最終仕入原価法の回の選び方はTSと同じ答え（15本の固定のベクトル）`、`FREQ-595-AC-01: 登録した順を入れ替えても（日付より後に登録した回を含めて）基準日の選び方は同じ`、`FREQ-595-AC-05: 品の印の変更は版の比べで守られ、理由が履歴に残る`、`FREQ-595-AC-01: 同じ要求番号の再送は前の結果、違う内容は REQUEST_KEY_CONFLICT`、`FREQ-595-AC-01: 品の印の表は anon・authenticated に権限が無く service_role は SELECT だけ。item_cost_history は今の権限のまま（authenticated は SELECT、service_role は ALL）で、lot_kind が NULL の昔の行を値のある行へ変える UPDATE は断られる`、`FREQ-594-AC-06: 勘定の行は TS と一致する`。
+- [ ] **Step 2（controller）: RED を測る。** 上の DB suite。列が無い失敗を記録し、接続の失敗を RED に数えない。
+- [ ] **Step 3: S29 を実装する。** SQL は ASCII。昔の行の列の意味を変えない。
+- [ ] **Step 4（controller）: GREEN を測る。** 共通 verify。末尾 assert を SAVEPOINT 内で、追記専用トリガーの無効化・制約の欠落・昔の行の改ざんを1つずつ入れて流し、55000 と対応 DETAIL を検査する。`item_cost_history` を触る既存の権限の試験（`sec_grants_hardening` の試験）が無改造で通ること。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 原価の回と品の印を追記専用で持つ`
+
+### Task 3: 評価の方法・承認の記録・設定（包装材料・低価法・3%）
+
+controller が別セッションへ先に知らせる。Task 2 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-596）
+- Create: `supabase/migrations/<ts30>_accounting_p5_inventory_methods.sql`、`tests/integration/db/accounting_p5_methods.integration.test.ts`
+- Modify: `tests/integration/db/accounting_p5_migration_asserts.integration.test.ts`（S30 の assert）、`tests/integration/db/helpers/accounting-inventory-fixtures.ts`
+- Test: 上の DB 1 suite
+- Read: 計画1 Task 7（`accounting_settings`・`accounting_periods`・`admin_update_accounting_settings` の形）、設計 9-c2・9-c4・9-c5・9-c8
+
+**Interfaces:**
+- Consumes: 計画1の `accounting_periods`（`business_type`・`starts_on`）、`accounting_settings`（`business_start_date`・`current_business_type`）。
+- Produces（表）:
+  - `inventory_valuation_settings(period_id uuid NOT NULL REFERENCES accounting_periods(id) ON DELETE RESTRICT, category text NOT NULL CHECK (category IN ('material','work_in_process','product','goods','supplies')), scope text NOT NULL CHECK (scope IN ('all','made_to_order')) DEFAULT 'all', method text NOT NULL CHECK (method IN ('last_purchase','specific','lower_of_cost_or_market')), reason text, set_by uuid, set_at timestamptz NOT NULL DEFAULT now(), version bigint NOT NULL DEFAULT 1, PRIMARY KEY (period_id, category, scope))`。行が無い区分・範囲は `last_purchase`（既定。9-c2）。**当てる範囲（9-c5。所得税基本通達47-13〔注〕）:** `scope='all'` は区分の全部、`scope='made_to_order'` は受注生産の品（注文を受けてから作る製品・仕掛品と、その品にだけ使う材料）だけ。`made_to_order` の個別法を設定すると、受注生産の注文の着だけを個別法（注文ごとの1着の原価）、同じ区分の作り置きの品・材料・貯蔵品は最終仕入原価法のまま。承認の記録の `scope` と設定の `scope` が合わない設定は断る（`all` の承認がなければ `all` の個別法は選べず、`made_to_order` の承認で `all` は選べない）。直しは `inventory_valuation_setting_revisions`（追記専用、前後の方法・理由・人・時刻）。`method='specific'` は、同じ事業の形・区分の承認の記録（下）で `first_year <=` その期間の年の行がある時だけ入る（書き口の関数と、遅らせて確かめる制約トリガーで。**個人の期間の年が2027未満なら個別法を断る**。法人の期間は `first_effective_on <= その期間の始まりの日` で確かめ、2027 の縛りは掛けない。A11）。`lower_of_cost_or_market` は法人の期間だけ（個人の期間は断る。個人は評価損で扱う 9-c7）。
+  - `inventory_method_approvals(id bigserial PRIMARY KEY, business_type text NOT NULL CHECK (business_type IN ('soleProprietor','corporation')), category text NOT NULL, scope text NOT NULL CHECK (scope IN ('all','made_to_order')) DEFAULT 'all', kind text NOT NULL CHECK (kind IN ('notice','change_application','approval','deemed_approval','withdrawn')), method text NOT NULL CHECK (method IN ('specific','lower_of_cost_or_market')), first_year integer, first_effective_on date, withdraws_id bigint UNIQUE REFERENCES inventory_method_approvals(id), document_number text, document_date date, recorded_by uuid, recorded_at timestamptz DEFAULT now(), memo text CHECK (char_length(memo) <= 500))`。追記専用。**個人は `first_year >= 2027` の CHECK（`business_type='soleProprietor'` の行だけ）が A11（2025年・2026年分は最終仕入原価法のまま）を DB で守る。法人は暦の年と事業年度が合わないので、使い始める事業年度の初日 `first_effective_on` の日付で持つ**（`business_type` ごとにどちらか一方が必須の CHECK）。個人の `notice` は断る（書き口の関数と CHECK）。`kind='withdrawn'` は `withdraws_id` で元の記録を指して打ち消す（打ち消しの行は元の記録の `category`・`method`・`scope`・`business_type` を写し、個人の `first_year >= 2027` などの CHECK は `kind <> 'withdrawn'` の行だけに掛ける。`withdraws_id` は `kind='withdrawn'` の時だけ必須で、それ以外は NULL の CHECK）。（間違えて入れた承認・通らなかった申請。打ち消された記録は評価に効かない。UNIQUE で1回だけ）。変更承認の申請の記録（`change_application`）は残せるが評価には効かない。評価に効くのは、個人は `approval`・`deemed_approval`、法人は `approval`・`deemed_approval` と、第1期の条件を満たす `notice`。法人の `notice` は**書き口の関数と、行を足す時の制約トリガー**で（CHECK は他の行を見られないので使わない）、`first_effective_on` が最初の期間の初日と同じ・`document_date` が `private.inventory_corporate_first_notice_due`（下）以前の時だけ受ける（新しい種類の事業を始めた時〔29条2項の該当の号。e-Gov で号を確かめて直す〕は未確認事項 #13）。`scope` は下の「当てる範囲」。期限の表示（個人の最初の届け出の期限 2026-03-16 は過ぎた・変更は変えたい年の3月15日・使い始めて3年たたないと特別な理由が要る・2027-03-15 の前に税理士と決める）は画面の読み口 `get_inventory_method_deadlines(_period_id)` が出す。
+  - `inventory_policy_settings(id smallint PRIMARY KEY CHECK (id = 1), small_incidentals_exclusion boolean NOT NULL DEFAULT false, factory_to_store_included boolean NOT NULL DEFAULT true, supplies_policy text NOT NULL CHECK (supplies_policy IN ('count','expense_when_stable')) DEFAULT 'count', supplies_policy_year integer, version bigint NOT NULL DEFAULT 1, updated_by uuid, updated_at timestamptz)`と追記専用の `inventory_policy_revisions`（理由必須）。`small_incidentals_exclusion` が真でも、外せるのは Task 1 の (1)〜(3) の3種類だけ（画面はこの3種類だけを選ばせる。仕入れの引取運賃などの選択肢を作らない）。`supplies_policy='expense_when_stable'` は開店した年（`business_start_date` の年）には選べない（9-a2）。選んだ年と、変えたら理由を残す。
+- Produces（書き口。private 本体＋service_role 専用の public 入口。権限 `admin.accounting.settings.manage`。名前は計画1 Task 2 の6件と照らして実装時に確かめる）: `admin_set_inventory_valuation_method(_actor_id,_period_id,_category,_method,_reason,_expected_version,_request_key,_scope text DEFAULT 'all') RETURNS jsonb`（`made_to_order` の行はこの `_scope` で作る）、`admin_record_inventory_method_approval(_actor_id,_approval jsonb,_request_key) RETURNS jsonb`、`admin_update_inventory_policy(_actor_id,_settings jsonb,_reason,_expected_version,_request_key) RETURNS jsonb`。どれも計画1の `accounting_lock_all` を最初に取る。
+- Produces（読み口。STABLE）: `public.get_inventory_settings() RETURNS jsonb`（方法・承認の記録・設定・版）、`public.get_inventory_method_deadlines(_period_id uuid) RETURNS jsonb`（`{individual_first_notice_due:'2026-03-16',passed:true,change_due_for_year:{2027:'2027-03-15'},three_year_note:true}` と、法人の第1期の2つの期限〔届け出が第1期の申告の期限・変更の承認の申請が新しい方法を使う事業年度の開始の日の前日〕と「届け出が無いと最終仕入原価法になる。個人で出した届け出は引き継がれない」の文。9-c8）、`private.inventory_valuation_method(_period_id uuid,_category text,_scope text DEFAULT 'all') RETURNS text`（STABLE。Task 1 の `resolveValuationMethod` と同じ答え）。
+- Produces（法人の第1期の届け出の期限。S30）: `private.inventory_corporate_first_notice_due(_period_id uuid) RETURNS date`（STABLE。その法人の最初の期間の `ends_on` の翌日から2か月後に、期間の延長の月 `corporate_tax_extension_months` を足し〔法人税法74条1項・75条の2〕、土日と12月29日〜31日なら次の日に繰り下げる。計画1 Task 5 の `filingDeadlines` と同じ式。**祝日は DB に表が無いので、土日と12月29日〜31日だけ繰り下げ、祝日に当たる年は画面で知らせて人が確かめる〔計画1の祝日の表を DB に写さない〕**。最初の期間でなければ NULL。計画1に期限の道具は既にあるので、前の計画への願いは無い）。システムの最初の法人の期間の初日は、実際の設立の日と合わせて作る旨を画面と運用の文書に書く。
+- Produces: S30 assert DETAIL `acc_s30_tables`・`acc_s30_constraints`（`first_year >= 2027`）・`acc_s30_immutable`・`acc_s30_rls_acl`・`acc_s30_function_attrs`・`acc_s30_default_row`（設定の1行）・`acc_s30_corporate_due`（期限の関数の属性と、延長・繰り下げの答え）・`acc_s30_existing_dml_allowlist`。
+
+- [ ] **Step 1: 失敗する試験を書く。** `FREQ-596-AC-01: 設定が無い区分は最終仕入原価法で、期間の事業の形と区分ごとに持てる`、`FREQ-596-AC-03: 製品で受注生産だけ個別法の時、作り置きの製品は最終仕入原価法のままで、承認の範囲と合わない設定は断られる`、`FREQ-596-AC-02: 承認の記録が無いと個別法の設定を断る`、`FREQ-596-AC-03: 2026年の期間は承認の記録があっても個別法を設定できず、個人で firstYear が2026以下の記録は入らない`（CHECK）、`FREQ-596-AC-02: 個人の期間で notice の記録では個別法が選べず（記録も断られる）、法人の期間では notice で選べる`、`FREQ-596-AC-02: deemed_approval は個人でも効く`、`FREQ-596-AC-02: 法人の第2期以後の notice は受けず、効かない（TS と SQL の固定のベクトルにも入れる）`、`FREQ-596-AC-02: 期限の当日の届け出は効き、次の日の届け出は断られ、延長1か月の時は延長後の期限まで効く`、`FREQ-596-AC-02: 期限は土日と12月29日〜31日なら次の日に繰り下がる`、`FREQ-596-AC-03: 法人の期間は first_effective_on <= 期間の始まりの日で確かめ、2027 の縛りは掛からない`、`FREQ-596-AC-02: withdrawn で打ち消した記録は効かず、打ち消しは1回だけ`、`FREQ-596-AC-03: 2027年の期間で、同じ事業の形・区分の承認の記録があれば個別法を設定できる`、`FREQ-596-AC-03: 個人の期間に低価法は設定できず、法人の期間では設定できる`、`FREQ-596-AC-01: 方法の設定のSQLの答えはTSの resolveValuationMethod と同じ（固定のベクトル）`、`FREQ-596-AC-01: 設定を直すと履歴に前後・理由・人が残り、版の衝突は VERSION_CONFLICT`、`FREQ-596-AC-04: 3%の設定は3種類の費用だけに効き、仕入れの引取運賃は外せない`（`private.inventory_acquisition_cost` との組み合わせ）、`FREQ-596-AC-05: 開店した年は包装材料を経費にする設定を断り、次の年からは選べて、変えると理由が履歴に残る`、`FREQ-596-AC-06: 法人の第1期の読み口に2つの期限と引き継がれない旨の文が出る`、`FREQ-596-AC-03: 期限の読み口に 2026-03-16 は過ぎたことと 2027-03-15 が出る`、`FREQ-596-AC-01: 同じ要求番号の再送は前の結果で、違う内容は REQUEST_KEY_CONFLICT`、`FREQ-596-AC-02: 設定と承認の書き口は権限の無い人を断る`、`FREQ-596-AC-01: 表は anon・authenticated に権限が無い`。
+- [ ] **Step 2（controller）: RED を測る。** 上の DB suite。
+- [ ] **Step 3: S30 を実装する。** 個別法の検査は書き口の関数と、設定の行を足す／変える時の遅らせて確かめる制約トリガーの両方（直接 INSERT は service_role にも許さない）。
+- [ ] **Step 4（controller）: GREEN を測る。** 共通 verify。S30 の末尾 assert の改ざん試験。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 在庫の評価の方法と承認の記録を持つ`
+
+### Task 4: 在庫の持ち出し（理由6つ・印の表・入口・戻り・取り消し）
+
+controller が別セッションへ先に知らせる（G の在庫の台帳 `stock_movements` の理由の CHECK、書き手の段取り〔`private.lock_group_g_inventory`・`private.allocate_group_g_fifo`・状態の記録〕、G の書き手の閉じた一覧 `private.group_g_writer_allowlist()`〔78→80本〕、新しい入口3本）。Task 3 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-597 の行。FREQ-600 の AC-01〜03 もこの Task が証明するので、その行も足す）
+- Create: `supabase/migrations/<ts31>_accounting_p5_inventory_withdrawals.sql`、`tests/integration/db/accounting_p5_withdrawals.integration.test.ts`、`tests/integration/db/accounting_p5_withdrawal_concurrency.integration.test.ts`、`tests/unit/lib/accounting/inventory/withdrawal-rules.test.ts`、`src/lib/accounting/inventory/withdrawal-rules.ts`
+- Modify: `tests/integration/db/accounting_p5_migration_asserts.integration.test.ts`（S31 の assert）、`tests/integration/db/helpers/accounting-inventory-fixtures.ts`（`seedWithdrawal`）、**`tests/integration/db/helpers/group-g-allowlist.ts`・`tests/integration/db/group_g1_writer_inventory.integration.test.ts`**（書き手の一覧の付け替え。下の「G の書き手の閉じた一覧に足す」）、`tests/integration/db/accounting_p4_migration_asserts.integration.test.ts`（S26 の確かめを時点の一覧 `P4_ALLOWLIST` で流す）、`stock_movements` の理由の一覧を固定する既存の試験（実装時に `grep -rln "allocation_release" tests e2e src` で数える）
+- Test: 上の DB 2 suite と単体1本。加えて `group_g1_*`（在庫・割り当て・一覧）・`group_g2_*`（入荷・一覧）・`group_h_*` が、意図して直した所以外は無改造で通ること
+- Read: `supabase/migrations/20261023211425_group_g1_allocation.sql:495-501`（理由の CHECK）、`:1282-1284`（書き手の段取りの注記）、`:8871`（`apply_group_g_stock_movement` の最新。作り直さない）、`:1523-1545`（整合の関数。作り直さない）、`:1734`（`admin_record_stock_movement`。`restock`・`adjustment` だけの入口）、`20261024153505_group_g2_purchasing_foundation.sql:94`（同関数の再定義）、`tests/integration/db/helpers/group-g-allowlist.ts:122-139`、計画4 Task 8 の「G の書き手の閉じた一覧に足す」
+
+**Interfaces:**
+- Consumes: `item_variants`・`items`（`price`）・`stock_movements`・Task 2 の `private.inventory_last_purchase_lot`・計画1の `accounting_period_for_event`・`accounting_cutover_on`。
+- Produces（`stock_movements` の理由。S31）: `reason` の CHECK を同じ名前で作り直し、既存の8つ（`purchase`・`restock`・`adjustment`・`cancel`・`refund`・`return`・`exchange`・`allocation_release`）に `owner_use`・`gift`・`promo`・`loan_out`・`loan_return`・`officer_gift` を足す。数の符号は、`loan_return` が正、ほかの5つが負。在庫を動かす関数と整合の関数は理由を見ないので作り直さない（空き在庫からだけ引くのは `stock_quantity >= 0` の CHECK が守る。割り当てた在庫は引けない）。`stock_movements` に単価・原価の列は足さない。
+- Produces（表。追記専用・RLS・service_role は SELECT のみ）:
+  - `inventory_withdrawals(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), kind text NOT NULL CHECK (kind IN ('owner_use','gift','promo','loan_out','loan_return','officer_gift')), variant_id bigint NOT NULL REFERENCES item_variants(id) ON DELETE RESTRICT, item_id bigint NOT NULL, quantity integer NOT NULL CHECK (quantity > 0), withdrawn_on date NOT NULL, stock_movement_id bigint NOT NULL UNIQUE REFERENCES stock_movements(id) ON DELETE RESTRICT, business_type text NOT NULL CHECK (business_type IN ('soleProprietor','corporation')), period_id uuid NOT NULL REFERENCES accounting_periods(id), counterparty text CHECK (char_length(counterparty) <= 200), purpose text CHECK (purpose IN ('private','client_thanks','media','sample','many_people','other')), medium_or_person text CHECK (char_length(medium_or_person) <= 200), has_post_agreement boolean NOT NULL DEFAULT false, ad_label_requested boolean, user_kind text CHECK (user_kind IN ('owner','household_relative')), unit_list_price integer NOT NULL CHECK (unit_list_price >= 0), unit_cost integer CHECK (unit_cost >= 0), cost_lot_id bigint, amount integer NOT NULL CHECK (amount >= 0), amount_overridden boolean NOT NULL DEFAULT false, override_reason text, consideration_amount integer, consideration_basis text CHECK (consideration_basis IN ('rate_card','quote','list_price')), consideration_reason text, consumption_tax_class text NOT NULL CHECK (consumption_tax_class IN ('deemed_sale','out_of_scope','not_a_transaction','taxable_exchange','deemed_sale_officer')), tax_exclusive_amount integer, return_due_on date, previous_month_net_salary integer CHECK (previous_month_net_salary >= 0), requested_by_officer boolean, uniform_discount boolean, unit_cost_manual_reason text, loan_withdrawal_id uuid REFERENCES inventory_withdrawals(id) ON DELETE RESTRICT, request_key uuid NOT NULL UNIQUE, request_hash text NOT NULL, created_by uuid, created_at timestamptz NOT NULL DEFAULT now())`。金額は**記録した時に固定**する（`unit_list_price` は記録の時の `items.price`、`unit_cost` はその日までで一番遅い回の取得価額、`amount` は印ごとの既定の額）。`amount` の既定: `owner_use`・`gift`・`officer_gift` は `unit_list_price * quantity`、`promo` は `unit_cost * quantity`、`loan_out`・`loan_return` は 0。`purpose`・`user_kind` などの必須の欄は印ごとに DB の関数が確かめる（下）。
+  - `inventory_withdrawal_voids(withdrawal_id uuid PRIMARY KEY REFERENCES inventory_withdrawals(id) ON DELETE RESTRICT, reason text NOT NULL CHECK (char_length(reason) BETWEEN 1 AND 500), restore_movement_id bigint UNIQUE REFERENCES stock_movements(id), voided_by uuid, voided_at timestamptz NOT NULL DEFAULT now())`。取り消しは1つの持ち出しにつき1回（主キー）。
+  - `inventory_loan_closures(loan_withdrawal_id uuid NOT NULL REFERENCES inventory_withdrawals(id) ON DELETE RESTRICT, quantity integer NOT NULL CHECK (quantity > 0), closure text NOT NULL CHECK (closure IN ('lost','broken')), memo text, closed_by uuid, closed_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (loan_withdrawal_id, closure))`。貸した品が戻らない・壊れて戻った時の、調整への切り替え（13-d2・13-h）。在庫は貸し出しの時に減っているので数は動かさない。
+- Produces（書き口。private 本体は SECURITY DEFINER・`search_path=''`・postgres 所有・service_role だけ EXECUTE。public 入口は同名同引数の `LANGUAGE sql SECURITY INVOKER`・service_role だけ。権限 `admin.stock.manage`。記録と取り消しの2本は下の「G の書き手の段取り」の全部に従い、閉じは①と⑥だけ）:
+  - `private.admin_record_inventory_withdrawal(_actor_id uuid,_variant_id bigint,_quantity integer,_kind text,_withdrawn_on date,_details jsonb,_request_key uuid) RETURNS jsonb`（`_details` の鍵は固定: `counterparty`・`purpose`・`medium_or_person`・`has_post_agreement`・`ad_label_requested`・`user_kind`・`amount_override`・`override_reason`・`consideration_amount`・`consideration_basis`・`consideration_reason`・`return_due_on`・`unit_cost_manual`・`unit_cost_manual_reason`・`loan_withdrawal_id`・`uniform_discount`・`previous_month_net_salary`・`withholding_*`〔Task 6・7〕）。印ごとの必須の欄: `owner_use` は `user_kind`（`household_relative` なら相手の名前）、`gift` は `purpose` と `counterparty`（`purpose='client_thanks'` ならお礼の相手）、`promo` は `medium_or_person` と `purpose IN ('many_people','sample')`（`client_thanks`・`private` は断り `gift` を案内する。13-c の「高い品やお礼の意味が強い時は 13-c3」）、`has_post_agreement` が真の時は `ad_label_requested`（「広告」「PR」の表示を頼んだか。NULL を断る）と `consideration_amount`/`consideration_basis`（料金表・見積りが無ければ `list_price` で `consideration_reason` 必須。13-c2 の4回目の直し17）、`loan_out` は `counterparty` と `return_due_on`、`loan_return` は `loan_withdrawal_id`（戻す数は貸した数から戻した数と閉じた数を引いた残り以下）。`officer_gift` は法人の期間だけ（個人の期間なら `INVENTORY_KIND_NOT_ALLOWED / 22023`）。`owner_use` は個人の期間だけ（法人は `gift` の私的として扱う。13-g2）。額の直し（`amount_override`）は `owner_use`・`gift` の個人の期間だけで、**`unit_cost * quantity` 以上かつ `ceil(unit_list_price * quantity * 70 / 100)` 以上**でなければ断り（`INVENTORY_AMOUNT_OUT_OF_RANGE / 22023`）、直した時は `override_reason` 必須（13-b。下限は所得税の70%と消費税の50%の厳しい方）。原価の回が無く `unit_cost_manual` も無ければ、原価を使う印（`promo`・`owner_use` の下限・`gift` の下限）は `INVENTORY_COST_MISSING / 55000`（`unit_cost_manual` を使う時は理由必須で、`cost_lot_id` は NULL）。期間が無い日は `ACCOUNTING_PERIOD_MISSING`、切り替えの日より前は `ACCOUNTING_ARGUMENT_INVALID`（detail `before_cutover`）、未来の日と在庫（空き）を超える数は断る。`stock_movements` に理由・負の数・`note`（日本語の固定の文か NULL。個人の名前も英字の印の名前も入れない。例「持ち出し（自家消費）」。`U&'\XXXX'` 形）で1行書き、`inventory_withdrawals` に同じトランザクションで1行書く。同じ要求番号で同じ内容は前の結果、違う内容は `ACCOUNTING_REQUEST_KEY_CONFLICT`。戻りは `{withdrawal_id, entry_expected:boolean}`。
+  - `private.admin_close_inventory_loan(_actor_id uuid,_loan_withdrawal_id uuid,_closure text,_quantity integer,_memo text,_request_key uuid) RETURNS jsonb`（戻らない・壊れて戻った。在庫は動かさない。仕訳は作らない。弁償金は Task 5 の別の入口）。段取りの①（`lock_group_g_inventory`）と⑥（会計の鍵）だけを行い、②〜⑤（状態・`stock_movements`・FIFO・`group_g_operations`）は行わない。残り数の検査は `loan_return` と同じ。**G の書き手の一覧には入れない**（G の6つの表を書かず、FIFO・状態の関数も呼ばない。`lock_group_g_inventory` は `SELECT … FOR UPDATE` だけなので書き手に数えられない）。一覧は80本に決める。
+  - `private.admin_void_inventory_withdrawal(_actor_id uuid,_withdrawal_id uuid,_reason text,_request_key uuid) RETURNS jsonb`（持ち出しの取り消し。`loan_return` 以外は**`loan_return` の理由で正の数を1行書いて戻す**〔意味は `inventory_withdrawal_voids` の行で区別する。G の在庫の履歴の画面では「貸し出しの戻り」に見えるので、取り消しで書く `stock_movements` の行の `note` に固定の日本語の文を入れる〔持ち出しの取消は「持ち出しの取消による戻り」、`loan_return` の取消は「貸し出しの戻りの取消」。G2 の発注の取り消しも `note` に日本語の文を入れている〕。読み口と route は変えず、画面は今の `note` の欄のまま出す〕。`loan_return` 自体の取り消しは負の数（理由は `loan_out`）で書く。一部が戻った後の `loan_out` は取り消せない〔`INVENTORY_LOAN_STATE`〕。AI の判断）。仕訳の取り消しは Task 5 の係が行う）。
+- **G の書き手の段取り（重大-2。`admin_record_stock_movement`〔`20261024153505_…sql:94`〕と同じ形）:** ①`private.lock_group_g_inventory(ARRAY[variant], ARRAY[]::uuid[], NULL)`（共通の鍵の後に品と注文の閉包を読んで決まった順で鍵を取る）→ ②状態を写す（`capture_group_g_item_states`）→ ③`stock_movements` に書く → ④正の数の時（`loan_return` と、取り消しで戻す正の数）は `private.allocate_group_g_fifo` で待っている支払い済みの注文へ割り当てる → ⑤状態の変化（`record_group_g_item_state_changes`）と `group_g_operations` の行（操作の名前 `inventory_withdrawal`・`inventory_withdrawal_void`・`inventory_loan_return` は書くだけ。名前の CHECK は無いので S31 で足す物は無い）→ ⑥会計の鍵（計画1の順）。戻りに FIFO で割り当てた数を載せる。共通の鍵の直接の `pg_advisory_xact_lock` は使わない。
+- **G の書き手の閉じた一覧に足す（78→80本）:** `private.admin_record_inventory_withdrawal`・`private.admin_void_inventory_withdrawal` は `stock_movements` に書くので一覧に入れる。S31 で `private.group_g_writer_allowlist()` を作り直して2本足す（80本）。今の決まりは計画4 Task 8 のとおり: **時点の一覧の定数（`H4_ALLOWLIST`・`H7_ALLOWLIST`・`P4_ALLOWLIST`）は変えず、`CURRENT_ALLOWLIST` の指す先だけを付け替える。昔の確かめを今の DB で流す試験は、流す前に一覧をその時点の物に戻す。** 意図して直す試験は次の3つ（すべて Files の Modify）: ① `group-g-allowlist.ts` に `P5_ALLOWLIST = [...P4_ALLOWLIST, 'private.admin_record_inventory_withdrawal(…)', 'private.admin_void_inventory_withdrawal(…)']` を足して `CURRENT_ALLOWLIST` を付け替える（引数の型の並びは実装時に `pg_get_function_identity_arguments` で書く）、② `group_h_migration_asserts` は変えない（計画4の戻し方〔H4 の移行の文をそのまま流して77本に戻す〕は、今が78本でも80本でも同じに戻る）。代わりに計画4の `accounting_p4_migration_asserts` の S26 の確かめ（`acc_s26_writer_allowlist` は78本と並びを見る）を `runWithAllowlist(P4_ALLOWLIST)` の中で流す形に直す（Files の Modify に足した）。計画6・7も同じ形（時点の一覧で流す）にする、③ `group_g1_writer_inventory` の手書きの `ALLOWLIST` と `FREQ-549-AC-03` の期待を `P5_ALLOWLIST` の本数に直す。`CURRENT_ALLOWLIST` を使う G の試験（`group_g2_*`・`group_g3_*`）は無改造で通ることを Step 4 で確かめる。直した所は `changed-tests.md` に表で報告する。
+- Produces（純粋な TS。`withdrawal-rules.ts`。SQL と同じ答え）: `defaultWithdrawalAmount({kind,unitListPrice,unitCost,quantity})`、`withdrawalAmountBounds({unitListPrice,unitCost,quantity})` → `{min: max(unitCost*qty, ceil(unitListPrice*qty*70/100))}`、`classifyConsumptionTax({businessType,kind,purpose,hasPostAgreement})` → `consumption_tax_class`（13-g。個人: `owner_use`→`deemed_sale`、`gift`・`promo`→`out_of_scope`、約束付きの `promo`→`taxable_exchange`、`loan_*`→`not_a_transaction`。法人: `officer_gift`→`deemed_sale_officer`、それ以外の `gift`・`promo`→`out_of_scope`、約束付きは `taxable_exchange`）、`taxExclusiveAmount(amount)` → `round(amount * 100 / 110)`（設計 13-3 の例 `20,000 → 18,182` に合わせる。端数の扱いは未確認事項 #8）。
+- Produces（読み口。STABLE・service_role 専用）: `public.list_inventory_withdrawals(_from date,_to date,_kind text DEFAULT NULL,_include_voided boolean DEFAULT false,_limit integer DEFAULT 100,_after_date date DEFAULT NULL,_after_id uuid DEFAULT NULL) RETURNS jsonb`（`MAX_WITHDRAWAL_PAGE=200`）、`public.get_inventory_loans_open(_as_of date) RETURNS jsonb`（戻っていない貸し出し: 貸した数−戻した数−閉じた数 > 0 の物）。
+- Produces: S31 assert DETAIL `acc_s31_reason_check`（理由が14個で既存の8つが残る）・`acc_s31_tables`・`acc_s31_constraints`・`acc_s31_immutable`・`acc_s31_rls_acl`・`acc_s31_function_attrs`・`acc_s31_g_bodies_unchanged`（`apply_group_g_stock_movement` と整合の関数の本文が移行の前後で同じ）・`acc_s31_writer_allowlist`（`P5_ALLOWLIST` と並び。78本の時の一覧に足しただけであること）・`acc_s31_existing_dml_allowlist`（移行の中で行を書き換えない）。
+
+- [ ] **Step 1: 失敗する試験を書く。** DB は ROLLBACK の形（並行だけコミット）。`FREQ-597-AC-01: 持ち出しの理由6つが台帳に入り、loan_return だけ正の数で、既存の8つの理由と数の動きは変わらない`、`FREQ-597-AC-01: 持ち出しは空き在庫から引き、割り当てた在庫は引けない`、`FREQ-597-AC-02: 自家消費は使う人、人にあげるは目的と相手、宣伝用は媒体か人と目的、貸し出しは相手と戻る予定の日が無いと断る`、`FREQ-597-AC-02: 宣伝用に取引先へのお礼とprivateは選べず、人にあげるを案内する`、`FREQ-597-AC-02: 約束付きは表示を頼んだかが必須で、負担の価額が無ければ売値を目安にして理由が必須`、`FREQ-597-AC-02: 額の直しは原価以上かつ売値の70%以上でだけ受け、直したら理由が必須`（売値20,000・原価8,000で 14,000 は通り 13,999 は断る）、`FREQ-597-AC-02: 原価の回が無く手入力も無ければ INVENTORY_COST_MISSING`、`FREQ-597-AC-02: 法人の期間でowner_useは断り、個人の期間でofficer_giftは断る`、`FREQ-597-AC-03: 貸し出しは戻すと在庫が戻り、戻す数は貸した数から戻した数と閉じた数を引いた残りまで`、`FREQ-597-AC-03: 貸し出しが戻ると、待っている支払い済みの注文に FIFO で割り当てられ、注文の状態が進む`、`FREQ-597-AC-06: 持ち出し（負の数）の後に group_g_operations の行が残り、状態の履歴は貸し出しの戻りと取り消し（FIFO が割り当てる時）の試験で確かめる`、`FREQ-597-AC-06: 閉じの関数は一覧の外で、G の6つの表を書かない`、`FREQ-597-AC-03: 戻らない・壊れて戻ったはclosureで閉じ、在庫の数は動かない`、`FREQ-597-AC-03: 年末に戻っていない貸し出しの読み口が出る`、`FREQ-597-AC-04: 調整（admin_record_stock_movementのadjustment）は持ち出しの表に入らず、印と分かれる`、`FREQ-597-AC-05: 持ち出しは注文を作らず、0円の注文は作れない既存の制限が変わらない`（FREQ-389・FREQ-548 の試験を引く）、`FREQ-597-AC-06: G の書き手の一覧は P5_ALLOWLIST の本数で、2本が入り、private は SECURITY DEFINER・search_path 空・postgres 所有、public は委譲だけ`、`FREQ-597-AC-06: 在庫を動かす関数と整合の関数は移行の前後で本文・属性・ACLが同じで、G の本文を固定する既存の試験（group_g1_cleanup・group_g1_fifo）は無改造で通る`、`FREQ-597-AC-06: 持ち出しの関数はadmin_finance_expensesの行を書かない`（計画1の `FREQ-556-AC-04` の確かめ）、`FREQ-597-AC-07: 同じ要求番号の再送は前の結果、違う内容はREQUEST_KEY_CONFLICT`、`FREQ-597-AC-07: 取り消しは1回だけで、2回目は断る`、`FREQ-597-AC-01: 持ち出しの表は追記専用でanon・authenticatedに権限が無い`、`FREQ-600-AC-01: 個人の自家消費はdeemed_saleで税抜は売値×100/110（20,000→18,182）、人にあげる・宣伝用はout_of_scope、貸し出しはnot_a_transaction`、`FREQ-600-AC-02: 法人の役員への贈与はdeemed_sale_officer、それ以外はout_of_scope`、`FREQ-600-AC-03: 壊れた・なくした品の調整は消費税の対象外`。並行（別の jest 実行）: `FREQ-597-AC-07: 同じ品の最後の1個を2つの接続で同時に持ち出すと1件だけ通り、在庫が負にならない`、`FREQ-597-AC-07: 同じ要求番号を同時に10回送っても1件`、`FREQ-597-AC-06: 持ち出しとG の割り当て・入荷が鍵の順の入れ替えで止まらない`（3連続）。単体: `withdrawal-rules.ts` の上の規則を SQL と同じ固定のベクトル（15本）で。
+- [ ] **Step 2（controller）: RED を測る。** DB 2 suite と単体。理由が無い失敗を記録する。
+- [ ] **Step 3: S31 と TS を実装する。** 理由の CHECK 以外の G の物は作り直さない。決済の関数は触らない。
+- [ ] **Step 4（controller）: GREEN を測る。** 共通 verify。並行3連続。末尾 assert を SAVEPOINT 内で、理由の CHECK の欠落・追記専用トリガーの無効化・一覧の本数の改ざん・G の関数の本文の改ざんを1つずつ入れて流し、55000 と対応 DETAIL を検査する。上の直した試験と、`group_g1_*`・`group_g2_*`・`group_g3_*`・`group_h_*`・`place_order_from_checkout_draft` が、直した所以外は無改造で通る。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(inventory): 在庫の持ち出しの理由と記録を足す`
+
+### Task 5: 個人の持ち出しの仕訳（自家消費・人にあげる・宣伝用・約束付き・弁償金・個人的な値引き）と計上係への追加
+
+controller が別セッションへ計上係の入口（`accounting_run_posting`）の変更と、割引の画面（H）に印を付ける入口を足すことを先に知らせる。Task 4 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-598）
+- Create: `supabase/migrations/<ts32>_accounting_p5_withdrawal_posting.sql`、`tests/integration/db/accounting_p5_withdrawal_posting.integration.test.ts`、`tests/integration/db/accounting_p5_withdrawal_posting_concurrency.integration.test.ts`、`tests/integration/db/accounting_p5_personal_discount.integration.test.ts`
+- Modify: `tests/integration/db/accounting_p5_migration_asserts.integration.test.ts`、`tests/integration/db/helpers/accounting-inventory-fixtures.ts`、`tests/integration/db/helpers/accounting-orders-fixtures.ts`（`seedDiscountedOrder`）、`tests/integration/db/accounting_p3_migration_asserts.integration.test.ts`（S15 の `acc_s15_pending_reason_check`、S20・S21 の `acc_s20_run_posting`・`acc_s21_run_posting` を、S32 が理由の CHECK と計上係を作り直す前の時点の定義で流す形に直す）、計画2・3の計上係の試験で戻りの jsonb の鍵を固定している物（`accounting_p2_*`・`accounting_p3_*` のうち `PostingRunResult` の鍵を比べる物。`withdrawals` が増えただけで通るように、**題を変えず期待に鍵を足す**。実装時に `grep -rln "has_more\|hasMore" tests/integration/db tests/unit` で数える）、`src/lib/accounting/posting-types.ts`（`PENDING_REASONS` と `PostingRunResult` に足す）
+- Test: 上の DB 3 suite
+- Read: 計画2 Task 6（`accounting_run_posting` の入口）・計画3 Task 6・7（呼ぶ順と戻りの jsonb。作り直した最後の本文）、`supabase/migrations/20261029130000_group_h_discounts_foundation.sql:54-100`（`discount_codes`・`discount_redemptions`・`order_line_unit_amounts`）、設計 13-b・13-c・13-c2・13-c3・13-d2・13-i
+
+**Interfaces:**
+- Consumes: Task 4 の `inventory_withdrawals`・`inventory_withdrawal_voids`、計画1の core・`accounting_reverse_journal_core`、計画2の `accounting_park_event`・`accounting_unpark_event`。
+- Produces（表。追記専用・RLS・service_role は SELECT のみ）:
+  - `inventory_compensations(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), loan_withdrawal_id uuid NOT NULL REFERENCES inventory_withdrawals(id), amount integer NOT NULL CHECK (amount > 0), received_on date NOT NULL, goods_usable boolean NOT NULL, bank_reference text, request_key uuid NOT NULL UNIQUE, request_hash text NOT NULL, created_by uuid, created_at timestamptz DEFAULT now())`。貸した品の弁償金（13-d2）。`goods_usable`（品を相手に渡してそのまま、または少し直せば使えるか）で消費税の区分を分ける（売上／対象外）。
+  - `inventory_personal_discount_codes(discount_code_id <H の discount_codes の主キーと同じ型> PRIMARY KEY REFERENCES discount_codes(id) ON DELETE RESTRICT, marked_by uuid, marked_at timestamptz DEFAULT now(), reason text NOT NULL CHECK (char_length(reason) BETWEEN 1 AND 500))`（13-i の「個人的な値引き」の印。H の割引の表と関数は変えず、別の表で持つ）と、外す履歴 `inventory_personal_discount_code_unmarks`（追記専用）。印を付けられるのは、特定の人だけに渡すコード（誰でも使えるコード・店全体のセール・宣伝のコード・型崩れや流行遅れの値下げ・お金を作るための安売りには付けない旨を、書き口の `_basis` の選択肢〔`family_friend`・`acquaintance`・`client_person`・`future_employee`〕で固定する）。従業員向けのコードは原価以上・売値の70%以上・全員同じ率で作る旨を確認の欄に残す。
+  - `inventory_personal_discount_determinations(id bigserial PRIMARY KEY, order_id uuid NOT NULL REFERENCES orders(id), list_total integer NOT NULL, paid_total integer NOT NULL, threshold integer NOT NULL, difference integer NOT NULL CHECK (difference >= 0), determined_on date NOT NULL, supersedes_id bigint UNIQUE REFERENCES inventory_personal_discount_determinations(id), reason text, determined_by uuid, determined_at timestamptz DEFAULT now())`。差の確定の履歴。`threshold = floor(list_total * 70 / 100)`、`difference = max(0, threshold - paid_total)`（所得税基本通達40-3）。`list_total` は注文の品の売値（`order_items.item_price × quantity`）の合計、`paid_total` は返金後の支払額（`order_line_unit_amounts.paid_amount` の合計から出荷後の返金を引いた額。実装時に計画3の読み口の名前で確かめる）。直し（返金で額が変わった時など）は新しい行で `supersedes_id` に前の行を指す（同じ行は1回だけ。UNIQUE）。
+- Produces（書き口。private 本体＋service_role 専用の public 入口）:
+  - `admin_record_inventory_compensation(_actor_id uuid,_loan_withdrawal_id uuid,_amount integer,_received_on date,_goods_usable boolean,_bank_reference text,_request_key uuid) RETURNS jsonb`（権限 `admin.stock.manage`。貸し出しが `lost` か `broken` で閉じられている時だけ受ける。G の表を書かない。`accounting_lock_all` で鍵を取る）。
+  - `admin_mark_personal_discount_code(_actor_id,_discount_code_id,_basis,_reason,_request_key)`・`admin_unmark_personal_discount_code(…)`（権限 `admin.discounts.manage` か H の割引の権限の名前。実装時に H の移行で確かめる）。個人の期間だけ意味を持ち、法人の期間は Task 6 の規則を使う旨を戻りに載せる。
+  - `admin_determine_personal_discount(_actor_id,_order_id,_determined_on,_reason,_request_key)`（権限 `admin.accounting.entries.correct`。印の付いたコードの注文で、70%未満の時だけ行を足す。家族への注文で売った物は対象外にして自家消費の記録（`owner_use`）へ案内する。同じ注文の最新の行と額が同じなら何も足さない）。
+- Produces（計上係）: `private.accounting_post_withdrawal_events(_limit integer) RETURNS jsonb`（`{posted,parked,resolved,reversed}`。入口なし・service_role からも REVOKE）。最初に `private.accounting_lock_all(NULL)`。行ロックは取らない。候補は計画2の「係の候補の選び方」に従う（新しい出来事を古い順に `_limit` 件、未解決の計上待ちを別枠で10件）。順に (a) 持ち出し、(b) 持ち出しの取り消し、(c) 弁償金、(d) 個人的な値引きの差。
+  - (a) 持ち出し: 取り消されていない `kind IN ('owner_use','gift','promo')` で、個人の期間の物。印は `buildEventKey('owner_use', [withdrawal.id])` と同じ文字列（`owner_use:<id>`）。日 `d = withdrawn_on`。`d < cutover_on` なら `before_cutover`、期間が無ければ `period_missing`。**金額は持ち出しの行に固定した値だけを読む**（`amount`・`consideration_amount`）。行: `owner_use`（`user_kind` を問わない）は借方 1910 事業主貸／貸方 4030 に `amount`（`order_id` なし。メモは `品名 × 数量`）。`gift` で `purpose='client_thanks'` は借方 6080 接待交際費／貸方 4030 に `amount`、それ以外は借方 1910／貸方 4030。`promo` で約束なしは借方 6060 広告宣伝費／貸方 5020 仕入高に `unit_cost * quantity`（`amount` と同じ）。`promo` で約束あり（`has_post_agreement`）は借方 6060／貸方 4010 売上高に `consideration_amount`（メモに投稿の約束・表示の記録・負担の価額の根拠を入れる）。`_source_recorded_at` に持ち出しの `created_at` を渡す。`source_table='inventory_withdrawals'`・`source_id=id`。成功したら `accounting_unpark_event`。数量が0・金額が0の行は作らず `no_revenue` で解決済み。固定の金額と `kind`・`purpose` が合わない（データの異常）時は `withdrawal_not_postable`（detail `reason`）で止める。
+  - (b) 取り消し: `inventory_withdrawal_voids` の行があり、その持ち出しの仕訳が取り消されていない物。`private.accounting_reverse_journal_core(NULL, 仕訳, ACCOUNTING_LABELS.withdrawalVoided, NULL, void の voided_at)`（日は元の日）。仕訳が無い持ち出しが取り消されたら、計上待ちの行を解決済みにして何も入れない。取り消しを先に見た係が元の仕訳より前に動くことはない（元の仕訳が無ければ取り消す物が無く、その持ち出しは候補から外れる）。
+  - (c) 弁償金: 印 `compensation_received:<id>`（`buildEventKey('compensation_received',[id])`）。借方 入金の勘定／貸方 4040 雑収入に `amount`、日は `received_on`。入金の勘定は Stripe 未収金でなく振込・現金なので、`bank_reference` が空なら現金、あれば普通預金を既定にし、画面で選べる（勘定の番号は実装時に `accounts.ts` で名前を確かめる。AI の判断）。
+  - (d) 個人的な値引きの差: 候補は**後継の無い（`supersedes_id` で指されていない）確定だけ**。後継のある確定で仕訳の無い物は、計上待ちの行を解決済みにして何も入れない。印 `buildEventKey('personal_discount',[order_id, determination_id])`。借方 1910 事業主貸／貸方 4030 家事消費等に `difference`、日は `determined_on`。**前の確定の行があれば先にその仕訳を取り消す**（`reversal`、元の日）。取り消しと新しい仕訳は同じ呼び出しの中で行う。`difference = 0` の確定は取り消しだけ入れる。
+- Produces（`private.accounting_run_posting` の作り直し）: 計画3 Task 6・7（S20・S21）が最後に作り直した本文を**一字も変えずに写し**、呼び出しを1行足す（`-- ACC_P5_BEGIN` 〜 `-- ACC_P5_END`）: 返金の後・取り消し（dispute）の前に `private.accounting_post_withdrawal_events`。囲みで足す所は3つ: ①呼び出し、②戻りの jsonb の鍵 `withdrawals`（`PostingRunResult` は `withdrawals:number`）、③`has_more` の式（`withdrawals` の入れた・新しく止めた件数を、計画2の「合計が `_limit` に達した時」の合計に加える）。囲みを全部除いた本文が最新の定義と同じことを assert で確かめる（`acc_s32_run_posting_body`）。
+- Produces（計上待ちの理由と拒否）: `PENDING_REASONS` と `accounting_pending_events` の理由の CHECK に `withdrawal_not_postable`（持ち出しの固定の金額と印が合わない異常。手では閉じられない）の1つを足す。`before_cutover`・`no_revenue`・`period_missing` は既存を使う。拒否は `INVENTORY_KIND_NOT_ALLOWED / 22023`（400）、`INVENTORY_AMOUNT_OUT_OF_RANGE / 22023`（400）、`INVENTORY_COST_MISSING / 55000`（409）、`INVENTORY_ITEM_MARK_MISSING / 55000`（409）、`INVENTORY_LOAN_STATE / 55000`（409）を `ACCOUNTING_ERRORS` に足す（Task 12）。
+- Produces: S32 assert DETAIL `acc_s32_tables`・`acc_s32_constraints`・`acc_s32_immutable`・`acc_s32_rls_acl`・`acc_s32_function_attrs`・`acc_s32_run_posting_body`・`acc_s32_pending_check`・`acc_s32_existing_dml_allowlist`。
+
+- [ ] **Step 1: 失敗する試験を書く。** 設計 13-3 の例を数字で固定する: 売値 20,000円（税込み）・原価 8,000円のシャツ、個人。`FREQ-598-AC-01: 自家消費は事業主貸／家事消費等 20,000円の1本で、印は owner_use:<持ち出しの番号>、日は持ち出した日の日本時間の日`、`FREQ-598-AC-01: 別に暮らす友人への贈りは同じ形で、事業の経費にならない（利益+12,000の効き方は損益に合わせる試験で）`、`FREQ-598-AC-02: 額を14,000円に直すと14,000円の仕訳になり、直した理由が持ち出しの行に残る`、`FREQ-598-AC-02: 取引先へのお礼の贈りは接待交際費／家事消費等 20,000円`、`FREQ-598-AC-03: 宣伝用は広告宣伝費／仕入高 8,000円（原価）の1本`、`FREQ-598-AC-04: 投稿の約束付きは広告宣伝費／売上高 の負担の価額で入り、表示を頼んだかの記録がある`、`FREQ-598-AC-04: 負担の価額が無ければ売値を目安にして理由が残る`、`FREQ-598-AC-05: 貸し出しは仕訳が1本も増えない（貸す・戻すとも）`、`FREQ-598-AC-05: 弁償金は雑収入の仕訳で、日は受け取った日`、`FREQ-598-AC-06: 「個人的な値引き」の印のコードで 10,000円で売った注文は、差 4,000円（20,000×70%−10,000）が事業主貸／家事消費等の1本になり、日は差を決めた日`（13-3 の8/1の行）、`FREQ-598-AC-06: 返金で額が変わった差は前の仕訳を取り消して新しい仕訳を入れる`、`FREQ-598-AC-07: 印の無いコードの注文・70%以上で売った注文・家族への注文は対象外で、確定の行を足せない`、`FREQ-598-AC-06: 確定1が period_missing で止まっている間に確定2が入り、期間を作った後も差の仕訳は確定2の1本だけ`、`FREQ-598-AC-08: 同じ持ち出しを2回・同時に流しても1本`（並行。3連続）、`FREQ-598-AC-08: 持ち出しを取り消すと元の日の取り消しの仕訳が足され、元の仕訳は変わらない`、`FREQ-598-AC-08: 仕訳を入れる前に取り消された持ち出しは仕訳が1本も入らず計上待ちも解決済みになる`、`FREQ-598-AC-08: 切り替えの日より前はbefore_cutover、期間が無い日はperiod_missingで止まり、期間を作ると次の呼び出しで入る`、`FREQ-598-AC-08: 記録の人はNULLで、遅れの印は持ち出しを記録した日時で決まる`、`FREQ-598-AC-07: 持ち出しの額は記録した時に固定され、あとで items.price や原価の回を直しても係の仕訳は変わらない`、`FREQ-598-AC-08: 計上係を呼ぶ順を入れ替えても（持ち出し→取り消し→弁償金→値引きの差）結果が同じ`、`FREQ-598-AC-08: 計上係の戻りにwithdrawalsの鍵が増え、計画2・3の鍵と計上係の本文（囲みを全部除いた物）は変わらない`、`FREQ-598-AC-08: 計上待ちの理由withdrawal_not_postableは手では閉じられない`。
+- [ ] **Step 2（controller）: RED を測る。** 上の DB suite。表が無い失敗を記録する。
+- [ ] **Step 3: S32 を実装する。** 係の仕訳の組み立ては1つの plpgsql の関数にまとめ、(a) と (b) で同じ関数を使う。`private.accounting_run_posting` は作り直す前の本文を一字も変えずに写す。
+- [ ] **Step 4（controller）: GREEN を測る。** 共通 verify。並行3連続。計画2・3の計上係の suite が、直した所（戻りの鍵）以外は無改造で通る。S32 の末尾 assert の改ざん試験。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 個人の持ち出しと値引きの差を仕訳として保存する`
+
+### Task 6: 法人の贈与・役員への贈与・源泉の表・損金の印
+
+controller が別セッションへ先に知らせる。Task 5 のコミット後に始める。計画1の「法人の寄附金の勘定と、損金の上限と申告書での調整が要る印〔7-k〕は、13-g2 の時価で使うこの計画で足す」に当たる。法人の期間は今は無い（個人だけ。設計 0-4）ので、試験はすべて ROLLBACK の中で法人の期間を作って流す。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-599）
+- Create: `supabase/migrations/<ts33>_accounting_p5_corporate_gifts.sql`、`tests/integration/db/accounting_p5_corporate_gifts.integration.test.ts`、`src/lib/accounting/inventory/bonus-withholding.ts`、`src/lib/accounting/inventory/officer-discount.ts`、`tests/unit/lib/accounting/inventory/bonus-withholding.test.ts`、`tests/unit/lib/accounting/inventory/officer-discount.test.ts`、`scripts/accounting/import-withholding-table.ts`（国税庁の Excel から表を入れる）
+- Modify: `tests/integration/db/accounting_p5_migration_asserts.integration.test.ts`、`tests/integration/db/helpers/accounting-inventory-fixtures.ts`（`seedCorporationPeriod`）
+- Test: 上の DB 1 suite と単体2本
+- Read: 計画1 Task 5（休みの日の繰り下げの部品）、設計 13-g・13-g2・13-4 の法人の行
+
+**Interfaces:**
+- Produces（表。追記専用・RLS・service_role は SELECT のみ）:
+  - `accounting_line_tax_marks(entry_id uuid NOT NULL, line_no integer NOT NULL, mark text NOT NULL CHECK (mark IN ('non_deductible_officer_pay','donation_cap','entertainment_cap')), PRIMARY KEY (entry_id, line_no, mark), FOREIGN KEY (entry_id, line_no) REFERENCES accounting_journal_lines(entry_id, line_no) ON DELETE RESTRICT)`。仕訳の行に付く損金の印（勘定ではなく行に付ける。理由: `6190` 役員報酬は通常の役員報酬にも使うため）。係が仕訳を入れた直後に同じトランザクションで足す。申告書の調整は計画6以後が読む。
+  - `withholding_bonus_tables(id bigserial PRIMARY KEY, tax_year integer NOT NULL, table_kind text NOT NULL CHECK (table_kind IN ('bonus_rate','monthly')), rows jsonb NOT NULL, source_note text NOT NULL, imported_by uuid, imported_at timestamptz DEFAULT now(), UNIQUE (tax_year, table_kind))`（国税庁が年ごとに出す源泉徴収税額表を、**支払う日の年ごとに分けてデータで持つ**。行は入れない。Excel から `import-withholding-table.ts` が入れる。**その年の表が無い時は計算を止める**。令和9年分以後の表の額は所得税・防衛特別所得税・復興特別所得税を合わせた額である旨を `source_note` に残す。表の行の形は国税庁の Excel の形で確かめる。未確認事項 #6）。
+  - `officer_gift_withholdings(withdrawal_id uuid PRIMARY KEY REFERENCES inventory_withdrawals(id), pay_date date NOT NULL, bonus_amount integer NOT NULL, previous_month_net_salary integer, rate_bps integer, withholding_amount integer NOT NULL, used_monthly_table boolean NOT NULL, table_id bigint NOT NULL REFERENCES withholding_bonus_tables(id), due_on date NOT NULL, due_rule text NOT NULL CHECK (due_rule IN ('next_month_10th','special_july_10','special_january_20')), social_insurance_notice_required boolean NOT NULL, computed_at timestamptz DEFAULT now())`。
+  - `corporate_gift_settings(id smallint PRIMARY KEY CHECK (id = 1), special_due_date_approved boolean NOT NULL DEFAULT false, version bigint NOT NULL DEFAULT 1, updated_by uuid, updated_at timestamptz)`（納期の特例の承認。常時10人未満で承認を受けた時だけ真）。
+- Produces（純粋な TS＋同じ答えの SQL の関数。`bonus-withholding.ts`）: `computeOfficerBonusWithholding({bonus, previousMonthNetSalary, payDate, rateTable, monthlyTable})`。前月の給与（社会保険料等を引いた額）から賞与の算出率を引き `floor(bonus * rate)`。前月の給与の10倍を超える時と前月に給与が無い時は月額表で（前月の給与＋賞与の合計で表を引き、前月の給与だけの額を引いて差を出す。表の形は Excel の形で確かめる）。表が無い年は `WithholdingTableMissingError`（DB は `WITHHOLDING_TABLE_MISSING / 55000`）。`withholdingDueDate(payDate, {specialApproved})`: 通常は翌月10日（休日なら次の日。計画1の部品）、特例は1〜6月分が7月10日、7〜12月分が翌年1月20日（所得税法216条）。
+- Produces（`officer-discount.ts`）: `judgeOfficerDiscount({receivedAmount, marketValue, cost, uniformForAllStaff})` → `{salaryLine:'not_salary'|'salary_difference', consumptionTaxLine:'normal_sale'|'deemed_at_market', salaryDifference:number}`。給与の線: 所得税基本通達36-23 の3つの条件（取得価額以上・おおむね70%以上・全員一律）をすべて満たせば給与にしない（法人税基本通達9-2-10）、満たさなければ時価との差額を役員報酬にする（9-2-9(2)）。消費税の線: 受け取った額が時価の50%未満で、仕入れの額以上かつ50%以上の例外にも全員一律の例外にも当たらなければ時価で売ったとみなす（消費税法28条1項ただし書・基本通達10-1-2）。**2つの線は別々に判定する**。
+- Produces（書き口。private 本体＋service_role 専用の public 入口。権限 `admin.accounting.settings.manage`）: `admin_import_withholding_table(_actor_id uuid,_tax_year integer,_table_kind text,_rows jsonb,_source_note text,_request_key uuid) RETURNS jsonb`（`import-withholding-table.ts` が呼ぶ。同じ年・種類の2回目は断る。追記専用）、`admin_update_corporate_gift_settings(_actor_id uuid,_special_due_date_approved boolean,_expected_version bigint,_request_key uuid) RETURNS jsonb`。
+- Produces（係の作り直し。S33）: `private.accounting_post_withdrawal_events` を、S32 の本文を一字も変えずに写して、法人の期間の分岐を `-- ACC_P5_BEGIN/END` で足す形に作り直す。法人の分岐: ① `officer_gift`（役員への贈与）は借方 6190 役員報酬（行に `non_deductible_officer_pay`）／貸方 4010 売上高に時価（`amount`）。同じ呼び出しで、`officer_gift_withholdings` の計算をまだしていなければ計算して入れる（表が無ければ仕訳は入れて、源泉の計算だけ後回しにする〔仕訳は時価で決まる。源泉は後から追いつく〕。**計上待ちの理由は足さず**、未計算の一覧 `public.list_officer_withholding_pending() RETURNS jsonb`〔`officer_gift` の持ち出しのうち `officer_gift_withholdings` の行が無い物〕と Task 7 の締める前の確かめの件数で知らせる。仕訳の印は `owner_use:<id>` のまま）。② 役員以外への私的な贈与（`gift` の `purpose='private'`）は借方 6325 寄附金（時価贈与、行に `donation_cap`）／貸方 4010 に時価（役員に頼まれた贈与は ① へ寄せる。持ち出しの `details` の `requested_by_officer` で判定。判定は税理士に確かめる。未確認事項 #5）。③ 取引先へのお礼（`client_thanks`）は借方 6080 接待交際費（行に `entertainment_cap`）／貸方 4010 に時価。④ 宣伝用（`promo`）は個人と同じ形（広告宣伝費／仕入高の原価、約束付きは広告宣伝費／売上高）。⑤ 私的な値引き（法人の期間の確定。`inventory_personal_discount_determinations` の行を使い、差を `difference = 時価 − 受取額` として）: 役員への値引きは `judgeOfficerDiscount` の給与の線で、`salary_difference` なら借方 6190／貸方 4010 に差、それ以外は寄附金か交際費等／4010 に差。**法人の期間では 4030・事業主貸・個人の70%の目安を使わない。**
+- Produces（源泉を後から計算する呼び出し）: `private.accounting_compute_officer_withholdings(_limit integer) RETURNS jsonb`（`{computed,table_missing}`。入口なし）。`private.accounting_post_withdrawal_events` の最後で毎回呼び（新しい入口は作らない）、`admin_import_withholding_table` の最後でも呼ぶ。対象は「`officer_gift` で仕訳があり、取り消されておらず、`officer_gift_withholdings` の行が無く、支払う日の年の表がある物」。計算には持ち出しの行に残した値〔`amount`・`previous_month_net_salary`・`withdrawn_on`〕と表だけを使い、同じ持ち出しは主キーで1行だけ。表が無い年の物は例外にせず `table_missing` の件数で返す（`WITHHOLDING_TABLE_MISSING` は計算の関数 `private.officer_bonus_withholding` が投げ、この関数が捕まえて数える）。源泉の計算の式そのもの（10倍を超える時の月額表の使い方）は未確認事項 #6 のままで、ここでは呼び出しと列の形だけを決める。
+- Produces: S33 assert DETAIL `acc_s33_tables`・`acc_s33_constraints`・`acc_s33_immutable`・`acc_s33_rls_acl`・`acc_s33_function_attrs`・`acc_s33_compute_function`・`acc_s33_posting_body`（S32 の本文から囲みを除いた物が一致）・`acc_s33_existing_dml_allowlist`・`acc_s33_account_6325`（Task 1 の勘定が存在）。
+
+- [ ] **Step 1: 失敗する試験を書く。** `FREQ-599-AC-01: 役員への贈与は役員報酬／売上高の時価の1本で、役員報酬の行に損金にならない印が付く`、`FREQ-599-AC-01: 法人の期間で自家消費と事業主貸と4030は使えない`、`FREQ-599-AC-02: 源泉は年ごとの表と前月の給与から出て、10倍を超える時と前月の給与が無い時は月額表になる`（固定の数値で。表は試験の中で作る）、`FREQ-599-AC-02: その年の表が無ければ計算を止めて WITHHOLDING_TABLE_MISSING（仕訳は時価で入り、源泉の計算だけ追いつく）`、`FREQ-599-AC-02: 表を後から入れると、次の係の呼び出しか表の取り込みの直後に源泉の行が1回だけ入り、仕訳は増えない`、`FREQ-599-AC-02: 令和9年分の表は9年に支払う分だけに使われ、8年分以前の支払いには使われない`、`FREQ-599-AC-03: 納期限は翌月10日で、休日なら次の日`、`FREQ-599-AC-03: 納期の特例の承認があれば1〜6月分は7月10日、7〜12月分は翌年1月20日`、`FREQ-599-AC-04: 役員への値引きは3つの条件を満たせば給与にせず、満たさなければ時価との差が役員報酬`、`FREQ-599-AC-04: 給与の線（70%）と消費税の線（50%）は別々に判定される`（受取が時価の60%・原価以下なら給与の差は出るが消費税は時価にならない、など）、`FREQ-599-AC-04: 全員一律の値引きは消費税の線に当たらない`、`FREQ-599-AC-05: 役員以外への私的な贈与は寄附金（時価贈与）／売上高で、上限の印が付く`、`FREQ-599-AC-05: 取引先へのお礼は接待交際費／売上高で、上限の印が付く`、`FREQ-599-AC-06: 法人の期間では個人的な値引きの70%の式を使わず、時価との差で分ける`、`FREQ-599-AC-05: 同じ持ち出しは1本で、取り消すと元の日の取り消しの仕訳と印の行が残る`、`FREQ-599-AC-01: 損金の印の表は追記専用でanon・authenticatedに権限が無い`。単体: `FREQ-599-AC-02/03/04` の純粋な関数を、SQL と同じ固定のベクトル（15本）で。
+- [ ] **Step 2（controller）: RED を測る。** DB 1 suite と単体2本。
+- [ ] **Step 3: S33 と TS を実装する。** S32 の係の本文を一字も変えずに写す。表の行は移行に入れない。
+- [ ] **Step 4（controller）: GREEN を測る。** 共通 verify。S33 の末尾 assert の改ざん試験。Task 5 の suite が無改造で通る。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 法人の贈与と役員への贈与の仕訳と源泉の表を持つ`
+
+### Task 7: 年末の一覧・調整の分け・投稿の約束の源泉の欄
+
+controller が別セッションへ先に知らせる。Task 6 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-600 の AC-04・AC-05 の行）
+- Create: `supabase/migrations/<ts34>_accounting_p5_withdrawal_reads.sql`、`tests/integration/db/accounting_p5_withdrawal_reads.integration.test.ts`
+- Modify: `tests/integration/db/accounting_p5_migration_asserts.integration.test.ts`
+- Test: 上の DB 1 suite
+- Read: 設計 13-c2・13-f・13-h
+
+**Interfaces:**
+- Produces（表。追記専用）: `inventory_withdrawal_tax_reviews(withdrawal_id uuid PRIMARY KEY REFERENCES inventory_withdrawals(id), withholding_required boolean, income_tax_204_clause text CHECK (char_length(income_tax_204_clause) <= 100), payer_has_employees boolean, withholding_amount integer, who_bears text CHECK (who_bears IN ('recipient','shop')), due_on date, payment_record_required boolean, memo text CHECK (char_length(memo) <= 500), reviewed_by uuid, reviewed_at timestamptz DEFAULT now(), version bigint NOT NULL DEFAULT 1)`と履歴 `inventory_withdrawal_tax_review_revisions`（追記専用）。法人か給与を払う店が個人と投稿の約束をした時（`has_post_agreement` かつ相手が個人）に、源泉徴収が要るか・204条のどの号か・現物の価値を報酬額にした源泉の額・受け取るか店が負担するか・納期限（基本は翌月10日）・支払調書の要否を、印ごとに判定して残す欄（13-c2）。**原稿・モデル・出演などのどれに当たるかは税理士に確かめる（未確認事項 #4）ので、画面は入力欄にとどめ、自動の判定はしない。** 書き口 `admin_set_withdrawal_tax_review(_actor_id,_withdrawal_id,_review jsonb,_expected_version,_request_key)`（権限 `admin.accounting.entries.correct`）。
+- Produces（読み口。STABLE・service_role 専用）: `public.list_year_end_withdrawals(_period_id uuid,_limit integer DEFAULT 100,_after_date date DEFAULT NULL,_after_id uuid DEFAULT NULL) RETURNS jsonb`（13-f。列: 日・品・数・印・原価・売値・入れた額・相手・目的・約束の有無・貸し出し中かどうか・消費税の区分・取り消されたか。**約束付きは目立たせる印**、**源泉徴収の要否・納める期限・支払調書の要否が未入力の約束付きは「未入力」の印**、**役員の現物の賞与の社会保険の届出が要る印**〔`social_insurance_notice_required`〕、**個人的な値引きの差の確定の候補**〔Task 5 の determinations と、印の付いたコードで70%未満の注文のうちまだ確定していない物〕を含む）、`public.list_stock_adjustments(_from date,_to date,…) RETURNS jsonb`（13-h。発注の受け取りの取り消しの行は除き、返金に結ばれた調整は別の印で出す。`admin_record_stock_movement` の `adjustment` と、貸し出しの `lost`・`broken` の閉じを、持ち出しの印と分けて出す。消費税の対象外）、`public.get_withdrawal_period_pre_close_check(_period_id uuid) RETURNS jsonb`（10-g の締める前の確かめに渡す材料: 未確定の個人的な値引きの候補の件数・源泉徴収の欄が未入力の約束付きの件数・戻っていない貸し出しの件数・計上待ちのままの持ち出しの件数・源泉の計算が未計算の役員への贈与の件数・**固定した原価が、持ち出した日までで一番遅い今の回の単価と違う持ち出しの件数と行**〔見積りから確定への置き換えや、前の日付の回の後からの登録で起きる〕・**持ち出した日より後に記録して `items.price` が記録の時の値段になった持ち出しの行**。年末の一覧にも同じ印を出す）。この読み口の結果は7年残す対象として `docs/06_Operations/` の保存の文書に載せる（Task 15）。法人の欠損金の年は10年（12-e2）。
+- Produces: S34 assert DETAIL `acc_s34_tables`・`acc_s34_constraints`・`acc_s34_immutable`・`acc_s34_rls_acl`・`acc_s34_reads_stable`（読み口は STABLE でロックを取らない）・`acc_s34_function_attrs`・`acc_s34_existing_dml_allowlist`。
+
+- [ ] **Step 1: 失敗する試験を書く。** `FREQ-600-AC-04: 年末の一覧に日・品・数・印・原価・売値・入れた額・相手・目的・約束の有無・貸し出し中かが出て、取り消した物は印で分かる`、`FREQ-600-AC-04: 約束付きの持ち出しは目立つ印が付き、源泉徴収の要否が未入力なら未入力の印が出る`、`FREQ-600-AC-04: 役員の現物の賞与の社会保険の届出が要る印が出る`、`FREQ-600-AC-04: 印の付いたコードで70%未満の注文のうち確定していない物が確定の候補に出る`、`FREQ-600-AC-03: 棚卸の差・壊れた・なくした品は調整の一覧に出て、持ち出しの印と混ざらず、消費税は対象外`、`FREQ-600-AC-05: 源泉徴収の欄は版の比べで守られ、履歴が残る。204条の号・納期限・支払調書の要否・負担者が残る`、`FREQ-600-AC-04: 締める前の確かめの材料の件数が正しい`、`FREQ-600-AC-04: 持ち出しの後に原価の回が確定の単価で入ると、固定した原価とのずれが一覧と確かめに出る`、`FREQ-600-AC-04: 読み口はロックを取らない`、`FREQ-600-AC-05: 書き口は権限の無い人を断る`。
+- [ ] **Step 2（controller）: RED を測る。** 上の DB suite。
+- [ ] **Step 3: S34 を実装する。** 読み口は元の表を読むだけで、額を保存しない。
+- [ ] **Step 4（controller）: GREEN を測る。** 共通 verify。S34 の末尾 assert の改ざん試験。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 持ち出しの年末の一覧と投稿の約束の源泉の欄を足す`
+
+### Task 8: 棚卸表の表・版・確認・追記専用
+
+controller が別セッションへ `docs/06_Operations/`（保存期間の文書）の更新を先に知らせる。Task 7 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-601）
+- Create: `supabase/migrations/<ts35>_accounting_p5_stocktake_tables.sql`、`tests/integration/db/accounting_p5_stocktake_tables.integration.test.ts`、`tests/integration/db/accounting_p5_stocktake_concurrency.integration.test.ts`
+- Modify: `tests/integration/db/accounting_p5_migration_asserts.integration.test.ts`、`tests/integration/db/helpers/accounting-inventory-fixtures.ts`（`seedStocktake`）
+- Test: 上の DB 2 suite
+- Read: 設計 9-b・9-b3・9-a2・9-c7、計画1 Task 7（期間の表・版の比べの形）
+
+**Interfaces:**
+- Produces（表。RLS・PUBLIC/anon/authenticated に権限なし・service_role は SELECT のみ）:
+  - `accounting_stocktakes(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), period_id uuid NOT NULL REFERENCES accounting_periods(id) ON DELETE RESTRICT, version integer NOT NULL CHECK (version >= 1), status text NOT NULL CHECK (status IN ('draft','confirmed')), basis_date date NOT NULL, as_of timestamptz NOT NULL, supersedes_id uuid UNIQUE REFERENCES accounting_stocktakes(id) ON DELETE RESTRICT, supplies_policy text NOT NULL CHECK (supplies_policy IN ('count','expense_when_stable')), valuation_snapshot jsonb NOT NULL, created_by uuid, created_at timestamptz NOT NULL DEFAULT now(), confirmed_by uuid, confirmed_at timestamptz, confirm_note text CHECK (char_length(confirm_note) <= 500), retention_until date NOT NULL, UNIQUE (period_id, version))`。`basis_date` は個人は12月31日、法人は期末。`valuation_snapshot` は作った時の区分ごとの評価の方法（Task 3 の答え）。`retention_until` は期末から7年（法人の欠損金の年は10年。12-e2）。確認の印を付けた版（`status='confirmed'`）は UPDATE/DELETE を断る。`status='draft'` から `'confirmed'` への1回の更新だけ許す。新しい版は `supersedes_id` で前の確認済みの版を指し、1つの版の後継は1つだけ（UNIQUE）。期間ごとに下書きは1つまで（部分一意 `WHERE status='draft'`）。
+  - `accounting_stocktake_lines(id bigserial PRIMARY KEY, stocktake_id uuid NOT NULL REFERENCES accounting_stocktakes(id) ON DELETE RESTRICT, line_type text NOT NULL CHECK (line_type IN ('inventory','prepaid_check','accrued_processing')), category text CHECK (category IN ('material','work_in_process','product','goods','supplies')), sub_kind text NOT NULL CHECK (sub_kind IN ('normal','entrusted_fabric','in_transit','on_loan')) DEFAULT 'normal', item_id bigint, variant_id bigint, counterparty text, location text CHECK (location IN ('shop','factory','in_transit','on_loan')), draft_quantity integer CHECK (draft_quantity >= 0), counted_quantity integer CHECK (counted_quantity >= 0), difference integer GENERATED ALWAYS AS (counted_quantity - draft_quantity) STORED, unit_cost integer CHECK (unit_cost >= 0), cost_lot_id bigint, price_status text CHECK (price_status IN ('estimate','final')), amount bigint, valuation_method text, write_down_reason text CHECK (write_down_reason IN ('seasonal_unsold','damaged','out_of_shape')), write_down_amount integer CHECK (write_down_amount >= 0), selling_price_at_basis integer, evidence jsonb, note text CHECK (char_length(note) <= 500), prepaid_balance bigint, work_done_amount bigint, work_done_is_estimate boolean, sewing_started boolean)`。確認前の下書きの行だけ UPDATE できる（制約トリガーが親の `status` を見る。確認後の UPDATE/DELETE は断る）。確認の時、`inventory` の行は `counted_quantity` が全部入っている必要がある（入っていなければ `STOCKTAKE_COUNT_MISSING / 55000`）。**数えた数が下書きと違えば数えた数が正で、差 `difference` が行に残る**（9-b3）。`amount = counted_quantity × unit_cost - write_down_amount` を確認の時に確定して入れる（`write_down_amount` は評価を下げる理由があり、個人は施行令104条に当たる時だけ。画面に「値段が下がっただけでは個人の評価損にできない」と出す。所得税基本通達47-24。9-c7）。
+- Produces（書き口。private 本体＋service_role 専用の public 入口。権限 `admin.accounting.entries.correct`、確認は `admin.accounting.settings.manage`。どれも `accounting_lock_all` を最初に取る）: `admin_create_stocktake_draft(_actor_id,_period_id,_as_of,_request_key)`（Task 9 が下書きの行を入れる関数を呼ぶ）、`admin_save_stocktake_lines(_actor_id,_stocktake_id,_lines jsonb,_expected_etag,_request_key)`（下書きだけ。材料・貯蔵品の行と数えた数・置き場所・評価を下げる理由・証拠・12月31日の売れる値段を入れる。1回200行まで）、`admin_confirm_stocktake(_actor_id,_stocktake_id,_note,_request_key)`（確認の印。`valuation_snapshot` と `amount` を確定する）、`admin_start_stocktake_revision(_actor_id,_stocktake_id,_reason,_request_key)`（確認済みの版から新しい下書きの版を作り、行を写す。`supersedes_id` で結ぶ）。同じ要求番号の再送は前の結果。
+- Produces（読み口。STABLE）: `public.get_stocktake(_stocktake_id uuid) RETURNS jsonb`、`public.list_stocktakes(_period_id uuid) RETURNS jsonb`（版の一覧）。
+- Produces: S35 assert DETAIL `acc_s35_tables`・`acc_s35_constraints`・`acc_s35_immutable`・`acc_s35_rls_acl`・`acc_s35_function_attrs`・`acc_s35_existing_dml_allowlist`。
+
+- [ ] **Step 1: 失敗する試験を書く。** `FREQ-601-AC-01: 棚卸表に5つの区分と前払金の確認の行が同じ表に載る`、`FREQ-601-AC-02: 数えた数が下書きと違えば数えた数が正で、差が行に残る`、`FREQ-601-AC-02: 確認の時に数えた数が入っていない行があれば断る`、`FREQ-601-AC-03: 評価を下げる理由・証拠・12月31日の売れる値段が残り、確認の時に額から引かれる`、`FREQ-601-AC-04: 確認の印を付けた版は書き換えもできず削除もできず、直しは新しい版の下書きになり、前の版の行が写される`、`FREQ-601-AC-04: 同じ確認済みの版から2つ目の新しい版は作れない`、`FREQ-601-AC-04: 期間ごとに下書きは1つだけ`、`FREQ-601-AC-05: 包装材料の扱い（数える・数えずに経費）が表に残り、設定と食い違えば断る`、`FREQ-601-AC-06: 表は追記専用でanon・authenticatedに権限が無く、保存期間が期末から7年（欠損金の年は10年）で残る`、`FREQ-601-AC-04: 版の比べで2人が同時に下書きを直すと片方が断られる`、`FREQ-601-AC-04: 確認の印と同時の下書きの直しで、確認後に行が変わらない`（並行。3連続）、`FREQ-601-AC-02: 同じ要求番号の再送は前の結果で、違う内容はREQUEST_KEY_CONFLICT`、`FREQ-601-AC-06: 事業の形が違う期間の棚卸表の行を写す道が無い`。
+- [ ] **Step 2（controller）: RED を測る。** 上の DB suite。
+- [ ] **Step 3: S35 を実装する。** 下書きの行の更新は、親が下書きの時だけ許す制約トリガーで守る。
+- [ ] **Step 4（controller）: GREEN を測る。** 共通 verify。並行3連続。S35 の末尾 assert の改ざん試験。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 棚卸表を版つきの追記専用で持つ`
+
+### Task 9: 下書きの作り・前払金と前受金の照合・注意
+
+controller が別セッションへ先に知らせる（G の在庫の読み口は読むだけ）。Task 8 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-602）
+- Create: `supabase/migrations/<ts36>_accounting_p5_stocktake_draft.sql`、`tests/integration/db/accounting_p5_stocktake_draft.integration.test.ts`、`tests/integration/db/accounting_p5_stocktake_checks.integration.test.ts`
+- Modify: `tests/integration/db/accounting_p5_migration_asserts.integration.test.ts`、`tests/integration/db/helpers/accounting-inventory-fixtures.ts`（`seedInProductionOrder`・`seedReadyUnshippedOrder`・`seedPrepaid`）
+- Test: 上の DB 2 suite
+- Read: `supabase/migrations/20261023211425_group_g1_allocation.sql:1560-1620`（`private.list_group_g_variant_inventory`。戻りは `variant_id, free, paid_allocated, payment_held, on_hand, waiting`。最新は `20261024153505_group_g2_purchasing_foundation.sql:202`〔式は同じ〕。1回500品までで、超えると `TOO_MANY_VARIANTS` なので、下書きは500品ずつ分けて読む）、`:1621`（`private.order_line_fulfillment`）、計画2 Task 1・7（`accounting_unit_values`・`accounting_g_fact_seq_at`・`list_deferred_revenue`・`get_order_backlog`・`get_intake_reconciliation`）、設計 9-b・9-b2・9-d・9-d2・9-e・9-f
+
+**Interfaces:**
+- Consumes: Task 2・3・8 の表と関数、G の `private.list_group_g_variant_inventory(bigint[])`・`private.order_line_fulfillment`・`order_item_allocations`、計画2の道具、`purchase_orders`・`purchase_order_lines`（未着の参考）。
+- Produces: `private.accounting_build_stocktake_draft(_stocktake_id uuid) RETURNS jsonb`（入口なし。Task 8 の `admin_create_stocktake_draft` だけが呼ぶ。G の表を書かず、G の表の行に鍵を取らない（G の共通の鍵は `accounting_lock_all` の①で持つ）。行ロックなし）。
+  1. **物の置き場（製品・商品）:** 品ごと・色サイズごと（`item_variants`）に `on_hand`（= 空き＋割り当て済み＋支払い待ちの確保）を**1回だけ**数える。品の印（`inventory_item_marks`）が `made` なら `product`（製品）、`bought` なら `goods`（商品）。**送っていない着（`ready_unshipped` = 割り当て済み）は `on_hand` の中にすでに入っているので別に足さない**（設計 9-b2「売れたが送っていない品は出荷まで製品」は、この数が出荷まで `on_hand` に残ることで満たす）。印の無い品は行を作らず、理由 `item_mark_missing` の注意に出す（Task 2 の `FREQ-595-AC-05`）。
+  2. **仕掛品:** `waiting`（= `in_production`。支払い済みで割り当ての無い未出荷の着。縫製に入ったかは持たない）は、**品の印が `made` の品だけ**を `work_in_process` の行にし、行に「縫製に入ったか」の欄 `sewing_started`（既定 NULL＝未確認）を置く。未確認の着は額を0にして注意に出し（`sewing_unconfirmed`）、オーナーが「縫製中」にした着だけ、作った品の回の**材料の額**（`material_cost`）で数える（9-d2）。仕入れた品（`bought`）の入荷待ちは仕掛品に入れない。工場に預けた生地は材料（工場に預け）の行で、仕掛品と二重に数えない。工場ごとに、オーナーが入れる「作業が済んだ加工代」（`work_done_amount`、見積りなら `work_done_is_estimate`）があれば、その額を製品／仕掛品の原価に足し、払っていない分を `accrued_processing` の行にする（9-d。未払金）。
+  3. **単価:** `private.inventory_valuation_method(period, category, scope)` を区分ごとに `'all'` と `'made_to_order'` の2回聞き、受注生産の着（`order_items.fulfillment_type='backorder'`。今の値は `stock`・`backorder` の2つ。`20260919065442_add_order_items_variant_columns.sql:12-13`）にだけ `made_to_order` の答えを当て、残りは `'all'` の答えを当てる。`last_purchase` は `private.inventory_last_purchase_lot(item_id, basis_date)` の回の `unit_cost`（製品・商品）／`material_cost`（仕掛品）。回が無ければ単価 NULL で注意（`cost_lot_missing`）。`specific` は承認の記録がある時だけで、`scope='made_to_order'` なら受注生産の注文の着（`order_items.fulfillment_type` が `'backorder'` の着（今の値は `stock`・`backorder` の2つ）。割り当て済みの作り置きの着とは、この列で見分ける）と、その品にだけ使う材料（通達47-1(2)。回の `made_to_order` の印で見分ける）だけを注文ごとの1着の原価（材料＋済んだ加工代）で出し、作り置きの品は最終仕入原価法の単価で出す（9-c5）。`scope='all'` なら区分の全部。`lower_of_cost_or_market`（法人）は原価と基準日の売値の低い方。
+  4. **貸し出し中:** `private.get_inventory_loans_open`（Task 4）の戻っていない数を、`sub_kind='on_loan'`・`location='on_loan'` の行として**店の在庫のまま**入れる（13-d。貸した時に `stock_quantity` から引いているので `on_hand` と重ならない）。
+  5. **預けた生地・運送中:** 工場に預けてまだ縫製に入っていない生地（`sub_kind='entrusted_fabric'`、`category='material'`）と、12月31日に運送中の生地・品（`sub_kind='in_transit'`。所得税基本通達47-8の2）はオーナーが入れる行。参考に、発注の受け取りが済んでいない数（`purchase_order_lines` の未着）を行の `evidence` に出す。縫製中の仕掛品の材料と同じ物を二重に数えないための確認欄を画面に出す。
+  6. **前払金の確認（9-d）:** `private.accounting_prepaid_balances(_as_of date) RETURNS TABLE(counterparty text, balance bigint)`（1410 前払金の工場ごと〔仕訳の行の `counterparty`〕の借方−貸方）を `prepaid_check` の行にする。12月31日に作業が済んでいない前払いは前払金のまま（経費にしない。棚卸資産に入れない）。作業が済んでいれば、払っていなくても `accrued_processing` の行（仕掛品・製品の原価に入れ、払っていない分は未払金）にし、額が決まっていなければ見積りで入れて確定した年に差を直す旨を画面に出す。途中の作業は、引き渡しを受けるまで加工代を入れない（9-d2。契約に「出来た分だけ払う」「途中で分けて引き渡す」の定めがあるかはオーナーが行に入れる。定めのある契約を結ぶ時は税理士に確かめる旨を画面に出す。未確認事項 #1）。
+  7. **日付:** `as_of`（既定は今）までの状態を読む。基準日（12月31日）より後に動いた物は、`stock_movements` のうち `created_at > 基準日の翌日0時（日本時間）` の物を行の `evidence` に載せ、オーナーが数えた数で直せるようにする。数えた数が正（9-b3）。
+- Produces（照合の読み口。STABLE・service_role 専用）:
+  - `public.get_stocktake_deferred_check(_period_id uuid) RETURNS jsonb`（9-e）: `{closing_deferred_balance, unshipped_remainder_total, difference, by_order:[{order_id,order_number,balance,unshipped_value,diff}], intake_unexplained}`。`closing_deferred_balance` は 2150 の注文番号つきの残高（計画2の `list_deferred_revenue(_as_of)` の `total_balance`）、`unshipped_remainder_total` は、送っていない・取り消していない注文の前受金の残り（`private.accounting_unit_values(order, 期末の番号)` の `shipped=false` の値打ちの合計。期末の番号は `accounting_g_fact_seq_at(期末の23:59:59 JST)`（計画2では Stripe の時刻と比べる W 用に作られた道具。ここでは読むだけで使う））。差があれば注文ごとに出す。`intake_unexplained` は計画2の `get_intake_reconciliation`（8-g・8-g2）の `unexplained` を渡す（カード会社の判断待ち・返金の失敗の振替は8-g2の内訳へつなぎ、説明のつかない差を残さない）。
+  - `public.list_stocktake_attention(_stocktake_id uuid) RETURNS jsonb`（9-f と注意）: ①作り始めた注文なのに、材料・仕掛品・製品・前払金のどこにも無い注文（支払い済みで `in_production` の着があるのに、その品の回も前払金も棚卸表の行も無い。**まだ作り始めていない注文もあるので一対一に合わせない注意**）、②品の印が無い品、③原価の回が無い品、④見積りのままの回、⑤戻っていない貸し出し、⑥基準日より後の動きが大きい品、⑦検品待ち（`pending_inspection`）で戻った品の数（店にあっても `on_hand` に入らない）。個人の情報（お客様の名前・メール）を含めない。
+- Produces: S36 assert DETAIL `acc_s36_functions`・`acc_s36_function_attrs`・`acc_s36_reads_stable`・`acc_s36_g_untouched`（G の表・関数の定義が移行の前後で同じ）・`acc_s36_existing_dml_allowlist`。
+
+- [ ] **Step 1: 失敗する試験を書く。** 設計 9-3 の例を数字で固定する（12/10 に支払い 30,000、12/15 に生地 8,000、工場の加工代 7,000、出荷は 1/15）。`FREQ-602-AC-01: 作った品の作り置きは製品、仕入れた品の作り置きは商品に分かれる`、`FREQ-602-AC-02: 出来上がって送っていない着は on_hand に1回だけ入り、別に足されない`（合計が物の数と一致）、`FREQ-602-AC-02: 縫製に入ったと印を付けた着だけが仕掛品の行に材料の額で入り、未確認の着は額0で注意に出て、送った着と仕入れた品の入荷待ちは含まれない`、`FREQ-602-AC-02: 12/28 に縫製が済み送っていない着は製品 15,000（材料 8,000＋加工代 7,000）に入り、今年の原価は0、翌年の出荷で製品から出る`、`FREQ-602-AC-03: 預けた生地と運送中の品は材料の別の行になり、縫製中の材料と二重に数えない確認欄が出る`、`FREQ-602-AC-04: 貸し出しは戻っていない数が店の在庫のまま on_loan の行に入る`、`FREQ-602-AC-05: 加工代を12/20に前払いして作業が1月からなら、預けた生地の材料 8,000 だけが棚卸に入り（注文の着は縫製に入っていないので仕掛品は0）、前払金 7,000 は前払金の確認の行に出て経費にならない`、`FREQ-602-AC-05: 12/31 に縫製が半分まで（出来た分を払う定めが無い）なら、仕掛品は材料 8,000 だけで、前払金 7,000 は確認に出る`、`FREQ-602-AC-05: 作業が済んだのに払っていない加工代は accrued_processing の行になり、額未定なら見積りの印が付く`、`FREQ-602-AC-05: 前払金の残高は工場ごとに出る`、`FREQ-602-AC-06: 前受金の残高 30,000 と送っていない注文の前受金の残り 30,000 が照合され、差があれば注文ごとに出る`、`FREQ-602-AC-06: 期末より後に起きた出荷・返金は期末の照合に入らない`（番号で切る）、`FREQ-602-AC-06: 計画2の照らし合わせの説明のつかない差が渡される`、`FREQ-602-AC-07: 支払い済みで縫製中の着があるのに材料・仕掛品・製品・前払金のどこにも無い注文が注意に出る`、`FREQ-602-AC-07: 品の印が無い品・原価の回が無い品・見積りのままの回が注意に出る`、`FREQ-602-AC-07: 検品待ちで戻った品の数が注意に出る`、`FREQ-602-AC-01: 評価の方法は設定に従い、承認の記録が無ければ最終仕入原価法の単価が入る`、`FREQ-602-AC-02: 下書きの作りはG の表を書かず、G の表の行に鍵を取らない`（`pg_locks` とソースの検索。G の共通の鍵は `accounting_lock_all` の①）、`FREQ-602-AC-02: 基準日より後の動きが行の証拠に載る`。
+- [ ] **Step 2（controller）: RED を測る。** 上の DB suite。
+- [ ] **Step 3: S36 を実装する。** 物の数は G の読み口 `list_group_g_variant_inventory` をそのまま使い、数え方を二重に書かない。
+- [ ] **Step 4（controller）: GREEN を測る。** 共通 verify（読み口は STABLE の assert）。G の既存の suite が無改造で通る（`acc_s36_g_untouched`）。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 棚卸の下書きと前払金・前受金の照合を作る`
+
+### Task 10: 数量の流れ（出荷・返品の戻り・交換・持ち出し）と、届く順の試験
+
+controller が別セッションへ先に知らせる（G・計画2・3の表は読むだけで変えない）。Task 9 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-603）
+- Create: `supabase/migrations/<ts37>_accounting_p5_stock_flow.sql`、`tests/integration/db/accounting_p5_stock_flow.integration.test.ts`、`tests/integration/db/accounting_p5_stock_flow_order_independence.integration.test.ts`、`tests/integration/db/accounting_p5_stock_flow_concurrency.integration.test.ts`
+- Modify: `tests/integration/db/accounting_p5_migration_asserts.integration.test.ts`、`tests/integration/db/helpers/accounting-inventory-fixtures.ts`（`seedShipment`・`seedReturnArrival`・`seedExchangeShipment`）
+- Test: 上の DB 3 suite
+- Read: 計画2 Task 3（出荷の候補・日の検査・`shipment_date_history`）、計画3 Task 4・7（`accounting_return_arrival_on`・`order_return_arrival_corrections`・`order_return_receipt_lines.disposition`）、`supabase/migrations/20261024153505_group_g2_purchasing_foundation.sql:404-430`（受け取り）、設計 9-b2・9-g・1-a17
+
+**Interfaces:**
+- Consumes: `shipment_slips`・`shipment_slip_lines`・`shipment_date_history`・`order_items`（`line_kind`）、`order_return_receipt_lines`（`disposition IN ('restocked','inspected_restocked')`）・`private.accounting_return_arrival_on`（読むだけ）、`purchase_order_receipt_lines`・`purchase_order_receipts`（`received_on`・`kind`）、`stock_movements`（`adjustment`）、`inventory_withdrawals`・`inventory_withdrawal_voids`・`inventory_loan_closures`、Task 2 の `private.inventory_last_purchase_lot`。
+- Produces（読み口。STABLE・SECURITY DEFINER・service_role 専用・**保存した額も数も持たず、ロックを取らない**）: `private.accounting_stock_flow(_from date,_to date) RETURNS TABLE(flow_date date, flow_kind text, variant_id bigint, quantity integer, source_table text, source_id text, flow_key text)` と、public 入口 `public.list_inventory_stock_flow(_from date,_to date,_variant_id bigint DEFAULT NULL,_limit integer DEFAULT 1000,_after_date date DEFAULT NULL,_after_key text DEFAULT NULL) RETURNS jsonb`（続きの目印つき。`MAX_FLOW_PAGE=5000`）。`flow_kind` と符号（在庫に入る＋、出る−）と日:
+  - `receipt`（＋）: 仕入れの受け取り（`kind='receive'` の数量。受け取りの行の `quantity` をそのまま足す〔取り消しの行は取り消しの時にすでに負で入っているので、`kind` を見て符号を付け直さない〕。取り消しは `receipt` の負として1回だけ引く）。日は `received_on`。
+  - `manual_restock`（＋）: `stock_movements` の `restock` のうち、発注の受け取りの行（`purchase_order_receipt_lines.stock_movement_id`）に結ばれていない物（在庫の画面から手で入れた入荷）。日は `created_at` の日本時間の日。
+  - `shipment`（−）: **取り消されていない**発送票の明細の数量。日は**発送票の今の出荷日**（計画2の読み方のとおり。日の直しは `shipment_date_history` の最新の版が今の日なので、直しの順に依らず答えが同じ）。取り消された発送票は出ない。`line_kind='exchange'` の品は `exchange_out`（−）として分ける（売上は作らない。1-a17）。
+  - `return_restock`（＋）: 返品の受け取りの行のうち `disposition IN ('restocked','inspected_restocked')` の数量（検品待ち `pending_inspection` は店にあっても `on_hand` に入らないので下書きの注意に数を出す）。`inspected_restocked` の日は**元の受け取りの届いた日**（検品の日ではない。検品の受け取りの行は `arrived_on` を持たない）。日は**今の届いた日**（`accounting_return_arrival_on`。最新の直しの新しい日、無ければ受け取りの行の `arrived_on`）。`exchange` で戻る品も同じ（交換で戻る品の原価の扱いは税理士に確かめる。未確認事項 #2）。
+  - `withdrawal`（−）: 取り消されていない `owner_use`・`gift`・`promo`・`officer_gift` と `loan_out` の数量。日は持ち出した日。`loan_return`（＋）、貸し出しの閉じ（`lost`・`broken`）は数が動かない（`loan_closed`、数量0の行で出る）。
+  - `adjustment`（±）: `stock_movements` の `reason='adjustment'` の数のうち、**`purchase_order_receipt_lines.stock_movement_id` に結ばれた行〔発注の受け取りの取り消しの行。`receipt` の負と二重にしない〕は除く**。返金に結ばれた行〔`stock_movements.refund_id IS NOT NULL` の `adjustment`。返金で在庫に戻さない調整〕は `refund_no_restock`（−）として別の印で出す。日は `created_at` の日本時間の日。
+  `flow_key` は `<flow_kind>:<source_id>`（例: 出荷は `shipment:<発送票の番号>:<品>`、交換は `exchange_movement:<行の番号>`〔`buildEventKey('exchange_movement',[行の番号])` と同じ文字列〕）。保存しないので重複の制約は無く、読み口が元の表の主キーから作る。
+- Produces（評価の読み口。STABLE）: `private.inventory_flow_cost(_variant_id bigint,_flow_date date,_business_type text) RETURNS integer`（その日までで一番遅い回の取得価額。数量の流れに単価を掛けて原価の額を**読む時に**出す。保存しない）と `public.get_inventory_flow_summary(_from date,_to date) RETURNS jsonb`（`{opening_quantity（`accounting_opening_inventory` と同じ棚卸表の数えた数。試算なら `is_trial:true` を載せる。無ければ0と注意）,receipts,manual_restocks,shipments,exchange_out,return_restock,withdrawals,loan_returns,adjustments,refund_no_restock,expected_closing_quantity, by_kind_amount:{…}}`。期首の数量＋`flow_kind` の全部〔`receipt`・`manual_restock`・`shipment`・`exchange_out`・`return_restock`・`withdrawal`・`loan_return`・`adjustment`・`refund_no_restock`〕の符号つきの和＝見込みの期末の数量。**棚卸の数えた数との差の確かめ**に使い、差が出れば棚卸表の差になる）。
+- 9-g の扱い（税理士に確かめてから決める）: 計画5の既定は、戻った品を `return_restock` として数量に戻し、評価は期末の最終仕入原価法に任せる（三分法では戻った品が期末の在庫に入れば売上原価が減る）。返品の受け取りの時に特別な原価の調整は作らない。税理士の答えが「戻した原価の調整を別に立てる」なら、`return_restock` の行を元に後から足せる（未確認事項 #2）。
+- Produces: S37 assert DETAIL `acc_s37_functions`・`acc_s37_function_attrs`・`acc_s37_reads_stable`（読み口は STABLE でロックを取らない）・`acc_s37_no_stored_amounts`（数量の流れの表・列が新しく作られていない）・`acc_s37_g_untouched`・`acc_s37_existing_dml_allowlist`（DML は無い）。
+
+- [ ] **Step 1: 失敗する試験を書く。** `FREQ-603-AC-02: 出荷した年に shipment の流れが出て、12/28 に出来上がって送っていない品は流れに出ず期末の見込みの数量に残る`、`FREQ-603-AC-03: 返品で戻った品は届いた日に return_restock として戻り、届いた日を直せば流れの日も直る`、`FREQ-603-AC-03: 返品の戻りで特別な原価の調整の行は作られない`、`FREQ-603-AC-04: 交換の出荷は exchange_out の流れに出て売上の仕訳は増えない`、`FREQ-603-AC-02: 発送票を取り消すと shipment が流れから消え、出荷日を直すと日が移る`、`FREQ-603-AC-02: 持ち出し・取り消し・貸し出しの戻りが流れに出る`、`FREQ-603-AC-05: 原価の回を基準日より後の日付で登録しても、その日までの評価額は変わらない`、`FREQ-603-AC-05: 原価の回を元の日付より後に登録すると、その日の評価額が（正しく）変わる`、`FREQ-603-AC-06: 数量の流れの読み口は STABLE で FOR SHARE・FOR UPDATE を使わず、数量や額を保存する表・列が新しく作られていない`、`FREQ-603-AC-06: 数量の流れの期首＋流れ＝見込みの期末で、数えた数との差が棚卸表の差になる（固定の表に返金で戻さない行を1つ入れる）`、`FREQ-603-AC-02: 手で入れた入荷（restock）は manual_restock として出て、発注の受け取りの入荷は二重に出ない`、`FREQ-603-AC-02: 発注の受け取りを取り消すと、流れは receipt の負の1回だけで引かれ、adjustment にも調整の一覧にも出ない`、`FREQ-603-AC-02: 返金で在庫に戻さない調整は refund_no_restock として出て、壊れた・なくした品の調整の一覧に混ざらない`。**届く順の試験 `FREQ-603-AC-01`**（`accounting_p5_stock_flow_order_independence`）: 1つの品について、出来事 E1 入荷、E2 発送票の確定、E3 発送票の取り消し、E4 発送票の再確定、E5 出荷日の直し、E6 返品の受け取り、E7 返品の届いた日の直し、E8 交換の出荷、E9 持ち出し、E10 持ち出しの取り消し、E11 原価の回の登録（元の日付より前・後の両方）、E12 調整、E13 発注の受け取りの取り消しを、**順列を網羅**（互いに前後が決まっている組を除いて、少なくとも 24 通り。実装時に全順列を数えて報告）して流し、最後の `get_inventory_flow_summary` と期末の評価額が**全順列で同じ**であること。固定の期待値（数字）を表で書く: 例）入荷 10・発送 3・取り消し・再確定 3・日の直し・返品の戻り 1・交換 1・持ち出し 2（1件取り消し）・調整 −1 → 見込みの期末 = 10 − 3 + 1 − 1 − 2 + 2 − 1 の形で、各項を表にして固定する。並行（別の jest 実行）: `FREQ-603-AC-01: 発送票の確定・取り消しと返品の受け取りと持ち出しを同時に流しても、読み口の答えは順列の答えのどれかと一致し、途中の状態を見せない`（3連続）。
+- [ ] **Step 2（controller）: RED を測る。** 上の DB suite。
+- [ ] **Step 3: S37 を実装する。** 元の表を読むだけ。額と数を保存しない。計画2・3の関数を呼ぶ時は読む関数だけ（書く関数を呼ばない）。
+- [ ] **Step 4（controller）: GREEN を測る。** 共通 verify。順列の試験は全部通ること。G・計画2・3の既存の suite が無改造で通る。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 在庫の数量の流れを元の記録から読む`
+
+### Task 11: 期末の評価の読み口・期首の引き継ぎ・決算書の欄の表
+
+controller が別セッションへ先に知らせる。Task 10 のコミット後に始める。締めそのもの（確定・版・書き出し）は計画6。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-604）
+- Create: `supabase/migrations/<ts38>_accounting_p5_closing_reads.sql`、`tests/integration/db/accounting_p5_closing_reads.integration.test.ts`、`src/lib/accounting/inventory/statement-lines.ts`、`tests/unit/lib/accounting/inventory/statement-lines.test.ts`
+- Modify: `tests/integration/db/accounting_p5_migration_asserts.integration.test.ts`
+- Test: 上の DB 1 suite と単体1本
+- Read: 計画1 Task 7（期首の残高の計算・`accounting_store_opening`）、設計 9-h・9-i・9-c7、`src/lib/finance/year-end.ts:20-31,73`
+
+**Interfaces:**
+- Produces（読み口。STABLE・service_role 専用）:
+  - `public.get_inventory_closing_values(_period_id uuid,_stocktake_id uuid DEFAULT NULL) RETURNS jsonb`: 確認済みの最新の棚卸表（指定がなければ最新の確認済みの版。無ければ下書きの試算で `is_trial:true`（棚卸表の下書きの `draft` と分ける））の行を区分ごとに合計し、`{material,work_in_process,product,goods,supplies, accrued_processing, prepaid_balance_check, method_by_category, estimate_lot_count, write_down_total, retention_until}` を返す。**評価額は設定の方法に従い、承認の記録が無ければ最終仕入原価法**（`FREQ-604-AC-01`）。確認済みの行は確定した `amount` を使い、再計算しない。
+  - `private.accounting_inventory_closing_lines(_period_id uuid,_stocktake_id uuid) RETURNS TABLE(line_no integer, account_code text, debit bigint, credit bigint, memo text)`（入口なし）: 期末の棚卸高の仕訳の行を組む。期首（前の期末の棚卸表の額）を戻す行と期末を立てる行の対で、`1310` 商品／`5040` 期末商品棚卸高、`1320` 製品／`5041`、`1330` 材料／`5045`、`1340` 仕掛品／`5046`、`1350` 貯蔵品／（包装材料を数える設定の年のみ。相手の勘定は決算書の欄の表で決める）、`5010`・`5011`・`5015`・`5016` の期首の側、未払金の `accrued_processing` は期間の事業の形で勘定を分け（個人 `6220` 外注工賃／法人 `5050` 外注加工費）、相手は未払金。借方の合計＝貸方の合計になる。**この行を `period_closing_entry`（印の3つ目は確定した棚卸表の版の番号）として入れるのは計画6**。計画5は読み口までで、仕訳を入れない。`public.get_inventory_closing_lines(_period_id uuid,_stocktake_id uuid) RETURNS jsonb` を読み取り用の入口にする。
+  - `private.accounting_opening_inventory(_period_id uuid) RETURNS TABLE(category text, amount bigint, is_trial boolean)`（9-h。締めの版が無い間は `is_trial = true`）: 期首の在庫は、**前の期間と事業の形が同じ時だけ**前の期末の棚卸表から取る。**締めた版が指す棚卸表**から取る（個人は最新の締めの版、法人は株主総会で確定した版1。法人の税のためだけの版2は期首に使わない。設計の「版」は締めた時に保存した版で、棚卸表の直しの版 `accounting_stocktakes.version` とは別物）。締めの版は計画6が持つので、**計画5の間は、締めの版がまだ無い期間の期首を試算（`is_trial = true`、最新の確認済みの棚卸表）として返すにとどめる**。個人から法人に変わる時の法人の第1期の期首の在庫は0で、法人へ移す分は11-d の取引として第1期の中の日付で入れる（個人の期末から自動で写さない）。**事業の形が違う期間の間で写す道を DB が止める**（棚卸表の `period_id` の事業の形と `supersedes_id` の事業の形が違えば断る。`FREQ-601-AC-06`・`FREQ-604-AC-03`）。
+  - `public.get_inventory_statement_map() RETURNS jsonb`（9-i）: 勘定ごとにどの欄へ出すかの表。TS の `statement-lines.ts` の定数 `INVENTORY_STATEMENT_MAP` が正本で、SQL の読み口はその値を返す（試験が一致を確かめる）。決算書 4ページ「製造原価の計算」: 材料の期首・期末の棚卸高（`5015`・`5045`）と材料の仕入高（`5020` のうち材料）、工場の加工代など作るための経費（法人は `5050`、個人は `6220` 外注工賃のうち工場の加工代。4ページの「外注工賃」の欄へ出す）、仕掛品の期首・期末の棚卸高（`5016`・`5046`）、「製品製造原価」を算出。1ページの損益計算書: 「仕入金額（製品製造原価）」に製品製造原価を移す、「期首商品（製品）棚卸高」（`5010`・`5011`）・「期末商品（製品）棚卸高」（`5040`・`5041`）。事務の経費は製造原価に入れず1ページ。貯蔵品は貸借対照表の棚卸資産。13-c の宣伝用の貸方 `5020` 仕入高は 1ページ③「仕入金額（製品製造原価）」から引く（他勘定振替高は作らない）。**商品の仕入高と製品製造原価が両方ある時の③欄の書き方は税理士に確かめる**（未確認事項 #7。令和7年分の様式は目で見て確かめる、同 #9）。
+- Produces: S38 assert DETAIL `acc_s38_functions`・`acc_s38_function_attrs`・`acc_s38_reads_stable`・`acc_s38_opening_type_guard`（事業の形が違う期間の間の写しを断つ制約）・`acc_s38_existing_dml_allowlist`。
+
+- [ ] **Step 1: 失敗する試験を書く。** `FREQ-604-AC-01: 評価額は設定の方法に従い、承認の記録が無ければ全部最終仕入原価法の単価で、2026年の期間は設定を変えても最終仕入原価法`、`FREQ-604-AC-01: 確認済みの棚卸表の評価額は、あとで原価の回を直しても変わらない`、`FREQ-604-AC-02: 期首の在庫は締めの版が指す棚卸表から取り、締めの版が無い間は試算（is_trial）として最新の確認済みの棚卸表を返す`、`FREQ-604-AC-02: 事業の形が同じ時だけ引き継がれ、前の期間を締めていなければ確認済みの最新の版を使う`、`FREQ-604-AC-03: 個人から法人に変わる時の第1期の期首の在庫は0で、事業の形が違う期間の間で写す道を DB が断る`、`FREQ-604-AC-04: 期末の棚卸高の仕訳の行が区分ごとに組まれ、借方の合計＝貸方の合計になり、仕訳は1本も入らない`、`FREQ-604-AC-04: 包装材料を数えない設定の年は貯蔵品の行が出ない`、`FREQ-604-AC-04: 個人の期間の未払いの加工代は 6220、法人の期間は 5050`、`FREQ-604-AC-04: 評価損は理由・額・証拠が棚卸表に残り、法人は会計の切り下げと税で認める評価損の差を別に出す`、`FREQ-604-AC-05: 勘定ごとの決算書の出し先の表が4ページと1ページに分かれ、TS の定数と SQL の読み口が一致する`、`FREQ-604-AC-05: 宣伝用の貸方の5020が1ページ③から引かれる扱いが表にある`、`FREQ-604-AC-01: 読み口はロックを取らない`。
+- [ ] **Step 2（controller）: RED を測る。** 上の DB suite と単体。
+- [ ] **Step 3: S38 を実装する。** 仕訳を入れる関数は作らない。
+- [ ] **Step 4（controller）: GREEN を測る。** 共通 verify。S38 の末尾 assert の改ざん試験。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 期末の在庫の評価と期首の引き継ぎの読み口を足す`
+
+### Task 12: store・route・計上係の呼び出しの追加
+
+controller が別セッションへ `src/app/api/admin/accounting/**`・`src/lib/accounting/**` の変更を先に知らせる。Task 11 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-595〜604 のうちこの Task が証明する AC の行）
+- Create: `src/lib/accounting/inventory/inventory-store.ts`（service_role の RPC 包み。`AccountingStoreError` と同じ分類）、`src/app/api/admin/accounting/inventory/cost-lots/route.ts`、`…/item-marks/route.ts`、`…/settings/route.ts`（方法・承認・設定）、`…/withdrawals/route.ts`（記録・一覧）、`…/withdrawals/[id]/void/route.ts`、`…/loans/[id]/close/route.ts`、`…/compensations/route.ts`、`…/personal-discounts/route.ts`（印・確定）、`…/withdrawal-reviews/[id]/route.ts`（源泉の欄）、`…/stocktakes/route.ts`・`…/stocktakes/[id]/route.ts`（作る・保存・確認・新しい版）、`…/checks/route.ts`（前受金の照合・注意）、`…/flow/route.ts`、`…/closing/route.ts`、各 route の単体試験（`tests/unit/api/admin/accounting/inventory/*.test.ts`）、`tests/unit/lib/accounting/inventory/inventory-store.test.ts`
+- Modify: `src/lib/accounting/accounting-types.ts`（`ACCOUNTING_ERRORS` に Task 5 の5つを足す）、`src/lib/accounting/posting-types.ts`（Task 5 で足した物を使う）、計画2 Task 10 の `runAccountingPosting` の呼び元（持ち出し・取り消し・弁償金・値引きの差の route の直後に `safeRunAccountingPosting('manual')`。**新しい source 名は足さない**）
+- Test: 上の単体
+- Read: 計画1 Task 8（route の順序と store の形）、計画2 Task 10、`src/app/api/admin/accounting/product-costs/route.ts`（今の原価の route。変えない）
+
+**Interfaces:**
+- Produces: 上の route は全部 計画1 の順序（認可 → CSRF → 回数の制限 → zod → DB 関数 → 監査）に従い、読み取りは成功・失敗とも `Cache-Control: no-store`。zod は固定の鍵だけ（未知の鍵を断る）。設定の route の zod に `scope`（`all`・`made_to_order`）を足す。監査（`logAudit`）に名前・メール・金額の明細・相手の名前を入れない（印・件数・版だけ）。持ち出しの記録の route は、成功の直後に `safeRunAccountingPosting('manual')` を `await` せずに呼び、失敗しても応答を変えない（計画2の決まり。取りこぼしは cron が拾う）。
+- 権限: 原価の回と品の印は `admin.finance.manage`（読みは `admin.finance.read`）、方法・承認・設定・棚卸表の確認は `admin.accounting.settings.manage`、棚卸表の下書きと数えた数・源泉の欄・値引きの差の確定は `admin.accounting.entries.correct`、持ち出し・貸し出し・弁償金は `admin.stock.manage`、割引コードの印は H の割引の管理の権限。**新しい権限は足さない。** 名前は計画1 Task 2 の6件と H の移行で実装時に確かめ、違えば Task の最初に報告する。
+- 持ち出しの route は G のカート・決済の route に触れない。`src/app/api/checkout/**` は変えない。
+
+- [ ] **Step 1: 失敗する単体を書く。** 各 route に、`FREQ-597-AC-02: 認証が無いと401・権限が無いと403`、CSRF の欠落、回数の制限（IP と actor を別に数える）、zod の不正（未知の鍵・範囲外の日付・負の数）が400、DB の拒否（`INVENTORY_*`・`ACCOUNTING_*`）が表どおりの状態と本文、成功時に `no-store`、監査に名前・金額の明細が入らない。`FREQ-598-AC-08: 持ち出しの記録の成功の後に計上係を呼び、計上係が失敗しても応答は成功のまま`、`FREQ-601-AC-04: 棚卸表の確認の route は確認済みの版の書き込みを DB の拒否で409にする`、`FREQ-596-AC-02: 個別法の設定の拒否は承認の記録が無い旨の本文`、`FREQ-603-AC-06: 数量の流れの route は続きの目印で最後まで読める`、`FREQ-602-AC-06: 照合の route は個人の情報を含まない`。ok でない応答の本文を読み切る／`response.body?.cancel()` を await する（画面側の試験は Task 13）。
+- [ ] **Step 2: RED を測る。** `npx.cmd jest tests/unit/api/admin/accounting/inventory tests/unit/lib/accounting/inventory --runInBand`。
+- [ ] **Step 3: 実装する。** 拒否表は計画1の `ACCOUNTING_ERRORS` に足す形（完全一致の分類）。
+- [ ] **Step 4: GREEN を測る。** 上の単体、既存の `tests/unit/api/admin/accounting`、型・lint。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 在庫と持ち出しの route と store を足す`
+
+### Task 13: 画面（原価の回・評価の方法・持ち出し・年末の一覧・棚卸表）
+
+controller が別セッションへ `src/components/CostProfitSection.tsx` 周辺（計画1 Task 1 で分けた View）と割引の画面・G の在庫の履歴の画面（`src/app/admin/item/ItemStockSection.tsx`）の変更を先に知らせる。Task 12 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-605）
+- Create: `src/components/cost-profit/InventoryCostLotsView.tsx`、`InventoryMethodsView.tsx`、`WithdrawalsView.tsx`、`YearEndWithdrawalsView.tsx`、`StocktakeView.tsx`、`StocktakeChecksView.tsx`、`src/components/cost-profit/inventory/*`（部品）、`tests/unit/components/cost-profit/Inventory*.test.tsx`
+- Modify: `src/app/admin/item/ItemStockSection.tsx`（`REASON_LABELS` に6つの理由の言葉（`owner_use`=自家消費、`gift`=贈り物、`promo`=宣伝用、`loan_out`=貸し出し、`loan_return`=貸し出しの戻り、`officer_gift`=役員への贈与。今の画面の短い名詞句に合わせる）を足す。取り消しの戻りは `note` の固定の文をそのまま出す（読み口と route は変えない））、`tests/unit/components/ItemStockSection.test.tsx`、計画1 Task 1 の `COST_PROFIT_TABS`（サブタブを足す）、`use-cost-profit-model.ts`、割引の画面のコンポーネント（**場所は実装時に `graphify query "割引 discount codes admin screen"` で確かめる**。「個人的な値引き」の印の切り替えを足す。H の割引の関数と route は変えない）
+- Test: 上の RTL
+- Read: 計画1 Task 10・11（画面の形）、計画2 Task 11、`src/components/ProductCostSection.tsx`（今の原価計算の画面。変えない）
+
+**Interfaces:**
+- Produces: サブタブ6つ。①「原価の回」: 品の印（作った／仕入れた）、回の一覧と入力（日・材料の額・加工代・付随費用・見積り／確定・見積書の番号・税込／税抜／消費税。免税の間は税込みで入れる旨の文）、年末の見積りのままの行の促し。②「評価の方法」: 区分ごとの方法、承認の記録の入力、期限の表示（2026-03-16 は過ぎた・2027-03-15 の前に税理士と決める・使い始めて3年たたないと特別な理由が要る）、3%の設定（3種類だけ）、包装材料の扱い、法人の第1期の2つの期限と引き継がれない旨。③「持ち出し」: 印の選択と印ごとの必須の欄、額の既定と直し（理由）、貸し出しの戻り・閉じ（戻らない・壊れた）、弁償金、取り消し、0円の注文は作れず持ち出しで記録する旨の説明。④「年末の一覧」: 13-f の列、目立たせる印、約束付きの源泉の欄、値引きの差の確定の候補、締める前の確かめの材料、7年（欠損金の年は10年）残す旨。⑤「棚卸表」: 下書きを作る、行の編集（数えた数・置き場所・評価を下げる理由・証拠・12月31日の売れる値段）、「値段が下がっただけでは個人の評価損にできない」の文、確認の印、版の一覧と新しい版。⑥「照合と注意」: 前受金の照合（差の注文別）、在庫の無い注文の注意、前払金の工場ごとの残高。
+- 画面の文の決まり: 穏やかな日本語・絵文字なし・感嘆符なし。「税理士に確かめる」の所（仕掛品の計算・戻った品の原価・型紙の代・投稿の源泉・法人の贈与の区分・③欄）は、その場所に小さな注記で出す。権限の無い人には書き込みのボタンを出さない（DB が最後の守り）。ok でない応答の本文を読み切る。390/768/1280px で崩れない。
+
+- [ ] **Step 1: 失敗する RTL を書く。** `FREQ-605-AC-01: 各サブタブが表示される`、`FREQ-605-AC-02: 権限が無いと書き込みのボタンが出ない`、`FREQ-605-AC-03: 税理士に確かめる所の注記が出る`、`FREQ-596-AC-03: 個別法の選択肢は承認の記録が無い間は出ず、期限の文が出る`、`FREQ-597-AC-02: 持ち出しの印を選ぶと必須の欄が変わる`、`FREQ-601-AC-03: 評価損の文が出る`、`FREQ-601-AC-04: 確認済みの版は編集できず新しい版を作るボタンだけが出る`、`FREQ-602-AC-06: 照合の差が注文別に出る`、`FREQ-600-AC-04: 年末の一覧に約束付きが目立つ`、`FREQ-598-AC-06: 割引の画面の「個人的な値引き」の印は選んだ理由の区分だけを選べる`、`FREQ-605-AC-01: ok でない応答の本文を読み切る`。
+- [ ] **Step 2: RED を測る。** `npx.cmd jest tests/unit/components/cost-profit --runInBand`。
+- [ ] **Step 3: 実装する。** 既存の画面の動きは変えない。
+- [ ] **Step 4: GREEN を測る。** 上の RTL、既存の `CostProfitSection`・`ProductCostSection`・割引の画面の RTL、型・lint。
+- [ ] **Step 5（controller）: Files だけコミットする。** `feat(accounting): 在庫と持ち出しと棚卸表の画面を足す`
+
+### Task 14: 新しい E2E
+
+controller が別セッションへ先に知らせる。Task 13 のコミット後に始める。E2E は必ず本番ビルド（`next build && next start`）と手元の Supabase で、3000番の E2E 用でないアプリを先に止める。dev サーバーで流した結果を合否に使わない。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-605 と全体の確認）
+- Create: `e2e/FR-ADMIN-142-inventory-cost-lots.spec.ts`、`FR-ADMIN-143-inventory-methods.spec.ts`、`FR-ADMIN-144-inventory-withdrawals.spec.ts`、`FR-ADMIN-145-inventory-corporate-gifts.spec.ts`、`FR-ADMIN-146-year-end-withdrawals.spec.ts`、`FR-ADMIN-147-stocktake.spec.ts`、`FR-ADMIN-148-stocktake-checks.spec.ts`（番号は実装時に `ls e2e` で最大を取り直す。2026-11-04 の最大は計画4の 141 まで）
+- Modify: `e2e/admin-accounting-test-utils.ts`（在庫の fixture を足す）
+
+**Interfaces:**
+- 各 spec は 390・768・1280px の3幅。画面で上の6サブタブの主要な流れ（原価の回を入れる・方法の設定と承認の記録・自家消費と宣伝用の持ち出しと仕訳が帳簿に出る・貸し出しの戻り・法人の期間の役員への贈与〔試験で作った法人の期間〕・年末の一覧・棚卸表の下書きから確認まで・前受金の照合）を確かめる。`x-real-ip` を試験ごとに分ける。持ち出しと棚卸表は消せないので、試験ごとに固有の識別子で作って残す（注文と同じ決まり）。
+- [ ] **Step 1: spec を書く。** 受け入れ条件（FREQ-594〜605）を検証するコードにする。画面の文を決め打ちせず、役割とラベルで探す。
+- [ ] **Step 2（controller）: 流す。** `npx playwright test e2e/FR-ADMIN-142 …148`。失敗は「単体で再実行 → 他の幅 → タイムアウトかアサーションか」の順で切り分け、`retries` を上げない。
+- [ ] **Step 3（controller）: 会計の E2E の回帰（計画1の「会計の E2E 回帰の対象」）が変わらず通る**ことを確かめる。
+- [ ] **Step 4（controller）: Files だけコミットする。** `test(accounting): 在庫と持ち出しと棚卸表の E2E を足す`
+
+### Task 15: 文書の正本の更新
+
+controller が別セッションへ共有の文書の更新（`docs/06_Operations/db-migrations.md`・台帳・`test-spec.md`・`docs/06_Operations/README.md`）を先に知らせる。Task 14 のコミット後に始める。
+
+**Files:**
+- Modify: `docs/02_Requirements/requirements.md`（FREQ-594〜605 の全部の行がそろっているかの確かめと体裁）、`docs/03_BasicDesign/data/er.md`（新しい表）、`docs/03_BasicDesign/api/api-spec.md`・`route-inventory.md`（新しい route）、`docs/03_BasicDesign/ui/screen-list.md`・`screen-flow.md`（新しいサブタブ）、`docs/04_DetailDesign/shared/finance.md`（勘定・評価の規則）、`docs/04_DetailDesign/pages/`（該当する頁）、`docs/04_DetailDesign/sequence/`（持ち出しから仕訳まで・棚卸表の版の流れ）、`docs/05_Quality/tests/test-spec.md`（手で書く）、`docs/06_Operations/db-migrations.md`（S29〜S38）、`docs/06_Operations/`（棚卸表・持ち出しの一覧の7年〔欠損金の年は10年〕の保存、源泉徴収の表の年ごとの入れ替えの手順、原価の回の見積りから確定への置き換えの手順、回のある品は消せない旨、A11 の期限）、作業と指摘の台帳（`docs/05_Quality/reviews/code/2026-09-25-working-diff-security-review.md`）の状態欄
+- Create: 必要なら `docs/03_BasicDesign/decisions/ADR-NNNN-inventory-cost-method.md`（出荷ごとの原価の仕訳を作らず数量の流れを読む判断。controller の決定が出た後）
+- 書式は `docs/README.md` の「共通フォーマット」に従い、文書冒頭の確認日を更新し、`npm.cmd run validate-docs` でリンクと Markdown を確認する。`docs/05_Quality/reports/traceability-report.md` は自動生成なので手で直さず `npm run report:traceability` で作り直す。更新不要と判断した文書は、完了報告に理由を1行書く。
+- [ ] **Step 1〜3:** 文書を更新し、`npm.cmd run validate-docs` を流す。
+- [ ] **Step 4（controller）: Files だけコミットする。** `docs(accounting): 在庫と持ち出しの正本を更新する`
+
+### Task 16（controller）: 全体検証・最終レビュー・本番を読む・適用・記録
+
+**Files:** なし（記録は `.superpowers/sdd/2026-11-04-accounting-redesign/` の下）。
+
+- [ ] **Step 1: 全体検証。** 単体・型・lint・DB 結合（`db reset` 後）・PostgREST（新 public 入口の service_role 成功／anon・authenticated 拒否）・並行（3連続）・build・E2E（本番ビルド）を流し、baseline（`docs/05_Quality/reports/` と台帳の既知の赤）と比べる。新しい赤だけを調べる。
+- [ ] **Step 2: 回帰。** G（`group_g1_*`〜`group_g4_*`）・H（`group_h_*`）・計画1〜4の suite・決済の route の単体・`FR-CHECKOUT-*` の E2E が、意図して直した所（Task 4 の3つの試験〔`group-g-allowlist.ts`・`accounting_p4_migration_asserts`・`group_g1_writer_inventory`〕、Task 5 の戻りの鍵と `accounting_p3_migration_asserts`、Task 2 の `accounts-contract`、Task 4 の `stock_movements` の理由の一覧を固定する既存の試験、Task 1 の勘定の数）以外は無改造で通ること。直した所を `changed-tests.md` に表で残す。G の書き手の閉じた一覧が80本、決済の関数 2本の本文の MD5 が前と同じ、計画2・3の計上係の本文（囲みを全部除いた物）と返金・返品の7本・計画4の7本の本文が前と同じことを確かめる。
+- [ ] **Step 3: 最終レビュー（Claude Opus、エフォート high）。** 計画5の全差分を、Review Focus の5行ごとに。特に「届く順」の順列の試験が全部通っていること、G の書き手の一覧、`stock_movements` の理由の追加、個別法の拒否（A11）、法人の期間で個人の勘定を使わないこと。
+- [ ] **Step 4: 本番を読む（読むだけ）。** 計画1〜4の移行（S0〜S28）が当たっていること、`item_cost_history` の件数と制約、`stock_movements` の理由の一覧、`group_g_writer_allowlist` の本数、本番の注文が試しだけで0件であることを読む。**本番に試しの持ち出し・棚卸表・原価の回を作らない。**
+- [ ] **Step 5: 本番の DB へ適用。** S29→S38 を順に。オーナーの許可の範囲（作業の順番の了承）を確かめ、報告する。大きい移行は MCP でなく CLI の `db push --linked` を使う。当てた文は `schema_migrations` の `md5(statements[1])` でファイルと突き合わせる。当てた後の `NOTIFY pgrst, 'reload schema'` と、anon・authenticated の `items` 読取 smoke を確かめる。
+- [ ] **Step 6: 記録。** 台帳の状態欄、`report-to-owner.md`（下）、`changed-tests.md`。コミット後に手動の `graphify update .` を重ねない（フックが後ろで流す）。
+
+---
+
+## 未確認事項
+
+1. **仕掛品の計算と途中の作業の加工代（9-c5・9-d2・16 の個別法の行）。** 2025年・2026年分は最終仕入原価法で、その間の仕掛品の計算（使った材料だけにする形）が条文・通達に直接の答えを持たない。出来た分だけ払う定めのある工場との契約を結ぶ時は税理士に確かめる。受注生産の個別法に変えるか（2027-03-15 の前にオーナーが税理士と決める。A11）。計画5は材料だけを仕掛品にし、設定を変えれば承認の記録の年から個別法で動く。
+2. **返品・交換で戻る品の原価（9-g・1-a17・16 の行）。** 既定は戻りを数量に戻し期末の評価に任せる。税理士の答えが別なら、`return_restock` の行を元に調整を足す。
+3. **型紙の代を1着の原価にどう入れるか（9-b・16 の行）。** 計画5は型紙の代（`items.pattern_cost`・`item_cost_history.pattern_cost`）を取得価額に入れない。作る数で割るか別の扱いかは税理士に確かめる。
+4. **投稿の約束の源泉徴収（13-c2・16-sr9）。** 204条のどの号に当たるか、現物の価値の税額の受け渡し、納期限、支払調書の要否。計画5は欄を持つだけで自動判定しない。
+5. **法人の贈与・値引きの区分（13-g2・16-sr8）。** 役員に頼まれた贈与の寄せ方、時価と受け取った額の差、寄附金の上限と既定の形、申告書の調整。計画5は既定の形と損金の印を持つ。持ち出しの `details` の `requested_by_officer` は人が入れる。
+6. **源泉徴収の表の形と計算（13-g）。** 国税庁の Excel の形（賞与の算出率の表・月額表の列）、10倍を超える時の計算の細部は、表を入れる時に原文で確かめる。表が無い年は計算を止める。
+7. **決算書1ページ③欄（9-i・16 の行）。** 商品の仕入高と製品製造原価が両方ある時の書き方。
+8. **消費税の端数（13-3）。** 税込みの売値から税抜を出す時の端数（設計の例は 20,000 → 18,182）。計画5は `round(amount*100/110)`。課税事業者になる前に税理士に確かめる。
+9. **令和7年分の青色申告決算書の様式（9-i）。** PDF から文字を取り出せず令和6年分で確かめた。作る時に目で見て確かめる。
+10. **開店した年の包装材料の数え方（9-a2）。** 通達と手引きから引いた AI の判断。税理士に確かめる。
+11. **法人の会計の切り下げと税の評価損の差（9-c7）。** 差を申告書へ出す手順は計画6。計画5は棚卸表に理由・額・証拠を残すところまで。
+12. **取引先へのお礼の贈りと宣伝用の線引き（13-c・13-c3）。** 「高い品やお礼の意味が強い時」の線は人が選ぶ。画面に例を出す。
+13. **法人が新しい種類の事業を始めた時の方法の届け出（法人税法施行令29条2項の該当の号。e-Gov で号を確かめる）。** 第1期の届け出とは別の期限と条件があるか。税理士に確かめる。計画5は第1期の届け出だけを `notice` として受ける。
+
+## オーナーへの報告（Task 16 の `report-to-owner.md` に載せる）
+
+1. **出荷のたびの原価の仕訳は作っていません。** 三分法の決算書（期首＋仕入高－期末）に合わせ、期末の棚卸高の仕訳で売上原価が決まる形です。出荷・返品・交換・持ち出しの数の流れは、元の記録から読んで見られます（設計 9-3・9-i のとおり。controller も受け入れた）。
+2. **個別法は、承認の記録が無い間は選べません。** 2025年・2026年分は最終仕入原価法です。2027年分から変えるかは 2027-03-15 の前に税理士と決めてください。
+3. **棚卸の下書きは、物の数を1回だけ数えます。** 出来上がって送っていない着は、すでに物の置き場の数に入っているため、別に足していません。設計の書き方と少し違うので、数の確認をお願いします。
+4. **税理士に確かめる所:** 仕掛品の計算・戻った品の原価・型紙の代・投稿の約束の源泉徴収・法人の贈与の区分・決算書③欄・消費税の端数・包装材料（未確認事項 #1〜#12）。
+5. **画面で入れていただく物:** 品ごとの「作った品／仕入れた品」の印、原価の回（見積りでよい。請求書が来たら確定に置き換える）、材料と貯蔵品の数、工場に預けた生地と運送中の品、作業が済んだ加工代。
+6. **源泉徴収の表**は国税庁の Excel から年ごとに入れます。入れていない年は役員への贈与の源泉の計算を止めます（仕訳は時価で入ります）。
+
+## セルフレビュー（writing-plans）
+
+**設計の網羅:** 9章（9-a〜9-i と9-1〜9-5）と13章（13-a〜13-i と13-1〜13-5）の全行、1-a17 の原価・在庫、1-a18、1-a20 の棚卸、16章の範囲の行を「設計の行から Task への対応」の表に載せた。範囲外の行（締め・書き出し・写し・減価償却）は計画6・7と書いた。
+
+**プレースホルダーの確認:** 「後で」「適宜」の類は無い。実装時に確かめる物（勘定の番号の重なり・割引の画面の場所・本番の `item_cost_history` の行の数）は、確かめる場所と、違った時の扱いを書いた（決めたことに移した）。
+
+**名前の一覧（計画間・Task 間でそろえた名前）:** `inventory_item_marks`・`item_cost_history`（回の列を足す）・`private.inventory_acquisition_cost`・`private.inventory_last_purchase_lot`・`private.inventory_current_lots`・`inventory_valuation_settings`・`inventory_method_approvals`・`inventory_policy_settings`・`private.inventory_valuation_method`・`inventory_withdrawals`・`inventory_withdrawal_voids`・`inventory_loan_closures`・`inventory_compensations`・`inventory_personal_discount_codes`・`inventory_personal_discount_determinations`・`private.admin_record_inventory_withdrawal`・`private.admin_void_inventory_withdrawal`・`private.admin_close_inventory_loan`・`private.accounting_post_withdrawal_events`・`private.accounting_run_posting`（計画3の本文を写して1行足す）・`accounting_line_tax_marks`・`withholding_bonus_tables`・`officer_gift_withholdings`・`corporate_gift_settings`・`inventory_withdrawal_tax_reviews`・`accounting_stocktakes`・`accounting_stocktake_lines`・`private.accounting_build_stocktake_draft`・`private.accounting_prepaid_balances`・`private.accounting_stock_flow`・`private.inventory_flow_cost`・`public.get_inventory_flow_summary`・`public.get_inventory_closing_values`・`private.accounting_inventory_closing_lines`・`private.accounting_opening_inventory`・`P5_ALLOWLIST`・`INVENTORY_STATEMENT_MAP`。計画1〜4から使う名前（`accounting_post_journal_core`・`accounting_reverse_journal_core`・`accounting_period_for_event`・`accounting_lock_all`・`accounting_park_event`・`accounting_unpark_event`・`accounting_unit_values`・`accounting_g_fact_seq_at`・`accounting_return_arrival_on`・`list_deferred_revenue`・`get_order_backlog`・`get_intake_reconciliation`・`PostingRunResult`・`PendingReason`・`ACCOUNTING_ERRORS`・`P4_ALLOWLIST`）は、各計画の本文で確かめた綴りのまま使った。
+
+**届く順の確認:** 原価の額は保存せず、数量の流れの読み口が元の記録（今の出荷日・今の届いた日・取り消されていない発送票・現在の版の回）から出す。持ち出しの金額は記録した時に固定される。個人的な値引きの差と弁償金は、確定の履歴の番号・入金の記録の番号で印が決まる。順列の試験は Task 10（`FREQ-603-AC-01`）、係の入れ替えは Task 5（`FREQ-598-AC-08`）。
+
+**Review Focus の対応:** 1行目 → Task 1・3・11、2行目 → Task 10・5、3行目 → Task 4〜7、4行目 → Task 8・9、5行目 → Task 4・5・16。
