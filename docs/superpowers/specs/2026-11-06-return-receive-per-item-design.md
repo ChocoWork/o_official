@@ -178,8 +178,11 @@ Shopify より厳しい上限にしたことで、品と関係ない上乗せ（
 
 ## 8. 試験と文書
 
-- 要求・受け入れ条件: 管理画面は範囲（`scripts/trace/scope.json` の ADMIN）に入っているので、`docs/02_Requirements/areas/admin.md` に新しい要求（`SR-ADMIN-NNN`）として書く
-- E2E: `e2e/FR-ADMIN-NNN-return-receive-per-item.spec.ts`（番号は既存の次）。mobile（390px）・tablet（768px）・desktop（1280px）で確かめる
+- 返品は追跡の範囲（`scripts/trace/scope.json`）の外として扱う（2026-11-06 調整役判断）。ADMIN の範囲は admin-misc だけで、返品は含まれない。範囲は広げない
+- 要求・受け入れ条件: `.claude/CLAUDE.md` の「範囲に入っていない領域」に従い、`docs/02_Requirements/requirements.md` の6列の表に次の FREQ を足す。現行最大552と会計計画の予約553〜640を確認し、今回は `FREQ-641` を使う。試験名は `FREQ-641-AC-NN: …`、単体は詳細設計の `DD-ADMIN-017`〜`020` に対応させる
+- E2E: `e2e/FR-ADMIN-164-return-receive-per-item.spec.ts`。`e2e/` と `docs/superpowers/plans/` を検索し、会計の予約128〜163の次で164が空いていることを2026-11-06に確認した。実装前にも衝突を確かめる。mobile（390px）・tablet（768px）・desktop（1280px）で確かめる
+- 文書: `docs/03_BasicDesign/ui/screen-list.md`・`screen-flow.md`、`docs/04_DetailDesign/pages/16_admin.md`、`docs/03_BasicDesign/api/api-spec.md`・`route-inventory.md`、`docs/03_BasicDesign/data/er.md`、`docs/04_DetailDesign/sequence/order-administration.md`・`states/order-payment.md`、`docs/05_Quality/tests/test-spec.md`、`docs/06_Operations/db-migrations.md` を実装と同時に更新する。`docs/05_Quality/reports/traceability-report.md` は手で直さず `npm run report:traceability` で作り直す
+- ADR は追跡の範囲外なので不要。範囲内用の要求ID・検査コマンドは、この変更の前提にしない
 - 受け入れ条件の例:
   - 2点を同じ受け取りで、1点を今すぐ返金・1点を相談にすると、1点分だけ返金され、もう1点が返金待ちになること
   - 注文の履歴の「返品の受け取り」が1行であること
@@ -187,6 +190,7 @@ Shopify より厳しい上限にしたことで、品と関係ない上乗せ（
   - 上限ちょうどの額は返せること
   - 権限「返金」を持たない人には、額の入力が出ないこと
   - 同じ注文の行の品が返品の2行に分かれ、片方を相談・片方を今すぐにした時、返金は1点分で、返金待ちが1点残ること（どちらの行に印が付くかは今の数え方のまま。5-1）
+  - 上の混在と、先の行を相談・後の行を今すぐとして2回に分けた受け取りの両方で、返事待ちの間の待ち額、errorから成功に戻る時の確保、後の相談返金が合うこと。数え方の芯は変えず、Hの関数と返金開始後のreleaseで直す（2026-11-06 オーナー承認）
 - 直す必要がある今の試験は、調べのメモ（作業場所の `research-report.md` の 10章）の一覧から計画で選ぶ
 
 ---
