@@ -2,7 +2,7 @@
 
 ## グループH Task 11 のE2E対応（2026-10-30）
 
-新規12 spec と既存6 spec を本番build・手元Supabaseの390/768/1280pxで確認するために作成した。実装者（Sonnet）が新規12 specと既存6 specをrun-e2e.ps1（workers 1）で全幅流して修正した。2026-11-01 にcontrollerがDBを初期化・本番buildし直して全18ファイルを流した結果は154 passed / 1 failed / 0 skipped（155件）。落ちた1件（CHECKOUT-054 の390px）は通信の切断（ECONNRESET）で、単独では12/12通過。原因（回数制限よけの6.1秒の間隔がサーバーのkeep-aliveの5秒を超え、閉じかけの接続を使い回した）を道具で直し、054・055を流し直して21/21通過。以下はAC全体の検証先の対応であり、E2EだけでDB制約・ロック・監査・providerを証明する表ではない。
+新規12 spec と既存6 spec を本番build・手元Supabaseの390/768/1280pxで確認するために作成した。実装者（Sonnet）が新規12 specと既存6 specをrun-e2e.ps1（workers 1）で全幅流して修正した。2026-11-01 にcontrollerがDBを初期化・本番buildし直して全18ファイルを流した結果は154 passed / 1 failed / 0 skipped（155件）。落ちた1件（CHECKOUT-054 の390px）は通信の切断（ECONNRESET）で、単独では12/12通過。原因（回数制限よけの6.1秒の間隔がサーバーのkeep-aliveの5秒を超え、閉じかけの接続を使い回した）を道具で直し、054・055を流し直して21/21通過。以下はAC全体の検証先の対応であり、E2EだけでDB制約・ロック・監査・providerを証明する表ではない。
 
 | AC | E2Eの対応と分担 |
 | --- | --- |
@@ -1777,6 +1777,16 @@
 | FREQ-532 | 同じお客様の同じ送り先の注文だけを、サーバーでも同梱できること。G-3 | FREQ-532-REQ-01 | 同じ会員ID、またはゲスト同士で同じメールアドレス（lower・前後空白除去）、かつ配送先7項目（氏名・郵便番号・都道府県・市区町村・住所・建物・電話）が完全一致する注文だけを1つの票に入れる。別ID・会員とゲストの混在・別住所・欠損は、画面を通さない呼出しでも拒否する | FREQ-532-AC-01<br>FREQ-532-AC-02<br>FREQ-532-AC-03<br>FREQ-532-AC-04<br>FREQ-532-AC-05 | ・FREQ-532-AC-01: DBの同梱判定は同じ会員IDならメールが違っても通す。 画面の確かめは E2E [FR-ADMIN-116](../../e2e/FR-ADMIN-116-packing-shipment-slips.spec.ts)⑤（同じ会員はメールが違っても同梱の候補に出る）＝G-3 Task 11。<br>・FREQ-532-AC-02: ゲストはlower(btrim(email))が同じ時だけ通す。 画面の確かめは E2E [FR-ADMIN-116](../../e2e/FR-ADMIN-116-packing-shipment-slips.spec.ts)④（同じメールのゲストの別の日の注文を1つの票へ同梱し、注文ごとに発送ができる）＝G-3 Task 11。<br>・FREQ-532-AC-03: 別ID・会員とゲストの混在は同じメールでもcustomer_mismatch、メールで連鎖させない。 画面の確かめは E2E [FR-ADMIN-116](../../e2e/FR-ADMIN-116-packing-shipment-slips.spec.ts)⑤（会員とゲストの混在・別IDは同じメールでも候補に出ず、窓口を直接呼んでも拒否の文が出る）＝G-3 Task 11。<br>・FREQ-532-AC-04: 必須7項目の空はaddress_incompleteを最優先、顧客が合わなければcustomer_mismatch、配送先7項目のbtrim後の違いはaddress_mismatch。建物はNULL・空・空白を空文字へ揃える。 画面の確かめは E2E [FR-ADMIN-116](../../e2e/FR-ADMIN-116-packing-shipment-slips.spec.ts)②⑤（配送先不足・別住所の行は選べず、窓口を直接呼んでも拒否の文が出る）＝G-3 Task 11。<br>・FREQ-532-AC-05: bundle_keyの非NULL全一致とDB判定NULLが同値。md5(jsonb_build_array(kind,id_or_email,full_name,postal_code,prefecture,city,address,building_or_empty,phone)::text)で文字境界を保ち、住所不足と空メールのゲストはNULL。DB [読取](../../tests/integration/db/group_g3_reads.integration.test.ts)。TSとの一致（bundleVerdict と DB が同じ組合せ表で一致）と保存時のサーバー拒否（画面を通さない呼出しでも会員と別会員・会員とゲスト・ゲストのメール違い・別住所7項目・建物の片方空・必須の空・同じメールでの連鎖を断り、拒否のとき票も操作の記録も増えない）はDB [下書き](../../tests/integration/db/group_g3_draft.integration.test.ts)＝G-3 Task 4。確定時の拒否はTask 5以降 |
 
 2026-10-25 Fix round 1のDB契約: FREQ-531の住所不足は該当明細ごとにorderItemIdつきで1件、paid_at_missingはpaid注文だけに付ける。荷作り表へ指定する票が不在ならGROUP_G_SLIP_NOT_FOUND / P0002、下書き以外ならGROUP_G_SLIP_NOT_DRAFT / 55000。FREQ-532の同梱判定は空/NULL配列・不在ID・NULL要素をaddress_incompleteとし、非空かつ全IDが実在する集合で非NULLキー全一致と判定NULLを同値とする。この読取のSQLは修正前Task 9のfresh reset・12 suite・639/639成功に含まれる。
+
+## 返品の受け取りで品ごとに返金の仕方を選ぶ（FREQ-641）
+
+状態: 現行の要求（2026-11-06 オーナー承認）。実装・DB・画面の検証は未実行。[設計書](../superpowers/specs/2026-11-06-return-receive-per-item-design.md)の3〜6・8章を根拠とする。返品は追跡の範囲外であり、会計の予約553〜640の次を採番した。
+
+| 要求ID | 要求内容 | 要件ID | 要件内容 | 受け入れ条件ID | 受け入れ条件 |
+| --- | --- | --- | --- | --- | --- |
+| FREQ-641 | 返品の荷物を1回受け取る時に品ごとに今すぐ返金と額を相談を選び、今すぐ分を今回の品と送料までに制限すること | FREQ-641-REQ-01 | 1回の受け取り・要求番号・返金・履歴・お客様へのメールを各1つに保ち、受取明細にnow/consultを保存する。親はnow/consult/mixed/noneを導出する。計算どおりはmax(G今−F今,0)+S、上限はmin(注文残額,G今+S)。手数料は今すぐと相談ごとに切り捨て、最初の固定費用の不足は相談があればpending、なければdueとする。Hは行が確保した安い着を今すぐへ先に当て、旧注文の相談分は累計差で計算する。admin.orders.refundと既存P9条件で出し分け、DBを正とする。相談後返金の対象・上限と状態の芯は維持する | FREQ-641-AC-01<br>FREQ-641-AC-02<br>FREQ-641-AC-03<br>FREQ-641-AC-04<br>FREQ-641-AC-05<br>FREQ-641-AC-06<br>FREQ-641-AC-07<br>FREQ-641-AC-08<br>FREQ-641-AC-09<br>FREQ-641-AC-10<br>FREQ-641-AC-11 | ・AC-01: 999円2点・10%・送料0で同じ受取を1点返金900円と1点相談にし、親mixed・受取1件・返金1件・待ち1点・履歴1行・お客様outbox1件になること<br>・AC-02: G今17000円・送料500円の上限17500円を1円超えると警告して送らず、上限ちょうどは返せること。注文残額が小さければそちらを上限とすること<br>・AC-03: 返金権限なしのP9（customer_requestかつ返送不要でない）でも品ごとに選べ、額・送料の入力はなく、相談を含む店への知らせが1件になること<br>・AC-04: 同じ注文商品の別返品行A17000円を相談・B20000円を今すぐにして、案イの印が逆に付いても待ち額・画面の見込み・後の実返金17000円が一致すること<br>・AC-05: 今すぐ0円と相談を1回受け取り、返金は作らず今すぐの1点だけ免除し、相談1点・受取メール1通を残すこと<br>・AC-06: P9外で返金権限がなければ品の選び・金額入力を出さず、全品相談になること<br>・AC-07: 混在のH・控除戻し・0円を検査し、同じ受取の印逆転、3行への空きの重複割当、P12000/A17000/B20000/U24000、P15000/A17000/B20000のerror間の別受取でも、相談17000円の元の結び・容量・例外0を保つこと。全行で結合数≤数量、dispositions数＝結合数とし、合計37000/86000/49000/52000円になること<br>・AC-08: 選びを省略した旧本文でA相談→B今すぐの2回受取でも返事待ち・pending/succeeded時の待ち額17000円、Bのerror復帰20000円、後の相談返金とerror復帰17000円、合計37000円・例外0・全行容量を保つこと<br>・AC-09: 旧14引数・9列、順序変更の同一キー再送、選び変更のRETURN_REQUEST_MISMATCH、親導出・P9・指定額・送料・now対象減少を検査すること。上限超過は両上限超過もRETURN_RECEIVE_REFUND_CAP_EXCEEDED/22023で取引を残さないこと<br>・AC-10: 明細の選び・NULL互換・6列NULL同一一意性・追記専用・ACL・77署名/OID・芯の本文を保ち、同じ行のnow17000/consult20000、旧注文G今1000/G相999・手数料100/99、読取専用の受取見込みと新移行の5つの固定DETAILを検査すること<br>・AC-11: 画面結合でP9の品ごとの選び→API本文→単一結果→再読込をつなぎ、金額入力なし・親mixedと品ごとの選びが一致すること |
+
+試験ファイル・試験名・入力・期待・担当・未実行の証跡は[試験仕様](../05_Quality/tests/test-spec.md)の「返品の品ごとの返金」に記す。E2EはFR-ADMIN-164の390/768/1280pxを後続Task 5で作成・実行する。
 
 ## G-3 Task 1 の検証記録
 

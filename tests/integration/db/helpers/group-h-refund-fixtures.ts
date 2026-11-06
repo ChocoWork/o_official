@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { isInTransaction } from './group-g1-fixtures';
 import { acceptHCheckout, hDiscount, seedHCheckout, seedHDiscount, seedHMember } from './group-h-fixtures';
 import { createCatalogFixture, shipFixtureOrder } from './order-fixtures';
 import type { PgClient } from './local-db';
@@ -50,3 +53,52 @@ export async function hReceive(db: PgClient, f: HRefundFixture, r: Awaited<Retur
 }
 export const hClaims = async (db: PgClient, item: string) => (await db.query(`select paid_amount,refund_id,refund_before_shipment,return_line_id
   from public.order_line_unit_amounts where order_item_id=$1 order by paid_amount,unit_index`, [item])).rows;
+
+/** These eleven bodies change in RR; the historical H5 assertion keeps its original MD5s. */
+export const H5_RETURN_FUNCTION_NAMES = Object.freeze([
+  'admin_receive_return', 'return_detail_json', 'group_h_return_unit_dispositions',
+  'group_h_release_return_units', 'group_h_release_completed_return_claims',
+  'group_h_return_refund_slices', 'group_h_receiving_amount', 'group_h_return_amounts',
+  'group_h_claim_refund_units', 'record_group_g_refund_result', 'group_h_return_refund_amount',
+]);
+
+/** Restore only function definitions, never the H5 triggers, grants or final assertion. */
+export async function withH5ReturnBaseline(client: PgClient, work: () => Promise<void>): Promise<void> {
+  if (!(await isInTransaction(client))) throw new Error('H5_RETURN_TRANSACTION_REQUIRED');
+  const sql = fs.readFileSync(path.join(process.cwd(), 'supabase/migrations/20261029130400_group_h_discounts_refunds.sql'), 'utf8');
+  const metadata = async () => (await client.query(`select p.oid,p.oid::regprocedure::text signature,p.proacl,
+    p.proowner,p.prosecdef,p.provolatile,p.proconfig,p.prorettype,p.proretset,p.pronargdefaults,p.proargnames,
+    p.proargtypes::text,p.proallargtypes,p.proargmodes,p.prolang,p.proisstrict,p.proparallel,
+    pg_get_expr(p.proargdefaults,0) defaults
+    from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='private' and p.proname=any($1::text[]) order by p.oid`, [H5_RETURN_FUNCTION_NAMES])).rows;
+  const before = await metadata();
+  const bodyHashes = async () => (await client.query(`select p.oid,md5(replace(p.prosrc,E'\\r','')) hash
+    from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='private' and p.proname=any($1::text[]) order by p.oid`, [H5_RETURN_FUNCTION_NAMES])).rows;
+  const currentBodies = await bodyHashes();
+  expect(before).toHaveLength(11);
+  await client.query('savepoint h5_return_baseline');
+  try {
+    for (const name of H5_RETURN_FUNCTION_NAMES) {
+      const definition = sql.match(new RegExp(`^CREATE(?: OR REPLACE)? FUNCTION private\\.${name}\\([\\s\\S]*?^\\$\\$;`, 'm'))?.[0];
+      if (!definition) throw new Error(`H5_RETURN_DEFINITION_MISSING:${name}`);
+      await client.query(definition.replace(/^CREATE(?: OR REPLACE)? FUNCTION/, 'CREATE OR REPLACE FUNCTION'));
+    }
+    expect(await metadata()).toEqual(before);
+    const bodies = (await client.query(`select p.proname,md5(replace(p.prosrc,E'\\r','')) hash
+      from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='private' and p.proname=any($1::text[]) order by p.proname`, [H5_RETURN_FUNCTION_NAMES])).rows;
+    for (const body of bodies) {
+      const hash = sql.match(new RegExp(`'private\\.${body.proname}\\([^']*\\)'[^\\n]*'([a-f0-9]{32})'`))?.[1];
+      expect(hash).toMatch(/^[a-f0-9]{32}$/);
+      expect(body.hash).toBe(hash);
+    }
+    await work();
+  } finally {
+    await client.query('rollback to savepoint h5_return_baseline');
+    await client.query('release savepoint h5_return_baseline');
+  }
+  expect(await metadata()).toEqual(before);
+  expect(await bodyHashes()).toEqual(currentBodies);
+}

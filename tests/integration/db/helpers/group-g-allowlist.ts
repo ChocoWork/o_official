@@ -126,7 +126,8 @@ export const H4_ALLOWLIST: readonly string[] = Object.freeze([
   'private.place_reconciled_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,text)',
 ]);
 
-// H7 replaces resolve_payment_exception in place; its OID and the 77-member set stay the same.
+// H7 and RR replace existing writers in place; the 77 OIDs stay the same.
+// RR's return_receive_amounts is a read helper and must never enter this writer list.
 export const H7_ALLOWLIST: readonly string[] = H4_ALLOWLIST;
 /**
  * 今の DB の書き手の一覧。「今の DB の一覧が固定の集合や本数と等しい」ことを確かめる生きた検査は、すべてこの定数に向ける。

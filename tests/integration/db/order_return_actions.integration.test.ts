@@ -2055,7 +2055,7 @@ describeLocalDb('integration: 返品の操作・読み出し・設定の関数�
       const [exchangeLine, refundLine] = detail.lines as Row[];
       const lineKeys = sorted([
         'id', 'fulfillment_id', 'fulfillment_number', 'order_item_id', 'item_name', 'color', 'size', 'quantity', 'reason', 'reason_note',
-        'resolution', 'exchange', 'progress', 'refund_amounts_by_count', 'refund_waiting_amount',
+        'resolution', 'exchange', 'progress', 'receive_refund_amounts_by_count', 'refund_amounts_by_count', 'refund_waiting_amount',
         'customer_note', 'requested_resolution', 'requested_exchange', 'photos', 'return_ineligible',
       ]);
       const progressKeys = sorted([

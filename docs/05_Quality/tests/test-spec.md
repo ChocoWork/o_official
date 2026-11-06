@@ -4,7 +4,8 @@
 
 ### 概要と実行境界
 
-新規12 spec は各390/768/1280pxで23題×3=69件を定義する。既存039/042/031/032のdescribe/test題は1字も変えず、ADMIN-109（32権限）とCART-024（割引欄）も確認する。新規12 specは、実装者（Sonnet）がrun-e2e.ps1（workers 1、本番build、手元Supabase）で1〜4ファイルずつ390/768/1280pxの全幅を流して修正した（結果は.superpowers/sdd/2026-10-29-group-h-promotions/task-11-report.mdの fix round 1・2）。2026-11-01 controllerの実測（DB初期化・本番build、全18ファイル、workers 1、retries 0）: 154 passed / 1 failed / 0 skipped（155件、22.8分）。落ちた1件はCHECKOUT-054 FREQ-548-AC-01の390pxでPOST /api/checkout/promotion-codeのECONNRESET。単独では12/12通過。回数制限よけの6.1秒の間隔がサーバーのkeep-alive（5秒）を超え、閉じかけの接続を使い回したため、discount-test-utils.tsの`api()`と`place()`を`connection: close`にした。直した後の054・055は21/21通過。店全体に効く自動割引を作る新規12 specはplaywright.config.tsのisolated-global（他の全部の後に1ファイルずつ直列）へ移した。ACごとの対応とDB/単体との分担は[要件](../../02_Requirements/requirements.md#グループh-task-11-のe2e対応2026-10-30)に記す。
+新規12 spec は各390/768/1280pxで23題×3=69件を定義する。既存039/042/031/032のdescribe/test題は1字も変えず、ADMIN-109（32権限）とCART-024（割引欄）も確認する。新規12 specは、実装者（Sonnet）が
+run-e2e.ps1（workers 1、本番build、手元Supabase）で1〜4ファイルずつ390/768/1280pxの全幅を流して修正した（結果は.superpowers/sdd/2026-10-29-group-h-promotions/task-11-report.mdの fix round 1・2）。2026-11-01 controllerの実測（DB初期化・本番build、全18ファイル、workers 1、retries 0）: 154 passed / 1 failed / 0 skipped（155件、22.8分）。落ちた1件はCHECKOUT-054 FREQ-548-AC-01の390pxでPOST /api/checkout/promotion-codeのECONNRESET。単独では12/12通過。回数制限よけの6.1秒の間隔がサーバーのkeep-alive（5秒）を超え、閉じかけの接続を使い回したため、discount-test-utils.tsの`api()`と`place()`を`connection: close`にした。直した後の054・055は21/21通過。店全体に効く自動割引を作る新規12 specはplaywright.config.tsのisolated-global（他の全部の後に1ファイルずつ直列）へ移した。ACごとの対応とDB/単体との分担は[要件](../../02_Requirements/requirements.md#グループh-task-11-のe2e対応2026-10-30)に記す。
 
 | spec | 確認内容と作るデータ | 実経路・差し替え |
 | --- | --- | --- |
@@ -1415,3 +1416,78 @@ E2E の補助には、ダミーの `captcha_token` を付けた（`e2e/captcha-t
 - DB 結合（`db:reset` の後）: 161 suites・4715 通過・0 失敗。
 - E2E 全件（本番ビルド、`db:reset` の後）: 186 failed / 4937 passed / 26 skipped / 5149 件（波 5 は 203 failed / 4821 passed）。前に通って今落ちた 27 と新しい赤 2 は、単独の再実行で通過した（負荷の時間切れ、ログインのコードの回数の枠の 429、Kong の upstream の不正な応答）。`FR-ACCOUNT-046` の 1 本は GoTrue の同じメールへの送信の間隔（手元 1 秒）に当たっていたので、試験に 1.5 秒の間を足した。結果の元は `.superpowers/sdd/2026-10-25-security-gap-fixes/e2e-results-wave6-full.json`。
 - 最後の直しの後の認証の E2E の組（`FR-LOGIN-0*`・`FR-SIGNUP`・`FR-PWRESET`・`FR-ACCOUNT-046`・`FR-ADMIN-MISC-002`・`FR-ABOUT`）: 636 通過・3 失敗（`FR-ABOUT-005-AC-01`・`FR-ABOUT-006-AC-01`・`FR-LOGIN-038` の `SEC-AUTH-032-AC-01`）。どれも波 5 の全件でも赤だった既知の赤。
+
+## 返品の品ごとの返金（FREQ-641、2026-11-06）
+
+Task 6 Step 2で要求・設計と試験対応を先に定義する。根拠は[承認設計](../../superpowers/specs/2026-11-06-return-receive-per-item-design.md)3〜6・8章、[要求](../../02_Requirements/requirements.md)FREQ-641-REQ-01・AC-01〜11、[詳細設計](../../04_DetailDesign/pages/16_admin.md)DD-ADMIN-017〜020。返品は追跡の範囲外。DBは既存`describeLocalDb`のlocalhost限定接続とBEGIN/ROLLBACKを使い、調整役だけが流す。DB・PostgREST・画面・E2Eの証跡は未実行。文書・型・lintの確認は業務試験のREDに数えない。
+
+### DBの入力と期待（Task 1 Step 1で作成）
+
+| ファイル | 試験名（先頭IDを含む） | 入力・前提 | 期待 | 担当 | 証跡 |
+| --- | --- | --- | --- | --- | --- |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-10: 同じ返品行と状態の2点をnowとconsultの2明細にする` | 999円×2、p10%、now1/consult1 | 親mixed/受取1/明細2、返金900・控除99、pending99、due0/open | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-09: 上限ちょうどは受け上限1円超過は取引を残さず断る` | H[17000,20000]、S500、残額50000/16000、17500/17501/16001、S501 | 計算15800、上限17500受理、両上限超過もCAP/22023、拒否でreceipt/refund/stock/outbox/claim不増、送料残額は既存検査を優先 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-09: 結果不明の同一キーは順序を変えても再送となり選びを変えると拒否する` | 同じキーで明細順逆転・選び変更、restocked2 | 同じreceipt/refundでreplayed、変更はMISMATCH、operation1/台帳1・outbox不増 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-10: Hの同じ行では17000の着をnowへ20000の着をconsultへ残す` | H同一行[17000,20000]、consult/nowの順序 | 見込み[17000,37000]、now claim17000、consult残20000 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-07: 同じ注文商品の古い相談行に返金済みの印が付いても額と後の返金は合う` | 同一商品A17000相談/B20000今すぐを同時受取 | 芯の印[[1,0],[0,1]]、待ち17000、AWAITING拒否、後返金/復帰17000はA、合計37000・例外0・全行容量 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-07: 3行の相談2点へ空きを割り当てても同じ着を重ねて数えない` | A1=17000/A2=20000相談、B=[23000,26000]を2回即返金。旧本文だけ | 空き2着を一度ずつ使用、相談37000・claim[17000,20000]とA1/A2、合計86000・例外0・全行容量 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-07: 相談返金の取り直しは予備の空き=$spare・間の受け取り=$interveningでも元の17000と行容量を保つ` | 2場面: P12000/A17000/B20000/U24000、P15000/A17000/B20000+交換C。旧本文・承認時id順確保 | 元の相談17000の単位キーとAを取り直す。error/介在release/成功で容量を超えず、例外0・合計49000/52000 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-07: 同じ行のnow17000とconsult20000はerrorから成功へ戻っても同じ着を取る` | 同一行now17000/consult20000、error→成功 | nowは17000の元の着、後相談20000、未解決/単位不一致例外0 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-08: 旧本文でA相談・後にB今すぐの2回受け取りでも待ち額と再確保を保つ（%s）` | 旧本文でA17000相談→B20000今すぐの2回、pending/succeededの2分岐 | 返事待ち/結果後の待ち17000、B回復20000、後相談と回復17000/A、合計37000・例外0・全行容量 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-10: Hの無い旧注文のG相は累計の差で端数をそろえる` | Hなし1000円×3、行割引1、N1/C1、p10% | G今1000/G相999、手数料100/99、pending99、即返金900/後返金900 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-07: 固定費用の不足と返金失敗の控除戻しを混ぜない` | H[100,2000]、p10%、固定240、指定額1、失敗2回→成功 | pending350/due0、控除100、失敗450を重ねず復帰350 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-07: 相談なしと全相談の固定費用は$choiceの規則へ残す` | G100、p10%、固定240、全now/全consult | 全nowはdue150/pending0、全consultはpending250/due0 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-07: 0円のnowはその1点だけを終えconsultの1点を待ちに残す` | H[0,20000]、now1/consult1、通知あり | refundなし/0/waived/open、免除1/待ち1、免除選びNULL、受取outbox1、相談20000 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-09: P9は品ごとに選べP9外のnowと権限なしの指定額を拒否する` | P9混在と再送、額0/送料1/交換変更、shop・not_required | 親mixed・actor_can_refund=false・店通知1、指定額とP9外nowはFORBIDDEN、全相談は受理 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-09: 実効明細の親まとめ%sと非返金NULLを保存する` | 親now/consult/mixed/noneの4例、非返金のnow値 | 実効親導出と新しい返金明細の非NULL、非返金はNULL | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-09: mixedの欠けた選びと親の不一致と不正な群の指定額を拒否する` | mixedで省略/NULL、親の不一致、全相談指定額・S>額 | ARGUMENT_INVALID、S>額は既存RETURN_REFUND_AMOUNT_INVALID | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-09: 旧省略本文の再送は移行前の指紋と追記済みNULL明細を変えない` | H5本文の旧consult指紋と追記NULL行、旧省略本文を再送 | 同receipt/replayed、指紋・行・stock/outbox/claim不変 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-09: 既存返金でnow対象が減った指定額のmixedはSTATE_CONFLICTで全体を戻す` | 通常返金でnow対象を覆い、mixed指定額100 | STATE_CONFLICT、受取と副作用なし | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-10: 交換を返金に変えた実効明細で選びを導出し旧注文の見込みはNULLへ戻す` | 在庫0の交換予定2点をrefund overrideでnow/consult | 元の予定exchange保持、実効refund2行・mixed、返金999、旧見込みNULL | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts) | `FREQ-641-AC-10: 部分受取の見込みは前回受取と他返品のactive claimを除き読取で着を変えない` | H[17000,20000,23000]、当返品2点・別返品1点、部分consult | 新見込み[17000,37000]→[20000]、他claim除外、読取前後の着不変 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item-migration.integration.test.ts](../../../tests/integration/db/return-receive-per-item-migration.integration.test.ts) | `FREQ-641-AC-10: 新移行1本が5つの固定DETAILを持ち適用済み移行と公開入口を置き換えない` | 新SQLのファイルと末尾assert | 新移行1本・後の時刻・LF/BOMなし・単一取引・5DETAIL・公開入口/過去行を書換えない | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item-migration.integration.test.ts](../../../tests/integration/db/return-receive-per-item-migration.integration.test.ts) | `FREQ-641-AC-10: 明細の選びはnullable textでCHECKと6列のNULL同一一意性を持つ` | information_schema・pg_constraint | nullable text、明細CHECK、親mixedとkind CHECK、6列NULLS NOT DISTINCT | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item-migration.integration.test.ts](../../../tests/integration/db/return-receive-per-item-migration.integration.test.ts) | `FREQ-641-AC-10: 旧NULLとnowとconsultの3明細は共存し同じ選びの重複と非返金の選びを断る` | 旧NULL/now/consultと同値再INSERT、mixed/非返金選び | 3値共存、重複23505、不正選び23514 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item-migration.integration.test.ts](../../../tests/integration/db/return-receive-per-item-migration.integration.test.ts) | `FREQ-641-AC-10: 過去のNULL明細は親%sで読み新しい旧本文は選びを補完する` | H5で旧NULLのnow/consultを作り現行本文で読取・返金・error復帰、さらに新しい旧本文 | 旧行不変・待ち額/claim17000・残る見込み20000、新しい書込は非NULL | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item-migration.integration.test.ts](../../../tests/integration/db/return-receive-per-item-migration.integration.test.ts) | `FREQ-641-AC-09: publicとprivateの14引数・既定値なし・9列と公開入口の本文を保つ` | public/privateのpg_proc、旧RPC1回 | 14引数・既定値0・9列、公開本文不変 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item-migration.integration.test.ts](../../../tests/integration/db/return-receive-per-item-migration.integration.test.ts) | `FREQ-641-AC-10: 新しい見込みhelperはSTABLEで旧戻り型とJSONの既存キーを保つ` | 新helperと旧H戻り型、H5のJSONキー | STABLE・新配列、旧戻り型/既存キー維持、見込み[17000,37000] | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item-migration.integration.test.ts](../../../tests/integration/db/return-receive-per-item-migration.integration.test.ts) | `FREQ-641-AC-10: 受取親と明細は所有者でも更新・削除・TRUNCATEできない` | 所有者の親/明細UPDATE・DELETE・TRUNCATE | 全操作拒否、追記専用 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item-migration.integration.test.ts](../../../tests/integration/db/return-receive-per-item-migration.integration.test.ts) | `FREQ-641-AC-09: 公開RPCはservice_roleだけが実行できprivate helperと表書込は公開しない` | anon/authenticated/service_roleのACLとSET ROLE | 公開RPCはservice_roleのみ、private helper/表DMLなし、権限外42501 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item-migration.integration.test.ts](../../../tests/integration/db/return-receive-per-item-migration.integration.test.ts) | `FREQ-641-AC-10: 書き手は77署名と同じOID集合のまま読取helperを加えない` | 書き手77署名のregprocedure/OID、芯のMD5 | 77 OID完全一致、新読取helper不在、芯本文不変 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item-migration.integration.test.ts](../../../tests/integration/db/return-receive-per-item-migration.integration.test.ts) | `FREQ-641-AC-10: 新11本文と見込みhelperは移行に固定した本文・属性・ACLで過剰overloadを持たない` | 新移行の11本文と読取helper、pg_proc | 本文hash・属性・owner/ACL・overload1を固定 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item-migration.integration.test.ts](../../../tests/integration/db/return-receive-per-item-migration.integration.test.ts) | `FREQ-641-AC-10: 新移行の末尾assertは無改変で通る` | 新移行の末尾DOとbaseline | 無改変成功 | 調整役（手元DB） | 未実行 |
+| [return-receive-per-item-migration.integration.test.ts](../../../tests/integration/db/return-receive-per-item-migration.integration.test.ts) | `FREQ-641-AC-10: 新移行の改ざんはP0001と固定DETAIL=$detailで断る` | schema/receive/amounts/ACL/writersの5改ざん | P0001・RETURN_RECEIVE_PER_ITEM_MIGRATION_ASSERTION_FAILED・各固定DETAIL | 調整役（手元DB） | 未実行 |
+
+AC-07の3行・予備あり・介在受取とAC-08は旧本文だけで組み立てる。承認の成功と行ID順の価格確保を確認してから業務assertへ進む。受取後・相談返金後・error後・成功後、介在例はrelease後も、0結合を含む全返品行でboundCount≤quantity、dispositionCount＝boundCountを検査する。3行例は受取後・相談返金後を検査する。準備の失敗・接続失敗・skipはREDに数えない。
+
+静的レビュー上、旧H5では3行例のBの2回目の額、予備あり・介在受取例の初回相談の結び先のassertが先に失敗し、後の対象不具合へ到達しない可能性がある。指定の入力と最終期待は保持し、狙った箇所のREDは未取得とする。詳細と調整役への引き継ぎは[Task 1A報告](../../../.superpowers/sdd/2026-11-06-return-receive-per-item/t1a-report.md)に記す。
+
+### 既存DB試験と固定検査
+
+| ファイル | 試験名 | 入力 | 期待 | 担当 | 証跡 |
+| --- | --- | --- | --- | --- | --- |
+| `tests/integration/db/order_return_receipts.integration.test.ts` | `FREQ-641-AC-09: 今返金の額の上限と AWAITING_REFUND_EXISTS は受け取り全体を戻す` | 2点の1点受取、10001指定・返事待ち | CAP、AWAITING、受取全体rollback | 調整役 | 未実行 |
+| 同上 | `FREQ-641-AC-09: 相談後は注文残額まで今返金は今回の商品額まで手数料を負けられる` | 相談後4500、今すぐ6000/5000、p10% | 相談上限維持、6000拒否/5000受理、adjustment0・控除500 | 調整役 | 未実行 |
+| `tests/integration/db/return_postgrest.integration.test.ts` | `FREQ-641-AC-09: 旧14引数の相談受取はPostgRESTの9列と単一結果を保ち新見込みも返す` | service_roleの旧14引数と同キー再送 | 9列1件・同receipt、旧注文の新見込みNULL | 調整役（手元PostgREST） | 未実行 |
+| `tests/integration/db/group_h_refund_outcomes.integration.test.ts` | `FREQ-641-AC-07: 返品2着の%sでは0円で終えるnowの着を解放し残る着だけを返金する` | H17000/20000、0円受取→返金と返金→0円受取 | 前者は安い17000を解放して20000を返金、後者は17000を返金して20000を解放。残る通常返金も合わせ37000 | 調整役 | 未実行 |
+| `tests/integration/db/group_h_migration_asserts.integration.test.ts`・`helpers/group-h-refund-fixtures.ts` | 既存FREQ-551-AC-02のH5無改変・改ざん検査（旧名維持） | withH5ReturnBaselineで11関数だけH5へ隔離 | H5固定MD5維持、署名/OID/ACL/属性同じ、finallyで復元 | 調整役 | 未実行 |
+
+### 後続Taskで作成する試験
+
+次は承認済み計画の作成予定であり、この区切りの成果物ではない。
+
+| ファイル | 試験名 | 入力 | 期待 | 担当 | 証跡 |
+| --- | --- | --- | --- | --- | --- |
+| `e2e/FR-ADMIN-164-return-receive-per-item.spec.ts` | `FREQ-641-AC-01: 同じ受け取りの2点を1点返金と1点相談にする` | 999円×2・p10%、3幅 | 900円/待ち1、受取/履歴/outbox各1 | Task 5実装者・調整役 | 未実行 |
+| 同上 | `FREQ-641-AC-02: 今すぐ分と送料の上限を超えると押せずちょうどなら返せる` | H17000+送料500、17501→17500 | 修正前POST0、上限受理 | Task 5実装者・調整役 | 未実行 |
+| 同上 | `FREQ-641-AC-03: 返金権限なしのP9でも品ごとに選べ金額入力は出ない` | P9のnow/consult | 額/送料入力なし、店通知1 | Task 5実装者・調整役 | 未実行 |
+| 同上 | `FREQ-641-AC-04: 同じ注文商品の別行で印が逆に付いても1点分を返し相談分が残る` | A17000相談/B20000now | 見込み/実返金17000、待ち1 | Task 5実装者・調整役 | 未実行 |
+| 同上 | `FREQ-641-AC-05: 今すぐ0円と相談を1回受け取り相談だけを待ちに残す` | now0/consult1 | refund0件、免除1/待ち1、受取メール1 | Task 5実装者・調整役 | 未実行 |
+| 同上 | `FREQ-641-AC-06: P9外の権限なしには選びも金額入力も出ず全品相談になる` | P9外・返金権限なし | 選び/金額なし・親consult | Task 5実装者・調整役 | 未実行 |
+| `tests/integration/ui/admin-return-receive.test.tsx` | `FREQ-641-AC-11: P9の品ごとの選びとAPI本文と再読込をつなぐ` | P9画面で2点別選び・単一応答 | mixed本文、金額入力なし、再読込 | Task 3実装者 | 未実行 |
+| `tests/unit/lib/orders/returns/return-calc.test.ts` | `DD-ADMIN-017 999円ずつの今すぐと相談は手数料を99円ずつに分ける` | 999×2、p10% | 各99・pending99 | Task 3実装者 | 未実行 |
+| `tests/unit/api/admin/order-return-money-routes.test.ts` | `DD-ADMIN-018 同じ返品行と状態でも選びが違う2要素を受ける` | 同一行/状態のnow/consult | 本文受理・権限をDBへ渡す | Task 2実装者 | 未実行 |
+| `tests/unit/components/OrderReturnReceiveDialog.test.tsx` | `DD-ADMIN-019 混在の見出しと上限とボタンを出す` | now/consult混在 | 2群・上限・混在ボタン | Task 3実装者 | 未実行 |
+| `tests/unit/lib/orders/email/order-email-compose-returns.test.ts` | `DD-ADMIN-020 mixedの受取は相談の品にだけ相談の一文を添える` | mixed正額返金の材料 | 相談品だけ相談文・お客様1通 | Task 4実装者 | 未実行 |
+
+残りの単体の詳細は承認済み計画Task 2〜4に従う。E2Eは390/768/1280px、本番build・手元DBで後続実測し、横はみ出し・focus・名前・1POSTを確認する。実Stripe/SES・本番適用・メール配送の証拠とはしない。

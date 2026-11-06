@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> 返品の品ごとの返金 Task 1 確認日: 2026-11-06。Route Handler の追加・削除はない（168ファイル・212メソッドのまま）。`POST /api/admin/returns/[returnId]/receive` が呼ぶ DB の関数 `admin_receive_return` の入力に品ごとの選びと `mixed` を足した（移行 `20261106005536`、本番は未適用）。窓口のコードは Task 2 で変える。詳しくは [API 仕様](./api-spec.md) の「返品の受け取りの品ごとの返金（FREQ-641 Task 1）」。
+
 > 波 6 確認日: 2026-11-01。ログイン中の会員のパスワード変更の窓口 `POST /api/auth/password/change/start`・`POST /api/auth/password/change/confirm` を 2 ファイル・2 メソッド追加した。Route Handler は168ファイル・212メソッド、表は167行・211メソッド（`/api/e2e/server-info` を除く）。新しいページ URL は `/account/password`（Route Handler ではない）。
 >
 > H Task 8 確認日: 2026-10-29。商品ページの割引の案内を返す `GET /api/discounts/advertisements` を 1 ファイル・1 メソッド追加した。Route Handler は166ファイル・210メソッド、表は165行・209メソッド（`/api/e2e/server-info` を除く）。

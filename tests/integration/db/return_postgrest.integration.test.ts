@@ -581,7 +581,7 @@ describeLocalDb('integration: 返品の窓口を実際の PostgREST に通す', 
     expect(await readOrderIdsByReturnStatus(client, 'in_progress')).toContain(order.orderId);
   });
 
-  test('受け取る（相談）: 返金も Stripe も使わず受け取りだけ記録され、交換の品の行が足される。送り直しは前の結果を返す。取消は断る', async () => {
+  test('FREQ-641-AC-09: 旧14引数の相談受取はPostgRESTの9列と単一結果を保ち新見込みも返す', async () => {
     const attentionBefore = await countReturnAttention(client);
     const input = {
       returnId,
@@ -623,6 +623,22 @@ describeLocalDb('integration: 返品の窓口を実際の PostgREST に通す', 
     });
     expect(brokenValues(received, 'received')).toEqual([]);
     expect(await receiveReturn(client, input)).toEqual({ ...received, replayed: true });
+    const replay = await client.rpc('admin_receive_return', {
+      _return_id: input.returnId, _actor_id: input.actorId, _actor_can_refund: input.actorCanRefund,
+      _request_key: input.requestKey,
+      _units: input.units.map(u => ({ return_line_id: u.returnLineId, disposition: u.disposition, quantity: u.quantity })),
+      _exchange_overrides: [], _refund_choice: input.refundChoice, _refund_amount: input.refundAmount,
+      _refund_shipping_amount: input.refundShippingAmount, _note: input.note, _notify_customer: input.notifyCustomer,
+      _sent_back_message: input.sentBackMessage, _sent_back_carrier: input.sentBackCarrier,
+      _sent_back_tracking_number: input.sentBackTrackingNumber,
+    });
+    expect(replay.error).toBeNull(); expect(replay.data).toHaveLength(1);
+    expectKeys(replay.data[0], ['receipt_id', 'return_status', 'refund_id', 'refund_amount', 'refund_status',
+      'exchange_order_item_ids', 'fee_due_amount', 'shop_notice_enqueued', 'replayed']);
+    expect(replay.data[0]).toMatchObject({ receipt_id: received.receiptId, replayed: true });
+    const rawDetail = await client.rpc('list_order_returns', { _order_id: order.orderId });
+    expect(rawDetail.error).toBeNull();
+    for (const line of rawDetail.data[0].lines) expect(line).toHaveProperty('receive_refund_amounts_by_count', null);
 
     // 受け取った後の取消は断る（DB の言葉 RETURN_STATE_CONFLICT）
     expect(await refusalOf(cancelReturn(client, { returnId, actorId: actor.id }))).toMatchObject({ code: 'RETURN_STATE_CONFLICT' });

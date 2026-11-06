@@ -470,9 +470,9 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     expect(await variantStock(db(),f.variantId)).toBe(1);
     expect((await receive(db(),f,{choice:'consult'})).refund_id).toBeNull();
   });
-  test('今返金の額の上限と AWAITING_REFUND_EXISTS は受け取り全体を戻す',async()=>{
+  test('FREQ-641-AC-09: 今返金の額の上限と AWAITING_REFUND_EXISTS は受け取り全体を戻す',async()=>{
     const f=await fixture(db(),{quantity:2});
-    await fails(db(),()=>receive(db(),f,{choice:'now',amount:10001}),'RETURN_REFUND_AMOUNT_INVALID');
+    await fails(db(),()=>receive(db(),f,{choice:'now',amount:10001}),'RETURN_RECEIVE_REFUND_CAP_EXCEEDED');
     await receive(db(),f,{choice:'now'});
     await fails(db(),()=>receive(db(),f,{choice:'now'}),'AWAITING_REFUND_EXISTS');
     expect((await progress(db(),f)).unprocessed).toBe(1);
@@ -497,17 +497,18 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     await fails(db(),()=>receive(db(),f,{disposition:'pending_inspection'}),'RETURN_ARGUMENT_INVALID');
     expect((await db().query('select count(*)::int n from public.order_return_receipts where return_id=$1',[f.returnId])).rows[0].n).toBe(0);
   });
-  test('額を決めて返金と今返金は、計算どおりを超えても返せる額（E-2 の値）までは直せて、差を adjustment_amount に残す（仕様書 6-3・P8）',async()=>{
+  test('FREQ-641-AC-09: 相談後は注文残額まで今返金は今回の商品額まで手数料を負けられる',async()=>{
     const f=await fixture(db(),{shippingFee:600,percent:10});await receive(db(),f);
     // 計算どおりは 5000 − 1100 = 3900。返せる額は 5000
     const r=await refund(db(),f,4500);
     expect(r).toMatchObject({amount:4500,status:'awaiting_response'});
     expect((await db().query('select adjustment_amount from public.order_refunds where id=$1',[r.refund_id])).rows[0].adjustment_amount).toBe(-500);
-    const g=await fixture(db(),{quantity:2});
-    await fails(db(),()=>receive(db(),g,{choice:'now',amount:10001}),'RETURN_REFUND_AMOUNT_INVALID');
-    const a=await receive(db(),g,{choice:'now',amount:6000});
-    expect(a).toMatchObject({refund_amount:6000,refund_status:'awaiting_response'});
-    expect((await db().query('select adjustment_amount from public.order_refunds where id=$1',[a.refund_id])).rows[0].adjustment_amount).toBe(1000);
+    const g=await fixture(db(),{quantity:2,percent:10});
+    await fails(db(),()=>receive(db(),g,{choice:'now',amount:6000}),'RETURN_RECEIVE_REFUND_CAP_EXCEEDED');
+    const a=await receive(db(),g,{choice:'now',amount:5000});
+    expect(a).toMatchObject({refund_amount:5000,refund_status:'awaiting_response'});
+    expect((await db().query('select adjustment_amount,return_fee_deduction from public.order_refunds where id=$1',[a.refund_id])).rows[0])
+      .toEqual({adjustment_amount:0,return_fee_deduction:500});
   });
 
   test('理由の設定が make の在庫不足の行は、店長だけが返金に変えられ、make の上書きと在庫が足りる行の上書きは受けない（C-1・仕様書 6-5）',async()=>{

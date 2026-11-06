@@ -218,7 +218,7 @@ describeLocalDb('お店の申し込みの確認（移行 F）', getDb => {
       'created_at','created_by_email','closed_at','cancelled_at','lines','refunds','receipts','exchange_items',
       'requested_at','approved_at','approved_by_email','declined_at','decline_reason','decline_message'].sort());
     expect(sorted(d.lines[0])).toEqual(['id','fulfillment_id','fulfillment_number','order_item_id','item_name','color','size','quantity',
-      'reason','reason_note','resolution','exchange','progress','refund_amounts_by_count','refund_waiting_amount',
+      'reason','reason_note','resolution','exchange','progress','receive_refund_amounts_by_count','refund_amounts_by_count','refund_waiting_amount',
       'customer_note','requested_resolution','requested_exchange','photos','return_ineligible'].sort());
     expect(d.lines[0]).toMatchObject({ requested_resolution: 'exchange', customer_note: '縫い目をご確認ください。',
       return_ineligible: true, photos: [{ id: p.id, purged: false }] });

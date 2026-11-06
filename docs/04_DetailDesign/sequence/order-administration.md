@@ -1,5 +1,7 @@
 # 注文管理のシーケンス
 
+> 返品の品ごとの返金 Task 1 確認日: 2026-11-06。受け取りで品ごとに今返す・相談するを選ぶ時の DB の中の流れを、末尾の「返品の受け取りの品ごとの返金（FREQ-641 Task 1）」に足した。DB だけ（移行 `20261106005536`、手元で確認・本番は未適用）。窓口・画面は Task 2 以降。
+
 > G-4 Task 8 確認日: 2026-10-27。荷作り表・発送票の注文番号から注文の詳細へ移る流れ（SQ-ADMIN-15 の入口）を追記し、履歴の dialog（`OrderHistoryDialog`）の撤去と、G-1 から 410 だけを返していた旧い発送・仕上がりの窓口 6 ファイル・7 メソッドの削除を、各節の注記に反映した。単体のみ実測済み（jest・tsc・lint）。DB・ブラウザ・E2Eはcontroller担当。
 
 > G-4 Task 7 確認日: 2026-10-26。旧い一覧の窓口 GET /api/admin/orders を削除し、一覧は GET /api/admin/order-items、要対応の欄の操作は一覧の頁（hook useOrderAttention）に移した。ORDER タブは注文一覧表への入口だけ。単体のみ実測済み（jest・tsc・lint）。DB・ブラウザ・E2Eはcontroller担当。
@@ -1132,3 +1134,32 @@ coreは数量を確かめ、最安free（返品なら固定claim）の和を計�
 Hの17,000円→20,000円と総和37,000円、旧の18,500円・33/33/34、交換・送料・調整の分離を試験する。DB・実Stripe・メール配送の確認はcontrollerへ残す。
 
 fix round 2: sent_back・missing・0円完了は受取記録と同じ取引で返品claimを解放し、G-1が認める通常返金の数量を保つ。error後の遅延成功は残る最安単位だけをclaimし、額または数量が合わなくても結果を記録して既存refund_failedの要対応を残す。G-4は注文ごとにG-1の区間と返品進捗を1回読み、希望先が埋まった単位をG-1の残る状態へ置く。分割発送のshipped/deliveredも双方を使う。画面は単位不足の見込みを停止して選び直せる表示にし、描画中に例外を投げない。DBが最終的な数量・金額を検証する。
+
+## 返品の受け取りの品ごとの返金（FREQ-641 Task 1）
+
+根拠は[設計書](../../superpowers/specs/2026-11-06-return-receive-per-item-design.md)の4〜6章。移行は [20261106005536_return_receive_per_item.sql](../../../supabase/migrations/20261106005536_return_receive_per_item.sql)。手元の DB だけで確認し、本番は未適用（許可待ち）。
+
+```mermaid
+sequenceDiagram
+    participant API as 受け取りの窓口
+    participant R as private.admin_receive_return
+    participant C as begin_order_refund_core
+    participant H as H の単位（claim・release）
+    API->>R: _units[].refund_choice（now・consult）と親（now・consult・mixed・none）
+    R->>R: 入力の検査・指紋（選びが無い本文は H5 と同じ）・G 共通鍵・二重防止
+    R->>R: 実効の明細（返金の品だけ選びを持つ）から親を導出して照合
+    R->>R: 品ごとに T（全部）・N（今）・C（相談）を数え、G今・G相・手数料・上限を出す
+    R->>R: 受け取りの記録・商品の扱い（選び付き）を追記（行ごとの trigger が H の release）
+    alt 今返す品があり額が1円以上
+        R->>C: 今返す品だけ（N）
+        C->>H: slices（その受け取りの now の行・W0=max(B−N−C,0)）→ claim
+        R->>H: release を1回（同じ取引・同じ鍵）
+    else 今返す額が0円
+        R->>R: 今返す品だけ refund_waived を追記（相談の品は返金待ちに残す）
+    end
+    R->>R: 手数料（不足は相談があれば差し引き待ち、無ければ受け取り待ち）・在庫・交換・知らせ
+```
+
+- 相談の品は返金待ちに残り、後の「額を決めて返金」（`admin_refund_return`）で返す。その時の当て先は、印が逆になった行（芯が返金済みと数えるのに、その行の単位がまだ返金に結ばれていない行）を先にし、自分の返せる単位、次に行の数までの空きの単位を使う（`private.group_h_return_refund_slices`）。
+- 返金がエラーの後に成功へ戻る時（`record_group_g_refund_result`）は、同じ slices で同じ単位を取り直し、合わない時だけ H5 の順に戻す。
+- 芯 `private.order_return_line_states_core` と公開の入口 `public.admin_receive_return` は変えない。

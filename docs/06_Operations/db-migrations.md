@@ -1,5 +1,7 @@
 # DB マイグレーション運用
 
+> 返品の品ごとの返金 Task 1 確認日: 2026-11-06。移行 `20261106005536_return_receive_per_item.sql` を追記した（「返品の受け取りの品ごとの返金の移行（FREQ-641 Task 1）」の節）。手元の DB だけで当てて確かめた。**本番には未適用で、当てる許可はまだ無い（オーナーの許可待ち）**。
+
 > 波 6 確認日: 2026-11-01。パスワード変更の確認コードの移行 M3（`20261101120000`）を追記した（「波 6 パスワード変更の確認コードの移行 M3」の節）。手元は適用済み、本番も 2026-11-01 21:06 頃 JST に適用済み（Task 11。G-1 に知らせ、dry-run が M3 の1本だけと確かめてから `db push --linked`。照合は同じ節）。
 
 > グループ H 本番適用: 2026-11-01（`20261029130000`〜`20261029130600` の7本。照合は末尾の「グループH 本番適用の記録」）
@@ -1239,3 +1241,17 @@ controller手順: H7未適用DBの新しい取消テストでRED→取引内で�
 | `orders`・`checkout_drafts` | 0・0 | 0・0 |
 
 既存のデータへの書き込みは H1 の権限の種（2件・admin への付与2件・admin の版 +1）だけ。各移行の末尾 assert は本番でも通った（落ちれば取引ごと戻り、push が止まる）。
+
+## 返品の受け取りの品ごとの返金の移行（FREQ-641 Task 1、手元の DB で確認済み・本番未適用）
+
+移行は [20261106005536_return_receive_per_item.sql](../../supabase/migrations/20261106005536_return_receive_per_item.sql)。サイズ 98,514 bytes、MD5 `1b71ce026bb7269754daa946ee77f200`。ASCII・BOM なし・LF。`BEGIN;` → 書き手の許可一覧の写し（一時表 `rr_writer_baseline`）→ 表の変更（`order_return_receipt_lines.refund_choice`・CHECK・6列の一意の組、`order_return_receipts` の CHECK に `mixed`）→ private の11本の `CREATE OR REPLACE` と新しい読み出し `private.return_receive_amounts` → 所有者・ACL → 末尾 assert → `NOTIFY pgrst, 'reload schema';` → `COMMIT;`。適用済みの移行は変えない。過去の受け取りの行の埋め直し・業務データの書き換えはしない（`UPDATE` は無い）。公開の入口 `public.admin_receive_return` と芯 `private.order_return_line_states_core` は変えない。
+
+末尾 assert は `RETURN_RECEIVE_PER_ITEM_MIGRATION_ASSERTION_FAILED / P0001`。DETAIL は `rr_schema`（列・CHECK・一意の組）・`rr_receive`（受け取り・詳細・読み出しの本文の MD5 と属性、公開の入口の本文）・`rr_amounts`（H の9本の本文の MD5 と属性）・`rr_acl`（12本の ACL。`private.admin_receive_return` だけ service_role に EXECUTE を残す。公開の入口が SECURITY INVOKER のため）・`rr_writers`（G の書き手の許可一覧が77本・同じ OID 集合・本文の MD5 `1a9bd697484b32bb5f44793ced4b70df` のまま）。
+
+手元で当てて確かめる手順（Docker の手元の Supabase が動いている時。`--linked` は使わない）:
+
+1. `npx supabase db reset`（手元だけ。全部の移行を当て直す。末尾 assert が落ちると取引ごと戻り、reset が止まる）
+2. `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db/return-receive-per-item --runInBand`（新しい試験の2ファイル・43件）
+3. もう一度 `npx supabase db reset` の後に `DATABASE_URL=… npx jest tests/integration/db --runInBand`（全部の DB の試験。`checkout_session_claim` の試験は後片付けで関数を消すので、ほかを流し直す前に reset する）
+
+2026-11-06 の実装者の実測（手元）: 手順2は43件すべて通過。手順3は fresh reset 直後の全件で 4,774 件中 4,758 件通過・失敗0・15件 skip・1件 todo（163 suite 通過・13 suite skip）。1回目の全件では G-3 の2 suite（3件、試験の準備の関数 `setOrderStatusForFixture` で `PAID_ORDER_REQUIRES_FULL_REFUND_BEFORE_CANCELLATION`）が落ちたが、単独では移行あり・なしとも通り、2回目の全件でも通ったので、並び順による揺れと見る。本番の DB への適用（`db push --linked` や MCP）は、オーナーの許可が出るまでしない。

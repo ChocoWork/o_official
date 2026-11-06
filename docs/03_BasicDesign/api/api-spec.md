@@ -1,5 +1,7 @@
 # API仕様（現行実装）
 
+> 返品の品ごとの返金 Task 1 確認日: 2026-11-06。窓口の追加・削除はない。受け取りの DB の関数 `admin_receive_return` の入力に、品ごとの選び（`_units[].refund_choice`）と親のまとめ `mixed` を足し、受け取りで今返す額の上限（`RETURN_RECEIVE_REFUND_CAP_EXCEEDED`）を足した。返品の詳細の読み出し（`private.return_detail_json`）の各行に `receive_refund_amounts_by_count` を足した。詳しくは末尾の「返品の受け取りの品ごとの返金（FREQ-641 Task 1）」。窓口の本文・画面は Task 2 以降で、まだ変えていない。
+
 > 波 6 確認日: 2026-11-01。ログイン中の会員が自分でパスワードを変える2窓口 `POST /api/auth/password/change/start`（API-AUTH-020）・`POST /api/auth/password/change/confirm`（API-AUTH-021）を「認証」の表に足した（168ファイル・212組、E2E 用を除く167ファイル・211組）。パスワードの規則に UTF-8 で72バイト以内を足した（手元の GoTrue で実測: 72バイトは通り、73バイトは400 `validation_failed`）。会員登録の窓口は、確認のリンクが切れた未確認の会員が同じメールで登録し直すと確認メールを送り直す（応答は同じ202。SEC-AUTH-016-AC-04）。手元の切り替え（captcha・確認メール必須）は同日に済み、本番は未反映。
 >
 > H Task 10 確認日: 2026-10-29。窓口の追加・削除はない（Route Handler の数は変わらない）。`GET /api/orders/[id]`（会員の注文詳細）の答えに注文時の割引の内訳 `discounts`、`GET /api/admin/orders/[id]` の `data` に管理用の内訳 `discounts` を足した。詳しくは末尾の「注文の割引の内訳（H Task 10）」。
@@ -1047,3 +1049,24 @@ GET `/api/admin/order-attention`（`admin.orders.read`）は`discounts:{orderId,
 | 管理の注文詳細 `GET /api/admin/orders/[id]` | 既存の`admin.orders.read`。`private.get_admin_order_detail`の`discounts`（上のrowsそのまま）。`admin.discounts.read`は要らない | 名前・コード・額・行別配分。旧注文は`discountId:null`の合計1行 | storeは内訳の合計が`amounts.discount`と、配分の合計が各割引の額と一致しない材料を500にする |
 
 完全な内訳の入口は`public.get_order_discount_breakdown(_order_id uuid)`（SECURITY INVOKERのSQL委譲、service_roleのみ。anon・authenticatedは拒否）で、`getOrderDiscountBreakdown(client,orderId)`（`src/lib/discounts/order-discount-store.ts`、server-only）が返り値をzodで検査する。呼ぶ側が先に認可する。不在の注文は`GROUP_H_ORDER_NOT_FOUND`（P0002）、NULLは`GROUP_H_ARGUMENT_INVALID`（22023）。H6の末尾assertのDETAILは`h6_order_breakdown`・`h6_customer_projection`・`h6_admin_projection`・`h6_public_acl`。
+
+### 返品の受け取りの品ごとの返金（FREQ-641 Task 1、2026-11-06）
+
+対応: FREQ-641-AC-07〜10（DB の部分）。根拠は[設計書](../../superpowers/specs/2026-11-06-return-receive-per-item-design.md)の3〜6章。移行は [20261106005536_return_receive_per_item.sql](../../../supabase/migrations/20261106005536_return_receive_per_item.sql)（手元の DB だけで確認。本番は未適用で、オーナーの許可待ち）。窓口 `POST /api/admin/returns/[returnId]/receive` の本文と答えはまだ変えていない（Task 2）。
+
+`public.admin_receive_return` は14引数・既定値なし・9列の答えのまま、本文・OID・ACL も変えない（SECURITY INVOKER で `private.admin_receive_return` に渡すだけ）。変えたのは private の本体:
+
+| 項目 | 内容 |
+| --- | --- |
+| `_refund_choice` | `now`・`consult`・`mixed`・`none`（`mixed` を足した）。額・送料の指定は `now`・`mixed` の時だけ |
+| `_units[]` | `{return_line_id,disposition,quantity,refund_choice?}`。`refund_choice` は `now`・`consult`・null。同じ行・同じ状態でも選びが違えば2要素にできる。同じ選びの重複は `RETURN_ARGUMENT_INVALID` |
+| 選びの補い | 品の選びが無い・null の返金の品は、親が `now`・`consult` ならその値で補う。親が `mixed` で選びが無い、親と品の選びが合わない、`none` に返金の品の選びがある、`mixed` なのに今と相談の両方が無い、今返す品が無いのに額・送料を入れた、はどれも `RETURN_ARGUMENT_INVALID / 22023`。交換・お返しの品の選びは null にそろえる |
+| 指紋 | 選びを1つも持たない本文は H5 と同じ指紋（前の送り直しはそのまま前の結果を返す）。選びを持つ本文は、品を（行・状態・選び）の順に並べて選びも指紋に入れる。順を変えた送り直しは前の結果、選びを変えると `RETURN_REQUEST_MISMATCH` |
+| 権限 | 返金の権限が無い人は、P9（お客様の申し込みで返送不要でない返品）の時だけ計算どおりの今返金ができる。P9 の外で今返金（親 `now`・`mixed` か品の `now`）は `RETURN_FORBIDDEN`。指定額（0を含む）・正の送料・交換の選び直しは今までどおり `RETURN_FORBIDDEN` |
+| 額 | 品ごとに今返す数 N と相談の数 C を数え、今返す品の額 G今 と相談の品の額 G相 を別に出す。今返す額は `max(G今 − F今, 0) + 送料`。手数料は群ごとに切り捨て、固定の費用は今返す群に入れる |
+| 上限 | 指定額は「額 < 送料 → `RETURN_REFUND_AMOUNT_INVALID`」「送料 > 送料の残り → `REFUND_SHIPPING_EXCEEDS`」の後に、`min(注文の返せる残り, G今 + 送料)` を超えると `RETURN_RECEIVE_REFUND_CAP_EXCEEDED / 22023`。今までの「返せる残りを超える → `RETURN_REFUND_AMOUNT_INVALID`」はこの記号に変わる |
+| 覆いで今返す数が減った時 | 額・送料を入れた受け取りで、今返す数が入力の今返す数より少なくなると `RETURN_STATE_CONFLICT`（相談の数は比べない） |
+| 記録 | 受け取りの記録の `refund_choice` は、実際に数えた N と C から `now`・`consult`・`mixed`・`none` を入れる。受け取りの商品の扱いの行に品の選びを入れる（返金の品だけ）。返金の記録（`begin_order_refund_core`）には今返す品だけを渡す |
+| 知らせ | 返金の権限が無い人の受け取りで、記録の選びが `consult`・`mixed` の時に店への知らせを1件予定する |
+
+返品の詳細の読み出し `private.return_detail_json(_return_id)` の各行に `receive_refund_amounts_by_count`（次の受け取りでその行が取る品の額の累計。H の単位額がある注文だけ。返品が受付中でなければ空の配列、H の無い旧い注文は null）を足した。元は新しい読み出しの関数 `private.return_receive_amounts(_return_id)`（STABLE・SECURITY DEFINER・誰にも EXECUTE を与えない）。ほかのキーは変えない。

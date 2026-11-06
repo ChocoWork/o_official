@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describeLocalDb } from './helpers/local-db';
 import { withH1PermissionBaseline } from './helpers/group-h-fixtures';
-import { hBegin, hRefundFixture, hResult } from './helpers/group-h-refund-fixtures';
+import { hBegin, hRefundFixture, hResult, withH5ReturnBaseline } from './helpers/group-h-refund-fixtures';
 import { G4_ALLOWLIST, H4_ALLOWLIST, H7_ALLOWLIST, replaceAllowlistSql } from './helpers/group-g-allowlist';
 import { MAX_AUTOMATIC_DISCOUNTS, MAX_STACKABLE_AUTOMATIC_PER_CLASS } from '@/lib/discounts/discount-types';
 
@@ -40,7 +40,10 @@ describeLocalDb('H5 semantic assertions (controller only; fill body MD5s first)'
     try {
       // Owner-only tampering and the migration assertion stay inside the rollback boundary.
       await db().query('set local role postgres');
-      await db().query(h5Baseline); if (change) await db().query(change); await db().query(assertionSql); return null;
+      await withH5ReturnBaseline(db(), async () => {
+        await db().query(h5Baseline); if (change) await db().query(change); await db().query(assertionSql);
+      });
+      return null;
     }
     catch (caught) { const e = caught as AssertFailure; return { code: e.code, message: e.message === 'GROUP_H_MIGRATION_ASSERTION_FAILED' ? e.message : 'H_UNEXPECTED_DB_ERROR', detail: e.detail, ...(e.hint ? { hint: e.hint } : {}) }; }
     finally { await db().query('rollback to savepoint h5_assert'); await db().query('release savepoint h5_assert'); }

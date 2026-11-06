@@ -118,17 +118,28 @@ describeLocalDb('H5 G-1 return outcomes and late refund recovery (controller)', 
     await finishCheapestRefund(db(), f, r, received.refund_id);
   });
   test.each(['waived_then_refund', 'refund_then_waived'] as const)(
-    'FREQ-551-AC-01: 返品2着の%sでも0円完了は高い単位を解放し返金17000円・調整0を保つ', async order => {
+    'FREQ-641-AC-07: 返品2着の%sでは0円で終えるnowの着を解放し残る着だけを返金する', async order => {
       const f = await hRefundFixture(db(), true), r = await hReturn(db(), f, 2);
       const waive = () => receiveUnits(db(), f, r, ['not_restocked'], 'now', 0);
       if (order === 'waived_then_refund') {
         expect(await waive()).toMatchObject({ refund_id: null, refund_status: 'waived', refund_amount: 0 });
-        expect((await hClaims(db(), f.itemId)).map(unit => unit.return_line_id)).toEqual([r.lineId, null]);
+        expect((await hClaims(db(), f.itemId)).map(unit => unit.return_line_id)).toEqual([null, r.lineId]);
       }
       const received = await hReceive(db(), f, r, 1, 'now');
       if (order === 'refund_then_waived') expect(await waive()).toMatchObject({ refund_id: null, refund_status: 'waived', refund_amount: 0 });
-      expect(received.refund_amount).toBe(17000);
-      await finishCheapestRefund(db(), f, r, received.refund_id);
+      if (order === 'refund_then_waived') {
+        expect(received.refund_amount).toBe(17000);
+        await finishCheapestRefund(db(), f, r, received.refund_id);
+      } else {
+        expect(received.refund_amount).toBe(20000);
+        expect((await db().query('select amount,adjustment_amount from public.order_refunds where id=$1', [received.refund_id])).rows)
+          .toEqual([{ amount: 20000, adjustment_amount: 0 }]);
+        expect((await hClaims(db(), f.itemId)).map(unit => unit.refund_id)).toEqual([null, received.refund_id]);
+        await hResult(db(), received.refund_id, 'succeeded');
+        const normal = await hBegin(db(), f, 17000);
+        expect(normal.amount).toBe(17000); await hResult(db(), normal.refund_id, 'succeeded');
+        expect((await db().query('select refunded_amount from public.orders where id=$1', [f.orderId])).rows[0].refunded_amount).toBe(37000);
+      }
     });
   test('FREQ-551-AC-02: 返金の公開入口も過剰な3着を業務拒否してclaimを増やさない', async () => {
     const f = await hRefundFixture(db(), true);
