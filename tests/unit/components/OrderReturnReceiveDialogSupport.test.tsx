@@ -11,8 +11,6 @@ import OrderReturnReceiveDialog from '@/components/OrderReturnReceiveDialog';
 const TITLE = `受け取る（${LABEL}）`;
 // 返金の品は2点で、1点 12,000 円（道具の返品の行）。手数料は 0
 const AUTO_TEXT = `受け取ると、計算どおり ${formatYen(24000)} を自動で返金します（額は変えられません）。`;
-const NOW_LABEL = `計算どおり ${formatYen(24000)} を返金する`;
-const CONSULT_LABEL = '額を相談してから返金する（店長が額を決めます）';
 const SUPPORT_NOTICE = '返金は店長が行います（受け取ると「返金待ち」になります）。';
 const SUPPORT_CONSULT_BUTTON = '受け取りだけ記録する（額は店長が決める）';
 const AWAITING_REFUND = '確かめ中の返金があります。先に確かめてください。';
@@ -72,20 +70,31 @@ function receiveAll(dialog: HTMLElement, disposition = 'restocked') {
   });
 }
 
+/** 品ごとの返金の選びを、選べる品の全部で「額を相談」にする（返品の品ごとの返金 設計3-1） */
+function consultAll(dialog: HTMLElement) {
+  within(dialog).getAllByRole('radio', { name: '額を相談' }).forEach((radio) => fireEvent.click(radio));
+}
+
+/** 選べる品の全部で「今すぐ返金」が選ばれている */
+function expectAllNow(dialog: HTMLElement) {
+  const radios = within(dialog).getAllByRole('radio', { name: '今すぐ返金' });
+  expect(radios.length).toBeGreaterThan(0);
+  radios.forEach((radio) => expect(radio).toBeChecked());
+}
+
 beforeEach(() => {
   mockClientFetch.mockReset();
 });
 
 describe('OrderReturnReceiveDialog のサポートの受け取り（お客様の申し込みの返品。Review Focus 5）', () => {
-  it('返金の品があれば、計算どおりの自動の返金を最初の選びにし、額と送料の入力は出さない', async () => {
+  it('返金の品があれば、品ごとの選びを今すぐ返金から始め、計算どおりの自動の返金を出す。額と送料の入力は出さない', async () => {
     const { dialog } = await openReceive(acceptedReturn(), false);
     receiveAll(dialog);
 
     expect(mockClientFetch).toHaveBeenCalledWith(RETURNS_URL, { cache: 'no-store' });
-    expect(within(dialog).getByRole('group', { name: '返金' })).toBeInTheDocument();
+    expect(within(dialog).getByText('今すぐ返金（2点）')).toBeInTheDocument();
     expect(within(dialog).getByText(AUTO_TEXT)).toBeInTheDocument();
-    expect(within(dialog).getByRole('radio', { name: NOW_LABEL })).toBeChecked();
-    expect(within(dialog).getByRole('radio', { name: CONSULT_LABEL })).not.toBeChecked();
+    expectAllNow(dialog);
     expect(within(dialog).queryByLabelText(/^返金額/)).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText(/^送料/)).not.toBeInTheDocument();
     expect(within(dialog).queryByText(SUPPORT_NOTICE)).not.toBeInTheDocument();
@@ -106,12 +115,12 @@ describe('OrderReturnReceiveDialog のサポートの受け取り（お客様の
     expect(requestBodyOf(0)).toMatchObject({ refundChoice: 'now', refundAmount: null, refundShippingAmount: 0, exchangeOverrides: [] });
   });
 
-  it('「額を相談してから返金する」を選ぶと、自動の返金の文を隠し、受け取りだけ記録して相談（店への知らせの返金待ち）で送る（Review Focus 5）', async () => {
+  it('全部の品を「額を相談」にすると、自動の返金の文を隠し、受け取りだけ記録して相談（店への知らせの返金待ち）で送る（Review Focus 5）', async () => {
     const { dialog, onDone } = await openReceive(acceptedReturn(), false);
     mockClientFetch.mockResolvedValueOnce(jsonResponse({ data: receiveData() }));
     receiveAll(dialog);
 
-    fireEvent.click(within(dialog).getByRole('radio', { name: CONSULT_LABEL }));
+    consultAll(dialog);
 
     expect(within(dialog).queryByText(AUTO_TEXT)).not.toBeInTheDocument();
     expect(submitButton(dialog)).toHaveTextContent(SUPPORT_CONSULT_BUTTON);
@@ -133,7 +142,7 @@ describe('OrderReturnReceiveDialog のサポートの受け取り（お客様の
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(AWAITING_REFUND);
     expect(onDone).not.toHaveBeenCalled();
 
-    fireEvent.click(within(dialog).getByRole('radio', { name: CONSULT_LABEL }));
+    consultAll(dialog);
     fireEvent.click(submitButton(dialog));
 
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
@@ -201,13 +210,13 @@ describe('OrderReturnReceiveDialog のサポートの受け取り（お客様の
     });
   });
 
-  it('店長（返金の権限がある人）は、申し込みの返品でも段1のまま: 額と送料を入れられ、相談の言葉は短いまま', async () => {
+  it('店長（返金の権限がある人）は、申し込みの返品でも額と送料を入れられ、自動の返金の文は出さない', async () => {
     const { dialog } = await openReceive(acceptedReturn(), true);
     receiveAll(dialog);
 
-    expect(within(dialog).getByRole('radio', { name: '額を相談してから返金する' })).toBeInTheDocument();
-    expect(within(dialog).queryByRole('radio', { name: CONSULT_LABEL })).not.toBeInTheDocument();
-    expect(within(dialog).getByLabelText(`返金額（返せる額: ${formatYen(54800)}）`)).toBeInTheDocument();
+    expect(within(dialog).getAllByRole('radio', { name: '額を相談' })).toHaveLength(2);
+    expect(within(dialog).getByRole('spinbutton', { name: '返金額' })).toBeInTheDocument();
+    expect(within(dialog).getByText(`上限 ${formatYen(24000)}`)).toBeInTheDocument();
     expect(within(dialog).queryByText(AUTO_TEXT)).not.toBeInTheDocument();
   });
 
@@ -218,7 +227,7 @@ describe('OrderReturnReceiveDialog のサポートの受け取り（お客様の
 
     // ボタンの額は、文の額（計算どおり）と同じ
     expect(within(dialog).getByText(AUTO_TEXT)).toBeInTheDocument();
-    expect(within(dialog).getByRole('radio', { name: NOW_LABEL })).toBeChecked();
+    expectAllNow(dialog);
     expect(submitButton(dialog)).toHaveTextContent(`すべて受け取って ${formatYen(24000)} を返金する`);
 
     fireEvent.click(submitButton(dialog));
@@ -234,7 +243,6 @@ describe('OrderReturnReceiveDialog のサポートの受け取り（お客様の
     receiveAll(dialog);
 
     expect(within(dialog).queryByText(AUTO_TEXT)).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole('radio', { name: NOW_LABEL })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('radio')).not.toBeInTheDocument();
     expect(within(dialog).getByText(SUPPORT_NOTICE)).toBeInTheDocument();
     expect(submitButton(dialog)).toHaveTextContent(SUPPORT_CONSULT_BUTTON);
@@ -278,5 +286,76 @@ describe('OrderReturnReceiveDialog のサポートの受け取り（お客様の
     expect(within(dialog).getByText(`お支払い待ち ${formatYen(3000)}（交換の品は、お支払いを確かめてから送ります）`)).toBeInTheDocument();
     expect(within(dialog).getByText('手数料のお支払い待ちのため、交換品の割り当てを保留します。')).toBeInTheDocument();
     expect(within(dialog).getByText('交換品は、在庫から注文の古い順に割り当てます。')).toBeInTheDocument();
+  });
+});
+
+describe('OrderReturnReceiveDialog の品ごとの選びと権限（返品の品ごとの返金 設計3-3）', () => {
+  const perItemRadiosOf = (dialog: HTMLElement) => within(dialog).queryAllByRole('radio', { name: /^(今すぐ返金|額を相談)$/ });
+  const unitRow = (dialog: HTMLElement, index: number) =>
+    within(within(dialog).getByRole('list', { name: '受け取る品' })).getAllByRole('listitem')[index];
+
+  it('DD-ADMIN-019 P9の受け取りは品ごとに選べ金額と送料の入力が無い', async () => {
+    const { dialog, onDone } = await openReceive(acceptedReturn(), false);
+    mockClientFetch.mockResolvedValueOnce(
+      jsonResponse({ data: receiveData({ refundId: 'refund-1', refundAmount: 12000, refundStatus: 'pending' }) }),
+    );
+    receiveAll(dialog);
+
+    const perItemRefundRadios = perItemRadiosOf(dialog);
+    const amountInputCount = within(dialog).queryAllByRole('spinbutton', { name: /^返金額/ }).length;
+    const shippingInputCount = within(dialog).queryAllByRole('spinbutton', { name: /^送料/ }).length;
+    expect(perItemRefundRadios).toHaveLength(4); // 2点×now/consult
+    expect(amountInputCount).toBe(0);
+    expect(shippingInputCount).toBe(0);
+
+    fireEvent.click(within(unitRow(dialog, 1)).getByRole('radio', { name: '額を相談' }));
+    expect(within(dialog).getByText('今すぐ返金（1点）')).toBeVisible();
+    expect(within(dialog).getByText('額を相談（1点）')).toBeVisible();
+    expect(within(dialog).getByText(`受け取ると、計算どおり ${formatYen(12000)} を自動で返金します（額は変えられません）。`)).toBeVisible();
+    expect(submitButton(dialog)).toHaveTextContent(`受け取る（1点を ${formatYen(12000)} 返金・1点は相談）`);
+    fireEvent.click(submitButton(dialog));
+
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith(NOTICE_ACCEPTED));
+    const p9Post = requestBodyOf(0);
+    expect(p9Post.refundChoice).toBe('mixed');
+    expect(p9Post).toMatchObject({ refundAmount: null, refundShippingAmount: 0, exchangeOverrides: [] });
+    expect((p9Post.units as Array<{ refundChoice?: string }>).map((unit) => unit.refundChoice)).toEqual(['now', 'consult']);
+  });
+
+  it('DD-ADMIN-019 P9外で返金権限が無ければ選びと額が無く全品相談になる', async () => {
+    const { dialog, onDone } = await openReceive(acceptedReturn({ source: 'shop', requestedAt: null }), false);
+    mockClientFetch.mockResolvedValueOnce(jsonResponse({ data: receiveData() }));
+    receiveAll(dialog);
+
+    const perItemRefundRadios = perItemRadiosOf(dialog);
+    expect(perItemRefundRadios).toHaveLength(0);
+    expect(within(dialog).queryAllByRole('spinbutton')).toHaveLength(0);
+    expect(within(dialog).getByText(SUPPORT_NOTICE)).toBeInTheDocument();
+    expect(submitButton(dialog)).toHaveTextContent(SUPPORT_CONSULT_BUTTON);
+    fireEvent.click(submitButton(dialog));
+
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith(NOTICE_RECORDED));
+    const nonP9Post = requestBodyOf(0);
+    expect(nonP9Post).toMatchObject({ refundChoice: 'consult', refundAmount: null, refundShippingAmount: 0 });
+    expect((nonP9Post.units as Array<{ refundChoice?: string }>).length).toBeGreaterThan(0);
+    expect((nonP9Post.units as Array<{ refundChoice?: string }>).every((x) => x.refundChoice === 'consult')).toBe(true);
+  });
+
+  it('DD-ADMIN-019 返金の権限がある人は、P9でなくても品ごとの選びと額・送料の入力を出す', async () => {
+    const { dialog } = await openReceive(acceptedReturn({ source: 'shop' }), true);
+    receiveAll(dialog);
+
+    expect(perItemRadiosOf(dialog)).toHaveLength(4);
+    expect(within(dialog).getByRole('spinbutton', { name: '返金額' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('spinbutton', { name: `送料（返せる送料: ${formatYen(800)}）` })).toBeInTheDocument();
+    expect(within(dialog).getByText(`上限 ${formatYen(24000)}`)).toBeInTheDocument();
+  });
+
+  it('DD-ADMIN-019 P9でも返送不要の返品は選びを出さず全品相談になる', async () => {
+    const { dialog } = await openReceive(acceptedReturn({ returnMethod: 'not_required' }), false);
+    receiveAll(dialog);
+
+    expect(perItemRadiosOf(dialog)).toHaveLength(0);
+    expect(within(dialog).getByText(SUPPORT_NOTICE)).toBeInTheDocument();
   });
 });

@@ -1,5 +1,7 @@
 # 1.16 管理画面（ADMIN）詳細設計
 
+> 返品の品ごとの返金 Task 3 確認日: 2026-11-06。DD-ADMIN-017 に見込みの計算（`computePerItemReturnRefundPreview`）、DD-ADMIN-019 に受け取りの画面（Task 3）の実装の段落を足した。単体・画面結合のみ実測済み（jest・tsc・lint）。3幅の E2E は controller 担当。
+
 > 返品の品ごとの返金 Task 2 確認日: 2026-11-06。DD-ADMIN-018 に、窓口・型・store・service の実装（Task 2）の段落を足した。単体のみ実測済み（jest・tsc・lint）。DB 結合・PostgREST・E2E は controller 担当。
 
 > 返品の品ごとの返金 Task 1 確認日: 2026-11-06。「返品の品ごとの返金（要求定義・2026-11-06）」の DD-ADMIN-018 の後に、DB の実装（移行 `20261106005536`、手元で確認・本番は未適用）の段落を足した。
@@ -1176,6 +1178,8 @@ Task 5 fix round 1（2026-10-29）: 一覧は「使った回数」と「上限�
 
 Hはその行の確保から安い着をnowへ当て、過去の受取・別active claimを除く。旧注文と交換行の新見込み配列はNULLで既存共通配列へ戻す。旧注文は注文商品ごとにN/Cを合算し、G今=A[N−1]、G相=A[N+C−1]−A[N−1]（0点は0）として行ごとに丸めない。Hの空きは注文商品内の共通キューで一度だけ使い、全返品行の結合数≤数量を守る。案イの芯の印は変更しない。計算不可の材料を黙って0円にしない。
 
+画面の見込みの実装（Task 3、2026-11-06）: [return-calc.ts](../../../src/lib/orders/returns/return-calc.ts) の `computePerItemReturnRefundPreview` が受け取りの画面の見込みを出す（`@design DD-ADMIN-017`）。入力は返品の行ごとの `ReceivePreviewLine`（`returnLineId`・`orderItemId`・`refundAmountsByCount`・`receiveRefundAmountsByCount`・`nowCount`・`consultCount`）と、従来の見込みと同じ費用・送料に `refundableAmount` を足した物。`receiveRefundAmountsByCount` が配列の行（H）は行ごとの累計で G今=R[N−1]、G相=R[N+C−1]−G今（他の行の安い着へ替えない）。null の行（旧注文・交換を返金に変えた行）は注文商品ごとに N・C を足して共通の累計から引く。出力は `nowItemsAmount`・`consultItemsAmount`・`nowFees`（返送料・floor(G今×p/100)・交換の手数料・交換の送料）・`consultRestockingFee`（floor(G相×p/100)）・`refundAmount`（max(G今−F今,0)+S）・`refundCap`（min(注文の返せる額, G今+S)）・`feePendingDeduction`（相談の手数料＋相談がある時の不足）・`feeDue`（相談が無い時の不足）。従来の `computeReturnRefundPreview` と呼び出しの契約は残した。単体は [return-calc.test.ts](../../../tests/unit/lib/orders/returns/return-calc.test.ts) の `DD-ADMIN-017` の試験。
+
 ### DD-ADMIN-018 品ごとの本文と窓口・store・service
 
 | 属性 | 値 |
@@ -1211,6 +1215,8 @@ DB の実装（Task 1 Step 3、2026-11-06）: 上の DD-ADMIN-017 と DD-ADMIN-0
 「今すぐ返金（n点）」に内訳と「上限 ￥X」、「額を相談（m点）」に品名と「返金待ちになります。額はあとで「額を決めて返金する」で決めます。」を出す。超過時は「この受け取りの商品の額と送料（￥X）を超えて入れられません。ほかの受け取りの分は、返品の画面の「額を決めて返金する」で返してください。」を欄に関連付け、額を丸めず送信を止める。混在ボタンは「受け取る（n点を ￥X 返金・m点は相談）」、片方だけは既存の言葉を保つ。
 
 1POSTで単一結果を受け、再読込する。結果不明では送った本文・requestKeyを固定して再送する。S>額・注文残額による上限も止め、混在0円でも相談を残す。相談後の返金画面は案イの待ち額17000円を使う。390/768/1280px、横はみ出し・名前・キーボード・focus・警告関連付けは後続Taskで確認する。
+
+画面の実装（Task 3、2026-11-06）: [OrderReturnReceiveDialog.tsx](../../../src/components/OrderReturnReceiveDialog.tsx) は1点ごとの状態に `refundChoice`（最初は `now`）を持ち、チェックして状態を選んだ返金の品（返金の行・「返金に変える」にした交換の行。お返しは除く）の「品の状態」の直下に radiogroup「返金」（「今すぐ返金」「額を相談」。name は品ごと）を出す。選びを出すのは `canRefund`、または `canRefund` が偽で `source='customer_request'` かつ `returnMethod<>'not_required'`（P9）で、今すぐの分の見込みが注文の返せる額以下の時。それ以外は選びを出さず、全部の返金の品を `consult` として送る（役割の名前では分けない）。本文の `units` は返品の行・状態・選びごとにまとめ、返金の品には `refundChoice` を必ず付け、返金にならない品はキーを省く（null は送らない）。親の `refundChoice` は now/consult/mixed/none を導く。`refundAmount` は今すぐの品があり `canRefund` で、見込みと違う額の時だけ送り、送料も今すぐの品がある時だけ送る（P9 は null・0）。返金の欄は「今すぐ返金（n点）」（`canRefund` は [ReturnDialogParts.tsx](../../../src/components/ReturnDialogParts.tsx) の `ReturnRefundFields` に `amountCap=refundCap`・`amountCapLabel='上限 ￥X'`・`preserveAmountOverMax`・`amountError` を渡す。P9 は自動の返金の文）と「額を相談（m点）」（品名の list「額を相談の品」と設計3-2の文）。上限を超えた額は丸めずに保ち、誤りの文を `aria-invalid`・`aria-describedby` で欄に結んで押せなくする。`ReturnRefundFields` の新しい属性を省いた時（相談後の返金の画面）は、従来の「返金額（返せる額: X）」と max=返せる額のまま。ボタンは [return-calc.ts](../../../src/lib/orders/returns/return-calc.ts) の `buildReceiveButtonLabel` が、mixed の時だけ「受け取る（n点を ￥X 返金・m点は相談）」にする（`@design DD-ADMIN-019`）。結果不明の送り直しは `useReturnOperation` が保存した本文をそのまま送る。単体は受け取りの画面・サポートの受け取り・返金の欄の部品・相談後の返金の画面の `DD-ADMIN-019` の試験、画面結合は [admin-return-receive.test.tsx](../../../tests/integration/ui/admin-return-receive.test.tsx)（`FREQ-641-AC-11`）。
 
 ### DD-ADMIN-020 単一の受取のメール材料と履歴
 

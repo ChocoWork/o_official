@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { refundLineAmount } from '@/lib/orders/refund/refund-allocation';
-import { buildReceiveButtonLabel, computeReturnRefundPreview, formatDeadline } from '@/lib/orders/returns/return-calc';
+import { buildReceiveButtonLabel, computePerItemReturnRefundPreview, computeReturnRefundPreview, formatDeadline } from '@/lib/orders/returns/return-calc';
 
 type PreviewInput = Parameters<typeof computeReturnRefundPreview>[0];
 
@@ -422,6 +422,159 @@ describe('formatDeadline（受付の期限の日付。M月D日）', () => {
   it('YYYY-MM-DD に読めない文字は、そのまま返す（DB は日本時間の日付だけを返す）', () => {
     expect(formatDeadline('invalid-date')).toBe('invalid-date');
     expect(formatDeadline('2026-10-05T01:00:00Z')).toBe('2026-10-05T01:00:00Z');
+  });
+});
+
+describe('computePerItemReturnRefundPreview（品ごとの今すぐ返金と相談。返品の品ごとの返金 設計4章）', () => {
+  type PerItemInput = Parameters<typeof computePerItemReturnRefundPreview>[0];
+  type PerItemLine = PerItemInput['lines'][number];
+
+  function perItemLine(overrides: Partial<PerItemLine> = {}): PerItemLine {
+    return {
+      returnLineId: 'line-a', orderItemId: 'X', refundAmountsByCount: [999, 1998], receiveRefundAmountsByCount: null,
+      nowCount: 1, consultCount: 1, ...overrides,
+    };
+  }
+
+  function perItemInput(overrides: Partial<PerItemInput> = {}): PerItemInput {
+    return {
+      lines: [perItemLine()],
+      firstReceipt: true,
+      hasExchangeInThisReceipt: false,
+      firstExchangeReceipt: true,
+      returnMethod: 'customer_ships',
+      returnShippingFee: 0,
+      restockingFeePercent: 10,
+      exchangeFee: 0,
+      exchangeShippingFee: 0,
+      shippingRefund: 0,
+      refundableAmount: 54800,
+      ...overrides,
+    };
+  }
+
+  it('DD-ADMIN-017 999円ずつの今すぐと相談は手数料を99円ずつに分ける', () => {
+    const preview = computePerItemReturnRefundPreview(perItemInput());
+
+    expect(preview).toMatchObject({ nowItemsAmount: 999, consultItemsAmount: 999,
+      consultRestockingFee: 99, refundAmount: 900, refundCap: 999, feePendingDeduction: 99, feeDue: 0 });
+    expect(preview.nowFees.restocking).toBe(99);
+  });
+
+  it('DD-ADMIN-017 旧注文の割引端数を累計差で相談分へ残す', () => {
+    // Task 1 と同じ単価1000×3・割引1・今1相1・p10%。共通の累計 [1000,1999,2999] を注文商品ごとに数を足して引く
+    const preview = computePerItemReturnRefundPreview(perItemInput({
+      lines: [perItemLine({ refundAmountsByCount: [1000, 1999, 2999] })],
+    }));
+
+    expect(preview).toMatchObject({ nowItemsAmount: 1000, consultItemsAmount: 999, consultRestockingFee: 99, feePendingDeduction: 99 });
+    expect(preview.nowFees.restocking).toBe(100);
+  });
+
+  it('DD-ADMIN-017 旧注文で同じ注文商品の2行に分かれても、数を足してから累計を引く（行ごとに丸めない）', () => {
+    const preview = computePerItemReturnRefundPreview(perItemInput({
+      lines: [
+        perItemLine({ returnLineId: 'line-a', refundAmountsByCount: [1000, 1999, 2999], nowCount: 1, consultCount: 0 }),
+        perItemLine({ returnLineId: 'line-b', refundAmountsByCount: [1000, 1999, 2999], nowCount: 0, consultCount: 1 }),
+      ],
+    }));
+
+    expect(preview).toMatchObject({ nowItemsAmount: 1000, consultItemsAmount: 999 });
+  });
+
+  it('DD-ADMIN-017 Hの同じ行の安い17000円を今すぐ分に使う', () => {
+    // p10%、S500、注文残額50000
+    const sameLine = computePerItemReturnRefundPreview(perItemInput({
+      lines: [perItemLine({ refundAmountsByCount: [17000, 37000], receiveRefundAmountsByCount: [17000, 37000] })],
+      shippingRefund: 500,
+      refundableAmount: 50000,
+    }));
+    expect(sameLine).toMatchObject({ nowItemsAmount: 17000, consultItemsAmount: 20000, refundAmount: 15800, refundCap: 17500 });
+
+    // 返品行BだけがnowならBの確保額を読み、他行の安い着へ替えない
+    const lineBOnly = computePerItemReturnRefundPreview(perItemInput({
+      lines: [
+        perItemLine({ returnLineId: 'line-a', refundAmountsByCount: [17000, 37000], receiveRefundAmountsByCount: [17000], nowCount: 0, consultCount: 1 }),
+        perItemLine({ returnLineId: 'line-b', refundAmountsByCount: [17000, 37000], receiveRefundAmountsByCount: [20000], nowCount: 1, consultCount: 0 }),
+      ],
+      restockingFeePercent: 0,
+      refundableAmount: 50000,
+    }));
+    expect(lineBOnly).toMatchObject({ nowItemsAmount: 20000, consultItemsAmount: 17000, refundAmount: 20000, refundCap: 20000 });
+  });
+
+  it('DD-ADMIN-017 固定費用の不足は相談があればpendingなければdue', () => {
+    // 今すぐ1000円・p10%（100）・返送料1050 → 今すぐの手数料 1150 が 150 円足りない。相談 2000 円の手数料は 200
+    const base = { returnMethod: 'shop_label' as const, returnShippingFee: 1050 };
+    const withConsult = computePerItemReturnRefundPreview(perItemInput({
+      ...base,
+      lines: [perItemLine({ refundAmountsByCount: [1000, 3000], nowCount: 1, consultCount: 1 })],
+    }));
+    const withoutConsult = computePerItemReturnRefundPreview(perItemInput({
+      ...base,
+      lines: [perItemLine({ refundAmountsByCount: [1000, 3000], nowCount: 1, consultCount: 0 })],
+    }));
+
+    expect(withConsult).toMatchObject({ feePendingDeduction: 350, feeDue: 0, refundAmount: 0 });
+    expect(withoutConsult).toMatchObject({ feePendingDeduction: 0, feeDue: 150, refundAmount: 0 });
+    expect(withConsult.nowFees).toEqual({ returnShipping: 1050, restocking: 100, exchange: 0, exchangeShipping: 0 });
+  });
+
+  it('DD-ADMIN-017 全部相談なら固定費用もpendingへ回し、今すぐの額と上限は送料だけ', () => {
+    const preview = computePerItemReturnRefundPreview(perItemInput({
+      returnMethod: 'shop_label',
+      returnShippingFee: 800,
+      lines: [perItemLine({ nowCount: 0, consultCount: 2 })],
+    }));
+
+    expect(preview).toMatchObject({ nowItemsAmount: 0, consultItemsAmount: 1998, consultRestockingFee: 199,
+      refundAmount: 0, refundCap: 0, feePendingDeduction: 999, feeDue: 0 });
+  });
+
+  it('DD-ADMIN-017 注文残額がG今+Sより少なければ、上限は注文残額', () => {
+    const preview = computePerItemReturnRefundPreview(perItemInput({
+      lines: [perItemLine({ refundAmountsByCount: [17000, 37000], receiveRefundAmountsByCount: [17000, 37000], nowCount: 2, consultCount: 0 })],
+      restockingFeePercent: 0,
+      shippingRefund: 500,
+      refundableAmount: 30000,
+    }));
+
+    expect(preview).toMatchObject({ nowItemsAmount: 37000, refundAmount: 37500, refundCap: 30000 });
+  });
+
+  it('DD-ADMIN-017 従来の computeReturnRefundPreview と同じ入力（全部今すぐ）なら同じ額', () => {
+    const legacy = computeReturnRefundPreview(previewInput({
+      lines: [{ orderItemId: 'X', refundAmountsByCount: X_AMOUNTS, count: 2 }],
+      returnMethod: 'shop_label', returnShippingFee: 800, restockingFeePercent: 10, shippingRefund: 300,
+    }));
+    const perItem = computePerItemReturnRefundPreview(perItemInput({
+      lines: [perItemLine({ orderItemId: 'X', refundAmountsByCount: X_AMOUNTS, nowCount: 2, consultCount: 0 })],
+      returnMethod: 'shop_label', returnShippingFee: 800, restockingFeePercent: 10, shippingRefund: 300,
+    }));
+
+    expect(perItem.nowItemsAmount).toBe(legacy.itemsAmount);
+    expect(perItem.nowFees).toEqual(legacy.fees);
+    expect(perItem.refundAmount).toBe(legacy.refundAmount);
+    expect(perItem.feeDue).toBe(legacy.feeDue);
+  });
+});
+
+describe('buildReceiveButtonLabel（品ごとの選びの混在）', () => {
+  const mixed = {
+    checked: 2, remaining: 2, refundUnits: 2, exchangeUnits: 0, sentBackUnits: 0,
+    refundChoice: 'mixed' as const, actorCanRefund: true, nowUnits: 1, consultUnits: 1,
+  };
+
+  it('DD-ADMIN-019 混在の時だけ「受け取る（n点を ￥X 返金・m点は相談）」。0円も同じ形', () => {
+    expect(buildReceiveButtonLabel({ ...mixed, refundAmount: 15800 })).toBe('受け取る（1点を ￥15,800 返金・1点は相談）');
+    expect(buildReceiveButtonLabel({ ...mixed, refundAmount: 0 })).toBe('受け取る（1点を ￥0 返金・1点は相談）');
+  });
+
+  it('DD-ADMIN-019 単独のnow・consultは今までの言葉のまま（nowUnits・consultUnits を渡しても）', () => {
+    expect(buildReceiveButtonLabel({ ...mixed, refundChoice: 'now', nowUnits: 2, consultUnits: 0, refundAmount: 1800 }))
+      .toBe('すべて受け取って ￥1,800 を返金する');
+    expect(buildReceiveButtonLabel({ ...mixed, refundChoice: 'consult', nowUnits: 0, consultUnits: 2, refundAmount: 0 }))
+      .toBe('受け取りだけ記録する（返金は額を決めてから）');
   });
 });
 

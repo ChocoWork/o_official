@@ -147,9 +147,17 @@ type ReturnNumberInputProps = {
   max: number;
   disabled: boolean;
   onChange: (next: number) => void;
+  /** 真なら max を超えた値も丸めずに渡す（受け取りの返金額。超えたことを誤りの文で示し、直すまで押せなくする） */
+  preserveOverMax?: boolean;
+  /** 欄の下に出す誤りの文。aria-invalid と aria-describedby で入力に結ぶ */
+  error?: string | null;
+  /** 入力の補足（「上限 ￥X」など）の id。aria-describedby に足す */
+  describedBy?: string;
 };
 
-function ReturnNumberInput({ id, label, value, max, disabled, onChange }: ReturnNumberInputProps) {
+function ReturnNumberInput({ id, label, value, max, disabled, onChange, preserveOverMax = false, error = null, describedBy }: ReturnNumberInputProps) {
+  const errorId = `${id}-error`;
+  const describedByIds = [describedBy, error ? errorId : undefined].filter((part): part is string => Boolean(part)).join(' ');
   return (
     <div>
       <label htmlFor={id} className="block font-acumin lk-text-3xs text-[#474747]">
@@ -164,9 +172,16 @@ function ReturnNumberInput({ id, label, value, max, disabled, onChange }: Return
         step={1}
         value={value}
         disabled={disabled}
-        onChange={(event) => onChange(clampQuantity(event.target.value, max))}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={describedByIds || undefined}
+        onChange={(event) => onChange(clampQuantity(event.target.value, preserveOverMax ? Number.MAX_SAFE_INTEGER : max))}
         className="mt-1 h-9 w-full border border-[#d4d4d4] bg-white px-2 font-acumin lk-text-3xs text-black disabled:bg-[#f3f3f3]"
       />
+      {error ? (
+        <p id={errorId} className="mt-1 font-acumin lk-text-3xs text-red-700">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -185,9 +200,24 @@ type ReturnRefundFieldsProps = {
   refundableShipping: number;
   onShippingChange: (next: number) => void;
   disabled: boolean;
+  /**
+   * 返金額の入力の上限（受け取りの今すぐ返金だけ。min(注文の返せる額, 今すぐの品の額 + 送料)）。渡すと見出しは「返金額」になり、
+   * 上限は amountCapLabel で別に出す。省くと従来どおり上限は refundableAmount、見出しは「返金額（返せる額: X）」
+   */
+  amountCap?: number;
+  amountCapLabel?: string;
+  /** 真なら上限を超えた額も丸めずに保つ（受け取りだけ） */
+  preserveAmountOverMax?: boolean;
+  /** 返金額の欄の誤りの文（上限を超えた時など） */
+  amountError?: string | null;
 };
 
-/** 受け取りの画面（今返金）と額を決めて返金の画面が共有する、返金の内訳と、返金額・送料の入力（設計書 6-1・6-3） */
+/**
+ * 受け取りの画面（今返金）と額を決めて返金の画面が共有する、返金の内訳と、返金額・送料の入力（設計書 6-1・6-3）。
+ * 受け取りの画面だけが上限（amountCap）と誤りの文を渡す（返品の品ごとの返金 設計3-2）。
+ *
+ * @design DD-ADMIN-019
+ */
 export function ReturnRefundFields({
   idPrefix,
   rows,
@@ -199,7 +229,13 @@ export function ReturnRefundFields({
   refundableShipping,
   onShippingChange,
   disabled,
+  amountCap,
+  amountCapLabel,
+  preserveAmountOverMax = false,
+  amountError = null,
 }: ReturnRefundFieldsProps) {
+  const capId = `${idPrefix}-amount-cap`;
+  const showCap = amountCap !== undefined && amountCapLabel !== undefined;
   return (
     <div className="space-y-3">
       <div role="group" aria-label="返金の内訳" className="border-t border-[#d4d4d4] pt-3">
@@ -213,14 +249,24 @@ export function ReturnRefundFields({
         </dl>
       </div>
       {afterBreakdown}
-      <ReturnNumberInput
-        id={`${idPrefix}-amount`}
-        label={`返金額（返せる額: ${formatYen(refundableAmount)}）`}
-        value={amount}
-        max={refundableAmount}
-        disabled={disabled}
-        onChange={onAmountChange}
-      />
+      <div>
+        <ReturnNumberInput
+          id={`${idPrefix}-amount`}
+          label={amountCap === undefined ? `返金額（返せる額: ${formatYen(refundableAmount)}）` : '返金額'}
+          value={amount}
+          max={amountCap ?? refundableAmount}
+          disabled={disabled}
+          onChange={onAmountChange}
+          preserveOverMax={preserveAmountOverMax}
+          error={amountError}
+          describedBy={showCap ? capId : undefined}
+        />
+        {showCap ? (
+          <p id={capId} className="mt-1 font-acumin lk-text-3xs text-[#474747]">
+            {amountCapLabel}
+          </p>
+        ) : null}
+      </div>
       <ReturnNumberInput
         id={`${idPrefix}-shipping`}
         label={`送料（返せる送料: ${formatYen(refundableShipping)}）`}

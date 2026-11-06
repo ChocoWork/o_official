@@ -14,7 +14,7 @@ import { blockEnterSubmit } from '@/hooks/useRefundSubmission';
 import { parseActionResponse, readRecord, useReturnOperation, type ReturnActionResponse } from '@/hooks/useReturnOperation';
 import { lineLabel } from '@/lib/orders/fulfillment/fulfillment-client';
 import { formatYen } from '@/lib/orders/refund/refund-messages';
-import { buildReceiveButtonLabel, computeReturnRefundPreview } from '@/lib/orders/returns/return-calc';
+import { buildReceiveButtonLabel, computePerItemReturnRefundPreview, type ReceivePreviewLine } from '@/lib/orders/returns/return-calc';
 import {
   DISPOSITION_LABELS,
   RETURN_CARRIER_LABELS,
@@ -27,7 +27,8 @@ import {
   type OrderReturnDetail,
   type OrderReturnLineDetail,
   type ReceiptDisposition,
-  type RefundChoice,
+  type ReceiptRefundChoice,
+  type ReceiveUnitRefundChoice,
   type ReturnCarrier,
   type ReturnStatus,
 } from '@/lib/orders/returns/return-types';
@@ -53,12 +54,16 @@ export type ReceiveDialogResult =
 
 type ExchangeOverride = 'make' | 'refund';
 
-/** 受け取りの窓口へ送る本文。C-1 の admin_receive_return の引数を camelCase にした物（返品の番号は URL、人と権限は窓口が決める） */
+/**
+ * 受け取りの窓口へ送る本文。C-1 の admin_receive_return の引数を camelCase にした物（返品の番号は URL、人と権限は窓口が決める）。
+ * units の refundChoice は返金の品にだけ付け（返品の行・状態・選びごとにまとめる）、返金にならない品はキーごと省く（null は送らない）。
+ * refundChoice（親）は品の選びから now・consult・mixed・none を導く（返品の品ごとの返金 設計5-1）
+ */
 export type ReceiveReturnRequest = {
   requestKey: string;
-  units: Array<{ returnLineId: string; disposition: ReceiptDisposition; quantity: number }>;
+  units: Array<{ returnLineId: string; disposition: ReceiptDisposition; quantity: number; refundChoice?: ReceiveUnitRefundChoice }>;
   exchangeOverrides: Array<{ returnLineId: string; action: ExchangeOverride }>;
-  refundChoice: RefundChoice;
+  refundChoice: ReceiptRefundChoice;
   refundAmount: number | null;
   refundShippingAmount: number;
   note: string | null;
@@ -76,7 +81,9 @@ type OrderReturnReceiveDialogBodyProps = Pick<ReturnDialogProps, 'onClose' | 'on
   reloadError?: string | null;
 };
 
-type RowState = { checked: boolean; disposition: ReceiptDisposition | '' };
+/** 1点ごとの入力。refundChoice は返金の品の時だけ使う（最初は今すぐ返金。選びを出さない人は相談に固定される） */
+type RowState = { checked: boolean; disposition: ReceiptDisposition | ''; refundChoice: ReceiveUnitRefundChoice };
+const EMPTY_ROW: RowState = { checked: false, disposition: '', refundChoice: 'now' };
 type UnitRow = { key: string; line: OrderReturnLineDetail; index: number };
 type LineTally = { kept: number; sentBack: number; byDisposition: Partial<Record<ReceiptDisposition, number>> };
 type ExchangeInfo = NonNullable<OrderReturnLineDetail['exchange']>;
@@ -88,11 +95,15 @@ type Step = 'form' | 'confirm' | 'missing';
 const MINUS = '\u2212';
 const UNKNOWN_RECEIVE_MESSAGE =
   '受け取りの結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。';
-const CONSULT_HINT =
-  '着た跡や付属品の不足などで、お客様と相談して額を決める時に選びます。受け取りだけを記録し、返品は「返金待ち」になります。';
 const SUPPORT_REFUND_NOTICE = '返金は店長が行います（受け取ると「返金待ち」になります）。';
-// サポートが、お客様の申し込みの返品（返送不要でない）を受け取る時の相談の選びの言葉（C-5）。今返金の言葉は店長の選びと同じ「計算どおり {額} を返金する」
-const SUPPORT_CONSULT_LABEL = '額を相談してから返金する（店長が額を決めます）';
+// 品ごとの返金の選び（返品の品ごとの返金 設計3-1・3-2）
+const UNIT_CHOICE_OPTIONS: ReadonlyArray<readonly [ReceiveUnitRefundChoice, string]> = [
+  ['now', '今すぐ返金'],
+  ['consult', '額を相談'],
+];
+const CONSULT_NOTE = '返金待ちになります。額はあとで「額を決めて返金する」で決めます。';
+const capErrorOf = (cap: number) =>
+  `この受け取りの商品の額と送料（${formatYen(cap)}）を超えて入れられません。ほかの受け取りの分は、返品の画面の「額を決めて返金する」で返してください。`;
 const MAKE_REASON = '在庫が足りないため、作ってお送りします。';
 const CHOOSE_NOTICE = '在庫が足りません。「作って送る」か「返金に変える」を選んでください。';
 const SUPPORT_STOCK_NOTICE = '在庫が足りません。この品は店長が受け取ります。';
@@ -236,9 +247,19 @@ type SelectableUnitProps = {
   dispositionOptions: Array<{ value: string; label: string }>;
   onToggle: (checked: boolean) => void;
   onSelect: (value: string) => void;
+  /** 品ごとの返金の選び（ラジオの name）。返金の品で、選びを出す人の時だけ渡す。null なら出さない */
+  choiceName: string | null;
+  onChoose: (choice: ReceiveUnitRefundChoice) => void;
 };
 
-function SelectableUnit({ line, state, blockedText, disabled, dispositionOptions, onToggle, onSelect }: SelectableUnitProps) {
+/**
+ * 1点の行。品の状態のすぐ下に「返金: 今すぐ返金 / 額を相談」を置く（見本 A。返品の品ごとの返金 設計3-1）。
+ * ラジオの name と group は品ごとに分け、矢印キーはその品の中だけで動く。
+ *
+ * @design DD-ADMIN-019
+ */
+function SelectableUnit({ line, state, blockedText, disabled, dispositionOptions, onToggle, onSelect, choiceName, onChoose }: SelectableUnitProps) {
+  const choiceLabelId = choiceName ? `${choiceName}-label` : undefined;
   return (
     <UnitRowFrame line={line}>
       <Checkbox
@@ -255,6 +276,25 @@ function SelectableUnit({ line, state, blockedText, disabled, dispositionOptions
         disabled={disabled || !state.checked}
         onChange={(event) => onSelect(event.target.value)}
       />
+      {choiceName ? (
+        <div role="radiogroup" aria-labelledby={choiceLabelId} className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span id={choiceLabelId} className="font-acumin lk-text-3xs text-[#474747]">返金</span>
+          {UNIT_CHOICE_OPTIONS.map(([value, text]) => (
+            <label key={value} className="flex min-h-9 cursor-pointer items-center gap-2">
+              <input
+                type="radio"
+                name={choiceName}
+                value={value}
+                className="h-4 w-4 accent-black"
+                checked={state.refundChoice === value}
+                disabled={disabled}
+                onChange={() => onChoose(value)}
+              />
+              <span className="font-acumin lk-text-sm text-black">{text}</span>
+            </label>
+          ))}
+        </div>
+      ) : null}
       {blockedText ? <p className="font-acumin lk-text-3xs text-[#474747]">{blockedText}</p> : null}
     </UnitRowFrame>
   );
@@ -292,7 +332,6 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
   });
   const [rowStates, setRowStates] = useState<Record<string, RowState>>({});
   const [overrides, setOverrides] = useState<Record<string, ExchangeOverride>>({});
-  const [refundChoice, setRefundChoice] = useState<'now' | 'consult'>('now');
   const [shippingEntered, setShippingEntered] = useState(0);
   // 返金額を手で直した時だけ入る。行・送料・選びを変えたら空に戻し、見込みの額に追い付かせる
   const [amountEntered, setAmountEntered] = useState<number | null>(null);
@@ -357,59 +396,82 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
     line.exchange?.outOfStockExchange === 'decline' && shortageOf(line) === 'choose',
   );
 
-  let refundUnits = 0;
+  // 返金の品（返金の行と「返金に変える」にした交換の行の、届いてお返しでない品）。この品にだけ返金の選びがある
+  const isRefundUnit = (row: UnitRow): boolean => {
+    const state = rowStates[row.key];
+    if (!state?.checked || state.disposition === '' || state.disposition === 'sent_back') return false;
+    return row.line.resolution === 'refund' || overrideOf(row.line) === 'refund';
+  };
   let exchangeUnits = 0;
   let sentBackUnits = 0;
-  const refundSources: Array<{ orderItemId: string; refundAmountsByCount: number[]; count: number }> = [];
   for (const line of detail.lines) {
     const entry = tally[line.id];
     if (!entry) continue;
     sentBackUnits += entry.sentBack;
-    if (entry.kept === 0) continue;
-    if (overrideOf(line) === 'refund' || line.resolution === 'refund') {
-      refundUnits += entry.kept;
-      // 額の表は、その注文の商品について今から k 点を返金した時の額で、同じ注文の商品を指す行は同じ列を持つ（C-2）。
-      // 返金に変えた交換の行も、返金の行と同じ表を使う（C-2 が交換の予定の行にも入れる）。行ごとに orderItemId を付けて渡し、
-      // 同じ orderItemId の行は computeReturnRefundPreview が数を足してから列を引く（DB の受け取りと同じ。行ごとに引くと割引の端数で1円ずれる）。
-      // 表が点数より短い時は、足りない分を見込みに入れない。最後に額を決めるのは DB（受け取りの時に計算し直す）
-      refundSources.push({
-        orderItemId: line.orderItemId,
-        refundAmountsByCount: line.refundAmountsByCount,
-        count: Math.min(entry.kept, line.refundAmountsByCount.length),
-      });
-    } else {
-      exchangeUnits += entry.kept;
-    }
+    if (entry.kept > 0 && overrideOf(line) !== 'refund' && line.resolution !== 'refund') exchangeUnits += entry.kept;
   }
 
-  const shippingAmount = Math.min(shippingEntered, refundableShipping);
-  const preview = computeReturnRefundPreview({
-    lines: refundSources,
-    firstReceipt: !detail.firstReceiptDone,
-    hasExchangeInThisReceipt: exchangeUnits > 0,
-    firstExchangeReceipt: !detail.firstExchangeReceiptDone,
-    returnMethod: detail.returnMethod,
-    returnShippingFee: detail.fees.returnShippingFee,
-    restockingFeePercent: detail.fees.restockingFeePercent,
-    exchangeFee: detail.fees.exchangeFee,
-    exchangeShippingFee: detail.fees.exchangeShippingFee,
-    shippingRefund: shippingAmount,
-  });
-  // サポート（返金の権限が無い人）の今返金は、お客様の申し込みの返品（返送不要でない）を受け取る時だけ許される（P9。DB も同じ条件で断る）。
-  // 額・送料・在庫不足の上書きは変えられず、窓口でも DB でも断られるので、画面は入力を出さず、額は DB が計算する。見込みの額が注文の今の返せる額を超える時は、サポートは額を切って送れず DB が受け取りごと断るので、自動の返金を出さず相談だけにする
-  const supportAutoRefund = !canRefund && detail.source === 'customer_request' && detail.returnMethod !== 'not_required' && preview.refundAmount <= refundableAmount;
-  // 返金の品が無ければ none。サポートは、自動の返金が許される返品なら今返金か相談を選べ、ほかの返品は相談（返金待ち）
-  const effectiveChoice: RefundChoice = refundUnits === 0 ? 'none' : canRefund || supportAutoRefund ? refundChoice : 'consult';
-  const amount = Math.min(refundableAmount, amountEntered ?? preview.refundAmount);
-  const breakdownRows: Array<[string, string]> = [['商品', formatYen(preview.itemsAmount)]];
-  if (preview.fees.returnShipping > 0) breakdownRows.push(['返送料', `${MINUS}${formatYen(preview.fees.returnShipping)}`]);
-  if (preview.fees.restocking > 0) breakdownRows.push(['返品の手数料', `${MINUS}${formatYen(preview.fees.restocking)}`]);
-  if (preview.fees.exchange > 0) breakdownRows.push(['交換の手数料', `${MINUS}${formatYen(preview.fees.exchange)}`]);
-  if (preview.fees.exchangeShipping > 0) breakdownRows.push(['交換の送料', `${MINUS}${formatYen(preview.fees.exchangeShipping)}`]);
+  // 品ごとの見込み。H の行は行ごとの累計、旧い行は注文の商品ごとに数を足した共通の累計（return-calc。DB が受け取りの時に計算し直す）
+  const previewOf = (choiceOf: (row: UnitRow) => ReceiveUnitRefundChoice, shippingRefund: number) => {
+    const lines: ReceivePreviewLine[] = detail.lines.map((line) => {
+      const refundRows = rows.filter((row) => row.line.id === line.id && isRefundUnit(row));
+      const nowCount = refundRows.filter((row) => choiceOf(row) === 'now').length;
+      return {
+        returnLineId: line.id,
+        orderItemId: line.orderItemId,
+        refundAmountsByCount: line.refundAmountsByCount,
+        receiveRefundAmountsByCount: line.receiveRefundAmountsByCount ?? null,
+        nowCount,
+        consultCount: refundRows.length - nowCount,
+      };
+    });
+    return computePerItemReturnRefundPreview({
+      lines,
+      firstReceipt: !detail.firstReceiptDone,
+      hasExchangeInThisReceipt: exchangeUnits > 0,
+      firstExchangeReceipt: !detail.firstExchangeReceiptDone,
+      returnMethod: detail.returnMethod,
+      returnShippingFee: detail.fees.returnShippingFee,
+      restockingFeePercent: detail.fees.restockingFeePercent,
+      exchangeFee: detail.fees.exchangeFee,
+      exchangeShippingFee: detail.fees.exchangeShippingFee,
+      shippingRefund,
+      refundableAmount,
+    });
+  };
+  const chosenOf = (row: UnitRow): ReceiveUnitRefundChoice => rowStates[row.key]?.refundChoice ?? 'now';
+  // 品ごとの選びは、権限「返金」を持つ人と、持たない人でも今の自動の返金（P9: お客様の申し込みの返品で、返送不要でない）が許される時に出す
+  // （設計3-3。役割の名前では決めない。DB も同じ条件で断る）。P9 の人は額・送料を変えられず、額は DB が計算する。
+  // 今すぐの分の見込みが注文の今の返せる額を超える時は、額を切って送れず DB が受け取りごと断るので、選びを出さず全部を相談にする
+  const p9Allowed = !canRefund && detail.source === 'customer_request' && detail.returnMethod !== 'not_required';
+  const supportAutoRefund = p9Allowed && previewOf(chosenOf, 0).refundAmount <= refundableAmount;
+  const showsChoices = canRefund || supportAutoRefund;
+  const choiceOf = (row: UnitRow): ReceiveUnitRefundChoice => (showsChoices ? chosenOf(row) : 'consult');
+  const refundRows = rows.filter(isRefundUnit);
+  const nowRows = refundRows.filter((row) => choiceOf(row) === 'now');
+  const consultRows = refundRows.filter((row) => choiceOf(row) === 'consult');
+  const refundUnits = refundRows.length;
+  const nowUnits = nowRows.length;
+  const consultUnits = consultRows.length;
+  // 受け取り全体のまとめ（設計5-1）。返金の品が無ければ none
+  const effectiveChoice: ReceiptRefundChoice =
+    nowUnits > 0 && consultUnits > 0 ? 'mixed' : nowUnits > 0 ? 'now' : consultUnits > 0 ? 'consult' : 'none';
+  // 送料は今すぐ返金の分から返す。今すぐの品が無ければ 0
+  const shippingAmount = canRefund && nowUnits > 0 ? Math.min(shippingEntered, refundableShipping) : 0;
+  const preview = previewOf(choiceOf, shippingAmount);
+  // 上限は min(注文の返せる額, 今すぐの品の額 + 送料)（設計4-2）。見込みも上限で切る。手で入れた額は丸めずに保ち、超えたら誤りの文で止める
+  const amount = amountEntered ?? Math.min(preview.refundAmount, preview.refundCap);
+  const amountOverCap = canRefund && nowUnits > 0 && amount > preview.refundCap;
+  const breakdownRows: Array<[string, string]> = [['商品', formatYen(preview.nowItemsAmount)]];
+  if (preview.nowFees.returnShipping > 0) breakdownRows.push(['返送料', `${MINUS}${formatYen(preview.nowFees.returnShipping)}`]);
+  if (preview.nowFees.restocking > 0) breakdownRows.push(['返品の手数料', `${MINUS}${formatYen(preview.nowFees.restocking)}`]);
+  if (preview.nowFees.exchange > 0) breakdownRows.push(['交換の手数料', `${MINUS}${formatYen(preview.nowFees.exchange)}`]);
+  if (preview.nowFees.exchangeShipping > 0) breakdownRows.push(['交換の送料', `${MINUS}${formatYen(preview.nowFees.exchangeShipping)}`]);
   breakdownRows.push(['送料', formatYen(shippingAmount)], ['返金額', formatYen(preview.refundAmount)]);
 
-  const feesTotal = preview.fees.returnShipping + preview.fees.restocking + preview.fees.exchange + preview.fees.exchangeShipping;
-  const feeDuePreview = effectiveChoice === 'now' ? preview.feeDue : effectiveChoice === 'none' ? feesTotal : 0;
+  // お支払い待ちは、今すぐの分で引ききれない手数料のうち、同じ受け取りに相談の品が無い時の分（相談の品があれば後で引く。設計4-3）。
+  // 返金の品が無い受け取り（交換だけ）は、手数料の全部
+  const feeDuePreview = preview.feeDue;
   // 交換品の割り当てを保留するのは、この受け取りの手数料だけでなく、前の受け取りの手数料がまだ払われていない時も同じ
   // （DB の割り当ての止め fee_waiting と同じ条件: 未決着の手数料があり、受け取りの記録も、支払いを待たずに送るも、まだ）
   const feeStillUnpaid = detail.fees.feeDueAmount > 0 && detail.fees.feeReceivedAt === null && detail.fees.exchangeReleasedAt === null;
@@ -430,7 +492,7 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
   // DB は「送料 ≤ 額」を入力の誤りにする。画面に新しい文は足さず、直るまで押せなくする（E-2 の返金の画面と同じ）。
   // 返金額が0円（手数料が商品の額以上か、店長が0に直した）の時は押せる。DB は返金を作らず、受け取りだけを記録する（P20）。
   // 押すボタンの言葉は buildReceiveButtonLabel が「返金なしで記録する」にする
-  const amountInvalid = effectiveChoice === 'now' && amount < shippingAmount;
+  const amountInvalid = nowUnits > 0 && (amount < shippingAmount || amountOverCap);
   const canSubmitForm =
     !stopped && checkedCount >= 1 && undecidedCount === 0 && !sentBackInvalid && unresolvedCount === 0 && !amountInvalid && !supportStockExceeded && reloadError === null;
   // 一部だけ届いた時と、お返しを含む時は、送る前に確かめを挟む
@@ -446,6 +508,8 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
     refundChoice: effectiveChoice,
     refundAmount: canRefund ? amount : preview.refundAmount,
     actorCanRefund: canRefund,
+    nowUnits,
+    consultUnits,
   });
   const submitLabel = step === 'missing' ? '返品を終える' : step === 'confirm' ? (sentBackUnits > 0 ? 'お返しする' : '記録する') : formLabel;
   const canSubmit = step === 'missing' ? !stopped : canSubmitForm;
@@ -455,22 +519,35 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
     setAmountEntered(null);
   };
 
+  const changeChoice = (key: string, refundChoice: ReceiveUnitRefundChoice) => {
+    setRowStates((previous) => ({ ...previous, [key]: { ...(previous[key] ?? EMPTY_ROW), refundChoice } }));
+    setAmountEntered(null);
+  };
+
+  // 返品の行・状態・選びごとに数をまとめる。返金の品には選びを必ず付け、返金にならない品（交換・お返し）はキーを省く（null は送らない）
+  const unitsOf = (): ReceiveReturnRequest['units'] =>
+    detail.lines.flatMap((line) =>
+      DISPOSITION_ORDER.flatMap((disposition) => {
+        const picked = rows.filter((row) => row.line.id === line.id && rowStates[row.key]?.checked && rowStates[row.key]?.disposition === disposition);
+        return ([...UNIT_CHOICE_OPTIONS.map(([value]) => value), null] as const).flatMap((choice) => {
+          const quantity = picked.filter((row) => (isRefundUnit(row) ? choiceOf(row) : null) === choice).length;
+          if (quantity === 0) return [];
+          return [choice === null ? { returnLineId: line.id, disposition, quantity } : { returnLineId: line.id, disposition, quantity, refundChoice: choice }];
+        });
+      }),
+    );
+
   const buildBody = (requestKey: string): ReceiveReturnRequest => ({
     requestKey,
-    units: detail.lines.flatMap((line) =>
-      DISPOSITION_ORDER.flatMap((disposition) => {
-        const quantity = tally[line.id]?.byDisposition[disposition] ?? 0;
-        return quantity > 0 ? [{ returnLineId: line.id, disposition, quantity }] : [];
-      }),
-    ),
+    units: unitsOf(),
     exchangeOverrides: detail.lines.flatMap((line) => {
       const action = overrideOf(line);
       return action ? [{ returnLineId: line.id, action }] : [];
     }),
     refundChoice: effectiveChoice,
-    // 見込みと同じ額なら送らない（DB が同じ式で計算する）。手で直した額と、返せる額で切った額だけを送る
-    refundAmount: effectiveChoice === 'now' && canRefund && amount !== preview.refundAmount ? amount : null, // サポートは額を送らない（DB が計算する。P9）
-    refundShippingAmount: effectiveChoice === 'now' && canRefund ? shippingAmount : 0,
+    // 見込みと同じ額なら送らない（DB が同じ式で計算する）。手で直した額と、上限で切った額だけを送る
+    refundAmount: nowUnits > 0 && canRefund && amount !== preview.refundAmount ? amount : null, // P9 の人は額を送らない（DB が計算する）
+    refundShippingAmount: nowUnits > 0 && canRefund ? shippingAmount : 0,
     note: null,
     // お返しのメッセージを伝えるため、お返しを含む時は必ず送る
     notifyCustomer: sentBackUnits > 0 ? true : notifyCustomer,
@@ -570,16 +647,19 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
                       <SelectableUnit
                         key={row.key}
                         line={line}
-                        state={rowStates[row.key] ?? { checked: false, disposition: '' }}
+                        state={rowStates[row.key] ?? EMPTY_ROW}
                         blockedText={!rowStates[row.key]?.checked && row.index >= capOf(line) ? SUPPORT_STOCK_NOTICE : null}
                         disabled={stopped}
                         dispositionOptions={dispositionOptions}
-                        onToggle={(checked) =>
-                          changeRow(row.key, { checked, disposition: checked ? (rowStates[row.key]?.disposition ?? '') : '' })
-                        }
+                        onToggle={(checked) => {
+                          const current = rowStates[row.key] ?? EMPTY_ROW;
+                          changeRow(row.key, { ...current, checked, disposition: checked ? current.disposition : '' });
+                        }}
                         onSelect={(value) =>
-                          changeRow(row.key, { checked: rowStates[row.key]?.checked ?? false, disposition: isDisposition(value) ? value : '' })
+                          changeRow(row.key, { ...(rowStates[row.key] ?? EMPTY_ROW), disposition: isDisposition(value) ? value : '' })
                         }
+                        choiceName={showsChoices && isRefundUnit(row) ? `return-receive-refund-${row.key}` : null}
+                        onChoose={(choice) => changeChoice(row.key, choice)}
                       />
                     )),
                 ])}
@@ -674,95 +754,53 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
                 </section>
               ) : null}
 
-              {refundUnits > 0 && canRefund ? (
-                <fieldset className="space-y-2">
-                  <legend className="font-acumin lk-text-sm text-black">返金</legend>
-                  <label className="flex min-h-9 cursor-pointer items-center gap-2">
-                    <input
-                      type="radio"
-                      name="return-receive-refund-choice"
-                      value="now"
-                      className="h-4 w-4 accent-black"
-                      checked={refundChoice === 'now'}
-                      disabled={stopped}
-                      onChange={() => setRefundChoice('now')}
-                    />
-                    <span className="font-acumin lk-text-sm text-black">{`計算どおり ${formatYen(preview.refundAmount)} を返金する`}</span>
-                  </label>
-                  <div>
-                    <label className="flex min-h-9 cursor-pointer items-center gap-2">
-                      <input
-                        type="radio"
-                        name="return-receive-refund-choice"
-                        value="consult"
-                        className="h-4 w-4 accent-black"
-                        aria-describedby="return-receive-consult-hint"
-                        checked={refundChoice === 'consult'}
-                        disabled={stopped}
-                        onChange={() => setRefundChoice('consult')}
-                      />
-                      <span className="font-acumin lk-text-sm text-black">額を相談してから返金する</span>
-                    </label>
-                    <p id="return-receive-consult-hint" className="ml-6 font-acumin lk-text-3xs text-[#474747]">
-                      {CONSULT_HINT}
-                    </p>
-                  </div>
-                </fieldset>
-              ) : null}
-              {refundUnits > 0 && supportAutoRefund ? (
-                <fieldset className="space-y-2">
-                  <legend className="font-acumin lk-text-sm text-black">返金</legend>
-                  {refundChoice === 'now' ? (
-                    <p className="font-acumin lk-text-sm text-black">{`受け取ると、計算どおり ${formatYen(preview.refundAmount)} を自動で返金します（額は変えられません）。`}</p>
-                  ) : null}
-                  <label className="flex min-h-9 cursor-pointer items-center gap-2">
-                    <input
-                      type="radio"
-                      name="return-receive-refund-choice"
-                      value="now"
-                      className="h-4 w-4 accent-black"
-                      checked={refundChoice === 'now'}
-                      disabled={stopped}
-                      onChange={() => setRefundChoice('now')}
-                    />
-                    <span className="font-acumin lk-text-sm text-black">{`計算どおり ${formatYen(preview.refundAmount)} を返金する`}</span>
-                  </label>
-                  <label className="flex min-h-9 cursor-pointer items-center gap-2">
-                    <input
-                      type="radio"
-                      name="return-receive-refund-choice"
-                      value="consult"
-                      className="h-4 w-4 accent-black"
-                      checked={refundChoice === 'consult'}
-                      disabled={stopped}
-                      onChange={() => setRefundChoice('consult')}
-                    />
-                    <span className="font-acumin lk-text-sm text-black">{SUPPORT_CONSULT_LABEL}</span>
-                  </label>
-                </fieldset>
-              ) : null}
-              {refundUnits > 0 && !canRefund && !supportAutoRefund ? (
+              {refundUnits > 0 && !showsChoices ? (
                 <p className="font-acumin lk-text-sm text-black">{SUPPORT_REFUND_NOTICE}</p>
               ) : null}
-              {effectiveChoice === 'now' && canRefund ? (
-                <ReturnRefundFields
-                  idPrefix="return-receive"
-                  rows={breakdownRows}
-                  afterBreakdown={feeDueNotice}
-                  amount={amount}
-                  refundableAmount={refundableAmount}
-                  onAmountChange={setAmountEntered}
-                  shippingAmount={shippingAmount}
-                  refundableShipping={refundableShipping}
-                  onShippingChange={(next) => {
-                    setShippingEntered(next);
-                    setAmountEntered(null);
-                  }}
-                  disabled={stopped}
-                />
+              {showsChoices && nowUnits > 0 ? (
+                <section aria-labelledby="return-receive-now-heading" className="space-y-2">
+                  <h4 id="return-receive-now-heading" className="font-acumin lk-text-sm text-black">{`今すぐ返金（${nowUnits}点）`}</h4>
+                  {canRefund ? (
+                    <ReturnRefundFields
+                      idPrefix="return-receive"
+                      rows={breakdownRows}
+                      afterBreakdown={feeDueNotice}
+                      amount={amount}
+                      refundableAmount={refundableAmount}
+                      onAmountChange={setAmountEntered}
+                      shippingAmount={shippingAmount}
+                      refundableShipping={refundableShipping}
+                      onShippingChange={(next) => {
+                        setShippingEntered(next);
+                        setAmountEntered(null);
+                      }}
+                      disabled={stopped}
+                      amountCap={preview.refundCap}
+                      amountCapLabel={`上限 ${formatYen(preview.refundCap)}`}
+                      preserveAmountOverMax
+                      amountError={amountOverCap ? capErrorOf(preview.refundCap) : null}
+                    />
+                  ) : (
+                    <>
+                      <p className="font-acumin lk-text-sm text-black">{`受け取ると、計算どおり ${formatYen(preview.refundAmount)} を自動で返金します（額は変えられません）。`}</p>
+                      {feeDueNotice}
+                    </>
+                  )}
+                </section>
               ) : null}
-
-              {effectiveChoice === 'now' && !canRefund ? feeDueNotice : null}
+              {showsChoices && consultUnits > 0 ? (
+                <section aria-labelledby="return-receive-consult-heading" className="space-y-2">
+                  <h4 id="return-receive-consult-heading" className="font-acumin lk-text-sm text-black">{`額を相談（${consultUnits}点）`}</h4>
+                  <ul aria-label="額を相談の品" className="space-y-1">
+                    {consultRows.map((row) => (
+                      <li key={row.key} className="font-acumin lk-text-sm text-black">
+                        {lineLabel({ name: row.line.itemName, color: row.line.color, size: row.line.size })}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="font-acumin lk-text-3xs text-[#474747]">{CONSULT_NOTE}</p>
+                </section>
+              ) : null}
               {effectiveChoice === 'none' && feeDuePreview > 0 ? (
                 <div className="space-y-2">
                   <dl className="space-y-1 border-t border-[#d4d4d4] pt-3">

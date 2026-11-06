@@ -152,6 +152,22 @@ it('FREQ-551-AC-01: Hの返金待ち17000円を均等式で18500円にしない'
   expect(breakdownRow(dialog, '商品')).toBe('商品￥17,000');
 });
 
+it('DD-ADMIN-019 案イの待ち額17000円を相談後の返金画面に出す', async () => {
+  // 同じ注文商品の返品行 A（17000 の着）を相談、B（20000 の着）を今すぐにして受け取った後（返金の結果は記録済み）。
+  // 案イの印は逆に付き、A が返金済み・B が返金待ちに見えるが、待ち額は A の 17000（DB の return_detail_json）
+  const lineA: OrderReturnLineDetail = { ...WAITING_BLOUSE, id: 'line-a', quantity: 1,
+    progress: progress({ restocked: 1, processed: 1, refundCovered: 1 }), refundWaitingAmount: 0, refundAmountsByCount: [] };
+  const lineB: OrderReturnLineDetail = { ...WAITING_BLOUSE, id: 'line-b', quantity: 1,
+    progress: progress({ restocked: 1, processed: 1, refundWaiting: 1 }), refundWaitingAmount: 17000, refundAmountsByCount: [] };
+  const { dialog } = await openDialog(returnDetail({ lines: [lineA, lineB] }));
+
+  const refundDialogPreview = within(dialog).getByRole('group', { name: '返金の内訳' });
+  expect(refundDialogPreview).toHaveTextContent('￥17,000');
+  expect(amountInput(dialog)).toHaveValue(17000);
+  expect(screen.getByRole('button', { name: '￥17,000 を返金する' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: '返金しないで終える' })).not.toBeInTheDocument();
+});
+
 describe('OrderReturnRefundDialog の読み込み', () => {
   it('開くと注文の返品の窓口を読み、読み終えるまでは「読み込み中です...」と「閉じる」だけを出す', async () => {
     let resolveGet: (value: Response) => void = () => {};

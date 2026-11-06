@@ -1,5 +1,5 @@
 import { formatYen } from '@/lib/orders/refund/refund-messages';
-import type { RefundChoice, ReturnMethod } from '@/lib/orders/returns/return-types';
+import type { ReceiptRefundChoice, ReturnMethod } from '@/lib/orders/returns/return-types';
 
 /**
  * 受け取りの画面の返金の見込みとボタンの言葉、受付の期限の日付の書き方（グループ E-3 設計書 4-9・6-1・6-3・6-4。共通の約束 C-5）。
@@ -84,11 +84,139 @@ export function computeReturnRefundPreview(input: {
 }
 
 /**
+ * 品ごとの見込みの1行（返品の行ごと）。nowCount・consultCount は、この受け取りでその行の品を今すぐ返金・額を相談にした数。
+ * receiveRefundAmountsByCount は H の注文だけの、その行が確保した着の累計（添字 k−1）。null の行（H の無い旧い注文・交換の行）は
+ * refundAmountsByCount（注文の商品ごとの共通の累計）へ戻る。
+ */
+export type ReceivePreviewLine = {
+  returnLineId: string;
+  orderItemId: string;
+  refundAmountsByCount: number[];
+  receiveRefundAmountsByCount: number[] | null;
+  nowCount: number;
+  consultCount: number;
+};
+
+export type PerItemReturnRefundPreviewInput = {
+  lines: ReceivePreviewLine[];
+  firstReceipt: boolean;
+  hasExchangeInThisReceipt: boolean;
+  firstExchangeReceipt: boolean;
+  returnMethod: ReturnMethod;
+  returnShippingFee: number;
+  restockingFeePercent: number;
+  exchangeFee: number;
+  exchangeShippingFee: number;
+  shippingRefund: number;
+  /** 注文の今の返せる額。今すぐ返金の入力の上限の片方 */
+  refundableAmount: number;
+};
+
+/** 累計の列から、先頭の count 点の額（count が列より多ければ列の最後、0 なら 0） */
+function cumulativeAt(amounts: readonly number[], count: number): number {
+  if (count < 1 || amounts.length === 0) return 0;
+  return amounts[Math.min(count, amounts.length) - 1];
+}
+
+const countOf = (value: number) => (Number.isInteger(value) && value > 0 ? value : 0);
+
+/**
+ * 今すぐ返金の品の額 G今 と額を相談の品の額 G相（返品の品ごとの返金 設計4-1・4-4）。
+ * H の行は行ごとの累計で、今すぐの品に先頭（安い着）を、相談の品にその続きを当てる（他の行の安い着へ替えない）。
+ * 旧い行は注文の商品ごとに数を足し、G今 = A[N−1]、G相 = A[N+C−1] − A[N−1] とする（行ごとに丸めないので端数を二重に数えない）。
+ */
+function perItemAmountsOf(lines: readonly ReceivePreviewLine[]): { now: number; consult: number; hasNow: boolean; hasConsult: boolean } {
+  let now = 0;
+  let consult = 0;
+  let hasNow = false;
+  let hasConsult = false;
+  const legacy = new Map<string, { amounts: number[]; now: number; consult: number }>();
+  for (const line of lines) {
+    const nowCount = countOf(line.nowCount);
+    const consultCount = countOf(line.consultCount);
+    if (nowCount + consultCount === 0) continue;
+    if (line.receiveRefundAmountsByCount !== null) {
+      const amounts = line.receiveRefundAmountsByCount;
+      if (amounts.length === 0) continue;
+      const nowAmount = cumulativeAt(amounts, nowCount);
+      now += nowAmount;
+      consult += cumulativeAt(amounts, nowCount + consultCount) - nowAmount;
+      hasNow ||= nowCount > 0;
+      hasConsult ||= consultCount > 0;
+      continue;
+    }
+    if (line.refundAmountsByCount.length === 0) continue;
+    const entry = legacy.get(line.orderItemId) ?? { amounts: line.refundAmountsByCount, now: 0, consult: 0 };
+    entry.now += nowCount;
+    entry.consult += consultCount;
+    legacy.set(line.orderItemId, entry);
+  }
+  for (const entry of legacy.values()) {
+    const nowAmount = cumulativeAt(entry.amounts, entry.now);
+    now += nowAmount;
+    consult += cumulativeAt(entry.amounts, entry.now + entry.consult) - nowAmount;
+    hasNow ||= entry.now > 0;
+    hasConsult ||= entry.consult > 0;
+  }
+  return { now, consult, hasNow, hasConsult };
+}
+
+/**
+ * 受け取りの品ごとの見込み（返品の品ごとの返金 設計4章）。記録する額は DB の admin_receive_return が同じ式で出す（DB が正）。
+ * 今すぐの額 = max(G今 − F今, 0) + S、入力の上限 = min(注文の返せる額, G今 + S)。
+ * F今は、最初の受け取りだけの固定費用（返送料・交換の手数料・交換の送料）と floor(G今 × p / 100)。相談の分の返品の手数料は
+ * floor(G相 × p / 100) を別に切り捨てる。今すぐの分で引ききれない手数料は、同じ受け取りに相談の品があれば後で引く手数料
+ * （feePendingDeduction）へ、無ければお支払い待ち（feeDue）へ足す。従来の computeReturnRefundPreview は変えない。
+ *
+ * @design DD-ADMIN-017
+ */
+export function computePerItemReturnRefundPreview(input: PerItemReturnRefundPreviewInput): {
+  nowItemsAmount: number;
+  consultItemsAmount: number;
+  nowFees: { returnShipping: number; restocking: number; exchange: number; exchangeShipping: number };
+  consultRestockingFee: number;
+  refundAmount: number;
+  refundCap: number;
+  feePendingDeduction: number;
+  feeDue: number;
+} {
+  const amounts = perItemAmountsOf(input.lines);
+  const hasRefundItems = amounts.hasNow || amounts.hasConsult;
+  const hasExchangeFees = input.hasExchangeInThisReceipt && input.firstExchangeReceipt;
+  const nowFees = {
+    returnShipping:
+      input.returnMethod === 'shop_label' && input.firstReceipt && (hasRefundItems || input.hasExchangeInThisReceipt)
+        ? input.returnShippingFee
+        : 0,
+    restocking: Math.floor((amounts.now * input.restockingFeePercent) / 100),
+    exchange: hasExchangeFees ? input.exchangeFee : 0,
+    exchangeShipping: hasExchangeFees ? input.exchangeShippingFee : 0,
+  };
+  const consultRestockingFee = Math.floor((amounts.consult * input.restockingFeePercent) / 100);
+  const nowFeesTotal = nowFees.returnShipping + nowFees.restocking + nowFees.exchange + nowFees.exchangeShipping;
+  const shortfall = Math.max(nowFeesTotal - amounts.now, 0);
+  return {
+    nowItemsAmount: amounts.now,
+    consultItemsAmount: amounts.consult,
+    nowFees,
+    consultRestockingFee,
+    refundAmount: Math.max(amounts.now - nowFeesTotal, 0) + input.shippingRefund,
+    refundCap: Math.min(input.refundableAmount, amounts.now + input.shippingRefund),
+    feePendingDeduction: consultRestockingFee + (amounts.hasConsult ? shortfall : 0),
+    feeDue: amounts.hasConsult ? 0 : shortfall,
+  };
+}
+
+/**
  * 受け取りの画面の確定のボタンの言葉（共通の約束 C-5「受け取りのボタンの言葉」）。
  * checked は今回チェックした点数、remaining は返品の未処理の残りの点数（checked が残り全部ならすべて受け取る）、
  * refundUnits・exchangeUnits・sentBackUnits は今回の点のうち、返金の品・交換の品・お返しの数。
  * 返金の品があり今返金を選んだ時に、返金額 refundAmount が 0 円なら（手数料が商品の額以上、または額を0に直した。P20）、
  * 返金の記録を作らないので「返金なしで記録する」と書く。
+ * 品ごとの選びで今すぐと相談が混ざる時（refundChoice が mixed）だけ「受け取る（n点を ￥X 返金・m点は相談）」にする
+ * （nowUnits・consultUnits は今すぐ・相談の点数。0円でも同じ形）。片方だけの時は今までの言葉のまま。
+ *
+ * @design DD-ADMIN-019
  */
 export function buildReceiveButtonLabel(input: {
   checked: number;
@@ -96,13 +224,19 @@ export function buildReceiveButtonLabel(input: {
   refundUnits: number;
   exchangeUnits: number;
   sentBackUnits: number;
-  refundChoice: RefundChoice;
+  refundChoice: ReceiptRefundChoice;
   refundAmount: number;
   actorCanRefund: boolean;
+  nowUnits?: number;
+  consultUnits?: number;
 }): string {
   const receivesAll = input.checked >= input.remaining;
   const received = receivesAll ? 'すべて受け取り' : `${input.checked}点を受け取り`;
   const exchangeTail = input.exchangeUnits > 0 ? '、交換の品を発送待ちにする' : '';
+
+  if (input.refundChoice === 'mixed') {
+    return `受け取る（${input.nowUnits ?? 0}点を ${formatYen(input.refundAmount)} 返金・${input.consultUnits ?? 0}点は相談）`;
+  }
 
   if (input.refundUnits > 0 && input.refundChoice === 'consult') {
     return input.actorCanRefund ? '受け取りだけ記録する（返金は額を決めてから）' : '受け取りだけ記録する（額は店長が決める）';

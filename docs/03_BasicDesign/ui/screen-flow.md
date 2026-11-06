@@ -1,5 +1,7 @@
 # 画面遷移図
 
+> 返品の品ごとの返金 Task 3 確認日: 2026-11-06。画面ルートの数は変えない（51ルート）。受け取りの dialog の中の品ごとの選びと送信・結果不明の送り直し・読み直しを、末尾の「返品の受け取りの品ごとの返金（FREQ-641 / DD-ADMIN-019）」に示す。
+>
 > 波 6 確認日: 2026-11-01。パスワード変更の画面 `/account/password` の1ルートを足し、画面は51ルートになった。導線は末尾の「パスワード変更からの導線（波 6 / FR-AUTH-006）」に示す。本文（概要の「47ルート」と全画面図）の数え直しは行わない。
 >
 > H Task 5 確認日: 2026-10-29。割引の管理で3ルート（`/admin/discounts/new`・`/admin/discounts/[id]`・`/admin/discounts/[id]/edit`）を足し、画面は50ルートになった。導線は末尾の「割引の管理からの導線（H Task 5）」に示す。本文の数え直しは行わない。
@@ -495,3 +497,23 @@ flowchart TD
 ```
 
 [画面の結合試験](../../../tests/integration/ui/auth-password-change.test.tsx)・[フォーム単体](../../../tests/unit/app/account/password/password-change-form.test.tsx)。幅（390/768/1280px）は E2E `FR-ACCOUNT-046` が確かめる。
+
+## 返品の受け取りの品ごとの返金（FREQ-641 / DD-ADMIN-019）
+
+確認日: 2026-11-06。ルートは移らない。注文の詳細の返品の欄（dialog「返品」）の「受け取る」から dialog「受け取る（返品の番号）」を開き、品ごとに返金の仕方を選んで1回だけ送る。根拠は[設計書](../../superpowers/specs/2026-11-06-return-receive-per-item-design.md)3章。
+
+```mermaid
+flowchart TD
+  RT["返品の dialog"] -->|受け取る| RC["受け取りの dialog"]
+  RC -->|届いた・品の状態| U["返金の品の行に 今すぐ返金 / 額を相談（権限「返金」か P9 の時）"]
+  U -->|選びを変える| RC
+  RC -->|今すぐの額が上限を超える| BLOCK["欄の下に上限の文。押せない"]
+  BLOCK -->|上限までに直す| RC
+  RC -->|受け取る 1回の POST（品ごとの選び・親 now/consult/mixed/none）| POST["POST /api/admin/returns/{id}/receive"]
+  POST -->|受け付けた| DONE["dialog を閉じ、知らせを出して返品の一覧を読み直す"]
+  POST -->|答えが分からない| UNK["もう一度確かめる: 同じ requestKey・同じ本文で送り直す"]
+  UNK --> POST
+  POST -->|処理の中で断られた| RC
+```
+
+一部だけ届いた時とお返しを含む時は、送る前に同じ dialog の中で確かめの段を挟む（今までどおり）。[画面結合](../../../tests/integration/ui/admin-return-receive.test.tsx)・[受け取りの画面単体](../../../tests/unit/components/OrderReturnReceiveDialog.test.tsx)で検証する。幅（390/768/1280px）は E2E `FR-ADMIN-164`（controller 担当）。

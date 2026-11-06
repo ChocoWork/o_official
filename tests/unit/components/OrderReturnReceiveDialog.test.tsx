@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { dialogButtons, footerCloseButton } from './dialog-test-helpers';
 import type { OrderReturnDetail, OrderReturnLineDetail } from '@/lib/orders/returns/return-types';
 
@@ -22,8 +23,6 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const UNKNOWN_RECEIVE = '受け取りの結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。';
 /** 回数の制限（429）で処理の前に断られた時の文（E-2 の返金の画面と同じ） */
 const RATE_LIMITED = '操作が続いたため受け付けませんでした。しばらく待ってから、もう一度お試しください。';
-const CONSULT_HINT =
-  '着た跡や付属品の不足などで、お客様と相談して額を決める時に選びます。受け取りだけを記録し、返品は「返金待ち」になります。';
 const PARTIAL_CONFIRM = (n: number) => `まだ届いていない商品が ${n} 点あります。届いた分だけ記録し、残りは受付中のまま残ります。`;
 // 受け取りの後の知らせ（C-5）。画面は onDone に渡し、返品の欄が出す
 const NOTICE_RECORDED = '受け取りを記録しました。';
@@ -141,7 +140,8 @@ const calledUrls = () => mockClientFetch.mock.calls.map(([url]) => url);
 const unitRows = (dialog: HTMLElement) => within(within(dialog).getByRole('list', { name: '受け取る品' })).getAllByRole('listitem');
 /** 確定のボタン（フォームの送信ボタン）。言葉は中身で変わるので、型で探す。答えが分からない時は無い */
 const primaryButton = (dialog: HTMLElement) => dialog.querySelector('button[type="submit"]') as HTMLButtonElement;
-const amountInput = (dialog: HTMLElement) => within(dialog).getByLabelText('返金額（返せる額: ￥54,800）') as HTMLInputElement;
+// 受け取りの返金額の欄は見出し「返金額」と別に「上限 ￥X」を出す（返品の品ごとの返金 設計3-2）
+const amountInput = (dialog: HTMLElement) => within(dialog).getByRole('spinbutton', { name: '返金額' }) as HTMLInputElement;
 const shippingInput = (dialog: HTMLElement) => within(dialog).getByLabelText('送料（返せる送料: ￥800）') as HTMLInputElement;
 
 /** 行をチェックして、状態を選ぶ */
@@ -153,6 +153,11 @@ function receiveUnit(dialog: HTMLElement, index: number, disposition: string) {
 
 function receiveAll(dialog: HTMLElement, disposition: string) {
   unitRows(dialog).forEach((_, index) => receiveUnit(dialog, index, disposition));
+}
+
+/** 品ごとの返金の選びを、選べる品の全部で「額を相談」にする（返品の品ごとの返金 設計3-1） */
+function consultAll(dialog: HTMLElement) {
+  within(dialog).getAllByRole('radio', { name: '額を相談' }).forEach((radio) => fireEvent.click(radio));
 }
 
 /** 内訳の1行の文字（「商品￥24,000」のように、名前と金額を続けた物） */
@@ -168,7 +173,7 @@ beforeEach(() => {
 it('FREQ-551-AC-01: 返品詳細の数量別見込みと入金待ち額と画面とメールは17000円からになる', async () => {
   const { dialog } = await openDialog(returnDetail({ lines: [{ ...BLOUSE, refundAmountsByCount: [17000, 37000] }] }));
   receiveUnit(dialog, 0, 'not_restocked');
-  expect(within(dialog).getByRole('radio', { name: '計算どおり ￥17,000 を返金する' })).toBeChecked();
+  expect(within(dialog).getByText('今すぐ返金（1点）')).toBeInTheDocument();
   expect(amountInput(dialog)).toHaveValue(17000);
   receiveUnit(dialog, 1, 'not_restocked');
   expect(amountInput(dialog)).toHaveValue(37000);
@@ -359,14 +364,18 @@ describe('OrderReturnReceiveDialog の画面の作り', () => {
 });
 
 describe('OrderReturnReceiveDialog の返金の欄', () => {
-  it('店長が返金の品を全部受け取ると、計算どおりの返金・内訳・額と送料の入力が出て、ボタンに額が出る', async () => {
+  it('店長が返金の品を全部受け取ると、品ごとの選びは今すぐ返金から始まり、内訳・上限・額と送料の入力が出て、ボタンに額が出る', async () => {
     const { dialog } = await openDialog();
     receiveAll(dialog, 'restocked');
 
-    const refund = within(dialog).getByRole('group', { name: '返金' });
-    expect(within(refund).getByRole('radio', { name: '計算どおり ￥24,000 を返金する' })).toBeChecked();
-    expect(within(refund).getByRole('radio', { name: '額を相談してから返金する' })).not.toBeChecked();
-    expect(within(dialog).getByText(CONSULT_HINT)).toBeInTheDocument();
+    unitRows(dialog).forEach((row) => {
+      expect(within(row).getByRole('radio', { name: '今すぐ返金' })).toBeChecked();
+      expect(within(row).getByRole('radio', { name: '額を相談' })).not.toBeChecked();
+    });
+    expect(within(dialog).getByText('今すぐ返金（2点）')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/^額を相談（/)).not.toBeInTheDocument();
+    expect(within(dialog).getByText('上限 ￥24,000')).toBeInTheDocument();
+    expect(amountInput(dialog)).toHaveAttribute('max', '24000');
     expect(breakdownRow(dialog, '商品')).toBe('商品￥24,000');
     expect(breakdownRow(dialog, '送料')).toBe('送料￥0');
     expect(breakdownRow(dialog, '返金額')).toBe('返金額￥24,000');
@@ -381,7 +390,8 @@ describe('OrderReturnReceiveDialog の返金の欄', () => {
     const { dialog } = await openDialog();
     receiveUnit(dialog, 0, 'not_restocked');
 
-    expect(within(dialog).getByRole('radio', { name: '計算どおり ￥12,000 を返金する' })).toBeChecked();
+    expect(within(dialog).getByText('今すぐ返金（1点）')).toBeInTheDocument();
+    expect(amountInput(dialog)).toHaveValue(12000);
     expect(primaryButton(dialog)).toHaveTextContent(/^1点を受け取って ￥12,000 を返金する$/);
   });
 
@@ -407,7 +417,7 @@ describe('OrderReturnReceiveDialog の返金の欄', () => {
     receiveUnit(dialog, 2, 'restocked');
     expect(breakdownRow(dialog, '商品')).toBe('商品￥14,333');
     expect(breakdownRow(dialog, '返金額')).toBe('返金額￥14,333');
-    expect(within(dialog).getByRole('radio', { name: '計算どおり ￥14,333 を返金する' })).toBeChecked();
+    expect(amountInput(dialog)).toHaveValue(14333);
     expect(primaryButton(dialog)).toHaveTextContent(/^すべて受け取って ￥14,333 を返金する$/);
 
     fireEvent.click(primaryButton(dialog));
@@ -425,7 +435,7 @@ describe('OrderReturnReceiveDialog の返金の欄', () => {
     });
   });
 
-  it('返金額は手で直せて、上限は返せる額。行や送料を変えると見込みの額に戻る', async () => {
+  it('返金額は手で直せて、上限（今すぐの品の額＋送料）を超えた額は丸めずに止める。行や送料を変えると見込みの額に戻る', async () => {
     const { dialog } = await openDialog();
     receiveAll(dialog, 'restocked');
 
@@ -434,11 +444,11 @@ describe('OrderReturnReceiveDialog の返金の欄', () => {
     expect(primaryButton(dialog)).toHaveTextContent(/^すべて受け取って ￥20,000 を返金する$/);
     // 内訳は、行と送料から出した見込みのまま
     expect(breakdownRow(dialog, '返金額')).toBe('返金額￥24,000');
-    // 計算どおりの選びの文字も、見込みのまま
-    expect(within(dialog).getByRole('radio', { name: '計算どおり ￥24,000 を返金する' })).toBeInTheDocument();
 
     fireEvent.change(amountInput(dialog), { target: { value: '99999999' } });
-    expect(amountInput(dialog)).toHaveValue(54800);
+    expect(amountInput(dialog)).toHaveValue(99999999);
+    expect(amountInput(dialog)).toHaveAttribute('aria-invalid', 'true');
+    expect(primaryButton(dialog)).toBeDisabled();
 
     fireEvent.change(amountInput(dialog), { target: { value: '20000' } });
     fireEvent.click(within(unitRows(dialog)[1]).getByRole('checkbox', { name: '届いた' }));
@@ -496,7 +506,7 @@ describe('OrderReturnReceiveDialog の返金の欄', () => {
     expect(breakdownRow(dialog, '返送料')).toBe(`返送料${MINUS}￥800`);
     expect(breakdownRow(dialog, '返品の手数料')).toBe(`返品の手数料${MINUS}￥2,400`);
     expect(breakdownRow(dialog, '返金額')).toBe('返金額￥20,800');
-    expect(within(dialog).getByRole('radio', { name: '計算どおり ￥20,800 を返金する' })).toBeChecked();
+    expect(amountInput(dialog)).toHaveValue(20800);
   });
 
   it('2回目以降の受け取りには、返送料が付かない（返品の手数料だけ）', async () => {
@@ -517,14 +527,15 @@ describe('OrderReturnReceiveDialog の返金の欄', () => {
     expect(breakdownRow(dialog, '返金額')).toBe('返金額￥21,600');
   });
 
-  it('「額を相談してから返金する」を選ぶと、内訳と入力を隠し、ボタンは「受け取りだけ記録する」になる', async () => {
+  it('全部の品を「額を相談」にすると、内訳と入力を隠し、ボタンは「受け取りだけ記録する」になる', async () => {
     const { dialog } = await openDialog();
     receiveAll(dialog, 'restocked');
 
-    fireEvent.click(within(dialog).getByRole('radio', { name: '額を相談してから返金する' }));
+    consultAll(dialog);
 
     expect(within(dialog).queryByRole('group', { name: '返金の内訳' })).not.toBeInTheDocument();
-    expect(within(dialog).queryByLabelText('返金額（返せる額: ￥54,800）')).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('spinbutton', { name: '返金額' })).not.toBeInTheDocument();
+    expect(within(dialog).getByText('額を相談（2点）')).toBeInTheDocument();
     expect(primaryButton(dialog)).toHaveTextContent('受け取りだけ記録する（返金は額を決めてから）');
     expect(primaryButton(dialog)).toBeEnabled();
   });
@@ -561,7 +572,7 @@ describe('OrderReturnReceiveDialog の返金額が0円になる受け取り（�
     expect(breakdownRow(dialog, '返品の手数料')).toBe(`返品の手数料${MINUS}￥24,000`);
     expect(breakdownRow(dialog, '返金額')).toBe('返金額￥0');
     expect(amountInput(dialog)).toHaveValue(0);
-    expect(within(dialog).getByRole('radio', { name: '計算どおり ￥0 を返金する' })).toBeChecked();
+    expect(within(dialog).getByText('今すぐ返金（2点）')).toBeInTheDocument();
     expect(primaryButton(dialog)).toBeEnabled();
     expect(primaryButton(dialog)).toHaveTextContent(/^すべて受け取り、返金なしで記録する$/);
   });
@@ -648,7 +659,7 @@ describe('OrderReturnReceiveDialog のお支払い待ちの見込み', () => {
     const notice = within(dialog).getByText(NOTICE('￥6,000'));
     const breakdown = within(dialog).getByRole('group', { name: '返金の内訳' });
     expect(breakdown.nextElementSibling).toBe(notice);
-    fireEvent.click(within(dialog).getByRole('radio', { name: '額を相談してから返金する' }));
+    consultAll(dialog);
     expect(within(dialog).queryByText(NOTICE('￥6,000'))).not.toBeInTheDocument();
   });
 
@@ -786,7 +797,7 @@ it('在庫不足で断られたら返品を読み直し、今の在庫で「作�
     receiveAll(dialog, 'restocked');
     const block = within(dialog).getByRole('group', { name: 'ウールコート（黒 / XL） × 2' });
     fireEvent.click(within(block).getByRole('radio', { name: '返金に変える' }));
-    expect(within(dialog).getByRole('radio', { name: '計算どおり ￥50,000 を返金する' })).toBeChecked();
+    expect(within(dialog).getByText('今すぐ返金（2点）')).toBeInTheDocument();
     expect(breakdownRow(dialog, '商品')).toBe('商品￥50,000');
     expect(primaryButton(dialog)).toHaveTextContent(/^すべて受け取って ￥50,000 を返金する$/);
     expect(within(block).queryByText('作って送る（お届けの目安 14日）')).not.toBeInTheDocument();
@@ -953,7 +964,8 @@ it('在庫不足で断られたら返品を読み直し、今の在庫で「作�
 
     fireEvent.click(within(within(dialog).getByRole('group', { name: 'ウールコート（黒 / XL） × 1' })).getByRole('radio', { name: '返金に変える' }));
 
-    expect(within(dialog).getByRole('radio', { name: '計算どおり ￥30,000 を返金する' })).toBeChecked();
+    expect(within(dialog).getByText('今すぐ返金（1点）')).toBeInTheDocument();
+    expect(amountInput(dialog)).toHaveValue(30000);
     expect(primaryButton(dialog)).toHaveTextContent(/^すべて受け取って ￥30,000 を返金する$/);
     fireEvent.click(primaryButton(dialog));
 
@@ -975,7 +987,7 @@ it('在庫不足で断られたら返品を読み直し、今の在庫で「作�
 
     fireEvent.click(within(within(dialog).getByRole('group', { name: 'ウールコート（黒 / XL） × 2' })).getByRole('radio', { name: '返金に変える' }));
 
-    expect(within(dialog).getByRole('radio', { name: '計算どおり ￥50,000 を返金する' })).toBeChecked();
+    expect(within(dialog).getByText('今すぐ返金（2点）')).toBeInTheDocument();
     expect(primaryButton(dialog)).toHaveTextContent(/^すべて受け取って ￥50,000 を返金する$/);
   });
 
@@ -1116,7 +1128,9 @@ describe('OrderReturnReceiveDialog のお返し', () => {
     receiveUnit(dialog, 0, 'restocked');
     receiveUnit(dialog, 1, 'sent_back');
 
-    expect(within(dialog).getByRole('radio', { name: '計算どおり ￥12,000 を返金する' })).toBeChecked();
+    expect(within(dialog).getByText('今すぐ返金（1点）')).toBeInTheDocument();
+    expect(amountInput(dialog)).toHaveValue(12000);
+    expect(within(unitRows(dialog)[1]).queryAllByRole('radio')).toHaveLength(0);
     expect(within(dialog).getByRole('checkbox', { name: 'お客様に知らせる' })).toBeDisabled();
     expect(within(dialog).getByRole('group', { name: 'お返し' })).toBeInTheDocument();
   });
@@ -1240,7 +1254,8 @@ describe('OrderReturnReceiveDialog の受け取り', () => {
     });
     expect(requestBodyOf(0)).toEqual({
       requestKey: expect.stringMatching(UUID_PATTERN),
-      units: [{ returnLineId: 'line-blouse', disposition: 'restocked', quantity: 2 }],
+      // 返金の品には品ごとの選びを必ず付ける（返品の品ごとの返金 設計5-1）
+      units: [{ returnLineId: 'line-blouse', disposition: 'restocked', quantity: 2, refundChoice: 'now' }],
       exchangeOverrides: [],
       refundChoice: 'now',
       refundAmount: null,
@@ -1296,12 +1311,15 @@ describe('OrderReturnReceiveDialog の受け取り', () => {
     mockClientFetch.mockResolvedValueOnce(json({ data: receiveData({ returnStatus: 'open' }) }));
     receiveAll(dialog, 'restocked');
     fireEvent.change(shippingInput(dialog), { target: { value: '300' } });
-    fireEvent.click(within(dialog).getByRole('radio', { name: '額を相談してから返金する' }));
+    consultAll(dialog);
 
     fireEvent.click(primaryButton(dialog));
 
     await waitFor(() => expect(onDone).toHaveBeenCalledWith(NOTICE_RECORDED));
-    expect(requestBodyOf(0)).toMatchObject({ refundChoice: 'consult', refundAmount: null, refundShippingAmount: 0 });
+    expect(requestBodyOf(0)).toMatchObject({
+      refundChoice: 'consult', refundAmount: null, refundShippingAmount: 0,
+      units: [{ returnLineId: 'line-blouse', disposition: 'restocked', quantity: 2, refundChoice: 'consult' }],
+    });
   });
 
   it('サポートの受け取りは、返金の品があれば相談（返金待ち）として送る', async () => {
@@ -1491,7 +1509,7 @@ describe('OrderReturnReceiveDialog の答えが分からない時（今返金を
       expect(within(unitRows(dialog)[0]).getByRole('combobox', { name: '品の状態' })).toBeDisabled();
       expect(amountInput(dialog)).toBeDisabled();
       expect(shippingInput(dialog)).toBeDisabled();
-      expect(within(dialog).getByRole('radio', { name: '額を相談してから返金する' })).toBeDisabled();
+      expect(within(unitRows(dialog)[0]).getByRole('radio', { name: '額を相談' })).toBeDisabled();
       expect(within(dialog).getByRole('checkbox', { name: 'お客様に知らせる' })).toBeDisabled();
       // 操作は「もう一度確かめる」と「閉じる」だけ
       expect(dialogButtons(dialog).map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
@@ -1617,6 +1635,206 @@ describe('OrderReturnReceiveDialog の答えが分からない時（今返金を
     await waitFor(() => expect(onDone).toHaveBeenCalledWith(NOTICE_CLOSED_MISSING));
     expect(calledUrls()).toEqual([RETURNS_URL, CLOSE_MISSING_URL, CLOSE_MISSING_URL]);
     expect(requestBodyOf(1)).toEqual(requestBodyOf(0));
+  });
+});
+
+describe('OrderReturnReceiveDialog の品ごとの返金の選び（返品の品ごとの返金 設計3章）', () => {
+  const NOW = '今すぐ返金';
+  const CONSULT = '額を相談';
+  const CONSULT_NOTE = '返金待ちになります。額はあとで「額を決めて返金する」で決めます。';
+  const capError = (yen: string) =>
+    `この受け取りの商品の額と送料（${yen}）を超えて入れられません。ほかの受け取りの分は、返品の画面の「額を決めて返金する」で返してください。`;
+  /** H の注文の同じ返品行の2点（17000 と 20000 の着）。返品の手数料 10% */
+  const hDetail = (overrides: Partial<OrderReturnDetail> = {}) => returnDetail({
+    fees: { ...returnDetail().fees, restockingFeePercent: 10 },
+    lines: [{ ...BLOUSE, refundAmountsByCount: [17000, 37000], receiveRefundAmountsByCount: [17000, 37000] }],
+    ...overrides,
+  });
+  const choiceRadios = (dialog: HTMLElement) => within(dialog).queryAllByRole('radio', { name: /^(今すぐ返金|額を相談)$/ });
+  const unitChoice = (dialog: HTMLElement, index: number, name: string) =>
+    within(unitRows(dialog)[index]).getByRole('radio', { name }) as HTMLInputElement;
+  const capAmountInput = (dialog: HTMLElement) => within(dialog).getByRole('spinbutton', { name: '返金額' }) as HTMLInputElement;
+
+  /** 店長が2点を受け取り、2点目を相談にして、送料 500 を入れる */
+  async function openMixed() {
+    const opened = await openDialog(hDetail(), { refundableAmount: 50000 });
+    receiveAll(opened.dialog, 'restocked');
+    fireEvent.click(unitChoice(opened.dialog, 1, CONSULT));
+    fireEvent.change(shippingInput(opened.dialog), { target: { value: '500' } });
+    return opened;
+  }
+
+  it('DD-ADMIN-019 混在の見出しと上限とボタンを出す', async () => {
+    const { dialog } = await openMixed();
+    const amountInput = capAmountInput(dialog);
+
+    expect(screen.getByText('今すぐ返金（1点）')).toBeVisible();
+    expect(screen.getByText('額を相談（1点）')).toBeVisible();
+    expect(screen.getByText('上限 ￥17,500')).toBeVisible();
+    expect(amountInput).toHaveAttribute('max', '17500');
+    expect(amountInput).toHaveValue(15800);
+    expect(breakdownRow(dialog, '商品')).toBe('商品￥17,000');
+    expect(breakdownRow(dialog, '返品の手数料')).toBe(`返品の手数料${MINUS}￥1,700`);
+    expect(screen.getByRole('button', { name: '受け取る（1点を ￥15,800 返金・1点は相談）' })).toBeEnabled();
+    // 相談の品名と設計3-2の全文
+    const consultList = within(dialog).getByRole('list', { name: '額を相談の品' });
+    expect(within(consultList).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['シルクブラウス（白 / M）']);
+    expect(within(dialog).getByText(CONSULT_NOTE)).toBeVisible();
+    // 前の受け取り全体の選びは無い
+    expect(within(dialog).queryByRole('radio', { name: /計算どおり/ })).not.toBeInTheDocument();
+  });
+
+  it('DD-ADMIN-019 上限1円超過は丸めず警告し上限ちょうどに直すと押せる', async () => {
+    const { dialog, onDone } = await openMixed();
+    mockClientFetch.mockResolvedValueOnce(json({ data: receiveData({ refundId: 'refund-1', refundAmount: 17500, refundStatus: 'pending' }) }));
+    const amountInput = capAmountInput(dialog);
+
+    fireEvent.change(amountInput, { target: { value: '17501' } });
+    const submit = primaryButton(dialog);
+    expect(amountInput).toHaveValue(17501);
+    const error = screen.getByText(capError('￥17,500'));
+    expect(error).toBeVisible();
+    expect(amountInput).toHaveAttribute('aria-invalid', 'true');
+    expect(amountInput.getAttribute('aria-describedby')?.split(' ')).toContain(error.id);
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(amountInput, { target: { value: '17500' } });
+    expect(screen.queryByText(capError('￥17,500'))).not.toBeInTheDocument();
+    expect(amountInput).not.toHaveAttribute('aria-invalid');
+    expect(primaryButton(dialog)).toBeEnabled();
+    expect(primaryButton(dialog)).toHaveTextContent('受け取る（1点を ￥17,500 返金・1点は相談）');
+    fireEvent.click(primaryButton(dialog));
+
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith(NOTICE_ACCEPTED));
+    expect(requestBodyOf(0)).toMatchObject({
+      refundChoice: 'mixed', refundAmount: 17500, refundShippingAmount: 500,
+      units: [
+        { returnLineId: 'line-blouse', disposition: 'restocked', quantity: 1, refundChoice: 'now' },
+        { returnLineId: 'line-blouse', disposition: 'restocked', quantity: 1, refundChoice: 'consult' },
+      ],
+    });
+  });
+
+  it('DD-ADMIN-019 注文残額がG今+Sより少ない時は、上限は注文残額。見込みの額も上限に切る', async () => {
+    const { dialog } = await openDialog(hDetail({ fees: { ...returnDetail().fees } }), { refundableAmount: 10000 });
+    receiveAll(dialog, 'restocked');
+    fireEvent.click(unitChoice(dialog, 1, CONSULT));
+
+    expect(screen.getByText('上限 ￥10,000')).toBeVisible();
+    expect(capAmountInput(dialog)).toHaveAttribute('max', '10000');
+    expect(capAmountInput(dialog)).toHaveValue(10000);
+    expect(primaryButton(dialog)).toHaveTextContent('受け取る（1点を ￥10,000 返金・1点は相談）');
+    expect(primaryButton(dialog)).toBeEnabled();
+  });
+
+  it('DD-ADMIN-019 送料が額より大きい間は送れない（混在でも）', async () => {
+    const { dialog } = await openMixed();
+
+    fireEvent.change(capAmountInput(dialog), { target: { value: '400' } });
+
+    expect(primaryButton(dialog)).toBeDisabled();
+  });
+
+  it('DD-ADMIN-019 混在の今すぐが0円でも押せ、相談の品を残して送る', async () => {
+    const { dialog, onDone } = await openDialog(hDetail({
+      lines: [{ ...BLOUSE, refundAmountsByCount: [0, 20000], receiveRefundAmountsByCount: [0, 20000] }],
+    }));
+    mockClientFetch.mockResolvedValueOnce(json({ data: receiveData({ refundAmount: 0, refundStatus: 'waived' }) }));
+    receiveAll(dialog, 'restocked');
+    fireEvent.click(unitChoice(dialog, 1, CONSULT));
+
+    expect(primaryButton(dialog)).toHaveTextContent('受け取る（1点を ￥0 返金・1点は相談）');
+    expect(primaryButton(dialog)).toBeEnabled();
+    fireEvent.click(primaryButton(dialog));
+
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith(NOTICE_RECORDED));
+    expect(requestBodyOf(0)).toMatchObject({ refundChoice: 'mixed', refundAmount: null, refundShippingAmount: 0 });
+    expect((requestBodyOf(0).units as Array<{ refundChoice?: string }>).map((unit) => unit.refundChoice)).toEqual(['now', 'consult']);
+  });
+
+  it('DD-ADMIN-019 単独のnow・consult・noneは既存のボタンの言葉のまま。品の選びは必ず送る', async () => {
+    const { dialog } = await openDialog(hDetail({ fees: { ...returnDetail().fees } }));
+    receiveAll(dialog, 'restocked');
+    expect(primaryButton(dialog)).toHaveTextContent('すべて受け取って ￥37,000 を返金する');
+    expect(screen.getByText('今すぐ返金（2点）')).toBeVisible();
+    expect(screen.queryByText(/^額を相談（/)).not.toBeInTheDocument();
+
+    fireEvent.click(unitChoice(dialog, 0, CONSULT));
+    fireEvent.click(unitChoice(dialog, 1, CONSULT));
+    expect(primaryButton(dialog)).toHaveTextContent('受け取りだけ記録する（返金は額を決めてから）');
+    expect(screen.getByText('額を相談（2点）')).toBeVisible();
+    expect(within(dialog).queryByRole('spinbutton', { name: '返金額' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(/^送料/)).not.toBeInTheDocument();
+  });
+
+  it('DD-ADMIN-019 結果不明の後も同じrequestKeyと送信した品ごとの本文を再送する', async () => {
+    const { dialog, onDone } = await openMixed();
+    mockClientFetch
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(json({ data: receiveData({ refundId: 'refund-1', refundAmount: 15800, refundStatus: 'pending', replayed: true }) }));
+    fireEvent.click(primaryButton(dialog));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(UNKNOWN_RECEIVE);
+    // 結果不明の間は品の選びも変えられない
+    expect(unitChoice(dialog, 0, NOW)).toBeDisabled();
+    expect(unitChoice(dialog, 1, CONSULT)).toBeDisabled();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith(NOTICE_ACCEPTED));
+
+    const firstPost = requestBodyOf(0);
+    const secondPost = requestBodyOf(1);
+    const postCount = calledUrls().filter((url) => url === RECEIVE_URL).length;
+    expect(secondPost).toEqual(firstPost);
+    expect(postCount).toBe(2);
+    expect(firstPost.requestKey).toMatch(UUID_PATTERN);
+    expect((firstPost.units as Array<{ refundChoice?: string }>).map((unit) => unit.refundChoice)).toEqual(['now', 'consult']);
+  });
+
+  it('DD-ADMIN-019 選びは届いた返金の品にだけ、状態の直下に出す。未選択・お返し・交換には出さず、交換→返金では出す', async () => {
+    const coat = exchangeLine({ stockQuantity: 0, outOfStockExchange: 'decline' }, { refundAmountsByCount: [30000] });
+    const { dialog } = await openDialog(returnDetail({ lines: [BLOUSE, coat] }));
+
+    // 何も選んでいない間は無い
+    expect(choiceRadios(dialog)).toHaveLength(0);
+    // チェックしただけ（状態が未選択）では出さない
+    fireEvent.click(within(unitRows(dialog)[0]).getByRole('checkbox', { name: '届いた' }));
+    expect(choiceRadios(dialog)).toHaveLength(0);
+    fireEvent.change(within(unitRows(dialog)[0]).getByRole('combobox', { name: '品の状態' }), { target: { value: 'restocked' } });
+    expect(within(unitRows(dialog)[0]).getAllByRole('radio')).toHaveLength(2);
+    expect(unitChoice(dialog, 0, NOW)).toBeChecked();
+    expect(unitChoice(dialog, 0, CONSULT)).not.toBeChecked();
+    // 状態の選びのすぐ後（行の中）に置く
+    const select = within(unitRows(dialog)[0]).getByRole('combobox', { name: '品の状態' });
+    expect(select.compareDocumentPosition(unitChoice(dialog, 0, NOW)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // お返しには出さない
+    receiveUnit(dialog, 1, 'sent_back');
+    expect(within(unitRows(dialog)[1]).queryAllByRole('radio')).toHaveLength(0);
+    // 交換の品には出さない
+    receiveUnit(dialog, 2, 'restocked');
+    expect(within(unitRows(dialog)[2]).queryAllByRole('radio')).toHaveLength(0);
+    // 交換を「返金に変える」にすると出す
+    fireEvent.click(within(dialog).getByRole('radio', { name: '返金に変える' }));
+    expect(unitChoice(dialog, 2, NOW)).toBeChecked();
+    expect(choiceRadios(dialog)).toHaveLength(4);
+  });
+
+  it('DD-ADMIN-019 同じ行の2点を別々に選べ、ラジオの名前と group は品ごとに分かれる。矢印キーで選べる', async () => {
+    const user = userEvent.setup();
+    const { dialog } = await openDialog(hDetail());
+    receiveAll(dialog, 'restocked');
+
+    const first = within(unitRows(dialog)[0]).getByRole('radiogroup', { name: '返金' });
+    const second = within(unitRows(dialog)[1]).getByRole('radiogroup', { name: '返金' });
+    expect(first).not.toBe(second);
+    expect(unitChoice(dialog, 0, NOW).name).not.toBe(unitChoice(dialog, 1, NOW).name);
+
+    unitChoice(dialog, 1, NOW).focus();
+    await user.keyboard('{ArrowDown}');
+    expect(unitChoice(dialog, 1, CONSULT)).toBeChecked();
+    expect(unitChoice(dialog, 1, CONSULT)).toHaveFocus();
+    expect(unitChoice(dialog, 0, NOW)).toBeChecked();
+    expect(screen.getByText('今すぐ返金（1点）')).toBeVisible();
+    expect(screen.getByText('額を相談（1点）')).toBeVisible();
   });
 });
 
