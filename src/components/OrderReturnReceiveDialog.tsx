@@ -104,7 +104,9 @@ const UNIT_CHOICE_OPTIONS: ReadonlyArray<readonly [ReceiveUnitRefundChoice, stri
 const CONSULT_NOTE = '返金待ちになります。額はあとで「額を決めて返金する」で決めます。';
 const capErrorOf = (cap: number) =>
   `この受け取りの商品の額と送料（${formatYen(cap)}）を超えて入れられません。ほかの受け取りの分は、返品の画面の「額を決めて返金する」で返してください。`;
-const MAKE_REASON = '在庫が足りないため、作ってお送りします。';
+const autoRefundOverLimitOf = (refundable: number) =>
+  `今すぐ返金の額が注文の返せる額（${formatYen(refundable)}）を超えます。一部を「額を相談」にしてください。`;
+const MAKE_REASON ='在庫が足りないため、作ってお送りします。';
 const CHOOSE_NOTICE = '在庫が足りません。「作って送る」か「返金に変える」を選んでください。';
 const SUPPORT_STOCK_NOTICE = '在庫が足りません。この品は店長が受け取ります。';
 const SENT_BACK_CONFIRM = 'お客様にメッセージが届きます。取り消せません。';
@@ -442,10 +444,10 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
   const chosenOf = (row: UnitRow): ReceiveUnitRefundChoice => rowStates[row.key]?.refundChoice ?? 'now';
   // 品ごとの選びは、権限「返金」を持つ人と、持たない人でも今の自動の返金（P9: お客様の申し込みの返品で、返送不要でない）が許される時に出す
   // （設計3-3。役割の名前では決めない。DB も同じ条件で断る）。P9 の人は額・送料を変えられず、額は DB が計算する。
-  // 今すぐの分の見込みが注文の今の返せる額を超える時は、額を切って送れず DB が受け取りごと断るので、選びを出さず全部を相談にする
+  // 選びは今の選びに関わらず出したままにする（押す順で画面が変わらないように）。今すぐの分の見込みが注文の今の返せる額を超える時は、
+  // 額を切って送れず DB が受け取りごと断るので、押せなくして理由を出す（一部を「額を相談」にすれば下げられる）
   const p9Allowed = !canRefund && detail.source === 'customer_request' && detail.returnMethod !== 'not_required';
-  const supportAutoRefund = p9Allowed && previewOf(chosenOf, 0).refundAmount <= refundableAmount;
-  const showsChoices = canRefund || supportAutoRefund;
+  const showsChoices = canRefund || p9Allowed;
   const choiceOf = (row: UnitRow): ReceiveUnitRefundChoice => (showsChoices ? chosenOf(row) : 'consult');
   const refundRows = rows.filter(isRefundUnit);
   const nowRows = refundRows.filter((row) => choiceOf(row) === 'now');
@@ -462,6 +464,7 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
   // 上限は min(注文の返せる額, 今すぐの品の額 + 送料)（設計4-2）。見込みも上限で切る。手で入れた額は丸めずに保ち、超えたら誤りの文で止める
   const amount = amountEntered ?? Math.min(preview.refundAmount, preview.refundCap);
   const amountOverCap = canRefund && nowUnits > 0 && amount > preview.refundCap;
+  const autoRefundOverLimit = p9Allowed && nowUnits > 0 && preview.refundAmount > refundableAmount;
   const breakdownRows: Array<[string, string]> = [['商品', formatYen(preview.nowItemsAmount)]];
   if (preview.nowFees.returnShipping > 0) breakdownRows.push(['返送料', `${MINUS}${formatYen(preview.nowFees.returnShipping)}`]);
   if (preview.nowFees.restocking > 0) breakdownRows.push(['返品の手数料', `${MINUS}${formatYen(preview.nowFees.restocking)}`]);
@@ -492,7 +495,7 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
   // DB は「送料 ≤ 額」を入力の誤りにする。画面に新しい文は足さず、直るまで押せなくする（E-2 の返金の画面と同じ）。
   // 返金額が0円（手数料が商品の額以上か、店長が0に直した）の時は押せる。DB は返金を作らず、受け取りだけを記録する（P20）。
   // 押すボタンの言葉は buildReceiveButtonLabel が「返金なしで記録する」にする
-  const amountInvalid = nowUnits > 0 && (amount < shippingAmount || amountOverCap);
+  const amountInvalid = nowUnits > 0 && (amount < shippingAmount || amountOverCap || autoRefundOverLimit);
   const canSubmitForm =
     !stopped && checkedCount >= 1 && undecidedCount === 0 && !sentBackInvalid && unresolvedCount === 0 && !amountInvalid && !supportStockExceeded && reloadError === null;
   // 一部だけ届いた時と、お返しを含む時は、送る前に確かめを挟む
@@ -653,7 +656,8 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
                         dispositionOptions={dispositionOptions}
                         onToggle={(checked) => {
                           const current = rowStates[row.key] ?? EMPTY_ROW;
-                          changeRow(row.key, { ...current, checked, disposition: checked ? current.disposition : '' });
+                          // 外した品は状態と返金の選びを最初に戻す（送らない。入れ直すと最初の値の今すぐ返金から）
+                          changeRow(row.key, checked ? { ...current, checked } : EMPTY_ROW);
                         }}
                         onSelect={(value) =>
                           changeRow(row.key, { ...(rowStates[row.key] ?? EMPTY_ROW), disposition: isDisposition(value) ? value : '' })
@@ -782,7 +786,11 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
                     />
                   ) : (
                     <>
-                      <p className="font-acumin lk-text-sm text-black">{`受け取ると、計算どおり ${formatYen(preview.refundAmount)} を自動で返金します（額は変えられません）。`}</p>
+                      {autoRefundOverLimit ? (
+                        <p role="alert" className="font-acumin lk-text-3xs text-red-700">{autoRefundOverLimitOf(refundableAmount)}</p>
+                      ) : (
+                        <p className="font-acumin lk-text-sm text-black">{`受け取ると、計算どおり ${formatYen(preview.refundAmount)} を自動で返金します（額は変えられません）。`}</p>
+                      )}
                       {feeDueNotice}
                     </>
                   )}

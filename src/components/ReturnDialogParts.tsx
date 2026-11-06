@@ -178,7 +178,7 @@ function ReturnNumberInput({ id, label, value, max, disabled, onChange, preserve
         className="mt-1 h-9 w-full border border-[#d4d4d4] bg-white px-2 font-acumin lk-text-3xs text-black disabled:bg-[#f3f3f3]"
       />
       {error ? (
-        <p id={errorId} className="mt-1 font-acumin lk-text-3xs text-red-700">
+        <p id={errorId} role="alert" className="mt-1 font-acumin lk-text-3xs text-red-700">
           {error}
         </p>
       ) : null}

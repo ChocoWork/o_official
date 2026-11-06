@@ -85,8 +85,9 @@ export function computeReturnRefundPreview(input: {
 
 /**
  * 品ごとの見込みの1行（返品の行ごと）。nowCount・consultCount は、この受け取りでその行の品を今すぐ返金・額を相談にした数。
- * receiveRefundAmountsByCount は H の注文だけの、その行が確保した着の累計（添字 k−1）。null の行（H の無い旧い注文・交換の行）は
- * refundAmountsByCount（注文の商品ごとの共通の累計）へ戻る。
+ * receiveRefundAmountsByCount は H の注文だけの、その行が確保した着の累計（添字 k−1。DB の return_detail_json が
+ * private.return_receive_amounts から返す receive_refund_amounts_by_count。H の注文なら交換の行にも配列がある）。
+ * null になるのは H の無い旧い注文の行だけで、refundAmountsByCount（注文の商品ごとの共通の累計）へ戻る。
  */
 export type ReceivePreviewLine = {
   returnLineId: string;

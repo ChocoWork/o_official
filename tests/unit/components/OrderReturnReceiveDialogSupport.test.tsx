@@ -16,6 +16,8 @@ const SUPPORT_CONSULT_BUTTON = '受け取りだけ記録する（額は店長が
 const AWAITING_REFUND = '確かめ中の返金があります。先に確かめてください。';
 const NOTICE_RECORDED = '受け取りを記録しました。';
 const NOTICE_ACCEPTED = '受け取りを記録し、返金を受け付けました。';
+const OVER_LIMIT_TEXT = (refundable: number) =>
+  `今すぐ返金の額が注文の返せる額（${formatYen(refundable)}）を超えます。一部を「額を相談」にしてください。`;
 
 /** 受付中（承認した後）の、お客様の申し込みの返品。2点とも未処理で、返金の品 */
 const acceptedReturn = (overrides: Partial<OrderReturnDetail> = {}) =>
@@ -236,15 +238,19 @@ describe('OrderReturnReceiveDialog のサポートの受け取り（お客様の
     expect(requestBodyOf(0)).toMatchObject({ refundChoice: 'now', refundAmount: null, refundShippingAmount: 0 });
   });
 
-  it('見込みが注文の今の返せる額を超える時は、サポートに自動の返金の選びを出さず、相談（返金待ち）だけで送る', async () => {
+  it('DD-ADMIN-019 見込みが注文の今の返せる額を超える時は、選びを残したまま押せなくして理由を出し、全部を相談にすると送れる', async () => {
     // 見込み ￥24,000 が返せる額 ￥10,000 を超える。サポートは額を切って送れず、DB は返せる額を超える今返金を受け取りごと断るため
     const { dialog, onDone } = await openReceive(acceptedReturn(), false, 10000);
     mockClientFetch.mockResolvedValueOnce(jsonResponse({ data: receiveData() }));
     receiveAll(dialog);
 
     expect(within(dialog).queryByText(AUTO_TEXT)).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole('radio')).not.toBeInTheDocument();
-    expect(within(dialog).getByText(SUPPORT_NOTICE)).toBeInTheDocument();
+    expect(within(dialog).getAllByRole('radio', { name: /^(今すぐ返金|額を相談)$/ })).toHaveLength(4);
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(OVER_LIMIT_TEXT(10000));
+    expect(submitButton(dialog)).toBeDisabled();
+
+    consultAll(dialog);
+    expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument();
     expect(submitButton(dialog)).toHaveTextContent(SUPPORT_CONSULT_BUTTON);
     expect(submitButton(dialog)).toBeEnabled();
 
@@ -357,5 +363,94 @@ describe('OrderReturnReceiveDialog の品ごとの選びと権限（返品の品
 
     expect(perItemRadiosOf(dialog)).toHaveLength(0);
     expect(within(dialog).getByText(SUPPORT_NOTICE)).toBeInTheDocument();
+  });
+
+  // 返せる額 ￥15,000、返金の品 A・B が ￥12,000 ずつ。今すぐが2点（￥24,000）だと超え、1点（￥12,000）なら収まる
+  const receiveRow = (dialog: HTMLElement, index: number) => {
+    fireEvent.click(within(unitRow(dialog, index)).getByRole('checkbox', { name: '届いた' }));
+    fireEvent.change(within(unitRow(dialog, index)).getByRole('combobox', { name: '品の状態' }), { target: { value: 'restocked' } });
+  };
+  const choose = (dialog: HTMLElement, index: number, name: '今すぐ返金' | '額を相談') =>
+    fireEvent.click(within(unitRow(dialog, index)).getByRole('radio', { name }));
+  const uiFactsOf = (dialog: HTMLElement) => ({
+    checked: perItemRadiosOf(dialog).map((radio) => (radio as HTMLInputElement).checked),
+    alert: within(dialog).queryByRole('alert')?.textContent ?? null,
+    submit: submitButton(dialog).textContent,
+    enabled: !submitButton(dialog).disabled,
+  });
+
+  it.each<[string, (dialog: HTMLElement) => void]>([
+    ['A・B を受け取ってから A を相談', (dialog) => { receiveRow(dialog, 0); receiveRow(dialog, 1); choose(dialog, 0, '額を相談'); }],
+    ['A を受け取って相談にしてから B を受け取る', (dialog) => { receiveRow(dialog, 0); choose(dialog, 0, '額を相談'); receiveRow(dialog, 1); }],
+    ['A を相談・B を受け取り・A を今すぐ・A を相談', (dialog) => {
+      receiveRow(dialog, 0); choose(dialog, 0, '額を相談'); receiveRow(dialog, 1); choose(dialog, 0, '今すぐ返金'); choose(dialog, 0, '額を相談');
+    }],
+    ['B を相談・A を相談・B を今すぐ', (dialog) => {
+      receiveRow(dialog, 0); receiveRow(dialog, 1); choose(dialog, 1, '額を相談'); choose(dialog, 0, '額を相談'); choose(dialog, 1, '今すぐ返金');
+    }],
+  ])('DD-ADMIN-019 P9の選びは押す順に関わらず同じ選びなら同じ画面になる（%s）', async (_name, act) => {
+    const { dialog } = await openReceive(acceptedReturn(), false, 15000);
+    act(dialog);
+
+    expect(uiFactsOf(dialog)).toEqual({
+      checked: [false, true, true, false], // A: 今すぐ・相談、B: 今すぐ・相談
+      alert: null,
+      submit: `受け取る（1点を ${formatYen(12000)} 返金・1点は相談）`,
+      enabled: true,
+    });
+  });
+
+  it('DD-ADMIN-019 P9で今すぐが返せる額を超えても選びは消えず、A相談・B今すぐにして正しい本文で送れる', async () => {
+    const { dialog, onDone } = await openReceive(acceptedReturn(), false, 15000);
+    mockClientFetch.mockResolvedValueOnce(
+      jsonResponse({ data: receiveData({ refundId: 'refund-1', refundAmount: 12000, refundStatus: 'pending' }) }),
+    );
+    receiveRow(dialog, 0);
+    receiveRow(dialog, 1);
+
+    // 今すぐ2点（￥24,000）は返せる額 ￥15,000 を超える。選びは残し、押せなくして理由を出す
+    expect(perItemRadiosOf(dialog)).toHaveLength(4);
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(OVER_LIMIT_TEXT(15000));
+    expect(submitButton(dialog)).toBeDisabled();
+
+    choose(dialog, 0, '額を相談');
+    expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument();
+    expect(submitButton(dialog)).toBeEnabled();
+    fireEvent.click(submitButton(dialog));
+
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith(NOTICE_ACCEPTED));
+    expect(requestBodyOf(0)).toMatchObject({
+      units: [
+        { returnLineId: 'line-blouse', disposition: 'restocked', quantity: 1, refundChoice: 'now' },
+        { returnLineId: 'line-blouse', disposition: 'restocked', quantity: 1, refundChoice: 'consult' },
+      ],
+      refundChoice: 'mixed',
+      refundAmount: null,
+      refundShippingAmount: 0,
+    });
+  });
+
+  it('DD-ADMIN-019 届いたを外した品は返金の選びを最初に戻し、送らない', async () => {
+    const { dialog, onDone } = await openReceive(acceptedReturn(), false);
+    mockClientFetch.mockResolvedValueOnce(
+      jsonResponse({ data: receiveData({ refundId: 'refund-1', refundAmount: 12000, refundStatus: 'pending' }) }),
+    );
+    receiveRow(dialog, 0);
+    receiveRow(dialog, 1);
+    choose(dialog, 1, '額を相談');
+
+    fireEvent.click(within(unitRow(dialog, 1)).getByRole('checkbox', { name: '届いた' }));
+    expect(within(dialog).queryByText(/^額を相談（/)).not.toBeInTheDocument();
+    receiveRow(dialog, 1);
+    expect(within(unitRow(dialog, 1)).getByRole('radio', { name: '今すぐ返金' })).toBeChecked();
+
+    choose(dialog, 1, '額を相談');
+    fireEvent.click(within(unitRow(dialog, 1)).getByRole('checkbox', { name: '届いた' }));
+    fireEvent.click(submitButton(dialog));
+    // 一部だけ届いた時は確かめを挟む
+    fireEvent.click(submitButton(dialog));
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    expect(requestBodyOf(0).refundChoice).toBe('now');
+    expect(requestBodyOf(0).units).toEqual([{ returnLineId: 'line-blouse', disposition: 'restocked', quantity: 1, refundChoice: 'now' }]);
   });
 });
