@@ -1054,7 +1054,7 @@ GET `/api/admin/order-attention`（`admin.orders.read`）は`discounts:{orderId,
 
 完全な内訳の入口は`public.get_order_discount_breakdown(_order_id uuid)`（SECURITY INVOKERのSQL委譲、service_roleのみ。anon・authenticatedは拒否）で、`getOrderDiscountBreakdown(client,orderId)`（`src/lib/discounts/order-discount-store.ts`、server-only）が返り値をzodで検査する。呼ぶ側が先に認可する。不在の注文は`GROUP_H_ORDER_NOT_FOUND`（P0002）、NULLは`GROUP_H_ARGUMENT_INVALID`（22023）。H6の末尾assertのDETAILは`h6_order_breakdown`・`h6_customer_projection`・`h6_admin_projection`・`h6_public_acl`。
 
-### 返品の受け取りの品ごとの返金（FREQ-641 Task 1、2026-11-06）
+### 返品の受け取りの品ごとの返金（FREQ-641 Task 1・2・5 Step 3、2026-11-06）
 
 対応: FREQ-641-AC-07〜10（DB の部分）。根拠は[設計書](../../superpowers/specs/2026-11-06-return-receive-per-item-design.md)の3〜6章。移行は [20261106005536_return_receive_per_item.sql](../../../supabase/migrations/20261106005536_return_receive_per_item.sql)（手元の DB だけで確認。本番は未適用で、オーナーの許可待ち）。窓口 `POST /api/admin/returns/[returnId]/receive` の本文は Task 2（2026-11-06）で O-return-receive に品ごとの選びと `mixed` を足した。200 の答えのキーは変えていない。
 
@@ -1074,3 +1074,7 @@ GET `/api/admin/order-attention`（`admin.orders.read`）は`discounts:{orderId,
 | 知らせ | 返金の権限が無い人の受け取りで、記録の選びが `consult`・`mixed` の時に店への知らせを1件予定する |
 
 返品の詳細の読み出し `private.return_detail_json(_return_id)` の各行に `receive_refund_amounts_by_count`（次の受け取りでその行が取る品の額の累計。H の単位額がある注文だけ。返品が受付中でなければ空の配列、H の無い旧い注文は null）を足した。元は新しい読み出しの関数 `private.return_receive_amounts(_return_id)`（STABLE・SECURITY DEFINER・誰にも EXECUTE を与えない）。ほかのキーは変えない。
+
+受け取りの画面からの本文（Task 5 Step 3）: 返金になる各品の行内の選びを `units[].refundChoice` に入れ、同じ返品行・状態・選びを数量でまとめる。全品今すぐは親 `now`、全品相談は `consult`、混在は `mixed`。P9で返金権限の無い人は品ごとの選びだけを送り、`refundAmount:null`・`refundShippingAmount:0`。返金権限の無い人でP9外は、返金になる全品を `consult` にする。受け取りの額の入力の上限は上表の今回上限で、相談後の `POST /api/admin/returns/[returnId]/refund` は従来どおり、その返品の返金待ちの品全部を対象に注文の返せる額まで返す。
+
+[E2E helper](../../../e2e/return-test-utils.ts) の品ごとの選びと、[受け取りの窓口の差し替え](../../../e2e/return-request-test-utils.ts) の既存の任意指定を接続する。旧呼び出しで品の選びを省く時はキーを足さず、前からの本文を保つ。既存 FR-ADMIN-085・087・088・090・096 の業務入力・返金結果の期待は変えず、今回変更後の本番ビルド E2E・手元DB・メールは調整役が確かめる。新しいAPIや応答のキーは足していない。

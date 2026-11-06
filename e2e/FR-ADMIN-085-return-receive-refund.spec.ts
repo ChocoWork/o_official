@@ -59,6 +59,7 @@ import {
   returnSummaryRow,
   returnsDialogName,
   setUnitState,
+  unitRefundChoice,
   unitTotal,
   waitForMails,
 } from './return-test-utils';
@@ -127,7 +128,7 @@ for (const viewport of viewports) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
-    test('受け取りの画面は品を1点ずつ1行に出し、状態を選ぶと進み具合とボタンの言葉が変わる。返金は「計算どおり」が最初に選ばれ、窓口へ「今返金」が届く', async ({ page }) => {
+    test('受け取りの画面は品を1点ずつ1行に出し、状態を選ぶと進み具合とボタンの言葉が変わる。各品の「今すぐ返金」が最初に選ばれ、窓口へ「今返金」が届く', async ({ page }) => {
       // FREQ-463-AC-01, FREQ-464-AC-01
       const { state, dialog } = await openReceive(page);
       await expect(dialog.getByRole('combobox', { name: '品の状態', exact: true })).toHaveCount(2);
@@ -138,7 +139,8 @@ for (const viewport of viewports) {
       await expect(confirmButton(dialog, RETURN_TEXT.receivePart(1, formatYen(5_000)))).toBeVisible();
       await setUnitState(dialog, 1, UNIT_STATES.restock);
       await expect(dialog.getByText(RETURN_TEXT.progress(2, 2))).toBeVisible();
-      await expect(dialog.getByRole('radio', { name: `計算どおり ${formatYen(10_000)} を返金する`, exact: true })).toBeChecked();
+      await expect(unitRefundChoice(dialog, 0, 'now')).toBeChecked();
+      await expect(unitRefundChoice(dialog, 1, 'now')).toBeChecked();
 
       state.answerAction = (route) =>
         fulfillJson(route, {
@@ -189,7 +191,10 @@ for (const viewport of viewports) {
       const { state, dialog } = await openReceive(page);
       await setUnitState(dialog, 0, UNIT_STATES.restock);
       await setUnitState(dialog, 1, UNIT_STATES.restock);
-      await dialog.getByLabel(RETURN_TEXT.refundAmountLabel(formatYen(20_000)), { exact: true }).fill('7000');
+      const amount = dialog.getByRole('spinbutton', { name: RETURN_TEXT.receiveRefundAmountLabel, exact: true });
+      await expect(dialog.getByText(RETURN_TEXT.receiveRefundCap(formatYen(10_000)), { exact: true })).toBeVisible();
+      await expect(amount).toHaveAttribute('max', '10000');
+      await amount.fill('7000');
       await expect(confirmButton(dialog, RETURN_TEXT.receiveAll(formatYen(7_000)))).toBeVisible();
 
       await confirmButton(dialog, RETURN_TEXT.receiveAll(formatYen(7_000))).click();
@@ -257,7 +262,7 @@ for (const viewport of viewports) {
       // FREQ-464-AC-01
       const { dialog } = await openReceive(page, { quantity: 1 });
       await setUnitState(dialog, 0, UNIT_STATES.restock);
-      await expect(dialog.getByRole('radio', { name: RETURN_TEXT.nowOption })).toBeChecked();
+      await expect(unitRefundChoice(dialog, 0, 'now')).toBeChecked();
       await chooseRefundChoice(dialog, 'consult');
       await expect(confirmButton(dialog, RETURN_TEXT.consultButton)).toBeVisible();
       await chooseRefundChoice(dialog, 'now');

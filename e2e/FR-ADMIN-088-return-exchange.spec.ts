@@ -40,6 +40,7 @@ import {
   UNIT_STATES,
   addVariant,
   chooseRefundChoice,
+  unitRefundChoice,
   confirmButton,
   createReturnInDb,
   createShippedOrder,
@@ -241,7 +242,9 @@ for (const viewport of viewports) {
 
       await row.getByRole('radio', { name: '返金に変える', exact: true }).check();
       // 返金の品になったので、返金の欄が出る。額は相談してから決める
+      await expect(unitRefundChoice(dialog, 0, 'now')).toBeChecked();
       await chooseRefundChoice(dialog, 'consult');
+      await expect(unitRefundChoice(dialog, 0, 'consult')).toBeChecked();
       await confirmButton(dialog, RETURN_TEXT.consultButton).click();
 
       await expect.poll(() => state.posts.receive.length).toBe(1);

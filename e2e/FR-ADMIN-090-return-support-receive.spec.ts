@@ -106,9 +106,11 @@ for (const viewport of viewports) {
       await setUnitState(dialog, 0, UNIT_STATES.restock);
 
       await expect(dialog.getByText(RETURN_TEXT.supportRefundNote)).toBeVisible();
-      // 返金額の入力も、「計算どおり」の選びも出ない
-      await expect(dialog.getByLabel(/^返金額（返せる額/)).toHaveCount(0);
-      await expect(dialog.getByRole('radio', { name: RETURN_TEXT.nowOption })).toHaveCount(0);
+      // P9 外では、品ごとの選びも額・送料の入力も出ない
+      await expect(dialog.getByRole('spinbutton', { name: /^返金額/ })).toHaveCount(0);
+      await expect(dialog.getByRole('spinbutton', { name: /^送料/ })).toHaveCount(0);
+      await expect(dialog.getByRole('radio', { name: RETURN_TEXT.nowOption, exact: true })).toHaveCount(0);
+      await expect(dialog.getByRole('radio', { name: RETURN_TEXT.consultOption, exact: true })).toHaveCount(0);
       await expect(confirmButton(dialog, RETURN_TEXT.supportConsultButton)).toBeVisible();
       await confirmButton(dialog, RETURN_TEXT.supportConsultButton).click();
 

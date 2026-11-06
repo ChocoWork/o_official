@@ -479,9 +479,16 @@ function refusal(error: unknown) {
   if (message.includes('AWAITING_REFUND_EXISTS')) return { code: 'awaiting_refund_exists', error: '確かめ中の返金があります。先に確かめてください。' };
   if (message.includes('RETURN_FORBIDDEN')) return { code: 'RETURN_FORBIDDEN', error: 'この操作は店長だけができます。' };
   if (message.includes('RETURN_STATE_CONFLICT')) return { code: 'RETURN_STATE_CONFLICT', error: '返品の状態が変わりました。画面を開き直してください。' };
+  if (message.includes('RETURN_RECEIVE_REFUND_CAP_EXCEEDED')) return { code: 'RETURN_RECEIVE_REFUND_CAP_EXCEEDED', error: 'この受け取りの商品の額と送料までにしてください。' };
   throw new Error('手元の DB の操作に失敗した');
 }
-export async function adminScene(page: Page, rr: RR, fx: ReturnFixture, role: 'admin' | 'supporter' = 'admin') {
+/**
+ * 受け取りの窓口を手元の DB の関数へつなぐ。品ごとの選び（units[].refundChoice）・返金額・送料は本文にあればそのまま渡し、
+ * 無ければ前からの呼び出しと同じ（選びのキーなし・計算どおり・送料0）。settleRefund: false なら返金の結果を書かず、Stripe の返事待ちのまま残す
+ */
+export async function adminScene(
+  page: Page, rr: RR, fx: ReturnFixture, role: 'admin' | 'supporter' = 'admin', options: { settleRefund?: boolean } = {},
+) {
   const returns = await listOrderReturns(rr.client, fx.orderId);
   const state = newReturnRouteState({
     orderId: fx.orderId, returns, materials: await loadReturnCreateMaterials(rr.client, fx.orderId),
@@ -507,16 +514,21 @@ export async function adminScene(page: Page, rr: RR, fx: ReturnFixture, role: 'a
     try {
       const received = await receiveReturnInDb(rr.db, post.returnId, fx.actorId, {
         requestKey: body.requestKey as string, canRefund: role === 'admin',
-        units: (body.units as Array<{ returnLineId: string; disposition: 'restocked' | 'not_restocked' | 'pending_inspection'; quantity: number }>)
-          .map((item) => ({ lineId: item.returnLineId, disposition: item.disposition, quantity: item.quantity })),
-        choice: body.refundChoice as 'now' | 'consult' | 'none', notify: body.notifyCustomer as boolean,
+        units: (body.units as Array<{ returnLineId: string; disposition: 'restocked' | 'not_restocked' | 'pending_inspection'; quantity: number; refundChoice?: 'now' | 'consult' }>)
+          .map((item) => ({ lineId: item.returnLineId, disposition: item.disposition, quantity: item.quantity,
+            ...(item.refundChoice ? { refundChoice: item.refundChoice } : {}) })),
+        choice: body.refundChoice as 'now' | 'consult' | 'mixed' | 'none', notify: body.notifyCustomer as boolean,
+        amount: (body.refundAmount as number | null | undefined) ?? null,
+        shippingAmount: (body.refundShippingAmount as number | undefined) ?? 0,
       });
-      if (received.refundId) await recordRefundResult(rr.db, received.refundId);
+      const settled = Boolean(received.refundId) && options.settleRefund !== false;
+      if (settled) await recordRefundResult(rr.db, received.refundId as string);
       await refresh();
-      await fulfillJson(route, { data: { ...received, refundStatus: received.refundId ? 'succeeded' : received.refundStatus } });
+      await fulfillJson(route, { data: { ...received, refundStatus: settled ? 'succeeded' : received.refundStatus } });
     } catch (error) {
       const denied = refusal(error);
-      await fulfillJson(route, denied, denied.code === 'RETURN_FORBIDDEN' ? 403 : 409);
+      const status = denied.code === 'RETURN_FORBIDDEN' ? 403 : denied.code === 'RETURN_RECEIVE_REFUND_CAP_EXCEEDED' ? 400 : 409;
+      await fulfillJson(route, denied, status);
     }
   };
   await page.route(/\/api\/admin\/returns\/[^/]+\/(approve|decline|photos)$/, async (route) => {

@@ -1,7 +1,7 @@
 import { beginRefund, expectDbError, runWorkerUntil } from './order-email-test-utils';
 import {
   createReturnInDb, receiveReturnInDb, returnLabelOf, openDetailReturnsDialog, openReceiveDialog,
-  setUnitState, UNIT_STATES, RETURN_TEXT, shopAlertsFor,
+  setUnitState, unitRefundChoice, chooseRefundChoice, UNIT_STATES, RETURN_TEXT, shopAlertsFor,
 } from './return-test-utils';
 import { orderNumberOf } from './order-fulfillment-test-utils';
 import {
@@ -23,8 +23,10 @@ for (const viewport of viewports) {
       const dialog = await openReceiveDialog(page, fx.orderId, returnLabelOf(fx.orderId, ret.number));
       await setUnitState(dialog, 0, UNIT_STATES.restock);
       await expect(dialog.getByText('受け取ると、計算どおり ￥5,000 を自動で返金します（額は変えられません）。', { exact: true })).toBeVisible();
-      await expect(dialog.getByRole('radio', { name: '計算どおり ￥5,000 を返金する', exact: true })).toBeChecked();
-      await expect(dialog.getByLabel(/^返金額（返せる額/)).toHaveCount(0);
+      await expect(unitRefundChoice(dialog, 0, 'now')).toBeChecked();
+      await expect(unitRefundChoice(dialog, 0, 'consult')).toBeVisible();
+      await expect(dialog.getByRole('spinbutton', { name: /^返金額/ })).toHaveCount(0);
+      await expect(dialog.getByRole('spinbutton', { name: /^送料/ })).toHaveCount(0);
       await dialog.getByRole('button', { name: 'すべて受け取って ￥5,000 を返金する', exact: true }).click();
       await expect.poll(() => scene.state.posts.receive.length).toBe(1);
       expect(scene.state.posts.receive[0].body).toMatchObject({ refundChoice: 'now', refundAmount: null, refundShippingAmount: 0 });
@@ -50,7 +52,10 @@ for (const viewport of viewports) {
       await openDetailReturnsDialog(page, fx.orderId, '受け取る');
       const dialog = await openReceiveDialog(page, fx.orderId, returnLabelOf(fx.orderId, created.number));
       await setUnitState(dialog, 0, UNIT_STATES.restock);
-      await expect(dialog.getByRole('radio', { name: /^計算どおり/ })).toHaveCount(0);
+      await expect(dialog.getByRole('radio', { name: RETURN_TEXT.nowOption, exact: true })).toHaveCount(0);
+      await expect(dialog.getByRole('radio', { name: RETURN_TEXT.consultOption, exact: true })).toHaveCount(0);
+      await expect(dialog.getByRole('spinbutton', { name: /^返金額/ })).toHaveCount(0);
+      await expect(dialog.getByRole('spinbutton', { name: /^送料/ })).toHaveCount(0);
       await expect(dialog.getByText(RETURN_TEXT.supportRefundNote, { exact: true })).toBeVisible();
       await dialog.getByRole('button', { name: RETURN_TEXT.supportConsultButton, exact: true }).click();
       await expect.poll(() => scene.state.posts.receive.length).toBe(1);
@@ -81,7 +86,8 @@ for (const viewport of viewports) {
       expect(Number((await rr.db.query('select count(*) from public.order_return_receipts where return_id=$1', [ret.id])).rows[0].count)).toBe(0);
       expect(Number((await rr.db.query("select count(*) from public.stock_movements where return_id=$1 and reason='return'", [ret.id])).rows[0].count)).toBe(0);
       expect(Number((await rr.db.query('select count(*) from public.order_refunds where order_id=$1', [fx.orderId])).rows[0].count)).toBe(1);
-      await dialog.getByRole('radio', { name: '額を相談してから返金する（店長が額を決めます）', exact: true }).check();
+      await chooseRefundChoice(dialog, 'consult');
+      await expect(unitRefundChoice(dialog, 0, 'consult')).toBeChecked();
       await dialog.getByRole('button', { name: RETURN_TEXT.supportConsultButton, exact: true }).click();
       await expect.poll(() => scene.state.posts.receive.length).toBe(2);
       expect(Number((await rr.db.query('select count(*) from public.order_return_receipts where return_id=$1', [ret.id])).rows[0].count)).toBe(1);

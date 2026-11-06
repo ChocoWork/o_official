@@ -62,6 +62,7 @@ import {
   returnSummaryRow,
   returnsDialogName,
   setUnitState,
+  unitRefundChoice,
   waitForMails,
   type ReturnRouteState,
 } from './return-test-utils';
@@ -187,7 +188,7 @@ for (const viewport of viewports) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
-    test('受け取りで「額を相談してから返金する」を選ぶと、確定のボタンが「受け取りだけ記録する（返金は額を決めてから）」になり、窓口へ相談が届く', async ({ page }) => {
+    test('受け取りで返金の品をすべて「額を相談」にすると、確定のボタンが「受け取りだけ記録する（返金は額を決めてから）」になり、窓口へ相談が届く', async ({ page }) => {
       // FREQ-464-AC-06
       const detail = returnDetailOf({
         orderId: ORDER_ID,
@@ -201,8 +202,9 @@ for (const viewport of viewports) {
       const dialog = await openReceiveDialog(page, ORDER_ID, LABEL);
 
       await setUnitState(dialog, 0, UNIT_STATES.restock);
-      await expect(dialog.getByText(RETURN_TEXT.consultOption)).toBeVisible();
+      await expect(unitRefundChoice(dialog, 0, 'consult')).toBeVisible();
       await chooseRefundChoice(dialog, 'consult');
+      await expect(unitRefundChoice(dialog, 0, 'consult')).toBeChecked();
       await expect(confirmButton(dialog, RETURN_TEXT.consultButton)).toBeVisible();
       await confirmButton(dialog, RETURN_TEXT.consultButton).click();
 
@@ -279,6 +281,7 @@ for (const viewport of viewports) {
       const { state, dialog } = await openRefund(page);
       expect(await readReturnBreakdown(dialog)).toMatchObject({ '商品': formatYen(5_000), '返金額': formatYen(5_000) });
       await expect(dialog.getByLabel(RETURN_TEXT.refundAmountLabel(formatYen(20_000)), { exact: true })).toHaveValue('5000');
+      await expect(dialog.getByLabel(RETURN_TEXT.refundAmountLabel(formatYen(20_000)), { exact: true })).toHaveAttribute('max', '20000');
       await expect(dialog.getByLabel(RETURN_TEXT.shippingAmountLabel(formatYen(800)), { exact: true })).toBeVisible();
       await expect(dialog.getByRole('textbox', { name: RETURN_TEXT.memoLabel, exact: true })).toBeVisible();
       await expect(dialog.getByRole('checkbox', { name: RETURN_TEXT.refundMailLabel, exact: true })).toBeChecked();

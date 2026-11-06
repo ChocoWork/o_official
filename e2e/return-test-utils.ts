@@ -21,7 +21,8 @@ import type {
   OrderReturnSummary,
   OutOfStockExchange,
   ReceiptDisposition,
-  RefundChoice,
+  ReceiptRefundChoice,
+  ReceiveUnitRefundChoice,
   ReturnCarrier,
   ReturnCreateMaterials,
   ReturnMethod,
@@ -68,7 +69,7 @@ export const RETURN_TEXT = {
   noticeByAmountSucceeded: '返金しました。',
   consultButton: '受け取りだけ記録する（返金は額を決めてから）',
   supportConsultButton: '受け取りだけ記録する（額は店長が決める）',
-  consultOption: '額を相談してから返金する',
+  consultOption: '額を相談',
   supportRefundNote: '返金は店長が行います（受け取ると「返金待ち」になります）。',
   missingOption: '残りは届かないものとして返品を終える',
   sentBackConfirm: 'お客様にメッセージが届きます。取り消せません。',
@@ -101,7 +102,7 @@ export const RETURN_TEXT = {
   deadline: (day: string) => `受付の期限: ${day}まで`,
   pastDeadline: (day: string) => `期限を過ぎています（${day}まで）`,
   progress: (total: number, checked: number) => `${total}点中${checked}点を確認`,
-  nowOption: /^計算どおり .+ を返金する$/,
+  nowOption: '今すぐ返金',
   receiveAll: (yen: string, tail = '') => `すべて受け取って ${yen} を返金する${tail}`,
   receivePart: (count: number, yen: string, tail = '') => `${count}点を受け取って ${yen} を返金する${tail}`,
   receiveAllWaived: (tail = '') => `すべて受け取り、返金なしで記録する${tail}`,
@@ -122,6 +123,8 @@ export const RETURN_TEXT = {
   receiveTitle: (label: string) => `受け取る（${label}）`,
   inspectTitle: (label: string) => `検品を終える（${label}）`,
   refundAmountLabel: (yen: string) => `返金額（返せる額: ${yen}）`,
+  receiveRefundAmountLabel: '返金額',
+  receiveRefundCap: (yen: string) => `上限 ${yen}`,
   shippingAmountLabel: (yen: string) => `送料（返せる送料: ${yen}）`,
   refundButton: (yen: string) => `${yen} を返金する`,
   stockOf: (count: number) => `在庫から（空き在庫 ${count}・割り当ては注文順）`,
@@ -374,15 +377,21 @@ export async function createReturnInDb(
   return { returnId, number: Number(row.number), status: row.status as string, replayed: row.replayed as boolean, lineIds, lineRows };
 }
 
-export type E2eReceiveUnit = { lineId: string; disposition: ReceiptDisposition; quantity: number };
+export type E2eReceiveUnit = {
+  lineId: string;
+  disposition: ReceiptDisposition;
+  quantity: number;
+  /** 品ごとの返金の選び（FREQ-641）。省くとキーを送らない（受け取り全体の choice に従う。前からの呼び出しと同じ本文） */
+  refundChoice?: ReceiveUnitRefundChoice;
+};
 
 export type E2eReceiveInput = {
   units: E2eReceiveUnit[];
   requestKey?: string;
   /** 店長か（既定 true）。サポートの人は false */
   canRefund?: boolean;
-  /** 既定は相談（consult）。今返金は now、返金の品が無い受け取りは none */
-  choice?: RefundChoice;
+  /** 既定は相談（consult）。今返金は now、返金の品が無い受け取りは none、品ごとに今すぐと相談が混ざる時は mixed */
+  choice?: ReceiptRefundChoice;
   /** 店長が直した返金額。省くと計算どおり */
   amount?: number | null;
   shippingAmount?: number;
@@ -422,7 +431,12 @@ export async function receiveReturnInDb(
       input.canRefund ?? true,
       input.requestKey ?? randomUUID(),
       JSON.stringify(
-        input.units.map((unit) => ({ return_line_id: unit.lineId, disposition: unit.disposition, quantity: unit.quantity })),
+        input.units.map((unit) => ({
+          return_line_id: unit.lineId,
+          disposition: unit.disposition,
+          quantity: unit.quantity,
+          ...(unit.refundChoice ? { refund_choice: unit.refundChoice } : {}),
+        })),
       ),
       JSON.stringify((input.exchangeOverrides ?? []).map((item) => ({ return_line_id: item.lineId, action: item.action }))),
       input.choice ?? 'consult',
@@ -1400,10 +1414,22 @@ export function unitRows(dialog: Locator): Locator {
   return dialog.getByRole('list', { name: '受け取る品' }).getByRole('listitem');
 }
 
-/** 受け取りの画面の返金の選び（計算どおり・相談） */
+/** 状態を選べる i 番目（0 始まり）の品の行の返金の選び。前の受け取りの固定行は数えない */
+export function unitRefundChoice(dialog: Locator, index: number, choice: 'now' | 'consult'): Locator {
+  return unitRows(dialog).filter({ has: dialog.page().getByRole('combobox', { name: '品の状態', exact: true }) }).nth(index)
+    .getByRole('radio', { name: choice === 'now' ? RETURN_TEXT.nowOption : RETURN_TEXT.consultOption, exact: true });
+}
+
+/** 受け取りの画面の返金になる品を、すべて今すぐ返金または額を相談にする。交換・お返し・未選択の品は選びが無いので含まない */
 export async function chooseRefundChoice(dialog: Locator, choice: 'now' | 'consult'): Promise<void> {
-  const radio = dialog.getByRole('radio', { name: choice === 'now' ? RETURN_TEXT.nowOption : RETURN_TEXT.consultOption });
-  await radio.check();
+  const radios = unitRows(dialog).getByRole('radio', {
+    name: choice === 'now' ? RETURN_TEXT.nowOption : RETURN_TEXT.consultOption, exact: true,
+  });
+  await expect(radios).not.toHaveCount(0);
+  const count = await radios.count();
+  for (let index = 0; index < count; index += 1) {
+    await radios.nth(index).check();
+  }
 }
 
 /** 受け取りの画面の確定のボタン（名前は中身で変わる） */
