@@ -1,6 +1,6 @@
 # 画面一覧
 
-> 返品の品ごとの返金 Task 3 確認日: 2026-11-06。画面ルートの数は変えない（51件）。注文の詳細の返品の欄から開く受け取りの画面（`OrderReturnReceiveDialog`）を、品ごとに「今すぐ返金 / 額を相談」を選ぶ形（見本 A）にした。末尾の「返品の受け取りの品ごとの返金（FREQ-641 / DD-ADMIN-019）」に記載。単体・画面結合のみ実測済み。3幅の E2E（`FR-ADMIN-164`）は controller 担当。
+> 返品の品ごとの返金 Task 3 確認日: 2026-11-06。画面ルートの数は変えない（51件）。注文の詳細の返品の欄から開く受け取りの画面（`OrderReturnReceiveDialog`）を、品ごとに「今すぐ返金 / 額を相談」を選ぶ形（見本 A）にした。末尾の「返品の受け取りの品ごとの返金（FREQ-641 / DD-ADMIN-019）」に記載。単体・画面結合と3幅の E2E（`FR-ADMIN-164`、18/18通過）は実測済み。調整役の手元の実行と結果は[テスト仕様](../../05_Quality/tests/test-spec.md)に記録。
 >
 > 波 6 確認日: 2026-11-01。パスワード変更の画面 `/account/password` の1ルートを追加し、`src/app/**/page.tsx` は51件になった（顧客向け18・認証・アカウント9・管理・開発補助24）。`/account` のお客様情報のタブに「パスワードを変更」のリンクを足した。本文の「47件」は50件の時点から数え直していなかったので、この行で51件に直した。実測（390/768/1280px）は E2E（`FR-ACCOUNT-046`）が3幅で確かめる。
 >
@@ -221,4 +221,4 @@ Task 5 fix round 1（2026-10-29）: DISCOUNT一覧の「使った回数」と「
 | 権限で出し分け | 権限「返金」（窓口の `canRefund`）を持つ人は選びと額・送料の入力。持たない人で P9 の時は選びだけ（今の選びに関わらず出す。今すぐの分の見込みが注文の返せる額を超える時は押せなくし、一部を「額を相談」にするよう文を出す）。それ以外は選びも入力も出さず「返金は店長が行います（受け取ると「返金待ち」になります）。」で、全部の品を相談として送る |
 | 確定のボタン | 今すぐと相談が両方ある時は「受け取る（n点を ￥X 返金・m点は相談）」（0円も同じ形）。片方だけの時は今までの言葉（「すべて受け取って ￥X を返金する」「受け取りだけ記録する（…）」など） |
 
-[受け取りの画面単体](../../../tests/unit/components/OrderReturnReceiveDialog.test.tsx)・[サポートの受け取り単体](../../../tests/unit/components/OrderReturnReceiveDialogSupport.test.tsx)・[返金の欄の部品単体](../../../tests/unit/components/return-dialog-parts.test.tsx)・[画面結合](../../../tests/integration/ui/admin-return-receive.test.tsx)で検証する。390/768/1280px は E2E `FR-ADMIN-164`（controller 担当）。
+[受け取りの画面単体](../../../tests/unit/components/OrderReturnReceiveDialog.test.tsx)・[サポートの受け取り単体](../../../tests/unit/components/OrderReturnReceiveDialogSupport.test.tsx)・[返金の欄の部品単体](../../../tests/unit/components/return-dialog-parts.test.tsx)・[画面結合](../../../tests/integration/ui/admin-return-receive.test.tsx)で検証する。390/768/1280px は E2E `FR-ADMIN-164` で18/18通過（2026-11-06、調整役の手元の実行・ログ保管。[テスト仕様](../../05_Quality/tests/test-spec.md)参照）。

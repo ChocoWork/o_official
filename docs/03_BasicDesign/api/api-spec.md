@@ -2,9 +2,9 @@
 
 > 返品の品ごとの返金 Task 4 確認日: 2026-11-06。窓口の追加・削除はない。`GET /api/admin/orders/[id]/history` は受け取りの行の解決と品ごとの返金の選び（`order_return_receipt_lines` の `resolution`・`refund_choice`）も読み、「返品の受け取り」の細目に「今すぐ返金 n点・相談 m点」を足す（行は1つのまま）。答えのキーは変えていない。
 
-> 返品の品ごとの返金 Task 2 確認日: 2026-11-06。窓口の追加・削除はない。`POST /api/admin/returns/[returnId]/receive` の本文 O-return-receive に品ごとの選び `units[].refundChoice`（`now`・`consult`）と親のまとめ `refundChoice: mixed` を足し、400 `RETURN_RECEIVE_REFUND_CAP_EXCEEDED` を足した。`GET /api/admin/orders/[id]/returns` の各行に `receiveRefundAmountsByCount`（配列か null）が付き、受け取りの記録の `refundChoice` に `mixed` が来る。200 の答えのキーは変えていない。画面は Task 3 以降。
+> 返品の品ごとの返金 Task 2 確認日: 2026-11-06。窓口の追加・削除はない。`POST /api/admin/returns/[returnId]/receive` の本文 O-return-receive に品ごとの選び `units[].refundChoice`（`now`・`consult`）と親のまとめ `refundChoice: mixed` を足し、400 `RETURN_RECEIVE_REFUND_CAP_EXCEEDED` を足した。`GET /api/admin/orders/[id]/returns` の各行に `receiveRefundAmountsByCount`（配列か null）が付き、受け取りの記録の `refundChoice` に `mixed` が来る。200 の答えのキーは変えていない。画面は Task 3 で実装済み。
 
-> 返品の品ごとの返金 Task 1 確認日: 2026-11-06。窓口の追加・削除はない。受け取りの DB の関数 `admin_receive_return` の入力に、品ごとの選び（`_units[].refund_choice`）と親のまとめ `mixed` を足し、受け取りで今返す額の上限（`RETURN_RECEIVE_REFUND_CAP_EXCEEDED`）を足した。返品の詳細の読み出し（`private.return_detail_json`）の各行に `receive_refund_amounts_by_count` を足した。詳しくは末尾の「返品の受け取りの品ごとの返金（FREQ-641 Task 1）」。窓口の本文・画面は Task 2 以降で、まだ変えていない。
+> 返品の品ごとの返金 Task 1 確認日: 2026-11-06。窓口の追加・削除はない。受け取りの DB の関数 `admin_receive_return` の入力に、品ごとの選び（`_units[].refund_choice`）と親のまとめ `mixed` を足し、受け取りで今返す額の上限（`RETURN_RECEIVE_REFUND_CAP_EXCEEDED`）を足した。返品の詳細の読み出し（`private.return_detail_json`）の各行に `receive_refund_amounts_by_count` を足した。詳しくは末尾の「返品の受け取りの品ごとの返金（FREQ-641 Task 1）」。窓口の本文は Task 2、画面は Task 3 で実装済み。
 
 > 波 6 確認日: 2026-11-01。ログイン中の会員が自分でパスワードを変える2窓口 `POST /api/auth/password/change/start`（API-AUTH-020）・`POST /api/auth/password/change/confirm`（API-AUTH-021）を「認証」の表に足した（168ファイル・212組、E2E 用を除く167ファイル・211組）。パスワードの規則に UTF-8 で72バイト以内を足した（手元の GoTrue で実測: 72バイトは通り、73バイトは400 `validation_failed`）。会員登録の窓口は、確認のリンクが切れた未確認の会員が同じメールで登録し直すと確認メールを送り直す（応答は同じ202。SEC-AUTH-016-AC-04）。手元の切り替え（captcha・確認メール必須）は同日に済み、本番は未反映。
 >
@@ -1077,4 +1077,4 @@ GET `/api/admin/order-attention`（`admin.orders.read`）は`discounts:{orderId,
 
 受け取りの画面からの本文（Task 5 Step 3）: 返金になる各品の行内の選びを `units[].refundChoice` に入れ、同じ返品行・状態・選びを数量でまとめる。全品今すぐは親 `now`、全品相談は `consult`、混在は `mixed`。P9で返金権限の無い人は品ごとの選びだけを送り、`refundAmount:null`・`refundShippingAmount:0`。返金権限の無い人でP9外は、返金になる全品を `consult` にする。受け取りの額の入力の上限は上表の今回上限で、相談後の `POST /api/admin/returns/[returnId]/refund` は従来どおり、その返品の返金待ちの品全部を対象に注文の返せる額まで返す。
 
-[E2E helper](../../../e2e/return-test-utils.ts) の品ごとの選びと、[受け取りの窓口の差し替え](../../../e2e/return-request-test-utils.ts) の既存の任意指定を接続する。旧呼び出しで品の選びを省く時はキーを足さず、前からの本文を保つ。既存 FR-ADMIN-085・087・088・090・096 の業務入力・返金結果の期待は変えず、今回変更後の本番ビルド E2E・手元DB・メールは調整役が確かめる。新しいAPIや応答のキーは足していない。
+[E2E helper](../../../e2e/return-test-utils.ts) の品ごとの選びと、[受け取りの窓口の差し替え](../../../e2e/return-request-test-utils.ts) の既存の任意指定を接続する。旧呼び出しで品の選びを省く時はキーを足さず、前からの本文を保つ。既存 FR-ADMIN-085・087・088・090・096 の画面の期待を品ごとの選びに合わせた。2026-11-06、既存の返品とFR-ADMIN-164は本番ビルド・手元のSupabase・3幅で337/337通過（調整役の手元の実行・ログ保管）。DB・PostgRESTの実測も[テスト仕様](../../05_Quality/tests/test-spec.md)に記録。実Stripe/SES・メールの実配送は未実行。新しいAPIや応答のキーは足していない。

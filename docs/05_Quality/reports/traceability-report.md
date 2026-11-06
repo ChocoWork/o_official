@@ -1,6 +1,6 @@
 # 要件IDの参照状況
 
-> 状態: 自動生成 | 生成日: 2026-10-27 | 対象: リポジトリ内の文字列参照
+> 状態: 自動生成 | 生成日: 2026-11-06 | 対象: リポジトリ内の文字列参照
 
 ## 概要
 
@@ -8,10 +8,10 @@
 
 | 指標 | 件数 |
 | --- | ---: |
-| 要件定義書の対象ID | 2211 |
-| 設計にID参照あり | 588 |
-| テストにID参照あり | 1514 |
-| 設計にID参照なし | 1623 |
+| 要件定義書の対象ID | 2278 |
+| 設計にID参照あり | 606 |
+| テストにID参照あり | 1581 |
+| 設計にID参照なし | 1672 |
 | テストにID参照なし | 697 |
 
 ## 参照一覧
@@ -51,6 +51,7 @@
 | `FR-ACCOUNT-042` | なし | 3件（[FR-ACCOUNT-042-delivery-tracking.spec.ts](../../../e2e/FR-ACCOUNT-042-delivery-tracking.spec.ts)） |
 | `FR-ACCOUNT-043` | 2件（[privacy.md](../../03_BasicDesign/areas/privacy.md)） | 1件（[FR-ACCOUNT-043-delivery-visibility.spec.ts](../../../e2e/FR-ACCOUNT-043-delivery-visibility.spec.ts)） |
 | `FR-ACCOUNT-044` | 1件（[20_order_status.md](../../04_DetailDesign/pages/20_order_status.md)） | 1件（[order-status-traceability.test.ts](../../../tests/unit/docs/order-status-traceability.test.ts)） |
+| `FR-ACCOUNT-045` | なし | 1件（[FR-ACCOUNT-045-discounted-return.spec.ts](../../../e2e/FR-ACCOUNT-045-discounted-return.spec.ts)） |
 | `FR-ADMIN-001` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-001-kpi-dashboard-redesign.spec.ts](../../../e2e/FR-ADMIN-001-kpi-dashboard-redesign.spec.ts)） |
 | `FR-ADMIN-002` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-002-sidenav-panel.spec.ts](../../../e2e/FR-ADMIN-002-sidenav-panel.spec.ts)） |
 | `FR-ADMIN-003` | 7件（[news.md](../../03_BasicDesign/areas/news.md)） | 2件（[FR-ADMIN-003-sidenav-fullheight-square.spec.ts](../../../e2e/FR-ADMIN-003-sidenav-fullheight-square.spec.ts)） |
@@ -59,7 +60,7 @@
 | `FR-ADMIN-006` | 10件（[stockist.md](../../03_BasicDesign/areas/stockist.md)） | 3件（[FR-ADMIN-006-kpi-card-target-edit.spec.ts](../../../e2e/FR-ADMIN-006-kpi-card-target-edit.spec.ts)） |
 | `FR-ADMIN-007` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | なし |
 | `FR-ADMIN-008` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-008-remove-kpi-heading.spec.ts](../../../e2e/FR-ADMIN-008-remove-kpi-heading.spec.ts)） |
-| `FR-ADMIN-009` | 3件（[admin.md](../../03_BasicDesign/areas/admin.md)） | 2件（[FR-ADMIN-009-kpi-icon-tooltip.spec.ts](../../../e2e/FR-ADMIN-009-kpi-icon-tooltip.spec.ts)） |
+| `FR-ADMIN-009` | 5件（[admin.md](../../03_BasicDesign/areas/admin.md)） | 4件（[FR-ADMIN-009-kpi-icon-tooltip.spec.ts](../../../e2e/FR-ADMIN-009-kpi-icon-tooltip.spec.ts)） |
 | `FR-ADMIN-029` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-029-accounting-tab.spec.ts](../../../e2e/FR-ADMIN-029-accounting-tab.spec.ts)） |
 | `FR-ADMIN-050` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 2件（[FR-ADMIN-050-order-shipping.spec.ts](../../../e2e/FR-ADMIN-050-order-shipping.spec.ts)） |
 | `FR-ADMIN-051` | なし | 2件（[FR-ADMIN-051-order-refund-safety.spec.ts](../../../e2e/FR-ADMIN-051-order-refund-safety.spec.ts)） |
@@ -85,7 +86,7 @@
 | `FR-ADMIN-082` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 2件（[FR-ADMIN-082-fulfillment-after-refund.spec.ts](../../../e2e/FR-ADMIN-082-fulfillment-after-refund.spec.ts)） |
 | `FR-ADMIN-083` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-083-paid-cancel-email.spec.ts](../../../e2e/FR-ADMIN-083-paid-cancel-email.spec.ts)） |
 | `FR-ADMIN-084` | 2件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-084-return-create.spec.ts](../../../e2e/FR-ADMIN-084-return-create.spec.ts)） |
-| `FR-ADMIN-085` | 3件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-085-return-receive-refund.spec.ts](../../../e2e/FR-ADMIN-085-return-receive-refund.spec.ts)） |
+| `FR-ADMIN-085` | 4件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 1件（[FR-ADMIN-085-return-receive-refund.spec.ts](../../../e2e/FR-ADMIN-085-return-receive-refund.spec.ts)） |
 | `FR-ADMIN-086` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-086-return-partial-missing-cancel.spec.ts](../../../e2e/FR-ADMIN-086-return-partial-missing-cancel.spec.ts)） |
 | `FR-ADMIN-087` | 2件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-087-return-consult-refund.spec.ts](../../../e2e/FR-ADMIN-087-return-consult-refund.spec.ts)） |
 | `FR-ADMIN-088` | 3件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-088-return-exchange.spec.ts](../../../e2e/FR-ADMIN-088-return-exchange.spec.ts)） |
@@ -96,7 +97,7 @@
 | `FR-ADMIN-093` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-093-return-guards-history.spec.ts](../../../e2e/FR-ADMIN-093-return-guards-history.spec.ts)） |
 | `FR-ADMIN-094` | 2件（[15_account.md](../../04_DetailDesign/pages/15_account.md)） | 1件（[FR-ADMIN-094-return-request-approve.spec.ts](../../../e2e/FR-ADMIN-094-return-request-approve.spec.ts)） |
 | `FR-ADMIN-095` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-095-return-request-decline.spec.ts](../../../e2e/FR-ADMIN-095-return-request-decline.spec.ts)） |
-| `FR-ADMIN-096` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-096-customer-return-support-refund.spec.ts](../../../e2e/FR-ADMIN-096-customer-return-support-refund.spec.ts)） |
+| `FR-ADMIN-096` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 2件（[FR-ADMIN-096-customer-return-support-refund.spec.ts](../../../e2e/FR-ADMIN-096-customer-return-support-refund.spec.ts)） |
 | `FR-ADMIN-097` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-097-cancel-requests.spec.ts](../../../e2e/FR-ADMIN-097-cancel-requests.spec.ts)） |
 | `FR-ADMIN-098` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-098-return-request-settings.spec.ts](../../../e2e/FR-ADMIN-098-return-request-settings.spec.ts)） |
 | `FR-ADMIN-099` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-099-item-return-ineligible.spec.ts](../../../e2e/FR-ADMIN-099-item-return-ineligible.spec.ts)） |
@@ -124,6 +125,11 @@
 | `FR-ADMIN-121` | なし | 4件（[FR-ADMIN-070-order-progress-labels.spec.ts](../../../e2e/FR-ADMIN-070-order-progress-labels.spec.ts)） |
 | `FR-ADMIN-122` | なし | 4件（[FR-ADMIN-069-made-to-order-completion.spec.ts](../../../e2e/FR-ADMIN-069-made-to-order-completion.spec.ts)） |
 | `FR-ADMIN-123` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 22件（[FR-ADMIN-050-order-shipping.spec.ts](../../../e2e/FR-ADMIN-050-order-shipping.spec.ts)） |
+| `FR-ADMIN-124` | なし | 1件（[FR-ADMIN-124-discount-management.spec.ts](../../../e2e/FR-ADMIN-124-discount-management.spec.ts)） |
+| `FR-ADMIN-125` | なし | 1件（[FR-ADMIN-125-discount-assignments.spec.ts](../../../e2e/FR-ADMIN-125-discount-assignments.spec.ts)） |
+| `FR-ADMIN-126` | なし | 1件（[FR-ADMIN-126-discount-permissions.spec.ts](../../../e2e/FR-ADMIN-126-discount-permissions.spec.ts)） |
+| `FR-ADMIN-127` | なし | 1件（[FR-ADMIN-127-discount-refund-amounts.spec.ts](../../../e2e/FR-ADMIN-127-discount-refund-amounts.spec.ts)） |
+| `FR-ADMIN-164` | 4件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 2件（[FR-ADMIN-164-return-receive-per-item.spec.ts](../../../e2e/FR-ADMIN-164-return-receive-per-item.spec.ts)） |
 | `FR-CART-001` | 1件（[12_cart.md](../../04_DetailDesign/pages/12_cart.md)） | 1件（[FR-CART-001-008-cart-ui-and-actions.spec.ts](../../../e2e/FR-CART-001-008-cart-ui-and-actions.spec.ts)） |
 | `FR-CART-002` | 1件（[12_cart.md](../../04_DetailDesign/pages/12_cart.md)） | 1件（[FR-CART-002-005-006-007-summary-session-empty.spec.ts](../../../e2e/FR-CART-002-005-006-007-summary-session-empty.spec.ts)） |
 | `FR-CART-003` | 1件（[12_cart.md](../../04_DetailDesign/pages/12_cart.md)） | なし |
@@ -138,6 +144,7 @@
 | `FR-CART-012` | 1件（[12_cart.md](../../04_DetailDesign/pages/12_cart.md)） | 1件（[FR-CART-012-013-summary-align-continue-shopping.spec.ts](../../../e2e/FR-CART-012-013-summary-align-continue-shopping.spec.ts)） |
 | `FR-CART-013` | 1件（[12_cart.md](../../04_DetailDesign/pages/12_cart.md)） | 1件（[FR-CART-012-013-summary-align-continue-shopping.spec.ts](../../../e2e/FR-CART-012-013-summary-align-continue-shopping.spec.ts)） |
 | `FR-CART-014` | 1件（[12_cart.md](../../04_DetailDesign/pages/12_cart.md)） | 1件（[FR-CART-014-unit-price-display.spec.ts](../../../e2e/FR-CART-014-unit-price-display.spec.ts)） |
+| `FR-CART-025` | なし | 1件（[FR-CART-025-automatic-discounts.spec.ts](../../../e2e/FR-CART-025-automatic-discounts.spec.ts)） |
 | `FR-CHECKOUT-001` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | なし |
 | `FR-CHECKOUT-002` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-002-pci-compliance.spec.ts](../../../e2e/FR-CHECKOUT-002-pci-compliance.spec.ts)） |
 | `FR-CHECKOUT-003` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-003-tax-display.spec.ts](../../../e2e/FR-CHECKOUT-003-tax-display.spec.ts)） |
@@ -150,11 +157,20 @@
 | `FR-CHECKOUT-010` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-010-postal-code-cache.spec.ts](../../../e2e/FR-CHECKOUT-010-postal-code-cache.spec.ts)） |
 | `FR-CHECKOUT-011` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-011-tax-calculation-wont.spec.ts](../../../e2e/FR-CHECKOUT-011-tax-calculation-wont.spec.ts)） |
 | `FR-CHECKOUT-012` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-012-account-profile-defaults.spec.ts](../../../e2e/FR-CHECKOUT-012-account-profile-defaults.spec.ts)） |
+| `FR-CHECKOUT-031` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-031-promo-code-label.spec.ts](../../../e2e/FR-CHECKOUT-031-promo-code-label.spec.ts)） |
+| `FR-CHECKOUT-032` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-032-promo-error-a11y.spec.ts](../../../e2e/FR-CHECKOUT-032-promo-error-a11y.spec.ts)） |
+| `FR-CHECKOUT-039` | 1件（[checkout-payment.md](../../04_DetailDesign/sequence/checkout-payment.md)） | 1件（[FR-CHECKOUT-039-promotion-code-server.spec.ts](../../../e2e/FR-CHECKOUT-039-promotion-code-server.spec.ts)） |
+| `FR-CHECKOUT-042` | なし | 1件（[FR-CHECKOUT-042-promotion-code-restore.spec.ts](../../../e2e/FR-CHECKOUT-042-promotion-code-restore.spec.ts)） |
 | `FR-CHECKOUT-049` | 1件（[20_order_status.md](../../04_DetailDesign/pages/20_order_status.md)） | 4件（[FR-ADMIN-080-stripe-dashboard-refund.spec.ts](../../../e2e/FR-ADMIN-080-stripe-dashboard-refund.spec.ts)） |
 | `FR-CHECKOUT-050` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-050-split-shipment-notice.spec.ts](../../../e2e/FR-CHECKOUT-050-split-shipment-notice.spec.ts)） |
 | `FR-CHECKOUT-051` | 2件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 4件（[FR-ADMIN-074-refund-dialog.spec.ts](../../../e2e/FR-ADMIN-074-refund-dialog.spec.ts)） |
 | `FR-CHECKOUT-052` | なし | 1件（[FR-CHECKOUT-052-payment-method-order.spec.ts](../../../e2e/FR-CHECKOUT-052-payment-method-order.spec.ts)） |
 | `FR-CHECKOUT-053` | なし | 1件（[FR-CHECKOUT-053-retry-after-session-error.spec.ts](../../../e2e/FR-CHECKOUT-053-retry-after-session-error.spec.ts)） |
+| `FR-CHECKOUT-054` | なし | 1件（[FR-CHECKOUT-054-own-discount-codes.spec.ts](../../../e2e/FR-CHECKOUT-054-own-discount-codes.spec.ts)） |
+| `FR-CHECKOUT-055` | なし | 1件（[FR-CHECKOUT-055-discount-combinations.spec.ts](../../../e2e/FR-CHECKOUT-055-discount-combinations.spec.ts)） |
+| `FR-CHECKOUT-056` | なし | 1件（[FR-CHECKOUT-056-discount-reservations.spec.ts](../../../e2e/FR-CHECKOUT-056-discount-reservations.spec.ts)） |
+| `FR-CHECKOUT-057` | なし | 1件（[FR-CHECKOUT-057-automatic-repeat-set.spec.ts](../../../e2e/FR-CHECKOUT-057-automatic-repeat-set.spec.ts)） |
+| `FR-CHECKOUT-058` | なし | 1件（[FR-CHECKOUT-058-discount-breakdown.spec.ts](../../../e2e/FR-CHECKOUT-058-discount-breakdown.spec.ts)） |
 | `FR-CONTACT-001` | 1件（[09_contact.md](../../04_DetailDesign/pages/09_contact.md)） | 1件（[FR-CONTACT-001-form-fields.spec.ts](../../../e2e/FR-CONTACT-001-form-fields.spec.ts)） |
 | `FR-CONTACT-002` | 1件（[09_contact.md](../../04_DetailDesign/pages/09_contact.md)） | 1件（[FR-CONTACT-002-inquiry-dropdown.spec.ts](../../../e2e/FR-CONTACT-002-inquiry-dropdown.spec.ts)） |
 | `FR-CONTACT-003` | 1件（[09_contact.md](../../04_DetailDesign/pages/09_contact.md)） | 1件（[FR-CONTACT-003-client-interactive-form.spec.ts](../../../e2e/FR-CONTACT-003-client-interactive-form.spec.ts)） |
@@ -201,6 +217,7 @@
 | `FR-ITEM-DETAIL-013` | 1件（[05_item_detail.md](../../04_DetailDesign/pages/05_item_detail.md)） | 1件（[FR-ITEM-DETAIL-013-image-alt-text.spec.ts](../../../e2e/FR-ITEM-DETAIL-013-image-alt-text.spec.ts)） |
 | `FR-ITEM-DETAIL-066` | 2件（[05_item_detail.md](../../04_DetailDesign/pages/05_item_detail.md)） | 1件（[FR-ITEM-DETAIL-066-return-ineligible.spec.ts](../../../e2e/FR-ITEM-DETAIL-066-return-ineligible.spec.ts)） |
 | `FR-ITEM-DETAIL-067` | なし | 1件（[FR-ITEM-DETAIL-067-retired-variant.spec.ts](../../../e2e/FR-ITEM-DETAIL-067-retired-variant.spec.ts)） |
+| `FR-ITEM-DETAIL-068` | なし | 1件（[FR-ITEM-DETAIL-068-discount-advertising.spec.ts](../../../e2e/FR-ITEM-DETAIL-068-discount-advertising.spec.ts)） |
 | `FR-LOGIN-001` | 2件（[auth.md](../../03_BasicDesign/areas/auth.md)） | 2件（[FR-LOGIN-001-otp-turnstile.spec.ts](../../../e2e/FR-LOGIN-001-otp-turnstile.spec.ts)） |
 | `FR-LOGIN-002` | 3件（[auth.md](../../03_BasicDesign/areas/auth.md)） | 1件（[FR-LOGIN-002-google-oauth.spec.ts](../../../e2e/FR-LOGIN-002-google-oauth.spec.ts)） |
 | `FR-LOGIN-003` | 3件（[auth.md](../../03_BasicDesign/areas/auth.md)） | 1件（[FR-LOGIN-003-password-reset-link.spec.ts](../../../e2e/FR-LOGIN-003-password-reset-link.spec.ts)） |
@@ -266,7 +283,7 @@
 | `FR-STOCKIST-010` | 4件（[stockist.md](../../03_BasicDesign/areas/stockist.md)） | 3件（[FR-STOCKIST-010-region-prefecture-filter.spec.ts](../../../e2e/FR-STOCKIST-010-region-prefecture-filter.spec.ts)） |
 | `FR-TERMS-001` | 1件（[18_terms.md](../../04_DetailDesign/pages/18_terms.md)） | 1件（[FR-TERMS-001-terms-content.spec.ts](../../../e2e/FR-TERMS-001-terms-content.spec.ts)） |
 | `FR-TERMS-002` | 1件（[18_terms.md](../../04_DetailDesign/pages/18_terms.md)） | 1件（[FR-TERMS-002-metadata.spec.ts](../../../e2e/FR-TERMS-002-metadata.spec.ts)） |
-| `FR-TERMS-005` | なし | 1件（[FR-TERMS-005-no-shipping-charge.spec.ts](../../../e2e/FR-TERMS-005-no-shipping-charge.spec.ts)） |
+| `FR-TERMS-005` | 1件（[01_home.md](../../04_DetailDesign/pages/01_home.md)） | 1件（[FR-TERMS-005-no-shipping-charge.spec.ts](../../../e2e/FR-TERMS-005-no-shipping-charge.spec.ts)） |
 | `FR-WISHLIST-001` | 1件（[11_wishlist.md](../../04_DetailDesign/pages/11_wishlist.md)） | 1件（[FR-WISHLIST-001-page-h1-and-client-render.spec.ts](../../../e2e/FR-WISHLIST-001-page-h1-and-client-render.spec.ts)） |
 | `FR-WISHLIST-002` | 1件（[11_wishlist.md](../../04_DetailDesign/pages/11_wishlist.md)） | 1件（[FR-WISHLIST-002-loading-error-empty.spec.ts](../../../e2e/FR-WISHLIST-002-loading-error-empty.spec.ts)） |
 | `FR-WISHLIST-003` | 1件（[11_wishlist.md](../../04_DetailDesign/pages/11_wishlist.md)） | 2件（[FR-WISHLIST-003-004-006-007-008-010-wishlist-behavior.spec.ts](../../../e2e/FR-WISHLIST-003-004-006-007-008-010-wishlist-behavior.spec.ts)） |
@@ -1909,7 +1926,7 @@
 | `FREQ-517-AC-03` | なし | なし |
 | `FREQ-517-AC-04` | なし | なし |
 | `FREQ-517-AC-05` | なし | なし |
-| `FREQ-518-AC-01` | なし | 1件（[FR-CHECKOUT-053-retry-after-session-error.spec.ts](../../../e2e/FR-CHECKOUT-053-retry-after-session-error.spec.ts)） |
+| `FREQ-518-AC-01` | なし | 3件（[FR-CHECKOUT-053-retry-after-session-error.spec.ts](../../../e2e/FR-CHECKOUT-053-retry-after-session-error.spec.ts)） |
 | `FREQ-518-AC-02` | なし | なし |
 | `FREQ-518-AC-03` | なし | なし |
 | `FREQ-518-AC-04` | なし | なし |
@@ -2024,8 +2041,47 @@
 | `FREQ-541-AC-04` | なし | なし |
 | `FREQ-541-AC-05` | なし | 4件（[FR-ADMIN-110-item-statuses.spec.ts](../../../e2e/FR-ADMIN-110-item-statuses.spec.ts)） |
 | `FREQ-541-AC-06` | なし | なし |
+| `FREQ-542-AC-01` | なし | 3件（[group_h_foundation.integration.test.ts](../../../tests/integration/db/group_h_foundation.integration.test.ts)） |
+| `FREQ-542-AC-02` | なし | 1件（[group_h_foundation.integration.test.ts](../../../tests/integration/db/group_h_foundation.integration.test.ts)） |
+| `FREQ-542-AC-03` | 3件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 2件（[group_h_checkout_draft.integration.test.ts](../../../tests/integration/db/group_h_checkout_draft.integration.test.ts)） |
+| `FREQ-543-AC-01` | なし | 10件（[FR-ADMIN-126-discount-permissions.spec.ts](../../../e2e/FR-ADMIN-126-discount-permissions.spec.ts)） |
+| `FREQ-543-AC-02` | なし | 2件（[discount-attention-route.test.ts](../../../tests/unit/api/admin/discount-attention-route.test.ts)） |
+| `FREQ-543-AC-03` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 6件（[FR-ADMIN-126-discount-permissions.spec.ts](../../../e2e/FR-ADMIN-126-discount-permissions.spec.ts)） |
+| `FREQ-544-AC-01` | なし | 4件（[group_h_context.integration.test.ts](../../../tests/integration/db/group_h_context.integration.test.ts)） |
+| `FREQ-544-AC-02` | なし | 3件（[FR-CHECKOUT-057-automatic-repeat-set.spec.ts](../../../e2e/FR-CHECKOUT-057-automatic-repeat-set.spec.ts)） |
+| `FREQ-544-AC-03` | なし | 2件（[FR-CHECKOUT-057-automatic-repeat-set.spec.ts](../../../e2e/FR-CHECKOUT-057-automatic-repeat-set.spec.ts)） |
+| `FREQ-545-AC-01` | なし | 1件（[discount-orders.test.ts](../../../tests/unit/lib/discounts/discount-orders.test.ts)） |
+| `FREQ-545-AC-02` | なし | 2件（[discount-allocation.test.ts](../../../tests/unit/lib/discounts/discount-allocation.test.ts)） |
+| `FREQ-545-AC-03` | なし | 4件（[FR-CHECKOUT-055-discount-combinations.spec.ts](../../../e2e/FR-CHECKOUT-055-discount-combinations.spec.ts)） |
+| `FREQ-546-AC-01` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 3件（[FR-CHECKOUT-055-discount-combinations.spec.ts](../../../e2e/FR-CHECKOUT-055-discount-combinations.spec.ts)） |
+| `FREQ-546-AC-02` | なし | 2件（[FR-CHECKOUT-055-discount-combinations.spec.ts](../../../e2e/FR-CHECKOUT-055-discount-combinations.spec.ts)） |
+| `FREQ-546-AC-03` | なし | 2件（[group_h_admin_concurrency.integration.test.ts](../../../tests/integration/db/group_h_admin_concurrency.integration.test.ts)） |
+| `FREQ-546-AC-04` | 2件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 9件（[FR-CART-025-automatic-discounts.spec.ts](../../../e2e/FR-CART-025-automatic-discounts.spec.ts)） |
+| `FREQ-547-AC-01` | なし | 9件（[FR-ADMIN-124-discount-management.spec.ts](../../../e2e/FR-ADMIN-124-discount-management.spec.ts)） |
+| `FREQ-547-AC-02` | なし | 5件（[group_h_admin.integration.test.ts](../../../tests/integration/db/group_h_admin.integration.test.ts)） |
+| `FREQ-547-AC-03` | なし | 4件（[FR-ADMIN-125-discount-assignments.spec.ts](../../../e2e/FR-ADMIN-125-discount-assignments.spec.ts)） |
+| `FREQ-547-AC-04` | なし | 10件（[FR-ADMIN-125-discount-assignments.spec.ts](../../../e2e/FR-ADMIN-125-discount-assignments.spec.ts)） |
+| `FREQ-547-AC-05` | なし | 6件（[group_h_admin_concurrency.integration.test.ts](../../../tests/integration/db/group_h_admin_concurrency.integration.test.ts)） |
+| `FREQ-548-AC-01` | 2件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 4件（[FR-CHECKOUT-054-own-discount-codes.spec.ts](../../../e2e/FR-CHECKOUT-054-own-discount-codes.spec.ts)） |
+| `FREQ-548-AC-02` | 2件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 12件（[FR-CHECKOUT-054-own-discount-codes.spec.ts](../../../e2e/FR-CHECKOUT-054-own-discount-codes.spec.ts)） |
+| `FREQ-548-AC-03` | なし | 3件（[group_h_checkout_draft.integration.test.ts](../../../tests/integration/db/group_h_checkout_draft.integration.test.ts)） |
+| `FREQ-549-AC-01` | 1件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 4件（[FR-CHECKOUT-056-discount-reservations.spec.ts](../../../e2e/FR-CHECKOUT-056-discount-reservations.spec.ts)） |
+| `FREQ-549-AC-02` | なし | 1件（[group_h_acceptance.integration.test.ts](../../../tests/integration/db/group_h_acceptance.integration.test.ts)） |
+| `FREQ-549-AC-03` | なし | 4件（[group_g1_writer_inventory.integration.test.ts](../../../tests/integration/db/group_g1_writer_inventory.integration.test.ts)） |
+| `FREQ-549-AC-04` | なし | 10件（[FR-CHECKOUT-056-discount-reservations.spec.ts](../../../e2e/FR-CHECKOUT-056-discount-reservations.spec.ts)） |
+| `FREQ-549-AC-05` | なし | 3件（[group_h_acceptance.integration.test.ts](../../../tests/integration/db/group_h_acceptance.integration.test.ts)） |
 | `FREQ-55-AC-01` | なし | 1件（[FR-LOOK-ALL-012-grid-row-gap.spec.ts](../../../e2e/FR-LOOK-ALL-012-grid-row-gap.spec.ts)） |
 | `FREQ-55-AC-02` | なし | 1件（[FR-LOOK-ALL-012-grid-row-gap.spec.ts](../../../e2e/FR-LOOK-ALL-012-grid-row-gap.spec.ts)） |
+| `FREQ-550-AC-01` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 12件（[FR-CART-025-automatic-discounts.spec.ts](../../../e2e/FR-CART-025-automatic-discounts.spec.ts)） |
+| `FREQ-550-AC-02` | なし | 5件（[checkout-api.test.ts](../../../tests/unit/app/checkout/checkout-api.test.ts)） |
+| `FREQ-550-AC-03` | 1件（[05_item_detail.md](../../04_DetailDesign/pages/05_item_detail.md)） | 5件（[FR-ITEM-DETAIL-068-discount-advertising.spec.ts](../../../e2e/FR-ITEM-DETAIL-068-discount-advertising.spec.ts)） |
+| `FREQ-551-AC-01` | なし | 12件（[FR-ACCOUNT-045-discounted-return.spec.ts](../../../e2e/FR-ACCOUNT-045-discounted-return.spec.ts)） |
+| `FREQ-551-AC-02` | なし | 9件（[group_h_migration_asserts.integration.test.ts](../../../tests/integration/db/group_h_migration_asserts.integration.test.ts)） |
+| `FREQ-551-AC-03` | なし | 1件（[group_h_refunds.integration.test.ts](../../../tests/integration/db/group_h_refunds.integration.test.ts)） |
+| `FREQ-551-AC-04` | なし | 5件（[FR-ADMIN-127-discount-refund-amounts.spec.ts](../../../e2e/FR-ADMIN-127-discount-refund-amounts.spec.ts)） |
+| `FREQ-552-AC-01` | 1件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 8件（[FR-CHECKOUT-058-discount-breakdown.spec.ts](../../../e2e/FR-CHECKOUT-058-discount-breakdown.spec.ts)） |
+| `FREQ-552-AC-02` | なし | 10件（[group_h_migration_asserts.integration.test.ts](../../../tests/integration/db/group_h_migration_asserts.integration.test.ts)） |
+| `FREQ-552-AC-03` | なし | 7件（[group_h_migration_asserts.integration.test.ts](../../../tests/integration/db/group_h_migration_asserts.integration.test.ts)） |
 | `FREQ-56-AC-01` | なし | 1件（[FR-LOOK-ALL-013-related-item-mobile-stack.spec.ts](../../../e2e/FR-LOOK-ALL-013-related-item-mobile-stack.spec.ts)） |
 | `FREQ-56-AC-02` | なし | 1件（[FR-LOOK-ALL-013-related-item-mobile-stack.spec.ts](../../../e2e/FR-LOOK-ALL-013-related-item-mobile-stack.spec.ts)） |
 | `FREQ-57-AC-01` | なし | 1件（[FR-STOCKIST-010-region-prefecture-filter.spec.ts](../../../e2e/FR-STOCKIST-010-region-prefecture-filter.spec.ts)） |
@@ -2048,6 +2104,17 @@
 | `FREQ-64-AC-02` | なし | 1件（[FR-LOGIN-011-auth-rounded-design.spec.ts](../../../e2e/FR-LOGIN-011-auth-rounded-design.spec.ts)） |
 | `FREQ-64-AC-03` | なし | なし |
 | `FREQ-64-AC-04` | なし | なし |
+| `FREQ-641-AC-01` | なし | 1件（[FR-ADMIN-164-return-receive-per-item.spec.ts](../../../e2e/FR-ADMIN-164-return-receive-per-item.spec.ts)） |
+| `FREQ-641-AC-02` | なし | 1件（[FR-ADMIN-164-return-receive-per-item.spec.ts](../../../e2e/FR-ADMIN-164-return-receive-per-item.spec.ts)） |
+| `FREQ-641-AC-03` | なし | 1件（[FR-ADMIN-164-return-receive-per-item.spec.ts](../../../e2e/FR-ADMIN-164-return-receive-per-item.spec.ts)） |
+| `FREQ-641-AC-04` | なし | 2件（[FR-ADMIN-164-return-receive-per-item.spec.ts](../../../e2e/FR-ADMIN-164-return-receive-per-item.spec.ts)） |
+| `FREQ-641-AC-05` | なし | 1件（[FR-ADMIN-164-return-receive-per-item.spec.ts](../../../e2e/FR-ADMIN-164-return-receive-per-item.spec.ts)） |
+| `FREQ-641-AC-06` | なし | 1件（[FR-ADMIN-164-return-receive-per-item.spec.ts](../../../e2e/FR-ADMIN-164-return-receive-per-item.spec.ts)） |
+| `FREQ-641-AC-07` | 2件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 2件（[group_h_refund_outcomes.integration.test.ts](../../../tests/integration/db/group_h_refund_outcomes.integration.test.ts)） |
+| `FREQ-641-AC-08` | なし | 1件（[return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts)） |
+| `FREQ-641-AC-09` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 4件（[order_return_receipts.integration.test.ts](../../../tests/integration/db/order_return_receipts.integration.test.ts)） |
+| `FREQ-641-AC-10` | なし | 2件（[return-receive-per-item-migration.integration.test.ts](../../../tests/integration/db/return-receive-per-item-migration.integration.test.ts)） |
+| `FREQ-641-AC-11` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[admin-return-receive.test.tsx](../../../tests/integration/ui/admin-return-receive.test.tsx)） |
 | `FREQ-65-AC-01` | なし | 1件（[FR-LOGIN-012-auth-tab-and-button-states.spec.ts](../../../e2e/FR-LOGIN-012-auth-tab-and-button-states.spec.ts)） |
 | `FREQ-65-AC-02` | なし | 1件（[FR-LOGIN-012-auth-tab-and-button-states.spec.ts](../../../e2e/FR-LOGIN-012-auth-tab-and-button-states.spec.ts)） |
 | `FREQ-65-AC-03` | なし | 2件（[FR-LOGIN-012-auth-tab-and-button-states.spec.ts](../../../e2e/FR-LOGIN-012-auth-tab-and-button-states.spec.ts)） |
@@ -2216,7 +2283,7 @@
 | `NFR-SEC-002` | なし | なし |
 | `NFR-SEC-003` | 7件（[about.md](../../03_BasicDesign/areas/about.md)） | なし |
 | `NFR-SEC-004` | なし | なし |
-| `NFR-SEC-005` | 7件（[admin.md](../../03_BasicDesign/areas/admin.md)） | なし |
+| `NFR-SEC-005` | 8件（[admin.md](../../03_BasicDesign/areas/admin.md)） | なし |
 | `NFR-SEC-006` | なし | なし |
 | `NFR-SEC-007` | 3件（[search.md](../../03_BasicDesign/areas/search.md)） | なし |
 | `NFR-SEC-008` | 1件（[auth.md](../../03_BasicDesign/areas/auth.md)） | なし |

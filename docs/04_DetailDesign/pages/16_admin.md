@@ -1,10 +1,10 @@
 # 1.16 管理画面（ADMIN）詳細設計
 
-> 返品の品ごとの返金 Task 4 確認日: 2026-11-06。DD-ADMIN-020 に、メールの材料・本文と注文の履歴の実装（Task 4）の段落を足した。単体のみ実測済み（jest・tsc・lint）。DB 結合・E2E・メールの実配送は controller 担当で未確認。
+> 返品の品ごとの返金 Task 4 確認日: 2026-11-06。DD-ADMIN-020 に、メールの材料・本文と注文の履歴の実装（Task 4）の段落を足した。単体211/211、メール材料のDB試験6/6と関連E2Eは実測済み（2026-11-06、調整役の手元の実行・ログ保管。[テスト仕様](../../05_Quality/tests/test-spec.md)参照）。メールの実配送は未実行。
 
-> 返品の品ごとの返金 Task 3 確認日: 2026-11-06。DD-ADMIN-017 に見込みの計算（`computePerItemReturnRefundPreview`）、DD-ADMIN-019 に受け取りの画面（Task 3）の実装の段落を足した。単体・画面結合のみ実測済み（jest・tsc・lint）。3幅の E2E は controller 担当。
+> 返品の品ごとの返金 Task 3 確認日: 2026-11-06。DD-ADMIN-017 に見込みの計算（`computePerItemReturnRefundPreview`）、DD-ADMIN-019 に受け取りの画面（Task 3）の実装の段落を足した。単体・画面結合247/247（直し2後）、3幅の E2E は18/18通過（2026-11-06、調整役の手元の実行・ログ保管）。
 
-> 返品の品ごとの返金 Task 2 確認日: 2026-11-06。DD-ADMIN-018 に、窓口・型・store・service の実装（Task 2）の段落を足した。単体のみ実測済み（jest・tsc・lint）。DB 結合・PostgREST・E2E は controller 担当。
+> 返品の品ごとの返金 Task 2 確認日: 2026-11-06。DD-ADMIN-018 に、窓口・型・store・service の実装（Task 2）の段落を足した。単体1026/1026通過。DB・本物のPostgREST・E2Eの実測は[テスト仕様](../../05_Quality/tests/test-spec.md)に記録（2026-11-06、調整役の手元の実行・ログ保管）。
 
 > 返品の品ごとの返金 Task 1 確認日: 2026-11-06。「返品の品ごとの返金（要求定義・2026-11-06）」の DD-ADMIN-018 の後に、DB の実装（移行 `20261106005536`、手元で確認・本番は未適用）の段落を足した。
 
@@ -1164,7 +1164,7 @@ Task 5 fix round 1（2026-10-29）: 一覧は「使った回数」と「上限�
 
 ## 返品の品ごとの返金（要求定義・2026-11-06）
 
-承認済みの要求を先に定義する。以下は後続実装の契約であり、実装済み・DB成功の記録ではない。根拠は[設計書](../../superpowers/specs/2026-11-06-return-receive-per-item-design.md)3〜6・8章と[要求](../../02_Requirements/requirements.md)FREQ-641。返品はADMINのadmin-misc限定の追跡範囲に含めず、DD-ADMIN-016は欠番のままとする。
+以下はTask 1〜5で実装した契約。DB・PostgREST・単体・画面結合・3幅E2Eの実測は[テスト仕様](../../05_Quality/tests/test-spec.md)に記録し、本番適用・実サービス・メールの実配送とは分ける。根拠は[設計書](../../superpowers/specs/2026-11-06-return-receive-per-item-design.md)3〜6・8章と[要求](../../02_Requirements/requirements.md)FREQ-641。返品はADMINのadmin-misc限定の追跡範囲に含めず、DD-ADMIN-016は欠番のままとする。
 
 ### DD-ADMIN-017 受取の今すぐ分と相談分の金額
 
@@ -1173,7 +1173,7 @@ Task 5 fix round 1（2026-10-29）: 一覧は「使った回数」と「上限�
 | 上位 | FREQ-641-REQ-01（範囲外） |
 | 根拠 | 今すぐ返す品以外の額を受け取りで返さず、Hの着と旧注文の端数をDB・見込みで一致させる（設計4章） |
 | 状態 | 現行 |
-| 確かめ方 | 単体テスト、FREQ-641-AC-07・08・10のDB結合（未実行） |
+| 確かめ方 | 単体テスト、FREQ-641-AC-07・08・10のDB結合（2026-11-06実測、テスト仕様参照） |
 | 出どころ | 2026-11-06 オーナー承認設計4章、Task 1 Interfaces・数え方の表 |
 
 入力は品ごとの選択数・状態・now/consult、Hの`receiveRefundAmountsByCount`（DBは`receive_refund_amounts_by_count`）、旧注文の共通累計、費用、注文残額、送料S。出力は今すぐ/相談の点数、G今/G相、各群の手数料、計算額、`amountCap`・`amountCapLabel`、pending/due。今すぐ額は`max(G今−F今,0)+S`、上限は`min(注文残額,G今+S)`。Sは送料残額以下かつ返金額以下。各群の率手数料は別々にfloorし、固定費用は今すぐへ先に引き、不足は同じ受取に相談があればpending、なければdue。全相談なら固定費用もpending。返金失敗による控除戻しは別に扱う。
@@ -1189,7 +1189,7 @@ Hはその行の確保から安い着をnowへ当て、過去の受取・別acti
 | 上位 | FREQ-641-REQ-01（範囲外） |
 | 根拠 | 品の選びを二重防止の本文に含め、窓口の認可とDBの確定で権限外の今すぐ返金を防ぐ（設計5章） |
 | 状態 | 現行 |
-| 確かめ方 | 単体テスト、FREQ-641-AC-09・10のDB・PostgREST（未実行） |
+| 確かめ方 | 単体テスト、FREQ-641-AC-09・10のDB・PostgREST（2026-11-06実測、テスト仕様参照） |
 | 出どころ | 2026-11-06 オーナー承認設計3-3・5-3、Task 1・2 Interfaces |
 
 品は`ReceiveUnitRefundChoice='now'|'consult'`、親は`ReceiptRefundChoice='now'|'consult'|'mixed'|'none'`、旧`RefundChoice`は維持。本文`units[].refundChoice`をRPCの`_units[].refund_choice`へ写す。全返金明細の実効選びから親を導出し、非返金はNULLへ正規化する。旧本文の省略/NULLは親now/consultで補うが、mixedの返金明細の欠落/NULLと親の不一致は`RETURN_ARGUMENT_INVALID/22023`。同じ行・状態でも選びが違えば2要素を許し、同じ選びの重複は拒否する。
@@ -1198,9 +1198,9 @@ Hはその行の確保から安い着をnowへ当て、過去の受取・別acti
 
 保存先は親1行・明細now/consult（旧NULLを保持）、6列`UNIQUE NULLS NOT DISTINCT`。受取・在庫・交換・返金開始は同じ取引で行い、今すぐ分のcore呼出し直後にHのreleaseを1回追加する。読取helperを77本の書き手へ加えない。同一キーは明細の順序が変わっても再送、選び変更は`RETURN_REQUEST_MISMATCH`、旧省略本文の既存指紋と行は変えない。providerはconsult/none/0円では呼ばない。
 
-DB の実装（Task 1 Step 3、2026-11-06）: 上の DD-ADMIN-017 と DD-ADMIN-018 の DB の部分は、移行 [20261106005536_return_receive_per_item.sql](../../../supabase/migrations/20261106005536_return_receive_per_item.sql) で作った（手元の DB だけで確認。本番は未適用で、オーナーの許可待ち）。作り直したのは private の11本（`admin_receive_return`・`return_detail_json`・`group_h_return_unit_dispositions`・`group_h_release_return_units`・`group_h_release_completed_return_claims`・`group_h_return_refund_slices`・`group_h_receiving_amount`・`group_h_return_amounts`・`group_h_claim_refund_units`・`record_group_g_refund_result`・`group_h_return_refund_amount`）で、新しく足したのは読み出しの `private.return_receive_amounts`。Hの数え方: 受け取りの前は行ごとに W0=max(自分の残りの単位−未処理,0) を飛ばし、今返す品はそこから安い順、相談の品はさらに今返す数を飛ばす。受け取りの記録があれば `slices` と `claim` は W0=max(B−N−C,0) で同じ単位を取る。受け取りの記録の無い相談の返金は、印が逆の行を先にし、自分の返せる単位、次に行の数までの空きを共通の列から1度だけ使う。0円の今返す品は、その受け取りの now の明細の位置に結んで解き（前の受け取りの相談の単位は動かさない）、ほかの0円・お返し・届かないは H5 どおり後ろから解く（直し1）。error の返金に成功が遅れて届き、行の数量の中で単位を取り直せない時は、関数を落とさず成功を記録し、単位の食い違いを要対応の例外に残す（直し1）。窓口・store・service・画面は Task 2 以降。証跡の記録は controller が test-spec に書く。
+DB の実装（Task 1 Step 3、2026-11-06）: 上の DD-ADMIN-017 と DD-ADMIN-018 の DB の部分は、移行 [20261106005536_return_receive_per_item.sql](../../../supabase/migrations/20261106005536_return_receive_per_item.sql) で作った（手元の DB だけで確認。本番は未適用で、オーナーの許可待ち）。作り直したのは private の11本（`admin_receive_return`・`return_detail_json`・`group_h_return_unit_dispositions`・`group_h_release_return_units`・`group_h_release_completed_return_claims`・`group_h_return_refund_slices`・`group_h_receiving_amount`・`group_h_return_amounts`・`group_h_claim_refund_units`・`record_group_g_refund_result`・`group_h_return_refund_amount`）で、新しく足したのは読み出しの `private.return_receive_amounts`。Hの数え方: 受け取りの前は行ごとに W0=max(自分の残りの単位−未処理,0) を飛ばし、今返す品はそこから安い順、相談の品はさらに今返す数を飛ばす。受け取りの記録があれば `slices` と `claim` は W0=max(B−N−C,0) で同じ単位を取る。受け取りの記録の無い相談の返金は、印が逆の行を先にし、自分の返せる単位、次に行の数までの空きを共通の列から1度だけ使う。0円の今返す品は、その受け取りの now の明細の位置に結んで解き（前の受け取りの相談の単位は動かさない）、ほかの0円・お返し・届かないは H5 どおり後ろから解く（直し1）。error の返金に成功が遅れて届き、行の数量の中で単位を取り直せない時は、関数を落とさず成功を記録し、単位の食い違いを要対応の例外に残す（直し1）。窓口・store・service は Task 2、画面は Task 3 で実装済み。証跡は[テスト仕様](../../05_Quality/tests/test-spec.md)に記録。
 
-窓口・型・store・service の実装（Task 2、2026-11-06）: 型は [return-types.ts](../../../src/lib/orders/returns/return-types.ts) に `ReceiveUnitRefundChoice` と `ReceiptRefundChoice` を足し、`OrderReturnDetail.receipts[].refundChoice` を後者にした。行に `receiveRefundAmountsByCount?: number[] | null` を足し、[return-store.ts](../../../src/lib/orders/returns/return-store.ts) は配列ならそのまま、キーが無い・null・配列でない値は null に直す。`ReceiveUnitInput.refundChoice` は省けて、store は値がある時だけ `refund_choice` を足す（省いた旧い本文の指紋を変えない）。窓口 [receive/route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/receive/route.ts) の zod は、親に `mixed` を受け、品は `now`・`consult` だけを受ける。重複は「返品の行・状態・補った選び」で断り、親 `mixed` で品の選びに `now` と `consult` の両方が無い本文も 400 にする（どの品が返金の品かは DB が決めるので、窓口はそれ以上を推し量らない）。認可 → CSRF → 回数の制限 → 本文 → 返金の権限 → DB → 監査の順は変えず、権限の無い人の指定額（0 を含む）・正の送料・交換の選び直しは窓口で 403。監査の `refund_choice` は親の値（DB が品の選びから導き直して一致を確かめた後の成功の値）で、生の品の行・メモは足さない。[return-service.ts](../../../src/lib/orders/returns/return-service.ts) は入力を作り直さずに渡し、受け取り1件・返金は最大1件の答えのまま。上限超過 `RETURN_RECEIVE_REFUND_CAP_EXCEEDED` は [return-messages.ts](../../../src/lib/orders/returns/return-messages.ts) で 400・「この受け取りの商品の額と送料までにしてください。」（額を入れた画面の文は Task 3 が見込みから作る）。メールの組み立て（`order-email-compose.ts` の `refundChoice`）は Task 4 で `ReceiptRefundChoice` に広げる。
+窓口・型・store・service の実装（Task 2、2026-11-06）: 型は [return-types.ts](../../../src/lib/orders/returns/return-types.ts) に `ReceiveUnitRefundChoice` と `ReceiptRefundChoice` を足し、`OrderReturnDetail.receipts[].refundChoice` を後者にした。行に `receiveRefundAmountsByCount?: number[] | null` を足し、[return-store.ts](../../../src/lib/orders/returns/return-store.ts) は配列ならそのまま、キーが無い・null・配列でない値は null に直す。`ReceiveUnitInput.refundChoice` は省けて、store は値がある時だけ `refund_choice` を足す（省いた旧い本文の指紋を変えない）。窓口 [receive/route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/receive/route.ts) の zod は、親に `mixed` を受け、品は `now`・`consult` だけを受ける。重複は「返品の行・状態・補った選び」で断り、親 `mixed` で品の選びに `now` と `consult` の両方が無い本文も 400 にする（どの品が返金の品かは DB が決めるので、窓口はそれ以上を推し量らない）。認可 → CSRF → 回数の制限 → 本文 → 返金の権限 → DB → 監査の順は変えず、権限の無い人の指定額（0 を含む）・正の送料・交換の選び直しは窓口で 403。監査の `refund_choice` は受け取った本文の親の値（`now`・`consult`・`mixed`・`none`）。DB が実際に数えた結果の親の値は受け取りの記録に残すで、生の品の行・メモは足さない。[return-service.ts](../../../src/lib/orders/returns/return-service.ts) は入力を作り直さずに渡し、受け取り1件・返金は最大1件の答えのまま。上限超過 `RETURN_RECEIVE_REFUND_CAP_EXCEEDED` は [return-messages.ts](../../../src/lib/orders/returns/return-messages.ts) で 400・「この受け取りの商品の額と送料までにしてください。」（額を入れた画面の文は Task 3 で見込みから作る実装にした）。メールの組み立て（`order-email-compose.ts` の `refundChoice`）は Task 4 で `ReceiptRefundChoice` に広げた。
 
 ### DD-ADMIN-019 品ごとの選びと送信・再送の画面
 
@@ -1209,18 +1209,18 @@ DB の実装（Task 1 Step 3、2026-11-06）: 上の DD-ADMIN-017 と DD-ADMIN-0
 | 上位 | FREQ-641-REQ-01（範囲外） |
 | 根拠 | 箱を1回受け取る操作で各品の返金を決め、上限誤りと結果不明時の重複を防ぐ（設計3章） |
 | 状態 | 現行 |
-| 確かめ方 | 単体、FREQ-641-AC-11画面結合、AC-01〜06の3幅E2E（未実行） |
+| 確かめ方 | 単体、FREQ-641-AC-11画面結合、AC-01〜06の3幅E2E（2026-11-06実測、テスト仕様参照） |
 | 出どころ | 2026-11-06 オーナー承認設計3章、Task 3・5 |
 
 入力は受取可能な各1点の行・状態・選択、認可結果、見込み材料。選択した返金品（交換→返金も含む）の状態直下に「返金: 今すぐ返金 / 額を相談」を置き、初期now。同じ行の2点も別々に選べる。未選択・交換・お返しには出さない。返金権限ありは選びと額/送料入力、P9は選びだけ、P9外は選びも入力もなく全相談。ラジオのgroup/nameを品ごとに分ける。
 
 「今すぐ返金（n点）」に内訳と「上限 ￥X」、「額を相談（m点）」に品名と「返金待ちになります。額はあとで「額を決めて返金する」で決めます。」を出す。超過時は「この受け取りの商品の額と送料（￥X）を超えて入れられません。ほかの受け取りの分は、返品の画面の「額を決めて返金する」で返してください。」を欄に関連付け、額を丸めず送信を止める。混在ボタンは「受け取る（n点を ￥X 返金・m点は相談）」、片方だけは既存の言葉を保つ。
 
-1POSTで単一結果を受け、再読込する。結果不明では送った本文・requestKeyを固定して再送する。S>額・注文残額による上限も止め、混在0円でも相談を残す。相談後の返金画面は案イの待ち額17000円を使う。390/768/1280px、横はみ出し・名前・キーボード・focus・警告関連付けは後続Taskで確認する。
+1POSTで単一結果を受け、再読込する。結果不明では送った本文・requestKeyを固定して再送する。S>額・注文残額による上限も止め、混在0円でも相談を残す。相談後の返金画面は案イの待ち額17000円を使う。390/768/1280px、横はみ出し・名前・キーボード・focus・警告関連付けはTask 5の試験で確かめ、18/18通過（2026-11-06、調整役の手元の実行・ログ保管）。
 
 画面の実装（Task 3、2026-11-06）: [OrderReturnReceiveDialog.tsx](../../../src/components/OrderReturnReceiveDialog.tsx) は1点ごとの状態に `refundChoice`（最初は `now`）を持ち、チェックして状態を選んだ返金の品（返金の行・「返金に変える」にした交換の行。お返しは除く）の「品の状態」の直下に radiogroup「返金」（「今すぐ返金」「額を相談」。name は品ごと）を出す。選びを出すのは `canRefund`、または `canRefund` が偽で `source='customer_request'` かつ `returnMethod<>'not_required'`（P9）の時で、今の選びに関わらず出したままにする（押す順で画面が変わらない。直し1、2026-11-06）。P9 で今すぐの分の見込みが注文の返せる額を超える時は、選びを残したまま押せなくし、`role="alert"` の「今すぐ返金の額が注文の返せる額（￥X）を超えます。一部を「額を相談」にしてください。」を出す。「届いた」を外した品は状態と選びを最初（今すぐ返金）に戻し、送らない。それ以外は選びを出さず、全部の返金の品を `consult` として送る（役割の名前では分けない）。本文の `units` は返品の行・状態・選びごとにまとめ、返金の品には `refundChoice` を必ず付け、返金にならない品はキーを省く（null は送らない）。親の `refundChoice` は now/consult/mixed/none を導く。`refundAmount` は今すぐの品があり `canRefund` で、見込みと違う額の時だけ送り、送料も今すぐの品がある時だけ送る（P9 は null・0）。返金の欄は「今すぐ返金（n点）」（`canRefund` は [ReturnDialogParts.tsx](../../../src/components/ReturnDialogParts.tsx) の `ReturnRefundFields` に `amountCap=refundCap`・`amountCapLabel='上限 ￥X'`・`preserveAmountOverMax`・`amountError` を渡す。P9 は自動の返金の文）と「額を相談（m点）」（品名の list「額を相談の品」と設計3-2の文）。上限を超えた額は丸めずに保ち、誤りの文を `aria-invalid`・`aria-describedby` で欄に結び、`role="alert"` で読み上げて押せなくする。`ReturnRefundFields` の新しい属性を省いた時（相談後の返金の画面）は、従来の「返金額（返せる額: X）」と max=返せる額のまま。相談後の返金の画面（[OrderReturnRefundDialog.tsx](../../../src/components/OrderReturnRefundDialog.tsx)）の商品の額は、返金待ちの印の行だけでなく全部の行の `refundWaitingAmount`（DB の `refund_waiting_amount`）を足す。H の注文の待ち額は仮の割り当てで決まり、案イの印で返金済みに見える行が持つことがあるため（直し2、2026-11-06。`admin_refund_return` も返品の待ちの品の全部を返す）。返金する品の一覧は印の `refundWaiting` の数のまま。ボタンは [return-calc.ts](../../../src/lib/orders/returns/return-calc.ts) の `buildReceiveButtonLabel` が、mixed の時だけ「受け取る（n点を ￥X 返金・m点は相談）」にする（`@design DD-ADMIN-019`）。結果不明の送り直しは `useReturnOperation` が保存した本文をそのまま送る。単体は受け取りの画面・サポートの受け取り・返金の欄の部品・相談後の返金の画面の `DD-ADMIN-019` の試験、画面結合は [admin-return-receive.test.tsx](../../../tests/integration/ui/admin-return-receive.test.tsx)（`FREQ-641-AC-11`）。
 
-既存 E2E の接続（Task 5 Step 3、2026-11-06）: FR-ADMIN-085 は「受け取る品」の状態を選べる listitem の中の radio を確かめ、返金額「返金額」と「上限 ￥10,000」で従来の7,000円入力を行う。FR-ADMIN-087 は全品を「額を相談」にし、相談後の返金は従来の注文上限（20,000円）・5,000円の見込みを保つ。FR-ADMIN-088 の交換から返金への変更も同じ行内の選びを使う。FR-ADMIN-090 はP9外の両ラジオ・両金額入力が無いこと、FR-ADMIN-096 はP9の行内の選びと両金額入力が無いことを確かめる。業務入力・返金結果・店への知らせの期待は変えず、今回変更後の本番ビルド E2E・DB・メールの実測は調整役が行う。
+既存 E2E の接続（Task 5 Step 3、2026-11-06）: FR-ADMIN-085 は「受け取る品」の状態を選べる listitem の中の radio を確かめ、返金額「返金額」と「上限 ￥10,000」で従来の7,000円入力を行う。FR-ADMIN-087 は全品を「額を相談」にし、相談後の返金は従来の注文上限（20,000円）・5,000円の見込みを保つ。FR-ADMIN-088 の交換から返金への変更も同じ行内の選びを使う。FR-ADMIN-090 はP9外の両ラジオ・両金額入力が無いこと、FR-ADMIN-096 はP9の行内の選びと両金額入力が無いことを確かめる。既存の画面の期待を品ごとの選びに合わせ、既存の返品とFR-ADMIN-164を本番ビルド・手元のSupabase・3幅で337/337通過（2026-11-06、調整役の手元の実行・ログ保管）。前に通って後で落ちたもの0件・新しい失敗0件。メールの実配送は未実行。
 
 ### DD-ADMIN-020 単一の受取のメール材料と履歴
 
@@ -1229,7 +1229,7 @@ DB の実装（Task 1 Step 3、2026-11-06）: 上の DD-ADMIN-017 と DD-ADMIN-0
 | 上位 | FREQ-641-REQ-01（範囲外） |
 | 根拠 | 届いた事実は1つとして伝え、相談品まで返金済みと誤認させない（設計5-1・6章） |
 | 状態 | 現行 |
-| 確かめ方 | メール材料・compose・履歴の単体、AC-01・05のE2E（未実行） |
+| 確かめ方 | メール材料・compose・履歴の単体、メール材料のDB試験、AC-01・05のE2E（2026-11-06実測、テスト仕様参照） |
 | 出どころ | 2026-11-06 オーナー承認設計6章、Task 4 |
 
 入力は親と明細の選び・点数・返金結果。正額のnowは既存の返金メールへ受取内容を含め、consultの品だけ「この品は状態を確かめてから、あらためてご連絡します」を添える。0円・失敗は既存の受取メールに今すぐと相談の品を分ける。お客様outboxは受取1回につき1通相当、権限なしで相談を含む場合は店へ`return_refund_pending_shop`を1件。再送で増やさない。

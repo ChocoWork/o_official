@@ -1,6 +1,6 @@
 # DB マイグレーション運用
 
-> 返品の品ごとの返金 Task 1 確認日: 2026-11-06。移行 `20261106005536_return_receive_per_item.sql` を追記した（「返品の受け取りの品ごとの返金の移行（FREQ-641 Task 1）」の節）。手元の DB だけで当てて確かめた。**本番には未適用で、当てる許可はまだ無い（オーナーの許可待ち）**。
+> 返品の品ごとの返金 Task 1 確認日: 2026-11-06。移行 `20261106005536_return_receive_per_item.sql` を追記した（「返品の受け取りの品ごとの返金の移行（FREQ-641 Task 1）」の節）。手元の DB だけで当てて確かめた。デプロイは移行を先に当ててからコードを出す。**本番には未適用で、当てる許可はまだ無い（オーナーの許可待ち）。許可の前に push しない**。
 
 > 波 6 確認日: 2026-11-01。パスワード変更の確認コードの移行 M3（`20261101120000`）を追記した（「波 6 パスワード変更の確認コードの移行 M3」の節）。手元は適用済み、本番も 2026-11-01 21:06 頃 JST に適用済み（Task 11。G-1 に知らせ、dry-run が M3 の1本だけと確かめてから `db push --linked`。照合は同じ節）。
 
@@ -1245,6 +1245,10 @@ controller手順: H7未適用DBの新しい取消テストでRED→取引内で�
 ## 返品の受け取りの品ごとの返金の移行（FREQ-641 Task 1、手元の DB で確認済み・本番未適用）
 
 移行は [20261106005536_return_receive_per_item.sql](../../supabase/migrations/20261106005536_return_receive_per_item.sql)。サイズ 100,580 bytes、MD5 `dd1402bee51133c791cea533b6933310`（2026-11-06 の直し1の後。直し1は、error の返金に成功が遅れて届いた時の取り直しが行の数量で取れなければ例外へ回すことと、受け取りで0円にした今返す品の解放をその受け取りの now の明細に結ぶこと）。ASCII・BOM なし・LF。`BEGIN;` → 書き手の許可一覧の写し（一時表 `rr_writer_baseline`）→ 表の変更（`order_return_receipt_lines.refund_choice`・CHECK・6列の一意の組、`order_return_receipts` の CHECK に `mixed`）→ private の11本の `CREATE OR REPLACE` と新しい読み出し `private.return_receive_amounts` → 所有者・ACL → 末尾 assert → `NOTIFY pgrst, 'reload schema';` → `COMMIT;`。適用済みの移行は変えない。過去の受け取りの行の埋め直し・業務データの書き換えはしない（`UPDATE` は無い）。公開の入口 `public.admin_receive_return` と芯 `private.order_return_line_states_core` は変えない。
+
+デプロイの順番（2026-11-06）: 本番では、この移行を先に当ててから、このコードを出す。逆にすると、管理画面の注文履歴の窓口 `/api/admin/orders/[id]/history` が新しい列 `refund_choice` を読めず500を返す。本番への適用はオーナーの許可待ち（未許可）。
+
+`.github/workflows/db-migrations.yml` は master への push で `supabase/migrations/**` に変更があれば本番へ `supabase db push` するため、許可の前に push しない。
 
 末尾 assert は `RETURN_RECEIVE_PER_ITEM_MIGRATION_ASSERTION_FAILED / P0001`。DETAIL は `rr_schema`（列・CHECK・一意の組）・`rr_receive`（受け取り・詳細・読み出しの本文の MD5 と属性、公開の入口の本文）・`rr_amounts`（H の9本の本文の MD5 と属性）・`rr_acl`（12本の ACL。`private.admin_receive_return` だけ service_role に EXECUTE を残す。公開の入口が SECURITY INVOKER のため）・`rr_writers`（G の書き手の許可一覧が77本・同じ OID 集合・本文の MD5 `1a9bd697484b32bb5f44793ced4b70df` のまま）。
 
