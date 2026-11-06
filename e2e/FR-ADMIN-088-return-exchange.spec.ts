@@ -40,7 +40,6 @@ import {
   UNIT_STATES,
   addVariant,
   chooseRefundChoice,
-  unitRefundChoice,
   confirmButton,
   createReturnInDb,
   createShippedOrder,
@@ -69,6 +68,7 @@ import {
   returnsDialogName,
   sentReturnMailCount,
   setUnitState,
+  unitRefundChoice,
   waitForMails,
   type ReturnRouteState,
 } from './return-test-utils';

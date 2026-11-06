@@ -173,6 +173,17 @@ async function submitByKeyboard(button: Locator): Promise<void> {
   await button.press('Enter');
 }
 
+/** 確定する前の画面で、ページ全体と開いている dialog 自体の横はみ出しを確かめる */
+async function expectNoOverflow(page: Page, dialog: Locator): Promise<void> {
+  await expect(dialog).toBeVisible();
+  await noOverflow(page);
+  const { scrollWidth, clientWidth } = await dialog.evaluate((element) => ({
+    scrollWidth: element.scrollWidth,
+    clientWidth: element.clientWidth,
+  }));
+  expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+}
+
 const unitChoices = (body: Record<string, unknown>) =>
   ((body.units ?? []) as Array<{ refundChoice?: string }>).map((unit) => unit.refundChoice ?? null);
 const amountInputs = (dialog: Locator) => dialog.getByRole('spinbutton', { name: /^返金額/ });
@@ -219,12 +230,12 @@ for (const viewport of viewports) {
       await expect(dialog.getByText(PER_ITEM.nowHeading(1), { exact: true })).toBeVisible();
       await expect(dialog.getByText(PER_ITEM.consultHeading(1), { exact: true })).toBeVisible();
       await expect(dialog.getByText(PER_ITEM.consultNote, { exact: true })).toBeVisible();
+      await expectNoOverflow(page, dialog);
       await submitByKeyboard(confirmButton(dialog, PER_ITEM.mixedButton(1, formatYen(900), 1)));
       await expect.poll(() => scene.state.posts.receive.length).toBe(1);
       const post = scene.state.posts.receive[0].body;
       expect(post.refundChoice).toBe('mixed');
       expect(unitChoices(post).sort()).toEqual(['consult', 'now']);
-      await noOverflow(page);
 
       const receipts = await receiptRows(rr.db, fx.returnId);
       expect(receipts).toHaveLength(1);
@@ -260,15 +271,18 @@ for (const viewport of viewports) {
       await expect(amount).toHaveAttribute('aria-invalid', 'true');
       const submitOver17500 = dialog.getByRole('button', { name: PER_ITEM.mixedButtonAny });
       await expect(submitOver17500).toBeDisabled();
+      await amount.press('Enter');
+      await expect(amount).toHaveValue('17501');
+      await expect(submitOver17500).toBeDisabled();
       const postCountBeforeFix = scene.state.posts.receive.length;
       expect(postCountBeforeFix).toBe(0);
 
       await amount.fill('17500');
       await expect(dialog.getByText(PER_ITEM.capError(formatYen(17_500)), { exact: true })).toHaveCount(0);
+      await expectNoOverflow(page, dialog);
       await submitByKeyboard(confirmButton(dialog, PER_ITEM.mixedButton(1, formatYen(17_500), 1)));
       await expect.poll(() => scene.state.posts.receive.length).toBe(1);
       expect(scene.state.posts.receive[0].body).toMatchObject({ refundChoice: 'mixed', refundAmount: 17_500, refundShippingAmount: 500 });
-      await noOverflow(page);
 
       const refunds = await returnRefundRows(rr.db, fx.orderId);
       expect(refunds).toHaveLength(1);
@@ -290,12 +304,12 @@ for (const viewport of viewports) {
       expect(refundAmountInputCount).toBe(0);
       expect(shippingAmountInputCount).toBe(0);
       await chooseConsultByKeyboard(dialog, 1);
+      await expectNoOverflow(page, dialog);
       await submitByKeyboard(confirmButton(dialog, PER_ITEM.mixedButton(1, formatYen(999), 1)));
       await expect.poll(() => scene.state.posts.receive.length).toBe(1);
       const post = scene.state.posts.receive[0].body;
       expect(post).toMatchObject({ refundChoice: 'mixed', refundAmount: null, refundShippingAmount: 0 });
       expect(unitChoices(post).sort()).toEqual(['consult', 'now']);
-      await noOverflow(page);
 
       const receipts = await receiptRows(rr.db, fx.returnId);
       expect(receipts).toHaveLength(1);
@@ -316,12 +330,12 @@ for (const viewport of viewports) {
       await setUnitState(dialog, 1, UNIT_STATES.keep);
       await chooseConsultByKeyboard(dialog, 0);
       await expect(unitChoice(dialog, 1, PER_ITEM.now)).toBeChecked();
+      await expectNoOverflow(page, dialog);
       await submitByKeyboard(confirmButton(dialog, PER_ITEM.mixedButton(1, formatYen(20_000), 1)));
       await expect.poll(() => scene.state.posts.receive.length).toBe(1);
       const units = scene.state.posts.receive[0].body.units as Array<{ returnLineId: string; refundChoice?: string }>;
       expect(units.find((unit) => unit.returnLineId === lineA)?.refundChoice).toBe('consult');
       expect(units.find((unit) => unit.returnLineId === lineB)?.refundChoice).toBe('now');
-      await noOverflow(page);
 
       // Stripe の返事待ちの間
       const refunds = await returnRefundRows(rr.db, fx.orderId);
@@ -358,6 +372,7 @@ for (const viewport of viewports) {
       await expect(refundDialogPreview).toContainText('￥17,000');
       const refundDialogButton = confirmButton(refundDialog, RETURN_TEXT.refundButton(formatYen(17_000)));
       await expect(refundDialogButton).toHaveAccessibleName('￥17,000 を返金する');
+      await expectNoOverflow(page, refundDialog);
       await submitByKeyboard(refundDialogButton);
       await expect.poll(() => scene.state.posts.refund.length).toBe(1);
       await expect.poll(() => later.made?.amount ?? null).not.toBeNull();
@@ -367,7 +382,6 @@ for (const viewport of viewports) {
       const actualConsultRefundAmount = Number(actual.amount);
       expect(actual.status).toBe('succeeded');
       expect(actualConsultRefundAmount).toBe(17000); // 画面の見込みと実額が一致
-      await noOverflow(page);
     });
 
     test('FREQ-641-AC-05: 今すぐ0円と相談を1回受け取り相談だけを待ちに残す', async ({ page, request, rr }) => {
@@ -378,10 +392,10 @@ for (const viewport of viewports) {
       await setUnitState(dialog, 0, UNIT_STATES.keep);
       await setUnitState(dialog, 1, UNIT_STATES.keep);
       await chooseConsultByKeyboard(dialog, 1);
+      await expectNoOverflow(page, dialog);
       await submitByKeyboard(confirmButton(dialog, PER_ITEM.mixedButton(1, formatYen(0), 1)));
       await expect.poll(() => scene.state.posts.receive.length).toBe(1);
       expect(scene.state.posts.receive[0].body.refundChoice).toBe('mixed');
-      await noOverflow(page);
 
       const refundRows = await returnRefundRows(rr.db, fx.orderId);
       expect(refundRows).toHaveLength(0);
@@ -394,9 +408,10 @@ for (const viewport of viewports) {
       // 受け取りのメールは1通で、今すぐ返金の品と額を相談の品を分けて書く
       const mails = await waitForMails(request, fx.email, RETURN_MAIL.received);
       expect(mails).toHaveLength(1);
-      expect(mails[0].Text).toContain(PER_ITEM.now);
-      expect(mails[0].Text).toContain(PER_ITEM.consult);
-      expect(mails[0].Text).toContain('照合テスト');
+      const mailText = mails[0].Text.replaceAll('\r\n', '\n');
+      expect(mailText).toContain('今すぐ返金する商品:\n・照合テスト（BLACK / M） × 1\n');
+      expect(mailText).toContain('額を相談する商品:\n・照合テスト（BLACK / M） × 1\n');
+      expect(mailText.indexOf('今すぐ返金する商品:')).toBeLessThan(mailText.indexOf('額を相談する商品:'));
     });
 
     test('FREQ-641-AC-06: P9外の権限なしには選びも金額入力も出ず全品相談になる', async ({ page, rr }) => {
@@ -405,17 +420,26 @@ for (const viewport of viewports) {
       const { scene, dialog } = await openReceive(page, rr, fx, 'supporter');
       await setUnitState(dialog, 0, UNIT_STATES.keep);
       await setUnitState(dialog, 1, UNIT_STATES.keep);
+      await expect(dialog.getByText(RETURN_TEXT.supportRefundNote, { exact: true })).toBeVisible();
       const refundChoiceRadioCount = await choiceRadios(dialog).count();
       const refundAmountInputCount = await amountInputs(dialog).count();
       expect(refundChoiceRadioCount).toBe(0);
       expect(refundAmountInputCount).toBe(0);
       await expect(shippingInputs(dialog)).toHaveCount(0);
+      await expectNoOverflow(page, dialog);
       await submitByKeyboard(confirmButton(dialog, RETURN_TEXT.supportConsultButton));
       await expect.poll(() => scene.state.posts.receive.length).toBe(1);
       const post = scene.state.posts.receive[0].body;
       expect(post.refundChoice).toBe('consult');
-      expect(unitChoices(post).every((choice) => choice === 'consult')).toBe(true);
-      await noOverflow(page);
+      const choices = unitChoices(post);
+      // 同じ返品行・同じ状態・同じ選びの品は1要素にまとめ、数量で送る
+      const sentQuantity = ((post.units ?? []) as Array<{ quantity?: number }>).reduce(
+        (sum, unit) => sum + (unit.quantity ?? 0),
+        0,
+      );
+      expect(choices.length).toBeGreaterThan(0);
+      expect(sentQuantity).toBe(2);
+      expect(choices.every((choice) => choice === 'consult')).toBe(true);
 
       const receipts = await receiptRows(rr.db, fx.returnId);
       expect(receipts).toHaveLength(1);

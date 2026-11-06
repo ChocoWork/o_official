@@ -52,11 +52,11 @@ for (const viewport of viewports) {
       await openDetailReturnsDialog(page, fx.orderId, '受け取る');
       const dialog = await openReceiveDialog(page, fx.orderId, returnLabelOf(fx.orderId, created.number));
       await setUnitState(dialog, 0, UNIT_STATES.restock);
+      await expect(dialog.getByText(RETURN_TEXT.supportRefundNote, { exact: true })).toBeVisible();
       await expect(dialog.getByRole('radio', { name: RETURN_TEXT.nowOption, exact: true })).toHaveCount(0);
       await expect(dialog.getByRole('radio', { name: RETURN_TEXT.consultOption, exact: true })).toHaveCount(0);
       await expect(dialog.getByRole('spinbutton', { name: /^返金額/ })).toHaveCount(0);
       await expect(dialog.getByRole('spinbutton', { name: /^送料/ })).toHaveCount(0);
-      await expect(dialog.getByText(RETURN_TEXT.supportRefundNote, { exact: true })).toBeVisible();
       await dialog.getByRole('button', { name: RETURN_TEXT.supportConsultButton, exact: true }).click();
       await expect.poll(() => scene.state.posts.receive.length).toBe(1);
       expect(scene.state.posts.receive[0].body.refundChoice).toBe('consult');
