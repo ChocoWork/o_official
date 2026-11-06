@@ -108,7 +108,7 @@ function receiptMaterial(overrides: Partial<OrderEmailReturnReceipt> = {}): Orde
   return {
     refundChoice: 'none', received: [{ item_name: 'コート', color: null, size: null, quantity: 1 }], sentBack: [],
     sentBackMessage: null, sentBackCarrier: null, sentBackTrackingNumber: null, exchanges: [], pendingRefund: null,
-    refundWaived: false, refundNotAccepted: false,
+    refundWaived: false, refundNotAccepted: false, refundNowItems: [], refundConsultItems: [],
     ...overrides,
   };
 }

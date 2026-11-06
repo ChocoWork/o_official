@@ -9,7 +9,12 @@ import {
   STRIPE_REFUND_REASON_LABELS,
 } from '@/lib/orders/refund/refund-messages';
 import type { OrderRefundSource, OrderRefundStatus } from '@/lib/orders/refund/refund-types';
-import type { AdminCancelRequest, OrderReturnDetail } from '@/lib/orders/returns/return-types';
+import type {
+  AdminCancelRequest,
+  OrderReturnDetail,
+  ReceiveUnitRefundChoice,
+  ReturnResolution,
+} from '@/lib/orders/returns/return-types';
 import { SHIPPING_CARRIERS, isShippingCarrierId } from '@/lib/orders/shipping-carriers';
 import {
   describeOrderEmailState,
@@ -189,8 +194,19 @@ export type OrderHistoryRefundRereserveEntry = {
   items: Array<{ name: string; quantity: number; shortage: number }>;
 };
 
-/** 受け取りの行ごとの数（order_return_receipt_lines）。履歴の「返品の受け取り」の細目と「届かない」「返金しない」の数に使う。disposition は restocked・missing・refund_waived など */
-export type OrderHistoryReturnReceiptLine = { receiptId: string; disposition: string; quantity: number };
+/**
+ * 受け取りの行ごとの数（order_return_receipt_lines）。履歴の「返品の受け取り」の細目と「届かない」「返金しない」の数に使う。disposition は restocked・missing・refund_waived など。
+ * resolution と refundChoice は、その行で決まった解決と品ごとの返金の選び（2026-11-06 設計書 6章）。前の受け取りの返金の行の refundChoice は NULL で、受け取りの記録の選びで読む
+ *
+ * @design DD-ADMIN-020
+ */
+export type OrderHistoryReturnReceiptLine = {
+  receiptId: string;
+  disposition: string;
+  quantity: number;
+  resolution: ReturnResolution | null;
+  refundChoice: ReceiveUnitRefundChoice | null;
+};
 
 /**
  * 返品の記録（order_returns）に直に残っていて、返品の一覧（list_order_returns。共通の約束 C-2）が持たない欄。
@@ -371,6 +387,41 @@ function receiptQuantity(lines: readonly OrderHistoryReturnReceiptLine[], receip
 }
 
 /**
+ * ある受け取りの、今すぐ返金と額を相談の品の数の細目（2026-11-06 設計書 6章）。「今すぐ返金 n点・相談 m点」の形で、0点の側は書かない。
+ * 数えるのは受け取った返金の品の行だけ（返金しないで終えた数・交換・お返しは重ねない）。前の受け取りの行（NULL）は受け取りの記録の now・consult で補う。
+ * 混ざる受け取り（mixed）の返金の行に選びが無いのは壊れた記録なので、推測で数えずに投げる（窓口は読み込みの失敗として答える）
+ *
+ * @design DD-ADMIN-020
+ */
+function receiptRefundChoiceDetails(
+  lines: readonly OrderHistoryReturnReceiptLine[],
+  receipt: OrderReturnDetail['receipts'][number],
+): string[] {
+  let now = 0;
+  let consult = 0;
+  for (const line of lines) {
+    if (line.receiptId !== receipt.id || line.resolution !== 'refund' || !RECEIVED_REFUND_DISPOSITIONS.has(line.disposition)) {
+      continue;
+    }
+    const choice =
+      line.refundChoice ?? (receipt.refundChoice === 'now' || receipt.refundChoice === 'consult' ? receipt.refundChoice : null);
+    if (choice === null && receipt.refundChoice === 'mixed') {
+      throw new Error('ORDER_HISTORY_RECEIPT_CHOICE_MISSING');
+    }
+    if (choice === 'now') {
+      now += line.quantity;
+    } else if (choice === 'consult') {
+      consult += line.quantity;
+    }
+  }
+  const parts = [...(now > 0 ? [`今すぐ返金 ${now}点`] : []), ...(consult > 0 ? [`相談 ${consult}点`] : [])];
+  return parts.length > 0 ? [parts.join('・')] : [];
+}
+
+/** 品ごとの返金の選びを持つ、受け取った品の状態（DB の制約と同じ: 在庫に戻す・戻さない・検品待ち） */
+const RECEIVED_REFUND_DISPOSITIONS: ReadonlySet<string> = new Set(['restocked', 'not_restocked', 'pending_inspection']);
+
+/**
  * 返品1件の履歴の行（グループ E-3 設計書 8-1、文は共通の約束 C-5）。受け取りの記録（receipts）から、受け取り・検品・届かない・
  * 開き直し・返金しないで終えた、を出す。取消・手数料の受け取り・支払いを待たずに送るは、返品の記録の時刻と、窓口が引いた
  * 返品の記録（record。した人のメールと、手数料をいただかない印 feeWaived）から出す。
@@ -429,7 +480,7 @@ function returnHistoryEntries(
       const details = RECEIVE_DETAIL_WORDS.flatMap(([word, disposition]) => {
         const quantity = receiptQuantity(receiptLines, receipt.id, disposition);
         return quantity > 0 ? [`${word} ${quantity}点`] : [];
-      });
+      }).concat(receiptRefundChoiceDetails(receiptLines, receipt));
       entries.push(entry('receive', id, receipt.createdAt, `返品の受け取り（${detail.label}）`, receipt.actorEmail, details));
     } else if (receipt.kind === 'waive_refund') {
       entries.push(waivedEntry(receipt));

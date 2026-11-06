@@ -755,8 +755,14 @@ describe('buildOrderHistory - 返金のお知らせと並び順', () => {
 // 返品の行（グループ E-3 設計書 8-1。文は共通の約束 C-5）。returnDetail の見本は、注文 ORDER_ID の1つ目の返品（番号 ORD-A1B2C3D4-R1）
 const EXCHANGE_LINE = '44444444-4444-4444-8444-444444444444'; // 返品の交換で足した交換の品の行
 
-function receiptLine(receiptId: string, disposition: string, quantity: number): OrderHistoryReturnReceiptLine {
-  return { receiptId, disposition, quantity };
+function receiptLine(
+  receiptId: string,
+  disposition: string,
+  quantity: number,
+  resolution: OrderHistoryReturnReceiptLine['resolution'] = null,
+  refundChoice: OrderHistoryReturnReceiptLine['refundChoice'] = null,
+): OrderHistoryReturnReceiptLine {
+  return { receiptId, disposition, quantity, resolution, refundChoice };
 }
 
 /** 窓口が order_returns から引いて渡す、取消などをした人のメールと手数料をいただかない印（returnDetail の見本の返品 ret-1 の分） */
@@ -1006,4 +1012,58 @@ describe('buildOrderHistory - 返品', () => {
     expect(entriesOf(history.entries, 'return').map((entry) => entry.kind)).toEqual(['created']);
   });
 
+});
+
+// 品ごとの返金の選び（2026-11-06 設計書 6章）。「返品の受け取り」は1行のまま、細目に選びの点数を足す
+describe('buildOrderHistory - 品ごとの返金の選び', () => {
+  const receive = (refundChoice: 'now' | 'consult' | 'mixed' | 'none') => [returnDetail({
+    receipts: [{ id: 'rc-1', kind: 'receive', refundChoice, createdAt: '2026-10-12T02:00:00.000Z', actorEmail: 'admin@example.com' }],
+  })];
+  const receiveEntriesOf = (history: ReturnType<typeof buildOrderHistory>) =>
+    entriesOf(history.entries, 'return').filter((entry) => entry.kind === 'receive');
+
+  it('DD-ADMIN-020 受け取り履歴は1行で選びの点数を添える', () => {
+    const history = buildOrderHistory(input({
+      returns: receive('mixed'),
+      returnReceiptLines: [
+        receiptLine('rc-1', 'restocked', 1, 'refund', 'now'),
+        receiptLine('rc-1', 'not_restocked', 1, 'refund', 'consult'),
+        receiptLine('rc-1', 'restocked', 1, 'exchange', null),
+        // 今すぐ返金が0円で返金しなかった数。受け取りの点数には重ねない
+        receiptLine('rc-1', 'refund_waived', 1, null, null),
+      ],
+    }));
+    const entries = entriesOf(history.entries, 'return');
+    const [receiveEntry] = receiveEntriesOf(history);
+
+    expect(entries.filter((x) => x.kind === 'receive')).toHaveLength(1);
+    expect(receiveEntry.details).toContain('今すぐ返金 1点・相談 1点');
+    expect(receiveEntry.details).toEqual(['在庫に戻す 2点', '戻さない 1点', '今すぐ返金 1点・相談 1点']);
+    // 0円の免除の行は別に1行。受け取りの行は増えない
+    expect(entries.map((entry) => entry.kind)).toEqual(['refund_waived', 'receive', 'created']);
+  });
+
+  it('DD-ADMIN-020 旧NULLは親で読みmixedのNULLは履歴生成を拒否する', () => {
+    const legacyLines = [receiptLine('rc-1', 'restocked', 1, 'refund', null), receiptLine('rc-1', 'restocked', 1, 'exchange', null)];
+    const legacyNow = receiveEntriesOf(buildOrderHistory(input({ returns: receive('now'), returnReceiptLines: legacyLines })));
+    const legacyConsult = receiveEntriesOf(buildOrderHistory(input({ returns: receive('consult'), returnReceiptLines: legacyLines })));
+    const exchangeOnly = receiveEntriesOf(buildOrderHistory(input({
+      returns: receive('none'), returnReceiptLines: [receiptLine('rc-1', 'restocked', 1, 'exchange', null)],
+    })));
+    let mixedNullHistoryRejected = false;
+    try {
+      buildOrderHistory(input({
+        returns: receive('mixed'),
+        returnReceiptLines: [receiptLine('rc-1', 'restocked', 1, 'refund', 'now'), receiptLine('rc-1', 'restocked', 1, 'refund', null)],
+      }));
+    } catch {
+      mixedNullHistoryRejected = true;
+    }
+
+    expect(legacyNow[0].details).toEqual(['在庫に戻す 2点', '今すぐ返金 1点']);
+    expect(legacyConsult[0].details).toEqual(['在庫に戻す 2点', '相談 1点']);
+    // 非返金の明細（交換）だけの受け取りには、選びの点数を出さない
+    expect(exchangeOnly[0].details).toEqual(['在庫に戻す 1点']);
+    expect(mixedNullHistoryRejected).toBe(true);
+  });
 });

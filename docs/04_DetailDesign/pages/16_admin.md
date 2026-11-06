@@ -1,5 +1,7 @@
 # 1.16 管理画面（ADMIN）詳細設計
 
+> 返品の品ごとの返金 Task 4 確認日: 2026-11-06。DD-ADMIN-020 に、メールの材料・本文と注文の履歴の実装（Task 4）の段落を足した。単体のみ実測済み（jest・tsc・lint）。DB 結合・E2E・メールの実配送は controller 担当で未確認。
+
 > 返品の品ごとの返金 Task 3 確認日: 2026-11-06。DD-ADMIN-017 に見込みの計算（`computePerItemReturnRefundPreview`）、DD-ADMIN-019 に受け取りの画面（Task 3）の実装の段落を足した。単体・画面結合のみ実測済み（jest・tsc・lint）。3幅の E2E は controller 担当。
 
 > 返品の品ごとの返金 Task 2 確認日: 2026-11-06。DD-ADMIN-018 に、窓口・型・store・service の実装（Task 2）の段落を足した。単体のみ実測済み（jest・tsc・lint）。DB 結合・PostgREST・E2E は controller 担当。
@@ -1231,6 +1233,8 @@ DB の実装（Task 1 Step 3、2026-11-06）: 上の DD-ADMIN-017 と DD-ADMIN-0
 入力は親と明細の選び・点数・返金結果。正額のnowは既存の返金メールへ受取内容を含め、consultの品だけ「この品は状態を確かめてから、あらためてご連絡します」を添える。0円・失敗は既存の受取メールに今すぐと相談の品を分ける。お客様outboxは受取1回につき1通相当、権限なしで相談を含む場合は店へ`return_refund_pending_shop`を1件。再送で増やさない。
 
 履歴の「返品の受け取り」は1行で、細目に「今すぐ返金 n点・相談 m点」を足す。旧NULL明細は親now/consultで読む。mixedの返金明細NULLは材料生成を拒否する。過去の追記済み記録・outbox key・送信回数を更新しない。メールの実配送は未確認であり、材料や本文の単体成功と分けて報告する。
+
+メールと履歴の実装（Task 4、2026-11-06）: [order-email-compose.ts](../../../src/lib/orders/email/order-email-compose.ts) は受け取りの行の `refund_choice` も読み、`OrderEmailReturnReceipt` に `refundNowItems`・`refundConsultItems`（受け取った返金の品だけ。同じ品でも選びが違えば別のまとまりで、まとまりの中は数を足す）を足し、`refundChoice` の型を `ReceiptRefundChoice`（`mixed` を含む）にした。旧い行の NULL は親の `now`・`consult` で補い、交換・お返しの品には印を付けない。親が `mixed` で返金の品の選びが NULL なら材料を null（送れない）にする。本文は、`mixed` と一緒の返金のお知らせで「返金した商品」の次に「額を相談する商品:」の節を足し、相談の品の行ごとに「この品は状態を確かめてから、あらためてご連絡します。」を添える。0円・受け付けられなかった `mixed` の受け取りのお知らせは、交換の品の次に「今すぐ返金する商品:」（0円なら「今すぐ返金する商品は、ご返金の額が0円のため、ご返金はございません。」、受け付けられなかったら「ご返金の額は、確かめてから改めてご連絡いたします。」を添える）と「額を相談する商品:」を書き、全体の0円・相談の一文は書かない。`mixed` なのにどちらかの品が無い材料からは作らない。`now`・`consult`・`none` の受け取りと、相談の後の返金（受け取りの番号を持たない）の本文は変えていない。お客様のメールの通数は DB の予定（Task 1）で決まり、本文の側で足さない。[order-history.ts](../../../src/lib/orders/email/order-history.ts) の `OrderHistoryReturnReceiptLine` に `resolution`・`refundChoice` を足し、[履歴の窓口](../../../src/app/api/admin/orders/%5Bid%5D/history/route.ts) が `order_return_receipt_lines` から `resolution, refund_choice` も読んで渡す。「返品の受け取り」の行は1行のまま、状態ごとの細目の後に「今すぐ返金 n点・相談 m点」（0点の側は書かない。返金の品が無ければ足さない）を足す。数えるのは在庫に戻す・戻さない・検品待ちの返金の行だけで、`refund_waived` の数は重ねない（「返金しないで終えた」は今までどおり別の行）。旧い行の NULL は親で補い、親 `mixed` の返金の行の NULL は推測せずに投げる（窓口は 500）。単体は [order-email-return-material.test.ts](../../../tests/unit/lib/orders/email/order-email-return-material.test.ts)・[order-email-compose-returns.test.ts](../../../tests/unit/lib/orders/email/order-email-compose-returns.test.ts)・[order-history.test.ts](../../../tests/unit/lib/orders/email/order-history.test.ts)・[order-history-route.test.ts](../../../tests/unit/api/admin/order-history-route.test.ts) の `DD-ADMIN-020` の試験。
 
 ## 注文の詳細の割引の内訳（H Task 10 / FREQ-552）
 

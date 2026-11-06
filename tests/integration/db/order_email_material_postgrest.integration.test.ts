@@ -204,6 +204,9 @@ describeLocalDb('integration: 返金のお知らせの材料を、実際の Post
       pendingRefund: { items: [{ ...BOUGHT, quantity: 1 }], amount: 4200 },
       refundWaived: false,
       refundNotAccepted: false,
+      // 前の受け取りの行（refund_choice が NULL）は、受け取りの記録の選び（consult）で読む。交換・お返しの品は入れない
+      refundNowItems: [],
+      refundConsultItems: [{ ...BOUGHT, quantity: 1 }],
     });
     // 受け取りの材料では、受付のお知らせの中身は読まない
     expect(material?.orderReturn).toMatchObject({ number: 1, items: [], exchangePlan: [], returnAddress: null });

@@ -747,6 +747,7 @@ const RETURN_BASE: OrderEmailReturnMaterial = {
 const RECEIPT_BASE: OrderEmailReturnReceipt = {
   refundChoice: 'none', received: [COAT_ITEM], sentBack: [], sentBackMessage: null, sentBackCarrier: null,
   sentBackTrackingNumber: null, exchanges: [], pendingRefund: null, refundWaived: false, refundNotAccepted: false,
+  refundNowItems: [], refundConsultItems: [],
 };
 const RETURN_REQUEST: OrderEmailRequestMaterial = {
   kind: 'return', number: 1, declineMessage: null,

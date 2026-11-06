@@ -51,3 +51,26 @@ test('FREQ-539-AC-04: 返品の記録と品物の状態履歴が同じ人のメ�
   expect(body.entries).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'return', actorEmail })]));
   expect(console.warn).not.toHaveBeenCalled(); expect(console.error).not.toHaveBeenCalled();
 });
+
+test('DD-ADMIN-020 受け取り履歴は1行で選びの点数を添える（窓口は明細の解決と返金の選びを読んで渡す）', async () => {
+  const receiptLineSelects: string[] = [];
+  (listOrderReturns as jest.Mock).mockResolvedValue([returnDetail({
+    receipts: [{ id: 'rc-1', kind: 'receive', refundChoice: 'mixed', createdAt: '2026-10-26T02:00:00Z', actorEmail: 'admin@example.com' }],
+  })]);
+  client.from.mockImplementation((table: string) => ({ select: (columns: string) => table === 'orders'
+    ? { eq: () => ({ maybeSingle: async () => ({ data: { id, status: 'paid', shipping_email: null, created_at: '2026-10-26T00:00:00Z' }, error: null }) }) }
+    : table === 'order_return_receipt_lines'
+      ? (receiptLineSelects.push(columns), { in: async () => ({ data: [
+        { receipt_id: 'rc-1', disposition: 'restocked', quantity: 1, resolution: 'refund', refund_choice: 'now' },
+        { receipt_id: 'rc-1', disposition: 'not_restocked', quantity: 1, resolution: 'refund', refund_choice: 'consult' },
+      ], error: null }) })
+      : { eq: async () => ({ data: [], error: null }), in: async () => ({ data: [], error: null }) } }));
+
+  const response = await get(); const body = await response.json();
+
+  expect(response.status).toBe(200);
+  expect(receiptLineSelects).toEqual(['receipt_id, disposition, quantity, resolution, refund_choice']);
+  const receives = body.entries.filter((entry: { kind?: string }) => entry.kind === 'receive');
+  expect(receives).toHaveLength(1);
+  expect(receives[0].details).toEqual(['在庫に戻す 1点', '戻さない 1点', '今すぐ返金 1点・相談 1点']);
+});

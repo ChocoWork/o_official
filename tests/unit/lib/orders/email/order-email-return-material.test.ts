@@ -385,6 +385,9 @@ describe('loadOrderEmailMaterial（受け取りの材料）', () => {
         // RECEIPT_LINES に返金しないことにした数（refund_waived）の行がある（本計画 P24）。受け取りの記録に返金の番号は無い（本計画 P25）
         refundWaived: true,
         refundNotAccepted: false,
+        // 前の受け取りの行（refund_choice が無い）は、受け取りの記録の選び（consult）で読む。返金の品だけで、交換の品は入れない
+        refundNowItems: [],
+        refundConsultItems: [COAT, { ...BLOUSE, quantity: 1 }],
       },
     });
     expect(db.queryOf('order_return_receipts')).toEqual({
@@ -396,7 +399,7 @@ describe('loadOrderEmailMaterial（受け取りの材料）', () => {
     expect(db.queryOf('order_returns').filters).toEqual([['eq', 'id', RETURN_ID], ['eq', 'order_id', ORDER_ID]]);
     expect(db.queryOf('order_return_receipt_lines')).toEqual({
       table: 'order_return_receipt_lines',
-      columns: 'return_line_id, disposition, quantity, resolution, exchange_method',
+      columns: 'return_line_id, disposition, quantity, resolution, exchange_method, refund_choice',
       filters: [['eq', 'receipt_id', RECEIPT_ID]],
     });
     // 交換の色・サイズは、実際に交換にした行の分だけ。お届けの目安は、作って送る品の商品だけ
@@ -446,6 +449,7 @@ describe('loadOrderEmailMaterial（受け取りの材料）', () => {
     expect(orderReturn?.receipt).toEqual({
       refundChoice: 'none', received: [COAT], sentBack: [], sentBackMessage: null, sentBackCarrier: null,
       sentBackTrackingNumber: null, exchanges: [], pendingRefund: null, refundWaived: false, refundNotAccepted: false,
+      refundNowItems: [], refundConsultItems: [],
     });
     expect(db.tablesRead()).not.toContain('item_variants');
     expect(db.tablesRead()).not.toContain('items');
@@ -722,5 +726,74 @@ describe('loadOrderEmailMaterial（返品の番号が無い時と読めない時
       name: 'OrderEmailMaterialError',
       table: 'list_order_returns',
     });
+  });
+});
+
+// 品ごとの返金の選び（2026-11-06 設計書 6章）。受け取りの行の refund_choice で、今すぐ返金の品と額を相談する品に分ける
+describe('loadOrderEmailMaterial（品ごとの返金の選び）', () => {
+  const choiceLine = (returnLineId: string, disposition: string, quantity: number, refundChoice: 'now' | 'consult' | null) => ({
+    return_line_id: returnLineId, disposition, quantity, resolution: 'refund', exchange_method: null, refund_choice: refundChoice,
+  });
+  const exchangeLine = { return_line_id: 'line-2', disposition: 'restocked', quantity: 1, resolution: 'exchange', exchange_method: 'stock', refund_choice: null };
+  const withChoice = (choice: string, lines: unknown[]) =>
+    returnTables({
+      order_return_receipts: { data: { ...RECEIPT_ROW, refund_choice: choice } },
+      order_return_receipt_lines: { data: lines },
+    });
+
+  it('DD-ADMIN-020 mixedの受取は相談の品にだけ相談の一文を添える（材料: 今すぐ返金の品と相談の品を分ける）', async () => {
+    const { orderReturn, db } = await loadReturn(
+      withChoice('mixed', [choiceLine('line-1', 'restocked', 1, 'now'), choiceLine('line-3', 'not_restocked', 1, 'consult'), exchangeLine]),
+      { returnReceiptId: RECEIPT_ID },
+    );
+
+    expect(orderReturn?.receipt?.refundChoice).toBe('mixed');
+    expect(orderReturn?.receipt?.refundNowItems.map((x) => x.quantity)).toEqual([1]);
+    expect(orderReturn?.receipt?.refundConsultItems.map((x) => x.quantity)).toEqual([1]);
+    expect(orderReturn?.receipt?.refundNowItems).toEqual([COAT]);
+    expect(orderReturn?.receipt?.refundConsultItems).toEqual([{ ...BLOUSE, quantity: 1 }]);
+    // 交換の品には相談の印を付けない
+    expect(orderReturn?.receipt?.received).toEqual([COAT, DRESS, { ...BLOUSE, quantity: 1 }]);
+    expect(db.queryOf('order_return_receipt_lines').columns).toBe(
+      'return_line_id, disposition, quantity, resolution, exchange_method, refund_choice',
+    );
+  });
+
+  it('DD-ADMIN-020 同じ品でも選びが違えば別のまとまりにし、まとまりの中では数を足す', async () => {
+    const { orderReturn } = await loadReturn(
+      withChoice('mixed', [
+        choiceLine('line-4', 'restocked', 1, 'now'),
+        choiceLine('line-4', 'not_restocked', 1, 'now'),
+        choiceLine('line-4', 'pending_inspection', 1, 'consult'),
+      ]),
+      { returnReceiptId: RECEIPT_ID },
+    );
+
+    expect(orderReturn?.receipt?.refundNowItems).toEqual([{ ...STOLE, quantity: 2 }]);
+    expect(orderReturn?.receipt?.refundConsultItems).toEqual([{ ...STOLE, quantity: 1 }]);
+  });
+
+  it('DD-ADMIN-020 旧NULLは親で読みmixedのNULLは材料生成を拒否する', async () => {
+    const legacyLines = [choiceLine('line-1', 'restocked', 1, null), exchangeLine];
+    const legacyNow = await loadReturn(withChoice('now', legacyLines), { returnReceiptId: RECEIPT_ID });
+    const legacyConsult = await loadReturn(withChoice('consult', legacyLines), { returnReceiptId: RECEIPT_ID });
+    const legacyNone = await loadReturn(withChoice('none', [exchangeLine]), { returnReceiptId: RECEIPT_ID });
+    const mixedNull = await loadReturn(
+      withChoice('mixed', [choiceLine('line-1', 'restocked', 1, 'now'), choiceLine('line-3', 'not_restocked', 1, null)]),
+      { returnReceiptId: RECEIPT_ID },
+    );
+    const legacyNowItems = legacyNow.orderReturn?.receipt?.refundNowItems ?? [];
+    const legacyConsultItems = legacyConsult.orderReturn?.receipt?.refundConsultItems ?? [];
+    const mixedNullMaterialRejected = mixedNull.orderReturn === null;
+
+    expect(legacyNowItems).toHaveLength(1);
+    expect(legacyConsultItems).toHaveLength(1);
+    expect(legacyNow.orderReturn?.receipt?.refundConsultItems).toEqual([]);
+    expect(legacyConsult.orderReturn?.receipt?.refundNowItems).toEqual([]);
+    // 非返金の明細（交換）へは、親が now・consult でも印を付けない
+    expect(legacyNone.orderReturn?.receipt).toMatchObject({ refundNowItems: [], refundConsultItems: [] });
+    expect(mixedNullMaterialRejected).toBe(true);
+    // 材料全体も null（worker は送れなかった: source_missing にする）
+    await expect(load(mixedNull.db, { returnReceiptId: RECEIPT_ID })).resolves.toBeNull();
   });
 });

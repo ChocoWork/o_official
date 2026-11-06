@@ -25,7 +25,7 @@ import {
 import { listOrderRefunds, RefundStoreError } from '@/lib/orders/refund/refund-store';
 import { listOrderCancelRequests } from '@/lib/orders/returns/cancel-request-store';
 import { listOrderReturns } from '@/lib/orders/returns/return-store';
-import type { OrderReturnDetail } from '@/lib/orders/returns/return-types';
+import type { OrderReturnDetail, ReceiveUnitRefundChoice, ReturnResolution } from '@/lib/orders/returns/return-types';
 import { listAdminOrderShipmentSlips, ShipmentSlipError } from '@/lib/orders/shipment-slips/shipment-slip-store';
 import type { ShipmentSlipLink } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import { DeliveryStoreError, getOrderDeliveryDetail } from '@/lib/orders/tracking/delivery-store';
@@ -42,7 +42,13 @@ type HistoryItemRow = {
   line_kind?: 'order' | 'exchange';
   created_at: string;
 };
-type ReceiptLineRow = { receipt_id: string; disposition: string; quantity: number };
+type ReceiptLineRow = {
+  receipt_id: string;
+  disposition: string;
+  quantity: number;
+  resolution?: ReturnResolution | null;
+  refund_choice?: ReceiveUnitRefundChoice | null;
+};
 type ReturnRecordRow = {
   id: string;
   cancelled_by: string | null;
@@ -86,7 +92,10 @@ async function loadHistoryLines(client: SupabaseClient, orderId: string): Promis
 /**
  * 受け取りごとの品の状態の数（order_return_receipt_lines）。履歴の「返品の受け取り」の細目と「届かない」「返金しない」の数に使う。
  * 返品の一覧（list_order_returns）は受け取りの数を持たない（共通の約束 C-2 の形は変えない）ので、service_role で直に読む
- * （service_role は SELECT だけを持つ）。受け取りが無い注文は読まない
+ * （service_role は SELECT だけを持つ）。受け取りが無い注文は読まない。
+ * 解決（resolution）と品ごとの返金の選び（refund_choice）も読み、細目の「今すぐ返金 n点・相談 m点」に使う（2026-11-06 設計書 6章）
+ *
+ * @design DD-ADMIN-020
  */
 async function loadReturnReceiptLines(
   client: SupabaseClient,
@@ -98,7 +107,7 @@ async function loadReturnReceiptLines(
   }
   const { data, error } = await client
     .from('order_return_receipt_lines')
-    .select('receipt_id, disposition, quantity')
+    .select('receipt_id, disposition, quantity, resolution, refund_choice')
     .in('receipt_id', receiptIds);
   if (error) {
     throw new FulfillmentStoreError('load_return_receipt_lines', error);
@@ -107,6 +116,8 @@ async function loadReturnReceiptLines(
     receiptId: row.receipt_id,
     disposition: row.disposition,
     quantity: Number(row.quantity),
+    resolution: row.resolution ?? null,
+    refundChoice: row.refund_choice ?? null,
   }));
 }
 

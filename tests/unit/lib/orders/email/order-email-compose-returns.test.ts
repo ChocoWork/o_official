@@ -103,6 +103,8 @@ function receiptMaterial(overrides: Partial<OrderEmailReturnReceipt> = {}): Orde
     pendingRefund: null,
     refundWaived: false,
     refundNotAccepted: false,
+    refundNowItems: [],
+    refundConsultItems: [],
     ...overrides,
   };
 }
@@ -1126,6 +1128,133 @@ describe('composeOrderEmail（返品のメールの種類）', () => {
     ]);
     for (const kind of kinds) {
       expect(composeOrderEmail(material(), { kind, variant: null, paymentExpiredSent: false })).toBeNull();
+    }
+  });
+});
+
+// 品ごとの返金の選び（2026-11-06 設計書 6章）。1回の受け取りで1通にし、今すぐ返金の品と額を相談する品を分けて書く
+describe('composeOrderEmail（今すぐ返金と相談が混ざる受け取り）', () => {
+  const BLOUSE_S1: OrderEmailReturnItem = { ...BLOUSE_S2, quantity: 1 };
+  const CONSULT_SENTENCE = 'この品は状態を確かめてから、あらためてご連絡します。';
+  const mixedReceipt = (overrides: Partial<OrderEmailReturnReceipt> = {}) => ({
+    refundChoice: 'mixed' as const,
+    received: [COAT, BLOUSE_S1],
+    refundNowItems: [COAT],
+    refundConsultItems: [BLOUSE_S1],
+    ...overrides,
+  });
+
+  it('DD-ADMIN-020 mixedの受取は相談の品にだけ相談の一文を添える', () => {
+    const refundEmail = composeOrderEmail(
+      {
+        ...withReceipt(mixedReceipt({ exchanges: [DRESS_M_STOCK], sentBack: [STOLE3], sentBackMessage: 'お返しします。' })),
+        refund: refundMaterial({ amount: 4800 }),
+      },
+      REFUND_RETURN,
+    );
+
+    expect(refundEmail?.text).toContain('この品は状態を確かめてから、あらためてご連絡します');
+    expect(refundEmail?.text).toBe(
+      [
+        '山田 花子 様',
+        '',
+        'ご注文（ORD-A1B2C3D4）の返金の手続きをいたしました。',
+        'ご返品いただいた商品をお受け取りしました（返品番号 ORD-A1B2C3D4-R1）。',
+        '',
+        '返金額: ￥4,800',
+        '返金した商品:',
+        '・コート（BLACK / M） × 1',
+        '',
+        '額を相談する商品:',
+        '・ブラウス（WHITE / S） × 1',
+        CONSULT_SENTENCE,
+        '',
+        '交換の品をお送りします:',
+        '・ワンピース（NAVY / M） × 1',
+        '',
+        'お返しする商品:',
+        '・ストール × 3',
+        '',
+        '当店より:',
+        'お返しします。',
+        '',
+        CARD_TIMING,
+        '',
+        STATUS_LINE,
+        CONTACT,
+        '',
+        SHOP,
+      ].join('\n'),
+    );
+    // 相談の一文は相談の品の行にだけ付ける（今すぐ返金の品・全体の「改めてご連絡」の文には付けない）
+    expect(refundEmail?.text.split(CONSULT_SENTENCE)).toHaveLength(2);
+    expect(refundEmail?.text).not.toContain('ご返金の額は、確かめてから改めてご連絡いたします。');
+  });
+
+  it('DD-ADMIN-020 mixedで今すぐが0円か失敗なら受取メールに両方の品を書く', () => {
+    const consultItemName = 'ブラウス（WHITE / S）';
+    const waived = composeOrderEmail(withReceipt(mixedReceipt({ refundWaived: true })), RETURN_RECEIVED);
+    const notAccepted = composeOrderEmail(withReceipt(mixedReceipt({ refundNotAccepted: true })), RETURN_RECEIVED);
+
+    for (const receivedEmail of [waived, notAccepted]) {
+      expect(receivedEmail?.text).toContain('今すぐ返金');
+      expect(receivedEmail?.text).toContain('額を相談');
+      expect(receivedEmail?.text).toContain(consultItemName);
+      expect(receivedEmail?.text.split(CONSULT_SENTENCE)).toHaveLength(2);
+    }
+    expect(waived?.text).toBe(
+      [
+        '山田 花子 様',
+        '',
+        'ご返品いただいた商品をお受け取りしました（返品番号 ORD-A1B2C3D4-R1）。',
+        '',
+        'お受け取りした商品:',
+        '・コート（BLACK / M） × 1',
+        '・ブラウス（WHITE / S） × 1',
+        '',
+        '今すぐ返金する商品:',
+        '・コート（BLACK / M） × 1',
+        '今すぐ返金する商品は、ご返金の額が0円のため、ご返金はございません。',
+        '',
+        '額を相談する商品:',
+        '・ブラウス（WHITE / S） × 1',
+        CONSULT_SENTENCE,
+        '',
+        STATUS_LINE,
+        CONTACT,
+        '',
+        SHOP,
+      ].join('\n'),
+    );
+    // 0円の全体の一文（相談の品も返金しないと読める）は、混ざる受け取りには書かない
+    expect(waived?.text).not.toContain('今回のご返品では');
+    // 今すぐ返金が受け付けられなかった時は、今すぐ返金の品の額を改めて伝える
+    expect(notAccepted?.text).toContain(
+      ['今すぐ返金する商品:', '・コート（BLACK / M） × 1', 'ご返金の額は、確かめてから改めてご連絡いたします。'].join('\n'),
+    );
+  });
+
+  it('DD-ADMIN-020 今すぐ返金だけ・相談だけの受け取りは今までの文のまま。相談後の返金メールには受け取りを再添付しない', () => {
+    const consultOnly = composeOrderEmail(
+      withReceipt({ refundChoice: 'consult', refundConsultItems: [COAT] }),
+      RETURN_RECEIVED,
+    );
+    const later = composeOrderEmail(
+      { ...withReturn(returnMaterial({ items: [], receipt: null })), refund: refundMaterial({ amount: 4500 }) },
+      REFUND_RETURN,
+    );
+
+    expect(consultOnly?.text).toContain('ご返金の額は、確かめてから改めてご連絡いたします。');
+    expect(consultOnly?.text).not.toContain('額を相談する商品');
+    expect(consultOnly?.text).not.toContain(CONSULT_SENTENCE);
+    expect(later?.text).not.toContain('額を相談する商品');
+    expect(later?.text).not.toContain('お受け取りしました');
+  });
+
+  it('DD-ADMIN-020 mixedなのに今すぐ返金の品か相談の品が無い材料からは作らない', () => {
+    for (const broken of [mixedReceipt({ refundNowItems: [] }), mixedReceipt({ refundConsultItems: [] })]) {
+      expect(composeOrderEmail(withReceipt(broken), RETURN_RECEIVED)).toBeNull();
+      expect(composeOrderEmail({ ...withReceipt(broken), refund: refundMaterial() }, REFUND_RETURN)).toBeNull();
     }
   });
 });

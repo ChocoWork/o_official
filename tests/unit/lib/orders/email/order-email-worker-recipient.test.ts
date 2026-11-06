@@ -56,7 +56,7 @@ const MATERIAL: OrderEmailMaterial = {
     receipt: {
       refundChoice: 'consult', received: [COAT], sentBack: [], sentBackMessage: null, sentBackCarrier: null,
       sentBackTrackingNumber: null, exchanges: [], pendingRefund: { items: [COAT], amount: 5000 },
-      refundWaived: false, refundNotAccepted: false,
+      refundWaived: false, refundNotAccepted: false, refundNowItems: [], refundConsultItems: [COAT],
     },
   },
 };

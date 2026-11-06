@@ -30,7 +30,8 @@ import type { OrderRefundStatus } from '@/lib/orders/refund/refund-types';
 import { formatReturnNumber, RETURN_CARRIER_LABELS, RETURN_REASON_LABELS } from '@/lib/orders/returns/return-messages';
 import {
   RETURN_CARRIERS,
-  type RefundChoice,
+  type ReceiptRefundChoice,
+  type ReceiveUnitRefundChoice,
   type ReturnCarrier,
   type ReturnMethod,
   type ReturnReason,
@@ -73,7 +74,8 @@ const MATERIAL_RETURN_LINE_COLUMNS = 'id, order_item_id, quantity, resolution, e
 // refund_id は、受け取りと一緒に始めた返金が Stripe に受け付けられたかを見るために読む（本計画 P25）
 const MATERIAL_RETURN_RECEIPT_COLUMNS =
   'id, return_id, refund_choice, refund_id, actor_can_refund, sent_back_message, sent_back_carrier, sent_back_tracking_number';
-const MATERIAL_RETURN_RECEIPT_LINE_COLUMNS = 'return_line_id, disposition, quantity, resolution, exchange_method';
+// refund_choice は、品ごとの返金の選び（今すぐ返金・額を相談）。前の受け取りの行は NULL で、受け取りの記録の選びで読む（2026-11-06 設計書 6章）
+const MATERIAL_RETURN_RECEIPT_LINE_COLUMNS = 'return_line_id, disposition, quantity, resolution, exchange_method, refund_choice';
 // 返品の行の元の品の名前・色・サイズ。並び（作った時刻、同じなら番号）にも使う
 const MATERIAL_RETURN_ITEM_COLUMNS = 'id, item_name, color, size, created_at';
 const MATERIAL_RETURN_VARIANT_COLUMNS = 'id, item_id, item_colors(name), item_sizes(label)';
@@ -152,6 +154,14 @@ const RETURN_FEE_NOTICE = '手数料はご返金から差し引きます。差�
 const RETURN_REFUND_CONSULT_NOTICE = 'ご返金の額は、確かめてから改めてご連絡いたします。';
 /** 受け取りの中で返金が0円になった時の一文（本計画 P24。返金のお知らせが届かないので、お客様を待たせない） */
 const RETURN_REFUND_WAIVED_NOTICE = '今回のご返品では、ご返金の額が0円のため、ご返金はございません。';
+/**
+ * 今すぐ返金と額を相談が混ざる受け取りの文（2026-11-06 設計書 6章）。相談の一文は設計書の文のまま、相談の品の行ごとに添える。
+ * 0円の一文は、相談の品も返金しないと読めないように、今すぐ返金の品にだけ向ける
+ */
+const RETURN_REFUND_NOW_HEADING = '今すぐ返金する商品:';
+const RETURN_REFUND_CONSULT_HEADING = '額を相談する商品:';
+const RETURN_REFUND_CONSULT_ITEM_NOTICE = 'この品は状態を確かめてから、あらためてご連絡します。';
+const RETURN_REFUND_NOW_WAIVED_NOTICE = '今すぐ返金する商品は、ご返金の額が0円のため、ご返金はございません。';
 const returnFeeWaitingNotice = (fee: string) =>
   `交換の品は、手数料 ${fee} のお支払いを確かめてからお送りします。お支払いの方法は、別にご案内いたします。`;
 const RETURN_SHOP_ACTION = '管理画面の注文の一覧で「額を決めて返金する」を押して、返金してください。';
@@ -214,10 +224,14 @@ export type OrderEmailReturnAddress = { name: string; postalCode: string; addres
  * pendingRefund は返金できない人（サポート）の受け取りの時だけ読む、返金待ちの品と計算どおりの額。
  * refundWaived は、この受け取りで返金が0円になったか（受け取りの行に refund_waived がある。本計画 P20・P24）。
  * refundNotAccepted は、この受け取りと一緒に始めた返金（今返金）が Stripe に受け付けられていないか
- * （受け取りの記録の refund_id の返金がエラー・失敗。本計画 P25）
+ * （受け取りの記録の refund_id の返金がエラー・失敗。本計画 P25）。
+ * refundNowItems・refundConsultItems は、受け取った返金の品を今すぐ返金と額を相談に分けた物（2026-11-06 設計書 6章）。
+ * 同じ品でも選びが違えば別のまとまりにし、まとまりの中では数を足す。交換・お返しの品は入れない
+ *
+ * @design DD-ADMIN-020
  */
 export type OrderEmailReturnReceipt = {
-  refundChoice: RefundChoice | null;
+  refundChoice: ReceiptRefundChoice | null;
   received: OrderEmailReturnItem[];
   sentBack: OrderEmailReturnItem[];
   sentBackMessage: string | null;
@@ -227,6 +241,8 @@ export type OrderEmailReturnReceipt = {
   pendingRefund: { items: OrderEmailReturnItem[]; amount: number } | null;
   refundWaived: boolean;
   refundNotAccepted: boolean;
+  refundNowItems: OrderEmailReturnItem[];
+  refundConsultItems: OrderEmailReturnItem[];
 };
 
 /**
@@ -545,7 +561,7 @@ type ReturnLineRow = {
 type ReturnReceiptRow = {
   id: string;
   return_id: string;
-  refund_choice: RefundChoice | null;
+  refund_choice: ReceiptRefundChoice | null;
   refund_id: string | null;
   actor_can_refund: boolean | null;
   sent_back_message: string | null;
@@ -560,6 +576,7 @@ type ReturnReceiptLineRow = {
   quantity: number;
   resolution: 'refund' | 'exchange' | null;
   exchange_method: 'stock' | 'make' | null;
+  refund_choice: ReceiveUnitRefundChoice | null;
 };
 
 type ReturnItemRow = { id: string; item_name: string; color: string | null; size: string | null; created_at: string };
@@ -866,6 +883,8 @@ async function loadReturnMaterial(
   const received: Array<{ item: ReturnItemRow; quantity: number }> = [];
   const sentBack: Array<{ item: ReturnItemRow; quantity: number }> = [];
   const exchangeUnits: Array<{ line: ReturnLineRow; quantity: number; method: 'stock' | 'make' }> = [];
+  const refundNow: Array<{ item: ReturnItemRow; quantity: number }> = [];
+  const refundConsult: Array<{ item: ReturnItemRow; quantity: number }> = [];
   for (const receiptLine of receiptLines) {
     const line = lineById.get(receiptLine.return_line_id);
     if (!line) {
@@ -874,6 +893,21 @@ async function loadReturnMaterial(
     const entry = { item: originalOf(line), quantity: receiptLine.quantity };
     if (RECEIVED_DISPOSITIONS.has(receiptLine.disposition)) {
       received.push(entry);
+      // 返金の品だけを、品ごとの選びで分ける。前の受け取りの行（NULL）は受け取りの記録の now・consult で補う。
+      // 混ざる受け取り（mixed）の返金の品に選びが無いのは壊れた材料なので、推測で分けずに送らない
+      if (receiptLine.resolution === 'refund') {
+        const choice =
+          receiptLine.refund_choice ??
+          (receipt.refund_choice === 'now' || receipt.refund_choice === 'consult' ? receipt.refund_choice : null);
+        if (choice === null && receipt.refund_choice === 'mixed') {
+          return null;
+        }
+        if (choice === 'now') {
+          refundNow.push(entry);
+        } else if (choice === 'consult') {
+          refundConsult.push(entry);
+        }
+      }
       // 交換の品は、返品の行の予定ではなく、その受け取りで実際に決まった解決（作って送るへの変更・返金への変更を含む）で数える
       if (receiptLine.resolution === 'exchange') {
         if (!receiptLine.exchange_method) {
@@ -940,6 +974,8 @@ async function loadReturnMaterial(
       // 受け取りの中で返金が0円になった数の行（本計画 P20・P24）。受け取った品の数には足さない
       refundWaived: receiptLines.some((line) => line.disposition === 'refund_waived'),
       refundNotAccepted,
+      refundNowItems: toReturnItems(refundNow),
+      refundConsultItems: toReturnItems(refundConsult),
     },
   };
 }
@@ -1478,6 +1514,25 @@ function sentBackSectionLines(receipt: OrderEmailReturnReceipt): string[] | null
   );
 }
 
+/**
+ * 今すぐ返金と額を相談が混ざる受け取り（mixed）なのに、今すぐ返金の品か相談の品が無いか（2026-11-06 設計書 6章）。
+ * 壊れた材料なので、推測で書かずにメールを作らない
+ *
+ * @design DD-ADMIN-020
+ */
+function isBrokenMixedReceipt(receipt: OrderEmailReturnReceipt): boolean {
+  return receipt.refundChoice === 'mixed' && (receipt.refundNowItems.length === 0 || receipt.refundConsultItems.length === 0);
+}
+
+/**
+ * 「額を相談する商品」の節。相談の品の行ごとに、設計書の相談の一文を添える（今すぐ返金の品には添えない）
+ *
+ * @design DD-ADMIN-020
+ */
+function consultSectionLines(items: readonly OrderEmailReturnItem[]): string[] {
+  return [RETURN_REFUND_CONSULT_HEADING, ...items.flatMap((item) => [returnItemLine(item), RETURN_REFUND_CONSULT_ITEM_NOTICE])];
+}
+
 /** 返金のお知らせの返品の書き分けの、2行目。受け取りと一緒の返金か、額を決めて後で返した返金か */
 function returnRefundLead(orderId: string, orderReturn: OrderEmailReturnMaterial): string {
   const label = formatReturnNumber(orderId, orderReturn.number);
@@ -1490,7 +1545,10 @@ function returnRefundLead(orderId: string, orderReturn: OrderEmailReturnMaterial
  * 金額は注文の内容・合計と同じ formatCurrency で出す（Global Constraints「金額の書き方」。1通の中で全角と半角の円記号を混ぜない）。
  * 書き分け return は返品の返金（グループ E-3 設計書 9-1 の4）: 返金の手続きの文の次の行に返品番号つきの文を足し、
  * 受け取りと一緒の返金なら、商品の行の後に交換の品の節とお返しの節（ある時）を足す。発送前の返金ではないので「お送りしません」の文は書かない。
- * 返品の材料が無い・お返しのメッセージが無ければ作らない
+ * 今すぐ返金と額を相談が混ざる受け取り（mixed）と一緒の返金は、返金した商品の次に「額を相談する商品」の節を足す（2026-11-06 設計書 6章）。
+ * 返品の材料が無い・お返しのメッセージが無い・混ざる受け取りの品の分け方が壊れていれば作らない
+ *
+ * @design DD-ADMIN-020
  */
 function composeRefund(material: OrderEmailMaterial, variant: RefundEmailVariant): ComposedOrderEmail | null {
   const { order, refund, orderReturn } = material;
@@ -1506,6 +1564,11 @@ function composeRefund(material: OrderEmailMaterial, variant: RefundEmailVariant
   if (sentBack === null) {
     return null;
   }
+  const receipt = returnPart?.receipt ?? null;
+  if (receipt && isBrokenMixedReceipt(receipt)) {
+    return null;
+  }
+  const consult = receipt?.refundChoice === 'mixed' ? consultSectionLines(receipt.refundConsultItems) : [];
   const orderNumber = toOrderNumber(order.id);
   const shippingPart =
     refund.shippingAmount > 0 ? `（うち送料 ${formatCurrency(refund.shippingAmount, order.currency)}）` : '';
@@ -1524,6 +1587,7 @@ function composeRefund(material: OrderEmailMaterial, variant: RefundEmailVariant
       ...(!returnPart && refund.lines.some((line) => line.before_shipment) ? [REFUND_NOT_SHIPPING_NOTICE] : []),
       ...(refund.stillShipping ? [REFUND_STILL_SHIPPING_NOTICE] : []),
       ...(variant === 'after_cancel' ? [REFUND_AFTER_CANCEL_NOTICE] : []),
+      ...(consult.length > 0 ? ['', ...consult] : []),
       ...(exchange.length > 0 ? ['', ...exchange] : []),
       ...(sentBack.length > 0 ? ['', ...sentBack] : []),
       '',
@@ -1612,7 +1676,11 @@ function composeReturnAccepted(material: OrderEmailMaterial): ComposedOrderEmail
 /**
  * 返品の受け取りのお知らせ（件名は「返品をお受け取りしました」。グループ E-3 設計書 9-1 の5）。今は返金しない受け取り（交換だけ・額を相談・お返しを含む）、
  * 今返金で返金が0円になった受け取り（本計画 P24）、今返金が Stripe に受け付けられなかった受け取り（本計画 P25）に1通。
- * 受け取りの材料・受け取った品が無い、お返しのメッセージが無ければ作らない
+ * 今すぐ返金と額を相談が混ざる受け取り（mixed）で今すぐ返金が0円・受け付けられなかった時は、今すぐ返金の品と額を相談する品を分けて書く
+ * （2026-11-06 設計書 6章）。0円・受け付けられなかった一文は今すぐ返金の品にだけ向け、相談の品には相談の一文を添える。
+ * 受け取りの材料・受け取った品が無い、お返しのメッセージが無い、混ざる受け取りの品の分け方が壊れていれば作らない
+ *
+ * @design DD-ADMIN-020
  */
 function composeReturnReceived(material: OrderEmailMaterial): ComposedOrderEmail | null {
   const { order, orderReturn } = material;
@@ -1621,9 +1689,15 @@ function composeReturnReceived(material: OrderEmailMaterial): ComposedOrderEmail
     return null;
   }
   const sentBack = sentBackSectionLines(receipt);
-  if (sentBack === null) {
+  if (sentBack === null || isBrokenMixedReceipt(receipt)) {
     return null;
   }
+  const mixed = receipt.refundChoice === 'mixed';
+  const nowNotice = receipt.refundWaived
+    ? [RETURN_REFUND_NOW_WAIVED_NOTICE]
+    : receipt.refundNotAccepted
+      ? [RETURN_REFUND_CONSULT_NOTICE]
+      : [];
   return {
     subject: `【${SHOP_NAME}】返品をお受け取りしました（${toOrderNumber(order.id)}）`,
     text: paragraphs(
@@ -1631,9 +1705,12 @@ function composeReturnReceived(material: OrderEmailMaterial): ComposedOrderEmail
       [returnReceivedLead(formatReturnNumber(order.id, orderReturn.number))],
       ['お受け取りした商品:', ...receipt.received.map(returnItemLine)],
       exchangeSectionLines(receipt.exchanges),
+      // 混ざる受け取りは、今すぐ返金の品（0円・受け付けられなかった一文つき）と額を相談する品を分けて書く
+      mixed ? [RETURN_REFUND_NOW_HEADING, ...receipt.refundNowItems.map(returnItemLine), ...nowNotice] : [],
+      mixed ? consultSectionLines(receipt.refundConsultItems) : [],
       // 額を相談する時と、今返金が受け付けられなかった時（本計画 P25）は、額を改めて伝える
-      receipt.refundChoice === 'consult' || receipt.refundNotAccepted ? [RETURN_REFUND_CONSULT_NOTICE] : [],
-      receipt.refundWaived ? [RETURN_REFUND_WAIVED_NOTICE] : [],
+      !mixed && (receipt.refundChoice === 'consult' || receipt.refundNotAccepted) ? [RETURN_REFUND_CONSULT_NOTICE] : [],
+      !mixed && receipt.refundWaived ? [RETURN_REFUND_WAIVED_NOTICE] : [],
       receipt.exchanges.length > 0 && orderReturn.feeWaitingAmount > 0
         ? [returnFeeWaitingNotice(formatCurrency(orderReturn.feeWaitingAmount, order.currency))]
         : [],
