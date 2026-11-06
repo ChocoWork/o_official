@@ -455,7 +455,7 @@ stateDiagram-v2
 
 ## 返品の受け取りの品ごとの返金（FREQ-641 Task 1、2026-11-06）
 
-根拠は[設計書](../../superpowers/specs/2026-11-06-return-receive-per-item-design.md)の4・6章。移行は [20261106005536_return_receive_per_item.sql](../../../supabase/migrations/20261106005536_return_receive_per_item.sql)（手元で確認・本番は未適用）。注文の状態の値と遷移は増やさない。
+根拠は[設計書](../../superpowers/specs/2026-11-06-return-receive-per-item-design.md)の4・6章。移行は [20261106005536_return_receive_per_item.sql](../../../supabase/migrations/20261106005536_return_receive_per_item.sql)（手元で確認・本番は 2026-11-06 に適用済み）。注文の状態の値と遷移は増やさない。
 
 受け取りの記録の `refund_choice`（受け取り1回のまとめ）は、この受け取りで実際に数えた今返す数 N と相談の数 C で決まる:
 

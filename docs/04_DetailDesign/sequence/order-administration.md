@@ -1,6 +1,6 @@
 # 注文管理のシーケンス
 
-> 返品の品ごとの返金 Task 1 確認日: 2026-11-06。受け取りで品ごとに今返す・相談するを選ぶ時の DB の中の流れを、末尾の「返品の受け取りの品ごとの返金（FREQ-641 Task 1）」に足した。移行 `20261106005536` は手元で確認・本番は未適用。窓口は Task 2、画面は Task 3 で実装済み。実測は[テスト仕様](../../05_Quality/tests/test-spec.md)を参照。
+> 返品の品ごとの返金 Task 1 確認日: 2026-11-06。受け取りで品ごとに今返す・相談するを選ぶ時の DB の中の流れを、末尾の「返品の受け取りの品ごとの返金（FREQ-641 Task 1）」に足した。移行 `20261106005536` は手元で確認・本番は 2026-11-06 に適用済み。窓口は Task 2、画面は Task 3 で実装済み。実測は[テスト仕様](../../05_Quality/tests/test-spec.md)を参照。
 
 > G-4 Task 8 確認日: 2026-10-27。荷作り表・発送票の注文番号から注文の詳細へ移る流れ（SQ-ADMIN-15 の入口）を追記し、履歴の dialog（`OrderHistoryDialog`）の撤去と、G-1 から 410 だけを返していた旧い発送・仕上がりの窓口 6 ファイル・7 メソッドの削除を、各節の注記に反映した。単体のみ実測済み（jest・tsc・lint）。DB・ブラウザ・E2Eはcontroller担当。
 
@@ -1137,7 +1137,7 @@ fix round 2: sent_back・missing・0円完了は受取記録と同じ取引で�
 
 ## 返品の受け取りの品ごとの返金（FREQ-641 Task 1）
 
-根拠は[設計書](../../superpowers/specs/2026-11-06-return-receive-per-item-design.md)の4〜6章。移行は [20261106005536_return_receive_per_item.sql](../../../supabase/migrations/20261106005536_return_receive_per_item.sql)。手元の DB だけで確認し、本番は未適用（許可待ち）。
+根拠は[設計書](../../superpowers/specs/2026-11-06-return-receive-per-item-design.md)の4〜6章。移行は [20261106005536_return_receive_per_item.sql](../../../supabase/migrations/20261106005536_return_receive_per_item.sql)。手元の DB で確認し、本番は 2026-11-06 に適用済み。
 
 ```mermaid
 sequenceDiagram

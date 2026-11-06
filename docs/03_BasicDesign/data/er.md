@@ -1,6 +1,6 @@
 # ER 図（現行リポジトリの実装）
 
-> 返品の品ごとの返金 Task 1 確認日: 2026-11-06。`order_return_receipt_lines` に列 `refund_choice` と CHECK を足し、一意の組を6列にし、`order_return_receipts.refund_choice` に `mixed` を足した（テーブル・FK の数は変わらない）。末尾の「返品の受け取りの品ごとの返金（FREQ-641 Task 1）」。移行 `20261106005536` は手元だけで確認、本番は未適用（許可待ち）。
+> 返品の品ごとの返金 Task 1 確認日: 2026-11-06。`order_return_receipt_lines` に列 `refund_choice` と CHECK を足し、一意の組を6列にし、`order_return_receipts.refund_choice` に `mixed` を足した（テーブル・FK の数は変わらない）。末尾の「返品の受け取りの品ごとの返金（FREQ-641 Task 1）」。移行 `20261106005536` は手元で確認し、本番は 2026-11-06 に適用済み。
 
 > 波 2 確認日: 2026-10-27。権限・CHECK（`NOT VALID`）・`stockists.type` の NULL 可・関数 `admin_update_look`・検索の関数・連番と台帳系の表の権限・置き場の設定を、末尾の「波 2 の権限・制約・関数・置き場」に追記した。移行 6 本は本番未適用（本番は G-4 と一緒に当てる・オーナーの確認の後）。
 
@@ -2279,7 +2279,7 @@ H判定は単位の存在（割引0も含む）。旧行と交換の計算は従
 
 ## 返品の受け取りの品ごとの返金（FREQ-641 Task 1）
 
-移行は [20261106005536_return_receive_per_item.sql](../../../supabase/migrations/20261106005536_return_receive_per_item.sql)。根拠は[設計書](../../superpowers/specs/2026-11-06-return-receive-per-item-design.md)の3章。手元の DB だけで確認し、本番は未適用（オーナーの許可待ち）。
+移行は [20261106005536_return_receive_per_item.sql](../../../supabase/migrations/20261106005536_return_receive_per_item.sql)。根拠は[設計書](../../superpowers/specs/2026-11-06-return-receive-per-item-design.md)の3章。手元の DB で確認し、本番には 2026-11-06 にオーナーの許可を得て当てた。
 
 | 表 | 変えたもの |
 | --- | --- |

@@ -1056,7 +1056,7 @@ GET `/api/admin/order-attention`（`admin.orders.read`）は`discounts:{orderId,
 
 ### 返品の受け取りの品ごとの返金（FREQ-641 Task 1・2・5 Step 3、2026-11-06）
 
-対応: FREQ-641-AC-07〜10（DB の部分）。根拠は[設計書](../../superpowers/specs/2026-11-06-return-receive-per-item-design.md)の3〜6章。移行は [20261106005536_return_receive_per_item.sql](../../../supabase/migrations/20261106005536_return_receive_per_item.sql)（手元の DB だけで確認。本番は未適用で、オーナーの許可待ち）。窓口 `POST /api/admin/returns/[returnId]/receive` の本文は Task 2（2026-11-06）で O-return-receive に品ごとの選びと `mixed` を足した。200 の答えのキーは変えていない。
+対応: FREQ-641-AC-07〜10（DB の部分）。根拠は[設計書](../../superpowers/specs/2026-11-06-return-receive-per-item-design.md)の3〜6章。移行は [20261106005536_return_receive_per_item.sql](../../../supabase/migrations/20261106005536_return_receive_per_item.sql)（手元の DB で確認し、本番は 2026-11-06 に適用済み）。窓口 `POST /api/admin/returns/[returnId]/receive` の本文は Task 2（2026-11-06）で O-return-receive に品ごとの選びと `mixed` を足した。200 の答えのキーは変えていない。
 
 `public.admin_receive_return` は14引数・既定値なし・9列の答えのまま、本文・OID・ACL も変えない（SECURITY INVOKER で `private.admin_receive_return` に渡すだけ）。変えたのは private の本体:
 
