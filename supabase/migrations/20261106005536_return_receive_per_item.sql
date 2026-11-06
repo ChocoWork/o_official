@@ -24,6 +24,9 @@ ALTER TABLE public.order_return_receipts ADD CONSTRAINT order_return_receipts_re
   refund_choice IN ('now','consult','mixed','none'));
 -- RR_SCHEMA_END
 
+-- A refund_waived row written by a receive belongs to the now rows of that same receipt and line; those
+-- positions keep their price order. Other waived rows, sent back and missing units keep the H5 rule (released last).
+-- Receipts written in one transaction share created_at; the append-only row position breaks that tie in insert order.
 CREATE OR REPLACE FUNCTION private.group_h_return_unit_dispositions(_return_line_id uuid)
 RETURNS TABLE(unit_index integer,paid_amount integer,exchange_unit boolean,released_unit boolean)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
@@ -38,32 +41,49 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
       COALESCE((SELECT pg_catalog.sum(x.quantity) FROM public.order_return_receipt_lines AS x
         WHERE x.return_line_id=l.id AND x.disposition='missing_reopened'),0) AS reopened
     FROM public.order_return_lines AS l WHERE l.id=_return_line_id
-  ), raw_receipts AS (
-    SELECT x.*,rc.created_at,rc.id AS receipt_order,COALESCE(pg_catalog.sum(x.quantity) FILTER (WHERE x.disposition='missing') OVER (
-      ORDER BY rc.created_at,rc.id,x.id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) AS previous_missing
+  ), lines_with_choice AS (
+    SELECT x.*,rc.created_at,rc.ctid AS receipt_ctid,rc.id AS receipt_order,
+      CASE WHEN x.resolution='refund' AND x.disposition IN ('restocked','not_restocked','pending_inspection')
+        AND COALESCE(x.refund_choice,rc.refund_choice)='now' THEN 0 ELSE 1 END AS now_order,
+      CASE WHEN rc.kind='receive' THEN COALESCE((SELECT pg_catalog.sum(w.quantity) FROM public.order_return_receipt_lines AS w
+        WHERE w.receipt_id=x.receipt_id AND w.return_line_id=x.return_line_id AND w.disposition='refund_waived'),0) ELSE 0 END AS receipt_waived
     FROM public.order_return_receipt_lines AS x JOIN public.order_return_receipts AS rc ON rc.id=x.receipt_id
     WHERE x.return_line_id=_return_line_id
       AND x.disposition IN ('restocked','not_restocked','pending_inspection','sent_back','missing')
+  ), waives AS (
+    SELECT COALESCE(pg_catalog.sum(b.bound_waived),0) AS bound_waived FROM (
+      SELECT LEAST(pg_catalog.max(x.receipt_waived),COALESCE(pg_catalog.sum(x.quantity) FILTER (WHERE x.now_order=0),0)) AS bound_waived
+      FROM lines_with_choice AS x GROUP BY x.receipt_order
+    ) AS b
+  ), raw_receipts AS (
+    SELECT x.*,COALESCE(pg_catalog.sum(x.quantity) FILTER (WHERE x.disposition='missing') OVER (
+      ORDER BY x.created_at,x.receipt_ctid,x.receipt_order,x.now_order,x.id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) AS previous_missing,
+      COALESCE(pg_catalog.sum(x.quantity) OVER (PARTITION BY x.receipt_order,x.now_order
+        ORDER BY x.id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) AS previous_same
+    FROM lines_with_choice AS x
   ), effective_receipts AS (
-    SELECT x.resolution,x.disposition,x.created_at,x.receipt_order,x.id,
+    SELECT x.resolution,x.disposition,x.created_at,x.receipt_ctid,x.receipt_order,x.now_order,x.id,x.receipt_waived,x.previous_same,
       CASE WHEN x.disposition='missing' THEN GREATEST(x.quantity-GREATEST(m.reopened-x.previous_missing,0),0)
         ELSE x.quantity END AS quantity FROM raw_receipts AS x CROSS JOIN meta AS m
   ), receipts AS (
-    SELECT x.resolution,x.disposition,x.quantity,COALESCE(pg_catalog.sum(x.quantity) OVER (
-      ORDER BY x.created_at,x.receipt_order,x.id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) AS previous
+    SELECT x.*,COALESCE(pg_catalog.sum(x.quantity) OVER (
+      ORDER BY x.created_at,x.receipt_ctid,x.receipt_order,x.now_order,x.id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) AS previous
     FROM effective_receipts AS x
-  ), positions AS (
+  ), placed AS (
     SELECT g.n,r.resolution,r.disposition,
-      pg_catalog.count(*) FILTER (WHERE r.resolution='refund' AND r.disposition NOT IN ('sent_back','missing'))
-        OVER (ORDER BY g.n) AS refund_n
+      COALESCE(r.now_order=0 AND g.n-r.previous+r.previous_same<=r.receipt_waived,false) AS bound_waive
     FROM meta CROSS JOIN LATERAL pg_catalog.generate_series(1,meta.quantity) AS g(n)
     LEFT JOIN receipts AS r ON g.n>r.previous AND g.n<=r.previous+r.quantity
+  ), positions AS (
+    SELECT p.*,pg_catalog.count(*) FILTER (WHERE p.resolution='refund' AND p.disposition NOT IN ('sent_back','missing')
+        AND NOT p.bound_waive) OVER (ORDER BY p.n) AS refund_n
+    FROM placed AS p
   ), marked AS (
-    SELECT p.*,COALESCE(p.disposition IN ('sent_back','missing') OR
-      (p.resolution='refund' AND p.refund_n>m.claimed AND p.refund_n<=m.claimed+m.waived),false) AS releasable
-    FROM positions AS p CROSS JOIN meta AS m
+    SELECT p.*,COALESCE(p.disposition IN ('sent_back','missing') OR p.bound_waive OR
+      (p.resolution='refund' AND p.refund_n>m.claimed AND p.refund_n<=m.claimed+GREATEST(m.waived-w.bound_waived,0)),false) AS releasable
+    FROM positions AS p CROSS JOIN meta AS m CROSS JOIN waives AS w
   ), ordered AS (
-    SELECT p.*,pg_catalog.row_number() OVER (ORDER BY COALESCE(p.releasable AND p.disposition IN ('sent_back','missing'),false),p.n) AS retained_n FROM marked AS p
+    SELECT p.*,pg_catalog.row_number() OVER (ORDER BY COALESCE(p.releasable AND NOT p.bound_waive,false),p.n) AS retained_n FROM marked AS p
   ), removed AS (
     SELECT p.*,pg_catalog.count(*) FILTER (WHERE p.releasable) OVER (ORDER BY p.retained_n DESC) AS released_n FROM ordered AS p
   ), remaining AS (
@@ -232,7 +252,7 @@ BEGIN
       JOIN public.order_return_receipt_lines AS x ON x.return_line_id=l.id AND x.receipt_id=v_receipt
         AND x.resolution='refund' AND x.disposition IN ('restocked','not_restocked','pending_inspection')
       WHERE l.return_id=_return_id AND l.order_item_id=_order_item_id
-      GROUP BY l.id,l.created_at,p.unprocessed ORDER BY l.created_at,l.id LOOP
+      GROUP BY l.id,p.unprocessed ORDER BY l.id LOOP
       EXIT WHEN v_left=0;
       quantity:=LEAST(v_left,v_line.now_n);return_line_id:=v_line.id;
       unit_offset:=GREATEST(v_line.bound_n-v_line.now_n-v_line.consult_n,0);
@@ -577,18 +597,24 @@ BEGIN
             v_h_amount:=0;v_h_left:=v_h_line.quantity;v_h_count:=0;
           END;
           IF v_h_left>0 THEN
-            FOR v_h_return IN SELECT l.id FROM public.order_return_lines AS l
-              WHERE l.return_id=v_current.return_id AND l.order_item_id=v_h_line.order_item_id ORDER BY l.created_at,l.id LOOP
-              SELECT LEAST(v_h_left,pg_catalog.count(*)::integer) INTO v_h_take
-                FROM public.order_line_unit_amounts AS u
-                LEFT JOIN LATERAL private.group_h_return_unit_rows(v_h_return.id) AS b ON b.unit_index=u.unit_index
-                WHERE u.order_item_id=v_h_line.order_item_id AND
-                  ((u.refund_id=_refund_id AND u.return_line_id=v_h_return.id)
-                  OR (u.refund_id IS NULL AND (u.return_line_id IS NULL
-                    OR (u.return_line_id=v_h_return.id AND b.remaining_index IS NOT NULL))));
-              v_h_amount:=v_h_amount+private.group_h_claim_refund_units(_refund_id,v_h_line.order_item_id,v_h_take,false,v_h_return.id);
-              v_h_count:=v_h_count+v_h_take;v_h_left:=v_h_left-v_h_take;EXIT WHEN v_h_left=0;
-            END LOOP;
+            -- The fallback claim keeps the line capacity; when it cannot bind the units, record the late
+            -- provider fact and leave the unit mismatch to the exception below instead of failing the result.
+            BEGIN
+              FOR v_h_return IN SELECT l.id FROM public.order_return_lines AS l
+                WHERE l.return_id=v_current.return_id AND l.order_item_id=v_h_line.order_item_id ORDER BY l.created_at,l.id LOOP
+                SELECT LEAST(v_h_left,pg_catalog.count(*)::integer) INTO v_h_take
+                  FROM public.order_line_unit_amounts AS u
+                  LEFT JOIN LATERAL private.group_h_return_unit_rows(v_h_return.id) AS b ON b.unit_index=u.unit_index
+                  WHERE u.order_item_id=v_h_line.order_item_id AND
+                    ((u.refund_id=_refund_id AND u.return_line_id=v_h_return.id)
+                    OR (u.refund_id IS NULL AND (u.return_line_id IS NULL
+                      OR (u.return_line_id=v_h_return.id AND b.remaining_index IS NOT NULL))));
+                v_h_amount:=v_h_amount+private.group_h_claim_refund_units(_refund_id,v_h_line.order_item_id,v_h_take,false,v_h_return.id);
+                v_h_count:=v_h_count+v_h_take;v_h_left:=v_h_left-v_h_take;EXIT WHEN v_h_left=0;
+              END LOOP;
+            EXCEPTION WHEN SQLSTATE '23514' THEN
+              v_h_amount:=0;v_h_count:=0;v_h_mismatch:=true;
+            END;
           END IF;
         END IF;
         v_h_mismatch:=v_h_mismatch OR v_h_count<>v_h_line.quantity OR v_h_amount IS DISTINCT FROM v_h_line.amount;
@@ -1490,14 +1516,14 @@ BEGIN
   END IF;
   v_detail:='rr_amounts';
   FOR e IN SELECT * FROM (VALUES
-    ('group_h_return_unit_dispositions','group_h_return_unit_dispositions(uuid)','ccc7a6f50ddf3231341bb9d108806d68','s'),
+    ('group_h_return_unit_dispositions','group_h_return_unit_dispositions(uuid)','3782fbc1a158aafda27288c7317f23a1','s'),
     ('group_h_release_return_units','group_h_release_return_units(uuid)','dcc3e69b7ac9cd4a7b1c47fff2282cfa','v'),
     ('group_h_release_completed_return_claims','group_h_release_completed_return_claims()','3437edf0c5c28c814b8f4d32410744ef','v'),
-    ('group_h_return_refund_slices','group_h_return_refund_slices(uuid,uuid,integer,uuid)','269a4e8d1b85011052e3cc815ea2dd13','s'),
+    ('group_h_return_refund_slices','group_h_return_refund_slices(uuid,uuid,integer,uuid)','5c9b69a23b7d78a19cbadc4c2e5d518d','s'),
     ('group_h_receiving_amount','group_h_receiving_amount(uuid,uuid,integer,jsonb)','c17563d22e12533506e4c15de1baa704','s'),
     ('group_h_return_amounts','group_h_return_amounts(uuid)','2410ec6490657d648b9717fd96af4e89','s'),
     ('group_h_claim_refund_units','group_h_claim_refund_units(uuid,uuid,integer,boolean,uuid)','320e045af0945b13526aa474bf2f07b3','v'),
-    ('record_group_g_refund_result','record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb)','cc33b9aecd8489938677799152d655d3','v'),
+    ('record_group_g_refund_result','record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb)','e8b6a3cbd56e77480cd044275e0ea755','v'),
     ('group_h_return_refund_amount','group_h_return_refund_amount(uuid,uuid,integer,uuid)','5188ce60c4d441d046643a2620f18bb2','s')
   ) AS expected(name,signature,body_md5,volatility) LOOP
     v_oid:=pg_catalog.to_regprocedure('private.'||e.signature);

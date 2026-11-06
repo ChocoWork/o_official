@@ -472,4 +472,31 @@ describeLocalDb('返品の受取明細ごとの選び（controllerがREDを実�
     expect(await claims(db(), f)).toEqual(before);
     expect(await sideEffects(db(), f)).toEqual(beforeEffects);
   });
+
+  test('FREQ-641-AC-07: errorの返金に後から成功が届いても行の数量を超えず記録し例外を開いたまま残す', async () => {
+    const f = await fixture(db(), { amounts: [17000, 20000], groups: [{ quantity: 1 }] });
+    await receive(db(), f, [unit(f, 0)], 'consult');
+    const a = await consultRefund(db(), f);
+    expect(a.amount).toBe(17000);
+    await db().query("select * from public.mark_order_refund_error($1,'stripe_rejected',false)", [a.refund_id]);
+    const b = await consultRefund(db(), f);
+    await hResult(db(), b.refund_id, 'succeeded');
+    expect(await failure(db(), () => hResult(db(), a.refund_id, 'succeeded'))).toBeNull();
+    await hResult(db(), a.refund_id, 'succeeded');
+    expect((await db().query('select status from public.order_refunds where id=$1', [a.refund_id])).rows[0].status).toBe('succeeded');
+    expect((await exceptionCounts(db(), f)).unresolved).toBeGreaterThan(0);
+    expectSnapshots([await snapshot(db(), f)], 1);
+  });
+
+  test('FREQ-641-AC-08: 先の相談の後に同じ行の今すぐを0円で終えても相談の額は17000のまま', async () => {
+    const f = await fixture(db(), { amounts: [17000, 20000] });
+    await receive(db(), f, [unit(f, 0)], 'consult');
+    expect((await detail(db(), f)).lines[0].refund_waiting_amount).toBe(17000);
+    const r = await receive(db(), f, [unit(f, 0)], 'now', { amount: 0 });
+    expect(r).toMatchObject({ refund_id: null, refund_amount: 0, refund_status: 'waived' });
+    expect((await claims(db(), f)).filter(x => x.return_line_id).map(x => x.paid_amount)).toEqual([17000]);
+    expect((await detail(db(), f)).lines[0].refund_waiting_amount).toBe(17000);
+    expect((await consultRefund(db(), f)).amount).toBe(17000);
+    expectSnapshots([await snapshot(db(), f)], 1);
+  });
 });
