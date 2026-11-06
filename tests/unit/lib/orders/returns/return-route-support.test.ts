@@ -316,6 +316,17 @@ describe('toReceiveReply（受け取りの流れの答えを HTTP と監査に�
     expect(reply.audit.metadata).toEqual(expect.objectContaining({ replayed: true }));
   });
 
+  it('DD-ADMIN-018 単一の受取結果と上限拒否を既存のHTTP形へ返す', () => {
+    expect(Object.keys(toReceiveReply(RECEIVED).body.data as object).sort()).toEqual([
+      'feeDueAmount', 'receiptId', 'refundAmount', 'refundId', 'refundStatus', 'replayed', 'returnStatus',
+    ]);
+    expect(toReceiveReply({ kind: 'refused', code: 'RETURN_RECEIVE_REFUND_CAP_EXCEEDED' })).toEqual({
+      status: 400,
+      body: { error: 'この受け取りの商品の額と送料までにしてください。', code: 'RETURN_RECEIVE_REFUND_CAP_EXCEEDED' },
+      audit: { outcome: 'failure', detail: 'Return receive refused', metadata: { code: 'RETURN_RECEIVE_REFUND_CAP_EXCEEDED' } },
+    });
+  });
+
   it.each(C4_CASES)('断り %s は C-4 の言葉。受け取りの断りとして監査に残す', (code, status, message) => {
     expect(toReceiveReply({ kind: 'refused', code })).toEqual({
       status,

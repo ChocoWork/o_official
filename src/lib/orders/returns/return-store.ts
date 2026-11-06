@@ -16,7 +16,8 @@ import {
   type OrderReturnSummary,
   type OutOfStockExchange,
   type ReceiptDisposition,
-  type RefundChoice,
+  type ReceiptRefundChoice,
+  type ReceiveUnitRefundChoice,
   type ReturnCarrier,
   type ReturnCreateMaterials,
   type ReturnDeclineReason,
@@ -270,7 +271,16 @@ export async function createReturn(store: ReturnStore, input: CreateReturnInput)
   };
 }
 
-export type ReceiveUnitInput = { returnLineId: string; disposition: ReceiptDisposition; quantity: number };
+/**
+ * 受け取る品の1要素。refundChoice は返金の品の選び（今すぐ・相談）。省いた旧い本文は、DB が親の now・consult で補う。
+ * 同じ行・同じ状態でも選びが違えば別の要素にする
+ */
+export type ReceiveUnitInput = {
+  returnLineId: string;
+  disposition: ReceiptDisposition;
+  quantity: number;
+  refundChoice?: ReceiveUnitRefundChoice;
+};
 /** 在庫不足の交換の行に、店長が選ぶ扱い。decline の理由の行は作って送る・返金に変える、make の理由の行は返金に変えるだけ（C-1） */
 export type ExchangeOverrideInput = { returnLineId: string; action: 'make' | 'refund' };
 
@@ -282,7 +292,8 @@ export type ReceiveReturnInput = {
   requestKey: string;
   units: ReceiveUnitInput[];
   exchangeOverrides: ExchangeOverrideInput[];
-  refundChoice: RefundChoice;
+  /** 品の選びのまとめ（今すぐだけ now・相談だけ consult・両方 mixed・返金の品なし none）。DB が品の選びから導き直して食い違いを断る */
+  refundChoice: ReceiptRefundChoice;
   /** null は計算どおり。店長だけが直せる */
   refundAmount: number | null;
   refundShippingAmount: number;
@@ -312,7 +323,12 @@ export type ReceivedReturn = {
  * 受け取りを記録する（今返金なら E-2 の返金の記録も「返事待ち」で作る。Stripe に頼むのは呼ぶ側）。
  * 返金額が0円になる受け取り（手数料が商品の額以上など。P20）は、返金の記録を作らず refundId が null・refundStatus が waived で返る
  * （Stripe に頼まない）。同じ requestKey の送り直しは前の受け取りと返金の記録を返す（replayed。Review Focus 1）。
- * 断りは ReturnStoreError（返品の記号か、E-2 の返金が断った記号）
+ * 断りは ReturnStoreError（返品の記号か、E-2 の返金が断った記号）。
+ * 品の選び（refundChoice）は refund_choice に写し、省いた品はキーを足さずに渡す（旧い本文の二重防止の指紋を変えないため）。
+ *
+ * @impl IMPL-ADMIN-202
+ * @design DD-ADMIN-018
+ * @remarks 上限・P9・親と品の選びの一致は DB が決める。ここでは額や選びを確かめない。
  */
 export async function receiveReturn(store: ReturnStore, input: ReceiveReturnInput): Promise<ReceivedReturn> {
   const row = firstRowOf(
@@ -325,6 +341,7 @@ export async function receiveReturn(store: ReturnStore, input: ReceiveReturnInpu
         return_line_id: unit.returnLineId,
         disposition: unit.disposition,
         quantity: unit.quantity,
+        ...(unit.refundChoice === undefined ? {} : { refund_choice: unit.refundChoice }),
       })),
       _exchange_overrides: input.exchangeOverrides.map((override) => ({
         return_line_id: override.returnLineId,
@@ -740,6 +757,10 @@ function toReturnLine(line: JsonObject): OrderReturnLineDetail {
       refundWaiting: Number(progress.refund_waiting),
     },
     refundAmountsByCount: Array.isArray(line.refund_amounts_by_count) ? line.refund_amounts_by_count.map(Number) : [],
+    // H の無い旧い注文・交換の行・旧い JSON（キーが無い）は null。画面は共通の累計に戻る
+    receiveRefundAmountsByCount: Array.isArray(line.receive_refund_amounts_by_count)
+      ? line.receive_refund_amounts_by_count.map(Number)
+      : null,
     refundWaitingAmount: Number(line.refund_waiting_amount),
     customerNote: textOrNull(line.customer_note),
     requestedResolution: resolutionOrNull(line.requested_resolution),
@@ -805,7 +826,7 @@ function toReturnDetail(row: JsonObject, orderId: string): OrderReturnDetail {
     receipts: objectsOf(row.receipts).map((receipt) => ({
       id: String(receipt.id),
       kind: receipt.kind as OrderReturnDetail['receipts'][number]['kind'],
-      refundChoice: textOrNull(receipt.refund_choice) as RefundChoice | null,
+      refundChoice: textOrNull(receipt.refund_choice) as ReceiptRefundChoice | null,
       createdAt: String(receipt.created_at),
       actorEmail: textOrNull(receipt.actor_email),
     })),

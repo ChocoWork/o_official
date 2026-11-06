@@ -80,6 +80,11 @@ function errorName(error: unknown): string {
  * 返金の記録ができたら（相談・なし・返金の品が無い受け取り・0円で返金しない受け取りは無い）、Stripe に頼んで結果を書く。
  * 同じ二重防止の番号の送り直しは、DB が前の受け取りを返し（replayed）、返事待ちの返金は同じ重複防止キー・同じ中身で頼み直す。
  * Stripe が返金を断った時は、DB が返金の記録をエラーにした取引で受け取りのメールを予定する（P25）ので、送る処理を動かす。
+ * 品ごとの選び（今すぐと相談の混ざった mixed）も、受け取り1件・返金の記録は最大1件（今すぐの分だけ）の同じ答えになる。
+ *
+ * @impl IMPL-ADMIN-203
+ * @design DD-ADMIN-018
+ * @remarks 入力は作り直さずに DB へ渡す。省いた品の選びを補うと、旧い本文の送り直しの指紋が変わるため（補いは DB が行う）。
  */
 export async function receiveReturnAndRefund(
   deps: ReturnServiceDeps,

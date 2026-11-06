@@ -1,3 +1,11 @@
+/**
+ * 返品の受け取りの窓口（POST /api/admin/returns/[returnId]/receive）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-ADMIN-204
+ * @design DD-ADMIN-018
+ * @remarks 品ごとの返金の選びの食い違い・上限・P9 は DB が決める。窓口は形と権限だけを確かめ、額や返品の条件を推し量らない。
+ */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { ADMIN_NOTE_MAX_LENGTH } from '@/lib/orders/order-payment-types';
@@ -25,23 +33,32 @@ const unitSchema = z.object({
   returnLineId: z.string().uuid(),
   disposition: z.enum(['restocked', 'not_restocked', 'pending_inspection', 'sent_back']),
   quantity: z.number().int().min(1).max(999),
+  // 返金の品の選び。省くと旧い本文（DB が親の now・consult で補う）。品に mixed・none は無い
+  refundChoice: z.enum(['now', 'consult']).optional(),
 });
+
+type UnitBody = z.infer<typeof unitSchema>;
+
+/** 重複を見る鍵の選び。省いた品は、親が now・consult ならその値で補った選びで比べる（DB の補い方と同じ） */
+function resolvedUnitChoice(unit: UnitBody, parent: string): string {
+  return unit.refundChoice ?? (parent === 'now' || parent === 'consult' ? parent : '');
+}
 
 const bodySchema = z.object({
   requestKey: z.string().uuid(),
-  // 同じ品でも状態が違えば別の行（DB の主キーも「受け取り・返品の行・状態」で1行）。同じ品の同じ状態は数を足して1行で送る
+  // 同じ品でも状態か返金の選びが違えば別の行。同じ品の同じ状態・同じ選びは数を足して1行で送る（重複は下の superRefine で断る）
   units: z
     .array(unitSchema)
     .min(1)
-    .max(100) // DB の admin_receive_return が受ける行の数の上限と同じ
-    .refine((units) => new Set(units.map((unit) => `${unit.returnLineId}:${unit.disposition}`)).size === units.length),
+    .max(100), // DB の admin_receive_return が受ける行の数の上限と同じ
   // 在庫が足りない交換の行に、店長が「作って送る」か「返金に変える」を選ぶ。無ければ空
   exchangeOverrides: z
     .array(z.object({ returnLineId: z.string().uuid(), action: z.enum(['make', 'refund']) }))
     .max(100)
     .refine((overrides) => new Set(overrides.map((override) => override.returnLineId)).size === overrides.length)
     .default([]),
-  refundChoice: z.enum(['now', 'consult', 'none']),
+  // 品の選びのまとめ。mixed は今すぐと相談の品が両方ある時。まとめと品の選びの食い違いは DB が断る
+  refundChoice: z.enum(['now', 'consult', 'mixed', 'none']),
   // 省く／null は「計算どおり」。0は返金しないで終える意味で、0のまま渡す。額を直せるのは店長だけ（DB が返せる額までを確かめる）
   refundAmount: optionalAmount,
   refundShippingAmount: z.number().int().min(0).max(MAX_AMOUNT).default(0),
@@ -50,11 +67,23 @@ const bodySchema = z.object({
   sentBackMessage: optionalText(1000),
   sentBackCarrier: optionalCarrier,
   sentBackTrackingNumber: optionalTrackingNumber,
+}).superRefine((body, context) => {
+  const keys = body.units.map((unit) => `${unit.returnLineId}:${unit.disposition}:${resolvedUnitChoice(unit, body.refundChoice)}`);
+  if (new Set(keys).size !== keys.length) {
+    context.addIssue({ code: 'custom', path: ['units'], message: 'duplicate unit' });
+  }
+  // mixed は品の選びで今すぐと相談の両方を送る（省いた品を mixed で補わない）。どの品が返金の品かは DB が決める
+  if (
+    body.refundChoice === 'mixed'
+    && !(body.units.some((unit) => unit.refundChoice === 'now') && body.units.some((unit) => unit.refundChoice === 'consult'))
+  ) {
+    context.addIssue({ code: 'custom', path: ['refundChoice'], message: 'mixed needs now and consult units' });
+  }
 });
 
 /**
  * 受け取る（グループ E-3 設計書 6-1・6-3）。品を1点ずつ確かめた結果（在庫に戻す・戻さない・検品待ち・お返し）を記録し、
- * 選んだ返金（今・相談・なし）を行う。今返金は Stripe に頼む（返金の流れが行う）。
+ * 選んだ返金（今・相談・なし。品ごとに今と相談を選んだ時のまとめは mixed）を行う。今返金は Stripe に頼む（返金の流れが行う）。
  * 権限 → CSRF → 回数の制限（送信元ごとと管理者ごと）→ 返品の番号 → 本文 → 返金の権限 → 受け取りの流れの順に確かめる。
  * 返金の権限（admin.orders.refund）が要るのは、額の指定・送料の指定・交換の選び直しだけ。
  * 持たない人（サポート）は相談・なしの受け取りができ、お客様の申し込みの返品（返送不要でない）なら今返金も送れる

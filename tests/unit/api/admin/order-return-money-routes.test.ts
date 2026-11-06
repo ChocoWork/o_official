@@ -817,6 +817,166 @@ describe('POST /api/admin/returns/[returnId]/receive（受け取る）', () => {
   });
 });
 
+// 返品の品ごとの返金（Task 2）: 品ごとに今すぐ（now）か相談（consult）を選び、親の refundChoice はそのまとめ（mixed を含む）
+describe('POST /api/admin/returns/[returnId]/receive（品ごとの返金の選び）', () => {
+  const NOW_UNIT = { returnLineId: LINE_ID, disposition: 'restocked', quantity: 1, refundChoice: 'now' };
+  const CONSULT_UNIT = { returnLineId: LINE_ID, disposition: 'restocked', quantity: 1, refundChoice: 'consult' };
+  const MIXED_BODY = { ...RECEIVE_BODY, units: [NOW_UNIT, CONSULT_UNIT], refundChoice: 'mixed' };
+
+  beforeEach(() => {
+    mockReceive.mockResolvedValue(RECEIVED);
+  });
+
+  async function expectInvalidBody(body: unknown) {
+    const response = await call(ENDPOINTS[0], { body });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: '入力を確かめてください。', code: 'invalid_request' });
+    return response;
+  }
+
+  it('DD-ADMIN-018 同じ返品行と状態でも選びが違う2要素を受ける', async () => {
+    const response = await call(ENDPOINTS[0], { body: MIXED_BODY });
+
+    expect(response.status).toBe(200);
+    expect(mockReceive).toHaveBeenCalledWith(mockDeps, {
+      returnId: RETURN_ID, actorId: 'admin-1', actorCanRefund: true, ...MIXED_BODY,
+    });
+    expect(mockReceive.mock.calls[0][1].units).toEqual([NOW_UNIT, CONSULT_UNIT]);
+  });
+
+  it('DD-ADMIN-018 同じ返品行と状態と選びの重複やmixedという品の選びは400', async () => {
+    await expectInvalidBody({ ...MIXED_BODY, units: [NOW_UNIT, { ...NOW_UNIT, quantity: 2 }, CONSULT_UNIT] });
+    // 旧本文の省略は親の now で補って比べる（省略と now は同じ選び）
+    await expectInvalidBody({ ...RECEIVE_BODY, refundChoice: 'now', units: [UNIT, NOW_UNIT] });
+    await expectInvalidBody({ ...MIXED_BODY, units: [{ ...NOW_UNIT, refundChoice: 'mixed' }, CONSULT_UNIT] });
+    await expectInvalidBody({ ...MIXED_BODY, units: [{ ...NOW_UNIT, refundChoice: 'none' }, CONSULT_UNIT] });
+    await expectInvalidBody({ ...MIXED_BODY, units: [{ ...NOW_UNIT, refundChoice: null }, CONSULT_UNIT] });
+
+    expect(mockReceive).not.toHaveBeenCalled();
+  });
+
+  it('DD-ADMIN-018 品の選びを省いた旧本文は、選びのキーを足さずにそのまま入口へ渡す', async () => {
+    const response = await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, refundChoice: 'consult' } });
+
+    expect(response.status).toBe(200);
+    expect(mockReceive.mock.calls[0][1].units).toEqual([UNIT]);
+    expect(mockReceive.mock.calls[0][1].units[0]).not.toHaveProperty('refundChoice');
+    expect(mockReceive.mock.calls[0][1].refundChoice).toBe('consult');
+  });
+
+  it('DD-ADMIN-018 P9の判定をDBに任せ指定額0と正の送料と交換変更は権限で止める', async () => {
+    grant('admin.orders.return');
+
+    const response = await call(ENDPOINTS[0], { body: MIXED_BODY });
+
+    expect(response.status).toBe(200);
+    const p9Input = mockReceive.mock.calls[0][1];
+    expect(p9Input.actorCanRefund).toBe(false);
+    expect(p9Input.refundAmount).toBeNull();
+    expect(p9Input.refundChoice).toBe('mixed');
+
+    for (const change of [
+      { refundAmount: 0 },
+      { refundShippingAmount: 300 },
+      { exchangeOverrides: [{ returnLineId: LINE_ID, action: 'refund' }] },
+    ]) {
+      const forbidden = await call(ENDPOINTS[0], { body: { ...MIXED_BODY, ...change } });
+      expect(forbidden.status).toBe(403);
+      await expect(forbidden.json()).resolves.toEqual({ error: 'この操作は店長だけができます。', code: 'RETURN_FORBIDDEN' });
+    }
+    expect(mockReceive).toHaveBeenCalledTimes(1);
+  });
+
+  it('DD-ADMIN-018 P9でない今すぐの品はDBの断りを403で返す', async () => {
+    grant('admin.orders.return');
+    mockReceive.mockResolvedValue({ kind: 'refused', code: 'RETURN_FORBIDDEN' });
+
+    const response = await call(ENDPOINTS[0], { body: MIXED_BODY });
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: 'この操作は店長だけができます。', code: 'RETURN_FORBIDDEN' });
+    expect(mockReceive).toHaveBeenCalledWith(mockDeps, expect.objectContaining({ actorCanRefund: false }));
+  });
+
+  it.each([401, 503])('DD-ADMIN-018 返金の権限を確かめられなかった（%i）時は偽に潰さず、その応答を返す', async (status) => {
+    mockAuthorize.mockReset();
+    mockAuthorize
+      .mockResolvedValueOnce(ADMIN)
+      .mockResolvedValueOnce({ ok: false, response: new Response(null, { status }) });
+
+    expect((await call(ENDPOINTS[0], { body: MIXED_BODY })).status).toBe(status);
+    expect(mockReceive).not.toHaveBeenCalled();
+  });
+
+  it('DD-ADMIN-018 上限ちょうどの額は窓口で比べずDBへ渡す', async () => {
+    const response = await call(ENDPOINTS[0], { body: { ...MIXED_BODY, refundAmount: 17500, refundShippingAmount: 500 } });
+
+    expect(response.status).toBe(200);
+    expect(mockReceive).toHaveBeenCalledWith(mockDeps, expect.objectContaining({ refundAmount: 17500, refundShippingAmount: 500 }));
+  });
+
+  it('DD-ADMIN-018 単一の受取結果と上限拒否を既存のHTTP形へ返す', async () => {
+    const ok = await call(ENDPOINTS[0], { body: MIXED_BODY });
+    expect(ok.status).toBe(200);
+    await expect(ok.json()).resolves.toEqual({ data: RECEIVED_DATA });
+
+    mockReceive.mockResolvedValueOnce({ kind: 'refused', code: 'RETURN_RECEIVE_REFUND_CAP_EXCEEDED' });
+    const capResponse = await call(ENDPOINTS[0], { body: { ...MIXED_BODY, refundAmount: 17501 } });
+    expect(capResponse.status).toBe(400);
+    const capBody = await capResponse.json();
+    expect(capBody).toEqual({ error: 'この受け取りの商品の額と送料までにしてください。', code: 'RETURN_RECEIVE_REFUND_CAP_EXCEEDED' });
+    expect(capBody.code).toBe('RETURN_RECEIVE_REFUND_CAP_EXCEEDED');
+
+    mockReceive.mockResolvedValueOnce({
+      kind: 'refund_not_accepted', receiptId: RECEIPT_ID, returnStatus: 'open', refund: { kind: 'unknown', refundId: REFUND_ID },
+    });
+    const unknown = await call(ENDPOINTS[0], { body: MIXED_BODY });
+    expect(unknown.status).toBe(502);
+    const unknownBody = await unknown.json();
+    // 非成功時は既存どおり最上位
+    expect(unknownBody.receiptId).toBe(RECEIPT_ID);
+    expect(unknownBody).toEqual({ error: UNKNOWN_MESSAGE, code: 'unknown_outcome', refundId: REFUND_ID, receiptId: RECEIPT_ID });
+  });
+
+  it.each<[string, Record<string, unknown>]>([
+    ['now', { units: [NOW_UNIT], refundChoice: 'now' }],
+    ['consult', { units: [CONSULT_UNIT], refundChoice: 'consult' }],
+    ['mixed', { units: [NOW_UNIT, CONSULT_UNIT], refundChoice: 'mixed' }],
+    ['none', { units: [{ returnLineId: LINE_ID, disposition: 'not_restocked', quantity: 1 }], refundChoice: 'none' }],
+  ])('DD-ADMIN-018 親のまとめと監査をnow consult mixed noneでそろえる（%s）', async (choice, change) => {
+    const response = await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, ...change } });
+
+    expect(response.status).toBe(200);
+    expect(mockReceive.mock.calls[0][1].refundChoice).toBe(choice);
+    const auditMetadata = mockLogAudit.mock.calls[0][0].metadata;
+    expect(auditMetadata.refund_choice).toBe(choice);
+    // 生の品の行・メモを監査に入れない
+    expect(Object.keys(auditMetadata).sort()).toEqual([
+      'fee_due_amount', 'receipt_id', 'refund_amount', 'refund_choice', 'refund_id', 'refund_status', 'replayed', 'return_status', 'unit_count',
+    ]);
+  });
+
+  it('DD-ADMIN-018 親mixedで品の選びが今すぐと相談の両方に無ければ400', async () => {
+    const mixedWithoutLineChoice = await expectInvalidBody({ ...RECEIVE_BODY, units: [UNIT], refundChoice: 'mixed' });
+    expect(mixedWithoutLineChoice.status).toBe(400);
+    await expectInvalidBody({ ...RECEIVE_BODY, units: [NOW_UNIT], refundChoice: 'mixed' });
+    await expectInvalidBody({ ...RECEIVE_BODY, units: [CONSULT_UNIT, { ...UNIT, disposition: 'not_restocked' }], refundChoice: 'mixed' });
+
+    expect(mockReceive).not.toHaveBeenCalled();
+  });
+
+  it('DD-ADMIN-018 親と品の選びの食い違いはDBの入力拒否を返し、成功の監査に残さない', async () => {
+    mockReceive.mockResolvedValue({ kind: 'refused', code: 'RETURN_ARGUMENT_INVALID' });
+
+    const response = await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, units: [NOW_UNIT, CONSULT_UNIT], refundChoice: 'now' } });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: '入力を確かめてください。', code: 'RETURN_ARGUMENT_INVALID' });
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit.mock.calls[0][0]).toMatchObject({ outcome: 'failure', detail: 'Return receive refused' });
+  });
+});
+
 describe('POST /api/admin/returns/[returnId]/refund（額を決めて返金する）', () => {
   const INVALID_BODIES: Array<[string, unknown]> = [
     ['requestKey が無い', { ...REFUND_BODY, requestKey: undefined }],

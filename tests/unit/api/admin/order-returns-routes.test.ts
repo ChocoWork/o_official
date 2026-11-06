@@ -242,6 +242,26 @@ describe('GET /api/admin/orders/[id]/returns（返品の一覧）', () => {
     expect(mockLogAudit).not.toHaveBeenCalled();
   });
 
+  it('DD-ADMIN-018 受け取りの見込みの累計（Hの配列・旧null）と親mixedの受け取りの記録をそのまま返す', async () => {
+    const detail: OrderReturnDetail = {
+      ...RETURN_DETAIL,
+      lines: [
+        { ...RETURN_DETAIL.lines[0], receiveRefundAmountsByCount: [17000, 37000] },
+        { ...RETURN_DETAIL.lines[0], id: FULFILLMENT_ID, receiveRefundAmountsByCount: null },
+      ],
+      receipts: [{ id: REQUEST_KEY, kind: 'receive', refundChoice: 'mixed', createdAt: '2026-10-12T02:00:00.000Z', actorEmail: null }],
+    };
+    mockListOrderReturns.mockResolvedValue([detail]);
+
+    const response = await getReturns(listRequest(), ORDER_CONTEXT);
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.data.returns[0].lines.map((line: { receiveRefundAmountsByCount: unknown }) => line.receiveRefundAmountsByCount))
+      .toEqual([[17000, 37000], null]);
+    expect(body.data.returns[0].receipts[0].refundChoice).toBe('mixed');
+  });
+
   it('サポート（返金の権限が無い人）にも一覧は返す。返金できるかは偽', async () => {
     grant('admin.orders.return');
 

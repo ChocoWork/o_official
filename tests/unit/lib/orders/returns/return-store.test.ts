@@ -72,6 +72,8 @@ const MIGRATION_SUFFIXES = [
   '_order_return_request_records.sql',
   '_order_return_customer_requests.sql',
   '_order_return_request_reviews.sql',
+  // 返品の品ごとの返金（RETURN_RECEIVE_REFUND_CAP_EXCEEDED を足した。public の関数は作り直していない）
+  '_return_receive_per_item.sql',
 ];
 
 /** 移行 A〜F の本文をつないだ物（A・B・C は段1、D・E・F は段2） */
@@ -614,6 +616,56 @@ describe('receiveReturn', () => {
   it.each(REFUND_DB_WORDS)('受け取りの中で E-2 の返金が %s で断れば、E-2 の記号 %s のまま渡す（確かめ中の返金がある時など）', async (word, code) => {
     await expectRefusal('admin_receive_return', word, code, (store) => receiveReturn(store, RECEIVE_INPUT));
   });
+
+  // 返品の品ごとの返金（Task 2）
+  it('DD-ADMIN-018 同じ返品行と状態でも選びが違う2要素を受ける', async () => {
+    const { store, rpc } = storeWith({ admin_receive_return: { data: [RECEIVED_ROW] } });
+
+    await expect(receiveReturn(store, {
+      ...RECEIVE_INPUT,
+      units: [
+        { returnLineId: LINE_1, disposition: 'restocked', quantity: 1, refundChoice: 'now' },
+        { returnLineId: LINE_1, disposition: 'restocked', quantity: 1, refundChoice: 'consult' },
+      ],
+      exchangeOverrides: [],
+      refundChoice: 'mixed',
+    })).resolves.toMatchObject({ receiptId: RECEIPT_ID, refundId: REFUND_ID });
+
+    const rpcArgs = rpc.mock.calls[0][1] as Record<string, unknown>;
+    expect(rpcArgs._units).toEqual([
+      { return_line_id: LINE_1, disposition: 'restocked', quantity: 1, refund_choice: 'now' },
+      { return_line_id: LINE_1, disposition: 'restocked', quantity: 1, refund_choice: 'consult' },
+    ]);
+    expect(rpcArgs._refund_choice).toBe('mixed');
+    // 14引数のまま
+    expect(Object.keys(rpcArgs)).toHaveLength(14);
+  });
+
+  it('DD-ADMIN-018 品の選びを省いた旧本文は、refund_choice のキーを足さずに渡す', async () => {
+    const { store, rpc } = storeWith({ admin_receive_return: { data: [RECEIVED_ROW] } });
+
+    await receiveReturn(store, {
+      ...RECEIVE_INPUT,
+      units: [
+        { returnLineId: LINE_1, disposition: 'restocked', quantity: 1 },
+        { returnLineId: LINE_2, disposition: 'sent_back', quantity: 1, refundChoice: 'consult' },
+      ],
+    });
+
+    const units = (rpc.mock.calls[0][1] as { _units: Array<Record<string, unknown>> })._units;
+    expect(units[0]).toEqual({ return_line_id: LINE_1, disposition: 'restocked', quantity: 1 });
+    expect(units[0]).not.toHaveProperty('refund_choice');
+    expect(units[1]).toEqual({ return_line_id: LINE_2, disposition: 'sent_back', quantity: 1, refund_choice: 'consult' });
+  });
+
+  it('DD-ADMIN-018 DB が RETURN_RECEIVE_REFUND_CAP_EXCEEDED で断れば、同じ綴りの記号', async () => {
+    await expectRefusal(
+      'admin_receive_return',
+      'RETURN_RECEIVE_REFUND_CAP_EXCEEDED',
+      'RETURN_RECEIVE_REFUND_CAP_EXCEEDED',
+      (store) => receiveReturn(store, RECEIVE_INPUT),
+    );
+  });
 });
 
 describe('refundReturn', () => {
@@ -1057,7 +1109,7 @@ const RETURN = {
         restocked: 1, notRestocked: 1, pendingInspection: 0, sentBack: 0, missing: 0, processed: 2, unprocessed: 1,
         exchanged: 0, refundCovered: 0, refundWaived: 1, refundWaiting: 1,
       },
-      refundAmountsByCount: [2666], refundWaitingAmount: 2666,
+      refundAmountsByCount: [2666], receiveRefundAmountsByCount: null, refundWaitingAmount: 2666,
       customerNote: null, requestedResolution: null, requestedExchange: null, photos: [], returnIneligible: false,
     },
     {
@@ -1068,7 +1120,7 @@ const RETURN = {
         restocked: 1, notRestocked: 0, pendingInspection: 0, sentBack: 0, missing: 0, processed: 1, unprocessed: 0,
         exchanged: 1, refundCovered: 0, refundWaived: 0, refundWaiting: 0,
       },
-      refundAmountsByCount: [], refundWaitingAmount: 0,
+      refundAmountsByCount: [], receiveRefundAmountsByCount: null, refundWaitingAmount: 0,
       customerNote: null, requestedResolution: null, requestedExchange: null, photos: [], returnIneligible: true,
     },
   ],
@@ -1149,6 +1201,40 @@ describe('listOrderReturns', () => {
     const [detail] = await listOrderReturns(weird.store, ORDER_ID);
 
     expect(detail).toMatchObject({ displayStatus: null, marks: ['awaiting_items'] });
+  });
+
+  it('DD-ADMIN-018 receive_refund_amounts_by_count はHの配列を写し、旧JSONの省略・null・配列でない値は null', async () => {
+    const [refundLine, exchangeLine] = RETURN_JSON.lines;
+    const { store } = storeWith({
+      list_order_returns: {
+        data: [{
+          ...RETURN_JSON,
+          lines: [
+            { ...refundLine, receive_refund_amounts_by_count: [17000, 37000] },
+            { ...exchangeLine, receive_refund_amounts_by_count: null },
+            { ...refundLine, id: LINE_2, receive_refund_amounts_by_count: 'x' },
+            refundLine,
+            { ...refundLine, receive_refund_amounts_by_count: [] },
+          ],
+        }],
+      },
+    });
+
+    const [detail] = await listOrderReturns(store, ORDER_ID);
+
+    expect(detail.lines.map((line) => line.receiveRefundAmountsByCount)).toEqual([[17000, 37000], null, null, null, []]);
+  });
+
+  it('DD-ADMIN-018 親mixedの受け取りの記録を読む', async () => {
+    const { store } = storeWith({
+      list_order_returns: {
+        data: [{ ...RETURN_JSON, receipts: [{ ...RETURN_JSON.receipts[0], refund_choice: 'mixed' }] }],
+      },
+    });
+
+    const [detail] = await listOrderReturns(store, ORDER_ID);
+
+    expect(detail.receipts[0].refundChoice).toBe('mixed');
   });
 });
 

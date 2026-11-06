@@ -127,6 +127,15 @@ describe('callReturnApi', () => {
     });
   });
 
+  it('DD-ADMIN-018 受け取りの上限超過の400は、記号つきの refused で receiptId が null', async () => {
+    const message = 'この受け取りの商品の額と送料までにしてください。';
+    mockClientFetch.mockResolvedValueOnce(json({ error: message, code: 'RETURN_RECEIVE_REFUND_CAP_EXCEEDED' }, 400));
+
+    await expect(callReturnApi(RECEIVE_URL, BODY, FALLBACK)).resolves.toEqual({
+      kind: 'refused', message, code: 'RETURN_RECEIVE_REFUND_CAP_EXCEEDED', receiptId: null,
+    });
+  });
+
   it('通信が切れた・500 番台・読めない成功は unknown', async () => {
     mockClientFetch
       .mockRejectedValueOnce(new TypeError('Failed to fetch'))

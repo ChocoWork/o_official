@@ -598,6 +598,86 @@ describe('receiveReturnAndRefund（受け取りと返金）', () => {
   });
 });
 
+// 返品の品ごとの返金（Task 2）: 品ごとの選びと親 mixed の受け取りも、受け取り1件・返金は最大1件のまま
+describe('receiveReturnAndRefund（品ごとの返金の選び）', () => {
+  const MIXED_INPUT: ReceiveInput = {
+    ...RECEIVE_INPUT,
+    units: [
+      { returnLineId: RETURN_LINE_ID, disposition: 'restocked', quantity: 1, refundChoice: 'now' },
+      { returnLineId: RETURN_LINE_ID, disposition: 'restocked', quantity: 1, refundChoice: 'consult' },
+    ],
+    refundChoice: 'mixed',
+  };
+
+  it('DD-ADMIN-018 単一の受取結果と上限拒否を既存のHTTP形へ返す', async () => {
+    const { deps, create } = setup();
+    mockRecord.mockResolvedValue(resultRow({ status: 'pending', emailEnqueued: true }));
+
+    await expect(receiveReturnAndRefund(deps, MIXED_INPUT)).resolves.toEqual({
+      kind: 'received',
+      receiptId: RECEIPT_ID,
+      returnStatus: 'open',
+      refund: { refundId: REFUND_ID, amount: 5000, status: 'pending' },
+      feeDueAmount: 0,
+      exchangeOrderItemIds: [],
+      replayed: false,
+    });
+    // 品ごとの本文も作り直さずに DB へ渡し、今すぐ分の返金だけを1回頼む
+    expect(mockReceive).toHaveBeenCalledWith(deps.store, MIXED_INPUT);
+    const refundRequestCount = create.mock.calls.length;
+    expect(refundRequestCount).toBe(1);
+    expect(create.mock.calls[0][1]).toEqual({ idempotencyKey: `order-refund-${REFUND_ID}` });
+  });
+
+  it('DD-ADMIN-018 上限超過の断りは RETURN_RECEIVE_REFUND_CAP_EXCEEDED の refused。Stripe に頼まない', async () => {
+    const { deps, create, schedule } = setup();
+    mockReceive.mockRejectedValue(new ReturnStoreError('RETURN_RECEIVE_REFUND_CAP_EXCEEDED'));
+
+    await expect(receiveReturnAndRefund(deps, { ...MIXED_INPUT, refundAmount: 17501 })).resolves.toEqual({
+      kind: 'refused', code: 'RETURN_RECEIVE_REFUND_CAP_EXCEEDED',
+    });
+    expect(create).not.toHaveBeenCalled();
+    expect(schedule).not.toHaveBeenCalled();
+  });
+
+  it.each<[string, ReceiveInput, Partial<Received>]>([
+    ['相談だけ', { ...MIXED_INPUT, units: [MIXED_INPUT.units[1]], refundChoice: 'consult' }, {}],
+    [
+      '返金なし',
+      { ...MIXED_INPUT, units: [{ returnLineId: RETURN_LINE_ID, disposition: 'not_restocked', quantity: 1 }], refundChoice: 'none' },
+      {},
+    ],
+    ['0円の今すぐと相談', MIXED_INPUT, { refundAmount: 0, refundStatus: 'waived' }],
+  ])('DD-ADMIN-018 %s の受け取りは Stripe を呼ばない', async (_name, input, overrides) => {
+    const { deps, create, retrieve } = setup();
+    mockReceive.mockResolvedValue(receivedWithoutRefund(overrides));
+
+    await receiveReturnAndRefund(deps, input);
+
+    expect(create).not.toHaveBeenCalled();
+    expect(retrieve).not.toHaveBeenCalled();
+    expect(mockGet).not.toHaveBeenCalled();
+  });
+
+  it('DD-ADMIN-018 答えが分からない後の送り直しは、同じ本文と同じ返金の番号の重複防止キーで頼み直す', async () => {
+    const { deps, create } = setup();
+    mockReceive.mockResolvedValueOnce(received()).mockResolvedValueOnce(received({ replayed: true }));
+    create
+      .mockRejectedValueOnce(new Stripe.errors.StripeConnectionError({ type: 'api_error', message: 'socket hang up' }))
+      .mockResolvedValueOnce(stripeRefund({ status: 'pending' }));
+    mockRecord.mockResolvedValue(resultRow({ status: 'pending', emailEnqueued: true }));
+
+    await expect(receiveReturnAndRefund(deps, MIXED_INPUT)).resolves.toMatchObject({
+      kind: 'refund_not_accepted', receiptId: RECEIPT_ID, refund: { kind: 'unknown', refundId: REFUND_ID },
+    });
+    await expect(receiveReturnAndRefund(deps, MIXED_INPUT)).resolves.toMatchObject({ kind: 'received', replayed: true });
+
+    expect(mockReceive.mock.calls[1]).toEqual(mockReceive.mock.calls[0]);
+    expect(create.mock.calls[1]).toEqual(create.mock.calls[0]);
+    expect(create.mock.calls[0][1]).toEqual({ idempotencyKey: `order-refund-${REFUND_ID}` });
+  });
+});
+
 describe('受け取りの後の返金（Stripe への頼みと、答えが分からない時）', () => {
   it('Stripe が断ったら、返金の記録をエラーにして、受け取りの記録は残したまま refund_not_accepted（stripe_rejected）で答える。理由は総称なので言葉にしない。DB が受け取りのメールを予定する（P25）ので、記録をエラーにした後にメールの処理を1回動かす', async () => {
     const { deps, create, schedule } = setup();

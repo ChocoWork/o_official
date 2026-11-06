@@ -25,6 +25,15 @@ export const RETURN_CARRIERS = ['yamato', 'sagawa', 'japanpost', 'other'] as con
 export type ReturnCarrier = (typeof RETURN_CARRIERS)[number];
 export type ReceiptDisposition = 'restocked' | 'not_restocked' | 'pending_inspection' | 'sent_back';
 export type RefundChoice = 'now' | 'consult' | 'none';
+/**
+ * 受け取りの品ごとの返金の選び（今すぐ・相談）と、受け取り全体のまとめ（品の選びが両方あれば mixed）。
+ *
+ * @impl IMPL-ADMIN-201
+ * @design DD-ADMIN-018
+ * @remarks 品に mixed や none は無い。まとめの mixed は本文・DB の受け取りの記録・監査・メールの側だけで使う。
+ */
+export type ReceiveUnitRefundChoice = 'now' | 'consult';
+export type ReceiptRefundChoice = RefundChoice | 'mixed';
 export type OutOfStockExchange = 'make' | 'decline';
 // 返品・キャンセルの申し込みのお断りの理由（お店の中だけで使う。お客様には出さない）と、キャンセルの申し込みの状態（段2）
 export const RETURN_DECLINE_REASONS = ['window_passed', 'final_sale', 'other'] as const;
@@ -41,6 +50,8 @@ export const RETURN_ERROR_CODES = [
   'RETURN_NOT_ELIGIBLE', 'RETURN_REQUESTS_CLOSED', 'RETURN_PHOTO_INVALID', 'RETURN_CUSTOMER_NOTE_REQUIRED',
   'RETURN_DECLINE_MESSAGE_REQUIRED', 'CANCEL_REQUEST_NOT_FOUND', 'CANCEL_REQUEST_EXISTS', 'CANCEL_REQUEST_NOT_ELIGIBLE',
   'CANCEL_REQUEST_QUANTITY_EXCEEDS', 'CANCEL_REQUEST_STATE_CONFLICT', 'CANCEL_REQUEST_RESOLUTION_INVALID',
+  // 返品の品ごとの返金: 受け取りで今返す額が min(注文の返せる残り, 今返す品の額 + 送料) を超えた
+  'RETURN_RECEIVE_REFUND_CAP_EXCEEDED',
 ] as const;
 export type ReturnErrorCode = (typeof RETURN_ERROR_CODES)[number];
 
@@ -77,6 +88,11 @@ export type OrderReturnLineDetail = {
               madeToOrderLeadDays: number | null; outOfStockExchange: OutOfStockExchange } | null;
   progress: { restocked: number; notRestocked: number; pendingInspection: number; sentBack: number; missing: number;
               processed: number; unprocessed: number; exchanged: number; refundCovered: number; refundWaived: number; refundWaiting: number };
+  /**
+   * 次の受け取りでこの行が取る品の額の累計（添字 k−1。H の単位額がある注文だけ）。H の無い旧い注文・交換の行・旧い JSON は null で、
+   * 画面は refundAmountsByCount の共通の累計に戻る。受付中でない返品は []
+   */
+  receiveRefundAmountsByCount?: number[] | null;
   refundAmountsByCount: number[];   // 今から k 点を返金した時の、その注文の商品の額（添字 k−1、長さはこの返品でその注文の商品を指す行の未処理の数の合計。同じ注文の商品の行は同じ列。DB の受け取りが注文の商品ごとに数を足して1回で額を出すのに合わせる）。交換の予定の行も入れる（受け取りで「返金に変える」時の見込みに使う）。受付中でない返品は []
   refundWaitingAmount: number;      // rw の品の商品の額（額を決めて返金の見込み）
   customerNote: string | null;      // お客様の詳しい内容（お客様の申し込みの行だけ。お店が作った行は null）
@@ -98,7 +114,7 @@ export type OrderReturnDetail = {
   declinedAt: string | null; declineReason: ReturnDeclineReason | null; declineMessage: string | null;
   lines: OrderReturnLineDetail[];
   refunds: Array<{ id: string; amount: number; status: OrderRefundStatus; createdAt: string }>;
-  receipts: Array<{ id: string; kind: 'receive' | 'inspect' | 'close_missing' | 'reopen' | 'waive_refund'; refundChoice: RefundChoice | null;
+  receipts: Array<{ id: string; kind: 'receive' | 'inspect' | 'close_missing' | 'reopen' | 'waive_refund'; refundChoice: ReceiptRefundChoice | null;
                     createdAt: string; actorEmail: string | null }>;
   exchangeItems: Array<{ orderItemId: string; itemName: string; color: string | null; size: string | null; quantity: number;
                          fulfillmentType: 'stock' | 'backorder'; shipped: number }>;

@@ -69,6 +69,8 @@ const EXPECTED = [
   ['CANCEL_REQUEST_QUANTITY_EXCEEDS', 409, '申し込みを受け付けられませんでした。'],
   ['CANCEL_REQUEST_STATE_CONFLICT', 409, 'キャンセルの申し込みの状態が変わりました。画面を開き直してください。'],
   ['CANCEL_REQUEST_RESOLUTION_INVALID', 409, '返金・キャンセルの記録を確かめられませんでした。画面を開き直してください。'],
+  // 返品の品ごとの返金（Task 2）。金額入りの画面の文は画面が見込みから作る
+  ['RETURN_RECEIVE_REFUND_CAP_EXCEEDED', 400, 'この受け取りの商品の額と送料までにしてください。'],
 ] as const;
 
 describe('返品の記号', () => {
@@ -88,7 +90,7 @@ describe('返品の記号', () => {
     expect([...CANCEL_REQUEST_STATUSES]).toEqual(['requested', 'resolved', 'declined', 'closed']);
   });
 
-  it('窓口が返す29の誤りの記号（段1の18と段2の11）は共通の約束 C-2 のとおり', () => {
+  it('窓口が返す30の誤りの記号（段1の18と段2の11と品ごとの返金の1）は共通の約束 C-2 のとおり', () => {
     expect([...RETURN_ERROR_CODES]).toEqual([
       'RETURN_NOT_FOUND', 'RETURN_ARGUMENT_INVALID', 'RETURN_QUANTITY_EXCEEDS', 'RETURN_EXCHANGE_VARIANT_INVALID',
       'RETURN_ADDRESS_REQUIRED', 'RETURN_STATE_CONFLICT', 'RETURN_RECEIPT_EXCEEDS', 'RETURN_EXCHANGE_OUT_OF_STOCK',
@@ -98,7 +100,18 @@ describe('返品の記号', () => {
       'RETURN_NOT_ELIGIBLE', 'RETURN_REQUESTS_CLOSED', 'RETURN_PHOTO_INVALID', 'RETURN_CUSTOMER_NOTE_REQUIRED',
       'RETURN_DECLINE_MESSAGE_REQUIRED', 'CANCEL_REQUEST_NOT_FOUND', 'CANCEL_REQUEST_EXISTS', 'CANCEL_REQUEST_NOT_ELIGIBLE',
       'CANCEL_REQUEST_QUANTITY_EXCEEDS', 'CANCEL_REQUEST_STATE_CONFLICT', 'CANCEL_REQUEST_RESOLUTION_INVALID',
+      'RETURN_RECEIVE_REFUND_CAP_EXCEEDED',
     ]);
+  });
+
+  it('DD-ADMIN-018 上限超過の記号は400で固定の文', () => {
+    expect(RETURN_ERROR_MESSAGES.RETURN_RECEIVE_REFUND_CAP_EXCEEDED).toEqual({
+      status: 400, message: 'この受け取りの商品の額と送料までにしてください。',
+    });
+  });
+
+  it('DD-ADMIN-018 上限超過の記号は、品ごとの返金の移行が断る言葉と同じ綴り', () => {
+    expect(migrationText('_return_receive_per_item.sql')).toContain("'RETURN_RECEIVE_REFUND_CAP_EXCEEDED'");
   });
 
   it('状態・理由・配送業者の値は、移行 A の CHECK の値と同じ（綴りが食い違うと、DB が断る）', () => {
