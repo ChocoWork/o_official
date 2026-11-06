@@ -16,6 +16,7 @@ import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { listAdminOrderItemStateHistory } from '@/lib/orders/admin-orders/admin-order-store';
 import { listOrderReturns } from '@/lib/orders/returns/return-store';
+import { listOrderRefunds } from '@/lib/orders/refund/refund-store';
 import { returnDetail } from '../../lib/orders/returns/order-return-detail-fixture';
 const id = '12345678-1234-4234-8234-123456789abc'; const entry = { id, reasonLabel: '入金の確認' };
 const getUserById = jest.fn();
@@ -54,6 +55,7 @@ test('FREQ-539-AC-04: 返品の記録と品物の状態履歴が同じ人のメ�
 
 test('DD-ADMIN-020 受け取り履歴は1行で選びの点数を添える（窓口は明細の解決と返金の選びを読んで渡す）', async () => {
   const receiptLineSelects: string[] = [];
+  (listOrderRefunds as jest.Mock).mockResolvedValue([{ refundId: 'refund-1', lines: [{ quantity: 1, beforeShipment: false }] }]);
   (listOrderReturns as jest.Mock).mockResolvedValue([returnDetail({
     receipts: [{ id: 'rc-1', kind: 'receive', refundChoice: 'mixed', createdAt: '2026-10-26T02:00:00Z', actorEmail: 'admin@example.com' }],
   })]);
@@ -61,16 +63,16 @@ test('DD-ADMIN-020 受け取り履歴は1行で選びの点数を添える（窓
     ? { eq: () => ({ maybeSingle: async () => ({ data: { id, status: 'paid', shipping_email: null, created_at: '2026-10-26T00:00:00Z' }, error: null }) }) }
     : table === 'order_return_receipt_lines'
       ? (receiptLineSelects.push(columns), { in: async () => ({ data: [
-        { receipt_id: 'rc-1', disposition: 'restocked', quantity: 1, resolution: 'refund', refund_choice: 'now' },
-        { receipt_id: 'rc-1', disposition: 'not_restocked', quantity: 1, resolution: 'refund', refund_choice: 'consult' },
+        { receipt_id: 'rc-1', disposition: 'restocked', quantity: 2, resolution: 'refund', refund_choice: 'now', receipt: { refund_id: 'refund-1' } },
+        { receipt_id: 'rc-1', disposition: 'not_restocked', quantity: 1, resolution: 'refund', refund_choice: 'consult', receipt: { refund_id: 'refund-1' } },
       ], error: null }) })
       : { eq: async () => ({ data: [], error: null }), in: async () => ({ data: [], error: null }) } }));
 
   const response = await get(); const body = await response.json();
 
   expect(response.status).toBe(200);
-  expect(receiptLineSelects).toEqual(['receipt_id, disposition, quantity, resolution, refund_choice']);
+  expect(receiptLineSelects).toEqual(['receipt_id, disposition, quantity, resolution, refund_choice, receipt:order_return_receipts!receipt_id(refund_id)']);
   const receives = body.entries.filter((entry: { kind?: string }) => entry.kind === 'receive');
   expect(receives).toHaveLength(1);
-  expect(receives[0].details).toEqual(['在庫に戻す 1点', '戻さない 1点', '今すぐ返金 1点・相談 1点']);
+  expect(receives[0].details).toEqual(['在庫に戻す 2点', '戻さない 1点', '今すぐ返金 1点・相談 1点']);
 });

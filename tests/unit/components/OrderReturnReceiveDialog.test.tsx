@@ -1725,6 +1725,10 @@ describe('OrderReturnReceiveDialog の品ごとの返金の選び（返品の品
     expect(capAmountInput(dialog)).toHaveValue(10000);
     expect(primaryButton(dialog)).toHaveTextContent('受け取る（1点を ￥10,000 返金・1点は相談）');
     expect(primaryButton(dialog)).toBeEnabled();
+    fireEvent.change(capAmountInput(dialog), { target: { value: '10001' } });
+    expect(within(dialog).getByText('この注文で返せる額（￥10,000）を超えて入れられません。')).toBeVisible();
+    expect(within(dialog).queryByText(capError('￥10,000'))).not.toBeInTheDocument();
+    expect(primaryButton(dialog)).toBeDisabled();
   });
 
   it('DD-ADMIN-019 送料が額より大きい間は送れない（混在でも）', async () => {

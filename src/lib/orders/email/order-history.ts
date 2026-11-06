@@ -206,6 +206,8 @@ export type OrderHistoryReturnReceiptLine = {
   quantity: number;
   resolution: ReturnResolution | null;
   refundChoice: ReceiveUnitRefundChoice | null;
+  /** この受け取りの refund_id が指す返金明細の点数。履歴の窓口が返金一覧から読む */
+  receiptRefundQuantity: number;
 };
 
 /**
@@ -388,7 +390,9 @@ function receiptQuantity(lines: readonly OrderHistoryReturnReceiptLine[], receip
 
 /**
  * ある受け取りの、今すぐ返金と額を相談の品の数の細目（2026-11-06 設計書 6章）。「今すぐ返金 n点・相談 m点」の形で、0点の側は書かない。
- * 数えるのは受け取った返金の品の行だけ（返金しないで終えた数・交換・お返しは重ねない）。前の受け取りの行（NULL）は受け取りの記録の now・consult で補う。
+ * 数えるのは受け取った返金の品の行だけ。nowは親がnow/mixedの時だけ、この受け取りの返金明細と0円で終えた点数までに抑える。
+ * 前の受け取りの行（NULL）は受け取りの記録の now・consult で補う。
+ * 相談は親がconsult/mixedの時だけ数える。
  * 混ざる受け取り（mixed）の返金の行に選びが無いのは壊れた記録なので、推測で数えずに投げる（窓口は読み込みの失敗として答える）
  *
  * @design DD-ADMIN-020
@@ -414,6 +418,11 @@ function receiptRefundChoiceDetails(
       consult += line.quantity;
     }
   }
+  const refundQuantity = lines.find((line) => line.receiptId === receipt.id)?.receiptRefundQuantity ?? 0;
+  now = receipt.refundChoice === 'now' || receipt.refundChoice === 'mixed'
+    ? Math.min(now, refundQuantity + receiptQuantity(lines, receipt.id, 'refund_waived'))
+    : 0;
+  consult = receipt.refundChoice === 'consult' || receipt.refundChoice === 'mixed' ? consult : 0;
   const parts = [...(now > 0 ? [`今すぐ返金 ${now}点`] : []), ...(consult > 0 ? [`相談 ${consult}点`] : [])];
   return parts.length > 0 ? [parts.join('・')] : [];
 }

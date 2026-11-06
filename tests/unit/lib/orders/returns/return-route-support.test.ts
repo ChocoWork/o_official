@@ -322,7 +322,7 @@ describe('toReceiveReply（受け取りの流れの答えを HTTP と監査に�
     ]);
     expect(toReceiveReply({ kind: 'refused', code: 'RETURN_RECEIVE_REFUND_CAP_EXCEEDED' })).toEqual({
       status: 400,
-      body: { error: 'この受け取りの商品の額と送料までにしてください。', code: 'RETURN_RECEIVE_REFUND_CAP_EXCEEDED' },
+      body: { error: '返金できる額を超えています。', code: 'RETURN_RECEIVE_REFUND_CAP_EXCEEDED' },
       audit: { outcome: 'failure', detail: 'Return receive refused', metadata: { code: 'RETURN_RECEIVE_REFUND_CAP_EXCEEDED' } },
     });
   });

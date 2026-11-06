@@ -70,7 +70,7 @@ const EXPECTED = [
   ['CANCEL_REQUEST_STATE_CONFLICT', 409, 'キャンセルの申し込みの状態が変わりました。画面を開き直してください。'],
   ['CANCEL_REQUEST_RESOLUTION_INVALID', 409, '返金・キャンセルの記録を確かめられませんでした。画面を開き直してください。'],
   // 返品の品ごとの返金（Task 2）。金額入りの画面の文は画面が見込みから作る
-  ['RETURN_RECEIVE_REFUND_CAP_EXCEEDED', 400, 'この受け取りの商品の額と送料までにしてください。'],
+  ['RETURN_RECEIVE_REFUND_CAP_EXCEEDED', 400, '返金できる額を超えています。'],
 ] as const;
 
 describe('返品の記号', () => {
@@ -106,7 +106,7 @@ describe('返品の記号', () => {
 
   it('DD-ADMIN-018 上限超過の記号は400で固定の文', () => {
     expect(RETURN_ERROR_MESSAGES.RETURN_RECEIVE_REFUND_CAP_EXCEEDED).toEqual({
-      status: 400, message: 'この受け取りの商品の額と送料までにしてください。',
+      status: 400, message: '返金できる額を超えています。',
     });
   });
 

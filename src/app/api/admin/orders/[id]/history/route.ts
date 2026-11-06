@@ -48,6 +48,7 @@ type ReceiptLineRow = {
   quantity: number;
   resolution?: ReturnResolution | null;
   refund_choice?: ReceiveUnitRefundChoice | null;
+  receipt: { refund_id: string | null };
 };
 type ReturnRecordRow = {
   id: string;
@@ -100,6 +101,7 @@ async function loadHistoryLines(client: SupabaseClient, orderId: string): Promis
 async function loadReturnReceiptLines(
   client: SupabaseClient,
   returns: readonly OrderReturnDetail[],
+  refunds: Awaited<ReturnType<typeof listOrderRefunds>>,
 ): Promise<OrderHistoryReturnReceiptLine[]> {
   const receiptIds = returns.flatMap((detail) => detail.receipts.map((receipt) => receipt.id));
   if (receiptIds.length === 0) {
@@ -107,17 +109,20 @@ async function loadReturnReceiptLines(
   }
   const { data, error } = await client
     .from('order_return_receipt_lines')
-    .select('receipt_id, disposition, quantity, resolution, refund_choice')
+    .select('receipt_id, disposition, quantity, resolution, refund_choice, receipt:order_return_receipts!receipt_id(refund_id)')
     .in('receipt_id', receiptIds);
   if (error) {
     throw new FulfillmentStoreError('load_return_receipt_lines', error);
   }
-  return ((data ?? []) as ReceiptLineRow[]).map((row) => ({
+  const refundQuantities = new Map(refunds.map((refund) => [refund.refundId,
+    refund.lines.reduce((total, line) => total + (line.beforeShipment ? 0 : line.quantity), 0)]));
+  return ((data ?? []) as unknown as ReceiptLineRow[]).map((row) => ({
     receiptId: row.receipt_id,
     disposition: row.disposition,
     quantity: Number(row.quantity),
     resolution: row.resolution ?? null,
     refundChoice: row.refund_choice ?? null,
+    receiptRefundQuantity: refundQuantities.get(row.receipt.refund_id ?? '') ?? 0,
   }));
 }
 
@@ -265,7 +270,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     ]);
     // 受け取りの細目と、返品の記録（取消などをした人と手数料をいただかない印）は、返品の一覧で番号が分かってから読む
     const [returnReceiptLines, returnRecords] = await Promise.all([
-      loadReturnReceiptLines(supabase, returns),
+      loadReturnReceiptLines(supabase, returns, refunds),
       loadReturnRecords(supabase, returns, emailForActor),
     ]);
 

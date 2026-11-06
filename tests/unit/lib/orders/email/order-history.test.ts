@@ -762,7 +762,7 @@ function receiptLine(
   resolution: OrderHistoryReturnReceiptLine['resolution'] = null,
   refundChoice: OrderHistoryReturnReceiptLine['refundChoice'] = null,
 ): OrderHistoryReturnReceiptLine {
-  return { receiptId, disposition, quantity, resolution, refundChoice };
+  return { receiptId, disposition, quantity, resolution, refundChoice, receiptRefundQuantity: 1 };
 }
 
 /** 窓口が order_returns から引いて渡す、取消などをした人のメールと手数料をいただかない印（returnDetail の見本の返品 ret-1 の分） */
@@ -1041,6 +1041,58 @@ describe('buildOrderHistory - 品ごとの返金の選び', () => {
     expect(receiveEntry.details).toEqual(['在庫に戻す 2点', '戻さない 1点', '今すぐ返金 1点・相談 1点']);
     // 0円の免除の行は別に1行。受け取りの行は増えない
     expect(entries.map((entry) => entry.kind)).toEqual(['refund_waived', 'receive', 'created']);
+  });
+
+  it.each(['consult', 'none'] as const)('DD-ADMIN-020 親が%sなら事前返金済みのnow明細を今すぐに数えない', (choice) => {
+    const history = buildOrderHistory(input({
+      returns: receive(choice),
+      returnReceiptLines: [receiptLine('rc-1', 'restocked', 2, 'refund', 'now')],
+    }));
+
+    expect(receiveEntriesOf(history)[0].details).toEqual(['在庫に戻す 2点']);
+  });
+
+  it('DD-ADMIN-020 mixedは選んだnowより受け取りに結び付く返金の点数を優先する', () => {
+    const nowLine = Object.assign(receiptLine('rc-1', 'restocked', 2, 'refund', 'now'), { receiptRefundQuantity: 1 });
+    const history = buildOrderHistory(input({
+      returns: receive('mixed'),
+      returnReceiptLines: [nowLine, receiptLine('rc-1', 'not_restocked', 1, 'refund', 'consult')],
+    }));
+
+    expect(receiveEntriesOf(history)[0].details).toEqual(['在庫に戻す 2点', '戻さない 1点', '今すぐ返金 1点・相談 1点']);
+  });
+
+  it('DD-ADMIN-020 親nowでも明細2点からこの受け取りの返金1点だけを今すぐに数える', () => {
+    const nowLine = Object.assign(receiptLine('rc-1', 'restocked', 2, 'refund', 'now'), { receiptRefundQuantity: 1 });
+    const history = buildOrderHistory(input({ returns: receive('now'), returnReceiptLines: [nowLine] }));
+
+    expect(receiveEntriesOf(history)[0].details).toEqual(['在庫に戻す 2点', '今すぐ返金 1点']);
+  });
+
+  it('DD-ADMIN-020 親noneのconsult明細は相談に数えない', () => {
+    const history = buildOrderHistory(input({
+      returns: receive('none'), returnReceiptLines: [receiptLine('rc-1', 'restocked', 1, 'refund', 'consult')],
+    }));
+
+    expect(receiveEntriesOf(history)[0].details).toEqual(['在庫に戻す 1点']);
+  });
+
+  it('DD-ADMIN-020 親nowのconsult明細は相談に数えない', () => {
+    const history = buildOrderHistory(input({ returns: receive('now'), returnReceiptLines: [
+      receiptLine('rc-1', 'restocked', 1, 'refund', 'now'), receiptLine('rc-1', 'not_restocked', 1, 'refund', 'consult'),
+    ] }));
+
+    expect(receiveEntriesOf(history)[0].details).toEqual(['在庫に戻す 1点', '戻さない 1点', '今すぐ返金 1点']);
+  });
+
+  it('DD-ADMIN-020 mixedで今すぐが0円ならこの受け取りの免除数だけを数える', () => {
+    const nowLine = Object.assign(receiptLine('rc-1', 'restocked', 2, 'refund', 'now'), { receiptRefundQuantity: 0 });
+    const history = buildOrderHistory(input({ returns: receive('mixed'), returnReceiptLines: [
+      nowLine, receiptLine('rc-1', 'not_restocked', 1, 'refund', 'consult'),
+      receiptLine('rc-1', 'refund_waived', 1), receiptLine('rc-other', 'refund_waived', 5),
+    ] }));
+
+    expect(receiveEntriesOf(history)[0].details).toContain('今すぐ返金 1点・相談 1点');
   });
 
   it('DD-ADMIN-020 旧NULLは親で読みmixedのNULLは履歴生成を拒否する', () => {

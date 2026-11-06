@@ -1,5 +1,7 @@
 # 返品の受け取りで品ごとに返金の仕方を選ぶ 実装計画
 
+> 確認日: 2026-11-06。FREQ-641の後回しの小さな直し4つを確認。DB・E2Eは今回未実行。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 1回の返品の受け取りで品ごとに「今すぐ返金」「額を相談」を選び、今すぐ返金の額をその品の額と送料までに制限する。
@@ -8,7 +10,7 @@
 
 **Tech Stack:** 現行の Next.js 16、React 19、TypeScript、Zod、Supabase Postgres・PostgREST、Jest・React Testing Library、Playwright。依存を増やさない。
 
-**Spec:** [承認済み設計書](../specs/2026-11-06-return-receive-per-item-design.md)（2026-11-06 オーナー承認）を正とする。[現状調査](../../../.superpowers/sdd/2026-11-06-return-receive-per-item/research-report.md)と[作る人への問い](../../../.superpowers/sdd/2026-11-06-return-receive-per-item/builder-check.md)は根拠。問い1は案イ、問い2は設計3-3で解決済み。
+**Spec:** [承認済み設計書](../specs/2026-11-06-return-receive-per-item-design.md)（2026-11-06 オーナー承認）を正とする。現状調査（作業場所の research-report.md。作業の後に消した）と作る人への問い（作業場所の builder-check.md。作業の後に消した）は根拠。問い1は案イ、問い2は設計3-3で解決済み。
 
 ## 概要
 
@@ -36,8 +38,8 @@ Task 6 Step 1・2の採番と要求定義を最初に行う。Task 1→2→Task 
 | `docs/superpowers/plans/2026-10-29-group-h-promotions.md` Task 9 | 移行・private/public・H の着・controller の検証境界 |
 | `docs/superpowers/plans/2026-11-04-accounting-p3-returns-refunds.md` Task 4・7、未確認 #17 | 将来の会計側の修正箇所。現行実装と扱わない |
 | `.claude/CLAUDE.md`、`.claude/skills/documentation-guide/SKILL.md`、`docs/README.md` | 領域の正本、ID、テスト名、同じコミットでの文書更新 |
-| [レビュー1](../../../.superpowers/sdd/2026-11-06-return-receive-per-item/plan-review-1.md)全文と末尾の追記3 | 案イを保つHの最小修正。重大2は追記で中へ訂正。今もある2回受け取りの不具合を含む |
-| [レビュー2](../../../.superpowers/sdd/2026-11-06-return-receive-per-item/plan-review-2.md)の再確認（2回目）の中1〜3と、再確認（3回目）の小1 | 空きの容量・優先順・重複防止・取り直し。AC-07の場面2/3は承認時のid順の確保で作れる価格・期待値にそろえる |
+| レビュー1（作業場所の plan-review-1.md。作業の後に消した）全文と末尾の追記3 | 案イを保つHの最小修正。重大2は追記で中へ訂正。今もある2回受け取りの不具合を含む |
+| レビュー2（作業場所の plan-review-2.md。作業の後に消した）の再確認（2回目）の中1〜3と、再確認（3回目）の小1 | 空きの容量・優先順・重複防止・取り直し。AC-07の場面2/3は承認時のid順の確保で作れる価格・期待値にそろえる |
 
 Graphify queryで関係を絞り、指定文書・移行を読んだ。今回の判断は文書とソースの静的確認であり、実DB・適用状況・provider・実メール・ブラウザーの確認ではない。
 
@@ -306,7 +308,7 @@ for (const snapshot of claimSnapshots) {
 - Produces: `ReceiveUnitInput = { returnLineId: string; disposition: ReceiptDisposition; quantity: number; refundChoice?: ReceiveUnitRefundChoice }`。新本文は品ごとの選びとまとめの親を送る。親mixedで返金明細省略は拒否し、旧本文は従来のnow/consult既定へ解決する。重複キーは返品行・状態・解決した選び。既存のunits最大100、quantity1..999を維持する。
 - Produces: `receiveReturn(store: ReturnStore,input: ReceiveReturnInput): Promise<ReceivedReturn>` が `refundChoice` を `refund_choice` に変換、省略は省略のまま渡す。読取は `OrderReturnLineDetail.receiveRefundAmountsByCount?: number[] | null` を追加する。storeは常に配列かNULLへ変換し、旧JSON/既存の型fixtureの省略も画面ではNULLとして扱う。
 - Produces: `receiveReturnAndRefund(deps: ReturnServiceDeps,input: Parameters<typeof receiveReturn>[1]): Promise<ReceiveReturnResult>`、POSTの成功 `data.{receiptId,returnStatus,refundId,refundAmount,refundStatus,feeDueAmount,replayed}`、返金だけ拒否・結果不明時のreceiptIdを維持する。
-- Produces: `RETURN_ERROR_CODES` に `RETURN_RECEIVE_REFUND_CAP_EXCEEDED`、`return-messages.ts` は400・固定文「この受け取りの商品の額と送料までにしてください。」。金額X入りの画面の文はTask 3が見込みから作る。
+- Produces: `RETURN_ERROR_CODES` に `RETURN_RECEIVE_REFUND_CAP_EXCEEDED`、`return-messages.ts` は400・固定文「返金できる額を超えています。」。金額X入りの画面の文はTask 3が見込みから作る。
 
 - [ ] **Step 1: 単体のREDを書く。** 以下のassertを既存のservice/store/routeのfixtureに追加する。
 
@@ -435,7 +437,7 @@ expect(screen.queryByRole('button', { name: '返金しないで終える' })).no
 test('DD-ADMIN-020 mixedの受取は相談の品にだけ相談の一文を添える');
 expect(material.orderReturn.receipt.refundNowItems.map(x => x.quantity)).toEqual([1]);
 expect(material.orderReturn.receipt.refundConsultItems.map(x => x.quantity)).toEqual([1]);
-expect(refundEmail.text).toContain('この品は状態を確かめてから、あらためてご連絡します');
+expect(refundEmail.text).toContain('ご返金の額は、確かめてから改めてご連絡いたします。');
 test('DD-ADMIN-020 mixedで今すぐが0円か失敗なら受取メールに両方の品を書く');
 expect(receivedEmail.text).toContain('今すぐ返金');
 expect(receivedEmail.text).toContain('額を相談');

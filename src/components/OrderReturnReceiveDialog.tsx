@@ -102,8 +102,9 @@ const UNIT_CHOICE_OPTIONS: ReadonlyArray<readonly [ReceiveUnitRefundChoice, stri
   ['consult', '額を相談'],
 ];
 const CONSULT_NOTE = '返金待ちになります。額はあとで「額を決めて返金する」で決めます。';
-const capErrorOf = (cap: number) =>
-  `この受け取りの商品の額と送料（${formatYen(cap)}）を超えて入れられません。ほかの受け取りの分は、返品の画面の「額を決めて返金する」で返してください。`;
+const capErrorOf = (cap: number, orderLimited: boolean) => orderLimited
+  ? `この注文で返せる額（${formatYen(cap)}）を超えて入れられません。`
+  : `この受け取りの商品の額と送料（${formatYen(cap)}）を超えて入れられません。ほかの受け取りの分は、返品の画面の「額を決めて返金する」で返してください。`;
 const autoRefundOverLimitOf = (refundable: number) =>
   `今すぐ返金の額が注文の返せる額（${formatYen(refundable)}）を超えます。一部を「額を相談」にしてください。`;
 const MAKE_REASON ='在庫が足りないため、作ってお送りします。';
@@ -782,7 +783,7 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
                       amountCap={preview.refundCap}
                       amountCapLabel={`上限 ${formatYen(preview.refundCap)}`}
                       preserveAmountOverMax
-                      amountError={amountOverCap ? capErrorOf(preview.refundCap) : null}
+                      amountError={amountOverCap ? capErrorOf(preview.refundCap, refundableAmount < preview.nowItemsAmount + shippingAmount) : null}
                     />
                   ) : (
                     <>

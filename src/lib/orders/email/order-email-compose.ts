@@ -155,12 +155,11 @@ const RETURN_REFUND_CONSULT_NOTICE = 'ご返金の額は、確かめてから改
 /** 受け取りの中で返金が0円になった時の一文（本計画 P24。返金のお知らせが届かないので、お客様を待たせない） */
 const RETURN_REFUND_WAIVED_NOTICE = '今回のご返品では、ご返金の額が0円のため、ご返金はございません。';
 /**
- * 今すぐ返金と額を相談が混ざる受け取りの文（2026-11-06 設計書 6章）。相談の一文は設計書の文のまま、相談の品の行ごとに添える。
+ * 今すぐ返金と額を相談が混ざる受け取りの文（2026-11-06 設計書 6章）。相談の一文は品のまとまりに1回だけ添える。
  * 0円の一文は、相談の品も返金しないと読めないように、今すぐ返金の品にだけ向ける
  */
 const RETURN_REFUND_NOW_HEADING = '今すぐ返金する商品:';
 const RETURN_REFUND_CONSULT_HEADING = '額を相談する商品:';
-const RETURN_REFUND_CONSULT_ITEM_NOTICE = 'この品は状態を確かめてから、あらためてご連絡します。';
 const RETURN_REFUND_NOW_WAIVED_NOTICE = '今すぐ返金する商品は、ご返金の額が0円のため、ご返金はございません。';
 const returnFeeWaitingNotice = (fee: string) =>
   `交換の品は、手数料 ${fee} のお支払いを確かめてからお送りします。お支払いの方法は、別にご案内いたします。`;
@@ -1525,12 +1524,12 @@ function isBrokenMixedReceipt(receipt: OrderEmailReturnReceipt): boolean {
 }
 
 /**
- * 「額を相談する商品」の節。相談の品の行ごとに、設計書の相談の一文を添える（今すぐ返金の品には添えない）
+ * 「額を相談する商品」の節。混在の今すぐ返金が受け付けられなかった時は、案内を別の段落へ出す
  *
  * @design DD-ADMIN-020
  */
-function consultSectionLines(items: readonly OrderEmailReturnItem[]): string[] {
-  return [RETURN_REFUND_CONSULT_HEADING, ...items.flatMap((item) => [returnItemLine(item), RETURN_REFUND_CONSULT_ITEM_NOTICE])];
+function consultSectionLines(items: readonly OrderEmailReturnItem[], includeNotice = true): string[] {
+  return [RETURN_REFUND_CONSULT_HEADING, ...items.map(returnItemLine), ...(includeNotice ? [RETURN_REFUND_CONSULT_NOTICE] : [])];
 }
 
 /** 返金のお知らせの返品の書き分けの、2行目。受け取りと一緒の返金か、額を決めて後で返した返金か */
@@ -1695,9 +1694,7 @@ function composeReturnReceived(material: OrderEmailMaterial): ComposedOrderEmail
   const mixed = receipt.refundChoice === 'mixed';
   const nowNotice = receipt.refundWaived
     ? [RETURN_REFUND_NOW_WAIVED_NOTICE]
-    : receipt.refundNotAccepted
-      ? [RETURN_REFUND_CONSULT_NOTICE]
-      : [];
+    : [];
   return {
     subject: `【${SHOP_NAME}】返品をお受け取りしました（${toOrderNumber(order.id)}）`,
     text: paragraphs(
@@ -1705,9 +1702,10 @@ function composeReturnReceived(material: OrderEmailMaterial): ComposedOrderEmail
       [returnReceivedLead(formatReturnNumber(order.id, orderReturn.number))],
       ['お受け取りした商品:', ...receipt.received.map(returnItemLine)],
       exchangeSectionLines(receipt.exchanges),
-      // 混ざる受け取りは、今すぐ返金の品（0円・受け付けられなかった一文つき）と額を相談する品を分けて書く
+      // 混ざる受け取りは、今すぐ返金の品（0円なら一文つき）と、相談の品・連絡の案内を分けて書く
       mixed ? [RETURN_REFUND_NOW_HEADING, ...receipt.refundNowItems.map(returnItemLine), ...nowNotice] : [],
-      mixed ? consultSectionLines(receipt.refundConsultItems) : [],
+      mixed ? consultSectionLines(receipt.refundConsultItems, !receipt.refundNotAccepted) : [],
+      mixed && receipt.refundNotAccepted ? [RETURN_REFUND_CONSULT_NOTICE] : [],
       // 額を相談する時と、今返金が受け付けられなかった時（本計画 P25）は、額を改めて伝える
       !mixed && (receipt.refundChoice === 'consult' || receipt.refundNotAccepted) ? [RETURN_REFUND_CONSULT_NOTICE] : [],
       !mixed && receipt.refundWaived ? [RETURN_REFUND_WAIVED_NOTICE] : [],

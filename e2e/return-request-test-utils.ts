@@ -479,7 +479,7 @@ function refusal(error: unknown) {
   if (message.includes('AWAITING_REFUND_EXISTS')) return { code: 'awaiting_refund_exists', error: '確かめ中の返金があります。先に確かめてください。' };
   if (message.includes('RETURN_FORBIDDEN')) return { code: 'RETURN_FORBIDDEN', error: 'この操作は店長だけができます。' };
   if (message.includes('RETURN_STATE_CONFLICT')) return { code: 'RETURN_STATE_CONFLICT', error: '返品の状態が変わりました。画面を開き直してください。' };
-  if (message.includes('RETURN_RECEIVE_REFUND_CAP_EXCEEDED')) return { code: 'RETURN_RECEIVE_REFUND_CAP_EXCEEDED', error: 'この受け取りの商品の額と送料までにしてください。' };
+  if (message.includes('RETURN_RECEIVE_REFUND_CAP_EXCEEDED')) return { code: 'RETURN_RECEIVE_REFUND_CAP_EXCEEDED', error: '返金できる額を超えています。' };
   throw new Error('手元の DB の操作に失敗した');
 }
 /**

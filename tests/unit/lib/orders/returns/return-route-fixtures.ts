@@ -52,7 +52,7 @@ export const C4_CASES: Array<[ReturnErrorCode, number, string]> = [
   ['CANCEL_REQUEST_QUANTITY_EXCEEDS', 409, '申し込みを受け付けられませんでした。'],
   ['CANCEL_REQUEST_STATE_CONFLICT', 409, 'キャンセルの申し込みの状態が変わりました。画面を開き直してください。'],
   ['CANCEL_REQUEST_RESOLUTION_INVALID', 409, '返金・キャンセルの記録を確かめられませんでした。画面を開き直してください。'],
-  ['RETURN_RECEIVE_REFUND_CAP_EXCEEDED', 400, 'この受け取りの商品の額と送料までにしてください。'],
+  ['RETURN_RECEIVE_REFUND_CAP_EXCEEDED', 400, '返金できる額を超えています。'],
 ];
 
 /** E-2 の返金の誤り（refund-messages.ts の言葉と HTTP。返品の窓口もそのまま返す）。13個すべて */

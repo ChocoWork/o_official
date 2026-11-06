@@ -924,7 +924,7 @@ describe('POST /api/admin/returns/[returnId]/receive（品ごとの返金の選�
     const capResponse = await call(ENDPOINTS[0], { body: { ...MIXED_BODY, refundAmount: 17501 } });
     expect(capResponse.status).toBe(400);
     const capBody = await capResponse.json();
-    expect(capBody).toEqual({ error: 'この受け取りの商品の額と送料までにしてください。', code: 'RETURN_RECEIVE_REFUND_CAP_EXCEEDED' });
+    expect(capBody).toEqual({ error: '返金できる額を超えています。', code: 'RETURN_RECEIVE_REFUND_CAP_EXCEEDED' });
     expect(capBody.code).toBe('RETURN_RECEIVE_REFUND_CAP_EXCEEDED');
 
     mockReceive.mockResolvedValueOnce({

@@ -52,7 +52,7 @@ const PER_ITEM = {
   mixedButton: (nowCount: number, yen: string, consultCount: number) => `受け取る（${nowCount}点を ${yen} 返金・${consultCount}点は相談）`,
   mixedButtonAny: /^受け取る（\d+点を ￥[\d,]+ 返金・\d+点は相談）$/,
   /** 返金のメールで相談の品に添える一文（設計 6） */
-  consultMail: 'この品は状態を確かめてから、あらためてご連絡します',
+  consultMail: 'ご返金の額は、確かめてから改めてご連絡いたします。',
 } as const;
 
 type Seed = {
@@ -251,6 +251,7 @@ for (const viewport of viewports) {
       const mails = await waitForMails(request, fx.email, RETURN_MAIL.refund);
       expect(mails).toHaveLength(1);
       expect(mails[0].Text).toContain(PER_ITEM.consultMail);
+      expect(mails[0].Text.split(PER_ITEM.consultMail)).toHaveLength(2);
     });
 
     test('FREQ-641-AC-02: 今すぐ分と送料の上限を超えると押せずちょうどなら返せる', async ({ page, rr }) => {
@@ -412,6 +413,7 @@ for (const viewport of viewports) {
       expect(mailText).toContain('今すぐ返金する商品:\n・照合テスト（BLACK / M） × 1\n');
       expect(mailText).toContain('額を相談する商品:\n・照合テスト（BLACK / M） × 1\n');
       expect(mailText.indexOf('今すぐ返金する商品:')).toBeLessThan(mailText.indexOf('額を相談する商品:'));
+      expect(mailText.split(PER_ITEM.consultMail)).toHaveLength(2);
     });
 
     test('FREQ-641-AC-06: P9外の権限なしには選びも金額入力も出ず全品相談になる', async ({ page, rr }) => {
