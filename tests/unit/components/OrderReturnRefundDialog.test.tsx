@@ -168,6 +168,36 @@ it('DD-ADMIN-019 案イの待ち額17000円を相談後の返金画面に出す'
   expect(screen.queryByRole('button', { name: '返金しないで終える' })).not.toBeInTheDocument();
 });
 
+it('DD-ADMIN-019 印が逆に付き返金待ちに見える行の待ち額が0で返金済みに見える行が17000を持つ時も、待ち額17000円を出して送る', async () => {
+  // FR-ADMIN-164 FREQ-641-AC-04 の形: A（相談・17000 の着）は作った順で返金済みの印、B（今すぐ・20000）は返金待ちの印。
+  // 待ち額は DB の仮の割り当てで A の行に付く（return_detail_json の refund_waiting_amount）
+  const lineA: OrderReturnLineDetail = { ...WAITING_BLOUSE, id: 'line-a', quantity: 1,
+    progress: progress({ restocked: 1, processed: 1, refundCovered: 1 }), refundWaitingAmount: 17000, refundAmountsByCount: [] };
+  const lineB: OrderReturnLineDetail = { ...WAITING_BLOUSE, id: 'line-b', quantity: 1,
+    progress: progress({ restocked: 1, processed: 1, refundWaiting: 1 }), refundWaitingAmount: 0, refundAmountsByCount: [] };
+  const { dialog } = await openDialog(returnDetail({ lines: [lineA, lineB] }));
+  mockClientFetch.mockResolvedValueOnce(json({ data: { refundId: 'refund-1', amount: 17000, status: 'pending', replayed: false } }));
+
+  expect(within(dialog).getByRole('group', { name: '返金の内訳' })).toHaveTextContent(`商品￥17,000送料￥0返金額￥17,000`);
+  expect(within(within(dialog).getByRole('list', { name: '返金する品' })).getAllByRole('listitem').map((item) => item.textContent))
+    .toEqual(['シルクブラウス（白 / M） × 1']);
+  const button = screen.getByRole('button', { name: '￥17,000 を返金する' });
+  expect(button).toBeEnabled();
+  fireEvent.click(button);
+
+  await waitFor(() => expect(mockClientFetch).toHaveBeenCalledTimes(2));
+  const body = JSON.parse((mockClientFetch.mock.calls[1][1] as RequestInit).body as string) as Record<string, unknown>;
+  // 見込みと同じ額なので送らない（DB が同じ待ち額で計算する）
+  expect(body).toMatchObject({ amount: null, shippingAmount: 0 });
+});
+
+it('DD-ADMIN-019 H の無い旧い注文は返金待ちの行の待ち額を足して出す', async () => {
+  const { dialog } = await openDialog(returnDetail({ lines: [WAITING_BLOUSE, WAITING_BELT, PAID_PANTS] }));
+
+  expect(within(dialog).getByRole('group', { name: '返金の内訳' })).toHaveTextContent(`商品￥33,000`);
+  expect(screen.getByRole('button', { name: '￥33,000 を返金する' })).toBeEnabled();
+});
+
 describe('OrderReturnRefundDialog の読み込み', () => {
   it('開くと注文の返品の窓口を読み、読み終えるまでは「読み込み中です...」と「閉じる」だけを出す', async () => {
     let resolveGet: (value: Response) => void = () => {};

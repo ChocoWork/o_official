@@ -97,7 +97,9 @@ function OrderReturnRefundDialogBody({ loaded, onClose, onDone, onUncertain }: O
 
   const stopped = flow.busy || flow.uncertain || flow.recorded;
   const waitingLines = detail.lines.filter((line) => line.progress.refundWaiting > 0);
-  const itemsAmount = waitingLines.reduce((sum, line) => sum + line.refundWaitingAmount, 0);
+  // 商品の額は全部の行の待ち額（DB の refund_waiting_amount）を足す。H の注文の待ち額は品ごとの仮の割り当てで決まり、
+  // 案イの印の行（返金待ちに見える行）と一致しないことがある。admin_refund_return も返品の待ちの品の全部を返す（DD-ADMIN-019）
+  const itemsAmount = detail.lines.reduce((sum, line) => sum + line.refundWaitingAmount, 0);
   // 相談の受け取りで付いた手数料は、商品の額から引く。引ききれない分は DB がお支払い待ちに回す
   const deducted = Math.min(pendingFeeOf(detail), itemsAmount);
   const shippingAmount = Math.min(shippingEntered, refundableShipping);
