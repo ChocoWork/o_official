@@ -8,11 +8,42 @@
 //                 残存簿価は残さず全額を必要経費に算入する。
 //   immediate     即時償却。10万円未満の少額資産、または青色申告者の
 //                 中小企業者等の少額減価償却資産の特例（30万円未満・年300万円まで）。
+//   decliningBalance  定率法。型だけ持つ未対応の値で、計算に渡すと
+//                 UnsupportedDepreciationMethodError を投げる（定額法に黙って置き換えない）。
+//
+// 会計の期間（法人の短い事業年度・期の途中の使い始め・個人が事業をやめた年）を渡すと、
+// 月数を暦年でなく期間で数える（設計 11-f・11-f2）。期間なしの呼び出しは従来の暦年のまま。
+
+import { parseIsoDate } from "@/lib/accounting/period";
+import { splitPeriodByMonth } from "@/lib/accounting/period-months";
 
 export type DepreciationMethod =
-  | "straightLine"
-  | "lumpSum3Year"
-  | "immediate";
+  "straightLine" | "lumpSum3Year" | "immediate" | "decliningBalance";
+
+/** 画面で選べる償却方法。定率法（decliningBalance）は未対応なので入れない。 */
+export const SELECTABLE_DEPRECIATION_METHODS = [
+  "straightLine",
+  "lumpSum3Year",
+  "immediate",
+] as const satisfies readonly DepreciationMethod[];
+
+/** 償却を数える会計の期間。 */
+export type DepreciationPeriod = {
+  businessType: "soleProprietor" | "corporation";
+  startsOn: string;
+  endsOn: string;
+};
+
+/** 未対応の償却方法（定率法）を計算に渡したときに投げる。 */
+export class UnsupportedDepreciationMethodError extends Error {
+  readonly method: DepreciationMethod;
+
+  constructor(method: DepreciationMethod) {
+    super(`Unsupported depreciation method: ${method}`);
+    this.name = "UnsupportedDepreciationMethodError";
+    this.method = method;
+  }
+}
 
 export type FixedAsset = {
   id: number;
@@ -38,6 +69,7 @@ export const DEPRECIATION_METHOD_LABELS: Record<DepreciationMethod, string> = {
   straightLine: "定額法",
   lumpSum3Year: "一括償却（3年均等）",
   immediate: "即時償却",
+  decliningBalance: "定率法",
 };
 
 /**
@@ -56,6 +88,61 @@ function yearOf(date: string): number {
 
 function monthOf(date: string): number {
   return Number.parseInt(date.slice(5, 7), 10);
+}
+
+/**
+ * 期間の月数。暦で数え、1か月に満たない端数は1か月に切り上げる
+ * （耐用年数省令5条5項。例 `2027-07-01`〜`2027-12-31` は6、`2027-07-15`〜`2028-07-14` は12）。
+ */
+export function monthsInPeriod(startsOn: string, endsOn: string): number {
+  const start = parseIsoDate(startsOn);
+  const end = parseIsoDate(endsOn);
+  if (startsOn > endsOn) {
+    throw new RangeError("startsOn must not be after endsOn");
+  }
+  const monthsApart = (end.year - start.year) * 12 + (end.month - start.month);
+  if (start.day === 1) return monthsApart + 1;
+  // 応当日の前日（その月に無ければ月末）までで満了する月数に、余りの日があれば1か月足す。
+  const lastDayOfWholeMonths = Math.min(
+    start.day - 1,
+    new Date(Date.UTC(end.year, end.month, 0)).getUTCDate(),
+  );
+  return monthsApart + (end.day > lastDayOfWholeMonths ? 1 : 0);
+}
+
+/**
+ * 期間のうち、使い始めた日の月から期間の終わりの月までの月数。使い始めた月も1か月に数える
+ * （設計 11-f2）。期間の前に使い始めていれば期間の最初の月から数える。
+ * 期間の終わりが早い個人の最後の期間は、事業をやめた日の月まで。
+ */
+export function usedMonthsInPeriod(
+  startedOn: string,
+  period: { startsOn: string; endsOn: string },
+): number {
+  if (startedOn > period.endsOn) return 0;
+  const from = startedOn > period.startsOn ? startedOn : period.startsOn;
+  return splitPeriodByMonth(from, period.endsOn).length;
+}
+
+/** 資産が期間に使った月数。除却した月まで数える。 */
+function assetUsedMonthsInPeriod(
+  asset: FixedAsset,
+  period: { startsOn: string; endsOn: string },
+): number {
+  const endsOn =
+    asset.disposedOn && asset.disposedOn < period.endsOn
+      ? asset.disposedOn
+      : period.endsOn;
+  if (endsOn < period.startsOn) return 0;
+  return usedMonthsInPeriod(depreciationStartOn(asset), {
+    startsOn: period.startsOn,
+    endsOn,
+  });
+}
+
+/** 浮動小数の誤差（100,200.00000000001 など）で切り捨てが1円ずれないよう丸めてから切り捨てる。 */
+function floorYen(value: number): number {
+  return Math.floor(Math.round(value * 1e6) / 1e6);
 }
 
 /**
@@ -109,6 +196,8 @@ function annualDepreciation(
   asset: FixedAsset,
   fiscalYear: number,
   elapsedYearIndex: number,
+  /** 期間で数えた使用月数。無ければ暦年（fiscalYear）で数える。 */
+  usedMonths?: number,
 ): number {
   if (asset.method === "immediate") {
     // 即時償却は取得年に全額。
@@ -125,7 +214,7 @@ function annualDepreciation(
   }
 
   // 定額法。年の中途取得・中途除却は月割。
-  const months = monthsInYear(asset, fiscalYear);
+  const months = usedMonths ?? monthsInYear(asset, fiscalYear);
   if (months === 0) return 0;
   const full = asset.acquisitionCost * straightLineRate(asset.usefulLife);
   return Math.floor((full * months) / 12);
@@ -136,15 +225,30 @@ function residualValue(asset: FixedAsset): number {
   return asset.method === "straightLine" ? 1 : 0;
 }
 
+/** 供用前の資産（当期の償却なし）。 */
+function notStarted(asset: FixedAsset): DepreciationForYear {
+  return {
+    asset,
+    openingBookValue: 0,
+    months: 0,
+    depreciation: 0,
+    businessExpense: 0,
+    privatePortion: 0,
+    closingBookValue: 0,
+    accumulated: 0,
+    isFinalYear: false,
+  };
+}
+
 /**
- * 指定年度の減価償却費。供用年から対象年まで積み上げて期首簿価を確定させるので、
- * 残存簿価の下限（定額法は1円）と最終年の端数処理が自然に効く。
+ * 期（年）ごとの理論償却費を積み上げ、最後の期の明細を返す。
+ * 残存簿価の下限（定額法は1円）と最終年の端数処理がここで効く。
  */
-export function depreciationForYear(
+function accumulate(
   asset: FixedAsset,
-  fiscalYear: number,
+  theoreticals: readonly number[],
+  months: number,
 ): DepreciationForYear {
-  const startYear = yearOf(depreciationStartOn(asset));
   const residual = residualValue(asset);
 
   let bookValue = asset.acquisitionCost;
@@ -152,28 +256,12 @@ export function depreciationForYear(
   let depreciation = 0;
   let openingBookValue = asset.acquisitionCost;
 
-  for (let year = startYear; year <= fiscalYear; year += 1) {
+  for (const theoretical of theoreticals) {
     openingBookValue = bookValue;
-    const theoretical = annualDepreciation(asset, year, year - startYear);
     // 残存簿価を割らないように上限をかける。これが最終年の端数調整になる。
     depreciation = Math.max(0, Math.min(theoretical, bookValue - residual));
     bookValue -= depreciation;
     accumulated += depreciation;
-  }
-
-  // 対象年より前に事業供用していない資産は当期の償却なし。
-  if (fiscalYear < startYear) {
-    return {
-      asset,
-      openingBookValue: 0,
-      months: 0,
-      depreciation: 0,
-      businessExpense: 0,
-      privatePortion: 0,
-      closingBookValue: 0,
-      accumulated: 0,
-      isFinalYear: false,
-    };
   }
 
   const businessExpense = Math.floor(
@@ -183,7 +271,7 @@ export function depreciationForYear(
   return {
     asset,
     openingBookValue,
-    months: monthsInYear(asset, fiscalYear),
+    months,
     depreciation,
     businessExpense,
     privatePortion: depreciation - businessExpense,
@@ -191,6 +279,108 @@ export function depreciationForYear(
     accumulated,
     isFinalYear: depreciation > 0 && bookValue <= residual,
   };
+}
+
+/**
+ * 法人の期の理論償却費。定額法は、期が1年に満たなければ償却率に月数/12を掛け（①）、
+ * 期の途中で使い始めた資産はその限度額を期の月数で割って使った月数を掛ける（②）。
+ * 一括償却・即時償却は月割せず、使い始めた期から数えた期の順で決める。
+ */
+function corporatePeriodTheoretical(
+  asset: FixedAsset,
+  period: DepreciationPeriod,
+  elapsedPeriodIndex: number,
+): number {
+  if (asset.method !== "straightLine") {
+    return annualDepreciation(
+      asset,
+      yearOf(period.startsOn),
+      elapsedPeriodIndex,
+    );
+  }
+  const used = assetUsedMonthsInPeriod(asset, period);
+  if (used === 0) return 0;
+  const periodMonths = monthsInPeriod(period.startsOn, period.endsOn);
+  const full = asset.acquisitionCost * straightLineRate(asset.usefulLife);
+  const limit = (full * Math.min(periodMonths, 12)) / 12;
+  return floorYen((limit / periodMonths) * Math.min(used, periodMonths));
+}
+
+/**
+ * 指定年度（または会計の期間）の減価償却費。使い始めた年（期）から対象まで積み上げて
+ * 期首簿価を確定させるので、残存簿価の下限（定額法は1円）と最終年の端数処理が自然に効く。
+ *
+ * `period` を渡さなければ暦年（fiscalYear）で数える。渡したときは:
+ * - 法人の期間: 使い始めた期から、`earlierPeriods`（前の期）と `period` を順に数える。
+ * - 個人の期間: 前の年は暦年で数え、`period` の年だけ期間の月数で数える
+ *   （事業をやめた年は期間の最初の月〜やめた日の月、暦年なら従来と同じ値）。
+ * 定率法（decliningBalance）は未対応なので UnsupportedDepreciationMethodError を投げる。
+ */
+export function depreciationForYear(
+  asset: FixedAsset,
+  fiscalYear: number,
+  period?: DepreciationPeriod,
+  earlierPeriods: readonly DepreciationPeriod[] = [],
+): DepreciationForYear {
+  if (asset.method === "decliningBalance") {
+    throw new UnsupportedDepreciationMethodError(asset.method);
+  }
+
+  const startOn = depreciationStartOn(asset);
+
+  if (period?.businessType === "corporation") {
+    if (startOn > period.endsOn) return notStarted(asset);
+    const sequence = [
+      ...earlierPeriods
+        .filter(
+          (earlier) =>
+            earlier.businessType === "corporation" &&
+            earlier.startsOn < period.startsOn,
+        )
+        .sort((a, b) => a.startsOn.localeCompare(b.startsOn)),
+      period,
+    ];
+    const first = Math.max(
+      0,
+      sequence.findIndex((candidate) => candidate.endsOn >= startOn),
+    );
+    const theoreticals = sequence
+      .slice(first)
+      .map((candidate, index) =>
+        corporatePeriodTheoretical(asset, candidate, index),
+      );
+    // 日の途中から始まる期間は暦の月で数えると期間の月数より1多くなるので、期間の月数で頭打ちにする。
+    const months = Math.min(
+      assetUsedMonthsInPeriod(asset, period),
+      monthsInPeriod(period.startsOn, period.endsOn),
+    );
+    return accumulate(asset, theoreticals, months);
+  }
+
+  const lastYear = period ? yearOf(period.startsOn) : fiscalYear;
+  const startYear = yearOf(startOn);
+
+  // 対象年より前に事業供用していない資産は当期の償却なし。
+  if (lastYear < startYear) return notStarted(asset);
+
+  const periodMonths = period ? assetUsedMonthsInPeriod(asset, period) : null;
+  const theoreticals: number[] = [];
+  for (let year = startYear; year <= lastYear; year += 1) {
+    theoreticals.push(
+      annualDepreciation(
+        asset,
+        year,
+        year - startYear,
+        year === lastYear && periodMonths !== null ? periodMonths : undefined,
+      ),
+    );
+  }
+
+  return accumulate(
+    asset,
+    theoreticals,
+    periodMonths ?? monthsInYear(asset, lastYear),
+  );
 }
 
 export type DepreciationSchedule = {
@@ -205,14 +395,25 @@ export type DepreciationSchedule = {
   accumulatedTotal: number;
 };
 
-/** 台帳全体の当年度償却明細。供用前・除却済みで動きのない資産は除く。 */
+/**
+ * 台帳全体の当年度（または会計の期間）の償却明細。供用前・除却済みで動きのない資産は除く。
+ * `period`・`earlierPeriods` の意味は `depreciationForYear` と同じ。
+ */
 export function depreciationSchedule(
   assets: readonly FixedAsset[],
   fiscalYear: number,
+  period?: DepreciationPeriod,
+  earlierPeriods: readonly DepreciationPeriod[] = [],
 ): DepreciationSchedule {
   const rows = assets
-    .filter((asset) => yearOf(depreciationStartOn(asset)) <= fiscalYear)
-    .map((asset) => depreciationForYear(asset, fiscalYear))
+    .filter((asset) =>
+      period
+        ? depreciationStartOn(asset) <= period.endsOn
+        : yearOf(depreciationStartOn(asset)) <= fiscalYear,
+    )
+    .map((asset) =>
+      depreciationForYear(asset, fiscalYear, period, earlierPeriods),
+    )
     .sort(
       (a, b) =>
         a.asset.acquiredOn.localeCompare(b.asset.acquiredOn) ||

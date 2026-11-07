@@ -10,6 +10,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge/StatusBadge";
 import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import {
   DEPRECIATION_METHOD_LABELS,
+  SELECTABLE_DEPRECIATION_METHODS,
   straightLineRate,
   type DepreciationMethod,
 } from "@/lib/finance/depreciation";
@@ -1021,14 +1022,12 @@ export function AssetsView({
                       size="sm"
                       aria-label="償却方法"
                       className="font-acumin"
-                      options={(
-                        Object.keys(
-                          DEPRECIATION_METHOD_LABELS,
-                        ) as DepreciationMethod[]
-                      ).map((method) => ({
-                        value: method,
-                        label: DEPRECIATION_METHOD_LABELS[method],
-                      }))}
+                      options={SELECTABLE_DEPRECIATION_METHODS.map(
+                        (method) => ({
+                          value: method,
+                          label: DEPRECIATION_METHOD_LABELS[method],
+                        }),
+                      )}
                       value={assetForm.method}
                       onValueChange={(value) =>
                         setAssetForm((current) => ({

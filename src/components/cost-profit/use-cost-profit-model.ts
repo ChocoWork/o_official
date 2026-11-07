@@ -40,11 +40,11 @@ import {
 import { resolveTransactionStatus } from "@/lib/finance/transaction-status";
 import {
   DEPRECIATION_METHOD_LABELS,
+  SELECTABLE_DEPRECIATION_METHODS,
   depreciationForYear,
   depreciationSchedule,
   straightLineRate,
   type DepreciationForYear,
-  type DepreciationMethod,
   type FixedAsset,
 } from "@/lib/finance/depreciation";
 import {
@@ -842,9 +842,38 @@ export function useCostProfitModel({
       : 0;
 
   // 固定資産は年度をまたいで償却する。当年度分の明細を台帳から算出する。
+  // 月数は暦年でなく選んだ会計の期間で数える（FREQ-557-AC-04）。前の期は同じ事業の形の期間。
+  const earlierPeriods = useMemo(
+    () =>
+      period
+        ? periods.filter(
+            (candidate) =>
+              candidate.businessType === period.businessType &&
+              candidate.startsOn < period.startsOn,
+          )
+        : [],
+    [period, periods],
+  );
+  // 選んだ期間の年だけ期間で数える。ほかの年（予定表の予測の列）は暦年のまま。
+  const depreciationFor = useCallback(
+    (asset: FixedAsset, year: number) =>
+      depreciationForYear(
+        asset,
+        year,
+        period && year === fiscalYear ? period : undefined,
+        earlierPeriods,
+      ),
+    [period, fiscalYear, earlierPeriods],
+  );
   const depreciation = useMemo(
-    () => depreciationSchedule(fixedAssets, fiscalYear),
-    [fixedAssets, fiscalYear],
+    () =>
+      depreciationSchedule(
+        fixedAssets,
+        fiscalYear,
+        period ?? undefined,
+        earlierPeriods,
+      ),
+    [fixedAssets, fiscalYear, period, earlierPeriods],
   );
 
   // ── 固定資産と取引の連携 ───────────────────────────────────────────────
@@ -3466,8 +3495,7 @@ export function useCostProfitModel({
   const assetMethodOptions = useMemo(
     () => [
       { value: "all", label: "全て" },
-      ...(Object.keys(DEPRECIATION_METHOD_LABELS) as DepreciationMethod[])
-        .filter((method) =>
+      ...SELECTABLE_DEPRECIATION_METHODS.filter((method) =>
           fixedAssets.some((asset) => asset.method === method),
         )
         .map((method) => ({
@@ -3531,7 +3559,7 @@ export function useCostProfitModel({
     () =>
       filteredDepreciationRows.map((row) => {
         const byYear = depreciationYears.map(
-          ({ year }) => depreciationForYear(row.asset, year).depreciation,
+          ({ year }) => depreciationFor(row.asset, year).depreciation,
         );
         const acquiredYear = Number.parseInt(
           row.asset.acquiredOn.slice(0, 4),
@@ -3544,14 +3572,14 @@ export function useCostProfitModel({
           year <= acquiredYear + row.asset.usefulLife + 60;
           year += 1
         ) {
-          if (depreciationForYear(row.asset, year).isFinalYear) {
+          if (depreciationFor(row.asset, year).isFinalYear) {
             completedYear = year;
             break;
           }
         }
         return { row, byYear, completedYear };
       }),
-    [filteredDepreciationRows, depreciationYears],
+    [filteredDepreciationRows, depreciationYears, depreciationFor],
   );
 
   const depreciationYearTotals = useMemo(
@@ -3571,11 +3599,11 @@ export function useCostProfitModel({
       depreciationYears.map(({ year }) =>
         filteredDepreciationRows.reduce(
           (sum, row) =>
-            sum + depreciationForYear(row.asset, year).businessExpense,
+            sum + depreciationFor(row.asset, year).businessExpense,
           0,
         ),
       ),
-    [depreciationYears, filteredDepreciationRows],
+    [depreciationYears, filteredDepreciationRows, depreciationFor],
   );
 
   const assetsCompletingThisYear = depreciationPlanRows.filter(
@@ -3694,10 +3722,10 @@ export function useCostProfitModel({
     return {
       // 年間償却額（概算）は月割の影響を受けない満年ベース＝供用翌年の額。
       annual: depreciationForYear(draft, startYear + 1).depreciation,
-      currentYear: depreciationForYear(draft, fiscalYear).depreciation,
+      currentYear: depreciationFor(draft, fiscalYear).depreciation,
       residual: assetForm.method === "straightLine" ? 1 : 0,
     };
-  }, [assetForm, fiscalYear]);
+  }, [assetForm, fiscalYear, depreciationFor]);
 
   // ── 決算・試算表 ───────────────────────────────────────────────────────
   // 期間の月（暦年の期間なら 1月〜12月の12本、年をまたぐ期間は期間の始まりの月から終わりの月まで）。
