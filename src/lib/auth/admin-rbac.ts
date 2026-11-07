@@ -35,7 +35,13 @@ export type PermissionCode =
   | 'admin.shipping.correct_date'
   | 'admin.permissions.manage'
   | 'admin.discounts.read'
-  | 'admin.discounts.manage';
+  | 'admin.discounts.manage'
+  | 'admin.accounting.settings.manage'
+  | 'admin.accounting.entries.correct'
+  | 'admin.accounting.close.manage'
+  | 'admin.accounting.inventory.manage'
+  | 'admin.accounting.export.read'
+  | 'admin.accounting.integration.manage';
 
 type AuthzSuccess = {
   ok: true;
@@ -104,6 +110,13 @@ export const legacyPermissionMap: Record<AppRole, Set<PermissionCode>> = {
     'admin.permissions.manage',
     'admin.discounts.read',
     'admin.discounts.manage',
+    // 会計の6権限は店長だけ（会計の作り直し 計画1 Task 2）
+    'admin.accounting.settings.manage',
+    'admin.accounting.entries.correct',
+    'admin.accounting.close.manage',
+    'admin.accounting.inventory.manage',
+    'admin.accounting.export.read',
+    'admin.accounting.integration.manage',
   ]),
   supporter: new Set<PermissionCode>([
     'admin.orders.read',

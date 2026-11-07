@@ -37,6 +37,12 @@ const rows: readonly (readonly [PermissionCode, string, string])[] = [
   ['admin.permissions.manage', '権限管理', '権限設定の閲覧・保存'],
   ['admin.discounts.read', '割引', '割引の閲覧'],
   ['admin.discounts.manage', '割引', '割引の管理'],
+  ['admin.accounting.settings.manage', '会計', '会計の設定・期間'],
+  ['admin.accounting.entries.correct', '会計', '仕訳の訂正・取り消し'],
+  ['admin.accounting.close.manage', '会計', '期間の締め・締めの解除'],
+  ['admin.accounting.inventory.manage', '会計', '棚卸・原価の確定'],
+  ['admin.accounting.export.read', '会計', '帳簿・写しの書き出し'],
+  ['admin.accounting.integration.manage', '会計', '会計ソフトとの連携'],
 ];
 
 // 準備中の権限は無い。割り当ての入れ替え〔admin.orders.allocate〕は G-4 で公開した
@@ -51,6 +57,13 @@ const dependencies: Partial<Record<PermissionCode, PermissionCode[]>> = {
   'admin.shipping.manage': ['admin.shipping.read', 'admin.orders.manage', 'admin.orders.read'],
   'admin.shipping.correct_date': ['admin.shipping.read', 'admin.orders.read'],
   'admin.discounts.manage': ['admin.discounts.read'],
+  // 会計の6権限は表示の上で会計の閲覧を前提にする。書き出しも閲覧とは別の権限
+  'admin.accounting.settings.manage': ['admin.finance.read'],
+  'admin.accounting.entries.correct': ['admin.finance.read'],
+  'admin.accounting.close.manage': ['admin.finance.read'],
+  'admin.accounting.inventory.manage': ['admin.finance.read'],
+  'admin.accounting.export.read': ['admin.finance.read'],
+  'admin.accounting.integration.manage': ['admin.finance.read'],
 };
 
 export const ROLE_PERMISSION_CATALOG: readonly PermissionDefinition[] = rows.map(([code, area, label]) => ({

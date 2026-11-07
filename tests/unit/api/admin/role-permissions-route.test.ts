@@ -32,19 +32,17 @@ beforeEach(() => {
 });
 afterEach(() => jest.restoreAllMocks());
 
-test('FREQ-543-AC-01: 32コードは保存できる', async () => {
+test('FREQ-553-AC-01: role-permissions の保存は38件まで受け39件を断る', async () => {
   const codes = ROLE_PERMISSION_CATALOG.map((p) => p.code);
-  expect(codes).toHaveLength(32);
+  expect(codes).toHaveLength(38);
   const role = { code: 'admin', version: '1', permissionCodes: codes };
-  rpc.mockResolvedValue({ data: { role, changedCount: 32 }, error: null });
+  rpc.mockResolvedValue({ data: { role, changedCount: 38 }, error: null });
   const response = await POST(request({ ...CHANGE, roleCode: 'admin', permissionCodes: codes }));
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ data: { role: { ...role, label: '店長' }, changedCount: 32 } });
-});
+  expect(await response.json()).toEqual({ data: { role: { ...role, label: '店長' }, changedCount: 38 } });
 
-test('FREQ-543-AC-01: 別々の33コードを認識する目録でも配列上限でRPC前に拒否する', async () => {
-  const extended = [...ROLE_PERMISSION_CATALOG.map((p) => p.code), 'admin.cap_probe'];
-  expect(new Set(extended).size).toBe(33);
+  const extended = [...codes, 'admin.cap_probe'];
+  expect(new Set(extended).size).toBe(39);
   jest.doMock('@/lib/auth/role-permission-catalog', () => ({ ROLE_PERMISSION_CATALOG: [
     ...ROLE_PERMISSION_CATALOG, { ...ROLE_PERMISSION_CATALOG[0], code: 'admin.cap_probe' },
   ] }));

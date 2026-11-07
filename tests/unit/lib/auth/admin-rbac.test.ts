@@ -524,8 +524,13 @@ describe('authorizeAdminPermission', () => {
 });
 
 describe('legacyPermissionMap', () => {
-  it('FREQ-543-AC-01: 初期値は店長32・サポーター指定8・一般0だけ', () => {
-    expect(legacyPermissionMap.admin.size).toBe(32);
+  it('FREQ-553-AC-01: 初期値は店長38・サポーター指定8・一般0だけ', () => {
+    expect(legacyPermissionMap.admin.size).toBe(38);
+    for (const code of ['admin.accounting.settings.manage', 'admin.accounting.entries.correct', 'admin.accounting.close.manage',
+      'admin.accounting.inventory.manage', 'admin.accounting.export.read', 'admin.accounting.integration.manage'] as const) {
+      expect(legacyPermissionMap.admin.has(code)).toBe(true);
+      expect(legacyPermissionMap.supporter.has(code)).toBe(false);
+    }
     expect(legacyPermissionMap.admin.has('admin.discounts.read')).toBe(true);
     expect(legacyPermissionMap.admin.has('admin.discounts.manage')).toBe(true);
     expect([...legacyPermissionMap.supporter].sort()).toEqual([

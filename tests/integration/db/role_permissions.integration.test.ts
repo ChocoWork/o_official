@@ -16,7 +16,9 @@ const g0Catalog = [
   'admin.purchase_orders.manage', 'admin.receiving.manage', 'admin.shipping.read',
   'admin.shipping.manage', 'admin.shipping.correct_date', 'admin.permissions.manage',
 ].sort();
-const catalog = [...g0Catalog, 'admin.discounts.read', 'admin.discounts.manage'].sort();
+const catalog = [...g0Catalog, 'admin.discounts.read', 'admin.discounts.manage',
+  'admin.accounting.settings.manage', 'admin.accounting.entries.correct', 'admin.accounting.close.manage',
+  'admin.accounting.inventory.manage', 'admin.accounting.export.read', 'admin.accounting.integration.manage'].sort();
 const supporterCodes = [
   'admin.users.read', 'admin.orders.read', 'admin.orders.manage', 'admin.contact.read',
   'admin.contact.manage', 'admin.orders.return', 'admin.shipping.read', 'admin.shipping.manage',

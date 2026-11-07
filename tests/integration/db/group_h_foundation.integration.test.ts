@@ -6,6 +6,7 @@ import { describeLocalDb } from './helpers/local-db';
 import { createCatalogFixture, createDraft, ensureFixturePaidAllocation, insertReturnRecord } from './helpers/order-fixtures';
 import { seedGroupG1Shipment } from './helpers/group-g1-fixtures';
 import { dropH2Additions, hDiscount, seedHDiscount, seedHOrderUnits } from './helpers/group-h-fixtures';
+import { withS0PermissionBodies } from './helpers/accounting-fixtures';
 
 const directory = path.join(process.cwd(), 'supabase/migrations');
 const files = fs.readdirSync(directory).filter((name) => name.endsWith('_group_h_discounts_foundation.sql'));
@@ -191,7 +192,7 @@ describeLocalDb('H1 foundation: controller reset required', (db) => {
       discount_facts='{}',discount_engine_version=1,discount_snapshot_hash=repeat('a',64) where id=$1`, [draft.draftId]);
   });
 
-  test('FREQ-543-AC-01: 32コードの初期登録は店長だけへ２件を付与し店長の版だけを1増やす', async () => {
+  test('FREQ-543-AC-01: 38コードの目録でもH1の初期登録は店長だけへ２件を付与し店長の版だけを1増やす', async () => {
     expect(section('PERMISSION_SEED')).not.toBe('');
     const admin = await actor('admin');
     // Reconstruct pre-H1 in this disposable transaction, then apply the actual H1 seed, without repair DML in production.
@@ -202,10 +203,10 @@ describeLocalDb('H1 foundation: controller reset required', (db) => {
     const before = (await db().query('select id,code,permissions_version::text as version from public.roles order by id')).rows;
     const grants = (await db().query('select * from public.role_permissions order by role_id,permission_id')).rows;
     await db().query(section('PERMISSION_SEED'));
-    // Hide later H2/H5 additions inside a savepoint, run H1's unmodified assert, then restore them.
+    // Hide later H2/H5 additions inside a savepoint, run H1's assert (permission bodies as recreated by accounting S0), then restore them.
     await db().query('savepoint h1_rerun');
     await dropH2Additions(db());
-    await db().query(section('FINAL_ASSERT'));
+    await db().query(withS0PermissionBodies(section('FINAL_ASSERT')));
     await db().query('rollback to savepoint h1_rerun');
     await db().query('release savepoint h1_rerun');
     const after = (await db().query('select id,code,permissions_version::text as version from public.roles order by id')).rows;
@@ -216,7 +217,7 @@ describeLocalDb('H1 foundation: controller reset required', (db) => {
       join public.permissions p on p.id=rp.permission_id where p.code in ('admin.discounts.read','admin.discounts.manage') order by p.code`)).rows)
       .toEqual(['admin.discounts.manage', 'admin.discounts.read'].map((permission) => ({ code: 'admin', permission })));
     const matrix = await service(async () => (await db().query('select public.admin_get_permissions($1) as r', [admin])).rows[0].r);
-    expect(matrix.permissionCodes).toHaveLength(32);
+    expect(matrix.permissionCodes).toHaveLength(38);
     const prior = before.find((r) => r.code === 'admin')!.version;
     await reject(() => service(() => db().query('select public.admin_set_role_permissions($1,$2,$3,$4,$5)',
       [admin, 'admin', matrix.permissionCodes, prior, randomUUID()])), 'P0001', 'ROLE_PERMISSION_VERSION_CONFLICT');
@@ -237,7 +238,7 @@ describeLocalDb('H1 foundation: controller reset required', (db) => {
     await db().query('update public.user_roles set active=false where user_id=$1', [inactive]);
     await db().query("update public.user_roles set expires_at=now()-interval '1 second' where user_id=$1", [expired]);
     // Deliberately no JWT/aal/session: service_role delegates only the trusted actor id.
-    expect((await service(async () => (await db().query('select public.admin_get_permissions($1) as r', [admin])).rows[0].r)).permissionCodes).toHaveLength(32);
+    expect((await service(async () => (await db().query('select public.admin_get_permissions($1) as r', [admin])).rows[0].r)).permissionCodes).toHaveLength(38);
     for (const id of [inactive, expired, supporter, await actor('user'), randomUUID()]) {
       await reject(() => service(() => db().query('select public.admin_get_permissions($1)', [id])), '42501', 'ROLE_PERMISSION_FORBIDDEN');
       await reject(() => service(() => db().query('select public.admin_set_role_permissions($1,$2,$3,$4,$5)',

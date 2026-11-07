@@ -53,7 +53,8 @@ const AREAS: ReadonlyArray<readonly [string, readonly string[]]> = [
     '割り当てを入れ替える',
   ]],
   ['問い合わせ', ['問い合わせの閲覧', '問い合わせの管理']],
-  ['会計', ['会計の閲覧', '会計の管理']],
+  ['会計', ['会計の閲覧', '会計の管理', '会計の設定・期間', '仕訳の訂正・取り消し', '期間の締め・締めの解除',
+    '棚卸・原価の確定', '帳簿・写しの書き出し', '会計ソフトとの連携']],
   ['監査', ['監査の閲覧']],
   ['ショップ設定', ['ショップ設定']],
   ['在庫', ['在庫一覧', '入荷・棚卸・割当強制解除']],
@@ -192,11 +193,11 @@ for (const viewport of viewports) {
       });
     });
 
-    test('分野ごとに32行・店長とサポーターの2列で出て、最初は店長32・サポーター8・一般利用者0。固定2行はスイッチが無く、新しい役割の入力も無い。画面ははみ出さず、表の中だけ横に動く', async ({ page }) => {
+    test('分野ごとに38行・店長とサポーターの2列で出て、最初は店長38・サポーター8・一般利用者0。固定2行はスイッチが無く、新しい役割の入力も無い。画面ははみ出さず、表の中だけ横に動く', async ({ page }) => {
       // FREQ-519-AC-01・AC-02（画面）・AC-06
       await withPermissionScenario(async (client) => {
         // DB の最初の値（共有目録の中）
-        expect(MANAGED_PERMISSION_CODES).toHaveLength(32);
+        expect(MANAGED_PERMISSION_CODES).toHaveLength(38);
         expect(MANAGED_PERMISSION_CODES).toEqual(expect.arrayContaining([...DISCOUNT_PERMISSION_CODES]));
         expect(SUPPORTER_INITIAL_CODES.filter(code => DISCOUNT_PERMISSION_CODES.includes(code))).toEqual([]);
         expect((await readRolePermissionState(client, 'admin')).permissionCodes).toEqual(sorted(MANAGED_PERMISSION_CODES));

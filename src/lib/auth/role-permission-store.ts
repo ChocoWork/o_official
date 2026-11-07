@@ -18,7 +18,7 @@ const refusalSqlstates: Readonly<Record<string, string>> = {
 };
 const managedCodes = new Set<string>(ROLE_PERMISSION_CATALOG.map((permission) => permission.code));
 const permissionSchema = z.custom<PermissionCode>((value) => typeof value === 'string' && managedCodes.has(value));
-const codesSchema = z.array(permissionSchema).max(32).refine((codes) => new Set(codes).size === codes.length);
+const codesSchema = z.array(permissionSchema).max(38).refine((codes) => new Set(codes).size === codes.length);
 const versionSchema = z.string().max(19).regex(/^(0|[1-9][0-9]*)$/)
   .refine((version) => version.length < 19 || version <= '9223372036854775807');
 const roleSchema = z.object({
@@ -30,7 +30,7 @@ const matrixSchema = z.object({
   permissionCodes: codesSchema.refine((codes) => codes.length === managedCodes.size),
   roles: z.array(roleSchema).length(2).refine((roles) => new Set(roles.map((role) => role.code)).size === 2),
 });
-const changeResultSchema = z.object({ role: roleSchema, changedCount: z.number().int().min(0).max(32) });
+const changeResultSchema = z.object({ role: roleSchema, changedCount: z.number().int().min(0).max(38) });
 const userRoleResultSchema = z.object({ previousRole: z.string(), role: z.enum(['admin', 'supporter', 'user']) });
 
 export class RolePermissionStoreError extends Error {

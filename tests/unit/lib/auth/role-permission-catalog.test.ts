@@ -83,26 +83,34 @@ const ROWS = [
   ['権限管理', '権限設定の閲覧・保存', 'admin.permissions.manage'],
   ['割引', '割引の閲覧', 'admin.discounts.read'],
   ['割引', '割引の管理', 'admin.discounts.manage'],
+  ['会計', '会計の設定・期間', 'admin.accounting.settings.manage'],
+  ['会計', '仕訳の訂正・取り消し', 'admin.accounting.entries.correct'],
+  ['会計', '期間の締め・締めの解除', 'admin.accounting.close.manage'],
+  ['会計', '棚卸・原価の確定', 'admin.accounting.inventory.manage'],
+  ['会計', '帳簿・写しの書き出し', 'admin.accounting.export.read'],
+  ['会計', '会計ソフトとの連携', 'admin.accounting.integration.manage'],
 ] as const;
+const ACCOUNTING_CODES = ['admin.accounting.settings.manage', 'admin.accounting.entries.correct', 'admin.accounting.close.manage',
+  'admin.accounting.inventory.manage', 'admin.accounting.export.read', 'admin.accounting.integration.manage'] as const;
 
-test('FREQ-543-AC-01: 全32行の表示順・分野・ラベルと固定2件・準備中0件を返す', () => {
-  expect(ROLE_PERMISSION_CATALOG).toHaveLength(32);
+test('FREQ-543-AC-01: 全38行の表示順・分野・ラベルと固定2件・準備中0件を返す', () => {
+  expect(ROLE_PERMISSION_CATALOG).toHaveLength(38);
   expect(ROLE_PERMISSION_CATALOG.map(({ area, label, code }) => [area, label, code])).toEqual(ROWS);
   expect(FIXED_PERMISSION_CODES).toEqual(['admin.users.manage', 'admin.permissions.manage']);
   expect(ROLE_PERMISSION_CATALOG.filter((p) => p.fixed).map((p) => p.code)).toEqual(['admin.users.manage', 'admin.permissions.manage']);
 });
 
 // G-4 の割り当て入替も公開済み。準備中は無い。
-test('FREQ-540-AC-06: upcoming（準備中）は0件で全32コードが公開済み', () => {
+test('FREQ-540-AC-06: upcoming（準備中）は0件で全38コードが公開済み', () => {
   expect(ROLE_PERMISSION_CATALOG.filter((p) => p.upcoming).map((p) => p.code)).toEqual([]);
-  expect(ROLE_PERMISSION_CATALOG.filter((p) => !p.upcoming)).toHaveLength(32);
+  expect(ROLE_PERMISSION_CATALOG.filter((p) => !p.upcoming)).toHaveLength(38);
   for (const code of ['admin.stock.read', 'admin.stock.manage', 'admin.purchase_orders.read', 'admin.purchase_orders.manage',
     'admin.receiving.manage', 'admin.shipping.read', 'admin.shipping.manage', 'admin.shipping.correct_date', 'admin.permissions.manage']) {
     expect(ROLE_PERMISSION_CATALOG.find((p) => p.code === code)?.upcoming).toBe(false);
   }
 });
 
-test('FREQ-543-AC-01: 依存のある8行だけに指定順の必要コードを表示する', () => {
+test('FREQ-543-AC-01: 依存のある14行だけに指定順の必要コードを表示する', () => {
   expect(Object.fromEntries(ROLE_PERMISSION_CATALOG.filter((p) => p.requires.length).map((p) => [p.code, p.requires]))).toEqual({
     'admin.stock.manage': ['admin.stock.read'],
     'admin.orders.allocate': ['admin.orders.read'],
@@ -112,7 +120,20 @@ test('FREQ-543-AC-01: 依存のある8行だけに指定順の必要コードを
     'admin.shipping.manage': ['admin.shipping.read', 'admin.orders.manage', 'admin.orders.read'],
     'admin.shipping.correct_date': ['admin.shipping.read', 'admin.orders.read'],
     'admin.discounts.manage': ['admin.discounts.read'],
+    ...Object.fromEntries(ACCOUNTING_CODES.map((code) => [code, ['admin.finance.read']])),
   });
+});
+
+test('FREQ-553-AC-01: 6権限の表示の依存はfinance.readでmanage系もreadなしは不足と出る', () => {
+  for (const code of ACCOUNTING_CODES) {
+    const permission = ROLE_PERMISSION_CATALOG.find((p) => p.code === code);
+    expect(permission).toMatchObject({ area: '会計', requires: ['admin.finance.read'], fixed: false, upcoming: false });
+    expect(getMissingPermissionDependencies([code])).toEqual(['admin.finance.read']);
+    expect(getMissingPermissionDependencies([code, 'admin.finance.read'])).toEqual([]);
+  }
+  // 書き出しは名前が read でも閲覧と別。finance.manage を持っていても finance.read が無ければ不足と出す
+  expect(getMissingPermissionDependencies([...ACCOUNTING_CODES, 'admin.finance.manage'])).toEqual(['admin.finance.read']);
+  expect(getMissingPermissionDependencies(['admin.finance.read'])).toEqual([]);
 });
 
 test('依存不足は重複なし辞書順で返し、入力に権限を追加しない', () => {

@@ -18,7 +18,7 @@ const codes = new Set<string>(ROLE_PERMISSION_CATALOG.map((permission) => permis
 const bodySchema = z.object({
   roleCode: z.enum(['admin', 'supporter']),
   permissionCodes: z.array(z.custom<PermissionCode>((value) => typeof value === 'string' && codes.has(value)))
-    .max(32).refine((values) => new Set(values).size === values.length),
+    .max(38).refine((values) => new Set(values).size === values.length),
   expectedVersion: z.string().max(19).regex(/^(0|[1-9][0-9]*)$/)
     .refine((version) => version.length < 19 || version <= '9223372036854775807'),
   requestKey: z.string().uuid(),

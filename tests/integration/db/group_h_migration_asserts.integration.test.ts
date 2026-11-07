@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describeLocalDb } from './helpers/local-db';
 import { withH1PermissionBaseline } from './helpers/group-h-fixtures';
+import { withS0PermissionBodies } from './helpers/accounting-fixtures';
 import { hBegin, hRefundFixture, hResult, withH5ReturnBaseline } from './helpers/group-h-refund-fixtures';
 import { G4_ALLOWLIST, H4_ALLOWLIST, H7_ALLOWLIST, replaceAllowlistSql } from './helpers/group-g-allowlist';
 import { MAX_AUTOMATIC_DISCOUNTS, MAX_STACKABLE_AUTOMATIC_PER_CLASS } from '@/lib/discounts/discount-types';
@@ -277,7 +278,8 @@ describeLocalDb('H1 semantic final assertions: controller only', (db) => {
     let failure: AssertFailure | null = null;
     try {
       // The helper creates baseline first, then executes the tamper and assertion together.
-      await withH1PermissionBaseline(db(), `${change};\n${assertion}`);
+      // Accounting S0 recreated the two permission functions: compare them with S0's fingerprints, keep every other H1 check.
+      await withH1PermissionBaseline(db(), `${change};\n${withS0PermissionBodies(assertion)}`);
     } catch (error) {
       const e = error as AssertFailure;
       failure = { code: e.code, message: e.message === 'GROUP_H_MIGRATION_ASSERTION_FAILED' ? e.message : 'H_UNEXPECTED_DB_ERROR', detail: e.detail };

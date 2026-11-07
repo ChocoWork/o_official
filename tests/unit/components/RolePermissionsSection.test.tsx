@@ -86,7 +86,7 @@ describe('DB由来の読み込みと権限表', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/permissions', { cache: 'no-store' });
   });
 
-  test('FREQ-543-AC-01: 全32コード・2役割を分野別の行見出しで表示し、固定2行にswitchを置かない', async () => {
+  test('FREQ-543-AC-01: 全38コード・2役割を分野別の行見出しで表示し、固定2行にswitchを置かない', async () => {
     await loaded();
     expect(screen.getByRole('heading', { level: 1, name: '権限' })).toBeVisible();
     expect(screen.getByText('役割ごとに、できる操作を設定します。')).toBeVisible();
@@ -110,7 +110,7 @@ describe('DB由来の読み込みと権限表', () => {
         expect(within(row).getByRole('switch', { name: `サポーター：${p.label}` })).toHaveAttribute('aria-checked', String(SUPPORTER_CODES.includes(p.code)));
       }
     }
-    expect(screen.getAllByRole('switch')).toHaveLength(60);
+    expect(screen.getAllByRole('switch')).toHaveLength(72);
     // G-4 の割り当て入替も公開済み。準備中の印は無い。
     expect(screen.queryAllByText('この権限は、対応する画面の公開後に使われます。')).toHaveLength(0);
     const region = screen.getByRole('region', { name: '権限の表' });
