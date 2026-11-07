@@ -590,7 +590,8 @@ BEGIN
 END;
 $$;
 
--- The period of the given business type that contains the day (read only; S3 adds the event lookup).
+-- The period of the given business type that contains the day (read only; S3 adds the event lookup
+-- private.accounting_period_for_event).
 CREATE FUNCTION private.accounting_period_for(_date date, _business_type text) RETURNS uuid
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
 AS $$
@@ -862,8 +863,12 @@ END;
 $$;
 
 -- 9. The reversal core: the lines of the original with debit and credit swapped, on the original day unless a day is
---    given, in the period of that day with the business type of the original period (S3 recreates this function with
---    the same signature to create a missing calendar-year sole period). No permission check and no entry point.
+--    given, in the period of that day with the business type of the original period. The period is found in three
+--    steps: (1) accounting_period_for(day, business type of the original); (2) when that is missing and the original
+--    is a sole proprietor entry, private.accounting_ensure_individual_periods (S3; it never creates a year after the
+--    end day of the sole business) creates the calendar-year period and (1) runs again; (3) still missing is
+--    ACCOUNTING_PERIOD_MISSING. A corporation period is never created here, and accounting_period_for_event (S3) is not
+--    used, so a reversal never moves to the other business type. No permission check and no entry point.
 CREATE FUNCTION private.accounting_reverse_journal_core(
   _actor_id uuid, _entry_id uuid, _reason text, _entry_date date DEFAULT NULL, _source_recorded_at timestamptz DEFAULT NULL
 ) RETURNS jsonb
@@ -874,6 +879,7 @@ DECLARE
   v_business_type text;
   v_date date;
   v_lines jsonb;
+  v_period_id uuid;
 BEGIN
   IF _entry_id IS NULL OR _reason IS NULL THEN
     RAISE EXCEPTION 'ACCOUNTING_ARGUMENT_INVALID' USING ERRCODE = '22023';
@@ -892,7 +898,16 @@ BEGIN
     'credit', l.debit, 'sub_account', l.sub_account, 'counterparty', l.counterparty, 'order_id', l.order_id,
     'memo', l.memo) ORDER BY l.line_no)
   INTO v_lines FROM public.accounting_journal_lines AS l WHERE l.entry_id = _entry_id;
-  RETURN private.accounting_post_journal_core(_actor_id, private.accounting_period_for(v_date, v_business_type), v_date,
+  BEGIN
+    v_period_id := private.accounting_period_for(v_date, v_business_type);
+  EXCEPTION WHEN SQLSTATE '55000' THEN
+    IF SQLERRM <> 'ACCOUNTING_PERIOD_MISSING' OR v_business_type <> 'soleProprietor' THEN
+      RAISE;
+    END IF;
+    PERFORM private.accounting_ensure_individual_periods(EXTRACT(year FROM v_date)::integer, _actor_id);
+    v_period_id := private.accounting_period_for(v_date, v_business_type);
+  END;
+  RETURN private.accounting_post_journal_core(_actor_id, v_period_id, v_date,
     'reversal', ARRAY[_entry_id::text], v_original.description, v_lines, _entry_id, _reason,
     v_original.source_table, v_original.source_id, NULL, NULL, _source_recorded_at);
 END;

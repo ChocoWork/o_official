@@ -202,3 +202,65 @@ export async function pinAccountingS2Baseline(client: PgClient): Promise<void> {
       'other_accounts', coalesce((select jsonb_agg(to_jsonb(a) order by a.code collate "C") from public.accounting_accounts a
         where not (a.code = any(${codes}))), '[]'::jsonb))`);
 }
+
+const s3Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p1_period_reads.sql'));
+/** The accounting S3 migration text (empty when it is missing, so the source contract fails visibly). */
+export const ACCOUNTING_S3_SQL = s3Files.length === 1 ? fs.readFileSync(path.join(directory, s3Files[0]), 'utf8') : '';
+export const ACCOUNTING_S3_FILES = s3Files;
+
+/** One section of S3 between `-- ACC_S3_<name>_BEGIN` and `-- ACC_S3_<name>_END`. */
+export function accountingS3Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+  return ACCOUNTING_S3_SQL.split(`-- ACC_S3_${name}_BEGIN\n`)[1]?.split(`-- ACC_S3_${name}_END`)[0] ?? '';
+}
+
+/**
+ * Pin the current state as the S3 baseline BEFORE a caller tampers: the settings row as it is now and the number of
+ * stored opening rows, instead of the fresh row and no opening row of apply time. Then the caller runs the assert.
+ */
+export async function pinAccountingS3Baseline(client: PgClient): Promise<void> {
+  await client.query(`create temp table accounting_s3_baseline(payload jsonb) on commit drop;
+    insert into pg_temp.accounting_s3_baseline(payload) select jsonb_build_object(
+      'settings', (select to_jsonb(s) from public.accounting_settings s),
+      'opening_rows', (select count(*) from public.accounting_opening_balances))`);
+}
+
+export type AccountingFailure = { code?: string; message?: string; detail?: string };
+
+/**
+ * Run inside a savepoint, then SET CONSTRAINTS ALL IMMEDIATE (so deferred checks fire too); return the fixed error
+ * (DB text other than ACCOUNTING_* becomes DATABASE_ERROR) or null. Everything the run wrote is undone either way.
+ */
+export async function accountingFailure(client: PgClient, run: () => Promise<unknown>): Promise<AccountingFailure | null> {
+  await client.query('savepoint acc_failure');
+  try {
+    await run();
+    await client.query('set constraints all immediate');
+    return null;
+  } catch (caught) {
+    const e = caught as AccountingFailure;
+    const fixed = /^ACCOUNTING_[A-Z_]+$/.test(e.message ?? '');
+    const message = fixed ? e.message : 'DATABASE_ERROR';
+    return fixed && e.detail ? { code: e.code, message, detail: e.detail } : { code: e.code, message };
+  } finally {
+    await client.query('rollback to savepoint acc_failure');
+    await client.query('release savepoint acc_failure');
+  }
+}
+
+/** The period jsonb of public.admin_create_accounting_period (S3), called as the connection's role. */
+export type AccountingPeriodJson = {
+  id: string; business_type: AccountingBusinessType; name: string; starts_on: string; ends_on: string;
+  corporate_tax_extension_months: number; consumption_tax_extension_months: number;
+  consumption_tax_status: 'exempt' | 'taxable'; consumption_taxable_from: string | null; version: string;
+  legacy_fiscal_year: number | null;
+};
+
+/** Create a period through the S3 entry (ROLLBACK tests; explicit dates). */
+export async function createAccountingPeriod(client: PgClient, actorId: string | null, input: {
+  businessType: AccountingBusinessType; startsOn: string; endsOn: string; name?: string | null; requestKey?: string;
+}): Promise<AccountingPeriodJson> {
+  return (await client.query(
+    `select public.admin_create_accounting_period($1::uuid, $2::text, $3::date, $4::date, $5::text,
+       coalesce($6::uuid, gen_random_uuid())) as r`,
+    [actorId, input.businessType, input.startsOn, input.endsOn, input.name ?? null, input.requestKey ?? null])).rows[0].r;
+}

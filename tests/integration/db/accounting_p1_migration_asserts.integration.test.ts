@@ -1,8 +1,10 @@
 /** @jest-environment node */
+import { formatPeriodName } from '@/lib/accounting/period';
 import { describeLocalDb } from './helpers/local-db';
 import {
-  ACCOUNTING_S2_ACCOUNT_CODES, ACCOUNTING_S2_FILES, ACCOUNTING_S2_SQL as sql, accountingS2Section, pinAccountingS2Baseline,
-  seedAccountingPeriod,
+  ACCOUNTING_S2_ACCOUNT_CODES, ACCOUNTING_S2_FILES, ACCOUNTING_S2_SQL as sql, ACCOUNTING_S3_FILES, ACCOUNTING_S3_SQL,
+  accountingS2Section, accountingS3Section, createAccountingPeriod, insertAccountingAdmin, pinAccountingS2Baseline,
+  pinAccountingS3Baseline, seedAccountingPeriod,
 } from './helpers/accounting-fixtures';
 
 // Accounting plan 1 S2 (FREQ-554): the shape of the migration and its final assert. The DB part is controller only.
@@ -159,6 +161,180 @@ describeLocalDb('S2 final assert: controller only', (db) => {
     [`alter table ${lines} enable replica trigger accounting_journal_lines_no_truncate`, 'acc_s2_immutable'],
   ])('FREQ-554-AC-07: S2改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// Accounting plan 1 S3 (FREQ-555): the shape of the migration and its final assert.
+const s3Assertion = accountingS3Section('FINAL_ASSERT');
+const s3Body = accountingS3Section('BODY');
+const s3Details = ['acc_s3_settings_row', 'acc_s3_period_layout_trigger', 'acc_s3_functions', 'acc_s3_rls_acl', 'acc_s3_reads_stable'];
+const s3BaselineStart = s3Body.indexOf('CREATE TEMP TABLE accounting_s3_baseline');
+const s3ApplyBaseline = s3Body.slice(s3BaselineStart, s3Body.indexOf('::jsonb);', s3BaselineStart) + '::jsonb);'.length);
+const s3Statements = s3Body.replace(/\$\$[\s\S]*?\$\$/g, '$$$$').split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n');
+/** The body of one CREATE FUNCTION of S3 (up to its closing $$;). */
+const s3Function = (name: string) => s3Body.split(`CREATE FUNCTION ${name}(`)[1]?.split('\n$$;')[0] ?? '';
+
+describe('S3 source contract (no DB)', () => {
+  test('FREQ-555-AC-01: S3はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S3_FILES).toEqual(['20261107130300_accounting_p1_period_reads.sql']);
+    expect(ACCOUNTING_S3_SQL).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(ACCOUNTING_S3_SQL.startsWith('BEGIN;\n')).toBe(true);
+    expect(ACCOUNTING_S3_SQL.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(ACCOUNTING_S3_SQL.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(ACCOUNTING_S3_SQL.trimEnd()).toMatch(/-- ACC_S3_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect([...new Set([...s3Assertion.matchAll(/'(acc_s3_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...s3Details].sort());
+    expect(s3Assertion).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(s3Assertion).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(ACCOUNTING_S3_SQL).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+  });
+
+  test('FREQ-555-AC-01: S3の実行時のDMLは比べる元の控えと設定の1行のINSERTだけ', () => {
+    expect([...s3Statements.matchAll(/^\s*(INSERT INTO|UPDATE|DELETE FROM|TRUNCATE(?: TABLE)?)\s+([\w.]+)/gm)].map((m) => `${m[1]} ${m[2]}`))
+      .toEqual(['INSERT INTO pg_temp.accounting_s3_baseline', 'INSERT INTO public.accounting_settings']);
+    expect(s3Statements).not.toMatch(/\bDO \$/);
+    expect(s3ApplyBaseline).toBe('CREATE TEMP TABLE accounting_s3_baseline(payload jsonb) ON COMMIT DROP;\n'
+      + 'INSERT INTO pg_temp.accounting_s3_baseline(payload)\n'
+      + `VALUES ('{"settings": null, "opening_rows": 0}'::jsonb);`);
+    expect(s3Body.indexOf(s3ApplyBaseline)).toBeLessThan(s3Body.indexOf('CREATE TABLE public.accounting_settings'));
+    expect(s3Body).toContain('INSERT INTO public.accounting_settings (id, cutover_on) VALUES (1, private.accounting_jst_date(pg_catalog.now()));');
+  });
+
+  test('FREQ-555-AC-07: S3の書く関数は状態を読む前に (190521,1)→(190525,0)→(190525,期間) の鍵を取り、取り消しのcoreはS2の1つだけ', () => {
+    expect(ACCOUNTING_S3_SQL).not.toContain('190524');
+    for (const [name, lock] of [
+      ['private.admin_create_accounting_period', 'PERFORM private.accounting_lock_all(NULL);'],
+      ['private.admin_shorten_final_sole_period', 'PERFORM private.accounting_lock_all(_period_id);'],
+      ['private.admin_update_accounting_settings', 'PERFORM private.accounting_lock_all(NULL);'],
+      ['private.admin_update_accounting_period_filing', 'PERFORM private.accounting_lock_all(_period_id);'],
+      ['private.accounting_ensure_individual_periods', 'PERFORM private.accounting_lock_all(NULL);'],
+      ['private.accounting_store_opening', 'PERFORM private.accounting_lock_all(_period_id);'],
+    ]) {
+      const fn = s3Function(name);
+      const firstRead = fn.search(/FROM public\.accounting_(periods|settings|opening_balances)|accounting_request_replay\(/);
+      expect({ name, locked: fn.includes(lock), before: fn.indexOf(lock) < firstRead }).toEqual({ name, locked: true, before: true });
+    }
+    // D6: the reversal core has one body, in S2; S3 does not recreate it.
+    expect(ACCOUNTING_S3_SQL).not.toMatch(/CREATE (OR REPLACE )?FUNCTION private\.accounting_reverse_journal_core/);
+    expect(sql.match(/CREATE (OR REPLACE )?FUNCTION private\.accounting_reverse_journal_core/g)).toHaveLength(1);
+    expect(sql).toContain('PERFORM private.accounting_ensure_individual_periods(EXTRACT(year FROM v_date)::integer, _actor_id);');
+    // T7-b: the length is checked before the period is written.
+    const create = s3Function('private.admin_create_accounting_period');
+    expect(create.indexOf('private.accounting_period_length_ok(_starts_on, _ends_on)'))
+      .toBeLessThan(create.indexOf('INSERT INTO public.accounting_periods'));
+  });
+
+  test('FREQ-555-AC-01: S3のU&形の期間の名前はTSのformatPeriodNameと同じ文字', () => {
+    const fn = s3Function('private.accounting_default_period_name');
+    const decode = (text: string) => text.replace(/\\([0-9A-F]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+    const literals = [...fn.matchAll(/U&'((?:\\[0-9A-F]{4})+)'/g)].map((m) => decode(m[1]));
+    const sole = formatPeriodName({ businessType: 'soleProprietor', startsOn: '2026-01-01', endsOn: '2026-12-31' });
+    const corporation = formatPeriodName({ businessType: 'corporation', startsOn: '2030-01-01', endsOn: '2030-12-31', termNumber: 7 });
+    expect([`2026${literals[0]}`, `${literals[1]}7${literals[2]}`]).toEqual([sole, corporation]);
+  });
+});
+
+describeLocalDb('S3 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  const s2Assertion = accountingS2Section('FINAL_ASSERT');
+  /** pin: the replay baseline (the current state); apply: the migration's own baseline. s2: the S2 assert, pinned. */
+  async function attempt(change = '', baseline: 'pin' | 'apply' | 's2' = 'pin'): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s3_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (baseline === 'pin') await pinAccountingS3Baseline(db());
+      else if (baseline === 'apply') await db().query(s3ApplyBaseline);
+      else await pinAccountingS2Baseline(db());
+      if (change) await db().query(change);
+      await db().query(baseline === 's2' ? s2Assertion : s3Assertion);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s3_assert'); await db().query('release savepoint acc_s3_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+
+  test('FREQ-555-AC-01: S3末尾assertは適用後の状態と呼出元search_pathを許す', async () => {
+    expect(s3Assertion).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+  });
+
+  test('FREQ-555-AC-01: S3の後に期間・設定・期首の行があってもS2とS3の末尾assertは再生で通り、適用の時の空の控えなら断る', async () => {
+    const admin = await insertAccountingAdmin(db());
+    // The two terms follow the last committed corporation period, if a commit suite left one (order independent).
+    const next = async () => (await db().query(`select to_char(s.d, 'YYYY-MM-DD') as "startsOn",
+        to_char((s.d + interval '1 year' - interval '1 day')::date, 'YYYY-MM-DD') as "endsOn"
+      from (select coalesce(max(ends_on) + 1, date '2070-01-01') as d from public.accounting_periods
+        where business_type = 'corporation') s`)).rows[0];
+    const term1 = await createAccountingPeriod(db(), admin, { businessType: 'corporation', ...(await next()) });
+    const term2 = await createAccountingPeriod(db(), admin, { businessType: 'corporation', ...(await next()) });
+    const settings = (await db().query('select public.get_accounting_settings() as r')).rows[0].r;
+    await db().query("select public.admin_update_accounting_settings($1::uuid, null, 'corporation', $2::bigint, gen_random_uuid())",
+      [admin, settings.version]);
+    await db().query(`select private.accounting_store_opening($1::uuid, $2::uuid,
+      '[{"account_code":"1010","signed_amount":10},{"account_code":"3040","signed_amount":-10}]', 1, 'closing_carryover', $3::uuid)`,
+      [admin, term2.id, term1.id]);
+    await db().query('set constraints all immediate');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('', 's2')).toBeNull();
+    expect(await attempt('', 'apply')).toEqual(failed('acc_s3_settings_row'));
+    // The pinned baseline still catches a change made after it.
+    expect(await attempt('update public.accounting_settings set version = version + 1')).toEqual(failed('acc_s3_settings_row'));
+    expect(await attempt(`insert into public.accounting_opening_balances (period_id, account_code, signed_amount, closing_version, source,
+      source_period_id) values ('${term2.id}', '1010', 0, 2, 'closing_carryover', '${term1.id}')`)).toEqual(failed('acc_s3_settings_row'));
+  });
+
+  const settingsTable = 'public.accounting_settings';
+  const opening = 'public.accounting_opening_balances';
+  const periods = 'public.accounting_periods';
+  test.each([
+    [`alter table ${settingsTable} add column acc_probe text`, 'acc_s3_settings_row'],
+    [`alter table ${settingsTable} alter column current_business_type drop default`, 'acc_s3_settings_row'],
+    [`alter table ${settingsTable} drop constraint accounting_settings_id_check`, 'acc_s3_settings_row'],
+    [`alter table ${opening} drop constraint accounting_opening_balances_source_period_id_fkey`, 'acc_s3_settings_row'],
+    [`alter table ${opening} add constraint acc_probe check (signed_amount < 1000000000000)`, 'acc_s3_settings_row'],
+    ['drop table pg_temp.accounting_s3_baseline', 'acc_s3_settings_row'],
+    ["update pg_temp.accounting_s3_baseline set payload = jsonb_set(payload, '{opening_rows}', '3')", 'acc_s3_settings_row'],
+    [`drop trigger accounting_periods_layout on ${periods}`, 'acc_s3_period_layout_trigger'],
+    [`alter table ${periods} disable trigger accounting_periods_guard_update`, 'acc_s3_period_layout_trigger'],
+    [`alter table ${periods} enable trigger accounting_periods_no_delete`, 'acc_s3_period_layout_trigger'],
+    [`alter table ${settingsTable} disable trigger accounting_settings_sole_end`, 'acc_s3_period_layout_trigger'],
+    [`drop trigger accounting_opening_balances_no_truncate on ${opening}`, 'acc_s3_period_layout_trigger'],
+    [`create trigger acc_probe before insert on ${settingsTable} for each row execute function private.reject_accounting_mutation()`, 'acc_s3_period_layout_trigger'],
+    [`create or replace function private.accounting_check_period_layout() returns trigger language plpgsql security definer
+      set search_path = '' as $$ begin return null; end; $$`, 'acc_s3_period_layout_trigger'],
+    [`alter table ${settingsTable} disable row level security`, 'acc_s3_rls_acl'],
+    [`grant select on ${opening} to authenticated`, 'acc_s3_rls_acl'],
+    [`grant insert on ${settingsTable} to service_role`, 'acc_s3_rls_acl'],
+    [`grant select (version) on ${settingsTable} to anon`, 'acc_s3_rls_acl'],
+    [`create policy acc_probe on ${opening} for select to service_role using (true)`, 'acc_s3_rls_acl'],
+    ['grant execute on function private.accounting_period_for_event(date,uuid) to service_role', 'acc_s3_functions'],
+    ['alter function private.admin_shorten_final_sole_period(uuid,uuid,date,bigint,bigint,text,uuid) security invoker', 'acc_s3_functions'],
+    ['revoke execute on function private.admin_create_accounting_period(uuid,text,date,date,text,uuid) from service_role', 'acc_s3_functions'],
+    [`create function private.admin_create_accounting_period(_actor_id uuid) returns jsonb language sql security definer
+      set search_path = '' as $$ select null::jsonb $$`, 'acc_s3_functions'],
+    [`create or replace function public.admin_update_accounting_settings(_actor_id uuid, _business_start_date date,
+      _current_business_type text, _expected_version bigint, _request_key uuid) returns jsonb language sql volatile security invoker
+      set search_path = '' as $$ select private.admin_update_accounting_settings(_actor_id, null, _current_business_type,
+      _expected_version, _request_key) $$`, 'acc_s3_functions'],
+    [`create or replace function private.accounting_reverse_journal_core(_actor_id uuid, _entry_id uuid, _reason text,
+      _entry_date date default null, _source_recorded_at timestamptz default null) returns jsonb language plpgsql security definer
+      set search_path = '' as $$ begin return null; end; $$`, 'acc_s3_functions'],
+    [`create function public.accounting_probe() returns void language sql set search_path = '' as $$ select $$`, 'acc_s3_functions'],
+    ['alter function public.list_accounting_journal(uuid,date,date,integer,date,bigint) volatile', 'acc_s3_reads_stable'],
+    ['grant execute on function private.accounting_opening_balances(uuid) to service_role', 'acc_s3_reads_stable'],
+    ['alter function private.get_accounting_settings() security invoker', 'acc_s3_reads_stable'],
+    ['revoke execute on function public.get_accounting_settings() from service_role', 'acc_s3_reads_stable'],
+    [`create or replace function public.get_accounting_trial_balance(_period_id uuid, _through date default null)
+      returns table(account_code text, debit_total bigint, credit_total bigint, opening_signed bigint) language sql stable
+      security invoker set search_path = '' as $$ select * from private.get_accounting_trial_balance(_period_id, null) $$`, 'acc_s3_reads_stable'],
+  ])('FREQ-555-AC-01: S3改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });
 });
