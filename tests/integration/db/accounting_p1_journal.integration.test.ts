@@ -139,6 +139,57 @@ describeLocalDb('S2 journal: controller only', (db) => {
         .toEqual({ statement, caught: { code: '55000', message: 'ACCOUNTING_HISTORY_IMMUTABLE' } });
     }
     expect(await counts()).toEqual({ entries: 1, lines: 2, numbers: 1 });
+    // The six reject triggers are ENABLE ALWAYS (they fire under session_replication_role = replica too); the deferred
+    // balance triggers stay ordinary so a replica-mode restore can load headers and lines separately.
+    expect((await db().query(`select tgname::text as name, tgenabled::text as enabled from pg_trigger
+      where tgrelid in ('public.accounting_accounts'::regclass, 'public.accounting_journal_entries'::regclass,
+        'public.accounting_journal_lines'::regclass) and not tgisinternal order by 1`)).rows).toEqual([
+      { name: 'accounting_accounts_no_truncate', enabled: 'A' }, { name: 'accounting_accounts_no_update_delete', enabled: 'A' },
+      { name: 'accounting_journal_entries_balance', enabled: 'O' }, { name: 'accounting_journal_entries_no_truncate', enabled: 'A' },
+      { name: 'accounting_journal_entries_no_update_delete', enabled: 'A' }, { name: 'accounting_journal_lines_balance', enabled: 'O' },
+      { name: 'accounting_journal_lines_no_truncate', enabled: 'A' }, { name: 'accounting_journal_lines_no_update_delete', enabled: 'A' },
+    ]);
+    // Where the role may switch to replica mode (postgres on Supabase), the rewrite is still refused.
+    const replica = await failure(() => db().query("set local session_replication_role = 'replica'"));
+    if (replica === null) {
+      await db().query('savepoint acc_s2_replica');
+      await db().query("set local session_replication_role = 'replica'");
+      const caught = await failure(() => db().query("update public.accounting_journal_entries set description = 'replica'"));
+      await db().query('rollback to savepoint acc_s2_replica');
+      expect(caught).toEqual({ code: '55000', message: 'ACCOUNTING_HISTORY_IMMUTABLE' });
+    } else {
+      expect(replica.code).toBe('42501');
+    }
+  });
+
+  test('FREQ-554-AC-04: 取り消しの一般の入口は一般の入口で作れない種類と手入力のsourceの元を断り、coreからは取り消せる', async () => {
+    const { current } = await solePeriods();
+    const admin = await insertAccountingAdmin(db());
+    const lines = journalLines(SALE);
+    const via = async (kind: string, parts: string[], tail = '', extra: unknown[] = []) =>
+      (await core([null, current, today, kind, parts, 'd', lines, ...extra], tail)).rows[0].r.entry_id as string;
+    const originals: [string, string][] = [
+      ['manual_entry', await via('manual_entry', ['41', '0'], ', _source_table => $8::text, _source_id => $9::text', ['admin_finance_expenses', '41'])],
+      ['migrated_entry', await via('migrated_entry', ['42'], ', _migrated_from => $8::text', ['admin_finance_expenses:42'])],
+      ['period_closing_entry', await via('period_closing_entry', [current, 'close', '1'])],
+      ['closed_year_correction', await via('closed_year_correction', ['c1', current, 'fix'])],
+      ['manual source', await via('payment_confirmed', ['pi_manual_src'], ', _source_table => $8::text', ['admin_finance_expenses'])],
+    ];
+    const automatic = await via('payment_confirmed', ['pi_general_rev']);
+    const reversalOf = (await reverse(await via('payment_confirmed', ['pi_rev_of_rev']), 'r')).entry_id as string;
+    originals.push(['reversal', reversalOf]);
+    const entrance = (entryId: string) => db().query('select public.admin_reverse_accounting_journal($1::uuid, $2::uuid, $3::text) as r',
+      [admin, entryId, 'mistake']);
+    await asService(async () => {
+      for (const [label, entryId] of originals) {
+        expect({ label, caught: await failure(() => entrance(entryId)) })
+          .toEqual({ label, caught: { code: '22023', message: 'ACCOUNTING_ARGUMENT_INVALID' } });
+      }
+      expect(await failure(() => entrance(randomUUID()))).toEqual({ code: 'P0002', message: 'ACCOUNTING_NOT_FOUND' });
+      expect((await entrance(automatic)).rows[0].r.created).toBe(true);
+    });
+    // The core (the Task 9 trigger's path) still reverses a manual entry.
+    expect((await reverse(originals[0][1], 'edited')).created).toBe(true);
   });
 
   test('FREQ-554-AC-03: 同じ印で同じ内容を2回入れると1本のままcreated=falseを返す', async () => {
@@ -256,6 +307,61 @@ describeLocalDb('S2 journal: controller only', (db) => {
     const exact = await core([null, current, today, 'reversal', [original.entryId], 'd',
       journalLines([{ account: '1130', credit: 1000 }, { account: '4010', debit: 1000 }]), original.entryId, 'r'], ', $8::uuid, $9::text');
     expect(exact.rows[0].r.created).toBe(true);
+  });
+
+  test('FREQ-554-AC-01: 201行・知らない鍵・形の違う補助科目と注文番号・文字でない文の欄はARGUMENT_INVALIDで断る', async () => {
+    const { current } = await solePeriods();
+    const good = { account_code: '1130', debit: 1000, credit: 0 };
+    const other = { account_code: '4010', debit: 0, credit: 1000 };
+    const debits = (n: number) => Array.from({ length: n }, () => ({ account_code: '1130', debit: 1, credit: 0 }));
+    const many = [...debits(200), { account_code: '4010', debit: 0, credit: 200 }];
+    const most = [...debits(199), { account_code: '4010', debit: 0, credit: 199 }];
+    const cases: [string, unknown[]][] = [
+      ['201 lines', many],
+      ['unknown key', [{ ...good, tax_code: 'x' }, other]],
+      ['upper-case sub_account', [{ ...good, sub_account: 'Processor:stripe' }, other]],
+      ['65-char sub_account', [{ ...good, sub_account: 'a'.repeat(65) }, other]],
+      ['order_id not a uuid', [{ ...good, order_id: 'order-1' }, other]],
+      ['numeric counterparty', [{ ...good, counterparty: 12 }, other]],
+      ['object memo', [{ ...good, memo: { text: 'x' } }, other]],
+      ['numeric account_code', [{ ...good, account_code: 1130 }, other]],
+      ['line not an object', ['1130', other]],
+      ['lines not an array', { account_code: '1130' } as unknown as unknown[]],
+    ];
+    for (const [label, lines] of cases) {
+      expect({ label, caught: await failure(() => core([null, current, today, 'payment_confirmed', [`pi_${label.replace(/\W/g, '_')}`], 'd', JSON.stringify(lines)])) })
+        .toEqual({ label, caught: { code: '22023', message: 'ACCOUNTING_ARGUMENT_INVALID' } });
+    }
+    // 200 lines, a valid sub_account and an upper-case uuid pass (the uuid is kept in lower case).
+    expect((await core([null, current, today, 'payment_confirmed', ['pi_200'], 'd', JSON.stringify(most)])).rows[0].r.created).toBe(true);
+    const id = randomUUID().toUpperCase();
+    const posted = (await core([null, current, today, 'payment_confirmed', ['pi_ok_fields'], 'd',
+      JSON.stringify([{ ...good, sub_account: 'processor:stripe', order_id: id, counterparty: 'c', memo: 'm' }, other])])).rows[0].r;
+    expect(await one('select sub_account, order_id::text as order_id from public.accounting_journal_lines where entry_id = $1 and line_no = 1', [posted.entry_id]))
+      .toEqual({ sub_account: 'processor:stripe', order_id: id.toLowerCase() });
+    expect(await counts()).toEqual({ entries: 2, lines: 202, numbers: 2 });
+  });
+
+  test('FREQ-554-AC-04: 無い仕訳の取り消しはNOT_FOUNDで断る', async () => {
+    const { current } = await solePeriods();
+    const missing = randomUUID();
+    const notFound = { code: 'P0002', message: 'ACCOUNTING_NOT_FOUND' };
+    expect(await failure(() => reverse(missing, 'r'))).toEqual(notFound);
+    expect(await failure(() => core([null, current, today, 'reversal', [missing], 'd', journalLines(SALE), missing, 'r'], ', $8::uuid, $9::text')))
+      .toEqual(notFound);
+    expect(await counts()).toEqual({ entries: 0, lines: 0, numbers: 0 });
+  });
+
+  test('FREQ-554-AC-08: 日と事業の形から期間を引く道具は1つならその期間、無ければPERIOD_MISSING、2つ以上ならPERIOD_OVERLAP', async () => {
+    const first = await insertAccountingPeriod(db(), { businessType: 'corporation', startsOn: '2027-07-01', endsOn: '2028-06-30' });
+    const periodFor = (date: string, type: string) => one('select private.accounting_period_for($1::date, $2::text) as id', [date, type]);
+    expect(await periodFor('2027-07-01', 'corporation')).toEqual({ id: first });
+    expect(await periodFor('2028-06-30', 'corporation')).toEqual({ id: first });
+    expect(await failure(() => periodFor('2028-07-01', 'corporation'))).toEqual({ code: '55000', message: 'ACCOUNTING_PERIOD_MISSING' });
+    expect(await failure(() => periodFor('2027-08-01', 'soleProprietor'))).toEqual({ code: '55000', message: 'ACCOUNTING_PERIOD_MISSING' });
+    expect(await failure(() => periodFor('2027-08-01', 'other'))).toEqual({ code: '22023', message: 'ACCOUNTING_ARGUMENT_INVALID' });
+    await insertAccountingPeriod(db(), { businessType: 'corporation', startsOn: '2028-01-01', endsOn: '2028-12-31' });
+    expect(await failure(() => periodFor('2028-03-01', 'corporation'))).toEqual({ code: '23514', message: 'ACCOUNTING_PERIOD_OVERLAP' });
   });
 
   test('FREQ-554-AC-05: timestamptzを日本時間の日付に直すSQLの道具はTSのtoJstDateと同じ日を返す', async () => {

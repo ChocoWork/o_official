@@ -179,3 +179,26 @@ export async function insertAccountingAdmin(client: PgClient): Promise<string> {
     select $1::uuid, r.id, true from public.roles r where r.code = 'admin'`, [id]);
   return id;
 }
+
+/** The 163 account codes S2 seeds (read from its ACC_ACCOUNTS block; later migrations may add other codes). */
+export const ACCOUNTING_S2_ACCOUNT_CODES: readonly string[] = [...accountingS2Section('ACCOUNTS').matchAll(/^ {2}\('(\d{4})',/gm)]
+  .map((match) => match[1]);
+
+/**
+ * Pin the current state as the S2 baseline BEFORE a caller tampers, so a replay of the S2 final assert compares with
+ * what exists now (the periods, numbers, entries and lines counts, and the accounts later migrations added) instead of
+ * the empty state at apply time. Then the caller runs the assert.
+ */
+export async function pinAccountingS2Baseline(client: PgClient): Promise<void> {
+  if (ACCOUNTING_S2_ACCOUNT_CODES.length !== 163) throw new Error('ACC_S2_ACCOUNT_CODES_MISSING');
+  // A multi-statement query cannot take bind parameters; the codes are four digits read from the migration.
+  const codes = `array[${ACCOUNTING_S2_ACCOUNT_CODES.map((code) => `'${code}'`).join(',')}]::text[]`;
+  await client.query(`create temp table accounting_s2_baseline(payload jsonb) on commit drop;
+    insert into pg_temp.accounting_s2_baseline(payload) select jsonb_build_object(
+      'periods', (select count(*) from public.accounting_periods),
+      'sequences', (select count(*) from public.accounting_period_sequences),
+      'entries', (select count(*) from public.accounting_journal_entries),
+      'lines', (select count(*) from public.accounting_journal_lines),
+      'other_accounts', coalesce((select jsonb_agg(to_jsonb(a) order by a.code collate "C") from public.accounting_accounts a
+        where not (a.code = any(${codes}))), '[]'::jsonb))`);
+}

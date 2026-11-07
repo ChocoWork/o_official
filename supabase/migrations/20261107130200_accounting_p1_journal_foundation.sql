@@ -35,6 +35,13 @@ BEGIN;
 
 -- ACC_S2_BODY_BEGIN
 
+-- 0. The baseline the final assert compares with: before this migration nothing exists, so no period, number, entry
+--    or line and no account other than the S2 seed. A replay of the assert (tests) pins the current state here first
+--    (withAccountingS2Baseline), so later migrations that add accounts or entries do not break it.
+CREATE TEMP TABLE accounting_s2_baseline(payload jsonb) ON COMMIT DROP;
+INSERT INTO pg_temp.accounting_s2_baseline(payload)
+VALUES ('{"periods": 0, "sequences": 0, "entries": 0, "lines": 0, "other_accounts": []}'::jsonb);
+
 -- 1. Event kinds, arity and event keys. The same 27 kinds, arity and key strings as
 --    src/lib/accounting/event-kinds.ts and event-key.ts (tests compare the two texts).
 CREATE FUNCTION private.accounting_event_kinds() RETURNS text[]
@@ -478,6 +485,16 @@ CREATE TRIGGER accounting_journal_lines_no_update_delete BEFORE UPDATE OR DELETE
   FOR EACH ROW EXECUTE FUNCTION private.reject_accounting_mutation();
 CREATE TRIGGER accounting_journal_lines_no_truncate BEFORE TRUNCATE ON public.accounting_journal_lines
   FOR EACH STATEMENT EXECUTE FUNCTION private.reject_accounting_mutation();
+-- ALWAYS: the six reject triggers fire even under session_replication_role = replica (a restore only inserts, so it
+-- is not affected). The deferred balance triggers below stay ordinary (fire on origin only): a data-only restore in
+-- replica mode may load headers and lines in separate statements or transactions, and the core already checks every
+-- entry it writes.
+ALTER TABLE public.accounting_accounts ENABLE ALWAYS TRIGGER accounting_accounts_no_update_delete;
+ALTER TABLE public.accounting_accounts ENABLE ALWAYS TRIGGER accounting_accounts_no_truncate;
+ALTER TABLE public.accounting_journal_entries ENABLE ALWAYS TRIGGER accounting_journal_entries_no_update_delete;
+ALTER TABLE public.accounting_journal_entries ENABLE ALWAYS TRIGGER accounting_journal_entries_no_truncate;
+ALTER TABLE public.accounting_journal_lines ENABLE ALWAYS TRIGGER accounting_journal_lines_no_update_delete;
+ALTER TABLE public.accounting_journal_lines ENABLE ALWAYS TRIGGER accounting_journal_lines_no_truncate;
 
 -- 5. Immediate checks. The core calls both before it returns; the deferred triggers below call the first again.
 -- One entry: at least two lines (min_lines), every amount positive (sign), one side per line (one_sided), and the
@@ -631,6 +648,11 @@ DECLARE
   v_entry_no bigint;
   v_constraint text;
 BEGIN
+  -- Order: steps 1-2 check the input only (plus the append-only account list) and run before lock_all, which keeps the
+  -- lock short; every check that reads mutable state (period, original, existing key, numbering) runs after it.
+  -- The key and reversal decisions assume READ COMMITTED (the default; PostgREST and the plan 2 runner use it): after
+  -- the lock each statement sees a writer that committed while this one waited. Under REPEATABLE READ a concurrent
+  -- duplicate would surface as DEDUPE_CONTENT_MISMATCH / ALREADY_REVERSED instead of created = false.
   -- 1. Arguments.
   IF _period_id IS NULL OR _entry_date IS NULL OR _event_kind IS NULL OR _description IS NULL
     OR NOT (_event_kind = ANY (private.accounting_event_kinds()))
@@ -878,6 +900,10 @@ $$;
 
 -- The general reversal entry (manual reversal: admin.finance.manage). It has no time argument. Reversals that need
 -- admin.accounting.entries.correct come from later plans, which check that permission and call the core.
+-- It reverses only what the general post entry could have written: an original of a kind with its own tool
+-- (reversal, manual_entry, migrated_entry, period_closing_entry, closed_year_correction) or from the manual-entry
+-- source is ARGUMENT_INVALID (manual entries are reversed by the Task 9 trigger through the core). The originals are
+-- append only, so reading one before the core takes the locks is safe; an unknown id is NOT_FOUND from the core.
 CREATE FUNCTION private.admin_reverse_accounting_journal(
   _actor_id uuid, _entry_id uuid, _reason text, _entry_date date DEFAULT NULL
 ) RETURNS jsonb
@@ -886,6 +912,11 @@ AS $$
 BEGIN
   IF NOT private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.finance.manage']) THEN
     RAISE EXCEPTION 'ACCOUNTING_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.accounting_journal_entries AS e WHERE e.id = _entry_id
+    AND (e.event_kind IN ('reversal', 'manual_entry', 'migrated_entry', 'period_closing_entry', 'closed_year_correction')
+      OR e.source_table IS NOT DISTINCT FROM 'admin_finance_expenses')) THEN
+    RAISE EXCEPTION 'ACCOUNTING_ARGUMENT_INVALID' USING ERRCODE = '22023';
   END IF;
   RETURN private.accounting_reverse_journal_core(_actor_id, _entry_id, _reason, _entry_date, NULL);
 END;
@@ -959,6 +990,8 @@ DECLARE
   p record;
   v_oid oid;
   v_stage text;
+  v_baseline jsonb;
+  v_other_codes text[];
 BEGIN
   v_stage := 'acc_s2_tables';
   -- acc_s2_tables: the five tables exist in public, are ordinary tables owned by postgres, and have exactly these
@@ -1114,14 +1147,15 @@ BEGIN
 
   v_stage := 'acc_s2_immutable';
   -- acc_s2_immutable: BEFORE UPDATE OR DELETE (row) and BEFORE TRUNCATE (statement) on the three append-only tables,
-  -- enabled, calling the reject function, and no other user trigger on them.
+  -- enabled ALWAYS (also under session_replication_role = replica), calling the reject function, and no other user
+  -- trigger on them.
   IF v_failed IS NULL AND (
     EXISTS (SELECT 1 FROM pg_catalog.unnest(v_append_only) AS t(name)
       CROSS JOIN (VALUES ('_no_update_delete', 27), ('_no_truncate', 34)) AS k(suffix, kind)
       WHERE NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger AS g
         WHERE g.tgrelid = pg_catalog.to_regclass('public.' || t.name) AND g.tgname::text = t.name || k.suffix
           AND g.tgfoid = 'private.reject_accounting_mutation()'::regprocedure AND g.tgtype = k.kind
-          AND g.tgenabled = 'O' AND NOT g.tgisinternal AND g.tgconstraint = 0 AND NOT g.tgdeferrable
+          AND g.tgenabled = 'A' AND NOT g.tgisinternal AND g.tgconstraint = 0 AND NOT g.tgdeferrable
           AND g.tgnargs = 0 AND g.tgqual IS NULL))
     OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_trigger AS g
       WHERE NOT g.tgisinternal AND g.tgrelid IN (SELECT pg_catalog.to_regclass('public.' || t)
@@ -1154,15 +1188,35 @@ BEGIN
   END IF;
 
   v_stage := 'acc_s2_accounts_seed';
-  -- acc_s2_accounts_seed: the 163 rows of scripts/accounting/emit-accounts-seed.ts (code, type, side, scope, role).
-  IF v_failed IS NULL AND (
-    (SELECT pg_catalog.count(*) FROM public.accounting_accounts) <> 163
-    OR (SELECT pg_catalog.md5(pg_catalog.string_agg(a.code || ',' || a.account_type || ',' || a.normal_side || ','
-        || a.scope || ',' || a.carryover_role, ';' ORDER BY a.code COLLATE "C")) FROM public.accounting_accounts AS a)
-      IS DISTINCT FROM '9267159e6a646a2f7b5fcd81a725235f'
-    OR NOT EXISTS (SELECT 1 FROM public.accounting_accounts AS a WHERE a.code = '9999' AND a.account_type = 'expense'
-      AND a.normal_side = 'debit' AND a.scope = 'common' AND a.carryover_role = 'pl_zero')) THEN
-    v_failed := 'acc_s2_accounts_seed';
+  -- acc_s2_accounts_seed: the 163 rows of scripts/accounting/emit-accounts-seed.ts (code, type, side, scope, role) are
+  -- present, and every other account equals the baseline (none at apply time; a replay pins the later ones).
+  -- The baseline itself must exist with one well-formed row (else acc_s2_existing_dml_allowlist).
+  IF v_failed IS NULL THEN
+    IF pg_catalog.to_regclass('pg_temp.accounting_s2_baseline') IS NULL THEN
+      v_failed := 'acc_s2_existing_dml_allowlist';
+    ELSIF (SELECT pg_catalog.count(*) FROM pg_temp.accounting_s2_baseline) <> 1 THEN
+      v_failed := 'acc_s2_existing_dml_allowlist';
+    ELSE
+      SELECT b.payload INTO v_baseline FROM pg_temp.accounting_s2_baseline AS b;
+      IF pg_catalog.jsonb_typeof(v_baseline->'other_accounts') IS DISTINCT FROM 'array' THEN
+        v_failed := 'acc_s2_existing_dml_allowlist';
+      ELSE
+        v_other_codes := ARRAY(SELECT o.value->>'code' FROM pg_catalog.jsonb_array_elements(v_baseline->'other_accounts') AS o);
+        IF (SELECT pg_catalog.count(*) FROM public.accounting_accounts AS a WHERE NOT (a.code = ANY (v_other_codes))) <> 163
+          OR (SELECT pg_catalog.md5(pg_catalog.string_agg(a.code || ',' || a.account_type || ',' || a.normal_side || ','
+              || a.scope || ',' || a.carryover_role, ';' ORDER BY a.code COLLATE "C"))
+            FROM public.accounting_accounts AS a WHERE NOT (a.code = ANY (v_other_codes)))
+            IS DISTINCT FROM '9267159e6a646a2f7b5fcd81a725235f'
+          OR NOT EXISTS (SELECT 1 FROM public.accounting_accounts AS a WHERE a.code = '9999' AND a.account_type = 'expense'
+            AND a.normal_side = 'debit' AND a.scope = 'common' AND a.carryover_role = 'pl_zero')
+          OR COALESCE((SELECT pg_catalog.jsonb_agg(pg_catalog.to_jsonb(a) ORDER BY a.code COLLATE "C")
+              FROM public.accounting_accounts AS a WHERE a.code = ANY (v_other_codes)), '[]'::jsonb)
+            IS DISTINCT FROM COALESCE((SELECT pg_catalog.jsonb_agg(o.value ORDER BY (o.value->>'code') COLLATE "C")
+              FROM pg_catalog.jsonb_array_elements(v_baseline->'other_accounts') AS o), '[]'::jsonb) THEN
+          v_failed := 'acc_s2_accounts_seed';
+        END IF;
+      END IF;
+    END IF;
   END IF;
 
   v_stage := 'acc_s2_function_attrs';
@@ -1233,11 +1287,13 @@ BEGIN
   END IF;
 
   v_stage := 'acc_s2_existing_dml_allowlist';
-  -- acc_s2_existing_dml_allowlist: the only DML of this migration is the account seed; no period, number, entry or
-  -- line exists yet.
+  -- acc_s2_existing_dml_allowlist: the only DML of this migration is the account seed; the periods, numbers, entries
+  -- and lines equal the baseline (zero at apply time, so none may exist yet).
   IF v_failed IS NULL AND (
-    EXISTS (SELECT 1 FROM public.accounting_periods) OR EXISTS (SELECT 1 FROM public.accounting_period_sequences)
-    OR EXISTS (SELECT 1 FROM public.accounting_journal_entries) OR EXISTS (SELECT 1 FROM public.accounting_journal_lines)) THEN
+    (SELECT pg_catalog.count(*) FROM public.accounting_periods) IS DISTINCT FROM (v_baseline->>'periods')::bigint
+    OR (SELECT pg_catalog.count(*) FROM public.accounting_period_sequences) IS DISTINCT FROM (v_baseline->>'sequences')::bigint
+    OR (SELECT pg_catalog.count(*) FROM public.accounting_journal_entries) IS DISTINCT FROM (v_baseline->>'entries')::bigint
+    OR (SELECT pg_catalog.count(*) FROM public.accounting_journal_lines) IS DISTINCT FROM (v_baseline->>'lines')::bigint) THEN
     v_failed := 'acc_s2_existing_dml_allowlist';
   END IF;
 
