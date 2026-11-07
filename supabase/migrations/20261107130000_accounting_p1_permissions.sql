@@ -236,7 +236,7 @@ BEGIN
           AND p.proparallel='u' AND p.pronargdefaults=0
           AND pg_catalog.md5(pg_catalog.replace(p.prosrc,E'\r',''))=v_record.body_md5
           AND (SELECT pg_catalog.array_agg(m.code[1] ORDER BY m.code[1] COLLATE "C") FROM pg_catalog.regexp_matches(
-            pg_catalog.substring(p.prosrc FROM 'catalog CONSTANT text\[\] := ARRAY\[([^]]*)\]'),'''([a-z_.]+)''','g') AS m(code))=v_catalog
+            pg_catalog.substring(p.prosrc,'catalog CONSTANT text\[\] := ARRAY\[([^]]*)\]'),'''([a-z_.]+)''','g') AS m(code))=v_catalog
           AND pg_catalog.has_function_privilege('service_role',p.oid,'EXECUTE')
           AND NOT pg_catalog.has_function_privilege('anon',p.oid,'EXECUTE')
           AND NOT pg_catalog.has_function_privilege('authenticated',p.oid,'EXECUTE')
