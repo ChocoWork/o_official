@@ -32,6 +32,7 @@ let financeQueryError: { code: string; message: string } | null = null;
 let cumulativeRowsOverride: Array<Record<string, unknown>> | null = null;
 let cumulativeRangeCalls: Array<[number, number]> = [];
 let cumulativePageLimit: number | null = null;
+let expenseSelectColumns: string[] = [];
 
 let stripeBalanceTransactionRows: Array<Record<string, unknown>> = [];
 let stripeRefundRows: Array<Record<string, unknown>> = [];
@@ -103,7 +104,9 @@ function createFinanceSupabaseMock() {
 				];
 
 				return {
-					select: () => ({
+					select: (columns?: string) => {
+						expenseSelectColumns.push(columns ?? '');
+						return {
 						// 当年度の取引一覧：fiscal_year で絞り、論理削除を除外して並べ替える
 						eq: () => ({
 							is: () => ({
@@ -119,7 +122,8 @@ function createFinanceSupabaseMock() {
 								} }) }),
 							}),
 						}),
-					}),
+						};
+					},
 				};
 			}
 
@@ -243,6 +247,7 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 		cumulativeRowsOverride = null;
 		cumulativeRangeCalls = [];
 		cumulativePageLimit = null;
+		expenseSelectColumns = [];
 		stripeBalanceTransactionRows = [];
 		stripeRefundRows = [];
 		stripePayoutRows = [];
@@ -482,6 +487,96 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 		expect(body.data.cumulativeEntries).toHaveLength(1001);
 		expect(body.data.cumulativeEntries.at(-1)).toEqual(expect.objectContaining({ id: 1001 }));
 		expect(cumulativeRangeCalls).toEqual([[0, 999], [500, 1499], [1000, 1999]]);
+	});
+});
+
+describe('GET /api/admin/kpi/cost-profit（証憑の種類）', () => {
+	beforeEach(() => {
+		jest.clearAllMocks();
+		financeQueryError = null;
+		cumulativeRangeCalls = [];
+		cumulativePageLimit = null;
+		expenseSelectColumns = [];
+		authorizeMock.mockResolvedValue(ADMIN);
+		createServiceMock.mockResolvedValue(createFinanceSupabaseMock() as never);
+	});
+	afterEach(() => {
+		cumulativeRowsOverride = null;
+	});
+
+	it('FREQ-559-AC-02: 会計のGETは証憑の種類と紙の原本の有無を返す', async () => {
+		const receipt = (id: number, kind: string, kept: boolean | null) => ({
+			id, storage_path: `2026/1/${id}.pdf`, file_name: `${id}.pdf`, mime_type: 'application/pdf', file_size: 10,
+			created_at: '2026-05-24T01:00:00.000Z', evidence_kind: kind, paper_original_kept: kept,
+		});
+		cumulativeRowsOverride = [{
+			id: 1, entry_type: 'expense', expense_date: '2026-05-24', category: '広告宣伝費', item_name: 'Instagram広告費',
+			partner: '', amount: 32000, payment_method: 'クレジットカード', memo: '', season_key: null,
+			admin_finance_receipts: [receipt(7, 'electronic', null), receipt(8, 'paper', true), receipt(9, 'unconfirmed', null)],
+		}];
+
+		const response = await GET(new Request('http://localhost/api/admin/kpi/cost-profit?year=2026'));
+		const body = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(body.data.expenses[0].receipts.map((r: Record<string, unknown>) => [r.id, r.evidenceKind, r.paperOriginalKept]))
+			.toEqual([[7, 'electronic', null], [8, 'paper', true], [9, 'unconfirmed', null]]);
+		// 当年度の一覧の射影が、埋め込みの証憑に種類の2列を持つ。
+		const listing = expenseSelectColumns.find((columns) => columns.includes('admin_finance_receipts('));
+		expect(listing).toMatch(/admin_finance_receipts\([^)]*evidence_kind[^)]*\)/);
+		expect(listing).toMatch(/admin_finance_receipts\([^)]*paper_original_kept[^)]*\)/);
+	});
+});
+
+describe('POST /api/admin/kpi/cost-profit（証憑の種類）', () => {
+	beforeEach(() => {
+		jest.clearAllMocks();
+		authorizeMock.mockResolvedValue(ADMIN);
+	});
+
+	function postAttach(receiptFields: Record<string, unknown>) {
+		return POST(new Request('http://localhost/api/admin/kpi/cost-profit', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				operation: 'receipt.attach',
+				expenseId: 28,
+				receipt: { storagePath: '2026/28/a.pdf', fileName: 'a.pdf', mimeType: 'application/pdf', fileSize: 10, ...receiptFields },
+			}),
+		}));
+	}
+
+	it('FREQ-559-AC-02: receipt.attachは種類を受け紙には原本の有無を求め未指定は未確認のまま', async () => {
+		const single = jest.fn().mockResolvedValue({ data: { id: 3 }, error: null });
+		const insert = jest.fn().mockReturnValue({ select: () => ({ single }) });
+		createServiceMock.mockResolvedValue({ from: jest.fn(() => ({ insert })) } as never);
+
+		expect((await postAttach({ evidenceKind: 'electronic' })).status).toBe(200);
+		expect(insert).toHaveBeenLastCalledWith(expect.objectContaining({ evidence_kind: 'electronic', paper_original_kept: null }));
+		expect((await postAttach({ evidenceKind: 'paper', paperOriginalKept: true })).status).toBe(200);
+		expect(insert).toHaveBeenLastCalledWith(expect.objectContaining({ evidence_kind: 'paper', paper_original_kept: true }));
+		expect((await postAttach({ evidenceKind: 'paper', paperOriginalKept: false })).status).toBe(200);
+		expect(insert).toHaveBeenLastCalledWith(expect.objectContaining({ evidence_kind: 'paper', paper_original_kept: false }));
+
+		// 種類を送らない画面（Task 11 の前）は、DB の既定の「未確認」に任せて列を送らない。
+		expect((await postAttach({})).status).toBe(200);
+		const omitted = insert.mock.lastCall?.[0] as Record<string, unknown>;
+		expect(omitted).not.toHaveProperty('evidence_kind');
+		expect(omitted).not.toHaveProperty('paper_original_kept');
+
+		const insertCount = insert.mock.calls.length;
+		for (const fields of [
+			{ evidenceKind: 'paper' },
+			{ evidenceKind: 'paper', paperOriginalKept: 'true' },
+			{ evidenceKind: 'electronic', paperOriginalKept: false },
+			{ paperOriginalKept: true },
+			{ evidenceKind: 'unconfirmed' },
+			{ evidenceKind: 'scan' },
+		]) {
+			const response = await postAttach(fields);
+			expect({ fields, status: response.status }).toEqual({ fields, status: 400 });
+		}
+		expect(insert).toHaveBeenCalledTimes(insertCount);
 	});
 });
 

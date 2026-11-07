@@ -60,3 +60,47 @@ export async function withAccountingPermissionBaseline(client: PgClient, assertS
       'acc_permissions',0,'acc_grants',0)`);
   await client.query(assertSql);
 }
+
+const s1Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p1_grants_receipts.sql'));
+/** The accounting S1 migration text (empty when it is missing, so the source contract fails visibly). */
+export const ACCOUNTING_S1_SQL = s1Files.length === 1 ? fs.readFileSync(path.join(directory, s1Files[0]), 'utf8') : '';
+export const ACCOUNTING_S1_FILES = s1Files;
+
+/** One section of S1 between `-- ACC_S1_<name>_BEGIN` and `-- ACC_S1_<name>_END`. */
+export function accountingS1Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+  return ACCOUNTING_S1_SQL.split(`-- ACC_S1_${name}_BEGIN\n`)[1]?.split(`-- ACC_S1_${name}_END`)[0] ?? '';
+}
+
+/** The twelve accounting tables S1 tightens (FREQ-553-AC-02). */
+export const FINANCE_TABLES = [
+  'admin_finance_entry_review_acks', 'admin_finance_entry_revisions', 'admin_finance_evidence_unavailable_records',
+  'admin_finance_expense_templates', 'admin_finance_expenses', 'admin_finance_fixed_assets', 'admin_finance_partners',
+  'admin_finance_receipts', 'admin_finance_seasons', 'admin_finance_summary_options', 'admin_finance_year_closings',
+  'admin_finance_years',
+] as const;
+
+/** The eight sequences the twelve tables own (the other four have natural keys). */
+export const FINANCE_SEQUENCES = [
+  'admin_finance_entry_review_acks_id_seq', 'admin_finance_entry_revisions_id_seq', 'admin_finance_expense_templates_id_seq',
+  'admin_finance_expenses_id_seq', 'admin_finance_fixed_assets_id_seq', 'admin_finance_partners_id_seq',
+  'admin_finance_receipts_id_seq', 'admin_finance_summary_options_id_seq',
+] as const;
+
+/** The sequences the twelve tables own, read from pg_depend (auto / internal), sorted by name. */
+export async function ownedFinanceSequences(client: PgClient): Promise<string[]> {
+  const result = await client.query(
+    `select s.relname::text as name
+     from pg_depend d join pg_class s on s.oid = d.objid and s.relkind = 'S'
+     where d.classid = 'pg_class'::regclass and d.refclassid = 'pg_class'::regclass and d.deptype in ('a', 'i')
+       and d.refobjid = any (select ('public.' || t)::regclass::oid from unnest($1::text[]) as t)
+     order by 1 collate "C"`,
+    [[...FINANCE_TABLES]],
+  );
+  return result.rows.map((row) => row.name as string);
+}
+
+/** Today's date in Japan (YYYY-MM-DD). Entry dates stay inside the opening year .. this JST year + 1 window. */
+export function japanToday(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(new Date());
+}

@@ -22,6 +22,20 @@ const ALLOWED_MIME_TYPES = [
 
 const receiptPathSchema = z.string().trim().min(1).max(500);
 
+// 証憑の種類（FREQ-559）。未確認は移行前の行だけの状態で、ここからは入れられない。
+// 種類を送らない画面（Task 11 の前）の証憑は、DB の既定の「未確認」のまま残す。
+const receiptEvidenceSchema = z.object({
+	evidenceKind: z.enum(['electronic', 'paper']).optional(),
+	paperOriginalKept: z.enum(['true', 'false']).transform((value) => value === 'true').optional(),
+}).superRefine((value, context) => {
+	if (value.evidenceKind === 'paper' && value.paperOriginalKept === undefined) {
+		context.addIssue({ code: 'custom', path: ['paperOriginalKept'], message: 'Paper receipts need paperOriginalKept' });
+	}
+	if (value.evidenceKind !== 'paper' && value.paperOriginalKept !== undefined) {
+		context.addIssue({ code: 'custom', path: ['paperOriginalKept'], message: 'Only paper receipts carry paperOriginalKept' });
+	}
+});
+
 /** 閲覧用の署名付きURLを発行する。 */
 export async function GET(request: Request) {
 	try {
@@ -38,7 +52,7 @@ export async function GET(request: Request) {
 		// 登録済みの証憑だけを対象にする（任意パスの署名を防ぐ）。
 		const { data: receipt, error: lookupError } = await supabase
 			.from('admin_finance_receipts')
-			.select('id, storage_path, file_name')
+			.select('id, storage_path, file_name, evidence_kind, paper_original_kept')
 			.eq('storage_path', parsedPath.data)
 			.maybeSingle();
 
@@ -54,7 +68,13 @@ export async function GET(request: Request) {
 		if (error || !data?.signedUrl) throw error ?? new Error('Failed to sign URL');
 
 		return NextResponse.json({
-			data: { url: data.signedUrl, fileName: receipt.file_name, expiresIn: SIGNED_URL_TTL_SECONDS },
+			data: {
+				url: data.signedUrl,
+				fileName: receipt.file_name,
+				expiresIn: SIGNED_URL_TTL_SECONDS,
+				evidenceKind: receipt.evidence_kind,
+				paperOriginalKept: receipt.paper_original_kept,
+			},
 		});
 	} catch (error) {
 		console.error('GET /api/admin/kpi/cost-profit/receipt error:', error);
@@ -84,6 +104,13 @@ export async function POST(request: Request) {
 		const parsedEntryId = z.coerce.number().int().positive().safeParse(entryIdRaw);
 		if (!parsedEntryId.success) {
 			return NextResponse.json({ error: 'Invalid entryId' }, { status: 400 });
+		}
+		const parsedEvidence = receiptEvidenceSchema.safeParse({
+			evidenceKind: formData?.get('evidenceKind') ?? undefined,
+			paperOriginalKept: formData?.get('paperOriginalKept') ?? undefined,
+		});
+		if (!parsedEvidence.success) {
+			return NextResponse.json({ error: 'Invalid evidenceKind' }, { status: 400 });
 		}
 		if (file.size <= 0 || file.size > MAX_FILE_SIZE) {
 			return NextResponse.json(
@@ -131,6 +158,12 @@ export async function POST(request: Request) {
 				mime_type: file.type,
 				file_size: file.size,
 				uploaded_by: authz.userId,
+				...(parsedEvidence.data.evidenceKind
+					? {
+						evidence_kind: parsedEvidence.data.evidenceKind,
+						paper_original_kept: parsedEvidence.data.paperOriginalKept ?? null,
+					}
+					: {}),
 			})
 			.select('id')
 			.single();

@@ -117,6 +117,16 @@ const mutationSchema = z.discriminatedUnion('operation', [
 			fileName: z.string().trim().min(1).max(255),
 			mimeType: z.string().trim().min(1).max(120),
 			fileSize: z.coerce.number().int().positive().max(20 * 1024 * 1024),
+			// 証憑の種類（FREQ-559）。receipt/route.ts の POST と同じ決まり。未指定は DB の既定の「未確認」のまま。
+			evidenceKind: z.enum(['electronic', 'paper']).optional(),
+			paperOriginalKept: z.boolean().optional(),
+		}).superRefine((value, context) => {
+			if (value.evidenceKind === 'paper' && value.paperOriginalKept === undefined) {
+				context.addIssue({ code: 'custom', path: ['paperOriginalKept'], message: 'Paper receipts need paperOriginalKept' });
+			}
+			if (value.evidenceKind !== 'paper' && value.paperOriginalKept !== undefined) {
+				context.addIssue({ code: 'custom', path: ['paperOriginalKept'], message: 'Only paper receipts carry paperOriginalKept' });
+			}
 		}),
 	}),
 	z.object({
@@ -275,6 +285,8 @@ type ReceiptRow = {
 	mime_type: string;
 	file_size: number;
 	created_at: string;
+	evidence_kind: 'electronic' | 'paper' | 'unconfirmed';
+	paper_original_kept: boolean | null;
 };
 
 type CumulativeEntryRow = {
@@ -468,6 +480,8 @@ function mapExpense(row: ExpenseRow) {
 			mimeType: receipt.mime_type,
 			fileSize: Number(receipt.file_size),
 			createdAt: receipt.created_at,
+			evidenceKind: receipt.evidence_kind,
+			paperOriginalKept: receipt.paper_original_kept,
 		})),
 		evidenceUnavailable: unavailable ? {
 			reason: unavailable.reason,
@@ -725,7 +739,7 @@ export async function GET(request: Request) {
 			// 論理削除された取引は集計・表示から除く（履歴には残る）。
 			supabase
 				.from('admin_finance_expenses')
-				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method, memo, season_key, fixed_asset_exempt, fixed_asset_exempt_reason, fixed_asset_reviewed_at, admin_finance_receipts(id, storage_path, file_name, mime_type, file_size, created_at), admin_finance_evidence_unavailable_records(reason, note, recorded_at, recorded_by, updated_at, updated_by)')
+				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method, memo, season_key, fixed_asset_exempt, fixed_asset_exempt_reason, fixed_asset_reviewed_at, admin_finance_receipts(id, storage_path, file_name, mime_type, file_size, created_at, evidence_kind, paper_original_kept), admin_finance_evidence_unavailable_records(reason, note, recorded_at, recorded_by, updated_at, updated_by)')
 				.eq('fiscal_year', parsedYear.data)
 				.is('deleted_at', null)
 				.order('expense_date', { ascending: false })
@@ -846,7 +860,7 @@ export async function GET(request: Request) {
 		const expensesResult = isMissingFixedAssetReviewColumn(initialExpensesResult.error)
 			? await supabase
 				.from('admin_finance_expenses')
-				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method, memo, season_key, admin_finance_receipts(id, storage_path, file_name, mime_type, file_size, created_at), admin_finance_evidence_unavailable_records(reason, note, recorded_at, recorded_by, updated_at, updated_by)')
+				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method, memo, season_key, admin_finance_receipts(id, storage_path, file_name, mime_type, file_size, created_at, evidence_kind, paper_original_kept), admin_finance_evidence_unavailable_records(reason, note, recorded_at, recorded_by, updated_at, updated_by)')
 				.eq('fiscal_year', parsedYear.data)
 				.is('deleted_at', null)
 				.order('expense_date', { ascending: false })
@@ -1248,6 +1262,9 @@ export async function POST(request: Request) {
 					mime_type: receipt.mimeType,
 					file_size: receipt.fileSize,
 					uploaded_by: authz.userId,
+					...(receipt.evidenceKind
+						? { evidence_kind: receipt.evidenceKind, paper_original_kept: receipt.paperOriginalKept ?? null }
+						: {}),
 				})
 				.select('id')
 				.single();

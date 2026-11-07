@@ -40,6 +40,18 @@ const TABLE_EXPECTATIONS: TableExpectation[] = [
     authenticated: [],
   },
   { group: '自分の行', tables: ['profiles'], anon: [], authenticated: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] },
+  // 会計の12表（FREQ-553-AC-02、移行 accounting_p1_grants_receipts）。読み書きは service_role の route だけ
+  {
+    group: '会計の表',
+    tables: [
+      'admin_finance_entry_review_acks', 'admin_finance_entry_revisions', 'admin_finance_evidence_unavailable_records',
+      'admin_finance_expense_templates', 'admin_finance_expenses', 'admin_finance_fixed_assets', 'admin_finance_partners',
+      'admin_finance_receipts', 'admin_finance_seasons', 'admin_finance_summary_options', 'admin_finance_year_closings',
+      'admin_finance_years',
+    ],
+    anon: [],
+    authenticated: [],
+  },
 ];
 const TABLE_CASES = TABLE_EXPECTATIONS.flatMap((expectation) => expectation.tables.map((table) => [expectation.group, table, expectation] as const));
 
@@ -83,15 +95,27 @@ const FUNCTION_EXPECTATIONS: FunctionExpectation[] = [
   { name: 'consume_password_change_challenge', anon: false, authenticated: false, postgres: true },
 ];
 
-const SEQUENCES = ['stockists_id_seq', 'rate_limit_counters_id_seq'];
-const BUCKETS = ['look-images', 'news-images'];
+const SEQUENCES = [
+  'stockists_id_seq',
+  'rate_limit_counters_id_seq',
+  // 会計の12表が持つ8つの連番（FREQ-553-AC-02）
+  'admin_finance_entry_review_acks_id_seq',
+  'admin_finance_entry_revisions_id_seq',
+  'admin_finance_expense_templates_id_seq',
+  'admin_finance_expenses_id_seq',
+  'admin_finance_fixed_assets_id_seq',
+  'admin_finance_partners_id_seq',
+  'admin_finance_receipts_id_seq',
+  'admin_finance_summary_options_id_seq',
+];
+const BUCKETS = ['look-images', 'news-images', 'finance-receipts'];
 
 /**
  * 既知の例外。他の領域・他の波の持ち物で、ここでは直さず「持っているかもしれない」上限として載せる。
  * 締まった表は落ちない（console.info に出る）。一覧にも例外にも無い表に広い権限が付いたら歯止めが落ちる。
  * G の表（注文・発送・在庫・発注）は各移行が明示の GRANT を持つ前提なので、ここには載せない。
  */
-const KNOWN_EXCEPTION_PREFIXES = ['admin_finance_', 'admin_kpi_'];
+const KNOWN_EXCEPTION_PREFIXES = ['admin_kpi_'];
 const KNOWN_EXCEPTION_TABLES = [
   'admin_costing_items',
   'admin_expense_cost_allocations',
