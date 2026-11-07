@@ -148,6 +148,7 @@ import {
   REVIEW_QUEUE_DEFS,
   ACCOUNT_TYPE_LABELS,
   type Receipt,
+  type ReceiptEvidence,
   type EvidenceUnavailableReason,
   evidenceUnavailableReasonRequiresNote,
   type EntryRevision,
@@ -164,7 +165,6 @@ import {
   type StripeAccounting,
   EMPTY_STRIPE_ACCOUNTING,
   emptyEntryForm,
-  accountOptionsFor,
   shiyouOptionsFor,
   paymentOptionsFor,
   SAVE_TEMPLATE_SENTINEL,
@@ -318,7 +318,21 @@ export function useCostProfitModel({
   const [receiptDrawerEntryIds, setReceiptDrawerEntryIds] = useState<number[]>(
     [],
   );
-  const [pendingReceipts, setPendingReceipts] = useState<File[]>([]);
+  // 保存前の証憑は、選んだ時の種類と一緒に溜める（保存の時に種類が変わっていても選んだ時の種類で送る）。
+  const [pendingReceipts, setPendingReceipts] = useState<
+    Array<{ file: File; evidence: ReceiptEvidence }>
+  >([]);
+  // 添付の前に選ぶ証憑の種類（FREQ-559-AC-03）。紙は原本を残してあることの確かめが要る。
+  const [receiptKindChoice, setReceiptKindChoice] = useState<
+    "" | "electronic" | "paper"
+  >("");
+  const [receiptPaperKept, setReceiptPaperKept] = useState(false);
+  const receiptEvidence: ReceiptEvidence | null =
+    receiptKindChoice === "electronic"
+      ? { evidenceKind: "electronic" }
+      : receiptKindChoice === "paper" && receiptPaperKept
+        ? { evidenceKind: "paper", paperOriginalKept: true }
+        : null;
   const [receiptUnavailableFormOpen, setReceiptUnavailableFormOpen] =
     useState(false);
   const [receiptUnavailableReason, setReceiptUnavailableReason] = useState<
@@ -438,6 +452,8 @@ export function useCostProfitModel({
     `${seasonKey}-ITEM-001`,
   );
   const [isDataLoading, setIsDataLoading] = useState(true);
+  // 最後の読み込みが失敗した。財務前提の保存を止める（読めていない期間へ書かない）。
+  const [loadFailed, setLoadFailed] = useState(false);
   const [archiveHealth, setArchiveHealth] = useState<LegalArchiveHealth | null>(
     null,
   );
@@ -596,6 +612,7 @@ export function useCostProfitModel({
       setPeriodNotices(payload.data.periodNotices ?? NO_PERIOD_NOTICES);
       setHasNoPeriod(payload.data.period === null);
       setJournalIncomplete(false);
+      setLoadFailed(false);
       setExpenses(payload.data.expenses);
       setIncomes(payload.data.incomes ?? []);
       setProducts(payload.data.products);
@@ -634,6 +651,7 @@ export function useCostProfitModel({
       setPeriodNotices(NO_PERIOD_NOTICES);
       setHasNoPeriod(false);
       setJournalIncomplete(incomplete);
+      setLoadFailed(true);
       setPlan(EMPTY_PLAN);
       setExpenses([]);
       setIncomes([]);
@@ -741,7 +759,12 @@ export function useCostProfitModel({
       let total = 0;
       for (const [code, amount] of openingBalances) {
         const account = accountByCode(code);
-        if (account && pick(account)) total += amount;
+        if (!account || !pick(account)) continue;
+        // 資産の控除科目（減価償却累計額 1590 など、貸方が正の資産）は借方−貸方で引く。
+        total +=
+          account.type === "asset" && account.normalSide === "credit"
+            ? -amount
+            : amount;
       }
       return total;
     };
@@ -1308,8 +1331,8 @@ export function useCostProfitModel({
         Number.isFinite(createdId) &&
         pendingReceipts.length > 0
       ) {
-        for (const file of pendingReceipts) {
-          await uploadReceiptFile(createdId, file);
+        for (const { file, evidence } of pendingReceipts) {
+          await uploadReceiptFile(createdId, file, evidence);
         }
         setPendingReceipts([]);
       }
@@ -1509,35 +1532,6 @@ export function useCostProfitModel({
       notifySuccess("摘要を削除しました。");
     } catch (error) {
       notifyError(error, "摘要の削除に失敗しました。");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // 事業形態切替。勘定科目の選択肢が変わるため、選択済みの科目が
-  // 新しい選択肢に無ければ未選択へ戻す。
-  const handleBusinessTypeChange = async (next: BusinessType) => {
-    setBusinessType(next);
-    setForm((current) => {
-      const stillAvailable = accountOptionsFor(current.entryType, next).some(
-        (option) => option.value === current.category,
-      );
-      return stillAvailable ? current : { ...current, category: "" };
-    });
-    try {
-      setIsSaving(true);
-      setFormMessage(null);
-      await postMutation({
-        operation: "businessType.update",
-        fiscalYear,
-        businessType: next,
-      });
-    } catch (error) {
-      setFormMessage(
-        error instanceof Error
-          ? error.message
-          : "事業形態の保存に失敗しました。",
-      );
     } finally {
       setIsSaving(false);
     }
@@ -2298,7 +2292,13 @@ export function useCostProfitModel({
         .reduce((total, entry) => total + entry.amount, 0);
     const income = sum(incomes);
     const expense = sum(expenses);
-    return { month, income, expense, balance: income - expense };
+    return {
+      year: Number(prefix.slice(0, 4)),
+      month,
+      income,
+      expense,
+      balance: income - expense,
+    };
   }, [expenses, incomes, periodBounds, today]);
 
   // 確認キュー。優先順（証憑 → 金額 → 科目 → 訂正）に並べ、空のグループは出さない。
@@ -2742,10 +2742,18 @@ export function useCostProfitModel({
 
   // --- 証憑（電子取引データ）---
   // 1ファイル分のアップロード。取引IDだけを取るので、保存直後の新規取引にも使える。
-  const uploadReceiptFile = async (entryId: number, file: File) => {
+  const uploadReceiptFile = async (
+    entryId: number,
+    file: File,
+    evidence: ReceiptEvidence,
+  ) => {
     const formData = new FormData();
     formData.append("entryId", String(entryId));
     formData.append("file", file);
+    formData.append("evidenceKind", evidence.evidenceKind);
+    if (evidence.evidenceKind === "paper") {
+      formData.append("paperOriginalKept", String(evidence.paperOriginalKept));
+    }
 
     const response = await clientFetch("/api/admin/kpi/cost-profit/receipt", {
       method: "POST",
@@ -2762,11 +2770,15 @@ export function useCostProfitModel({
   /** ドロップ／選択された証憑をまとめて添付する。 */
   const handleAttachReceipts = async (entry: Expense, files: File[]) => {
     if (files.length === 0) return;
+    if (!receiptEvidence) {
+      setReceiptMessage("証憑の種類を選んでください。");
+      return;
+    }
     try {
       setUploadingEntryId(entry.id);
       setReceiptMessage(null);
       for (const file of files) {
-        await uploadReceiptFile(entry.id, file);
+        await uploadReceiptFile(entry.id, file, receiptEvidence);
       }
       await loadFinanceData();
       setReceiptMessage(
@@ -4260,6 +4272,11 @@ export function useCostProfitModel({
     setReceiptDrawerEntryIds,
     pendingReceipts,
     setPendingReceipts,
+    receiptKindChoice,
+    setReceiptKindChoice,
+    receiptPaperKept,
+    setReceiptPaperKept,
+    receiptEvidence,
     receiptUnavailableFormOpen,
     setReceiptUnavailableFormOpen,
     receiptUnavailableReason,
@@ -4333,6 +4350,9 @@ export function useCostProfitModel({
     selectedProductId,
     setSelectedProductId,
     isDataLoading,
+    // 選んだ期間を読み終え、失敗していない時だけ財務前提を保存できる。
+    planEditable:
+      !isDataLoading && !loadFailed && loadedScope === requestScope,
     setIsDataLoading,
     archiveHealth,
     setArchiveHealth,
@@ -4445,7 +4465,6 @@ export function useCostProfitModel({
     handleEntryTypeChange,
     handleSaveSummaryOption,
     handleDeleteSummaryOption,
-    handleBusinessTypeChange,
     handleAddPartner,
     handleTemplateSelect,
     handleSaveTemplate,

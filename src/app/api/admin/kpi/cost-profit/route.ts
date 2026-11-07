@@ -141,8 +141,8 @@ const mutationSchema = z.discriminatedUnion('operation', [
 			fileName: z.string().trim().min(1).max(255),
 			mimeType: z.string().trim().min(1).max(120),
 			fileSize: z.coerce.number().int().positive().max(20 * 1024 * 1024),
-			// 証憑の種類（FREQ-559）。receipt/route.ts の POST と同じ決まり。未指定は DB の既定の「未確認」のまま。
-			evidenceKind: z.enum(['electronic', 'paper']).optional(),
+			// 証憑の種類（FREQ-559）。receipt/route.ts の POST と同じ決まりで必須（紙は原本の有無も必須）。
+			evidenceKind: z.enum(['electronic', 'paper']),
 			paperOriginalKept: z.boolean().optional(),
 		}).superRefine((value, context) => {
 			if (value.evidenceKind === 'paper' && value.paperOriginalKept === undefined) {
@@ -1470,9 +1470,8 @@ export async function POST(request: Request) {
 					mime_type: receipt.mimeType,
 					file_size: receipt.fileSize,
 					uploaded_by: authz.userId,
-					...(receipt.evidenceKind
-						? { evidence_kind: receipt.evidenceKind, paper_original_kept: receipt.paperOriginalKept ?? null }
-						: {}),
+					evidence_kind: receipt.evidenceKind,
+					paper_original_kept: receipt.paperOriginalKept ?? null,
 				})
 				.select('id')
 				.single();

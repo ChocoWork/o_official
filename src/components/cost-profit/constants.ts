@@ -16,7 +16,13 @@ import type { FixedAssetLinkStatus } from "@/lib/finance/fixed-asset-link";
 import type { EvidenceStatus } from "@/lib/finance/evidence-status";
 import type { EntryType, FinanceEntry } from "@/lib/finance/journal";
 
-export type CostProfitTab = "summary" | "expenses" | "journal" | "products" | "tax";
+export type CostProfitTab =
+  | "summary"
+  | "expenses"
+  | "journal"
+  | "products"
+  | "tax"
+  | "settings";
 
 // 帳簿タブ内のサブビュー。
 // 仕訳帳と総勘定元帳は「同じ仕訳を科目で切って見る」だけの違いなので1枚に畳み、
@@ -91,22 +97,6 @@ export const DEPRECIATION_BAR_COLOR = "#c3d5f2";
 
 /** 残高推移の色。当期は黒の実線、前期末は灰の破線、異常値は橙の点。 */
 export const LEDGER_TREND_COLOR = "#111111";
-
-/** 元帳の月ラベル。残高推移の横軸に使う。 */
-export const LEDGER_MONTH_LABELS = [
-  "1月",
-  "2月",
-  "3月",
-  "4月",
-  "5月",
-  "6月",
-  "7月",
-  "8月",
-  "9月",
-  "10月",
-  "11月",
-  "12月",
-] as const;
 
 /** 仕訳一覧の1ページあたりの表示件数の選択肢。 */
 export const LEDGER_PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
@@ -275,7 +265,15 @@ export type Receipt = {
   mimeType: string;
   fileSize: number;
   createdAt: string;
+  /** 証憑の種類（FREQ-559）。unconfirmed は移行前の行だけ。 */
+  evidenceKind?: "electronic" | "paper" | "unconfirmed";
+  paperOriginalKept?: boolean | null;
 };
+
+/** 添付のときに選ぶ証憑の種類。紙は原本を残してあることの確かめが要る。 */
+export type ReceiptEvidence =
+  | { evidenceKind: "electronic" }
+  | { evidenceKind: "paper"; paperOriginalKept: true };
 
 export type EvidenceUnavailableReason =
   | "bank_history_expired"
@@ -479,6 +477,7 @@ export const COST_PROFIT_TABS: Array<{ key: CostProfitTab; label: string }> = [
   { key: "journal", label: "帳簿" },
   { key: "products", label: "商品原価" },
   { key: "tax", label: "税務レポート" },
+  { key: "settings", label: "設定・期間" },
 ];
 
 export const COST_LABELS: Array<{

@@ -65,6 +65,7 @@ export function SummaryView({
     isCumulativeScope,
     profitScope,
     handleSavePlan,
+    planEditable,
     handleStatementExport,
   } = model;
   const stripeSettlementView = <StripeSettlementView model={model} />;
@@ -827,7 +828,7 @@ export function SummaryView({
             size="sm"
             className="font-acumin"
             onClick={() => void handleSavePlan()}
-            disabled={isSaving}
+            disabled={isSaving || !planEditable}
           >
             {isSaving ? "保存中..." : "財務前提を保存"}
           </Button>

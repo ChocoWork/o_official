@@ -19,6 +19,8 @@ import { ExpensesView } from "@/components/cost-profit/expenses-view";
 import { JournalView } from "@/components/cost-profit/journal-view";
 import { ProductView } from "@/components/cost-profit/product-view";
 import { TaxView } from "@/components/cost-profit/tax-view";
+import { PeriodPicker } from "@/components/cost-profit/period-picker";
+import { SettingsView } from "@/components/cost-profit/settings-view";
 
 /** 期間の状態の知らせ（期間が無い・一部しか読めない・まだ動く・期限を過ぎた・入れ漏れ）。 */
 function PeriodNotice({
@@ -111,11 +113,6 @@ export default function CostProfitSection(props: CostProfitProps) {
         {view}
       </>
     );
-  // 新しい期間が先頭。値は親が持つ選択、未選択なら読み込んだ期間。
-  const periodOptions = [...periods].reverse().map((option) => ({
-    value: option.id,
-    label: option.name,
-  }));
   return (
     <div className="min-w-0">
       {/* タブ行の右端に同期ステータスと再読み込みを並べる。詳細な文言は右下の Toast へ。 */}
@@ -134,16 +131,11 @@ export default function CostProfitSection(props: CostProfitProps) {
             年度選択。会計期間（暦年）はどのサブタブでもここから切り替える。
             期間が 1/1〜12/31 なので表記は「年度」ではなく「年」。
           */}
-          {onPeriodChange && periodOptions.length > 0 ? (
-            <SingleSelect
-              variant="dropdown"
-              size="2xs"
-              shape="rounded"
-              className="font-acumin"
-              aria-label="会計期間"
-              options={periodOptions}
-              value={periodId ?? period?.id ?? periodOptions[0].value}
-              onValueChange={(value) => onPeriodChange(value)}
+          {onPeriodChange && periods.length > 0 ? (
+            <PeriodPicker
+              periods={periods}
+              value={periodId ?? period?.id ?? null}
+              onChange={onPeriodChange}
             />
           ) : fiscalYearOptions && onFiscalYearChange ? (
             <SingleSelect
@@ -227,6 +219,9 @@ export default function CostProfitSection(props: CostProfitProps) {
         />
       ) : null}
       {activeTab === "tax" ? withCountNotices(taxView) : null}
+      {activeTab === "settings" ? (
+        <SettingsView onChanged={() => void loadFinanceData()} />
+      ) : null}
       {payoutConfirmDialog}
 
       {/* エラー・完了の詳細は画面右下の Toast に出す。成功は自動で消し、エラーは操作で閉じる。

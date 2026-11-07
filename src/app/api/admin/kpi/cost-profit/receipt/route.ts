@@ -22,10 +22,10 @@ const ALLOWED_MIME_TYPES = [
 
 const receiptPathSchema = z.string().trim().min(1).max(500);
 
-// 証憑の種類（FREQ-559）。未確認は移行前の行だけの状態で、ここからは入れられない。
-// 種類を送らない画面（Task 11 の前）の証憑は、DB の既定の「未確認」のまま残す。
+// 証憑の種類（FREQ-559）。必須。未確認は移行前の行だけの状態で、ここからは入れられない。
+// 紙は原本を残したかどうか（paperOriginalKept）も必須。DB の CHECK は足さず、route だけで決める。
 const receiptEvidenceSchema = z.object({
-	evidenceKind: z.enum(['electronic', 'paper']).optional(),
+	evidenceKind: z.enum(['electronic', 'paper']),
 	paperOriginalKept: z.enum(['true', 'false']).transform((value) => value === 'true').optional(),
 }).superRefine((value, context) => {
 	if (value.evidenceKind === 'paper' && value.paperOriginalKept === undefined) {
@@ -158,12 +158,8 @@ export async function POST(request: Request) {
 				mime_type: file.type,
 				file_size: file.size,
 				uploaded_by: authz.userId,
-				...(parsedEvidence.data.evidenceKind
-					? {
-						evidence_kind: parsedEvidence.data.evidenceKind,
-						paper_original_kept: parsedEvidence.data.paperOriginalKept ?? null,
-					}
-					: {}),
+				evidence_kind: parsedEvidence.data.evidenceKind,
+				paper_original_kept: parsedEvidence.data.paperOriginalKept ?? null,
 			})
 			.select('id')
 			.single();

@@ -6,8 +6,8 @@ import { currentFiscalYear, formatFiscalYearLabel } from '@/lib/finance/fiscal-y
 
 // ACCOUNTING タブ。財務概要 / 取引管理 / 帳簿 / 商品原価 / 税務レポートを
 // CostProfitSection がサブタブとして描画し、ここでは会計の期間だけを決める。
-// 期間の一覧は cost-profit GET の periods から CostProfitSection がサブタブ行の右端に出す
-// （Task 11 で period-picker に替える）。未選択の間は今年を個人の暦年の期間に結んで読む。
+// 期間の一覧は cost-profit GET の periods から、CostProfitSection がサブタブ行の右端の
+// PeriodPicker に出す。未選択の間は今年を個人の暦年の期間に結んで読む。期間は設定・期間のタブで作る。
 // シーズン（S/S・A/W）は商品原価タブ内のボタンで切り替える。
 export default function AccountingSection() {
 	const current = useMemo(() => currentFiscalYear(), []);

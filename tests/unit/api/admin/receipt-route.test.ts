@@ -100,7 +100,7 @@ describe('POST /api/admin/kpi/cost-profit/receipt', () => {
 			throw new Error('cookie finalization failed');
 		});
 
-		const response = await POST(requestWithReceipt());
+		const response = await POST(requestWithReceipt({ evidenceKind: 'electronic' }));
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({
@@ -115,7 +115,7 @@ describe('POST /api/admin/kpi/cost-profit/receipt', () => {
 		consoleError.mockRestore();
 	});
 
-	it('FREQ-559-AC-02: receiptのPOSTは種類を受け紙には原本の有無を求め未指定は未確認のまま', async () => {
+	it('FREQ-559-AC-02: receiptのPOSTは種類を必須にし紙には原本の有無を必須にする', async () => {
 		// 電子の証憑は種類だけを保存し、原本の有無は持たない。
 		expect((await POST(requestWithReceipt({ evidenceKind: 'electronic' }))).status).toBe(200);
 		expect(supabase.receiptQuery.insert).toHaveBeenLastCalledWith(
@@ -132,15 +132,12 @@ describe('POST /api/admin/kpi/cost-profit/receipt', () => {
 			expect.objectContaining({ evidence_kind: 'paper', paper_original_kept: false }),
 		);
 
-		// 種類を送らない画面（Task 11 の前）は、DB の既定の「未確認」に任せて列を送らない。
-		expect((await POST(requestWithReceipt())).status).toBe(200);
-		const omitted = supabase.receiptQuery.insert.mock.lastCall?.[0] as Record<string, unknown>;
-		expect(omitted).not.toHaveProperty('evidence_kind');
-		expect(omitted).not.toHaveProperty('paper_original_kept');
-
+		// 種類は必須。送らない要求は断り、DB の既定の「未確認」を新しく作らない。
 		const insertCount = supabase.receiptQuery.insert.mock.calls.length;
 		const uploadCount = supabase.bucket.upload.mock.calls.length;
 		const invalid: Array<Record<string, string>> = [
+			{},
+			{ evidenceKind: '' },
 			{ evidenceKind: 'paper' },
 			{ evidenceKind: 'paper', paperOriginalKept: 'yes' },
 			{ evidenceKind: 'electronic', paperOriginalKept: 'false' },

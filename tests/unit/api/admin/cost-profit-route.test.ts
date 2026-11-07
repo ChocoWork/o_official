@@ -811,7 +811,7 @@ describe('POST /api/admin/kpi/cost-profit（証憑の種類）', () => {
 		}));
 	}
 
-	it('FREQ-559-AC-02: receipt.attachは種類を受け紙には原本の有無を求め未指定は未確認のまま', async () => {
+	it('FREQ-559-AC-02: receipt.attachは種類を必須にし紙には原本の有無を必須にする', async () => {
 		const single = jest.fn().mockResolvedValue({ data: { id: 3 }, error: null });
 		const insert = jest.fn().mockReturnValue({ select: () => ({ single }) });
 		createServiceMock.mockResolvedValue({ from: jest.fn(() => ({ insert })) } as never);
@@ -823,14 +823,10 @@ describe('POST /api/admin/kpi/cost-profit（証憑の種類）', () => {
 		expect((await postAttach({ evidenceKind: 'paper', paperOriginalKept: false })).status).toBe(200);
 		expect(insert).toHaveBeenLastCalledWith(expect.objectContaining({ evidence_kind: 'paper', paper_original_kept: false }));
 
-		// 種類を送らない画面（Task 11 の前）は、DB の既定の「未確認」に任せて列を送らない。
-		expect((await postAttach({})).status).toBe(200);
-		const omitted = insert.mock.lastCall?.[0] as Record<string, unknown>;
-		expect(omitted).not.toHaveProperty('evidence_kind');
-		expect(omitted).not.toHaveProperty('paper_original_kept');
-
+		// 種類は必須。送らない要求は断り、DB の既定の「未確認」を新しく作らない。
 		const insertCount = insert.mock.calls.length;
 		for (const fields of [
+			{},
 			{ evidenceKind: 'paper' },
 			{ evidenceKind: 'paper', paperOriginalKept: 'true' },
 			{ evidenceKind: 'electronic', paperOriginalKept: false },

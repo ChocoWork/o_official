@@ -17,7 +17,6 @@ import { TabSegmentControl } from "@/components/ui/TabSegmentControl/TabSegmentC
 import { TextAreaField } from "@/components/ui/TextAreaField/TextAreaField";
 import { TextField } from "@/components/ui/TextField/TextField";
 import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
-import type { BusinessType } from "@/lib/finance/accounts";
 import type { EntryType } from "@/lib/finance/journal";
 import {
   EMPTY_ENTRY_FILTER,
@@ -78,6 +77,11 @@ export function ExpensesView({
     setReceiptDrawerEntryIds,
     pendingReceipts,
     setPendingReceipts,
+    receiptKindChoice,
+    setReceiptKindChoice,
+    receiptPaperKept,
+    setReceiptPaperKept,
+    receiptEvidence,
     receiptUnavailableFormOpen,
     setReceiptUnavailableFormOpen,
     receiptUnavailableReason,
@@ -139,7 +143,6 @@ export function ExpensesView({
     handleEntryTypeChange,
     handleSaveSummaryOption,
     handleDeleteSummaryOption,
-    handleBusinessTypeChange,
     handleAddPartner,
     handleTemplateSelect,
     handleSaveTemplate,
@@ -990,6 +993,55 @@ export function ExpensesView({
     </Dialog>
   );
 
+  // 添付の前に証憑の種類を選ぶ（FREQ-559-AC-03）。紙は原本を残してあることを確かめるまで添付しない。
+  const receiptKindPicker = (scope: "drawer" | "pending") => (
+    <fieldset className="space-y-2 rounded-sm border border-[#ededed] p-3">
+      <legend className="px-1 font-acumin lk-text-4xs text-[#474747]">
+        証憑の種類 <span className="text-red-700">*</span>
+      </legend>
+      {(
+        [
+          ["electronic", "電子で受け取った（PDF など）"],
+          ["paper", "紙あり（画像は写し）"],
+        ] as const
+      ).map(([value, label]) => (
+        <label
+          key={value}
+          className="flex items-center gap-2 font-acumin lk-text-4xs text-black"
+        >
+          <input
+            type="radio"
+            name={`receipt-kind-${scope}`}
+            value={value}
+            checked={receiptKindChoice === value}
+            onChange={() => {
+              setReceiptKindChoice(value);
+              setReceiptPaperKept(false);
+            }}
+          />
+          {label}
+        </label>
+      ))}
+      {receiptKindChoice === "paper" ? (
+        <label className="flex items-center gap-2 pl-5 font-acumin lk-text-4xs text-black">
+          <input
+            type="checkbox"
+            checked={receiptPaperKept}
+            onChange={(event) => setReceiptPaperKept(event.target.checked)}
+          />
+          紙の原本を残してある
+        </label>
+      ) : null}
+      {receiptEvidence === null ? (
+        <p className="font-acumin lk-text-5xs text-[#707070]">
+          {receiptKindChoice === "paper"
+            ? "紙の原本を残してあることを確かめると添付できます。"
+            : "種類を選ぶと添付できます。"}
+        </p>
+      ) : null}
+    </fieldset>
+  );
+
   // 証憑（電子取引データ）の追加。ドラッグ＆ドロップとクリック選択の両方を受ける。
   const receiptDrawer = (
     <Drawer
@@ -1022,6 +1074,7 @@ export function ExpensesView({
         >
           {receiptMessage}
         </LiveMessage>
+        {receiptKindPicker("drawer")}
         {receiptDrawerEntries.map((entry) => (
           <div
             key={entry.id}
@@ -1052,6 +1105,11 @@ export function ExpensesView({
                       <i className="ri-attachment-2 mr-1" aria-hidden="true" />
                       {receipt.fileName}
                     </button>
+                    {receipt.evidenceKind === "unconfirmed" ? (
+                      <span className="shrink-0 font-acumin lk-text-5xs text-[#b45309]">
+                        種類を確かめてください
+                      </span>
+                    ) : null}
                     <button
                       type="button"
                       className="shrink-0 text-[#888888] hover:text-black"
@@ -1076,7 +1134,8 @@ export function ExpensesView({
               busy={uploadingEntryId === entry.id}
               busyLabel="添付中..."
               disabled={
-                uploadingEntryId !== null && uploadingEntryId !== entry.id
+                receiptEvidence === null ||
+                (uploadingEntryId !== null && uploadingEntryId !== entry.id)
               }
               aria-label={`${entry.item}に証憑を添付`}
               label="ドラッグ＆ドロップ／クリックで選択"
@@ -1281,8 +1340,9 @@ export function ExpensesView({
         </div>
         <div className="block">
           <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
-            事業形態 <span className="text-red-700">*</span>
+            事業形態
           </span>
+          {/* 選んだ期間の事業の形を読み取り専用で示す。変えるのは設定・期間のタブ。 */}
           <SingleSelect
             variant="dropdown"
             block
@@ -1290,17 +1350,16 @@ export function ExpensesView({
             aria-label="事業形態"
             className="font-acumin"
             shape="rounded"
+            disabled
             options={BUSINESS_TYPE_OPTIONS.map((option) => ({
               value: option.value,
               label: option.label,
             }))}
             value={businessType}
-            onValueChange={(value) =>
-              void handleBusinessTypeChange(value as BusinessType)
-            }
+            onValueChange={() => undefined}
           />
           <p className="mt-1 font-acumin lk-text-4xs text-[#707070]">
-            選んだ事業形態で使える勘定科目だけを表示します。
+            選んだ期間の事業の形で使える勘定科目だけを表示します。事業の形は設定・期間のタブで変えます。
           </p>
         </div>
         <div className="block">
@@ -1672,21 +1731,28 @@ export function ExpensesView({
           </span>
           {editingEntryId === null ? (
             <>
+              {receiptKindPicker("pending")}
               <FileDropZone
                 size="2xs"
                 shape="rounded"
                 accept={RECEIPT_ACCEPT}
                 multiple
+                disabled={receiptEvidence === null}
                 aria-label="新規取引に証憑を添付"
                 label="ドラッグ＆ドロップ／クリックで選択"
                 hint="PDF・JPEG・PNG・WebP・HEIC（20MBまで）"
-                onFiles={(files) =>
-                  setPendingReceipts((current) => [...current, ...files])
-                }
+                onFiles={(files) => {
+                  if (!receiptEvidence) return;
+                  const evidence = receiptEvidence;
+                  setPendingReceipts((current) => [
+                    ...current,
+                    ...files.map((file) => ({ file, evidence })),
+                  ]);
+                }}
               />
               {pendingReceipts.length > 0 ? (
                 <ul className="mt-2 space-y-1">
-                  {pendingReceipts.map((file, index) => (
+                  {pendingReceipts.map(({ file, evidence }, index) => (
                     <li
                       key={`${file.name}-${index}`}
                       className="flex items-center justify-between gap-2"
@@ -1697,6 +1763,9 @@ export function ExpensesView({
                           aria-hidden="true"
                         />
                         {file.name}
+                        <span className="ml-1 text-[#707070]">
+                          （{evidence.evidenceKind === "paper" ? "紙あり" : "電子"}）
+                        </span>
                       </span>
                       <Button
                         variant="ghost"
@@ -2123,7 +2192,7 @@ export function ExpensesView({
           title={<span className={panelTitleClassName}>今月の収支</span>}
           actions={
             <span className="font-acumin lk-text-4xs text-[#707070] tabular-nums">
-              {fiscalYear}/{String(monthlyBalance.month).padStart(2, "0")}
+              {monthlyBalance.year}/{String(monthlyBalance.month).padStart(2, "0")}
             </span>
           }
         >

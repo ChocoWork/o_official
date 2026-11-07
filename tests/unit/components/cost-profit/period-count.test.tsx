@@ -320,6 +320,27 @@ describe('会計の画面を期間で数える', () => {
 		expect(screen.getAllByText('2028年6月').length).toBeGreaterThan(0);
 	});
 
+	it('FREQ-557-AC-01: 財務前提の期首の固定資産は減価償却累計額を引いた額で示す', async () => {
+		mockFinanceFetch(() => ({
+			status: 200,
+			body: { data: financeData({ opening: opening([['1535', 100_000], ['1590', -30_000], ['2910', -70_000]]) }) },
+		}));
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByText('財務前提を編集'));
+		// 1590 は貸方が正の資産の控除科目。借方−貸方で 100,000 − 30,000 = 70,000。
+		expect(screen.getByRole('spinbutton', { name: '固定資産' })).toHaveValue(70_000);
+		expect(screen.getByRole('button', { name: '財務前提を保存' })).not.toBeDisabled();
+	});
+
+	it('FREQ-557-AC-05: 期間を読み込めなかった間は財務前提を保存できない', async () => {
+		mockFinanceFetch(() => ({ status: 500, body: { error: '会計データの取得に失敗しました。' } }));
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期エラー');
+		fireEvent.click(screen.getByText('財務前提を編集'));
+		expect(screen.getByRole('button', { name: '財務前提を保存' })).toBeDisabled();
+	});
+
 	it('FREQ-557-AC-01: 財務前提の期首の5つの欄は期間の期首を読み取り専用で示し、保存は売上見込みだけを変える', async () => {
 		const legacyPlan = { salesRevenue: 1_000, openingCash: 11, accountsReceivable: 22, fixedAssets: 33, accountsPayable: 44, openingCapital: 55 };
 		const mockFetch = mockFinanceFetch(() => ({
