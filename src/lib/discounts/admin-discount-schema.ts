@@ -13,7 +13,9 @@ const CODE_PATTERN = /^[A-Z0-9-]{1,64}$/;
 const PREFIX_PATTERN = /^[A-Z0-9]([A-Z0-9-]{0,53}[A-Z0-9])?$/;
 
 export const uuidSchema = z.string().uuid();
-export const bigintStringSchema = z.string().regex(/^(0|[1-9][0-9]*)$/).refine((v) => BigInt(v) <= BigInt(BIGINT_MAX));
+const BIGINT_PATTERN = /^(0|[1-9][0-9]*)$/;
+// zod 4 は regex が外れても refine を走らせる。BigInt('v1') の例外で500にしないよう、形が合う時だけ比べる。
+export const bigintStringSchema = z.string().regex(BIGINT_PATTERN).refine((v) => !BIGINT_PATTERN.test(v) || BigInt(v) <= BigInt(BIGINT_MAX));
 const isoSchema = z.string().datetime({ offset: true });
 const codeSchema = z.string().trim().toUpperCase().regex(CODE_PATTERN);
 const prefixSchema = z.string().trim().toUpperCase().regex(PREFIX_PATTERN);

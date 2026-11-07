@@ -237,6 +237,16 @@ describe('admin discount routes', () => {
     }
   });
 
+  test('FREQ-547-AC-02: 更新・停止・再開の版が数字でない値なら500でなく通常の400にしてRPCを呼ばない', async () => {
+    for (const c of writes.filter((w) => 'expectedVersion' in w.body)) {
+      seq.length = 0; rpcImpl.mockClear(); mockAudit.mockClear();
+      const bad = await run(c, build(c, { ...c.body, expectedVersion: 'v1' }));
+      expect([c.name, bad.response.status, bad.json]).toEqual([c.name, 400, { code: 'GROUP_H_ARGUMENT_INVALID', error: '入力を確かめてください。' }]);
+      expect(rpcImpl).not.toHaveBeenCalled();
+      expect(mockAudit).toHaveBeenLastCalledWith(expect.objectContaining({ action: c.action, outcome: 'failure', metadata: { result_code: 'GROUP_H_ARGUMENT_INVALID' } }));
+    }
+  });
+
   test('FREQ-543-AC-02: DB拒否は固定本文と結果コードだけを監査し、未知の失敗は固定500で秘密を出さない', async () => {
     const secrets = ['SECRETCODE', '春の割引', 'member@example.test', user1, user2, 'PRIVATE'];
     for (const c of writes) {

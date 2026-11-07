@@ -156,6 +156,16 @@ describe('admin discount schema', () => {
     expect(stopBodySchema.safeParse({ expectedVersion: '2', requestKey: uuid(1), extra: 1 }).success).toBe(false);
   });
 
+  test('FREQ-547-AC-02: 版の文字列は数字でない値でも例外を出さずに拒む', () => {
+    for (const v of ['v1', 'abc', '1.5', ' 1', '0x10', '', '01', '-1', '9223372036854775808']) {
+      expect(() => bigintStringSchema.safeParse(v)).not.toThrow();
+      expect([v, bigintStringSchema.safeParse(v).success]).toEqual([v, false]);
+    }
+    for (const v of ['0', '9223372036854775807']) expect([v, bigintStringSchema.safeParse(v).success]).toEqual([v, true]);
+    expect(stopBodySchema.safeParse({ expectedVersion: 'v1', requestKey: uuid(1) }).success).toBe(false);
+    expect(patchBodySchema.safeParse({ patch: { name: 'x' }, expectedVersion: 'v1', requestKey: uuid(1) }).success).toBe(false);
+  });
+
   test('FREQ-547-AC-01: 一覧・詳細・会員検索のqueryは許可したキーと範囲だけ', () => {
     const q = (s: string) => new URLSearchParams(s);
     expect(parseDiscountListQuery(q(''))).toEqual({ filters: {}, page: 1 });

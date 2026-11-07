@@ -56,6 +56,15 @@ React Testing Libraryの単体試験。窓口（`clientFetch`）と画面の移�
 
 Task 5 fix round 1（Codex）: 共有コード＋割り当て0件はcodeIdでassign、束＋0件はcodes。共有コードの現在値、+00:00と秒未満の日時・itemIdsの順序を変えない編集、束のaudienceと会員の不整合のPOST前拒否、initialBatchを含む1回の作成と同じ要求番号の再試行、429/500/503の頁送り失敗時の頁・行の保持と読み直し、窓のTabとフォーカス復帰、409後の読取失敗の文・使用済み409での読取を単体で確かめる。`DiscountFormScreen.test.tsx`で新規作成のmanage確認と失敗後の再読取、`discount-admin-client.test.ts`で実物のResponse/ReadableStreamの401/403/429/503の読了を確かめる。DB試験にはcodesと初回の束の一括保存・拒否時のロールバック・再送を追加するが、controller実行待ち。
 
+## 割引の管理APIの版の文字列の直し（2026-11-07）
+
+zod 4 は `regex` が外れても後ろの `refine` を走らせるため、`bigintStringSchema` の `BigInt(v)` が数字でない版（`'v1'` など）で例外を投げ、更新・停止・再開が通常の400でなく500を返していた。形が合う時だけ比べる形に直した。受け付ける値と拒む値はほかに変えない。
+
+| ファイル | 受入条件 | 期待と方法 |
+| --- | --- | --- |
+| `tests/unit/lib/discounts/admin-discount-schema.test.ts`（追加） | FREQ-547-AC-02 | `'v1'`・`'abc'`・`'1.5'`・`' 1'`・`'0x10'`・`''`・`'01'`・`'-1'`・`'9223372036854775808'` は例外を出さずに拒み、`'0'`・`'9223372036854775807'` は受け付ける。`patchBodySchema`・`stopBodySchema` も `expectedVersion: 'v1'` を拒む |
+| `tests/unit/api/admin/discount-routes.test.ts`（追加） | FREQ-547-AC-02 | 更新（PATCH）・停止・再開に `expectedVersion: 'v1'` を送ると、400と固定本文（`GROUP_H_ARGUMENT_INVALID`）を返し、RPCを呼ばず、監査は失敗の結果コードだけ。直す前は500（`割引の処理に失敗しました。`）だった |
+
 ## グループH Task 4 管理API・store・入力と監査（2026-10-29）
 
 mockしたDB（RPC）に対するTypeScript単体試験。認可の実装（`authorizeAdminPermission`）は丸ごとmockせず、その下のトークン検証・session生存・ACL照会と、CSRF・回数制限・DB・監査の各依存を記録して順序を検証する。DBの実行、PostgREST、E2Eはcontroller担当（Task 11）。実装者の実測は jest・tsc・eslint まで。
