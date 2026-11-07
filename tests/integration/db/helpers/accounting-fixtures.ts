@@ -104,3 +104,78 @@ export function japanToday(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' })
     .format(new Date());
 }
+
+const s2Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p1_journal_foundation.sql'));
+/** The accounting S2 migration text (empty when it is missing, so the source contract fails visibly). */
+export const ACCOUNTING_S2_SQL = s2Files.length === 1 ? fs.readFileSync(path.join(directory, s2Files[0]), 'utf8') : '';
+export const ACCOUNTING_S2_FILES = s2Files;
+
+/** One section of S2: the body, the final assert, or the account rows between ACC_ACCOUNTS_BEGIN/END. */
+export function accountingS2Section(name: 'BODY' | 'FINAL_ASSERT' | 'ACCOUNTS'): string {
+  const marker = name === 'ACCOUNTS' ? 'ACC_ACCOUNTS' : `ACC_S2_${name}`;
+  return ACCOUNTING_S2_SQL.split(`-- ${marker}_BEGIN\n`)[1]?.split(`-- ${marker}_END`)[0] ?? '';
+}
+
+export type AccountingBusinessType = 'soleProprietor' | 'corporation';
+
+function periodName(businessType: AccountingBusinessType, startsOn: string, term: number): string {
+  return businessType === 'soleProprietor' ? `${startsOn.slice(0, 4)}年（個人）` : `第${term}期`;
+}
+
+/**
+ * Insert a period with explicit dates (ROLLBACK tests only: periods cannot be removed once committed with entries).
+ * Inserted directly as the connection's role; S2 has no period entry point yet (S3 adds it).
+ */
+export async function insertAccountingPeriod(client: PgClient,
+  input: { businessType: AccountingBusinessType; startsOn: string; endsOn: string }): Promise<string> {
+  const term = Number((await client.query('select count(*) as n from public.accounting_periods where business_type = $1',
+    [input.businessType])).rows[0].n) + 1;
+  const row = (await client.query(
+    `insert into public.accounting_periods (business_type, name, starts_on, ends_on) values ($1, $2, $3::date, $4::date)
+     returning id`, [input.businessType, periodName(input.businessType, input.startsOn, term), input.startsOn, input.endsOn])).rows[0];
+  return row.id as string;
+}
+
+/**
+ * Insert the period right after the last one of the business type (2026 for the first sole period, 2027-07-01 for the
+ * first corporation period). For suites that must commit; the dates never collide with committed earlier runs.
+ */
+export async function seedAccountingPeriod(client: PgClient, input: { businessType: AccountingBusinessType }): Promise<string> {
+  const next = (await client.query(
+    `select to_char(s.starts_on, 'YYYY-MM-DD') as starts_on,
+       to_char(case when $1 = 'soleProprietor' then make_date(extract(year from s.starts_on)::integer, 12, 31)
+         else (s.starts_on + interval '1 year' - interval '1 day')::date end, 'YYYY-MM-DD') as ends_on
+     from (select coalesce(max(p.ends_on) + 1, case when $1 = 'soleProprietor' then date '2026-01-01' else date '2027-07-01' end)
+       as starts_on from public.accounting_periods p where p.business_type = $1) s`, [input.businessType])).rows[0];
+  return insertAccountingPeriod(client, { businessType: input.businessType, startsOn: next.starts_on, endsOn: next.ends_on });
+}
+
+export type JournalLineInput = { account: string; debit?: number; credit?: number };
+
+/** The _lines jsonb the core takes. */
+export function journalLines(lines: readonly JournalLineInput[]): string {
+  return JSON.stringify(lines.map((line) => ({
+    account_code: line.account, debit: line.debit ?? 0, credit: line.credit ?? 0,
+    sub_account: null, counterparty: null, order_id: null, memo: null,
+  })));
+}
+
+/** Post through the core (no permission check) as the connection's role. */
+export async function postJournal(client: PgClient, input: {
+  periodId: string; entryDate: string; kind: string; parts: string[]; lines: JournalLineInput[]; sourceRecordedAt?: string;
+}): Promise<{ entryId: string; entryNo: number; created: boolean }> {
+  const result = (await client.query(
+    `select private.accounting_post_journal_core(null, $1::uuid, $2::date, $3::text, $4::text[], 'test entry', $5::jsonb,
+       _source_recorded_at => $6::timestamptz) as r`,
+    [input.periodId, input.entryDate, input.kind, input.parts, journalLines(input.lines), input.sourceRecordedAt ?? null])).rows[0].r;
+  return { entryId: result.entry_id, entryNo: Number(result.entry_no), created: result.created };
+}
+
+/** An actor with the owner role (admin), which holds admin.finance.manage. */
+export async function insertAccountingAdmin(client: PgClient): Promise<string> {
+  const id = (await client.query('select gen_random_uuid() as id')).rows[0].id as string;
+  await client.query("insert into auth.users (id, raw_app_meta_data, raw_user_meta_data) values ($1, '{}', '{}')", [id]);
+  await client.query(`insert into public.user_roles (user_id, role_id, active)
+    select $1::uuid, r.id, true from public.roles r where r.code = 'admin'`, [id]);
+  return id;
+}

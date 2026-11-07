@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { ACCOUNTS, accountByCode, resolveAccount, type Account } from '@/lib/finance/accounts';
 import {
 	ACCOUNTING_SUB_ACCOUNTS,
@@ -5,6 +7,7 @@ import {
 	type SavedJournalEntry,
 } from '@/lib/accounting/journal-types';
 import { buildAccountsSeedRows, buildAccountsSeedSql } from '@/../scripts/accounting/emit-accounts-seed';
+import { ACCOUNTING_EVENT_KINDS, EVENT_KEY_ARITY, EVENT_KEY_PREFIX } from '@/lib/accounting/event-kinds';
 
 function lookup(code: string): Account {
 	const account = accountByCode(code);
@@ -138,5 +141,32 @@ describe('勘定の種の出力', () => {
 		expect(lines).toHaveLength(164);
 		expect(lines[1]).toBe("  ('1010','asset','debit','common','carry'),");
 		expect(lines[163]).toBe("  ('9999','expense','debit','common','pl_zero');");
+	});
+});
+
+describe('FREQ-554-AC-06: S2の勘定の行と種類の一覧はTSと一致する', () => {
+	const directory = path.join(process.cwd(), 'supabase/migrations');
+	const files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p1_journal_foundation.sql'));
+	const s2 = files.length === 1 ? fs.readFileSync(path.join(directory, files[0]), 'utf8') : '';
+	const between = (begin: string, end: string) => s2.split(begin)[1]?.split(end)[0] ?? '';
+
+	it('FREQ-554-AC-06: S2の勘定の行は生成スクリプトの出力と同じで9999がある', () => {
+		expect(files).toEqual(['20261107130200_accounting_p1_journal_foundation.sql']);
+		expect(between('-- ACC_ACCOUNTS_BEGIN\n', '-- ACC_ACCOUNTS_END')).toBe(buildAccountsSeedSql());
+		expect(buildAccountsSeedSql()).toContain("  ('9999','expense','debit','common','pl_zero');\n");
+	});
+
+	it('FREQ-554-AC-03: S2の種類の一覧と印の個数はTSの27種と一致する', () => {
+		const kindsBody = between('CREATE FUNCTION private.accounting_event_kinds()', '\n$$;');
+		expect([...kindsBody.matchAll(/^\s+'([a-z_]+)',?$/gm)].map((m) => m[1])).toEqual([...ACCOUNTING_EVENT_KINDS]);
+		const arityBody = between('CREATE FUNCTION private.accounting_event_arity(_kind text)', '\n$$;');
+		expect(Object.fromEntries([...arityBody.matchAll(/\('([a-z_]+)', (\d)\)/g)].map((m) => [m[1], Number(m[2])])))
+			.toEqual(EVENT_KEY_ARITY);
+		expect([...arityBody.matchAll(/\('([a-z_]+)', (\d)\)/g)].map((m) => m[1])).toEqual([...ACCOUNTING_EVENT_KINDS]);
+		// The prefix rule: only stripe_fee differs (stripe:fee).
+		const keyBody = between('CREATE FUNCTION private.accounting_event_key(_kind text, _parts text[])', '\n$$;');
+		expect(keyBody).toContain("CASE WHEN _kind = 'stripe_fee' THEN 'stripe:fee' ELSE _kind END");
+		expect(keyBody).toContain("'^[A-Za-z0-9_.-]{1,128}$'");
+		expect(Object.entries(EVENT_KEY_PREFIX).filter(([kind, prefix]) => kind !== prefix)).toEqual([['stripe_fee', 'stripe:fee']]);
 	});
 });
