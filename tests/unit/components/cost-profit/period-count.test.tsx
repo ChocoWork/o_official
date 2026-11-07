@@ -62,8 +62,11 @@ function financeData(overrides: Record<string, unknown> = {}) {
 type Reply = { status: number; body: unknown };
 /** cost-profit GET の答えを要求の条件（periodId か旧の year）で返す。ほかの API は空で答える。 */
 function mockFinanceFetch(reply: (url: URL) => Reply) {
-	const mockFetch = jest.fn(async (input: RequestInfo | URL) => {
+	const mockFetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = new URL(String(input), 'http://localhost');
+		if (url.pathname === '/api/admin/kpi/cost-profit' && init?.method === 'POST') {
+			return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+		}
 		if (url.pathname === '/api/admin/kpi/cost-profit') {
 			const { status, body } = reply(url);
 			return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -281,5 +284,75 @@ describe('会計の画面を期間で数える', () => {
 		await screen.findByText('同期エラー');
 		expect(screen.getByText(partial)).toBeInTheDocument();
 		expect(screen.queryByText('¥32,000')).not.toBeInTheDocument();
+	});
+
+	it('FREQ-557-AC-03: 期間が2027年7月1日から2028年6月30日でも貸借対照表の期末の合計と月の推移は期間の月で数える', async () => {
+		const corporate = { ...P2027, startsOn: '2027-07-01', endsOn: '2028-06-30' };
+		mockFinanceFetch(() => ({
+			status: 200,
+			body: {
+				data: financeData({
+					fiscalYear: 2027,
+					businessType: 'corporation',
+					period: corporate,
+					periods: [corporate],
+					opening: [],
+					savedJournal: [
+						saved(1, '2027-08-01', [['1040', 100_000, 0], ['3010', 0, 100_000]], corporate.id),
+						// 2028年の行。暦年で数えると期末の合計から落ちる。
+						saved(2, '2028-03-01', [['1040', 50_000, 0], ['4010', 0, 50_000]], corporate.id),
+					],
+				}),
+			},
+		}));
+		render(<CostProfitSection periodId={corporate.id} fiscalYear={2027} fiscalYearLabel="2027年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '帳簿' }));
+		fireEvent.click(screen.getByRole('tab', { name: '決算・試算表' }));
+
+		// 期末（2028-06-30）の資産 150,000 ＝ 資本金 100,000 ＋ 当期純利益 50,000。
+		expect(screen.getByText('貸借一致')).toBeInTheDocument();
+		expect(screen.queryByText('貸借不一致')).not.toBeInTheDocument();
+		expect(screen.getByText('資産合計')).toHaveTextContent('資産合計¥150,000');
+		expect(screen.getByText('負債・純資産合計')).toHaveTextContent('負債・純資産合計¥150,000');
+		// 推移の横軸は期間の月（2027年7月〜2028年6月の12本）。
+		expect(screen.getByRole('img', { name: '資産・負債・純資産の12か月推移' })).toBeInTheDocument();
+		expect(screen.getAllByText('2028年6月').length).toBeGreaterThan(0);
+	});
+
+	it('FREQ-557-AC-01: 財務前提の期首の5つの欄は期間の期首を読み取り専用で示し、保存は売上見込みだけを変える', async () => {
+		const legacyPlan = { salesRevenue: 1_000, openingCash: 11, accountsReceivable: 22, fixedAssets: 33, accountsPayable: 44, openingCapital: 55 };
+		const mockFetch = mockFinanceFetch(() => ({
+			status: 200,
+			body: {
+				data: financeData({
+					plan: legacyPlan,
+					opening: opening([['1010', 70_000], ['1120', 30_000], ['1535', 20_000], ['2020', -15_000], ['2910', -105_000]]),
+				}),
+			},
+		}));
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByText('財務前提を編集'));
+
+		expect(screen.getByText('期首は会計の期間の期首（前の期間からの繰越）から作ります。ここでは入力しません。持ち込んだ残高は取引として入れてください。売上見込みは資金推移の目標線に使います。')).toBeInTheDocument();
+		for (const [label, value] of [
+			['期首現金', 70_000], ['売掛金', 30_000], ['固定資産', 20_000], ['買掛金・未払金', 15_000], ['元入金', 105_000],
+		] as const) {
+			const field = screen.getByRole('spinbutton', { name: label });
+			expect(field).toHaveAttribute('readonly');
+			expect(field).toHaveValue(value);
+		}
+
+		fireEvent.change(screen.getByRole('spinbutton', { name: '売上見込み' }), { target: { value: '500000' } });
+		fireEvent.click(screen.getByRole('button', { name: '財務前提を保存' }));
+		await screen.findByText('財務前提を保存しました。');
+		const post = mockFetch.mock.calls.find(([input, init]) => String(input) === '/api/admin/kpi/cost-profit' && init?.method === 'POST');
+		// route は6つの欄をそろえて受ける。期首の5つは読み込んだ値のまま送り、売上見込みだけが変わる。
+		expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+			operation: 'plan.update',
+			fiscalYear: 2026,
+			plan: { ...legacyPlan, salesRevenue: 500_000 },
+		});
 	});
 });

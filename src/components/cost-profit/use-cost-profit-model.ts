@@ -19,6 +19,7 @@ import { toJstDate } from "@/lib/accounting/jst-date";
 import type { AccountingPeriod } from "@/lib/accounting/period";
 import {
   isDateInPeriod,
+  periodMonthIndexOf,
   periodMonthsOf,
   type PeriodBounds,
 } from "@/lib/finance/period-range";
@@ -134,7 +135,6 @@ import {
   BS_ASSET_COLOR,
   BS_LIABILITY_COLOR,
   BS_EQUITY_COLOR,
-  LEDGER_MONTH_LABELS,
   LEDGER_PAGE_SIZE_OPTIONS,
   ASSET_PAGE_SIZE,
   DEPRECIATION_PAST_YEARS,
@@ -390,14 +390,20 @@ export function useCostProfitModel({
     useState<BusinessType>("soleProprietor");
   // 会計の期間と、その期間の保存した仕訳・期首（cost-profit GET）。
   const [loadedPeriod, setPeriod] = useState<AccountingPeriod | null>(null);
+  const [periods, setPeriods] = useState<AccountingPeriod[]>([]);
   // どの要求（periodId か旧の year）で読んだ期間か。要求が変わったら読み終わるまで要求の年で見せる。
   const [loadedScope, setLoadedScope] = useState<string | null>(null);
   const requestScope =
     periodId !== null
       ? `periodId=${encodeURIComponent(periodId)}`
       : `year=${requestedFiscalYear}`;
-  const period = loadedScope === requestScope ? loadedPeriod : null;
-  const [periods, setPeriods] = useState<AccountingPeriod[]>([]);
+  // 選んだ期間を読み込んでいる間（と読み切れなかった間）も、一覧にある選んだ期間の範囲で見せ、入力の日付を確かめる。
+  const period =
+    loadedScope === requestScope
+      ? loadedPeriod
+      : periodId !== null
+        ? (periods.find((candidate) => candidate.id === periodId) ?? null)
+        : null;
   const [savedJournal, setSavedJournal] = useState<SavedJournalEntry[]>([]);
   const [openingRows, setOpeningRows] = useState<OpeningBalanceRow[]>([]);
   const [periodNotices, setPeriodNotices] =
@@ -726,6 +732,38 @@ export function useCostProfitModel({
     }
     return balances;
   }, [openingRows]);
+  /**
+   * 財務前提の画面に読み取り専用で出す期首（期間の期首から計算した値）。
+   * 旧の財務前提の期首の5つの欄（admin_finance_years）は、もう期首に使わない。
+   */
+  const openingSummary = useMemo(() => {
+    const sumOf = (pick: (account: Account) => boolean) => {
+      let total = 0;
+      for (const [code, amount] of openingBalances) {
+        const account = accountByCode(code);
+        if (account && pick(account)) total += amount;
+      }
+      return total;
+    };
+    return {
+      openingCash: sumOf((account) => account.section === "現金及び預金"),
+      accountsReceivable: sumOf((account) => account.section === "売上債権"),
+      fixedAssets: sumOf((account) =>
+        (NON_CURRENT_ASSET_SECTIONS as readonly string[]).includes(
+          account.section,
+        ),
+      ),
+      accountsPayable: sumOf(
+        (account) =>
+          account.section === "仕入債務" ||
+          account.code === "2130" ||
+          account.code === "2140",
+      ),
+      openingCapital: sumOf(
+        (account) => account.code === "2910" || account.code === "3010",
+      ),
+    };
+  }, [openingBalances]);
 
   const seasonForecast = useMemo(() => {
     const sales = products.reduce(
@@ -1760,6 +1798,7 @@ export function useCostProfitModel({
     try {
       setIsSaving(true);
       setDataMessage(null);
+      // 期首の5つの欄は画面で変えない（読み込んだ値のまま送る。route は6つの欄をそろえて受ける）。
       await postMutation({ operation: "plan.update", fiscalYear, plan });
       notifySuccess("財務前提を保存しました。");
     } catch (error) {
@@ -3642,7 +3681,15 @@ export function useCostProfitModel({
   }, [assetForm, fiscalYear]);
 
   // ── 決算・試算表 ───────────────────────────────────────────────────────
-  // 科目ごとの月末残高（決算書の正常側を正）。比較列・推移・増減要因の元になる。
+  // 期間の月（暦年の期間なら 1月〜12月の12本、年をまたぐ期間は期間の始まりの月から終わりの月まで）。
+  const periodMonths = useMemo(() => periodMonthsOf(periodBounds), [periodBounds]);
+  const periodMonthLabels = useMemo(
+    () => periodMonths.map((month) => month.label),
+    [periodMonths],
+  );
+  /** 期間の終わりの月。貸借対照表の合計と貸借一致はここで見る。 */
+  const periodEndMonthIndex = periodMonths.length - 1;
+  // 科目ごとの期間の月末残高（決算書の正常側を正）。比較列・推移・増減要因の元になる。
   const monthlyAccountBalances = useMemo(() => {
     const opening = new Map<string, number>();
     const monthly = new Map<string, number[]>();
@@ -3653,12 +3700,11 @@ export function useCostProfitModel({
           ? 1
           : -1;
       const normalSign = account.account.normalSide === "debit" ? 1 : -1;
-      const net = new Array<number>(12).fill(0);
+      const net = new Array<number>(periodMonths.length).fill(0);
       for (const row of account.rows) {
-        if (Number.parseInt(row.date.slice(0, 4), 10) !== fiscalYear) continue;
-        const month = Number.parseInt(row.date.slice(5, 7), 10);
-        if (!Number.isFinite(month) || month < 1 || month > 12) continue;
-        net[month - 1] += (row.debit - row.credit) * naturalSign;
+        const index = periodMonthIndexOf(periodMonths, row.date);
+        if (index < 0) continue;
+        net[index] += (row.debit - row.credit) * naturalSign;
       }
       let balance = account.openingBalance * normalSign * naturalSign;
       opening.set(account.account.code, balance);
@@ -3669,20 +3715,18 @@ export function useCostProfitModel({
     }
 
     return { opening, monthly };
-  }, [ledger, fiscalYear]);
+  }, [ledger, periodMonths]);
 
-  // 基準月＝当年度に仕訳のある最後の月。決算整理は12/31なので締め後は12月になる。
+  // 基準月＝期間の中で仕訳のある最後の月。決算整理は期間の終わりの日なので締め後は最後の月になる。
   const currentMonthIndex = useMemo(() => {
     let last = 0;
     for (const account of ledger) {
       for (const row of account.rows) {
-        if (Number.parseInt(row.date.slice(0, 4), 10) !== fiscalYear) continue;
-        const month = Number.parseInt(row.date.slice(5, 7), 10);
-        if (Number.isFinite(month)) last = Math.max(last, month - 1);
+        last = Math.max(last, periodMonthIndexOf(periodMonths, row.date));
       }
     }
     return last;
-  }, [ledger, fiscalYear]);
+  }, [ledger, periodMonths]);
 
   const comparisonMonthIndex =
     comparisonBasis === "opening" ? null : currentMonthIndex - 1;
@@ -3921,27 +3965,28 @@ export function useCostProfitModel({
     });
   }, [balanceSheetDetailRows, collapsedBsGroups, balanceSheetKeyword]);
 
-  const bsAssetTotal = amountOfTypesAt(["asset"], currentMonthIndex);
+  // 構成図の合計と貸借一致は期間の終わりの残高で見る。
+  const bsAssetTotal = amountOfTypesAt(["asset"], periodEndMonthIndex);
   const bsCurrentAssets = amountOfSectionsAt(
     bsSectionGroups.currentAssets,
-    currentMonthIndex,
+    periodEndMonthIndex,
   );
   const bsFixedAssets = amountOfSectionsAt(
     bsSectionGroups.fixedAssets,
-    currentMonthIndex,
+    periodEndMonthIndex,
   );
   const bsCurrentLiabilities = amountOfSectionsAt(
     bsSectionGroups.currentLiabilities,
-    currentMonthIndex,
+    periodEndMonthIndex,
   );
   const bsFixedLiabilities = amountOfSectionsAt(
     bsSectionGroups.fixedLiabilities,
-    currentMonthIndex,
+    periodEndMonthIndex,
   );
-  const bsLiabilityTotal = amountOfTypesAt(["liability"], currentMonthIndex);
+  const bsLiabilityTotal = amountOfTypesAt(["liability"], periodEndMonthIndex);
   const bsEquityTotal =
-    amountOfTypesAt(["equity"], currentMonthIndex) +
-    netIncomeAt(currentMonthIndex);
+    amountOfTypesAt(["equity"], periodEndMonthIndex) +
+    netIncomeAt(periodEndMonthIndex);
   const bsRightTotal = bsLiabilityTotal + bsEquityTotal;
 
   // 構成図の高さ配分。金額が0でも枠が潰れないよう最小値を持たせる。
@@ -3950,19 +3995,19 @@ export function useCostProfitModel({
       ? 50
       : Math.max(12, (Math.abs(value) / bsAssetTotal) * 100);
 
-  // 資産・負債・純資産の推移（12か月）。積み上げ高＝負債＋純資産＝資産合計。
+  // 資産・負債・純資産の推移（期間の月ごと）。積み上げ高＝負債＋純資産＝資産合計。
   const balanceSheetTrend = useMemo(() => {
-    const equityWithoutProfit = LEDGER_MONTH_LABELS.map((_, index) =>
+    const equityWithoutProfit = periodMonths.map((_, index) =>
       amountOfTypesAt(["equity"], index),
     );
     return {
       equity: equityWithoutProfit,
-      liability: LEDGER_MONTH_LABELS.map((_, index) =>
+      liability: periodMonths.map((_, index) =>
         amountOfTypesAt(["liability"], index),
       ),
-      netIncome: LEDGER_MONTH_LABELS.map((_, index) => netIncomeAt(index)),
+      netIncome: periodMonths.map((_, index) => netIncomeAt(index)),
     };
-  }, [amountOfTypesAt, netIncomeAt]);
+  }, [periodMonths, amountOfTypesAt, netIncomeAt]);
 
   // 増減要因。資産の決算書区分ごとの差を大きい順に並べ、残りを「その他」へ寄せる。
   const balanceSheetVariance = useMemo(() => {
@@ -4045,9 +4090,7 @@ export function useCostProfitModel({
         const monthRows = accounts.flatMap((account) =>
           account.rows.filter(
             (row) =>
-              Number.parseInt(row.date.slice(0, 4), 10) === fiscalYear &&
-              Number.parseInt(row.date.slice(5, 7), 10) - 1 ===
-                currentMonthIndex,
+              periodMonthIndexOf(periodMonths, row.date) === currentMonthIndex,
           ),
         );
         const byCounter = new Map<string, number>();
@@ -4084,7 +4127,7 @@ export function useCostProfitModel({
       .slice(0, 6);
   }, [
     ledger,
-    fiscalYear,
+    periodMonths,
     currentMonthIndex,
     comparisonMonthIndex,
     amountOfSectionsAt,
@@ -4138,6 +4181,8 @@ export function useCostProfitModel({
     periodBounds,
     periodRangeLabel,
     periodSpanLabel,
+    periodMonthLabels,
+    openingSummary,
     fiscalYear,
     fiscalYearLabel,
     fiscalYearOptions,

@@ -7,7 +7,6 @@ import {
 } from "@/lib/finance/cash-flow";
 import type { CounterpartyBalanceSection } from "@/lib/finance/counterparty-balances";
 import {
-  type FinancePlan,
   currency,
   deltaCurrency,
   ratioOf,
@@ -43,7 +42,7 @@ export function SummaryView({
     setCashTrendMode,
     profitScopeMode,
     setProfitScopeMode,
-    previousClosingBalances,
+    openingSummary,
     plan,
     setPlan,
     isSaving,
@@ -770,42 +769,53 @@ export function SummaryView({
       </div>
 
       {/*
-        開業時の持ち込み残高と売上見込み。どちらも取引履歴からは導けない。
-        期首残高は前年の決算が済めば繰越が優先されるので、開業初年度だけ効く。
+        売上見込みだけを入力する。期首は会計の期間の期首（前の期間からの繰越）から作るので、
+        ここでは計算した期首を読み取り専用で示すだけにする（旧の期首の欄は使わない）。
       */}
       <details className={`${panelClassName} ${boxRadiusClassName}`}>
         <summary className="cursor-pointer font-acumin lk-text-sm font-medium tracking-widest text-black">
           財務前提を編集
         </summary>
         <p className="mt-3 font-acumin lk-text-4xs leading-relaxed text-[#707070]">
-          {previousClosingBalances
-            ? "期首残高は前年の決算から繰り越し済みです。ここでの入力は使われません。売上見込みは資金推移の目標線にだけ使います。"
-            : "開業初年度は帳簿に前年がないため、持ち込んだ残高をここで入力します。翌年以降は前年の決算から自動で繰り越します。売上見込みは資金推移の目標線に使います。"}
+          期首は会計の期間の期首（前の期間からの繰越）から作ります。ここでは入力しません。持ち込んだ残高は取引として入れてください。売上見込みは資金推移の目標線に使います。
         </p>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
-          {[
-            ["salesRevenue", "売上見込み"],
-            ["openingCash", "期首現金"],
-            ["accountsReceivable", "売掛金"],
-            ["fixedAssets", "固定資産"],
-            ["accountsPayable", "買掛金・未払金"],
-            ["openingCapital", "元入金"],
-          ].map(([key, label]) => (
+          <label>
+            <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
+              売上見込み
+            </span>
+            <input
+              type="number"
+              min="0"
+              value={plan.salesRevenue}
+              onChange={(event) =>
+                setPlan((current) => ({
+                  ...current,
+                  salesRevenue: Math.max(0, Number(event.target.value) || 0),
+                }))
+              }
+              className={inputClassName}
+              aria-label="売上見込み"
+            />
+          </label>
+          {(
+            [
+              ["openingCash", "期首現金"],
+              ["accountsReceivable", "売掛金"],
+              ["fixedAssets", "固定資産"],
+              ["accountsPayable", "買掛金・未払金"],
+              ["openingCapital", "元入金"],
+            ] as const
+          ).map(([key, label]) => (
             <label key={key}>
               <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">
-                {label}
+                {label}（期首）
               </span>
               <input
                 type="number"
-                min="0"
-                value={plan[key as keyof FinancePlan]}
-                onChange={(event) =>
-                  setPlan((current) => ({
-                    ...current,
-                    [key]: Math.max(0, Number(event.target.value) || 0),
-                  }))
-                }
-                className={inputClassName}
+                readOnly
+                value={openingSummary[key]}
+                className={`${inputClassName} bg-[#f5f5f5] text-[#474747]`}
                 aria-label={label}
               />
             </label>

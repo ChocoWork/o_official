@@ -12,7 +12,6 @@ import {
   BS_ASSET_FILL,
   BS_LIABILITY_FILL,
   BS_EQUITY_FILL,
-  LEDGER_MONTH_LABELS,
   currency,
   percent,
   boxRadiusClassName,
@@ -36,6 +35,7 @@ export function BalanceSheetView({
     setCollapsedBsGroups,
     visibleBalanceSheetRows,
     bsAssetTotal,
+    periodMonthLabels,
     bsCurrentAssets,
     bsFixedAssets,
     bsCurrentLiabilities,
@@ -162,7 +162,7 @@ export function BalanceSheetView({
           aria-label="資産・負債・純資産の推移"
           title={
             <span className={panelTitleClassName}>
-              資産・負債・純資産の推移（12か月）
+              資産・負債・純資産の推移（{periodMonthLabels.length}か月）
             </span>
           }
         >
@@ -173,8 +173,8 @@ export function BalanceSheetView({
             plotWidth={430}
             unitLabel="（円）"
             className="font-acumin"
-            ariaLabel="資産・負債・純資産の12か月推移"
-            categories={LEDGER_MONTH_LABELS}
+            ariaLabel={`資産・負債・純資産の${periodMonthLabels.length}か月推移`}
+            categories={periodMonthLabels}
             series={[
               {
                 label: "純資産",
