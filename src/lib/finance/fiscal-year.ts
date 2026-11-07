@@ -23,7 +23,11 @@ export function formatFiscalYearLabel(year: number): string {
   return `${year}年`;
 }
 
-/** 年度の期間（1/1〜12/31）を ISO 日付で返す。 */
+/**
+ * 年度の期間（1/1〜12/31）を ISO 日付で返す。
+ * これは暦年の期間で、会計の期間（法人の決算月や個人のやめた年を含む）は
+ * `src/lib/accounting/period.ts` の `AccountingPeriod` を使う。
+ */
 export function fiscalYearRange(year: number): { start: string; end: string } {
   return { start: `${year}-01-01`, end: `${year}-12-31` };
 }
