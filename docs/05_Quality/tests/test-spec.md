@@ -62,8 +62,8 @@ zod 4 は `regex` が外れても後ろの `refine` を走らせるため、`big
 
 | ファイル | 受入条件 | 期待と方法 |
 | --- | --- | --- |
-| `tests/unit/lib/discounts/admin-discount-schema.test.ts`（追加） | FREQ-547-AC-02 | `'v1'`・`'abc'`・`'1.5'`・`' 1'`・`'0x10'`・`''`・`'01'`・`'-1'`・`'9223372036854775808'` は例外を出さずに拒み、`'0'`・`'9223372036854775807'` は受け付ける。`patchBodySchema`・`stopBodySchema` も `expectedVersion: 'v1'` を拒む |
-| `tests/unit/api/admin/discount-routes.test.ts`（追加） | FREQ-547-AC-02 | 更新（PATCH）・停止・再開に `expectedVersion: 'v1'` を送ると、400と固定本文（`GROUP_H_ARGUMENT_INVALID`）を返し、RPCを呼ばず、監査は失敗の結果コードだけ。直す前は500（`割引の処理に失敗しました。`）だった |
+| `tests/unit/lib/discounts/admin-discount-schema.test.ts`（変更） | FREQ-547-AC-02 | `'v1'`・`'abc'`・`'1.5'`・`' 1'`・`'0x10'`・`''`・`'01'`・`'-1'`・`'9223372036854775808'` は例外を出さずに拒み、`'0'`・`'9223372036854775807'` は受け付ける。`patchBodySchema`・`stopBodySchema` も `expectedVersion: 'v1'` を拒む |
+| `tests/unit/api/admin/discount-routes.test.ts`（変更） | FREQ-547-AC-02 | 更新（PATCH）・停止・再開に `expectedVersion: 'v1'` を送ると、400と固定本文（`GROUP_H_ARGUMENT_INVALID`）を返し、RPCを呼ばず、監査は失敗の結果コードだけ。直す前は500（`割引の処理に失敗しました。`）だった |
 
 ## グループH Task 4 管理API・store・入力と監査（2026-10-29）
 

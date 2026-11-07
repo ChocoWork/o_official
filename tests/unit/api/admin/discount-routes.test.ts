@@ -238,7 +238,9 @@ describe('admin discount routes', () => {
   });
 
   test('FREQ-547-AC-02: 更新・停止・再開の版が数字でない値なら500でなく通常の400にしてRPCを呼ばない', async () => {
-    for (const c of writes.filter((w) => 'expectedVersion' in w.body)) {
+    const versioned = writes.filter((w) => 'expectedVersion' in w.body);
+    expect(versioned).toHaveLength(3);
+    for (const c of versioned) {
       seq.length = 0; rpcImpl.mockClear(); mockAudit.mockClear();
       const bad = await run(c, build(c, { ...c.body, expectedVersion: 'v1' }));
       expect([c.name, bad.response.status, bad.json]).toEqual([c.name, 400, { code: 'GROUP_H_ARGUMENT_INVALID', error: '入力を確かめてください。' }]);
