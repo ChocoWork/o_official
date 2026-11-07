@@ -99,8 +99,15 @@ describeLocalDb('S2 final assert: controller only', (db) => {
   });
 
   const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
-  /** A period no other test or commit suite uses (direct insert; S2 checks the layout only inside the core). */
-  const farPeriod = "insert into public.accounting_periods (business_type, name, starts_on, ends_on) values ('soleProprietor', 'p', '2090-01-01', '2090-12-31')";
+  /**
+   * A period no other test or commit suite uses (direct insert): the year after the last sole period, or 2090 when
+   * there is none. It keeps the sole layout gap-free, because a test may already have made the deferred layout check
+   * immediate and A8 (S5) commits the sole periods of the moved transactions.
+   */
+  const farPeriod = `insert into public.accounting_periods (business_type, name, starts_on, ends_on)
+    select 'soleProprietor', 'p', s.d, make_date(extract(year from s.d)::integer, 12, 31)
+    from (select coalesce(max(ends_on) + 1, date '2090-01-01') as d from public.accounting_periods
+      where business_type = 'soleProprietor') s`;
 
   test('FREQ-554-AC-07: S2末尾assertは後の移行が足した期間・仕訳・勘定があっても再生で通り、適用の時の空の控えなら断る', async () => {
     // What later migrations (S3-S5, plans 2-7) and commit suites leave behind: an added account, a period, an entry.
