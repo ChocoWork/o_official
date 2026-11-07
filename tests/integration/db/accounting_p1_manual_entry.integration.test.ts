@@ -526,42 +526,51 @@ describeLocalDb('S4 manual entries: controller only', (db) => {
   });
 
   test('FREQ-556-AC-04: G・Hの関数のソースがadmin_finance_expensesを書かず、手入力のトリガーが行の鍵の後にG共通鍵を取っても詰まらない', async () => {
-    // Functions that take the group G common lock (190521,1) directly or through private.accounting_lock_all.
-    const functions = (await db().query(`select n.nspname || '.' || p.proname as name, p.prosrc as src
+    // G / H take the common lock (190521,1) through wrappers (lock_group_g_inventory, group_h_lock, ...), so instead of
+    // following every caller, the writers are pinned: the only functions whose source writes or row-locks
+    // admin_finance_expenses are the two cost-allocation entries the product-costs route calls through RPC, and no
+    // other function names them. A new writer anywhere (a G / H function included) fails this test. The S4 trigger
+    // functions do not write the table (they write the journal and the revisions). The source is normalized (lower
+    // case, double quotes removed) so quoted or schema-qualified names match; SQL built at run time (EXECUTE format)
+    // is out of scope of a source search.
+    const functions = (await db().query(`select n.nspname || '.' || p.proname as name, lower(replace(p.prosrc, '"', '')) as src
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-      where n.nspname in ('public', 'private') and p.prokind = 'f'`)).rows as { name: string; src: string }[];
-    const takesGLock = (src: string) => /pg_advisory_xact_lock\s*\(\s*190521\s*,/.test(src) || /private\.accounting_lock_all\s*\(/.test(src);
+      where n.nspname not in ('pg_catalog', 'information_schema') and n.nspname !~ '^pg_toast' and p.prokind in ('f', 'p')
+        and p.prolang <> (select l.oid from pg_language l where l.lanname = 'c')`)).rows as { name: string; src: string }[];
+    const table = String.raw`(?:only\s+)?(?:public\s*\.\s*)?admin_finance_expenses\b`;
     const writesExpenses = (src: string) =>
-      /(insert\s+into|update|delete\s+from|merge\s+into)\s+(public\.)?admin_finance_expenses\b/i.test(src)
-      || /from\s+(public\.)?admin_finance_expenses\b[^;]*\bfor\s+(update|no\s+key\s+update|share|key\s+share)\b/i.test(src);
-    const holders = functions.filter((f) => takesGLock(f.src) && f.name !== 'private.accounting_lock_all');
-    const writers = functions.filter((f) => writesExpenses(f.src)).map((f) => f.name);
-    expect(holders.length).toBeGreaterThan(10);
-    expect(holders.map((f) => f.name)).toEqual(expect.arrayContaining([
-      'private.accounting_post_journal_core', 'private.accounting_manual_entry_after_write',
-    ]));
-    expect(holders.filter((f) => writesExpenses(f.src)).map((f) => f.name)).toEqual([]);
-    // No holder calls a function that writes the rows either.
-    expect(holders.flatMap((f) => writers.filter((w) => f.src.includes(w.split('.')[1])).map((w) => `${f.name} -> ${w}`))).toEqual([]);
+      new RegExp(String.raw`\b(?:insert\s+into|update|delete\s+from|merge\s+into|truncate(?:\s+table)?)\s+${table}`).test(src)
+      || new RegExp(String.raw`\bfrom\s+${table}[^;]*\bfor\s+(?:update|no\s+key\s+update|share|key\s+share)\b`).test(src);
+    const writers = functions.filter((f) => writesExpenses(f.src)).map((f) => f.name).sort();
+    expect(writers).toEqual(['public.clear_admin_expense_cost_allocations', 'public.replace_admin_expense_cost_allocations']);
+    expect(functions.filter((f) => !writers.includes(f.name)
+      && writers.some((w) => f.src.includes(w.split('.')[1]))).map((f) => f.name)).toEqual([]);
+    // The matcher sees quoted and qualified forms (a guard against the normalization silently failing).
+    expect(writesExpenses('update "public"."admin_finance_expenses" set x = 1'.toLowerCase().replaceAll('"', ''))).toBe(true);
+    expect(writesExpenses('perform 1 from public.admin_finance_expenses where id = 1 for update')).toBe(true);
+    expect(writesExpenses("select 1 from public.accounting_journal_entries where source_table = 'admin_finance_expenses'")).toBe(false);
 
     // A transaction that holds the G lock (as a G / H function does) makes the trigger wait after its row write; the
-    // insert finishes as soon as that transaction ends, with no deadlock.
+    // write finishes as soon as that transaction ends, with no deadlock.
+    const pid = Number((await one('select pg_backend_pid() as pid')).pid);
+    const waitingFor = async (probe: PgClient) => {
+      for (let i = 0; i < 5000; i += 1) {
+        const locks = (await probe.query(`select l.locktype, l.classid::text, l.objid::text, l.granted, l.mode, c.relname
+          from pg_locks l left join pg_class c on c.oid = l.relation where l.pid = $1`, [pid])).rows;
+        if (locks.some((l) => l.locktype === 'advisory' && l.classid === '190521' && l.objid === '1' && !l.granted)
+          && locks.some((l) => l.relname === 'admin_finance_expenses' && l.mode === 'RowExclusiveLock' && l.granted)) return true;
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      return false;
+    };
     const holder: PgClient = await connectLocalDb();
     try {
+      // INSERT: the new row is written, then the trigger waits for (1).
       await holder.query('begin');
       await holder.query('select pg_advisory_xact_lock(190521, 1)');
-      const pid = Number((await one('select pg_backend_pid() as pid')).pid);
       let settled = false;
       const pending = insertExpense({ item: 'acc s4 waits' }).finally(() => { settled = true; });
-      let waiting = false;
-      for (let i = 0; i < 5000 && !waiting; i += 1) {
-        const locks = (await holder.query(`select l.locktype, l.classid::text, l.objid::text, l.granted, l.mode, c.relname
-          from pg_locks l left join pg_class c on c.oid = l.relation where l.pid = $1`, [pid])).rows;
-        waiting = locks.some((l) => l.locktype === 'advisory' && l.classid === '190521' && l.objid === '1' && !l.granted)
-          && locks.some((l) => l.relname === 'admin_finance_expenses' && l.mode === 'RowExclusiveLock' && l.granted);
-        if (!waiting) await new Promise((resolve) => setImmediate(resolve));
-      }
-      expect({ waiting, settled }).toEqual({ waiting: true, settled: false });
+      expect({ waiting: await waitingFor(holder), settled }).toEqual({ waiting: true, settled: false });
       await holder.query('rollback');
       const id = await pending;
       expect(await keys(id)).toEqual([`manual_entry:${id}:0`]);
@@ -569,6 +578,54 @@ describeLocalDb('S4 manual entries: controller only', (db) => {
       await holder.query('rollback').catch(() => undefined);
       await holder.end();
     }
+
+    // UPDATE of an existing (committed) row: the row lock is taken by the write and is already held while the trigger
+    // waits for (1) -> (2) -> (3); another session cannot lock the row (FOR UPDATE NOWAIT is 55P03) until it finishes.
+    // The row is committed in replica mode, where the ordinary journal and history triggers do not fire, so no journal
+    // entry is committed; it is removed again at the end (the ALWAYS delete refusal is switched off for that only).
+    const setup: PgClient = await connectLocalDb();
+    const probe: PgClient = await connectLocalDb();
+    let committedId: string | null = null;
+    try {
+      await db().query('rollback');
+      await setup.query('begin');
+      await setup.query("set local session_replication_role = 'replica'");
+      committedId = String((await setup.query(`insert into public.admin_finance_expenses (expense_date, category, item_name, amount,
+        payment_method) values ($1::date, '消耗品費', 'acc s4 row lock', 1200, '現金') returning id`, [`${year}-03-10`])).rows[0].id);
+      await setup.query('commit');
+      await db().query('begin');
+      await probe.query('begin');
+      await probe.query('select pg_advisory_xact_lock(190521, 1)');
+      let settled = false;
+      const pending = updateExpense(committedId, 'amount = 1500').finally(() => { settled = true; });
+      expect({ waiting: await waitingFor(probe), settled }).toEqual({ waiting: true, settled: false });
+      await probe.query('savepoint row_probe');
+      const rowLock = await probe.query('select id from public.admin_finance_expenses where id = $1 for update nowait', [committedId])
+        .then(() => 'locked by the probe', (error: { code?: string }) => error.code);
+      await probe.query('rollback to savepoint row_probe');
+      expect(rowLock).toBe('55P03');
+      await probe.query('rollback');
+      await pending;
+      // The row had no entry yet, so the update posts it as an insert would (number 0), inside this ROLLBACK.
+      expect(await keys(committedId)).toEqual([`manual_entry:${committedId}:0`]);
+    } finally {
+      await probe.query('rollback').catch(() => undefined);
+      await probe.end();
+      if (committedId) {
+        await db().query('rollback');
+        await setup.query('begin');
+        await setup.query('alter table public.admin_finance_expenses disable trigger accounting_manual_entry_no_delete');
+        await setup.query("set local session_replication_role = 'replica'");
+        await setup.query('delete from public.admin_finance_expenses where id = $1', [committedId]);
+        await setup.query('alter table public.admin_finance_expenses enable always trigger accounting_manual_entry_no_delete');
+        await setup.query('commit');
+        await db().query('begin');
+      }
+      await setup.end();
+    }
+    expect(await one('select count(*)::int as n from public.admin_finance_expenses where id = $1', [committedId])).toEqual({ n: 0 });
+    expect(await one(`select tgenabled::text as enabled from pg_trigger
+      where tgrelid = 'public.admin_finance_expenses'::regclass and tgname = 'accounting_manual_entry_no_delete'`)).toEqual({ enabled: 'A' });
   });
 
   async function attempt(change = ''): Promise<{ code?: string; message?: string; detail?: string } | null> {
