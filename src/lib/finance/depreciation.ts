@@ -316,23 +316,41 @@ export function startedBeforeCorporation(
 }
 
 /**
+ * 法人の一括償却資産の期ごとの額（法人税法施行令133条の2第1項: 取得価額 ÷ 36 × 事業年度の月数）。
+ * 使い始めた期から事業年度の月数（12で頭打ち）を足していき、36か月に届く期を最後の期にする。
+ * 最後の期だけは取得価額から前の期までの合計を引いた残りを償却する（÷36 の端数を36か月の中に収め、
+ * 取得価額を過不足なく償却するため。12か月の期が3つなら 1/3 ずつで、端数は第3期に寄る）。
+ * 最後の期より後は0。
+ */
+function corporateLumpSumAmounts(
+  cost: number,
+  terms: readonly DepreciationPeriod[],
+): number[] {
+  let months = 0;
+  let charged = 0;
+  return terms.map((term) => {
+    if (months >= 36) return 0;
+    const termMonths = Math.min(monthsInPeriod(term.startsOn, term.endsOn), 12);
+    months += termMonths;
+    const amount =
+      months >= 36
+        ? cost - charged
+        : floorYen((cost / 36) * termMonths);
+    charged += amount;
+    return amount;
+  });
+}
+
+/**
  * 法人の期の理論償却費。定額法は、期が1年に満たなければ償却率に月数/12を掛け（①）、
  * 期の途中で使い始めた資産はその限度額を期の月数で割って使った月数を掛ける（②）。
- * 一括償却資産は、取得価額 ÷ 36 × 事業年度の月数
- * （法人税法施行令133条の2第1項。12か月なら 1/3）。即時償却は使い始めた期に全額。
+ * 即時償却は使い始めた期に全額。一括償却資産は `corporateLumpSumAmounts` で期をまたいで決める。
  */
 function corporatePeriodTheoretical(
   asset: FixedAsset,
   period: DepreciationPeriod,
   elapsedPeriodIndex: number,
 ): number {
-  if (asset.method === "lumpSum3Year") {
-    const periodMonths = Math.min(
-      monthsInPeriod(period.startsOn, period.endsOn),
-      12,
-    );
-    return floorYen((asset.acquisitionCost / 36) * periodMonths);
-  }
   if (asset.method !== "straightLine") {
     return annualDepreciation(
       asset,
@@ -376,11 +394,13 @@ export function depreciationForYear(
     // 最初の法人の期間より前に使い始めた資産（個人のときの資産）は法人では償却しない（設計 11-f）。
     if (startOn < sequence[0].startsOn) return notStarted(asset);
     const first = sequence.findIndex((candidate) => candidate.endsOn >= startOn);
-    const theoreticals = sequence
-      .slice(first)
-      .map((candidate, index) =>
-        corporatePeriodTheoretical(asset, candidate, index),
-      );
+    const terms = sequence.slice(first);
+    const theoreticals =
+      asset.method === "lumpSum3Year"
+        ? corporateLumpSumAmounts(asset.acquisitionCost, terms)
+        : terms.map((candidate, index) =>
+            corporatePeriodTheoretical(asset, candidate, index),
+          );
     // 日の途中から始まる期間は暦の月で数えると期間の月数より1多くなるので、期間の月数で頭打ちにする。
     const months = Math.min(
       assetUsedMonthsInPeriod(asset, period),

@@ -147,7 +147,7 @@ describe('FREQ-557-AC-04: 6か月の期間の定額法は償却率に6/12を掛�
 	it('FREQ-557-AC-04: 一括償却資産は取得価額 ÷ 36 × 事業年度の月数（法人税法施行令133条の2第1項）', () => {
 		const second = corp('2028-01-01', '2028-12-31');
 		const lump = asset({ method: 'lumpSum3Year', acquisitionCost: 180_000, acquiredOn: '2027-09-10' });
-		// 6か月の期は 180,000 ÷ 36 × 6 = 30,000、12か月の期は 60,000（従来の 1/3 と同じ）
+		// 6か月の期は 180,000 ÷ 36 × 6 = 30,000、12か月の期は 60,000（180,000 の 1/3）
 		expect(depreciationForYear(lump, 2027, FIRST_TERM).depreciation).toBe(30_000);
 		expect(depreciationForYear(lump, 2028, second, [FIRST_TERM]).depreciation).toBe(60_000);
 		// 6か月＋12か月＋12か月＋6か月の4期で 36か月分（取得価額）に達し、超えない
@@ -159,10 +159,69 @@ describe('FREQ-557-AC-04: 6か月の期間の定額法は償却率に6/12を掛�
 		expect(last.closingBookValue).toBe(0);
 	});
 
-	it('一括償却資産の12か月の期は従来の 1/3 と同じ', () => {
+	it('一括償却資産の12か月の期は取得価額が3で割り切れれば 1/3（150,000 → 50,000）', () => {
 		const year = corp('2028-01-01', '2028-12-31');
 		const lump = asset({ method: 'lumpSum3Year', acquisitionCost: 150_000, acquiredOn: '2028-02-01' });
 		expect(depreciationForYear(lump, 2028, year).depreciation).toBe(50_000);
+	});
+
+	describe('FREQ-557-AC-04: 一括償却資産の端数は36か月目の期に寄せ、取得価額を過不足なく償却する', () => {
+		const terms = (...ranges: Array<[string, string]>) => ranges.map(([startsOn, endsOn]) => corp(startsOn, endsOn));
+		const run = (target: FixedAsset, list: DepreciationPeriod[]) =>
+			list.map((term, index) =>
+				depreciationForYear(target, Number(term.startsOn.slice(0, 4)), term, list.slice(0, index)),
+			);
+		const twelve = terms(
+			['2027-01-01', '2027-12-31'],
+			['2028-01-01', '2028-12-31'],
+			['2029-01-01', '2029-12-31'],
+			['2030-01-01', '2030-12-31'],
+		);
+		const sixTwelve = terms(
+			['2027-07-01', '2027-12-31'],
+			['2028-01-01', '2028-12-31'],
+			['2029-01-01', '2029-12-31'],
+			['2030-01-01', '2030-06-30'],
+			['2030-07-01', '2030-12-31'],
+		);
+		const lump = (cost: number, acquiredOn: string) => asset({ method: 'lumpSum3Year', acquisitionCost: cost, acquiredOn });
+
+		it('100,000 円を12か月の期3つで 33,333・33,333・33,334、4つ目は0', () => {
+			const rows = run(lump(100_000, '2027-03-10'), twelve);
+			expect(rows.map((row) => row.depreciation)).toEqual([33_333, 33_333, 33_334, 0]);
+			expect(rows.map((row) => row.isFinalYear)).toEqual([false, false, true, false]);
+			expect(rows[2].closingBookValue).toBe(0);
+		});
+
+		it('100,000 円を 6＋12＋12＋6か月で合計ちょうど 100,000、36か月目の期で終わり、その後は0', () => {
+			const rows = run(lump(100_000, '2027-09-10'), sixTwelve);
+			const amounts = rows.map((row) => row.depreciation);
+			expect(amounts.slice(0, 3)).toEqual([16_666, 33_333, 33_333]);
+			expect(amounts[3]).toBe(16_668);
+			expect(amounts[4]).toBe(0);
+			expect(amounts.reduce((sum, amount) => sum + amount, 0)).toBe(100_000);
+			expect(rows.map((row) => row.isFinalYear)).toEqual([false, false, false, true, false]);
+			expect(rows[3].closingBookValue).toBe(0);
+		});
+
+		for (const cost of [150_001, 199_999]) {
+			it(`${cost.toLocaleString('ja-JP')} 円も12か月の期3つ・6＋12＋12＋6か月の4期で合計ちょうど取得価額、36か月目の後は0`, () => {
+				for (const [list, startedOn] of [[twelve, '2027-03-10'], [sixTwelve, '2027-09-10']] as const) {
+					const rows = run(lump(cost, startedOn), list);
+					const amounts = rows.map((row) => row.depreciation);
+					expect(amounts.reduce((sum, amount) => sum + amount, 0)).toBe(cost);
+					const finalIndex = list === twelve ? 2 : 3;
+					expect(rows[finalIndex].closingBookValue).toBe(0);
+					expect(rows[finalIndex].isFinalYear).toBe(true);
+					expect(amounts.slice(finalIndex + 1).every((amount) => amount === 0)).toBe(true);
+					// 最後の期より前は ÷36 × 月数の切り捨て（限度額の中）
+					for (let index = 0; index < finalIndex; index += 1) {
+						const months = index === 0 && list === sixTwelve ? 6 : 12;
+						expect(amounts[index]).toBe(Math.floor((cost / 36) * months));
+					}
+				}
+			});
+		}
 	});
 
 	it('個人の期間の一括償却資産は従来どおり 1/3（月数で割らない）', () => {
