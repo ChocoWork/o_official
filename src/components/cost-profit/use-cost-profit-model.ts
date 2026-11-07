@@ -327,6 +327,10 @@ export function useCostProfitModel({
     "" | "electronic" | "paper"
   >("");
   const [receiptPaperKept, setReceiptPaperKept] = useState(false);
+  const resetReceiptKind = () => {
+    setReceiptKindChoice("");
+    setReceiptPaperKept(false);
+  };
   const receiptEvidence: ReceiptEvidence | null =
     receiptKindChoice === "electronic"
       ? { evidenceKind: "electronic" }
@@ -1335,6 +1339,7 @@ export function useCostProfitModel({
           await uploadReceiptFile(createdId, file, evidence);
         }
         setPendingReceipts([]);
+        resetReceiptKind();
       }
       if (
         !isEditing &&
@@ -2780,6 +2785,8 @@ export function useCostProfitModel({
       for (const file of files) {
         await uploadReceiptFile(entry.id, file, receiptEvidence);
       }
+      // 種類は取引ごとに選び直す（次の取引へ前の選択を持ち越さない）。
+      resetReceiptKind();
       await loadFinanceData();
       setReceiptMessage(
         files.length === 1

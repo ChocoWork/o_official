@@ -70,6 +70,10 @@ describe('領収書の種類', () => {
 		await waitFor(() => expect(uploads).toHaveLength(1));
 		expect(uploads[0].get('evidenceKind')).toBe('paper');
 		expect(uploads[0].get('paperOriginalKept')).toBe('true');
+		// 添付が済んだら種類の選択を戻し、次の取引へ持ち越さない。
+		await waitFor(() => expect(within(drawer).getByRole('radio', { name: '紙あり（画像は写し）' })).not.toBeChecked());
+		expect(within(drawer).queryByRole('checkbox', { name: '紙の原本を残してある' })).not.toBeInTheDocument();
+		expect(zone).toBeDisabled();
 
 		fireEvent.click(within(drawer).getByRole('radio', { name: '電子で受け取った（PDF など）' }));
 		expect(within(drawer).queryByRole('checkbox', { name: '紙の原本を残してある' })).not.toBeInTheDocument();

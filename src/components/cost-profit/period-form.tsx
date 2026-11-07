@@ -27,7 +27,57 @@ type BusinessType = AccountingPeriod["businessType"];
 
 export type AccountingSendResult =
   | { ok: true; data: unknown }
-  | { ok: false; message: string };
+  | { ok: false; message: string; code: string | null };
+
+/** 画面の知らせ。成功か失敗かは文から推し量らず、書き込みの結果で決める。 */
+export type Notice = {
+  text: string;
+  tone: "success" | "error";
+  /** 版の衝突（ACCOUNTING_VERSION_CONFLICT）の後は、その場で読み直すボタンを出す。 */
+  reload?: boolean;
+};
+
+export const successNotice = (text: string): Notice => ({ text, tone: "success" });
+export const errorNotice = (text: string): Notice => ({ text, tone: "error" });
+export const failureNotice = (
+  result: Extract<AccountingSendResult, { ok: false }>,
+): Notice => ({
+  text: result.message,
+  tone: "error",
+  reload: result.code === "ACCOUNTING_VERSION_CONFLICT",
+});
+
+export function NoticeLine({
+  notice,
+  onReload,
+}: {
+  notice: Notice | null;
+  onReload?: () => void;
+}) {
+  if (!notice) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <p
+        role="status"
+        data-tone={notice.tone}
+        className={`font-acumin lk-text-4xs ${notice.tone === "success" ? "text-[#16844b]" : "text-red-700"}`}
+      >
+        {notice.text}
+      </p>
+      {notice.reload && onReload ? (
+        <Button
+          variant="outline"
+          size="2xs"
+          shape="rounded"
+          className="font-acumin"
+          onClick={onReload}
+        >
+          読み直す
+        </Button>
+      ) : null}
+    </div>
+  );
+}
 
 /**
  * 会計の設定・期間の書き込み（Task 8 の route）。ok でない応答も本文を最後まで読み、
@@ -45,9 +95,9 @@ export async function sendAccountingJson(
       body: JSON.stringify(body),
     });
     const text = await response.text();
-    let payload: { data?: unknown; error?: unknown } | null = null;
+    let payload: { data?: unknown; error?: unknown; code?: unknown } | null = null;
     try {
-      payload = JSON.parse(text) as { data?: unknown; error?: unknown };
+      payload = JSON.parse(text) as { data?: unknown; error?: unknown; code?: unknown };
     } catch {
       payload = null;
     }
@@ -56,11 +106,12 @@ export async function sendAccountingJson(
         ok: false,
         message:
           typeof payload?.error === "string" ? payload.error : ACCOUNTING_TEXT.failed,
+        code: typeof payload?.code === "string" ? payload.code : null,
       };
     }
     return { ok: true, data: payload?.data ?? null };
   } catch {
-    return { ok: false, message: ACCOUNTING_TEXT.failed };
+    return { ok: false, message: ACCOUNTING_TEXT.failed, code: null };
   }
 }
 
@@ -102,7 +153,7 @@ export function PeriodForm({
   const [year, setYear] = useState("");
   const [startsOn, setStartsOn] = useState("");
   const [endsOn, setEndsOn] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
 
@@ -125,21 +176,23 @@ export function PeriodForm({
           ? { startsOn, endsOn }
           : null;
     if (!range) {
-      setMessage(
-        businessType === "soleProprietor"
-          ? "年を4桁で入れてください。"
-          : "始まりと終わりの日を入れてください。",
+      setNotice(
+        errorNotice(
+          businessType === "soleProprietor"
+            ? "年を4桁で入れてください。"
+            : "始まりと終わりの日を入れてください。",
+        ),
       );
       return;
     }
     const checked = validateNewPeriod({ businessType, ...range, existing: periods });
     if (!checked.ok) {
-      setMessage(rejectionText(checked, expectedStart));
+      setNotice(errorNotice(rejectionText(checked, expectedStart)));
       return;
     }
     submittingRef.current = true;
     setSubmitting(true);
-    setMessage(null);
+    setNotice(null);
     const result = await sendAccountingJson("/api/admin/accounting/periods", "POST", {
       businessType,
       ...range,
@@ -148,13 +201,13 @@ export function PeriodForm({
     submittingRef.current = false;
     setSubmitting(false);
     if (!result.ok) {
-      setMessage(result.message);
+      setNotice(failureNotice(result));
       return;
     }
     setYear("");
     setStartsOn("");
     setEndsOn("");
-    setMessage("期間を追加しました。");
+    setNotice(successNotice("期間を追加しました。"));
     onCreated();
   };
 
@@ -176,7 +229,7 @@ export function PeriodForm({
             value={chosenType}
             onChange={(event) => {
               setChosenType(event.target.value as BusinessType);
-              setMessage(null);
+              setNotice(null);
             }}
           >
             <option value="soleProprietor">個人</option>
@@ -237,14 +290,7 @@ export function PeriodForm({
           </p>
         </>
       )}
-      {message ? (
-        <p
-          role="status"
-          className={`font-acumin lk-text-4xs ${message === "期間を追加しました。" ? "text-[#16844b]" : "text-red-700"}`}
-        >
-          {message}
-        </p>
-      ) : null}
+      <NoticeLine notice={notice} />
       <div className="flex justify-end">
         <Button
           variant="primary"

@@ -75,7 +75,7 @@ describe('FREQ-561-AC-01: 法人の期限は終了日の翌日から2か月で�
 		});
 	});
 
-	it('延長した地方税は都道府県・市町村への申請が別に要ると note に書く', () => {
+	it('延長した地方税は事業税の承認と延滞金と住民税の届け出を note に書き利子税とは書かない', () => {
 		const { deadlines } = filingDeadlines(
 			period({ startsOn: '2027-07-01', endsOn: '2027-12-31', corporateTaxExtensionMonths: 1 }),
 			holidays(),
@@ -84,8 +84,9 @@ describe('FREQ-561-AC-01: 法人の期限は終了日の翌日から2か月で�
 			tax: 'local_tax',
 			due: '2028-03-31',
 			extended: true,
-			note: '延ばした分に利子税がかかる。都道府県・市町村への申請が別に要る',
+			note: '事業税・特別法人事業税は都道府県知事の承認が別に要る。延ばした分に延滞金がかかる。住民税は法人税の延長に合わせて延び、届け出が要る',
 		});
+		expect(deadlines[1].note).not.toContain('利子税');
 	});
 });
 

@@ -411,4 +411,125 @@ describe('設定・期間のタブ', () => {
 		expect(within(region('事業をやめた日')).getByLabelText('やめた日')).toBeInTheDocument();
 		expect(calls.filter((call) => call.method === 'PUT')).toHaveLength(0);
 	});
+	it('FREQ-561-AC-02: 延長を入れた法人の地方税の行は事業税の承認と延滞金と住民税の届け出を出し利子税とは出さない', async () => {
+		const first = corporatePeriod(1, '2027-01-01', '2027-12-31', { corporateTaxExtensionMonths: 1 });
+		mockFetch((url) => (url.pathname === PERIODS_URL
+			? { status: 200, body: periodsBody([first], settingsOf({ currentBusinessType: 'corporation' })) }
+			: undefined));
+		render(<SettingsView today="2026-11-07" />);
+
+		const block = await screen.findByRole('group', { name: '第1期の申告の期限' });
+		const local = within(block).getByText('法人住民税・事業税の申告').closest('li') as HTMLElement;
+		expect(local).toHaveTextContent('事業税・特別法人事業税は都道府県知事の承認が別に要ります。延ばした分に延滞金がかかります。住民税は法人税の延長に合わせて延び、届け出が要ります');
+		expect(local).not.toHaveTextContent('利子税');
+	});
+
+	it('FREQ-561-AC-02: 課税の期間の注記の日付は年/月/日で出す', async () => {
+		const first = corporatePeriod(1, '2027-07-01', '2028-06-30', { consumptionTaxStatus: 'taxable', consumptionTaxableFrom: '2028-01-01' });
+		mockFetch((url) => (url.pathname === PERIODS_URL
+			? { status: 200, body: periodsBody([first], settingsOf({ currentBusinessType: 'corporation' })) }
+			: undefined));
+		render(<SettingsView today="2026-11-07" />);
+
+		const block = await screen.findByRole('group', { name: '第1期の申告の期限' });
+		expect(within(block).getByText('消費税の確定申告（法人）').closest('li')).toHaveTextContent('2028/01/01から2028/06/30までが課税の期間です');
+	});
+
+	it('FREQ-555-AC-01: 4つの書き込みが500で失敗すると失敗の色で知らせる', async () => {
+		const p2026 = solePeriod(2026, { endsOn: '2026-06-30' });
+		const settings = settingsOf({ soleBusinessEndedOn: '2026-06-30' });
+		mockFetch((url, method) => {
+			if (url.pathname === PERIODS_URL && method === 'GET') return { status: 200, body: periodsBody([p2026], settings) };
+			if (method === 'PUT' || method === 'POST') return { status: 500, body: { error: '会計の処理に失敗しました。' } };
+			return undefined;
+		});
+		render(<SettingsView today="2026-11-07" />);
+		const failed = async (scope: HTMLElement) => {
+			const message = await within(scope).findByText('会計の処理に失敗しました。');
+			expect(message).toHaveAttribute('data-tone', 'error');
+			expect(message).toHaveClass('text-red-700');
+			expect(message).not.toHaveClass('text-[#16844b]');
+		};
+
+		// 開業日
+		const start = await screen.findByRole('region', { name: '開業日と事業の形' });
+		fireEvent.change(within(start).getByLabelText('開業日'), { target: { value: '2026-04-01' } });
+		fireEvent.click(within(start).getByRole('button', { name: '開業日を保存' }));
+		await failed(start);
+		// 事業の形（やめた日の登録済みで、確かめてから個人から法人へ）
+		fireEvent.change(within(start).getByLabelText('新しい事業の形'), { target: { value: 'corporation' } });
+		fireEvent.click(within(start).getByLabelText('やめた日を確かめました'));
+		fireEvent.click(within(start).getByRole('button', { name: '事業の形を変える' }));
+		await waitFor(() => expect(within(start).getAllByText('会計の処理に失敗しました。')).toHaveLength(2));
+		for (const message of within(start).getAllByText('会計の処理に失敗しました。')) {
+			expect(message).toHaveAttribute('data-tone', 'error');
+			expect(message).toHaveClass('text-red-700');
+		}
+		// やめた日
+		const sole = region('事業をやめた日');
+		fireEvent.click(within(sole).getByRole('button', { name: 'やめた日を選び直す' }));
+		fireEvent.change(within(sole).getByLabelText('やめた日'), { target: { value: '2026-07-31' } });
+		fireEvent.change(within(sole).getByLabelText('選び直す理由'), { target: { value: '見落とし' } });
+		fireEvent.click(within(sole).getByRole('button', { name: '選び直しを保存' }));
+		await failed(sole);
+		// 申告の設定
+		const block = screen.getByRole('group', { name: '2026年（個人）の申告の期限' });
+		fireEvent.click(within(block).getByRole('button', { name: '申告の設定を保存' }));
+		await failed(block);
+	});
+
+	it('FREQ-555-AC-06: 保存の後に作り直されても成功の知らせが残り、版の衝突の後は読み直せる', async () => {
+		const p2026 = solePeriod(2026);
+		let current = p2026;
+		let conflict = false;
+		const { calls } = mockFetch((url, method, body) => {
+			if (url.pathname === PERIODS_URL && method === 'GET') return { status: 200, body: periodsBody([current], settingsOf()) };
+			if (url.pathname === `${PERIODS_URL}/${p2026.id}/filing` && method === 'PUT') {
+				if (conflict) return { status: 409, body: { code: 'ACCOUNTING_VERSION_CONFLICT', error: '設定が変わりました。読み直してください。' } };
+				const filing = body as { consumptionTaxStatus: 'taxable'; consumptionTaxableFrom: string };
+				current = { ...current, consumptionTaxStatus: filing.consumptionTaxStatus, consumptionTaxableFrom: filing.consumptionTaxableFrom, version: String(Number(current.version) + 1) };
+				return { status: 200, body: { data: { period: current } } };
+			}
+			return undefined;
+		});
+		render(<SettingsView today="2026-11-07" />);
+
+		let block = await screen.findByRole('group', { name: '2026年（個人）の申告の期限' });
+		fireEvent.change(within(block).getByLabelText('消費税'), { target: { value: 'taxable' } });
+		fireEvent.change(within(block).getByLabelText('課税事業者になった日'), { target: { value: '2026-01-01' } });
+		fireEvent.click(within(block).getByRole('button', { name: '申告の設定を保存' }));
+		// 版が変わってフォームが作り直された後も、成功の文が成功の色で残る。
+		block = screen.getByRole('group', { name: '2026年（個人）の申告の期限' });
+		const saved = await within(block).findByText('申告の設定を保存しました。');
+		expect(saved).toHaveAttribute('data-tone', 'success');
+		await waitFor(() => expect(within(block).getByText('消費税の確定申告（個人）')).toBeInTheDocument());
+
+		conflict = true;
+		fireEvent.click(within(block).getByRole('button', { name: '申告の設定を保存' }));
+		expect(await within(block).findByText('設定が変わりました。読み直してください。')).toHaveAttribute('data-tone', 'error');
+		const gets = () => calls.filter((call) => call.url === PERIODS_URL && call.method === 'GET').length;
+		const before = gets();
+		fireEvent.click(within(block).getByRole('button', { name: '読み直す' }));
+		await waitFor(() => expect(gets()).toBe(before + 1));
+		await waitFor(() => expect(screen.queryByText('設定が変わりました。読み直してください。')).not.toBeInTheDocument());
+	});
+
+	it('FREQ-561-AC-03: 開業日を保存した後は読み取り専用になり保存したと知らせる', async () => {
+		let settings = settingsOf();
+		mockFetch((url, method, body) => {
+			if (url.pathname === PERIODS_URL && method === 'GET') return { status: 200, body: periodsBody([solePeriod(2026)], settings) };
+			if (url.pathname === '/api/admin/accounting/settings' && method === 'PUT') {
+				settings = settingsOf({ businessStartDate: (body as { businessStartDate: string }).businessStartDate, version: '4' });
+				return { status: 200, body: { data: { settings } } };
+			}
+			return undefined;
+		});
+		render(<SettingsView today="2026-11-07" />);
+
+		const start = await screen.findByRole('region', { name: '開業日と事業の形' });
+		fireEvent.change(within(start).getByLabelText('開業日'), { target: { value: '2026-04-01' } });
+		fireEvent.click(within(start).getByRole('button', { name: '開業日を保存' }));
+		expect(await within(start).findByText('開業日を保存しました。')).toHaveAttribute('data-tone', 'success');
+		expect(within(start).getByLabelText('開業日')).toHaveAttribute('readonly');
+	});
 });

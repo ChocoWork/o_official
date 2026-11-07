@@ -21,8 +21,21 @@ export type InterimFiling = {
 
 export type HolidayLookup = (date: string) => boolean | undefined;
 
+/** 法人税の延長（法人税法75条の2）。延ばした分に利子税がかかる。 */
 const EXTENSION_NOTE = '延ばした分に利子税がかかる';
-const LOCAL_TAX_EXTENSION_NOTE = '都道府県・市町村への申請が別に要る';
+/**
+ * 地方税の延長。法人税の延長とは扱いが違う（利子税ではない）。
+ * - 事業税・特別法人事業税: 延長は都道府県知事の承認を受ける（地方税法72条の25第3項）。
+ *   延ばした分には延滞金がかかる（同72条の45の2）。
+ * - 法人住民税（法人税割）: 法人税の申告書の提出期限に合わせて延び、要るのは届出（同53条）。
+ * 2026-11-07 に e-Gov の法令 API v1 で条文を確かめた。v1 は古い版を返すことがあるため、
+ * 開店前に税理士に今の版で確かめてもらう（台帳の未確認事項）。
+ */
+const LOCAL_TAX_EXTENSION_NOTE = [
+	'事業税・特別法人事業税は都道府県知事の承認が別に要る',
+	'延ばした分に延滞金がかかる',
+	'住民税は法人税の延長に合わせて延び、届け出が要る',
+].join('。');
 
 /**
  * 期限が土曜・日曜・祝日・1月2日・3日・12月29日〜31日に当たれば次の日にする（国税通則法10条2項・同施行令2条2項）。
@@ -106,7 +119,7 @@ export function filingDeadlines(
 			'local_tax',
 			corporateBase,
 			corporateExtended,
-			joinNotes(corporateNote, corporateExtended ? LOCAL_TAX_EXTENSION_NOTE : ''),
+			corporateExtended ? LOCAL_TAX_EXTENSION_NOTE : '',
 			isHoliday,
 		),
 	);

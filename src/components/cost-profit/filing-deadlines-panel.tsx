@@ -32,9 +32,10 @@ const INTERIM_LABELS: Record<InterimFiling["tax"], string> = {
   consumption_tax_corporate: "消費税の中間申告",
 };
 
-/** 期限の注記（常体の短い文を「。」でつないだもの）を、画面の穏やかな文へ直す。 */
+/** 期限の注記（常体の短い文を「。」でつないだもの）を、画面の穏やかな文へ直す。日付は YYYY/MM/DD にそろえる。 */
 export function politeNote(note: string): string {
   return note
+    .replace(/(\d{4})-(\d{2})-(\d{2})/g, "$1/$2/$3")
     .split("。")
     .filter((part) => part !== "")
     .map((part) => {

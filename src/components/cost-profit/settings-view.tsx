@@ -21,7 +21,16 @@ import {
   politeNote,
   slashDate,
 } from "./filing-deadlines-panel";
-import { PeriodForm, sendAccountingJson } from "./period-form";
+import {
+  errorNotice,
+  failureNotice,
+  NoticeLine,
+  PeriodForm,
+  sendAccountingJson,
+  successNotice,
+  type AccountingSendResult,
+  type Notice,
+} from "./period-form";
 
 // 設定・期間のタブ（FREQ-555・561）。開業日と事業の形、期間の一覧と追加、期間ごとの申告の期限、
 // 開業日からの届け出の期限、個人の最後の期間のやめた日の登録。
@@ -72,28 +81,22 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Message({ text }: { text: string | null }) {
-  if (!text) return null;
-  const success = /ました。$/.test(text);
-  return (
-    <p
-      role="status"
-      className={`font-acumin lk-text-4xs ${success ? "text-[#16844b]" : "text-red-700"}`}
-    >
-      {text}
-    </p>
-  );
-}
-
 /** 期間の申告の設定（課税事業者か免税事業者か・課税事業者になった日・法人の延長）。権限のある人だけ。 */
 function FilingForm({
   period,
   onSaved,
   guard,
+  notice,
+  onNotice,
+  onReload,
 }: {
   period: AccountingPeriod;
   onSaved: () => Promise<void>;
   guard: { current: boolean };
+  /** 知らせは親が持つ（保存の後に版が変わって作り直されても、成功の文を残す）。 */
+  notice: Notice | null;
+  onNotice: (notice: Notice | null) => void;
+  onReload: () => void;
 }) {
   const [status, setStatus] = useState(period.consumptionTaxStatus);
   const [taxableFrom, setTaxableFrom] = useState(
@@ -105,19 +108,18 @@ function FilingForm({
   const [consumptionExtension, setConsumptionExtension] = useState(
     period.consumptionTaxExtensionMonths,
   );
-  const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const isCorporation = period.businessType === "corporation";
 
   const save = async () => {
     if (guard.current) return;
     if (status === "taxable" && !taxableFrom) {
-      setMessage("課税事業者になった日を入れてください。");
+      onNotice(errorNotice("課税事業者になった日を入れてください。"));
       return;
     }
     guard.current = true;
     setSaving(true);
-    setMessage(null);
+    onNotice(null);
     const result = await sendAccountingJson(
       `${PERIODS_URL}/${period.id}/filing`,
       "PUT",
@@ -134,7 +136,7 @@ function FilingForm({
     if (result.ok) await onSaved();
     guard.current = false;
     setSaving(false);
-    setMessage(result.ok ? "申告の設定を保存しました。" : result.message);
+    onNotice(result.ok ? successNotice("申告の設定を保存しました。") : failureNotice(result));
   };
 
   return (
@@ -190,7 +192,7 @@ function FilingForm({
           </label>
         </div>
       ) : null}
-      <Message text={message} />
+      <NoticeLine notice={notice} onReload={onReload} />
       <div className="flex justify-end">
         <Button
           variant="outline"
@@ -224,18 +226,19 @@ export function SettingsView({
   const busy = useRef(false);
 
   const [startInput, setStartInput] = useState("");
-  const [startMessage, setStartMessage] = useState<string | null>(null);
+  const [startNotice, setStartNotice] = useState<Notice | null>(null);
   const [savingStart, setSavingStart] = useState(false);
 
   const [typeChoice, setTypeChoice] = useState<AccountingPeriod["businessType"] | null>(null);
   const [endConfirmed, setEndConfirmed] = useState(false);
-  const [typeMessage, setTypeMessage] = useState<string | null>(null);
+  const [typeNotice, setTypeNotice] = useState<Notice | null>(null);
   const [savingType, setSavingType] = useState(false);
 
   const [soleFormOpen, setSoleFormOpen] = useState(false);
   const [endedInput, setEndedInput] = useState("");
   const [reasonInput, setReasonInput] = useState("");
-  const [soleMessage, setSoleMessage] = useState<string | null>(null);
+  const [soleNotice, setSoleNotice] = useState<Notice | null>(null);
+  const [filingNotices, setFilingNotices] = useState<Record<string, Notice | null>>({});
   const [savingSole, setSavingSole] = useState(false);
   const endedInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -320,6 +323,15 @@ export function SettingsView({
   const toCorporation =
     settings.currentBusinessType === "soleProprietor" && chosenType === "corporation";
 
+  /** 版の衝突の後に、知らせを消して読み直す。 */
+  const reload = () => {
+    setStartNotice(null);
+    setTypeNotice(null);
+    setSoleNotice(null);
+    setFilingNotices({});
+    void load();
+  };
+
   /** 書き込みの後は、期間・期限・設定の版を読み直し、会計の画面にも知らせる。 */
   const afterWrite = async () => {
     await load();
@@ -328,8 +340,8 @@ export function SettingsView({
 
   const run = async (
     setSaving: (value: boolean) => void,
-    send: () => Promise<{ ok: true; data: unknown } | { ok: false; message: string }>,
-    onDone: (result: { ok: true; data: unknown } | { ok: false; message: string }) => void,
+    send: () => Promise<AccountingSendResult>,
+    onDone: (result: AccountingSendResult) => void,
   ) => {
     if (busy.current) return;
     busy.current = true;
@@ -343,14 +355,14 @@ export function SettingsView({
 
   const saveBusinessStart = () => {
     if (!startInput) {
-      setStartMessage("開業日を入れてください。");
+      setStartNotice(errorNotice("開業日を入れてください。"));
       return;
     }
     if (startInput < MIN_BUSINESS_START || startInput > maxBusinessStart) {
-      setStartMessage("選べる日の範囲で入れてください");
+      setStartNotice(errorNotice("選べる日の範囲で入れてください"));
       return;
     }
-    setStartMessage(null);
+    setStartNotice(null);
     void run(
       setSavingStart,
       () =>
@@ -360,12 +372,13 @@ export function SettingsView({
           expectedVersion: settings.version,
           requestKey: crypto.randomUUID(),
         }),
-      (result) => setStartMessage(result.ok ? "開業日を保存しました。" : result.message),
+      (result) =>
+        setStartNotice(result.ok ? successNotice("開業日を保存しました。") : failureNotice(result)),
     );
   };
 
   const saveBusinessType = () => {
-    setTypeMessage(null);
+    setTypeNotice(null);
     void run(
       setSavingType,
       () =>
@@ -380,7 +393,7 @@ export function SettingsView({
           setTypeChoice(null);
           setEndConfirmed(false);
         }
-        setTypeMessage(result.ok ? "事業の形を変えました。" : result.message);
+        setTypeNotice(result.ok ? successNotice("事業の形を変えました。") : failureNotice(result));
       },
     );
   };
@@ -390,12 +403,14 @@ export function SettingsView({
     if (!soleLast) return;
     const lastDay = `${parseIsoDate(soleLast.startsOn).year}-12-31`;
     if (!endedInput || endedInput < soleLast.startsOn || endedInput > lastDay) {
-      setSoleMessage(
+      setSoleNotice(
+        errorNotice(
         `やめた日は${slashDate(soleLast.startsOn)}から${slashDate(lastDay)}までの日にしてください。`,
+        ),
       );
       return;
     }
-    setSoleMessage(null);
+    setSoleNotice(null);
     void run(
       setSavingSole,
       () =>
@@ -411,9 +426,11 @@ export function SettingsView({
           setSoleFormOpen(false);
           setEndedInput("");
           setReasonInput("");
-          setSoleMessage(rechoosing ? "やめた日を選び直しました。" : "やめた日を登録しました。");
+          setSoleNotice(
+            successNotice(rechoosing ? "やめた日を選び直しました。" : "やめた日を登録しました。"),
+          );
         } else {
-          setSoleMessage(result.message);
+          setSoleNotice(failureNotice(result));
         }
       },
     );
@@ -421,7 +438,7 @@ export function SettingsView({
 
   const openSoleForm = () => {
     setSoleFormOpen(true);
-    setSoleMessage(null);
+    setSoleNotice(null);
   };
 
   return (
@@ -447,6 +464,7 @@ export function SettingsView({
                   />
                 </label>
                 <p className={noteClassName}>開業日は選び直せません</p>
+                <NoticeLine notice={startNotice} onReload={reload} />
               </>
             ) : manageSettings ? (
               <>
@@ -467,7 +485,7 @@ export function SettingsView({
                 <p className={noteClassName}>
                   {`選べる日: ${slashDate(MIN_BUSINESS_START)}〜${slashDate(maxBusinessStart)}`}
                 </p>
-                <Message text={startMessage} />
+                <NoticeLine notice={startNotice} onReload={reload} />
                 <Button
                   variant="primary"
                   size="sm"
@@ -498,7 +516,7 @@ export function SettingsView({
                     onChange={(event) => {
                       setTypeChoice(event.target.value as AccountingPeriod["businessType"]);
                       setEndConfirmed(false);
-                      setTypeMessage(null);
+                      setTypeNotice(null);
                     }}
                   >
                     <option value="soleProprietor">個人</option>
@@ -540,7 +558,7 @@ export function SettingsView({
                     </div>
                   )
                 ) : null}
-                <Message text={typeMessage} />
+                <NoticeLine notice={typeNotice} onReload={reload} />
                 <Button
                   variant="outline"
                   size="sm"
@@ -590,7 +608,7 @@ export function SettingsView({
         )}
         {manageSettings ? (
           <PeriodForm
-            key={`${settings.version}-${periods.length}`}
+            key={settings.currentBusinessType}
             periods={periods}
             settings={settings}
             onCreated={() => void afterWrite()}
@@ -618,6 +636,11 @@ export function SettingsView({
                     period={period}
                     guard={busy}
                     onSaved={afterWrite}
+                    notice={filingNotices[period.id] ?? null}
+                    onNotice={(notice) =>
+                      setFilingNotices((current) => ({ ...current, [period.id]: notice }))
+                    }
+                    onReload={reload}
                   />
                 ) : null}
               </FilingDeadlinesPanel>
@@ -739,7 +762,7 @@ export function SettingsView({
               </div>
             </div>
           ) : null}
-          <Message text={soleMessage} />
+          <NoticeLine notice={soleNotice} onReload={reload} />
           {settings.soleEndChanges.length > 0 ? (
             <div className="space-y-1">
               <p className={labelClassName}>選び直しの記録</p>
