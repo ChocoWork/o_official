@@ -9,7 +9,10 @@ import {
 
 // Accounting plan 1 S4 (FREQ-556 AC-01..AC-06): manual transactions become journal entries through the trigger on
 // public.admin_finance_expenses, the rows are only removed logically and the revision history is append only.
-// Every DB test runs inside BEGIN ... ROLLBACK (controller only, local DB; commit suites run last with a reset).
+// Every DB test runs inside BEGIN ... ROLLBACK (controller only, local DB; commit suites run last with a reset), except
+// one step of the FREQ-556-AC-04 test: it COMMITS one admin_finance_expenses row (in replica mode, so no journal entry
+// or revision is committed) to prove the row lock, and deletes it again in a committed cleanup that switches the
+// ALWAYS delete refusal off and back on; the test then checks the row is gone and the trigger is ALWAYS again.
 const directory = path.join(process.cwd(), 'supabase/migrations');
 const s4Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p1_manual_entry_journal.sql'));
 const s4Path = s4Files.length === 1 ? path.join(directory, s4Files[0]) : '';
@@ -570,6 +573,7 @@ describeLocalDb('S4 manual entries: controller only', (db) => {
       await holder.query('select pg_advisory_xact_lock(190521, 1)');
       let settled = false;
       const pending = insertExpense({ item: 'acc s4 waits' }).finally(() => { settled = true; });
+      pending.catch(() => undefined);
       expect({ waiting: await waitingFor(holder), settled }).toEqual({ waiting: true, settled: false });
       await holder.query('rollback');
       const id = await pending;
@@ -598,6 +602,8 @@ describeLocalDb('S4 manual entries: controller only', (db) => {
       await probe.query('select pg_advisory_xact_lock(190521, 1)');
       let settled = false;
       const pending = updateExpense(committedId, 'amount = 1500').finally(() => { settled = true; });
+      // An assertion failing before `await pending` must not leave its rejection unhandled.
+      pending.catch(() => undefined);
       expect({ waiting: await waitingFor(probe), settled }).toEqual({ waiting: true, settled: false });
       await probe.query('savepoint row_probe');
       const rowLock = await probe.query('select id from public.admin_finance_expenses where id = $1 for update nowait', [committedId])
@@ -610,23 +616,35 @@ describeLocalDb('S4 manual entries: controller only', (db) => {
       expect(await keys(committedId)).toEqual([`manual_entry:${committedId}:0`]);
     } finally {
       await probe.query('rollback').catch(() => undefined);
-      await probe.end();
-      if (committedId) {
-        await db().query('rollback');
-        await setup.query('begin');
-        await setup.query('alter table public.admin_finance_expenses disable trigger accounting_manual_entry_no_delete');
-        await setup.query("set local session_replication_role = 'replica'");
-        await setup.query('delete from public.admin_finance_expenses where id = $1', [committedId]);
-        await setup.query('alter table public.admin_finance_expenses enable always trigger accounting_manual_entry_no_delete');
-        await setup.query('commit');
-        await db().query('begin');
+      await probe.end().catch(() => undefined);
+      try {
+        if (committedId) {
+          // The test transaction holds RowExclusiveLock on the table; end it before the ALTER needs its exclusive lock.
+          await db().query('rollback');
+          try {
+            await setup.query('begin');
+            await setup.query('alter table public.admin_finance_expenses disable trigger accounting_manual_entry_no_delete');
+            await setup.query("set local session_replication_role = 'replica'");
+            await setup.query('delete from public.admin_finance_expenses where id = $1', [committedId]);
+            await setup.query('alter table public.admin_finance_expenses enable always trigger accounting_manual_entry_no_delete');
+            await setup.query('commit');
+          } catch (error) {
+            // A failed step rolls the whole cleanup back (the trigger stays ALWAYS, no exclusive lock is left behind); the
+            // row check below then fails visibly.
+            await setup.query('rollback').catch(() => undefined);
+            throw error;
+          } finally {
+            await db().query('begin');
+          }
+        }
+      } finally {
+        await setup.end();
       }
-      await setup.end();
     }
     expect(await one('select count(*)::int as n from public.admin_finance_expenses where id = $1', [committedId])).toEqual({ n: 0 });
     expect(await one(`select tgenabled::text as enabled from pg_trigger
       where tgrelid = 'public.admin_finance_expenses'::regclass and tgname = 'accounting_manual_entry_no_delete'`)).toEqual({ enabled: 'A' });
-  });
+  }, 30_000);
 
   async function attempt(change = ''): Promise<{ code?: string; message?: string; detail?: string } | null> {
     await db().query('savepoint acc_s4_assert');
