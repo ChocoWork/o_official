@@ -175,6 +175,17 @@ describeLocalDb('S3 periods: controller only', (db) => {
     expect([same.business_start_date, same.version]).toEqual(['2025-10-01', '2']);
   });
 
+  test('FREQ-561-AC-03: 開業日は2000-01-01から日本時間の今日の1年後までだけ受ける', async () => {
+    const bound = await one(`select to_char(d, 'YYYY-MM-DD') as max, to_char(d + 1, 'YYYY-MM-DD') as over
+      from (select (private.accounting_jst_date(now()) + interval '1 year')::date as d) s`);
+    expect(await failure(() => updateSettings('1999-12-31', 'soleProprietor', 1))).toEqual(INVALID);
+    expect(await failure(() => updateSettings(bound.over, 'soleProprietor', 1))).toEqual(INVALID);
+    // Each accepted value is rolled back by the savepoint, so the next one can still be tried.
+    expect(await failure(() => updateSettings('2000-01-01', 'soleProprietor', 1))).toBeNull();
+    expect(await failure(() => updateSettings(bound.max, 'soleProprietor', 1))).toBeNull();
+    expect((await settings()).business_start_date).toBeNull();
+  });
+
   test('FREQ-555-AC-06: 設定の版が違えば更新できない', async () => {
     expect(await failure(() => updateSettings(null, 'corporation', 5))).toEqual(VERSION);
     expect(await failure(() => updateSettings(null, 'corporation', 1, randomUUID(), randomUUID()))).toEqual(FORBIDDEN);

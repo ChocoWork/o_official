@@ -135,6 +135,26 @@ describeLocalDb('S3 opening balances: controller only', (db) => {
     expect(await failure(async () => undefined)).toBeNull();
   });
 
+  test('FREQ-555-AC-02: 繰越の期首は同じ事業の形の直前の期間からだけ保存でき、後の期間・自分・離れた期間を元にした物と法人の第1期への繰越は断る', async () => {
+    const term1 = await create('corporation', '2027-01-01', '2027-12-31');
+    const term2 = await create('corporation', '2028-01-01', '2028-12-31');
+    const term3 = await create('corporation', '2029-01-01', '2029-12-31');
+    const rows = [{ account_code: '1010', signed_amount: 1000 }, { account_code: '3040', signed_amount: -1000 }];
+    const mismatch = { code: '55000', message: 'ACCOUNTING_OPENING_TYPE_MISMATCH' };
+    // Into the first term (it has no previous period), here from a later term.
+    expect(await failure(() => store(term1, rows, 1, 'closing_carryover', term2))).toEqual(mismatch);
+    // From the period itself, from a later period, and from an earlier but not adjacent period.
+    expect(await failure(() => store(term2, rows, 1, 'closing_carryover', term2))).toEqual(mismatch);
+    expect(await failure(() => store(term2, rows, 1, 'closing_carryover', term3))).toEqual(mismatch);
+    expect(await failure(() => store(term3, rows, 1, 'closing_carryover', term1))).toEqual(mismatch);
+    // The immediately preceding period of the same business type is accepted; the first term stays at zero.
+    expect(await store(term2, rows, 1, 'closing_carryover', term1)).toBe(2);
+    expect(await opening(term2)).toEqual([
+      { account_code: '1010', signed_amount: 1000, basis: 'stored' }, { account_code: '3040', signed_amount: -1000, basis: 'stored' }]);
+    expect(await opening(term1)).toEqual([]);
+    expect(await failure(async () => undefined)).toBeNull();
+  });
+
   test('FREQ-555-AC-06: 期首は個人なら最も新しい版、法人なら版1の行を選び版2は使わない', async () => {
     const sole = await create('soleProprietor', '2026-01-01', '2026-12-31');
     const sole2027 = await create('soleProprietor', '2027-01-01', '2027-12-31');

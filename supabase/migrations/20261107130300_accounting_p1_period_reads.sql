@@ -737,8 +737,9 @@ BEGIN
 END;
 $$;
 
--- The opening day (once; another value later is ACCOUNTING_SETTINGS_LOCKED, the same value passes, 11-k) and the
--- current business type. The end day of the sole business is not an argument here.
+-- The opening day (once; another value later is ACCOUNTING_SETTINGS_LOCKED, the same value passes, 11-k; it lies
+-- between 2000-01-01 and today in Japan + 1 year, else ACCOUNTING_ARGUMENT_INVALID) and the current business type.
+-- The end day of the sole business is not an argument here.
 CREATE FUNCTION private.admin_update_accounting_settings(_actor_id uuid, _business_start_date date,
   _current_business_type text, _expected_version bigint, _request_key uuid) RETURNS jsonb
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
@@ -752,8 +753,10 @@ BEGIN
   IF NOT private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.accounting.settings.manage']) THEN
     RAISE EXCEPTION 'ACCOUNTING_FORBIDDEN' USING ERRCODE = '42501';
   END IF;
+  -- The opening day can never be re-selected, so a typo is refused: 2000-01-01 .. today in Japan + 1 year.
   IF _current_business_type IS NULL OR _current_business_type NOT IN ('soleProprietor', 'corporation')
-    OR _expected_version IS NULL OR _request_key IS NULL THEN
+    OR _expected_version IS NULL OR _request_key IS NULL OR _business_start_date < DATE '2000-01-01'
+    OR _business_start_date > (private.accounting_jst_date(pg_catalog.now()) + interval '1 year')::date THEN
     RAISE EXCEPTION 'ACCOUNTING_ARGUMENT_INVALID' USING ERRCODE = '22023';
   END IF;
   PERFORM private.accounting_lock_all(NULL);
@@ -848,7 +851,8 @@ $$;
 
 -- 11. Stored openings (service_role; plan 6 calls it, plan 1 has no route). _rows: [{"account_code":"1040",
 --     "signed_amount":120000}] (signed = debit - credit, JSON integers, one row per account). initial has no source
---     period; closing_carryover names one of the same business type (ACCOUNTING_OPENING_TYPE_MISMATCH otherwise). The
+--     period; closing_carryover names the immediately preceding period of the same business type (ends_on =
+--     starts_on - 1; ACCOUNTING_OPENING_TYPE_MISMATCH otherwise, also for the first corporation term). The
 --     first corporation term (no previous corporation period) takes no non-zero initial row (also TYPE_MISMATCH,
 --     3-c). The rows total zero and revenue, expense, owner draw and owner contribution are zero (3-f,
 --     ACCOUNTING_OPENING_UNBALANCED). Returns the number of rows stored.
@@ -859,6 +863,7 @@ AS $$
 DECLARE
   v_period public.accounting_periods%ROWTYPE;
   v_source_type text;
+  v_source_ends_on date;
   v_row jsonb;
   v_codes text[] := ARRAY[]::text[];
   v_total numeric := 0;
@@ -892,11 +897,14 @@ BEGIN
     RAISE EXCEPTION 'ACCOUNTING_NOT_FOUND' USING ERRCODE = 'P0002';
   END IF;
   IF _source_period_id IS NOT NULL THEN
-    SELECT p.business_type INTO v_source_type FROM public.accounting_periods AS p WHERE p.id = _source_period_id;
+    SELECT p.business_type, p.ends_on INTO v_source_type, v_source_ends_on
+    FROM public.accounting_periods AS p WHERE p.id = _source_period_id;
     IF NOT FOUND THEN
       RAISE EXCEPTION 'ACCOUNTING_NOT_FOUND' USING ERRCODE = 'P0002';
     END IF;
-    IF v_source_type <> v_period.business_type THEN
+    -- Only the immediately preceding period of the same business type (so never the period itself, a later one, or
+    -- anything into the first corporation term, which has no previous period).
+    IF v_source_type <> v_period.business_type OR v_source_ends_on <> v_period.starts_on - 1 THEN
       RAISE EXCEPTION 'ACCOUNTING_OPENING_TYPE_MISMATCH' USING ERRCODE = '55000';
     END IF;
   END IF;
@@ -1140,7 +1148,7 @@ BEGIN
   v_stage := 'acc_s3_period_layout_trigger';
   -- acc_s3_period_layout_trigger: exactly these triggers on the periods, the settings and the opening balances (the
   -- deferred checks ordinary, the guards and refusals ALWAYS), the layout check calls the S2 layout and the end-day
-  -- check, and the trigger functions are SECURITY DEFINER.
+  -- check, the two guard bodies have the fingerprints below, and the trigger functions are SECURITY DEFINER.
   IF v_failed IS NULL AND (
     (SELECT pg_catalog.count(*) FROM (VALUES
       ('accounting_periods', 'accounting_periods_layout', 'private.accounting_check_period_layout()', 5, 'O', true),
@@ -1169,6 +1177,12 @@ BEGIN
     OR NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc AS f
       WHERE f.oid = 'private.accounting_check_sole_end_matches_period()'::regprocedure
         AND pg_catalog.strpos(f.prosrc, 'PERFORM private.accounting_assert_sole_end();') > 0)
+    -- The two guard bodies are fingerprinted (md5 of the body with CR removed, as S0 does).
+    OR (SELECT pg_catalog.count(*) FROM (VALUES
+        ('private.accounting_guard_period_update()', '1c9a9f8b0bf9df4661b22a739ece9a90'),
+        ('private.accounting_guard_settings_update()', '61e9299c4c7c27a1ce37d18cf7aa8bf1')
+      ) AS b(fn, body_md5) JOIN pg_catalog.pg_proc AS f ON f.oid = pg_catalog.to_regprocedure(b.fn)
+      WHERE pg_catalog.md5(pg_catalog.replace(f.prosrc, E'\r', '')) = b.body_md5) <> 2
     OR EXISTS (SELECT 1 FROM pg_catalog.unnest(ARRAY['private.accounting_check_period_layout()',
         'private.accounting_guard_period_update()', 'private.accounting_guard_settings_update()',
         'private.accounting_check_sole_end_matches_period()']) AS t(fn)

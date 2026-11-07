@@ -308,6 +308,10 @@ describeLocalDb('S3 final assert: controller only', (db) => {
     [`create trigger acc_probe before insert on ${settingsTable} for each row execute function private.reject_accounting_mutation()`, 'acc_s3_period_layout_trigger'],
     [`create or replace function private.accounting_check_period_layout() returns trigger language plpgsql security definer
       set search_path = '' as $$ begin return null; end; $$`, 'acc_s3_period_layout_trigger'],
+    [`create or replace function private.accounting_guard_period_update() returns trigger language plpgsql security definer
+      set search_path = '' as $$ begin return new; end; $$`, 'acc_s3_period_layout_trigger'],
+    [`create or replace function private.accounting_guard_settings_update() returns trigger language plpgsql security definer
+      set search_path = '' as $$ begin return new; end; $$`, 'acc_s3_period_layout_trigger'],
     [`alter table ${settingsTable} disable row level security`, 'acc_s3_rls_acl'],
     [`grant select on ${opening} to authenticated`, 'acc_s3_rls_acl'],
     [`grant insert on ${settingsTable} to service_role`, 'acc_s3_rls_acl'],
