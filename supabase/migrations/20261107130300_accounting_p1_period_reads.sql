@@ -1062,6 +1062,7 @@ TO service_role;
 DO $acc_s3_final$
 DECLARE
   v_failed text;
+  v_search_path text;
   v_stage text;
   v_baseline jsonb;
   v_tables CONSTANT text[] := ARRAY['accounting_settings', 'accounting_opening_balances'];
@@ -1069,6 +1070,12 @@ DECLARE
   p record;
   v_oid oid;
 BEGIN
+  -- Catalog text (pg_get_expr, pg_get_constraintdef, format_type) depends on the caller's search_path: with
+  -- extensions ahead of pg_catalog (the Supabase default) a built-in such as gen_random_uuid() prints as
+  -- pg_catalog.gen_random_uuid(). Pin an empty search_path for this block (transaction local); it is put back below,
+  -- and an error rolls it back with the block.
+  v_search_path := pg_catalog.current_setting('search_path');
+  PERFORM pg_catalog.set_config('search_path', '', true);
   v_stage := 'acc_s3_settings_row';
   -- acc_s3_settings_row: the two tables (owner, columns, constraints: exactly these CHECK / PRIMARY KEY / FOREIGN KEY,
   -- validated, not deferrable), exactly one settings row (the fresh one at apply time, the pinned one on a replay) and
@@ -1312,6 +1319,7 @@ BEGIN
     v_failed := 'acc_s3_functions';
   END IF;
 
+  PERFORM pg_catalog.set_config('search_path', v_search_path, true);
   IF v_failed IS NOT NULL THEN
     RAISE EXCEPTION 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = v_failed;
   END IF;

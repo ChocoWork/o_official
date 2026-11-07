@@ -998,6 +998,7 @@ TO service_role;
 DO $acc_s2_final$
 DECLARE
   v_failed text;
+  v_search_path text;
   v_tables CONSTANT text[] := ARRAY['accounting_accounts', 'accounting_periods', 'accounting_period_sequences',
     'accounting_journal_entries', 'accounting_journal_lines'];
   v_append_only CONSTANT text[] := ARRAY['accounting_accounts', 'accounting_journal_entries', 'accounting_journal_lines'];
@@ -1008,6 +1009,12 @@ DECLARE
   v_baseline jsonb;
   v_other_codes text[];
 BEGIN
+  -- Catalog text (pg_get_expr, pg_get_constraintdef, format_type) depends on the caller's search_path: with
+  -- extensions ahead of pg_catalog (the Supabase default) a built-in such as gen_random_uuid() prints as
+  -- pg_catalog.gen_random_uuid(). Pin an empty search_path for this block (transaction local); it is put back below,
+  -- and an error rolls it back with the block.
+  v_search_path := pg_catalog.current_setting('search_path');
+  PERFORM pg_catalog.set_config('search_path', '', true);
   v_stage := 'acc_s2_tables';
   -- acc_s2_tables: the five tables exist in public, are ordinary tables owned by postgres, and have exactly these
   -- columns (name, type, NOT NULL, default) in this order.
@@ -1312,6 +1319,7 @@ BEGIN
     v_failed := 'acc_s2_existing_dml_allowlist';
   END IF;
 
+  PERFORM pg_catalog.set_config('search_path', v_search_path, true);
   IF v_failed IS NOT NULL THEN
     RAISE EXCEPTION 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = v_failed;
   END IF;

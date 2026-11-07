@@ -88,6 +88,14 @@ describeLocalDb('S2 final assert: controller only', (db) => {
     expect(await attempt()).toBeNull();
     expect(await attempt('set local search_path = pg_catalog')).toBeNull();
     expect(await attempt('set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt("set local search_path = ''")).toBeNull();
+    // The assert pins an empty search_path only while it runs and gives the caller's back.
+    await db().query('savepoint acc_s2_search_path');
+    await db().query('set local search_path = public, private, extensions, pg_catalog');
+    await pinAccountingS2Baseline(db());
+    await db().query(assertion);
+    expect((await db().query('show search_path')).rows[0].search_path).toBe('public, private, extensions, pg_catalog');
+    await db().query('rollback to savepoint acc_s2_search_path');
   });
 
   const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
@@ -262,6 +270,10 @@ describeLocalDb('S3 final assert: controller only', (db) => {
     expect(await attempt()).toBeNull();
     expect(await attempt('set local search_path = pg_catalog')).toBeNull();
     expect(await attempt('set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt("set local search_path = ''")).toBeNull();
+    // The S2 assert replayed after S3, under the same caller paths.
+    expect(await attempt('set local search_path = public, private, extensions, pg_catalog', 's2')).toBeNull();
+    expect(await attempt("set local search_path = ''", 's2')).toBeNull();
   });
 
   test('FREQ-555-AC-01: S3の後に期間・設定・期首の行があってもS2とS3の末尾assertは再生で通り、適用の時の空の控えなら断る', async () => {
