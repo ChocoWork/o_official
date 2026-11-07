@@ -118,9 +118,16 @@ describeLocalDb('S1 routes after grants: controller only, commits rows', (db) =>
     form.set('evidenceKind', 'paper');
     form.set('paperOriginalKept', 'true');
     form.set('file', new File(['%PDF-1.4 accounting s1'], 'receipt.pdf', { type: 'application/pdf' }));
-    const uploaded = await postReceipt(new Request('http://localhost/api/admin/kpi/cost-profit/receipt', {
-      method: 'POST', body: form, headers: { 'user-agent': 'accounting-s1-test' },
-    })) as unknown as RouteResponse;
+    // tests/setupRequestPolyfill.js replaces the global Request with node-fetch's, which has no formData(). Next.js
+    // hands the route a WHATWG Request, so the body is encoded as real multipart and parsed back by Node's own
+    // (undici) Response, whose class comes from a data: URL fetch (no network).
+    const NativeResponse = (await fetch('data:,')).constructor as typeof Response;
+    const encoded = new NativeResponse(form);
+    const multipart = { type: encoded.headers.get('content-type') ?? '', bytes: await encoded.arrayBuffer() };
+    const receiptRequest = Object.assign(new Request('http://localhost/api/admin/kpi/cost-profit/receipt', {
+      method: 'POST', headers: { 'user-agent': 'accounting-s1-test', 'content-type': multipart.type },
+    }), { formData: () => new NativeResponse(multipart.bytes, { headers: { 'content-type': multipart.type } }).formData() });
+    const uploaded = await postReceipt(receiptRequest) as unknown as RouteResponse;
     expect(uploaded.status).toBe(200);
     const storagePath = uploaded.body.data.storagePath as string;
     expect((await db().query(
