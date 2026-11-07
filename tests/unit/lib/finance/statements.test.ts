@@ -33,7 +33,7 @@ function buildStatements(options: {
 	const depreciation = depreciationSchedule(options.assets ?? [], fiscalYear);
 	const journal = [
 		...buildJournal(options.entries, 'soleProprietor'),
-		...buildDepreciationEntries(depreciation.rows, fiscalYear),
+		...buildDepreciationEntries(depreciation.rows, `${fiscalYear}-12-31`),
 	];
 	const trial = buildTrialBalance(buildGeneralLedger(journal, options.opening ?? new Map()));
 	return { trial, pl: buildProfitAndLoss(trial), bs: buildBalanceSheet(trial), depreciation };

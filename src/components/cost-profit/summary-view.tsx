@@ -36,6 +36,8 @@ export function SummaryView({
   const {
     fiscalYear,
     fiscalYearLabel,
+    periodRangeLabel,
+    periodSpanLabel,
     setActiveTab,
     cashTrendMode,
     setCashTrendMode,
@@ -270,7 +272,7 @@ export function SummaryView({
             }
             actions={
               <span className="font-acumin lk-text-4xs text-[#707070] tabular-nums">
-                会計期間 {fiscalYear}/01/01〜{fiscalYear}/12/31
+                会計期間 {periodRangeLabel}
               </span>
             }
           >
@@ -697,7 +699,7 @@ export function SummaryView({
             ? cumulative.firstYear
               ? `${cumulative.firstYear}年〜${fiscalYear}年（${fiscalYear - cumulative.firstYear + 1}期）・${cumulative.entryCount}件の積み上げ`
               : "取引がまだありません"
-            : `${fiscalYear}年1月〜12月の実績`}
+            : `${periodSpanLabel}の実績`}
         </p>
         <div className="mt-3 overflow-x-auto">
           <div className="flex flex-col gap-2 lg:min-w-180 lg:flex-row lg:items-stretch">

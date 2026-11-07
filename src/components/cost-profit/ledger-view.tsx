@@ -8,7 +8,6 @@ import { SearchField } from "@/components/ui/SearchField/SearchField";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import {
   LEDGER_TREND_COLOR,
-  LEDGER_MONTH_LABELS,
   LEDGER_PAGE_SIZE_OPTIONS,
   REVISION_OPERATION_LABELS,
   currency,
@@ -17,6 +16,9 @@ import {
 } from "./constants";
 import { FlowOperator } from "./shared-ui";
 import type { CostProfitModel } from "./use-cost-profit-model";
+
+/** 保存していない合成の仕訳（注文・Stripe）の印。計画2が保存を始めたら外す。 */
+const SYNTHESIZED_ENTRY_LABEL = "集計中（計画2で保存）";
 
 export function LedgerView({
   model,
@@ -52,6 +54,7 @@ export function LedgerView({
     toggleAccountGroup,
     ledgerClosingBalance,
     entriesById,
+    synthesizedEntryNumbers,
     ledgerPeriodOptions,
     LEDGER_SIDE_OPTIONS,
     filteredLedgerRows,
@@ -259,7 +262,9 @@ export function LedgerView({
                   className="font-acumin"
                   ariaLabel={`${fiscalYear}年の月次累積収支推移`}
                   ariaDescribedBy={`cumulative-balance-trend-${fiscalYear}-table`}
-                  categories={LEDGER_MONTH_LABELS}
+                  categories={cumulativeBalanceTrend.monthly.map(
+                    (point) => point.label,
+                  )}
                   series={[
                     {
                       label: "累積収支",
@@ -283,8 +288,8 @@ export function LedgerView({
                   </thead>
                   <tbody>
                     {cumulativeBalanceTrend.monthly.map((point) => (
-                      <tr key={point.month}>
-                        <th scope="row">{point.month}月</th>
+                      <tr key={point.key}>
+                        <th scope="row">{point.label}</th>
                         <td>{currency(point.balance)}</td>
                       </tr>
                     ))}
@@ -444,7 +449,16 @@ export function LedgerView({
                     key: "number",
                     header: "伝票No.",
                     cellClassName: "whitespace-nowrap text-[#474747]",
-                    render: (row) => row.number,
+                    render: (row) => (
+                      <>
+                        {row.number}
+                        {synthesizedEntryNumbers.has(row.number) ? (
+                          <span className="ml-1.5 font-acumin lk-text-6xs text-[#707070]">
+                            {SYNTHESIZED_ENTRY_LABEL}
+                          </span>
+                        ) : null}
+                      </>
+                    ),
                   },
                   {
                     key: "counter",
@@ -573,7 +587,12 @@ export function LedgerView({
                     {selectedLedgerRow.date.replaceAll("-", "/")}
                   </span>,
                 )}
-                {ledgerDetailRow("伝票No.", selectedLedgerRow.number)}
+                {ledgerDetailRow(
+                  "伝票No.",
+                  synthesizedEntryNumbers.has(selectedLedgerRow.number)
+                    ? `${selectedLedgerRow.number}（${SYNTHESIZED_ENTRY_LABEL}）`
+                    : selectedLedgerRow.number,
+                )}
                 {ledgerDetailRow(
                   "証憑",
                   selectedLedgerReceipts.length > 0

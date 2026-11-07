@@ -66,17 +66,19 @@ function cumulativeDepreciationExpense(
 }
 
 /**
- * 開業以来（対象年の年末まで）の累計。
+ * 開業以来（期間の終わりの日まで）の累計。
+ * 減価償却は期間の終わりの日の暦年まで年ごとに足す（期間の月数での割り振りは計画1 Task 12）。
  * 取引の相手科目だけを見る。資金側（出金方法・入金方法）は必ず
  * 資産・負債・純資産の科目なので損益には影響しない。
  */
 export function buildCumulativeSummary(
   entries: readonly CumulativeEntry[],
   assets: readonly FixedAsset[],
-  throughYear: number,
+  /** 期間の終わりの日（`YYYY-MM-DD`）。この日までの取引を数える。 */
+  throughDate: string,
 ): CumulativeSummary {
-  const yearEnd = `${throughYear}-12-31`;
-  const target = entries.filter((entry) => entry.date <= yearEnd);
+  const throughYear = yearOf(throughDate);
+  const target = entries.filter((entry) => entry.date <= throughDate);
 
   let sales = 0;
   let expenses = 0;
@@ -109,7 +111,7 @@ export function buildCumulativeSummary(
   // 減価償却費は仕訳ではなく固定資産台帳から生成されるため別途足す。
   // 決算書上は「経費」なので販管費にも積む。
   const acquiredAssets = assets.filter(
-    (asset) => asset.acquiredOn <= yearEnd,
+    (asset) => asset.acquiredOn <= throughDate,
   );
   for (const asset of acquiredAssets) {
     const depreciation = cumulativeDepreciationExpense(asset, throughYear);

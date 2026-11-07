@@ -1,5 +1,7 @@
 import { buildStripeJournal, mergeJournalEntries } from '@/lib/finance/stripe-journal';
-import { accountByCode } from '@/lib/finance/accounts';
+import { accountByCode, type Account } from '@/lib/finance/accounts';
+import { buildOrderSalesJournal } from '@/lib/finance/journal';
+import { savedEntryToJournalEntry, type SavedJournalEntry } from '@/lib/accounting/journal-types';
 
 const order = {
   id: 'order-1', paymentIntentId: 'pi_1', totalAmount: 10_000,
@@ -110,5 +112,33 @@ describe('Stripe accounting journal projection', () => {
       orders: [order], balanceTransactions: [charge], refunds: [], payouts: [],
     });
     expect(mergeJournalEntries(generated, generated)).toHaveLength(generated.length);
+  });
+
+  it('FREQ-557-AC-01: 保存した仕訳と合成の仕訳は印が違うので重ねずに両方残す', () => {
+    const saved: SavedJournalEntry = {
+      id: '00000000-0000-4000-8000-000000000001', periodId: '00000000-0000-4000-8000-000000000002',
+      entryNo: 1, entryDate: '2026-08-15', eventKind: 'manual_entry', dedupeKey: 'manual_entry:1:0',
+      description: '広告', recordedAt: '2026-08-15T01:00:00Z', recordedBy: null, isLate: false,
+      reversesEntryId: null, reason: null, sourceTable: 'admin_finance_expenses', sourceId: '1',
+      migratedFrom: null, migratedAt: null, sourceRecordedAt: null,
+      lines: [
+        { lineNo: 1, accountCode: '6110', debit: 3_000, credit: 0, subAccount: null, counterparty: null, orderId: null, memo: null },
+        { lineNo: 2, accountCode: '1010', debit: 0, credit: 3_000, subAccount: null, counterparty: null, orderId: null, memo: null },
+      ],
+    };
+    const lookup = (code: string) => accountByCode(code) as Account;
+    const orderSales = buildOrderSalesJournal([{
+      id: -1, entryType: 'income', date: '2026-08-15', category: '売上高', item: 'オンライン注文', partner: '',
+      amount: 5_000, paymentMethod: 'Stripe', memo: '', seasonTag: null, sourceId: 'order-2',
+    }], 'soleProprietor', { startsOn: '2026-01-01', endsOn: '2026-12-31' });
+    const generated = buildStripeJournal({
+      orders: [order], balanceTransactions: [charge], refunds: [], payouts: [],
+    });
+
+    const merged = mergeJournalEntries([savedEntryToJournalEntry(saved, lookup), ...orderSales], generated);
+    expect(merged.map((entry) => entry.sourceKey).sort()).toEqual([
+      'manual_entry:1:0', 'order:order-2', 'stripe:fee:txn-charge-1', 'stripe:sale:order-1',
+    ]);
+    expect(mergeJournalEntries(merged, generated)).toHaveLength(merged.length);
   });
 });

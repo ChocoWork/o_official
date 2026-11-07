@@ -8,17 +8,35 @@ import { isFixedAssetAccount } from '@/lib/finance/fixed-asset-link';
 import {
 	ACCOUNTING_ERRORS,
 	AccountingStoreError,
+	MAX_JOURNAL_PAGE,
 	SOLE_ENDED_NOT_SWITCHED,
 	type AccountingErrorCode,
+	type JournalCursor,
+	type OpeningBalanceRow,
 } from '@/lib/accounting/accounting-types';
+import {
+	getAccountingSettings,
+	getOpeningBalances,
+	listAccountingPeriods,
+	listSavedJournal,
+} from '@/lib/accounting/accounting-store';
+import { filingDeadlines } from '@/lib/accounting/filing-deadlines';
+import { isJpHoliday } from '@/lib/accounting/jp-holidays';
+import { toJstDate } from '@/lib/accounting/jst-date';
+import type { SavedJournalEntry } from '@/lib/accounting/journal-types';
+import { addDays, type AccountingPeriod } from '@/lib/accounting/period';
+import { isDateInPeriod, jstStartOfDayIso, periodRangeOf } from '@/lib/finance/period-range';
 import {
 	toOrderSalesTransaction,
 	type OrderSalesRow,
 } from '@/lib/sales/order-sales';
 
 const seasonKeySchema = z.string().regex(/^\d{4}(SS|AW)$/);
-// 会計期間は暦年。取引・決算はすべてこの軸で扱う（シーズンは商品原価専用）。
+// 旧の年の入口。GET は個人の暦年の期間に結ぶ（会計の期間は accounting_periods。シーズンは商品原価専用）。
 const fiscalYearSchema = z.coerce.number().int().min(2000).max(2999);
+const periodIdSchema = z.string().uuid();
+/** 保存した仕訳を読む最大のページ数（1ページ MAX_JOURNAL_PAGE 件）。超えたら欠けた合計を返さず断る。 */
+const MAX_SAVED_JOURNAL_PAGES = 100;
 // 証憑（電子取引データ）の非公開バケット。
 const RECEIPT_BUCKET = 'finance-receipts';
 const moneySchema = z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
@@ -441,13 +459,106 @@ function missingMigrationResponse() {
 	);
 }
 
-/** 初回利用時は、未作成の会計領域を「取引0件」の正常な空状態として表示する。 */
-function emptyFinanceResponse(fiscalYear: number, seasonKey: string | null) {
+type PeriodNotices = { filingDeadlinePassed: boolean; previousPeriodOpen: boolean };
+
+/** 期間で数える応答の欄（既存の欄に足す）。 */
+type PeriodPayload = {
+	period: AccountingPeriod | null;
+	periods: AccountingPeriod[];
+	savedJournal: SavedJournalEntry[];
+	opening: OpeningBalanceRow[];
+	periodNotices: PeriodNotices;
+};
+
+const NO_PERIOD_NOTICES: PeriodNotices = { filingDeadlinePassed: false, previousPeriodOpen: false };
+
+/** 旧の year は、その暦年に始まる個人の期間に結ぶ（個人の期間は1月1日に始まる）。 */
+function soleCalendarPeriod(periods: readonly AccountingPeriod[], year: number): AccountingPeriod | undefined {
+	return periods.find((period) => period.businessType === 'soleProprietor' && Number(period.startsOn.slice(0, 4)) === year);
+}
+
+/**
+ * 既定の期間: 今日（日本時間）を含む期間。個人と法人の両方が含むときは設定の今の事業の形の方。
+ * 含む期間が無ければ、今日までに始まった最後の期間、それも無ければ最初の期間。
+ */
+async function defaultPeriod(
+	client: Awaited<ReturnType<typeof createServiceRoleClient>>,
+	periods: readonly AccountingPeriod[],
+	today: string,
+): Promise<AccountingPeriod | null> {
+	const containing = periods.filter((period) => period.startsOn <= today && today <= period.endsOn);
+	if (containing.length > 1) {
+		const settings = await getAccountingSettings(client);
+		return containing.find((period) => period.businessType === settings.currentBusinessType) ?? containing[0];
+	}
+	if (containing.length === 1) return containing[0];
+	const started = periods.filter((period) => period.startsOn <= today);
+	return started[started.length - 1] ?? periods[0] ?? null;
+}
+
+/**
+ * 前の期間を締めていない（期首が締めた版の stored でない）間は数字がまだ動く（設計 3-d）。
+ * 前の期間は同じ事業の形のすぐ前の期間だけを見る（法人の第1期は個人の期首を写さない）。
+ * 申告の期限は個人は所得税、法人は法人税の期限（休みの日の繰り下げ後）で見る。
+ */
+function periodNoticesOf(
+	period: AccountingPeriod,
+	periods: readonly AccountingPeriod[],
+	opening: readonly OpeningBalanceRow[],
+	today: string,
+): PeriodNotices {
+	const previous = periods.find(
+		(candidate) => candidate.businessType === period.businessType && candidate.endsOn === addDays(period.startsOn, -1),
+	);
+	const mainTax = period.businessType === 'soleProprietor' ? 'income_tax' : 'corporate_tax';
+	const due = filingDeadlines(period, isJpHoliday).deadlines.find((deadline) => deadline.tax === mainTax)?.due;
+	return {
+		filingDeadlinePassed: due !== undefined && due < today,
+		previousPeriodOpen: previous !== undefined && !opening.some((row) => row.basis === 'stored'),
+	};
+}
+
+/**
+ * 期間の保存した仕訳を、続きの目印 (entryDate, entryNo) で最後まで読む（FREQ-557-AC-06）。
+ * 途中の失敗も上限超えも、欠けた配列を成功として返さない。
+ */
+async function readAllSavedJournal(
+	client: Awaited<ReturnType<typeof createServiceRoleClient>>,
+	periodId: string,
+): Promise<{ ok: true; entries: SavedJournalEntry[] } | { ok: false; code: 'JOURNAL_TOO_LARGE' | 'JOURNAL_INCOMPLETE' }> {
+	const entries: SavedJournalEntry[] = [];
+	let after: JournalCursor | null = null;
+	for (let page = 0; page < MAX_SAVED_JOURNAL_PAGES; page += 1) {
+		try {
+			const result = await listSavedJournal(client, {
+				periodId,
+				limit: MAX_JOURNAL_PAGE,
+				...(after ? { afterEntryDate: after.entryDate, afterEntryNo: after.entryNo } : {}),
+			});
+			entries.push(...result.entries);
+			if (result.nextAfter === null) return { ok: true, entries };
+			after = result.nextAfter;
+		} catch (error) {
+			const failure = error instanceof AccountingStoreError ? error : new AccountingStoreError();
+			console.error('GET /api/admin/kpi/cost-profit journal read error:', failure.code ?? failure.sqlstate ?? null);
+			return { ok: false, code: 'JOURNAL_INCOMPLETE' };
+		}
+	}
+	return { ok: false, code: 'JOURNAL_TOO_LARGE' };
+}
+
+function journalFailureResponse(code: 'JOURNAL_TOO_LARGE' | 'JOURNAL_INCOMPLETE') {
+	return NextResponse.json({ error: '会計データの取得に失敗しました。', code }, { status: 500 });
+}
+
+/** 初回利用時は、未作成の会計領域を「取引0件」の正常な空状態として表示する。期間が1つも無いときも同じ形で返す。 */
+function emptyFinanceResponse(fiscalYear: number, seasonKey: string | null, accounting: PeriodPayload) {
 	return NextResponse.json({
 		data: {
+			...accounting,
 			fiscalYear,
 			seasonKey,
-			businessType: 'soleProprietor',
+			businessType: accounting.period?.businessType ?? 'soleProprietor',
 			plan: EMPTY_PLAN,
 			expenses: [],
 			incomes: [],
@@ -728,10 +839,23 @@ export async function GET(request: Request) {
 		if (!authz.ok) return authz.response;
 
 		const url = new URL(request.url);
-		// 会計データは年度（必須）で取得する。シーズンは商品原価の絞り込みにのみ使う（任意）。
-		const parsedYear = fiscalYearSchema.safeParse(url.searchParams.get('year'));
-		if (!parsedYear.success) {
-			return NextResponse.json({ error: 'Invalid year' }, { status: 400 });
+		// 会計データは期間（periodId）で取得する。旧の year は個人の暦年の期間に結ぶ。どちらも無ければ断る。
+		// シーズンは商品原価の絞り込みにのみ使う（任意）。
+		const periodParam = url.searchParams.get('periodId');
+		let requestedPeriodId: string | null = null;
+		let requestedYear: number | null = null;
+		if (periodParam !== null) {
+			const parsedPeriod = periodIdSchema.safeParse(periodParam);
+			if (!parsedPeriod.success) {
+				return NextResponse.json({ error: 'Invalid period' }, { status: 400 });
+			}
+			requestedPeriodId = parsedPeriod.data.toLowerCase();
+		} else {
+			const parsedYear = fiscalYearSchema.safeParse(url.searchParams.get('year'));
+			if (!parsedYear.success) {
+				return NextResponse.json({ error: 'Invalid year' }, { status: 400 });
+			}
+			requestedYear = parsedYear.data;
 		}
 		const seasonParam = url.searchParams.get('season');
 		const parsedSeason = seasonParam ? seasonKeySchema.safeParse(seasonParam) : null;
@@ -741,6 +865,30 @@ export async function GET(request: Request) {
 		const seasonKey = parsedSeason?.success ? parsedSeason.data : null;
 
 		const supabase = await createServiceRoleClient();
+		const today = toJstDate(new Date());
+		const periods = await listAccountingPeriods(supabase);
+		let period: AccountingPeriod | null;
+		if (requestedPeriodId !== null) {
+			period = periods.find((candidate) => candidate.id.toLowerCase() === requestedPeriodId) ?? null;
+			if (!period) {
+				const notFound = new AccountingStoreError('ACCOUNTING_NOT_FOUND');
+				return NextResponse.json({ error: notFound.message, code: notFound.code }, { status: notFound.status });
+			}
+		} else {
+			period = soleCalendarPeriod(periods, requestedYear as number) ?? (await defaultPeriod(supabase, periods, today));
+		}
+		if (!period) {
+			// 期間が1つも無い。404 にせず空の画面（期間を作る案内）を返す。
+			return emptyFinanceResponse(requestedYear ?? Number(today.slice(0, 4)), seasonKey, {
+				period: null, periods, savedJournal: [], opening: [], periodNotices: NO_PERIOD_NOTICES,
+			});
+		}
+		const selectedPeriod: AccountingPeriod = period;
+		// 旧の年の表（admin_finance_years・admin_finance_year_closings）の鍵。期間の始まりの年。
+		const legacyYear = Number(selectedPeriod.startsOn.slice(0, 4));
+		const range = periodRangeOf(selectedPeriod);
+		const rangeStartIso = jstStartOfDayIso(range.from);
+		const parsedYear = { data: legacyYear };
 		const [
 			planResult,
 			initialExpensesResult,
@@ -764,7 +912,8 @@ export async function GET(request: Request) {
 			supabase
 				.from('admin_finance_expenses')
 				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method, memo, season_key, fixed_asset_exempt, fixed_asset_exempt_reason, fixed_asset_reviewed_at, admin_finance_receipts(id, storage_path, file_name, mime_type, file_size, created_at, evidence_kind, paper_original_kept), admin_finance_evidence_unavailable_records(reason, note, recorded_at, recorded_by, updated_at, updated_by)')
-				.eq('fiscal_year', parsedYear.data)
+				.gte('expense_date', range.from)
+				.lte('expense_date', range.to)
 				.is('deleted_at', null)
 				.order('expense_date', { ascending: false })
 				.order('id', { ascending: false }),
@@ -785,7 +934,7 @@ export async function GET(request: Request) {
 				.select('id, name, account, acquired_on, acquisition_cost, useful_life, method, business_use_ratio, disposed_on, service_started_on, entry_id, memo')
 				.order('acquired_on', { ascending: true })
 				.order('id', { ascending: true }),
-			// 当年度と前年度の決算。前年度のスナップショットが当年度の期首残高になる。
+			// 旧の年の決算整理の入力と締め（期首は accounting の opening から作る。計画6で置き換える）。
 			supabase
 				.from('admin_finance_year_closings')
 				.select('fiscal_year, closing_inventory_goods, closing_inventory_materials, allowance_for_doubtful, closing_balances, closed_at')
@@ -802,8 +951,9 @@ export async function GET(request: Request) {
 			supabase
 				.from('orders')
 				.select('id, payment_intent_id, status, total_amount, refunded_amount, currency, created_at')
-				.gte('created_at', `${parsedYear.data}-01-01T00:00:00+09:00`)
-				.lt('created_at', `${parsedYear.data + 1}-01-01T00:00:00+09:00`)
+				// 注文を作った日時の日本時間の日付が期間に入る物（出荷の期間へ移すのは計画2）。
+				.gte('created_at', rangeStartIso)
+				.lt('created_at', range.toExclusiveIso)
 				.order('created_at', { ascending: false })
 				.order('id', { ascending: false }),
 			// 要確認の確認済み記録。年度に属さない（取引を直接指す）ので絞らない。
@@ -814,8 +964,9 @@ export async function GET(request: Request) {
 		]);
 
 		// Stripe精算の原始記録（migration 089）。未適用でも会計データ全体は表示できる。
-		const fiscalYearStart = `${parsedYear.data}-01-01T00:00:00+09:00`;
-		const fiscalYearEnd = `${parsedYear.data + 1}-01-01T00:00:00+09:00`;
+		// Stripe は stripe_created_at の日本時間の日付が期間に入る物。
+		const fiscalYearStart = rangeStartIso;
+		const fiscalYearEnd = range.toExclusiveIso;
 		const [stripeTransactionsResult, stripeRefundsResult, stripePayoutsResult] = await Promise.all([
 			supabase
 				.from('stripe_balance_transactions')
@@ -862,7 +1013,7 @@ export async function GET(request: Request) {
 			const page = await supabase
 				.from('admin_finance_expenses')
 				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method', { count: 'exact' })
-				.lte('expense_date', `${parsedYear.data}-12-31`)
+				.lte('expense_date', range.to)
 				.is('deleted_at', null)
 				.order('expense_date', { ascending: true })
 				.order('id', { ascending: true })
@@ -885,7 +1036,8 @@ export async function GET(request: Request) {
 			? await supabase
 				.from('admin_finance_expenses')
 				.select('id, entry_type, expense_date, category, item_name, partner, amount, payment_method, memo, season_key, admin_finance_receipts(id, storage_path, file_name, mime_type, file_size, created_at, evidence_kind, paper_original_kept), admin_finance_evidence_unavailable_records(reason, note, recorded_at, recorded_by, updated_at, updated_by)')
-				.eq('fiscal_year', parsedYear.data)
+				.gte('expense_date', range.from)
+				.lte('expense_date', range.to)
 				.is('deleted_at', null)
 				.order('expense_date', { ascending: false })
 				.order('id', { ascending: false })
@@ -908,16 +1060,30 @@ export async function GET(request: Request) {
 			|| (isMissingFinanceTable(summaryOptionsResult.error) ? null : summaryOptionsResult.error);
 		if (queryError) {
 			if (isMissingFinanceTable(queryError)) {
-				return emptyFinanceResponse(parsedYear.data, seasonKey);
+				return emptyFinanceResponse(parsedYear.data, seasonKey, {
+					period: selectedPeriod, periods, savedJournal: [], opening: [], periodNotices: NO_PERIOD_NOTICES,
+				});
 			}
 			console.error('GET /api/admin/kpi/cost-profit query error:', queryError);
 			return NextResponse.json({ error: '会計データの取得に失敗しました。' }, { status: 500 });
 		}
 
+		// 保存した仕訳（手入力は S4 のトリガーが仕訳にした物が正）と期首を、期間で最後まで読む。
+		const savedJournal = await readAllSavedJournal(supabase, selectedPeriod.id);
+		if (!savedJournal.ok) return journalFailureResponse(savedJournal.code);
+		let opening: OpeningBalanceRow[];
+		try {
+			opening = await getOpeningBalances(supabase, selectedPeriod.id);
+		} catch (error) {
+			const failure = error instanceof AccountingStoreError ? error : new AccountingStoreError();
+			console.error('GET /api/admin/kpi/cost-profit opening read error:', failure.code ?? failure.sqlstate ?? null);
+			return journalFailureResponse('JOURNAL_INCOMPLETE');
+		}
+
 		const entries = ((expensesResult.data ?? []) as ExpenseRow[]).map(mapExpense);
 		const orderIncomes = ((orderSalesResult.data ?? []) as OrderSalesRow[])
 			.map((row, index) => mapOrderIncome(row, index, projectedPaymentIntents.has(row.payment_intent_id)))
-			.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+			.filter((entry): entry is NonNullable<typeof entry> => entry !== null && isDateInPeriod(entry.date, selectedPeriod));
 		const planRow = (planResult.data as FinancePlanRow | null) ?? null;
 
 		const closingRows = (closingsResult.data ?? []) as YearClosingRow[];
@@ -928,7 +1094,13 @@ export async function GET(request: Request) {
 			data: {
 				fiscalYear: parsedYear.data,
 				seasonKey,
-				businessType: planRow?.business_type ?? 'soleProprietor',
+				// 事業の形は期間が持つ（admin_finance_years.business_type は使わない）。
+				businessType: selectedPeriod.businessType,
+				period: selectedPeriod,
+				periods,
+				savedJournal: savedJournal.entries,
+				opening,
+				periodNotices: periodNoticesOf(selectedPeriod, periods, opening, today),
 				plan: mapPlan(planRow),
 				expenses: entries.filter((entry) => entry.entryType === 'expense'),
 				incomes: [

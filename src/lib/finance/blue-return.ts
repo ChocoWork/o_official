@@ -11,6 +11,12 @@
 
 import { accountByCode, type Account } from "@/lib/finance/accounts";
 import type { JournalEntry } from "@/lib/finance/journal";
+import {
+  periodMonthIndexOf,
+  periodMonthsOf,
+  type PeriodBounds,
+} from "@/lib/finance/period-range";
+import type { BalanceSheet, ProfitAndLoss } from "@/lib/finance/statements";
 
 /** 青色申告特別控除の上限（複式簿記＋e-Tax）。 */
 export const BLUE_RETURN_DEDUCTION_MAX = 650_000;
@@ -36,7 +42,7 @@ function statementAmountOfLine(
 }
 
 export type MonthlyAmountRow = {
-  /** 1〜12 */
+  /** 暦の月（1〜12）。期間の月の順に並ぶ。 */
   month: number;
   sales: number;
   purchases: number;
@@ -61,20 +67,20 @@ export type MonthlySummary = {
  */
 export function buildMonthlySummary(
   journal: readonly JournalEntry[],
-  fiscalYear: number,
+  period: PeriodBounds,
 ): MonthlySummary {
-  const rows: MonthlyAmountRow[] = Array.from({ length: 12 }, (_, index) => ({
-    month: index + 1,
+  // 期間の月ごとの行。個人の暦年の期間なら 1月〜12月の12行。
+  const months = periodMonthsOf(period);
+  const rows: MonthlyAmountRow[] = months.map((month) => ({
+    month: month.month,
     sales: 0,
     purchases: 0,
   }));
   let miscIncome = 0;
 
   for (const entry of journal) {
-    // 会計期間外の仕訳は載せない（決算整理仕訳は 12/31 なので12月に入る）。
-    if (!entry.date.startsWith(`${fiscalYear}-`)) continue;
-    const month = Number.parseInt(entry.date.slice(5, 7), 10);
-    const row = rows[month - 1];
+    // 期間の外の仕訳は載せない（決算整理仕訳は期間の終わりの日なので最後の月に入る）。
+    const row = rows[periodMonthIndexOf(months, entry.date)];
     if (!row) continue;
 
     for (const line of entry.lines) {
@@ -100,6 +106,31 @@ export function buildMonthlySummary(
     salesTotal: rows.reduce((sum, row) => sum + row.sales, 0),
     purchasesTotal: rows.reduce((sum, row) => sum + row.purchases, 0),
     miscIncome,
+  };
+}
+
+export type PreDeductionIncomeCheck = {
+  /** 損益計算書の青色申告特別控除前の所得（収益 − 費用） */
+  fromProfitAndLoss: number;
+  /** 貸借対照表の資産 − 負債 − 純資産（元入金・事業主借など。事業主貸は資産の側） */
+  fromBalanceSheet: number;
+  matches: boolean;
+};
+
+/**
+ * 損益計算書と貸借対照表の青色申告特別控除前の所得が一致するかを確かめる（設計 3-g）。
+ * 合わないときは期首の元入金・事業主貸・事業主借の入れ漏れを疑う。
+ */
+export function checkPreDeductionIncome(
+  profitAndLoss: Pick<ProfitAndLoss, "netIncome">,
+  balanceSheet: Pick<BalanceSheet, "assetTotal" | "liabilityTotal" | "equityTotal">,
+): PreDeductionIncomeCheck {
+  const fromBalanceSheet =
+    balanceSheet.assetTotal - balanceSheet.liabilityTotal - balanceSheet.equityTotal;
+  return {
+    fromProfitAndLoss: profitAndLoss.netIncome,
+    fromBalanceSheet,
+    matches: fromBalanceSheet === profitAndLoss.netIncome,
   };
 }
 

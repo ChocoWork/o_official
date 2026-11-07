@@ -7,7 +7,8 @@ import {
 	buildTrialBalance,
 	type FinanceEntry,
 } from '@/lib/finance/journal';
-import { buildBalanceSheet } from '@/lib/finance/statements';
+import { checkPreDeductionIncome } from '@/lib/finance/blue-return';
+import { buildBalanceSheet, buildProfitAndLoss } from '@/lib/finance/statements';
 import {
 	buildAllowanceEntries,
 	buildClosingBalances,
@@ -50,17 +51,18 @@ function closeYear(options: {
 	} = options;
 
 	const depreciation = depreciationSchedule(assets, fiscalYear);
+	const closingDate = `${fiscalYear}-12-31`;
 	const journal = [
 		...buildJournal(entries, businessType),
-		...buildDepreciationEntries(depreciation.rows, fiscalYear),
-		...buildInventoryEntries(adjustment, opening, fiscalYear),
-		...buildAllowanceEntries(adjustment, fiscalYear),
+		...buildDepreciationEntries(depreciation.rows, closingDate),
+		...buildInventoryEntries(adjustment, opening, closingDate),
+		...buildAllowanceEntries(adjustment, closingDate),
 	];
 	const ledger = buildGeneralLedger(journal, opening);
 	const trial = buildTrialBalance(ledger);
 	const bs = buildBalanceSheet(trial);
 	const closing = buildClosingBalances(trial, businessType);
-	return { trial, bs, closing, ledger };
+	return { trial, bs, pl: buildProfitAndLoss(trial), closing, ledger };
 }
 
 describe('buildInventoryEntries（三分法の棚卸振替）', () => {
@@ -68,7 +70,7 @@ describe('buildInventoryEntries（三分法の棚卸振替）', () => {
 		const journal = buildInventoryEntries(
 			{ ...EMPTY_YEAR_END_ADJUSTMENT, closingInventoryGoods: 180_000 },
 			new Map([['1310', 120_000]]),
-			2026,
+			'2026-12-31',
 		);
 
 		expect(journal).toHaveLength(2);
@@ -97,14 +99,14 @@ describe('buildInventoryEntries（三分法の棚卸振替）', () => {
 	});
 
 	it('期首・期末いずれも0なら仕訳を作らない', () => {
-		expect(buildInventoryEntries(EMPTY_YEAR_END_ADJUSTMENT, new Map(), 2026)).toHaveLength(0);
+		expect(buildInventoryEntries(EMPTY_YEAR_END_ADJUSTMENT, new Map(), '2026-12-31')).toHaveLength(0);
 	});
 
 	it('材料も同様に振替する', () => {
 		const journal = buildInventoryEntries(
 			{ ...EMPTY_YEAR_END_ADJUSTMENT, closingInventoryMaterials: 60_000 },
 			new Map([['1330', 40_000]]),
-			2026,
+			'2026-12-31',
 		);
 		expect(journal.map((row) => row.lines[0].account.name)).toEqual(['期首材料棚卸高', '材料']);
 	});
@@ -114,7 +116,7 @@ describe('buildAllowanceEntries', () => {
 	it('貸倒引当金繰入を計上する', () => {
 		const journal = buildAllowanceEntries(
 			{ ...EMPTY_YEAR_END_ADJUSTMENT, allowanceForDoubtful: 30_000 },
-			2026,
+			'2026-12-31',
 		);
 		expect(journal[0].lines[0].account.name).toBe('貸倒引当金繰入');
 		expect(journal[0].lines[1].account.name).toBe('貸倒引当金');
@@ -122,7 +124,7 @@ describe('buildAllowanceEntries', () => {
 	});
 
 	it('0円なら仕訳を作らない', () => {
-		expect(buildAllowanceEntries(EMPTY_YEAR_END_ADJUSTMENT, 2026)).toHaveLength(0);
+		expect(buildAllowanceEntries(EMPTY_YEAR_END_ADJUSTMENT, '2026-12-31')).toHaveLength(0);
 	});
 });
 
@@ -150,6 +152,39 @@ describe('buildClosingBalances（決算振替）', () => {
 		// 当期純利益 = 売上(900,000+300,000) − 仕入200,000 − 消耗品50,000 = 950,000
 		// 元入金 = 100,000 + 950,000 + 事業主借50,000 − 事業主貸300,000
 		expect(closing.get('2910')).toBe(100_000 + 950_000 + 50_000 - 300_000);
+	});
+
+	it('FREQ-557-AC-02: 年越しは事業主貸の区分の1910と1920を0にして元入金へ入れ、損益と貸借の控除前の所得が一致する', () => {
+		const { closing, pl, bs } = closeYear({
+			fiscalYear: 2026,
+			entries: [
+				entry({ id: 1, amount: 900_000, entryType: 'income', category: '売上高', paymentMethod: '銀行' }),
+				// 事業主貸 300,000（売上を個人口座で受け取った）
+				entry({ id: 2, amount: 300_000, entryType: 'income', category: '売上高', paymentMethod: 'プライベート' }),
+				// 資産譲渡損（区分は事業主貸）70,000
+				entry({ id: 3, amount: 70_000, category: '資産譲渡損', paymentMethod: '銀行' }),
+				// 事業主借 50,000（経費を私費で支払った）
+				entry({ id: 4, amount: 50_000, category: '消耗品費', paymentMethod: 'プライベート' }),
+			],
+			opening: new Map([
+				['1040', 100_000],
+				['2910', 100_000],
+			]),
+		});
+
+		expect(bs.assetSections.flatMap((section) => section.lines).find((line) => line.account.code === '1920')?.amount).toBe(70_000);
+		expect(closing.has('1910')).toBe(false);
+		expect(closing.has('1920')).toBe(false);
+		expect(closing.has('2920')).toBe(false);
+		// 当期純利益 = 1,200,000 − 50,000 = 1,150,000
+		// 元入金 = 100,000 + 1,150,000 + 事業主借50,000 − 事業主貸(300,000 + 70,000)
+		expect(closing.get('2910')).toBe(100_000 + 1_150_000 + 50_000 - 300_000 - 70_000);
+		expect(verifyOpeningBalances(closing).isBalanced).toBe(true);
+		expect(checkPreDeductionIncome(pl, bs)).toEqual({
+			fromProfitAndLoss: 1_150_000,
+			fromBalanceSheet: 1_150_000,
+			matches: true,
+		});
 	});
 
 	it('法人は繰越利益剰余金へ振り替える', () => {

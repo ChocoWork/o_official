@@ -1,3 +1,4 @@
+jest.mock('server-only', () => ({}), { virtual: true });
 jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn() }));
 jest.mock('@/lib/auth/admin-rbac', () => ({ authorizeAdminPermission: jest.fn() }));
 jest.mock('@/lib/audit', () => ({ logAudit: jest.fn() }));
@@ -34,9 +35,67 @@ let cumulativeRangeCalls: Array<[number, number]> = [];
 let cumulativePageLimit: number | null = null;
 let expenseSelectColumns: string[] = [];
 
+// 会計の期間・保存した仕訳・期首（会計 S3 の読み口）。既定は個人の2026年の期間1つ。
+const periodUuid = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+function periodRow(n: number, startsOn: string, endsOn: string, businessType = 'soleProprietor', name = `${startsOn.slice(0, 4)}年（個人）`) {
+	return {
+		id: periodUuid(n), business_type: businessType, name, starts_on: startsOn, ends_on: endsOn,
+		corporate_tax_extension_months: 0, consumption_tax_extension_months: 0, consumption_tax_status: 'exempt',
+		consumption_taxable_from: null, version: '1', legacy_fiscal_year: businessType === 'soleProprietor' ? Number(startsOn.slice(0, 4)) : null,
+	};
+}
+const SETTINGS_ROW = {
+	business_start_date: null, cutover_on: '2026-11-07', current_business_type: 'soleProprietor',
+	sole_business_ended_on: null, version: '1', sole_end_changes: [],
+};
+let accountingPeriodRows: Array<Record<string, unknown>> = [periodRow(2026, '2026-01-01', '2026-12-31')];
+let settingsRow: Record<string, unknown> = SETTINGS_ROW;
+let journalPages: Array<{ data: unknown; error: unknown }> = [];
+let openingRows: Array<Record<string, unknown>> = [];
+let rangeCalls: Array<[string, string, string, unknown]> = [];
+
+function savedEntryRow(n: number, periodN = 2026, amount = 1_000): Record<string, unknown> {
+	return {
+		id: periodUuid(100_000 + n), period_id: periodUuid(periodN), entry_no: n, entry_date: '2026-03-01', event_kind: 'manual_entry',
+		dedupe_key: `manual_entry:${n}:0`, description: `手入力${n}`, recorded_at: '2026-03-01T01:00:00+00:00', recorded_by: null,
+		is_late: false, reverses_entry_id: null, reason: null, source_table: 'admin_finance_expenses', source_id: String(n),
+		migrated_from: null, migrated_at: null, source_recorded_at: null,
+		lines: [
+			{ line_no: 1, account_code: '6060', debit: amount, credit: 0, sub_account: null, counterparty: null, order_id: null, memo: null },
+			{ line_no: 2, account_code: '1010', debit: 0, credit: amount, sub_account: null, counterparty: null, order_id: null, memo: null },
+		],
+	};
+}
+
+function accountingRpc(name: string, args?: Record<string, unknown>) {
+	void args;
+	if (name === 'list_accounting_periods') return Promise.resolve({ data: accountingPeriodRows, error: null });
+	if (name === 'get_accounting_settings') return Promise.resolve({ data: settingsRow, error: null });
+	if (name === 'get_accounting_opening') return Promise.resolve({ data: openingRows, error: null });
+	if (name === 'list_accounting_journal') {
+		return Promise.resolve(journalPages.shift() ?? { data: { entries: [], next_after_date: null, next_after_no: null }, error: null });
+	}
+	return Promise.resolve({ data: null, error: { code: '42883', message: `unknown rpc ${name}` } });
+}
+
+function rangeChain<T>(table: string, terminal: () => T) {
+	return {
+		gte: (column: string, from: unknown) => {
+			rangeCalls.push([table, 'gte', column, from]);
+			return {
+				lt: (ltColumn: string, to: unknown) => {
+					rangeCalls.push([table, 'lt', ltColumn, to]);
+					return terminal();
+				},
+			};
+		},
+	};
+}
+
 let stripeBalanceTransactionRows: Array<Record<string, unknown>> = [];
 let stripeRefundRows: Array<Record<string, unknown>> = [];
 let stripePayoutRows: Array<Record<string, unknown>> = [];
+let orderRowsOverride: Array<Record<string, unknown>> | null = null;
 
 function result(data: unknown) {
 	return Promise.resolve({ data, error: financeQueryError });
@@ -44,6 +103,7 @@ function result(data: unknown) {
 
 function createFinanceSupabaseMock() {
 	return {
+		rpc: jest.fn(accountingRpc),
 		from: jest.fn((table: string) => {
 			if (table === 'admin_finance_years') {
 				return {
@@ -107,21 +167,32 @@ function createFinanceSupabaseMock() {
 					select: (columns?: string) => {
 						expenseSelectColumns.push(columns ?? '');
 						return {
-						// 当年度の取引一覧：fiscal_year で絞り、論理削除を除外して並べ替える
-						eq: () => ({
-							is: () => ({
-								order: () => ({ order: () => result(rows) }),
-							}),
-						}),
-						// 開業以来累計：選択年度の年末までを取る
-						lte: () => ({
+						// 期間の取引一覧：取引の日を期間の端で絞り、論理削除を除外して並べ替える
+						gte: (column: string, from: unknown) => {
+							rangeCalls.push(['admin_finance_expenses', 'gte', column, from]);
+							return {
+								lte: (lteColumn: string, to: unknown) => {
+									rangeCalls.push(['admin_finance_expenses', 'lte', lteColumn, to]);
+									return {
+										is: () => ({
+											order: () => ({ order: () => result(rows) }),
+										}),
+									};
+								},
+							};
+						},
+						// 開業以来累計：期間の終わりの日までを取る
+						lte: (column: string, to: unknown) => {
+							rangeCalls.push(['admin_finance_expenses:cumulative', 'lte', column, to]);
+							return {
 							is: () => ({
 								order: () => ({ order: () => ({ range: (from: number, to: number) => {
 									cumulativeRangeCalls.push([from, to]);
 									return Promise.resolve({ data: rows.slice(from, Math.min(to + 1, from + (cumulativePageLimit ?? Number.MAX_SAFE_INTEGER))), count: rows.length, error: financeQueryError });
 								} }) }),
 							}),
-						}),
+							};
+						},
 						};
 					},
 				};
@@ -129,11 +200,9 @@ function createFinanceSupabaseMock() {
 
 			if (table === 'orders') {
 				return {
-					select: () => ({
-						gte: () => ({
-							lt: () => ({
+					select: () => rangeChain('orders', () => ({
 								order: () => ({
-									order: () => result([
+									order: () => result(orderRowsOverride ?? [
 										{
 											id: 'order-1',
 											payment_intent_id: 'pi_1',
@@ -154,22 +223,20 @@ function createFinanceSupabaseMock() {
 										},
 									]),
 								}),
-							}),
-						}),
-					}),
+							})),
 				};
 			}
 
 			if (table === 'stripe_balance_transactions') {
-				return { select: () => ({ gte: () => ({ lt: () => ({ order: () => result(stripeBalanceTransactionRows) }) }) }) };
+				return { select: () => rangeChain(table, () => ({ order: () => result(stripeBalanceTransactionRows) })) };
 			}
 
 			if (table === 'stripe_refunds') {
-				return { select: () => ({ gte: () => ({ lt: () => ({ order: () => result(stripeRefundRows) }) }) }) };
+				return { select: () => rangeChain(table, () => ({ order: () => result(stripeRefundRows) })) };
 			}
 
 			if (table === 'stripe_payouts') {
-				return { select: () => ({ gte: () => ({ lt: () => ({ order: () => result(stripePayoutRows) }) }) }) };
+				return { select: () => rangeChain(table, () => ({ order: () => result(stripePayoutRows) })) };
 			}
 
 			if (table === 'admin_finance_partners') {
@@ -251,6 +318,10 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 		stripeBalanceTransactionRows = [];
 		stripeRefundRows = [];
 		stripePayoutRows = [];
+		orderRowsOverride = null;
+		rangeCalls = [];
+		journalPages = [];
+		openingRows = [];
 		authorizeMock.mockResolvedValue(ADMIN);
 		createServiceMock.mockResolvedValue(createFinanceSupabaseMock() as never);
 	});
@@ -487,6 +558,200 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 		expect(body.data.cumulativeEntries).toHaveLength(1001);
 		expect(body.data.cumulativeEntries.at(-1)).toEqual(expect.objectContaining({ id: 1001 }));
 		expect(cumulativeRangeCalls).toEqual([[0, 999], [500, 1499], [1000, 1999]]);
+	});
+});
+
+describe('GET /api/admin/kpi/cost-profit（期間で数える）', () => {
+	let client: ReturnType<typeof createFinanceSupabaseMock>;
+	const get = async (query: string) => {
+		const response = await GET(new Request(`http://localhost/api/admin/kpi/cost-profit?${query}`));
+		return { status: response.status, body: await response.json() };
+	};
+	const journalCalls = () => client.rpc.mock.calls.filter(([name]) => name === 'list_accounting_journal');
+
+	beforeEach(() => {
+		jest.clearAllMocks();
+		// 今日は 2026-11-07（日本時間）。Date だけを止め、Promise の進みは止めない。
+		jest.useFakeTimers({
+			now: new Date('2026-11-07T03:00:00.000Z'),
+			doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate', 'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'clearImmediate'],
+		});
+		financeQueryError = null;
+		cumulativeRowsOverride = null;
+		cumulativeRangeCalls = [];
+		cumulativePageLimit = null;
+		expenseSelectColumns = [];
+		stripeBalanceTransactionRows = [];
+		stripeRefundRows = [];
+		stripePayoutRows = [];
+		orderRowsOverride = null;
+		rangeCalls = [];
+		journalPages = [];
+		openingRows = [];
+		settingsRow = SETTINGS_ROW;
+		accountingPeriodRows = [
+			periodRow(2025, '2025-01-01', '2025-12-31'),
+			periodRow(2026, '2026-01-01', '2026-12-31'),
+			periodRow(2027, '2027-07-15', '2028-07-14', 'corporation', '第1期'),
+		];
+		authorizeMock.mockResolvedValue(ADMIN);
+		client = createFinanceSupabaseMock();
+		createServiceMock.mockResolvedValue(client as never);
+	});
+	afterEach(() => {
+		jest.useRealTimers();
+		accountingPeriodRows = [periodRow(2026, '2026-01-01', '2026-12-31')];
+		orderRowsOverride = null;
+		journalPages = [];
+		openingRows = [];
+	});
+
+	it('FREQ-557-AC-01: 旧の year クエリは個人の暦年の期間に結ばれる', async () => {
+		const { status, body } = await get('year=2025');
+
+		expect(status).toBe(200);
+		expect(body.data.period).toEqual(expect.objectContaining({
+			id: periodUuid(2025), businessType: 'soleProprietor', startsOn: '2025-01-01', endsOn: '2025-12-31',
+		}));
+		expect(body.data.fiscalYear).toBe(2025);
+		expect(body.data.periods.map((period: { id: string }) => period.id)).toEqual([2025, 2026, 2027].map(periodUuid));
+		// 範囲は期間の端（日付）と、日本時間の0時を UTC にした時刻で絞る。
+		expect(rangeCalls).toEqual(expect.arrayContaining([
+			['admin_finance_expenses', 'gte', 'expense_date', '2025-01-01'],
+			['admin_finance_expenses', 'lte', 'expense_date', '2025-12-31'],
+			['admin_finance_expenses:cumulative', 'lte', 'expense_date', '2025-12-31'],
+			['orders', 'gte', 'created_at', '2024-12-31T15:00:00.000Z'],
+			['orders', 'lt', 'created_at', '2025-12-31T15:00:00.000Z'],
+			['stripe_balance_transactions', 'gte', 'stripe_created_at', '2024-12-31T15:00:00.000Z'],
+			['stripe_payouts', 'lt', 'stripe_created_at', '2025-12-31T15:00:00.000Z'],
+		]));
+		expect(journalCalls()[0][1]).toEqual(expect.objectContaining({ _period_id: periodUuid(2025), _limit: 200 }));
+		expect(client.rpc).toHaveBeenCalledWith('get_accounting_opening', { _period_id: periodUuid(2025) });
+
+		// periodId も year も無ければ従来どおり 400。
+		expect((await get('')).status).toBe(400);
+	});
+
+	it('FREQ-557-AC-01: 期間を選ぶと選んだ期間の保存した仕訳と期首だけを数える', async () => {
+		openingRows = [
+			{ account_code: '1040', signed_amount: 5_000, basis: 'carryover' },
+			{ account_code: '3010', signed_amount: -5_000, basis: 'carryover' },
+		];
+		journalPages = [{ data: { entries: [savedEntryRow(1, 2027)], next_after_date: null, next_after_no: null }, error: null }];
+
+		const { status, body } = await get(`periodId=${periodUuid(2027)}`);
+
+		expect(status).toBe(200);
+		expect(body.data.period).toEqual(expect.objectContaining({ id: periodUuid(2027), businessType: 'corporation', name: '第1期' }));
+		expect(body.data.businessType).toBe('corporation');
+		expect(body.data.savedJournal.map((entry: { dedupeKey: string }) => entry.dedupeKey)).toEqual(['manual_entry:1:0']);
+		expect(body.data.opening).toEqual([
+			{ accountCode: '1040', signedAmount: 5_000, basis: 'carryover' },
+			{ accountCode: '3010', signedAmount: -5_000, basis: 'carryover' },
+		]);
+		expect(journalCalls().map(([, args]) => (args as { _period_id: string })._period_id)).toEqual([periodUuid(2027)]);
+		expect(client.rpc).toHaveBeenCalledWith('get_accounting_opening', { _period_id: periodUuid(2027) });
+		expect(rangeCalls).toEqual(expect.arrayContaining([
+			['admin_finance_expenses', 'gte', 'expense_date', '2027-07-15'],
+			['admin_finance_expenses', 'lte', 'expense_date', '2028-07-14'],
+			['orders', 'gte', 'created_at', '2027-07-14T15:00:00.000Z'],
+			['orders', 'lt', 'created_at', '2028-07-14T15:00:00.000Z'],
+		]));
+
+		// 形の違う periodId は 400、無い期間は 404（本文は読み切れる JSON）。
+		expect((await get('periodId=not-a-uuid')).status).toBe(400);
+		const missing = await get(`periodId=${periodUuid(1999)}`);
+		expect(missing.status).toBe(404);
+		expect(missing.body).toEqual({ error: '会計の記録が見つかりません。', code: 'ACCOUNTING_NOT_FOUND' });
+	});
+
+	it('FREQ-557-AC-01: 12月28日に払った注文は注文を作った日の期間に出て年を作り直しても二重に数えない', async () => {
+		orderRowsOverride = [
+			{ id: 'order-1228', payment_intent_id: 'pi_a', status: 'paid', total_amount: 10_000, refunded_amount: 0, currency: 'jpy', created_at: '2026-12-28T05:00:00.000Z' },
+			// 日本時間では 2027-01-01 00:30。2026年の期間には入れない。
+			{ id: 'order-newyear', payment_intent_id: 'pi_b', status: 'paid', total_amount: 7_000, refunded_amount: 0, currency: 'jpy', created_at: '2026-12-31T15:30:00.000Z' },
+		];
+
+		const first = await get('year=2026');
+		const again = await get('year=2026');
+
+		for (const { status, body } of [first, again]) {
+			expect(status).toBe(200);
+			const orders = body.data.incomes.filter((income: { source?: string }) => income.source === 'order');
+			expect(orders.map((income: { sourceId: string; date: string }) => [income.sourceId, income.date])).toEqual([['order-1228', '2026-12-28']]);
+		}
+	});
+
+	it('FREQ-557-AC-05: 期間が1つも無いときは404でなく空の画面を返し作成を案内する', async () => {
+		accountingPeriodRows = [];
+
+		const { status, body } = await get('year=2026');
+
+		expect(status).toBe(200);
+		expect(body.data).toEqual(expect.objectContaining({
+			period: null,
+			periods: [],
+			savedJournal: [],
+			opening: [],
+			periodNotices: { filingDeadlinePassed: false, previousPeriodOpen: false },
+			expenses: [],
+			incomes: [],
+		}));
+		expect(journalCalls()).toHaveLength(0);
+	});
+
+	it('FREQ-557-AC-05: 前の期間を締めていない間は数字がまだ動くと出し、期限を過ぎた期間への入力に知らせる', async () => {
+		openingRows = [{ account_code: '1040', signed_amount: 1_000, basis: 'carryover' }, { account_code: '2910', signed_amount: -1_000, basis: 'carryover' }];
+		// 2026年: 前の2025年は締めていない（期首は繰越の計算）。申告の期限 2027-03-15 は先。
+		expect((await get('year=2026')).body.data.periodNotices).toEqual({ filingDeadlinePassed: false, previousPeriodOpen: true });
+		// 2025年: 前の期間は無い。申告の期限 2026-03-16 を過ぎている。
+		expect((await get('year=2025')).body.data.periodNotices).toEqual({ filingDeadlinePassed: true, previousPeriodOpen: false });
+		// 締めた版から取った期首（stored）なら数字はもう動かない。
+		openingRows = [{ account_code: '1040', signed_amount: 1_000, basis: 'stored' }, { account_code: '2910', signed_amount: -1_000, basis: 'stored' }];
+		expect((await get('year=2026')).body.data.periodNotices).toEqual({ filingDeadlinePassed: false, previousPeriodOpen: false });
+		// 法人の第1期は、前に個人の期間があっても期首を写さないので「まだ動く」を出さない。
+		openingRows = [];
+		expect((await get(`periodId=${periodUuid(2027)}`)).body.data.periodNotices).toEqual({ filingDeadlinePassed: false, previousPeriodOpen: false });
+	});
+
+	it('FREQ-557-AC-06: 保存した仕訳が201件ある期間は101件目と201件目も読み試算表と元帳と決算書の合計に入る', async () => {
+		journalPages = [
+			{ data: { entries: Array.from({ length: 200 }, (_, i) => savedEntryRow(i + 1)), next_after_date: '2026-03-01', next_after_no: 200 }, error: null },
+			{ data: { entries: [savedEntryRow(201)], next_after_date: null, next_after_no: null }, error: null },
+		];
+
+		const { status, body } = await get('year=2026');
+
+		expect(status).toBe(200);
+		expect(body.data.savedJournal).toHaveLength(201);
+		expect(body.data.savedJournal[100].entryNo).toBe(101);
+		expect(body.data.savedJournal[200].entryNo).toBe(201);
+		expect(journalCalls().map(([, args]) => args)).toEqual([
+			expect.objectContaining({ _limit: 200, _after_entry_date: null, _after_entry_no: null }),
+			expect.objectContaining({ _limit: 200, _after_entry_date: '2026-03-01', _after_entry_no: 200 }),
+		]);
+	});
+
+	it('FREQ-557-AC-06: ページの上限または途中の取得失敗では一部しか読めていないと出し合計も書き出しも出さない', async () => {
+		// 100ページ目にも続きがある → 500 JOURNAL_TOO_LARGE。欠けた配列は返さない。
+		journalPages = Array.from({ length: 100 }, (_, i) => ({
+			data: { entries: [savedEntryRow(i + 1)], next_after_date: '2026-03-01', next_after_no: i + 1 },
+			error: null,
+		}));
+		const tooLarge = await get('year=2026');
+		expect(tooLarge.status).toBe(500);
+		expect(tooLarge.body).toEqual({ error: '会計データの取得に失敗しました。', code: 'JOURNAL_TOO_LARGE' });
+		expect(journalCalls()).toHaveLength(100);
+
+		// 2ページ目の取得が失敗 → 500 JOURNAL_INCOMPLETE。
+		journalPages = [
+			{ data: { entries: [savedEntryRow(1)], next_after_date: '2026-03-01', next_after_no: 1 }, error: null },
+			{ data: null, error: { code: 'XX000', message: 'boom' } },
+		];
+		const incomplete = await get('year=2026');
+		expect(incomplete.status).toBe(500);
+		expect(incomplete.body).toEqual({ error: '会計データの取得に失敗しました。', code: 'JOURNAL_INCOMPLETE' });
+		expect(JSON.stringify(incomplete.body)).not.toContain('boom');
 	});
 });
 

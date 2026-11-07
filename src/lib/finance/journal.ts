@@ -12,6 +12,7 @@ import {
 } from "@/lib/finance/accounts";
 import { paymentMethodAccountName } from "@/lib/finance/payment-methods";
 import type { DepreciationForYear } from "@/lib/finance/depreciation";
+import { isDateInPeriod, type PeriodBounds } from "@/lib/finance/period-range";
 
 export type EntryType = "expense" | "income";
 
@@ -101,6 +102,27 @@ export function buildJournal(
   });
 }
 
+/** 注文由来の売上（route の `mapOrderIncome` の結果）。`sourceId` は注文の番号。 */
+export type OrderSalesEntry = FinanceEntry & { sourceId: string };
+
+/**
+ * 注文の売上の合成仕訳（計画1。計画2が保存を始めたら外して `payment_confirmed:<payment_intent>` へ置き換える）。
+ * 日（注文を作った日の日本時間）が期間に入る物だけを残し、`order:<注文の番号>` の印を付ける。
+ * 印があるので、作り直した結果を `mergeJournalEntries` で重ねても1本にまとまる。
+ */
+export function buildOrderSalesJournal(
+  orders: readonly OrderSalesEntry[],
+  businessType: BusinessType,
+  period: PeriodBounds,
+): JournalEntry[] {
+  const inPeriod = orders.filter((order) => isDateInPeriod(order.date, period));
+  const sourceIdByEntryId = new Map(inPeriod.map((order) => [order.id, order.sourceId]));
+  return buildJournal(inPeriod, businessType).map((entry) => ({
+    ...entry,
+    sourceKey: `order:${sourceIdByEntryId.get(entry.entryId) ?? entry.entryId}`,
+  }));
+}
+
 /**
  * 減価償却の決算整理仕訳。
  * 直接法（資産科目を直接減額）で立てる。青色申告決算書4ページの貸借対照表は
@@ -113,9 +135,9 @@ export function buildJournal(
  */
 export function buildDepreciationEntries(
   rows: readonly DepreciationForYear[],
-  fiscalYear: number,
+  /** 期間の終わりの日（決算整理仕訳の日） */
+  closingDate: string,
 ): JournalEntry[] {
-  const closingDate = `${fiscalYear}-12-31`;
 
   return rows
     .filter((row) => row.depreciation > 0)

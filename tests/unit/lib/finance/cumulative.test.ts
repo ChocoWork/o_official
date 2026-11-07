@@ -33,7 +33,7 @@ describe('buildCumulativeSummary', () => {
 				entry({ date: '2027-06-01', amount: 300_000, category: '仕入高' }),
 			],
 			[],
-			2027,
+			'2027-12-31',
 		);
 
 		expect(summary.sales).toBe(1_300_000);
@@ -50,7 +50,7 @@ describe('buildCumulativeSummary', () => {
 				entry({ date: '2027-01-05', amount: 900_000, entryType: 'income', category: '売上高' }),
 			],
 			[],
-			2026,
+			'2026-12-31',
 		);
 		expect(summary.sales).toBe(500_000);
 		expect(summary.entryCount).toBe(1);
@@ -63,7 +63,7 @@ describe('buildCumulativeSummary', () => {
 				entry({ date: '2026-07-01', amount: 40_000, category: '売上値引・返品' }),
 			],
 			[],
-			2026,
+			'2026-12-31',
 		);
 		expect(summary.sales).toBe(460_000);
 	});
@@ -75,7 +75,7 @@ describe('buildCumulativeSummary', () => {
 				entry({ date: '2026-07-01', amount: 20_000, entryType: 'income', category: '仕入値引・返品' }),
 			],
 			[],
-			2026,
+			'2026-12-31',
 		);
 		expect(summary.expenses).toBe(180_000);
 	});
@@ -89,7 +89,7 @@ describe('buildCumulativeSummary', () => {
 				entry({ date: '2026-02-10', amount: 100_000, category: '買掛金' }),
 			],
 			[],
-			2026,
+			'2026-12-31',
 		);
 		expect(summary.expenses).toBe(0);
 		expect(summary.sales).toBe(0);
@@ -97,10 +97,10 @@ describe('buildCumulativeSummary', () => {
 
 	it('減価償却費を年数分だけ累計費用へ足す', () => {
 		// 600,000 × 0.167 = 100,200／年
-		const oneYear = buildCumulativeSummary([], [ASSET], 2026);
+		const oneYear = buildCumulativeSummary([], [ASSET], '2026-12-31');
 		expect(oneYear.expenses).toBe(100_200);
 
-		const threeYears = buildCumulativeSummary([], [ASSET], 2028);
+		const threeYears = buildCumulativeSummary([], [ASSET], '2028-12-31');
 		expect(threeYears.expenses).toBe(100_200 * 3);
 	});
 
@@ -108,7 +108,7 @@ describe('buildCumulativeSummary', () => {
 		const summary = buildCumulativeSummary(
 			[],
 			[{ ...ASSET, businessUseRatio: 70 }],
-			2026,
+			'2026-12-31',
 		);
 		// 100,200 × 70% = 70,140
 		expect(summary.expenses).toBe(70_140);
@@ -118,20 +118,20 @@ describe('buildCumulativeSummary', () => {
 		const summary = buildCumulativeSummary(
 			[],
 			[ASSET, { ...ASSET, id: 2, acquiredOn: '2028-03-01', acquisitionCost: 450_000 }],
-			2026,
+			'2026-12-31',
 		);
 		expect(summary.capitalInvestment).toBe(600_000);
 
 		const later = buildCumulativeSummary(
 			[],
 			[ASSET, { ...ASSET, id: 2, acquiredOn: '2028-03-01', acquisitionCost: 450_000 }],
-			2028,
+			'2028-12-31',
 		);
 		expect(later.capitalInvestment).toBe(1_050_000);
 	});
 
 	it('取引も資産も無ければ全て0', () => {
-		const summary = buildCumulativeSummary([], [], 2026);
+		const summary = buildCumulativeSummary([], [], '2026-12-31');
 		expect(summary).toMatchObject({
 			sales: 0,
 			expenses: 0,
@@ -149,7 +149,7 @@ describe('buildCumulativeSummary', () => {
 				entry({ date: '2026-06-01', amount: 200_000, category: '仕入高' }),
 			],
 			[ASSET],
-			2026,
+			'2026-12-31',
 		);
 		// 900,000 − (200,000 + 100,200)
 		expect(summary.netIncome).toBe(599_800);
@@ -165,7 +165,7 @@ describe('buildCumulativeSummary の費用内訳', () => {
 				entry({ date: '2026-04-01', amount: 120_000, category: '広告宣伝費' }),
 			],
 			[],
-			2026,
+			'2026-12-31',
 		);
 
 		expect(summary.costOfSales).toBe(500_000);
@@ -186,7 +186,7 @@ describe('buildCumulativeSummary の費用内訳', () => {
 				}),
 			],
 			[],
-			2026,
+			'2026-12-31',
 		);
 
 		expect(summary.costOfSales).toBe(250_000);
@@ -194,7 +194,7 @@ describe('buildCumulativeSummary の費用内訳', () => {
 	});
 
 	it('減価償却費は販管費（経費）へ積む', () => {
-		const summary = buildCumulativeSummary([], [ASSET], 2026);
+		const summary = buildCumulativeSummary([], [ASSET], '2026-12-31');
 
 		expect(summary.operatingExpenses).toBe(100_200);
 		expect(summary.costOfSales).toBe(0);
@@ -205,7 +205,7 @@ describe('buildCumulativeSummary の費用内訳', () => {
 		const summary = buildCumulativeSummary(
 			[entry({ date: '2026-06-01', amount: 10_000, category: '支払利息' })],
 			[],
-			2026,
+			'2026-12-31',
 		);
 
 		expect(summary.costOfSales).toBe(0);

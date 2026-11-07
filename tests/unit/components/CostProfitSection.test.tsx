@@ -1,5 +1,79 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import CostProfitSection from '@/components/CostProfitSection';
+import { buildJournal, type FinanceEntry } from '@/lib/finance/journal';
+
+// 会計の期間で数える応答の欄（FREQ-557）。手入力の取引ごとに、S4 のトリガーが作るのと同じ保存した仕訳を足す。
+// 期首は以前の財務前提の期首の欄と同じ額を、期間の期首（借方−貸方）として渡す。
+function periodOf(year: number, businessType: string) {
+	return {
+		id: `00000000-0000-4000-8000-${String(year).padStart(12, '0')}`,
+		businessType,
+		name: `${year}年（個人）`,
+		startsOn: `${year}-01-01`,
+		endsOn: `${year}-12-31`,
+		corporateTaxExtensionMonths: 0,
+		consumptionTaxExtensionMonths: 0,
+		consumptionTaxStatus: 'exempt',
+		consumptionTaxableFrom: null,
+		version: '1',
+	};
+}
+
+function savedJournalOf(
+	entries: Array<Record<string, unknown>>,
+	period: ReturnType<typeof periodOf>,
+) {
+	return entries
+		.filter((entry) => entry.source !== 'order')
+		.map((entry) => ({ ...entry, entryType: entry.entryType ?? 'expense' }) as unknown as FinanceEntry)
+		.filter((entry) => entry.date >= period.startsOn && entry.date <= period.endsOn)
+		.sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id)
+		.map((entry, index) => {
+			const [journal] = buildJournal([entry], period.businessType as 'soleProprietor' | 'corporation');
+			return {
+				id: `00000000-0000-4000-8000-${String(900_000 + index).padStart(12, '0')}`,
+				periodId: period.id,
+				entryNo: index + 1,
+				entryDate: entry.date,
+				eventKind: 'manual_entry',
+				dedupeKey: `manual_entry:${entry.id}:0`,
+				description: entry.item,
+				recordedAt: `${entry.date}T01:00:00Z`,
+				recordedBy: null,
+				isLate: false,
+				reversesEntryId: null,
+				reason: null,
+				sourceTable: 'admin_finance_expenses',
+				sourceId: String(entry.id),
+				migratedFrom: null,
+				migratedAt: null,
+				sourceRecordedAt: null,
+				lines: journal.lines.map((line, lineIndex) => ({
+					lineNo: lineIndex + 1,
+					accountCode: line.account.code,
+					debit: line.debit,
+					credit: line.credit,
+					subAccount: null,
+					counterparty: entry.partner || null,
+					orderId: null,
+					// S4 は未登録の科目（9999）の行に元の文を memo で残す。
+					memo: line.account.code === '9999' ? line.account.name : null,
+				})),
+			};
+		});
+}
+
+function openingOf(plan: Record<string, number>) {
+	return ([
+		['1010', plan.openingCash],
+		['1120', plan.accountsReceivable],
+		['1535', plan.fixedAssets],
+		['2020', -plan.accountsPayable],
+		['2910', -plan.openingCapital],
+	] as Array<[string, number]>)
+		.filter(([, amount]) => amount !== 0)
+		.map(([accountCode, signedAmount]) => ({ accountCode, signedAmount, basis: 'carryover' }));
+}
 
 function setupFinanceFetch(
 	incomes: Array<Record<string, unknown>> = [],
@@ -176,7 +250,18 @@ function setupFinanceFetch(
 				...(body.operation === 'expense.create' ? { resourceId: '2' } : {}),
 			}), { status: 200, headers: { 'Content-Type': 'application/json' } });
 		}
-		return new Response(JSON.stringify({ data }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+		const requestedYear = Number(new URL(String(_input), 'http://localhost').searchParams.get('year') ?? 2026);
+		const period = periodOf(requestedYear, data.businessType);
+		return new Response(JSON.stringify({
+			data: {
+				...data,
+				period,
+				periods: [period],
+				savedJournal: savedJournalOf([...data.expenses, ...data.incomes], period),
+				opening: openingOf(data.plan),
+				periodNotices: { filingDeadlinePassed: false, previousPeriodOpen: false },
+			},
+		}), { status: 200, headers: { 'Content-Type': 'application/json' } });
 	});
 	global.fetch = mockFetch as unknown as typeof fetch;
 	return mockFetch;
@@ -197,7 +282,7 @@ describe('CostProfitSection', () => {
 				{ id: 4, entryType: 'expense', date: '2026-03-15', category: '旅費交通費', item: '当年交通費', partner: '', amount: 5000, paymentMethod: 'プライベート', memo: '' },
 			],
 		});
-		const { rerender } = render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		const { rerender } = render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '帳簿' }));
 
@@ -227,7 +312,7 @@ describe('CostProfitSection', () => {
 		expect(within(journalList).getByText('Instagram広告費')).toBeInTheDocument();
 		expect(screen.getByRole('region', { name: '照合結果' })).toHaveTextContent('販売費・マーケティング');
 
-		rerender(<CostProfitSection fiscalYear={2025} fiscalYearLabel="2025年" />);
+		rerender(<CostProfitSection periodId={null} fiscalYear={2025} fiscalYearLabel="2025年" />);
 		const priorYearTrend = await screen.findByRole('region', { name: '月次累積収支推移' });
 		expect(within(priorYearTrend).getByRole('img', { name: '2025年の月次累積収支推移' })).toBeInTheDocument();
 		expect(within(priorYearTrend).getByText('当年末残高').parentElement).toHaveTextContent('¥70,000');
@@ -252,7 +337,7 @@ describe('CostProfitSection', () => {
 				summary: { stripeBalance: 9_640, inTransitBalance: 9_640, unmatchedPayoutCount: 0 },
 			},
 		});
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 
 		expect(await screen.findByRole('button', { name: 'Payout po_1 の銀行着金を確認' })).toBeEnabled();
 		expect(screen.getByText('Stripe決済残高')).toBeVisible();
@@ -279,7 +364,7 @@ describe('CostProfitSection', () => {
 				summary: { stripeBalance: 8_000, inTransitBalance: 0, unmatchedPayoutCount: 1 },
 			},
 		});
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 
 		expect(await screen.findByRole('button', { name: 'Payout po_mismatch の銀行着金を確認' })).toBeDisabled();
 		expect(screen.getByRole('button', { name: 'Payout po_pending の銀行着金を確認' })).toBeDisabled();
@@ -302,7 +387,7 @@ describe('CostProfitSection', () => {
 				summary: { stripeBalance: 9_640, inTransitBalance: 9_640, unmatchedPayoutCount: 0 },
 			},
 		});
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 
 		fireEvent.click(await screen.findByRole('button', { name: 'Payout po_1 の銀行着金を確認' }));
 		fireEvent.change(screen.getByLabelText('銀行着金日'), { target: { value: '2026-08-16' } });
@@ -331,7 +416,7 @@ describe('CostProfitSection', () => {
 				receipts: [],
 			},
 		]);
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 
 		fireEvent.click(await screen.findByRole('tab', { name: '取引管理' }));
 		fireEvent.click(await screen.findByRole('button', { name: '銀行振込売上の証憑' }));
@@ -373,7 +458,7 @@ describe('CostProfitSection', () => {
 			cumulativeEntries: [loan, repayment, payable],
 		});
 
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 
 		const funding = screen.getByRole('region', { name: '借入・事業主資金' });
@@ -409,7 +494,7 @@ describe('CostProfitSection', () => {
 			refundedAmount: 500,
 		}]);
 
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 
@@ -425,7 +510,7 @@ describe('CostProfitSection', () => {
 
 	it('摘要プルダウンの先頭から共有候補を追加できる', async () => {
 		const fetchMock = setupFinanceFetch();
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		fireEvent.click(await screen.findByRole('tab', { name: '取引管理' }));
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
 
@@ -446,7 +531,7 @@ describe('CostProfitSection', () => {
 
 	it('ユーザー追加摘要には削除アクションを表示する', async () => {
 		setupFinanceFetch();
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		fireEvent.click(await screen.findByRole('tab', { name: '取引管理' }));
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
 		fireEvent.click(screen.getByRole('combobox', { name: '支出摘要' }));
@@ -455,7 +540,7 @@ describe('CostProfitSection', () => {
 	});
 
 	it('手動取引の操作列から編集Drawerを開く', async () => {
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 
@@ -472,7 +557,7 @@ describe('CostProfitSection', () => {
 
 	it('削除アイコンは確認後にだけ取引を論理削除する', async () => {
 		const mockFetch = setupFinanceFetch();
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 
@@ -493,7 +578,7 @@ describe('CostProfitSection', () => {
 
 	it('削除確認をキャンセルすると取引を残す', async () => {
 		const mockFetch = setupFinanceFetch();
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 
@@ -509,7 +594,7 @@ describe('CostProfitSection', () => {
 	});
 
 	it('削除確認はキーボードフォーカスを管理する', async () => {
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 		const deleteButton = screen.getByRole('button', { name: 'Instagram広告費を削除' });
@@ -524,7 +609,7 @@ describe('CostProfitSection', () => {
 
 	it('削除に失敗すると行を復元して確認ダイアログに理由を表示する', async () => {
 		setupFinanceFetch([], undefined, true);
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 
@@ -540,7 +625,7 @@ describe('CostProfitSection', () => {
 	});
 
 	it('アーカイブの準備状態と外部保存先の未設定を表示する', async () => {
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		fireEvent.click(await screen.findByRole('tab', { name: '取引管理' }));
 		expect(await screen.findByText('保存要件整備中')).toBeInTheDocument();
 		expect(screen.getByText('外部保存先 未設定')).toBeInTheDocument();
@@ -555,7 +640,7 @@ describe('CostProfitSection', () => {
 			externalStorageConfigured: true,
 			delayed: false,
 		});
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		fireEvent.click(await screen.findByRole('tab', { name: '取引管理' }));
 		const archiveStatus = await screen.findByText('注文データ保存済み');
 		expect(archiveStatus.closest('[role="status"]')).toHaveTextContent('注文データ保存済み');
@@ -563,7 +648,7 @@ describe('CostProfitSection', () => {
 	});
 
 	it('財務3表と青色申告向けのサブタブを表示する', async () => {
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 
 		expect(screen.getByText('損益計算書（P/L）')).toBeInTheDocument();
@@ -575,7 +660,7 @@ describe('CostProfitSection', () => {
 	});
 
 	it('登録した経費を一覧と仕訳帳へ反映する', async () => {
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
@@ -597,7 +682,7 @@ describe('CostProfitSection', () => {
 	});
 
 	it('取引先を新規登録して選択肢に追加する', async () => {
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
@@ -616,7 +701,7 @@ describe('CostProfitSection', () => {
 	});
 
 	it('入力をテンプレート保存し、選択して経費フォームへ反映する', async () => {
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
@@ -658,7 +743,7 @@ describe('CostProfitSection', () => {
 
 	it('テンプレート名の未保存中は閉じる前に確認し、入力を保持または破棄できる', async () => {
 		const mockFetch = setupFinanceFetch();
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
@@ -717,7 +802,7 @@ describe('CostProfitSection', () => {
 			partners: ['旧取引先', '新取引先'],
 			templates: [{ name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', partner: '旧取引先', amount: 80000, paymentMethod: '銀行', memo: '事務所' }],
 		});
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
@@ -743,7 +828,7 @@ describe('CostProfitSection', () => {
 		setupFinanceFetch([], undefined, false, {
 			templates: [{ name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', partner: '', amount: 80000, paymentMethod: '銀行', memo: '事務所' }],
 		});
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
@@ -762,7 +847,7 @@ describe('CostProfitSection', () => {
 		const mockFetch = setupFinanceFetch([], undefined, false, {
 			templates: [{ name: '毎月の家賃', entryType: 'expense', category: '地代家賃', item: '打合せ・交通', partner: '', amount: 80000, paymentMethod: '銀行', memo: '事務所' }],
 		});
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
@@ -788,7 +873,7 @@ describe('CostProfitSection', () => {
 		[{ status: 403, payload: { permission: 'admin.finance.manage' } }, '会計データの保存には財務管理権限が必要です。'],
 	] as const)('取引先登録の403理由に応じた案内を表示する', async (postError, message) => {
 		setupFinanceFetch([], undefined, false, { postError });
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
@@ -801,7 +886,7 @@ describe('CostProfitSection', () => {
 	});
 
 	it('テンプレート名の取消では取引Drawerを閉じない', async () => {
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
@@ -821,7 +906,7 @@ describe('CostProfitSection', () => {
 	});
 
 	it('商品原価タブで新しい配賦モデルのシーズン概要を表示する', async () => {
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '商品原価' }));
@@ -833,7 +918,7 @@ describe('CostProfitSection', () => {
 
 	it('行末の削除ボタンで経費をSupabaseから削除する', async () => {
 		const mockFetch = setupFinanceFetch();
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
@@ -853,7 +938,7 @@ describe('CostProfitSection', () => {
 
 	it('種別を収入に切り替えて収入を登録し、収入一覧へ反映する', async () => {
 		const mockFetch = setupFinanceFetch();
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
@@ -896,7 +981,7 @@ describe('CostProfitSection', () => {
 	});
 
 	it('テンプレートは支出・収入で別管理される', async () => {
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
@@ -938,7 +1023,7 @@ describe('CostProfitSection', () => {
 				changedAt: '2026-08-12T00:00:00.000Z',
 			}],
 		});
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 
@@ -956,7 +1041,7 @@ describe('CostProfitSection', () => {
 			revisions: [{ id: 1, entryId: 1, operation: 'update', before: { date: '2026-05-24', category: '広告宣伝費', item: '広告費', partner: '', amount: '30000' }, after: { date: '2026-05-24', category: '販売費・マーケティング', item: 'Instagram広告費', partner: '', amount: '32000' }, changedAt: '2026-08-12T00:00:00.000Z' }],
 			reviewAcks: [{ entryRef: 'entry:1', reason: 'revisedEntry', note: '', reviewedAt: '2026-08-12T01:00:00.000Z' }],
 		});
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 
@@ -971,7 +1056,7 @@ describe('CostProfitSection', () => {
 			entryCategory: '広告宣伝費',
 			revisions: [{ id: 1, entryId: 1, operation: 'update', before: { date: '2026-05-24', category: '広告宣伝費', item: '広告費', partner: '', amount: '30000' }, after: { date: '2026-05-24', category: '販売費・マーケティング', item: 'Instagram広告費', partner: '', amount: '32000' }, changedAt: '2026-08-12T00:00:00.000Z' }],
 		});
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 
@@ -995,7 +1080,7 @@ describe('CostProfitSection', () => {
 			}],
 		});
 
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 
@@ -1032,7 +1117,7 @@ describe('CostProfitSection', () => {
 			readOnly: true,
 		}]);
 
-		render(<CostProfitSection fiscalYear={2026} fiscalYearLabel="2026年" />);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
 		await screen.findByText('同期済み');
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 

@@ -35,21 +35,24 @@ export const EMPTY_YEAR_END_ADJUSTMENT: YearEndAdjustment = {
 /** 棚卸資産の科目コード。商品(1310) / 材料(1330)。 */
 const GOODS_CODE = "1310";
 const MATERIALS_CODE = "1330";
-/** 事業主貸(1910) / 元入金(2910) / 事業主借(2920) / 繰越利益剰余金(3040) */
-const OWNER_DRAW_CODE = "1910";
+/**
+ * 区分「事業主貸」の科目（1910 事業主貸・1920 資産譲渡損。設計 3-e・3-f）は期首で0にして元入金へ入れる。
+ * 元入金(2910) / 事業主借(2920) / 繰越利益剰余金(3040)
+ */
+const OWNER_DRAW_SECTION = "事業主貸";
 const CAPITAL_CODE = "2910";
 const OWNER_LOAN_CODE = "2920";
 const RETAINED_EARNINGS_CODE = "3040";
 
 function entryOf(
-  fiscalYear: number,
+  /** 期間の終わりの日（決算整理仕訳の日） */
+  date: string,
   suffix: string,
   description: string,
   debitAccount: string,
   creditAccount: string,
   amount: number,
 ): JournalEntry {
-  const date = `${fiscalYear}-12-31`;
   return {
     // 決算整理仕訳は取引 id と衝突しない負の連番。
     entryId: -1_000_000 - suffix.charCodeAt(suffix.length - 1),
@@ -73,7 +76,7 @@ function entryOf(
 export function buildInventoryEntries(
   adjustment: YearEndAdjustment,
   openingBalances: ReadonlyMap<string, number>,
-  fiscalYear: number,
+  closingDate: string,
 ): JournalEntry[] {
   const entries: JournalEntry[] = [];
 
@@ -81,7 +84,7 @@ export function buildInventoryEntries(
   if (openingGoods > 0) {
     entries.push(
       entryOf(
-        fiscalYear,
+        closingDate,
         "I01",
         "期首商品棚卸高の振替",
         "期首商品棚卸高",
@@ -93,7 +96,7 @@ export function buildInventoryEntries(
   if (adjustment.closingInventoryGoods > 0) {
     entries.push(
       entryOf(
-        fiscalYear,
+        closingDate,
         "I02",
         "期末商品棚卸高の計上",
         "商品",
@@ -107,7 +110,7 @@ export function buildInventoryEntries(
   if (openingMaterials > 0) {
     entries.push(
       entryOf(
-        fiscalYear,
+        closingDate,
         "I03",
         "期首材料棚卸高の振替",
         "期首材料棚卸高",
@@ -119,7 +122,7 @@ export function buildInventoryEntries(
   if (adjustment.closingInventoryMaterials > 0) {
     entries.push(
       entryOf(
-        fiscalYear,
+        closingDate,
         "I04",
         "期末材料棚卸高の計上",
         "材料",
@@ -135,12 +138,12 @@ export function buildInventoryEntries(
 /** 貸倒引当金繰入の決算整理仕訳。借方 貸倒引当金繰入 / 貸方 貸倒引当金。 */
 export function buildAllowanceEntries(
   adjustment: YearEndAdjustment,
-  fiscalYear: number,
+  closingDate: string,
 ): JournalEntry[] {
   if (adjustment.allowanceForDoubtful <= 0) return [];
   return [
     entryOf(
-      fiscalYear,
+      closingDate,
       "A01",
       "貸倒引当金繰入",
       "貸倒引当金繰入",
@@ -155,7 +158,7 @@ export function buildAllowanceEntries(
  *
  * 損益科目は0にし（決算振替）、その利益を純資産へ振り替える。
  *   個人事業主：翌年元入金 = 当年元入金 + 当期純利益 + 事業主借 − 事業主貸
- *               事業主貸・事業主借は0にする
+ *               事業主貸（区分の1910・1920）・事業主借は0にする
  *   法人      ：繰越利益剰余金 += 当期純利益
  *
  * 結果として「資産（事業主貸を除く）= 負債 + 純資産」が成立する。
@@ -192,8 +195,8 @@ export function buildClosingBalances(
       continue;
     }
 
-    if (code === OWNER_DRAW_CODE) {
-      ownerDraw = balance;
+    if (row.account.section === OWNER_DRAW_SECTION) {
+      ownerDraw += balance;
       continue;
     }
     if (code === OWNER_LOAN_CODE) {

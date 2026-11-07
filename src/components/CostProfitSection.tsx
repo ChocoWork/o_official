@@ -20,9 +20,39 @@ import { JournalView } from "@/components/cost-profit/journal-view";
 import { ProductView } from "@/components/cost-profit/product-view";
 import { TaxView } from "@/components/cost-profit/tax-view";
 
+/** 期間の状態の知らせ（期間が無い・一部しか読めない・まだ動く・期限を過ぎた・入れ漏れ）。 */
+function PeriodNotice({
+  tone,
+  children,
+}: {
+  tone: "info" | "warning";
+  children: string;
+}) {
+  return (
+    <p
+      role={tone === "warning" ? "alert" : "note"}
+      className={`mb-4 rounded-md border px-3 py-2 font-acumin lk-text-3xs ${
+        tone === "warning"
+          ? "border-red-200 text-red-700"
+          : "border-[#d4d4d4] text-[#474747]"
+      }`}
+    >
+      {children}
+    </p>
+  );
+}
+
 export default function CostProfitSection(props: CostProfitProps) {
   const model = useCostProfitModel(props);
   const {
+    periodId,
+    onPeriodChange,
+    period,
+    periods,
+    periodNotices,
+    hasNoPeriod,
+    journalIncomplete,
+    preDeductionIncome,
     fiscalYear,
     fiscalYearOptions,
     onFiscalYearChange,
@@ -47,6 +77,45 @@ export default function CostProfitSection(props: CostProfitProps) {
   // Legacy JSX remains temporarily for a small rollback window while the new data model is deployed.
   // Evaluating the binding keeps lint honest without rendering or exposing the retired editor.
   void productView;
+  // 期間が無いときは作る案内だけ、保存した仕訳を読み切れなかったときは合計を出さない（書き出しも出さない）。
+  const noPeriodNotice = (
+    <PeriodNotice tone="info">
+      期間がありません。設定・期間のタブで期間を作ってください
+    </PeriodNotice>
+  );
+  const blockedNotice = hasNoPeriod ? (
+    noPeriodNotice
+  ) : journalIncomplete ? (
+    <PeriodNotice tone="warning">
+      一部しか読めていないため、合計を表示できません。もう一度読み込んでください
+    </PeriodNotice>
+  ) : null;
+  const countNotices = (
+    <>
+      {periodNotices.previousPeriodOpen ? (
+        <PeriodNotice tone="info">
+          前の期間を締めていないため、数字はまだ動きます
+        </PeriodNotice>
+      ) : null}
+      {!preDeductionIncome.matches ? (
+        <PeriodNotice tone="warning">
+          事業主貸・事業主借の入れ漏れを確かめてください
+        </PeriodNotice>
+      ) : null}
+    </>
+  );
+  const withCountNotices = (view: React.JSX.Element) =>
+    blockedNotice ?? (
+      <>
+        {countNotices}
+        {view}
+      </>
+    );
+  // 新しい期間が先頭。値は親が持つ選択、未選択なら読み込んだ期間。
+  const periodOptions = [...periods].reverse().map((option) => ({
+    value: option.id,
+    label: option.name,
+  }));
   return (
     <div className="min-w-0">
       {/* タブ行の右端に同期ステータスと再読み込みを並べる。詳細な文言は右下の Toast へ。 */}
@@ -65,7 +134,18 @@ export default function CostProfitSection(props: CostProfitProps) {
             年度選択。会計期間（暦年）はどのサブタブでもここから切り替える。
             期間が 1/1〜12/31 なので表記は「年度」ではなく「年」。
           */}
-          {fiscalYearOptions && onFiscalYearChange ? (
+          {onPeriodChange && periodOptions.length > 0 ? (
+            <SingleSelect
+              variant="dropdown"
+              size="2xs"
+              shape="rounded"
+              className="font-acumin"
+              aria-label="会計期間"
+              options={periodOptions}
+              value={periodId ?? period?.id ?? periodOptions[0].value}
+              onValueChange={(value) => onPeriodChange(value)}
+            />
+          ) : fiscalYearOptions && onFiscalYearChange ? (
             <SingleSelect
               variant="dropdown"
               size="2xs"
@@ -123,9 +203,22 @@ export default function CostProfitSection(props: CostProfitProps) {
           </Button>
         </div>
       </div>
-      {activeTab === "summary" ? summaryView : null}
-      {activeTab === "expenses" ? expensesView : null}
-      {activeTab === "journal" ? journalView : null}
+      {activeTab === "summary" ? withCountNotices(summaryView) : null}
+      {activeTab === "expenses" ? (
+        hasNoPeriod ? (
+          noPeriodNotice
+        ) : (
+          <>
+            {periodNotices.filingDeadlinePassed ? (
+              <PeriodNotice tone="info">
+                この期間の申告の期限を過ぎています。入れた仕訳は取り消しと正しい仕訳として残ります
+              </PeriodNotice>
+            ) : null}
+            {expensesView}
+          </>
+        )
+      ) : null}
+      {activeTab === "journal" ? withCountNotices(journalView) : null}
       {activeTab === "products" ? (
         <ProductCostSection
           seasonKey={seasonKey}
@@ -133,7 +226,7 @@ export default function CostProfitSection(props: CostProfitProps) {
           onSeasonChange={setSeasonKey}
         />
       ) : null}
-      {activeTab === "tax" ? taxView : null}
+      {activeTab === "tax" ? withCountNotices(taxView) : null}
       {payoutConfirmDialog}
 
       {/* エラー・完了の詳細は画面右下の Toast に出す。成功は自動で消し、エラーは操作で閉じる。

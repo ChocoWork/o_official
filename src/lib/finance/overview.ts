@@ -16,6 +16,11 @@ import {
   type BusinessType,
 } from "@/lib/finance/accounts";
 import { paymentMethodAccountName } from "@/lib/finance/payment-methods";
+import {
+  periodMonthIndexOf,
+  periodMonthsOf,
+  type PeriodBounds,
+} from "@/lib/finance/period-range";
 
 /** 売上債権（未回収）とみなす決算書区分。 */
 const RECEIVABLE_SECTIONS = ["売上債権"];
@@ -67,7 +72,7 @@ export type CashTrend = {
  */
 export function buildMonthlyCashTrend(
   ledger: readonly LedgerAccount[],
-  fiscalYear: number,
+  period: PeriodBounds,
 ): CashTrend {
   const cashLedgers = ledger.filter((row) => isCashAccount(row.account));
   const openingCash = cashLedgers.reduce(
@@ -75,13 +80,14 @@ export function buildMonthlyCashTrend(
     0,
   );
 
-  const netByMonth = new Array<number>(12).fill(0);
+  // 期間の月ごとに束ねる。暦年の期間なら 1月〜12月の12本で、見出しは MONTH_LABELS と同じ。
+  const months = periodMonthsOf(period);
+  const netByMonth = new Array<number>(months.length).fill(0);
   for (const cashLedger of cashLedgers) {
     for (const row of cashLedger.rows) {
-      if (Number.parseInt(row.date.slice(0, 4), 10) !== fiscalYear) continue;
-      const month = Number.parseInt(row.date.slice(5, 7), 10);
-      if (!Number.isFinite(month) || month < 1 || month > 12) continue;
-      netByMonth[month - 1] += row.debit - row.credit;
+      const index = periodMonthIndexOf(months, row.date);
+      if (index < 0) continue;
+      netByMonth[index] += row.debit - row.credit;
     }
   }
 
@@ -90,7 +96,7 @@ export function buildMonthlyCashTrend(
   const points = netByMonth.map((net, index) => {
     balance += net;
     cumulativeNet += net;
-    return { label: MONTH_LABELS[index], balance, net, cumulativeNet };
+    return { label: months[index].label, balance, net, cumulativeNet };
   });
 
   return { openingCash, closingCash: balance, points };
@@ -110,10 +116,12 @@ export function buildCashTargetLine(
   openingCash: number,
   plannedSales: number,
   expenseTotal: number,
+  /** 期間の月の数（資金推移の点の数にそろえる）。暦年は12。 */
+  monthCount: number = MONTH_LABELS.length,
 ): number[] | null {
   if (plannedSales <= 0) return null;
-  const monthlyGain = (plannedSales - expenseTotal) / 12;
-  return MONTH_LABELS.map((_, index) =>
+  const monthlyGain = (plannedSales - expenseTotal) / monthCount;
+  return Array.from({ length: monthCount }, (_, index) =>
     Math.round(openingCash + monthlyGain * (index + 1)),
   );
 }

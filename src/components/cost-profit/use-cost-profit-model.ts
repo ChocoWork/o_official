@@ -5,9 +5,23 @@ import { clientFetch } from "@/lib/client-fetch";
 import {
   accountByCode,
   accountByName,
+  resolveAccount,
+  type Account,
   type AccountType,
   type BusinessType,
 } from "@/lib/finance/accounts";
+import type { OpeningBalanceRow } from "@/lib/accounting/accounting-types";
+import {
+  savedEntryToJournalEntry,
+  type SavedJournalEntry,
+} from "@/lib/accounting/journal-types";
+import { toJstDate } from "@/lib/accounting/jst-date";
+import type { AccountingPeriod } from "@/lib/accounting/period";
+import {
+  isDateInPeriod,
+  periodMonthsOf,
+  type PeriodBounds,
+} from "@/lib/finance/period-range";
 import {
   buildCashFlow,
   CASH_FLOW_CATEGORY_LABELS,
@@ -47,12 +61,16 @@ import {
   formatSeasonLabel,
   seasonOptionsDescending,
 } from "@/lib/kpi/monthly-metrics";
-import { fiscalYearOf } from "@/lib/finance/fiscal-year";
+import {
+  fiscalYearOf,
+  fiscalYearRange,
+  formatFiscalYearLabel,
+} from "@/lib/finance/fiscal-year";
 import { resolveEvidenceStatus } from "@/lib/finance/evidence-status";
 import {
   buildDepreciationEntries,
   buildGeneralLedger,
-  buildJournal,
+  buildOrderSalesJournal,
   buildTrialBalance,
   type EntryType,
   type FinanceEntry,
@@ -73,6 +91,7 @@ import {
   buildBlueReturnDeduction,
   buildMonthlySummary,
   buildPartnerBreakdown,
+  checkPreDeductionIncome,
 } from "@/lib/finance/blue-return";
 import {
   buildAllowanceEntries,
@@ -157,7 +176,71 @@ import {
   sumProductUnitCost,
 } from "./constants";
 
+/** cost-profit GET の期間の知らせ（設計 3-d）。 */
+export type PeriodNotices = {
+  filingDeadlinePassed: boolean;
+  previousPeriodOpen: boolean;
+};
+
+const NO_PERIOD_NOTICES: PeriodNotices = {
+  filingDeadlinePassed: false,
+  previousPeriodOpen: false,
+};
+
+/** 期間で数える応答の欄（cost-profit GET が既存の欄に足す）。 */
+type PeriodPayload = {
+  period?: AccountingPeriod | null;
+  periods?: AccountingPeriod[];
+  savedJournal?: SavedJournalEntry[];
+  opening?: OpeningBalanceRow[];
+  periodNotices?: PeriodNotices;
+};
+
+/** 保存した仕訳を最後まで読めなかったときの GET の固定コード（FREQ-557-AC-06）。 */
+const JOURNAL_INCOMPLETE_CODES = new Set(["JOURNAL_TOO_LARGE", "JOURNAL_INCOMPLETE"]);
+
+/**
+ * 未登録の科目（S4 が 9999 にした行）。memo に元の文（科目名・出金方法）が残るので、その名前の 9999 で出す
+ * （手入力から合成していた時の resolveAccount と同じ見え方）。
+ */
+const UNREGISTERED_ACCOUNT_NAME = "未登録の科目";
+function unregisteredAccount(memo: string | null): Account {
+  const name = memo?.trim() || UNREGISTERED_ACCOUNT_NAME;
+  const account = resolveAccount(name);
+  return account.code === "9999"
+    ? account
+    : resolveAccount(`${name}（未登録）`);
+}
+
+/** Stripe の日時を日本時間の日へ直す（buildStripeJournal は先頭の10文字を仕訳の日にする）。 */
+function stripeRowsInJst<T extends Record<string, unknown>>(
+  rows: readonly T[],
+  fields: readonly string[],
+): T[] {
+  return rows.map((row) => {
+    const copy: Record<string, unknown> = { ...row };
+    for (const field of fields) {
+      const value = copy[field];
+      if (
+        typeof value === "string" &&
+        value.length > 10 &&
+        Number.isFinite(Date.parse(value))
+      ) {
+        copy[field] = toJstDate(value);
+      }
+    }
+    return copy as T;
+  });
+}
+
+const slashDate = (date: string) => date.replaceAll("-", "/");
+
 export type CostProfitProps = {
+  /** 選んだ会計期間。null は未選択で、旧の fiscalYear を個人の暦年の期間に結ぶ（GET が既定の期間を選ぶ）。 */
+  periodId: string | null;
+  /** 期間の選択。渡されたときだけタブ行に期間のセレクトを出す（一覧は GET の periods）。 */
+  onPeriodChange?: (periodId: string) => void;
+  /** 旧の年の入口（Task 11 まで残す）。 */
   fiscalYear: number;
   fiscalYearLabel: string;
   /** 年度選択の選択肢。渡されたときだけタブ行に年度セレクトを出す。 */
@@ -166,8 +249,10 @@ export type CostProfitProps = {
 };
 
 export function useCostProfitModel({
-  fiscalYear,
-  fiscalYearLabel,
+  periodId,
+  onPeriodChange,
+  fiscalYear: requestedFiscalYear,
+  fiscalYearLabel: requestedFiscalYearLabel,
   fiscalYearOptions,
   onFiscalYearChange,
 }: CostProfitProps) {
@@ -303,6 +388,46 @@ export function useCostProfitModel({
   const [plan, setPlan] = useState<FinancePlan>(EMPTY_PLAN);
   const [businessType, setBusinessType] =
     useState<BusinessType>("soleProprietor");
+  // 会計の期間と、その期間の保存した仕訳・期首（cost-profit GET）。
+  const [loadedPeriod, setPeriod] = useState<AccountingPeriod | null>(null);
+  // どの要求（periodId か旧の year）で読んだ期間か。要求が変わったら読み終わるまで要求の年で見せる。
+  const [loadedScope, setLoadedScope] = useState<string | null>(null);
+  const requestScope =
+    periodId !== null
+      ? `periodId=${encodeURIComponent(periodId)}`
+      : `year=${requestedFiscalYear}`;
+  const period = loadedScope === requestScope ? loadedPeriod : null;
+  const [periods, setPeriods] = useState<AccountingPeriod[]>([]);
+  const [savedJournal, setSavedJournal] = useState<SavedJournalEntry[]>([]);
+  const [openingRows, setOpeningRows] = useState<OpeningBalanceRow[]>([]);
+  const [periodNotices, setPeriodNotices] =
+    useState<PeriodNotices>(NO_PERIOD_NOTICES);
+  // 期間が1つも無い（GET が period:null を返した）。期間を作る案内だけを出す。
+  const [hasNoPeriod, setHasNoPeriod] = useState(false);
+  // 保存した仕訳を最後まで読めなかった。合計と書き出しを出さない（前の期間の合計も残さない）。
+  const [journalIncomplete, setJournalIncomplete] = useState(false);
+  // 画面の年・見出し・範囲は読み込んだ期間から決める。読む前は旧の年（暦年）のまま。
+  const fiscalYear = period
+    ? Number(period.startsOn.slice(0, 4))
+    : requestedFiscalYear;
+  const fiscalYearLabel = period
+    ? period.businessType === "soleProprietor"
+      ? formatFiscalYearLabel(fiscalYear)
+      : period.name
+    : requestedFiscalYearLabel;
+  const periodBounds = useMemo<PeriodBounds>(() => {
+    if (period) return { startsOn: period.startsOn, endsOn: period.endsOn };
+    const { start, end } = fiscalYearRange(requestedFiscalYear);
+    return { startsOn: start, endsOn: end };
+  }, [period, requestedFiscalYear]);
+  const periodRangeLabel = `${slashDate(periodBounds.startsOn)}〜${slashDate(periodBounds.endsOn)}`;
+  const periodSpanLabel = (() => {
+    const startYear = periodBounds.startsOn.slice(0, 4);
+    const endYear = periodBounds.endsOn.slice(0, 4);
+    const startMonth = Number(periodBounds.startsOn.slice(5, 7));
+    const endMonth = Number(periodBounds.endsOn.slice(5, 7));
+    return `${startYear}年${startMonth}月〜${endYear === startYear ? "" : `${endYear}年`}${endMonth}月`;
+  })();
   const [selectedProductId, setSelectedProductId] = useState(
     `${seasonKey}-ITEM-001`,
   );
@@ -421,21 +546,29 @@ export function useCostProfitModel({
   }, [isSaving, isTemplateDiscardDialogOpen]);
 
   const loadFinanceData = useCallback(async () => {
+    let incomplete = false;
     try {
       setIsDataLoading(true);
       setDataMessage(null);
-      // 会計データは年度で、商品原価だけシーズンで取得する。
+      // 会計データは期間で（未選択なら旧の年を個人の暦年の期間に結ぶ）、商品原価だけシーズンで取得する。
       const response = await clientFetch(
-        `/api/admin/kpi/cost-profit?year=${fiscalYear}&season=${encodeURIComponent(seasonKey)}`,
+        `/api/admin/kpi/cost-profit?${requestScope}&season=${encodeURIComponent(seasonKey)}`,
         {
           cache: "no-store",
         },
       );
+      // ok でない応答も本文を読み切る。
       const payload = (await response.json().catch(() => null)) as
-        | CostProfitResponse
-        | { error?: string; details?: string }
+        | (CostProfitResponse & { data: PeriodPayload })
+        | { error?: string; details?: string; code?: string }
         | null;
       if (!response.ok || !payload || !("data" in payload)) {
+        incomplete = Boolean(
+          payload &&
+            "code" in payload &&
+            payload.code &&
+            JOURNAL_INCOMPLETE_CODES.has(payload.code),
+        );
         throw new Error(
           payload && "error" in payload && payload.error
             ? payload.error
@@ -444,7 +577,19 @@ export function useCostProfitModel({
       }
 
       setPlan(payload.data.plan);
-      setBusinessType(payload.data.businessType ?? "soleProprietor");
+      setBusinessType(
+        payload.data.period?.businessType ??
+          payload.data.businessType ??
+          "soleProprietor",
+      );
+      setPeriod(payload.data.period ?? null);
+      setLoadedScope(requestScope);
+      setPeriods(payload.data.periods ?? []);
+      setSavedJournal(payload.data.savedJournal ?? []);
+      setOpeningRows(payload.data.opening ?? []);
+      setPeriodNotices(payload.data.periodNotices ?? NO_PERIOD_NOTICES);
+      setHasNoPeriod(payload.data.period === null);
+      setJournalIncomplete(false);
       setExpenses(payload.data.expenses);
       setIncomes(payload.data.incomes ?? []);
       setProducts(payload.data.products);
@@ -477,7 +622,12 @@ export function useCostProfitModel({
       setSyncedAt(new Date().toISOString());
     } catch (error) {
       // DB取得に失敗した場合、削除できないサンプル行を残さない。
-      // 画面上のデータがSupabase由来であることを保証する。
+      // 画面上のデータがSupabase由来であることを保証する。前の期間の仕訳・期首も残さない。
+      setSavedJournal([]);
+      setOpeningRows([]);
+      setPeriodNotices(NO_PERIOD_NOTICES);
+      setHasNoPeriod(false);
+      setJournalIncomplete(incomplete);
       setPlan(EMPTY_PLAN);
       setExpenses([]);
       setIncomes([]);
@@ -498,7 +648,7 @@ export function useCostProfitModel({
     } finally {
       setIsDataLoading(false);
     }
-  }, [fiscalYear, seasonKey, notifyError]);
+  }, [requestScope, seasonKey, notifyError]);
 
   useEffect(() => {
     void loadFinanceData();
@@ -563,28 +713,19 @@ export function useCostProfitModel({
   }, []);
 
   // 財務3表はすべて仕訳の実残高から導出する（架空の係数は使わない）。
-  // 期首残高は「前年度の決算スナップショット」が最優先。無ければ手入力の期首残高を使う。
-  // これで 翌年期首BS = 当年期末BS が保たれる。
+  // 期首残高は会計の期間の期首（GET の opening。前の期間の仕訳から計算した繰越か締めた版）から作る。
+  // 旧の admin_finance_years の期首の欄・年の締めのスナップショットからは作らない。
+  // opening は借方−貸方なので、元帳の normalSide 基準へ向きをそろえる。
   const openingBalances = useMemo(() => {
-    if (previousClosingBalances) {
-      return new Map<string, number>(
-        Object.entries(previousClosingBalances).filter(
-          ([, amount]) => amount !== 0,
-        ),
-      );
+    const balances = new Map<string, number>();
+    for (const row of openingRows) {
+      const account = accountByCode(row.accountCode);
+      const amount =
+        account?.normalSide === "credit" ? -row.signedAmount : row.signedAmount;
+      if (amount !== 0) balances.set(row.accountCode, amount);
     }
-    return new Map<string, number>(
-      (
-        [
-          ["1010", plan.openingCash],
-          ["1120", plan.accountsReceivable],
-          ["1535", plan.fixedAssets],
-          ["2020", plan.accountsPayable],
-          ["2910", plan.openingCapital],
-        ] as Array<[string, number]>
-      ).filter(([, amount]) => amount > 0),
-    );
-  }, [plan, previousClosingBalances]);
+    return balances;
+  }, [openingRows]);
 
   const seasonForecast = useMemo(() => {
     const sales = products.reduce(
@@ -721,15 +862,24 @@ export function useCostProfitModel({
         })),
     [incomes, stripeProjectedPaymentIntents],
   );
+  // Stripe の合成仕訳。日は日本時間に直し、期間に入る物だけを残す（保存は計画2）。
   const stripeJournal = useMemo(
     () =>
       buildStripeJournal({
         orders: stripeJournalOrders,
-        balanceTransactions: stripeAccounting.balanceTransactions as never,
-        refunds: stripeAccounting.refunds as never,
-        payouts: stripeAccounting.payouts as never,
-      }),
-    [stripeJournalOrders, stripeAccounting],
+        balanceTransactions: stripeRowsInJst(
+          stripeAccounting.balanceTransactions,
+          ["stripe_created_at"],
+        ) as never,
+        refunds: stripeRowsInJst(stripeAccounting.refunds, [
+          "succeeded_at",
+        ]) as never,
+        payouts: stripeRowsInJst(
+          stripeAccounting.payouts as unknown as Array<Record<string, unknown>>,
+          ["paid_at"],
+        ) as never,
+      }).filter((entry) => isDateInPeriod(entry.date, periodBounds)),
+    [stripeJournalOrders, stripeAccounting, periodBounds],
   );
   const journalIncomes = useMemo(
     () =>
@@ -744,24 +894,68 @@ export function useCostProfitModel({
     [incomes, stripeProjectedPaymentIntents],
   );
 
+  // 手入力の取引は保存した仕訳が正（S4 のトリガーが仕訳にする）。ここで手入力から仕訳を合成しない。
+  const savedJournalEntries = useMemo(
+    () =>
+      savedJournal.map((saved) => {
+        const entry = savedEntryToJournalEntry(
+          saved,
+          (code) => accountByCode(code) ?? unregisteredAccount(null),
+        );
+        // savedEntryToJournalEntry と同じ行の順（lineNo）で memo を突き合わせる。
+        const savedLines = [...saved.lines].sort((a, b) => a.lineNo - b.lineNo);
+        return {
+          ...entry,
+          lines: entry.lines.map((line, index) =>
+            savedLines[index]?.accountCode === "9999"
+              ? { ...line, account: unregisteredAccount(savedLines[index].memo) }
+              : line,
+          ),
+        };
+      }),
+    [savedJournal],
+  );
+  // 注文の売上の合成（計画1。注文を作った日の日本時間で期間に入る物。計画2が保存へ置き換える）。
+  const orderSalesJournal = useMemo(
+    () =>
+      buildOrderSalesJournal(
+        journalIncomes
+          .filter((income) => income.source === "order")
+          .map((income) => ({
+            ...income,
+            sourceId: String(income.sourceId ?? income.id),
+          })),
+        businessType,
+        periodBounds,
+      ),
+    [journalIncomes, businessType, periodBounds],
+  );
+  /** 保存していない合成の仕訳の伝票番号。仕訳帳で「集計中（計画2で保存）」の印を付ける。 */
+  const synthesizedEntryNumbers = useMemo(
+    () =>
+      new Set(
+        [...orderSalesJournal, ...stripeJournal].map((entry) => entry.number),
+      ),
+    [orderSalesJournal, stripeJournal],
+  );
+
   const journal = useMemo(
     () => [
       ...mergeJournalEntries(
-        buildJournal([...expenses, ...journalIncomes], businessType),
+        [...savedJournalEntries, ...orderSalesJournal],
         stripeJournal,
       ),
-      // 決算整理仕訳（減価償却・棚卸・引当金）。
-      ...buildDepreciationEntries(depreciation.rows, fiscalYear),
-      ...buildInventoryEntries(adjustment, openingBalances, fiscalYear),
-      ...buildAllowanceEntries(adjustment, fiscalYear),
+      // 決算整理仕訳（減価償却・棚卸・引当金）は期間の終わりの日に立てる。
+      ...buildDepreciationEntries(depreciation.rows, periodBounds.endsOn),
+      ...buildInventoryEntries(adjustment, openingBalances, periodBounds.endsOn),
+      ...buildAllowanceEntries(adjustment, periodBounds.endsOn),
     ],
     [
-      expenses,
-      journalIncomes,
+      savedJournalEntries,
+      orderSalesJournal,
       stripeJournal,
-      businessType,
       depreciation.rows,
-      fiscalYear,
+      periodBounds.endsOn,
       adjustment,
       openingBalances,
     ],
@@ -779,6 +973,11 @@ export function useCostProfitModel({
     () => buildBalanceSheet(trialBalance),
     [trialBalance],
   );
+  // 3-g: 損益計算書と貸借対照表の青色申告特別控除前の所得が一致するか。
+  const preDeductionIncome = useMemo(
+    () => checkPreDeductionIncome(profitAndLoss, balanceSheet),
+    [profitAndLoss, balanceSheet],
+  );
   // C/F は直接法。現金・預金元帳の動きを相手科目で営業/投資/財務に分類する。
   const cashFlow = useMemo(
     () => buildCashFlow(ledger, accountByName),
@@ -793,12 +992,17 @@ export function useCostProfitModel({
   // 開業以来累計。BSは時点なので累積が期末残高に現れるが、損益は期間なので
   // 年度で切ると積み上げが見えない。ブランドの体力を別枠の指標として出す。
   const cumulative = useMemo(
-    () => buildCumulativeSummary(cumulativeEntries, fixedAssets, fiscalYear),
-    [cumulativeEntries, fixedAssets, fiscalYear],
+    () =>
+      buildCumulativeSummary(
+        cumulativeEntries,
+        fixedAssets,
+        periodBounds.endsOn,
+      ),
+    [cumulativeEntries, fixedAssets, periodBounds.endsOn],
   );
   const cumulativeBalanceTrend = useMemo(
-    () => buildCumulativeBalanceTrend(cumulativeEntries, fiscalYear),
-    [cumulativeEntries, fiscalYear],
+    () => buildCumulativeBalanceTrend(cumulativeEntries, periodBounds),
+    [cumulativeEntries, periodBounds],
   );
   const counterpartyBalances = useMemo(() => {
     const officialBalances = new Map(
@@ -807,16 +1011,16 @@ export function useCostProfitModel({
     return buildCounterpartyBalances(
       cumulativeEntries,
       businessType,
-      `${fiscalYear}-12-31`,
+      periodBounds.endsOn,
       officialBalances,
     );
-  }, [cumulativeEntries, businessType, fiscalYear, ledger]);
+  }, [cumulativeEntries, businessType, periodBounds.endsOn, ledger]);
 
   // ここから財務概要の派生値。すべて上の仕訳・元帳・試算表から導く。
   // 資金推移。月次＝月末の資金残高、通期＝期首からの累積増減。
   const cashTrend = useMemo(
-    () => buildMonthlyCashTrend(ledger, fiscalYear),
-    [ledger, fiscalYear],
+    () => buildMonthlyCashTrend(ledger, periodBounds),
+    [ledger, periodBounds],
   );
   // 安全水準は3ヶ月分の固定費（経費の月平均×3）。
   const safetyLevel = useMemo(
@@ -830,8 +1034,14 @@ export function useCostProfitModel({
         cashTrend.openingCash,
         plan.salesRevenue,
         profitAndLoss.expenseTotal,
+        cashTrend.points.length,
       ),
-    [cashTrend.openingCash, plan.salesRevenue, profitAndLoss.expenseTotal],
+    [
+      cashTrend.openingCash,
+      cashTrend.points.length,
+      plan.salesRevenue,
+      profitAndLoss.expenseTotal,
+    ],
   );
   const isMonthlyTrend = cashTrendMode === "monthly";
   const trendPoints = useMemo(
@@ -998,10 +1208,10 @@ export function useCostProfitModel({
       );
       return;
     }
-    // 会計期間は日付から決まる。選択中の年度外の日付は保存しても一覧に出ないため弾く。
-    if (fiscalYearOf(form.date) !== fiscalYear) {
+    // 会計期間は日付から決まる。選択中の期間の外の日付は保存しても一覧に出ないため弾く。
+    if (!isDateInPeriod(form.date, periodBounds)) {
       setFormMessage(
-        `日付は選択中の会計期間（${fiscalYear}/01/01〜${fiscalYear}/12/31）の範囲で入力してください。`,
+        `日付は選択中の会計期間（${periodRangeLabel}）の範囲で入力してください。`,
       );
       return;
     }
@@ -1042,11 +1252,16 @@ export function useCostProfitModel({
         isEditing
           ? {
               operation: "expense.update",
-              fiscalYear,
+              // 旧の年の鍵（admin_finance_years・fiscal_year 列）は取引の日の暦年。
+              fiscalYear: fiscalYearOf(form.date) ?? fiscalYear,
               expenseId: editingEntryId,
               expense,
             }
-          : { operation: "expense.create", fiscalYear, expense },
+          : {
+              operation: "expense.create",
+              fiscalYear: fiscalYearOf(form.date) ?? fiscalYear,
+              expense,
+            },
       );
       // 新規登録では取引IDが保存後に決まるため、Drawer で受けた証憑はここでまとめて送る。
       const createdId = Number(result?.resourceId);
@@ -1488,7 +1703,8 @@ export function useCostProfitModel({
       setIncomes((current) => current.filter((item) => item.id !== expense.id));
       await postMutation({
         operation: "expense.delete",
-        fiscalYear,
+        // fiscal_year 列は取引の日の暦年（年をまたぐ法人の期間でも行を見つける）。
+        fiscalYear: fiscalYearOf(expense.date) ?? fiscalYear,
         expenseId: expense.id,
       });
       await loadFinanceData();
@@ -2027,11 +2243,16 @@ export function useCostProfitModel({
     };
   }, [entryRows, evidenceStatusOf]);
 
-  // 今月の収支。選択中の会計年が当年でなければ、その年の12月を対象にする。
+  // 今月の収支。今日が選択中の期間に入らなければ、期間の最後の月を対象にする。
   const monthlyBalance = useMemo(() => {
-    const now = new Date();
-    const month = now.getFullYear() === fiscalYear ? now.getMonth() + 1 : 12;
-    const prefix = `${fiscalYear}-${String(month).padStart(2, "0")}`;
+    const months = periodMonthsOf(periodBounds);
+    const target =
+      months.find(
+        (candidate) =>
+          today >= candidate.startsOn && today <= candidate.endsOn,
+      ) ?? months[months.length - 1];
+    const month = target.month;
+    const prefix = target.key;
     const sum = (rows: Expense[]) =>
       rows
         .filter((entry) => entry.date.startsWith(prefix))
@@ -2039,7 +2260,7 @@ export function useCostProfitModel({
     const income = sum(incomes);
     const expense = sum(expenses);
     return { month, income, expense, balance: income - expense };
-  }, [expenses, incomes, fiscalYear]);
+  }, [expenses, incomes, periodBounds, today]);
 
   // 確認キュー。優先順（証憑 → 金額 → 科目 → 訂正）に並べ、空のグループは出さない。
   const reviewQueue = useMemo(() => {
@@ -2617,8 +2838,8 @@ export function useCostProfitModel({
 
   // --- 青色申告決算書（一般用）1〜4ページ ---
   const monthlySummary = useMemo(
-    () => buildMonthlySummary(journal, fiscalYear),
-    [journal, fiscalYear],
+    () => buildMonthlySummary(journal, periodBounds),
+    [journal, periodBounds],
   );
   const deductionCalc = useMemo(
     () => buildBlueReturnDeduction(profitAndLoss.netIncome, usesEtax),
@@ -3021,16 +3242,28 @@ export function useCostProfitModel({
     return map;
   }, [journal]);
 
-  /** 四半期の絞り込み。会計期間は暦年なので 1-3 / 4-6 / 7-9 / 10-12 で切る。 */
+  /** 四半期の絞り込み。期間の月を始まりから3か月ずつ束ねる（暦年の期間なら 1-3 / 4-6 / 7-9 / 10-12）。 */
+  const ledgerQuarters = useMemo(() => {
+    const months = periodMonthsOf(periodBounds);
+    const quarters: Array<{ startsOn: string; endsOn: string }> = [];
+    for (let index = 0; index < months.length; index += 3) {
+      const chunk = months.slice(index, index + 3);
+      quarters.push({
+        startsOn: chunk[0].startsOn,
+        endsOn: chunk[chunk.length - 1].endsOn,
+      });
+    }
+    return quarters;
+  }, [periodBounds]);
   const ledgerPeriodOptions = [
     {
       value: "full",
-      label: `期間：${fiscalYear}/01/01 〜 ${fiscalYear}/12/31`,
+      label: `期間：${slashDate(periodBounds.startsOn)} 〜 ${slashDate(periodBounds.endsOn)}`,
     },
-    { value: "q1", label: `期間：${fiscalYear}/01/01 〜 ${fiscalYear}/03/31` },
-    { value: "q2", label: `期間：${fiscalYear}/04/01 〜 ${fiscalYear}/06/30` },
-    { value: "q3", label: `期間：${fiscalYear}/07/01 〜 ${fiscalYear}/09/30` },
-    { value: "q4", label: `期間：${fiscalYear}/10/01 〜 ${fiscalYear}/12/31` },
+    ...ledgerQuarters.map((quarter, index) => ({
+      value: `q${index + 1}`,
+      label: `期間：${slashDate(quarter.startsOn)} 〜 ${slashDate(quarter.endsOn)}`,
+    })),
   ];
 
   const LEDGER_SIDE_OPTIONS = [
@@ -3045,13 +3278,17 @@ export function useCostProfitModel({
     if (!selectedLedger) return [];
     const keyword = ledgerRowKeyword.trim().toLowerCase();
     const quarter =
-      ledgerPeriod === "full" ? null : Number(ledgerPeriod.slice(1));
+      ledgerPeriod === "full"
+        ? null
+        : (ledgerQuarters[Number(ledgerPeriod.slice(1)) - 1] ?? null);
     return selectedLedger.rows
       .map((row, index) => ({ ...row, key: `${row.number}-${index}` }))
       .filter((row) => {
-        if (quarter !== null) {
-          const month = Number.parseInt(row.date.slice(5, 7), 10);
-          if (Math.ceil(month / 3) !== quarter) return false;
+        if (
+          quarter !== null &&
+          !isDateInPeriod(row.date, quarter)
+        ) {
+          return false;
         }
         if (ledgerSideFilter === "debit" && row.debit <= 0) return false;
         if (ledgerSideFilter === "credit" && row.credit <= 0) return false;
@@ -3889,6 +4126,18 @@ export function useCostProfitModel({
   }, [expenses, incomes, evidenceStatusOf]);
 
   return {
+    periodId,
+    onPeriodChange,
+    period,
+    periods,
+    periodNotices,
+    hasNoPeriod,
+    journalIncomplete,
+    preDeductionIncome,
+    synthesizedEntryNumbers,
+    periodBounds,
+    periodRangeLabel,
+    periodSpanLabel,
     fiscalYear,
     fiscalYearLabel,
     fiscalYearOptions,

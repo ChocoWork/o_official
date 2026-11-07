@@ -6,8 +6,12 @@ import {
 	buildBlueReturnDeduction,
 	buildMonthlySummary,
 	buildPartnerBreakdown,
+	checkPreDeductionIncome,
 } from '@/lib/finance/blue-return';
-import { buildJournal, type FinanceEntry } from '@/lib/finance/journal';
+import { buildGeneralLedger, buildJournal, buildTrialBalance, type FinanceEntry } from '@/lib/finance/journal';
+import { buildBalanceSheet, buildProfitAndLoss } from '@/lib/finance/statements';
+
+const CALENDAR_2026 = { startsOn: '2026-01-01', endsOn: '2026-12-31' };
 
 function entry(partial: Partial<FinanceEntry> & Pick<FinanceEntry, 'id' | 'amount'>): FinanceEntry {
 	return {
@@ -36,7 +40,7 @@ describe('buildMonthlySummary（2ページ 月別売上・仕入）', () => {
 				entry({ id: 3, date: '2026-06-01', amount: 300_000, entryType: 'income', category: '売上高', paymentMethod: '銀行' }),
 				entry({ id: 4, date: '2026-02-10', amount: 80_000, category: '仕入高', paymentMethod: '買掛金' }),
 			]),
-			2026,
+			CALENDAR_2026,
 		);
 
 		expect(summary.rows[0].sales).toBe(150_000);
@@ -53,7 +57,7 @@ describe('buildMonthlySummary（2ページ 月別売上・仕入）', () => {
 				entry({ id: 1, date: '2026-03-01', amount: 200_000, entryType: 'income', category: '売上高', paymentMethod: '銀行' }),
 				entry({ id: 2, date: '2026-03-20', amount: 30_000, category: '売上値引・返品', paymentMethod: '現金' }),
 			]),
-			2026,
+			CALENDAR_2026,
 		);
 		expect(summary.rows[2].sales).toBe(170_000);
 		expect(summary.salesTotal).toBe(170_000);
@@ -65,7 +69,7 @@ describe('buildMonthlySummary（2ページ 月別売上・仕入）', () => {
 				entry({ id: 1, date: '2026-05-01', amount: 100_000, category: '仕入高', paymentMethod: '買掛金' }),
 				entry({ id: 2, date: '2026-05-15', amount: 20_000, entryType: 'income', category: '仕入値引・返品', paymentMethod: '現金' }),
 			]),
-			2026,
+			CALENDAR_2026,
 		);
 		expect(summary.rows[4].purchases).toBe(80_000);
 	});
@@ -76,7 +80,7 @@ describe('buildMonthlySummary（2ページ 月別売上・仕入）', () => {
 				entry({ id: 1, date: '2026-04-01', amount: 100_000, entryType: 'income', category: '売上高', paymentMethod: '銀行' }),
 				entry({ id: 2, date: '2026-04-05', amount: 8_000, entryType: 'income', category: '雑収入', paymentMethod: '現金' }),
 			]),
-			2026,
+			CALENDAR_2026,
 		);
 		expect(summary.rows[3].sales).toBe(100_000);
 		expect(summary.miscIncome).toBe(8_000);
@@ -88,7 +92,7 @@ describe('buildMonthlySummary（2ページ 月別売上・仕入）', () => {
 				entry({ id: 1, date: '2026-12-31', amount: 100_000, entryType: 'income', category: '売上高', paymentMethod: '銀行' }),
 				entry({ id: 2, date: '2027-01-05', amount: 500_000, entryType: 'income', category: '売上高', paymentMethod: '銀行' }),
 			]),
-			2026,
+			CALENDAR_2026,
 		);
 		expect(summary.salesTotal).toBe(100_000);
 		expect(summary.rows[11].sales).toBe(100_000);
@@ -204,5 +208,34 @@ describe('buildBalanceSheetComparison（4ページ 貸借対照表）', () => {
 		const accumulated = bs.assets.find((row) => row.code === '1590');
 		expect(accumulated?.closing).toBe(-100_200);
 		expect(bs.closingAssetTotal).toBe(499_800);
+	});
+});
+
+describe('checkPreDeductionIncome（損益と貸借の控除前の所得）', () => {
+	function statementsOf(entries: FinanceEntry[], opening: Map<string, number>) {
+		const trial = buildTrialBalance(buildGeneralLedger(journalOf(entries), opening));
+		return { pl: buildProfitAndLoss(trial), bs: buildBalanceSheet(trial) };
+	}
+	const entries = [
+		entry({ id: 1, amount: 500_000, entryType: 'income', category: '売上高', paymentMethod: '銀行' }),
+		entry({ id: 2, amount: 120_000, entryType: 'income', category: '売上高', paymentMethod: 'プライベート' }),
+		entry({ id: 3, amount: 40_000, category: '消耗品費', paymentMethod: 'プライベート' }),
+	];
+
+	it('FREQ-557-AC-02: 損益と貸借の控除前の所得が一致し合わなければ入れ漏れを示す', () => {
+		const balanced = statementsOf(entries, new Map([['1040', 200_000], ['2910', 200_000]]));
+		expect(checkPreDeductionIncome(balanced.pl, balanced.bs)).toEqual({
+			fromProfitAndLoss: 580_000,
+			fromBalanceSheet: 580_000,
+			matches: true,
+		});
+
+		// 期首の元入金が資産と合わない（事業主借の入れ漏れ）と、貸借の側の所得がずれる。
+		const missing = statementsOf(entries, new Map([['1040', 200_000]]));
+		expect(checkPreDeductionIncome(missing.pl, missing.bs)).toEqual({
+			fromProfitAndLoss: 580_000,
+			fromBalanceSheet: 780_000,
+			matches: false,
+		});
 	});
 });
