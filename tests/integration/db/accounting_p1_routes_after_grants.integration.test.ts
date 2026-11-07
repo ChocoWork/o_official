@@ -102,6 +102,16 @@ describeLocalDb('S1 routes after grants: controller only, commits rows', (db) =>
     const entryId = Number(expense[0].id);
     expect((await db().query("select operation from public.admin_finance_entry_revisions where entry_id = $1 order by id", [entryId])).rows)
       .toEqual([{ operation: 'insert' }]);
+    // Since S4 (FREQ-556-AC-01/02) the same write also leaves the sole period of today and one journal entry
+    // (debit 6120 consumables, credit 1040 bank) recorded by the actor; the route's write shape is unchanged.
+    expect((await db().query(
+      `select e.dedupe_key, p.business_type, to_char(e.entry_date, 'YYYY-MM-DD') as entry_date, e.recorded_by,
+         (select jsonb_agg(jsonb_build_array(l.account_code, l.debit, l.credit) order by l.line_no)
+          from public.accounting_journal_lines l where l.entry_id = e.id) as lines
+       from public.accounting_journal_entries e join public.accounting_periods p on p.id = e.period_id
+       where e.source_table = 'admin_finance_expenses' and e.source_id = $1::text`, [entryId])).rows)
+      .toEqual([{ dedupe_key: `manual_entry:${entryId}:0`, business_type: 'soleProprietor', entry_date: today, recorded_by: mockActorId,
+        lines: [['6120', 1200, 0], ['1040', 0, 1200]] }]);
 
     const form = new FormData();
     form.set('entryId', String(entryId));

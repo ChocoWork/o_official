@@ -667,6 +667,123 @@ describe('POST /api/admin/kpi/cost-profit', () => {
 		);
 	});
 
+	// 会計 S4: 手入力の取引はトリガーが仕訳にし、期間が無いと取引の行ごと ACCOUNTING_PERIOD_MISSING で断られる。
+	function periodMissingInsert(details: string | null) {
+		const yearUpsert = jest.fn().mockResolvedValue({ error: null });
+		const single = jest.fn().mockResolvedValue({
+			data: null,
+			error: { code: '55000', message: 'ACCOUNTING_PERIOD_MISSING', details, hint: null },
+		});
+		const insert = jest.fn().mockReturnValue({ select: () => ({ single }) });
+		const from = jest.fn((table: string) => (table === 'admin_finance_years' ? { upsert: yearUpsert } : { insert }));
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+		return { insert };
+	}
+	const createRequest = () => new Request('http://localhost/api/admin/kpi/cost-profit', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			operation: 'expense.create',
+			fiscalYear: 2027,
+			expense: { entryType: 'expense', date: '2027-08-01', category: '消耗品費', item: 'ペン', amount: 1200, paymentMethod: '現金' },
+		}),
+	});
+
+	it('FREQ-556-AC-02: 経費の作成は期間が無いとき409と日本語の本文を返す', async () => {
+		const { insert } = periodMissingInsert(null);
+		const response = await POST(createRequest());
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toEqual({
+			error: 'この日付の会計の期間がありません。先に期間を作ってください。',
+			code: 'ACCOUNTING_PERIOD_MISSING',
+		});
+		// 書き込みの形は変えない（service_role から表へ直接 insert する）。
+		expect(insert).toHaveBeenCalledWith(expect.objectContaining({ expense_date: '2027-08-01', item_name: 'ペン', created_by: 'admin-id' }));
+	});
+
+	it('FREQ-555-AC-09: やめた日より後の手入力は、法人へ未切り替えなら日を確かめてから切り替える案内で断られる', async () => {
+		periodMissingInsert('sole_ended_not_switched');
+		const response = await POST(createRequest());
+		const body = await response.json();
+
+		expect(response.status).toBe(409);
+		expect(body).toEqual({
+			error: 'やめた日より後の日付です。やめた日が正しいか確かめ、正しければ事業の形を法人へ切り替えてください。',
+			code: 'ACCOUNTING_PERIOD_MISSING',
+		});
+		expect(JSON.stringify(body)).not.toContain('sole_ended_not_switched');
+	});
+
+	it('FREQ-556-AC-02: 年の範囲の外の日付はARGUMENT_INVALIDの400と日本語の本文で断り、500になる拒否は従来どおり500', async () => {
+		const failWith = (error: Record<string, unknown>) => {
+			const single = jest.fn().mockResolvedValue({ data: null, error });
+			const from = jest.fn((table: string) => (table === 'admin_finance_years'
+				? { upsert: jest.fn().mockResolvedValue({ error: null }) }
+				: { insert: () => ({ select: () => ({ single }) }) }));
+			createServiceMock.mockResolvedValueOnce({ from } as never);
+		};
+		failWith({ code: '22023', message: 'ACCOUNTING_ARGUMENT_INVALID', details: null, hint: null });
+		const invalid = await POST(createRequest());
+		expect(invalid.status).toBe(400);
+		expect(await invalid.json()).toEqual({ error: '入力を確かめてください。', code: 'ACCOUNTING_ARGUMENT_INVALID' });
+
+		failWith({ code: '55000', message: 'ACCOUNTING_HISTORY_IMMUTABLE', details: null, hint: null });
+		const immutable = await POST(createRequest());
+		expect(immutable.status).toBe(500);
+		expect(await immutable.json()).toEqual({ error: '会計データの保存に失敗しました。' });
+	});
+
+	it('FREQ-556-AC-02: 取引の直しと削除も期間が無いときは409と日本語の本文を返し、ほかのDBの失敗は500のまま', async () => {
+		const periodMissing = { code: '55000', message: 'ACCOUNTING_PERIOD_MISSING', details: null };
+		const deleteFrom = (error: unknown) => jest.fn((table: string) => table === 'admin_expense_cost_allocations'
+			? { select: () => ({ eq: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }) }
+			: { update: () => ({ eq: () => ({ eq: () => ({ is: () => ({ select: () => Promise.resolve({ data: null, error }) }) }) }) }) });
+		const deleteRequest = () => new Request('http://localhost/api/admin/kpi/cost-profit', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ operation: 'expense.delete', fiscalYear: 2026, expenseId: 12 }),
+		});
+		createServiceMock.mockResolvedValueOnce({ from: deleteFrom(periodMissing) } as never);
+		const deleted = await POST(deleteRequest());
+		expect(deleted.status).toBe(409);
+		expect((await deleted.json()).code).toBe('ACCOUNTING_PERIOD_MISSING');
+
+		// 同じ文でも SQLSTATE が違えば固定の失敗とは見なさない。
+		createServiceMock.mockResolvedValueOnce({ from: deleteFrom({ ...periodMissing, code: '23505' }) } as never);
+		const other = await POST(deleteRequest());
+		expect(other.status).toBe(500);
+
+		const from = jest.fn((table: string) => {
+			if (table === 'admin_finance_expenses') {
+				return {
+					select: () => ({ eq: () => ({ is: () => ({ maybeSingle: () => Promise.resolve({ data: { amount: 1200, season_key: null, entry_type: 'expense' }, error: null }) }) }) }),
+					update: () => ({ eq: () => ({ is: () => ({ select: () => Promise.resolve({ data: null, error: periodMissing }) }) }) }),
+				};
+			}
+			if (table === 'admin_finance_fixed_assets') {
+				return { select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) };
+			}
+			return { select: () => ({ eq: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }) };
+		});
+		createServiceMock.mockResolvedValueOnce({ from } as never);
+		const updated = await POST(new Request('http://localhost/api/admin/kpi/cost-profit', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				operation: 'expense.update',
+				fiscalYear: 2026,
+				expenseId: 12,
+				expense: { entryType: 'expense', date: '2028-01-10', category: '消耗品費', item: 'ペン', amount: 1200, paymentMethod: '現金' },
+			}),
+		}));
+		expect(updated.status).toBe(409);
+		expect(await updated.json()).toEqual({
+			error: 'この日付の会計の期間がありません。先に期間を作ってください。',
+			code: 'ACCOUNTING_PERIOD_MISSING',
+		});
+	});
+
 	it('取引先マスタへ新規取引先をupsertする', async () => {
 		const upsert = jest.fn().mockResolvedValue({ error: null });
 		const from = jest.fn().mockReturnValue({ upsert });

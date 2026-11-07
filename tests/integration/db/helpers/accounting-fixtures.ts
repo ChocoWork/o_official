@@ -93,7 +93,7 @@ export async function ownedFinanceSequences(client: PgClient): Promise<string[]>
      from pg_depend d join pg_class s on s.oid = d.objid and s.relkind = 'S'
      where d.classid = 'pg_class'::regclass and d.refclassid = 'pg_class'::regclass and d.deptype in ('a', 'i')
        and d.refobjid = any (select ('public.' || t)::regclass::oid from unnest($1::text[]) as t)
-     order by 1 collate "C"`,
+     order by s.relname::text collate "C"`,
     [[...FINANCE_TABLES]],
   );
   return result.rows.map((row) => row.name as string);

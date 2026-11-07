@@ -4,7 +4,7 @@ import { describeLocalDb } from './helpers/local-db';
 import { adminTableTools } from './helpers/admin-table-grants';
 import {
   ACCOUNTING_S1_FILES, ACCOUNTING_S1_SQL as sql, FINANCE_SEQUENCES, FINANCE_TABLES, accountingS1Section, japanToday,
-  ownedFinanceSequences,
+  ownedFinanceSequences, seedAccountingPeriod,
 } from './helpers/accounting-fixtures';
 
 // Accounting plan 1 S1 (FREQ-553 AC-02/03/04): the twelve admin_finance_* tables and their eight owned sequences give
@@ -79,6 +79,15 @@ describeLocalDb('S1 finance grants: controller only', (db) => {
     admin_finance_year_closings: 'fiscal_year', admin_finance_years: 'fiscal_year',
   };
   const keyOf = (table: string) => KEY_COLUMN[table] ?? 'id';
+  /**
+   * Since S4 a manual transaction also writes its period and journal entry, so the expense day lies in the sole period
+   * right after the last one (inside this ROLLBACK), which never collides with periods committed by earlier suites.
+   */
+  async function expenseDay(): Promise<{ periodId: string; day: string }> {
+    const periodId = await seedAccountingPeriod(db(), { businessType: 'soleProprietor' });
+    const day = (await one("select to_char(starts_on, 'YYYY-MM-DD') as day from public.accounting_periods where id = $1", [periodId])).day;
+    return { periodId, day };
+  }
 
   test('FREQ-553-AC-02: 12表と連番でanonもauthenticatedも表の権限を何も持たない', async () => {
     for (const table of FINANCE_TABLES) {
@@ -131,6 +140,7 @@ describeLocalDb('S1 finance grants: controller only', (db) => {
   });
 
   test('FREQ-553-AC-03: service_roleは12表を従来どおり読み書きできる', async () => {
+    const { periodId, day } = await expenseDay();
     const touched = await asService(async () => {
       const seen: string[] = [];
       const write = async (table: string, insert: string, update: string, params: unknown[] = []) => {
@@ -160,9 +170,18 @@ describeLocalDb('S1 finance grants: controller only', (db) => {
       const revisionsBefore = Number((await one('select count(*) as n from public.admin_finance_entry_revisions')).n);
       const entryId = await write('admin_finance_expenses',
         "insert into public.admin_finance_expenses(expense_date, category, item_name, amount, payment_method) values ($1::date, 'cat', 'item', 100, 'bank') returning id as key",
-        "update public.admin_finance_expenses set memo = 'm' where id = $1", [japanToday()]);
+        "update public.admin_finance_expenses set memo = 'm' where id = $1", [day]);
       // The history is written by the trigger, not by the caller: the insert and the update each add one row.
       expect(Number((await one('select count(*) as n from public.admin_finance_entry_revisions')).n)).toBe(revisionsBefore + 2);
+      // Since S4 the insert also made one journal entry in that period (the memo update makes none).
+      expect((await db().query('select period_id, dedupe_key from public.accounting_journal_entries where source_id = $1::text', [entryId])).rows)
+        .toEqual([{ period_id: periodId, dedupe_key: `manual_entry:${entryId}:0` }]);
+      // The history table is append only since S4: service_role reads it and may insert, nothing else.
+      const inserted = await db().query(
+        "insert into public.admin_finance_entry_revisions(entry_id, operation, before_data, after_data) values ($1, 'update', '{}', '{}') returning id",
+        [entryId]);
+      expect(inserted.rowCount).toBe(1);
+      expect(Number((await one('select count(*) as n from public.admin_finance_entry_revisions where entry_id = $1', [entryId])).n)).toBe(3);
       seen.push('admin_finance_entry_revisions');
       await write('admin_finance_receipts',
         "insert into public.admin_finance_receipts(entry_id, storage_path, file_name, mime_type, file_size) values ($1, $2, 'a.pdf', 'application/pdf', 1) returning id as key",
@@ -187,10 +206,11 @@ describeLocalDb('S1 finance grants: controller only', (db) => {
     expect(definer).toEqual({ prosecdef: true, owner: 'postgres' });
     const actor = randomUUID();
     await db().query("insert into auth.users(id, raw_app_meta_data, raw_user_meta_data) values ($1, '{}', '{}')", [actor]);
+    const { day } = await expenseDay();
     const history = await asService(async () => {
       const entry = await one(
         "insert into public.admin_finance_expenses(expense_date, category, item_name, amount, payment_method, created_by, updated_by) values ($1::date, 'cat', 'item', 100, 'bank', $2, $2) returning id",
-        [japanToday(), actor]);
+        [day, actor]);
       await db().query("update public.admin_finance_expenses set memo = 'fixed', updated_by = $2 where id = $1", [entry.id, actor]);
       await db().query('update public.admin_finance_expenses set deleted_at = now(), deleted_by = $2 where id = $1', [entry.id, actor]);
       return (await db().query('select operation, changed_by from public.admin_finance_entry_revisions where entry_id = $1 order by id', [entry.id])).rows;

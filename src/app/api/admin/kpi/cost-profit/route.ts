@@ -6,6 +6,12 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getClientIp } from '@/lib/request-ip';
 import { isFixedAssetAccount } from '@/lib/finance/fixed-asset-link';
 import {
+	ACCOUNTING_ERRORS,
+	AccountingStoreError,
+	SOLE_ENDED_NOT_SWITCHED,
+	type AccountingErrorCode,
+} from '@/lib/accounting/accounting-types';
+import {
 	toOrderSalesTransaction,
 	type OrderSalesRow,
 } from '@/lib/sales/order-sales';
@@ -393,6 +399,24 @@ function isMissingFinanceTable(error: unknown): boolean {
 	// 42P01 はPostgres、PGRST205はPostgRESTのテーブル不存在。
 	// 権限不足（42501）や列不足は空データにせず、運用エラーとして通知する。
 	return typed.code === '42P01' || typed.code === 'PGRST205';
+}
+
+/**
+ * 手入力の取引は DB のトリガーが仕訳にする（会計 S4）。トリガーの拒否（期間が無い・年の範囲の外など）は取引の行ごと
+ * ACCOUNTING_* で返るので、会計の表（ACCOUNTING_ERRORS）の message と SQLSTATE が両方一致した物だけを
+ * `{error, code}` と表の HTTP にする。DETAIL は固定の語 sole_ended_not_switched だけを見て、生の値は返さない。
+ * 500 になる物（書き換え不可など）と表に無い失敗は null を返し、従来どおり 500 と失敗の監査へ進む。
+ */
+function accountingRefusalResponse(error: unknown) {
+	if (!error || typeof error !== 'object') return null;
+	const typed = error as SupabaseErrorLike & { details?: unknown };
+	if (typeof typed.message !== 'string' || !Object.hasOwn(ACCOUNTING_ERRORS, typed.message)) return null;
+	if (ACCOUNTING_ERRORS[typed.message as AccountingErrorCode][0] !== typed.code) return null;
+	const refusal = new AccountingStoreError(typed.message, undefined, {
+		soleEndedNotSwitched: typed.details === SOLE_ENDED_NOT_SWITCHED,
+	});
+	if (!refusal.code || refusal.status >= 500) return null;
+	return NextResponse.json({ error: refusal.message, code: refusal.code }, { status: refusal.status });
 }
 
 function isNoRowsError(error: unknown): boolean {
@@ -1028,7 +1052,11 @@ export async function POST(request: Request) {
 				.select('id, fiscal_year')
 				.single();
 
-			if (error) throw error;
+			if (error) {
+				const refusal = accountingRefusalResponse(error);
+				if (refusal) return refusal;
+				throw error;
+			}
 			resourceId = String(data.id);
 		} else if (parsed.data.operation === 'expense.delete') {
 			const { data: existingAllocations, error: allocationLookupError } = await supabase
@@ -1056,7 +1084,11 @@ export async function POST(request: Request) {
 				.is('deleted_at', null)
 				.select('id');
 
-			if (error) throw error;
+			if (error) {
+				const refusal = accountingRefusalResponse(error);
+				if (refusal) return refusal;
+				throw error;
+			}
 			if (!data?.length) {
 				return NextResponse.json({ error: '取引が見つかりません。' }, { status: 404 });
 			}
@@ -1139,7 +1171,11 @@ export async function POST(request: Request) {
 				.is('deleted_at', null)
 				.select('id');
 
-			if (error) throw error;
+			if (error) {
+				const refusal = accountingRefusalResponse(error);
+				if (refusal) return refusal;
+				throw error;
+			}
 			if (!data?.length) {
 				return NextResponse.json({ error: '取引が見つかりません。' }, { status: 404 });
 			}
