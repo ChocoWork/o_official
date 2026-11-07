@@ -43,6 +43,7 @@ import {
   SELECTABLE_DEPRECIATION_METHODS,
   depreciationForYear,
   depreciationSchedule,
+  startedBeforeCorporation,
   straightLineRate,
   type DepreciationForYear,
   type FixedAsset,
@@ -874,6 +875,16 @@ export function useCostProfitModel({
         earlierPeriods,
       ),
     [fixedAssets, fiscalYear, period, earlierPeriods],
+  );
+  // 法人の期間を選んだとき、個人のときに使い始めた資産は償却しない（設計 11-f）。その注記を出すか。
+  const hasAssetsStartedBeforeCorporation = useMemo(
+    () =>
+      period
+        ? fixedAssets.some((asset) =>
+            startedBeforeCorporation(asset, period, earlierPeriods),
+          )
+        : false,
+    [fixedAssets, period, earlierPeriods],
   );
 
   // ── 固定資産と取引の連携 ───────────────────────────────────────────────
@@ -4453,6 +4464,7 @@ export function useCostProfitModel({
     selectedGrossProfit,
     selectedGrossMargin,
     depreciation,
+    hasAssetsStartedBeforeCorporation,
     expensesById,
     unlinkedAssetEntryRows,
     pendingAssetEntryRows,

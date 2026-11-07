@@ -38,6 +38,7 @@ export function AssetsView({
 }): React.JSX.Element {
   const {
     fiscalYear,
+    hasAssetsStartedBeforeCorporation,
     setActiveTab,
     assetSectionFilter,
     setAssetSectionFilter,
@@ -1170,6 +1171,11 @@ export function AssetsView({
           </span>
         }
       >
+        {hasAssetsStartedBeforeCorporation ? (
+          <p className="mb-3 font-acumin lk-text-3xs text-[#707070]">
+            個人の期間に使い始めた資産は、法人の期間では償却しません。法人へ移した物は、法人で取得した資産として登録してください。
+          </p>
+        ) : null}
         {depreciationPlanRows.length === 0 ? (
           <p className="font-acumin lk-text-3xs text-[#707070]">
             固定資産を登録すると、年度別の償却予定が自動計算されます。

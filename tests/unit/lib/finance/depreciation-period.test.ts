@@ -5,6 +5,7 @@ import {
 	depreciationForYear,
 	depreciationSchedule,
 	monthsInPeriod,
+	startedBeforeCorporation,
 	usedMonthsInPeriod,
 	type DepreciationPeriod,
 	type FixedAsset,
@@ -136,18 +137,42 @@ describe('FREQ-557-AC-04: 6か月の期間の定額法は償却率に6/12を掛�
 	});
 
 	it('日の途中から始まる12か月の期間は満額（13か月に数えない）', () => {
-		const result = depreciationForYear(asset({ acquiredOn: '2020-01-01' }), 2027, corp('2027-07-15', '2028-07-14'), [
+		const result = depreciationForYear(asset({ acquiredOn: '2026-07-15' }), 2027, corp('2027-07-15', '2028-07-14'), [
 			corp('2026-07-15', '2027-07-14'),
 		]);
 		expect(result.months).toBe(12);
 		expect(result.depreciation).toBe(100_200);
 	});
 
-	it('一括償却資産と即時償却は月割せず期の順で数える', () => {
+	it('FREQ-557-AC-04: 一括償却資産は取得価額 ÷ 36 × 事業年度の月数（法人税法施行令133条の2第1項）', () => {
 		const second = corp('2028-01-01', '2028-12-31');
-		const lump = asset({ method: 'lumpSum3Year', acquisitionCost: 150_000 });
-		expect(depreciationForYear(lump, 2027, FIRST_TERM).depreciation).toBe(50_000);
-		expect(depreciationForYear(lump, 2028, second, [FIRST_TERM]).depreciation).toBe(50_000);
+		const lump = asset({ method: 'lumpSum3Year', acquisitionCost: 180_000, acquiredOn: '2027-09-10' });
+		// 6か月の期は 180,000 ÷ 36 × 6 = 30,000、12か月の期は 60,000（従来の 1/3 と同じ）
+		expect(depreciationForYear(lump, 2027, FIRST_TERM).depreciation).toBe(30_000);
+		expect(depreciationForYear(lump, 2028, second, [FIRST_TERM]).depreciation).toBe(60_000);
+		// 6か月＋12か月＋12か月＋6か月の4期で 36か月分（取得価額）に達し、超えない
+		const third = corp('2029-01-01', '2029-12-31');
+		const fourth = corp('2030-01-01', '2030-06-30');
+		expect(depreciationForYear(lump, 2029, third, [FIRST_TERM, second]).depreciation).toBe(60_000);
+		const last = depreciationForYear(lump, 2030, fourth, [FIRST_TERM, second, third]);
+		expect(last.depreciation).toBe(30_000);
+		expect(last.closingBookValue).toBe(0);
+	});
+
+	it('一括償却資産の12か月の期は従来の 1/3 と同じ', () => {
+		const year = corp('2028-01-01', '2028-12-31');
+		const lump = asset({ method: 'lumpSum3Year', acquisitionCost: 150_000, acquiredOn: '2028-02-01' });
+		expect(depreciationForYear(lump, 2028, year).depreciation).toBe(50_000);
+	});
+
+	it('個人の期間の一括償却資産は従来どおり 1/3（月数で割らない）', () => {
+		const lump = asset({ method: 'lumpSum3Year', acquisitionCost: 180_000, acquiredOn: '2026-05-01' });
+		expect(depreciationForYear(lump, 2026, sole('2026-01-01', '2026-12-31')).depreciation).toBe(60_000);
+		expect(depreciationForYear(lump, 2026, sole('2026-01-01', '2026-08-31')).depreciation).toBe(60_000);
+	});
+
+	it('即時償却は使い始めた期に全額、次の期は0', () => {
+		const second = corp('2028-01-01', '2028-12-31');
 		const immediate = asset({ method: 'immediate', acquisitionCost: 80_000 });
 		expect(depreciationForYear(immediate, 2027, FIRST_TERM).depreciation).toBe(80_000);
 		expect(depreciationForYear(immediate, 2028, second, [FIRST_TERM]).depreciation).toBe(0);
@@ -159,6 +184,58 @@ describe('FREQ-557-AC-04: 6か月の期間の定額法は償却率に6/12を掛�
 		const tiny = depreciationForYear(asset({ acquisitionCost: 1 }), 2027, FIRST_TERM);
 		expect(tiny.depreciation).toBe(0);
 		expect(tiny.closingBookValue).toBe(1);
+	});
+});
+
+describe('FREQ-557-AC-04: 個人のときに使い始めた資産は法人の期間で償却しない（設計 11-f）', () => {
+	const second = corp('2028-01-01', '2028-12-31');
+	const cases: Array<[string, FixedAsset]> = [
+		['2025年の即時償却（除却済み）', asset({ method: 'immediate', acquisitionCost: 80_000, acquiredOn: '2025-05-01', disposedOn: '2027-06-30' })],
+		['2026年の一括償却', asset({ method: 'lumpSum3Year', acquisitionCost: 150_000, acquiredOn: '2026-05-01' })],
+		['2025年の定額法（除却なし）', asset({ acquiredOn: '2025-05-01' })],
+		['除却済みの定額法', asset({ acquiredOn: '2025-05-01', disposedOn: '2027-06-30' })],
+	];
+
+	for (const [label, target] of cases) {
+		it(`${label}は法人の第1期でも次の期でも償却せず簿価も残さない`, () => {
+			for (const [period, earlier] of [[FIRST_TERM, []], [second, [FIRST_TERM]]] as const) {
+				const result = depreciationForYear(target, 2027, period, earlier);
+				expect(result.depreciation).toBe(0);
+				expect(result.businessExpense).toBe(0);
+				expect(result.months).toBe(0);
+				expect(result.closingBookValue).toBe(0);
+				expect(result.accumulated).toBe(0);
+			}
+		});
+
+		it(`${label}は法人の期間の明細に載せない`, () => {
+			const schedule = depreciationSchedule([target], 2027, FIRST_TERM);
+			expect(schedule.rows).toEqual([]);
+			expect(schedule.depreciationTotal).toBe(0);
+			expect(schedule.closingBookValueTotal).toBe(0);
+			expect(depreciationSchedule([target], 2028, second, [FIRST_TERM]).rows).toEqual([]);
+		});
+	}
+
+	it('法人の最初の期間に使い始めた資産は償却する', () => {
+		const target = asset({ acquiredOn: '2027-07-01' });
+		expect(depreciationSchedule([target, ...cases.map(([, other], index) => ({ ...other, id: index + 10 }))], 2027, FIRST_TERM).rows).toHaveLength(1);
+		expect(startedBeforeCorporation(target, FIRST_TERM)).toBe(false);
+	});
+
+	it('startedBeforeCorporation は最初の法人の期間の始まりより前に使い始めた資産だけ true', () => {
+		expect(startedBeforeCorporation(asset({ acquiredOn: '2027-06-30' }), FIRST_TERM)).toBe(true);
+		expect(startedBeforeCorporation(asset({ acquiredOn: '2020-01-01', serviceStartedOn: '2027-07-01' }), FIRST_TERM)).toBe(false);
+		expect(startedBeforeCorporation(asset({ acquiredOn: '2027-07-01' }), second, [FIRST_TERM])).toBe(false);
+		expect(startedBeforeCorporation(asset({ acquiredOn: '2027-06-30' }), second, [FIRST_TERM])).toBe(true);
+		// 個人の期間・期間なしは対象外
+		expect(startedBeforeCorporation(asset({ acquiredOn: '2020-01-01' }), sole('2027-01-01', '2027-12-31'))).toBe(false);
+		expect(startedBeforeCorporation(asset({ acquiredOn: '2020-01-01' }), undefined)).toBe(false);
+	});
+
+	it('個人の期間では従来どおり前の年から使う資産を償却する', () => {
+		const result = depreciationForYear(asset({ acquiredOn: '2025-05-01' }), 2027, sole('2027-01-01', '2027-12-31'));
+		expect(result.depreciation).toBe(100_200);
 	});
 });
 

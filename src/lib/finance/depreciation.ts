@@ -281,16 +281,58 @@ function accumulate(
   };
 }
 
+/** 法人の期間を古い順に並べる。前の期は同じ事業の形（法人）で `period` より前のものだけ。 */
+function corporationSequence(
+  period: DepreciationPeriod,
+  earlierPeriods: readonly DepreciationPeriod[],
+): DepreciationPeriod[] {
+  return [
+    ...earlierPeriods
+      .filter(
+        (earlier) =>
+          earlier.businessType === "corporation" &&
+          earlier.startsOn < period.startsOn,
+      )
+      .sort((a, b) => a.startsOn.localeCompare(b.startsOn)),
+    period,
+  ];
+}
+
+/**
+ * 最初の法人の期間より前に使い始めた資産か（個人のときの資産）。
+ * 法人の期間では償却しない（設計 11-f: 法人へ移した物は法人で新しく取った資産として登録する）。
+ * `earlierPeriods` は法人の前の期間を全部渡すこと。法人の期間でなければ常に false。
+ */
+export function startedBeforeCorporation(
+  asset: FixedAsset,
+  period: DepreciationPeriod | undefined,
+  earlierPeriods: readonly DepreciationPeriod[] = [],
+): boolean {
+  if (period?.businessType !== "corporation") return false;
+  return (
+    depreciationStartOn(asset) <
+    corporationSequence(period, earlierPeriods)[0].startsOn
+  );
+}
+
 /**
  * 法人の期の理論償却費。定額法は、期が1年に満たなければ償却率に月数/12を掛け（①）、
  * 期の途中で使い始めた資産はその限度額を期の月数で割って使った月数を掛ける（②）。
- * 一括償却・即時償却は月割せず、使い始めた期から数えた期の順で決める。
+ * 一括償却資産は、取得価額 ÷ 36 × 事業年度の月数
+ * （法人税法施行令133条の2第1項。12か月なら 1/3）。即時償却は使い始めた期に全額。
  */
 function corporatePeriodTheoretical(
   asset: FixedAsset,
   period: DepreciationPeriod,
   elapsedPeriodIndex: number,
 ): number {
+  if (asset.method === "lumpSum3Year") {
+    const periodMonths = Math.min(
+      monthsInPeriod(period.startsOn, period.endsOn),
+      12,
+    );
+    return floorYen((asset.acquisitionCost / 36) * periodMonths);
+  }
   if (asset.method !== "straightLine") {
     return annualDepreciation(
       asset,
@@ -330,20 +372,10 @@ export function depreciationForYear(
 
   if (period?.businessType === "corporation") {
     if (startOn > period.endsOn) return notStarted(asset);
-    const sequence = [
-      ...earlierPeriods
-        .filter(
-          (earlier) =>
-            earlier.businessType === "corporation" &&
-            earlier.startsOn < period.startsOn,
-        )
-        .sort((a, b) => a.startsOn.localeCompare(b.startsOn)),
-      period,
-    ];
-    const first = Math.max(
-      0,
-      sequence.findIndex((candidate) => candidate.endsOn >= startOn),
-    );
+    const sequence = corporationSequence(period, earlierPeriods);
+    // 最初の法人の期間より前に使い始めた資産（個人のときの資産）は法人では償却しない（設計 11-f）。
+    if (startOn < sequence[0].startsOn) return notStarted(asset);
+    const first = sequence.findIndex((candidate) => candidate.endsOn >= startOn);
     const theoreticals = sequence
       .slice(first)
       .map((candidate, index) =>
@@ -411,6 +443,8 @@ export function depreciationSchedule(
         ? depreciationStartOn(asset) <= period.endsOn
         : yearOf(depreciationStartOn(asset)) <= fiscalYear,
     )
+    // 個人のときに使い始めた資産は法人の期間の明細に載せない（設計 11-f）。
+    .filter((asset) => !startedBeforeCorporation(asset, period, earlierPeriods))
     .map((asset) =>
       depreciationForYear(asset, fiscalYear, period, earlierPeriods),
     )
