@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> 会計の作り直し 計画1 Task 8 確認日: 2026-11-07。会計の期間・設定・保存した仕訳の読みの 5 ファイル・7 メソッド（`GET`・`POST /api/admin/accounting/periods`、`POST /api/admin/accounting/periods/[id]/final-sole`、`PUT /api/admin/accounting/periods/[id]/filing`、`GET`・`PUT /api/admin/accounting/settings`、`GET /api/admin/accounting/journal`）を追加した。Route Handler は173ファイル・219メソッド、表は172行・218メソッド（`/api/e2e/server-info` を除く）。認可・CSRF・制限・監査の順序と応答は[API仕様](api-spec.md)の会計の表を参照。
+>
 > 返品の品ごとの返金 Task 2 確認日: 2026-11-06。Route Handler の追加・削除はない（168ファイル・212メソッドのまま）。`POST /api/admin/returns/[returnId]/receive` の本文に品ごとの選び（`units[].refundChoice`）と親の `mixed` を足し、400 `RETURN_RECEIVE_REFUND_CAP_EXCEEDED` を返すようにした。詳しくは [API 仕様](./api-spec.md) の O-return-receive。
 
 > 返品の品ごとの返金 Task 1 確認日: 2026-11-06。Route Handler の追加・削除はない（168ファイル・212メソッドのまま）。`POST /api/admin/returns/[returnId]/receive` が呼ぶ DB の関数 `admin_receive_return` の入力に品ごとの選びと `mixed` を足した（移行 `20261106005536`、本番は 2026-11-06 に適用済み）。窓口のコードは Task 2 で実装済み。詳しくは [API 仕様](./api-spec.md) の「返品の受け取りの品ごとの返金（FREQ-641 Task 1）」。
@@ -54,6 +56,11 @@
 | `/api/admin/accounting/product-costs` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/accounting/product-costs/route.ts) |
 | `/api/admin/accounting/stripe-backfill` | `POST` | [route.ts](../../../src/app/api/admin/accounting/stripe-backfill/route.ts) |
 | `/api/admin/accounting/stripe-payouts/[id]/confirm` | `POST` | [route.ts](../../../src/app/api/admin/accounting/stripe-payouts/%5Bid%5D/confirm/route.ts) |
+| `/api/admin/accounting/periods` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/accounting/periods/route.ts) （会計 計画1 Task 8: GET は `admin.finance.read`、POST は `admin.accounting.settings.manage`・CSRF→IP/actor各30回/600秒→strict本文→作成→監査。全応答no-store） |
+| `/api/admin/accounting/periods/[id]/final-sole` | `POST` | [route.ts](../../../src/app/api/admin/accounting/periods/%5Bid%5D/final-sole/route.ts) （会計 計画1 Task 8: 個人の最後の期間のやめた日。`admin.accounting.settings.manage`） |
+| `/api/admin/accounting/periods/[id]/filing` | `PUT` | [route.ts](../../../src/app/api/admin/accounting/periods/%5Bid%5D/filing/route.ts) （会計 計画1 Task 8: 期間の申告の設定。`admin.accounting.settings.manage`） |
+| `/api/admin/accounting/settings` | `GET`, `PUT` | [route.ts](../../../src/app/api/admin/accounting/settings/route.ts) （会計 計画1 Task 8: GET は `admin.finance.read`、PUT は `admin.accounting.settings.manage`） |
+| `/api/admin/accounting/journal` | `GET` | [route.ts](../../../src/app/api/admin/accounting/journal/route.ts) （会計 計画1 Task 8: 保存した仕訳と期首の残高。`admin.finance.read`、回数制限なし） |
 | `/api/admin/audit-logs` | `GET` | [route.ts](../../../src/app/api/admin/audit-logs/route.ts) |
 | `/api/admin/contact/[id]/reply` | `POST` | [route.ts](../../../src/app/api/admin/contact/%5Bid%5D/reply/route.ts) |
 | `/api/admin/contact/[id]` | `GET`, `PATCH` | [route.ts](../../../src/app/api/admin/contact/%5Bid%5D/route.ts) |
@@ -233,7 +240,7 @@ API単体 [GET](../../../tests/unit/api/admin/permissions-route.test.ts)・[POST
 
 ## `src/app/api` の外の入口（波 3 / 2026-10-28）
 
-頁ではなく画像のバイトを返す Route Handler。パスが `/api/` で始まらず、`src/app/api` の外にあるので、上の表と概要の数（168ファイル・212メソッド、表は167行・211メソッド）には入れない。数を固定する単体試験（`tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts`）は `src/app/api` だけを数える。
+頁ではなく画像のバイトを返す Route Handler。パスが `/api/` で始まらず、`src/app/api` の外にあるので、上の表と概要の数（173ファイル・219メソッド、表は172行・218メソッド）には入れない。数を固定する単体試験（`tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts`）は `src/app/api` だけを数える。
 
 | パス | メソッド | 根拠 |
 | --- | --- | --- |
