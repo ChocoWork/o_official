@@ -1,5 +1,7 @@
 # 運用文書
 
+> 状態: 現行 | 確認日: 2026-11-07 | 対象: 運用文書と Git フック
+
 ## 概要
 
 このディレクトリは DB 変更、シークレット、注文証憑アーカイブなどの運用手順をまとめる。ソース上の構成は本番での実行結果を保証しない。適用前に対象環境と現行設定を確認する。
@@ -19,3 +21,12 @@
 | `docs/06_Operations/archive/auth_migration.md` | 旧認証 DB 移行手順 | 履歴であり、現在の適用手順ではない |
 
 DB スキーマ適用の現行ワークフローは `.github/workflows/db-migrations.yml` にある。旧 `migrations/*.sql` の一括再実行手順は現行の適用経路として使用しない。
+
+## push の前の確認
+
+[`scripts/hooks/pre-push`](../../scripts/hooks/pre-push) は lint → 型検査 → Jest 全件 → E2E の順で確認する。3/4 の Jest は、次の2段階で流す。
+
+1. `tests/unit/lib/discounts/discount-search.test.ts` を除いた全件を並列で流す。`node_modules` と `.claude` の既存の除外は残す。
+2. 1 が成功したら、外したファイルを `--runInBand --runTestsByPath` で単独に流す。200ms 未満の条件と試験の中身は変えない。
+
+どちらかが失敗すれば `set -e` で push を止め、後続へ進まない。両方が通った後の E2E の実行条件と警告扱いは従来どおり。`jest.config.cjs` と npm の script は変更していないため、通常の `npm test` と pre-commit の関連テストの選び方は変わらない。

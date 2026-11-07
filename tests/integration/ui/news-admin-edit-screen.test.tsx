@@ -174,6 +174,8 @@ describe('記事の編集の画面', () => {
 
     await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
     expect(((mockFetch.mock.calls[1][1]?.body as FormData).get('image') as File).name).toBe('new.webp');
+    // 成功後の遷移まで確かめ、次のケースへタイマーを残さない。
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/admin?tab=NEWS'));
   });
 
   it('SCR-NEWS-005 送る間はボタンを更新中にして押せなくする', async () => {
@@ -186,6 +188,7 @@ describe('記事の編集の画面', () => {
     expect(await screen.findByRole('button', { name: '更新中...' })).toBeDisabled();
     resolve(response(true, {}));
     expect(await screen.findByRole('button', { name: '更新' })).not.toBeDisabled();
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/admin?tab=NEWS'));
   });
 
   it('SCR-NEWS-005 断られた時はサーバーの error の文を出し、一覧へ戻さない', async () => {
