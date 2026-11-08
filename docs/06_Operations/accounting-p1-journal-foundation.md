@@ -28,12 +28,24 @@
 | --- | --- | --- | --- |
 | S0 `..130000_accounting_p1_permissions.sql` | 権限6件を足す（32 → 38）。店長だけに付ける | `acc_s0_permission_catalogs`・`acc_s0_permission_seed`・`acc_s0_existing_dml_allowlist` | 移行のファイルに戻しの文は無い。S1〜S5 を先に戻した後だけ（S3 の書き手が `admin.accounting.settings.manage` を確かめるため）。H1（`20261029130000`）の2関数の本体へ `CREATE OR REPLACE` し、`role_permissions`・`permissions` から6件を消す（外部キーで止まらない。`role_permission_events` の文字の記録は残る）。6件を消した役割の版を+1する（店長。画面でサポーターへ付けていればサポーターも）。アプリの目録（`admin-rbac.ts`・`role-permission-catalog.ts`・保存の上限、38 → 32）を同じデプロイで戻す（要レビュー） |
 | S1 `..130100_accounting_p1_grants_receipts.sql` | 12表と8連番の `anon`・`authenticated` の権限を外す。`admin_finance_receipts` に `evidence_kind`・`paper_original_kept`。置き場 `finance-receipts` を非公開・20MiB・5形式に | `acc_s1_finance_table_acl`・`acc_s1_finance_seq_acl`・`acc_s1_bucket`・`acc_s1_receipt_columns`・`acc_s1_policies_unchanged` | 移行のファイルの先頭の ROLLBACK のとおり。適用前に読んだ権限・置き場の行の値へ戻す。種類の列を消すと適用後に記録した種類が消えるので先に書き出す。`public` は `true` に戻さない |
-| S2 `..130200_accounting_p1_journal_foundation.sql` | 仕訳・期間・勘定の5表、仕訳を入れる関数・取り消しの関数、勘定163行（162＋`9999`） | `acc_s2_tables` ほか9つ | 仕訳が1件も無い間だけ、ファイル先頭の DROP の文。仕訳は消せない |
+| S2 `..130200_accounting_p1_journal_foundation.sql` | 仕訳・期間・勘定の5表、仕訳を入れる関数・取り消しの関数、勘定163行（162＋`9999`） | `acc_s2_tables` ほか8つ（計9つ） | 仕訳が1件も無い間だけ、ファイル先頭の DROP の文。仕訳は消せない |
 | S3 `..130300_accounting_p1_period_reads.sql` | 設定・期首の表、期間の作成・やめた日・設定・申告の設定の書き手、読み5つ、トリガー | `acc_s3_settings_row`・`acc_s3_period_layout_trigger`・`acc_s3_functions`・`acc_s3_rls_acl`・`acc_s3_reads_stable` | 期間・設定の変更・期首の行が残らない間だけ、ファイル先頭の DROP の文 |
 | S4 `..130400_accounting_p1_manual_entry_journal.sql` | 手入力の取引を仕訳にするトリガー、分類・支払方法の写し、履歴の保護、履歴を書く関数の入れ替え | `acc_s4_map_table`・`acc_s4_trigger`・`acc_s4_functions`・`acc_s4_legacy_trigger_untouched` | 手入力の仕訳が無い間だけ、ファイル先頭の DROP の文。履歴の関数は `remote_schema.sql` の本体へ `CREATE OR REPLACE` で戻し、続けて `ALTER FUNCTION public.record_admin_finance_entry_revision() SET search_path = public, pg_temp;` も流す |
-| S5 `..130500_accounting_p1_a8_migrate_manual.sql` | 削除されていない手入力の取引を `migrated_entry` として移す（A8） | `acc_s5_counts`・`acc_s5_numbering`・`acc_s5_revisions_unchanged`・`acc_s5_receipts_unchanged`・`acc_s5_triggers_unchanged` | 戻せない。誤りは取り消しと正しい仕訳で直す |
+| S5 `..130500_accounting_p1_a8_migrate_manual.sql` | 削除されていない手入力の取引を `migrated_entry` として移す（A8） | `acc_s5_counts`・`acc_s5_numbering`・`acc_s5_revisions_unchanged`・`acc_s5_receipts_unchanged`・`acc_s5_triggers_unchanged`、事前の止め `a8_corporation_year`・`a8_legacy_opening_nonzero`・`a8_closings_exist`・`a8_startup_cost_category` | 戻せない。誤りは取り消しと正しい仕訳で直す |
 
 各移行は1本の取引（`BEGIN`〜`COMMIT`）で、末尾に自己検査を持つ。検査が崩れると全部戻る。失敗の詳細は固定の `DETAIL` の語だけ。
+
+S5 は末尾の検査のほかに、移す前の事前の止めでも `ACCOUNTING_MIGRATION_ASSERTION_FAILED`（55000）で全部戻る。止める語は次のとおり。
+
+| DETAIL | 止まる理由 |
+| --- | --- |
+| `a8_corporation_year` | 法人の年が `admin_finance_years` にある |
+| `a8_legacy_opening_nonzero` | 期首の5列（`opening_cash`・`accounts_receivable`・`fixed_assets`・`accounts_payable`・`opening_capital`）のどれかが 0 でない |
+| `a8_closings_exist` | `admin_finance_year_closings` に行がある |
+| `a8_startup_cost_category` | 分類か支払方法に `開業費` の取引がある |
+| `acc_s5_counts` | 既に仕訳がある（2回目の流し、S4 と S5 の間の書き込み）ほか、件数が合わない |
+
+もう1つ、本番の事前確認の1（`created_at` が今より後の行）と5（最初の取引の年が窓の外）が崩れているときは、S5 の語ではなく `ACCOUNTING_ARGUMENT_INVALID`（22023、`DETAIL` なし）で落ちる。前者は S2 の入力検査（`_recorded_at > clock_timestamp()`、S2:662）、後者は S3 の期間を作る道具（年が開業日の年〜今年+1 の窓の外、S3:516-518）が出す。`DETAIL` の語を探しても出ないので、この2つの事前確認の値から原因を探す。
 
 ## 仕訳を入れる関数の使い方
 
@@ -79,7 +91,7 @@
 
 ### 適用の手順（T16-1）
 
-Ruling T16-1 (refines C11): Task 16 applies in two pushes — (1) S0–S3 first; (2) run ALL S5 stop pre-checks read-only on production (task-13-report's 9 checks + earliest live expense year ≥ 2025 when start date NULL + max(created_at) ≤ now + category listing incl. 開業費 0 rows); (3) owner confirms no admin expense writes; (4) push S4+S5 together; if S5 fails, nobody edits expenses (S4 alone posts only on writes), fix S5 and push again — because db push commits each file separately and an S4-only state + any write would make S5 stop permanently (M-4) — cost if wrong: manual reconciliation decision needed.
+（記録。手順は下の日本語）Ruling T16-1 (refines C11): Task 16 applies in two pushes — (1) S0–S3 first; (2) run ALL S5 stop pre-checks read-only on production (task-13-report's 9 checks + earliest live expense year ≥ 2025 when start date NULL + max(created_at) ≤ now + category listing incl. 開業費 0 rows); (3) owner confirms no admin expense writes; (4) push S4+S5 together; if S5 fails, nobody edits expenses (S4 alone posts only on writes), fix S5 and push again — because db push commits each file separately and an S4-only state + any write would make S5 stop permanently (M-4) — cost if wrong: manual reconciliation decision needed.
 
 意味: 1回目で S0〜S3 を当てる。続けて下の「本番の事前確認」をすべて読み取り専用で流す。管理者が会計の取引を書いていないことをオーナーが確かめてから、2回目で S4 を当てて続けて S5 を当てる。S5 が失敗したら、直して S5 を当て直すまで誰も取引を書かない（S4 だけの状態で取引を書くと、S5 が `acc_s5_counts` で永久に止まる）。2本を別の日に分けない。
 
@@ -96,24 +108,27 @@ Ruling T16-1 (refines C11): Task 16 applies in two pushes — (1) S0–S3 first;
 7. `select tgenabled from pg_trigger where tgrelid = 'public.admin_finance_expenses'::regclass and tgname = 'trigger_admin_finance_entry_revisions';` — `O`。
 8. `select category, payment_method, entry_type, count(*) from public.admin_finance_expenses where deleted_at is null group by 1,2,3 order by 1,2,3;` を S4 の写し（`ACC_MANUAL_MAP` の行）と照らす。分類にも支払方法にも `開業費`（`U&'\958B\696D\8CBB'`）の行が 0 件であること（あれば S5 が `a8_startup_cost_category` で止まる。先にオーナーが決める）。直接の確認: `select id, expense_date, category, payment_method from public.admin_finance_expenses where deleted_at is null and (category = U&'\958B\696D\8CBB' or payment_method = U&'\958B\696D\8CBB');` — 0 行。`9999` に入る行と資産・在庫の分類の行も控える（S5 は S4 の規則のまま移し、直しは移した後に取り消しと正しい仕訳で行う）。
 9. S4 と S5 を `apply_migration` で続けて当て、その間に管理者が取引を編集しない（S5 の途中で履歴だけが増えると `acc_s5_revisions_unchanged` で S5 が戻る。安全だが再実行になる）。
+10. `select current_setting('server_version_num');` — 本番の PostgreSQL の版。S2 の末尾の検査は制約（CHECK など）をちょうど27と数える。手元は PG17。PG18 では NOT NULL も制約として数えられて合わなくなり、S2 が `acc_s2_constraints` で止まって戻る。版が18以上なら、当てる前に数え方を直すか尋ねる。
+11. 当てる役割が `storage.buckets` に INSERT・UPDATE できること（S1 が置き場 `finance-receipts` を作る・直す。本番の置き場は手で作ったもので、移行では作っていない）。できなければ S1 の検査（`acc_s1_bucket`）で止まって戻る。当てる前に、例えば `select has_table_privilege(current_user, 'storage.buckets', 'INSERT'), has_table_privilege(current_user, 'storage.buckets', 'UPDATE');` で読んで確かめる。
 
 ### 成功の確認
 
-- S5 の NOTICE（`acc_s5_counts moved=<n> deleted_not_moved=<n> ...`）の `moved` が事前確認1の生きた行の数、`deleted_not_moved` が削除済みの行の数と等しい。
-- `select count(*) from public.accounting_journal_entries where event_kind = 'migrated_entry';` が生きた行の数と等しい。
+- 正の確認は `select count(*) from public.accounting_journal_entries where event_kind = 'migrated_entry';` の件数が、元の表の生きた行の数（事前確認1の `live`。`select count(*) from public.admin_finance_expenses where deleted_at is null;` で取り直せる）と等しいこと。
+- S5 の NOTICE（`acc_s5_counts moved=<n> deleted_not_moved=<n> ...`）は目安にとどめる。MCP の `apply_migration` が NOTICE を返すかは確かめていない。返った時は `moved` が生きた行の数、`deleted_not_moved` が削除済みの行の数と等しいかも見る。
 - `admin_finance_expenses`・`admin_finance_entry_revisions`・`admin_finance_receipts` の行の数が事前確認の値のまま。
 - `supabase_migrations.schema_migrations` に S0〜S5 の版が載り、文の md5 がコミットしたファイルと一致する（[DB 移行](db-migrations.md)の照合の書き方）。
+- アプリを出すのは S5 を当てて上の確認が済んだ後にする。理由: S2・S3 より前は会計の画面が500になる。S3 の後・S5 の前は手入力の取引が0件に見える（画面は保存した仕訳から数える）。S1 より前は GET が `evidence_kind` を読めない。
 - 画面の帳簿（仕訳帳）に、移した仕訳（`migrated_entry`）が読めて出る。確かめのためだけに本番で取引を足したり直したりしない（S4 の後は仕訳と取り消しの行が消せずに残る）。手入力の取引が仕訳に出ることは、次の本物の取引で確かめる。
 
 ### 戻し方
 
-S5 に戻しは無い。仕訳の誤りは取り消しと正しい仕訳で直す。S4 を外すのは手入力の仕訳が1件も無い間だけ。S5 が止まった時は、取引の書き込みを止めたまま原因（`DETAIL` の語）を直して S5 を `apply_migration` で当て直す。
+S5 に戻しは無い。仕訳の誤りは取り消しと正しい仕訳で直す。S4 を外すのは手入力の仕訳が1件も無い間だけ。S5 が止まった時は、取引の書き込みを止めたまま原因（`DETAIL` の語。語が無く `ACCOUNTING_ARGUMENT_INVALID` なら事前確認1・5の値）を直して S5 を `apply_migration` で当て直す。
 
 ## 領収書の置き場
 
 - 置き場 `finance-receipts`: 非公開、1ファイル 20MiB（20971520 バイト）まで、形式は PDF・JPEG・PNG・WebP・HEIC の5つ。`storage.objects` にこの置き場を名指しする方針は置かない（`anon` と一般の管理者の JWT からは読み書きできない。画面は署名付きの URL を使う）。
 - 適用前に既に同じ名前の置き場があるときは、S1 の先頭の読み取りの文で行の値を控える。20MiB を超える既存のファイルと他の形式のファイルはそのまま残り、新しい上げ下ろしだけが断られる。
-- 領収書の種類は `evidence_kind`（`electronic`・`paper`・`unconfirmed`）と `paper_original_kept`（紙だけ。ほかは NULL）。既存の行は `unconfirmed` のまま。画面は「種類を確かめてください」を出す。route は `unconfirmed` を書かない。
+- 領収書の種類は `evidence_kind`（`electronic`・`paper`・`unconfirmed`）と `paper_original_kept`（紙だけ。ほかは NULL）。既存の領収書（8件の見込み）は `unconfirmed` のまま。画面は「種類を確かめてください」を出すだけで、既存の行の種類を確かめて入れる操作は今は無く、後の計画で足す。それまで「消して上げ直す」はしない（削除は置き場の元のファイルも消すため、元のファイルを持っていなければ原本の写しを失う）。route は `unconfirmed` を書かない。
 
 ## 個人の最後の期間の登録・選び直しと再作成を防ぐ規則
 
