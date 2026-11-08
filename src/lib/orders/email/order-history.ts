@@ -206,8 +206,19 @@ export type OrderHistoryReturnReceiptLine = {
   quantity: number;
   resolution: ReturnResolution | null;
   refundChoice: ReceiveUnitRefundChoice | null;
-  /** この受け取りの refund_id が指す返金明細の点数。履歴の窓口が返金一覧から読む */
-  receiptRefundQuantity: number;
+};
+
+/**
+ * 受け取り1件ごとの値（品の行には重ねない）。履歴の窓口が受け取りの番号で引けるように渡す（2026-11-08 の直し M-4）。
+ * refundQuantity はこの受け取りの refund_id が指す返金明細の点数（返金一覧から読む。返金が無ければ 0）。
+ * consultQuantity は DB がこの受け取りで返金待ちにした相談の点数（order_return_receipts.consult_quantity）。
+ * null は 2026-11-08 の移行より前の受け取りで、行の合計のまま数える
+ *
+ * @design DD-ADMIN-020
+ */
+export type OrderHistoryReturnReceipt = {
+  refundQuantity: number;
+  consultQuantity: number | null;
 };
 
 /**
@@ -299,6 +310,8 @@ export type BuildOrderHistoryInput = {
   refunds: OrderRefundRow[];
   returns: OrderReturnDetail[];
   returnReceiptLines: OrderHistoryReturnReceiptLine[];
+  /** 受け取りの番号から、受け取り1件ごとの値を引く表。無い受け取りは返金明細0点・相談の点数 null として扱う */
+  returnReceipts: ReadonlyMap<string, OrderHistoryReturnReceipt>;
   returnRecords: OrderHistoryReturnRecord[];
   /** キャンセルの申し込み（Task 4 の listOrderCancelRequests の答え）。申し込み・お断り・解決済み・解決の行に使う（グループ E-3 段2） */
   cancelRequests: AdminCancelRequest[];
@@ -392,7 +405,7 @@ function receiptQuantity(lines: readonly OrderHistoryReturnReceiptLine[], receip
  * ある受け取りの、今すぐ返金と額を相談の品の数の細目（2026-11-06 設計書 6章）。「今すぐ返金 n点・相談 m点」の形で、0点の側は書かない。
  * 数えるのは受け取った返金の品の行だけ。nowは親がnow/mixedの時だけ、この受け取りの返金明細と0円で終えた点数までに抑える。
  * 前の受け取りの行（NULL）は受け取りの記録の now・consult で補う。
- * 相談は親がconsult/mixedの時だけ数える。
+ * 相談は親がconsult/mixedの時だけ数え、受け取りの記録の相談の点数（DB が返金待ちにした数）が数なら、そこまでに抑える（N-1）。
  * 混ざる受け取り（mixed）の返金の行に選びが無いのは壊れた記録なので、推測で数えずに投げる（窓口は読み込みの失敗として答える）
  *
  * @design DD-ADMIN-020
@@ -400,6 +413,7 @@ function receiptQuantity(lines: readonly OrderHistoryReturnReceiptLine[], receip
 function receiptRefundChoiceDetails(
   lines: readonly OrderHistoryReturnReceiptLine[],
   receipt: OrderReturnDetail['receipts'][number],
+  values: OrderHistoryReturnReceipt | undefined,
 ): string[] {
   let now = 0;
   let consult = 0;
@@ -418,11 +432,14 @@ function receiptRefundChoiceDetails(
       consult += line.quantity;
     }
   }
-  const refundQuantity = lines.find((line) => line.receiptId === receipt.id)?.receiptRefundQuantity ?? 0;
+  const refundQuantity = values?.refundQuantity ?? 0;
+  const consultQuantity = values?.consultQuantity ?? null;
   now = receipt.refundChoice === 'now' || receipt.refundChoice === 'mixed'
     ? Math.min(now, refundQuantity + receiptQuantity(lines, receipt.id, 'refund_waived'))
     : 0;
-  consult = receipt.refundChoice === 'consult' || receipt.refundChoice === 'mixed' ? consult : 0;
+  consult = receipt.refundChoice === 'consult' || receipt.refundChoice === 'mixed'
+    ? (consultQuantity === null ? consult : Math.min(consult, consultQuantity))
+    : 0;
   const parts = [...(now > 0 ? [`今すぐ返金 ${now}点`] : []), ...(consult > 0 ? [`相談 ${consult}点`] : [])];
   return parts.length > 0 ? [parts.join('・')] : [];
 }
@@ -439,6 +456,7 @@ const RECEIVED_REFUND_DISPOSITIONS: ReadonlySet<string> = new Set(['restocked', 
 function returnHistoryEntries(
   detail: OrderReturnDetail,
   receiptLines: readonly OrderHistoryReturnReceiptLine[],
+  receiptValues: ReadonlyMap<string, OrderHistoryReturnReceipt>,
   record: OrderHistoryReturnRecord | undefined,
 ): OrderHistoryReturnEntry[] {
   const entry = (
@@ -489,7 +507,7 @@ function returnHistoryEntries(
       const details = RECEIVE_DETAIL_WORDS.flatMap(([word, disposition]) => {
         const quantity = receiptQuantity(receiptLines, receipt.id, disposition);
         return quantity > 0 ? [`${word} ${quantity}点`] : [];
-      }).concat(receiptRefundChoiceDetails(receiptLines, receipt));
+      }).concat(receiptRefundChoiceDetails(receiptLines, receipt, receiptValues.get(receipt.id)));
       entries.push(entry('receive', id, receipt.createdAt, `返品の受け取り（${detail.label}）`, receipt.actorEmail, details));
     } else if (receipt.kind === 'waive_refund') {
       entries.push(waivedEntry(receipt));
@@ -738,7 +756,8 @@ export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryRe
         }]
       : []);
   const recordByReturn = new Map(returnRecords.map((row) => [row.returnId, row] as const));
-  const returnEntries = returns.flatMap((detail) => returnHistoryEntries(detail, returnReceiptLines, recordByReturn.get(detail.id)));
+  const returnEntries = returns.flatMap((detail) =>
+    returnHistoryEntries(detail, returnReceiptLines, input.returnReceipts, recordByReturn.get(detail.id)));
   const cancelRequestEntries = cancelRequestHistoryEntries(cancelRequests);
   const deliveryEvents: OrderHistoryDeliveryEventEntry[] = (input.delivery?.fulfillments ?? []).flatMap((row) =>
     row.events.map((event) => ({ type: 'delivery_event', at: event.happenedAt, fulfillmentId: row.fulfillmentId, number: row.number, event })));

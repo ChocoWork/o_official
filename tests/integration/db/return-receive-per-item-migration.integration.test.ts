@@ -9,6 +9,10 @@ import { hReceive, hRefundFixture, hReturn, H5_RETURN_FUNCTION_NAMES, withH5Retu
 const directory = path.join(process.cwd(), 'supabase/migrations');
 const migrationFiles = fs.readdirSync(directory).filter(name => /^\d+_return_receive_per_item\.sql$/.test(name));
 const sql = migrationFiles.length === 1 ? fs.readFileSync(path.join(directory, migrationFiles[0]), 'utf8') : '';
+// 2026-11-08 の直し（I-1・N-1）が4本の本文を置き換えた。今の DB の本文はこの移行の物と比べる
+const dedupFiles = fs.readdirSync(directory).filter(name => /^\d+_return_receive_unit_dedup\.sql$/.test(name));
+const dedupSql = dedupFiles.length === 1 ? fs.readFileSync(path.join(directory, dedupFiles[0]), 'utf8') : '';
+const DEDUP_REPLACED = ['admin_receive_return', 'group_h_receiving_amount', 'group_h_return_refund_amount', 'return_receive_amounts'];
 const receiveArgs = 'uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text';
 const resultNames = ['receipt_id', 'return_status', 'refund_id', 'refund_amount', 'refund_status',
   'exchange_order_item_ids', 'fee_due_amount', 'shop_notice_enqueued', 'replayed'];
@@ -25,6 +29,13 @@ function definition(source: string, name: string, schema = 'private') {
 const assertion = [...sql.matchAll(/^DO\s+(\$[a-zA-Z_0-9]*\$)([\s\S]*?)\1;/gmi)]
   .find(m => m[2].includes('RETURN_RECEIVE_PER_ITEM_MIGRATION_ASSERTION_FAILED'))?.[0] ?? '';
 const baselines = sql.match(/^CREATE TEMP(?:ORARY)? TABLE[\s\S]*?;/gmi) ?? [];
+/** 置き換えた本文の MD5 だけを新しい本文の物に替えた RR の末尾 assert（ほかの確かめは元のまま） */
+const currentAssertion = DEDUP_REPLACED.reduce((text, name) => {
+  const before = definition(sql, name), after = definition(dedupSql, name);
+  return before && after ? text.replace(`'${md5(before.body)}'`, `'${md5(after.body)}'`) : text;
+}, assertion);
+const dedupAssertion = [...dedupSql.matchAll(/^DO\s+(\$[a-zA-Z_0-9]*\$)([\s\S]*?)\1;/gmi)]
+  .find(m => m[2].includes('RETURN_RECEIVE_UNIT_DEDUP_MIGRATION_ASSERTION_FAILED'))?.[0] ?? '';
 type DbError = { code?: string; message?: string; detail?: string };
 async function failure(db: PgClient, work: () => Promise<unknown>): Promise<DbError | null> {
   await db.query('savepoint rr_migration_failure');
@@ -199,7 +210,7 @@ describeLocalDb('受取明細の列・制約・ACL・本文・書き手77本（c
   test('FREQ-641-AC-10: 新11本文と見込みhelperは移行に固定した本文・属性・ACLで過剰overloadを持たない', async () => {
     expect(sql).not.toBe('');
     for (const name of [...H5_RETURN_FUNCTION_NAMES, 'return_receive_amounts']) {
-      const expected = definition(sql, name); expect(expected).not.toBeNull();
+      const expected = DEDUP_REPLACED.includes(name) ? definition(dedupSql, name) : definition(sql, name); expect(expected).not.toBeNull();
       const rows = (await db().query(`select md5(replace(p.prosrc,E'\\r','')) hash,p.provolatile,p.proconfig,
         p.proowner=(select oid from pg_roles where rolname='postgres') owned,
         coalesce((select array_agg(a.grantee::regrole::text order by a.grantee::regrole::text)
@@ -220,10 +231,13 @@ describeLocalDb('受取明細の列・制約・ACL・本文・書き手77本（c
     expect(assertion).not.toBe('');
     return failure(db(), async () => {
       for (const baseline of baselines) await db().query(baseline);
-      if (change) await change(); await db().query(assertion);
+      if (change) await change(); await db().query(currentAssertion);
     });
   }
-  test('FREQ-641-AC-10: 新移行の末尾assertは無改変で通る', async () => { expect(await attempt()).toBeNull(); });
+  test('FREQ-641-AC-10: 新移行の末尾assertは無改変で通る', async () => {
+    for (const name of DEDUP_REPLACED) expect(currentAssertion).toContain(`'${md5(definition(dedupSql, name)!.body)}'`);
+    expect(await attempt()).toBeNull();
+  });
   test.each([
     { detail: 'rr_schema', change: 'alter table public.order_return_receipt_lines drop constraint order_return_receipt_lines_refund_choice_check' },
     { detail: 'rr_receive', name: 'admin_receive_return' },
@@ -239,5 +253,26 @@ describeLocalDb('受取明細の列・制約・ACL・本文・書き手77本（c
         await db().query(def.replace(/\$function\$;?\s*$/, '\n-- rr deliberate body change\n$function$;'));
       }
     })).toEqual({ code: 'P0001', message: 'RETURN_RECEIVE_PER_ITEM_MIGRATION_ASSERTION_FAILED', detail: o.detail });
+  });
+
+  async function dedupAttempt(change?: string) {
+    expect(dedupAssertion).not.toBe('');
+    await db().query('savepoint rd_migration_failure');
+    try { if (change) await db().query(change); await db().query(dedupAssertion); return null; }
+    catch (caught) { const e = caught as DbError; return { code: e.code, message: e.message, detail: e.detail }; }
+    finally { await db().query('rollback to savepoint rd_migration_failure'); await db().query('release savepoint rd_migration_failure'); }
+  }
+  test('FREQ-641-AC-07: 受け取りの数え方の直しの移行の末尾assertは無改変で通り、改ざんは固定DETAILで断る', async () => {
+    expect(dedupFiles).toHaveLength(1);
+    expect(dedupSql).not.toContain('\r');
+    expect(dedupSql.match(/^BEGIN;$/gm)).toHaveLength(1); expect(dedupSql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(dedupSql).not.toMatch(/DROP\s+FUNCTION|CREATE(?: OR REPLACE)? FUNCTION public\./i);
+    expect(dedupSql).not.toMatch(/UPDATE\s+(?:public\.)?order_return_receipt(?:s|_lines)\b/i);
+    expect(await dedupAttempt()).toBeNull();
+    const rejected = { code: 'P0001', message: 'RETURN_RECEIVE_UNIT_DEDUP_MIGRATION_ASSERTION_FAILED' };
+    expect(await dedupAttempt('alter table public.order_return_receipts drop constraint order_return_receipts_consult_quantity_check'))
+      .toEqual({ ...rejected, detail: 'rd_schema' });
+    expect(await dedupAttempt('grant execute on function private.group_h_receiving_amount(uuid,uuid,integer,jsonb) to service_role'))
+      .toEqual({ ...rejected, detail: 'rd_bodies' });
   });
 });

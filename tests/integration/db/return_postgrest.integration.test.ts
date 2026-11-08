@@ -104,7 +104,7 @@ const RETURN_FEES_KEYS = [
 ];
 const RETURN_LINE_KEYS = [
   'id', 'fulfillmentId', 'fulfillmentNumber', 'orderItemId', 'itemName', 'color', 'size', 'quantity', 'reason', 'reasonNote', 'resolution',
-  'exchange', 'progress', 'refundAmountsByCount', 'refundWaitingAmount',
+  'exchange', 'progress', 'refundAmountsByCount', 'receiveRefundAmountsByCount', 'refundWaitingAmount',
   'customerNote', 'requestedResolution', 'requestedExchange', 'photos', 'returnIneligible',
 ];
 const RETURN_LINE_EXCHANGE_KEYS = ['variantId', 'color', 'size', 'method', 'stockQuantity', 'madeToOrderLeadDays', 'outOfStockExchange'];

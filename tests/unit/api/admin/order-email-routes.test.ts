@@ -467,8 +467,8 @@ describe('GET /api/admin/orders/[id]/history', () => {
     mockReceiptLines.mockResolvedValue({
       data: [
         // 受け取りの返金の番号（receipt.refund_id）は、受け取りの記録との結合で必ず1つの物として返る（外部キーは NOT NULL）
-        { receipt_id: RECEIPT_ID, disposition: 'restocked', quantity: 1, receipt: { refund_id: null } },
-        { receipt_id: RECEIPT_ID, disposition: 'sent_back', quantity: 1, receipt: { refund_id: null } },
+        { receipt_id: RECEIPT_ID, disposition: 'restocked', quantity: 1, receipt: { refund_id: null, consult_quantity: null } },
+        { receipt_id: RECEIPT_ID, disposition: 'sent_back', quantity: 1, receipt: { refund_id: null, consult_quantity: null } },
       ],
       error: null,
     });

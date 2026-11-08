@@ -1149,6 +1149,7 @@ export async function bridgeHistory(client: PgClient, orderId: string, slips?: R
     refunds: [],
     returns: [],
     returnReceiptLines: [],
+    returnReceipts: new Map(),
     returnRecords: [],
     cancelRequests: [],
     lines,

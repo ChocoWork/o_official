@@ -1,5 +1,7 @@
 # 1.16 管理画面（ADMIN）詳細設計
 
+> 返品の受け取りの数え方の直し 確認日: 2026-11-08。DD-ADMIN-017 に「数え方の直し」（I-1。空きの着を注文の商品ごとに1列で使う）、DD-ADMIN-019 の上限の見込みの文、DD-ADMIN-020 に「相談の点数の直し」（N-1・M-4。`consult_quantity`）を足した。DD-ADMIN-017 に直していない場面を「既知の点」として書いた（交換の印を着そのものに結び付ける別の設計で直す。オーナー決定）。移行 `20261108120000` は手元の DB で確認し、本番は未適用（オーナーの許可待ち）。DB 結合の試験は[テスト仕様](../../05_Quality/tests/test-spec.md)参照。
+
 > 返品の品ごとの返金 Task 4 確認日: 2026-11-06。DD-ADMIN-020 に、メールの材料・本文と注文の履歴の実装（Task 4）の段落を足した。単体211/211、メール材料のDB試験6/6と関連E2Eは実測済み（2026-11-06、調整役の手元の実行・ログ保管。[テスト仕様](../../05_Quality/tests/test-spec.md)参照）。メールの実配送は未実行。
 
 > 返品の品ごとの返金 Task 3 確認日: 2026-11-06。DD-ADMIN-017 に見込みの計算（`computePerItemReturnRefundPreview`）、DD-ADMIN-019 に受け取りの画面（Task 3）の実装の段落を足した。単体・画面結合247/247（直し2後）、3幅の E2E は18/18通過（2026-11-06、調整役の手元の実行・ログ保管）。
@@ -1180,6 +1182,16 @@ Task 5 fix round 1（2026-10-29）: 一覧は「使った回数」と「上限�
 
 Hはその行の確保から安い着をnowへ当て、過去の受取・別active claimを除く。旧注文と交換行の新見込み配列はNULLで既存共通配列へ戻す。旧注文は注文商品ごとにN/Cを合算し、G今=A[N−1]、G相=A[N+C−1]−A[N−1]（0点は0）として行ごとに丸めない。Hの空きは注文商品内の共通キューで一度だけ使い、全返品行の結合数≤数量を守る。案イの芯の印は変更しない。計算不可の材料を黙って0円にしない。
 
+数え方の直し（I-1、2026-11-08、移行 [20261108120000_return_receive_unit_dedup.sql](../../../supabase/migrations/20261108120000_return_receive_unit_dedup.sql)。手元で確認・本番は未適用）: 受け取りの上限（`private.group_h_receiving_amount`。`v_goods`・`v_goods_consult`）、受け取りの記録がある返金の行の値段（`private.group_h_return_refund_amount`）、交換の品の値段（`admin_receive_return` の `exchange_paid_amount`）、画面の見込み（`private.return_receive_amounts`）は、前は行ごとに `group_h_return_line_amount` で空きの着を最初から数えたので、同じ注文の商品の2つの行が同じ空きの着を数えた（上限が低く出て、実際に取る着と食い違い `GROUP_H_REFUND_UNIT_MISMATCH` で断られた。相談の手数料の控えも少なく出た）。直した後は、注文の商品ごとに空きの着を安い順に1列に並べ、行の id の順に「その行の自分の着（W0 などの飛ばす数の後）→ 残りの空きの着」を取り、前の行が使った空きの着は次の行で使わない。実際に着を取る `group_h_return_refund_slices`→`group_h_claim_refund_units` と同じ順番。今すぐと相談を同じ受け取りで分ける時は、相談の額を「今すぐと相談を続けて数えた額 − 今すぐの額」で出し、今すぐで使った空きの着の次から相談を数える（今すぐの行は、覆いで抑えた今すぐの点数までに行の順で切り詰める）。交換の行どうしは同じ列を使う。交換の行と返金の行は空きの着の列を分けていない（下の既知の点の1つ目を参照）。
+
+既知の点（直していない。別の設計で直す）:
+
+- 交換の行と返金の行が同じ注文の商品の空きの着を要る時、交換の品の値段（`exchange_paid_amount`）が返金と同じ着を指す。あとで交換の品を返金する時に少なく返す（例: 3000円）。受け取りを2回に分けても起きる。この場面ではお客様に足りない向き。ただし返し過ぎの向きの道もある（4つ目の点）。返品の行に結び付かないふつうの返金も、交換が値段のもとにした空きの着を取れるので、同じ向きの誤りになる見込みがある（確かめていない。別の設計で確かめる）。
+- 画面の見込み（`private.return_receive_amounts`）が、一部の行だけ受け取る時や、相談と今すぐの行の id の順によって、DB の上限・額とずれる。額は DB が決めるので返し過ぎにはならない。P9 の人に出る「計算どおり」の額が実際と違うことがある。
+- 受け取りを2回に分けて相談にすると、手数料の控えが同じ着を2回数える（10%で 3700円のはずが 3400円）。
+- error の後に返金をやり直すと、返し過ぎの向きに誤る道もある。本番に当たっている `20261106005536` から前からある道で、`20261108120000` が入れた物ではない。原因は3つ。開き直しのトリガー（005536:122-145）が空きの着を行へ結び付ける。`group_h_claim_refund_units`（005536:217-219）が空きの着に `return_line_id` も書く。返金の error の時の `group_h_release_refund_units`（130400:258-266）は `refund_id` だけを外す。場面: 数量2（17000円と20000円）の交換の行を「届かない」で終える。ふつうの返金を1点して 17000円の着を取る。開き直すと、20000円の着がその行に結び付く。返金が error になり、17000円の着が空きへ戻る。1回目の受け取りで交換すると、交換の値段は 20000円になる。2回目の受け取りの今すぐの返金が 17000円の着を取って行に結び付け、交換の印が位置で 17000円の着へ移る。その返金が error になる（`return_line_id` は残る）。やり直した返金が 20000円の着を取る。交換の値段 20000円と返金 20000円で、払った 37000円より 3000円多く返る。返金の error が2回いるので、とてもまれ。別の設計の受け入れ条件に、この場面の試験を入れる。
+- 直し方の向き: 交換の印を行の着の位置ではなく着そのものに結び付ける設計を別に書き、承認を得てから直す（2026-11-08 オーナー決定）。
+
 画面の見込みの実装（Task 3、2026-11-06）: [return-calc.ts](../../../src/lib/orders/returns/return-calc.ts) の `computePerItemReturnRefundPreview` が受け取りの画面の見込みを出す（`@design DD-ADMIN-017`）。入力は返品の行ごとの `ReceivePreviewLine`（`returnLineId`・`orderItemId`・`refundAmountsByCount`・`receiveRefundAmountsByCount`・`nowCount`・`consultCount`）と、従来の見込みと同じ費用・送料に `refundableAmount` を足した物。`receiveRefundAmountsByCount` が配列の行（H）は行ごとの累計で G今=R[N−1]、G相=R[N+C−1]−G今（他の行の安い着へ替えない）。null の行（旧注文・交換を返金に変えた行）は注文商品ごとに N・C を足して共通の累計から引く。出力は `nowItemsAmount`・`consultItemsAmount`・`nowFees`（返送料・floor(G今×p/100)・交換の手数料・交換の送料）・`consultRestockingFee`（floor(G相×p/100)）・`refundAmount`（max(G今−F今,0)+S）・`refundCap`（min(注文の返せる額, G今+S)）・`feePendingDeduction`（相談の手数料＋相談がある時の不足）・`feeDue`（相談が無い時の不足）。従来の `computeReturnRefundPreview` と呼び出しの契約は残した。単体は [return-calc.test.ts](../../../tests/unit/lib/orders/returns/return-calc.test.ts) の `DD-ADMIN-017` の試験。
 
 ### DD-ADMIN-018 品ごとの本文と窓口・store・service
@@ -1214,7 +1226,7 @@ DB の実装（Task 1 Step 3、2026-11-06）: 上の DD-ADMIN-017 と DD-ADMIN-0
 
 入力は受取可能な各1点の行・状態・選択、認可結果、見込み材料。選択した返金品（交換→返金も含む）の状態直下に「返金: 今すぐ返金 / 額を相談」を置き、初期now。同じ行の2点も別々に選べる。未選択・交換・お返しには出さない。返金権限ありは選びと額/送料入力、P9は選びだけ、P9外は選びも入力もなく全相談。ラジオのgroup/nameを品ごとに分ける。
 
-「今すぐ返金（n点）」に内訳と「上限 ￥X」、「額を相談（m点）」に品名と「返金待ちになります。額はあとで「額を決めて返金する」で決めます。」を出す。超過時は、注文の返せる額が今すぐの品の額＋送料より小さければ「この注文で返せる額（￥X）を超えて入れられません。」、それ以外は「この受け取りの商品の額と送料（￥X）を超えて入れられません。ほかの受け取りの分は、返品の画面の「額を決めて返金する」で返してください。」を欄に関連付け、額を丸めず送信を止める。窓口の `RETURN_RECEIVE_REFUND_CAP_EXCEEDED` は「返金できる額を超えています。」。混在ボタンは「受け取る（n点を ￥X 返金・m点は相談）」、片方だけは既存の言葉を保つ。画面の上限の見込みは、DB の上限（`admin_receive_return` の `v_goods`）と同じく、行ごとに空きの着を数える。2つの行が同じ空きの着を要る時は、DB でも返金の着の割り当てで受け取りが断られる見込み（2026-11-06 のレビュー I-1、未確認）。
+「今すぐ返金（n点）」に内訳と「上限 ￥X」、「額を相談（m点）」に品名と「返金待ちになります。額はあとで「額を決めて返金する」で決めます。」を出す。超過時は、注文の返せる額が今すぐの品の額＋送料より小さければ「この注文で返せる額（￥X）を超えて入れられません。」、それ以外は「この受け取りの商品の額と送料（￥X）を超えて入れられません。ほかの受け取りの分は、返品の画面の「額を決めて返金する」で返してください。」を欄に関連付け、額を丸めず送信を止める。窓口の `RETURN_RECEIVE_REFUND_CAP_EXCEEDED` は「返金できる額を超えています。」。混在ボタンは「受け取る（n点を ￥X 返金・m点は相談）」、片方だけは既存の言葉を保つ。画面の上限の見込みは、DB の上限（`admin_receive_return` の `v_goods`）と同じ数え方で、注文の商品ごとに空きの着を1列に並べ、行の id の順に前の行が使った空きの着を次の行で使わない（`private.return_receive_amounts`）。2つの行が同じ空きの着を要る時も、上限・返金の値段・実際に取る着が同じ着を指し、受け取りは断られない（2026-11-06 のレビュー I-1。2026-11-08 に移行 `20261108120000` で直し、[再現の試験](../../../tests/integration/db/return-receive-per-item-repro.integration.test.ts) で確かめた。DD-ADMIN-017 の「数え方の直し」）。
 
 1POSTで単一結果を受け、再読込する。結果不明では送った本文・requestKeyを固定して再送する。S>額・注文残額による上限も止め、混在0円でも相談を残す。相談後の返金画面は案イの待ち額17000円を使う。390/768/1280px、横はみ出し・名前・キーボード・focus・警告関連付けはTask 5の試験で確かめ、18/18通過（2026-11-06、調整役の手元の実行・ログ保管）。
 
@@ -1234,9 +1246,12 @@ DB の実装（Task 1 Step 3、2026-11-06）: 上の DD-ADMIN-017 と DD-ADMIN-0
 
 入力は親と明細の選び・点数・返金結果。正額のnowは既存の返金メールへ受取内容を含め、consultの品を「額を相談する商品:」にまとめ、その後に「ご返金の額は、確かめてから改めてご連絡いたします。」を1通に1回だけ添える。0円・失敗は既存の受取メールに今すぐと相談の品を分ける。mixedで今すぐの返金が受け付けられなかった時だけは、案内の1文を両方の品のまとまりの後に独立した段落で1回出す。お客様outboxは受取1回につき1通相当、権限なしで相談を含む場合は店へ`return_refund_pending_shop`を1件。再送で増やさない。
 
-履歴の「返品の受け取り」は1行で、細目に「今すぐ返金 n点・相談 m点」を足す。今すぐは親now/mixedだけを対象にし、明細のnow合計を、この受け取りのrefund_idが指す返金明細の点数と同じ受け取りのrefund_waivedの合計までに抑える。親consult/noneのnow明細は今すぐに数えない。相談は親がconsult/mixedの時だけ、相談を選んだ明細の点数を数える。親now/noneでは明細がconsultでも相談に数えない。旧NULL明細は親now/consultで読む。mixedの返金明細NULLは材料生成を拒否する。過去の追記済み記録・outbox key・送信回数を更新しない。メールの実配送は未確認であり、材料や本文の単体成功と分けて報告する。
+履歴の「返品の受け取り」は1行で、細目に「今すぐ返金 n点・相談 m点」を足す。今すぐは親now/mixedだけを対象にし、明細のnow合計を、この受け取りのrefund_idが指す返金明細の点数と同じ受け取りのrefund_waivedの合計までに抑える。親consult/noneのnow明細は今すぐに数えない。相談は親がconsult/mixedの時だけ、相談を選んだ明細の点数を数え、受け取りの記録の`consult_quantity`（DB がこの受け取りで返金待ちにした点数。2026-11-08 から）が数ならそこまでに抑える。NULL（それより前の受け取り）は明細の点数のまま。親now/noneでは明細がconsultでも相談に数えない。旧NULL明細は親now/consultで読む。mixedの返金明細NULLは材料生成を拒否する。過去の追記済み記録・outbox key・送信回数を更新しない。メールの実配送は未確認であり、材料や本文の単体成功と分けて報告する。
 
 メールと履歴の実装（Task 4、2026-11-06）: [order-email-compose.ts](../../../src/lib/orders/email/order-email-compose.ts) は受け取りの行の `refund_choice` も読み、`OrderEmailReturnReceipt` に `refundNowItems`・`refundConsultItems`（受け取った返金の品だけ。同じ品でも選びが違えば別のまとまりで、まとまりの中は数を足す）を足し、`refundChoice` の型を `ReceiptRefundChoice`（`mixed` を含む）にした。旧い行の NULL は親の `now`・`consult` で補い、交換・お返しの品には印を付けない。親が `mixed` で返金の品の選びが NULL なら材料を null（送れない）にする。本文は、`mixed` と一緒の返金のお知らせで「返金した商品」の次に「額を相談する商品:」の節を足し、相談の品を並べた後に「ご返金の額は、確かめてから改めてご連絡いたします。」を1回だけ添える。0円・受け付けられなかった `mixed` の受け取りのお知らせは、交換の品の次に「今すぐ返金する商品:」（0円なら「今すぐ返金する商品は、ご返金の額が0円のため、ご返金はございません。」を添える）と「額を相談する商品:」を書き、全体の0円の一文は書かない。mixedで今すぐの返金が受け付けられなかった時だけは、今すぐと相談の両方の品のまとまりの後に「ご返金の額は、確かめてから改めてご連絡いたします。」を独立した段落で1回出し、両方の品に掛かる案内にする。`mixed` なのにどちらかの品が無い材料からは作らない。`now`・`consult`・`none` の受け取りと、相談の後の返金（受け取りの番号を持たない）の本文は変えていない。お客様のメールの通数は DB の予定（Task 1）で決まり、本文の側で足さない。[order-history.ts](../../../src/lib/orders/email/order-history.ts) の `OrderHistoryReturnReceiptLine` に `resolution`・`refundChoice` を足し、[履歴の窓口](../../../src/app/api/admin/orders/%5Bid%5D/history/route.ts) が `order_return_receipt_lines` から `resolution, refund_choice` と受け取りの `refund_id` も読み、既存の返金一覧で同じ返金の明細点数を照合して渡す。「返品の受け取り」の行は1行のまま、状態ごとの細目の後に「今すぐ返金 n点・相談 m点」（0点の側は書かない。返金の品が無ければ足さない）を足す。今すぐは親now/mixedだけを対象にし、明細のnow合計を、この受け取りの返金明細と同じ受け取りの0円で終えた点数の合計までに抑える。相談は親consult/mixedの時だけ数え、親now/noneでは明細がconsultでも数えない。数えるのは在庫に戻す・戻さない・検品待ちの返金の行だけで、`refund_waived` の数は重ねない（「返金しないで終えた」は今までどおり別の行）。旧い行の NULL は親で補い、親 `mixed` の返金の行の NULL は推測せずに投げる（窓口は 500）。単体は [order-email-return-material.test.ts](../../../tests/unit/lib/orders/email/order-email-return-material.test.ts)・[order-email-compose-returns.test.ts](../../../tests/unit/lib/orders/email/order-email-compose-returns.test.ts)・[order-history.test.ts](../../../tests/unit/lib/orders/email/order-history.test.ts)・[order-history-route.test.ts](../../../tests/unit/api/admin/order-history-route.test.ts) の `DD-ADMIN-020` の試験。
+
+相談の点数の直し（N-1・M-4、2026-11-08）: DB は相談の点数を、覆い（ふつうの返金で先に返した品）で抑えた後の数で返金待ちにするが、前は抑えた数をどこにも残さず、履歴は受け取りの行の相談の合計を出していた（例: 相談2点で受け取り、返金待ちになったのは1点でも「相談 2点」）。移行 `20261108120000` で `order_return_receipts.consult_quantity` に抑えた後の数を書き、履歴の窓口は `receipt:order_return_receipts!receipt_id(refund_id, consult_quantity)` を読む。受け取り1件ごとの値（返金明細の点数 `refundQuantity`・相談の点数 `consultQuantity`）は品の行（`OrderHistoryReturnReceiptLine`）に重ねず、`BuildOrderHistoryInput.returnReceipts`（受け取りの番号から `OrderHistoryReturnReceipt` を引く表）で渡す。表に無い受け取りは返金明細0点・相談の点数 null として扱う。窓口の答えの形は変わらない。
+
 
 ## 注文の詳細の割引の内訳（H Task 10 / FREQ-552）
 

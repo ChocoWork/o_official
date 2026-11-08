@@ -63,16 +63,40 @@ test('DD-ADMIN-020 受け取り履歴は1行で選びの点数を添える（窓
     ? { eq: () => ({ maybeSingle: async () => ({ data: { id, status: 'paid', shipping_email: null, created_at: '2026-10-26T00:00:00Z' }, error: null }) }) }
     : table === 'order_return_receipt_lines'
       ? (receiptLineSelects.push(columns), { in: async () => ({ data: [
-        { receipt_id: 'rc-1', disposition: 'restocked', quantity: 2, resolution: 'refund', refund_choice: 'now', receipt: { refund_id: 'refund-1' } },
-        { receipt_id: 'rc-1', disposition: 'not_restocked', quantity: 1, resolution: 'refund', refund_choice: 'consult', receipt: { refund_id: 'refund-1' } },
+        { receipt_id: 'rc-1', disposition: 'restocked', quantity: 2, resolution: 'refund', refund_choice: 'now', receipt: { refund_id: 'refund-1', consult_quantity: 1 } },
+        { receipt_id: 'rc-1', disposition: 'not_restocked', quantity: 1, resolution: 'refund', refund_choice: 'consult', receipt: { refund_id: 'refund-1', consult_quantity: 1 } },
       ], error: null }) })
       : { eq: async () => ({ data: [], error: null }), in: async () => ({ data: [], error: null }) } }));
 
   const response = await get(); const body = await response.json();
 
   expect(response.status).toBe(200);
-  expect(receiptLineSelects).toEqual(['receipt_id, disposition, quantity, resolution, refund_choice, receipt:order_return_receipts!receipt_id(refund_id)']);
+  expect(receiptLineSelects).toEqual(['receipt_id, disposition, quantity, resolution, refund_choice, receipt:order_return_receipts!receipt_id(refund_id, consult_quantity)']);
   const receives = body.entries.filter((entry: { kind?: string }) => entry.kind === 'receive');
   expect(receives).toHaveLength(1);
   expect(receives[0].details).toEqual(['在庫に戻す 2点', '戻さない 1点', '今すぐ返金 1点・相談 1点']);
+});
+
+test.each([
+  { consultQuantity: 1, details: '今すぐ返金 1点・相談 1点' },
+  { consultQuantity: null, details: '今すぐ返金 1点・相談 2点' },
+])('DD-ADMIN-020 相談の点数は受け取りの記録の consult_quantity=$consultQuantity まで（NULL は行の合計のまま）', async ({ consultQuantity, details }) => {
+  (listOrderRefunds as jest.Mock).mockResolvedValue([{ refundId: 'refund-1', lines: [{ quantity: 1, beforeShipment: false }] }]);
+  (listOrderReturns as jest.Mock).mockResolvedValue([returnDetail({
+    receipts: [{ id: 'rc-1', kind: 'receive', refundChoice: 'mixed', createdAt: '2026-10-26T02:00:00Z', actorEmail: 'admin@example.com' }],
+  })]);
+  const receipt = { refund_id: 'refund-1', consult_quantity: consultQuantity };
+  client.from.mockImplementation((table: string) => ({ select: () => table === 'orders'
+    ? { eq: () => ({ maybeSingle: async () => ({ data: { id, status: 'paid', shipping_email: null, created_at: '2026-10-26T00:00:00Z' }, error: null }) }) }
+    : table === 'order_return_receipt_lines'
+      ? { in: async () => ({ data: [
+        { receipt_id: 'rc-1', disposition: 'restocked', quantity: 1, resolution: 'refund', refund_choice: 'now', receipt },
+        { receipt_id: 'rc-1', disposition: 'not_restocked', quantity: 2, resolution: 'refund', refund_choice: 'consult', receipt },
+      ], error: null }) }
+      : { eq: async () => ({ data: [], error: null }), in: async () => ({ data: [], error: null }) } }));
+
+  const body = await (await get()).json();
+
+  const receives = body.entries.filter((entry: { kind?: string }) => entry.kind === 'receive');
+  expect(receives[0].details).toEqual(['在庫に戻す 1点', '戻さない 2点', details]);
 });

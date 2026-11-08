@@ -1,5 +1,7 @@
 # DB マイグレーション運用
 
+> 返品の受け取りの数え方の直し 確認日: 2026-11-08。1回目の形に戻した（受け取りの時の結び付けは外した。オーナー決定）。直していない場面を「既知の点」に書いた。移行 `20261108120000_return_receive_unit_dedup.sql` を追記した（「返品の受け取りの数え方の直しの移行（I-1・N-1、2026-11-08）」の節）。手元の DB だけで当てて確かめた。本番は未適用で、オーナーの許可待ち。デプロイは移行を先に当ててからコードを出す。
+
 > 確認日: 2026-11-08。「ローカル開発について」の節の古い記述（seed が無い・pre-push の E2E を手元の DB にするかは未決）を、今の形（`supabase/seed.sql` あり・E2E と pre-push は手元の DB）に直した。
 
 > 返品の品ごとの返金 Task 1 確認日: 2026-11-06。移行 `20261106005536_return_receive_per_item.sql` を追記した（「返品の受け取りの品ごとの返金の移行（FREQ-641 Task 1）」の節）。手元の DB だけで当てて確かめた。デプロイは移行を先に当ててからコードを出す。本番には 2026-11-06 にオーナーの許可を得て `supabase db push --linked` で当てた（`schema_migrations` に version と名前 `return_receive_per_item` が入り、`refund_choice` の列2つがあることを確かめた）。当てた後に master を push した。
@@ -1261,3 +1263,39 @@ controller手順: H7未適用DBの新しい取消テストでRED→取引内で�
 3. もう一度 `npx supabase db reset` の後に `DATABASE_URL=… npx jest tests/integration/db --runInBand`（全部の DB の試験。`checkout_session_claim` の試験は後片付けで関数を消すので、ほかを流し直す前に reset する）
 
 2026-11-06 の実装者の実測（手元）: 手順2は43件すべて通過。手順3は fresh reset 直後の全件で 4,774 件中 4,758 件通過・失敗0・15件 skip・1件 todo（163 suite 通過・13 suite skip）。1回目の全件では G-3 の2 suite（3件、試験の準備の関数 `setOrderStatusForFixture` で `PAID_ORDER_REQUIRES_FULL_REFUND_BEFORE_CANCELLATION`）が落ちたが、単独では移行あり・なしとも通り、2回目の全件でも通ったので、並び順による揺れと見る。直し1の後（fresh reset 直後の全件）: 4,776 件中 4,760 件通過・失敗0・15件 skip・1件 todo。本番の DB への適用（`db push --linked` や MCP）は、オーナーの許可が出るまでしない。
+
+## 返品の受け取りの数え方の直しの移行（I-1・N-1、2026-11-08、手元の DB で確認済み・本番未適用）
+
+移行は [20261108120000_return_receive_unit_dedup.sql](../../supabase/migrations/20261108120000_return_receive_unit_dedup.sql)。サイズ 53,330 bytes、MD5 `85377c44f56224126ad24155564ed69a`。ASCII・BOM なし・LF。2026-11-08 にオーナーが承認した案（I-1・N-1 とも案 A）。適用済みの移行（`20261029130400`・`20261106005536`）は1字も変えていない。
+
+| 何を | どう変えたか |
+| --- | --- |
+| 表 `order_return_receipts` | 列 `consult_quantity integer` を足した（NULL＝この移行より前の記録）。CHECK `order_return_receipts_consult_quantity_check`（NULL か0以上）。追記だけの表なので、既存の行は埋め直さない（`UPDATE` は無い）。値は受け取りの INSERT の時に書く |
+| `private.admin_receive_return` | 受け取りの記録に、この受け取りで返金待ちにした相談の点数（覆いで抑えた後の `v_consult_total`）を書く（N-1）。指紋 `request_fingerprint` と再送の一致の確かめには入れない（古い再送が `RETURN_REQUEST_MISMATCH` にならない）。相談の上限は、今すぐの分が使った空きの着の次から数える。交換の品の値段（`exchange_paid_amount`）も、同じ注文の商品の交換の行の間で空きの着を1列で使う（I-1） |
+| `private.group_h_receiving_amount` | 受け取りの上限の値段を、行ごとの `group_h_return_line_amount` の足し算から、注文の商品ごとに空きの着を1列に並べて前の行が使った着を次の行で使わない形にした（I-1）。要素に `refund_choice` があれば相談は今すぐの後に数える |
+| `private.group_h_return_refund_amount` | 受け取りの記録がある枝（返金の行の値段）を同じ形にした。受け取りの記録が無い枝は元のまま |
+| `private.return_receive_amounts` | 画面の見込みも、行の id の順に空きの着を1列で使う（前は行ごとに最初の空きの着から数えた） |
+
+順番は3つの数え方（値段・上限・実際に着を取る `group_h_return_refund_slices`→`group_h_claim_refund_units`）でそろえた: 行の id の順、自分の着 → 空きの着、安い順、今すぐの後に相談。関数の署名・所有者・`search_path`・EXECUTE の付与は前と同じ（`private.admin_receive_return` だけ service_role に EXECUTE を残し、ほかは postgres だけ）。G の書き手の許可一覧は変えない（OID は `CREATE OR REPLACE` で変わらない）。
+
+末尾 assert は `RETURN_RECEIVE_UNIT_DEDUP_MIGRATION_ASSERTION_FAILED / P0001`。DETAIL は `rd_schema`（列の型・NULL 可・既定値なし、CHECK の定義、anon・authenticated が読めず service_role が読めるだけ）と `rd_bodies`（置き換えた4本の本文の MD5・所有者・SECURITY DEFINER・`search_path`・揮発性・ACL・同じ名前の関数が1本だけ、公開の入口 `public.admin_receive_return` の本文 MD5 `2dedc2b2503ceb8516dedeaeb970609c` のまま）。
+
+デプロイの順番: 本番では、この移行を先に当ててから、このコードを出す。逆にすると、管理画面の注文履歴の窓口 `/api/admin/orders/[id]/history` が新しい列 `consult_quantity` を読めず500を返す。`.github/workflows/db-migrations.yml` が master への push で本番へ `supabase db push` するため、許可の前に push しない。本番の DB への適用（`db push --linked` や MCP）は、オーナーの許可が出るまでしない。
+
+手元で当てて確かめる手順（`--linked` は使わない）:
+
+1. `npx supabase db reset`（手元だけ。末尾 assert が落ちると取引ごと戻り、reset が止まる）
+2. `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest --runInBand tests/integration/db/return-receive-per-item-repro.integration.test.ts tests/integration/db/return-receive-per-item.integration.test.ts tests/integration/db/return-receive-per-item-migration.integration.test.ts`
+
+2026-11-08 の実装者の実測（手元）: 手順1で新しい移行が当たった。手順2は3ファイル55件すべて通過（再現の試験 9件・品ごとの返金 28件・移行の契約 18件）。割引の返金・返品に関わる DB の試験19ファイル（`group_g1_refund_cancel`・`group_g1_return_exchange`・`group_g1_return_requests`・`group_h_admin`・`group_h_migration_asserts`・`group_h_order_amounts`・`group_h_refund_concurrency`・`group_h_refund_outcomes`・`group_h_refunds`・`order_refund_records`・`order_refund_requests`・`order_refund_results`・`order_return_actions`・`order_return_customer_requests`・`order_return_receipts`・`order_return_records`・`order_return_request_records`・`order_return_request_reviews`・`order_status_returns`）は1,005件通過・失敗0。PostgREST を通す3ファイルは、`refund_postgrest`・`refund_failure_exception_postgrest` が通過、`return_postgrest` は3件失敗（返品の行の鍵の一覧に `receiveRefundAmountsByCount` が無い。2026-11-06 の f07981dc で TS の写し `return-store.ts` にこの鍵を足した時に、試験の鍵の一覧〔試験の105-108行〕を直し忘れた前からの失敗。今回の移行のせいではない。試験の鍵の一覧にこの鍵を足して直した）。終わった後に `npx supabase db reset` で手元の DB を戻した。
+
+既知の点（直していない。別の設計で直す）:
+
+- 交換の行と返金の行が同じ注文の商品の空きの着を要る時、交換の品の値段（`exchange_paid_amount`）が返金と同じ着を指す。あとで交換の品を返金する時に少なく返す（例: 3000円）。受け取りを2回に分けても起きる。この場面ではお客様に足りない向き。ただし返し過ぎの向きの道もある（4つ目の点）。返品の行に結び付かないふつうの返金も、交換が値段のもとにした空きの着を取れるので、同じ向きの誤りになる見込みがある（確かめていない。別の設計で確かめる）。
+- 画面の見込み（`private.return_receive_amounts`）が、一部の行だけ受け取る時や、相談と今すぐの行の id の順によって、DB の上限・額とずれる。額は DB が決めるので返し過ぎにはならない。ただし P9 の人に出る「計算どおり」の額が実際と違うことがある。
+- 受け取りを2回に分けて相談にすると、手数料の控えが同じ着を2回数える（10%で 3700円のはずが 3400円）。
+- error の後に返金をやり直すと、返し過ぎの向きに誤る道もある。本番に当たっている `20261106005536` から前からある道で、`20261108120000` が入れた物ではない。原因は3つ。開き直しのトリガー（005536:122-145）が空きの着を行へ結び付ける。`group_h_claim_refund_units`（005536:217-219）が空きの着に `return_line_id` も書く。返金の error の時の `group_h_release_refund_units`（130400:258-266）は `refund_id` だけを外す。場面: 数量2（17000円と20000円）の交換の行を「届かない」で終える。ふつうの返金を1点して 17000円の着を取る。開き直すと、20000円の着がその行に結び付く。返金が error になり、17000円の着が空きへ戻る。1回目の受け取りで交換すると、交換の値段は 20000円になる。2回目の受け取りの今すぐの返金が 17000円の着を取って行に結び付け、交換の印が位置で 17000円の着へ移る。その返金が error になる（`return_line_id` は残る）。やり直した返金が 20000円の着を取る。交換の値段 20000円と返金 20000円で、払った 37000円より 3000円多く返る。返金の error が2回いるので、とてもまれ。別の設計の受け入れ条件に、この場面の試験を入れる。
+- 直し方の向き: 交換の印を行の着の位置（安い順の何番目か）ではなく着そのものに結び付ける設計を別に書き、承認を得てから直す（2026-11-08 オーナー決定）。2回目・3回目で受け取りの時に空きの着を行へ結び付ける形を試したが、今の位置で決める作りと合わず返し過ぎの道が出たので、この移行は1回目の形に戻した。
+
+2026-11-08 の実装者の実測（手元、1回目の形に戻した後）: 移行は1回目と同じ（MD5 `85377c44f56224126ad24155564ed69a`）。`npx supabase db reset` で当たった。手順2の3ファイルは55件すべて通過。上の19ファイルは1,005件通過・1件飛ばし・失敗0（1回目と同じ）。PostgREST を通す3ファイルは、`db reset` の後に27件すべて通過（`return_postgrest` も通過）。終わった後に `npx supabase db reset` で手元の DB を戻した。
+

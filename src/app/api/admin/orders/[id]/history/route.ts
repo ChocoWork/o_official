@@ -7,6 +7,7 @@ import type { OrderStatus } from '@/lib/orders/order-payment-types';
 import {
   buildOrderHistory,
   type OrderHistoryLine,
+  type OrderHistoryReturnReceipt,
   type OrderHistoryReturnReceiptLine,
   type OrderHistoryReturnRecord,
 } from '@/lib/orders/email/order-history';
@@ -48,7 +49,7 @@ type ReceiptLineRow = {
   quantity: number;
   resolution?: ReturnResolution | null;
   refund_choice?: ReceiveUnitRefundChoice | null;
-  receipt: { refund_id: string | null };
+  receipt: { refund_id: string | null; consult_quantity: number | null };
 };
 type ReturnRecordRow = {
   id: string;
@@ -94,7 +95,8 @@ async function loadHistoryLines(client: SupabaseClient, orderId: string): Promis
  * 受け取りごとの品の状態の数（order_return_receipt_lines）。履歴の「返品の受け取り」の細目と「届かない」「返金しない」の数に使う。
  * 返品の一覧（list_order_returns）は受け取りの数を持たない（共通の約束 C-2 の形は変えない）ので、service_role で直に読む
  * （service_role は SELECT だけを持つ）。受け取りが無い注文は読まない。
- * 解決（resolution）と品ごとの返金の選び（refund_choice）も読み、細目の「今すぐ返金 n点・相談 m点」に使う（2026-11-06 設計書 6章）
+ * 解決（resolution）と品ごとの返金の選び（refund_choice）も読み、細目の「今すぐ返金 n点・相談 m点」に使う（2026-11-06 設計書 6章）。
+ * 受け取り1件ごとの値（返金明細の点数と、DB が返金待ちにした相談の点数 consult_quantity）は、品の行に重ねず受け取りの番号の表で返す（2026-11-08 の直し N-1・M-4）
  *
  * @design DD-ADMIN-020
  */
@@ -102,28 +104,33 @@ async function loadReturnReceiptLines(
   client: SupabaseClient,
   returns: readonly OrderReturnDetail[],
   refunds: Awaited<ReturnType<typeof listOrderRefunds>>,
-): Promise<OrderHistoryReturnReceiptLine[]> {
+): Promise<{ lines: OrderHistoryReturnReceiptLine[]; receipts: Map<string, OrderHistoryReturnReceipt> }> {
   const receiptIds = returns.flatMap((detail) => detail.receipts.map((receipt) => receipt.id));
   if (receiptIds.length === 0) {
-    return [];
+    return { lines: [], receipts: new Map() };
   }
   const { data, error } = await client
     .from('order_return_receipt_lines')
-    .select('receipt_id, disposition, quantity, resolution, refund_choice, receipt:order_return_receipts!receipt_id(refund_id)')
+    .select('receipt_id, disposition, quantity, resolution, refund_choice, receipt:order_return_receipts!receipt_id(refund_id, consult_quantity)')
     .in('receipt_id', receiptIds);
   if (error) {
     throw new FulfillmentStoreError('load_return_receipt_lines', error);
   }
   const refundQuantities = new Map(refunds.map((refund) => [refund.refundId,
     refund.lines.reduce((total, line) => total + (line.beforeShipment ? 0 : line.quantity), 0)]));
-  return ((data ?? []) as unknown as ReceiptLineRow[]).map((row) => ({
+  const rows = (data ?? []) as unknown as ReceiptLineRow[];
+  const receipts = new Map(rows.map((row) => [row.receipt_id, {
+    refundQuantity: refundQuantities.get(row.receipt.refund_id ?? '') ?? 0,
+    consultQuantity: row.receipt.consult_quantity,
+  }] as const));
+  const lines = rows.map((row) => ({
     receiptId: row.receipt_id,
     disposition: row.disposition,
     quantity: Number(row.quantity),
     resolution: row.resolution ?? null,
     refundChoice: row.refund_choice ?? null,
-    receiptRefundQuantity: refundQuantities.get(row.receipt.refund_id ?? '') ?? 0,
   }));
+  return { lines, receipts };
 }
 
 /**
@@ -269,7 +276,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       loadSlipLinks(supabase, authz.userId, order.id),
     ]);
     // 受け取りの細目と、返品の記録（取消などをした人と手数料をいただかない印）は、返品の一覧で番号が分かってから読む
-    const [returnReceiptLines, returnRecords] = await Promise.all([
+    const [{ lines: returnReceiptLines, receipts: returnReceipts }, returnRecords] = await Promise.all([
       loadReturnReceiptLines(supabase, returns, refunds),
       loadReturnRecords(supabase, returns, emailForActor),
     ]);
@@ -284,6 +291,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         refunds,
         returns,
         returnReceiptLines,
+        returnReceipts,
         returnRecords,
         cancelRequests,
         lines,
