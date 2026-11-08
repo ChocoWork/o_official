@@ -552,6 +552,96 @@ describeLocalDb('S9 Stripe posting: controller only', (db) => {
     }
   });
 
+  test('FREQ-565-AC-03: 支払いの番号（payment_intent）が無い売上の取引は黙って落とさずno_orderで止め、手数料は計上される', async () => {
+    await start();
+    const txId = await seedStripeFee(db(), { createdAt: '2026-06-15T03:00:00Z', type: 'charge', reportingCategory: 'charge', amount: 5000, fee: 180,
+      paymentIntentId: null });
+    const payment = (await q('select private.accounting_post_payment_events(50) as r')).rows[0].r as RunResult;
+    expect(payment).toEqual({ posted: 0, parked_new: 1, reparked: 0, resolved: 0 });
+    expect(await pendingOf('stripe_balance_transactions', txId, 'payment_confirmed')).toMatchObject({ reason: 'no_order', detail: {}, resolved_at: null });
+    // The fee lane takes the fee as before; the principal is never posted (the key needs the payment intent).
+    expect(await run()).toEqual({ posted: 1, parked_new: 0, reparked: 0, resolved: 0 });
+    expect(await lineSummary(`stripe:fee:${txId}`)).toEqual(['6280:180/0', '1160:0/180']);
+    expect(await entryCount()).toBe(1);
+    // A second run looks at it again and keeps it parked; the balance read names it as pending.
+    expect((await q('select private.accounting_post_payment_events(50) as r')).rows[0].r).toEqual({ posted: 0, parked_new: 0, reparked: 1, resolved: 0 });
+    // The type payment is treated the same way as charge.
+    const second = await seedStripeFee(db(), { createdAt: '2026-06-16T03:00:00Z', type: 'payment', reportingCategory: 'charge', amount: 3000, paymentIntentId: null });
+    await q('select private.accounting_post_payment_events(50)');
+    expect((await pendingOf('stripe_balance_transactions', second, 'payment_confirmed'))?.reason).toBe('no_order');
+  });
+
+  test('FREQ-565-AC-01: 入金の失敗の仕訳は取引の額（amount）で入り、戻りの取引に付いた手数料は手数料の係が1本で計上する', async () => {
+    await start();
+    const payout = await seedStripePayout(db(), { amount: 1000, paidAt: '2026-06-09T03:00:00Z' });
+    await run();
+    const failureTx = await seedStripeFee(db(), { createdAt: '2026-06-11T03:00:00Z', type: 'payout_failure', reportingCategory: 'payout_reversal',
+      amount: 1000, fee: 10, sourceId: payout });
+    expect(await run()).toEqual({ posted: 2, parked_new: 0, reparked: 0, resolved: 0 });
+    expect(await lineSummary(`payout_failed:${failureTx}`)).toEqual(['1160:1000/0', '1150:0/1000']);
+    expect(await lineSummary(`stripe:fee:${failureTx}`)).toEqual(['6280:10/0', '1160:0/10']);
+    // 1160 moved by the net of the transaction (990), not by amount minus two fees.
+    const moved = Number((await q(`select coalesce(sum(l.debit - l.credit), 0) as n from public.accounting_journal_lines l
+      join public.accounting_journal_entries e on e.id = l.entry_id where l.account_code = '1160' and e.dedupe_key in ($1, $2)`,
+      [`payout_failed:${failureTx}`, `stripe:fee:${failureTx}`])).rows[0].n);
+    expect(moved).toBe(990);
+  });
+
+  test('FREQ-565-AC-04: 入金の仕訳を取り消した入金には着金を入れない', async () => {
+    await start();
+    const payout = await seedStripePayout(db(), { amount: 9640, paidAt: '2026-06-20T03:00:00Z' });
+    await run();
+    const entry = (await entryOf(`payout_started:${payout}`)).id as string;
+    const admin = await insertAccountingAdmin(db());
+    await q("select public.admin_reverse_accounting_journal($1::uuid, $2::uuid, 'test reversal', null)", [admin, entry]);
+    await q(`update public.stripe_payouts set bank_arrival_date = '2026-06-23', bank_confirmed_at = now(), bank_confirmed_by = $2 where id = $1`, [payout, admin]);
+    expect(await lane('bank')).toEqual({ posted: 0, parked_new: 0, reparked: 0, resolved: 0 });
+    expect(await entryOf(`bank_arrived:${payout}`)).toBeUndefined();
+  });
+
+  test('FREQ-565-AC-01: 元の記録の保存が古く登録が2か月以上遅れた手数料は遅れの印が付く', async () => {
+    await start();
+    const late = await seedStripeFee(db(), { createdAt: '2026-01-05T03:00:00Z', type: 'charge', reportingCategory: 'charge', amount: 5000, fee: 180,
+      syncedAt: new Date().toISOString() });
+    const notLate = await seedStripeFee(db(), { createdAt: '2026-01-05T04:00:00Z', type: 'charge', reportingCategory: 'charge', amount: 5000, fee: 180,
+      syncedAt: '2026-01-06T00:00:00Z' });
+    await run();
+    expect((await entryOf(`stripe:fee:${late}`)).is_late).toBe(true);
+    expect((await entryOf(`stripe:fee:${notLate}`)).is_late).toBe(false);
+  });
+
+  test('FREQ-565-AC-06: 同じStripeの取引の番号は別の銀行の取引の番号や番号なしでも2回入らない（同じ内容は前の仕訳を返し、違えば断る）', async () => {
+    await start();
+    const admin = await insertAccountingAdmin(db());
+    const topup = (amount: number, bank: string | null, stripe: string | null, date = '2026-06-10') =>
+      q('select public.admin_record_balance_topup($1::uuid, $2::bigint, $3::date, $4::text, $5::text, null, $6::uuid) as r', [admin, amount, date, bank, stripe, randomUUID()]);
+    const first = (await topup(20000, 'BANK-1', 'txn_a')).rows[0].r;
+    // Another bank number, the same Stripe transaction.
+    expect((await topup(20000, 'BANK-2', 'txn_a')).rows[0].r).toMatchObject({ created: false, entry_id: first.entry_id });
+    expect(await accountingFailure(db(), () => topup(25000, 'BANK-2', 'txn_a'))).toMatchObject({ code: '23505', message: 'ACCOUNTING_DEDUPE_CONTENT_MISMATCH' });
+    expect(await accountingFailure(db(), () => topup(20000, 'BANK-2', 'txn_a', '2026-06-11'))).toMatchObject({ code: '23505', message: 'ACCOUNTING_DEDUPE_CONTENT_MISMATCH' });
+    // No bank number: the Stripe number becomes the key, which the first entry does not carry.
+    expect((await topup(20000, null, 'txn_a')).rows[0].r).toMatchObject({ created: false, entry_id: first.entry_id });
+    expect(await accountingFailure(db(), () => topup(1000, null, 'txn_a'))).toMatchObject({ code: '23505', message: 'ACCOUNTING_DEDUPE_CONTENT_MISMATCH' });
+    expect(await entryCount()).toBe(1);
+    // A reversed entry no longer binds the Stripe number.
+    await q("select public.admin_reverse_accounting_journal($1::uuid, $2::uuid, 'test reversal', null)", [admin, first.entry_id]);
+    expect((await topup(7000, 'BANK-3', 'txn_a')).rows[0].r.created).toBe(true);
+  });
+
+  test('FREQ-565-AC-06: Stripeの取引の番号だけで入れた補充に、あとから銀行の取引の番号を付けて入れ直しても2回入らない', async () => {
+    await start();
+    const admin = await insertAccountingAdmin(db());
+    const topup = (amount: number, bank: string | null, stripe: string | null) =>
+      q('select public.admin_record_balance_topup($1::uuid, $2::bigint, $3::date, $4::text, $5::text, null, $6::uuid) as r', [admin, amount, '2026-06-10', bank, stripe, randomUUID()]);
+    const first = (await topup(20000, null, 'txn_b')).rows[0].r;
+    expect(await entryOf('balance_topup:txn_b')).toBeDefined();
+    expect((await topup(20000, 'BANK-9', 'txn_b')).rows[0].r).toMatchObject({ created: false, entry_id: first.entry_id });
+    expect(await accountingFailure(db(), () => topup(20001, 'BANK-9', 'txn_b'))).toMatchObject({ code: '23505', message: 'ACCOUNTING_DEDUPE_CONTENT_MISMATCH' });
+    expect(await entryOf('balance_topup:BANK-9')).toBeUndefined();
+    expect(await entryCount()).toBe(1);
+  });
+
   test('FREQ-565-AC-01: 手数料の仕訳に元の記録を保存した時刻が渡り、未来の時刻は流した時刻に丸められて計上される', async () => {
     await start();
     const future = await seedStripeFee(db(), { createdAt: '2026-03-01T03:00:00Z', type: 'charge', reportingCategory: 'charge', amount: 5000, fee: 180,

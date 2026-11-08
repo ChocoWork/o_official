@@ -710,7 +710,7 @@ describe('S9 source contract (no DB)', () => {
     expect(fee).toContain('ORDER BY t.stripe_created_at, t.id\n        LIMIT _limit)');
     expect(fee).toContain('LIMIT 10)');
     const failure = functionBodyS9('private.accounting_post_stripe_payout_failure_events');
-    expect(failure).toContain("private.accounting_stripe_category_kind(t.type, t.reporting_category) = 'payout_failure' AND t.net <> 0");
+    expect(failure).toContain("private.accounting_stripe_category_kind(t.type, t.reporting_category) = 'payout_failure' AND t.amount <> 0");
     const tax = functionBodyS9('private.accounting_post_stripe_tax_adjustment_events');
     expect(tax).toContain("private.accounting_stripe_category_kind(t.type, t.reporting_category) = 'tax_adjustment' AND t.net <> 0");
   });
@@ -806,6 +806,7 @@ describeLocalDb('S9 final assert: controller only', (db) => {
     [edit("'1040'", "'1030'", topupS9), 'acc_s9_functions'],
     [edit('ACCOUNTING_VERSION_CONFLICT', 'ACCOUNTING_VERSION_CHANGED', invoiceS9), 'acc_s9_functions'],
     [edit('private.accounting_entry_live(', 'private.accounting_entry_dead(', balanceReadS9), 'acc_s9_functions'],
+    [edit("private.accounting_entry_live('payout_started', o.id)", 'true', laneSignature('bank')), 'acc_s9_functions'],
     // attributes and EXECUTE
     ...lanes.map((lane) => [`grant execute on function ${laneSignature(lane)} to service_role`, 'acc_s9_function_attrs']),
     [`grant execute on function ${runnerS9} to anon`, 'acc_s9_function_attrs'],
@@ -820,7 +821,7 @@ describeLocalDb('S9 final assert: controller only', (db) => {
       security invoker set search_path = '' as $$ select private.accounting_post_stripe_events(_limit) $$`, 'acc_s9_function_attrs'],
     [`alter function ${kindMapS9} stable`, 'acc_s9_function_attrs'],
     ['alter function private.accounting_stripe_fee_amount(text,integer,integer) volatile', 'acc_s9_function_attrs'],
-    ['grant execute on function private.accounting_entry_live(text) to service_role', 'acc_s9_function_attrs'],
+    ['grant execute on function private.accounting_entry_live(text,text) to service_role', 'acc_s9_function_attrs'],
     [`revoke execute on function ${topupS9} from service_role`, 'acc_s9_function_attrs'],
     ['revoke execute on function public.admin_set_stripe_invoice_record(uuid,text,bigint,bigint,text,bigint,uuid) from service_role', 'acc_s9_function_attrs'],
     ['grant execute on function public.get_stripe_fee_reconciliation(text) to anon', 'acc_s9_function_attrs'],

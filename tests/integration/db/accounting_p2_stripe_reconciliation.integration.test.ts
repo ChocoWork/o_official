@@ -91,20 +91,25 @@ describeLocalDb('S9 Stripe reconciliation: controller only', (db) => {
     const admin = await insertAccountingAdmin(db());
     const adjustment = await seedStripeFee(db(), { createdAt: '2026-07-05T03:00:00Z', type: 'tax_fee', reportingCategory: 'tax', amount: -30 });
     await seedStripeFee(db(), { createdAt: '2026-08-05T03:00:00Z', type: 'tax_fee', reportingCategory: 'tax', amount: -999 });
-    await setInvoice(admin, '2026-06', 500, 45, 'INV-2026-06', null);
+    // The invoice is the UTC-month total plus the cost of the adjustment that moved the balance: 550 + 30 = 580 explains it all.
+    // (The sign awaits confirmation against a real invoice, plan 2 Task 16 step 4.)
+    await setInvoice(admin, '2026-06', 580, 53, 'INV-2026-06', null);
     const result = await feeRecon('2026-06');
-    expect(result.invoice_total).toBe(500);
+    expect(result.invoice_total).toBe(580);
     expect(result.utc_total).toBe(550);
-    expect(result.diff_utc_invoice).toBe(50);
+    expect(result.diff_utc_invoice).toBe(-30);
     // The adjustment of the next month moves the balance by -net = 30 of cost.
     expect(result.next_month_adjustments).toEqual([{ txn_id: adjustment, jst_date: '2026-07-05', amount: 30 }]);
     expect(result.explained_adjustments).toBe(30);
-    expect(result.unexplained_utc_invoice).toBe(20);
+    expect(result.unexplained_utc_invoice).toBe(0);
+    // An invoice of 600 leaves 20 that nothing explains (the invoice is higher than the books by more than the adjustment).
+    await setInvoice(admin, '2026-06', 600, 53, 'INV-2026-06', '1');
+    expect((await feeRecon('2026-06')).unexplained_utc_invoice).toBe(-20);
     // A returned adjustment (net > 0) is a negative cost.
     await seedStripeFee(db(), { createdAt: '2026-07-06T03:00:00Z', type: 'tax_fee', reportingCategory: 'tax', amount: 10 });
     const after = await feeRecon('2026-06');
     expect(after.explained_adjustments).toBe(20);
-    expect(after.unexplained_utc_invoice).toBe(30);
+    expect(after.unexplained_utc_invoice).toBe(-30);
   });
 
   test('FREQ-566-AC-02: 請求書の記録が無い月は2段目を出さない', async () => {
@@ -129,6 +134,20 @@ describeLocalDb('S9 Stripe reconciliation: controller only', (db) => {
     const result = await feeRecon('2026-06');
     expect(result.jst_total).toBe(440);
     expect(result.journal_vs_txn_diff).toBe(90);
+    expect(result.unexplained_jst_utc).toBe(0);
+  });
+
+  test('FREQ-566-AC-02: 取り消した手数料の仕訳は保存した仕訳の合計から外れ、差が別の行に出る', async () => {
+    const t = await seedJune();
+    await runAll();
+    expect((await feeRecon('2026-06')).journal_vs_txn_diff).toBe(0);
+    const entry = (await q('select id from public.accounting_journal_entries where dedupe_key = $1', [`stripe:fee:${t.inside}`])).rows[0].id as string;
+    const admin = await insertAccountingAdmin(db());
+    await q("select public.admin_reverse_accounting_journal($1::uuid, $2::uuid, 'test reversal', null)", [admin, entry]);
+    const result = await feeRecon('2026-06');
+    // The fee of 100 is no longer on the books; the transactions did not change.
+    expect(result.jst_total).toBe(350);
+    expect(result.journal_vs_txn_diff).toBe(100);
     expect(result.unexplained_jst_utc).toBe(0);
   });
 

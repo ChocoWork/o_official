@@ -70,7 +70,7 @@ BEGIN;
 --     private.admin_record_balance_topup(uuid,bigint,date,text,text,text,uuid), private.accounting_post_stripe_events(integer),
 --     private.accounting_post_stripe_payout_failure_events(integer), private.accounting_post_stripe_bank_events(integer),
 --     private.accounting_post_stripe_payout_events(integer), private.accounting_post_stripe_tax_adjustment_events(integer),
---     private.accounting_post_stripe_fee_events(integer), private.accounting_entry_live(text),
+--     private.accounting_post_stripe_fee_events(integer), private.accounting_entry_live(text,text),
 --     private.accounting_period_taxable(uuid,date), private.accounting_stripe_fee_amount(text,integer,integer),
 --     private.accounting_stripe_category_kind(text,text);
 --   DROP TABLE public.accounting_stripe_invoice_records;
@@ -145,12 +145,14 @@ AS $$
     FROM public.accounting_periods AS p WHERE p.id = _period_id), false)
 $$;
 
--- An entry of this key exists and has not been reversed (reads only; the balance reconciliation uses it).
-CREATE FUNCTION private.accounting_entry_live(_key text) RETURNS boolean
+-- An entry of this kind and one key part exists and has not been reversed (reads only; the balance reconciliation and the
+-- bank lane use it). The key is built by private.accounting_event_key; a part the key cannot hold is never live.
+CREATE FUNCTION private.accounting_entry_live(_kind text, _part text) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
 AS $$
-  SELECT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS e WHERE e.dedupe_key = _key
-    AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS r WHERE r.reverses_entry_id = e.id))
+  SELECT COALESCE(CASE WHEN _part ~ '^[A-Za-z0-9_.-]{1,128}$' THEN EXISTS (
+    SELECT 1 FROM public.accounting_journal_entries AS e WHERE e.dedupe_key = private.accounting_event_key(_kind, ARRAY[_part])
+      AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS r WHERE r.reverses_entry_id = e.id)) END, false)
 $$;
 
 -- 3. The fee lane (and the unknown_category lane).
@@ -553,9 +555,7 @@ BEGIN
       (SELECT o.id, o.amount, o.bank_arrival_date, o.bank_confirmed_at, 0 AS lane, o.bank_arrival_date::timestamptz AS sort_at
         FROM public.stripe_payouts AS o
         WHERE o.bank_arrival_date IS NOT NULL AND o.bank_confirmed_at IS NOT NULL
-          AND EXISTS (SELECT 1 FROM public.accounting_journal_entries AS e
-            WHERE e.dedupe_key = CASE WHEN o.id ~ '^[A-Za-z0-9_.-]{1,128}$'
-              THEN private.accounting_event_key('payout_started', ARRAY[o.id]) END)
+          AND private.accounting_entry_live('payout_started', o.id)
           AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS e
             WHERE e.dedupe_key = CASE WHEN o.id ~ '^[A-Za-z0-9_.-]{1,128}$'
               THEN private.accounting_event_key('bank_arrived', ARRAY[o.id]) END)
@@ -652,10 +652,10 @@ BEGIN
   v_cutover := private.accounting_cutover_on();
 
   FOR v_tx IN
-    SELECT s.id, s.source_id, s.net, s.raw_payload, s.stripe_created_at, s.synced_at, s.lane FROM (
-      (SELECT t.id, t.source_id, t.net, t.raw_payload, t.stripe_created_at, t.synced_at, 0 AS lane, t.stripe_created_at AS sort_at
+    SELECT s.id, s.source_id, s.amount, s.raw_payload, s.stripe_created_at, s.synced_at, s.lane FROM (
+      (SELECT t.id, t.source_id, t.amount, t.raw_payload, t.stripe_created_at, t.synced_at, 0 AS lane, t.stripe_created_at AS sort_at
         FROM public.stripe_balance_transactions AS t
-        WHERE private.accounting_stripe_category_kind(t.type, t.reporting_category) = 'payout_failure' AND t.net <> 0
+        WHERE private.accounting_stripe_category_kind(t.type, t.reporting_category) = 'payout_failure' AND t.amount <> 0
           AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS e
             WHERE e.dedupe_key = CASE WHEN t.id ~ '^[A-Za-z0-9_.-]{1,128}$'
               THEN private.accounting_event_key('payout_failed', ARRAY[t.id]) END)
@@ -664,7 +664,7 @@ BEGIN
         ORDER BY t.stripe_created_at, t.id
         LIMIT _limit)
       UNION ALL
-      (SELECT t.id, t.source_id, t.net, t.raw_payload, t.stripe_created_at, t.synced_at, 1 AS lane, p.last_detected_at AS sort_at
+      (SELECT t.id, t.source_id, t.amount, t.raw_payload, t.stripe_created_at, t.synced_at, 1 AS lane, p.last_detected_at AS sort_at
         FROM public.accounting_pending_events AS p
         JOIN public.stripe_balance_transactions AS t ON t.id = p.source_id
         WHERE p.event_kind = 'payout_failed' AND p.source_table = 'stripe_balance_transactions' AND p.resolved_at IS NULL
@@ -720,7 +720,8 @@ BEGIN
         PERFORM private.accounting_park_event('payout_failed', 'stripe_balance_transactions', v_tx.id, NULL, v_reason, v_detail);
         IF v_tx.lane = 0 THEN v_parked_new := v_parked_new + 1; ELSE v_reparked := v_reparked + 1; END IF;
       ELSE
-        v_abs := pg_catalog.abs(v_tx.net)::bigint;
+        -- The return posts the amount (the principal of the transaction); a fee on it belongs to the fee lane.
+        v_abs := pg_catalog.abs(v_tx.amount)::bigint;
         v_memo := 'payout:' || v_tx.source_id;
         v_retried := v_tx.raw_payload ->> 'retried_payout_id';
         IF v_retried ~ '^[A-Za-z0-9_.-]{1,128}$' THEN
@@ -804,6 +805,7 @@ DECLARE
   v_period uuid;
   v_label CONSTANT text := U&'\6B8B\9AD8\306E\88DC\5145';
   v_note text;
+  v_other public.accounting_journal_entries%ROWTYPE;
 BEGIN
   IF NOT private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.finance.manage']) THEN
     RAISE EXCEPTION 'ACCOUNTING_FORBIDDEN' USING ERRCODE = '42501';
@@ -825,6 +827,23 @@ BEGIN
     RAISE EXCEPTION 'ACCOUNTING_ARGUMENT_INVALID' USING ERRCODE = '22023';
   END IF;
   v_period := private.accounting_period_for_event(_bank_date, _actor_id);
+  -- Bound to the Stripe-side record: a live top-up entry that already has this Stripe transaction under another key is the
+  -- same top-up. The same content answers that entry; any other content is refused.
+  IF v_stripe IS NOT NULL THEN
+    SELECT e.* INTO v_other FROM public.accounting_journal_entries AS e
+    WHERE e.event_kind = 'balance_topup' AND e.source_table = 'stripe_balance_transactions' AND e.source_id = v_stripe
+      AND e.dedupe_key <> private.accounting_event_key('balance_topup', ARRAY[v_ref])
+      AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS r WHERE r.reverses_entry_id = e.id)
+    ORDER BY e.recorded_at, e.id LIMIT 1;
+    IF FOUND THEN
+      IF v_other.entry_date = _bank_date AND EXISTS (SELECT 1 FROM public.accounting_journal_lines AS l
+          WHERE l.entry_id = v_other.id AND l.account_code = '1160' AND l.debit = _amount) THEN
+        RETURN pg_catalog.jsonb_build_object('entry_id', v_other.id, 'entry_no', v_other.entry_no,
+          'period_id', v_other.period_id, 'created', false);
+      END IF;
+      RAISE EXCEPTION 'ACCOUNTING_DEDUPE_CONTENT_MISMATCH' USING ERRCODE = '23505';
+    END IF;
+  END IF;
   RETURN private.accounting_post_journal_core(_actor_id, v_period, _bank_date, 'balance_topup', ARRAY[v_ref],
     CASE WHEN v_note IS NULL THEN v_label ELSE v_label || ' / ' || v_note END,
     pg_catalog.jsonb_build_array(
@@ -967,7 +986,9 @@ BEGIN
   SELECT COALESCE(pg_catalog.sum(l.debit - l.credit), 0) INTO v_journal
   FROM public.accounting_journal_lines AS l
   JOIN public.accounting_journal_entries AS e ON e.id = l.entry_id
-  WHERE e.event_kind = 'stripe_fee' AND e.entry_date >= v_start AND e.entry_date < v_next AND l.account_code IN ('6280', '1480');
+  LEFT JOIN public.accounting_journal_entries AS o ON o.id = e.reverses_entry_id
+  WHERE (e.event_kind = 'stripe_fee' OR (e.event_kind = 'reversal' AND o.event_kind = 'stripe_fee'))
+    AND e.entry_date >= v_start AND e.entry_date < v_next AND l.account_code IN ('6280', '1480');
 
   v_diff := v_jst_total - v_utc_total;
   v_explained := v_in_sum - v_out_sum;
@@ -977,7 +998,10 @@ BEGIN
     'diff_jst_utc', v_diff, 'explained_boundary', v_explained, 'unexplained_jst_utc', v_diff - v_explained,
     'diff_utc_invoice', CASE WHEN v_has_invoice THEN v_utc_total - v_invoice END,
     'explained_adjustments', CASE WHEN v_has_invoice THEN v_adjustments_sum END,
-    'unexplained_utc_invoice', CASE WHEN v_has_invoice THEN (v_utc_total - v_invoice) - v_adjustments_sum END,
+    -- The adjustment of the next month moves the balance so that invoice = utc_total + adjustment cost (cost = -net),
+    -- so the difference is explained when (utc_total - invoice) + cost is 0. THE SIGN AWAITS CONFIRMATION against a real
+    -- invoice and its adjustment (plan 2 Task 16 step 4); if it is the other way, flip this one sign.
+    'unexplained_utc_invoice', CASE WHEN v_has_invoice THEN (v_utc_total - v_invoice) + v_adjustments_sum END,
     'journal_vs_txn_diff', v_jst_total - v_journal);
 END;
 $$;
@@ -1035,12 +1059,12 @@ BEGIN
   d AS (
     SELECT c.*,
       CASE c.kind
-        WHEN 'sale' THEN c.payment_intent_id IS NOT NULL AND private.accounting_entry_live('payment_confirmed:' || c.payment_intent_id)
-        WHEN 'tax_adjustment' THEN private.accounting_entry_live('stripe_tax_adjustment:' || c.id)
-        WHEN 'payout' THEN c.net_zero OR private.accounting_entry_live('payout_started:' || c.source_id)
-        WHEN 'payout_failure' THEN c.net_zero OR private.accounting_entry_live('payout_failed:' || c.id)
+        WHEN 'sale' THEN private.accounting_entry_live('payment_confirmed', c.payment_intent_id)
+        WHEN 'tax_adjustment' THEN private.accounting_entry_live('stripe_tax_adjustment', c.id)
+        WHEN 'payout' THEN c.net_zero OR private.accounting_entry_live('payout_started', c.source_id)
+        WHEN 'payout_failure' THEN c.net_zero OR private.accounting_entry_live('payout_failed', c.id)
         ELSE false END AS p_done,
-      c.f_amt = 0 OR private.accounting_entry_live('stripe:fee:' || c.id) AS f_done
+      c.f_amt = 0 OR private.accounting_entry_live('stripe_fee', c.id) AS f_done
     FROM c),
   parts AS (
     SELECT CASE d.kind WHEN 'refund_principal' THEN 'planned_p3' WHEN 'payout' THEN 'payout_unposted'
@@ -1091,7 +1115,7 @@ AS $$ SELECT private.get_stripe_balance_reconciliation(_through) $$;
 ALTER FUNCTION private.accounting_stripe_category_kind(text,text) OWNER TO postgres;
 ALTER FUNCTION private.accounting_stripe_fee_amount(text,integer,integer) OWNER TO postgres;
 ALTER FUNCTION private.accounting_period_taxable(uuid,date) OWNER TO postgres;
-ALTER FUNCTION private.accounting_entry_live(text) OWNER TO postgres;
+ALTER FUNCTION private.accounting_entry_live(text,text) OWNER TO postgres;
 ALTER FUNCTION private.accounting_post_stripe_fee_events(integer) OWNER TO postgres;
 ALTER FUNCTION private.accounting_post_stripe_tax_adjustment_events(integer) OWNER TO postgres;
 ALTER FUNCTION private.accounting_post_stripe_payout_events(integer) OWNER TO postgres;
@@ -1108,7 +1132,7 @@ ALTER FUNCTION public.get_stripe_fee_reconciliation(text) OWNER TO postgres;
 ALTER FUNCTION public.get_stripe_balance_reconciliation(date) OWNER TO postgres;
 REVOKE ALL ON FUNCTION
   private.accounting_stripe_category_kind(text,text), private.accounting_stripe_fee_amount(text,integer,integer),
-  private.accounting_period_taxable(uuid,date), private.accounting_entry_live(text),
+  private.accounting_period_taxable(uuid,date), private.accounting_entry_live(text,text),
   private.accounting_post_stripe_fee_events(integer), private.accounting_post_stripe_tax_adjustment_events(integer),
   private.accounting_post_stripe_payout_events(integer), private.accounting_post_stripe_bank_events(integer),
   private.accounting_post_stripe_payout_failure_events(integer), private.accounting_post_stripe_events(integer),
@@ -1223,7 +1247,7 @@ BEGIN
         'private.accounting_event_key(''payout_started'', ARRAY[o.id])']),
       ('private.accounting_post_stripe_bank_events(integer)', true, ARRAY[
         'PERFORM private.accounting_lock_all(NULL);', '''1040''', '''1150''', '''bank_arrived''', 'v_date := v_row.bank_arrival_date;',
-        'private.accounting_period_for_event(v_date)', 'private.accounting_event_key(''payout_started'', ARRAY[o.id])',
+        'private.accounting_period_for_event(v_date)', 'private.accounting_entry_live(''payout_started'', o.id)',
         'private.accounting_park_failure(''bank_arrived'',', 'IF v_parked THEN', 'EXCEPTION WHEN OTHERS',
         '_source_recorded_at => LEAST(v_row.bank_confirmed_at, pg_catalog.clock_timestamp())']),
       ('private.accounting_post_stripe_payout_failure_events(integer)', true, ARRAY[
@@ -1249,7 +1273,7 @@ BEGIN
       ('private.get_stripe_balance_reconciliation(date)', false, ARRAY[
         'private.accounting_entry_live(', '''planned_p3''', '''payout_unposted''', '''manual_topup''', 'payout_in_transit_1150',
         'processor:stripe', 'payout_net_zero']),
-      ('private.accounting_entry_live(text)', false, ARRAY['reverses_entry_id']),
+      ('private.accounting_entry_live(text,text)', false, ARRAY['reverses_entry_id']),
       ('private.accounting_period_taxable(uuid,date)', false, ARRAY['consumption_taxable_from']),
       ('private.accounting_stripe_fee_amount(text,integer,integer)', false, ARRAY['''tax_adjustment''', '''fee_only'''])
     ) AS x(signature, lane, needles)
@@ -1293,7 +1317,7 @@ BEGIN
       ('private.accounting_stripe_category_kind(text,text)', 'text', '_type,_reporting_category', 0, 'i', true, 'sql', false),
       ('private.accounting_stripe_fee_amount(text,integer,integer)', 'integer', '_kind,_fee,_net', 0, 'i', true, 'sql', false),
       ('private.accounting_period_taxable(uuid,date)', 'boolean', '_period_id,_date', 0, 's', true, 'sql', false),
-      ('private.accounting_entry_live(text)', 'boolean', '_key', 0, 's', true, 'sql', false),
+      ('private.accounting_entry_live(text,text)', 'boolean', '_kind,_part', 0, 's', true, 'sql', false),
       ('private.accounting_post_stripe_fee_events(integer)', 'jsonb', '_limit', 1, 'v', true, 'plpgsql', false),
       ('private.accounting_post_stripe_tax_adjustment_events(integer)', 'jsonb', '_limit', 1, 'v', true, 'plpgsql', false),
       ('private.accounting_post_stripe_payout_events(integer)', 'jsonb', '_limit', 1, 'v', true, 'plpgsql', false),
@@ -1340,7 +1364,7 @@ BEGIN
     FOR e IN SELECT * FROM (VALUES
       ('private.get_stripe_fee_reconciliation(text)'), ('public.get_stripe_fee_reconciliation(text)'),
       ('private.get_stripe_balance_reconciliation(date)'), ('public.get_stripe_balance_reconciliation(date)'),
-      ('private.accounting_entry_live(text)'), ('private.accounting_period_taxable(uuid,date)')
+      ('private.accounting_entry_live(text,text)'), ('private.accounting_period_taxable(uuid,date)')
     ) AS x(signature)
     LOOP
       SELECT f.* INTO p FROM pg_catalog.pg_proc AS f WHERE f.oid = pg_catalog.to_regprocedure(e.signature);

@@ -8,6 +8,8 @@ BEGIN;
 --   is the only caller; PUBLIC, anon, authenticated and service_role hold no EXECUTE.
 --   * First statement: private.accounting_lock_all(NULL) (locks 1 and 2 of the plan-1 order; the core takes the period
 --     lock). It takes no row lock: the group G tables and admin_finance_expenses are only read (no FOR SHARE / UPDATE).
+--   * A sale row (type charge / payment, reporting category charge) without a payment intent is parked as no_order (never posted:
+--     the key needs the payment intent); its fee is posted by the Stripe fee lane.
 --   * New events (no entry with the key payment_confirmed:<payment intent>, no parked row of any state), oldest first by
 --     (stripe_created_at, id), at most _limit. Then, in the same call, at most 10 still-open parked payments are looked at
 --     again, oldest last_detected_at first. The two groups cannot overlap (a parked row excludes the first group).
@@ -91,6 +93,7 @@ DECLARE
   v_tx record;
   v_cutover date;
   v_order_id uuid;
+  v_found boolean;
   v_total integer;
   v_shipping integer;
   v_date date;
@@ -119,7 +122,7 @@ BEGIN
     SELECT s.id, s.payment_intent_id, s.order_id, s.amount, s.stripe_created_at, s.synced_at, s.lane FROM (
       (SELECT t.id, t.payment_intent_id, t.order_id, t.amount, t.stripe_created_at, t.synced_at, 0 AS lane, t.stripe_created_at AS sort_at
         FROM public.stripe_balance_transactions AS t
-        WHERE t.type IN ('charge', 'payment') AND t.reporting_category = 'charge' AND t.payment_intent_id IS NOT NULL
+        WHERE t.type IN ('charge', 'payment') AND t.reporting_category = 'charge'
           AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS e
             WHERE e.dedupe_key = CASE WHEN t.payment_intent_id ~ '^[A-Za-z0-9_.-]{1,128}$'
               THEN private.accounting_event_key('payment_confirmed', ARRAY[t.payment_intent_id]) END)
@@ -132,7 +135,7 @@ BEGIN
         FROM public.accounting_pending_events AS p
         JOIN public.stripe_balance_transactions AS t ON t.id = p.source_id
         WHERE p.event_kind = 'payment_confirmed' AND p.source_table = 'stripe_balance_transactions' AND p.resolved_at IS NULL
-          AND t.type IN ('charge', 'payment') AND t.reporting_category = 'charge' AND t.payment_intent_id IS NOT NULL
+          AND t.type IN ('charge', 'payment') AND t.reporting_category = 'charge'
         ORDER BY p.last_detected_at, p.id
         LIMIT 10)
     ) AS s
@@ -145,13 +148,19 @@ BEGIN
     v_period := NULL;
     BEGIN
       -- The order: by the payment intent (unique), else by the order the transaction was linked to.
-      SELECT o.id, o.total_amount, o.shipping_amount INTO v_order_id, v_total, v_shipping
-      FROM public.orders AS o WHERE o.payment_intent_id = v_tx.payment_intent_id;
-      IF NOT FOUND AND v_tx.order_id IS NOT NULL THEN
+      -- A sale row without a payment intent cannot be tied to an order and has no event key: it is parked as no_order, never posted.
+      v_found := false;
+      IF v_tx.payment_intent_id IS NOT NULL THEN
         SELECT o.id, o.total_amount, o.shipping_amount INTO v_order_id, v_total, v_shipping
-        FROM public.orders AS o WHERE o.id = v_tx.order_id;
+        FROM public.orders AS o WHERE o.payment_intent_id = v_tx.payment_intent_id;
+        v_found := FOUND;
+        IF NOT v_found AND v_tx.order_id IS NOT NULL THEN
+          SELECT o.id, o.total_amount, o.shipping_amount INTO v_order_id, v_total, v_shipping
+          FROM public.orders AS o WHERE o.id = v_tx.order_id;
+          v_found := FOUND;
+        END IF;
       END IF;
-      IF NOT FOUND THEN
+      IF NOT v_found THEN
         v_order_id := NULL;
         v_reason := 'no_order';
       ELSE

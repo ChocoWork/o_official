@@ -152,6 +152,32 @@ describe('Stripe accounting synchronization', () => {
     expect(db.rows['stripe_payouts:po_jst']).toMatchObject({ arrival_date: '2025-08-16' });
   });
 
+  it.each([
+    ['2025-08-15T14:59:59.000Z', '2025-08-15'],
+    ['2025-08-15T15:00:00.000Z', '2025-08-16'],
+    ['2025-08-15T00:00:00.000Z', '2025-08-15'],
+  ])('FREQ-565-AC-04: 到着日の境（%s は日本時間の %s）', async (arrivalAt, expected) => {
+    const db = database();
+    const stripe = {
+      payouts: { retrieve: jest.fn().mockResolvedValue({
+        id: 'po_edge', amount: 100, currency: 'jpy', status: 'paid', automatic: true,
+        arrival_date: Date.parse(arrivalAt) / 1000, created: 1_755_212_400, balance_transaction: 'txn_payout_edge',
+      }) },
+      balanceTransactions: {
+        retrieve: jest.fn().mockResolvedValue(balanceTransaction({
+          id: 'txn_payout_edge', amount: -100, fee: 0, net: -100, source: 'po_edge', reporting_category: 'payout', type: 'payout',
+        })),
+        list: jest.fn().mockReturnValue({ async *[Symbol.asyncIterator]() {
+          yield balanceTransaction({ id: 'txn_member', amount: 100, fee: 0, net: 100, source: 'ch_member' });
+        } }),
+      },
+    };
+
+    await syncPayoutAccounting({ stripe, database: db, payoutId: 'po_edge' });
+
+    expect(db.rows['stripe_payouts:po_edge']).toMatchObject({ arrival_date: expected });
+  });
+
   it('FREQ-565-AC-05: 入金の失敗の取引（failure_balance_transaction）を同期で保存する', async () => {
     const db = database();
     const stripe = {
