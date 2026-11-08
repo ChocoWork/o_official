@@ -14,7 +14,8 @@ BEGIN;
 --     _updates = [{"month_key":"2026-07","metric_key":"kpi:sales","value":123.4}], 1..200 entries (0 entries writes nothing);
 --     "value" null (or missing) deletes the row. The same month and metric twice in a list: the last one counts. Returns the number of
 --     different (month, metric) pairs written or deleted. A bad list is refused as a whole (ACCOUNTING_ARGUMENT_INVALID / 22023).
---   system_upsert_kpi_monthly_records(_rows jsonb) -> integer: the Meta sync cron. No actor and no permission check (only service_role
+--   system_upsert_kpi_monthly_records(_rows jsonb) -> integer: the Meta sync (syncMetaKpis: the cron and the owner's manual sync, both
+--     with the service-role client). No actor and no permission check (only service_role
 --     can call it); upsert only (a null value is refused); at most 200 entries.
 --   list_kpi_monthly_records(_month_keys text[]) -> TABLE(month_key, metric_key, value): STABLE; at most 24 months.
 --   Both writers use the private tool kpi_monthly_records_apply (owner only), which takes the rows in (month, metric) order so two

@@ -2,7 +2,13 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import { isValidStorageKey, seasonMonthKeys, currentSeasonKey } from '@/lib/kpi/monthly-metrics';
+import {
+  isValidStorageKey,
+  seasonMonthKeys,
+  currentSeasonKey,
+  SOURCE_METRIC_KEYS,
+  MONTHLY_KPI_FORMULAS,
+} from '@/lib/kpi/monthly-metrics';
 
 type MonthlyRecordRow = {
   month_key: string;
@@ -18,16 +24,21 @@ type SupabaseLikeError = {
 // admin_set_kpi_monthly_records が 1 回で受ける最大件数（DB 側の上限と同じ）。
 const MAX_UPDATES_PER_CALL = 200;
 
+// 1 回の本文で受ける更新の上限 = 6 か月 × 保存の鍵の数（VALID_STORAGE_KEYS の大きさ）。超えたら 400。
+const MAX_BODY_UPDATES = 6 * (SOURCE_METRIC_KEYS.length + MONTHLY_KPI_FORMULAS.length);
+
 const updateRequestSchema = z.object({
   season: z.string().regex(/^\d{4}(SS|AW)$/),
-  updates: z.array(
-    z.object({
-      monthKey: z.string().regex(/^\d{4}-\d{2}$/),
-      metricKey: z.string().min(1),
-      // 空文字は削除（未入力に戻す）、数値は upsert。
-      value: z.union([z.number().finite(), z.literal('')]),
-    }),
-  ),
+  updates: z
+    .array(
+      z.object({
+        monthKey: z.string().regex(/^\d{4}-\d{2}$/),
+        metricKey: z.string().min(1),
+        // 空文字は削除（未入力に戻す）、数値は upsert。
+        value: z.union([z.number().finite(), z.literal('')]),
+      }),
+    )
+    .max(MAX_BODY_UPDATES),
 });
 
 async function authorizeAsAdmin(request: Request) {
@@ -74,7 +85,9 @@ async function getRecordPayload(season: string) {
 // DB の拒否は意味を保って返す。それ以外は固定の本文にし、DB の文（表の名前など）を応答へ出さない。
 function saveFailureResponse(error: SupabaseLikeError) {
   console.error('PUT /api/admin/kpi/monthly-record error:', error.code, error.message);
-  if (error.code === '42501') {
+  // 権限の拒否と読めるのは、DB の関数が自分で出した ACCOUNTING_FORBIDDEN だけ。
+  // PostgREST の permission denied（権限の設定ミス）は店長自身の権限の問題ではないので 500。
+  if (error.code === '42501' && error.message === 'ACCOUNTING_FORBIDDEN') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
   if (error.code === '22023') {
@@ -131,8 +144,13 @@ export async function PUT(request: Request) {
       (update) => allowedMonths.has(update.monthKey) && isValidStorageKey(update.metricKey),
     );
 
+    // 同じ月・指標は最後の 1 件だけ残す（重複で呼び出しの数を増やさない）。
     // 空値は削除（value: null）、数値は upsert。書き込みは DB の関数だけが行う。
-    const dbUpdates = safeUpdates.map((update) => ({
+    const lastByCell = new Map<string, (typeof safeUpdates)[number]>();
+    for (const update of safeUpdates) {
+      lastByCell.set(`${update.monthKey}|${update.metricKey}`, update);
+    }
+    const dbUpdates = [...lastByCell.values()].map((update) => ({
       month_key: update.monthKey,
       metric_key: update.metricKey,
       value: update.value === '' ? null : update.value,

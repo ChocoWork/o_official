@@ -25,6 +25,8 @@ const service = {
   rpc: (name: string, args: Record<string, unknown>) => rpcImpl(name, args),
 };
 const SEASON = '2026SS';
+// 6 months x every key the screen saves (VALID_STORAGE_KEYS).
+const MAX_BODY = 6 * (SOURCE_METRIC_KEYS.length + MONTHLY_KPI_FORMULAS.length);
 const MONTHS = seasonMonthKeys(SEASON);
 const url = `https://example.test/api/admin/kpi/monthly-record?season=${SEASON}`;
 const put = (updates: unknown, season = SEASON) => new Request(url, { method: 'PUT', body: JSON.stringify({ season, updates }) });
@@ -105,6 +107,12 @@ describe('/api/admin/kpi/monthly-record', () => {
     rpcImpl.mockImplementation(async (name: string) => (name === 'admin_set_kpi_monthly_records' ? dbError('ACCOUNTING_FORBIDDEN', '42501') : defaultRpc(name)));
     const forbidden = await PUT(put(updates));
     expect([forbidden.status, await forbidden.json()]).toEqual([403, { error: 'Forbidden' }]);
+    // A 42501 that is not the DB function's own refusal (a missing grant: "permission denied for function") is a plain failure, not "Forbidden".
+    for (const message of ['permission denied for function admin_set_kpi_monthly_records', 'ACCOUNTING_OTHER', '']) {
+      rpcImpl.mockImplementation(async (name: string) => (name === 'admin_set_kpi_monthly_records' ? dbError(message, '42501') : defaultRpc(name)));
+      const denied = await PUT(put(updates));
+      expect([message, denied.status, await denied.json()]).toEqual([message, 500, { error: 'Failed to update monthly record' }]);
+    }
     rpcImpl.mockImplementation(async (name: string) => (name === 'admin_set_kpi_monthly_records' ? dbError('ACCOUNTING_ARGUMENT_INVALID', '22023') : defaultRpc(name)));
     const invalid = await PUT(put(updates));
     expect([invalid.status, await invalid.json()]).toEqual([400, { error: 'Invalid request body' }]);
@@ -188,5 +196,33 @@ describe('/api/admin/kpi/monthly-record', () => {
     expect(sizes.reduce((sum, size) => sum + size, 0)).toBe(updates.length);
     expect(Math.max(...sizes)).toBe(200);
     expect(sizes[0]).toBe(200);
+  });
+
+  test('FREQ-573-AC-02: 同じ月・指標の更新は最後の1件だけにしてからDBの関数へ渡す', async () => {
+    const response = await PUT(put([
+      { monthKey: MONTHS[0], metricKey: 'kpi:sales', value: 1 },
+      { monthKey: MONTHS[1], metricKey: 'kpi:sales', value: 5 },
+      { monthKey: MONTHS[0], metricKey: 'kpi:sales', value: 2 },
+      { monthKey: MONTHS[0], metricKey: 'kpi:sales', value: '' },
+    ]));
+    expect(response.status).toBe(200);
+    expect(rpcCalls('admin_set_kpi_monthly_records').map(([, args]) => args._updates)).toEqual([[
+      { month_key: MONTHS[0], metric_key: 'kpi:sales', value: null },
+      { month_key: MONTHS[1], metric_key: 'kpi:sales', value: 5 },
+    ]]);
+    // Duplicates do not multiply the calls: a body full of copies of one cell (up to the body cap) is one call of one entry.
+    rpcImpl.mockClear();
+    const many = Array.from({ length: MAX_BODY }, (_, i) => ({ monthKey: MONTHS[0], metricKey: 'kpi:sales', value: i }));
+    expect((await PUT(put(many))).status).toBe(200);
+    expect(rpcCalls('admin_set_kpi_monthly_records').map(([, args]) => args._updates)).toEqual([[{ month_key: MONTHS[0], metric_key: 'kpi:sales', value: MAX_BODY - 1 }]]);
+  });
+
+  test('FREQ-573-AC-02: 本文の更新が6か月×保存の鍵の数を超えたら400で、DBの関数を呼ばない', async () => {
+    const cell = { monthKey: MONTHS[0], metricKey: 'kpi:sales', value: 1 };
+    rpcImpl.mockClear();
+    const over = await PUT(put(Array.from({ length: MAX_BODY + 1 }, () => cell)));
+    expect(over.status).toBe(400);
+    expect(rpcImpl).not.toHaveBeenCalled();
+    expect((await PUT(put(Array.from({ length: MAX_BODY }, () => cell)))).status).toBe(200);
   });
 });
