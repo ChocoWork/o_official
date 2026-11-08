@@ -4,7 +4,7 @@ import { setLoginTwoFactorCookie } from './auth-2fa-test-utils';
 import { CART_API_URL, toCartJson } from './shop-test-utils';
 
 /**
- * カートとお気に入りの読み込みを空で固定する。
+ * 認証と、配送先・カート・お気に入りの読み込みを固定する。
  * 中身の要る spec は、呼んだ後に自分の route を登録する（後に登録した方が勝つ）。
  */
 export async function mockOtpAuthentication(page: Page, email = 'user@example.com') {
@@ -52,6 +52,20 @@ export async function mockOtpAuthentication(page: Page, email = 'user@example.co
           mfaVerified: false,
         },
       }),
+    });
+  });
+
+  // ACCOUNT はプロフィールと並行して配送先も読む。ここだけ実 API に届くと、
+  // 偽 Cookie に対する 401 → refresh 失敗で認証モックまで未認証へ切り替わる。
+  await page.route('**/api/profile/addresses', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ addresses: [] }),
     });
   });
 

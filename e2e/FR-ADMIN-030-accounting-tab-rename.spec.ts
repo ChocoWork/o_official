@@ -133,7 +133,7 @@ for (const viewport of viewports) {
       // FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
       await page.getByRole('button', { name: '新規取引' }).click();
 
-      await page.getByRole('button', { name: '支出概要' }).click();
+      await page.getByRole('combobox', { name: '支出摘要' }).click();
       await page.getByRole('option', { name: '展示会・イベント' }).click();
       await page.getByRole('combobox', { name: '勘定科目' }).click();
       await page.getByRole('option', { name: '経費 / 広告宣伝費', exact: true }).click();

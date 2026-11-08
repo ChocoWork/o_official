@@ -1,7 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import { fetchItemsViaApi } from './item-list-test-utils';
 
-// FREQ-162: 768px 未満のカルーセルを画像間2px・2:3アスペクトにする
+// FREQ-162 / FREQ-307: 768px 未満のカルーセルを画面幅比の隙間・2:3アスペクトにする
 
 type ItemLike = { id: string | number; image_urls?: string[] };
 
@@ -31,7 +31,7 @@ for (const viewport of [
   test.describe(`FR-ITEM-DETAIL-023 カルーセル画像アスペクト (${viewport.name})`, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
-    test('FREQ-162: 隣接スライド間の隙間が約 2px である', async ({
+    test('FREQ-162 / FREQ-307: 隣接スライド間の隙間が画面幅の0.625%で余白との比が1:10である', async ({
       page,
     }) => {
       const ok = await gotoMultiImageItem(page);
@@ -43,8 +43,22 @@ for (const viewport of [
       expect(second).not.toBeNull();
 
       const gap = second!.x - (first!.x + first!.width);
-      expect(gap).toBeGreaterThanOrEqual(1);
-      expect(gap).toBeLessThanOrEqual(3);
+      const expectedGap = viewport.width * 0.00625;
+      // 従来の ±1px の許容差を保ち、固定2pxではなく画面幅比を検証する。
+      expect(gap).toBeGreaterThanOrEqual(expectedGap - 1);
+      expect(gap).toBeLessThanOrEqual(expectedGap + 1);
+      const carousel = await page.getByTestId('item-detail-carousel').boundingBox();
+      expect(carousel).not.toBeNull();
+      const inset = first!.x - carousel!.x;
+      expect(Math.abs(inset / first!.width - 1 / 14)).toBeLessThanOrEqual(0.005);
+      expect(Math.abs(first!.width / viewport.width - 0.875)).toBeLessThanOrEqual(0.005);
+      expect(Math.abs(gap / inset - 0.1)).toBeLessThanOrEqual(0.01);
+      expect(second!.x).toBeLessThan(viewport.width);
+      const widths = await page.evaluate(() => ({
+        client: document.documentElement.clientWidth,
+        scroll: document.documentElement.scrollWidth,
+      }));
+      expect(widths.scroll).toBeLessThanOrEqual(widths.client);
     });
 
     test('FREQ-162: スライドの幅と高さの比が 2:3 である', async ({

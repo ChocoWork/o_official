@@ -2,7 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 
 // FREQ-139: LOOK カード情報パネル（lg 未満）の余白・文字サイズを
 // デザイン4原則で調整する。
-// 対比: タイトル font-size = 関連アイテム文字（2xs）× φ（1.5 倍以上）
+// 対比（2026-11-07 改定）: タイトルは mobile で --lk-size-sm、sm（640px）以上で --lk-size-4xl、
+//   関連アイテム文字は --lk-size-2xs。比は mobile が eighthstep² ≒ 1.128、tablet が eighthstep⁷ ≒ 1.52（1.5 倍以上）
 // 反復・整列: 画像↔パネル間隔はフィボナッチ 13px（mobile）/ 21px（tablet）
 // 近接: シーズン↔タイトル（2px）はタイトル↔罫線（8px/13px）より密
 // 整列・反復: 罫線の上余白 = 下余白
@@ -33,7 +34,8 @@ async function readPanelMetrics(
       : scope.querySelector<HTMLElement>('[data-testid="look-card-caption"]');
     if (!caption) return null;
 
-    const card = caption.closest('div')?.parentElement;
+    // 2026-11-07 改定: 文字の側は .reveal-mask > .reveal-rise に入っていて、画像のリンクとは兄弟。カード全体（look-card）から探す
+    const card = caption.closest<HTMLElement>('[data-testid="look-card"]');
     const imageContainer = card?.querySelector<HTMLElement>(
       'a[href^="/look/"] > div',
     );
@@ -99,8 +101,14 @@ test.describe('FR-LOOK-ALL-026 情報パネルの余白・文字サイズ（デ�
         expect(m!.dividerMarginTop).not.toBeNull();
         expect(m!.dividerMarginBottom).not.toBeNull();
 
-        // AC-02（対比）: タイトル font-size ≥ アイテム文字 × 1.5（φ 比）
-        expect(m!.titleFontSize / m!.itemFontSize!).toBeGreaterThanOrEqual(1.5);
+        // AC-02（対比）: mobile はタイトル / アイテム文字 ≒ 1.128（1.062²）、tablet は 1.5 倍以上（1.062⁷ ≒ 1.52）
+        const ratio = m!.titleFontSize / m!.itemFontSize!;
+        if (vp.name === 'mobile') {
+          expect(ratio).toBeGreaterThan(1);
+          expect(Math.abs(ratio - 1.128)).toBeLessThanOrEqual(0.02);
+        } else {
+          expect(ratio).toBeGreaterThanOrEqual(1.5);
+        }
 
         // AC-03（近接）: シーズン↔タイトルはタイトル↔罫線より密
         expect(m!.seasonToTitleGap).toBeLessThan(m!.titleToDividerGap!);

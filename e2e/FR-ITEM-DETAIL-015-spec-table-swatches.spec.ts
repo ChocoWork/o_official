@@ -12,7 +12,13 @@ async function gotoFirstItemDetail(page: Page): Promise<boolean> {
   return true;
 }
 
-function specTable(page: Page) {
+async function specTable(page: Page) {
+  if (page.viewportSize()!.width < 768) {
+    await page.getByTestId('item-actions-fixed').getByRole('button', { name: 'SELECT OPTIONS' }).click();
+    const options = page.getByTestId('item-option-sheet').getByTestId('item-sheet-options');
+    await expect(options).toBeVisible();
+    return options;
+  }
   return page.getByTestId('item-spec-table');
 }
 
@@ -30,7 +36,7 @@ for (const viewport of [
       const ok = await gotoFirstItemDetail(page);
       test.skip(!ok, '公開商品データがないためスキップ');
 
-      const table = specTable(page);
+      const table = await specTable(page);
       await expect(table).toBeVisible();
 
       // スウォッチボタン: aria-pressed を持ち、テキストではなく色付き四角を表示
@@ -57,7 +63,7 @@ for (const viewport of [
       const ok = await gotoFirstItemDetail(page);
       test.skip(!ok, '公開商品データがないためスキップ');
 
-      const table = specTable(page);
+      const table = await specTable(page);
       await expect(table).toBeVisible();
 
       // SIZE 行のボタン（aria-label なし・テキストのみ）
@@ -79,7 +85,7 @@ for (const viewport of [
             .first()
             .evaluate((el) => getComputedStyle(el).borderTopColor),
         )
-        .toBe('rgb(17, 17, 17)');
+        .toBe('rgb(0, 0, 0)');
     });
 
     test('FREQ-153-AC-03: MATERIAL / MADE IN 行が表示され、値の無い行は表示されない', async ({

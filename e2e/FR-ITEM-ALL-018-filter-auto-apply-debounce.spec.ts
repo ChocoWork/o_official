@@ -1,5 +1,5 @@
 import { expect, Page, test } from '@playwright/test';
-import { gotoItemList } from './item-list-test-utils';
+import { expandItemFilterSection, gotoItemList, openItemFilters } from './item-list-test-utils';
 
 // FREQ-41: APPLYボタンを廃止し、操作停止後のデバウンス(300ms)で自動適用する。
 
@@ -9,10 +9,9 @@ const VIEWPORTS = [
   { name: 'desktop', width: 1280, height: 900, drawer: false },
 ] as const;
 
-async function openFilters(page: Page, useDrawer: boolean): Promise<void> {
-  if (useDrawer) {
-    await page.locator('[data-filter-button="floating"]').click();
-  }
+async function openFilters(page: Page): Promise<void> {
+  const filters = await openItemFilters(page);
+  await expandItemFilterSection(filters, 'PRICE');
   await expect(page.locator('input[aria-label="Maximum value"]:visible').first()).toBeVisible();
 }
 
@@ -24,14 +23,14 @@ test.describe('FR-ITEM-ALL-018 フィルタの自動適用（APPLYボタン廃�
       // FREQ-41-AC-01: APPLYボタンが存在しない
       test('APPLYボタンが存在しない', async ({ page }) => {
         await gotoItemList(page);
-        await openFilters(page, viewport.drawer);
+        await openFilters(page);
         await expect(page.getByRole('button', { name: 'APPLY' })).toHaveCount(0);
       });
 
       // FREQ-41-AC-02: 操作後に待つだけでフィルタが自動適用される
       test('PRICEスライダー操作後、待つだけでURLにフィルタが反映される', async ({ page }) => {
         await gotoItemList(page);
-        await openFilters(page, viewport.drawer);
+        await openFilters(page);
 
         const maxThumb = page.locator('input[aria-label="Maximum value"]:visible').first();
         await maxThumb.focus();

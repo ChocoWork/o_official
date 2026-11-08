@@ -178,7 +178,7 @@ for (const viewport of viewports) {
       // FREQ-244-AC-04
       await openFixedAssets(page);
 
-      await expect(page.getByText(/^当期償却（\d{4}年度）$/)).toBeVisible();
+      await expect(page.getByText('当期償却', { exact: true })).toBeVisible();
       await expect(page.getByText('必要経費算入額', { exact: true }).first()).toBeVisible();
       await expect(page.getByText('未償却残高', { exact: true }).first()).toBeVisible();
       await expect(page.getByRole('button', { name: '台帳CSV' })).toBeVisible();

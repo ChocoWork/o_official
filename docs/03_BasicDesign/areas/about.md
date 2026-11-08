@@ -1,6 +1,6 @@
 # ABOUT の構造設計
 
-> 状態: 推定 | 確認日: 2026-11-01 | 対象: ABOUT（アバウトページ `/about`） | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-11-07 | 対象: ABOUT（アバウトページ `/about`） | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -15,7 +15,7 @@ ABOUT の領域の構成・画面・画面遷移を、追跡できる項目（`#
 | 状態遷移・API・データ | 0 | — | ABOUT は状態・窓口・表を持たない（理由は「範囲と根拠」） |
 
 - 結論: ABOUT は `src/app/about/page.tsx` の1ファイルで、文をコードに直に持ち、DB・外のサービス・API を呼ばない Server Component。ただし共有の layout の設定で毎回サーバーで描かれ、共有の proxy が守りの見出しを付ける（セッションの Cookie は決済の道だけで発行し、`/about` には付けない）
-- 今の画面は h1・画像・アイコン・CONTACT への CTA を持たない。それを求める FR-ABOUT-005 の h1 の部分・FR-ABOUT-006・FR-ABOUT-007 は、満たす構造が無いので上位につながず、本文に「満たさない」と書いた。SEC-ABOUT-003 は 2026-10-28 に満たした（CSP と画像の最適化の許可は共有の `src/proxy.ts`・`next.config.ts` で決まり、DD-HOME-004・ADR-0108 が持つ）が、ABOUT の構造の単位はまだ上位につないでいない（SEC-ABOUT-007 は 2026-10-28 に本番ビルドで必須にして満たしたので、ARC-ABOUT-003 につないだ）
+- 今の画面は画像・アイコン・CONTACT への CTA を持たない（h1 は 2026-11-07 に見えない h1 を足した）。CONTACT の CTA を求めていた FR-ABOUT-006 は 2026-11-07 に2導線へ直したので満たす。FR-ABOUT-007 は、満たす構造が無いので上位につながず、本文に「満たさない」と書いた。SEC-ABOUT-003 は 2026-10-28 に満たした（CSP と画像の最適化の許可は共有の `src/proxy.ts`・`next.config.ts` で決まり、DD-HOME-004・ADR-0108 が持つ）が、ABOUT の構造の単位はまだ上位につないでいない（SEC-ABOUT-007 は 2026-10-28 に本番ビルドで必須にして満たしたので、ARC-ABOUT-003 につないだ）
 
 ## 範囲と根拠
 
@@ -129,7 +129,7 @@ sequenceDiagram
 - 設定が無い時: 本番のビルド（`VERCEL_ENV=production`）は、`NEXT_PUBLIC_SITE_URL`・`NEXT_PUBLIC_SUPABASE_URL`・`APP_ALLOWED_ORIGINS`（2026-11-01 に足した。SEC-ABOUT-007-AC-02）のどれかが無ければ `next.config.ts` の先頭の確かめ `assertBuildEnv`（`src/lib/build-env-guard.ts`）が落とす（SEC-ABOUT-007、`ADR-0206`、`DD-ABOUT-002`）。`APP_ALLOWED_ORIGINS` は値の書式も見る（カンマ区切りの各項目が空でなく、`https:` で、`origin` と一致する形。末尾の `/` やパスは落とす。2026-11-01）。`getSiteUrl` は変えない（無い時の既定の `http://localhost:3000` と `NEXT_PUBLIC_VERCEL_URL` の読み方は残る。本番は上の確かめで `NEXT_PUBLIC_SITE_URL` が必ず在るので、`getSiteUrl` はそれを最初に読む）。`NODE_ENV` でなく `VERCEL_ENV` で見るのは、E2E の本番ビルドも `NODE_ENV=production` になり、止めてはいけないため。同じ確かめが、`NEXT_PUBLIC_SUPABASE_URL` と `SUPABASE_URL` が別の origin を指す設定も、環境に依らず落とす（署名つきの画像の host と CSP・`remotePatterns` の許す host を 1 つに揃える。`ADR-0316`）。失敗の文に URL の値は載せない
 - 本文の画像: 本文に画像は無い（SCR-ABOUT-001、ADR-0201）。CSP と画像の最適化の許可の広さは SEC-ABOUT-003 を見る
 - 返さない物: canonical・`og:url`・`og:type`・twitter のカードは返さない（推定。NFR-SEO-003 は canonical も求める）
-- h1: FR-ABOUT-005 のうち h1 の部分は、この構造でも SCR-ABOUT-001 でも満たさない（h1 が無い）
+- h1: FR-ABOUT-005 の h1 は、ページの先頭の見えない h1（`sr-only`、`ABOUT`）で満たす（2026-11-07。オーナー決定。見た目は変えない）
 - 文のずれ: description は「天然繊維100%」、本文は「生地は天然繊維を中心に」（`StoryPage` の COLLECTION の節）
 
 ## 画面
@@ -138,7 +138,7 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ABOUT-001、FR-ABOUT-002、FR-ABOUT-003、FR-ABOUT-004、DRV-ABOUT-001、DRV-ABOUT-003、DRV-ABOUT-004、DRV-ABOUT-005、ADR-0200、ADR-0201、ADR-0202、ADR-0203 |
+| 上位 | FR-ABOUT-001、FR-ABOUT-005、FR-ABOUT-002、FR-ABOUT-003、FR-ABOUT-004、DRV-ABOUT-001、DRV-ABOUT-003、DRV-ABOUT-004、DRV-ABOUT-005、ADR-0200、ADR-0201、ADR-0202、ADR-0203 |
 | 根拠 | ブランドが何を目指すか（思想）→ なぜつくるか（創業者の言葉）→ どう実現するか（3つの原則）→ 何を売るか（商品設計の考え方）の順に読ませ、最後に締めの一文から商品と LOOK へ渡すため（FR-ABOUT-001〜004、DRV-ABOUT-001）。思想はブランドを主語に、理由は創業者の一人称で分けて書く（ADR-0202）。画像とアイコンを置かず、罫線と余白で節を区切って静かな世界観を保つ（DRV-ABOUT-003、ADR-0201）。2026-08-13 に今の画面を正しい仕様とした（ADR-0200） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -157,8 +157,8 @@ sequenceDiagram
 - 区画3の並び: 見出しを上に置き、原則の行を字下げする。番号は 640px 以上で左の列（64px、1024px 以上は 88px）に右寄せ、640px 未満は本文の上。どの原則も上に罫線を引き、最後の原則だけ下にも引く（DRV-ABOUT-005。最後の原則かどうかの分岐。このページの中の分岐はこの1つだけ）
 - 引用: 創業者の言葉は表示用の書体と広い行の間で、説明の本文と分ける（ADR-0202）
 - 文字の大きさ: 共有の大きさのトークンを `style` の属性で付ける。h2 は `--lk-size-2xl`、本文は `--lk-size-xs`（`StoryPage` の `style` の値）。`docs/03_BasicDesign/ui/design-guide.md` の大きさとは違う
-- 見出しの階層: h1 は無く、最初の見出しが h2（2026-06-28 の作り直しで消えた）。FR-ABOUT-005 の h1 の部分は満たさない
-- 満たさない要件: CONTACT への CTA（FR-ABOUT-006）、アイコンの読み上げ外しと画像の代わりの文（FR-ABOUT-007。対象のアイコン・画像が無い）
+- 見出しの階層: 先頭に見えない h1（`sr-only`、`ABOUT`。2026-11-07 に足した。2026-06-28 の作り直しで一度消えていた）、続く見える見出しは h2。FR-ABOUT-005 の h1 は満たす
+- 満たさない要件: アイコンの読み上げ外しと画像の代わりの文（FR-ABOUT-007。対象のアイコン・画像が無い）
 - 失敗と空: 読み出しが無いので、取り出しの失敗・空の表示は無い
 
 ## 画面遷移
@@ -187,7 +187,7 @@ flowchart LR
 - 入口: ヘッダーのナビ（`src/components/Header.tsx`）、フッター（`src/components/Footer.tsx`）、ホームのボタン（`src/app/page.tsx` の ABOUT の区画、FR-HOME-003）
 - 出口: `VIEW COLLECTION`（主のボタン）→ `/item`、`VIEW LOOKBOOK`（2つ目のボタン）→ `/look`。どちらも共有のボタンの部品が返す `next/link` のリンクで、同じタブの中で移る
 - 並び: 640px 未満は縦に並べて幅いっぱい、640px 以上は横に並べて最小の幅を持たせる（FR-ABOUT-004 の文は「tablet（768px）以上で横」）
-- 置かない出口: CONTACT（`/contact`）と NEWS（`/news`）への CTA は無い（ADR-0203。FR-ABOUT-006 は満たさない。要件の側の食い違いは要件の文書を見る）
+- 置かない出口: CONTACT（`/contact`）と NEWS（`/news`）への CTA は無い（ADR-0203。FR-ABOUT-006 は 2026-11-07 に2導線に直したので満たす）
 - 試験: `/about` への入口を押して移る試験は無い。入口のリンクが見えることだけを `e2e/FR-LOADING-002-header-menu-and-content-motion.spec.ts`（範囲外）が試す
 
 ## 未確認事項
@@ -195,6 +195,6 @@ flowchart LR
 - `/about` の応答に付く `Cache-Control` の実際の値（SEC-ABOUT-004 の見込みを本番ビルドで測っていない）
 - 本番のサイトの URL の環境変数の設定と、本番で `/about.png` が取得できるか（本番は未デプロイ）
 - 本番のホスティングでの、ページの要求の回数の守り（SEC-ABOUT-006）
-- h1 を足すか、FR-ABOUT-005 の h1 の部分を外すか。CONTACT の CTA（FR-ABOUT-006）とアイコン・画像（FR-ABOUT-007・008）を残すか（要件の文書の未確認事項と同じ）
+- アイコン・画像（FR-ABOUT-007・008）を残すか（要件の文書の未確認事項と同じ。CONTACT の CTA は決着）
 - CSP を頁ごとに分けるか全体を絞るか（SEC-ABOUT-003。共有の proxy の話）
 - この文書の項目は全部「推定」。ユーザーの確認を受けたら「現行」にする

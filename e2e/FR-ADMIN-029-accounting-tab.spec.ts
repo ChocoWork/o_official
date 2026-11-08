@@ -114,9 +114,8 @@ for (const viewport of viewports) {
       // FREQ-238-AC-02
       await page.goto('/admin');
 
-      await expect(page.getByRole('tab', { name: '目標 & 進捗' })).toBeVisible();
-      await expect(page.getByRole('tab', { name: '過去推移' })).toBeVisible();
-      await expect(page.getByRole('tab', { name: '月次記録' })).toBeVisible();
+      // KPI は目標・推移・月次記録を1画面で管理する構成で、サブタブ自体が無い。
+      await expect(page.getByText('カードを選択して、目標・推移・月次記録を一画面で管理')).toBeVisible();
       await expect(page.getByRole('tab', { name: 'コスト & 利益' })).toHaveCount(0);
     });
 

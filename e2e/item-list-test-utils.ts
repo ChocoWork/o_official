@@ -1,4 +1,4 @@
-import { expect, Page } from '@playwright/test';
+import { expect, Locator, Page } from '@playwright/test';
 
 type ApiItem = {
   id: number | string;
@@ -15,6 +15,35 @@ type ItemsApiResponse = ApiItem[] | { items: ApiItem[] };
 export async function gotoItemList(page: Page, query = ''): Promise<void> {
   await page.goto(`/item${query}`);
   await expect(page).toHaveURL(new RegExp('/item'));
+}
+
+export async function openItemFilters(page: Page): Promise<Locator> {
+  const width = await page.evaluate(() => window.innerWidth);
+  if (width < 1024) {
+    await page.locator('[data-filter-button="floating"]').click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    return dialog;
+  }
+  const sidebar = page.getByRole('complementary');
+  await expect(sidebar).toBeVisible();
+  return sidebar;
+}
+
+export async function closeItemFilters(filters: Locator): Promise<void> {
+  if (await filters.getAttribute('role') === 'dialog') {
+    await filters.getByRole('button', { name: 'Close filter drawer' }).click();
+    await expect(filters).toBeHidden();
+  }
+}
+
+export async function expandItemFilterSection(filters: Locator, name: string): Promise<Locator> {
+  const trigger = filters.getByRole('button', { name, exact: true });
+  if (await trigger.getAttribute('aria-expanded') !== 'true') {
+    await trigger.click();
+  }
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  return trigger.locator('..');
 }
 
 export function itemCards(page: Page) {

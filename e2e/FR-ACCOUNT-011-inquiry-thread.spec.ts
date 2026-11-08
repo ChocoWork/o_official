@@ -69,7 +69,8 @@ test.describe('FR-ACCOUNT-011 お問い合わせスレッド', () => {
     });
 
     await loginAndOpenAccount(page);
-    await page.getByRole('button', { name: 'お問い合わせ' }).click();
+    await page.getByRole('tab', { name: 'お問い合わせ' }).click();
+    await expect(page).toHaveURL(/tab=inquiries/);
 
     await expect(page.getByText('配送について')).toBeVisible();
 

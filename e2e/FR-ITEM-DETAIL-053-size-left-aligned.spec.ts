@@ -12,15 +12,26 @@ async function openItemDetail(page: Page, sizes: string[]): Promise<void> {
   await mockItemDetailApis(page, sampleItemDetail({ sizes }), []);
   await page.goto('/item/101');
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+  if (page.viewportSize()?.width === 390) {
+    await page.getByTestId('item-actions-fixed').getByRole('button', {
+      name: /SELECT OPTIONS/,
+    }).click();
+    await expect(page.getByTestId('item-option-sheet')).toBeVisible();
+  }
 }
 
 function sizeButtons(page: Page) {
-  return page.getByTestId('item-size-select').locator('button');
+  return page.getByTestId(
+    page.viewportSize()?.width === 390 ? 'item-sheet-size-select' : 'item-size-select',
+  ).locator('button');
 }
 
 function addToCartButton(page: Page) {
   return page
-    .getByTestId('item-actions-main')
+    .getByTestId(
+      page.viewportSize()?.width === 390 ? 'item-option-sheet' : 'item-actions-main',
+    )
     .getByRole('button', { name: /ADD TO CART|SOLD OUT/ })
     .first();
 }

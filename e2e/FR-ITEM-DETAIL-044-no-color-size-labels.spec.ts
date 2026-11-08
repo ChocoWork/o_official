@@ -17,6 +17,13 @@ async function openItemDetail(page: Page): Promise<void> {
   await mockItemDetailApis(page, item, []);
   await page.goto('/item/101');
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+  if (page.viewportSize()?.width === 390) {
+    await page.getByTestId('item-actions-fixed').getByRole('button', {
+      name: /SELECT OPTIONS/,
+    }).click();
+    await expect(page.getByTestId('item-option-sheet')).toBeVisible();
+  }
 }
 
 for (const viewport of [
@@ -32,7 +39,9 @@ for (const viewport of [
     }) => {
       await openItemDetail(page);
 
-      const table = page.getByTestId('item-spec-table');
+      const table = page.getByTestId(
+        viewport.name === 'mobile' ? 'item-sheet-options' : 'item-spec-table',
+      );
       await expect(table).toBeVisible();
 
       // AC-01: COLOR / SIZE のラベルテキストが存在しない
@@ -43,6 +52,8 @@ for (const viewport of [
       const swatches = table.locator('button[aria-pressed][aria-label]');
       expect(await swatches.count()).toBeGreaterThan(0);
       await expect(swatches.first()).toBeVisible();
+      await swatches.first().click();
+      await expect(swatches.first()).toHaveAttribute('aria-pressed', 'true');
 
       // サイズボタンは従来どおり表示・選択できる
       const sizeButtons = table.locator(

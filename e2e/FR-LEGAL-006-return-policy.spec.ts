@@ -32,7 +32,7 @@ for (const vp of viewports) {
     test('返品送料の負担区分が記載される', async ({ page }) => {
       const value = dd(page);
       await expect(value).toContainText('送料は、お客様のご負担');
-      await expect(value).toContainText('当社が当該送料を負担');
+      await expect(value).toContainText('初期不良・誤送など当社の責めに帰すべき理由による場合は、当社が負担いたします');
     });
 
     test('返品・交換不可のケースが5項目以上の箇条書きで表示される', async ({

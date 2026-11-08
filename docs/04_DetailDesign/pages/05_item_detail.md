@@ -31,7 +31,7 @@
 | FR-ITEM-DETAIL-007 | 在庫状態を表示しサイズ・カラー選択時に「残りわずか」「売り切れ」情報を明示する。選択不可バリエーションは無効化する | IMPL-ITEM-DETAIL-007 | `src/app/item/[id]/ItemDetailClient.tsx`, `src/app/item/[id]/page.tsx` | `StockBadge` コンポーネントで在庫表示。`isSoldOut` で UI 無効化。`stock_quantity` カラムを DB に追加 | 済 |
 | FR-ITEM-DETAIL-008 | カラー・サイズのボタンに `aria-pressed` を付与しエラーメッセージには `role="alert"` を含める | IMPL-ITEM-DETAIL-008 | `src/app/item/[id]/ItemDetailClient.tsx` | カラー・サイズボタンに `aria-pressed` を動的に設定。バリデーションエラーに `role="alert"` を付与 | 済 |
 | FR-ITEM-DETAIL-009 | `generateMetadata` で SEO メタ情報を設定する（Server Component ラッパーへの切り出しが必要） | IMPL-ITEM-DETAIL-009 | `src/app/item/[id]/page.tsx`, `src/app/item/[id]/ItemDetailClient.tsx` | Server Component `page.tsx` で `generateMetadata` 実装。商品名・説明・OGP 画像を設定 | 済 |
-| FR-ITEM-DETAIL-010 | パンくずナビゲーションと「ITEM一覧へ戻る」の明示的リンクを設ける | IMPL-ITEM-DETAIL-010 | `src/app/item/[id]/ItemDetailClient.tsx` | Breadcrumb: HOME > ITEMS > 商品名。ITEMS へのリンク（navigation + history.back オプション） | 済 |
+| FR-ITEM-DETAIL-010 | パンくずナビゲーションと「ITEM一覧へ戻る」の明示的リンクを設ける | IMPL-ITEM-DETAIL-010 | `src/app/item/[id]/ItemDetailClient.tsx` | 廃止（2026-11-07 改定）: パンくず（HOME > ITEMS > 商品名）は 2026-07 に削除済みで表示しない。`/item` への固定リンクは他の導線（ヘッダーなど）に任せる | 廃止 |
 | FR-ITEM-DETAIL-011 | `compare_at_price` / セール価格対応や「NEW」「SALE」「SOLD OUT」バッジ表示を追加する | IMPL-ITEM-DETAIL-011 | `src/app/item/[id]/page.tsx`, `src/types/item.ts` | 未実装。価格は `¥{item.price.toLocaleString()}` のみ | 不要 |
 | FR-ITEM-DETAIL-012 | 同カテゴリ・おすすめルックなどの関連商品提案セクションを設ける | IMPL-ITEM-DETAIL-012 | `src/app/item/[id]/ItemDetailClient.tsx`, `src/features/items/components/RelatedItems.tsx` | 関連商品セクション: 同カテゴリから最大 4 件の関連商品を取得・表示 | 済 |
 | FR-ITEM-DETAIL-013 | 画像の alt テキストは商品名だけでなく色・角度などを含めて付与する | IMPL-ITEM-DETAIL-013 | `src/app/item/[id]/ItemDetailClient.tsx` | メイン・カルーセル画像の alt: `${item.name} - ${activeColorName} - ${index + 1}枚目` | 済 |
@@ -114,3 +114,9 @@ GET /api/items/[id] は returnIneligible: boolean を返す。画面の Item.ret
 - 取得に失敗しても商品の表示と購入は続ける。非okの応答は本文を読み切る（回数制限の429はno-storeで、残すと要求が開いたままになる）。広告をOFFにしてもカート・checkoutの割引は隠さない。
 
 実装は[ItemDetailClient](../../../src/app/item/[id]/ItemDetailClient.tsx)、窓口は[route](../../../src/app/api/discounts/advertisements/route.ts)、選び方は[discount-preview-store](../../../src/lib/discounts/discount-preview-store.ts)。単体は[ItemDetailAddToCart](../../../tests/unit/components/ItemDetailAddToCart.test.tsx)・[API](../../../tests/unit/api/discount-advertisements-route.test.ts)・[選び方](../../../tests/unit/lib/discounts/discount-preview-store.test.ts)。3幅の折返しはTask 11で測る。
+## 余白（FREQ-286 / 2026-11-07）
+
+確認日: 2026-11-07
+
+- `src/styles/detail-layout.css` の `.detail-page-main`（`Providers.tsx` が `/item/:id`・`/look/:id` の main に付ける）は、768〜1023px で左右パディング 20px。ほかの幅は 6.25% のまま。以前は 6.25% が全幅に効き、`ItemDetailClient.tsx` の `md:-ml-5`・`md:pr-3`（20px 前提）と合わず間隔が 57〜69px になっていた
+- 2026-11-08: LOOK 詳細（`/look/[id]`）も同じ列の計算で同じずれ（右端 57〜76px）が残っていたので、オーナーの許可を得て同じ 20px を効かせた（FREQ-288-AC-04）。商品詳細だけに付けていた `.item-detail-page-main` の印は無くした。

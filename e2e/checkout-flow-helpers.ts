@@ -17,7 +17,7 @@ export type SeedResult = { ok: true; itemId: number; price: number } | { ok: fal
 /**
  * 公開中で50円以上の商品を1つ、その商品詳細の最初のバリアントでカートに入れる（Stripe の最低額は50円）。
  * カートの窓口は色・サイズではなくバリアントの番号で受けるので、番号は商品詳細の窓口（variantAvailability）から引く。
- * スキップの理由を返すのは、その商品（またはそのバリアント）が無い環境のときだけ。入口の崩れや回数の制限（429）などの
+ * スキップの理由を返すのは、そのバリアントが無い環境のときだけ。商品が無い場合や入口の崩れ、回数の制限（429）などの
  * 通信の失敗は投げて、テストを失敗にする（スキップにすると赤にならず、push の前の E2E でも回帰に気づけない）。
  */
 export async function seedCart(page: Page): Promise<SeedResult> {
@@ -28,19 +28,34 @@ export async function seedCart(page: Page): Promise<SeedResult> {
       throw new Error(`/api/items returned ${itemsResponse.status}`);
     }
     const body = (await itemsResponse.json()) as { items?: { id?: number; price?: number }[] };
-    const item = (body.items ?? []).find((i) => typeof i?.id === 'number' && (i?.price ?? 0) >= 50);
-    if (!item?.id || typeof item.price !== 'number') {
-      return { ok: false, reason: 'No published item priced at 50 JPY or above' };
+    const candidates = (body.items ?? []).filter((i): i is { id: number; price: number } =>
+      typeof i?.id === 'number' && typeof i.price === 'number' && i.price >= 50,
+    );
+    if (candidates.length === 0) {
+      throw new Error('No published item priced at 50 JPY or above');
     }
-    const detailResponse = await fetch(`/api/items/${item.id}`);
-    if (!detailResponse.ok) {
-      throw new Error(`/api/items/${item.id} returned ${detailResponse.status}`);
+    let selected: { item: { id: number; price: number }; variantId: number } | undefined;
+    for (const item of candidates) {
+      const detailResponse = await fetch(`/api/items/${item.id}`);
+      // 一覧取得の直後に、並行するテストが一時商品を削除する場合がある。
+      if (detailResponse.status === 404) {
+        continue;
+      }
+      if (!detailResponse.ok) {
+        throw new Error(`/api/items/${item.id} returned ${detailResponse.status}`);
+      }
+      const detail = (await detailResponse.json()) as { variantAvailability?: Array<{ variantId: number }> };
+      const variantId = detail.variantAvailability?.[0]?.variantId;
+      if (!variantId) {
+        return { ok: false, reason: 'No variant for the published item' };
+      }
+      selected = { item, variantId };
+      break;
     }
-    const detail = (await detailResponse.json()) as { variantAvailability?: Array<{ variantId: number }> };
-    const variantId = detail.variantAvailability?.[0]?.variantId;
-    if (!variantId) {
-      return { ok: false, reason: 'No variant for the published item' };
+    if (!selected) {
+      throw new Error('No published item detail remained available from /api/items');
     }
+    const { item, variantId } = selected;
     // 会員のカートの書き換えは CSRF の合言葉を求める（ゲストには Cookie が無いので付かない）。値は外へ出さない
     const csrfToken = document.cookie
       .split('; ')

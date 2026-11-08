@@ -6,12 +6,13 @@ import {
 } from './shop-test-utils';
 
 // FREQ-301: SIZE は面を塗らず黒文字のまま、枠線で選択を示す
-// FREQ-303 で未選択のグレー枠は撤回し、未選択は枠なしになった
+// FREQ-303 で未選択のグレー枠は撤回したが、2026-11-07 改定で今の画面（ItemDetailClient.css）に合わせ、
+// 未選択は薄い枠（#f1f0ed）、選択中は黒枠（#000000）に戻した
 
 const SURFACE = 'rgba(0, 0, 0, 0)';
 const BLACK_TEXT = 'rgb(17, 17, 17)';
-const BORDER_UNSELECTED = 'rgba(0, 0, 0, 0)';
-const BORDER_SELECTED = 'rgb(17, 17, 17)';
+const BORDER_UNSELECTED = 'rgb(241, 240, 237)'; // #f1f0ed
+const BORDER_SELECTED = 'rgb(0, 0, 0)'; // #000000
 
 const item = sampleItemDetail({ sizes: ['XS', 'S', 'M', 'L', 'XL'] });
 
@@ -20,10 +21,19 @@ async function openItemDetail(page: Page): Promise<void> {
   await mockItemDetailApis(page, item, []);
   await page.goto('/item/101');
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+  if (page.viewportSize()?.width === 390) {
+    await page.getByTestId('item-actions-fixed').getByRole('button', {
+      name: /SELECT OPTIONS/,
+    }).click();
+    await expect(page.getByTestId('item-option-sheet')).toBeVisible();
+  }
 }
 
 function sizeButtons(page: Page) {
-  return page.getByTestId('item-size-select').locator('button');
+  return page.getByTestId(
+    page.viewportSize()?.width === 390 ? 'item-sheet-size-select' : 'item-size-select',
+  ).locator('button');
 }
 
 function styles(page: Page, index: number) {
@@ -47,7 +57,7 @@ for (const viewport of [
   test.describe(`FR-ITEM-DETAIL-051 SIZE の枠線選択 (${viewport.name})`, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
-    test('FREQ-301-AC-01/AC-02: 面は塗らず黒文字で、未選択は枠なし・選択中は黒枠', async ({
+    test('FREQ-301-AC-01/AC-02: 面は塗らず黒文字で、未選択は薄い枠（#f1f0ed）・選択中は黒枠（#000000）', async ({
       page,
     }) => {
       await openItemDetail(page);

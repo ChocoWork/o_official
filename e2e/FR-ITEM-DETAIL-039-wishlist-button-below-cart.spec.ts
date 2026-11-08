@@ -15,9 +15,11 @@ async function openItemDetail(page: Page): Promise<void> {
 }
 
 function actions(page: Page) {
-  const root = page.getByTestId('item-actions-main');
+  const root = page.getByTestId(
+    page.viewportSize()?.width === 390 ? 'item-actions-fixed' : 'item-actions-main',
+  );
   return {
-    cart: root.getByRole('button', { name: /ADD TO CART|SOLD OUT/ }),
+    cart: root.getByRole('button', { name: /ADD TO CART|SELECT OPTIONS|SOLD OUT/ }),
     wishlist: root.getByRole('button', { name: 'Add to wishlist' }),
   };
 }
@@ -51,7 +53,10 @@ test.describe('FR-ITEM-DETAIL-039 wishlist button below add to cart', () => {
     await openItemDetail(page);
 
     const { cart, wishlist } = actions(page);
+    await expect(cart).toBeVisible();
+    await expect(wishlist).toBeVisible();
     await expect(wishlist.getByText('ADD TO WISHLIST')).toBeHidden();
+    await expect(wishlist).toHaveText('');
 
     const cartBox = await cart.boundingBox();
     const wishlistBox = await wishlist.boundingBox();

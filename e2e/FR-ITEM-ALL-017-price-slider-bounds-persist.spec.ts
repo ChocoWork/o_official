@@ -1,5 +1,5 @@
 import { expect, Page, test } from '@playwright/test';
-import { gotoItemList } from './item-list-test-utils';
+import { expandItemFilterSection, gotoItemList, openItemFilters } from './item-list-test-utils';
 
 // FREQ-40-AC-01: 価格フィルタを適用してもPRICEスライダーの上限が縮まず、
 // 再び最大価格までスライドできる（上下限を全商品の最大レンジで保持する）。
@@ -11,10 +11,9 @@ const VIEWPORTS = [
 ] as const;
 
 // フィルターUI（デスクトップはサイドバー、モバイル/タブレットはDrawer）を開く。
-async function openFilters(page: Page, useDrawer: boolean): Promise<void> {
-  if (useDrawer) {
-    await page.locator('[data-filter-button="floating"]').click();
-  }
+async function openFilters(page: Page): Promise<void> {
+  const filters = await openItemFilters(page);
+  await expandItemFilterSection(filters, 'PRICE');
   // 表示中のPRICEスライダーの最大つまみが現れるまで待つ。
   await expect(maxThumb(page)).toBeVisible();
 }
@@ -30,7 +29,7 @@ test.describe('FR-ITEM-ALL-017 PRICEスライダーの上下限が適用後も�
 
       test('価格上限を絞って適用しても最大つまみの上限値が縮まない', async ({ page }) => {
         await gotoItemList(page);
-        await openFilters(page, viewport.drawer);
+        await openFilters(page);
 
         const fullMax = await maxThumb(page).getAttribute('aria-valuemax');
         expect(fullMax).not.toBeNull();
@@ -44,6 +43,10 @@ test.describe('FR-ITEM-ALL-017 PRICEスライダーの上下限が適用後も�
 
         // 適用後も上限値が適用前の最大価格と一致する（縮まない）。
         await expect(maxThumb(page)).toHaveAttribute('aria-valuemax', fullMax!);
+        await maxThumb(page).press('End');
+        // range の value は千円単位の表示値(89)。実値は aria-valuenow(89000)で比べる。
+        await expect(maxThumb(page)).toHaveAttribute('aria-valuenow', fullMax!);
+        await expect(page).not.toHaveURL(/priceMax=/);
       });
     });
   }

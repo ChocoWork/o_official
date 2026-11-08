@@ -81,7 +81,6 @@
     "untagged-test|e2e/FR-LOOK-ALL-035-desktop-filter-left-edge.spec.ts|テスト「desktop（1280px）でフィルターが画面左端に寄っている」の名前に ID が無い",
     "untagged-test|e2e/FR-LOOK-ALL-035-desktop-filter-left-edge.spec.ts|テスト「mobile（390px）/ tablet（768px）ではデスクトップフィルターを表示しない」の名前に ID が無い",
     "untagged-test|e2e/FR-LOOK-ALL-035-desktop-filter-left-edge.spec.ts|テスト「wide desktop（1920px）でもフィルターが画面左端に寄っている」の名前に ID が無い",
-    "untagged-test|e2e/FR-NEWS-ALL-008-mobile-filter-initial-offset.spec.ts|テスト「初期表示でフィルターバーがヘッダー直下に収まり、先頭記事と重ならない」の名前に ID が無い",
     "untagged-test|e2e/FR-NEWS-ALL-009-mobile-filter-scroll-gap.spec.ts|テスト「md 幅で Header と FILTER バーの間に隙間が出ない」の名前に ID が無い",
     "untagged-test|e2e/FR-NEWS-ALL-009-mobile-filter-scroll-gap.spec.ts|テスト「sm 幅で Header と FILTER バーの間に隙間が出ない」の名前に ID が無い",
     "untagged-test|e2e/FR-NEWS-ALL-010-mobile-filter-motion-phase.spec.ts|テスト「390px 幅で Header が隠れる前に FILTER バーが先に動かない」の名前に ID が無い",
@@ -93,14 +92,11 @@
     "untagged-test|e2e/FR-NEWS-ALL-010-mobile-filter-motion-phase.spec.ts|テスト「md 幅で Header の隠れアニメーション中も FILTER バーが追従する」の名前に ID が無い",
     "untagged-test|e2e/FR-NEWS-ALL-010-mobile-filter-motion-phase.spec.ts|テスト「md 幅の wheel スクロールでも Header と FILTER バーが分離しない」の名前に ID が無い",
     "untagged-test|e2e/FR-NEWS-ALL-010-mobile-filter-motion-phase.spec.ts|テスト「sm 幅で Header の隠れアニメーション中も FILTER バーが追従する」の名前に ID が無い",
-    "untagged-test|e2e/FR-NEWS-ALL-011-desktop-filter-initial-position.spec.ts|テスト「desktop 幅でフィルター開始位置が Header 直下から過度に離れない」の名前に ID が無い",
-    "untagged-test|e2e/FR-NEWS-ALL-011-desktop-filter-initial-position.spec.ts|テスト「laptop 幅でフィルター開始位置が Header 直下から過度に離れない」の名前に ID が無い",
     "untagged-test|e2e/FR-NEWS-ALL-017-desktop-filter-left-edge.spec.ts|テスト「mobile（390px）/ tablet（768px）ではデスクトップフィルターを表示しない」の名前に ID が無い",
     "untagged-test|e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts|テスト「uses the same field and button sizing contract as login」の名前に ID が無い",
     "untagged-test|e2e/FR-PWRESET-002-password-reset-hardening.spec.ts|テスト「a link without a token redirects with a reason」の名前に ID が無い",
     "untagged-test|e2e/FR-PWRESET-002-password-reset-hardening.spec.ts|テスト「confirm rejects the removed legacy token payload」の名前に ID が無い",
     "untagged-test|e2e/FR-PWRESET-002-password-reset-hardening.spec.ts|テスト「opening the link with GET forwards to the verify page」の名前に ID が無い",
-    "untagged-test|e2e/FR-PWRESET-002-password-reset-hardening.spec.ts|テスト「the request form is still reachable」の名前に ID が無い",
-    "untagged-test|e2e/FR-STOCKIST-009-divider-spacing.spec.ts|テスト「${scenario.label} applies phi-based divider spacing」の名前に ID が無い"
+    "untagged-test|e2e/FR-PWRESET-002-password-reset-hardening.spec.ts|テスト「the request form is still reachable」の名前に ID が無い"
   ]
 }

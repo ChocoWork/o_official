@@ -68,7 +68,7 @@ test.describe('FR-ITEM-DETAIL-024 reference responsive proportions', () => {
   test.describe('tablet 768x1024', () => {
     test.use({ viewport: { width: 768, height: 1024 } });
 
-    test('FREQ-162-AC-02: 58/42 split and 290px information column', async ({
+    test('FREQ-162-AC-02 / FREQ-286: bounded image column and equal 32px gaps', async ({
       page,
     }) => {
       await openItemDetail(page);
@@ -86,13 +86,28 @@ test.describe('FR-ITEM-DETAIL-024 reference responsive proportions', () => {
       const imageBox = await box(images);
       const mainImageBox = await box(mainImage);
       const informationBox = await box(information);
+      const dimensions = await page.getByTestId('item-detail-layout').evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          rem: parseFloat(getComputedStyle(document.documentElement).fontSize),
+          contentWidth: element.getBoundingClientRect().width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+        };
+      });
       expect(layout.x).toBeCloseTo(0, 0);
-      expect(layout.width).toBeCloseTo(768, 0);
-      expect(informationBox.x / layout.width).toBeCloseTo(0.601, 2);
-      expect(informationBox.width).toBeCloseTo(290, 0);
-      expect(imageBox.x).toBeCloseTo(-20, 0);
-      expect(imageBox.width).toBeCloseTo(465, 0);
+      const imageWidthLimit = Math.min(
+        32 * dimensions.rem,
+        dimensions.contentWidth * 0.56,
+        (1024 - 6 * dimensions.rem) * 2 / 3,
+      );
+      expect(imageBox.x - layout.x).toBeCloseTo(-20, 0);
+      expect(mainImageBox.width).toBeCloseTo(imageWidthLimit, 0);
+      expect(imageBox.width).toBeCloseTo(mainImageBox.width, 0);
+      expect(informationBox.width).toBeGreaterThanOrEqual(18.125 * dimensions.rem);
+      expect(informationBox.x - (mainImageBox.x + mainImageBox.width)).toBeCloseTo(32, 0);
+      expect(768 - (informationBox.x + informationBox.width)).toBeCloseTo(32, 0);
       expect(mainImageBox.width / mainImageBox.height).toBeCloseTo(2 / 3, 2);
+      expect(mainImageBox.y).toBeGreaterThanOrEqual(0);
+      expect(mainImageBox.y + mainImageBox.height).toBeLessThanOrEqual(1024);
       await expect(page.getByTestId('item-detail-first-view')).toHaveCSS(
         'min-height',
         '960px',
@@ -133,6 +148,7 @@ test.describe('FR-ITEM-DETAIL-024 reference responsive proportions', () => {
       { name: 'iPhone SE', width: 375, height: 667 },
       { name: 'iPhone XR', width: 414, height: 896 },
       { name: 'iPhone 12 Pro', width: 390, height: 844 },
+      { name: '768px breakpoint - 1', width: 767, height: 1024 },
       { name: 'iPhone 14 Pro Max', width: 430, height: 932 },
       { name: 'Pixel 7', width: 412, height: 915 },
       { name: 'Galaxy S8+', width: 360, height: 740 },
@@ -161,22 +177,46 @@ test.describe('FR-ITEM-DETAIL-024 reference responsive proportions', () => {
             page.getByTestId('item-detail-carousel-slide').first(),
           );
           await expect(page.getByTestId('item-detail-carousel')).toBeVisible();
+          await expect(page.getByTestId('item-detail-desktop-images')).toBeHidden();
           expect(slide.x).toBeCloseTo(device.width * 0.0625, 0);
           expect(slide.width).toBeCloseTo(device.width * 0.875, 0);
           expect(slide.width / slide.height).toBeCloseTo(2 / 3, 2);
+          const information = await box(page.getByTestId('item-detail-information'));
+          expect(information.y).toBeGreaterThanOrEqual(slide.y + slide.height);
         } else {
           await expect(
             page.getByTestId('item-detail-desktop-images'),
           ).toBeVisible();
-          const layout = await box(page.getByTestId('item-detail-layout'));
+          await expect(page.getByTestId('item-detail-carousel')).toBeHidden();
+          const mainImage = await box(
+            device.width < 1024
+              ? page.getByTestId('item-detail-tablet-carousel-slide').first()
+              : page.getByTestId('item-detail-main-image-frame'),
+          );
           const information = await box(
             page.getByTestId('item-detail-information'),
           );
-          // 1024px 以上は FREQ-168 の中央寄せグリッド（-mx-5 解除）のため
-          // レイアウト幅はコンテナ幅（device.width - 40px）になる
-          const expectedLayoutWidth =
-            device.width >= 1024 ? device.width - 40 : device.width;
-          expect(layout.width).toBeCloseTo(expectedLayoutWidth, 0);
+          // FREQ-286 後はコンテナの固定幅でなく、768px境界の2列配置と画像上限を検証する。
+          expect(mainImage.x + mainImage.width).toBeLessThan(information.x);
+          expect(mainImage.width / mainImage.height).toBeCloseTo(2 / 3, 2);
+          expect(mainImage.y).toBeGreaterThanOrEqual(0);
+          expect(mainImage.y + mainImage.height).toBeLessThanOrEqual(device.height);
+          if (device.width < 1024) {
+            const dimensions = await page.getByTestId('item-detail-layout').evaluate((element) => {
+              const style = getComputedStyle(element);
+              return {
+                rem: parseFloat(getComputedStyle(document.documentElement).fontSize),
+                contentWidth: element.getBoundingClientRect().width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+              };
+            });
+            expect(mainImage.width).toBeCloseTo(Math.min(
+              32 * dimensions.rem,
+              dimensions.contentWidth * 0.56,
+              (device.height - 6 * dimensions.rem) * 2 / 3,
+            ), 0);
+            expect(information.x - (mainImage.x + mainImage.width)).toBeCloseTo(32, 0);
+            expect(device.width - (information.x + information.width)).toBeCloseTo(32, 0);
+          }
           expect(information.x + information.width).toBeLessThanOrEqual(
             device.width,
           );

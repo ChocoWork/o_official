@@ -1,6 +1,6 @@
 # LOOK の構造設計
 
-> 状態: 推定 | 確認日: 2026-10-29 | 対象: LOOK（一覧 `/look`・詳細 `/look/[id]`・ホームの LOOK の区画の部品・管理の LOOK） | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-11-07 | 対象: LOOK（一覧 `/look`・詳細 `/look/[id]`・ホームの LOOK の区画の部品・管理の LOOK） | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -21,7 +21,7 @@ LOOK の領域の構成・画面・画面遷移・状態遷移・API・データ
 - SEC-LOOK-003 は、波 5（2026-10-29）の移行 M2 を当てた DB で満たす（`has_permission` が aal2 と結び付いた生きた session を求める。AUTH の DATA-AUTH-008・ADR-0418。M2 は 2026-10-29 に本番適用済み）。構造は AUTH が持つので、ここでは上位につながない
 - 今のコードが満たさないセキュリティ要件（SEC-LOOK-002・004〜010・012〜016・020〜023）は、満たす形の構造を持たないので上位につながず、本文に「満たさない」と書いた
 - 一部だけ満たすセキュリティ要件は NEWS と同じ決まりで扱った。項目が受け持つコードの中に満たさない所がある時は上位にせず、満たさない所が共有部品などほかのコードにだけある時は上位にした（例: SEC-LOOK-011 の送り元の取り方は共有の `src/features/auth/middleware/rateLimit.ts` にあるので管理の変更の窓口の上位にする。SEC-LOOK-019 の画面の出し分けは LOOK の画面にあるので、画面の項目の上位にはせず窓口の項目の上位にする）
-- 要件のうち、今のコードと合わないと要件の文書が書いた物（FR-LOOK-ALL-003・FR-LOOK-DETAIL-004・FREQ-139-REQ-01・FREQ-141-REQ-01・FREQ-178-REQ-01・FREQ-180-REQ-01・FREQ-279-REQ-03）と、作らないと決めた FR-LOOK-DETAIL-007 は上位にしていない。ADR-0150〜0158 も同じ決まりで、満たさない要件を上位にせず「結果」に書いた
+- 要件のうち、今のコードと合わないと要件の文書が書いた物（FR-LOOK-ALL-003・FREQ-139-REQ-01・FREQ-141-REQ-01・FREQ-180-REQ-01・FREQ-279-REQ-03）と、作らないと決めた FR-LOOK-DETAIL-007 は上位にしていない。ADR-0150〜0158 も同じ決まりで、満たさない要件を上位にせず「結果」に書いた
 
 ## 範囲と根拠
 
@@ -162,7 +162,7 @@ sequenceDiagram
 - 作り: Server Component の `src/app/look/page.tsx` が URL の `season` を `resolveLookSeasonFilter` で ALL・SS・AW に直し、公開の LOOK を新しい順に 100 件まで（`getPublishedLookList`。説明文なし）取って `PublicLookGrid`（`variant="catalog"`）に渡す。絞るのは部品の側（STATE-LOOK-002、ADR-0153）
 - 絞り込み: lg 以上は左のサイドバー（幅 233px、xl で 288px、ヘッダーの真下に sticky）の `MultiSelect`、lg 未満は FILTER のボタンと左の引き出し（`Drawer`）。lg 未満の FILTER のバーはヘッダーの真下に付いて動き、同じ高さの見えない置き物で先頭のカードとの重なりを防ぐ（DRV-LOOK-003）
 - 格子: md 未満2列・md〜2xl 未満3列・2xl 以上4列（FREQ-277）。行の間隔は lg 未満で広く、lg 以上は縦横を同じにする（FREQ-137・140）。カードは SCR-LOOK-002
-- 本文の列の左右の余白は sm 未満で 0（FREQ-141-REQ-01 の 13px と合わないので上位にしない。E2E FR-LOOK-ALL-028 が赤）
+- 本文の列の左右の余白は sm 未満で 0（FREQ-141-REQ-01 は 2026-11-07 にこの 0 に直した。上位へのつなぎ直しは別の作業）
 - 見出しの `h1` は置かない（FREQ-50）。title は「LOOK BOOK | Le Fil des Heures」、description は固定の文、OG の画像はサイトのメインの写真 `/mainphoto.png`（FR-LOOK-ALL-005）
 - 空と0件: 公開の LOOK が無い時「公開中のLOOKがありません」、絞った結果が0件の時「該当シーズンのLOOKがありません」と ALL に戻す「すべて見る」のボタン（DRV-LOOK-007）。取り出しの失敗は「0件」にせず、誤りの画面（`src/app/look/error.tsx`。見出し「LOOK を読み込めませんでした」、案内の文、`retry` のボタン。`error.message`・`stack` は出さない）になる（SEC-LOOK-022。2026-10-26）
 - 件数: ページングも無限スクロールも無く、取り出した 100 件までを一度に出す（FR-LOOK-ALL-003 は満たさないので上位にしない。ADR-0152、ADR-0159）
@@ -182,7 +182,7 @@ sequenceDiagram
 - 写真: 1枚目（無ければ `/placeholder.png`）を `next/image` で出す。2枚目があれば乗った時に重ねて替える。拡大はしない（FREQ-132）。写真は署名つき URL（DRV-LOOK-005）
 - lg 以上: 写真の下部に黒の多段のグラデーションを敷き、白い文字でシーズン（「2026AW」の形）とテーマ（セリフ体・大文字）を重ねる。関連商品があれば乗った時に名前と価格の並びに入れ替える。2つの塊は同じ格子のセルに重ね、最後の行の文字の下でそろえる（FREQ-128〜135）
 - lg 未満: カード全体をグレーの枠線で囲み（FREQ-142。E2E FR-LOOK-ALL-029 が赤、原因は未確認）、写真の下の情報パネルにシーズン（「2026 AW」の形、濃く・太く・字間を詰める）、テーマ、罫線、関連商品の名前と価格（ITEM のカードと同じ見た目）を出す（FREQ-138・143〜145）。モバイルは名前と価格を縦に積む（FREQ-56・337）
-- 情報パネルのテーマの大きさと写真の下の余白は FREQ-139-REQ-01 の式と合わないので上位にしない（E2E FR-LOOK-ALL-026 が赤）
+- 情報パネルのテーマの大きさ（640px 未満 `--lk-size-sm`、以上 `--lk-size-4xl`）と写真の下の余白は、FREQ-139-REQ-01 を 2026-11-07 にこの値に直した（上位へのつなぎ直しは別の作業）
 - リンク: 写真と lg 以上の重ねた文字を `/look/<id>` への1つのリンクで包む。lg 未満は情報パネルのシーズンとテーマも同じ行き先の2つ目のリンクになる（推定。ADR-0155。同じ行き先が2回出る点は`trace-matrix.md` の「食い違い」節を参照）。重ねた関連商品の行は `role="link"`・`tabIndex=0` で、押すか Enter で既定の動きを止めて `/item/<id>` へ移る。Space では移らない。情報パネルの関連商品はカードのリンクの外の普通のリンク（FREQ-150・151、ADR-0155）
 - 下線: 関連商品に乗ると、lg 以上は白、lg 未満は黒の下線が左から右へ出る（FREQ-150-REQ-02・151）
 - 出方: `ScrollReveal`（範囲外）が画面に入ったカードに `data-reveal` を立て、写真は白いカバーが退いて左から右へ、文字も左から右へ滑り込む（FREQ-279・338・339）。文字が下からせり上がる形（FREQ-279-REQ-03）は LOOK では FREQ-338 で置き換わったので上位にしない
@@ -208,19 +208,19 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-LOOK-DETAIL-001、FR-LOOK-DETAIL-002、FR-LOOK-DETAIL-003、FR-LOOK-DETAIL-006、FREQ-176-REQ-01、FREQ-177-REQ-01、FREQ-181-REQ-01、FREQ-182-REQ-01、FREQ-183-REQ-01、FREQ-183-REQ-02、FREQ-183-REQ-03、FREQ-288-REQ-03、FREQ-343-REQ-01、FREQ-343-REQ-02、FREQ-343-REQ-03、FREQ-344-REQ-01、NFR-SEO-003（範囲外）、SEC-LOOK-001、SEC-LOOK-016、SEC-LOOK-017、SEC-LOOK-022、DRV-LOOK-004、DRV-LOOK-006、ADR-0152、ADR-0156、ADR-0159 |
+| 上位 | FR-LOOK-DETAIL-001、FR-LOOK-DETAIL-002、FR-LOOK-DETAIL-003、FR-LOOK-DETAIL-004、FR-LOOK-DETAIL-006、FREQ-176-REQ-01、FREQ-177-REQ-01、FREQ-181-REQ-01、FREQ-182-REQ-01、FREQ-183-REQ-01、FREQ-183-REQ-02、FREQ-183-REQ-03、FREQ-288-REQ-03、FREQ-343-REQ-01、FREQ-343-REQ-02、FREQ-343-REQ-03、FREQ-344-REQ-01、NFR-SEO-003（範囲外）、SEC-LOOK-001、SEC-LOOK-016、SEC-LOOK-017、SEC-LOOK-022、DRV-LOOK-004、DRV-LOOK-006、ADR-0152、ADR-0156、ADR-0159 |
 | 根拠 | 1つの着こなしの狙いを写真と言葉で伝え、使った商品と前後の LOOK へその場で移れるようにするため（FR-LOOK-DETAIL-001〜003）。画像と情報の列を ITEM 詳細と同じ組み方にし、詳細の頁ごとに見方を覚え直させない（FREQ-288）。モバイルは前後と一覧への移動を画面の下に固定し、親指で届くようにする（FREQ-343）。非公開・無い LOOK は同じ URL で知らせを出し、有無も中身も出さない（SEC-LOOK-001、DRV-LOOK-006、ADR-0156） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/look/[id]/page.tsx`、`src/app/look/[id]/look-detail.css`）、`docs/03_BasicDesign/ui/screen-list.md` |
 
 - 作り: Server Component。道の `id` を `parseLookId` で正の整数に確かめ、現在の LOOK を `getPublishedLookById` で 1 件取り、前後は `getAdjacentPublishedLooks` で 1 件ずつ取る（ADR-0159。一覧の 100 件に頼らない）。メタ情報も `getPublishedLookById` で 1 件を別に取る。1回の表示で同じ LOOK の画像を2回署名する（推定）
-- 列: md 未満は1列、md 以上は ITEM 詳細と同じ2列（左に画像のギャラリー SCR-LOOK-005、右に情報）。PC の画像は高さ基準で右の列にかぶらない（FREQ-288-REQ-03。幅基準にする FREQ-180-REQ-01 は FREQ-288 で高さ基準に戻ったので上位にしない）
+- 列: md 未満は1列、md 以上は ITEM 詳細と同じ2列（左に画像のギャラリー SCR-LOOK-005、右に情報）。PC の画像は高さ基準で右の列にかぶらない（FREQ-288-REQ-03。幅基準にする FREQ-180-REQ-01 は FREQ-288 で高さ基準に戻ったので上位にしない）。タブレット（768〜1023px）はページの左右の余白を ITEM 詳細と同じ 20px にし、画像と情報の列の間・情報の列の右端から画面の右端までをどちらも 32px にする（FREQ-288-AC-04、2026-11-08）
 - 情報: シーズン（「2026 AW」）、テーマ（h1）、説明文（空の時も空白1文字の段落を出す）、STYLING ITEMS の `List`（showcase。名前・分類・価格・画像、`/item/<id>` へのリンク、見本は √φ 倍、外枠の線は区切り線と同じ。FREQ-176・177）。公開中の商品だけを出し、0件は「紐づけ商品はありません」（DRV-LOOK-004）
 - 前後: md 以上は「PREV LOOK / LOOK LIST / NEXT LOOK」の3等分の格子（`aria-label="Look navigation"`）。アイコンは線幅1のインラインの SVG。前後が無い側は薄い非リンク（`aria-hidden`）。リンクの読み上げの名前は「Previous look: <テーマ>」「Look list」「Next look: <テーマ>」（FREQ-181〜183、FR-LOOK-DETAIL-006）
 - モバイル: md 未満は3列を隠し、同じ3項目を `BottomNavigation`（範囲外）で画面の下に固定する。前後が無い側は `disabled`。固定のナビがフッターを覆わないよう、`look-detail.css` がフッターに下の余白を足す（FREQ-343）。横のスクロールは起こさない（FREQ-344）
 - 「Back to Lookbook」のリンクは通常の表示に無い（FREQ-178 の前半）
-- 無い時: 公開の LOOK に無い・非公開・形の合わない id は、見出し「Look not found」だけを状態 200 で返す（DRV-LOOK-006、ADR-0156）。形の合わない id は DB を呼ばない。`/look` への戻りのリンクは無い（FR-LOOK-DETAIL-004・FREQ-178-REQ-01 は満たさないので上位にしない。E2E FR-LOOK-DETAIL-004・010 が赤）。DB の取り出しの失敗は「Look not found」にせず、頁が投げて `src/app/look/error.tsx` の誤りの画面になる（SEC-LOOK-022。2026-10-26）。前後の取り出しだけが失敗した時は頁を開き、前後を無効の表示にする
+- 無い時: 公開の LOOK に無い・非公開・形の合わない id は、見出し「Look not found」だけを状態 200 で返す（DRV-LOOK-006、ADR-0156）。形の合わない id は DB を呼ばない。見出しの下に `/look` への「Back to Lookbook」のリンクを置く（FR-LOOK-DETAIL-004・FREQ-178-REQ-01。2026-11-07 に戻した）。DB の取り出しの失敗は「Look not found」にせず、頁が投げて `src/app/look/error.tsx` の誤りの画面になる（SEC-LOOK-022。2026-10-26）。前後の取り出しだけが失敗した時は頁を開き、前後を無効の表示にする
 - メタ: title は「<テーマ> | LOOK | Le Fil des Heures」、description は説明文（空ならテーマから作った文）、OG の画像は、署名できる画像が 1 枚以上ある LOOK だけ `/look/<id>/og`（相対。`metadataBase` で絶対になる。API-LOOK-007。SEC-LOOK-006）、無ければ空。無い時は「Look not found | Le Fil des Heures」と固定の説明
 - 道の `id` は `parseLookId`（`/^[1-9]\d{0,15}$/` かつ安全な整数）で確かめる。`1e3`・`1.5`・`0`・`01`・前後の空白・17 桁以上は null（SEC-LOOK-016。2026-10-26）
 
@@ -318,7 +318,7 @@ flowchart LR
 - カードのリンクは `/look/<id>` だけで、選んだシーズンを詳細へ引き継がない。詳細の LOOK LIST は `/look`（ALL）へ戻る。選んだシーズンへ戻れるのはブラウザの戻るだけ（推定。`trace-matrix.md` の「食い違い」節を参照）
 - 前後は公開の LOOK 全体の並び（作った日時の新しい順・同じ時刻は `id` の大きい順）で決め、一覧で絞ったシーズンの中の前後ではない。一覧の 100 件の外の LOOK でも前後を持つ（`getAdjacentPublishedLooks`。ADR-0159）
 - 端の LOOK では無い側を押せない（md 以上は薄い非リンク、md 未満は `disabled`）
-- 例外: 無い LOOK の詳細（SCR-LOOK-004）には戻りのリンクが無く、ヘッダーなど共通の部品で移るしかない
+- 例外: 無い LOOK の詳細（SCR-LOOK-004）は見出しの下の「Back to Lookbook」で `/look` へ戻る（唯一の戻り道。FREQ-178）
 
 ### FLOW-LOOK-002 管理の一覧から作成・編集へ移り、保存かキャンセルで一覧へ戻る
 

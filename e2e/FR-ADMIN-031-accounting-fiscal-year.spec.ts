@@ -186,9 +186,9 @@ for (const viewport of viewports) {
 
       // 2026年度には初期データが1件ある。
       await expect(page.getByText('1-1 / 1件')).toBeVisible();
-      await expect(
-        page.getByRole('region', { name: '取引一覧' }).getByText('広告出稿 / A社'),
-      ).toBeVisible();
+      const list = page.getByRole('region', { name: '取引一覧' });
+      await expect(list.getByText('広告出稿', { exact: true })).toBeVisible();
+      await expect(list.getByText('A社', { exact: true })).toBeVisible();
       expect(requestedUrls.some((url) => url.includes('year=2026'))).toBe(true);
     });
 
@@ -227,7 +227,7 @@ for (const viewport of viewports) {
       // FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
       await page.getByRole('button', { name: '新規取引' }).click();
 
-      await page.getByRole('button', { name: '支出概要' }).click();
+      await page.getByRole('combobox', { name: '支出摘要' }).click();
       await page.getByRole('option', { name: '展示会・イベント' }).click();
       await page.getByRole('combobox', { name: '勘定科目' }).click();
       await page.getByRole('option', { name: '経費 / 広告宣伝費', exact: true }).click();

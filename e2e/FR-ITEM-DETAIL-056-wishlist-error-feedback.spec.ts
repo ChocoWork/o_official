@@ -45,12 +45,12 @@ async function openItemDetail(page: Page, wishlistPostStatus: number): Promise<v
 
 /**
  * そのビューポートで実際に押せるウィッシュリストボタン。
- * md 未満は ADD TO CART の右隣、md 以上は商品名の右のアイコン（FREQ-299）。
+ * md 未満は固定 CTA の右隣（FREQ-347）、md 以上は商品名の右のアイコン（FREQ-299）。
  */
 function wishlistButton(page: Page, viewportName: string) {
   const scope =
     viewportName === 'mobile'
-      ? page.getByTestId('item-actions-main')
+      ? page.getByTestId('item-actions-fixed')
       : page.getByTestId('item-wishlist-icon');
 
   return scope.getByRole('button', { name: 'Add to wishlist' });

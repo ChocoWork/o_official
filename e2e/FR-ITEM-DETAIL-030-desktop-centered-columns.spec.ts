@@ -49,6 +49,8 @@ test.describe('FR-ITEM-DETAIL-030 desktop centered columns', () => {
       const gap = information.x - (mainImage.x + mainImage.width);
       expect(gap).toBeGreaterThanOrEqual(54);
       expect(gap).toBeLessThanOrEqual(58);
+      // FREQ-286: 幅に余裕があるデスクトップでは情報列を画像と同じ幅にする。
+      expect(information.width).toBeCloseTo(mainImage.width, 0);
 
       // AC-02: 2カラム全体が水平中央に配置される（整列）
       const clientWidth = await page.evaluate(
@@ -60,23 +62,46 @@ test.describe('FR-ITEM-DETAIL-030 desktop centered columns', () => {
     });
   }
 
-  test('FREQ-168-AC-03: tablet（768px）では従来の58%/42%2カラムが維持される', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 768, height: 1024 });
-    await openItemDetail(page);
+  for (const viewport of [
+    { width: 768, height: 1024 },
+    { width: 918, height: 815 },
+  ]) {
+    test(`FREQ-168-AC-03 / FREQ-286: tablet（${viewport.width}px）では画像上限と2:3比率・32px余白を守り見切れない`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      await openItemDetail(page);
 
-    const layout = await box(page.getByTestId('item-detail-layout'));
-    const imageColumn = await box(
-      page.getByTestId('item-detail-desktop-images'),
-    );
-
-    // 画像列の右端 = レイアウト左端 + 58%
-    const expectedBoundary = layout.x + layout.width * 0.58;
-    expect(
-      Math.abs(imageColumn.x + imageColumn.width - expectedBoundary),
-    ).toBeLessThanOrEqual(2);
-  });
+      const mainImage = await box(
+        page.getByTestId('item-detail-tablet-carousel-slide').first(),
+      );
+      const information = await box(page.getByTestId('item-detail-information'));
+      const dimensions = await page.getByTestId('item-detail-layout').evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          rem: parseFloat(getComputedStyle(document.documentElement).fontSize),
+          contentWidth: element.getBoundingClientRect().width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+        };
+      });
+      const imageWidthLimit = Math.min(
+        32 * dimensions.rem,
+        dimensions.contentWidth * 0.56,
+        (viewport.height - 6 * dimensions.rem) * 2 / 3,
+      );
+      // 従来の幅境界の許容差2pxを保ち、FREQ-286の幅上限に照合する。
+      expect(Math.abs(mainImage.width - imageWidthLimit)).toBeLessThanOrEqual(2);
+      expect(mainImage.width / mainImage.height).toBeCloseTo(2 / 3, 2);
+      expect(mainImage.y).toBeGreaterThanOrEqual(0);
+      expect(mainImage.y + mainImage.height).toBeLessThanOrEqual(viewport.height);
+      expect(information.x - (mainImage.x + mainImage.width)).toBeCloseTo(32, 0);
+      expect(viewport.width - (information.x + information.width)).toBeCloseTo(32, 0);
+      const widths = await page.evaluate(() => ({
+        client: document.documentElement.clientWidth,
+        scroll: document.documentElement.scrollWidth,
+      }));
+      expect(widths.scroll).toBeLessThanOrEqual(widths.client);
+    });
+  }
 
   test('FREQ-168-AC-03: mobile（390px）では画像の下に情報欄の1カラムが維持される', async ({
     page,

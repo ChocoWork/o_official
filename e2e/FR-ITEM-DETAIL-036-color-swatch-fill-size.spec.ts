@@ -15,6 +15,13 @@ async function openItemDetail(page: Page): Promise<void> {
   await mockItemDetailApis(page, item, []);
   await page.goto('/item/101');
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+  if (page.viewportSize()?.width === 390) {
+    await page.getByTestId('item-actions-fixed').getByRole('button', {
+      name: /SELECT OPTIONS/,
+    }).click();
+    await expect(page.getByTestId('item-option-sheet')).toBeVisible();
+  }
 }
 
 async function box(locator: Locator) {
@@ -39,7 +46,9 @@ test.describe('FR-ITEM-DETAIL-036 color swatch fill size', () => {
       await openItemDetail(page);
 
       const swatch = page
-        .getByTestId('item-spec-table')
+        .getByTestId(
+          viewport.name === 'mobile' ? 'item-sheet-options' : 'item-spec-table',
+        )
         .locator('button[aria-label]')
         .first();
       await expect(swatch).toBeVisible();

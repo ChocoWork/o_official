@@ -52,19 +52,25 @@ test.describe('FR-ACCOUNT-002 profile fields', () => {
 
     await expect(page.getByText('メールアドレス')).toBeVisible();
     await expect(page.getByLabel('メールアドレス')).toHaveValue('user@example.com');
+    await expect(page.getByLabel('メールアドレス')).not.toBeEditable();
     await expect(page.getByLabel('氏名')).toHaveValue('山田 花子');
     await expect(page.getByLabel('電話番号')).toHaveValue('090-1111-2222');
 
     await page.getByRole('button', { name: '編集' }).click();
+    await expect(page.getByLabel('メールアドレス')).not.toBeEditable();
     await page.getByLabel('氏名').fill('佐藤 花子');
     await page.getByLabel('電話番号').fill('08033334444');
     await expect(page.getByLabel('電話番号')).toHaveValue('080-3333-4444');
-    await page.getByRole('button', { name: '変更を保存' }).click();
+    await page.getByRole('button', { name: '保存', exact: true }).click();
 
     await expect.poll(() => postPayload).not.toBeNull();
     await expect(postPayload).toMatchObject({
       fullName: '佐藤 花子',
       phone: '080-3333-4444',
     });
+    await expect(page.getByRole('button', { name: '編集' })).toBeVisible();
+    await expect(page.getByLabel('氏名')).toHaveValue('佐藤 花子');
+    await expect(page.getByLabel('電話番号')).toHaveValue('080-3333-4444');
+    await expect(page.getByLabel('メールアドレス')).toHaveValue('user@example.com');
   });
 });

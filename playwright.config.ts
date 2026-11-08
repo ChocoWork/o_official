@@ -1,5 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 import { loadEnvConfig } from '@next/env';
+import { randomInt } from 'node:crypto';
 import { prepareE2EEnvironment } from './scripts/e2e/environment';
 
 // アプリと同じ .env 解決規則（.env.local > .env）でテストプロセスにも環境変数を読み込む。
@@ -23,6 +24,19 @@ const e2e = prepareE2EEnvironment({
   baseUrl: resolvedBaseUrl,
 });
 Object.assign(process.env, e2e.env);
+
+/*
+ * 試験ごとに別の送り元として数えさせる（x-real-ip。E2E のアプリは CLIENT_IP_HEADER で見出しを信じる）。
+ * 付けないと全部の試験が rate_limit_counters の ip が NULL の1つの枠を分け合い、全件の時だけ
+ * items:list（1分120回）などを使い切って、商品詳細・お気に入り・ホームの試験が 429 や時間切れで落ちる
+ * （2026-11-07 に DB の行で確かめた）。Playwright は文脈（browser context・request fixture）を作るたびに
+ * extraHTTPHeaders を読み直すので、getter にして文脈ごとに新しい値を返す。範囲は試験用の 198.19.0.0/16
+ * （試験が自分で付ける uniqueSourceIp の 198.18.0.0/16 と重ねない）。要求ごとに見出しを渡す試験はそちらが勝つ。
+ */
+const perContextSourceIp: Record<string, string> = Object.defineProperty({}, 'x-real-ip', {
+  enumerable: true,
+  get: () => `198.19.${randomInt(0, 256)}.${randomInt(1, 255)}`,
+});
 
 /**
  * See https://playwright.dev/docs/test-configuration.
@@ -54,6 +68,7 @@ export default defineConfig({
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
     baseURL: resolvedBaseUrl,
+    extraHTTPHeaders: perContextSourceIp,
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
     /* Screenshot on failure */

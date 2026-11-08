@@ -4,7 +4,7 @@ title: シークレット管理方針
 
 # シークレット管理方針（暫定: 手動運用）
 
-> 状態: 既存の運用方針 | 本番設定・手順の適用状況は未確認 | 確認日: 2026-10-02（`ADMIN_API_KEY` の廃止の節は 2026-10-26、ビルドの前に要る環境変数の節と `CLIENT_IP_HEADER` の節は 2026-10-28、`AUTH_REQUIRE_APP_SESSION` の節は 2026-10-29、`APP_ALLOWED_ORIGINS` の必須化と captcha 関連の節は 2026-11-01 に追記）
+> 状態: 既存の運用方針 | 本番設定・手順の適用状況は未確認 | 確認日: 2026-10-02（`ADMIN_API_KEY` の廃止の節は 2026-10-26、ビルドの前に要る環境変数の節と `CLIENT_IP_HEADER` の節は 2026-10-28（E2E の行は 2026-11-07）、`AUTH_REQUIRE_APP_SESSION` の節は 2026-10-29、`APP_ALLOWED_ORIGINS` の必須化と captcha 関連の節は 2026-11-01 に追記）
 
 この文書中の `docs/seq/supabase-service-role-key-rotation-diagrams.md` は現行リポジトリに存在しない旧計画への参照である。自動ローテーションを実施済みとは扱わず、実施前に現在の秘密値の保管場所、権限、手順を確認する。
 ## 概要
@@ -114,7 +114,7 @@ Resend の配達の状態の知らせ（`POST /api/webhook/resend-delivery`）�
 | 環境 | 扱い |
 | --- | --- |
 | 本番（Vercel） | 置かない。Vercel が `VERCEL=1` を自動で入れ、見出しを上書きして付けるので足りる |
-| E2E（手元の Supabase） | `scripts/e2e/environment.ts` の `E2E_FIXED_ENV` が `CLIENT_IP_HEADER=x-real-ip` を入れる。E2E の送り元の分け方は `x-real-ip` で行う。`.env.local` や `.env` には書かない |
+| E2E（手元の Supabase） | `scripts/e2e/environment.ts` の `E2E_FIXED_ENV` が `CLIENT_IP_HEADER=x-real-ip` を入れる。E2E の送り元の分け方は `x-real-ip` で行う。`playwright.config.ts` は文脈（browser context・request fixture）ごとに `198.19.0.0/16` の別の `x-real-ip` を付ける（2026-11-07。付けないと全部の試験が ip が NULL の1つの枠を分け合い、全件の時だけ回数の制限で落ちる）。要求ごとに見出しを渡す試験はそちらが勝つ。`.env.local` や `.env` には書かない |
 | 手元の開発・単体の試験 | 置かない。見出しの無い要求は送り元が null になり、回数の制限は 1 つの枠を共有し、監査の IP は null で残る。単体の試験は `tests/setupClientIp.js` が立てる |
 | Vercel 以外の置き場 | 前段の中継（リバースプロキシ）が利用者の付けた `x-real-ip` を捨てて自分の見る接続元の IP で上書きすると確かめてから、`CLIENT_IP_HEADER` に空でない値（例 `x-real-ip`）を置く。確かめずに置くと、利用者が送り元を偽って回数の制限を越え、監査の IP を偽れる |
 

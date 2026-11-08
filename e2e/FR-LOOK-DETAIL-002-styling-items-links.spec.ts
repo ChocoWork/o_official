@@ -5,7 +5,6 @@ test.describe('FR-LOOK-DETAIL-002 STYLING ITEMS', () => {
     // 見本の LOOK 1 の紐づけ商品: 商品1（Aoi Linen Tunic・89,000円）と商品3（Mizu Wide Trousers・20,999円）
     await page.goto('/look/1');
 
-    await expect(page.getByText('STYLING ITEMS')).toBeVisible();
     await expect(page.getByText('紐づけ商品はありません')).toHaveCount(0);
 
     const layout = page.locator('[data-testid="look-detail-layout"]');

@@ -243,7 +243,11 @@ describe('LookDetailPage 本体', () => {
       expect(screen.queryByTestId('gallery')).not.toBeInTheDocument();
       expect(screen.queryByTestId('look-detail-bottom-nav')).not.toBeInTheDocument();
       expect(screen.queryByTestId('bottom-nav')).not.toBeInTheDocument();
-      expect(screen.queryByRole('link')).not.toBeInTheDocument();
+      // 無い LOOK の表示のリンクは「Back to Lookbook」だけ（FREQ-178-AC-02）
+      const links = screen.getAllByRole('link');
+      expect(links).toHaveLength(1);
+      expect(links[0]).toHaveAttribute('href', '/look');
+      expect(links[0]).toHaveTextContent('Back to Lookbook');
     });
 
     it.each(['abc', '1e3', '0', '-1', '1.5'])(

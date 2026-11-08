@@ -38,6 +38,26 @@ function sizeButtons(page: Page) {
   return page.getByTestId('item-size-select').locator('button');
 }
 
+async function optionControls(page: Page) {
+  const mobile = page.viewportSize()?.width === 390;
+  if (mobile) {
+    await page.getByTestId('item-actions-fixed').getByRole('button', {
+      name: /SELECT OPTIONS/,
+    }).click();
+    await expect(page.getByTestId('item-option-sheet')).toBeVisible();
+  }
+
+  const options = page.getByTestId(mobile ? 'item-sheet-options' : 'item-spec-table');
+  return {
+    black: options.getByRole('button', { name: 'Black', exact: true }),
+    ivory: options.getByRole('button', { name: 'Ivory', exact: true }),
+    sizes: options.getByTestId(mobile ? 'item-sheet-size-select' : 'item-size-select').locator('button'),
+    cart: page.getByTestId(mobile ? 'item-option-sheet' : 'item-actions-main').getByRole('button', {
+      name: /ADD TO CART/,
+    }),
+  };
+}
+
 for (const viewport of VIEWPORTS) {
   test.describe(`FR-ITEM-DETAIL-058 単一選択肢の自動選択 (${viewport.name})`, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
@@ -46,6 +66,26 @@ for (const viewport of VIEWPORTS) {
       page,
     }) => {
       await openItemDetail(page, { colors: [BLACK], sizes: ['M'] });
+
+      if (viewport.name === 'mobile') {
+        // mobile は選択 UI が下から出るシートの中にあり、閉じている間は見えない（FREQ-347）。
+        // 選択済みかどうかは、固定 CTA が SELECT OPTIONS でなく ADD TO CART と出て押せること（FREQ-347-AC-03）と、
+        // 画面に出ない仕様テーブル側の aria-pressed の両方で確かめる。
+        const fixedCta = page
+          .getByTestId('item-actions-fixed')
+          .getByRole('button', { name: /ADD TO CART|SELECT OPTIONS/ });
+        await expect(fixedCta).toHaveText(/ADD TO CART/);
+        await expect(fixedCta).toBeEnabled();
+        const hiddenTable = page.getByTestId('item-spec-table');
+        await expect(hiddenTable.locator('button[aria-label="Black"]')).toHaveAttribute(
+          'aria-pressed',
+          'true',
+        );
+        await expect(
+          hiddenTable.getByTestId('item-size-select').locator('button').first(),
+        ).toHaveAttribute('aria-pressed', 'true');
+        return;
+      }
 
       await expect(page.getByRole('button', { name: 'Black' })).toHaveAttribute(
         'aria-pressed',
@@ -62,55 +102,70 @@ for (const viewport of VIEWPORTS) {
       page,
     }) => {
       await openItemDetail(page, { colors: [BLACK, IVORY], sizes: ['M'] });
+      const controls = await optionControls(page);
 
-      await expect(page.getByRole('button', { name: 'Black' })).toHaveAttribute(
+      await expect(controls.black).toHaveAttribute(
         'aria-pressed',
         'false',
       );
-      await expect(page.getByRole('button', { name: 'Ivory' })).toHaveAttribute(
+      await expect(controls.ivory).toHaveAttribute(
         'aria-pressed',
         'false',
       );
       // SIZE は 1 つなので自動選択される
-      await expect(sizeButtons(page).first()).toHaveAttribute(
+      await expect(controls.sizes.first()).toHaveAttribute(
         'aria-pressed',
         'true',
       );
-      await expect(addToCartButton(page)).toBeDisabled();
+      await expect(controls.cart).toBeDisabled();
+      await controls.ivory.click();
+      await expect(controls.ivory).toHaveAttribute('aria-pressed', 'true');
+      await expect(controls.cart).toBeEnabled();
     });
 
     test('FREQ-345-AC-03: SIZE が複数なら SIZE は未選択で ADD TO CART が無効', async ({
       page,
     }) => {
       await openItemDetail(page, { colors: [BLACK], sizes: ['S', 'M'] });
+      const controls = await optionControls(page);
 
-      await expect(page.getByRole('button', { name: 'Black' })).toHaveAttribute(
+      await expect(controls.black).toHaveAttribute(
         'aria-pressed',
         'true',
       );
-      await expect(sizeButtons(page).first()).toHaveAttribute(
+      await expect(controls.sizes.first()).toHaveAttribute(
         'aria-pressed',
         'false',
       );
-      await expect(sizeButtons(page).nth(1)).toHaveAttribute(
+      await expect(controls.sizes.nth(1)).toHaveAttribute(
         'aria-pressed',
         'false',
       );
-      await expect(addToCartButton(page)).toBeDisabled();
+      await expect(controls.cart).toBeDisabled();
+      await controls.sizes.nth(1).click();
+      await expect(controls.sizes.nth(1)).toHaveAttribute('aria-pressed', 'true');
+      await expect(controls.cart).toBeEnabled();
     });
 
     test('FREQ-345-AC-04: 両方複数のとき、両方を選ぶと ADD TO CART が有効になる', async ({
       page,
     }) => {
       await openItemDetail(page, { colors: [BLACK, IVORY], sizes: ['S', 'M'] });
+      const controls = await optionControls(page);
 
-      await expect(addToCartButton(page)).toBeDisabled();
+      await expect(controls.black).toHaveAttribute('aria-pressed', 'false');
+      await expect(controls.ivory).toHaveAttribute('aria-pressed', 'false');
+      await expect(controls.sizes.nth(0)).toHaveAttribute('aria-pressed', 'false');
+      await expect(controls.sizes.nth(1)).toHaveAttribute('aria-pressed', 'false');
+      await expect(controls.cart).toBeDisabled();
 
-      await page.getByRole('button', { name: 'Ivory' }).click();
-      await expect(addToCartButton(page)).toBeDisabled();
+      await controls.ivory.click();
+      await expect(controls.ivory).toHaveAttribute('aria-pressed', 'true');
+      await expect(controls.cart).toBeDisabled();
 
-      await sizeButtons(page).nth(1).click();
-      await expect(addToCartButton(page)).toBeEnabled();
+      await controls.sizes.nth(1).click();
+      await expect(controls.sizes.nth(1)).toHaveAttribute('aria-pressed', 'true');
+      await expect(controls.cart).toBeEnabled();
     });
   });
 }

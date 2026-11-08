@@ -12,10 +12,23 @@ async function openItemDetail(page: Page, sizes: string[]): Promise<void> {
   await mockItemDetailApis(page, sampleItemDetail({ sizes }), []);
   await page.goto('/item/101');
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+  if (page.viewportSize()?.width === 390) {
+    await page.getByTestId('item-actions-fixed').getByRole('button', {
+      name: /SELECT OPTIONS/,
+    }).click();
+    await expect(page.getByTestId('item-option-sheet')).toBeVisible();
+  }
+}
+
+function sizeSelect(page: Page) {
+  return page.getByTestId(
+    page.viewportSize()?.width === 390 ? 'item-sheet-size-select' : 'item-size-select',
+  );
 }
 
 function sizeButtons(page: Page) {
-  return page.getByTestId('item-size-select').locator('button');
+  return sizeSelect(page).locator('button');
 }
 
 for (const viewport of [
@@ -40,6 +53,7 @@ for (const viewport of [
 
       await expect(buttons.nth(2)).toHaveAttribute('aria-pressed', 'true');
       await expect(buttons.nth(0)).toHaveAttribute('aria-pressed', 'false');
+      await expect(sizeSelect(page).locator('button[aria-pressed="true"]')).toHaveCount(1);
 
       const radius = await buttons
         .nth(2)

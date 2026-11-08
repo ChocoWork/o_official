@@ -1,6 +1,6 @@
 # LOOK の要件
 
-> 状態: 推定 | 確認日: 2026-10-29 | 対象: LOOK（一覧 `/look`・詳細 `/look/[id]`・ホームの LOOK の区画の部品・管理の LOOK） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-11-07 | 対象: LOOK（一覧 `/look`・詳細 `/look/[id]`・ホームの LOOK の区画の部品・管理の LOOK） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -16,7 +16,7 @@ LOOK の領域の要求・要件・受け入れ条件・派生要件を、追跡
 | セキュリティ要件 | 23（受け入れ条件 45） | `SEC-LOOK-001`〜`023`、`SEC-LOOK-NNN-AC-NN`。上位は脅威の文書（`docs/05_Quality/security/threats/look.md`）の `THR-LOOK-001`〜`023` |
 
 - 状態: 写した要求・要件・受け入れ条件のうち、根拠が元の行に書いてある物は「現行」。元の行に理由が無く根拠の「なぜ」を推定で補った物・コードと合わない行・後の行で中身が置き換わった行・新しく起こした項目・実装から読み取った項目は「推定」。後の行が「置換」「取り消し」と明記した物だけを「廃止」にした。どちらが正しいかは決めず、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節に載せた
-- 結論: 公開の LOOK を見る要求は元の文書に無かった（`SR-LOOK-001`・`002` を推定で起こした）。無い LOOK の頁の戻りのリンク（FR-LOOK-DETAIL-004・FREQ-178）と、一覧のモバイルの左右の余白（FREQ-141）はコードと要件が合わず、E2E が赤。LOOK のカードの見た目の行（FREQ-127〜145）は後の行が前の行を置き換えた所が多く、元の行に置き換えの印が無い
+- 結論: 公開の LOOK を見る要求は元の文書に無かった（`SR-LOOK-001`・`002` を推定で起こした）。一覧のモバイルの左右の余白（FREQ-141）はコードと要件が合わず、E2E が赤。無い LOOK の頁の戻りのリンク（FR-LOOK-DETAIL-004・FREQ-178）は 2026-11-07 にコードへ戻した（`Back to Lookbook`、`/look` へ）。LOOK のカードの見た目の行（FREQ-127〜145）は後の行が前の行を置き換えた所が多く、元の行に置き換えの印が無い
 
 ## 範囲と根拠
 
@@ -116,6 +116,7 @@ LOOK の領域の要求・要件・受け入れ条件・派生要件を、追跡
 | FR-LOOK-DETAIL-018-no-horizontal-overflow | FREQ-344-AC-01、FREQ-344-AC-03 |
 | FR-LOOK-DETAIL-019-detail-content-and-links-remaining | FR-LOOK-DETAIL-001-AC-02、FR-LOOK-DETAIL-002-AC-02、FR-LOOK-DETAIL-003-AC-02、FR-LOOK-DETAIL-004-AC-01、FR-LOOK-DETAIL-006-AC-02、FREQ-11-AC-01 |
 | FR-LOOK-DETAIL-020-detail-layout-and-nav-remaining | FREQ-176-AC-02、FREQ-180-AC-02、FREQ-181-AC-02、FREQ-181-AC-03、FREQ-182-AC-02、FREQ-183-AC-02、FREQ-183-AC-03、FREQ-344-AC-02、FREQ-289-AC-01、FREQ-289-AC-02 |
+| FR-LOOK-DETAIL-021-tablet-right-margin-match-item | FREQ-288-AC-04 |
 | FR-LOOK-SEC-001-public-visibility | SEC-LOOK-001-AC-01、SEC-LOOK-001-AC-02、SEC-LOOK-006-AC-01、SEC-LOOK-006-AC-02、SEC-LOOK-006-AC-03、SEC-LOOK-007-AC-01、SEC-LOOK-008-AC-01、SEC-LOOK-009-AC-01、SEC-LOOK-016-AC-01、SEC-LOOK-017-AC-01 |
 | FR-LOOK-SEC-002-postgrest-policies | SEC-LOOK-002-AC-01、SEC-LOOK-002-AC-02、SEC-LOOK-003-AC-01、SEC-LOOK-003-AC-02、SEC-LOOK-004-AC-01、SEC-LOOK-004-AC-02、SEC-LOOK-005-AC-01、SEC-LOOK-005-AC-02、SEC-LOOK-010-AC-02、SEC-LOOK-023-AC-01 |
 | FR-LOOK-SEC-003-admin-api-authz | SEC-LOOK-019-AC-01、SEC-LOOK-019-AC-02、SEC-LOOK-019-AC-03、SEC-LOOK-019-AC-04、SEC-LOOK-019-AC-05、SEC-LOOK-018-AC-01、SEC-LOOK-018-AC-02、SEC-LOOK-016-AC-02、SEC-LOOK-016-AC-03、SEC-LOOK-011-AC-01 |
@@ -394,7 +395,7 @@ E2E が無い受け入れ条件（`missing-child` と同じ）: `FREQ-12-AC-01`�
 
 | 属性 | 値 |
 | --- | --- |
-| 根拠 | テーマと関連アイテムの文字の比が 1.35:1 で階層が弱く、画像とパネルの間隔もサイトの間隔の並び（フィボナッチ系）から外れていたため。今のコードのテーマの文字の大きさは要件の式と違い、E2E FR-LOOK-ALL-026 が 2026-10-24 の全件の E2E で赤（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」節を参照） |
+| 根拠 | テーマと関連アイテムの文字の比が 1.35:1 で階層が弱く、画像とパネルの間隔もサイトの間隔の並び（フィボナッチ系）から外れていたため。文字の比は 2026-11-07 に今の画面（モバイル約 1.13）に直した。E2E FR-LOOK-ALL-026 は 2026-10-24 の全件の E2E で赤だった（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」節を参照） |
 | 状態 | 推定 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md` の「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-139 の行 |
@@ -416,12 +417,12 @@ E2E が無い受け入れ条件（`missing-child` と同じ）: `FREQ-12-AC-01`�
 
 | 属性 | 値 |
 | --- | --- |
-| 根拠 | ホームと一覧で同じカードの余白と列の間隔が違うと、行き来した時に別の画面に見えるため。今のコードはモバイルの左右の余白が無く、E2E FR-LOOK-ALL-028 のモバイルが赤（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」節を参照） |
+| 根拠 | ホームと一覧で同じカードの余白と列の間隔が違うと、行き来した時に別の画面に見えるため。モバイルの左右の余白は 2026-11-07 に今の画面（0）に直した。E2E FR-LOOK-ALL-028 のモバイルは 2026-10-24 の全件の E2E で赤だった（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」節を参照） |
 | 状態 | 推定 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md` の「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-141 の行 |
 
-要求の文: /look 一覧ページのモバイル・タブレット（lg 未満）の見た目を、ホームページの LOOK セクションと揃えること。①モバイルで画像が画面端まで密着していた（px-0）左右余白を、ホームの section-space と同値（モバイル 13px・sm 16px・md 21px は既に同値）にする。②タブレットの列間 32px（md:gap-8）をホームと同じ 24px（sm:gap-6）にする（FREQ-140-AC-02 の「一覧 32px」を 24px に置換）。lg 以上は変更しない
+要求の文: /look 一覧ページのモバイル・タブレット（lg 未満）の見た目を、ホームページの LOOK セクションと揃えること。①モバイルで画像が画面端まで密着していた（px-0）左右余白を、ホームの section-space と同値（モバイル 13px・sm 16px・md 21px）にする（2026-11-07 改定: モバイルは今の画面の 0 を正とし、sm 16px・md 21px だけホームと同値）。②タブレットの列間 32px（md:gap-8）をホームと同じ 24px（sm:gap-6）にする（FREQ-140-AC-02 の「一覧 32px」を 24px に置換）。lg 以上は変更しない
 
 ### FREQ-142 lg 未満だけ LOOK カード全体をグレーの枠線で囲む
 
@@ -515,7 +516,7 @@ E2E が無い受け入れ条件（`missing-child` と同じ）: `FREQ-12-AC-01`�
 
 | 属性 | 値 |
 | --- | --- |
-| 根拠 | 通常の表示には下のナビ（LOOK LIST）に一覧への入口があり、上の戻りのリンクと重なるため（推定）。無い LOOK の表示の戻りのリンクは唯一の戻り道として残すと決めたが、今のコードはそちらも無い（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」節を参照） |
+| 根拠 | 通常の表示には下のナビ（LOOK LIST）に一覧への入口があり、上の戻りのリンクと重なるため（推定）。無い LOOK の表示の戻りのリンクは唯一の戻り道として残すと決め、2026-11-07 にコードへ戻した（7月の改修で消えていた） |
 | 状態 | 推定 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md` の「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-178 の行 |
@@ -980,20 +981,22 @@ LOOK グリッド（HOME・一覧とも）の `xl:gap-x-6` を `xl:gap-6` に変
 
 LookCard の画像下キャプション（lg 未満のみ表示）を、シーズンラベル `{seasonYear} {seasonType}`（例: 2026 AW）＋テーマ名 `font-display`（Didot/Georgia 系セリフ体）・`uppercase`（サイズ --lk-size-xl）とする。関連アイテムがある場合はテーマ名とリストの間に罫線（hr・border-black/10・lg:hidden）を敷き、各行は商品名（左）と価格（右端・右寄せ）で表示する（モバイルは折り返し回避のため縦積みを維持）。lg 以上のオーバーレイ・カード下リスト非表示・画像 mb-0 は従来仕様（FREQ-128〜136）のまま変更しないこと
 
-### FREQ-139-REQ-01 パネルのテーマの文字を関連アイテムの φ 倍にし、画像の下の margin をモバイル 13px・タブレット 21px にする
+### FREQ-139-REQ-01 パネルのテーマの文字を関連アイテムより大きくし（モバイル約 1.13 倍・タブレット 1.5 倍以上）、画像の下の margin をモバイル 13px・タブレット 21px にする
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FREQ-139 |
-| 根拠 | 対比（文字の大きさの比を φ に）と反復（余白をサイトのフィボナッチの並びに）を、式と値で決めた |
-| 状態 | 推定 |
+| 根拠 | 対比（文字の大きさの階層）と反復（余白をサイトのフィボナッチの並びに）を、値で決めた。文字の比は 2026-11-07 にオーナーが今の画面（モバイル約 1.13）を正にして直した |
+| 状態 | 現行 |
 | 確かめ方 | E2E |
-| 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
+| 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表）。2026-11-07 のオーナー決定（今の画面の値を正にする） |
 | 旧所在 | `docs/02_Requirements/requirements.md` の「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-139 の行 |
 
-LookCard のキャプション h3 の font-size を `calc(var(--lk-size-2xs) * var(--phi))`（関連アイテム文字 2xs の φ 倍）・line-height を `var(--sqrt-phi)`（見出し用 1.272）とする。画像コンテナの margin-bottom をモバイル 13px・タブレット 21px（lg 以上は 0 のまま）とする
+LookCard のキャプション h3 の font-size を、640px 未満で `var(--lk-size-sm)`、640px 以上で `var(--lk-size-4xl)`（`PublicLookGrid.css`）とし、line-height を `var(--sqrt-phi)`（見出し用 1.272）とする。関連アイテム文字は `var(--lk-size-2xs)`。文字の比（タイトル ÷ アイテム）は、モバイルが約 1.13（`--lk-eighthstep` の2乗 ≒ 1.128）、タブレットが 1.5 倍以上（`--lk-eighthstep` の7乗 ≒ 1.52）。画像コンテナの margin-bottom をモバイル 13px・タブレット 21px（lg 以上は 0 のまま）とする
 
-今のコード（推定）: 画像の下の margin は 13px・21px（lg 以上は 0）。テーマの文字の大きさは `PublicLookGrid.css` で 640px 未満が `--lk-size-sm`、640px 以上が `--lk-size-4xl` で、要件の式（2xs の φ 倍）と違う。
+（2026-11-07 改定: 旧は font-size を `calc(var(--lk-size-2xs) * var(--phi))`（2xs の φ 倍）・比 1.5 倍以上とした。今の画面はモバイルの比が約 1.13 のため、オーナーが今の画面を正にした。）
+
+今のコード: 画像の下の margin は 13px・21px（lg 以上は 0）。テーマの文字の大きさは `PublicLookGrid.css` で 640px 未満が `--lk-size-sm`、640px 以上が `--lk-size-4xl`。上の要件の文はこの値に直した（2026-11-07）。
 
 ### FREQ-140-REQ-01 row-gap をモバイル 34px・sm 以上 55px にし、lg 以上は縦横を同じに戻す
 
@@ -1008,20 +1011,22 @@ LookCard のキャプション h3 の font-size を `calc(var(--lk-size-2xs) * v
 
 LOOK グリッド（HOME・一覧の両デフォルトクラス）の row-gap を、モバイル 34px（gap-y-8.5）・sm 以上 55px（sm:gap-y-13.75、一覧は md:gap-y-13.75 も維持）とし、lg 以上は従来どおり gap-4 / xl:gap-6（縦横同値）に戻すこと。column-gap は全ビューポートで従来値を維持すること
 
-### FREQ-141-REQ-01 一覧の本文の列の左右の padding をホームと同じにし、タブレットの列の間隔を 24px にする
+### FREQ-141-REQ-01 一覧の本文の列の左右の padding をモバイルで 0、タブレットでホームと同じにし、タブレットの列の間隔を 24px にする
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FREQ-141 |
-| 根拠 | ホームの区画の余白と同じ値を一覧の列に持たせれば、2つの画面のカードの位置と大きさがそろうため |
-| 状態 | 推定 |
+| 根拠 | タブレットはホームの区画の余白と同じ値を一覧の列に持たせれば、2つの画面のカードの位置と大きさがそろうため。モバイルは画像を画面の端まで密着させる今の画面を、2026-11-07 にオーナーが正にした |
+| 状態 | 現行 |
 | 確かめ方 | E2E |
-| 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
+| 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表）。2026-11-07 のオーナー決定（今の画面の値を正にする） |
 | 旧所在 | `docs/02_Requirements/requirements.md` の「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-141 の行 |
 
-look-content-column の水平 padding を `px-3.25 sm:px-4 md:px-5.25`（ホーム section-space の px と同値）とし、一覧グリッドの `md:gap-8 md:gap-y-13.75` を削除して sm:gap-6（24px）・sm:gap-y-13.75 を md 帯域にも適用すること。lg 以上の padding・gap は従来どおりとすること
+look-content-column の水平 padding を `sm:px-4 md:px-5.25`（モバイルは 0。タブレット以上はホーム section-space の px と同値）とし、一覧グリッドの `md:gap-8 md:gap-y-13.75` を削除して sm:gap-6（24px）・sm:gap-y-13.75 を md 帯域にも適用すること。lg 以上の padding・gap は従来どおりとすること
 
-今のコード（推定）: 本文の列（look-content-column）は `sm:px-4 md:px-5.25` だけで、モバイルの `px-3.25` が無い（モバイルの左右の余白が 0）。列の間隔はホームと同じ（タブレット 24px）。
+今のコード: 本文の列（look-content-column）は `sm:px-4 md:px-5.25` だけで、モバイルの左右の余白は 0（画像が画面の端まで密着する）。列の間隔はホームと同じ（タブレット 24px）。
+
+（2026-11-07 改定: 旧は `px-3.25 sm:px-4 md:px-5.25` で、モバイルも 13px（ホームと同値）とした。オーナーが今の画面（モバイル 0）を正にした。ホームの LOOK 区画のモバイルの左右 padding は 13px のまま。）
 
 ### FREQ-142-REQ-01 カードの外側に枠線を付け、画像は枠に付け、情報パネルだけ内側に余白を取る
 
@@ -1207,7 +1212,7 @@ List showcase variant のプレビューサイズ計算に倍率変数 `--list-p
 
 LOOK詳細ページ通常表示の上部にある `/look` への「Back to Lookbook」リンクとその外側ブロックを削除すること。Look not found 表示の「Back to Lookbook」リンクは変更しないこと
 
-今のコード（推定）: 通常の表示にリンクは無い。無い LOOK の表示は見出し「Look not found」だけで、戻りのリンクも無い。
+今のコード（推定）: 通常の表示にリンクは無い。無い LOOK の表示は見出し「Look not found」と、`/look` への「Back to Lookbook」のリンク（2026-11-07 に戻した）。
 
 ### FREQ-179-REQ-01 モバイルは端まで広げたスワイプのカルーセルにし、サムネイルを出さない
 
@@ -1575,7 +1580,7 @@ md 未満（768px 未満）では既存のインライン3カラムナビ（data
 
 モバイルの画像カルーセルをフルブリード化する負マージンを `-mx-5`（20px）から `main` の左右パディングと同じ `-mx-4`（16px）に揃え、ページ全体の `scrollWidth` が `clientWidth` を超えないようにすること。md 以上の画像列が左側へ意図的にはみ出す挙動（FREQ-181 系）は変更しないこと
 
-今のコード（推定）: 詳細の頁の main は `px-4` でなく `detail-page-main` の印を持ち、左右の余白は幅の 6.25%（`src/styles/detail-layout.css`、`src/contexts/Providers.tsx`）。md 未満のカルーセル（`detail-mobile-gallery`）の負の margin は `calc(-100% / 14)` で、中身の幅 87.5% に対する 6.25% と同じ（`detail-layout.css`、`src/features/look/components/LookImageGallery.tsx`）。16px の固定の値ではないが、負の margin を main の余白と同じにする考えは同じ
+今のコード（推定）: 詳細の頁の main は `px-4` でなく `detail-page-main` の印を持ち、左右の余白は幅の 6.25%（768〜1023px だけは 20px。FREQ-288-AC-04）（`src/styles/detail-layout.css`、`src/contexts/Providers.tsx`）。md 未満のカルーセル（`detail-mobile-gallery`）の負の margin は `calc(-100% / 14)` で、中身の幅 87.5% に対する 6.25% と同じ（`detail-layout.css`、`src/features/look/components/LookImageGallery.tsx`）。16px の固定の値ではないが、負の margin を main の余白と同じにする考えは同じ
 
 ### LOOK 一覧・詳細・管理の要件
 
@@ -1730,7 +1735,7 @@ LOOK 一覧ページでシーズン（ALL / SS / AW）をフィルタでき、de
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SR-LOOK-002 |
-| 根拠 | 消えた LOOK や打ち間違いの URL で来た人が行き止まりにならないようにするため（SR-LOOK-002）。FREQ-178 も戻りのリンクを残すと決めたが、今のコードは見出しだけで戻りのリンクが無い（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」節を参照） |
+| 根拠 | 消えた LOOK や打ち間違いの URL で来た人が行き止まりにならないようにするため（SR-LOOK-002）。FREQ-178 も戻りのリンクを残すと決めた。2026-11-07 にコードへ戻した（見出しの下に `/look` への「Back to Lookbook」） |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | `docs/02_Requirements/requirements.md` |
@@ -2420,18 +2425,18 @@ LOOK カードのシーズンラベルが「{4桁年}{SS|AW}」形式（例: 202
 
 モバイル（390px）で画像コンテナの margin-bottom が 13px、タブレット（768px）で 21px であること
 
-### FREQ-139-AC-02 モバイル・タブレットでテーマの文字が関連アイテムの文字の 1.5 倍以上になる
+### FREQ-139-AC-02 モバイルでテーマの文字が関連アイテムの文字の約 1.13 倍、タブレットで 1.5 倍以上になる
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FREQ-139-REQ-01 |
-| 根拠 | FREQ-139-REQ-01 の結果を、「モバイル・タブレットでテーマの文字が関連アイテムの文字の 1.5 倍以上になる」ことで画面の外から確かめる。テーマの文字の大きさは要件の式と違う値で決めており、E2E FR-LOOK-ALL-026 が赤（どの条件で落ちるかは未確認） |
-| 状態 | 推定 |
+| 根拠 | FREQ-139-REQ-01 の結果を、文字の比で画面の外から確かめる。モバイルは `--lk-size-sm` ÷ `--lk-size-2xs` ＝ `--lk-eighthstep` の2乗 ≒ 1.128、タブレットは `--lk-size-4xl` ÷ `--lk-size-2xs` ＝ 同7乗 ≒ 1.52。2026-11-07 にオーナーが今の画面を正にして直した（旧: モバイル・タブレットとも 1.5 倍以上） |
+| 状態 | 現行 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md` の「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-139 の行 |
 
-モバイル・タブレットでタイトルの font-size が関連アイテム文字の font-size の 1.5 倍以上であること
+モバイル（390px）でタイトルの font-size ÷ 関連アイテム文字の font-size が約 1.13（1.128 ± 0.02）、タブレット（768px）で 1.5 倍以上であること（検証した LOOK カードは、関連アイテムを持ち罫線が出るもの。ホームの LOOK 区画と /look の両方）
 
 ### FREQ-139-AC-03 シーズンとテーマの間隔がテーマと罫線の間隔より小さい
 
@@ -2524,18 +2529,18 @@ LOOK カードのシーズンラベルが「{4桁年}{SS|AW}」形式（例: 202
 
 デスクトップ（1280px）では従来どおり row-gap と column-gap が等しい（24px）こと
 
-### FREQ-141-AC-01 モバイルで一覧の本文の列の左右の padding が 13px になる
+### FREQ-141-AC-01 モバイルで一覧の本文の列の左右の padding が 0 になる
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FREQ-141-REQ-01 |
-| 根拠 | FREQ-141-REQ-01 の結果を、「モバイルで一覧の本文の列の左右の padding が 13px になる」ことで画面の外から確かめる。今のコードはモバイルの左右の padding を持たず、E2E FR-LOOK-ALL-028 のモバイルが 2026-10-24 の全件の E2E で赤 |
-| 状態 | 推定 |
+| 根拠 | FREQ-141-REQ-01 の結果を、「モバイルで一覧の本文の列の左右の padding が 0 になる」ことで画面の外から確かめる。2026-11-07 にオーナーが今の画面を正にして直した（旧: 13px。E2E FR-LOOK-ALL-028 のモバイルが 2026-10-24 の全件の E2E で赤だった） |
+| 状態 | 現行 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md` の「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-141 の行 |
 
-モバイル（390px）で /look 一覧のコンテンツ列の左右 padding が 13px（ホーム LOOK セクションの左右 padding と同値）であること
+モバイル（390px）で /look 一覧のコンテンツ列の左右 padding が 0 であること。ホーム LOOK セクションの左右 padding は 13px のままで、モバイルでは両者は同値ではない
 
 ### FREQ-141-AC-02 タブレットで一覧の column-gap が 24px になる
 
@@ -2919,7 +2924,7 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で、LOOK詳細ペー�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FREQ-178-REQ-01 |
-| 根拠 | FREQ-178-REQ-01 の結果を、「無い LOOK の URL では「Back to Lookbook」が出る」ことで画面の外から確かめる。今のコードは無い LOOK の表示に戻りのリンクを持たず、E2E FR-LOOK-DETAIL-010 の該当のテストが 2026-10-24 の全件の E2E で赤 |
+| 根拠 | FREQ-178-REQ-01 の結果を、「無い LOOK の URL では「Back to Lookbook」が出る」ことで画面の外から確かめる。無い LOOK の表示の戻りのリンクは 2026-11-07 にコードへ戻した（2026-10-24 の全件の E2E で FR-LOOK-DETAIL-004・010 の該当のテストが赤だった原因） |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
@@ -3251,6 +3256,18 @@ tablet（768px）で前後ボタンの上下中心が画像枠の上下中心と
 | 旧所在 | `docs/02_Requirements/requirements.md` の「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-288 の行 |
 
 desktop（1280px）で画像枠の縦横比が 2:3 で高さが viewport 内に収まり、情報列の幅が画像の幅と等しいこと
+
+### FREQ-288-AC-04 タブレットで画像と情報の列の間と、情報の列の右端から画面の右端までがどちらも 32px になる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FREQ-288-REQ-03 |
+| 根拠 | FREQ-288-REQ-03 は md 以上を ITEM と同じ2列の格子にする。ITEM 詳細はタブレットで2つの余白を 32px にする（FREQ-286-AC-02）ので、LOOK 詳細も同じ値になることで確かめる。2026-11-08 の実測では LOOK 詳細の右端だけが 57〜76px で、ITEM とずれていた |
+| 状態 | 現行 |
+| 確かめ方 | E2E |
+| 出どころ | オーナーの判断（2026-11-08「そろえる」） |
+
+tablet（768px・1023px）で、画像の枠の右端から情報の列の左端までと、情報の列の右端から画面の右端までが、どちらも 32px であること。mobile（390px）と desktop（1280px）では横スクロールが出ないこと
 
 ### FREQ-289-AC-01 1280×725 で ITEM 詳細のインジケータの下端が画面の下端から 12px 以上離れる
 
@@ -4793,9 +4810,8 @@ AC-01 と同じ状態で、aal2 の管理者の session の `/api/admin/looks/<i
 
 ## 未確認事項
 
-- 無い LOOK の頁の戻りのリンク: FR-LOOK-DETAIL-004 と FREQ-178-REQ-01・AC-02 は残すと決め、今のコードには無い。足すのか、要件を改めるのか（E2E FR-LOOK-DETAIL-004・010 の赤の原因）
-- 一覧のモバイルの左右の余白: FREQ-141-REQ-01 は 13px、今のコードは 0（E2E FR-LOOK-ALL-028 の赤）
-- 情報パネルのテーマの文字の大きさ: FREQ-139-REQ-01 の式と今の CSS の値が違う。E2E FR-LOOK-ALL-026（4件）・FR-LOOK-ALL-029（4件）・FR-LOOK-DETAIL-002（1件）の赤は、どの条件で落ちるかを確かめていない
+- 一覧のモバイルの左右の余白: FREQ-141-REQ-01 を 2026-11-07 に今のコード（0）に直した（決着）
+- 情報パネルのテーマの文字の大きさ: FREQ-139-REQ-01 は 2026-11-07 に今の CSS の値に直した（決着）。E2E FR-LOOK-ALL-026 の赤は、文字の側が `.reveal-mask` に入って検索の道がずれたことと、モバイルの比の期待が 1.5 倍以上だったことが原因だった。FR-LOOK-ALL-029（4件）・FR-LOOK-DETAIL-002（1件）の赤は、どの条件で落ちるかを確かめていない
 - 公開の LOOK を見る要求 `SR-LOOK-001`・`002` と、FR-ADMIN-005 を FREQ-17 につないだことの確認。FREQ-11 を SR の代わりに上位にするか（FREQ-11-AC-01 の「関連コーディネート」が何を指すか）
 - FREQ-12（ほかの利用者のコーディネート）は実装が無い。残すか廃止にするか
 - FR-LOOK-ALL-003（COULD）のページング・無限スクロールを作るか。今は全件を一度に出す

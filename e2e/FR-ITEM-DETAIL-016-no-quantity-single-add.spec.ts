@@ -50,7 +50,14 @@ for (const viewport of [
       });
 
       // 未選択バリデーションを通すため、スウォッチとサイズを選択しておく
-      const table = page.getByTestId('item-spec-table');
+      const mobile = viewport.width < 768;
+      if (mobile) {
+        await page.getByTestId('item-actions-fixed').getByRole('button', { name: 'SELECT OPTIONS' }).click();
+        await expect(page.getByTestId('item-sheet-options')).toBeVisible();
+      }
+      const table = mobile
+        ? page.getByTestId('item-sheet-options')
+        : page.getByTestId('item-spec-table');
       const swatch = table.locator('button[aria-pressed][aria-label]').first();
       if ((await swatch.count()) > 0) await swatch.click();
       const sizeButton = table
@@ -58,7 +65,10 @@ for (const viewport of [
         .first();
       if ((await sizeButton.count()) > 0) await sizeButton.click();
 
-      await page.getByText('ADD TO CART').first().click();
+      const actions = mobile
+        ? page.getByTestId('item-option-sheet')
+        : page.getByTestId('item-actions-main');
+      await actions.getByRole('button', { name: 'ADD TO CART' }).click();
       await expect.poll(() => sentQuantity).toBe(1);
     });
   });

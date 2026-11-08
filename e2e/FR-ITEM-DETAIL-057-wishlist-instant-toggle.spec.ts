@@ -69,7 +69,7 @@ async function openWishlistedItem(
 function wishlistButton(page: Page, viewportName: string) {
   const scope =
     viewportName === 'mobile'
-      ? page.getByTestId('item-actions-main')
+      ? page.getByTestId('item-actions-fixed')
       : page.getByTestId('item-wishlist-icon');
 
   return scope.getByRole('button', { name: 'Add to wishlist' });

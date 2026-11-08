@@ -29,6 +29,24 @@ test.describe('FR-ACCOUNT-004 address form', () => {
         return;
       }
 
+      await route.fallback();
+    });
+
+    await page.route('**/api/profile/addresses', async (route) => {
+      const method = route.request().method();
+      if (method === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ addresses: [] }),
+        });
+        return;
+      }
+      if (method !== 'PUT') {
+        await route.fallback();
+        return;
+      }
+
       savedPayload = route.request().postDataJSON() as Record<string, unknown>;
       await route.fulfill({
         status: 200,
@@ -57,11 +75,12 @@ test.describe('FR-ACCOUNT-004 address form', () => {
 
     await loginAndOpenAccount(page);
 
-    await page.getByRole('button', { name: '配送情報' }).click();
+    await page.getByRole('tab', { name: '配送情報' }).click();
+    await page.getByRole('button', { name: '+ 住所を追加', exact: true }).click();
 
     await page.getByLabel('郵便番号').fill('1500001');
     await expect(page.getByLabel('郵便番号')).toHaveValue('150-0001');
-    await expect(page.getByLabel('都道府県')).toHaveValue('東京都');
+    await expect(page.getByRole('combobox', { name: '都道府県' })).toContainText('東京都');
     await expect(page.getByLabel('市区町村')).toHaveValue('渋谷区');
     await expect(page.getByLabel('番地')).toHaveValue('神宮前1-2-3');
 
@@ -70,13 +89,18 @@ test.describe('FR-ACCOUNT-004 address form', () => {
 
     await expect.poll(() => savedPayload).not.toBeNull();
     await expect(savedPayload).toMatchObject({
-      address: {
+      addresses: [{
+        id: expect.any(String),
         postalCode: '1500001',
         prefecture: '東京都',
         city: '渋谷区',
         address: '神宮前1-2-3',
         building: '青山ハイツ 101',
-      },
+        isDefault: true,
+      }],
     });
+    await expect(page.getByRole('status').filter({ hasText: '配送情報を保存しました' })).toBeVisible();
+    await expect(page.getByText('〒150-0001', { exact: true })).toBeVisible();
+    await expect(page.getByText('東京都渋谷区神宮前1-2-3青山ハイツ 101', { exact: true })).toBeVisible();
   });
 });

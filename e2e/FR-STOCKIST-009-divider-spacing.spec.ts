@@ -1,7 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
 const PHI = 1.618;
-const EIGHTHSTEP = 1.062;
 const QUARTERSTEP_DEC = 0.128;
 const PX_TOLERANCE = 0.75;
 
@@ -13,6 +12,7 @@ type StockistSpacingMetrics = {
   detailRowGapPx: number;
   cardTopPaddingPx: number;
   cardBottomPaddingPx: number;
+  cardEdgeGapPx: number;
 };
 
 function round(value: number) {
@@ -26,6 +26,9 @@ function expectClose(actual: number, expected: number, label: string) {
   ).toBeLessThanOrEqual(PX_TOLERANCE);
 }
 
+// 2026-11-07 改定: カード上下の内側の余白は「見出しの文字の大きさ × 1.062」ではなく、
+// カードの上下の余白は Card の --card-pad と枠線 1px の和（実測 1280px で約 21.25px）。
+// 他の寸法（見出し↔区切り線↔詳細、行の間）は見出し・本文の文字の大きさから決まるまま。
 async function measureStockistSpacing(path: string, page: Page): Promise<StockistSpacingMetrics> {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.goto(path);
@@ -75,6 +78,11 @@ async function measureStockistSpacing(path: string, page: Page): Promise<Stockis
     const titleStyle = window.getComputedStyle(title);
     const bodyStyle = window.getComputedStyle(firstRowText);
 
+    // 期待値はカード部品の padding と枠線 1px の和。--lk-stockist-card-padding は Card の padding に負けて効いていない
+    const cardStyle = window.getComputedStyle(card);
+    const cardEdgeGapPx =
+      Number.parseFloat(cardStyle.paddingTop) + Number.parseFloat(cardStyle.borderTopWidth);
+
     return {
       titleFontSizePx: Number.parseFloat(titleStyle.fontSize),
       bodyFontSizePx: Number.parseFloat(bodyStyle.fontSize),
@@ -83,6 +91,7 @@ async function measureStockistSpacing(path: string, page: Page): Promise<Stockis
       detailRowGapPx: secondRowRect.top - firstRowRect.bottom,
       cardTopPaddingPx: titleRect.top - cardRect.top,
       cardBottomPaddingPx: cardRect.bottom - lastRowRect.bottom,
+      cardEdgeGapPx,
     };
   });
 }
@@ -91,12 +100,12 @@ for (const scenario of [
   { label: 'home', path: '/' },
   { label: 'catalog', path: '/stockist' },
 ]) {
-  test(`${scenario.label} applies phi-based divider spacing`, async ({ page }) => {
+  test(`FR-STOCKIST-002-AC-03 ${scenario.label} applies phi-based divider spacing`, async ({ page }) => {
     const metrics = await measureStockistSpacing(scenario.path, page);
     const expectedTitleToDividerGapPx = metrics.titleFontSizePx / PHI;
     const expectedDividerToDetailsGapPx = expectedTitleToDividerGapPx;
     const expectedDetailRowGapPx = (metrics.bodyFontSizePx / PHI) - (metrics.bodyFontSizePx * QUARTERSTEP_DEC);
-    const expectedCardPaddingPx = metrics.titleFontSizePx * EIGHTHSTEP;
+    const expectedCardPaddingPx = metrics.cardEdgeGapPx;
 
     expectClose(metrics.titleToDividerGapPx, expectedTitleToDividerGapPx, `${scenario.label} title to divider gap`);
     expectClose(metrics.dividerToDetailsGapPx, expectedDividerToDetailsGapPx, `${scenario.label} divider to details gap`);

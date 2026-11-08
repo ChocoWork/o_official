@@ -24,7 +24,7 @@ test.describe('FR-ITEM-DETAIL-032 description font size', () => {
     { name: 'tablet', width: 768, height: 1024 },
     { name: 'desktop', width: 1280, height: 800 },
   ]) {
-    test(`FREQ-170: ${viewport.name}（${viewport.width}px）で説明文が1段階小さいフォントで表示される`, async ({
+    test(`FREQ-170: ${viewport.name}（${viewport.width}px）で説明文が var(--lk-size-2xs) で表示され、SIZE の文字より大きい`, async ({
       page,
     }) => {
       await page.setViewportSize({
@@ -53,15 +53,16 @@ test.describe('FR-ITEM-DETAIL-032 description font size', () => {
         });
       expect(actual).toBeCloseTo(expected, 1);
 
-      // AC-02: 説明文が仕様テーブルの値テキスト（--lk-size-xs）より小さい。
+      // AC-02（2026-11-07 改定）: 説明文は SIZE の値テキスト（SingleSelect size="3xs"）より大きい。
       // FREQ-290 で MATERIAL は SpecList へ移り、FREQ-291 でラベルと同じ字面に
       // 揃えたため、比較対象は仕様テーブルに残る SIZE の値テキストとする。
+      // 実測: mobile 説明文 11.69px > SIZE 11.01px、tablet 12.12px > 11.41px、desktop 12.52px > 11.79px。
       const sizeValueFontSize = await page
         .getByTestId('item-spec-table')
         .locator('button')
         .last()
         .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
-      expect(actual).toBeLessThan(sizeValueFontSize);
+      expect(actual).toBeGreaterThan(sizeValueFontSize);
     });
   }
 });

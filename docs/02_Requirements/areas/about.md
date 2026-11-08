@@ -1,6 +1,6 @@
 # ABOUT の要件
 
-> 状態: 推定 | 確認日: 2026-11-01 | 対象: ABOUT（アバウトページ `/about`） | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-11-07 | 対象: ABOUT（アバウトページ `/about`） | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -16,7 +16,7 @@ ABOUT の領域の要求・要件・受け入れ条件・派生要件を、追�
 | セキュリティ要件 | 7 | 新しい `SEC-ABOUT-001`〜`007`（上位は `docs/05_Quality/security/threats/about.md` の `THR-ABOUT-001`〜`006`）と、その受け入れ条件11件 `SEC-ABOUT-NNN-AC-NN` |
 
 - 状態: 全部「推定」。FR-ABOUT-001〜004 は 2026-08-13 の決定（今の画面を仕様とする）で今の画面に合わせた文だが、決定の理由は出どころに書かれておらず、ユーザーの承認の記録も見つからないので「推定」にした。コードと合わない要件（005〜007）、コードは満たすが E2E の前提（画像が1枚以上ある）と画像を置くかどうかが決まっていない要件（008）、新しく起こした項目、実装から読み取った項目も「推定」。どちらが正しいかは決めず、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節（`TM-ABOUT-`）に載せた
-- 結論: 今の画面は文章と余白だけで、h1・画像・アイコン・CONTACT への導線が無い。h1（FR-ABOUT-005）、CONTACT の CTA（FR-ABOUT-006）、アイコンと画像（FR-ABOUT-007・008）を残すか廃止するかは、ユーザーに決めてもらう
+- 結論: 今の画面は文章と余白だけで、画像・アイコン・CONTACT への導線が無い（h1 は 2026-11-07 に見えない h1 を足した）。CTA は英語の2導線（`/item`・`/look`）で、CONTACT への CTA は置かない（FR-ABOUT-006 は 2026-11-07 にオーナーが2導線に直した）。アイコンと画像（FR-ABOUT-007・008）を残すか廃止するかは、ユーザーに決めてもらう
 
 ## 範囲と根拠
 
@@ -28,7 +28,7 @@ ABOUT の領域の要求・要件・受け入れ条件・派生要件を、追�
 | 対象のコード | `src/app/about/page.tsx`（1ファイル。データの取得・入力・API を持たない Server Component。描画は共有の `src/app/layout.tsx` の設定で毎回サーバーで行う） |
 | 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない） |
 | 範囲外の上位 | 全体の非機能要件 `NFR-SEO-003`（title・description・OG・canonical）・`NFR-A11Y-001`・`NFR-A11Y-005` は、どの領域の文書も定義しない（`requirements.md` の 5 章にだけある）。ここでは写さず、根拠に添えるだけにした。`NFR-SEO-004（範囲外）`（URL 設計・robots・サイトマップ、`requirements.md` の 5 章）も ABOUT に触れる。今はサイト全体に sitemap・robots が無く、`/about` もどこにも載らない（`src/app/`・`public/` に無い） |
-| 過去の決定 | 2026-08-13 に「ABOUT は今の画面を正規の仕様とする」と決め、FR-ABOUT-002〜004 の文を置き換えた（`docs/superpowers/specs/2026-08-13-e2e-classification-5.md`）。FR-ABOUT-005 の h1 は「別途判断」のまま |
+| 過去の決定 | 2026-08-13 に「ABOUT は今の画面を正規の仕様とする」と決め、FR-ABOUT-002〜004 の文を置き換えた（`docs/superpowers/specs/2026-08-13-e2e-classification-5.md`）。FR-ABOUT-005 の h1 は「別途判断」のままだったが、2026-11-07 にオーナーが「見た目を変えない h1（`sr-only`）を足す」と決めた |
 
 ### 写さなかった行
 
@@ -48,7 +48,7 @@ ABOUT の領域の要求・要件・受け入れ条件・派生要件を、追�
 | FR-ABOUT-002-quality-craftsmanship-section | FR-ABOUT-002-AC-01 | |
 | FR-ABOUT-003-our-values-icons | FR-ABOUT-003-AC-01 | |
 | FR-ABOUT-004-responsive-story-layout | FR-ABOUT-004-AC-01（3つの幅） | |
-| FR-ABOUT-005-heading-and-metadata | FR-ABOUT-005-AC-01 | h1 が無いと赤 |
+| FR-ABOUT-005-heading-and-metadata | FR-ABOUT-005-AC-01 | h1 が無いと赤（2026-11-07 に見えない h1 を足して満たす） |
 | FR-ABOUT-006-cta-links | FR-ABOUT-006-AC-01 | その文言のリンクが無いと赤 |
 | FR-ABOUT-007-icon-aria-and-image-alt | FR-ABOUT-007-AC-01 | アイコンが0個の今は空で通る |
 | FR-ABOUT-008-static-image-source | FR-ABOUT-008-AC-01 | 画像が0枚の今は空で通る |
@@ -163,23 +163,23 @@ ABOUT ページの見出しの階層・題・説明が検索エンジンと支�
 
 ページに `h1` を含む見出し階層を明示し、`generateMetadata` で `title` / `description` を設定する。
 
-今のコード: h1 は満たさない。題 `ABOUT | Le Fil des Heures` と説明は返す（レビューの注の「generateMetadata も無し」は古い）。h1 は無く、最初の見出しは h2（2026-06-28 の作り直しで消えた）。canonical は無い（NFR-SEO-003 は求める）。
+今のコード: 題 `ABOUT | Le Fil des Heures` と説明は返す（レビューの注の「generateMetadata も無し」は古い）。h1 は 2026-06-28 の作り直しで消えていたが、2026-11-07 のオーナー決定で、見た目を変えない h1（`<h1 class="sr-only">ABOUT</h1>`。文言は題の語）をページの先頭に足した。最初の見える見出しは h2 のまま。canonical は無い（NFR-SEO-003 は求める）。
 
-### FR-ABOUT-006 ブランドの話の後に COLLECTION・LOOKBOOK・CONTACT への CTA を置く
+### FR-ABOUT-006 ブランドの話の後に COLLECTION・LOOKBOOK への CTA を置く
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SR-ABOUT-001 |
-| 根拠 | 読み終えた人の次の行動（商品を見る・LOOK を見る・問い合わせる）を用意するため |
-| 状態 | 推定 |
+| 根拠 | 読み終えた人の次の行動（商品を見る・LOOK を見る）を用意するため。CONTACT への導線は置かない（ADR-0203 の判断どおり。2026-11-07 にオーナーが今の画面を正にした） |
+| 状態 | 現行 |
 | 確かめ方 | E2E |
-| 出どころ | `docs/02_Requirements/requirements.md` |
+| 出どころ | `docs/02_Requirements/requirements.md`。2026-11-07 のオーナー決定（今の画面の2導線を正にする） |
 | 優先度 | COULD |
 | 旧所在 | `docs/02_Requirements/requirements.md` の「1.8 アバウトページ（ABOUT）」節の FR-ABOUT-006 |
 
-ブランドストーリー後に `COLLECTIONを見る` / `LOOKBOOKを見る` / `CONTACTする` などの CTA を設置する。
+ブランドストーリー後に `VIEW COLLECTION`（`/item`）と `VIEW LOOKBOOK`（`/look`）の2つの CTA を設置する。`/contact` への CTA は置かない。
 
-今のコード: CTA は `VIEW COLLECTION`（`/item`）と `VIEW LOOKBOOK`（`/look`）の2つだけ。`/contact` への CTA は無く、文言も違うので満たさない（FR-ABOUT-004 の CTA と中身が重なる）。
+（2026-11-07 改定: 旧文は `COLLECTIONを見る` / `LOOKBOOKを見る` / `CONTACTする` の3つだったが、今の画面は英語の2つ（FR-ABOUT-004 の CTA と同じ物）で、オーナーが今の画面を正にすると決めた。）
 
 ### FR-ABOUT-007 装飾のアイコンを読み上げから外し、画像の代わりの文を具体にする
 
@@ -287,7 +287,7 @@ ABOUT ページの見出しの階層・題・説明が検索エンジンと支�
 | 確かめ方 | E2E |
 | 出どころ | 要件の文から起こした（FR-ABOUT-005）。`e2e/FR-ABOUT-005-heading-and-metadata.spec.ts` |
 
-`/about` を開くと、h1 の見出しが1つ表示されること。
+`/about` を開くと、h1 の見出しが1つあること。画面には見えない（`sr-only`）が、Playwright の可視判定は通り、画面の読み上げと検索には届く。
 
 ### FR-ABOUT-005-AC-02 ページの題と説明がある
 
@@ -301,17 +301,17 @@ ABOUT ページの見出しの階層・題・説明が検索エンジンと支�
 
 `/about` のページの題に `ABOUT` か `Le Fil des Heures` が含まれ、説明のメタ情報（description）が空でないこと。
 
-### FR-ABOUT-006-AC-01 COLLECTION・LOOKBOOK・CONTACT への CTA がある
+### FR-ABOUT-006-AC-01 COLLECTION・LOOKBOOK への CTA がある
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-ABOUT-006 |
-| 根拠 | FR-ABOUT-006 の3つの CTA を、文言と行き先で確かめる |
-| 状態 | 推定 |
+| 根拠 | FR-ABOUT-006 の2つの CTA を、文言と行き先で確かめる |
+| 状態 | 現行 |
 | 確かめ方 | E2E |
-| 出どころ | 要件の文から起こした（FR-ABOUT-006）。`e2e/FR-ABOUT-006-cta-links.spec.ts` |
+| 出どころ | 要件の文から起こした（FR-ABOUT-006）。`e2e/FR-ABOUT-006-cta-links.spec.ts`。2026-11-07 に今の画面（英語の2導線）に直した |
 
-`/about` を開くと、リンク `COLLECTIONを見る` が `/item` を、`LOOKBOOKを見る` が `/look` を、`CONTACTする` が `/contact` を指して表示されること。
+`/about` を開くと、リンク `VIEW COLLECTION` が `/item` を、`VIEW LOOKBOOK` が `/look` を指して表示されること。CTA の並びに `/contact` を指すリンクは無いこと。
 
 ### FR-ABOUT-007-AC-01 装飾のアイコンが読み上げから外れている
 
@@ -638,9 +638,8 @@ OG の題は `ABOUT | Le Fil des Heures`、説明は検索用の説明より短�
 
 ## 未確認事項
 
-- h1 を足すか、FR-ABOUT-005 から h1 の部分を外すか（2026-08-13 から「別途判断」のまま）
 - FR-ABOUT-005 の題と説明に、OG と canonical（NFR-SEO-003）の確かめまで含めるか
-- FR-ABOUT-006（CONTACT への CTA）を残すか、廃止して FR-ABOUT-004 にまとめるか
+- FR-ABOUT-006 と FR-ABOUT-004 の CTA は中身が重なる。1つにまとめるか（CONTACT の CTA は置かないと 2026-11-07 に決着）
 - FR-ABOUT-007・008 を廃止にするか（今は画像とアイコンを置かない方針。DRV-ABOUT-003）。置かない方針なら ADR に残す
 - 説明の「天然繊維100%」（metadata・brand.md）と本文の「天然繊維を中心に」のどちらが正か
 - CSP と画像の最適化の許可を、頁ごとに分けるか全体を絞るか（SEC-ABOUT-003。共有の `src/proxy.ts`・`next.config.ts` の話）

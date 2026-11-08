@@ -64,6 +64,8 @@ export default function StoryPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-1 sm:px-4 lg:px-8">
+      {/* 画面には出さない h1（2026-11-07 決定）。最初の見えない見出しとして主題を伝える */}
+      <h1 className="sr-only">ABOUT</h1>
       {/* Philosophy（ブランド主語の説明） */}
       <div className="mb-8.5 sm:mb-13.75 lg:mb-22.25 border-t border-black/10 pt-8.5 sm:pt-13.75 lg:pt-22.25">
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-12 gap-y-3.25 sm:gap-y-5.25">

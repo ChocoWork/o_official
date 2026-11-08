@@ -2,6 +2,15 @@
   padding-inline: 6.25%;
 }
 
+/* 詳細（ITEM・LOOK）のタブレット帯はページ左右を 20px にする。ItemDetailClient と
+   look/[id]/page.tsx の md:-ml-5 / md:pr-3 はこの 20px を前提に 32px の見た目の間隔を作る
+   (FREQ-286・FREQ-288-AC-04)。 */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .detail-page-main {
+    padding-inline: 1.25rem;
+  }
+}
+
 @media (max-width: 767px) {
   /* The content is 87.5% of the page: 6.25 / 87.5 = 1 / 14. */
   .detail-page-main .detail-mobile-gallery {

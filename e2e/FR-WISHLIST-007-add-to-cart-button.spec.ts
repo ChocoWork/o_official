@@ -226,6 +226,9 @@ test.describe('FR-WISHLIST-007 カートに追加ボタン', () => {
 
     await page.goto('/cart');
     await page.waitForLoadState('networkidle').catch(() => undefined);
-    await expect(page.getByRole('heading', { name: item!.name })).toHaveCount(1);
+    // 1行につき画像リンクと商品名リンクの2本がある。商品名の文字を持つ方だけ数えて「1行」を確かめる。
+    await expect(page.getByRole('link', { name: item!.name, exact: true }).and(
+      page.locator(`a[href="/item/${item!.id}"]`),
+    ).filter({ hasText: item!.name })).toHaveCount(1);
   });
 });

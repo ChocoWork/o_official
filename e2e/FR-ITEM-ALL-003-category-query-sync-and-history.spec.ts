@@ -1,13 +1,14 @@
 import { expect, test } from '@playwright/test';
-import { gotoItemList } from './item-list-test-utils';
+import { closeItemFilters, expandItemFilterSection, gotoItemList, openItemFilters } from './item-list-test-utils';
 
 test.describe('FR-ITEM-ALL-003 カテゴリURL同期', () => {
   test('カテゴリ選択がURLに反映され、戻るで復元される', async ({ page }) => {
     await gotoItemList(page);
 
-    await page.getByLabel('Open filter drawer').click();
-    await page.locator('label:has(input[aria-label="CATEGORY TOPS"])').click();
-    await page.getByLabel('Close filter drawer').click();
+    const filters = await openItemFilters(page);
+    const category = await expandItemFilterSection(filters, 'CATEGORY');
+    await category.getByRole('checkbox', { name: 'TOPS', exact: true }).check();
+    await closeItemFilters(filters);
 
     await expect(page).toHaveURL(/category=TOPS/i, { timeout: 15000 });
 
@@ -18,7 +19,8 @@ test.describe('FR-ITEM-ALL-003 カテゴリURL同期', () => {
     await page.goBack();
 
     await expect(page).toHaveURL(/category=TOPS/i, { timeout: 15000 });
-    await page.getByLabel('Open filter drawer').click();
-    await expect(page.getByLabel('CATEGORY TOPS')).toBeChecked();
+    const restoredFilters = await openItemFilters(page);
+    const restoredCategory = await expandItemFilterSection(restoredFilters, 'CATEGORY');
+    await expect(restoredCategory.getByRole('checkbox', { name: 'TOPS', exact: true })).toBeChecked();
   });
 });

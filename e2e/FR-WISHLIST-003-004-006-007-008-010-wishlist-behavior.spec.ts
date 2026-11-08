@@ -6,7 +6,8 @@ import {
 } from './shop-test-utils';
 
 test.describe('FR-WISHLIST-003/004/006/007/008/010 wishlist behavior', () => {
-  test('カード表示・削除・カート追加・ARIA role を確認する', async ({ page }) => {
+  // 2026-11-07 改定: お気に入りのカードもカテゴリを表示しない（画像・商品名・価格のみ）
+  test('カード表示（カテゴリなし）・削除・カート追加・ARIA role を確認する', async ({ page }) => {
     await mockCartApis(page, []);
     const wishlistMocks = await mockWishlistApis(page, [sampleWishlistItem()]);
 
@@ -18,7 +19,7 @@ test.describe('FR-WISHLIST-003/004/006/007/008/010 wishlist behavior', () => {
 
     await expect(wishlistList).toBeVisible();
     await expect(wishlistList.getByRole('listitem')).toHaveCount(1);
-    await expect(firstItem.getByText('TOPS')).toBeVisible();
+    await expect(firstItem.getByText('TOPS')).toHaveCount(0);
     await expect(firstItem.getByRole('heading', { level: 3, name: 'Silk Blouse' })).toBeVisible();
     await expect(firstItem.getByText('¥12,000')).toBeVisible();
     await expect(firstItem.getByRole('link', { name: 'Silk Blouse', exact: true })).toHaveAttribute('href', '/item/101');
@@ -29,8 +30,8 @@ test.describe('FR-WISHLIST-003/004/006/007/008/010 wishlist behavior', () => {
 
     await page.getByRole('button', { name: 'ウィッシュリストから削除' }).click();
     expect(wishlistMocks.deleteIds).toContain('wishlist-1');
-    await expect(page.getByText('ウィッシュリストは空です')).toBeVisible();
-    await expect(page.getByRole('link', { name: '買い物を続ける' })).toHaveAttribute('href', '/item');
+    await expect(page.getByText('WISHLIST IS EMPTY', { exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Continue Shopping', exact: true })).toHaveAttribute('href', '/item');
   });
 
   test('item.items が null の場合はフォールバック UI を表示する', async ({ page }) => {

@@ -1,6 +1,6 @@
 ﻿# 1.8 アバウトページ（ABOUT）詳細設計
 
-> 状態: 推定 | 確認日: 2026-11-01 | 対象: アバウトページ `/about`（`src/app/about/page.tsx`） | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-11-07 | 対象: アバウトページ `/about`（`src/app/about/page.tsx`） | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -69,15 +69,15 @@ graph LR
 | 要件 | この単位での扱い |
 | --- | --- |
 | FR-ABOUT-001・002・003・004 | 満たす（区画1〜4と CTA） |
-| FR-ABOUT-005 | 題と説明は満たす。h1 は無い（最初の見出しが h2） |
-| FR-ABOUT-006 | 満たさない（CONTACT への CTA が無い） |
+| FR-ABOUT-005 | 題と説明を返し、見えない h1（`sr-only`、`ABOUT`）を先頭に置く（2026-11-07。最初の見える見出しは h2） |
+| FR-ABOUT-006 | 満たす（CTA は `VIEW COLLECTION`・`VIEW LOOKBOOK` の2つ。2026-11-07 に要件を2導線に直した） |
 | FR-ABOUT-007 | 対象が無い（アイコン・画像を持たない） |
 | FR-ABOUT-008 | 本文の画像は無く、OG の画像は `public/` の物 |
 | DRV-ABOUT-001〜005 | 締めの一文、OG、画像とアイコンを置かない、節の2列と縦積み、原則の罫線 |
 | SEC-ABOUT-001・005・006 | 同じオリジンの OG の画像、相対の道だけを渡す、DB と外のサービスを読まない |
 | SEC-ABOUT-002・004 | ページの側には仕組みが無い（共有の proxy と Next の既定の動き。ARC-ABOUT-002） |
 | SEC-ABOUT-003 | ページの側には仕組みが無い（CSP は共有の proxy が全部の頁に同じ方針で付ける。満たすかは SEC-ABOUT-003 を見る） |
-| NFR-SEO-003（範囲外）・NFR-A11Y-001（範囲外） | canonical と h1 は無い |
+| NFR-SEO-003（範囲外）・NFR-A11Y-001（範囲外） | canonical は無い。h1 は見えない h1 を置いた（2026-11-07） |
 
 #### 入出力
 
@@ -103,7 +103,7 @@ graph LR
 1. 題・説明・OG（ARC-ABOUT-003）: 呼ばれると固定の値をそのまま返す。待つ処理は無い。OG の画像の相対の道は、共有の layout の `metadataBase` で `getSiteUrl` の起点に足されて絶対の URL になる（SEC-ABOUT-005）
 2. 文字の大きさ: 7つの `style` の値（締めの一文・h2・h3・英語のラベル・本文・引用・番号）を作る。どれも共有の大きさのトークン（`--lk-size-*`）を指す。h2 は `--lk-size-2xl`、本文は `--lk-size-xs`
 3. 3つの原則: 番号 `01`〜`03`、英語のラベル、日本語の見出し、説明の固定の3件の配列を作る
-4. 外側: 幅の上限 `max-w-6xl` で中央に寄せ、左右の余白を幅ごとに3段にする。共有の `Providers` の `<main>` の `px-4` がその外に重なる
+4. 外側: 先頭に見えない h1（`sr-only`、`ABOUT`。FR-ABOUT-005。2026-11-07）を置く。幅の上限 `max-w-6xl` で中央に寄せ、左右の余白を幅ごとに3段にする。共有の `Providers` の `<main>` の `px-4` がその外に重なる
 5. 区画1 ブランドの思想（FR-ABOUT-001）: 上の罫線と余白。h2 `Brand Philosophy / ブランドの思想` と3段落。1024px 以上は見出しと本文を 1:2 の2列、未満は縦に積む（DRV-ABOUT-004）
 6. 区画2 なぜ、つくるのか（FR-ABOUT-002）: h2 `WHY WE MAKE / なぜ、つくるのか`、問題提起の1段落、表示用の書体の引用2つ、`— Founder, Le Fil des Heures`
 7. 区画3 取り組み（FR-ABOUT-003）: h2 `OUR COMMITMENTS / 取り組み` を上に置き、原則の行を字下げする。原則ごとに、番号（640px 以上は左の列 64px・1024px 以上は 88px で右寄せ、未満は上）、上の罫線、英語のラベル、h3 の日本語の見出し、説明を出す。最後の原則だけ下の罫線を足す（DRV-ABOUT-005）
@@ -161,7 +161,7 @@ graph LR
 | 8 | 読み出しをしない | `fetch` を見張って、metadata の関数とページの関数を呼ぶ | `fetch` が一度も呼ばれない（SEC-ABOUT-006） |
 
 - 分岐の網羅に要るのは 1 と 2（1回の描画で両方を通る）。3〜8 は区画の中身と守りの確かめ。単体テストの 8 件は `tests/unit/about/about-page.test.tsx` の `it` の順と同じ
-- 次の観点は単体では試さず、結合テストが見る。h2 が4つで `Brand Philosophy / ブランドの思想`・`WHY WE MAKE / なぜ、つくるのか`・`OUR COMMITMENTS / 取り組み`・`COLLECTION / 商品設計思想` の順（h1 は試さない。TM-ABOUT-01 の判断待ち）、CTA の行き先（`VIEW COLLECTION` が `/item`、`VIEW LOOKBOOK` が `/look`、`/contact` へのリンクは無い）、画像とアイコンを持たない（`img`・`svg`・`picture`・`video`・`i` の要素が0。DRV-ABOUT-003）は SCR-ABOUT-001（`tests/integration/ui/about-screen.test.tsx`）と FLOW-ABOUT-001（`tests/integration/ui/about-flow.test.tsx`）のテストが見る
+- 次の観点は単体では試さず、結合テストが見る。h2 が4つで `Brand Philosophy / ブランドの思想`・`WHY WE MAKE / なぜ、つくるのか`・`OUR COMMITMENTS / 取り組み`・`COLLECTION / 商品設計思想` の順（見える h1 は無い。見えない h1 は FR-ABOUT-005-AC-01 の E2E が見る）、CTA の行き先（`VIEW COLLECTION` が `/item`、`VIEW LOOKBOOK` が `/look`、`/contact` へのリンクは無い）、画像とアイコンを持たない（`img`・`svg`・`picture`・`video`・`i` の要素が0。DRV-ABOUT-003）は SCR-ABOUT-001（`tests/integration/ui/about-screen.test.tsx`）と FLOW-ABOUT-001（`tests/integration/ui/about-flow.test.tsx`）のテストが見る
 - 応答の見出し・Cookie・CSP・`Cache-Control`（SEC-ABOUT-002・003・004）と、OG の絶対の URL（SEC-ABOUT-005）は共有の proxy と layout の動きなので、この単位の単体テストでは試さない（E2E の受け入れ条件で試す）
 
 ### DD-ABOUT-002 本番ビルドで必須の環境変数の確かめ assertBuildEnv（next.config.ts の先頭）
@@ -242,7 +242,7 @@ graph LR
 
 - `/about` の応答に付く `Cache-Control` の実際の値（SEC-ABOUT-004。本番ビルドで測っていない）
 - 本番のサイトの URL の環境変数の設定（設定が漏れればビルドが落ちる。`DD-ABOUT-002`）と、本番で `/about.png` が取得できるか（本番は未デプロイ）
-- h1 を足すか、FR-ABOUT-005 の h1 の部分を外すか。CONTACT の CTA（FR-ABOUT-006）とアイコン・画像（FR-ABOUT-007・008）を残すか（要件の文書の未確認事項と同じ）
+- アイコン・画像（FR-ABOUT-007・008）を残すか（要件の文書の未確認事項と同じ。CONTACT の CTA は FR-ABOUT-006 を2導線に直して決着）
 - CTA が横に並ぶ境目（コードは 640px、FR-ABOUT-004 の文は 768px）をどちらに合わせるか
 - 「天然繊維100%」（description）と「生地は天然繊維を中心に」（本文）のどちらが正か
 - この頁の項目は全部「推定」。ユーザーの確認を受けたら「現行」にする

@@ -276,7 +276,8 @@ describeLocalDb('G-3 shipment slip confirm', (db) => {
     await refused(s.id,'GROUP_G_SLIP_VERSION_CONFLICT',{version:2},'55000');
     for (const [change,message] of [
       [()=>db().query("select private.ensure_group_g_payment_review_hold($1,'g3-confirm',null,null,null)",[a.orderId]),'GROUP_G_SLIP_PAYMENT_REVIEW_REQUIRED'],
-      [()=>setOrderStatusForFixture(db(),[a.orderId],'cancelled'),'GROUP_G_SLIP_ORDER_NOT_SHIPPABLE'],
+      // J-19 を当てた DB では、入金済みの取り消しは全額返金と同じ更新でだけ通る。
+      [()=>setOrderStatusForFixture(db(),[a.orderId],'cancelled',{refundedInFull:true}),'GROUP_G_SLIP_ORDER_NOT_SHIPPABLE'],
       [async()=>db().query('update public.orders set user_id=$2 where id=$1',[a.orderId,await flow.createActor([])]),'GROUP_G_SLIP_CUSTOMER_MISMATCH'],
     ] as const) {
       await db().query('savepoint changed');await change();await refused(s.id,message);await db().query('rollback to savepoint changed');await db().query('release savepoint changed');

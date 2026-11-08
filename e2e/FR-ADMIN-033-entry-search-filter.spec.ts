@@ -209,9 +209,9 @@ for (const viewport of viewports) {
       await expect(page.getByText(/2条件で絞り込み中/)).toBeVisible();
       await applyFilter(page);
       await expect(page.getByText('1-1 / 1件')).toBeVisible();
-      await expect(
-        page.getByRole('region', { name: '取引一覧' }).getByText('卸売 / A社'),
-      ).toBeVisible();
+      const list = page.getByRole('region', { name: '取引一覧' });
+      await expect(list.getByText('卸売', { exact: true })).toBeVisible();
+      await expect(list.getByText('A社', { exact: true })).toBeVisible();
     });
 
     test('絞り込みは帳簿の集計に影響しない', async ({ page }) => {

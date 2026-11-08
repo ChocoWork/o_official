@@ -1,6 +1,6 @@
 # 試験の穴
 
-> 状態: 自動生成 | 生成日: 2026-11-01 | 対象: NEWS・HOME・LOOK・ABOUT・STOCKIST・SEARCH・PRIVACY・AUTH・ADMIN
+> 状態: 自動生成 | 生成日: 2026-11-08 | 対象: NEWS・HOME・LOOK・ABOUT・STOCKIST・SEARCH・PRIVACY・AUTH・ADMIN
 
 ## 概要
 
@@ -12,28 +12,28 @@
 
 | 項目 | 足りない試験 | 場所 |
 | --- | --- | --- |
-| FREQ-275-AC-02 390・768px で 20px、1280px で 28px | E2E | `docs/02_Requirements/areas/news.md:1158` |
-| SEC-NEWS-003-AC-01 移行だけを当てた DB で置き場が非公開になる | E2E | `docs/02_Requirements/areas/news.md:1625` |
-| SEC-NEWS-008-AC-02 署名の失敗が記録に1件残る | E2E | `docs/02_Requirements/areas/news.md:1832` |
-| SEC-NEWS-009-AC-03 公開の一覧の取り出しは上限を渡さなくても上限で止まる | E2E | `docs/02_Requirements/areas/news.md:1881` |
-| SEC-NEWS-009-AC-04 詳細の前後の取り出しは公開済みの全部を読まない | E2E | `docs/02_Requirements/areas/news.md:1893` |
-| SEC-NEWS-018-AC-03 作成の失敗で上げた画像が残らない | E2E | `docs/02_Requirements/areas/news.md:2293` |
-| SEC-NEWS-019-AC-01 /api/news の失敗の応答は固定の文だけ | E2E | `docs/02_Requirements/areas/news.md:2318` |
-| SEC-NEWS-019-AC-02 失敗の記録に鍵と token が含まれない | E2E | `docs/02_Requirements/areas/news.md:2330` |
-| SEC-NEWS-020-AC-02 管理の1件の取得は DB の失敗を 404 にしない | E2E | `docs/02_Requirements/areas/news.md:2375` |
-| SEC-NEWS-020-AC-03 公開の一覧の取り出しの失敗が記録に残る | E2E | `docs/02_Requirements/areas/news.md:2387` |
-| SEC-NEWS-021-AC-01 決めた回数を超えた作成を断る | E2E | `docs/02_Requirements/areas/news.md:2412` |
+| FREQ-275-AC-02 390・768px で 20px、1280px で 28px | E2E | `docs/02_Requirements/areas/news.md:1160` |
+| SEC-NEWS-003-AC-01 移行だけを当てた DB で置き場が非公開になる | E2E | `docs/02_Requirements/areas/news.md:1651` |
+| SEC-NEWS-008-AC-02 署名の失敗が記録に1件残る | E2E | `docs/02_Requirements/areas/news.md:1858` |
+| SEC-NEWS-009-AC-03 公開の一覧の取り出しは上限を渡さなくても上限で止まる | E2E | `docs/02_Requirements/areas/news.md:1907` |
+| SEC-NEWS-009-AC-04 詳細の前後の取り出しは公開済みの全部を読まない | E2E | `docs/02_Requirements/areas/news.md:1919` |
+| SEC-NEWS-018-AC-03 作成の失敗で上げた画像が残らない | E2E | `docs/02_Requirements/areas/news.md:2319` |
+| SEC-NEWS-019-AC-01 /api/news の失敗の応答は固定の文だけ | E2E | `docs/02_Requirements/areas/news.md:2344` |
+| SEC-NEWS-019-AC-02 失敗の記録に鍵と token が含まれない | E2E | `docs/02_Requirements/areas/news.md:2356` |
+| SEC-NEWS-020-AC-02 管理の1件の取得は DB の失敗を 404 にしない | E2E | `docs/02_Requirements/areas/news.md:2401` |
+| SEC-NEWS-020-AC-03 公開の一覧の取り出しの失敗が記録に残る | E2E | `docs/02_Requirements/areas/news.md:2413` |
+| SEC-NEWS-021-AC-01 決めた回数を超えた作成を断る | E2E | `docs/02_Requirements/areas/news.md:2438` |
 | FREQ-278-AC-02 3つの幅で縦線の動きの名前が threadDraw | E2E | `docs/02_Requirements/areas/home.md:709` |
 | FREQ-278-AC-06 3つの幅で縦線は1回だけ再生し、終わりの形を保つ | E2E | `docs/02_Requirements/areas/home.md:761` |
 | SEC-HOME-014-AC-01 1つの領域の取得が失敗してもホームのほかの節が出る | E2E | `docs/02_Requirements/areas/home.md:1412` |
-| FREQ-12-AC-01 ほかの利用者のコーディネートを見る時にエラーが出ず関連コーディネートが出る | E2E | `docs/02_Requirements/areas/look.md:1825` |
-| FREQ-137-AC-01 各幅で HOME と一覧の格子の row-gap と column-gap が等しい | E2E | `docs/02_Requirements/areas/look.md:2319` |
-| FR-LOOK-DETAIL-007-AC-01 詳細に同じシーズンか関連のコーディネートを薦める節が出る | E2E | `docs/02_Requirements/areas/look.md:3745` |
-| SEC-LOOK-010-AC-01 大きな件数を求めても上限までしか返らない | E2E | `docs/02_Requirements/areas/look.md:4155` |
+| FREQ-12-AC-01 ほかの利用者のコーディネートを見る時にエラーが出ず関連コーディネートが出る | E2E | `docs/02_Requirements/areas/look.md:1830` |
+| FREQ-137-AC-01 各幅で HOME と一覧の格子の row-gap と column-gap が等しい | E2E | `docs/02_Requirements/areas/look.md:2324` |
+| FR-LOOK-DETAIL-007-AC-01 詳細に同じシーズンか関連のコーディネートを薦める節が出る | E2E | `docs/02_Requirements/areas/look.md:3762` |
+| SEC-LOOK-010-AC-01 大きな件数を求めても上限までしか返らない | E2E | `docs/02_Requirements/areas/look.md:4172` |
 | SEC-ABOUT-006-AC-01 Supabase に届かない状態でも /about が表示される | E2E | `docs/02_Requirements/areas/about.md:532` |
 | SEC-ABOUT-007-AC-01 設定が無い時に OG の URL が手元の URL にならない | E2E | `docs/02_Requirements/areas/about.md:559` |
 | SEC-ABOUT-007-AC-02 許可オリジンの設定が無い本番のビルドは落ちる | E2E | `docs/02_Requirements/areas/about.md:573` |
-| SEC-STOCKIST-008-AC-01 anon・authenticated に表の余分な権限が無い | E2E | `docs/02_Requirements/areas/stockist.md:941` |
+| SEC-STOCKIST-008-AC-01 anon・authenticated に表の余分な権限が無い | E2E | `docs/02_Requirements/areas/stockist.md:956` |
 | FREQ-184-AC-01 1280px で左右の2カラム、390・768px で縦積みになり横にはみ出さない | E2E | `docs/02_Requirements/areas/search.md:790` |
 | FREQ-184-AC-02 「N RESULTS」「SORT BY」「RELEVANCE」と、行の種別・題・サムネイル・矢印が出る | E2E | `docs/02_Requirements/areas/search.md:803` |
 | FREQ-190-AC-01 入力すると種別付きの候補が最大8件、行の高さ 44px 以上で出る | E2E | `docs/02_Requirements/areas/search.md:972` |
@@ -76,7 +76,6 @@
 
 | 段 | 場所 | 名前 |
 | --- | --- | --- |
-| e2e | `e2e/FR-NEWS-ALL-008-mobile-filter-initial-offset.spec.ts:6` | 初期表示でフィルターバーがヘッダー直下に収まり、先頭記事と重ならない |
 | e2e | `e2e/FR-NEWS-ALL-009-mobile-filter-scroll-gap.spec.ts:78` | sm 幅で Header と FILTER バーの間に隙間が出ない |
 | e2e | `e2e/FR-NEWS-ALL-009-mobile-filter-scroll-gap.spec.ts:95` | md 幅で Header と FILTER バーの間に隙間が出ない |
 | e2e | `e2e/FR-NEWS-ALL-010-mobile-filter-motion-phase.spec.ts:146` | 390px 幅で Header の隠れアニメーション中も FILTER バーが追従する |
@@ -88,8 +87,6 @@
 | e2e | `e2e/FR-NEWS-ALL-010-mobile-filter-motion-phase.spec.ts:230` | md 幅の wheel スクロールでも Header と FILTER バーが分離しない |
 | e2e | `e2e/FR-NEWS-ALL-010-mobile-filter-motion-phase.spec.ts:244` | iPhone 12 エミュレーションでも Header の隠れアニメーション中に FILTER バーが分離しない |
 | e2e | `e2e/FR-NEWS-ALL-010-mobile-filter-motion-phase.spec.ts:266` | iPad エミュレーションでも Header の隠れアニメーション中に FILTER バーが分離しない |
-| e2e | `e2e/FR-NEWS-ALL-011-desktop-filter-initial-position.spec.ts:38` | laptop 幅でフィルター開始位置が Header 直下から過度に離れない |
-| e2e | `e2e/FR-NEWS-ALL-011-desktop-filter-initial-position.spec.ts:55` | desktop 幅でフィルター開始位置が Header 直下から過度に離れない |
 | e2e | `e2e/FR-NEWS-ALL-017-desktop-filter-left-edge.spec.ts:44` | mobile（390px）/ tablet（768px）ではデスクトップフィルターを表示しない |
 | e2e | `e2e/FR-LOOK-ALL-009-filter-spacing-match-news.spec.ts:58` | ${vp.name} で drawer の option-list gap が LOOK と NEWS で一致する |
 | e2e | `e2e/FR-LOOK-ALL-019-hover-second-image.spec.ts:51` | ${vp.name} では2枚目画像が opacity 0 のまま表示されない |
@@ -97,7 +94,6 @@
 | e2e | `e2e/FR-LOOK-ALL-035-desktop-filter-left-edge.spec.ts:17` | desktop（1280px）でフィルターが画面左端に寄っている |
 | e2e | `e2e/FR-LOOK-ALL-035-desktop-filter-left-edge.spec.ts:25` | wide desktop（1920px）でもフィルターが画面左端に寄っている |
 | e2e | `e2e/FR-LOOK-ALL-035-desktop-filter-left-edge.spec.ts:33` | mobile（390px）/ tablet（768px）ではデスクトップフィルターを表示しない |
-| e2e | `e2e/FR-STOCKIST-009-divider-spacing.spec.ts:94` | ${scenario.label} applies phi-based divider spacing |
 | e2e | `e2e/FR-LOGIN-011-auth-rounded-design.spec.ts:25` | email input and login button are not rounded (minimal design) |
 | e2e | `e2e/FR-LOGIN-013-password-reset-link-placement.spec.ts:50` | register confirm-password remains vertically centered in the shared support row |
 | e2e | `e2e/FR-LOGIN-022-auth-layout-hierarchy.spec.ts:12` | auth JSX uses lk-text classes instead of inline font-size tokens |
@@ -127,7 +123,7 @@
 | e2e | `e2e/FR-LOOK-DETAIL-007-related-recommendations-wont.spec.ts:4` | FR-LOOK-DETAIL-007-AC-01 | FR-LOOK-DETAIL-007-AC-01 詳細に同じシーズンか関連のコーディネートを薦める節が出る（現フェーズ対象外のため未実装） |
 | integration | `tests/integration/ui/auth-header-visibility.test.tsx:95` | ARC-AUTH-008 | ARC-AUTH-008 CSS が印の true の時にヘッダーの高さを、false の時に 0 を --site-header-offset に入れる（計算後の CSS で確かめる手段が要る） |
 | integration | `tests/integration/ui/auth-header-visibility.test.tsx:96` | ARC-AUTH-008 | ARC-AUTH-008 共有のレイアウトが html の初期値に data-header-visible="true" を持つ（レイアウトを描いて確かめる手段が要る） |
-| integration | `tests/integration/db/auth_grants_inventory.integration.test.ts:386` | DATA-AUTH-006 | DATA-AUTH-006 anon の TRUNCATE を既知の例外の表からも外す（他領域の波で直す） |
+| integration | `tests/integration/db/auth_grants_inventory.integration.test.ts:410` | DATA-AUTH-006 | DATA-AUTH-006 anon の TRUNCATE を既知の例外の表からも外す（他領域の波で直す） |
 
 ## 届かない分岐
 

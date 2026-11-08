@@ -7,6 +7,8 @@ import {
 
 // FREQ-290: MATERIAL / CARE / MADE IN を COLOR・SIZE の仕様テーブルから切り離し、
 // ADD TO WISHLIST の下に罫線区切りの SpecList として表示する
+// 2026-11-07 改定: mobile は購入操作が画面下の固定 CTA と下から出るシートに移り、
+// インラインの ADD TO CART / ADD TO WISHLIST が無い。mobile の MATERIAL 行は商品説明の下に置く。
 
 const item = {
   ...sampleItemDetail({
@@ -66,8 +68,8 @@ test.describe('FR-ITEM-DETAIL-042 MATERIAL / CARE / MADE IN を WISHLIST ボタ�
       }
     });
 
-    // AC-02: MATERIAL 行が ADD TO WISHLIST より下にあり、仕様テーブルには残っていない
-    test(`${viewport.name} MATERIAL 行が ADD TO WISHLIST の下にある`, async ({
+    // AC-02: MATERIAL 行が購入操作（tablet / desktop はアクション群、mobile は商品説明）より下にあり、仕様テーブルには残っていない
+    test(`${viewport.name} MATERIAL 行が ${viewport.name === 'mobile' ? '商品説明' : 'ADD TO WISHLIST'} の下にある`, async ({
       page,
     }) => {
       await page.setViewportSize({
@@ -77,7 +79,10 @@ test.describe('FR-ITEM-DETAIL-042 MATERIAL / CARE / MADE IN を WISHLIST ボタ�
       await openItemDetail(page);
 
       // FREQ-299: md 以上は ADD TO WISHLIST を廃したのでアクション群の下端を基準にする
-      const wishlistButton = page.getByTestId('item-actions-main');
+      // mobile: item-actions-main は display:none（購入操作は固定 CTA とシート）。商品説明の下端を基準にする
+      const wishlistButton = page.getByTestId(
+        viewport.name === 'mobile' ? 'item-detail-description' : 'item-actions-main',
+      );
       const material = page.getByTestId('item-material');
       await expect(material).toHaveText('Wool 100%');
 

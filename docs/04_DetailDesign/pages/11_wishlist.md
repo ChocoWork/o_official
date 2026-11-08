@@ -1,6 +1,6 @@
 ﻿# 1.11 ウィッシュリストページ（WISHLIST）詳細設計
 
-> 状態: 既存設計 | 実装状況は項目ごとに要再照合
+> 状態: 既存設計 | 確認日: 2026-11-07 | 実装状況は項目ごとに要再照合
 
 ## 概要
 
@@ -10,9 +10,9 @@
 
 | 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |
 |--------|----------|--------|----------------|----------|--------------|
-| FR-WISHLIST-001 | `/wishlist` ページは `h1` 見出しを含み `WishlistClient` でウィッシュリストアイテムを表示する | IMPL-WISHLIST-001 | `src/app/wishlist/page.tsx`, `src/app/wishlist/client.tsx` | `page.tsx` は RSC で `h1` "Wishlist" を持ち `<WishlistClient />` を内包 | 済 |
+| FR-WISHLIST-001 | `/wishlist` ページは `h1` 見出しを含み `WishlistClient` でウィッシュリストアイテムを表示する | IMPL-WISHLIST-001 | `src/app/wishlist/page.tsx`, `src/app/wishlist/client.tsx` | `page.tsx` は RSC で `h1` "Wishlist" を持ち `<WishlistClient />` を内包。空のときも見えない h1（`sr-only`、WISHLIST）を `EmptyPage` の外に出す（2026-11-07） | 済 |
 | FR-WISHLIST-002 | `WishlistClient` は `/api/wishlist` からデータを取得し読み込み中・エラー・空状態の各 UI を表示する | IMPL-WISHLIST-002 | `src/app/wishlist/client.tsx`, `src/app/api/wishlist/route.ts` | `useEffect` で `fetch('/api/wishlist')` 実行。loading / error / empty の各ブランチ実装済み。エラー時は `alert()` を使用 | 済 |
-| FR-WISHLIST-003 | ウィッシュリストカードは商品画像・カテゴリ・商品名・価格を表示し商品詳細ページへ遷移できる | IMPL-WISHLIST-003 | `src/app/wishlist/client.tsx` | `Image` コンポーネントで `image_url`、カテゴリ、商品名、価格、`/item/${item.items.id}` リンクを表示 | 済 |
+| FR-WISHLIST-003 | ウィッシュリストカードは商品画像・商品名・価格を表示し（カテゴリは表示しない。2026-11-07 改定）商品詳細ページへ遷移できる | IMPL-WISHLIST-003 | `src/app/wishlist/client.tsx` | `Image` コンポーネントで `image_url`、商品名、価格、`/item/${item.items.id}` リンクを表示 | 済 |
 | FR-WISHLIST-004 | ユーザーはカード上の削除ボタンでアイテムを削除でき削除後に一覧を再レンダリングする | IMPL-WISHLIST-004 | `src/app/wishlist/client.tsx`, `src/app/api/wishlist/[id]/route.ts` | `DELETE /api/wishlist/${wishlistId}` 呼び出し後に `filter` で画面更新。エラー時は `alert()` のみ | 済 |
 | FR-WISHLIST-005 | ウィッシュリスト API は GET / POST / DELETE を持ち、wishlist Cookie または会員の ID で管理する | IMPL-WISHLIST-005 | `src/app/api/wishlist/route.ts`, `src/app/api/wishlist/[id]/route.ts` | 持ち主と wishlist_lines をサーバーで照合。GET の各行に販売中の `variants:[{id,color,size}]` を添え、会員の書き換えには CSRF を求める | 済 |
 | FR-WISHLIST-006 | ウィッシュリストが空の場合は案内テキストと `/item` への継続購入リンクを提供する | IMPL-WISHLIST-006 | `src/app/wishlist/client.tsx` | 「ウィッシュリストは空です」と `Link href="/item"` 「買い物を続ける」を表示 | 済 |

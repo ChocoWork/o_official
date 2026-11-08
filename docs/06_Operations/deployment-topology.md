@@ -1,6 +1,6 @@
 # 配置構成
 
-> 状態: 現行（本番は未デプロイ） | 確認日: 2026-11-01 | 対象: 本番の構成と設定の正本の置き場、Supabase Auth の設定の順序
+> 状態: 現行（本番は未デプロイ） | 確認日: 2026-11-07 | 対象: 本番の構成と設定の正本の置き場、Supabase Auth の設定の順序
 
 ## 概要
 
@@ -48,7 +48,7 @@ flowchart LR
 | --- | --- |
 | 前提 | 本番は Vercel に直接置き、前段に Cloudflare などの中継を置かない。送り元の IP は `x-vercel-forwarded-for`、`x-real-ip` の順に読む（`VERCEL=1` の時だけ。`x-forwarded-for` は読まない）。設計判断は [ADR-0416](../03_BasicDesign/decisions/ADR-0416-auth-client-ip-vercel-headers-only.md) |
 | 中継を置く時 | 見出しが中継の IP に変わるので、そのまま置くと全員が同じ送り元になる。置く前に、段数を決める `TRUSTED_PROXY_HOPS` の設計を足す（今回は作らない） |
-| E2E | E2E の固定の環境（`E2E_FIXED_ENV`）が `CLIENT_IP_HEADER=x-real-ip` を入れる。`E2E_FIXED_ENV` は `buildE2EOverrides` の中だけで混ぜ、その環境は既存の見張り（`findUnsafeE2ESettings`）が手元の Supabase であることを保証する。旗の専用の見張りは足さない。詳しくは[シークレット管理方針](secrets.md)の `CLIENT_IP_HEADER` |
+| E2E | E2E の固定の環境（`E2E_FIXED_ENV`）が `CLIENT_IP_HEADER=x-real-ip` を入れる。`E2E_FIXED_ENV` は `buildE2EOverrides` の中だけで混ぜ、その環境は既存の見張り（`findUnsafeE2ESettings`）が手元の Supabase であることを保証する。旗の専用の見張りは足さない。試験の側は `playwright.config.ts` が文脈ごとに `198.19.0.0/16` の別の `x-real-ip` を付ける（2026-11-07）。詳しくは[シークレット管理方針](secrets.md)の `CLIENT_IP_HEADER` |
 | 最初の preview での実測（配備の前に必ず） | preview の URL に、偽の `x-real-ip: 203.0.113.7` と偽の `x-forwarded-for: 203.0.113.8` と偽の `x-vercel-forwarded-for: 203.0.113.9` を付けて `GET` を送り、アプリが受け取る送り元（監査の行の `ip`、または回数の制限の枠）が偽の値ではなく、リクエスト元の実際の IP になることを確かめる。偽の値が通るなら配備を止める。結果は日付つきでこの節に書く |
 | 状態 | 本番は未デプロイで、Vercel が見出しを上書きすることは未実測 |
 

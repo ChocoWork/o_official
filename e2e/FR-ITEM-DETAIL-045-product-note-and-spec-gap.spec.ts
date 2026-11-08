@@ -66,48 +66,72 @@ for (const viewport of [
       await expect(page.getByTestId('item-product-note')).toHaveCount(0);
     });
 
-    test('FREQ-294-AC-01: 値の左端がコンテナ幅の約40%に揃い、ラベルは1行', async ({
+    test('FREQ-294-AC-01: 短ラベルは約40%、長ラベルは自然幅と余白に合わせ、全値を揃えラベルは1行', async ({
       page,
     }) => {
-      await openItemDetail(page, itemWithNote);
+      for (const sample of [
+        {
+          name: 'short labels',
+          item: itemWithoutNote,
+          labels: ['MATERIAL', 'MADE IN'],
+        },
+        {
+          name: 'longest label',
+          item: itemWithNote,
+          labels: ['MATERIAL', 'CARE', 'MADE IN', 'PRODUCT NOTE'],
+        },
+      ]) {
+        await test.step(sample.name, async () => {
+          await openItemDetail(page, sample.item);
 
-      const geometry = await page.evaluate(() => {
-        const list = document.querySelector('[data-testid="item-spec-list"]');
-        if (!list) return null;
-        const listRect = list.getBoundingClientRect();
-        const cells = [...list.children] as HTMLElement[];
-        const rows: Array<{
-          label: string;
-          labelLineCount: number;
-          valueOffsetRatio: number;
-        }> = [];
-        for (let i = 0; i + 1 < cells.length; i += 2) {
-          const range = document.createRange();
-          range.selectNodeContents(cells[i]);
-          rows.push({
-            label: cells[i].textContent ?? '',
-            labelLineCount: range.getClientRects().length,
-            valueOffsetRatio:
-              (cells[i + 1].getBoundingClientRect().left - listRect.left) /
-              listRect.width,
+          const geometry = await page.evaluate(() => {
+            const list = document.querySelector('[data-testid="item-spec-list"]');
+            if (!list) return null;
+            const listRect = list.getBoundingClientRect();
+            const cells = [...list.children] as HTMLElement[];
+            const rows: Array<{
+              label: string;
+              labelLineCount: number;
+              labelNaturalWidthWithPadding: number;
+              valueOffsetRatio: number;
+            }> = [];
+            for (let i = 0; i + 1 < cells.length; i += 2) {
+              const range = document.createRange();
+              range.selectNodeContents(cells[i]);
+              rows.push({
+                label: cells[i].textContent ?? '',
+                labelLineCount: range.getClientRects().length,
+                labelNaturalWidthWithPadding:
+                  range.getBoundingClientRect().width +
+                  parseFloat(getComputedStyle(cells[i]).paddingLeft) +
+                  parseFloat(getComputedStyle(cells[i]).paddingRight),
+                valueOffsetRatio:
+                  (cells[i + 1].getBoundingClientRect().left - listRect.left) /
+                  listRect.width,
+              });
+            }
+            return { width: listRect.width, rows };
           });
-        }
-        return rows;
-      });
 
-      expect(geometry).not.toBeNull();
-      expect(geometry!.map((row) => row.label)).toEqual([
-        'MATERIAL',
-        'CARE',
-        'MADE IN',
-        'PRODUCT NOTE',
-      ]);
+          expect(geometry).not.toBeNull();
+          expect(geometry!.rows.map((row) => row.label)).toEqual(sample.labels);
+          const naturalWidth = Math.max(
+            ...geometry!.rows.map((row) => row.labelNaturalWidthWithPadding),
+          );
+          const expectedOffsetRatio = Math.max(0.4, naturalWidth / geometry!.width);
+          if (sample.name === 'short labels') {
+            // 短ラベルが収まる場合の40%指定も独立して維持する。
+            expect(naturalWidth / geometry!.width).toBeLessThanOrEqual(0.4);
+          }
 
-      for (const row of geometry!) {
-        // AC-01: ラベルは折り返さない
-        expect(row.labelLineCount).toBe(1);
-        // AC-01: 値の左端がコンテナ幅の約 40%
-        expect(row.valueOffsetRatio).toBeCloseTo(0.4, 2);
+          for (const row of geometry!.rows) {
+            // AC-01: ラベルは折り返さない。
+            expect(row.labelLineCount).toBe(1);
+            // AC-01: 40%に収まらないときは最長ラベルの自然幅と余白まで列を広げる。
+            expect(row.valueOffsetRatio).toBeCloseTo(expectedOffsetRatio, 2);
+            expect(row.valueOffsetRatio).toBeCloseTo(geometry!.rows[0].valueOffsetRatio, 2);
+          }
+        });
       }
     });
   });

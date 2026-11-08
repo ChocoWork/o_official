@@ -279,7 +279,8 @@ describeLocalDb('H2 admin writers and snapshot reads (controller only)', (db) =>
     const bare = await create(hDiscount({ stopped: true }));
     expect(await hFailure(db(), () => hRpc(db(), 'get_admin_discount_activation_context', [bare.discountId, { stopped: false }, actor]))).toEqual(invalid);
     expect(await hFailure(db(), () => hRpc(db(), 'admin_set_discount_stopped', [bare.discountId, false, 1, randomUUID(), actor]))).toEqual(invalid);
-    const auto = await create(hDiscount({ method: 'automatic', allowGuests: true, startsAt: '2300-01-01T00:00:00Z' }));
+    // group_h_admin_concurrency が 2300 年以降の1秒の窓に残す25件と重ならない期間にする（走る順で上限に当たらない）。
+    const auto = await create(hDiscount({ method: 'automatic', allowGuests: true, startsAt: '2299-01-01T00:00:00Z', endsAt: '2300-01-01T00:00:00Z' }));
     expect(await hFailure(db(), () => hRpc(db(), 'admin_update_discount', [auto.discountId, { method: 'code' }, 1, randomUUID(), actor]))).toEqual(invalid);
     expect((await hRpc<Created>(db(), 'admin_update_discount', [auto.discountId, { method: 'code', code: `SWITCH-${randomUUID().toUpperCase()}` }, 1, randomUUID(), actor])).version).toBe('2');
     const prefix = `PFX-${randomUUID().slice(0, 8).toUpperCase()}`;

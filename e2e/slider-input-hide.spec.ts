@@ -31,12 +31,17 @@ test('Slider with input hidden - isolate visual source', async ({ browser }) => 
     if (input) input.style.display = '';
   });
 
-  // Add a style to show the webkit runnable track as semi-transparent
-  await page.addStyleTag({ content: `
+  // Load a same-origin stylesheet under the production style-src-elem policy.
+  const stylesheetUrl = new URL('/__e2e__/slider-track.css', page.url()).href;
+  await page.route(stylesheetUrl, (route) => route.fulfill({
+    contentType: 'text/css',
+    body: `
     [data-ui-slider-input]::-webkit-slider-runnable-track {
       background: rgba(255,0,0,0.3) !important;
     }
-  `});
+  `,
+  }));
+  await page.addStyleTag({ url: stylesheetUrl });
   await page.waitForTimeout(100);
   await section.screenshot({ path: 'e2e/screenshots/debug-track-red.png' });
 });

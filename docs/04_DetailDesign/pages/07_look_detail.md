@@ -1,6 +1,6 @@
 ﻿# 1.7 ルック詳細ページ（LOOK DETAIL）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: LOOK 詳細 `/look/[id]`、詳細の画像のギャラリー、1件の LOOK の取り出し、シーズンの表記 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-11-07 | 対象: LOOK 詳細 `/look/[id]`、詳細の画像のギャラリー、1件の LOOK の取り出し、シーズンの表記 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -17,7 +17,7 @@ LOOK 詳細 `/look/[id]` を作るコードの単位ごとに、入出力・正�
 | `DD-LOOK-071` | `GET`（`src/app/look/[id]/og/route.ts`）、`getPublishedLookCoverRaw`（`src/lib/look/server.ts`） | `og:image` の窓口。公開の LOOK の先頭の画像を、検証した道筋のバイトで返す。署名しない | なし |
 
 - 結論: 詳細の本体は道の `id` を `parseLookId` で確かめ、`getPublishedLookById` で現在の LOOK を 1 件取り（説明文あり）、前後は `getAdjacentPublishedLooks` で並びの境目から 1 件ずつ取る（ADR-0159）。一覧の 100 件の写しに頼らないので、101 番目より古い LOOK も開き、説明文が出る。メタも `getPublishedLookById` で 1 件を別に取るので、1回の表示で同じ LOOK の画像を2回署名する（推定）
-- 無い・非公開・形の合わない id は、同じ URL で見出し「Look not found」だけを状態 200 で返す。`/look` への戻りのリンクは無い（推定）。DB の取り出しの失敗は「Look not found」にせず、頁が投げて `src/app/look/error.tsx`（[一覧の頁](06_look_list.md) の DD-LOOK-069）の誤りの画面になる
+- 無い・非公開・形の合わない id は、同じ URL で見出し「Look not found」だけを状態 200 で返す。見出しの下に `/look` への「Back to Lookbook」のリンクを置く（FR-LOOK-DETAIL-004。2026-11-07 に戻した）。DB の取り出しの失敗は「Look not found」にせず、頁が投げて `src/app/look/error.tsx`（[一覧の頁](06_look_list.md) の DD-LOOK-069）の誤りの画面になる
 - 番号は `DD-LOOK-030`〜`059` をこの頁で使う。今は `030`〜`033` を使い、`034` 以降は空けておく。`068` は管理の頁の範囲の空きを `parseLookId` に使った（`069` の誤りの画面は一覧の頁。2026-10-26）。`071` は `og:image` の窓口（2026-10-28。`070` は管理の画像の頁）
 - 旧版の `FR-LOOK-DETAIL-007`（関連の推薦、WONT）の行は実装の ID が「—」で、コードの単位が無い。項目を作らない
 
@@ -30,7 +30,7 @@ LOOK 詳細 `/look/[id]` を作るコードの単位ごとに、入出力・正�
 | 対象のコード | `src/app/look/[id]/page.tsx`、`src/features/look/components/LookImageGallery.tsx`、`src/lib/look/server.ts` の `getPublishedLookById`・`getAdjacentPublishedLooks`・`getPublishedLookCoverRaw`、`src/lib/look/public.ts` の `formatLookSeason`・`parseLookId`、`src/app/look/[id]/og/route.ts` |
 | 単位の無いファイル | `src/app/look/[id]/look-detail.css`（`.css` は単位にならない。固定のナビがフッターを覆わないよう、フッターに下の余白を足す） |
 | 関連文書 | [ルック一覧の詳細設計](06_look_list.md)、`docs/03_BasicDesign/ui/screen-list.md` |
-| 旧版のこの頁 | 機能要件対応表（`IMPL-LOOK-DETAIL-001`〜`006`）。対象の `src/components/ui/List.tsx` は今 `src/components/ui/List/List.tsx`。not found の「Back to Lookbook」リンクと、通常の表示の「Back to Lookbook」はコードに無い |
+| 旧版のこの頁 | 機能要件対応表（`IMPL-LOOK-DETAIL-001`〜`006`）。対象の `src/components/ui/List.tsx` は今 `src/components/ui/List/List.tsx`。not found の「Back to Lookbook」リンクは 2026-11-07 にコードへ戻した。通常の表示の「Back to Lookbook」は FREQ-178 で外したのでコードに無い |
 | 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない）。2026-10-26 に `DD-LOOK-030`・`032`・`068` を直した（単体・結合テストで確かめた） |
 
 範囲外の共有部品は ID を持たないので、項目の本文にファイルの道で書く。
@@ -72,7 +72,7 @@ graph LR
 
 #### 対応要件
 
-FR-LOOK-DETAIL-001・002・003・006、FREQ-176・177・180〜183・288・343・344、NFR-SEO-003（範囲外）、DRV-LOOK-001・004・006。FR-LOOK-DETAIL-004・FREQ-178-REQ-01（not found の戻りのリンク）は満たさない。
+FR-LOOK-DETAIL-001・002・003・006、FREQ-176・177・180〜183・288・343・344、NFR-SEO-003（範囲外）、DRV-LOOK-001・004・006。FR-LOOK-DETAIL-004・FREQ-178-REQ-01（not found の戻りのリンク）は 2026-11-07 に戻して満たす。
 
 #### 入出力
 
@@ -100,7 +100,7 @@ FR-LOOK-DETAIL-001・002・003・006、FREQ-176・177・180〜183・288・343・
 | --- | --- | --- |
 | id が正の整数でない（メタ） | 取り出さず「Look not found」のメタ | `src/app/look/[id]/page.tsx` |
 | 1件の取り出しで見つからない・非公開・失敗（メタ） | 「Look not found」のメタ（失敗でも投げない） | `src/app/look/[id]/page.tsx` |
-| 無い・非公開・id が正の整数でない（本体） | 見出し「Look not found」だけを状態 200 で返す。戻りのリンクは無い。id が合わない時は DB を呼ばず、無い・非公開の時は前後を取らない | `src/app/look/[id]/page.tsx` |
+| 無い・非公開・id が正の整数でない（本体） | 見出し「Look not found」だけを状態 200 で返す。見出しの下に `/look` への「Back to Lookbook」のリンクを置く。id が合わない時は DB を呼ばず、無い・非公開の時は前後を取らない | `src/app/look/[id]/page.tsx` |
 | 取り出しの失敗（本体） | `LookFetchError` が投げられ、`error.tsx` の誤りの画面になる（SEC-LOOK-022） | `src/app/look/[id]/page.tsx`、`src/lib/look/server.ts` |
 | 前後の取り出しの失敗 | 記録だけで、その側を無効の表示にして頁は開く | `src/lib/look/server.ts` |
 | 説明文が空（メタ） | 「<テーマ> のスタイリング詳細ページ」 | `src/app/look/[id]/page.tsx` |
@@ -479,7 +479,6 @@ SEC-LOOK-006（-AC-02、-AC-03）。
 ## 未確認事項
 
 - 詳細のページが要求ごとに描かれるか、キャッシュされるかを本番のビルドで確かめていない
-- 無い LOOK を状態 200 で返す形と、戻りのリンクが無い形（FR-LOOK-DETAIL-004・FREQ-178-AC-02 と合わない。E2E FR-LOOK-DETAIL-004・010 が赤）をどちらに合わせるか
 - 本体とメタで同じ LOOK の取り出しを2回行う形（1 回にまとめるか）
 - `.or()` の時刻の引用が本物の PostgREST で意図どおりに通るか（単体・結合のモックでは文字しか確かめられない。E2E `FR-LOOK-DETAIL-003`・`013`・`017`・`019`・`020` で確かめる）
 - 画像が変わった時にギャラリーの選択を先頭へ戻すか

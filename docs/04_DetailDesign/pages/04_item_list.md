@@ -11,7 +11,7 @@
 | 要件ID | 要件内容 | 実装ID | 実装対象ファイル | 実装概要 | 実装ステータス |
 |--------|----------|--------|----------------|----------|--------------|
 | FR-ITEM-ALL-001 | 公開済み商品をカテゴリ・コレクション別に一覧表示する | IMPL-ITEM-LIST-001 | `src/app/item/page.tsx`, `src/features/items/components/PublicItemGrid.tsx` | `getPublishedItems()` で全公開商品を取得し `PublicItemGrid variant="catalog"` で表示。カテゴリ絞り込みはクライアント側の `selectedCategories` ステートで実施 | 済 |
-| FR-ITEM-ALL-002 | 商品カードはカテゴリ・商品名・価格・サムネイルを表示し判別性を高める | IMPL-ITEM-LIST-002 | `src/features/items/components/PublicItemGrid.tsx` | カードにカテゴリ・商品名・価格・画像を表示（ラベル表示なし） | 済 |
+| FR-ITEM-ALL-002 | 商品カードは商品名・価格・サムネイルを表示する（カテゴリは表示しない。2026-11-07 改定） | IMPL-ITEM-LIST-002 | `src/features/items/components/PublicItemGrid.tsx` | カードに商品名・価格・画像を表示（カテゴリ・ラベル表示なし） | 済 |
 | FR-ITEM-ALL-003 | URL ベースのカテゴリフィルタリングを実装しブラウザの戻る/進むで絞り込み状態を復元できるようにする | IMPL-ITEM-LIST-003 | `src/features/items/components/PublicItemGrid.tsx` | `useSearchParams` / `useRouter` でカテゴリをURL同期し、履歴復元に対応 | 済 |
 | FR-ITEM-ALL-004 | サーバ側カテゴリ絞り込みを実装し `category` に基づく DB フィルタを行う | IMPL-ITEM-LIST-004 | `src/app/item/page.tsx`, `src/lib/items/public.ts`, `src/app/api/items/route.ts` | `searchParams` と `category` をサーバで解釈し、DBクエリに反映 | 済 |
 | FR-ITEM-ALL-005 | 無限スクロール方式を採用し追加読み込みで結果を継続表示できるようにする | IMPL-ITEM-LIST-005 | `src/features/items/components/PublicItemGrid.tsx` | IntersectionObserver による追加ページ読込を実装 | 済 |
@@ -29,7 +29,7 @@
 
 ### TODO（未要件）
 
-- [x] FR-ITEM-ALL-002: カテゴリ表示と判別性バッジ（NEW / SALE / SOLD OUT）を商品カードに追加する
+- [x] FR-ITEM-ALL-002: 判別性バッジ（NEW / SALE / SOLD OUT）を商品カードに追加する（カテゴリ表示は 2026-11-07 に要件から外した）
 - [x] FR-ITEM-ALL-003: URL クエリとカテゴリフィルタの同期（戻る/進むで復元）を実装する
 - [x] FR-ITEM-ALL-004: サーバ側カテゴリ絞り込み（`category`）を実装する
 - [x] FR-ITEM-ALL-005: 無限スクロールで追加読み込みを実装する
@@ -158,3 +158,11 @@ skus (
 - 判定は `item_variants` の在庫と有効・無効。以前は `description` に "sold out" / "在庫切れ" が含まれるか、`sizes` が空かで見ていた（在庫数を一切見ていない文字列判定だった）
 - 絞り込みの選択肢は `IN STOCK` / `MADE TO ORDER`。適用中の印は「在庫あり」「受注生産」
 - 在庫の有無はサーバ側で `item_variants` から引いて各商品に付ける（`src/lib/items/availability.ts`）。`item_variants` は匿名から読めないため、この1か所だけ service role で読み、公開中の商品に絞ったうえで**有無の真偽だけ**に落として返す
+
+## デスクトップのフィルター位置（FREQ-38）
+
+確認日: 2026-11-07
+
+- フィルター aside（`PublicItemGrid.tsx`）の sticky top は `lg:top-[70px] xl:top-[72px]`。Providers の main の上余白（lg 58px・xl 60px）と上パディング 12px の合計で、初期位置と一致する。高さは `100vh` からこの値を引いた値で、下端が画面に収まる。
+- 以前は `top: var(--site-header-height)`（xl 60px）で、初期位置 72px との差 12px だけスクロールで動いていた（FR-ITEM-ALL-015 が落ちた）。
+- タブレット以下・他ページ・フィルターの中身は変更なし。

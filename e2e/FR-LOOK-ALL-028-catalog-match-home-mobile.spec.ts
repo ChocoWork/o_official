@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 // FREQ-141: /look 一覧のモバイル・タブレット（lg 未満）の見た目を
 // ホーム LOOK セクションと揃える。
 // ① コンテンツ列の左右 padding をホームの section-space と同値にする
-//    （モバイル 13px / sm 16px / md 21px）
+//    （sm 16px / md 21px）。2026-11-07 改定: モバイルは今の画面の 0（画像が画面の端まで密着。ホームは 13px のまま）
 // ② グリッドの row-gap / column-gap をホームと一致させる
 //    （タブレットの列間 32px → 24px）
 // lg 以上（サイドバーレイアウト・gap）は変更しない。
@@ -47,27 +47,27 @@ async function readHomeSectionPaddingLeft(page: Page): Promise<number> {
 }
 
 const PANEL_VIEWPORTS = [
-  { name: "mobile", width: 390, height: 844, padding: 13 },
-  { name: "tablet", width: 768, height: 1024, padding: 21 },
+  { name: "mobile", width: 390, height: 844, padding: 13, catalogPadding: 0 },
+  { name: "tablet", width: 768, height: 1024, padding: 21, catalogPadding: 21 },
 ] as const;
 
-/** /look の左右 padding がホーム LOOK セクションと同値（ホームは vp.padding） */
+/** /look の左右 padding は vp.catalogPadding（タブレットはホームと同値、モバイルは 0）。ホームは vp.padding */
 async function expectCatalogPaddingMatchesHome(page: Page, vp: (typeof PANEL_VIEWPORTS)[number]): Promise<void> {
   await page.setViewportSize({ width: vp.width, height: vp.height });
 
-  // AC-01: ホーム section-space の padding と同値
+  // ホーム section-space の padding（モバイル 13px・タブレット 21px）
   const homePadding = await readHomeSectionPaddingLeft(page);
   expect(homePadding).toBe(vp.padding);
 
   await page.goto("/look");
   const catalogPadding = await readCatalogPadding(page);
-  expect(catalogPadding.left).toBe(homePadding);
-  expect(catalogPadding.right).toBe(homePadding);
+  expect(catalogPadding.left).toBe(vp.catalogPadding);
+  expect(catalogPadding.right).toBe(vp.catalogPadding);
 }
 
 test.describe("FR-LOOK-ALL-028 /look 一覧のモバイル・タブレットをホームと揃える", () => {
-  // FREQ-141-AC-01 はモバイル（390px）だけの条件。タブレット（21px）の padding には受け入れ条件が無いので、タブレットにはタグを付けない
-  test("FREQ-141-AC-01 mobile /look の左右 padding がホーム LOOK セクションと同値", async ({ page }) => {
+  // FREQ-141-AC-01 はモバイル（390px）だけの条件（0）。タブレット（21px）の padding には受け入れ条件が無いので、タブレットにはタグを付けない
+  test("FREQ-141-AC-01 mobile /look の左右 padding が 0（ホームは 13px）", async ({ page }) => {
     await expectCatalogPaddingMatchesHome(page, PANEL_VIEWPORTS[0]);
   });
 

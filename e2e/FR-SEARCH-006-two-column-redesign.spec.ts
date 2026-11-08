@@ -82,7 +82,11 @@ test.describe('FR-SEARCH-006 2カラムリデザイン', () => {
       const firstRow = rows.first();
       await expect(firstRow.getByText(/^(ITEM|LOOK|NEWS)$/).first()).toBeVisible();
       await expect(firstRow.locator('svg')).toBeVisible();
-      expect(await firstRow.locator('div.aspect-\\[3\\/4\\]').count()).toBe(1);
+      const thumbnail = firstRow.getByRole('link').locator(':scope > div').first();
+      await expect(thumbnail).toBeVisible();
+      const thumbnailBox = await stableBox(thumbnail);
+      expect(thumbnailBox.width / thumbnailBox.height).toBeCloseTo(3 / 4, 2);
+      await expect(thumbnail).toHaveCSS('aspect-ratio', '3 / 4');
       const borderBottom = await firstRow.evaluate((el) => getComputedStyle(el).borderBottomWidth);
       expect(borderBottom).toBe('1px');
 

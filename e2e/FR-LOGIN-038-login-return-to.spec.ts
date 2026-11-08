@@ -472,6 +472,8 @@ for (const viewport of viewports) {
       // 通ったすべての URL・要求の本文・Location・応答の本文を集める（番号は後で真偽だけで探す）。
       const seen: string[] = [];
       const pending: Array<Promise<unknown>> = [];
+      const headerReads: Array<Promise<unknown>> = [];
+      const authBodyReads: Array<Promise<unknown>> = [];
       let loginHeaders: ReadonlyArray<{ name: string; value: string }> = [];
       page.on('request', (request) => {
         seen.push(request.url());
@@ -484,17 +486,22 @@ for (const viewport of viewports) {
         if (location) seen.push(location);
         const isLoginPost = new URL(response.url()).pathname === '/api/auth/login' && response.request().method() === 'POST';
         if (isLoginPost) {
-          pending.push(response.headersArray().then((headers) => (loginHeaders = headers)).catch(() => undefined));
+          headerReads.push(response.headersArray().then((headers) => (loginHeaders = headers)).catch(() => undefined));
         }
         if (['document', 'fetch', 'xhr'].includes(response.request().resourceType())) {
-          pending.push(response.text().then((text) => seen.push(text)).catch(() => undefined));
+          // 番号が通るログインの窓口とページの本文は必ず読み切る。それ以外は画面の移動で読めなくなることがあるので下で上限をつける。
+          const type = response.request().resourceType();
+          const reads = type === 'document' || new URL(response.url()).pathname.startsWith('/api/auth/') ? authBodyReads : pending;
+          reads.push(response.text().then((text) => seen.push(text)).catch(() => undefined));
         }
       });
 
       await page.goto('/login?next=%2Fstockist');
       await signInOnLoginScreen(page, member);
       await expectLandedOn(page, '/stockist');
-      await Promise.allSettled(pending);
+      await Promise.allSettled(headerReads);
+      await Promise.allSettled(authBodyReads);
+      await Promise.race([Promise.allSettled(pending), new Promise((resolve) => setTimeout(resolve, 10_000))]);
 
       const issued = setCookiesNamed(loginHeaders, RETURN_INTENT_COOKIE).at(-1);
       expect(issued, `ログインの応答が ${RETURN_INTENT_COOKIE} を発行する`).toBeDefined();

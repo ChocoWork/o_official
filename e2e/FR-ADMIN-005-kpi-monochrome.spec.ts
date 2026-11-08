@@ -2,6 +2,9 @@ import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-206: Admin KPIビュー既存パーツの暖色グレーを無彩色（白・黒・グレー）に統一
+// 2026-11-07 改定: KPIカードだけは目標の達成状態で色分けする（達成=青・未達成=赤・目標なし=白）。
+// 状態色の値は src/components/KpiSection.tsx の KpiListCard の statusColor。
+// パネルの枠線・横スクロールなど、ほかのパーツは無彩色のまま。
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 768, height: 1024 },
@@ -78,6 +81,15 @@ function expectMonochrome([r, g, b]: [number, number, number]): void {
   expect(g).toBe(b);
 }
 
+// KpiListCard の statusColor（達成 / 未達成 / 目標なし）の背景色と枠線色
+const KPI_CARD_STATE_COLORS = {
+  achieved: { bg: 'rgb(238, 247, 255)', border: 'rgb(185, 217, 245)' }, // #eef7ff / #b9d9f5（青）
+  missed: { bg: 'rgb(255, 241, 241)', border: 'rgb(241, 196, 196)' }, // #fff1f1 / #f1c4c4（赤）
+  none: { bg: 'rgb(255, 255, 255)', border: 'rgb(232, 232, 232)' }, // 白 / #e8e8e8
+} as const;
+// 選択中のカードは枠が黒（border-2 border-black）
+const KPI_CARD_SELECTED_BORDER = 'rgb(0, 0, 0)';
+
 function kpiListPanel(page: Page) {
   return page.locator('[data-ui-panel]').filter({ hasText: 'KPI一覧' }).first();
 }
@@ -89,7 +101,7 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
     });
 
-    test('KPIカードの背景色と枠線色が無彩色である', async ({ page }) => {
+    test('KPIカードの背景色と枠線色が達成状態の色（未達成=赤）である', async ({ page }) => {
       // FREQ-206-AC-01
       await page.goto('/admin');
 
@@ -101,8 +113,10 @@ for (const viewport of viewports) {
         const s = getComputedStyle(el);
         return { bg: s.backgroundColor, border: s.borderTopColor };
       });
-      expectMonochrome(parseRgb(styles.bg));
-      expectMonochrome(parseRgb(styles.border));
+      // このモックの「リーチ数」は目標を下回り「未達成」（赤の背景 #fff1f1）で表示される
+      await expect(card).toContainText('未達成');
+      expect(styles.bg).toBe(KPI_CARD_STATE_COLORS.missed.bg);
+      expect([KPI_CARD_STATE_COLORS.missed.border, KPI_CARD_SELECTED_BORDER]).toContain(styles.border);
     });
 
     test('パネルの枠線の色が無彩色である', async ({ page }) => {

@@ -139,8 +139,8 @@ for (const viewport of viewports) {
 
       await page.getByRole('button', { name: '収入', exact: true }).click();
       // 収入時は「収入概要」ラベルになり、収入用の選択肢が選べる。
-      await expect(page.getByRole('button', { name: '収入概要' })).toBeVisible();
-      await page.getByRole('button', { name: '収入概要' }).click();
+      await expect(page.getByRole('combobox', { name: '収入摘要' })).toBeVisible();
+      await page.getByRole('combobox', { name: '収入摘要' }).click();
       await page.getByRole('option', { name: 'オンライン販売' }).click();
       await page.getByRole('combobox', { name: '勘定科目' }).click();
       await page.getByRole('option', { name: '売上（収入）金額 / 売上高', exact: true }).click();
@@ -161,7 +161,7 @@ for (const viewport of viewports) {
       await openIncomeExpenseTab(page);
 
       // 支出でテンプレートを1件作る。
-      await page.getByRole('button', { name: '支出概要' }).click();
+      await page.getByRole('combobox', { name: '支出摘要' }).click();
       await page.getByRole('option', { name: '縫製外注' }).click();
       await page.getByPlaceholder('0').fill('50000');
       await page.getByRole('combobox', { name: 'テンプレート', exact: true }).click();

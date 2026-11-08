@@ -88,11 +88,25 @@ test.describe('FR-ITEM-DETAIL-049 アイコンのみのウィッシュリスト 
 
     await expect(bookmarkButton(page)).toBeHidden();
 
-    const wishlist = actionsWishlist(page);
+    const fixedActions = page.getByTestId('item-actions-fixed');
+    await fixedActions.getByRole('button', { name: /SELECT OPTIONS/ }).click();
+    const sheet = page.getByTestId('item-option-sheet');
+    await expect(sheet).toBeVisible();
+    await sheet.getByRole('button', { name: 'Black', exact: true }).click();
+    await sheet.getByTestId('item-sheet-size-select').getByRole('button', {
+      name: 'S', exact: true,
+    }).click();
+    await page.keyboard.press('Escape');
+    await expect(sheet).toBeHidden();
+
+    const cart = fixedActions.getByRole('button', { name: /ADD TO CART/ });
+    const wishlist = fixedActions.getByRole('button', { name: 'Add to wishlist' });
+    await expect(cart).toBeVisible();
     await expect(wishlist).toBeVisible();
+    await expect(wishlist).toHaveText('');
 
     const wishlistBox = await wishlist.boundingBox();
-    const cartBox = await addToCartButton(page).boundingBox();
+    const cartBox = await cart.boundingBox();
     expect(wishlistBox).not.toBeNull();
     expect(cartBox).not.toBeNull();
     expect(wishlistBox!.y).toBeCloseTo(cartBox!.y, 0);

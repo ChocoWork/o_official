@@ -3,7 +3,8 @@ import { expect, test } from '@playwright/test';
 test.describe('FR-NEWS-ALL-008 mobile filter initial offset', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test('初期表示でフィルターバーがヘッダー直下に収まり、先頭記事と重ならない', async ({ page }) => {
+  // 2026-11-07 改定: 浮かぶ FILTER のバーは data-filter-bar="floating"（下罫線は無い）。流れの中の見えない同じ高さの枠が先頭記事を押し下げる。
+  test('FR-NEWS-ALL-002-AC-04 初期表示でフィルターバーがヘッダー直下に収まり、先頭記事と重ならない', async ({ page }) => {
     await page.goto('/news');
     await page.waitForLoadState('networkidle');
 
@@ -15,10 +16,8 @@ test.describe('FR-NEWS-ALL-008 mobile filter initial offset', () => {
 
     const metrics = await page.evaluate(() => {
       const header = document.querySelector('header');
-      const filterButton = Array.from(document.querySelectorAll('button')).find(
-        (element) => element.textContent?.trim() === 'FILTER',
-      );
-      const filterBar = filterButton?.closest('div[class*="border-b"]');
+      const filterButton = document.querySelector('[data-filter-button="floating"]');
+      const filterBar = document.querySelector('[data-filter-bar="floating"]');
       const firstArticle = document.querySelector('main article');
 
       const rect = (element: Element | null | undefined) => {

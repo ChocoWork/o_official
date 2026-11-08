@@ -739,13 +739,9 @@ export function PublicItemGrid(props: PublicItemGridProps) {
       "translateY(calc(var(--site-header-offset) - var(--site-header-height)))",
   } as const;
 
-  // デスクトップのフィルターは常にヘッダー高さ分だけ下げた位置に固定する。
-  // --site-header-offset（ヘッダー自動非表示でスクロール中に 0 へ変化）に追従させると
-  // 右側のITEMをスクロールしたときにフィルターが上下に動いてしまうため、
-  // 定数の --site-header-height に固定して動かさない。
-  const desktopFilterStickyStyle = {
-    top: "var(--site-header-height)",
-  } as const;
+  // デスクトップのフィルターの sticky top と高さは aside の className（lg:top-[70px] xl:top-[72px]）で
+  // 初期位置（Providers の main の上余白 58/60px + 上パディング 12px）に一致させる。
+  // ずれるとスクロール時にフィルターが動く (FREQ-38)。--site-header-offset には追従させない。
 
   const renderSortSelect = (className: string) => (
     <div className={className}>
@@ -1352,8 +1348,7 @@ export function PublicItemGrid(props: PublicItemGridProps) {
     <>
       <div className="flex w-full">
         <aside
-          className="hidden lg:flex flex-col w-58.25 xl:w-[288px] shrink-0 sticky h-[calc(100vh-var(--site-header-height))] overflow-hidden"
-          style={desktopFilterStickyStyle}
+          className="hidden lg:flex flex-col w-58.25 xl:w-[288px] shrink-0 sticky lg:top-[70px] xl:top-[72px] lg:h-[calc(100vh-70px)] xl:h-[calc(100vh-72px)] overflow-hidden"
         >
           <div className={FILTER_SIDEBAR_SCROLL_CLASS}>
             {renderFilterSections("3xs")}

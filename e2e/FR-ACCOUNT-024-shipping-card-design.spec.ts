@@ -2,7 +2,8 @@ import { test, expect } from '@playwright/test';
 import { loginAndOpenAccount, mockOtpAuthentication } from './account-test-utils';
 
 // FREQ-93: 配送情報タブの配送先カードのデザイン
-// 上部右「MAIN」バッジ＋郵便番号と住所を1行結合＋「編集」「削除」
+// 上部右「MAIN」バッジ＋「〒」付き郵便番号と住所の2行＋「編集」「削除」
+// （2026-11-07 改定: 郵便番号と住所は1行結合ではなく、〒付きの郵便番号の行と住所の行の2行）
 const VIEWPORTS = [
 	{ name: 'mobile', width: 390, height: 844 },
 	{ name: 'tablet', width: 768, height: 1024 },
@@ -53,7 +54,7 @@ async function mockShippingProfile(page: import('@playwright/test').Page) {
 
 for (const vp of VIEWPORTS) {
 	test.describe(`FR-ACCOUNT-024 shipping card design @ ${vp.name}`, () => {
-		test('MAINバッジ・結合住所・編集/削除ボタンが表示される', async ({ page }) => {
+		test('MAINバッジ・〒付き郵便番号と住所の2行・編集/削除ボタンが表示される', async ({ page }) => {
 			await page.setViewportSize({ width: vp.width, height: vp.height });
 			await mockOtpAuthentication(page);
 			await mockShippingProfile(page);
@@ -65,11 +66,17 @@ for (const vp of VIEWPORTS) {
 			await expect(page.getByText('MAIN', { exact: true })).toBeVisible();
 			await expect(page.getByText('メイン', { exact: true })).toHaveCount(0);
 
-			// AC-02: 郵便番号・住所を表示、「郵便番号」「住所」の個別ラベルは無し
-			await expect(page.getByText('981-3351', { exact: true })).toBeVisible();
-			await expect(
-				page.getByText('宮城県富谷市鷹乃杜202号', { exact: true }),
-			).toBeVisible();
+			// AC-02: 「〒」付きの郵便番号の行と住所の行（2行）を表示、「郵便番号」「住所」の個別ラベルは無し
+			const postal = page.getByText('〒981-3351', { exact: true });
+			const addressLine = page.getByText('宮城県富谷市鷹乃杜202号', { exact: true });
+			await expect(postal).toBeVisible();
+			await expect(addressLine).toBeVisible();
+			const postalBox = await postal.boundingBox();
+			const addressBox = await addressLine.boundingBox();
+			expect(postalBox).not.toBeNull();
+			expect(addressBox).not.toBeNull();
+			// 郵便番号の行が住所の行の上にあり、別の行である
+			expect(addressBox!.y).toBeGreaterThanOrEqual(postalBox!.y + postalBox!.height - 1);
 			await expect(page.getByText('郵便番号', { exact: true })).toHaveCount(0);
 			await expect(page.getByText('住所', { exact: true })).toHaveCount(0);
 

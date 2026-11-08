@@ -82,7 +82,7 @@ async function runGroupG1Fixture<T>(client: PgClient, run: (owns: boolean) => Pr
  * as they would be in production; use a real RPC or an allowed transition instead.
  */
 export async function setOrderStatusForFixture(
-  client: PgClient, orderIds: string[], status: string, extra: { paidAmount?: number } = {},
+  client: PgClient, orderIds: string[], status: string, extra: { paidAmount?: number; refundedInFull?: boolean } = {},
 ): Promise<void> {
   assertLocal(client);
   if (!(await isInTransaction(client))) throw new Error('GROUP_G_FIXTURE_TRANSACTION_REQUIRED');
@@ -91,8 +91,9 @@ export async function setOrderStatusForFixture(
   await client.query("select pg_catalog.set_config('app.order_change_reason', 'fixture_status_change', true)");
   // A refused update aborts the caller's transaction, so the reason is restored only after success.
   await client.query(
-    `update public.orders set status=$2::public.order_status, paid_amount=coalesce($3::integer, paid_amount)
-     where id = any($1::uuid[])`, [orderIds, status, extra.paidAmount ?? null]);
+    `update public.orders set status=$2::public.order_status, paid_amount=coalesce($3::integer, paid_amount),
+       refunded_amount=case when $4 then coalesce(nullif(coalesce($3::integer, paid_amount), 0), total_amount) else refunded_amount end
+     where id = any($1::uuid[])`, [orderIds, status, extra.paidAmount ?? null, extra.refundedInFull ?? false]);
   await client.query("select pg_catalog.set_config('app.order_change_reason', $1, true)", [previous]);
 }
 

@@ -61,14 +61,19 @@ test.describe('FR-LOOK-ALL-029 LOOK カードのグレー枠線（lg 未満）',
         const card = page
           .locator(`${target.scope} [data-testid="look-card"]`)
           .first();
+        await expect(card).toBeVisible();
+        const image = card.locator('a').first().locator(':scope > div').first();
+        await image.scrollIntoViewIfNeeded();
+        await expect(image).toHaveAttribute('data-reveal', 'true');
+        const mask = card.locator('.reveal-mask');
+        await mask.scrollIntoViewIfNeeded();
+        await expect(mask).toHaveAttribute('data-reveal', 'true');
+        await expect(mask.locator('.reveal-rise')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
         const cardBox = await card.boundingBox();
         expect(cardBox).not.toBeNull();
 
         // AC-02: 画像コンテナの左右端が枠線の内側に密着（枠線 1px 分のみのずれ）
-        const imageBox = await card
-          .locator('.aspect-\\[2\\/3\\]')
-          .first()
-          .boundingBox();
+        const imageBox = await image.boundingBox();
         expect(imageBox).not.toBeNull();
         expect(Math.abs(imageBox!.x - cardBox!.x)).toBeLessThanOrEqual(2);
         expect(

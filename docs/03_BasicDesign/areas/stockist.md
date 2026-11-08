@@ -1,6 +1,6 @@
 # STOCKIST の構造設計
 
-> 状態: 推定 | 確認日: 2026-10-29 | 対象: STOCKIST（取扱店の一覧 `/stockist`・ホームの取扱店の節の部品・管理の取扱店） | 基準コミット: `4facf63b`
+> 状態: 推定 | 確認日: 2026-11-07 | 対象: STOCKIST（取扱店の一覧 `/stockist`・ホームの取扱店の節の部品・管理の取扱店） | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -223,7 +223,7 @@ sequenceDiagram
 | 6 | 定休日 | 隠す | `StockistCard` |
 
 - 部品: 共有の `Card`（`size="sm"`・`hoverable`）に `stockist-card` の印を付け、余白・区切り線・行の間は全体の CSS の変数で決める（`globals.css`。同じ指定が同じファイルの別の所にもう一度ある）
-- 余白: 見出しと区切り線の間・区切り線と詳細の間は見出しの文字の大きさから黄金比で作る変数（DRV-STOCKIST-012）。E2E `FR-STOCKIST-009` の求める上下の余白と今の値は合わない（記録では期待 16.92px・実 21.25px）
+- 余白: 見出しと区切り線の間・区切り線と詳細の間は見出しの文字の大きさから黄金比で作る変数（DRV-STOCKIST-012）。上下の余白は Card 部品の `--card-pad`（`--card-font-size` × φ）と枠線 1px の和（実測 1280px で上下とも 21.25px）。`--lk-stockist-card-padding` は Card の値に負けて今は効いていない。E2E `FR-STOCKIST-009` の期待を 2026-11-07 にこの値に直した（旧: 見出しの文字の大きさ × 1.062 = 16.92px）。確かめは FR-STOCKIST-002-AC-03
 - リンクの作り: 住所は `https://www.google.com/maps/search/?api=1&query=` に `encodeURIComponent` した住所を付け、`target="_blank"` と `rel="noopener noreferrer"`。電話は数字と `+` 以外を消して `tel:` に付ける
 - 読み上げ: 各行のアイコンは `aria-hidden`。店舗の値は React の文字として出し、HTML として入れない
 - 区別: カードの key は店の id。カードの要素は共有の `Card` が決める
@@ -690,7 +690,7 @@ stateDiagram-v2
 - `/stockist` に h1 を足すか（UI/UX のレビュー S-1 の「対応済」と今のコードが合わない）
 - モバイルのカードで電話・営業時間・定休日を隠すことを残すか（FR-STOCKIST-002 と DRV-STOCKIST-004）
 - 住所の地図のリンク（DRV-STOCKIST-002）を要件として認めるか（FR-STOCKIST-007 は WONT）
-- カードの余白（DRV-STOCKIST-012）と E2E `FR-STOCKIST-009` の食い違いを、どちらに合わせるか
+- カードの余白（DRV-STOCKIST-012）と E2E `FR-STOCKIST-009` の食い違いは、2026-11-07 に今の画面（21.25px）に合わせて決着した
 - 公開の画面の応答と管理の応答の `Cache-Control` の実際の値（本番ビルドで測っていない）
 - 本番の PostgREST の `max_rows` の設定（本番は未デプロイ）
 - この文書の項目は全部「推定」。ユーザーの確認を受けたら「現行」にする

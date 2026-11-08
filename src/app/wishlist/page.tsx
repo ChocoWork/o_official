@@ -339,13 +339,17 @@ export default function Page() {
 
   if (wishlistItems.length === 0) {
     return (
-      <EmptyPage
-        iconClassName="ri-bookmark-line"
-        label="WISHLIST IS EMPTY"
-        size="xs"
-        buttonLabel="Continue Shopping"
-        href="/item"
-      />
+      <>
+        {/* 空でも h1 を持たせる（見た目は変えない）。EmptyPage は cart と共用のため外に置く */}
+        <h1 className="sr-only">WISHLIST</h1>
+        <EmptyPage
+          iconClassName="ri-bookmark-line"
+          label="WISHLIST IS EMPTY"
+          size="xs"
+          buttonLabel="Continue Shopping"
+          href="/item"
+        />
+      </>
     );
   }
 

@@ -1,7 +1,8 @@
 import { test, expect, Page } from '@playwright/test';
 import { fetchFirstItemViaApi } from './item-list-test-utils';
 
-// FREQ-155: 縦横をより活用し、ファーストビューで関連商品（YOU MAY ALSO LIKE）を見せない
+// FREQ-155（2026-11-07 改定）: tablet / desktop のファーストビューでは関連商品（YOU MAY ALSO LIKE）を見せない。
+// mobile は選択 UI がシートに移って本文が短くなったため、最初の画面の中に関連商品の見出しが見える。
 
 async function gotoFirstItemDetail(page: Page): Promise<boolean> {
   const item = await fetchFirstItemViaApi(page);
@@ -19,7 +20,7 @@ for (const viewport of [
   test.describe(`FR-ITEM-DETAIL-017 ファーストビューレイアウト (${viewport.name})`, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
-    test('FREQ-155-AC-01: 初期表示で YOU MAY ALSO LIKE が見えない', async ({
+    test('FREQ-155-AC-01: 初期表示で YOU MAY ALSO LIKE が、mobile では見え、tablet / desktop では見えない', async ({
       page,
     }) => {
       const ok = await gotoFirstItemDetail(page);
@@ -31,9 +32,14 @@ for (const viewport of [
         );
         return el ? Math.round(el.getBoundingClientRect().top) : null;
       });
-      // 関連商品が無い商品ではセクション自体が無い（null）＝見えないので合格
+      // 関連商品が無い商品ではセクション自体が無い（null）。見える／見えないの比べは、あるときだけ行う
       if (relatedTop !== null) {
-        expect(relatedTop).toBeGreaterThan(viewport.height);
+        if (viewport.name === 'mobile') {
+          // mobile: 見出しの上端が最初の画面（高さ 844px）の中にある
+          expect(relatedTop).toBeLessThan(viewport.height);
+        } else {
+          expect(relatedTop).toBeGreaterThan(viewport.height);
+        }
       }
     });
 

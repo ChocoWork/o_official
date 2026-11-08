@@ -1,6 +1,6 @@
 # 要件IDの参照状況
 
-> 状態: 自動生成 | 生成日: 2026-11-06 | 対象: リポジトリ内の文字列参照
+> 状態: 自動生成 | 生成日: 2026-11-08 | 対象: リポジトリ内の文字列参照
 
 ## 概要
 
@@ -8,11 +8,11 @@
 
 | 指標 | 件数 |
 | --- | ---: |
-| 要件定義書の対象ID | 2278 |
+| 要件定義書の対象ID | 2324 |
 | 設計にID参照あり | 606 |
-| テストにID参照あり | 1581 |
-| 設計にID参照なし | 1672 |
-| テストにID参照なし | 697 |
+| テストにID参照あり | 1626 |
+| 設計にID参照なし | 1718 |
+| テストにID参照なし | 698 |
 
 ## 参照一覧
 
@@ -26,14 +26,14 @@
 | `FR-ABOUT-006` | 3件（[about.md](../../03_BasicDesign/areas/about.md)） | 1件（[FR-ABOUT-006-cta-links.spec.ts](../../../e2e/FR-ABOUT-006-cta-links.spec.ts)） |
 | `FR-ABOUT-007` | 3件（[about.md](../../03_BasicDesign/areas/about.md)） | 2件（[FR-ABOUT-007-icon-aria-and-image-alt.spec.ts](../../../e2e/FR-ABOUT-007-icon-aria-and-image-alt.spec.ts)） |
 | `FR-ABOUT-008` | 4件（[about.md](../../03_BasicDesign/areas/about.md)） | 1件（[FR-ABOUT-008-static-image-source.spec.ts](../../../e2e/FR-ABOUT-008-static-image-source.spec.ts)） |
-| `FR-ACCOUNT-001` | 1件（[15_account.md](../../04_DetailDesign/pages/15_account.md)） | 1件（[FR-ACCOUNT-001-tabs-layout.spec.ts](../../../e2e/FR-ACCOUNT-001-tabs-layout.spec.ts)） |
+| `FR-ACCOUNT-001` | 1件（[15_account.md](../../04_DetailDesign/pages/15_account.md)） | 2件（[FR-ACCOUNT-001-tabs-layout.spec.ts](../../../e2e/FR-ACCOUNT-001-tabs-layout.spec.ts)） |
 | `FR-ACCOUNT-002` | 1件（[15_account.md](../../04_DetailDesign/pages/15_account.md)） | 1件（[FR-ACCOUNT-002-profile-fields.spec.ts](../../../e2e/FR-ACCOUNT-002-profile-fields.spec.ts)） |
 | `FR-ACCOUNT-003` | 1件（[15_account.md](../../04_DetailDesign/pages/15_account.md)） | 1件（[FR-ACCOUNT-003-login-required.spec.ts](../../../e2e/FR-ACCOUNT-003-login-required.spec.ts)） |
-| `FR-ACCOUNT-004` | 1件（[15_account.md](../../04_DetailDesign/pages/15_account.md)） | 1件（[FR-ACCOUNT-004-address-form.spec.ts](../../../e2e/FR-ACCOUNT-004-address-form.spec.ts)） |
+| `FR-ACCOUNT-004` | 1件（[15_account.md](../../04_DetailDesign/pages/15_account.md)） | 2件（[FR-ACCOUNT-004-address-form.spec.ts](../../../e2e/FR-ACCOUNT-004-address-form.spec.ts)） |
 | `FR-ACCOUNT-005` | 1件（[15_account.md](../../04_DetailDesign/pages/15_account.md)） | 1件（[FR-ACCOUNT-005-order-history.spec.ts](../../../e2e/FR-ACCOUNT-005-order-history.spec.ts)） |
 | `FR-ACCOUNT-006` | 1件（[15_account.md](../../04_DetailDesign/pages/15_account.md)） | 1件（[FR-ACCOUNT-006-extended-profile.spec.ts](../../../e2e/FR-ACCOUNT-006-extended-profile.spec.ts)） |
 | `FR-ACCOUNT-007` | 1件（[15_account.md](../../04_DetailDesign/pages/15_account.md)） | 1件（[FR-ACCOUNT-007-logout.spec.ts](../../../e2e/FR-ACCOUNT-007-logout.spec.ts)） |
-| `FR-ACCOUNT-008` | 1件（[15_account.md](../../04_DetailDesign/pages/15_account.md)） | 1件（[FR-ACCOUNT-008-profile-address-integration.spec.ts](../../../e2e/FR-ACCOUNT-008-profile-address-integration.spec.ts)） |
+| `FR-ACCOUNT-008` | 1件（[15_account.md](../../04_DetailDesign/pages/15_account.md)） | なし |
 | `FR-ACCOUNT-014` | なし | 2件（[FR-ACCOUNT-005-order-history.spec.ts](../../../e2e/FR-ACCOUNT-005-order-history.spec.ts)） |
 | `FR-ACCOUNT-021` | なし | なし |
 | `FR-ACCOUNT-022` | なし | なし |
@@ -211,7 +211,7 @@
 | `FR-ITEM-DETAIL-007` | 1件（[05_item_detail.md](../../04_DetailDesign/pages/05_item_detail.md)） | 1件（[FR-ITEM-DETAIL-007-stock-status.spec.ts](../../../e2e/FR-ITEM-DETAIL-007-stock-status.spec.ts)） |
 | `FR-ITEM-DETAIL-008` | 1件（[05_item_detail.md](../../04_DetailDesign/pages/05_item_detail.md)） | 1件（[FR-ITEM-DETAIL-008-aria-accessibility.spec.ts](../../../e2e/FR-ITEM-DETAIL-008-aria-accessibility.spec.ts)） |
 | `FR-ITEM-DETAIL-009` | 1件（[05_item_detail.md](../../04_DetailDesign/pages/05_item_detail.md)） | 1件（[FR-ITEM-DETAIL-009-seo-metadata.spec.ts](../../../e2e/FR-ITEM-DETAIL-009-seo-metadata.spec.ts)） |
-| `FR-ITEM-DETAIL-010` | 1件（[05_item_detail.md](../../04_DetailDesign/pages/05_item_detail.md)） | 1件（[FR-ITEM-DETAIL-010-breadcrumb.spec.ts](../../../e2e/FR-ITEM-DETAIL-010-breadcrumb.spec.ts)） |
+| `FR-ITEM-DETAIL-010` | 1件（[05_item_detail.md](../../04_DetailDesign/pages/05_item_detail.md)） | 2件（[FR-ITEM-DETAIL-001-002-003-010-item-detail-core-ui.spec.ts](../../../e2e/FR-ITEM-DETAIL-001-002-003-010-item-detail-core-ui.spec.ts)） |
 | `FR-ITEM-DETAIL-011` | 1件（[05_item_detail.md](../../04_DetailDesign/pages/05_item_detail.md)） | なし |
 | `FR-ITEM-DETAIL-012` | 1件（[05_item_detail.md](../../04_DetailDesign/pages/05_item_detail.md)） | 2件（[FR-ITEM-DETAIL-012-013-related-items-and-alt.spec.ts](../../../e2e/FR-ITEM-DETAIL-012-013-related-items-and-alt.spec.ts)） |
 | `FR-ITEM-DETAIL-013` | 1件（[05_item_detail.md](../../04_DetailDesign/pages/05_item_detail.md)） | 1件（[FR-ITEM-DETAIL-013-image-alt-text.spec.ts](../../../e2e/FR-ITEM-DETAIL-013-image-alt-text.spec.ts)） |
@@ -241,7 +241,7 @@
 | `FR-LOOK-DETAIL-006` | 1件（[look.md](../../03_BasicDesign/areas/look.md)） | 2件（[FR-LOOK-DETAIL-006-metadata-backlink-aria.spec.ts](../../../e2e/FR-LOOK-DETAIL-006-metadata-backlink-aria.spec.ts)） |
 | `FR-LOOK-DETAIL-007` | 2件（[look.md](../../03_BasicDesign/areas/look.md)） | 1件（[FR-LOOK-DETAIL-007-related-recommendations-wont.spec.ts](../../../e2e/FR-LOOK-DETAIL-007-related-recommendations-wont.spec.ts)） |
 | `FR-NEWS-ALL-001` | 4件（[news.md](../../03_BasicDesign/areas/news.md)） | 11件（[FR-NEWS-ALL-001-published-news-order.spec.ts](../../../e2e/FR-NEWS-ALL-001-published-news-order.spec.ts)） |
-| `FR-NEWS-ALL-002` | 4件（[news.md](../../03_BasicDesign/areas/news.md)） | 2件（[FR-NEWS-ALL-002-category-filter-options.spec.ts](../../../e2e/FR-NEWS-ALL-002-category-filter-options.spec.ts)） |
+| `FR-NEWS-ALL-002` | 4件（[news.md](../../03_BasicDesign/areas/news.md)） | 4件（[FR-NEWS-ALL-002-category-filter-options.spec.ts](../../../e2e/FR-NEWS-ALL-002-category-filter-options.spec.ts)） |
 | `FR-NEWS-ALL-003` | 2件（[news.md](../../03_BasicDesign/areas/news.md)） | 2件（[FR-NEWS-ALL-003-category-query-sync.spec.ts](../../../e2e/FR-NEWS-ALL-003-category-query-sync.spec.ts)） |
 | `FR-NEWS-ALL-004` | 2件（[news.md](../../03_BasicDesign/areas/news.md)） | 2件（[FR-NEWS-ALL-004-news-card-content-and-navigation.spec.ts](../../../e2e/FR-NEWS-ALL-004-news-card-content-and-navigation.spec.ts)） |
 | `FR-NEWS-ALL-005` | 2件（[news.md](../../03_BasicDesign/areas/news.md)） | 1件（[FR-NEWS-ALL-005-server-category-filter.spec.ts](../../../e2e/FR-NEWS-ALL-005-server-category-filter.spec.ts)） |
@@ -273,7 +273,7 @@
 | `FR-SEARCH-004` | 2件（[search.md](../../03_BasicDesign/areas/search.md)） | 1件（[FR-SEARCH-004-empty-results.spec.ts](../../../e2e/FR-SEARCH-004-empty-results.spec.ts)） |
 | `FR-SEARCH-005` | 2件（[ADR-0308-search-no-local-history.md](../../03_BasicDesign/decisions/ADR-0308-search-no-local-history.md)） | 1件（[FR-SEARCH-005-search-history.spec.ts](../../../e2e/FR-SEARCH-005-search-history.spec.ts)） |
 | `FR-STOCKIST-001` | 2件（[stockist.md](../../03_BasicDesign/areas/stockist.md)） | 2件（[FR-STOCKIST-001-catalog-grid.spec.ts](../../../e2e/FR-STOCKIST-001-catalog-grid.spec.ts)） |
-| `FR-STOCKIST-002` | 3件（[stockist.md](../../03_BasicDesign/areas/stockist.md)） | 2件（[FR-STOCKIST-002-card-fields.spec.ts](../../../e2e/FR-STOCKIST-002-card-fields.spec.ts)） |
+| `FR-STOCKIST-002` | 3件（[stockist.md](../../03_BasicDesign/areas/stockist.md)） | 3件（[FR-STOCKIST-002-card-fields.spec.ts](../../../e2e/FR-STOCKIST-002-card-fields.spec.ts)） |
 | `FR-STOCKIST-003` | 4件（[stockist.md](../../03_BasicDesign/areas/stockist.md)） | 2件（[FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts](../../../e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts)） |
 | `FR-STOCKIST-004` | 5件（[home.md](../../03_BasicDesign/areas/home.md)） | 2件（[FR-STOCKIST-004-home-limit-behavior.spec.ts](../../../e2e/FR-STOCKIST-004-home-limit-behavior.spec.ts)） |
 | `FR-STOCKIST-005` | 2件（[stockist.md](../../03_BasicDesign/areas/stockist.md)） | 1件（[FR-STOCKIST-005-stockist-metadata.spec.ts](../../../e2e/FR-STOCKIST-005-stockist-metadata.spec.ts)） |
@@ -539,7 +539,7 @@
 | `FREQ-176-AC-02` | なし | 1件（[FR-LOOK-DETAIL-020-detail-layout-and-nav-remaining.spec.ts](../../../e2e/FR-LOOK-DETAIL-020-detail-layout-and-nav-remaining.spec.ts)） |
 | `FREQ-177-AC-01` | なし | 1件（[FR-LOOK-DETAIL-009-related-item-preview-size.spec.ts](../../../e2e/FR-LOOK-DETAIL-009-related-item-preview-size.spec.ts)） |
 | `FREQ-178-AC-01` | なし | 1件（[FR-LOOK-DETAIL-010-remove-back-link.spec.ts](../../../e2e/FR-LOOK-DETAIL-010-remove-back-link.spec.ts)） |
-| `FREQ-178-AC-02` | 2件（[ADR-0156-look-detail-not-found-same-route-200.md](../../03_BasicDesign/decisions/ADR-0156-look-detail-not-found-same-route-200.md)） | 1件（[FR-LOOK-DETAIL-010-remove-back-link.spec.ts](../../../e2e/FR-LOOK-DETAIL-010-remove-back-link.spec.ts)） |
+| `FREQ-178-AC-02` | 1件（[ADR-0156-look-detail-not-found-same-route-200.md](../../03_BasicDesign/decisions/ADR-0156-look-detail-not-found-same-route-200.md)） | 2件（[FR-LOOK-DETAIL-010-remove-back-link.spec.ts](../../../e2e/FR-LOOK-DETAIL-010-remove-back-link.spec.ts)） |
 | `FREQ-179-AC-01` | なし | 1件（[FR-LOOK-DETAIL-011-image-gallery-match-item.spec.ts](../../../e2e/FR-LOOK-DETAIL-011-image-gallery-match-item.spec.ts)） |
 | `FREQ-179-AC-02` | なし | 2件（[FR-LOOK-DETAIL-011-image-gallery-match-item.spec.ts](../../../e2e/FR-LOOK-DETAIL-011-image-gallery-match-item.spec.ts)） |
 | `FREQ-179-AC-03` | なし | 1件（[FR-LOOK-DETAIL-011-image-gallery-match-item.spec.ts](../../../e2e/FR-LOOK-DETAIL-011-image-gallery-match-item.spec.ts)） |
@@ -967,7 +967,7 @@
 | `FREQ-284-AC-03` | なし | 1件（[FR-ITEM-032-filter-initial-open-state.spec.ts](../../../e2e/FR-ITEM-032-filter-initial-open-state.spec.ts)） |
 | `FREQ-285-AC-01` | なし | 1件（[FR-ITEM-DETAIL-039-wishlist-button-below-cart.spec.ts](../../../e2e/FR-ITEM-DETAIL-039-wishlist-button-below-cart.spec.ts)） |
 | `FREQ-286-AC-01` | なし | 1件（[FR-ITEM-DETAIL-040-image-fit-and-arrow-size.spec.ts](../../../e2e/FR-ITEM-DETAIL-040-image-fit-and-arrow-size.spec.ts)） |
-| `FREQ-286-AC-02` | なし | 1件（[FR-ITEM-DETAIL-040-image-fit-and-arrow-size.spec.ts](../../../e2e/FR-ITEM-DETAIL-040-image-fit-and-arrow-size.spec.ts)） |
+| `FREQ-286-AC-02` | なし | 2件（[FR-ITEM-DETAIL-040-image-fit-and-arrow-size.spec.ts](../../../e2e/FR-ITEM-DETAIL-040-image-fit-and-arrow-size.spec.ts)） |
 | `FREQ-286-AC-03` | なし | 1件（[FR-ITEM-DETAIL-040-image-fit-and-arrow-size.spec.ts](../../../e2e/FR-ITEM-DETAIL-040-image-fit-and-arrow-size.spec.ts)） |
 | `FREQ-287-AC-01` | なし | 1件（[FR-ITEM-DETAIL-040-image-fit-and-arrow-size.spec.ts](../../../e2e/FR-ITEM-DETAIL-040-image-fit-and-arrow-size.spec.ts)） |
 | `FREQ-287-AC-02` | なし | 1件（[FR-ITEM-DETAIL-040-image-fit-and-arrow-size.spec.ts](../../../e2e/FR-ITEM-DETAIL-040-image-fit-and-arrow-size.spec.ts)） |
@@ -1171,7 +1171,7 @@
 | `FREQ-346-AC-03` | なし | 1件（[FR-ITEM-DETAIL-059-fixed-footer-no-clip.spec.ts](../../../e2e/FR-ITEM-DETAIL-059-fixed-footer-no-clip.spec.ts)） |
 | `FREQ-347-AC-01` | なし | 1件（[FR-ITEM-DETAIL-060-mobile-option-sheet.spec.ts](../../../e2e/FR-ITEM-DETAIL-060-mobile-option-sheet.spec.ts)） |
 | `FREQ-347-AC-02` | なし | 1件（[FR-ITEM-DETAIL-060-mobile-option-sheet.spec.ts](../../../e2e/FR-ITEM-DETAIL-060-mobile-option-sheet.spec.ts)） |
-| `FREQ-347-AC-03` | なし | 1件（[FR-ITEM-DETAIL-060-mobile-option-sheet.spec.ts](../../../e2e/FR-ITEM-DETAIL-060-mobile-option-sheet.spec.ts)） |
+| `FREQ-347-AC-03` | なし | 2件（[FR-ITEM-DETAIL-058-single-option-auto-select.spec.ts](../../../e2e/FR-ITEM-DETAIL-058-single-option-auto-select.spec.ts)） |
 | `FREQ-347-AC-04` | なし | 1件（[FR-ITEM-DETAIL-060-mobile-option-sheet.spec.ts](../../../e2e/FR-ITEM-DETAIL-060-mobile-option-sheet.spec.ts)） |
 | `FREQ-347-AC-05` | なし | 1件（[FR-ITEM-DETAIL-060-mobile-option-sheet.spec.ts](../../../e2e/FR-ITEM-DETAIL-060-mobile-option-sheet.spec.ts)） |
 | `FREQ-347-AC-06` | なし | 1件（[FR-ITEM-DETAIL-060-mobile-option-sheet.spec.ts](../../../e2e/FR-ITEM-DETAIL-060-mobile-option-sheet.spec.ts)） |
@@ -2044,7 +2044,7 @@
 | `FREQ-542-AC-01` | なし | 3件（[group_h_foundation.integration.test.ts](../../../tests/integration/db/group_h_foundation.integration.test.ts)） |
 | `FREQ-542-AC-02` | なし | 1件（[group_h_foundation.integration.test.ts](../../../tests/integration/db/group_h_foundation.integration.test.ts)） |
 | `FREQ-542-AC-03` | 3件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 2件（[group_h_checkout_draft.integration.test.ts](../../../tests/integration/db/group_h_checkout_draft.integration.test.ts)） |
-| `FREQ-543-AC-01` | なし | 10件（[FR-ADMIN-126-discount-permissions.spec.ts](../../../e2e/FR-ADMIN-126-discount-permissions.spec.ts)） |
+| `FREQ-543-AC-01` | なし | 7件（[FR-ADMIN-126-discount-permissions.spec.ts](../../../e2e/FR-ADMIN-126-discount-permissions.spec.ts)） |
 | `FREQ-543-AC-02` | なし | 2件（[discount-attention-route.test.ts](../../../tests/unit/api/admin/discount-attention-route.test.ts)） |
 | `FREQ-543-AC-03` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 6件（[FR-ADMIN-126-discount-permissions.spec.ts](../../../e2e/FR-ADMIN-126-discount-permissions.spec.ts)） |
 | `FREQ-544-AC-01` | なし | 4件（[group_h_context.integration.test.ts](../../../tests/integration/db/group_h_context.integration.test.ts)） |
@@ -2058,7 +2058,7 @@
 | `FREQ-546-AC-03` | なし | 2件（[group_h_admin_concurrency.integration.test.ts](../../../tests/integration/db/group_h_admin_concurrency.integration.test.ts)） |
 | `FREQ-546-AC-04` | 2件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 9件（[FR-CART-025-automatic-discounts.spec.ts](../../../e2e/FR-CART-025-automatic-discounts.spec.ts)） |
 | `FREQ-547-AC-01` | なし | 9件（[FR-ADMIN-124-discount-management.spec.ts](../../../e2e/FR-ADMIN-124-discount-management.spec.ts)） |
-| `FREQ-547-AC-02` | なし | 5件（[group_h_admin.integration.test.ts](../../../tests/integration/db/group_h_admin.integration.test.ts)） |
+| `FREQ-547-AC-02` | なし | 6件（[group_h_admin.integration.test.ts](../../../tests/integration/db/group_h_admin.integration.test.ts)） |
 | `FREQ-547-AC-03` | なし | 4件（[FR-ADMIN-125-discount-assignments.spec.ts](../../../e2e/FR-ADMIN-125-discount-assignments.spec.ts)） |
 | `FREQ-547-AC-04` | なし | 10件（[FR-ADMIN-125-discount-assignments.spec.ts](../../../e2e/FR-ADMIN-125-discount-assignments.spec.ts)） |
 | `FREQ-547-AC-05` | なし | 6件（[group_h_admin_concurrency.integration.test.ts](../../../tests/integration/db/group_h_admin_concurrency.integration.test.ts)） |
@@ -2082,8 +2082,54 @@
 | `FREQ-552-AC-01` | 1件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 8件（[FR-CHECKOUT-058-discount-breakdown.spec.ts](../../../e2e/FR-CHECKOUT-058-discount-breakdown.spec.ts)） |
 | `FREQ-552-AC-02` | なし | 10件（[group_h_migration_asserts.integration.test.ts](../../../tests/integration/db/group_h_migration_asserts.integration.test.ts)） |
 | `FREQ-552-AC-03` | なし | 7件（[group_h_migration_asserts.integration.test.ts](../../../tests/integration/db/group_h_migration_asserts.integration.test.ts)） |
+| `FREQ-553-AC-01` | なし | 5件（[accounting_p1_permissions.integration.test.ts](../../../tests/integration/db/accounting_p1_permissions.integration.test.ts)） |
+| `FREQ-553-AC-02` | なし | 2件（[accounting_p1_grants.integration.test.ts](../../../tests/integration/db/accounting_p1_grants.integration.test.ts)） |
+| `FREQ-553-AC-03` | なし | 1件（[accounting_p1_grants.integration.test.ts](../../../tests/integration/db/accounting_p1_grants.integration.test.ts)） |
+| `FREQ-553-AC-04` | なし | 2件（[accounting_p1_grants.integration.test.ts](../../../tests/integration/db/accounting_p1_grants.integration.test.ts)） |
+| `FREQ-554-AC-01` | なし | 1件（[accounting_p1_journal.integration.test.ts](../../../tests/integration/db/accounting_p1_journal.integration.test.ts)） |
+| `FREQ-554-AC-02` | なし | 2件（[accounting_p1_journal.integration.test.ts](../../../tests/integration/db/accounting_p1_journal.integration.test.ts)） |
+| `FREQ-554-AC-03` | なし | 5件（[accounting_p1_journal.integration.test.ts](../../../tests/integration/db/accounting_p1_journal.integration.test.ts)） |
+| `FREQ-554-AC-04` | なし | 3件（[accounting_p1_journal.integration.test.ts](../../../tests/integration/db/accounting_p1_journal.integration.test.ts)） |
+| `FREQ-554-AC-05` | なし | 2件（[accounting_p1_journal.integration.test.ts](../../../tests/integration/db/accounting_p1_journal.integration.test.ts)） |
+| `FREQ-554-AC-06` | なし | 3件（[accounting_p1_journal.integration.test.ts](../../../tests/integration/db/accounting_p1_journal.integration.test.ts)） |
+| `FREQ-554-AC-07` | なし | 2件（[accounting_p1_journal.integration.test.ts](../../../tests/integration/db/accounting_p1_journal.integration.test.ts)） |
+| `FREQ-554-AC-08` | なし | 1件（[accounting_p1_journal.integration.test.ts](../../../tests/integration/db/accounting_p1_journal.integration.test.ts)） |
+| `FREQ-554-AC-09` | なし | 1件（[accounting_p1_journal.integration.test.ts](../../../tests/integration/db/accounting_p1_journal.integration.test.ts)） |
+| `FREQ-554-AC-10` | なし | 1件（[accounting_p1_journal.integration.test.ts](../../../tests/integration/db/accounting_p1_journal.integration.test.ts)） |
+| `FREQ-555-AC-01` | なし | 7件（[accounting_p1_migration_asserts.integration.test.ts](../../../tests/integration/db/accounting_p1_migration_asserts.integration.test.ts)） |
+| `FREQ-555-AC-02` | なし | 1件（[accounting_p1_opening.integration.test.ts](../../../tests/integration/db/accounting_p1_opening.integration.test.ts)） |
+| `FREQ-555-AC-03` | なし | 2件（[accounting_p1_opening.integration.test.ts](../../../tests/integration/db/accounting_p1_opening.integration.test.ts)） |
+| `FREQ-555-AC-04` | なし | 5件（[accounting_p1_periods.integration.test.ts](../../../tests/integration/db/accounting_p1_periods.integration.test.ts)） |
+| `FREQ-555-AC-05` | なし | 1件（[period-months.test.ts](../../../tests/unit/lib/accounting/period-months.test.ts)） |
+| `FREQ-555-AC-06` | なし | 4件（[accounting_p1_opening.integration.test.ts](../../../tests/integration/db/accounting_p1_opening.integration.test.ts)） |
+| `FREQ-555-AC-07` | なし | 5件（[accounting_p1_migration_asserts.integration.test.ts](../../../tests/integration/db/accounting_p1_migration_asserts.integration.test.ts)） |
+| `FREQ-555-AC-08` | なし | 2件（[accounting_p1_periods.integration.test.ts](../../../tests/integration/db/accounting_p1_periods.integration.test.ts)） |
+| `FREQ-555-AC-09` | なし | 4件（[accounting_p1_periods.integration.test.ts](../../../tests/integration/db/accounting_p1_periods.integration.test.ts)） |
+| `FREQ-556-AC-01` | なし | 3件（[accounting_p1_manual_entry.integration.test.ts](../../../tests/integration/db/accounting_p1_manual_entry.integration.test.ts)） |
+| `FREQ-556-AC-02` | なし | 2件（[accounting_p1_manual_entry.integration.test.ts](../../../tests/integration/db/accounting_p1_manual_entry.integration.test.ts)） |
+| `FREQ-556-AC-03` | なし | 2件（[accounting_p1_manual_entry.integration.test.ts](../../../tests/integration/db/accounting_p1_manual_entry.integration.test.ts)） |
+| `FREQ-556-AC-04` | なし | 1件（[accounting_p1_manual_entry.integration.test.ts](../../../tests/integration/db/accounting_p1_manual_entry.integration.test.ts)） |
+| `FREQ-556-AC-05` | なし | 1件（[accounting_p1_manual_entry.integration.test.ts](../../../tests/integration/db/accounting_p1_manual_entry.integration.test.ts)） |
+| `FREQ-556-AC-06` | なし | 1件（[accounting_p1_manual_entry.integration.test.ts](../../../tests/integration/db/accounting_p1_manual_entry.integration.test.ts)） |
+| `FREQ-557-AC-01` | なし | 4件（[cost-profit-route.test.ts](../../../tests/unit/api/admin/cost-profit-route.test.ts)） |
+| `FREQ-557-AC-02` | なし | 3件（[period-count.test.tsx](../../../tests/unit/components/cost-profit/period-count.test.tsx)） |
+| `FREQ-557-AC-03` | なし | 2件（[period-count.test.tsx](../../../tests/unit/components/cost-profit/period-count.test.tsx)） |
+| `FREQ-557-AC-04` | なし | 1件（[depreciation-period.test.ts](../../../tests/unit/lib/finance/depreciation-period.test.ts)） |
+| `FREQ-557-AC-05` | なし | 2件（[cost-profit-route.test.ts](../../../tests/unit/api/admin/cost-profit-route.test.ts)） |
+| `FREQ-557-AC-06` | なし | 3件（[cost-profit-route.test.ts](../../../tests/unit/api/admin/cost-profit-route.test.ts)） |
+| `FREQ-558-AC-01` | なし | 1件（[csv-export.test.ts](../../../tests/unit/lib/finance/csv-export.test.ts)） |
+| `FREQ-559-AC-01` | なし | 1件（[accounting_p1_receipts_bucket.integration.test.ts](../../../tests/integration/db/accounting_p1_receipts_bucket.integration.test.ts)） |
+| `FREQ-559-AC-02` | なし | 3件（[accounting_p1_receipts_bucket.integration.test.ts](../../../tests/integration/db/accounting_p1_receipts_bucket.integration.test.ts)） |
+| `FREQ-559-AC-03` | なし | 1件（[receipt-kind.test.tsx](../../../tests/unit/components/cost-profit/receipt-kind.test.tsx)） |
 | `FREQ-56-AC-01` | なし | 1件（[FR-LOOK-ALL-013-related-item-mobile-stack.spec.ts](../../../e2e/FR-LOOK-ALL-013-related-item-mobile-stack.spec.ts)） |
 | `FREQ-56-AC-02` | なし | 1件（[FR-LOOK-ALL-013-related-item-mobile-stack.spec.ts](../../../e2e/FR-LOOK-ALL-013-related-item-mobile-stack.spec.ts)） |
+| `FREQ-560-AC-01` | なし | 1件（[accounting_p1_a8_migrate.integration.test.ts](../../../tests/integration/db/accounting_p1_a8_migrate.integration.test.ts)） |
+| `FREQ-560-AC-02` | なし | 1件（[accounting_p1_a8_migrate.integration.test.ts](../../../tests/integration/db/accounting_p1_a8_migrate.integration.test.ts)） |
+| `FREQ-560-AC-03` | なし | 1件（[accounting_p1_a8_migrate.integration.test.ts](../../../tests/integration/db/accounting_p1_a8_migrate.integration.test.ts)） |
+| `FREQ-561-AC-01` | なし | 2件（[accounting-periods-route.test.ts](../../../tests/unit/api/admin/accounting-periods-route.test.ts)） |
+| `FREQ-561-AC-02` | なし | 3件（[accounting-settings-route.test.ts](../../../tests/unit/api/admin/accounting-settings-route.test.ts)） |
+| `FREQ-561-AC-03` | なし | 3件（[accounting_p1_periods.integration.test.ts](../../../tests/integration/db/accounting_p1_periods.integration.test.ts)） |
+| `FREQ-561-AC-04` | なし | 2件（[accounting-periods-route.test.ts](../../../tests/unit/api/admin/accounting-periods-route.test.ts)） |
 | `FREQ-57-AC-01` | なし | 1件（[FR-STOCKIST-010-region-prefecture-filter.spec.ts](../../../e2e/FR-STOCKIST-010-region-prefecture-filter.spec.ts)） |
 | `FREQ-57-AC-02` | なし | 1件（[FR-STOCKIST-010-region-prefecture-filter.spec.ts](../../../e2e/FR-STOCKIST-010-region-prefecture-filter.spec.ts)） |
 | `FREQ-57-AC-03` | なし | 1件（[FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts](../../../e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts)） |
