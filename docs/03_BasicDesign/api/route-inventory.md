@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> 会計の作り直し 計画1 Task 15 確認日: 2026-11-08。Route Handler の追加・削除はない（173ファイル・219メソッドのまま）。`/api/admin/kpi/cost-profit` の GET に `periodId` と期間の欄、receipt に証憑の種類、権限の管理対象が 38 コードになったことを備考に足した。
+>
 > 会計の作り直し 計画1 Task 8 確認日: 2026-11-07。会計の期間・設定・保存した仕訳の読みの 5 ファイル・7 メソッド（`GET`・`POST /api/admin/accounting/periods`、`POST /api/admin/accounting/periods/[id]/final-sole`、`PUT /api/admin/accounting/periods/[id]/filing`、`GET`・`PUT /api/admin/accounting/settings`、`GET /api/admin/accounting/journal`）を追加した。Route Handler は173ファイル・219メソッド、表は172行・218メソッド（`/api/e2e/server-info` を除く）。認可・CSRF・制限・監査の順序と応答は[API仕様](api-spec.md)の会計の表を参照。
 >
 > 返品の品ごとの返金 Task 2 確認日: 2026-11-06。Route Handler の追加・削除はない（168ファイル・212メソッドのまま）。`POST /api/admin/returns/[returnId]/receive` の本文に品ごとの選び（`units[].refundChoice`）と親の `mixed` を足し、400 `RETURN_RECEIVE_REFUND_CAP_EXCEEDED` を返すようにした。詳しくは [API 仕様](./api-spec.md) の O-return-receive。
@@ -95,8 +97,8 @@
 | `/api/admin/items/[id]` | `DELETE`, `GET`, `PATCH`, `PUT` | [route.ts](../../../src/app/api/admin/items/%5Bid%5D/route.ts) |
 | `/api/admin/items/[id]/variants` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/items/%5Bid%5D/variants/route.ts) |
 | `/api/admin/items` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/items/route.ts) |
-| `/api/admin/kpi/cost-profit/receipt` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/kpi/cost-profit/receipt/route.ts) |
-| `/api/admin/kpi/cost-profit` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/kpi/cost-profit/route.ts) |
+| `/api/admin/kpi/cost-profit/receipt` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/kpi/cost-profit/receipt/route.ts) （会計 計画1 Task 3・11: POST は `evidenceKind` 必須、`paper` は `paperOriginalKept` も必須。GET は種類を返す） |
+| `/api/admin/kpi/cost-profit` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/kpi/cost-profit/route.ts) （会計 計画1 Task 9・10: GET は `periodId` か `year`、期間・期間の一覧・保存した仕訳・期首・知らせを返し、`JOURNAL_TOO_LARGE`／`JOURNAL_INCOMPLETE` の500がある。POST の `expense.*` はトリガーの `ACCOUNTING_*` を固定本文で返す） |
 | `/api/admin/kpi/meta/callback` | `GET` | [route.ts](../../../src/app/api/admin/kpi/meta/callback/route.ts) |
 | `/api/admin/kpi/meta/connect` | `GET` | [route.ts](../../../src/app/api/admin/kpi/meta/connect/route.ts) |
 | `/api/admin/kpi/meta` | `DELETE`, `GET` | [route.ts](../../../src/app/api/admin/kpi/meta/route.ts) |
@@ -231,8 +233,8 @@ G-3 Task 7: 伝票番号の入力・訂正の入口（`POST /api/admin/shipment-
 
 | パス | 契約・認可 |
 | --- | --- |
-| `GET /api/admin/permissions` | 毎回 `authorizeAdminPermission('admin.permissions.manage', request)` で DB ACL・active session・aal2 を確認。`{ data: PermissionsMatrix }`（管理対象30コードと admin/supporter の2役割、各文字列の版・許可一覧）。読取は `clientFetch` の `cache: 'no-store'` |
-| `POST /api/admin/role-permissions` | 同じ認可→CSRF→IP/actor各10分30回→strict本文検証→RPC→操作監査。`RolePermissionChange` の4欄で1役割の30コード内許可一覧全体を期待版/UUID要求キー付きで保存。応答 `{ data: RolePermissionChangeResult }` の role/版を採用。同キー同入力は同じ結果、同キー異入力・版競合は409。固定2コードの解除/他役割付与は403。差分とイベントの同時保存はDB担当 |
+| `GET /api/admin/permissions` | 毎回 `authorizeAdminPermission('admin.permissions.manage', request)` で DB ACL・active session・aal2 を確認。`{ data: PermissionsMatrix }`（管理対象38コードと admin/supporter の2役割、各文字列の版・許可一覧）。読取は `clientFetch` の `cache: 'no-store'` |
+| `POST /api/admin/role-permissions` | 同じ認可→CSRF→IP/actor各10分30回→strict本文検証→RPC→操作監査。`RolePermissionChange` の4欄で1役割の38コード内許可一覧全体を期待版/UUID要求キー付きで保存。応答 `{ data: RolePermissionChangeResult }` の role/版を採用。同キー同入力は同じ結果、同キー異入力・版競合は409。固定2コードの解除/他役割付与は403。差分とイベントの同時保存はDB担当 |
 
 新2入口は拒否応答も `Cache-Control: no-store`。`PUT` 互換入口は作らない（今回の裁定は POST。承認済み設計の旧 PUT 案は変更しない）。型・catalog は [共有型](../../../src/lib/auth/role-permission-types.ts)・[catalog](../../../src/lib/auth/role-permission-catalog.ts)、画面・再送・表示優先は [管理画面詳細](../../04_DetailDesign/pages/16_admin.md#権限画面g-0--freq-519freq-540-の-g-0-部分)。既存 `PATCH /api/admin/users` は `admin.users.manage`・CSRF・同じ制限と1 RPCで自己役割変更/最後の有効店長/昇格を保護する（Task 2）。業務窓口のAND条件と旧発送/在庫APIの切替は後続 G-1〜G-3。
 

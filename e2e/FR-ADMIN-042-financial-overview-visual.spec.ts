@@ -331,7 +331,7 @@ for (const viewport of viewports) {
       ).toHaveCSS('border-top-left-radius', '8px');
     });
 
-    test('会計期間は暦年なので「年」表記で、2025年から選べる', async ({ page }) => {
+    test('会計期間は「2026年（個人）」の名前で、作ってある期間（2025年〜）から選べる', async ({ page }) => {
       // FREQ-256-AC-03 / AC-04
       await openAccounting(page);
 

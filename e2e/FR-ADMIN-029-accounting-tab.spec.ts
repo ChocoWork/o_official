@@ -121,7 +121,7 @@ for (const viewport of viewports) {
       await expect(page.getByRole('tab', { name: 'コスト & 利益' })).toHaveCount(0);
     });
 
-    test('ACCOUNTING タブに5つのサブタブと暦年選択が並ぶ', async ({ page }) => {
+    test('ACCOUNTING タブに6つのサブタブと会計期間の選択が並ぶ', async ({ page }) => {
       // FREQ-238-AC-03（会計期間の軸は FREQ-241 でシーズン→暦年へ変更）
       await page.goto('/admin');
       await page.getByRole('button', { name: 'ACCOUNTING' }).click();

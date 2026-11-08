@@ -364,7 +364,7 @@ export function buildComposition(
   return composition;
 }
 
-/** 売上高構成。売上として立った収入取引を「収入概要」で束ねる。 */
+/** 売上高構成。売上として立った収入取引を「収入摘要」で束ねる。 */
 export function buildSalesComposition(
   incomes: readonly FinanceEntry[],
   limit = 4,

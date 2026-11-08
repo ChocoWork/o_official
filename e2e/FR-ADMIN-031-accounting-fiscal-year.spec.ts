@@ -168,7 +168,7 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
     });
 
-    test('最上部が暦年ボタンで、シーズンボタンは表示されない', async ({ page }) => {
+    test('最上部が会計期間の選択で、シーズンボタンは表示されない', async ({ page }) => {
       // FREQ-241-AC-01
       await openAccounting(page);
 

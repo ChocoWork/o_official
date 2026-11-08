@@ -1,7 +1,7 @@
 # ハイブリッド RBAC (Role-Based Access Control) アーキテクチャ
 
 **ステータス**: 実装完料
-**最終更新**: 2026-10-13
+**最終更新**: 2026-11-08（会計の権限 6 件と表の権限の締め直しを追記）
 **Migration**: 023_add_acl_rbac_tables_and_policies.sql
 
 ---
@@ -83,6 +83,23 @@ Permission Codes:
 （user は上記権限なし）
 
 グループ E-3 の返品では、`admin.orders.return`（店長とサポート）で返品の窓口を使い、返金に関わる操作（受け取りの今返金（お客様の申し込みで返送不要でない返品の計算どおりの場合を除く）・返金額の指定・送料・交換の選び直し、額を決めて返金する、手数料の受け取りの記録、支払いを待たずに送る）は `admin.orders.return` と `admin.orders.refund` の両方（店長だけ）が要る。サポートの受け取りは、お店が作った返品・返送不要の返品では、相談で受け取って返品を「返金待ち」にするところまで。権限の行は移行 A（`20261012235910_order_return_records.sql`）が入れ、`src/lib/auth/admin-rbac.ts` の `PermissionCode` と `legacyPermissionMap`（店長・サポートの両方）にも足す。グループ E-3 段2では、返品の承認・お断り・写真を見る・キャンセルの申し込みを見る・お断り・解決済み・解決も `admin.orders.return`（店長とサポート）。サポートは `source = 'customer_request'` かつ `return_method <> 'not_required'` の返品の受け取りに限り、計算どおりの今返金を選べる（額・送料・交換の上書きは窓口が 403、DB も `RETURN_FORBIDDEN`）。相談なら返金待ちにして店へ知らせる。商品の返品不可は `admin.items.manage`、設定は `admin.settings.manage`。お客様の入口は `authenticateRequest` の `claims.sub` を DB に渡し、DB が `orders.user_id` を送り直しより先に照合する。新4表は利用者から直接読めず書けず、`service_role` は読むだけで、書く関数の実行だけを許す。
+
+### 会計の権限 6 件（会計の計画 1。FREQ-553。管理対象は 32 → 38 コード）
+
+移行 S0（`20261107130000_accounting_p1_permissions.sql`）が、権限の目録を持つ 2 つの DB 関数（`private.admin_get_permissions`・`private.admin_set_role_permissions`）の `catalog` に次の 6 コードを足し、`permissions` へ 6 件を入れて店長（`admin`）だけに付ける。サポーターと一般には付けない。画面の分野は「会計」で、6 件とも依存は `admin.finance.read`（読めないまま管理だけ付けると足りない扱い）。コードは `src/lib/auth/admin-rbac.ts` の `PermissionCode`・`legacyPermissionMap.admin`、`src/lib/auth/role-permission-catalog.ts`（ROLE_PERMISSION_CATALOG）にも足し、`role-permissions` の保存の上限は 38 件。
+
+| コード | 画面の名前 | 計画 1 で使う入口 |
+| --- | --- | --- |
+| `admin.accounting.settings.manage` | 会計の設定・期間 | 期間の作成、開業日・事業の形の設定、申告の設定、個人の最後の期間の登録・選び直し |
+| `admin.accounting.entries.correct` | 仕訳の訂正・取り消し | まだ使う入口は無い（後の計画） |
+| `admin.accounting.close.manage` | 期間の締め・締めの解除 | まだ使う入口は無い（後の計画） |
+| `admin.accounting.inventory.manage` | 棚卸・原価の確定 | まだ使う入口は無い（後の計画） |
+| `admin.accounting.export.read` | 帳簿・写しの書き出し | まだ使う入口は無い（後の計画） |
+| `admin.accounting.integration.manage` | 会計ソフトとの連携 | まだ使う入口は無い（後の計画） |
+
+### 会計の表の権限の締め直し（会計の計画 1。FREQ-553）
+
+移行 S1（`20261107130100_accounting_p1_grants_receipts.sql`）が、`admin_finance_*` の 12 表（`entry_review_acks`・`entry_revisions`・`evidence_unavailable_records`・`expense_templates`・`expenses`・`fixed_assets`・`partners`・`receipts`・`seasons`・`summary_options`・`year_closings`・`years`）と、これらが持つ 8 つの連番（`*_id_seq`。`evidence_unavailable_records`・`seasons`・`year_closings`・`years` は自然キーで連番なし）から、`PUBLIC`・`anon`・`authenticated` の権限を全部外す。`service_role` には 12 表の全権限と 8 連番の `USAGE, SELECT` を与える。RLS の方針（45 本）は変えない。会計の画面と API は `createServiceRoleClient` だけで表に触るので、利用者の JWT で表を直接読み書きする道はもう無い（`admin.finance.read` の人でも表の `SELECT` は 42501 になる）。`auth_grants_inventory` の例外一覧から `admin_finance_` を外し、締まった表として数える。
 
 ---
 

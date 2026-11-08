@@ -1,6 +1,6 @@
 ﻿# 詳細設計の案内
 
-> 状態: 文書索引 | 確認日: 2026-10-04
+> 状態: 文書索引 | 確認日: 2026-11-08（ADMIN の会計・会計の仕訳のシーケンス・会計の期間の状態を追加）
 
 ## 概要
 
@@ -12,7 +12,7 @@
 | --- | --- |
 | ホーム・情報 | [HOME](pages/01_home.md)、[NEWS一覧](pages/02_news_list.md)、[NEWS詳細](pages/03_news_detail.md)、[ABOUT](pages/08_about.md)、[CONTACT](pages/09_contact.md)、[STOCKIST](pages/10_stockist.md) |
 | 商品・購入 | [ITEM一覧](pages/04_item_list.md)、[ITEM詳細](pages/05_item_detail.md)、[LOOK一覧](pages/06_look_list.md)、[LOOK詳細](pages/07_look_detail.md)、[WISHLIST](pages/11_wishlist.md)、[CART](pages/12_cart.md)、[CHECKOUT](pages/13_checkout.md) |
-| アカウント・管理 | [LOGIN](pages/14_login.md)、[ACCOUNT](pages/15_account.md)、[ADMIN](pages/16_admin.md)、[ADMIN NEWS](pages/16-1_admin_news.md)、[ADMIN そのほか（項目の形）](pages/16-2_admin_misc.md)、[ADMIN の LOOK](pages/16-3_admin_look.md)、[ADMIN STOCKIST](pages/16-4_admin_stockist.md) |
+| アカウント・管理 | [LOGIN](pages/14_login.md)、[ACCOUNT](pages/15_account.md)、[ADMIN](pages/16_admin.md)、[ADMIN NEWS](pages/16-1_admin_news.md)、[ADMIN そのほか（項目の形）](pages/16-2_admin_misc.md)、[ADMIN の LOOK](pages/16-3_admin_look.md)、[ADMIN STOCKIST](pages/16-4_admin_stockist.md)、[ADMIN 会計](pages/16-5_admin_accounting.md) |
 | その他 | [PRIVACY](pages/17_privacy.md)、[PRIVACY（項目の形）](pages/17-1_privacy.md)、[TERMS](pages/18_terms.md)、[SEARCH](pages/19_search.md) |
 
 現行の全ルートは[画面一覧](../03_BasicDesign/ui/screen-list.md)を参照する。ページ別設計にない認証・管理下位ルートは、必要に応じて要件IDと実装根拠を確認して追加する。
