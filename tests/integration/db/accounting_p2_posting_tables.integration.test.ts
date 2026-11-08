@@ -125,6 +125,7 @@ describeLocalDb('S6 posting foundation: controller only', (db) => {
     ['payout_mismatch', { payout_state: 'payout_net_zero' }],
     ['payout_mismatch', {}],
     ['dispute_withdrawal_missing', { waiting_on: 'dispute_account_unassigned', dispute_status: 'needs_response' }],
+    ['dispute_withdrawal_missing', { waiting_on: 'dispute_withdrawn' }],
     ['no_revenue', { lost_on: '2026-11-08' }],
     ['no_revenue', {}],
     ['no_order', {}], ['units_insufficient', {}], ['shipment_date_mismatch', {}], ['before_cutover', {}], ['unknown_category', {}],

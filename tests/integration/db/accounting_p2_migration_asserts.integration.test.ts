@@ -574,6 +574,8 @@ describeLocalDb('S8 final assert: controller only', (db) => {
     [edit("private.accounting_post_journal_core(NULL, v_period, v_date, 'shipment_redated',", "private.accounting_post_journal_core(NULL, v_period, v_date, 'shipment_confirmed',"), 'acc_s8_functions'],
     [edit('private.accounting_shipment_plan(v_slip.id, v_seq)', 'private.accounting_shipment_plan(v_slip.id, 0)'), 'acc_s8_functions'],
     [edit("v_reason := 'dispute_withdrawal_missing';", 'v_reason := NULL;'), 'acc_s8_functions'],
+    [edit("'waiting_on', 'dispute_withdrawn'", "'waiting_on', 'x'"), 'acc_s8_functions'],
+    [edit("pb.reason = 'before_cutover'", "pb.reason = 'no_order'"), 'acc_s8_functions'],
     [edit('private.accounting_g_fact_seq_at(t.stripe_created_at) < v_seq', 'private.accounting_g_fact_seq_at(t.stripe_created_at) <= v_seq'), 'acc_s8_functions'],
     [edit('private.accounting_period_for_event(v_date)', "private.accounting_period_for(v_date, 'soleProprietor')"), 'acc_s8_functions'],
     [edit('_source_recorded_at => LEAST(v_slip.confirmed_at, pg_catalog.clock_timestamp())', '_source_recorded_at => NULL'), 'acc_s8_functions'],

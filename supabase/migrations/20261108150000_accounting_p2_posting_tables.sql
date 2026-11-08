@@ -497,7 +497,7 @@ BEGIN
     ELSIF v_key = 'payout_state' THEN
       IF (v_value #>> '{}') NOT IN ('payout_not_posted', 'payout_net_zero') THEN RETURN false; END IF;
     ELSIF v_key = 'waiting_on' THEN
-      IF (v_value #>> '{}') <> 'dispute_account_unassigned' THEN RETURN false; END IF;
+      IF (v_value #>> '{}') NOT IN ('dispute_account_unassigned', 'dispute_withdrawn') THEN RETURN false; END IF;
     ELSIF v_key = 'dispute_status' THEN
       IF (v_value #>> '{}') !~ '^[a-z_]{1,40}$' THEN RETURN false; END IF;
     ELSE

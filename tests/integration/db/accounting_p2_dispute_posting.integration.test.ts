@@ -392,7 +392,7 @@ describeLocalDb('S11 dispute posting: controller only', (db) => {
       if (shipmentsFirst) {
         // The shipment (confirm number above the withdrawal's) waits for the withdrawal, which goes in in full in the same call.
         expect(await runAll()).toMatchObject({ shipments: 0, disputes: 1, parked: 1 });
-        expect(await slipPending()).toMatchObject({ reason: 'dispute_withdrawal_missing', detail: {}, resolved_at: null });
+        expect(await slipPending()).toMatchObject({ reason: 'dispute_withdrawal_missing', detail: { waiting_on: 'dispute_withdrawn' }, resolved_at: null });
         expect(await runAll()).toMatchObject({ shipments: 0, disputes: 0, parked: 1 });
       } else {
         expect(await runDisputes()).toEqual({ ...none, posted: 1, withdrawn: 1 });
@@ -1027,6 +1027,54 @@ describeLocalDb('S11 dispute posting: controller only', (db) => {
       await q('rollback to savepoint row13');
       await q('release savepoint row13');
     }
+  });
+
+  test('FREQ-569-AC-05: 元の記録の時刻は保存した時刻と今の小さい方で、2か月を超えてから記録した引かれた時・確定は遅れの印が付き、その前なら付かない', async () => {
+    await setSetting('fraudulent', '7530');
+    const order = await seedOrder({ shipped: 8 });
+    // Withdrawal saved the day after (not late) and saved long afterwards (late); a time in the future is clamped to now and still posts.
+    const near = await dispute(order, 10000, { syncedAt: '2026-06-21T00:00:00Z' });
+    const far = await dispute(order, 5000, { syncedAt: '2026-10-01T00:00:00Z' });
+    const future = await dispute(order, 3000, { syncedAt: '2999-01-01T00:00:00Z' });
+    expect(await runDisputes()).toEqual({ ...none, posted: 3, withdrawn: 3 });
+    const entry = async (d: { disputeId: string; txnId: string | null }) => entryOf(key(d.disputeId, 'withdrawn', d.txnId as string));
+    expect(await entry(near)).toMatchObject({ is_late: false });
+    expect(new Date((await entry(near)).source_recorded_at).toISOString()).toBe('2026-06-21T00:00:00.000Z');
+    expect(await entry(far)).toMatchObject({ is_late: true });
+    expect(new Date((await entry(far)).source_recorded_at).toISOString()).toBe('2026-10-01T00:00:00.000Z');
+    expect((await entry(future)).is_late).toBe(true);
+    expect(new Date((await entry(future)).source_recorded_at).getTime()).toBeLessThanOrEqual(Date.now());
+    // The confirmation: the lost row was saved the day after the loss (not late), or two and a half months afterwards (late).
+    await addDisputeHistory(db(), { disputeId: near.disputeId, status: 'lost', occurredAt: '2026-08-02T00:00:00Z', stripeEventCreatedAt: '2026-08-01T03:00:00Z',
+      eventType: 'charge.dispute.closed', createdAt: '2026-08-02T00:00:00Z' });
+    await addDisputeHistory(db(), { disputeId: far.disputeId, status: 'lost', occurredAt: '2026-08-02T00:00:00Z', stripeEventCreatedAt: '2026-08-01T03:00:00Z',
+      eventType: 'charge.dispute.closed', createdAt: '2026-10-15T00:00:00Z' });
+    await runDisputes();
+    expect(await entryOf(key(near.disputeId, 'confirmed', 'lost'))).toMatchObject({ is_late: false, entry_date: '2026-08-01' });
+    expect(await entryOf(key(far.disputeId, 'confirmed', 'lost'))).toMatchObject({ is_late: true, entry_date: '2026-08-01' });
+  });
+
+  test('FREQ-562-AC-05: 取り消しの係は limit が範囲の外なら断り、新しい出来事を _limit 件までと未解決の見直し10件までで切る', async () => {
+    for (const bad of [0, 201, -1, null]) {
+      expect(await accountingFailure(db(), () => q('select private.accounting_post_dispute_events($1::integer)', [bad]))).toMatchObject({ code: '22023', message: 'ACCOUNTING_ARGUMENT_INVALID' });
+    }
+    const order = await seedOrder({ shipped: 8 });
+    for (let i = 0; i < 3; i += 1) await dispute(order, 1000, { withdrawnAt: `2026-06-2${i}T03:00:00Z` });
+    expect(await runDisputes(2)).toEqual({ ...none, posted: 2, withdrawn: 2 });
+    expect(await runDisputes(2)).toEqual({ ...none, posted: 1, withdrawn: 1 });
+    expect(await runDisputes(2)).toEqual(none);
+  });
+
+  test('FREQ-568-AC-03: before_cutover で止まった引かれた時は入らないので、後に確定した発送票はそれを待たずに入る', async () => {
+    const order = await seedOrder();
+    // A withdrawal before the cutover day never posts. The slip confirmed after it must not wait for it.
+    const d = await dispute(order, 10000, { amount: 10000, withdrawnAt: '2025-12-30T03:00:00Z' });
+    expect(await runDisputes()).toEqual({ ...none, parked_new: 1 });
+    expect(await pendingOf('stripe_balance_transactions', d.txnId as string)).toMatchObject({ reason: 'before_cutover' });
+    const slip = await confirmSlipAt(order, 5, '2026-06-21', '2026-06-21T01:00:00Z');
+    await postShipments();
+    expect(await entryOf(`shipment_confirmed:${slip.number}`)).toBeDefined();
+    expect((await q("select 1 from public.accounting_pending_events where event_kind = 'shipment_confirmed' and source_id = $1", [slip.slipId])).rows).toEqual([]);
   });
 
   test('FREQ-568-AC-04: 確定の後に保存された戻りの取引は、lostの時刻より前の時刻でも遅れた取り下げとして入り、dispute_pendingはマイナスにならない', async () => {

@@ -31,7 +31,10 @@ BEGIN;
 --     withdrawal time) on the same order, where that withdrawal (dispute_event:<dispute>:withdrawn:<transaction>) is not in the books
 --     yet, is parked as dispute_withdrawal_missing and goes in after the withdrawal (the withdrawal counted those units as not sent).
 --     The withdrawal never waits for such a slip, so they cannot wait for each other. If the withdrawal took the deferred revenue,
---     the shipment parks as deferred_revenue_short until a won dispute gives it back.
+--     the shipment parks as deferred_revenue_short until a won dispute gives it back. The parked row says what it waits on
+--     (detail waiting_on dispute_withdrawn). A withdrawal parked as before_cutover never posts, so it is not waited for.
+--     DEPENDENCY: this poster calls private.accounting_dispute_order (S11, 20261108200000), resolved when it runs; dropping that
+--     function breaks the shipment poster (see the ROLLBACK note of S11).
 --   * Source times: the slip's confirmed_at for a confirmation, its cancelled_at for a cancellation, the date history row's
 --     created_at for a date correction, each LEAST(..., clock_timestamp()).
 -- private.accounting_shipment_plan(_slip_id, _confirm_seq) decides the units sent (private.accounting_shipped_units at the
@@ -434,9 +437,13 @@ BEGIN
               IN (SELECT oi.order_id FROM public.shipment_slip_lines AS sl
                 JOIN public.order_items AS oi ON oi.id = sl.order_item_id WHERE sl.slip_id = v_slip.id)
             AND private.accounting_g_fact_seq_at(t.stripe_created_at) < v_seq
+            AND NOT EXISTS (SELECT 1 FROM public.accounting_pending_events AS pb
+              WHERE pb.event_kind = 'dispute_event' AND pb.source_table = 'stripe_balance_transactions' AND pb.source_id = t.id
+                AND pb.reason = 'before_cutover')
             AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS e
               WHERE e.dedupe_key = 'dispute_event:' || t.source_id || ':withdrawn:' || t.id)) THEN
           v_reason := 'dispute_withdrawal_missing';
+          v_detail := pg_catalog.jsonb_build_object('waiting_on', 'dispute_withdrawn');
         END IF;
         IF v_reason IS NULL THEN
           v_period := private.accounting_period_for_event(v_date);
@@ -720,6 +727,8 @@ BEGIN
         OR pg_catalog.strpos(v_src, 'private.accounting_g_fact_seq_at(t.stripe_created_at) < v_seq') = 0
         OR pg_catalog.strpos(v_src, '''dispute_event:'' || t.source_id || '':withdrawn:'' || t.id') = 0
         OR pg_catalog.strpos(v_src, 'v_reason := ''dispute_withdrawal_missing'';') = 0
+        OR pg_catalog.strpos(v_src, '''waiting_on'', ''dispute_withdrawn''') = 0
+        OR pg_catalog.strpos(v_src, 'pb.reason = ''before_cutover''') = 0
         OR pg_catalog.strpos(v_src, 'private.accounting_shipment_date_reason(v_slip.id, v_date)') = 0
         OR pg_catalog.strpos(v_src, 'private.accounting_period_for_event(v_date)') = 0
         OR pg_catalog.strpos(v_src, 'private.accounting_event_key(''shipment_confirmed'', ARRAY[s.number])') = 0
