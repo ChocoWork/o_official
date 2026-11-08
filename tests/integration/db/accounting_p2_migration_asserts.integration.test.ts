@@ -818,6 +818,7 @@ describeLocalDb('S9 final assert: controller only', (db) => {
     [edit('ACCOUNTING_VERSION_CONFLICT', 'ACCOUNTING_VERSION_CHANGED', invoiceS9), 'acc_s9_functions'],
     [edit('private.accounting_entry_live(', 'private.accounting_entry_dead(', balanceReadS9), 'acc_s9_functions'],
     [edit("private.accounting_entry_live('payout_started', o.id)", 'true', laneSignature('bank')), 'acc_s9_functions'],
+    [edit('private.accounting_dispute_key(', 'private.accounting_dispute_keyx(', balanceReadS9), 'acc_s9_functions'],
     // attributes and EXECUTE
     ...lanes.map((lane) => [`grant execute on function ${laneSignature(lane)} to service_role`, 'acc_s9_function_attrs']),
     [`grant execute on function ${runnerS9} to anon`, 'acc_s9_function_attrs'],

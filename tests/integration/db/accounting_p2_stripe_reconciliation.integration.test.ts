@@ -2,7 +2,9 @@
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
 import { accountingFailure, insertAccountingAdmin, insertAccountingPeriod, postJournal } from './helpers/accounting-fixtures';
-import { seedStripeFee, seedStripePayout, setCutoverForTest } from './helpers/accounting-orders-fixtures';
+import {
+  addDisputeHistory, seedDispute, seedDisputeReversal, seedPostedPayment, seedStripeFee, seedStripePayout, setAsideExistingSlips, setCutoverForTest,
+} from './helpers/accounting-orders-fixtures';
 
 // Accounting plan 2 Task 4 (FREQ-566): the fee reconciliation (Japan month, UTC month, invoice) and the balance
 // reconciliation (Stripe balance against 1160 + 1130 of Stripe), and the invoice record writer. ROLLBACK form (run with
@@ -300,5 +302,68 @@ describeLocalDb('S9 Stripe reconciliation: controller only', (db) => {
     expect(after.difference).toBe(4820);
     expect(bucket(after, 'pending')).toEqual({ kind: 'pending', count: 1, net_sum: 4820 });
     expect(after.unjournaled.reduce((sum, row) => sum + row.net_sum, 0)).toBe(after.difference);
+  });
+
+  // ---- dispute transactions (S11 posts them; the read must know their entries) ----------------------------------------------
+  async function disputeSetup() {
+    await q('select pg_catalog.pg_advisory_xact_lock(190521,1)');
+    await setAsideExistingSlips(db());
+    // An order paid 10,000 yen (fee 360 on the charge) and a dispute of 3,000 yen with a fee of 1,500.
+    const order = await seedPostedPayment(db(), { lines: [{ price: 5000, quantity: 2 }], createdAt: '2026-06-10T03:00:00Z', fee: 360 });
+    const d = await seedDispute(db(), { orderId: order.orderId, paymentIntentId: order.paymentIntentId, amount: 3000, fee: 1500 });
+    return { order, d };
+  }
+  const runPosting = () => q('select private.accounting_run_posting(50)');
+  const sumUnjournaled = (r: BalanceReconciliation) => r.unjournaled.reduce((sum, row) => sum + row.net_sum, 0);
+
+  test('FREQ-566-AC-03: 引かれた支払いの取り消しの仕訳が入ると、その取引は仕訳になっていない物に数えず、説明のつかない差は0', async () => {
+    await disputeSetup();
+    await runPosting();
+    const result = await balanceRecon('2026-12-31');
+    // Stripe: 9,640 (charge) - 3,000 - 1,500 (the dispute and its fee); books: +10,000 - 360 - 3,000 - 1,500.
+    expect(result.stripe_balance).toBe(5140);
+    expect(result.ledger_1160).toBe(5140);
+    expect(result.difference).toBe(0);
+    expect(result.unjournaled.every((row) => row.net_sum === 0 && row.count === 0)).toBe(true);
+  });
+
+  test('FREQ-566-AC-03: 取り下げの戻りの取引も仕訳が入れば数えず、差は0のまま', async () => {
+    const { d } = await disputeSetup();
+    await runPosting();
+    await addDisputeHistory(db(), { disputeId: d.disputeId, status: 'won', occurredAt: '2026-07-05T04:00:00Z', eventType: 'charge.dispute.closed' });
+    await seedDisputeReversal(db(), { disputeId: d.disputeId, amount: 3000, createdAt: '2026-07-05T03:00:00Z' });
+    // Before the reversal is posted it is named as pending.
+    const before = await balanceRecon('2026-12-31');
+    expect(bucket(before, 'pending')).toEqual({ kind: 'pending', count: 1, net_sum: 3000 });
+    expect(before.difference).toBe(3000);
+    await runPosting();
+    const after = await balanceRecon('2026-12-31');
+    expect(after.difference).toBe(0);
+    expect(after.unjournaled.every((row) => row.net_sum === 0 && row.count === 0)).toBe(true);
+  });
+
+  test('FREQ-566-AC-03: まだ仕訳になっていない引かれた取引は pending に出て、差と合計が一致する', async () => {
+    await disputeSetup();
+    // Only the Stripe poster runs: the fee entries are in, the withdrawal is not.
+    await runAll();
+    const result = await balanceRecon('2026-12-31');
+    expect(bucket(result, 'pending')).toEqual({ kind: 'pending', count: 1, net_sum: -3000 });
+    expect(result.difference).toBe(-3000);
+    expect(sumUnjournaled(result)).toBe(result.difference);
+    await runPosting();
+    expect((await balanceRecon('2026-12-31')).difference).toBe(0);
+  });
+
+  test('FREQ-566-AC-03: 取り消した引かれた仕訳は仕訳になっていない物に数え直す', async () => {
+    const { d } = await disputeSetup();
+    await runPosting();
+    const entry = (await q('select id from public.accounting_journal_entries where dedupe_key = $1',
+      [`dispute_event:${d.disputeId}:withdrawn:${d.txnId}`])).rows[0].id as string;
+    const admin = await insertAccountingAdmin(db());
+    await q("select public.admin_reverse_accounting_journal($1::uuid, $2::uuid, 'test reversal', null)", [admin, entry]);
+    const result = await balanceRecon('2026-12-31');
+    expect(bucket(result, 'pending')).toEqual({ kind: 'pending', count: 1, net_sum: -3000 });
+    expect(result.difference).toBe(-3000);
+    expect(sumUnjournaled(result)).toBe(result.difference);
   });
 });

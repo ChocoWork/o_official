@@ -47,6 +47,8 @@ BEGIN;
 -- accounting_stripe_invoice_records + admin_set_stripe_invoice_record (private + public, admin.finance.manage): the total, the
 --   tax and a reference text of the qualified invoice of a UTC month. Version checked, request key replayed.
 -- Reads (STABLE, service_role): get_stripe_fee_reconciliation(month) and get_stripe_balance_reconciliation(through).
+--   DEPENDENCY: get_stripe_balance_reconciliation calls private.accounting_dispute_key, which S11 (the dispute posting) defines
+--   later. It is plpgsql, so the name is looked up when the read runs; dropping S11's function breaks the read.
 --
 -- Labels: ACCOUNTING_LABELS.stripeJapan, feePayment, feeDispute, feeFx, taxAdjustment, payoutStarted, bankArrived,
 -- payoutFailed and balanceTopup, pasted from scripts/accounting/emit-labels.ts:
@@ -1010,6 +1012,8 @@ $$;
 --     difference is made of. Every transaction has up to two parts that reach 1160: the principal (the amount; the net for a tax
 --     adjustment; none for a stand-alone fee) and the fee (-fee_amount). A part that is on the books (an entry of its key that
 --     has not been reversed) is journaled; the rest is named by its kind. 1150 is shown apart and never added.
+--     A dispute transaction counts as journaled when its dispute_event entry of S11 exists (private.accounting_dispute_key, called
+--     when this function runs: S11 is applied after this file, so the call is late-bound).
 --     ledger_1160 sums every entry dated up to the day, so an entry and its reversal cancel (the entry no longer counts as
 --     journaled in the parts above). A manual top-up is not a part of a transaction: its bucket is the top-up transactions minus
 --     the top-up entries on the books, so an entered top-up is explained once, never twice.
@@ -1043,7 +1047,7 @@ BEGIN
     AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS r WHERE r.reverses_entry_id = e.id);
 
   WITH t AS (
-    SELECT b.id, b.payment_intent_id, b.source_id, b.amount, b.net, k.kind, private.accounting_stripe_fee_amount(k.kind, b.fee, b.net) AS fee_amount
+    SELECT b.id, b.payment_intent_id, b.source_id, b.reporting_category, b.amount, b.net, k.kind, private.accounting_stripe_fee_amount(k.kind, b.fee, b.net) AS fee_amount
     FROM public.stripe_balance_transactions AS b
     CROSS JOIN LATERAL (SELECT private.accounting_stripe_category_kind(b.type, b.reporting_category) AS kind) AS k
     WHERE private.accounting_jst_date(b.stripe_created_at) <= _through),
@@ -1063,6 +1067,15 @@ BEGIN
         WHEN 'tax_adjustment' THEN private.accounting_entry_live('stripe_tax_adjustment', c.id)
         WHEN 'payout' THEN c.net_zero OR private.accounting_entry_live('payout_started', c.source_id)
         WHEN 'payout_failure' THEN c.net_zero OR private.accounting_entry_live('payout_failed', c.id)
+        -- A dispute withdrawal (amount < 0) or its reversal (amount > 0) is on the books when the dispute entry of that
+        -- transaction exists and has not been reversed. The key is S11's (private.accounting_dispute_key, built by
+        -- accounting_event_key); this function is plpgsql, so the name is resolved when it runs.
+        WHEN 'dispute' THEN EXISTS (SELECT 1 FROM public.accounting_journal_entries AS de
+          WHERE de.dedupe_key = CASE WHEN c.reporting_category = 'dispute' AND c.amount < 0
+              THEN private.accounting_dispute_key(c.source_id, 'withdrawn', c.id)
+            WHEN c.reporting_category = 'dispute_reversal' AND c.amount > 0
+              THEN private.accounting_dispute_key(c.source_id, 'reversal', c.id) END
+            AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS dr WHERE dr.reverses_entry_id = de.id))
         ELSE false END AS p_done,
       c.f_amt = 0 OR private.accounting_entry_live('stripe_fee', c.id) AS f_done
     FROM c),
@@ -1271,7 +1284,7 @@ BEGIN
         'private.accounting_stripe_fee_amount(', 'private.accounting_stripe_category_kind(', 'unexplained_jst_utc',
         'unexplained_utc_invoice', 'journal_vs_txn_diff']),
       ('private.get_stripe_balance_reconciliation(date)', false, ARRAY[
-        'private.accounting_entry_live(', '''planned_p3''', '''payout_unposted''', '''manual_topup''', 'payout_in_transit_1150',
+        'private.accounting_entry_live(', 'private.accounting_dispute_key(', '''planned_p3''', '''payout_unposted''', '''manual_topup''', 'payout_in_transit_1150',
         'processor:stripe', 'payout_net_zero']),
       ('private.accounting_entry_live(text,text)', false, ARRAY['reverses_entry_id']),
       ('private.accounting_period_taxable(uuid,date)', false, ARRAY['consumption_taxable_from']),

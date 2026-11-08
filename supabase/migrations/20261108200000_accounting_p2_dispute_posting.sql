@@ -63,6 +63,8 @@ BEGIN;
 --   disputeReversal: U&'\30AB\30FC\30C9\4F1A\793E\304B\3089\306E\652F\6255\3044\306E\53D6\308A\6D88\3057\306E\53D6\308A\4E0B\3052'
 --   disputeAssigned: U&'\30AB\30FC\30C9\4F1A\793E\304B\3089\306E\652F\6255\3044\306E\53D6\308A\6D88\3057\306E\79D1\76EE\306E\632F\308A\66FF\3048'
 --
+-- DEPENDENCY: the S9 balance read (public/private.get_stripe_balance_reconciliation) calls private.accounting_dispute_key when it runs,
+-- to count a dispute transaction as journaled; dropping that function breaks the read.
 -- ROLLBACK (only while no entry of kind dispute_event exists and both tables are empty). WARNING: the shipment poster of S8
 -- (private.accounting_post_shipment_events) calls private.accounting_dispute_order; dropping that function (or this whole list)
 -- breaks the shipment poster, so recreate the function of S8 without the dispute wait first:
