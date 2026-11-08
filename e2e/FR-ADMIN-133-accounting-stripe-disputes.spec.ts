@@ -97,6 +97,18 @@ async function freshFeeMonth(s: AccountingScenario): Promise<string> {
   throw new Error('使っていない月が無い。db reset してから流す');
 }
 
+/** Stripe の残高の照合を route で読む: 種類ごとの件数と額、画面と同じ「説明のつかない差」（差 - 種類の額の合計） */
+async function readBalanceReconciliation(s: AccountingScenario) {
+  type Bucket = { kind: string; count: number; net_sum: number };
+  const reply = await s.api(s.admin, `/api/admin/accounting/reconciliation?kind=stripe-balance&through=${s.today}`);
+  expect(reply.status, reply.text.slice(0, 200)).toBe(200);
+  const data = reply.body.data as { difference: number; unjournaled: Bucket[] };
+  return {
+    buckets: new Map(data.unjournaled.map((row) => [row.kind, row])),
+    unexplained: data.difference - data.unjournaled.reduce((sum, row) => sum + row.net_sum, 0),
+  };
+}
+
 async function openSlipWithRealSession(page: Page, s: AccountingScenario, slipId: string): Promise<void> {
   await s.attach(page);
   await mockAdminBackgroundApis(page);
@@ -213,17 +225,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
       test.setTimeout(300_000);
       await withAccountingScenario('balance-reconciliation', async (s) => {
         await s.todayPeriod();
-        type Bucket = { kind: string; count: number; net_sum: number };
-        const readBuckets = async () => {
-          const reply = await s.api(s.admin, `/api/admin/accounting/reconciliation?kind=stripe-balance&through=${s.today}`);
-          expect(reply.status, reply.text.slice(0, 200)).toBe(200);
-          const data = reply.body.data as { difference: number; unjournaled: Bucket[] };
-          return {
-            buckets: new Map(data.unjournaled.map((row) => [row.kind, row])),
-            unexplained: data.difference - data.unjournaled.reduce((sum, row) => sum + row.net_sum, 0),
-          };
-        };
-        const before = await readBuckets();
+        const before = await readBalanceReconciliation(s);
 
         // 仕訳にならないまま残る取引（計画3で計上する返金の元本・注文に結び付かない支払い・知らない種類・入金の取引）を1件ずつ入れる
         await s.seedStripeFee({ type: 'refund', reportingCategory: 'refund', amount: -1_000 });
@@ -233,11 +235,14 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         await s.runPosting();
 
         // 本物の route: 増える種類は、この試験の分（1件・その額）だけ増える。計上待ちの取引は他の試験の計上で減ることがあるので、この1件の分は残るだけを確かめる
-        const after = await readBuckets();
+        const after = await readBalanceReconciliation(s);
         for (const [kind, amount] of [['planned_p3', -1_000], ['unknown', 200], ['payout_unposted', -9_000]] as const) {
           expect(after.buckets.get(kind)?.count, kind).toBe((before.buckets.get(kind)?.count ?? 0) + 1);
           expect(after.buckets.get(kind)?.net_sum, kind).toBe((before.buckets.get(kind)?.net_sum ?? 0) + amount);
         }
+        // 残高の補充は動かない（このファイルで補充を入れるのは別の試験で、同じファイルの中は1つずつ流れる）ので、注文に結び付かない700円は「計上待ちの取引」にある
+        expect(after.buckets.get('manual_topup')?.count ?? 0).toBe(before.buckets.get('manual_topup')?.count ?? 0);
+        expect(after.buckets.get('manual_topup')?.net_sum ?? 0).toBe(before.buckets.get('manual_topup')?.net_sum ?? 0);
         expect(after.buckets.get('pending')?.count ?? 0).toBeGreaterThanOrEqual(1);
         // この試験の4件は、Stripe の残高にだけあって帳簿に無い取引なので、種類ごとに名指しされ、説明のつかない差を動かさない
         expect(after.unexplained).toBe(before.unexplained);
@@ -261,8 +266,10 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         const difference = yenOf(await section.getByText(/^差 /).first().innerText());
         const unexplained = page.getByTestId('balance-unexplained');
         expect(yenOf((await unexplained.innerText()).replace('説明のつかない差', ''))).toBe(difference - bucketSum);
-        // 説明のつかない差そのものは全体の値（0 とは限らない）。画面の色は値に合う
-        await expect(unexplained).toHaveAttribute('data-tone', difference - bucketSum === 0 ? 'ok' : 'alert');
+        // 支払いの取り消しも仕訳にした分は説明済みに数えるので、説明のつかない差は 0（route も画面も）
+        expect(after.unexplained).toBe(0);
+        await expect(unexplained).toHaveAttribute('data-tone', 'ok');
+        await expect(unexplained).toContainText('説明のつかない差 ¥0');
         await expectNoHorizontalOverflow(page);
       }, { period: 'none' });
     });
@@ -280,12 +287,15 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         await s.runPosting();
         expect(await s.deferredBalance(order.orderId)).toBe(0);
 
+        const unexplainedBefore = (await readBalanceReconciliation(s)).unexplained;
         const dispute = await s.seedDispute({
           orderId: order.orderId, paymentIntentId: order.paymentIntentId, amount: 30_000, reason: cause.reason, fee: 1_500,
           withdrawnAt: isoAgo(300), createdAt: isoAgo(300),
         });
         await s.runPosting();
         const withdrawn = await s.entryByKey(`dispute_event:${dispute.disputeId}:withdrawn:${dispute.txnId}`);
+        // 取り消しを仕訳にしても、Stripe の残高の照合の説明のつかない差は動かない（仕訳にした取引は説明済み）
+        expect((await readBalanceReconciliation(s)).unexplained).toBe(unexplainedBefore);
         expect(withdrawn).toMatchObject({ entryDate: s.today, description: 'カード会社からの支払いの取り消し' });
         // 出荷済みなので、費用にせず「仮払金（判断待ち）」に置く
         expect(await s.linesOf(withdrawn!.id)).toEqual([
@@ -310,6 +320,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         await s.addDisputeHistory({ disputeId: dispute.disputeId, status: 'lost', occurredAt: isoAgo(60), stripeEventCreatedAt: isoAgo(120), eventType: 'charge.dispute.closed' });
         await s.runPosting();
         const confirmed = await s.entryByKey(`dispute_event:${dispute.disputeId}:confirmed:lost`);
+        expect((await readBalanceReconciliation(s)).unexplained).toBe(unexplainedBefore);
         expect(confirmed).toMatchObject({ entryDate: s.today, description: 'カード会社からの支払いの取り消しの確定' });
         expect(await s.linesOf(confirmed!.id)).toEqual([
           { account: '1470', debit: 30_000, credit: 0, orderId: null, subAccount: 'dispute_confirmed_unassigned' },
@@ -331,6 +342,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
 
         // 振り替えの仕訳が1本入り、決定待ちの仮払金は0になる
         const assigned = await s.entryByKey(`dispute_event:${dispute.disputeId}:assigned:1`);
+        expect((await readBalanceReconciliation(s)).unexplained).toBe(unexplainedBefore);
         expect(assigned).toMatchObject({ entryDate: s.today });
         expect(await s.linesOf(assigned!.id)).toEqual([
           { account: '7530', debit: 30_000, credit: 0, orderId: null, subAccount: null },

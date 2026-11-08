@@ -194,6 +194,24 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
           await expect(deferred).toHaveCount(1, { timeout: 30_000 });
           await expect(deferred).toContainText(yen(4_000));
           await expectNoHorizontalOverflow(page);
+
+          // 2着めも本物の発送票で送って計上すると、前受金は0になり、前受金の確認の一覧から消える（残りを残さない）
+          const second = await createDraftInDb(ctx, [material], [1]);
+          const secondConfirmed = await s.api(s.admin, `/api/admin/shipment-slips/${second.id}/confirm`, 'POST', {
+            expectedVersion: second.version, carrier: null, trackingNumber: null, shipmentDate: s.today, notifyCustomer: false, requestKey: randomUUID(),
+          });
+          expect(secondConfirmed.status, secondConfirmed.text.slice(0, 300)).toBe(200);
+          await s.runPosting();
+          const secondEntry = await s.entryByKey(`shipment_confirmed:${second.number}`);
+          expect(await s.linesOf(secondEntry!.id)).toEqual([
+            { account: '2150', debit: 4_000, credit: 0, orderId: material.orderId, subAccount: null },
+            { account: '4010', debit: 0, credit: 4_000, orderId: material.orderId, subAccount: null },
+          ]);
+          expect(await s.deferredBalance(material.orderId)).toBe(0);
+          await s.openAccounting(page, '計上待ち');
+          await expect(page.getByRole('table', { name: '繰り越した前受金の一覧' }).or(page.getByText('繰り越した前受金はありません'))).toBeVisible({ timeout: 30_000 });
+          await expect(page.getByRole('row').filter({ hasText: material.orderNumber })).toHaveCount(0);
+          await expectNoHorizontalOverflow(page);
         });
       }, { period: 'none' });
     });
@@ -268,20 +286,33 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
       test.setTimeout(300_000);
       await withAccountingScenario('shipment-before-payment', async (s) => {
         await s.todayPeriod();
-        // この理由の行は、名前も番号も出さない固定の文なので、画面では「出荷」の行のうち理由の文を持つ行の数で、この試験の1行を数える。
-        // 行そのものは計上待ちの route（画面と同じ読み口）で、注文と発送票の番号で名指しする。
+        // この理由の行は、名前も番号も出さない固定の文なので、画面では行の数でしか数えられない。画面は新しい順の50件までなので、
+        // 件数を前の値と比べず、画面を開き直すたびに「画面の出荷+この理由の行の数」を同じ瞬間の計上待ちの route（画面と同じ問い合わせ）の1ページ目と比べる。
+        // この試験の1行は、route の1ページ目に注文と発送票の番号で名指しして、出る・消えるを確かめる。
         const rows = () => page.getByRole('list', { name: '計上待ちの一覧' }).getByRole('listitem')
           .filter({ hasText: PAYMENT_MISSING_TEXT })
           .filter({ has: page.locator('span', { hasText: /^出荷$/ }) });
-        const mineOpen = async () => {
-          const reply = await s.api(s.admin, '/api/admin/accounting/pending-events?includeResolved=false&limit=100');
+        const firstPage = async () => {
+          const reply = await s.api(s.admin, '/api/admin/accounting/pending-events?includeResolved=false&limit=50');
           expect(reply.status, reply.text.slice(0, 200)).toBe(200);
           return (reply.body.data.events as Array<{ sourceId: string; orderId: string | null; reason: string; eventKind: string }>)
             .filter((event) => event.eventKind === 'shipment_confirmed' && event.reason === 'payment_journal_missing');
         };
-        await s.openAccounting(page, '計上待ち');
-        await expect(page.getByText(/^未解決 \d+件$/)).toBeVisible({ timeout: 30_000 });
-        const baseline = await rows().count();
+        /** 画面を開き直し、画面の行の数と route の1ページ目の該当の数が同じ瞬間に揃うまで繰り返す。揃った時の route の該当の行を返す */
+        const screenMatchesRoute = async () => {
+          let matched: Awaited<ReturnType<typeof firstPage>> = [];
+          await expect
+            .poll(async () => {
+              await s.openAccounting(page, '計上待ち');
+              await expect(page.getByText(/^未解決 \d+件$/)).toBeVisible({ timeout: 30_000 });
+              const fromRoute = await firstPage();
+              const onScreen = await rows().count();
+              matched = fromRoute;
+              return onScreen === fromRoute.length;
+            }, { timeout: 90_000, intervals: [500, 1_000, 2_000] })
+            .toBe(true);
+          return matched;
+        };
 
         // 注文はあるが、Stripe の支払い（残高の取引）がまだ無いまま出荷した
         const order = await s.seedPaidOrder({ lines: [{ price: 6_000 + randomInt(100, 900), quantity: 1 }] });
@@ -289,20 +320,17 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         await s.runPosting();
         expect(await s.entryByKey(`shipment_confirmed:${slip.number}`)).toBeNull();
         expect(await s.pendingOf('shipment_confirmed', slip.slipId)).toMatchObject({ reason: 'payment_journal_missing', resolvedAt: null });
-        expect((await mineOpen()).filter((event) => event.sourceId === slip.slipId && event.orderId === order.orderId)).toHaveLength(1);
 
-        // 画面を読み直す（押すと計上係が流れて一覧を読み直す。計上するものは無い）と、この試験の1行が増える
-        await page.getByRole('button', { name: 'もう一度計上する', exact: true }).click();
-        await expect(rows()).toHaveCount(baseline + 1, { timeout: 30_000 });
+        // この試験の1行が計上待ちの route に名指しで出て、画面の行の数もその route と揃う
+        const open = await screenMatchesRoute();
+        expect(open.filter((event) => event.sourceId === slip.slipId && event.orderId === order.orderId)).toHaveLength(1);
         await expect(rows().first()).toContainText('仕訳が入るまで閉じられません');
         await expectNoHorizontalOverflow(page);
 
-        // 支払い（Stripe の残高の取引）を入れて「もう一度計上する」を押すと、支払いも出荷も計上され、この行は画面から消える
+        // 支払い（Stripe の残高の取引）を入れて「もう一度計上する」を押すと、支払いも出荷も計上され、この行は route からも画面からも消える
         await s.seedStripeCharge({ paymentIntentId: order.paymentIntentId, amount: order.total, orderId: order.orderId });
         await page.getByRole('button', { name: 'もう一度計上する', exact: true }).click();
         await expect(page.getByText(/件を計上しました/)).toBeVisible({ timeout: 90_000 });
-        await expect(rows()).toHaveCount(baseline, { timeout: 30_000 });
-        expect((await mineOpen()).filter((event) => event.sourceId === slip.slipId)).toHaveLength(0);
         const payment = await s.entryByKey(`payment_confirmed:${order.paymentIntentId}`);
         const shipment = await s.entryByKey(`shipment_confirmed:${slip.number}`);
         expect(payment).not.toBeNull();
@@ -310,6 +338,8 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         const resolved = await s.pendingOf('shipment_confirmed', slip.slipId);
         expect(resolved?.resolvedAt).not.toBeNull();
         expect(await s.deferredBalance(order.orderId)).toBe(0);
+        const gone = await screenMatchesRoute();
+        expect(gone.filter((event) => event.sourceId === slip.slipId)).toHaveLength(0);
         await expectNoHorizontalOverflow(page);
       }, { period: 'none' });
     });
