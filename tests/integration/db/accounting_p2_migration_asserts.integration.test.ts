@@ -9,11 +9,12 @@ import {
   ACCOUNTING_S9_FILES, ACCOUNTING_S9_SQL as sqlS9, accountingS9Section, pinAccountingS9Baseline,
   ACCOUNTING_S10_FILES, ACCOUNTING_S10_SQL as sqlS10, accountingS10Section, pinAccountingS10Baseline,
   ACCOUNTING_S11_FILES, ACCOUNTING_S11_SQL as sqlS11, accountingS11Section, pinAccountingS11Baseline,
+  ACCOUNTING_S12_FILES, ACCOUNTING_S12_SQL as sqlS12, accountingS12Section, pinAccountingS12Baseline,
 } from './helpers/accounting-orders-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
 
 // Accounting plan 2 S6 (FREQ-569 / FREQ-563): the shape of the migration and its final assert. The DB part is
-// controller only. Tasks 2-9 add the asserts of S7-S14 below (S7: the payment posting, Task 2; S8: the shipment posting, Task 3; S11: the dispute posting, Task 6).
+// controller only. Tasks 2-9 add the asserts of S7-S14 below (S7: the payment posting, Task 2; S8: the shipment posting, Task 3; S11: the dispute posting, Task 6; S12: the intake reads, Task 7).
 const assertion = accountingS6Section('FINAL_ASSERT');
 const body = accountingS6Section('BODY');
 const details = ['acc_s6_tables', 'acc_s6_constraints', 'acc_s6_immutable', 'acc_s6_rls_acl', 'acc_s6_function_attrs',
@@ -1297,6 +1298,242 @@ describeLocalDb('S11 final assert: controller only', (db) => {
     ["update pg_temp.accounting_s11_baseline set payload = jsonb_set(payload, '{settings}', '5')", 'acc_s11_existing_dml_allowlist'],
     ["insert into public.accounting_periods (business_type, name, starts_on, ends_on) values ('soleProprietor', 'tamper', '2026-01-01', '2026-12-31')", 'acc_s11_existing_dml_allowlist'],
   ] as Array<[string, string]>)('FREQ-568-AC-05: S11改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// ---- S12 (Task 7): the order intake / backlog / reconciliation reads and the deferred revenue lists ----------------------------------
+const assertionS12 = accountingS12Section('FINAL_ASSERT');
+const bodyS12 = accountingS12Section('BODY');
+const detailsS12 = ['acc_s12_functions', 'acc_s12_function_attrs', 'acc_s12_reads_stable', 'acc_s12_existing_dml_allowlist'];
+const statementsS12 = bodyS12.replace(/\$\$[\s\S]*?\$\$/g, '$$$$').split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n');
+const readsS12 = ['list_order_intake_events', 'get_intake_breakdown', 'get_order_backlog', 'get_intake_reconciliation', 'list_deferred_revenue',
+  'list_deferred_revenue_anomalies'];
+const functionBodyS12 = (name: string) => bodyS12.split(`CREATE FUNCTION ${name}(`)[1]?.split('\n$$;')[0] ?? '';
+const eventsS12 = 'private.accounting_intake_events(date,date)';
+const linesS12 = 'private.accounting_effective_lines(date,date)';
+const intakePrivateS12 = 'private.list_order_intake_events(date,date,integer,date,text)';
+const intakePublicS12 = 'public.list_order_intake_events(date,date,integer,date,text)';
+const breakdownS12 = 'private.get_intake_breakdown(date,date)';
+const backlogS12 = 'private.get_order_backlog(date)';
+const reconciliationS12 = 'private.get_intake_reconciliation(date,date)';
+const deferredS12 = 'private.list_deferred_revenue(date,integer,uuid)';
+const anomaliesS12 = 'private.list_deferred_revenue_anomalies()';
+
+describe('S12 source contract (no DB)', () => {
+  test('FREQ-571-AC-01: S12はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S12_FILES).toEqual(['20261108210000_accounting_p2_intake_reads.sql']);
+    expect(ACCOUNTING_S12_FILES[0] > ACCOUNTING_S11_FILES[0]).toBe(true);
+    expect(sqlS12).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(sqlS12.startsWith('BEGIN;\n')).toBe(true);
+    expect(sqlS12.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(sqlS12.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(sqlS12.trimEnd()).toMatch(/-- ACC_S12_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect(assertionS12).not.toBe('');
+    expect([...new Set([...assertionS12.matchAll(/'(acc_s12_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...detailsS12].sort());
+    expect(assertionS12).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(assertionS12.replace(/''55000''/g, '')).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(sqlS12).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+  });
+
+  test('FREQ-571-AC-05: S12は読むだけ。実行時のDMLは比べる元の控えのINSERTだけで、表も権限付きの表もトリガーも足さず、service_role に渡すのは6つの読み口（private と public）だけ', () => {
+    expect([...statementsS12.matchAll(/^\s*(INSERT INTO|UPDATE|DELETE FROM|TRUNCATE(?: TABLE)?)\s+([\w.]+)/gm)].map((m) => `${m[1]} ${m[2]}`))
+      .toEqual(['INSERT INTO pg_temp.accounting_s12_baseline']);
+    expect(statementsS12).not.toMatch(/CREATE (TABLE|TRIGGER|POLICY|SEQUENCE|INDEX)|GRANT [A-Z, ]+ ON TABLE/);
+    const grant = bodyS12.split('GRANT EXECUTE ON FUNCTION')[1]?.split(';')[0] ?? '';
+    expect(grant.match(/(private|public)\.[a-z_]+\(/g)?.sort()).toEqual(
+      [...readsS12.map((n) => `private.${n}(`), ...readsS12.map((n) => `public.${n}(`)].sort());
+    expect(grant).toContain('TO service_role');
+    expect([...bodyS12.matchAll(/CREATE FUNCTION public\.([a-z_]+)\(/g)].map((m) => m[1]).sort()).toEqual([...readsS12].sort());
+    expect([...statementsS12.matchAll(/GRANT[^;]*;/g)].some((m) => /\b(anon|authenticated)\b/.test(m[0]))).toBe(false);
+    // The tools are named accounting_*, and no public function is: the plan 1 asserts that nothing named accounting_* is public keep holding.
+    expect([...bodyS12.matchAll(/CREATE FUNCTION public\.accounting_/g)]).toHaveLength(0);
+  });
+
+  test('FREQ-571-AC-01: 取り消しの仕訳は元の仕訳の種類と鍵で数え、読み口の始まりは期間の始まり（無ければ切り替えの日）', () => {
+    const lines = functionBodyS12('private.accounting_effective_lines');
+    expect(lines).toContain('COALESCE(o.event_kind, e.event_kind)');
+    expect(lines).toContain('COALESCE(o.dedupe_key, e.dedupe_key)');
+    expect(lines).toContain('LEFT JOIN public.accounting_journal_entries AS o ON o.id = e.reverses_entry_id');
+    expect(lines).toContain('GREATEST(_from, private.accounting_read_start())');
+    const start = functionBodyS12('private.accounting_read_start');
+    expect(start).toContain('pg_catalog.min(p.starts_on)');
+    expect(start).toContain('s.cutover_on');
+    // The "drop the reversed original" way is not mixed in: no read looks at reverses_entry_id except the one tool.
+    for (const name of ['private.accounting_intake_events', 'private.get_intake_reconciliation', 'private.list_deferred_revenue',
+      'private.list_deferred_revenue_anomalies', 'private.get_order_backlog', 'private.accounting_order_balances']) {
+      expect(functionBodyS12(name)).not.toContain('reverses_entry_id');
+    }
+  });
+
+  test('FREQ-571-AC-04: カード会社の取り消しの確定の日は、確定の仕訳の日か、解決済みの行の lost_on で、道具を読み直さない。早い戻りと遅い戻りは1160のメモで分ける', () => {
+    const events = functionBodyS12('private.accounting_intake_events');
+    expect(events).toContain("'dispute_event:' || pd.dispute_id || ':confirmed:lost'");
+    expect(events).toContain("p.source_table = 'stripe_disputes'");
+    expect(events).toContain("p.reason = 'no_revenue' AND p.resolved_at IS NOT NULL");
+    expect(events).toContain("(p.detail ->> 'lost_on')::date");
+    expect(events).toContain("m.memo = 'dispute_reversal_kind:R'");
+    expect(events).toContain("m.memo = 'dispute_reversal_kind:L'");
+    expect(events).not.toMatch(/accounting_dispute_|stripe_dispute_events|stripe_disputes AS/);
+  });
+
+  test('FREQ-571-AC-05: 照らし合わせの例外は、判断待ち・2130・その他（種類ごと）の3種類で、説明のつかない差と2段目の差は式のとおり', () => {
+    const text = functionBodyS12('private.get_intake_reconciliation');
+    expect(text).toContain("'dispute_pending'");
+    expect(text).toContain("'return_refund_2130'");
+    expect(text).toContain("'other'");
+    expect(text).toContain('v_pending := v_pending_move - v_deducted;');
+    expect(text).toContain("'unexplained', v_closing - (v_opening + v_intake - v_sales + v_pending + v_refund_2130 + v_other_sum)");
+    expect(text).toContain("'unexplained2', (v_sales - v_returns) - v_booked");
+    expect(text).toContain("'book_sales_total', v_booked + v_other_4010 - v_other_4020");
+    // 4050 is a row of its own: it is not in the sales total.
+    expect(text).toContain("l.account_code = '4050'");
+    expect(text).not.toMatch(/book_sales_total[^\n]*v_fee/);
+  });
+
+  test('FREQ-569-AC-04: 前受金の一覧は未出荷の状態を G の関数から読み（order の行だけ）、異常の一覧は着の値の道具を使う。名前・メール・住所・利用者の番号を書かない', () => {
+    const deferred = functionBodyS12('private.list_deferred_revenue');
+    expect(deferred).toContain('private.list_admin_order_item_states(v_ids)');
+    expect(deferred).toContain("oi.line_kind = 'order'");
+    expect(functionBodyS12('private.list_deferred_revenue_anomalies')).toContain('private.accounting_unit_values(b.order_id, NULL::bigint)');
+    for (const name of ['private.accounting_intake_events', 'private.list_order_intake_events', 'private.get_intake_breakdown',
+      'private.get_order_backlog', 'private.get_intake_reconciliation', 'private.list_deferred_revenue', 'private.list_deferred_revenue_anomalies']) {
+      const text = functionBodyS12(name);
+      expect(text).not.toBe('');
+      expect(text).not.toMatch(/raw_payload|evidence_details|customer_email|shipping_email|shipping_full_name|ship_to_|shipping_phone|shipping_address|user_id|session_id/);
+    }
+  });
+
+  test('FREQ-571-AC-01: S12に日本語の文字列は無い（画面の語は Task 13 が持つ）', () => {
+    const code = bodyS12.split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n');
+    expect(code).not.toMatch(/U&'/);
+    expect(sqlS12).not.toMatch(/chargeback/i);
+  });
+});
+
+describeLocalDb('S12 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  async function attempt(change = '', baseline: 'pin' | 'none' = 'pin'): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s12_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (baseline === 'pin') await pinAccountingS12Baseline(db());
+      if (change) await db().query(change);
+      await db().query(assertionS12);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s12_assert'); await db().query('release savepoint acc_s12_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
+  /** Re-create the function with a changed text (owner, ACL and attributes stay). */
+  const edit = (from: string, to: string, signature: string) => `do $x$ declare d text; begin
+    d := pg_get_functiondef('${signature}'::regprocedure);
+    if position(${quote(from)} in d) = 0 then raise exception 'TAMPER_TARGET_MISSING'; end if;
+    d := replace(d, ${quote(from)}, ${quote(to)});
+    execute d; end $x$`;
+
+  test('FREQ-571-AC-05: S12末尾assertは適用後の状態と呼出元search_pathを許す', async () => {
+    expect(assertionS12).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt("set local search_path = ''")).toBeNull();
+    await db().query('savepoint acc_s12_search_path');
+    await db().query('set local search_path = public, private, extensions, pg_catalog');
+    await pinAccountingS12Baseline(db());
+    await db().query(assertionS12);
+    expect((await db().query('show search_path')).rows[0].search_path).toBe('public, private, extensions, pg_catalog');
+    await db().query('rollback to savepoint acc_s12_search_path');
+  });
+
+  test('FREQ-571-AC-05: S12末尾assertは比べる元の控えが無いと断る', async () => {
+    expect(await attempt('', 'none')).toEqual(failed('acc_s12_existing_dml_allowlist'));
+  });
+
+  test('FREQ-571-AC-05: 読み口は service_role だけが呼べ、道具は誰も呼べない', async () => {
+    for (const name of readsS12) {
+      const row = (await db().query(
+        `select p.oid::regprocedure::text as signature,
+           has_function_privilege('anon', p.oid, 'EXECUTE') as anon, has_function_privilege('authenticated', p.oid, 'EXECUTE') as authenticated,
+           has_function_privilege('service_role', p.oid, 'EXECUTE') as service_role, has_function_privilege('public', p.oid, 'EXECUTE') as public
+         from pg_proc p where p.proname = $1 and p.pronamespace in ('public'::regnamespace, 'private'::regnamespace) order by p.pronamespace`, [name])).rows;
+      expect(row).toHaveLength(2);
+      for (const entry of row) expect([entry.signature, entry.anon, entry.authenticated, entry.service_role, entry.public]).toEqual([entry.signature, false, false, true, false]);
+    }
+    for (const signature of [eventsS12, linesS12, 'private.accounting_order_balances(date)', 'private.accounting_read_start()']) {
+      const row = (await db().query(
+        "select has_function_privilege('service_role', $1::regprocedure, 'EXECUTE') as service_role, has_function_privilege('anon', $1::regprocedure, 'EXECUTE') as anon",
+        [signature])).rows[0];
+      expect([signature, row]).toEqual([signature, { service_role: false, anon: false }]);
+    }
+  });
+
+  test.each([
+    // functions: owner, security, volatility, arguments, ACL
+    [`grant execute on function ${eventsS12} to service_role`, 'acc_s12_function_attrs'],
+    [`grant execute on function ${linesS12} to authenticated`, 'acc_s12_function_attrs'],
+    ['grant execute on function private.accounting_order_balances(date) to anon', 'acc_s12_function_attrs'],
+    ['grant execute on function private.accounting_read_start() to public', 'acc_s12_function_attrs'],
+    [`grant execute on function ${intakePrivateS12} to anon`, 'acc_s12_function_attrs'],
+    [`grant execute on function ${intakePublicS12} to authenticated`, 'acc_s12_function_attrs'],
+    [`grant execute on function ${intakePublicS12} to public`, 'acc_s12_function_attrs'],
+    [`revoke execute on function ${intakePublicS12} from service_role`, 'acc_s12_function_attrs'],
+    [`revoke execute on function ${reconciliationS12} from service_role`, 'acc_s12_function_attrs'],
+    [`alter function ${intakePublicS12} security definer`, 'acc_s12_function_attrs'],
+    [`alter function ${backlogS12} security invoker`, 'acc_s12_function_attrs'],
+    [`alter function ${breakdownS12} volatile`, 'acc_s12_function_attrs'],
+    ['alter function public.get_order_backlog(date) volatile', 'acc_s12_function_attrs'],
+    [`alter function ${eventsS12} volatile`, 'acc_s12_function_attrs'],
+    [`alter function ${deferredS12} set search_path = public`, 'acc_s12_function_attrs'],
+    [`alter function ${anomaliesS12} strict`, 'acc_s12_function_attrs'],
+    ['drop function public.get_intake_reconciliation(date,date)', 'acc_s12_function_attrs'],
+    ['create function public.accounting_read_start() returns date language sql as $$ select current_date $$', 'acc_s12_function_attrs'],
+    // functions: the text keeps the rules
+    ['create function private.get_order_backlog(_as_of integer) returns integer language sql as $$ select 1 $$', 'acc_s12_functions'],
+    ['drop function private.accounting_order_balances(date) cascade', 'acc_s12_functions'],
+    [edit('COALESCE(o.event_kind, e.event_kind)', 'e.event_kind', linesS12), 'acc_s12_functions'],
+    [edit('COALESCE(o.dedupe_key, e.dedupe_key)', 'e.dedupe_key', linesS12), 'acc_s12_functions'],
+    [edit('GREATEST(_from, private.accounting_read_start())', '_from', linesS12), 'acc_s12_functions'],
+    [edit('s.cutover_on', 'DATE \'2000-01-01\'', 'private.accounting_read_start()'), 'acc_s12_functions'],
+    [edit("p.resolved_at IS NOT NULL", "true", eventsS12), 'acc_s12_functions'],
+    [edit("'dispute_reversal_kind:L'", "'dispute_reversal_kind:Q'", eventsS12), 'acc_s12_functions'],
+    [edit("'dispute_reversal_kind:R'", "'dispute_reversal_kind:Q'", eventsS12), 'acc_s12_functions'],
+    [edit('cf.pending <> 0', 'true', eventsS12), 'acc_s12_functions'],
+    [edit("'pre_shipment_refund'", "'pre_shipment_refunds'", eventsS12), 'acc_s12_functions'],
+    [edit('_limit > 5000', '_limit > 6000', intakePrivateS12), 'acc_s12_functions'],
+    [edit('LIMIT _limit + 1', 'LIMIT _limit', intakePrivateS12), 'acc_s12_functions'],
+    [edit('COLLATE "C"', 'COLLATE "default"', intakePrivateS12), 'acc_s12_functions'],
+    [edit('v_subtotal - v_discount + v_shipping + v_cancel + v_dispute = v_intake', 'true', breakdownS12), 'acc_s12_functions'],
+    [edit('HAVING pg_catalog.sum(e.amount) <> 0', 'HAVING true', breakdownS12), 'acc_s12_functions'],
+    [edit('b.balance <> 0', 'true', backlogS12), 'acc_s12_functions'],
+    [edit('v_pending_move - v_deducted', 'v_pending_move', reconciliationS12), 'acc_s12_functions'],
+    [edit('v_closing - (v_opening + v_intake - v_sales + v_pending + v_refund_2130 + v_other_sum)', '0', reconciliationS12), 'acc_s12_functions'],
+    [edit('(v_sales - v_returns) - v_booked', '0', reconciliationS12), 'acc_s12_functions'],
+    [edit("'return_refund_2130'", "'return_refund'", reconciliationS12), 'acc_s12_functions'],
+    [edit('_from - 1', '_from', reconciliationS12), 'acc_s12_functions'],
+    [edit("oi.line_kind = 'order'", 'true', deferredS12), 'acc_s12_functions'],
+    [edit('b.balance > 0', 'b.balance <> 0', deferredS12), 'acc_s12_functions'],
+    [edit('_limit > 200', '_limit > 300', deferredS12), 'acc_s12_functions'],
+    [edit('NOT v.shipped AND v.value > 0', 'true', anomaliesS12), 'acc_s12_functions'],
+    [edit("'negative_balance'", "'negative'", anomaliesS12), 'acc_s12_functions'],
+    // reads: no write, no personal column
+    [edit('pg_catalog.count(*) FILTER (WHERE b.balance <> 0)', 'pg_catalog.count(*) FILTER (WHERE b.balance <> 0 AND EXISTS (SELECT 1 FROM public.orders AS o WHERE o.user_id IS NULL))', backlogS12), 'acc_s12_reads_stable'],
+    [edit("'order_number', 'ORD-' || pg_catalog.upper(pg_catalog.left(f.order_id::text, 8))", "'order_number', (SELECT o.shipping_email FROM public.orders AS o WHERE o.id = f.order_id)", anomaliesS12), 'acc_s12_reads_stable'],
+    [edit('IF _as_of IS NULL THEN', '-- FOR UPDATE\n  IF _as_of IS NULL THEN', backlogS12), 'acc_s12_reads_stable'],
+    [edit('v_total := COALESCE(', 'PERFORM 1; v_total := COALESCE(', deferredS12), 'acc_s12_reads_stable'],
+    // no row written
+    ["select private.accounting_park_event('payment_confirmed', 'stripe_balance_transactions', 'txn_tamper', null, 'no_order', '{}')", 'acc_s12_existing_dml_allowlist'],
+    ['drop table pg_temp.accounting_s12_baseline', 'acc_s12_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s12_baseline set payload = payload - 'periods'", 'acc_s12_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s12_baseline set payload = jsonb_set(payload, '{lines}', '5')", 'acc_s12_existing_dml_allowlist'],
+    ["insert into public.accounting_periods (business_type, name, starts_on, ends_on) values ('soleProprietor', 'tamper', '2026-01-01', '2026-12-31')", 'acc_s12_existing_dml_allowlist'],
+  ] as Array<[string, string]>)('FREQ-571-AC-05: S12改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });

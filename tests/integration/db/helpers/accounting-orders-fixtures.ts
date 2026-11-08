@@ -554,3 +554,63 @@ export async function addDisputeHistory(client: PgClient, input: {
 		await client.query('update public.stripe_disputes set status = $2 where id = $1', [input.disputeId, input.status]);
 	}
 }
+
+/** 計画2 S12（受注高・受注残・前受金の確認・照らし合わせの読み口）の移行の本文。無ければ空で、原文の確かめが目に見えて落ちる。 */
+const s12Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p2_intake_reads.sql'));
+export const ACCOUNTING_S12_SQL = s12Files.length === 1 ? fs.readFileSync(path.join(directory, s12Files[0]), 'utf8') : '';
+export const ACCOUNTING_S12_FILES = s12Files;
+
+/** S12 の `-- ACC_S12_<name>_BEGIN` と `-- ACC_S12_<name>_END` の間。 */
+export function accountingS12Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S12_SQL.split(`-- ACC_S12_${name}_BEGIN\n`)[1]?.split(`-- ACC_S12_${name}_END`)[0] ?? '';
+}
+
+/**
+ * 手を入れる前の今の状態を S12 の比べる元として控える（適用の時は仕訳も計上待ちも期間も増えない）。そのあとで末尾 assert を流す。
+ * 比べるのは、仕訳の見出し・行・計上待ちの行・会計の期間の行数。
+ */
+export async function pinAccountingS12Baseline(client: PgClient): Promise<void> {
+	await client.query(`create temp table accounting_s12_baseline(payload jsonb) on commit drop;
+		insert into pg_temp.accounting_s12_baseline(payload) select jsonb_build_object(
+			'entries', (select count(*) from public.accounting_journal_entries),
+			'lines', (select count(*) from public.accounting_journal_lines),
+			'pending_events', (select count(*) from public.accounting_pending_events),
+			'periods', (select count(*) from public.accounting_periods))`);
+}
+
+export type ManualLine = { account: string; debit?: number; credit?: number; orderId?: string | null; memo?: string | null; subAccount?: string | null };
+
+/**
+ * 返品・返金・出荷前の返金などの仕訳を、計画3の実装に頼らず core へ直接入れる（種類 `return_arrived` など）。期間は出来事の日の決め方
+ * （accounting_period_for_event）で選ぶ。ROLLBACK の試験の中で、postgres として呼ぶ。
+ */
+export async function postManualEntryFixture(client: PgClient, input: {
+	entryDate: string; kind: string; parts: string[]; lines: readonly ManualLine[]; description?: string;
+}): Promise<{ entryId: string; entryNo: number; created: boolean }> {
+	const lines = input.lines.map((line) => ({
+		account_code: line.account, debit: line.debit ?? 0, credit: line.credit ?? 0, sub_account: line.subAccount ?? null,
+		counterparty: null, order_id: line.orderId ?? null, memo: line.memo ?? null,
+	}));
+	const result = (await client.query(
+		`select private.accounting_post_journal_core(null, private.accounting_period_for_event($1::date), $1::date, $2::text, $3::text[],
+			$4::text, $5::jsonb) as r`,
+		[input.entryDate, input.kind, input.parts, input.description ?? 'fixture entry', JSON.stringify(lines)])).rows[0].r;
+	return { entryId: result.entry_id as string, entryNo: Number(result.entry_no), created: result.created as boolean };
+}
+
+/** 仕訳を取り消す（core。取り消しの日は元の日）。 */
+export async function reverseEntryFixture(client: PgClient, entryId: string, reason = 'fixture reversal'): Promise<string> {
+	const result = (await client.query('select private.accounting_reverse_journal_core(null, $1::uuid, $2::text) as r', [entryId, reason])).rows[0].r;
+	return result.entry_id as string;
+}
+
+/** 発送票を日付と事実の時刻を決めて確定する（過去の日付で試す時。出荷の仕訳は係を流して作る）。 */
+export async function confirmSlipAt(client: PgClient, order: { orderId: string; orderItemIds: string[] }, input: {
+	quantity: number; shipmentDate: string; lockedAt: string; orderItemId?: string;
+}): Promise<{ slipId: string }> {
+	const slip = await seedConfirmedSlip(client, {
+		orders: [{ orderId: order.orderId, lines: [{ orderItemId: input.orderItemId ?? order.orderItemIds[0], quantity: input.quantity }] }],
+		shipmentDate: input.shipmentDate, confirmedAt: input.lockedAt, recordFact: false });
+	await recordSlipFactAt(client, slip.slipId, 'confirm', input.lockedAt);
+	return { slipId: slip.slipId };
+}
