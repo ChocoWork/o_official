@@ -78,6 +78,26 @@ describe('runOpsChecks', () => {
     expect(send).toHaveBeenCalledTimes(seconds < 900 ? 0 : 1);
     if (seconds >= 900) expect(calls.find((c) => c.name === 'claim_ops_alert')?.params).toEqual({ _alert_key: 'job_stale_delivery_tracking', _cooldown_seconds: 86400 });
   });
+  it.each([1799, 1800, 1801])('FREQ-569-AC-01: 会計の計上の心拍が%s秒前なら30分（10分ごとの3回分）から1時間に1回知らせる', async (seconds) => {
+    const state = emptyState();
+    state.heartbeats = [heartbeat('accounting_post', new Date(NOW.getTime() - seconds * 1000).toISOString())];
+    const { store, calls } = fakeStore(state); const send = jest.fn().mockResolvedValue(true);
+    const first = await runOpsChecks({ store, send, now: () => NOW });
+    expect(first.staleAlerted).toEqual(seconds < 1800 ? [] : ['accounting_post']);
+    await runOpsChecks({ store, send, now: () => NOW });
+    expect(send).toHaveBeenCalledTimes(seconds < 1800 ? 0 : 1);
+    if (seconds >= 1800) {
+      expect(calls.find((c) => c.name === 'claim_ops_alert')?.params).toEqual({ _alert_key: 'job_stale_accounting_post', _cooldown_seconds: 3600 });
+      expect(send.mock.calls[0][0].subject).toBe('【要確認】定期処理が止まっています（会計の計上）');
+    }
+  });
+  it('FREQ-569-AC-01: 会計の計上がまだ一度も成功していなければ対象外', async () => {
+    const state = emptyState(); state.heartbeats = [heartbeat('accounting_post', null)];
+    const { store } = fakeStore(state); const send = jest.fn().mockResolvedValue(true);
+    expect((await runOpsChecks({ store, send, now: () => NOW })).staleAlerted).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
+    expect(OPS_CHECK_LIMITS.staleAfterSeconds.accounting_post).toBe(30 * 60);
+  });
   it('配送がまだ一度も成功していなければ対象外、送信失敗ならclaimを返す', async () => {
     const state = emptyState(); state.heartbeats = [heartbeat('delivery_tracking', null)];
     const { store, calls } = fakeStore(state); const send = jest.fn().mockResolvedValue(false);

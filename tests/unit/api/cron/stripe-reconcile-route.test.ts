@@ -3,6 +3,8 @@ jest.mock('next/server', () => ({
 }));
 jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn() }));
 const mockLogAudit = jest.fn().mockResolvedValue(undefined);
+const mockSafeRunPosting = jest.fn();
+jest.mock('@/lib/accounting/posting-runner', () => ({ safeRunAccountingPosting: (...args: unknown[]) => mockSafeRunPosting(...args) }));
 jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockLogAudit(...args) }));
 const mockRecordHeartbeat = jest.fn();
 jest.mock('@/lib/ops/ops-store', () => ({
@@ -216,6 +218,30 @@ describe('POST /api/cron/stripe-reconcile', () => {
     expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockDatabase, 'stripe_reconcile', false, 'db_unavailable');
     // ログには原因の記号だけを出す（例外そのものを渡さない）
     expect(error).toHaveBeenCalledWith('[stripe-reconcile] Reconciliation failed', 'db_unavailable');
+    error.mockRestore();
+  });
+
+  it('FREQ-562-AC-05: 照合のあとの最後に、会計の計上を1回流す（成功の記録と知らせのあと、応答の前）', async () => {
+    mockReconcileOrders.mockResolvedValue(orderReport());
+    mockReconcilePayouts.mockResolvedValue(payoutReport());
+    mockSafeRunPosting.mockResolvedValue(null);
+
+    const response = await POST(authorizedRequest());
+
+    expect(response.status).toBe(200);
+    expect(mockSafeRunPosting).toHaveBeenCalledTimes(1);
+    expect(mockSafeRunPosting).toHaveBeenCalledWith('reconcile');
+    expect(mockSafeRunPosting.mock.invocationCallOrder[0]).toBeGreaterThan(mockRecordHeartbeat.mock.invocationCallOrder[0]);
+    expect(mockSafeRunPosting.mock.invocationCallOrder[0]).toBeGreaterThan(mockLogAudit.mock.invocationCallOrder[0]);
+  });
+
+  it('FREQ-562-AC-05: 照合が失敗した時は会計の計上を流さない', async () => {
+    mockReconcileOrders.mockRejectedValue(new Error('database down'));
+    mockReconcilePayouts.mockResolvedValue(payoutReport());
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect((await POST(authorizedRequest())).status).toBe(502);
+    expect(mockSafeRunPosting).not.toHaveBeenCalled();
     error.mockRestore();
   });
 

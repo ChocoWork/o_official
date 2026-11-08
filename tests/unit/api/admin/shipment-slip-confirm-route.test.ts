@@ -9,6 +9,8 @@ jest.mock('@/lib/auth/admin-rbac', () => ({ authorizeAdminPermissions: jest.fn()
 jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn() }));
 const mockLogAudit = jest.fn();
 jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockLogAudit(...args) }));
+const mockSchedule = jest.fn();
+jest.mock('@/lib/accounting/posting-runner', () => ({ scheduleAccountingPosting: (...args: unknown[]) => mockSchedule(...args) }));
 
 import { inspect } from 'util';
 import { POST as CONFIRM } from '@/app/api/admin/shipment-slips/[id]/confirm/route';
@@ -23,6 +25,8 @@ import { ITEM_ID, ITEM_ID_2, SLIP_ID } from '../../lib/orders/shipment-slips/shi
  * 認可（4つの権限）→ CSRF → IP の回数制限 → actor の回数制限 → 検証 → store → 監査 の順で、実行者は認可結果の userId だけから渡す。
  */
 const rpc = jest.fn();
+// 確定の前に読む「判断待ちの取り消し」の読み口は別の関数で受け、確定の関数の呼び出し（rpc）の数え方を変えない
+const holdsRpc = jest.fn();
 const authorize = authorizeAdminPermissions as jest.Mock;
 
 const REQUEST_KEY = '11111111-1111-4111-8111-111111111111';
@@ -90,8 +94,11 @@ beforeEach(() => {
   mockCsrf.mockResolvedValue(undefined);
   mockRateLimit.mockResolvedValue(null);
   mockLogAudit.mockResolvedValue(undefined);
-  (createServiceRoleClient as jest.Mock).mockResolvedValue({ rpc });
+  (createServiceRoleClient as jest.Mock).mockResolvedValue({
+    rpc: (name: string, args: unknown) => (name === 'get_slip_dispute_holds' ? holdsRpc(name, args) : rpc(name, args)),
+  });
   rpc.mockResolvedValue({ data: saved, error: null });
+  holdsRpc.mockResolvedValue({ data: [], error: null });
 });
 afterEach(() => jest.restoreAllMocks());
 
@@ -282,4 +289,70 @@ test('FREQ-533-AC-05: 会社と番号がそろえばtrim後の値を渡す', asy
   const result = await call(ROUTES[0], { ...BODY, carrier: 'yamato', trackingNumber: ' abc-123 ' });
   expect(result.status).toBe(200);
   expect(rpc).toHaveBeenCalledWith('admin_confirm_shipment_slip', expect.objectContaining({ _carrier: 'yamato', _tracking_number: 'abc-123' }));
+});
+
+const ORDER_A = '33333333-3333-4333-8333-333333333333';
+const ORDER_B = '44444444-4444-4444-8444-444444444444';
+
+describe('判断待ちのカード会社の取り消しがある票の確定（4-e3）', () => {
+  test('FREQ-568-AC-06: 判断待ちの注文を含むと409とDISPUTE_HOLDとorderIdsを返し、確定の関数を呼ばない', async () => {
+    holdsRpc.mockResolvedValue({ data: [{ order_id: ORDER_A, dispute_id: 'dp_1' }, { order_id: ORDER_B, dispute_id: 'dp_2' }, { order_id: ORDER_A, dispute_id: 'dp_3' }], error: null });
+    const result = await call(ROUTES[0]);
+    expect(result.status).toBe(409);
+    expect(result.response.headers.get('cache-control')).toBe('no-store');
+    expect(result.json).toEqual({
+      error: 'カード会社の判断待ちの注文が含まれているため、出荷できません。',
+      code: 'DISPUTE_HOLD',
+      orderIds: [ORDER_A, ORDER_B],
+    });
+    expect(holdsRpc).toHaveBeenCalledTimes(1);
+    expect(holdsRpc).toHaveBeenCalledWith('get_slip_dispute_holds', { _slip_id: SLIP_ID });
+    expect(rpc).not.toHaveBeenCalled();
+    expect(mockSchedule).not.toHaveBeenCalled();
+    // 監査は failure と DISPUTE_HOLD だけ。取り消しの番号・注文の番号・名前は残さない。
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith({
+      action: 'admin.shipment_slips.confirm', actor_id: 'authorized-actor', resource: 'shipment_slips', resource_id: SLIP_ID, outcome: 'failure', metadata: { code: 'DISPUTE_HOLD' },
+    });
+    const logged = JSON.stringify(mockLogAudit.mock.calls);
+    for (const marker of [ORDER_A, ORDER_B, 'dp_1', 'dp_2']) expect(logged).not.toContain(marker);
+  });
+
+  test('FREQ-568-AC-06: 判断待ちが無ければ従来どおり確定し、応答の形は変わらず、応答の後に係を流す', async () => {
+    const result = await call(ROUTES[0]);
+    expect(result.status).toBe(200);
+    expect(result.json).toEqual(saved);
+    expect(holdsRpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('admin_confirm_shipment_slip', ROUTES[0].rpcArgs);
+    // 読むのは確定の前
+    expect(holdsRpc.mock.invocationCallOrder[0]).toBeLessThan(rpc.mock.invocationCallOrder[0]);
+    expect(mockSchedule).toHaveBeenCalledTimes(1);
+    expect(mockSchedule).toHaveBeenCalledWith('shipment_confirm');
+  });
+
+  test('FREQ-568-AC-06: 判断待ちを読めない時は確定せず、固定の500にする（生の文を出さない）', async () => {
+    holdsRpc.mockResolvedValue({ data: null, error: { message: 'PRIVATE-MARKER', code: 'XX000', details: 'PRIVATE-MARKER', hint: null } });
+    const result = await call(ROUTES[0]);
+    expect(result.status).toBe(500);
+    expect(result.json).toEqual({ error: '発送の記録に失敗しました' });
+    expect(rpc).not.toHaveBeenCalled();
+    expect(mockSchedule).not.toHaveBeenCalled();
+    expect(result.text).not.toContain('PRIVATE-MARKER');
+    expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('PRIVATE-MARKER');
+  });
+
+  test('FREQ-568-AC-06: 確定が断られたら係を流さない', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'GROUP_G_SLIP_NOT_DRAFT', code: '55000' } });
+    expect((await call(ROUTES[0])).status).toBe(409);
+    expect(mockSchedule).not.toHaveBeenCalled();
+  });
+
+  test('FREQ-568-AC-06: 入力・権限で断る時は判断待ちの読み口にも進まない', async () => {
+    useAcl(['admin.shipping.read', 'admin.orders.read']);
+    expect((await call(ROUTES[0])).status).toBe(403);
+    authorize.mockResolvedValue({ ok: true, userId: 'authorized-actor', role: 'admin' });
+    expect((await call(ROUTES[0], { ...BODY, requestKey: 'bad' })).status).toBe(400);
+    expect(holdsRpc).not.toHaveBeenCalled();
+  });
 });

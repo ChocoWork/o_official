@@ -4,6 +4,7 @@ import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { getClientIp } from '@/lib/request-ip';
+import { scheduleAccountingPosting } from '@/lib/accounting/posting-runner';
 
 const requestSchema = z.object({
   bankArrivalDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -119,6 +120,8 @@ export async function POST(
       metadata: { payoutId, bankArrivalDate, amount: current.amount },
     });
 
+    // 着金の仕訳（普通預金／Stripe 入金途上）を、応答を返した後に入れる。失敗は応答に影響しない
+    scheduleAccountingPosting('bank_confirm');
     return confirmedResponse(updated[0] as PayoutRow);
   } catch (error) {
     console.error('POST /api/admin/accounting/stripe-payouts/[id]/confirm error:', error);

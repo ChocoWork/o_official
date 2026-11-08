@@ -25,6 +25,7 @@ import { createStripeAccountingDatabase } from '@/lib/stripe/supabase-accounting
 import { getStripeServerClient } from '@/lib/stripe/server';
 import { webhookFailureCause, type WebhookFailureCause } from '@/lib/stripe/webhook-events';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { safeRunAccountingPosting } from '@/lib/accounting/posting-runner';
 
 // Stripe の全履歴を読むので300秒まで動かす。pg_net は60秒で待つのをやめ、長い実行は応答が timed_out になるが実行は続く（成功か失敗かは ops_job_heartbeats が正）
 export const maxDuration = 300;
@@ -192,6 +193,8 @@ export async function POST(request: Request) {
     });
     await recordRun(store, true, null);
     await notifyFindings(orderReport.unmatchedRecentPayments, data.errors);
+    // 同期で入った残高の取引・入金・取り消しを、最後に会計へ入れる。失敗はログだけで、応答も成功の記録も変えない
+    await safeRunAccountingPosting('reconcile');
     return NextResponse.json({ data });
   } catch (error) {
     const cause = webhookFailureCause(error);

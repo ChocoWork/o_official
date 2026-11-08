@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> 会計の作り直し 計画2 Task 10 確認日: 2026-11-09。計上待ち・計上係・支払いの取り消し・Stripe の記録・照合・年末の照合の 12 ファイル・16 メソッド（`/api/admin/accounting/pending-events`・`pending-events/[id]/resolve`・`posting/run`・`dispute-settings`・`disputes`・`disputes/[id]/assign`・`stripe-invoices`・`balance-topups`・`reconciliation`・`deferred-revenue`・`year-end-shipments`・`shipment-trace`）と、10分ごとの cron `POST /api/cron/accounting-post` の 1 ファイル・1 メソッドを追加した。Route Handler は186ファイル・236メソッド、表は185行・235メソッド（`/api/e2e/server-info` を除く）。認可・CSRF・制限・監査の順序と応答は[API仕様](api-spec.md)の会計の表を参照。
+>
 > 会計の作り直し 計画1 Task 15 確認日: 2026-11-08。Route Handler の追加・削除はない（173ファイル・219メソッドのまま）。`/api/admin/kpi/cost-profit` の GET に `periodId` と期間の欄、receipt に証憑の種類、権限の管理対象が 38 コードになったことを備考に足した。
 >
 > 会計の作り直し 計画1 Task 8 確認日: 2026-11-07。会計の期間・設定・保存した仕訳の読みの 5 ファイル・7 メソッド（`GET`・`POST /api/admin/accounting/periods`、`POST /api/admin/accounting/periods/[id]/final-sole`、`PUT /api/admin/accounting/periods/[id]/filing`、`GET`・`PUT /api/admin/accounting/settings`、`GET /api/admin/accounting/journal`）を追加した。Route Handler は173ファイル・219メソッド、表は172行・218メソッド（`/api/e2e/server-info` を除く）。認可・CSRF・制限・監査の順序と応答は[API仕様](api-spec.md)の会計の表を参照。
@@ -63,6 +65,18 @@
 | `/api/admin/accounting/periods/[id]/filing` | `PUT` | [route.ts](../../../src/app/api/admin/accounting/periods/%5Bid%5D/filing/route.ts) （会計 計画1 Task 8: 期間の申告の設定。`admin.accounting.settings.manage`） |
 | `/api/admin/accounting/settings` | `GET`, `PUT` | [route.ts](../../../src/app/api/admin/accounting/settings/route.ts) （会計 計画1 Task 8: GET は `admin.finance.read`、PUT は `admin.accounting.settings.manage`） |
 | `/api/admin/accounting/journal` | `GET` | [route.ts](../../../src/app/api/admin/accounting/journal/route.ts) （会計 計画1 Task 8: 保存した仕訳と期首の残高。`admin.finance.read`、回数制限なし） |
+| `/api/admin/accounting/pending-events` | `GET` | [route.ts](../../../src/app/api/admin/accounting/pending-events/route.ts) （会計 計画2 Task 10: 計上待ちの一覧。`admin.finance.read`、全応答no-store） |
+| `/api/admin/accounting/pending-events/[id]/resolve` | `POST` | [route.ts](../../../src/app/api/admin/accounting/pending-events/%5Bid%5D/resolve/route.ts) （会計 計画2 Task 10: 確認済みにする。`admin.accounting.entries.correct`・CSRF→IP/actor各30回/600秒→strict本文→監査） |
+| `/api/admin/accounting/posting/run` | `POST` | [route.ts](../../../src/app/api/admin/accounting/posting/run/route.ts) （会計 計画2 Task 10: 計上係を今すぐ流す。`admin.finance.manage`） |
+| `/api/admin/accounting/dispute-settings` | `GET`, `PUT` | [route.ts](../../../src/app/api/admin/accounting/dispute-settings/route.ts) （会計 計画2 Task 10: GET は `admin.finance.read`、PUT は `admin.accounting.settings.manage`） |
+| `/api/admin/accounting/disputes` | `GET` | [route.ts](../../../src/app/api/admin/accounting/disputes/route.ts) （会計 計画2 Task 10: 支払いの取り消しの一覧。`admin.finance.read`） |
+| `/api/admin/accounting/disputes/[id]/assign` | `POST` | [route.ts](../../../src/app/api/admin/accounting/disputes/%5Bid%5D/assign/route.ts) （会計 計画2 Task 10: 確定・科目の決定待ちの振り替え。`admin.accounting.entries.correct`） |
+| `/api/admin/accounting/stripe-invoices` | `GET`, `PUT` | [route.ts](../../../src/app/api/admin/accounting/stripe-invoices/route.ts) （会計 計画2 Task 10: GET は `admin.finance.read`、PUT は `admin.finance.manage`） |
+| `/api/admin/accounting/balance-topups` | `POST` | [route.ts](../../../src/app/api/admin/accounting/balance-topups/route.ts) （会計 計画2 Task 10: 残高の補充。`admin.finance.manage`） |
+| `/api/admin/accounting/reconciliation` | `GET` | [route.ts](../../../src/app/api/admin/accounting/reconciliation/route.ts) （会計 計画2 Task 10: 3つの照合。`admin.finance.read`） |
+| `/api/admin/accounting/deferred-revenue` | `GET` | [route.ts](../../../src/app/api/admin/accounting/deferred-revenue/route.ts) （会計 計画2 Task 10: 繰り越した前受金と異常。`admin.finance.read`） |
+| `/api/admin/accounting/year-end-shipments` | `GET`, `POST`, `PUT` | [route.ts](../../../src/app/api/admin/accounting/year-end-shipments/route.ts) （会計 計画2 Task 10: GET は `admin.finance.read`、POST は `admin.finance.manage`、PUT は `admin.accounting.settings.manage`） |
+| `/api/admin/accounting/shipment-trace` | `GET` | [route.ts](../../../src/app/api/admin/accounting/shipment-trace/route.ts) （会計 計画2 Task 10: 発送票の跡と仕訳。`admin.finance.read`） |
 | `/api/admin/audit-logs` | `GET` | [route.ts](../../../src/app/api/admin/audit-logs/route.ts) |
 | `/api/admin/contact/[id]/reply` | `POST` | [route.ts](../../../src/app/api/admin/contact/%5Bid%5D/reply/route.ts) |
 | `/api/admin/contact/[id]` | `GET`, `PATCH` | [route.ts](../../../src/app/api/admin/contact/%5Bid%5D/route.ts) |
@@ -191,6 +205,7 @@
 | `/api/cron/legal-archive/status` | `POST` | [route.ts](../../../src/app/api/cron/legal-archive/status/route.ts) |
 | `/api/cron/meta-kpi-sync` | `POST` | [route.ts](../../../src/app/api/cron/meta-kpi-sync/route.ts) |
 | `/api/cron/process-stripe-webhooks` | `POST` | [route.ts](../../../src/app/api/cron/process-stripe-webhooks/route.ts) |
+| `/api/cron/accounting-post` | `POST` | [route.ts](../../../src/app/api/cron/accounting-post/route.ts) （会計 計画2 Task 10: 10分ごとに計上係を流す。CRON_SECRET Bearer） |
 | `/api/cron/stripe-reconcile` | `POST` | [route.ts](../../../src/app/api/cron/stripe-reconcile/route.ts) |
 | `/api/discounts/advertisements` | `GET` | [route.ts](../../../src/app/api/discounts/advertisements/route.ts) （H Task 8: 商品ページの割引の案内） |
 | `/api/items/[id]` | `GET` | [route.ts](../../../src/app/api/items/%5Bid%5D/route.ts) |
@@ -242,7 +257,7 @@ API単体 [GET](../../../tests/unit/api/admin/permissions-route.test.ts)・[POST
 
 ## `src/app/api` の外の入口（波 3 / 2026-10-28）
 
-頁ではなく画像のバイトを返す Route Handler。パスが `/api/` で始まらず、`src/app/api` の外にあるので、上の表と概要の数（173ファイル・219メソッド、表は172行・218メソッド）には入れない。数を固定する単体試験（`tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts`）は `src/app/api` だけを数える。
+頁ではなく画像のバイトを返す Route Handler。パスが `/api/` で始まらず、`src/app/api` の外にあるので、上の表と概要の数（186ファイル・236メソッド、表は185行・235メソッド）には入れない。数を固定する単体試験（`tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts`）は `src/app/api` だけを数える。
 
 | パス | メソッド | 根拠 |
 | --- | --- | --- |

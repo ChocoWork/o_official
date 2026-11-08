@@ -19,7 +19,7 @@ export type OpsStore = {
   rpc(name: OpsRpcName, params?: Record<string, unknown>): Promise<{ data: unknown; error: QueryError }>;
 };
 
-export type OpsJob = 'webhook_worker' | 'order_sweep' | 'stripe_reconcile' | 'order_email_worker' | 'order_email_delivery_check' | 'return_photo_purge' | 'delivery_tracking';
+export type OpsJob = 'webhook_worker' | 'order_sweep' | 'stripe_reconcile' | 'order_email_worker' | 'order_email_delivery_check' | 'return_photo_purge' | 'delivery_tracking' | 'accounting_post';
 
 export type OpsAlertKey =
   | 'site_url_invalid'
@@ -40,7 +40,8 @@ export type OpsAlertKey =
   | 'delivery_tracking_signature_invalid'
   | 'delivery_tracking_read_failed'
   | 'delivery_tracking_unknown_status'
-  | 'job_stale_delivery_tracking';
+  | 'job_stale_delivery_tracking'
+  | 'job_stale_accounting_post';
 
 export type Heartbeat = { lastSucceededAt: Date | null; lastFailedAt: Date | null; lastErrorCode: string | null };
 

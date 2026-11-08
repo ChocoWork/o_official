@@ -11,6 +11,8 @@ jest.mock('next/server', () => ({
 const mockAuthorize = jest.fn();
 const mockCsrf = jest.fn();
 const mockLogAudit = jest.fn().mockResolvedValue(undefined);
+const mockSchedule = jest.fn();
+jest.mock('@/lib/accounting/posting-runner', () => ({ scheduleAccountingPosting: (...args: unknown[]) => mockSchedule(...args) }));
 const mockSelectPayout = jest.fn();
 const mockUpdate = jest.fn();
 
@@ -88,6 +90,25 @@ describe('POST /api/admin/accounting/stripe-payouts/:id/confirm', () => {
 
     expect(response.status).toBe(expectedStatus);
     expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('FREQ-565-AC-04: 着金の確認が通った後に、応答の後で会計の計上を流す', async () => {
+    const response = await POST(request(), params);
+
+    expect(response.status).toBe(200);
+    expect(mockSchedule).toHaveBeenCalledTimes(1);
+    expect(mockSchedule).toHaveBeenCalledWith('bank_confirm');
+  });
+
+  it('FREQ-565-AC-04: 断った時・確認済みの再送では会計の計上を流さない', async () => {
+    mockSelectPayout.mockResolvedValue({ data: { ...PAID_MATCHED, status: 'pending' }, error: null });
+    expect((await POST(request(), params)).status).toBe(409);
+    mockSelectPayout.mockResolvedValue({
+      data: { ...PAID_MATCHED, bank_arrival_date: '2026-08-16', bank_confirmed_at: '2026-08-16T00:00:00.000Z', bank_confirmed_by: 'admin-1' },
+      error: null,
+    });
+    expect((await POST(request('2026-08-16'), params)).status).toBe(200);
+    expect(mockSchedule).not.toHaveBeenCalled();
   });
 
   it('rejects a malformed bank arrival date', async () => {

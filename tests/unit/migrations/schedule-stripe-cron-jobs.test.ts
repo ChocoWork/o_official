@@ -28,6 +28,12 @@ describe.each([
     endpoint: '/api/cron/stripe-reconcile',
   },
   {
+    file: 'schedule_accounting_post.sql',
+    job: 'accounting-post',
+    schedule: '*/10 * * * *',
+    endpoint: '/api/cron/accounting-post',
+  },
+  {
     file: 'schedule_return_photo_purge.sql',
     job: 'purge-return-photos',
     schedule: '20 19 * * *',

@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { z } from 'zod';
+import { scheduleAccountingPosting } from '@/lib/accounting/posting-runner';
 import {
   expectedVersionSchema,
   handleShipmentSlipWrite,
@@ -27,9 +28,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     errorCode: 'SHIPMENT_SLIP_CANCEL_FAILED',
     schema: bodySchema,
     status: 200,
-    run: (client, actorId, slipId, body) => cancelShipmentSlip(client, actorId, {
-      slipId: slipId as string, expectedVersion: body.expectedVersion, requestKey: body.requestKey,
-    }),
+    run: async (client, actorId, slipId, body) => {
+      const result = await cancelShipmentSlip(client, actorId, {
+        slipId: slipId as string, expectedVersion: body.expectedVersion, requestKey: body.requestKey,
+      });
+      // 取り消しの仕訳を、応答を返した後に入れる。失敗は応答に影響しない
+      scheduleAccountingPosting('shipment_cancel');
+      return result;
+    },
     auditSuccess: (_body, result) => ({ restored_quantity: result.restoredQuantity, replayed: result.replayed }),
     auditFailure: () => ({}),
   });

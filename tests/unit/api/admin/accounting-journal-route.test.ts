@@ -48,6 +48,7 @@ const defaultRpc = (name: string): { data: unknown; error: null } => {
     case 'list_accounting_periods': return { data: db.periods, error: null };
     case 'list_accounting_journal': return { data: { entries: [entryRow(1), entryRow(2)], next_after_date: '2026-03-01', next_after_no: 2 }, error: null };
     case 'get_accounting_opening': return { data: [{ account_code: '2910', signed_amount: 0, basis: 'carryover' }], error: null };
+    case 'list_journal_shipment_meta': return { data: [], error: null };
     default: throw new Error(`unexpected rpc ${name}`);
   }
 };
@@ -78,8 +79,11 @@ describe('GET /api/admin/accounting/journal', () => {
     const body = await read(response);
     expect(Object.keys(body).sort()).toEqual(['data', 'permissions']);
     expect(body.permissions).toEqual({ manageSettings: false });
-    const data = body.data as { entries: Record<string, unknown>[]; nextAfter: unknown; opening: unknown[] };
-    expect(Object.keys(data).sort()).toEqual(['entries', 'nextAfter', 'opening']);
+    const data = body.data as { entries: Record<string, unknown>[]; nextAfter: unknown; opening: unknown[]; shipmentMeta: unknown[] };
+    expect(Object.keys(data).sort()).toEqual(['entries', 'nextAfter', 'opening', 'shipmentMeta']);
+    // 出荷の仕訳が1つも無いページでは、出荷の日の読み口を呼ばず空の一覧を返す
+    expect(data.shipmentMeta).toEqual([]);
+    expect(rpcImpl).not.toHaveBeenCalledWith('list_journal_shipment_meta', expect.anything());
     for (const entry of data.entries) expect(Object.keys(entry).sort()).toEqual(ENTRY_KEYS);
     expect(data.entries[0].legacy).toEqual({ revisionCount: 0, receiptCount: 1 });
     expect(data.nextAfter).toEqual({ entryDate: '2026-03-01', entryNo: 2 });
@@ -109,7 +113,7 @@ describe('GET /api/admin/accounting/journal', () => {
   });
 
   test('FREQ-555-AC-04: 期間が1つも無いときは404でなく空の一覧を返す', async () => {
-    const empty = { data: { entries: [], nextAfter: null, opening: [] }, permissions: { manageSettings: false } };
+    const empty = { data: { entries: [], nextAfter: null, opening: [], shipmentMeta: [] }, permissions: { manageSettings: false } };
     // periodId を省略し期間が無い。
     db.periods = [];
     const none = await get('');
@@ -135,6 +139,41 @@ describe('GET /api/admin/accounting/journal', () => {
     const ok = await get();
     expect((await read(ok)).permissions).toEqual({ manageSettings: true });
     rpcImpl.mockImplementation(async (name: string) => (name === 'get_accounting_opening' ? { data: null, error: { message: 'boom secret', code: 'XX000', details: 'secret', hint: null } } : defaultRpc(name)));
+    const failed = await get();
+    expect([failed.status, await read(failed)]).toEqual([500, { error: '会計の処理に失敗しました。' }]);
+  });
+});
+
+describe('出荷の仕訳に付ける出荷した日と登録した日', () => {
+  test('FREQ-564-AC-04: 仕訳のrouteは出荷の仕訳にだけ出荷した日と発送票を確定した日を付ける', async () => {
+    const shipmentEntry = entryRow(3, { event_kind: 'shipment_confirmed', dedupe_key: 'shipment_confirmed:slip:0', source_table: 'shipment_slips', source_id: uuid(500) });
+    rpcImpl.mockImplementation(async (name: string) => {
+      if (name === 'list_accounting_journal') return { data: { entries: [entryRow(1), shipmentEntry], next_after_date: null, next_after_no: null }, error: null };
+      if (name === 'list_journal_shipment_meta') {
+        return { data: [{ entry_id: shipmentEntry.id, slip_number: 'SL-20261109-0001', shipment_date: '2026-11-05', confirmed_at: '2026-11-09T01:00:00+00:00' }], error: null };
+      }
+      return defaultRpc(name);
+    });
+    const response = await get();
+    expect(response.status).toBe(200);
+    const body = await read(response);
+    expect((body.data as { shipmentMeta: unknown[] }).shipmentMeta).toEqual([
+      { entryId: shipmentEntry.id, slipNumber: 'SL-20261109-0001', shipmentDate: '2026-11-05', confirmedAt: '2026-11-09T01:00:00+00:00' },
+    ]);
+    // 出荷の仕訳の番号だけを渡す（手入力の仕訳は渡さない）
+    expect(rpcImpl).toHaveBeenCalledWith('list_journal_shipment_meta', { _entry_ids: [shipmentEntry.id] });
+    // 既存の欄は消えない
+    expect(Object.keys(body.data as object).sort()).toEqual(['entries', 'nextAfter', 'opening', 'shipmentMeta']);
+    expect(JSON.stringify(body)).not.toMatch(/"[a-z]+_[a-z_]+":/);
+  });
+
+  test('FREQ-564-AC-04: 出荷の日の読み口が壊れたら固定の500（生の文を出さない）', async () => {
+    const shipmentEntry = entryRow(3, { source_table: 'shipment_slips', source_id: uuid(500) });
+    rpcImpl.mockImplementation(async (name: string) => {
+      if (name === 'list_accounting_journal') return { data: { entries: [shipmentEntry], next_after_date: null, next_after_no: null }, error: null };
+      if (name === 'list_journal_shipment_meta') return { data: null, error: { message: 'boom secret', code: 'XX000', details: 'secret', hint: null } };
+      return defaultRpc(name);
+    });
     const failed = await get();
     expect([failed.status, await read(failed)]).toEqual([500, { error: '会計の処理に失敗しました。' }]);
   });

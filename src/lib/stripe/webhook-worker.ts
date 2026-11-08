@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { safeRunAccountingPosting, WEBHOOK_POSTING_OPTIONS } from '@/lib/accounting/posting-runner';
 import { processStripeWebhookEvent } from '@/lib/stripe/webhook-processor';
 import type { WebhookEventStore } from '@/lib/stripe/webhook-events';
 import { drainWebhookQueue, type DrainResult } from '@/lib/stripe/webhook-drain';
@@ -60,6 +61,12 @@ export async function runWebhookWorker(options: { requestUrl: string; budgetMs?:
     await recordHeartbeat(store, 'webhook_worker', !claimFailed, claimFailed ? 'db_unavailable' : null);
   } catch (error) {
     console.error('[stripe-webhook-worker] Failed to record heartbeat', error instanceof Error ? error.name : 'UnknownError');
+  }
+
+  // この起動で知らせを1件以上処理した時だけ、終わりに1回だけ会計の計上を流す（知らせ1件ごとには呼ばない。worker の時間と
+  // 発送の鍵を食わないよう少なく、繰り返さない）。失敗はログだけで、知らせは成功のまま。取りこぼしは10分ごとの cron が拾う。
+  if (drain.processed > 0) {
+    await safeRunAccountingPosting('webhook', WEBHOOK_POSTING_OPTIONS);
   }
 
   // Stripe の知らせが書いた注文のメールの行を、同じ起動の中で送る。投げても、点検は続ける

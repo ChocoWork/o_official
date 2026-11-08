@@ -9,6 +9,8 @@ jest.mock('@/lib/auth/admin-rbac', () => ({ authorizeAdminPermissions: jest.fn()
 jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn() }));
 const mockLogAudit = jest.fn();
 jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockLogAudit(...args) }));
+const mockSchedule = jest.fn();
+jest.mock('@/lib/accounting/posting-runner', () => ({ scheduleAccountingPosting: (...args: unknown[]) => mockSchedule(...args) }));
 
 import { inspect } from 'util';
 import { POST as CANCEL } from '@/app/api/admin/shipment-slips/[id]/cancel/route';
@@ -265,5 +267,21 @@ describe('POST /api/admin/shipment-slips/[id]/cancel', () => {
     expect(result.text).not.toContain('PRIVATE-MARKER');
     expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('PRIVATE-MARKER');
     expect(inspect((console.error as jest.Mock).mock.calls, { depth: null })).not.toContain('PRIVATE-MARKER');
+  });
+});
+
+describe('取り消しの後の会計の計上', () => {
+  test('FREQ-564-AC-01: 取り消しが通ったら応答の形を変えず、応答の後に係を流す', async () => {
+    const result = await call();
+    expect(result.status).toBe(200);
+    expect(result.json).toEqual(cancelled);
+    expect(mockSchedule).toHaveBeenCalledTimes(1);
+    expect(mockSchedule).toHaveBeenCalledWith('shipment_cancel');
+  });
+
+  test('FREQ-564-AC-01: 取り消しが断られた時は係を流さない', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'GROUP_G_SLIP_HAS_RETURN', code: '22023' } });
+    expect((await call()).status).toBe(409);
+    expect(mockSchedule).not.toHaveBeenCalled();
   });
 });

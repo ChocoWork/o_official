@@ -9,6 +9,8 @@ const mockAudit = jest.fn();
 jest.mock('@/lib/csrfMiddleware', () => ({ requireCsrfOrDeny: () => mockCsrf() }));
 jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: (...args: unknown[]) => mockRate(...args) }));
 jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockAudit(...args) }));
+const mockSchedule = jest.fn();
+jest.mock('@/lib/accounting/posting-runner', () => ({ scheduleAccountingPosting: (...args: unknown[]) => mockSchedule(...args) }));
 
 import { POST } from '@/app/api/admin/shipment-slips/[id]/shipment-date/route';
 import { authorizeAdminPermissions } from '@/lib/auth/admin-rbac';
@@ -124,4 +126,16 @@ test('FREQ-535-AC-03: CSRF・回数制限はRPCより前に止める', async () 
   expect((await call()).response.status).toBe(403); expect(mockRate).not.toHaveBeenCalled();
   mockRate.mockResolvedValueOnce(new Response('{}', { status: 429 }));
   expect((await call()).response.status).toBe(429); expect(rpc).not.toHaveBeenCalled();
+});
+test('FREQ-564-AC-02: 日の直しが通ったら応答の形を変えず、応答の後に係を流す', async () => {
+  const { response, json } = await call();
+  expect(response.status).toBe(200);
+  expect(json).toEqual(result);
+  expect(mockSchedule).toHaveBeenCalledTimes(1);
+  expect(mockSchedule).toHaveBeenCalledWith('shipment_date');
+});
+test('FREQ-564-AC-02: 日の直しが断られた時は係を流さない', async () => {
+  rpc.mockResolvedValue({ data: null, error: { code: '22023', message: 'GROUP_G_SHIPMENT_DATE_UNCHANGED' } });
+  expect((await call()).response.status).toBe(409);
+  expect(mockSchedule).not.toHaveBeenCalled();
 });

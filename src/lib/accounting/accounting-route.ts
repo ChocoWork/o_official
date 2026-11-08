@@ -10,7 +10,10 @@ import {
 	listAccountingPeriods,
 	listSavedJournal,
 } from '@/lib/accounting/accounting-store';
+import { listJournalShipmentMeta } from '@/lib/accounting/posting-store';
 import {
+	ACCOUNTING_LIST_RESTART,
+	AccountingListRestartError,
 	AccountingStoreError,
 	type AccountingJournalData,
 	type AccountingPeriodsData,
@@ -30,9 +33,34 @@ export type AccountingAuditAction =
 	| 'admin.accounting.period.create'
 	| 'admin.accounting.period.final_sole'
 	| 'admin.accounting.period.filing'
-	| 'admin.accounting.settings.update';
-/** 監査に載せる値。名前・メール・金額・日付（開業日を含む）は載せない（FREQ-561-AC-04）。 */
-export type AccountingAuditMetadata = { period_id?: string; result_code?: string; changed_fields?: string[] };
+	| 'admin.accounting.settings.update'
+	| 'admin.accounting.pending.resolve'
+	| 'admin.accounting.posting.run'
+	| 'admin.accounting.dispute.setting'
+	| 'admin.accounting.dispute.assign'
+	| 'admin.accounting.stripe.invoice'
+	| 'admin.accounting.stripe.topup'
+	| 'admin.accounting.year_end.check'
+	| 'admin.accounting.shipping.options';
+/**
+ * 監査に載せる値。名前・メール・金額・日付（開業日を含む）・メモの本文は載せない（FREQ-561-AC-04）。
+ * 計画2: 対象の番号（event_id・dispute_id）、原因と勘定の符号、月、結果、係の件数だけを足せる。
+ */
+export type AccountingAuditMetadata = {
+	period_id?: string;
+	event_id?: string;
+	dispute_id?: string;
+	slip_id?: string;
+	result_code?: string;
+	changed_fields?: string[];
+	reason?: string;
+	account_code?: string;
+	month?: string;
+	result?: string;
+	counts?: Record<string, number | boolean>;
+};
+/** 失敗の監査に対象の番号を載せる時の鍵。 */
+export type AccountingAuditIdKey = 'period_id' | 'event_id' | 'dispute_id' | 'slip_id';
 
 const WINDOW_SECONDS = 600;
 const WRITE_LIMIT = 30;
@@ -47,6 +75,8 @@ function noStore<T extends Response>(response: T): T {
 const json = (body: unknown, status: number): Response => noStore(NextResponse.json(body, { status }));
 const failureResponse = (error: AccountingStoreError): Response =>
 	json({ ...(error.code && error.status < 500 ? { code: error.code } : {}), error: error.message }, error.status);
+const listRestartResponse = (): Response =>
+	json({ code: ACCOUNTING_LIST_RESTART.code, error: ACCOUNTING_LIST_RESTART.message }, ACCOUNTING_LIST_RESTART.status);
 const invalid = (): AccountingStoreError => new AccountingStoreError('ACCOUNTING_ARGUMENT_INVALID');
 const sqlstateOf = (error: unknown): unknown =>
 	error !== null && typeof error === 'object' && 'code' in error ? error.code : undefined;
@@ -85,7 +115,7 @@ export async function readAccountingPeriods(client: SupabaseClient, today: strin
 }
 
 /** 読み: 認可(admin.finance.read) → 検証 → store。回数の制限・CSRF・監査は付けない。全応答が no-store。 */
-async function handleRead(
+export async function handleRead(
 	request: Request,
 	label: string,
 	load: (client: SupabaseClient, request: Request) => Promise<unknown>,
@@ -96,6 +126,8 @@ async function handleRead(
 		const data = await load(await createServiceRoleClient(), request);
 		return json({ data, permissions: permissionsOf(authz.permissions) }, 200);
 	} catch (error) {
+		// 続きの目印が古い時は、画面に一覧の最初から読み直させる（一般の入力の誤りと分ける）。
+		if (error instanceof AccountingListRestartError) return listRestartResponse();
 		const failure = asStoreError(error);
 		logUnexpected(label, failure);
 		return failureResponse(failure);
@@ -114,7 +146,7 @@ export function handleSettingsGet(request: Request): Promise<Response> {
 	}));
 }
 
-const EMPTY_JOURNAL: AccountingJournalData = { entries: [], nextAfter: null, opening: [] };
+const EMPTY_JOURNAL: AccountingJournalData = { entries: [], nextAfter: null, opening: [], shipmentMeta: [] };
 
 /** periodId を省略した時は、期間が1つも無ければ空の一覧、あれば入力の誤り。渡した期間が無い時も空の一覧（404 にしない）。 */
 export function handleJournalGet(request: Request): Promise<Response> {
@@ -129,7 +161,12 @@ export function handleJournalGet(request: Request): Promise<Response> {
 		try {
 			const page = await listSavedJournal(client, { ...query, periodId });
 			const opening = await getOpeningBalances(client, periodId);
-			return { ...page, opening };
+			// 出荷の仕訳にだけ、出荷した日と発送票を確定した日を付ける（6-c）。ほかの仕訳は呼ばない。
+			const shipmentMeta = await listJournalShipmentMeta(
+				client,
+				page.entries.filter((entry) => entry.sourceTable === 'shipment_slips').map((entry) => entry.id),
+			);
+			return { ...page, opening, shipmentMeta };
 		} catch (error) {
 			if (error instanceof AccountingStoreError && error.code === 'ACCOUNTING_NOT_FOUND') return EMPTY_JOURNAL;
 			throw error;
@@ -140,8 +177,14 @@ export function handleJournalGet(request: Request): Promise<Response> {
 export type AccountingWriteSpec<B, R> = {
 	label: string;
 	action: AccountingAuditAction;
-	/** true: URL の [id] を UUID として検証して run へ渡す。 */
+	/** true: URL の [id] を検証して run へ渡す。 */
 	withId: boolean;
+	/** [id] の検査。省くと UUID。 */
+	idSchema?: z.ZodType<string>;
+	/** 失敗の監査に [id] を載せる鍵。省くと period_id。 */
+	idKey?: AccountingAuditIdKey;
+	/** 要る権限。省くと admin.accounting.settings.manage。 */
+	permission?: PermissionCode;
 	schema: z.ZodType<B>;
 	status: 200 | 201;
 	run: (client: SupabaseClient, actorId: string, id: string | null, body: B) => Promise<R>;
@@ -152,7 +195,7 @@ export type AccountingWriteSpec<B, R> = {
 };
 
 /**
- * 書き込み: 認可(admin.accounting.settings.manage) → CSRF → IP の制限 → actor の制限 → 入力 → store → 監査 → 応答。
+ * 書き込み: 認可(spec.permission。省くと admin.accounting.settings.manage) → CSRF → IP の制限 → actor の制限 → 入力 → store → 監査 → 応答。
  * 途中で断ったら以降を呼ばない。actor は認可の結果の userId だけで、本文からは受け取らない。
  */
 export async function handleAccountingWrite<B, R>(
@@ -163,7 +206,7 @@ export async function handleAccountingWrite<B, R>(
 	let audit: ((outcome: 'success' | 'failure' | 'error', resourceId: string | null, metadata: AccountingAuditMetadata) => Promise<void>) | undefined;
 	let id: string | null = null;
 	try {
-		const authz = await authorizeAdminPermission(MANAGE, request);
+		const authz = await authorizeAdminPermission(spec.permission ?? MANAGE, request);
 		if (!authz.ok) return noStore(authz.response);
 		const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
 		const csrf = await requireCsrfOrDeny();
@@ -174,7 +217,7 @@ export async function handleAccountingWrite<B, R>(
 			await logAudit({ action: spec.action, actor_id: authz.userId, resource: 'accounting', resource_id: resourceId, outcome, metadata });
 		};
 		if (spec.withId) {
-			const parsedId = uuidSchema.safeParse((await context?.params)?.id);
+			const parsedId = (spec.idSchema ?? uuidSchema).safeParse((await context?.params)?.id);
 			if (!parsedId.success) throw invalid();
 			id = parsedId.data;
 		}
@@ -192,7 +235,7 @@ export async function handleAccountingWrite<B, R>(
 		logUnexpected(spec.label, failure);
 		const resultCode = failure.code ?? 'ACCOUNTING_FAILED';
 		if (audit) {
-			await audit(failure.status >= 500 ? 'error' : 'failure', id, { ...(id ? { period_id: id } : {}), result_code: resultCode }).catch(() => {});
+			await audit(failure.status >= 500 ? 'error' : 'failure', id, { ...(id ? { [spec.idKey ?? 'period_id']: id } : {}), result_code: resultCode }).catch(() => {});
 		}
 		return failureResponse(failure);
 	}

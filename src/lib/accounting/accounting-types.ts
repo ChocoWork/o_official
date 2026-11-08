@@ -32,6 +32,10 @@ export const ACCOUNTING_ERRORS = {
 	ACCOUNTING_VERSION_CONFLICT: ['40001', 409, '設定が変わりました。読み直してください。'],
 	ACCOUNTING_REQUEST_KEY_CONFLICT: ['23505', 409, '同じ要求番号で異なる操作は実行できません。'],
 	ACCOUNTING_HISTORY_IMMUTABLE: ['55000', 500, '会計の処理に失敗しました。'],
+	// 計画2（計上待ち・支払いの取り消しの設定）。
+	ACCOUNTING_EVENT_NOT_POSTABLE: ['55000', 409, 'この出来事は今は仕訳にできません。計上待ちの一覧で理由を確かめてください。'],
+	ACCOUNTING_PENDING_RESOLVED: ['55000', 409, 'この計上待ちは既に解決されています。'],
+	ACCOUNTING_DISPUTE_ACCOUNT_INVALID: ['22023', 400, '選んだ勘定は、支払いの取り消しの振り替え先に使えません。'],
 } as const satisfies Readonly<Record<string, readonly [sqlstate: string, status: number, message: string]>>;
 
 export type AccountingErrorCode = keyof typeof ACCOUNTING_ERRORS;
@@ -51,19 +55,37 @@ export class AccountingStoreError extends Error {
 	readonly status: number;
 	readonly code: AccountingErrorCode | null;
 	readonly sqlstate?: string;
-	constructor(code?: string | null, sqlstate?: unknown, options?: { soleEndedNotSwitched?: boolean }) {
+	/** `message` は route が固定の文で本文を置き換える時だけ渡す（DB の文は渡さない）。 */
+	constructor(code?: string | null, sqlstate?: unknown, options?: { soleEndedNotSwitched?: boolean; message?: string }) {
 		const entry =
 			typeof code === 'string' && Object.hasOwn(ACCOUNTING_ERRORS, code)
 				? ACCOUNTING_ERRORS[code as AccountingErrorCode]
 				: undefined;
 		const soleEnded = code === 'ACCOUNTING_PERIOD_MISSING' && options?.soleEndedNotSwitched === true;
-		super(soleEnded ? ACCOUNTING_TEXT.periodMissingSoleEnded : entry ? entry[2] : ACCOUNTING_TEXT.failed);
+		super(options?.message ?? (soleEnded ? ACCOUNTING_TEXT.periodMissingSoleEnded : entry ? entry[2] : ACCOUNTING_TEXT.failed));
 		this.name = 'AccountingStoreError';
 		this.status = entry ? entry[1] : 500;
 		this.code = entry ? (code as AccountingErrorCode) : null;
 		if (!entry && typeof sqlstate === 'string' && /^[0-9A-Z]{5}$/.test(sqlstate)) {
 			Object.defineProperty(this, 'sqlstate', { value: sqlstate, enumerable: false });
 		}
+	}
+}
+
+/**
+ * 続きの目印（afterAt・afterId など）が古くて DB が 22023 で断った時。画面に一覧の最初から読み直させるため、
+ * 一般の入力の誤り（400）と分けて 409 `ACCOUNTING_LIST_RESTART` で返す。
+ */
+export const ACCOUNTING_LIST_RESTART = {
+	code: 'ACCOUNTING_LIST_RESTART',
+	status: 409,
+	message: '一覧が変わりました。最初から読み直してください。',
+} as const;
+
+export class AccountingListRestartError extends Error {
+	constructor() {
+		super(ACCOUNTING_LIST_RESTART.message);
+		this.name = 'AccountingListRestartError';
 	}
 }
 
@@ -107,4 +129,7 @@ export type AccountingPeriodsData = {
 	startup: StartupDeadline[];
 };
 
-export type AccountingJournalData = SavedJournalPage & { opening: OpeningBalanceRow[] };
+/** 出荷の仕訳に付ける、出荷した日と発送票を確定した日（6-c）。そのページの出荷の仕訳だけ。 */
+export type ShipmentMeta = { entryId: string; slipNumber: string; shipmentDate: string; confirmedAt: string };
+
+export type AccountingJournalData = SavedJournalPage & { opening: OpeningBalanceRow[]; shipmentMeta: ShipmentMeta[] };

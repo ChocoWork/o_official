@@ -44,7 +44,16 @@ export type PendingEvent = {
 	resolvedEntryId: string | null;
 };
 
-/** `accounting_run_posting` の戻りの jsonb（snake_case）を store が直した形。 */
+/**
+ * `accounting_run_posting` の戻りの jsonb（snake_case）を store が直した形。数は SQL が返した値のまま持つ。
+ * - `payments`・`shipments`・`stripe`・`disputes`: 入れた仕訳の数（その係が新しく入れた物。取り消しや日の直しの仕訳も含む）。
+ * - `parked`: 止めた件数（新しく止めた物と、見直して止め直した物の合計）。入れた直後に解決済みにする `no_revenue` の行も
+ *   ここに数える（交換の品だけの発送票など）。
+ * - `resolved`: 計上待ちが解決済みになった件数。額が0になる出荷など、仕訳を作らずに解決した物は `resolved` にだけ現れ、
+ *   `shipments` には数えない。
+ * - `hasMore`: 係の1回の件数の上限に達した（まだ新しい出来事が残りうる）。runner は `hasMore` が偽になるまで繰り返す。
+ * 繰り返した時の数は回ごとの合計で、`hasMore` は最後の回の値（上限の回数で止まった時は真のまま）。
+ */
 export type PostingRunResult = {
 	payments: number;
 	shipments: number;
@@ -60,3 +69,26 @@ export const MAX_POSTING_BATCH = 200;
 export const MAX_POSTING_LOOPS = 20;
 export const MAX_PENDING_PAGE = 100;
 export const MAX_DISPUTE_NOTE = 500;
+
+/** 係を呼ぶ入口の名前。ログと監査に残す（個人の情報ではない）。 */
+export type PostingSource =
+	| 'webhook'
+	| 'shipment_confirm'
+	| 'shipment_cancel'
+	| 'shipment_date'
+	| 'bank_confirm'
+	| 'reconcile'
+	| 'cron'
+	| 'manual';
+
+/** 計上待ちの一覧の1ページ。`byReason` は未解決の理由ごとの件数。 */
+export type PendingEventsPage = {
+	events: PendingEvent[];
+	nextAfterAt: string | null;
+	nextAfterId: string | null;
+	openCount: number;
+	byReason: Partial<Record<PendingReason, number>>;
+};
+
+/** 発送票の確定の前に読む、その票の注文を止めている取り消しの有無。 */
+export type SlipDisputeHold = { orderId: string; disputeId: string };

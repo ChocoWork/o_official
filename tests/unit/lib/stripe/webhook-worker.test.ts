@@ -1,4 +1,9 @@
 const mockStore = { rpc: jest.fn() };
+const mockSafeRunPosting = jest.fn();
+jest.mock('@/lib/accounting/posting-runner', () => ({
+  safeRunAccountingPosting: (...args: unknown[]) => mockSafeRunPosting(...args),
+  WEBHOOK_POSTING_OPTIONS: { limit: 20, maxLoops: 1 },
+}));
 jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(async () => mockStore),
 }));
@@ -61,6 +66,39 @@ describe('runWebhookWorker', () => {
     mockRunOrderEmailOpsChecks.mockResolvedValue(EMAIL_CHECKS);
     mockRunOrderEmailDeliveryCheckIfDue.mockResolvedValue('not_due');
     mockTracking.mockReset().mockResolvedValue(TRACKING);
+    mockSafeRunPosting.mockReset().mockResolvedValue(null);
+  });
+
+  it('FREQ-562-AC-05: 知らせを処理した起動は、終わりに1回だけ係を呼び（limit 20・繰り返さない）、注文のメールの前に待つ', async () => {
+    mockDrain.mockResolvedValue({ processed: 5, failed: 1, stoppedBy: 'empty' });
+
+    await runWebhookWorker({ requestUrl: 'http://localhost/x' });
+
+    expect(mockSafeRunPosting).toHaveBeenCalledTimes(1);
+    expect(mockSafeRunPosting).toHaveBeenCalledWith('webhook', { limit: 20, maxLoops: 1 });
+    // 知らせ1件ごとには呼ばない: drain の process は会計の係を呼ばず、係の呼び出しは drain のあと
+    expect(mockDrain.mock.invocationCallOrder[0]).toBeLessThan(mockSafeRunPosting.mock.invocationCallOrder[0]);
+    expect(mockSafeRunPosting.mock.invocationCallOrder[0]).toBeLessThan(mockRunOrderEmailWorker.mock.invocationCallOrder[0]);
+  });
+
+  it('FREQ-562-AC-05: 知らせを1件も処理しなかった起動は係を呼ばない', async () => {
+    mockDrain.mockResolvedValue({ processed: 0, failed: 0, stoppedBy: 'empty' });
+    await runWebhookWorker({ requestUrl: 'http://localhost/x' });
+    mockDrain.mockResolvedValue({ processed: 0, failed: 2, stoppedBy: 'empty' });
+    await runWebhookWorker({ requestUrl: 'http://localhost/x' });
+    expect(mockSafeRunPosting).not.toHaveBeenCalled();
+  });
+
+  it('FREQ-562-AC-05: 係が失敗（null）しても知らせは成功として数え、メールと点検へ進む', async () => {
+    mockDrain.mockResolvedValue({ processed: 3, failed: 0, stoppedBy: 'empty' });
+    mockSafeRunPosting.mockResolvedValue(null);
+
+    const result = await runWebhookWorker({ requestUrl: 'http://localhost/x' });
+
+    expect(result).toMatchObject({ processed: 3, failed: 0, stoppedBy: 'empty' });
+    expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockStore, 'webhook_worker', true, null);
+    expect(mockRunOrderEmailWorker).toHaveBeenCalled();
+    expect(mockRunOpsChecks).toHaveBeenCalled();
   });
 
   it('Stripe の知らせに35秒、注文のメールに10秒を使い、成功を記録して両方を点検する', async () => {

@@ -55,6 +55,12 @@ describe('店への知らせのメールの文面', () => {
     expect(mail.subject).toBe('【要確認】定期処理が止まっています（配送の追跡）');
     expect(mail.lines).toContain('配送の追跡が、15分以上成功していません。');
   });
+  it('FREQ-569-AC-01: 会計の計上の心拍停止は30分と正しい名前を書く', () => {
+    const mail = staleJobMail('accounting_post', new Date('2026-11-09T00:00:00Z'));
+    expect(mail.subject).toBe('【要確認】定期処理が止まっています（会計の計上）');
+    expect(mail.lines).toContain('会計の計上が、30分以上成功していません。');
+    expect(mail.lines.join(String.fromCharCode(10))).toContain('定期処理が止まったとき');
+  });
   it('溜まり: 状態ごとの件数・いちばん古い受け取り・原因の記号を書く', () => {
     const mail = backlogAlertMail([
       { status: 'failed', count: 2, oldestReceivedAt: new Date('2026-10-05T00:00:00Z'), lastErrors: ['stripe_unavailable'] },
