@@ -111,7 +111,7 @@ async function mockAdminApis(page: Page, seedValues: Record<string, Record<strin
 async function openRecordTab(page: Page) {
   await page.goto('/admin');
   await page.getByRole('button', { name: '算出元データを確認' }).click();
-  await page.getByLabel('売上額 4月の値').waitFor();
+  await page.getByLabel('受注高 4月の値').waitFor();
 }
 
 for (const viewport of viewports) {
@@ -132,7 +132,7 @@ for (const viewport of viewports) {
       await expect(page.getByText('KPI（自動計算）', { exact: true })).toBeVisible();
 
       for (const month of ['4月', '5月', '6月', '7月', '8月', '9月']) {
-        await expect(page.getByLabel(`売上額 ${month}の値`)).toBeVisible();
+        await expect(page.getByLabel(`受注高 ${month}の値`)).toBeVisible();
       }
       // KPIは各月の記録値入力（20指標 × 6ヶ月）
       await expect(page.locator('input[aria-label$="の記録値（上書き）"]')).toHaveCount(20 * 6);
@@ -225,8 +225,8 @@ for (const viewport of viewports) {
       await page.getByRole('option', { name: '2026 A/W' }).click();
       await page.getByRole('button', { name: '算出元データを確認' }).click();
       await expect(page.getByText('2026年10月〜2027年3月', { exact: true })).toBeVisible();
-      await expect(page.getByLabel('売上額 10月の値')).toBeVisible();
-      await expect(page.getByLabel('売上額 3月の値')).toBeVisible();
+      await expect(page.getByLabel('受注高 10月の値')).toBeVisible();
+      await expect(page.getByLabel('受注高 3月の値')).toBeVisible();
     });
 
     test('order由来は各月の自動値プレースホルダ+自動バッジ、SNS系は手入力バッジ', async ({ page }) => {
@@ -234,9 +234,9 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
       await openRecordTab(page);
 
-      await expect(page.getByLabel('売上額 4月の値')).toHaveAttribute('placeholder', '¥800,000');
+      await expect(page.getByLabel('受注高 4月の値')).toHaveAttribute('placeholder', '¥800,000');
 
-      const salesRow = page.getByLabel('売上額 4月の値').locator('xpath=ancestor::tr');
+      const salesRow = page.getByLabel('受注高 4月の値').locator('xpath=ancestor::tr');
       await expect(salesRow.getByText('自動', { exact: true })).toBeVisible();
 
       const reachRow = page.getByLabel('リーチ数 4月の値').locator('xpath=ancestor::tr');

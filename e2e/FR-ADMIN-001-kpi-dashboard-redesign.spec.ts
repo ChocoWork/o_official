@@ -129,8 +129,8 @@ for (const viewport of viewports) {
       await page.goto('/admin');
       await expect(page.getByText('リーチ数', { exact: true }).last()).toBeVisible();
 
-      // 既定は売上が選択され、推移グラフと月次記録が同時に見える
-      await expect(page.getByText('売上推移', { exact: true })).toBeVisible();
+      // 既定は受注高が選択され、推移グラフと月次記録が同時に見える
+      await expect(page.getByText('受注高推移', { exact: true })).toBeVisible();
       await expect(page.getByText('月次記録を入力', { exact: true })).toBeVisible();
 
       await page.getByRole('button', { name: /^CVR/ }).last().click();

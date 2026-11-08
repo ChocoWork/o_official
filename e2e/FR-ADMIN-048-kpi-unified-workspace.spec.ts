@@ -145,7 +145,7 @@ for (const viewport of viewports) {
 
       const cards = page.getByRole('button', { pressed: false }).filter({ hasText: '目標' });
       await expect(page.getByText('KPI一覧', { exact: true })).toBeVisible();
-      await expect(kpiListPanel(page).getByRole('button', { name: /^売上：/ })).toHaveAttribute('aria-pressed', 'true');
+      await expect(kpiListPanel(page).getByRole('button', { name: /^受注高：/ })).toHaveAttribute('aria-pressed', 'true');
       await expect(cards.first()).toBeVisible();
 
       const cvrCard = kpiListPanel(page).getByRole('button', { name: /^CVR：/ });
@@ -154,7 +154,7 @@ for (const viewport of viewports) {
 
       await page.getByRole('button', { name: '広告', exact: true }).click();
       await expect(kpiListPanel(page).getByRole('button', { name: /^ROAS：/ })).toBeVisible();
-      await expect(kpiListPanel(page).getByRole('button', { name: /^売上：/ })).toHaveCount(0);
+      await expect(kpiListPanel(page).getByRole('button', { name: /^受注高：/ })).toHaveCount(0);
     });
 
     test('選択中KPIの現在値・目標・達成率と目標編集が表示される', async ({ page }) => {
@@ -168,23 +168,23 @@ for (const viewport of viewports) {
       await expect(summary.getByText('¥2,000,000', { exact: true })).toBeVisible();
 
       await page.getByRole('button', { name: '目標を編集' }).click();
-      await expect(page.getByLabel('売上の目標値')).toHaveValue('2,000,000');
+      await expect(page.getByLabel('受注高の目標値')).toHaveValue('2,000,000');
       await expect(page.getByRole('button', { name: '目標を保存' })).toBeVisible();
       await page.getByRole('button', { name: '編集をキャンセル' }).click();
-      await expect(page.getByLabel('売上の目標値')).toHaveCount(0);
+      await expect(page.getByLabel('受注高の目標値')).toHaveCount(0);
     });
 
     test('推移グラフが表示され、粒度を切り替えられる', async ({ page }) => {
       // FREQ-261-AC-04
       await openKpiWorkspace(page);
 
-      await expect(page.getByText('売上推移', { exact: true })).toBeVisible();
-      await expect(page.getByRole('img', { name: '売上の推移グラフ' })).toBeVisible();
+      await expect(page.getByText('受注高推移', { exact: true })).toBeVisible();
+      await expect(page.getByRole('img', { name: '受注高の推移グラフ' })).toBeVisible();
 
       await page.getByRole('tab', { name: 'シーズン' }).click();
-      await expect(page.getByRole('img', { name: '売上の推移グラフ' })).toBeVisible();
+      await expect(page.getByRole('img', { name: '受注高の推移グラフ' })).toBeVisible();
       await page.getByRole('tab', { name: '年度' }).click();
-      await expect(page.getByRole('img', { name: '売上の推移グラフ' })).toBeVisible();
+      await expect(page.getByRole('img', { name: '受注高の推移グラフ' })).toBeVisible();
     });
 
     test('月次記録の入力・一覧・インサイトが同一画面に並ぶ', async ({ page }) => {
@@ -197,9 +197,9 @@ for (const viewport of viewports) {
       await expect(page.getByRole('button', { name: '記録を保存' })).toBeVisible();
 
       await page.getByRole('button', { name: '算出元データを確認' }).click();
-      await expect(page.getByLabel('売上額 4月の値')).toBeVisible();
+      await expect(page.getByLabel('受注高 4月の値')).toBeVisible();
       await page.getByRole('button', { name: '算出元データを閉じる' }).click();
-      await expect(page.getByLabel('売上額 4月の値')).toHaveCount(0);
+      await expect(page.getByLabel('受注高 4月の値')).toHaveCount(0);
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {

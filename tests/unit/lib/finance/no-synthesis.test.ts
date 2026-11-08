@@ -4,10 +4,10 @@ import path from 'node:path';
 // 画面は注文の売上と Stripe の仕訳を合成せず、保存した仕訳だけで数える（FREQ-570）。
 // `mergeJournalEntries`（保存した仕訳と決算整理の仕訳を重ねない道具）と過去の履歴の文書は数えない。
 // `order:` の文字列は数えない（entry-review.ts の `order:${…}` は合成でない）。
-// `toOrderSalesTransaction`・`order-sales.ts` は KPI の route がまだ使っているので、数えるのは Task 13。
+// KPI の route は帳簿の受注高の読み口から数えるため、`toOrderSalesTransaction`・`order-sales.ts` も数える（Task 13）。
 
 const SRC = path.join(process.cwd(), 'src');
-const BANNED = ['buildStripeJournal', 'buildOrderSalesJournal', 'mapOrderIncome', 'stripe:sale:'] as const;
+const BANNED = ['buildStripeJournal', 'buildOrderSalesJournal', 'mapOrderIncome', 'stripe:sale:', 'toOrderSalesTransaction', 'order-sales'] as const;
 
 function sourceFiles(directory: string): string[] {
 	return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -20,7 +20,7 @@ function sourceFiles(directory: string): string[] {
 describe('合成の仕訳が残っていない', () => {
 	const files = sourceFiles(SRC);
 
-	it('FREQ-570-AC-04: srcに buildStripeJournal・buildOrderSalesJournal・mapOrderIncome・stripe:sale: が残っていない', () => {
+	it('FREQ-570-AC-04: srcに buildStripeJournal・buildOrderSalesJournal・mapOrderIncome・stripe:sale:・toOrderSalesTransaction・order-sales が残っていない', () => {
 		expect(files.length).toBeGreaterThan(100);
 		const found = files.flatMap((file) => {
 			const text = fs.readFileSync(file, 'utf8');

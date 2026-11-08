@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
 import { insertAccountingAdmin } from './helpers/accounting-fixtures';
-import { MONTHLY_KPI_FORMULAS, SOURCE_METRIC_KEYS, kpiOverrideStorageKey, sourceStorageKey } from '@/lib/kpi/monthly-metrics';
+import { VALID_STORAGE_KEYS } from '@/lib/kpi/monthly-metrics';
 
 // Accounting plan 2 S13 (FREQ-573-AC-01, AC-02): the monthly KPI table admin_kpi_monthly_records and its writers / reader.
 // Every test runs inside a transaction that is rolled back (the table and the writers are checked as the roles that use them).
@@ -77,7 +77,7 @@ describeLocalDb('S13 monthly KPI records (rollback)', (db) => {
   });
 
   test('FREQ-573-AC-01: 保存の鍵として画面が許す全部の指標の鍵を表が受ける', async () => {
-    const keys = [...SOURCE_METRIC_KEYS.map(sourceStorageKey), ...MONTHLY_KPI_FORMULAS.map((formula) => kpiOverrideStorageKey(formula.key))];
+    const keys = [...VALID_STORAGE_KEYS];
     expect(keys.length).toBeGreaterThan(20);
     for (const key of keys) {
       expect([key, await attempt(`insert into ${TABLE}(month_key, metric_key, value) values ('2026-07', $1, 1)`, [key])]).toEqual([key, null]);

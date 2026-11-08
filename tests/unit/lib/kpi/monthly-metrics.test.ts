@@ -3,6 +3,11 @@ import {
 	latestAdjacentRecordedPair,
 	MONTHLY_KPI_FORMULAS,
 	resolveRecordedKpiValue,
+	SOURCE_METRICS,
+	VALID_STORAGE_KEYS,
+	isValidStorageKey,
+	kpiOverrideStorageKey,
+	sourceStorageKey,
 } from '@/lib/kpi/monthly-metrics';
 
 describe('MONTHLY_KPI_FORMULAS', () => {
@@ -55,5 +60,30 @@ describe('recorded series helpers', () => {
 			previous: 120,
 			current: 180,
 		});
+	});
+});
+
+describe('月の記録の受注高', () => {
+	it('FREQ-573-AC-04: 月の記録の指標名が「受注高」になり、保存の鍵 src:paid_sales と kpi:sales は変わらない', () => {
+		expect(SOURCE_METRICS.find((metric) => metric.key === 'paid_sales')?.label).toBe('受注高');
+		const sales = MONTHLY_KPI_FORMULAS.find((formula) => formula.key === 'sales');
+		expect(sales).toMatchObject({ label: '受注高', formulaText: '受注高' });
+		expect(sourceStorageKey('paid_sales')).toBe('src:paid_sales');
+		expect(kpiOverrideStorageKey('sales')).toBe('kpi:sales');
+		expect(sales?.compute({ paid_sales: 90000 })).toBe(90000);
+	});
+
+	it('FREQ-573-AC-04: 客単価とLTVの算出式の文も「受注高」で書く', () => {
+		const texts = ['aov', 'ltv'].map((key) => MONTHLY_KPI_FORMULAS.find((formula) => formula.key === key)?.formulaText);
+		expect(texts).toEqual(['受注高 ÷ 有効注文数', '受注高 ÷ 顧客数']);
+		expect(JSON.stringify([SOURCE_METRICS, MONTHLY_KPI_FORMULAS.map((f) => f.formulaText)])).not.toContain('売上額');
+	});
+
+	it('FREQ-573-AC-04: 保存できる鍵の集合を出し、保存の鍵の判定と同じ中身になる', () => {
+		expect(VALID_STORAGE_KEYS.has('src:paid_sales')).toBe(true);
+		expect(VALID_STORAGE_KEYS.has('kpi:sales')).toBe(true);
+		expect(VALID_STORAGE_KEYS.has('kpi:unknown')).toBe(false);
+		for (const key of VALID_STORAGE_KEYS) expect(isValidStorageKey(key)).toBe(true);
+		expect(VALID_STORAGE_KEYS.size).toBe(SOURCE_METRICS.length + MONTHLY_KPI_FORMULAS.length);
 	});
 });

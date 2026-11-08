@@ -15,7 +15,7 @@ import {
   ACCOUNTING_S14_FILES, ACCOUNTING_S14_SQL as sqlS14, accountingS14Section, pinAccountingS14Baseline,
 } from './helpers/accounting-orders-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
-import { MONTHLY_KPI_FORMULAS, SOURCE_METRIC_KEYS, isValidStorageKey, kpiOverrideStorageKey, sourceStorageKey } from '@/lib/kpi/monthly-metrics';
+import { VALID_STORAGE_KEYS, isValidStorageKey } from '@/lib/kpi/monthly-metrics';
 
 // Accounting plan 2 S6 (FREQ-569 / FREQ-563): the shape of the migration and its final assert. The DB part is
 // controller only. Tasks 2-9 add the asserts of S7-S14 below (S7: the payment posting, Task 2; S8: the shipment posting, Task 3; S11: the dispute posting, Task 6; S12: the intake reads, Task 7).
@@ -1603,7 +1603,7 @@ describe('S13 source contract (no DB)', () => {
     expect(check('metric_key')).toBe('^(src|kpi):[A-Za-z0-9_]{1,64}$');
     const monthPattern = new RegExp(check('month_key'));
     const metricPattern = new RegExp(check('metric_key'));
-    const keys = [...SOURCE_METRIC_KEYS.map(sourceStorageKey), ...MONTHLY_KPI_FORMULAS.map((formula) => kpiOverrideStorageKey(formula.key))];
+    const keys = [...VALID_STORAGE_KEYS];
     expect(keys.length).toBeGreaterThan(20);
     for (const key of keys) expect([key, isValidStorageKey(key), metricPattern.test(key)]).toEqual([key, true, true]);
     for (const key of ['reach', 'foo:reach', 'src:', 'src:a-b', `kpi:${'a'.repeat(65)}`]) expect([key, metricPattern.test(key)]).toEqual([key, false]);

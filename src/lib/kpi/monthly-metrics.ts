@@ -14,7 +14,7 @@ export type SourceMetricDef = {
 // order = 注文DBから機械取得（現在月の PeriodKpiMetrics から読む）。manual = SNS・広告系の手入力。
 export const SOURCE_METRICS: SourceMetricDef[] = [
 	// --- order 由来（自動取得） ---
-	{ key: 'paid_sales', label: '売上額', unit: '円', group: 'order' },
+	{ key: 'paid_sales', label: '受注高', unit: '円', group: 'order' },
 	{ key: 'paid_orders', label: '有効注文数', unit: '件', group: 'order' },
 	{ key: 'all_orders', label: '全注文数', unit: '件', group: 'order' },
 	{ key: 'set_orders', label: 'セット注文数', unit: '件', group: 'order' },
@@ -72,15 +72,15 @@ export const MONTHLY_KPI_FORMULAS: MonthlyKpiFormulaDef[] = [
 	{ key: 'story_reach', label: 'ストーリー到達率', formulaText: 'ストーリー到達数 ÷ フォロワー数', compute: (s) => ratio(s.story_reach, s.followers) },
 	{ key: 'link_click', label: 'リンククリック率', formulaText: 'リンククリック数 ÷ プロフィールアクセス数', compute: (s) => ratio(s.link_clicks, s.profile_visits) },
 	{ key: 'cvr', label: 'CVR', formulaText: '有効注文数 ÷ 全注文数', compute: (s) => ratio(s.paid_orders, s.all_orders) },
-	{ key: 'aov', label: '客単価（AOV）', formulaText: '売上額 ÷ 有効注文数', compute: (s) => ratio(s.paid_sales, s.paid_orders, 1) },
+	{ key: 'aov', label: '客単価（AOV）', formulaText: '受注高 ÷ 有効注文数', compute: (s) => ratio(s.paid_sales, s.paid_orders, 1) },
 	{ key: 'set_purchase_rate', label: 'セット購入率', formulaText: 'セット注文数 ÷ 有効注文数', compute: (s) => ratio(s.set_orders, s.paid_orders) },
-	{ key: 'sales', label: '売上', formulaText: '売上額', compute: (s) => direct(s.paid_sales) },
+	{ key: 'sales', label: '受注高', formulaText: '受注高', compute: (s) => direct(s.paid_sales) },
 	{ key: 'inventory_turnover', label: '在庫消化率', formulaText: '販売実績商品数 ÷ 公開商品数', compute: (s) => ratio(s.sold_items, s.published_items) },
 	{ key: 'cpa', label: 'CPA', formulaText: '広告費 ÷ 広告コンバージョン数', compute: (s) => ratio(s.ad_spend, s.ad_conversions, 1) },
 	{ key: 'roas', label: 'ROAS', formulaText: '広告経由売上 ÷ 広告費', compute: (s) => ratio(s.ad_revenue, s.ad_spend, 1) },
 	{ key: 'cpc', label: 'CPC', formulaText: '広告費 ÷ 広告クリック数', compute: (s) => ratio(s.ad_spend, s.ad_clicks, 1) },
 	{ key: 'cpm', label: 'CPM', formulaText: '広告費 ÷ 広告表示回数 × 1000', compute: (s) => ratio(s.ad_spend, s.ad_impressions, 1000) },
-	{ key: 'ltv', label: 'LTV', formulaText: '売上額 ÷ 顧客数', compute: (s) => ratio(s.paid_sales, s.customers, 1) },
+	{ key: 'ltv', label: 'LTV', formulaText: '受注高 ÷ 顧客数', compute: (s) => ratio(s.paid_sales, s.customers, 1) },
 	{ key: 'repeat_rate', label: 'リピート率', formulaText: 'リピート顧客数 ÷ 顧客数', compute: (s) => ratio(s.repeat_customers, s.customers) },
 	{ key: 'return_rate', label: '返品率', formulaText: 'キャンセル数 ÷ 全注文数', compute: (s) => ratio(s.cancelled_orders, s.all_orders) },
 	{ key: 'exit_rate', label: '離脱率', formulaText: 'LP離脱数 ÷ LPセッション数', compute: (s) => ratio(s.lp_exits, s.lp_sessions) },
@@ -167,7 +167,8 @@ export function latestAdjacentRecordedPair(values: readonly (number | null)[]): 
 	return previous === null || current === null ? null : { previous, current };
 }
 
-const VALID_STORAGE_KEYS = new Set<string>([
+// 保存できる鍵（src: と kpi:）の全部。DB の CHECK を試す試験もこの集合を使う。
+export const VALID_STORAGE_KEYS: ReadonlySet<string> = new Set<string>([
 	...SOURCE_METRIC_KEYS.map(sourceStorageKey),
 	...MONTHLY_KPI_FORMULAS.map((formula) => kpiOverrideStorageKey(formula.key)),
 ]);

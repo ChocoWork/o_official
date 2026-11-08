@@ -10,7 +10,7 @@ const viewports = [
 
 // FREQ-261 で実データ接続済みの指標を先に並べる順序に変更
 const KPI_LABELS = [
-  '売上',
+  '受注高',
   'CVR',
   '客単価（AOV）',
   '在庫消化率',
@@ -172,7 +172,7 @@ for (const viewport of viewports) {
       await openTrendTab(page);
 
       const reachRow = trendTableBody(page).locator('tr').filter({ hasText: 'リーチ数' });
-      const salesRow = trendTableBody(page).locator('tr').filter({ hasText: '売上' });
+      const salesRow = trendTableBody(page).locator('tr').filter({ hasText: '受注高' });
 
       await expect(reachRow.getByText('参考', { exact: true })).toBeVisible();
       await expect(salesRow.getByText('参考', { exact: true })).toHaveCount(0);

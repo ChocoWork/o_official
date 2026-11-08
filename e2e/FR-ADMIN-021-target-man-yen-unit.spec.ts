@@ -91,7 +91,7 @@ async function mockAdminApis(page: Page, salesTarget: string): Promise<void> {
 async function openKpiWorkspace(page: Page) {
   await page.goto('/admin');
   await page.getByRole('heading', { name: 'KPIダッシュボード' }).waitFor();
-  await expect(page.getByRole('img', { name: '売上の推移グラフ' })).toBeVisible();
+  await expect(page.getByRole('img', { name: '受注高の推移グラフ' })).toBeVisible();
 }
 
 function salesCard(page: Page) {
@@ -99,7 +99,7 @@ function salesCard(page: Page) {
     .locator('[data-ui-panel]')
     .filter({ hasText: 'KPI一覧' })
     .first()
-    .getByRole('button', { name: /^売上：/ });
+    .getByRole('button', { name: /^受注高：/ });
 }
 
 for (const viewport of viewports) {

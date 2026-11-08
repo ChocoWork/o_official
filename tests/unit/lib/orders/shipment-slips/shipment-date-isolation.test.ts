@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-const roots = ['src/lib/kpi', 'src/lib/finance', 'src/lib/sales', 'src/app/api/admin/kpi', 'src/app/api/admin/accounting'];
+const roots = ['src/lib/kpi', 'src/lib/finance', 'src/app/api/admin/kpi', 'src/app/api/admin/accounting'];
 function sources(root: string): string[] {
   return fs.readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
     const file = path.join(root, entry.name);

@@ -1,3 +1,4 @@
+jest.mock('server-only', () => ({}), { virtual: true });
 jest.mock('next/server', () => ({
   NextResponse: {
     json: (body: unknown, init?: { status?: number }) => ({ status: init?.status ?? 200, body }),
@@ -13,14 +14,41 @@ type Row = Record<string, unknown>;
 // 窓口が読む表の中身。試験ごとに入れ替える
 let mockOrders: Row[] = [];
 let mockOrderItems: Row[] = [];
+let mockIntakeEvents: Row[] = [];
 const mockOrderItemsSelect = jest.fn();
+
+// 受注高は帳簿の支払いの出来事（会計の読み口）から数える
+const mockRpcAnswer = (name: string): unknown => {
+  switch (name) {
+    case 'list_accounting_periods':
+      return [];
+    case 'get_accounting_settings':
+      return { business_start_date: null, cutover_on: '2026-02-01', current_business_type: 'soleProprietor', sole_business_ended_on: null, version: '1', sole_end_changes: [] };
+    case 'list_order_intake_events':
+      return { events: mockIntakeEvents, next_after_date: null, next_after_key: null };
+    case 'get_order_backlog':
+      return { backlog_total: 0, order_count: 0 };
+    case 'get_intake_breakdown':
+      return { subtotal_before_discount: 0, discount: 0, shipping: 0, payment: 0, pre_shipment_cancel: 0, dispute_unshipped: 0, dispute_unshipped_restored: 0, intake: 0, order_count: 0, breakdown_ok: true };
+    case 'get_intake_reconciliation':
+      return { returns: 0 };
+    default:
+      throw new Error(`unexpected rpc ${name}`);
+  }
+};
 
 jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(async () => ({
     from: (table: string) => ({
       select: (columns: string) => {
         if (table === 'orders') {
-          return { not: () => ({ order: async () => ({ data: mockOrders, error: null }) }) };
+          return {
+            not: () => ({ order: async () => ({ data: mockOrders, error: null }) }),
+            in: async (_column: string, ids: string[]) => ({
+              data: mockOrders.filter((row) => ids.includes(row.id as string)).map((row) => ({ id: row.id, user_id: row.user_id, session_id: row.session_id })),
+              error: null,
+            }),
+          };
         }
         if (table === 'order_items') {
           mockOrderItemsSelect(columns);
@@ -33,6 +61,9 @@ jest.mock('@/lib/supabase/server', () => ({
         });
       },
     }),
+  })),
+  createServiceRoleClient: jest.fn(async () => ({
+    rpc: async (name: string) => ({ data: mockRpcAnswer(name), error: null }),
   })),
 }));
 
@@ -54,10 +85,12 @@ const MARCH_10 = '2026-03-10T03:00:00.000Z'; // 日本時間 3月10日 12時
 const MARCH_11 = '2026-03-11T03:00:00.000Z';
 
 function paidOrder(id: string, createdAt: string): Row {
-  return {
-    id, session_id: `session-${id}`, user_id: `user-${id}`, payment_intent_id: `pi_${id}`,
-    status: 'paid', total_amount: 12000, refunded_amount: 0, currency: 'jpy', created_at: createdAt,
-  };
+  return { id, session_id: `session-${id}`, user_id: `user-${id}`, status: 'paid', created_at: createdAt };
+}
+
+// 帳簿の支払いの出来事。3月10日（日本時間）に12,000円
+function paymentOf(orderId: string): Row {
+  return { order_id: orderId, event_date: '2026-03-10', kind: 'payment', amount: 12000, key: `${orderId}:1` };
 }
 
 function line(orderId: string, itemId: number, overrides: Row = {}): Row {
@@ -91,11 +124,13 @@ describe('GET /api/admin/kpi の交換の品の行（グループ E-3）', () =>
   beforeEach(() => {
     mockOrders = [];
     mockOrderItems = [];
+    mockIntakeEvents = [];
     mockOrderItemsSelect.mockClear();
   });
 
   it('1点の注文に交換の品の行が付いても、セット注文に数えない。2点の注文は今までどおりセット注文（T13-1）', async () => {
     mockOrders = [paidOrder('order-set', MARCH_10), paidOrder('order-exchanged', MARCH_11)];
+    mockIntakeEvents = [paymentOf('order-set'), paymentOf('order-exchanged')];
     mockOrderItems = [
       line('order-set', 10),
       line('order-set', 11),
@@ -112,6 +147,7 @@ describe('GET /api/admin/kpi の交換の品の行（グループ E-3）', () =>
 
   it('交換の品の行の商品は、販売実績の商品の数に入れない（T13-1）', async () => {
     mockOrders = [paidOrder('order-1', MARCH_10)];
+    mockIntakeEvents = [paymentOf('order-1')];
     // 段1の交換は同じ商品だけだが、交換の品の行は商品の数に入れない決まりを、別の商品の番号で確かめる
     mockOrderItems = [line('order-1', 10), exchangeLine('order-1', 12)];
 
@@ -120,8 +156,9 @@ describe('GET /api/admin/kpi の交換の品の行（グループ E-3）', () =>
     expect(march.soldItemCount).toBe(1);
   });
 
-  it('売上と有効注文数は、交換の品の行があっても変わらない（お金が動かない）', async () => {
+  it('受注高と有効注文数は、交換の品の行があっても変わらない（お金が動かない）', async () => {
     mockOrders = [paidOrder('order-1', MARCH_10)];
+    mockIntakeEvents = [paymentOf('order-1')];
     mockOrderItems = [line('order-1', 10), exchangeLine('order-1', 10)];
 
     const march = await getMarch2026();
