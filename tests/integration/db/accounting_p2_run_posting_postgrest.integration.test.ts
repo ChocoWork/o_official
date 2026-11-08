@@ -77,6 +77,12 @@ describeLocalDb('S11 posting entry point over PostgREST: controller only, commit
     ['get_intake_reconciliation', { _from: '2026-01-01', _to: '2026-01-31' }],
     ['list_deferred_revenue', { _as_of: '2026-01-31', _limit: 5, _after_order: null }],
     ['list_deferred_revenue_anomalies', {}],
+    // Task 9: the year-end shipment list, the check mark, the shipping options and the carrier receipt-date check.
+    ['list_year_end_shipments', { _from: '2026-12-25', _to: '2027-01-10', _limit: 10, _after_date: null, _after_slip: null }],
+    ['admin_check_year_end_shipment', { _actor_id: randomUUID(), _slip_id: randomUUID(), _note: null, _request_key: randomUUID() }],
+    ['get_shipping_options', {}],
+    ['admin_set_shipping_options', { _actor_id: randomUUID(), _carrier_date_check_enabled: true, _expected_version: 1, _request_key: randomUUID() }],
+    ['list_carrier_date_gaps', { _from: '2026-12-25', _to: '2027-01-10', _limit: 10 }],
   ];
 
   test('FREQ-562-AC-05: 入口は service_role で呼べて、件数の7つの鍵を返す', async () => {
@@ -126,6 +132,26 @@ describeLocalDb('S11 posting entry point over PostgREST: controller only, commit
     expect(await keysOf('list_deferred_revenue_anomalies', {})).toEqual(['anomalies']);
     const refused = await service.rpc('get_intake_breakdown', { _from: '2026-02-01', _to: '2026-01-01' });
     expect(refused.error).toMatchObject({ code: '22023', message: 'ACCOUNTING_ARGUMENT_INVALID' });
+  });
+
+  test('FREQ-574-AC-01: 年末の一覧・設定・受付の日とのずれの3つの読み口は service_role で呼べて、決めた鍵を返し、書き口は権限の無い人を断る', async () => {
+    const args = (name: string) => publicEntries.find(([entry]) => entry === name)?.[1] ?? {};
+    const list = await service.rpc('list_year_end_shipments', args('list_year_end_shipments'));
+    expect(list.error).toBeNull();
+    expect(Object.keys(list.data as Record<string, unknown>).sort()).toEqual(['next_after_date', 'next_after_slip', 'slips']);
+    const options = await service.rpc('get_shipping_options');
+    expect(options.error).toBeNull();
+    expect(Object.keys(options.data as Record<string, unknown>).sort()).toEqual(['carrier_date_check_enabled', 'changed_at', 'changed_by', 'version']);
+    const gaps = await service.rpc('list_carrier_date_gaps', args('list_carrier_date_gaps'));
+    expect(gaps.error).toBeNull();
+    expect(Object.keys(gaps.data as Record<string, unknown>).sort()).toEqual(['enabled', 'slips']);
+    const tooLong = await service.rpc('list_year_end_shipments', { ...args('list_year_end_shipments'), _to: '2027-03-10' });
+    expect(tooLong.error).toMatchObject({ code: '22023', message: 'ACCOUNTING_ARGUMENT_INVALID' });
+    // The writers answer a person with no permission (a random id) with 42501; nothing is written.
+    const check = await service.rpc('admin_check_year_end_shipment', args('admin_check_year_end_shipment'));
+    expect(check.error).toMatchObject({ code: '42501', message: 'ACCOUNTING_FORBIDDEN' });
+    const set = await service.rpc('admin_set_shipping_options', args('admin_set_shipping_options'));
+    expect(set.error).toMatchObject({ code: '42501', message: 'ACCOUNTING_FORBIDDEN' });
   });
 
   test('FREQ-568-AC-05: 書き口は service_role で呼べるが、権限の無い人は ACCOUNTING_FORBIDDEN（42501）で断られる', async () => {

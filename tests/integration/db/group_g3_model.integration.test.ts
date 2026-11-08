@@ -174,7 +174,7 @@ describeLocalDb('integration: G-3 発送票のモデル', (db) => {
       await rejected(db(), () => db().query(`truncate ${table}`), HISTORY, '55000');
     }
     await rejected(db(), () => db().query('delete from public.shipment_slips where id=$1', [g.slip]), HISTORY, '55000');
-    await rejected(db(), () => db().query(`truncate ${TABLES.join(",")}, public.accounting_g_slip_facts`), HISTORY, '55000');
+    await rejected(db(), () => db().query(`truncate ${TABLES.join(",")}, public.accounting_g_slip_facts, public.accounting_shipment_checks`), HISTORY, '55000');
   });
 
   type Mark = 'draft' | 'discard' | 'confirm' | 'tracking' | 'deliver' | 'date' | 'cancel';

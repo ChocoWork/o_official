@@ -601,6 +601,29 @@ export async function pinAccountingS13Baseline(client: PgClient): Promise<void> 
 			'periods', (select count(*) from public.accounting_periods))`);
 }
 
+/** 計画2 S14（出荷の年末の照合と運送会社の受付日の照合。表 `accounting_shipment_checks`・`accounting_shipping_options` と読み口）の移行の本文。無ければ空で、原文の確かめが目に見えて落ちる。 */
+const s14Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p2_year_end_shipments.sql'));
+export const ACCOUNTING_S14_SQL = s14Files.length === 1 ? fs.readFileSync(path.join(directory, s14Files[0]), 'utf8') : '';
+export const ACCOUNTING_S14_FILES = s14Files;
+
+/** S14 の `-- ACC_S14_<name>_BEGIN` と `-- ACC_S14_<name>_END` の間。 */
+export function accountingS14Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S14_SQL.split(`-- ACC_S14_${name}_BEGIN\n`)[1]?.split(`-- ACC_S14_${name}_END`)[0] ?? '';
+}
+
+/**
+ * 手を入れる前の今の状態を S14 の比べる元として控える（適用の時は仕訳も計上待ちも期間も増えない。確かめた印の表は空で、設定の表は既定の1行）。
+ * そのあとで末尾 assert を流す。比べるのは、仕訳の見出し・行・計上待ちの行・会計の期間の行数。
+ */
+export async function pinAccountingS14Baseline(client: PgClient): Promise<void> {
+	await client.query(`create temp table accounting_s14_baseline(payload jsonb) on commit drop;
+		insert into pg_temp.accounting_s14_baseline(payload) select jsonb_build_object(
+			'entries', (select count(*) from public.accounting_journal_entries),
+			'lines', (select count(*) from public.accounting_journal_lines),
+			'pending_events', (select count(*) from public.accounting_pending_events),
+			'periods', (select count(*) from public.accounting_periods))`);
+}
+
 export type ManualLine = { account: string; debit?: number; credit?: number; orderId?: string | null; memo?: string | null; subAccount?: string | null };
 
 /**

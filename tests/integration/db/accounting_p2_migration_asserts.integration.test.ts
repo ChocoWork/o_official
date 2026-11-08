@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describeLocalDb } from './helpers/local-db';
+import { seedGroupG3Slip } from './helpers/group-g3-fixtures';
 import {
   ACCOUNTING_S6_FILES, ACCOUNTING_S6_SQL as sql, accountingS6Section, pinAccountingS6Baseline,
   ACCOUNTING_S7_FILES, ACCOUNTING_S7_SQL as sqlS7, accountingS7Section, pinAccountingS7Baseline,
@@ -11,6 +12,7 @@ import {
   ACCOUNTING_S11_FILES, ACCOUNTING_S11_SQL as sqlS11, accountingS11Section, pinAccountingS11Baseline,
   ACCOUNTING_S12_FILES, ACCOUNTING_S12_SQL as sqlS12, accountingS12Section, pinAccountingS12Baseline,
   ACCOUNTING_S13_FILES, ACCOUNTING_S13_SQL as sqlS13, accountingS13Section, pinAccountingS13Baseline,
+  ACCOUNTING_S14_FILES, ACCOUNTING_S14_SQL as sqlS14, accountingS14Section, pinAccountingS14Baseline,
 } from './helpers/accounting-orders-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
 import { MONTHLY_KPI_FORMULAS, SOURCE_METRIC_KEYS, isValidStorageKey, kpiOverrideStorageKey, sourceStorageKey } from '@/lib/kpi/monthly-metrics';
@@ -1753,6 +1755,242 @@ describeLocalDb('S13 final assert: controller only', (db) => {
     ["update pg_temp.accounting_s13_baseline set payload = payload - 'periods'", 'acc_s13_existing_dml_allowlist'],
     ["update pg_temp.accounting_s13_baseline set payload = jsonb_set(payload, '{lines}', '5')", 'acc_s13_existing_dml_allowlist'],
   ] as Array<[string, string]>)('FREQ-573-AC-01: S13改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// ---- S14 (Task 9): the year-end shipment check and the carrier receipt-date check (6-d, 6-d2) -------------------------------------
+const assertionS14 = accountingS14Section('FINAL_ASSERT');
+const bodyS14 = accountingS14Section('BODY');
+const detailsS14 = ['acc_s14_tables', 'acc_s14_constraints', 'acc_s14_immutable', 'acc_s14_rls_acl', 'acc_s14_function_attrs', 'acc_s14_existing_dml_allowlist'];
+const statementsS14 = bodyS14.replace(/\$\$[\s\S]*?\$\$/g, '$$$$').split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n');
+const functionBodyS14 = (name: string) => bodyS14.split(`CREATE FUNCTION ${name}(`)[1]?.split('\n$$;')[0] ?? '';
+const checksTable = 'public.accounting_shipment_checks';
+const optionsTable = 'public.accounting_shipping_options';
+const listYePrivate = 'private.list_year_end_shipments(date,date,integer,date,uuid)';
+const listYePublic = 'public.list_year_end_shipments(date,date,integer,date,uuid)';
+const checkPrivate = 'private.admin_check_year_end_shipment(uuid,uuid,text,uuid)';
+const checkPublic = 'public.admin_check_year_end_shipment(uuid,uuid,text,uuid)';
+const getOptionsPrivate = 'private.get_shipping_options()';
+const getOptionsPublic = 'public.get_shipping_options()';
+const setOptionsPrivate = 'private.admin_set_shipping_options(uuid,boolean,bigint,uuid)';
+const setOptionsPublic = 'public.admin_set_shipping_options(uuid,boolean,bigint,uuid)';
+const gapsPrivate = 'private.list_carrier_date_gaps(date,date,integer)';
+const gapsPublic = 'public.list_carrier_date_gaps(date,date,integer)';
+
+describe('S14 source contract (no DB)', () => {
+  test('FREQ-574-AC-01: S14はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S14_FILES).toEqual(['20261108230000_accounting_p2_year_end_shipments.sql']);
+    expect(ACCOUNTING_S14_FILES[0] > ACCOUNTING_S13_FILES[0]).toBe(true);
+    expect(sqlS14).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(sqlS14.startsWith('BEGIN;\n')).toBe(true);
+    expect(sqlS14.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(sqlS14.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(sqlS14.trimEnd()).toMatch(/-- ACC_S14_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect(assertionS14).not.toBe('');
+    expect([...new Set([...assertionS14.matchAll(/'(acc_s14_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...detailsS14].sort());
+    expect(assertionS14).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(assertionS14.replace(/''55000''/g, '')).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(sqlS14).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+  });
+
+  test('FREQ-574-AC-03: 実行時のDMLは、比べる元の控えと設定の表の既定の1行のINSERTだけ（Gの表は読むだけ）', () => {
+    expect([...statementsS14.matchAll(/^\s*(INSERT INTO|UPDATE|DELETE FROM|TRUNCATE(?: TABLE)?)\s+([\w.]+)/gm)].map((m) => `${m[1]} ${m[2]}`))
+      .toEqual(['INSERT INTO pg_temp.accounting_s14_baseline', `INSERT INTO ${optionsTable}`]);
+    expect(statementsS14).toMatch(/INSERT INTO public\.accounting_shipping_options \(id\) VALUES \(1\);/);
+    expect(statementsS14).not.toMatch(/IF NOT EXISTS|CREATE OR REPLACE|DROP /);
+    // The two new tables are the only tables made or altered; nothing of group G, H, returns or refunds is changed.
+    expect([...statementsS14.matchAll(/CREATE TABLE ([\w.]+)/g)].map((m) => m[1])).toEqual([checksTable, optionsTable]);
+    expect([...statementsS14.matchAll(/ALTER TABLE ([\w.]+)/g)].map((m) => m[1]).filter((name) => ![checksTable, optionsTable].includes(name))).toEqual([]);
+    expect(statementsS14).not.toMatch(/(?:CREATE OR REPLACE FUNCTION|ALTER FUNCTION)\s+\S*(?:admin_confirm_shipment_slip|admin_cancel_shipment_slip|admin_correct_shipment_date)/);
+    expect([...statementsS14.matchAll(/CREATE TRIGGER \w+ [^;]*? ON ([\w.]+)/g)].map((m) => m[1]).filter((name) => ![checksTable, optionsTable].includes(name))).toEqual([]);
+    expect(statementsS14).not.toMatch(/\bFOR (SHARE|NO KEY UPDATE|KEY SHARE)\b/);
+  });
+
+  test('FREQ-574-AC-02: 権限は service_role の SELECT だけで、anon・authenticated・PUBLIC には渡さない。関数は service_role だけ', () => {
+    const grants = [...statementsS14.matchAll(/GRANT[^;]*;/g)].map((m) => m[0].replace(/\s+/g, ' '));
+    expect(grants.filter((g) => /ON TABLE/.test(g))).toEqual([`GRANT SELECT ON TABLE ${checksTable}, ${optionsTable} TO service_role;`]);
+    expect(grants.some((g) => /\b(anon|authenticated|PUBLIC)\b/.test(g))).toBe(false);
+    const grant = bodyS14.split('GRANT EXECUTE ON FUNCTION')[1]?.split(';')[0] ?? '';
+    expect([...grant.matchAll(/(?:private|public)\.[a-z_]+\(/g)].map((m) => m[0]).sort()).toEqual(
+      [listYePrivate, listYePublic, checkPrivate, checkPublic, getOptionsPrivate, getOptionsPublic, setOptionsPrivate, setOptionsPublic, gapsPrivate, gapsPublic]
+        .map((signature) => signature.replace(/\(.*/, '(')).sort());
+    for (const table of [checksTable, optionsTable]) expect(bodyS14).toContain(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+    expect(statementsS14).not.toMatch(/CREATE POLICY/);
+  });
+
+  test('FREQ-574-AC-02: 書く関数は最初に権限の確認、確かめた印は ON CONFLICT DO NOTHING で1枚1つ、設定は行を FOR UPDATE で握って版を確かめる', () => {
+    const check = functionBodyS14('private.admin_check_year_end_shipment');
+    expect(check).toContain("private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.finance.manage'])");
+    expect(check.indexOf('group_g_actor_has_permissions')).toBeLessThan(check.indexOf('INSERT INTO'));
+    expect(check.indexOf('group_g_actor_has_permissions')).toBeLessThan(check.indexOf("'ACCOUNTING_ARGUMENT_INVALID'"));
+    expect(check).toContain('ON CONFLICT DO NOTHING');
+    expect(check).toContain('ACCOUNTING_REQUEST_KEY_CONFLICT');
+    expect(check).toContain('private.accounting_request_hash(');
+    expect(check).not.toContain('accounting_lock_all');
+    const set = functionBodyS14('private.admin_set_shipping_options');
+    expect(set).toContain("private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.accounting.settings.manage'])");
+    expect(set.indexOf('group_g_actor_has_permissions')).toBeLessThan(set.indexOf('FOR UPDATE'));
+    expect(set.indexOf('FOR UPDATE')).toBeLessThan(set.indexOf('ACCOUNTING_VERSION_CONFLICT'));
+    expect(set).toContain('version = v_row.version + 1');
+    expect(set).toContain('changed_at = pg_catalog.now()');
+    for (const name of ['list_year_end_shipments', 'get_shipping_options', 'list_carrier_date_gaps']) {
+      const text = functionBodyS14(`private.${name}`);
+      expect([name, text === '']).toEqual([name, false]);
+      expect([name, /\b(INSERT|UPDATE|DELETE|TRUNCATE|PERFORM|EXECUTE|FOR (SHARE|UPDATE|NO KEY UPDATE|KEY SHARE))\b/i.test(text)]).toEqual([name, false]);
+    }
+  });
+
+  test('FREQ-574-AC-01: 一覧は確定と取り消し済みだけを日・票番号の順に、範囲は最長60日・上限200件。お客様の名前・メール・住所の列は読まない', () => {
+    const fn = functionBodyS14('private.list_year_end_shipments');
+    expect(fn).toContain('(_to - _from) > 59');
+    expect(fn).toContain('_limit > 200');
+    expect(fn).toContain("s.stage IN ('confirmed', 'cancelled')");
+    expect(fn).toContain('ORDER BY s.shipment_date, s.number');
+    expect(fn).not.toMatch(/customer_|ship_to_|draft_lines/);
+    expect(bodyS14.replace(/--[^\n]*/g, '')).not.toMatch(/customer_email|ship_to_full_name|ship_to_address|ship_to_phone/);
+  });
+
+  test('FREQ-574-AC-04: 受付の日は追跡の in_transit の最初の時刻の日本時間の日で、今の追跡の版の出来事だけを数え、オフなら読まない', () => {
+    const fn = functionBodyS14('private.list_carrier_date_gaps');
+    expect(fn).toContain("e.status = 'in_transit'");
+    expect(fn).toContain("e.source = 'tracking'");
+    expect(fn).toContain('e.tracking_version = s.tracking_version');
+    expect(fn).toContain("AT TIME ZONE 'Asia/Tokyo'");
+    expect(fn).toContain('pg_catalog.min(e.happened_at)');
+    expect(fn).toContain("s.stage = 'confirmed'");
+    expect(fn.indexOf('carrier_date_check_enabled')).toBeLessThan(fn.indexOf('shipment_slip_fulfillments'));
+  });
+
+  test('FREQ-574-AC-01: S14に日本語の文字列は無い', () => {
+    expect(bodyS14.split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n')).not.toMatch(/U&'/);
+  });
+});
+
+describeLocalDb('S14 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  async function attempt(change = '', baseline: 'pin' | 'none' = 'pin'): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s14_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (baseline === 'pin') await pinAccountingS14Baseline(db());
+      if (change) await db().query(change);
+      await db().query(assertionS14);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s14_assert'); await db().query('release savepoint acc_s14_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
+  /** Re-create the function with a changed text (owner, ACL and attributes stay). */
+  const edit = (from: string, to: string, signature: string) => `do $x$ declare d text; begin
+    d := pg_get_functiondef('${signature}'::regprocedure);
+    if position(${quote(from)} in d) = 0 then raise exception 'TAMPER_TARGET_MISSING'; end if;
+    d := replace(d, ${quote(from)}, ${quote(to)});
+    execute d; end $x$`;
+
+  test('FREQ-574-AC-01: S14末尾assertは適用後の状態と呼出元search_pathを許す', async () => {
+    expect(assertionS14).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt("set local search_path = ''")).toBeNull();
+    await db().query('savepoint acc_s14_search_path');
+    await db().query('set local search_path = public, private, extensions, pg_catalog');
+    await pinAccountingS14Baseline(db());
+    await db().query(assertionS14);
+    expect((await db().query('show search_path')).rows[0].search_path).toBe('public, private, extensions, pg_catalog');
+    await db().query('rollback to savepoint acc_s14_search_path');
+  });
+
+  test('FREQ-574-AC-02: 確かめた印の行が1つでも入っていれば S14 末尾assertは断る', async () => {
+    await db().query('select pg_catalog.pg_advisory_xact_lock(190521, 1)');
+    const slipId = await seedGroupG3Slip(db(), { stage: 'confirmed', shipmentDate: '2097-12-26' });
+    expect(await attempt(`insert into ${checksTable}(slip_id, checked_by, request_key, request_hash) values ('${slipId}', gen_random_uuid(), gen_random_uuid(), 'h')`))
+      .toEqual(failed('acc_s14_existing_dml_allowlist'));
+  });
+
+  test('FREQ-574-AC-01: S14末尾assertは比べる元の控えが無いと断る', async () => {
+    expect(await attempt('', 'none')).toEqual(failed('acc_s14_existing_dml_allowlist'));
+  });
+
+  test.each([
+    // tables
+    [`alter table ${checksTable} add column acc_probe text`, 'acc_s14_tables'],
+    [`alter table ${checksTable} alter column checked_at drop default`, 'acc_s14_tables'],
+    [`alter table ${checksTable} alter column checked_by drop not null`, 'acc_s14_tables'],
+    [`alter table ${checksTable} rename column note to memo`, 'acc_s14_tables'],
+    [`alter table ${optionsTable} add column acc_probe text`, 'acc_s14_tables'],
+    [`alter table ${optionsTable} alter column carrier_date_check_enabled set default true`, 'acc_s14_tables'],
+    [`alter table ${optionsTable} alter column version type integer`, 'acc_s14_tables'],
+    [`alter table ${optionsTable} alter column admin_requests drop default`, 'acc_s14_tables'],
+    [`drop table ${optionsTable}`, 'acc_s14_tables'],
+    // constraints
+    [`alter table ${checksTable} drop constraint accounting_shipment_checks_pkey`, 'acc_s14_constraints'],
+    [`alter table ${checksTable} drop constraint accounting_shipment_checks_slip_id_fkey`, 'acc_s14_constraints'],
+    [`alter table ${checksTable} drop constraint accounting_shipment_checks_request_key_key`, 'acc_s14_constraints'],
+    [`alter table ${checksTable} drop constraint accounting_shipment_checks_note_check`, 'acc_s14_constraints'],
+    [`alter table ${checksTable} drop constraint accounting_shipment_checks_note_check, add constraint accounting_shipment_checks_note_check check (char_length(note) <= 500)`, 'acc_s14_constraints'],
+    [`alter table ${checksTable} add constraint acc_probe check (checked_by is not null)`, 'acc_s14_constraints'],
+    [`alter table ${optionsTable} drop constraint accounting_shipping_options_id_check`, 'acc_s14_constraints'],
+    [`alter table ${optionsTable} drop constraint accounting_shipping_options_admin_requests_check`, 'acc_s14_constraints'],
+    [`alter table ${optionsTable} drop constraint accounting_shipping_options_pkey`, 'acc_s14_constraints'],
+    [`alter table ${optionsTable} add constraint acc_probe check (version > 0)`, 'acc_s14_constraints'],
+    [`create index acc_probe on ${checksTable}(checked_at)`, 'acc_s14_constraints'],
+    // append only / one row that stays
+    [`alter table ${checksTable} disable trigger accounting_shipment_checks_no_update_delete`, 'acc_s14_immutable'],
+    [`drop trigger accounting_shipment_checks_no_truncate on ${checksTable}`, 'acc_s14_immutable'],
+    [`alter table ${checksTable} enable replica trigger accounting_shipment_checks_no_update_delete`, 'acc_s14_immutable'],
+    [`create trigger acc_probe before insert on ${checksTable} for each row execute function private.reject_accounting_mutation()`, 'acc_s14_immutable'],
+    [`drop trigger accounting_shipping_options_no_delete on ${optionsTable}`, 'acc_s14_immutable'],
+    [`alter table ${optionsTable} disable trigger accounting_shipping_options_no_truncate`, 'acc_s14_immutable'],
+    [`create trigger acc_probe before update on ${optionsTable} for each row execute function private.reject_accounting_mutation()`, 'acc_s14_immutable'],
+    // RLS and ACL
+    [`alter table ${checksTable} disable row level security`, 'acc_s14_rls_acl'],
+    [`alter table ${optionsTable} disable row level security`, 'acc_s14_rls_acl'],
+    [`create policy acc_probe on ${checksTable} for select to authenticated using (true)`, 'acc_s14_rls_acl'],
+    [`grant select on ${checksTable} to anon`, 'acc_s14_rls_acl'],
+    [`grant select on ${optionsTable} to authenticated`, 'acc_s14_rls_acl'],
+    [`grant select on ${optionsTable} to public`, 'acc_s14_rls_acl'],
+    [`grant insert on ${checksTable} to service_role`, 'acc_s14_rls_acl'],
+    [`grant update on ${optionsTable} to service_role`, 'acc_s14_rls_acl'],
+    [`grant select (note) on ${checksTable} to authenticated`, 'acc_s14_rls_acl'],
+    [`revoke select on ${optionsTable} from service_role`, 'acc_s14_rls_acl'],
+    // functions: ACL, attributes, text
+    [`grant execute on function ${listYePublic} to anon`, 'acc_s14_function_attrs'],
+    [`grant execute on function ${checkPublic} to authenticated`, 'acc_s14_function_attrs'],
+    [`grant execute on function ${getOptionsPublic} to public`, 'acc_s14_function_attrs'],
+    [`revoke execute on function ${setOptionsPublic} from service_role`, 'acc_s14_function_attrs'],
+    [`revoke execute on function ${gapsPrivate} from service_role`, 'acc_s14_function_attrs'],
+    [`alter function ${listYePublic} security definer`, 'acc_s14_function_attrs'],
+    [`alter function ${checkPrivate} security invoker`, 'acc_s14_function_attrs'],
+    [`alter function ${gapsPublic} volatile`, 'acc_s14_function_attrs'],
+    [`alter function ${gapsPrivate} volatile`, 'acc_s14_function_attrs'],
+    [`alter function ${setOptionsPrivate} stable`, 'acc_s14_function_attrs'],
+    [`alter function ${getOptionsPrivate} set search_path = public`, 'acc_s14_function_attrs'],
+    [`drop function ${getOptionsPublic}`, 'acc_s14_function_attrs'],
+    ['create function public.get_shipping_options(_extra integer) returns integer language sql as $$ select 1 $$', 'acc_s14_function_attrs'],
+    [edit("ARRAY['admin.finance.manage']", "ARRAY['admin.finance.read']", checkPrivate), 'acc_s14_function_attrs'],
+    [edit("ARRAY['admin.accounting.settings.manage']", "ARRAY['admin.accounting.entries.correct']", setOptionsPrivate), 'acc_s14_function_attrs'],
+    [edit('> 59', '> 99', listYePrivate), 'acc_s14_function_attrs'],
+    [edit('> 200', '> 400', listYePrivate), 'acc_s14_function_attrs'],
+    [edit("e.source = 'tracking'", "e.source <> 'manual'", gapsPrivate), 'acc_s14_function_attrs'],
+    [edit("e.status = 'in_transit'", "e.status = 'delivered'", gapsPrivate), 'acc_s14_function_attrs'],
+    [edit("USING ERRCODE = '42501'", "USING ERRCODE = '22023'", checkPrivate), 'acc_s14_function_attrs'],
+    [edit('ON CONFLICT DO NOTHING', 'ON CONFLICT (slip_id) DO UPDATE SET note = EXCLUDED.note', checkPrivate), 'acc_s14_function_attrs'],
+    // rows
+    [`update ${optionsTable} set carrier_date_check_enabled = true`, 'acc_s14_existing_dml_allowlist'],
+    [`update ${optionsTable} set version = 2`, 'acc_s14_existing_dml_allowlist'],
+    ["select private.accounting_park_event('payment_confirmed', 'stripe_balance_transactions', 'txn_tamper_s14', null, 'no_order', '{}')", 'acc_s14_existing_dml_allowlist'],
+    ['drop table pg_temp.accounting_s14_baseline', 'acc_s14_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s14_baseline set payload = payload - 'periods'", 'acc_s14_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s14_baseline set payload = jsonb_set(payload, '{lines}', '5')", 'acc_s14_existing_dml_allowlist'],
+  ] as Array<[string, string]>)('FREQ-574-AC-01: S14改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });
