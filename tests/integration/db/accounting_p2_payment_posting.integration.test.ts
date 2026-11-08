@@ -29,7 +29,7 @@ describeLocalDb('S7 payment posting: controller only', (db) => {
      from public.accounting_pending_events where source_table = 'stripe_balance_transactions' and source_id = $1`, [txId])).rows[0];
   const entriesOf = async (pi: string) => (await q(
     `select e.id, e.event_kind, e.dedupe_key, e.description, e.source_table, e.source_id, e.recorded_by, e.recorded_at,
-       to_char(e.entry_date, 'YYYY-MM-DD') as entry_date, e.period_id, e.entry_no, to_char(p.starts_on, 'YYYY-MM-DD') as period_starts_on
+       to_char(e.entry_date, 'YYYY-MM-DD') as entry_date, e.period_id, e.entry_no, e.is_late, e.source_recorded_at, to_char(p.starts_on, 'YYYY-MM-DD') as period_starts_on
      from public.accounting_journal_entries e join public.accounting_periods p on p.id = e.period_id
      where e.dedupe_key = $1`, ['payment_confirmed:' + pi])).rows;
   const linesOf = async (entryId: string) => (await q(
@@ -321,10 +321,83 @@ describeLocalDb('S7 payment posting: controller only', (db) => {
     const mismatched = [];
     for (let i = 0; i < 12; i += 1) mismatched.push(await paidPair({ createdAt: `2026-06-15T01:${String(i).padStart(2, '0')}:00Z`, amount: 1000 }));
     expect(await run(50)).toEqual({ posted: 0, parked_new: 12, reparked: 0, resolved: 0 });
+    // One test transaction has one now(): stagger the detection times as separate runs would have left them.
+    for (const [index, row] of mismatched.entries()) {
+      await q("update public.accounting_pending_events set last_detected_at = now() - make_interval(mins => $2) where source_id = $1",
+        [row.txId, 60 - index]);
+    }
     const fine = await paidPair({ createdAt: '2026-06-16T03:00:00Z' });
     // 12 are open: only 10 are reviewed in one call, the new event is still posted.
     expect(await run(50)).toEqual({ posted: 1, parked_new: 0, reparked: 10, resolved: 0 });
     expect(await entriesOf(fine.pi)).toHaveLength(1);
-    expect(mismatched).toHaveLength(12);
+    // The next call reviews the 10 oldest-detected again: the 2 left out last time come first, the 8 others fill up.
+    expect(await run(50)).toEqual({ posted: 0, parked_new: 0, reparked: 10, resolved: 0 });
+    for (const skipped of mismatched.slice(10)) expect((await pendingOf(skipped.txId))?.detection_count).toBe(2);
+    for (const reviewed of mismatched.slice(0, 10)) expect((await pendingOf(reviewed.txId))?.detection_count).toBeGreaterThanOrEqual(2);
+  });
+
+  test('FREQ-569-AC-06: 失敗の保留の道具は入力が壊れていても例外を出さず、固定の posting_error に落とすか何も保留しない', async () => {
+    const call = (kind: string, sqlstate: string | null, message: string, date: string | null, id: string) =>
+      q('select private.accounting_park_failure($1, \'stripe_balance_transactions\', $2, null, $3, $4, null, $5::date)', [kind, id, sqlstate, message, date]);
+    // A known core error keeps its fixed code; the text of an unknown one is dropped.
+    await call('payment_confirmed', '23514', 'ACCOUNTING_PERIOD_GAP', '2026-06-15', 'txn_helper_1');
+    await call('payment_confirmed', '23505', 'duplicate key value violates unique constraint "x"', null, 'txn_helper_2');
+    expect((await pendingOf('txn_helper_1'))?.detail).toEqual({ error_sqlstate: '23514', error_code: 'ACCOUNTING_PERIOD_GAP', entry_date: '2026-06-15' });
+    expect((await pendingOf('txn_helper_2'))?.detail).toEqual({ error_sqlstate: '23505', error_code: 'unexpected_error' });
+    await call('payment_confirmed', '55000', 'ACCOUNTING_PERIOD_MISSING', '2026-06-15', 'txn_helper_3');
+    expect(await pendingOf('txn_helper_3')).toMatchObject({ reason: 'period_missing', detail: { entry_date: '2026-06-15' } });
+    // A broken SQLSTATE falls back to the fixed row; an unknown event kind parks nothing; neither raises.
+    await call('payment_confirmed', 'not-a-state', 'boom', null, 'txn_helper_4');
+    expect((await pendingOf('txn_helper_4'))?.detail).toEqual({ error_sqlstate: 'XX000', error_code: 'unexpected_error' });
+    await call('not_a_kind', '22023', 'ACCOUNTING_ARGUMENT_INVALID', null, 'txn_helper_5');
+    expect(await pendingOf('txn_helper_5')).toBeUndefined();
+  });
+
+  test('FREQ-562-AC-01: 記録した時刻（Stripeの行を保存した時刻）が出来事の日から近ければ、止まっていて後で入っても遅れの印は付かない', async () => {
+    await setCutoverForTest(db(), '2026-01-01');
+    const admin = await insertAccountingAdmin(db());
+    const settings = (await q('select version::text as v from public.accounting_settings where id = 1')).rows[0];
+    await q("select public.admin_update_accounting_settings($1::uuid, null, 'corporation', $2::bigint, $3::uuid)", [admin, settings.v, randomUUID()]);
+    const order = await seedPaidOrder(db(), sole());
+    // Stored the day after the charge; it stays parked (no corporate period) and is posted months later (now).
+    const syncedAt = '2026-06-16T03:00:00Z';
+    await seedStripeCharge(db(), { paymentIntentId: order.paymentIntentId, amount: order.total, createdAt: '2026-06-15T03:00:00Z', syncedAt });
+    expect(await run()).toEqual({ posted: 0, parked_new: 1, reparked: 0, resolved: 0 });
+    await insertAccountingPeriod(db(), { businessType: 'corporation', startsOn: '2026-04-01', endsOn: '2027-03-31' });
+    expect(await run()).toEqual({ posted: 1, parked_new: 0, reparked: 0, resolved: 1 });
+    const [entry] = await entriesOf(order.paymentIntentId as string);
+    expect(entry.is_late).toBe(false);
+    expect(new Date(entry.source_recorded_at).toISOString()).toBe('2026-06-16T03:00:00.000Z');
+  });
+
+  test('FREQ-562-AC-01: Stripeの行を出来事の日から2か月を超えて保存した（遅れて届いた）支払いは遅れの印が付く', async () => {
+    await setCutoverForTest(db(), '2026-01-01');
+    const order = await seedPaidOrder(db(), sole());
+    await seedStripeCharge(db(), { paymentIntentId: order.paymentIntentId, amount: order.total, createdAt: '2026-06-15T03:00:00Z',
+      syncedAt: '2026-09-20T03:00:00Z' });
+    expect(await run()).toEqual({ posted: 1, parked_new: 0, reparked: 0, resolved: 0 });
+    const [entry] = await entriesOf(order.paymentIntentId as string);
+    expect(entry.is_late).toBe(true);
+    expect(new Date(entry.source_recorded_at).toISOString()).toBe('2026-09-20T03:00:00.000Z');
+  });
+
+  test('FREQ-562-AC-01: 保存した時刻が先の日付でも断られず、流した時刻に丸めて入る', async () => {
+    await setCutoverForTest(db(), '2026-01-01');
+    const order = await seedPaidOrder(db(), sole());
+    const tomorrow = new Date(Date.now() + 86400000).toISOString();
+    await seedStripeCharge(db(), { paymentIntentId: order.paymentIntentId, amount: order.total, createdAt: '2026-06-15T03:00:00Z', syncedAt: tomorrow });
+    expect(await run()).toEqual({ posted: 1, parked_new: 0, reparked: 0, resolved: 0 });
+    const [entry] = await entriesOf(order.paymentIntentId as string);
+    expect(new Date(entry.source_recorded_at).getTime()).toBeLessThanOrEqual(Date.now() + 1000);
+  });
+
+  test('FREQ-562-AC-05: 印に使えない文字の payment_intent は係全体を止めず posting_error になる', async () => {
+    await setCutoverForTest(db(), '2026-01-01');
+    const order = await seedPaidOrder(db(), { ...sole(), paymentIntentId: 'pi_bad:colon' });
+    const bad = await seedStripeCharge(db(), { paymentIntentId: 'pi_bad:colon', amount: order.total, createdAt: '2026-06-15T03:00:00Z' });
+    const fine = await paidPair({ createdAt: '2026-06-16T03:00:00Z' });
+    expect(await run()).toEqual({ posted: 1, parked_new: 1, reparked: 0, resolved: 0 });
+    expect(await pendingOf(bad)).toMatchObject({ reason: 'posting_error', detail: { error_code: 'ACCOUNTING_ARGUMENT_INVALID', error_sqlstate: '22023' } });
+    expect(await entriesOf(fine.pi)).toHaveLength(1);
   });
 });

@@ -144,21 +144,22 @@ export async function seedPaidOrder(client: PgClient, input: {
 
 /**
  * Stripe の残高の取引（支払い）の行を直接入れる。orderId を渡すと取引の側にも注文を結ぶ。fee は手数料（net = amount - fee）。
- * type / reportingCategory の初期値は charge。
+ * type / reportingCategory の初期値は charge。syncedAt は Stripe の行を保存した時刻（無ければ now()）。
  */
 export async function seedStripeCharge(client: PgClient, input: {
 	paymentIntentId: string | null; amount: number; createdAt: string; orderId?: string | null; fee?: number;
-	type?: string; reportingCategory?: string; id?: string;
+	type?: string; reportingCategory?: string; id?: string; syncedAt?: string;
 }): Promise<string> {
 	const id = input.id ?? `txn_${randomUUID().replaceAll('-', '')}`;
 	const fee = input.fee ?? 0;
 	await client.query(
 		`insert into public.stripe_balance_transactions
 			(id, source_id, payment_intent_id, order_id, type, reporting_category, amount, fee, net, currency, status,
-			 available_on, stripe_created_at, fee_details, raw_payload)
-		 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'jpy', 'available', $10::timestamptz, $10::timestamptz, '[]'::jsonb, '{}'::jsonb)`,
+			 available_on, stripe_created_at, fee_details, raw_payload, synced_at)
+		 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'jpy', 'available', $10::timestamptz, $10::timestamptz, '[]'::jsonb, '{}'::jsonb,
+			coalesce($11::timestamptz, now()))`,
 		[id, `ch_${randomUUID().replaceAll('-', '')}`, input.paymentIntentId, input.orderId ?? null, input.type ?? 'charge',
-			input.reportingCategory ?? 'charge', input.amount, fee, input.amount - fee, input.createdAt]);
+			input.reportingCategory ?? 'charge', input.amount, fee, input.amount - fee, input.createdAt, input.syncedAt ?? null]);
 	return id;
 }
 
@@ -174,7 +175,7 @@ export function accountingS7Section(name: 'BODY' | 'FINAL_ASSERT'): string {
 
 /**
  * 手を入れる前の今の状態を S7 の比べる元として控える（適用の時は仕訳も計上待ちも0件）。そのあとで末尾 assert を流す。
- * 比べるのは、仕訳の見出し・行・計上待ちの行数と、支払いの関数以外の accounting 関数の数。
+ * 比べるのは、仕訳の見出し・行・計上待ちの行・会計の期間の行数。
  */
 export async function pinAccountingS7Baseline(client: PgClient): Promise<void> {
 	await client.query(`create temp table accounting_s7_baseline(payload jsonb) on commit drop;

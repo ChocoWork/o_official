@@ -249,6 +249,7 @@ const bodyS7 = accountingS7Section('BODY');
 const detailsS7 = ['acc_s7_functions', 'acc_s7_function_attrs', 'acc_s7_existing_dml_allowlist'];
 const statementsS7 = bodyS7.replace(/\$\$[\s\S]*?\$\$/g, '$$$$').split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n');
 const signatureS7 = 'private.accounting_post_payment_events(integer)';
+const signatureFailureS7 = 'private.accounting_park_failure(text,text,text,uuid,text,text,text,date)';
 
 describe('S7 source contract (no DB)', () => {
   test('FREQ-562-AC-01: S7はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
@@ -283,9 +284,25 @@ describe('S7 source contract (no DB)', () => {
     expect(fn).not.toMatch(/paid_at/i);
     expect(fn.indexOf('EXCEPTION WHEN OTHERS')).toBeGreaterThan(fn.indexOf('private.accounting_period_for_event(v_date)'));
     expect(fn.indexOf('private.accounting_post_journal_core(')).toBeLessThan(fn.indexOf('EXCEPTION WHEN OTHERS'));
-    // The message of the exception is never stored: SQLERRM only feeds a fixed-code test.
+    // The mapping from the exception to the parked row is the shared helper; the text of the exception is only handed to it.
+    expect(fn).toContain('PERFORM private.accounting_park_failure(');
     expect(fn).not.toMatch(/PG_EXCEPTION_CONTEXT/);
     expect(fn).not.toMatch(/'(?:message|detail|context)'/);
+    expect(fn).toContain('_source_recorded_at => LEAST(v_tx.synced_at, pg_catalog.clock_timestamp())');
+    expect(fn).toContain("private.accounting_event_key('payment_confirmed', ARRAY[t.payment_intent_id])");
+    expect(fn).not.toContain("'payment_confirmed:' ||");
+  });
+
+  test('FREQ-569-AC-06: 失敗の保留の道具は例外を出す文を持たず、例外の文を保存せず、owner だけが呼べる', () => {
+    const fn = bodyS7.split('CREATE FUNCTION private.accounting_park_failure(')[1]?.split('\n$$;')[0] ?? '';
+    expect(fn).not.toBe('');
+    expect(fn).not.toMatch(/RAISE|SQLERRM|PG_EXCEPTION_CONTEXT|PG_EXCEPTION_DETAIL/);
+    expect(fn).toContain('EXCEPTION WHEN OTHERS');
+    // _message is compared twice and only handed on when it is a fixed code (declaration, one comparison, the regex test, the value).
+    expect(fn.match(/_message/g)).toHaveLength(4);
+    expect(bodyS7).toContain('REVOKE ALL ON FUNCTION private.accounting_park_failure(text,text,text,uuid,text,text,text,date) FROM PUBLIC, anon, authenticated, service_role;');
+    // The comment above it says it must not raise (an error there aborts the whole batch).
+    expect(bodyS7).toMatch(/MUST NOT RAISE[\s\S]*CREATE FUNCTION private\.accounting_park_failure/);
   });
 
   test('FREQ-562-AC-01: S7の説明の日本語は ACCOUNTING_LABELS の語の出力と同じ', () => {
@@ -314,8 +331,8 @@ describeLocalDb('S7 final assert: controller only', (db) => {
   const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
   const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
   /** Re-create the function with a changed text (owner, ACL and attributes stay). */
-  const edit = (from: string, to: string) => `do $x$ declare d text; begin
-    d := pg_get_functiondef('${signatureS7}'::regprocedure);
+  const edit = (from: string, to: string, signature = signatureS7) => `do $x$ declare d text; begin
+    d := pg_get_functiondef('${signature}'::regprocedure);
     if position(${quote(from)} in d) = 0 then raise exception 'TAMPER_TARGET_MISSING'; end if;
     d := replace(d, ${quote(from)}, ${quote(to)});
     execute d; end $x$`;
@@ -353,6 +370,16 @@ describeLocalDb('S7 final assert: controller only', (db) => {
     [edit('private.accounting_jst_date(v_tx.stripe_created_at)', '(SELECT o.paid_at::date FROM public.orders AS o WHERE o.id = v_order_id)'), 'acc_s7_functions'],
     [edit('FROM public.orders AS o WHERE o.id = v_tx.order_id;', 'FROM public.orders AS o WHERE o.id = v_tx.order_id FOR SHARE;'), 'acc_s7_functions'],
     [edit('EXCEPTION WHEN OTHERS THEN', 'EXCEPTION WHEN no_data_found THEN'), 'acc_s7_functions'],
+    [edit('_source_recorded_at => LEAST(v_tx.synced_at, pg_catalog.clock_timestamp())', '_source_recorded_at => NULL'), 'acc_s7_functions'],
+    [edit("PERFORM private.accounting_park_failure('payment_confirmed',", "PERFORM private.accounting_park_event('payment_confirmed',"), 'acc_s7_functions'],
+    [`drop function ${signatureFailureS7}`, 'acc_s7_functions'],
+    [edit('EXCEPTION WHEN OTHERS THEN', 'EXCEPTION WHEN no_data_found THEN', signatureFailureS7), 'acc_s7_functions'],
+    [edit('NULL;\n    END;', 'RAISE EXCEPTION \'X\';\n    END;', signatureFailureS7), 'acc_s7_functions'],
+    [edit("_message ~ '^(ACCOUNTING", "SQLERRM ~ '^(ACCOUNTING", signatureFailureS7), 'acc_s7_functions'],
+    [`grant execute on function ${signatureFailureS7} to service_role`, 'acc_s7_function_attrs'],
+    [`grant execute on function ${signatureFailureS7} to public`, 'acc_s7_function_attrs'],
+    [`alter function ${signatureFailureS7} security invoker`, 'acc_s7_function_attrs'],
+    [`alter function ${signatureFailureS7} set search_path = public`, 'acc_s7_function_attrs'],
     ['grant execute on function private.accounting_post_payment_events(integer) to service_role', 'acc_s7_function_attrs'],
     ['grant execute on function private.accounting_post_payment_events(integer) to anon', 'acc_s7_function_attrs'],
     ['grant execute on function private.accounting_post_payment_events(integer) to authenticated', 'acc_s7_function_attrs'],
