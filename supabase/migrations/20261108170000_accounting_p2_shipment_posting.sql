@@ -27,6 +27,11 @@ BEGIN;
 --     that one event (the entry, its units, the cancellation and the new entry of a date correction, and the numbers), is
 --     parked through private.accounting_park_failure (period_missing with the day, else posting_error with SQLSTATE and a
 --     fixed code), and the next event goes on.
+--   * A confirmed slip whose confirm number is above the number N of a card network dispute withdrawal (the group G facts taken up to the
+--     withdrawal time) on the same order, where that withdrawal (dispute_event:<dispute>:withdrawn:<transaction>) is not in the books
+--     yet, is parked as dispute_withdrawal_missing and goes in after the withdrawal (the withdrawal counted those units as not sent).
+--     The withdrawal never waits for such a slip, so they cannot wait for each other. If the withdrawal took the deferred revenue,
+--     the shipment parks as deferred_revenue_short until a won dispute gives it back.
 --   * Source times: the slip's confirmed_at for a confirmation, its cancelled_at for a cancellation, the date history row's
 --     created_at for a date correction, each LEAST(..., clock_timestamp()).
 -- private.accounting_shipment_plan(_slip_id, _confirm_seq) decides the units sent (private.accounting_shipped_units at the
@@ -419,6 +424,20 @@ BEGIN
         v_date := v_slip.shipment_date;
         v_order_id := private.accounting_shipment_single_order(v_slip.id);
         v_reason := private.accounting_shipment_date_reason(v_slip.id, v_date);
+        -- A slip confirmed after the withdrawal time of a card network dispute on the same order, whose withdrawal is not in the books
+        -- yet, waits for that withdrawal: the withdrawal counted these units as not sent, so it must take the deferred revenue first
+        -- (otherwise it could be left short for good). The withdrawal never waits for such a slip, so the two cannot wait for each
+        -- other. A key of a withdrawal entry is dispute_event:<dispute>:withdrawn:<balance transaction>.
+        IF v_reason IS NULL AND EXISTS (SELECT 1 FROM public.stripe_balance_transactions AS t
+          WHERE t.reporting_category = 'dispute' AND t.amount < 0
+            AND private.accounting_dispute_order(t.source_id)
+              IN (SELECT oi.order_id FROM public.shipment_slip_lines AS sl
+                JOIN public.order_items AS oi ON oi.id = sl.order_item_id WHERE sl.slip_id = v_slip.id)
+            AND private.accounting_g_fact_seq_at(t.stripe_created_at) < v_seq
+            AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS e
+              WHERE e.dedupe_key = 'dispute_event:' || t.source_id || ':withdrawn:' || t.id)) THEN
+          v_reason := 'dispute_withdrawal_missing';
+        END IF;
         IF v_reason IS NULL THEN
           v_period := private.accounting_period_for_event(v_date);
           v_plan := private.accounting_shipment_plan(v_slip.id, v_seq);
@@ -698,6 +717,9 @@ BEGIN
         OR pg_catalog.strpos(v_src, 'private.accounting_post_journal_core(NULL, v_period, v_date, ''shipment_redated'',') = 0
         OR pg_catalog.strpos(v_src, 'private.accounting_reverse_journal_core(NULL, v_entry.id,') = 0
         OR pg_catalog.strpos(v_src, 'private.accounting_shipment_plan(v_slip.id, v_seq)') = 0
+        OR pg_catalog.strpos(v_src, 'private.accounting_g_fact_seq_at(t.stripe_created_at) < v_seq') = 0
+        OR pg_catalog.strpos(v_src, '''dispute_event:'' || t.source_id || '':withdrawn:'' || t.id') = 0
+        OR pg_catalog.strpos(v_src, 'v_reason := ''dispute_withdrawal_missing'';') = 0
         OR pg_catalog.strpos(v_src, 'private.accounting_shipment_date_reason(v_slip.id, v_date)') = 0
         OR pg_catalog.strpos(v_src, 'private.accounting_period_for_event(v_date)') = 0
         OR pg_catalog.strpos(v_src, 'private.accounting_event_key(''shipment_confirmed'', ARRAY[s.number])') = 0

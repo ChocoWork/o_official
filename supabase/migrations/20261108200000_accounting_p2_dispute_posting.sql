@@ -43,8 +43,10 @@ BEGIN;
 --   (INVOKER, service_role only). _limit 1..200 (else ACCOUNTING_ARGUMENT_INVALID). It calls the payment, shipment, Stripe and
 --   dispute posters in that order, each of which takes its own locks, and returns {payments, shipments, stripe, disputes, parked,
 --   resolved, has_more}: the first four are the entries each poster created, parked = parked_new + reparked, and has_more is true
---   when posted + parked_new summed over the posters reaches _limit. A net-zero payout resolution of the Stripe poster is counted
---   only in resolved, so a batch made only of those leaves has_more false: they leave the candidates by themselves.
+--   when posted + parked_new summed over the posters reaches _limit. Counting rules the callers must know: a shipment or a dispute
+--   no_revenue (the row is parked and closed at once) is counted in parked_new, so also in parked, although it is resolved; a
+--   net-zero payout resolution of the Stripe poster (Task 4) is counted only in resolved, so a batch made only of those leaves
+--   has_more false: they leave the candidates by themselves.
 --
 -- Tables: accounting_dispute_account_settings (cause -> account; written by admin_set_dispute_account_setting) and
 --   accounting_dispute_assignments (append only; one row per assigned dispute). RLS on, no policy, service_role SELECT only.
@@ -71,7 +73,8 @@ BEGIN;
 --     private.accounting_post_dispute_events(integer), private.accounting_dispute_json(text),
 --     private.accounting_dispute_assigned_account(text), private.accounting_dispute_confirmed_account(text),
 --     private.accounting_dispute_split_reversal(text,text), private.accounting_dispute_split_withdrawn(uuid,bigint,bigint),
---     private.accounting_dispute_reversal_kind(text,timestamptz), private.accounting_dispute_withdrawn_totals(text),
+--     private.accounting_dispute_reversal_kind(text,timestamptz), private.accounting_dispute_withdrawn_all_posted(text),
+--     private.accounting_dispute_withdrawn_totals(text),
 --     private.accounting_dispute_balance(text,text,text), private.accounting_dispute_order(text),
 --     private.accounting_dispute_confirmed_done(text), private.accounting_dispute_settled(text),
 --     private.accounting_dispute_lost_at(text), private.accounting_dispute_key(text,text,text), private.accounting_dispute_cause(text);
@@ -220,6 +223,18 @@ AS $$
   JOIN public.accounting_journal_lines AS l ON l.entry_id = e.id
   WHERE pg_catalog.starts_with(e.dedupe_key, 'dispute_event:' || _dispute_id || ':withdrawn:')
     AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS r WHERE r.reverses_entry_id = e.id)
+$$;
+
+-- Every withdrawal transaction of the dispute is in the books (and there is at least one). C and R wait for this, so they never take a
+-- partial S while a second withdrawal is parked.
+CREATE FUNCTION private.accounting_dispute_withdrawn_all_posted(_dispute_id text) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT EXISTS (SELECT 1 FROM private.accounting_dispute_withdrawn_totals(_dispute_id) AS w WHERE w.entries > 0)
+    AND NOT EXISTS (SELECT 1 FROM public.stripe_balance_transactions AS t
+      WHERE t.source_id = _dispute_id AND t.reporting_category = 'dispute' AND t.amount < 0
+        AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS e
+          WHERE e.dedupe_key = private.accounting_dispute_key(_dispute_id, 'withdrawn', t.id)))
 $$;
 
 -- R or L of a reversal (NULL: the dispute is not settled yet). Decided by Stripe's time only; once C is done every reversal that
@@ -498,7 +513,8 @@ BEGIN
                 WHERE e.dedupe_key = private.accounting_event_key('shipment_confirmed', ARRAY[s.number]))
               AND NOT EXISTS (SELECT 1 FROM public.accounting_pending_events AS p
                 WHERE p.event_kind = 'shipment_confirmed' AND p.source_table = 'shipment_slips' AND p.source_id = s.id::text
-                  AND p.resolved_at IS NOT NULL AND p.resolved_entry_id IS NULL AND p.reason IN ('no_revenue', 'before_cutover'))) THEN
+                  AND ((p.reason = 'no_revenue' AND p.resolved_at IS NOT NULL AND p.resolved_entry_id IS NULL)
+                    OR p.reason = 'before_cutover'))) THEN
             v_reason := 'dispute_shipment_pending';
           END IF;
         END IF;
@@ -572,7 +588,7 @@ BEGIN
             v_reason := 'no_order';
           END IF;
         END IF;
-        IF v_reason IS NULL AND (SELECT w.entries FROM private.accounting_dispute_withdrawn_totals(v_dispute_id) AS w) = 0 THEN
+        IF v_reason IS NULL AND NOT private.accounting_dispute_withdrawn_all_posted(v_dispute_id) THEN
           v_reason := 'dispute_withdrawal_missing';
         END IF;
         IF v_reason IS NULL THEN
@@ -667,7 +683,7 @@ BEGIN
         END IF;
         v_date := private.accounting_jst_date(v_lost);
         v_order_id := private.accounting_dispute_order(v_dispute_id);
-        IF (SELECT w.entries FROM private.accounting_dispute_withdrawn_totals(v_dispute_id) AS w) = 0 THEN
+        IF NOT private.accounting_dispute_withdrawn_all_posted(v_dispute_id) THEN
           v_reason := 'dispute_withdrawal_missing';
         ELSIF EXISTS (SELECT 1 FROM public.stripe_balance_transactions AS t
           WHERE t.source_id = v_dispute_id AND t.reporting_category = 'dispute_reversal' AND t.amount > 0
@@ -1058,6 +1074,7 @@ ALTER FUNCTION private.accounting_dispute_confirmed_done(text) OWNER TO postgres
 ALTER FUNCTION private.accounting_dispute_order(text) OWNER TO postgres;
 ALTER FUNCTION private.accounting_dispute_balance(text,text,text) OWNER TO postgres;
 ALTER FUNCTION private.accounting_dispute_withdrawn_totals(text) OWNER TO postgres;
+ALTER FUNCTION private.accounting_dispute_withdrawn_all_posted(text) OWNER TO postgres;
 ALTER FUNCTION private.accounting_dispute_reversal_kind(text,timestamptz) OWNER TO postgres;
 ALTER FUNCTION private.accounting_dispute_split_withdrawn(uuid,bigint,bigint) OWNER TO postgres;
 ALTER FUNCTION private.accounting_dispute_split_reversal(text,text) OWNER TO postgres;
@@ -1083,7 +1100,7 @@ REVOKE ALL ON FUNCTION
   private.accounting_dispute_cause(text), private.accounting_dispute_key(text,text,text), private.accounting_dispute_lost_at(text),
   private.accounting_dispute_settled(text), private.accounting_dispute_confirmed_done(text), private.accounting_dispute_order(text),
   private.accounting_dispute_balance(text,text,text), private.accounting_dispute_withdrawn_totals(text),
-  private.accounting_dispute_reversal_kind(text,timestamptz), private.accounting_dispute_split_withdrawn(uuid,bigint,bigint),
+  private.accounting_dispute_withdrawn_all_posted(text), private.accounting_dispute_reversal_kind(text,timestamptz), private.accounting_dispute_split_withdrawn(uuid,bigint,bigint),
   private.accounting_dispute_split_reversal(text,text), private.accounting_dispute_confirmed_account(text),
   private.accounting_dispute_assigned_account(text), private.accounting_post_dispute_events(integer),
   private.admin_set_dispute_account_setting(uuid,text,text,bigint,uuid), private.admin_assign_dispute_confirmed(uuid,text,uuid),
@@ -1200,9 +1217,9 @@ BEGIN
         'PERFORM private.accounting_lock_all(NULL);', '''dispute_event''', '''1160''', '''2150''', '''1470''', '''dispute_pending''',
         '''dispute_confirmed_unassigned''', 'private.accounting_jst_date(v_bt.stripe_created_at)', 'private.accounting_jst_date(v_lost)',
         'private.accounting_period_for_event(v_date)', 'private.accounting_g_fact_seq_at(v_bt.stripe_created_at)',
-        'private.accounting_dispute_split_withdrawn(', 'private.accounting_dispute_split_reversal(',
+        'private.accounting_dispute_split_withdrawn(', 'private.accounting_dispute_split_reversal(', 'private.accounting_dispute_withdrawn_all_posted(',
         'private.accounting_dispute_reversal_kind(', 'private.accounting_dispute_lost_at(', 'private.accounting_dispute_balance(',
-        'dispute_shipment_pending', 'dispute_withdrawal_missing', 'dispute_account_unassigned', 'dispute_refund_overlap',
+        'dispute_shipment_pending', 'p.reason = ''before_cutover''', 'dispute_withdrawal_missing', 'dispute_account_unassigned', 'dispute_refund_overlap',
         'dispute_return_refund_pending', 'no_revenue', 'lost_on', 'dispute_reversal_kind:', 'dispute_lost_at:', 'dispute_reason:',
         'private.accounting_park_failure(''dispute_event'',', 'IF v_parked THEN', 'EXCEPTION WHEN OTHERS',
         '_source_recorded_at => LEAST(v_bt.synced_at, pg_catalog.clock_timestamp())',
@@ -1264,6 +1281,7 @@ BEGIN
       ('private.accounting_dispute_order(text)', 'uuid', false, '_dispute_id', 0, 's', 'sql', false),
       ('private.accounting_dispute_balance(text,text,text)', 'bigint', false, '_dispute_id,_account_code,_sub_account', 0, 's', 'sql', false),
       ('private.accounting_dispute_withdrawn_totals(text)', 'record', true, '_dispute_id', 0, 's', 'sql', false),
+      ('private.accounting_dispute_withdrawn_all_posted(text)', 'boolean', false, '_dispute_id', 0, 's', 'sql', false),
       ('private.accounting_dispute_reversal_kind(text,timestamptz)', 'text', false, '_dispute_id,_created_at', 0, 's', 'plpgsql', false),
       ('private.accounting_dispute_split_withdrawn(uuid,bigint,bigint)', 'record', true, '_order_id,_amount,_as_of_seq', 0, 's', 'plpgsql', false),
       ('private.accounting_dispute_split_reversal(text,text)', 'record', true, '_dispute_id,_txn_id', 0, 's', 'plpgsql', false),

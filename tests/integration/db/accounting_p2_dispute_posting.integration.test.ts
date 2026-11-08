@@ -4,7 +4,7 @@ import { ACCOUNTING_LABELS } from '@/lib/accounting/labels';
 import { describeLocalDb } from './helpers/local-db';
 import { accountingFailure, insertAccountingAdmin, insertAccountingPeriod } from './helpers/accounting-fixtures';
 import {
-  addDisputeHistory, recordAllocationAt, recordSlipFactAt, seedConfirmedSlip, seedDispute, seedDisputeReversal, seedPaidOrder,
+  addDisputeHistory, cancelSlip, recordAllocationAt, recordSlipFactAt, seedConfirmedSlip, seedDispute, seedDisputeReversal, seedPaidOrder,
   seedPostedPayment, seedStripeFee, setAsideExistingSlips, setCutoverForTest,
 } from './helpers/accounting-orders-fixtures';
 import { seedGroupG3Slip } from './helpers/group-g3-fixtures';
@@ -74,11 +74,12 @@ describeLocalDb('S11 dispute posting: controller only', (db) => {
   async function seedOrder(input: { shipped?: number; units?: number; price?: number } = {}) {
     const units = input.units ?? 8;
     const order = await seedPostedPayment(db(), { lines: [{ price: input.price ?? 3750, quantity: units }], createdAt: '2026-06-10T03:00:00Z' });
+    let slip: Awaited<ReturnType<typeof confirmSlipAt>> | null = null;
     if ((input.shipped ?? 0) > 0) {
-      await confirmSlipAt(order, input.shipped as number, '2026-06-15', '2026-06-15T01:00:00Z');
+      slip = await confirmSlipAt(order, input.shipped as number, '2026-06-15', '2026-06-15T01:00:00Z');
       await postShipments();
     }
-    return order;
+    return { ...order, slip };
   }
   async function confirmSlipAt(order: { orderId: string; orderItemIds: string[] }, quantity: number, shipmentDate: string, lockedAt: string, orderItemId?: string) {
     const slip = await seedConfirmedSlip(db(), {
@@ -179,7 +180,9 @@ describeLocalDb('S11 dispute posting: controller only', (db) => {
       if (!shipmentFirst) await runDisputes();
       await confirmSlipAt(order, 5, '2026-06-21', '2026-06-21T01:00:00Z');
       if (shipmentFirst) {
-        expect(await runAll()).toMatchObject({ shipments: 1, disputes: 1 });
+        // The slip was confirmed after the withdrawal time: its shipment waits for the withdrawal and goes in on the next call.
+        expect(await runAll()).toMatchObject({ shipments: 0, disputes: 1 });
+        expect(await runAll()).toMatchObject({ shipments: 1, disputes: 0 });
       } else {
         await postShipments();
       }
@@ -321,7 +324,9 @@ describeLocalDb('S11 dispute posting: controller only', (db) => {
     await recordAllocationAt(db(), { orderItemId: y, unitIndex: 0, refundKey: 'RF-0002', amount: 4000, lockedAt: '2026-06-21T00:00:00Z' });
     await confirmSlipAt(order, 1, '2026-06-21', '2026-06-21T01:00:00Z', y);
     const d = await dispute(order, 6000, { amount: 6000 });
-    expect(await runAll()).toMatchObject({ shipments: 2, disputes: 1 });
+    // X's shipment and the withdrawal go in at once; Y's slip was confirmed after the withdrawal time, so it waits for the withdrawal.
+    expect(await runAll()).toMatchObject({ shipments: 1, disputes: 1 });
+    expect(await runAll()).toMatchObject({ shipments: 1, disputes: 0 });
     // As of the withdrawal: X is 10,000 and sent, Y is 10,000 and not sent. (Counting the later facts would give S = 6,000, U = 0.)
     expect(await summary(key(d.disputeId, 'withdrawn', d.txnId as string))).toEqual(['1160:0/6000', '2150:3000/0', '1470(dispute_pending):3000/0']);
   });
@@ -334,6 +339,109 @@ describeLocalDb('S11 dispute posting: controller only', (db) => {
     expect(await summary(key(first.disputeId, 'withdrawn', first.txnId as string))).toEqual(['1160:0/5000', '2150:5000/0']);
     expect(await summary(key(second.disputeId, 'withdrawn', second.txnId as string))).toEqual(['1160:0/7000', '2150:7000/0']);
     expect(await deferredBalance(order.orderId)).toBe(18000);
+  });
+
+  test('FREQ-568-AC-03: 引かれた後に発送票を取り消しても、出荷の係とdisputeの係のどちらを先に流してもWのSとUが同じで、最後の前受金も同じ', async () => {
+    const wLines = ['1160:0/30000', '2150:11250/0', '1470(dispute_pending):18750/0'];
+    const worlds: Array<{ lines: string[] | null; deferred: number }> = [];
+    // (a) the shipment is posted, then the withdrawal, then the slip is cancelled (the cancel fact comes after the withdrawal time)
+    // and the cancellation is posted.
+    {
+      const order = await seedOrder({ shipped: 5 });
+      const d = await dispute(order, 30000, { amount: 30000 });
+      await runDisputes();
+      await cancelSlip(db(), (order.slip as { slipId: string }).slipId);
+      await postShipments();
+      worlds.push({ lines: await summary(key(d.disputeId, 'withdrawn', d.txnId as string)), deferred: await deferredBalance(order.orderId) });
+    }
+    // (b) the same events with the posters the other way round: the cancel fact is there before the withdrawal is posted, and the
+    // withdrawal goes in first, the cancellation after it.
+    {
+      const order = await seedOrder({ shipped: 5 });
+      const d = await dispute(order, 30000, { amount: 30000 });
+      await cancelSlip(db(), (order.slip as { slipId: string }).slipId);
+      await runDisputes();
+      await postShipments();
+      worlds.push({ lines: await summary(key(d.disputeId, 'withdrawn', d.txnId as string)), deferred: await deferredBalance(order.orderId) });
+    }
+    // (c) the slip was confirmed before the withdrawal and cancelled after it, and its shipment entry was never posted.
+    {
+      const order = await seedOrder();
+      const slip = await confirmSlipAt(order, 5, '2026-06-15', '2026-06-15T01:00:00Z');
+      const d = await dispute(order, 30000, { amount: 30000 });
+      expect(await runDisputes()).toEqual({ ...none, parked_new: 1 });
+      expect((await pendingOf('stripe_balance_transactions', d.txnId as string))?.reason).toBe('dispute_shipment_pending');
+      await cancelSlip(db(), slip.slipId);
+      await runAll();
+      expect(await entryOf(`shipment_confirmed:${slip.number}`)).toBeUndefined();
+      worlds.push({ lines: await summary(key(d.disputeId, 'withdrawn', d.txnId as string)), deferred: await deferredBalance(order.orderId) });
+    }
+    // The units sent as of the withdrawal count as sent whatever happened to the slip afterwards; the cancellation only gives the
+    // deferred revenue back. Deferred revenue at the end: 30,000 paid - 11,250 withdrawn.
+    expect(worlds).toEqual([0, 1, 2].map(() => ({ lines: wLines, deferred: 18750 })));
+  });
+
+  test('FREQ-568-AC-03: 引かれた後に確定した発送票は引かれた時を待たせず、引かれた時が入るまで自分が待ち、前受金が足りなければ止まって、勝って戻ると自動で入る', async () => {
+    const worlds: string[][] = [];
+    for (const shipmentsFirst of [true, false]) {
+      const order = await seedOrder();
+      const d = await dispute(order, 10000, { amount: 10000 });
+      const slip = await confirmSlipAt(order, 8, '2026-06-21', '2026-06-21T01:00:00Z');
+      const slipPending = async () => (await q(
+        "select reason, detail, resolved_at from public.accounting_pending_events where event_kind = 'shipment_confirmed' and source_id = $1", [slip.slipId])).rows[0];
+      if (shipmentsFirst) {
+        // The shipment (confirm number above the withdrawal's) waits for the withdrawal, which goes in in full in the same call.
+        expect(await runAll()).toMatchObject({ shipments: 0, disputes: 1, parked: 1 });
+        expect(await slipPending()).toMatchObject({ reason: 'dispute_withdrawal_missing', detail: {}, resolved_at: null });
+        expect(await runAll()).toMatchObject({ shipments: 0, disputes: 0, parked: 1 });
+      } else {
+        expect(await runDisputes()).toEqual({ ...none, posted: 1, withdrawn: 1 });
+        await postShipments();
+      }
+      expect(await slipPending()).toMatchObject({ reason: 'deferred_revenue_short', detail: { shortage: 10000 }, resolved_at: null });
+      expect(await entryOf(`shipment_confirmed:${slip.number}`)).toBeUndefined();
+      expect(await summary(key(d.disputeId, 'withdrawn', d.txnId as string))).toEqual(['1160:0/10000', '2150:10000/0']);
+      // The dispute is won: the money comes back to the deferred revenue and the shipment goes in by itself.
+      await addDisputeHistory(db(), { disputeId: d.disputeId, status: 'won', occurredAt: '2026-07-06T03:00:00Z', eventType: 'charge.dispute.closed' });
+      const reversal = await seedDisputeReversal(db(), { disputeId: d.disputeId, amount: 10000, createdAt: '2026-07-05T03:00:00Z' });
+      await runAll();
+      await runAll();
+      expect(await entryOf(`shipment_confirmed:${slip.number}`)).toBeDefined();
+      expect((await slipPending()).resolved_at).not.toBeNull();
+      expect(await deferredBalance(order.orderId)).toBe(0);
+      worlds.push((await summary(key(d.disputeId, 'reversal', reversal))) as string[]);
+    }
+    expect(worlds[1]).toEqual(worlds[0]);
+  });
+
+  test('FREQ-568-AC-03: 切り替えの日より前の発送票が止まったまま（開いたbefore_cutover）でも、引かれた時はそれを待たず出荷済みとして数える', async () => {
+    const order = await seedOrder();
+    const slip = await confirmSlipAt(order, 5, '2025-12-31', '2025-12-31T01:00:00Z');
+    await postShipments();
+    expect(await q("select reason, resolved_at from public.accounting_pending_events where event_kind = 'shipment_confirmed' and source_id = $1", [slip.slipId]))
+      .toMatchObject({ rows: [{ reason: 'before_cutover', resolved_at: null }] });
+    const d = await dispute(order, 30000, { amount: 30000 });
+    expect(await runDisputes()).toEqual({ ...none, posted: 1, withdrawn: 1 });
+    expect(await summary(key(d.disputeId, 'withdrawn', d.txnId as string))).toEqual(['1160:0/30000', '2150:11250/0', '1470(dispute_pending):18750/0']);
+  });
+
+  test('FREQ-568-AC-04: 引かれた取引が2つある取り消しは、2つ目が止まっている間は確定も待ち、2つ目が入った後に両方のSで確定が入る', async () => {
+    await setSetting('fraudulent', '7530');
+    const order = await seedOrder({ shipped: 5 });
+    const d = await dispute(order, 10000, { amount: 10000, withdrawnAt: '2026-06-20T03:00:00Z' });
+    // A second withdrawal of the same dispute whose number a key cannot hold: it is parked, the first one is booked.
+    const second = await seedStripeFee(db(), { createdAt: '2026-06-21T03:00:00Z', type: 'adjustment', reportingCategory: 'dispute', amount: -5000,
+      sourceId: d.disputeId, id: 'txn:second:withdrawal' });
+    await lose(d.disputeId);
+    expect(await runDisputes()).toEqual({ ...none, posted: 1, parked_new: 2, withdrawn: 1 });
+    expect(await pendingOf('stripe_balance_transactions', second)).toMatchObject({ reason: 'posting_error' });
+    expect(await pendingOf('stripe_disputes', d.disputeId)).toMatchObject({ reason: 'dispute_withdrawal_missing', resolved_at: null });
+    expect(await entryOf(key(d.disputeId, 'confirmed', 'lost'))).toBeUndefined();
+    await q('update public.stripe_balance_transactions set id = $2 where id = $1', [second, 'txn_second_withdrawal']);
+    await q('update public.accounting_pending_events set source_id = $2 where source_id = $1', [second, 'txn_second_withdrawal']);
+    // 10,000 -> S = 6,250 and U = 3,750; 5,000 -> S = 3,125 and U = 1,875 (the second one is worth 5/8 of 3/8 again)
+    expect(await runDisputes()).toMatchObject({ posted: 2, withdrawn: 1, confirmed: 1 });
+    expect(await summary(key(d.disputeId, 'confirmed', 'lost'))).toEqual(['7530:9375/0', '1470(dispute_pending):0/9375']);
   });
 
   test('FREQ-568-AC-04: 確定の後に遅れて取り下げられると、戻った日に「Stripe未収金／確定の時に振り替えた科目」で戻り、未出荷の分は前受金を戻す', async () => {
@@ -685,7 +793,7 @@ describeLocalDb('S11 dispute posting: controller only', (db) => {
     expect(await pendingOf('stripe_balance_transactions', d.txnId as string)).toMatchObject({ reason: 'deferred_revenue_short', detail: { shortage: 10000 } });
   });
 
-  test('FREQ-568-AC-01: 同じ取り消しを2回流しても1本ずつで、直らない保留は新しい候補を塞がない', async () => {
+  test('FREQ-568-AC-01: 同じ取り消しの係を2回流しても仕訳は1本のままで、2回目は何も足さない', async () => {
     const order = await seedOrder({ shipped: 5 });
     const d = await dispute(order, 30000, { amount: 30000 });
     expect(await runDisputes()).toEqual({ ...none, posted: 1, withdrawn: 1 });
@@ -753,6 +861,24 @@ describeLocalDb('S11 dispute posting: controller only', (db) => {
   });
 
   // ---- FREQ-568-AC-07: every order of arrival gives the same last balances and the same profit per year -------------------------
+  /** The last balances of a dispute as the AC-07 table lists them. */
+  async function measure(disputeId: string) {
+    const profit = Object.fromEntries((await q(
+      `select extract(year from e.entry_date)::int as y, sum(l.credit - l.debit)::int as profit
+       from public.accounting_journal_entries e join public.accounting_journal_lines l on l.entry_id = e.id
+       join public.accounting_accounts a on a.code = l.account_code and a.account_type in ('expense', 'revenue')
+       where starts_with(e.dedupe_key, $1) group by 1 having sum(l.credit - l.debit) <> 0 order by 1`, [`dispute_event:${disputeId}:`])).rows.map((r) => [String(r.y), r.profit]));
+    const delta2150 = Number((await q(
+      `select coalesce(sum(l.credit - l.debit), 0) as b from public.accounting_journal_lines l join public.accounting_journal_entries e on e.id = l.entry_id
+       where l.account_code = '2150' and starts_with(e.dedupe_key, $1)`, [`dispute_event:${disputeId}:`])).rows[0].b);
+    return {
+      pending: await balance(disputeId, '1470', 'dispute_pending'),
+      unassigned: await balance(disputeId, '1470', 'dispute_confirmed_unassigned'),
+      expense: await balance(disputeId, '7530', null),
+      d2150: delta2150, profit, entries: await disputeEntryCount(disputeId),
+    };
+  }
+
   type Step = 'W' | 'lostNotice' | 'lostReconcile' | 'lostTimed' | 'won' | 'rev';
   type MatrixRow = {
     id: number; shipped: number; setting: boolean; end: 'lost' | 'won' | 'none'; rev: null | { amount: number; at: string };
@@ -842,20 +968,7 @@ describeLocalDb('S11 dispute posting: controller only', (db) => {
               await settle();
             }
             const label = `row ${row.id} / ${form.name} / ${steps.join(',')} / ${mode}`;
-            const profit = Object.fromEntries((await q(
-              `select extract(year from e.entry_date)::int as y, sum(l.credit - l.debit)::int as profit
-               from public.accounting_journal_entries e join public.accounting_journal_lines l on l.entry_id = e.id
-               join public.accounting_accounts a on a.code = l.account_code and a.account_type in ('expense', 'revenue')
-               where starts_with(e.dedupe_key, $1) group by 1 having sum(l.credit - l.debit) <> 0 order by 1`, [`dispute_event:${d.disputeId}:`])).rows.map((r) => [String(r.y), r.profit]));
-            const delta2150 = Number((await q(
-              `select coalesce(sum(l.credit - l.debit), 0) as b from public.accounting_journal_lines l join public.accounting_journal_entries e on e.id = l.entry_id
-               where l.account_code = '2150' and starts_with(e.dedupe_key, $1)`, [`dispute_event:${d.disputeId}:`])).rows[0].b);
-            const actual = {
-              pending: await balance(d.disputeId, '1470', 'dispute_pending'),
-              unassigned: await balance(d.disputeId, '1470', 'dispute_confirmed_unassigned'),
-              expense: await balance(d.disputeId, '7530', null),
-              d2150: delta2150, profit, entries: await disputeEntryCount(d.disputeId),
-            };
+            const actual = await measure(d.disputeId);
             expect({ label, ...actual }).toEqual({ label, ...row.expected });
             // No event has two entries, and nothing is left waiting.
             expect(Number((await q(
@@ -875,58 +988,45 @@ describeLocalDb('S11 dispute posting: controller only', (db) => {
     expect(scenarios).toBeGreaterThan(200);
   });
 
-  test('FREQ-568-AC-07: W が止まっている間に lost と戻りが届き、あとで W が入っても、待っている間は仕訳が増えず、最後は場合3と同じ', async () => {
-    await setSetting('fraudulent', '7530');
-    const order = await seedOrder();
-    await confirmSlipAt(order, 5, '2026-06-15', '2026-06-15T01:00:00Z');
-    const d = await dispute(order, 30000, { amount: 30000 });
-    await lose(d.disputeId);
-    const reversal = await seedDisputeReversal(db(), { disputeId: d.disputeId, amount: 30000, createdAt: L_AT });
-    // The withdrawal waits for the shipment entry of the slip; C and L wait for the withdrawal. Nothing is booked meanwhile.
-    expect(await runDisputes()).toEqual({ ...none, parked_new: 3 });
-    expect(await runDisputes()).toEqual({ ...none, reparked: 3 });
-    expect(await disputeEntryCount(d.disputeId)).toBe(0);
-    await postShipments();
-    expect(await runDisputes()).toMatchObject({ posted: 3, withdrawn: 1, confirmed: 1, late_reversals: 1 });
-    expect(await summary(key(d.disputeId, 'confirmed', 'lost'))).toEqual(['7530:18750/0', '1470(dispute_pending):0/18750']);
-    expect(await summary(key(d.disputeId, 'reversal', reversal))).toEqual(['1160:30000/0', '2150:0/11250', '7530:0/18750']);
-    expect(await disputeEntryCount(d.disputeId)).toBe(3);
-  });
-
-  test('FREQ-569-AC-05: 元の記録の時刻は保存した時刻と今の小さい方で、2か月を超えてから記録した引かれた時・確定は遅れの印が付き、その前なら付かない', async () => {
-    await setSetting('fraudulent', '7530');
-    const order = await seedOrder({ shipped: 8 });
-    // Withdrawal saved the day after (not late) and saved long afterwards (late); a time in the future is clamped to now and still posts.
-    const near = await dispute(order, 10000, { syncedAt: '2026-06-21T00:00:00Z' });
-    const far = await dispute(order, 5000, { syncedAt: '2026-10-01T00:00:00Z' });
-    const future = await dispute(order, 3000, { syncedAt: '2999-01-01T00:00:00Z' });
-    expect(await runDisputes()).toEqual({ ...none, posted: 3, withdrawn: 3 });
-    const entry = async (d: { disputeId: string; txnId: string | null }) => entryOf(key(d.disputeId, 'withdrawn', d.txnId as string));
-    expect(await entry(near)).toMatchObject({ is_late: false });
-    expect(new Date((await entry(near)).source_recorded_at).toISOString()).toBe('2026-06-21T00:00:00.000Z');
-    expect(await entry(far)).toMatchObject({ is_late: true });
-    expect(new Date((await entry(far)).source_recorded_at).toISOString()).toBe('2026-10-01T00:00:00.000Z');
-    expect((await entry(future)).is_late).toBe(true);
-    expect(new Date((await entry(future)).source_recorded_at).getTime()).toBeLessThanOrEqual(Date.now());
-    // The confirmation: the lost row was saved the day after the loss (not late), or two and a half months afterwards (late).
-    await addDisputeHistory(db(), { disputeId: near.disputeId, status: 'lost', occurredAt: '2026-08-02T00:00:00Z', stripeEventCreatedAt: '2026-08-01T03:00:00Z',
-      eventType: 'charge.dispute.closed', createdAt: '2026-08-02T00:00:00Z' });
-    await addDisputeHistory(db(), { disputeId: far.disputeId, status: 'lost', occurredAt: '2026-08-02T00:00:00Z', stripeEventCreatedAt: '2026-08-01T03:00:00Z',
-      eventType: 'charge.dispute.closed', createdAt: '2026-10-15T00:00:00Z' });
-    await runDisputes();
-    expect(await entryOf(key(near.disputeId, 'confirmed', 'lost'))).toMatchObject({ is_late: false, entry_date: '2026-08-01' });
-    expect(await entryOf(key(far.disputeId, 'confirmed', 'lost'))).toMatchObject({ is_late: true, entry_date: '2026-08-01' });
-  });
-
-  test('FREQ-562-AC-05: 取り消しの係は limit が範囲の外なら断り、新しい出来事を _limit 件までと未解決の見直し10件までで切る', async () => {
-    for (const bad of [0, 201, -1, null]) {
-      expect(await accountingFailure(db(), () => q('select private.accounting_post_dispute_events($1::integer)', [bad]))).toMatchObject({ code: '22023', message: 'ACCOUNTING_ARGUMENT_INVALID' });
+  test('FREQ-568-AC-07: W が止まっている間に lost と戻りが届き、あとで W が入っても、待っている間は仕訳が増えず、最後は場合1〜12と同じ（場合13）', async () => {
+    const admin = await insertAccountingAdmin(db());
+    for (const row of rows) {
+      await q('savepoint row13');
+      // The slip was confirmed before the withdrawal but its shipment entry is not posted: the withdrawal waits (dispute_shipment_pending).
+      const order = await seedOrder();
+      if (row.shipped > 0) await confirmSlipAt(order, row.shipped, '2026-06-15', '2026-06-15T01:00:00Z');
+      const d = await dispute(order, 30000, { amount: 30000, withdrawnAt: null });
+      if (row.setting) await setSetting('fraudulent', '7530', admin);
+      await seedStripeFee(db(), { createdAt: W_AT, type: 'adjustment', reportingCategory: 'dispute', amount: -30000, sourceId: d.disputeId });
+      const lateRev = row.rev !== null && row.x !== 'beforeRev';
+      if (lateRev && new Date((row.rev as { at: string }).at) <= new Date(LOST_AT)) {
+        await seedDisputeReversal(db(), { disputeId: d.disputeId, amount: (row.rev as { amount: number }).amount, createdAt: (row.rev as { at: string }).at });
+      }
+      if (row.end === 'lost') await lose(d.disputeId);
+      if (row.end === 'won') await addDisputeHistory(db(), { disputeId: d.disputeId, status: 'won', occurredAt: '2026-12-11T00:00:00Z', eventType: 'charge.dispute.closed' });
+      if (lateRev && new Date((row.rev as { at: string }).at) > new Date(LOST_AT)) {
+        await seedDisputeReversal(db(), { disputeId: d.disputeId, amount: (row.rev as { amount: number }).amount, createdAt: (row.rev as { at: string }).at });
+      }
+      // Nothing is booked while the withdrawal waits, however many times the poster runs.
+      if (row.shipped > 0) {
+        await runDisputes();
+        await runDisputes();
+        expect({ row: row.id, entries: await disputeEntryCount(d.disputeId) }).toEqual({ row: row.id, entries: 0 });
+        await postShipments();
+      }
+      for (let i = 0; i < 4; i += 1) { if ((await runDisputes()).posted === 0) break; }
+      if (row.x === 'after' || row.x === 'beforeRev') {
+        await setSetting('fraudulent', '7530', admin);
+        await q('select public.admin_assign_dispute_confirmed($1::uuid, $2, $3::uuid)', [admin, d.disputeId, randomUUID()]);
+        if (row.x === 'beforeRev') {
+          await seedDisputeReversal(db(), { disputeId: d.disputeId, amount: (row.rev as { amount: number }).amount, createdAt: (row.rev as { at: string }).at });
+        }
+        for (let i = 0; i < 4; i += 1) { if ((await runDisputes()).posted === 0) break; }
+      }
+      expect({ row: row.id, ...(await measure(d.disputeId)) }).toEqual({ row: row.id, ...row.expected });
+      await q('rollback to savepoint row13');
+      await q('release savepoint row13');
     }
-    const order = await seedOrder({ shipped: 8 });
-    for (let i = 0; i < 3; i += 1) await dispute(order, 1000, { withdrawnAt: `2026-06-2${i}T03:00:00Z` });
-    expect(await runDisputes(2)).toEqual({ ...none, posted: 2, withdrawn: 2 });
-    expect(await runDisputes(2)).toEqual({ ...none, posted: 1, withdrawn: 1 });
-    expect(await runDisputes(2)).toEqual(none);
   });
 
   test('FREQ-568-AC-04: 確定の後に保存された戻りの取引は、lostの時刻より前の時刻でも遅れた取り下げとして入り、dispute_pendingはマイナスにならない', async () => {
