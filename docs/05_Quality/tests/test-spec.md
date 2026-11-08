@@ -1,6 +1,6 @@
 # テスト仕様
 
-> 確認日: 2026-11-08。速さを測る試験2本（`discount-search.test.ts`・[tests/items/items-api.performance.test.ts](../../../tests/items/items-api.performance.test.ts)）を、pre-push でも pre-commit でも並列の実行から外し、`--runInBand` で1本ずつ流す。pre-commit は `jest --listTests --findRelatedTests` で関連する時だけ流す。試験の中身と200ms未満の条件は変えていない。pre-commit の関連テストの段を、商品一覧の処理・割引の探索・返品の文の3つのステージで流して確かめた（全部通過。速さの試験は前の2つの時だけ1本で流れた）。pre-push の全件は今回流していない。
+> 確認日: 2026-11-08。`npm test` を通常の全件の並列実行 → 成功したら速さの試験だけ `--runInBand --passWithNoTests` の2段にし、引数を両段へ渡す。速さの試験は設定で `.timing.test.ts` に統一し、商品一覧を [tests/items/items-api.timing.test.ts](../../../tests/items/items-api.timing.test.ts) へ改名、割引の AC-04 の時間を測る2件を `discount-search.timing.test.ts` へ移した（通常側は14件）。試験名・本文・200ms未満の条件は変えない。pre-commit は通常の設定の関連テストだけを流し、速さの試験は流さない（割引の1本で約100秒のため、オーナー決定）。pre-push は `npm test -- --silent` を呼ぶ。[tests/integration/ui/news-admin-edit-screen.test.tsx](../../../tests/integration/ui/news-admin-edit-screen.test.tsx) の成功の3件は、送る前に偽のタイマーへ切り替え、499ms では一覧へ戻らず500msで1回だけ戻ることを確かめる形にした（実時間の待ちの余裕に頼らない。16/16通過）。今回の確認は関係する試験と関連テストの段に限り、全件・E2E・DB結合試験は流していない。
 >
 > 2026-11-07。push の前の単体テストの流し方と NEWS の試験を直した。[tests/integration/ui/news-admin-edit-screen.test.tsx](../../../tests/integration/ui/news-admin-edit-screen.test.tsx) の成功の2件は、画面の移動（`/admin?tab=NEWS`）まで確かめてから終わる。前は成功時の0.5秒のタイマーが残り、次の試験の `mockPush` に入って揺れる形だった（待ちを足した診断で再現、直した後は同じ条件で通過、最終版は16/16通過。元の全件並列での再現はしていない）。FREQ-546-AC-04（`discount-search.test.ts`）の200msの条件は変えず、pre-push では全件の後に1本だけで流す（`--runInBand`、16/16通過）。
 >
@@ -89,6 +89,7 @@ I/OなしのTypeScript単体試験。時刻/購入済み着数/利用回数/本�
 | `discount-allocation.test.ts` | FREQ-545-AC-02/03 | 100円を33/34/33、1円/2円/0重み/最大整数、行/１着/総和とgroup逆順（数値item9/10・単価999/1000） |
 | `discount-engine.test.ts` | FREQ-544-AC-01・FREQ-545-AC-02 | ２着目3000円引きの20000/17000、version1、不変入力、文言秘匿、見込みと欠けた事実の拒否 |
 | `discount-search.test.ts` | FREQ-546-AC-01〜04・FREQ-545-AC-03 | 独立unit/set組の総当たりoracleと固定seed512カートの割引部分集合、保持額の制約による下限、双方の併用許可４状態/複数単価、固定円セットの手計算1300、既存4000/5000/注文のみ5000・10000、tie-break、未採用code、C21全件数配置123480通りの上界導出、合法5100/exact・強制5000/fallbackかつ全単独以上、50行５itemの手計算198865 |
+| `discount-search.timing.test.ts` | FREQ-546-AC-04 | 時間を測る2件（２商品10着の厳密な2900円引き、最大カート3620計算）を `--runInBand` で流し、各計算200ms未満を確認する |
 
 性能は50行×20着、コード所属c=0..5/非併用自動所属u=0..13の84配置、全商品重複形と別item最大セット形を各20回（3360計算）。注文側の併用自動0〜5件/非併用商品自動19〜14件の６配置×２形×20回（240計算）、レビューの6商品auto/1注文auto/18非併用商品auto/5商品codeで5100円となるfixture20回を加え、合計3620計算とする。module読込を除く全計算200ms未満を要求する。商品集合最大2067・組最大157696と３商品の採否2^3=８集合は計算上界で、engine内部の訪問数の実測ではない。consoleもmeasured（呼出回数/時間）とcomputedBoundsを分ける。全商品形の両端は296900/680400円、セットのみ商品側は8400円を手計算の根拠とする。実測/RED→GREEN/型/lintはTask 2レポートに記録する。試作の計測値を製品成功の証拠にしない。
 

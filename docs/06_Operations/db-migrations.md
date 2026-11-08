@@ -1,5 +1,7 @@
 # DB マイグレーション運用
 
+> 確認日: 2026-11-08。「ローカル開発について」の節の古い記述（seed が無い・pre-push の E2E を手元の DB にするかは未決）を、今の形（`supabase/seed.sql` あり・E2E と pre-push は手元の DB）に直した。
+
 > 返品の品ごとの返金 Task 1 確認日: 2026-11-06。移行 `20261106005536_return_receive_per_item.sql` を追記した（「返品の受け取りの品ごとの返金の移行（FREQ-641 Task 1）」の節）。手元の DB だけで当てて確かめた。デプロイは移行を先に当ててからコードを出す。本番には 2026-11-06 にオーナーの許可を得て `supabase db push --linked` で当てた（`schema_migrations` に version と名前 `return_receive_per_item` が入り、`refund_choice` の列2つがあることを確かめた）。当てた後に master を push した。
 
 > 波 6 確認日: 2026-11-01。パスワード変更の確認コードの移行 M3（`20261101120000`）を追記した（「波 6 パスワード変更の確認コードの移行 M3」の節）。手元は適用済み、本番も 2026-11-01 21:06 頃 JST に適用済み（Task 11。G-1 に知らせ、dry-run が M3 の1本だけと確かめてから `db push --linked`。照合は同じ節）。
@@ -616,8 +618,8 @@ COMMIT;
 
 `npx supabase db reset` はローカル Docker のスタックを対象にする。本番には触れない。
 ベースラインが入ったので、`db reset` は本番相当のスキーマを再現できる。
-ただし `supabase/seed.sql` はまだ無いためデータは空。
-`scripts/hooks/pre-push` の E2E をローカル DB 前提にするかは未決（seed の整備が先）。
+`db reset` は移行の後に [`supabase/seed.sql`](../../supabase/seed.sql)（架空の見本データ）を入れる。画像の中身は E2E の前に `scripts/e2e/seed-storage.ts` が置く。
+E2E は手元の Supabase に対して流す（`playwright.config.ts` の見張り `scripts/e2e/environment.ts` が本番の住所を拒む）。[`scripts/hooks/pre-push`](../../scripts/hooks/pre-push) も E2E の前に `npx supabase db reset` で手元の DB を作り直す。
 
 ## 付録: 台帳の旧 105 件をどうするか
 

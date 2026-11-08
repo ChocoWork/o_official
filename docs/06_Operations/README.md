@@ -24,15 +24,20 @@ DB スキーマ適用の現行ワークフローは `.github/workflows/db-migrat
 
 ## push の前の確認
 
-[`scripts/hooks/pre-push`](../../scripts/hooks/pre-push) は lint → 型検査 → Jest 全件 → E2E の順で確認する。3/4 の Jest は、次の2段階で流す。
+[`scripts/hooks/pre-push`](../../scripts/hooks/pre-push) は lint → 型検査 → Jest 全件 → E2E の順で確認する。3/4 は `npm test -- --silent` を呼ぶ。`npm test` は [`scripts/test/run-unit-tests.mjs`](../../scripts/test/run-unit-tests.mjs) で、次の2段階を実行する。
 
-1. 速さを測る2本（`tests/unit/lib/discounts/discount-search.test.ts`・`tests/items/items-api.performance.test.ts`）を除いた全件を並列で流す。`node_modules` と `.claude` の既存の除外は残す。
-2. 1 が成功したら、外した2本を `--runInBand --runTestsByPath` で1本ずつ流す。200ms 未満の条件と試験の中身は変えない。
+1. 通常の [`jest.config.cjs`](../../jest.config.cjs) で、速さを測る試験を除いた全件を並列で流す。`node_modules` と `.claude` の既存の除外は残す。
+2. 1 が成功したら、[`jest.timing.config.cjs`](../../jest.timing.config.cjs) で速さを測る試験だけを `--runInBand --passWithNoTests` で1本ずつ流す。対象が無ければ成功とする。
 
-どちらかが失敗すれば `set -e` で push を止め、後続へ進まない。両方が通った後の E2E の実行条件と警告扱いは従来どおり。
+速さを測る試験は、名前の終わりを `.timing.test.ts` にする。この名前の決まりは、両方の設定が読む [`scripts/test/jest-timing.cjs`](../../scripts/test/jest-timing.cjs) だけで定める。現在は `tests/items/items-api.timing.test.ts` と `tests/unit/lib/discounts/discount-search.timing.test.ts` が対象で、割引の時間を測らない14件は `discount-search.test.ts` に残す。試験の中身と200ms未満の条件は変えない。
+
+`npm test -- <引数>` のパスの絞り込みや `--silent` は両段へ渡す。前段が失敗したら後段は実行せず、どちらかが失敗すればその終了コードで終わり、push を止める。両方が通った後の E2E の実行条件と警告扱いは従来どおり。
+
+- 速さの試験だけを指定すると、前段に当たる試験が無く「No tests found」で失敗する（打ち間違いを黙って通さないため、前段に `--passWithNoTests` は付けない）。速さの試験を1本だけ流す時は `npx jest -c jest.timing.config.cjs <パス>` を使う。
+- `-c`・`--config`・`--watch`・`--watchAll`・`--coverage`・`--collectCoverage` は2段と合わないので、`npm test` は終了コード2で止める。これらは `npx jest` を直に使う。
 
 ## コミットの前の確認
 
-[`scripts/hooks/pre-commit`](../../scripts/hooks/pre-commit) は、ステージした `.ts`・`.tsx` の lint → 型検査 → 関連する Jest の順で確認する。関連する Jest は、push の前と同じ速さを測る2本を並列の実行から外し、`jest --listTests --findRelatedTests` でその2本が関連すると分かった時だけ、後から `--runInBand --runTestsByPath` で1本ずつ流す。
+[`scripts/hooks/pre-commit`](../../scripts/hooks/pre-commit) は、ステージした `.ts`・`.tsx` の lint → 型検査 → 関連する Jest の順で確認する。関連する Jest は、通常の設定で `--findRelatedTests $STAGED --passWithNoTests --silent` を流す。失敗すれば `set -e` でコミットを止める。
 
-`jest.config.cjs` と npm の script は変更していないため、通常の `npm test` の並列の実行では、速さを測る2本は今までどおり負荷で揺れうる。
+速さの試験（`.timing.test.ts`）は通常の設定で外れるので、コミットの前には流れない。割引の探索の速さの試験が1本だけで約100秒かかるため、2026-11-08 にオーナーが「コミットの前は流さない」と決めた。速さの試験は `npm test` と pre-push の後段で必ず1本ずつ流れる。遅くなったことに気づくのは push の時になる。

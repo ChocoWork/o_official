@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import EditNewsPage from '@/app/admin/news/edit/[id]/page';
 
@@ -59,6 +59,19 @@ function statusRadio(value: 'private' | 'published'): HTMLInputElement {
   return document.querySelector(`input[type="radio"][name="status"][value="${value}"]`) as HTMLInputElement;
 }
 
+// 成功の後の一覧への移動は 500ms のタイマー。偽のタイマーで進め、次のケースへタイマーを残さない。
+function expectPushAfterSuccessTimer() {
+  act(() => {
+    jest.advanceTimersByTime(499);
+  });
+  expect(mockPush).not.toHaveBeenCalled();
+  act(() => {
+    jest.advanceTimersByTime(1);
+  });
+  expect(mockPush).toHaveBeenCalledTimes(1);
+  expect(mockPush).toHaveBeenCalledWith('/admin?tab=NEWS');
+}
+
 async function renderLoaded() {
   mockFetch.mockResolvedValueOnce(response(true, { data: ARTICLE }));
   const utils = render(<EditNewsPage />);
@@ -81,6 +94,7 @@ describe('記事の編集の画面', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     getContextSpy.mockRestore();
     errorSpy.mockRestore();
   });
@@ -142,7 +156,8 @@ describe('記事の編集の画面', () => {
     await user.clear(screen.getByLabelText(/^タイトル/));
     await user.type(screen.getByLabelText(/^タイトル/), '直した題');
     await user.click(statusRadio('private'));
-    await user.click(screen.getByRole('button', { name: '更新' }));
+    jest.useFakeTimers();
+    fireEvent.click(screen.getByRole('button', { name: '更新' }));
 
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('更新しました'));
     expect(screen.getByRole('alert')).toBeEmptyDOMElement();
@@ -159,7 +174,7 @@ describe('記事の編集の画面', () => {
     expect(body.get('detailedContent')).toBe('詳細の文');
     expect(body.get('status')).toBe('private');
     expect(body.has('image')).toBe(false);
-    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/admin?tab=NEWS'));
+    expectPushAfterSuccessTimer();
   });
 
   it('SCR-NEWS-005 選び直した画像は送る', async () => {
@@ -169,26 +184,28 @@ describe('記事の編集の画面', () => {
       target: { files: [makeFile('new.webp', 'image/webp')] },
     });
     await screen.findByText('new.webp (新規)');
+    jest.useFakeTimers();
 
     fireEvent.submit(container.querySelector('form')!);
 
-    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('更新しました'));
+    expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(((mockFetch.mock.calls[1][1]?.body as FormData).get('image') as File).name).toBe('new.webp');
-    // 成功後の遷移まで確かめ、次のケースへタイマーを残さない。
-    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/admin?tab=NEWS'));
+    expectPushAfterSuccessTimer();
   });
 
   it('SCR-NEWS-005 送る間はボタンを更新中にして押せなくする', async () => {
     const { container } = await renderLoaded();
     let resolve!: (value: Response) => void;
     mockFetch.mockReturnValueOnce(new Promise<Response>((r) => { resolve = r; }));
+    jest.useFakeTimers();
 
     fireEvent.submit(container.querySelector('form')!);
 
     expect(await screen.findByRole('button', { name: '更新中...' })).toBeDisabled();
     resolve(response(true, {}));
     expect(await screen.findByRole('button', { name: '更新' })).not.toBeDisabled();
-    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/admin?tab=NEWS'));
+    expectPushAfterSuccessTimer();
   });
 
   it('SCR-NEWS-005 断られた時はサーバーの error の文を出し、一覧へ戻さない', async () => {
