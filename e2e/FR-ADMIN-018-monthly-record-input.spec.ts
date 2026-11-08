@@ -30,6 +30,7 @@ function metric(period: string) {
     formattedReturnRate: '5.0%',
     orderCount: 100,
     paidOrderCount: 40,
+    createdPaidOrderCount: 40,
     customerCount: 50,
     repeatCustomerCount: 10,
     setOrderCount: 24,
