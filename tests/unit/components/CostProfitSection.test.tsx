@@ -63,6 +63,40 @@ function savedJournalOf(
 		});
 }
 
+// 手入力でない保存した仕訳（支払い・出荷・手数料・入金。計上係が作る）。
+const stripeEntryId = (no: number) => `00000000-0000-4000-8000-${String(700_000 + no).padStart(12, '0')}`;
+function stripeSaved(
+	no: number,
+	eventKind: string,
+	date: string,
+	description: string,
+	lines: Array<[accountCode: string, debit: number, credit: number]>,
+	sourceTable = 'stripe_balance_transactions',
+) {
+	return {
+		id: stripeEntryId(no),
+		periodId: periodOf(2026, 'soleProprietor').id,
+		entryNo: no,
+		entryDate: date,
+		eventKind,
+		dedupeKey: `${eventKind}:${no}`,
+		description,
+		recordedAt: `${date}T01:00:00Z`,
+		recordedBy: null,
+		isLate: false,
+		reversesEntryId: null,
+		reason: null,
+		sourceTable,
+		sourceId: `src-${no}`,
+		migratedFrom: null,
+		migratedAt: null,
+		sourceRecordedAt: null,
+		lines: lines.map(([accountCode, debit, credit], index) => ({
+			lineNo: index + 1, accountCode, debit, credit, subAccount: null, counterparty: null, orderId: null, memo: null,
+		})),
+	};
+}
+
 function openingOf(plan: Record<string, number>) {
 	return ([
 		['1010', plan.openingCash],
@@ -97,6 +131,8 @@ function setupFinanceFetch(
 		partners?: string[];
 		templates?: Array<{ name: string; entryType: string; category: string; item: string; partner: string; amount: number; paymentMethod: string; memo: string }>;
 		stripeAccounting?: Record<string, unknown>;
+		/** 支払い・出荷・手数料・入金など、手入力でない保存した仕訳（計上係が作る物）。 */
+		savedJournalExtra?: Array<Record<string, unknown>>;
 	} = {},
 ) {
 	const data = {
@@ -257,7 +293,10 @@ function setupFinanceFetch(
 				...data,
 				period,
 				periods: [period],
-				savedJournal: savedJournalOf([...data.expenses, ...data.incomes], period),
+				savedJournal: [
+					...savedJournalOf([...data.expenses, ...data.incomes], period),
+					...(statusOptions.savedJournalExtra ?? []),
+				],
 				opening: openingOf(data.plan),
 				periodNotices: { filingDeadlinePassed: false, previousPeriodOpen: false },
 			},
@@ -526,6 +565,107 @@ describe('CostProfitSection', () => {
 		expect(screen.queryByRole('button', { name: 'オンライン注文を訂正' })).not.toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: 'オンライン注文を編集' })).not.toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: 'オンライン注文を削除' })).not.toBeInTheDocument();
+	});
+
+	// 計上係が作る保存した仕訳（支払い・出荷・手数料・入金）。注文の収入の行は出荷の仕訳から作る。
+	const STRIPE_SAVED = [
+		stripeSaved(101, 'payment_confirmed', '2026-08-01', '支払いの受け取り（前受金）', [['1160', 10_000, 0], ['2150', 0, 10_000]]),
+		stripeSaved(102, 'shipment_confirmed', '2026-08-03', '出荷による売上', [['2150', 10_000, 0], ['4010', 0, 10_000]], 'shipment_slips'),
+		stripeSaved(103, 'stripe_fee', '2026-08-01', '決済の手数料', [['6280', 360, 0], ['1160', 0, 360]]),
+		stripeSaved(104, 'payout_started', '2026-08-05', '銀行への入金の開始', [['1150', 9_640, 0], ['1160', 0, 9_640]]),
+		stripeSaved(105, 'bank_arrived', '2026-08-07', '銀行への着金', [['1040', 9_640, 0], ['1150', 0, 9_640]]),
+	];
+	const ORDER_FROM_SHIPMENT = {
+		id: -1, entryType: 'income', date: '2026-08-03', category: '売上高', item: 'オンライン注文', partner: '', amount: 10_000,
+		paymentMethod: 'Stripe', memo: '', seasonTag: null, receipts: [], evidenceStatus: 'system_record', source: 'order',
+		sourceId: stripeEntryId(102), readOnly: true, grossAmount: 10_000, refundedAmount: 0, netAmount: 10_000, currency: 'jpy',
+	};
+	const STRIPE_RAW = {
+		balanceTransactions: [{
+			id: 'txn_1', source_id: 'ch_1', payment_intent_id: 'pi_1', order_id: 'order-1', payout_id: 'po_1', type: 'charge',
+			reporting_category: 'charge', amount: 10_000, fee: 360, net: 9_640, currency: 'jpy', status: 'available',
+			stripe_created_at: '2026-08-01T01:00:00.000Z',
+		}],
+		refunds: [],
+		payouts: [{
+			id: 'po_1', amount: 9_640, currency: 'jpy', status: 'paid', automatic: true, arrival_date: '2026-08-07',
+			reconciliation_status: 'matched', paid_at: '2026-08-05T01:00:00.000Z', bank_arrival_date: null, bank_confirmed_at: null,
+		}],
+		summary: { stripeBalance: 9_640, inTransitBalance: 9_640, unmatchedPayoutCount: 0 },
+	};
+
+	it('FREQ-570-AC-01: 画面の仕訳は保存した仕訳だけから注文とStripeの売上を数え、合成の仕訳が重ならない', async () => {
+		// 注文の収入の行と Stripe の原始記録（支払い・入金）が応答にあっても、そこから売上・手数料・入金の仕訳を足さない。
+		setupFinanceFetch([ORDER_FROM_SHIPMENT], undefined, false, { stripeAccounting: STRIPE_RAW, savedJournalExtra: STRIPE_SAVED });
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+
+		fireEvent.click(screen.getByRole('tab', { name: '帳簿' }));
+		fireEvent.click(screen.getByRole('tab', { name: '決算・試算表' }));
+		fireEvent.click(screen.getByRole('tab', { name: '合計残高試算表' }));
+		const table = screen.getByRole('columnheader', { name: '借方合計' }).closest('table') as HTMLTableElement;
+		const row = (name: string) => within(table).getByText(name).closest('tr') as HTMLTableRowElement;
+
+		// 売上高は保存した出荷の1本だけの10,000円（合成が重なれば20,000円）。
+		expect(row('売上高')).toHaveTextContent('¥10,000');
+		expect(table).not.toHaveTextContent('¥20,000');
+		expect(row('支払手数料')).toHaveTextContent('¥360');
+		// 合成の仕訳が使っていた 1130 クレジット売掛金は出ない（Stripe の売上の道は 1160 と 2150・4010）。
+		expect(within(table).queryByText('クレジット売掛金')).not.toBeInTheDocument();
+		expect(row('Stripe未収金')).toBeInTheDocument();
+		expect(row('前受金')).toBeInTheDocument();
+		expect(row('Stripe入金途上')).toBeInTheDocument();
+		// 手入力の広告費32,000円と保存した5本。借方も貸方も 71,640円で合う。
+		expect((within(table).getByText('合計').closest('tr') as HTMLElement)).toHaveTextContent('合計¥71,640¥71,640');
+		expect(screen.queryByText('集計中（計画2で保存）')).not.toBeInTheDocument();
+	});
+
+	it('FREQ-570-AC-01: 支払い・出荷・手数料・入金の保存した仕訳が、仕訳帳と元帳と試算表に1度ずつ出る', async () => {
+		setupFinanceFetch([ORDER_FROM_SHIPMENT], undefined, false, { stripeAccounting: STRIPE_RAW, savedJournalExtra: STRIPE_SAVED });
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '帳簿' }));
+		fireEvent.click(screen.getByRole('tab', { name: '仕訳・元帳' }));
+
+		const accountTree = screen.getByRole('region', { name: '勘定科目' });
+		// 元帳: 前受金（2150）は支払い（貸方）と出荷（借方）の2本、Stripe未収金（1160）は支払い・手数料・入金の3本。
+		fireEvent.click(within(accountTree).getByRole('button', { name: /^2150 前受金/ }));
+		let list = screen.getByRole('region', { name: '仕訳一覧' });
+		expect(within(list).getAllByText('JE-000101')).toHaveLength(1);
+		expect(within(list).getAllByText('JE-000102')).toHaveLength(1);
+		expect(within(list).queryByText('JE-000103')).not.toBeInTheDocument();
+		fireEvent.click(within(accountTree).getByRole('button', { name: /^1160 Stripe未収金/ }));
+		list = screen.getByRole('region', { name: '仕訳一覧' });
+		for (const number of ['JE-000101', 'JE-000103', 'JE-000104']) expect(within(list).getAllByText(number)).toHaveLength(1);
+		expect(within(list).queryByText('JE-000105')).not.toBeInTheDocument();
+		fireEvent.click(within(accountTree).getByRole('button', { name: /^1040 普通預金/ }));
+		list = screen.getByRole('region', { name: '仕訳一覧' });
+		expect(within(list).getAllByText('JE-000105')).toHaveLength(1);
+		// 試算表: 各科目は1行ずつ。
+		fireEvent.click(screen.getByRole('tab', { name: '決算・試算表' }));
+		fireEvent.click(screen.getByRole('tab', { name: '合計残高試算表' }));
+		const table = screen.getByRole('columnheader', { name: '借方合計' }).closest('table') as HTMLTableElement;
+		for (const name of ['Stripe未収金', '前受金', '売上高', '支払手数料', 'Stripe入金途上']) {
+			expect(within(table).getAllByText(name)).toHaveLength(1);
+		}
+	});
+
+	it('FREQ-570-AC-03: Stripeの精算のタブは原始記録の一覧と入金の確認を今のまま出す', async () => {
+		const mockFetch = setupFinanceFetch([ORDER_FROM_SHIPMENT], undefined, false, { stripeAccounting: STRIPE_RAW, savedJournalExtra: STRIPE_SAVED });
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
+
+		await screen.findByRole('button', { name: 'Payout po_1 の銀行着金を確認' });
+		const settlement = within(screen.getByRole('region', { name: 'Stripe精算' }));
+		expect(settlement.getByText('po_1')).toBeVisible();
+		expect(settlement.getByText('Stripe決済残高')).toBeVisible();
+		expect(settlement.getByText('Stripe入金途上')).toBeVisible();
+		fireEvent.click(screen.getByRole('button', { name: 'Payout po_1 の銀行着金を確認' }));
+		fireEvent.change(screen.getByLabelText('銀行着金日'), { target: { value: '2026-08-07' } });
+		fireEvent.click(screen.getByRole('button', { name: '着金を確定' }));
+		await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(
+			'/api/admin/accounting/stripe-payouts/po_1/confirm',
+			expect.objectContaining({ method: 'POST' }),
+		));
 	});
 
 	it('摘要プルダウンの先頭から共有候補を追加できる', async () => {

@@ -206,7 +206,8 @@ export async function openLedgerTab(page: Page) {
 // cost-profit GET の作り物（FREQ-557。期間で数える形）
 //
 // 画面の仕訳・元帳・試算表・財務3表は GET の `savedJournal`（保存した仕訳）と `opening`（期首）から作る。
-// 手入力の取引は DB のトリガー（S4）が保存した仕訳にするので、作り物にも取引ごとに同じ形の行を足す。
+// 手入力の取引は DB のトリガー（S4）、注文の支払い・出荷と Stripe の手数料・入金は計上係が保存した仕訳にするので、
+// 作り物にも取引・注文・Stripe の記録ごとに同じ形の行を足す（画面は仕訳を合成しない。FREQ-570）。
 // 以前の spec は expenses / incomes / plan / previousClosingBalances だけを渡していたので、
 // それを渡すと期間・保存した仕訳・期首・知らせを足した応答の欄を返す。
 // ---------------------------------------------------------------------------------------------
@@ -256,46 +257,127 @@ type MockEntry = Record<string, unknown> & {
   paymentMethod: string;
 };
 
-/** 手入力の取引 → S4 のトリガーが作る保存した仕訳（日付昇順・同日は id 昇順で通し番号 1 から）。 */
-function mockSavedJournal(entries: readonly MockEntry[], period: MockAccountingPeriod) {
-  return entries
-    .filter((entry) => entry.source !== 'order')
-    .map((entry) => ({ ...entry, entryType: entry.entryType ?? 'expense' }) as unknown as FinanceEntry)
-    .filter((entry) => entry.date >= period.startsOn && entry.date <= period.endsOn)
-    .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id)
-    .map((entry, index) => {
-      const [journal] = buildJournal([entry], period.businessType);
-      return {
-        id: `00000000-0000-4000-8000-${String(900_000 + index).padStart(12, '0')}`,
-        periodId: period.id,
-        entryNo: index + 1,
-        entryDate: entry.date,
-        eventKind: 'manual_entry',
-        dedupeKey: `manual_entry:${entry.id}:0`,
-        description: entry.item,
-        recordedAt: `${entry.date}T01:00:00Z`,
-        recordedBy: null,
-        isLate: false,
-        reversesEntryId: null,
-        reason: null,
-        sourceTable: 'admin_finance_expenses',
-        sourceId: String(entry.id),
-        migratedFrom: null,
-        migratedAt: null,
-        sourceRecordedAt: null,
-        lines: journal.lines.map((line, lineIndex) => ({
-          lineNo: lineIndex + 1,
-          accountCode: line.account.code,
-          debit: line.debit,
-          credit: line.credit,
-          subAccount: null,
-          counterparty: entry.partner || null,
-          orderId: null,
-          // S4 は未登録の科目（9999）の行に元の文を memo で残す。
-          memo: line.account.code === '9999' ? line.account.name : null,
-        })),
-      };
+type MockStripeAccounting = {
+  balanceTransactions?: Array<Record<string, unknown>>;
+  payouts?: Array<Record<string, unknown>>;
+};
+
+type MockDraftLine = { accountCode: string; debit: number; credit: number; memo: string | null };
+
+type MockDraft = {
+  date: string;
+  /** 同じ日の並び（手入力と注文は取引の番号、Stripe の物はそのあと）。 */
+  order: number;
+  eventKind: string;
+  dedupeKey: string;
+  description: string;
+  counterparty: string | null;
+  sourceTable: string;
+  sourceId: string;
+  lines: MockDraftLine[];
+};
+
+const jstDate = (iso: string) => new Date(new Date(iso).getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+const pair = (debitCode: string, creditCode: string, amount: number): MockDraftLine[] => [
+  { accountCode: debitCode, debit: amount, credit: 0, memo: null },
+  { accountCode: creditCode, debit: 0, credit: amount, memo: null },
+];
+
+/**
+ * 保存した仕訳の作り物。画面は仕訳を合成せず、保存した仕訳（計上係と S4 のトリガーが作る物）だけで数える（FREQ-570）。
+ * - 手入力の取引 → S4 のトリガーが作る仕訳（日付昇順・同日は id 昇順で通し番号 1 から）。
+ * - 注文の収入（source が order）→ 支払い（Stripe未収金 1160／前受金 2150）と出荷（前受金 2150／売上高 4010）の2本。
+ * - Stripe の原始記録 → 手数料（支払手数料 6280／1160）、照合済みの入金（Stripe入金途上 1150／1160）、銀行着金（普通預金 1040／1150）。
+ */
+function mockSavedJournal(entries: readonly MockEntry[], period: MockAccountingPeriod, stripe?: MockStripeAccounting) {
+  const drafts: MockDraft[] = [];
+  for (const entry of entries) {
+    if (entry.source === 'order') {
+      const key = String(entry.sourceId ?? entry.id);
+      drafts.push(
+        {
+          date: entry.date, order: entry.id, eventKind: 'payment_confirmed', dedupeKey: `payment_confirmed:${key}`,
+          description: '支払いの受け取り（前受金）', counterparty: null, sourceTable: 'stripe_balance_transactions', sourceId: key,
+          lines: pair('1160', '2150', entry.amount),
+        },
+        {
+          date: entry.date, order: entry.id, eventKind: 'shipment_confirmed', dedupeKey: `shipment_confirmed:${key}`,
+          description: entry.item, counterparty: null, sourceTable: 'shipment_slips', sourceId: key,
+          lines: pair('2150', '4010', entry.amount),
+        },
+      );
+      continue;
+    }
+    const [journal] = buildJournal([{ ...entry, entryType: entry.entryType ?? 'expense' } as unknown as FinanceEntry], period.businessType);
+    drafts.push({
+      date: entry.date, order: entry.id, eventKind: 'manual_entry', dedupeKey: `manual_entry:${entry.id}:0`,
+      description: entry.item, counterparty: entry.partner || null, sourceTable: 'admin_finance_expenses', sourceId: String(entry.id),
+      // S4 は未登録の科目（9999）の行に元の文を memo で残す。
+      lines: journal.lines.map((line) => ({
+        accountCode: line.account.code, debit: line.debit, credit: line.credit,
+        memo: line.account.code === '9999' ? line.account.name : null,
+      })),
     });
+  }
+  let stripeOrder = 1_000_000;
+  for (const transaction of stripe?.balanceTransactions ?? []) {
+    const fee = Number(transaction.fee ?? 0);
+    if (fee === 0) continue;
+    drafts.push({
+      date: jstDate(String(transaction.stripe_created_at)), order: stripeOrder++, eventKind: 'stripe_fee',
+      dedupeKey: `stripe_fee:${transaction.id}`, description: '決済の手数料', counterparty: 'ストライプジャパン株式会社',
+      sourceTable: 'stripe_balance_transactions', sourceId: String(transaction.id),
+      lines: fee > 0 ? pair('6280', '1160', fee) : pair('1160', '6280', -fee),
+    });
+  }
+  for (const payout of stripe?.payouts ?? []) {
+    if (payout.reconciliation_status !== 'matched' || !payout.paid_at) continue;
+    const amount = Number(payout.amount);
+    drafts.push({
+      date: jstDate(String(payout.paid_at)), order: stripeOrder++, eventKind: 'payout_started',
+      dedupeKey: `payout_started:${payout.id}`, description: '銀行への入金の開始', counterparty: null,
+      sourceTable: 'stripe_payouts', sourceId: String(payout.id), lines: pair('1150', '1160', amount),
+    });
+    if (payout.bank_arrival_date && payout.bank_confirmed_at) {
+      drafts.push({
+        date: String(payout.bank_arrival_date), order: stripeOrder++, eventKind: 'bank_arrived',
+        dedupeKey: `bank_arrived:${payout.id}`, description: '銀行への着金', counterparty: null,
+        sourceTable: 'stripe_payouts', sourceId: String(payout.id), lines: pair('1040', '1150', amount),
+      });
+    }
+  }
+  return drafts
+    .filter((draft) => draft.date >= period.startsOn && draft.date <= period.endsOn)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order)
+    .map((draft, index) => ({
+      id: `00000000-0000-4000-8000-${String(900_000 + index).padStart(12, '0')}`,
+      periodId: period.id,
+      entryNo: index + 1,
+      entryDate: draft.date,
+      eventKind: draft.eventKind,
+      dedupeKey: draft.dedupeKey,
+      description: draft.description,
+      recordedAt: `${draft.date}T01:00:00Z`,
+      recordedBy: null,
+      isLate: false,
+      reversesEntryId: null,
+      reason: null,
+      sourceTable: draft.sourceTable,
+      sourceId: draft.sourceId,
+      migratedFrom: null,
+      migratedAt: null,
+      sourceRecordedAt: null,
+      lines: draft.lines.map((line, lineIndex) => ({
+        lineNo: lineIndex + 1,
+        accountCode: line.accountCode,
+        debit: line.debit,
+        credit: line.credit,
+        subAccount: null,
+        counterparty: draft.counterparty,
+        orderId: null,
+        memo: line.memo,
+      })),
+    }));
 }
 
 /** 期首（借方−貸方）。前年度末の残高（previousClosingBalances。各科目の正常残高の向き）があればそれを、無ければ財務前提の期首の欄を使う。 */
@@ -345,7 +427,7 @@ export function buildCostProfitMock<T extends Record<string, unknown>>(
     businessType: period.businessType,
     period,
     periods: options.periods ?? [period],
-    savedJournal: data.savedJournal ?? mockSavedJournal(entries, period),
+    savedJournal: data.savedJournal ?? mockSavedJournal(entries, period, data.stripeAccounting as MockStripeAccounting | undefined),
     opening: data.opening ?? mockOpening(data),
     periodNotices: data.periodNotices ?? options.periodNotices ?? { filingDeadlinePassed: false, previousPeriodOpen: false },
   };

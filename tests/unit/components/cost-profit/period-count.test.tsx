@@ -97,7 +97,7 @@ async function selectPeriod(name: string) {
 describe('会計の画面を期間で数える', () => {
 	jest.setTimeout(30000);
 
-	it('FREQ-557-AC-01: 手入力の取引は保存した仕訳から一度だけ数え合成と重ならない', async () => {
+	it('FREQ-557-AC-01: 手入力の取引と出荷の売上は保存した仕訳から一度だけ数え合成と重ならない', async () => {
 		mockFinanceFetch(() => ({
 			status: 200,
 			body: {
@@ -108,7 +108,8 @@ describe('会計の画面を期間で数える', () => {
 						paymentMethod: 'Stripe', memo: '', seasonTag: null, receipts: [], source: 'order', sourceId: 'order-9', readOnly: true,
 						grossAmount: 10_000, refundedAmount: 0,
 					}],
-					savedJournal: [advertising(1, 32_000)],
+					// 出荷の売上は計上係が保存した仕訳（前受金／売上高）。注文の収入の行があっても画面では合成しない（FREQ-570）。
+					savedJournal: [advertising(1, 32_000), saved(2, '2026-04-02', [['2150', 10_000, 0], ['4010', 0, 10_000]])],
 				}),
 			},
 		}));
@@ -119,15 +120,15 @@ describe('会計の画面を期間で数える', () => {
 		// 手入力の32,000円は保存した仕訳の1本だけ。手入力から合成した2本目は無い。
 		expect(rowOf(table, '広告宣伝費')).toHaveTextContent('¥32,000');
 		expect(table).not.toHaveTextContent('¥64,000');
-		// 注文は合成（計画2で保存）で売上に入る。
+		// 注文の売上は保存した出荷の仕訳の1本だけ。注文の収入の行から作る2本目は無い。
 		expect(rowOf(table, '売上高')).toHaveTextContent('¥10,000');
 		expect(totalRowOf(table)).toHaveTextContent('合計¥42,000¥42,000');
 
-		// 合成の仕訳には「集計中（計画2で保存）」の印、保存した仕訳には付けない。
+		// 仕訳には合成の印（集計中）を付けない。
 		fireEvent.click(screen.getByRole('tab', { name: '仕訳・元帳' }));
 		const accountTree = screen.getByRole('region', { name: '勘定科目' });
 		fireEvent.click(within(accountTree).getByRole('button', { name: /^4010 売上高/ }));
-		expect(within(screen.getByRole('region', { name: '仕訳一覧' })).getByText('集計中（計画2で保存）')).toBeInTheDocument();
+		expect(within(screen.getByRole('region', { name: '仕訳一覧' })).getAllByText('JE-000002')).toHaveLength(1);
 		fireEvent.click(within(accountTree).getByRole('button', { name: /^6060 広告宣伝費/ }));
 		const journalList = screen.getByRole('region', { name: '仕訳一覧' });
 		expect(within(journalList).getByText('JE-000001')).toBeInTheDocument();

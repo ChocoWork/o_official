@@ -434,7 +434,7 @@ export type CostProfitResponse = {
   };
 };
 
-/** Stripe原始記録はDB行のまま扱う。仕訳投影（buildStripeJournal）と同じ形を保つ。 */
+/** Stripe原始記録はDB行のまま扱う（精算のタブの一覧と入金の確認に使う。仕訳は保存した仕訳から数える）。 */
 export type StripePayoutRecord = {
   id: string;
   amount: number;

@@ -3,7 +3,8 @@ import { mockAdminApis, buildCostProfitMock } from './admin-accounting-test-util
 
 // FREQ-270: Stripe決済・実額手数料・成功返金・Payout・銀行着金確認を ACCOUNTING に反映する。
 // 財務概要に Stripe決済残高／Stripe入金途上／Payout一覧と銀行着金確認を出し、
-// 仕訳・元帳には Stripe 原始記録から投影した仕訳を並べる。
+// 仕訳・元帳には保存した仕訳（支払い・出荷・手数料・入金。FREQ-570 で画面の合成をやめた）を並べる。
+// Stripe の売上の道は Stripe未収金（1160）・前受金（2150）・売上高（4010）。
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 768, height: 1024 },
@@ -145,7 +146,7 @@ for (const viewport of viewports) {
       await page.getByRole('tab', { name: '帳簿', exact: true }).click();
       await expect(page.getByRole('tab', { name: '仕訳・元帳', exact: true })).toBeVisible();
 
-      await expect(page.getByText('クレジット売掛金').first()).toBeVisible();
+      await expect(page.getByText('Stripe未収金').first()).toBeVisible();
       await expect(page.getByText('支払手数料').first()).toBeVisible();
     });
   });

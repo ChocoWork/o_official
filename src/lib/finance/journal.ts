@@ -102,7 +102,7 @@ export function buildJournal(
   });
 }
 
-/** 注文由来の売上（route の `mapOrderIncome` の結果）。`sourceId` は注文の番号。 */
+/** 注文由来の売上（取引管理の注文の収入の行）。`sourceId` は注文の番号。 */
 export type OrderSalesEntry = FinanceEntry & { sourceId: string };
 
 /**

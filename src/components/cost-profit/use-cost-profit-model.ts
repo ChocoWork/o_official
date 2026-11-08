@@ -10,12 +10,14 @@ import {
   type AccountType,
   type BusinessType,
 } from "@/lib/finance/accounts";
-import type { OpeningBalanceRow } from "@/lib/accounting/accounting-types";
+import type {
+  OpeningBalanceRow,
+  ShipmentMeta,
+} from "@/lib/accounting/accounting-types";
 import {
   savedEntryToJournalEntry,
   type SavedJournalEntry,
 } from "@/lib/accounting/journal-types";
-import { toJstDate } from "@/lib/accounting/jst-date";
 import type { AccountingPeriod } from "@/lib/accounting/period";
 import {
   isDateInPeriod,
@@ -72,17 +74,13 @@ import { resolveEvidenceStatus } from "@/lib/finance/evidence-status";
 import {
   buildDepreciationEntries,
   buildGeneralLedger,
-  buildOrderSalesJournal,
   buildTrialBalance,
   type EntryType,
   type FinanceEntry,
   type JournalEntry,
   type LedgerAccount,
 } from "@/lib/finance/journal";
-import {
-  buildStripeJournal,
-  mergeJournalEntries,
-} from "@/lib/finance/stripe-journal";
+import { mergeJournalEntries } from "@/lib/finance/stripe-journal";
 import {
   buildBalanceSheet,
   buildProfitAndLoss,
@@ -193,6 +191,8 @@ type PeriodPayload = {
   period?: AccountingPeriod | null;
   periods?: AccountingPeriod[];
   savedJournal?: SavedJournalEntry[];
+  /** 出荷の仕訳の出荷した日と登録した日（仕訳帳の列に出す）。 */
+  shipmentMeta?: ShipmentMeta[];
   opening?: OpeningBalanceRow[];
   periodNotices?: PeriodNotices;
 };
@@ -211,27 +211,6 @@ function unregisteredAccount(memo: string | null): Account {
   return account.code === "9999"
     ? account
     : resolveAccount(`${name}（未登録）`);
-}
-
-/** Stripe の日時を日本時間の日へ直す（buildStripeJournal は先頭の10文字を仕訳の日にする）。 */
-function stripeRowsInJst<T extends Record<string, unknown>>(
-  rows: readonly T[],
-  fields: readonly string[],
-): T[] {
-  return rows.map((row) => {
-    const copy: Record<string, unknown> = { ...row };
-    for (const field of fields) {
-      const value = copy[field];
-      if (
-        typeof value === "string" &&
-        value.length > 10 &&
-        Number.isFinite(Date.parse(value))
-      ) {
-        copy[field] = toJstDate(value);
-      }
-    }
-    return copy as T;
-  });
 }
 
 const slashDate = (date: string) => date.replaceAll("-", "/");
@@ -424,6 +403,7 @@ export function useCostProfitModel({
         ? (periods.find((candidate) => candidate.id === periodId) ?? null)
         : null;
   const [savedJournal, setSavedJournal] = useState<SavedJournalEntry[]>([]);
+  const [shipmentMeta, setShipmentMeta] = useState<ShipmentMeta[]>([]);
   const [openingRows, setOpeningRows] = useState<OpeningBalanceRow[]>([]);
   const [periodNotices, setPeriodNotices] =
     useState<PeriodNotices>(NO_PERIOD_NOTICES);
@@ -613,6 +593,7 @@ export function useCostProfitModel({
       setLoadedScope(requestScope);
       setPeriods(payload.data.periods ?? []);
       setSavedJournal(payload.data.savedJournal ?? []);
+      setShipmentMeta(payload.data.shipmentMeta ?? []);
       setOpeningRows(payload.data.opening ?? []);
       setPeriodNotices(payload.data.periodNotices ?? NO_PERIOD_NOTICES);
       setHasNoPeriod(payload.data.period === null);
@@ -652,6 +633,7 @@ export function useCostProfitModel({
       // DB取得に失敗した場合、削除できないサンプル行を残さない。
       // 画面上のデータがSupabase由来であることを保証する。前の期間の仕訳・期首も残さない。
       setSavedJournal([]);
+      setShipmentMeta([]);
       setOpeningRows([]);
       setPeriodNotices(NO_PERIOD_NOTICES);
       setHasNoPeriod(false);
@@ -934,72 +916,11 @@ export function useCostProfitModel({
     return statuses;
   }, [fixedAssets, expensesById, fiscalYear]);
 
-  // 帳簿・財務3表は取引管理に入力された実データと決算整理仕訳だけから作る。
+  // 帳簿・財務3表は保存した仕訳（手入力・支払い・出荷・手数料・入金）と決算整理仕訳だけから作る。
+  // 注文の売上も Stripe の仕訳も画面では合成しない（FREQ-570）。
   // 仕訳 → 総勘定元帳 → 合計残高試算表 → 損益計算書・貸借対照表 の順に導出する。
-  // Stripe原始記録が投影済みの注文は、注文由来の売上仕訳ではなく
-  // Stripe仕訳（売上・手数料・返金・入金途上・普通預金）で表現する。
-  const stripeProjectedPaymentIntents = useMemo(
-    () =>
-      new Set(
-        stripeAccounting.balanceTransactions
-          .filter(
-            (row) =>
-              row.reporting_category === "charge" && row.payment_intent_id,
-          )
-          .map((row) => String(row.payment_intent_id)),
-      ),
-    [stripeAccounting.balanceTransactions],
-  );
-  const stripeJournalOrders = useMemo(
-    () =>
-      incomes
-        .filter(
-          (income) =>
-            income.source === "order" &&
-            income.paymentIntentId &&
-            stripeProjectedPaymentIntents.has(income.paymentIntentId),
-        )
-        .map((income) => ({
-          id: String(income.sourceId),
-          paymentIntentId: income.paymentIntentId as string,
-          totalAmount: income.grossAmount ?? income.amount,
-          currency: "jpy",
-        })),
-    [incomes, stripeProjectedPaymentIntents],
-  );
-  // Stripe の合成仕訳。日は日本時間に直し、期間に入る物だけを残す（保存は計画2）。
-  const stripeJournal = useMemo(
-    () =>
-      buildStripeJournal({
-        orders: stripeJournalOrders,
-        balanceTransactions: stripeRowsInJst(
-          stripeAccounting.balanceTransactions,
-          ["stripe_created_at"],
-        ) as never,
-        refunds: stripeRowsInJst(stripeAccounting.refunds, [
-          "succeeded_at",
-        ]) as never,
-        payouts: stripeRowsInJst(
-          stripeAccounting.payouts as unknown as Array<Record<string, unknown>>,
-          ["paid_at"],
-        ) as never,
-      }).filter((entry) => isDateInPeriod(entry.date, periodBounds)),
-    [stripeJournalOrders, stripeAccounting, periodBounds],
-  );
-  const journalIncomes = useMemo(
-    () =>
-      incomes.filter(
-        (income) =>
-          !(
-            income.source === "order" &&
-            income.paymentIntentId &&
-            stripeProjectedPaymentIntents.has(income.paymentIntentId)
-          ),
-      ),
-    [incomes, stripeProjectedPaymentIntents],
-  );
 
-  // 手入力の取引は保存した仕訳が正（S4 のトリガーが仕訳にする）。ここで手入力から仕訳を合成しない。
+  // 保存した仕訳が正（手入力は S4 のトリガー、支払い・出荷・手数料・入金は計上係が仕訳にする）。ここで仕訳を合成しない。
   const savedJournalEntries = useMemo(
     () =>
       savedJournal.map((saved) => {
@@ -1020,45 +941,17 @@ export function useCostProfitModel({
       }),
     [savedJournal],
   );
-  // 注文の売上の合成（計画1。注文を作った日の日本時間で期間に入る物。計画2が保存へ置き換える）。
-  const orderSalesJournal = useMemo(
-    () =>
-      buildOrderSalesJournal(
-        journalIncomes
-          .filter((income) => income.source === "order")
-          .map((income) => ({
-            ...income,
-            sourceId: String(income.sourceId ?? income.id),
-          })),
-        businessType,
-        periodBounds,
-      ),
-    [journalIncomes, businessType, periodBounds],
-  );
-  /** 保存していない合成の仕訳の伝票番号。仕訳帳で「集計中（計画2で保存）」の印を付ける。 */
-  const synthesizedEntryNumbers = useMemo(
-    () =>
-      new Set(
-        [...orderSalesJournal, ...stripeJournal].map((entry) => entry.number),
-      ),
-    [orderSalesJournal, stripeJournal],
-  );
 
   const journal = useMemo(
-    () => [
-      ...mergeJournalEntries(
-        [...savedJournalEntries, ...orderSalesJournal],
-        stripeJournal,
-      ),
-      // 決算整理仕訳（減価償却・棚卸・引当金）は期間の終わりの日に立てる。
-      ...buildDepreciationEntries(depreciation.rows, periodBounds.endsOn),
-      ...buildInventoryEntries(adjustment, openingBalances, periodBounds.endsOn),
-      ...buildAllowanceEntries(adjustment, periodBounds.endsOn),
-    ],
+    () =>
+      mergeJournalEntries(savedJournalEntries, [
+        // 決算整理仕訳（減価償却・棚卸・引当金）は期間の終わりの日に立てる。
+        ...buildDepreciationEntries(depreciation.rows, periodBounds.endsOn),
+        ...buildInventoryEntries(adjustment, openingBalances, periodBounds.endsOn),
+        ...buildAllowanceEntries(adjustment, periodBounds.endsOn),
+      ]),
     [
       savedJournalEntries,
-      orderSalesJournal,
-      stripeJournal,
       depreciation.rows,
       periodBounds.endsOn,
       adjustment,
@@ -4235,7 +4128,8 @@ export function useCostProfitModel({
     hasNoPeriod,
     journalIncomplete,
     preDeductionIncome,
-    synthesizedEntryNumbers,
+    savedJournal,
+    shipmentMeta,
     periodBounds,
     periodRangeLabel,
     periodSpanLabel,
@@ -4471,10 +4365,6 @@ export function useCostProfitModel({
     excludedAssetEntryRows,
     selectedAssetCandidate,
     assetLinkStatuses,
-    stripeProjectedPaymentIntents,
-    stripeJournalOrders,
-    stripeJournal,
-    journalIncomes,
     journal,
     ledger,
     trialBalance,

@@ -67,8 +67,48 @@ function savedEntryRow(n: number, periodN = 2026, amount = 1_000): Record<string
 	};
 }
 
+/** 出荷の仕訳（前受金／売上高）。reverses を渡すと、その番号の仕訳を打ち消す仕訳（借貸が逆）。 */
+function shipmentEntryRow(
+	n: number,
+	options: { date?: string; amount?: number; eventKind?: string; reverses?: number; revenueLines?: Array<[debit: number, credit: number]> } = {},
+): Record<string, unknown> {
+	const amount = options.amount ?? 10_000;
+	const reversing = options.reverses !== undefined;
+	const revenue = options.revenueLines ?? [reversing ? [amount, 0] : [0, amount]];
+	return {
+		...savedEntryRow(n),
+		id: periodUuid(200_000 + n),
+		entry_date: options.date ?? '2026-03-01',
+		event_kind: options.eventKind ?? (reversing ? 'reversal' : 'shipment_confirmed'),
+		dedupe_key: `${options.eventKind ?? (reversing ? 'reversal' : 'shipment_confirmed')}:${n}`,
+		description: reversing ? '出荷の取り消し' : '出荷による売上',
+		source_table: reversing ? 'accounting_journal_entries' : 'shipment_slips',
+		source_id: reversing ? periodUuid(200_000 + (options.reverses as number)) : periodUuid(300_000 + n),
+		reverses_entry_id: reversing ? periodUuid(200_000 + (options.reverses as number)) : null,
+		lines: [
+			{ line_no: 1, account_code: '2150', debit: reversing ? 0 : amount, credit: reversing ? amount : 0, sub_account: null, counterparty: null, order_id: null, memo: null },
+			...revenue.map(([debit, credit], index) => ({
+				line_no: index + 2, account_code: '4010', debit, credit, sub_account: null, counterparty: null, order_id: null, memo: null,
+			})),
+		],
+	};
+}
+
+// 出荷の仕訳に付ける出荷した日と登録した日（list_journal_shipment_meta）。既定は渡された仕訳の番号ごとに1行。
+let shipmentMetaError: { code: string; message: string } | null = null;
+
 function accountingRpc(name: string, args?: Record<string, unknown>) {
-	void args;
+	if (name === 'list_journal_shipment_meta') {
+		if (shipmentMetaError) return Promise.resolve({ data: null, error: shipmentMetaError });
+		const ids = (args?._entry_ids ?? []) as string[];
+		return Promise.resolve({
+			data: ids.map((id, index) => ({
+				entry_id: id, slip_number: `SL-20260301-${String(index + 1).padStart(4, '0')}`,
+				shipment_date: '2026-03-01', confirmed_at: '2026-03-01T01:00:00+00:00',
+			})),
+			error: null,
+		});
+	}
 	if (name === 'list_accounting_periods') return Promise.resolve({ data: accountingPeriodRows, error: null });
 	if (name === 'get_accounting_settings') return Promise.resolve({ data: settingsRow, error: null });
 	if (name === 'get_accounting_opening') return Promise.resolve({ data: openingRows, error: null });
@@ -95,7 +135,6 @@ function rangeChain<T>(table: string, terminal: () => T) {
 let stripeBalanceTransactionRows: Array<Record<string, unknown>> = [];
 let stripeRefundRows: Array<Record<string, unknown>> = [];
 let stripePayoutRows: Array<Record<string, unknown>> = [];
-let orderRowsOverride: Array<Record<string, unknown>> | null = null;
 
 function result(data: unknown) {
 	return Promise.resolve({ data, error: financeQueryError });
@@ -198,35 +237,6 @@ function createFinanceSupabaseMock() {
 				};
 			}
 
-			if (table === 'orders') {
-				return {
-					select: () => rangeChain('orders', () => ({
-								order: () => ({
-									order: () => result(orderRowsOverride ?? [
-										{
-											id: 'order-1',
-											payment_intent_id: 'pi_1',
-											status: 'paid',
-											total_amount: 25_300,
-											refunded_amount: 500,
-											currency: 'jpy',
-											created_at: '2026-05-26T01:00:00.000Z',
-										},
-										{
-											id: 'order-fully-refunded',
-											payment_intent_id: 'pi_refunded',
-											status: 'cancelled',
-											total_amount: 59_600,
-											refunded_amount: 59_600,
-											currency: 'jpy',
-											created_at: '2026-07-05T01:00:00.000Z',
-										},
-									]),
-								}),
-							})),
-				};
-			}
-
 			if (table === 'stripe_balance_transactions') {
 				return { select: () => rangeChain(table, () => ({ order: () => result(stripeBalanceTransactionRows) })) };
 			}
@@ -311,6 +321,7 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
 		financeQueryError = null;
+		shipmentMetaError = null;
 		cumulativeRowsOverride = null;
 		cumulativeRangeCalls = [];
 		cumulativePageLimit = null;
@@ -318,7 +329,6 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 		stripeBalanceTransactionRows = [];
 		stripeRefundRows = [];
 		stripePayoutRows = [];
-		orderRowsOverride = null;
 		rangeCalls = [];
 		journalPages = [];
 		openingRows = [];
@@ -327,6 +337,7 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 	});
 
 	it('管理者へ指定年度の会計データを返す', async () => {
+		journalPages = [{ data: { entries: [shipmentEntryRow(1, { amount: 24_800 })], next_after_date: null, next_after_no: null }, error: null }];
 		const response = await GET(new Request('http://localhost/api/admin/kpi/cost-profit?year=2026'));
 		const body = await response.json();
 
@@ -338,6 +349,7 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 		expect(body.data.expenses).toHaveLength(1);
 		expect(body.data.expenses[0].item).toBe('Instagram広告費');
 		expect(body.data.expenses[0].partner).toBe('丸善テキスタイル');
+		// 注文の収入の行は保存した出荷の仕訳から作る（注文の表は読まない）。
 		expect(body.data.incomes).toHaveLength(2);
 		expect(body.data.incomes[0].item).toBe('オンライン販売');
 		expect(body.data.incomes[0].entryType).toBe('income');
@@ -356,10 +368,12 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 			amount: 24_800,
 			source: 'order',
 			evidenceStatus: 'system_record',
-			sourceId: 'order-1',
+			sourceId: periodUuid(200_001),
 			readOnly: true,
-			grossAmount: 25_300,
-			refundedAmount: 500,
+			grossAmount: 24_800,
+			refundedAmount: 0,
+			netAmount: 24_800,
+			currency: 'jpy',
 		}));
 		expect(body.data.partners).toEqual(['丸善テキスタイル']);
 		expect(body.data.cumulativeEntries[0]).toEqual(expect.objectContaining({
@@ -401,26 +415,6 @@ describe('GET /api/admin/kpi/cost-profit', () => {
 			},
 		});
 		expect(body.data.stripeAccounting.balanceTransactions).toHaveLength(1);
-	});
-
-	it('Stripe投影済みの注文は総額売上を保つ', async () => {
-		stripeBalanceTransactionRows = [
-			{
-				id: 'txn_1', source_id: 'ch_1', payment_intent_id: 'pi_1', order_id: 'order-1',
-				payout_id: null, type: 'charge', reporting_category: 'charge',
-				amount: 25_300, fee: 900, net: 24_400, currency: 'jpy', status: 'available',
-				available_on: '2026-05-28', stripe_created_at: '2026-05-26T01:00:00.000Z',
-			},
-		];
-
-		const body = await (await GET(new Request('http://localhost/api/admin/kpi/cost-profit?year=2026'))).json();
-
-		expect(body.data.incomes[1]).toEqual(expect.objectContaining({
-			sourceId: 'order-1',
-			amount: 25_300,
-			grossAmount: 25_300,
-			refundedAmount: 0,
-		}));
 	});
 
 	it('入金途上と未照合Payoutを集計する', async () => {
@@ -577,6 +571,7 @@ describe('GET /api/admin/kpi/cost-profit（期間で数える）', () => {
 			doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate', 'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'clearImmediate'],
 		});
 		financeQueryError = null;
+		shipmentMetaError = null;
 		cumulativeRowsOverride = null;
 		cumulativeRangeCalls = [];
 		cumulativePageLimit = null;
@@ -584,7 +579,6 @@ describe('GET /api/admin/kpi/cost-profit（期間で数える）', () => {
 		stripeBalanceTransactionRows = [];
 		stripeRefundRows = [];
 		stripePayoutRows = [];
-		orderRowsOverride = null;
 		rangeCalls = [];
 		journalPages = [];
 		openingRows = [];
@@ -601,7 +595,6 @@ describe('GET /api/admin/kpi/cost-profit（期間で数える）', () => {
 	afterEach(() => {
 		jest.useRealTimers();
 		accountingPeriodRows = [periodRow(2026, '2026-01-01', '2026-12-31')];
-		orderRowsOverride = null;
 		journalPages = [];
 		openingRows = [];
 	});
@@ -620,8 +613,6 @@ describe('GET /api/admin/kpi/cost-profit（期間で数える）', () => {
 			['admin_finance_expenses', 'gte', 'expense_date', '2025-01-01'],
 			['admin_finance_expenses', 'lte', 'expense_date', '2025-12-31'],
 			['admin_finance_expenses:cumulative', 'lte', 'expense_date', '2025-12-31'],
-			['orders', 'gte', 'created_at', '2024-12-31T15:00:00.000Z'],
-			['orders', 'lt', 'created_at', '2025-12-31T15:00:00.000Z'],
 			['stripe_balance_transactions', 'gte', 'stripe_created_at', '2024-12-31T15:00:00.000Z'],
 			['stripe_payouts', 'lt', 'stripe_created_at', '2025-12-31T15:00:00.000Z'],
 		]));
@@ -654,8 +645,6 @@ describe('GET /api/admin/kpi/cost-profit（期間で数える）', () => {
 		expect(rangeCalls).toEqual(expect.arrayContaining([
 			['admin_finance_expenses', 'gte', 'expense_date', '2027-07-15'],
 			['admin_finance_expenses', 'lte', 'expense_date', '2028-07-14'],
-			['orders', 'gte', 'created_at', '2027-07-14T15:00:00.000Z'],
-			['orders', 'lt', 'created_at', '2028-07-14T15:00:00.000Z'],
 		]));
 
 		// 形の違う periodId は 400、無い期間は 404（本文は読み切れる JSON）。
@@ -663,23 +652,6 @@ describe('GET /api/admin/kpi/cost-profit（期間で数える）', () => {
 		const missing = await get(`periodId=${periodUuid(1999)}`);
 		expect(missing.status).toBe(404);
 		expect(missing.body).toEqual({ error: '会計の記録が見つかりません。', code: 'ACCOUNTING_NOT_FOUND' });
-	});
-
-	it('FREQ-557-AC-01: 12月28日に払った注文は注文を作った日の期間に出て年を作り直しても二重に数えない', async () => {
-		orderRowsOverride = [
-			{ id: 'order-1228', payment_intent_id: 'pi_a', status: 'paid', total_amount: 10_000, refunded_amount: 0, currency: 'jpy', created_at: '2026-12-28T05:00:00.000Z' },
-			// 日本時間では 2027-01-01 00:30。2026年の期間には入れない。
-			{ id: 'order-newyear', payment_intent_id: 'pi_b', status: 'paid', total_amount: 7_000, refunded_amount: 0, currency: 'jpy', created_at: '2026-12-31T15:30:00.000Z' },
-		];
-
-		const first = await get('year=2026');
-		const again = await get('year=2026');
-
-		for (const { status, body } of [first, again]) {
-			expect(status).toBe(200);
-			const orders = body.data.incomes.filter((income: { source?: string }) => income.source === 'order');
-			expect(orders.map((income: { sourceId: string; date: string }) => [income.sourceId, income.date])).toEqual([['order-1228', '2026-12-28']]);
-		}
 	});
 
 	it('FREQ-557-AC-05: 期間が1つも無いときは404でなく空の画面を返し作成を案内する', async () => {
@@ -755,10 +727,275 @@ describe('GET /api/admin/kpi/cost-profit（期間で数える）', () => {
 	});
 });
 
+describe('GET /api/admin/kpi/cost-profit（保存した仕訳で数える）', () => {
+	let client: ReturnType<typeof createFinanceSupabaseMock>;
+	const get = async (query: string) => {
+		const response = await GET(new Request(`http://localhost/api/admin/kpi/cost-profit?${query}`));
+		return { status: response.status, body: await response.json() };
+	};
+	const journalCalls = () => client.rpc.mock.calls.filter(([name]) => name === 'list_accounting_journal');
+	const metaCalls = () => client.rpc.mock.calls.filter(([name]) => name === 'list_journal_shipment_meta');
+	const page = (entries: Array<Record<string, unknown>>, after: [string, number] | null = null) => ({
+		data: { entries, next_after_date: after?.[0] ?? null, next_after_no: after?.[1] ?? null },
+		error: null,
+	});
+	type OrderIncome = Record<string, unknown>;
+	const orderIncomes = (body: { data: { incomes: OrderIncome[] } }) => body.data.incomes.filter((income) => income.source === 'order');
+
+	beforeEach(() => {
+		jest.clearAllMocks();
+		jest.useFakeTimers({
+			now: new Date('2026-11-07T03:00:00.000Z'),
+			doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate', 'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'clearImmediate'],
+		});
+		financeQueryError = null;
+		shipmentMetaError = null;
+		cumulativeRowsOverride = null;
+		cumulativeRangeCalls = [];
+		cumulativePageLimit = null;
+		expenseSelectColumns = [];
+		stripeBalanceTransactionRows = [];
+		stripeRefundRows = [];
+		stripePayoutRows = [];
+		rangeCalls = [];
+		journalPages = [];
+		openingRows = [];
+		settingsRow = SETTINGS_ROW;
+		accountingPeriodRows = [periodRow(2026, '2026-01-01', '2026-12-31')];
+		authorizeMock.mockResolvedValue(ADMIN);
+		client = createFinanceSupabaseMock();
+		createServiceMock.mockResolvedValue(client as never);
+	});
+	afterEach(() => {
+		jest.useRealTimers();
+		journalPages = [];
+		openingRows = [];
+	});
+
+	it('FREQ-570-AC-01: 画面の仕訳は保存した仕訳だけから注文とStripeの売上を数え、注文の表は読まず合成の仕訳が重ならない', async () => {
+		journalPages = [page([shipmentEntryRow(1, { amount: 10_000 })])];
+		stripeBalanceTransactionRows = [
+			{
+				id: 'txn_1', source_id: 'ch_1', payment_intent_id: 'pi_1', order_id: 'order-1', payout_id: null, type: 'charge',
+				reporting_category: 'charge', amount: 10_000, fee: 360, net: 9_640, currency: 'jpy', status: 'available',
+				available_on: '2026-03-05', stripe_created_at: '2026-03-01T01:00:00.000Z',
+			},
+		];
+
+		const { status, body } = await get('year=2026');
+
+		expect(status).toBe(200);
+		// 注文の表は読まない。Stripe の3表は精算のタブのために読む。
+		const tables = client.from.mock.calls.map(([table]) => table);
+		expect(tables).not.toContain('orders');
+		expect(tables).toEqual(expect.arrayContaining(['stripe_balance_transactions', 'stripe_refunds', 'stripe_payouts']));
+		// 注文の収入の行は出荷の仕訳の1本だけ。Stripe の原始記録の支払い（pi_1）から売上の行を足さない。
+		expect(orderIncomes(body)).toHaveLength(1);
+		expect(body.data.savedJournal).toHaveLength(1);
+		expect(body.data.stripeAccounting.balanceTransactions).toHaveLength(1);
+		expect(JSON.stringify(body)).not.toContain('stripe:sale:');
+	});
+
+	it('FREQ-570-AC-01: 支払い・出荷・手数料・入金の保存した仕訳が、返す仕訳に1本ずつ出て注文の収入の行は出荷の1本だけ', async () => {
+		const row = (n: number, eventKind: string, lines: Array<[string, number, number]>) => ({
+			...savedEntryRow(n),
+			id: periodUuid(200_000 + n), event_kind: eventKind, dedupe_key: `${eventKind}:${n}`,
+			source_table: eventKind === 'shipment_confirmed' ? 'shipment_slips' : 'stripe_balance_transactions', source_id: `src-${n}`,
+			lines: lines.map(([account_code, debit, credit], index) => ({
+				line_no: index + 1, account_code, debit, credit, sub_account: null, counterparty: null, order_id: null, memo: null,
+			})),
+		});
+		journalPages = [page([
+			row(1, 'payment_confirmed', [['1160', 10_000, 0], ['2150', 0, 10_000]]),
+			row(2, 'shipment_confirmed', [['2150', 10_000, 0], ['4010', 0, 10_000]]),
+			row(3, 'stripe_fee', [['6280', 360, 0], ['1160', 0, 360]]),
+			row(4, 'payout_started', [['1150', 9_640, 0], ['1160', 0, 9_640]]),
+			row(5, 'bank_arrived', [['1040', 9_640, 0], ['1150', 0, 9_640]]),
+		])];
+
+		const { body } = await get('year=2026');
+
+		expect(body.data.savedJournal.map((entry: { eventKind: string }) => entry.eventKind)).toEqual([
+			'payment_confirmed', 'shipment_confirmed', 'stripe_fee', 'payout_started', 'bank_arrived',
+		]);
+		expect(new Set(body.data.savedJournal.map((entry: { dedupeKey: string }) => entry.dedupeKey)).size).toBe(5);
+		expect(orderIncomes(body).map((income) => income.sourceId)).toEqual([periodUuid(200_002)]);
+		// 出荷の仕訳にだけ出荷した日と登録した日を付ける。
+		expect(metaCalls()).toHaveLength(1);
+		expect(metaCalls()[0][1]).toEqual({ _entry_ids: [periodUuid(200_002)] });
+		expect(body.data.shipmentMeta).toEqual([
+			{ entryId: periodUuid(200_002), slipNumber: 'SL-20260301-0001', shipmentDate: '2026-03-01', confirmedAt: '2026-03-01T01:00:00+00:00' },
+		]);
+	});
+
+	it('FREQ-570-AC-01: 保存した仕訳が1000件を超えてもページを最後まで読み、借方と貸方の合計が合う', async () => {
+		journalPages = [
+			...[0, 1, 2, 3, 4].map((index) => page(
+				Array.from({ length: 200 }, (_, i) => savedEntryRow(index * 200 + i + 1, 2026, 1_000 + i)),
+				['2026-03-01', (index + 1) * 200],
+			)),
+			page([savedEntryRow(1001, 2026, 7)]),
+		];
+
+		const { status, body } = await get('year=2026');
+
+		expect(status).toBe(200);
+		expect(body.data.savedJournal).toHaveLength(1001);
+		expect(new Set(body.data.savedJournal.map((entry: { entryNo: number }) => entry.entryNo)).size).toBe(1001);
+		expect(journalCalls().map(([, args]) => (args as Record<string, unknown>)._after_entry_no)).toEqual([null, 200, 400, 600, 800, 1000]);
+		const sum = (side: 'debit' | 'credit') => body.data.savedJournal
+			.flatMap((entry: { lines: Array<Record<string, number>> }) => entry.lines)
+			.reduce((total: number, line: Record<string, number>) => total + line[side], 0);
+		expect(sum('debit')).toBe(sum('credit'));
+		expect(sum('debit')).toBeGreaterThan(0);
+	});
+
+	it('FREQ-570-AC-01: 日付の古い取り消しの仕訳（通し番号は大きい）がページの境目にあっても、抜けも重なりも無く数字が合う', async () => {
+		// 並びは (仕訳の日, 通し番号)。ページの終わりは (3月10日, 200)。次のページの先頭は、古い日の取り消し (3月10日, 900)。
+		const first = Array.from({ length: 200 }, (_, i) => ({ ...savedEntryRow(i + 1), entry_date: '2026-03-10' }));
+		const reversal = { ...shipmentEntryRow(900, { date: '2026-03-10', reverses: 2, amount: 10_000 }) };
+		const later = { ...savedEntryRow(201), entry_date: '2026-03-11' };
+		journalPages = [page(first, ['2026-03-10', 200]), page([reversal, later])];
+
+		const { status, body } = await get('year=2026');
+
+		expect(status).toBe(200);
+		const calls = journalCalls().map(([, args]) => args as Record<string, unknown>);
+		expect(calls).toHaveLength(2);
+		// 続きの目印は日付と通し番号の両方を渡す（通し番号だけでは (3月10日, 900) を飛ばすか二重に読む）。
+		expect(calls[1]).toEqual(expect.objectContaining({ _after_entry_date: '2026-03-10', _after_entry_no: 200 }));
+		expect(body.data.savedJournal.map((entry: { entryNo: number }) => entry.entryNo)).toEqual([
+			...Array.from({ length: 200 }, (_, i) => i + 1), 900, 201,
+		]);
+	});
+
+	it('FREQ-570-AC-01: ページの上限を超えた時は数字を出さずに止まり、JOURNAL_TOO_LARGEを返す', async () => {
+		journalPages = Array.from({ length: 100 }, (_, i) => page([savedEntryRow(i + 1)], ['2026-03-01', i + 1]));
+
+		const { status, body } = await get('year=2026');
+
+		expect(status).toBe(500);
+		expect(body).toEqual({ error: '会計データの取得に失敗しました。', code: 'JOURNAL_TOO_LARGE' });
+		expect(journalCalls()).toHaveLength(100);
+		expect(metaCalls()).toHaveLength(0);
+	});
+
+	it('FREQ-570-AC-02: 取引管理の注文の収入の行は出荷の仕訳と一致し、取り消された出荷は出ない', async () => {
+		journalPages = [page([
+			shipmentEntryRow(1, { date: '2026-03-01', amount: 10_000 }),
+			shipmentEntryRow(2, { date: '2026-03-02', amount: 5_000 }),
+			shipmentEntryRow(3, { date: '2026-03-02', amount: 5_000, reverses: 2 }),
+		])];
+
+		const { body } = await get('year=2026');
+
+		expect(orderIncomes(body)).toEqual([
+			expect.objectContaining({
+				source: 'order', sourceId: periodUuid(200_001), date: '2026-03-01', entryType: 'income',
+				grossAmount: 10_000, refundedAmount: 0, netAmount: 10_000, amount: 10_000, currency: 'jpy', readOnly: true,
+			}),
+		]);
+		// 取り消しの仕訳そのものも、取り消された出荷も行にならない。
+		expect(JSON.stringify(orderIncomes(body))).not.toContain(periodUuid(200_002));
+		expect(JSON.stringify(orderIncomes(body))).not.toContain(periodUuid(200_003));
+	});
+
+	it('FREQ-570-AC-02: 日の直しがあれば直した日の行だけが出る', async () => {
+		journalPages = [page([
+			shipmentEntryRow(1, { date: '2026-03-01', amount: 10_000 }),
+			shipmentEntryRow(2, { date: '2026-03-01', amount: 10_000, reverses: 1 }),
+			shipmentEntryRow(3, { date: '2026-03-05', amount: 10_000, eventKind: 'shipment_redated' }),
+		])];
+
+		const { body } = await get('year=2026');
+
+		expect(orderIncomes(body).map((income) => [income.sourceId, income.date, income.netAmount])).toEqual([
+			[periodUuid(200_003), '2026-03-05', 10_000],
+		]);
+	});
+
+	it('FREQ-570-AC-02: 一部出荷のgrossAmountとnetAmountは保存した4010のcredit−debitの合計で元の注文の総額を使わない', async () => {
+		// 総額 29,000 の注文のうち、送った分の売上 18,750（4010 の貸方 20,000 − 借方 1,250）だけが出荷の仕訳。
+		journalPages = [page([shipmentEntryRow(1, { amount: 18_750, revenueLines: [[0, 20_000], [1_250, 0]] })])];
+
+		const { body } = await get('year=2026');
+
+		const [income] = orderIncomes(body);
+		expect(income).toEqual(expect.objectContaining({ grossAmount: 18_750, netAmount: 18_750, refundedAmount: 0, amount: 18_750 }));
+		expect(JSON.stringify(body.data.incomes)).not.toContain('29000');
+	});
+
+	it('FREQ-570-AC-03: Stripeの精算のタブの原始記録と入金の確認の数字は今のまま返す', async () => {
+		stripeBalanceTransactionRows = [
+			{
+				id: 'txn_1', source_id: 'ch_1', payment_intent_id: 'pi_1', order_id: 'order-1', payout_id: null, type: 'charge',
+				reporting_category: 'charge', amount: 10_000, fee: 360, net: 9_640, currency: 'jpy', status: 'available',
+				stripe_created_at: '2026-03-01T01:00:00.000Z',
+			},
+		];
+		stripePayoutRows = [
+			{
+				id: 'po_1', amount: 9_640, currency: 'jpy', status: 'paid', automatic: true, arrival_date: '2026-03-05',
+				stripe_created_at: '2026-03-02T01:00:00.000Z', paid_at: '2026-03-02T01:00:00.000Z', reconciliation_status: 'matched',
+				reconciled_net: 9_640, bank_confirmed_at: null, bank_arrival_date: null,
+			},
+		];
+
+		const { status, body } = await get('year=2026');
+
+		expect(status).toBe(200);
+		expect(body.data.stripeAccounting.balanceTransactions).toEqual(stripeBalanceTransactionRows);
+		expect(body.data.stripeAccounting.payouts).toEqual(stripePayoutRows);
+		expect(body.data.stripeAccounting.summary).toEqual({ stripeBalance: 9_640, inTransitBalance: 9_640, unmatchedPayoutCount: 0 });
+		expect(rangeCalls).toEqual(expect.arrayContaining([
+			['stripe_balance_transactions', 'gte', 'stripe_created_at', '2025-12-31T15:00:00.000Z'],
+			['stripe_payouts', 'lt', 'stripe_created_at', '2026-12-31T15:00:00.000Z'],
+		]));
+	});
+
+	it('FREQ-570-AC-02: 出荷の仕訳の出荷した日と登録した日を、200件ずつに分けて読んで返す', async () => {
+		const shipments = Array.from({ length: 201 }, (_, i) => shipmentEntryRow(i + 1, { amount: 100 }));
+		journalPages = [
+			page(shipments.slice(0, 200), ['2026-03-01', 200]),
+			page([shipments[200], savedEntryRow(300)]),
+		];
+
+		const { status, body } = await get('year=2026');
+
+		expect(status).toBe(200);
+		expect(metaCalls().map(([, args]) => (args as { _entry_ids: string[] })._entry_ids.length)).toEqual([200, 1]);
+		expect(body.data.shipmentMeta).toHaveLength(201);
+		// 手入力の仕訳の番号は渡さない。
+		expect(metaCalls().flatMap(([, args]) => (args as { _entry_ids: string[] })._entry_ids)).not.toContain(periodUuid(100_300));
+	});
+
+	it('FREQ-570-AC-02: 出荷の日付が読めない時は一部しか読めていないと止め、中身の例外は返さない', async () => {
+		journalPages = [page([shipmentEntryRow(1)])];
+		shipmentMetaError = { code: 'XX000', message: 'boom' };
+
+		const { status, body } = await get('year=2026');
+
+		expect(status).toBe(500);
+		expect(body).toEqual({ error: '会計データの取得に失敗しました。', code: 'JOURNAL_INCOMPLETE' });
+		expect(JSON.stringify(body)).not.toContain('boom');
+	});
+
+	it('FREQ-570-AC-02: 出荷の仕訳が無い期間は出荷の日付を呼ばず空の配列を返す', async () => {
+		journalPages = [page([savedEntryRow(1)])];
+
+		const { body } = await get('year=2026');
+
+		expect(metaCalls()).toHaveLength(0);
+		expect(body.data.shipmentMeta).toEqual([]);
+		expect(orderIncomes(body)).toEqual([]);
+	});
+});
+
 describe('GET /api/admin/kpi/cost-profit（証憑の種類）', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
 		financeQueryError = null;
+		shipmentMetaError = null;
 		cumulativeRangeCalls = [];
 		cumulativePageLimit = null;
 		expenseSelectColumns = [];

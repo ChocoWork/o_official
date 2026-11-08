@@ -13,6 +13,7 @@ import {
 	type AccountingErrorCode,
 	type JournalCursor,
 	type OpeningBalanceRow,
+	type ShipmentMeta,
 } from '@/lib/accounting/accounting-types';
 import {
 	getAccountingSettings,
@@ -20,16 +21,13 @@ import {
 	listAccountingPeriods,
 	listSavedJournal,
 } from '@/lib/accounting/accounting-store';
+import { listJournalShipmentMeta } from '@/lib/accounting/posting-store';
 import { filingDeadlines } from '@/lib/accounting/filing-deadlines';
 import { isJpHoliday } from '@/lib/accounting/jp-holidays';
 import { toJstDate } from '@/lib/accounting/jst-date';
 import type { SavedJournalEntry } from '@/lib/accounting/journal-types';
 import { addDays, type AccountingPeriod } from '@/lib/accounting/period';
-import { isDateInPeriod, jstStartOfDayIso, periodRangeOf } from '@/lib/finance/period-range';
-import {
-	toOrderSalesTransaction,
-	type OrderSalesRow,
-} from '@/lib/sales/order-sales';
+import { jstStartOfDayIso, periodRangeOf } from '@/lib/finance/period-range';
 
 const seasonKeySchema = z.string().regex(/^\d{4}(SS|AW)$/);
 // 旧の年の入口。GET は個人の暦年の期間に結ぶ（会計の期間は accounting_periods。シーズンは商品原価専用）。
@@ -466,6 +464,8 @@ type PeriodPayload = {
 	period: AccountingPeriod | null;
 	periods: AccountingPeriod[];
 	savedJournal: SavedJournalEntry[];
+	/** 出荷の仕訳の出荷した日と登録した日。保存した仕訳の読み直しと一緒に返す。 */
+	shipmentMeta: ShipmentMeta[];
 	opening: OpeningBalanceRow[];
 	periodNotices: PeriodNotices;
 };
@@ -545,6 +545,67 @@ async function readAllSavedJournal(
 		}
 	}
 	return { ok: false, code: 'JOURNAL_TOO_LARGE' };
+}
+
+/** 出荷の仕訳に付ける出荷した日と登録した日を一度に読む件数（読み口の上限）。 */
+const SHIPMENT_META_BATCH = 200;
+
+/**
+ * 出荷の仕訳（発送票由来）だけの出荷した日・登録した日を、200件ずつに分けて最後まで読む（FREQ-564-AC-04）。
+ * 途中の失敗は、欠けた配列を成功として返さない。
+ */
+async function readShipmentMeta(
+	client: Awaited<ReturnType<typeof createServiceRoleClient>>,
+	entries: readonly SavedJournalEntry[],
+): Promise<{ ok: true; meta: ShipmentMeta[] } | { ok: false; code: 'JOURNAL_INCOMPLETE' }> {
+	const ids = entries.filter((entry) => entry.sourceTable === 'shipment_slips').map((entry) => entry.id);
+	const meta: ShipmentMeta[] = [];
+	try {
+		for (let from = 0; from < ids.length; from += SHIPMENT_META_BATCH) {
+			meta.push(...(await listJournalShipmentMeta(client, ids.slice(from, from + SHIPMENT_META_BATCH))));
+		}
+	} catch (error) {
+		const failure = error instanceof AccountingStoreError ? error : new AccountingStoreError();
+		console.error('GET /api/admin/kpi/cost-profit shipment meta read error:', failure.code ?? failure.sqlstate ?? null);
+		return { ok: false, code: 'JOURNAL_INCOMPLETE' };
+	}
+	return { ok: true, meta };
+}
+
+/**
+ * 取引管理の注文の収入の行。取り消されていない出荷の仕訳（shipment_confirmed・shipment_redated）1本につき1行で、
+ * 額は保存した 4010 の貸方−借方の合計。元の注文の総額・支払いの額からは作らない（FREQ-570-AC-02）。
+ */
+function orderIncomesFromJournal(entries: readonly SavedJournalEntry[]) {
+	const reversed = new Set(entries.map((entry) => entry.reversesEntryId).filter((id): id is string => id !== null));
+	return entries
+		.filter((entry) => (entry.eventKind === 'shipment_confirmed' || entry.eventKind === 'shipment_redated') && !reversed.has(entry.id))
+		.map((entry, index) => {
+			const revenue = entry.lines
+				.filter((line) => line.accountCode === '4010')
+				.reduce((total, line) => total + line.credit - line.debit, 0);
+			return {
+				id: -(index + 1),
+				entryType: 'income' as const,
+				date: entry.entryDate,
+				category: '売上高',
+				item: 'オンライン注文',
+				partner: '',
+				amount: revenue,
+				paymentMethod: 'Stripe',
+				memo: '',
+				seasonTag: null,
+				receipts: [],
+				evidenceStatus: 'system_record' as const,
+				source: 'order' as const,
+				sourceId: entry.id,
+				readOnly: true,
+				grossAmount: revenue,
+				refundedAmount: 0,
+				netAmount: revenue,
+				currency: 'jpy' as const,
+			};
+		});
 }
 
 function journalFailureResponse(code: 'JOURNAL_TOO_LARGE' | 'JOURNAL_INCOMPLETE') {
@@ -629,15 +690,6 @@ function mapExpense(row: ExpenseRow) {
 	};
 }
 
-function formatJstDate(date: string): string {
-	return new Intl.DateTimeFormat('en-CA', {
-		timeZone: 'Asia/Tokyo',
-		year: 'numeric',
-		month: '2-digit',
-		day: '2-digit',
-	}).format(new Date(date));
-}
-
 type StripeAccountingRow = Record<string, unknown>;
 
 type StripeAccountingPayload = {
@@ -684,32 +736,6 @@ function buildStripeAccounting(
 		refunds,
 		payouts,
 		summary: { stripeBalance, inTransitBalance, unmatchedPayoutCount },
-	};
-}
-
-function mapOrderIncome(row: OrderSalesRow, index: number, hasStripeAccounting: boolean) {
-	const sale = toOrderSalesTransaction(row, { hasStripeAccounting });
-	if (!sale || sale.netAmount <= 0) return null;
-
-	return {
-		id: -(index + 1),
-		entryType: 'income' as const,
-		date: formatJstDate(sale.date),
-		category: '売上高',
-		item: 'オンライン注文',
-		partner: '',
-		amount: sale.netAmount,
-		paymentMethod: 'Stripe',
-		memo: '',
-		seasonTag: null,
-		receipts: [],
-		evidenceStatus: 'system_record' as const,
-		source: sale.source,
-		sourceId: sale.sourceId,
-		paymentIntentId: sale.paymentIntentId,
-		readOnly: sale.readOnly,
-		grossAmount: sale.grossAmount,
-		refundedAmount: sale.refundedAmount,
 	};
 }
 
@@ -880,7 +906,7 @@ export async function GET(request: Request) {
 		if (!period) {
 			// 期間が1つも無い。404 にせず空の画面（期間を作る案内）を返す。
 			return emptyFinanceResponse(requestedYear ?? Number(today.slice(0, 4)), seasonKey, {
-				period: null, periods, savedJournal: [], opening: [], periodNotices: NO_PERIOD_NOTICES,
+				period: null, periods, savedJournal: [], shipmentMeta: [], opening: [], periodNotices: NO_PERIOD_NOTICES,
 			});
 		}
 		const selectedPeriod: AccountingPeriod = period;
@@ -899,7 +925,6 @@ export async function GET(request: Request) {
 			closingsResult,
 			revisionsResult,
 			_cumulativePlaceholder,
-			orderSalesResult,
 			reviewAcksResult,
 			summaryOptionsResult,
 		] = await Promise.all([
@@ -948,14 +973,6 @@ export async function GET(request: Request) {
 				.limit(200),
 			// 開業以来累計と借入先別残高の集計用。仕訳再構築に必要な最小限の列を取る。
 			Promise.resolve({ data: [], error: null }),
-			supabase
-				.from('orders')
-				.select('id, payment_intent_id, status, total_amount, refunded_amount, currency, created_at')
-				// 注文を作った日時の日本時間の日付が期間に入る物（出荷の期間へ移すのは計画2）。
-				.gte('created_at', rangeStartIso)
-				.lt('created_at', range.toExclusiveIso)
-				.order('created_at', { ascending: false })
-				.order('id', { ascending: false }),
 			// 要確認の確認済み記録。年度に属さない（取引を直接指す）ので絞らない。
 			supabase
 				.from('admin_finance_entry_review_acks')
@@ -1000,11 +1017,6 @@ export async function GET(request: Request) {
 				(stripeRefundsResult.data ?? []) as StripeAccountingRow[],
 				(stripePayoutsResult.data ?? []) as StripeAccountingRow[],
 			);
-		const projectedPaymentIntents = new Set(
-			stripeAccounting.balanceTransactions
-				.filter((row) => row.reporting_category === 'charge' && row.payment_intent_id)
-				.map((row) => String(row.payment_intent_id)),
-		);
 
 		const cumulativeEntries: CumulativeEntryRow[] = [];
 		let cumulativeError: unknown = null;
@@ -1056,12 +1068,12 @@ export async function GET(request: Request) {
 		const queryError =
 			planError || expensesResult.error || productsResult.error || partnersResult.error || templatesResult.error
 			|| assetsResult.error || closingsResult.error || revisionsResult.error || cumulativeResult.error
-			|| orderSalesResult.error || reviewAcksError
+			|| reviewAcksError
 			|| (isMissingFinanceTable(summaryOptionsResult.error) ? null : summaryOptionsResult.error);
 		if (queryError) {
 			if (isMissingFinanceTable(queryError)) {
 				return emptyFinanceResponse(parsedYear.data, seasonKey, {
-					period: selectedPeriod, periods, savedJournal: [], opening: [], periodNotices: NO_PERIOD_NOTICES,
+					period: selectedPeriod, periods, savedJournal: [], shipmentMeta: [], opening: [], periodNotices: NO_PERIOD_NOTICES,
 				});
 			}
 			console.error('GET /api/admin/kpi/cost-profit query error:', queryError);
@@ -1081,9 +1093,10 @@ export async function GET(request: Request) {
 		}
 
 		const entries = ((expensesResult.data ?? []) as ExpenseRow[]).map(mapExpense);
-		const orderIncomes = ((orderSalesResult.data ?? []) as OrderSalesRow[])
-			.map((row, index) => mapOrderIncome(row, index, projectedPaymentIntents.has(row.payment_intent_id)))
-			.filter((entry): entry is NonNullable<typeof entry> => entry !== null && isDateInPeriod(entry.date, selectedPeriod));
+		// 注文の収入の行は保存した出荷の仕訳から作る。出荷の仕訳の出荷した日と登録した日も一緒に返す（6-c）。
+		const orderIncomes = orderIncomesFromJournal(savedJournal.entries);
+		const shipmentMeta = await readShipmentMeta(supabase, savedJournal.entries);
+		if (!shipmentMeta.ok) return journalFailureResponse(shipmentMeta.code);
 		const planRow = (planResult.data as FinancePlanRow | null) ?? null;
 
 		const closingRows = (closingsResult.data ?? []) as YearClosingRow[];
@@ -1099,6 +1112,7 @@ export async function GET(request: Request) {
 				period: selectedPeriod,
 				periods,
 				savedJournal: savedJournal.entries,
+				shipmentMeta: shipmentMeta.meta,
 				opening,
 				periodNotices: periodNoticesOf(selectedPeriod, periods, opening, today),
 				plan: mapPlan(planRow),

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/Button/Button";
 import { DataTable } from "@/components/ui/DataTable/DataTable";
 import { Graph } from "@/components/ui/Graph/Graph";
@@ -23,94 +23,38 @@ import {
   isRecord,
   jstDayLabel,
   Section,
-  useTicket,
 } from "./accounting-api";
-import type { JournalCursor, ShipmentMeta } from "@/lib/accounting/accounting-types";
+import type { ShipmentMeta } from "@/lib/accounting/accounting-types";
 import type { SavedJournalEntry } from "@/lib/accounting/journal-types";
 import type { CostProfitModel } from "./use-cost-profit-model";
-
-/** 保存していない合成の仕訳（注文・Stripe）の印。計画2が保存を始めたら外す。 */
-const SYNTHESIZED_ENTRY_LABEL = "集計中（計画2で保存）";
 
 const entryNumber = (entryNo: number): string => `JE-${String(entryNo).padStart(6, "0")}`;
 
 /** 出荷の仕訳の行に付ける、発送票の番号・出荷した日・発送票を確定した日（6-c）。 */
 export type ShipmentRowInfo = { slipId: string; shipmentDate: string; confirmedAt: string };
 
-type JournalPage = {
-  entries: SavedJournalEntry[];
-  nextAfter: JournalCursor | null;
-  shipmentMeta: ShipmentMeta[];
-};
-
-const META_PAGE_SIZE = 200;
-const META_MAX_PAGES = 50;
 
 /**
- * 期間の保存した仕訳を読み、出荷の仕訳だけの「出荷した日」「登録した日」を、仕訳の伝票番号（JE-…）で引ける形にする
- * （FREQ-564-AC-04）。期間が変わったら古い答えは捨てる。読めなければ error に固定の文（列は空のまま）。
+ * 出荷の仕訳の行に付ける情報を、仕訳の伝票番号（JE-…）で引ける形にする（FREQ-564-AC-04）。
+ * 出荷した日と登録した日は cost-profit GET の shipmentMeta（出荷の仕訳だけ）から取り、画面で読み直さない。
  */
-export function useShipmentJournalMeta(periodId: string | null): {
-  byNumber: Map<string, ShipmentRowInfo>;
-  error: string | null;
-  /** 読む上限（ページ数）に達して、後ろの仕訳の出荷の列を埋められていない。 */
-  truncated: boolean;
-} {
-  const [byNumber, setByNumber] = useState<Map<string, ShipmentRowInfo>>(new Map());
-  const [error, setError] = useState<string | null>(null);
-  const [truncated, setTruncated] = useState(false);
-  const ticket = useTicket();
-
-  useEffect(() => {
-    const mine = ticket.next();
-    setByNumber(new Map());
-    setError(null);
-    setTruncated(false);
-    if (!periodId) return;
-    void (async () => {
-      const found = new Map<string, ShipmentRowInfo>();
-      let cursor = null as JournalCursor | null;
-      for (let page = 0; page < META_MAX_PAGES; page += 1) {
-        const result: Awaited<ReturnType<typeof getAccountingData<JournalPage>>> =
-          await getAccountingData<JournalPage>(
-            "journal",
-            {
-              periodId,
-              limit: META_PAGE_SIZE,
-              afterEntryDate: cursor?.entryDate,
-              afterEntryNo: cursor?.entryNo,
-            },
-            (data) => hasArray(data, "entries") && hasArray(data, "shipmentMeta"),
-          );
-        if (!ticket.isCurrent(mine)) return;
-        if (!result.ok) {
-          setError(result.message);
-          return;
-        }
-        const metaById = new Map(result.data.shipmentMeta.map((meta) => [meta.entryId, meta]));
-        for (const entry of result.data.entries) {
-          const meta = metaById.get(entry.id);
-          if (meta && entry.sourceId) {
-            found.set(entryNumber(entry.entryNo), {
-              slipId: entry.sourceId,
-              shipmentDate: meta.shipmentDate,
-              confirmedAt: meta.confirmedAt,
-            });
-          }
-        }
-        setByNumber(new Map(found));
-        if (!result.data.nextAfter) return;
-        cursor = result.data.nextAfter;
-      }
-      // 上限まで読んでも続きがある。
-      if (ticket.isCurrent(mine)) setTruncated(true);
-    })();
-    return () => {
-      ticket.next();
-    };
-  }, [periodId, ticket]);
-
-  return { byNumber, error, truncated };
+export function shipmentRowInfoByNumber(
+  savedJournal: readonly SavedJournalEntry[],
+  shipmentMeta: readonly ShipmentMeta[],
+): Map<string, ShipmentRowInfo> {
+  const metaById = new Map(shipmentMeta.map((meta) => [meta.entryId, meta]));
+  const found = new Map<string, ShipmentRowInfo>();
+  for (const entry of savedJournal) {
+    const meta = metaById.get(entry.id);
+    if (meta && entry.sourceId) {
+      found.set(entryNumber(entry.entryNo), {
+        slipId: entry.sourceId,
+        shipmentDate: meta.shipmentDate,
+        confirmedAt: meta.confirmedAt,
+      });
+    }
+  }
+  return found;
 }
 
 type Trace = {
@@ -259,7 +203,8 @@ export function LedgerView({
     toggleAccountGroup,
     ledgerClosingBalance,
     entriesById,
-    synthesizedEntryNumbers,
+    savedJournal,
+    shipmentMeta,
     ledgerPeriodOptions,
     LEDGER_SIDE_OPTIONS,
     filteredLedgerRows,
@@ -278,14 +223,10 @@ export function LedgerView({
     ledgerReconcileDifference,
     selectAccount,
     openEntryFromLedger,
-    period,
   } = model;
-  const {
-    byNumber: shipmentByNumber,
-    error: shipmentError,
-    truncated: shipmentTruncated,
-  } = useShipmentJournalMeta(
-    period?.id ?? null,
+  const shipmentByNumber = useMemo(
+    () => shipmentRowInfoByNumber(savedJournal, shipmentMeta),
+    [savedJournal, shipmentMeta],
   );
   const [traceSlipId, setTraceSlipId] = useState<string | null>(null);
   const ledgerHeaderActions = (
@@ -664,14 +605,7 @@ export function LedgerView({
                     header: "伝票No.",
                     cellClassName: "whitespace-nowrap text-[#474747]",
                     render: (row) => (
-                      <>
-                        {row.number}
-                        {synthesizedEntryNumbers.has(row.number) ? (
-                          <span className="ml-1.5 font-acumin lk-text-6xs text-[#707070]">
-                            {SYNTHESIZED_ENTRY_LABEL}
-                          </span>
-                        ) : null}
-                      </>
+                      row.number
                     ),
                   },
                   {
@@ -781,16 +715,6 @@ export function LedgerView({
                 ]}
               />
             </div>
-            {shipmentError ? (
-              <p role="alert" className="mt-2 font-acumin lk-text-4xs text-red-700">
-                {shipmentError}
-              </p>
-            ) : null}
-            {shipmentTruncated ? (
-              <p role="note" className="mt-2 font-acumin lk-text-4xs text-[#707070]">
-                仕訳が多いため、後ろの仕訳の出荷した日と登録した日は空のままです。期間を分けて確かめてください。
-              </p>
-            ) : null}
             {traceSlipId ? (
               <ShipmentTracePanel
                 key={traceSlipId}
@@ -858,12 +782,7 @@ export function LedgerView({
                     {selectedLedgerRow.date.replaceAll("-", "/")}
                   </span>,
                 )}
-                {ledgerDetailRow(
-                  "伝票No.",
-                  synthesizedEntryNumbers.has(selectedLedgerRow.number)
-                    ? `${selectedLedgerRow.number}（${SYNTHESIZED_ENTRY_LABEL}）`
-                    : selectedLedgerRow.number,
-                )}
+                {ledgerDetailRow("伝票No.", selectedLedgerRow.number)}
                 {ledgerDetailRow(
                   "証憑",
                   selectedLedgerReceipts.length > 0
