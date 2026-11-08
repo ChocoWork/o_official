@@ -53,15 +53,19 @@ const META_MAX_PAGES = 50;
 export function useShipmentJournalMeta(periodId: string | null): {
   byNumber: Map<string, ShipmentRowInfo>;
   error: string | null;
+  /** 読む上限（ページ数）に達して、後ろの仕訳の出荷の列を埋められていない。 */
+  truncated: boolean;
 } {
   const [byNumber, setByNumber] = useState<Map<string, ShipmentRowInfo>>(new Map());
   const [error, setError] = useState<string | null>(null);
+  const [truncated, setTruncated] = useState(false);
   const ticket = useTicket();
 
   useEffect(() => {
     const mine = ticket.next();
     setByNumber(new Map());
     setError(null);
+    setTruncated(false);
     if (!periodId) return;
     void (async () => {
       const found = new Map<string, ShipmentRowInfo>();
@@ -98,13 +102,15 @@ export function useShipmentJournalMeta(periodId: string | null): {
         if (!result.data.nextAfter) return;
         cursor = result.data.nextAfter;
       }
+      // 上限まで読んでも続きがある。
+      if (ticket.isCurrent(mine)) setTruncated(true);
     })();
     return () => {
       ticket.next();
     };
   }, [periodId, ticket]);
 
-  return { byNumber, error };
+  return { byNumber, error, truncated };
 }
 
 type Trace = {
@@ -274,7 +280,11 @@ export function LedgerView({
     openEntryFromLedger,
     period,
   } = model;
-  const { byNumber: shipmentByNumber, error: shipmentError } = useShipmentJournalMeta(
+  const {
+    byNumber: shipmentByNumber,
+    error: shipmentError,
+    truncated: shipmentTruncated,
+  } = useShipmentJournalMeta(
     period?.id ?? null,
   );
   const [traceSlipId, setTraceSlipId] = useState<string | null>(null);
@@ -774,6 +784,11 @@ export function LedgerView({
             {shipmentError ? (
               <p role="alert" className="mt-2 font-acumin lk-text-4xs text-red-700">
                 {shipmentError}
+              </p>
+            ) : null}
+            {shipmentTruncated ? (
+              <p role="note" className="mt-2 font-acumin lk-text-4xs text-[#707070]">
+                仕訳が多いため、後ろの仕訳の出荷した日と登録した日は空のままです。期間を分けて確かめてください。
               </p>
             ) : null}
             {traceSlipId ? (

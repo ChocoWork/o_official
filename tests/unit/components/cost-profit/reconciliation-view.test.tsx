@@ -176,6 +176,10 @@ describe('照合のタブ', () => {
 		fireEvent.click(within(form).getByRole('button', { name: '請求書の合計を保存' }));
 		await waitFor(() => expect(reconciliationUrls(api).length).toBe(before + 1));
 		expect(reconciliationUrls(api).at(-1)).toContain('kind=stripe-fee&month=2026-10');
+		// 引き直している間も請求書の欄は残り、「保存しました。」が消えない。
+		expect(await within(form).findByText('保存しました。')).toBeInTheDocument();
+		await within(region).findByRole('group', { name: '2段目 UTCと請求書の差' });
+		expect(within(region).getByText('保存しました。')).toBeInTheDocument();
 	});
 
 	it('FREQ-566-AC-01: 請求書がまだ無い月は2段目を「請求書の合計が未入力です」にする', async () => {

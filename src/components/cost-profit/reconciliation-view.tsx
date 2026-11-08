@@ -331,7 +331,8 @@ function FeeSection({ today }: { today: string }) {
         <p className={labelClassName}>{`${monthTitle(shownMonth)}の照合`}</p>
       ) : null}
       {state.phase === "ready" ? <FeeResult data={state.data} /> : null}
-      {state.phase === "ready" && shownMonth ? (
+      {/* 照合を引き直している間も、請求書の欄は残す（「保存しました。」を消さない）。 */}
+      {(state.phase === "ready" || state.phase === "loading") && shownMonth ? (
         <InvoiceRecordForm key={shownMonth} month={shownMonth} onSaved={() => runFee(shownMonth)} />
       ) : null}
     </Section>

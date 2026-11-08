@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import CostProfitSection from '@/components/CostProfitSection';
+import { useShipmentJournalMeta } from '@/components/cost-profit/ledger-view';
 import { BASE, envelope, uuid } from './accounting-fixtures';
 import { mockFetch, solePeriod } from './settings-fixtures';
 
@@ -199,5 +200,54 @@ describe('仕訳帳の出荷の列', () => {
 		expect(api.calls.find((call) => call.url === `${BASE}/shipment-trace`)?.response.bodyUsed).toBe(true);
 		fireEvent.click(screen.getByRole('button', { name: '出荷の跡を閉じる' }));
 		expect(screen.queryByRole('region', { name: '出荷の跡' })).not.toBeInTheDocument();
+	});
+
+	it('FREQ-564-AC-04: 上限のページ数まで読んでも続きがあれば、後ろの列が空であることを穏やかな文で知らせる', async () => {
+		mockFetch((url) => {
+			if (url.pathname === '/api/admin/kpi/cost-profit') return { status: 200, body: { data: financeData() } };
+			if (url.pathname === `${BASE}/journal`) {
+				return { status: 200, body: envelope({ entries: [], nextAfter: { entryDate: '2026-11-03', entryNo: 4 }, opening: [], shipmentMeta: [] }) };
+			}
+			return undefined;
+		});
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '帳簿' }));
+		expect(await screen.findByText(/仕訳が多いため、後ろの仕訳の出荷した日と登録した日は空のままです/, undefined, { timeout: 15000 })).toBeInTheDocument();
+	});
+});
+
+describe('出荷の列の読み込み（期間を替えた時）', () => {
+	function Probe({ periodId }: { periodId: string }) {
+		const { byNumber } = useShipmentJournalMeta(periodId);
+		return <ul aria-label="出荷の列">{[...byNumber].map(([number, info]) => <li key={number}>{`${number} ${info.shipmentDate}`}</li>)}</ul>;
+	}
+	const page = (entryNo: number, entryId: string, shipmentDate: string) => envelope({
+		entries: [entry(entryId, entryNo, { eventKind: 'shipment_confirmed', sourceTable: 'shipment_slips', sourceId: uuid(950 + entryNo) })],
+		nextAfter: null, opening: [],
+		shipmentMeta: [{ entryId, slipNumber: `SL-${entryNo}`, shipmentDate, confirmedAt: '2026-11-03T16:30:00+00:00' }],
+	});
+
+	it('FREQ-564-AC-04: 期間を替えたら、前の期間の遅れた答えで出荷の列を上書きしない', async () => {
+		const OLD = uuid(2025);
+		const NEW = uuid(2026);
+		let releaseOld: (response: Response) => void = () => {};
+		const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+		global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+			const url = new URL(String(input), 'http://localhost');
+			if (url.pathname !== `${BASE}/journal`) return new Response('{}', { status: 404 });
+			if (url.searchParams.get('periodId') === OLD) return new Promise<Response>((resolve) => { releaseOld = resolve; });
+			return json(page(7, uuid(307), '2026-12-01'));
+		}) as unknown as typeof fetch;
+
+		const { rerender } = render(<Probe periodId={OLD} />);
+		rerender(<Probe periodId={NEW} />);
+		const list = screen.getByRole('list', { name: '出荷の列' });
+		await within(list).findByText('JE-000007 2026-12-01');
+		await act(async () => {
+			releaseOld(json(page(5, uuid(305), '2025-12-01')));
+		});
+		expect(within(list).queryByText(/2025-12-01/)).not.toBeInTheDocument();
+		expect(within(list).getAllByRole('listitem')).toHaveLength(1);
 	});
 });

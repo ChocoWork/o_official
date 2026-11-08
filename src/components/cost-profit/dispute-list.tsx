@@ -109,6 +109,8 @@ export function DisputeList({
   const [error, setError] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<ViewPermissions>(NO_PERMISSIONS);
   const [loadingMore, setLoadingMore] = useState(false);
+  // 先頭からの読み直しの最中は、続きを読ませない（読み直しの答えを続きの取り込みで捨てない）。
+  const [reading, setReading] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [assigning, setAssigning] = useState<string | null>(null);
   const guard = useRef(false);
@@ -120,6 +122,8 @@ export function DisputeList({
   /** 先頭から読み直す。決定待ちの画面は「無い」と言い切るため、続きも上限まで全部読む。 */
   const load = useCallback(async () => {
     const mine = ticket.next();
+    setReading(true);
+    setLoadingMore(false);
     let collected: DisputeRow[] = [];
     let cursor: { at: string; id: string } | null = null;
     for (let page = 0; page < (awaitingOnly ? AWAITING_MAX_PAGES : 1); page += 1) {
@@ -135,6 +139,7 @@ export function DisputeList({
         setNext(null);
         setLoaded(false);
         setError(result.message);
+        setReading(false);
         return;
       }
       if (page === 0) setPermissions(result.permissions);
@@ -146,6 +151,7 @@ export function DisputeList({
     setRows(collected);
     setNext(cursor);
     setLoaded(true);
+    setReading(false);
   }, [awaitingOnly, ticket]);
 
   useEffect(() => {
@@ -161,8 +167,8 @@ export function DisputeList({
       afterAt: next.at,
       afterId: next.id,
     }, (data) => hasArray(data, "disputes"));
-    if (!ticket.isCurrent(mine)) return;
     setLoadingMore(false);
+    if (!ticket.isCurrent(mine)) return;
     if (!result.ok) {
       setError(result.message);
       return;
@@ -204,7 +210,7 @@ export function DisputeList({
   ) : null;
 
   const moreButton = next ? (
-    <Button variant="outline" size="sm" shape="rounded" className="font-acumin" disabled={loadingMore} onClick={() => void loadMore()}>
+    <Button variant="outline" size="sm" shape="rounded" className="font-acumin" disabled={loadingMore || reading} onClick={() => void loadMore()}>
       さらに読み込む
     </Button>
   ) : null;

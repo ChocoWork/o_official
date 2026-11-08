@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { DisputeList } from '@/components/cost-profit/dispute-list';
 import { DisputeSettingsPanel } from '@/components/cost-profit/dispute-settings-panel';
 import { ALL_FLAGS, BASE, dispute, disputePage, envelope, type Flags } from './accounting-fixtures';
@@ -133,6 +133,47 @@ describe('支払いの取り消しの設定', () => {
 		expect(within(waiting).getByRole('button', { name: 'dp_0009を設定の科目へ振り替える' })).toBeInTheDocument();
 		expect(api.fn.mock.calls.some((call) => String(call[0]).includes('afterId=dp_0001'))).toBe(true);
 		expect(screen.queryByText('科目の決定待ちの取り消しはありません')).not.toBeInTheDocument();
+	});
+
+	it('FREQ-568-AC-02: 振り替えの後の読み直しの最中は「さらに読み込む」を押せず、読み直しの答えを捨てない', async () => {
+		let reloading = false;
+		let releaseReload: (response: Response) => void = () => {};
+		let served = 0;
+		const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+		global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = new URL(String(input), 'http://localhost');
+			const method = init?.method ?? 'GET';
+			if (url.pathname === `${BASE}/dispute-settings`) return json(envelope({ settings: [SETTING] }, ALL_FLAGS));
+			if (url.pathname === `${BASE}/disputes/dp_0001/assign` && method === 'POST') {
+				reloading = true;
+				return json({ data: { assignment: { entry_id: 'e', entry_no: 3, period_id: 'p', created: true } } });
+			}
+			if (url.pathname === `${BASE}/disputes`) {
+				if (reloading && !url.searchParams.get('afterId')) {
+					reloading = false;
+					return new Promise<Response>((resolve) => { releaseReload = resolve; });
+				}
+				served += 1;
+				// 続きが終わらない一覧（上限のページ数で止まり、「さらに読み込む」が残る）。
+				const first = !url.searchParams.get('afterId');
+				const rows = first
+					? [dispute(1, { status: 'lost', reason: 'fraudulent', confirmed_on: '2026-11-03', assigned_account_code: null })]
+					: [dispute(100 + served, { status: 'under_review' })];
+				return json(envelope(disputePage(rows, { next_after_at: '2026-10-20T03:00:00+00:00', next_after_id: `dp_${String(200 + served)}` }), ALL_FLAGS));
+			}
+			return new Response('{}', { status: 404 });
+		}) as unknown as typeof fetch;
+
+		render(<DisputeSettingsPanel />);
+		const more = await screen.findByRole('button', { name: 'さらに読み込む' }, { timeout: 15000 });
+		expect(more).toBeEnabled();
+		fireEvent.click(await screen.findByRole('button', { name: 'dp_0001を設定の科目へ振り替える' }));
+		await waitFor(() => expect(screen.getByRole('button', { name: 'さらに読み込む' })).toBeDisabled());
+		await act(async () => {
+			releaseReload(json(envelope(disputePage([dispute(1, { status: 'lost', reason: 'fraudulent', confirmed_on: '2026-11-03', assigned_account_code: '6280' })]), ALL_FLAGS)));
+		});
+		// 読み直しの答えが取り込まれ、振り替えた行は決定待ちから消える。
+		expect(await screen.findByText('科目の決定待ちの取り消しはありません')).toBeInTheDocument();
 	});
 
 	it('FREQ-568-AC-02: 決定待ちの取り消しが無ければ、無いと出す', async () => {
