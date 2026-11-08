@@ -1,5 +1,5 @@
 /** @jest-environment node */
-// I-1・N-1 の再現（2026-11-08 調べ）と直した後の挙動（移行 20261108120000_return_receive_unit_dedup）。
+// I-1・N-1 の再現（2026-11-08 調べ）と直した後の挙動（移行 20261108063711_return_receive_unit_dedup）。
 // 期待の試験は直す前の DB で落ちた（RED。2026-11-08 の調べ）。【直った後】の試験は、調べの時の【現状の記録】を直した後の挙動に書き換えた物。
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
