@@ -15,8 +15,8 @@ type SupabaseLikeError = {
   message?: string;
 };
 
-const TABLE_MISSING_DETAIL =
-  'migrations/063_create_admin_kpi_monthly_records.sql をSupabaseダッシュボード > SQL Editor で実行してください。';
+// admin_set_kpi_monthly_records が 1 回で受ける最大件数（DB 側の上限と同じ）。
+const MAX_UPDATES_PER_CALL = 200;
 
 const updateRequestSchema = z.object({
   season: z.string().regex(/^\d{4}(SS|AW)$/),
@@ -43,7 +43,7 @@ async function authorizeAsAdmin(request: Request) {
     };
   }
 
-  return { ok: true as const };
+  return { ok: true as const, userId: authz.userId };
 }
 
 // season の6ヶ月分の値を { monthKey: { metricKey: value } } で返す。
@@ -55,17 +55,9 @@ async function getRecordPayload(season: string) {
   }
 
   const supabase = await createServiceRoleClient();
-  const { data, error } = await supabase
-    .from('admin_kpi_monthly_records')
-    .select('month_key, metric_key, value')
-    .in('month_key', monthKeys);
+  const { data, error } = await supabase.rpc('list_kpi_monthly_records', { _month_keys: monthKeys });
 
   if (error) {
-    const typedError = error as SupabaseLikeError;
-    if (typedError.code === '42P01' || typedError.message?.includes('admin_kpi_monthly_records')) {
-      console.warn('admin_kpi_monthly_records table not found, returning empty values:', typedError);
-      return { season, monthKeys, values };
-    }
     console.warn('Error fetching monthly records, using empty values:', error);
     return { season, monthKeys, values };
   }
@@ -77,6 +69,18 @@ async function getRecordPayload(season: string) {
   }
 
   return { season, monthKeys, values };
+}
+
+// DB の拒否は意味を保って返す。それ以外は固定の本文にし、DB の文（表の名前など）を応答へ出さない。
+function saveFailureResponse(error: SupabaseLikeError) {
+  console.error('PUT /api/admin/kpi/monthly-record error:', error.code, error.message);
+  if (error.code === '42501') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+  if (error.code === '22023') {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
+  return NextResponse.json({ error: 'Failed to update monthly record' }, { status: 500 });
 }
 
 export async function GET(request: Request) {
@@ -127,40 +131,23 @@ export async function PUT(request: Request) {
       (update) => allowedMonths.has(update.monthKey) && isValidStorageKey(update.metricKey),
     );
 
-    const deleteTargets = safeUpdates.filter((update) => update.value === '');
-    const upsertRows = safeUpdates
-      .filter((update): update is { monthKey: string; metricKey: string; value: number } => typeof update.value === 'number')
-      .map((update) => ({ month_key: update.monthKey, metric_key: update.metricKey, value: update.value }));
+    // 空値は削除（value: null）、数値は upsert。書き込みは DB の関数だけが行う。
+    const dbUpdates = safeUpdates.map((update) => ({
+      month_key: update.monthKey,
+      metric_key: update.metricKey,
+      value: update.value === '' ? null : update.value,
+    }));
 
     const supabase = await createServiceRoleClient();
 
-    for (const target of deleteTargets) {
-      const { error } = await supabase
-        .from('admin_kpi_monthly_records')
-        .delete()
-        .eq('month_key', target.monthKey)
-        .eq('metric_key', target.metricKey);
+    for (let offset = 0; offset < dbUpdates.length; offset += MAX_UPDATES_PER_CALL) {
+      const { error } = await supabase.rpc('admin_set_kpi_monthly_records', {
+        _actor_id: authz.userId,
+        _updates: dbUpdates.slice(offset, offset + MAX_UPDATES_PER_CALL),
+      });
 
       if (error) {
-        const typedError = error as SupabaseLikeError;
-        if (typedError.code === '42P01') {
-          return NextResponse.json({ error: '月次記録テーブルが未作成です', details: TABLE_MISSING_DETAIL }, { status: 503 });
-        }
-        throw new Error(typedError.message || JSON.stringify(error));
-      }
-    }
-
-    if (upsertRows.length > 0) {
-      const { error } = await supabase
-        .from('admin_kpi_monthly_records')
-        .upsert(upsertRows, { onConflict: 'month_key,metric_key' });
-
-      if (error) {
-        const typedError = error as SupabaseLikeError;
-        if (typedError.code === '42P01') {
-          return NextResponse.json({ error: '月次記録テーブルが未作成です', details: TABLE_MISSING_DETAIL }, { status: 503 });
-        }
-        throw new Error(typedError.message || JSON.stringify(error));
+        return saveFailureResponse(error as SupabaseLikeError);
       }
     }
 
@@ -169,6 +156,6 @@ export async function PUT(request: Request) {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
     console.error('PUT /api/admin/kpi/monthly-record error:', errorMessage);
-    return NextResponse.json({ error: 'Failed to update monthly record', details: errorMessage }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to update monthly record' }, { status: 500 });
   }
 }

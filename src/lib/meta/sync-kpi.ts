@@ -203,7 +203,7 @@ export async function syncMetaKpis(supabase: SupabaseClient, connection: MetaCon
 		Object.entries(metrics).map(([key, value]) => ({ month_key: monthKey, metric_key: sourceStorageKey(key), value })),
 	);
 	if (rows.length > 0) {
-		const { error } = await supabase.from('admin_kpi_monthly_records').upsert(rows, { onConflict: 'month_key,metric_key' });
+		const { error } = await supabase.rpc('system_upsert_kpi_monthly_records', { _rows: rows });
 		if (error) throw new Error(error.message);
 	}
 	return {

@@ -10,8 +10,10 @@ import {
   ACCOUNTING_S10_FILES, ACCOUNTING_S10_SQL as sqlS10, accountingS10Section, pinAccountingS10Baseline,
   ACCOUNTING_S11_FILES, ACCOUNTING_S11_SQL as sqlS11, accountingS11Section, pinAccountingS11Baseline,
   ACCOUNTING_S12_FILES, ACCOUNTING_S12_SQL as sqlS12, accountingS12Section, pinAccountingS12Baseline,
+  ACCOUNTING_S13_FILES, ACCOUNTING_S13_SQL as sqlS13, accountingS13Section, pinAccountingS13Baseline,
 } from './helpers/accounting-orders-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
+import { MONTHLY_KPI_FORMULAS, SOURCE_METRIC_KEYS, isValidStorageKey, kpiOverrideStorageKey, sourceStorageKey } from '@/lib/kpi/monthly-metrics';
 
 // Accounting plan 2 S6 (FREQ-569 / FREQ-563): the shape of the migration and its final assert. The DB part is
 // controller only. Tasks 2-9 add the asserts of S7-S14 below (S7: the payment posting, Task 2; S8: the shipment posting, Task 3; S11: the dispute posting, Task 6; S12: the intake reads, Task 7).
@@ -1535,6 +1537,222 @@ describeLocalDb('S12 final assert: controller only', (db) => {
     ["update pg_temp.accounting_s12_baseline set payload = jsonb_set(payload, '{lines}', '5')", 'acc_s12_existing_dml_allowlist'],
     ["insert into public.accounting_periods (business_type, name, starts_on, ends_on) values ('soleProprietor', 'tamper', '2026-01-01', '2026-12-31')", 'acc_s12_existing_dml_allowlist'],
   ] as Array<[string, string]>)('FREQ-571-AC-05: S12改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// ---- S13 (Task 8): the monthly KPI table admin_kpi_monthly_records and its writers / reader ---------------------------------------
+const assertionS13 = accountingS13Section('FINAL_ASSERT');
+const bodyS13 = accountingS13Section('BODY');
+const detailsS13 = ['acc_s13_table', 'acc_s13_constraints', 'acc_s13_rls_acl', 'acc_s13_function_attrs', 'acc_s13_existing_dml_allowlist'];
+const statementsS13 = bodyS13.replace(/\$\$[\s\S]*?\$\$/g, '$$$$').split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n');
+const functionBodyS13 = (name: string) => bodyS13.split(`CREATE FUNCTION ${name}(`)[1]?.split('\n$$;')[0] ?? '';
+const kpiTable = 'public.admin_kpi_monthly_records';
+const applyS13 = 'private.kpi_monthly_records_apply(jsonb,boolean)';
+const adminSetPrivate = 'private.admin_set_kpi_monthly_records(uuid,jsonb)';
+const adminSetPublic = 'public.admin_set_kpi_monthly_records(uuid,jsonb)';
+const upsertPrivate = 'private.system_upsert_kpi_monthly_records(jsonb)';
+const upsertPublic = 'public.system_upsert_kpi_monthly_records(jsonb)';
+const listPrivate = 'private.list_kpi_monthly_records(text[])';
+const listPublic = 'public.list_kpi_monthly_records(text[])';
+
+describe('S13 source contract (no DB)', () => {
+  test('FREQ-573-AC-01: S13はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S13_FILES).toEqual(['20261108220000_accounting_p2_kpi_monthly_records.sql']);
+    expect(ACCOUNTING_S13_FILES[0] > ACCOUNTING_S12_FILES[0]).toBe(true);
+    expect(sqlS13).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(sqlS13.startsWith('BEGIN;\n')).toBe(true);
+    expect(sqlS13.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(sqlS13.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(sqlS13.trimEnd()).toMatch(/-- ACC_S13_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect(assertionS13).not.toBe('');
+    expect([...new Set([...assertionS13.matchAll(/'(acc_s13_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...detailsS13].sort());
+    expect(assertionS13).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(assertionS13.replace(/''55000''/g, '')).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(sqlS13).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+  });
+
+  test('FREQ-573-AC-01: 表は IF NOT EXISTS なしで作り（既にあれば適用が止まる）、実行時のDMLは比べる元の控えのINSERTだけ', () => {
+    expect(statementsS13).toContain('CREATE TABLE public.admin_kpi_monthly_records');
+    expect(statementsS13).not.toMatch(/IF NOT EXISTS|CREATE OR REPLACE|DROP /);
+    expect([...statementsS13.matchAll(/^\s*(INSERT INTO|UPDATE|DELETE FROM|TRUNCATE(?: TABLE)?)\s+([\w.]+)/gm)].map((m) => `${m[1]} ${m[2]}`))
+      .toEqual(['INSERT INTO pg_temp.accounting_s13_baseline']);
+    // The only CREATE TABLE is the KPI table, and nothing of group G / H / returns / refund is altered.
+    expect([...statementsS13.matchAll(/CREATE TABLE ([\w.]+)/g)].map((m) => m[1])).toEqual([kpiTable]);
+    expect([...statementsS13.matchAll(/ALTER TABLE ([\w.]+)/g)].map((m) => m[1]).filter((name) => name !== kpiTable)).toEqual([]);
+  });
+
+  test('FREQ-573-AC-01: 表の権限は service_role の SELECT だけで、anon・authenticated・PUBLIC には渡さない。書き口と読み口は service_role だけ', () => {
+    const grants = [...statementsS13.matchAll(/GRANT[^;]*;/g)].map((m) => m[0].replace(/\s+/g, ' '));
+    expect(grants.filter((g) => /ON TABLE|ON public\./.test(g))).toEqual(['GRANT SELECT ON TABLE public.admin_kpi_monthly_records TO service_role;']);
+    expect(grants.some((g) => /\b(anon|authenticated|PUBLIC)\b/.test(g))).toBe(false);
+    const grant = bodyS13.split('GRANT EXECUTE ON FUNCTION')[1]?.split(';')[0] ?? '';
+    const names = [...grant.matchAll(/(?:private|public)\.[a-z_]+\(/g)].map((m) => m[0]).sort();
+    expect(names).toEqual([adminSetPrivate, adminSetPublic, upsertPrivate, upsertPublic, listPrivate, listPublic]
+      .map((signature) => signature.replace(/\(.*/, '(')).sort());
+    expect(bodyS13).toMatch(/ALTER TABLE public\.admin_kpi_monthly_records ENABLE ROW LEVEL SECURITY;/);
+    expect(statementsS13).not.toMatch(/CREATE POLICY/);
+  });
+
+  test('FREQ-573-AC-01: 月と指標の鍵のCHECKは、画面が保存に使う全部の鍵（src:とkpi:）を受け、それ以外を断る', () => {
+    const check = (column: string) => bodyS13.match(new RegExp(`${column} text NOT NULL CONSTRAINT \\w+ CHECK \\(${column} ~ '([^']+)'\\)`))?.[1] ?? '';
+    expect(check('month_key')).toBe('^[0-9]{4}-(0[1-9]|1[0-2])$');
+    expect(check('metric_key')).toBe('^(src|kpi):[A-Za-z0-9_]{1,64}$');
+    const monthPattern = new RegExp(check('month_key'));
+    const metricPattern = new RegExp(check('metric_key'));
+    const keys = [...SOURCE_METRIC_KEYS.map(sourceStorageKey), ...MONTHLY_KPI_FORMULAS.map((formula) => kpiOverrideStorageKey(formula.key))];
+    expect(keys.length).toBeGreaterThan(20);
+    for (const key of keys) expect([key, isValidStorageKey(key), metricPattern.test(key)]).toEqual([key, true, true]);
+    for (const key of ['reach', 'foo:reach', 'src:', 'src:a-b', `kpi:${'a'.repeat(65)}`]) expect([key, metricPattern.test(key)]).toEqual([key, false]);
+    for (const month of ['2026-01', '2026-12']) expect(monthPattern.test(month)).toBe(true);
+    for (const month of ['2026-00', '2026-13', '2026-1']) expect(monthPattern.test(month)).toBe(false);
+  });
+
+  test('FREQ-573-AC-02: 書き口は最初に admin.orders.read の確認、上限は200件（読み口は月24件）、同じ月・指標はON CONFLICTで1行', () => {
+    const adminSet = functionBodyS13('private.admin_set_kpi_monthly_records');
+    expect(adminSet).toContain("private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.orders.read'])");
+    expect(adminSet).toContain("RAISE EXCEPTION 'ACCOUNTING_FORBIDDEN' USING ERRCODE = '42501'");
+    expect(adminSet.indexOf('group_g_actor_has_permissions')).toBeLessThan(adminSet.indexOf('kpi_monthly_records_apply'));
+    expect(functionBodyS13('private.system_upsert_kpi_monthly_records')).not.toContain('group_g_actor_has_permissions');
+    const apply = functionBodyS13('private.kpi_monthly_records_apply');
+    expect(apply).toContain('> 200');
+    expect(apply).toContain('ON CONFLICT (month_key, metric_key) DO UPDATE');
+    expect(apply).toContain('DELETE FROM public.admin_kpi_monthly_records');
+    expect(apply).toContain("'^[0-9]{4}-(0[1-9]|1[0-2])$'");
+    expect(apply).toContain("'^(src|kpi):[A-Za-z0-9_]{1,64}$'");
+    expect(functionBodyS13('private.list_kpi_monthly_records')).toContain('> 24');
+    expect(functionBodyS13('private.list_kpi_monthly_records')).not.toMatch(/INSERT|UPDATE|DELETE|FOR (SHARE|UPDATE)/);
+  });
+
+  test('FREQ-573-AC-01: S13に日本語の文字列は無く、G・H・返品・返金の表を名指ししない', () => {
+    const code = bodyS13.split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n');
+    expect(code).not.toMatch(/U&'/);
+    expect(code).not.toMatch(/public\.(orders|order_\w+|shipment_\w+|\w*refund\w*|stripe_\w+)\b/i);
+  });
+});
+
+describeLocalDb('S13 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  async function attempt(change = '', baseline: 'pin' | 'none' = 'pin'): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s13_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (baseline === 'pin') await pinAccountingS13Baseline(db());
+      if (change) await db().query(change);
+      await db().query(assertionS13);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s13_assert'); await db().query('release savepoint acc_s13_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
+  /** Re-create the function with a changed text (owner, ACL and attributes stay). */
+  const edit = (from: string, to: string, signature: string) => `do $x$ declare d text; begin
+    d := pg_get_functiondef('${signature}'::regprocedure);
+    if position(${quote(from)} in d) = 0 then raise exception 'TAMPER_TARGET_MISSING'; end if;
+    d := replace(d, ${quote(from)}, ${quote(to)});
+    execute d; end $x$`;
+
+  test('FREQ-573-AC-01: S13末尾assertは適用後の状態と呼出元search_pathを許す', async () => {
+    expect(assertionS13).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt("set local search_path = ''")).toBeNull();
+    await db().query('savepoint acc_s13_search_path');
+    await db().query('set local search_path = public, private, extensions, pg_catalog');
+    await pinAccountingS13Baseline(db());
+    await db().query(assertionS13);
+    expect((await db().query('show search_path')).rows[0].search_path).toBe('public, private, extensions, pg_catalog');
+    await db().query('rollback to savepoint acc_s13_search_path');
+  });
+
+  test('FREQ-573-AC-01: S13末尾assertは比べる元の控えが無いと断る', async () => {
+    expect(await attempt('', 'none')).toEqual(failed('acc_s13_existing_dml_allowlist'));
+  });
+
+  test('FREQ-573-AC-01: 書き口と読み口は service_role だけが呼べ、道具は誰も呼べない', async () => {
+    for (const name of ['admin_set_kpi_monthly_records', 'system_upsert_kpi_monthly_records', 'list_kpi_monthly_records']) {
+      const rows = (await db().query(
+        `select p.oid::regprocedure::text as signature,
+           has_function_privilege('anon', p.oid, 'EXECUTE') as anon, has_function_privilege('authenticated', p.oid, 'EXECUTE') as authenticated,
+           has_function_privilege('service_role', p.oid, 'EXECUTE') as service_role, has_function_privilege('public', p.oid, 'EXECUTE') as public
+         from pg_proc p where p.proname = $1 and p.pronamespace in ('public'::regnamespace, 'private'::regnamespace)`, [name])).rows;
+      expect(rows).toHaveLength(2);
+      for (const entry of rows) expect([entry.signature, entry.anon, entry.authenticated, entry.service_role, entry.public]).toEqual([entry.signature, false, false, true, false]);
+    }
+    for (const signature of [applyS13, 'private.admin_kpi_monthly_records_touch()']) {
+      const row = (await db().query(
+        "select has_function_privilege('service_role', $1::regprocedure, 'EXECUTE') as service_role, has_function_privilege('anon', $1::regprocedure, 'EXECUTE') as anon",
+        [signature])).rows[0];
+      expect([signature, row]).toEqual([signature, { service_role: false, anon: false }]);
+    }
+  });
+
+  test.each([
+    // table
+    [`alter table ${kpiTable} add column note text`, 'acc_s13_table'],
+    [`alter table ${kpiTable} alter column value type bigint`, 'acc_s13_table'],
+    [`alter table ${kpiTable} alter column value drop not null`, 'acc_s13_table'],
+    [`alter table ${kpiTable} alter column created_at drop default`, 'acc_s13_table'],
+    [`alter table ${kpiTable} alter column id drop identity`, 'acc_s13_table'],
+    [`alter table ${kpiTable} rename column value to amount`, 'acc_s13_table'],
+    [`drop table ${kpiTable} cascade`, 'acc_s13_table'],
+    // constraints, index, trigger
+    [`alter table ${kpiTable} drop constraint admin_kpi_monthly_records_month_key_check`, 'acc_s13_constraints'],
+    [`alter table ${kpiTable} drop constraint admin_kpi_monthly_records_metric_key_check`, 'acc_s13_constraints'],
+    [`alter table ${kpiTable} drop constraint admin_kpi_monthly_records_month_key_metric_key_key`, 'acc_s13_constraints'],
+    [`alter table ${kpiTable} drop constraint admin_kpi_monthly_records_metric_key_check, add constraint admin_kpi_monthly_records_metric_key_check check (metric_key ~ '^(src|kpi):.*$')`, 'acc_s13_constraints'],
+    [`alter table ${kpiTable} drop constraint admin_kpi_monthly_records_month_key_check, add constraint admin_kpi_monthly_records_month_key_check check (month_key ~ '^[0-9]{4}-[0-9]{2}$')`, 'acc_s13_constraints'],
+    [`alter table ${kpiTable} add constraint admin_kpi_monthly_records_value_check check (value >= 0)`, 'acc_s13_constraints'],
+    ['drop index public.admin_kpi_monthly_records_month_key_idx', 'acc_s13_constraints'],
+    [`alter table ${kpiTable} disable trigger admin_kpi_monthly_records_touch`, 'acc_s13_constraints'],
+    [`drop trigger admin_kpi_monthly_records_touch on ${kpiTable}`, 'acc_s13_constraints'],
+    [`create trigger tamper_after after insert on ${kpiTable} for each row execute function private.admin_kpi_monthly_records_touch()`, 'acc_s13_constraints'],
+    // RLS and ACL
+    [`alter table ${kpiTable} disable row level security`, 'acc_s13_rls_acl'],
+    [`create policy tamper on ${kpiTable} for select using (true)`, 'acc_s13_rls_acl'],
+    [`grant select on ${kpiTable} to anon`, 'acc_s13_rls_acl'],
+    [`grant select on ${kpiTable} to authenticated`, 'acc_s13_rls_acl'],
+    [`grant select on ${kpiTable} to public`, 'acc_s13_rls_acl'],
+    [`grant insert on ${kpiTable} to service_role`, 'acc_s13_rls_acl'],
+    [`grant update on ${kpiTable} to service_role`, 'acc_s13_rls_acl'],
+    [`grant delete on ${kpiTable} to service_role`, 'acc_s13_rls_acl'],
+    [`grant select (value) on ${kpiTable} to authenticated`, 'acc_s13_rls_acl'],
+    [`revoke select on ${kpiTable} from service_role`, 'acc_s13_rls_acl'],
+    // functions: ACL, attributes, text
+    [`grant execute on function ${adminSetPublic} to anon`, 'acc_s13_function_attrs'],
+    [`grant execute on function ${upsertPublic} to authenticated`, 'acc_s13_function_attrs'],
+    [`grant execute on function ${listPublic} to public`, 'acc_s13_function_attrs'],
+    [`grant execute on function ${applyS13} to service_role`, 'acc_s13_function_attrs'],
+    ['grant execute on function private.admin_kpi_monthly_records_touch() to service_role', 'acc_s13_function_attrs'],
+    [`revoke execute on function ${adminSetPublic} from service_role`, 'acc_s13_function_attrs'],
+    [`revoke execute on function ${listPrivate} from service_role`, 'acc_s13_function_attrs'],
+    [`alter function ${adminSetPublic} security definer`, 'acc_s13_function_attrs'],
+    [`alter function ${adminSetPrivate} security invoker`, 'acc_s13_function_attrs'],
+    [`alter function ${listPublic} volatile`, 'acc_s13_function_attrs'],
+    [`alter function ${listPrivate} volatile`, 'acc_s13_function_attrs'],
+    [`alter function ${upsertPrivate} stable`, 'acc_s13_function_attrs'],
+    [`alter function ${applyS13} set search_path = public`, 'acc_s13_function_attrs'],
+    [`drop function ${listPublic}`, 'acc_s13_function_attrs'],
+    ['create function public.list_kpi_monthly_records(_month_keys text[], _extra integer) returns integer language sql as $$ select 1 $$', 'acc_s13_function_attrs'],
+    [edit("ARRAY['admin.orders.read']", "ARRAY['admin.orders.manage']", adminSetPrivate), 'acc_s13_function_attrs'],
+    [edit('> 200', '> 300', applyS13), 'acc_s13_function_attrs'],
+    [edit('DO UPDATE SET value = EXCLUDED.value', 'DO UPDATE SET value = t.value', applyS13), 'acc_s13_function_attrs'],
+    [edit('> 24', '> 36', listPrivate), 'acc_s13_function_attrs'],
+    [edit("USING ERRCODE = '42501'", "USING ERRCODE = '22023'", adminSetPrivate), 'acc_s13_function_attrs'],
+    // no row written
+    [`insert into ${kpiTable}(month_key, metric_key, value) values ('2026-07', 'kpi:sales', 1)`, 'acc_s13_existing_dml_allowlist'],
+    ["select private.accounting_park_event('payment_confirmed', 'stripe_balance_transactions', 'txn_tamper', null, 'no_order', '{}')", 'acc_s13_existing_dml_allowlist'],
+    ['drop table pg_temp.accounting_s13_baseline', 'acc_s13_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s13_baseline set payload = payload - 'periods'", 'acc_s13_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s13_baseline set payload = jsonb_set(payload, '{lines}', '5')", 'acc_s13_existing_dml_allowlist'],
+  ] as Array<[string, string]>)('FREQ-573-AC-01: S13改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });

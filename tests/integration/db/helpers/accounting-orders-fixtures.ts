@@ -578,6 +578,29 @@ export async function pinAccountingS12Baseline(client: PgClient): Promise<void> 
 			'periods', (select count(*) from public.accounting_periods))`);
 }
 
+/** 計画2 S13（月の KPI の表 `admin_kpi_monthly_records` と書き口）の移行の本文。無ければ空で、原文の確かめが目に見えて落ちる。 */
+const s13Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p2_kpi_monthly_records.sql'));
+export const ACCOUNTING_S13_SQL = s13Files.length === 1 ? fs.readFileSync(path.join(directory, s13Files[0]), 'utf8') : '';
+export const ACCOUNTING_S13_FILES = s13Files;
+
+/** S13 の `-- ACC_S13_<name>_BEGIN` と `-- ACC_S13_<name>_END` の間。 */
+export function accountingS13Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S13_SQL.split(`-- ACC_S13_${name}_BEGIN\n`)[1]?.split(`-- ACC_S13_${name}_END`)[0] ?? '';
+}
+
+/**
+ * 手を入れる前の今の状態を S13 の比べる元として控える（適用の時は仕訳も計上待ちも期間も増えず、月の記録の表は空）。そのあとで末尾 assert を流す。
+ * 比べるのは、仕訳の見出し・行・計上待ちの行・会計の期間の行数。
+ */
+export async function pinAccountingS13Baseline(client: PgClient): Promise<void> {
+	await client.query(`create temp table accounting_s13_baseline(payload jsonb) on commit drop;
+		insert into pg_temp.accounting_s13_baseline(payload) select jsonb_build_object(
+			'entries', (select count(*) from public.accounting_journal_entries),
+			'lines', (select count(*) from public.accounting_journal_lines),
+			'pending_events', (select count(*) from public.accounting_pending_events),
+			'periods', (select count(*) from public.accounting_periods))`);
+}
+
 export type ManualLine = { account: string; debit?: number; credit?: number; orderId?: string | null; memo?: string | null; subAccount?: string | null };
 
 /**
