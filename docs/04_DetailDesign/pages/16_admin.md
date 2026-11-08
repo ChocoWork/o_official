@@ -1,5 +1,7 @@
 # 1.16 管理画面（ADMIN）詳細設計
 
+> 会計の計画 1 確認日: 2026-11-08。権限の表の「30コード」を 38 コードに直した（会計の 6 コード。`ROLE_PERMISSION_CATALOG`）。ACCOUNTING タブの会計の詳細設計は新しい [16-5 ページ](16-5_admin_accounting.md)。会計は `scripts/trace/scope.json` の範囲外なので、このページに会計の `DD-ADMIN-*` は振っていない（会計を範囲に入れる時に 16-5 の見出しを `DD-ADMIN-NNN` と属性の表の形へ直す）。
+
 > 返品の受け取りの数え方の直し 確認日: 2026-11-08。DD-ADMIN-017 に「数え方の直し」（I-1。空きの着を注文の商品ごとに1列で使う）、DD-ADMIN-019 の上限の見込みの文、DD-ADMIN-020 に「相談の点数の直し」（N-1・M-4。`consult_quantity`）を足した。DD-ADMIN-017 に直していない場面を「既知の点」として書いた（交換の印を着そのものに結び付ける別の設計で直す。オーナー決定）。移行 `20261108120000` は手元の DB で確認し、本番は未適用（オーナーの許可待ち）。DB 結合の試験は[テスト仕様](../../05_Quality/tests/test-spec.md)参照。
 
 > 返品の品ごとの返金 Task 4 確認日: 2026-11-06。DD-ADMIN-020 に、メールの材料・本文と注文の履歴の実装（Task 4）の段落を足した。単体211/211、メール材料のDB試験6/6と関連E2Eは実測済み（2026-11-06、調整役の手元の実行・ログ保管。[テスト仕様](../../05_Quality/tests/test-spec.md)参照）。メールの実配送は未実行。
@@ -795,16 +797,16 @@ G-4撤去: 旧発送・発送取消・伝票訂正・手動配達済み・仕上
 
 SETTINGS のショップ設定の前に `nav aria-label="設定メニュー"` と「権限」リンクを置く。リンク先は `/admin/settings/permissions`、戻るリンク「管理画面に戻る」は `/admin?tab=SETTINGS`。独立ページは Server Component、[RolePermissionsSection](../../../src/components/RolePermissionsSection.tsx) は Client Component。直URLでも `GET /api/admin/permissions` の成功前に表を出さない。店長が固定2コード以外を全解除しても、この画面と戻るリンクを使える。既存管理メニューは役割名で表示を決め、サポーターは ORDER だけ。画面に「管理メニューの表示は、権限の設定ではなく役割名で決まります。」を表示する。
 
-表は列「操作」「店長」「サポーター」、共有 [ROLE_PERMISSION_CATALOG](../../../src/lib/auth/role-permission-catalog.ts) の30コードを分野ごとにまとめる。`user` は編集対象外。`table` と列・行の `th`、分野ごとの `tbody` と `scope="rowgroup"` を使う。見出し「権限の表」で名付けた、キーボードで焦点を当てられるスクロール領域に表を入れる。390/768px は表内だけ横スクロール、1280px は全列が収まる幅とする（実表示の検証は Task 4）。
+表は列「操作」「店長」「サポーター」、共有 [ROLE_PERMISSION_CATALOG](../../../src/lib/auth/role-permission-catalog.ts) の38コード（会計の6コードを足した。分野に「会計」が増える）を分野ごとにまとめる。`user` は編集対象外。`table` と列・行の `th`、分野ごとの `tbody` と `scope="rowgroup"` を使う。見出し「権限の表」で名付けた、キーボードで焦点を当てられるスクロール領域に表を入れる。390/768px は表内だけ横スクロール、1280px は全列が収まる幅とする（実表示の検証は Task 4）。
 
 | 行・表示 | 契約 |
 | --- | --- |
 | 固定2行 | `admin.users.manage`・`admin.permissions.manage` は両役割欄をまたぐ「店長のみ・変更不可」。switch は置かない。DB関数と行トリガーでも解除・他役割への付与を拒否する |
 | その他28行 | 役割ごとに switch。名前は `${roleLabel}：${operationLabel}`。操作ラベルは行見出しにだけ出し、共通 SwitchToggle の `ariaLabel` を使う |
-| 準備中の行 | G-4 Task 5（確認日: 2026-10-26）で割り当ての入れ替え（`admin.orders.allocate`）を公開したため、`ROLE_PERMISSION_CATALOG` の `upcoming` は全30行でfalse。準備中の権限は無く、「この権限は、対応する画面の公開後に使われます。」の印は0件（FREQ-540-AC-06）。権限の依存・固定・初期値は維持する |
+| 準備中の行 | G-4 Task 5（確認日: 2026-10-26）で割り当ての入れ替え（`admin.orders.allocate`）を公開したため、`ROLE_PERMISSION_CATALOG` の `upcoming` は全38行でfalse。準備中の権限は無く、「この権限は、対応する画面の公開後に使われます。」の印は0件（FREQ-540-AC-06）。権限の依存・固定・初期値は維持する |
 | 依存不足 | 役割別に「操作に必要な権限が不足しています：{不足コードの操作ラベルを「、」で結合}。」。共有関数で重複除去・コード辞書順。権限を自動追加せず、保存も禁止しない |
 
-切替では値を変えず「権限を変更する」を開き、「{役割}の「{操作}」を許可/解除します。変更しますか？」を表示する。「戻る」は送信しない。「変更する」で UUID を1回生成し、その役割の取得済み一覧に1コードだけ差分を加えた `RolePermissionChange`（`roleCode`・`permissionCodes`・文字列の `expectedVersion`・`requestKey`）を `POST /api/admin/role-permissions` へ送る。30コード外は扱わない。CSRF は既存 `clientFetch` に任せる。
+切替では値を変えず「権限を変更する」を開き、「{役割}の「{操作}」を許可/解除します。変更しますか？」を表示する。「戻る」は送信しない。「変更する」で UUID を1回生成し、その役割の取得済み一覧に1コードだけ差分を加えた `RolePermissionChange`（`roleCode`・`permissionCodes`・文字列の `expectedVersion`・`requestKey`）を `POST /api/admin/role-permissions` へ送る。38コード外は扱わない。CSRF は既存 `clientFetch` に任せる。
 
 `Dialog fullScreenOnMobile` の children に確認・戻るボタンを置き、組込み `onConfirm` の自動closeを使わない。保存中は全switch・確認・戻るを disabled にし、共通 `onClose` は何もしないため Esc・モバイル×・backdrop でも閉じない。応答の role と版を採用してから閉じ、「権限を保存しました。」を `role="status"` に表示し、元の switch へ焦点を戻す。
 
@@ -1150,7 +1152,7 @@ G-1 で止めた旧い発送の入口の案内を、G-3 の発送票へ向ける
 
 | 項目 | 内容 |
 | --- | --- |
-| タブの並び | 店長は KPI・ACCOUNTING・NEWS・ITEM・LOOK・STOCKIST・USER・ORDER・INVENTORY・PACKING・CONTACT・DISCOUNT・SETTINGS の13個。サポーターは ORDER・INVENTORY・PACKING・CONTACT・DISCOUNT の5個。`allAdminTabs`・`supporterTabs` の CONTACT の次に足した。印は `ri-price-tag-3-line`。役割名でH権限を補わず、未付与のサポーターは一覧が「割引を見る権限がありません。」を出す |
+| タブの並び | 店長は KPI・ACCOUNTING（会計期間・設定・期間などの詳細は [16-5 ページ](16-5_admin_accounting.md)）・NEWS・ITEM・LOOK・STOCKIST・USER・ORDER・INVENTORY・PACKING・CONTACT・DISCOUNT・SETTINGS の13個。サポーターは ORDER・INVENTORY・PACKING・CONTACT・DISCOUNT の5個。`allAdminTabs`・`supporterTabs` の CONTACT の次に足した。印は `ri-price-tag-3-line`。役割名でH権限を補わず、未付与のサポーターは一覧が「割引を見る権限がありません。」を出す |
 | 一覧（`DiscountList`） | 7列（割引名・種類・効き方・状態・期間・使った回数・上限）を20件ずつ。状態（予定・有効・期限切れ・止めた）・種類・効き方の絞り込みと、名前とコードの検索（「探す」）。空は「割引はありません。」、失敗は「割引を読み込めませんでした。」＋「読み直す」、403は「割引を見る権限がありません。」。計算の要対応は「割引の計算を確認してください。（N件）」をread権限にも出す。読みは最後に始めた物の答えだけを使い、非okの本文は読み切る |
 | 詳細（`DiscountDetail`） | 設定の要約。manage権限の人だけ「止める」「再開する」（期待版と要求番号。連打・再試行は同じ番号）、「複製」（停止中の新しい詳細へ移動。新しいコードを設定してから再開。複製はコードを写さないので編集にコード欄が出る。「誰でも」の束の複製も画面からは共有コードを付ける形になる）、「編集」、「割り当てを足す」（使い捨ての束は先頭の文字と会員、共有コードがあれば割り当て0件でも会員だけ（codesのsingleUse=falseとcodeIdで判断））、「確認済みにする」。変更後に読み直せない時は「変更しましたが、最新の情報を読み込めませんでした。」を出して操作を止め、「読み直す」で戻す |
 | 割り当ての表（`DiscountAssignments`） | コード・割り当てた人・状態・使った日・注文。状態は 未使用／使用済み（入金待ち）／使用済み。「外す」は未使用の行だけ。guestは伏せたメールのみ。注文は `/admin/orders/[id]` のLink。20行ずつ |

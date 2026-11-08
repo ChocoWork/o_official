@@ -1,5 +1,7 @@
 # DB マイグレーション運用
 
+> 会計の計画 1 確認日: 2026-11-08。移行 S0〜S5（`20261107130000`〜`20261107130500`）を末尾の「会計の作り直し 計画 1 の移行 S0〜S5（手元の DB で確認済み・本番未適用）」に追記した。本番へは未適用で、当てる前にオーナーが普段の開発（`npm run dev`）の接続先が手元の Supabase であることを確かめる。
+
 > 返品の受け取りの数え方の直し 確認日: 2026-11-08。1回目の形に戻した（受け取りの時の結び付けは外した。オーナー決定）。直していない場面を「既知の点」に書いた。移行 `20261108120000_return_receive_unit_dedup.sql` を追記した（「返品の受け取りの数え方の直しの移行（I-1・N-1、2026-11-08）」の節）。手元の DB だけで当てて確かめた。本番は未適用で、オーナーの許可待ち。デプロイは移行を先に当ててからコードを出す。
 
 > 確認日: 2026-11-08。「ローカル開発について」の節の古い記述（seed が無い・pre-push の E2E を手元の DB にするかは未決）を、今の形（`supabase/seed.sql` あり・E2E と pre-push は手元の DB）に直した。
@@ -1299,3 +1301,54 @@ controller手順: H7未適用DBの新しい取消テストでRED→取引内で�
 
 2026-11-08 の実装者の実測（手元、1回目の形に戻した後）: 移行は1回目と同じ（MD5 `85377c44f56224126ad24155564ed69a`）。`npx supabase db reset` で当たった。手順2の3ファイルは55件すべて通過。上の19ファイルは1,005件通過・1件飛ばし・失敗0（1回目と同じ）。PostgREST を通す3ファイルは、`db reset` の後に27件すべて通過（`return_postgrest` も通過）。終わった後に `npx supabase db reset` で手元の DB を戻した。
 
+
+## 会計の作り直し 計画 1 の移行 S0〜S5（手元の DB で確認済み・本番未適用）
+
+確認日: 2026-11-08。FREQ-553〜561。計画は [会計の作り直し 計画1](../superpowers/plans/2026-11-04-accounting-p1-journal-foundation.md)。使い方・事前確認・成功の確認・戻し方の詳細は[運用の手引き](accounting-p1-journal-foundation.md)が正本で、ここは移行の台帳として目的・順・末尾の検査・戻し方を写す。手元の DB で確かめた。本番は未適用。
+
+本番に当てる前の約束（Task 16 Step 0。[本番適用前の普段の開発の接続先のオーナー確認](accounting-p1-journal-foundation.md#本番適用前の普段の開発の接続先のオーナー確認)）:
+
+1. 本番に当てる前に、オーナーが `npm run dev` の接続先が手元の Supabase であることを確かめる。
+2. 済むまで S0〜S5 を本番に当てない。
+3. 環境変数の値は Claude も書き手も読まない。
+4. 記録するのは確認した日と確認済みかどうかだけ。現在は確認日が未・確認済みがいいえ。
+
+`.github/workflows/db-migrations.yml` は master への push で `supabase/migrations/**` に変更があれば本番へ `supabase db push` するため、許可と確認の前に push しない。
+
+### 順番と各ファイル
+
+適用の順はファイル名の順（S0 → S5）。各移行は 1 本の取引（`BEGIN`〜`COMMIT`）で、末尾に自己検査を持つ。検査が崩れると全部戻り、失敗の詳細は固定の `DETAIL` の語だけを返す。ファイルの MD5 はコミットしたファイルのもの。本番に当てた文の照合（`md5(statements[1])` の書き方は上の波 2・M1 の節と同じ）は、本番に当てた後の Task 16 で記入する。
+
+| 移行 | 大きさ / ファイルの MD5 | 当てた文の照合 | 目的 |
+| --- | --- | --- | --- |
+| S0 `20261107130000_accounting_p1_permissions.sql` | 21,480 bytes / `8928d04875b7acc5e22fa9287e7f3cb1` | 未適用 | 権限 6 件を足す（32 → 38）。店長だけに付ける。H1 の GET/SET 目録の関数を 38 件に広げる |
+| S1 `20261107130100_accounting_p1_grants_receipts.sql` | 16,404 bytes / `cdde6fb7ac47d57419f45fb2cd0f52a9` | 未適用 | `admin_finance_*` の 12 表と 8 連番から `anon`・`authenticated` の権限を外す。`admin_finance_receipts` に `evidence_kind`・`paper_original_kept`。置き場 `finance-receipts` を非公開・20MiB・5 形式にする |
+| S2 `20261107130200_accounting_p1_journal_foundation.sql` | 84,339 bytes / `dab29db5a8aefaae01166c4acee2b263` | 未適用 | 仕訳・期間・勘定の 5 表、仕訳を入れる関数・取り消しの関数、勘定 163 行（162 ＋ `9999`） |
+| S3 `20261107130300_accounting_p1_period_reads.sql` | 87,564 bytes / `0593bf4afcf8cf781c827643f6be0257` | 未適用 | 設定・期首の表、期間の作成・やめた日・設定・申告の設定の書き手、読み 5 つ、トリガー |
+| S4 `20261107130400_accounting_p1_manual_entry_journal.sql` | 48,136 bytes / `5ceaf3e153ee5809f03c982b7704401e` | 未適用 | 手入力の取引を仕訳にするトリガー、分類・支払方法の写し、履歴の保護、履歴を書く関数の入れ替え |
+| S5 `20261107130500_accounting_p1_a8_migrate_manual.sql` | 17,118 bytes / `fcb9c5d689beacd0ba81b50f771687aa` | 未適用 | 削除されていない手入力の取引を `migrated_entry` として移す（A8） |
+
+### 末尾の検査（DETAIL）と戻し方
+
+| 移行 | 末尾の検査（DETAIL） | 戻し方 |
+| --- | --- | --- |
+| S0 | `acc_s0_permission_catalogs`・`acc_s0_permission_seed`・`acc_s0_existing_dml_allowlist` | 移行のファイルに戻しの文は無い。S1〜S5 を先に戻した後だけ（S3 の書き手が `admin.accounting.settings.manage` を確かめるため）。H1（`20261029130000`）の 2 関数の本体へ `CREATE OR REPLACE` し、`role_permissions`・`permissions` から 6 件を消す。6 件を消した役割の版を +1 する（店長。画面でサポーターへ付けていればサポーターも）。アプリの目録（`admin-rbac.ts`・`role-permission-catalog.ts`・保存の上限、38 → 32）を同じデプロイで戻す（要レビュー） |
+| S1 | `acc_s1_finance_table_acl`・`acc_s1_finance_seq_acl`・`acc_s1_bucket`・`acc_s1_receipt_columns`・`acc_s1_policies_unchanged` | 移行のファイルの先頭の ROLLBACK のとおり。適用前に読んだ権限・置き場の行の値へ戻す。種類の列を消すと適用後に記録した種類が消えるので先に書き出す。`public` は `true` に戻さない |
+| S2 | `acc_s2_tables` ほか 9 つ | 仕訳が 1 件も無い間だけ、ファイル先頭の DROP の文。仕訳は消せない |
+| S3 | `acc_s3_settings_row`・`acc_s3_period_layout_trigger`・`acc_s3_functions`・`acc_s3_rls_acl`・`acc_s3_reads_stable` | 期間・設定の変更・期首の行が残らない間だけ、ファイル先頭の DROP の文 |
+| S4 | `acc_s4_map_table`・`acc_s4_trigger`・`acc_s4_functions`・`acc_s4_legacy_trigger_untouched` | 手入力の仕訳が無い間だけ、ファイル先頭の DROP の文。履歴の関数は `remote_schema.sql` の本体へ `CREATE OR REPLACE` で戻し、続けて `ALTER FUNCTION public.record_admin_finance_entry_revision() SET search_path = public, pg_temp;` も流す |
+| S5 | `acc_s5_counts`・`acc_s5_numbering`・`acc_s5_revisions_unchanged`・`acc_s5_receipts_unchanged`・`acc_s5_triggers_unchanged` | 戻せない。誤りは取り消しと正しい仕訳で直す |
+
+### 本番へ当てる手順（T16-1）
+
+Ruling T16-1 (refines C11): Task 16 applies in two pushes — (1) S0–S3 first; (2) run ALL S5 stop pre-checks read-only on production (task-13-report's 9 checks + earliest live expense year ≥ 2025 when start date NULL + max(created_at) ≤ now + category listing incl. 開業費 0 rows); (3) owner confirms no admin expense writes; (4) push S4+S5 together; if S5 fails, nobody edits expenses (S4 alone posts only on writes), fix S5 and push again — because db push commits each file separately and an S4-only state + any write would make S5 stop permanently (M-4) — cost if wrong: manual reconciliation decision needed.
+
+意味: 1 回目の push で S0〜S3 を当てる。続けて[運用の手引きの本番の事前確認](accounting-p1-journal-foundation.md#本番の事前確認読み取りだけ)をすべて読み取り専用で流す。管理者が会計の取引を書いていないことをオーナーが確かめてから、2 回目の push で S4 と S5 を一緒に当てる。S5 が失敗したら、直して再度 push するまで誰も取引を書かない（S4 だけの状態で取引を書くと、S5 が `acc_s5_counts` で永久に止まる）。`db push` はファイルごとに別々に確定するため、2 本を別の日に分けない。
+
+当てた後の確かめ（NOTICE の件数、`migrated_entry` の数、元の表の件数が変わらないこと、`schema_migrations` の突き合わせ、画面で移した仕訳が読めること）は[運用の手引きの成功の確認](accounting-p1-journal-foundation.md#成功の確認)。確かめのために本番で取引を足したり直したりしない（S4 の後は仕訳と取り消しの行が消せずに残る）。
+
+### 手元で当てて確かめる手順（`--linked` は使わない）
+
+1. `npx supabase db reset`（手元だけ。末尾の検査が落ちると取引ごと戻り、reset が止まる）
+2. `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db/accounting_p1 --runInBand`（`accounting_p1_*` の 12 ファイル）
+3. E2E（`FR-ADMIN-128` など）の後に DB 結合を流すときは、先に `npm run db:reset` する。E2E が開業日・個人事業を終えた日・空きの個人の期間を手元の DB に残すため。

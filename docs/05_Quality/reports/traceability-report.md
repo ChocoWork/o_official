@@ -9,9 +9,9 @@
 | 指標 | 件数 |
 | --- | ---: |
 | 要件定義書の対象ID | 2324 |
-| 設計にID参照あり | 606 |
+| 設計にID参照あり | 607 |
 | テストにID参照あり | 1626 |
-| 設計にID参照なし | 1718 |
+| 設計にID参照なし | 1717 |
 | テストにID参照なし | 698 |
 
 ## 参照一覧
@@ -61,7 +61,7 @@
 | `FR-ADMIN-007` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | なし |
 | `FR-ADMIN-008` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-008-remove-kpi-heading.spec.ts](../../../e2e/FR-ADMIN-008-remove-kpi-heading.spec.ts)） |
 | `FR-ADMIN-009` | 5件（[admin.md](../../03_BasicDesign/areas/admin.md)） | 4件（[FR-ADMIN-009-kpi-icon-tooltip.spec.ts](../../../e2e/FR-ADMIN-009-kpi-icon-tooltip.spec.ts)） |
-| `FR-ADMIN-029` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-029-accounting-tab.spec.ts](../../../e2e/FR-ADMIN-029-accounting-tab.spec.ts)） |
+| `FR-ADMIN-029` | 2件（[screen-list.md](../../03_BasicDesign/ui/screen-list.md)） | 1件（[FR-ADMIN-029-accounting-tab.spec.ts](../../../e2e/FR-ADMIN-029-accounting-tab.spec.ts)） |
 | `FR-ADMIN-050` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 2件（[FR-ADMIN-050-order-shipping.spec.ts](../../../e2e/FR-ADMIN-050-order-shipping.spec.ts)） |
 | `FR-ADMIN-051` | なし | 2件（[FR-ADMIN-051-order-refund-safety.spec.ts](../../../e2e/FR-ADMIN-051-order-refund-safety.spec.ts)） |
 | `FR-ADMIN-061` | なし | 1件（[FR-ADMIN-061-order-list-review-states.spec.ts](../../../e2e/FR-ADMIN-061-order-list-review-states.spec.ts)） |
@@ -2056,7 +2056,7 @@
 | `FREQ-546-AC-01` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 3件（[FR-CHECKOUT-055-discount-combinations.spec.ts](../../../e2e/FR-CHECKOUT-055-discount-combinations.spec.ts)） |
 | `FREQ-546-AC-02` | なし | 2件（[FR-CHECKOUT-055-discount-combinations.spec.ts](../../../e2e/FR-CHECKOUT-055-discount-combinations.spec.ts)） |
 | `FREQ-546-AC-03` | なし | 2件（[group_h_admin_concurrency.integration.test.ts](../../../tests/integration/db/group_h_admin_concurrency.integration.test.ts)） |
-| `FREQ-546-AC-04` | 2件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 9件（[FR-CART-025-automatic-discounts.spec.ts](../../../e2e/FR-CART-025-automatic-discounts.spec.ts)） |
+| `FREQ-546-AC-04` | 2件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 10件（[FR-CART-025-automatic-discounts.spec.ts](../../../e2e/FR-CART-025-automatic-discounts.spec.ts)） |
 | `FREQ-547-AC-01` | なし | 9件（[FR-ADMIN-124-discount-management.spec.ts](../../../e2e/FR-ADMIN-124-discount-management.spec.ts)） |
 | `FREQ-547-AC-02` | なし | 6件（[group_h_admin.integration.test.ts](../../../tests/integration/db/group_h_admin.integration.test.ts)） |
 | `FREQ-547-AC-03` | なし | 4件（[FR-ADMIN-125-discount-assignments.spec.ts](../../../e2e/FR-ADMIN-125-discount-assignments.spec.ts)） |
@@ -2082,10 +2082,10 @@
 | `FREQ-552-AC-01` | 1件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 8件（[FR-CHECKOUT-058-discount-breakdown.spec.ts](../../../e2e/FR-CHECKOUT-058-discount-breakdown.spec.ts)） |
 | `FREQ-552-AC-02` | なし | 10件（[group_h_migration_asserts.integration.test.ts](../../../tests/integration/db/group_h_migration_asserts.integration.test.ts)） |
 | `FREQ-552-AC-03` | なし | 7件（[group_h_migration_asserts.integration.test.ts](../../../tests/integration/db/group_h_migration_asserts.integration.test.ts)） |
-| `FREQ-553-AC-01` | なし | 5件（[accounting_p1_permissions.integration.test.ts](../../../tests/integration/db/accounting_p1_permissions.integration.test.ts)） |
+| `FREQ-553-AC-01` | なし | 6件（[FR-ADMIN-130-accounting-permissions.spec.ts](../../../e2e/FR-ADMIN-130-accounting-permissions.spec.ts)） |
 | `FREQ-553-AC-02` | なし | 2件（[accounting_p1_grants.integration.test.ts](../../../tests/integration/db/accounting_p1_grants.integration.test.ts)） |
 | `FREQ-553-AC-03` | なし | 1件（[accounting_p1_grants.integration.test.ts](../../../tests/integration/db/accounting_p1_grants.integration.test.ts)） |
-| `FREQ-553-AC-04` | なし | 2件（[accounting_p1_grants.integration.test.ts](../../../tests/integration/db/accounting_p1_grants.integration.test.ts)） |
+| `FREQ-553-AC-04` | なし | 3件（[FR-ADMIN-130-accounting-permissions.spec.ts](../../../e2e/FR-ADMIN-130-accounting-permissions.spec.ts)） |
 | `FREQ-554-AC-01` | なし | 1件（[accounting_p1_journal.integration.test.ts](../../../tests/integration/db/accounting_p1_journal.integration.test.ts)） |
 | `FREQ-554-AC-02` | なし | 2件（[accounting_p1_journal.integration.test.ts](../../../tests/integration/db/accounting_p1_journal.integration.test.ts)） |
 | `FREQ-554-AC-03` | なし | 5件（[accounting_p1_journal.integration.test.ts](../../../tests/integration/db/accounting_p1_journal.integration.test.ts)） |
@@ -2096,39 +2096,39 @@
 | `FREQ-554-AC-08` | なし | 1件（[accounting_p1_journal.integration.test.ts](../../../tests/integration/db/accounting_p1_journal.integration.test.ts)） |
 | `FREQ-554-AC-09` | なし | 1件（[accounting_p1_journal.integration.test.ts](../../../tests/integration/db/accounting_p1_journal.integration.test.ts)） |
 | `FREQ-554-AC-10` | なし | 1件（[accounting_p1_journal.integration.test.ts](../../../tests/integration/db/accounting_p1_journal.integration.test.ts)） |
-| `FREQ-555-AC-01` | なし | 7件（[accounting_p1_migration_asserts.integration.test.ts](../../../tests/integration/db/accounting_p1_migration_asserts.integration.test.ts)） |
+| `FREQ-555-AC-01` | なし | 8件（[FR-ADMIN-128-accounting-periods-settings.spec.ts](../../../e2e/FR-ADMIN-128-accounting-periods-settings.spec.ts)） |
 | `FREQ-555-AC-02` | なし | 1件（[accounting_p1_opening.integration.test.ts](../../../tests/integration/db/accounting_p1_opening.integration.test.ts)） |
 | `FREQ-555-AC-03` | なし | 2件（[accounting_p1_opening.integration.test.ts](../../../tests/integration/db/accounting_p1_opening.integration.test.ts)） |
 | `FREQ-555-AC-04` | なし | 5件（[accounting_p1_periods.integration.test.ts](../../../tests/integration/db/accounting_p1_periods.integration.test.ts)） |
 | `FREQ-555-AC-05` | なし | 1件（[period-months.test.ts](../../../tests/unit/lib/accounting/period-months.test.ts)） |
 | `FREQ-555-AC-06` | なし | 4件（[accounting_p1_opening.integration.test.ts](../../../tests/integration/db/accounting_p1_opening.integration.test.ts)） |
-| `FREQ-555-AC-07` | なし | 5件（[accounting_p1_migration_asserts.integration.test.ts](../../../tests/integration/db/accounting_p1_migration_asserts.integration.test.ts)） |
-| `FREQ-555-AC-08` | なし | 2件（[accounting_p1_periods.integration.test.ts](../../../tests/integration/db/accounting_p1_periods.integration.test.ts)） |
+| `FREQ-555-AC-07` | なし | 6件（[FR-ADMIN-128-accounting-periods-settings.spec.ts](../../../e2e/FR-ADMIN-128-accounting-periods-settings.spec.ts)） |
+| `FREQ-555-AC-08` | なし | 3件（[FR-ADMIN-128-accounting-periods-settings.spec.ts](../../../e2e/FR-ADMIN-128-accounting-periods-settings.spec.ts)） |
 | `FREQ-555-AC-09` | なし | 4件（[accounting_p1_periods.integration.test.ts](../../../tests/integration/db/accounting_p1_periods.integration.test.ts)） |
-| `FREQ-556-AC-01` | なし | 3件（[accounting_p1_manual_entry.integration.test.ts](../../../tests/integration/db/accounting_p1_manual_entry.integration.test.ts)） |
+| `FREQ-556-AC-01` | なし | 4件（[FR-ADMIN-129-accounting-saved-journal.spec.ts](../../../e2e/FR-ADMIN-129-accounting-saved-journal.spec.ts)） |
 | `FREQ-556-AC-02` | なし | 2件（[accounting_p1_manual_entry.integration.test.ts](../../../tests/integration/db/accounting_p1_manual_entry.integration.test.ts)） |
 | `FREQ-556-AC-03` | なし | 2件（[accounting_p1_manual_entry.integration.test.ts](../../../tests/integration/db/accounting_p1_manual_entry.integration.test.ts)） |
 | `FREQ-556-AC-04` | なし | 1件（[accounting_p1_manual_entry.integration.test.ts](../../../tests/integration/db/accounting_p1_manual_entry.integration.test.ts)） |
 | `FREQ-556-AC-05` | なし | 1件（[accounting_p1_manual_entry.integration.test.ts](../../../tests/integration/db/accounting_p1_manual_entry.integration.test.ts)） |
 | `FREQ-556-AC-06` | なし | 1件（[accounting_p1_manual_entry.integration.test.ts](../../../tests/integration/db/accounting_p1_manual_entry.integration.test.ts)） |
-| `FREQ-557-AC-01` | なし | 4件（[cost-profit-route.test.ts](../../../tests/unit/api/admin/cost-profit-route.test.ts)） |
+| `FREQ-557-AC-01` | なし | 5件（[FR-ADMIN-129-accounting-saved-journal.spec.ts](../../../e2e/FR-ADMIN-129-accounting-saved-journal.spec.ts)） |
 | `FREQ-557-AC-02` | なし | 3件（[period-count.test.tsx](../../../tests/unit/components/cost-profit/period-count.test.tsx)） |
 | `FREQ-557-AC-03` | なし | 2件（[period-count.test.tsx](../../../tests/unit/components/cost-profit/period-count.test.tsx)） |
-| `FREQ-557-AC-04` | なし | 1件（[depreciation-period.test.ts](../../../tests/unit/lib/finance/depreciation-period.test.ts)） |
+| `FREQ-557-AC-04` | 1件（[finance.md](../../04_DetailDesign/shared/finance.md)） | 1件（[depreciation-period.test.ts](../../../tests/unit/lib/finance/depreciation-period.test.ts)） |
 | `FREQ-557-AC-05` | なし | 2件（[cost-profit-route.test.ts](../../../tests/unit/api/admin/cost-profit-route.test.ts)） |
-| `FREQ-557-AC-06` | なし | 3件（[cost-profit-route.test.ts](../../../tests/unit/api/admin/cost-profit-route.test.ts)） |
+| `FREQ-557-AC-06` | なし | 4件（[FR-ADMIN-129-accounting-saved-journal.spec.ts](../../../e2e/FR-ADMIN-129-accounting-saved-journal.spec.ts)） |
 | `FREQ-558-AC-01` | なし | 1件（[csv-export.test.ts](../../../tests/unit/lib/finance/csv-export.test.ts)） |
 | `FREQ-559-AC-01` | なし | 1件（[accounting_p1_receipts_bucket.integration.test.ts](../../../tests/integration/db/accounting_p1_receipts_bucket.integration.test.ts)） |
 | `FREQ-559-AC-02` | なし | 3件（[accounting_p1_receipts_bucket.integration.test.ts](../../../tests/integration/db/accounting_p1_receipts_bucket.integration.test.ts)） |
-| `FREQ-559-AC-03` | なし | 1件（[receipt-kind.test.tsx](../../../tests/unit/components/cost-profit/receipt-kind.test.tsx)） |
+| `FREQ-559-AC-03` | なし | 4件（[FR-ADMIN-038-receipts-and-revisions.spec.ts](../../../e2e/FR-ADMIN-038-receipts-and-revisions.spec.ts)） |
 | `FREQ-56-AC-01` | なし | 1件（[FR-LOOK-ALL-013-related-item-mobile-stack.spec.ts](../../../e2e/FR-LOOK-ALL-013-related-item-mobile-stack.spec.ts)） |
 | `FREQ-56-AC-02` | なし | 1件（[FR-LOOK-ALL-013-related-item-mobile-stack.spec.ts](../../../e2e/FR-LOOK-ALL-013-related-item-mobile-stack.spec.ts)） |
 | `FREQ-560-AC-01` | なし | 1件（[accounting_p1_a8_migrate.integration.test.ts](../../../tests/integration/db/accounting_p1_a8_migrate.integration.test.ts)） |
 | `FREQ-560-AC-02` | なし | 1件（[accounting_p1_a8_migrate.integration.test.ts](../../../tests/integration/db/accounting_p1_a8_migrate.integration.test.ts)） |
 | `FREQ-560-AC-03` | なし | 1件（[accounting_p1_a8_migrate.integration.test.ts](../../../tests/integration/db/accounting_p1_a8_migrate.integration.test.ts)） |
 | `FREQ-561-AC-01` | なし | 2件（[accounting-periods-route.test.ts](../../../tests/unit/api/admin/accounting-periods-route.test.ts)） |
-| `FREQ-561-AC-02` | なし | 3件（[accounting-settings-route.test.ts](../../../tests/unit/api/admin/accounting-settings-route.test.ts)） |
-| `FREQ-561-AC-03` | なし | 3件（[accounting_p1_periods.integration.test.ts](../../../tests/integration/db/accounting_p1_periods.integration.test.ts)） |
+| `FREQ-561-AC-02` | なし | 4件（[FR-ADMIN-128-accounting-periods-settings.spec.ts](../../../e2e/FR-ADMIN-128-accounting-periods-settings.spec.ts)） |
+| `FREQ-561-AC-03` | なし | 4件（[FR-ADMIN-128-accounting-periods-settings.spec.ts](../../../e2e/FR-ADMIN-128-accounting-periods-settings.spec.ts)） |
 | `FREQ-561-AC-04` | なし | 2件（[accounting-periods-route.test.ts](../../../tests/unit/api/admin/accounting-periods-route.test.ts)） |
 | `FREQ-57-AC-01` | なし | 1件（[FR-STOCKIST-010-region-prefecture-filter.spec.ts](../../../e2e/FR-STOCKIST-010-region-prefecture-filter.spec.ts)） |
 | `FREQ-57-AC-02` | なし | 1件（[FR-STOCKIST-010-region-prefecture-filter.spec.ts](../../../e2e/FR-STOCKIST-010-region-prefecture-filter.spec.ts)） |
@@ -2150,13 +2150,13 @@
 | `FREQ-64-AC-02` | なし | 1件（[FR-LOGIN-011-auth-rounded-design.spec.ts](../../../e2e/FR-LOGIN-011-auth-rounded-design.spec.ts)） |
 | `FREQ-64-AC-03` | なし | なし |
 | `FREQ-64-AC-04` | なし | なし |
-| `FREQ-641-AC-01` | なし | 1件（[FR-ADMIN-164-return-receive-per-item.spec.ts](../../../e2e/FR-ADMIN-164-return-receive-per-item.spec.ts)） |
+| `FREQ-641-AC-01` | なし | 2件（[FR-ADMIN-164-return-receive-per-item.spec.ts](../../../e2e/FR-ADMIN-164-return-receive-per-item.spec.ts)） |
 | `FREQ-641-AC-02` | なし | 1件（[FR-ADMIN-164-return-receive-per-item.spec.ts](../../../e2e/FR-ADMIN-164-return-receive-per-item.spec.ts)） |
 | `FREQ-641-AC-03` | なし | 1件（[FR-ADMIN-164-return-receive-per-item.spec.ts](../../../e2e/FR-ADMIN-164-return-receive-per-item.spec.ts)） |
 | `FREQ-641-AC-04` | なし | 2件（[FR-ADMIN-164-return-receive-per-item.spec.ts](../../../e2e/FR-ADMIN-164-return-receive-per-item.spec.ts)） |
 | `FREQ-641-AC-05` | なし | 1件（[FR-ADMIN-164-return-receive-per-item.spec.ts](../../../e2e/FR-ADMIN-164-return-receive-per-item.spec.ts)） |
 | `FREQ-641-AC-06` | なし | 1件（[FR-ADMIN-164-return-receive-per-item.spec.ts](../../../e2e/FR-ADMIN-164-return-receive-per-item.spec.ts)） |
-| `FREQ-641-AC-07` | 2件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 2件（[group_h_refund_outcomes.integration.test.ts](../../../tests/integration/db/group_h_refund_outcomes.integration.test.ts)） |
+| `FREQ-641-AC-07` | 2件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 4件（[group_h_refund_outcomes.integration.test.ts](../../../tests/integration/db/group_h_refund_outcomes.integration.test.ts)） |
 | `FREQ-641-AC-08` | なし | 1件（[return-receive-per-item.integration.test.ts](../../../tests/integration/db/return-receive-per-item.integration.test.ts)） |
 | `FREQ-641-AC-09` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 4件（[order_return_receipts.integration.test.ts](../../../tests/integration/db/order_return_receipts.integration.test.ts)） |
 | `FREQ-641-AC-10` | なし | 2件（[return-receive-per-item-migration.integration.test.ts](../../../tests/integration/db/return-receive-per-item-migration.integration.test.ts)） |

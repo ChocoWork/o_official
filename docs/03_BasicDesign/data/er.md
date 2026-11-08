@@ -1,5 +1,7 @@
 # ER 図（現行リポジトリの実装）
 
+> 会計の計画 1（仕訳の土台と期間）確認日: 2026-11-08。新しい表 9 つと `admin_finance_receipts` の列 2 つを、末尾の「会計の仕訳の土台と期間（計画 1 / FREQ-553〜561）」に追記した。移行 6 本（`20261107130000`〜`20261107130500`）は手元の DB で確かめた。本番は未適用。旧 `admin_kpi_monthly_records` との食い違いは計画 2 で扱う（この文書には書かない）。
+
 > 返品の受け取りの数え方の直し 確認日: 2026-11-08。`order_return_receipts` に列 `consult_quantity` と CHECK を足した（テーブル・FK の数は変わらない）。末尾の「返品の受け取りの相談の点数（I-1・N-1 の直し、2026-11-08）」。移行 `20261108120000` は手元で確認し、本番は未適用（オーナーの許可待ち）。
 
 > 返品の品ごとの返金 Task 1 確認日: 2026-11-06。`order_return_receipt_lines` に列 `refund_choice` と CHECK を足し、一意の組を6列にし、`order_return_receipts.refund_choice` に `mixed` を足した（テーブル・FK の数は変わらない）。末尾の「返品の受け取りの品ごとの返金（FREQ-641 Task 1）」。移行 `20261106005536` は手元で確認し、本番は 2026-11-06 に適用済み。
@@ -2250,7 +2252,7 @@ service_role の権限は移行が明示する（後の REVOKE で消えない�
 
 checkout_draftsのdiscount_result/discount_facts/discount_engine_version/discount_snapshot_hashは全NULLまたは全存在。既存行へ補完しない。結果はversion=1のobjectでallocations/unitAmountsがarray、factsはobject、engine_version=1、hashは小文字SHA256 hex64。行ごとの厳密な金額はTask 6で扱う。
 
-private.order_line_discounts(uuid)は保存allocationが1件でもある注文の通常行をLEFT JOINし、対象外は0を返す。保存がない注文は旧累積丸めの本文を保ち、交換行は常に0。controller裁定により従来のSQL/STABLE/SECURITY INVOKERを保ち、search_pathは空、PUBLIC/anon/authenticated/service_roleのEXECUTEは無い。呼出元のDEFINER本体を通し、新public入口は作らない。privateの不変/関連/行総和/設定検査helperとH保存の有無を読むgroup_h_order_has_units(uuid)はpostgres所有・DEFINER・空search_pathで、service_roleも直接実行不可。order_itemsの遅延検査はorder_id/quantity/line_total/line_kindのUPDATEだけで、WHENは旧/新の注文にHの着別金額がある時だけイベントを作る。設定検査も使用列だけのUPDATEに絞り、会員FKのNULL化では起動しない。H1のGET/SET目録は32件へ広げ、既存public INVOKER入口・固定2権限・版・要求キー・監査を保つ。注文の行配分/着別金額のorder_idを含め、FK読取を支える明示索引は15本。
+private.order_line_discounts(uuid)は保存allocationが1件でもある注文の通常行をLEFT JOINし、対象外は0を返す。保存がない注文は旧累積丸めの本文を保ち、交換行は常に0。controller裁定により従来のSQL/STABLE/SECURITY INVOKERを保ち、search_pathは空、PUBLIC/anon/authenticated/service_roleのEXECUTEは無い。呼出元のDEFINER本体を通し、新public入口は作らない。privateの不変/関連/行総和/設定検査helperとH保存の有無を読むgroup_h_order_has_units(uuid)はpostgres所有・DEFINER・空search_pathで、service_roleも直接実行不可。order_itemsの遅延検査はorder_id/quantity/line_total/line_kindのUPDATEだけで、WHENは旧/新の注文にHの着別金額がある時だけイベントを作る。設定検査も使用列だけのUPDATEに絞り、会員FKのNULL化では起動しない。H1のGET/SET目録は32件へ広げ（会計の計画 1 の S0 で38件になった。末尾の「会計の仕訳の土台と期間」）、既存public INVOKER入口・固定2権限・版・要求キー・監査を保つ。注文の行配分/着別金額のorder_idを含め、FK読取を支える明示索引は15本。
 
 ## 割引の管理と割り当て表（H2 / FREQ-543・544・546・547）
 
@@ -2299,3 +2301,50 @@ H判定は単位の存在（割引0も含む）。旧行と交換の計算は従
 | `public.order_return_receipts` | 列 `consult_quantity integer`（NULL 可・既定値なし）。受け取り（`kind = 'receive'`）で DB が返金待ちにした相談の点数（ふつうの返金で先に返した品の覆いで抑えた後の数）。NULL はこの移行より前の記録。CHECK `order_return_receipts_consult_quantity_check`: NULL か0以上 |
 
 値は `private.admin_receive_return` が受け取りの記録を INSERT する時に書く（追記だけの決まりは変えない。前の記録は埋め直さない）。受け取りの指紋 `request_fingerprint` と再送の一致の確かめには入れない。表の権限は前と同じ（service_role は SELECT だけ。anon・authenticated は読めない）。テーブル・FK の数は変わらない。
+
+## 会計の仕訳の土台と期間（計画 1 / FREQ-553〜561）
+
+移行は [S1 権限と領収書](../../../supabase/migrations/20261107130100_accounting_p1_grants_receipts.sql)・[S2 仕訳の土台](../../../supabase/migrations/20261107130200_accounting_p1_journal_foundation.sql)・[S3 期間と設定](../../../supabase/migrations/20261107130300_accounting_p1_period_reads.sql)・[S4 手入力の仕訳](../../../supabase/migrations/20261107130400_accounting_p1_manual_entry_journal.sql)。S0 は権限のコードを足すだけ（表なし）、S5 は本番の手入力の取引を仕訳へ移すだけ（表なし）。適用の順と戻し方は[運用の手引き](../../06_Operations/accounting-p1-journal-foundation.md)と [db-migrations.md](../../06_Operations/db-migrations.md)。手元の DB で確かめた。本番は未適用。
+
+### 新しい 9 表と関連
+
+```mermaid
+erDiagram
+    accounting_periods ||--o| accounting_period_sequences : "period_id"
+    accounting_periods ||--o{ accounting_journal_entries : "period_id"
+    accounting_journal_entries ||--o{ accounting_journal_lines : "entry_id"
+    accounting_journal_entries |o--o| accounting_journal_entries : "reverses_entry_id"
+    accounting_accounts ||--o{ accounting_journal_lines : "account_code"
+    accounting_periods ||--o{ accounting_opening_balances : "period_id"
+    accounting_periods |o--o{ accounting_opening_balances : "source_period_id"
+    accounting_accounts ||--o{ accounting_opening_balances : "account_code"
+    accounting_accounts ||--o{ accounting_manual_category_map : "account_code"
+    accounting_accounts ||--o{ accounting_manual_method_map : "account_code"
+```
+
+全 FK は `ON DELETE RESTRICT`。9 表とも RLS 有効で方針は 0 本、所有者は `postgres`、`PUBLIC`・`anon`・`authenticated`・`service_role` の権限を全部外して `service_role` に SELECT だけ付ける。書くのは `SECURITY DEFINER` の関数だけ。
+
+| 表（移行） | 主キー | 列と制約 |
+| --- | --- | --- |
+| `accounting_accounts`（S2） | `code` | `account_type`（asset・liability・equity・revenue・expense）、`normal_side`（debit・credit）、`scope`（common・soleProprietor・corporation）、`carryover_role`（carry・capital_sole・owner_draw・owner_contribution・retained_corp・pl_zero）。`code` は数字 4 桁。162 科目と代わりの `9999` で 163 行。後の移行は足すだけ（UPDATE・DELETE・TRUNCATE はトリガーで断る） |
+| `accounting_periods`（S2） | `id` | `business_type`（soleProprietor・corporation）、`name`（1〜60 字）、`starts_on`・`ends_on`、`corporate_tax_extension_months`・`consumption_tax_extension_months`（0〜1。消費税は法人税以下）、`consumption_tax_status`（exempt・taxable。`consumption_taxable_from` は taxable の時だけで期間の中）、`version`、`creation_request_key`（一意）・`creation_request_hash`、`admin_requests`、`legacy_fiscal_year`（一意）。CHECK: 始まり ≦ 終わり、1 年未満（2 月 29 日始まりは翌年 2 月 28 日まで）、個人は 1 月 1 日始まりで同じ年の終わり。重なり・すき間は S3 の遅延トリガー `accounting_periods_layout` が確かめる |
+| `accounting_period_sequences`（S2） | `period_id` | `last_entry_no`（0 以上）。仕訳の通し番号の数え |
+| `accounting_journal_entries`（S2） | `id` | `period_id`・`entry_no`（組で一意・1 以上）、`entry_date`（日本時間の日）、`event_kind`、`dedupe_key`（一意）、`content_hash`、`description`（500 字まで）、`recorded_at`・`source_recorded_at`（前者以前）・`recorded_by`、`is_late`、`reverses_entry_id`（一意・自己参照）、`reason`、`source_table`・`source_id`、`migrated_from`・`migrated_at`。取り消し（`event_kind = 'reversal'`）は `reverses_entry_id` と `reason` が要り、それ以外は両方 NULL。UPDATE・DELETE・TRUNCATE はトリガーで断る |
+| `accounting_journal_lines`（S2） | `(entry_id, line_no)` | `line_no` 1〜200、`account_code`、`debit`・`credit`（0 以上の整数円）、`sub_account`（`^[a-z0-9_:.-]{1,64}$`）、`counterparty`・`order_id`・`memo`。借貸の一致・片側だけは遅延の制約トリガー `accounting_journal_entries_balance`・`accounting_journal_lines_balance` が確かめる。UPDATE・DELETE・TRUNCATE はトリガーで断る |
+| `accounting_settings`（S3） | `id`（1 だけ） | `business_start_date`（1 度だけ入れられる）、`cutover_on`（移行の日。日本時間の今日）、`current_business_type`、`sole_business_ended_on`（個人の最後の期間の終わり）、`sole_end_changes`（変更の履歴の配列）、`version`、`admin_requests`。1 行を移行が入れ、DELETE・TRUNCATE は断る |
+| `accounting_opening_balances`（S3） | `(period_id, closing_version, account_code)` | `signed_amount`（符号つきの整数円）、`closing_version`（1 以上）、`source`（initial・closing_carryover）、`source_period_id`。追記だけで、計画 1 は行を足さない（計画 6 が締めた版を足す） |
+| `accounting_manual_category_map`（S4） | `source_text` | 手入力の科目名から勘定 `account_code` への対応 |
+| `accounting_manual_method_map`（S4） | `(source_text, direction, business_type)` | 入出金方法から勘定への対応。`direction`（expense・income）、`business_type` |
+
+`admin_finance_expenses` には S4 のトリガー `accounting_manual_entry_journal`（INSERT・UPDATE で仕訳を足す）と、DELETE・TRUNCATE を断る 2 本（`ENABLE ALWAYS`）を足した。`admin_finance_entry_revisions` には履歴の書き換えを断るトリガー `accounting_entry_revisions_guard`（`changed_by` を NULL に変える 1 つだけ通す）と TRUNCATE を断る 1 本を足した。列は増やしていない。
+
+### 領収書の列と置き場（S1）
+
+| 対象 | 変えたもの |
+| --- | --- |
+| `public.admin_finance_receipts` | 列 `evidence_kind text NOT NULL DEFAULT 'unconfirmed'`（CHECK `admin_finance_receipts_evidence_kind_check`: electronic・paper・unconfirmed）と列 `paper_original_kept boolean NULL`（CHECK `admin_finance_receipts_paper_original_kept_check`: NULL か `evidence_kind = 'paper'`）。既存の行は埋め直さず unconfirmed と読む |
+| `storage.buckets` の `finance-receipts` | 移行で作る。非公開・上限 20 MiB（20971520）・形式は PDF・JPEG・PNG・WebP・HEIC の 5 つ。`storage.objects` に `finance-receipts` を名指しする方針は置かない（あれば S1 の最後の確かめが止める） |
+
+### 表の権限の締め直し（S1）
+
+`admin_finance_*` の 12 表と、その 12 表が持つ 8 つの連番から、`PUBLIC`・`anon`・`authenticated` の権限（SELECT を含む）を全部外し、`service_role` に明示で付け直した。利用者の JWT で 12 表を直接読み書きする道は無く、アプリは `service_role` の route を通る。RLS の方針（45 本）は変えない。

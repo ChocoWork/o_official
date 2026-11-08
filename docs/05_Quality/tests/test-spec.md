@@ -1,5 +1,7 @@
 # テスト仕様
 
+> 2026-11-08 確認日（会計の計画 1 の文書の正本）: 末尾に「会計の仕訳の土台と期間（計画 1 / FREQ-553〜561）」を足した。会計の E2E の題を言い換えた 6 件（024・025・029・031・042）、新しい E2E（FR-ADMIN-128〜131）、単体・画面・DB 結合の試験の対応、E2E の後に DB 結合を流すときは `db:reset` する注意を書いた。
+>
 > 2026-11-08 確認日（返品の受け取りの数え方の直し I-1・N-1・M-4）: 下の「返品の品ごとの返金」の表に、再現の試験9件・移行の試験1件・履歴の単体を足した。DB の試験は実装者が手元の DB で流した（返品の受け取りの3ファイル 55/55、関係する DB の19ファイル 1005 通過）。E2E は流していない。
 >
 > 確認日: 2026-11-08。`npm test` を通常の全件の並列実行 → 成功したら速さの試験だけ `--runInBand --passWithNoTests` の2段にし、引数を両段へ渡す。速さの試験は設定で `.timing.test.ts` に統一し、商品一覧を [tests/items/items-api.timing.test.ts](../../../tests/items/items-api.timing.test.ts) へ改名、割引の AC-04 の時間を測る2件を `discount-search.timing.test.ts` へ移した（通常側は14件）。試験名・本文・200ms未満の条件は変えない。pre-commit は通常の設定の関連テストだけを流し、速さの試験は流さない（割引の1本で約100秒のため、オーナー決定）。pre-push は `npm test -- --silent` を呼ぶ。[tests/integration/ui/news-admin-edit-screen.test.tsx](../../../tests/integration/ui/news-admin-edit-screen.test.tsx) の成功の3件は、送る前に偽のタイマーへ切り替え、499ms では一覧へ戻らず500msで1回だけ戻ることを確かめる形にした（実時間の待ちの余裕に頼らない。16/16通過）。今回の確認は関係する試験と関連テストの段に限り、全件・E2E・DB結合試験は流していない。
@@ -1543,3 +1545,101 @@ AC-07の3行・予備あり・介在受取とAC-08は旧本文だけで組み立
 | `tests/unit/lib/orders/email/order-email-compose-returns.test.ts` | `DD-ADMIN-020 mixedの受取は相談の品にだけ相談の一文を添える` | mixed正額返金の材料 | 相談品だけ相談文・お客様1通 | Task 4実装者 | 2026-11-06 Task 4の211/211通過に含む（調整役の手元の実行・ログ保管） |
 
 残りの単体の詳細は承認済み計画Task 2〜4に従う。E2Eは390/768/1280px、本番ビルド・手元DBで上記のとおり実測済み。横はみ出し・focus・名前・1POSTの試験を含む。実Stripe/SES・本番適用・メールの実配送は未実行で、この実測をそれらの証拠にはしない。旧H5で狙った箇所のDBのREDは、上記のとおり未取得のまま。
+
+## 会計の仕訳の土台と期間（計画 1 / FREQ-553〜561、2026-11-08）
+
+対象は会計の計画 1（仕訳の土台・期間・設定・手入力の仕訳・領収書の種類・手入力の取引の移行）。要求と受け入れ条件は[要件定義書](../../02_Requirements/requirements.md)の FREQ-553〜561、設計は[詳細設計の会計のページ](../../04_DetailDesign/pages/16-5_admin_accounting.md)・[仕訳の流れ](../../04_DetailDesign/sequence/accounting-journal.md)・[期間の状態](../../04_DetailDesign/states/accounting-period.md)、運用は[運用の手引き](../../06_Operations/accounting-p1-journal-foundation.md)。会計は `scripts/trace/scope.json` の範囲の外なので、この文書に手で書く。要求から受け入れ条件・試験までの文字列の参照は [traceability-report.md](../reports/traceability-report.md)（自動生成。手で直さない）に出る。
+
+### 題を変えた E2E（会計の画面の変更に合わせた言い換え）
+
+題は文字列の参照のつなぎなので、変えた分をここに残す。本文と期待値の変更の理由は各 spec のコメントと FREQ-238・241・256 の AC に書いた。
+
+| ファイル | 旧の題 | 新の題 |
+| --- | --- | --- |
+| `e2e/FR-ADMIN-024` 142 行 | 「支出概要」がプルダウンで、選んだ経費が仕訳帳に反映される | 「支出摘要」がプルダウンで、選んだ経費が仕訳帳に反映される |
+| `e2e/FR-ADMIN-025` 130 行 | 現在の入力をテンプレート保存（名前初期値=支出概要/金額）できる | 現在の入力をテンプレート保存（名前初期値=支出摘要/金額）できる |
+| `e2e/FR-ADMIN-025` 151 行 | 保存済みテンプレートを選ぶと支出概要・金額がフォームへ反映される | 保存済みテンプレートを選ぶと支出摘要・金額がフォームへ反映される |
+| `e2e/FR-ADMIN-029-accounting-tab.spec.ts` 124 行 | ACCOUNTING タブに5つのサブタブと暦年選択が並ぶ | ACCOUNTING タブに6つのサブタブと会計期間の選択が並ぶ |
+| `e2e/FR-ADMIN-031-accounting-fiscal-year.spec.ts` 171 行 | 最上部が暦年ボタンで、シーズンボタンは表示されない | 最上部が会計期間の選択で、シーズンボタンは表示されない |
+| `e2e/FR-ADMIN-042-financial-overview-visual.spec.ts` 334 行 | 会計期間は暦年なので「年」表記で、2025年から選べる | 会計期間は「2026年（個人）」の名前で、作ってある期間（2025年〜）から選べる |
+
+042 の「2025年〜」は、spec の作り物が渡す期間の一覧である。本物の画面の下限（作ってある期間の最初）は E2E で確かめていない。
+
+### 新しい E2E（`FR-ADMIN-128`〜`131`。本番ビルド・手元の Supabase・390/768/1280px）
+
+実 route・実 DB・実画面で流す。実測（調整役の手元の実行。ログは Git 管理外）: `db:reset` の直後に `128`〜`131` と `109` を流して 63 通過・失敗 0（新しい 4 本が 39 件、`FR-ADMIN-109` が 24 件）。会計の E2E の回帰セット（27 ファイル）は 500 通過・失敗 0・飛ばし 4（`FR-ADMIN-044` の元からの飛ばし。題を変えた 6 件を含む）。
+
+| spec | 試験名の先頭の ID | 確かめること |
+| --- | --- | --- |
+| [FR-ADMIN-128](../../../e2e/FR-ADMIN-128-accounting-periods-settings.spec.ts) | FREQ-555-AC-07 | 個人の最後の期間のやめた日を、後の日の仕訳があれば短くできず、理由つきで選び直せる（実 route・DB・画面） |
+| 同上 | FREQ-555-AC-08 | やめた日より後の個人の期間は作れない（400 `ACCOUNTING_ARGUMENT_INVALID`。DB は `ACCOUNTING_PERIOD_SHORTEN_BLOCKED`。画面に法人だけの案内） |
+| 同上 | FREQ-555-AC-01 | 設定タブで法人の期間を足し、重なりと1年超が日本語で断られる（画面・HTTP の 409・DB） |
+| 同上 | FREQ-561-AC-02 | 設定タブに申告の期限と開業日の案内が出る（開業日 `2025-04-01` なら届出の日が `2025/05/01`・`2025/06/02`） |
+| 同上 | FREQ-561-AC-03 | 入力済みの開業日は画面で変えられず、別の日の PUT は 409 `ACCOUNTING_SETTINGS_LOCKED` |
+| [FR-ADMIN-129](../../../e2e/FR-ADMIN-129-accounting-saved-journal.spec.ts) | FREQ-557-AC-06 | 1 本に 2 部分。(1) 手元の DB の 201 行（経費を DB へ直接入れ、トリガーは本物）で、仕訳の route が 200 件+1 件に分けて返し、試算表が 20,301 円で貸借一致。(2) 表示だけの差し替え応答（`JOURNAL_TOO_LARGE`・`JOURNAL_INCOMPLETE`）で警告が出て合計を出さない。サーバーの上限そのものは証明しない |
+| 同上 | FREQ-556-AC-01 | 手入力の取引を作ると仕訳帳に出て、直すと取り消しと正しい仕訳が並ぶ（実 route）。帳簿の並びは「新しい日付が先頭」で、`JE-000001`（9/20）・`JE-000002`（3/5）の後、直すと `JE-000004`・`000003`・`000001`・`000002` の順 |
+| 同上 | FREQ-557-AC-01 | 期間を選ぶと選んだ期間の仕訳だけが試算表に出る（期間ごとの借方・貸方の合計） |
+| [FR-ADMIN-130](../../../e2e/FR-ADMIN-130-accounting-permissions.spec.ts) | FREQ-553-AC-01 | 6 権限は店長にあり未付与のサポーターは 403。閲覧だけ付与で読めて書けず、設定の権限を付与すると書ける。解除で 403 に戻る（付与は本物の `saveRolePermissionsInDb`） |
+| 同上 | FREQ-553-AC-01 | 7 つの本物の route で、aal1 は 403・失効した app session は 401・店長は 200、書き込みなし |
+| 同上 | FREQ-553-AC-04 | 表の権限を締めた後も本物の cost-profit GET・経費の作成と更新・領収書の POST（手元の Storage）・product-costs GET が 200。店長の authenticated の JWT で 12 表と会計の 4 表を PostgREST で読むと 403 / 42501 |
+| [FR-ADMIN-131](../../../e2e/FR-ADMIN-131-accounting-receipt-kind.spec.ts) | FREQ-559-AC-03 | 種類なし・紙で原本の印なし・電子で原本の印ありは 400 で何も保存されない。画面は種類を選ぶまで添付できず、紙は原本の確認が要る |
+| 同上 | FREQ-559-AC-03 | 種類を持たない行（移行前と同じ形）は未確認と読み、ドロワーに「種類を確かめてください」が 1 つだけ出る |
+
+注意（E2E を流す人へ）:
+
+- E2E の後に DB 結合を流すときは先に `npm run db:reset` する。`FR-ADMIN-128` が開業日（`2025-04-01`）・個人事業を終えた日（最後の個人の期間の中）・空きの個人の期間約 60（2030 年から）・法人の期間を手元の DB に残し、元に戻せない（やめた日は消せず、以後の個人の期間は作れない）。DB 結合の `accounting_p1_grants` などが次の実行で `ACCOUNTING_PERIOD_MISSING` で落ちるのを避けるため。
+- 128〜131 は空きの個人の期間（2030 年から）を 1 回の全件で約 33 使う。`db:reset` なしで 3 回続けて流すと空きが尽きる場合がある。毎回 `db:reset` してから流す。
+- 試験の後片付けは自分の経費の論理削除と自分の session の削除だけ。期間・仕訳・領収書・試験用の利用者は残る（`db:reset` で消える）。
+
+### 単体・画面・DB 結合の試験
+
+| ファイル | 種類 | 受け入れ条件 |
+| --- | --- | --- |
+| [`tests/unit/api/admin/accounting-journal-route.test.ts`](../../../tests/unit/api/admin/accounting-journal-route.test.ts) | 単体 | FREQ-555-AC-04 |
+| [`tests/unit/api/admin/accounting-periods-route.test.ts`](../../../tests/unit/api/admin/accounting-periods-route.test.ts) | 単体 | FREQ-555-AC-01・04・07、FREQ-561-AC-01・04 |
+| [`tests/unit/api/admin/accounting-settings-route.test.ts`](../../../tests/unit/api/admin/accounting-settings-route.test.ts) | 単体 | FREQ-555-AC-06、FREQ-561-AC-03・04 |
+| [`tests/unit/api/admin/cost-profit-route.test.ts`](../../../tests/unit/api/admin/cost-profit-route.test.ts) | 単体 | FREQ-555-AC-09、FREQ-556-AC-02、FREQ-557-AC-01・05・06、FREQ-559-AC-02 |
+| [`tests/unit/api/admin/receipt-route.test.ts`](../../../tests/unit/api/admin/receipt-route.test.ts) | 単体 | FREQ-559-AC-02 |
+| [`tests/unit/lib/accounting/accounting-store.test.ts`](../../../tests/unit/lib/accounting/accounting-store.test.ts) | 単体 | FREQ-555-AC-01・04 |
+| [`tests/unit/lib/accounting/accounts-contract.test.ts`](../../../tests/unit/lib/accounting/accounts-contract.test.ts) | 単体 | FREQ-554-AC-06 |
+| [`tests/unit/lib/accounting/event-key.test.ts`](../../../tests/unit/lib/accounting/event-key.test.ts) | 単体 | FREQ-554-AC-03 |
+| [`tests/unit/lib/accounting/filing-deadlines.test.ts`](../../../tests/unit/lib/accounting/filing-deadlines.test.ts) | 単体 | FREQ-561-AC-01 |
+| [`tests/unit/lib/accounting/jst-date.test.ts`](../../../tests/unit/lib/accounting/jst-date.test.ts) | 単体 | FREQ-554-AC-05 |
+| [`tests/unit/lib/accounting/manual-account-map.test.ts`](../../../tests/unit/lib/accounting/manual-account-map.test.ts) | 単体 | FREQ-556-AC-01・03 |
+| [`tests/unit/lib/accounting/period-months.test.ts`](../../../tests/unit/lib/accounting/period-months.test.ts) | 単体 | FREQ-555-AC-05 |
+| [`tests/unit/lib/accounting/period.test.ts`](../../../tests/unit/lib/accounting/period.test.ts) | 単体 | FREQ-555-AC-01 |
+| [`tests/unit/lib/accounting/startup-deadlines.test.ts`](../../../tests/unit/lib/accounting/startup-deadlines.test.ts) | 単体 | FREQ-561-AC-02 |
+| [`tests/unit/lib/finance/blue-return.test.ts`](../../../tests/unit/lib/finance/blue-return.test.ts) | 単体 | FREQ-557-AC-02 |
+| [`tests/unit/lib/finance/csv-export.test.ts`](../../../tests/unit/lib/finance/csv-export.test.ts) | 単体 | FREQ-558-AC-01 |
+| [`tests/unit/lib/finance/depreciation-period.test.ts`](../../../tests/unit/lib/finance/depreciation-period.test.ts) | 単体 | FREQ-557-AC-04 |
+| [`tests/unit/lib/finance/journal.test.ts`](../../../tests/unit/lib/finance/journal.test.ts) | 単体 | FREQ-557-AC-01 |
+| [`tests/unit/lib/finance/period-range.test.ts`](../../../tests/unit/lib/finance/period-range.test.ts) | 単体 | FREQ-557-AC-03 |
+| [`tests/unit/lib/finance/saved-journal-count.test.ts`](../../../tests/unit/lib/finance/saved-journal-count.test.ts) | 単体 | FREQ-557-AC-06 |
+| [`tests/unit/lib/finance/stripe-journal.test.ts`](../../../tests/unit/lib/finance/stripe-journal.test.ts) | 単体 | FREQ-557-AC-01 |
+| [`tests/unit/lib/finance/year-end.test.ts`](../../../tests/unit/lib/finance/year-end.test.ts) | 単体 | FREQ-557-AC-02 |
+| [`tests/integration/db/accounting_p1_a8_migrate.integration.test.ts`](../../../tests/integration/db/accounting_p1_a8_migrate.integration.test.ts) | DB 結合 | FREQ-560-AC-01・02・03 |
+| [`tests/integration/db/accounting_p1_grants.integration.test.ts`](../../../tests/integration/db/accounting_p1_grants.integration.test.ts) | DB 結合 | FREQ-553-AC-02・03・04 |
+| [`tests/integration/db/accounting_p1_journal.integration.test.ts`](../../../tests/integration/db/accounting_p1_journal.integration.test.ts) | DB 結合 | FREQ-554-AC-01・02・03・04・06・07・08・09・10 |
+| [`tests/integration/db/accounting_p1_journal_concurrency.integration.test.ts`](../../../tests/integration/db/accounting_p1_journal_concurrency.integration.test.ts) | DB 結合 | FREQ-554-AC-03・04 |
+| [`tests/integration/db/accounting_p1_manual_entry.integration.test.ts`](../../../tests/integration/db/accounting_p1_manual_entry.integration.test.ts) | DB 結合 | FREQ-555-AC-09、FREQ-556-AC-01・02・03・04・05・06 |
+| [`tests/integration/db/accounting_p1_migration_asserts.integration.test.ts`](../../../tests/integration/db/accounting_p1_migration_asserts.integration.test.ts) | DB 結合 | FREQ-554-AC-02・07、FREQ-555-AC-01 |
+| [`tests/integration/db/accounting_p1_opening.integration.test.ts`](../../../tests/integration/db/accounting_p1_opening.integration.test.ts) | DB 結合 | FREQ-555-AC-02・03・06 |
+| [`tests/integration/db/accounting_p1_periods.integration.test.ts`](../../../tests/integration/db/accounting_p1_periods.integration.test.ts) | DB 結合 | FREQ-554-AC-04、FREQ-555-AC-01・04・06・07・08・09、FREQ-561-AC-03 |
+| [`tests/integration/db/accounting_p1_permissions.integration.test.ts`](../../../tests/integration/db/accounting_p1_permissions.integration.test.ts) | DB 結合 | FREQ-553-AC-01 |
+| [`tests/integration/db/accounting_p1_reads.integration.test.ts`](../../../tests/integration/db/accounting_p1_reads.integration.test.ts) | DB 結合 | FREQ-555-AC-04 |
+| [`tests/integration/db/accounting_p1_receipts_bucket.integration.test.ts`](../../../tests/integration/db/accounting_p1_receipts_bucket.integration.test.ts) | DB 結合 | FREQ-559-AC-01・02 |
+| [`tests/integration/db/accounting_p1_routes_after_grants.integration.test.ts`](../../../tests/integration/db/accounting_p1_routes_after_grants.integration.test.ts) | DB 結合 | FREQ-553-AC-04 |
+| [`tests/integration/db/auth_grants_inventory.integration.test.ts`](../../../tests/integration/db/auth_grants_inventory.integration.test.ts) | DB 結合 | FREQ-553-AC-02 |
+| [`tests/unit/components/CostProfitSection.test.tsx`](../../../tests/unit/components/CostProfitSection.test.tsx) | 単体（画面） | FREQ-557-AC-03 |
+| [`tests/unit/components/cost-profit/period-count.test.tsx`](../../../tests/unit/components/cost-profit/period-count.test.tsx) | 単体（画面） | FREQ-557-AC-01・02・05・06 |
+| [`tests/unit/components/cost-profit/period-form.test.tsx`](../../../tests/unit/components/cost-profit/period-form.test.tsx) | 単体（画面） | FREQ-555-AC-01・08 |
+| [`tests/unit/components/cost-profit/receipt-kind.test.tsx`](../../../tests/unit/components/cost-profit/receipt-kind.test.tsx) | 単体（画面） | FREQ-559-AC-03 |
+| [`tests/unit/components/cost-profit/settings-view.test.tsx`](../../../tests/unit/components/cost-profit/settings-view.test.tsx) | 単体（画面） | FREQ-555-AC-01・07・09、FREQ-561-AC-02・03 |
+
+`tests/unit/components/CostProfitSection.test.tsx`（37 件通過）と `tests/unit/lib/finance/*`（`depreciation-period.test.ts`・`period-range.test.ts`・`saved-journal-count.test.ts`・`csv-export.test.ts` ほか）も受け入れ条件につながる。DB 結合は DB を起こした環境（controller）で流す。DB の接続先が無い環境では全件が `skip` になる（`local-db.ts`）。
+
+### 未実行・限界
+
+- 本番の DB への適用は未（S0〜S5 と手入力の移行 S5）。適用後の確かめは[運用の手引き](../../06_Operations/accounting-p1-journal-foundation.md)の「成功の確認」。
+- `FR-ADMIN-129` の FREQ-557-AC-06 の「表示だけの差し替え」は表示の確かめで、サーバーの取得の上限は単体（`cost-profit-route.test.ts`）と DB 結合で確かめる。
+- 地方税の申告の期限の注記は税理士の確認待ち（運用の手引きの未確認事項）。
