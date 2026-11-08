@@ -21,6 +21,8 @@ import { ProductView } from "@/components/cost-profit/product-view";
 import { TaxView } from "@/components/cost-profit/tax-view";
 import { PeriodPicker } from "@/components/cost-profit/period-picker";
 import { SettingsView } from "@/components/cost-profit/settings-view";
+import { PendingView } from "@/components/cost-profit/pending-view";
+import { ReconciliationView } from "@/components/cost-profit/reconciliation-view";
 
 /** 期間の状態の知らせ（期間が無い・一部しか読めない・まだ動く・期限を過ぎた・入れ漏れ）。 */
 function PeriodNotice({
@@ -221,6 +223,10 @@ export default function CostProfitSection(props: CostProfitProps) {
       {activeTab === "tax" ? withCountNotices(taxView) : null}
       {activeTab === "settings" ? (
         <SettingsView onChanged={() => void loadFinanceData()} />
+      ) : null}
+      {activeTab === "pending" ? <PendingView /> : null}
+      {activeTab === "reconciliation" ? (
+        <ReconciliationView periodStart={period?.startsOn} periodEnd={period?.endsOn} />
       ) : null}
       {payoutConfirmDialog}
 

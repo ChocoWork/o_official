@@ -118,8 +118,12 @@ export type SavedJournalQuery = {
 };
 export type SavedJournalPage = { entries: SavedJournalEntry[]; nextAfter: JournalCursor | null };
 
-/** 画面の出し分けに使う閲覧者の権限（admin.accounting.settings.manage）。 */
-export type AccountingPermissions = { manageSettings: boolean };
+/**
+ * 画面の出し分けに使う閲覧者の権限。manageSettings は admin.accounting.settings.manage。
+ * manageFinance（admin.finance.manage: 計上係・補充・請求書・年末の印）と correctEntries（admin.accounting.entries.correct:
+ * 計上待ちの確認済み・取り消しの振り替え）は、持つ時だけ true で付ける（無ければ鍵を付けない。計画1の応答の形を変えない）。
+ */
+export type AccountingPermissions = { manageSettings: boolean; manageFinance?: true; correctEntries?: true };
 
 export type AccountingPeriodsData = {
 	periods: AccountingPeriod[];

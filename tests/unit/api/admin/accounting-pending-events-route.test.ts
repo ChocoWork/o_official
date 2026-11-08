@@ -85,6 +85,17 @@ describe('GET /api/admin/accounting/pending-events', () => {
 		expect(mockRate).not.toHaveBeenCalled(); expect(mockCsrf).not.toHaveBeenCalled(); expect(mockAudit).not.toHaveBeenCalled();
 	});
 
+	test('FREQ-569-AC-03: 読みの応答の権限は、持つ権限の旗だけを真で返す（無ければ鍵を付けない）', async () => {
+		grants.current = [PERM.read];
+		expect((await read(await get())).permissions).toEqual({ manageSettings: false });
+		grants.current = [PERM.read, PERM.manage];
+		expect((await read(await get())).permissions).toEqual({ manageSettings: false, manageFinance: true });
+		grants.current = [PERM.read, PERM.correct];
+		expect((await read(await get())).permissions).toEqual({ manageSettings: false, correctEntries: true });
+		grants.current = [PERM.read, PERM.manage, PERM.correct, PERM.settings];
+		expect((await read(await get())).permissions).toEqual({ manageSettings: true, manageFinance: true, correctEntries: true });
+	});
+
 	test('FREQ-569-AC-01: 既定は未解決・50件。includeResolved=trueで解決済みも読む', async () => {
 		await get();
 		expect(rpcImpl).toHaveBeenCalledWith('list_accounting_pending_events', { _include_resolved: false, _limit: 50, _after_at: null, _after_id: null });

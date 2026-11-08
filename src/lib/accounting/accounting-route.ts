@@ -67,6 +67,8 @@ const WRITE_LIMIT = 30;
 const WRITE_ENDPOINT = 'admin.accounting.write';
 const READ: PermissionCode = 'admin.finance.read';
 const MANAGE: PermissionCode = 'admin.accounting.settings.manage';
+const FINANCE_MANAGE: PermissionCode = 'admin.finance.manage';
+const ENTRIES_CORRECT: PermissionCode = 'admin.accounting.entries.correct';
 
 function noStore<T extends Response>(response: T): T {
 	response.headers.set('Cache-Control', NO_STORE_CACHE_CONTROL);
@@ -84,6 +86,8 @@ const asStoreError = (error: unknown): AccountingStoreError =>
 	error instanceof AccountingStoreError ? error : new AccountingStoreError(null, sqlstateOf(error));
 const permissionsOf = (permissions: ReadonlySet<PermissionCode>): AccountingPermissions => ({
 	manageSettings: permissions.has(MANAGE),
+	...(permissions.has(FINANCE_MANAGE) ? { manageFinance: true as const } : {}),
+	...(permissions.has(ENTRIES_CORRECT) ? { correctEntries: true as const } : {}),
 });
 
 function logUnexpected(label: string, failure: AccountingStoreError): void {

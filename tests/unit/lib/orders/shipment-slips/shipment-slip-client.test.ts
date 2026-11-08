@@ -325,6 +325,18 @@ describe('submitSlipConfirm', () => {
   });
 });
 
+describe('submitSlipConfirm の判断待ちの止め', () => {
+  const body = { expectedVersion: 1, carrier: null, trackingNumber: null, shipmentDate: '2026-10-25', notifyCustomer: true, requestKey: KEY };
+  test('FREQ-568-AC-06: 確定の409が code DISPUTE_HOLD なら、断りの文にカード会社の判断待ちの止めの文を出す', async () => {
+    mockClientFetch.mockResolvedValue(respond(409, { code: 'DISPUTE_HOLD', error: 'x', orderIds: ['11111111-1111-4111-8111-111111111111'] }));
+    expect(await client.submitSlipConfirm(SLIP_ID, body)).toEqual({ kind: 'refused', message: 'カード会社の判断待ちの注文が含まれているため、出荷できません。' });
+  });
+  test('FREQ-568-AC-06: 確定の409でも code が DISPUTE_HOLD でなければ今までの断りの文のまま', async () => {
+    mockClientFetch.mockResolvedValue(respond(409, {}));
+    expect(await client.submitSlipConfirm(SLIP_ID, body)).toEqual({ kind: 'refused', message: SHIPMENT_SLIP_ERRORS.GROUP_G_ARGUMENT_INVALID[2] });
+  });
+});
+
 describe('submitSlipCancel', () => {
   const body = { expectedVersion: 2, requestKey: KEY };
   const result = { id: SLIP_ID, version: 3, restoredQuantity: 4, replayed: false };

@@ -14,6 +14,8 @@ import {
   type AccountingPeriod,
 } from "@/lib/accounting/period";
 import type { StartupDeadline } from "@/lib/accounting/startup-deadlines";
+import { DisputeSettingsPanel } from "./dispute-settings-panel";
+import { ShippingOptionsSection } from "./year-end-shipments-panel";
 import {
   FilingDeadlinesPanel,
   HOLIDAY_TABLE_MISSING_TEXT,
@@ -780,6 +782,9 @@ export function SettingsView({
           ) : null}
         </Section>
       ) : null}
+
+      <DisputeSettingsPanel />
+      <ShippingOptionsSection today={today} />
     </div>
   );
 }

@@ -532,4 +532,39 @@ describe('設定・期間のタブ', () => {
 		expect(await within(start).findByText('開業日を保存しました。')).toHaveAttribute('data-tone', 'success');
 		expect(within(start).getByLabelText('開業日')).toHaveAttribute('readonly');
 	});
+	it('FREQ-569-AC-01: 計上待ちと照合のタブは設定・期間の後ろに足し、他のタブの順と題は変えない', async () => {
+		const p2026 = solePeriod(2026);
+		const settings = settingsOf();
+		const { calls } = mockFetch((url) => {
+			if (url.pathname === '/api/admin/kpi/cost-profit') return { status: 200, body: { data: financeData(p2026, [p2026]) } };
+			if (url.pathname === PERIODS_URL) return { status: 200, body: periodsBody([p2026], settings) };
+			if (url.pathname === '/api/admin/accounting/pending-events') {
+				return { status: 200, body: { data: { events: [], nextAfterAt: null, nextAfterId: null, openCount: 0, byReason: {} }, permissions: { manageSettings: false } } };
+			}
+			return undefined;
+		});
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+			'財務概要', '取引管理', '帳簿', '商品原価', '税務レポート', '設定・期間', '計上待ち', '照合',
+		]);
+		fireEvent.click(screen.getByRole('tab', { name: '計上待ち' }));
+		expect(await screen.findByRole('region', { name: '計上待ち' })).toBeInTheDocument();
+		expect(await screen.findByText('計上待ちはありません')).toBeInTheDocument();
+		expect(calls.some((call) => call.url === '/api/admin/accounting/pending-events')).toBe(true);
+
+		fireEvent.click(screen.getByRole('tab', { name: '照合' }));
+		expect(await screen.findByRole('region', { name: '受注高と帳簿の照らし合わせ' })).toBeInTheDocument();
+		// 受注高の照合の既定の範囲は選んでいる会計期間。
+		expect(screen.getByLabelText('開始日')).toHaveValue('2026-01-01');
+		expect(screen.getByLabelText('終了日')).toHaveValue('2026-12-31');
+	});
+
+	it('FREQ-568-AC-05: 設定のタブに、支払いの取り消しの振り替え先と運送会社の受付日のオプションを足す', async () => {
+		const p2026 = solePeriod(2026);
+		mockFetch((url) => (url.pathname === PERIODS_URL ? { status: 200, body: periodsBody([p2026], settingsOf()) } : undefined));
+		render(<SettingsView today="2026-11-07" />);
+		expect(await screen.findByRole('region', { name: '支払いの取り消しの振り替え先' })).toBeInTheDocument();
+		expect(screen.getByRole('region', { name: '運送会社の受付日' })).toBeInTheDocument();
+	});
 });

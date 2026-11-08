@@ -344,6 +344,26 @@ describe('CostProfitSection', () => {
 		expect(screen.getByText('Stripe入金途上')).toBeVisible();
 	});
 
+	it('FREQ-565-AC-06: Stripe精算に残高の補充の入力と、カード会社からの支払いの取り消しの一覧を付ける', async () => {
+		setupFinanceFetch();
+		const base = global.fetch;
+		const accounting = (data: unknown, permissions: Record<string, unknown>) =>
+			new Response(JSON.stringify({ data, permissions }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+		global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input);
+			if (url.startsWith('/api/admin/accounting/settings')) return accounting({ settings: {} }, { manageSettings: false, manageFinance: true });
+			if (url.startsWith('/api/admin/accounting/disputes')) return accounting({ disputes: [], next_after_at: null, next_after_id: null }, { manageSettings: false });
+			return base(input, init);
+		}) as unknown as typeof fetch;
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
+
+		expect(await screen.findByRole('region', { name: '残高の補充の記録' })).toBeInTheDocument();
+		// 権限は設定の読み口の旗から。持っている人にだけ入力欄が出る。
+		expect(await screen.findByRole('button', { name: '補充を記録する' })).toBeInTheDocument();
+		expect(await screen.findByText('カード会社からの支払いの取り消しはありません')).toBeInTheDocument();
+		expect(screen.getByLabelText('請求書を記録する月')).toBeInTheDocument();
+	});
+
 	it('照合未完了のPayoutは銀行着金を確認させない', async () => {
 		setupFinanceFetch([], undefined, false, {
 			stripeAccounting: {

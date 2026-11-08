@@ -22,7 +22,9 @@ export type CostProfitTab =
   | "journal"
   | "products"
   | "tax"
-  | "settings";
+  | "settings"
+  | "pending"
+  | "reconciliation";
 
 // 帳簿タブ内のサブビュー。
 // 仕訳帳と総勘定元帳は「同じ仕訳を科目で切って見る」だけの違いなので1枚に畳み、
@@ -478,6 +480,8 @@ export const COST_PROFIT_TABS: Array<{ key: CostProfitTab; label: string }> = [
   { key: "products", label: "商品原価" },
   { key: "tax", label: "税務レポート" },
   { key: "settings", label: "設定・期間" },
+  { key: "pending", label: "計上待ち" },
+  { key: "reconciliation", label: "照合" },
 ];
 
 export const COST_LABELS: Array<{

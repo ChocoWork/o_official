@@ -32,6 +32,7 @@ import {
   type ShipmentSlipTrackingInput,
   type ShipmentSlipTrackingUpdated,
 } from './shipment-slip-types';
+import { disputeHoldMessage } from './shipment-slip-notice';
 
 /**
  * 管理画面（ブラウザ）から発送票の窓口を呼ぶ唯一のモジュール（G-3）。荷作り表・票の頁・後の Task の確定・伝票・配達済み・取消・出荷日の訂正が、
@@ -136,8 +137,11 @@ export async function fetchShipmentSlip(id: string): Promise<SlipReadResult<Ship
   }
 }
 
-/** 窓口が断った時（記録していない）に画面へ出す文。DB の誤りの code が表にあればその本文、無ければ「入力を確かめてください。」 */
+/** 窓口が断った時（記録していない）に画面へ出す文。判断待ちの止め（DISPUTE_HOLD）ならその文、DB の誤りの code が表にあればその本文、無ければ「入力を確かめてください。」 */
 function refusedMessage(body: unknown): string {
+  // カード会社の判断待ちの注文を含む票の確定の止め（計画2 Task 10）は、その旨の文を出す
+  const hold = disputeHoldMessage(body);
+  if (hold !== null) return hold;
   const code = body !== null && typeof body === 'object' ? (body as { code?: unknown }).code : undefined;
   return typeof code === 'string' && isShipmentSlipErrorCode(code)
     ? SHIPMENT_SLIP_ERRORS[code][2]

@@ -1,13 +1,49 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/Button/Button";
 import { Dialog } from "@/components/ui/Dialog/Dialog";
 import { Panel } from "@/components/ui/Panel/Panel";
 import { TextField } from "@/components/ui/TextField/TextField";
+import { useAccountingPermissions } from "./accounting-api";
+import { BalanceTopupForm } from "./balance-topup-form";
+import { DisputeList } from "./dispute-list";
+import { InvoiceRecordForm } from "./reconciliation-view";
 import {
   payoutConfirmBlockReason,
   currency,
   panelTitleClassName,
 } from "./constants";
 import type { CostProfitModel } from "./use-cost-profit-model";
+
+/** 月ごとの Stripe の適格請求書の記録。月を選ぶと、その月の合計を入れる欄が出る。 */
+function InvoiceMonthSection(): React.JSX.Element {
+  const [month, setMonth] = useState("");
+  return (
+    <div className="space-y-2 border-t border-[#ededed] pt-4">
+      <label className="block max-w-xs">
+        <span className="mb-1 block font-acumin lk-text-4xs text-[#474747]">請求書を記録する月</span>
+        <input
+          type="month"
+          className="h-10 w-full rounded-md border border-[#d4d4d4] bg-white px-3 font-acumin lk-text-sm text-black focus:border-black focus:outline-none"
+          value={month}
+          onChange={(event) => setMonth(event.target.value)}
+        />
+      </label>
+      {month ? <InvoiceRecordForm key={month} month={month} /> : null}
+    </div>
+  );
+}
+
+/** Stripe の精算に足す、残高の補充の入力・請求書の記録・カード会社からの支払いの取り消しの一覧（計画2）。 */
+function StripeAccountingTools(): React.JSX.Element {
+  const permissions = useAccountingPermissions();
+  return (
+    <div className="space-y-4 border-t border-[#d4d4d4] pt-4">
+      <BalanceTopupForm canManage={permissions?.manageFinance === true} />
+      <InvoiceMonthSection />
+      <DisputeList />
+    </div>
+  );
+}
 
 export function StripeSettlementView({
   model,
@@ -144,6 +180,7 @@ export function StripeSettlementView({
             </tbody>
           </table>
         </div>
+        <StripeAccountingTools />
       </div>
     </Panel>
   );

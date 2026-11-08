@@ -790,6 +790,14 @@ describe('発送確定', () => {
     fireEvent.click(screen.getByRole('button', { name: '発送票確認' }));
     expect(posts()).toHaveLength(1);
   });
+  test('FREQ-568-AC-06: 確定がカード会社の判断待ちで止められたら、止めの文を出し、票を読み直す', async () => {
+    serve({ slip: () => twoLines(), confirm: () => respond(409, { code: 'DISPUTE_HOLD', error: 'x', orderIds: [] }) });
+    await open();
+    fireEvent.click(screen.getByRole('button', { name: '発送確定' }));
+    await waitFor(() => expect(slipReads()).toHaveLength(2));
+    expect(await screen.findByText('カード会社の判断待ちの注文が含まれているため、出荷できません。')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '発送票の確認' })).not.toBeInTheDocument();
+  });
   test('FREQ-533-AC-03: NOT_DRAFTなら確認を閉じ、読み直した発送済みの表を出す', async () => {
     let current = twoLines();
     serve({ slip: () => current, confirm: () => {
