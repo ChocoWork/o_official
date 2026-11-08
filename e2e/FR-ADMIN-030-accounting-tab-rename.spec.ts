@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-240: ACCOUNTING タブのサブタブ改称（財務サマリー→財務概要 / 収支入力→取引管理 / 帳簿（仕訳一覧）→帳簿）
 const viewports = [
@@ -98,7 +99,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
       return;
     }
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: finance }) });
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: buildCostProfitMock(finance) }) });
   });
 }
 

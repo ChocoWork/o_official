@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock, mockAccountingPeriod } from './admin-accounting-test-utils';
 
 // FREQ-254: 財務概要の見た目（角丸・状態色）。
 // 面は Panel（--radius-md 8px）、内側の枠は --radius-sm（6px）、
@@ -104,7 +105,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           fiscalYear: year,
           seasonKey: '2026SS',
           businessType: 'soleProprietor',
@@ -122,7 +123,7 @@ async function mockAdminApis(page: Page): Promise<void> {
           previousClosingBalances: null,
           revisions: [],
           cumulativeEntries: [],
-        },
+        }, { periods: [mockAccountingPeriod(2026), mockAccountingPeriod(2025)] }),
       }),
     });
   });
@@ -300,7 +301,8 @@ for (const viewport of viewports) {
       // FREQ-256-AC-01 / AC-02
       await openAccounting(page);
 
-      const year = page.getByRole('combobox', { name: '会計年' });
+      // 年の選択は会計期間の選択になった（Task 10）。
+      const year = page.getByRole('combobox', { name: '会計期間' });
       const status = page.getByText('同期済み');
       const update = page.getByRole('button', { name: '更新' });
 
@@ -333,14 +335,15 @@ for (const viewport of viewports) {
       // FREQ-256-AC-03 / AC-04
       await openAccounting(page);
 
-      const year = page.getByRole('combobox', { name: '会計年' });
-      await expect(page.getByText('2026年', { exact: true })).toBeVisible();
+      // 選べる年は、作ってある会計期間（名前は「2025年（個人）」「2026年（個人）」）。Task 10 で会計年の固定の一覧から変わった。
+      const year = page.getByRole('combobox', { name: '会計期間' });
+      await expect(page.getByText('2026年（個人）', { exact: true })).toBeVisible();
       await expect(page.getByText('2026年度', { exact: true })).toHaveCount(0);
 
       await year.click();
-      await expect(page.getByRole('option', { name: '2025年' })).toBeVisible();
-      await expect(page.getByRole('option', { name: '2026年' })).toBeVisible();
-      await expect(page.getByRole('option', { name: '2024年' })).toHaveCount(0);
+      await expect(page.getByRole('option', { name: '2025年（個人）' })).toBeVisible();
+      await expect(page.getByRole('option', { name: '2026年（個人）' })).toBeVisible();
+      await expect(page.getByRole('option', { name: '2024年（個人）' })).toHaveCount(0);
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {

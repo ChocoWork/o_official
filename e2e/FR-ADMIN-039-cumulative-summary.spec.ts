@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-250: 財務概要の「開業以来の累計」パネル。
 // 損益は期間の表なので、年度で切ると積み上げが見えない点を補う。
@@ -118,7 +119,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           fiscalYear: year,
           seasonKey: '2026SS',
           businessType: 'soleProprietor',
@@ -139,7 +140,7 @@ async function mockAdminApis(page: Page): Promise<void> {
           cumulativeEntries: CUMULATIVE_ENTRIES.filter(
             (entry) => entry.date <= `${year}-12-31`,
           ),
-        },
+        }),
       }),
     });
   });

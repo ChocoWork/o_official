@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-233: コスト入力タブを「収支入力」に改称し、支出だけでなく収入も管理（収入は売上高へ反映）
 const viewports = [
@@ -98,7 +99,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
       return;
     }
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: finance }) });
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: buildCostProfitMock(finance) }) });
   });
 }
 
@@ -138,7 +139,7 @@ for (const viewport of viewports) {
       await openIncomeExpenseTab(page);
 
       await page.getByRole('button', { name: '収入', exact: true }).click();
-      // 収入時は「収入概要」ラベルになり、収入用の選択肢が選べる。
+      // 収入時は「収入摘要」ラベルになり、収入用の選択肢が選べる。
       await expect(page.getByRole('combobox', { name: '収入摘要' })).toBeVisible();
       await page.getByRole('combobox', { name: '収入摘要' }).click();
       await page.getByRole('option', { name: 'オンライン販売' }).click();

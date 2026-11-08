@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-241: 会計期間を暦年（1/1〜12/31）へ統一。シーズン軸は商品原価タブのみ。
 // 取引は暦年に属し、シーズンはコレクション別分析用の任意タグ。
@@ -138,7 +139,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           fiscalYear: year,
           seasonKey: url.searchParams.get('season'),
           businessType: 'soleProprietor',
@@ -148,7 +149,7 @@ async function mockAdminApis(page: Page): Promise<void> {
           products: [],
           partners: [],
           templates: [],
-        },
+        }),
       }),
     });
   });
@@ -172,8 +173,9 @@ for (const viewport of viewports) {
       await openAccounting(page);
 
       // 年度選択はタブ行右端のドロップダウン（FREQ-253-REQ-06）。
-      await expect(page.getByRole('combobox', { name: '会計年' })).toBeVisible();
-      await expect(page.getByText('2026年', { exact: true })).toBeVisible();
+      // 会計期間のドロップダウン（期間の名前は「2026年（個人）」。Task 10 で「会計年」から変わった）。
+      await expect(page.getByRole('combobox', { name: '会計期間' })).toBeVisible();
+      await expect(page.getByText('2026年（個人）', { exact: true })).toBeVisible();
       await expect(page.getByText('会計期間 2026/01/01〜2026/12/31')).toBeVisible();
       // 会計期間の切替軸にシーズンは出さない。
       await expect(page.getByRole('button', { name: '2026 S/S', exact: true })).toHaveCount(0);

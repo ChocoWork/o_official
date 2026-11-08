@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-239: 管理画面のフォント一括指定からヘッダー・フッターを除外し、他ページと同じ表示にする
 const viewports = [
@@ -56,7 +57,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           seasonKey: '2026SS',
           businessType: 'soleProprietor',
           plan: { salesRevenue: 0, openingCash: 0, accountsReceivable: 0, fixedAssets: 0, accountsPayable: 0, openingCapital: 0 },
@@ -65,7 +66,7 @@ async function mockAdminApis(page: Page): Promise<void> {
           products: [],
           partners: [],
           templates: [],
-        },
+        }),
       }),
     }),
   );

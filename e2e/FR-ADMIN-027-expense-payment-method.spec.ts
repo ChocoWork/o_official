@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-234: 支出フォームの「支払い方法」→「出金方法」改称 + 出金方法の選択肢16項目
 const viewports = [
@@ -83,7 +84,7 @@ async function mockAdminApis(page: Page): Promise<void> {
   };
 
   await page.route('**/api/admin/kpi/cost-profit**', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: finance }) }),
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: buildCostProfitMock(finance) }) }),
   );
 }
 

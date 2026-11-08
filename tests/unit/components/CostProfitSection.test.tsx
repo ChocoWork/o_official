@@ -666,7 +666,7 @@ describe('CostProfitSection', () => {
 		fireEvent.click(screen.getByRole('tab', { name: '取引管理' }));
 		// FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
-		// 支出概要は黄金比UIの SingleSelect（dropdown）。トリガーを開いて選択肢を押す。
+		// 支出摘要は黄金比UIの SingleSelect（dropdown）。トリガーを開いて選択肢を押す。
 		fireEvent.click(screen.getByRole('combobox', { name: '支出摘要' }));
 		fireEvent.click(screen.getByRole('option', { name: '展示会・イベント' }));
 		fireEvent.click(screen.getByRole('combobox', { name: '勘定科目' }));
@@ -708,7 +708,7 @@ describe('CostProfitSection', () => {
 		// FREQ-257 以降、取引の入力欄は「新規取引」Drawer の中にある。
 		fireEvent.click(screen.getByRole('button', { name: '新規取引' }));
 
-		// 支出概要と金額を入力してからテンプレート保存。
+		// 支出摘要と金額を入力してからテンプレート保存。
 		fireEvent.click(screen.getByRole('combobox', { name: '支出摘要' }));
 		fireEvent.click(screen.getByRole('option', { name: '縫製外注' }));
 		fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '50000' } });
@@ -716,7 +716,7 @@ describe('CostProfitSection', () => {
 		fireEvent.click(screen.getByRole('combobox', { name: 'テンプレート' }));
 		fireEvent.click(screen.getByRole('option', { name: '＋ 現在の入力を保存' }));
 
-		// 名前の初期値は「支出概要 / 金額」。
+		// 名前の初期値は「支出摘要 / 金額」。
 		const nameInput = screen.getByPlaceholderText('テンプレート名') as HTMLInputElement;
 		expect(nameInput.value).toBe('縫製外注 / ¥50,000');
 		fireEvent.compositionStart(nameInput);
@@ -730,7 +730,7 @@ describe('CostProfitSection', () => {
 
 		expect(await screen.findByText('テンプレートを保存しました。')).toBeInTheDocument();
 
-		// 別の支出概要へ変更してから、テンプレートを選び直すと支出概要・金額が戻る。
+		// 別の支出摘要へ変更してから、テンプレートを選び直すと支出摘要・金額が戻る。
 		fireEvent.click(screen.getByRole('combobox', { name: '支出摘要' }));
 		fireEvent.click(screen.getByRole('option', { name: '広告出稿' }));
 
@@ -948,7 +948,7 @@ describe('CostProfitSection', () => {
 		// 種別トグルを「収入」に。
 		fireEvent.click(screen.getByRole('button', { name: '収入', pressed: false }));
 
-		// 収入時は「収入概要」ラベルになり、収入用の選択肢が選べる。
+		// 収入時は「収入摘要」ラベルになり、収入用の選択肢が選べる。
 		expect(screen.getByRole('combobox', { name: '収入摘要' })).toBeInTheDocument();
 		fireEvent.click(screen.getByRole('combobox', { name: '収入摘要' }));
 		fireEvent.click(screen.getByRole('option', { name: 'オンライン販売' }));

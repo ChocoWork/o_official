@@ -23,7 +23,7 @@ export type FinanceEntry = {
   date: string;
   /** 勘定科目名（相手科目） */
   category: string;
-  /** 支出概要／収入概要 */
+  /** 支出摘要／収入摘要 */
   item: string;
   partner: string;
   amount: number;

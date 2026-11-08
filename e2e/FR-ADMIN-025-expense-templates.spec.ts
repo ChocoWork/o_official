@@ -1,7 +1,8 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
-// FREQ-232: 勘定科目・支出概要・金額・支払い方法・メモをテンプレート保存し、選択して経費フォームへ反映
+// FREQ-232: 勘定科目・支出摘要・金額・支払い方法・メモをテンプレート保存し、選択して経費フォームへ反映
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 768, height: 1024 },
@@ -104,7 +105,7 @@ async function mockAdminApis(page: Page) {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
       return;
     }
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: finance }) });
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: buildCostProfitMock(finance) }) });
   });
 
   return finance;
@@ -127,7 +128,7 @@ for (const viewport of viewports) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
-    test('現在の入力をテンプレート保存（名前初期値=支出概要/金額）できる', async ({ page }) => {
+    test('現在の入力をテンプレート保存（名前初期値=支出摘要/金額）できる', async ({ page }) => {
       // FREQ-232-AC-01 / AC-02
       await mockAdminApis(page);
       await openCostInputTab(page);
@@ -148,7 +149,7 @@ for (const viewport of viewports) {
       await expect(page.getByRole('option', { name: '縫製外注（定番）' })).toBeVisible();
     });
 
-    test('保存済みテンプレートを選ぶと支出概要・金額がフォームへ反映される', async ({ page }) => {
+    test('保存済みテンプレートを選ぶと支出摘要・金額がフォームへ反映される', async ({ page }) => {
       // FREQ-232-AC-03
       await mockAdminApis(page);
       await openCostInputTab(page);
@@ -163,7 +164,7 @@ for (const viewport of viewports) {
       await page.getByRole('button', { name: 'テンプレートを保存' }).click();
       await expect(page.getByText('テンプレートを保存しました。')).toBeVisible({ timeout: 15_000 });
 
-      // 別の支出概要・金額へ変更。
+      // 別の支出摘要・金額へ変更。
       await page.getByRole('combobox', { name: '支出摘要' }).click();
       await page.getByRole('option', { name: '広告出稿' }).click();
       await page.getByPlaceholder('0').fill('12000');

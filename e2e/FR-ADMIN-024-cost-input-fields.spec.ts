@@ -1,7 +1,8 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
-// FREQ-230: コスト入力タブ = カテゴリ→勘定科目 / 項目→支出概要(固定プルダウン) / 取引先(選択+新規登録)
+// FREQ-230: コスト入力タブ = カテゴリ→勘定科目 / 項目→支出摘要(固定プルダウン) / 取引先(選択+新規登録)
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 768, height: 1024 },
@@ -110,7 +111,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
       return;
     }
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: finance }) });
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: buildCostProfitMock(finance) }) });
   });
 }
 
@@ -139,7 +140,7 @@ for (const viewport of viewports) {
       await expect(page.getByText('カテゴリ', { exact: true })).toHaveCount(0);
     });
 
-    test('「支出概要」がプルダウンで、選んだ経費が仕訳帳に反映される', async ({ page }) => {
+    test('「支出摘要」がプルダウンで、選んだ経費が仕訳帳に反映される', async ({ page }) => {
       // FREQ-230-AC-02
       await mockAdminApis(page);
       await openCostInputTab(page);

@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-259: 税務レポートを「税務サマリー／青色申告決算書／税務調整／税務カレンダー／申告資料」の
 // 5枚に再構成し、従来の 1P〜4P は「青色申告決算書」の中に置く。
@@ -140,7 +141,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           fiscalYear: 2026,
           seasonKey: '2026SS',
           businessType: 'soleProprietor',
@@ -161,7 +162,7 @@ async function mockAdminApis(page: Page): Promise<void> {
           previousClosingBalances: null,
           revisions: [],
           cumulativeEntries: [],
-        },
+        }),
       }),
     });
   });

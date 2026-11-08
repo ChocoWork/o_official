@@ -1,5 +1,6 @@
 import { expect, Page, test } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
@@ -25,7 +26,7 @@ async function mockApis(page: Page) {
   await page.route('**/api/admin/kpi', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { targetYear: 2026, monthlyYearOptions: [2026], monthlyKpiByYear: [{ year: 2026, metrics: Array.from({ length: 12 }, (_, index) => metric(`${index + 1}月`)) }], seasonalKpi: [metric('2026SS')] } }) }));
   await page.route('**/api/admin/kpi/targets', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { currentSeason: '2026SS', seasons: ['2026SS'], definitions: [], values: {} } }) }));
   await page.route('**/api/admin/kpi/monthly-record**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { season: '2026SS', monthKeys: [], values: {} } }) }));
-  await page.route('**/api/admin/kpi/cost-profit**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { fiscalYear: 2026, seasonKey: '2026SS', plan: { salesRevenue: 0, openingCash: 0, accountsReceivable: 0, fixedAssets: 0, accountsPayable: 0, openingCapital: 0 }, expenses: [], incomes: [], products: [], partners: [], templates: [], fixedAssets: [], closing: { closingInventoryGoods: 0, closingInventoryMaterials: 0, allowanceForDoubtful: 0, closingBalances: {}, closedAt: null }, previousClosingBalances: null, revisions: [], cumulativeEntries: [] } }) }));
+  await page.route('**/api/admin/kpi/cost-profit**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: buildCostProfitMock({ fiscalYear: 2026, seasonKey: '2026SS', plan: { salesRevenue: 0, openingCash: 0, accountsReceivable: 0, fixedAssets: 0, accountsPayable: 0, openingCapital: 0 }, expenses: [], incomes: [], products: [], partners: [], templates: [], fixedAssets: [], closing: { closingInventoryGoods: 0, closingInventoryMaterials: 0, allowanceForDoubtful: 0, closingBalances: {}, closedAt: null }, previousClosingBalances: null, revisions: [], cumulativeEntries: [] }) }) }));
   await page.route('**/api/admin/accounting/product-costs**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
     seasonKey: '2026SS',
     items: [{ id: 1, seasonKey: '2026SS', category: 'TOPS', provisionalName: 'リネンシャツ', plannedQuantity: 10, sellingPrice: 20000, fabricMetersPerUnit: 1.25, updatedAt: '2026-08-01T00:00:00Z', directCost: 50000, unitCost: 5000, projectedSales: 200000, projectedProfit: 150000, unitProfit: 15000, profitMargin: 75, requiredFabricMeters: 12.5, costBreakdown: { material: 0, sewing: 50000, pattern: 0, planning: 0, accessories: 0, processing: 0, inspection_finishing: 0, logistics: 0, advertising: 0, photography: 0, exhibition: 0, other: 0 } }],

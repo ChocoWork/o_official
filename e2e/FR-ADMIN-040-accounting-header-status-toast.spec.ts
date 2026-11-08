@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-251: 会計画面ヘッダーの整理。
 // 更新（再読み込み）はタブ行の右端へ、常時表示は短い状態ラベルのみ、
@@ -103,7 +104,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           fiscalYear: year,
           seasonKey: '2026SS',
           businessType: 'soleProprietor',
@@ -121,7 +122,7 @@ async function mockAdminApis(page: Page): Promise<void> {
           previousClosingBalances: null,
           revisions: [],
           cumulativeEntries: [],
-        },
+        }),
       }),
     });
   });

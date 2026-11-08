@@ -1,5 +1,7 @@
 import { expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { accountByCode } from '@/lib/finance/accounts';
+import { buildJournal, type FinanceEntry } from '@/lib/finance/journal';
 
 /**
  * ACCOUNTING（会計）画面の E2E 用モックとナビゲーション。
@@ -163,7 +165,7 @@ export async function mockAdminApis(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           fiscalYear: 2026,
           seasonKey: '2026SS',
           businessType: 'soleProprietor',
@@ -187,7 +189,7 @@ export async function mockAdminApis(page: Page): Promise<void> {
             { id: 103, entryType: 'income', date: '2026-01-10', category: '売上高', item: '当年売上', partner: '', amount: 20000, paymentMethod: '現金', memo: '' },
             { id: 104, entryType: 'expense', date: '2026-02-05', category: '広告宣伝費', item: '当年広告', partner: '', amount: 5000, paymentMethod: '銀行', memo: '' },
           ],
-        },
+        }),
       }),
     });
   });
@@ -198,4 +200,153 @@ export async function openLedgerTab(page: Page) {
   await page.getByRole('button', { name: 'ACCOUNTING' }).click();
   await page.getByRole('tab', { name: '帳簿', exact: true }).click();
   await expect(page.getByRole('tab', { name: '仕訳・元帳', exact: true })).toBeVisible();
+}
+
+// ---------------------------------------------------------------------------------------------
+// cost-profit GET の作り物（FREQ-557。期間で数える形）
+//
+// 画面の仕訳・元帳・試算表・財務3表は GET の `savedJournal`（保存した仕訳）と `opening`（期首）から作る。
+// 手入力の取引は DB のトリガー（S4）が保存した仕訳にするので、作り物にも取引ごとに同じ形の行を足す。
+// 以前の spec は expenses / incomes / plan / previousClosingBalances だけを渡していたので、
+// それを渡すと期間・保存した仕訳・期首・知らせを足した応答の欄を返す。
+// ---------------------------------------------------------------------------------------------
+
+export type MockAccountingPeriod = {
+  id: string;
+  businessType: 'soleProprietor' | 'corporation';
+  name: string;
+  startsOn: string;
+  endsOn: string;
+  corporateTaxExtensionMonths: 0 | 1;
+  consumptionTaxExtensionMonths: 0 | 1;
+  consumptionTaxStatus: 'exempt' | 'taxable';
+  consumptionTaxableFrom: string | null;
+  version: string;
+};
+
+/** 個人の暦年の期間（1/1〜12/31）。法人は同じ日付の事業年度として作る（名前だけ違う）。 */
+export function mockAccountingPeriod(
+  year: number,
+  businessType: 'soleProprietor' | 'corporation' = 'soleProprietor',
+  overrides: Partial<MockAccountingPeriod> = {},
+): MockAccountingPeriod {
+  return {
+    id: `00000000-0000-4000-8000-${businessType === 'corporation' ? 'c' : '0'}${String(year).padStart(11, '0')}`,
+    businessType,
+    name: businessType === 'soleProprietor' ? `${year}年（個人）` : `第${year - 2025}期`,
+    startsOn: `${year}-01-01`,
+    endsOn: `${year}-12-31`,
+    corporateTaxExtensionMonths: 0,
+    consumptionTaxExtensionMonths: 0,
+    consumptionTaxStatus: 'exempt',
+    consumptionTaxableFrom: null,
+    version: '1',
+    ...overrides,
+  };
+}
+
+type MockEntry = Record<string, unknown> & {
+  id: number;
+  entryType?: string;
+  date: string;
+  category: string;
+  item: string;
+  partner?: string;
+  amount: number;
+  paymentMethod: string;
+};
+
+/** 手入力の取引 → S4 のトリガーが作る保存した仕訳（日付昇順・同日は id 昇順で通し番号 1 から）。 */
+function mockSavedJournal(entries: readonly MockEntry[], period: MockAccountingPeriod) {
+  return entries
+    .filter((entry) => entry.source !== 'order')
+    .map((entry) => ({ ...entry, entryType: entry.entryType ?? 'expense' }) as unknown as FinanceEntry)
+    .filter((entry) => entry.date >= period.startsOn && entry.date <= period.endsOn)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id)
+    .map((entry, index) => {
+      const [journal] = buildJournal([entry], period.businessType);
+      return {
+        id: `00000000-0000-4000-8000-${String(900_000 + index).padStart(12, '0')}`,
+        periodId: period.id,
+        entryNo: index + 1,
+        entryDate: entry.date,
+        eventKind: 'manual_entry',
+        dedupeKey: `manual_entry:${entry.id}:0`,
+        description: entry.item,
+        recordedAt: `${entry.date}T01:00:00Z`,
+        recordedBy: null,
+        isLate: false,
+        reversesEntryId: null,
+        reason: null,
+        sourceTable: 'admin_finance_expenses',
+        sourceId: String(entry.id),
+        migratedFrom: null,
+        migratedAt: null,
+        sourceRecordedAt: null,
+        lines: journal.lines.map((line, lineIndex) => ({
+          lineNo: lineIndex + 1,
+          accountCode: line.account.code,
+          debit: line.debit,
+          credit: line.credit,
+          subAccount: null,
+          counterparty: entry.partner || null,
+          orderId: null,
+          // S4 は未登録の科目（9999）の行に元の文を memo で残す。
+          memo: line.account.code === '9999' ? line.account.name : null,
+        })),
+      };
+    });
+}
+
+/** 期首（借方−貸方）。前年度末の残高（previousClosingBalances。各科目の正常残高の向き）があればそれを、無ければ財務前提の期首の欄を使う。 */
+function mockOpening(data: Record<string, unknown>) {
+  const previous = data.previousClosingBalances as Record<string, number> | null | undefined;
+  const plan = (data.plan ?? {}) as Record<string, number>;
+  const pairs: Array<[string, number]> = previous
+    ? Object.entries(previous)
+    : [
+        ['1010', plan.openingCash ?? 0],
+        ['1120', plan.accountsReceivable ?? 0],
+        ['1535', plan.fixedAssets ?? 0],
+        ['2020', plan.accountsPayable ?? 0],
+        ['2910', plan.openingCapital ?? 0],
+      ];
+  return pairs
+    .filter(([, amount]) => amount !== 0)
+    .map(([accountCode, amount]) => ({
+      accountCode,
+      signedAmount: accountByCode(accountCode)?.normalSide === 'credit' ? -amount : amount,
+      basis: 'carryover' as const,
+    }));
+}
+
+/**
+ * cost-profit GET の `data` を作る。`data` には従来どおり expenses / incomes / plan / previousClosingBalances などを渡す。
+ * 足す欄: `period`・`periods`・`savedJournal`・`opening`・`periodNotices`。`businessType` は期間の事業の形に合わせる。
+ * `options.period` を渡すとその期間（既定は 2026 年の個人の暦年）、`options.periods` で選択肢の一覧を差し替える。
+ * `data` が既に持つ `savedJournal`・`opening`・`periodNotices` は上書きしない。
+ */
+export function buildCostProfitMock<T extends Record<string, unknown>>(
+  data: T,
+  options: {
+    period?: MockAccountingPeriod;
+    periods?: MockAccountingPeriod[];
+    periodNotices?: { filingDeadlinePassed: boolean; previousPeriodOpen: boolean };
+  } = {},
+) {
+  const businessType = (data.businessType as 'soleProprietor' | 'corporation' | undefined) ?? 'soleProprietor';
+  const period = options.period ?? mockAccountingPeriod(Number(data.fiscalYear ?? 2026), businessType);
+  const entries = [
+    ...((data.expenses as MockEntry[] | undefined) ?? []),
+    ...((data.incomes as MockEntry[] | undefined) ?? []),
+  ];
+  return {
+    ...data,
+    businessType: period.businessType,
+    period,
+    periods: options.periods ?? [period],
+    savedJournal: data.savedJournal ?? mockSavedJournal(entries, period),
+    opening: data.opening ?? mockOpening(data),
+    periodNotices: data.periodNotices ?? options.periodNotices ?? { filingDeadlinePassed: false, previousPeriodOpen: false },
+  };
 }

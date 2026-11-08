@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-247: 税務レポートを青色申告決算書（一般用）1〜4ページの様式に対応させる。
 const viewports = [
@@ -133,7 +134,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           fiscalYear: 2026,
           seasonKey: '2026SS',
           businessType: 'soleProprietor',
@@ -152,7 +153,7 @@ async function mockAdminApis(page: Page): Promise<void> {
             closedAt: null,
           },
           previousClosingBalances: null,
-        },
+        }),
       }),
     });
   });

@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-248 / FREQ-249: 財務3表のCSVエクスポート・C/F検算、
 // 証憑（電子取引データ）の添付と訂正削除履歴。
@@ -117,7 +118,7 @@ async function mockAdminApis(page: Page): Promise<void> {
   );
 
   // 証憑API：アップロードと署名付きURL発行
-  const uploads: Array<{ entryId: string }> = [];
+  const uploads: Array<{ entryId: string; evidenceKind: string | null }> = [];
   await page.exposeFunction('__receiptUploads', () => uploads);
 
   // 証憑APIは cost-profit のサブパスなので、1つのハンドラでパスを見て分岐する。
@@ -127,7 +128,11 @@ async function mockAdminApis(page: Page): Promise<void> {
 
     if (isReceipt) {
       if (req.method() === 'POST') {
-        uploads.push({ entryId: 'uploaded' });
+        // 証憑の種類（evidenceKind）は multipart の欄で送られる（FREQ-559-AC-03）。
+        uploads.push({
+          entryId: 'uploaded',
+          evidenceKind: /name="evidenceKind"\r\n\r\n(\w+)/.exec(req.postData() ?? '')?.[1] ?? null,
+        });
         route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -153,7 +158,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           fiscalYear: 2026,
           seasonKey: '2026SS',
           businessType: 'soleProprietor',
@@ -170,7 +175,7 @@ async function mockAdminApis(page: Page): Promise<void> {
           },
           previousClosingBalances: null,
           revisions: REVISIONS,
-        },
+        }),
       }),
     });
   });
@@ -223,6 +228,8 @@ for (const viewport of viewports) {
 
       // FREQ-257 以降、投下面は証憑 Drawer の中にある。
       await page.getByRole('button', { name: 'システム・ツール利用料の証憑' }).click();
+      // 添付の前に証憑の種類を選ぶ（FREQ-559-AC-03。選ぶまで投下面は無効）。
+      await page.getByLabel('電子で受け取った（PDF など）').check();
       await page.getByLabel('システム・ツール利用料に証憑を添付').setInputFiles({
         name: 'receipt.pdf',
         mimeType: 'application/pdf',
@@ -231,9 +238,10 @@ for (const viewport of viewports) {
 
       await expect(page.getByText('receipt.pdf を添付しました。')).toBeVisible();
       const uploads = await page.evaluate(() => (window as unknown as {
-        __receiptUploads: () => Promise<Array<{ entryId: string }>>;
+        __receiptUploads: () => Promise<Array<{ entryId: string; evidenceKind: string | null }>>;
       }).__receiptUploads());
       expect(uploads.length).toBeGreaterThan(0);
+      expect(uploads[0].evidenceKind).toBe('electronic');
     });
 
     test('訂正・削除の履歴が登録・訂正・削除の順で確認できる', async ({ page }) => {

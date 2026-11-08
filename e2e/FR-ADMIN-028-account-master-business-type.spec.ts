@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock, mockAccountingPeriod } from './admin-accounting-test-utils';
 
 // FREQ-237: 勘定科目マスタに基づく選択肢 + 事業形態（個人事業主/法人）による出し分け
 const viewports = [
@@ -83,11 +84,25 @@ async function mockAdminApis(page: Page): Promise<void> {
     templates: [] as Array<Record<string, unknown>>,
   };
 
+  // 事業の形は期間ごとに決まる（Task 11）。個人の2026年と法人の第1期を持ち、法人の期間を選んだ読み込みには法人で返す。
+  const soleProprietorPeriod = mockAccountingPeriod(2026, 'soleProprietor');
+  const corporationPeriod = mockAccountingPeriod(2026, 'corporation');
   await page.route('**/api/admin/kpi/cost-profit**', (route) => {
     if (route.request().method() === 'POST') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
     }
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: finance }) });
+    const corporation = new URL(route.request().url()).searchParams.get('periodId') === corporationPeriod.id;
+    const period = corporation ? corporationPeriod : soleProprietorPeriod;
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: buildCostProfitMock(
+          { ...finance, businessType: period.businessType },
+          { period, periods: [corporationPeriod, soleProprietorPeriod] },
+        ),
+      }),
+    });
   });
 }
 
@@ -104,9 +119,14 @@ async function openAccountDropdown(page: Page) {
   await page.getByRole('combobox', { name: '勘定科目' }).click();
 }
 
-async function selectBusinessType(page: Page, label: string) {
-  await page.getByRole('combobox', { name: '事業形態' }).click();
-  await page.getByRole('option', { name: label, exact: true }).click();
+// 事業形態の欄は読み取り専用になった（Task 11。事業の形は設定・期間のタブと期間で決まる）。
+// 事業の形を変える代わりに、その事業の形の期間を選ぶ。入力欄は期間のドロップダウンを覆うので、いったん閉じて開き直す。
+async function selectPeriod(page: Page, periodName: string) {
+  await page.getByRole('button', { name: '取引の入力を閉じる' }).click();
+  await page.getByRole('combobox', { name: '会計期間' }).click();
+  await page.getByRole('option', { name: periodName, exact: true }).click();
+  await page.getByRole('button', { name: '新規取引' }).click();
+  await page.getByRole('combobox', { name: '勘定科目' }).waitFor();
 }
 
 for (const viewport of viewports) {
@@ -145,7 +165,7 @@ for (const viewport of viewports) {
       await expect(page.getByRole('option', { name: '経費 / 役員報酬', exact: true })).toHaveCount(0);
       await openAccountDropdown(page); // トリガー再クリックで閉じる
 
-      await selectBusinessType(page, '法人');
+      await selectPeriod(page, '第1期');
 
       await openAccountDropdown(page);
       await expect(page.getByRole('option', { name: '経費 / 役員報酬', exact: true })).toBeVisible();

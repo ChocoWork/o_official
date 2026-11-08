@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-245: 財務3表と税務レポートを仕訳の実残高から算出する（架空係数の全廃）。
 const viewports = [
@@ -113,7 +114,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           fiscalYear: 2026,
           seasonKey: '2026SS',
           businessType: 'soleProprietor',
@@ -124,7 +125,7 @@ async function mockAdminApis(page: Page): Promise<void> {
           partners: ['B社', 'C社'],
           templates: [],
           fixedAssets: FIXED_ASSETS,
-        },
+        }),
       }),
     });
   });

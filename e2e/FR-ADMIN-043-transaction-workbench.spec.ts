@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-257: 取引管理タブのダッシュボード化。
 // 1つの表＋サマリー3枚＋確認キュー、検索と登録は Drawer、証憑はD&D／クリック選択。
@@ -147,7 +148,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           fiscalYear: 2026,
           seasonKey: '2026SS',
           businessType: 'soleProprietor',
@@ -165,7 +166,7 @@ async function mockAdminApis(page: Page): Promise<void> {
           previousClosingBalances: null,
           revisions: REVISIONS,
           cumulativeEntries: [],
-        },
+        }),
       }),
     });
   });
@@ -399,6 +400,8 @@ for (const viewport of viewports) {
       await expect(zone).toBeVisible();
       await expect(zone.getByText('ドラッグ＆ドロップ／クリックで選択')).toBeVisible();
 
+      // 添付の前に証憑の種類を選ぶ（FREQ-559-AC-03。選ぶまで投下面は無効）。
+      await page.getByLabel('電子で受け取った（PDF など）').check();
       // クリック選択の経路（input[type=file]）でアップロードできる
       await page.getByLabel('システム・ツール利用料に証憑を添付').setInputFiles({
         name: 'receipt.pdf',

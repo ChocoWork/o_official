@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-246: 決算処理（棚卸・引当金・減価償却・元入金振替・翌年度繰越）。
 const viewports = [
@@ -144,7 +145,7 @@ async function mockAdminApis(page: Page, options: { closed?: boolean } = {}): Pr
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           fiscalYear: 2026,
           seasonKey: '2026SS',
           businessType: 'soleProprietor',
@@ -157,7 +158,7 @@ async function mockAdminApis(page: Page, options: { closed?: boolean } = {}): Pr
           fixedAssets: FIXED_ASSETS,
           closing,
           previousClosingBalances: null,
-        },
+        }),
       }),
     });
   });

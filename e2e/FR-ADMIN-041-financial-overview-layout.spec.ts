@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-253: ACCOUNTING > 財務概要の情報構造。
 // 上から サブタブ行 → 資金推移 → キャッシュブリッジ → 財務3表 → 利益構造 → 構成比。
@@ -104,7 +105,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           fiscalYear: year,
           seasonKey: '2026SS',
           businessType: 'soleProprietor',
@@ -122,7 +123,7 @@ async function mockAdminApis(page: Page): Promise<void> {
           previousClosingBalances: null,
           revisions: [],
           cumulativeEntries: [],
-        },
+        }),
       }),
     });
   });
@@ -232,10 +233,11 @@ for (const viewport of viewports) {
       await openAccounting(page);
 
       const tabBox = await page.getByRole('tab', { name: '財務概要' }).boundingBox();
-      const year = page.getByRole('combobox', { name: '会計年' });
+      // 年の選択は会計期間の選択になった（Task 10）。
+      const year = page.getByRole('combobox', { name: '会計期間' });
       const update = page.getByRole('button', { name: '更新' });
       await expect(year).toBeVisible();
-      await expect(page.getByText('2026年', { exact: true })).toBeVisible();
+      await expect(page.getByText('2026年（個人）', { exact: true })).toBeVisible();
       await expect(update).toBeVisible();
       await expect(page.getByText('同期済み')).toBeVisible();
 

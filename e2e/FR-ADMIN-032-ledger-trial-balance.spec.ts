@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-242: 帳簿タブを法定帳簿の形（仕訳帳・総勘定元帳・合計残高試算表）で表示し、
 // 取引管理の実データだけから導出する。架空仕訳は出さない。
@@ -109,7 +110,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           fiscalYear: 2026,
           seasonKey: '2026SS',
           businessType: 'soleProprietor',
@@ -119,7 +120,7 @@ async function mockAdminApis(page: Page): Promise<void> {
           products: [],
           partners: ['A社', 'B社'],
           templates: [],
-        },
+        }),
       }),
     });
   });
@@ -161,7 +162,8 @@ for (const viewport of viewports) {
         .getByRole('region', { name: '勘定科目' })
         .getByRole('button', { name: /1010\s*現金/ })
         .click();
-      const adRow = page.getByRole('row').filter({ hasText: 'JE-20260305-001' });
+      // 伝票番号は保存した仕訳の通し番号（JE-000001 の形。日付昇順なので3月5日の広告出稿は3番目）。
+      const adRow = page.getByRole('row').filter({ hasText: 'JE-000003' });
       await expect(adRow).toContainText('広告宣伝費');
     });
 

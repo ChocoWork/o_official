@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-263: 要確認の取引を、理由と確認手順を見たうえで確認済み（登録済み）にできる。
 const viewports = [
@@ -135,7 +136,7 @@ async function mockAdminApis(page: Page, acks: Ack[]): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           fiscalYear: 2026,
           seasonKey: '2026SS',
           businessType: 'soleProprietor',
@@ -154,7 +155,7 @@ async function mockAdminApis(page: Page, acks: Ack[]): Promise<void> {
           revisions: [],
           reviewAcks: acks,
           cumulativeEntries: [],
-        },
+        }),
       }),
     });
   });

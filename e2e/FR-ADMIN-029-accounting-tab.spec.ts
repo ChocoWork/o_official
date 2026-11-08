@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-238: ACCOUNTING タブを KPI の直下に追加し、コスト & 利益の中身を移設
 const viewports = [
@@ -8,7 +9,8 @@ const viewports = [
   { name: 'desktop', width: 1280, height: 900 },
 ];
 
-const ACCOUNTING_SUB_TABS = ['財務概要', '取引管理', '帳簿', '商品原価', '税務レポート'];
+// 設定・期間のタブは Task 11（FREQ-555）で末尾に増えた。
+const ACCOUNTING_SUB_TABS = ['財務概要', '取引管理', '帳簿', '商品原価', '税務レポート', '設定・期間'];
 
 function metric(period: string) {
   return {
@@ -79,7 +81,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           seasonKey: '2026SS',
           businessType: 'soleProprietor',
           plan: { salesRevenue: 0, openingCash: 0, accountsReceivable: 0, fixedAssets: 0, accountsPayable: 0, openingCapital: 0 },
@@ -88,7 +90,7 @@ async function mockAdminApis(page: Page): Promise<void> {
           products: [],
           partners: [],
           templates: [],
-        },
+        }),
       }),
     }),
   );
@@ -128,8 +130,9 @@ for (const viewport of viewports) {
         await expect(page.getByRole('tab', { name: label })).toBeVisible();
       }
       // 年度選択はタブ行右端のドロップダウン（FREQ-253-REQ-06）。
-      await expect(page.getByRole('combobox', { name: '会計年' })).toBeVisible();
-      await expect(page.getByText('2026年', { exact: true })).toBeVisible();
+      // 会計期間のドロップダウン（期間の名前は「2026年（個人）」。Task 10 で「会計年」から変わった）。
+      await expect(page.getByRole('combobox', { name: '会計期間' })).toBeVisible();
+      await expect(page.getByText('2026年（個人）', { exact: true })).toBeVisible();
 
       await page.getByRole('tab', { name: '取引管理' }).click();
       await expect(page.getByRole('heading', { name: '取引管理', exact: true })).toBeVisible();

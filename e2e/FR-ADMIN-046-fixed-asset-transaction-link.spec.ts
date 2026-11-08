@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-260: 固定資産の入力を取引管理と固定資産タブで二重に行わせず、取引を単一の入口として連携させる。
 // 取引管理＝購入日・取引先・支払額・支払方法・証憑（取得仕訳）、
@@ -129,7 +130,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           fiscalYear: 2026,
           seasonKey: '2026SS',
           businessType: 'soleProprietor',
@@ -147,7 +148,7 @@ async function mockAdminApis(page: Page): Promise<void> {
           previousClosingBalances: {},
           revisions: [],
           cumulativeEntries: [],
-        },
+        }),
       }),
     });
   });

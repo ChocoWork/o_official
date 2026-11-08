@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-243: 取引管理の検索・絞り込み。電子帳簿保存法の検索機能要件を満たす。
 const viewports = [
@@ -108,7 +109,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           fiscalYear: 2026,
           seasonKey: '2026SS',
           businessType: 'soleProprietor',
@@ -118,7 +119,7 @@ async function mockAdminApis(page: Page): Promise<void> {
           products: [],
           partners: ['A社', 'B社'],
           templates: [],
-        },
+        }),
       }),
     });
   });

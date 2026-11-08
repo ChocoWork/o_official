@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { buildCostProfitMock } from './admin-accounting-test-utils';
 
 // FREQ-244: 固定資産台帳と減価償却計算。定額法・一括償却・即時償却・事業按分。
 const viewports = [
@@ -105,7 +106,7 @@ async function mockAdminApis(page: Page): Promise<void> {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
+        data: buildCostProfitMock({
           fiscalYear: 2026,
           seasonKey: '2026SS',
           businessType: 'soleProprietor',
@@ -116,7 +117,7 @@ async function mockAdminApis(page: Page): Promise<void> {
           partners: [],
           templates: [],
           fixedAssets: FIXED_ASSETS,
-        },
+        }),
       }),
     });
   });
