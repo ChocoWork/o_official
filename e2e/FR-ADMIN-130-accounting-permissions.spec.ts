@@ -47,6 +47,19 @@ async function putFiling(s: AccountingScenario, who: Parameters<AccountingScenar
   });
 }
 
+/** 申告の設定を新しい期間の既定値（免税・延長なし）へ戻す。すでに既定値なら何もしない */
+async function restoreFiling(s: AccountingScenario): Promise<void> {
+  const row = (await s.db.query(
+    `select consumption_tax_status as status, corporate_tax_extension_months as corp, consumption_tax_extension_months as cons, version::text as version
+       from public.accounting_periods where id = $1`, [s.periodId])).rows[0];
+  if (row.status === 'exempt' && row.corp === 0 && row.cons === 0) return;
+  const reply = await s.api(s.admin, `/api/admin/accounting/periods/${s.periodId}/filing`, 'PUT', {
+    corporateTaxExtensionMonths: 0, consumptionTaxExtensionMonths: 0, consumptionTaxStatus: 'exempt', consumptionTaxableFrom: null,
+    expectedVersion: row.version, requestKey: randomUUID(),
+  });
+  expect(reply.status, reply.text).toBe(200);
+}
+
 const periodVersion = async (s: AccountingScenario): Promise<string> =>
   (await s.db.query('select version::text as v from public.accounting_periods where id = $1', [s.periodId])).rows[0].v;
 
@@ -60,6 +73,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
     test('FREQ-553-AC-01: 会計の新しい権限は店長にあり未付与のサポーターは操作できず付与後だけ操作できる', async () => {
       test.setTimeout(240_000);
       await withAccountingPermissionScenario(async (s) => {
+       try {
         // ---- DB: 新しい6件は店長だけが持つ ----
         const adminState = await readRolePermissionState(s.db, 'admin');
         const supporterState = await readRolePermissionState(s.db, 'supporter');
@@ -110,6 +124,10 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         const revoked = await putFiling(s, supporter, await periodVersion(s));
         expect(revoked.status).toBe(403);
         expect(revoked.body).toMatchObject({ permission: MANAGE });
+       } finally {
+        // 池の期間は使い回されるので、途中で落ちても申告の設定を新しい期間の既定値へ戻す（店長が同じ route で書く）
+        await restoreFiling(s);
+       }
       });
     });
 

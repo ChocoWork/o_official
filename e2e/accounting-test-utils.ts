@@ -36,9 +36,9 @@ const POOL_FIRST_YEAR = 2030;
 const POOL_FREE_TARGET = 60;
 
 export const ACCOUNTING_EXPENSE_CATEGORY = '広告宣伝費';
-export const ACCOUNTING_EXPENSE_METHOD = '現金';
+const ACCOUNTING_EXPENSE_METHOD = '現金';
 
-export type ApiReply = { status: number; body: any; text: string; cacheControl: string };
+export type ApiReply = { status: number; body: any; text: string };
 
 export type ExpenseInput = {
   date: string;
@@ -77,7 +77,7 @@ const toPoolPeriod = (row: PoolRow): PoolPeriod => ({
 
 const PERIOD_COLUMNS = `p.id, p.name, to_char(p.starts_on, 'YYYY-MM-DD') as starts_on, to_char(p.ends_on, 'YYYY-MM-DD') as ends_on, p.version::text as version`;
 
-/** 池の空き（2030 年以降・個人・最後の期間でない・仕訳が1本も無い）。年の順 */
+/** 池の空き（2030 年以降・個人・最後の期間でない・仕訳が1本も無い・申告の設定が新しい期間の既定値のまま）。年の順 */
 async function freePoolPeriods(db: PgClient): Promise<PoolPeriod[]> {
   const rows = await db.query(
     `select ${PERIOD_COLUMNS}
@@ -85,13 +85,15 @@ async function freePoolPeriods(db: PgClient): Promise<PoolPeriod[]> {
       where p.business_type = 'soleProprietor' and p.starts_on >= make_date($1, 1, 1)
         and p.starts_on < (select max(q.starts_on) from public.accounting_periods q where q.business_type = 'soleProprietor')
         and not exists (select 1 from public.accounting_journal_entries e where e.period_id = p.id)
+        and p.consumption_tax_status = 'exempt' and p.consumption_taxable_from is null
+        and p.corporate_tax_extension_months = 0 and p.consumption_tax_extension_months = 0
       order by p.starts_on`,
     [POOL_FIRST_YEAR],
   );
   return (rows.rows as PoolRow[]).map(toPoolPeriod);
 }
 
-export async function soleBusinessEnded(db: PgClient): Promise<boolean> {
+async function soleBusinessEnded(db: PgClient): Promise<boolean> {
   const row = await db.query('select sole_business_ended_on is not null as ended from public.accounting_settings where id = 1');
   return row.rows[0].ended === true;
 }
@@ -219,7 +221,7 @@ export class AccountingScenario {
       } catch {
         body = null;
       }
-      return { status: response.status(), body, text, cacheControl: response.headers()['cache-control'] ?? '' };
+      return { status: response.status(), body, text };
     } finally {
       await response.dispose();
     }
