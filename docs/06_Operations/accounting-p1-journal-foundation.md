@@ -9,7 +9,7 @@
 | 項目 | 内容 |
 | --- | --- |
 | 適用の順 | S0 → S1 → S2 → S3 → S4 → S5。ファイル名の順が適用の順 |
-| 本番への当て方 | 下の「適用の手順（T16-1）」の2回の push。S4 と S5 は必ず同じ push |
+| 本番への当て方 | 下の「適用の手順（T16-1）」の2回。2回とも Supabase MCP の `apply_migration` で1本ずつ当てる（素の `supabase db push` と CI は使わない）。S4 の直後に S5 |
 | 戻せるか | S0・S1 は戻せる（値を先に控える）。S2・S3 は仕訳・期間・設定の変更が無い間だけ。S4 は手入力の仕訳が無い間だけ。S5 は戻せない（直しは取り消しと正しい仕訳） |
 | 先に済ませること | 本番の接続先の確認（下の「確認の記録」）。事前の読み取り（下の「本番の事前確認」） |
 | 関連 | 仕訳の流れ: [会計の仕訳のシーケンス](../04_DetailDesign/sequence/accounting-journal.md)、期間: [会計の期間の状態](../04_DetailDesign/states/accounting-period.md)、移行の台帳: [DB 移行](db-migrations.md) |
@@ -81,7 +81,9 @@
 
 Ruling T16-1 (refines C11): Task 16 applies in two pushes — (1) S0–S3 first; (2) run ALL S5 stop pre-checks read-only on production (task-13-report's 9 checks + earliest live expense year ≥ 2025 when start date NULL + max(created_at) ≤ now + category listing incl. 開業費 0 rows); (3) owner confirms no admin expense writes; (4) push S4+S5 together; if S5 fails, nobody edits expenses (S4 alone posts only on writes), fix S5 and push again — because db push commits each file separately and an S4-only state + any write would make S5 stop permanently (M-4) — cost if wrong: manual reconciliation decision needed.
 
-意味: 1回目の push で S0〜S3 を当てる。続けて下の「本番の事前確認」をすべて読み取り専用で流す。管理者が会計の取引を書いていないことをオーナーが確かめてから、2回目の push で S4 と S5 を一緒に当てる。S5 が失敗したら、直して再度 push するまで誰も取引を書かない（S4 だけの状態で取引を書くと、S5 が `acc_s5_counts` で永久に止まる）。`db push` はファイルごとに別々に確定するため、2本を別の日に分けない。
+意味: 1回目で S0〜S3 を当てる。続けて下の「本番の事前確認」をすべて読み取り専用で流す。管理者が会計の取引を書いていないことをオーナーが確かめてから、2回目で S4 を当てて続けて S5 を当てる。S5 が失敗したら、直して S5 を当て直すまで誰も取引を書かない（S4 だけの状態で取引を書くと、S5 が `acc_s5_counts` で永久に止まる）。2本を別の日に分けない。
+
+当て方（Ruling T15b-apply）: 2 回とも Supabase MCP の `apply_migration` で 1 本ずつ当てる。1 回目は S0 → S1 → S2 → S3、2 回目は S4 の直後に S5。`name` はファイル名の版（`20261107130000_` など）を除いた部分に合わせ、`query` はファイルの全文にする。素の `supabase db push` と CI（master への push で動く `db-migrations.yml`）は、この 6 本には使わない。6 本を一度に当てるため、S5 で止まると T16-1 が避けたい「S4 だけ」の状態が残る。返品の `20261108120000` が先に本番へ当たっていても、この当て方なら止まらない（MCP は版を当てた時刻で付けるので、S0〜S5 のファイルの版が本番の最新より古くても関係しない。素の `db push` ならその時点で止まる）。当てた直後に `list_migrations` で記録された版を見て、[DB 移行](db-migrations.md)の「MCP の apply_migration で当てた場合」の決まりでファイル名の版を付け直し、`schema_migrations` の文の `md5(statements[1])` をファイルと突き合わせる。付け直すと手元の `db reset` の適用順が変わりうるので、付け直した後に `db reset` が通ることも確かめる。S0〜S5 のコミットの master への push は、当て終えて版を付け直した後にする（先に push すると、CI が動いた場合に 6 本が一度に当たる。今は CI が `supabase link` で落ちているが、当てにしない）。
 
 ### 本番の事前確認（読み取りだけ）
 
@@ -93,7 +95,7 @@ Ruling T16-1 (refines C11): Task 16 applies in two pushes — (1) S0–S3 first;
 6. `select count(*) from public.accounting_journal_entries; select count(*) from public.accounting_periods;` — 0 と 0（番号を1から振る前提）。
 7. `select tgenabled from pg_trigger where tgrelid = 'public.admin_finance_expenses'::regclass and tgname = 'trigger_admin_finance_entry_revisions';` — `O`。
 8. `select category, payment_method, entry_type, count(*) from public.admin_finance_expenses where deleted_at is null group by 1,2,3 order by 1,2,3;` を S4 の写し（`ACC_MANUAL_MAP` の行）と照らす。分類にも支払方法にも `開業費`（`U&'\958B\696D\8CBB'`）の行が 0 件であること（あれば S5 が `a8_startup_cost_category` で止まる。先にオーナーが決める）。直接の確認: `select id, expense_date, category, payment_method from public.admin_finance_expenses where deleted_at is null and (category = U&'\958B\696D\8CBB' or payment_method = U&'\958B\696D\8CBB');` — 0 行。`9999` に入る行と資産・在庫の分類の行も控える（S5 は S4 の規則のまま移し、直しは移した後に取り消しと正しい仕訳で行う）。
-9. S4 と S5 を1回の `db push` で当て、その間に管理者が取引を編集しない（S5 の途中で履歴だけが増えると `acc_s5_revisions_unchanged` で S5 が戻る。安全だが再実行になる）。
+9. S4 と S5 を `apply_migration` で続けて当て、その間に管理者が取引を編集しない（S5 の途中で履歴だけが増えると `acc_s5_revisions_unchanged` で S5 が戻る。安全だが再実行になる）。
 
 ### 成功の確認
 
@@ -105,7 +107,7 @@ Ruling T16-1 (refines C11): Task 16 applies in two pushes — (1) S0–S3 first;
 
 ### 戻し方
 
-S5 に戻しは無い。仕訳の誤りは取り消しと正しい仕訳で直す。S4 を外すのは手入力の仕訳が1件も無い間だけ。S5 が止まった時は、取引の書き込みを止めたまま原因（`DETAIL` の語）を直して再度 push する。
+S5 に戻しは無い。仕訳の誤りは取り消しと正しい仕訳で直す。S4 を外すのは手入力の仕訳が1件も無い間だけ。S5 が止まった時は、取引の書き込みを止めたまま原因（`DETAIL` の語）を直して S5 を `apply_migration` で当て直す。
 
 ## 領収書の置き場
 

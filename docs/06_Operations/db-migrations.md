@@ -1317,7 +1317,7 @@ controller手順: H7未適用DBの新しい取消テストでRED→取引内で�
 
 ### 順番と各ファイル
 
-適用の順はファイル名の順（S0 → S5）。各移行は 1 本の取引（`BEGIN`〜`COMMIT`）で、末尾に自己検査を持つ。検査が崩れると全部戻り、失敗の詳細は固定の `DETAIL` の語だけを返す。ファイルの MD5 はコミットしたファイルのもの。本番に当てた文の照合（`md5(statements[1])` の書き方は上の波 2・M1 の節と同じ）は、本番に当てた後の Task 16 で記入する。
+適用の順はファイル名の順（S0 → S5。本番へは下の「本番へ当てる手順（T16-1）」の当て方で 1 本ずつ）。各移行は 1 本の取引（`BEGIN`〜`COMMIT`）で、末尾に自己検査を持つ。検査が崩れると全部戻り、失敗の詳細は固定の `DETAIL` の語だけを返す。ファイルの MD5 はコミットしたファイルのもの。本番に当てた文の照合（`md5(statements[1])` の書き方は上の波 2・M1 の節と同じ）は、本番に当てた後の Task 16 で記入する。ファイルの MD5 のほかに、本文の指紋（`md5(replace(prosrc, E'', ''))`。関数を戻した後や当てた後に、本番の定義と突き合わせる値）を下に書く。
 
 | 移行 | 大きさ / ファイルの MD5 | 当てた文の照合 | 目的 |
 | --- | --- | --- | --- |
@@ -1327,6 +1327,16 @@ controller手順: H7未適用DBの新しい取消テストでRED→取引内で�
 | S3 `20261107130300_accounting_p1_period_reads.sql` | 87,564 bytes / `0593bf4afcf8cf781c827643f6be0257` | 未適用 | 設定・期首の表、期間の作成・やめた日・設定・申告の設定の書き手、読み 5 つ、トリガー |
 | S4 `20261107130400_accounting_p1_manual_entry_journal.sql` | 48,136 bytes / `5ceaf3e153ee5809f03c982b7704401e` | 未適用 | 手入力の取引を仕訳にするトリガー、分類・支払方法の写し、履歴の保護、履歴を書く関数の入れ替え |
 | S5 `20261107130500_accounting_p1_a8_migrate_manual.sql` | 17,118 bytes / `fcb9c5d689beacd0ba81b50f771687aa` | 未適用 | 削除されていない手入力の取引を `migrated_entry` として移す（A8） |
+
+本文の指紋（`md5(replace(prosrc, E'', ''))`）:
+
+| 対象 | 値 | 使い方 |
+| --- | --- | --- |
+| S0 後の `private.admin_get_permissions(uuid)` | `57b375f57488317d34e9b4b5aa9b8e10`（S0 :229） | S0 の末尾の検査が照らす。当てた後の本番の定義と突き合わせる |
+| S0 後の `private.admin_set_role_permissions(uuid,text,text[],bigint,uuid)` | `340c33e13641a27bbad4080f23931b94`（S0 :230） | 同上 |
+| H1（`20261029130000`）の元の `admin_get_permissions` | `e74dab48011008b34e1c42f06f75efcf`（H1 :878） | S0 を戻した後の確かめ。`CREATE OR REPLACE` で戻した本体がこの値に戻ること |
+| H1 の元の `admin_set_role_permissions` | `8dd855720e3442134a80e240e8474185`（H1 :879） | 同上 |
+| S2 の勘定の種（`9999` を含む 163 行。`code,account_type,normal_side,scope,carryover_role` を `;` でつないだ md5） | `9267159e6a646a2f7b5fcd81a725235f`（S2 :1231） | S2 の末尾の検査が照らす。当てた後の `accounting_accounts` と突き合わせる |
 
 ### 末尾の検査（DETAIL）と戻し方
 
@@ -1343,7 +1353,9 @@ controller手順: H7未適用DBの新しい取消テストでRED→取引内で�
 
 Ruling T16-1 (refines C11): Task 16 applies in two pushes — (1) S0–S3 first; (2) run ALL S5 stop pre-checks read-only on production (task-13-report's 9 checks + earliest live expense year ≥ 2025 when start date NULL + max(created_at) ≤ now + category listing incl. 開業費 0 rows); (3) owner confirms no admin expense writes; (4) push S4+S5 together; if S5 fails, nobody edits expenses (S4 alone posts only on writes), fix S5 and push again — because db push commits each file separately and an S4-only state + any write would make S5 stop permanently (M-4) — cost if wrong: manual reconciliation decision needed.
 
-意味: 1 回目の push で S0〜S3 を当てる。続けて[運用の手引きの本番の事前確認](accounting-p1-journal-foundation.md#本番の事前確認読み取りだけ)をすべて読み取り専用で流す。管理者が会計の取引を書いていないことをオーナーが確かめてから、2 回目の push で S4 と S5 を一緒に当てる。S5 が失敗したら、直して再度 push するまで誰も取引を書かない（S4 だけの状態で取引を書くと、S5 が `acc_s5_counts` で永久に止まる）。`db push` はファイルごとに別々に確定するため、2 本を別の日に分けない。
+意味: 1 回目で S0〜S3 を当てる。続けて[運用の手引きの本番の事前確認](accounting-p1-journal-foundation.md#本番の事前確認読み取りだけ)をすべて読み取り専用で流す。管理者が会計の取引を書いていないことをオーナーが確かめてから、2 回目で S4 を当てて続けて S5 を当てる。S5 が失敗したら、直して S5 を当て直すまで誰も取引を書かない（S4 だけの状態で取引を書くと、S5 が `acc_s5_counts` で永久に止まる）。S4 と S5 は別々に確定するため、2 本を別の日に分けない。
+
+当て方（Ruling T15b-apply）: 2 回とも Supabase MCP の `apply_migration` で 1 本ずつ当てる。1 回目は S0 → S1 → S2 → S3、2 回目は S4 の直後に S5。`name` はファイル名の版（`20261107130000_` など）を除いた部分に合わせ、`query` はファイルの全文にする。素の `supabase db push` と CI（master への push で動く `db-migrations.yml`）は、この 6 本には使わない。6 本を一度に当てるため、S5 で止まると T16-1 が避けたい「S4 だけ」の状態が残る。返品の `20261108120000` が先に本番へ当たっていても、この当て方なら止まらない（MCP は版を当てた時刻で付けるので、S0〜S5 のファイルの版が本番の最新より古くても関係しない。素の `db push` ならその時点で止まる）。当てた直後に `list_migrations` で記録された版を見て、上の「MCP の apply_migration で当てた場合」の決まりでファイル名の版を付け直し、`schema_migrations` の文の `md5(statements[1])` をファイルと突き合わせる。付け直すと手元の `db reset` の適用順が変わりうるので、付け直した後に `db reset` が通ることも確かめる。S0〜S5 のコミットの master への push は、当て終えて版を付け直した後にする（先に push すると、CI が動いた場合に 6 本が一度に当たる。今は CI が `supabase link` で落ちているが、当てにしない）。
 
 当てた後の確かめ（NOTICE の件数、`migrated_entry` の数、元の表の件数が変わらないこと、`schema_migrations` の突き合わせ、画面で移した仕訳が読めること）は[運用の手引きの成功の確認](accounting-p1-journal-foundation.md#成功の確認)。確かめのために本番で取引を足したり直したりしない（S4 の後は仕訳と取り消しの行が消せずに残る）。
 

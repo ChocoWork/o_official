@@ -797,12 +797,12 @@ G-4撤去: 旧発送・発送取消・伝票訂正・手動配達済み・仕上
 
 SETTINGS のショップ設定の前に `nav aria-label="設定メニュー"` と「権限」リンクを置く。リンク先は `/admin/settings/permissions`、戻るリンク「管理画面に戻る」は `/admin?tab=SETTINGS`。独立ページは Server Component、[RolePermissionsSection](../../../src/components/RolePermissionsSection.tsx) は Client Component。直URLでも `GET /api/admin/permissions` の成功前に表を出さない。店長が固定2コード以外を全解除しても、この画面と戻るリンクを使える。既存管理メニューは役割名で表示を決め、サポーターは ORDER だけ。画面に「管理メニューの表示は、権限の設定ではなく役割名で決まります。」を表示する。
 
-表は列「操作」「店長」「サポーター」、共有 [ROLE_PERMISSION_CATALOG](../../../src/lib/auth/role-permission-catalog.ts) の38コード（会計の6コードを足した。分野に「会計」が増える）を分野ごとにまとめる。`user` は編集対象外。`table` と列・行の `th`、分野ごとの `tbody` と `scope="rowgroup"` を使う。見出し「権限の表」で名付けた、キーボードで焦点を当てられるスクロール領域に表を入れる。390/768px は表内だけ横スクロール、1280px は全列が収まる幅とする（実表示の検証は Task 4）。
+表は列「操作」「店長」「サポーター」、共有 [ROLE_PERMISSION_CATALOG](../../../src/lib/auth/role-permission-catalog.ts) の38コード（会計の6コードを足した。分野「会計」の行が 2 → 8 になる）を分野ごとにまとめる。`user` は編集対象外。`table` と列・行の `th`、分野ごとの `tbody` と `scope="rowgroup"` を使う。見出し「権限の表」で名付けた、キーボードで焦点を当てられるスクロール領域に表を入れる。390/768px は表内だけ横スクロール、1280px は全列が収まる幅とする（実表示の検証は Task 4）。
 
 | 行・表示 | 契約 |
 | --- | --- |
 | 固定2行 | `admin.users.manage`・`admin.permissions.manage` は両役割欄をまたぐ「店長のみ・変更不可」。switch は置かない。DB関数と行トリガーでも解除・他役割への付与を拒否する |
-| その他28行 | 役割ごとに switch。名前は `${roleLabel}：${operationLabel}`。操作ラベルは行見出しにだけ出し、共通 SwitchToggle の `ariaLabel` を使う |
+| その他36行 | 役割ごとに switch。名前は `${roleLabel}：${operationLabel}`。操作ラベルは行見出しにだけ出し、共通 SwitchToggle の `ariaLabel` を使う |
 | 準備中の行 | G-4 Task 5（確認日: 2026-10-26）で割り当ての入れ替え（`admin.orders.allocate`）を公開したため、`ROLE_PERMISSION_CATALOG` の `upcoming` は全38行でfalse。準備中の権限は無く、「この権限は、対応する画面の公開後に使われます。」の印は0件（FREQ-540-AC-06）。権限の依存・固定・初期値は維持する |
 | 依存不足 | 役割別に「操作に必要な権限が不足しています：{不足コードの操作ラベルを「、」で結合}。」。共有関数で重複除去・コード辞書順。権限を自動追加せず、保存も禁止しない |
 
