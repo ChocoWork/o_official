@@ -22,7 +22,9 @@ BEGIN;
 --   evidence_details, stripe_created_at}; _event {stripe_event_id, event_type, status, occurred_at, stripe_event_created_at,
 --   balance_transaction_ids, raw_payload}, or NULL for a re-read that adds no history row (the state did not change). The dispute
 --   is created or its mutable columns are updated (order_id is never cleared); the history row is added ON CONFLICT
---   (stripe_event_id) DO NOTHING. Result {dispute_id, event_inserted}. A second call with the same stripe_event_id adds nothing.
+--   (stripe_event_id) DO NOTHING. synced_at is the time the dispute was read from Stripe (passed by the caller; now() when absent): a
+--   read older than the stored one does not overwrite the mutable columns (the history row is still added), so two workers
+--   that handle the same dispute at once leave the last read in the table. Result {dispute_id, event_inserted}. A second call with the same stripe_event_id adds nothing.
 --   It takes no accounting lock and posts nothing.
 --
 -- ROLLBACK (only while no dispute has been recorded):
@@ -152,14 +154,15 @@ BEGIN
     (_dispute ->> 'is_charge_refundable')::boolean, (_dispute ->> 'evidence_due_by')::timestamptz,
     CASE WHEN pg_catalog.jsonb_typeof(_dispute -> 'evidence_details') = 'object' THEN _dispute -> 'evidence_details'
       ELSE '{}'::jsonb END,
-    (_dispute ->> 'stripe_created_at')::timestamptz, pg_catalog.now())
+    (_dispute ->> 'stripe_created_at')::timestamptz, COALESCE((_dispute ->> 'synced_at')::timestamptz, pg_catalog.now()))
   ON CONFLICT (id) DO UPDATE SET
     status = EXCLUDED.status,
     is_charge_refundable = EXCLUDED.is_charge_refundable,
     evidence_due_by = EXCLUDED.evidence_due_by,
     evidence_details = EXCLUDED.evidence_details,
     order_id = COALESCE(EXCLUDED.order_id, public.stripe_disputes.order_id),
-    synced_at = EXCLUDED.synced_at;
+    synced_at = EXCLUDED.synced_at
+  WHERE public.stripe_disputes.synced_at <= EXCLUDED.synced_at;
 
   IF _event IS NOT NULL THEN
     INSERT INTO public.stripe_dispute_events (dispute_id, stripe_event_id, event_type, status, occurred_at,
@@ -362,7 +365,7 @@ BEGIN
     IF v_failed IS NULL THEN
       SELECT f.prosrc INTO v_src FROM pg_catalog.pg_proc AS f
       WHERE f.oid = pg_catalog.to_regprocedure('private.record_stripe_dispute(jsonb,jsonb)');
-      IF EXISTS (SELECT 1 FROM pg_catalog.unnest(ARRAY['ON CONFLICT (stripe_event_id) DO NOTHING', 'ON CONFLICT (id) DO UPDATE SET',
+      IF EXISTS (SELECT 1 FROM pg_catalog.unnest(ARRAY['ON CONFLICT (stripe_event_id) DO NOTHING', 'ON CONFLICT (id) DO UPDATE SET', 'WHERE public.stripe_disputes.synced_at <= EXCLUDED.synced_at',
           'order_id = COALESCE(EXCLUDED.order_id, public.stripe_disputes.order_id)', '''ACCOUNTING_ARGUMENT_INVALID''',
           'GET DIAGNOSTICS v_rows = ROW_COUNT', '''event_inserted''']) AS n(text) WHERE pg_catalog.strpos(v_src, n.text) = 0)
         OR v_src ~* '(accounting_lock_all|accounting_post_journal|accounting_journal|accounting_pending|DELETE FROM|TRUNCATE|PG_EXCEPTION_CONTEXT)'

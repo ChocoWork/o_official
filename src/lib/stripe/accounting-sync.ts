@@ -12,7 +12,7 @@ import type {
   StripeRefundStatus,
 } from './accounting-types';
 
-type StripeObject = Record<string, unknown>;
+export type StripeObject = Record<string, unknown>;
 type RetrieveApi = { retrieve(id: string): Promise<StripeObject> };
 type StripeAccountingClient = {
   paymentIntents?: RetrieveApi;
@@ -24,7 +24,7 @@ type StripeAccountingClient = {
   };
 };
 
-function idOf(value: unknown): string | null {
+export function idOf(value: unknown): string | null {
   if (typeof value === 'string') return value;
   if (value && typeof value === 'object' && typeof (value as StripeObject).id === 'string') {
     return (value as StripeObject).id as string;
@@ -32,7 +32,7 @@ function idOf(value: unknown): string | null {
   return null;
 }
 
-function iso(epoch: unknown): string | null {
+export function iso(epoch: unknown): string | null {
   return typeof epoch === 'number' ? new Date(epoch * 1000).toISOString() : null;
 }
 
@@ -41,12 +41,12 @@ function toJstDateOrNull(isoTime: string | null): string | null {
   return isoTime ? toJstDate(isoTime) : null;
 }
 
-function requiredApi<T>(value: T | undefined, name: string): T {
+export function requiredApi<T>(value: T | undefined, name: string): T {
   if (!value) throw new Error(`Stripe ${name} API is unavailable`);
   return value;
 }
 
-async function saveBalanceTransaction(input: {
+export async function saveBalanceTransaction(input: {
   database: StripeAccountingDatabase;
   transaction: StripeObject;
   paymentIntentId?: string | null;

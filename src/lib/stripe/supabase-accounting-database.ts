@@ -8,9 +8,6 @@ import type {
 
 type QueryResult = { data: unknown; error: { message?: string } | null };
 
-/** 毎晩取り直す未決着の dispute の上限（実際はごく少数。暴走した時に毎晩の実行を止めないための枠） */
-const OPEN_DISPUTE_LIMIT = 500;
-
 function unwrap(result: QueryResult): unknown {
   if (result.error) {
     throw new Error(result.error.message ?? 'Stripe accounting query failed');
@@ -51,6 +48,7 @@ export function createStripeAccountingDatabase(
           evidence_due_by: dispute.evidenceDueBy,
           evidence_details: dispute.evidenceDetails,
           stripe_created_at: dispute.stripeCreatedAt,
+          synced_at: dispute.syncedAt,
         },
         _event: event && {
           stripe_event_id: event.stripeEventId,
@@ -75,13 +73,25 @@ export function createStripeAccountingDatabase(
       return (unwrap(result) as { status: string } | null)?.status ?? null;
     },
 
-    async listOpenDisputeIds() {
+    async listOpenDisputeIds(limit: number) {
       const result = (await client
         .from('stripe_disputes')
         .select('id')
         .not('status', 'in', '(won,lost,warning_closed)')
-        .limit(OPEN_DISPUTE_LIMIT)) as QueryResult;
+        .order('stripe_created_at', { ascending: true })
+        .limit(limit)) as QueryResult;
       return ((unwrap(result) as Array<{ id: string }> | null) ?? []).map((row) => row.id);
+    },
+
+    async hasLostEventTime(disputeId: string) {
+      const result = (await client
+        .from('stripe_dispute_events')
+        .select('id')
+        .eq('dispute_id', disputeId)
+        .eq('status', 'lost')
+        .not('stripe_event_created_at', 'is', null)
+        .limit(1)) as QueryResult;
+      return ((unwrap(result) as unknown[] | null) ?? []).length > 0;
     },
 
     async findById(table: StripeAccountingTable, id: string) {

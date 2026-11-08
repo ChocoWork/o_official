@@ -29,7 +29,7 @@ function disputeObject(overrides: Obj = {}): Obj {
   };
 }
 
-function makeDatabase(options: { order?: { id: string; currency: string } | null; knownStatus?: string | null } = {}) {
+function makeDatabase(options: { order?: { id: string; currency: string } | null; knownStatus?: string | null; lostTimeKnown?: boolean } = {}) {
   const balanceRows = new Map<string, Obj>();
   const recorded: Array<{ dispute: StripeDisputeInput; event: StripeDisputeEventInput | null }> = [];
   const events = new Set<string>();
@@ -44,6 +44,7 @@ function makeDatabase(options: { order?: { id: string; currency: string } | null
       return next;
     }),
     findDisputeStatus: jest.fn(async () => status),
+    hasLostEventTime: jest.fn(async () => options.lostTimeKnown ?? false),
     recordDispute: jest.fn(async (dispute, event) => {
       recorded.push({ dispute, event });
       status = dispute.status;
@@ -102,6 +103,7 @@ describe('syncDisputeAccounting（charge.dispute の知らせ）', () => {
       status: 'needs_response', isChargeRefundable: false, evidenceDueBy: new Date((CREATED + 7 * 86400) * 1000).toISOString(),
       evidenceDetails: { due_by: CREATED + 7 * 86400, has_evidence: false, past_due: false, submission_count: 0 },
       stripeCreatedAt: new Date(CREATED * 1000).toISOString(),
+      syncedAt: expect.any(String),
     });
     expect(recorded[0].event).toMatchObject({
       stripeEventId: `evt_${type}`, eventType: type, status: 'needs_response', balanceTransactionIds: ['txn_w', 'txn_r'],
@@ -110,6 +112,18 @@ describe('syncDisputeAccounting（charge.dispute の知らせ）', () => {
     // 原因・期限・資料の写しは、その時点の dispute のまま履歴に残る
     expect(recorded[0].event?.rawPayload).toMatchObject({ id: 'dp_1', reason: 'fraudulent', evidence: { customer_name: 'dummy' } });
     expect(typeof recorded[0].event?.occurredAt).toBe('string');
+  });
+
+  it('FREQ-567-AC-02: 取り直した時刻を、dispute にも履歴にも残高の取引にも同じ値で渡す（DB が古い取り直しの上書きを断つ）', async () => {
+    const { database, balanceRows, recorded } = makeDatabase();
+    const { stripe } = makeStripe(disputeObject());
+    const now = () => new Date('2026-06-10T00:20:00.000Z');
+
+    await syncDisputeAccounting({ stripe, database, ...webhookInput('charge.dispute.created'), now });
+
+    expect(recorded[0].dispute.syncedAt).toBe('2026-06-10T00:20:00.000Z');
+    expect(recorded[0].event?.occurredAt).toBe('2026-06-10T00:20:00.000Z');
+    expect(balanceRows.get('txn_w')?.synced_at).toBe('2026-06-10T00:20:00.000Z');
   });
 
   it('FREQ-567-AC-01: 支払いに結び付く注文が無い取り消しも保存し order_id はNULL', async () => {
@@ -306,8 +320,34 @@ describe('syncDisputeAccounting（毎晩の再照合）', () => {
       expect(recorded[0].event?.stripeEventCreatedAt).toBeNull();
     });
 
-    it('履歴を足さない夜（状態が同じ lost）は一覧も読まない', async () => {
-      const { database } = makeDatabase({ knownStatus: 'lost' });
+    it('表が lost で、lost の履歴に Stripe 側の時刻が無い夜は、出来事の一覧から拾って時刻つきの行を足す', async () => {
+      const { database, recorded } = makeDatabase({ knownStatus: 'lost', lostTimeKnown: false });
+      const { stripe, eventList } = makeStripe(disputeObject({ status: 'lost' }), [[closedEvent('dp_1', 'lost', 1782100000)]]);
+
+      expect(await syncDisputeAccounting({ stripe, database, ...reconcileInput })).toEqual({ disposition: 'inserted' });
+
+      expect(eventList).toHaveBeenCalledTimes(1);
+      expect(recorded[0].event).toMatchObject({
+        stripeEventId: 'reconcile:dp_1:lost:event_time', status: 'lost', stripeEventCreatedAt: new Date(1782100000 * 1000).toISOString(),
+      });
+    });
+
+    it('表が lost で時刻が見つからない夜は行を足さない（可変の欄の更新だけ）。時刻がすでにある夜は一覧も読まない', async () => {
+      const missing = makeDatabase({ knownStatus: 'lost', lostTimeKnown: false });
+      const first = makeStripe(disputeObject({ status: 'lost' }), []);
+      await syncDisputeAccounting({ stripe: first.stripe, database: missing.database, ...reconcileInput });
+      expect(first.eventList).toHaveBeenCalledTimes(1);
+      expect(missing.recorded[0].event).toBeNull();
+
+      const known = makeDatabase({ knownStatus: 'lost', lostTimeKnown: true });
+      const second = makeStripe(disputeObject({ status: 'lost' }), [[closedEvent('dp_1', 'lost', 1782100000)]]);
+      await syncDisputeAccounting({ stripe: second.stripe, database: known.database, ...reconcileInput });
+      expect(second.eventList).not.toHaveBeenCalled();
+      expect(known.recorded[0].event).toBeNull();
+    });
+
+    it('履歴を足さない夜（状態が同じ lost で時刻もある）は一覧も読まない', async () => {
+      const { database } = makeDatabase({ knownStatus: 'lost', lostTimeKnown: true });
       const { stripe, eventList } = makeStripe(disputeObject({ status: 'lost' }));
 
       await syncDisputeAccounting({ stripe, database, ...reconcileInput });

@@ -97,7 +97,7 @@ describe('createStripeAccountingDatabase: dispute（カード会社からの支�
   const dispute = {
     id: 'dp_1', paymentIntentId: 'pi_1', chargeId: 'ch_1', orderId: null, amount: 5000, currency: 'jpy', reason: 'fraudulent',
     status: 'needs_response', isChargeRefundable: false, evidenceDueBy: '2026-07-01T00:00:00.000Z', evidenceDetails: { has_evidence: false },
-    stripeCreatedAt: '2026-06-10T00:00:00.000Z',
+    stripeCreatedAt: '2026-06-10T00:00:00.000Z', syncedAt: '2026-06-10T00:05:00.000Z',
   };
   const event = {
     stripeEventId: 'evt_1', eventType: 'charge.dispute.created', status: 'needs_response', occurredAt: '2026-06-10T00:05:00.000Z',
@@ -117,6 +117,7 @@ describe('createStripeAccountingDatabase: dispute（カード会社からの支�
         id: 'dp_1', payment_intent_id: 'pi_1', charge_id: 'ch_1', order_id: null, amount: 5000, currency: 'jpy', reason: 'fraudulent',
         status: 'needs_response', is_charge_refundable: false, evidence_due_by: '2026-07-01T00:00:00.000Z',
         evidence_details: { has_evidence: false }, stripe_created_at: '2026-06-10T00:00:00.000Z',
+        synced_at: '2026-06-10T00:05:00.000Z',
       },
       _event: {
         stripe_event_id: 'evt_1', event_type: 'charge.dispute.created', status: 'needs_response', occurred_at: '2026-06-10T00:05:00.000Z',
@@ -160,10 +161,32 @@ describe('createStripeAccountingDatabase: dispute（カード会社からの支�
     const builder: Record<string, jest.Mock> = {};
     builder.select = jest.fn(() => builder);
     builder.not = jest.fn(() => builder);
+    builder.order = jest.fn(() => builder);
     builder.limit = jest.fn(async () => ({ data: [{ id: 'dp_1' }, { id: 'dp_2' }], error: null }));
     const database = createStripeAccountingDatabase({ from: jest.fn(() => builder) } as never);
 
-    await expect(database.listOpenDisputeIds!()).resolves.toEqual(['dp_1', 'dp_2']);
+    await expect(database.listOpenDisputeIds!(501)).resolves.toEqual(['dp_1', 'dp_2']);
     expect(builder.not).toHaveBeenCalledWith('status', 'in', '(won,lost,warning_closed)');
+    // 作成の古い順に、渡された件数まで
+    expect(builder.order).toHaveBeenCalledWith('stripe_created_at', { ascending: true });
+    expect(builder.limit).toHaveBeenCalledWith(501);
+  });
+
+  it('FREQ-567-AC-03: hasLostEventTime は、lost の履歴に Stripe 側の時刻が入った行があるかを返す', async () => {
+    const builder: Record<string, jest.Mock> = {};
+    builder.select = jest.fn(() => builder);
+    builder.eq = jest.fn(() => builder);
+    builder.not = jest.fn(() => builder);
+    builder.limit = jest.fn()
+      .mockResolvedValueOnce({ data: [{ id: 'row-1' }], error: null })
+      .mockResolvedValueOnce({ data: [], error: null });
+    const from = jest.fn(() => builder);
+    const database = createStripeAccountingDatabase({ from } as never);
+
+    await expect(database.hasLostEventTime!('dp_1')).resolves.toBe(true);
+    await expect(database.hasLostEventTime!('dp_2')).resolves.toBe(false);
+    expect(from).toHaveBeenCalledWith('stripe_dispute_events');
+    expect(builder.eq).toHaveBeenCalledWith('status', 'lost');
+    expect(builder.not).toHaveBeenCalledWith('stripe_event_created_at', 'is', null);
   });
 });

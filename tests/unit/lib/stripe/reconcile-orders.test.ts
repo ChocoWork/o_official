@@ -442,7 +442,7 @@ describe('reconcileStripeDisputes（毎晩の、カード会社からの支払�
     expect(list).toHaveBeenCalledWith({ limit: 100, created: { gte: NOW_SECONDS - 30 * DAY_SECONDS } });
     expect(syncDispute).toHaveBeenCalledTimes(1);
     expect(syncDispute).toHaveBeenCalledWith('dp_new');
-    expect(report).toEqual({ syncedDisputes: 1, errors: [] });
+    expect(report).toEqual({ syncedDisputes: 1, openDisputesCapped: false, errors: [] });
   });
 
   it('FREQ-567-AC-04: 作成から30日を過ぎた未決着の dispute の確定も、毎晩の取り直しで拾う（一覧に無くても、表の未決着を全部取り直す）', async () => {
@@ -457,6 +457,29 @@ describe('reconcileStripeDisputes（毎晩の、カード会社からの支払�
     // 重複は1回だけ。表の未決着が先、30日の一覧が後
     expect(syncDispute.mock.calls.map(([id]) => id)).toEqual(['dp_old_open', 'dp_recent']);
     expect(report.syncedDisputes).toBe(2);
+  });
+
+  it('FREQ-567-AC-04: 表の未決着は作成の古い順に500件まで。超えたら openDisputesCapped で知らせ、古い方の500件だけ取り直す', async () => {
+    const ids = Array.from({ length: 501 }, (_, index) => `dp_open_${index}`);
+    const listOpen = jest.fn(async (limit: number) => ids.slice(0, limit));
+    const syncDispute = jest.fn().mockResolvedValue({ disposition: 'unchanged' });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const report = await reconcileStripeDisputes({
+      stripe: { disputes: { list: listOf([]) } }, listOpenDisputeIds: listOpen, syncDispute, now: () => NOW,
+    });
+
+    expect(listOpen).toHaveBeenCalledWith(501);
+    expect(report.openDisputesCapped).toBe(true);
+    expect(report.syncedDisputes).toBe(500);
+    expect(syncDispute).not.toHaveBeenCalledWith('dp_open_500');
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+
+    const exact = await reconcileStripeDisputes({
+      stripe: { disputes: { list: listOf([]) } }, listOpenDisputeIds: async (limit) => ids.slice(0, Math.min(limit, 500)), syncDispute, now: () => NOW,
+    });
+    expect(exact.openDisputesCapped).toBe(false);
   });
 
   it('FREQ-567-AC-04: 一覧は最大500件（5ページ）で打ち切る', async () => {

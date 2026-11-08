@@ -30,7 +30,7 @@ const signalDeps: SignalDeps = {
 // PUBLIC: Stripe からの知らせの受け取り口。ログインの代わりに Stripe の署名で確かめる。
 /**
  * PUBLIC: Stripe の知らせの受け取り口（設計書 2026-10-05 グループ B の 5-1）。
- * 1 署名（時刻の差は5分まで）→ 2 13種か → 3 モードが鍵と合うか → 4 保存（同じ番号は1回だけ）→ 5 200 を返し、after() で worker。
+ * 1 署名（時刻の差は5分まで）→ 2 18種か → 3 モードが鍵と合うか → 4 保存（同じ番号は1回だけ）→ 5 200 を返し、after() で worker。
  * 署名の欠落・不一致は400。監査ログに1件ずつ書かず、件数だけ数える（R-05）。
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {

@@ -39,6 +39,8 @@ export type StripeReconcileResponse = {
   syncedPayouts: number;
   payoutMismatches: number;
   syncedDisputes: number;
+  /** 未決着の dispute が上限を超え、古い順の上限までしか取り直していない */
+  openDisputesCapped: boolean;
   errors: StripeReconciliationError[];
 };
 
@@ -130,7 +132,7 @@ export async function POST(request: Request) {
     try {
       disputeReport = await reconcileStripeDisputes({
         stripe: stripe as unknown as ReconcileDisputeStripe,
-        listOpenDisputeIds: () => accountingDatabase.listOpenDisputeIds!(),
+        listOpenDisputeIds: (limit) => accountingDatabase.listOpenDisputeIds!(limit),
         syncDispute: (disputeId) => syncDisputeAccounting({
           stripe: stripe as unknown as StripeDisputeClient,
           database: accountingDatabase,
@@ -144,7 +146,7 @@ export async function POST(request: Request) {
     } catch (disputeError) {
       const reason = webhookFailureCause(disputeError);
       console.error('[stripe-reconcile] Dispute reconciliation failed', reason);
-      disputeReport = { syncedDisputes: 0, errors: [{ sourceId: 'disputes', reason }] };
+      disputeReport = { syncedDisputes: 0, openDisputesCapped: false, errors: [{ sourceId: 'disputes', reason }] };
     }
 
     // 返金の照合の失敗は、{ sourceId, reason } の形にそろえる（sourceId は支払いの番号。一覧そのものを読めなかった時は 'refunds'。
@@ -162,6 +164,7 @@ export async function POST(request: Request) {
       syncedPayouts: payoutReport.syncedPayouts,
       payoutMismatches: payoutReport.payoutMismatches,
       syncedDisputes: disputeReport.syncedDisputes,
+      openDisputesCapped: disputeReport.openDisputesCapped,
       errors: [...orderReport.errors, ...refundErrors, ...payoutReport.errors, ...disputeReport.errors],
     };
 
@@ -179,6 +182,7 @@ export async function POST(request: Request) {
         syncedPayouts: data.syncedPayouts,
         payoutMismatches: data.payoutMismatches,
         syncedDisputes: data.syncedDisputes,
+        openDisputesCapped: data.openDisputesCapped,
         failed: data.errors.length,
         errors: data.errors.slice(0, MAX_AUDITED_ERRORS),
         unmatchedRecentPaymentIds: orderReport.unmatchedRecentPayments

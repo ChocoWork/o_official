@@ -211,8 +211,13 @@ type ReconcileDisputeStripe = {
 
 export type StripeDisputeReconciliationReport = {
   syncedDisputes: number;
+  /** 表の未決着が上限（MAX_OPEN_DISPUTES）を超えていて、古い順の上限までしか取り直していない */
+  openDisputesCapped: boolean;
   errors: StripeReconciliationError[];
 };
+
+/** 毎晩取り直す未決着の dispute の上限（実際はごく少数。暴走した時に毎晩の実行を止めないための枠。作成の古い順） */
+const MAX_OPEN_DISPUTES = 500;
 
 /** 新しい dispute を拾う範囲（作成から30日。Stripe が出来事を残す期間と同じ） */
 const DISPUTE_LOOKBACK_SECONDS = 30 * 24 * 60 * 60;
@@ -222,7 +227,8 @@ const MAX_LISTED_DISPUTES = 500;
 
 /**
  * 毎晩の、カード会社からの支払いの取り消しの取りこぼし拾い（FREQ-567-AC-04）。
- * ① 表の中で決着していない dispute は、作成から30日を過ぎた物も全部取り直す（判断は2か月以上かかる）。
+ * ① 表の中で決着していない dispute は、作成から30日を過ぎた物も取り直す（判断は2か月以上かかる）。作成の古い順に500件まで
+ *    （超えたら openDisputesCapped を立てる）。
  * ② 作成から30日以内の新しい dispute を Stripe の一覧から最大500件拾う。
  * 各 dispute を取り込み（dispute-sync.ts）に通す。1件の失敗で全体を止めず、番号と原因の記号だけを残す。
  * 表か一覧を読めなければそのまま投げる（窓口が受け止めて、失敗として errors に残す）。
@@ -234,11 +240,15 @@ export async function reconcileStripeDisputes({
   now = () => new Date(),
 }: {
   stripe: ReconcileDisputeStripe;
-  listOpenDisputeIds: () => Promise<string[]>;
+  listOpenDisputeIds: (limit: number) => Promise<string[]>;
   syncDispute: (disputeId: string) => Promise<unknown>;
   now?: () => Date;
 }): Promise<StripeDisputeReconciliationReport> {
-  const disputeIds = new Set<string>(await listOpenDisputeIds());
+  // 上限より1件多く読み、超えたかどうかを知る
+  const open = await listOpenDisputeIds(MAX_OPEN_DISPUTES + 1);
+  const openDisputesCapped = open.length > MAX_OPEN_DISPUTES;
+  if (openDisputesCapped) console.warn('[dispute-reconcile] open disputes exceed the limit; only the oldest are re-read');
+  const disputeIds = new Set<string>(open.slice(0, MAX_OPEN_DISPUTES));
   let listed = 0;
   for await (const dispute of stripe.disputes.list({
     limit: 100,
@@ -249,7 +259,7 @@ export async function reconcileStripeDisputes({
     if (listed >= MAX_LISTED_DISPUTES) break;
   }
 
-  const report: StripeDisputeReconciliationReport = { syncedDisputes: 0, errors: [] };
+  const report: StripeDisputeReconciliationReport = { syncedDisputes: 0, openDisputesCapped, errors: [] };
   for (const disputeId of disputeIds) {
     try {
       await syncDispute(disputeId);

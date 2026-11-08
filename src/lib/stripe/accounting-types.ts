@@ -17,8 +17,10 @@ export interface StripeAccountingDatabase {
   ): Promise<{ disputeId: string; eventInserted: boolean }>;
   /** 表にある dispute の今の状態（無ければ null） */
   findDisputeStatus?(disputeId: string): Promise<string | null>;
-  /** 表の中で決着していない（won・lost・warning_closed 以外の）dispute の番号 */
-  listOpenDisputeIds?(): Promise<string[]>;
+  /** 表の中で決着していない（won・lost・warning_closed 以外の）dispute の番号。作成の古い順に limit 件まで */
+  listOpenDisputeIds?(limit: number): Promise<string[]>;
+  /** その dispute の lost の履歴に、Stripe 側の時刻（stripe_event_created_at）が入った行が1つでもあるか */
+  hasLostEventTime?(disputeId: string): Promise<boolean>;
   findById(table: StripeAccountingTable, id: string): Promise<Record<string, unknown> | null>;
   insert(table: StripeAccountingTable, values: Record<string, unknown>): Promise<Record<string, unknown>>;
   updateById(
@@ -115,6 +117,8 @@ export interface StripeDisputeInput {
   evidenceDueBy: string | null;
   evidenceDetails: unknown;
   stripeCreatedAt: string;
+  /** Stripe から取り直した時刻。DB は、これより新しい取り直しの状態を上書きしない */
+  syncedAt: string;
 }
 
 /** record_stripe_dispute の _event。rawPayload にはお客様の個人情報が入りうる（service_role だけが読む・ログに出さない） */

@@ -68,7 +68,7 @@ function refundReport(overrides: Record<string, unknown> = {}) {
 }
 
 function disputeReport(overrides: Record<string, unknown> = {}) {
-  return { syncedDisputes: 0, errors: [], ...overrides };
+  return { syncedDisputes: 0, openDisputesCapped: false, errors: [], ...overrides };
 }
 
 function payoutReport(overrides: Record<string, unknown> = {}) {
@@ -422,10 +422,22 @@ describe('POST /api/cron/stripe-reconcile', () => {
       expect(response.status).toBe(200);
       expect(mockReconcileDisputes).toHaveBeenCalledTimes(1);
       expect(body.data.syncedDisputes).toBe(3);
+      expect(body.data.openDisputesCapped).toBe(false);
       expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockDatabase, 'stripe_reconcile', true, null);
       expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
         action: 'stripe.reconcile',
         metadata: expect.objectContaining({ syncedDisputes: 3 }),
+      }));
+    });
+
+    it('FREQ-567-AC-04: 未決着の dispute が上限を超えた夜は、応答と監査にそれが載る', async () => {
+      mockReconcileDisputes.mockResolvedValue(disputeReport({ syncedDisputes: 500, openDisputesCapped: true }));
+
+      const body = await (await POST(authorizedRequest())).json();
+
+      expect(body.data.openDisputesCapped).toBe(true);
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        metadata: expect.objectContaining({ syncedDisputes: 500, openDisputesCapped: true }),
       }));
     });
 

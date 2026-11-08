@@ -1033,6 +1033,8 @@ describeLocalDb('S10 final assert: controller only', (db) => {
     [edit('COALESCE(EXCLUDED.order_id, public.stripe_disputes.order_id)', 'EXCLUDED.order_id', writerS10), 'acc_s10_function_attrs'],
     [edit('is_charge_refundable = EXCLUDED.is_charge_refundable,', 'is_charge_refundable = EXCLUDED.is_charge_refundable,\n    amount = EXCLUDED.amount,', writerS10), 'acc_s10_function_attrs'],
     [edit('ACCOUNTING_ARGUMENT_INVALID', 'ACCOUNTING_ARGUMENT_BAD', writerS10), 'acc_s10_function_attrs'],
+    [edit('WHERE public.stripe_disputes.synced_at <= EXCLUDED.synced_at', 'WHERE true', writerS10), 'acc_s10_function_attrs'],
+    [edit('WHERE public.stripe_disputes.synced_at <= EXCLUDED.synced_at', 'WHERE public.stripe_disputes.synced_at >= EXCLUDED.synced_at', writerS10), 'acc_s10_function_attrs'],
     [edit('RETURN pg_catalog.jsonb_build_object', 'PERFORM private.accounting_lock_all(NULL); RETURN pg_catalog.jsonb_build_object', writerS10), 'acc_s10_function_attrs'],
     [edit('SELECT private.record_stripe_dispute(_dispute, _event)', 'SELECT private.record_stripe_dispute(_dispute, NULL)', publicWriterS10), 'acc_s10_function_attrs'],
     // no row written

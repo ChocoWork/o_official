@@ -74,6 +74,34 @@ describeLocalDb('S10 dispute intake: controller only', (db) => {
     expect((await eventRows(created.dispute.id)).map((e) => e.status)).toEqual(['needs_response', 'won']);
   });
 
+  test('FREQ-567-AC-02: 古く取り直した状態は、新しく取り直した状態を上書きしない（履歴の行は足す）。同じ時刻なら更新する', async () => {
+    const created = disputeFixture({ dispute: { synced_at: '2026-06-10T00:10:00Z' } });
+    await record(created);
+    // 新しい取り直し（00:20）で won
+    const newer = disputeFixture({
+      dispute: { ...created.dispute, status: 'won', synced_at: '2026-06-10T00:20:00Z' },
+      event: { event_type: 'charge.dispute.closed', status: 'won' },
+    });
+    await record(newer);
+    // 遅れて書き込まれた、もっと前（00:15）の取り直し（まだ under_review）
+    const older = disputeFixture({
+      dispute: { ...created.dispute, status: 'under_review', evidence_details: { stale: true }, synced_at: '2026-06-10T00:15:00Z' },
+      event: { event_type: 'charge.dispute.updated', status: 'under_review' },
+    });
+    expect(await record(older)).toEqual({ dispute_id: created.dispute.id, event_inserted: true });
+    const row = await disputeRow(created.dispute.id);
+    expect(row.status).toBe('won');
+    expect(row.evidence_details).toEqual(newer.dispute.evidence_details);
+    expect(row.synced_at.toISOString()).toBe('2026-06-10T00:20:00.000Z');
+    expect((await eventRows(created.dispute.id)).map((e) => e.status).sort()).toEqual(['needs_response', 'under_review', 'won']);
+    // 同じ時刻の取り直しは更新する
+    await record(disputeFixture({ dispute: { ...created.dispute, status: 'lost', synced_at: '2026-06-10T00:20:00Z' }, event: null }));
+    expect((await disputeRow(created.dispute.id)).status).toBe('lost');
+    // 時刻を渡さない呼び方は now() で、新しい取り直しとして更新する
+    await record(disputeFixture({ dispute: { ...created.dispute, status: 'won', synced_at: undefined }, event: null }));
+    expect((await disputeRow(created.dispute.id)).status).toBe('won');
+  });
+
   test('FREQ-567-AC-02: 履歴を足さない呼び方（_event がNULL）は dispute の可変の欄だけを更新する', async () => {
     const created = disputeFixture();
     await record(created);
