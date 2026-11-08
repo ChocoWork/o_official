@@ -62,7 +62,10 @@ const ENTRIES_CORRECT: PermissionCode = 'admin.accounting.entries.correct';
 
 const queryOf = (request: Request): URLSearchParams => new URL(request.url).searchParams;
 
-/** 続きの目印を付けた問い合わせを DB が 22023 で断るのは、目印が古い時だけ（ほかの入力は先に検査済み）。画面に最初から読み直させる。 */
+/**
+ * 続きの目印を付けた問い合わせを DB が 22023 で断るのは、目印が古い時だけ（ほかの入力は先に検査済み）。画面に最初から読み直させる。
+ * 年末の一覧（`list_year_end_shipments` が目印の発送票の存在を確かめる）だけに使う。ほかの一覧は目印を確かめない単純な続きなので使わない。
+ */
 async function withRestart<T>(hasCursor: boolean, load: () => Promise<T>): Promise<T> {
 	try {
 		return await load();
@@ -81,7 +84,7 @@ export function handlePendingEventsGet(request: Request): Promise<Response> {
 	return handleRead(request, label('GET', 'pending-events'), async (client, req) => {
 		const query = parsePendingEventsQuery(queryOf(req));
 		if (!query) throw invalid();
-		return withRestart(query.afterAt !== undefined, () => listPendingEvents(client, query));
+		return listPendingEvents(client, query);
 	});
 }
 
@@ -157,7 +160,7 @@ export function handleDisputesGet(request: Request): Promise<Response> {
 	return handleRead(request, label('GET', 'disputes'), async (client, req) => {
 		const query = parseDisputesQuery(queryOf(req));
 		if (!query) throw invalid();
-		return withRestart(query.afterAt !== undefined, () => listDisputes(client, query));
+		return listDisputes(client, query);
 	});
 }
 
@@ -255,9 +258,7 @@ export function handleDeferredRevenueGet(request: Request): Promise<Response> {
 		const query = parseDeferredRevenueQuery(queryOf(req));
 		if (!query) throw invalid();
 		const asOf = query.asOf ?? toJstDate(new Date());
-		const list = await withRestart(query.afterOrder !== undefined, () =>
-			listDeferredRevenue(client, { asOf, limit: query.limit, afterOrder: query.afterOrder }),
-		);
+		const list = await listDeferredRevenue(client, { asOf, limit: query.limit, afterOrder: query.afterOrder });
 		const anomalies = await listDeferredRevenueAnomalies(client);
 		return { ...list, anomalies: anomalies.anomalies ?? [] };
 	});

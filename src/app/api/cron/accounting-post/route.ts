@@ -32,7 +32,13 @@ export async function POST(request: Request) {
     const database = await createServiceRoleClient();
     store = database as unknown as OpsStore;
     const result = await runAccountingPosting(database);
-    const openPending = await countOpenPendingEvents(database);
+    // 件数の読みが失敗しても、計上が済んだ成功と心拍は変えない（未解決の数は null で返す）
+    let openPending: number | null = null;
+    try {
+      openPending = await countOpenPendingEvents(database);
+    } catch (countError) {
+      console.error('[accounting-post] Failed to count open pending events', webhookFailureCause(countError));
+    }
     const data = { ...result, openPending };
 
     // 件数だけを残す（金額・注文・お客様の情報は載せない）

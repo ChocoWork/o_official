@@ -84,6 +84,16 @@ describe('POST /api/cron/accounting-post', () => {
     });
   });
 
+  it('FREQ-569-AC-01: 未解決の数を読めなくても、計上が済んでいれば200・心拍は成功のまま（openPendingはnull）', async () => {
+    mockCountOpen.mockRejectedValue(Object.assign(new Error('PRIVATE-MARKER'), { code: 'db_unavailable' }));
+    const response = await POST(authorizedRequest());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ data: { ...RESULT, openPending: null } });
+    expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockDatabase, 'accounting_post', true, null);
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success', metadata: { ...RESULT, openPending: null } }));
+    expect(JSON.stringify(error.mock.calls)).not.toContain('PRIVATE-MARKER');
+  });
+
   it('FREQ-569-AC-01: 係が失敗したら502にし、心拍に失敗と原因の記号だけを残す（例外の文・個人の情報は出さない）', async () => {
     mockRunPosting.mockRejectedValue(Object.assign(new Error('PRIVATE-MARKER 氏名 住所'), { code: 'db_unavailable' }));
 

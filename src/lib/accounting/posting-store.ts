@@ -1,13 +1,8 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import {
-	ACCOUNTING_ERRORS,
-	AccountingStoreError,
-	SOLE_ENDED_NOT_SWITCHED,
-	type AccountingErrorCode,
-	type ShipmentMeta,
-} from '@/lib/accounting/accounting-types';
+import { classify, parse, rpc, sqlstateOf } from '@/lib/accounting/accounting-store';
+import { AccountingStoreError, type ShipmentMeta } from '@/lib/accounting/accounting-types';
 import { ACCOUNTING_EVENT_KINDS } from '@/lib/accounting/event-kinds';
 import {
 	MAX_POSTING_BATCH,
@@ -21,43 +16,7 @@ import {
 } from '@/lib/accounting/posting-types';
 
 // 計上待ち・計上係・支払いの取り消し・Stripe の記録・照合・年末の照合の public 入口を service_role で呼ぶ。
-// 失敗は message と SQLSTATE が表と両方一致した時だけ固定コードにし、DB の生の文は持たない（accounting-store と同じ規則）。
-
-const sqlstateOf = (error: unknown): unknown =>
-	error !== null && typeof error === 'object' && 'code' in error ? error.code : undefined;
-
-function classify(error: unknown): AccountingStoreError {
-	if (
-		error !== null &&
-		typeof error === 'object' &&
-		'message' in error &&
-		'code' in error &&
-		typeof error.message === 'string' &&
-		Object.hasOwn(ACCOUNTING_ERRORS, error.message) &&
-		ACCOUNTING_ERRORS[error.message as AccountingErrorCode][0] === error.code
-	) {
-		const details = 'details' in error ? error.details : undefined;
-		return new AccountingStoreError(error.message, undefined, { soleEndedNotSwitched: details === SOLE_ENDED_NOT_SWITCHED });
-	}
-	return new AccountingStoreError(null, sqlstateOf(error));
-}
-
-async function rpc(client: SupabaseClient, name: string, args?: Record<string, unknown>): Promise<unknown> {
-	let response;
-	try {
-		response = args === undefined ? await client.rpc(name) : await client.rpc(name, args);
-	} catch (error) {
-		throw new AccountingStoreError(null, sqlstateOf(error));
-	}
-	if (response.error) throw classify(response.error);
-	return response.data as unknown;
-}
-
-function parse<T>(schema: z.ZodType<T>, raw: unknown): T {
-	const result = schema.safeParse(raw);
-	if (!result.success) throw new AccountingStoreError();
-	return result.data;
-}
+// 失敗は message と SQLSTATE が表と両方一致した時だけ固定コードにし、DB の生の文は持たない（accounting-store の classify をそのまま使う）。
 
 const uuid = z.string().uuid();
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);

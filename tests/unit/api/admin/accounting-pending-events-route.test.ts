@@ -105,16 +105,6 @@ describe('GET /api/admin/accounting/pending-events', () => {
 		expect(rpcImpl).not.toHaveBeenCalled();
 	});
 
-	test('FREQ-569-AC-01: 続きの目印が古くてDBが22023で断ったら、一般の400でなく409で最初から読み直させる', async () => {
-		const stale = `?afterAt=2026-11-09T01:00:00%2B00:00&afterId=${uuid(209)}`;
-		rpcImpl.mockImplementation(async (name: string) => (name === 'list_accounting_pending_events' ? dbError('ACCOUNTING_ARGUMENT_INVALID', '22023') : defaultRpc(name)));
-		const response = await get(stale);
-		expect([response.status, await read(response)]).toEqual([409, { code: 'ACCOUNTING_LIST_RESTART', error: '一覧が変わりました。最初から読み直してください。' }]);
-		// 目印の無い問い合わせの22023は一般の入力の誤り。
-		const plain = await get();
-		expect([plain.status, (await read(plain)).code]).toEqual([400, 'ACCOUNTING_ARGUMENT_INVALID']);
-	});
-
 	test('FREQ-569-AC-03: 読みはadmin.finance.readを求め、aal1を断り、壊れた応答・未知の失敗は固定の500', async () => {
 		grants.current = [PERM.manage, PERM.correct];
 		expect((await get()).status).toBe(403);

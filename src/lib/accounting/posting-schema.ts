@@ -39,7 +39,8 @@ export const DEFAULT_PENDING_PAGE = 50;
 const MAX_SAFE = Number.MAX_SAFE_INTEGER;
 /** 銀行の取引の番号・Stripe の取引の番号。DB と同じ形（Ruling P2-M6）。 */
 export const TOPUP_REFERENCE_PATTERN = /^[A-Za-z0-9_.-]{1,128}$/;
-export const DISPUTE_ID_PATTERN = /^dp_[A-Za-z0-9]+$/;
+/** Stripe の取り消しの番号。全体で255文字まで。 */
+export const DISPUTE_ID_PATTERN = /^dp_[A-Za-z0-9]{1,252}$/;
 
 export const disputeCauseSchema = z.enum(DISPUTE_CAUSES);
 export const disputeIdSchema = z.string().regex(DISPUTE_ID_PATTERN);
@@ -126,7 +127,8 @@ export const invoiceBodySchema = z
 		month: monthSchema,
 		total: yenSchema,
 		tax: yenSchema,
-		documentRef: z.string().trim().max(MAX_INVOICE_REF).nullable(),
+		// 前後の空白を落として空なら「参照なし」（null）として扱う
+		documentRef: z.string().trim().max(MAX_INVOICE_REF).transform((value) => (value === '' ? null : value)).nullable(),
 		/** 初めて入れる月は null、直す時は読んだ版。 */
 		expectedVersion: versionSchema.nullable(),
 		requestKey: uuidSchema,

@@ -102,6 +102,13 @@ describe('/api/admin/accounting/stripe-invoices', () => {
 		for (const secret of ['12345', '1122', 'INV-1', KEY]) expect(audit).not.toContain(secret);
 	});
 
+	test('FREQ-566-AC-02: 文書の参照が空白だけならnull（参照なし）としてDBへ渡す', async () => {
+		expect((await putInvoice({ ...invoiceBody, documentRef: '   ' })).status).toBe(200);
+		expect(rpcImpl).toHaveBeenCalledWith('admin_set_stripe_invoice_record', expect.objectContaining({ _document_ref: null }));
+		await putInvoice({ ...invoiceBody, documentRef: ' INV-2 ' });
+		expect(rpcImpl).toHaveBeenLastCalledWith('admin_set_stripe_invoice_record', expect.objectContaining({ _document_ref: 'INV-2' }));
+	});
+
 	test('FREQ-566-AC-02: 請求書の記録のPUTは版違いを409で返す', async () => {
 		rpcImpl.mockImplementation(async (name: string) => (name === 'admin_set_stripe_invoice_record' ? dbError('ACCOUNTING_VERSION_CONFLICT', '40001') : defaultRpc(name)));
 		const conflict = await putInvoice({ ...invoiceBody, expectedVersion: '1' });

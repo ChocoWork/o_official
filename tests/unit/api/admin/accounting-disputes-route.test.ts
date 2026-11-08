@@ -146,11 +146,7 @@ describe('/api/admin/accounting/disputes', () => {
 		expect((await getDisputes()).status).toBe(403);
 	});
 
-	test('FREQ-568-AC-05: 古い続きの目印は409で最初から読み直させる。一覧に画面に出さない欄（資料・メール）が無い', async () => {
-		rpcImpl.mockImplementation(async (name: string) => (name === 'list_accounting_disputes' ? dbError('ACCOUNTING_ARGUMENT_INVALID', '22023') : defaultRpc(name)));
-		const stale = await getDisputes(`?afterAt=2026-11-02T00:00:00%2B00:00&afterId=${DISPUTE}`);
-		expect([stale.status, (await read(stale)).code]).toEqual([409, 'ACCOUNTING_LIST_RESTART']);
-		rpcImpl.mockImplementation(async (name: string) => defaultRpc(name));
+	test('FREQ-568-AC-05: 一覧に画面に出さない欄（資料・メール）が無い', async () => {
 		const text = JSON.stringify(await read(await getDisputes()));
 		expect(text).not.toMatch(/raw_payload|evidence|email|name"/i);
 	});
@@ -179,10 +175,13 @@ describe('POST /api/admin/accounting/disputes/[id]/assign', () => {
 	});
 
 	test('FREQ-568-AC-05: 不正なIDや本文は400でDBを呼ばず、振り替えられない状態は409', async () => {
-		for (const id of ['xyz', 'dp_', 'dp_a-b', 'DP_abc', '../x', uuid(1)]) {
+		for (const id of ['xyz', 'dp_', 'dp_a-b', 'DP_abc', '../x', uuid(1), 'dp_' + 'a'.repeat(253)]) {
 			const response = await assign({ requestKey: KEY }, id);
 			expect([id, response.status]).toEqual([id, 400]);
 		}
+		// 255文字ちょうどは通る
+		expect((await assign({ requestKey: KEY }, 'dp_' + 'a'.repeat(252))).status).toBe(200);
+		rpcImpl.mockClear();
 		for (const value of [{}, { requestKey: 'bad' }, { requestKey: KEY, entryId: uuid(1) }, null]) {
 			expect([JSON.stringify(value), (await assign(value)).status]).toEqual([JSON.stringify(value), 400]);
 		}

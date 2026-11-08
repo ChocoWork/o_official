@@ -17,11 +17,12 @@ import { ACCOUNTING_EVENT_KINDS } from '@/lib/accounting/event-kinds';
 import type { SavedJournalEntry } from '@/lib/accounting/journal-types';
 import { formatPeriodName, validateNewPeriod, type AccountingPeriod, type ValidateNewPeriodResult } from '@/lib/accounting/period';
 
-const sqlstateOf = (error: unknown): unknown =>
+/** DB の誤りを固定コードに直す道具。posting-store も同じ物を使う（写しを持たない）。 */
+export const sqlstateOf = (error: unknown): unknown =>
 	error !== null && typeof error === 'object' && 'code' in error ? error.code : undefined;
 
 /** message と SQLSTATE の両方が表の1行と一致した時だけ固定コードにする。DETAIL は固定の語だけを見る。 */
-function classify(error: unknown): AccountingStoreError {
+export function classify(error: unknown): AccountingStoreError {
 	if (
 		error !== null &&
 		typeof error === 'object' &&
@@ -37,7 +38,7 @@ function classify(error: unknown): AccountingStoreError {
 	return new AccountingStoreError(null, sqlstateOf(error));
 }
 
-async function rpc(client: SupabaseClient, name: string, args?: Record<string, unknown>): Promise<unknown> {
+export async function rpc(client: SupabaseClient, name: string, args?: Record<string, unknown>): Promise<unknown> {
 	let response;
 	try {
 		response = args === undefined ? await client.rpc(name) : await client.rpc(name, args);
@@ -48,7 +49,7 @@ async function rpc(client: SupabaseClient, name: string, args?: Record<string, u
 	return response.data as unknown;
 }
 
-function parse<T>(schema: z.ZodType<T>, raw: unknown): T {
+export function parse<T>(schema: z.ZodType<T>, raw: unknown): T {
 	const result = schema.safeParse(raw);
 	if (!result.success) throw new AccountingStoreError();
 	return result.data;

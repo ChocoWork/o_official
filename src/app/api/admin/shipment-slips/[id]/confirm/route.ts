@@ -3,6 +3,7 @@ import 'server-only';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { scheduleAccountingPosting } from '@/lib/accounting/posting-runner';
+import { AccountingStoreError } from '@/lib/accounting/accounting-types';
 import { getSlipDisputeHolds } from '@/lib/accounting/posting-store';
 import { DISPUTE_HOLD_CODE, DISPUTE_HOLD_MESSAGE } from '@/lib/orders/shipment-slips/shipment-slip-notice';
 import { expectedVersionSchema, handleShipmentSlipWrite, requestKeySchema } from '@/lib/orders/shipment-slips/shipment-slip-route';
@@ -40,7 +41,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     auditAction: 'admin.shipment_slips.confirm', errorCode: 'SHIPMENT_SLIP_CONFIRM_FAILED',
     schema: bodySchema, status: 200,
     run: async (client, actorId, slipId, body) => {
-      const holds = await getSlipDisputeHolds(client, slipId as string);
+      let holds;
+      try {
+        holds = await getSlipDisputeHolds(client, slipId as string);
+      } catch (error) {
+        // 判断待ちを読めなかったことを、確定の失敗と見分けられるよう記号だけ残す（番号・個人の情報は書かない）
+        console.error('[shipment-slip.confirm] hold read failed', error instanceof AccountingStoreError ? (error.code ?? error.sqlstate ?? 'AccountingStoreError') : 'UnknownError');
+        throw error;
+      }
       if (holds.length > 0) {
         held.orderIds = [...new Set(holds.map((hold) => hold.orderId))];
         throw new DisputeHoldError();

@@ -132,14 +132,11 @@ describe('GET /api/admin/accounting/deferred-revenue', () => {
 		expect(JSON.stringify(body)).not.toMatch(/email|@|"name"/i);
 	});
 
-	test('FREQ-569-AC-04: 不正な問い合わせはDBを呼ばず400、古い目印は409で最初から読み直させる、権限はreadだけ', async () => {
+	test('FREQ-569-AC-04: 不正な問い合わせはDBを呼ばず400、権限はreadだけ', async () => {
 		for (const query of ['?asOf=2026-02-30', '?limit=0', '?limit=201', '?afterOrder=bad', '?x=1', '?asOf=2026-12-31&asOf=2026-12-30']) {
 			expect([query, (await getDeferred(query)).status]).toEqual([query, 400]);
 		}
 		expect(rpcImpl).not.toHaveBeenCalled();
-		rpcImpl.mockImplementation(async (name: string) => (name === 'list_deferred_revenue' ? dbError('ACCOUNTING_ARGUMENT_INVALID', '22023') : defaultRpc(name)));
-		const stale = await getDeferred('?afterOrder=' + uuid(599));
-		expect([stale.status, (await read(stale)).code]).toEqual([409, 'ACCOUNTING_LIST_RESTART']);
 		grants.current = [PERM.manage];
 		expect((await getDeferred()).status).toBe(403);
 	});

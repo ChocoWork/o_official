@@ -340,6 +340,9 @@ describe('判断待ちのカード会社の取り消しがある票の確定（4
     expect(mockSchedule).not.toHaveBeenCalled();
     expect(result.text).not.toContain('PRIVATE-MARKER');
     expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('PRIVATE-MARKER');
+    // 読めなかったことを記号だけでログに残す（番号・生の文は書かない）
+    expect(console.error).toHaveBeenCalledWith('[shipment-slip.confirm] hold read failed', 'XX000');
+    expect(inspect((console.error as jest.Mock).mock.calls, { depth: null })).not.toContain('PRIVATE-MARKER');
   });
 
   test('FREQ-568-AC-06: 確定が断られたら係を流さない', async () => {
