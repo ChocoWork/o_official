@@ -4,10 +4,11 @@ import path from 'node:path';
 import { describeLocalDb } from './helpers/local-db';
 import {
   ACCOUNTING_S6_FILES, ACCOUNTING_S6_SQL as sql, accountingS6Section, pinAccountingS6Baseline,
+  ACCOUNTING_S7_FILES, ACCOUNTING_S7_SQL as sqlS7, accountingS7Section, pinAccountingS7Baseline,
 } from './helpers/accounting-orders-fixtures';
 
 // Accounting plan 2 S6 (FREQ-569 / FREQ-563): the shape of the migration and its final assert. The DB part is
-// controller only. Tasks 2-9 add the asserts of S7-S14 below.
+// controller only. Tasks 2-9 add the asserts of S7-S14 below (S7: the payment posting, Task 2).
 const assertion = accountingS6Section('FINAL_ASSERT');
 const body = accountingS6Section('BODY');
 const details = ['acc_s6_tables', 'acc_s6_constraints', 'acc_s6_immutable', 'acc_s6_rls_acl', 'acc_s6_function_attrs',
@@ -239,5 +240,137 @@ describeLocalDb('S6 final assert: controller only', (db) => {
       d := replace(d, E'PERFORM private.lock_group_g_shipment_slips(', E'-- ACC_P4_BEGIN\\n  PERFORM 2;\\n  -- ACC_P4_END\\n  PERFORM private.lock_group_g_shipment_slips(');
       execute d; end $x$`;
     expect(await attempt(addP3AndTamper)).toEqual(failed('acc_s6_g_body_unchanged'));
+  });
+});
+
+// ---- S7 (Task 2): the payment posting -------------------------------------------------------------------------------
+const assertionS7 = accountingS7Section('FINAL_ASSERT');
+const bodyS7 = accountingS7Section('BODY');
+const detailsS7 = ['acc_s7_functions', 'acc_s7_function_attrs', 'acc_s7_existing_dml_allowlist'];
+const statementsS7 = bodyS7.replace(/\$\$[\s\S]*?\$\$/g, '$$$$').split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n');
+const signatureS7 = 'private.accounting_post_payment_events(integer)';
+
+describe('S7 source contract (no DB)', () => {
+  test('FREQ-562-AC-01: S7はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S7_FILES).toEqual(['20261108160000_accounting_p2_payment_posting.sql']);
+    expect(ACCOUNTING_S7_FILES[0] > ACCOUNTING_S6_FILES[0]).toBe(true);
+    expect(sqlS7).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(sqlS7.startsWith('BEGIN;\n')).toBe(true);
+    expect(sqlS7.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(sqlS7.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(sqlS7.trimEnd()).toMatch(/-- ACC_S7_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect(assertionS7).not.toBe('');
+    expect([...new Set([...assertionS7.matchAll(/'(acc_s7_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...detailsS7].sort());
+    expect(assertionS7).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(assertionS7.replace(/''55000''/g, '')).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(sqlS7).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+  });
+
+  test('FREQ-562-AC-05: S7の実行時のDMLは比べる元の控えのINSERTだけで、関数は入口を持たず service_role にも渡さない', () => {
+    expect([...statementsS7.matchAll(/^\s*(INSERT INTO|UPDATE|DELETE FROM|TRUNCATE(?: TABLE)?)\s+([\w.]+)/gm)].map((m) => `${m[1]} ${m[2]}`))
+      .toEqual(['INSERT INTO pg_temp.accounting_s7_baseline']);
+    expect(bodyS7).toContain('REVOKE ALL ON FUNCTION private.accounting_post_payment_events(integer) FROM PUBLIC, anon, authenticated, service_role;');
+    expect(bodyS7).not.toMatch(/GRANT EXECUTE/i);
+    expect(bodyS7).not.toMatch(/CREATE (OR REPLACE )?FUNCTION public\./);
+  });
+
+  test('FREQ-562-AC-05: 係の本文は最初に accounting_lock_all(NULL) を取り、行ロックと orders.paid_at を使わず、出来事ごとの例外処理で包む', () => {
+    const fn = bodyS7.split('CREATE FUNCTION private.accounting_post_payment_events(')[1]?.split('\n$$;')[0] ?? '';
+    expect(fn).not.toBe('');
+    expect(fn.indexOf('PERFORM private.accounting_lock_all(NULL);')).toBeGreaterThan(0);
+    expect(fn.indexOf('PERFORM private.accounting_lock_all(NULL);')).toBeLessThan(fn.indexOf('FOR v_tx IN'));
+    expect(fn).not.toMatch(/FOR (SHARE|UPDATE|NO KEY UPDATE|KEY SHARE)/i);
+    expect(fn).not.toMatch(/paid_at/i);
+    expect(fn.indexOf('EXCEPTION WHEN OTHERS')).toBeGreaterThan(fn.indexOf('private.accounting_period_for_event(v_date)'));
+    expect(fn.indexOf('private.accounting_post_journal_core(')).toBeLessThan(fn.indexOf('EXCEPTION WHEN OTHERS'));
+    // The message of the exception is never stored: SQLERRM only feeds a fixed-code test.
+    expect(fn).not.toMatch(/PG_EXCEPTION_CONTEXT/);
+    expect(fn).not.toMatch(/'(?:message|detail|context)'/);
+  });
+
+  test('FREQ-562-AC-01: S7の説明の日本語は ACCOUNTING_LABELS の語の出力と同じ', () => {
+    const literals = [...bodyS7.matchAll(/U&'(?:[^']|'')*'/g)].map((m) => m[0]);
+    expect(literals).toEqual(["U&'\\652F\\6255\\3044\\306E\\53D7\\3051\\53D6\\308A\\FF08\\524D\\53D7\\91D1\\FF09'"]);
+  });
+});
+
+describeLocalDb('S7 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  async function attempt(change = '', baseline: 'pin' | 'none' = 'pin'): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s7_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (baseline === 'pin') await pinAccountingS7Baseline(db());
+      if (change) await db().query(change);
+      await db().query(assertionS7);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s7_assert'); await db().query('release savepoint acc_s7_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
+  /** Re-create the function with a changed text (owner, ACL and attributes stay). */
+  const edit = (from: string, to: string) => `do $x$ declare d text; begin
+    d := pg_get_functiondef('${signatureS7}'::regprocedure);
+    if position(${quote(from)} in d) = 0 then raise exception 'TAMPER_TARGET_MISSING'; end if;
+    d := replace(d, ${quote(from)}, ${quote(to)});
+    execute d; end $x$`;
+
+  test('FREQ-562-AC-05: S7末尾assertは適用後の状態と呼出元search_pathを許す', async () => {
+    expect(assertionS7).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt("set local search_path = ''")).toBeNull();
+    await db().query('savepoint acc_s7_search_path');
+    await db().query('set local search_path = public, private, extensions, pg_catalog');
+    await pinAccountingS7Baseline(db());
+    await db().query(assertionS7);
+    expect((await db().query('show search_path')).rows[0].search_path).toBe('public, private, extensions, pg_catalog');
+    await db().query('rollback to savepoint acc_s7_search_path');
+  });
+
+  test('FREQ-562-AC-05: 後の Task が足す public の accounting_run_posting があっても S7 末尾assertは再生で通る', async () => {
+    expect(await attempt(`create function public.accounting_run_posting(_limit integer default 50) returns jsonb language sql volatile
+      security invoker set search_path = '' as $$ select '{}'::jsonb $$`)).toBeNull();
+  });
+
+  test('FREQ-562-AC-05: S7末尾assertは比べる元の控えが無いと断る', async () => {
+    expect(await attempt('', 'none')).toEqual(failed('acc_s7_existing_dml_allowlist'));
+  });
+
+  test.each([
+    ['drop function private.accounting_post_payment_events(integer)', 'acc_s7_functions'],
+    ['create function private.accounting_post_payment_events(a integer, b integer) returns jsonb language sql as $$ select null::jsonb $$', 'acc_s7_functions'],
+    [edit('PERFORM private.accounting_lock_all(NULL);', 'PERFORM 1;'), 'acc_s7_functions'],
+    [edit("'2150'", "'2151'"), 'acc_s7_functions'],
+    [edit("'1160'", "'1161'"), 'acc_s7_functions'],
+    [edit('private.accounting_period_for_event(v_date)', "private.accounting_period_for(v_date, 'soleProprietor')"), 'acc_s7_functions'],
+    [edit('private.accounting_jst_date(v_tx.stripe_created_at)', '(SELECT o.paid_at::date FROM public.orders AS o WHERE o.id = v_order_id)'), 'acc_s7_functions'],
+    [edit('FROM public.orders AS o WHERE o.id = v_tx.order_id;', 'FROM public.orders AS o WHERE o.id = v_tx.order_id FOR SHARE;'), 'acc_s7_functions'],
+    [edit('EXCEPTION WHEN OTHERS THEN', 'EXCEPTION WHEN no_data_found THEN'), 'acc_s7_functions'],
+    ['grant execute on function private.accounting_post_payment_events(integer) to service_role', 'acc_s7_function_attrs'],
+    ['grant execute on function private.accounting_post_payment_events(integer) to anon', 'acc_s7_function_attrs'],
+    ['grant execute on function private.accounting_post_payment_events(integer) to authenticated', 'acc_s7_function_attrs'],
+    ['grant execute on function private.accounting_post_payment_events(integer) to public', 'acc_s7_function_attrs'],
+    ['alter function private.accounting_post_payment_events(integer) security invoker', 'acc_s7_function_attrs'],
+    ['alter function private.accounting_post_payment_events(integer) stable', 'acc_s7_function_attrs'],
+    ['alter function private.accounting_post_payment_events(integer) set search_path = public', 'acc_s7_function_attrs'],
+    ['alter function private.accounting_post_payment_events(integer) reset search_path', 'acc_s7_function_attrs'],
+    ['alter function private.accounting_post_payment_events(integer) strict', 'acc_s7_function_attrs'],
+    [`create function public.accounting_post_payment_events(_limit integer default 50) returns jsonb language sql volatile
+      security invoker set search_path = '' as $$ select private.accounting_post_payment_events(_limit) $$`, 'acc_s7_function_attrs'],
+    ["select private.accounting_park_event('payment_confirmed', 'orders', 'tamper_s7_1', null, 'no_order', '{}')", 'acc_s7_existing_dml_allowlist'],
+    ['drop table pg_temp.accounting_s7_baseline', 'acc_s7_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s7_baseline set payload = payload - 'periods'", 'acc_s7_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s7_baseline set payload = jsonb_set(payload, '{entries}', '5')", 'acc_s7_existing_dml_allowlist'],
+    ["insert into public.accounting_periods (business_type, name, starts_on, ends_on) values ('soleProprietor', 'tamper', '2026-01-01', '2026-12-31')", 'acc_s7_existing_dml_allowlist'],
+  ])('FREQ-562-AC-05: S7改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
   });
 });

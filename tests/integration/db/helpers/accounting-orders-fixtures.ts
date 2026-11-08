@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { PgClient } from './local-db';
 import { seedGroupG3Slip } from './group-g3-fixtures';
 import { seedHOrderUnits } from './group-h-fixtures';
@@ -109,4 +110,77 @@ export async function seedBareSlip(client: PgClient, input: { orderItemId: strin
 export async function slipFactSeq(client: PgClient, slipId: string, kind: 'confirm' | 'cancel'): Promise<number | null> {
 	const row = (await client.query('select fact_seq from public.accounting_g_slip_facts where slip_id = $1 and kind = $2', [slipId, kind])).rows[0];
 	return row ? Number(row.fact_seq) : null;
+}
+
+/**
+ * 支払いの仕訳（計画2 Task 2）の試験の注文。lines の1要素が1つの品（price 円を quantity 着）。unitAmounts を渡すと
+ * 1着ごとの支払額をその値にする（合計が注文の合計と違う例を作る）。legacy は1着ごとの支払額の行が無い旧い注文。
+ * paymentIntentId を渡すと結び付ける（無ければ新しい番号）。呼び出す取引は G の共通の鍵（190521,1）を先に取っておく。
+ */
+export async function seedPaidOrder(client: PgClient, input: {
+	lines: ReadonlyArray<{ price: number; quantity: number; unitAmounts?: readonly number[] }>;
+	paymentIntentId?: string | null; paidAt?: string | null; shippingAmount?: number; status?: 'paid' | 'pending' | 'payment_in_progress';
+	legacy?: boolean;
+}): Promise<{ orderId: string; orderItemIds: string[]; paymentIntentId: string | null; total: number }> {
+	const seeded = await seedHOrderUnits(client, {
+		legacy: input.legacy ?? false,
+		lines: input.lines.map((line) => ({
+			itemPrice: line.price,
+			quantity: line.quantity,
+			discounts: [],
+			unitAmounts: line.unitAmounts ?? Array.from({ length: line.quantity }, () => line.price),
+		})),
+		paidAt: input.paidAt,
+		shippingAmount: input.shippingAmount,
+		status: input.status ?? 'paid',
+	});
+	const paymentIntentId = input.paymentIntentId === undefined ? `pi_${randomUUID().replaceAll('-', '')}` : input.paymentIntentId;
+	if (paymentIntentId !== null) {
+		await client.query('update public.orders set payment_intent_id = $2 where id = $1', [seeded.orderId, paymentIntentId]);
+	}
+	const total = input.lines.reduce((sum, line) => sum + line.price * line.quantity, 0) + (input.shippingAmount ?? 0);
+	return { orderId: seeded.orderId, orderItemIds: seeded.orderItemIds, paymentIntentId, total };
+}
+
+/**
+ * Stripe の残高の取引（支払い）の行を直接入れる。orderId を渡すと取引の側にも注文を結ぶ。fee は手数料（net = amount - fee）。
+ * type / reportingCategory の初期値は charge。
+ */
+export async function seedStripeCharge(client: PgClient, input: {
+	paymentIntentId: string | null; amount: number; createdAt: string; orderId?: string | null; fee?: number;
+	type?: string; reportingCategory?: string; id?: string;
+}): Promise<string> {
+	const id = input.id ?? `txn_${randomUUID().replaceAll('-', '')}`;
+	const fee = input.fee ?? 0;
+	await client.query(
+		`insert into public.stripe_balance_transactions
+			(id, source_id, payment_intent_id, order_id, type, reporting_category, amount, fee, net, currency, status,
+			 available_on, stripe_created_at, fee_details, raw_payload)
+		 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'jpy', 'available', $10::timestamptz, $10::timestamptz, '[]'::jsonb, '{}'::jsonb)`,
+		[id, `ch_${randomUUID().replaceAll('-', '')}`, input.paymentIntentId, input.orderId ?? null, input.type ?? 'charge',
+			input.reportingCategory ?? 'charge', input.amount, fee, input.amount - fee, input.createdAt]);
+	return id;
+}
+
+/** 計画2 S7（支払いの仕訳）の移行の本文。無ければ空で、原文の確かめが目に見えて落ちる。 */
+const s7Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p2_payment_posting.sql'));
+export const ACCOUNTING_S7_SQL = s7Files.length === 1 ? fs.readFileSync(path.join(directory, s7Files[0]), 'utf8') : '';
+export const ACCOUNTING_S7_FILES = s7Files;
+
+/** S7 の `-- ACC_S7_<name>_BEGIN` と `-- ACC_S7_<name>_END` の間。 */
+export function accountingS7Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S7_SQL.split(`-- ACC_S7_${name}_BEGIN\n`)[1]?.split(`-- ACC_S7_${name}_END`)[0] ?? '';
+}
+
+/**
+ * 手を入れる前の今の状態を S7 の比べる元として控える（適用の時は仕訳も計上待ちも0件）。そのあとで末尾 assert を流す。
+ * 比べるのは、仕訳の見出し・行・計上待ちの行数と、支払いの関数以外の accounting 関数の数。
+ */
+export async function pinAccountingS7Baseline(client: PgClient): Promise<void> {
+	await client.query(`create temp table accounting_s7_baseline(payload jsonb) on commit drop;
+		insert into pg_temp.accounting_s7_baseline(payload) select jsonb_build_object(
+			'entries', (select count(*) from public.accounting_journal_entries),
+			'lines', (select count(*) from public.accounting_journal_lines),
+			'pending_events', (select count(*) from public.accounting_pending_events),
+			'periods', (select count(*) from public.accounting_periods))`);
 }
