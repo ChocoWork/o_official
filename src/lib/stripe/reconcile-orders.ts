@@ -202,4 +202,63 @@ export async function reconcileStripePayouts({
   return report;
 }
 
-export type { ReconcileDatabase, ReconcileStripe, ReconcilePayoutStripe };
+type DisputeSnapshot = { id: string };
+type ReconcileDisputeStripe = {
+  disputes: {
+    list(params: { limit: number; created: { gte: number } }): AsyncIterable<DisputeSnapshot> | Iterable<DisputeSnapshot>;
+  };
+};
+
+export type StripeDisputeReconciliationReport = {
+  syncedDisputes: number;
+  errors: StripeReconciliationError[];
+};
+
+/** 新しい dispute を拾う範囲（作成から30日。Stripe が出来事を残す期間と同じ） */
+const DISPUTE_LOOKBACK_SECONDS = 30 * 24 * 60 * 60;
+
+/** 一覧から拾う dispute の上限（100件ずつ最大5ページ） */
+const MAX_LISTED_DISPUTES = 500;
+
+/**
+ * 毎晩の、カード会社からの支払いの取り消しの取りこぼし拾い（FREQ-567-AC-04）。
+ * ① 表の中で決着していない dispute は、作成から30日を過ぎた物も全部取り直す（判断は2か月以上かかる）。
+ * ② 作成から30日以内の新しい dispute を Stripe の一覧から最大500件拾う。
+ * 各 dispute を取り込み（dispute-sync.ts）に通す。1件の失敗で全体を止めず、番号と原因の記号だけを残す。
+ * 表か一覧を読めなければそのまま投げる（窓口が受け止めて、失敗として errors に残す）。
+ */
+export async function reconcileStripeDisputes({
+  stripe,
+  listOpenDisputeIds,
+  syncDispute,
+  now = () => new Date(),
+}: {
+  stripe: ReconcileDisputeStripe;
+  listOpenDisputeIds: () => Promise<string[]>;
+  syncDispute: (disputeId: string) => Promise<unknown>;
+  now?: () => Date;
+}): Promise<StripeDisputeReconciliationReport> {
+  const disputeIds = new Set<string>(await listOpenDisputeIds());
+  let listed = 0;
+  for await (const dispute of stripe.disputes.list({
+    limit: 100,
+    created: { gte: Math.floor(now().getTime() / 1000) - DISPUTE_LOOKBACK_SECONDS },
+  })) {
+    disputeIds.add(dispute.id);
+    listed += 1;
+    if (listed >= MAX_LISTED_DISPUTES) break;
+  }
+
+  const report: StripeDisputeReconciliationReport = { syncedDisputes: 0, errors: [] };
+  for (const disputeId of disputeIds) {
+    try {
+      await syncDispute(disputeId);
+      report.syncedDisputes += 1;
+    } catch (error) {
+      report.errors.push(failureOf(disputeId, error));
+    }
+  }
+  return report;
+}
+
+export type { ReconcileDatabase, ReconcileDisputeStripe, ReconcileStripe, ReconcilePayoutStripe };

@@ -406,3 +406,46 @@ export async function pinAccountingS9Baseline(client: PgClient): Promise<void> {
 			'periods', (select count(*) from public.accounting_periods),
 			'invoice_records', (select count(*) from public.accounting_stripe_invoice_records))`);
 }
+
+/** 計画2 S10（カード会社からの支払いの取り消しの受け取り）の移行の本文。無ければ空で、原文の確かめが目に見えて落ちる。 */
+const s10Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p2_dispute_intake.sql'));
+export const ACCOUNTING_S10_SQL = s10Files.length === 1 ? fs.readFileSync(path.join(directory, s10Files[0]), 'utf8') : '';
+export const ACCOUNTING_S10_FILES = s10Files;
+
+/** S10 の `-- ACC_S10_<name>_BEGIN` と `-- ACC_S10_<name>_END` の間。 */
+export function accountingS10Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S10_SQL.split(`-- ACC_S10_${name}_BEGIN\n`)[1]?.split(`-- ACC_S10_${name}_END`)[0] ?? '';
+}
+
+/**
+ * 手を入れる前の今の状態を S10 の比べる元として控える（適用の時は仕訳も計上待ちも dispute の表も0件）。そのあとで末尾 assert を流す。
+ * 比べるのは、仕訳の見出し・行・計上待ちの行・会計の期間・dispute と履歴の行数。
+ */
+export async function pinAccountingS10Baseline(client: PgClient): Promise<void> {
+	await client.query(`create temp table accounting_s10_baseline(payload jsonb) on commit drop;
+		insert into pg_temp.accounting_s10_baseline(payload) select jsonb_build_object(
+			'entries', (select count(*) from public.accounting_journal_entries),
+			'lines', (select count(*) from public.accounting_journal_lines),
+			'pending_events', (select count(*) from public.accounting_pending_events),
+			'periods', (select count(*) from public.accounting_periods),
+			'disputes', (select count(*) from public.stripe_disputes),
+			'dispute_events', (select count(*) from public.stripe_dispute_events))`);
+}
+
+/** Stripe の dispute の写し（record_stripe_dispute の _dispute と _event の形）。 */
+export function disputeFixture(overrides: { dispute?: Record<string, unknown>; event?: Record<string, unknown> | null } = {}) {
+	const id = `dp_${randomUUID().replaceAll('-', '')}`;
+	const dispute = {
+		id, payment_intent_id: `pi_${randomUUID().replaceAll('-', '')}`, charge_id: `ch_${randomUUID().replaceAll('-', '')}`,
+		order_id: null, amount: 5000, currency: 'jpy', reason: 'fraudulent', status: 'needs_response', is_charge_refundable: false,
+		evidence_due_by: '2026-07-01T00:00:00Z', evidence_details: { has_evidence: false, past_due: false, submission_count: 0 },
+		stripe_created_at: '2026-06-10T00:00:00Z', ...overrides.dispute,
+	};
+	const event = overrides.event === null ? null : {
+		stripe_event_id: `evt_${randomUUID().replaceAll('-', '')}`, event_type: 'charge.dispute.created', status: dispute.status,
+		occurred_at: '2026-06-10T00:05:00Z', stripe_event_created_at: null, balance_transaction_ids: [`txn_${randomUUID().replaceAll('-', '')}`],
+		raw_payload: { id, reason: dispute.reason, evidence_details: dispute.evidence_details, evidence: { customer_name: 'fixture' } },
+		...overrides.event,
+	};
+	return { dispute, event };
+}

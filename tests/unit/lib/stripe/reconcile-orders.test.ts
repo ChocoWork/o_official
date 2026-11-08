@@ -16,7 +16,7 @@ jest.mock('@/lib/orders/refund/refund-store', () => ({
 
 import type { RefundServiceDeps } from '@/lib/orders/refund/refund-service';
 import { OrderNotFoundForPaymentIntentError, RefundSyncNotConvergedError } from '@/lib/stripe/order-refund-sync';
-import { reconcileRecentRefunds, reconcileStripeOrders, reconcileStripePayouts } from '@/lib/stripe/reconcile-orders';
+import { reconcileRecentRefunds, reconcileStripeDisputes, reconcileStripeOrders, reconcileStripePayouts } from '@/lib/stripe/reconcile-orders';
 
 // 直近7日の境目を決まった値で確かめるため、時計を渡す
 const NOW = new Date('2026-10-07T00:00:00Z');
@@ -425,5 +425,75 @@ describe('reconcileStripePayouts', () => {
 
     expect(report.syncedPayouts).toBe(1);
     expect(report.errors).toEqual([{ sourceId: 'po_1', reason: 'unexpected_error' }]);
+  });
+});
+
+describe('reconcileStripeDisputes（毎晩の、カード会社からの支払いの取り消しの取りこぼし拾い）', () => {
+  const listOf = (ids: string[]) => jest.fn(() => ids.map((id) => ({ id })));
+
+  it('FREQ-567-AC-04: 毎晩の再照合は取りこぼした dispute を保存する。直近30日に作られた一覧は100件ずつ最大5ページ読む', async () => {
+    const list = listOf(['dp_new']);
+    const syncDispute = jest.fn().mockResolvedValue({ disposition: 'inserted' });
+
+    const report = await reconcileStripeDisputes({
+      stripe: { disputes: { list } }, listOpenDisputeIds: async () => [], syncDispute, now: () => NOW,
+    });
+
+    expect(list).toHaveBeenCalledWith({ limit: 100, created: { gte: NOW_SECONDS - 30 * DAY_SECONDS } });
+    expect(syncDispute).toHaveBeenCalledTimes(1);
+    expect(syncDispute).toHaveBeenCalledWith('dp_new');
+    expect(report).toEqual({ syncedDisputes: 1, errors: [] });
+  });
+
+  it('FREQ-567-AC-04: 作成から30日を過ぎた未決着の dispute の確定も、毎晩の取り直しで拾う（一覧に無くても、表の未決着を全部取り直す）', async () => {
+    const syncDispute = jest.fn().mockResolvedValue({ disposition: 'unchanged' });
+
+    const report = await reconcileStripeDisputes({
+      stripe: { disputes: { list: listOf(['dp_recent']) } },
+      listOpenDisputeIds: async () => ['dp_old_open', 'dp_recent'],
+      syncDispute, now: () => NOW,
+    });
+
+    // 重複は1回だけ。表の未決着が先、30日の一覧が後
+    expect(syncDispute.mock.calls.map(([id]) => id)).toEqual(['dp_old_open', 'dp_recent']);
+    expect(report.syncedDisputes).toBe(2);
+  });
+
+  it('FREQ-567-AC-04: 一覧は最大500件（5ページ）で打ち切る', async () => {
+    let read = 0;
+    const list = jest.fn(() => (async function* () { for (let index = 0; index < 700; index += 1) { read += 1; yield { id: `dp_${index}` }; } })());
+    const syncDispute = jest.fn().mockResolvedValue({ disposition: 'unchanged' });
+
+    const report = await reconcileStripeDisputes({
+      stripe: { disputes: { list } }, listOpenDisputeIds: async () => [], syncDispute, now: () => NOW,
+    });
+
+    expect(report.syncedDisputes).toBe(500);
+    expect(read).toBeLessThanOrEqual(501);
+  });
+
+  it('FREQ-567-AC-04: 1件の失敗で全体を止めない。失敗は dispute の番号と原因の記号だけを残す', async () => {
+    const syncDispute = jest.fn(async (id: string) => {
+      if (id === 'dp_bad') throw new Error('customer@example.com leaked');
+      return { disposition: 'inserted' };
+    });
+
+    const report = await reconcileStripeDisputes({
+      stripe: { disputes: { list: listOf(['dp_bad', 'dp_good']) } }, listOpenDisputeIds: async () => [], syncDispute, now: () => NOW,
+    });
+
+    expect(report.syncedDisputes).toBe(1);
+    expect(report.errors).toHaveLength(1);
+    expect(report.errors[0].sourceId).toBe('dp_bad');
+    expect(JSON.stringify(report.errors)).not.toContain('customer@example.com');
+  });
+
+  it('FREQ-567-AC-04: 表の未決着の一覧か Stripe の一覧が読めなければ、そのまま投げる（窓口が受け止めて errors に残す）', async () => {
+    await expect(reconcileStripeDisputes({
+      stripe: { disputes: { list: listOf([]) } }, listOpenDisputeIds: async () => { throw new Error('db_down'); }, syncDispute: jest.fn(), now: () => NOW,
+    })).rejects.toThrow('db_down');
+    await expect(reconcileStripeDisputes({
+      stripe: { disputes: { list: jest.fn(() => { throw new Error('stripe_down'); }) } }, listOpenDisputeIds: async () => [], syncDispute: jest.fn(), now: () => NOW,
+    })).rejects.toThrow('stripe_down');
   });
 });

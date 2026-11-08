@@ -1,6 +1,6 @@
 /**
  * 受け取り口が保存する Stripe の知らせの種類（設計書 2026-10-05 グループ B の 5-1）。
- * Stripe 側の購読も同じ13種にする（手順書）。処理する側（webhook-processor）の分け方と一致させる（テストが確かめる）。
+ * Stripe 側の購読も同じ18種にする（手順書）。charge.dispute の5種は、Stripe の宛先に足すまで知らせが届かない。処理する側（webhook-processor）の分け方と一致させる（テストが確かめる）。
  */
 export const HANDLED_STRIPE_EVENT_TYPES = [
   'checkout.session.completed',
@@ -16,6 +16,11 @@ export const HANDLED_STRIPE_EVENT_TYPES = [
   'payout.paid',
   'payout.failed',
   'payout.reconciliation_completed',
+  'charge.dispute.created',
+  'charge.dispute.updated',
+  'charge.dispute.closed',
+  'charge.dispute.funds_withdrawn',
+  'charge.dispute.funds_reinstated',
 ] as const;
 
 const HANDLED: ReadonlySet<string> = new Set(HANDLED_STRIPE_EVENT_TYPES);

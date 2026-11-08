@@ -7,16 +7,20 @@ import { reconcileFindingsMail, sendOpsAlertMail } from '@/lib/ops/ops-alert-mai
 import { createDefaultRefundServiceDeps } from '@/lib/orders/refund/refund-service';
 import {
   reconcileRecentRefunds,
+  reconcileStripeDisputes,
   reconcileStripeOrders,
   reconcileStripePayouts,
   type RecentRefundReconciliationReport,
   type ReconcileDatabase,
+  type ReconcileDisputeStripe,
   type ReconcilePayoutStripe,
   type ReconcileStripe,
+  type StripeDisputeReconciliationReport,
   type StripeReconciliationError,
   type UnmatchedRecentPayment,
 } from '@/lib/stripe/reconcile-orders';
 import { syncPaymentIntentAccounting, syncPayoutAccounting } from '@/lib/stripe/accounting-sync';
+import { DISPUTE_RECONCILE_EVENT_TYPE, syncDisputeAccounting, type StripeDisputeClient } from '@/lib/stripe/dispute-sync';
 import { createStripeAccountingDatabase } from '@/lib/stripe/supabase-accounting-database';
 import { getStripeServerClient } from '@/lib/stripe/server';
 import { webhookFailureCause, type WebhookFailureCause } from '@/lib/stripe/webhook-events';
@@ -34,6 +38,7 @@ export type StripeReconcileResponse = {
   syncedRefunds: number;
   syncedPayouts: number;
   payoutMismatches: number;
+  syncedDisputes: number;
   errors: StripeReconciliationError[];
 };
 
@@ -119,6 +124,29 @@ export async function POST(request: Request) {
       }),
     });
 
+    // カード会社からの支払いの取り消しの取りこぼし拾い。出金の同期が入れる payout_id を消さないよう、出金の照合のあとに行う。
+    // 一覧を読めなくても、ほかの照合の結果は返す。失敗は原因の記号だけを errors に残し、知らせのメールに載せる
+    let disputeReport: StripeDisputeReconciliationReport;
+    try {
+      disputeReport = await reconcileStripeDisputes({
+        stripe: stripe as unknown as ReconcileDisputeStripe,
+        listOpenDisputeIds: () => accountingDatabase.listOpenDisputeIds!(),
+        syncDispute: (disputeId) => syncDisputeAccounting({
+          stripe: stripe as unknown as StripeDisputeClient,
+          database: accountingDatabase,
+          disputeId,
+          eventId: null,
+          eventType: DISPUTE_RECONCILE_EVENT_TYPE,
+          eventCreated: null,
+          eventObjectStatus: null,
+        }),
+      });
+    } catch (disputeError) {
+      const reason = webhookFailureCause(disputeError);
+      console.error('[stripe-reconcile] Dispute reconciliation failed', reason);
+      disputeReport = { syncedDisputes: 0, errors: [{ sourceId: 'disputes', reason }] };
+    }
+
     // 返金の照合の失敗は、{ sourceId, reason } の形にそろえる（sourceId は支払いの番号。一覧そのものを読めなかった時は 'refunds'。
     // message は原因の記号 — webhookFailureCause の記号か、収まらない時の not_converged。例外の文は入っていない）
     const refundErrors: StripeReconciliationError[] = refundReport.errors.map((failure) => ({
@@ -133,7 +161,8 @@ export async function POST(request: Request) {
       syncedRefunds: refundReport.syncedRefunds,
       syncedPayouts: payoutReport.syncedPayouts,
       payoutMismatches: payoutReport.payoutMismatches,
-      errors: [...orderReport.errors, ...refundErrors, ...payoutReport.errors],
+      syncedDisputes: disputeReport.syncedDisputes,
+      errors: [...orderReport.errors, ...refundErrors, ...payoutReport.errors, ...disputeReport.errors],
     };
 
     // 1件ずつの失敗は止めずに数え、支払いの ID と原因の記号を監査に残す（設計書 4-5）
@@ -149,6 +178,7 @@ export async function POST(request: Request) {
         syncedRefunds: data.syncedRefunds,
         syncedPayouts: data.syncedPayouts,
         payoutMismatches: data.payoutMismatches,
+        syncedDisputes: data.syncedDisputes,
         failed: data.errors.length,
         errors: data.errors.slice(0, MAX_AUDITED_ERRORS),
         unmatchedRecentPaymentIds: orderReport.unmatchedRecentPayments

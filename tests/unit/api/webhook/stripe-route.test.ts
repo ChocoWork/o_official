@@ -40,6 +40,12 @@ jest.mock('@/lib/stripe/accounting-sync', () => ({
   syncPayoutAccounting: (...args: unknown[]) => mockSyncPayoutAccounting(...args),
 }));
 
+// カード会社からの支払いの取り消し（charge.dispute.*）。取り込みの中身は dispute-sync.test.ts が確かめる。
+const mockSyncDisputeAccounting = jest.fn().mockResolvedValue({ disposition: 'inserted' });
+jest.mock('@/lib/stripe/dispute-sync', () => ({
+  syncDisputeAccounting: (...args: unknown[]) => mockSyncDisputeAccounting(...args),
+}));
+
 jest.mock('@/lib/stripe/supabase-accounting-database', () => ({
   createStripeAccountingDatabase: jest.fn().mockReturnValue({}),
 }));
@@ -514,5 +520,50 @@ describe('Stripe webhook business processor', () => {
     const event = { id: 'evt_completed', type: 'checkout.session.completed', data: { object: { id: 'cs_1' } } };
 
     expect((await processForTest(makeRequest(event))).status).toBe(500);
+  });
+
+  it.each([
+    'charge.dispute.created',
+    'charge.dispute.updated',
+    'charge.dispute.closed',
+    'charge.dispute.funds_withdrawn',
+    'charge.dispute.funds_reinstated',
+  ])('FREQ-567-AC-01: %s は dispute の番号と知らせの番号・時刻・中身の状態を渡して取り込み、注文や決済の照合には触れない', async (type) => {
+    const event = { id: `evt_${type}`, type, created: 1782000000, data: { object: { id: 'dp_1', status: 'lost' } } };
+
+    const response = await processForTest(makeRequest(event));
+
+    expect(response.status).toBe(200);
+    expect(mockSyncDisputeAccounting).toHaveBeenCalledTimes(1);
+    expect(mockSyncDisputeAccounting).toHaveBeenCalledWith(expect.objectContaining({
+      disputeId: 'dp_1', eventId: `evt_${type}`, eventType: type, eventCreated: 1782000000, eventObjectStatus: 'lost',
+    }));
+    expect(mockReconcile).not.toHaveBeenCalled();
+    expect(mockSyncPaymentIntentRefunds).not.toHaveBeenCalled();
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'checkout.webhook.event_processing', outcome: 'success' }));
+  });
+
+  it('FREQ-567-AC-01: 知らせの中身に状態が無ければ eventObjectStatus はNULLで渡す', async () => {
+    const event = { id: 'evt_dp', type: 'charge.dispute.updated', created: 1782000000, data: { object: { id: 'dp_1' } } };
+
+    await processForTest(makeRequest(event));
+
+    expect(mockSyncDisputeAccounting).toHaveBeenCalledWith(expect.objectContaining({ eventObjectStatus: null }));
+  });
+
+  it('FREQ-567-AC-02: dispute の取り込みが失敗したら握りつぶさず、イベントを失敗にして再試行させる', async () => {
+    mockSyncDisputeAccounting.mockRejectedValueOnce(new Error('rpc_failed'));
+    const event = { id: 'evt_dp', type: 'charge.dispute.created', created: 1782000000, data: { object: { id: 'dp_1', status: 'needs_response' } } };
+
+    expect((await processForTest(makeRequest(event))).status).toBe(500);
+    expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'checkout.webhook.event_processing' }));
+  });
+
+  it('FREQ-567-AC-01: dispute 以外の知らせでは dispute の取り込みを呼ばない', async () => {
+    const event = { id: 'evt_refund', type: 'refund.updated', data: { object: { id: 're_1', payment_intent: 'pi_refund' } } };
+
+    await processForTest(makeRequest(event));
+
+    expect(mockSyncDisputeAccounting).not.toHaveBeenCalled();
   });
 });

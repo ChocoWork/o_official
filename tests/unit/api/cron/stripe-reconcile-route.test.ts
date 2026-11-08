@@ -19,6 +19,7 @@ jest.mock('@/lib/stripe/reconcile-orders', () => ({
   reconcileStripeOrders: jest.fn(),
   reconcileStripePayouts: jest.fn(),
   reconcileRecentRefunds: jest.fn(),
+  reconcileStripeDisputes: jest.fn(),
 }));
 const mockRefundDeps = { name: 'refund-service-deps' };
 jest.mock('@/lib/orders/refund/refund-service', () => ({
@@ -29,7 +30,7 @@ jest.mock('@/lib/stripe/supabase-accounting-database', () => ({
 }));
 
 import * as reconcileRoute from '@/app/api/cron/stripe-reconcile/route';
-import { reconcileRecentRefunds, reconcileStripeOrders, reconcileStripePayouts } from '@/lib/stripe/reconcile-orders';
+import { reconcileRecentRefunds, reconcileStripeDisputes, reconcileStripeOrders, reconcileStripePayouts } from '@/lib/stripe/reconcile-orders';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
 const mockDatabase = { name: 'service-role-client' };
@@ -37,6 +38,7 @@ const mockDatabase = { name: 'service-role-client' };
 const mockReconcileOrders = reconcileStripeOrders as jest.Mock;
 const mockReconcilePayouts = reconcileStripePayouts as jest.Mock;
 const mockReconcileRefunds = reconcileRecentRefunds as jest.Mock;
+const mockReconcileDisputes = reconcileStripeDisputes as jest.Mock;
 const { POST } = reconcileRoute;
 // 定期処理の合言葉は32文字以上（設計書 2026-10-05 グループ B の 4-3）
 const CRON_SECRET = 'cron-secret-for-unit-tests-0123456789';
@@ -65,6 +67,10 @@ function refundReport(overrides: Record<string, unknown> = {}) {
   return { checkedPaymentIntents: 0, syncedRefunds: 0, errors: [], ...overrides };
 }
 
+function disputeReport(overrides: Record<string, unknown> = {}) {
+  return { syncedDisputes: 0, errors: [], ...overrides };
+}
+
 function payoutReport(overrides: Record<string, unknown> = {}) {
   return { syncedPayouts: 0, payoutMismatches: 0, errors: [], ...overrides };
 }
@@ -81,6 +87,7 @@ describe('POST /api/cron/stripe-reconcile', () => {
     mockSendOpsAlertMail.mockResolvedValue(true);
     mockReconcileFindingsMail.mockReturnValue(findingsMail);
     mockReconcileRefunds.mockResolvedValue(refundReport());
+    mockReconcileDisputes.mockResolvedValue(disputeReport());
   });
   afterEach(() => {
     warn.mockRestore();
@@ -397,6 +404,66 @@ describe('POST /api/cron/stripe-reconcile', () => {
         metadata: expect.objectContaining({ unmatchedRecentPaymentIds: many.slice(0, 20).map((payment) => payment.id) }),
       }));
       expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('"amount"');
+    });
+  });
+
+  describe('カード会社からの支払いの取り消しの照合（FREQ-567-AC-04）', () => {
+    beforeEach(() => {
+      mockReconcileOrders.mockResolvedValue(orderReport());
+      mockReconcilePayouts.mockResolvedValue(payoutReport());
+    });
+
+    it('FREQ-567-AC-04: 再照合の件数がheartbeatと監査の応答に載る', async () => {
+      mockReconcileDisputes.mockResolvedValue(disputeReport({ syncedDisputes: 3 }));
+
+      const response = await POST(authorizedRequest());
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(mockReconcileDisputes).toHaveBeenCalledTimes(1);
+      expect(body.data.syncedDisputes).toBe(3);
+      expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockDatabase, 'stripe_reconcile', true, null);
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'stripe.reconcile',
+        metadata: expect.objectContaining({ syncedDisputes: 3 }),
+      }));
+    });
+
+    it('FREQ-567-AC-04: 取り消しの失敗は dispute の番号と原因の記号だけを errors に足し、200 で返す', async () => {
+      mockReconcileDisputes.mockResolvedValue(disputeReport({ syncedDisputes: 1, errors: [{ sourceId: 'dp_1', reason: 'stripe_unavailable' }] }));
+
+      const response = await POST(authorizedRequest());
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.data.errors).toEqual([{ sourceId: 'dp_1', reason: 'stripe_unavailable' }]);
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'error', metadata: expect.objectContaining({ failed: 1 }) }));
+    });
+
+    it('FREQ-567-AC-04: 取り消しの一覧を読めなくても、ほかの照合の結果は返し、失敗は原因の記号だけを残す', async () => {
+      const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+      mockReconcileDisputes.mockRejectedValue(Object.assign(new Error('customer@example.com'), { code: 'stripe_unavailable' }));
+      mockReconcileOrders.mockResolvedValue(orderReport({ checkedPayments: 1, syncedBalanceTransactions: 1 }));
+
+      const response = await POST(authorizedRequest());
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.data.syncedBalanceTransactions).toBe(1);
+      expect(body.data.syncedDisputes).toBe(0);
+      expect(body.data.errors).toEqual([{ sourceId: 'disputes', reason: 'stripe_unavailable' }]);
+      expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('customer@example.com');
+      error.mockRestore();
+    });
+
+    it('FREQ-567-AC-04: 取り消しの照合は出金の照合のあとに行う（出金の同期が入れる payout_id を消さない）', async () => {
+      const order: string[] = [];
+      mockReconcilePayouts.mockImplementation(async () => { order.push('payouts'); return payoutReport(); });
+      mockReconcileDisputes.mockImplementation(async () => { order.push('disputes'); return disputeReport(); });
+
+      await POST(authorizedRequest());
+
+      expect(order).toEqual(['payouts', 'disputes']);
     });
   });
 });

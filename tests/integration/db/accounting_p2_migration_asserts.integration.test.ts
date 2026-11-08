@@ -7,6 +7,7 @@ import {
   ACCOUNTING_S7_FILES, ACCOUNTING_S7_SQL as sqlS7, accountingS7Section, pinAccountingS7Baseline,
   ACCOUNTING_S8_FILES, ACCOUNTING_S8_SQL as sqlS8, accountingS8Section, pinAccountingS8Baseline,
   ACCOUNTING_S9_FILES, ACCOUNTING_S9_SQL as sqlS9, accountingS9Section, pinAccountingS9Baseline,
+  ACCOUNTING_S10_FILES, ACCOUNTING_S10_SQL as sqlS10, accountingS10Section, pinAccountingS10Baseline,
 } from './helpers/accounting-orders-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
 
@@ -861,6 +862,187 @@ describeLocalDb('S9 final assert: controller only', (db) => {
     ["insert into public.accounting_stripe_invoice_records (invoice_month, invoice_total) values ('2026-01', 1)", 'acc_s9_existing_dml_allowlist'],
     ["insert into public.accounting_periods (business_type, name, starts_on, ends_on) values ('soleProprietor', 'tamper', '2026-01-01', '2026-12-31')", 'acc_s9_existing_dml_allowlist'],
   ] as Array<[string, string]>)('FREQ-565-AC-01: S9改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// ---- S10 (Task 5): the dispute intake (stripe_disputes, stripe_dispute_events, record_stripe_dispute) -----------------------
+const assertionS10 = accountingS10Section('FINAL_ASSERT');
+const bodyS10 = accountingS10Section('BODY');
+const detailsS10 = ['acc_s10_tables', 'acc_s10_constraints', 'acc_s10_immutable', 'acc_s10_rls_acl', 'acc_s10_function_attrs',
+  'acc_s10_existing_dml_allowlist'];
+const statementsS10 = bodyS10.replace(/\$\$[\s\S]*?\$\$/g, '$$$$').split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n');
+const writerS10 = 'private.record_stripe_dispute(jsonb,jsonb)';
+const publicWriterS10 = 'public.record_stripe_dispute(jsonb,jsonb)';
+const guardS10 = 'private.stripe_disputes_guard_update()';
+
+describe('S10 source contract (no DB)', () => {
+  test('FREQ-567-AC-01: S10はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S10_FILES).toEqual(['20261108190000_accounting_p2_dispute_intake.sql']);
+    expect(ACCOUNTING_S10_FILES[0] > ACCOUNTING_S9_FILES[0]).toBe(true);
+    expect(sqlS10).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(sqlS10.startsWith('BEGIN;\n')).toBe(true);
+    expect(sqlS10.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(sqlS10.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(sqlS10.trimEnd()).toMatch(/-- ACC_S10_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect(assertionS10).not.toBe('');
+    expect([...new Set([...assertionS10.matchAll(/'(acc_s10_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...detailsS10].sort());
+    expect(assertionS10).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(assertionS10.replace(/''55000''/g, '')).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(sqlS10).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+  });
+
+  test('FREQ-567-AC-03: S10の実行時のDMLは比べる元の控えのINSERTだけで、service_role に渡す関数は書き口（private と public）の2つだけ', () => {
+    expect([...statementsS10.matchAll(/^\s*(INSERT INTO|UPDATE|DELETE FROM|TRUNCATE(?: TABLE)?)\s+([\w.]+)/gm)].map((m) => `${m[1]} ${m[2]}`))
+      .toEqual(['INSERT INTO pg_temp.accounting_s10_baseline']);
+    const grant = bodyS10.split('GRANT EXECUTE ON FUNCTION')[1]?.split(';')[0] ?? '';
+    expect(grant.match(/(private|public)\.[a-z_]+\(/g)?.sort()).toEqual(['private.record_stripe_dispute(', 'public.record_stripe_dispute(']);
+    expect(grant).toContain('TO service_role');
+    expect([...bodyS10.matchAll(/CREATE FUNCTION public\.([a-z_]+)\(/g)].map((m) => m[1])).toEqual(['record_stripe_dispute']);
+    // The only table grant is SELECT to service_role; nothing is granted to anon or authenticated.
+    const tableGrants = [...statementsS10.matchAll(/GRANT ([A-Z, ]+) ON TABLE ([\w., ]+) TO ([\w, ]+);/g)].map((m) => `${m[1]} ${m[3]}`);
+    expect(tableGrants).toEqual(['SELECT service_role']);
+    expect([...statementsS10.matchAll(/GRANT[^;]*;/g)].some((m) => /\b(anon|authenticated)\b/.test(m[0]))).toBe(false);
+  });
+
+  test('FREQ-567-AC-03: 書き口は会計の鍵も仕訳も触らず、履歴は鍵の重複を無視して足し、注文の番号を消さない', () => {
+    const writer = bodyS10.split('CREATE FUNCTION private.record_stripe_dispute(')[1]?.split('\n$$;')[0] ?? '';
+    expect(writer).not.toBe('');
+    expect(writer).not.toMatch(/accounting_lock_all|accounting_post_journal|accounting_journal|accounting_pending|PG_EXCEPTION_CONTEXT/);
+    expect(writer).toContain('ON CONFLICT (stripe_event_id) DO NOTHING');
+    expect(writer).toContain('order_id = COALESCE(EXCLUDED.order_id, public.stripe_disputes.order_id)');
+    // The columns that never change are not in the update list.
+    const update = writer.split('DO UPDATE SET')[1]?.split(';')[0] ?? '';
+    expect(update).not.toMatch(/\b(amount|reason|charge_id|payment_intent_id|currency|stripe_created_at)\b/);
+  });
+
+  test('FREQ-567-AC-03: S10に日本語の文字列は無い（画面の語は後の Task が ACCOUNTING_LABELS から出す）', () => {
+    const code = bodyS10.split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n');
+    expect(code).not.toMatch(/U&'/);
+  });
+});
+
+describeLocalDb('S10 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  async function attempt(change = '', baseline: 'pin' | 'none' = 'pin'): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s10_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (baseline === 'pin') await pinAccountingS10Baseline(db());
+      if (change) await db().query(change);
+      await db().query(assertionS10);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s10_assert'); await db().query('release savepoint acc_s10_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
+  /** Re-create the function with a changed text (owner, ACL and attributes stay). */
+  const edit = (from: string, to: string, signature: string) => `do $x$ declare d text; begin
+    d := pg_get_functiondef('${signature}'::regprocedure);
+    if position(${quote(from)} in d) = 0 then raise exception 'TAMPER_TARGET_MISSING'; end if;
+    d := replace(d, ${quote(from)}, ${quote(to)});
+    execute d; end $x$`;
+
+  test('FREQ-567-AC-03: S10末尾assertは適用後の状態と呼出元search_pathを許す', async () => {
+    expect(assertionS10).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt("set local search_path = ''")).toBeNull();
+    await db().query('savepoint acc_s10_search_path');
+    await db().query('set local search_path = public, private, extensions, pg_catalog');
+    await pinAccountingS10Baseline(db());
+    await db().query(assertionS10);
+    expect((await db().query('show search_path')).rows[0].search_path).toBe('public, private, extensions, pg_catalog');
+    await db().query('rollback to savepoint acc_s10_search_path');
+  });
+
+  test('FREQ-567-AC-03: 後の Task が足す public の accounting_run_posting があっても S10 末尾assertは再生で通る', async () => {
+    expect(await attempt(`create function public.accounting_run_posting(_limit integer default 50) returns jsonb language sql volatile
+      security invoker set search_path = '' as $$ select '{}'::jsonb $$`)).toBeNull();
+  });
+
+  test('FREQ-567-AC-03: S10末尾assertは比べる元の控えが無いと断る', async () => {
+    expect(await attempt('', 'none')).toEqual(failed('acc_s10_existing_dml_allowlist'));
+  });
+
+  test.each([
+    // tables
+    ['alter table public.stripe_disputes add column tamper_s10 integer', 'acc_s10_tables'],
+    ['alter table public.stripe_disputes alter column evidence_details drop default', 'acc_s10_tables'],
+    ['alter table public.stripe_disputes alter column order_id set not null', 'acc_s10_tables'],
+    ['alter table public.stripe_disputes alter column amount type integer', 'acc_s10_tables'],
+    ['alter table public.stripe_dispute_events alter column balance_transaction_ids drop default', 'acc_s10_tables'],
+    ['alter table public.stripe_dispute_events alter column stripe_event_created_at set not null', 'acc_s10_tables'],
+    ['alter table public.stripe_dispute_events drop column created_at', 'acc_s10_tables'],
+    ['alter table public.stripe_dispute_events rename column raw_payload to payload', 'acc_s10_tables'],
+    // constraints
+    ['alter table public.stripe_disputes drop constraint stripe_disputes_amount_check', 'acc_s10_constraints'],
+    ['alter table public.stripe_disputes drop constraint stripe_disputes_id_check', 'acc_s10_constraints'],
+    ['alter table public.stripe_disputes drop constraint stripe_disputes_status_check, add constraint stripe_disputes_status_check check (char_length(status) between 1 and 99)', 'acc_s10_constraints'],
+    ['alter table public.stripe_disputes add constraint tamper_s10 check (amount < 100000000)', 'acc_s10_constraints'],
+    ['alter table public.stripe_dispute_events drop constraint stripe_dispute_events_stripe_event_id_key', 'acc_s10_constraints'],
+    ['alter table public.stripe_dispute_events drop constraint stripe_dispute_events_dispute_id_fkey, add constraint stripe_dispute_events_dispute_id_fkey foreign key (dispute_id) references public.stripe_disputes (id) on delete cascade', 'acc_s10_constraints'],
+    ["alter table public.stripe_dispute_events add constraint tamper_s10 check (event_type <> 'x')", 'acc_s10_constraints'],
+    ['drop index public.stripe_dispute_events_dispute_idx', 'acc_s10_constraints'],
+    // immutable
+    ['alter table public.stripe_dispute_events disable trigger stripe_dispute_events_no_update_delete', 'acc_s10_immutable'],
+    ['alter table public.stripe_dispute_events enable trigger stripe_dispute_events_no_truncate', 'acc_s10_immutable'],
+    ['alter table public.stripe_disputes disable trigger stripe_disputes_guard_update', 'acc_s10_immutable'],
+    ['alter table public.stripe_disputes enable replica trigger stripe_disputes_no_delete', 'acc_s10_immutable'],
+    ['drop trigger stripe_disputes_no_truncate on public.stripe_disputes', 'acc_s10_immutable'],
+    ['drop trigger stripe_dispute_events_no_update_delete on public.stripe_dispute_events', 'acc_s10_immutable'],
+    ['create trigger tamper_s10 before insert on public.stripe_disputes for each row execute function private.reject_accounting_mutation()', 'acc_s10_immutable'],
+    [edit('NEW.amount IS DISTINCT FROM OLD.amount', 'false', guardS10), 'acc_s10_immutable'],
+    [edit('NEW.stripe_created_at IS DISTINCT FROM OLD.stripe_created_at', 'false', guardS10), 'acc_s10_immutable'],
+    [edit('NEW.reason IS DISTINCT FROM OLD.reason', 'NEW.reason IS DISTINCT FROM OLD.reason OR NEW.status IS DISTINCT FROM OLD.status', guardS10), 'acc_s10_immutable'],
+    // rls and acl
+    ['alter table public.stripe_disputes disable row level security', 'acc_s10_rls_acl'],
+    ['alter table public.stripe_dispute_events disable row level security', 'acc_s10_rls_acl'],
+    ['create policy tamper_s10 on public.stripe_disputes for select using (true)', 'acc_s10_rls_acl'],
+    ['grant select on public.stripe_disputes to anon', 'acc_s10_rls_acl'],
+    ['grant select on public.stripe_dispute_events to authenticated', 'acc_s10_rls_acl'],
+    ['grant select on public.stripe_dispute_events to public', 'acc_s10_rls_acl'],
+    ['grant insert on public.stripe_disputes to service_role', 'acc_s10_rls_acl'],
+    ['grant update on public.stripe_dispute_events to service_role', 'acc_s10_rls_acl'],
+    ['grant delete on public.stripe_disputes to service_role', 'acc_s10_rls_acl'],
+    ['revoke select on public.stripe_disputes from service_role', 'acc_s10_rls_acl'],
+    ['grant select (evidence_details) on public.stripe_disputes to authenticated', 'acc_s10_rls_acl'],
+    // functions
+    [`drop function ${publicWriterS10}`, 'acc_s10_function_attrs'],
+    [`grant execute on function ${guardS10} to service_role`, 'acc_s10_function_attrs'],
+    [`grant execute on function ${writerS10} to anon`, 'acc_s10_function_attrs'],
+    [`grant execute on function ${writerS10} to authenticated`, 'acc_s10_function_attrs'],
+    [`grant execute on function ${writerS10} to public`, 'acc_s10_function_attrs'],
+    [`grant execute on function ${publicWriterS10} to anon`, 'acc_s10_function_attrs'],
+    [`revoke execute on function ${writerS10} from service_role`, 'acc_s10_function_attrs'],
+    [`revoke execute on function ${publicWriterS10} from service_role`, 'acc_s10_function_attrs'],
+    [`alter function ${writerS10} security invoker`, 'acc_s10_function_attrs'],
+    [`alter function ${publicWriterS10} security definer`, 'acc_s10_function_attrs'],
+    [`alter function ${writerS10} stable`, 'acc_s10_function_attrs'],
+    [`alter function ${writerS10} set search_path = public`, 'acc_s10_function_attrs'],
+    [`alter function ${writerS10} strict`, 'acc_s10_function_attrs'],
+    ['create function private.record_stripe_dispute(a jsonb) returns jsonb language sql as $$ select a $$', 'acc_s10_function_attrs'],
+    [edit('ON CONFLICT (stripe_event_id) DO NOTHING', 'ON CONFLICT DO NOTHING', writerS10), 'acc_s10_function_attrs'],
+    [edit('COALESCE(EXCLUDED.order_id, public.stripe_disputes.order_id)', 'EXCLUDED.order_id', writerS10), 'acc_s10_function_attrs'],
+    [edit('is_charge_refundable = EXCLUDED.is_charge_refundable,', 'is_charge_refundable = EXCLUDED.is_charge_refundable,\n    amount = EXCLUDED.amount,', writerS10), 'acc_s10_function_attrs'],
+    [edit('ACCOUNTING_ARGUMENT_INVALID', 'ACCOUNTING_ARGUMENT_BAD', writerS10), 'acc_s10_function_attrs'],
+    [edit('RETURN pg_catalog.jsonb_build_object', 'PERFORM private.accounting_lock_all(NULL); RETURN pg_catalog.jsonb_build_object', writerS10), 'acc_s10_function_attrs'],
+    [edit('SELECT private.record_stripe_dispute(_dispute, _event)', 'SELECT private.record_stripe_dispute(_dispute, NULL)', publicWriterS10), 'acc_s10_function_attrs'],
+    // no row written
+    ["insert into public.stripe_disputes (id, amount, currency, reason, status, stripe_created_at) values ('dp_tamper', 1, 'jpy', 'general', 'x', now())", 'acc_s10_existing_dml_allowlist'],
+    ["select private.accounting_park_event('stripe_fee', 'stripe_balance_transactions', 'tamper_s10_1', null, 'unknown_category', '{}')", 'acc_s10_existing_dml_allowlist'],
+    ['drop table pg_temp.accounting_s10_baseline', 'acc_s10_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s10_baseline set payload = payload - 'dispute_events'", 'acc_s10_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s10_baseline set payload = jsonb_set(payload, '{disputes}', '5')", 'acc_s10_existing_dml_allowlist'],
+    ["insert into public.accounting_periods (business_type, name, starts_on, ends_on) values ('soleProprietor', 'tamper', '2026-01-01', '2026-12-31')", 'acc_s10_existing_dml_allowlist'],
+  ] as Array<[string, string]>)('FREQ-567-AC-03: S10改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });

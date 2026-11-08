@@ -13,6 +13,7 @@ import {
   syncPayoutAccounting,
   syncRefundAccounting,
 } from '@/lib/stripe/accounting-sync';
+import { syncDisputeAccounting, type StripeDisputeClient } from '@/lib/stripe/dispute-sync';
 import { createStripeAccountingDatabase } from '@/lib/stripe/supabase-accounting-database';
 import { reconcileCheckoutPayment, type ReconcileInput } from '@/lib/stripe/checkout-payment-reconciler';
 import { createDefaultReconcilerDeps } from '@/lib/stripe/checkout-payment-reconciler-deps';
@@ -161,12 +162,12 @@ async function handleRefundChanged(
 type AccountingStripeClient = Parameters<typeof syncPayoutAccounting>[0]['stripe'];
 
 /**
- * 注文更新とは独立に、Stripe原始記録（Balance Transaction / Refund / Payout）を同期する。
+ * 注文更新とは独立に、Stripe原始記録（Balance Transaction / Refund / Payout / Dispute）を同期する。
  */
 async function syncAccountingForEvent(event: Stripe.Event, stripe: Stripe): Promise<void> {
   const database = createStripeAccountingDatabase(supabase);
   const client = stripe as unknown as AccountingStripeClient;
-  const object = event.data.object as { id?: string };
+  const object = event.data.object as { id?: string; status?: string };
   if (!object?.id) {
     return;
   }
@@ -188,6 +189,23 @@ async function syncAccountingForEvent(event: Stripe.Event, stripe: Stripe): Prom
     case 'payout.failed':
     case 'payout.reconciliation_completed':
       await syncPayoutAccounting({ stripe: client, database, payoutId: object.id });
+      break;
+    case 'charge.dispute.created':
+    case 'charge.dispute.updated':
+    case 'charge.dispute.closed':
+    case 'charge.dispute.funds_withdrawn':
+    case 'charge.dispute.funds_reinstated':
+      // カード会社からの支払いの取り消し。知らせの中身は合図にだけ使い、Stripe から取り直した今の状態を保存する。仕訳は作らない。
+      // 失敗は握りつぶさず投げる（worker がイベントを失敗にして再試行する）。
+      await syncDisputeAccounting({
+        stripe: stripe as unknown as StripeDisputeClient,
+        database,
+        disputeId: object.id,
+        eventId: event.id,
+        eventType: event.type,
+        eventCreated: event.created,
+        eventObjectStatus: object.status ?? null,
+      });
       break;
     default:
       break;
