@@ -28,6 +28,13 @@ import type { ShipmentMeta } from "@/lib/accounting/accounting-types";
 import type { SavedJournalEntry } from "@/lib/accounting/journal-types";
 import type { CostProfitModel } from "./use-cost-profit-model";
 
+/** 計上係などが保存した、取引でない仕訳（手入力・移した仕訳は除く）。証憑は付かず、取引区分は出来事の種類で呼ぶ。 */
+const isSystemEntry = (row: { entryId: number; eventKind?: string }): boolean =>
+  row.entryId < 0 &&
+  row.eventKind !== undefined &&
+  row.eventKind !== "manual_entry" &&
+  row.eventKind !== "migrated_entry";
+
 const entryNumber = (entryNo: number): string => `JE-${String(entryNo).padStart(6, "0")}`;
 
 /** 出荷の仕訳の行に付ける、発送票の番号・出荷した日・発送票を確定した日（6-c）。 */
@@ -225,7 +232,7 @@ export function LedgerView({
     openEntryFromLedger,
   } = model;
   const shipmentByNumber = useMemo(
-    () => shipmentRowInfoByNumber(savedJournal, shipmentMeta),
+    () => shipmentRowInfoByNumber(savedJournal, shipmentMeta ?? []),
     [savedJournal, shipmentMeta],
   );
   const [traceSlipId, setTraceSlipId] = useState<string | null>(null);
@@ -715,6 +722,11 @@ export function LedgerView({
                 ]}
               />
             </div>
+            {shipmentMeta === null ? (
+              <p role="note" className="mt-2 font-acumin lk-text-4xs text-[#707070]">
+                出荷した日と登録した日を読み込めませんでした。仕訳はそのまま使えます。時間をおいて、もう一度読み込んでください。
+              </p>
+            ) : null}
             {traceSlipId ? (
               <ShipmentTracePanel
                 key={traceSlipId}
@@ -787,17 +799,21 @@ export function LedgerView({
                   "証憑",
                   selectedLedgerReceipts.length > 0
                     ? selectedLedgerReceipts[0].fileName
-                    : selectedLedgerRow.entryId < 0
-                      ? "決算整理（対象外）"
-                      : "未添付",
+                    : isSystemEntry(selectedLedgerRow)
+                      ? "対象外（自動で作る仕訳）"
+                      : selectedLedgerRow.entryId < 0
+                        ? "決算整理（対象外）"
+                        : "未添付",
                 )}
                 {ledgerDetailRow(
                   "取引区分",
-                  selectedLedgerRow.entryId < 0
-                    ? "決算整理"
-                    : selectedLedgerEntry?.entryType === "income"
-                      ? "収入"
-                      : "支出",
+                  isSystemEntry(selectedLedgerRow)
+                    ? eventKindLabel(selectedLedgerRow.eventKind as string)
+                    : selectedLedgerRow.entryId < 0
+                      ? "決算整理"
+                      : selectedLedgerEntry?.entryType === "income"
+                        ? "収入"
+                        : "支出",
                 )}
                 {ledgerDetailRow("取引先", selectedLedgerRow.partner || "—")}
                 {ledgerDetailRow("摘要", selectedLedgerRow.description)}

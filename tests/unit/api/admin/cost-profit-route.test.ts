@@ -969,14 +969,18 @@ describe('GET /api/admin/kpi/cost-profit（保存した仕訳で数える）', (
 		expect(metaCalls().flatMap(([, args]) => (args as { _entry_ids: string[] })._entry_ids)).not.toContain(periodUuid(100_300));
 	});
 
-	it('FREQ-570-AC-02: 出荷の日付が読めない時は一部しか読めていないと止め、中身の例外は返さない', async () => {
+	it('FREQ-570-AC-02: 出荷の日付が読めない時も仕訳は返し、shipmentMetaはnullにして、中身の例外は返さない', async () => {
 		journalPages = [page([shipmentEntryRow(1)])];
 		shipmentMetaError = { code: 'XX000', message: 'boom' };
 
 		const { status, body } = await get('year=2026');
 
-		expect(status).toBe(500);
-		expect(body).toEqual({ error: '会計データの取得に失敗しました。', code: 'JOURNAL_INCOMPLETE' });
+		// 仕訳は最後まで読めている。出荷した日と登録した日の2列だけが読めないので、画面全体は止めない。
+		expect(status).toBe(200);
+		expect(body.data.shipmentMeta).toBeNull();
+		expect(body.data.savedJournal).toHaveLength(1);
+		expect(orderIncomes(body)).toHaveLength(1);
+		expect(body.data).not.toHaveProperty('code');
 		expect(JSON.stringify(body)).not.toContain('boom');
 	});
 

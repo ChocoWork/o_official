@@ -57,13 +57,22 @@ function manualEntryId(saved: SavedJournalEntry): number {
 	return Number.isSafeInteger(id) ? id : -1;
 }
 
+/**
+ * 取引でない保存した仕訳（支払い・出荷・手数料・入金など）の画面の中の番号。通し番号ごとに別の負の値にして、
+ * 手入力の取引（正）・固定資産の決算整理（-資産id）・年末の整理（-1,000,000 台）と、注文の収入の行（-1 から）に重ならない。
+ */
+const SAVED_ENTRY_ID_BASE = 2_000_000;
+
 export function savedEntryToJournalEntry(
 	saved: SavedJournalEntry,
 	accounts: (code: string) => Account,
 ): JournalEntry {
 	const lines = [...saved.lines].sort((a, b) => a.lineNo - b.lineNo);
+	const manualId = manualEntryId(saved);
 	return {
-		entryId: manualEntryId(saved),
+		entryId: manualId > 0 ? manualId : -(SAVED_ENTRY_ID_BASE + saved.entryNo),
+		eventKind: saved.eventKind,
+		savedEntryId: saved.id,
 		sourceKey: saved.dedupeKey,
 		number: `JE-${String(saved.entryNo).padStart(6, '0')}`,
 		date: saved.entryDate,

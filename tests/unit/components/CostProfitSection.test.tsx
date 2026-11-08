@@ -650,6 +650,49 @@ describe('CostProfitSection', () => {
 		}
 	});
 
+	it('FREQ-570-AC-01: 保存した仕訳は取引でなくても自分の番号を持ち、仕訳詳細の証憑と取引区分は出来事の種類で出す（注文の収入の行と重ならない）', async () => {
+		// 注文の収入の行（id -1）があっても、保存した出荷・支払いの仕訳が「収入」「決算整理」と取り違えられない。
+		setupFinanceFetch([ORDER_FROM_SHIPMENT], undefined, false, { stripeAccounting: STRIPE_RAW, savedJournalExtra: STRIPE_SAVED });
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '帳簿' }));
+		fireEvent.click(screen.getByRole('tab', { name: '仕訳・元帳' }));
+		fireEvent.click(within(screen.getByRole('region', { name: '勘定科目' })).getByRole('button', { name: /^2150 前受金/ }));
+
+		const list = screen.getByRole('region', { name: '仕訳一覧' });
+		const detail = () => screen.getByRole('region', { name: '仕訳詳細' });
+		const open = (number: string) => {
+			const row = within(list).getByText(number).closest('tr') as HTMLElement;
+			fireEvent.click(within(row).getAllByRole('button')[0]);
+		};
+		open('JE-000102');
+		expect(detail()).toHaveTextContent('取引区分出荷');
+		expect(detail()).toHaveTextContent('証憑対象外（自動で作る仕訳）');
+		expect(detail()).not.toHaveTextContent('決算整理');
+		open('JE-000101');
+		expect(detail()).toHaveTextContent('取引区分支払い');
+		expect(detail()).not.toHaveTextContent('取引区分収入');
+		// 修正・証憑の操作は取引でない仕訳には出さない（押せない）。
+		expect(within(detail()).getByRole('button', { name: '修正' })).toBeDisabled();
+	});
+
+	it('FREQ-570-AC-01: 概要の未入金の件数は注文の収入の行（Stripe未収金・前受金で数える）を入れず、掛けの手入力だけを数える', async () => {
+		setupFinanceFetch(
+			[
+				ORDER_FROM_SHIPMENT,
+				{ id: 5, entryType: 'income', date: '2026-08-10', category: '売上高', item: '卸売', partner: '得意先B', amount: 5_000, paymentMethod: '売掛金', memo: '' },
+			],
+			undefined,
+			false,
+			{ stripeAccounting: STRIPE_RAW, savedJournalExtra: STRIPE_SAVED },
+		);
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+
+		expect(await screen.findByText(/未入金 1件（売上債権 ¥[0-9,]+）を確認/)).toBeInTheDocument();
+		expect(screen.queryByText(/未入金 2件/)).not.toBeInTheDocument();
+	});
+
 	it('FREQ-570-AC-03: Stripeの精算のタブは原始記録の一覧と入金の確認を今のまま出す', async () => {
 		const mockFetch = setupFinanceFetch([ORDER_FROM_SHIPMENT], undefined, false, { stripeAccounting: STRIPE_RAW, savedJournalExtra: STRIPE_SAVED });
 		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);

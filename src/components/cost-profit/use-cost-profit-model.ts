@@ -192,7 +192,7 @@ type PeriodPayload = {
   periods?: AccountingPeriod[];
   savedJournal?: SavedJournalEntry[];
   /** 出荷の仕訳の出荷した日と登録した日（仕訳帳の列に出す）。 */
-  shipmentMeta?: ShipmentMeta[];
+  shipmentMeta?: ShipmentMeta[] | null;
   opening?: OpeningBalanceRow[];
   periodNotices?: PeriodNotices;
 };
@@ -403,7 +403,8 @@ export function useCostProfitModel({
         ? (periods.find((candidate) => candidate.id === periodId) ?? null)
         : null;
   const [savedJournal, setSavedJournal] = useState<SavedJournalEntry[]>([]);
-  const [shipmentMeta, setShipmentMeta] = useState<ShipmentMeta[]>([]);
+  // null は出荷した日と登録した日を読めなかった時（仕訳そのものは読めている）。
+  const [shipmentMeta, setShipmentMeta] = useState<ShipmentMeta[] | null>([]);
   const [openingRows, setOpeningRows] = useState<OpeningBalanceRow[]>([]);
   const [periodNotices, setPeriodNotices] =
     useState<PeriodNotices>(NO_PERIOD_NOTICES);
@@ -593,7 +594,11 @@ export function useCostProfitModel({
       setLoadedScope(requestScope);
       setPeriods(payload.data.periods ?? []);
       setSavedJournal(payload.data.savedJournal ?? []);
-      setShipmentMeta(payload.data.shipmentMeta ?? []);
+      setShipmentMeta(
+        payload.data.shipmentMeta === null
+          ? null
+          : (payload.data.shipmentMeta ?? []),
+      );
       setOpeningRows(payload.data.opening ?? []);
       setPeriodNotices(payload.data.periodNotices ?? NO_PERIOD_NOTICES);
       setHasNoPeriod(payload.data.period === null);
@@ -1070,7 +1075,11 @@ export function useCostProfitModel({
     () =>
       buildOverviewActions({
         trial: trialBalance,
-        receivableEntryCount: countReceivableEntries(incomes, businessType),
+        // 注文の収入の行（出荷の仕訳から作る）は Stripe未収金／前受金で数えるので、未入金には入れない。
+        receivableEntryCount: countReceivableEntries(
+          incomes.filter((income) => income.source !== "order"),
+          businessType,
+        ),
         dueSoon,
         closingCash: cashFlow.closingCash,
         safetyLevel,
@@ -2584,7 +2593,7 @@ export function useCostProfitModel({
 
   // 決算整理仕訳（自動生成分）。伝票番号の D/I/A サフィックスで判別する。
   const closingEntries = useMemo(
-    () => journal.filter((entry) => entry.entryId < 0),
+    () => journal.filter((entry) => entry.entryId < 0 && !entry.eventKind),
     [journal],
   );
 
@@ -3223,7 +3232,8 @@ export function useCostProfitModel({
   // 取引・仕訳を id / 伝票番号で引く索引。元帳行から証憑と明細へ辿る。
   const entriesById = useMemo(() => {
     const map = new Map<number, Expense>();
-    for (const entry of allEntries) map.set(entry.id, entry);
+    // 取引の id は正。注文の収入の行（負の仮の番号）は仕訳の番号と重ならないよう入れない。
+    for (const entry of allEntries) if (entry.id > 0) map.set(entry.id, entry);
     return map;
   }, [allEntries]);
 
@@ -3283,7 +3293,11 @@ export function useCostProfitModel({
         }
         if (ledgerSideFilter === "debit" && row.debit <= 0) return false;
         if (ledgerSideFilter === "credit" && row.credit <= 0) return false;
-        if (ledgerSideFilter === "closing" && row.entryId >= 0) return false;
+        if (
+          ledgerSideFilter === "closing" &&
+          (row.entryId >= 0 || row.eventKind)
+        )
+          return false;
         if (!keyword) return true;
         return `${row.description} ${row.partner} ${row.number} ${row.counterAccount}`
           .toLowerCase()

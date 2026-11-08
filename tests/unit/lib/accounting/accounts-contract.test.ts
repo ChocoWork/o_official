@@ -78,7 +78,9 @@ describe('FREQ-554-AC-06: 保存した仕訳を画面の仕訳の型へ直して
 	it('貸借・科目・印・日付・説明を保ち、番号は期間の通し番号を使う', () => {
 		const entry = savedEntryToJournalEntry(saved(), lookup);
 		expect(entry).toEqual({
-			entryId: -1,
+			entryId: -2_000_042,
+			eventKind: 'payment_confirmed',
+			savedEntryId: saved().id,
 			sourceKey: 'payment_confirmed:pi_1',
 			number: 'JE-000042',
 			date: '2026-08-15',
@@ -100,7 +102,7 @@ describe('FREQ-554-AC-06: 保存した仕訳を画面の仕訳の型へ直して
 	it('手入力の行の番号が分かるときだけ entryId を数値にする', () => {
 		expect(savedEntryToJournalEntry(saved({ eventKind: 'manual_entry', dedupeKey: 'manual_entry:17:0' }), lookup).entryId).toBe(17);
 		expect(savedEntryToJournalEntry(saved({ eventKind: 'migrated_entry', dedupeKey: 'migrated_entry:23' }), lookup).entryId).toBe(23);
-		expect(savedEntryToJournalEntry(saved({ eventKind: 'manual_entry', dedupeKey: 'manual_entry:abc:0' }), lookup).entryId).toBe(-1);
+		expect(savedEntryToJournalEntry(saved({ eventKind: 'manual_entry', dedupeKey: 'manual_entry:abc:0' }), lookup).entryId).toBe(-2_000_042);
 	});
 
 	it('取引先が無ければ空にし、未登録の科目は渡した関数に任せる', () => {

@@ -7,7 +7,7 @@ import path from 'node:path';
 // `toOrderSalesTransaction`・`order-sales.ts` は KPI の route がまだ使っているので、数えるのは Task 13。
 
 const SRC = path.join(process.cwd(), 'src');
-const BANNED = ['buildStripeJournal', 'mapOrderIncome', 'stripe:sale:'] as const;
+const BANNED = ['buildStripeJournal', 'buildOrderSalesJournal', 'mapOrderIncome', 'stripe:sale:'] as const;
 
 function sourceFiles(directory: string): string[] {
 	return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -20,7 +20,7 @@ function sourceFiles(directory: string): string[] {
 describe('合成の仕訳が残っていない', () => {
 	const files = sourceFiles(SRC);
 
-	it('FREQ-570-AC-04: srcに buildStripeJournal・mapOrderIncome・stripe:sale: が残っていない', () => {
+	it('FREQ-570-AC-04: srcに buildStripeJournal・buildOrderSalesJournal・mapOrderIncome・stripe:sale: が残っていない', () => {
 		expect(files.length).toBeGreaterThan(100);
 		const found = files.flatMap((file) => {
 			const text = fs.readFileSync(file, 'utf8');

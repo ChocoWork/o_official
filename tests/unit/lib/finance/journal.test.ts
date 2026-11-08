@@ -7,11 +7,9 @@ import {
 import {
 	buildGeneralLedger,
 	buildJournal,
-	buildOrderSalesJournal,
 	buildTrialBalance,
 	type FinanceEntry,
 } from '@/lib/finance/journal';
-import { mergeJournalEntries } from '@/lib/finance/stripe-journal';
 
 function entry(partial: Partial<FinanceEntry> & Pick<FinanceEntry, 'id' | 'amount'>): FinanceEntry {
 	return {
@@ -298,28 +296,3 @@ describe('buildTrialBalance（貸借一致の検証基盤）', () => {
 	});
 });
 
-describe('buildOrderSalesJournal（注文の売上の合成。保存は計画2）', () => {
-	const orderSale = (id: number, date: string, sourceId: string) => ({
-		...entry({ id, date, amount: 10_000, entryType: 'income', category: '売上高', item: 'オンライン注文', paymentMethod: 'Stripe' }),
-		sourceId,
-	});
-	// 日は route が注文を作った日時の日本時間で付ける（2026-12-31T15:30Z は 2027-01-01）。
-	const orders = [orderSale(-1, '2026-12-28', 'order-1'), orderSale(-2, '2027-01-01', 'order-2')];
-	const year2026 = { startsOn: '2026-01-01', endsOn: '2026-12-31' };
-	const year2027 = { startsOn: '2027-01-01', endsOn: '2027-12-31' };
-
-	it('FREQ-557-AC-01: 12月28日に払った注文は注文を作った日の期間に出て年を作り直しても二重に数えない', () => {
-		// 出荷の期間へ移すのは計画2。計画1は注文を作った日（日本時間）の期間に数える。
-		const in2026 = buildOrderSalesJournal(orders, 'soleProprietor', year2026);
-		expect(in2026.map((row) => [row.sourceKey, row.date])).toEqual([['order:order-1', '2026-12-28']]);
-		const in2027 = buildOrderSalesJournal(orders, 'soleProprietor', year2027);
-		expect(in2027.map((row) => [row.sourceKey, row.date])).toEqual([['order:order-2', '2027-01-01']]);
-
-		// 作り直した結果を重ねても印で1本にまとまる。
-		const rebuilt = buildOrderSalesJournal(orders, 'soleProprietor', year2026);
-		const merged = mergeJournalEntries([...in2026, ...rebuilt], rebuilt);
-		expect(merged).toHaveLength(1);
-		const trial = buildTrialBalance(buildGeneralLedger(merged));
-		expect(trial.rows.find((row) => row.account.code === '4010')?.creditTotal).toBe(10_000);
-	});
-});

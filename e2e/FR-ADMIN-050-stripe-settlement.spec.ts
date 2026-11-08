@@ -146,8 +146,20 @@ for (const viewport of viewports) {
       await page.getByRole('tab', { name: '帳簿', exact: true }).click();
       await expect(page.getByRole('tab', { name: '仕訳・元帳', exact: true })).toBeVisible();
 
-      await expect(page.getByText('Stripe未収金').first()).toBeVisible();
-      await expect(page.getByText('支払手数料').first()).toBeVisible();
+      // 勘定科目ツリーにも名前が出るので、Stripe未収金（1160）の元帳の行（相手勘定科目）で確かめる。
+      await page.getByRole('searchbox', { name: '勘定科目を検索' }).fill('Stripe未収金');
+      await page.getByRole('button', { name: '勘定科目を検索する' }).click();
+      await page
+        .getByRole('region', { name: '勘定科目' })
+        .getByRole('button', { name: /1160\s*Stripe未収金/ })
+        .last()
+        .click();
+      const list = page.getByRole('region', { name: '仕訳一覧' });
+      // 支払い（前受金）・手数料（支払手数料）・入金の開始（Stripe入金途上）が相手勘定科目に並ぶ。
+      await expect(list).toContainText('前受金');
+      await expect(list).toContainText('支払手数料');
+      await expect(list).toContainText('Stripe入金途上');
+      await expect(list).not.toContainText('クレジット売掛金');
     });
   });
 }

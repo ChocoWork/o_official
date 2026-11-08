@@ -12,7 +12,6 @@ import {
 } from "@/lib/finance/accounts";
 import { paymentMethodAccountName } from "@/lib/finance/payment-methods";
 import type { DepreciationForYear } from "@/lib/finance/depreciation";
-import { isDateInPeriod, type PeriodBounds } from "@/lib/finance/period-range";
 
 export type EntryType = "expense" | "income";
 
@@ -40,7 +39,12 @@ export type JournalLine = {
 };
 
 export type JournalEntry = {
+  /** 手入力の取引の id（正）。ほかの仕訳は取引でないので負の値（保存した仕訳は番号ごとに別の値、決算整理は別の範囲）。 */
   entryId: number;
+  /** 保存した仕訳の出来事の種類（payment_confirmed など）。決算整理の仕訳には無い。 */
+  eventKind?: string;
+  /** 保存した仕訳の id（uuid）。 */
+  savedEntryId?: string;
   /** 外部原始記録から決定的に生成した仕訳の冪等キー。 */
   sourceKey?: string;
   /** 伝票番号 JE-YYYYMMDD-NNN */
@@ -102,27 +106,6 @@ export function buildJournal(
   });
 }
 
-/** 注文由来の売上（取引管理の注文の収入の行）。`sourceId` は注文の番号。 */
-export type OrderSalesEntry = FinanceEntry & { sourceId: string };
-
-/**
- * 注文の売上の合成仕訳（計画1。計画2が保存を始めたら外して `payment_confirmed:<payment_intent>` へ置き換える）。
- * 日（注文を作った日の日本時間）が期間に入る物だけを残し、`order:<注文の番号>` の印を付ける。
- * 印があるので、作り直した結果を `mergeJournalEntries` で重ねても1本にまとまる。
- */
-export function buildOrderSalesJournal(
-  orders: readonly OrderSalesEntry[],
-  businessType: BusinessType,
-  period: PeriodBounds,
-): JournalEntry[] {
-  const inPeriod = orders.filter((order) => isDateInPeriod(order.date, period));
-  const sourceIdByEntryId = new Map(inPeriod.map((order) => [order.id, order.sourceId]));
-  return buildJournal(inPeriod, businessType).map((entry) => ({
-    ...entry,
-    sourceKey: `order:${sourceIdByEntryId.get(entry.entryId) ?? entry.entryId}`,
-  }));
-}
-
 /**
  * 減価償却の決算整理仕訳。
  * 直接法（資産科目を直接減額）で立てる。青色申告決算書4ページの貸借対照表は
@@ -177,6 +160,8 @@ export function buildDepreciationEntries(
 export type LedgerRow = {
   /** 元になった取引の id（決算整理仕訳は負の値）。証憑・訂正履歴の突き合わせに使う。 */
   entryId: number;
+  /** 保存した仕訳の出来事の種類。決算整理の仕訳には無い。 */
+  eventKind?: string;
   date: string;
   number: string;
   /** 相手科目名（複合仕訳になった場合は「諸口」） */
@@ -250,6 +235,7 @@ export function buildGeneralLedger(
 
       ledger.rows.push({
         entryId: entry.entryId,
+        eventKind: entry.eventKind,
         date: entry.date,
         number: entry.number,
         counterAccount,

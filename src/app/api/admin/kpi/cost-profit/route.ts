@@ -464,8 +464,8 @@ type PeriodPayload = {
 	period: AccountingPeriod | null;
 	periods: AccountingPeriod[];
 	savedJournal: SavedJournalEntry[];
-	/** 出荷の仕訳の出荷した日と登録した日。保存した仕訳の読み直しと一緒に返す。 */
-	shipmentMeta: ShipmentMeta[];
+	/** 出荷の仕訳の出荷した日と登録した日。保存した仕訳の読み直しと一緒に返す。読めなかった時は null。 */
+	shipmentMeta: ShipmentMeta[] | null;
 	opening: OpeningBalanceRow[];
 	periodNotices: PeriodNotices;
 };
@@ -552,12 +552,12 @@ const SHIPMENT_META_BATCH = 200;
 
 /**
  * 出荷の仕訳（発送票由来）だけの出荷した日・登録した日を、200件ずつに分けて最後まで読む（FREQ-564-AC-04）。
- * 途中の失敗は、欠けた配列を成功として返さない。
+ * 途中の失敗は、欠けた配列を成功として返さず ok:false にする（列を埋めるだけの読み物なので、GET は止めずに null を返す）。
  */
 async function readShipmentMeta(
 	client: Awaited<ReturnType<typeof createServiceRoleClient>>,
 	entries: readonly SavedJournalEntry[],
-): Promise<{ ok: true; meta: ShipmentMeta[] } | { ok: false; code: 'JOURNAL_INCOMPLETE' }> {
+): Promise<{ ok: true; meta: ShipmentMeta[] } | { ok: false }> {
 	const ids = entries.filter((entry) => entry.sourceTable === 'shipment_slips').map((entry) => entry.id);
 	const meta: ShipmentMeta[] = [];
 	try {
@@ -567,7 +567,7 @@ async function readShipmentMeta(
 	} catch (error) {
 		const failure = error instanceof AccountingStoreError ? error : new AccountingStoreError();
 		console.error('GET /api/admin/kpi/cost-profit shipment meta read error:', failure.code ?? failure.sqlstate ?? null);
-		return { ok: false, code: 'JOURNAL_INCOMPLETE' };
+		return { ok: false };
 	}
 	return { ok: true, meta };
 }
@@ -1096,7 +1096,6 @@ export async function GET(request: Request) {
 		// 注文の収入の行は保存した出荷の仕訳から作る。出荷の仕訳の出荷した日と登録した日も一緒に返す（6-c）。
 		const orderIncomes = orderIncomesFromJournal(savedJournal.entries);
 		const shipmentMeta = await readShipmentMeta(supabase, savedJournal.entries);
-		if (!shipmentMeta.ok) return journalFailureResponse(shipmentMeta.code);
 		const planRow = (planResult.data as FinancePlanRow | null) ?? null;
 
 		const closingRows = (closingsResult.data ?? []) as YearClosingRow[];
@@ -1112,7 +1111,7 @@ export async function GET(request: Request) {
 				period: selectedPeriod,
 				periods,
 				savedJournal: savedJournal.entries,
-				shipmentMeta: shipmentMeta.meta,
+				shipmentMeta: shipmentMeta.ok ? shipmentMeta.meta : null,
 				opening,
 				periodNotices: periodNoticesOf(selectedPeriod, periods, opening, today),
 				plan: mapPlan(planRow),

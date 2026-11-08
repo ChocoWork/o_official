@@ -329,7 +329,6 @@ export type Expense = FinanceEntry & {
   evidenceUnavailable?: EvidenceUnavailableRecord | null;
   source?: "manual" | "order";
   sourceId?: string;
-  paymentIntentId?: string;
   readOnly?: boolean;
   grossAmount?: number;
   refundedAmount?: number;

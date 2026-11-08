@@ -63,7 +63,7 @@ const TRACE = {
 	],
 };
 
-function financeData(shipmentMeta: unknown[] = [META]) {
+function financeData(shipmentMeta: unknown[] | null = [META]) {
 	return {
 		fiscalYear: 2026, seasonKey: null, businessType: 'soleProprietor',
 		plan: { salesRevenue: 0, openingCash: 0, accountsReceivable: 0, fixedAssets: 0, accountsPayable: 0, openingCapital: 0 },
@@ -76,11 +76,11 @@ function financeData(shipmentMeta: unknown[] = [META]) {
 	};
 }
 
-type Serve = { traceStatus?: number; shipmentMeta?: unknown[] };
+type Serve = { traceStatus?: number; shipmentMeta?: unknown[] | null };
 
 function serve(state: Serve = {}) {
 	return mockFetch((url) => {
-		if (url.pathname === '/api/admin/kpi/cost-profit') return { status: 200, body: { data: financeData(state.shipmentMeta) } };
+		if (url.pathname === '/api/admin/kpi/cost-profit') return { status: 200, body: { data: financeData(state.shipmentMeta === undefined ? [META] : state.shipmentMeta) } };
 		if (url.pathname === `${BASE}/shipment-trace`) {
 			if (state.traceStatus) return { status: state.traceStatus, body: { code: 'ACCOUNTING_NOT_FOUND', error: '会計の記録が見つかりません。' } };
 			return { status: 200, body: envelope(TRACE) };
@@ -146,6 +146,17 @@ describe('仕訳帳の出荷の列', () => {
 		const cells = within(rowOf('JE-000005')).getAllByRole('cell').map((cell) => cell.textContent);
 		expect(cells.slice(-3)).toEqual(['', '', '']);
 		expect(within(rowOf('JE-000005')).queryByRole('button', { name: /出荷の跡/ })).not.toBeInTheDocument();
+	});
+
+	it('FREQ-570-AC-02: 出荷の日付を読めなかった時（null）は穏やかな固定の文を出し、仕訳一覧と列の見出しはそのまま出る', async () => {
+		serve({ shipmentMeta: null });
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '帳簿' }));
+		await selectAccount();
+		expect(await screen.findByText(/出荷した日と登録した日を読み込めませんでした。仕訳はそのまま使えます/)).toBeInTheDocument();
+		const cells = within(rowOf('JE-000005')).getAllByRole('cell').map((cell) => cell.textContent);
+		expect(cells.slice(-3)).toEqual(['', '', '']);
 	});
 
 	it('FREQ-564-AC-03: 出荷の跡に直した理由・人・前後の日と、取り消しと正しい仕訳が並ぶ', async () => {
