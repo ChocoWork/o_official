@@ -13,6 +13,7 @@ import {
   NO_PERMISSIONS,
   Section,
   tableClassName,
+  useTicket,
   type ViewPermissions,
 } from "./accounting-api";
 import { currency } from "./constants";
@@ -74,6 +75,8 @@ export const disputeCauseLabel = (reason: string): string =>
 export function disputeStatusLabel(status: string): string {
   if (status === "lost") return "取り消しが確定した（お金は戻らない）";
   if (status === "won") return "取り消しが取り下げられた（お金が戻った）";
+  // 事前の問い合わせ（warning_*）は、閉じたものは終わっている（SQL の accounting_dispute_settled）。
+  if (status === "warning_closed") return "事前の問い合わせは終わった";
   if (status === "needs_response" || status === "under_review" || status.startsWith("warning_")) {
     return "カード会社の判断待ち";
   }
@@ -85,6 +88,9 @@ export const accountLabel = (code: string): string => `${code} ${accountByCode(c
 /** 確定したが、振り替え先の科目がまだの取り消し。 */
 const awaitingAssignment = (row: DisputeRow): boolean =>
   row.confirmed_on !== null && row.assigned_account_code === null;
+
+/** 決定待ちの画面が全部読む時の上限（100件 × 20ページ）。 */
+const AWAITING_MAX_PAGES = 20;
 
 export function DisputeList({
   awaitingOnly = false,
@@ -106,28 +112,41 @@ export function DisputeList({
   const [notice, setNotice] = useState<Notice | null>(null);
   const [assigning, setAssigning] = useState<string | null>(null);
   const guard = useRef(false);
+  const ticket = useTicket();
 
-  const apply = (page: DisputePage, append: boolean) => {
-    setRows((current) => (append ? [...current, ...page.disputes] : page.disputes));
-    setNext(page.next_after_at && page.next_after_id ? { at: page.next_after_at, id: page.next_after_id } : null);
-  };
+  const cursorOf = (page: DisputePage) =>
+    page.next_after_at && page.next_after_id ? { at: page.next_after_at, id: page.next_after_id } : null;
 
+  /** 先頭から読み直す。決定待ちの画面は「無い」と言い切るため、続きも上限まで全部読む。 */
   const load = useCallback(async () => {
-    const result = await getAccountingData<DisputePage>("disputes", { limit: 50 }, (data) => hasArray(data, "disputes"));
-    if (!result.ok) {
-      setError(result.message);
-      return;
+    const mine = ticket.next();
+    let collected: DisputeRow[] = [];
+    let cursor: { at: string; id: string } | null = null;
+    for (let page = 0; page < (awaitingOnly ? AWAITING_MAX_PAGES : 1); page += 1) {
+      const result: Awaited<ReturnType<typeof getAccountingData<DisputePage>>> = await getAccountingData<DisputePage>(
+        "disputes",
+        { limit: awaitingOnly ? 100 : 50, afterAt: cursor?.at, afterId: cursor?.id },
+        (data) => hasArray(data, "disputes"),
+      );
+      if (!ticket.isCurrent(mine)) return;
+      if (!result.ok) {
+        // 古い表を残さない。
+        setRows([]);
+        setNext(null);
+        setLoaded(false);
+        setError(result.message);
+        return;
+      }
+      if (page === 0) setPermissions(result.permissions);
+      collected = [...collected, ...result.data.disputes];
+      cursor = cursorOf(result.data);
+      if (!cursor) break;
     }
     setError(null);
-    setPermissions(result.permissions);
-    setRows(result.data.disputes);
-    setNext(
-      result.data.next_after_at && result.data.next_after_id
-        ? { at: result.data.next_after_at, id: result.data.next_after_id }
-        : null,
-    );
+    setRows(collected);
+    setNext(cursor);
     setLoaded(true);
-  }, []);
+  }, [awaitingOnly, ticket]);
 
   useEffect(() => {
     void load();
@@ -136,17 +155,20 @@ export function DisputeList({
   const loadMore = async () => {
     if (!next || loadingMore) return;
     setLoadingMore(true);
+    const mine = ticket.next();
     const result = await getAccountingData<DisputePage>("disputes", {
-      limit: 50,
+      limit: awaitingOnly ? 100 : 50,
       afterAt: next.at,
       afterId: next.id,
     }, (data) => hasArray(data, "disputes"));
+    if (!ticket.isCurrent(mine)) return;
     setLoadingMore(false);
     if (!result.ok) {
       setError(result.message);
       return;
     }
-    apply(result.data, true);
+    setRows((current) => [...current, ...result.data.disputes]);
+    setNext(cursorOf(result.data));
   };
 
   const assign = async (row: DisputeRow) => {
@@ -195,7 +217,9 @@ export function DisputeList({
         {errorBlock}
         <NoticeLine notice={notice} onReload={() => void load()} />
         {loaded && waiting.length === 0 ? (
-          <p className={noteClassName}>科目の決定待ちの取り消しはありません</p>
+          <p className={noteClassName}>
+            {next ? "読み込んだ範囲には、科目の決定待ちの取り消しはありません。さらに読み込めます" : "科目の決定待ちの取り消しはありません"}
+          </p>
         ) : null}
         {waiting.length > 0 ? (
           <ul aria-label="科目の決定待ちの取り消し" className="space-y-2">

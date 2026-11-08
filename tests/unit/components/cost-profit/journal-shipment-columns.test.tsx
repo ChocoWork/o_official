@@ -1,21 +1,26 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { JournalShipmentPanel } from '@/components/cost-profit/journal-view';
+import CostProfitSection from '@/components/CostProfitSection';
 import { BASE, envelope, uuid } from './accounting-fixtures';
-import { mockFetch } from './settings-fixtures';
+import { mockFetch, solePeriod } from './settings-fixtures';
 
-// 仕訳帳の出荷の列と出荷の跡（FREQ-564-AC-03・AC-04）。
+// 仕訳帳の出荷の列と出荷の跡（FREQ-564-AC-03・AC-04）。列は帳簿タブの「仕訳・元帳」の仕訳一覧の列で、
+// 出荷の仕訳の行にだけ「出荷した日」「登録した日」と「出荷の跡」の操作が付き、ほかの行は空。
 // 仕訳の読み口は shipmentMeta（出荷の仕訳だけ）を足す。跡は {slip, history, entries}（snake_case）。
 
-const PERIOD = uuid(2026);
+const PERIOD = solePeriod(2026);
 const SLIP = uuid(901);
 const E5 = uuid(305);
 const E6 = uuid(306);
 const E7 = uuid(307);
 
+function line(lineNo: number, accountCode: string, debit: number, credit: number) {
+	return { lineNo, accountCode, debit, credit, subAccount: null, counterparty: null, orderId: null, memo: null };
+}
+
 function entry(id: string, no: number, overrides: Record<string, unknown> = {}) {
 	return {
 		id,
-		periodId: PERIOD,
+		periodId: PERIOD.id,
 		entryNo: no,
 		entryDate: '2026-11-03',
 		eventKind: 'payment_confirmed',
@@ -31,13 +36,16 @@ function entry(id: string, no: number, overrides: Record<string, unknown> = {}) 
 		migratedFrom: null,
 		migratedAt: null,
 		sourceRecordedAt: null,
-		lines: [],
+		lines: [line(1, '2150', 0, 30000), line(2, '1160', 30000, 0)],
 		...overrides,
 	};
 }
 
-const SHIPMENT_ENTRY = entry(E5, 5, { eventKind: 'shipment_confirmed', description: '出荷', sourceTable: 'shipment_slips', sourceId: SLIP });
-const PAYMENT_ENTRY = entry(uuid(304), 4);
+const SHIPMENT_ENTRY = entry(E5, 5, {
+	eventKind: 'shipment_confirmed', description: '出荷', sourceTable: 'shipment_slips', sourceId: SLIP,
+	lines: [line(1, '2150', 30000, 0), line(2, '4010', 0, 30000)],
+});
+const PAYMENT_ENTRY = entry(uuid(304), 4, { lines: [line(1, '2150', 0, 30000), line(2, '1160', 30000, 0)] });
 const META = { entryId: E5, slipNumber: 'SL-20261103-0001', shipmentDate: '2026-11-03', confirmedAt: '2026-11-03T16:30:00+00:00' };
 
 const TRACE = {
@@ -53,81 +61,126 @@ const TRACE = {
 	],
 };
 
-function serve(pages?: Record<string, unknown>) {
+function financeData() {
+	return {
+		fiscalYear: 2026, seasonKey: null, businessType: 'soleProprietor',
+		plan: { salesRevenue: 0, openingCash: 0, accountsReceivable: 0, fixedAssets: 0, accountsPayable: 0, openingCapital: 0 },
+		expenses: [], incomes: [], products: [], partners: [], fixedAssets: [],
+		closing: { closingInventoryGoods: 0, closingInventoryMaterials: 0, allowanceForDoubtful: 0, closingBalances: {}, closedAt: null },
+		previousClosingBalances: null, revisions: [], reviewAcks: [], cumulativeEntries: [], templates: [], summaryOptions: [],
+		stripeAccounting: { balanceTransactions: [], refunds: [], payouts: [], summary: { stripeBalance: 0, inTransitBalance: 0, unmatchedPayoutCount: 0 } },
+		period: PERIOD, periods: [PERIOD], savedJournal: [PAYMENT_ENTRY, SHIPMENT_ENTRY], opening: [],
+		periodNotices: { filingDeadlinePassed: false, previousPeriodOpen: false },
+	};
+}
+
+type Serve = { journalPages?: Record<string, unknown>; journalStatus?: number; traceStatus?: number };
+
+function serve(state: Serve = {}) {
 	return mockFetch((url) => {
+		if (url.pathname === '/api/admin/kpi/cost-profit') return { status: 200, body: { data: financeData() } };
 		if (url.pathname === `${BASE}/journal`) {
-			const body = pages?.[url.searchParams.get('afterEntryNo') ?? 'first'] ?? {
+			if (state.journalStatus) return { status: state.journalStatus, body: { error: '会計の処理に失敗しました。' } };
+			const body = state.journalPages?.[url.searchParams.get('afterEntryNo') ?? 'first'] ?? {
 				entries: [PAYMENT_ENTRY, SHIPMENT_ENTRY], nextAfter: null, opening: [], shipmentMeta: [META],
 			};
 			return { status: 200, body: envelope(body) };
 		}
-		if (url.pathname === `${BASE}/shipment-trace`) return { status: 200, body: envelope(TRACE) };
+		if (url.pathname === `${BASE}/shipment-trace`) {
+			if (state.traceStatus) return { status: state.traceStatus, body: { code: 'ACCOUNTING_NOT_FOUND', error: '会計の記録が見つかりません。' } };
+			return { status: 200, body: envelope(TRACE) };
+		}
 		return undefined;
 	});
 }
+
+/** 勘定科目の一覧から「前受金」を選ぶ（仕訳一覧は選んだ科目の元帳行）。 */
+async function selectAccount() {
+	const button = await waitFor(() => {
+		const found = screen.getAllByRole('button').find((candidate) => candidate.textContent?.startsWith('2150前受金'));
+		if (!found) throw new Error('2150 not shown yet');
+		return found;
+	});
+	fireEvent.click(button);
+}
+
+async function openLedger() {
+	render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
+	await screen.findByText('同期済み');
+	fireEvent.click(screen.getByRole('tab', { name: '帳簿' }));
+	// 仕訳一覧の表は選んだ科目の元帳行。2つの仕訳が通る「前受金」を選ぶ。
+	await selectAccount();
+	return screen.findByRole('button', { name: 'JE-000005の出荷の跡を開く' });
+}
+
+const journalTable = () => screen.getAllByRole('table').find((table) => within(table).queryByRole('columnheader', { name: '出荷した日' }))!;
+const rowOf = (number: string) => within(journalTable()).getAllByRole('row').find((row) => within(row).queryByText(number))!;
 
 describe('仕訳帳の出荷の列', () => {
 	jest.setTimeout(30000);
 
 	it('FREQ-564-AC-04: 仕訳帳の出荷の仕訳に出荷した日と登録した日が並び、ほかの仕訳は空', async () => {
 		const api = serve();
-		render(<JournalShipmentPanel periodId={PERIOD} />);
-		const region = await screen.findByRole('region', { name: '出荷の仕訳の日付' });
-		const table = await within(region).findByRole('table', { name: '保存した仕訳' });
-		expect(within(table).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
-			'伝票No.', '日付', '摘要', '出荷した日', '登録した日', '出荷の跡',
-		]);
-		expect(api.fn.mock.calls[0][0]).toContain(`periodId=${PERIOD}`);
-		const rows = within(table).getAllByRole('row').slice(1);
+		await openLedger();
+		const headers = within(journalTable()).getAllByRole('columnheader').map((cell) => cell.textContent);
+		// 既存の列の後ろに、出荷した日・登録した日・出荷の跡の3列。
+		expect(headers.slice(-3)).toEqual(['出荷した日', '登録した日', '出荷の跡']);
+		expect(headers.slice(0, 3)).toEqual(['日付', '伝票No.', '相手勘定科目']);
+		expect(api.fn.mock.calls.some((call) => String(call[0]).includes(`${BASE}/journal?`) && String(call[0]).includes(`periodId=${PERIOD.id}`))).toBe(true);
+
 		const cells = (row: HTMLElement) => within(row).getAllByRole('cell').map((cell) => cell.textContent);
 		// 出荷の仕訳: 出荷した日 = 発送票の出荷日、登録した日 = 発送票を確定した日（日本時間）。
-		expect(cells(rows[1]).slice(0, 5)).toEqual(['JE-000005', '2026/11/03', '出荷', '2026/11/03', '2026/11/04']);
-		expect(within(rows[1]).getByRole('button', { name: 'JE-000005の出荷の跡を開く' })).toBeInTheDocument();
-		// 出荷でない仕訳は、2つの列とも空で、跡の操作も無い。
-		expect(cells(rows[0])).toEqual(['JE-000004', '2026/11/03', '注文の支払い', '', '', '']);
-		expect(within(rows[0]).queryByRole('button')).not.toBeInTheDocument();
+		const shipment = cells(rowOf('JE-000005'));
+		expect(shipment.slice(-3, -1)).toEqual(['2026/11/03', '2026/11/04']);
+		expect(within(rowOf('JE-000005')).getByRole('button', { name: 'JE-000005の出荷の跡を開く' })).toBeInTheDocument();
+		// 出荷でない仕訳は、3つの列とも空で、跡の操作も無い。
+		const payment = cells(rowOf('JE-000004'));
+		expect(payment.slice(-3)).toEqual(['', '', '']);
+		expect(within(rowOf('JE-000004')).queryByRole('button', { name: /出荷の跡/ })).not.toBeInTheDocument();
 	});
 
-	it('FREQ-564-AC-04: 続きがあれば「さらに読み込む」で次の仕訳を足す', async () => {
+	it('FREQ-564-AC-04: 続きの仕訳も最後まで読んで、出荷の列に反映する', async () => {
 		const api = serve({
-			first: { entries: [PAYMENT_ENTRY], nextAfter: { entryDate: '2026-11-03', entryNo: 4 }, opening: [], shipmentMeta: [] },
-			'4': { entries: [SHIPMENT_ENTRY], nextAfter: null, opening: [], shipmentMeta: [META] },
+			journalPages: {
+				first: { entries: [PAYMENT_ENTRY], nextAfter: { entryDate: '2026-11-03', entryNo: 4 }, opening: [], shipmentMeta: [] },
+				'4': { entries: [SHIPMENT_ENTRY], nextAfter: null, opening: [], shipmentMeta: [META] },
+			},
 		});
-		render(<JournalShipmentPanel periodId={PERIOD} />);
-		fireEvent.click(await screen.findByRole('button', { name: 'さらに読み込む' }));
-		await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(3));
+		await openLedger();
 		expect(api.fn.mock.calls.some((call) => String(call[0]).includes('afterEntryDate=2026-11-03&afterEntryNo=4'))).toBe(true);
-		expect(screen.queryByRole('button', { name: 'さらに読み込む' })).not.toBeInTheDocument();
 	});
 
-	it('FREQ-564-AC-04: 期間が無ければ読まず、案内だけを出す', () => {
-		const api = serve();
-		render(<JournalShipmentPanel periodId={null} />);
-		expect(screen.getByText('期間を選ぶと、出荷の仕訳の日付を出します')).toBeInTheDocument();
-		expect(api.calls).toHaveLength(0);
+	it('FREQ-564-AC-04: 出荷の日付が読めなくても仕訳一覧は出て、固定の文で知らせ、本文を読み切る', async () => {
+		const api = serve({ journalStatus: 500 });
+		render(<CostProfitSection periodId={null} fiscalYear={2026} fiscalYearLabel="2026年" />);
+		await screen.findByText('同期済み');
+		fireEvent.click(screen.getByRole('tab', { name: '帳簿' }));
+		await selectAccount();
+		expect(await screen.findByText('会計の処理に失敗しました。')).toBeInTheDocument();
+		await waitFor(() => expect(within(journalTable()).getByText('JE-000005')).toBeInTheDocument());
+		const cells = within(rowOf('JE-000005')).getAllByRole('cell').map((cell) => cell.textContent);
+		expect(cells.slice(-3)).toEqual(['', '', '']);
+		expect(api.calls.find((call) => call.url === `${BASE}/journal`)?.response.bodyUsed).toBe(true);
 	});
 
 	it('FREQ-564-AC-03: 出荷の跡に直した理由・人・前後の日と、取り消しと正しい仕訳が並ぶ', async () => {
 		const api = serve();
-		render(<JournalShipmentPanel periodId={PERIOD} />);
-		fireEvent.click(await screen.findByRole('button', { name: 'JE-000005の出荷の跡を開く' }));
+		fireEvent.click(await openLedger());
 
 		const trace = await screen.findByRole('region', { name: '出荷の跡' });
-		expect(api.fn.mock.calls.some((call) => String(call[0]).includes(`shipment-trace?slipId=${SLIP}`))).toBe(true);
 		await within(trace).findByRole('list', { name: '出荷日の直した跡' });
+		expect(api.fn.mock.calls.some((call) => String(call[0]).includes(`shipment-trace?slipId=${SLIP}`))).toBe(true);
 		expect(trace).toHaveTextContent('SL-20261103-0001');
 		expect(trace).toHaveTextContent('今の出荷日 2026/11/05');
 
-		const history = within(trace).getByRole('list', { name: '出荷日の直した跡' });
-		const items = within(history).getAllByRole('listitem');
+		const items = within(within(trace).getByRole('list', { name: '出荷日の直した跡' })).getAllByRole('listitem');
 		expect(items[0]).toHaveTextContent('最初の出荷日 2026/11/03');
 		expect(items[1]).toHaveTextContent('2026/11/03 から 2026/11/05 へ直しました');
 		expect(items[1]).toHaveTextContent('理由 出荷日の記録の誤り');
 		expect(items[1]).toHaveTextContent('担当 00000000');
 		expect(items[1]).toHaveTextContent('直した日 2026/11/04');
 
-		const entries = within(trace).getByRole('list', { name: 'この出荷の仕訳' });
-		const rows = within(entries).getAllByRole('listitem');
+		const rows = within(within(trace).getByRole('list', { name: 'この出荷の仕訳' })).getAllByRole('listitem');
 		expect(rows).toHaveLength(3);
 		expect(rows[0]).toHaveTextContent('JE-000005');
 		expect(rows[0]).toHaveTextContent('取り消されました（JE-000006）');
@@ -140,12 +193,8 @@ describe('仕訳帳の出荷の列', () => {
 	});
 
 	it('FREQ-564-AC-03: 跡が読めなければ固定の文を出して本文を読み切り、閉じられる', async () => {
-		const api = mockFetch((url) => {
-			if (url.pathname === `${BASE}/journal`) return { status: 200, body: envelope({ entries: [SHIPMENT_ENTRY], nextAfter: null, opening: [], shipmentMeta: [META] }) };
-			return { status: 404, body: { code: 'ACCOUNTING_NOT_FOUND', error: '会計の記録が見つかりません。' } };
-		});
-		render(<JournalShipmentPanel periodId={PERIOD} />);
-		fireEvent.click(await screen.findByRole('button', { name: 'JE-000005の出荷の跡を開く' }));
+		const api = serve({ traceStatus: 404 });
+		fireEvent.click(await openLedger());
 		expect(await screen.findByText('会計の記録が見つかりません。')).toBeInTheDocument();
 		expect(api.calls.find((call) => call.url === `${BASE}/shipment-trace`)?.response.bodyUsed).toBe(true);
 		fireEvent.click(screen.getByRole('button', { name: '出荷の跡を閉じる' }));

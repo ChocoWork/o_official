@@ -118,6 +118,23 @@ describe('支払いの取り消しの設定', () => {
 		expect(within(waiting).queryByRole('button')).not.toBeInTheDocument();
 	});
 
+	it('FREQ-568-AC-02: 決定待ちは続きのページも最後まで読んでから、無いと言う', async () => {
+		const api = mockFetch((url, method) => {
+			if (url.pathname === `${BASE}/dispute-settings` && method === 'GET') return { status: 200, body: envelope({ settings: [SETTING] }, ALL_FLAGS) };
+			if (url.pathname !== `${BASE}/disputes`) return undefined;
+			if (url.searchParams.get('afterId')) {
+				return { status: 200, body: envelope(disputePage([dispute(9, { status: 'lost', reason: 'fraudulent', confirmed_on: '2026-11-03', assigned_account_code: null })]), ALL_FLAGS) };
+			}
+			return { status: 200, body: envelope(disputePage([dispute(1, { status: 'under_review' })], { next_after_at: '2026-10-20T03:00:00+00:00', next_after_id: 'dp_0001' }), ALL_FLAGS) };
+		});
+		render(<DisputeSettingsPanel />);
+		const waiting = await screen.findByRole('list', { name: '科目の決定待ちの取り消し' });
+		expect(within(waiting).getAllByRole('listitem')).toHaveLength(1);
+		expect(within(waiting).getByRole('button', { name: 'dp_0009を設定の科目へ振り替える' })).toBeInTheDocument();
+		expect(api.fn.mock.calls.some((call) => String(call[0]).includes('afterId=dp_0001'))).toBe(true);
+		expect(screen.queryByText('科目の決定待ちの取り消しはありません')).not.toBeInTheDocument();
+	});
+
 	it('FREQ-568-AC-02: 決定待ちの取り消しが無ければ、無いと出す', async () => {
 		serve({ settings: [SETTING], disputes: [dispute(4, { status: 'under_review' })] });
 		render(<DisputeSettingsPanel />);
@@ -133,17 +150,21 @@ describe('支払いの取り消しの一覧', () => {
 				dispute(2, { status: 'under_review' }),
 				dispute(3, { status: 'lost', confirmed_on: '2026-11-03', assigned_account_code: '6280' }),
 				dispute(4, { status: 'won' }),
+				dispute(5, { status: 'warning_closed' }),
 			],
 		});
 		render(<DisputeList />);
 		const region = await screen.findByRole('region', { name: 'カード会社からの支払いの取り消し' });
 		const table = await within(region).findByRole('table', { name: 'カード会社からの支払いの取り消しの一覧' });
 		const rows = within(table).getAllByRole('row').slice(1);
-		expect(rows).toHaveLength(4);
+		expect(rows).toHaveLength(5);
 		expect(rows[0]).toHaveTextContent('カード会社の判断待ち');
 		expect(rows[1]).toHaveTextContent('カード会社の判断待ち');
 		expect(rows[2]).toHaveTextContent('取り消しが確定した（お金は戻らない）');
 		expect(rows[3]).toHaveTextContent('取り消しが取り下げられた（お金が戻った）');
+		// 閉じた事前の問い合わせは終わっている（判断待ちとは言わない）。
+		expect(rows[4]).toHaveTextContent('事前の問い合わせは終わった');
+		expect(rows[4]).not.toHaveTextContent('カード会社の判断待ち');
 		expect(rows[0]).toHaveTextContent('¥30,000');
 		expect(rows[0]).toHaveTextContent('不正利用');
 		expect(rows[2]).toHaveTextContent('6280 支払手数料');

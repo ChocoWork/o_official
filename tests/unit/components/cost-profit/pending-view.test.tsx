@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { PendingView } from '@/components/cost-profit/pending-view';
 import { PENDING_REASONS } from '@/lib/accounting/posting-types';
 import { ALL_FLAGS, BASE, envelope, pendingEvent, pendingPage, uuid, type Flags } from './accounting-fixtures';
@@ -45,6 +45,28 @@ function serve(state: Serve = {}) {
 	return api;
 }
 
+/** 理由ごとに、画面の文が含む決めた言い回し。 */
+const REASON_SNIPPETS: Record<(typeof PENDING_REASONS)[number], string> = {
+	payment_journal_missing: '支払いが、まだ帳簿に入っていません',
+	order_not_postable: '送料や合計が決まりの形と合わない',
+	amount_mismatch: '取引の総額が、注文の支払額と違います',
+	no_order: '注文と結び付かない支払い',
+	units_insufficient: '送る着の数が、まだ送っていない着の数より多く',
+	shipment_date_mismatch: '出荷日と発送票の出荷日が食い違っています',
+	deferred_revenue_short: '前受金の残りより多くなっています',
+	period_missing: 'この日を含む会計の期間がありません',
+	posting_error: '帳簿に入れる処理で失敗しました',
+	before_cutover: '新しい帳簿を始めた日より前の出来事です',
+	unknown_category: 'まだ知らない種類',
+	payout_mismatch: '入金の中身の合計と額が合っていません',
+	dispute_refund_overlap: '成功した返金があります',
+	dispute_return_refund_pending: '返品の返金待ちがあります',
+	dispute_withdrawal_missing: '決着していません',
+	dispute_shipment_pending: '出荷の仕訳がまだ入っていない物',
+	shipment_lines_mismatch: '品ごとの数量が食い違っています',
+	no_revenue: '仕訳にする額が0円です',
+};
+
 const pendingRegion = () => screen.getByRole('region', { name: '計上待ち' });
 const resolveCalls = (api: ReturnType<typeof serve>) => api.calls.filter((call) => call.url.endsWith('/resolve'));
 
@@ -71,22 +93,34 @@ describe('計上待ちのタブ', () => {
 		expect(region.textContent).not.toMatch(/[!！]/);
 	});
 
-	it.each(PENDING_REASONS)('FREQ-569-AC-01: 理由 %s に文があり、固定のコードをそのまま出さない', async (reason) => {
-		serve({ events: [pendingEvent(1, { reason, detail: reason === 'period_missing' ? { entry_date: '2026-11-08' } : {} })] });
+	it('FREQ-569-AC-01: 理由の一覧は計上待ちの理由の全部を覆う（試験の表と型の一覧が食い違えば落ちる）', () => {
+		expect(Object.keys(REASON_SNIPPETS).sort()).toEqual([...PENDING_REASONS].sort());
+	});
+
+	it.each(PENDING_REASONS)('FREQ-569-AC-01: 理由 %s は決めた文を出し、固定のコードをそのまま出さない', async (reason) => {
+		serve({
+			events: [pendingEvent(1, {
+				reason,
+				detail: reason === 'period_missing' ? { entry_date: '2026-11-08' } : reason === 'dispute_withdrawal_missing' ? { dispute_status: 'under_review' } : {},
+			})],
+		});
 		render(<PendingView />);
 		const region = await screen.findByRole('region', { name: '計上待ち' });
 		const text = (await within(region).findByTestId('pending-reason')).textContent ?? '';
-		expect(text.length).toBeGreaterThan(10);
+		expect(text).toContain(REASON_SNIPPETS[reason]);
 		expect(region.textContent).not.toContain(reason);
 		expect(region.textContent).not.toMatch(/[!！]/);
 	});
 
-	it('FREQ-569-AC-01: dispute_withdrawal_missing は待っている相手ごとに3つの文を出す', async () => {
+	it('FREQ-569-AC-01: dispute_withdrawal_missing は待つ相手ごとに3つの文を出す（決着を待つのは dispute_status がある時だけ）', async () => {
+		const dispute = { reason: 'dispute_withdrawal_missing' as const, eventKind: 'dispute_event' as const };
 		serve({
 			events: [
-				pendingEvent(1, { reason: 'dispute_withdrawal_missing', eventKind: 'dispute_event', detail: { waiting_on: 'dispute_account_unassigned' } }),
-				pendingEvent(2, { reason: 'dispute_withdrawal_missing', eventKind: 'dispute_event', detail: { waiting_on: 'dispute_withdrawn' } }),
-				pendingEvent(3, { reason: 'dispute_withdrawal_missing', eventKind: 'dispute_event', detail: { dispute_status: 'under_review' } }),
+				pendingEvent(1, { ...dispute, detail: { waiting_on: 'dispute_account_unassigned' } }),
+				pendingEvent(2, { ...dispute, detail: { dispute_status: 'under_review' } }),
+				// waiting_on も dispute_status も無い行は、前の段の仕訳（引かれた時・確定）を待っている。
+				pendingEvent(3, { ...dispute, detail: {} }),
+				pendingEvent(4, { ...dispute, detail: { waiting_on: 'dispute_withdrawn' } }),
 			],
 		});
 		render(<PendingView />);
@@ -95,8 +129,10 @@ describe('計上待ちのタブ', () => {
 		const texts = reasons.map((node) => node.textContent);
 		expect(new Set(texts).size).toBe(3);
 		expect(texts[0]).toMatch(/振り替え先の科目/);
-		expect(texts[1]).toMatch(/引かれた時/);
-		expect(texts[2]).toMatch(/決着/);
+		expect(texts[1]).toMatch(/決着していません/);
+		expect(texts[2]).toMatch(/前の段の仕訳/);
+		expect(texts[2]).not.toMatch(/決着/);
+		expect(texts[3]).toBe(texts[2]);
 		expect(region.textContent).not.toMatch(/チャージバック/);
 	});
 
@@ -125,6 +161,14 @@ describe('計上待ちのタブ', () => {
 		expect(reason).toHaveTextContent('確かめてください');
 		expect(screen.queryByRole('button', { name: '確認済みにする' })).not.toBeInTheDocument();
 		expect(within(pendingRegion()).getByText('仕訳が入るまで閉じられません')).toBeInTheDocument();
+	});
+
+	it('FREQ-569-AC-01: 取り消しの出来事に注文が無い時は、支払いの文ではなく取り消しの文を出す', async () => {
+		serve({ events: [pendingEvent(1, { reason: 'no_order', eventKind: 'dispute_event', sourceTable: 'stripe_disputes', sourceId: 'dp_1', orderId: null })] });
+		render(<PendingView />);
+		const reason = await screen.findByTestId('pending-reason');
+		expect(reason).toHaveTextContent('カード会社からの支払いの取り消しに、結び付く注文が見つかりません');
+		expect(reason).not.toHaveTextContent('支払いが届いています');
 	});
 
 	it('FREQ-569-AC-02: 一覧が空なら「計上待ちはありません」と出る', async () => {
@@ -186,9 +230,8 @@ describe('計上待ちのタブ', () => {
 		fireEvent.click(screen.getByRole('button', { name: '確認済みにして送る' }));
 		expect(await screen.findByText('この計上待ちは既に解決されています。')).toBeInTheDocument();
 		expect(resolveCalls(api)[0].response.bodyUsed).toBe(true);
-		const reads = api.calls.filter((call) => call.url === `${BASE}/pending-events` && call.method === 'GET');
-		await waitFor(() => expect(api.calls.filter((call) => call.url === `${BASE}/pending-events`).length).toBeGreaterThanOrEqual(2));
-		expect(reads.length).toBeGreaterThanOrEqual(1);
+		// 最初の読みの後に、もう1回読み直している。
+		await waitFor(() => expect(api.calls.filter((call) => call.url === `${BASE}/pending-events` && call.method === 'GET')).toHaveLength(2));
 	});
 
 	it('FREQ-569-AC-03: もう一度計上するは押すと二重に押せず、結果の件数を出す', async () => {
@@ -251,7 +294,7 @@ describe('計上待ちのタブ', () => {
 		expect(within(region).getByRole('button', { name: 'もう一度計上する' })).toBeInTheDocument();
 	});
 
-	it('FREQ-569-AC-06: 元の記録を直して再計上すると保留が消えほかの成功した出来事は増えない', async () => {
+	it('FREQ-569-AC-06: 再計上の結果の件数をそのまま出し、保留が消えた一覧を読み直す', async () => {
 		const api = serve({
 			events: [pendingEvent(1, { reason: 'posting_error', detail: { error_sqlstate: '23514', error_code: 'unexpected_error' } })],
 			run: { payments: 0, shipments: 1, stripe: 0, disputes: 0, parked: 0, resolved: 1, hasMore: false },
@@ -305,5 +348,54 @@ describe('計上待ちのタブ', () => {
 		await waitFor(() =>
 			expect(api.fn.mock.calls.some((call) => String(call[0]).includes('asOf=2027-03-31'))).toBe(true),
 		);
+	});
+
+	describe('前受金の確認の読み直し', () => {
+		const json = (body: unknown, status = 200) =>
+			new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+		const order = (n: number, number: string) => ({ order_id: uuid(n), order_number: number, balance: 1000, paid_on: '2026-12-20', unshipped_units: 1, states: {} });
+		const route = (deferred: (asOf: string | null, after: string | null) => Promise<Response> | Response) => {
+			global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+				const url = new URL(String(input), 'http://localhost');
+				if (url.pathname === `${BASE}/pending-events`) return json(envelope(pendingPage([]), ALL_FLAGS));
+				if (url.pathname === `${BASE}/periods`) return json({ data: { periods: [], settings: {}, deadlines: {}, interim: {}, startup: [] }, permissions: { manageSettings: false } });
+				if (url.pathname === `${BASE}/deferred-revenue`) return deferred(url.searchParams.get('asOf'), url.searchParams.get('afterOrder'));
+				return json({}, 404);
+			}) as unknown as typeof fetch;
+		};
+
+		it('FREQ-569-AC-04: 日を替えた後に前の日の続きが遅れて返っても、新しい日の表に足さない', async () => {
+			let releaseOld: (response: Response) => void = () => {};
+			route((asOf, after) => {
+				if (after) return new Promise<Response>((resolve) => { releaseOld = resolve; });
+				if (asOf === '2027-03-31') return json(envelope({ orders: [order(2, 'ORD-NEW')], next_after_order: null, total_balance: 1000, anomalies: [] }));
+				return json(envelope({ orders: [order(1, 'ORD-OLD1')], next_after_order: uuid(1), total_balance: 2000, anomalies: [] }));
+			});
+			render(<PendingView />);
+			const panel = await screen.findByRole('region', { name: '前受金の確認' });
+			await within(panel).findByText('ORD-OLD1');
+			fireEvent.click(within(panel).getByRole('button', { name: 'さらに読み込む' }));
+			fireEvent.change(within(panel).getByLabelText('この日の終わりの前受金'), { target: { value: '2027-03-31' } });
+			await within(panel).findByText('ORD-NEW');
+			await act(async () => {
+				releaseOld(json(envelope({ orders: [order(3, 'ORD-OLD2')], next_after_order: null, total_balance: 2500, anomalies: [] })));
+			});
+			expect(within(panel).queryByText('ORD-OLD2')).not.toBeInTheDocument();
+			expect(within(panel).queryByText('ORD-OLD1')).not.toBeInTheDocument();
+			expect(within(panel).getByText('前受金の残りの合計 ¥1,000')).toBeInTheDocument();
+		});
+
+		it('FREQ-569-AC-04: 日を替えて読み直しに失敗したら、前の日の表を残さず固定の文を出す', async () => {
+			route((asOf) => (asOf === '2027-03-31'
+				? json({ error: '会計の処理に失敗しました。' }, 500)
+				: json(envelope({ orders: [order(1, 'ORD-OLD1')], next_after_order: null, total_balance: 2000, anomalies: [] }))));
+			render(<PendingView />);
+			const panel = await screen.findByRole('region', { name: '前受金の確認' });
+			await within(panel).findByText('ORD-OLD1');
+			fireEvent.change(within(panel).getByLabelText('この日の終わりの前受金'), { target: { value: '2027-03-31' } });
+			expect(await within(panel).findByText('会計の処理に失敗しました。')).toBeInTheDocument();
+			expect(within(panel).queryByText('ORD-OLD1')).not.toBeInTheDocument();
+			expect(within(panel).queryByRole('table', { name: '繰り越した前受金の一覧' })).not.toBeInTheDocument();
+		});
 	});
 });

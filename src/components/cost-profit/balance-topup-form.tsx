@@ -29,10 +29,14 @@ const MAX_NOTE = 400;
 
 export function BalanceTopupForm({
   canManage,
+  loadError = null,
   today: todayProp,
   onRecorded,
 }: {
-  canManage: boolean;
+  /** 権限を読み終えるまでは null（読み込み中を出す）。 */
+  canManage: boolean | null;
+  /** 権限が読めなかった時の固定の文。 */
+  loadError?: string | null;
   /** 日本時間の今日（試験用）。 */
   today?: string;
   onRecorded?: () => void;
@@ -47,10 +51,20 @@ export function BalanceTopupForm({
   const [saving, setSaving] = useState(false);
   const guard = useRef(false);
 
-  if (!canManage) {
+  if (canManage !== true) {
     return (
       <Section title="残高の補充の記録">
-        <p className={noteClassName}>残高の補充を記録する権限がありません</p>
+        {loadError ? (
+          <p role="alert" className="font-acumin lk-text-3xs text-red-700">
+            {loadError}
+          </p>
+        ) : canManage === null ? (
+          <p role="status" className={noteClassName}>
+            読み込み中
+          </p>
+        ) : (
+          <p className={noteClassName}>残高の補充を記録する権限がありません</p>
+        )}
       </Section>
     );
   }
@@ -94,7 +108,7 @@ export function BalanceTopupForm({
     if (result.ok) {
       const created = (result.data as { topup?: { created?: boolean } } | null)?.topup?.created;
       setNotice(
-        successNotice(created === false ? "同じ記録が既にあります。補充を記録しました。" : "補充を記録しました。"),
+        successNotice(created === false ? "同じ記録が既にあります。新しくは入れていません。" : "補充を記録しました。"),
       );
       setAmount("");
       setBankDate("");

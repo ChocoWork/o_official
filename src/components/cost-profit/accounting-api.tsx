@@ -97,21 +97,43 @@ export async function getAccountingData<T>(
 
 export const accountingUrl = (path: string): string => `${ACCOUNTING_BASE}/${path}`;
 
-/** 権限だけが要る画面のために、設定の読み口から旗を読む。読めるまでは null。 */
-export function useAccountingPermissions(): ViewPermissions | null {
-  const [permissions, setPermissions] = useState<ViewPermissions | null>(null);
+/** 権限だけが要る画面のために、設定の読み口から旗を読む。読めるまでは permissions が null、読めなければ error に固定の文。 */
+export function useAccountingPermissions(): { permissions: ViewPermissions | null; error: string | null } {
+  const [state, setState] = useState<{ permissions: ViewPermissions | null; error: string | null }>({
+    permissions: null,
+    error: null,
+  });
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const result = await getAccountingData<unknown>("settings");
       if (cancelled) return;
-      setPermissions(result.ok ? result.permissions : NO_PERMISSIONS);
+      setState(
+        result.ok
+          ? { permissions: result.permissions, error: null }
+          : { permissions: null, error: result.message },
+      );
     })();
     return () => {
       cancelled = true;
     };
   }, []);
-  return permissions;
+  return state;
+}
+
+/**
+ * 読みの順番札。読み始める時に next() で札を取り、答えが来たら isCurrent(札) が偽なら捨てる
+ * （日や期間を切り替えた後に、古い答えで上書きしたり追記したりしない）。
+ */
+export function useTicket(): { next: () => number; isCurrent: (ticket: number) => boolean } {
+  const [ticket] = useState(() => {
+    let latest = 0;
+    return {
+      next: () => ++latest,
+      isCurrent: (value: number) => value === latest,
+    };
+  });
+  return ticket;
 }
 
 export const inputClassName =

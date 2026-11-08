@@ -69,6 +69,16 @@ function serve(state: Serve = {}) {
 			if (kind === 'stripe-fee') return { status: 200, body: envelope(state.fee ?? FEE, flags) };
 			if (kind === 'intake') return { status: 200, body: envelope(state.intake ?? INTAKE, flags) };
 		}
+		if (url.pathname === `${BASE}/year-end-shipments`) {
+			return {
+				status: 200,
+				body: envelope({
+					slips: [], next_after_date: null, next_after_slip: null,
+					options: { carrier_date_check_enabled: false, changed_at: null, changed_by: null, version: '1' },
+					carrier_gaps: { enabled: false, slips: [], has_more: false },
+				}, flags),
+			};
+		}
 		if (url.pathname === `${BASE}/stripe-invoices` && method === 'GET') {
 			return { status: 200, body: envelope(state.invoice ?? { record: null }, flags) };
 		}
@@ -78,6 +88,9 @@ function serve(state: Serve = {}) {
 		return undefined;
 	});
 }
+
+const reconciliationUrls = (api: ReturnType<typeof serve>) =>
+	api.fn.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/reconciliation?'));
 
 describe('照合のタブ', () => {
 	jest.setTimeout(30000);
@@ -90,8 +103,9 @@ describe('照合のタブ', () => {
 		fireEvent.click(within(region).getByRole('button', { name: 'Stripeの残高を照合する' }));
 
 		const table = await within(region).findByRole('table', { name: '仕訳になっていない取引の種類' });
-		expect(api.calls[0].url).toBe(`${BASE}/reconciliation`);
-		expect(api.fn.mock.calls[0][0]).toContain('kind=stripe-balance&through=2026-11-09');
+		expect(reconciliationUrls(api)).toEqual([expect.stringContaining('kind=stripe-balance&through=2026-11-09')]);
+		// 何の日に対する結果かを添える。
+		expect(within(region).getByText('2026/11/09 時点の照合')).toBeInTheDocument();
 		expect(within(region).getByText('Stripeの残高 ¥1,000,000')).toBeInTheDocument();
 		expect(within(region).getByText('帳簿の残高 ¥950,000')).toBeInTheDocument();
 		expect(within(region).getByText('差 ¥50,000')).toBeInTheDocument();
@@ -104,6 +118,10 @@ describe('照合のタブ', () => {
 		expect(within(region).getByTestId('balance-unexplained')).toHaveTextContent('説明のつかない差 ¥0');
 		expect(within(region).getByTestId('balance-unexplained')).toHaveAttribute('data-tone', 'ok');
 		expect(within(region).getByText('入金途上（1150） ¥70,000')).toBeInTheDocument();
+		// 日を替えたら、前の日の結果は消す。
+		fireEvent.change(within(region).getByLabelText('照合する日'), { target: { value: '2026-11-08' } });
+		expect(within(region).queryByRole('table', { name: '仕訳になっていない取引の種類' })).not.toBeInTheDocument();
+		expect(within(region).queryByText('2026/11/09 時点の照合')).not.toBeInTheDocument();
 	});
 
 	it('FREQ-566-AC-01: 手数料の月の照合は2段の差と説明のつかない差を出し、0でなければ赤字で出す', async () => {
@@ -115,6 +133,7 @@ describe('照合のタブ', () => {
 
 		const step1 = await within(region).findByRole('group', { name: '1段目 日本時間とUTCの差' });
 		expect(api.fn.mock.calls.some((call) => String(call[0]).includes('kind=stripe-fee&month=2026-10'))).toBe(true);
+		expect(within(region).getByText('2026年10月の照合')).toBeInTheDocument();
 		expect(step1).toHaveTextContent('日本時間の合計 ¥12,000');
 		expect(step1).toHaveTextContent('UTCの合計 ¥11,800');
 		expect(step1).toHaveTextContent('差 ¥200');
@@ -136,6 +155,27 @@ describe('照合のタブ', () => {
 		// 符号は暫定。誤りと決めつける言葉は使わない。
 		expect(region.textContent).not.toMatch(/誤り/);
 		expect(step2).toHaveTextContent('符号の向きは確認中');
+		// 月を替えたら、前の月の結果と請求書の欄は消す。
+		fireEvent.change(within(region).getByLabelText('照合する月'), { target: { value: '2026-09' } });
+		expect(within(region).queryByRole('group', { name: '1段目 日本時間とUTCの差' })).not.toBeInTheDocument();
+		expect(within(region).queryByRole('region', { name: /適格請求書の記録/ })).not.toBeInTheDocument();
+	});
+
+	it('FREQ-566-AC-02: 請求書の合計を保存したら、手数料の照合を引き直して2段目に反映する', async () => {
+		const api = serve({ fee: { ...FEE, invoice_total: null, diff_utc_invoice: null, explained_adjustments: null, unexplained_utc_invoice: null } });
+		render(<ReconciliationView today="2026-11-09" periodStart="2026-01-01" periodEnd="2026-12-31" />);
+		const region = screen.getByRole('region', { name: '手数料の月の照合' });
+		fireEvent.change(within(region).getByLabelText('照合する月'), { target: { value: '2026-10' } });
+		fireEvent.click(within(region).getByRole('button', { name: '手数料を照合する' }));
+		await within(region).findByText(/請求書の合計が未入力です/);
+		const form = await within(region).findByRole('region', { name: '適格請求書の記録（2026年10月）' });
+		await within(form).findByText('この月の請求書の合計はまだ入っていません');
+		fireEvent.change(within(form).getByLabelText('請求書の合計（税込）'), { target: { value: '11500' } });
+		fireEvent.change(within(form).getByLabelText('うち消費税'), { target: { value: '1045' } });
+		const before = reconciliationUrls(api).length;
+		fireEvent.click(within(form).getByRole('button', { name: '請求書の合計を保存' }));
+		await waitFor(() => expect(reconciliationUrls(api).length).toBe(before + 1));
+		expect(reconciliationUrls(api).at(-1)).toContain('kind=stripe-fee&month=2026-10');
 	});
 
 	it('FREQ-566-AC-01: 請求書がまだ無い月は2段目を「請求書の合計が未入力です」にする', async () => {
@@ -221,6 +261,7 @@ describe('照合のタブ', () => {
 		expect(within(step1).getByTestId('intake-unexplained-1')).toHaveAttribute('data-tone', 'ok');
 
 		const step2 = within(region).getByRole('group', { name: '2段目 売上の照らし合わせ' });
+		expect(within(region).getByText('2026/01/01 〜 2026/12/31 の照合')).toBeInTheDocument();
 		expect(step2).toHaveTextContent('返品 ¥10,000');
 		expect(step2).toHaveTextContent('受注の売上（返品を引いた後） ¥590,000');
 		expect(step2).toHaveTextContent('返品の手数料の売上（4050） ¥1,000');
@@ -230,6 +271,26 @@ describe('照合のタブ', () => {
 		const confirmed = within(step2).getByRole('list', { name: '確定した取り消しの勘定別' });
 		expect(confirmed).toHaveTextContent('6290');
 		expect(confirmed).toHaveTextContent('¥30,000');
+	});
+
+	it('FREQ-571-AC-05: 選んでいる会計期間が替わったら、範囲もその期間に合わせ、前の期間の結果は消す', async () => {
+		serve();
+		const { rerender } = render(<ReconciliationView today="2026-11-09" periodStart="2026-01-01" periodEnd="2026-12-31" />);
+		const region = screen.getByRole('region', { name: '受注高と帳簿の照らし合わせ' });
+		fireEvent.click(within(region).getByRole('button', { name: '受注高を照合する' }));
+		await within(region).findByRole('group', { name: '1段目 受注残の動き' });
+		rerender(<ReconciliationView today="2026-11-09" periodStart="2027-01-01" periodEnd="2027-12-31" />);
+		await waitFor(() => expect(within(region).getByLabelText('開始日')).toHaveValue('2027-01-01'));
+		expect(within(region).getByLabelText('終了日')).toHaveValue('2027-12-31');
+		expect(within(region).queryByRole('group', { name: '1段目 受注残の動き' })).not.toBeInTheDocument();
+	});
+
+	it('FREQ-574-AC-01: 照合のタブに年末の出荷の確認が出る（運送会社の受付日のずれもここ）', async () => {
+		serve();
+		render(<ReconciliationView today="2026-12-28" periodStart="2026-01-01" periodEnd="2026-12-31" />);
+		const panel = await screen.findByRole('region', { name: '年末の出荷の確認' });
+		expect(await within(panel).findByText('運送会社の受付日との照らし合わせはオフです')).toBeInTheDocument();
+		expect(within(panel).getByLabelText('開始日')).toHaveValue('2026-12-25');
 	});
 
 	it('FREQ-571-AC-05: 説明のつかない差が0でなければ赤字で出す', async () => {
@@ -250,6 +311,6 @@ describe('照合のタブ', () => {
 		const region = screen.getByRole('region', { name: '受注高と帳簿の照らし合わせ' });
 		fireEvent.click(within(region).getByRole('button', { name: '受注高を照合する' }));
 		expect(await within(region).findByText('会計の処理に失敗しました。')).toBeInTheDocument();
-		expect(api.calls[0].response.bodyUsed).toBe(true);
+		expect(api.calls.find((call) => call.url === `${BASE}/reconciliation`)?.response.bodyUsed).toBe(true);
 	});
 });

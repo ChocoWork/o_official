@@ -35,10 +35,13 @@ function InvoiceMonthSection(): React.JSX.Element {
 
 /** Stripe の精算に足す、残高の補充の入力・請求書の記録・カード会社からの支払いの取り消しの一覧（計画2）。 */
 function StripeAccountingTools(): React.JSX.Element {
-  const permissions = useAccountingPermissions();
+  const { permissions, error } = useAccountingPermissions();
   return (
     <div className="space-y-4 border-t border-[#d4d4d4] pt-4">
-      <BalanceTopupForm canManage={permissions?.manageFinance === true} />
+      <BalanceTopupForm
+        canManage={permissions === null ? null : permissions.manageFinance}
+        loadError={error}
+      />
       <InvoiceMonthSection />
       <DisputeList />
     </div>

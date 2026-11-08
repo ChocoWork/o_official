@@ -554,10 +554,12 @@ describe('設定・期間のタブ', () => {
 		expect(calls.some((call) => call.url === '/api/admin/accounting/pending-events')).toBe(true);
 
 		fireEvent.click(screen.getByRole('tab', { name: '照合' }));
-		expect(await screen.findByRole('region', { name: '受注高と帳簿の照らし合わせ' })).toBeInTheDocument();
+		const intake = await screen.findByRole('region', { name: '受注高と帳簿の照らし合わせ' });
 		// 受注高の照合の既定の範囲は選んでいる会計期間。
-		expect(screen.getByLabelText('開始日')).toHaveValue('2026-01-01');
-		expect(screen.getByLabelText('終了日')).toHaveValue('2026-12-31');
+		expect(within(intake).getByLabelText('開始日')).toHaveValue('2026-01-01');
+		expect(within(intake).getByLabelText('終了日')).toHaveValue('2026-12-31');
+		// 年末の出荷の確認も照合のタブに出る。
+		expect(screen.getByRole('region', { name: '年末の出荷の確認' })).toBeInTheDocument();
 	});
 
 	it('FREQ-568-AC-05: 設定のタブに、支払いの取り消しの振り替え先と運送会社の受付日のオプションを足す', async () => {

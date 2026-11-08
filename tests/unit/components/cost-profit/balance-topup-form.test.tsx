@@ -108,6 +108,27 @@ describe('残高の補充の入力', () => {
 		await waitFor(() => expect(within(region).getByRole('button', { name: '補充を記録する' })).toBeEnabled());
 	});
 
+	it('FREQ-565-AC-06: 権限を読み終えるまでは読み込み中、読めなければ固定の文を出し、権限が無いとは言わない', () => {
+		const api = serve();
+		const { rerender } = render(<BalanceTopupForm canManage={null} today="2026-11-09" />);
+		expect(screen.getByText('読み込み中')).toBeInTheDocument();
+		expect(screen.queryByText('残高の補充を記録する権限がありません')).not.toBeInTheDocument();
+		rerender(<BalanceTopupForm canManage={null} loadError="会計の処理に失敗しました。" today="2026-11-09" />);
+		expect(screen.getByRole('alert')).toHaveTextContent('会計の処理に失敗しました。');
+		expect(screen.queryByText('残高の補充を記録する権限がありません')).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: '補充を記録する' })).not.toBeInTheDocument();
+		expect(api.calls).toHaveLength(0);
+	});
+
+	it('FREQ-565-AC-06: 同じ記録が既にある時は、新しくは入れていないと正しく伝える', async () => {
+		serve({ status: 200, body: { data: { topup: { entry_id: 'e1', entry_no: 7, period_id: 'p1', created: false } } } });
+		render(<BalanceTopupForm canManage today="2026-11-09" />);
+		const region = screen.getByRole('region', { name: '残高の補充の記録' });
+		fill(region, { '補充した額（円）': '50000', 銀行の日: '2026-11-09', 銀行の取引番号: 'BANK-1' });
+		submit(region);
+		expect(await within(region).findByText('同じ記録が既にあります。新しくは入れていません。')).toBeInTheDocument();
+	});
+
 	it('FREQ-565-AC-06: 権限の無い人には入力欄を出さない', () => {
 		const api = serve();
 		render(<BalanceTopupForm canManage={false} today="2026-11-09" />);

@@ -19,6 +19,7 @@ import {
   NO_PERMISSIONS,
 } from "./accounting-api";
 import { currency, signedCurrency } from "./constants";
+import { YearEndShipmentsPanel } from "./year-end-shipments-panel";
 import {
   errorNotice,
   failureNotice,
@@ -79,6 +80,10 @@ type ReadState<T> =
 function useReconciliation<T>() {
   const [state, setState] = useState<ReadState<T>>({ phase: "idle" });
   const ticket = useRef(0);
+  const reset = useCallback(() => {
+    ticket.current += 1;
+    setState({ phase: "idle" });
+  }, []);
   const run = useCallback(async (params: Record<string, string>) => {
     const mine = ++ticket.current;
     setState({ phase: "loading" });
@@ -86,7 +91,7 @@ function useReconciliation<T>() {
     if (mine !== ticket.current) return;
     setState(result.ok ? { phase: "ready", data: result.data } : { phase: "error", message: result.message });
   }, []);
-  return [state, run] as const;
+  return [state, run, reset] as const;
 }
 
 function StateNotice<T>({ state }: { state: ReadState<T> }) {
@@ -129,13 +134,13 @@ const BALANCE_KIND_LABELS: Readonly<Record<string, string>> = {
 
 function BalanceSection({ today }: { today: string }) {
   const [through, setThrough] = useState(today);
-  const [state, run] = useReconciliation<BalanceReconciliation>();
+  const [state, run, reset] = useReconciliation<BalanceReconciliation>();
   return (
     <Section title="Stripeの残高の照合">
       <div className="flex flex-wrap items-end gap-3">
         <label className="block max-w-xs">
           <span className={labelClassName}>照合する日</span>
-          <input type="date" className={inputClassName} value={through} onChange={(e) => setThrough(e.target.value)} />
+          <input type="date" className={inputClassName} value={through} onChange={(e) => { setThrough(e.target.value); reset(); }} />
         </label>
         <Button
           variant="outline"
@@ -166,6 +171,7 @@ function BalanceResult({ data }: { data: BalanceReconciliation }) {
   const tone = toneOf(unexplained);
   return (
     <div className="space-y-2">
+      <p className={labelClassName}>{`${slash(data.through)} 時点の照合`}</p>
       <Line text={`Stripeの残高 ${signedCurrency(data.stripe_balance)}`} />
       <Line text={`帳簿の残高 ${signedCurrency(book)}`} />
       <Line text={`差 ${signedCurrency(data.difference)}`} />
@@ -294,13 +300,17 @@ function previousMonth(today: string): string {
 function FeeSection({ today }: { today: string }) {
   const [month, setMonth] = useState(previousMonth(today));
   const [shownMonth, setShownMonth] = useState<string | null>(null);
-  const [state, run] = useReconciliation<FeeReconciliation>();
+  const [state, run, reset] = useReconciliation<FeeReconciliation>();
+  const runFee = (target: string) => {
+    setShownMonth(target);
+    void run({ kind: "stripe-fee", month: target });
+  };
   return (
     <Section title="手数料の月の照合">
       <div className="flex flex-wrap items-end gap-3">
         <label className="block max-w-xs">
           <span className={labelClassName}>照合する月</span>
-          <input type="month" className={inputClassName} value={month} onChange={(e) => setMonth(e.target.value)} />
+          <input type="month" className={inputClassName} value={month} onChange={(e) => { setMonth(e.target.value); setShownMonth(null); reset(); }} />
         </label>
         <Button
           variant="outline"
@@ -308,10 +318,7 @@ function FeeSection({ today }: { today: string }) {
           shape="rounded"
           className="font-acumin"
           disabled={!month || state.phase === "loading"}
-          onClick={() => {
-            setShownMonth(month);
-            void run({ kind: "stripe-fee", month });
-          }}
+          onClick={() => runFee(month)}
         >
           手数料を照合する
         </Button>
@@ -320,9 +327,12 @@ function FeeSection({ today }: { today: string }) {
         1段目は日本時間とUTCの月のずれ、2段目はUTCの合計と Stripe の適格請求書の合計の差です。
       </p>
       <StateNotice state={state} />
+      {state.phase === "ready" && shownMonth ? (
+        <p className={labelClassName}>{`${monthTitle(shownMonth)}の照合`}</p>
+      ) : null}
       {state.phase === "ready" ? <FeeResult data={state.data} /> : null}
       {state.phase === "ready" && shownMonth ? (
-        <InvoiceRecordForm key={shownMonth} month={shownMonth} />
+        <InvoiceRecordForm key={shownMonth} month={shownMonth} onSaved={() => runFee(shownMonth)} />
       ) : null}
     </Section>
   );
@@ -345,7 +355,14 @@ const monthTitle = (month: string): string => {
 };
 
 /** 月ごとの Stripe の適格請求書の合計を記録する。権限（admin.finance.manage）が無ければ読み取りだけ。 */
-export function InvoiceRecordForm({ month }: { month: string }): React.JSX.Element {
+export function InvoiceRecordForm({
+  month,
+  onSaved,
+}: {
+  month: string;
+  /** 保存できた後に呼ぶ（手数料の照合を引き直す）。 */
+  onSaved?: () => void;
+}): React.JSX.Element {
   const [record, setRecord] = useState<InvoiceRecord | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [permissions, setPermissions] = useState<ViewPermissions>(NO_PERMISSIONS);
@@ -411,6 +428,7 @@ export function InvoiceRecordForm({ month }: { month: string }): React.JSX.Eleme
       const saved = (result.data as { record?: InvoiceRecord } | null)?.record ?? null;
       if (saved) setRecord(saved);
       setNotice(successNotice("保存しました。"));
+      onSaved?.();
     } else {
       setNotice(failureNotice(result));
     }
@@ -551,14 +569,24 @@ function IntakeSection({
 }) {
   const [from, setFrom] = useState(periodStart ?? `${today.slice(0, 4)}-01-01`);
   const [to, setTo] = useState(periodEnd ?? today);
-  const [state, run] = useReconciliation<IntakeReconciliation>();
+  const [state, run, reset] = useReconciliation<IntakeReconciliation>();
   const [rangeError, setRangeError] = useState<string | null>(null);
+  const [shownRange, setShownRange] = useState<string | null>(null);
+  // 選んでいる会計期間が替わったら、範囲もその期間に合わせ、前の期間の結果は消す。
+  useEffect(() => {
+    setFrom(periodStart ?? `${today.slice(0, 4)}-01-01`);
+    setTo(periodEnd ?? today);
+    setShownRange(null);
+    setRangeError(null);
+    reset();
+  }, [periodStart, periodEnd, today, reset]);
   const check = () => {
     if (!from || !to || from > to) {
       setRangeError("開始日は終了日より前にしてください。");
       return;
     }
     setRangeError(null);
+    setShownRange(`${slash(from)} 〜 ${slash(to)}`);
     void run({ kind: "intake", from, to });
   };
   return (
@@ -567,11 +595,11 @@ function IntakeSection({
       <div className="flex flex-wrap items-end gap-3">
         <label className="block max-w-xs">
           <span className={labelClassName}>開始日</span>
-          <input type="date" className={inputClassName} value={from} onChange={(e) => setFrom(e.target.value)} />
+          <input type="date" className={inputClassName} value={from} onChange={(e) => { setFrom(e.target.value); setShownRange(null); reset(); }} />
         </label>
         <label className="block max-w-xs">
           <span className={labelClassName}>終了日</span>
-          <input type="date" className={inputClassName} value={to} onChange={(e) => setTo(e.target.value)} />
+          <input type="date" className={inputClassName} value={to} onChange={(e) => { setTo(e.target.value); setShownRange(null); reset(); }} />
         </label>
         <Button variant="outline" size="sm" shape="rounded" className="font-acumin" disabled={state.phase === "loading"} onClick={check}>
           受注高を照合する
@@ -583,6 +611,7 @@ function IntakeSection({
         </p>
       ) : null}
       <StateNotice state={state} />
+      {state.phase === "ready" && shownRange ? <p className={labelClassName}>{`${shownRange} の照合`}</p> : null}
       {state.phase === "ready" ? <IntakeResult data={state.data} /> : null}
     </Section>
   );
@@ -605,6 +634,7 @@ export function ReconciliationView({
       <BalanceSection today={today} />
       <FeeSection today={today} />
       <IntakeSection today={today} periodStart={periodStart} periodEnd={periodEnd} />
+      <YearEndShipmentsPanel today={today} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button/Button";
 import { addDays, type AccountingPeriod } from "@/lib/accounting/period";
 import {
@@ -13,6 +13,7 @@ import {
   Section,
   tableClassName,
   todayJst,
+  useTicket,
 } from "./accounting-api";
 import { currency } from "./constants";
 
@@ -63,24 +64,27 @@ export function DeferredRevenuePanel(): React.JSX.Element {
   const [orders, setOrders] = useState<DeferredOrder[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  // 日を速く切り替えた時、古い答えで上書きしない。
-  const latest = useRef(0);
+  // 日を切り替えた時、古い答え（先頭も続きも）で上書き・追記しない。
+  const ticket = useTicket();
 
   const load = useCallback(async (date: string) => {
-    const ticket = ++latest.current;
+    const mine = ticket.next();
     const result = await getAccountingData<DeferredPage>("deferred-revenue", {
       asOf: date,
       limit: PAGE_LIMIT,
     }, (data) => hasArray(data, "orders") && hasArray(data, "anomalies"));
-    if (ticket !== latest.current) return;
+    if (!ticket.isCurrent(mine)) return;
     if (!result.ok) {
+      // 前の日の表を残さない。
+      setPage(null);
+      setOrders([]);
       setError(result.message);
       return;
     }
     setError(null);
     setPage(result.data);
     setOrders(result.data.orders);
-  }, []);
+  }, [ticket]);
 
   // 最初に期間を読んで既定の日を決める。読めなければ今日にする。
   useEffect(() => {
@@ -103,11 +107,13 @@ export function DeferredRevenuePanel(): React.JSX.Element {
   const loadMore = async () => {
     if (!asOf || !page?.next_after_order || loadingMore) return;
     setLoadingMore(true);
+    const mine = ticket.next();
     const result = await getAccountingData<DeferredPage>("deferred-revenue", {
       asOf,
       limit: PAGE_LIMIT,
       afterOrder: page.next_after_order,
     }, (data) => hasArray(data, "orders") && hasArray(data, "anomalies"));
+    if (!ticket.isCurrent(mine)) return;
     setLoadingMore(false);
     if (!result.ok) {
       setError(result.message);
@@ -126,7 +132,13 @@ export function DeferredRevenuePanel(): React.JSX.Element {
           className={inputClassName}
           value={asOf ?? ""}
           onChange={(event) => {
-            if (event.target.value) setAsOf(event.target.value);
+            if (!event.target.value) return;
+            // 日を替えたら、前の日の表は消して読み直す。
+            ticket.next();
+            setLoadingMore(false);
+            setPage(null);
+            setOrders([]);
+            setAsOf(event.target.value);
           }}
         />
       </label>

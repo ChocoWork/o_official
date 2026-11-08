@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/Button/Button";
 import { DataTable } from "@/components/ui/DataTable/DataTable";
 import { Graph } from "@/components/ui/Graph/Graph";
@@ -15,10 +15,209 @@ import {
   panelTitleClassName,
 } from "./constants";
 import { FlowOperator } from "./shared-ui";
+import {
+  dayLabel,
+  eventKindLabel,
+  getAccountingData,
+  hasArray,
+  isRecord,
+  jstDayLabel,
+  Section,
+  useTicket,
+} from "./accounting-api";
+import type { JournalCursor, ShipmentMeta } from "@/lib/accounting/accounting-types";
+import type { SavedJournalEntry } from "@/lib/accounting/journal-types";
 import type { CostProfitModel } from "./use-cost-profit-model";
 
 /** 保存していない合成の仕訳（注文・Stripe）の印。計画2が保存を始めたら外す。 */
 const SYNTHESIZED_ENTRY_LABEL = "集計中（計画2で保存）";
+
+const entryNumber = (entryNo: number): string => `JE-${String(entryNo).padStart(6, "0")}`;
+
+/** 出荷の仕訳の行に付ける、発送票の番号・出荷した日・発送票を確定した日（6-c）。 */
+export type ShipmentRowInfo = { slipId: string; shipmentDate: string; confirmedAt: string };
+
+type JournalPage = {
+  entries: SavedJournalEntry[];
+  nextAfter: JournalCursor | null;
+  shipmentMeta: ShipmentMeta[];
+};
+
+const META_PAGE_SIZE = 200;
+const META_MAX_PAGES = 50;
+
+/**
+ * 期間の保存した仕訳を読み、出荷の仕訳だけの「出荷した日」「登録した日」を、仕訳の伝票番号（JE-…）で引ける形にする
+ * （FREQ-564-AC-04）。期間が変わったら古い答えは捨てる。読めなければ error に固定の文（列は空のまま）。
+ */
+export function useShipmentJournalMeta(periodId: string | null): {
+  byNumber: Map<string, ShipmentRowInfo>;
+  error: string | null;
+} {
+  const [byNumber, setByNumber] = useState<Map<string, ShipmentRowInfo>>(new Map());
+  const [error, setError] = useState<string | null>(null);
+  const ticket = useTicket();
+
+  useEffect(() => {
+    const mine = ticket.next();
+    setByNumber(new Map());
+    setError(null);
+    if (!periodId) return;
+    void (async () => {
+      const found = new Map<string, ShipmentRowInfo>();
+      let cursor = null as JournalCursor | null;
+      for (let page = 0; page < META_MAX_PAGES; page += 1) {
+        const result: Awaited<ReturnType<typeof getAccountingData<JournalPage>>> =
+          await getAccountingData<JournalPage>(
+            "journal",
+            {
+              periodId,
+              limit: META_PAGE_SIZE,
+              afterEntryDate: cursor?.entryDate,
+              afterEntryNo: cursor?.entryNo,
+            },
+            (data) => hasArray(data, "entries") && hasArray(data, "shipmentMeta"),
+          );
+        if (!ticket.isCurrent(mine)) return;
+        if (!result.ok) {
+          setError(result.message);
+          return;
+        }
+        const metaById = new Map(result.data.shipmentMeta.map((meta) => [meta.entryId, meta]));
+        for (const entry of result.data.entries) {
+          const meta = metaById.get(entry.id);
+          if (meta && entry.sourceId) {
+            found.set(entryNumber(entry.entryNo), {
+              slipId: entry.sourceId,
+              shipmentDate: meta.shipmentDate,
+              confirmedAt: meta.confirmedAt,
+            });
+          }
+        }
+        setByNumber(new Map(found));
+        if (!result.data.nextAfter) return;
+        cursor = result.data.nextAfter;
+      }
+    })();
+    return () => {
+      ticket.next();
+    };
+  }, [periodId, ticket]);
+
+  return { byNumber, error };
+}
+
+type Trace = {
+  slip: { number: string; confirmed_at: string; shipment_date: string; stage: string };
+  history: Array<{
+    version: number;
+    kind: string;
+    previous_date: string;
+    new_date: string;
+    reason: string | null;
+    actor_id: string;
+    created_at: string;
+  }>;
+  entries: Array<{
+    entry_id: string;
+    entry_no: number;
+    event_kind: string;
+    entry_date: string;
+    recorded_at: string;
+    reverses_entry_id: string | null;
+  }>;
+};
+
+type TraceState =
+  | { phase: "loading" }
+  | { phase: "error"; message: string }
+  | { phase: "ready"; trace: Trace };
+
+function TraceBody({ trace }: { trace: Trace }) {
+  const reversedBy = new Map(
+    trace.entries.filter((e) => e.reverses_entry_id).map((e) => [e.reverses_entry_id as string, e]),
+  );
+  const byId = new Map(trace.entries.map((e) => [e.entry_id, e]));
+  return (
+    <div className="space-y-4">
+      <p className="font-acumin lk-text-3xs text-black">{trace.slip.number}</p>
+      <p className="font-acumin lk-text-4xs text-black">{`今の出荷日 ${dayLabel(trace.slip.shipment_date)}`}</p>
+      <div className="space-y-1">
+        <p className="font-acumin lk-text-4xs font-medium text-black">出荷日の直した跡</p>
+        <ul aria-label="出荷日の直した跡" className="space-y-1">
+          {trace.history.map((row) => (
+            <li key={row.version} className="font-acumin lk-text-4xs text-black tabular-nums">
+              {row.kind === "correction"
+                ? `${dayLabel(row.previous_date)} から ${dayLabel(row.new_date)} へ直しました。理由 ${row.reason ?? "-"}。担当 ${row.actor_id.slice(0, 8)}。直した日 ${jstDayLabel(row.created_at)}`
+                : `最初の出荷日 ${dayLabel(row.new_date)}`}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div className="space-y-1">
+        <p className="font-acumin lk-text-4xs font-medium text-black">この出荷の仕訳</p>
+        <ul aria-label="この出荷の仕訳" className="space-y-1">
+          {trace.entries.map((entry) => {
+            const target = entry.reverses_entry_id ? byId.get(entry.reverses_entry_id) : undefined;
+            const reverser = reversedBy.get(entry.entry_id);
+            const relation = entry.reverses_entry_id
+              ? `${target ? entryNumber(target.entry_no) : "元の仕訳"}を取り消す`
+              : reverser
+                ? `取り消されました（${entryNumber(reverser.entry_no)}）`
+                : "今の正しい仕訳";
+            return (
+              <li key={entry.entry_id} className="font-acumin lk-text-4xs text-black tabular-nums">
+                {`${entryNumber(entry.entry_no)}　${eventKindLabel(entry.event_kind)}　${dayLabel(entry.entry_date)}　${relation}`}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+/** 出荷の跡（6-b）。直した理由・人・前後の日と、この出荷の仕訳の取り消しと正しい仕訳のつながり。発送票ごとに作り直す（key）。 */
+export function ShipmentTracePanel({ slipId, onClose }: { slipId: string; onClose: () => void }) {
+  const [state, setState] = useState<TraceState>({ phase: "loading" });
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const result = await getAccountingData<Trace>(
+        "shipment-trace",
+        { slipId },
+        (data) => hasArray(data, "history") && hasArray(data, "entries") && isRecord((data as Record<string, unknown>).slip),
+      );
+      if (cancelled) return;
+      setState(result.ok ? { phase: "ready", trace: result.data } : { phase: "error", message: result.message });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slipId]);
+  return (
+    <div className="mt-3">
+      <Section title="出荷の跡">
+        <div className="flex justify-end">
+          <Button variant="outline" size="2xs" shape="rounded" className="font-acumin" onClick={onClose}>
+            出荷の跡を閉じる
+          </Button>
+        </div>
+        {state.phase === "loading" ? (
+          <p role="status" className="font-acumin lk-text-4xs text-[#707070]">
+            読み込み中
+          </p>
+        ) : null}
+        {state.phase === "error" ? (
+          <p role="alert" className="font-acumin lk-text-3xs text-red-700">
+            {state.message}
+          </p>
+        ) : null}
+        {state.phase === "ready" ? <TraceBody trace={state.trace} /> : null}
+      </Section>
+    </div>
+  );
+}
 
 export function LedgerView({
   model,
@@ -73,7 +272,12 @@ export function LedgerView({
     ledgerReconcileDifference,
     selectAccount,
     openEntryFromLedger,
+    period,
   } = model;
+  const { byNumber: shipmentByNumber, error: shipmentError } = useShipmentJournalMeta(
+    period?.id ?? null,
+  );
+  const [traceSlipId, setTraceSlipId] = useState<string | null>(null);
   const ledgerHeaderActions = (
     <div className="flex flex-wrap items-center gap-2">
       <Button
@@ -415,7 +619,7 @@ export function LedgerView({
                 rows={pagedLedgerRows}
                 rowKey={(row) => row.key}
                 emptyLabel="該当する仕訳がありません。"
-                tableClassName="min-w-155"
+                tableClassName="min-w-240"
                 containerClassName="font-acumin"
                 rowClassName={(row) =>
                   selectedLedgerRow?.key === row.key ? "bg-[#f5f5f5]" : ""
@@ -524,9 +728,61 @@ export function LedgerView({
                         : "無";
                     },
                   },
+                  {
+                    key: "shipmentDate",
+                    header: "出荷した日",
+                    cellClassName: "whitespace-nowrap tabular-nums",
+                    render: (row) => {
+                      const info = shipmentByNumber.get(row.number);
+                      return info ? dayLabel(info.shipmentDate) : "";
+                    },
+                  },
+                  {
+                    key: "registeredDate",
+                    header: "登録した日",
+                    cellClassName: "whitespace-nowrap tabular-nums",
+                    render: (row) => {
+                      const info = shipmentByNumber.get(row.number);
+                      return info ? jstDayLabel(info.confirmedAt) : "";
+                    },
+                  },
+                  {
+                    key: "shipmentTrace",
+                    header: "出荷の跡",
+                    cellClassName: "whitespace-nowrap",
+                    render: (row) => {
+                      const info = shipmentByNumber.get(row.number);
+                      return info ? (
+                        <Button
+                          variant="outline"
+                          size="2xs"
+                          shape="rounded"
+                          className="font-acumin"
+                          aria-label={`${row.number}の出荷の跡を開く`}
+                          onClick={() => setTraceSlipId(info.slipId)}
+                        >
+                          出荷の跡
+                        </Button>
+                      ) : (
+                        ""
+                      );
+                    },
+                  },
                 ]}
               />
             </div>
+            {shipmentError ? (
+              <p role="alert" className="mt-2 font-acumin lk-text-4xs text-red-700">
+                {shipmentError}
+              </p>
+            ) : null}
+            {traceSlipId ? (
+              <ShipmentTracePanel
+                key={traceSlipId}
+                slipId={traceSlipId}
+                onClose={() => setTraceSlipId(null)}
+              />
+            ) : null}
 
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">

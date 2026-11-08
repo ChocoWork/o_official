@@ -48,8 +48,8 @@ export const POSTING_ERROR_TEXT =
 
 const DISPUTE_WITHDRAWAL_TEXT = {
   account: "確定した損失を、振り替え先の科目が決まっていない仮払金に置いています。設定のタブで科目を決め、「確定・科目の決定待ち」を振り替えると、計上が進みます。",
-  withdrawn: "前の段の仕訳（カード会社に引かれた時の仕訳）がまだ入っていません。入ると自動で計上されます。",
-  pending: "カード会社からの支払いの取り消しの判断がまだ決着していません。決着すると、戻りの扱いを決めて計上します。",
+  earlier: "前の段の仕訳（カード会社に引かれた時や、確定の仕訳）がまだ入っていません。入ると自動で計上されます。",
+  undecided: "カード会社からの支払いの取り消しの判断がまだ決着していません。決着すると、戻りの扱いを決めて計上します。",
 } as const;
 
 const REASON_TEXT: Readonly<Record<Exclude<PendingReason, "period_missing" | "dispute_withdrawal_missing">, string>> = {
@@ -80,8 +80,14 @@ export function reasonText(event: PendingEvent): string {
         : "この日を含む会計の期間がありません。設定・期間のタブで期間を作ると、自動で計上されます。";
     case "dispute_withdrawal_missing":
       if (event.detail.waiting_on === "dispute_account_unassigned") return DISPUTE_WITHDRAWAL_TEXT.account;
-      if (event.detail.waiting_on === "dispute_withdrawn") return DISPUTE_WITHDRAWAL_TEXT.withdrawn;
-      return DISPUTE_WITHDRAWAL_TEXT.pending;
+      // 判断の待ちは dispute_status が付く時だけ。ほかは、前の段の仕訳（引かれた時・確定・戻りより前の段）を待っている。
+      if (typeof event.detail.dispute_status === "string") return DISPUTE_WITHDRAWAL_TEXT.undecided;
+      return DISPUTE_WITHDRAWAL_TEXT.earlier;
+    case "no_order":
+      // 取り消しの出来事で、取り消しに結び付く注文が無い時は、支払いの文は合わない。
+      return event.eventKind === "dispute_event"
+        ? "カード会社からの支払いの取り消しに、結び付く注文が見つかりません。取り消しの内容を確かめてください。"
+        : REASON_TEXT.no_order;
     default:
       return REASON_TEXT[event.reason];
   }
