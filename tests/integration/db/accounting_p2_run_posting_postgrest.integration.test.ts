@@ -70,6 +70,13 @@ describeLocalDb('S11 posting entry point over PostgREST: controller only, commit
     ['get_slip_dispute_holds', { _slip_id: randomUUID() }],
     ['admin_set_dispute_account_setting', { _actor_id: randomUUID(), _reason: 'fraudulent', _account_code: '7530', _expected_version: null, _request_key: randomUUID() }],
     ['admin_assign_dispute_confirmed', { _actor_id: randomUUID(), _dispute_id: 'dp_none', _request_key: randomUUID() }],
+    // Task 7: the six reads of the order intake, the backlog, the reconciliation and the deferred revenue.
+    ['list_order_intake_events', { _from: '2026-01-01', _to: '2026-01-31', _limit: 10 }],
+    ['get_intake_breakdown', { _from: '2026-01-01', _to: '2026-01-31' }],
+    ['get_order_backlog', { _as_of: '2026-01-31' }],
+    ['get_intake_reconciliation', { _from: '2026-01-01', _to: '2026-01-31' }],
+    ['list_deferred_revenue', { _as_of: '2026-01-31', _limit: 5, _after_order: null }],
+    ['list_deferred_revenue_anomalies', {}],
   ];
 
   test('FREQ-562-AC-05: 入口は service_role で呼べて、件数の7つの鍵を返す', async () => {
@@ -99,6 +106,26 @@ describeLocalDb('S11 posting entry point over PostgREST: controller only, commit
     const slipHolds = await service.rpc('get_slip_dispute_holds', { _slip_id: randomUUID() });
     expect(slipHolds.error).toBeNull();
     expect(slipHolds.data).toEqual([]);
+  });
+
+  test('FREQ-571-AC-05: 受注高・受注残・照らし合わせ・前受金の6つの読み口は service_role で呼べて、決めた鍵を返す', async () => {
+    const keysOf = async (name: string, args: Record<string, unknown>) => {
+      const { data, error } = await service.rpc(name, args);
+      expect([name, error]).toEqual([name, null]);
+      return Object.keys(data as Record<string, unknown>).sort();
+    };
+    const args = (name: string) => publicEntries.find(([entry]) => entry === name)?.[1] ?? {};
+    expect(await keysOf('list_order_intake_events', args('list_order_intake_events'))).toEqual(['events', 'next_after_date', 'next_after_key']);
+    expect(await keysOf('get_intake_breakdown', args('get_intake_breakdown'))).toEqual(['breakdown_ok', 'discount', 'dispute_unshipped',
+      'dispute_unshipped_restored', 'intake', 'order_count', 'payment', 'pre_shipment_cancel', 'shipping', 'subtotal_before_discount']);
+    expect(await keysOf('get_order_backlog', args('get_order_backlog'))).toEqual(['backlog_total', 'order_count']);
+    expect(await keysOf('get_intake_reconciliation', args('get_intake_reconciliation'))).toEqual(['book_sales_total', 'booked_sales_net_orders',
+      'closing_backlog', 'dispute_confirmed_by_account', 'exceptions', 'intake', 'opening_backlog', 'other_4010', 'other_4020',
+      'return_fee_revenue_4050', 'returns', 'sales_before_return', 'unexplained', 'unexplained2']);
+    expect(await keysOf('list_deferred_revenue', args('list_deferred_revenue'))).toEqual(['next_after_order', 'orders', 'total_balance']);
+    expect(await keysOf('list_deferred_revenue_anomalies', {})).toEqual(['anomalies']);
+    const refused = await service.rpc('get_intake_breakdown', { _from: '2026-02-01', _to: '2026-01-01' });
+    expect(refused.error).toMatchObject({ code: '22023', message: 'ACCOUNTING_ARGUMENT_INVALID' });
   });
 
   test('FREQ-568-AC-05: 書き口は service_role で呼べるが、権限の無い人は ACCOUNTING_FORBIDDEN（42501）で断られる', async () => {

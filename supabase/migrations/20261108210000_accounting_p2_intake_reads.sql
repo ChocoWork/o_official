@@ -33,9 +33,11 @@ BEGIN;
 --   get_intake_breakdown(_from date, _to date) -> {subtotal_before_discount, discount, shipping, payment, pre_shipment_cancel,
 --     dispute_unshipped, dispute_unshipped_restored, intake, order_count, breakdown_ok}. subtotal / discount / shipping are the sums of
 --     orders.subtotal_amount / discount_amount / shipping_amount of the orders whose payment events add up to something other than 0
---     in the window (order_count of them). pre_shipment_cancel and dispute_unshipped are signed; dispute_unshipped is the deduction
---     and the restoration together (dispute_unshipped_restored is the restoring part alone). intake = payment + pre_shipment_cancel
---     + dispute_unshipped. breakdown_ok = (subtotal - discount + shipping + pre_shipment_cancel + dispute_unshipped = intake). The returns
+--     in the window (order_count of them), each with the sign of its net payment (a payment reversed in a later window counts
+--     negative there). pre_shipment_cancel and dispute_unshipped are signed; dispute_unshipped is the deduction only (the same as the
+--     kind of the events read) and dispute_unshipped_restored the restoring part. intake = payment + pre_shipment_cancel
+--     + dispute_unshipped + dispute_unshipped_restored. breakdown_ok = (subtotal - discount + shipping + pre_shipment_cancel
+--     + dispute_unshipped + dispute_unshipped_restored = intake). The returns
 --     after shipment and the return fee revenue are neither added nor taken off.
 --   get_order_backlog(_as_of date) -> {backlog_total, order_count}: the sum of 2150 credit - debit of the lines that carry an order id up to
 --     _as_of (all orders; order_count = the orders whose balance is not 0).
@@ -215,7 +217,6 @@ DECLARE
   v_cancel bigint;
   v_deducted bigint;
   v_restored bigint;
-  v_dispute bigint;
   v_intake bigint;
   v_subtotal bigint;
   v_discount bigint;
@@ -231,18 +232,19 @@ BEGIN
     COALESCE(pg_catalog.sum(e.amount) FILTER (WHERE e.kind = 'dispute_unshipped_restored'), 0)
   INTO v_payment, v_cancel, v_deducted, v_restored
   FROM private.accounting_intake_events(_from, _to) AS e;
-  v_dispute := v_deducted + v_restored;
-  v_intake := v_payment + v_cancel + v_dispute;
-  SELECT COALESCE(pg_catalog.sum(o.subtotal_amount), 0), COALESCE(pg_catalog.sum(o.discount_amount), 0),
-    COALESCE(pg_catalog.sum(o.shipping_amount), 0), pg_catalog.count(*)
+  v_intake := v_payment + v_cancel + v_deducted + v_restored;
+  -- Each order counts with the sign of its net payment in the window (a payment reversed in a later window is negative there).
+  SELECT COALESCE(pg_catalog.sum(g.sign * o.subtotal_amount), 0), COALESCE(pg_catalog.sum(g.sign * o.discount_amount), 0),
+    COALESCE(pg_catalog.sum(g.sign * o.shipping_amount), 0), pg_catalog.count(*)
   INTO v_subtotal, v_discount, v_shipping, v_count
-  FROM public.orders AS o
-  WHERE o.id IN (SELECT e.order_id FROM private.accounting_intake_events(_from, _to) AS e
-    WHERE e.kind = 'payment' GROUP BY e.order_id HAVING pg_catalog.sum(e.amount) <> 0);
+  FROM (SELECT e.order_id, pg_catalog.sign(pg_catalog.sum(e.amount)) AS sign
+    FROM private.accounting_intake_events(_from, _to) AS e
+    WHERE e.kind = 'payment' GROUP BY e.order_id HAVING pg_catalog.sum(e.amount) <> 0) AS g
+  JOIN public.orders AS o ON o.id = g.order_id;
   RETURN pg_catalog.jsonb_build_object('subtotal_before_discount', v_subtotal, 'discount', v_discount, 'shipping', v_shipping,
-    'payment', v_payment, 'pre_shipment_cancel', v_cancel, 'dispute_unshipped', v_dispute,
+    'payment', v_payment, 'pre_shipment_cancel', v_cancel, 'dispute_unshipped', v_deducted,
     'dispute_unshipped_restored', v_restored, 'intake', v_intake, 'order_count', v_count,
-    'breakdown_ok', (v_subtotal - v_discount + v_shipping + v_cancel + v_dispute = v_intake));
+    'breakdown_ok', (v_subtotal - v_discount + v_shipping + v_cancel + v_deducted + v_restored = v_intake));
 END;
 $$;
 
@@ -559,7 +561,7 @@ BEGIN
         '_limit > 5000', 'ACCOUNTING_ARGUMENT_INVALID', 'COLLATE "C"', 'LIMIT _limit + 1', 'next_after_date', 'next_after_key']),
       ('private.get_intake_breakdown(date,date)', ARRAY[
         '''payment''', '''pre_shipment_cancel''', '''dispute_unshipped''', '''dispute_unshipped_restored''', 'o.subtotal_amount', 'o.discount_amount',
-        'HAVING pg_catalog.sum(e.amount) <> 0', 'v_subtotal - v_discount + v_shipping + v_cancel + v_dispute = v_intake']),
+        'HAVING pg_catalog.sum(e.amount) <> 0', 'v_subtotal - v_discount + v_shipping + v_cancel + v_deducted + v_restored = v_intake', 'pg_catalog.sign(pg_catalog.sum(e.amount))']),
       ('private.get_order_backlog(date)', ARRAY['private.accounting_order_balances(_as_of)', 'b.balance <> 0']),
       ('private.get_intake_reconciliation(date,date)', ARRAY[
         '''dispute_pending''', '''return_refund_2130''', '''other''', '''2130''', '''4010''', '''4020''', '''4050''', '''shipment_confirmed''',

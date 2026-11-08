@@ -207,7 +207,18 @@ describeLocalDb('S12 intake reconciliation: controller only', (db) => {
     expect(january.booked_sales_net_orders).toBe(18750);
   });
 
-  test('FREQ-571-AC-05: 読み口は期間の向きを確かめ、個人の情報を返さない', async () => {
+  test('FREQ-571-AC-05: 読み口は期間の向きを確かめる', async () => {
     await expect(q('select public.get_intake_reconciliation($1::date, $2::date)', ['2026-02-01', '2026-01-01'])).rejects.toMatchObject({ message: 'ACCOUNTING_ARGUMENT_INVALID' });
+  });
+
+  test('FREQ-571-AC-05: 照らし合わせの答えは決めた鍵だけで、名前・メール・住所を含まない', async () => {
+    await seedExample();
+    const result = await reconcile('2026-01-01', '2026-03-31');
+    expect(Object.keys(result).sort()).toEqual(['book_sales_total', 'booked_sales_net_orders', 'closing_backlog', 'dispute_confirmed_by_account', 'exceptions',
+      'intake', 'opening_backlog', 'other_4010', 'other_4020', 'return_fee_revenue_4050', 'returns', 'sales_before_return', 'unexplained', 'unexplained2']);
+    expect(result.exceptions.map((row) => Object.keys(row).sort().join(','))).toEqual(['amount,kind,label_key', 'amount,kind,label_key']);
+    const text = JSON.stringify(result);
+    expect(text).not.toMatch(/@|email|name|address|phone/i);
+    expect(text).not.toContain('example.invalid');
   });
 });

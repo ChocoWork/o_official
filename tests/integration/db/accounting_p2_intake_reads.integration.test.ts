@@ -123,6 +123,16 @@ describeLocalDb('S12 intake reads: controller only', (db) => {
       breakdown_ok: false });
   });
 
+  test('FREQ-571-AC-02: 支払いが後の期間で取り消された時は、その期間の注文の額を符号つきで足し、breakdown_ok は真のまま', async () => {
+    const order = await seedPostedPayment(db(), { lines: [{ price: 18750, quantity: 1 }], createdAt: '2026-01-20T03:00:00Z' });
+    await reverseEntryFixture(db(), order.paymentEntryId, 'fixture payment reversal', '2026-02-10');
+    expect(await breakdown('2026-01-01', '2026-01-31')).toMatchObject({ subtotal_before_discount: 18750, payment: 18750, intake: 18750, order_count: 1, breakdown_ok: true });
+    // February: the payment is reversed (-18,750), so the order counts with the minus sign and the breakdown still adds up.
+    expect(await breakdown('2026-02-01', '2026-02-28')).toMatchObject({ subtotal_before_discount: -18750, discount: 0, payment: -18750, intake: -18750,
+      order_count: 1, breakdown_ok: true });
+    expect(await breakdown('2026-01-01', '2026-02-28')).toMatchObject({ subtotal_before_discount: 0, payment: 0, intake: 0, order_count: 0, breakdown_ok: true });
+  });
+
   test('FREQ-571-AC-03: 出荷して発送済みになった注文も、出荷後に返品が届いても受注高は変わらない', async () => {
     const order = await seedPostedPayment(db(), { lines: [{ price: 18750, quantity: 1 }], createdAt: '2026-01-20T03:00:00Z' });
     await confirmSlipAt(db(), order, { quantity: 1, shipmentDate: '2026-02-03', lockedAt: '2026-02-03T01:00:00Z' });
@@ -201,7 +211,7 @@ describeLocalDb('S12 intake reads: controller only', (db) => {
     await runAll();
     const events = ofOrder(await allEvents('2026-06-01', '2026-12-31'), order.orderId);
     expect(summary(events)).toEqual(['2026-06-10 payment 30000', '2026-08-20 dispute_unshipped -30000', '2026-09-15 dispute_unshipped_restored 7000']);
-    expect(await breakdown('2026-09-01', '2026-09-30')).toMatchObject({ dispute_unshipped: 7000, dispute_unshipped_restored: 7000, intake: 7000, breakdown_ok: true });
+    expect(await breakdown('2026-09-01', '2026-09-30')).toMatchObject({ dispute_unshipped: 0, dispute_unshipped_restored: 7000, payment: 0, pre_shipment_cancel: 0, intake: 7000, breakdown_ok: true });
   });
 
   test('FREQ-571-AC-04: 2つの取り消しがあっても同じ額を二重に引かない', async () => {
@@ -226,7 +236,6 @@ describeLocalDb('S12 intake reads: controller only', (db) => {
       if (day === '2026-01-26') await reverseEntryFixture(db(), entry.entryId);
     }
     const whole = await allEvents('2026-01-01', '2026-01-31');
-    expect(whole.map((event) => event.key)).toHaveLength(whole.length);
     expect(new Set(whole.map((event) => event.key)).size).toBe(whole.length);
     expect(whole.length).toBeGreaterThanOrEqual(7);
     const ordered = [...whole].sort((x, y) => (x.event_date < y.event_date ? -1 : x.event_date > y.event_date ? 1 : x.key < y.key ? -1 : x.key > y.key ? 1 : 0));
@@ -266,7 +275,8 @@ describeLocalDb('S12 intake reads: controller only', (db) => {
     }
     await q('savepoint acc_s12_role');
     await q('set local role service_role');
-    expect(((await q('select public.get_order_backlog($1::date) as r', ['2026-01-31'])).rows[0].r as { order_count: number }).order_count).toBeGreaterThanOrEqual(0);
+    expect((await q('select public.get_order_backlog($1::date) as r', ['2026-01-31'])).rows[0].r)
+      .toEqual(expect.objectContaining({ backlog_total: expect.any(Number), order_count: expect.any(Number) }));
     await q('rollback to savepoint acc_s12_role');
     for (const role of ['anon', 'authenticated']) {
       await q('savepoint acc_s12_role');

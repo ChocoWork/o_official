@@ -598,9 +598,9 @@ export async function postManualEntryFixture(client: PgClient, input: {
 	return { entryId: result.entry_id as string, entryNo: Number(result.entry_no), created: result.created as boolean };
 }
 
-/** 仕訳を取り消す（core。取り消しの日は元の日）。 */
-export async function reverseEntryFixture(client: PgClient, entryId: string, reason = 'fixture reversal'): Promise<string> {
-	const result = (await client.query('select private.accounting_reverse_journal_core(null, $1::uuid, $2::text) as r', [entryId, reason])).rows[0].r;
+/** 仕訳を取り消す（core。取り消しの日は entryDate、無ければ元の日）。 */
+export async function reverseEntryFixture(client: PgClient, entryId: string, reason = 'fixture reversal', entryDate: string | null = null): Promise<string> {
+	const result = (await client.query('select private.accounting_reverse_journal_core(null, $1::uuid, $2::text, $3::date) as r', [entryId, reason, entryDate])).rows[0].r;
 	return result.entry_id as string;
 }
 
