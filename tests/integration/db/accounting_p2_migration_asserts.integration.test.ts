@@ -29,7 +29,6 @@ describe('S6 source contract (no DB)', () => {
     expect(sql.trimEnd()).toMatch(/-- ACC_S6_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
     expect(assertion).not.toBe('');
     expect([...new Set([...assertion.matchAll(/'(acc_s6_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...details].sort());
-    expect(`${assertion}${body}`.match(/'(acc_s6_[a-z_]+)'/g)).not.toBeNull();
     expect(assertion).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
     expect(assertion.replace(/''55000''/g, '')).not.toMatch(/ERRCODE = '(?!55000')/);
     expect(sql).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
@@ -125,6 +124,11 @@ describeLocalDb('S6 final assert: controller only', (db) => {
     await db().query('rollback to savepoint acc_s6_search_path');
   });
 
+  test('FREQ-569-AC-01: 後の Task が足す public の accounting_* 関数（accounting_run_posting など）があっても S6 末尾assertは再生で通る', async () => {
+    expect(await attempt(`create function public.accounting_run_posting(_limit integer default 50) returns jsonb language sql volatile
+      security invoker set search_path = '' as $$ select '{}'::jsonb $$`)).toBeNull();
+  });
+
   test('FREQ-569-AC-01: S6末尾assertは後の移行・試験が足した行があっても再生で通り、足したままの比べる元の控えが無いと断る', async () => {
     // What later plans and commit suites leave behind: parked rows, a fact, a unit refund.
     await db().query("select private.accounting_park_event('payment_confirmed', 'orders', 'replay_1', null, 'no_order', '{}')");
@@ -187,7 +191,8 @@ describeLocalDb('S6 final assert: controller only', (db) => {
     ['revoke execute on function public.list_accounting_pending_events(boolean,integer,timestamptz,uuid) from service_role', 'acc_s6_function_attrs'],
     [`create or replace function public.get_accounting_pending_summary() returns jsonb language sql stable security invoker
       set search_path = '' as $$ select '{}'::jsonb $$`, 'acc_s6_function_attrs'],
-    [`create function public.accounting_probe() returns void language sql set search_path = '' as $$ select $$`, 'acc_s6_function_attrs'],
+    [`create function public.accounting_shipped_units(_a uuid, _b bigint) returns void language sql set search_path = '' as $$ select $$`, 'acc_s6_function_attrs'],
+    [`create function public.accounting_park_event() returns void language sql set search_path = '' as $$ select $$`, 'acc_s6_function_attrs'],
     [`create function private.accounting_cutover_on(_x integer) returns date language sql stable security definer
       set search_path = '' as $$ select null::date $$`, 'acc_s6_function_attrs'],
     [`alter table public.ops_job_heartbeats drop constraint ops_job_heartbeats_job_check,

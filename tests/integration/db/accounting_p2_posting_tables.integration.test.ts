@@ -269,9 +269,13 @@ describeLocalDb('S6 posting foundation: controller only', (db) => {
     expect(page1.next_after_at).not.toBeNull();
     const page2 = await list(false, 2, page1.next_after_at, page1.next_after_id);
     expect(page2.events.map((e: { source_id: string }) => e.source_id)).toEqual([ids[2], ids[1]]);
-    const page3 = await list(false, 2, page2.next_after_at, page2.next_after_id);
-    expect(page3.events.map((e: { source_id: string }) => e.source_id).slice(0, 0)).toEqual([]);
-    expect(page3.events.some((e: { source_id: string }) => e.source_id === ids[0])).toBe(false);
+    // Nothing of this test is left after page 2 (the resolved one is hidden): either there is no next page (no cursor, and the
+    // cursor pair is null together) or the next page holds none of the five.
+    expect([page2.next_after_at === null, page2.next_after_id === null]).toEqual([page2.next_after_at === null, page2.next_after_at === null]);
+    if (page2.next_after_at !== null) {
+      const page3 = await list(false, 2, page2.next_after_at, page2.next_after_id);
+      expect(page3.events.filter((e: { source_id: string }) => ids.includes(e.source_id))).toEqual([]);
+    }
     const all = await list(true, 100);
     expect(all.events.filter((e: { source_id: string }) => ids.includes(e.source_id)).map((e: { source_id: string }) => e.source_id)).toEqual([ids[4], ids[3], ids[2], ids[1], ids[0]]);
     expect(Object.keys(all.events[0]).sort()).toEqual(['detail', 'detection_count', 'event_kind', 'first_detected_at', 'id', 'last_detected_at',
@@ -612,6 +616,41 @@ describeLocalDb('S6 posting foundation: controller only', (db) => {
     expect((await q('select count(*) as n from private.accounting_unit_values($1::uuid, null)', [other.orderId])).rows[0].n).toBe('1');
   });
 
+  test('FREQ-563-AC-03: 支払額0の着は全額返金済みとは見ず、番号の若い着から送り、値打ちは0', async () => {
+    // Units paid [0, 1]: a slip of 1 takes unit 0 (the lowest index), and unit 0 is worth 0.
+    const order = await seedUnitOrder(db(), [[0, 1]]);
+    const item = order.orderItemIds[0];
+    const slip = await seedFactSlip(db(), { orderItemId: item, quantity: 1 });
+    expect(await shippedUnits(db(), item)).toEqual([{ unit: 0, slipId: slip }]);
+    const values = (await q('select unit_index, shipped, value from private.accounting_unit_values($1::uuid, null) order by unit_index', [order.orderId])).rows;
+    expect(values).toEqual([{ unit_index: 0, shipped: true, value: 0 }, { unit_index: 1, shipped: false, value: 1 }]);
+    // A fully refunded unit with a positive paid amount is still skipped (the rule needs paid_amount > 0 and sum = paid_amount).
+    const second = await seedUnitOrder(db(), [[0, 1]]);
+    await refund('RF-FULL', second.orderItemIds[0], 1, 1);
+    const next = await seedFactSlip(db(), { orderItemId: second.orderItemIds[0], quantity: 2 });
+    expect(await shippedUnits(db(), second.orderItemIds[0])).toEqual([{ unit: 0, slipId: next }]);
+  });
+
+  test('FREQ-563-AC-03: 交換の品（line_kind=exchange）の着は送った着にも着の値打ちにも出ない', async () => {
+    const order = await seedUnitOrder(db(), [[5000, 5000]]);
+    const base = order.orderItemIds[0];
+    // The foreign key to the return line is not the point here; replica mode skips it for this one insert (CHECKs still apply).
+    await q('set local session_replication_role = replica');
+    const exchange = (await q(`insert into public.order_items (order_id, item_id, item_name, item_price, quantity, line_total, variant_id,
+      fulfillment_type, line_kind, exchange_return_line_id, exchange_paid_amount)
+      select oi.order_id, oi.item_id, 'exchange', 0, 2, 0, oi.variant_id, 'backorder', 'exchange', gen_random_uuid(), 3000
+      from public.order_items oi where oi.id = $1 returning id`, [base])).rows[0].id as string;
+    await q('insert into public.order_line_unit_amounts (order_id, order_item_id, unit_index, paid_amount) values ($1, $2, 0, 3000), ($1, $2, 1, 3000)',
+      [order.orderId, exchange]);
+    await q('set local session_replication_role = origin');
+    const slip = await seedFactSlip(db(), { orderItemId: exchange, quantity: 2 });
+    expect(slip).toBeTruthy();
+    expect(await shippedUnits(db(), exchange)).toEqual([]);
+    const values = (await q('select order_item_id, unit_index from private.accounting_unit_values($1::uuid, null) order by order_item_id, unit_index', [order.orderId])).rows;
+    expect(values.map((r) => r.order_item_id)).toEqual([base, base]);
+    expect((await q('select count(*) as n from public.order_line_unit_amounts where order_item_id = $1', [exchange])).rows[0].n).toBe('2');
+  });
+
   // ---- the two group G functions (FREQ-563-AC-03) --------------------------------------------------------------
   test('FREQ-563-AC-03: 番号を取る1行を足した確定と取り消しの2本は、囲みを全部除いた本文が最新の定義と同じで、属性とACLが前と同じ', async () => {
     expect(confirmLatest).not.toBe('');
@@ -795,7 +834,13 @@ describeLocalDb('S6 posting foundation: controller only', (db) => {
 });
 
 // The concurrency test commits rows into the local database (the accounting_* rows cannot be removed): reset it afterwards.
+// Run it on its own (the controller): db reset, ACCOUNTING_COMMIT_SUITE=1 ... npx jest <this file> --runInBand -t concurrency, db reset.
+const COMMIT_SUITE = process.env.ACCOUNTING_COMMIT_SUITE === '1';
 describeLocalDb('S6 fact numbers under concurrency: controller only (commits)', () => {
+  if (!COMMIT_SUITE) {
+    test.skip('ACCOUNTING_COMMIT_SUITE=1 未設定のためスキップ', () => {});
+    return;
+  }
   const order = async (client: PgClient) => {
     await client.query('begin');
     await client.query('select pg_catalog.pg_advisory_xact_lock(190521,1)');

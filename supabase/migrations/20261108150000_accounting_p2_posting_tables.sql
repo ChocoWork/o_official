@@ -1316,9 +1316,14 @@ BEGIN
       END IF;
     END LOOP;
   END IF;
-  -- Nothing named accounting_* (the tools of this file) has a public entry.
+  -- None of the 13 private tools of this file has a public entry (only these names: a later task may add its own
+  -- public accounting_* function, e.g. accounting_run_posting, without breaking a replay of this assert).
   IF v_failed IS NULL AND EXISTS (SELECT 1 FROM pg_catalog.pg_proc AS f
-    WHERE f.pronamespace = 'public'::regnamespace AND f.proname LIKE 'accounting\_%') THEN
+    WHERE f.pronamespace = 'public'::regnamespace AND f.proname = ANY (ARRAY['accounting_check_unit_allocation_sum',
+      'accounting_allocate_amount', 'accounting_cutover_on', 'accounting_take_g_fact_seq', 'accounting_record_slip_fact',
+      'accounting_g_fact_seq_at', 'accounting_shipped_units', 'accounting_unit_values', 'accounting_record_unit_refund',
+      'accounting_pending_detail_valid', 'accounting_park_event', 'accounting_unpark_event',
+      'accounting_pending_event_json'])) THEN
     v_failed := 'acc_s6_function_attrs';
   END IF;
 
