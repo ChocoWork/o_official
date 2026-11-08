@@ -1420,16 +1420,16 @@ controller手順: H7未適用DBの新しい取消テストでRED→取引内で�
 | S9 の `private.get_stripe_balance_reconciliation`（公開の窓口と同じ） | S11 の `private.accounting_dispute_key` | Stripe の残高の照合。dispute の取引を仕訳済みと数える |
 | S11 の `private.accounting_run_posting` | S7・S8・S9・S11 の4つの係 | 計上の入口 |
 
-S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の関数を、dispute を呼ばない版に作り直す（S11 のヘッダーの注意）。
+S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の関数を、dispute を呼ばない版に作り直す（S11 のヘッダーの注意）。戻す順は逆順（S14 → S6）。S7・S8・S9 は S11 の入口から呼ばれるので、S11 より前には戻せない。
 
 ### 末尾の検査（DETAIL）と戻し方
 
 | 移行 | 末尾の検査（DETAIL） | 戻し方 |
 | --- | --- | --- |
-| S6 | 事前の止め `acc_s6_slip_fact_backfill`（確定・取り消し済みの発送票があれば止まる）、末尾 `acc_s6_tables`・`acc_s6_constraints`・`acc_s6_immutable`・`acc_s6_rls_acl`・`acc_s6_function_attrs`・`acc_s6_heartbeat_check`・`acc_s6_seq_acl`・`acc_s6_existing_dml_allowlist`・`acc_s6_g_allowlist_unchanged`・`acc_s6_g_body_unchanged`・`acc_s6_g_function_attrs`（計12）。割り当ての合計の違反は `ACCOUNTING_ARGUMENT_INVALID` / 22023、DETAIL `unit_allocation_sum` | 4表の行が1件も無い間だけ。ファイル先頭の ROLLBACK のとおり: G の2関数（確定 `20261026045859_group_g4_orders_foundation.sql`・取り消し `20261025100130_group_g3_shipping_slips.sql`）を前の定義へ `CREATE OR REPLACE`、`ops_job_heartbeats_job_check` から `accounting_post` を外す、読み・書き手・道具の関数、索引、連番、4表の DROP |
-| S7 | `acc_s7_functions`・`acc_s7_function_attrs`・`acc_s7_existing_dml_allowlist` | `payment_confirmed` の仕訳が無い間だけ。`private.accounting_post_payment_events(integer)`・`private.accounting_park_failure(...)` を DROP |
+| S6 | 事前の止め `acc_s6_slip_fact_backfill`（確定・取り消し済みの発送票があれば本体の前で止まる。末尾の検査の段にも同じ名前がある）、末尾 `acc_s6_tables`・`acc_s6_constraints`・`acc_s6_immutable`・`acc_s6_rls_acl`・`acc_s6_function_attrs`・`acc_s6_heartbeat_check`・`acc_s6_seq_acl`・`acc_s6_existing_dml_allowlist`・`acc_s6_g_allowlist_unchanged`・`acc_s6_g_body_unchanged`・`acc_s6_g_function_attrs`（計12）。割り当ての合計の違反は `ACCOUNTING_ARGUMENT_INVALID` / 22023、DETAIL `unit_allocation_sum` | 4表の行が1件も無い間だけ。ファイル先頭の ROLLBACK のとおり: G の2関数（確定 `20261026045859_group_g4_orders_foundation.sql`・取り消し `20261025100130_group_g3_shipping_slips.sql`）を前の定義へ `CREATE OR REPLACE`、`ops_job_heartbeats_job_check` から `accounting_post` を外す、読み・書き手・道具の関数、索引、連番、4表の DROP |
+| S7 | `acc_s7_functions`・`acc_s7_function_attrs`・`acc_s7_existing_dml_allowlist` | `payment_confirmed` の仕訳が無い間だけ。`private.accounting_post_payment_events(integer)`・`private.accounting_park_failure(...)` を DROP。S11 の `accounting_run_posting` が呼ぶので、S11 を先に戻す |
 | S8 | `acc_s8_functions`・`acc_s8_function_attrs`・`acc_s8_reads_stable`・`acc_s8_g_untouched`・`acc_s8_existing_dml_allowlist` | `shipment_confirmed`・`shipment_redated` の仕訳が無い間だけ。ファイル先頭の DROP の文（8関数）。S11 が S8 の道具を呼ぶので、S11 を先に戻す |
-| S9 | `acc_s9_tables`・`acc_s9_functions`・`acc_s9_function_attrs`・`acc_s9_rls_acl`・`acc_s9_reads_stable`・`acc_s9_category_map`・`acc_s9_existing_dml_allowlist` | `stripe_fee`・`stripe_tax_adjustment`・`payout_started`・`bank_arrived`・`payout_failed`・`balance_topup` の仕訳が無く、請求書の表が空の間だけ。ファイル先頭の DROP の文と `DROP TABLE accounting_stripe_invoice_records` |
+| S9 | `acc_s9_tables`・`acc_s9_functions`・`acc_s9_function_attrs`・`acc_s9_rls_acl`・`acc_s9_reads_stable`・`acc_s9_category_map`・`acc_s9_existing_dml_allowlist` | `stripe_fee`・`stripe_tax_adjustment`・`payout_started`・`bank_arrived`・`payout_failed`・`balance_topup` の仕訳が無く、請求書の表が空の間だけ。ファイル先頭の DROP の文と `DROP TABLE accounting_stripe_invoice_records`。S11 の `accounting_run_posting` が呼ぶので、S11 を先に戻す |
 | S10 | `acc_s10_tables`・`acc_s10_constraints`・`acc_s10_immutable`・`acc_s10_rls_acl`・`acc_s10_function_attrs`・`acc_s10_existing_dml_allowlist` | dispute が1件も記録されていない間だけ。`record_stripe_dispute`（公開と私的）・`stripe_disputes_guard_update` と2表を DROP |
 | S11 | `acc_s11_tables`・`acc_s11_functions`・`acc_s11_function_attrs`・`acc_s11_rls_acl`・`acc_s11_reads_stable`・`acc_s11_run_posting`・`acc_s11_existing_dml_allowlist` | `dispute_event` の仕訳が無く、2表が空の間だけ。先に S8 と S9 の依存する関数を作り直してから、ファイル先頭の DROP の文 |
 | S12 | `acc_s12_functions`・`acc_s12_function_attrs`・`acc_s12_reads_stable`・`acc_s12_existing_dml_allowlist` | 行を書かない移行。関数の DROP だけ |

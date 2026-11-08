@@ -581,9 +581,9 @@ flowchart TD
 
 | 遷移 | 条件と結果 |
 | --- | --- |
-| KPI → 照合 | KPI の受注高のパネルの案内の link が `/admin?tab=ACCOUNTING&accountingTab=reconciliation` を開く |
+| KPI → 照合 | KPI の受注高のパネルの案内のリンクが `/admin?tab=ACCOUNTING&accountingTab=reconciliation` を開く |
 | 計上待ち → 計上 | 「もう一度計上する」は `admin.finance.manage` が要る。押している間は無効で、終わると件数と一覧を読み直す |
 | 計上待ち → 確認済み | `before_cutover`・`no_revenue` の行だけ。`admin.accounting.entries.correct` とメモが要る。ほかの理由の行は仕訳が入った時に自動で消える |
 | 計上待ち → 設定・期間 | `period_missing` は期間を作る、またはやめた日より後なら事業の形を法人へ切り替える（設定・期間のタブ） |
-| 発送票の確定 → 止まる | 引かれた取引のある判断待ちの dispute の注文を含むと確定が断られる。dispute が決着するか、科目が決まって振り替えが済むと確定できる |
+| 発送票の確定 → 止まる | 引かれた取引のある判断待ちの dispute の注文を含むと確定が断られる。dispute の状態が判断待ち（`needs_response`・`under_review`）でなくなるか、戻りの取引が入ると、止めは外れる（科目の振り替えは負けた後の話で、止めの条件ではない） |
 | 科目の決定待ち → 振り替え | 確定した損失の科目が未設定の dispute は、設定・期間で原因の科目を決めてから、Stripe 精算のタブの「科目の決定待ちの取り消し」を「振り替える」 |

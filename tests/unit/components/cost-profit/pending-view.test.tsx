@@ -112,6 +112,15 @@ describe('計上待ちのタブ', () => {
 		expect(region.textContent).not.toMatch(/[!！]/);
 	});
 
+	it('FREQ-569-AC-01: units_insufficient は「この発送票を取り消すと閉じる」と言い切り、他の発送票の取り消しでは直ると読める文にしない', async () => {
+		serve({ events: [pendingEvent(1, { reason: 'units_insufficient' })] });
+		render(<PendingView />);
+		const region = await screen.findByRole('region', { name: '計上待ち' });
+		const text = (await within(region).findByTestId('pending-reason')).textContent ?? '';
+		expect(text).toBe('この発送票で送る着の数が、まだ送っていない着の数より多くなっています。この発送票を取り消すと、この行は閉じます。');
+		expect(text).not.toMatch(/自動で計上/);
+	});
+
 	it('FREQ-569-AC-01: dispute_withdrawal_missing は待つ相手ごとに3つの文を出す（決着を待つのは dispute_status がある時だけ）', async () => {
 		const dispute = { reason: 'dispute_withdrawal_missing' as const, eventKind: 'dispute_event' as const };
 		serve({

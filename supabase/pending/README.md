@@ -14,7 +14,6 @@
 | `schedule_return_photo_purge.sql` | E-3 段2の写真の片付け。毎日19:20 UTC（翌日4:20 JST）に POST /api/cron/purge-return-photos。未使用1日・終了後90日を過ぎた写真を Storage API で消し、return_photo_purge に成功を記録する | 開店時。D・E・F の DB の移行、アプリの公開、Vault の cron_secret・app_base_url の名前の存在を確認してから新しい移行へ昇格する |
 | `schedule_accounting_post.sql` | 会計の計上係（10分ごとに `/api/cron/accounting-post` を POST で呼ぶ pg_cron）。Webhook の worker と各画面の操作が流す計上の取りこぼしを拾い、`ops_job_heartbeats` の `accounting_post` に成功・失敗を残す（30分止まると店へ知らせる）。FREQ-562〜569 | 開店のとき。手順書の順番どおり（手順 3）。会計の移行 S6〜S14 を本番に当て、アプリを公開し、Vault の `cron_secret`・`app_base_url` を確認してから。[会計の運用](../../docs/06_Operations/accounting-p2-posting-stripe.md) |
 
-
 2026-09-25 に互換段階のCheckout・注文RPCとWebhookキューを本番へ適用済みです。SQLは本番の台帳versionで supabase/migrations/ へ移しました。
 
 ## 本番へ入れる手順
