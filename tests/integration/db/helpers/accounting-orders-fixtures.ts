@@ -449,3 +449,108 @@ export function disputeFixture(overrides: { dispute?: Record<string, unknown>; e
 	};
 	return { dispute, event };
 }
+
+/** 計画2 S11（支払いの取り消しの仕訳・設定・計上係の入口）の移行の本文。無ければ空で、原文の確かめが目に見えて落ちる。 */
+const s11Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p2_dispute_posting.sql'));
+export const ACCOUNTING_S11_SQL = s11Files.length === 1 ? fs.readFileSync(path.join(directory, s11Files[0]), 'utf8') : '';
+export const ACCOUNTING_S11_FILES = s11Files;
+
+/** S11 の `-- ACC_S11_<name>_BEGIN` と `-- ACC_S11_<name>_END` の間。 */
+export function accountingS11Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S11_SQL.split(`-- ACC_S11_${name}_BEGIN\n`)[1]?.split(`-- ACC_S11_${name}_END`)[0] ?? '';
+}
+
+/**
+ * 手を入れる前の今の状態を S11 の比べる元として控える（適用の時は仕訳も計上待ちも設定も振り替えも0件）。そのあとで末尾 assert を流す。
+ * 比べるのは、仕訳の見出し・行・計上待ちの行・会計の期間・取り消しの設定と振り替えの行数。
+ */
+export async function pinAccountingS11Baseline(client: PgClient): Promise<void> {
+	await client.query(`create temp table accounting_s11_baseline(payload jsonb) on commit drop;
+		insert into pg_temp.accounting_s11_baseline(payload) select jsonb_build_object(
+			'entries', (select count(*) from public.accounting_journal_entries),
+			'lines', (select count(*) from public.accounting_journal_lines),
+			'pending_events', (select count(*) from public.accounting_pending_events),
+			'periods', (select count(*) from public.accounting_periods),
+			'settings', (select count(*) from public.accounting_dispute_account_settings),
+			'assignments', (select count(*) from public.accounting_dispute_assignments))`);
+}
+
+/**
+ * G の確定・取り消しの事実を、番号の列から番号を取り、時刻を決めて入れる（G の関数は今の時計で時刻を付けるので、過去の日付で
+ * 試す時はこちらを使う）。取引は G の共通の鍵を持っていなくてよい（試験の直接の書き込み）。
+ */
+export async function recordSlipFactAt(client: PgClient, slipId: string, kind: 'confirm' | 'cancel', lockedAt: string): Promise<number> {
+	const row = (await client.query(
+		`insert into public.accounting_g_slip_facts (slip_id, kind, fact_seq, locked_at)
+		 values ($1::uuid, $2, nextval('private.accounting_g_fact_seq'), $3::timestamptz) returning fact_seq`, [slipId, kind, lockedAt])).rows[0];
+	return Number(row.fact_seq);
+}
+
+/** 出荷前の返金の割り当てを、番号の列から番号を取り、時刻を決めて入れる。 */
+export async function recordAllocationAt(client: PgClient, input: {
+	orderItemId: string; unitIndex: number; refundKey: string; amount: number; lockedAt: string;
+}): Promise<number> {
+	const row = (await client.query(
+		`insert into public.accounting_unit_refund_allocations (order_item_id, unit_index, refund_key, amount, fact_seq, locked_at)
+		 values ($1::uuid, $2, $3, $4, nextval('private.accounting_g_fact_seq'), $5::timestamptz) returning fact_seq`,
+		[input.orderItemId, input.unitIndex, input.refundKey, input.amount, input.lockedAt])).rows[0];
+	return Number(row.fact_seq);
+}
+
+/**
+ * 支払いの取り消し（dispute）を入れる。取り消しの表の行・作った知らせの履歴・引かれた残高の取引（withdrawnAt が null なら
+ * 取引は入れない）。fee は残高の取引に付く取り消しの手数料。status の初期値は needs_response。
+ */
+export async function seedDispute(client: PgClient, input: {
+	orderId?: string | null; paymentIntentId?: string | null; amount: number; withdrawnAt?: string | null; reason?: string;
+	status?: string; fee?: number; createdAt?: string; disputeId?: string; txnId?: string; syncedAt?: string;
+}): Promise<{ disputeId: string; txnId: string | null }> {
+	const disputeId = input.disputeId ?? `dp_${randomUUID().replaceAll('-', '')}`;
+	const withdrawnAt = input.withdrawnAt === undefined ? '2026-06-20T03:00:00Z' : input.withdrawnAt;
+	const createdAt = input.createdAt ?? withdrawnAt ?? '2026-06-20T03:00:00Z';
+	await client.query(
+		`insert into public.stripe_disputes
+			(id, payment_intent_id, charge_id, order_id, amount, currency, reason, status, is_charge_refundable, evidence_due_by,
+			 evidence_details, stripe_created_at, synced_at)
+		 values ($1, $2, $3, $4, $5, 'jpy', $6, 'needs_response', false, null, '{}'::jsonb, $7::timestamptz, $7::timestamptz)`,
+		[disputeId, input.paymentIntentId ?? null, `ch_${randomUUID().replaceAll('-', '')}`, input.orderId ?? null, input.amount,
+			input.reason ?? 'fraudulent', createdAt]);
+	await addDisputeHistory(client, { disputeId, status: 'needs_response', occurredAt: createdAt, eventType: 'charge.dispute.created',
+		setStatus: false });
+	let txnId: string | null = null;
+	if (withdrawnAt !== null) {
+		txnId = await seedStripeFee(client, { createdAt: withdrawnAt, type: 'adjustment', reportingCategory: 'dispute', amount: -input.amount,
+			fee: input.fee ?? 0, id: input.txnId, sourceId: disputeId, syncedAt: input.syncedAt });
+	}
+	if (input.status !== undefined && input.status !== 'needs_response') {
+		await client.query('update public.stripe_disputes set status = $2 where id = $1', [disputeId, input.status]);
+	}
+	return { disputeId, txnId };
+}
+
+/** 取り消しが取り下げられて戻る残高の取引（reporting_category dispute_reversal、プラスの額）。 */
+export async function seedDisputeReversal(client: PgClient, input: {
+	disputeId: string; amount: number; createdAt: string; id?: string; syncedAt?: string;
+}): Promise<string> {
+	return seedStripeFee(client, { createdAt: input.createdAt, type: 'adjustment', reportingCategory: 'dispute_reversal', amount: input.amount,
+		fee: 0, id: input.id, sourceId: input.disputeId, syncedAt: input.syncedAt });
+}
+
+/**
+ * 状態の履歴の行を1つ足す（知らせの行も、毎晩の再照合の行も同じ形）。stripeEventCreatedAt は Stripe 側の出来事の時刻
+ * （lost の時だけ入る）。setStatus が偽でなければ、取り消しの表の今の状態もその状態にする。
+ */
+export async function addDisputeHistory(client: PgClient, input: {
+	disputeId: string; status: string; occurredAt: string; stripeEventCreatedAt?: string | null; eventType?: string; eventId?: string;
+	setStatus?: boolean; createdAt?: string;
+}): Promise<void> {
+	await client.query(
+		`insert into public.stripe_dispute_events
+			(dispute_id, stripe_event_id, event_type, status, occurred_at, stripe_event_created_at, balance_transaction_ids, raw_payload, created_at)
+		 values ($1, $2, $3, $4, $5::timestamptz, $6::timestamptz, '{}'::text[], '{}'::jsonb, coalesce($7::timestamptz, now()))`,
+		[input.disputeId, input.eventId ?? `evt_${randomUUID().replaceAll('-', '')}`, input.eventType ?? 'charge.dispute.updated', input.status,
+			input.occurredAt, input.stripeEventCreatedAt ?? null, input.createdAt ?? null]);
+	if (input.setStatus !== false) {
+		await client.query('update public.stripe_disputes set status = $2 where id = $1', [input.disputeId, input.status]);
+	}
+}

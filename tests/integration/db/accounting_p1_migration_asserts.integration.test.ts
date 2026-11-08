@@ -73,6 +73,9 @@ describeLocalDb('S2 final assert: controller only', (db) => {
     let failure: AssertFailure | null = null;
     try {
       // The baseline is taken first, then the tamper and the assertion run against it.
+      // The posting entry point public.accounting_run_posting (plan 2 Task 6) is public on purpose; this assert (plan 1) says that nothing named
+      // accounting_* is public, so the replay runs without it. The statement is undone with the savepoint.
+      await db().query('drop function if exists public.accounting_run_posting(integer)');
       if (baseline === 'pin') await pinAccountingS2Baseline(db()); else await db().query(applyBaseline);
       if (change) await db().query(change);
       await db().query(assertion);
@@ -92,6 +95,9 @@ describeLocalDb('S2 final assert: controller only', (db) => {
     // The assert pins an empty search_path only while it runs and gives the caller's back.
     await db().query('savepoint acc_s2_search_path');
     await db().query('set local search_path = public, private, extensions, pg_catalog');
+    // The posting entry point public.accounting_run_posting (plan 2 Task 6) is public on purpose; this assert (plan 1) says that nothing named
+    // accounting_* is public, so the replay runs without it. The statement is undone with the savepoint.
+    await db().query('drop function if exists public.accounting_run_posting(integer)');
     await pinAccountingS2Baseline(db());
     await db().query(assertion);
     expect((await db().query('show search_path')).rows[0].search_path).toBe('public, private, extensions, pg_catalog');
@@ -259,6 +265,9 @@ describeLocalDb('S3 final assert: controller only', (db) => {
     await db().query('savepoint acc_s3_assert');
     let failure: AssertFailure | null = null;
     try {
+      // The posting entry point public.accounting_run_posting (plan 2 Task 6) is public on purpose; this assert (plan 1) says that nothing named
+      // accounting_* is public, so the replay runs without it. The statement is undone with the savepoint.
+      await db().query('drop function if exists public.accounting_run_posting(integer)');
       if (baseline === 'pin') await pinAccountingS3Baseline(db());
       else if (baseline === 'apply') await db().query(s3ApplyBaseline);
       else await pinAccountingS2Baseline(db());

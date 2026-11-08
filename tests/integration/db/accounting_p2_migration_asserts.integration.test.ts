@@ -8,11 +8,12 @@ import {
   ACCOUNTING_S8_FILES, ACCOUNTING_S8_SQL as sqlS8, accountingS8Section, pinAccountingS8Baseline,
   ACCOUNTING_S9_FILES, ACCOUNTING_S9_SQL as sqlS9, accountingS9Section, pinAccountingS9Baseline,
   ACCOUNTING_S10_FILES, ACCOUNTING_S10_SQL as sqlS10, accountingS10Section, pinAccountingS10Baseline,
+  ACCOUNTING_S11_FILES, ACCOUNTING_S11_SQL as sqlS11, accountingS11Section, pinAccountingS11Baseline,
 } from './helpers/accounting-orders-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
 
 // Accounting plan 2 S6 (FREQ-569 / FREQ-563): the shape of the migration and its final assert. The DB part is
-// controller only. Tasks 2-9 add the asserts of S7-S14 below (S7: the payment posting, Task 2; S8: the shipment posting, Task 3).
+// controller only. Tasks 2-9 add the asserts of S7-S14 below (S7: the payment posting, Task 2; S8: the shipment posting, Task 3; S11: the dispute posting, Task 6).
 const assertion = accountingS6Section('FINAL_ASSERT');
 const body = accountingS6Section('BODY');
 const details = ['acc_s6_tables', 'acc_s6_constraints', 'acc_s6_immutable', 'acc_s6_rls_acl', 'acc_s6_function_attrs',
@@ -130,7 +131,7 @@ describeLocalDb('S6 final assert: controller only', (db) => {
   });
 
   test('FREQ-569-AC-01: 後の Task が足す public の accounting_* 関数（accounting_run_posting など）があっても S6 末尾assertは再生で通る', async () => {
-    expect(await attempt(`create function public.accounting_run_posting(_limit integer default 50) returns jsonb language sql volatile
+    expect(await attempt(`create or replace function public.accounting_run_posting(_limit integer default 50) returns jsonb language sql volatile
       security invoker set search_path = '' as $$ select '{}'::jsonb $$`)).toBeNull();
   });
 
@@ -357,7 +358,7 @@ describeLocalDb('S7 final assert: controller only', (db) => {
   });
 
   test('FREQ-562-AC-05: 後の Task が足す public の accounting_run_posting があっても S7 末尾assertは再生で通る', async () => {
-    expect(await attempt(`create function public.accounting_run_posting(_limit integer default 50) returns jsonb language sql volatile
+    expect(await attempt(`create or replace function public.accounting_run_posting(_limit integer default 50) returns jsonb language sql volatile
       security invoker set search_path = '' as $$ select '{}'::jsonb $$`)).toBeNull();
   });
 
@@ -555,7 +556,7 @@ describeLocalDb('S8 final assert: controller only', (db) => {
   });
 
   test('FREQ-563-AC-04: 後の Task が足す public の accounting_run_posting と accounting_* の関数があっても S8 末尾assertは再生で通る', async () => {
-    expect(await attempt(`create function public.accounting_run_posting(_limit integer default 50) returns jsonb language sql volatile
+    expect(await attempt(`create or replace function public.accounting_run_posting(_limit integer default 50) returns jsonb language sql volatile
       security invoker set search_path = '' as $$ select '{}'::jsonb $$`)).toBeNull();
     expect(await attempt(`create function private.accounting_post_stripe_shipment_events(_limit integer) returns jsonb language sql volatile
       security definer set search_path = '' as $$ select '{}'::jsonb $$`)).toBeNull();
@@ -774,7 +775,7 @@ describeLocalDb('S9 final assert: controller only', (db) => {
   });
 
   test('FREQ-565-AC-01: 後の Task が足す public の accounting_run_posting があっても S9 末尾assertは再生で通る', async () => {
-    expect(await attempt(`create function public.accounting_run_posting(_limit integer default 50) returns jsonb language sql volatile
+    expect(await attempt(`create or replace function public.accounting_run_posting(_limit integer default 50) returns jsonb language sql volatile
       security invoker set search_path = '' as $$ select '{}'::jsonb $$`)).toBeNull();
   });
 
@@ -964,7 +965,7 @@ describeLocalDb('S10 final assert: controller only', (db) => {
   });
 
   test('FREQ-567-AC-03: 後の Task が足す public の accounting_run_posting があっても S10 末尾assertは再生で通る', async () => {
-    expect(await attempt(`create function public.accounting_run_posting(_limit integer default 50) returns jsonb language sql volatile
+    expect(await attempt(`create or replace function public.accounting_run_posting(_limit integer default 50) returns jsonb language sql volatile
       security invoker set search_path = '' as $$ select '{}'::jsonb $$`)).toBeNull();
   });
 
@@ -1045,6 +1046,249 @@ describeLocalDb('S10 final assert: controller only', (db) => {
     ["update pg_temp.accounting_s10_baseline set payload = jsonb_set(payload, '{disputes}', '5')", 'acc_s10_existing_dml_allowlist'],
     ["insert into public.accounting_periods (business_type, name, starts_on, ends_on) values ('soleProprietor', 'tamper', '2026-01-01', '2026-12-31')", 'acc_s10_existing_dml_allowlist'],
   ] as Array<[string, string]>)('FREQ-567-AC-03: S10改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// ---- S11 (Task 6): the dispute posting, the settings, the holds and the posting entry point ---------------------------------------
+const assertionS11 = accountingS11Section('FINAL_ASSERT');
+const bodyS11 = accountingS11Section('BODY');
+const detailsS11 = ['acc_s11_tables', 'acc_s11_functions', 'acc_s11_function_attrs', 'acc_s11_rls_acl', 'acc_s11_reads_stable',
+  'acc_s11_run_posting', 'acc_s11_existing_dml_allowlist'];
+const statementsS11 = bodyS11.replace(/\$\$[\s\S]*?\$\$/g, '$$$$').split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n');
+const posterS11 = 'private.accounting_post_dispute_events(integer)';
+const runnerPrivateS11 = 'private.accounting_run_posting(integer)';
+const runnerPublicS11 = 'public.accounting_run_posting(integer)';
+const settingS11 = 'private.admin_set_dispute_account_setting(uuid,text,text,bigint,uuid)';
+const assignS11 = 'private.admin_assign_dispute_confirmed(uuid,text,uuid)';
+const functionBodyS11 = (name: string) => bodyS11.split(`CREATE FUNCTION ${name}(`)[1]?.split('\n$$;')[0] ?? '';
+
+describe('S11 source contract (no DB)', () => {
+  test('FREQ-568-AC-01: S11はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S11_FILES).toEqual(['20261108200000_accounting_p2_dispute_posting.sql']);
+    expect(ACCOUNTING_S11_FILES[0] > ACCOUNTING_S10_FILES[0]).toBe(true);
+    expect(sqlS11).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(sqlS11.startsWith('BEGIN;\n')).toBe(true);
+    expect(sqlS11.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(sqlS11.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(sqlS11.trimEnd()).toMatch(/-- ACC_S11_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect(assertionS11).not.toBe('');
+    expect([...new Set([...assertionS11.matchAll(/'(acc_s11_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...detailsS11].sort());
+    expect(assertionS11).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(assertionS11.replace(/''55000''/g, '')).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(sqlS11).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+  });
+
+  test('FREQ-568-AC-05: S11の実行時のDMLは比べる元の控えのINSERTだけで、service_role に渡す関数は書き口・読み口・入口の private と public だけ', () => {
+    expect([...statementsS11.matchAll(/^\s*(INSERT INTO|UPDATE|DELETE FROM|TRUNCATE(?: TABLE)?)\s+([\w.]+)/gm)].map((m) => `${m[1]} ${m[2]}`))
+      .toEqual(['INSERT INTO pg_temp.accounting_s11_baseline']);
+    const grant = bodyS11.split('GRANT EXECUTE ON FUNCTION')[1]?.split(';')[0] ?? '';
+    const names = ['accounting_run_posting', 'admin_assign_dispute_confirmed', 'admin_set_dispute_account_setting', 'get_order_dispute_holds',
+      'get_slip_dispute_holds', 'list_accounting_disputes', 'list_dispute_account_settings'];
+    expect(grant.match(/(private|public)\.[a-z_]+\(/g)?.sort()).toEqual(
+      [...names.map((n) => `private.${n}(`), ...names.map((n) => `public.${n}(`)].sort());
+    expect(grant).toContain('TO service_role');
+    expect([...bodyS11.matchAll(/CREATE FUNCTION public\.([a-z_]+)\(/g)].map((m) => m[1]).sort()).toEqual(names);
+    const tableGrants = [...statementsS11.matchAll(/GRANT ([A-Z, ]+) ON TABLE ([\w., ]+) TO ([\w, ]+);/g)].map((m) => `${m[1]} ${m[3]}`);
+    expect(tableGrants).toEqual(['SELECT service_role']);
+    expect([...statementsS11.matchAll(/GRANT[^;]*;/g)].some((m) => /\b(anon|authenticated)\b/.test(m[0]))).toBe(false);
+  });
+
+  test('FREQ-568-AC-04: 係は最初に会計の鍵を取り、行の鍵を使わず、出来事ごとの失敗を共通の道具で保留にして、数えるのは保留できた時だけ', () => {
+    const poster = functionBodyS11('private.accounting_post_dispute_events');
+    expect(poster).not.toBe('');
+    expect(poster.indexOf('PERFORM private.accounting_lock_all(NULL);')).toBeGreaterThan(0);
+    expect(poster.indexOf('PERFORM private.accounting_lock_all(NULL);')).toBeLessThan(poster.indexOf('FOR v_job IN'));
+    expect(poster).not.toMatch(/FOR (SHARE|UPDATE|NO KEY UPDATE|KEY SHARE)/);
+    expect(poster).not.toMatch(/PG_EXCEPTION_CONTEXT/);
+    expect(poster).toContain("private.accounting_park_failure('dispute_event', v_table, v_source_id, v_order_id, v_sqlstate, SQLERRM,");
+    expect(poster).toContain('IF v_parked THEN');
+    // The failure mapping is Task 2's: this file defines no mapping of its own.
+    expect(statementsS11).not.toMatch(/CREATE FUNCTION private\.accounting_park_failure/);
+    expect(poster).not.toMatch(/raw_payload|evidence_details/);
+  });
+
+  test('FREQ-568-AC-04: lostの時刻はStripeの時刻の最も古い物で、無い時だけ受けた時刻の最も古い物。Cが済んだ後の戻りは全部L', () => {
+    const lostAt = functionBodyS11('private.accounting_dispute_lost_at');
+    expect(lostAt).toContain('COALESCE(pg_catalog.min(e.stripe_event_created_at), pg_catalog.min(e.occurred_at))');
+    expect(lostAt).toContain("e.status = 'lost'");
+    const kind = functionBodyS11('private.accounting_dispute_reversal_kind');
+    expect(kind.indexOf('accounting_dispute_confirmed_done')).toBeGreaterThan(0);
+    expect(kind.indexOf('accounting_dispute_confirmed_done')).toBeLessThan(kind.indexOf('accounting_dispute_lost_at'));
+    expect(kind).toContain('_created_at > v_lost');
+  });
+
+  test('FREQ-568-AC-03: 引かれた時の分け方と戻りの分け方は1つずつの関数で、割り振りと累計の式を使う', () => {
+    expect(functionBodyS11('private.accounting_dispute_split_withdrawn')).toContain('private.accounting_allocate_amount(_amount, v_values)');
+    const reversal = functionBodyS11('private.accounting_dispute_split_reversal');
+    expect(reversal).toContain('pg_catalog.floor(v_s::numeric * v_bc / v_a)::bigint - pg_catalog.floor(v_s::numeric * v_bp / v_a)::bigint');
+    expect(reversal).toContain('OVER (ORDER BY t.stripe_created_at, t.id)');
+    const poster = functionBodyS11('private.accounting_post_dispute_events');
+    expect((poster.match(/accounting_dispute_split_withdrawn\(/g) ?? []).length).toBe(1);
+    expect((poster.match(/accounting_dispute_split_reversal\(/g) ?? []).length).toBe(1);
+  });
+
+  test('FREQ-568-AC-06: 読み口は申し立ての資料の写し・名前・住所を一切書かない', () => {
+    for (const name of ['private.list_dispute_account_settings', 'private.accounting_dispute_json', 'private.list_accounting_disputes',
+      'private.get_order_dispute_holds', 'private.get_slip_dispute_holds']) {
+      const text = functionBodyS11(name);
+      expect(text).not.toBe('');
+      expect(text).not.toMatch(/raw_payload|evidence_details|customer_email|shipping_email|shipping_full_name|ship_to_|shipping_phone|shipping_address/);
+    }
+  });
+
+  test('FREQ-562-AC-05: 入口は4つの係を支払い・出荷・Stripe・取り消しの順に呼び、上限は1〜200、has_more は入れた件数と新しく止めた件数の合計', () => {
+    const runner = functionBodyS11('private.accounting_run_posting');
+    const order = ['accounting_post_payment_events(_limit)', 'accounting_post_shipment_events(_limit)', 'accounting_post_stripe_events(_limit)',
+      'accounting_post_dispute_events(_limit)'].map((needle) => runner.indexOf(needle));
+    expect(order.every((position) => position > 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(runner).toContain('_limit IS NULL OR _limit < 1 OR _limit > 200');
+    expect(runner).not.toContain('accounting_lock_all');
+    expect(bodyS11).toContain('CREATE FUNCTION public.accounting_run_posting(_limit integer DEFAULT 50) RETURNS jsonb\nLANGUAGE sql VOLATILE SECURITY INVOKER SET search_path = \'\'');
+  });
+
+  test('FREQ-568-AC-05: 日本語の文字列は ACCOUNTING_LABELS の4語だけ（U&の形）で、移行にチャージバックの語は無い', () => {
+    const code = bodyS11.split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n');
+    const literals = [...code.matchAll(/U&'((?:[^']|'')*)'/g)].map((m) => m[0]);
+    const allowed = new Set([ACCOUNTING_LABELS.disputeWithdrawn, ACCOUNTING_LABELS.disputeConfirmed, ACCOUNTING_LABELS.disputeReversal, ACCOUNTING_LABELS.disputeAssigned]
+      .map((label) => encodeSqlUnicodeLiteral(label)));
+    expect(literals.length).toBeGreaterThan(0);
+    expect(literals.every((literal) => allowed.has(literal))).toBe(true);
+    expect(sqlS11).not.toMatch(/chargeback/i);
+  });
+});
+
+describeLocalDb('S11 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  async function attempt(change = '', baseline: 'pin' | 'none' = 'pin'): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s11_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (baseline === 'pin') await pinAccountingS11Baseline(db());
+      if (change) await db().query(change);
+      await db().query(assertionS11);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s11_assert'); await db().query('release savepoint acc_s11_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
+  /** Re-create the function with a changed text (owner, ACL and attributes stay). */
+  const edit = (from: string, to: string, signature: string) => `do $x$ declare d text; begin
+    d := pg_get_functiondef('${signature}'::regprocedure);
+    if position(${quote(from)} in d) = 0 then raise exception 'TAMPER_TARGET_MISSING'; end if;
+    d := replace(d, ${quote(from)}, ${quote(to)});
+    execute d; end $x$`;
+
+  test('FREQ-568-AC-05: S11末尾assertは適用後の状態と呼出元search_pathを許す', async () => {
+    expect(assertionS11).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt("set local search_path = ''")).toBeNull();
+    await db().query('savepoint acc_s11_search_path');
+    await db().query('set local search_path = public, private, extensions, pg_catalog');
+    await pinAccountingS11Baseline(db());
+    await db().query(assertionS11);
+    expect((await db().query('show search_path')).rows[0].search_path).toBe('public, private, extensions, pg_catalog');
+    await db().query('rollback to savepoint acc_s11_search_path');
+  });
+
+  test('FREQ-568-AC-05: S11末尾assertは比べる元の控えが無いと断る', async () => {
+    expect(await attempt('', 'none')).toEqual(failed('acc_s11_existing_dml_allowlist'));
+  });
+
+  test('FREQ-562-AC-05: 入口は service_role だけが呼べ、anon と authenticated は呼べない', async () => {
+    for (const signature of [runnerPrivateS11, runnerPublicS11, settingS11, assignS11, 'public.list_accounting_disputes(integer,timestamptz,text)',
+      'public.get_order_dispute_holds(uuid[])', 'public.get_slip_dispute_holds(uuid)', 'public.list_dispute_account_settings()']) {
+      const row = (await db().query(
+        `select has_function_privilege('anon', $1::regprocedure, 'EXECUTE') as anon, has_function_privilege('authenticated', $1::regprocedure, 'EXECUTE') as authenticated,
+           has_function_privilege('service_role', $1::regprocedure, 'EXECUTE') as service_role, has_function_privilege('public', $1::regprocedure, 'EXECUTE') as public`,
+        [signature])).rows[0];
+      expect([signature, row]).toEqual([signature, { anon: false, authenticated: false, service_role: true, public: false }]);
+    }
+    for (const signature of [posterS11, 'private.accounting_dispute_lost_at(text)', 'private.accounting_dispute_split_withdrawn(uuid,bigint,bigint)']) {
+      const row = (await db().query(
+        "select has_function_privilege('service_role', $1::regprocedure, 'EXECUTE') as service_role", [signature])).rows[0];
+      expect([signature, row.service_role]).toEqual([signature, false]);
+    }
+  });
+
+  test.each([
+    // tables and triggers
+    ['alter table public.accounting_dispute_account_settings add column tamper_s11 integer', 'acc_s11_tables'],
+    ['alter table public.accounting_dispute_account_settings alter column version drop default', 'acc_s11_tables'],
+    ['alter table public.accounting_dispute_account_settings drop constraint accounting_dispute_account_settings_reason_check', 'acc_s11_tables'],
+    ['alter table public.accounting_dispute_account_settings add constraint tamper_s11 check (version < 1000)', 'acc_s11_tables'],
+    ['alter table public.accounting_dispute_account_settings drop constraint accounting_dispute_account_settings_account_code_fkey', 'acc_s11_tables'],
+    ['alter table public.accounting_dispute_assignments drop constraint accounting_dispute_assignments_request_key_key', 'acc_s11_tables'],
+    ['alter table public.accounting_dispute_assignments drop constraint accounting_dispute_assignments_entry_id_fkey', 'acc_s11_tables'],
+    ['alter table public.accounting_dispute_assignments alter column request_hash drop not null', 'acc_s11_tables'],
+    ['alter table public.accounting_dispute_assignments disable trigger accounting_dispute_assignments_no_update_delete', 'acc_s11_tables'],
+    ['alter table public.accounting_dispute_assignments enable replica trigger accounting_dispute_assignments_no_truncate', 'acc_s11_tables'],
+    ['drop trigger accounting_dispute_assignments_no_truncate on public.accounting_dispute_assignments', 'acc_s11_tables'],
+    ['create trigger tamper_s11 before insert on public.accounting_dispute_account_settings for each row execute function private.reject_accounting_mutation()', 'acc_s11_tables'],
+    // rls and acl
+    ['alter table public.accounting_dispute_account_settings disable row level security', 'acc_s11_rls_acl'],
+    ['create policy tamper_s11 on public.accounting_dispute_assignments for select using (true)', 'acc_s11_rls_acl'],
+    ['grant select on public.accounting_dispute_account_settings to anon', 'acc_s11_rls_acl'],
+    ['grant select on public.accounting_dispute_assignments to authenticated', 'acc_s11_rls_acl'],
+    ['grant insert on public.accounting_dispute_account_settings to service_role', 'acc_s11_rls_acl'],
+    ['grant update on public.accounting_dispute_assignments to service_role', 'acc_s11_rls_acl'],
+    ['revoke select on public.accounting_dispute_assignments from service_role', 'acc_s11_rls_acl'],
+    // functions: owner, security, volatility, arguments, ACL
+    [`grant execute on function ${posterS11} to service_role`, 'acc_s11_function_attrs'],
+    [`grant execute on function ${runnerPrivateS11} to anon`, 'acc_s11_function_attrs'],
+    [`grant execute on function ${runnerPublicS11} to authenticated`, 'acc_s11_function_attrs'],
+    [`grant execute on function ${runnerPublicS11} to public`, 'acc_s11_function_attrs'],
+    [`revoke execute on function ${runnerPublicS11} from service_role`, 'acc_s11_function_attrs'],
+    [`revoke execute on function ${settingS11} from service_role`, 'acc_s11_function_attrs'],
+    [`alter function ${runnerPublicS11} security definer`, 'acc_s11_function_attrs'],
+    [`alter function ${runnerPrivateS11} security invoker`, 'acc_s11_function_attrs'],
+    ['alter function public.list_accounting_disputes(integer,timestamptz,text) volatile', 'acc_s11_function_attrs'],
+    ['alter function private.get_order_dispute_holds(uuid[]) volatile', 'acc_s11_function_attrs'],
+    [`alter function ${assignS11} set search_path = public`, 'acc_s11_function_attrs'],
+    [`alter function ${posterS11} strict`, 'acc_s11_function_attrs'],
+    ['alter function public.get_slip_dispute_holds(uuid) security definer', 'acc_s11_function_attrs'],
+    ['drop function public.get_slip_dispute_holds(uuid)', 'acc_s11_function_attrs'],
+    ['create function public.accounting_dispute_cause(_r text) returns text language sql as $$ select _r $$', 'acc_s11_function_attrs'],
+    // functions: the text keeps the rules
+    [edit('PERFORM private.accounting_lock_all(NULL);', 'NULL;', posterS11), 'acc_s11_functions'],
+    [edit('IF v_parked THEN', 'IF true THEN', posterS11), 'acc_s11_functions'],
+    [edit('private.accounting_dispute_reversal_kind(', 'private.accounting_dispute_settled(', posterS11), 'acc_s11_functions'],
+    [edit("'dispute_shipment_pending'", "'dispute_withdrawal_missing'", posterS11), 'acc_s11_functions'],
+    [edit('LEAST(v_bt.synced_at, pg_catalog.clock_timestamp())', 'pg_catalog.clock_timestamp()', posterS11), 'acc_s11_functions'],
+    [edit('v_cutover := private.accounting_cutover_on();', 'v_cutover := private.accounting_cutover_on(); PERFORM 1 FROM public.accounting_pending_events FOR UPDATE;', posterS11), 'acc_s11_functions'],
+    [edit('COALESCE(pg_catalog.min(e.stripe_event_created_at), pg_catalog.min(e.occurred_at))', 'pg_catalog.min(e.occurred_at)', 'private.accounting_dispute_lost_at(text)'), 'acc_s11_functions'],
+    [edit('private.accounting_dispute_confirmed_done(_dispute_id)', 'false', 'private.accounting_dispute_reversal_kind(text,timestamptz)'), 'acc_s11_functions'],
+    [edit('pg_catalog.floor(v_s::numeric * v_bp / v_a)', 'pg_catalog.floor(v_s::numeric * v_bp / v_a) * 1', 'private.accounting_dispute_split_reversal(text,text)'), 'acc_s11_functions'],
+    [edit("'won', 'lost', 'warning_closed'", "'won', 'lost'", 'private.accounting_dispute_settled(text)'), 'acc_s11_functions'],
+    [edit("ARRAY['admin.accounting.entries.correct']", "ARRAY['admin.finance.manage']", assignS11), 'acc_s11_functions'],
+    [edit("IN ('expense', 'revenue')", "IN ('expense', 'revenue', 'asset')", settingS11), 'acc_s11_functions'],
+    [edit('ACCOUNTING_DISPUTE_ACCOUNT_INVALID', 'ACCOUNTING_ARGUMENT_INVALID', settingS11), 'acc_s11_functions'],
+    // reads
+    [edit('ORDER BY o.id, d.id', 'ORDER BY o.id, d.id, (SELECT t.raw_payload::text FROM public.stripe_balance_transactions AS t LIMIT 1)', 'private.get_order_dispute_holds(uuid[])'), 'acc_s11_reads_stable'],
+    [edit("'withdrawn_on'", "'evidence_details', d.evidence_details, 'withdrawn_on'", 'private.accounting_dispute_json(text)'), 'acc_s11_reads_stable'],
+    // the entry point
+    [edit('v_payments := private.accounting_post_payment_events(_limit);\n  v_shipments := private.accounting_post_shipment_events(_limit);',
+      'v_shipments := private.accounting_post_shipment_events(_limit);\n  v_payments := private.accounting_post_payment_events(_limit);', runnerPrivateS11), 'acc_s11_run_posting'],
+    [edit(') >= _limit);', ') > _limit);', runnerPrivateS11), 'acc_s11_run_posting'],
+    [edit("(v_disputes ->> 'parked_new')::integer) >= _limit", "(v_disputes ->> 'resolved')::integer) >= _limit", runnerPrivateS11), 'acc_s11_run_posting'],
+    [edit('SELECT private.accounting_run_posting(_limit)', 'SELECT private.accounting_run_posting(50)', runnerPublicS11), 'acc_s11_run_posting'],
+    // no row written
+    ["insert into public.accounting_dispute_account_settings (reason, account_code) values ('fraudulent', '7530')", 'acc_s11_existing_dml_allowlist'],
+    ["select private.accounting_park_event('dispute_event', 'stripe_disputes', 'dp_tamper', null, 'no_order', '{}')", 'acc_s11_existing_dml_allowlist'],
+    ['drop table pg_temp.accounting_s11_baseline', 'acc_s11_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s11_baseline set payload = payload - 'assignments'", 'acc_s11_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s11_baseline set payload = jsonb_set(payload, '{settings}', '5')", 'acc_s11_existing_dml_allowlist'],
+    ["insert into public.accounting_periods (business_type, name, starts_on, ends_on) values ('soleProprietor', 'tamper', '2026-01-01', '2026-12-31')", 'acc_s11_existing_dml_allowlist'],
+  ] as Array<[string, string]>)('FREQ-568-AC-05: S11改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });

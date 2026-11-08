@@ -649,6 +649,9 @@ describeLocalDb('S4 manual entries: controller only', (db) => {
   async function attempt(change = ''): Promise<{ code?: string; message?: string; detail?: string } | null> {
     await db().query('savepoint acc_s4_assert');
     try {
+      // The posting entry point public.accounting_run_posting (plan 2 Task 6) is public on purpose; this assert (plan 1) says that nothing named
+      // accounting_* is public, so the replay runs without it. The statement is undone with the savepoint.
+      await db().query('drop function if exists public.accounting_run_posting(integer)');
       await db().query(baselineStatement);
       if (change) await db().query(change);
       await db().query(assertion);
@@ -673,6 +676,9 @@ describeLocalDb('S4 manual entries: controller only', (db) => {
       .toEqual({ schema: 'extensions' });
     await db().query('savepoint acc_s4_path');
     await db().query('set local search_path = public, private, extensions, pg_catalog');
+    // The posting entry point public.accounting_run_posting (plan 2 Task 6) is public on purpose; this assert (plan 1) says that nothing named
+    // accounting_* is public, so the replay runs without it. The statement is undone with the savepoint.
+    await db().query('drop function if exists public.accounting_run_posting(integer)');
     await db().query(baselineStatement);
     await db().query(assertion);
     expect(await one("select current_setting('search_path') as path")).toEqual({ path: 'public, private, extensions, pg_catalog' });

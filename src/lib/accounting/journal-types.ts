@@ -9,6 +9,8 @@ import { parseEventKey } from '@/lib/accounting/event-key';
 export const ACCOUNTING_SUB_ACCOUNTS = {
 	return_refund: { accountCode: '2130' },
 	dispute_pending: { accountCode: '1470' },
+	/** 確定した損失で、振り替え先の科目の設定がまだ無いまま置いた分（計画2 Task 6。設定を入れて振り替えると0に戻る）。 */
+	dispute_confirmed_unassigned: { accountCode: '1470' },
 	processor: { accountCode: '1130' },
 } as const;
 
