@@ -6,7 +6,9 @@ import {
   ACCOUNTING_S6_FILES, ACCOUNTING_S6_SQL as sql, accountingS6Section, pinAccountingS6Baseline,
   ACCOUNTING_S7_FILES, ACCOUNTING_S7_SQL as sqlS7, accountingS7Section, pinAccountingS7Baseline,
   ACCOUNTING_S8_FILES, ACCOUNTING_S8_SQL as sqlS8, accountingS8Section, pinAccountingS8Baseline,
+  ACCOUNTING_S9_FILES, ACCOUNTING_S9_SQL as sqlS9, accountingS9Section, pinAccountingS9Baseline,
 } from './helpers/accounting-orders-fixtures';
+import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
 
 // Accounting plan 2 S6 (FREQ-569 / FREQ-563): the shape of the migration and its final assert. The DB part is
 // controller only. Tasks 2-9 add the asserts of S7-S14 below (S7: the payment posting, Task 2; S8: the shipment posting, Task 3).
@@ -627,6 +629,237 @@ describeLocalDb('S8 final assert: controller only', (db) => {
     ["update pg_temp.accounting_s8_baseline set payload = jsonb_set(payload, '{entries}', '5')", 'acc_s8_existing_dml_allowlist'],
     ["insert into public.accounting_periods (business_type, name, starts_on, ends_on) values ('soleProprietor', 'tamper', '2026-01-01', '2026-12-31')", 'acc_s8_existing_dml_allowlist'],
   ])('FREQ-563-AC-04: S8改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// ---- S9 (Task 4): the Stripe fee, tax adjustment, payout, arrival, payout failure, top-up and reconciliation ---------------
+const assertionS9 = accountingS9Section('FINAL_ASSERT');
+const bodyS9 = accountingS9Section('BODY');
+const detailsS9 = ['acc_s9_tables', 'acc_s9_functions', 'acc_s9_function_attrs', 'acc_s9_rls_acl', 'acc_s9_reads_stable', 'acc_s9_category_map',
+  'acc_s9_existing_dml_allowlist'];
+const statementsS9 = bodyS9.replace(/\$\$[\s\S]*?\$\$/g, '$$$$').split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n');
+const lanes = ['fee', 'tax_adjustment', 'payout', 'bank', 'payout_failure'];
+const laneSignature = (lane: string) => `private.accounting_post_stripe_${lane}_events(integer)`;
+const runnerS9 = 'private.accounting_post_stripe_events(integer)';
+const topupS9 = 'private.admin_record_balance_topup(uuid,bigint,date,text,text,text,uuid)';
+const invoiceS9 = 'private.admin_set_stripe_invoice_record(uuid,text,bigint,bigint,text,bigint,uuid)';
+const feeReadS9 = 'private.get_stripe_fee_reconciliation(text)';
+const balanceReadS9 = 'private.get_stripe_balance_reconciliation(date)';
+const kindMapS9 = 'private.accounting_stripe_category_kind(text,text)';
+const functionBodyS9 = (name: string) => bodyS9.split(`CREATE FUNCTION ${name}(`)[1]?.split('\n$$;')[0] ?? '';
+
+describe('S9 source contract (no DB)', () => {
+  test('FREQ-565-AC-01: S9はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S9_FILES).toEqual(['20261108180000_accounting_p2_stripe_posting.sql']);
+    expect(ACCOUNTING_S9_FILES[0] > ACCOUNTING_S8_FILES[0]).toBe(true);
+    expect(sqlS9).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(sqlS9.startsWith('BEGIN;\n')).toBe(true);
+    expect(sqlS9.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(sqlS9.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(sqlS9.trimEnd()).toMatch(/-- ACC_S9_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect(assertionS9).not.toBe('');
+    expect([...new Set([...assertionS9.matchAll(/'(acc_s9_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...detailsS9].sort());
+    expect(assertionS9).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(assertionS9.replace(/''55000''/g, '')).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(sqlS9).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+  });
+
+  test('FREQ-565-AC-01: S9の実行時のDMLは比べる元の控えのINSERTだけで、係は入口を持たず、service_role に渡すのは書き口2つと読み口2つ（private と public）だけ', () => {
+    expect([...statementsS9.matchAll(/^\s*(INSERT INTO|UPDATE|DELETE FROM|TRUNCATE(?: TABLE)?)\s+([\w.]+)/gm)].map((m) => `${m[1]} ${m[2]}`))
+      .toEqual(['INSERT INTO pg_temp.accounting_s9_baseline']);
+    const grant = bodyS9.split('GRANT EXECUTE ON FUNCTION')[1]?.split(';')[0] ?? '';
+    expect(grant.match(/(private|public)\.[a-z_]+\(/g)?.sort()).toEqual([
+      'private.admin_record_balance_topup(', 'private.admin_set_stripe_invoice_record(', 'private.get_stripe_balance_reconciliation(',
+      'private.get_stripe_fee_reconciliation(', 'public.admin_record_balance_topup(', 'public.admin_set_stripe_invoice_record(',
+      'public.get_stripe_balance_reconciliation(', 'public.get_stripe_fee_reconciliation(']);
+    expect(grant).toContain('TO service_role');
+    expect([...bodyS9.matchAll(/CREATE FUNCTION public\.([a-z_]+)\(/g)].map((m) => m[1]).sort()).toEqual([
+      'admin_record_balance_topup', 'admin_set_stripe_invoice_record', 'get_stripe_balance_reconciliation', 'get_stripe_fee_reconciliation']);
+  });
+
+  test('FREQ-565-AC-01: 5つの係とその親は最初に accounting_lock_all(NULL) を取り、行ロックと orders.paid_at を使わず、出来事ごとに例外処理で包んで共通の保留の道具で止める', () => {
+    for (const lane of lanes) {
+      const fn = functionBodyS9(`private.accounting_post_stripe_${lane}_events`);
+      expect(fn).not.toBe('');
+      expect(fn.indexOf('PERFORM private.accounting_lock_all(NULL);')).toBeGreaterThan(0);
+      expect(fn.indexOf('PERFORM private.accounting_lock_all(NULL);')).toBeLessThan(fn.indexOf('FOR v_'));
+      expect(fn).not.toMatch(/FOR (SHARE|UPDATE|NO KEY UPDATE|KEY SHARE)/i);
+      expect(fn).not.toMatch(/public\.orders|orders\.paid_at/);
+      expect(fn.indexOf('EXCEPTION WHEN OTHERS')).toBeGreaterThan(fn.indexOf('private.accounting_period_for_event(v_date)'));
+      expect(fn.indexOf('private.accounting_post_journal_core(')).toBeLessThan(fn.indexOf('EXCEPTION WHEN OTHERS'));
+      expect(fn.match(/v_parked := private\.accounting_park_failure\(/g)).toHaveLength(1);
+      expect(fn).toContain('IF v_parked THEN');
+      expect(fn).not.toMatch(/PG_EXCEPTION_CONTEXT/);
+      expect(fn).not.toMatch(/'(?:message|detail|context)'/);
+      expect(fn).toContain('_source_recorded_at => LEAST(');
+      // The key is always built by the one function (never by hand).
+      expect(fn).toContain('private.accounting_event_key(');
+      expect(fn).not.toMatch(/'(?:stripe:fee|payout_started|bank_arrived|payout_failed|stripe_tax_adjustment|stripe_fee)' \|\|/);
+    }
+    const runner = functionBodyS9('private.accounting_post_stripe_events');
+    expect(runner.indexOf('PERFORM private.accounting_lock_all(NULL);')).toBeGreaterThan(0);
+    expect(runner.indexOf('PERFORM private.accounting_lock_all(NULL);')).toBeLessThan(runner.indexOf('v_fee := '));
+    expect(runner).not.toMatch(/FOR (SHARE|UPDATE|NO KEY UPDATE|KEY SHARE)/i);
+  });
+
+  test('FREQ-565-AC-03: 手数料の係の候補は「手数料のある種類」と「種類が無い物」を1つの条件で拾い、飛ばす取引を条件で除いて古い順に_limit件まで取る', () => {
+    const fee = functionBodyS9('private.accounting_post_stripe_fee_events');
+    expect(fee).toContain("(k.kind IS NULL OR (k.kind <> 'tax_adjustment' AND private.accounting_stripe_fee_amount(k.kind, t.fee, t.net) <> 0))");
+    expect(fee).toContain('ORDER BY t.stripe_created_at, t.id\n        LIMIT _limit)');
+    expect(fee).toContain('LIMIT 10)');
+    const failure = functionBodyS9('private.accounting_post_stripe_payout_failure_events');
+    expect(failure).toContain("private.accounting_stripe_category_kind(t.type, t.reporting_category) = 'payout_failure' AND t.net <> 0");
+    const tax = functionBodyS9('private.accounting_post_stripe_tax_adjustment_events');
+    expect(tax).toContain("private.accounting_stripe_category_kind(t.type, t.reporting_category) = 'tax_adjustment' AND t.net <> 0");
+  });
+
+  test('FREQ-565-AC-01: S9の説明の日本語は ACCOUNTING_LABELS の語の出力と同じ', () => {
+    const wanted = ['stripeJapan', 'feePayment', 'feeDispute', 'feeFx', 'taxAdjustment', 'payoutStarted', 'bankArrived', 'payoutFailed', 'balanceTopup']
+      .map((key) => encodeSqlUnicodeLiteral(ACCOUNTING_LABELS[key as keyof typeof ACCOUNTING_LABELS]));
+    const code = bodyS9.split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n');
+    const literals = [...new Set([...code.matchAll(/U&'(?:[^']|'')*'/g)].map((m) => m[0]))];
+    expect(literals.sort()).toEqual([...wanted].sort());
+  });
+
+  test('FREQ-565-AC-03: 種類の対応は本文の中の `ACC_S9_CATEGORY_MAP` の印の間にあり、読み口は書き込みの文を持たない', () => {
+    expect(accountingS9Section('CATEGORY_MAP')).toMatch(/^CREATE FUNCTION private\.accounting_stripe_category_kind\(_type text, _reporting_category text\) RETURNS text\n/);
+    for (const read of ['private.get_stripe_fee_reconciliation', 'private.get_stripe_balance_reconciliation']) {
+      expect(functionBodyS9(read)).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE|PERFORM|EXECUTE)\b/);
+    }
+  });
+});
+
+describeLocalDb('S9 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  async function attempt(change = '', baseline: 'pin' | 'none' = 'pin'): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s9_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (baseline === 'pin') await pinAccountingS9Baseline(db());
+      if (change) await db().query(change);
+      await db().query(assertionS9);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s9_assert'); await db().query('release savepoint acc_s9_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
+  /** Re-create the function with a changed text (owner, ACL and attributes stay). */
+  const edit = (from: string, to: string, signature: string) => `do $x$ declare d text; begin
+    d := pg_get_functiondef('${signature}'::regprocedure);
+    if position(${quote(from)} in d) = 0 then raise exception 'TAMPER_TARGET_MISSING'; end if;
+    d := replace(d, ${quote(from)}, ${quote(to)});
+    execute d; end $x$`;
+  const zeroResult = '\'{"posted":0,"parked_new":0,"reparked":0,"resolved":0}\'::jsonb';
+
+  test('FREQ-565-AC-01: S9末尾assertは適用後の状態と呼出元search_pathを許す', async () => {
+    expect(assertionS9).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt("set local search_path = ''")).toBeNull();
+    await db().query('savepoint acc_s9_search_path');
+    await db().query('set local search_path = public, private, extensions, pg_catalog');
+    await pinAccountingS9Baseline(db());
+    await db().query(assertionS9);
+    expect((await db().query('show search_path')).rows[0].search_path).toBe('public, private, extensions, pg_catalog');
+    await db().query('rollback to savepoint acc_s9_search_path');
+  });
+
+  test('FREQ-565-AC-01: 後の Task が足す public の accounting_run_posting があっても S9 末尾assertは再生で通る', async () => {
+    expect(await attempt(`create function public.accounting_run_posting(_limit integer default 50) returns jsonb language sql volatile
+      security invoker set search_path = '' as $$ select '{}'::jsonb $$`)).toBeNull();
+  });
+
+  test('FREQ-565-AC-01: S9末尾assertは比べる元の控えが無いと断る', async () => {
+    expect(await attempt('', 'none')).toEqual(failed('acc_s9_existing_dml_allowlist'));
+  });
+
+  test.each([
+    // functions: existence and text
+    ...lanes.map((lane) => [`drop function ${laneSignature(lane)}`, 'acc_s9_functions']),
+    ...lanes.map((lane) => [`create function private.accounting_post_stripe_${lane}_events(a integer, b integer) returns jsonb language sql as $$ select null::jsonb $$`, 'acc_s9_functions']),
+    [edit('PERFORM private.accounting_lock_all(NULL);', 'PERFORM 1;', laneSignature('fee')), 'acc_s9_functions'],
+    [edit('PERFORM private.accounting_lock_all(NULL);', 'PERFORM 1;', laneSignature('payout_failure')), 'acc_s9_functions'],
+    [edit('PERFORM private.accounting_lock_all(NULL);', 'PERFORM 1;', runnerS9), 'acc_s9_functions'],
+    [edit("'6280'", "'6281'", laneSignature('fee')), 'acc_s9_functions'],
+    [edit('tax_default_10', 'tax_default', laneSignature('fee')), 'acc_s9_functions'],
+    [edit("'unknown_category'", "'posting_error'", laneSignature('fee')), 'acc_s9_functions'],
+    [edit('private.accounting_period_for_event(v_date)', "private.accounting_period_for(v_date, 'soleProprietor')", laneSignature('tax_adjustment')), 'acc_s9_functions'],
+    [edit("'1480'", "'1481'", laneSignature('tax_adjustment')), 'acc_s9_functions'],
+    [edit('private.accounting_jst_date(v_row.paid_at)', "(v_row.paid_at AT TIME ZONE 'UTC')::date", laneSignature('payout')), 'acc_s9_functions'],
+    [edit('v_date := v_row.bank_arrival_date;', 'v_date := CURRENT_DATE;', laneSignature('bank')), 'acc_s9_functions'],
+    [edit('payout_net_zero', 'payout_netzero', laneSignature('payout_failure')), 'acc_s9_functions'],
+    [edit('IF v_parked THEN', 'IF true THEN', laneSignature('payout_failure')), 'acc_s9_functions'],
+    [edit('EXCEPTION WHEN OTHERS THEN', 'EXCEPTION WHEN no_data_found THEN', laneSignature('bank')), 'acc_s9_functions'],
+    [edit('_source_recorded_at => LEAST(v_tx.synced_at, pg_catalog.clock_timestamp())', '_source_recorded_at => NULL', laneSignature('fee')), 'acc_s9_functions'],
+    [edit("private.accounting_park_failure('payout_started',", "private.accounting_park_event('payout_started',", laneSignature('payout')), 'acc_s9_functions'],
+    [edit('ORDER BY t.stripe_created_at, t.id\n        LIMIT _limit)', 'ORDER BY t.stripe_created_at, t.id\n        FOR UPDATE\n        LIMIT _limit)', laneSignature('fee')), 'acc_s9_functions'],
+    [edit('v_payout := private.accounting_post_stripe_payout_events(_limit);', `v_payout := ${zeroResult};`, runnerS9), 'acc_s9_functions'],
+    [edit("ARRAY['admin.finance.manage']", "ARRAY['admin.finance.view']", topupS9), 'acc_s9_functions'],
+    [edit("'1040'", "'1030'", topupS9), 'acc_s9_functions'],
+    [edit('ACCOUNTING_VERSION_CONFLICT', 'ACCOUNTING_VERSION_CHANGED', invoiceS9), 'acc_s9_functions'],
+    [edit('private.accounting_entry_live(', 'private.accounting_entry_dead(', balanceReadS9), 'acc_s9_functions'],
+    // attributes and EXECUTE
+    ...lanes.map((lane) => [`grant execute on function ${laneSignature(lane)} to service_role`, 'acc_s9_function_attrs']),
+    [`grant execute on function ${runnerS9} to anon`, 'acc_s9_function_attrs'],
+    [`grant execute on function ${runnerS9} to authenticated`, 'acc_s9_function_attrs'],
+    [`grant execute on function ${runnerS9} to public`, 'acc_s9_function_attrs'],
+    [`alter function ${runnerS9} security invoker`, 'acc_s9_function_attrs'],
+    [`alter function ${runnerS9} stable`, 'acc_s9_function_attrs'],
+    [`alter function ${runnerS9} set search_path = public`, 'acc_s9_function_attrs'],
+    [`alter function ${laneSignature('fee')} reset search_path`, 'acc_s9_function_attrs'],
+    [`alter function ${laneSignature('fee')} strict`, 'acc_s9_function_attrs'],
+    [`create function public.accounting_post_stripe_events(_limit integer default 50) returns jsonb language sql volatile
+      security invoker set search_path = '' as $$ select private.accounting_post_stripe_events(_limit) $$`, 'acc_s9_function_attrs'],
+    [`alter function ${kindMapS9} stable`, 'acc_s9_function_attrs'],
+    ['alter function private.accounting_stripe_fee_amount(text,integer,integer) volatile', 'acc_s9_function_attrs'],
+    ['grant execute on function private.accounting_entry_live(text) to service_role', 'acc_s9_function_attrs'],
+    [`revoke execute on function ${topupS9} from service_role`, 'acc_s9_function_attrs'],
+    ['revoke execute on function public.admin_set_stripe_invoice_record(uuid,text,bigint,bigint,text,bigint,uuid) from service_role', 'acc_s9_function_attrs'],
+    ['grant execute on function public.get_stripe_fee_reconciliation(text) to anon', 'acc_s9_function_attrs'],
+    ['grant execute on function public.get_stripe_balance_reconciliation(date) to authenticated', 'acc_s9_function_attrs'],
+    ['alter function public.get_stripe_fee_reconciliation(text) security definer', 'acc_s9_function_attrs'],
+    ['alter function public.admin_record_balance_topup(uuid,bigint,date,text,text,text,uuid) set search_path = public', 'acc_s9_function_attrs'],
+    [`alter function ${feeReadS9} volatile`, 'acc_s9_function_attrs'],
+    // reads stay reads
+    [edit('v_diff := v_jst_total - v_utc_total;', 'PERFORM 1; v_diff := v_jst_total - v_utc_total;', feeReadS9), 'acc_s9_reads_stable'],
+    [edit('v_has_invoice := FOUND;', 'v_has_invoice := FOUND; DELETE FROM public.accounting_pending_events WHERE false;', feeReadS9), 'acc_s9_reads_stable'],
+    [edit('RETURN pg_catalog.jsonb_build_object(\'through\'', 'PERFORM 1; RETURN pg_catalog.jsonb_build_object(\'through\'', balanceReadS9), 'acc_s9_reads_stable'],
+    // the map
+    [edit("'tax_fee'", "'tax_feex'", kindMapS9), 'acc_s9_category_map'],
+    [edit("'topup_reversal'", "'topup_reversal2'", kindMapS9), 'acc_s9_category_map'],
+    [edit("_reporting_category IN ('charge')", "_reporting_category IN ('charge', 'other')", kindMapS9), 'acc_s9_category_map'],
+    [edit('ELSE NULL', "ELSE 'unknown'", kindMapS9), 'acc_s9_category_map'],
+    // the invoice table and its ACL
+    ['alter table public.accounting_stripe_invoice_records add column tamper_s9 integer', 'acc_s9_tables'],
+    ['alter table public.accounting_stripe_invoice_records drop constraint accounting_stripe_invoice_records_invoice_total_check', 'acc_s9_tables'],
+    ['alter table public.accounting_stripe_invoice_records alter column document_ref set not null', 'acc_s9_tables'],
+    ['alter table public.accounting_stripe_invoice_records alter column invoice_tax drop default', 'acc_s9_tables'],
+    ['alter table public.accounting_stripe_invoice_records add constraint tamper_s9 check (invoice_total < 1000000)', 'acc_s9_tables'],
+    ['alter table public.accounting_stripe_invoice_records disable row level security', 'acc_s9_rls_acl'],
+    ['create policy tamper_s9 on public.accounting_stripe_invoice_records for select using (true)', 'acc_s9_rls_acl'],
+    ['grant select on public.accounting_stripe_invoice_records to anon', 'acc_s9_rls_acl'],
+    ['grant select on public.accounting_stripe_invoice_records to authenticated', 'acc_s9_rls_acl'],
+    ['grant select on public.accounting_stripe_invoice_records to public', 'acc_s9_rls_acl'],
+    ['grant insert on public.accounting_stripe_invoice_records to service_role', 'acc_s9_rls_acl'],
+    ['grant update on public.accounting_stripe_invoice_records to service_role', 'acc_s9_rls_acl'],
+    ['grant delete on public.accounting_stripe_invoice_records to service_role', 'acc_s9_rls_acl'],
+    ['revoke select on public.accounting_stripe_invoice_records from service_role', 'acc_s9_rls_acl'],
+    // no row written
+    ["select private.accounting_park_event('stripe_fee', 'stripe_balance_transactions', 'tamper_s9_1', null, 'unknown_category', '{}')", 'acc_s9_existing_dml_allowlist'],
+    ['drop table pg_temp.accounting_s9_baseline', 'acc_s9_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s9_baseline set payload = payload - 'invoice_records'", 'acc_s9_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s9_baseline set payload = jsonb_set(payload, '{entries}', '5')", 'acc_s9_existing_dml_allowlist'],
+    ["insert into public.accounting_stripe_invoice_records (invoice_month, invoice_total) values ('2026-01', 1)", 'acc_s9_existing_dml_allowlist'],
+    ["insert into public.accounting_periods (business_type, name, starts_on, ends_on) values ('soleProprietor', 'tamper', '2026-01-01', '2026-12-31')", 'acc_s9_existing_dml_allowlist'],
+  ] as Array<[string, string]>)('FREQ-565-AC-01: S9改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });

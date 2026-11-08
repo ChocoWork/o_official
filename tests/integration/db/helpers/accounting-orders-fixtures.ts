@@ -326,3 +326,83 @@ export async function setAsideExistingSlips(client: PgClient): Promise<void> {
 		select 'shipment_confirmed', 'shipment_slips', s.id::text, 'no_revenue', now() from public.shipment_slips s
 		where s.stage = 'confirmed' on conflict do nothing`);
 }
+
+/**
+ * Stripe の残高の取引を直接入れる（手数料・税額調整・入金・入金の失敗・補充・知らない種類の試験）。支払いは seedStripeCharge。
+ * amount と fee から net = amount - fee を入れる。feeDetails は Stripe の fee_details（[{amount,type,...}]）、rawPayload は
+ * 元の記録（入金の失敗の取引の retried_payout_id など）、sourceId は取引の元（入金の取引・失敗の取引では入金の番号 po_…）。
+ */
+export async function seedStripeFee(client: PgClient, input: {
+	createdAt: string; type: string; reportingCategory: string; amount: number; fee?: number; id?: string; sourceId?: string;
+	feeDetails?: ReadonlyArray<Record<string, unknown>>; rawPayload?: Record<string, unknown>; paymentIntentId?: string | null;
+	payoutId?: string | null; syncedAt?: string;
+}): Promise<string> {
+	const id = input.id ?? `txn_${randomUUID().replaceAll('-', '')}`;
+	const fee = input.fee ?? 0;
+	await client.query(
+		`insert into public.stripe_balance_transactions
+			(id, source_id, payment_intent_id, payout_id, type, reporting_category, amount, fee, net, currency, status,
+			 available_on, stripe_created_at, fee_details, raw_payload, synced_at)
+		 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'jpy', 'available', $10::timestamptz, $10::timestamptz, $11::jsonb, $12::jsonb,
+			coalesce($13::timestamptz, now()))`,
+		[id, input.sourceId ?? `src_${randomUUID().replaceAll('-', '')}`, input.paymentIntentId ?? null, input.payoutId ?? null,
+			input.type, input.reportingCategory, input.amount, fee, input.amount - fee, input.createdAt,
+			JSON.stringify(input.feeDetails ?? []), JSON.stringify(input.rawPayload ?? {}), input.syncedAt ?? null]);
+	return id;
+}
+
+/**
+ * Stripe の入金（stripe_payouts）を直接入れる。paidAt は入金の取引の時刻（NULL なら入金の仕訳の日が決まらない）。
+ * bankArrivalDate を渡すと、銀行の着金を確かめた印（着金日・確かめた時刻・確かめた人）を付ける（人は insertAccountingAdmin）。
+ */
+export async function seedStripePayout(client: PgClient, input: {
+	amount: number; id?: string; status?: 'pending' | 'in_transit' | 'paid' | 'failed' | 'canceled'; paidAt?: string | null;
+	reconciliationStatus?: 'pending' | 'matched' | 'mismatch'; bankArrivalDate?: string | null; bankConfirmedAt?: string;
+	createdAt?: string; syncedAt?: string;
+}): Promise<string> {
+	const id = input.id ?? `po_${randomUUID().replaceAll('-', '')}`;
+	const confirmedBy = input.bankArrivalDate ? await insertAccountingAdmin(client) : null;
+	await client.query(
+		`insert into public.stripe_payouts
+			(id, amount, currency, status, automatic, arrival_date, stripe_created_at, paid_at, reconciliation_status, reconciled_net,
+			 bank_arrival_date, bank_confirmed_at, bank_confirmed_by, raw_payload, synced_at)
+		 values ($1, $2, 'jpy', $3, true, null, $4::timestamptz, $5::timestamptz, $6, $2, $7::date, $8::timestamptz, $9::uuid, '{}'::jsonb,
+			coalesce($10::timestamptz, now()))`,
+		[id, input.amount, input.status ?? 'paid', input.createdAt ?? input.paidAt ?? '2026-06-01T00:00:00Z', input.paidAt ?? null,
+			input.reconciliationStatus ?? 'matched', input.bankArrivalDate ?? null,
+			input.bankArrivalDate ? (input.bankConfirmedAt ?? input.bankArrivalDate + 'T03:00:00Z') : null, confirmedBy, input.syncedAt ?? null]);
+	return id;
+}
+
+/** 期間を課税にする（admin_update_accounting_period_filing。taxableFrom は期間の中の日）。 */
+export async function makePeriodTaxable(client: PgClient, periodId: string, taxableFrom: string): Promise<void> {
+	const actor = await insertAccountingAdmin(client);
+	const version = (await client.query('select version from public.accounting_periods where id = $1', [periodId])).rows[0].version as string;
+	await client.query(
+		`select public.admin_update_accounting_period_filing($1::uuid, $2::uuid, 0::smallint, 0::smallint, 'taxable', $3::date, $4::bigint, gen_random_uuid())`,
+		[actor, periodId, taxableFrom, version]);
+}
+
+/** 計画2 S9（Stripe の手数料・入金・照合）の移行の本文。無ければ空で、原文の確かめが目に見えて落ちる。 */
+const s9Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p2_stripe_posting.sql'));
+export const ACCOUNTING_S9_SQL = s9Files.length === 1 ? fs.readFileSync(path.join(directory, s9Files[0]), 'utf8') : '';
+export const ACCOUNTING_S9_FILES = s9Files;
+
+/** S9 の `-- ACC_S9_<name>_BEGIN` と `-- ACC_S9_<name>_END` の間。CATEGORY_MAP は本文（BODY）の中の種類の対応の関数。 */
+export function accountingS9Section(name: 'BODY' | 'FINAL_ASSERT' | 'CATEGORY_MAP'): string {
+	return ACCOUNTING_S9_SQL.split(`-- ACC_S9_${name}_BEGIN\n`)[1]?.split(`-- ACC_S9_${name}_END`)[0] ?? '';
+}
+
+/**
+ * 手を入れる前の今の状態を S9 の比べる元として控える（適用の時は仕訳も計上待ちも請求書の記録も0件）。そのあとで末尾 assert を流す。
+ * 比べるのは、仕訳の見出し・行・計上待ちの行・会計の期間・請求書の記録の行数。
+ */
+export async function pinAccountingS9Baseline(client: PgClient): Promise<void> {
+	await client.query(`create temp table accounting_s9_baseline(payload jsonb) on commit drop;
+		insert into pg_temp.accounting_s9_baseline(payload) select jsonb_build_object(
+			'entries', (select count(*) from public.accounting_journal_entries),
+			'lines', (select count(*) from public.accounting_journal_lines),
+			'pending_events', (select count(*) from public.accounting_pending_events),
+			'periods', (select count(*) from public.accounting_periods),
+			'invoice_records', (select count(*) from public.accounting_stripe_invoice_records))`);
+}

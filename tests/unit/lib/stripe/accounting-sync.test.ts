@@ -126,4 +126,83 @@ describe('Stripe accounting synchronization', () => {
     expect(result.reconciliationStatus).toBe('matched');
     expect(stripe.balanceTransactions.list).toHaveBeenCalledWith({ payout: 'po_1', limit: 100 });
   });
+
+  it('FREQ-565-AC-04: 入金の到着日（arrival_date）は日本時間の日になる', async () => {
+    const db = database();
+    // 2025-08-15T15:30:00Z は日本時間では 2025-08-16 0:30。UTC の日で切ると 08-15 になってしまう。
+    const arrival = Date.parse('2025-08-15T15:30:00.000Z') / 1000;
+    const stripe = {
+      payouts: { retrieve: jest.fn().mockResolvedValue({
+        id: 'po_jst', amount: 100, currency: 'jpy', status: 'paid', automatic: true,
+        arrival_date: arrival, created: 1_755_212_400, balance_transaction: 'txn_payout_jst',
+      }) },
+      balanceTransactions: {
+        retrieve: jest.fn().mockResolvedValue(balanceTransaction({
+          id: 'txn_payout_jst', amount: -100, fee: 0, net: -100, source: 'po_jst',
+          reporting_category: 'payout', type: 'payout',
+        })),
+        list: jest.fn().mockReturnValue({ async *[Symbol.asyncIterator]() {
+          yield balanceTransaction({ id: 'txn_member', amount: 100, fee: 0, net: 100, source: 'ch_member' });
+        } }),
+      },
+    };
+
+    await syncPayoutAccounting({ stripe, database: db, payoutId: 'po_jst' });
+
+    expect(db.rows['stripe_payouts:po_jst']).toMatchObject({ arrival_date: '2025-08-16' });
+  });
+
+  it('FREQ-565-AC-05: 入金の失敗の取引（failure_balance_transaction）を同期で保存する', async () => {
+    const db = database();
+    const stripe = {
+      payouts: { retrieve: jest.fn().mockResolvedValue({
+        id: 'po_failed', amount: 100, currency: 'jpy', status: 'failed', automatic: true,
+        arrival_date: 1_755_302_400, created: 1_755_212_400,
+        balance_transaction: 'txn_payout_failed', failure_balance_transaction: 'txn_failure_1',
+      }) },
+      balanceTransactions: {
+        retrieve: jest.fn().mockImplementation(async (id: string) => id === 'txn_failure_1'
+          ? balanceTransaction({ id: 'txn_failure_1', amount: 100, fee: 0, net: 100, source: 'po_failed',
+            reporting_category: 'payout_reversal', type: 'payout_failure', created: 1_755_300_000 })
+          : balanceTransaction({ id: 'txn_payout_failed', amount: -100, fee: 0, net: -100, source: 'po_failed',
+            reporting_category: 'payout', type: 'payout' })),
+        list: jest.fn().mockReturnValue({ async *[Symbol.asyncIterator]() {
+          yield balanceTransaction({ id: 'txn_member', amount: 100, fee: 0, net: 100, source: 'ch_member' });
+        } }),
+      },
+    };
+
+    await syncPayoutAccounting({ stripe, database: db, payoutId: 'po_failed' });
+
+    expect(stripe.balanceTransactions.retrieve).toHaveBeenCalledWith('txn_failure_1');
+    expect(db.rows['stripe_balance_transactions:txn_failure_1']).toMatchObject({
+      type: 'payout_failure', net: 100, source_id: 'po_failed', payout_id: null,
+    });
+    // 失敗の取引は入金の中身ではないので、照合の合計（reconciled_net）に入れない。
+    expect(db.rows['stripe_payouts:po_failed']).toMatchObject({ reconciled_net: 100, reconciliation_status: 'matched' });
+  });
+
+  it('FREQ-565-AC-05: 失敗の取引が無い入金は、取引を余分に取りに行かない', async () => {
+    const db = database();
+    const stripe = {
+      payouts: { retrieve: jest.fn().mockResolvedValue({
+        id: 'po_ok', amount: 100, currency: 'jpy', status: 'paid', automatic: true,
+        arrival_date: 1_755_302_400, created: 1_755_212_400,
+        balance_transaction: 'txn_payout_ok', failure_balance_transaction: null,
+      }) },
+      balanceTransactions: {
+        retrieve: jest.fn().mockResolvedValue(balanceTransaction({
+          id: 'txn_payout_ok', amount: -100, fee: 0, net: -100, source: 'po_ok', reporting_category: 'payout', type: 'payout',
+        })),
+        list: jest.fn().mockReturnValue({ async *[Symbol.asyncIterator]() {
+          yield balanceTransaction({ id: 'txn_member', amount: 100, fee: 0, net: 100, source: 'ch_member' });
+        } }),
+      },
+    };
+
+    await syncPayoutAccounting({ stripe, database: db, payoutId: 'po_ok' });
+
+    expect(stripe.balanceTransactions.retrieve).toHaveBeenCalledTimes(1);
+    expect(stripe.balanceTransactions.retrieve).toHaveBeenCalledWith('txn_payout_ok');
+  });
 });

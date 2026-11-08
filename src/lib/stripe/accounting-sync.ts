@@ -1,3 +1,4 @@
+import { toJstDate } from '../accounting/jst-date';
 import {
   upsertBalanceTransaction,
   upsertPayout,
@@ -33,6 +34,11 @@ function idOf(value: unknown): string | null {
 
 function iso(epoch: unknown): string | null {
   return typeof epoch === 'number' ? new Date(epoch * 1000).toISOString() : null;
+}
+
+// 到着日は日本時間の日（設計 1-e）。UTC の日で切ると、UTC 15:00 以後の到着が前の日になる。
+function toJstDateOrNull(isoTime: string | null): string | null {
+  return isoTime ? toJstDate(isoTime) : null;
 }
 
 function requiredApi<T>(value: T | undefined, name: string): T {
@@ -163,6 +169,13 @@ export async function syncPayoutAccounting(input: {
       payoutId: input.payoutId, syncedAt,
     });
   }
+  // 入金が失敗・取り消しになると Stripe は戻りの取引を別に作る（会計の 1-a13 の元の記録）。入金の中身ではないので
+  // payout_id は付けない（付けると照合の合計に混ざる）。返金の failure_balance_transaction と同じ扱い。
+  const failureTransactionId = idOf(payout.failure_balance_transaction);
+  if (failureTransactionId) {
+    const failureTransaction = await balanceApi.retrieve(failureTransactionId);
+    await saveBalanceTransaction({ database: input.database, transaction: failureTransaction, syncedAt });
+  }
 
   let transactionCount = 0;
   let reconciledNet = 0;
@@ -185,7 +198,7 @@ export async function syncPayoutAccounting(input: {
   await upsertPayout(input.database, {
     id: String(payout.id), amount, currency: String(payout.currency).toLowerCase(),
     status: payout.status as StripePayoutStatus, automatic: Boolean(payout.automatic),
-    arrivalDate: iso(payout.arrival_date)?.slice(0, 10) ?? null,
+    arrivalDate: toJstDateOrNull(iso(payout.arrival_date)),
     stripeCreatedAt: createdAt, paidAt, reconciliationStatus, reconciledNet,
     rawPayload: payout, syncedAt,
   });
