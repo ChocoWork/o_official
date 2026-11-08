@@ -436,7 +436,7 @@ describe('S8 source contract (no DB)', () => {
   test('FREQ-563-AC-06: S8の実行時のDMLは比べる元の控えのINSERTだけで、係・計画・日の検査は入口を持たず service_role にも渡さない', () => {
     expect([...statementsS8.matchAll(/^\s*(INSERT INTO|UPDATE|DELETE FROM|TRUNCATE(?: TABLE)?)\s+([\w.]+)/gm)].map((m) => `${m[1]} ${m[2]}`))
       .toEqual(['INSERT INTO pg_temp.accounting_s8_baseline']);
-    expect(bodyS8).toContain('private.accounting_shipment_date_reason(uuid,date), private.accounting_shipment_plan(uuid,bigint),\n  private.accounting_post_shipment_events(integer),');
+    expect(bodyS8).toContain('private.accounting_shipment_date_reason(uuid,date), private.accounting_shipment_plan(uuid,bigint),\n  private.accounting_shipment_single_order(uuid), private.accounting_post_shipment_events(integer),');
     // The only EXECUTE for service_role is on the two reads, private and public.
     const grants = [...bodyS8.matchAll(/GRANT EXECUTE ON FUNCTION([\s\S]*?)TO service_role;/g)];
     expect(grants).toHaveLength(1);
@@ -459,10 +459,16 @@ describe('S8 source contract (no DB)', () => {
     expect(fn).not.toMatch(/FOR (SHARE|UPDATE|NO KEY UPDATE|KEY SHARE)/i);
     expect(fn).not.toMatch(/paid_at|public\.orders\b/i);
     // The date correction checks the new day before it touches the live entry, and both halves sit in the one block.
-    const redate = fn.slice(fn.indexOf("ELSIF v_job.task = 'redate' THEN"), fn.indexOf('EXCEPTION WHEN OTHERS'));
+    const redate = fn.slice(fn.indexOf("ELSIF v_job.task = 'redate' THEN"), fn.lastIndexOf('EXCEPTION WHEN OTHERS'));
     expect(redate.indexOf('private.accounting_shipment_date_reason(')).toBeLessThan(redate.indexOf('private.accounting_reverse_journal_core('));
     expect(redate.indexOf('private.accounting_reverse_journal_core(')).toBeLessThan(redate.indexOf("private.accounting_post_journal_core(NULL, v_period, v_date, 'shipment_redated',"));
-    expect(fn.match(/EXCEPTION WHEN OTHERS/g)).toHaveLength(1);
+    // One block per event, and one around each closing of a parked row in the sweep (a row that cannot be closed is skipped).
+    expect(fn.match(/EXCEPTION WHEN OTHERS/g)).toHaveLength(2);
+    expect(fn.indexOf('EXCEPTION WHEN OTHERS')).toBeLessThan(fn.indexOf('FOR v_job IN'));
+    // New events: cancellations first, so a re-shipment in the same call finds the deferred revenue back.
+    expect(fn).toContain("(SELECT 'cancel'::text, 0, 1, s.id");
+    expect(fn).toContain('0 AS lane, 2 AS phase');
+    expect(fn).toContain("(SELECT 'redate'::text, 0, 3, s.id");
     expect(fn).toContain('v_parked := private.accounting_park_failure(v_kind, v_table, v_source_id, v_order_id,');
     expect(fn).toContain('IF v_parked THEN');
     expect(fn).not.toMatch(/PG_EXCEPTION_CONTEXT/);
@@ -576,7 +582,7 @@ describeLocalDb('S8 final assert: controller only', (db) => {
     [edit('a.fact_seq < _confirm_seq', 'a.fact_seq <= _confirm_seq', signaturePlan), 'acc_s8_functions'],
     [edit("'4010'", "'4011'", signaturePlan), 'acc_s8_functions'],
     [edit("v_item.line_kind <> 'order'", 'false', signaturePlan), 'acc_s8_functions'],
-    [edit('v_order_count := pg_catalog.cardinality(v_orders);', "v_order_count := (SELECT pg_catalog.count(*) FROM public.orders AS o WHERE o.status = 'paid')::integer;", signaturePlan), 'acc_s8_functions'],
+    [edit('v_order_count := 0;', "v_order_count := (SELECT pg_catalog.count(*) FROM public.orders AS o WHERE o.status = 'paid')::integer;", signaturePlan), 'acc_s8_functions'],
     [edit("'before_cutover'", "'before_cut'", signatureReason), 'acc_s8_functions'],
     [`drop function ${signatureReason}`, 'acc_s8_functions'],
     ['grant execute on function private.accounting_post_shipment_events(integer) to service_role', 'acc_s8_function_attrs'],
@@ -590,6 +596,8 @@ describeLocalDb('S8 final assert: controller only', (db) => {
     [`grant execute on function ${signaturePlan} to service_role`, 'acc_s8_function_attrs'],
     [`alter function ${signaturePlan} volatile`, 'acc_s8_function_attrs'],
     [`grant execute on function ${signatureReason} to authenticated`, 'acc_s8_function_attrs'],
+    ['grant execute on function private.accounting_shipment_single_order(uuid) to service_role', 'acc_s8_function_attrs'],
+    ['drop function private.accounting_shipment_single_order(uuid)', 'acc_s8_function_attrs'],
     ["create function public.accounting_shipment_plan(a uuid, b bigint) returns jsonb language sql security invoker set search_path = '' as $$ select private.accounting_shipment_plan(a, b) $$", 'acc_s8_function_attrs'],
     ['revoke execute on function public.get_shipment_journal_trace(uuid) from service_role', 'acc_s8_function_attrs'],
     ['revoke execute on function private.list_journal_shipment_meta(uuid[]) from service_role', 'acc_s8_function_attrs'],

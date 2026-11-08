@@ -17,8 +17,9 @@ BEGIN;
 --     or corrected while a run is open.
 --   * First, every open parked row of a slip that was cancelled, and every open parked date correction that a later
 --     correction of the same slip overtook, is resolved with no entry.
---   * Then at most _limit new events, in this order: (a) confirmed slips with no entry and no parked row of any state, in
---     the order of their confirm number; (b) live shipment entries of cancelled slips; (c) live shipment entries whose
+--   * Then at most _limit new events, in this order: (b) live shipment entries of cancelled slips (first, so a re-shipment of
+--     the same units in the same call finds the deferred revenue back); (a) confirmed slips with no entry and no parked row
+--     of any state, in the order of their confirm number; (c) live shipment entries whose
 --     day differs from the slip's day, with the latest correction in the date history. Then, in the same call, at most
 --     10 still-open parked rows (confirm / date correction / cancellation) are looked at again, oldest last_detected_at
 --     first. The two groups cannot overlap (a parked row of any state keeps an event out of the first group).
@@ -119,6 +120,17 @@ BEGIN
 END;
 $$;
 
+-- 1b. The order of a slip that has exactly one order (NULL for several), known before any check, so every park of the slip
+--     carries it.
+CREATE FUNCTION private.accounting_shipment_single_order(_slip_id uuid) RETURNS uuid
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  RETURN (SELECT CASE WHEN pg_catalog.count(DISTINCT sf.order_id) = 1 THEN pg_catalog.min(sf.order_id::text)::uuid END
+    FROM public.shipment_slip_fulfillments AS sf WHERE sf.slip_id = _slip_id);
+END;
+$$;
+
 -- 2. The one place that decides the units sent and the amounts of a confirmed slip. The answer is
 --    {reason, detail, order_ids} when the slip cannot be posted (reason in payment_journal_missing, shipment_lines_mismatch,
 --    units_insufficient, deferred_revenue_short, no_revenue) and {reason: null, lines, units, order_ids} otherwise.
@@ -147,15 +159,17 @@ BEGIN
   SELECT pg_catalog.array_agg(DISTINCT sf.order_id ORDER BY sf.order_id) INTO v_orders
   FROM public.shipment_slip_fulfillments AS sf WHERE sf.slip_id = _slip_id;
   v_orders := COALESCE(v_orders, ARRAY[]::uuid[]);
-  v_order_count := pg_catalog.cardinality(v_orders);
+  v_order_count := 0;
 
   -- Every order of the slip needs a payment entry that is not reversed. The state and the payment time of the order
   -- are not looked at: the books decide.
-  IF EXISTS (SELECT 1 FROM pg_catalog.unnest(v_orders) AS o(id) WHERE NOT EXISTS (
+  -- order_count is the number of orders of the slip that have none.
+  SELECT pg_catalog.count(*) INTO v_order_count FROM pg_catalog.unnest(v_orders) AS o(id) WHERE NOT EXISTS (
     SELECT 1 FROM public.accounting_journal_lines AS l
     JOIN public.accounting_journal_entries AS e ON e.id = l.entry_id
     WHERE l.order_id = o.id AND l.account_code = '2150' AND e.event_kind = 'payment_confirmed'
-      AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS r WHERE r.reverses_entry_id = e.id))) THEN
+      AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS r WHERE r.reverses_entry_id = e.id));
+  IF v_order_count > 0 THEN
     RETURN pg_catalog.jsonb_build_object('reason', 'payment_journal_missing',
       'detail', pg_catalog.jsonb_build_object('order_count', v_order_count), 'order_ids', pg_catalog.to_jsonb(v_orders));
   END IF;
@@ -292,14 +306,19 @@ BEGIN
           ORDER BY d.version DESC LIMIT 1)))))
     ORDER BY p.id
   LOOP
-    PERFORM private.accounting_unpark_event(v_swept.event_kind, v_swept.source_table, v_swept.source_id, NULL);
-    v_resolved := v_resolved + 1;
+    BEGIN
+      PERFORM private.accounting_unpark_event(v_swept.event_kind, v_swept.source_table, v_swept.source_id, NULL);
+      v_resolved := v_resolved + 1;
+    EXCEPTION WHEN OTHERS THEN
+      -- One row that cannot be closed must not stop the call: it stays open and is tried again next time.
+      NULL;
+    END;
   END LOOP;
 
   FOR v_job IN
     SELECT j.task, j.lane, j.slip_id, j.entry_id, j.history_id FROM (
       (SELECT n.task, n.lane, n.phase, n.slip_id, n.entry_id, n.history_id, n.sort_a, n.sort_b FROM (
-        (SELECT 'confirm'::text AS task, 0 AS lane, 1 AS phase, s.id AS slip_id, NULL::uuid AS entry_id, NULL::uuid AS history_id,
+        (SELECT 'confirm'::text AS task, 0 AS lane, 2 AS phase, s.id AS slip_id, NULL::uuid AS entry_id, NULL::uuid AS history_id,
            COALESCE(f.fact_seq, 9223372036854775807)::numeric AS sort_a, s.id AS sort_b
          FROM public.shipment_slips AS s
          LEFT JOIN public.accounting_g_slip_facts AS f ON f.slip_id = s.id AND f.kind = 'confirm'
@@ -311,7 +330,7 @@ BEGIN
          ORDER BY COALESCE(f.fact_seq, 9223372036854775807), s.id
          LIMIT _limit)
         UNION ALL
-        (SELECT 'cancel'::text, 0, 2, s.id, e.id, NULL::uuid, COALESCE(x.fact_seq, 0)::numeric, e.id
+        (SELECT 'cancel'::text, 0, 1, s.id, e.id, NULL::uuid, COALESCE(x.fact_seq, 0)::numeric, e.id
          FROM public.accounting_journal_entries AS e
          JOIN public.shipment_slips AS s ON e.source_table = 'shipment_slips' AND e.source_id = s.id::text
          LEFT JOIN public.accounting_g_slip_facts AS x ON x.slip_id = s.id AND x.kind = 'cancel'
@@ -338,7 +357,7 @@ BEGIN
       ) AS n ORDER BY n.phase, n.sort_a, n.sort_b LIMIT _limit)
       UNION ALL
       (SELECT r.task, r.lane, r.phase, r.slip_id, r.entry_id, r.history_id, r.sort_a, r.sort_b FROM (
-        (SELECT 'confirm'::text AS task, 1 AS lane, 1 AS phase, s.id AS slip_id, NULL::uuid AS entry_id, NULL::uuid AS history_id,
+        (SELECT 'confirm'::text AS task, 1 AS lane, 2 AS phase, s.id AS slip_id, NULL::uuid AS entry_id, NULL::uuid AS history_id,
            EXTRACT(EPOCH FROM p.last_detected_at)::numeric AS sort_a, p.id AS sort_b
          FROM public.accounting_pending_events AS p
          JOIN public.shipment_slips AS s ON p.source_table = 'shipment_slips' AND p.source_id = s.id::text
@@ -350,7 +369,7 @@ BEGIN
          JOIN public.shipment_slips AS s ON s.id = h.slip_id AND s.stage = 'confirmed'
          WHERE p.resolved_at IS NULL AND p.event_kind = 'shipment_redated')
         UNION ALL
-        (SELECT 'cancel'::text, 1, 2, s.id, e.id, NULL::uuid, EXTRACT(EPOCH FROM p.last_detected_at)::numeric, p.id
+        (SELECT 'cancel'::text, 1, 1, s.id, e.id, NULL::uuid, EXTRACT(EPOCH FROM p.last_detected_at)::numeric, p.id
          FROM public.accounting_pending_events AS p
          JOIN public.accounting_journal_entries AS e ON p.source_table = 'accounting_journal_entries' AND p.source_id = e.id::text
          JOIN public.shipment_slips AS s ON e.source_table = 'shipment_slips' AND e.source_id = s.id::text
@@ -398,6 +417,7 @@ BEGIN
         END IF;
         -- The day check, then the period, then the amounts: an owner action (the period) shows before the money checks.
         v_date := v_slip.shipment_date;
+        v_order_id := private.accounting_shipment_single_order(v_slip.id);
         v_reason := private.accounting_shipment_date_reason(v_slip.id, v_date);
         IF v_reason IS NULL THEN
           v_period := private.accounting_period_for_event(v_date);
@@ -468,12 +488,13 @@ BEGIN
         END IF;
         -- The new day is checked first: when it cannot be posted the live entry is not reversed.
         v_date := v_slip.shipment_date;
+        v_order_id := private.accounting_shipment_single_order(v_slip.id);
         v_reason := private.accounting_shipment_date_reason(v_slip.id, v_date);
         IF v_reason IS NULL THEN
           v_period := private.accounting_period_for_event(v_date);
         END IF;
         IF v_reason IS NOT NULL THEN
-          PERFORM private.accounting_park_event(v_kind, v_table, v_source_id, NULL, v_reason, '{}'::jsonb);
+          PERFORM private.accounting_park_event(v_kind, v_table, v_source_id, v_order_id, v_reason, '{}'::jsonb);
           IF v_job.lane = 0 THEN v_parked_new := v_parked_new + 1; ELSE v_reparked := v_reparked + 1; END IF;
         ELSE
           SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('account_code', l.account_code, 'debit', l.debit,
@@ -607,6 +628,7 @@ AS $$ SELECT m.entry_id, m.slip_number, m.shipment_date, m.confirmed_at FROM pri
 --    service_role.
 ALTER FUNCTION private.accounting_shipment_date_reason(uuid,date) OWNER TO postgres;
 ALTER FUNCTION private.accounting_shipment_plan(uuid,bigint) OWNER TO postgres;
+ALTER FUNCTION private.accounting_shipment_single_order(uuid) OWNER TO postgres;
 ALTER FUNCTION private.accounting_post_shipment_events(integer) OWNER TO postgres;
 ALTER FUNCTION private.get_shipment_journal_trace(uuid) OWNER TO postgres;
 ALTER FUNCTION private.list_journal_shipment_meta(uuid[]) OWNER TO postgres;
@@ -614,7 +636,7 @@ ALTER FUNCTION public.get_shipment_journal_trace(uuid) OWNER TO postgres;
 ALTER FUNCTION public.list_journal_shipment_meta(uuid[]) OWNER TO postgres;
 REVOKE ALL ON FUNCTION
   private.accounting_shipment_date_reason(uuid,date), private.accounting_shipment_plan(uuid,bigint),
-  private.accounting_post_shipment_events(integer), private.get_shipment_journal_trace(uuid),
+  private.accounting_shipment_single_order(uuid), private.accounting_post_shipment_events(integer), private.get_shipment_journal_trace(uuid),
   private.list_journal_shipment_meta(uuid[]), public.get_shipment_journal_trace(uuid), public.list_journal_shipment_meta(uuid[])
 FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION
@@ -736,6 +758,7 @@ BEGIN
       ('private.accounting_post_shipment_events(integer)', 'jsonb', 'v', '_limit', 1, false, true),
       ('private.accounting_shipment_plan(uuid,bigint)', 'jsonb', 's', '_slip_id,_confirm_seq', 0, false, true),
       ('private.accounting_shipment_date_reason(uuid,date)', 'text', 's', '_slip_id,_date', 0, false, true),
+      ('private.accounting_shipment_single_order(uuid)', 'uuid', 's', '_slip_id', 0, false, true),
       ('private.get_shipment_journal_trace(uuid)', 'jsonb', 's', '_slip_id', 0, true, false),
       ('private.list_journal_shipment_meta(uuid[])', 'TABLE(entry_id uuid, slip_number text, shipment_date date, confirmed_at timestamp with time zone)', 's', '_entry_ids', 0, true, false),
       ('public.get_shipment_journal_trace(uuid)', 'jsonb', 's', '_slip_id', 0, true, false),

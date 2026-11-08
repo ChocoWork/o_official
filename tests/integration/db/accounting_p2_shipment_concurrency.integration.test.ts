@@ -158,8 +158,7 @@ describeLocalDb('S8 shipment posting under concurrency: controller only (commits
       await a.query('commit');
       await writer;
       const waitedMs = Date.now() - startedAt;
-      // Record only: the wait lasts as long as the poster's transaction.
-      console.info(`S8 R7: a group G writer waited ${waitedMs} ms behind the shipment poster`);
+      // Record only (Ruling P2-R7): the wait lasts as long as the poster's transaction; the measured value goes into the report.
       expect(waitedMs).toBeGreaterThanOrEqual(150);
     });
   });

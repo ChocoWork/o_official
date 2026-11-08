@@ -221,7 +221,7 @@ describeLocalDb('G-3 date correction (local DB only)', (db) => {
     }
     expect((await db().query('select cardinality(private.group_g_writer_allowlist()) n')).rows[0].n).toBe(CURRENT_ALLOWLIST.length);
   });
-  test('FREQ-535-AC-04: shipment_dateを持つprosrcはG-3の限定した関数だけで、KPI・会計関数に広がらない', async () => {
+  test('FREQ-535-AC-04: shipment_dateを持つprosrcはG-3の関数と会計の出荷の係の5関数だけで、KPIなどほかの関数に広がらない', async () => {
     const actual = (await db().query(`select n.nspname||'.'||p.proname name from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname in ('public','private') and strpos(p.prosrc,'shipment_date')>0 order by 1`)).rows.map((p) => p.name);
     // Accounting plan 2 S8 reads the shipment day on purpose (design 6-a): its five functions are listed with the G-3 ones.

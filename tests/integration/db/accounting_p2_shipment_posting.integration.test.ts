@@ -482,4 +482,91 @@ describeLocalDb('S8 shipment posting: controller only', (db) => {
       await q('rollback to savepoint bad_limit');
     }
   });
+
+  test('FREQ-564-AC-01: 発送票を取り消してすぐ別の発送票で出し直しても、1回の呼び出しで取り消しと新しい出荷が入り、何も止まらない', async () => {
+    await setCutoverForTest(db(), '2026-01-01');
+    const order = await seedPostedPayment(db(), { lines: [{ price: 5000, quantity: 2 }] });
+    const [item] = order.orderItemIds;
+    const first = await seedConfirmedSlip(db(), { orders: [slipFor(order.orderId, [{ orderItemId: item, quantity: 2 }])], shipmentDate: '2026-06-20' });
+    expect(await run()).toEqual({ ...none, posted: 1 });
+    expect(await deferredBalance(order.orderId)).toBe(0);
+    // Cancelled and shipped again on a new slip before the next run: the cancellation is posted first, so the deferred revenue is back.
+    await cancelSlip(db(), first.slipId);
+    const again = await seedConfirmedSlip(db(), { orders: [slipFor(order.orderId, [{ orderItemId: item, quantity: 2 }])], shipmentDate: '2026-06-22' });
+    expect(await run()).toEqual({ ...none, posted: 2, reversed: 1 });
+    expect(await pendingOf(again.slipId)).toBeUndefined();
+    const [entry] = await entriesOf(again.number);
+    expect(await unitsOf(entry.id)).toHaveLength(2);
+    expect(await deferredBalance(order.orderId)).toBe(0);
+    expect(await run()).toEqual(none);
+  });
+
+  test('FREQ-563-AC-04: 1つの注文だけの発送票の止めには、日の食い違い・切り替え前・期間なしでも注文番号が付く（複数の注文なら付かない）', async () => {
+    await setCutoverForTest(db(), '2026-06-18');
+    const a = await seedPostedPayment(db(), { lines: [{ price: 5000, quantity: 1 }], createdAt: '2026-06-20T03:00:00Z' });
+    const b = await seedPostedPayment(db(), { lines: [{ price: 4000, quantity: 1 }], createdAt: '2026-06-20T03:00:00Z' });
+    const mismatch = await seedConfirmedSlip(db(), {
+      orders: [slipFor(a.orderId, [{ orderItemId: a.orderItemIds[0], quantity: 1 }], { fulfillmentDate: '2026-06-21' })], shipmentDate: '2026-06-20' });
+    const early = await seedConfirmedSlip(db(), { orders: [slipFor(b.orderId, [{ orderItemId: b.orderItemIds[0], quantity: 1 }])], shipmentDate: '2026-06-15' });
+    expect(await run()).toEqual({ ...none, parked_new: 2 });
+    expect(await pendingOf(mismatch.slipId)).toMatchObject({ reason: 'shipment_date_mismatch', order_id: a.orderId });
+    expect(await pendingOf(early.slipId)).toMatchObject({ reason: 'before_cutover', order_id: b.orderId });
+    await corporationWithoutPeriods();
+    const c = await seedPostedPayment(db(), { lines: [{ price: 3000, quantity: 2 }], createdAt: '2026-06-20T03:00:00Z' });
+    const d = await seedPostedPayment(db(), { lines: [{ price: 2000, quantity: 1 }], createdAt: '2026-06-20T03:00:00Z' });
+    const noPeriod = await seedConfirmedSlip(db(), { orders: [slipFor(c.orderId, [{ orderItemId: c.orderItemIds[0], quantity: 1 }])], shipmentDate: '2027-01-05' });
+    const noPeriodTwo = await seedConfirmedSlip(db(), { orders: [
+      slipFor(c.orderId, [{ orderItemId: c.orderItemIds[0], quantity: 1 }]), slipFor(d.orderId, [{ orderItemId: d.orderItemIds[0], quantity: 1 }])], shipmentDate: '2027-01-06' });
+    await run();
+    expect(await pendingOf(noPeriod.slipId)).toMatchObject({ reason: 'period_missing', order_id: c.orderId });
+    expect((await pendingOf(noPeriodTwo.slipId))?.order_id).toBeNull();
+  });
+
+  test('FREQ-563-AC-04: payment_journal_missingのorder_countは、支払いの仕訳が無い注文だけの数', async () => {
+    await setCutoverForTest(db(), '2026-01-01');
+    const paid = await seedPostedPayment(db(), { lines: [{ price: 5000, quantity: 1 }] });
+    const unpaid = await seedPaidOrder(db(), { lines: [{ price: 4000, quantity: 1 }], paidAt: '2026-06-10T03:00:00Z' });
+    const slip = await seedConfirmedSlip(db(), { orders: [
+      slipFor(paid.orderId, [{ orderItemId: paid.orderItemIds[0], quantity: 1 }]),
+      slipFor(unpaid.orderId, [{ orderItemId: unpaid.orderItemIds[0], quantity: 1 }])], shipmentDate: '2026-06-20' });
+    await run();
+    expect(await pendingOf(slip.slipId)).toMatchObject({ reason: 'payment_journal_missing', detail: { order_count: 1 } });
+  });
+
+  test('FREQ-563-AC-04: 1つの注文の2枚の発送票を1回で流すと、2枚目は1枚目の借方が見えるので前受金が足りなければ止まる', async () => {
+    await setCutoverForTest(db(), '2026-01-01');
+    const order = await seedPostedPayment(db(), { lines: [{ price: 5000, quantity: 2 }] });
+    const [item] = order.orderItemIds;
+    // 4,000 yen leave the deferred revenue by another entry: 6,000 remain, so only one unit of 5,000 fits.
+    await q(`select private.accounting_post_journal_core(null, private.accounting_period_for_event('2026-06-12'::date), '2026-06-12'::date,
+        'pre_shipment_refund', ARRAY['RF-PART']::text[], 'refund', $1::jsonb)`, [JSON.stringify([
+      { account_code: '2150', debit: 4000, credit: 0, order_id: order.orderId },
+      { account_code: '1160', debit: 0, credit: 4000, order_id: order.orderId }])]);
+    const first = await seedConfirmedSlip(db(), { orders: [slipFor(order.orderId, [{ orderItemId: item, quantity: 1 }])], shipmentDate: '2026-06-20' });
+    const second = await seedConfirmedSlip(db(), { orders: [slipFor(order.orderId, [{ orderItemId: item, quantity: 1 }])], shipmentDate: '2026-06-21' });
+    expect(await run()).toEqual({ ...none, posted: 1, parked_new: 1 });
+    expect(await entriesOf(first.number)).toHaveLength(1);
+    expect(await pendingOf(second.slipId)).toMatchObject({ reason: 'deferred_revenue_short', detail: { shortage: 4000 } });
+  });
+
+  test('FREQ-563-AC-06: 未解決の見直しは1回10件までで、新しい発送票は見直しの数に押し出されない', async () => {
+    await setCutoverForTest(db(), '2026-01-01');
+    const parked = [];
+    for (let i = 0; i < 12; i += 1) {
+      const order = await seedPaidOrder(db(), { lines: [{ price: 1000, quantity: 1 }], paidAt: '2026-06-10T03:00:00Z' });
+      parked.push(await seedConfirmedSlip(db(), { orders: [slipFor(order.orderId, [{ orderItemId: order.orderItemIds[0], quantity: 1 }])], shipmentDate: '2026-06-20' }));
+    }
+    expect(await run(50)).toEqual({ ...none, parked_new: 12 });
+    // One test transaction has one now(): stagger the detection times as separate runs would have left them.
+    for (const [index, slip] of parked.entries()) {
+      await q("update public.accounting_pending_events set last_detected_at = now() - make_interval(mins => $2) where event_kind = 'shipment_confirmed' and source_id = $1",
+        [slip.slipId, 60 - index]);
+    }
+    const fineOrder = await seedPostedPayment(db(), { lines: [{ price: 2000, quantity: 1 }] });
+    const fine = await seedConfirmedSlip(db(), { orders: [slipFor(fineOrder.orderId, [{ orderItemId: fineOrder.orderItemIds[0], quantity: 1 }])], shipmentDate: '2026-06-21' });
+    expect(await run(50)).toEqual({ ...none, posted: 1, reparked: 10 });
+    expect(await entriesOf(fine.number)).toHaveLength(1);
+    expect(await run(50)).toEqual({ ...none, reparked: 10 });
+    for (const skipped of parked.slice(10)) expect((await pendingOf(skipped.slipId))?.detection_count).toBe(2);
+  });
 });

@@ -332,4 +332,54 @@ describeLocalDb('S8 shipment corrections: controller only', (db) => {
     const history = (await q("select id from public.shipment_date_history where slip_id = $1 and kind = 'initial'", [slip.slipId])).rows[0].id;
     expect(result.rows[0].revision_id).toBe(history);
   });
+
+  test('FREQ-564-AC-01: 日を直した後に発送票を取り消すと、入れ直した仕訳が元の日（直した日）で取り消される', async () => {
+    const { order, slip } = await postedShipment({ paidAt: '2026-06-10T03:00:00Z' });
+    const historyId = await correctShipmentDate(db(), slip.slipId, '2026-06-25');
+    expect(await run()).toEqual({ ...none, posted: 1, redated: 1 });
+    const redated = await redatedEntry(historyId);
+    await cancelSlip(db(), slip.slipId);
+    expect(await run()).toEqual({ ...none, posted: 1, reversed: 1 });
+    const reversal = await reversalOf(redated.id);
+    expect(reversal).toMatchObject({ event_kind: 'reversal', entry_date: '2026-06-25', reason: ACCOUNTING_LABELS.shipmentCancelled, source_id: slip.slipId });
+    expect(await deferredBalance(order.orderId)).toBe(15000);
+    expect(await run()).toEqual(none);
+  });
+
+  test('FREQ-564-AC-01: 取り消しが失敗して止まったら、直した後の次の呼び出しで取り消しが入り計上待ちが解決される', async () => {
+    const { order, slip, entry } = await postedShipment();
+    // A sole period two years later leaves a gap: the core refuses the reversal after it has taken a number.
+    await insertAccountingPeriod(db(), { businessType: 'soleProprietor', startsOn: '2028-01-01', endsOn: '2028-12-31' });
+    await cancelSlip(db(), slip.slipId);
+    expect(await run()).toEqual({ ...none, parked_new: 1 });
+    const [parked] = await pendingRows('reversal');
+    expect(parked).toMatchObject({ reason: 'posting_error', source_table: 'accounting_journal_entries', source_id: entry.id, resolved_at: null });
+    expect(parked.detail).toMatchObject({ error_code: 'ACCOUNTING_PERIOD_GAP', entry_date: '2026-06-20' });
+    expect(await reversalOf(entry.id)).toBeUndefined();
+    expect(await run()).toEqual({ ...none, reparked: 1 });
+    // The gap is filled: the retry from the parked row posts the reversal and closes the row.
+    await insertAccountingPeriod(db(), { businessType: 'soleProprietor', startsOn: '2027-01-01', endsOn: '2027-12-31' });
+    expect(await run()).toEqual({ ...none, posted: 1, reversed: 1, resolved: 1 });
+    const reversal = await reversalOf(entry.id);
+    const [closed] = await pendingRows('reversal');
+    expect(closed.resolved_at).not.toBeNull();
+    expect(closed.resolved_entry_id).toBe(reversal.id);
+    expect(await deferredBalance(order.orderId)).toBe(15000);
+    expect(await run()).toEqual(none);
+  });
+
+  test('FREQ-564-AC-02: 日の直しが発送ごとの出荷日の食い違いで止まると、元の仕訳は取り消されず、注文番号つきの計上待ちに残る', async () => {
+    const { order, slip, entry } = await postedShipment({ paidAt: '2026-06-10T03:00:00Z' });
+    const historyId = await correctShipmentDate(db(), slip.slipId, '2026-06-25');
+    // A shipment of the slip is left on another day.
+    await q('set local session_replication_role = replica');
+    await q("update public.order_fulfillments set shipment_date = '2026-06-21' where id = $1", [slip.fulfillmentIds[0]]);
+    await q('set local session_replication_role = origin');
+    expect(await run()).toEqual({ ...none, parked_new: 1 });
+    const [parked] = await pendingRows('shipment_redated');
+    expect(parked).toMatchObject({ reason: 'shipment_date_mismatch', source_id: historyId, resolved_at: null });
+    expect((await q("select order_id from public.accounting_pending_events where event_kind = 'shipment_redated'")).rows[0].order_id).toBe(order.orderId);
+    expect(await reversalOf(entry.id)).toBeUndefined();
+    expect(await redatedEntry(historyId)).toBeUndefined();
+  });
 });
