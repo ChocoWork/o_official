@@ -20,6 +20,14 @@ echo "[pre-commit] typecheck"
 npm run --silent typecheck
 
 echo "[pre-commit] 関連ユニットテスト"
-npx jest --findRelatedTests $STAGED --passWithNoTests --silent
+# 速さを測るテストは並列の負荷で揺れるので、並列の実行から外し、関係する時だけ1本ずつ流す。
+# CLI の除外指定は設定を置き換えるため、既存の除外も残す。先頭が / の引数は sh が書き換えるので [/] と書く。
+npx jest --findRelatedTests $STAGED --passWithNoTests --silent --testPathIgnorePatterns '[/]node_modules[/]' '<rootDir>/.claude/' 'tests/unit/lib/discounts/discount-search[.]test[.]ts$' 'tests/items/items-api[.]performance[.]test[.]ts$'
+RELATED=$(npx jest --listTests --findRelatedTests $STAGED)
+TIMING=$(printf '%s\n' "$RELATED" | grep -E 'tests[\/]unit[\/]lib[\/]discounts[\/]discount-search[.]test[.]ts$|tests[\/]items[\/]items-api[.]performance[.]test[.]ts$' || true)
+if [ -n "$TIMING" ]; then
+  echo "[pre-commit] 関連する速さを測るテスト（1本ずつ実行）"
+  npx jest --silent --runInBand --runTestsByPath $TIMING
+fi
 
 echo "[pre-commit] OK"

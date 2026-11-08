@@ -1,6 +1,8 @@
 # テスト仕様
 
-> 確認日: 2026-11-07。push の前の単体テストの流し方と NEWS の試験を直した。[tests/integration/ui/news-admin-edit-screen.test.tsx](../../../tests/integration/ui/news-admin-edit-screen.test.tsx) の成功の2件は、画面の移動（`/admin?tab=NEWS`）まで確かめてから終わる。前は成功時の0.5秒のタイマーが残り、次の試験の `mockPush` に入って揺れる形だった（待ちを足した診断で再現、直した後は同じ条件で通過、最終版は16/16通過。元の全件並列での再現はしていない）。FREQ-546-AC-04（`discount-search.test.ts`）の200msの条件は変えず、pre-push では全件の後に1本だけで流す（`--runInBand`、16/16通過）。
+> 確認日: 2026-11-08。速さを測る試験2本（`discount-search.test.ts`・[tests/items/items-api.performance.test.ts](../../../tests/items/items-api.performance.test.ts)）を、pre-push でも pre-commit でも並列の実行から外し、`--runInBand` で1本ずつ流す。pre-commit は `jest --listTests --findRelatedTests` で関連する時だけ流す。試験の中身と200ms未満の条件は変えていない。pre-commit の関連テストの段を、商品一覧の処理・割引の探索・返品の文の3つのステージで流して確かめた（全部通過。速さの試験は前の2つの時だけ1本で流れた）。pre-push の全件は今回流していない。
+>
+> 2026-11-07。push の前の単体テストの流し方と NEWS の試験を直した。[tests/integration/ui/news-admin-edit-screen.test.tsx](../../../tests/integration/ui/news-admin-edit-screen.test.tsx) の成功の2件は、画面の移動（`/admin?tab=NEWS`）まで確かめてから終わる。前は成功時の0.5秒のタイマーが残り、次の試験の `mockPush` に入って揺れる形だった（待ちを足した診断で再現、直した後は同じ条件で通過、最終版は16/16通過。元の全件並列での再現はしていない）。FREQ-546-AC-04（`discount-search.test.ts`）の200msの条件は変えず、pre-push では全件の後に1本だけで流す（`--runInBand`、16/16通過）。
 >
 > 2026-11-06。FREQ-641の後回しの小さな直し4つの試験を追加・更新。E2Eは2026-11-07に調整役が実測（返品の13ファイル、下のFREQ-641節）。DBの試験は今回流していない。
 

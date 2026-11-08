@@ -1,6 +1,6 @@
 # 運用文書
 
-> 状態: 現行 | 確認日: 2026-11-07 | 対象: 運用文書と Git フック
+> 状態: 現行 | 確認日: 2026-11-08 | 対象: 運用文書と Git フック
 
 ## 概要
 
@@ -26,7 +26,13 @@ DB スキーマ適用の現行ワークフローは `.github/workflows/db-migrat
 
 [`scripts/hooks/pre-push`](../../scripts/hooks/pre-push) は lint → 型検査 → Jest 全件 → E2E の順で確認する。3/4 の Jest は、次の2段階で流す。
 
-1. `tests/unit/lib/discounts/discount-search.test.ts` を除いた全件を並列で流す。`node_modules` と `.claude` の既存の除外は残す。
-2. 1 が成功したら、外したファイルを `--runInBand --runTestsByPath` で単独に流す。200ms 未満の条件と試験の中身は変えない。
+1. 速さを測る2本（`tests/unit/lib/discounts/discount-search.test.ts`・`tests/items/items-api.performance.test.ts`）を除いた全件を並列で流す。`node_modules` と `.claude` の既存の除外は残す。
+2. 1 が成功したら、外した2本を `--runInBand --runTestsByPath` で1本ずつ流す。200ms 未満の条件と試験の中身は変えない。
 
-どちらかが失敗すれば `set -e` で push を止め、後続へ進まない。両方が通った後の E2E の実行条件と警告扱いは従来どおり。`jest.config.cjs` と npm の script は変更していないため、通常の `npm test` と pre-commit の関連テストの選び方は変わらない。
+どちらかが失敗すれば `set -e` で push を止め、後続へ進まない。両方が通った後の E2E の実行条件と警告扱いは従来どおり。
+
+## コミットの前の確認
+
+[`scripts/hooks/pre-commit`](../../scripts/hooks/pre-commit) は、ステージした `.ts`・`.tsx` の lint → 型検査 → 関連する Jest の順で確認する。関連する Jest は、push の前と同じ速さを測る2本を並列の実行から外し、`jest --listTests --findRelatedTests` でその2本が関連すると分かった時だけ、後から `--runInBand --runTestsByPath` で1本ずつ流す。
+
+`jest.config.cjs` と npm の script は変更していないため、通常の `npm test` の並列の実行では、速さを測る2本は今までどおり負荷で揺れうる。

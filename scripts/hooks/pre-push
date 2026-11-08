@@ -20,9 +20,9 @@ npm run --silent typecheck
 echo "[pre-push] 3/4 ユニットテスト全件"
 # CLI の除外指定は設定を置き換えるため、既存の除外も残す。
 # Git for Windows の sh は先頭が / の引数をパスに書き換えるので、[/] と書く。
-npm test -- --silent --testPathIgnorePatterns '[/]node_modules[/]' '<rootDir>/.claude/' 'tests/unit/lib/discounts/discount-search[.]test[.]ts$'
-echo "[pre-push] 3/4 割引探索のテスト（性能測定を含む・単独実行）"
-npm test -- --silent --runInBand --runTestsByPath tests/unit/lib/discounts/discount-search.test.ts
+npm test -- --silent --testPathIgnorePatterns '[/]node_modules[/]' '<rootDir>/.claude/' 'tests/unit/lib/discounts/discount-search[.]test[.]ts$' 'tests/items/items-api[.]performance[.]test[.]ts$'
+echo "[pre-push] 3/4 速さを測るテスト（1本ずつ実行）"
+npm test -- --silent --runInBand --runTestsByPath tests/unit/lib/discounts/discount-search.test.ts tests/items/items-api.performance.test.ts
 
 # --- ここから E2E ---
 
