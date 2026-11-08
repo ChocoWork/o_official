@@ -101,7 +101,7 @@ Ruling T16-1 (refines C11): Task 16 applies in two pushes — (1) S0–S3 first;
 - `select count(*) from public.accounting_journal_entries where event_kind = 'migrated_entry';` が生きた行の数と等しい。
 - `admin_finance_expenses`・`admin_finance_entry_revisions`・`admin_finance_receipts` の行の数が事前確認の値のまま。
 - `supabase_migrations.schema_migrations` に S0〜S5 の版が載り、文の md5 がコミットしたファイルと一致する（[DB 移行](db-migrations.md)の照合の書き方）。
-- 画面で、取引管理の追加・直し・削除が仕訳（帳簿）に出る。
+- 画面の帳簿（仕訳帳）に、移した仕訳（`migrated_entry`）が読めて出る。確かめのためだけに本番で取引を足したり直したりしない（S4 の後は仕訳と取り消しの行が消せずに残る）。手入力の取引が仕訳に出ることは、次の本物の取引で確かめる。
 
 ### 戻し方
 
