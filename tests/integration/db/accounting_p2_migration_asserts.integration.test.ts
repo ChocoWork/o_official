@@ -285,7 +285,8 @@ describe('S7 source contract (no DB)', () => {
     expect(fn.indexOf('EXCEPTION WHEN OTHERS')).toBeGreaterThan(fn.indexOf('private.accounting_period_for_event(v_date)'));
     expect(fn.indexOf('private.accounting_post_journal_core(')).toBeLessThan(fn.indexOf('EXCEPTION WHEN OTHERS'));
     // The mapping from the exception to the parked row is the shared helper; the text of the exception is only handed to it.
-    expect(fn).toContain('PERFORM private.accounting_park_failure(');
+    expect(fn).toContain('v_parked := private.accounting_park_failure(');
+    expect(fn).toContain('IF v_parked THEN');
     expect(fn).not.toMatch(/PG_EXCEPTION_CONTEXT/);
     expect(fn).not.toMatch(/'(?:message|detail|context)'/);
     expect(fn).toContain('_source_recorded_at => LEAST(v_tx.synced_at, pg_catalog.clock_timestamp())');
@@ -371,10 +372,12 @@ describeLocalDb('S7 final assert: controller only', (db) => {
     [edit('FROM public.orders AS o WHERE o.id = v_tx.order_id;', 'FROM public.orders AS o WHERE o.id = v_tx.order_id FOR SHARE;'), 'acc_s7_functions'],
     [edit('EXCEPTION WHEN OTHERS THEN', 'EXCEPTION WHEN no_data_found THEN'), 'acc_s7_functions'],
     [edit('_source_recorded_at => LEAST(v_tx.synced_at, pg_catalog.clock_timestamp())', '_source_recorded_at => NULL'), 'acc_s7_functions'],
-    [edit("PERFORM private.accounting_park_failure('payment_confirmed',", "PERFORM private.accounting_park_event('payment_confirmed',"), 'acc_s7_functions'],
+    [edit("private.accounting_park_failure('payment_confirmed',", "private.accounting_park_event('payment_confirmed',"), 'acc_s7_functions'],
+    [edit('IF v_parked THEN', 'IF true THEN'), 'acc_s7_functions'],
+    [`drop function ${signatureFailureS7}; create function private.accounting_park_failure(_kind text, _source_table text, _source_id text, _order_id uuid, _sqlstate text, _message text, _pg_detail text, _entry_date date) returns void language plpgsql security definer set search_path = '' as $$ begin null; end $$`, 'acc_s7_functions'],
     [`drop function ${signatureFailureS7}`, 'acc_s7_functions'],
     [edit('EXCEPTION WHEN OTHERS THEN', 'EXCEPTION WHEN no_data_found THEN', signatureFailureS7), 'acc_s7_functions'],
-    [edit('NULL;\n    END;', 'RAISE EXCEPTION \'X\';\n    END;', signatureFailureS7), 'acc_s7_functions'],
+    [edit('RETURN false;\n    END;', 'RAISE EXCEPTION \'X\';\n    END;', signatureFailureS7), 'acc_s7_functions'],
     [edit("_message ~ '^(ACCOUNTING", "SQLERRM ~ '^(ACCOUNTING", signatureFailureS7), 'acc_s7_functions'],
     [`grant execute on function ${signatureFailureS7} to service_role`, 'acc_s7_function_attrs'],
     [`grant execute on function ${signatureFailureS7} to public`, 'acc_s7_function_attrs'],

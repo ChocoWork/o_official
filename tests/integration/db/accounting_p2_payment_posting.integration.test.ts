@@ -337,19 +337,21 @@ describeLocalDb('S7 payment posting: controller only', (db) => {
   });
 
   test('FREQ-569-AC-06: 失敗の保留の道具は入力が壊れていても例外を出さず、固定の posting_error に落とすか何も保留しない', async () => {
-    const call = (kind: string, sqlstate: string | null, message: string, date: string | null, id: string) =>
-      q('select private.accounting_park_failure($1, \'stripe_balance_transactions\', $2, null, $3, $4, null, $5::date)', [kind, id, sqlstate, message, date]);
+    const call = async (kind: string, sqlstate: string | null, message: string, date: string | null, id: string): Promise<boolean> =>
+      (await q("select private.accounting_park_failure($1, 'stripe_balance_transactions', $2, null, $3, $4, null, $5::date) as parked",
+        [kind, id, sqlstate, message, date])).rows[0].parked as boolean;
     // A known core error keeps its fixed code; the text of an unknown one is dropped.
-    await call('payment_confirmed', '23514', 'ACCOUNTING_PERIOD_GAP', '2026-06-15', 'txn_helper_1');
-    await call('payment_confirmed', '23505', 'duplicate key value violates unique constraint "x"', null, 'txn_helper_2');
+    expect(await call('payment_confirmed', '23514', 'ACCOUNTING_PERIOD_GAP', '2026-06-15', 'txn_helper_1')).toBe(true);
+    expect(await call('payment_confirmed', '23505', 'duplicate key value violates unique constraint "x"', null, 'txn_helper_2')).toBe(true);
     expect((await pendingOf('txn_helper_1'))?.detail).toEqual({ error_sqlstate: '23514', error_code: 'ACCOUNTING_PERIOD_GAP', entry_date: '2026-06-15' });
     expect((await pendingOf('txn_helper_2'))?.detail).toEqual({ error_sqlstate: '23505', error_code: 'unexpected_error' });
-    await call('payment_confirmed', '55000', 'ACCOUNTING_PERIOD_MISSING', '2026-06-15', 'txn_helper_3');
+    expect(await call('payment_confirmed', '55000', 'ACCOUNTING_PERIOD_MISSING', '2026-06-15', 'txn_helper_3')).toBe(true);
     expect(await pendingOf('txn_helper_3')).toMatchObject({ reason: 'period_missing', detail: { entry_date: '2026-06-15' } });
     // A broken SQLSTATE falls back to the fixed row; an unknown event kind parks nothing; neither raises.
-    await call('payment_confirmed', 'not-a-state', 'boom', null, 'txn_helper_4');
+    expect(await call('payment_confirmed', 'not-a-state', 'boom', null, 'txn_helper_4')).toBe(true);
     expect((await pendingOf('txn_helper_4'))?.detail).toEqual({ error_sqlstate: 'XX000', error_code: 'unexpected_error' });
-    await call('not_a_kind', '22023', 'ACCOUNTING_ARGUMENT_INVALID', null, 'txn_helper_5');
+    // false: nothing could be parked, so the caller counts the event nowhere.
+    expect(await call('not_a_kind', '22023', 'ACCOUNTING_ARGUMENT_INVALID', null, 'txn_helper_5')).toBe(false);
     expect(await pendingOf('txn_helper_5')).toBeUndefined();
   });
 

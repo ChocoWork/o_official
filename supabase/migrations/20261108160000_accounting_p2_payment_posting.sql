@@ -44,9 +44,10 @@ SELECT pg_catalog.jsonb_build_object(
 -- caller, outside any sub-block, so an error here would abort the whole batch and undo every event already posted.
 -- Any failure inside it falls back to a fixed posting_error row, and if even that fails nothing is parked (the event
 -- has no parked row, so the next run takes it again as a new event). The text of the exception and of its detail is only
--- compared, never stored. _entry_date is the day of the event when it is known.
+-- compared, never stored. _entry_date is the day of the event when it is known. It RETURNS true when a parked row was
+-- written or updated and false when nothing could be parked: the caller counts a parked event only on true.
 CREATE FUNCTION private.accounting_park_failure(_kind text, _source_table text, _source_id text, _order_id uuid,
-  _sqlstate text, _message text, _pg_detail text, _entry_date date) RETURNS void
+  _sqlstate text, _message text, _pg_detail text, _entry_date date) RETURNS boolean
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
 AS $$
 DECLARE
@@ -70,12 +71,14 @@ BEGIN
       END IF;
     END IF;
     PERFORM private.accounting_park_event(_kind, _source_table, _source_id, _order_id, v_reason, v_detail);
+    RETURN true;
   EXCEPTION WHEN OTHERS THEN
     BEGIN
       PERFORM private.accounting_park_event(_kind, _source_table, _source_id, NULL, 'posting_error',
         pg_catalog.jsonb_build_object('error_sqlstate', 'XX000', 'error_code', 'unexpected_error'));
+      RETURN true;
     EXCEPTION WHEN OTHERS THEN
-      NULL;
+      RETURN false;
     END;
   END;
 END;
@@ -103,6 +106,7 @@ DECLARE
   v_posted integer := 0;
   v_parked_new integer := 0;
   v_reparked integer := 0;
+  v_parked boolean;
   v_resolved integer := 0;
 BEGIN
   IF _limit IS NULL OR _limit < 1 OR _limit > 200 THEN
@@ -209,9 +213,12 @@ BEGIN
       -- The rows and the entry number of this one event are undone with the block. Only the SQLSTATE and a fixed code
       -- are kept; the text of the exception is never stored.
       GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE, v_pg_detail = PG_EXCEPTION_DETAIL;
-      PERFORM private.accounting_park_failure('payment_confirmed', 'stripe_balance_transactions', v_tx.id, v_order_id,
+      v_parked := private.accounting_park_failure('payment_confirmed', 'stripe_balance_transactions', v_tx.id, v_order_id,
         v_sqlstate, SQLERRM, v_pg_detail, v_date);
-      IF v_tx.lane = 0 THEN v_parked_new := v_parked_new + 1; ELSE v_reparked := v_reparked + 1; END IF;
+      -- false: nothing could be parked; the event is counted nowhere and is taken again as a new event next run.
+      IF v_parked THEN
+        IF v_tx.lane = 0 THEN v_parked_new := v_parked_new + 1; ELSE v_reparked := v_reparked + 1; END IF;
+      END IF;
     END;
   END LOOP;
 
@@ -279,7 +286,8 @@ BEGIN
         OR pg_catalog.strpos(v_src, 'EXCEPTION WHEN OTHERS') = 0
         OR pg_catalog.strpos(v_src, '_source_recorded_at => LEAST(v_tx.synced_at, pg_catalog.clock_timestamp())') = 0
         OR pg_catalog.strpos(v_src, 'private.accounting_event_key(''payment_confirmed'', ARRAY[t.payment_intent_id])') = 0
-        OR pg_catalog.strpos(v_src, 'PERFORM private.accounting_park_failure(''payment_confirmed'',') = 0
+        OR pg_catalog.strpos(v_src, 'private.accounting_park_failure(''payment_confirmed'',') = 0
+        OR pg_catalog.strpos(v_src, 'IF v_parked THEN') = 0
         OR v_src ~* 'paid_at' OR v_src ~* 'FOR (SHARE|UPDATE|NO KEY UPDATE|KEY SHARE)' THEN
         v_failed := 'acc_s7_functions';
       END IF;
@@ -307,7 +315,7 @@ BEGIN
   IF v_failed IS NULL THEN
     FOR e IN SELECT * FROM (VALUES
       ('private.accounting_post_payment_events(integer)', 'jsonb', '_limit', 1),
-      ('private.accounting_park_failure(text,text,text,uuid,text,text,text,date)', 'void',
+      ('private.accounting_park_failure(text,text,text,uuid,text,text,text,date)', 'boolean',
         '_kind,_source_table,_source_id,_order_id,_sqlstate,_message,_pg_detail,_entry_date', 0)
     ) AS x(signature, result_type, arg_names, defaults)
     LOOP
