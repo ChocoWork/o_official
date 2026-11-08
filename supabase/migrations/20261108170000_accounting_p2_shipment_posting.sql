@@ -44,7 +44,7 @@ BEGIN;
 --   DROP FUNCTION public.get_shipment_journal_trace(uuid), public.list_journal_shipment_meta(uuid[]),
 --     private.get_shipment_journal_trace(uuid), private.list_journal_shipment_meta(uuid[]),
 --     private.accounting_post_shipment_events(integer), private.accounting_shipment_plan(uuid,bigint),
---     private.accounting_shipment_date_reason(uuid,date);
+--     private.accounting_shipment_date_reason(uuid,date), private.accounting_shipment_single_order(uuid);
 
 -- ACC_S8_BODY_BEGIN
 -- The baseline the final assert compares with: row counts of the accounting tables this file must not write, and one
