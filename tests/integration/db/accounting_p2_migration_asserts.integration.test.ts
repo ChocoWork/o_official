@@ -1848,7 +1848,7 @@ describe('S14 source contract (no DB)', () => {
     expect(fn).toContain('_limit > 200');
     expect(fn).toContain("s.stage IN ('confirmed', 'cancelled')");
     expect(fn).toContain('ORDER BY s.shipment_date, s.number');
-    // The latest mark of the slip, and stale when its date or tracking version is not the slip's now.
+    // The mark matching the slip's present date and tracking version if any, else the latest mark; stale when that mark's date or tracking version is not the slip's now.
     expect(fn).toContain('ORDER BY (k.checked_shipment_date = s.shipment_date AND k.checked_tracking_version = s.tracking_version) DESC');
     expect(fn).toContain('k.checked_at DESC');
     expect(fn).toContain('c.checked_shipment_date <> s.shipment_date OR c.checked_tracking_version <> s.tracking_version');
