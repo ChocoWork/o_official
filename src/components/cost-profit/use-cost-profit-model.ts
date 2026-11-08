@@ -1,4 +1,5 @@
 // 会計画面（CostProfitSection）の状態と処理。hooks は元の画面の順のまま並べる。
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TaxPage } from "@/components/tax/types";
 import { clientFetch } from "@/lib/client-fetch";
@@ -124,6 +125,7 @@ import {
 import { exportCsv } from "@/lib/finance/csv-export";
 import {
   type CostProfitTab,
+  initialCostProfitTab,
   type LedgerTab,
   type StatementTab,
   type ComparisonBasis,
@@ -236,7 +238,11 @@ export function useCostProfitModel({
   fiscalYearOptions,
   onFiscalYearChange,
 }: CostProfitProps) {
-  const [activeTab, setActiveTab] = useState<CostProfitTab>("summary");
+  // KPI 画面の案内（?accountingTab=reconciliation）からは、そのサブタブを最初に開く。
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState<CostProfitTab>(() =>
+    initialCostProfitTab(searchParams?.get("accountingTab")),
+  );
   // 財務概要の資金推移グラフの表示単位。
   const [cashTrendMode, setCashTrendMode] = useState<"monthly" | "cumulative">(
     "monthly",

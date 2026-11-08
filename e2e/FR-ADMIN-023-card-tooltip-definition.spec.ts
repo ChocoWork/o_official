@@ -71,8 +71,8 @@ async function mockAdminApis(page: Page): Promise<void> {
           currentSeason: '2026SS',
           seasons: ['2026SS'],
           definitions: [
-            { key: 'sales', label: '売上', definition: '総売上', priority: '◎' },
-            { key: 'aov', label: '客単価（AOV）', definition: '売上 ÷ 注文数', priority: '◎' },
+            { key: 'sales', label: '受注高', definition: '支払いを受けた注文の額 − 出荷前の取り消し', priority: '◎' },
+            { key: 'aov', label: '客単価（AOV）', definition: '受注高 ÷ 注文数', priority: '◎' },
           ],
           values: { sales: { '2026SS': '約130万円' } },
         },
@@ -107,7 +107,7 @@ for (const viewport of viewports) {
       await page.goto('/admin');
       await expect(kpiListPanel(page).getByRole('button', { name: /^リーチ数：/ })).toBeVisible();
 
-      await expect(salesCard(page).getByRole('img')).toHaveAttribute('aria-label', /総売上/);
+      await expect(salesCard(page).getByRole('img')).toHaveAttribute('aria-label', /支払いを受けた注文の額/);
     });
 
     test('ホバーで定義行が表示される（ホバー前は非表示）', async ({ page }) => {
@@ -116,7 +116,7 @@ for (const viewport of viewports) {
       await expect(kpiListPanel(page).getByRole('button', { name: /^リーチ数：/ })).toBeVisible();
 
       const card = salesCard(page);
-      const definitionLine = card.getByText('定義: 総売上');
+      const definitionLine = card.getByText('定義: 支払いを受けた注文の額 − 出荷前の取り消し');
 
       await expect(definitionLine).toBeHidden();
       await card.getByRole('img').hover();

@@ -16,6 +16,8 @@ export const SOURCE_METRICS: SourceMetricDef[] = [
 	// --- order 由来（自動取得） ---
 	{ key: 'paid_sales', label: '受注高', unit: '円', group: 'order' },
 	{ key: 'paid_orders', label: '有効注文数', unit: '件', group: 'order' },
+	// CVR の分子。注文を作った月で数える（有効注文数は支払いを受けた日の月）
+	{ key: 'created_paid_orders', label: '作成月の有効注文数', unit: '件', group: 'order' },
 	{ key: 'all_orders', label: '全注文数', unit: '件', group: 'order' },
 	{ key: 'set_orders', label: 'セット注文数', unit: '件', group: 'order' },
 	{ key: 'cancelled_orders', label: 'キャンセル数', unit: '件', group: 'order' },
@@ -71,7 +73,7 @@ export const MONTHLY_KPI_FORMULAS: MonthlyKpiFormulaDef[] = [
 	{ key: 'story_views', label: 'ストーリー視聴数', formulaText: 'ストーリー視聴数', compute: (s) => direct(s.story_views) },
 	{ key: 'story_reach', label: 'ストーリー到達率', formulaText: 'ストーリー到達数 ÷ フォロワー数', compute: (s) => ratio(s.story_reach, s.followers) },
 	{ key: 'link_click', label: 'リンククリック率', formulaText: 'リンククリック数 ÷ プロフィールアクセス数', compute: (s) => ratio(s.link_clicks, s.profile_visits) },
-	{ key: 'cvr', label: 'CVR', formulaText: '有効注文数 ÷ 全注文数', compute: (s) => ratio(s.paid_orders, s.all_orders) },
+	{ key: 'cvr', label: 'CVR', formulaText: '作成月の有効注文数 ÷ 全注文数', compute: (s) => ratio(s.created_paid_orders, s.all_orders) },
 	{ key: 'aov', label: '客単価（AOV）', formulaText: '受注高 ÷ 有効注文数', compute: (s) => ratio(s.paid_sales, s.paid_orders, 1) },
 	{ key: 'set_purchase_rate', label: 'セット購入率', formulaText: 'セット注文数 ÷ 有効注文数', compute: (s) => ratio(s.set_orders, s.paid_orders) },
 	{ key: 'sales', label: '受注高', formulaText: '受注高', compute: (s) => direct(s.paid_sales) },

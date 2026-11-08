@@ -79,7 +79,7 @@ async function mockAdminApis(page: Page, salesTarget: string): Promise<void> {
         data: {
           currentSeason: '2026SS',
           seasons: ['2026SS'],
-          definitions: [{ key: 'sales', label: '売上', definition: '総売上', priority: '◎' }],
+          definitions: [{ key: 'sales', label: '受注高', definition: '支払いを受けた注文の額 − 出荷前の取り消し', priority: '◎' }],
           values: { sales: { '2026SS': salesTarget } },
         },
       }),

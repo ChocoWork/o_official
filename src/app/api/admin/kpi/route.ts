@@ -257,6 +257,7 @@ function toKpiMetricsResponse(
   formattedReturnRate: string;
   orderCount: number;
   paidOrderCount: number;
+  createdPaidOrderCount: number;
   customerCount: number;
   repeatCustomerCount: number;
   setOrderCount: number;
@@ -303,6 +304,8 @@ function toKpiMetricsResponse(
     formattedReturnRate: formatPercent(returnRate),
     orderCount: accumulator.allOrders,
     paidOrderCount: accumulator.paidOrders,
+    // CVR の分子。注文を作った月で数える（paidOrderCount は支払いを受けた日の月）
+    createdPaidOrderCount: accumulator.createdPaidOrders,
     customerCount,
     repeatCustomerCount,
     setOrderCount: accumulator.setOrderCount,
@@ -398,9 +401,10 @@ async function readIntakeEvents(client: SupabaseClient, from: string, to: string
   throw new AccountingStoreError();
 }
 
+// 受注高の出来事は必須（読めなければ 500）。受注残・内訳・返品は脇の数字で、読めなければ null にして画面は残す
 type IntakeReads = {
   events: IntakeEvent[];
-  backlog: { total: number; orderCount: number; asOf: string };
+  backlog: { total: number; orderCount: number; asOf: string } | null;
   intakeBreakdown: {
     from: string;
     to: string;
@@ -414,45 +418,56 @@ type IntakeReads = {
     intake: number;
     orderCount: number;
     breakdownOk: boolean;
-  };
-  returnsThisMonth: { month: string; amount: number };
+  } | null;
+  returnsThisMonth: { month: string; amount: number } | null;
 };
+
+async function readOptional<T>(label: string, read: () => Promise<T>): Promise<T | null> {
+  try {
+    return await read();
+  } catch (error) {
+    console.error(`[admin.kpi] Failed to read ${label}:`, error);
+    return null;
+  }
+}
 
 // 受注高の出来事・受注残・今の月の内訳と返品を、サービスロールの読み口から読む（個人の情報は返らない）
 async function readIntake(client: SupabaseClient, today: string): Promise<IntakeReads> {
   const monthStart = `${today.slice(0, 7)}-01`;
   const start = await resolveIntakeStart(client);
 
-  const [events, backlog, breakdown, reconciliation] = await Promise.all([
-    // 切り替えの日が今日より後の間は、読む範囲が無い
+  const [events, backlog, breakdown, returns] = await Promise.all([
+    // 切り替えの日が今日より後の間は、読む範囲が無い。出来事は読めなければ 500（誤った受注高を出さない）
     start > today ? Promise.resolve<IntakeEvent[]>([]) : readIntakeEvents(client, start, today),
-    rpc(client, 'get_order_backlog', { _as_of: today }),
-    rpc(client, 'get_intake_breakdown', { _from: monthStart, _to: today }),
-    rpc(client, 'get_intake_reconciliation', { _from: monthStart, _to: today }),
+    readOptional('order backlog', async () => parse(backlogSchema, await rpc(client, 'get_order_backlog', { _as_of: today }))),
+    readOptional('intake breakdown', async () =>
+      parse(breakdownSchema, await rpc(client, 'get_intake_breakdown', { _from: monthStart, _to: today })),
+    ),
+    readOptional('intake returns', async () =>
+      parse(returnsSchema, await rpc(client, 'get_intake_reconciliation', { _from: monthStart, _to: today })),
+    ),
   ]);
-
-  const parsedBacklog = parse(backlogSchema, backlog);
-  const parsedBreakdown = parse(breakdownSchema, breakdown);
-  const parsedReturns = parse(returnsSchema, reconciliation);
 
   return {
     events,
-    backlog: { total: parsedBacklog.backlog_total, orderCount: parsedBacklog.order_count, asOf: today },
-    intakeBreakdown: {
-      from: monthStart,
-      to: today,
-      subtotalBeforeDiscount: parsedBreakdown.subtotal_before_discount,
-      discount: parsedBreakdown.discount,
-      shipping: parsedBreakdown.shipping,
-      payment: parsedBreakdown.payment,
-      preShipmentCancel: parsedBreakdown.pre_shipment_cancel,
-      disputeUnshipped: parsedBreakdown.dispute_unshipped,
-      disputeUnshippedRestored: parsedBreakdown.dispute_unshipped_restored,
-      intake: parsedBreakdown.intake,
-      orderCount: parsedBreakdown.order_count,
-      breakdownOk: parsedBreakdown.breakdown_ok,
-    },
-    returnsThisMonth: { month: today.slice(0, 7), amount: parsedReturns.returns },
+    backlog: backlog ? { total: backlog.backlog_total, orderCount: backlog.order_count, asOf: today } : null,
+    intakeBreakdown: breakdown
+      ? {
+          from: monthStart,
+          to: today,
+          subtotalBeforeDiscount: breakdown.subtotal_before_discount,
+          discount: breakdown.discount,
+          shipping: breakdown.shipping,
+          payment: breakdown.payment,
+          preShipmentCancel: breakdown.pre_shipment_cancel,
+          disputeUnshipped: breakdown.dispute_unshipped,
+          disputeUnshippedRestored: breakdown.dispute_unshipped_restored,
+          intake: breakdown.intake,
+          orderCount: breakdown.order_count,
+          breakdownOk: breakdown.breakdown_ok,
+        }
+      : null,
+    returnsThisMonth: returns ? { month: today.slice(0, 7), amount: returns.returns } : null,
   };
 }
 

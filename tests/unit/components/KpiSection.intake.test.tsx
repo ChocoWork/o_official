@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import KpiSection, { type AdminKpiData } from '@/components/KpiSection';
 
 // 受注高の名前と数え方の画面（計画2 Task 13）。目標・月次記録の取得は空の答えで足りる。
@@ -29,6 +29,7 @@ function metric(period: string, overrides: Record<string, unknown> = {}) {
     formattedReturnRate: '0.0%',
     orderCount: 10,
     paidOrderCount: 10,
+    createdPaidOrderCount: 10,
     customerCount: 10,
     repeatCustomerCount: 0,
     setOrderCount: 2,
@@ -95,7 +96,12 @@ describe('KpiSection の受注高', () => {
 
     expect((await screen.findAllByText('受注高')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('期間内に支払いを受けた注文の額（出荷前の取り消しを引く）').length).toBeGreaterThan(0);
-    expect(screen.queryByText('売上')).toBeNull();
+    // カードの名前（aria-label）と推移の見出し・グラフの名前が「受注高」になり、「売上」のままの物が無い
+    expect(screen.getAllByRole('button', { name: /^受注高：/ }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: /^売上：/ })).toBeNull();
+    expect(screen.getAllByText('受注高推移').length).toBeGreaterThan(0);
+    expect(screen.queryByText('売上推移')).toBeNull();
+    expect(screen.queryByRole('img', { name: '売上の推移グラフ' })).toBeNull();
     expect(screen.queryByText('期間内に売れた総額')).toBeNull();
   });
 
@@ -106,7 +112,7 @@ describe('KpiSection の受注高', () => {
     expect(within(panel).getByText('受注高は帳簿の売上高ではありません。申告には使いません。')).toBeTruthy();
     expect(within(panel).getByText(/支払いの確認が帳簿に入るまで数えません/)).toBeTruthy();
     const link = within(panel).getByRole('link', { name: /帳簿との照らし合わせは会計の『照合』で見られます/ });
-    expect(link.getAttribute('href')).toBe('/admin?tab=ACCOUNTING');
+    expect(link.getAttribute('href')).toBe('/admin?tab=ACCOUNTING&accountingTab=reconciliation');
   });
 
   it('FREQ-572-AC-05: 受注残のカードに額と件数、返品の行に今の月の返品が出る', async () => {
@@ -114,7 +120,10 @@ describe('KpiSection の受注高', () => {
 
     const panel = await screen.findByRole('region', { name: '受注高の内訳' });
     expect(within(panel).getByTestId('intake-backlog-total').textContent).toBe('¥540,000');
-    expect(within(panel).getByTestId('intake-backlog-count').textContent).toContain('7件');
+    expect(within(panel).getByText('受注残（11月9日時点）')).toBeTruthy();
+    expect(within(panel).getByTestId('intake-backlog-count').textContent).toBe('前受金が残っている注文は7件です');
+    expect(within(panel).queryByText(/出荷を待っています/)).toBeNull();
+    expect(within(panel).getByText('返品（11月）')).toBeTruthy();
     expect(within(panel).getByTestId('intake-returns').textContent).toBe('¥4,000');
     expect(within(panel).getByText(/出荷後の返品は受注高から引かず/)).toBeTruthy();
   });
@@ -130,6 +139,8 @@ describe('KpiSection の受注高', () => {
     expect(within(panel).getByTestId('intake-total').textContent).toBe('¥118,000');
     expect(within(panel).getByText('支払いの件数（取り消しを含む）')).toBeTruthy();
     expect(within(panel).getByTestId('intake-order-count').textContent).toBe('12件');
+    expect(within(panel).getByText('内訳（11月1日〜11月9日）')).toBeTruthy();
+    expect(panel.textContent).not.toMatch(/\d{4}-\d{2}/);
   });
 
   it('FREQ-572-AC-02: 内訳の合計が受注高に合わない時は画面が注意を出し、合う時は出さない', async () => {
@@ -143,11 +154,41 @@ describe('KpiSection の受注高', () => {
     expect(await screen.findByText(/内訳の合計が受注高と合いません/)).toBeTruthy();
   });
 
-  it('FREQ-572-AC-05: 受注高の読み取りが応答に無い時は内訳の枠を出さず、ほかの表示は変えない', async () => {
+  it('FREQ-572-AC-05: 受注高の読み取りが応答に無い時は内訳の枠を出さないが、帳簿の売上高ではない旨は画面に残す', async () => {
     renderKpi(kpiData({ backlog: undefined, intakeBreakdown: undefined, returnsThisMonth: undefined }));
 
     await waitFor(() => expect(screen.getAllByText('受注高').length).toBeGreaterThan(0));
     expect(screen.queryByRole('region', { name: '受注高の内訳' })).toBeNull();
+    expect(screen.getByText('受注高は帳簿の売上高ではありません。申告には使いません。')).toBeTruthy();
+  });
+
+  it('FREQ-572-AC-05: 受注残・内訳・返品が読めなかった時は、その部分だけ断り、注意書きとKPIのカードは残る', async () => {
+    renderKpi(kpiData({ backlog: null, intakeBreakdown: null, returnsThisMonth: null }));
+
+    const panel = await screen.findByRole('region', { name: '受注高の内訳' });
+    expect(within(panel).getByText('受注高は帳簿の売上高ではありません。申告には使いません。')).toBeTruthy();
+    expect(within(panel).getAllByText('読み込めませんでした。時間をおいて更新してください。')).toHaveLength(3);
+    expect(within(panel).queryByTestId('intake-total')).toBeNull();
+    expect(screen.getAllByRole('button', { name: /^受注高：/ }).length).toBeGreaterThan(0);
+  });
+
+  it('FREQ-573-AC-04: 月の記録の「作成月の有効注文数」は作成月の件数から自動で入り、CVRの算出に使われる', async () => {
+    const months = Array.from({ length: 12 }, (_, index) =>
+      metric(`${index + 1}月`, { createdPaidOrderCount: 3, paidOrderCount: 0, orderCount: 4 }),
+    );
+    mockClientFetch.mockImplementation(async (url: string) => {
+      if (String(url).includes('/targets')) {
+        return { ok: true, status: 200, json: async () => ({ data: { currentSeason: '2026SS', seasons: ['2026SS'], definitions: [], values: {} } }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ data: { season: '2026SS', monthKeys: ['2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09'], values: {} } }) };
+    });
+
+    renderKpi(kpiData({ monthlyKpiByYear: [{ year: 2026, metrics: months }] }));
+
+    fireEvent.click(await screen.findByRole('button', { name: '算出元データを確認' }));
+    const input = await screen.findByLabelText('作成月の有効注文数 4月の値');
+    expect(input.getAttribute('placeholder')).toBe('3件');
+    expect((await screen.findByLabelText('有効注文数 4月の値')).getAttribute('placeholder')).toBe('0件');
   });
 
   it('FREQ-572-AC-01: 受注高の目標は今までと同じ鍵 sales の値を読む（鍵は変えない）', async () => {

@@ -79,6 +79,21 @@ describe('月の記録の受注高', () => {
 		expect(JSON.stringify([SOURCE_METRICS, MONTHLY_KPI_FORMULAS.map((f) => f.formulaText)])).not.toContain('売上額');
 	});
 
+	it('FREQ-573-AC-04: CVRは作成月の有効注文数を全注文数で割り、支払いを受けた日の月の有効注文数（客単価・セット購入率）とは別の源データを使う', () => {
+		const cvr = MONTHLY_KPI_FORMULAS.find((formula) => formula.key === 'cvr');
+		const aov = MONTHLY_KPI_FORMULAS.find((formula) => formula.key === 'aov');
+		// 3月に作った4件のうち3件を支払い、3月に支払いを受けた注文は5件（前の月の分を含む）
+		const source = { created_paid_orders: 3, paid_orders: 5, all_orders: 4, paid_sales: 50000 };
+		expect(cvr?.compute(source)).toBe(75);
+		expect(cvr?.formulaText).toBe('作成月の有効注文数 ÷ 全注文数');
+		expect(aov?.compute(source)).toBe(10000);
+		expect(cvr?.compute({ paid_orders: 5, all_orders: 4 })).toBeNull();
+		expect(SOURCE_METRICS.find((metric) => metric.key === 'created_paid_orders')).toMatchObject({ group: 'order', unit: '件' });
+		// 保存の鍵として DB の CHECK の形に合う
+		expect(sourceStorageKey('created_paid_orders')).toMatch(/^(src|kpi):[A-Za-z0-9_]{1,64}$/);
+		expect(VALID_STORAGE_KEYS.has('src:created_paid_orders')).toBe(true);
+	});
+
 	it('FREQ-573-AC-04: 保存できる鍵の集合を出し、保存の鍵の判定と同じ中身になる', () => {
 		expect(VALID_STORAGE_KEYS.has('src:paid_sales')).toBe(true);
 		expect(VALID_STORAGE_KEYS.has('kpi:sales')).toBe(true);

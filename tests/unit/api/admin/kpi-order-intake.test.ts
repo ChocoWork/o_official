@@ -17,6 +17,7 @@ type Row = Record<string, unknown>;
 let mockOrders: Row[] = [];
 let mockOrderItems: Row[] = [];
 let mockCustomers: Row[] = [];
+let mockCustomerError: unknown = null;
 const mockCustomerChunks: string[][] = [];
 const mockRpc = jest.fn();
 
@@ -29,6 +30,7 @@ jest.mock('@/lib/supabase/server', () => ({
             not: () => ({ order: async () => ({ data: mockOrders, error: null }) }),
             in: async (_column: string, ids: string[]) => {
               mockCustomerChunks.push(ids);
+              if (mockCustomerError) return { data: null, error: mockCustomerError };
               return { data: mockCustomers.filter((row) => ids.includes(row.id as string)), error: null };
             },
           };
@@ -54,6 +56,7 @@ type KpiMonth = {
   repeatRate: number;
   setPurchaseRate: number;
   paidOrderCount: number;
+  createdPaidOrderCount: number;
   orderCount: number;
   customerCount: number;
   soldItemCount: number;
@@ -67,9 +70,9 @@ type KpiResponse = {
     data: {
       monthlyKpiByYear: Array<{ year: number; metrics: KpiMonth[] }>;
       seasonalKpi: Array<KpiMonth & { period: string }>;
-      backlog: { total: number; orderCount: number; asOf: string };
-      intakeBreakdown: Record<string, unknown>;
-      returnsThisMonth: { month: string; amount: number };
+      backlog: { total: number; orderCount: number; asOf: string } | null;
+      intakeBreakdown: Record<string, unknown> | null;
+      returnsThisMonth: { month: string; amount: number } | null;
       returnRateNote: string;
     };
   };
@@ -186,6 +189,7 @@ beforeEach(() => {
   mockOrders = [];
   mockOrderItems = [];
   mockCustomers = [];
+  mockCustomerError = null;
   mockCustomerChunks.length = 0;
   mockEventPages = [{ events: [], next_after_date: null, next_after_key: null }];
   mockPeriods = [period('2026-01-01')];
@@ -210,7 +214,7 @@ describe('GET /api/admin/kpi の受注高（計画2 Task 13）', () => {
     expect(march.aov).toBe(12000);
   });
 
-  it('FREQ-572-AC-02: 出荷後の返品が届いても受注高は変わらず、返品の行に別に出る', async () => {
+  it('FREQ-572-AC-02: 受注高は支払いの出来事だけから数え、今の月の返品の行は照らし合わせの答えの返品をそのまま別に出す', async () => {
     mockOrders = [oneOrder(uuid(1), MARCH_10)];
     mockCustomers = [customer(uuid(1), 'user-1')];
     setEvents([paymentEvent(uuid(1), '2026-03-10')]);
@@ -257,6 +261,19 @@ describe('GET /api/admin/kpi の受注高（計画2 Task 13）', () => {
     expect(march.salesAmount).toBe(0);
     expect(april.salesAmount).toBe(12000);
     expect(april.customerCount).toBe(1);
+  });
+
+  it('FREQ-572-AC-03: 月の記録のCVRの分子（createdPaidOrderCount）は注文を作った月に入り、支払いを受けた日の月の件数（paidOrderCount）とは別に返る', async () => {
+    // 3月10日に作った注文を4月2日に支払う。分子は3月、有効注文数は4月
+    mockOrders = [oneOrder(uuid(1), MARCH_10), oneOrder(uuid(2), MARCH_10, 'pending')];
+    mockCustomers = [customer(uuid(1), 'user-1')];
+    setEvents([paymentEvent(uuid(1), '2026-04-02')]);
+
+    const march = await monthOf(2026, 2);
+    const april = await monthOf(2026, 3);
+
+    expect(march).toMatchObject({ createdPaidOrderCount: 1, paidOrderCount: 0, orderCount: 2 });
+    expect(april).toMatchObject({ createdPaidOrderCount: 0, paidOrderCount: 1, orderCount: 0 });
   });
 
   it('FREQ-572-AC-03: CVRは注文を作った月で数え、支払いの途中・失敗・放棄の注文を入れない', async () => {
@@ -417,10 +434,10 @@ describe('GET /api/admin/kpi の受注高（計画2 Task 13）', () => {
     expect(march.customerCount).toBe(449);
   });
 
-  it('FREQ-572-AC-02: 帳簿の読み込みに失敗した時は 500 を返し、DB の文を出さない', async () => {
+  it('FREQ-572-AC-02: 受注高の出来事を読めない時は 500 を返し、DB の文を出さない', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
     mockRpc.mockImplementation(async (name: string, args?: Record<string, unknown>) =>
-      name === 'get_order_backlog' ? { data: null, error: { message: 'secret detail', code: 'XX000' } } : defaultRpc(name, args),
+      name === 'list_order_intake_events' ? { data: null, error: { message: 'secret detail', code: 'XX000' } } : defaultRpc(name, args),
     );
 
     const response = await getKpi();
@@ -428,5 +445,42 @@ describe('GET /api/admin/kpi の受注高（計画2 Task 13）', () => {
     expect(response.status).toBe(500);
     expect(response.body).toEqual({ error: 'Failed to fetch KPI data' });
     expect(JSON.stringify(response.body)).not.toContain('secret');
+  });
+
+  it.each([
+    ['get_order_backlog', 'backlog'],
+    ['get_intake_breakdown', 'intakeBreakdown'],
+    ['get_intake_reconciliation', 'returnsThisMonth'],
+  ] as const)('FREQ-572-AC-05: 脇の読み取り %s が失敗しても 200 を返し、その部分だけ null にして受注高は残す', async (failing, key) => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockOrders = [oneOrder(uuid(1), MARCH_10)];
+    mockCustomers = [customer(uuid(1), 'user-1')];
+    setEvents([paymentEvent(uuid(1), '2026-03-10')]);
+    mockRpc.mockImplementation(async (name: string, args?: Record<string, unknown>) =>
+      name === failing ? { data: null, error: { message: 'secret detail', code: 'XX000' } } : defaultRpc(name, args),
+    );
+
+    const response = await getKpi();
+
+    expect(response.status).toBe(200);
+    const data = response.body.data;
+    expect(data[key]).toBeNull();
+    for (const other of ['backlog', 'intakeBreakdown', 'returnsThisMonth'] as const) {
+      if (other !== key) expect(data[other]).not.toBeNull();
+    }
+    expect(data.monthlyKpiByYear[0].metrics[2].salesAmount).toBe(12000);
+    expect(JSON.stringify(response.body)).not.toContain('secret');
+  });
+
+  it('FREQ-572-AC-03: 顧客の鍵を引けない時は 500 を返す', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockOrders = [oneOrder(uuid(1), MARCH_10)];
+    mockCustomerError = { message: 'secret detail', code: 'XX000' };
+    setEvents([paymentEvent(uuid(1), '2026-03-10')]);
+
+    const response = await getKpi();
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ error: 'Failed to fetch KPI data' });
   });
 });

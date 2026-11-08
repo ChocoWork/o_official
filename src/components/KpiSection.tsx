@@ -53,6 +53,7 @@ type PeriodKpiMetrics = {
   formattedReturnRate: string;
   orderCount: number;
   paidOrderCount: number;
+  createdPaidOrderCount: number;
   customerCount: number;
   repeatCustomerCount: number;
   setOrderCount: number;
@@ -69,8 +70,8 @@ export type AdminKpiData = {
   }>;
   seasonalKpi: PeriodKpiMetrics[];
   targetYear: number;
-  // 受注残・今の月の内訳・今の月の返品（帳簿の読み口。無い応答では枠を出さない）
-  backlog?: { total: number; orderCount: number; asOf: string };
+  // 受注残・今の月の内訳・今の月の返品（帳簿の読み口）。応答に無ければ枠は出さず、null なら読めなかった部分だけ断る
+  backlog?: { total: number; orderCount: number; asOf: string } | null;
   intakeBreakdown?: {
     from: string;
     to: string;
@@ -84,8 +85,8 @@ export type AdminKpiData = {
     intake: number;
     orderCount: number;
     breakdownOk: boolean;
-  };
-  returnsThisMonth?: { month: string; amount: number };
+  } | null;
+  returnsThisMonth?: { month: string; amount: number } | null;
   returnRateNote?: string;
   inventoryConsumptionRateNote?: string;
 };
@@ -652,6 +653,7 @@ const ORDER_SOURCE_ACCESSORS: Record<
 > = {
   paid_sales: (m) => m.salesAmount,
   paid_orders: (m) => m.paidOrderCount,
+  created_paid_orders: (m) => m.createdPaidOrderCount,
   all_orders: (m) => m.orderCount,
   set_orders: (m) => m.setOrderCount,
   cancelled_orders: (m) => m.cancelledOrderCount,
@@ -914,26 +916,48 @@ function formatSignedYen(value: number): string {
   return value < 0 ? `-${formatKpiValue(-value, "円")}` : formatKpiValue(value, "円");
 }
 
+// 'YYYY-MM-DD' → '11月9日'（画面のほかの日付と同じ書き方）。
+function formatMonthDayLabel(isoDate: string): string {
+  const matched = isoDate.match(/^\d{4}-(\d{2})-(\d{2})$/);
+  return matched
+    ? `${Number.parseInt(matched[1], 10)}月${Number.parseInt(matched[2], 10)}日`
+    : isoDate;
+}
+
+// 受注高は帳簿の売上高ではない旨。内訳の枠が出ない時も、この一文は画面に残す。
+const INTAKE_NOT_BOOK_SALES_NOTE =
+  "受注高は帳簿の売上高ではありません。申告には使いません。";
+
 // 受注高の内訳・受注残・返品。受注高は帳簿の支払いの仕訳から数えた額で、帳簿の売上高（出荷の日に立てる）とは別の物。
+// 読み取りに失敗した部分は null で届く。その部分だけ「読み込めませんでした」と出し、ほかは見せる。
 function IntakeSummary({
   backlog,
   breakdown,
   returnsThisMonth,
 }: {
-  backlog: NonNullable<AdminKpiData["backlog"]>;
-  breakdown: NonNullable<AdminKpiData["intakeBreakdown"]>;
-  returnsThisMonth: NonNullable<AdminKpiData["returnsThisMonth"]>;
+  backlog: AdminKpiData["backlog"];
+  breakdown: AdminKpiData["intakeBreakdown"];
+  returnsThisMonth: AdminKpiData["returnsThisMonth"];
 }) {
+  const unavailable = (
+    <p className="font-acumin lk-text-3xs text-[#888888]">
+      読み込めませんでした。時間をおいて更新してください。
+    </p>
+  );
   // 支払いの取り消し（出荷前）は、引いた額とその戻しを合わせて見せる
-  const dispute = breakdown.disputeUnshipped + breakdown.disputeUnshippedRestored;
-  const rows: Array<{ id: string; label: string; value: string }> = [
-    { id: "subtotal", label: "割引の前の商品の額", value: formatSignedYen(breakdown.subtotalBeforeDiscount) },
-    { id: "discount", label: "割引", value: formatSignedYen(-breakdown.discount) },
-    { id: "shipping", label: "送料", value: formatSignedYen(breakdown.shipping) },
-    { id: "cancel", label: "出荷前の取り消し", value: formatSignedYen(breakdown.preShipmentCancel) },
-    { id: "dispute", label: "カード会社からの支払いの取り消し（出荷前）", value: formatSignedYen(dispute) },
-    { id: "total", label: "受注高", value: formatSignedYen(breakdown.intake) },
-  ];
+  const dispute = breakdown
+    ? breakdown.disputeUnshipped + breakdown.disputeUnshippedRestored
+    : 0;
+  const rows: Array<{ id: string; label: string; value: string }> = breakdown
+    ? [
+        { id: "subtotal", label: "割引の前の商品の額", value: formatSignedYen(breakdown.subtotalBeforeDiscount) },
+        { id: "discount", label: "割引", value: formatSignedYen(-breakdown.discount) },
+        { id: "shipping", label: "送料", value: formatSignedYen(breakdown.shipping) },
+        { id: "cancel", label: "出荷前の取り消し", value: formatSignedYen(breakdown.preShipmentCancel) },
+        { id: "dispute", label: "カード会社からの支払いの取り消し（出荷前）", value: formatSignedYen(dispute) },
+        { id: "total", label: "受注高", value: formatSignedYen(breakdown.intake) },
+      ]
+    : [];
 
   return (
     <Panel
@@ -945,13 +969,16 @@ function IntakeSummary({
       <div className="space-y-3">
         <div className="space-y-1">
           <p className="font-acumin lk-text-3xs text-[#474747]">
-            受注高は帳簿の売上高ではありません。申告には使いません。
+            {INTAKE_NOT_BOOK_SALES_NOTE}
           </p>
           <p className="font-acumin lk-text-3xs text-[#888888]">
             支払いの確認が帳簿に入るまで数えません。
           </p>
           <p className="font-acumin lk-text-3xs text-[#888888]">
-            <Link href="/admin?tab=ACCOUNTING" className="underline">
+            <Link
+              href="/admin?tab=ACCOUNTING&accountingTab=reconciliation"
+              className="underline"
+            >
               帳簿との照らし合わせは会計の『照合』で見られます
             </Link>
           </p>
@@ -961,64 +988,88 @@ function IntakeSummary({
           <div className="min-w-0 space-y-3">
             <div>
               <p className="font-acumin lk-text-4xs text-[#888888]">
-                受注残（{backlog.asOf}時点）
+                受注残{backlog ? `（${formatMonthDayLabel(backlog.asOf)}時点）` : ""}
               </p>
-              <p
-                data-testid="intake-backlog-total"
-                className="mt-1 font-acumin lk-text-2xl leading-none text-black tabular-nums"
-              >
-                {formatSignedYen(backlog.total)}
-              </p>
-              <p
-                data-testid="intake-backlog-count"
-                className="mt-1 font-acumin lk-text-4xs text-[#888888] tabular-nums"
-              >
-                {backlog.orderCount}件の注文が出荷を待っています
-              </p>
+              {backlog ? (
+                <>
+                  <p
+                    data-testid="intake-backlog-total"
+                    className="mt-1 font-acumin lk-text-2xl leading-none text-black tabular-nums"
+                  >
+                    {formatSignedYen(backlog.total)}
+                  </p>
+                  <p
+                    data-testid="intake-backlog-count"
+                    className="mt-1 font-acumin lk-text-4xs text-[#888888] tabular-nums"
+                  >
+                    前受金が残っている注文は{backlog.orderCount}件です
+                  </p>
+                </>
+              ) : (
+                unavailable
+              )}
             </div>
             <div>
               <p className="font-acumin lk-text-4xs text-[#888888]">
-                返品（{returnsThisMonth.month}）
+                返品
+                {returnsThisMonth
+                  ? `（${Number.parseInt(returnsThisMonth.month.slice(5, 7), 10)}月）`
+                  : ""}
               </p>
-              <p
-                data-testid="intake-returns"
-                className="mt-1 font-acumin lk-text-2xl leading-none text-black tabular-nums"
-              >
-                {formatSignedYen(returnsThisMonth.amount)}
-              </p>
-              <p className="mt-1 font-acumin lk-text-4xs text-[#888888]">
-                出荷後の返品は受注高から引かず、ここに別に出します。
-              </p>
+              {returnsThisMonth ? (
+                <>
+                  <p
+                    data-testid="intake-returns"
+                    className="mt-1 font-acumin lk-text-2xl leading-none text-black tabular-nums"
+                  >
+                    {formatSignedYen(returnsThisMonth.amount)}
+                  </p>
+                  <p className="mt-1 font-acumin lk-text-4xs text-[#888888]">
+                    出荷後の返品は受注高から引かず、ここに別に出します。
+                  </p>
+                </>
+              ) : (
+                unavailable
+              )}
             </div>
           </div>
 
           <div className="min-w-0">
             <p className="font-acumin lk-text-4xs text-[#888888]">
-              内訳（{breakdown.from}〜{breakdown.to}）
+              内訳
+              {breakdown
+                ? `（${formatMonthDayLabel(breakdown.from)}〜${formatMonthDayLabel(breakdown.to)}）`
+                : ""}
             </p>
-            <dl className="mt-1 space-y-1">
-              {rows.map((row) => (
-                <div
-                  key={row.id}
-                  className={`flex items-baseline justify-between gap-3 font-acumin lk-text-3xs text-[#474747] ${row.id === "total" ? "border-t border-[#ededed] pt-1 text-black" : ""}`}
-                >
-                  <dt>{row.label}</dt>
-                  <dd data-testid={`intake-${row.id}`} className="tabular-nums">
-                    {row.value}
-                  </dd>
-                </div>
-              ))}
-              <div className="flex items-baseline justify-between gap-3 font-acumin lk-text-4xs text-[#888888]">
-                <dt>支払いの件数（取り消しを含む）</dt>
-                <dd data-testid="intake-order-count" className="tabular-nums">
-                  {breakdown.orderCount}件
-                </dd>
-              </div>
-            </dl>
-            {breakdown.breakdownOk ? null : (
-              <p role="status" className="mt-2 font-acumin lk-text-3xs text-red-700">
-                内訳の合計が受注高と合いません。会計の『照合』で確かめてください。
-              </p>
+            {breakdown ? (
+              <>
+                <dl className="mt-1 space-y-1">
+                  {rows.map((row) => (
+                    <div
+                      key={row.id}
+                      className={`flex items-baseline justify-between gap-3 font-acumin lk-text-3xs text-[#474747] ${row.id === "total" ? "border-t border-[#ededed] pt-1 text-black" : ""}`}
+                    >
+                      <dt>{row.label}</dt>
+                      <dd data-testid={`intake-${row.id}`} className="tabular-nums">
+                        {row.value}
+                      </dd>
+                    </div>
+                  ))}
+                  <div className="flex items-baseline justify-between gap-3 font-acumin lk-text-4xs text-[#888888]">
+                    <dt>支払いの件数（取り消しを含む）</dt>
+                    <dd data-testid="intake-order-count" className="tabular-nums">
+                      {breakdown.orderCount}件
+                    </dd>
+                  </div>
+                </dl>
+                {breakdown.breakdownOk ? null : (
+                  <p role="status" className="mt-2 font-acumin lk-text-3xs text-red-700">
+                    内訳の合計が受注高と合いません。会計の『照合』で確かめてください。
+                  </p>
+                )}
+              </>
+            ) : (
+              unavailable
             )}
           </div>
         </div>
@@ -2066,13 +2117,19 @@ export default function KpiSection({
   return (
     <section>
       {header}
-      {data.backlog && data.intakeBreakdown && data.returnsThisMonth ? (
+      {data.backlog !== undefined ||
+      data.intakeBreakdown !== undefined ||
+      data.returnsThisMonth !== undefined ? (
         <IntakeSummary
-          backlog={data.backlog}
-          breakdown={data.intakeBreakdown}
-          returnsThisMonth={data.returnsThisMonth}
+          backlog={data.backlog ?? null}
+          breakdown={data.intakeBreakdown ?? null}
+          returnsThisMonth={data.returnsThisMonth ?? null}
         />
-      ) : null}
+      ) : (
+        <p className="mb-4 font-acumin lk-text-3xs text-[#474747]">
+          {INTAKE_NOT_BOOK_SALES_NOTE}
+        </p>
+      )}
       {/* 広い画面ではKPI一覧を4列に広げ、その分だけ右カラム（推移グラフ）を狭める。 */}
       <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,400px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,780px)_minmax(0,1fr)]">
         {/* 左：KPI一覧。カードを選ぶと右側の詳細が切り替わる。 */}

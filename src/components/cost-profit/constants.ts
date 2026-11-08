@@ -483,6 +483,11 @@ export const COST_PROFIT_TABS: Array<{ key: CostProfitTab; label: string }> = [
   { key: "reconciliation", label: "照合" },
 ];
 
+// URL の accountingTab（例: KPI 画面の「照合」への案内）から最初に開くサブタブを決める。知らない値は財務概要。
+export function initialCostProfitTab(value: string | null | undefined): CostProfitTab {
+  return COST_PROFIT_TABS.find((tab) => tab.key === value)?.key ?? "summary";
+}
+
 export const COST_LABELS: Array<{
   key: ProductCostKey;
   label: string;
