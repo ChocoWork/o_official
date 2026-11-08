@@ -99,7 +99,7 @@ S5 は末尾の検査のほかに、移す前の事前の止めでも `ACCOUNTIN
 
 ### 本番の事前確認（読み取りだけ）
 
-1. `select count(*) filter (where deleted_at is null) as live, count(*) filter (where deleted_at is not null) as deleted, count(*) as total, min(expense_date) filter (where deleted_at is null), max(expense_date) filter (where deleted_at is null), max(created_at) from public.admin_finance_expenses;` を控える。生きている行の数の見込みは18（削除済みを含む総数ではない）。最初の日の年が2025以上であること（開業日が未入力の時）、`max(created_at)` が今以前であること。
+1. `select count(*) filter (where deleted_at is null) as live, count(*) filter (where deleted_at is not null) as deleted, count(*) as total, min(expense_date) filter (where deleted_at is null), max(expense_date) filter (where deleted_at is null), max(created_at) from public.admin_finance_expenses;` を控える。2026-11-08 に読んだ値は、生きている行15・削除済み3（総数18。設計と計画の「経費18」は総数）。最初の日の年が2025以上であること（開業日が未入力の時）、`max(created_at)` が今以前であること。
 2. `select count(*) from public.admin_finance_entry_revisions;`（見込み25）と `select count(*), count(*) filter (where evidence_kind <> 'unconfirmed') from public.admin_finance_receipts;`（見込み8件。S1 の後は `unconfirmed` 以外が 0 件）。
 3. `select fiscal_year, business_type, opening_cash, accounts_receivable, fixed_assets, accounts_payable, opening_capital from public.admin_finance_years;` — 法人の年が無く、期首の5列がすべて 0。違えば S5 が止まる（オーナーに尋ねる）。
 4. `select count(*) from public.admin_finance_year_closings;` — 0。
