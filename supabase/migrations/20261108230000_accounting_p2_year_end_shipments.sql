@@ -4,7 +4,9 @@ BEGIN;
 -- shipment_slip_fulfillments, order_fulfillment_events) are only read, and no group G / H / returns / refund object is changed.
 --
 -- Tables (public, owner postgres, RLS on and no policy, PUBLIC / anon / authenticated hold nothing, service_role can only SELECT):
---   accounting_shipment_checks: one check mark per shipment slip (slip_id is the key; RESTRICT on the slip). Append only (UPDATE, DELETE
+--   accounting_shipment_checks: one check mark per slip AND per state of the slip that was checked: the key is (slip_id,
+--     checked_shipment_date, checked_tracking_version), snapshotted from the slip when the mark is put (RESTRICT on the slip), so a slip
+--     whose shipment date or tracking was corrected after the check can be marked again. Append only (UPDATE, DELETE
 --     and TRUNCATE are refused for every role). request_key / request_hash make a retry of the same request return the same mark.
 --   accounting_shipping_options: one row (id = 1), made here with the default (carrier_date_check_enabled false, version 1). The row
 --     cannot be deleted or truncated; it changes only through admin_set_shipping_options. admin_requests keeps the request keys.
@@ -13,16 +15,17 @@ BEGIN;
 --   list_year_end_shipments(_from, _to, _limit 100, _after_date, _after_slip) -> {slips:[{slip_id, number, shipment_date, confirmed_at,
 --     stage, shipping_carrier, tracking_number, checked_at, checked_by}], next_after_date, next_after_slip}: the confirmed and cancelled
 --     slips whose shipment_date is in the range, by shipment_date then slip number; the range is at most 60 days (both ends in) and the
---     limit 1..200. The cursor is the last slip of the page (both halves or none). No customer name, mail address or address is read.
+--     limit 1..200. checked_at / checked_by are of the latest mark of the slip; check_stale is true when that mark was put for another
+--     shipment date or tracking version than the slip has now (false when there is no mark). The cursor is the last slip of the page (both halves or none). No customer name, mail address or address is read.
 --   admin_check_year_end_shipment(_actor_id, _slip_id, _note, _request_key) -> {slip_id, checked_by, checked_at, note, created}: permission
 --     admin.finance.manage (ACCOUNTING_FORBIDDEN / 42501) first. Puts the mark; a slip that is checked already returns the first mark as
---     it is (created false); the same request key with other content is ACCOUNTING_REQUEST_KEY_CONFLICT; a slip that is not confirmed
+--     it is (created false, 'it' = the mark for the present shipment date and tracking version of the slip); the same request key with other content is ACCOUNTING_REQUEST_KEY_CONFLICT; a slip that is not confirmed
 --     or cancelled is ACCOUNTING_NOT_FOUND; the note is at most 200 characters (blank is no note).
 --   get_shipping_options() -> {carrier_date_check_enabled, changed_at, changed_by, version}.
 --   admin_set_shipping_options(_actor_id, _carrier_date_check_enabled, _expected_version, _request_key): permission
 --     admin.accounting.settings.manage; a different version is ACCOUNTING_VERSION_CONFLICT; keeps the time and the person of the change.
 --   list_carrier_date_gaps(_from, _to, _limit 100) -> {enabled, slips:[{slip_id, number, shipment_date, carrier_accepted_date,
---     gap_days}]}: empty and enabled false while the option is off. When on: for each confirmed slip in the range, the day (Japan time) of
+--     gap_days}], has_more}: has_more is true when more slips than _limit are one day or more away; empty and enabled false while the option is off. When on: for each confirmed slip in the range, the day (Japan time) of
 --     the first in_transit tracking event (source tracking, the slip's present tracking version) of the fulfillments of the slip is the
 --     carrier accepted day; the slips that are one day or more away from shipment_date are listed (gap_days = accepted day - shipment
 --     day). A slip with no such event is not listed. ASSUMPTION (unconfirmed item 3): in_transit is read as the carrier receipt; the
@@ -48,13 +51,15 @@ SELECT pg_catalog.jsonb_build_object(
 
 -- 1. The tables.
 CREATE TABLE public.accounting_shipment_checks (
-  slip_id uuid NOT NULL CONSTRAINT accounting_shipment_checks_pkey PRIMARY KEY
-    CONSTRAINT accounting_shipment_checks_slip_id_fkey REFERENCES public.shipment_slips (id) ON DELETE RESTRICT,
+  slip_id uuid NOT NULL CONSTRAINT accounting_shipment_checks_slip_id_fkey REFERENCES public.shipment_slips (id) ON DELETE RESTRICT,
+  checked_shipment_date date NOT NULL,
+  checked_tracking_version integer NOT NULL,
   checked_by uuid NOT NULL,
   checked_at timestamptz NOT NULL DEFAULT now(),
   note text NULL CONSTRAINT accounting_shipment_checks_note_check CHECK (pg_catalog.char_length(note) <= 200),
   request_key uuid NOT NULL CONSTRAINT accounting_shipment_checks_request_key_key UNIQUE,
-  request_hash text NOT NULL
+  request_hash text NOT NULL,
+  CONSTRAINT accounting_shipment_checks_pkey PRIMARY KEY (slip_id, checked_shipment_date, checked_tracking_version)
 );
 CREATE TABLE public.accounting_shipping_options (
   id smallint NOT NULL CONSTRAINT accounting_shipping_options_pkey PRIMARY KEY
@@ -114,9 +119,12 @@ BEGIN
   END IF;
   WITH page AS (
     SELECT s.id, s.number, s.shipment_date, s.confirmed_at, s.stage, s.shipping_carrier, s.tracking_number, c.checked_at, c.checked_by,
+      (c.slip_id IS NOT NULL AND (c.checked_shipment_date <> s.shipment_date OR c.checked_tracking_version <> s.tracking_version)) AS check_stale,
       pg_catalog.row_number() OVER (ORDER BY s.shipment_date, s.number) AS rn
     FROM public.shipment_slips AS s
-    LEFT JOIN public.accounting_shipment_checks AS c ON c.slip_id = s.id
+    LEFT JOIN LATERAL (SELECT k.slip_id, k.checked_shipment_date, k.checked_tracking_version, k.checked_at, k.checked_by
+      FROM public.accounting_shipment_checks AS k WHERE k.slip_id = s.id
+      ORDER BY k.checked_at DESC, k.checked_shipment_date DESC, k.checked_tracking_version DESC LIMIT 1) AS c ON true
     WHERE s.stage IN ('confirmed', 'cancelled') AND s.shipment_date BETWEEN _from AND _to
       AND (_after_slip IS NULL OR (s.shipment_date, s.number) > (_after_date, v_cursor_number))
     ORDER BY s.shipment_date, s.number
@@ -124,7 +132,7 @@ BEGIN
   SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
       'slip_id', p.id, 'number', p.number, 'shipment_date', pg_catalog.to_char(p.shipment_date, 'YYYY-MM-DD'),
       'confirmed_at', p.confirmed_at, 'stage', p.stage, 'shipping_carrier', p.shipping_carrier, 'tracking_number', p.tracking_number,
-      'checked_at', p.checked_at, 'checked_by', p.checked_by) ORDER BY p.rn) FILTER (WHERE p.rn <= _limit), '[]'::jsonb),
+      'checked_at', p.checked_at, 'checked_by', p.checked_by, 'check_stale', p.check_stale) ORDER BY p.rn) FILTER (WHERE p.rn <= _limit), '[]'::jsonb),
     CASE WHEN pg_catalog.max(p.rn) > _limit THEN (pg_catalog.array_agg(p.shipment_date ORDER BY p.rn) FILTER (WHERE p.rn = _limit))[1] END,
     CASE WHEN pg_catalog.max(p.rn) > _limit THEN (pg_catalog.array_agg(p.id ORDER BY p.rn) FILTER (WHERE p.rn = _limit))[1] END
   INTO v_slips, v_next_date, v_next_slip
@@ -134,7 +142,8 @@ BEGIN
 END;
 $$;
 
--- 5. The check mark. The permission comes first; the mark is one per slip (ON CONFLICT DO NOTHING, then the first mark is read back).
+-- 5. The check mark. The permission comes first; the mark is one per slip and state (shipment date, tracking version) of the slip
+--    (ON CONFLICT DO NOTHING, then the first mark is read back).
 CREATE FUNCTION private.admin_check_year_end_shipment(_actor_id uuid, _slip_id uuid, _note text, _request_key uuid) RETURNS jsonb
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
 AS $$
@@ -142,6 +151,9 @@ DECLARE
   v_note text;
   v_hash text;
   v_row public.accounting_shipment_checks%ROWTYPE;
+  v_date date;
+  v_version integer;
+  v_created boolean;
 BEGIN
   IF NOT private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.finance.manage']) THEN
     RAISE EXCEPTION 'ACCOUNTING_FORBIDDEN' USING ERRCODE = '42501';
@@ -157,32 +169,40 @@ BEGIN
     IF v_row.request_hash IS DISTINCT FROM v_hash THEN
       RAISE EXCEPTION 'ACCOUNTING_REQUEST_KEY_CONFLICT' USING ERRCODE = '23505';
     END IF;
-    RETURN pg_catalog.jsonb_build_object('slip_id', v_row.slip_id, 'checked_by', v_row.checked_by, 'checked_at', v_row.checked_at,
-      'note', v_row.note, 'created', false);
-  END IF;
-  SELECT * INTO v_row FROM public.accounting_shipment_checks AS c WHERE c.slip_id = _slip_id;
-  IF FOUND THEN
-    RETURN pg_catalog.jsonb_build_object('slip_id', v_row.slip_id, 'checked_by', v_row.checked_by, 'checked_at', v_row.checked_at,
-      'note', v_row.note, 'created', false);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM public.shipment_slips AS s WHERE s.id = _slip_id AND s.stage IN ('confirmed', 'cancelled')) THEN
-    RAISE EXCEPTION 'ACCOUNTING_NOT_FOUND' USING ERRCODE = 'P0002';
-  END IF;
-  INSERT INTO public.accounting_shipment_checks AS c (slip_id, checked_by, checked_at, note, request_key, request_hash)
-  VALUES (_slip_id, _actor_id, pg_catalog.now(), v_note, _request_key, v_hash)
-  ON CONFLICT DO NOTHING
-  RETURNING c.* INTO v_row;
-  IF FOUND THEN
-    RETURN pg_catalog.jsonb_build_object('slip_id', v_row.slip_id, 'checked_by', v_row.checked_by, 'checked_at', v_row.checked_at,
-      'note', v_row.note, 'created', true);
-  END IF;
-  -- Somebody else marked the same slip a moment ago (or used the same key for another slip).
-  SELECT * INTO v_row FROM public.accounting_shipment_checks AS c WHERE c.slip_id = _slip_id;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'ACCOUNTING_REQUEST_KEY_CONFLICT' USING ERRCODE = '23505';
+    v_created := false;
+  ELSE
+    -- The state of the slip that is checked now (the mark keeps it, so a later correction makes the mark stale).
+    SELECT s.shipment_date, s.tracking_version INTO v_date, v_version
+    FROM public.shipment_slips AS s WHERE s.id = _slip_id AND s.stage IN ('confirmed', 'cancelled');
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'ACCOUNTING_NOT_FOUND' USING ERRCODE = 'P0002';
+    END IF;
+    SELECT * INTO v_row FROM public.accounting_shipment_checks AS c
+    WHERE c.slip_id = _slip_id AND c.checked_shipment_date = v_date AND c.checked_tracking_version = v_version;
+    IF FOUND THEN
+      v_created := false;
+    ELSE
+      INSERT INTO public.accounting_shipment_checks AS c (slip_id, checked_shipment_date, checked_tracking_version, checked_by,
+        checked_at, note, request_key, request_hash)
+      VALUES (_slip_id, v_date, v_version, _actor_id, pg_catalog.clock_timestamp(), v_note, _request_key, v_hash)
+      ON CONFLICT DO NOTHING
+      RETURNING c.* INTO v_row;
+      IF FOUND THEN
+        v_created := true;
+      ELSE
+        -- Somebody else marked the same state of the slip a moment ago (or used the same key for another slip).
+        SELECT * INTO v_row FROM public.accounting_shipment_checks AS c
+        WHERE c.slip_id = _slip_id AND c.checked_shipment_date = v_date AND c.checked_tracking_version = v_version;
+        IF NOT FOUND THEN
+          RAISE EXCEPTION 'ACCOUNTING_REQUEST_KEY_CONFLICT' USING ERRCODE = '23505';
+        END IF;
+        v_created := false;
+      END IF;
+    END IF;
   END IF;
   RETURN pg_catalog.jsonb_build_object('slip_id', v_row.slip_id, 'checked_by', v_row.checked_by, 'checked_at', v_row.checked_at,
-    'note', v_row.note, 'created', false);
+    'note', v_row.note, 'checked_shipment_date', pg_catalog.to_char(v_row.checked_shipment_date, 'YYYY-MM-DD'),
+    'checked_tracking_version', v_row.checked_tracking_version, 'created', v_created);
 END;
 $$;
 
@@ -249,13 +269,14 @@ AS $$
 DECLARE
   v_enabled boolean;
   v_slips jsonb;
+  v_more boolean;
 BEGIN
   IF _from IS NULL OR _to IS NULL OR _to < _from OR (_to - _from) > 59 OR _limit IS NULL OR _limit < 1 OR _limit > 200 THEN
     RAISE EXCEPTION 'ACCOUNTING_ARGUMENT_INVALID' USING ERRCODE = '22023';
   END IF;
   SELECT o.carrier_date_check_enabled INTO v_enabled FROM public.accounting_shipping_options AS o WHERE o.id = 1;
   IF v_enabled IS DISTINCT FROM true THEN
-    RETURN pg_catalog.jsonb_build_object('enabled', false, 'slips', '[]'::jsonb);
+    RETURN pg_catalog.jsonb_build_object('enabled', false, 'slips', '[]'::jsonb, 'has_more', false);
   END IF;
   WITH accepted AS (
     SELECT s.id, s.number, s.shipment_date,
@@ -266,18 +287,20 @@ BEGIN
     FROM public.shipment_slips AS s
     WHERE s.stage = 'confirmed' AND s.shipment_date BETWEEN _from AND _to),
   gaps AS (
-    SELECT a.id, a.number, a.shipment_date, a.accepted_date, (a.accepted_date - a.shipment_date) AS gap_days
+    SELECT a.id, a.number, a.shipment_date, a.accepted_date, (a.accepted_date - a.shipment_date) AS gap_days,
+      pg_catalog.row_number() OVER (ORDER BY a.shipment_date, a.number) AS rn
     FROM accepted AS a
     WHERE a.accepted_date IS NOT NULL AND pg_catalog.abs(a.accepted_date - a.shipment_date) >= 1
     ORDER BY a.shipment_date, a.number
-    LIMIT _limit)
+    LIMIT _limit + 1)
   SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
     'slip_id', g.id, 'number', g.number, 'shipment_date', pg_catalog.to_char(g.shipment_date, 'YYYY-MM-DD'),
     'carrier_accepted_date', pg_catalog.to_char(g.accepted_date, 'YYYY-MM-DD'), 'gap_days', g.gap_days)
-    ORDER BY g.shipment_date, g.number), '[]'::jsonb)
-  INTO v_slips
+    ORDER BY g.rn) FILTER (WHERE g.rn <= _limit), '[]'::jsonb),
+    COALESCE(pg_catalog.max(g.rn) > _limit, false)
+  INTO v_slips, v_more
   FROM gaps AS g;
-  RETURN pg_catalog.jsonb_build_object('enabled', true, 'slips', v_slips);
+  RETURN pg_catalog.jsonb_build_object('enabled', true, 'slips', v_slips, 'has_more', v_more);
 END;
 $$;
 
@@ -385,7 +408,7 @@ BEGIN
         FROM pg_catalog.pg_attribute AS a
         LEFT JOIN pg_catalog.pg_attrdef AS d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
         WHERE a.attrelid = v_checks AND a.attnum > 0 AND NOT a.attisdropped)
-      IS DISTINCT FROM 'slip_id uuid not null, checked_by uuid not null, checked_at timestamp with time zone not null default now(), note text, request_key uuid not null, request_hash text not null'
+      IS DISTINCT FROM 'slip_id uuid not null, checked_shipment_date date not null, checked_tracking_version integer not null, checked_by uuid not null, checked_at timestamp with time zone not null default now(), note text, request_key uuid not null, request_hash text not null'
     OR (SELECT pg_catalog.string_agg(a.attname::text || ' ' || pg_catalog.format_type(a.atttypid, a.atttypmod)
           || CASE WHEN a.attnotnull THEN ' not null' ELSE '' END
           || CASE WHEN a.attidentity <> '' THEN ' identity ' || a.attidentity::text ELSE '' END
@@ -400,7 +423,7 @@ BEGIN
   v_stage := 'acc_s14_constraints';
   IF v_failed IS NULL AND (
     EXISTS (SELECT 1 FROM (VALUES
-      ('accounting_shipment_checks', 'accounting_shipment_checks_pkey', 'p', 'slip_id'),
+      ('accounting_shipment_checks', 'accounting_shipment_checks_pkey', 'p', 'slip_id,checked_shipment_date,checked_tracking_version'),
       ('accounting_shipment_checks', 'accounting_shipment_checks_request_key_key', 'u', 'request_key'),
       ('accounting_shipment_checks', 'accounting_shipment_checks_note_check', 'c', 'CHECK ((char_length(note) <= 200))'),
       ('accounting_shipping_options', 'accounting_shipping_options_pkey', 'p', 'id'),
@@ -529,7 +552,8 @@ BEGIN
       ('private.list_year_end_shipments(date,date,integer,date,uuid)', ARRAY[
         '(_to - _from) > 59', '_limit > 200', '(_after_date IS NULL) <> (_after_slip IS NULL)', '''22023''',
         'AND s.stage IN (''confirmed'', ''cancelled'')', 'ORDER BY s.shipment_date, s.number',
-        '(s.shipment_date, s.number) > (_after_date, v_cursor_number)', 'LEFT JOIN public.accounting_shipment_checks AS c ON c.slip_id = s.id']),
+        '(s.shipment_date, s.number) > (_after_date, v_cursor_number)', 'FROM public.accounting_shipment_checks AS k WHERE k.slip_id = s.id', 'ORDER BY k.checked_at DESC', '''check_stale'', p.check_stale',
+        'c.checked_shipment_date <> s.shipment_date OR c.checked_tracking_version <> s.tracking_version']),
       ('private.admin_check_year_end_shipment(uuid,uuid,text,uuid)', ARRAY[
         'private.group_g_actor_has_permissions(_actor_id, ARRAY[''admin.finance.manage''])', '''ACCOUNTING_FORBIDDEN''', '''42501''',
         'pg_catalog.char_length(v_note) > 200', 'private.accounting_request_hash(', '''ACCOUNTING_REQUEST_KEY_CONFLICT''', '''23505''',
@@ -543,7 +567,8 @@ BEGIN
       ('private.list_carrier_date_gaps(date,date,integer)', ARRAY[
         '(_to - _from) > 59', '_limit > 200', '''22023''', 'o.carrier_date_check_enabled', 'IF v_enabled IS DISTINCT FROM true THEN',
         'e.status = ''in_transit''', 'e.source = ''tracking''', 'e.tracking_version = s.tracking_version', 'pg_catalog.min(e.happened_at)',
-        'AT TIME ZONE ''Asia/Tokyo''', 's.stage = ''confirmed''', 'pg_catalog.abs(a.accepted_date - a.shipment_date) >= 1'])
+        'AT TIME ZONE ''Asia/Tokyo''', 's.stage = ''confirmed''', 'pg_catalog.abs(a.accepted_date - a.shipment_date) >= 1',
+        'LIMIT _limit + 1', '''has_more'', v_more', 'g.rn <= _limit'])
     ) AS x(signature, needles)
     LOOP
       v_src := (SELECT f.prosrc FROM pg_catalog.pg_proc AS f WHERE f.oid = pg_catalog.to_regprocedure(e.signature));

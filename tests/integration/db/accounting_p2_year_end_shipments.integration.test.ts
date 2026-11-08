@@ -11,9 +11,9 @@ import { seedUnitOrder } from './helpers/accounting-orders-fixtures';
 // the cutover day and the G functions refuse such dates).
 type Failure = { code?: string; message: string };
 type Slip = { slip_id: string; number: string; shipment_date: string; confirmed_at: string | null; stage: string; shipping_carrier: string | null;
-  tracking_number: string | null; checked_at: string | null; checked_by: string | null };
+  tracking_number: string | null; checked_at: string | null; checked_by: string | null; check_stale: boolean };
 type Page = { slips: Slip[]; next_after_date: string | null; next_after_slip: string | null };
-type Mark = { slip_id: string; checked_by: string; checked_at: string; note: string | null; created: boolean };
+type Mark = { slip_id: string; checked_by: string; checked_at: string; note: string | null; checked_shipment_date: string; checked_tracking_version: number; created: boolean };
 type Options = { carrier_date_check_enabled: boolean; changed_at: string | null; changed_by: string | null; version: string };
 const CHECKS = 'public.accounting_shipment_checks';
 const OPTIONS = 'public.accounting_shipping_options';
@@ -62,7 +62,7 @@ describeLocalDb('S14 year-end shipments and the carrier receipt-date check (roll
   const setOptions = async (actor: string, enabled: boolean, expected: number, key = randomUUID()) =>
     (await asService<{ r: Options }>(db(), 'select public.admin_set_shipping_options($1::uuid, $2::boolean, $3::bigint, $4::uuid) as r', [actor, enabled, expected, key]))[0].r;
   const gaps = async (from: string, to: string, limit = 100) =>
-    (await asService<{ r: { enabled: boolean; slips: Array<Record<string, unknown>> } }>(db(),
+    (await asService<{ r: { enabled: boolean; slips: Array<Record<string, unknown>>; has_more: boolean } }>(db(),
       'select public.list_carrier_date_gaps($1::date, $2::date, $3::integer) as r', [from, to, limit]))[0].r;
 
   const slip = (date: string, input: { stage?: 'confirmed' | 'cancelled' | 'draft'; carrier?: 'yamato' | 'sagawa' | 'japanpost'; tracking?: string } = {}) =>
@@ -78,6 +78,13 @@ describeLocalDb('S14 year-end shipments and the carrier receipt-date check (roll
       await db().query(`insert into public.order_fulfillment_events(fulfillment_id, tracking_version, status, happened_at, source)
         values($1, $2, $3, $4::timestamptz, $5)`, [fulfillmentId, version ?? 1, status, at, source]);
     }
+  }
+  /** What the G functions do to a confirmed slip: a date correction ('date') or a tracking change ('tracking'), under their mark. */
+  async function changeSlip(slipId: string, mark: 'date' | 'tracking'): Promise<void> {
+    const changes = mark === 'date' ? 'shipment_date = shipment_date + 1'
+      : "shipping_carrier = 'yamato', tracking_number = 'CHANGED-1', tracking_version = tracking_version + 1";
+    await db().query("select set_config('app.group_g_slip_change', $1, true)", [mark]);
+    await db().query(`update public.shipment_slips set version = version + 1, ${changes} where id = $1`, [slipId]);
   }
   const numbersOf = async (page: Page) => page.slips.map((s) => s.number);
   const numberOf = async (slipId: string) => (await db().query('select number from public.shipment_slips where id = $1', [slipId])).rows[0].number as string;
@@ -102,9 +109,9 @@ describeLocalDb('S14 year-end shipments and the carrier receipt-date check (roll
     const numbers = await numbersOf(page);
     expect(numbers[1] < numbers[2]).toBe(true);
     for (const row of page.slips) {
-      expect(Object.keys(row).sort()).toEqual(['checked_at', 'checked_by', 'confirmed_at', 'number', 'shipment_date', 'shipping_carrier', 'slip_id', 'stage', 'tracking_number']);
+      expect(Object.keys(row).sort()).toEqual(['check_stale', 'checked_at', 'checked_by', 'confirmed_at', 'number', 'shipment_date', 'shipping_carrier', 'slip_id', 'stage', 'tracking_number']);
       expect(row.confirmed_at).toEqual(expect.any(String));
-      expect([row.checked_at, row.checked_by]).toEqual([null, null]);
+      expect([row.checked_at, row.checked_by, row.check_stale]).toEqual([null, null, false]);
     }
     // No customer data: not the name, the mail address or the address.
     expect(JSON.stringify(page)).not.toMatch(/Fixture|example\.invalid|0000000/);
@@ -171,7 +178,7 @@ describeLocalDb('S14 year-end shipments and the carrier receipt-date check (roll
     const cancelled = await slip('2097-12-27', { stage: 'cancelled', carrier: 'sagawa', tracking: 'SG-1' });
     const key = randomUUID();
     const first = await check(admin, target, 'seen in the year-end check', key);
-    expect(first).toMatchObject({ slip_id: target, checked_by: admin, note: 'seen in the year-end check', created: true });
+    expect(first).toMatchObject({ slip_id: target, checked_by: admin, note: 'seen in the year-end check', checked_shipment_date: '2097-12-26', checked_tracking_version: 1, created: true });
     expect(Date.parse(first.checked_at)).not.toBeNaN();
     // The list shows the mark (who and when) and nothing else changes.
     const marked = (await list('2097-12-25', '2097-12-28')).slips.find((s) => s.slip_id === target) as Slip;
@@ -193,6 +200,30 @@ describeLocalDb('S14 year-end shipments and the carrier receipt-date check (roll
     expect(await again(admin, cancelled, 'seen in the year-end check')).toEqual(conflict);
     expect(await again(admin, target, 'another note')).toEqual(conflict);
     expect(await again(other, target, 'seen in the year-end check')).toEqual(conflict);
+  });
+
+  test.each(['date', 'tracking'] as const)('FREQ-574-AC-02: 確かめた後に票の%sを直すと印は古い扱いになり、もう一度確かめると新しい印が付く', async (mark) => {
+    const admin = await insertAccountingAdmin(db());
+    const target = await slip('2097-12-26', { carrier: 'yamato', tracking: 'YM-1' });
+    const staleOf = async () => {
+      const row = (await list('2097-12-25', '2097-12-29')).slips.find((s) => s.slip_id === target) as Slip;
+      return { stale: row.check_stale, checkedAt: row.checked_at };
+    };
+    expect(await staleOf()).toEqual({ stale: false, checkedAt: null });
+    const first = await check(admin, target, 'before the correction');
+    expect(await staleOf()).toEqual({ stale: false, checkedAt: first.checked_at });
+    // The correction: the mark stays in the table but is no longer a mark of the slip as it is now.
+    await changeSlip(target, mark);
+    expect(await staleOf()).toEqual({ stale: true, checkedAt: first.checked_at });
+    // Marking again puts a new mark for the new state (created true), not the first mark back.
+    const again = await check(admin, target, 'after the correction');
+    expect(again).toMatchObject({ slip_id: target, created: true, note: 'after the correction' });
+    expect(mark === 'date' ? again.checked_shipment_date : again.checked_tracking_version).toBe(mark === 'date' ? '2097-12-27' : 2);
+    expect(again.checked_at).not.toBe(first.checked_at);
+    expect(await staleOf()).toEqual({ stale: false, checkedAt: again.checked_at });
+    // A third call for the same state returns the second mark; the first mark is still there (append only).
+    expect(await check(admin, target, 'third')).toEqual({ ...again, created: false });
+    expect(Number((await db().query(`select count(*) as n from ${CHECKS} where slip_id = $1`, [target])).rows[0].n)).toBe(2);
   });
 
   test('FREQ-574-AC-02: 確かめる対象は確定または取り消し済みの票だけで、メモは200字まで', async () => {
@@ -226,9 +257,10 @@ describeLocalDb('S14 year-end shipments and the carrier receipt-date check (roll
     expect(await attempt(`update ${CHECKS} set checked_by = $1`, [nobody])).toEqual(immutable);
     expect(await attempt(`delete from ${CHECKS}`)).toEqual(immutable);
     expect(await attempt(`truncate ${CHECKS}`)).toEqual(immutable);
-    // The slip that carries a mark cannot be deleted (RESTRICT), and a direct insert as service_role is refused.
-    expect(await attempt('delete from public.shipment_slips where id = $1', [target])).not.toBeNull();
-    expect((await attempt(`insert into ${CHECKS}(slip_id, checked_by, request_key, request_hash) values($1, $2, gen_random_uuid(), 'h')`, [target, admin], 'service_role'))?.code).toBe('42501');
+    // A slip cannot be deleted: group G's own guard answers first (the FK RESTRICT to the slip is pinned by the S14 assert, not here).
+    expect(await attempt('delete from public.shipment_slips where id = $1', [target])).toEqual({ code: '55000', message: 'GROUP_G_HISTORY_IMMUTABLE' });
+    // A direct insert as service_role is refused.
+    expect((await attempt(`insert into ${CHECKS}(slip_id, checked_shipment_date, checked_tracking_version, checked_by, request_key, request_hash) values($1, '2097-12-26', 1, $2, gen_random_uuid(), 'h')`, [target, admin], 'service_role'))?.code).toBe('42501');
     expect((await attempt(`select 1 from ${CHECKS}`, [], 'authenticated'))?.code).toBe('42501');
   });
 
@@ -236,12 +268,16 @@ describeLocalDb('S14 year-end shipments and the carrier receipt-date check (roll
     const admin = await insertAccountingAdmin(db());
     const a = await slip('2097-12-26');
     const b = await slip('2097-12-26');
-    const insert = (slipId: string, note: string | null, key: string) =>
-      attempt(`insert into ${CHECKS}(slip_id, checked_by, note, request_key, request_hash) values($1, $2, $3, $4, 'h')`, [slipId, admin, note, key]);
+    const insert = (slipId: string, note: string | null, key: string, date = '2097-12-26', version = 1) =>
+      attempt(`insert into ${CHECKS}(slip_id, checked_shipment_date, checked_tracking_version, checked_by, note, request_key, request_hash)
+        values($1, $5::date, $6::integer, $2, $3, $4, 'h')`, [slipId, admin, note, key, date, version]);
     const key = randomUUID();
     // An attempt is rolled back, so the first mark is put in for real.
-    await db().query(`insert into ${CHECKS}(slip_id, checked_by, note, request_key, request_hash) values($1, $2, 'ok', $3, 'h')`, [a, admin, key]);
+    await db().query(`insert into ${CHECKS}(slip_id, checked_shipment_date, checked_tracking_version, checked_by, note, request_key, request_hash) values($1, '2097-12-26', 1, $2, 'ok', $3, 'h')`, [a, admin, key]);
     expect((await insert(a, 'ok', randomUUID()))?.code).toBe('23505');
+    // Another state of the same slip (a corrected date, another tracking version) is another mark.
+    expect(await insert(a, 'ok', randomUUID(), '2097-12-27')).toBeNull();
+    expect(await insert(a, 'ok', randomUUID(), '2097-12-26', 2)).toBeNull();
     expect((await insert(b, 'x'.repeat(201), randomUUID()))?.code).toBe('23514');
     expect(await insert(b, 'x'.repeat(200), randomUUID())).toBeNull();
     expect(await insert(b, null, randomUUID())).toBeNull();
@@ -326,19 +362,20 @@ describeLocalDb('S14 year-end shipments and the carrier receipt-date check (roll
     const earlier = await slip('2097-12-30', { carrier: 'sagawa', tracking: 'E1' });
     await track(earlier, [['in_transit', 'tracking', '2097-12-28T03:00:00Z']]);
     // Off (the default): nothing, however big the gaps are.
-    expect(await gaps('2097-12-25', '2098-01-10')).toEqual({ enabled: false, slips: [] });
+    expect(await gaps('2097-12-25', '2098-01-10')).toEqual({ enabled: false, slips: [], has_more: false });
     await setOptions(admin, true, 1);
     const on = await gaps('2097-12-25', '2098-01-10');
     expect(on.enabled).toBe(true);
     const numberLater = await numberOf(later);
     const numberEarlier = await numberOf(earlier);
+    expect(on.has_more).toBe(false);
     expect(on.slips).toEqual([
       { slip_id: later, number: numberLater, shipment_date: '2097-12-26', carrier_accepted_date: '2097-12-27', gap_days: 1 },
       { slip_id: earlier, number: numberEarlier, shipment_date: '2097-12-30', carrier_accepted_date: '2097-12-28', gap_days: -2 },
     ]);
     // Off again: empty again.
     await setOptions(admin, false, 2);
-    expect(await gaps('2097-12-25', '2098-01-10')).toEqual({ enabled: false, slips: [] });
+    expect(await gaps('2097-12-25', '2098-01-10')).toEqual({ enabled: false, slips: [], has_more: false });
   });
 
   test('FREQ-574-AC-04: 受付の日は日本時間の日で、最初の在途だけを数え、追跡以外・別の版・別の状態の出来事は数えない', async () => {
@@ -373,7 +410,7 @@ describeLocalDb('S14 year-end shipments and the carrier receipt-date check (roll
     await track(cancelled, [['in_transit', 'tracking', '2097-12-29T03:00:00Z']]);
     const outside = await slip('2098-01-20', { carrier: 'yamato', tracking: 'OUT' });
     await track(outside, [['in_transit', 'tracking', '2098-01-25T03:00:00Z']]);
-    expect(await gaps('2097-12-25', '2098-01-10')).toEqual({ enabled: true, slips: [] });
+    expect(await gaps('2097-12-25', '2098-01-10')).toEqual({ enabled: true, slips: [], has_more: false });
     // The range and the limit are checked like the year-end list; the limit cuts the answer.
     const invalid = { code: '22023', message: 'ACCOUNTING_ARGUMENT_INVALID' };
     const call = (from: string, to: string, limit: number, role = 'service_role') =>
@@ -387,8 +424,14 @@ describeLocalDb('S14 year-end shipments and the carrier receipt-date check (roll
       const target = await slip(day, { carrier: 'yamato', tracking: 'G' + day });
       await track(target, [['in_transit', 'tracking', '2098-01-02T03:00:00Z']]);
     }
-    expect((await gaps('2097-12-25', '2098-01-10', 2)).slips).toHaveLength(2);
-    expect((await gaps('2097-12-25', '2098-01-10', 200)).slips).toHaveLength(3);
+    // The limit cuts the answer and says so (has_more); an exact fit does not.
+    const cut = await gaps('2097-12-25', '2098-01-10', 2);
+    expect([cut.slips.length, cut.has_more]).toEqual([2, true]);
+    expect(cut.slips.map((s) => s.shipment_date)).toEqual(['2097-12-26', '2097-12-27']);
+    const exact = await gaps('2097-12-25', '2098-01-10', 3);
+    expect([exact.slips.length, exact.has_more]).toEqual([3, false]);
+    const all = await gaps('2097-12-25', '2098-01-10', 200);
+    expect([all.slips.length, all.has_more]).toEqual([3, false]);
   });
 
   test('FREQ-574-AC-04: 新しい関数は service_role だけが呼べる（private と public の両方）', async () => {

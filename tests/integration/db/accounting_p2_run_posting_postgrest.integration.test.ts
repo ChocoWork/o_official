@@ -144,7 +144,7 @@ describeLocalDb('S11 posting entry point over PostgREST: controller only, commit
     expect(Object.keys(options.data as Record<string, unknown>).sort()).toEqual(['carrier_date_check_enabled', 'changed_at', 'changed_by', 'version']);
     const gaps = await service.rpc('list_carrier_date_gaps', args('list_carrier_date_gaps'));
     expect(gaps.error).toBeNull();
-    expect(Object.keys(gaps.data as Record<string, unknown>).sort()).toEqual(['enabled', 'slips']);
+    expect(Object.keys(gaps.data as Record<string, unknown>).sort()).toEqual(['enabled', 'has_more', 'slips']);
     const tooLong = await service.rpc('list_year_end_shipments', { ...args('list_year_end_shipments'), _to: '2027-03-10' });
     expect(tooLong.error).toMatchObject({ code: '22023', message: 'ACCOUNTING_ARGUMENT_INVALID' });
     // The writers answer a person with no permission (a random id) with 42501; nothing is written.

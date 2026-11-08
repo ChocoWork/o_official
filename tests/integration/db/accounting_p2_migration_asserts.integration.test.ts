@@ -1848,6 +1848,9 @@ describe('S14 source contract (no DB)', () => {
     expect(fn).toContain('_limit > 200');
     expect(fn).toContain("s.stage IN ('confirmed', 'cancelled')");
     expect(fn).toContain('ORDER BY s.shipment_date, s.number');
+    // The latest mark of the slip, and stale when its date or tracking version is not the slip's now.
+    expect(fn).toContain('ORDER BY k.checked_at DESC');
+    expect(fn).toContain('c.checked_shipment_date <> s.shipment_date OR c.checked_tracking_version <> s.tracking_version');
     expect(fn).not.toMatch(/customer_|ship_to_|draft_lines/);
     expect(bodyS14.replace(/--[^\n]*/g, '')).not.toMatch(/customer_email|ship_to_full_name|ship_to_address|ship_to_phone/);
   });
@@ -1859,6 +1862,8 @@ describe('S14 source contract (no DB)', () => {
     expect(fn).toContain('e.tracking_version = s.tracking_version');
     expect(fn).toContain("AT TIME ZONE 'Asia/Tokyo'");
     expect(fn).toContain('pg_catalog.min(e.happened_at)');
+    expect(fn).toContain('LIMIT _limit + 1');
+    expect(fn).toContain("'has_more'");
     expect(fn).toContain("s.stage = 'confirmed'");
     expect(fn.indexOf('carrier_date_check_enabled')).toBeLessThan(fn.indexOf('shipment_slip_fulfillments'));
   });
@@ -1911,7 +1916,7 @@ describeLocalDb('S14 final assert: controller only', (db) => {
   test('FREQ-574-AC-02: 確かめた印の行が1つでも入っていれば S14 末尾assertは断る', async () => {
     await db().query('select pg_catalog.pg_advisory_xact_lock(190521, 1)');
     const slipId = await seedGroupG3Slip(db(), { stage: 'confirmed', shipmentDate: '2097-12-26' });
-    expect(await attempt(`insert into ${checksTable}(slip_id, checked_by, request_key, request_hash) values ('${slipId}', gen_random_uuid(), gen_random_uuid(), 'h')`))
+    expect(await attempt(`insert into ${checksTable}(slip_id, checked_shipment_date, checked_tracking_version, checked_by, request_key, request_hash) values ('${slipId}', '2097-12-26', 1, gen_random_uuid(), gen_random_uuid(), 'h')`))
       .toEqual(failed('acc_s14_existing_dml_allowlist'));
   });
 
@@ -1925,6 +1930,8 @@ describeLocalDb('S14 final assert: controller only', (db) => {
     [`alter table ${checksTable} alter column checked_at drop default`, 'acc_s14_tables'],
     [`alter table ${checksTable} alter column checked_by drop not null`, 'acc_s14_tables'],
     [`alter table ${checksTable} rename column note to memo`, 'acc_s14_tables'],
+    [`alter table ${checksTable} alter column checked_tracking_version set default 1`, 'acc_s14_tables'],
+    [`alter table ${checksTable} alter column checked_tracking_version type bigint`, 'acc_s14_tables'],
     [`alter table ${optionsTable} add column acc_probe text`, 'acc_s14_tables'],
     [`alter table ${optionsTable} alter column carrier_date_check_enabled set default true`, 'acc_s14_tables'],
     [`alter table ${optionsTable} alter column version type integer`, 'acc_s14_tables'],
@@ -1932,6 +1939,8 @@ describeLocalDb('S14 final assert: controller only', (db) => {
     [`drop table ${optionsTable}`, 'acc_s14_tables'],
     // constraints
     [`alter table ${checksTable} drop constraint accounting_shipment_checks_pkey`, 'acc_s14_constraints'],
+    [`alter table ${checksTable} drop constraint accounting_shipment_checks_pkey, add constraint accounting_shipment_checks_pkey primary key (slip_id)`, 'acc_s14_constraints'],
+    [`alter table ${checksTable} drop constraint accounting_shipment_checks_pkey, add constraint accounting_shipment_checks_pkey primary key (slip_id, checked_shipment_date)`, 'acc_s14_constraints'],
     [`alter table ${checksTable} drop constraint accounting_shipment_checks_slip_id_fkey`, 'acc_s14_constraints'],
     [`alter table ${checksTable} drop constraint accounting_shipment_checks_request_key_key`, 'acc_s14_constraints'],
     [`alter table ${checksTable} drop constraint accounting_shipment_checks_note_check`, 'acc_s14_constraints'],
@@ -1980,6 +1989,8 @@ describeLocalDb('S14 final assert: controller only', (db) => {
     [edit('> 59', '> 99', listYePrivate), 'acc_s14_function_attrs'],
     [edit('> 200', '> 400', listYePrivate), 'acc_s14_function_attrs'],
     [edit("e.source = 'tracking'", "e.source <> 'manual'", gapsPrivate), 'acc_s14_function_attrs'],
+    [edit('c.checked_tracking_version <> s.tracking_version', 'false', listYePrivate), 'acc_s14_function_attrs'],
+    [edit('LIMIT _limit + 1', 'LIMIT _limit', gapsPrivate), 'acc_s14_function_attrs'],
     [edit("e.status = 'in_transit'", "e.status = 'delivered'", gapsPrivate), 'acc_s14_function_attrs'],
     [edit("USING ERRCODE = '42501'", "USING ERRCODE = '22023'", checkPrivate), 'acc_s14_function_attrs'],
     [edit('ON CONFLICT DO NOTHING', 'ON CONFLICT (slip_id) DO UPDATE SET note = EXCLUDED.note', checkPrivate), 'acc_s14_function_attrs'],
