@@ -2,6 +2,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { CHECKOUT_VIEWPORTS, expectNoHorizontalOverflow } from './checkout-flow-helpers';
 import {
+  addDaysIso,
   ledgerRowCells,
   selectAccountingPeriod,
   selectLedgerAccount,
@@ -9,6 +10,7 @@ import {
   type AccountingScenario,
   type PoolPeriod,
 } from './accounting-test-utils';
+import { createDraftInDb, createShippingMaterial, withShippingScenario } from './shipping-test-utils';
 
 // FREQ-562 / FREQ-563 / FREQ-564 / FREQ-569 / FREQ-570（計画2）: 支払いの前受金・出荷した日の売上・出荷日の直し・計上待ち・取引管理の注文の収入を、
 // 本物の route・本物の画面・手元の Supabase で確かめる。
@@ -154,35 +156,45 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
       test.setTimeout(300_000);
       await withAccountingScenario('shipment-journal', async (s) => {
         const period = await s.todayPeriod();
-        // シャツ18,750円・パンツ11,250円。シャツだけ送る
-        const order = await paidOrderWithCharge(s, [{ price: 18_750, quantity: 1 }, { price: 11_250, quantity: 1 }]);
-        await s.runPosting();
-        expect(await s.deferredBalance(order.orderId)).toBe(30_000);
+        // 2着10,000円（1着め6,000円・2着め4,000円）の注文を払い、1着だけ本物の確定の route で送る（G の確定から計上までを通す）
+        await withShippingScenario(async (ctx) => {
+          const paymentIntentId = `pi_${randomUUID().replaceAll('-', '')}`;
+          const material = await createShippingMaterial(ctx.client, { quantity: 2, paymentIntentId });
+          await s.seedUnitAmounts(material.orderId, material.orderItemId, [6_000, 4_000]);
+          await s.seedStripeCharge({ paymentIntentId, amount: 10_000, orderId: material.orderId });
+          await s.runPosting();
+          expect(await s.deferredBalance(material.orderId)).toBe(10_000);
 
-        const slip = await s.seedConfirmedSlip({ orders: [{ orderId: order.orderId, lines: [{ orderItemId: order.orderItemIds[0], quantity: 1 }] }] });
-        await s.openAccounting(page, '計上待ち');
-        await page.getByRole('button', { name: 'もう一度計上する', exact: true }).click();
-        await expect(page.getByText(/件を計上しました/)).toBeVisible({ timeout: 90_000 });
+          const draft = await createDraftInDb(ctx, [material], [1]);
+          const confirmed = await s.api(s.admin, `/api/admin/shipment-slips/${draft.id}/confirm`, 'POST', {
+            expectedVersion: draft.version, carrier: null, trackingNumber: null, shipmentDate: s.today, notifyCustomer: false, requestKey: randomUUID(),
+          });
+          expect(confirmed.status, confirmed.text.slice(0, 300)).toBe(200);
 
-        // 送った着の額だけの売上（前受金／売上高）が出荷の日に立ち、前受金は送っていない分だけ残る
-        const entry = await s.entryByKey(`shipment_confirmed:${slip.number}`);
-        expect(entry).toMatchObject({ eventKind: 'shipment_confirmed', entryDate: s.today, periodId: period.id });
-        expect(await s.linesOf(entry!.id)).toEqual([
-          { account: '2150', debit: 18_750, credit: 0, orderId: order.orderId, subAccount: null },
-          { account: '4010', debit: 0, credit: 18_750, orderId: order.orderId, subAccount: null },
-        ]);
-        expect(await s.deferredBalance(order.orderId)).toBe(11_250);
+          await s.openAccounting(page, '計上待ち');
+          await page.getByRole('button', { name: 'もう一度計上する', exact: true }).click();
+          await expect(page.getByText(/件を計上しました/)).toBeVisible({ timeout: 90_000 });
 
-        // 画面: 売上高の元帳（貸方 18,750）と、前受金の確認（残り 11,250）
-        await page.getByRole('tab', { name: '帳簿', exact: true }).click();
-        const cells = await ledgerCells(page, period, SALES, entry!.entryNo);
-        expect(cells[6]).toBe(yen(18_750));
-        expect(cells[9]).toBe(slash(s.today));
-        await page.getByRole('tab', { name: '計上待ち', exact: true }).click();
-        const deferred = page.getByRole('table', { name: '繰り越した前受金の一覧' }).getByRole('row').filter({ hasText: order.orderNumber });
-        await expect(deferred).toHaveCount(1, { timeout: 30_000 });
-        await expect(deferred).toContainText(yen(11_250));
-        await expectNoHorizontalOverflow(page);
+          // 送った着（番号の若い1着め）の額だけの売上（前受金／売上高）が出荷の日に立ち、前受金は送っていない分だけ残る
+          const entry = await s.entryByKey(`shipment_confirmed:${draft.number}`);
+          expect(entry).toMatchObject({ eventKind: 'shipment_confirmed', entryDate: s.today, periodId: period.id });
+          expect(await s.linesOf(entry!.id)).toEqual([
+            { account: '2150', debit: 6_000, credit: 0, orderId: material.orderId, subAccount: null },
+            { account: '4010', debit: 0, credit: 6_000, orderId: material.orderId, subAccount: null },
+          ]);
+          expect(await s.deferredBalance(material.orderId)).toBe(4_000);
+
+          // 画面: 売上高の元帳（貸方 6,000）と、前受金の確認（残り 4,000）
+          await page.getByRole('tab', { name: '帳簿', exact: true }).click();
+          const cells = await ledgerCells(page, period, SALES, entry!.entryNo);
+          expect(cells[6]).toBe(yen(6_000));
+          expect(cells[9]).toBe(slash(s.today));
+          await page.getByRole('tab', { name: '計上待ち', exact: true }).click();
+          const deferred = page.getByRole('table', { name: '繰り越した前受金の一覧' }).getByRole('row').filter({ hasText: material.orderNumber });
+          await expect(deferred).toHaveCount(1, { timeout: 30_000 });
+          await expect(deferred).toContainText(yen(4_000));
+          await expectNoHorizontalOverflow(page);
+        });
       }, { period: 'none' });
     });
 
@@ -196,9 +208,12 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         await s.runPosting();
 
         // 元の発送票は出荷日が明日（直に入れる）。計上すると明日の日付で売上が立つ
+        // 発送票を確定した日（登録した日）は昨日にして、出荷した日（今日に直す）と別の日にする
+        const yesterday = addDaysIso(s.today, -1);
         const slip = await s.seedConfirmedSlip({
           orders: [{ orderId: order.orderId, lines: [{ orderItemId: order.orderItemIds[0], quantity: 1 }] }],
           shipmentDate: s.tomorrow,
+          confirmedAt: new Date(Date.now() - 86_400_000).toISOString(),
         });
         await s.runPosting();
         const original = await s.entryByKey(`shipment_confirmed:${slip.number}`);
@@ -219,14 +234,15 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         expect(journal.entries.find((entry) => entry.id === redated!.id)).toMatchObject({ eventKind: 'shipment_redated', dedupeKey: `shipment_redated:${historyId}` });
         const meta = journal.shipmentMeta.find((row) => row.entryId === redated!.id);
         expect(meta).toMatchObject({ slipNumber: slip.number, shipmentDate: s.today });
-        expect(jstDateOf(meta!.confirmedAt)).toBe(s.today);
+        expect(jstDateOf(meta!.confirmedAt)).toBe(yesterday);
 
         // 画面: 売上高の元帳に、取り消しと正しい仕訳が並び、列に出荷した日と登録した日が出る
         await s.openAccounting(page, '帳簿');
         const redatedCells = await ledgerCells(page, period, SALES, redated!.entryNo);
         expect(redatedCells[6]).toBe(yen(unit));
+        // 出荷した日（直した日）と登録した日（確定した日）は別の列で、別の日が出る
         expect(redatedCells[9]).toBe(slash(s.today));
-        expect(redatedCells[10]).toBe(slash(s.today));
+        expect(redatedCells[10]).toBe(slash(yesterday));
         const traceButton = page.getByRole('button', { name: `JE-${String(redated!.entryNo).padStart(6, '0')}の出荷の跡を開く` });
         await traceButton.click();
         const trace = page.getByRole('region', { name: '出荷の跡' });
@@ -252,24 +268,41 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
       test.setTimeout(300_000);
       await withAccountingScenario('shipment-before-payment', async (s) => {
         await s.todayPeriod();
+        // この理由の行は、名前も番号も出さない固定の文なので、画面では「出荷」の行のうち理由の文を持つ行の数で、この試験の1行を数える。
+        // 行そのものは計上待ちの route（画面と同じ読み口）で、注文と発送票の番号で名指しする。
+        const rows = () => page.getByRole('list', { name: '計上待ちの一覧' }).getByRole('listitem')
+          .filter({ hasText: PAYMENT_MISSING_TEXT })
+          .filter({ has: page.locator('span', { hasText: /^出荷$/ }) });
+        const mineOpen = async () => {
+          const reply = await s.api(s.admin, '/api/admin/accounting/pending-events?includeResolved=false&limit=100');
+          expect(reply.status, reply.text.slice(0, 200)).toBe(200);
+          return (reply.body.data.events as Array<{ sourceId: string; orderId: string | null; reason: string; eventKind: string }>)
+            .filter((event) => event.eventKind === 'shipment_confirmed' && event.reason === 'payment_journal_missing');
+        };
+        await s.openAccounting(page, '計上待ち');
+        await expect(page.getByText(/^未解決 \d+件$/)).toBeVisible({ timeout: 30_000 });
+        const baseline = await rows().count();
+
         // 注文はあるが、Stripe の支払い（残高の取引）がまだ無いまま出荷した
         const order = await s.seedPaidOrder({ lines: [{ price: 6_000 + randomInt(100, 900), quantity: 1 }] });
         const slip = await s.seedConfirmedSlip({ orders: [{ orderId: order.orderId, lines: [{ orderItemId: order.orderItemIds[0], quantity: 1 }] }] });
         await s.runPosting();
         expect(await s.entryByKey(`shipment_confirmed:${slip.number}`)).toBeNull();
         expect(await s.pendingOf('shipment_confirmed', slip.slipId)).toMatchObject({ reason: 'payment_journal_missing', resolvedAt: null });
+        expect((await mineOpen()).filter((event) => event.sourceId === slip.slipId && event.orderId === order.orderId)).toHaveLength(1);
 
-        await s.openAccounting(page, '計上待ち');
-        const reasons = page.getByTestId('pending-reason').filter({ hasText: PAYMENT_MISSING_TEXT });
-        await expect(reasons.first()).toBeVisible({ timeout: 30_000 });
-        await expect(page.getByRole('list', { name: '計上待ちの一覧' }).getByRole('listitem').filter({ hasText: PAYMENT_MISSING_TEXT }).first()).toContainText('出荷');
-        await expect(page.getByRole('list', { name: '計上待ちの一覧' }).getByRole('listitem').filter({ hasText: PAYMENT_MISSING_TEXT }).first()).toContainText('仕訳が入るまで閉じられません');
+        // 画面を読み直す（押すと計上係が流れて一覧を読み直す。計上するものは無い）と、この試験の1行が増える
+        await page.getByRole('button', { name: 'もう一度計上する', exact: true }).click();
+        await expect(rows()).toHaveCount(baseline + 1, { timeout: 30_000 });
+        await expect(rows().first()).toContainText('仕訳が入るまで閉じられません');
         await expectNoHorizontalOverflow(page);
 
-        // 支払い（Stripe の残高の取引）を入れて「もう一度計上する」を押すと、支払いも出荷も計上され、計上待ちは解決済みになる
+        // 支払い（Stripe の残高の取引）を入れて「もう一度計上する」を押すと、支払いも出荷も計上され、この行は画面から消える
         await s.seedStripeCharge({ paymentIntentId: order.paymentIntentId, amount: order.total, orderId: order.orderId });
         await page.getByRole('button', { name: 'もう一度計上する', exact: true }).click();
         await expect(page.getByText(/件を計上しました/)).toBeVisible({ timeout: 90_000 });
+        await expect(rows()).toHaveCount(baseline, { timeout: 30_000 });
+        expect((await mineOpen()).filter((event) => event.sourceId === slip.slipId)).toHaveLength(0);
         const payment = await s.entryByKey(`payment_confirmed:${order.paymentIntentId}`);
         const shipment = await s.entryByKey(`shipment_confirmed:${slip.number}`);
         expect(payment).not.toBeNull();
@@ -311,8 +344,11 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         await page.getByLabel('取引金額（上限）').fill(String(amount));
         await page.getByRole('button', { name: '適用して閉じる' }).click();
         const table = page.getByRole('region', { name: '取引一覧' });
+        // 同じ額の行が前の実行に残っていても、route が返す同じ額の注文の収入の行の数と同じだけ出る
+        const sameAmount = incomes.filter((income) => income.source === 'order' && income.amount === amount).length;
+        expect(sameAmount).toBeGreaterThanOrEqual(1);
         const rows = table.getByRole('row').filter({ hasText: 'オンライン注文' }).filter({ hasText: yen(amount) });
-        await expect(rows.first()).toBeVisible({ timeout: 30_000 });
+        await expect(rows).toHaveCount(sameAmount, { timeout: 30_000 });
         await expectNoHorizontalOverflow(page);
       }, { period: 'none' });
     });

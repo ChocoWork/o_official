@@ -45,7 +45,7 @@ const CORPORATE_LOCK = '190528, 2';
 /** 池の期間を試験の接続に結ぶ lock の鍵の組の1つ目 */
 const CLAIM_CLASS = 190529;
 /** 池に入れる最初の年（今の日本時間の年+1 より後。自動で作られる期間と重ねない） */
-const POOL_FIRST_YEAR = 2030;
+export const POOL_FIRST_YEAR = 2030;
 /** 池の空きの目標。やめた日の前に足す */
 const POOL_FREE_TARGET = 60;
 
@@ -281,6 +281,18 @@ export class AccountingScenario {
       return order;
     });
     return { ...seeded, paymentIntentId, total, orderNumber: `ORD-${seeded.orderId.slice(0, 8).toUpperCase()}` };
+  }
+
+  /** 着ごとの支払額を入れる（G-1 の材料の注文は旧い形で、着ごとの支払額が無い）。着は番号 0 から。呼び出しは G の共通の鍵を取る材料の取引の中 */
+  async seedUnitAmounts(orderId: string, orderItemId: string, amounts: readonly number[]): Promise<void> {
+    await withGroupG1Material(this.db, async () => {
+      for (const [index, amount] of amounts.entries()) {
+        await this.db.query(
+          'insert into public.order_line_unit_amounts (order_id, order_item_id, unit_index, paid_amount) values ($1, $2, $3, $4)',
+          [orderId, orderItemId, index, amount],
+        );
+      }
+    });
   }
 
   /** Stripe の残高の取引（支払い）を入れる。日時の初期値は今 */

@@ -2,6 +2,7 @@ import { expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
 import { accountByCode } from '@/lib/finance/accounts';
 import { buildJournal, type FinanceEntry } from '@/lib/finance/journal';
+import { kindOfStripeCategory } from '@/lib/accounting/stripe-categories';
 
 /**
  * ACCOUNTING（会計）画面の E2E 用モックとナビゲーション。
@@ -321,9 +322,9 @@ function mockSavedJournal(entries: readonly MockEntry[], period: MockAccountingP
   }
   let stripeOrder = 1_000_000;
   for (const transaction of stripe?.balanceTransactions ?? []) {
-    // 本物の規則（accounting_stripe_fee_amount）: 単独の手数料の種類は -net、それ以外は fee の列。
-    const standalone = transaction.type === 'stripe_fee' || transaction.type === 'stripe_fx_fee';
-    const fee = standalone ? -Number(transaction.net ?? 0) : Number(transaction.fee ?? 0);
+    // 本物の規則（accounting_stripe_fee_amount）: 知らない種類（kind が NULL）と税額の調整は 0、単独の手数料は -net、それ以外は fee の列。
+    const kind = kindOfStripeCategory(String(transaction.type ?? ''), String(transaction.reporting_category ?? ''));
+    const fee = kind === null || kind === 'tax_adjustment' ? 0 : kind === 'fee_only' ? -Number(transaction.net ?? 0) : Number(transaction.fee ?? 0);
     if (fee === 0) continue;
     drafts.push({
       date: jstDate(String(transaction.stripe_created_at)), order: stripeOrder++, eventKind: 'stripe_fee',
@@ -426,8 +427,9 @@ export function buildCostProfitMock<T extends Record<string, unknown>>(
   ];
   const savedJournal = data.savedJournal ?? mockSavedJournal(entries, period, data.stripeAccounting as MockStripeAccounting | undefined);
   // 出荷の仕訳ごとの発送票の番号・出荷した日・登録した日（本物の GET の shipmentMeta と同じ形。出荷の仕訳だけ）。
-  const shipmentMeta = data.shipmentMeta ?? (savedJournal as Array<{ id: string; eventKind: string; sourceId: string; entryDate: string }>)
-    .filter((entry) => entry.eventKind === 'shipment_confirmed')
+  // 本物の route と同じく、元の記録が発送票（sourceTable が shipment_slips）の仕訳すべてに付ける
+  const shipmentMeta = data.shipmentMeta ?? (savedJournal as Array<{ id: string; sourceTable: string | null; sourceId: string; entryDate: string }>)
+    .filter((entry) => entry.sourceTable === 'shipment_slips')
     .map((entry) => ({ entryId: entry.id, slipNumber: entry.sourceId, shipmentDate: entry.entryDate, confirmedAt: `${entry.entryDate}T01:00:00Z` }));
   return {
     ...data,

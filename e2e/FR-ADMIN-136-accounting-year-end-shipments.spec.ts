@@ -101,7 +101,8 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
       await withAccountingScenario('carrier-date-option', async (s) => {
         await s.todayPeriod();
         const initial = (await readYearEnd(s, s.today, s.today)).options;
-        // 一度も切り替えていなければ既定はオフ（切り替えた日と人は空）
+        // 一度も切り替えていなければ既定はオフ（切り替えた日と人は空）。切り替えの記録は消せないので、既定そのものを確かめられるのは
+        // db reset の後の最初の幅だけ。2つ目以降の幅と再実行では、前の実行がオフに戻した状態（オフ）を確かめる
         if (initial.changed_at === null) {
           expect(initial.carrier_date_check_enabled).toBe(false);
           expect(initial.changed_by).toBeNull();

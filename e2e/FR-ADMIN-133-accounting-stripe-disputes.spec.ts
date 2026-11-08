@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { DISPUTE_HOLD_CODE, DISPUTE_HOLD_MESSAGE } from '@/lib/orders/shipment-slips/shipment-slip-notice';
 import { mockAdminBackgroundApis } from './admin-test-utils';
 import {
+  POOL_FIRST_YEAR,
   addDaysIso,
   ledgerRowCells,
   selectAccountingPeriod,
@@ -11,13 +12,16 @@ import {
   type AccountingScenario,
 } from './accounting-test-utils';
 import { CHECKOUT_VIEWPORTS, expectNoHorizontalOverflow } from './checkout-flow-helpers';
+import { DISPUTE_CAUSES } from '@/lib/accounting/posting-schema';
 import { createDraftInDb, createShippingMaterial, openSlip, withShippingScenario } from './shipping-test-utils';
 
 // FREQ-565 / FREQ-566 / FREQ-568（計画2）: Stripe の手数料・照合・補充とカード会社からの支払いの取り消しを、本物の route・本物の画面・手元の Supabase で確かめる。
 // 材料（注文・Stripe の残高の取引・取り消し・確定した発送票）は手元の DB へ直に入れる。Stripe は呼ばない。入れた stripe_* の行は
 // 「画面と帳簿の表示の証拠」であって、実 Stripe の証拠ではない（計画2 Task 16 で本物の Stripe の読みを確かめる）。
 // 仕訳・期間・Stripe の行・取り消しの設定は消せないので db reset してから流す。期間は今日を含む期間と、手数料の月の照合の月を含む期間（ensurePeriodFor）。
-// 取り消しの原因の設定（原因ごとに1つ）は消せないので、試験は設定の無い原因を選ぶ。
+// 取り消しの原因の設定（原因ごとに1つ）は消せないので、試験は設定の無い原因を選ぶ。原因は16種で、1回のファイルの実行（3幅）で3つ使うので、db reset なしで流せるのは5回まで
+// （6回目は最後の幅で使える原因が無くなって落ちる）。
+// 手数料の月の照合の月は、計画1の池の年（POOL_FIRST_YEAR 以降）に入らない来年から池の前の年までの月だけを選ぶ（裁定 P2-M11）。
 
 test.use({ trace: 'off', locale: 'ja-JP' });
 // 計上待ち・Stripe の行・照合は全体で共有する状態なので、このファイルの中は1つずつ流す（他のファイルとは並列）。
@@ -27,35 +31,58 @@ const FEE_ACCOUNT = { code: '6280', name: '支払手数料' };
 const SUSPENSE = { code: '1470', name: '仮払金' };
 const yen = (value: number) => value.toLocaleString('ja-JP');
 const slash = (date: string) => date.replaceAll('-', '/');
+/** 「¥1,234」「▲¥1,234」の文から円の数を読む（▲は負） */
+const yenOf = (text: string): number => {
+  const match = /(▲|-)?\s*¥?\s*([\d,]+)/.exec(text);
+  if (!match) throw new Error(`円を読めない: ${text}`);
+  const value = Number(match[2].replaceAll(',', ''));
+  return match[1] ? -value : value;
+};
 const pad2 = (value: number) => String(value).padStart(2, '0');
 const isoAgo = (seconds: number) => new Date(Date.now() - seconds * 1000).toISOString();
 
-/** 取り消しの原因のうち、設定のまだ無い物（設定は消せないので、試験ごとに1つ使う） */
-const DISPUTE_CAUSE_CANDIDATES: ReadonlyArray<readonly [string, string]> = [
-  ['product_unacceptable', '商品が違う・不備'],
-  ['duplicate', '二重の請求'],
-  ['general', '一般の理由'],
-  ['credit_not_processed', '返金が済んでいない'],
-  ['unrecognized', '身に覚えがない'],
-  ['product_not_received', '商品が届かない'],
-  ['fraudulent', '不正利用'],
-  ['subscription_canceled', '定期購入の解約'],
-];
+/** 取り消しの原因 16 種の呼び名（画面の DISPUTE_CAUSE_LABELS の写し。設定の表の選択欄の名前で画面と合うことを試験の中で確かめる） */
+const DISPUTE_CAUSE_LABELS: Readonly<Record<(typeof DISPUTE_CAUSES)[number], string>> = {
+  fraudulent: '不正利用',
+  product_not_received: '商品が届かない',
+  product_unacceptable: '商品が違う・不備',
+  unrecognized: '身に覚えがない',
+  duplicate: '二重の請求',
+  subscription_canceled: '定期購入の解約',
+  credit_not_processed: '返金が済んでいない',
+  general: '一般の理由',
+  bank_cannot_process: '銀行が処理できない',
+  check_returned: '小切手の返却',
+  customer_initiated: 'お客様からの申し立て',
+  debit_not_authorized: '引き落としの承認が無い',
+  incorrect_account_details: '口座の情報の誤り',
+  insufficient_funds: '残高不足',
+  noncompliant: '規則に合わない',
+  other: 'その他',
+};
 
+/** 取り消しの原因のうち、設定のまだ無い物（設定は消せないので、試験ごとに1つ使う。知らない値は other 扱いなので other は選ばない） */
 async function unusedDisputeCause(s: AccountingScenario): Promise<{ reason: string; label: string }> {
   const reply = await s.api(s.admin, '/api/admin/accounting/dispute-settings');
   expect(reply.status, reply.text.slice(0, 200)).toBe(200);
   const used = new Set((reply.body.data.settings as Array<{ reason: string }>).map((row) => row.reason));
-  const found = DISPUTE_CAUSE_CANDIDATES.find(([reason]) => !used.has(reason));
+  const found = DISPUTE_CAUSES.find((reason) => reason !== 'other' && !used.has(reason));
   if (!found) throw new Error('設定の無い取り消しの原因が残っていない。db reset してから流す');
-  return { reason: found[0], label: found[1] };
+  return { reason: found, label: DISPUTE_CAUSE_LABELS[found] };
 }
 
 /** 手数料の月の照合を使っていない月（取引も請求書も無い月）を、来年以降から選ぶ。その月と翌月を含む期間を足す */
 async function freshFeeMonth(s: AccountingScenario): Promise<string> {
-  const year = Number(s.today.slice(0, 4)) + 1;
-  const months = Array.from({ length: 36 }, (_, index) => `${year + Math.floor(index / 12)}-${pad2((index % 12) + 1)}`);
-  for (let tries = 0; tries < months.length; tries += 1) {
+  // 月も翌月も、計画1の池の年（POOL_FIRST_YEAR 以降）に入れない。来年から池の前の年までの月で、最後の年の12月（翌月が池の年）は使わない
+  const months: string[] = [];
+  for (let year = Number(s.today.slice(0, 4)) + 1; year < POOL_FIRST_YEAR; year += 1) {
+    for (let month = 1; month <= 12; month += 1) {
+      if (year === POOL_FIRST_YEAR - 1 && month === 12) continue;
+      months.push(`${year}-${pad2(month)}`);
+    }
+  }
+  if (months.length === 0) throw new Error('池の年の前に使える月が残っていない（この試験の月の選び方を見直す）');
+  for (let tries = 0; months.length > 0; tries += 1) {
     const month = months.splice(randomInt(0, months.length), 1)[0];
     const reply = await s.api(s.admin, `/api/admin/accounting/reconciliation?kind=stripe-fee&month=${month}`);
     expect(reply.status, reply.text.slice(0, 200)).toBe(200);
@@ -67,7 +94,7 @@ async function freshFeeMonth(s: AccountingScenario): Promise<string> {
       return month;
     }
   }
-  throw new Error('使っていない月が無い');
+  throw new Error('使っていない月が無い。db reset してから流す');
 }
 
 async function openSlipWithRealSession(page: Page, s: AccountingScenario, slipId: string): Promise<void> {
@@ -186,24 +213,56 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
       test.setTimeout(300_000);
       await withAccountingScenario('balance-reconciliation', async (s) => {
         await s.todayPeriod();
-        // 仕訳にならないまま残る取引（計画3で計上する返金の元本・注文に結び付かない支払い・知らない種類・入金の取引）
+        type Bucket = { kind: string; count: number; net_sum: number };
+        const readBuckets = async () => {
+          const reply = await s.api(s.admin, `/api/admin/accounting/reconciliation?kind=stripe-balance&through=${s.today}`);
+          expect(reply.status, reply.text.slice(0, 200)).toBe(200);
+          const data = reply.body.data as { difference: number; unjournaled: Bucket[] };
+          return {
+            buckets: new Map(data.unjournaled.map((row) => [row.kind, row])),
+            unexplained: data.difference - data.unjournaled.reduce((sum, row) => sum + row.net_sum, 0),
+          };
+        };
+        const before = await readBuckets();
+
+        // 仕訳にならないまま残る取引（計画3で計上する返金の元本・注文に結び付かない支払い・知らない種類・入金の取引）を1件ずつ入れる
         await s.seedStripeFee({ type: 'refund', reportingCategory: 'refund', amount: -1_000 });
         await s.seedStripeCharge({ paymentIntentId: null, amount: 700 });
         await s.seedStripeFee({ type: `e2e_unknown_${randomUUID().slice(0, 8)}`, reportingCategory: 'other', amount: 200 });
         await s.seedStripeFee({ type: 'payout', reportingCategory: 'payout', amount: -9_000, sourceId: `po_e2e_${randomUUID().slice(0, 12)}` });
         await s.runPosting();
 
+        // 本物の route: 増える種類は、この試験の分（1件・その額）だけ増える。計上待ちの取引は他の試験の計上で減ることがあるので、この1件の分は残るだけを確かめる
+        const after = await readBuckets();
+        for (const [kind, amount] of [['planned_p3', -1_000], ['unknown', 200], ['payout_unposted', -9_000]] as const) {
+          expect(after.buckets.get(kind)?.count, kind).toBe((before.buckets.get(kind)?.count ?? 0) + 1);
+          expect(after.buckets.get(kind)?.net_sum, kind).toBe((before.buckets.get(kind)?.net_sum ?? 0) + amount);
+        }
+        expect(after.buckets.get('pending')?.count ?? 0).toBeGreaterThanOrEqual(1);
+        // この試験の4件は、Stripe の残高にだけあって帳簿に無い取引なので、種類ごとに名指しされ、説明のつかない差を動かさない
+        expect(after.unexplained).toBe(before.unexplained);
+
+        // 画面: 4つの種類の行が出て、画面の数だけで「差 = 種類の合計 + 説明のつかない差」になり、説明のつかない差は 0
         await s.openAccounting(page, '照合');
-        await page.getByRole('button', { name: 'Stripeの残高を照合する' }).click();
-        const table = page.getByRole('table', { name: '仕訳になっていない取引の種類' });
+        const section = page.getByRole('region', { name: 'Stripeの残高の照合' });
+        await section.getByRole('button', { name: 'Stripeの残高を照合する' }).click();
+        const table = section.getByRole('table', { name: '仕訳になっていない取引の種類' });
         await expect(table).toBeVisible({ timeout: 30_000 });
-        for (const label of ['返金の元本（返金の仕訳は別の段で入れます）', '計上待ちの取引', '知らない種類の取引', '入金の取引（仕訳がまだ）']) {
+        let bucketSum = 0;
+        for (const label of ['返金の元本（返金の仕訳は別の段で入れます）', '計上待ちの取引', '知らない種類の取引', '入金の取引（仕訳がまだ）', '残高の補充（手で入れた分を除く）']) {
           const row = table.getByRole('row').filter({ hasText: label });
           await expect(row).toHaveCount(1);
-          const count = Number((await row.getByRole('cell').nth(1).innerText()).replace(/\D/g, ''));
+          bucketSum += yenOf(await row.getByRole('cell').nth(2).innerText());
+        }
+        for (const label of ['返金の元本（返金の仕訳は別の段で入れます）', '計上待ちの取引', '知らない種類の取引', '入金の取引（仕訳がまだ）']) {
+          const count = Number((await table.getByRole('row').filter({ hasText: label }).getByRole('cell').nth(1).innerText()).replace(/\D/g, ''));
           expect(count, label).toBeGreaterThanOrEqual(1);
         }
-        await expect(page.getByTestId('balance-unexplained')).toContainText('説明のつかない差');
+        const difference = yenOf(await section.getByText(/^差 /).first().innerText());
+        const unexplained = page.getByTestId('balance-unexplained');
+        expect(yenOf((await unexplained.innerText()).replace('説明のつかない差', ''))).toBe(difference - bucketSum);
+        // 説明のつかない差そのものは全体の値（0 とは限らない）。画面の色は値に合う
+        await expect(unexplained).toHaveAttribute('data-tone', difference - bucketSum === 0 ? 'ok' : 'alert');
         await expectNoHorizontalOverflow(page);
       }, { period: 'none' });
     });
