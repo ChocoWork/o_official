@@ -321,7 +321,9 @@ function mockSavedJournal(entries: readonly MockEntry[], period: MockAccountingP
   }
   let stripeOrder = 1_000_000;
   for (const transaction of stripe?.balanceTransactions ?? []) {
-    const fee = Number(transaction.fee ?? 0);
+    // 本物の規則（accounting_stripe_fee_amount）: 単独の手数料の種類は -net、それ以外は fee の列。
+    const standalone = transaction.type === 'stripe_fee' || transaction.type === 'stripe_fx_fee';
+    const fee = standalone ? -Number(transaction.net ?? 0) : Number(transaction.fee ?? 0);
     if (fee === 0) continue;
     drafts.push({
       date: jstDate(String(transaction.stripe_created_at)), order: stripeOrder++, eventKind: 'stripe_fee',
@@ -422,12 +424,18 @@ export function buildCostProfitMock<T extends Record<string, unknown>>(
     ...((data.expenses as MockEntry[] | undefined) ?? []),
     ...((data.incomes as MockEntry[] | undefined) ?? []),
   ];
+  const savedJournal = data.savedJournal ?? mockSavedJournal(entries, period, data.stripeAccounting as MockStripeAccounting | undefined);
+  // 出荷の仕訳ごとの発送票の番号・出荷した日・登録した日（本物の GET の shipmentMeta と同じ形。出荷の仕訳だけ）。
+  const shipmentMeta = data.shipmentMeta ?? (savedJournal as Array<{ id: string; eventKind: string; sourceId: string; entryDate: string }>)
+    .filter((entry) => entry.eventKind === 'shipment_confirmed')
+    .map((entry) => ({ entryId: entry.id, slipNumber: entry.sourceId, shipmentDate: entry.entryDate, confirmedAt: `${entry.entryDate}T01:00:00Z` }));
   return {
     ...data,
     businessType: period.businessType,
     period,
     periods: options.periods ?? [period],
-    savedJournal: data.savedJournal ?? mockSavedJournal(entries, period, data.stripeAccounting as MockStripeAccounting | undefined),
+    savedJournal,
+    shipmentMeta,
     opening: data.opening ?? mockOpening(data),
     periodNotices: data.periodNotices ?? options.periodNotices ?? { filingDeadlinePassed: false, previousPeriodOpen: false },
   };

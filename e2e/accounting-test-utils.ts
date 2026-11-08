@@ -16,9 +16,23 @@
  */
 import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { expect, request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test';
-import { seedAccountingPeriod } from '../tests/integration/db/helpers/accounting-fixtures';
+import { japanToday, seedAccountingPeriod } from '../tests/integration/db/helpers/accounting-fixtures';
+import {
+  addDisputeHistory,
+  confirmSlipAt as confirmSlipAtFixture,
+  correctShipmentDate as correctShipmentDateFixture,
+  seedConfirmedSlip as seedConfirmedSlipFixture,
+  seedDispute as seedDisputeFixture,
+  seedDisputeReversal as seedDisputeReversalFixture,
+  seedStripeCharge as seedStripeChargeFixture,
+  seedStripeFee as seedStripeFeeFixture,
+  type SeedSlipOrder,
+} from '../tests/integration/db/helpers/accounting-orders-fixtures';
+import { seedHOrderUnits } from '../tests/integration/db/helpers/group-h-fixtures';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
+import { createCatalogFixture } from '../tests/integration/db/helpers/order-fixtures';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { withGroupG1Material } from './group-g1-test-utils';
 import { createAdminSessionActor, type AdminSessionActor, type AdminSessionAal, type AdminSessionRole } from './admin-session-test-utils';
 import { withLocalDb } from './order-email-test-utils';
 import { withPermissionScenario } from './permission-settings-test-utils';
@@ -63,6 +77,8 @@ export type ScenarioOptions = {
 };
 
 const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex');
+/** YYYY-MM-DD に日数を足す（UTC の日付計算。夏時間は無い） */
+export const addDaysIso = (date: string, days: number): string => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 const ip198 = (): string => `198.19.${randomInt(0, 256)}.${randomInt(1, 255)}`;
 
 type PoolRow = { id: string; name: string; starts_on: string; ends_on: string; version: string };
@@ -196,6 +212,215 @@ export class AccountingScenario {
   /** 試験の中で、やめた日の期間（個人の最後の期間）を読み直す */
   tail(): Promise<PoolPeriod> {
     return soleTail(this.db);
+  }
+
+  // ---- 今日の期間（計画2。E2E は今日の日付だけを使う） ----
+  /** 日本時間の今日 */
+  get today(): string {
+    return japanToday();
+  }
+  /** 日本時間の明日（出荷日を直す例の「元の日」。G は今日より後を断るので、元の発送票だけを DB へ直に入れる） */
+  get tomorrow(): string {
+    return addDaysIso(japanToday(), 1);
+  }
+
+  /**
+   * 日付を含む個人の期間を返す。無ければ、その事業の形の最後の期間の次に続く期間（seedAccountingPeriod）を、含むまで足す。
+   * 池の期間（2030 年以降の空き）は使わない（計画2 の裁定 P2-M11）。足すのは全体の lock の中。
+   * 期間は消せないので、db reset してから流す。やめた日が入った後は足せないため、含む期間が無ければ投げる。
+   */
+  async ensurePeriodFor(date: string): Promise<PoolPeriod> {
+    return withGlobalLock(this.db, async () => {
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const found = await this.db.query(
+          `select ${PERIOD_COLUMNS} from public.accounting_periods p
+            where p.business_type = 'soleProprietor' and p.starts_on <= $1::date and p.ends_on >= $1::date`,
+          [date],
+        );
+        if (found.rows.length === 1) return toPoolPeriod(found.rows[0] as PoolRow);
+        if (await soleBusinessEnded(this.db)) throw new Error(`${date} を含む個人の期間が無く、やめた日が入っているので足せない`);
+        await seedAccountingPeriod(this.db, { businessType: 'soleProprietor' });
+      }
+      throw new Error(`${date} を含む個人の期間を足せない`);
+    });
+  }
+
+  /** 今日を含む個人の期間（無ければ足す）。明日が年をまたぐ日なら、明日の期間も足す */
+  async todayPeriod(): Promise<PoolPeriod> {
+    const period = await this.ensurePeriodFor(this.today);
+    await this.ensurePeriodFor(this.tomorrow);
+    return period;
+  }
+
+  // ---- 注文・Stripe・発送票・取り消しの材料（手元の DB へ直に入れる。Stripe は呼ばない。表示の証拠であって実 Stripe の証拠ではない） ----
+  /**
+   * 支払い済みの注文（着ごとの支払額つき。割引の割り当ては無い）を入れる。商品は非公開（公開のままだと、同時に流れる購入の spec の seedCart が
+   * 「新しい順の最初の商品」にこの商品を拾ってしまう）。paymentIntentId を省くと新しい番号。呼び出しは G の共通の鍵を取る材料の取引の中。
+   */
+  async seedPaidOrder(input: {
+    lines: ReadonlyArray<{ price: number; quantity: number; unitAmounts?: readonly number[] }>;
+    paymentIntentId?: string;
+    paidAt?: string;
+  }): Promise<{ orderId: string; orderItemIds: string[]; paymentIntentId: string; total: number; orderNumber: string }> {
+    const paymentIntentId = input.paymentIntentId ?? `pi_${randomUUID().replaceAll('-', '')}`;
+    const total = input.lines.reduce((sum, line) => sum + line.price * line.quantity, 0);
+    const seeded = await withGroupG1Material(this.db, async () => {
+      const lines = [];
+      for (const line of input.lines) {
+        const catalog = await createCatalogFixture(this.db, { stock: 0, itemStatus: 'private' });
+        lines.push({
+          itemPrice: line.price,
+          quantity: line.quantity,
+          discounts: [],
+          unitAmounts: line.unitAmounts ?? Array.from({ length: line.quantity }, () => line.price),
+          catalog,
+        });
+      }
+      const order = await seedHOrderUnits(this.db, { legacy: false, status: 'paid', paidAt: input.paidAt ?? new Date().toISOString(), lines });
+      await this.db.query('update public.orders set payment_intent_id = $2 where id = $1', [order.orderId, paymentIntentId]);
+      return order;
+    });
+    return { ...seeded, paymentIntentId, total, orderNumber: `ORD-${seeded.orderId.slice(0, 8).toUpperCase()}` };
+  }
+
+  /** Stripe の残高の取引（支払い）を入れる。日時の初期値は今 */
+  seedStripeCharge(input: {
+    paymentIntentId: string | null; amount: number; orderId?: string | null; fee?: number; createdAt?: string; id?: string; syncedAt?: string;
+  }): Promise<string> {
+    return seedStripeChargeFixture(this.db, { ...input, createdAt: input.createdAt ?? new Date().toISOString() });
+  }
+
+  /** Stripe の残高の取引（手数料・入金・補充・返金の元本など）を入れる。日時の初期値は今 */
+  seedStripeFee(input: {
+    type: string; reportingCategory: string; amount: number; fee?: number; createdAt?: string; id?: string; sourceId?: string;
+    feeDetails?: ReadonlyArray<Record<string, unknown>>; rawPayload?: Record<string, unknown>; paymentIntentId?: string | null; payoutId?: string | null;
+  }): Promise<string> {
+    return seedStripeFeeFixture(this.db, { ...input, createdAt: input.createdAt ?? new Date().toISOString() });
+  }
+
+  /** 確定した発送票を G の表へ直に入れる（G の関数は今日より後の出荷日を断る）。出荷日の初期値は今日 */
+  seedConfirmedSlip(input: {
+    orders: ReadonlyArray<SeedSlipOrder>; shipmentDate?: string; confirmedAt?: string; recordFact?: boolean;
+  }) {
+    return seedConfirmedSlipFixture(this.db, input);
+  }
+
+  /** 発送票を、確定した時刻と事実の時刻を決めて入れる（支払いの取り消しが引かれた時刻と前後を決める例） */
+  confirmSlipAt(order: { orderId: string; orderItemIds: string[] }, input: { quantity: number; shipmentDate: string; lockedAt: string; orderItemId?: string }) {
+    return confirmSlipAtFixture(this.db, order, input);
+  }
+
+  /** G の関数で出荷日を直す（本物の関数。日は支払いの日以後・今日以前）。できた履歴の行の番号を返す */
+  correctShipmentDate(slipId: string, date: string, reason: string): Promise<string> {
+    return correctShipmentDateFixture(this.db, slipId, date, { reason, actorId: this.admin.userId });
+  }
+
+  /** カード会社からの支払いの取り消しと、引かれた残高の取引を入れる。日時の初期値は今 */
+  seedDispute(input: {
+    orderId?: string | null; paymentIntentId?: string | null; amount: number; withdrawnAt?: string | null; reason?: string;
+    status?: string; fee?: number; createdAt?: string; disputeId?: string;
+  }) {
+    const now = new Date().toISOString();
+    return seedDisputeFixture(this.db, { ...input, withdrawnAt: input.withdrawnAt === undefined ? now : input.withdrawnAt, createdAt: input.createdAt ?? now });
+  }
+
+  /** 取り消しの状態の履歴を足す（lost は Stripe 側の時刻 stripeEventCreatedAt が要る） */
+  addDisputeHistory(input: { disputeId: string; status: string; occurredAt: string; stripeEventCreatedAt?: string | null; eventType?: string }) {
+    return addDisputeHistory(this.db, input);
+  }
+
+  seedDisputeReversal(input: { disputeId: string; amount: number; createdAt: string }) {
+    return seedDisputeReversalFixture(this.db, input);
+  }
+
+  /**
+   * 計上係を流す（DB の入口 private.accounting_run_posting。画面の「もう一度計上する」と同じ係）。has_more が偽になるまで繰り返す（最大20回）。
+   * 全体の係なので、ほかの試験が入れた出来事も計上される。件数は各回の合計。
+   */
+  async runPosting(limit = 50): Promise<{ payments: number; shipments: number; stripe: number; disputes: number; parked: number; resolved: number; loops: number }> {
+    const total = { payments: 0, shipments: 0, stripe: 0, disputes: 0, parked: 0, resolved: 0, loops: 0 };
+    for (let loop = 0; loop < 20; loop += 1) {
+      const row = (await this.db.query('select private.accounting_run_posting($1::integer) as r', [limit])).rows[0].r as Record<string, number | boolean>;
+      total.payments += Number(row.payments);
+      total.shipments += Number(row.shipments);
+      total.stripe += Number(row.stripe);
+      total.disputes += Number(row.disputes);
+      total.parked += Number(row.parked);
+      total.resolved += Number(row.resolved);
+      total.loops += 1;
+      if (row.has_more !== true) break;
+    }
+    return total;
+  }
+
+  /** 印（dedupe_key）で仕訳を探す。無ければ null */
+  async entryByKey(dedupeKey: string): Promise<{ id: string; entryNo: number; entryDate: string; eventKind: string; description: string; reversesEntryId: string | null; reason: string | null; periodId: string } | null> {
+    const row = (await this.db.query(
+      `select id, entry_no, to_char(entry_date, 'YYYY-MM-DD') as entry_date, event_kind, description, reverses_entry_id, reason, period_id
+         from public.accounting_journal_entries where dedupe_key = $1`,
+      [dedupeKey],
+    )).rows[0];
+    return row
+      ? { id: row.id, entryNo: Number(row.entry_no), entryDate: row.entry_date, eventKind: row.event_kind, description: row.description, reversesEntryId: row.reverses_entry_id, reason: row.reason, periodId: row.period_id }
+      : null;
+  }
+
+  /** 取り消した仕訳（元の仕訳を打ち消す仕訳）を探す。無ければ null */
+  async reversalOf(entryId: string): Promise<{ id: string; entryNo: number; entryDate: string; reason: string | null } | null> {
+    const row = (await this.db.query(
+      `select id, entry_no, to_char(entry_date, 'YYYY-MM-DD') as entry_date, reason from public.accounting_journal_entries where reverses_entry_id = $1::uuid`,
+      [entryId],
+    )).rows[0];
+    return row ? { id: row.id, entryNo: Number(row.entry_no), entryDate: row.entry_date, reason: row.reason } : null;
+  }
+
+  /** 仕訳の行（行の順）。借方・貸方は円 */
+  async linesOf(entryId: string): Promise<Array<{ account: string; debit: number; credit: number; orderId: string | null; subAccount: string | null }>> {
+    const rows = (await this.db.query(
+      `select account_code, debit::bigint as debit, credit::bigint as credit, order_id, sub_account from public.accounting_journal_lines where entry_id = $1::uuid order by line_no`,
+      [entryId],
+    )).rows;
+    return rows.map((row) => ({ account: row.account_code, debit: Number(row.debit), credit: Number(row.credit), orderId: row.order_id, subAccount: row.sub_account }));
+  }
+
+  /** 注文の前受金（2150）の残り（貸方−借方）。全部の仕訳（取り消しを含む）の合計 */
+  async deferredBalance(orderId: string): Promise<number> {
+    const row = (await this.db.query(
+      "select coalesce(sum(credit - debit), 0)::bigint as b from public.accounting_journal_lines where order_id = $1::uuid and account_code = '2150'",
+      [orderId],
+    )).rows[0];
+    return Number(row.b);
+  }
+
+  /** 計上待ち（この出来事の種類と元の記録の番号）の行。無ければ null */
+  async pendingOf(eventKind: string, sourceId: string): Promise<{ reason: string; detail: Record<string, unknown>; resolvedAt: Date | null } | null> {
+    const row = (await this.db.query(
+      'select reason, detail, resolved_at from public.accounting_pending_events where event_kind = $1 and source_id = $2 order by first_detected_at desc limit 1',
+      [eventKind, sourceId],
+    )).rows[0];
+    return row ? { reason: row.reason, detail: row.detail, resolvedAt: row.resolved_at } : null;
+  }
+
+  /** 本物の journal route を、日付の範囲で最後まで読む（続きの目印をたどる。最大20ページ）。期間の全体は読まない */
+  async journalBetween(periodId: string, from: string, to: string, who: AdminSessionActor = this.admin) {
+    type Entry = {
+      id: string; entryNo: number; entryDate: string; eventKind: string; dedupeKey: string; description: string; reason: string | null;
+      reversesEntryId: string | null; sourceTable: string | null; sourceId: string | null;
+      lines: Array<{ accountCode: string; debit: number; credit: number; orderId: string | null; subAccount: string | null }>;
+    };
+    const entries: Entry[] = [];
+    let cursor = '';
+    let shipmentMeta: Array<{ entryId: string; slipNumber: string; shipmentDate: string; confirmedAt: string }> = [];
+    for (let page = 0; page < 20; page += 1) {
+      const reply = await this.api(who, `/api/admin/accounting/journal?periodId=${periodId}&from=${from}&to=${to}&limit=200${cursor}`);
+      if (reply.status !== 200) throw new Error(`仕訳帳を読めない（${reply.status}）`);
+      entries.push(...(reply.body.data.entries as Entry[]));
+      shipmentMeta = shipmentMeta.concat(reply.body.data.shipmentMeta ?? []);
+      const next = reply.body.data.nextAfter as { entryDate: string; entryNo: number } | null;
+      if (!next) break;
+      cursor = `&afterEntryDate=${next.entryDate}&afterEntryNo=${next.entryNo}`;
+    }
+    return { entries, shipmentMeta };
   }
 
   // ---- HTTP（本物の route。Authorization: Bearer なので CSRF は要らない） ----
@@ -378,7 +603,10 @@ export class AccountingScenario {
   }
 
   /** 画面の会計（ACCOUNTING）を、本物の route で開く。裏の読み込み（Meta・法定保存・要対応）だけは空の応答にする */
-  async openAccounting(page: Page, tab: '財務概要' | '取引管理' | '帳簿' | '設定・期間' = '取引管理'): Promise<void> {
+  async openAccounting(
+    page: Page,
+    tab: '財務概要' | '取引管理' | '帳簿' | '設定・期間' | '計上待ち' | '照合' = '取引管理',
+  ): Promise<void> {
     await this.attach(page);
     await mockAdminBackgroundApis(page);
     // 本物の session を使うので、裏の更新の差し替えは使わない（呼ばれたら本物へ通す）
@@ -494,4 +722,24 @@ export async function trialBalanceTotals(page: Page): Promise<{ debit: number; c
   const yen = (text: string) => Number(text.replace(/[^\d-]/g, ''));
   if (cells.length < 3) throw new Error('試算表の合計の行を読めない');
   return { debit: yen(cells[1]), credit: yen(cells[2]) };
+}
+
+/** 仕訳・元帳で、科目（符号つきの名前）を検索して選ぶ */
+export async function selectLedgerAccount(page: Page, account: { code: string; name: string }): Promise<void> {
+  await page.getByRole('searchbox', { name: '勘定科目を検索' }).fill(account.name);
+  await page.getByRole('button', { name: '勘定科目を検索する' }).click();
+  await page
+    .getByRole('region', { name: '勘定科目' })
+    .getByRole('button', { name: new RegExp(`${account.code}\\s*${account.name}`) })
+    .click();
+}
+
+/** 仕訳一覧を伝票番号（JE-000123）で絞り、その行の欄（日付・伝票No.・相手勘定科目・取引先・摘要・借方・貸方・残高・証憑・出荷した日・登録した日・出荷の跡）の文を返す */
+export async function ledgerRowCells(page: Page, entryNo: number): Promise<string[]> {
+  const number = `JE-${String(entryNo).padStart(6, '0')}`;
+  await page.getByRole('searchbox', { name: '仕訳を検索' }).fill(number);
+  await page.getByRole('button', { name: '仕訳を検索する' }).click();
+  const row = page.getByRole('region', { name: '仕訳一覧' }).locator('tbody tr').filter({ hasText: number });
+  await expect(row).toHaveCount(1, { timeout: 30_000 });
+  return (await row.getByRole('cell').allInnerTexts()).map((text) => text.trim());
 }
