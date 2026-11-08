@@ -5,10 +5,11 @@ import { describeLocalDb } from './helpers/local-db';
 import {
   ACCOUNTING_S6_FILES, ACCOUNTING_S6_SQL as sql, accountingS6Section, pinAccountingS6Baseline,
   ACCOUNTING_S7_FILES, ACCOUNTING_S7_SQL as sqlS7, accountingS7Section, pinAccountingS7Baseline,
+  ACCOUNTING_S8_FILES, ACCOUNTING_S8_SQL as sqlS8, accountingS8Section, pinAccountingS8Baseline,
 } from './helpers/accounting-orders-fixtures';
 
 // Accounting plan 2 S6 (FREQ-569 / FREQ-563): the shape of the migration and its final assert. The DB part is
-// controller only. Tasks 2-9 add the asserts of S7-S14 below (S7: the payment posting, Task 2).
+// controller only. Tasks 2-9 add the asserts of S7-S14 below (S7: the payment posting, Task 2; S8: the shipment posting, Task 3).
 const assertion = accountingS6Section('FINAL_ASSERT');
 const body = accountingS6Section('BODY');
 const details = ['acc_s6_tables', 'acc_s6_constraints', 'acc_s6_immutable', 'acc_s6_rls_acl', 'acc_s6_function_attrs',
@@ -400,6 +401,224 @@ describeLocalDb('S7 final assert: controller only', (db) => {
     ["update pg_temp.accounting_s7_baseline set payload = jsonb_set(payload, '{entries}', '5')", 'acc_s7_existing_dml_allowlist'],
     ["insert into public.accounting_periods (business_type, name, starts_on, ends_on) values ('soleProprietor', 'tamper', '2026-01-01', '2026-12-31')", 'acc_s7_existing_dml_allowlist'],
   ])('FREQ-562-AC-05: S7改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// ---- S8 (Task 3): the shipment posting ------------------------------------------------------------------------------
+const assertionS8 = accountingS8Section('FINAL_ASSERT');
+const bodyS8 = accountingS8Section('BODY');
+const baselineS8 = accountingS8Section('BASELINE');
+const detailsS8 = ['acc_s8_functions', 'acc_s8_function_attrs', 'acc_s8_reads_stable', 'acc_s8_g_untouched', 'acc_s8_existing_dml_allowlist'];
+const statementsS8 = bodyS8.replace(/\$\$[\s\S]*?\$\$/g, '$$$$').split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n');
+const signaturePost = 'private.accounting_post_shipment_events(integer)';
+const signaturePlan = 'private.accounting_shipment_plan(uuid,bigint)';
+const signatureReason = 'private.accounting_shipment_date_reason(uuid,date)';
+const functionBody = (name: string) => bodyS8.split(`CREATE FUNCTION ${name}(`)[1]?.split('\n$$;')[0] ?? '';
+
+describe('S8 source contract (no DB)', () => {
+  test('FREQ-563-AC-04: S8はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S8_FILES).toEqual(['20261108170000_accounting_p2_shipment_posting.sql']);
+    expect(ACCOUNTING_S8_FILES[0] > ACCOUNTING_S7_FILES[0]).toBe(true);
+    expect(sqlS8).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(sqlS8.startsWith('BEGIN;\n')).toBe(true);
+    expect(sqlS8.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(sqlS8.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(sqlS8.trimEnd()).toMatch(/-- ACC_S8_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect(assertionS8).not.toBe('');
+    expect([...new Set([...assertionS8.matchAll(/'(acc_s8_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...detailsS8].sort());
+    expect(assertionS8).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(assertionS8.replace(/''55000''/g, '')).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(sqlS8).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+  });
+
+  test('FREQ-563-AC-06: S8の実行時のDMLは比べる元の控えのINSERTだけで、係・計画・日の検査は入口を持たず service_role にも渡さない', () => {
+    expect([...statementsS8.matchAll(/^\s*(INSERT INTO|UPDATE|DELETE FROM|TRUNCATE(?: TABLE)?)\s+([\w.]+)/gm)].map((m) => `${m[1]} ${m[2]}`))
+      .toEqual(['INSERT INTO pg_temp.accounting_s8_baseline']);
+    expect(bodyS8).toContain('private.accounting_shipment_date_reason(uuid,date), private.accounting_shipment_plan(uuid,bigint),\n  private.accounting_post_shipment_events(integer),');
+    // The only EXECUTE for service_role is on the two reads, private and public.
+    const grants = [...bodyS8.matchAll(/GRANT EXECUTE ON FUNCTION([\s\S]*?)TO service_role;/g)];
+    expect(grants).toHaveLength(1);
+    expect(grants[0][1].replace(/\([^)]*\)/g, '').split(',').map((name) => name.trim()).sort()).toEqual([
+      'private.get_shipment_journal_trace', 'private.list_journal_shipment_meta',
+      'public.get_shipment_journal_trace', 'public.list_journal_shipment_meta']);
+    expect(bodyS8).not.toMatch(/CREATE (OR REPLACE )?FUNCTION public\.accounting_/);
+    // No group G object is changed by this file.
+    expect(statementsS8).not.toMatch(/(?:CREATE OR REPLACE FUNCTION|ALTER FUNCTION)\s+\S*(?:admin_confirm_shipment_slip|admin_cancel_shipment_slip|admin_correct_shipment_date|list_shipment_accounting_inputs)/);
+    expect(statementsS8).not.toMatch(/ALTER TABLE\s+public\.(?:shipment_|order_fulfillment)/i);
+    expect(statementsS8).not.toMatch(/(?:CREATE|DROP)\s+TRIGGER/i);
+  });
+
+  test('FREQ-563-AC-06: 係の本文は最初に accounting_lock_all(NULL) を取り、行ロックと注文の状態・支払いの時刻を使わず、出来事ごとの例外処理で包む', () => {
+    const fn = functionBody('private.accounting_post_shipment_events');
+    expect(fn).not.toBe('');
+    expect(fn.indexOf('PERFORM private.accounting_lock_all(NULL);')).toBeGreaterThan(0);
+    expect(fn.indexOf('PERFORM private.accounting_lock_all(NULL);')).toBeLessThan(fn.indexOf('FOR v_swept IN'));
+    expect(fn.indexOf('PERFORM private.accounting_lock_all(NULL);')).toBeLessThan(fn.indexOf('FOR v_job IN'));
+    expect(fn).not.toMatch(/FOR (SHARE|UPDATE|NO KEY UPDATE|KEY SHARE)/i);
+    expect(fn).not.toMatch(/paid_at|public\.orders\b/i);
+    // The date correction checks the new day before it touches the live entry, and both halves sit in the one block.
+    const redate = fn.slice(fn.indexOf("ELSIF v_job.task = 'redate' THEN"), fn.indexOf('EXCEPTION WHEN OTHERS'));
+    expect(redate.indexOf('private.accounting_shipment_date_reason(')).toBeLessThan(redate.indexOf('private.accounting_reverse_journal_core('));
+    expect(redate.indexOf('private.accounting_reverse_journal_core(')).toBeLessThan(redate.indexOf("private.accounting_post_journal_core(NULL, v_period, v_date, 'shipment_redated',"));
+    expect(fn.match(/EXCEPTION WHEN OTHERS/g)).toHaveLength(1);
+    expect(fn).toContain('v_parked := private.accounting_park_failure(v_kind, v_table, v_source_id, v_order_id,');
+    expect(fn).toContain('IF v_parked THEN');
+    expect(fn).not.toMatch(/PG_EXCEPTION_CONTEXT/);
+    expect(fn).not.toMatch(/'(?:message|context)'/);
+    expect(fn).toContain('_source_recorded_at => LEAST(v_slip.confirmed_at, pg_catalog.clock_timestamp())');
+    expect(fn).toContain('LEAST(v_slip.cancelled_at, pg_catalog.clock_timestamp())');
+    expect(fn).toContain('_source_recorded_at => LEAST(v_hist.created_at, pg_catalog.clock_timestamp())');
+    expect(fn).toContain("private.accounting_event_key('shipment_confirmed', ARRAY[s.number])");
+    expect(fn).toContain("private.accounting_event_key('shipment_redated', ARRAY[h.id::text])");
+    expect(fn).not.toContain("'shipment_confirmed:' ||");
+  });
+
+  test('FREQ-563-AC-01: 着の選び方と額の計算は計画の関数の1か所にあり、確定だけがそれを使う（日の直しは元の行と着を写す）', () => {
+    const plan = functionBody('private.accounting_shipment_plan');
+    expect(plan).toContain('private.accounting_shipped_units(v_item.order_item_id, _confirm_seq)');
+    expect(plan).toContain('a.fact_seq < _confirm_seq');
+    expect(plan).toContain("v_item.line_kind <> 'order'");
+    expect(plan).not.toMatch(/paid_at|public\.orders\b/i);
+    const post = functionBody('private.accounting_post_shipment_events');
+    expect(post.match(/private\.accounting_shipment_plan\(/g)).toHaveLength(1);
+    expect(post).not.toContain('private.accounting_shipped_units(');
+    // The date correction copies the units of the entry it replaces.
+    expect(post).toContain('FROM public.accounting_shipment_units AS u WHERE u.entry_id = v_entry.id');
+  });
+
+  test('FREQ-563-AC-04: 比べる元の控えの指紋と末尾assertの指紋は同じ文（文が離れていかない）', () => {
+    const digest = (text: string) => text.match(/SELECT 'tab:'[\s\S]*?\)\s*AS x/)?.[0].replace(/\s+/g, ' ') ?? '';
+    expect(digest(baselineS8)).not.toBe('');
+    expect(digest(assertionS8)).toBe(digest(baselineS8));
+    expect(bodyS8).toContain('-- ACC_S8_BASELINE_BEGIN\n');
+  });
+
+  test('FREQ-564-AC-01: S8の説明の日本語は ACCOUNTING_LABELS の語の出力と同じ', () => {
+    const literals = [...bodyS8.matchAll(/U&'(?:[^']|'')*'/g)].map((m) => m[0]);
+    expect([...new Set(literals)].sort()).toEqual([
+      "U&' \\00D7 '",
+      "U&'\\51FA\\8377\\306B\\3088\\308B\\58F2\\4E0A'",
+      "U&'\\51FA\\8377\\306E\\53D6\\308A\\6D88\\3057'"].sort());
+  });
+});
+
+describeLocalDb('S8 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  async function attempt(change = '', baseline: 'pin' | 'none' = 'pin'): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s8_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (baseline === 'pin') await pinAccountingS8Baseline(db());
+      if (change) await db().query(change);
+      await db().query(assertionS8);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s8_assert'); await db().query('release savepoint acc_s8_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
+  /** Re-create the function with a changed text (owner, ACL and attributes stay). */
+  const edit = (from: string, to: string, signature = signaturePost) => `do $x$ declare d text; begin
+    d := pg_get_functiondef('${signature}'::regprocedure);
+    if position(${quote(from)} in d) = 0 then raise exception 'TAMPER_TARGET_MISSING'; end if;
+    d := replace(d, ${quote(from)}, ${quote(to)});
+    execute d; end $x$`;
+
+  test('FREQ-563-AC-04: S8末尾assertは適用後の状態と呼出元search_pathを許す', async () => {
+    expect(assertionS8).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt("set local search_path = ''")).toBeNull();
+    // The fingerprint does not depend on the search_path of the session that took the baseline.
+    await db().query('savepoint acc_s8_search_path');
+    await db().query('set local search_path = public, private, extensions, pg_catalog');
+    await pinAccountingS8Baseline(db());
+    await db().query("set local search_path = ''");
+    await db().query(assertionS8);
+    await db().query('rollback to savepoint acc_s8_search_path');
+  });
+
+  test('FREQ-563-AC-04: 後の Task が足す public の accounting_run_posting と accounting_* の関数があっても S8 末尾assertは再生で通る', async () => {
+    expect(await attempt(`create function public.accounting_run_posting(_limit integer default 50) returns jsonb language sql volatile
+      security invoker set search_path = '' as $$ select '{}'::jsonb $$`)).toBeNull();
+    expect(await attempt(`create function private.accounting_post_stripe_shipment_events(_limit integer) returns jsonb language sql volatile
+      security definer set search_path = '' as $$ select '{}'::jsonb $$`)).toBeNull();
+  });
+
+  test('FREQ-563-AC-04: S8末尾assertは比べる元の控えが無いと断る', async () => {
+    expect(await attempt('', 'none')).toEqual(failed('acc_s8_existing_dml_allowlist'));
+  });
+
+  test.each([
+    ['drop function private.accounting_post_shipment_events(integer)', 'acc_s8_functions'],
+    ['create function private.accounting_post_shipment_events(a integer, b integer) returns jsonb language sql as $$ select null::jsonb $$', 'acc_s8_functions'],
+    [edit('PERFORM private.accounting_lock_all(NULL);', 'PERFORM 1;'), 'acc_s8_functions'],
+    [edit('private.accounting_reverse_journal_core(NULL, v_entry.id,', 'private.accounting_reverse_journal_core(NULL, v_existing,'), 'acc_s8_functions'],
+    [edit("private.accounting_post_journal_core(NULL, v_period, v_date, 'shipment_redated',", "private.accounting_post_journal_core(NULL, v_period, v_date, 'shipment_confirmed',"), 'acc_s8_functions'],
+    [edit('private.accounting_shipment_plan(v_slip.id, v_seq)', 'private.accounting_shipment_plan(v_slip.id, 0)'), 'acc_s8_functions'],
+    [edit('private.accounting_period_for_event(v_date)', "private.accounting_period_for(v_date, 'soleProprietor')"), 'acc_s8_functions'],
+    [edit('_source_recorded_at => LEAST(v_slip.confirmed_at, pg_catalog.clock_timestamp())', '_source_recorded_at => NULL'), 'acc_s8_functions'],
+    [edit('LEAST(v_slip.cancelled_at, pg_catalog.clock_timestamp())', 'NULL'), 'acc_s8_functions'],
+    [edit('_source_recorded_at => LEAST(v_hist.created_at, pg_catalog.clock_timestamp())', '_source_recorded_at => NULL'), 'acc_s8_functions'],
+    [edit('EXCEPTION WHEN OTHERS THEN', 'EXCEPTION WHEN no_data_found THEN'), 'acc_s8_functions'],
+    [edit('IF v_parked THEN', 'IF true THEN'), 'acc_s8_functions'],
+    [edit('v_parked := private.accounting_park_failure(v_kind,', "v_parked := private.accounting_park_failure('shipment_confirmed',"), 'acc_s8_functions'],
+    [edit('FROM public.shipment_slips AS s WHERE s.id = v_job.slip_id;', 'FROM public.shipment_slips AS s WHERE s.id = v_job.slip_id FOR UPDATE;'), 'acc_s8_functions'],
+    [edit('v_date := v_slip.shipment_date;', 'v_date := (SELECT o.paid_at::date FROM public.orders AS o LIMIT 1);'), 'acc_s8_functions'],
+    [edit('private.accounting_shipped_units(v_item.order_item_id, _confirm_seq)', 'private.accounting_shipped_units(v_item.order_item_id, NULL)', signaturePlan), 'acc_s8_functions'],
+    [edit('a.fact_seq < _confirm_seq', 'a.fact_seq <= _confirm_seq', signaturePlan), 'acc_s8_functions'],
+    [edit("'4010'", "'4011'", signaturePlan), 'acc_s8_functions'],
+    [edit("v_item.line_kind <> 'order'", 'false', signaturePlan), 'acc_s8_functions'],
+    [edit('v_order_count := pg_catalog.cardinality(v_orders);', "v_order_count := (SELECT pg_catalog.count(*) FROM public.orders AS o WHERE o.status = 'paid')::integer;", signaturePlan), 'acc_s8_functions'],
+    [edit("'before_cutover'", "'before_cut'", signatureReason), 'acc_s8_functions'],
+    [`drop function ${signatureReason}`, 'acc_s8_functions'],
+    ['grant execute on function private.accounting_post_shipment_events(integer) to service_role', 'acc_s8_function_attrs'],
+    ['grant execute on function private.accounting_post_shipment_events(integer) to anon', 'acc_s8_function_attrs'],
+    ['grant execute on function private.accounting_post_shipment_events(integer) to authenticated', 'acc_s8_function_attrs'],
+    ['grant execute on function private.accounting_post_shipment_events(integer) to public', 'acc_s8_function_attrs'],
+    ['alter function private.accounting_post_shipment_events(integer) security invoker', 'acc_s8_function_attrs'],
+    ['alter function private.accounting_post_shipment_events(integer) stable', 'acc_s8_function_attrs'],
+    ['alter function private.accounting_post_shipment_events(integer) set search_path = public', 'acc_s8_function_attrs'],
+    ['alter function private.accounting_post_shipment_events(integer) strict', 'acc_s8_function_attrs'],
+    [`grant execute on function ${signaturePlan} to service_role`, 'acc_s8_function_attrs'],
+    [`alter function ${signaturePlan} volatile`, 'acc_s8_function_attrs'],
+    [`grant execute on function ${signatureReason} to authenticated`, 'acc_s8_function_attrs'],
+    ["create function public.accounting_shipment_plan(a uuid, b bigint) returns jsonb language sql security invoker set search_path = '' as $$ select private.accounting_shipment_plan(a, b) $$", 'acc_s8_function_attrs'],
+    ['revoke execute on function public.get_shipment_journal_trace(uuid) from service_role', 'acc_s8_function_attrs'],
+    ['revoke execute on function private.list_journal_shipment_meta(uuid[]) from service_role', 'acc_s8_function_attrs'],
+    ['grant execute on function public.get_shipment_journal_trace(uuid) to anon', 'acc_s8_function_attrs'],
+    ['grant execute on function public.list_journal_shipment_meta(uuid[]) to authenticated', 'acc_s8_function_attrs'],
+    ['grant execute on function private.get_shipment_journal_trace(uuid) to public', 'acc_s8_function_attrs'],
+    ['alter function public.list_journal_shipment_meta(uuid[]) security definer', 'acc_s8_function_attrs'],
+    ['alter function public.get_shipment_journal_trace(uuid) volatile', 'acc_s8_function_attrs'],
+    ['alter function private.get_shipment_journal_trace(uuid) set search_path = public', 'acc_s8_function_attrs'],
+    [edit('RETURN pg_catalog.jsonb_build_object(', 'PERFORM 1; RETURN pg_catalog.jsonb_build_object(', 'private.get_shipment_journal_trace(uuid)'), 'acc_s8_reads_stable'],
+    [edit('RETURN QUERY', 'DELETE FROM public.accounting_pending_events WHERE false; RETURN QUERY', 'private.list_journal_shipment_meta(uuid[])'), 'acc_s8_reads_stable'],
+    ['alter table public.shipment_slips add column tamper_s8 integer', 'acc_s8_g_untouched'],
+    ['alter table public.order_fulfillments alter column notify_customer drop not null', 'acc_s8_g_untouched'],
+    ['alter table public.shipment_slip_lines drop constraint shipment_slip_lines_quantity_check', 'acc_s8_g_untouched'],
+    ['alter table public.shipment_slips disable trigger user', 'acc_s8_g_untouched'],
+    ['create trigger tamper_s8 before insert on public.shipment_slip_lines for each row execute function private.reject_accounting_mutation()', 'acc_s8_g_untouched'],
+    [`do $x$ declare d text; begin d := pg_get_functiondef('private.admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid)'::regprocedure);
+      execute replace(d, 'GROUP_G_SLIP_REASON_REQUIRED', 'GROUP_G_SLIP_REASON_NEEDED'); end $x$`, 'acc_s8_g_untouched'],
+    [`do $x$ declare d text; begin d := pg_get_functiondef('private.list_shipment_accounting_inputs(date,date,integer)'::regprocedure);
+      execute replace(d, 'LIMIT _limit', 'LIMIT _limit + 1'); end $x$`, 'acc_s8_g_untouched'],
+    ['drop function private.list_shipment_accounting_inputs(date,date,integer)', 'acc_s8_g_untouched'],
+    ["create function public.tamper_shipment_s8() returns integer language sql as 'select 1'", 'acc_s8_g_untouched'],
+    ["select private.accounting_park_event('shipment_confirmed', 'shipment_slips', 'tamper_s8_1', null, 'no_order', '{}')", 'acc_s8_existing_dml_allowlist'],
+    ['drop table pg_temp.accounting_s8_baseline', 'acc_s8_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s8_baseline set payload = payload - 'shipment_units'", 'acc_s8_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s8_baseline set payload = payload - 'g_digest'", 'acc_s8_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s8_baseline set payload = jsonb_set(payload, '{entries}', '5')", 'acc_s8_existing_dml_allowlist'],
+    ["insert into public.accounting_periods (business_type, name, starts_on, ends_on) values ('soleProprietor', 'tamper', '2026-01-01', '2026-12-31')", 'acc_s8_existing_dml_allowlist'],
+  ])('FREQ-563-AC-04: S8改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });

@@ -3,6 +3,8 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { PgClient } from './local-db';
 import { seedGroupG3Slip } from './group-g3-fixtures';
+import { withGroupG1FixtureTransaction } from './group-g1-fixtures';
+import { insertAccountingAdmin } from './accounting-fixtures';
 import { seedHOrderUnits } from './group-h-fixtures';
 
 // 会計の計画2（前受金・出荷の日の売上・Stripe）の DB 試験の道具。計画2の各 Task が必要な物をここへ足す。
@@ -184,4 +186,143 @@ export async function pinAccountingS7Baseline(client: PgClient): Promise<void> {
 			'lines', (select count(*) from public.accounting_journal_lines),
 			'pending_events', (select count(*) from public.accounting_pending_events),
 			'periods', (select count(*) from public.accounting_periods))`);
+}
+
+/** 計画2 S8（出荷の仕訳）の移行の本文。無ければ空で、原文の確かめが目に見えて落ちる。 */
+const s8Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p2_shipment_posting.sql'));
+export const ACCOUNTING_S8_SQL = s8Files.length === 1 ? fs.readFileSync(path.join(directory, s8Files[0]), 'utf8') : '';
+export const ACCOUNTING_S8_FILES = s8Files;
+
+/** S8 の `-- ACC_S8_<name>_BEGIN` と `-- ACC_S8_<name>_END` の間。BASELINE は本文（BODY）の中の比べる元の控えの文。 */
+export function accountingS8Section(name: 'BODY' | 'BASELINE' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S8_SQL.split(`-- ACC_S8_${name}_BEGIN\n`)[1]?.split(`-- ACC_S8_${name}_END`)[0] ?? '';
+}
+
+/**
+ * 手を入れる前の今の状態を S8 の比べる元として控える（適用の時と同じ文を流す）。そのあとで末尾 assert を流す。
+ * 比べるのは、仕訳の見出し・行・計上待ち・着の記録・会計の期間の行数と、G の表・トリガー・関数の定義の指紋。
+ */
+export async function pinAccountingS8Baseline(client: PgClient): Promise<void> {
+	await client.query(accountingS8Section('BASELINE'));
+}
+
+export type SeedSlipOrder = {
+	orderId: string;
+	lines: ReadonlyArray<{ orderItemId: string; quantity: number }>;
+	/** 発送ごとの出荷日（無ければ発送票の出荷日）。食い違いの試験だけが使う。 */
+	fulfillmentDate?: string;
+};
+
+/**
+ * 確定した発送票を G の表へ直接入れる（G の関数は今日より後・支払いの日より前の出荷日を断るので通らない）。
+ * 発送票1枚・注文ごとに発送1つ（旧い発送の印 legacy=true で、在庫の消費の遅延検査の対象外）・品の行・発送票の明細・
+ * 出荷日の履歴（initial）・版の行を入れ、同じ取引の中で G の鍵を取って確定の事実（番号）も記録する。
+ * shipmentDate の初期値は今日（日本時間）。confirmedAt は発送票を確定した時刻（初期値は今）。
+ * 呼び出す取引は G の共通の鍵（190521,1）を先に取っておく（取引の外なら、この関数が取引を開いて閉じる）。
+ */
+export async function seedConfirmedSlip(client: PgClient, input: {
+	orders: ReadonlyArray<SeedSlipOrder>; shipmentDate?: string; confirmedAt?: string; recordFact?: boolean;
+}): Promise<{ slipId: string; number: string; version: number; fulfillmentIds: string[]; factSeq: number | null }> {
+	return withGroupG1FixtureTransaction(client, async () => {
+		const slipId = randomUUID();
+		const actor = randomUUID();
+		const operationId = randomUUID();
+		const shipmentDate = input.shipmentDate
+			?? ((await client.query("select ((now() at time zone 'Asia/Tokyo')::date)::text as d")).rows[0].d as string);
+		await client.query(`insert into private.group_g_operations
+			(id,operation,request_key,fingerprint,cause_type,cause_id,actor_id,result)
+			values ($1,'shipment_slip_confirm',$2,repeat('a',64),'shipment_slip',$3,$4,'{}')`, [operationId, randomUUID(), slipId, actor]);
+		const number = (await client.query(`insert into public.shipment_slips
+			(id,number,stage,customer_kind,customer_email,ship_to_full_name,ship_to_postal_code,ship_to_prefecture,ship_to_city,
+			 ship_to_address,ship_to_phone,draft_lines,notify_customer,shipment_date,confirm_request_key,confirm_operation_id,
+			 confirmed_at,confirmed_by,created_by)
+			values ($1, 'SL-29991231-' || lpad((coalesce((select max(right(number,4)::integer) from public.shipment_slips
+				where number like 'SL-29991231-%'),0)+1)::text,4,'0'), 'confirmed','guest','fixture@example.invalid','Fixture',
+				'0000000','Fixture','Fixture','Fixture','0000000000','[]'::jsonb,false,$2::date,$3,$4,coalesce($5::timestamptz, now()),$6,$6)
+			returning number`, [slipId, shipmentDate, randomUUID(), operationId, input.confirmedAt ?? null, actor])).rows[0].number as string;
+		const fulfillmentIds: string[] = [];
+		const slipLines = new Map<string, number>();
+		for (const order of input.orders) {
+			const fulfillmentId = (await client.query(`insert into public.order_fulfillments
+				(order_id,number,request_key,notify_customer,completes_order,shipped_at,created_by,legacy,shipment_date,delivery_status,delivery_status_at)
+				values ($1,(select coalesce(max(number),0)+1 from public.order_fulfillments where order_id=$1),$2,false,false,now(),$3,true,
+					$4::date,'confirmed',now()) returning id`,
+				[order.orderId, randomUUID(), actor, order.fulfillmentDate ?? shipmentDate])).rows[0].id as string;
+			fulfillmentIds.push(fulfillmentId);
+			for (const line of order.lines) {
+				await client.query('insert into public.order_fulfillment_lines(fulfillment_id, order_item_id, quantity) values($1,$2,$3)',
+					[fulfillmentId, line.orderItemId, line.quantity]);
+				slipLines.set(line.orderItemId, (slipLines.get(line.orderItemId) ?? 0) + line.quantity);
+			}
+			await client.query('insert into public.shipment_slip_fulfillments(slip_id, order_id, fulfillment_id) values($1,$2,$3)',
+				[slipId, order.orderId, fulfillmentId]);
+		}
+		for (const [orderItemId, quantity] of slipLines) {
+			await client.query('insert into public.shipment_slip_lines(slip_id, order_item_id, quantity) values($1,$2,$3)',
+				[slipId, orderItemId, quantity]);
+		}
+		await client.query(`insert into public.shipment_slip_versions(slip_id,version,kind,tracking_version,shipment_date,actor_id,operation_id)
+			values($1,1,'confirm',1,$2::date,$3,$4)`, [slipId, shipmentDate, actor, operationId]);
+		await client.query(`insert into public.shipment_date_history(slip_id,version,kind,previous_date,new_date,actor_id,operation_id)
+			values($1,1,'initial',$2::date,$2::date,$3,$4)`, [slipId, shipmentDate, actor, operationId]);
+		const factSeq = input.recordFact === false ? null : await recordSlipFact(client, slipId, 'confirm');
+		return { slipId, number, version: 1, fulfillmentIds, factSeq };
+	});
+}
+
+/** G の関数を呼ぶ人（owner の役割は発送の権限を全部持つ）。 */
+async function shippingActor(client: PgClient, actorId?: string): Promise<string> {
+	return actorId ?? insertAccountingAdmin(client);
+}
+
+/** 確定した発送票を G の取り消しの関数で取り消す（取引の中。G の鍵は関数が取る）。 */
+export async function cancelSlip(client: PgClient, slipId: string, input: { actorId?: string } = {}): Promise<void> {
+	const actor = await shippingActor(client, input.actorId);
+	const version = (await client.query('select version from public.shipment_slips where id = $1', [slipId])).rows[0].version as number;
+	await client.query('select public.admin_cancel_shipment_slip($1::uuid, $2::integer, $3::uuid, $4::uuid)',
+		[slipId, version, actor, randomUUID()]);
+}
+
+/**
+ * 出荷日を G の直しの関数で直し、できた履歴の行の番号を返す。G は今日より後・支払いの日より前の日を断るので、
+ * 日は注文の支払いの日以後・今日以前にする。
+ */
+export async function correctShipmentDate(client: PgClient, slipId: string, date: string,
+	input: { reason?: string; actorId?: string } = {}): Promise<string> {
+	const actor = await shippingActor(client, input.actorId);
+	const version = (await client.query('select version from public.shipment_slips where id = $1', [slipId])).rows[0].version as number;
+	await client.query('select public.admin_correct_shipment_date($1::uuid, $2::integer, $3::date, $4::text, $5::uuid, $6::uuid)',
+		[slipId, version, date, input.reason ?? 'record fix', actor, randomUUID()]);
+	return (await client.query(
+		"select id from public.shipment_date_history where slip_id = $1 and kind = 'correction' order by version desc limit 1", [slipId])).rows[0].id as string;
+}
+
+/**
+ * 支払いの仕訳まで入れた注文（計画2 Task 3 の出荷の試験の土台）。注文と Stripe の支払いを入れ、支払いの係を1回流して
+ * payment_confirmed の仕訳を作る。支払いの日の初期値は 2026-06-10（日本時間の昼）で、注文の paid_at も同じ日。
+ * 呼び出す取引は G の共通の鍵（190521,1）を先に取っておく。lines の1要素が1つの品。
+ */
+export async function seedPostedPayment(client: PgClient, input: {
+	lines: ReadonlyArray<{ price: number; quantity: number; unitAmounts?: readonly number[] }>;
+	createdAt?: string; fee?: number;
+}): Promise<{ orderId: string; orderItemIds: string[]; paymentIntentId: string; total: number; txId: string; paymentEntryId: string }> {
+	const createdAt = input.createdAt ?? '2026-06-10T03:00:00Z';
+	const order = await seedPaidOrder(client, { lines: input.lines, paidAt: createdAt });
+	const txId = await seedStripeCharge(client, { paymentIntentId: order.paymentIntentId, amount: order.total, createdAt, fee: input.fee ?? 0 });
+	const run = (await client.query('select private.accounting_post_payment_events(50) as r')).rows[0].r as { posted: number };
+	if (run.posted < 1) throw new Error('SEED_PAYMENT_NOT_POSTED');
+	const entry = (await client.query('select id from public.accounting_journal_entries where dedupe_key = $1',
+		['payment_confirmed:' + order.paymentIntentId])).rows[0];
+	return { orderId: order.orderId, orderItemIds: order.orderItemIds, paymentIntentId: order.paymentIntentId as string,
+		total: order.total, txId, paymentEntryId: entry.id as string };
+}
+
+/**
+ * ROLLBACK の試験の始めに、すでに DB にある確定済みの発送票（ほかの suite がコミットした物）を「解決済みの計上待ち」にして
+ * 出荷の係の候補から外す。外さないと、全件の実行で係が見知らぬ発送票を拾い、試験の件数が合わない。取引ごと ROLLBACK で戻る。
+ */
+export async function setAsideExistingSlips(client: PgClient): Promise<void> {
+	await client.query(`insert into public.accounting_pending_events (event_kind, source_table, source_id, reason, resolved_at)
+		select 'shipment_confirmed', 'shipment_slips', s.id::text, 'no_revenue', now() from public.shipment_slips s
+		where s.stage = 'confirmed' on conflict do nothing`);
 }

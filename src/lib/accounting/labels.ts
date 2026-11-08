@@ -8,6 +8,8 @@ export const ACCOUNTING_LABELS = {
 	shipmentRevenue: '出荷による売上',
 	/** 出荷の取り消しの仕訳の理由。 */
 	shipmentCancelled: '出荷の取り消し',
+	/** 出荷の仕訳の行のメモ「品名 × 数量」の間の字（前後に空白）。 */
+	quantityTimes: ' × ',
 	/** 決済会社の相手の名前。 */
 	stripeJapan: 'ストライプジャパン株式会社',
 	feePayment: '決済の手数料',

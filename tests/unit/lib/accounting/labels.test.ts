@@ -11,7 +11,7 @@ const decode = (escaped: string) =>
 	escaped.replace(/\\([0-9A-Fa-f]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16))).replace(/''/g, "'");
 
 describe('FREQ-562-AC-01: 仕訳の説明・メモ・相手の日本語は ACCOUNTING_LABELS が正本', () => {
-	it('計画2で使う16個の語を持ち、空でなく重ならない', () => {
+	it('計画2で使う17個の語を持ち、空でなく重ならない', () => {
 		expect(Object.keys(ACCOUNTING_LABELS).sort()).toEqual(
 			[
 				'bankArrived',
@@ -26,6 +26,7 @@ describe('FREQ-562-AC-01: 仕訳の説明・メモ・相手の日本語は ACCOU
 				'paymentReceived',
 				'payoutFailed',
 				'payoutStarted',
+				'quantityTimes',
 				'shipmentCancelled',
 				'shipmentRevenue',
 				'stripeJapan',

@@ -224,12 +224,14 @@ describeLocalDb('G-3 date correction (local DB only)', (db) => {
   test('FREQ-535-AC-04: shipment_dateを持つprosrcはG-3の限定した関数だけで、KPI・会計関数に広がらない', async () => {
     const actual = (await db().query(`select n.nspname||'.'||p.proname name from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname in ('public','private') and strpos(p.prosrc,'shipment_date')>0 order by 1`)).rows.map((p) => p.name);
+    // Accounting plan 2 S8 reads the shipment day on purpose (design 6-a): its five functions are listed with the G-3 ones.
     expect(actual).toEqual([
+      'private.accounting_post_shipment_events', 'private.accounting_shipment_date_reason',
       'private.admin_cancel_shipment_slip', 'private.admin_confirm_shipment_slip', 'private.admin_correct_shipment_date',
       'private.admin_mark_shipment_slip_delivered', 'private.admin_update_shipment_slip_tracking', 'private.get_admin_shipment_slip',
-      'private.group_g_writer_allowlist', 'private.guard_group_g_shipment_slip_change', 'private.list_admin_shipment_slips',
-      'private.list_shipment_accounting_inputs', 'private.restrict_fulfillment_record_update',
-      'public.admin_confirm_shipment_slip', 'public.admin_correct_shipment_date',
+      'private.get_shipment_journal_trace', 'private.group_g_writer_allowlist', 'private.guard_group_g_shipment_slip_change', 'private.list_admin_shipment_slips',
+      'private.list_journal_shipment_meta', 'private.list_shipment_accounting_inputs', 'private.restrict_fulfillment_record_update',
+      'public.admin_confirm_shipment_slip', 'public.admin_correct_shipment_date', 'public.list_journal_shipment_meta',
     ]);
   });
   test.each(['PERFORM 1 FROM public.shipment_slips;', 'PERFORM private.group_g_actor_has_permissions(_actor_id, ARRAY[]::text[]);'])('FREQ-540-AC-11: 新writerのlock前参照%sをG3D最終assertが拒否', async (injected) => {
