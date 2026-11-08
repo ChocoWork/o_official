@@ -1,5 +1,7 @@
 # ER 図（現行リポジトリの実装）
 
+> 会計の計画 2（前受金・出荷の日の売上・Stripe）確認日: 2026-11-09。新しい表 12 と、G・会計の既存の物への足し物（索引・連番・CHECK・関数 2 本）を、末尾の「会計の前受金・出荷・Stripe の表（計画 2 / FREQ-562〜574）」に追記した。外部キーは 11 本（G・H の `shipment_slips`・`order_items`・`order_line_unit_amounts` と会計の `accounting_journal_entries`・`accounting_accounts` へ）。移行 9 本（`20261108150000`〜`20261108230000`、S6〜S14）は手元の DB で確かめた。本番は未適用。旧 `admin_kpi_monthly_records` の食い違い（旧 `migrations/063` にだけ定義があった）は、S13 が `supabase/migrations/` に定義を持つことで解消した（6.1 の表を直した）。
+>
 > 会計の計画 1（仕訳の土台と期間）確認日: 2026-11-08。新しい表 9 つと `admin_finance_receipts` の列 2 つを、末尾の「会計の仕訳の土台と期間（計画 1 / FREQ-553〜561）」に追記した。移行 6 本（`20261107130000`〜`20261107130500`）は手元の DB で確かめた。本番は未適用。旧 `admin_kpi_monthly_records` との食い違いは計画 2 で扱う（この文書には書かない）。
 
 > 返品の受け取りの数え方の直し 確認日: 2026-11-08。`order_return_receipts` に列 `consult_quantity` と CHECK を足した（テーブル・FK の数は変わらない）。末尾の「返品の受け取りの相談の点数（I-1・N-1 の直し、2026-11-08）」。移行 `20261108063711` は手元で確認し、2026-11-08 にオーナーの許可で本番へ当てた。
@@ -1442,7 +1444,7 @@ CHECK (
 
 | 現行コードの参照テーブル | 旧 SQL の PK / UNIQUE | 旧 SQL の FK | 定義元 / 現行の参照元 |
 | --- | --- | --- | --- |
-| `admin_kpi_monthly_records` | bigint `id` PK、`(month_key, metric_key)` UNIQUE | なし | [063 の定義](../../../migrations/063_create_admin_kpi_monthly_records.sql#L10) / [月次記録 API](../../../src/app/api/admin/kpi/monthly-record/route.ts#L59) / [Meta 同期](../../../src/lib/meta/sync-kpi.ts#L206) |
+| `admin_kpi_monthly_records`（2026-11-09 から S13 が `supabase/migrations/` でも定義する。下の計画 2 の節） | bigint `id` PK、`(month_key, metric_key)` UNIQUE | なし | [063 の定義](../../../migrations/063_create_admin_kpi_monthly_records.sql#L10) / [月次記録 API](../../../src/app/api/admin/kpi/monthly-record/route.ts#L59) / [Meta 同期](../../../src/lib/meta/sync-kpi.ts#L206) |
 | `public.admin_meta_kpi_connections` | uuid `id` PK、`provider` UNIQUE | nullable uuid `connected_by` → `auth.users(id)`、ON DELETE SET NULL | [079 の定義](../../../migrations/079_create_meta_kpi_integration.sql#L1) / [接続状態 API](../../../src/app/api/admin/kpi/meta/route.ts#L12) |
 | `public.admin_meta_kpi_sync_runs` | uuid `id` PK | 非 nullable uuid `connection_id` → `public.admin_meta_kpi_connections(id)`、ON DELETE CASCADE | [079 の定義](../../../migrations/079_create_meta_kpi_integration.sql#L20) / [同期 API](../../../src/app/api/admin/kpi/meta/sync/route.ts#L23) |
 
@@ -2348,3 +2350,55 @@ erDiagram
 ### 表の権限の締め直し（S1）
 
 `admin_finance_*` の 12 表と、その 12 表が持つ 8 つの連番から、`PUBLIC`・`anon`・`authenticated` の権限（SELECT を含む）を全部外し、`service_role` に明示で付け直した。利用者の JWT で 12 表を直接読み書きする道は無く、アプリは `service_role` の route を通る。RLS の方針（45 本）は変えない。
+
+
+## 会計の前受金・出荷・Stripe の表（計画 2 / FREQ-562〜574）
+
+確認日: 2026-11-09。移行は [S6 計上の土台](../../../supabase/migrations/20261108150000_accounting_p2_posting_tables.sql)・[S9 Stripe の計上](../../../supabase/migrations/20261108180000_accounting_p2_stripe_posting.sql)・[S10 dispute の受け取り](../../../supabase/migrations/20261108190000_accounting_p2_dispute_intake.sql)・[S11 dispute の計上](../../../supabase/migrations/20261108200000_accounting_p2_dispute_posting.sql)・[S13 月の KPI の記録](../../../supabase/migrations/20261108220000_accounting_p2_kpi_monthly_records.sql)・[S14 年末の出荷](../../../supabase/migrations/20261108230000_accounting_p2_year_end_shipments.sql)。S7・S8・S12 は関数だけで表を足さない。適用の順と戻し方は [db-migrations.md](../../06_Operations/db-migrations.md) の計画 2 の節と[運用の手引き](../../06_Operations/accounting-p2-posting-stripe.md)。会計は `scripts/trace/scope.json` の範囲の外なので、この文書に手で書く。
+
+### 新しい 12 表と関連
+
+```mermaid
+erDiagram
+    accounting_journal_entries ||--o{ accounting_pending_events : "resolved_entry_id"
+    accounting_journal_entries ||--o{ accounting_shipment_units : "entry_id"
+    order_items ||--o{ accounting_shipment_units : "order_item_id"
+    order_items ||--o{ accounting_unit_refund_allocations : "order_item_id"
+    order_line_unit_amounts ||--o{ accounting_unit_refund_allocations : "order_item_id, unit_index"
+    shipment_slips ||--o{ accounting_g_slip_facts : "slip_id"
+    shipment_slips ||--o{ accounting_shipment_checks : "slip_id"
+    stripe_disputes ||--o{ stripe_dispute_events : "dispute_id"
+    stripe_disputes ||--o| accounting_dispute_assignments : "dispute_id"
+    accounting_journal_entries ||--o{ accounting_dispute_assignments : "entry_id"
+    accounting_accounts ||--o{ accounting_dispute_account_settings : "account_code"
+```
+
+全 FK は `ON DELETE RESTRICT`。12 表とも RLS 有効で方針は 0 本、所有者は `postgres`、`PUBLIC`・`anon`・`authenticated`・`service_role` の権限を全部外して `service_role` に SELECT だけ付ける。書くのは `SECURITY DEFINER` の関数だけ（`record_stripe_dispute` など）。`accounting_pending_events`・`accounting_stripe_invoice_records`・`accounting_dispute_account_settings`・`accounting_shipping_options`・`admin_kpi_monthly_records` は行を更新できる（理由の更新・版つきの更新）。`stripe_disputes` は更新できる列が決まっている（下の表）。ほかは追記だけ（UPDATE・DELETE・TRUNCATE を `private.reject_accounting_mutation` が断る。`ENABLE ALWAYS`）。
+
+| 表（移行） | 主キー | 列と制約 |
+| --- | --- | --- |
+| `accounting_pending_events`（S6） | `id` | 仕訳にできない出来事。`event_kind`（仕訳の種類の目録の中）・`source_table`・`source_id`（組で一意）、`order_id`、`reason`（CHECK で 18 種: `payment_journal_missing`・`order_not_postable`・`amount_mismatch`・`no_order`・`units_insufficient`・`shipment_date_mismatch`・`deferred_revenue_short`・`period_missing`・`posting_error`・`before_cutover`・`unknown_category`・`payout_mismatch`・`dispute_refund_overlap`・`dispute_return_refund_pending`・`dispute_withdrawal_missing`・`dispute_shipment_pending`・`shipment_lines_mismatch`・`no_revenue`）、`detail`（jsonb の object。理由ごとの鍵の検査は書き手 `accounting_park_event` が行う）、`first_detected_at`・`last_detected_at`・`detection_count`（1 以上）、`resolved_at`・`resolved_entry_id`（→ `accounting_journal_entries`）・`resolved_by`・`resolution_note`（500 字まで）・`resolution_request_key`（一意）・`resolution_request_hash`。索引 `(resolved_at, first_detected_at)`・`(order_id)` |
+| `accounting_shipment_units`（S6） | `(entry_id, order_item_id, unit_index)` | 出荷の仕訳が使った着。`entry_id` → `accounting_journal_entries`、`order_item_id` → `order_items`、`unit_index`（0 以上）、`paid_amount`（0 以上）、`refunded_amount`（0 以上）。追記だけ |
+| `accounting_unit_refund_allocations`（S6） | `(order_item_id, unit_index, refund_key)` | 出荷前の返金の着ごとの額。`order_item_id` → `order_items`、`(order_item_id, unit_index)` → `order_line_unit_amounts`、`refund_key`（`^[A-Za-z0-9_.:-]{1,128}$`。返金の番号、`reapply:`・`cover:`・`release:` の前置き）、`amount`（0 でない整数。解放は負）、`fact_seq`（一意）・`locked_at`（G の鍵の中で取った番号と時刻）。着ごとの合計が 0 〜 支払額に収まることを遅延の制約トリガー `accounting_check_unit_allocation_sum` が確かめる（違反は DETAIL `unit_allocation_sum`）。追記だけ |
+| `accounting_g_slip_facts`（S6） | `(slip_id, kind)` | 発送票の確定・取り消しの事実。`slip_id` → `shipment_slips`、`kind`（`confirm`・`cancel`）、`fact_seq`（一意）・`locked_at`。G の確定・取り消しの関数が段を変えた直後に書く（番号は G の鍵 `(190521,1)` を持つ間だけ取る）。追記だけ |
+| `accounting_stripe_invoice_records`（S9） | `invoice_month` | Stripe の適格請求書の月の記録（手で入れる）。`invoice_month`（`YYYY-MM`）、`invoice_total`・`invoice_tax`（0 以上）、`document_ref`（200 字まで）、`entered_by`・`entered_at`、`version`（1 以上）、`admin_requests`（jsonb の object。要求の鍵の再送の記録） |
+| `stripe_disputes`（S10） | `id` | カード会社からの支払いの取り消し。`id`（`dp_…`）、`payment_intent_id`・`charge_id`・`order_id`（FK なし。更新で NULL に戻らない）、`amount`（正）、`currency`、`reason`（1〜64 字。原因）、`status`、`is_charge_refundable`、`evidence_due_by`、`evidence_details`（jsonb。`service_role` の SELECT だけで、読みの関数は返さない）、`stripe_created_at`、`synced_at`。更新できる列は状態・期限・証拠・同期時刻だけ（`stripe_disputes_guard_update` が `id`・`amount`・`currency`・`reason`・`charge_id`・`payment_intent_id`・`stripe_created_at` の変更を `ACCOUNTING_HISTORY_IMMUTABLE` で断る）。DELETE・TRUNCATE は断る |
+| `stripe_dispute_events`（S10） | `id` | dispute の履歴（追記だけ）。`dispute_id` → `stripe_disputes`、`stripe_event_id`（一意）、`event_type`（`reconcile` は毎晩の読み直し）、`status`、`occurred_at`、`stripe_event_created_at`（NULL 可。Stripe の知らせの時刻。確定の時刻に使う）、`balance_transaction_ids`（text の配列）、`raw_payload`（jsonb。個人の情報を含みうるので `service_role` の SELECT だけ）、`created_at`。索引 `(dispute_id, occurred_at)` |
+| `accounting_dispute_account_settings`（S11） | `reason` | 原因ごとの、確定した損失の科目。`reason`（1〜64 字。Stripe の 16 の原因）、`account_code` → `accounting_accounts`（費用か収益の科目だけ）、`version`（1 以上）、`updated_by`・`updated_at`、`admin_requests`。行は削除できない（設定を外す道は無い） |
+| `accounting_dispute_assignments`（S11） | `dispute_id` | 「確定・科目の決定待ち」の振り替え（X）の記録。`dispute_id` → `stripe_disputes`、`entry_id` → `accounting_journal_entries`、`assigned_by`・`assigned_at`、`request_key`（一意）・`request_hash`。1 つの dispute に 1 回。追記だけ |
+| `admin_kpi_monthly_records`（S13） | `id`（identity） | 月の KPI の記録。`month_key`（`YYYY-MM`）、`metric_key`（`^(src|kpi):[A-Za-z0-9_]{1,64}$`）、`value`（numeric）、`created_at`・`updated_at`（`admin_kpi_monthly_records_touch` が更新で時刻を進める）。`(month_key, metric_key)` 一意。値を空にすると行を削除する。書くのは `admin_set_kpi_monthly_records`（店長の画面）と `system_upsert_kpi_monthly_records`（Meta の同期）だけ |
+| `accounting_shipment_checks`（S14） | `(slip_id, checked_shipment_date, checked_tracking_version)` | 年末の出荷の確かめの印。`slip_id` → `shipment_slips`、印を付けた時の出荷日と追跡の版（その後に直すと印が古いと分かる）、`checked_by`（NOT NULL）・`checked_at`、`note`（200 字まで）、`request_key`（一意）・`request_hash`。追記だけ |
+| `accounting_shipping_options`（S14） | `id`（1 だけ） | 運送会社の受付日を使うオプション。`carrier_date_check_enabled`（既定 false）、`changed_at`・`changed_by`、`version`、`admin_requests`。移行が 1 行を入れ、DELETE・TRUNCATE は断る |
+
+### 既存の物への足し物
+
+| 対象（移行） | 足したもの |
+| --- | --- |
+| `public.accounting_journal_lines`（S6） | 部分索引 `accounting_journal_lines_order_account_idx (order_id, account_code) WHERE order_id IS NOT NULL`。注文ごとの前受金（2150）の残高を引く |
+| `private.accounting_g_fact_seq`（S6） | 連番（bigint）。誰にも権限を付けず、`SECURITY DEFINER` の道具 `accounting_take_g_fact_seq` だけが G の鍵の中で取る。番号の順がコミットの順になる |
+| `ops_job_heartbeats_job_check`（S6） | 8 つ目の印 `accounting_post` を足した |
+| `private.admin_confirm_shipment_slip`・`private.admin_cancel_shipment_slip`（S6） | 段を変えた直後に事実を書く 1 行ずつ（`-- ACC_P2_BEGIN … _END` の間）。引数・戻り・権限・G の書き手の一覧は変えない |
+| `accounting_journal_entries` の種類の目録 | 計画 2 が使う種類（`payment_confirmed`・`shipment_confirmed`・`shipment_redated`・`stripe_fee`・`stripe_tax_adjustment`・`payout_started`・`bank_arrived`・`payout_failed`・`balance_topup`・`dispute_event`）は計画 1 の S2 の 27 種に最初から入っている（足していない）。補助科目 `dispute_pending`・`dispute_confirmed_unassigned` は 1470 の行の `sub_account` に入る |
+| 仕訳の印（`dedupe_key`） | `payment_confirmed:<payment intent>`、`shipment_confirmed:<発送票の番号>`、`shipment_redated:<日付の履歴の行>`、`stripe:fee:<取引>`、`dispute_event:<dispute>:<段>:<参照>`（段は `withdrawn`・`confirmed`・`reversal`・`assigned`）など。同じ印の内容が違うと 409 |
+
+G・H の表（`shipment_slips`・`order_items`・`order_line_unit_amounts`）へ外部キーを張ったため、G・H の既存の試験の TRUNCATE などの期待を直した（[db-migrations.md](../../06_Operations/db-migrations.md) の「G・H の試験に足した変更」）。G・H の表・列・制約は変えていない。

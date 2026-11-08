@@ -1,5 +1,7 @@
 # 画面一覧
 
+> 会計の作り直し 計画2 Task 15 確認日: 2026-11-09。画面ルートの数は変えない（51件）。`/admin` の ACCOUNTING のサブタブに「計上待ち」「照合」を足して8つにし（URL の `?accountingTab=reconciliation` で最初に開くタブを選べる）、帳簿・Stripe 精算・設定・期間に欄を足し、KPI の「売上」を「受注高」に改めた。末尾の「会計の計上待ち・照合・受注高（FREQ-562〜574）」に書いた。
+>
 > 会計の作り直し 計画1 Task 15 確認日: 2026-11-08。画面ルートの数は変えない（51件）。`/admin` の ACCOUNTING の中に、6つ目のサブタブ「設定・期間」を足し、年の選択を会計期間の選択に替えた（末尾の「会計の設定・期間と期間の選択（FREQ-555・561）」）。
 >
 > 返品の品ごとの返金 Task 3 確認日: 2026-11-06。画面ルートの数は変えない（51件）。注文の詳細の返品の欄から開く受け取りの画面（`OrderReturnReceiveDialog`）を、品ごとに「今すぐ返金 / 額を相談」を選ぶ形（見本 A）にした。末尾の「返品の受け取りの品ごとの返金（FREQ-641 / DD-ADMIN-019）」に記載。単体・画面結合と3幅の E2E（`FR-ADMIN-164`、18/18通過）は実測済み。調整役の手元の実行と結果は[テスト仕様](../../05_Quality/tests/test-spec.md)に記録。
@@ -227,7 +229,7 @@ Task 5 fix round 1（2026-10-29）: DISCOUNT一覧の「使った回数」と「
 
 ## 会計の設定・期間と期間の選択（FREQ-555・559・561）
 
-確認日: 2026-11-08。根拠は会計の作り直し 計画1（Task 10・11）の実装。ルートは増やさない（`/admin` の ACCOUNTING の中）。サブタブは「財務概要」「取引管理」「帳簿」「商品原価」「税務レポート」「設定・期間」の6つ（[constants.ts](../../../src/components/cost-profit/constants.ts)）。
+確認日: 2026-11-08。根拠は会計の作り直し 計画1（Task 10・11）の実装。ルートは増やさない（`/admin` の ACCOUNTING の中）。サブタブは「財務概要」「取引管理」「帳簿」「商品原価」「税務レポート」「設定・期間」の6つ（計画2で「計上待ち」「照合」を足して8つ。下の計画2の節）（[constants.ts](../../../src/components/cost-profit/constants.ts)）。
 
 | 部分 | 表示と条件 |
 | --- | --- |
@@ -241,3 +243,22 @@ Task 5 fix round 1（2026-10-29）: DISCOUNT一覧の「使った回数」と「
 | 証憑の種類の選択（取引管理の証憑の Drawer と新しい取引の入力） | 添付の前にラジオ2つ「電子で受け取った（PDF など）」「紙」から選ぶ（必須）。紙は「紙の原本を残してある」を確かめるまで添付できない。種類が決まるまで FileDropZone を押せない。移行前の領収書（`unconfirmed`）には「種類を確かめてください」を出す。添付済みは「電子」「紙あり」で示す |
 
 「地方税の延長」の注記の言い方は、税理士の確認待ち（未確認事項）。画面単体は [settings-view.test.tsx](../../../tests/unit/components/cost-profit/settings-view.test.tsx)・[period-form.test.tsx](../../../tests/unit/components/cost-profit/period-form.test.tsx)・[receipt-kind.test.tsx](../../../tests/unit/components/cost-profit/receipt-kind.test.tsx)・[period-count.test.tsx](../../../tests/unit/components/cost-profit/period-count.test.tsx)、390/768/1280px は E2E `FR-ADMIN-128`〜`131`・`FR-ADMIN-029`・`031`・`042` が確かめる。
+
+
+## 会計の計上待ち・照合・受注高（FREQ-562〜574）
+
+確認日: 2026-11-09。根拠は会計の作り直し 計画2（Task 11・12・13）の実装。ルートは増やさない（`/admin` の ACCOUNTING と KPI の中）。サブタブは「財務概要」「取引管理」「帳簿」「商品原価」「税務レポート」「設定・期間」「計上待ち」「照合」の8つ（[constants.ts](../../../src/components/cost-profit/constants.ts) の `COST_PROFIT_TABS`）。URL `/admin?tab=ACCOUNTING&accountingTab=reconciliation` で「照合」を最初に開く（知らない値は財務概要）。窓口は[API 仕様](../api/api-spec.md)、運用は[会計の運用](../../06_Operations/accounting-p2-posting-stripe.md)、詳細は[管理の会計の詳細設計](../../04_DetailDesign/pages/16-5_admin_accounting.md)。
+
+| 部分 | 表示と条件 |
+| --- | --- |
+| 計上待ち（`PendingView`） | 仕訳にできていない出来事の一覧（`GET /api/admin/accounting/pending-events`）。1件ごとに種類、日、理由（18 種それぞれにやさしい文。固定のコードはそのまま出さない。`dispute_withdrawal_missing` は `waiting_on` で3通りの文、`period_missing` は `sole_ended_not_switched` で文を変える）、詳細の補足（金額の不足など）。「もう一度計上する」（`admin.finance.manage`、`POST /api/admin/accounting/posting/run`。押している間は無効、結果を知らせて一覧を読み直す）。「確認済みにする」は `before_cutover`・`no_revenue` の行だけで、権限 `admin.accounting.entries.correct` とメモ（必須）が要る。お金が動く行には「仕訳が入るまで閉じられません」を出す。`no_order` は閉じるボタンを出さず、確かめる旨の説明だけ。`posting_error` は記号（`error_code`）・SQLSTATE・出来事の日、元の注文／発送票へのリンク、「運用の担当へ記号を渡す」の案内で、確認済みにはできない（生の例外は出さない）。続きの目印が古い時（409 `ACCOUNTING_LIST_RESTART`）は最初から読み直す |
+| 前受金の確認（`DeferredRevenuePanel`、計上待ちの下） | 繰り越した前受金（2150）の注文別の一覧（`GET /api/admin/accounting/deferred-revenue`）。基準日（既定は最も早い課税期間の始まりの前日、無ければ今日）、注文番号、残高、未出荷の着の状態、合計。「前受金の異常」（残高がマイナス、または全部出荷済み・返金済みなのに残高が残る）を別の欄に出す。注文番号は `ORD-` と注文 ID の先頭8文字 |
+| 照合（`ReconciliationView`） | 4つの欄。(1) Stripe の残高の照合（照合する日を選ぶ。Stripe の残高、帳簿の残高、差、仕訳になっていない取引の種類〔5 欄〕、説明のつかない差、入金途上〔1150〕）。(2) 手数料の月の照合（1段目: 日本時間と UTC の差と月またぎの内訳。2段目: UTC と請求書の差。「符号の向きは確認中」の注記。請求書の合計・税額・書類の参照を入れる `InvoiceRecordForm`〔権限 `admin.finance.manage`〕）。(3) 受注高の照合（範囲を選ぶ。1段目: 期首の受注残 ＋ 受注高 − 売上高 ＋ 例外 ＝ 期末の受注残、2段目: 帳簿の売上高との照合と dispute の確定した損失の科目別の内訳。説明のつかない差が0以外なら赤字）。(4) 年末の出荷の確認（下） |
+| 年末の出荷の確認（`YearEndShipmentsPanel`、照合の中） | 範囲（既定は 12/25〜1/10。7月より前は前の年末）の確定・取り消し済みの発送票の表（発送票の番号、出荷日、段、運送会社、伝票番号、確かめた印）。「確かめた」で印を付ける（`admin.finance.manage`、`POST /api/admin/accounting/year-end-shipments`）。印を付けた後に出荷日か追跡が変わると「確かめた後で日付か追跡が変わりました」と「もう一度確かめた」。運送会社の受付日のオプションがオンの時だけ「運送会社の受付日とのずれ」の表（上限100件を超えると「100件を超えました。範囲を狭めてください」）。オフの時は「…オフです」 |
+| 帳簿（仕訳帳・元帳）の出荷の列（`ledger-view.tsx`・`journal-view.tsx`） | 出荷の仕訳の行に「出荷した日」「登録した日」「出荷の跡」の列。値は取引管理の読み（`shipmentMeta`）から来る。読めなかった時は「出荷した日と登録した日を読み込めませんでした。仕訳はそのまま使えます。…」の固定の案内。「出荷の跡」は、出荷日を直した理由・人・前後の日と、取り消しと正しい仕訳のつながり（`GET /api/admin/accounting/shipment-trace`）を開く |
+| Stripe 精算のタブへの足し物（`stripe-settlement-view.tsx`） | 「残高の補充の記録」（金額、銀行の日付、銀行の番号か Stripe の番号〔どちらか必須。`^[A-Za-z0-9_.-]{1,128}$`〕、送る前に検証。同じ記録は「同じ記録が既にあります」）。請求書を記録する月（`InvoiceRecordForm`）。「カード会社からの支払いの取り消し」の一覧（取り消しの番号、原因、金額、状態、引かれた日、振り替え先。申し立ての資料やお客様の情報は出さない）。原因の科目が決まっていない確定した損失は「科目の決定待ちの取り消し」に出て、「振り替える」（`admin.accounting.entries.correct`）で科目へ移す |
+| 設定・期間への足し物（`settings-view.tsx`） | 「支払いの取り消しの振り替え先」（Stripe の原因16種ごとに、確定した損失の科目を選ぶ。権限 `admin.accounting.settings.manage`。設定は削除できない）。「運送会社の受付日」（オプションのオン・オフ。既定はオフ） |
+| 発送票の確定の画面（G-3 の票の画面） | 判断待ちの dispute のある注文を含む票の確定は 409 で断られ、「カード会社の判断待ちの注文が含まれているため、出荷できません。」を出す（`DISPUTE_HOLD`）。票は読み直す |
+| KPI の「受注高」（`KpiSection.tsx`） | 「売上」の名前と文言を「受注高」に改めた（カード、推移、月次記録の指標名、算出式、tooltip）。説明は「期間内に支払いを受けた注文の額（出荷前の取り消しを引く）」。受注高の内訳のパネル（`IntakeSummary`）: 「受注高は帳簿の売上高ではありません。申告には使いません。」「支払いの確認が帳簿に入るまで数えません。」、受注残（件数と額）、今月の返品（出荷後の返品は引かない旨の注記）、内訳（割引前の額・割引・送料・支払い・出荷前の取り消し・カード会社の取り消し）、「支払いの件数（取り消しを含む）」、内訳が合わない時の警告。「帳簿との照らし合わせは会計の『照合』で見られます」から `/admin?tab=ACCOUNTING&accountingTab=reconciliation` へ。パネルは3つの欄（受注残・内訳・返品）が揃った時だけ出す |
+
+390/768/1280px の幅は E2E `FR-ADMIN-132`〜`136` が確かめる（横のはみ出しなし）。画面単体は `tests/unit/components/cost-profit/` の `pending-view`・`reconciliation-view`・`dispute-settings-panel`・`balance-topup-form`・`year-end-shipments-panel`・`journal-shipment-columns` と `tests/unit/components/KpiSection.intake.test.tsx`。

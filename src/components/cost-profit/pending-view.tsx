@@ -57,7 +57,7 @@ const REASON_TEXT: Readonly<Record<Exclude<PendingReason, "period_missing" | "di
   order_not_postable: "この注文は送料や合計が決まりの形と合わないため、自動で計上できません。内容を確かめてください。",
   amount_mismatch: "Stripe の取引の総額が、注文の支払額と違います。取引が同期し直されると、もう一度確かめます。",
   no_order: "Stripe に、注文と結び付かない支払いが届いています。注文以外の入金でないか、内容を確かめてください。",
-  units_insufficient: "送る着の数が、まだ送っていない着の数より多くなっています。取り消しで着が戻ると自動で計上されます。",
+  units_insufficient: "この発送票で送る着の数が、まだ送っていない着の数より多くなっています。この発送票を取り消すと、この行は閉じます。",
   shipment_date_mismatch: "発送ごとの出荷日と発送票の出荷日が食い違っています。日が直されると自動で計上されます。",
   deferred_revenue_short: "出荷の額が、この注文の前受金の残りより多くなっています。支払いや戻しが入ると自動で計上されます。",
   posting_error: POSTING_ERROR_TEXT,

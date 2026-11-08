@@ -1,7 +1,7 @@
 # ハイブリッド RBAC (Role-Based Access Control) アーキテクチャ
 
 **ステータス**: 実装完料
-**最終更新**: 2026-11-08（会計の権限 6 件と表の権限の締め直しを追記）
+**最終更新**: 2026-11-09（会計の計画2で、権限 6 件の使い道を追記。目録は変えていない）／2026-11-08（会計の権限 6 件と表の権限の締め直しを追記）
 **Migration**: 023_add_acl_rbac_tables_and_policies.sql
 
 ---
@@ -96,6 +96,8 @@ Permission Codes:
 | `admin.accounting.inventory.manage` | 棚卸・原価の確定 | まだ使う入口は無い（後の計画） |
 | `admin.accounting.export.read` | 帳簿・写しの書き出し | まだ使う入口は無い（後の計画） |
 | `admin.accounting.integration.manage` | 会計ソフトとの連携 | まだ使う入口は無い（後の計画） |
+
+計画2（2026-11-09）で使う入口: `admin.accounting.settings.manage` は dispute の原因ごとの科目の設定（`PUT /api/admin/accounting/dispute-settings`）と運送会社の受付日のオプション（`PUT /api/admin/accounting/year-end-shipments`）にも使う。`admin.accounting.entries.correct` は、計上待ちの `before_cutover`・`no_revenue` を確認済みにする操作（`POST …/pending-events/[id]/resolve`）と、確定した損失の科目の振り替え（`POST …/disputes/[id]/assign`）に使う。計上係を手で流す・残高の補充・請求書の記録・年末の出荷の確かめは `admin.finance.manage`、会計の読みは `admin.finance.read`。権限の目録は38コードのまま（足していない）。
 
 ### 会計の表の権限の締め直し（会計の計画 1。FREQ-553）
 

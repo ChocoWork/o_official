@@ -1,6 +1,7 @@
 # Stripe の知らせのキューと定期処理の手順書
 
-> 対象: Stripe の知らせ（Webhook）の受け取り口・キュー・worker、毎時の見回り、毎晩の照合、店への知らせ
+> 対象: Stripe の知らせ（Webhook）の受け取り口・キュー・worker、毎時の見回り、毎晩の照合、10分ごとの会計の計上、店への知らせ
+> 確認日: 2026-11-09（会計の計画2: 受け取りの種類を13種から18種にし、10分ごとの会計の計上 `accounting-post` を足した）
 > 設計: [グループ B 設計書](../superpowers/specs/2026-10-05-webhook-queue-operations-design.md)、保留中の SQL: [supabase/pending/README.md](../../supabase/pending/README.md)
 
 ---
@@ -23,6 +24,7 @@
 | worker | 毎分 | POST `/api/cron/process-stripe-webhooks`（Stripe の知らせの後に注文のメールも送る） |
 | 見回り | 毎時0分 | POST `/api/cron/expire-pending-orders` |
 | 照合 | 毎日 3:00（18:00 UTC） | POST `/api/cron/stripe-reconcile` |
+| 会計の計上（accounting-post、印 accounting_post） | 10分ごと | POST `/api/cron/accounting-post`（開店時に保留 SQL で登録。会計の運用は[会計の前受金・出荷・Stripe の運用](accounting-p2-posting-stripe.md)） |
 | 実行の記録の掃除 | 毎日 4:00（19:00 UTC） | DB の中だけ（7日を残す） |
 | 写真を消す処理（purge-return-photos、印 return_photo_purge） | 毎日4:20（19:20 UTC） | POST `/api/cron/purge-return-photos`（開店時に保留 SQL で登録） |
 | 注文のメールの片付け（`order-email-retention`） | 毎日 4:40（19:40 UTC） | DB の中だけ（本文と受付済みの番号の片付け） |
@@ -37,7 +39,7 @@ flowchart TD
     A --> B["2 本番 DB で pg_net を有効にし、Vault に合言葉と住所を入れる"]
     B --> C["3 保留中の SQL を当て、定期処理を登録する"]
     C --> D["4 定期処理が成功しているのを確かめる"]
-    D --> E["5 Stripe の知らせの宛先を登録する（13種）"]
+    D --> E["5 Stripe の知らせの宛先を登録する（18種）"]
     E --> F["6 最初の知らせが処理されたのを確かめる"]
     F --> G["7 普段の開発を手元の DB に切り替える"]
 ```
@@ -47,9 +49,9 @@ flowchart TD
 | 0 | 本番の環境変数（`MAIL_PROVIDER` など）を入れる前に、[注文のメールの手順書](order-email-operations.md)の1-1で移行前後を照合し、1-2の読むだけの SQL で送信待ち・送信中・やり直し待ちを確かめる。試しの行の取りやめはユーザーに見せ、明示の承認を得た後だけ | ユーザーと Claude | 古い印が種類ごとに同じ8行・2注文で、公開前の試しの送信待ちが残っていない（宛先を出さない） |
 | 1 | 公開の前に、E-3 段2の移行 D・E・F が A〜C の後に当たっていることを確かめる（下の箇条書き）。Vercel に公開し、環境変数を入れる。`CRON_SECRET` は32文字以上のランダムな値（例: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`）。`SHOP_ALERT_EMAIL`・`MAIL_FROM_ADDRESS`・`STRIPE_SECRET_KEY`（本番の鍵）も入れる。知らせのメールを送る設定（`MAIL_PROVIDER` は `resend`（小文字）、`RESEND_API_KEY`。本番の注文のメールは Resend でしか送らない。[注文のメールの手順書](order-email-operations.md)の1）も入れる。`resend` は秘密ではない設定値で、`Resend` と入れると完全一致の検証で止まり、店への知らせも届かない | ユーザー | 公開した URL で画面が開く。Vercel の環境変数に、`SHOP_ALERT_EMAIL`・`MAIL_FROM_ADDRESS` とメールを送る設定が入っている（無いと、知らせのメールは送られず、アプリのログに警告が出るだけになる） |
 | 2 | 本番 DB で `create extension if not exists pg_net with schema extensions;` を流し、Vault に `cron_secret`（Vercel の `CRON_SECRET` と同じ値）と `app_base_url`（公開した URL。末尾の `/` は付けずに入れる）を入れる | 合言葉はユーザー（Vault の画面で入れる）、それ以外は Claude（許可を得て） | `select name from vault.decrypted_secrets where name in ('cron_secret', 'app_base_url');` が2行 |
-| 3 | `supabase/pending/` の `schedule_stripe_webhook_worker.sql`・`schedule_expire_pending_orders.sql`・`schedule_stripe_reconcile.sql`・`schedule_return_photo_purge.sql` を、新しい version の移行にして当てる（`supabase/pending/README.md` の手順） | Claude（許可を得て） | `select jobname, schedule, active from cron.job order by jobname;` に、`cron-job-run-details-retention`（掃除。移行で登録済み）・`expire-pending-orders`・`process-stripe-webhooks`・`stripe-reconcile`・`order-email-retention`（毎日19:40 UTC、本文と受付済みの番号の片付け。グループ D の移行 A で登録）・`purge-return-photos`（毎日19:20 UTC）の6つが `active` で並ぶ。保持期限の別のジョブ（`checkout-drafts-retention`・`rate-limit-counters-retention`）が並んでいてもよい |
-| 4 | 定期処理が成功しているのを確かめる | Claude | 6 の「実行の記録と、その直後の応答」の SQL（`jobname` を変えて使う）。worker は数分後に、`process-stripe-webhooks` の `status` が `succeeded`、応答の `status_code` が200。見回りは次の毎時0分の後、照合は次の 18:00 UTC の後に、`expire-pending-orders`・`stripe-reconcile` の実行の記録と応答（応答は実行から6時間以内に見る）、そして `ops_job_heartbeats` の `order_sweep`・`stripe_reconcile` の成功の時刻で確かめる。照合は最大300秒動き、pg_net は60秒で待つのをやめるので、応答が `timed_out` でも、`stripe_reconcile` の成功の時刻が新しければ成功（6 の「応答の見方」）。写真を消す処理は次の19:20 UTCの後、6節と下の写真の確認の SQL で200の uploads・photos と return_photo_purge の最初の成功を確認する。対象0でも成功時刻は更新される。掃除は次の 19:00 UTC の後に、6 の「定期処理ごとの実行の記録」の SQL（`cron-job-run-details-retention`。URL を呼ばないので応答は無い）で確かめる |
-| 5 | Stripe の管理画面で知らせの宛先（`<公開した URL>/api/webhook/stripe`）を作り、4 の13種を購読し、署名の合言葉を Vercel の `STRIPE_WEBHOOK_SECRET` に入れて出し直す | ユーザー | Stripe の管理画面で宛先が有効 |
+| 3 | `supabase/pending/` の `schedule_stripe_webhook_worker.sql`・`schedule_expire_pending_orders.sql`・`schedule_stripe_reconcile.sql`・`schedule_return_photo_purge.sql`・`schedule_accounting_post.sql` を、新しい version の移行にして当てる（`supabase/pending/README.md` の手順） | Claude（許可を得て） | `select jobname, schedule, active from cron.job order by jobname;` に、`cron-job-run-details-retention`（掃除。移行で登録済み）・`expire-pending-orders`・`process-stripe-webhooks`・`stripe-reconcile`・`order-email-retention`（毎日19:40 UTC、本文と受付済みの番号の片付け。グループ D の移行 A で登録）・`purge-return-photos`（毎日19:20 UTC）・`accounting-post`（10分ごと。会計の計上。計画2 Task 10 で保留 SQL を足した）の7つが `active` で並ぶ。保持期限の別のジョブ（`checkout-drafts-retention`・`rate-limit-counters-retention`）が並んでいてもよい |
+| 4 | 定期処理が成功しているのを確かめる | Claude | 6 の「実行の記録と、その直後の応答」の SQL（`jobname` を変えて使う）。worker は数分後に、`process-stripe-webhooks` の `status` が `succeeded`、応答の `status_code` が200。見回りは次の毎時0分の後、照合は次の 18:00 UTC の後に、`expire-pending-orders`・`stripe-reconcile` の実行の記録と応答（応答は実行から6時間以内に見る）、そして `ops_job_heartbeats` の `order_sweep`・`stripe_reconcile` の成功の時刻で確かめる。照合は最大300秒動き、pg_net は60秒で待つのをやめるので、応答が `timed_out` でも、`stripe_reconcile` の成功の時刻が新しければ成功（6 の「応答の見方」）。会計の計上は登録の約10分後に、`accounting-post` の実行の記録の `status` が `succeeded` で応答の `status_code` が200（応答の `data` に `payments`・`shipments`・`stripe`・`disputes`・`parked`・`resolved`・`hasMore`・`openPending`）、`ops_job_heartbeats` の `accounting_post` の成功の時刻が新しいこと（30分止まると店へ知らせが出る。一度も成功していない処理には出ないので、最初の成功を必ず確かめる）。写真を消す処理は次の19:20 UTCの後、6節と下の写真の確認の SQL で200の uploads・photos と return_photo_purge の最初の成功を確認する。対象0でも成功時刻は更新される。掃除は次の 19:00 UTC の後に、6 の「定期処理ごとの実行の記録」の SQL（`cron-job-run-details-retention`。URL を呼ばないので応答は無い）で確かめる |
+| 5 | Stripe の管理画面で知らせの宛先（`<公開した URL>/api/webhook/stripe`）を作り、4 の18種（既存の13種と `charge.dispute.*` の5種）を購読し、署名の合言葉を Vercel の `STRIPE_WEBHOOK_SECRET` に入れて出し直す | ユーザー | Stripe の管理画面で宛先が有効 |
 | 5b | Resend の配達の知らせの宛先を登録する（[注文のメールの手順書](order-email-operations.md)の1の順2） | ユーザー | Resend の管理画面で宛先が有効 |
 | 5c | 本番の Stripe の設定「顧客に返金のメールを送信する」を切る（こちらの返金のお知らせと二重になるため。コンビニ払いの口座の入力のお願いのメールは切らない。グループ E-2。[注文のメールの手順書](order-email-operations.md)の 8-1） | ユーザー | Stripe の設定の画面で、その設定が切れている |
 | 5d | 本番でコンビニ払いを使うかを決める（使うなら、口座の入力のお願いのメールは切らない。グループ E-2） | ユーザー | 決めた結果を台帳に残す |
@@ -96,11 +98,13 @@ order by r.code;
 2. その間に Vercel の `STRIPE_WEBHOOK_SECRET` を新しい値にして出し直す。
 3. 署名不正の知らせ（5）が来ないこと、`stripe_webhook_events` に新しい行が `completed` で入ることを確かめる。
 
-## 4. Stripe の知らせの購読（13種）
+## 4. Stripe の知らせの購読（18種）
 
-受け取り口は次の13種だけを保存する（`src/lib/stripe/handled-webhook-events.ts`）。ほかの種類は保存せずに200を返す。Stripe の宛先も同じ13種を購読する。
+受け取り口は次の18種だけを保存する（`src/lib/stripe/handled-webhook-events.ts`）。ほかの種類は保存せずに200を返す。Stripe の宛先も同じ18種を購読する。最後の5種（`charge.dispute.*`）は会計の計画2で足した。**コードだけ出しても、Stripe の宛先に足すまで知らせは届かない。**
 
-`checkout.session.completed`・`checkout.session.async_payment_succeeded`・`checkout.session.async_payment_failed`・`checkout.session.expired`・`payment_intent.succeeded`・`payment_intent.payment_failed`・`refund.created`・`refund.updated`・`refund.failed`・`charge.refunded`・`payout.paid`・`payout.failed`・`payout.reconciliation_completed`
+`checkout.session.completed`・`checkout.session.async_payment_succeeded`・`checkout.session.async_payment_failed`・`checkout.session.expired`・`payment_intent.succeeded`・`payment_intent.payment_failed`・`refund.created`・`refund.updated`・`refund.failed`・`charge.refunded`・`payout.paid`・`payout.failed`・`payout.reconciliation_completed`・`charge.dispute.created`・`charge.dispute.updated`・`charge.dispute.closed`・`charge.dispute.funds_withdrawn`・`charge.dispute.funds_reinstated`
+
+種類を変える順番（会計の手引きの 4 が正本）: ア）5種を処理する版のコードを先に出す（出すまでは、届いても保存せず200を返すだけ）→ イ）Stripe の管理画面で宛先を開き、イベントの追加で5種を足す → ウ）テストモードの宛先で `stripe trigger charge.dispute.created` などを流し、管理画面の「カード会社からの支払いの取り消し」の一覧に1行入ることを確かめる → エ）本番の宛先は、開店の準備の手順 5 で作る時に18種を購読する（今の本番には宛先が無い）。購読を戻す・減らす時は、先に処理する版を戻さず、宛先から外すだけにする。詳細は[会計の前受金・出荷・Stripe の運用](accounting-p2-posting-stripe.md#4-stripe-の受け取りの種類を変える手順)。
 
 本番の鍵（`sk_live_`・`rk_live_`）のアプリには本番の宛先、テストの鍵（`sk_test_`・`rk_test_`）のアプリにはテストの宛先をつなぐ。食い違うと「モード違い」の知らせが届き、その知らせは処理されない。鍵の頭がこの4つのどれでもないとき（引用符つきで貼った・`pk_` の鍵など）は、知らせを保存せずに500を返す。Stripe が最大3日送り直すので、鍵を直せば知らせは失われない。モード違いとして数え、店へ知らせる（メールの「このアプリの鍵」は「不明」になる）。
 
@@ -145,6 +149,10 @@ order by r.code;
 - 件名: 【要確認】定期処理が止まっています（毎晩の照合）
   - 何が起きたか: 照合が25時間以上成功していない
   - やること: 6 の「実行の記録と、その直後の応答」の SQL（`jobname` を `stripe-reconcile` にする）で実行の記録と応答を見て、`ops_job_heartbeats` の `stripe_reconcile` の `last_error_code`（原因の記号）を見る。最初の遅れの知らせは、18:00 UTC の実行が失敗した約1時間後（最後の成功から25時間たった時点）に届く。応答は6時間残るので、知らせを見てすぐなら、失敗した実行の応答がまだ残っている。6時間以上たっていたら応答は消えているので、実行の記録（7日残る）と `ops_job_heartbeats` で見る（次の実行（18:00 UTC）の後6時間以内にも、応答を見られる）。401・3xx・実行の記録が `failed` のときは、「知らせが溜まったとき」の 2 と同じ。502 は、注文を DB から読めなかったか、Stripe の支払い・Payout の一覧を読めなかったとき（`last_error_code` が `db_unavailable`・`stripe_unavailable` など）。404・そのほかの5xx は、アプリの公開とログを確かめる。照合のルートは最大300秒動き、pg_net は60秒で待つのをやめるので、長い実行の応答は `timed_out` になるのが普通で、それだけでは失敗と判断しない。成功か失敗かは、`ops_job_heartbeats` の `stripe_reconcile` と、監査の行（`audit_logs` の `action = 'stripe.reconcile'`）で見る
+
+- 件名: 【要確認】定期処理が止まっています（会計の計上）
+  - 何が起きたか: 見回りの印 `accounting_post` の最後の成功が30分より古い。知らせの鍵は `job_stale_accounting_post`。一度も成功していない処理には知らせが出ないので、登録直後の最初の成功を必ず確かめる
+  - やること: 6 の「実行の記録と、その直後の応答」の SQL（`jobname` を `accounting-post` にする）で実行の記録と応答を見る。401・3xx・実行の記録が `failed`（Vault の秘密が無い）のときは、「知らせが溜まったとき」の 2 と同じ。502 は計上係が失敗した（`ops_job_heartbeats` の `accounting_post` の `last_error_code` に原因の記号）。係は最大20回まで繰り返し、pg_net は60秒で待つのをやめるので、応答が `timed_out` でも、`accounting_post` の成功の時刻が新しければ成功。計上待ちが溜まっていないかは、管理画面の「計上待ち」で見る（読み方は[会計の前受金・出荷・Stripe の運用](accounting-p2-posting-stripe.md#2-計上待ちの見方)）
 
 - 件名: 【要確認】定期処理が止まっています（写真を消す処理）
   - 何が起きたか: 見回りの印 return_photo_purge の最後の成功が49時間より古い。知らせの鍵は job_stale_return_photo_purge。一度も成功していない処理には知らせが出ないため、登録直後の最初の成功を必ず確認する。
@@ -212,7 +220,7 @@ from cron.job_run_details d join cron.job j using (jobid)
 order by d.start_time desc limit 20;
 
 -- 定期処理ごとの実行の記録（7日を残して毎日消える）。jobname を変えて使う
--- （process-stripe-webhooks・expire-pending-orders・stripe-reconcile・cron-job-run-details-retention）
+-- （process-stripe-webhooks・expire-pending-orders・stripe-reconcile・accounting-post・cron-job-run-details-retention）
 select d.start_time, d.status, d.return_message
 from cron.job_run_details d join cron.job j using (jobid)
 where j.jobname = 'stripe-reconcile'

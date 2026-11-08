@@ -1,10 +1,10 @@
 # Stripe Webhookの受付と非同期処理
 
-> 状態: 現行ソース確認（返金の取り込み・見回り・照合はグループ E-2 の変更を 2026-10-11 に反映） | 確認日: 2026-10-07 | 対象: Webhook受付、イベントworker、決済見回り
+> 状態: 現行ソース確認（返金の取り込み・見回り・照合はグループ E-2 の変更を 2026-10-11 に、受け取りの種類が13種から18種になったことを 2026-11-09 に反映。dispute の処理は[計上係のシーケンス](accounting-posting.md)） | 確認日: 2026-11-09 | 対象: Webhook受付、イベントworker、決済見回り
 
 ## 概要
 
-Stripe Webhookの受付は、署名を検証した13種のイベントのうち鍵と同じモードのものをDBへ保存して200を返し、その後に`after()`でworkerを1回動かす。注文・返金・会計の処理はworkerが行い、workerは毎分のCron APIからも起動する。受付応答、キューの処理完了、注文の入金済みはそれぞれ別の結果である。
+Stripe Webhookの受付は、署名を検証した18種のイベントのうち鍵と同じモードのものをDBへ保存して200を返し、その後に`after()`でworkerを1回動かす。注文・返金・会計の処理はworkerが行い、workerは毎分のCron APIからも起動する。受付応答、キューの処理完了、注文の入金済みはそれぞれ別の結果である。
 
 図の分割・線種・根拠の扱いは[記載方針](README.md)に従う。状態値と再試行条件は[Webhookキュー](../states/stripe-webhook-queue.md)、注文照合は[購入・決済](checkout-payment.md)、返金の取り込みは[注文管理](order-administration.md)の SQ-ADMIN-07 を参照する。
 
@@ -14,7 +14,7 @@ Stripe Webhookの受付は、署名を検証した13種のイベントのうち�
 
 | 境界・操作 | 根拠 |
 | --- | --- |
-| `POST /api/webhook/stripe`、raw body、`webhooks.constructEvent`、13種とモードの判定、署名不正・モード違いの件数 | [Webhook受付](../../../src/app/api/webhook/stripe/route.ts)、[13種とモード](../../../src/lib/stripe/handled-webhook-events.ts)、[件数と知らせ](../../../src/lib/ops/webhook-receiver-signals.ts) |
+| `POST /api/webhook/stripe`、raw body、`webhooks.constructEvent`、18種とモードの判定、署名不正・モード違いの件数 | [Webhook受付](../../../src/app/api/webhook/stripe/route.ts)、[18種とモード](../../../src/lib/stripe/handled-webhook-events.ts)、[件数と知らせ](../../../src/lib/ops/webhook-receiver-signals.ts) |
 | enqueue・claim・complete・fail RPC | [イベントサービス](../../../src/lib/stripe/webhook-events.ts)、[キュー定義](../../../supabase/migrations/20260925000303_add_stripe_webhook_queue.sql)、[再試行・退避の定義](../../../supabase/migrations/20261007030242_webhook_queue_dead_letter.sql) |
 | `POST /api/cron/process-stripe-webhooks`、Bearer認証、payload検査、繰り返し | [worker](../../../src/app/api/cron/process-stripe-webhooks/route.ts)、[workerの起動](../../../src/lib/stripe/webhook-worker.ts)、[繰り返し](../../../src/lib/stripe/webhook-drain.ts)、[Cron認証](../../../src/lib/cron/auth.ts) |
 | 決済・返金イベントの振り分け、会計同期、処理監査 | [イベント処理](../../../src/lib/stripe/webhook-processor.ts) |
@@ -24,7 +24,7 @@ Stripe Webhookの受付は、署名を検証した13種のイベントのうち�
 
 ## SQ-WEBHOOK-01: 署名検証済みイベントの受付
 
-目的は、Stripeから受け取ったイベントを処理前に永続化すること。事前条件はWebhook secretとStripe秘密鍵が設定され、`stripe-signature`ヘッダーがあること。終了結果は保存または一致する重複の確認後の200、保存しない200（13種以外・鍵と食い違うモード）、または400・500（鍵の頭が分からないときの、保存しない500を含む）であり、注文処理の完了ではない。
+目的は、Stripeから受け取ったイベントを処理前に永続化すること。事前条件はWebhook secretとStripe秘密鍵が設定され、`stripe-signature`ヘッダーがあること。終了結果は保存または一致する重複の確認後の200、保存しない200（18種以外・鍵と食い違うモード）、または400・500（鍵の頭が分からないときの、保存しない500を含む）であり、注文処理の完了ではない。
 
 ```mermaid
 sequenceDiagram
@@ -37,7 +37,7 @@ sequenceDiagram
     API->>SDK: webhooks.constructEvent(rawBody, signature, secret)
     alt 署名が有効
         SDK-->>API: 検証済みEvent
-        alt 13種以外
+        alt 18種以外
             API-->>Stripe: 200 received=true, ignored=true（保存しない）
         else 鍵の頭が分からない（sk_live_・rk_live_・sk_test_・rk_test_のどれでもない）
             API-->>Stripe: 500 Internal server error（保存しない。Stripeが最大3日送り直す）
@@ -45,7 +45,7 @@ sequenceDiagram
         else 鍵のモードと食い違う
             API-->>Stripe: 200 received=true, ignored=true（保存しない）
             Note over API,DB: 応答の後にafter()で件数を数え、店へメール（1時間に1回まで）
-        else 13種でモードが合う
+        else 18種でモードが合う
             API->>DB: enqueue_stripe_webhook_event(id, type, payload)
             alt 初回保存
                 DB-->>API: true / queuedを保存
@@ -72,7 +72,7 @@ sequenceDiagram
 | --- | --- |
 | Webhook secretまたはStripe秘密鍵が未設定 | 500。enqueueへ進まない（Stripeが後で送り直す） |
 | signature欠落 / 署名不一致 | 400。enqueueへ進まない。監査ログに1件ずつ書かず、`ops_alert_state`の件数だけを進める（10分に5件で店へメール。1時間に1回まで） |
-| 13種以外 | 200 `ignored=true`。保存しない（ログに1行） |
+| 18種以外 | 200 `ignored=true`。保存しない（ログに1行） |
 | 鍵のモードと食い違う（`sk_live_`・`rk_live_`は本番、`sk_test_`・`rk_test_`はテスト） | 200 `ignored=true`。保存しない。件数を進めて店へメール（1時間に1回まで）。メールを送れなかったときも、次の要求では送り直さない |
 | 鍵は設定されているが、頭が`sk_live_`・`rk_live_`・`sk_test_`・`rk_test_`のどれでもない（引用符つきで貼った・`pk_`の鍵など） | 500 `Internal server error`。保存しない（Stripeが最大3日送り直す。200だと知らせが失われる）。ログに`[webhook] STRIPE_SECRET_KEY has an unknown prefix`を1行出し、件数を進めて店へメール（鍵のモードは「不明」。1時間に1回まで。送れなかったときも、次の要求では送り直さない） |
 | 初回enqueue | event ID・type・payload、`queued`、attempt_count=0、次の試行時刻を保存 |

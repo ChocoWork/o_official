@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> 会計の作り直し 計画2 Task 15 確認日: 2026-11-09。Route Handler の追加・削除はない（186ファイル・236メソッドのまま）。既存の窓口の振る舞いの変更を[API仕様](api-spec.md)に写した: `/api/admin/kpi/monthly-record`（月の KPI の表を DB の関数で読み書き。503 の分岐をやめた）、`/api/admin/kpi`（受注高の数え方と応答の `backlog`・`intakeBreakdown`・`returnsThisMonth`）、`/api/admin/kpi/targets`（受注高の定義）、`/api/webhook/stripe`（18種）、`/api/cron/stripe-reconcile`（dispute の読み直し）、`/api/admin/accounting/journal`（`shipmentMeta`・権限の欄）、発送票の確定・取り消し・出荷日の直しと着金の確認（応答の後に計上係）。
+>
 > 会計の作り直し 計画2 Task 10 確認日: 2026-11-09。計上待ち・計上係・支払いの取り消し・Stripe の記録・照合・年末の照合の 12 ファイル・16 メソッド（`/api/admin/accounting/pending-events`・`pending-events/[id]/resolve`・`posting/run`・`dispute-settings`・`disputes`・`disputes/[id]/assign`・`stripe-invoices`・`balance-topups`・`reconciliation`・`deferred-revenue`・`year-end-shipments`・`shipment-trace`）と、10分ごとの cron `POST /api/cron/accounting-post` の 1 ファイル・1 メソッドを追加した。Route Handler は186ファイル・236メソッド、表は185行・235メソッド（`/api/e2e/server-info` を除く）。認可・CSRF・制限・監査の順序と応答は[API仕様](api-spec.md)の会計の表を参照。
 >
 > 会計の作り直し 計画1 Task 15 確認日: 2026-11-08。Route Handler の追加・削除はない（173ファイル・219メソッドのまま）。`/api/admin/kpi/cost-profit` の GET に `periodId` と期間の欄、receipt に証憑の種類、権限の管理対象が 38 コードになったことを備考に足した。

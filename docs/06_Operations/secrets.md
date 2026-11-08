@@ -52,7 +52,7 @@ title: シークレット管理方針
 ## Stripe注文同期
 
 Stripe Webhookは `${APP_BASE_URL}/api/webhook/stripe` に設定し、署名シークレットを
-`STRIPE_WEBHOOK_SECRET` としてサーバー環境だけに保存します。受け取り口が保存する次の13種（`src/lib/stripe/handled-webhook-events.ts`）を購読します。ほかの種類は保存しません。本番の鍵のアプリには本番の宛先、テストの鍵のアプリにはテストの宛先をつなぎます（食い違うと処理せず、店へ知らせます）。
+`STRIPE_WEBHOOK_SECRET` としてサーバー環境だけに保存します。受け取り口が保存する次の18種（`src/lib/stripe/handled-webhook-events.ts`）を購読します。ほかの種類は保存しません。本番の鍵のアプリには本番の宛先、テストの鍵のアプリにはテストの宛先をつなぎます（食い違うと処理せず、店へ知らせます）。
 
 | イベント | 用途 |
 | --- | --- |
@@ -69,6 +69,7 @@ Stripe Webhookは `${APP_BASE_URL}/api/webhook/stripe` に設定し、署名シ�
 | `payout.paid` | Stripe の Payout を会計記録へ同期する |
 | `payout.failed` | Payout の失敗を会計記録へ同期する |
 | `payout.reconciliation_completed` | Payout の照合結果を会計記録へ同期する |
+| `charge.dispute.created`・`charge.dispute.updated`・`charge.dispute.closed`・`charge.dispute.funds_withdrawn`・`charge.dispute.funds_reinstated` | カード会社からの支払いの取り消し（dispute）を表と履歴に同期し、会計の仕訳（引かれた時・確定・戻り）の材料にする（会計の計画 2）。**コードを出しても Stripe の宛先に足すまで届かない**。手順は[会計の運用](accounting-p2-posting-stripe.md#4-stripe-の受け取りの種類を変える手順) |
 
 返金の `refund.*` 購読が無いと、注文の無い失敗・取消返金が要対応として記録されず、店への通知も行われません。また、受け口に返金の4つの知らせ（`refund.created`・`refund.updated`・`refund.failed`・`charge.refunded`）を入れていないと、Stripe の画面で直接返した返金が返金の記録に入らず（毎晩の照合が前の48時間の分を拾うまで）、在庫もお客様へのメールも動きません。本番の受け口には、開店前に4つとも入れます（グループ E の開店前の設定）。
 

@@ -238,9 +238,9 @@ flowchart TD
   S -- どちらか無い --> S1["500: Stripe再送"]
   S -- 両方ある --> B{"署名ヘッダーがあり、<br/>raw bodyの署名が正しい"}
   B -- 無い・不一致 --> C["400: 件数だけ数え、<br/>10分に5件で店へ知らせる"]
-  B -- 正しい --> T{"13種のイベントか"}
-  T -- 13種以外 --> T1["200: 保存しない"]
-  T -- 13種 --> M{"鍵のモードと一致するか"}
+  B -- 正しい --> T{"18種のイベントか"}
+  T -- 18種以外 --> T1["200: 保存しない"]
+  T -- 18種 --> M{"鍵のモードと一致するか"}
   M -- 食い違う --> M1["200: 保存せず、<br/>モード違いを店へ知らせる"]
   M -- 鍵の頭が分からない --> M2["500: Stripe再送（最大3日）。<br/>保存せず、モード違いとして<br/>数えて店へ知らせる"]
   M -- 一致 --> D["原子的enqueue: stripe_webhook_events"]
@@ -262,10 +262,10 @@ flowchart TD
 | --- | --- | --- |
 | `STRIPE_WEBHOOK_SECRET`か`STRIPE_SECRET_KEY`が未設定 | 500（Stripeが再送する） | しない |
 | 署名ヘッダーが無い・署名が合わない | 400。監査ログには1件ずつ書かず、件数だけを数え、10分に5件で店へ知らせる | しない |
-| 13種（[一覧](../../../src/lib/stripe/handled-webhook-events.ts)）以外 | 200（`ignored`） | しない |
+| 18種（[一覧](../../../src/lib/stripe/handled-webhook-events.ts)）以外 | 200（`ignored`） | しない |
 | 鍵のモードと食い違う（`sk_live_`・`rk_live_`は本番、`sk_test_`・`rk_test_`はテスト） | 200（`ignored`）。モード違いを店へ知らせる（1時間に1回まで） | しない |
 | 鍵は設定されているが、頭が上の4つのどれでもない（引用符つきで貼った・`pk_`の鍵など） | 500（Stripeが最大3日再送する。200だと知らせが失われる）。ログに`[webhook] STRIPE_SECRET_KEY has an unknown prefix`を1行出し、モード違い（鍵のモードは不明）として数えて店へ知らせる（1時間に1回まで） | しない |
-| 13種で、モードが合う | 200。応答の後に`after()`でworkerを1回動かす | する（同じIDの再送は1回だけ） |
+| 18種で、モードが合う | 200。応答の後に`after()`でworkerを1回動かす | する（同じIDの再送は1回だけ） |
 | 保存の失敗 | 500（Stripeが再送する） | しない |
 
 StripeのイベントIDを主キーに、署名検証済みのpayloadをservice-role専用RPCで永続化してから2xxを返す。同じIDの再送では種別・不変の`data`・`account`・`livemode`を照合して重複扱いにする。`pending_webhooks`など配信状況メタデータの差は許容し、不変部分の差は衝突として拒否する。保存が失敗したとき、設定が欠けているとき、鍵の頭が分からないときだけ5xxにしてStripe再送を受ける。
@@ -862,7 +862,7 @@ limit 20;
 
 決済手段の動的化と在庫復元の機能を本番へ入れる際は、次の順序で確認・実施する。どれか1つでも欠けると、機能の一部または全部が「エラーは出ないが動いていない」状態になる。
 
-1. **Stripe Webhook エンドポイントの購読イベントを確認する。** 受け取り口が保存する13種（一覧は[手順書](../../06_Operations/webhook-queue-operations.md)の4）が Stripe ダッシュボードのエンドポイント設定で有効になっていること。そのうち `checkout.session.completed` / `checkout.session.async_payment_succeeded` / `checkout.session.async_payment_failed` / `checkout.session.expired` / `payment_intent.succeeded` / `payment_intent.payment_failed` の6つは照合関数へ渡すイベント（`src/lib/stripe/webhook-processor.ts` の `processStripeWebhookEvent`）で、これが漏れていると webhook 側の照合は一切発火せず、毎時の見回りだけが注文と在庫を合わせる経路になる（サイレントな機能欠落）。
+1. **Stripe Webhook エンドポイントの購読イベントを確認する。** 受け取り口が保存する18種（一覧は[手順書](../../06_Operations/webhook-queue-operations.md)の4）が Stripe ダッシュボードのエンドポイント設定で有効になっていること。そのうち `checkout.session.completed` / `checkout.session.async_payment_succeeded` / `checkout.session.async_payment_failed` / `checkout.session.expired` / `payment_intent.succeeded` / `payment_intent.payment_failed` の6つは照合関数へ渡すイベント（`src/lib/stripe/webhook-processor.ts` の `processStripeWebhookEvent`）で、これが漏れていると webhook 側の照合は一切発火せず、毎時の見回りだけが注文と在庫を合わせる経路になる（サイレントな機能欠落）。
 2. **`CRON_SECRET` を本番環境変数に設定し、Vault にも登録する。** 値は32文字以上のランダムな値にする（短いと全部の定期処理の入口が設定の誤りとして401で断る）。`supabase/pending/schedule_expire_pending_orders.sql`（pg_cron 登録マイグレーション。公開時に新しい version で適用する）は Vault に秘密が無くても適用できるが、秘密が揃うまでジョブは毎回失敗する（FREQ-368）。失敗は `cron.job_run_details` に status=failed と理由が残り、認証ヘッダの無い要求は送られない。適用後に次を確認する。
 
    ```sql

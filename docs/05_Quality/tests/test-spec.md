@@ -1,5 +1,7 @@
 # テスト仕様
 
+> 2026-11-09 確認日（会計の計画 2 の文書の正本）: 末尾に「会計の前受金・出荷・Stripe・受注高（計画 2 / FREQ-562〜574、2026-11-09）」を足した。新しい DB 結合 21 ファイル、単体・画面 約 40 ファイル、E2E 5 本（`FR-ADMIN-132`〜`136`）と、題や期待を直した既存の試験。コミットする試験の流し方（`ACCOUNTING_COMMIT_SUITE=1`・単独・前後に `db reset`）と、E2E の流す回数の限り（dispute の spec は 1 回の `db reset` で 5 回）を書いた。数は各 Task の実装者の報告から引いた値で、今回は再実行していない。
+>
 > 2026-11-08 確認日（会計の計画 1 の文書の正本）: 末尾に「会計の仕訳の土台と期間（計画 1 / FREQ-553〜561）」を足した。会計の E2E の題を言い換えた 6 件（024・025・029・031・042）、新しい E2E（FR-ADMIN-128〜131）、単体・画面・DB 結合の試験の対応、E2E の後に DB 結合を流すときは `db:reset` する注意を書いた。
 >
 > 2026-11-08 確認日（返品の受け取りの数え方の直し I-1・N-1・M-4）: 下の「返品の品ごとの返金」の表に、再現の試験9件・移行の試験1件・履歴の単体を足した。DB の試験は実装者が手元の DB で流した（返品の受け取りの3ファイル 55/55、関係する DB の19ファイル 1005 通過）。E2E は流していない。
@@ -1644,3 +1646,107 @@ AC-07の3行・予備あり・介在受取とAC-08は旧本文だけで組み立
 - `FR-ADMIN-129` の FREQ-557-AC-06 の「表示だけの差し替え」は表示の確かめで、サーバーの取得の上限は単体（`cost-profit-route.test.ts`）と DB 結合で確かめる。
 - `FR-ADMIN-128` の FREQ-561-AC-02 は、空きの個人の期間が 2030 年からなので申告の期限が 2031 年以後になり、祝日の表（内閣府の公表。2027 年まで）の外で動く。期待値は「借りた期間の年 + 1」の 3/15 で、期間は 2030 年から順に借りるので年は実行ごとに変わる。繰り下げが無い前提なので、表がその年まで延び、その年の 3/15 が土日だと翌の平日に変わり、この試験が落ちる（例: 2031-03-15 は土曜で `03/17`。その時は期待値を直す）。
 - 地方税の申告の期限の注記は税理士の確認待ち（運用の手引きの未確認事項）。
+
+
+## 会計の前受金・出荷・Stripe・受注高（計画 2 / FREQ-562〜574、2026-11-09）
+
+対象は会計の計画 2（支払いの前受金、出荷の日の売上、取り消しと出荷日の直し、Stripe の手数料・入金・着金・照合、dispute の受け取りと仕訳、計上待ちと前受金の確認、保存した仕訳で数える、受注高と受注残の照合、KPI の受注高、月の KPI の表、年末の出荷）。要求と受け入れ条件は[要件定義書](../../02_Requirements/requirements.md)の FREQ-562〜574（受け入れ条件 64 行。64 件すべてに試験の名前の先頭の ID がある）、設計は[計上係のシーケンス](../../04_DetailDesign/sequence/accounting-posting.md)・[計上待ちの状態](../../04_DetailDesign/states/accounting-pending.md)・[dispute の状態](../../04_DetailDesign/states/accounting-dispute.md)・[管理の会計のページ](../../04_DetailDesign/pages/16-5_admin_accounting.md)、運用は[運用の手引き](../../06_Operations/accounting-p2-posting-stripe.md)。会計は `scripts/trace/scope.json` の範囲の外なので、この文書に手で書く。要求から受け入れ条件・試験までの文字列の参照は [traceability-report.md](../reports/traceability-report.md)（自動生成。手で直さない）に出る。
+
+### 流し方の決まり
+
+| 種類 | 決まり |
+| --- | --- |
+| ロールバックの DB 結合 | `supabase db reset` の後、`DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db/accounting_p2 --runInBand`。計画 1 も含めるなら `accounting_p1 accounting_p2`。ほかの試験が残した行（確定した発送票など）で数が狂わないよう、出荷の試験は `setAsideExistingSlips` で既存の票を除いて数える |
+| コミットする試験（並行・PostgREST） | `ACCOUNTING_COMMIT_SUITE=1` を付け、**1 ファイルずつ単独の jest で**流す。前後に `db reset` を挟む。同じ jest にロールバックの試験を混ぜると、残った行で落ちる。対象: `accounting_p2_payment_concurrency`・`…_shipment_concurrency`・`…_stripe_concurrency`・`…_dispute_concurrency`・`…_run_posting_postgrest`・`…_kpi_monthly_records_postgrest`。PostgREST の 2 本は `LOCAL_SUPABASE_URL`・`LOCAL_SUPABASE_ANON_KEY`・`LOCAL_SUPABASE_SERVICE_ROLE_KEY`・`LOCAL_SUPABASE_JWT_SECRET`（`supabase status` の値）も要る。`accounting_p2_posting_tables` の最後の 1 ブロックも同じフラグで動く（フラグなしでは飛ばす） |
+| 移行の自己検査の試験 | `accounting_p2_migration_asserts`（S6〜S14 の本文の契約、再生、改ざんした本文を断る）。移行ファイルの本文を変えたら、固定の needle と合わせて直す |
+| E2E | 本番ビルド（`next build && next start`）・手元の Supabase。`db reset` の直後に流す。3000 番に残ったアプリは先に止める。1 回の `db reset` で `FR-ADMIN-133` の dispute の試験は 5 回までしか流せない（原因 16 種のうち設定の無い物を 1 回に 3 つ使う。`other` は選ばないので使えるのは 15。6 回目は最後の幅で落ちる）。ほかの 4 本は `db reset` なしで繰り返せる（確かめた） |
+| E2E の後 | DB 結合に戻る前に `npm run db:reset`（計画 1 と同じ） |
+
+### 新しい E2E（`FR-ADMIN-132`〜`136`。本番ビルド・手元の Supabase・390/768/1280px）
+
+実 route・実 DB・実画面。Stripe は呼ばず、`stripe_*` の行は DB へ直接入れる。発送票は主に DB に直接入れて確定済みにし、`FREQ-563-AC-01` は実際の確定の route を通す。実測（Task 14 の実装者の報告。2026-11-09、`db reset` の直後）: 新しい 5 本 60 通過・失敗 0（18＋18＋12＋6＋6）。会計と KPI の回帰（024〜031・033・034・042〜044・050・128〜131 と KPI の 001・006・017・018・021・023・048）419 通過・飛ばし 4（`FR-ADMIN-044` の元からの飛ばし）・失敗 0。30 ファイルを使い込んだ DB でまとめて 479 通過・飛ばし 4・失敗 0。
+
+| spec | 試験名の先頭の ID | 確かめること |
+| --- | --- | --- |
+| [FR-ADMIN-132](../../../e2e/FR-ADMIN-132-accounting-order-journals.spec.ts) | FREQ-569-AC-06 | 支払いの取引の payment intent に `:` が入っていて 1 件が `posting_error`（22023）で保留、ほかの支払いは同じ実行で計上。画面は記号と「直してから『もう一度計上する』」の案内と注文へのリンクを出し、確認済みのボタンは無い。直して押すと仕訳が入り、保留が解決し、件数が 1 減る |
+| 同上 | FREQ-562-AC-01 | 支払いを計上すると `1160` 借 / `2150` 貸（総額、注文の番号つき、今日の期間）。仕訳の route と元帳に出る |
+| 同上 | FREQ-563-AC-01 | 2 着（6,000＋4,000）の注文を、実際の確定の route で 1 着ずつ出荷して計上: `2150` 借 / `4010` 貸、残高 4,000 → 0。前受金の確認に出て、0 になると消える |
+| 同上 | FREQ-564-AC-02 | 出荷日を直すと取り消しと正しい仕訳が並ぶ。`shipmentMeta` と帳簿の「出荷した日」「登録した日」が別の日で出る。「出荷の跡」に理由と取り消す／取り消された関係 |
+| 同上 | FREQ-569-AC-01 | 支払いより先に出荷した票は `payment_journal_missing` で計上待ち（画面の件数と route の最初のページを同じ瞬間に比べる）。支払いを足して「もう一度計上する」で両方入り、保留が解決し前受金が 0 |
+| 同上 | FREQ-570-AC-02 | 取引管理の注文の収入の行が出荷の仕訳と同じ額（`gross = net = amount`、`readOnly`）。取引一覧に「オンライン注文」で出る |
+| [FR-ADMIN-133](../../../e2e/FR-ADMIN-133-accounting-stripe-disputes.spec.ts) | FREQ-565-AC-01 | 手数料が取引 1 件ごとに `6280` 借 / `1160` 貸で入る。2 回目の実行は増えない。支払手数料の元帳に両方 |
+| 同上 | FREQ-566-AC-02 | 手数料の月の照合: 1 段目は説明のつかない差 ¥0。請求書の合計 600 を入れると 2 段目が ▲¥100（赤・符号は確認中の注記）、翌月の調整 100 を足すと ¥0 |
+| 同上 | FREQ-566-AC-03 | Stripe の残高の照合: 返金の元本・計上待ち・知らない種類・入金の取引の欄が出る。説明のつかない差は route が 0、画面が「¥0」・正常の色。入れた 4 件の増えが取り分に出る |
+| 同上 | FREQ-568-AC-02 | 出荷済みの注文の dispute: 引かれた時は `1470`（`dispute_pending`）借 / `1160` 貸、確定で `dispute_confirmed_unassigned`、設定・期間で 7530 を選び「振り替える」で `7530` 借 / `1470` 貸。説明のつかない差は 3 つの段で変わらない |
+| 同上 | FREQ-568-AC-06 | 判断待ちの dispute（引かれた取引つき）の注文を含む票の確定は実際の route が 409 `DISPUTE_HOLD`。票は下書きのまま。画面が同じ文を出す |
+| 同上 | FREQ-565-AC-06 | 残高の補充を入れると `1160` 借 / `1040` 貸が 1 本。同じ番号をもう一度送ると「同じ記録が既にあります」で増えない |
+| [FR-ADMIN-134](../../../e2e/FR-ADMIN-134-kpi-order-intake.spec.ts) | FREQ-572-AC-02 | 出荷しても受注高は減らない。KPI の route の受注高・受注残・内訳が DB の合計と合う（同じ瞬間の読みが揃うまで待つ） |
+| 同上 | FREQ-572-AC-05 | 画面に「帳簿の売上高ではありません」。カードは「受注高」で、「売上：」のカードや「売上推移」は無い |
+| 同上 | FREQ-571-AC-05 | 照合の画面で、期首の受注残 ＋ 受注高 − 売上高 ＋ 例外 ＝ 期末の受注残。説明のつかない差は 1 段目・2 段目とも ¥0 |
+| 同上 | FREQ-572-AC-04 | サポーターは KPI を読めない（403。応答に受注残・内訳の鍵が無い）。店長は読めて画面に出る |
+| [FR-ADMIN-135](../../../e2e/FR-ADMIN-135-kpi-monthly-records.spec.ts) | FREQ-573-AC-02 | 実際の保存と読み: 同じセルの重複は最後の値、月×指標で 1 行、空にするとそのセルだけ消える。KPI の画面から保存して開き直すと残り、空にすると消える。いつも後片付けする |
+| 同上 | FREQ-573-AC-03 | サポーターは保存も読みも 403 で行は書かれない。店長は保存できる |
+| [FR-ADMIN-136](../../../e2e/FR-ADMIN-136-accounting-year-end-shipments.spec.ts) | FREQ-574-AC-01 | 年末の出荷の一覧に票が出て「確かめた」で印が付き、DB に 1 行（店長の ID）。2 回目の POST は `created:false`。開き直しても残る |
+| 同上 | FREQ-574-AC-03 | 運送会社の受付日のオプションは既定オフ（初回のみ観測できる）。設定・期間でオンにすると `changed_by`・`changed_at` が付き、照合の「…オフです」が消える。最後にオフへ戻す |
+
+### 題や期待を直した既存の E2E
+
+| ファイル | 変更 |
+| --- | --- |
+| `e2e/FR-ADMIN-001`・`017`・`018`・`021`・`023`・`048` | 「売上」→「受注高」（期待の文字だけ。題は変えていない）。`017` の行の絞り込みと、`018` の「受注高 N月の値」、`021`・`023`・`048` の「受注高：」 |
+| `e2e/FR-ADMIN-050-stripe-settlement.spec.ts` | 3 本目の期待を「クレジット売掛金」→「Stripe未収金」に。作り物 `buildCostProfitMock` が保存した仕訳（支払い・出荷・手数料・入金・着金）を作る |
+| `e2e/admin-accounting-test-utils.ts`・`accounting-test-utils.ts` | 作り物の仕訳と `shipmentMeta`、手数料の規則を SQL に合わせた。計画 2 の材料（`seedPaidOrder`・`seedStripeCharge`・`seedDispute`・`runPosting` など） |
+
+### DB 結合（`tests/integration/db/accounting_p2_*.integration.test.ts`）
+
+| ファイル | 件数 | 受け入れ条件 | 確かめること |
+| --- | --- | --- | --- |
+| `accounting_p2_posting_tables` | 32 | FREQ-562-AC-01、563-AC-02・03、569-AC-01・03・05 | S6 の 4 表・連番・割り当ての合計の検査・保留の書き手と解決・G の 2 関数が事実を書く・着の選び方。最後の 1 ブロックだけコミット（フラグ） |
+| `accounting_p2_payment_posting` | 25 | FREQ-562-AC-01〜05、569-AC-01・06 | 支払いの計上、金額・期間・切り替えの日・注文の形の保留、`synced_at` による遅れの印、失敗の保留と他の出来事の続き、保留の見直しの上限（10 件） |
+| `accounting_p2_shipment_posting` | 30 | FREQ-563-AC-01〜06、564-AC-01・04、569-AC-01・06 | 出荷の計上: 着の選び方、一部の出荷、交換の品、日の不一致、前受金の不足、2 枚の票が同じ注文、取り消しと再出荷が 1 回の呼び出し |
+| `accounting_p2_shipment_corrections` | 17 | FREQ-563-AC-04、564-AC-01〜04、569-AC-01・06 | 取り消し、出荷日の直し（取り消し＋入れ直し、年またぎ）、直しの後の取り消し、保留した反転の再試行 |
+| `accounting_p2_stripe_posting` | 37 | FREQ-565-AC-01〜06、569-AC-01・06 | 手数料・税額調整・入金・着金・入金の失敗・残高の補充・請求書の記録。種類の対応、`unknown_category`、入金の純 0 |
+| `accounting_p2_stripe_reconciliation` | 19 | FREQ-566-AC-01〜03 | 手数料の月の照合 2 段と残高の照合。dispute の引かれた取引が仕訳済みなら差に出ない（仕訳の取り消し後は計上待ちに戻る） |
+| `accounting_p2_dispute_intake` | 11 | FREQ-567-AC-01〜03 | 表と履歴の書き手、更新できない列、取得時刻の新しい物だけが更新する、権限（`raw_payload` は `service_role` の SELECT だけ） |
+| `accounting_p2_dispute_posting` | 48 | FREQ-562-AC-05、568-AC-01〜07、569-AC-01・05・06 | 4 つの段（W・C・R／L・X）、12 行の組み合わせ表を 3 つの確定の形×届く順で、最終の前受金・仮払金・費用・年ごとの利益を比べる。出荷との待ち合い、期間・日 |
+| `accounting_p2_intake_reads` | 14 | FREQ-571-AC-01〜05 | 受注高の読み（出来事・内訳・受注残） |
+| `accounting_p2_intake_reconciliation` | 12 | FREQ-571-AC-05・06 | 受注高の 2 段の照合の式、例外の行 |
+| `accounting_p2_deferred_revenue` | 5 | FREQ-569-AC-04 | 前受金の確認の一覧と異常 |
+| `accounting_p2_kpi_monthly_records` | 8 | FREQ-573-AC-01・02 | 月の KPI の表の書き手・読み・一括の検査 |
+| `accounting_p2_year_end_shipments` | 16 | FREQ-574-AC-01〜04 | 年末の一覧、確かめた印（出荷日と追跡の版をキーに持つ）、受付日のオプション、受付日のずれ |
+| `accounting_p2_run_posting` | 6 | FREQ-562-AC-05、569-AC-02・06 | 計上の入口、`has_more`、数の意味 |
+| `accounting_p2_migration_asserts` | 91 の記述（改ざんの表を `test.each` で展開する。実測は S12 まで 485、S13 が 61、S14 が 74） | FREQ-562〜574 のうち 28 の AC | S6〜S14 の本文の契約と末尾の自己検査 |
+| `accounting_p2_payment_concurrency`・`…_shipment_concurrency`・`…_stripe_concurrency`・`…_dispute_concurrency` | 3・6・3・7 | FREQ-562-AC-05、563-AC-06、564-AC-01・02、565-AC-01、568-AC-01・03・04 | 同時の計上で 1 本、鍵の順、G の書き手の待ち（記録のみ: 約 40〜210 ミリ秒） |
+| `accounting_p2_run_posting_postgrest`・`…_kpi_monthly_records_postgrest` | 9・5 | FREQ-562-AC-05、568-AC-05、571-AC-05、573-AC-01・02、574-AC-01 | 本物の PostgREST: `service_role` は通り、`anon`・認証済みの利用者は 42501 |
+
+直した G・H・計画 1 の試験（外部キーと公開の入口のため。[DB 移行](../../06_Operations/db-migrations.md)の計画 2 の節）: `group_g1_model`・`group_g3_model`・`group_h_migration_asserts`・`group_g3_date`・`group_g4_foundation`・`accounting_p1_migration_asserts`・`accounting_p1_manual_entry`。新しい共通の材料は `tests/integration/db/helpers/accounting-orders-fixtures.ts`。
+
+### 単体・画面の試験
+
+| ファイル | 種類 | 受け入れ条件 |
+| --- | --- | --- |
+| `tests/unit/lib/accounting/posting-types.test.ts`・`allocate.test.ts`・`labels.test.ts`・`stripe-categories.test.ts` | 単体 | FREQ-569-AC-01、563-AC-03、562-AC-01、565-AC-03（SQL の日本語・種類の対応表と TS の一致を含む） |
+| `tests/unit/lib/accounting/posting-runner.test.ts`・`posting-store.test.ts` | 単体 | FREQ-562-AC-05 ほか（入口の繰り返し・失敗の握り方・DB 結果の写し） |
+| `tests/unit/lib/stripe/dispute-sync.test.ts`・`handled-webhook-events.test.ts`・`reconcile-orders.test.ts`・`supabase-accounting-database.test.ts`・`accounting-sync.test.ts`・`webhook-worker.test.ts` | 単体 | FREQ-567-AC-01〜04（18 種、表への保存、確定の時刻、毎晩の読み直し〔上限 500〕）。`webhook-worker` は処理した知らせがある時だけ計上係を 1 回流す |
+| `tests/unit/api/webhook/stripe-route.test.ts`・`tests/unit/api/cron/stripe-reconcile-route.test.ts`・`accounting-post-route.test.ts` | 単体 | 5 種の保存、`syncedDisputes`・`openDisputesCapped`、10 分ごとの cron の認可・heartbeat・監査 |
+| `tests/unit/api/admin/accounting-pending-events-route`・`accounting-disputes-route`・`accounting-stripe-route`・`accounting-reconciliation-route`・`accounting-year-end-route`（`.test.ts`） | 単体 | FREQ-562-AC-05、564-AC-03、565-AC-06、566-AC-02・03、568-AC-05、569-AC-01・03・04、571-AC-05、574-AC-01〜04 |
+| `tests/unit/api/admin/shipment-slip-confirm-route`・`…-cancel-route`・`…-shipment-date-route`・`stripe-payout-confirm-route`（`.test.ts`）、`tests/unit/lib/orders/shipment-slips/shipment-slip-notice.test.ts`・`shipment-slip-client.test.ts` | 単体 | FREQ-568-AC-06（`DISPUTE_HOLD`）と、確定・取り消し・日の直し・着金の確認の後に計上係を流すこと |
+| `tests/unit/lib/ops/ops-checks.test.ts`・`ops-alert-mail.test.ts` | 単体 | `accounting_post` の 30 分の止まりの知らせ |
+| `tests/unit/api/admin/cost-profit-route.test.ts`・`accounting-journal-route.test.ts`、`tests/unit/lib/finance/no-synthesis.test.ts`・`journal.test.ts`・`stripe-journal.test.ts` | 単体 | FREQ-570-AC-01〜04（注文の表を読まない、出荷の仕訳から収入の行、`shipmentMeta` の読み、合成の道が残らない） |
+| `tests/unit/api/admin/kpi-order-intake.test.ts`・`kpi-targets-definitions.test.ts`・`kpi-hidden-statuses.test.ts`・`kpi-exchange-lines.test.ts`、`tests/unit/lib/kpi/monthly-metrics.test.ts` | 単体 | FREQ-572-AC-01〜05（受注高の数え方、定義の文、サポーターの 403） |
+| `tests/unit/api/admin/kpi-monthly-record-route.test.ts`、`tests/unit/lib/meta/sync-kpi.test.ts` | 単体 | FREQ-573-AC-02・03 |
+| `tests/unit/components/cost-profit/pending-view`・`reconciliation-view`・`dispute-settings-panel`・`balance-topup-form`・`year-end-shipments-panel`・`journal-shipment-columns`（`.test.tsx`）、`KpiSection.intake.test.tsx`、`cost-profit-initial-tab.test.ts` | 画面 | FREQ-564-AC-03・04、565-AC-06、566-AC-01〜03、568-AC-01・02・05、569-AC-01〜04・06、571-AC-05、572-AC-01・02・05、573-AC-04、574-AC-01・03 |
+| `tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts` | 単体 | Route Handler の数（186 ファイル・236 メソッド）の確認 |
+
+### 実測（各 Task の実装者の報告。今回は再実行していない）
+
+- DB 結合全件（`tests/integration/db`、`db reset` の直後、S14 と dispute の残高の直しを含む）: 189 スイート通過・飛ばし 21、5,984 通過・25 飛ばし・1 todo・0 失敗（Task 4 の直し 2 回目）。コミットする試験は 1 ファイルずつ単独で通過。
+- 単体（`tests/unit`）: 701 スイート通過（3 飛ばし）、17,968 通過・8 飛ばし（Task 13 の直し 1 回目）。`tsc --noEmit` と `npm run lint`（0 エラー、113 警告のまま）は各 Task で通過。
+- E2E: 上のとおり。計画 1 の最後の全件（5,189 通過・3 失敗・26 飛ばし、`.superpowers/sdd/2026-11-04-accounting-p1-journal-foundation/e2e-full-p1.json`）との全件の比べは、計画 2 の Task 16 の担当（未実施）。
+
+### 未実行・限界
+
+- 本番の DB には S6〜S14 を当てていない。適用後の確かめは[運用の手引き](../../06_Operations/accounting-p2-posting-stripe.md)の 10。
+- Stripe の実機（`stripe trigger charge.dispute.*`、`tax_fee`・`fee_details` の形、請求書の符号）は未確認。Stripe MCP の再認証が要る（運用の手引きの未確認事項 1〜3・19）。
+- E2E は Stripe を呼ばない。画面の幅の確かめは Task 14 の 5 本（上）が全てで、本番の見た目は確かめていない。
+- 全件の E2E と、計画 2 の最終レビューは Task 16。

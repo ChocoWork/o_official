@@ -1,6 +1,6 @@
 # 状態設計の案内と記載方針
 
-> 状態: 現行ソースとの同期方針 | 確認日: 2026-11-08（会計の期間の行を追加）／2026-10-25（在庫の割当の行は2026-10-24に、発注書の行と発送票の行は2026-10-25に確認） | 対象: 注文・購入下書き・Webhook・要対応記録・在庫の割当・発注書・発送票
+> 状態: 現行ソースとの同期方針 | 確認日: 2026-11-09（会計の計上待ち・dispute の行を追加）／2026-11-08（会計の期間の行を追加）／2026-10-25（在庫の割当の行は2026-10-24に、発注書の行と発送票の行は2026-10-25に確認） | 対象: 注文・購入下書き・Webhook・要対応記録・在庫の割当・発注書・発送票
 
 ## 概要
 
@@ -33,6 +33,8 @@
 | [割引の使用（H）](discount-redemptions.md) | `discount_redemptions.state`（`reserved`・`confirmed`・`cancelled`）と要対応の印 | 注文受付・照合の受付・入金・未入金終了・実入金の回復（共通の在庫の鍵と本人・割引の鍵の下） |
 | [発送票（G-3）](shipping.md) | `shipment_slips.stage`（`draft`・`confirmed`・`cancelled`・`discarded`）と、票の更新を通す操作印 `app.group_g_slip_change` ごとの遷移 | 下書きの保存・破棄（Task 4。共通の在庫の鍵の下）。確定・伝票・配達済み・出荷日の訂正・取消は後続 Task |
 | [会計の期間（計画1）](accounting-period.md) | `accounting_periods`（作成・申告の設定・最後の個人の期間のやめた日）と `accounting_settings`（開業日・事業の形・個人事業を終えた日） | 期間の作成、申告の設定、やめた日の登録・選び直し、設定の保存（共通の会計の鍵の下） |
+| [会計の計上待ち（計画2）](accounting-pending.md) | `accounting_pending_events` の開いている／解決済みと、保存・見直し・自動の解決・人の確認済み | 各計上の係、計上待ちの「確認済みにする」（`before_cutover`・`no_revenue` だけ） |
+| [dispute と計上の段（計画2）](accounting-dispute.md) | `stripe_disputes` の状態と、仕訳の4つの段（W・C・R／L・X）の待ち合い | dispute の受け取り（知らせと毎晩の読み直し）、dispute の計上の係、科目の振り替え |
 
 ## 共通フォーマット
 
