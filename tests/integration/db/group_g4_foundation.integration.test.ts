@@ -56,7 +56,10 @@ describeLocalDb('G-4 foundation: controller reset required', (db) => {
 
   test('FREQ-540-AC-14: DB の confirm 本体は G-3 の < を <= に置き換えた本体と一致する', async () => {
     const body = (await db().query('select prosrc from pg_catalog.pg_proc where oid=$1::regprocedure', [signature])).rows[0].prosrc as string;
-    expect(normalize(body)).toBe(normalize(expected.slice(expected.indexOf('AS $$') + 'AS $$'.length, expected.lastIndexOf('$$;'))));
+    // 会計の計画が足す `-- ACC_P<数字>_BEGIN` 〜 `-- ACC_P<数字>_END` の囲みは両側から全部除いて比べる（番号は1桁。後の計画が別の番号の囲みを足しても直さずに通る）。
+    const withoutAccountingBlocks = (value: string) => value.replace(/-- ACC_P\d_BEGIN[\s\S]*?-- ACC_P\d_END/g, '');
+    expect(normalize(withoutAccountingBlocks(body))).toBe(normalize(withoutAccountingBlocks(
+      expected.slice(expected.indexOf('AS $$') + 'AS $$'.length, expected.lastIndexOf('$$;')))));
   });
 
   test('FREQ-540-AC-14: CREATE OR REPLACE は OID・所有者・ACL・属性と書き手の OID 集合を保つ', async () => {

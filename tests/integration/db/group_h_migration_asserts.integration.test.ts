@@ -306,7 +306,7 @@ describeLocalDb('H1 semantic final assertions: controller only', (db) => {
   });
 
   test.each([
-    ['drop table public.order_line_unit_amounts', 'h1_tables'],
+    ['drop table public.order_line_unit_amounts cascade', 'h1_tables'],
     ['alter table public.discount_codes drop constraint discount_codes_discount_id_id_key cascade', 'h1_constraints'],
     ['alter table public.discounts disable row level security', 'h1_rls_acl'],
     ['grant select on public.discounts to anon', 'h1_rls_acl'],

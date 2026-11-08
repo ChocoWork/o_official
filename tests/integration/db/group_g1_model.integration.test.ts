@@ -418,7 +418,7 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
            public.purchase_order_attachment_reservations, public.purchase_order_attachments,
            public.purchase_order_attachment_revisions, public.shipment_slips, public.shipment_slip_lines,
            public.shipment_slip_fulfillments, public.shipment_slip_versions, public.shipment_date_history,
-           private.shipment_tracking_registrations`,
+           private.shipment_tracking_registrations, public.accounting_g_slip_facts`,
       ];
 
       for (const role of ['postgres', 'service_role']) {
@@ -429,6 +429,7 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
               .map((name) => `public.purchase_order_${name}`),
             'public.shipment_slips', 'public.shipment_slip_lines', 'public.shipment_slip_fulfillments',
             'public.shipment_slip_versions', 'public.shipment_date_history', 'private.shipment_tracking_registrations',
+            'public.accounting_g_slip_facts',
           ]) {
             await db().query(`grant select, insert, update, delete, truncate on ${table} to service_role`);
           }
