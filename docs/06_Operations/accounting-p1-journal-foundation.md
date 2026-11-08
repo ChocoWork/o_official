@@ -26,11 +26,11 @@
 
 | 移行 | 目的 | 末尾の検査（DETAIL） | 戻し方 |
 | --- | --- | --- | --- |
-| S0 `..130000_accounting_p1_permissions.sql` | 権限6件を足す（32 → 38）。店長だけに付ける | `acc_s0_permission_catalogs`・`acc_s0_permission_seed`・`acc_s0_existing_dml_allowlist` | 移行のファイルに戻しの文は無い。戻す時は H1（`20261029130000`）の2関数の本体へ `CREATE OR REPLACE` し、`role_permissions`・`permissions` から6件を消して店長の版を+1する（要レビュー） |
+| S0 `..130000_accounting_p1_permissions.sql` | 権限6件を足す（32 → 38）。店長だけに付ける | `acc_s0_permission_catalogs`・`acc_s0_permission_seed`・`acc_s0_existing_dml_allowlist` | 移行のファイルに戻しの文は無い。S1〜S5 を先に戻した後だけ（S3 の書き手が `admin.accounting.settings.manage` を確かめるため）。H1（`20261029130000`）の2関数の本体へ `CREATE OR REPLACE` し、`role_permissions`・`permissions` から6件を消す（外部キーで止まらない。`role_permission_events` の文字の記録は残る）。6件を消した役割の版を+1する（店長。画面でサポーターへ付けていればサポーターも）。アプリの目録（`admin-rbac.ts`・`role-permission-catalog.ts`・保存の上限、38 → 32）を同じデプロイで戻す（要レビュー） |
 | S1 `..130100_accounting_p1_grants_receipts.sql` | 12表と8連番の `anon`・`authenticated` の権限を外す。`admin_finance_receipts` に `evidence_kind`・`paper_original_kept`。置き場 `finance-receipts` を非公開・20MiB・5形式に | `acc_s1_finance_table_acl`・`acc_s1_finance_seq_acl`・`acc_s1_bucket`・`acc_s1_receipt_columns`・`acc_s1_policies_unchanged` | 移行のファイルの先頭の ROLLBACK のとおり。適用前に読んだ権限・置き場の行の値へ戻す。種類の列を消すと適用後に記録した種類が消えるので先に書き出す。`public` は `true` に戻さない |
 | S2 `..130200_accounting_p1_journal_foundation.sql` | 仕訳・期間・勘定の5表、仕訳を入れる関数・取り消しの関数、勘定163行（162＋`9999`） | `acc_s2_tables` ほか9つ | 仕訳が1件も無い間だけ、ファイル先頭の DROP の文。仕訳は消せない |
 | S3 `..130300_accounting_p1_period_reads.sql` | 設定・期首の表、期間の作成・やめた日・設定・申告の設定の書き手、読み5つ、トリガー | `acc_s3_settings_row`・`acc_s3_period_layout_trigger`・`acc_s3_functions`・`acc_s3_rls_acl`・`acc_s3_reads_stable` | 期間・設定の変更・期首の行が残らない間だけ、ファイル先頭の DROP の文 |
-| S4 `..130400_accounting_p1_manual_entry_journal.sql` | 手入力の取引を仕訳にするトリガー、分類・支払方法の写し、履歴の保護、履歴を書く関数の入れ替え | `acc_s4_map_table`・`acc_s4_trigger`・`acc_s4_functions`・`acc_s4_legacy_trigger_untouched` | 手入力の仕訳が無い間だけ、ファイル先頭の DROP の文。履歴の関数は `remote_schema.sql` の本体へ戻す |
+| S4 `..130400_accounting_p1_manual_entry_journal.sql` | 手入力の取引を仕訳にするトリガー、分類・支払方法の写し、履歴の保護、履歴を書く関数の入れ替え | `acc_s4_map_table`・`acc_s4_trigger`・`acc_s4_functions`・`acc_s4_legacy_trigger_untouched` | 手入力の仕訳が無い間だけ、ファイル先頭の DROP の文。履歴の関数は `remote_schema.sql` の本体へ `CREATE OR REPLACE` で戻し、続けて `ALTER FUNCTION public.record_admin_finance_entry_revision() SET search_path = public, pg_temp;` も流す |
 | S5 `..130500_accounting_p1_a8_migrate_manual.sql` | 削除されていない手入力の取引を `migrated_entry` として移す（A8） | `acc_s5_counts`・`acc_s5_numbering`・`acc_s5_revisions_unchanged`・`acc_s5_receipts_unchanged`・`acc_s5_triggers_unchanged` | 戻せない。誤りは取り消しと正しい仕訳で直す |
 
 各移行は1本の取引（`BEGIN`〜`COMMIT`）で、末尾に自己検査を持つ。検査が崩れると全部戻る。失敗の詳細は固定の `DETAIL` の語だけ。
@@ -41,8 +41,8 @@
 
 | 関数 | 引数 | 使い方 |
 | --- | --- | --- |
-| `public.admin_post_accounting_journal` | `_actor_id`・`_period_id`・`_entry_date`・`_event_kind`・`_event_parts text[]`・`_description`・`_lines jsonb`・（`_reverses_entry_id`・`_reason`・`_source_table`・`_source_id`） | 一般の仕訳を1本入れる。戻りは `{entry_id, entry_no, period_id, created}`。`created=false` は同じ印・同じ内容の再送 |
-| `public.admin_reverse_accounting_journal` | `_actor_id`・`_entry_id`・`_reason`・`_entry_date`（省略は元の日） | 元の仕訳の借方・貸方を入れ替えた取り消しを入れる |
+| `public.admin_post_accounting_journal` | `_actor_id`・`_period_id`・`_entry_date`・`_event_kind`・`_event_parts text[]`・`_description`・`_lines jsonb`・（`_source_table`・`_source_id`）。`_reverses_entry_id`・`_reason` は引数にあるが、値を入れると 22023 で断る。`_source_table` に `admin_finance_expenses` を入れても断る | 一般の仕訳を1本入れる。戻りは `{entry_id, entry_no, period_id, created}`。`created=false` は同じ印・同じ内容の再送 |
+| `public.admin_reverse_accounting_journal` | `_actor_id`・`_entry_id`・`_reason`・`_entry_date`（省略は元の日） | 元の仕訳の借方・貸方を入れ替えた取り消しを入れる。日付は省略なら元の日、渡せばその日を含む期間（元の期間と同じ事業の形。個人で期間が無ければ暦年の期間を作る）に入る |
 
 - `_lines` は2〜200行の配列で、行のキーは `account_code`・`debit`・`credit`・`sub_account`・`counterparty`・`order_id`・`memo` の7つだけ（他のキーは 22023）。金額は整数の JSON 数（文字列は不可、0〜2^53−1）。1行は借方か貸方の片方だけ。全行の借方の合計 = 貸方の合計。
 - 印は `_event_kind`（27種）と `_event_parts` から作る（`stripe_fee` だけ前置きが `stripe:fee`）。要素は `[A-Za-z0-9_.-]{1,128}`。種類ごとの個数は [event-kinds.ts](../../src/lib/accounting/event-kinds.ts)。同じ印で内容が違うと 409。
@@ -63,7 +63,7 @@
 ## 取り消しの道具
 
 - 画面から仕訳を取り消す入口は計画1には無い（権限 `admin.accounting.entries.correct` を使う入口は後の計画）。
-- 一般の仕訳は `admin_reverse_accounting_journal` で取り消す。1つの元に取り消しは1本（二重は 409 `ACCOUNTING_ALREADY_REVERSED`）。取り消しは元の日の期間に入り、説明・出どころを元から写す。
+- 一般の仕訳は `admin_reverse_accounting_journal` で取り消す。1つの元に取り消しは1本（二重は 409 `ACCOUNTING_ALREADY_REVERSED`）。取り消しは（日付を渡さなければ）元の日の期間に入り、説明・出どころを元から写す。
 - 手入力の取引の取り消しは、取引の直し・削除に伴ってトリガーが入れる（直接は入れられない）。
 
 ## 手入力のトリガーの動き
@@ -86,7 +86,7 @@ Ruling T16-1 (refines C11): Task 16 applies in two pushes — (1) S0–S3 first;
 ### 本番の事前確認（読み取りだけ）
 
 1. `select count(*) filter (where deleted_at is null) as live, count(*) filter (where deleted_at is not null) as deleted, count(*) as total, min(expense_date) filter (where deleted_at is null), max(expense_date) filter (where deleted_at is null), max(created_at) from public.admin_finance_expenses;` を控える。生きている行の数の見込みは18（削除済みを含む総数ではない）。最初の日の年が2025以上であること（開業日が未入力の時）、`max(created_at)` が今以前であること。
-2. `select count(*) from public.admin_finance_entry_revisions;`（見込み25）と `select count(*), count(*) filter (where evidence_kind <> 'unconfirmed') from public.admin_finance_receipts;`（S1 の後は 0 件が `unconfirmed` 以外）。
+2. `select count(*) from public.admin_finance_entry_revisions;`（見込み25）と `select count(*), count(*) filter (where evidence_kind <> 'unconfirmed') from public.admin_finance_receipts;`（見込み8件。S1 の後は `unconfirmed` 以外が 0 件）。
 3. `select fiscal_year, business_type, opening_cash, accounts_receivable, fixed_assets, accounts_payable, opening_capital from public.admin_finance_years;` — 法人の年が無く、期首の5列がすべて 0。違えば S5 が止まる（オーナーに尋ねる）。
 4. `select count(*) from public.admin_finance_year_closings;` — 0。
 5. `select * from public.accounting_settings;`（S3 の後）— 開業日は NULL か、その年が最初の生きた取引の年以前。個人事業を終えた日は NULL。事業の形は個人。最後の生きた取引の年が今年（日本時間）+1 以下。
@@ -94,6 +94,14 @@ Ruling T16-1 (refines C11): Task 16 applies in two pushes — (1) S0–S3 first;
 7. `select tgenabled from pg_trigger where tgrelid = 'public.admin_finance_expenses'::regclass and tgname = 'trigger_admin_finance_entry_revisions';` — `O`。
 8. `select category, payment_method, entry_type, count(*) from public.admin_finance_expenses where deleted_at is null group by 1,2,3 order by 1,2,3;` を S4 の写し（`ACC_MANUAL_MAP` の行）と照らす。分類にも支払方法にも `開業費`（`U&'\958B\696D\8CBB'`）の行が 0 件であること（あれば S5 が `a8_startup_cost_category` で止まる。先にオーナーが決める）。直接の確認: `select id, expense_date, category, payment_method from public.admin_finance_expenses where deleted_at is null and (category = U&'\958B\696D\8CBB' or payment_method = U&'\958B\696D\8CBB');` — 0 行。`9999` に入る行と資産・在庫の分類の行も控える（S5 は S4 の規則のまま移し、直しは移した後に取り消しと正しい仕訳で行う）。
 9. S4 と S5 を1回の `db push` で当て、その間に管理者が取引を編集しない（S5 の途中で履歴だけが増えると `acc_s5_revisions_unchanged` で S5 が戻る。安全だが再実行になる）。
+
+### 成功の確認
+
+- S5 の NOTICE（`acc_s5_counts moved=<n> deleted_not_moved=<n> ...`）の `moved` が事前確認1の生きた行の数、`deleted_not_moved` が削除済みの行の数と等しい。
+- `select count(*) from public.accounting_journal_entries where event_kind = 'migrated_entry';` が生きた行の数と等しい。
+- `admin_finance_expenses`・`admin_finance_entry_revisions`・`admin_finance_receipts` の行の数が事前確認の値のまま。
+- `supabase_migrations.schema_migrations` に S0〜S5 の版が載り、文の md5 がコミットしたファイルと一致する（[DB 移行](db-migrations.md)の照合の書き方）。
+- 画面で、取引管理の追加・直し・削除が仕訳（帳簿）に出る。
 
 ### 戻し方
 

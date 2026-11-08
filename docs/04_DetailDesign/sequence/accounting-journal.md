@@ -43,6 +43,8 @@ sequenceDiagram
     P->>P: 暦年の個人の期間を作る（作成者 = 操作した人）
   else やめた日より後・法人の期間が無い
     P-->>R: 409 ACCOUNTING_PERIOD_MISSING（やめた日より後は「法人へ切り替えてください」の本文）
+  else 日付の年が「開業日の年（未入力は2025年）〜今年（日本時間）+1」の外
+    P-->>R: 400 ACCOUNTING_ARGUMENT_INVALID
   end
   T->>T: 鍵 ③（期間）を取る
   alt 直し（UPDATE）

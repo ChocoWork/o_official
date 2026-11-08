@@ -6,11 +6,11 @@
 
 ACCOUNTING タブ（`src/components/CostProfitSection.tsx`）は、年の選択をやめ、会計期間で全部を数える。取引・累計・注文・Stripe は選んだ期間の日付の範囲で読み、手入力の仕訳は DB が保存した仕訳（`savedJournal`）をそのまま使う。6つ目のサブタブ「設定・期間」で、開業日・事業の形・期間・申告の期限・個人事業のやめた日を扱う。
 
-この頁は `scripts/trace/scope.json` の範囲の外にあるので、`DD-` の項目は振らず、`16_admin.md`（範囲内の ADMIN の `DD-ADMIN-*`）とは別に置く。管理全体の入口は [ADMIN](16_admin.md)、会計の財務ドメインは[財務](../shared/finance.md)を参照する。
+このページは `scripts/trace/scope.json` の範囲の外にあるので、`DD-` の項目は振らず、`16_admin.md`（範囲内の ADMIN の `DD-ADMIN-*`）とは別に置く。管理全体の入口は [ADMIN](16_admin.md)、会計の財務ドメインは[財務](../shared/finance.md)を参照する。
 
 | 部分 | 実装 |
 | --- | --- |
-| 入れ物と状態 | [CostProfitSection.tsx](../../../src/components/CostProfitSection.tsx)（173行）、[use-cost-profit-model.ts](../../../src/components/cost-profit/use-cost-profit-model.ts)（全 hooks と計算）、サブタブごとの `*-view.tsx`（hooks を持たず `model` を受ける） |
+| 入れ物と状態 | [CostProfitSection.tsx](../../../src/components/CostProfitSection.tsx)、[use-cost-profit-model.ts](../../../src/components/cost-profit/use-cost-profit-model.ts)（全 hooks と計算）、サブタブごとの `*-view.tsx`（hooks を持たず `model` を受ける） |
 | 期間の選択 | [period-picker.tsx](../../../src/components/cost-profit/period-picker.tsx)。`AccountingSection` が `periodId` を持つ |
 | 設定・期間 | [settings-view.tsx](../../../src/components/cost-profit/settings-view.tsx)、[period-form.tsx](../../../src/components/cost-profit/period-form.tsx)、[filing-deadlines-panel.tsx](../../../src/components/cost-profit/filing-deadlines-panel.tsx) |
 | 期間の計算 | [period.ts](../../../src/lib/accounting/period.ts)・[period-months.ts](../../../src/lib/accounting/period-months.ts)・[filing-deadlines.ts](../../../src/lib/accounting/filing-deadlines.ts)・[startup-deadlines.ts](../../../src/lib/accounting/startup-deadlines.ts)・[jp-holidays.ts](../../../src/lib/accounting/jp-holidays.ts) |
@@ -28,7 +28,7 @@ ACCOUNTING タブ（`src/components/CostProfitSection.tsx`）は、年の選択�
 
 | 論点 | 内容 |
 | --- | --- |
-| 期間の決め方 | `periodId`（UUID）があればその期間（無ければ 404 `ACCOUNTING_NOT_FOUND`、形が違えば 400）。無ければ旧の `year` をその年に始まる個人の期間に結ぶ。どちらも無ければ 400。年の期間が無ければ既定の期間（今日〔日本時間〕を含む期間、個人と法人の両方なら現在の事業の形、無ければ今日までに始まった最後の期間） |
+| 期間の決め方 | `periodId`（UUID）があればその期間（無ければ 404 `ACCOUNTING_NOT_FOUND`、形が違えば 400）。無ければ旧の `year` をその年に始まる個人の期間に結ぶ。どちらも無ければ 400。年の期間が無ければ既定の期間（今日〔日本時間〕を含む期間、個人と法人の両方なら現在の事業の形、無ければ今日までに始まった最後の期間、それも無ければ最初の期間） |
 | 期間が1つも無い | 200 で `period:null`・空の配列。画面は「期間がありません」の案内だけ |
 | 読みの範囲 | 手入力の取引は `expense_date` が期間の中、累計は期間の終わりまで、注文は日本時間の日付が期間に入る物、Stripe は `stripe_created_at` が期間の中。事業の形は期間の事業の形 |
 | 保存した仕訳 | 1ページ200件で `nextAfter` が無くなるまで最大100ページ。超えたら 500 `JOURNAL_TOO_LARGE`、途中の失敗と期首の失敗は 500 `JOURNAL_INCOMPLETE`。画面は合計を出さず「一部しか読めていないため、合計を表示できません」を出す |
