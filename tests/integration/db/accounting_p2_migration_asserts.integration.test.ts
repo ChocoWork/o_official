@@ -1849,7 +1849,8 @@ describe('S14 source contract (no DB)', () => {
     expect(fn).toContain("s.stage IN ('confirmed', 'cancelled')");
     expect(fn).toContain('ORDER BY s.shipment_date, s.number');
     // The latest mark of the slip, and stale when its date or tracking version is not the slip's now.
-    expect(fn).toContain('ORDER BY k.checked_at DESC');
+    expect(fn).toContain('ORDER BY (k.checked_shipment_date = s.shipment_date AND k.checked_tracking_version = s.tracking_version) DESC');
+    expect(fn).toContain('k.checked_at DESC');
     expect(fn).toContain('c.checked_shipment_date <> s.shipment_date OR c.checked_tracking_version <> s.tracking_version');
     expect(fn).not.toMatch(/customer_|ship_to_|draft_lines/);
     expect(bodyS14.replace(/--[^\n]*/g, '')).not.toMatch(/customer_email|ship_to_full_name|ship_to_address|ship_to_phone/);
@@ -1991,6 +1992,7 @@ describeLocalDb('S14 final assert: controller only', (db) => {
     [edit("e.source = 'tracking'", "e.source <> 'manual'", gapsPrivate), 'acc_s14_function_attrs'],
     [edit('c.checked_tracking_version <> s.tracking_version', 'false', listYePrivate), 'acc_s14_function_attrs'],
     [edit('LIMIT _limit + 1', 'LIMIT _limit', gapsPrivate), 'acc_s14_function_attrs'],
+    [edit('k.checked_tracking_version = s.tracking_version) DESC', 'false) DESC', listYePrivate), 'acc_s14_function_attrs'],
     [edit("e.status = 'in_transit'", "e.status = 'delivered'", gapsPrivate), 'acc_s14_function_attrs'],
     [edit("USING ERRCODE = '42501'", "USING ERRCODE = '22023'", checkPrivate), 'acc_s14_function_attrs'],
     [edit('ON CONFLICT DO NOTHING', 'ON CONFLICT (slip_id) DO UPDATE SET note = EXCLUDED.note', checkPrivate), 'acc_s14_function_attrs'],

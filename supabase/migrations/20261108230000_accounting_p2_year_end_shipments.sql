@@ -13,11 +13,14 @@ BEGIN;
 --
 -- Functions (public.<name> calls private.<name>; SECURITY INVOKER entries for service_role only):
 --   list_year_end_shipments(_from, _to, _limit 100, _after_date, _after_slip) -> {slips:[{slip_id, number, shipment_date, confirmed_at,
---     stage, shipping_carrier, tracking_number, checked_at, checked_by}], next_after_date, next_after_slip}: the confirmed and cancelled
---     slips whose shipment_date is in the range, by shipment_date then slip number; the range is at most 60 days (both ends in) and the
---     limit 1..200. checked_at / checked_by are of the latest mark of the slip; check_stale is true when that mark was put for another
---     shipment date or tracking version than the slip has now (false when there is no mark). The cursor is the last slip of the page (both halves or none). No customer name, mail address or address is read.
---   admin_check_year_end_shipment(_actor_id, _slip_id, _note, _request_key) -> {slip_id, checked_by, checked_at, note, created}: permission
+--     stage, shipping_carrier, tracking_number, checked_at, checked_by, check_stale}], next_after_date, next_after_slip}: the confirmed
+--     and cancelled slips whose shipment_date is in the range, by shipment_date then slip number; the range is at most 60 days (both
+--     ends in) and the limit 1..200. checked_at / checked_by are of the mark that matches the shipment date and tracking version the slip
+--     has now when there is one (so a date corrected from A to B and back to A is checked again), else of the latest mark; check_stale
+--     is true when marks exist but none matches the slip now (false when it matches or there is no mark). The cursor is the last slip of
+--     the page (both halves or none). No customer name, mail address or address is read.
+--   admin_check_year_end_shipment(_actor_id, _slip_id, _note, _request_key) -> {slip_id, checked_by, checked_at, note,
+--     checked_shipment_date, checked_tracking_version, created}: permission
 --     admin.finance.manage (ACCOUNTING_FORBIDDEN / 42501) first. Puts the mark; a slip that is checked already returns the first mark as
 --     it is (created false, 'it' = the mark for the present shipment date and tracking version of the slip); the same request key with other content is ACCOUNTING_REQUEST_KEY_CONFLICT; a slip that is not confirmed
 --     or cancelled is ACCOUNTING_NOT_FOUND; the note is at most 200 characters (blank is no note).
@@ -124,7 +127,8 @@ BEGIN
     FROM public.shipment_slips AS s
     LEFT JOIN LATERAL (SELECT k.slip_id, k.checked_shipment_date, k.checked_tracking_version, k.checked_at, k.checked_by
       FROM public.accounting_shipment_checks AS k WHERE k.slip_id = s.id
-      ORDER BY k.checked_at DESC, k.checked_shipment_date DESC, k.checked_tracking_version DESC LIMIT 1) AS c ON true
+      ORDER BY (k.checked_shipment_date = s.shipment_date AND k.checked_tracking_version = s.tracking_version) DESC,
+        k.checked_at DESC, k.checked_shipment_date DESC, k.checked_tracking_version DESC LIMIT 1) AS c ON true
     WHERE s.stage IN ('confirmed', 'cancelled') AND s.shipment_date BETWEEN _from AND _to
       AND (_after_slip IS NULL OR (s.shipment_date, s.number) > (_after_date, v_cursor_number))
     ORDER BY s.shipment_date, s.number
@@ -552,7 +556,7 @@ BEGIN
       ('private.list_year_end_shipments(date,date,integer,date,uuid)', ARRAY[
         '(_to - _from) > 59', '_limit > 200', '(_after_date IS NULL) <> (_after_slip IS NULL)', '''22023''',
         'AND s.stage IN (''confirmed'', ''cancelled'')', 'ORDER BY s.shipment_date, s.number',
-        '(s.shipment_date, s.number) > (_after_date, v_cursor_number)', 'FROM public.accounting_shipment_checks AS k WHERE k.slip_id = s.id', 'ORDER BY k.checked_at DESC', '''check_stale'', p.check_stale',
+        '(s.shipment_date, s.number) > (_after_date, v_cursor_number)', 'FROM public.accounting_shipment_checks AS k WHERE k.slip_id = s.id', 'ORDER BY (k.checked_shipment_date = s.shipment_date AND k.checked_tracking_version = s.tracking_version) DESC', 'k.checked_at DESC', '''check_stale'', p.check_stale',
         'c.checked_shipment_date <> s.shipment_date OR c.checked_tracking_version <> s.tracking_version']),
       ('private.admin_check_year_end_shipment(uuid,uuid,text,uuid)', ARRAY[
         'private.group_g_actor_has_permissions(_actor_id, ARRAY[''admin.finance.manage''])', '''ACCOUNTING_FORBIDDEN''', '''42501''',

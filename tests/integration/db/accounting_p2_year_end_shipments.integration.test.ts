@@ -226,6 +226,26 @@ describeLocalDb('S14 year-end shipments and the carrier receipt-date check (roll
     expect(Number((await db().query(`select count(*) as n from ${CHECKS} where slip_id = $1`, [target])).rows[0].n)).toBe(2);
   });
 
+  test('FREQ-574-AC-02: 出荷した日をA→B→Aと直して元に戻すと、Aの時の印がまた今の票の印になり古い扱いが消える', async () => {
+    const admin = await insertAccountingAdmin(db());
+    const target = await slip('2097-12-26', { carrier: 'yamato', tracking: 'YM-1' });
+    const stale = async () => ((await list('2097-12-25', '2097-12-29')).slips.find((s) => s.slip_id === target) as Slip).check_stale;
+    const first = await check(admin, target, 'on A');
+    await changeSlip(target, 'date');
+    expect(await stale()).toBe(true);
+    const second = await check(admin, target, 'on B');
+    expect(second.created).toBe(true);
+    expect(await stale()).toBe(false);
+    // Corrected back to A (12-27 -> 12-26): the first mark is the mark of the present state again.
+    await db().query("select set_config('app.group_g_slip_change', 'date', true)");
+    await db().query("update public.shipment_slips set version = version + 1, shipment_date = shipment_date - 1 where id = $1", [target]);
+    const row = (await list('2097-12-25', '2097-12-29')).slips.find((s) => s.slip_id === target) as Slip;
+    expect([row.shipment_date, row.check_stale, row.checked_at]).toEqual(['2097-12-26', false, first.checked_at]);
+    // Marking the slip again returns the mark of A; nothing is added.
+    expect(await check(admin, target, 'again')).toEqual({ ...first, created: false });
+    expect(Number((await db().query(`select count(*) as n from ${CHECKS} where slip_id = $1`, [target])).rows[0].n)).toBe(2);
+  });
+
   test('FREQ-574-AC-02: 確かめる対象は確定または取り消し済みの票だけで、メモは200字まで', async () => {
     const admin = await insertAccountingAdmin(db());
     const draft = await slip('2097-12-26', { stage: 'draft' });
