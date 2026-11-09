@@ -1063,7 +1063,11 @@ BEGIN
   d AS (
     SELECT c.*,
       CASE c.kind
-        WHEN 'sale' THEN private.accounting_entry_live('payment_confirmed', c.payment_intent_id)
+        -- The sale is on the books when a payment entry sourced from this transaction exists and has not been reversed (not
+        -- decided by the payment intent column: a sync that carries no intent must not turn a posted sale into an unposted one).
+        WHEN 'sale' THEN EXISTS (SELECT 1 FROM public.accounting_journal_entries AS se
+          WHERE se.event_kind = 'payment_confirmed' AND se.source_table = 'stripe_balance_transactions' AND se.source_id = c.id
+            AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS sr WHERE sr.reverses_entry_id = se.id))
         WHEN 'tax_adjustment' THEN private.accounting_entry_live('stripe_tax_adjustment', c.id)
         WHEN 'payout' THEN c.net_zero OR private.accounting_entry_live('payout_started', c.source_id)
         WHEN 'payout_failure' THEN c.net_zero OR private.accounting_entry_live('payout_failed', c.id)

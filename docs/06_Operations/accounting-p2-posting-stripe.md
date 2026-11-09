@@ -167,11 +167,27 @@ from public.shipment_slips;
 - **0でない時、または適用の途中で S6 の assert（`acc_s6_slip_fact_backfill`）が止まった時は、当てずに報告してオーナーと対応を決める。** 状態別の件数と止めた理由を残す。発送票の清掃、assert の無効化、番号の推測による補完をその場で行わない。S6 は1つの取引なので、止まれば S6 は巻き戻ったまま。S7 以後へ進まない。既に確定した発送票の事実を移しかえる設計は別に行う。
 - 読んだ後に件数が増えて assert で止まった場合も同じ。
 
+**止める規則（切り替えの日以後の Stripe の行）**: 次の件数を読み、**どれも0であること**。
+
+```sql
+select
+  (select count(*) from public.stripe_balance_transactions t
+    where private.accounting_jst_date(t.stripe_created_at) >= (select cutover_on from public.accounting_settings where id = 1)) as balance_transactions_on_or_after_cutover,
+  (select count(*) from public.stripe_payouts p
+    where private.accounting_jst_date(p.paid_at) >= (select cutover_on from public.accounting_settings where id = 1)
+       or p.bank_arrival_date >= (select cutover_on from public.accounting_settings where id = 1)) as payouts_on_or_after_cutover;
+```
+
+- **1件でもあれば当てずに報告する。** 当てると、最初の計上の呼び出し（計上のボタン・入金の着金の確認・発送票の route・Webhook の worker・定期処理）で、消せない手数料・入金・入金の失敗の仕訳になり、期間が自動で作られることがある（注文が0でも、手数料は注文なしで仕訳になる。支払いの行は `no_order` で閉じられない保留になる）。
+- 切り替えの日より前の行は `before_cutover` で保留になるだけで害はない。
+
 そのほかの事前の読み取り（数だけ。書かない）: 計画1の S0〜S5 が当たっていること（`accounting_journal_entries` の件数と、`permissions` の `admin.accounting.%` が6件）、`admin_kpi_monthly_records` と Meta 連携の表が**まだ無い**こと、`accounting_settings.cutover_on`、`orders` の払い済みの件数（0のはず）、`stripe_balance_transactions`・`stripe_refunds`・`stripe_payouts`・`order_fulfillments` の件数。
 
 ## 10. 適用の方法
 
 計画1のとおり、CLI の `npx supabase db push --linked --include-all`。S6 → S14 の順で、途中で止めたい時はあとのファイルを一時的に外して当てる（計画1と同じやり方）。MCP の `apply_migration` は使わない。大きいファイル（S6 は約95KB、S9 は約88KB、S11 は約90KB）を手で写すとずれるため。適用の後は読むだけで確かめる: 各移行の assert が通ったこと、`admin_kpi_monthly_records` が空で存在すること、`accounting_pending_events` が0件、`accounting_settings` が変わっていないこと、権限が38件のまま。本番に書いて確かめることはしない。
+
+**配備の順**: 移行 S6〜S14 を全部当ててから、コードを配備する。コードが先だと、出荷の確定の route が `get_slip_dispute_holds`（S11）を呼べず安全側で全部止まり、KPI の route が S13 の表が無くて 500 になる。
 
 ## 運用の注意
 
@@ -195,7 +211,7 @@ from public.shipment_slips;
 | 5 | 仕訳の「遅れ」の印 `is_late`。取引の保存時刻 `synced_at` は同期のたびに上書きされるので、遅れの側に寄る | 古い取引を読み直した時に印が付きうる。実害は印だけ |
 | 6 | Meta 連携の表が移行に無い疑い（上の 6） | 本番を読む（Task 16 Step 6）。作る作業はオーナーが決める |
 | 7 | Stripe は知らせの履歴を30日しか持たない。作成から30日を超えて確定した dispute は、確定の時刻が取れず取引の時刻で代える | 確定が遅れた dispute が出た時、確定の日の年がずれていないか見る |
-| 8 | 入金を取り込み直す（payout の再同期）と、残高の取引の `payment_intent_id`・`order_id` が空になる | 仕訳は取引の番号と dispute の注文で追うので、計上には影響しない。照合の説明の付き方が変わらないか見る |
+| 8 | 入金を取り込み直す（payout の再同期）と、残高の取引の `payment_intent_id`・`order_id` が空にならないか | 解消済み: 取り込みの口（`saveBalanceTransaction`）は、結び付きを渡さない同期が、先の同期の付けた支払いの番号・注文・入金の番号を消さない。支払いの係は元の取引から出た仕訳（`source_id`）が先にある取引を新しい出来事にせず、残高の照合も支払いの番号でなく元の取引から出た仕訳で数える。本番で入金の同期の後も支払いの番号が残っていることを数だけで確かめる |
 | 9 | dispute の取引で想定外の種類・符号の組は、キーが付かず計上待ちに残る。dispute の取引の選び方は、S11 が種類だけ、S9 の対応は `type='adjustment'` も要る | Stripe のテストモードで dispute の取引の形を読む（Task 16 Step 4） |
 | 10 | 引かれた時より後に確定した発送票と、その dispute の「引かれた時」の仕訳（W）の間で、どちらかが止まったままになる形。出荷が先に入ると、W が前受金の不足（`deferred_revenue_short`）で止まる。W が先に入ると、その発送票の出荷が `deferred_revenue_short` で止まる。出荷の係は、未計上の W がある注文の発送票を W まで待たせる（`dispute_withdrawal_missing`、`waiting_on` が `dispute_withdrawn`）ので、互いに待ち合う形にはならないが、W が入れない原因（期間が無い、前受金の不足など）が続くと、後の発送票も待つ。通常は、画面と route が、判断待ちで引かれた取引のある注文を含む発送票の確定を止める。この形になるのは、dispute の知らせが届く前（同期の窓）に確定した発送票だけ。回復: W の止まった原因を直す、dispute に勝って戻り（R）が入り前受金が戻る、またはその発送票を取り消す。dispute に負けた場合の出荷の扱いは決まっていない | 計画3で DB の中の止めを入れる。起きた時は、止まった行の理由と詳細で見る |
 | 11 | 切り替えの日をまたぐ入金と dispute。前の部分が `before_cutover` になると、後の段が `dispute_withdrawal_missing` で待ち、手で閉じられない。期首の 1160 も入れていないので、Stripe の残高の照合は切り替えの前の取引の分も数える | 本番の注文は切り替えの前が0件の想定。初めて跨る取引が出たら、オーナーと扱いを決める |

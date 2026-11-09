@@ -1391,8 +1391,9 @@ controller手順: H7未適用DBの新しい取消テストでRED→取引内で�
 1. 計画1の S0〜S5 が本番に当たっていること（2026-11-08 に当てた）。
 2. 計画1の Task 16 Step 0 の接続先のオーナー確認（`npm run dev` が手元の Supabase を向く）が有効なこと（[計画2の運用の手引きの 8](accounting-p2-posting-stripe.md#8-普段の開発の接続先のオーナー確認計画1の-task-16-step-0-を引き継ぐ)）。済んでいなければ当てずに報告する。
 3. S6 を当てる前に、確定済み・取り消し済みの発送票の件数を読み、どちらも0であること（[運用の手引きの 9](accounting-p2-posting-stripe.md#9-s6-を当てる前の発送票の件数task-16-step-6)）。1件でもある時、または適用の途中で S6 の assert（`acc_s6_slip_fact_backfill`）が止まった時は、**当てずに報告して、オーナーと対応を決める**。発送票の清掃・assert の無効化・番号の推測による補完をその場で行わない。
-4. 本番に `admin_kpi_monthly_records` が**まだ無い**こと（S13 は `CREATE TABLE` なので、旧 `migrations/063` を手で当てていると失敗して戻る）。
-5. master への push はオーナーの許可を得てから。`.github/workflows/db-migrations.yml` は master への push で `supabase/migrations/**` の変更を本番へ `supabase db push` する。
+4. **Stripe の行が切り替えの日以後に1件も無いこと（止める規則）**: `stripe_balance_transactions` で `private.accounting_jst_date(stripe_created_at) >= cutover_on` の件数、`stripe_payouts` で `paid_at` または `bank_arrival_date` が `cutover_on` 以後の件数を読み（数だけ。[運用の手引きの 9](accounting-p2-posting-stripe.md#9-s6-を当てる前の発送票の件数task-16-step-6)）、**どれも0であること**。1件でもあれば当てずに報告する（当てると、最初の計上の呼び出しで消せない手数料・入金・入金の失敗の仕訳になり、期間が自動で作られることがある）。切り替えの日より前の行は `before_cutover` で保留になるだけで害はない。
+5. 本番に `admin_kpi_monthly_records` が**まだ無い**こと（S13 は `CREATE TABLE` なので、旧 `migrations/063` を手で当てていると失敗して戻る）。
+6. master への push はオーナーの許可を得てから。`.github/workflows/db-migrations.yml` は master への push で `supabase/migrations/**` の変更を本番へ `supabase db push` する。
 
 ### 順番と各ファイル
 
@@ -1400,10 +1401,10 @@ controller手順: H7未適用DBの新しい取消テストでRED→取引内で�
 
 | 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
 | --- | --- | --- | --- |
-| S6 `20261108150000_accounting_p2_posting_tables.sql` | 95,280 bytes / `c57889f92857c064e57356562f628274` | 未適用 | 計上待ち・出荷の着・出荷前の返金の割り当て・発送票の確定／取り消しの事実の4表と、G の鍵の中で番号を取る連番 `private.accounting_g_fact_seq`。割り当ての道具、計上待ちの書き手と読み、G の2関数（確定・取り消し）に事実を書く1行ずつ、`ops_job_heartbeats` に `accounting_post` |
-| S7 `20261108160000_accounting_p2_payment_posting.sql` | 21,512 bytes / `ea282463a1ae8e9bd179062123103f8d` | 未適用 | 支払いを前受金（1160 借 / 2150 貸）にする計上（`private.accounting_post_payment_events`）と、失敗を保留に残す道具 `accounting_park_failure` |
+| S6 `20261108150000_accounting_p2_posting_tables.sql` | 95,453 bytes / `634abc8f986c49dab1a7fbcc093193c9` | 未適用 | 計上待ち・出荷の着・出荷前の返金の割り当て・発送票の確定／取り消しの事実の4表と、G の鍵の中で番号を取る連番 `private.accounting_g_fact_seq`。割り当ての道具、計上待ちの書き手と読み、G の2関数（確定・取り消し）に事実を書く1行ずつ、`ops_job_heartbeats` に `accounting_post` |
+| S7 `20261108160000_accounting_p2_payment_posting.sql` | 21,977 bytes / `3a217724d16b35a8e3b2bbcdb48d56fd` | 未適用 | 支払いを前受金（1160 借 / 2150 貸）にする計上（`private.accounting_post_payment_events`）と、失敗を保留に残す道具 `accounting_park_failure` |
 | S8 `20261108170000_accounting_p2_shipment_posting.sql` | 57,985 bytes / `35c17969e28884ebf20a4ca6eb582325` | 未適用 | 発送票の確定・取り消し・出荷日の直しの計上（`private.accounting_post_shipment_events`）、出荷の計画の道具、仕訳から発送票の跡を引く読み（`get_shipment_journal_trace`・`list_journal_shipment_meta`） |
-| S9 `20261108180000_accounting_p2_stripe_posting.sql` | 88,200 bytes / `4a95e47d87543d31d69cdcf1a3f2b675` | 未適用 | Stripe の手数料・税額調整・入金・着金・入金の失敗の計上（5つの係）、取引の種類の対応表、残高の補充の書き手、請求書の記録の表と書き手、手数料と残高の照合の読み |
+| S9 `20261108180000_accounting_p2_stripe_posting.sql` | 88,692 bytes / `ac529381e3c8d92067e81d041dd8880f` | 未適用 | Stripe の手数料・税額調整・入金・着金・入金の失敗の計上（5つの係）、取引の種類の対応表、残高の補充の書き手、請求書の記録の表と書き手、手数料と残高の照合の読み |
 | S10 `20261108190000_accounting_p2_dispute_intake.sql` | 27,849 bytes / `fd2177fce49a35be0f89de51b30e425f` | 未適用 | dispute の表 `stripe_disputes` と履歴 `stripe_dispute_events`、受け取る関数 `record_stripe_dispute` |
 | S11 `20261108200000_accounting_p2_dispute_posting.sql` | 90,364 bytes / `1cb5b304fe7f539cd3b838af9411eaf7` | 未適用 | dispute の計上（引かれた時 W・確定 C・戻り R／L・科目の振り替え X）、原因ごとの科目の設定と振り替えの表、dispute の読み、**計上の入口 `public.accounting_run_posting`** |
 | S12 `20261108210000_accounting_p2_intake_reads.sql` | 43,964 bytes / `2a8e4c593d9c7888615865676139246c` | 未適用 | 受注高・受注残・照合・前受金の確認の読み（表なし、行を書かない） |
@@ -1426,7 +1427,7 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 
 | 移行 | 末尾の検査（DETAIL） | 戻し方 |
 | --- | --- | --- |
-| S6 | 事前の止め `acc_s6_slip_fact_backfill`（確定・取り消し済みの発送票があれば本体の前で止まる。末尾の検査の段にも同じ名前がある）、末尾 `acc_s6_tables`・`acc_s6_constraints`・`acc_s6_immutable`・`acc_s6_rls_acl`・`acc_s6_function_attrs`・`acc_s6_heartbeat_check`・`acc_s6_seq_acl`・`acc_s6_existing_dml_allowlist`・`acc_s6_g_allowlist_unchanged`・`acc_s6_g_body_unchanged`・`acc_s6_g_function_attrs`（計12）。割り当ての合計の違反は `ACCOUNTING_ARGUMENT_INVALID` / 22023、DETAIL `unit_allocation_sum` | 4表の行が1件も無い間だけ。ファイル先頭の ROLLBACK のとおり: G の2関数（確定 `20261026045859_group_g4_orders_foundation.sql`・取り消し `20261025100130_group_g3_shipping_slips.sql`）を前の定義へ `CREATE OR REPLACE`、`ops_job_heartbeats_job_check` から `accounting_post` を外す、読み・書き手・道具の関数、索引、連番、4表の DROP |
+| S6 | 事前の止め `acc_s6_slip_fact_backfill`（確定・取り消し済みの発送票があれば本体の前で止まる。末尾の検査の段にも同じ名前がある）、末尾 `acc_s6_tables`・`acc_s6_constraints`・`acc_s6_immutable`・`acc_s6_rls_acl`・`acc_s6_function_attrs`・`acc_s6_heartbeat_check`・`acc_s6_seq_acl`・`acc_s6_existing_dml_allowlist`・`acc_s6_g_allowlist_unchanged`・`acc_s6_g_body_unchanged`・`acc_s6_g_function_attrs`（計12）。割り当ての合計の違反は `ACCOUNTING_ARGUMENT_INVALID` / 22023、DETAIL `unit_allocation_sum` | 4表の行が1件も無い間だけ。ファイル先頭の ROLLBACK のとおり: G の2関数（確定 `20261026045859_group_g4_orders_foundation.sql`・取り消し `20261025100130_group_g3_shipping_slips.sql`）を前の定義へ `CREATE OR REPLACE`、`ops_job_heartbeats_job_check` から `accounting_post` を外す、**4表の DROP を先に**（割り当ての表の制約トリガーが `accounting_check_unit_allocation_sum` を呼ぶので、表より先に関数を落とせない）、そのあとで読み・書き手・道具の関数、索引、連番の DROP |
 | S7 | `acc_s7_functions`・`acc_s7_function_attrs`・`acc_s7_existing_dml_allowlist` | `payment_confirmed` の仕訳が無い間だけ。`private.accounting_post_payment_events(integer)`・`private.accounting_park_failure(...)` を DROP。S11 の `accounting_run_posting` が呼ぶので、S11 を先に戻す |
 | S8 | `acc_s8_functions`・`acc_s8_function_attrs`・`acc_s8_reads_stable`・`acc_s8_g_untouched`・`acc_s8_existing_dml_allowlist` | `shipment_confirmed`・`shipment_redated` の仕訳が無い間だけ。ファイル先頭の DROP の文（8関数）。S11 が S8 の道具を呼ぶので、S11 を先に戻す |
 | S9 | `acc_s9_tables`・`acc_s9_functions`・`acc_s9_function_attrs`・`acc_s9_rls_acl`・`acc_s9_reads_stable`・`acc_s9_category_map`・`acc_s9_existing_dml_allowlist` | `stripe_fee`・`stripe_tax_adjustment`・`payout_started`・`bank_arrived`・`payout_failed`・`balance_topup` の仕訳が無く、請求書の表が空の間だけ。ファイル先頭の DROP の文と `DROP TABLE accounting_stripe_invoice_records`。S11 の `accounting_run_posting` が呼ぶので、S11 を先に戻す |
@@ -1439,9 +1440,10 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 ### 当てる手順
 
 - 方法: CLI の `npx supabase db push --linked --include-all`。S6 → S14 の順で、途中で止めたい時はあとのファイルを一時的に外す（計画1の Ruling T16-cli）。MCP の `apply_migration` は使わない。大きいファイル（S6・S9・S11 は約90KB）を手で写すとずれる。CLI はファイルをそのまま送り、版もファイル名のまま残る。
-- 事前（読むだけ）: 上の「当てる前の約束」の1〜4、`list_migrations` で本番の最新と S6〜S14 の版の並び（ファイル名の版が本番の最新より新しいこと。`20261108063711` の返品の移行の後）。
+- 事前（読むだけ）: 上の「当てる前の約束」の1〜5、`list_migrations` で本番の最新と S6〜S14 の版の並び（ファイル名の版が本番の最新より新しいこと。`20261108063711` の返品の移行の後）。
 - 事後（読むだけ）: 9本が `schema_migrations` に載ったこと、`accounting_pending_events` が0件、`accounting_settings` が変わっていないこと、権限が38件のままであること、`admin_kpi_monthly_records` が空で存在すること、`ops_job_heartbeats_job_check` に `accounting_post` があること。**本番に書いて確かめることはしない**（仕訳は消せない）。
 - 失敗した時: 固定の SQLSTATE・DETAIL・どこまで当たったかを残して止める。データの戻しを即興で行わない。S6 の `acc_s6_slip_fact_backfill` で止まった時は S7 以後へ進まない。
+- **コードの配備は S6〜S14 を全部当てた後**（出荷の確定の route は `get_slip_dispute_holds` が無いと安全側で止まり、KPI の route は S13 が無いと 500 になる）。
 - 当てた後は、Stripe の宛先に `charge.dispute.*` の5種を足し（本番の宛先が出来た時）、10分ごとの定期処理を登録する（[運用の手引きの 3・4](accounting-p2-posting-stripe.md)）。
 
 ### 手元で当てて確かめる手順（`--linked` は使わない）

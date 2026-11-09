@@ -178,6 +178,65 @@ describe('Stripe accounting synchronization', () => {
     expect(db.rows['stripe_payouts:po_edge']).toMatchObject({ arrival_date: expected });
   });
 
+  it('FREQ-565-AC-01: 支払いの同期のあとに入金の同期をしても、残高の取引の支払いの番号と注文は消えない（入金の番号は付く）', async () => {
+    const db = database();
+    const charge = balanceTransaction();
+    await syncPaymentIntentAccounting({
+      stripe: {
+        paymentIntents: { retrieve: jest.fn().mockResolvedValue({ id: 'pi_1', latest_charge: 'ch_1' }) },
+        charges: { retrieve: jest.fn().mockResolvedValue({ id: 'ch_1', balance_transaction: 'txn_1' }) },
+        balanceTransactions: { retrieve: jest.fn().mockResolvedValue(charge) },
+      },
+      database: db, paymentIntentId: 'pi_1',
+    });
+    expect(db.rows['stripe_balance_transactions:txn_1']).toMatchObject({
+      payment_intent_id: 'pi_1', order_id: '11111111-1111-4111-8111-111111111111', payout_id: null });
+
+    await syncPayoutAccounting({
+      stripe: {
+        payouts: { retrieve: jest.fn().mockResolvedValue({
+          id: 'po_1', amount: 9_640, currency: 'jpy', status: 'paid', automatic: true,
+          arrival_date: 1_755_302_400, created: 1_755_212_400, balance_transaction: 'txn_payout_1' }) },
+        balanceTransactions: {
+          retrieve: jest.fn().mockResolvedValue(balanceTransaction({
+            id: 'txn_payout_1', amount: -9_640, fee: 0, net: -9_640, source: 'po_1', reporting_category: 'payout', type: 'payout' })),
+          list: jest.fn().mockReturnValue({ async *[Symbol.asyncIterator]() { yield charge; } }),
+        },
+      },
+      database: db, payoutId: 'po_1',
+    });
+
+    expect(db.rows['stripe_balance_transactions:txn_1']).toMatchObject({
+      payment_intent_id: 'pi_1', order_id: '11111111-1111-4111-8111-111111111111', payout_id: 'po_1' });
+  });
+
+  it('FREQ-565-AC-01: 入金の同期のあとに支払いの同期をしても、入金の番号は消えない', async () => {
+    const db = database();
+    const charge = balanceTransaction();
+    await syncPayoutAccounting({
+      stripe: {
+        payouts: { retrieve: jest.fn().mockResolvedValue({
+          id: 'po_1', amount: 9_640, currency: 'jpy', status: 'paid', automatic: true,
+          arrival_date: 1_755_302_400, created: 1_755_212_400, balance_transaction: 'txn_payout_1' }) },
+        balanceTransactions: {
+          retrieve: jest.fn().mockResolvedValue(balanceTransaction({
+            id: 'txn_payout_1', amount: -9_640, fee: 0, net: -9_640, source: 'po_1', reporting_category: 'payout', type: 'payout' })),
+          list: jest.fn().mockReturnValue({ async *[Symbol.asyncIterator]() { yield charge; } }),
+        },
+      },
+      database: db, payoutId: 'po_1',
+    });
+    await syncPaymentIntentAccounting({
+      stripe: {
+        paymentIntents: { retrieve: jest.fn().mockResolvedValue({ id: 'pi_1', latest_charge: 'ch_1' }) },
+        charges: { retrieve: jest.fn().mockResolvedValue({ id: 'ch_1', balance_transaction: 'txn_1' }) },
+        balanceTransactions: { retrieve: jest.fn().mockResolvedValue(charge) },
+      },
+      database: db, paymentIntentId: 'pi_1',
+    });
+    expect(db.rows['stripe_balance_transactions:txn_1']).toMatchObject({ payment_intent_id: 'pi_1', payout_id: 'po_1' });
+  });
+
   it('FREQ-565-AC-05: 入金の失敗の取引（failure_balance_transaction）を同期で保存する', async () => {
     const db = database();
     const stripe = {

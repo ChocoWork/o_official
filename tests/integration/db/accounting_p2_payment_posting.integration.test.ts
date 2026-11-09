@@ -221,6 +221,16 @@ describeLocalDb('S7 payment posting: controller only', (db) => {
     expect(parked?.detail.entry_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
+  test('FREQ-562-AC-05: 計上した支払いの取引から支払いの番号が消えても、新しい出来事にならず計上待ちも作らない（元の取引から出た仕訳が先にある）', async () => {
+    await setCutoverForTest(db(), '2026-01-01');
+    const pair = await paidPair({ createdAt: '2026-06-15T03:00:00Z' });
+    expect(await run()).toEqual({ posted: 1, parked_new: 0, reparked: 0, resolved: 0 });
+    await q('update public.stripe_balance_transactions set payment_intent_id = null, order_id = null where id = $1', [pair.txId]);
+    expect(await run()).toEqual({ posted: 0, parked_new: 0, reparked: 0, resolved: 0 });
+    expect(await pendingOf(pair.txId)).toBeUndefined();
+    expect(await entryCount()).toBe(1);
+  });
+
   test('FREQ-562-AC-05: 同じ支払いを2回流しても1本で2回目はcreated=false', async () => {
     await setCutoverForTest(db(), '2026-01-01');
     const pair = await paidPair({ createdAt: '2026-06-15T03:00:00Z' });

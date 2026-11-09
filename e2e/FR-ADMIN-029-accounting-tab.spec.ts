@@ -9,8 +9,8 @@ const viewports = [
   { name: 'desktop', width: 1280, height: 900 },
 ];
 
-// 設定・期間のタブは Task 11（FREQ-555）で末尾に増えた。
-const ACCOUNTING_SUB_TABS = ['財務概要', '取引管理', '帳簿', '商品原価', '税務レポート', '設定・期間'];
+// 設定・期間のタブは Task 11（FREQ-555）、計上待ち・照合のタブは計画2の Task 11（FREQ-569・566）で末尾に増えた（COST_PROFIT_TABS と同じ8つ）。
+const ACCOUNTING_SUB_TABS = ['財務概要', '取引管理', '帳簿', '商品原価', '税務レポート', '設定・期間', '計上待ち', '照合'];
 
 function metric(period: string) {
   return {
@@ -121,7 +121,7 @@ for (const viewport of viewports) {
       await expect(page.getByRole('tab', { name: 'コスト & 利益' })).toHaveCount(0);
     });
 
-    test('ACCOUNTING タブに6つのサブタブと会計期間の選択が並ぶ', async ({ page }) => {
+    test('ACCOUNTING タブに8つのサブタブと会計期間の選択が並ぶ', async ({ page }) => {
       // FREQ-238-AC-03（会計期間の軸は FREQ-241 でシーズン→暦年へ変更）
       await page.goto('/admin');
       await page.getByRole('button', { name: 'ACCOUNTING' }).click();

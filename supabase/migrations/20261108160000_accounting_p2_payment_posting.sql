@@ -8,6 +8,8 @@ BEGIN;
 --   is the only caller; PUBLIC, anon, authenticated and service_role hold no EXECUTE.
 --   * First statement: private.accounting_lock_all(NULL) (locks 1 and 2 of the plan-1 order; the core takes the period
 --     lock). It takes no row lock: the group G tables and admin_finance_expenses are only read (no FOR SHARE / UPDATE).
+--   * A transaction that already has a payment_confirmed entry sourced from it (source_table / source_id) is never a new event, whatever
+--     its payment intent column holds now (defence in depth: a sale must never be parked again once it is posted).
 --   * A sale row (type charge / payment, reporting category charge) without a payment intent is parked as no_order (never posted:
 --     the key needs the payment intent); its fee is posted by the Stripe fee lane.
 --   * New events (no entry with the key payment_confirmed:<payment intent>, no parked row of any state), oldest first by
@@ -126,6 +128,8 @@ BEGIN
           AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS e
             WHERE e.dedupe_key = CASE WHEN t.payment_intent_id ~ '^[A-Za-z0-9_.-]{1,128}$'
               THEN private.accounting_event_key('payment_confirmed', ARRAY[t.payment_intent_id]) END)
+          AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS se
+            WHERE se.event_kind = 'payment_confirmed' AND se.source_table = 'stripe_balance_transactions' AND se.source_id = t.id)
           AND NOT EXISTS (SELECT 1 FROM public.accounting_pending_events AS p
             WHERE p.event_kind = 'payment_confirmed' AND p.source_table = 'stripe_balance_transactions' AND p.source_id = t.id)
         ORDER BY t.stripe_created_at, t.id

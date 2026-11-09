@@ -167,14 +167,26 @@ describe('出荷の仕訳に付ける出荷した日と登録した日', () => {
     expect(JSON.stringify(body)).not.toMatch(/"[a-z]+_[a-z_]+":/);
   });
 
-  test('FREQ-564-AC-04: 出荷の日の読み口が壊れたら固定の500（生の文を出さない）', async () => {
+  test('FREQ-564-AC-04: 出荷の日の読み口が壊れても仕訳の一覧は返し、shipmentMetaはnullと固定の文になる（生の文を出さない）', async () => {
     const shipmentEntry = entryRow(3, { source_table: 'shipment_slips', source_id: uuid(500) });
     rpcImpl.mockImplementation(async (name: string) => {
       if (name === 'list_accounting_journal') return { data: { entries: [shipmentEntry], next_after_date: null, next_after_no: null }, error: null };
       if (name === 'list_journal_shipment_meta') return { data: null, error: { message: 'boom secret', code: 'XX000', details: 'secret', hint: null } };
       return defaultRpc(name);
     });
-    const failed = await get();
-    expect([failed.status, await read(failed)]).toEqual([500, { error: '会計の処理に失敗しました。' }]);
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const response = await get();
+      expect(response.status).toBe(200);
+      const body = await read(response);
+      const data = body.data as { entries: unknown[]; shipmentMeta: unknown; shipmentMetaNote: string };
+      expect(data.entries).toHaveLength(1);
+      expect(data.shipmentMeta).toBeNull();
+      expect(data.shipmentMetaNote).toBe('出荷した日と登録した日を読み込めませんでした。仕訳はそのまま使えます。');
+      expect(JSON.stringify(body)).not.toMatch(/boom|secret/);
+      expect(JSON.stringify(spy.mock.calls)).not.toMatch(/boom|secret/);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

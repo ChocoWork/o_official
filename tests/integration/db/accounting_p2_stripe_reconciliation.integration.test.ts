@@ -1,7 +1,7 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
-import { accountingFailure, insertAccountingAdmin, insertAccountingPeriod, postJournal } from './helpers/accounting-fixtures';
+import { accountingFailure, insertAccountingAdmin, insertAccountingPeriod, journalLines } from './helpers/accounting-fixtures';
 import {
   addDisputeHistory, seedDispute, seedDisputeReversal, seedPostedPayment, seedStripeFee, seedStripePayout, setAsideExistingSlips, setCutoverForTest,
 } from './helpers/accounting-orders-fixtures';
@@ -202,8 +202,11 @@ describeLocalDb('S9 Stripe reconciliation: controller only', (db) => {
     // S1: a sale whose payment entry exists; its fee goes in below.
     const s1 = await fee('2026-06-10T03:00:00Z', 10000, 360);
     const s1Pi = (await q('select payment_intent_id as pi from public.stripe_balance_transactions where id = $1', [s1])).rows[0].pi as string;
-    await postJournal(db(), { periodId: period, entryDate: '2026-06-10', kind: 'payment_confirmed', parts: [s1Pi],
-      lines: [{ account: '1160', debit: 10000 }, { account: '2150', credit: 10000 }] });
+    // The payment poster always records the transaction as the source of its entry (source_table / source_id), and the
+    // balance read finds a posted sale by that source: so the fixture entry carries it as the poster's does.
+    await q(`select private.accounting_post_journal_core(null, $1::uuid, '2026-06-10'::date, 'payment_confirmed', $2::text[], 'test payment', $3::jsonb,
+      _source_table => 'stripe_balance_transactions', _source_id => $4::text)`,
+      [period, [s1Pi], journalLines([{ account: '1160', debit: 10000 }, { account: '2150', credit: 10000 }]), s1]);
     // S2: a sale without a payment entry.
     await fee('2026-06-11T03:00:00Z', 4000, 144);
     // A refund (planned for plan 3) and an unknown kind.
@@ -313,7 +316,7 @@ describeLocalDb('S9 Stripe reconciliation: controller only', (db) => {
     const d = await seedDispute(db(), { orderId: order.orderId, paymentIntentId: order.paymentIntentId, amount: 3000, fee: 1500 });
     return { order, d };
   }
-  const runPosting = () => q('select private.accounting_run_posting(50)');
+  const runPosting = () => q('select private.accounting_run_posting(50) as r');
   const sumUnjournaled = (r: BalanceReconciliation) => r.unjournaled.reduce((sum, row) => sum + row.net_sum, 0);
 
   test('FREQ-566-AC-03: 引かれた支払いの取り消しの仕訳が入ると、その取引は仕訳になっていない物に数えず、説明のつかない差は0', async () => {
@@ -365,5 +368,29 @@ describeLocalDb('S9 Stripe reconciliation: controller only', (db) => {
     expect(bucket(result, 'pending')).toEqual({ kind: 'pending', count: 1, net_sum: -3000 });
     expect(result.difference).toBe(-3000);
     expect(sumUnjournaled(result)).toBe(result.difference);
+  });
+
+  test('FREQ-566-AC-03: 計上した売上の取引から支払いの番号と注文が消えても（入金の同期が付け直さなかった時）、計上待ちは増えず説明のつかない差は0', async () => {
+    await q('select pg_catalog.pg_advisory_xact_lock(190521,1)');
+    await setAsideExistingSlips(db());
+    const order = await seedPostedPayment(db(), { lines: [{ price: 5000, quantity: 2 }], createdAt: '2026-06-10T03:00:00Z', fee: 360 });
+    await runPosting();
+    const before = await balanceRecon('2026-12-31');
+    expect(before.difference).toBe(0);
+    const pendingBefore = Number((await q('select count(*) as n from public.accounting_pending_events')).rows[0].n);
+    await q('update public.stripe_balance_transactions set payment_intent_id = null, order_id = null where id = $1', [order.txId]);
+    const run = (await runPosting()).rows[0].r;
+    expect(run).toMatchObject({ payments: 0, parked: 0 });
+    expect(Number((await q('select count(*) as n from public.accounting_pending_events')).rows[0].n)).toBe(pendingBefore);
+    expect((await q("select 1 from public.accounting_pending_events where event_kind = 'payment_confirmed' and source_id = $1", [order.txId])).rowCount).toBe(0);
+    const after = await balanceRecon('2026-12-31');
+    expect(after.difference).toBe(0);
+    expect(after.unjournaled.every((row) => row.net_sum === 0 && row.count === 0)).toBe(true);
+    // A reversed payment entry is not on the books any more: the sale is named as pending again.
+    const entry = (await q('select id from public.accounting_journal_entries where source_table = $1 and source_id = $2 and event_kind = $3',
+      ['stripe_balance_transactions', order.txId, 'payment_confirmed'])).rows[0].id as string;
+    const admin = await insertAccountingAdmin(db());
+    await q("select public.admin_reverse_accounting_journal($1::uuid, $2::uuid, 'test reversal', null)", [admin, entry]);
+    expect(bucket(await balanceRecon('2026-12-31'), 'pending')).toMatchObject({ count: 1, net_sum: 10000 });
   });
 });

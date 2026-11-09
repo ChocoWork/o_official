@@ -150,6 +150,8 @@ export function handleSettingsGet(request: Request): Promise<Response> {
 	}));
 }
 
+const SHIPMENT_META_NOTE = '出荷した日と登録した日を読み込めませんでした。仕訳はそのまま使えます。';
+
 const EMPTY_JOURNAL: AccountingJournalData = { entries: [], nextAfter: null, opening: [], shipmentMeta: [] };
 
 /** periodId を省略した時は、期間が1つも無ければ空の一覧、あれば入力の誤り。渡した期間が無い時も空の一覧（404 にしない）。 */
@@ -166,11 +168,18 @@ export function handleJournalGet(request: Request): Promise<Response> {
 			const page = await listSavedJournal(client, { ...query, periodId });
 			const opening = await getOpeningBalances(client, periodId);
 			// 出荷の仕訳にだけ、出荷した日と発送票を確定した日を付ける（6-c）。ほかの仕訳は呼ばない。
-			const shipmentMeta = await listJournalShipmentMeta(
-				client,
-				page.entries.filter((entry) => entry.sourceTable === 'shipment_slips').map((entry) => entry.id),
-			);
-			return { ...page, opening, shipmentMeta };
+			// 列を埋めるだけの読み物なので、読めなくても一覧は返す（cost-profit の route と同じ。shipmentMeta は null と固定の文）。
+			try {
+				const shipmentMeta = await listJournalShipmentMeta(
+					client,
+					page.entries.filter((entry) => entry.sourceTable === 'shipment_slips').map((entry) => entry.id),
+				);
+				return { ...page, opening, shipmentMeta };
+			} catch (metaError) {
+				const failure = metaError instanceof AccountingStoreError ? metaError : new AccountingStoreError();
+				console.error('GET /api/admin/accounting/journal shipment meta read error:', failure.code ?? failure.sqlstate ?? null);
+				return { ...page, opening, shipmentMeta: null, shipmentMetaNote: SHIPMENT_META_NOTE };
+			}
 		} catch (error) {
 			if (error instanceof AccountingStoreError && error.code === 'ACCOUNTING_NOT_FOUND') return EMPTY_JOURNAL;
 			throw error;

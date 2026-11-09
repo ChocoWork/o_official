@@ -57,12 +57,16 @@ export async function saveBalanceTransaction(input: {
   const transaction = input.transaction;
   const createdAt = iso(transaction.created);
   if (!createdAt) throw new Error('Stripe balance transaction has no created timestamp');
+  // 結び付きを渡さない同期（入金の同期など）が、先の同期が付けた支払いの番号・注文・入金の番号を消さない。
+  // 支払いの仕訳と残高の照合は支払いの番号で引くので、消えると払い済みの支払いが仕訳待ちに戻る。
+  const existing = await input.database.findById('stripe_balance_transactions', String(transaction.id));
+  const keep = (value: unknown) => (typeof value === 'string' ? value : null);
   return upsertBalanceTransaction(input.database, {
     id: String(transaction.id),
     sourceId: idOf(transaction.source) ?? '',
-    paymentIntentId: input.paymentIntentId ?? null,
-    orderId: input.orderId ?? null,
-    payoutId: input.payoutId ?? null,
+    paymentIntentId: input.paymentIntentId ?? keep(existing?.payment_intent_id),
+    orderId: input.orderId ?? keep(existing?.order_id),
+    payoutId: input.payoutId ?? keep(existing?.payout_id),
     type: String(transaction.type),
     reportingCategory: String(transaction.reporting_category),
     amount: Number(transaction.amount),

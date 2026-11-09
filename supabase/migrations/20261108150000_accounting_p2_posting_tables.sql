@@ -30,12 +30,13 @@ BEGIN;
 -- ROLLBACK (only while no row exists in the four new tables):
 --   re-run CREATE OR REPLACE of the two group G functions from 20261026045859_group_g4_orders_foundation.sql (confirm) and
 --   20261025100130_group_g3_shipping_slips.sql (cancel); restore ops_job_heartbeats_job_check without accounting_post;
+--   DROP TABLE public.accounting_unit_refund_allocations, public.accounting_shipment_units,
+--     public.accounting_g_slip_facts, public.accounting_pending_events;   -- first: the constraint trigger of the allocation
+--     table calls private.accounting_check_unit_allocation_sum(), so that function cannot be dropped before the table;
 --   DROP FUNCTION the public and private list_accounting_pending_events, get_accounting_pending_summary,
 --     admin_resolve_accounting_pending_event and the private accounting_* functions of this file;
 --   DROP INDEX public.accounting_journal_lines_order_account_idx;
 --   DROP SEQUENCE private.accounting_g_fact_seq;
---   DROP TABLE public.accounting_unit_refund_allocations, public.accounting_shipment_units,
---     public.accounting_g_slip_facts, public.accounting_pending_events;
 
 -- ACC_S6_BODY_BEGIN
 

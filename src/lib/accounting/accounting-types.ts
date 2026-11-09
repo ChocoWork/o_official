@@ -136,4 +136,9 @@ export type AccountingPeriodsData = {
 /** 出荷の仕訳に付ける、出荷した日と発送票を確定した日（6-c）。そのページの出荷の仕訳だけ。 */
 export type ShipmentMeta = { entryId: string; slipNumber: string; shipmentDate: string; confirmedAt: string };
 
-export type AccountingJournalData = SavedJournalPage & { opening: OpeningBalanceRow[]; shipmentMeta: ShipmentMeta[] };
+/** shipmentMeta は出荷の仕訳の出荷した日と登録した日。読めなかった時は null（shipmentMetaNote に固定の文）。 */
+export type AccountingJournalData = SavedJournalPage & {
+	opening: OpeningBalanceRow[];
+	shipmentMeta: ShipmentMeta[] | null;
+	shipmentMetaNote?: string;
+};
