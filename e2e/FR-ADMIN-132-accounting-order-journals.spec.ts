@@ -331,6 +331,18 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         await s.seedStripeCharge({ paymentIntentId: order.paymentIntentId, amount: order.total, orderId: order.orderId });
         await page.getByRole('button', { name: 'もう一度計上する', exact: true }).click();
         await expect(page.getByText(/件を計上しました/)).toBeVisible({ timeout: 90_000 });
+        // 計上係は1回に、止まっている出荷の行を止め直した日の古い順に10件しか見直さず、見直した行は新しい側へ回る（設計どおり。
+        // 残りは次の呼び出しと10分ごとの cron が見直す）。ほかの試験が止めたまま残した出荷の行が10件を超える時は、この試験の行まで
+        // 何回か回る必要があるので、ボタンの1回で入らなければ、同じ本物の route（posting/run）をこの試験の仕訳が入るまで繰り返す（時間で打ち切る）。
+        if ((await s.entryByKey(`shipment_confirmed:${slip.number}`)) === null) {
+          await expect
+            .poll(async () => {
+              const rerun = await s.api(s.admin, '/api/admin/accounting/posting/run', 'POST', {});
+              expect(rerun.status, rerun.text.slice(0, 200)).toBe(200);
+              return (await s.entryByKey(`shipment_confirmed:${slip.number}`)) !== null;
+            }, { timeout: 120_000, intervals: [250] })
+            .toBe(true);
+        }
         const payment = await s.entryByKey(`payment_confirmed:${order.paymentIntentId}`);
         const shipment = await s.entryByKey(`shipment_confirmed:${slip.number}`);
         expect(payment).not.toBeNull();

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 import { withAccountingScenario, type AccountingScenario } from './accounting-test-utils';
 import { CHECKOUT_VIEWPORTS, expectNoHorizontalOverflow } from './checkout-flow-helpers';
 import { SHIPPING_CARRIERS } from '@/lib/orders/shipping-carriers';
@@ -16,16 +16,56 @@ test.describe.configure({ mode: 'default' });
 
 const slash = (date: string) => date.replaceAll('-', '/');
 
+type YearEndSlip = { slip_id: string; number: string; shipment_date: string; shipping_carrier: string | null; tracking_number: string | null; checked_at: string | null; checked_by: string | null };
 type YearEndReply = {
-  slips: Array<{ slip_id: string; number: string; shipment_date: string; shipping_carrier: string | null; tracking_number: string | null; checked_at: string | null; checked_by: string | null }>;
+  slips: YearEndSlip[];
+  next_after_date: string | null;
+  next_after_slip: string | null;
   options: { carrier_date_check_enabled: boolean; changed_at: string | null; changed_by: string | null; version: string };
   carrier_gaps: { enabled: boolean };
 };
 
-async function readYearEnd(s: AccountingScenario, from: string, to: string): Promise<YearEndReply> {
-  const reply = await s.api(s.admin, `/api/admin/accounting/year-end-shipments?from=${from}&to=${to}&limit=100`);
+// 画面も route も1ページは100件。E2E は今日の日付だけを使うので、db reset の後に流した発送票が増えると今日の分が何ページにもなる。
+const YEAR_END_PAGE = 100;
+// たどるページの上限（100件×この数）。超えたら無限に回らず失敗にする
+const YEAR_END_MAX_PAGES = 100;
+
+async function readYearEnd(s: AccountingScenario, from: string, to: string, after?: { date: string; slip: string }): Promise<YearEndReply> {
+  const cursor = after ? `&afterDate=${after.date}&afterSlip=${after.slip}` : '';
+  const reply = await s.api(s.admin, `/api/admin/accounting/year-end-shipments?from=${from}&to=${to}&limit=${YEAR_END_PAGE}${cursor}`);
   expect(reply.status, reply.text.slice(0, 200)).toBe(200);
   return reply.body.data as YearEndReply;
+}
+
+/**
+ * 本物の route の続きの目印（next_after_date・next_after_slip）をたどり、この発送票を探す。1ページに収まらなくても見つかる。
+ * 見つかるまでの各ページの先頭の発送票番号も返す（画面を同じページまで送る時に使う）。範囲の最後まで探して無ければ slip は undefined。
+ */
+async function findYearEndSlip(s: AccountingScenario, slipId: string, from: string, to: string): Promise<{ slip: YearEndSlip | undefined; pageHeads: string[] }> {
+  const pageHeads: string[] = [];
+  let after: { date: string; slip: string } | undefined;
+  for (let pageNo = 0; pageNo < YEAR_END_MAX_PAGES; pageNo += 1) {
+    const data = await readYearEnd(s, from, to, after);
+    if (data.slips.length > 0) pageHeads.push(data.slips[0].number);
+    const slip = data.slips.find((row) => row.slip_id === slipId);
+    if (slip) return { slip, pageHeads };
+    if (!data.next_after_date || !data.next_after_slip) return { slip: undefined, pageHeads };
+    after = { date: data.next_after_date, slip: data.next_after_slip };
+  }
+  throw new Error(`年末の出荷の一覧が${YEAR_END_MAX_PAGES}ページを超えた`);
+}
+
+/**
+ * 画面の表を、この発送票があるページまで「次のページ」で送る（route でページを数えてから送る）。
+ * 画面を開いた直後・「この範囲で出す」の直後は先頭のページから始まるので、各ページの先頭の発送票番号が表に出るのを待ってから次へ進む。
+ */
+async function pageToSlip(s: AccountingScenario, section: Locator, slipId: string): Promise<void> {
+  const { pageHeads } = await findYearEndSlip(s, slipId, s.today, s.today);
+  const table = section.getByRole('table', { name: '年末の発送票' });
+  for (let index = 0; index < pageHeads.length; index += 1) {
+    await expect(table.getByRole('row').nth(1)).toContainText(pageHeads[index], { timeout: 30_000 });
+    if (index < pageHeads.length - 1) await section.getByRole('button', { name: '次のページ' }).click();
+  }
 }
 
 for (const viewport of CHECKOUT_VIEWPORTS) {
@@ -49,8 +89,9 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         expect(set.status, set.text.slice(0, 300)).toBe(200);
         await s.runPosting();
 
-        // 本物の route: 今日を含む範囲に、運送会社・追跡番号・出荷した日つきで出て、まだ確かめていない
-        const before = (await readYearEnd(s, s.today, s.today)).slips.find((row) => row.slip_id === slip.slipId);
+        // 本物の route: 今日を含む範囲に、運送会社・追跡番号・出荷した日つきで出て、まだ確かめていない。
+        // 今日の発送票が100件を超えても見つかるよう、続きの目印をたどって探す
+        const before = (await findYearEndSlip(s, slip.slipId, s.today, s.today)).slip;
         expect(before).toMatchObject({ number: slip.number, shipment_date: s.today, shipping_carrier: 'yamato', tracking_number: tracking, checked_at: null, checked_by: null });
 
         // 画面: 照合のタブの「年末の出荷の確認」で、範囲を今日にして出す
@@ -60,6 +101,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         await section.getByLabel('終了日').fill(s.today);
         await section.getByRole('button', { name: 'この範囲で出す' }).click();
         const row = () => section.getByRole('table', { name: '年末の発送票' }).getByRole('row').filter({ hasText: slip.number });
+        await pageToSlip(s, section, slip.slipId);
         await expect(row()).toHaveCount(1, { timeout: 30_000 });
         await expect(row()).toContainText(slash(s.today));
         await expect(row()).toContainText('確定');
@@ -78,19 +120,21 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
 
         // 範囲を出し直しても、開き直しても残っている。同じ発送票に印は二重に付かない
         await section.getByRole('button', { name: 'この範囲で出す' }).click();
+        await pageToSlip(s, section, slip.slipId);
         await expect(row()).toContainText(`確かめ済み ${slash(s.today)}`, { timeout: 30_000 });
-        const again = await s.api(s.admin, '/api/admin/accounting/year-end-shipments', 'POST', { slipId: slip.slipId, note: null, requestKey: randomUUID() });
+        const again =await s.api(s.admin, '/api/admin/accounting/year-end-shipments', 'POST', { slipId: slip.slipId, note: null, requestKey: randomUUID() });
         expect(again.status, again.text.slice(0, 200)).toBe(200);
         expect(again.body.data.check.created).toBe(false);
         const marksAfter = await s.db.query('select count(*)::int as n from public.accounting_shipment_checks where slip_id = $1', [slip.slipId]);
         expect(marksAfter.rows[0].n).toBe(1);
-        const after = (await readYearEnd(s, s.today, s.today)).slips.find((candidate) => candidate.slip_id === slip.slipId);
+        const after = (await findYearEndSlip(s, slip.slipId, s.today, s.today)).slip;
         expect(after?.checked_by).toBe(s.admin.userId);
         expect(after?.checked_at).not.toBeNull();
         await s.openAccounting(page, '照合');
         await section.getByLabel('開始日').fill(s.today);
         await section.getByLabel('終了日').fill(s.today);
         await section.getByRole('button', { name: 'この範囲で出す' }).click();
+        await pageToSlip(s, section, slip.slipId);
         await expect(row()).toContainText(`確かめ済み ${slash(s.today)}`, { timeout: 30_000 });
         await expectNoHorizontalOverflow(page);
       }, { period: 'none' });
