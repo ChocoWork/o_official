@@ -1,6 +1,6 @@
 # DB マイグレーション運用
 
-> 会計の計画 2 確認日: 2026-11-09。移行 S6〜S14（`20261108150000`〜`20261108230000`、9本）を末尾の「会計の作り直し 計画 2 の移行 S6〜S14（手元の DB で確認済み・未適用）」に追記した。本番へは未適用。適用の前提（計画1が本番にあること、接続先のオーナー確認、S6 前の発送票の件数）と、移行の間の呼び出しの依存（S8 → S11、S9 → S11）を、その節に書いた。
+> 会計の計画 2 確認日: 2026-11-09。移行 S6〜S14（`20261108150000`〜`20261108230000`、9本）を末尾の「会計の作り直し 計画 2 の移行 S6〜S14（手元の DB で確認済み・2026-11-09 本番適用済み）」に追記した。本番へは 2026-11-09 にオーナーの承認で当てた（その節の「本番への適用の記録」）。適用の前提（計画1が本番にあること、接続先のオーナー確認、S6 前の発送票の件数）と、移行の間の呼び出しの依存（S8 → S11、S9 → S11）を、その節に書いた。
 >
 > 会計の計画 1 確認日: 2026-11-08。移行 S0〜S5（`20261107130000`〜`20261107130500`）を末尾の「会計の作り直し 計画 1 の移行 S0〜S5（手元の DB で確認済み・2026-11-08 本番適用済み）」に追記した。本番へは 2026-11-08 に当てた（その節の「本番への適用の記録」）。
 
@@ -1382,9 +1382,9 @@ controller手順: H7未適用DBの新しい取消テストでRED→取引内で�
 2. `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db/accounting_p1 --runInBand`（`accounting_p1_*` の 12 ファイル）
 3. E2E（`FR-ADMIN-128` など）の後に DB 結合を流すときは、先に `npm run db:reset` する。E2E が開業日・個人事業を終えた日・空きの個人の期間を手元の DB に残すため。
 
-## 会計の作り直し 計画 2 の移行 S6〜S14（手元の DB で確認済み・未適用）
+## 会計の作り直し 計画 2 の移行 S6〜S14（手元の DB で確認済み・2026-11-09 本番適用済み）
 
-確認日: 2026-11-09。FREQ-562〜574。計画は [会計の作り直し 計画2](../superpowers/plans/2026-11-04-accounting-p2-deferred-revenue-stripe.md)。使い方・計上待ちの読み方・Stripe の購読の変え方・事前の読み取りは[運用の手引き](accounting-p2-posting-stripe.md)が正本で、ここは移行の台帳として目的・順・末尾の検査・戻し方を写す。手元の DB（`supabase db reset`）で全部を当てて確かめた。**本番には未適用。**
+確認日: 2026-11-09。FREQ-562〜574。計画は [会計の作り直し 計画2](../superpowers/plans/2026-11-04-accounting-p2-deferred-revenue-stripe.md)。使い方・計上待ちの読み方・Stripe の購読の変え方・事前の読み取りは[運用の手引き](accounting-p2-posting-stripe.md)が正本で、ここは移行の台帳として目的・順・末尾の検査・戻し方を写す。手元の DB（`supabase db reset`）で全部を当てて確かめた。本番へは 2026-11-09 に当てた（下の「本番への適用の記録」）。
 
 本番に当てる前の約束:
 
@@ -1397,19 +1397,27 @@ controller手順: H7未適用DBの新しい取消テストでRED→取引内で�
 
 ### 順番と各ファイル
 
-適用の順はファイル名の順（S6 → S14）。各移行は1本の取引（`BEGIN`〜`COMMIT`）で、末尾に自己検査を持つ。検査が崩れると全部戻り、失敗の詳細は固定の `DETAIL` の語（`acc_s6_*`〜`acc_s14_*`）だけを返す。SQL の日本語は `U&'\XXXX'` 形で、`src/lib/accounting/labels.ts` と試験が一致を確かめる。ファイルの MD5 はコミットしたファイルのもの（`md5sum`。ファイルは ASCII・LF）。状態はすべて「未適用」。
+適用の順はファイル名の順（S6 → S14）。各移行は1本の取引（`BEGIN`〜`COMMIT`）で、末尾に自己検査を持つ。検査が崩れると全部戻り、失敗の詳細は固定の `DETAIL` の語（`acc_s6_*`〜`acc_s14_*`）だけを返す。SQL の日本語は `U&'\XXXX'` 形で、`src/lib/accounting/labels.ts` と試験が一致を確かめる。ファイルの MD5 はコミットしたファイルのもの（`md5sum`。ファイルは ASCII・LF）。状態はすべて 2026-11-09 に本番へ適用済み。
 
 | 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
 | --- | --- | --- | --- |
-| S6 `20261108150000_accounting_p2_posting_tables.sql` | 95,453 bytes / `634abc8f986c49dab1a7fbcc093193c9` | 未適用 | 計上待ち・出荷の着・出荷前の返金の割り当て・発送票の確定／取り消しの事実の4表と、G の鍵の中で番号を取る連番 `private.accounting_g_fact_seq`。割り当ての道具、計上待ちの書き手と読み、G の2関数（確定・取り消し）に事実を書く1行ずつ、`ops_job_heartbeats` に `accounting_post` |
-| S7 `20261108160000_accounting_p2_payment_posting.sql` | 21,977 bytes / `3a217724d16b35a8e3b2bbcdb48d56fd` | 未適用 | 支払いを前受金（1160 借 / 2150 貸）にする計上（`private.accounting_post_payment_events`）と、失敗を保留に残す道具 `accounting_park_failure` |
-| S8 `20261108170000_accounting_p2_shipment_posting.sql` | 57,985 bytes / `35c17969e28884ebf20a4ca6eb582325` | 未適用 | 発送票の確定・取り消し・出荷日の直しの計上（`private.accounting_post_shipment_events`）、出荷の計画の道具、仕訳から発送票の跡を引く読み（`get_shipment_journal_trace`・`list_journal_shipment_meta`） |
-| S9 `20261108180000_accounting_p2_stripe_posting.sql` | 88,692 bytes / `ac529381e3c8d92067e81d041dd8880f` | 未適用 | Stripe の手数料・税額調整・入金・着金・入金の失敗の計上（5つの係）、取引の種類の対応表、残高の補充の書き手、請求書の記録の表と書き手、手数料と残高の照合の読み |
-| S10 `20261108190000_accounting_p2_dispute_intake.sql` | 27,849 bytes / `fd2177fce49a35be0f89de51b30e425f` | 未適用 | dispute の表 `stripe_disputes` と履歴 `stripe_dispute_events`、受け取る関数 `record_stripe_dispute` |
-| S11 `20261108200000_accounting_p2_dispute_posting.sql` | 90,364 bytes / `1cb5b304fe7f539cd3b838af9411eaf7` | 未適用 | dispute の計上（引かれた時 W・確定 C・戻り R／L・科目の振り替え X）、原因ごとの科目の設定と振り替えの表、dispute の読み、**計上の入口 `public.accounting_run_posting`** |
-| S12 `20261108210000_accounting_p2_intake_reads.sql` | 43,964 bytes / `2a8e4c593d9c7888615865676139246c` | 未適用 | 受注高・受注残・照合・前受金の確認の読み（表なし、行を書かない） |
-| S13 `20261108220000_accounting_p2_kpi_monthly_records.sql` | 26,363 bytes / `982af0ee7672ed54ee501419da9a944e` | 未適用 | 月の KPI の記録の表 `admin_kpi_monthly_records`（旧 063 の食い違いの解消）と、書き手・読み |
-| S14 `20261108230000_accounting_p2_year_end_shipments.sql` | 43,995 bytes / `958fcbac2176547d928cbe825ed4b9af` | 未適用 | 年末の出荷の確かめの印の表、運送会社の受付日のオプションの表、年末の一覧・受付日の差の読み |
+| S6 `20261108150000_accounting_p2_posting_tables.sql` | 95,453 bytes / `634abc8f986c49dab1a7fbcc093193c9` | 2026-11-09 適用（CLI。版はファイル名のまま） | 計上待ち・出荷の着・出荷前の返金の割り当て・発送票の確定／取り消しの事実の4表と、G の鍵の中で番号を取る連番 `private.accounting_g_fact_seq`。割り当ての道具、計上待ちの書き手と読み、G の2関数（確定・取り消し）に事実を書く1行ずつ、`ops_job_heartbeats` に `accounting_post` |
+| S7 `20261108160000_accounting_p2_payment_posting.sql` | 21,977 bytes / `3a217724d16b35a8e3b2bbcdb48d56fd` | 2026-11-09 適用（CLI。版はファイル名のまま） | 支払いを前受金（1160 借 / 2150 貸）にする計上（`private.accounting_post_payment_events`）と、失敗を保留に残す道具 `accounting_park_failure` |
+| S8 `20261108170000_accounting_p2_shipment_posting.sql` | 57,985 bytes / `35c17969e28884ebf20a4ca6eb582325` | 2026-11-09 適用（CLI。版はファイル名のまま） | 発送票の確定・取り消し・出荷日の直しの計上（`private.accounting_post_shipment_events`）、出荷の計画の道具、仕訳から発送票の跡を引く読み（`get_shipment_journal_trace`・`list_journal_shipment_meta`） |
+| S9 `20261108180000_accounting_p2_stripe_posting.sql` | 88,692 bytes / `ac529381e3c8d92067e81d041dd8880f` | 2026-11-09 適用（CLI。版はファイル名のまま） | Stripe の手数料・税額調整・入金・着金・入金の失敗の計上（5つの係）、取引の種類の対応表、残高の補充の書き手、請求書の記録の表と書き手、手数料と残高の照合の読み |
+| S10 `20261108190000_accounting_p2_dispute_intake.sql` | 27,849 bytes / `fd2177fce49a35be0f89de51b30e425f` | 2026-11-09 適用（CLI。版はファイル名のまま） | dispute の表 `stripe_disputes` と履歴 `stripe_dispute_events`、受け取る関数 `record_stripe_dispute` |
+| S11 `20261108200000_accounting_p2_dispute_posting.sql` | 90,364 bytes / `1cb5b304fe7f539cd3b838af9411eaf7` | 2026-11-09 適用（CLI。版はファイル名のまま） | dispute の計上（引かれた時 W・確定 C・戻り R／L・科目の振り替え X）、原因ごとの科目の設定と振り替えの表、dispute の読み、**計上の入口 `public.accounting_run_posting`** |
+| S12 `20261108210000_accounting_p2_intake_reads.sql` | 43,964 bytes / `2a8e4c593d9c7888615865676139246c` | 2026-11-09 適用（CLI。版はファイル名のまま） | 受注高・受注残・照合・前受金の確認の読み（表なし、行を書かない） |
+| S13 `20261108220000_accounting_p2_kpi_monthly_records.sql` | 26,363 bytes / `982af0ee7672ed54ee501419da9a944e` | 2026-11-09 適用（CLI。版はファイル名のまま） | 月の KPI の記録の表 `admin_kpi_monthly_records`（旧 063 の食い違いの解消）と、書き手・読み |
+| S14 `20261108230000_accounting_p2_year_end_shipments.sql` | 43,995 bytes / `958fcbac2176547d928cbe825ed4b9af` | 2026-11-09 適用（CLI。版はファイル名のまま） | 年末の出荷の確かめの印の表、運送会社の受付日のオプションの表、年末の一覧・受付日の差の読み |
+
+### 本番への適用の記録（2026-11-09）
+
+- 2026-11-09 にオーナーの承認を得て、CLI の `npx.cmd supabase db push --linked --include-all` で S6〜S14 の 9 本を一度に当てた（先に `--dry-run` で 9 本だけが対象であることを確かめた。各ファイルは 1 本の取引で、CLI は最初に失敗したファイルで止まる）。版はファイル名のまま（`20261108150000`〜`20261108230000`）で、付け直しは無い。push はしていない。
+- 当てる直前（2026-11-09 11:58 JST）に読み直した数: 確定済み・取り消し済みの発送票 0 件、切り替えの日（2026-11-08）以後の Stripe の取引 0 件・入金 0 件、`admin_kpi_monthly_records` は無し。
+- 当てた後に読むだけで確かめた: 9 本の版が `schema_migrations` にある。`admin_kpi_monthly_records` は在って 0 行。`accounting_pending_events` は 0 行。`accounting_settings` は変わらない（`cutover_on` 2026-11-08・版 1）。権限は 38 件（会計 6 件）のまま。仕訳は 15 件のまま（計画1の A8 の移し替えの分）。
+- 当てた文の照合: CLI で当てたため `md5(statements[1])` は使わず、本文の指紋で照らした。`public`・`private` の会計・Stripe・dispute・月の KPI・年末・出荷の跡の関数 123 個について、`md5(replace(prosrc, E'\r', ''))` を署名の順につないだ md5 が、手元の DB（同じ 9 本を当てた `db reset` 後）と本番で同じ `b35a1934d0fa54d3dec3801a86d236f0` だった。
+- Meta 連携の表（`admin_meta_kpi_connections`・`admin_meta_kpi_sync_runs`）は本番にも移行にも無い。オーナーの決定（2026-11-09）で別の作業として作る。
 
 ### 移行の間の呼び出しの依存（実行時に探す）
 
