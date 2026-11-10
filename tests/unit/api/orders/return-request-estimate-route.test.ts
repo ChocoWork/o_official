@@ -56,6 +56,10 @@ const AUTH_OK = { ok: true, claims: { sub: CUSTOMER_ID, session_id: 'session-1',
 
 const MATERIALS = {
   order: { id: ORDER_ID, status: 'shipped' },
+  reasons: [
+    { reason: 'size_too_small', resolutions: 'refund_and_exchange' },
+    { reason: 'defective', resolutions: 'exchange_only' },
+  ],
   shipments: [
     {
       fulfillmentId: FULFILLMENT_ID,
@@ -146,6 +150,17 @@ describe('POST /api/orders/[id]/return-request/estimate（FREQ-642）', () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({ code: 'RETURN_ARGUMENT_INVALID' });
     expect(mockEstimate).not.toHaveBeenCalled();
+  });
+
+  test('FREQ-642-AC-30: 交換だけの理由（不良）で返金を選んだ行は、申し込みの DB の規則と同じ RETURN_NOT_ELIGIBLE の409。見込みは出さない', async () => {
+    const response = await POST(request({ lines: [{ ...LINE, reason: 'defective' }] }), ORDER_CONTEXT);
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ code: 'RETURN_NOT_ELIGIBLE' });
+    expect(mockEstimate).not.toHaveBeenCalled();
+
+    await POST(request({ lines: [{ ...LINE, reason: 'defective', requestedResolution: 'exchange' }] }), ORDER_CONTEXT);
+    expect(mockEstimate).toHaveBeenCalledTimes(1);
   });
 
   test('FREQ-642-AC-21: 枠が足りないなど見込みを出せない時は、額を出さずに 409（申し込みは止めない）', async () => {

@@ -17,6 +17,7 @@ import {
   parseOrderId,
   respondToCustomerReturnError,
 } from '@/lib/orders/returns/customer-return-route-support';
+import { CUSTOMER_RETURN_ERROR_MESSAGES } from '@/lib/orders/returns/customer-return-messages';
 import { loadCustomerReturnRequestMaterials } from '@/lib/orders/returns/customer-return-store';
 import { RETURN_REASONS } from '@/lib/orders/returns/return-types';
 import { estimateCustomerReturn } from '@/lib/orders/unit-pricing/unit-pricing-service';
@@ -66,6 +67,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const selectable = new Set(materials.shipments.flatMap((shipment) => shipment.lines.map((line) => line.orderItemId)));
     if (parsedBody.data.lines.some((line) => !selectable.has(line.orderItemId))) {
       return invalidArgumentResponse();
+    }
+    // ご希望が理由の設定に合わない行（不良・誤送の返金など）は、申し込みの DB の規則と同じ RETURN_NOT_ELIGIBLE で断る
+    const notAllowed = parsedBody.data.lines.some((line) => {
+      const resolutions = materials.reasons.find((reason) => reason.reason === line.reason)?.resolutions;
+      return (resolutions === 'exchange_only' && line.requestedResolution === 'refund')
+        || (resolutions === 'refund_only' && line.requestedResolution === 'exchange');
+    });
+    if (notAllowed) {
+      const { status, message } = CUSTOMER_RETURN_ERROR_MESSAGES.RETURN_NOT_ELIGIBLE;
+      return customerJson({ error: message, code: 'RETURN_NOT_ELIGIBLE' }, status);
     }
     const estimate = await estimateCustomerReturn(client, orderId, parsedBody.data.lines);
     return customerJson({ data: estimate });

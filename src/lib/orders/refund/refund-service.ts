@@ -30,7 +30,7 @@ import type {
   RefundErrorCode,
   StripeRefundReason,
 } from '@/lib/orders/refund/refund-types';
-import { planOrderCancel, planOrderRefund, withFreshPricing } from '@/lib/orders/unit-pricing/unit-pricing-service';
+import { planOrderCancel, planOrderRefund, withFreshPricing, withPlanOrNull } from '@/lib/orders/unit-pricing/unit-pricing-service';
 import type { UnitPricingArg } from '@/lib/orders/unit-pricing/unit-pricing-types';
 import { getStripeServerClient } from '@/lib/stripe/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
@@ -172,8 +172,13 @@ export async function requestReleaseRefunds(deps: RefundServiceDeps, refundIds: 
   for (const refundId of refundIds) {
     try {
       const ref = await getOrderRefund(deps.store, refundId);
-      if (ref) {
-        await settleExistingRefund(deps, ref);
+      if (!ref) {
+        console.error('[refund] the release refund was not found', refundId);
+        continue;
+      }
+      const result = await settleExistingRefund(deps, ref);
+      if (result.kind === 'refused' || result.kind === 'unknown') {
+        console.error('[refund] the release refund was not settled', refundId, result.kind);
       }
     } catch (error) {
       console.error('[refund] the release refund was not requested', errorName(error));
@@ -270,8 +275,13 @@ async function startRefund(
 
   let began: BeganRefund;
   try {
-    began = await withFreshPricing(async () =>
-      beginOrderRefund(deps.store, { ...input, pricing: planner ? await planner() : null }),
+    // 計画を作れない時も、計画なしで DB を呼び、送り直しなら DB に前の結果を答えさせる（要るのに無ければ DB が断る）
+    began = await withFreshPricing(() =>
+      withPlanOrNull(
+        async () => (planner ? planner() : null),
+        (pricing) => beginOrderRefund(deps.store, { ...input, pricing }),
+        () => new RefundOperationError('unit_pricing_invalid'),
+      ),
     );
   } catch (error) {
     if (error instanceof RefundOperationError) {
@@ -280,9 +290,11 @@ async function startRefund(
     throw error;
   }
 
-  const result = await settleBegunRefund(deps, input, context, began);
-  await requestReleaseRefunds(deps, began.releaseRefundIds);
-  return result;
+  try {
+    return await settleBegunRefund(deps, input, context, began);
+  } finally {
+    await requestReleaseRefunds(deps, began.releaseRefundIds);
+  }
 }
 
 /** 始めた返金を Stripe に頼む（送り直しは前の記録の今の状態で答える） */

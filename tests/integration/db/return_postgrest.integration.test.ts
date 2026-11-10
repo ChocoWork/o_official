@@ -938,7 +938,7 @@ describeLocalDb('integration: 返品の窓口を実際の PostgREST に通す', 
       lines: [
         {
           fulfillmentId: target.fulfillmentId, orderItemId: target.ineligibleOrderItemId, quantity: 1, reason: 'wrong_item',
-          customerNote: null, requestedResolution: 'refund', requestedExchangeVariantId: null,
+          customerNote: null, requestedResolution: 'exchange', requestedExchangeVariantId: navyVariantId,
           photos: [{ uploadId: secondUpload.uploadId, contentType: 'image/png', sizeBytes: 4567 }],
         },
       ],

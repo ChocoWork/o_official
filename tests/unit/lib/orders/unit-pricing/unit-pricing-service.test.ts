@@ -197,6 +197,42 @@ describe('DD-ADMIN-022: 受け取りの値段の計画と見込み', () => {
     expect(returned.map(l => l.unitIndex)).toEqual([0]);
   });
 
+  test('DD-ADMIN-022: 交換に結ぶ枠は、返品の行に結び付いた枠（claimedReturnLineId）が先。安い枠より優先する', async () => {
+    const m = repeat();
+    const bound = { ...m, target: { ...m.target, slots: m.target.slots.map(s => (s.unitIndex === 0 ? { ...s, claimedReturnLineId: 'lx' } : s)) } };
+    const lx = line({ id: 'lx', resolution: 'exchange', fulfillmentNumber: 1 });
+    mockList.mockResolvedValue([returnDetail({ id: RETURN_ID, lines: [lx, line({ id: 'l1', fulfillmentNumber: 2 })] })]);
+    const { client } = clientWith({ materials: bound });
+
+    const { plan } = await planReturnReceive(client, RETURN_ID, {
+      ...BODY,
+      units: [{ returnLineId: 'lx', disposition: 'restocked', quantity: 1 }, { returnLineId: 'l1', disposition: 'restocked', quantity: 1 }],
+    });
+
+    // 交換は結び付いた unit 0（20,000円）を取り、返す着は残りの unit 1
+    expect((plan?.lines.filter(l => l.lineKind === 'returned') ?? []).map(l => l.unitIndex)).toEqual([1]);
+  });
+
+  test('DD-ADMIN-022: 最初の交換の受け取りは、交換の手数料と送料も固定の費用に入る（E の外）', async () => {
+    const lx = line({ id: 'lx', resolution: 'exchange', fulfillmentNumber: 1 });
+    mockList.mockResolvedValue([returnDetail({
+      id: RETURN_ID, fees: { exchangeFee: 500, exchangeShippingFee: 300 }, lines: [lx, line({ id: 'l1', fulfillmentNumber: 2 })],
+    })]);
+    const { client } = clientWith({ materials: repeat() });
+    const body = {
+      ...BODY,
+      units: [{ returnLineId: 'lx', disposition: 'restocked' as const, quantity: 1 }, { returnLineId: 'l1', disposition: 'restocked' as const, quantity: 1 }],
+    };
+
+    const first = await planReturnReceive(client, RETURN_ID, body);
+    expect(first.estimate).toMatchObject({ fixedFees: 800, refundAmount: 17000 - 800 });
+
+    mockList.mockResolvedValue([returnDetail({
+      id: RETURN_ID, firstExchangeReceiptDone: true, fees: { exchangeFee: 500, exchangeShippingFee: 300 }, lines: [lx, line({ id: 'l1', fulfillmentNumber: 2 })],
+    })]);
+    expect((await planReturnReceive(client, RETURN_ID, body)).estimate.fixedFees).toBe(0);
+  });
+
   test('DD-ADMIN-022: 返品が無い・計画の計算が断った時は、画面を開き直してもらう断り', async () => {
     const missing = clientWith({ materials: repeat() });
     mockList.mockResolvedValue([]);

@@ -71,6 +71,37 @@ export async function withFreshPricing<T>(run: () => Promise<T>): Promise<T> {
   return run();
 }
 
+function codeOf(error: unknown): unknown {
+  return (error as { code?: unknown } | null | undefined)?.code;
+}
+
+/**
+ * 計画を作って入口を呼ぶ。計画の計算が断った（UNIT_PRICING_INVALID。同じ requestKey の送り直しで、返す着がもう動いている時など）でも、
+ * 計画なし（null）で入口を呼び、送り直しなら DB に前の結果を答えさせる（DB は計画を確かめる前に requestKey で探す）。
+ * 送り直しでなければ DB が UNIT_PRICING_REQUIRED で断るので、計画の断りと同じ断り（invalid）に戻す。
+ * 要らない道（写しの無い注文など）は計画の計算が断らないので、ここに来ない。requestKey を先に調べる案より、入口を1回呼ぶだけで済む
+ */
+export async function withPlanOrNull<P, T>(
+  plan: () => Promise<P | null>,
+  enter: (pricing: P | null) => Promise<T>,
+  invalid: () => Error,
+): Promise<T> {
+  let pricing: P | null = null;
+  let planFailed = false;
+  try {
+    pricing = await plan();
+  } catch (error) {
+    if (codeOf(error) !== 'UNIT_PRICING_INVALID' && codeOf(error) !== 'unit_pricing_invalid') throw error;
+    planFailed = true;
+  }
+  try {
+    return await enter(pricing);
+  } catch (error) {
+    if (planFailed && (codeOf(error) === 'UNIT_PRICING_REQUIRED' || codeOf(error) === 'unit_pricing_required')) throw invalid();
+    throw error;
+  }
+}
+
 // ---- 受け取り ----
 
 interface UnitPick { line: OrderReturnLineDetail; part: 'now' | 'consult'; quantity: number }
