@@ -1,6 +1,6 @@
-import { planUnitEvent, UnitPricingError } from '@/lib/orders/unit-pricing/unit-event-plan';
+import { pastFeeTotal, planUnitEvent, UnitPricingError } from '@/lib/orders/unit-pricing/unit-event-plan';
 import { definition } from '../../discounts/fixtures';
-import type { UnitEventChange, UnitPricingMaterials, UnitPricingPlan } from '@/lib/orders/unit-pricing/unit-pricing-types';
+import type { OrderPricingState, UnitEventChange, UnitPricingMaterials, UnitPricingPlan } from '@/lib/orders/unit-pricing/unit-pricing-types';
 import {
   applyPlan, buildOrder, JACKET, materialsOf, oneYenOff, pairSet, percent10, quantityTier, receive, repeat, repeatDefinition, repeatPreviousDefinition,
   ret, retJacket, retPants, sequence, set, stacked, threshold, tiny, twoOrders,
@@ -442,6 +442,70 @@ describe('DD-ADMIN-021: 修正3 前の出来事を出来事の時と同じ段取
       // 返品の行の id の順を保つ分け方なら、手数料の合計も1回の受け取りと同じ
       const inOrder = split.flat().every((n, i) => n === i);
       if (inOrder) expect(fee).toBe(single.feeAmount);
+    }
+  });
+});
+
+describe('DD-ADMIN-021: 修正4 戻しの出来事は率0の段にし、返品の行の無い返品は1着ずつ段にする', () => {
+  const line = (oi: string, id: string | null, feePercent: number) =>
+    ({ returnLineId: id, holderOrderItemId: oi, quantity: 1, side: 'customer' as const, part: 'now' as const, feePercent });
+  const firstOrder = () => buildOrder({
+    orderId: 'order-1', placedAt: '2026-11-01T00:00:00Z',
+    lines: [
+      { orderItemId: 'oi-a', itemId: JACKET, unitPrice: 20000, quantity: 1 },
+      { orderItemId: 'oi-c', itemId: 3, unitPrice: 1000, quantity: 1 },
+      { orderItemId: 'oi-d', itemId: 4, unitPrice: 500, quantity: 1 },
+    ],
+    definitions: [repeatPreviousDefinition()],
+  });
+
+  test.each([[30, 300, 700], [0, 0, 1000]])('DD-ADMIN-021: 前の注文への戻しの後に %i%% で返すと、戻した 3,000 に率を掛けず手数料 %i・返す額 %i', (r3, fee, refund) => {
+    let m = materialsOf(firstOrder(), [twoOrders().second]);
+    const p1 = planUnitEvent(m, receive([line('oi-a', 'rl-1', 10)]));
+    expect([p1.feeAmount, p1.holdTotal]).toEqual([1700, 3000]);
+    m = applyPlan(m, p1, '2026-11-20T00:00:00Z', { 'rl-1': 10 });
+    let m2 = materialsOf(m.related[0], [m.target]);
+    const p2 = planUnitEvent(m2, receive([line('oi-b', 'rl-2', 0)]));
+    expect(p2.releases.map(x => [x.orderId, x.standardRefund, x.feeAmount])).toEqual([['order-1', 3000, 0]]);
+    m2 = applyPlan(m2, p2, '2026-11-21T00:00:00Z', { 'rl-2': 0 });
+    const m3 = materialsOf(m2.related[0], [m2.target]);
+    expect(pastFeeTotal(m3.target)).toBe(1700);
+    const p3 = planUnitEvent(m3, receive([line('oi-c', 'rl-3', r3)]));
+    expect([p3.feeAmount, p3.standardRefund]).toEqual([fee, refund]);
+  });
+
+  test('DD-ADMIN-021: 返品の行の無いご都合の返品2つは、それぞれの率で掛ける（並びを入れ替えても同じ）', () => {
+    const order = () => materialsOf(buildOrder({
+      orderId: 'order-5',
+      lines: [{ orderItemId: 'oi-x', itemId: 3, unitPrice: 10000, quantity: 1 }, { orderItemId: 'oi-y', itemId: 4, unitPrice: 10000, quantity: 1 }],
+    }));
+    const a = planUnitEvent(order(), receive([line('oi-x', null, 10), line('oi-y', null, 30)]));
+    const b = planUnitEvent(order(), receive([line('oi-y', null, 30), line('oi-x', null, 10)]));
+    expect(a.feeAmount).toBe(4000);
+    expect([b.feeAmount, b.standardRefund]).toEqual([a.feeAmount, a.standardRefund]);
+  });
+
+  test('DD-ADMIN-021: 戻し・お店の側の返品を含む並びでも、出来事のたびに数え直した手数料の累計が取った累計と同じ', () => {
+    let seed = 7;
+    const rand = (n: number) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+    const actions = [['order-1', 'oi-a'], ['order-1', 'oi-c'], ['order-1', 'oi-d'], ['order-2', 'oi-b']] as const;
+    for (let run = 0; run < 40; run++) {
+      const orders: Record<string, OrderPricingState> = { 'order-1': firstOrder(), 'order-2': twoOrders().second };
+      const order = [...actions];
+      for (let i = order.length - 1; i > 0; i--) { const j = rand(i + 1); [order[i], order[j]] = [order[j], order[i]]; }
+      order.forEach(([orderId, oi], n) => {
+        const otherId = orderId === 'order-1' ? 'order-2' : 'order-1';
+        const id = `rl-${run}-${n}`;
+        const shop = rand(3) === 0;
+        const rate = shop ? 0 : [0, 10, 20, 30][rand(4)];
+        const m = materialsOf(orders[orderId], [orders[otherId]]);
+        const plan = planUnitEvent(m, receive([{ ...line(oi, id, rate), side: shop ? 'shop' : 'customer' }]));
+        const next = applyPlan(m, plan, `2026-11-${String(20 + n).padStart(2, '0')}T00:00:00Z`, { [id]: rate });
+        orders[orderId] = next.target;
+        orders[otherId] = next.related[0];
+        expect([pastFeeTotal(orders['order-1']), pastFeeTotal(orders['order-2'])])
+          .toEqual([orders['order-1'].feeTotal, orders['order-2'].feeTotal]);
+      });
     }
   });
 });
