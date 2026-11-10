@@ -374,3 +374,29 @@ describe('DD-ADMIN-021: 修正1b 手数料の累計を過去の返品の率で�
     expect(plans.reduce((s, p) => s + p.standardRefund, 0)).toBe(oneReceipt.standardRefund);
   });
 });
+
+describe('DD-ADMIN-021: 修正2 前の出来事の holds を、その出来事の返品の増えから外さない', () => {
+  const line = (oi: string, id: string, feePercent: number) =>
+    ({ returnLineId: id, holderOrderItemId: oi, quantity: 1, side: 'customer' as const, part: 'now' as const, feePercent });
+  const start = () => {
+    const first = buildOrder({
+      orderId: 'order-1', placedAt: '2026-11-01T00:00:00Z',
+      lines: [{ orderItemId: 'oi-a', itemId: JACKET, unitPrice: 20000, quantity: 1 }, { orderItemId: 'oi-c', itemId: 3, unitPrice: 1000, quantity: 1 }],
+      definitions: [repeatPreviousDefinition()],
+    });
+    return materialsOf(first, [twoOrders().second]);
+  };
+  const run = (r2: number) => {
+    const cs = [receive([line('oi-a', 'rl-1', 10)]), receive([line('oi-c', 'rl-2', r2)])];
+    return sequence(start(), 2, i => cs[i], step);
+  };
+
+  test.each([[0, 1700], [10, 1800]])('DD-ADMIN-021: 2回目の返品が %i%% なら手数料の合計は %i（1回目は holds 3,000 を引いた 17,000 に 10%）', (r2, total) => {
+    const [p1, p2] = run(r2);
+    expect([p1.feeAmount, p1.holdTotal]).toEqual([1700, 3000]);
+    expect(p1.feeAmount + p2.feeAmount).toBe(total);
+    const single = planUnitEvent(start(), receive([line('oi-a', 'rl-1', 10), line('oi-c', 'rl-2', r2)]));
+    expect(single.feeAmount).toBe(total);
+    expect(single.standardRefund).toBe(p1.standardRefund + p2.standardRefund);
+  });
+});

@@ -241,29 +241,40 @@ function evaluate(materials: UnitPricingMaterials, kind: UnitEventChange['kind']
   const shopOnly = target.paidTotal - keptDefAfter;
 
   // 手数料の累計を正確に出し直す。元の額 (E′ − E′不備) の増えは、お客様のご都合の返品が生む。
-  // 返品を「前の出来事の返品（返した時刻・率ごと、枠の並び順）→ この出来事の返品（返品の行の id の順）」に1つずつ足し、
-  // 足すごとの増えにその返品の率を floor(増え × 率 / 100) で掛けて足す。お店の側の返品は最初から返した状態で数え、率を持たない。
-  // この出来事の手数料 ＝ max(出し直した累計 − これまでの手数料の累計, 0)。新しい holds は最後の足しから引く。
+  // 返品を「前の出来事の返品（出来事の seq → 率 → 枠の並び順）→ この出来事の返品（返品の行の id の順）」に1つずつ足し、
+  // 足すごとの元の額 ＝ (holds を引く前の E′ − E′不備) − その出来事までに書かれた holds の正味（seq が出来事以下の行）。
+  // 増え（負にもなる）にその返品の率を floor(増え × 率 / 100) で掛けて足す。お店の側の返品は最初から返した状態で数え、率を持たない。
+  // この出来事の新しい holds は、同じ商品の枠を返した返品のうち最後の足しから引く（無ければ最後の足し）。この出来事の手数料 ＝ max(出し直した累計 − これまでの累計, 0)。
   const shopBase = withPicks(new Map([...before].map(([k, v]) => [k, v === 'returned_customer' ? 'kept' : v] as [SlotKey, SlotState])),
     picks.filter(p => p.side === 'shop'));
-  const groups: { keys: SlotKey[]; rate: number }[] = [];
-  const pastSlots = target.slots.filter(s => s.state === 'returned_customer')
-    .sort((x, y) => compareIds(x.returnedCustomerAt ?? '', y.returnedCustomerAt ?? '') || compareIds(slotKeyOfSlot(x), slotKeyOfSlot(y)));
-  const pastGroups = new Map<string, { keys: SlotKey[]; rate: number }>();
+  interface FeeGroup { keys: SlotKey[]; rate: number; seq: number }
+  const pastGroups = new Map<string, FeeGroup>();
+  const pastSlots = target.slots.filter(s => s.state === 'returned_customer').sort((x, y) =>
+    (x.returnedEventSeq ?? 0) - (y.returnedEventSeq ?? 0) || (x.returnedFeePercent ?? 0) - (y.returnedFeePercent ?? 0)
+    || compareIds(slotKeyOfSlot(x), slotKeyOfSlot(y)));
   for (const s of pastSlots) {
     const rate = s.returnedFeePercent ?? 0;
-    const gk = `${s.returnedCustomerAt ?? ''}|${rate}`;
-    const g = pastGroups.get(gk) ?? { keys: [], rate };
-    g.keys.push(slotKeyOfSlot(s)); pastGroups.set(gk, g);
+    const seq = s.returnedEventSeq ?? 0;
+    const g = pastGroups.get(`${seq}|${rate}`) ?? { keys: [], rate, seq };
+    g.keys.push(slotKeyOfSlot(s)); pastGroups.set(`${seq}|${rate}`, g);
   }
-  groups.push(...pastGroups.values());
-  const pickGroups = new Map<string, { keys: SlotKey[]; rate: number }>();
+  const pickGroups = new Map<string, FeeGroup>();
   for (const p of [...customerPicks].sort((x, y) => compareIds(x.returnLineId ?? '', y.returnLineId ?? '') || compareIds(x.key, y.key))) {
     const gk = p.returnLineId ?? p.key;
-    const g = pickGroups.get(gk) ?? { keys: [], rate: p.feePercent };
+    const g = pickGroups.get(gk) ?? { keys: [], rate: p.feePercent, seq: Infinity };
     g.keys.push(p.key); pickGroups.set(gk, g);
   }
-  groups.push(...pickGroups.values());
+  const groups = [...pastGroups.values(), ...pickGroups.values()];
+  const itemOfKey = new Map(target.slots.map(s => [slotKeyOfSlot(s), s.itemId]));
+  const newHoldAt = new Map<number, number>();
+  for (const row of [...holdPlan.adds, ...ownRows]) {
+    let at = groups.length - 1;
+    groups.forEach((g, i) => { if (g.seq === Infinity && g.keys.some(k => itemOfKey.get(k) === row.itemId)) at = i; });
+    newHoldAt.set(at, (newHoldAt.get(at) ?? 0) + row.amount);
+  }
+  let newHoldsSoFar = 0;
+  const heldUpTo = (seq: number) => target.holds.filter(h => h.heldOrderId === target.orderId && h.seq <= seq)
+    .reduce((sum, h) => sum + h.amount, 0);
   let feeTotalNow = 0;
   let previousBase = 0;
   const done: SlotKey[] = [];
@@ -272,9 +283,10 @@ function evaluate(materials: UnitPricingMaterials, kind: UnitEventChange['kind']
     const st = new Map(shopBase);
     for (const k of done) st.set(k, 'returned_customer');
     const raw = correctKeptPrice(target, shopOnlyStates(st)).total - correctKeptPrice(target, st).total;
-    const current = raw - (i === groups.length - 1 ? holdTotal : 0);
-    feeTotalNow += Math.floor(Math.max(0, current - previousBase) * g.rate / 100);
-    previousBase = Math.max(previousBase, current);
+    newHoldsSoFar += newHoldAt.get(i) ?? 0;
+    const current = raw - (g.seq === Infinity ? holdsBefore + newHoldsSoFar : heldUpTo(g.seq));
+    feeTotalNow += Math.floor((current - previousBase) * g.rate / 100);
+    previousBase = current;
   });
   const fee = Math.max(feeTotalNow - target.feeTotal, 0);
   const entitlement = gross - target.feeTotal - fee;

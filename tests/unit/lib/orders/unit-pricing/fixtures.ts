@@ -43,7 +43,7 @@ export function buildOrder(spec: OrderSpec): OrderPricingState {
     return {
       orderItemId: l.orderItemId, unitIndex, itemId: l.itemId, paidAmount: paid, allocatedAmount: 0, currentPrice: paid,
       state: 'kept' as const, holderOrderItemId: l.orderItemId, holderUnitIndex: unitIndex,
-      shipped: spec.shipped ?? true, returnedCustomerAt: null, returnedFeePercent: null, claimedReturnLineId: null,
+      shipped: spec.shipped ?? true, returnedCustomerAt: null, returnedFeePercent: null, returnedEventSeq: null, claimedReturnLineId: null,
     };
   }));
   return {
@@ -145,8 +145,9 @@ export function receive(returns: UnitReturnInput[], excludedSlots: SlotKey[] = [
 export function applyPlan(materials: UnitPricingMaterials, plan: UnitPricingPlan, now = '2026-11-20T00:00:00Z',
   feeByReturnLine: Readonly<Record<string, number>> = {}): UnitPricingMaterials {
   const seqBase = Math.max(0, ...[materials.target, ...materials.related].flatMap(o => o.holds.map(h => h.seq)));
-  let seq = seqBase;
-  const nextHolds = (rows: UnitPricingPlan['holds']): UnitHold[] => rows.map(r => ({ ...r, seq: ++seq }));
+  const slotSeqs = [materials.target, ...materials.related].flatMap(o => o.slots.map(s => s.returnedEventSeq ?? 0));
+  const eventSeq = Math.max(seqBase, ...slotSeqs) + 1;
+  const nextHolds = (rows: UnitPricingPlan['holds']): UnitHold[] => rows.map(r => ({ ...r, seq: eventSeq }));
   const update = (order: OrderPricingState, p: UnitPricingPlan): OrderPricingState => ({
     ...order,
     slots: order.slots.map(s => {
@@ -155,6 +156,7 @@ export function applyPlan(materials: UnitPricingMaterials, plan: UnitPricingPlan
       return {
         ...s, state: line.stateAfter, currentPrice: line.priceAfter, allocatedAmount: s.allocatedAmount + line.allocation,
         returnedCustomerAt: line.stateAfter === 'returned_customer' ? now : s.returnedCustomerAt,
+        returnedEventSeq: line.stateAfter === 'returned_customer' ? eventSeq : s.returnedEventSeq,
         returnedFeePercent: line.stateAfter === 'returned_customer' ? (feeByReturnLine[line.returnLineId ?? ''] ?? 0) : s.returnedFeePercent,
       };
     }),
