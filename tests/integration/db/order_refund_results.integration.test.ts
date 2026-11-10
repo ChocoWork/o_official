@@ -1612,7 +1612,7 @@ describeLocalDb('integration: 返金の結果を書く関数・外からの返�
            $1::uuid, 'admin', $2::uuid, $3::jsonb, true, 500, 10500, 'テスト', 'requested_by_customer', null, true, $4::uuid, null)`,
         [order.orderId, crypto.randomUUID(), JSON.stringify([{ order_item_id: order.itemIds[0], quantity: 2, before_shipment: true }]), actor.id],
       );
-      expect(began.rows).toEqual([{ refund_id: expect.any(String), amount: 10500, status: 'awaiting_response', replayed: false }]);
+      expect(began.rows).toEqual([{ refund_id: expect.any(String), amount: 10500, status: 'awaiting_response', replayed: false, release_refund_ids: [] }]);
       const refundId = began.rows[0].refund_id as string;
 
       const res = await record(db(), refundId, { status: 'succeeded' });
@@ -1800,11 +1800,11 @@ describeLocalDb('E-3: 返品のメールも既存のリースと履歴で扱う'
 
 describeLocalDb('H5 result release regression (controller)', db => {
   beforeEach(async () => { await db().query('begin'); }); afterEach(async () => { await db().query('rollback'); });
-  test('FREQ-551-AC-02: errorで安いclaimを解放しStripeで見つかれば同じ額で取り直す', async () => {
+  test('FREQ-642-AC-28: errorの後に Stripe で見つかっても、返品なしの発送後の返金は着を取り押さえない（旧: 安いclaimを解放して取り直す）', async () => {
     const f = await hRefundFixture(db(), true); const a = await hBegin(db(), f, 17000);
     await db().query("select * from public.mark_order_refund_error($1,'stripe_rejected',false)", [a.refund_id]);
     expect((await hClaims(db(), f.itemId)).every(u => u.refund_id === null)).toBe(true);
     await hResult(db(), a.refund_id, 'succeeded');
-    expect((await hClaims(db(), f.itemId)).map(u => u.refund_id)).toEqual([a.refund_id, null]);
+    expect((await hClaims(db(), f.itemId)).map(u => u.refund_id)).toEqual([null, null]); // 返品なしの発送後の返金は着を取り押さえない（FREQ-642-AC-28）
   });
 });

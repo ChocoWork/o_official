@@ -267,7 +267,7 @@ async function waitUntilBlocked(db: PgClient, pid: number): Promise<void> {
 
 /** 新しい public の関数。service_role だけが実行できる（anon・authenticated・PUBLIC からは外す） */
 const SERVICE_ONLY_FUNCTIONS = [
-  'public.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)',
+  'public.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,jsonb)',
   'public.get_order_refund(uuid)',
   'public.load_order_refund_materials(uuid)',
   'public.list_order_refunds(uuid)',
@@ -305,7 +305,7 @@ describeLocalDb('integration: 返金を始める関数と読み出しの関数�
         stripeReason: 'requested_by_customer',
       });
 
-      expect(res.rows).toEqual([{ refund_id: expect.any(String), amount: 4444, status: 'awaiting_response', replayed: false }]);
+      expect(res.rows).toEqual([{ refund_id: expect.any(String), amount: 4444, status: 'awaiting_response', replayed: false, release_refund_ids: [] }]);
       const refundId = res.rows[0].refund_id as string;
       // 始めただけでは Stripe に頼んでいない: 返金の番号も支払いの種類も空
       expect(await refundRow(db(), refundId)).toMatchObject({
@@ -527,14 +527,14 @@ describeLocalDb('integration: 返金を始める関数と読み出しの関数�
       const again = await beginRefund(db(), order.orderId, { ...input, lines: [refundBefore(y, 2), refundBefore(x, 1)] });
 
       const refundId = first.rows[0].refund_id as string;
-      expect(again.rows).toEqual([{ refund_id: refundId, amount: 4444, status: 'awaiting_response', replayed: true }]);
+      expect(again.rows).toEqual([{ refund_id: refundId, amount: 4444, status: 'awaiting_response', replayed: true, release_refund_ids: [] }]);
       expect(await countRefunds(db(), order.orderId)).toBe(1);
       expect(Object.keys(await refundLines(db(), refundId))).toHaveLength(2);
 
       // Stripe が受け付けた後の送り直しも、新しい記録を作らず、今の状態を返す
       await settle(db(), refundId, 'pending');
       const later = await beginRefund(db(), order.orderId, input);
-      expect(later.rows).toEqual([{ refund_id: refundId, amount: 4444, status: 'pending', replayed: true }]);
+      expect(later.rows).toEqual([{ refund_id: refundId, amount: 4444, status: 'pending', replayed: true, release_refund_ids: [] }]);
       expect(await countRefunds(db(), order.orderId)).toBe(1);
     });
 
@@ -733,7 +733,7 @@ describeLocalDb('integration: 返金を始める関数と読み出しの関数�
         notify: true,
       });
 
-      expect(res.rows).toEqual([{ refund_id: expect.any(String), amount: 8500, status: 'awaiting_response', replayed: false }]);
+      expect(res.rows).toEqual([{ refund_id: expect.any(String), amount: 8500, status: 'awaiting_response', replayed: false, release_refund_ids: [] }]);
       const refundId = res.rows[0].refund_id as string;
       expect(await refundRow(db(), refundId)).toMatchObject({
         source: 'order_cancel',
@@ -836,7 +836,7 @@ describeLocalDb('integration: 返金を始める関数と読み出しの関数�
         amount: 1,
       });
 
-      expect(res.rows).toEqual([{ refund_id: expect.any(String), amount: 5000, status: 'awaiting_response', replayed: false }]);
+      expect(res.rows).toEqual([{ refund_id: expect.any(String), amount: 5000, status: 'awaiting_response', replayed: false, release_refund_ids: [] }]);
       const refundId = res.rows[0].refund_id as string;
       expect(await refundRow(db(), refundId)).toMatchObject({
         source: 'auto_cancelled_order_payment',
@@ -1809,18 +1809,18 @@ describeLocalDb('E-3: E-2 の返金開始の署名と返品の上限',db=>{
       where (n.nspname='public' and p.proname='begin_order_refund')
          or (n.nspname='private' and p.proname='begin_order_refund_core') order by n.nspname`);
     expect(rows.rows).toEqual([
-      {nspname:'private',proname:'begin_order_refund_core',pronargs:15,pronargdefaults:0,prosecdef:false,proconfig:['search_path=""']},
-      {nspname:'public',proname:'begin_order_refund',pronargs:13,pronargdefaults:1,prosecdef:false,proconfig:['search_path=""']},
+      {nspname:'private',proname:'begin_order_refund_core',pronargs:16,pronargdefaults:0,prosecdef:false,proconfig:['search_path=""']},
+      {nspname:'public',proname:'begin_order_refund',pronargs:14,pronargdefaults:2,prosecdef:false,proconfig:['search_path=""']},
     ]);
     const body=(await db().query(`select p.prosecdef,p.pronargdefaults,
       has_function_privilege('service_role',p.oid,'execute') as service,
       has_function_privilege('anon',p.oid,'execute') as anon,
       has_function_privilege('authenticated',p.oid,'execute') as authenticated
-      from pg_proc p where p.oid='private.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)'::regprocedure`)).rows;
-    expect(body).toEqual([{prosecdef:true,pronargdefaults:1,service:true,anon:false,authenticated:false}]);
+      from pg_proc p where p.oid='private.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,jsonb)'::regprocedure`)).rows;
+    expect(body).toEqual([{prosecdef:true,pronargdefaults:2,service:true,anon:false,authenticated:false}]);
     for(const role of ['anon','authenticated','service_role']) {
-      const allowed=await db().query(`select has_function_privilege($1,'public.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)','execute') as api,
-        has_function_privilege($1,'private.begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer)','execute') as core`,[role]);
+      const allowed=await db().query(`select has_function_privilege($1,'public.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,jsonb)','execute') as api,
+        has_function_privilege($1,'private.begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer,uuid)','execute') as core`,[role]);
       expect(allowed.rows[0]).toEqual({api:role==='service_role',core:false});
     }
   });

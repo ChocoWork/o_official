@@ -52,7 +52,7 @@ async function finishCheapestRefund(db: PgClient, f: HRefundFixture, r: Awaited<
     .toEqual([{ quantity: 1, amount: 20000 }]);
   expect((await db.query('select adjustment_amount from public.order_refunds where id=$1', [normal.refund_id])).rows[0].adjustment_amount).toBe(0);
   await hResult(db, normal.refund_id, 'succeeded');
-  expect((await hClaims(db, f.itemId)).map(unit => unit.refund_id)).toEqual([refundId, normal.refund_id]);
+  expect((await hClaims(db, f.itemId)).map(unit => unit.refund_id)).toEqual([refundId, null]); // 返品なしの発送後の返金は着を取り押さえない（FREQ-642-AC-28）
   expect((await db.query('select refunded_amount from public.orders where id=$1', [f.orderId])).rows[0].refunded_amount).toBe(37000);
 }
 async function completed(db: PgClient, outcome: Outcome) {
@@ -107,7 +107,7 @@ describeLocalDb('H5 G-1 return outcomes and late refund recovery (controller)', 
     expect((await db().query('select quantity,amount from public.order_refund_lines where refund_id=$1', [refund.refund_id])).rows)
       .toEqual([{ quantity: 1, amount: 20000 }]);
     await hResult(db(), refund.refund_id, 'succeeded');
-    expect((await hClaims(db(), f.itemId)).map(unit => unit.refund_id)).toEqual([null, refund.refund_id]);
+    expect((await hClaims(db(), f.itemId)).map(unit => unit.refund_id)).toEqual([null, null]); // 返品なしの発送後の返金は着を取り押さえない（FREQ-642-AC-28）
   });
   test('FREQ-551-AC-01: 届かない2着を開き直して1着を返金し残りを再び閉じても17000円と20000円を保つ', async () => {
     const f = await hRefundFixture(db(), true), r = await hReturn(db(), f, 2);
@@ -249,12 +249,13 @@ describeLocalDb('H5 G-1 return outcomes and late refund recovery (controller)', 
     await db().query('select * from public.admin_reopen_return($1,$2,$3)', [f.completedReturn.returnId, f.actor, randomUUID()]);
     await hReceive(db(), f, f.completedReturn);
     const material = (await db().query('select lines from public.load_order_refund_materials($1)', [f.orderId])).rows[0].lines[0];
-    expect(material.shipped_refundable).toBe(1); expect(material.available_unit_amounts).toEqual([20000]);
+    // 返品なしの発送後の返金は着を取り押さえない（FREQ-642-AC-28）ので、17,000円の着は空きのまま
+    expect(material.shipped_refundable).toBe(1); expect(material.available_unit_amounts).toEqual([17000, 20000]);
     const b = await hBegin(db(), f, 20000); await hResult(db(), b.refund_id, 'succeeded');
     expect((await db().query('select sum(line_amount)::int n from private.group_g_order_item_rows($1)', [[f.orderId]])).rows[0].n).toBe(37000);
   });
   test.each([{ quantity: 1, reviewed: false }, { quantity: 2, reviewed: false }, { quantity: 1, reviewed: true }])(
-    'FREQ-551-AC-02: A error→B $quantity着成功→A遅延成功でもwebhookは記録し要対応を残す（旧対応済み=$reviewed）', async ({ quantity, reviewed }) => {
+    'FREQ-642-AC-28: A error→B $quantity着成功→A遅延成功でもwebhookは記録し、着を取り押さえないので要対応を作らない（旧対応済み=$reviewed）', async ({ quantity, reviewed }) => {
     const f = await hRefundFixture(db(), true);
     const a = await hBegin(db(), f, 17000);
     await db().query("select * from public.mark_order_refund_error($1,'stripe_rejected',true)", [a.refund_id]);
@@ -266,11 +267,12 @@ describeLocalDb('H5 G-1 return outcomes and late refund recovery (controller)', 
     expect(result.status).toBe('succeeded');
     expect((await db().query('select status,amount from public.order_refunds where id=$1', [a.refund_id])).rows[0])
       .toEqual({ status: 'succeeded', amount: 17000 });
-    expect((await hClaims(db(), f.itemId)).filter(unit => unit.refund_id === a.refund_id)).toHaveLength(2 - quantity);
+    // 返品なしの発送後の返金は着を取り押さえない（FREQ-642-AC-28）ので、遅い成功でも着の食い違いの要対応は作らない
+    expect((await hClaims(db(), f.itemId)).filter(unit => unit.refund_id === a.refund_id)).toHaveLength(0);
     expect((await db().query("select count(*)::int n from public.payment_exceptions where payment_ref=any($1::text[]) and reason='refund_failed' and resolved_at is null",
-      [[a.refund_id, `re_${a.refund_id.replaceAll('-', '')}`]])).rows[0].n).toBe(1);
+      [[a.refund_id, `re_${a.refund_id.replaceAll('-', '')}`]])).rows[0].n).toBe(0);
     await hResult(db(), a.refund_id, 'succeeded');
-    expect((await hClaims(db(), f.itemId)).filter(unit => unit.refund_id === b.refund_id)).toHaveLength(quantity);
+    expect((await hClaims(db(), f.itemId)).filter(unit => unit.refund_id === b.refund_id)).toHaveLength(0);
     expect((await db().query('select sum(line_amount)::int n from private.group_g_order_item_rows($1)', [[f.orderId]])).rows[0].n).toBe(37000);
   });
   test('FREQ-551-AC-04: 分割発送の一方が配達済みでも発送中の単位を返金できる', async () => {
@@ -281,9 +283,9 @@ describeLocalDb('H5 G-1 return outcomes and late refund recovery (controller)', 
     const a = await hBegin(db(), f, 17000); await hResult(db(), a.refund_id, 'succeeded');
     const b = await hBegin(db(), f, 20000); await hResult(db(), b.refund_id, 'succeeded');
     const rows = (await db().query('select status,quantity,line_amount from private.group_g_order_item_rows($1)', [[f.orderId]])).rows;
-    expect(rows).toEqual(expect.arrayContaining([
-      { status: 'shipped', quantity: 1, line_amount: 17000 }, { status: 'delivered', quantity: 1, line_amount: 20000 },
-    ]));
+    // 返品なしの発送後の返金は着を取り押さえない（FREQ-642-AC-28）ので、発送ごとの内訳は決まった着に結ばない。合計は同じ
+    expect(rows.map(row => row.status).sort()).toEqual(['delivered', 'shipped']);
+    expect(rows.reduce((sum, row) => sum + row.line_amount, 0)).toBe(37000);
   });
 });
 

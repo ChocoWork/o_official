@@ -141,10 +141,24 @@ export const RECEIVE_RETURN_14 = 'private.admin_receive_return(uuid,uuid,boolean
 export const RECEIVE_RETURN_15 = 'private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)';
 export const UB_ALLOWLIST: readonly string[] = Object.freeze(H7_ALLOWLIST.map((entry) => (entry === RECEIVE_RETURN_14 ? RECEIVE_RETURN_15 : entry)));
 /**
+ * 交換の印の移行 D（FREQ-642）で、返金の入口3本が値段の計画（末尾の引数）を受けるようになり、13・15・7の引数の関数は落ちた。
+ * 本数は同じ77本で、入れ替わったのは begin_order_refund（13→14）・begin_order_refund_core（15→16）・admin_refund_return（7→8）の署名の3本。
+ * それより前の時点の一覧が名指す、今は無い署名は、replaceAllowlistSql が取引の中だけの代わりの関数（巻き戻しで消える）を立てて型に通す。
+ */
+export const REFUND_SIGNATURE_SWAPS: readonly (readonly [string, string])[] = Object.freeze([
+  ['private.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)',
+    'private.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,jsonb)'],
+  ['private.begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer)',
+    'private.begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer,uuid)'],
+  ['private.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean)', 'private.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean,jsonb)'],
+]);
+export const UB_REFUNDS_ALLOWLIST: readonly string[] = Object.freeze(UB_ALLOWLIST.map((entry) => REFUND_SIGNATURE_SWAPS.find(([from]) => from === entry)?.[1] ?? entry));
+
+/**
  * 今の DB の書き手の一覧。「今の DB の一覧が固定の集合や本数と等しい」ことを確かめる生きた検査は、すべてこの定数に向ける。
  * 次の段階が本数を足す時は、この指し先だけを新しい一覧へ付け替える（時点の再実行が使う G3C/G3D/G4_ALLOWLIST は変えない）。
  */
-export const CURRENT_ALLOWLIST: readonly string[] = UB_ALLOWLIST;
+export const CURRENT_ALLOWLIST: readonly string[] = UB_REFUNDS_ALLOWLIST;
 
 /** 移行 C より前の時点の確かめを再生するための、14の引数の受け取りの入口（取引の中だけ。本体は15の引数へ渡すだけ） */
 const LEGACY_RECEIVE_STUB_SQL = `create or replace function private.admin_receive_return(_return_id uuid, _actor_id uuid, _actor_can_refund boolean, _request_key uuid,
@@ -162,10 +176,24 @@ const LEGACY_RECEIVE_STUB_SQL = `create or replace function private.admin_receiv
     grant execute on function ${RECEIVE_RETURN_14} to service_role;`;
 
 /** 書き手の閉じた一覧を、渡した一覧へ置き換える文（関数の所有者・SECURITY DEFINER・search_path 空は移行と同じ）。14の引数の受け取りを含む一覧には、その入口を取引の中に作る文を前に付ける */
+/** 一覧が名指す署名のうち今の DB に無い物（移行 C・D で落ちた旧い署名）の代わりの関数を、取引の中だけに立てる文 */
+function missingSignatureStubsSql(entries: readonly string[]): string {
+  const list = entries.map((entry) => `'${entry}'`).join(', ');
+  return `do $stubs$ declare s text; begin
+    foreach s in array array[${list}] loop
+      if pg_catalog.to_regprocedure(s) is null and s <> '${RECEIVE_RETURN_14}' then
+        execute pg_catalog.format('create function %s returns void language sql security definer set search_path = '''' as ''select null::void''', s);
+        execute pg_catalog.format('alter function %s owner to postgres', s);
+        execute pg_catalog.format('revoke all on function %s from public, anon, authenticated, service_role', s);
+      end if;
+    end loop; end $stubs$;
+    `;
+}
+
 export function replaceAllowlistSql(entries: readonly string[], options: { stub?: boolean } = {}): string {
   const stub = (options.stub ?? true) && entries.includes(RECEIVE_RETURN_14) ? `${LEGACY_RECEIVE_STUB_SQL};
 ` : '';
-  return `${stub}create or replace function private.group_g_writer_allowlist()
+  return `${stub}${missingSignatureStubsSql(entries)}create or replace function private.group_g_writer_allowlist()
     returns pg_catalog.regprocedure[] language sql stable security definer set search_path = ''
     as $f$ select array[${entries.map((entry) => `'${entry}'`).join(', ')}]::pg_catalog.regprocedure[] $f$`;
 }
@@ -179,7 +207,7 @@ export function restoreH4AllowlistSql(options: { stub?: boolean } = {}): string 
   const body = text.match(/^CREATE OR REPLACE FUNCTION private\.group_g_writer_allowlist\(\)[\s\S]*?^\$\$;/m)?.[0];
   if (!body) throw new Error('GROUP_H_H4_ALLOWLIST_FUNCTION_MISSING');
   return `${options.stub ?? true ? `${LEGACY_RECEIVE_STUB_SQL};
-` : ''}${body}`;
+` : ''}${missingSignatureStubsSql(H4_ALLOWLIST)}${body}`;
 }
 
 /** 呼び出し元の取引の中で一覧を入れ替えてから、末尾の確かめの節を流す。戻すのは呼び出し元の rollback */

@@ -1,7 +1,7 @@
 /** @jest-environment node */
 import { describeLocalDb, type PgClient } from './helpers/local-db';
 import { createCatalogFixture } from './helpers/order-fixtures';
-import { G2_ALLOWLIST, H4_ALLOWLIST, H7_ALLOWLIST, CURRENT_ALLOWLIST, UB_ALLOWLIST, RECEIVE_RETURN_14, RECEIVE_RETURN_15 } from './helpers/group-g-allowlist';
+import { G2_ALLOWLIST, H4_ALLOWLIST, H7_ALLOWLIST, CURRENT_ALLOWLIST, UB_ALLOWLIST, UB_REFUNDS_ALLOWLIST, REFUND_SIGNATURE_SWAPS, RECEIVE_RETURN_14, RECEIVE_RETURN_15 } from './helpers/group-g-allowlist';
 
 /**
  * G-1 Task 14（FREQ-522-AC-02・FREQ-524・FREQ-540-AC-05）: 書き手の閉じた一覧の構造の確かめ。
@@ -42,8 +42,8 @@ const ALLOWLIST = [
   'private.record_cancelled_order_paid_amount(uuid,text,integer)',
   'private.admin_cancel_failed_order(uuid,uuid,text,text)',
   'private.link_guest_orders(uuid,text)',
-  'private.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)',
-  'private.begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer)',
+  'private.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,jsonb)',
+  'private.begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer,uuid)',
   'private.apply_order_refund_state(uuid)',
   'private.apply_return_refund_outcome(uuid,text)',
   'private.record_order_refund_result(uuid,text,text,text,text,timestamptz,text,text,text)',
@@ -69,7 +69,7 @@ const ALLOWLIST = [
   'private.admin_reopen_return(uuid,uuid,uuid)',
   'private.admin_inspect_return(uuid,uuid,uuid,jsonb)',
   'private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)',
-  'private.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean)',
+  'private.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean,jsonb)',
   'private.refresh_order_return_status(uuid)',
   'private.admin_record_return_fee_payment(uuid,uuid,text,boolean)',
   'private.admin_release_return_exchange(uuid,uuid)',
@@ -207,8 +207,10 @@ describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の�
     const signature = 'private.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)';
     expect(H7_ALLOWLIST).toEqual(H4_ALLOWLIST);
     // 移行 C（FREQ-642）で受け取りの署名だけが15の引数に入れ替わった（本数は同じ77本）
-    expect(CURRENT_ALLOWLIST).toEqual(UB_ALLOWLIST);
+    // 移行 D（FREQ-642）で返金の入口3本の署名が入れ替わった（本数は同じ77本）
+    expect(CURRENT_ALLOWLIST).toEqual(UB_REFUNDS_ALLOWLIST);
     expect(UB_ALLOWLIST.filter((entry) => !H7_ALLOWLIST.includes(entry))).toEqual([RECEIVE_RETURN_15]);
+    expect(UB_REFUNDS_ALLOWLIST.filter((entry) => !UB_ALLOWLIST.includes(entry))).toEqual(REFUND_SIGNATURE_SWAPS.map(([, to]) => to));
     expect(H7_ALLOWLIST).toHaveLength(77);
     expect(H7_ALLOWLIST.filter(s => s === signature)).toEqual([signature]);
     expect((await db().query('select $1::regprocedure::oid=any(private.group_g_writer_allowlist()::oid[]) as present', [signature])).rows)
@@ -219,7 +221,7 @@ describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の�
 
   test('一覧はCURRENT_ALLOWLISTと同じ集合で、関数は postgres の SECURITY DEFINER・search_path 空・だれも EXECUTE できない', async () => {
     expect(ALLOWLIST).toEqual(CURRENT_ALLOWLIST);
-    expect(ALLOWLIST.slice(0, 65)).toEqual(G2_ALLOWLIST.map((entry) => (entry === RECEIVE_RETURN_14 ? RECEIVE_RETURN_15 : entry)));
+    expect(ALLOWLIST.slice(0, 65)).toEqual(G2_ALLOWLIST.map((entry) => (entry === RECEIVE_RETURN_14 ? RECEIVE_RETURN_15 : (REFUND_SIGNATURE_SWAPS.find(([from]) => from === entry)?.[1] ?? entry))));
     const expected = (await db().query('select to_regprocedure(s)::oid::text as oid, s from unnest($1::text[]) as s', [ALLOWLIST])).rows;
     expect(expected.filter((row) => row.oid === null).map((row) => row.s)).toEqual([]);
     expect(new Set(expected.map((row) => row.oid)).size).toBe(CURRENT_ALLOWLIST.length);

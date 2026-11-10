@@ -1,7 +1,6 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
 import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
-import { hFailure } from './helpers/group-h-fixtures';
 import { hBegin, hClaims, hRefundFixture, hResult } from './helpers/group-h-refund-fixtures';
 
 jest.setTimeout(120000);
@@ -32,22 +31,23 @@ describeLocalDb('H5 common-lock race (controller: three consecutive runs)', db =
     const secondPromise = hBegin(b, f, 20000);
     await blocked(bp, ap); await a.query('commit'); const second = await secondPromise; await hResult(b, second.refund_id, 'succeeded'); await b.query('commit');
     await db().query('begin');
-    expect((await hClaims(db(), f.itemId)).map(u => u.refund_id)).toEqual([first.refund_id, second.refund_id]);
+    expect((await hClaims(db(), f.itemId)).map(u => u.refund_id)).toEqual([null, null]); // 返品なしの発送後の返金は着を取り押さえない（FREQ-642-AC-28）
     await hResult(db(), first.refund_id, 'failed');
     if (failure === 'error') {
       // mark_order_refund_error applies to an awaiting retry, not the pending first refund.
       const errored = await hBegin(db(), f, 17000);
-      expect((await hClaims(db(), f.itemId)).map(u => u.refund_id)).toEqual([errored.refund_id, second.refund_id]);
+      expect((await hClaims(db(), f.itemId)).map(u => u.refund_id)).toEqual([null, null]);
       const result = (await db().query("select * from public.mark_order_refund_error($1,'stripe_rejected',false)", [errored.refund_id])).rows[0];
       expect(result.outcome).toBe('errored');
     }
-    expect((await hClaims(db(), f.itemId)).map(u => u.refund_id)).toEqual([null, second.refund_id]);
+    expect((await hClaims(db(), f.itemId)).map(u => u.refund_id)).toEqual([null, null]);
     const retryKey = randomUUID(); const retry = await hBegin(db(), f, 17000, false, retryKey);
     expect(await hBegin(db(), f, 17000, false, retryKey)).toMatchObject({ refund_id: retry.refund_id, replayed: true });
     await hResult(db(), retry.refund_id, 'succeeded');
-    expect((await hClaims(db(), f.itemId)).map(u => u.refund_id)).toEqual([retry.refund_id, second.refund_id]);
+    expect((await hClaims(db(), f.itemId)).map(u => u.refund_id)).toEqual([null, null]);
     expect((await db().query('select refunded_amount from public.orders where id=$1', [f.orderId])).rows[0].refunded_amount).toBe(37000);
-    expect(await hFailure(db(), () => db().query('select private.return_units_amount($1,1)', [f.itemId]))).toEqual({ code: '23514', message: 'GROUP_H_REFUND_UNIT_MISMATCH' });
+    // 着を取り押さえないので、全部の着が空きのまま（旧: 全部取り押さえられて GROUP_H_REFUND_UNIT_MISMATCH）
+    expect(Number((await db().query('select private.return_units_amount($1,1) n', [f.itemId])).rows[0].n)).toBe(17000);
   }
   test('FREQ-551-AC-02: 安い返金が失敗し高い返金が成功しても安い単位を一度だけ再試行できる', async () => { await race('failed'); });
   test('FREQ-551-AC-02: 並行の高い返金が成功した後もerrorで安いclaimを解放して再試行できる', async () => { await race('error'); });

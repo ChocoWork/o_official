@@ -18,6 +18,9 @@ const DEDUP_REPLACED = ['admin_receive_return', 'group_h_receiving_amount', 'gro
 const unitReceiveFiles = fs.readdirSync(directory).filter(name => /^\d+_unit_binding_receive\.sql$/.test(name));
 const unitReceiveSql = unitReceiveFiles.length === 1 ? fs.readFileSync(path.join(directory, unitReceiveFiles[0]), 'utf8') : '';
 const UNIT_RECEIVE_REPLACED = ['admin_receive_return', 'record_group_g_refund_result'];
+// 移行 D（FREQ-642）は受け取りの本文を、返金の記録を共通のコアが書く形に置き換えた（record_group_g_refund_result は移行 C のまま）
+const unitRefundsFiles = fs.readdirSync(directory).filter(name => /^\d+_unit_binding_refunds\.sql$/.test(name));
+const unitRefundsSql = unitRefundsFiles.length === 1 ? fs.readFileSync(path.join(directory, unitRefundsFiles[0]), 'utf8') : '';
 const receiveArgs = 'uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text';
 const receiveArgs15 = `${receiveArgs},jsonb`;
 const resultNames = ['receipt_id', 'return_status', 'refund_id', 'refund_amount', 'refund_status',
@@ -218,7 +221,7 @@ describeLocalDb('受取明細の列・制約・ACL・本文・書き手77本（c
   test('FREQ-641-AC-10: 新11本文と見込みhelperは移行に固定した本文・属性・ACLで過剰overloadを持たない', async () => {
     expect(sql).not.toBe('');
     for (const name of [...H5_RETURN_FUNCTION_NAMES, 'return_receive_amounts']) {
-      const expected = UNIT_RECEIVE_REPLACED.includes(name) ? definition(unitReceiveSql, name)
+      const expected = UNIT_RECEIVE_REPLACED.includes(name) ? definition(name === 'admin_receive_return' ? unitRefundsSql : unitReceiveSql, name)
         : DEDUP_REPLACED.includes(name) ? definition(dedupSql, name) : definition(sql, name); expect(expected).not.toBeNull();
       const rows = (await db().query(`select md5(replace(p.prosrc,E'\\r','')) hash,p.provolatile,p.proconfig,
         p.proowner=(select oid from pg_roles where rolname='postgres') owned,

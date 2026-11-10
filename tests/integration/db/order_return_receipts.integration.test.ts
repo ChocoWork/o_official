@@ -440,8 +440,8 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
   test('額を決めて0円で終える時は waive_refund を作り、返金とメールを作らず再送は同じ結果になる（P20）',async()=>{
     const f=await fixture(db(),{shippingFee:600,percent:10,paymentIntent:null});
     await receive(db(),f,{notify:false});const key=randomUUID();
-    expect(await refund(db(),f,0,key)).toEqual({refund_id:null,amount:0,status:'waived',replayed:false});
-    expect(await refund(db(),f,0,key)).toEqual({refund_id:null,amount:0,status:'waived',replayed:true});
+    expect(await refund(db(),f,0,key)).toEqual({refund_id:null,amount:0,status:'waived',replayed:false,release_refund_ids:[]});
+    expect(await refund(db(),f,0,key)).toEqual({refund_id:null,amount:0,status:'waived',replayed:true,release_refund_ids:[]});
     await fails(db(),()=>refund(db(),f,1,key),'RETURN_REQUEST_MISMATCH');
     const receipt=(await db().query('select id,kind,refund_choice,refund_id,actor_can_refund from public.order_return_receipts where request_key=$1',[key])).rows[0];
     expect(receipt).toMatchObject({kind:'waive_refund',refund_choice:null,refund_id:null,actor_can_refund:true});
@@ -729,7 +729,7 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     const f=await fixture(db());
     for(const [source,fee] of [['return',null],['return',-1],['admin',-1],['admin',0],['admin',1]] as const) {
       await fails(db(),()=>db().query(`select * from private.begin_order_refund_core(
-        $1,$2,$3,'[]'::jsonb,false,0,1,null,null,null,false,$4,null,$5,$6)`,
+        $1,$2,$3,'[]'::jsonb,false,0,1,null,null,null,false,$4,null,$5,$6,null)`,
         [f.orderId,source,randomUUID(),f.actor,source==='return'?f.returnId:null,fee]),'REFUND_ARGUMENT_INVALID');
     }
     // 返品の0以上の値は既存の今返金・額を決めて返金の試験、ほかの道のNULL→記録0はStep 1bで確かめる。

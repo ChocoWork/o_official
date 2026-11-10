@@ -19,7 +19,8 @@ BEGIN;
 --    - The member's related orders are locked together with the order, after the advisory lock.
 -- 2. private.record_group_g_refund_result: a refund tied to an event, retried after an error (error -> pending / succeeded), takes back the units
 --    of the event's returned lines for its part (units held by another refund in error or failed are released first); never by position.
---    failed releases the claims and never changes a slot state. A refund not tied to an event is handled as before.
+--    failed releases the claims and never changes a slot state. A refund not tied to an event is handled as before, except that a refund of
+--    a shipped line without a return on an order with a discount snapshot takes no unit back (it never claimed one, FREQ-642-AC-28).
 -- Applied migrations are never edited.
 
 -- UBR_BASELINE_BEGIN
@@ -892,7 +893,10 @@ BEGIN
         v_h_mismatch:=true;
       END;
     END IF;
+    -- A refund of a shipped line without a return, on an order with a discount snapshot, claims no unit at all (FREQ-642-AC-28), so it has nothing to take back.
     FOR v_h_line IN SELECT l.* FROM public.order_refund_lines AS l WHERE l.refund_id=_refund_id AND NOT v_linked
+      AND NOT (v_current.return_id IS NULL AND NOT l.before_shipment
+        AND EXISTS (SELECT 1 FROM public.order_discount_snapshots AS ds WHERE ds.order_id=v_current.order_id))
       ORDER BY l.order_item_id,l.before_shipment DESC LOOP
       IF EXISTS (SELECT 1 FROM public.order_line_unit_amounts AS u WHERE u.order_item_id=v_h_line.order_item_id) THEN
         IF v_current.return_id IS NULL THEN
@@ -1116,7 +1120,7 @@ BEGIN
   FOR e IN SELECT * FROM (VALUES
     ('private', 'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)', 'v', true, 'plpgsql', '7a22d1be620d118bb78a3cc95e155443'),
     ('public', 'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)', 'v', false, 'sql', 'dd060b0e28ac9450ca5f2fc218658b03'),
-    ('private', 'record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb)', 'v', true, 'plpgsql', '4b6d2ce680d8db576cd1a9aadd4c4b22'),
+    ('private', 'record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb)', 'v', true, 'plpgsql', '81ccb9dc619f089c26d8165523dff738'),
     ('private', 'group_g_writer_allowlist()', 's', true, 'sql', '0c8a984982e81ef0342e3af887c93689')
   ) AS expected(schema_name, signature, volatility, definer, lang, body_md5) LOOP
     v_oid := pg_catalog.to_regprocedure(e.schema_name || '.' || e.signature);

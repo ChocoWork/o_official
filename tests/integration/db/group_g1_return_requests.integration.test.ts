@@ -316,7 +316,7 @@ describeLocalDb('G-1 return internal cores require the real advisory', getDb => 
       await db.query("select set_config('app.group_g_operation_id',$1,true)", [randomUUID()]);
       await refusal(db, () => db.query('select private.lock_order_return($1::uuid)', [randomUUID()]), 'GROUP_G_INVENTORY_LOCK_REQUIRED', '55000');
       await refusal(db, () => db.query(`select * from private.begin_order_refund_core($1::uuid,'order_cancel',$2::uuid,
-        '[]'::jsonb,true,null,null,null,null,'customer_request',false,$3::uuid,null,null,null)`,
+        '[]'::jsonb,true,null,null,null,null,'customer_request',false,$3::uuid,null,null,null,null)`,
       [randomUUID(), randomUUID(), randomUUID()]), 'GROUP_G_INVENTORY_LOCK_REQUIRED', '55000');
     } finally { await db.query('rollback'); }
   });

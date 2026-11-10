@@ -326,6 +326,12 @@ describeLocalDb('FREQ-642-AC-18: unit binding core (controller only)', (db) => {
   });
 
   describe('claim overloads and refund link', () => {
+    /** 通常の返金は、移行 D から返品なしの発送後の着を取り押さえない。取り押さえた返金が要る試験は、H5 の取り押さえ（安い着を1つ）を直に付けて作る */
+    const hBeginClaimed = async (f: Awaited<ReturnType<typeof hRefundFixture>>, amount: number) => {
+      const refund = await hBegin(db(), f, amount);
+      await q('select private.group_h_claim_refund_units($1,$2,1,false,null)', [refund.refund_id, f.itemId]);
+      return refund;
+    };
     const insertEvent = async (orderId: string, over: Record<string, unknown> = {}) => {
       const e = { kind: 'return_receive', return_id: null, standard_refund: 0, now_refund: 0, consult_refund: 0, ...over };
       return (await q(`insert into public.order_unit_events(order_id,kind,return_id,entitlement_previous,entitlement_max_before,entitlement_gross,
@@ -344,7 +350,7 @@ describeLocalDb('FREQ-642-AC-18: unit binding core (controller only)', (db) => {
       const ret = await hReturn(db(), f, 1);
       const claimed = await hClaims(db(), f.itemId);
       expect(claimed.map(c => [c.paid_amount, c.refund_id, c.return_line_id])).toEqual([[17000, null, ret.lineId], [20000, null, null]]);
-      const refund = await hBegin(db(), f, 3000);
+      const refund = await hBeginClaimed(f, 3000);
       const refundUnit = (await hClaims(db(), f.itemId)).find(c => c.refund_id === refund.refund_id)!;
       expect(refundUnit.paid_amount).toBe(20000);
       const eventId = await insertEvent(f.orderId);
@@ -372,12 +378,12 @@ describeLocalDb('FREQ-642-AC-18: unit binding core (controller only)', (db) => {
 
     test('FREQ-642-AC-04: 別の返金が取っている着は結べず、部分の違う二重の結びも断る', async () => {
       const f = await hRefundFixture(db(), true, 2);
-      const refundA = await hBegin(db(), f, 3000);
+      const refundA = await hBeginClaimed(f, 3000);
       const taken = (await hClaims(db(), f.itemId)).find(c => c.refund_id === refundA.refund_id)!;
       const takenIndex = (await q('select unit_index from public.order_line_unit_amounts where order_item_id=$1 and refund_id=$2', [f.itemId, refundA.refund_id])).rows[0].unit_index as number;
       expect(taken.paid_amount).toBe(17000);
       await hResult(db(), refundA.refund_id, 'succeeded');
-      const refundB = await hBegin(db(), f, 2000);
+      const refundB = await hBeginClaimed(f, 2000);
       const eventId = await insertEvent(f.orderId);
       await insertLine(eventId, f.orderId, f.itemId, takenIndex);
       expect(await failure(() => q('select private.order_unit_link_refund($1,$2,$3)', [eventId, refundB.refund_id, 'now'])))
@@ -388,7 +394,7 @@ describeLocalDb('FREQ-642-AC-18: unit binding core (controller only)', (db) => {
 
     test('FREQ-642-AC-04: 取り押さえの重ね定義は共通の鍵を求め、番号を指定した着に付け外しする', async () => {
       const f = await hRefundFixture(db(), true, 2);
-      const refund = await hBegin(db(), f, 3000);
+      const refund = await hBeginClaimed(f, 3000);
       await q('rollback'); await q('begin');
       expect(await failure(() => q('select private.group_h_claim_refund_units($1,$2,$3::integer[],false,null)', [refund.refund_id, f.itemId, [0]])))
         .toMatchObject({ message: 'GROUP_H_LOCK_REQUIRED' });
@@ -397,7 +403,7 @@ describeLocalDb('FREQ-642-AC-18: unit binding core (controller only)', (db) => {
 
     test('FREQ-642-AC-04: 番号を指定して取ると paid_amount の和を返し、同じ返金でもう一度呼んでも何も変わらない', async () => {
       const f = await hRefundFixture(db(), true, 2);
-      const refund = await hBegin(db(), f, 3000);
+      const refund = await hBeginClaimed(f, 3000);
       const claimedBefore = (await q('select unit_index from public.order_line_unit_amounts where order_item_id=$1 and refund_id=$2', [f.itemId, refund.refund_id])).rows[0].unit_index as number;
       const other = claimedBefore === 0 ? 1 : 0;
       const sum = async (indexes: number[]) => (await q('select private.group_h_claim_refund_units($1,$2,$3::integer[],false,null) as n', [refund.refund_id, f.itemId, indexes])).rows[0].n as number;
@@ -413,17 +419,18 @@ describeLocalDb('FREQ-642-AC-18: unit binding core (controller only)', (db) => {
         .toMatchObject({ code: '23514' });
     });
 
-    test('FREQ-642-AC-04: order_unit_outstanding は返品の出来事の返す額から、結んだ返金（awaiting・pending・succeeded・error）を引く', async () => {
+    test('FREQ-642-AC-04: order_unit_outstanding は返品の出来事の相談の分から、相談として結んだ返金（awaiting・pending・succeeded・error）を引く', async () => {
       const f = await hRefundFixture(db(), true, 2);
       const ret = await hReturn(db(), f, 1);
       const outstanding = async () => (await q('select private.order_unit_outstanding($1) as n', [ret.returnId])).rows[0].n as number;
       expect(await outstanding()).toBe(0);
-      const eventId = await insertEvent(f.orderId, { return_id: ret.returnId, standard_refund: 5000, now_refund: 5000 });
+      const eventId = await insertEvent(f.orderId, { return_id: ret.returnId, standard_refund: 5000, now_refund: 0, consult_refund: 5000 });
       expect(await outstanding()).toBe(5000);
-      const refund = await hBegin(db(), f, 3000);
+      const refund = await hBeginClaimed(f, 3000);
       const claimed = (await q('select unit_index from public.order_line_unit_amounts where order_item_id=$1 and refund_id=$2', [f.itemId, refund.refund_id])).rows[0].unit_index as number;
-      await insertLine(eventId, f.orderId, f.itemId, claimed);
-      await q('select private.order_unit_link_refund($1,$2,$3)', [eventId, refund.refund_id, 'now']);
+      await insertLine(eventId, f.orderId, f.itemId, claimed, { part: 'consult' });
+      // 相談として結んだ返金だけが相談の残りを減らす（今すぐの分を店長が下げても、その分は戻ってこない。設計書 2-1。受け取りの試験で確かめる）
+      await q('select private.order_unit_link_refund($1,$2,$3)', [eventId, refund.refund_id, 'consult']);
       expect(await outstanding()).toBe(2000);
       await q("update public.order_refunds set status='error' where id=$1", [refund.refund_id]);
       expect(await outstanding()).toBe(2000);

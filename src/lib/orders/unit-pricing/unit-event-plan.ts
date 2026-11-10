@@ -106,7 +106,11 @@ function selectPicks(
       const pool = order.slots.filter(s => {
         const key = slotKeyOfSlot(s);
         if (s.state !== 'kept' || taken.has(key) || excluded.has(key) || s.claimedRefundId !== null) return false;
-        if (r.cancel) return !s.shipped && s.orderItemId === r.holderOrderItemId;
+        // 発送前の取り消し: 出荷前の元の行の枠。まだ発送していない交換の品の行は、交換に出した出荷済みの元の枠（持ち主がその行）を返す（Q10）
+        if (r.cancel) {
+          return (s.holderOrderItemId === r.holderOrderItemId && s.holderOrderItemId !== s.orderItemId)
+            || (!s.shipped && s.orderItemId === r.holderOrderItemId);
+        }
         return s.shipped && s.holderOrderItemId === r.holderOrderItemId
           && (s.claimedReturnLineId === null || s.claimedReturnLineId === r.returnLineId);
       });

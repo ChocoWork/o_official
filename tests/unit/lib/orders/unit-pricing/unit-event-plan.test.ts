@@ -191,6 +191,24 @@ test('DD-ADMIN-021: 例9 発送前の取り消しは出荷済みでない着か�
   expect(plan.lines.find(l => l.lineKind === 'returned')).toMatchObject({ shipped: false, allocation: 17000, stateAfter: 'returned_shop', part: null });
 });
 
+test('FREQ-642-AC-27: まだ発送していない交換の品の取り消しは、交換に出した出荷済みの元の枠を返す枠に選ぶ', () => {
+  const order = buildOrder({
+    orderId: 'order-q10', lines: [{ orderItemId: 'oi-1', itemId: JACKET, unitPrice: 20000, quantity: 2 }],
+    definitions: [repeatDefinition()], shipped: true,
+  });
+  const exchanged = order.slots.find(s => s.paidAmount === 17000)!;
+  exchanged.holderOrderItemId = 'ex-1';
+  exchanged.holderUnitIndex = 0;
+  const m = materialsOf(order);
+  const plan = planUnitEvent(m, { kind: 'pre_shipment_cancel', cancels: [{ orderItemId: 'ex-1', quantity: 1 }] });
+  expect(plan.standardRefund).toBe(17000);
+  expect(plan.lines.find(l => l.lineKind === 'returned')).toMatchObject({
+    orderItemId: 'oi-1', unitIndex: exchanged.unitIndex, holderOrderItemId: 'ex-1', shipped: true, allocation: 17000, stateAfter: 'returned_shop',
+  });
+  // 出荷済みで交換にも出ていない元の行の着は、発送前の取り消しの対象にならない
+  expect(() => planUnitEvent(m, { kind: 'pre_shipment_cancel', cancels: [{ orderItemId: 'oi-1', quantity: 2 }] })).toThrow(UnitPricingError);
+});
+
 describe('DD-ADMIN-021: 返す枠の選び方と誤り', () => {
   test('発送後の返品は出荷済みの枠から。出荷前の枠しか無ければ unit_not_available', () => {
     const m = materialsOf(buildOrder({

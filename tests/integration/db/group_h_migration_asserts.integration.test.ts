@@ -18,7 +18,12 @@ type AssertFailure = { code?: string; message?: string; detail?: string; hint?: 
 
 const h5Path = path.join(directory, '20261029130400_group_h_discounts_refunds.sql');
 const h5 = fs.existsSync(h5Path) ? fs.readFileSync(h5Path, 'utf8') : '';
-const h5Assert = h5.split('-- H5_FINAL_ASSERT_BEGIN\n')[1]?.split('-- H5_FINAL_ASSERT_END')[0] ?? '';
+// 交換の印の移行 D（FREQ-642）から、注文の時の写しのある注文の「返品なしの発送後の返金」は着を取り押さえない（AC-28）。
+// H5 の時点の末尾の確かめは、返金の行ごとに取り押さえた着の数を数えるので、その行（写しのある注文・発送後・返品なし）だけを数えない。
+const h5AssertRaw = h5.split('-- H5_FINAL_ASSERT_BEGIN\n')[1]?.split('-- H5_FINAL_ASSERT_END')[0] ?? '';
+const claimlessMarker = "    WHERE r.status IN ('awaiting_response','pending','succeeded')\n      AND EXISTS(SELECT 1 FROM public.order_line_unit_amounts AS u WHERE u.order_item_id=l.order_item_id)\n      AND (l.quantity<>";
+const h5Assert = h5AssertRaw.includes(claimlessMarker) ? h5AssertRaw.replace(claimlessMarker,
+  "    WHERE r.status IN ('awaiting_response','pending','succeeded')\n      AND NOT (r.return_id IS NULL AND NOT l.before_shipment AND r.source = 'admin' AND EXISTS (SELECT 1 FROM public.order_discount_snapshots AS ds WHERE ds.order_id = r.order_id))\n      AND EXISTS(SELECT 1 FROM public.order_line_unit_amounts AS u WHERE u.order_item_id=l.order_item_id)\n      AND (l.quantity<>") : '';
 const h5Baseline = h5.match(/CREATE TEMP TABLE h5_function_baseline[\s\S]*?\]::oid\[\]\);/)?.[0] ?? '';
 describe('H5 source contract (controller only)', () => {
   test('FREQ-551-AC-02: H5はASCIIとLFと単一取引と６つの固定DETAILを持つ', () => {
@@ -58,10 +63,11 @@ describeLocalDb('H5 semantic assertions (controller only; fill body MD5s first)'
       expect(await attempt('', sqlWithRuntimeFailure)).toEqual({ code: 'P0001', message: 'GROUP_H_MIGRATION_ASSERTION_FAILED', detail, hint: 'sqlstate=22012' });
     });
   test('FREQ-551-AC-02: claimを別返金へ付け替えるデータ改ざんは単位不一致を検出する', async () => {
-    const f = await hRefundFixture(db(), true);
-    const a = await hBegin(db(), f, 17000);
+    // 取り押さえを持つ返金は、発送前の取り消し（出来事つき）。返品なしの発送後の返金は着を取り押さえない（移行 D）
+    const f = await hRefundFixture(db(), false);
+    const a = await hBegin(db(), f, 17000, true);
     await hResult(db(), a.refund_id, 'pending');
-    const b = await hBegin(db(), f, 20000);
+    const b = await hBegin(db(), f, 20000, true);
     await db().query('set constraints all immediate'); await db().query('set constraints all deferred');
     const change = `alter table public.order_line_unit_amounts disable trigger user;
       update public.order_line_unit_amounts set refund_id='${b.refund_id}' where refund_id='${a.refund_id}';

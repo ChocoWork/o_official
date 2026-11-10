@@ -7,7 +7,8 @@ import { seedFactSlip } from './accounting-orders-fixtures';
 import { createCatalogFixture, shipFixtureOrder } from './order-fixtures';
 import type { PgClient } from './local-db';
 import { restoreH4AllowlistSql } from './group-g-allowlist';
-import { ubReceive } from './unit-binding-receive';
+import { planUnitEvent } from '@/lib/orders/unit-pricing/unit-event-plan';
+import { materialsOf, ubReceive } from './unit-binding-receive';
 
 /** Real H3 -> H4 acceptance and payment; each payment has its own intent. */
 export async function hRefundFixture(db: PgClient, shipped: boolean | number = false, quantity = 2, unitDiscount = 3000, buyerUserId?: string) {
@@ -34,9 +35,17 @@ export async function hRefundFixture(db: PgClient, shipped: boolean | number = f
   return { orderId, itemId, actor, discountId, catalog, f, fulfillment };
 }
 export type HRefundFixture = Awaited<ReturnType<typeof hRefundFixture>>;
+/** 発送前の行（before）は、写しのある注文では値段の計画（発送前の取り消し）が要るので、本物の計画を付けて呼ぶ（FREQ-642 移行 D）。 */
 export async function hBegin(db: PgClient, f: HRefundFixture, amount: number, before = false, key = randomUUID(), quantity = 1) {
-  return (await db.query(`select * from public.begin_order_refund($1,'admin',$2,$3::jsonb,false,0,$4,null,'requested_by_customer',null,false,$5)`,
-    [f.orderId, key, JSON.stringify([{ order_item_id: f.itemId, before_shipment: before, quantity }]), amount, f.actor])).rows[0] as { refund_id: string; amount: number; replayed: boolean };
+  const pricing = before ? await cancelPlanFor(db, f.orderId, f.itemId, quantity) : null;
+  return (await db.query(`select * from public.begin_order_refund($1,'admin',$2,$3::jsonb,false,0,$4,null,'requested_by_customer',null,false,$5,null,$6::jsonb)`,
+    [f.orderId, key, JSON.stringify([{ order_item_id: f.itemId, before_shipment: before, quantity }]), amount, f.actor,
+      pricing === null ? null : JSON.stringify(pricing)])).rows[0] as { refund_id: string; amount: number; replayed: boolean };
+}
+/** 発送前の取り消しの値段の計画。写しの無い注文は null。 */
+export async function cancelPlanFor(db: PgClient, orderId: string, orderItemId: string, quantity: number) {
+  const materials = await materialsOf(db, orderId);
+  return materials ? planUnitEvent(materials, { kind: 'pre_shipment_cancel', cancels: [{ orderItemId, quantity }] }) : null;
 }
 export async function hResult(db: PgClient, id: string, status: 'pending' | 'succeeded' | 'failed') {
   return (await db.query("select * from public.record_order_refund_result($1,$2,$3,null,$4,null,'card',null,null)",
@@ -77,6 +86,47 @@ const UNIT_LIST_OVERLOADS = Object.freeze([
 const RECEIVE_ARGS_14 = 'uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text';
 const RECEIVE_ARGS_15 = `${RECEIVE_ARGS_14},jsonb`;
 
+const REFUND_ARGS_15 = 'uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer';
+const REFUND_BEGIN_13 = 'uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer';
+const REFUND_RETURN_7 = 'uuid,uuid,uuid,integer,integer,text,boolean';
+
+/**
+ * 交換の印の移行 D（FREQ-642）が置き換えた返金の入口3本（コア15→16の引数、begin_order_refund 13→14、admin_refund_return 7→8）を、
+ * G1・H5 の時点の物（15・13・7の引数）に取引の中だけ戻す。H5・RR・RD の時点の受け取りと返金は、この物を呼ぶ（巻き戻しで戻る）。
+ */
+export async function installRefundEra(client: PgClient): Promise<void> {
+  const read = (name: string) => fs.readFileSync(path.join(process.cwd(), 'supabase/migrations', name), 'utf8');
+  const pick = (source: string, pattern: RegExp, label: string) => {
+    const text = source.match(pattern)?.[0];
+    if (!text) throw new Error(`REFUND_ERA_DEFINITION_MISSING:${label}`);
+    return text;
+  };
+  const h = read('20261029130400_group_h_discounts_refunds.sql');
+  const g1 = read('20261023211425_group_g1_allocation.sql');
+  await client.query(`drop function if exists public.begin_order_refund(${REFUND_BEGIN_13},jsonb); drop function if exists private.begin_order_refund(${REFUND_BEGIN_13},jsonb);
+    drop function if exists public.admin_refund_return(${REFUND_RETURN_7},jsonb); drop function if exists private.admin_refund_return(${REFUND_RETURN_7},jsonb);
+    drop function if exists private.begin_order_refund_core(${REFUND_ARGS_15},uuid)`);
+  await client.query(pick(h, /^CREATE OR REPLACE FUNCTION private\.begin_order_refund_core\([\s\S]*?^\$\$;/m, 'core'));
+  await client.query(pick(g1, /^CREATE FUNCTION private\.begin_order_refund\([\s\S]*?^\$\$;/m, 'begin'));
+  await client.query(pick(g1, /^CREATE OR REPLACE FUNCTION public\.begin_order_refund\([\s\S]*?^\$\$;/m, 'begin_public'));
+  await client.query(pick(h, /^CREATE OR REPLACE FUNCTION private\.admin_refund_return\([\s\S]*?^\$\$;/m, 'refund_return'));
+  await client.query(pick(g1, /^CREATE OR REPLACE FUNCTION public\.admin_refund_return\([\s\S]*?^\$\$;/m, 'refund_return_public'));
+  await client.query(`alter function private.begin_order_refund_core(${REFUND_ARGS_15}) owner to postgres;
+    revoke all on function private.begin_order_refund_core(${REFUND_ARGS_15}) from public, anon, authenticated, service_role;
+    alter function private.begin_order_refund(${REFUND_BEGIN_13}) owner to postgres;
+    revoke all on function private.begin_order_refund(${REFUND_BEGIN_13}) from public, anon, authenticated, service_role;
+    grant execute on function private.begin_order_refund(${REFUND_BEGIN_13}) to service_role;
+    alter function public.begin_order_refund(${REFUND_BEGIN_13}) owner to postgres;
+    revoke all on function public.begin_order_refund(${REFUND_BEGIN_13}) from public, anon, authenticated, service_role;
+    grant execute on function public.begin_order_refund(${REFUND_BEGIN_13}) to service_role;
+    alter function private.admin_refund_return(${REFUND_RETURN_7}) owner to postgres;
+    revoke all on function private.admin_refund_return(${REFUND_RETURN_7}) from public, anon, authenticated, service_role;
+    grant execute on function private.admin_refund_return(${REFUND_RETURN_7}) to service_role;
+    alter function public.admin_refund_return(${REFUND_RETURN_7}) owner to postgres;
+    revoke all on function public.admin_refund_return(${REFUND_RETURN_7}) from public, anon, authenticated, service_role;
+    grant execute on function public.admin_refund_return(${REFUND_RETURN_7}) to service_role`);
+}
+
 /**
  * 移行 RR・RD の末尾の確かめを今の DB で再生するための、取引の中だけの立て直し（巻き戻しで戻る）。移行 C（FREQ-642）が置き換えた
  * 2本を RD の時点に戻す: 14の引数の admin_receive_return（RD の本文）と、その公開の入口（G1 の本文）、RR の record_group_g_refund_result、
@@ -96,6 +146,7 @@ export async function installReceiveEra(client: PgClient): Promise<void> {
   for (const schema of ['private', 'public']) await client.query(`alter function ${schema}.admin_receive_return(${RECEIVE_ARGS_14}) owner to postgres;
     revoke all on function ${schema}.admin_receive_return(${RECEIVE_ARGS_14}) from public, anon, authenticated, service_role;
     grant execute on function ${schema}.admin_receive_return(${RECEIVE_ARGS_14}) to service_role`);
+  await installRefundEra(client);
   await client.query(restoreH4AllowlistSql({ stub: false }));
 }
 
@@ -137,6 +188,7 @@ export async function withH5ReturnBaseline(client: PgClient, work: () => Promise
     for (const schema of ['private', 'public']) await client.query(`alter function ${schema}.admin_receive_return(${RECEIVE_ARGS_14}) owner to postgres;
       revoke all on function ${schema}.admin_receive_return(${RECEIVE_ARGS_14}) from public, anon, authenticated, service_role;
       grant execute on function ${schema}.admin_receive_return(${RECEIVE_ARGS_14}) to service_role`);
+    await installRefundEra(client);
     await client.query(restoreH4AllowlistSql({ stub: false }));
     expect(sansReceive(await metadata())).toEqual(sansReceive(before));
     const bodies = (await client.query(`select p.proname,md5(replace(p.prosrc,E'\\r','')) hash

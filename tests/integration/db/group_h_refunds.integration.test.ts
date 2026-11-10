@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
 import { acceptHCheckout, hDiscount, hFailure, seedHCheckout, seedHDiscount, seedHMember, seedHOrderUnits } from './helpers/group-h-fixtures';
 import { createCatalogFixture, shipFixtureOrder } from './helpers/order-fixtures';
-import { hBegin, hClaims, hReceive, hRefundFixture, hResult, hReturn } from './helpers/group-h-refund-fixtures';
+import { cancelPlanFor, hBegin, hClaims, hReceive, hRefundFixture, hResult, hReturn } from './helpers/group-h-refund-fixtures';
 
 describeLocalDb('H5 refunds / returns (controller only)', db => {
   beforeEach(async () => { await db().query('begin'); await db().query('select pg_advisory_xact_lock(190521,1)'); });
@@ -17,7 +17,8 @@ describeLocalDb('H5 refunds / returns (controller only)', db => {
     expect((await db().query('select amount from public.order_refund_lines where refund_id=any($1::uuid[]) order by amount', [[a.refund_id, b.refund_id]])).rows).toEqual([{ amount: 17000 }, { amount: 20000 }]);
     expect((await db().query('select refunded_amount from public.orders where id=$1', [f.orderId])).rows[0].refunded_amount).toBe(37000);
     const cancel = await hRefundFixture(db());
-    await db().query("select * from public.begin_order_refund($1,'order_cancel',$2,'[]',false,null,null,null,null,'customer_request',false,$3)", [cancel.orderId, randomUUID(), cancel.actor]);
+    await db().query("select * from public.begin_order_refund($1,'order_cancel',$2,'[]',false,null,null,null,null,'customer_request',false,$3,null,$4::jsonb)",
+      [cancel.orderId, randomUUID(), cancel.actor, JSON.stringify(await cancelPlanFor(db(), cancel.orderId, cancel.itemId, 2))]);
     expect((await db().query('select sum(l.amount)::int n from public.order_refund_lines l join public.order_refunds r on r.id=l.refund_id where r.order_id=$1', [cancel.orderId])).rows[0].n).toBe(37000);
   });
   test('FREQ-551-AC-02: unit記録の無い旧注文は均等式を保ち交換は元の支払額を使う', async () => {
@@ -36,9 +37,9 @@ describeLocalDb('H5 refunds / returns (controller only)', db => {
   });
   test('FREQ-551-AC-02: 発送前と発送後を同時に選ぶと発送前から17000円と20000円を保存する', async () => {
     const f = await hRefundFixture(db(), 1);
-    const r = (await db().query("select * from public.begin_order_refund($1,'admin',$2,$3,false,0,37000,null,'requested_by_customer',null,false,$4)",
+    const r = (await db().query("select * from public.begin_order_refund($1,'admin',$2,$3,false,0,37000,null,'requested_by_customer',null,false,$4,null,$5::jsonb)",
       [f.orderId, randomUUID(), JSON.stringify([{ order_item_id: f.itemId, before_shipment: false, quantity: 1 },
-        { order_item_id: f.itemId, before_shipment: true, quantity: 1 }]), f.actor])).rows[0];
+        { order_item_id: f.itemId, before_shipment: true, quantity: 1 }]), f.actor, JSON.stringify(await cancelPlanFor(db(), f.orderId, f.itemId, 1))])).rows[0];
     expect((await db().query('select before_shipment,amount from public.order_refund_lines where refund_id=$1 order by before_shipment desc', [r.refund_id])).rows).toEqual([
       { before_shipment: true, amount: 17000 }, { before_shipment: false, amount: 20000 },
     ]);
@@ -87,11 +88,21 @@ describeLocalDb('H5 refunds / returns (controller only)', db => {
     await hResult(db(), a.refund_id, 'pending'); expect(await prior()).toMatchObject({ [items[0].item_id]: 1 });
     await hResult(db(), a.refund_id, 'succeeded');
     // 移行 A（FREQ-642）から、枠のある注文の前の注文の着数は手元にある（kept）枠の数。発送後の品を返品なしで選ぶ返金は着の状態を変えない
-    // （設計書 2-3）ので、成功した返金でも 1 のまま。発送前の取り消しの返金で枠を動かすのは、後の作業（設計書 4-1・Task 6）。
+    // （設計書 2-3）ので、成功した返金でも 1 のまま。発送前の取り消し・返品の受け取りは枠を動かし、着数を減らす（移行 D、設計書 4-4・FREQ-642-AC-28）。
     expect((await prior())[String(items[0].item_id)]).toBe(1);
     expect((await prior())[String(items[1].item_id)]).toBe(1);
     expect((await hClaims(db(), items[1].id))[0].paid_amount).toBe(17000);
     expect((await db().query('select state from public.discount_redemptions where order_id=$1', [order.order_id])).rows).toEqual([{ state: 'confirmed' }]);
+    // 発送前の取り消しと返品の受け取りは、同じ会員の前の注文の着数を減らす（返金の成功を待たない）
+    const priorOf = async (itemId: number) => (await db().query("select public.get_checkout_discount_context($1,null,'{}',$2,now(),'confirm') j", [buyer, [itemId]])).rows[0].j.facts.priorUnitsByItem[String(itemId)];
+    const unshipped = await hRefundFixture(db(), false, 2, 3000, buyer);
+    expect(await priorOf(unshipped.catalog.itemId)).toBe(2);
+    await hBegin(db(), unshipped, 17000, true);
+    expect(await priorOf(unshipped.catalog.itemId)).toBe(1);
+    const shipped = await hRefundFixture(db(), true, 2, 3000, buyer);
+    expect(await priorOf(shipped.catalog.itemId)).toBe(2);
+    await hReceive(db(), shipped, await hReturn(db(), shipped, 1), 1, 'now');
+    expect(await priorOf(shipped.catalog.itemId)).toBe(1);
   });
   test('FREQ-551-AC-02: Stripeの管理画面からの返金も安い着から取り同じ着を二度返さない', async () => {
     const f = await hRefundFixture(db()); const a = await hBegin(db(), f, 17000, true); await hResult(db(), a.refund_id, 'succeeded');

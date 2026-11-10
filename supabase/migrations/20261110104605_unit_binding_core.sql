@@ -42,10 +42,10 @@ BEGIN
     OR OLD.order_id IS DISTINCT FROM NEW.order_id OR OLD.item_id IS DISTINCT FROM NEW.item_id THEN
     RAISE EXCEPTION 'UNIT_SLOT_IMMUTABLE' USING ERRCODE = '55000', DETAIL = 'key';
   END IF;
-  -- A returned slot keeps its price and holder, except in the revert path below.
+  -- A returned slot keeps its price, holder and last event, except in the revert path below.
   IF OLD.state IN ('returned_customer', 'returned_shop') AND NOT (OLD.state = 'returned_shop' AND NEW.state = 'kept')
     AND (NEW.current_price IS DISTINCT FROM OLD.current_price OR NEW.holder_order_item_id IS DISTINCT FROM OLD.holder_order_item_id
-      OR NEW.holder_unit_index IS DISTINCT FROM OLD.holder_unit_index) THEN
+      OR NEW.holder_unit_index IS DISTINCT FROM OLD.holder_unit_index OR NEW.last_event_id IS DISTINCT FROM OLD.last_event_id) THEN
     RAISE EXCEPTION 'UNIT_SLOT_IMMUTABLE' USING ERRCODE = '55000', DETAIL = 'frozen';
   END IF;
   IF NEW.state IS DISTINCT FROM OLD.state AND OLD.state IN ('kept', 'returned_customer', 'returned_shop')
@@ -143,7 +143,7 @@ BEGIN
   LEFT JOIN LATERAL (
     SELECT pg_catalog.sum(el.allocation) AS total
     FROM public.order_unit_event_lines AS el JOIN public.order_unit_events AS ev ON ev.id = el.event_id
-    WHERE el.order_item_id = s.order_item_id AND el.unit_index = s.unit_index
+    WHERE el.order_item_id = s.order_item_id AND el.unit_index = s.unit_index AND ev.kind <> 'cancel_reverted'
       AND NOT EXISTS (SELECT 1 FROM public.order_unit_events AS r WHERE r.reverts_event_id = ev.id)
   ) AS al ON true
   LEFT JOIN LATERAL (
@@ -232,7 +232,7 @@ AS $$
     s.order_id, s.item_id, s.state, s.current_price, s.holder_order_item_id, s.holder_unit_index, u.paid_amount,
     COALESCE((SELECT pg_catalog.sum(el.allocation) FROM public.order_unit_event_lines AS el
       JOIN public.order_unit_events AS ev ON ev.id = el.event_id
-      WHERE el.order_item_id = f.order_item_id AND el.unit_index = f.unit_index
+      WHERE el.order_item_id = f.order_item_id AND el.unit_index = f.unit_index AND ev.kind <> 'cancel_reverted'
         AND NOT EXISTS (SELECT 1 FROM public.order_unit_events AS r WHERE r.reverts_event_id = ev.id)), 0)::integer,
     EXISTS (SELECT 1 FROM private.accounting_shipped_units(f.order_item_id, NULL) AS x WHERE x.unit_index = f.unit_index)
   FROM private.order_unit_plan_lines(_plan) AS f
@@ -314,7 +314,7 @@ BEGIN
   -- (4) a state moves kept -> returned_*; a kept line and a hold line keep the state (a hold line also the price)
   IF EXISTS (SELECT 1 FROM private.order_unit_plan_lines(_plan) AS f WHERE CASE f.line_kind
       WHEN 'returned' THEN NOT (f.state_before = 'kept' AND f.state_after IN ('returned_customer', 'returned_shop')) OR v_kind = 'hold_release'
-        OR (v_kind = 'pre_shipment_cancel' AND (f.state_after <> 'returned_shop' OR f.shipped))
+        OR (v_kind = 'pre_shipment_cancel' AND (f.state_after <> 'returned_shop' OR (f.shipped AND f.holder_order_item_id = f.order_item_id)))
         OR (v_kind = 'return_receive' AND NOT f.shipped)
       WHEN 'kept' THEN NOT (f.state_before = 'kept' AND f.state_after = 'kept') OR v_kind = 'hold_release'
       ELSE NOT (f.state_before = f.state_after AND f.price_before = f.price_after) END) THEN
@@ -479,18 +479,19 @@ BEGIN
 END;
 $$;
 
--- What a return's events owe in goods and what the refunds tied to them already cover (awaiting_response, pending, succeeded, error).
--- The shipping part of a refund is not E, so it is not counted. Not below 0.
+-- What the consult part of a return's events owes in goods and what the consult refunds tied to them already cover (awaiting_response,
+-- pending, succeeded, error). The now part is settled by the receive (a manager may lower it; that never comes back as an outstanding
+-- amount, 2-1). The shipping part of a refund is not E, so it is not counted. Not below 0.
 CREATE FUNCTION private.order_unit_outstanding(_return_id uuid) RETURNS integer
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
 AS $$
   SELECT GREATEST(
-    COALESCE((SELECT pg_catalog.sum(e.standard_refund) FROM public.order_unit_events AS e WHERE e.return_id = _return_id
+    COALESCE((SELECT pg_catalog.sum(e.consult_refund) FROM public.order_unit_events AS e WHERE e.return_id = _return_id
       AND NOT EXISTS (SELECT 1 FROM public.order_unit_events AS r WHERE r.reverts_event_id = e.id)), 0)
     - COALESCE((SELECT pg_catalog.sum(rf.amount - rf.shipping_amount) FROM public.order_refunds AS rf
       WHERE rf.status IN ('awaiting_response', 'pending', 'succeeded', 'error')
         AND rf.id IN (SELECT er.refund_id FROM public.order_unit_event_refunds AS er
-          JOIN public.order_unit_events AS e ON e.id = er.event_id WHERE e.return_id = _return_id)), 0),
+          JOIN public.order_unit_events AS e ON e.id = er.event_id WHERE e.return_id = _return_id AND er.part = 'consult')), 0),
     0)::integer
 $$;
 -- UBC_FUNCTIONS_END
@@ -555,21 +556,21 @@ BEGIN
   -- ubc_functions: owner, security, settings, volatility, result type and the exact body of every function of this file.
   IF v_detail IS NULL THEN
     FOR e IN SELECT * FROM (VALUES
-      ('private', 'order_unit_slot_guard()', 'trigger', 'v', true, '67215a81245148dd3ea65c6c4e39a39b'),
+      ('private', 'order_unit_slot_guard()', 'trigger', 'v', true, '963c55ccbcb5af08f8a974acd4f082fe'),
       ('private', 'order_unit_related_orders(uuid)', 'uuid[]', 's', true, '4008d3582ba5b9a27d834f2dced4a581'),
       ('private', 'order_unit_version(uuid)', 'text', 's', true, 'a3cc30f7ba6329a8dfb6a772d5b662c1'),
       ('private', 'order_unit_totals(uuid)', 'record', 's', true, '4aaecb3c271c62f983ef1d03480f1a4a'),
-      ('private', 'order_unit_order_state(uuid)', 'jsonb', 's', true, '1687dce7016aebf3572358815f98e6bf'),
+      ('private', 'order_unit_order_state(uuid)', 'jsonb', 's', true, 'a626d03293f51dec76627275ab4f77f7'),
       ('private', 'order_unit_pricing_materials(uuid)', 'jsonb', 's', true, 'f878db0be13a6dcf17cab5e381458f65'),
       ('public', 'order_unit_pricing_materials(uuid)', 'jsonb', 's', false, 'ce0476c87fa38d6e984c9cbe4a045034'),
       ('private', 'order_unit_plan_lines(jsonb)', 'record', 's', false, 'dc5b50fea718dcbe9b6a66a9dec003e2'),
       ('private', 'order_unit_plan_holds(jsonb)', 'record', 's', false, '3e441b7352524983a7097a25df2e06b3'),
-      ('private', 'order_unit_plan_line_facts(jsonb)', 'record', 's', false, '3f7c0645a3dd3e0b01feef6578499f7f'),
-      ('private', 'order_unit_apply_plan(jsonb,uuid,uuid,uuid,uuid)', 'uuid', 'v', true, 'f6d961168d661a1d6a4b548622753b7e'),
+      ('private', 'order_unit_plan_line_facts(jsonb)', 'record', 's', false, '604261a576d579c2f6ae4b3dbd25b866'),
+      ('private', 'order_unit_apply_plan(jsonb,uuid,uuid,uuid,uuid)', 'uuid', 'v', true, '8735f95cadb6c7c60e9f9f305ba64d3e'),
       ('private', 'group_h_claim_refund_units(uuid,uuid,integer[],boolean,uuid)', 'integer', 'v', true, '122b4819f9926b5e249861bb34f7ef90'),
       ('private', 'group_h_release_return_units(uuid,integer[])', 'void', 'v', true, '2321e7f708f89c92e8a19a32fe847836'),
       ('private', 'order_unit_link_refund(uuid,uuid,text)', 'void', 'v', true, '8b66fac61cc6a28bf9a4b2d634efb213'),
-      ('private', 'order_unit_outstanding(uuid)', 'integer', 's', true, '88076b5e836087528cf5678bbb087e1f')
+      ('private', 'order_unit_outstanding(uuid)', 'integer', 's', true, 'e88a1ca4dad572c67701331c1e9a1378')
     ) AS expected(schema_name, signature, result_type, volatility, definer, body_md5) LOOP
       v_oid := pg_catalog.to_regprocedure(e.schema_name || '.' || e.signature);
       SELECT f.* INTO p FROM pg_catalog.pg_proc AS f WHERE f.oid = v_oid;
