@@ -6,6 +6,7 @@ import {
   firstErrorFieldId,
   formatMonthDay,
   hasSendingPhotos,
+  estimateTextOf,
   itemLabel,
   lineDomId,
   lineKey,
@@ -362,6 +363,14 @@ describe('buildConfirmSummary', () => {
     expect(buildConfirmSummary(free, draft, photos).shipping).toBe('返送料: 当店が負担します（着払いでお送りください）');
   });
 
+  it('shopLabelCharge は、お客様の負担でお店の送り状の定額が1円以上の時だけ真', () => {
+    const customerOnly: RequestDraft = { [K_PANTS]: input({ reason: 'size_too_small' }) };
+    expect(buildConfirmSummary(withFees({ customerPaidMethod: 'shop_label', shopLabelFee: 800 }), customerOnly, {}).shopLabelCharge).toBe(true);
+    expect(buildConfirmSummary(withFees({ customerPaidMethod: 'shop_label', shopLabelFee: 0 }), customerOnly, {}).shopLabelCharge).toBe(false);
+    expect(buildConfirmSummary(withFees({ customerPaidMethod: 'customer_ships', shopLabelFee: 800 }), customerOnly, {}).shopLabelCharge).toBe(false);
+    expect(buildConfirmSummary(withFees({ customerPaidMethod: 'shop_label', shopLabelFee: 800 }), draft, photos).shopLabelCharge).toBe(false);
+  });
+
   it('手数料は、設定で使う物（0より大きい物）のうち、この申し込みに関わる物だけ出す', () => {
     const fees = withFees({ restockingFeePercent: 10, exchangeFee: 500, exchangeShippingFee: 1200 });
     const refundOnly: RequestDraft = { [K_PANTS]: input({ reason: 'size_too_small' }) };
@@ -433,5 +442,20 @@ describe('破損・不良と注文と違う品', () => {
   it('FREQ-642-AC-30: 破損・不良・注文と違う品の設定（交換だけ）では、ご希望は交換だけで返金は出ない', () => {
     expect(resolutionOptionsOf('exchange_only', true)).toEqual(['exchange']);
     expect(resolutionOptionsOf('exchange_only', true)).not.toContain('refund');
+  });
+});
+
+describe('estimateTextOf', () => {
+  const base = { lines: [], shipping: '返送料: お客様のご負担です', fees: [], feeNote: null, shopLabelCharge: false };
+
+  it.each([
+    ['待っている間', undefined, base, ''],
+    ['出せなかった時', null, base, '返金の額は受け取りの後にお知らせします'],
+    ['返金がある時', { refundAmount: 17000, moneyMoves: true }, base, '返金の見込み: 17,000円'],
+    ['お金が動かず何も差し引かない時', { refundAmount: 0, moneyMoves: false }, base, 'お金のやり取りはありません'],
+    ['お金が動かないが手数料がある時', { refundAmount: 0, moneyMoves: false }, { ...base, fees: ['交換の手数料: ￥500'], feeNote: 'x' }, ''],
+    ['お金が動かないがお店の送り状の返送料を差し引く時', { refundAmount: 0, moneyMoves: false }, { ...base, shopLabelCharge: true }, ''],
+  ] as const)('FREQ-642-AC-21: %s', (_name, estimate, summary, expected) => {
+    expect(estimateTextOf(estimate as never, summary as never)).toBe(expected);
   });
 });

@@ -45,6 +45,7 @@ const SUMMARY: ConfirmSummary = {
   shipping: '返送料: 当店が負担します（着払いでお送りください）',
   fees: ['返品の手数料: ご返金の商品の額の 10%'],
   feeNote: '手数料はご返金から差し引きます。差し引けない分は、お支払いのご案内をお送りします。',
+  shopLabelCharge: false,
 };
 
 function setup(summary: ConfirmSummary = SUMMARY) {
@@ -102,6 +103,7 @@ describe('ReturnRequestConfirm の内容', () => {
       shipping: '返送料: お客様のご負担です',
       fees: [],
       feeNote: null,
+      shopLabelCharge: false,
     });
 
     expect(screen.getByText('返送料: お客様のご負担です')).toBeInTheDocument();
@@ -121,6 +123,7 @@ describe('ReturnRequestConfirm の内容', () => {
       shipping: '返送料: お客様のご負担です',
       fees: [],
       feeNote: null,
+      shopLabelCharge: false,
     });
 
     const note = screen.getByText(/袖.*が短い/);
@@ -399,7 +402,7 @@ describe('ReturnRequestConfirm の返金の見込み', () => {
 
   it('FREQ-642-AC-21: お店の送り状の返送料（ご返金から差し引く）があれば「お金のやり取りはありません」は出さない', async () => {
     mockEstimate.mockResolvedValue({ refundAmount: 0, moneyMoves: false });
-    setup({ ...SUMMARY, fees: [], feeNote: null, shipping: '返送料: ￥800（ご返金から差し引きます）' });
+    setup({ ...SUMMARY, fees: [], feeNote: null, shopLabelCharge: true });
 
     await waitFor(() => expect(mockEstimate).toHaveBeenCalled());
     expect(screen.queryByText('お金のやり取りはありません')).not.toBeInTheDocument();

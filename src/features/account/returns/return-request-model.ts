@@ -403,7 +403,14 @@ export type ConfirmLine = {
   wish: string;
   photos: string | null;
 };
-export type ConfirmSummary = { lines: ConfirmLine[]; shipping: string; fees: string[]; feeNote: string | null };
+export type ConfirmSummary = {
+  lines: ConfirmLine[];
+  shipping: string;
+  fees: string[];
+  feeNote: string | null;
+  /** お店の送り状の返送料をご返金から差し引く（お金が動く）か */
+  shopLabelCharge: boolean;
+};
 
 /**
  * 「内容を確かめる」の段に出す文（C-5）。手数料は設定で使う物（0より大きい物）のうち、この申し込みに関わる物だけ出す
@@ -456,7 +463,8 @@ export function buildConfirmSummary(materials: CustomerReturnRequestMaterials, d
   }
   // 手数料がある時だけ添え書きを付ける。返金の品があれば返金から差し引く文、交換だけなら（差し引く返金が無いので）お支払いのご案内の文
   const feeNote = fees.length === 0 ? null : hasRefund ? REQUEST_TEXT.feeNoteWithRefund : REQUEST_TEXT.feeNoteExchangeOnly;
-  return { lines, shipping, fees, feeNote };
+  const shopLabelCharge = terms.payer !== 'shop' && terms.method === 'shop_label' && materials.fees.shopLabelFee > 0;
+  return { lines, shipping, fees, feeNote, shopLabelCharge };
 }
 
 /**
@@ -467,7 +475,8 @@ export function estimateTextOf(estimate: CustomerReturnEstimate | null | undefin
   if (estimate === undefined) return '';
   if (estimate === null) return REQUEST_TEXT.estimateUnavailable;
   if (estimate.moneyMoves) return REQUEST_TEXT.estimateRefund(estimate.refundAmount);
-  const hasCharge = summary.fees.length > 0 || summary.feeNote !== null || summary.shipping.includes('差し引きます');
+  // 添え書き（feeNote）は手数料がある時だけ付くので、手数料の有無だけ見ればよい
+  const hasCharge = summary.fees.length > 0 || summary.shopLabelCharge;
   return hasCharge ? '' : REQUEST_TEXT.estimateNoMoney;
 }
 
