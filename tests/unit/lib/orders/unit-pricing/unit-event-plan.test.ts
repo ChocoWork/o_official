@@ -17,7 +17,7 @@ describe('DD-ADMIN-021: 設計書3章の例の返す額', () => {
     ['FREQ-642-AC-08 例8 セット 不良のパンツ', set(), retPants('shop'), 8500],
     ['FREQ-642-AC-08 例12 セット 不良のジャケット', set(), retJacket('shop'), 20000],
     ['FREQ-642-AC-08 例13 ジャケットとパンツだけ 不良のジャケット', pairSet(), retJacket('shop'), 17000],
-    ['FREQ-642-AC-29 例13 をご都合で返すと', pairSet(), retJacket('customer'), 15500],
+    ['FREQ-642-AC-08 例13 をご都合で返すと', pairSet(), retJacket('customer'), 15500],
     ['FREQ-642-AC-29 例14 10%引き ジャケットを返す', percent10(), retJacket('customer'), 18000],
     ['FREQ-642-AC-29 例15 30,000円以上で1,000円引き パンツを返す', threshold(), retPants('customer'), 9000],
     ['FREQ-642-AC-29 例15 交換できず返金', threshold(), retPants('shop'), 9667],

@@ -1623,7 +1623,7 @@ DB結合・単体の実測は各Taskの実装者と調整役の報告のとお�
 | AC-27 注文全体の取り消し | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-27: 注文全体の取り消しは全部の枠が returned_shop で払った合計を返す`。`tests/unit/lib/orders/unit-pricing/unit-pricing-service.test.ts`：`FREQ-642-AC-27: 発送前の品を選ぶ返金は計画を作り…` |
 | AC-30 店長が交換を返金に変える | `tests/integration/db/unit-binding-receive.integration.test.ts`：`FREQ-642-AC-30: 交換の頼みを返金に変えた行は、お店の側の事情で返った枠になる（17,000円）`（2026-11-11 足した）。`tests/unit/lib/orders/unit-pricing/unit-pricing-service.test.ts`：`FREQ-642-AC-26: 交換の頼みを店が返金に変えた行は shop の扱いで…` |
 
-穴: 受け入れ条件31件のすべてに、題の先頭に ID を持つ試験が結び付く（2026-11-11 の `npm run report:traceability`）。ただし単体の純関数だけで確かめている条件がある（AC-01・08・11・13・24・29 の一部。`unit-event-plan.test.ts`）。DB・画面で確かめていない分岐は下の「まだ試していない分岐」に書く。AC-01 の「残る着は手元にある」は `unit-binding-receive.integration.test.ts` の AC-02 の試験に足した確かめ（未実行。調整役が流す）。
+穴: 受け入れ条件31件のすべてに、題に ID を持つ試験が結び付く（2026-11-11 の `npm run report:traceability`）。ただし単体の純関数だけで確かめている条件がある（AC-01・08・11・13・24・29 の一部。`unit-event-plan.test.ts`）。DB・画面で確かめていない分岐は下の「まだ試していない分岐」に書く。AC-01 の「残る着は手元にある」は `unit-binding-receive.integration.test.ts` の AC-02 の試験に足した確かめ（未実行。調整役が流す）。
 
 ### 流し方と限り
 
