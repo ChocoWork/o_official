@@ -165,7 +165,6 @@ describeLocalDb('FREQ-642-AC-17: unit binding receive (controller only)', (db) =
     const linksBefore = await linksOf(f.orderId);
     expect(linksBefore).toHaveLength(1);
     // 在庫を0にしてから、同じ行の2着目を今すぐ返金に変えて受け取る（店の側の扱い）
-    await q('delete from public.stock_movements where false');
     const free = Number((await q('select stock_quantity n from public.item_variants where id=$1', [f.catalog.variantId])).rows[0].n);
     if (free > 0) await insertRestockMovement(db(), f.catalog.variantId, -free);
     const now = await ubReceive(db(), { returnId: ret.returnId, actorId: f.actor, choice: 'now', units: [unit(line)],
@@ -174,21 +173,26 @@ describeLocalDb('FREQ-642-AC-17: unit binding receive (controller only)', (db) =
     await q("select * from public.mark_order_refund_error($1,'stripe_rejected',false)", [now.refund_id]);
     await hResult(db(), now.refund_id, 'succeeded');
     await hResult(db(), ordinary.refund_id, 'succeeded');
-    // 実際の限度: 受け取りの返金（E の流れ）の合計は E の最高以内、全部の返金は払った額以内
+    // 実際の限度: 受け取りの返金（E の流れ）は E の最高以内。全部の返金（どの source も）では、遅く成功した通常の返金の分だけ E の最高を超える。
+    // Task 6 が写しのある注文の通常の返金に着の取り押さえを残させたら、これは allRefunded <= entitlementMax と支払いの例外0件に変わる
     const max = Number((await q('select entitlement_max n from private.order_unit_totals($1)', [f.orderId])).rows[0].n);
     const viaEvents = Number((await q(`select coalesce(sum(amount - shipping_amount),0) n from public.order_refunds
       where order_id=$1 and source='return' and status<>'failed'`, [f.orderId])).rows[0].n);
+    const allRefunded = await refundedTotal(f.orderId);
     expect(viaEvents).toBeLessThanOrEqual(max);
-    expect(await refundedTotal(f.orderId)).toBeLessThanOrEqual(37000);
-    // 着ごとの割り振りは払った額以内。1着を2つの返金が握らない（取り押さえの列は1つ）
+    expect(allRefunded - Number(ordinary.amount)).toBeLessThanOrEqual(max);
+    expect(allRefunded - max).toBe(Number(ordinary.amount));
+    expect(allRefunded).toBeLessThanOrEqual(37000);
+    // 着ごとの割り振り（この注文の出来事だけ）は払った額以内
     expect((await q(`select count(*)::int n from (select el.order_item_id, el.unit_index from public.order_unit_event_lines el
+      join public.order_unit_events ev on ev.id=el.event_id and ev.order_id=$1
       join public.order_line_unit_amounts u on u.order_item_id=el.order_item_id and u.unit_index=el.unit_index
-      group by el.order_item_id, el.unit_index, u.paid_amount having sum(el.allocation) > u.paid_amount) x`)).rows[0].n).toBe(0);
+      group by el.order_item_id, el.unit_index, u.paid_amount having sum(el.allocation) > u.paid_amount) x`, [f.orderId])).rows[0].n).toBe(0);
     const claimed = (await q('select refund_id, count(*)::int n from public.order_line_unit_amounts where order_item_id=$1 and refund_id is not null group by 1', [f.itemId])).rows;
     for (const c of claimed) expect(c.n).toBeLessThanOrEqual(1);
     expect(await linksOf(f.orderId)).toEqual(linksBefore);
     // error で外れた通常の返金の着を、その後の受け取りの返金が使った。通常の返金の遅い成功は着を取り直せず、見直しの印（支払いの例外）になる。
-    // この道（通常の返金の取り押さえを着の出来事に合わせる）は Task 6 が直す。返し過ぎにはならず、受け取りの返金と交換の結びは動かない
+    // この道（通常の返金の取り押さえを着の出来事に合わせる）は Task 6 が直す。今は E の最高を通常の返金の額だけ超えるが、見直しの印が残り、受け取りの返金と交換の結びは動かない
     expect((await q('select detail,payment_ref from public.payment_exceptions where order_id=$1', [f.orderId])).rows)
       .toEqual([{ detail: 'group_h_refund_unit_mismatch', payment_ref: ordinary.refund_id }]);
   });
