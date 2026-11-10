@@ -216,7 +216,8 @@ describeLocalDb('受取明細の列・制約・ACL・本文・書き手77本（c
         coalesce((select array_agg(a.grantee::regrole::text order by a.grantee::regrole::text)
           from aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
           where a.grantee<>p.proowner and a.privilege_type='EXECUTE'),'{}') other_executors
-        from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='private' and p.proname=$1`, [name])).rows;
+        from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='private' and p.proname=$1
+          and pg_get_function_identity_arguments(p.oid) !~ 'integer\\[\\]'`, [name])).rows; // the unit-list overloads of migration B are not part of RR
       // public.admin_receive_return is SECURITY INVOKER, so service_role keeps EXECUTE on this private body only.
       expect(rows).toHaveLength(1); expect(rows[0]).toMatchObject({ hash: md5(expected!.body), owned: true,
         other_executors: name === 'admin_receive_return' ? ['service_role'] : [] });
@@ -230,6 +231,8 @@ describeLocalDb('受取明細の列・制約・ACL・本文・書き手77本（c
     // A missing migration/assertion is a source-contract failure, never a caught database rejection.
     expect(assertion).not.toBe('');
     return failure(db(), async () => {
+      // The RR assertion counts functions by name; migration B's unit-list overloads are put back by the rollback.
+      await db().query('drop function if exists private.group_h_claim_refund_units(uuid,uuid,integer[],boolean,uuid); drop function if exists private.group_h_release_return_units(uuid,integer[])');
       for (const baseline of baselines) await db().query(baseline);
       if (change) await change(); await db().query(currentAssertion);
     });

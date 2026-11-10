@@ -13,6 +13,8 @@ export type HOrderSeed = {
   lines: readonly { itemPrice: number; quantity: number; discounts: readonly { discountId: string; amount: number }[];
     unitAmounts: readonly number[]; catalog?: HCatalog }[];
   legacy: boolean; buyerUserId?: string; email?: string; paidAt?: string | null; status?: OrderStatus; shippingAmount?: number;
+  /** Order creation time (the column is immutable afterwards); defaults to now(). */
+  createdAt?: string;
 };
 
 export const hDiscount = (overrides: Partial<DiscountSeed> = {}): DiscountSeed => ({
@@ -100,10 +102,10 @@ export async function seedHOrderUnits(client: PgClient, input: HOrderSeed): Prom
   const discount = input.lines.reduce((sum, line) => sum + line.discounts.reduce((n, d) => n + d.amount, 0), 0);
   const orderId = (await client.query(`insert into public.orders
     (session_id,checkout_session_id,status,subtotal_amount,shipping_amount,discount_amount,total_amount,currency,
-     user_id,paid_at,shipping_email,shipping_full_name,shipping_postal_code,shipping_prefecture,shipping_city,shipping_address,shipping_phone)
-    values($1,$2,$3,$4,$10,$5,$6,'jpy',$7,$8,$9,'Fixture','1500001','Tokyo','Tokyo','Fixture','0311112222') returning id`,
+     user_id,paid_at,shipping_email,shipping_full_name,shipping_postal_code,shipping_prefecture,shipping_city,shipping_address,shipping_phone,created_at)
+    values($1,$2,$3,$4,$10,$5,$6,'jpy',$7,$8,$9,'Fixture','1500001','Tokyo','Tokyo','Fixture','0311112222',coalesce($11::timestamptz,now())) returning id`,
   [`h-${randomUUID()}`, `cs_h_${randomUUID()}`, input.status ?? 'paid', subtotal, discount, subtotal - discount + (input.shippingAmount ?? 0),
-    input.buyerUserId ?? null, input.paidAt === undefined ? new Date().toISOString() : input.paidAt, input.email ?? 'h@example.invalid', input.shippingAmount ?? 0])).rows[0].id as string;
+    input.buyerUserId ?? null, input.paidAt === undefined ? new Date().toISOString() : input.paidAt, input.email ?? 'h@example.invalid', input.shippingAmount ?? 0, input.createdAt ?? null])).rows[0].id as string;
   const orderItemIds: string[] = [];
   for (const line of input.lines) {
     const catalog = line.catalog ?? await createCatalogFixture(client);
@@ -201,4 +203,21 @@ export async function acceptHCheckout(client: PgClient, f: Awaited<ReturnType<ty
   const args = [f.draftId, f.checkoutSessionId, f.sessionId, f.result.totalAmount, f.result.discountAmount, 'jpy', new Date(), f.paymentIntentId, ...(state ? [state] : [[], f.userId])];
   const row = (await client.query(`select * from public.${fn}(${args.map((_, i) => `$${i + 1}`).join(',')})`, args)).rows[0] as { order_id: string | null; order_status: OrderStatus | null; created: boolean; rejection: string | null };
   await client.query('reset role'); return row;
+}
+
+/**
+ * Snapshot row and one kept slot per unit for an order made by seedHOrderUnits (non-legacy). This is what
+ * private.group_h_copy_order_discounts writes at acceptance (FREQ-642). Without `snapshot` the order carries no discount definitions.
+ */
+export async function seedHUnitSlots(client: PgClient, input: { orderId: string; snapshot?: {
+  engineVersion?: number; definitions?: unknown[]; codes?: string[]; facts?: unknown; lines?: unknown[] } }): Promise<void> {
+  const s = input.snapshot ?? {};
+  await client.query(`insert into public.order_discount_snapshots(order_id,engine_version,definitions,codes,facts,lines)
+    values($1,$2,$3::jsonb,$4::text[],$5::jsonb,$6::jsonb)`,
+  [input.orderId, s.engineVersion ?? 1, JSON.stringify(s.definitions ?? []), s.codes ?? [],
+    JSON.stringify(s.facts ?? { priorUnitsByItem: {}, buyer: { kind: 'guest', normalizedEmail: 'h@example.invalid' }, hasPreviousOrder: false,
+      hasFirstOrderReservation: false, usage: [], at: new Date().toISOString() }), JSON.stringify(s.lines ?? [])]);
+  await client.query(`insert into public.order_unit_slots(order_item_id,unit_index,order_id,item_id,current_price,holder_order_item_id,holder_unit_index)
+    select u.order_item_id,u.unit_index,u.order_id,oi.item_id,u.paid_amount,u.order_item_id,u.unit_index
+    from public.order_line_unit_amounts u join public.order_items oi on oi.id=u.order_item_id where u.order_id=$1`, [input.orderId]);
 }

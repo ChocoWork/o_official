@@ -62,6 +62,12 @@ export const H5_RETURN_FUNCTION_NAMES = Object.freeze([
   'group_h_claim_refund_units', 'record_group_g_refund_result', 'group_h_return_refund_amount',
 ]);
 
+/** Migration B (unit binding) adds unit-list overloads of two of these names; the H5 and RR assertions know only the original ones. */
+const H5_ORIGINAL_ONLY = "pg_get_function_identity_arguments(p.oid) !~ 'integer\\[\\]'";
+const UNIT_LIST_OVERLOADS = Object.freeze([
+  'private.group_h_claim_refund_units(uuid,uuid,integer[],boolean,uuid)', 'private.group_h_release_return_units(uuid,integer[])',
+]);
+
 /** Restore only function definitions, never the H5 triggers, grants or final assertion. */
 export async function withH5ReturnBaseline(client: PgClient, work: () => Promise<void>): Promise<void> {
   if (!(await isInTransaction(client))) throw new Error('H5_RETURN_TRANSACTION_REQUIRED');
@@ -71,11 +77,11 @@ export async function withH5ReturnBaseline(client: PgClient, work: () => Promise
     p.proargtypes::text,p.proallargtypes,p.proargmodes,p.prolang,p.proisstrict,p.proparallel,
     pg_get_expr(p.proargdefaults,0) defaults
     from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-    where n.nspname='private' and p.proname=any($1::text[]) order by p.oid`, [H5_RETURN_FUNCTION_NAMES])).rows;
+    where n.nspname='private' and p.proname=any($1::text[]) and ${H5_ORIGINAL_ONLY} order by p.oid`, [H5_RETURN_FUNCTION_NAMES])).rows;
   const before = await metadata();
   const bodyHashes = async () => (await client.query(`select p.oid,md5(replace(p.prosrc,E'\\r','')) hash
     from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-    where n.nspname='private' and p.proname=any($1::text[]) order by p.oid`, [H5_RETURN_FUNCTION_NAMES])).rows;
+    where n.nspname='private' and p.proname=any($1::text[]) and ${H5_ORIGINAL_ONLY} order by p.oid`, [H5_RETURN_FUNCTION_NAMES])).rows;
   const currentBodies = await bodyHashes();
   expect(before).toHaveLength(11);
   await client.query('savepoint h5_return_baseline');
@@ -88,12 +94,14 @@ export async function withH5ReturnBaseline(client: PgClient, work: () => Promise
     expect(await metadata()).toEqual(before);
     const bodies = (await client.query(`select p.proname,md5(replace(p.prosrc,E'\\r','')) hash
       from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-      where n.nspname='private' and p.proname=any($1::text[]) order by p.proname`, [H5_RETURN_FUNCTION_NAMES])).rows;
+      where n.nspname='private' and p.proname=any($1::text[]) and ${H5_ORIGINAL_ONLY} order by p.proname`, [H5_RETURN_FUNCTION_NAMES])).rows;
     for (const body of bodies) {
       const hash = sql.match(new RegExp(`'private\\.${body.proname}\\([^']*\\)'[^\\n]*'([a-f0-9]{32})'`))?.[1];
       expect(hash).toMatch(/^[a-f0-9]{32}$/);
       expect(body.hash).toBe(hash);
     }
+    // The older assertions count functions by name, so they run without the overloads (the savepoint puts them back).
+    for (const signature of UNIT_LIST_OVERLOADS) await client.query(`drop function if exists ${signature}`);
     await work();
   } finally {
     await client.query('rollback to savepoint h5_return_baseline');

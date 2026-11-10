@@ -10,6 +10,8 @@ const directory = path.join(process.cwd(), 'supabase', 'migrations');
 const file = fs.readdirSync(directory).find((name) => name.endsWith('_unit_binding_schema.sql'));
 const sql = file ? fs.readFileSync(path.join(directory, file), 'utf8') : '';
 
+// Migration B removed the DEFAULT 0 of the amount columns, so every insert names them.
+const EVENT_COLUMNS = '(order_id,kind,entitlement_previous,entitlement_max_before,entitlement_gross,entitlement_shop_only,fee_amount,hold_total,entitlement,standard_refund,now_refund,consult_refund)';
 const TABLES = ['order_discount_snapshots', 'order_unit_slots', 'order_unit_exchange_links', 'order_unit_events',
   'order_unit_event_lines', 'order_unit_holds', 'order_unit_event_refunds', 'order_return_line_treatments'];
 
@@ -125,7 +127,7 @@ describeLocalDb('FREQ-642-AC-20: unit binding schema (controller only)', (db) =>
       await db().query('set local role authenticated');
       await db().query("update public.order_unit_slots set state='returned_shop' where order_id=$1", [order.orderId]);
     })).toMatchObject({ code: '42501' });
-    const eventId = (await db().query("insert into public.order_unit_events(order_id,kind) values($1,'return_receive') returning id", [order.orderId])).rows[0].id as string;
+    const eventId = (await db().query(`insert into public.order_unit_events${EVENT_COLUMNS} values($1,'return_receive',0,0,0,0,0,0,0,0,0,0) returning id`, [order.orderId])).rows[0].id as string;
     expect(await hFailure(db(), () => db().query("update public.order_unit_events set fee_amount=1 where id=$1", [eventId])))
       .toEqual({ code: '55000', message: 'GROUP_H_IMMUTABLE' });
     expect(await hFailure(db(), () => db().query('delete from public.order_unit_events where id=$1', [eventId])))
@@ -140,9 +142,9 @@ describeLocalDb('FREQ-642-AC-20: unit binding schema (controller only)', (db) =>
   test('FREQ-642-AC-20: 出来事の合計の式と状態の値はCHECKで守られる', async () => {
     const userId = await seedHMember(db()); const catalog = await createCatalogFixture(db());
     const order = await buyJacket(userId, catalog, 1);
-    expect(await hFailure(db(), () => db().query(`insert into public.order_unit_events(order_id,kind,standard_refund,now_refund,consult_refund)
-      values($1,'return_receive',100,60,30)`, [order.orderId]))).toMatchObject({ code: '23514' });
-    expect(await hFailure(db(), () => db().query("insert into public.order_unit_events(order_id,kind) values($1,'bogus')", [order.orderId])))
+    expect(await hFailure(db(), () => db().query(`insert into public.order_unit_events${EVENT_COLUMNS}
+      values($1,'return_receive',0,0,0,0,0,0,0,100,60,30)`, [order.orderId]))).toMatchObject({ code: '23514' });
+    expect(await hFailure(db(), () => db().query(`insert into public.order_unit_events${EVENT_COLUMNS} values($1,'bogus',0,0,0,0,0,0,0,0,0,0)`, [order.orderId])))
       .toMatchObject({ code: '23514' });
     expect(await hFailure(db(), () => db().query("update public.order_unit_slots set state='bogus' where order_id=$1", [order.orderId])))
       .toMatchObject({ code: '23514' });
@@ -160,7 +162,12 @@ describeLocalDb('FREQ-642-AC-20: unit binding migration A final assertion (contr
   async function attempt(change = ''): Promise<Failure | null> {
     await db().query('savepoint ub_assert');
     let failure: Failure | null = null;
-    try { if (change) await db().query(change); await db().query(ubAssert); }
+    try {
+      // Migration B adds the slot guard (the BEFORE UPDATE trigger A's assertion did not expect); B's own assertion pins it.
+      await db().query('drop trigger ub_order_unit_slots_guard on public.order_unit_slots');
+      if (change) await db().query(change);
+      await db().query(ubAssert);
+    }
     catch (caught) { const e = caught as Failure; failure = { code: e.code, message: e.message, detail: e.detail }; }
     finally { await db().query('rollback to savepoint ub_assert'); await db().query('release savepoint ub_assert'); }
     return failure;

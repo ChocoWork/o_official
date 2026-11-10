@@ -1,5 +1,7 @@
 # 注文管理のシーケンス
 
+> 値段の計画の確かめと記録 確認日: 2026-11-10。末尾の「値段の計画の確かめと記録（FREQ-642 Task 4）」に、材料 → 計画 → 版と式の確かめ → 記録 → 取り押さえの流れを足した。
+
 > 返品の受け取りの数え方の直し 確認日: 2026-11-08。末尾の「返品の受け取りの品ごとの返金（FREQ-641 Task 1）」に、空きの単位を1列で使う数え方と `consult_quantity` の1項目を足した（I-1・N-1）。移行 `20261108063711` は手元で確認し、2026-11-08 にオーナーの許可で本番へ当てた。
 
 > 返品の品ごとの返金 Task 1 確認日: 2026-11-06。受け取りで品ごとに今返す・相談するを選ぶ時の DB の中の流れを、末尾の「返品の受け取りの品ごとの返金（FREQ-641 Task 1）」に足した。移行 `20261106005536` は手元で確認・本番は 2026-11-06 に適用済み。窓口は Task 2、画面は Task 3 で実装済み。実測は[テスト仕様](../../05_Quality/tests/test-spec.md)を参照。
@@ -1166,3 +1168,35 @@ sequenceDiagram
 - 返金がエラーの後に成功へ戻る時（`record_group_g_refund_result`）は、同じ slices で同じ単位を取り直し、合わない時だけ H5 の順に戻す。その時も行の数量を超えて確保しない。取り直せなければ、遅れて届いた成功は記録し、`group_h_refund_unit_mismatch` を要対応の例外に残す（直し1）。
 - 芯 `private.order_return_line_states_core` と公開の入口 `public.admin_receive_return` は変えない。
 - G今・G相（上限）と、受け取りの記録がある返金の行の値段は、注文の商品ごとに空きの単位を1列に並べ、行の id の順に「自分の単位 → 残りの空きの単位」を取る（前の行が使った空きの単位を次の行で使わない。slices → claim と同じ順番）。G相は今すぐの後に数える。DB が返金待ちにした相談の点数を受け取りの記録 `consult_quantity` に書く（2026-11-08 の直し I-1・N-1、移行 [20261108063711_return_receive_unit_dedup.sql](../../../supabase/migrations/20261108063711_return_receive_unit_dedup.sql)。手元で確認・本番適用済み（2026-11-08、MCP の apply_migration。版 20261108063711））。
+
+## 値段の計画の確かめと記録（FREQ-642 Task 4、2026-11-10）
+
+根拠は[設計書](../../superpowers/specs/2026-11-08-exchange-unit-binding-design.md)の4-1・5・7章。移行は `20261110104605_unit_binding_core.sql`（手元で確認。本番は未適用）。返金の計算の入口（受け取り・額を決めて返金・発送前の取り消し）はまだ変えない。この節は、後の作業（Task 5・6）が呼ぶ DB の芯の流れ。
+
+```mermaid
+sequenceDiagram
+    participant S as サーバー（TypeScript）
+    participant M as order_unit_pricing_materials
+    participant P as planUnitEvent（純関数）
+    participant A as private.order_unit_apply_plan
+    participant L as order_unit_link_refund
+    participant H as H の単位（claim・release）
+    S->>M: 注文の id（service_role）
+    M-->>S: 材料（版・対象・同じ会員の他の入金済みの注文）
+    S->>P: 材料と出来事（返品の行・取り消し）
+    P-->>S: 計画（式・1着ごとの割り振りと直し・holds）
+    S->>A: G 共通鍵を持った取引の中で計画・二重防止の鍵・返品・受け取り
+    A->>A: 版が今と同じか（違えば UNIT_PRICING_STALE / 40001）
+    A->>A: 枠の状態と値段・移り方・割り振り・式・返す額の規則・上限・holds を確かめる（違えば UNIT_PRICING_INVALID / 22023、DETAIL ub_plan_1〜9）
+    A->>A: 出来事・行・holds を追記し、枠の状態と値段を更新
+    S->>L: 出来事・返金・部分（now / consult / release）
+    L->>H: 返す着を取り押さえる（交換の品の返品なら元の着の return_line_id を先に外す）
+```
+
+- 材料は読むだけ（STABLE）。版は、対象と同じ会員の関わる注文に触った出来事の `seq` の最大（無ければ `'0'`）の文字列。誰かが同じ会員の注文に出来事を記録すると変わり、古い計画は断られる。サーバーは材料を読み直して計画を1回だけ作り直す。
+- 確かめは計画の中の数を DB の値と突き合わせるだけで、割引の計算は持たない。式 `Σ割り振り − Σ直し − 手数料 ＝ 新しい E − 前の E` と、`E ＝ 払った合計 − 手元に残る着の値段 − holds − 手数料の累計` を、DB の値で閉じる。
+- `releases`（前の注文に戻す計画）は記録しない。呼び出し側が、出来事の後に版を付け直して別の出来事（`hold_release`）として呼ぶ。`hold_release` の行は前の注文の着を指すだけなので、その着の状態は照合しない。
+- 枠の更新は表の守りが見張る。鍵の列は変わらず、状態は `kept` から `returned_*` へ一度だけ動く。`returned_shop` から `kept` へ戻すのは、店が返金をやめた発送前の取り消しの戻しの道だけ（その道が `app.unit_slot_revert` を `on` にして、G の共通鍵を持った取引の中で呼ぶ）。
+- 返金の結び（`order_unit_link_refund`）は、出来事の `returned` の行のうち部分が同じ着（部分の無い行は `now`）に、返金の取り押さえを付ける。同じ返品の返金なら返品の行の取り押さえを残し、交換の品の返品や別の返品の返金なら元の着の `return_line_id` を外して `refund_id` だけ付ける（H の守りの規則 e・f）。返金の error・やり直しでは枠の状態も割り振りも動かさない。
+- 返品の残り（`order_unit_outstanding`）は、返品の出来事の返す額の和から、結んだ返金（`awaiting_response`・`pending`・`succeeded`・`error`）の商品分（`amount − shipping_amount`）の和を引いた額。0 より少なくならない。
+

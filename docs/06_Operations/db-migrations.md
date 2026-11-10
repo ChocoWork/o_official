@@ -1,5 +1,7 @@
 # DB マイグレーション運用
 
+> 交換の印 移行 B 確認日: 2026-11-10。移行 `20261110104605_unit_binding_core.sql`（値段の計画の材料・確かめと記録・返金の結び・取り押さえの重ね定義）を末尾の「交換の印と1着ずつの記録の移行 B（FREQ-642 Task 4、2026-11-10）」に追記した。手元の DB で確かめた。本番は未適用。
+>
 > 交換の印 移行 A 確認日: 2026-11-10。移行 `20261110090325_unit_binding_schema.sql` を末尾の「交換の印と1着ずつの記録の移行 A（FREQ-642 Task 2、2026-11-10）」に追記した。手元の DB で確かめた。本番は未適用。
 >
 > 会計の計画 2 確認日: 2026-11-09。移行 S6〜S14（`20261108150000`〜`20261108230000`、9本）を末尾の「会計の作り直し 計画 2 の移行 S6〜S14（手元の DB で確認済み・2026-11-09 本番適用済み）」に追記した。本番へは 2026-11-09 にオーナーの承認で当てた（その節の「本番への適用の記録」）。適用の前提（計画1が本番にあること、接続先のオーナー確認、S6 前の発送票の件数）と、移行の間の呼び出しの依存（S8 → S11、S9 → S11）を、その節に書いた。
@@ -1488,3 +1490,20 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 | 戻し方 | 本番に当てた後に戻す時は、取り替えた2本を H4（`20261029130300`）の本文に戻す新しい移行を足す（適用済みの移行は直さない）。8 表は行が無ければ `DROP TABLE` できる。行ができた後は消さない（追記だけの表）。設定の2行は、戻す前の値を店長に確かめてから `UPDATE` する |
 | 前の注文の着数 | 枠のある注文は `state = 'kept'` の枠の数、枠の無い古い注文は今までの式（入金済みの行の数 − 成功した返金の数）。交換の品の行は枠で数えるので足さない |
 | 配備 | 移行 A は返金の計算を変えない（写しと枠を残し、前の注文の着数を数え直し、理由の設定を直す）。理由の設定の直しで、お客様の返品の申し込みと店長の返品の作成の画面は、初期不良・誤送のご希望を交換だけにする。返金の計算・入口の変更は後の作業で出す。**ただし移行 A だけを本番に当ててはいけない。** 移行 A の後、枠のある注文は返金・返品・発送前の取り消しが成功しても枠が手元にある（kept）のまま残り、お客様の前の注文の着数が減らない。枠を動かすのは Task 4〜6 の移行なので、それより前に作られた枠は直す道が無く、リピート割引の数え間違いが残り続ける。移行 A は Task 4〜6 の移行と一緒に本番へ当てる |
+
+## 交換の印と1着ずつの記録の移行 B（FREQ-642 Task 4、2026-11-10）
+
+確認日: 2026-11-10。移行は [20261110104605_unit_binding_core.sql](../../supabase/migrations/20261110104605_unit_binding_core.sql)。サイズ 43686 bytes、MD5 `3012fc38f1a17163270c2ab46fd2628b`。ASCII・BOM なし・LF。手元の DB（`npx supabase db reset`）で当てて確かめた。**本番は未適用**（移行 A と一緒に、当てる前にオーナーの許可を取る）。適用済みの移行は1字も変えていない。版は移行 A（`20261110090325`）の後で、会計のセッションへ知らせる版は A の `20261110090325` とこの `20261110104605`。
+
+| 項目 | 内容 |
+| --- | --- |
+| 目的 | TypeScript の値段の計画（`planUnitEvent`）の材料を返し、計画を確かめて1着ずつの出来事として記録する DB の芯と、返金を着に結ぶ道具（設計書 4-1・5・7章） |
+| 列の直し | `order_unit_events` の金額の10列（`entitlement_previous`・`entitlement_max_before`・`entitlement_gross`・`entitlement_shop_only`・`fee_amount`・`hold_total`・`entitlement`・`standard_refund`・`now_refund`・`consult_refund`）から `DEFAULT 0` を外す（`NOT NULL` は残す）。入れ忘れが黙って 0 にならず `23502` で止まる |
+| 枠の守り | `order_unit_slots` に BEFORE UPDATE の守り `ub_order_unit_slots_guard`（`private.order_unit_slot_guard`）。鍵の列は変えられず、状態は `kept` から `returned_*` へだけ動く。`returned_shop` から `kept` は、取引の中の設定 `app.unit_slot_revert` が `on` で、G の共通鍵を持っている時だけ（Task 6 の戻しの道が使う）。移行 A の末尾の確かめ（枠の表に UPDATE の守りが無い）は履歴で、新しい期待はこの移行の `ubc_schema` が持つ |
+| 足した関数（読み手） | `private.order_unit_related_orders`・`order_unit_version`・`order_unit_totals`・`order_unit_order_state`・`order_unit_pricing_materials`（STABLE。材料。`service_role` が実行できる）。入口は `public.order_unit_pricing_materials(uuid)`（SECURITY INVOKER、`service_role` だけ）。写しの無い注文は `NULL`。版は対象と同じ会員の関わる注文に触った出来事の `seq` の最大（無ければ `'0'`） |
+| 足した関数（書き手） | `private.order_unit_apply_plan(jsonb,uuid,uuid,uuid,uuid)`（確かめて記録する。誰にも実行を渡さない）、`private.order_unit_link_refund(uuid,uuid,text)`、`private.order_unit_outstanding(uuid)`、取り押さえの重ね定義 `private.group_h_claim_refund_units(uuid,uuid,integer[],boolean,uuid)` と `private.group_h_release_return_units(uuid,integer[])`（H5 の同じ名前の関数に、着の番号の一覧を取る版を足す。名前が同じなので `order_line_unit_amounts` の守りが通す）。計画を行に開く道具 `order_unit_plan_lines`・`order_unit_plan_holds`・`order_unit_plan_line_facts` |
+| 断る時の記号 | 版が今と違う: `UNIT_PRICING_STALE`（`40001`）。計画が合わない: `UNIT_PRICING_INVALID`（`22023`）、DETAIL は `ub_plan_1`（形）・`ub_plan_3`（枠の状態・値段・出荷の印）・`ub_plan_4`（状態の移り方）・`ub_plan_5`（割り振り）・`ub_plan_6`（式と E の閉じ方）・`ub_plan_7`（前の E・E の最高・返す額）・`ub_plan_8`（E ≦ 払った合計・holds・手数料）・`ub_plan_9`（holds）。返金の結びの誤りは `ub_link_1`・`ub_link_2` |
+| 末尾の確かめ | `UNIT_BINDING_CORE_MIGRATION_ASSERTION_FAILED`（SQLSTATE `P0001`）。DETAIL は `ubc_schema`（金額列の既定値・枠の守り）・`ubc_functions`（本文の MD5・所有者・設定・名前ごとの本数。取り押さえの2つは H5 の分と合わせて2本）・`ubc_acl`（関数の権限） |
+| 古い試験への影響 | 移行 A の末尾の確かめを再生する試験は、再生の前にこの移行の枠の守りを落とす（A は枠の表に UPDATE の守りが無いことを期待していた）。出来事を直接入れる試験は、金額の10列を全部書く。H5・RR の末尾の確かめを再生する試験の道具（`withH5ReturnBaseline`）と RR の試験は、重ね定義の2つを外して再生し（巻き戻しで戻る）、元の11本の名前を引く所は重ね定義を除く |
+| 戻し方 | 本番に当てた後は、新しい関数と守りを落とし金額列の既定値を戻す新しい移行を足す（適用済みの移行は直さない）。出来事・行・holds・結びができた後は表を消さない（追記だけ）。取り押さえの重ね定義は、使い手（Task 5・6）を戻した後で落とす |
+| 配備 | この移行は、返金の計算の入口（受け取り・額を決めて返金・発送前の取り消し）をまだ変えない。**移行 A・B だけを本番に当ててはいけない。** 枠を動かすのは Task 5・6 の入口の変更なので、一緒に本番へ当てる |
