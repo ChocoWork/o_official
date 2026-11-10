@@ -9,6 +9,7 @@ import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
 import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
 import { TextAreaField } from '@/components/ui/TextAreaField/TextAreaField';
 import { blockEnterSubmit, useRefundSubmission } from '@/hooks/useRefundSubmission';
+import { useUnitPricingEstimate } from '@/hooks/useUnitPricingEstimate';
 import { clampQuantity, lineLabel } from '@/lib/orders/fulfillment/fulfillment-client';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import { ADMIN_NOTE_MAX_LENGTH } from '@/lib/orders/order-payment-types';
@@ -27,6 +28,7 @@ import {
   type RefundMaterials,
   type StripeRefundReason,
 } from '@/lib/orders/refund/refund-types';
+import type { OrderRefundEstimate } from '@/lib/orders/unit-pricing/unit-pricing-types';
 
 type OrderRefundDialogProps = {
   /** 開いている注文。null なら閉じている */
@@ -53,6 +55,8 @@ function isStripeReason(value: string): value is StripeRefundReason {
 
 // 割引の行の符号は U+2212（ハイフンではなくマイナス記号）
 const MINUS = '\u2212';
+const ESTIMATING_TEXT = '計算しています';
+const ESTIMATE_FAILURE_MESSAGE = '返金の見込みを計算できませんでした。選び直すか、画面を開き直してください。';
 const RESTOCK_HINT = '発送前の在庫の品を、すぐ出せる数に戻します。';
 const BACKORDER_NOTICE =
   '受注生産の品は在庫を確保していないため、在庫には戻りません。仕上がった品を売る時は、商品の在庫の画面で「入荷」してください。';
@@ -230,9 +234,32 @@ function OrderRefundDialogBody({ orderId, onClose, onRefunded, onUncertain, pref
   const shippingAmount = order && fixedFull ? fullRefundShipping(order) : shippingEntered;
   const calculatedEstimate = materials ? estimateRefund(materials.lines, selections, shippingAmount) : null;
   const estimate = calculatedEstimate && Number.isFinite(calculatedEstimate.total) ? calculatedEstimate : null;
+  // 発送前の品を選ぶ返金は、着の状態と割引が変わりうるので、標準の額を見込みの窓口（サーバーの計画）から出す。
+  // 発送後の品だけの返金・全部を選んだ固定の返金は聞かず、今の計算のまま（AC-28）。答えを待つ間・出せない間は額を出さない
+  const estimateBody =
+    materials && !fixedFull && selectedBefore.length > 0
+      ? { lines: selections.map(({ orderItemId, beforeShipment, quantity }) => ({ orderItemId, beforeShipment, quantity })), shippingAmount }
+      : null;
+  const estimateState = useUnitPricingEstimate<OrderRefundEstimate>(
+    estimateBody ? `/api/admin/orders/${orderId}/refund-estimate` : null,
+    estimateBody,
+    ESTIMATE_FAILURE_MESSAGE,
+  );
+  const estimating = estimateState.status === 'loading';
+  const estimateBlocked = estimating || estimateState.status === 'error';
+  const serverEstimate = estimateState.status === 'ready' && !estimateState.estimate.legacy ? estimateState.estimate : null;
+  // 窓口の標準の額は上限で切らずに返るので、画面で窓口の上限（と注文の返せる額）で切る
+  const serverTotal = serverEstimate && order ? Math.min(serverEstimate.suggestedAmount, serverEstimate.refundCap, order.refundableAmount) : null;
+  const standardTotal = serverTotal ?? estimate?.total ?? null;
   const amount =
-    order && estimate ? (fixedFull ? order.refundableAmount : Math.min(order.refundableAmount, amountEntered ?? estimate.total)) : 0;
-  const breakdownRows: Array<[string, string]> = estimate
+    order && standardTotal !== null ? (fixedFull ? order.refundableAmount : Math.min(order.refundableAmount, amountEntered ?? standardTotal)) : 0;
+  const breakdownRows: Array<[string, string]> = serverTotal !== null
+    ? [
+        ['商品', formatYen(Math.max(serverTotal - shippingAmount, 0))],
+        ['送料', formatYen(shippingAmount)],
+        ['返金額', formatYen(serverTotal)],
+      ]
+    : estimate
     ? [
         ['商品', formatYen(estimate.itemsAmount)],
         ['割引', estimate.discountAmount > 0 ? `${MINUS}${formatYen(estimate.discountAmount)}` : formatYen(0)],
@@ -264,7 +291,7 @@ function OrderRefundDialogBody({ orderId, onClose, onRefunded, onUncertain, pref
   };
 
   // DB は「送料 ≤ 額」を入力の誤りにする。画面に新しい文は足さず、直るまで押せなくする
-  const canSubmit = Boolean(materials) && !awaiting && !stopped && amount >= 1 && amount >= shippingAmount;
+  const canSubmit = Boolean(materials) && !awaiting && !stopped && !estimateBlocked && amount >= 1 && amount >= shippingAmount;
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -290,7 +317,7 @@ function OrderRefundDialogBody({ orderId, onClose, onRefunded, onUncertain, pref
         <RefundFlowContent
           flow={flow}
           backLabel="戻る"
-          submitLabel={`${formatYen(amount)} を返金する`}
+          submitLabel={estimateBlocked ? '返金する' : `${formatYen(amount)} を返金する`}
           canSubmit={canSubmit}
         >
           {order && !awaiting ? (
@@ -373,28 +400,36 @@ function OrderRefundDialogBody({ orderId, onClose, onRefunded, onUncertain, pref
               />
               {fixedFull ? <p className="font-acumin lk-text-3xs text-[#474747]">{FULL_REFUND_NOTICE}</p> : null}
 
-              <div role="group" aria-label="返金の内訳" className="border-t border-[#d4d4d4] pt-3">
-                {calculatedEstimate && !estimate ? (
-                  <p role="status">選んだ数量の返金額を確かめられません。商品を選び直してください。</p>
-                ) : null}
-                <dl className="space-y-1">
-                  {breakdownRows.map(([term, value]) => (
-                    <div key={term} className="flex justify-between font-acumin lk-text-sm text-black">
-                      <dt>{term}</dt>
-                      <dd>{value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-              <NumberInput
-                id="refund-amount"
-                label="返金額"
-                value={amount}
-                max={order.refundableAmount}
-                disabled={stopped || fixedFull}
-                hint={`返せる額: ${formatYen(order.refundableAmount)}`}
-                onChange={setAmountEntered}
-              />
+              {estimating ? <p role="status" className="font-acumin lk-text-sm text-black">{ESTIMATING_TEXT}</p> : null}
+              {estimateState.status === 'error' ? (
+                <p role="alert" className="font-acumin lk-text-3xs text-red-700">{estimateState.message}</p>
+              ) : null}
+              {estimateBlocked ? null : (
+                <>
+                  <div role="group" aria-label="返金の内訳" className="border-t border-[#d4d4d4] pt-3">
+                    {calculatedEstimate && !estimate ? (
+                      <p role="status">選んだ数量の返金額を確かめられません。商品を選び直してください。</p>
+                    ) : null}
+                    <dl className="space-y-1">
+                      {breakdownRows.map(([term, value]) => (
+                        <div key={term} className="flex justify-between font-acumin lk-text-sm text-black">
+                          <dt>{term}</dt>
+                          <dd>{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                  <NumberInput
+                    id="refund-amount"
+                    label="返金額"
+                    value={amount}
+                    max={order.refundableAmount}
+                    disabled={stopped || fixedFull}
+                    hint={`返せる額: ${formatYen(order.refundableAmount)}`}
+                    onChange={setAmountEntered}
+                  />
+                </>
+              )}
 
               <SingleSelect
                 label="Stripe に伝える理由"

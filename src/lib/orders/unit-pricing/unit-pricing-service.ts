@@ -8,9 +8,10 @@ import {
   ReturnStoreError, listOrderReturns, loadReturnCreateMaterials,
 } from '@/lib/orders/returns/return-store';
 import type {
-  OrderReturnDetail, OrderReturnLineDetail, ReceiveReturnRequest, ReturnReason,
+  OrderReturnDetail, OrderReturnLineDetail, ReceiveReturnRequest,
 } from '@/lib/orders/returns/return-types';
 import { planUnitEvent } from '@/lib/orders/unit-pricing/unit-event-plan';
+import { defaultTreatment } from '@/lib/orders/unit-pricing/unit-pricing-treatment';
 import {
   loadConsultOutstanding, loadReturnOrderId, loadUnitPricingMaterials, type UnitPricingClient,
 } from '@/lib/orders/unit-pricing/unit-pricing-store';
@@ -32,13 +33,8 @@ import {
  */
 export type PricingClient = UnitPricingClient;
 
-/** お店の側の事情として扱う返品の理由（設計 2-3）。ほかの理由はお客様のご都合 */
-const SHOP_SIDE_REASONS: readonly ReturnReason[] = ['defective', 'wrong_item'];
-
-/** 受け取りで直さなかった時の「割引の扱い」。理由から決まる。交換の頼みを店が返金に変えた行は、理由に関わらずお店の側 */
-export function defaultTreatment(reason: ReturnReason, exchangeChangedToRefund: boolean): ReturnSide {
-  return exchangeChangedToRefund || SHOP_SIDE_REASONS.includes(reason) ? 'shop' : 'customer';
-}
+// 割引の扱いの初めの値の規則は、管理画面も読むので unit-pricing-treatment.ts に置く（試験はここから読む）
+export { defaultTreatment };
 
 // ---- 版の食い違い（UNIT_PRICING_STALE）の作り直し ----
 

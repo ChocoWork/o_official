@@ -8,11 +8,13 @@ import { TextAreaField } from '@/components/ui/TextAreaField/TextAreaField';
 import { useLoadedReturn, type LoadedReturn } from '@/hooks/useLoadedReturn';
 import { blockEnterSubmit } from '@/hooks/useRefundSubmission';
 import { readRecord, useReturnOperation } from '@/hooks/useReturnOperation';
+import { useUnitPricingEstimate } from '@/hooks/useUnitPricingEstimate';
 import { lineLabel } from '@/lib/orders/fulfillment/fulfillment-client';
 import { ADMIN_NOTE_MAX_LENGTH } from '@/lib/orders/order-payment-types';
 import { UNKNOWN_REFUND_OUTCOME_MESSAGE, formatYen } from '@/lib/orders/refund/refund-messages';
 import { RETURN_ERROR_MESSAGES } from '@/lib/orders/returns/return-messages';
 import type { OrderReturnDetail } from '@/lib/orders/returns/return-types';
+import type { ReturnReceiveEstimate } from '@/lib/orders/unit-pricing/unit-pricing-types';
 
 /**
  * 額を決めて返金の窓口が返す `data`（C-3）。返金額が0円の時（P20）は、返金を作らず refundId が null、status が 'waived'
@@ -38,6 +40,10 @@ type OrderReturnRefundDialogBodyProps = Pick<ReturnDialogProps, 'onClose' | 'onD
 // 割引・手数料の行の符号は U+2212（ハイフンではなくマイナス記号）
 const MINUS = '\u2212';
 const IRREVERSIBLE_NOTICE = '返金は取り消せません。';
+const ESTIMATING_TEXT = '計算しています';
+const ESTIMATE_FAILURE_MESSAGE = '返金の見込みを計算できませんでした。画面を開き直してください。';
+// 品を選ばない本文。受け取りの見込みの窓口が、写しのある注文の「相談の残り」（consultOutstanding）だけを返すのに使う
+const NO_PICKS_BODY = { units: [], exchangeOverrides: [], refundChoice: 'none', refundShippingAmount: 0 } as const;
 const WAIVE_NOTICE = '返金しないで終えます。お客様に返金のメールは送りません。';
 const REFUND_NOTICES = {
   accepted: '返金を受け付けました。お金が戻ると、注文の状態が変わります。',
@@ -97,9 +103,19 @@ function OrderReturnRefundDialogBody({ loaded, onClose, onDone, onUncertain }: O
 
   const stopped = flow.busy || flow.uncertain || flow.recorded;
   const waitingLines = detail.lines.filter((line) => line.progress.refundWaiting > 0);
+  // 商品の額は、写しのある注文では見込みの窓口の「相談の残り」（相談の出来事がまだ返していない額。全部返金済みなら 0）。
+  // 写しの無い注文（legacy）は、今の待ち額で出す（FREQ-642-AC-20）。窓口の答えを待つ間・出せない間は額を出さない
+  const estimateState = useUnitPricingEstimate<ReturnReceiveEstimate>(
+    waitingLines.length > 0 ? `/api/admin/returns/${detail.id}/receive-estimate` : null,
+    waitingLines.length > 0 ? NO_PICKS_BODY : null,
+    ESTIMATE_FAILURE_MESSAGE,
+  );
+  const estimating = estimateState.status === 'loading';
+  const estimateBlocked = estimating || estimateState.status === 'error';
+  const outstanding = estimateState.status === 'ready' && !estimateState.estimate.legacy ? estimateState.estimate.consultOutstanding ?? null : null;
   // 商品の額は全部の行の待ち額（DB の refund_waiting_amount）を足す。H の注文の待ち額は品ごとの仮の割り当てで決まり、
   // 案イの印の行（返金待ちに見える行）と一致しないことがある。admin_refund_return も返品の待ちの品の全部を返す（DD-ADMIN-019）
-  const itemsAmount = detail.lines.reduce((sum, line) => sum + line.refundWaitingAmount, 0);
+  const itemsAmount = outstanding ?? detail.lines.reduce((sum, line) => sum + line.refundWaitingAmount, 0);
   // 相談の受け取りで付いた手数料は、商品の額から引く。引ききれない分は DB がお支払い待ちに回す
   const deducted = Math.min(pendingFeeOf(detail), itemsAmount);
   const shippingAmount = Math.min(shippingEntered, refundableShipping);
@@ -112,7 +128,7 @@ function OrderReturnRefundDialogBody({ loaded, onClose, onDone, onUncertain }: O
   breakdownRows.push(['送料', formatYen(shippingAmount)], ['返金額', formatYen(calculated)]);
 
   // DB は「送料 ≤ 額」を入力の誤りにする。画面に新しい文は足さず、直るまで押せなくする（E-2 の返金の画面と同じ）
-  const canSubmit = !stopped && waitingLines.length > 0 && amount >= shippingAmount;
+  const canSubmit = !stopped && waitingLines.length > 0 && amount >= shippingAmount && !estimateBlocked;
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -143,7 +159,7 @@ function OrderReturnRefundDialogBody({ loaded, onClose, onDone, onUncertain }: O
         <ReturnFlowContent
           flow={flow}
           backLabel="戻る"
-          submitLabel={waiving ? '返金しないで終える' : `${formatYen(amount)} を返金する`}
+          submitLabel={estimateBlocked ? '返金する' : waiving ? '返金しないで終える' : `${formatYen(amount)} を返金する`}
           canSubmit={canSubmit}
         >
           {/* 幅が 768px 以上の Dialog は高さを制限しないので、入力の部分だけを縦に動かし、誤りの文とボタンは動かさない */}
@@ -153,8 +169,13 @@ function OrderReturnRefundDialogBody({ loaded, onClose, onDone, onUncertain }: O
                 <li key={line.id}>{`${lineLabel({ name: line.itemName, color: line.color, size: line.size })} × ${line.progress.refundWaiting}`}</li>
               ))}
             </ul>
+            {estimating ? <p role="status" className="font-acumin lk-text-sm text-black">{ESTIMATING_TEXT}</p> : null}
+            {estimateState.status === 'error' ? (
+              <p role="alert" className="font-acumin lk-text-3xs text-red-700">{estimateState.message}</p>
+            ) : null}
             <ReturnRefundFields
               idPrefix="return-refund"
+              amountsHidden={estimateBlocked}
               rows={breakdownRows}
               amount={amount}
               refundableAmount={refundableAmount}

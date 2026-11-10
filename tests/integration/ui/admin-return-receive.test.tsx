@@ -7,6 +7,7 @@ import { LABEL, ORDER_ID, RETURN_ID, RETURNS_URL, returnDetail, returnLine } fro
 // clientFetch は本物を通し、網の境目の fetch だけを差し替える（CSRF の見出しと送り方まで確かめる）
 const CSRF_TOKEN = 'csrf-test-token';
 const RECEIVE_URL = `/api/admin/returns/${RETURN_ID}/receive`;
+const ESTIMATE_URL = `/api/admin/returns/${RETURN_ID}/receive-estimate`;
 const mockFetch = jest.fn();
 const realFetch = global.fetch;
 
@@ -63,6 +64,12 @@ it('FREQ-641-AC-11: P9の品ごとの選びとAPI本文と再読込をつなぐ'
   let received = false;
   mockFetch.mockImplementation(async (url: string, init: RequestInit) => {
     if (url === RETURNS_URL) return response(200, returnsBody(received ? receivedReturn() : openReturn()));
+    // 見込みの窓口。今すぐの1点は 12,000円（額は窓口の値だけが画面に出る）
+    if (url === ESTIMATE_URL) {
+      return response(200, {
+        data: { legacy: false, standardRefund: 24000, nowRefund: 12000, consultRefund: 12000, feeAmount: 0, fixedFees: 0, refundAmount: 12000, refundCap: 12000, consultOutstanding: 0 },
+      });
+    }
     if (url === RECEIVE_URL && init.method === 'POST') {
       received = true;
       return response(200, {
@@ -86,7 +93,8 @@ it('FREQ-641-AC-11: P9の品ごとの選びとAPI本文と再読込をつなぐ'
   expect(within(dialog).queryAllByRole('spinbutton')).toHaveLength(0);
   expect(within(dialog).getAllByRole('radio', { name: /^(今すぐ返金|額を相談)$/ })).toHaveLength(4);
   fireEvent.click(within(rows[1]).getByRole('radio', { name: '額を相談' }));
-  fireEvent.click(within(dialog).getByRole('button', { name: `受け取る（1点を ${formatYen(12000)} 返金・1点は相談）` }));
+  // 見込みの窓口の答えが届くまで受け取りのボタンは額の入らない言葉で止まる
+  fireEvent.click(await within(dialog).findByRole('button', { name: `受け取る（1点を ${formatYen(12000)} 返金・1点は相談）` }));
 
   // 単一の結果を受けて受け取りの画面を閉じ、返品の一覧を読み直す
   expect(await screen.findByRole('status')).toHaveTextContent('受け取りを記録し、返金を受け付けました。');

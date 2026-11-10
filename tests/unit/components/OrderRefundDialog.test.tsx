@@ -4,6 +4,8 @@ import type { RefundAcceptedResponse, RefundMaterialLine, RefundMaterials } from
 const mockClientFetch = jest.fn();
 jest.mock('@/lib/client-fetch', () => ({ clientFetch: (...args: unknown[]) => mockClientFetch(...args) }));
 
+// 見込みの窓口の呼び出しは OrderRefundDialog.unitPricing.test.tsx で確かめる。ここは窓口を呼ばず、画面の計算（写しの無い注文）で今の振る舞いを確かめる
+jest.mock('@/hooks/useUnitPricingEstimate', () => ({ useUnitPricingEstimate: () => ({ status: 'idle' }) }));
 import OrderRefundDialog from '@/components/OrderRefundDialog';
 
 const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';

@@ -4,7 +4,9 @@ import type { ReceiptRefundChoice, ReturnMethod } from '@/lib/orders/returns/ret
 /**
  * 受け取りの画面の返金の見込みとボタンの言葉、受付の期限の日付の書き方（グループ E-3 設計書 4-9・6-1・6-3・6-4。共通の約束 C-5）。
  * 画面からも読むので、サーバーだけの物を import しない。
- * 記録する額は DB の関数 admin_receive_return が同じ式で出す（SQL が正。TS は見込みだけ）。商品の額は E-2 の割り振りで
+ * 注文の時の値段の写しがある注文（FREQ-642）は、ここで額を計算しない。額はサーバーの計画（unit-pricing-service.ts）が出し、
+ * 画面は見込みの窓口（receive-estimate・refund-estimate）の値だけを出す。この計算は、写しの無い注文（この変更より前の注文）の
+ * 見込みとして残す（AC-20）。記録する額は DB の関数 admin_receive_return が同じ式で出す（SQL が正。TS は見込みだけ）。商品の額は E-2 の割り振りで
  * DB が出し、返品の行が指す注文の商品ごとの「今から k 点を返金した時の額」（refundAmountsByCount。同じ注文の商品の行は同じ列）として
  * 画面に渡る。ここでは割り振らず、同じ注文の商品の行の数を足して列を引くだけ。
  */

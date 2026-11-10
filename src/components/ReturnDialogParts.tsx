@@ -210,6 +210,8 @@ type ReturnRefundFieldsProps = {
   preserveAmountOverMax?: boolean;
   /** 返金額の欄の誤りの文（上限を超えた時など） */
   amountError?: string | null;
+  /** 真なら内訳と返金額の欄を出さない（額をサーバーの見込みから出す間・出せない間。送料の欄は残す） */
+  amountsHidden?: boolean;
 };
 
 /**
@@ -233,40 +235,45 @@ export function ReturnRefundFields({
   amountCapLabel,
   preserveAmountOverMax = false,
   amountError = null,
+  amountsHidden = false,
 }: ReturnRefundFieldsProps) {
   const capId = `${idPrefix}-amount-cap`;
   const showCap = amountCap !== undefined && amountCapLabel !== undefined;
   return (
     <div className="space-y-3">
-      <div role="group" aria-label="返金の内訳" className="border-t border-[#d4d4d4] pt-3">
-        <dl className="space-y-1">
-          {rows.map(([term, value]) => (
-            <div key={term} className="flex justify-between font-acumin lk-text-sm text-black">
-              <dt>{term}</dt>
-              <dd>{value}</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-      {afterBreakdown}
-      <div>
-        <ReturnNumberInput
-          id={`${idPrefix}-amount`}
-          label={amountCap === undefined ? `返金額（返せる額: ${formatYen(refundableAmount)}）` : '返金額'}
-          value={amount}
-          max={amountCap ?? refundableAmount}
-          disabled={disabled}
-          onChange={onAmountChange}
-          preserveOverMax={preserveAmountOverMax}
-          error={amountError}
-          describedBy={showCap ? capId : undefined}
-        />
-        {showCap ? (
-          <p id={capId} className="mt-1 font-acumin lk-text-3xs text-[#474747]">
-            {amountCapLabel}
-          </p>
-        ) : null}
-      </div>
+      {amountsHidden ? null : (
+        <>
+          <div role="group" aria-label="返金の内訳" className="border-t border-[#d4d4d4] pt-3">
+            <dl className="space-y-1">
+              {rows.map(([term, value]) => (
+                <div key={term} className="flex justify-between font-acumin lk-text-sm text-black">
+                  <dt>{term}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+          {afterBreakdown}
+          <div>
+            <ReturnNumberInput
+              id={`${idPrefix}-amount`}
+              label={amountCap === undefined ? `返金額（返せる額: ${formatYen(refundableAmount)}）` : '返金額'}
+              value={amount}
+              max={amountCap ?? refundableAmount}
+              disabled={disabled}
+              onChange={onAmountChange}
+              preserveOverMax={preserveAmountOverMax}
+              error={amountError}
+              describedBy={showCap ? capId : undefined}
+            />
+            {showCap ? (
+              <p id={capId} className="mt-1 font-acumin lk-text-3xs text-[#474747]">
+                {amountCapLabel}
+              </p>
+            ) : null}
+          </div>
+        </>
+      )}
       <ReturnNumberInput
         id={`${idPrefix}-shipping`}
         label={`送料（返せる送料: ${formatYen(refundableShipping)}）`}
