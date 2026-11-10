@@ -6,7 +6,7 @@ type UpdatedEntry = ShopReturnSettings['updated']['shipping'];
 const DEFECT_PHOTO_NOTE = '傷や不具合の場所がわかる写真をお送りください';
 const SIZE_PHOTO_NOTE = 'タグの付いた状態がわかる写真をお送りください';
 
-/** 理由ごとの設定の最初の値（仕様書 8-3 の表。移行 A が入れる値と同じ）。呼ぶたびに新しい物を返す */
+/** 理由ごとの設定の最初の値（仕様書 8-3 の表。移行 A が入れる値と同じ。FREQ-642 の移行で破損・不良と注文と違う品は交換だけ）。呼ぶたびに新しい物を返す */
 function initialReasons(): ReasonRow[] {
   const hiddenFromCustomers = {
     shown: false,
@@ -20,7 +20,7 @@ function initialReasons(): ReasonRow[] {
     {
       reason: 'defective',
       shown: true,
-      resolutions: 'refund_and_exchange',
+      resolutions: 'exchange_only',
       outOfStockExchange: 'make',
       photo: 'required',
       photoInstructions: DEFECT_PHOTO_NOTE,
@@ -29,7 +29,7 @@ function initialReasons(): ReasonRow[] {
     {
       reason: 'wrong_item',
       shown: true,
-      resolutions: 'refund_and_exchange',
+      resolutions: 'exchange_only',
       outOfStockExchange: 'make',
       photo: 'required',
       photoInstructions: DEFECT_PHOTO_NOTE,

@@ -1556,7 +1556,7 @@ AC-07の3行・予備あり・介在受取とAC-08は旧本文だけで組み立
 
 ### E2E（`FR-ADMIN-165`・`166`、`FR-ACCOUNT-048`、`FR-ITEM-DETAIL-070`、`FR-CHECKOUT-061`、`FR-LEGAL-008`、`FR-TERMS-007`）
 
-注文は注文の時の写し（割引の定義・1着ごとの払った額・着の状態）のある注文を、本物の割引の計算（`buildOrder`）で手元のDBに作る（`e2e/unit-binding-test-utils.ts`）。管理画面は本物のログイン（aal2）で動かし、見込みの窓口（`receive-estimate`・`refund-estimate`・`return-request/estimate`）は本物を通す。受け取り・返金の窓口だけ、Stripeを「すぐ成功する」偽物にした同じ入口（`receiveReturnAndRefund`・`submitAdminRefund`）に差し替える（外へ返金を頼まない）。額は手元のDB（`order_refunds`・`order_unit_events`・`order_unit_slots`）から読む。
+注文は注文の時の写し（割引の定義・1着ごとの払った額・着の状態）のある注文を、本物の割引の計算（`buildOrder`）で手元のDBに作る（`e2e/unit-binding-test-utils.ts`）。管理画面は本物のログイン（aal2）で動かし、見込みの窓口（`receive-estimate`・`refund-estimate`・`return-request/estimate`）は本物を通す。受け取り（`/receive`）と返金（`/refund`）のPOSTだけは、HTTPの窓口（route）の層ごと試験の中の入口（`receiveReturnAndRefund`・`submitAdminRefund`）に差し替え、Stripeを「すぐ成功する」偽物にする（外へ返金を頼まない）。入口は本物なので値段の計画の作成とDBの関数は通るが、認可・CSRF・回数の制限・画面の本文のzodの検証は通らない（窓口の検証は `tests/unit/api/admin/order-return-money-routes.test.ts` が持つ）。AC-25の `actor_id` は差し替えが渡す管理者の番号。額は手元のDB（`order_refunds`・`order_unit_events`・`order_unit_slots`）から読む。
 
 | ファイル | 試験名 | 入力 | 期待 | 担当 | 実測 |
 | --- | --- | --- | --- | --- | --- |
@@ -1580,7 +1580,7 @@ AC-07の3行・予備あり・介在受取とAC-08は旧本文だけで組み立
 
 | ファイル | 試験 | 前から後 | 理由 |
 | --- | --- | --- | --- |
-| `e2e/FR-ADMIN-092-shop-return-settings.spec.ts` | 最初の値が手元のDBの設定と画面の見本で同じ（FREQ-470-AC-14） | 理由ごとの設定の`resolutions`は見ていなかった。後は、破損・不良と注文と違う品が届いた・サイズが小さい・大きいは`exchange_only`、ほかは`refund_and_exchange` | FREQ-642-AC-30。移行が2行を交換だけにする |
+| `e2e/FR-ADMIN-092-shop-return-settings.spec.ts` | 最初の値が手元のDBの設定と画面の見本で同じ（FREQ-470-AC-14） | 理由ごとの設定の`resolutions`は見ていなかった。後は、画面の見本（共通の部品 `shop-return-settings-test-fixtures.ts` と、それを写した単体の試験）も同じ値にそろえ、見本とDBの突き合わせにも`resolutions`を足した。DBは、破損・不良と注文と違う品が届いた・サイズが小さい・大きいは`exchange_only`、ほかは`refund_and_exchange` | FREQ-642-AC-30。移行が2行を交換だけにする |
 | `e2e/FR-ACCOUNT-036-return-request-photos.spec.ts` | 画面で選んだ写真を2000pxまで縮め、…受付に付ける | 破損・不良のご希望が返金のまま。後は、交換にできる色・サイズを足して選ぶ | FREQ-642-AC-30。ご希望が交換だけになり、交換の品を選ばないと申し込めない |
 | `e2e/return-test-utils.ts`（`mockReturnRoutes`） | 窓口を差し替える受け取り・額を決めて返金の画面の試験（FR-ADMIN-085・087・088・164 ほか） | 見込みの窓口を呼ばない。後は、`receive-estimate`に`legacy: true`を答える | 画面が見込みの窓口の答えを待つようになった（DD-ADMIN-022）。写しの無い注文は窓口も`legacy`を答え、画面は今の計算で額を出す |
 | `e2e/refund-test-utils.ts`（`mockRefundRoutes`） | 窓口を差し替える返金の画面の試験 | 見込みの窓口を呼ばない。後は、`refund-estimate`に`legacy: true`を答える | 同上（DD-ADMIN-023） |
@@ -1611,9 +1611,21 @@ AC-07の3行・予備あり・介在受取とAC-08は旧本文だけで組み立
 
 DB結合・単体の実測は各Taskの実装者と調整役の報告のとおり（2026-11-10〜11-11。手元のSupabase）。この節では再実行していない。
 
+### E2E に無い受け入れ条件の節と、それを確かめる試験（修正1、2026-11-11）
+
+| 節 | 確かめる試験（ファイル：試験名） |
+| --- | --- |
+| AC-02 返品が先で交換が後 | `tests/integration/db/unit-binding-receive.integration.test.ts`：`FREQ-642-AC-02: 交換が先でも返品が先でも、交換0円・返品17,000円`（両方の順を1本で確かめる）、`FREQ-642-AC-03: …行の id の順を入れ替えても…` |
+| AC-07 一部の行だけ受け取る | 同上：`FREQ-642-AC-07: 2行の返品の一部の行だけ受け取ると、計画の見込みと返した額が同じで、残りの行は未処理のまま`（2026-11-11 足した） |
+| AC-07 相談と今すぐの id の順・上限 | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-07: 相談の返金は相談の分だけで、今すぐの分を店長が下げても相談の残りに戻らない`。`e2e/FR-ADMIN-164-return-receive-per-item.spec.ts`：`FREQ-641-AC-02`（上限）・`FREQ-641-AC-04`（印が逆）。`tests/unit/components/OrderReturnReceiveDialog.unitPricing.test.tsx`：`FREQ-642-AC-07: 窓口の上限を超える額は…上限で切る` |
+| AC-27 注文全体の取り消し | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-27: 注文全体の取り消しは全部の枠が returned_shop で払った合計を返す`。`tests/unit/lib/orders/unit-pricing/unit-pricing-service.test.ts`：`FREQ-642-AC-27: 発送前の品を選ぶ返金は計画を作り…` |
+| AC-30 店長が交換を返金に変える | `tests/integration/db/unit-binding-receive.integration.test.ts`：`FREQ-642-AC-30: 交換の頼みを返金に変えた行は、お店の側の事情で返った枠になる（17,000円）`（2026-11-11 足した）。`tests/unit/lib/orders/unit-pricing/unit-pricing-service.test.ts`：`FREQ-642-AC-26: 交換の頼みを店が返金に変えた行は shop の扱いで…` |
+
+穴: 無し（AC-07 の「一部の行だけ受け取る」と AC-30 の2つ目は試験が無かったので上の2本を足した）。
+
 ### 流し方と限り
 
-- E2E: `npm run db:reset`の後、3000番の残りのアプリを止めてから`npx playwright test <ファイル> --project=chromium --no-deps`。既存の割引の試験（`FR-ACCOUNT-045`・`FR-ADMIN-127`）は`--project=isolated-global --no-deps`。`--no-deps`を付けないと`isolated-global`の後始末が他の試験まで流す。途中で止めた割引の試験は有効な自動の割引を手元のDBに残すので、止めた後は`db:reset`する。
+- E2E: `npm run db:reset`の後、3000番の残りのアプリを止めてから`npx playwright test <ファイル> --project=chromium --no-deps`。割引の試験と返品の設定の行を書き換える試験（`FR-ACCOUNT-045`・`FR-ADMIN-127`・`FR-ADMIN-165`・`FR-ADMIN-166`）は`--project=isolated-global --no-deps`（`playwright.config.ts` で他の試験と同時に流れない project に入れた）。`--no-deps`を付けないと`isolated-global`の後始末が他の試験まで流す。途中で止めた割引の試験は有効な自動の割引を手元のDBに残すので、止めた後は`db:reset`する。
 - 受け取り・返金の窓口の差し替えは、Stripeの呼び出し（返金の作成と支払い方法の読み取り）だけを偽物にする。値段の計画の作成・DBの関数・見込みの窓口は本物。Stripeとの実際のやり取りは別の試験が持つ。
 - 全件のE2Eと`trace:compare-e2e`は調整役が流す。ここの実測は上の表の試験ファイルを個別に流した結果。
 

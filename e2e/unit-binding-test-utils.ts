@@ -280,8 +280,16 @@ export async function installReceiveBridge(page: Page, actorId: string): Promise
     const returnId = new URL(route.request().url()).pathname.split('/')[4];
     const body = route.request().postDataJSON() as UbReceiveBody;
     state.posts.push({ returnId, body });
-    const { receiveReturnAndRefund } = await loadServices();
-    const result = await receiveReturnAndRefund(stubDeps(), receiveInput(returnId, actorId, body));
+    let result;
+    try {
+      const { receiveReturnAndRefund } = await loadServices();
+      result = await receiveReturnAndRefund(stubDeps(), receiveInput(returnId, actorId, body));
+    } catch (error) {
+      // 入口が投げても窓口は必ず答える（答えないと待つ側が原因の分からない時間切れになる）
+      state.results.push(error);
+      await fulfillJson(route, { error: String((error as Error)?.message ?? error), code: 'bridge_error' }, 500);
+      return;
+    }
     state.results.push(result);
     if (result.kind !== 'received') {
       await fulfillJson(route, { error: '受け取りを記録できませんでした。', code: 'refused' }, 409);
@@ -304,8 +312,15 @@ export async function installRefundBridge(page: Page, actorId: string): Promise<
     const orderId = new URL(route.request().url()).pathname.split('/')[4];
     const request = route.request().postDataJSON() as CreateRefundRequest;
     state.posts.push(request);
-    const { submitAdminRefund } = await loadServices();
-    const result = await submitAdminRefund(stubDeps(), { orderId, actorId, request });
+    let result;
+    try {
+      const { submitAdminRefund } = await loadServices();
+      result = await submitAdminRefund(stubDeps(), { orderId, actorId, request });
+    } catch (error) {
+      state.results.push(error);
+      await fulfillJson(route, { error: String((error as Error)?.message ?? error), code: 'bridge_error' }, 500);
+      return;
+    }
     state.results.push(result);
     if (result.kind !== 'accepted') {
       await fulfillJson(route, { error: '返金を受け付けられませんでした。', code: result.kind === 'refused' ? result.code : 'failed' }, 409);

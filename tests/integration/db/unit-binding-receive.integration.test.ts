@@ -233,6 +233,27 @@ describeLocalDb('FREQ-642-AC-17: unit binding receive (controller only)', (db) =
     expect(one.received.refund_amount).toBe(17000);
   });
 
+  test('FREQ-642-AC-07: 2行の返品の一部の行だけ受け取ると、計画の見込みと返した額が同じで、残りの行は未処理のまま', async () => {
+    const f = await hRefundFixture(db(), true);
+    const ret = await createUbReturn(db(), f, [{ quantity: 1 }, { quantity: 1 }]);
+    const input = { returnId: ret.returnId, actorId: f.actor, choice: 'now', units: [unit(ret.lineIds[1], 1, 'now')] };
+    const plan = (await buildReceivePricing(db(), input))!;
+    const received = await ubReceive(db(), input, plan);
+    expect(plan.nowRefund).toBe(17000);
+    expect(received.refund_amount).toBe(plan.nowRefund);
+    const left = (await q("select count(*)::int n from public.order_return_receipt_lines l join public.order_return_receipts r on r.id=l.receipt_id where r.return_id=$1 and l.return_line_id=$2", [ret.returnId, ret.lineIds[0]])).rows[0].n;
+    expect(left).toBe(0);
+  });
+
+  test('FREQ-642-AC-30: 交換の頼みを返金に変えた行は、お店の側の事情で返った枠になる（17,000円）', async () => {
+    const f = await hRefundFixture(db(), true);
+    const ret = await createUbReturn(db(), f, [{ quantity: 1, exchange: true, method: 'stock' }]);
+    const received = await ubReceive(db(), { returnId: ret.returnId, actorId: f.actor, choice: 'now', units: [unit(ret.lineIds[0])],
+      overrides: [{ return_line_id: ret.lineIds[0], action: 'refund' }] });
+    expect(received.refund_amount).toBe(17000);
+    expect((await slotsOf(f.orderId)).map((x) => x.state).sort()).toEqual(['kept', 'returned_shop']);
+  });
+
   test('FREQ-642-AC-17: 同じ requestKey の送り直しは、間に状態が変わっても同じ結果', async () => {
     const f = await hRefundFixture(db(), true);
     const ret = await createUbReturn(db(), f, [{ quantity: 2 }]);

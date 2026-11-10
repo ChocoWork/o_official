@@ -285,7 +285,7 @@ for (const viewport of viewports) {
         photoInstructions: '', shippingPayer: 'shop', outOfStockExchange: 'make',
       });
       expect(saved.reasons.find((row) => row.reason === 'defective')).toEqual({
-        reason: 'defective', shown: true, resolutions: 'refund_and_exchange', photo: 'required',
+        reason: 'defective', shown: true, resolutions: 'exchange_only', photo: 'required',
         photoInstructions: '傷や不具合の場所がわかる写真をお送りください', shippingPayer: 'shop', outOfStockExchange: 'make',
       });
     });
@@ -353,8 +353,8 @@ for (const viewport of viewports) {
         windowStart: 'each_item',
         deliveryBufferDays: 3,
         reasons: [
-          { reason: 'defective', shown: true, resolutions: 'refund_and_exchange', photo: 'required', photoInstructions: '傷や不具合の場所がわかる写真をお送りください', shippingPayer: 'shop', outOfStockExchange: 'make' },
-          { reason: 'wrong_item', shown: true, resolutions: 'refund_and_exchange', photo: 'required', photoInstructions: '傷や不具合の場所がわかる写真をお送りください', shippingPayer: 'shop', outOfStockExchange: 'make' },
+          { reason: 'defective', shown: true, resolutions: 'exchange_only', photo: 'required', photoInstructions: '傷や不具合の場所がわかる写真をお送りください', shippingPayer: 'shop', outOfStockExchange: 'make' },
+          { reason: 'wrong_item', shown: true, resolutions: 'exchange_only', photo: 'required', photoInstructions: '傷や不具合の場所がわかる写真をお送りください', shippingPayer: 'shop', outOfStockExchange: 'make' },
           { reason: 'size_too_small', shown: true, resolutions: 'exchange_only', photo: 'optional', photoInstructions: 'タグの付いた状態がわかる写真をお送りください', shippingPayer: 'customer', outOfStockExchange: 'decline' },
           { reason: 'size_too_large', shown: true, resolutions: 'exchange_only', photo: 'optional', photoInstructions: 'タグの付いた状態がわかる写真をお送りください', shippingPayer: 'customer', outOfStockExchange: 'decline' },
           { reason: 'color', shown: false, resolutions: 'refund_and_exchange', photo: 'optional', photoInstructions: '', shippingPayer: 'customer', outOfStockExchange: 'decline' },
@@ -602,7 +602,7 @@ for (const viewport of viewports) {
         expect(sample.deliveryBufferDays).toBe(3);
         for (const row of sample.reasons) {
           const stored = rows.find((item) => item.reason === row.reason);
-          expect(stored, row.reason).toMatchObject({ shipping_payer: row.shippingPayer, out_of_stock_exchange: row.outOfStockExchange });
+          expect(stored, row.reason).toMatchObject({ resolutions: row.resolutions, shipping_payer: row.shippingPayer, out_of_stock_exchange: row.outOfStockExchange });
         }
       });
     });

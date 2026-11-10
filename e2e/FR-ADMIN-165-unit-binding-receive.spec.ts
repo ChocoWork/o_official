@@ -95,7 +95,10 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         await waitPosts(bridge, 1);
         expect(bridge.posts[0].returnId).toBe(exchange.returnId);
         expect(await refundsOf(s.db, order.orderId)).toEqual([]);
-        expect((await eventsOf(s.db, order.orderId)).every((event) => event.now_refund === 0)).toBe(true);
+        // 交換だけの受け取りは出来事（E・返す額）を作らず、交換の結びだけが1本できる
+        expect(await eventsOf(s.db, order.orderId)).toEqual([]);
+        const links = await s.db.query('select count(*)::int n from public.order_unit_exchange_links l join public.order_unit_slots x on x.order_item_id=l.slot_order_item_id and x.unit_index=l.slot_unit_index where x.order_id=$1', [order.orderId]);
+        expect(links.rows[0].n).toBe(1);
 
         // 返品の受け取り: 画面の見込みが 17,000円で、返した額も同じ
         await page.reload();
@@ -149,7 +152,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
       }, { returnSettings: true });
     });
 
-    test('FREQ-642-AC-07: 画面に出た返送料・交換の手数料・お支払い待ち・返金額が、受け取りで DB に残った値と同じ', async ({ page }) => {
+    test('FREQ-642-AC-07: 画面に出た返送料・お支払い待ち・返金額が、受け取りで DB に残った値と同じ（交換の手数料と送料はお支払い待ちの合計で確かめる）', async ({ page }) => {
       test.setTimeout(300_000);
       await withDiscountScenario(`ub165-ac07-${viewport.name}`, async (s) => {
         const order = await repeatOrder(s);
@@ -191,7 +194,9 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         expect(refunds.map((r) => r.amount)).toEqual([shownRefund]);
         expect((await returnFeeRow(s.db, refund.returnId)).returnShippingFee).toBe(shownShipping);
         const events = await eventsOf(s.db, order.orderId);
-        expect(events.at(-1)).toMatchObject({ standard_refund: 17_000, now_refund: 17_000 }); // 見込みの商品の額 17,000円は E のまま
+        // 返送料は E の外。出来事の商品の額 17,000円は E のまま、手数料の累計（率）は0
+        expect(events.at(-1)).toMatchObject({ standard_refund: 17_000, now_refund: 17_000, fee_amount: 0 });
+        expect(shownRefund).toBe(events.at(-1)!.now_refund - shownShipping);
       }, { returnSettings: true });
     });
 

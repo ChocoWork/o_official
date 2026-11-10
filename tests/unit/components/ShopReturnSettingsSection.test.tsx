@@ -36,8 +36,8 @@ const SIZE_PHOTO_NOTE = 'タグの付いた状態がわかる写真をお送り�
 
 /** 既定の設定（仕様書 8-3 の最初の値）を保存した時に、窓口へ渡る理由ごとの行（段1の2つの欄と、段2の4つの欄） */
 const DEFAULT_REASONS: ShopReturnSettingsUpdate['reasons'] = [
-  { reason: 'defective', shown: true, resolutions: 'refund_and_exchange', photo: 'required', photoInstructions: DEFECT_PHOTO_NOTE, shippingPayer: 'shop', outOfStockExchange: 'make' },
-  { reason: 'wrong_item', shown: true, resolutions: 'refund_and_exchange', photo: 'required', photoInstructions: DEFECT_PHOTO_NOTE, shippingPayer: 'shop', outOfStockExchange: 'make' },
+  { reason: 'defective', shown: true, resolutions: 'exchange_only', photo: 'required', photoInstructions: DEFECT_PHOTO_NOTE, shippingPayer: 'shop', outOfStockExchange: 'make' },
+  { reason: 'wrong_item', shown: true, resolutions: 'exchange_only', photo: 'required', photoInstructions: DEFECT_PHOTO_NOTE, shippingPayer: 'shop', outOfStockExchange: 'make' },
   { reason: 'size_too_small', shown: true, resolutions: 'exchange_only', photo: 'optional', photoInstructions: SIZE_PHOTO_NOTE, shippingPayer: 'customer', outOfStockExchange: 'decline' },
   { reason: 'size_too_large', shown: true, resolutions: 'exchange_only', photo: 'optional', photoInstructions: SIZE_PHOTO_NOTE, shippingPayer: 'customer', outOfStockExchange: 'decline' },
   { reason: 'color', shown: false, resolutions: 'refund_and_exchange', photo: 'optional', photoInstructions: '', shippingPayer: 'customer', outOfStockExchange: 'decline' },
@@ -752,8 +752,8 @@ describe('ShopReturnSettingsSection の理由ごとの出す・ご希望・写�
     renderSection();
 
     const expected: Array<[string, boolean, string, string, string]> = [
-      ['破損・不良', true, 'refund_and_exchange', 'required', DEFECT_PHOTO_NOTE],
-      ['注文と違う品が届いた', true, 'refund_and_exchange', 'required', DEFECT_PHOTO_NOTE],
+      ['破損・不良', true, 'exchange_only', 'required', DEFECT_PHOTO_NOTE],
+      ['注文と違う品が届いた', true, 'exchange_only', 'required', DEFECT_PHOTO_NOTE],
       ['サイズが小さい', true, 'exchange_only', 'optional', SIZE_PHOTO_NOTE],
       ['サイズが大きい', true, 'exchange_only', 'optional', SIZE_PHOTO_NOTE],
       ['色がイメージと違った', false, 'refund_and_exchange', 'optional', ''],

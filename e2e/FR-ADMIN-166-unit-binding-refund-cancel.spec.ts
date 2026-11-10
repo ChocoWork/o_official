@@ -158,7 +158,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
 
         expect((await refundsOf(s.db, second.orderId)).map((r) => r.amount)).toEqual([17_000]);
         const firstRefunds = await refundsOf(s.db, first.orderId);
-        expect(firstRefunds.map((r) => [r.source, r.amount])).toEqual([[firstRefunds[0].source, 17_000], ['unit_hold_release', 3_000]]);
+        expect(firstRefunds.map((r) => [r.source, r.amount])).toEqual([['return', 17_000], ['unit_hold_release', 3_000]]);
         expect(await refundedTotal(s.db, first.orderId)).toBeLessThanOrEqual(20_000);
         expect(await refundedTotal(s.db, first.orderId) + await refundedTotal(s.db, second.orderId)).toBe(37_000);
       }, { returnSettings: true });

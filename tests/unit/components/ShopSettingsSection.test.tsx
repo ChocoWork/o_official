@@ -889,7 +889,7 @@ describe('ShopSettingsSection の返品の欄の段2の欄', () => {
     expect(reasons[0]).toEqual({
       reason: 'defective',
       shown: true,
-      resolutions: 'refund_and_exchange',
+      resolutions: 'exchange_only',
       photo: 'required',
       photoInstructions: '傷や不具合の場所がわかる写真をお送りください',
       shippingPayer: 'shop',
