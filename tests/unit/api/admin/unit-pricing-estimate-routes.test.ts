@@ -63,7 +63,7 @@ const RECEIVE_BODY = {
   refundShippingAmount: 0,
   treatments: [{ returnLineId: LINE_ID, treatment: 'shop' }],
 };
-const REFUND_ESTIMATE = { legacy: false, suggestedAmount: 17000, refundCap: 37000, changesUnits: true };
+const REFUND_ESTIMATE = { legacy: false, suggestedAmount: 17000, itemsAmount: 17000, refundCap: 37000, changesUnits: true };
 const REFUND_BODY = { lines: [{ orderItemId: LINE_ID, quantity: 1, beforeShipment: true }], shippingAmount: 0 };
 
 beforeEach(() => {

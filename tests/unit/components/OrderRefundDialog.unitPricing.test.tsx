@@ -43,7 +43,7 @@ const MATERIALS: RefundMaterials = {
 };
 
 const estimateOf = (overrides: Record<string, unknown> = {}) => ({
-  legacy: false, suggestedAmount: 17000, refundCap: 33800, changesUnits: true, ...overrides,
+  legacy: false, suggestedAmount: 17000, itemsAmount: 17000, refundCap: 33800, changesUnits: true, ...overrides,
 });
 
 function install(estimate: () => Promise<Response>) {
@@ -77,6 +77,8 @@ describe('返金の画面の見込み（FREQ-642）', () => {
     const group = await within(dialog).findByRole('group', { name: '返金の内訳' });
     expect(within(group).getByText('返金額').parentElement).toHaveTextContent('￥17,000');
     expect(within(dialog).getByRole('spinbutton', { name: '返金額' })).toHaveValue(17000);
+    // 商品の行は窓口の itemsAmount
+    expect(within(group).getByText('商品').parentElement).toHaveTextContent('￥17,000');
 
     expect(estimateCalls()).toHaveLength(1);
     expect(JSON.parse((estimateCalls()[0][1] as RequestInit).body as string)).toEqual({
@@ -94,6 +96,19 @@ describe('返金の画面の見込み（FREQ-642）', () => {
     const dialog = await open(async () => json({ data: estimateOf({ suggestedAmount: 40000, refundCap: 30000 }) }));
     setQuantity(dialog, 'refund-quantity-item-stock-before', 1);
     await waitFor(() => expect(within(dialog).getByRole('spinbutton', { name: '返金額' })).toHaveValue(30000));
+  });
+
+  test('DD-ADMIN-023: 手で入れた返金額は、選びを変えた後の新しい窓口の額を上書きしない（上限で切る）', async () => {
+    let n = 0;
+    const dialog = await open(async () => json({ data: n++ === 0 ? estimateOf() : estimateOf({ suggestedAmount: 34000, itemsAmount: 34000 }) }));
+    setQuantity(dialog, 'refund-quantity-item-stock-before', 1);
+    await waitFor(() => expect(within(dialog).getByRole('spinbutton', { name: '返金額' })).toHaveValue(17000));
+    fireEvent.change(within(dialog).getByRole('spinbutton', { name: '返金額' }), { target: { value: '5000' } });
+    expect(within(dialog).getByRole('spinbutton', { name: '返金額' })).toHaveValue(5000);
+
+    setQuantity(dialog, 'refund-quantity-item-stock-before', 2);
+    // 新しい窓口の額（34,000円を窓口の上限 33,800円で切った額）が出る。前に入れた 5,000円は残らない
+    await waitFor(() => expect(within(dialog).getByRole('spinbutton', { name: '返金額' })).toHaveValue(33800));
   });
 
   test('DD-ADMIN-023: 送料を直すと見込みを出し直す', async () => {

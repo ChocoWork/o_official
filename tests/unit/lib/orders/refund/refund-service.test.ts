@@ -69,7 +69,7 @@ const mockRecord = recordOrderRefundResult as jest.MockedFunction<typeof recordO
 const mockPlanRefund = planOrderRefund as jest.MockedFunction<typeof planOrderRefund>;
 const mockPlanCancel = planOrderCancel as jest.MockedFunction<typeof planOrderCancel>;
 /** 写しの無い注文: 計画は無い */
-const NO_PLAN = { plan: null, estimate: { legacy: true, suggestedAmount: 0, refundCap: 0, changesUnits: false } };
+const NO_PLAN = { plan: null, estimate: { legacy: true, suggestedAmount: 0, itemsAmount: 0, refundCap: 0, changesUnits: false } };
 
 const REQUEST_KEY = 'd1b2c3d4-1111-4222-8333-444455556666';
 const ITEM_ID = 'e1b2c3d4-1111-4222-8333-444455556666';
@@ -1272,7 +1272,7 @@ describe('createDefaultRefundServiceDeps', () => {
 describe('FREQ-642: 値段の計画と、前の注文へ割引の分を戻す返金', () => {
   const RELEASE_ID = 'b9b2c3d4-1111-4222-8333-444455556666';
   const PLAN = { kind: 'pre_shipment_cancel', orderId: ORDER_ID, version: 'v1' } as unknown as UnitPricingPlan;
-  const PLANNED = { plan: PLAN, estimate: { legacy: false, suggestedAmount: 5000, refundCap: 5000, changesUnits: true } };
+  const PLANNED = { plan: PLAN, estimate: { legacy: false, suggestedAmount: 5000, itemsAmount: 5000, refundCap: 5000, changesUnits: true } };
 
   function withReleaseRef() {
     mockGet.mockImplementation(async (_store, id) =>

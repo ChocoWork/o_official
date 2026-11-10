@@ -6,7 +6,9 @@ import type { OrderReturnDetail, OrderReturnLineDetail } from '@/lib/orders/retu
 const mockClientFetch = jest.fn();
 jest.mock('@/lib/client-fetch', () => ({ clientFetch: (...args: unknown[]) => mockClientFetch(...args) }));
 // 見込みの窓口の呼び出しは OrderReturnReceiveDialog.unitPricing.test.tsx で確かめる。ここは窓口を呼ばず、画面の計算（写しの無い注文の見込み）で今の振る舞いを確かめる
-jest.mock('@/hooks/useUnitPricingEstimate', () => ({ useUnitPricingEstimate: () => ({ status: 'idle' }) }));
+jest.mock('@/hooks/useUnitPricingEstimate', () => ({
+  useUnitPricingEstimate: (url: string | null) => (url ? { status: 'ready', estimate: { legacy: true } } : { status: 'idle' }),
+}));
 
 import OrderReturnReceiveDialog, {
   receiveNoticeOf,

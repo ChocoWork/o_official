@@ -206,6 +206,38 @@ describe('受け取りの画面の見込み（FREQ-642）', () => {
     expect(submit(dialog)).toBeDisabled();
   });
 
+  test('DD-ADMIN-022: 写しのある注文で状態が未定の行がある間は、画面の計算の額を出さず、確定を止める', async () => {
+    const dialog = await open(returnDetail([blouse()]), { estimate: async () => json({ data: estimateOf() }) });
+    receiveUnit(dialog, 0);
+    // 2点目はチェックだけで状態が未定。窓口に聞ける選びではない
+    fireEvent.click(within(rows(dialog)[1]).getByRole('checkbox', { name: '届いた' }));
+    expect(within(dialog).queryByRole('group', { name: '返金の内訳' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('spinbutton', { name: '返金額' })).not.toBeInTheDocument();
+    expect(dialog.textContent).not.toMatch(/￥12,000|￥24,000/);
+    expect(submit(dialog)).toBeDisabled();
+    expect(submit(dialog).textContent).not.toMatch(/￥/);
+  });
+
+  test('DD-ADMIN-022: 固定の費用は窓口の内訳を legacy と同じ見出しの行で出し、お支払い待ちも窓口の値', async () => {
+    const dialog = await open(returnDetail([blouse()]), {
+      estimate: async () => json({
+        data: estimateOf({
+          fixedFees: 1600, fixedFeeParts: { returnShipping: 800, exchangeFee: 500, exchangeShipping: 300 },
+          refundAmount: 15400, feeDue: 3000, feePending: 0,
+        }),
+      }),
+    });
+    receiveUnit(dialog, 0);
+    receiveUnit(dialog, 1);
+    const group = await within(dialog).findByRole('group', { name: '返金の内訳' });
+    expect(within(group).getByText('返送料').parentElement).toHaveTextContent('−￥800');
+    expect(within(group).getByText('交換の手数料').parentElement).toHaveTextContent('−￥500');
+    expect(within(group).getByText('交換の送料').parentElement).toHaveTextContent('−￥300');
+    expect(within(group).queryByText('返送料・交換の手数料・送料')).not.toBeInTheDocument();
+    expect(within(group).getByText('返金額').parentElement).toHaveTextContent('￥15,400');
+    expect(within(dialog).getByText(/お支払い待ち ￥3,000/)).toBeInTheDocument();
+  });
+
   test('FREQ-642-AC-20: 写しの無い注文（legacy）は今の画面の計算のまま（1点 12,000円）', async () => {
     const dialog = await open(returnDetail([blouse()]), {
       estimate: async () => json({ data: estimateOf({ legacy: true, nowRefund: 12000, refundAmount: 12000, refundCap: 12000 }) }),

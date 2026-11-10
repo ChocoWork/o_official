@@ -115,8 +115,6 @@ const TREATMENT_OPTIONS: Array<{ value: ReturnSide; label: string }> = [
 const TREATMENT_HINT = '返金する品にかかる割引の扱いです。理由から決まった値で始まり、直すと返金の見込みを出し直します。';
 const ESTIMATING_TEXT = '計算しています';
 const ESTIMATE_FAILURE_MESSAGE = '返金の見込みを計算できませんでした。選び直すか、画面を開き直してください。';
-// 写しのある注文の見込みで、返送料・交換の手数料・交換の送料をまとめて出す行の見出し（窓口は合計だけを返す）
-const FIXED_FEES_TERM = '返送料・交換の手数料・送料';
 const CONSULT_NOTE = '返金待ちになります。額はあとで「額を決めて返金する」で決めます。';
 const capErrorOf = (cap: number, orderLimited: boolean) => orderLimited
   ? `この注文で返せる額（${formatYen(cap)}）を超えて入れられません。`
@@ -504,16 +502,17 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
     ESTIMATE_FAILURE_MESSAGE,
   );
   const estimating = estimateState.status === 'loading';
-  const estimateBlocked = estimating || estimateState.status === 'error';
-  // 写しの無い注文（legacy）は、今の画面の計算（return-calc）のまま。写しのある注文は窓口の額だけを使う
+  // 額が要るのは返金か交換の品がある時。その時に窓口の答え（ready）が無ければ（待っている・誤り・まだ聞けない選び）、
+  // 額は出さない。画面の計算（return-calc）を使うのは、窓口が写しの無い注文（legacy）と答えた時と、額が要らない時だけ
+  const estimateBlocked = (refundUnits > 0 || exchangeUnits > 0) && estimateState.status !== 'ready';
   const serverEstimate = estimateState.status === 'ready' && !estimateState.estimate.legacy ? estimateState.estimate : null;
+  // 写しのある注文は窓口の値だけ（お支払い待ちも内訳も窓口が出す。画面で導かない）
   const preview = serverEstimate
     ? {
         refundAmount: serverEstimate.refundAmount,
         refundCap: serverEstimate.refundCap,
         nowItemsAmount: serverEstimate.nowRefund,
-        // 今すぐの分で引ききれない固定の費用のうち、同じ受け取りに相談の品が無い時の分（相談の品があれば後で引く）
-        feeDue: consultUnits > 0 ? 0 : Math.max(serverEstimate.fixedFees - serverEstimate.nowRefund, 0),
+        feeDue: serverEstimate.feeDue ?? 0,
       }
     : localPreview;
   // 上限は min(注文の返せる額, 今すぐの品の額 + 送料)（設計4-2）。見込みも上限で切る。手で入れた額は丸めずに保ち、超えたら誤りの文で止める
@@ -521,20 +520,19 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
   const amountOverCap = canRefund && nowUnits > 0 && amount > preview.refundCap;
   const autoRefundOverLimit = p9Allowed && nowUnits > 0 && preview.refundAmount > refundableAmount;
   const breakdownRows: Array<[string, string]> = [['商品', formatYen(preview.nowItemsAmount)]];
-  if (serverEstimate) {
-    if (serverEstimate.fixedFees > 0) breakdownRows.push([FIXED_FEES_TERM, `${MINUS}${formatYen(serverEstimate.fixedFees)}`]);
-  } else {
-    const { nowFees } = localPreview;
-    if (nowFees.returnShipping > 0) breakdownRows.push(['返送料', `${MINUS}${formatYen(nowFees.returnShipping)}`]);
-    if (nowFees.restocking > 0) breakdownRows.push(['返品の手数料', `${MINUS}${formatYen(nowFees.restocking)}`]);
-    if (nowFees.exchange > 0) breakdownRows.push(['交換の手数料', `${MINUS}${formatYen(nowFees.exchange)}`]);
-    if (nowFees.exchangeShipping > 0) breakdownRows.push(['交換の送料', `${MINUS}${formatYen(nowFees.exchangeShipping)}`]);
-  }
+  // 写しのある注文の返送料・交換の手数料・交換の送料は窓口の内訳。率の手数料は E の中なので行に出ない
+  const feeRows = serverEstimate
+    ? { returnShipping: serverEstimate.fixedFeeParts?.returnShipping ?? 0, restocking: 0, exchange: serverEstimate.fixedFeeParts?.exchangeFee ?? 0, exchangeShipping: serverEstimate.fixedFeeParts?.exchangeShipping ?? 0 }
+    : localPreview.nowFees;
+  if (feeRows.returnShipping > 0) breakdownRows.push(['返送料', `${MINUS}${formatYen(feeRows.returnShipping)}`]);
+  if (feeRows.restocking > 0) breakdownRows.push(['返品の手数料', `${MINUS}${formatYen(feeRows.restocking)}`]);
+  if (feeRows.exchange > 0) breakdownRows.push(['交換の手数料', `${MINUS}${formatYen(feeRows.exchange)}`]);
+  if (feeRows.exchangeShipping > 0) breakdownRows.push(['交換の送料', `${MINUS}${formatYen(feeRows.exchangeShipping)}`]);
   breakdownRows.push(['送料', formatYen(shippingAmount)], ['返金額', formatYen(preview.refundAmount)]);
 
   // お支払い待ちは、今すぐの分で引ききれない手数料のうち、同じ受け取りに相談の品が無い時の分（相談の品があれば後で引く。設計4-3）。
   // 返金の品が無い受け取り（交換だけ）は、手数料の全部
-  const feeDuePreview = preview.feeDue;
+  const feeDuePreview = estimateBlocked ? 0 : preview.feeDue;
   // 交換品の割り当てを保留するのは、この受け取りの手数料だけでなく、前の受け取りの手数料がまだ払われていない時も同じ
   // （DB の割り当ての止め fee_waiting と同じ条件: 未決着の手数料があり、受け取りの記録も、支払いを待たずに送るも、まだ）
   const feeStillUnpaid = detail.fees.feeDueAmount > 0 && detail.fees.feeReceivedAt === null && detail.fees.exchangeReleasedAt === null;
@@ -748,11 +746,12 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
 
               {treatmentLines.length > 0 ? (
                 <div className="space-y-2">
-                  <p className="font-acumin lk-text-3xs text-[#474747]">{TREATMENT_HINT}</p>
+                  <p id="return-receive-treatment-hint" className="font-acumin lk-text-3xs text-[#474747]">{TREATMENT_HINT}</p>
                   {treatmentLines.map((line) => (
                     <div key={line.id} role="group" aria-label={lineLabel({ name: line.itemName, color: line.color, size: line.size })} className="border border-[#d4d4d4] p-3">
                       <SingleSelect
                         label="割引の扱い"
+                        aria-describedby="return-receive-treatment-hint"
                         options={TREATMENT_OPTIONS}
                         value={treatmentOf(line)}
                         disabled={stopped}
@@ -907,7 +906,7 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
               {effectiveChoice === 'none' && feeDuePreview > 0 ? (
                 <div className="space-y-2">
                   <dl className="space-y-1 border-t border-[#d4d4d4] pt-3">
-                    {breakdownRows.filter(([term]) => ['返送料', '交換の手数料', '交換の送料', FIXED_FEES_TERM].includes(term)).map(([term, value]) => (
+                    {breakdownRows.filter(([term]) => ['返送料', '交換の手数料', '交換の送料'].includes(term)).map(([term, value]) => (
                       <div key={term} className="flex justify-between font-acumin lk-text-sm text-black"><dt>{term}</dt><dd>{value}</dd></div>
                     ))}
                   </dl>

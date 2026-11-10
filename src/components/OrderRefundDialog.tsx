@@ -252,10 +252,10 @@ function OrderRefundDialogBody({ orderId, onClose, onRefunded, onUncertain, pref
   const serverTotal = serverEstimate && order ? Math.min(serverEstimate.suggestedAmount, serverEstimate.refundCap, order.refundableAmount) : null;
   const standardTotal = serverTotal ?? estimate?.total ?? null;
   const amount =
-    order && standardTotal !== null ? (fixedFull ? order.refundableAmount : Math.min(order.refundableAmount, amountEntered ?? standardTotal)) : 0;
+    order && standardTotal !== null ? (fixedFull ? order.refundableAmount : Math.min(order.refundableAmount, serverEstimate?.refundCap ?? Number.POSITIVE_INFINITY, amountEntered ?? standardTotal)) : 0;
   const breakdownRows: Array<[string, string]> = serverTotal !== null
     ? [
-        ['商品', formatYen(Math.max(serverTotal - shippingAmount, 0))],
+        ['商品', formatYen(serverEstimate?.itemsAmount ?? 0)],
         ['送料', formatYen(shippingAmount)],
         ['返金額', formatYen(serverTotal)],
       ]

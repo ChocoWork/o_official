@@ -233,6 +233,57 @@ describe('DD-ADMIN-022: 受け取りの値段の計画と見込み', () => {
     expect((await planReturnReceive(client, RETURN_ID, body)).estimate.fixedFees).toBe(0);
   });
 
+  describe('DD-ADMIN-022: お支払い待ち(feeDue)・相談に回る手数料(feePending)・固定の費用の内訳は DB の admin_receive_return と同じ', () => {
+    const shopLabel = (returnShippingFee: number, extra: Record<string, unknown> = {}) => returnDetail({
+      id: RETURN_ID, returnMethod: 'shop_label', fees: { returnShippingFee, exchangeFee: 500, exchangeShippingFee: 300 },
+      lines: [line({ quantity: 2, progress: { ...line().progress, unprocessed: 2 } }), line({ id: 'lx', resolution: 'exchange', fulfillmentNumber: 2 })],
+      ...extra,
+    });
+
+    test('今すぐだけ: 固定の費用が今すぐの額に収まれば待ちは 0、超えた分が feeDue（内訳は返送料）', async () => {
+      const { client } = clientWith({ materials: repeat() });
+      mockList.mockResolvedValue([shopLabel(800)]);
+      const fits = await planReturnReceive(client, RETURN_ID, BODY);
+      expect(fits.estimate).toMatchObject({ fixedFees: 800, fixedFeeParts: { returnShipping: 800, exchangeFee: 0, exchangeShipping: 0 }, feeDue: 0, feePending: 0 });
+
+      mockList.mockResolvedValue([shopLabel(20000)]);
+      const over = await planReturnReceive(client, RETURN_ID, BODY);
+      expect(over.estimate).toMatchObject({ fixedFees: 20000, feeDue: 20000 - 17000, feePending: 0, refundAmount: 0 });
+    });
+
+    test('今すぐと相談が両方: 引ききれない分は feePending（feeDue は 0）', async () => {
+      const { client } = clientWith({ materials: repeat() });
+      mockList.mockResolvedValue([shopLabel(20000)]);
+      const mixed = await planReturnReceive(client, RETURN_ID, {
+        ...BODY,
+        units: [{ returnLineId: 'l1', disposition: 'restocked', quantity: 1, refundChoice: 'now' }, { returnLineId: 'l1', disposition: 'restocked', quantity: 1, refundChoice: 'consult' }],
+        refundChoice: 'mixed',
+      });
+      expect(mixed.estimate).toMatchObject({ fixedFees: 20000, feeDue: 0 });
+      expect(mixed.estimate.feePending).toBe(20000 - (mixed.estimate.nowRefund ?? 0));
+    });
+
+    test('相談だけ: 固定の費用の全部が feePending（feeDue は 0）', async () => {
+      const { client } = clientWith({ materials: repeat() });
+      mockList.mockResolvedValue([shopLabel(800)]);
+      const consult = await planReturnReceive(client, RETURN_ID, {
+        ...BODY, units: [{ returnLineId: 'l1', disposition: 'restocked', quantity: 1, refundChoice: 'consult' }], refundChoice: 'consult',
+      });
+      expect(consult.estimate).toMatchObject({ fixedFees: 800, feeDue: 0, feePending: 800, refundAmount: 0 });
+    });
+
+    test('交換だけ: 固定の費用の全部が feeDue（返送料・交換の手数料・交換の送料の内訳）', async () => {
+      const { client } = clientWith({ materials: repeat() });
+      mockList.mockResolvedValue([shopLabel(800)]);
+      const exchangeOnly = await planReturnReceive(client, RETURN_ID, {
+        ...BODY, units: [{ returnLineId: 'lx', disposition: 'restocked', quantity: 1 }], refundChoice: 'none',
+      });
+      expect(exchangeOnly.estimate).toMatchObject({
+        fixedFees: 1600, fixedFeeParts: { returnShipping: 800, exchangeFee: 500, exchangeShipping: 300 }, feeDue: 1600, feePending: 0,
+      });
+    });
+  });
+
   test('DD-ADMIN-022: 返品が無い・計画の計算が断った時は、画面を開き直してもらう断り', async () => {
     const missing = clientWith({ materials: repeat() });
     mockList.mockResolvedValue([]);
@@ -345,7 +396,7 @@ describe('DD-ADMIN-023: 注文の返金・取り消し・相談の返金の計�
 
     expect(plan?.kind).toBe('pre_shipment_cancel');
     expect(plan?.standardRefund).toBe(17000);
-    expect(estimate).toEqual({ legacy: false, suggestedAmount: 17000, refundCap: 37000, changesUnits: true });
+    expect(estimate).toEqual({ legacy: false, suggestedAmount: 17000, itemsAmount: 17000, refundCap: 37000, changesUnits: true });
   });
 
   test('DD-ADMIN-023: 注文の取り消しは、まだ発送していない品を全部、発送前として取り消す計画', async () => {
@@ -380,7 +431,7 @@ describe('DD-ADMIN-023: 注文の返金・取り消し・相談の返金の計�
     });
 
     expect(plan).toBeNull();
-    expect(estimate).toEqual({ legacy: true, suggestedAmount: 17500, refundCap: 37000, changesUnits: false });
+    expect(estimate).toEqual({ legacy: true, suggestedAmount: 17500, itemsAmount: 17000, refundCap: 37000, changesUnits: false });
   });
 
   test('DD-ADMIN-023: 注文が無ければ order_not_found', async () => {

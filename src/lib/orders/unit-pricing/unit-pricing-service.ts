@@ -210,10 +210,14 @@ export async function planReturnReceive(
   const nowUnits = picks.filter(p => p.part === 'now').reduce((sum, p) => sum + p.quantity, 0);
   const shipping = nowUnits > 0 ? body.refundShippingAmount : 0;
   const refundable = refundMaterials.order.refundableAmount;
-  const fixedFees =
-    (!detail.firstReceiptDone && (refundUnits > 0 || exchangeUnits > 0) && detail.returnMethod === 'shop_label'
-      ? detail.fees.returnShippingFee : 0)
-    + (!detail.firstExchangeReceiptDone && exchangeUnits > 0 ? detail.fees.exchangeFee + detail.fees.exchangeShippingFee : 0);
+  // DB の v_fixed と同じ条件・同じ内訳（最初の受け取りだけ・お店の送り状なら返送料、交換のある最初の受け取りなら交換の手数料と送料）
+  const fixedFeeParts = {
+    returnShipping: !detail.firstReceiptDone && (refundUnits > 0 || exchangeUnits > 0) && detail.returnMethod === 'shop_label'
+      ? detail.fees.returnShippingFee : 0,
+    exchangeFee: !detail.firstExchangeReceiptDone && exchangeUnits > 0 ? detail.fees.exchangeFee : 0,
+    exchangeShipping: !detail.firstExchangeReceiptDone && exchangeUnits > 0 ? detail.fees.exchangeShippingFee : 0,
+  };
+  const fixedFees = fixedFeeParts.returnShipping + fixedFeeParts.exchangeFee + fixedFeeParts.exchangeShipping;
 
   if (materials === null) {
     return { plan: null, estimate: legacyReceiveEstimate(detail, picks, exchangeUnits, body.refundShippingAmount, refundable) };
@@ -231,10 +235,22 @@ export async function planReturnReceive(
     () => planUnitEvent(materials, { kind: 'return_receive', returns: returnInputs, excludedSlots }),
     cause => refused('UNIT_PRICING_INVALID', cause),
   );
+  // DB の admin_receive_return（写しのある注文）の v_due（お支払い待ち）と v_pending（相談の分に回る手数料）。
+  // v_fees は固定の費用だけ（率は E の中）で、v_fee_consult は 0。v_goods は計画の nowRefund
+  let feeDue = 0;
+  let feePending = 0;
+  if (nowUnits > 0) {
+    const shortfall = Math.max(fixedFees - plan.nowRefund, 0);
+    if (refundUnits > nowUnits) feePending = shortfall; else feeDue = shortfall;
+  } else if (refundUnits > 0) {
+    feePending = fixedFees;
+  } else {
+    feeDue = fixedFees;
+  }
   const estimate: ReturnReceiveEstimate = {
     legacy: false,
     standardRefund: plan.standardRefund, nowRefund: plan.nowRefund, consultRefund: plan.consultRefund,
-    feeAmount: plan.feeAmount, fixedFees,
+    feeAmount: plan.feeAmount, fixedFees, fixedFeeParts, feeDue, feePending,
     // 受け取りの式（DB の admin_receive_return）: 写しのある注文の率は E の中なので、固定の費用だけを引く
     refundAmount: nowUnits > 0 ? Math.min(Math.max(plan.nowRefund - fixedFees, 0) + shipping, refundable) : 0,
     refundCap: nowUnits > 0 ? Math.min(refundable, plan.nowRefund + shipping) : 0,
@@ -305,7 +321,10 @@ async function planOrderRefundFrom(
   if (materials === null || preLines.length === 0) {
     // 写しの無い注文と、発送後の品だけ・品を指定しない返金は、今の計算（着の状態も E も変わらない。AC-28）
     const suggestedAmount = safe(estimateRefund(refundMaterials.lines, selections, body.shippingAmount).total);
-    return { plan: null, estimate: { legacy: materials === null, suggestedAmount, refundCap, changesUnits: false } };
+    return {
+      plan: null,
+      estimate: { legacy: materials === null, suggestedAmount, itemsAmount: suggestedAmount - body.shippingAmount, refundCap, changesUnits: false },
+    };
   }
   const cancels = preLines.map(l => ({ orderItemId: l.orderItemId, quantity: l.quantity }));
   const plan = guarded(
@@ -317,7 +336,10 @@ async function planOrderRefundFrom(
   const shippedAmount = shipped.length > 0 ? safe(estimateRefund(refundMaterials.lines, shipped, 0).total) : 0;
   return {
     plan,
-    estimate: { legacy: false, suggestedAmount: plan.standardRefund + shippedAmount + body.shippingAmount, refundCap, changesUnits: true },
+    estimate: {
+      legacy: false, suggestedAmount: plan.standardRefund + shippedAmount + body.shippingAmount,
+      itemsAmount: plan.standardRefund + shippedAmount, refundCap, changesUnits: true,
+    },
   };
 }
 

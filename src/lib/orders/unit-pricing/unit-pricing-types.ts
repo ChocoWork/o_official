@@ -155,6 +155,12 @@ export interface ReturnReceiveEstimate {
   feeAmount: number;
   /** 返送料・交換の手数料・交換の送料（最初の受け取りだけ。E の外） */
   fixedFees: number;
+  /** 写しのある注文だけ: fixedFees の内訳（合計が fixedFees）。画面は 返送料・交換の手数料・交換の送料 の行をこれで出す */
+  fixedFeeParts?: { returnShipping: number; exchangeFee: number; exchangeShipping: number };
+  /** 写しのある注文だけ: お支払い待ちになる額（DB の v_due） */
+  feeDue?: number;
+  /** 写しのある注文だけ: 相談の分に回る手数料（DB の v_pending。受け取りの画面は出さない） */
+  feePending?: number;
   /** 今すぐ返金する額の見込み（店長が額を変えない時の確定の額） */
   refundAmount: number;
   /** 店長が直せる額の上限 */
@@ -166,6 +172,8 @@ export interface ReturnReceiveEstimate {
 export interface OrderRefundEstimate {
   legacy: boolean;
   suggestedAmount: number;
+  /** 商品の額（送料を除く標準の額。上限で切る前）。画面の内訳の「商品」の行 */
+  itemsAmount: number;
   refundCap: number;
   /** 選んだ品が着の状態を変える（発送前の品を選んだ・注文の取り消し）か */
   changesUnits: boolean;
