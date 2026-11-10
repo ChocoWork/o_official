@@ -2424,4 +2424,4 @@ G・H の表（`shipment_slips`・`order_items`・`order_line_unit_amounts`）�
 
 足した外部キーは RESTRICT だけで、`orders`・`order_items`・`order_returns`・`order_return_receipts`・`order_return_lines`・`order_refunds`・`order_line_unit_amounts` と、この 8 表の間（枠 → 出来事、交換の結び → 枠、出来事の行 → 枠・出来事、差し引き → 出来事、出来事と返金のつなぎ → 出来事・返金）。`item_id` の型は `order_items.item_id` に合わせて `bigint`。出来事の金額の列は `NOT NULL DEFAULT 0`。`actor_id` に外部キーは付けない。
 
-足した連番は `public.order_unit_events_seq_seq`（権限はすべて外した）。関数の本文は 2 本取り替えた: `private.group_h_copy_order_discounts`（注文を受けた時に、写し 1 行と、着ごとの枠を足す）と `private.get_checkout_discount_context`（会員の前の注文の着数を、枠のある注文は `state = 'kept'` の枠の数、枠の無い古い注文は今までの式で数える）。理由ごとの設定は、`defective`・`wrong_item` の `resolutions` を `exchange_only` に直した。
+足した連番は `public.order_unit_events_seq_seq`（権限はすべて外した）。関数の本文は 2 本取り替えた: `private.group_h_copy_order_discounts`（注文を受けた時に、写し 1 行と、着ごとの枠を足す）と `private.get_checkout_discount_context`（会員の前の注文の着数を、枠のある注文は `state = 'kept'` の枠の数（status が `cancelled` の注文は、一度も発送していない着＝会計の `accounting_shipped_units` に無い着を数えない）、枠の無い古い注文は今までの式で数える）。理由ごとの設定は、`defective`・`wrong_item` の `resolutions` を `exchange_only` に直した。

@@ -487,7 +487,7 @@ stateDiagram-v2
 - 状態を動かすのは `private.order_unit_apply_plan` だけ（確かめを通った計画の行）。表の BEFORE UPDATE の守り（`ub_order_unit_slots_guard`）が、鍵の列（`order_item_id`・`unit_index`・`order_id`・`item_id`）の変更と、上の表に無い動きを `UNIT_SLOT_IMMUTABLE`（SQLSTATE `55000`）で断る。`kept` のまま値段（`current_price`）を直すのは許す。
 - `returned_shop` から `kept` へ戻す動きは、最後の出来事が発送前の取り消しの枠だけ、取り消しをやめる道が `app.unit_slot_revert` に今の取引の id（`txid_current()`）を入れた取引の中で、G の共通鍵を持ってだけできる。返した枠の値段と持ち主は動かない。戻した時の前受金はそのまま残り、出荷の時に売上になる（5-2 Q7）。
 - 返金の error・やり直し・failed では状態も割り振りも動かさない。返金の記録へのつなぎ（`order_line_unit_amounts.refund_id`）だけ、やり直しで付け替えてよい。
-- 「前の注文の着数」は `kept` の枠の数（移行 A）。状態を動かした時に数が減る（返金の成功を待たない）。
+- 「前の注文の着数」は `kept` の枠の数（移行 A）。ただし status が `cancelled` の注文の、一度も発送していない着（会計の `accounting_shipped_units` に無い着）は数えない（取り消した着。発送済みの着は、全額を返金して注文が `cancelled` になっても手元にあるので数える）。返金が失敗して注文が戻れば数え直す。状態を動かした時に数が減る（返金の成功を待たない）。
 
 ### 発送前の取り消し・前の注文への戻し・取り消しの戻し（FREQ-642 Task 6、2026-11-10）
 

@@ -107,6 +107,7 @@ describeLocalDb('H5 refunds / returns (controller only)', db => {
   test('FREQ-551-AC-03: 取り消された注文の着は前の注文の着数に数えない（自動の取消・Stripe の画面の全額の返金）。通常の取り消しと戻しは数える', async () => {
     const buyer = await seedHMember(db());
     const priorOf = async (itemId: number) => (await db().query("select public.get_checkout_discount_context($1,null,'{}',$2,now(),'confirm') j", [buyer, [itemId]])).rows[0].j.facts.priorUnitsByItem?.[String(itemId)] ?? 0;
+    const beginRefundAdmin = async (f: Awaited<ReturnType<typeof hRefundFixture>>, amount: number, quantity: number) => hBegin(db(), f, amount, false, randomUUID(), quantity);
     // (a) 支払額の不一致の自動の取消（出来事なし・枠は kept のまま）で注文が cancelled になったら数えない
     const auto = await hRefundFixture(db(), false, 2, 3000, buyer);
     expect(await priorOf(auto.catalog.itemId)).toBe(2);
@@ -120,6 +121,20 @@ describeLocalDb('H5 refunds / returns (controller only)', db => {
     await db().query("select * from public.record_external_order_refund($1,$2,37000,'succeeded',null,null,null,'card',null,null,null,now())", [ext.orderId, `re_${randomUUID().replaceAll('-', '')}`]);
     expect((await db().query('select status from public.orders where id=$1', [ext.orderId])).rows[0].status).toBe('cancelled');
     expect(await priorOf(ext.catalog.itemId)).toBe(0);
+    // (d) 発送済みの注文を返品なしで全額返金して cancelled になっても、お客様の手元にある着は数える（出荷済みの着）
+    const shipped = await hRefundFixture(db(), true, 2, 3000, buyer);
+    const full = await beginRefundAdmin(shipped, 37000, 2);
+    await hResult(db(), full.refund_id, 'succeeded');
+    expect((await db().query('select status from public.orders where id=$1', [shipped.orderId])).rows[0].status).toBe('cancelled');
+    expect(await priorOf(shipped.catalog.itemId)).toBe(2);
+    // (e) 発送前の注文の全額の返金が成功して cancelled になれば数えず、失敗に変わって注文が戻れば数え直す
+    const back = await hRefundFixture(db(), false, 2, 3000, buyer);
+    const rb = (await db().query("select * from public.begin_order_refund($1,'auto_amount_mismatch',null,'[]',true,null,null,null,null,null,true,null)", [back.orderId])).rows[0];
+    await hResult(db(), rb.refund_id, 'succeeded');
+    expect(await priorOf(back.catalog.itemId)).toBe(0);
+    await hResult(db(), rb.refund_id, 'failed');
+    expect((await db().query('select status from public.orders where id=$1', [back.orderId])).rows[0].status).toBe('paid');
+    expect(await priorOf(back.catalog.itemId)).toBe(2);
     // (c) 通常の取り消し（order_cancel・計画つき）は枠が returned_shop になり数えない。返金が止まって戻すと数え直す
     const cancel = await hRefundFixture(db(), false, 2, 3000, buyer);
     const plan = await cancelPlanFor(db(), cancel.orderId, cancel.itemId, 2);

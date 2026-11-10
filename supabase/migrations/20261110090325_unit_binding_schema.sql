@@ -10,7 +10,7 @@ BEGIN;
 -- 2. private.group_h_copy_order_discounts also writes one order_discount_snapshots row and one order_unit_slots row per
 --    unit of an H order. Everything else it does is unchanged.
 -- 3. private.get_checkout_discount_context counts the prior units of a member by kept slots for an order that has slots
---    (not of a cancelled order)
+--    (a kept unit of a cancelled order counts only if it was shipped: private.accounting_shipped_units)
 --    and by the old formula for an order that has none. Everything else it does is unchanged.
 -- 4. shop_return_reason_settings: defective and wrong_item accept an exchange only.
 -- Applied migrations are never edited. The G writer allowlist is not changed here.
@@ -366,7 +366,8 @@ BEGIN
           AND NOT EXISTS(SELECT 1 FROM public.order_unit_slots AS s WHERE s.order_id=o.id) GROUP BY oi.item_id),
       slotted AS (SELECT s.item_id,pg_catalog.count(*) FILTER (WHERE s.state='kept')::bigint AS n
         FROM public.orders AS o JOIN public.order_unit_slots AS s ON s.order_id=o.id
-        WHERE o.user_id=_buyer_user_id AND (o.status IN ('paid','shipped') OR o.paid_amount>0) AND o.status<>'cancelled'
+        WHERE o.user_id=_buyer_user_id AND (o.status IN ('paid','shipped') OR o.paid_amount>0) 
+          AND (o.status<>'cancelled' OR EXISTS (SELECT 1 FROM private.accounting_shipped_units(s.order_item_id,NULL) AS su WHERE su.unit_index=s.unit_index))
           AND s.item_id=ANY(_item_ids) GROUP BY s.item_id),
       units AS (SELECT t.item_id,pg_catalog.sum(t.n)::bigint AS n
         FROM (SELECT l.item_id,l.n FROM legacy AS l UNION ALL SELECT k.item_id,k.n FROM slotted AS k) AS t GROUP BY t.item_id)
@@ -491,7 +492,7 @@ BEGIN
   IF v_detail IS NULL THEN
     FOR e IN SELECT * FROM (VALUES
       ('group_h_copy_order_discounts(uuid,uuid,jsonb)','void',false,'v',false,'7905f5e5323b8db102098f495a894aa0'),
-      ('get_checkout_discount_context(uuid,text,text[],bigint[],timestamptz,text)','jsonb',true,'s',true,'2401bef0a8e3175d4173bea7b840c9aa')
+      ('get_checkout_discount_context(uuid,text,text[],bigint[],timestamptz,text)','jsonb',true,'s',true,'794575a0f5acde21fafaddf152f5778b')
     ) AS expected(signature,result_type,stable_reader,volatility,service,body_md5) LOOP
       v_oid := pg_catalog.to_regprocedure('private.'||e.signature);
       SELECT f.* INTO p FROM pg_catalog.pg_proc AS f WHERE f.oid=v_oid;
