@@ -62,6 +62,12 @@ const bodySchema = z.object({
   // 省く／null は「計算どおり」。0は返金しないで終える意味で、0のまま渡す。額を直せるのは店長だけ（DB が返せる額までを確かめる）
   refundAmount: optionalAmount,
   refundShippingAmount: z.number().int().min(0).max(MAX_AMOUNT).default(0),
+  // 返品の行ごとの「割引の扱い」（FREQ-642）。省くと理由から決まる（交換を返金に変えた行はお店の側）。直せるのは店長だけ（値段の計画を作る時に確かめる）
+  treatments: z
+    .array(z.object({ returnLineId: z.string().uuid(), treatment: z.enum(['shop', 'customer']) }))
+    .max(100)
+    .refine((treatments) => new Set(treatments.map((t) => t.returnLineId)).size === treatments.length)
+    .optional(),
   note: optionalText(ADMIN_NOTE_MAX_LENGTH),
   notifyCustomer: z.boolean(),
   sentBackMessage: optionalText(1000),

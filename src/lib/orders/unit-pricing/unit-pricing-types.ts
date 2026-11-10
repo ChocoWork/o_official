@@ -141,3 +141,51 @@ export class UnitPricingError extends Error {
 export function slotKeyOf(orderItemId: string, unitIndex: number): SlotKey {
   return `${orderItemId}:${unitIndex}`;
 }
+
+/**
+ * 見込みの窓口（受け取り・返金・お客様の申し込み）の答えの形（FREQ-642。設計書 6章）。画面からも読む。
+ * 見込みと確定は同じ計画から出すので、店長が額を直さない時は確定の返金の額と同じになる。
+ */
+export interface ReturnReceiveEstimate {
+  /** 注文の時の写しが無い注文（今の計算のまま。AC-20） */
+  legacy: boolean;
+  standardRefund: number;
+  nowRefund: number;
+  consultRefund: number;
+  feeAmount: number;
+  /** 返送料・交換の手数料・交換の送料（最初の受け取りだけ。E の外） */
+  fixedFees: number;
+  /** 今すぐ返金する額の見込み（店長が額を変えない時の確定の額） */
+  refundAmount: number;
+  /** 店長が直せる額の上限 */
+  refundCap: number;
+  /** 写しのある注文だけ: この返品の相談の出来事がまだ返していない額。全部返金済みなら 0 */
+  consultOutstanding?: number;
+}
+
+export interface OrderRefundEstimate {
+  legacy: boolean;
+  suggestedAmount: number;
+  refundCap: number;
+  /** 選んだ品が着の状態を変える（発送前の品を選んだ・注文の取り消し）か */
+  changesUnits: boolean;
+}
+
+export interface CustomerReturnEstimate {
+  refundAmount: number;
+  /** 交換だけならお金が動かない */
+  moneyMoves: boolean;
+}
+
+/**
+ * 相談の返金（admin_refund_return）の計画。着の状態は変わらないので、版と、前の注文へ戻す計画（releases）だけを持つ。
+ * 戻す物が無い時は計画ごと渡さない（null）。
+ */
+export interface ReleasesOnlyPricing {
+  orderId: string;
+  version: string;
+  releases: UnitPricingPlan[];
+}
+
+/** DB の入口（_pricing）へ渡す物 */
+export type UnitPricingArg = UnitPricingPlan | ReleasesOnlyPricing;

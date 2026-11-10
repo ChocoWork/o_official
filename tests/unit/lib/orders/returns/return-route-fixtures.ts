@@ -53,6 +53,9 @@ export const C4_CASES: Array<[ReturnErrorCode, number, string]> = [
   ['CANCEL_REQUEST_STATE_CONFLICT', 409, 'キャンセルの申し込みの状態が変わりました。画面を開き直してください。'],
   ['CANCEL_REQUEST_RESOLUTION_INVALID', 409, '返金・キャンセルの記録を確かめられませんでした。画面を開き直してください。'],
   ['RETURN_RECEIVE_REFUND_CAP_EXCEEDED', 400, '返金できる額を超えています。'],
+  ['UNIT_PRICING_STALE', 409, '他の操作で返金の額の計算が変わりました。画面を開き直してください。'],
+  ['UNIT_PRICING_INVALID', 409, '返金の額の計算を確かめられませんでした。画面を開き直してください。'],
+  ['UNIT_PRICING_REQUIRED', 409, '返金の額の計算が必要です。画面を開き直してください。'],
 ];
 
 /** E-2 の返金の誤り（refund-messages.ts の言葉と HTTP。返品の窓口もそのまま返す）。13個すべて */
@@ -70,4 +73,7 @@ export const E2_CASES: Array<[RefundErrorCode, number, string]> = [
   ['must_include_unshipped', 409, '全額を返金する時は、まだ発送していない商品もすべて選んでください。'],
   ['must_be_full', 409, 'まだ発送していない注文の商品を全部返す時は、送料と返金額も全部返してください。'],
   ['invalid_argument', 400, '入力を確かめてください。'],
+  ['unit_pricing_stale', 409, '他の操作で返金の額の計算が変わりました。画面を開き直してください。'],
+  ['unit_pricing_invalid', 409, '返金の額の計算を確かめられませんでした。画面を開き直してください。'],
+  ['unit_pricing_required', 409, '返金の額の計算が必要です。画面を開き直してください。'],
 ];

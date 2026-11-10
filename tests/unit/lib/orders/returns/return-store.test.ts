@@ -74,6 +74,10 @@ const MIGRATION_SUFFIXES = [
   '_order_return_request_reviews.sql',
   // 返品の品ごとの返金（RETURN_RECEIVE_REFUND_CAP_EXCEEDED を足した。public の関数は作り直していない）
   '_return_receive_per_item.sql',
+  // 交換の印の直し（FREQ-642）: 受け取り・返金の入口に _pricing を足した。UNIT_PRICING_* の言葉もここで止まる
+  '_unit_binding_core.sql',
+  '_unit_binding_receive.sql',
+  '_unit_binding_refunds.sql',
 ];
 
 /** 移行 A〜F の本文をつないだ物（A・B・C は段1、D・E・F は段2） */
@@ -85,8 +89,10 @@ function returnMigrationsText(): string {
 function declaredParams(sql: string, name: string): Array<{ name: string; optional: boolean }> {
   // SQL のコメント（-- から行末まで）は、括弧や引用符を含みうるので、先に捨てる
   const text = sql.replace(/--.*$/gm, '');
-  const head = new RegExp(`CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+public\\.${name}\\s*\\(`).exec(text);
-  expect(head).not.toBeNull();
+  // 作り直された関数は、いちばん後ろの宣言が今の形
+  const heads = [...text.matchAll(new RegExp(`CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+public\\.${name}\\s*\\(`, 'g'))];
+  const head = heads.at(-1);
+  expect(head).not.toBeUndefined();
 
   // 対応する ) までを、括弧・角括弧・引用符の外のカンマで引数に分ける
   const pieces: string[] = [];
@@ -507,6 +513,7 @@ describe('receiveReturn', () => {
       feeDueAmount: 0,
       shopNoticeEnqueued: false,
       replayed: false,
+      releaseRefundIds: [],
     });
 
     expect(rpc).toHaveBeenCalledTimes(1);
@@ -528,6 +535,7 @@ describe('receiveReturn', () => {
       _sent_back_message: '着用の跡があるためお返しします',
       _sent_back_carrier: 'yamato',
       _sent_back_tracking_number: 'AB-9999',
+      _pricing: null,
     });
   });
 
@@ -553,6 +561,7 @@ describe('receiveReturn', () => {
       feeDueAmount: 1600,
       shopNoticeEnqueued: true,
       replayed: false,
+      releaseRefundIds: [],
     });
   });
 
@@ -576,6 +585,7 @@ describe('receiveReturn', () => {
       feeDueAmount: 88,
       shopNoticeEnqueued: false,
       replayed: false,
+      releaseRefundIds: [],
     });
     // 店長が額を0に直した時は、計算どおり（null）ではなく 0 を渡す
     expect(rpc).toHaveBeenCalledWith('admin_receive_return', expect.objectContaining({ _refund_amount: 0 }));
@@ -637,8 +647,8 @@ describe('receiveReturn', () => {
       { return_line_id: LINE_1, disposition: 'restocked', quantity: 1, refund_choice: 'consult' },
     ]);
     expect(rpcArgs._refund_choice).toBe('mixed');
-    // 14引数のまま
-    expect(Object.keys(rpcArgs)).toHaveLength(14);
+    // 14引数に値段の計画（_pricing。FREQ-642）を足した15引数
+    expect(Object.keys(rpcArgs)).toHaveLength(15);
   });
 
   it('DD-ADMIN-018 品の選びを省いた旧本文は、refund_choice のキーを足さずに渡す', async () => {
@@ -675,7 +685,7 @@ describe('refundReturn', () => {
     });
 
     await expect(refundReturn(store, REFUND_INPUT)).resolves.toEqual({
-      refundId: REFUND_ID, amount: 2900, status: 'awaiting_response', replayed: false,
+      refundId: REFUND_ID, amount: 2900, status: 'awaiting_response', replayed: false, releaseRefundIds: [],
     });
 
     expect(rpc).toHaveBeenCalledWith('admin_refund_return', {
@@ -686,6 +696,7 @@ describe('refundReturn', () => {
       _shipping_amount: 500,
       _note: '額を相談して決めた',
       _notify_customer: true,
+      _pricing: null,
     });
   });
 
@@ -693,13 +704,13 @@ describe('refundReturn', () => {
     const first = storeWith({ admin_refund_return: { data: [{ refund_id: null, amount: 0, status: 'waived', replayed: false }] } });
 
     await expect(refundReturn(first.store, { ...REFUND_INPUT, amount: 0, shippingAmount: 0 })).resolves.toEqual({
-      refundId: null, amount: 0, status: 'waived', replayed: false,
+      refundId: null, amount: 0, status: 'waived', replayed: false, releaseRefundIds: [],
     });
     expect(first.rpc).toHaveBeenCalledWith('admin_refund_return', expect.objectContaining({ _amount: 0, _shipping_amount: 0 }));
 
     const again = storeWith({ admin_refund_return: { data: [{ refund_id: null, amount: 0, status: 'waived', replayed: true }] } });
     await expect(refundReturn(again.store, { ...REFUND_INPUT, amount: 0, shippingAmount: 0 })).resolves.toEqual({
-      refundId: null, amount: 0, status: 'waived', replayed: true,
+      refundId: null, amount: 0, status: 'waived', replayed: true, releaseRefundIds: [],
     });
   });
 
@@ -709,7 +720,7 @@ describe('refundReturn', () => {
     });
 
     await expect(refundReturn(store, { ...REFUND_INPUT, amount: null, shippingAmount: 0 })).resolves.toEqual({
-      refundId: REFUND_ID, amount: 2666, status: 'pending', replayed: true,
+      refundId: REFUND_ID, amount: 2666, status: 'pending', replayed: true, releaseRefundIds: [],
     });
     expect(rpc).toHaveBeenCalledWith('admin_refund_return', expect.objectContaining({ _amount: null, _shipping_amount: 0 }));
   });

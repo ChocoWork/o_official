@@ -25,6 +25,9 @@ export const REFUND_ERROR_MESSAGES = {
   must_include_unshipped: { status: 409, message: '全額を返金する時は、まだ発送していない商品もすべて選んでください。' },
   must_be_full: { status: 409, message: 'まだ発送していない注文の商品を全部返す時は、送料と返金額も全部返してください。' },
   invalid_argument: { status: 400, message: '入力を確かめてください。' },
+  unit_pricing_stale: { status: 409, message: '他の操作で返金の額の計算が変わりました。画面を開き直してください。' },
+  unit_pricing_invalid: { status: 409, message: '返金の額の計算を確かめられませんでした。画面を開き直してください。' },
+  unit_pricing_required: { status: 409, message: '返金の額の計算が必要です。画面を開き直してください。' },
 } as const satisfies Record<RefundErrorCode, { status: 400 | 404 | 409; message: string }>;
 
 /** 窓口に届いた中身の形が誤っている時（400）。どこが誤りかは返さない */
@@ -89,6 +92,7 @@ export const REFUND_SOURCE_LABELS = {
   auto_amount_mismatch: '自動の取消（支払額の違い）',
   legacy: '前からの写し',
   return: '返品',
+  unit_hold_release: '返品に伴う割引の戻し',
 } as const satisfies Record<OrderRefundSource, string>;
 
 export const STRIPE_REFUND_REASON_LABELS = {

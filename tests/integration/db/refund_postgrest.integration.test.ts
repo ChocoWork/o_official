@@ -209,7 +209,7 @@ describeLocalDb('integration: 返金の記録の窓口を実際の PostgREST に
 
     const began = await beginOrderRefund(client, input);
 
-    expect(began).toEqual({ refundId: expect.stringMatching(UUID_PATTERN), amount: PRICE, status: 'awaiting_response', replayed: false });
+    expect(began).toEqual({ refundId: expect.stringMatching(UUID_PATTERN), amount: PRICE, status: 'awaiting_response', replayed: false, releaseRefundIds: [] });
     const stored = await db().query(
       `select source, status, amount, shipping_amount, adjustment_amount, request_key, stripe_reason, notify_customer, actor_id, note
        from public.order_refunds where id = $1`,

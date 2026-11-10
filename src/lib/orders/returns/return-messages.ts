@@ -47,6 +47,10 @@ export const RETURN_ERROR_MESSAGES = {
   CANCEL_REQUEST_RESOLUTION_INVALID: { status: 409, message: '返金・キャンセルの記録を確かめられませんでした。画面を開き直してください。' },
   // 返品の品ごとの返金。上限の額を入れた文は、画面が見込みから作る
   RETURN_RECEIVE_REFUND_CAP_EXCEEDED: { status: 400, message: '返金できる額を超えています。' },
+  // 交換の印の直し（FREQ-642）。値段の計画は、画面を開き直すと作り直される
+  UNIT_PRICING_STALE: { status: 409, message: '他の操作で返金の額の計算が変わりました。画面を開き直してください。' },
+  UNIT_PRICING_INVALID: { status: 409, message: '返金の額の計算を確かめられませんでした。画面を開き直してください。' },
+  UNIT_PRICING_REQUIRED: { status: 409, message: '返金の額の計算が必要です。画面を開き直してください。' },
 } as const satisfies Record<ReturnErrorCode, { status: 400 | 403 | 404 | 409; message: string }>;
 
 export const RETURN_DISPLAY_STATUS_LABELS: Record<ReturnDisplayStatus, string> = {

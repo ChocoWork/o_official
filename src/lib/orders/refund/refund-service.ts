@@ -30,6 +30,8 @@ import type {
   RefundErrorCode,
   StripeRefundReason,
 } from '@/lib/orders/refund/refund-types';
+import { planOrderCancel, planOrderRefund, withFreshPricing } from '@/lib/orders/unit-pricing/unit-pricing-service';
+import type { UnitPricingArg } from '@/lib/orders/unit-pricing/unit-pricing-types';
 import { getStripeServerClient } from '@/lib/stripe/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
@@ -83,7 +85,7 @@ export async function submitAdminRefund(
     cancelReason: null,
     notifyCustomer: request.notifyCustomer,
     actorId,
-  });
+  }, async () => (await planOrderRefund(deps.store, orderId, request)).plan);
 }
 
 /** 支払い済みの注文のキャンセル（道イ）。残りの商品と送料の全額は DB が決めるので、額と送料には 0 を渡す */
@@ -106,7 +108,7 @@ export async function submitPaidOrderCancel(
     cancelReason: request.reason,
     notifyCustomer: request.notifyCustomer,
     actorId,
-  });
+  }, async () => (await planOrderCancel(deps.store, orderId)).plan);
 }
 
 /**
@@ -158,6 +160,25 @@ export async function confirmAwaitingRefund(
     return { kind: 'refused', code: 'order_not_found' };
   }
   return settleExistingRefund(deps, ref);
+}
+
+/**
+ * 前の注文へ割引の分を戻す返金（source unit_hold_release。DB が受け取り・返金・取り消しと同じ取引で「返事待ち」に作る）を、Stripe に頼む。
+ * 頼まないと返事待ちのまま残り、その注文の以後の返金が AWAITING_REFUND_EXISTS で止まる。主の操作は DB に書けているので、
+ * 1件の失敗で例外を投げない（失敗した返金は返事待ちのまま、同じ番号の確かめ直しと毎時の見回りが片付ける。見回りは返金の種類を問わない）。
+ * 送り直しでは DB が同じ番号を返し、頼み直しは同じ重複防止キー・同じ中身になる
+ */
+export async function requestReleaseRefunds(deps: RefundServiceDeps, refundIds: readonly string[]): Promise<void> {
+  for (const refundId of refundIds) {
+    try {
+      const ref = await getOrderRefund(deps.store, refundId);
+      if (ref) {
+        await settleExistingRefund(deps, ref);
+      }
+    } catch (error) {
+      console.error('[refund] the release refund was not requested', errorName(error));
+    }
+  }
 }
 
 /**
@@ -231,8 +252,17 @@ async function loadPaymentContext(deps: RefundServiceDeps, orderId: string): Pro
   return { kind: 'ready', paymentIntentId, shippingEmail: data.shipping_email };
 }
 
-/** 記録を作り（DB）、Stripe に頼み、結果を書く。同じ二重防止の番号の送り直しは、前の記録の今の状態で答える */
-async function startRefund(deps: RefundServiceDeps, input: BeginRefundInput): Promise<RefundSubmitResult> {
+/**
+ * 記録を作り（DB）、Stripe に頼み、結果を書く。同じ二重防止の番号の送り直しは、前の記録の今の状態で答える。
+ * planner は注文の時の写しがある注文の値段の計画を作る（FREQ-642。発送前の品の返金・注文の取り消しだけ。要らない道・自動の返金は渡さない）。
+ * 計画を作って DB に渡す一連を、版の食い違いの時だけ1回作り直す（withFreshPricing）。
+ * 前の注文へ割引の分を戻す返金（releaseRefundIds）は、この返金の後で Stripe に頼む
+ */
+async function startRefund(
+  deps: RefundServiceDeps,
+  input: BeginRefundInput,
+  planner?: () => Promise<UnitPricingArg | null>,
+): Promise<RefundSubmitResult> {
   const context = await loadPaymentContext(deps, input.orderId);
   if (context.kind === 'refused') {
     return context;
@@ -240,7 +270,9 @@ async function startRefund(deps: RefundServiceDeps, input: BeginRefundInput): Pr
 
   let began: BeganRefund;
   try {
-    began = await beginOrderRefund(deps.store, input);
+    began = await withFreshPricing(async () =>
+      beginOrderRefund(deps.store, { ...input, pricing: planner ? await planner() : null }),
+    );
   } catch (error) {
     if (error instanceof RefundOperationError) {
       return { kind: 'refused', code: error.code };
@@ -248,6 +280,18 @@ async function startRefund(deps: RefundServiceDeps, input: BeginRefundInput): Pr
     throw error;
   }
 
+  const result = await settleBegunRefund(deps, input, context, began);
+  await requestReleaseRefunds(deps, began.releaseRefundIds);
+  return result;
+}
+
+/** 始めた返金を Stripe に頼む（送り直しは前の記録の今の状態で答える） */
+async function settleBegunRefund(
+  deps: RefundServiceDeps,
+  input: BeginRefundInput,
+  context: Extract<PaymentContext, { kind: 'ready' }>,
+  began: BeganRefund,
+): Promise<RefundSubmitResult> {
   if (began.replayed) {
     const ref = await getOrderRefund(deps.store, began.refundId);
     return ref ? settleExistingRefund(deps, ref) : { kind: 'refused', code: 'order_not_found' };

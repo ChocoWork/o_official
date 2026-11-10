@@ -607,7 +607,7 @@ describeLocalDb('integration: 返品の窓口を実際の PostgREST に通す', 
 
     expectKeys(received, [
       'receiptId', 'returnStatus', 'refundId', 'refundAmount', 'refundStatus', 'exchangeOrderItemIds', 'feeDueAmount',
-      'shopNoticeEnqueued', 'replayed',
+      'shopNoticeEnqueued', 'replayed', 'releaseRefundIds',
     ]);
     expect(received).toMatchObject({
       receiptId: expect.stringMatching(UUID_PATTERN),
@@ -634,7 +634,7 @@ describeLocalDb('integration: 返品の窓口を実際の PostgREST に通す', 
     });
     expect(replay.error).toBeNull(); expect(replay.data).toHaveLength(1);
     expectKeys(replay.data[0], ['receipt_id', 'return_status', 'refund_id', 'refund_amount', 'refund_status',
-      'exchange_order_item_ids', 'fee_due_amount', 'shop_notice_enqueued', 'replayed']);
+      'exchange_order_item_ids', 'fee_due_amount', 'shop_notice_enqueued', 'replayed', 'release_refund_ids']);
     expect(replay.data[0]).toMatchObject({ receipt_id: received.receiptId, replayed: true });
     const rawDetail = await client.rpc('list_order_returns', { _order_id: order.orderId });
     expect(rawDetail.error).toBeNull();
@@ -670,8 +670,8 @@ describeLocalDb('integration: 返品の窓口を実際の PostgREST に通す', 
     const recorded = await refundReturn(client, {
       returnId, actorId: actor.id, requestKey: crypto.randomUUID(), amount: null, shippingAmount: 0, note: null, notifyCustomer: false,
     });
-    expectKeys(recorded, ['refundId', 'amount', 'status', 'replayed']);
-    expect(recorded).toEqual({ refundId: expect.stringMatching(UUID_PATTERN), amount: PRICE, status: 'awaiting_response', replayed: false });
+    expectKeys(recorded, ['refundId', 'amount', 'status', 'replayed', 'releaseRefundIds']);
+    expect(recorded).toEqual({ refundId: expect.stringMatching(UUID_PATTERN), amount: PRICE, status: 'awaiting_response', replayed: false, releaseRefundIds: [] });
     const refundId = recorded.refundId as string;
     const linked = await db().query('select source, return_id from public.order_refunds where id = $1', [refundId]);
     expect(linked.rows).toEqual([{ source: 'return', return_id: returnId }]);
@@ -688,7 +688,7 @@ describeLocalDb('integration: 返品の窓口を実際の PostgREST に通す', 
       returnId, actorId: actor.id, requestKey: crypto.randomUUID(), amount: 0, shippingAmount: 0, note: null, notifyCustomer: false,
     };
     const waived = await refundReturn(client, waiveInput);
-    expect(waived).toEqual({ refundId: null, amount: 0, status: 'waived', replayed: false });
+    expect(waived).toEqual({ refundId: null, amount: 0, status: 'waived', replayed: false, releaseRefundIds: [] });
     expect(await refundReturn(client, waiveInput)).toEqual({ ...waived, replayed: true });
     const refundCount = await db().query('select count(*)::int as count from public.order_refunds where return_id = $1', [returnId]);
     expect(refundCount.rows[0].count).toBe(1);

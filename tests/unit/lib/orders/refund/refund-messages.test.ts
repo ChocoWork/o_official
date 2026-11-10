@@ -45,22 +45,27 @@ const EXPECTED = [
   ['must_include_unshipped', 409, '全額を返金する時は、まだ発送していない商品もすべて選んでください。'],
   ['must_be_full', 409, 'まだ発送していない注文の商品を全部返す時は、送料と返金額も全部返してください。'],
   ['invalid_argument', 400, '入力を確かめてください。'],
+  ['unit_pricing_stale', 409, '他の操作で返金の額の計算が変わりました。画面を開き直してください。'],
+  ['unit_pricing_invalid', 409, '返金の額の計算を確かめられませんでした。画面を開き直してください。'],
+  ['unit_pricing_required', 409, '返金の額の計算が必要です。画面を開き直してください。'],
 ] as const;
 
 describe('返金の記号', () => {
   it('返金の道・状態・Stripe に伝える理由は Global Constraints のとおり', () => {
     expect([...ORDER_REFUND_SOURCES]).toEqual([
       'admin', 'order_cancel', 'stripe_dashboard', 'auto_cancelled_order_payment', 'auto_amount_mismatch', 'legacy', 'return',
+      'unit_hold_release',
     ]);
     expect([...ORDER_REFUND_STATUSES]).toEqual(['awaiting_response', 'error', 'pending', 'succeeded', 'failed']);
     expect([...STRIPE_REFUND_REASONS]).toEqual(['requested_by_customer', 'duplicate', 'fraudulent']);
   });
 
-  it('窓口が返す13の誤りの記号は共通の約束のとおり', () => {
+  it('窓口が返す16の誤りの記号（13と交換の印の3）は共通の約束のとおり', () => {
     expect([...REFUND_ERROR_CODES]).toEqual([
       'order_not_found', 'order_not_refundable', 'order_not_cancellable', 'awaiting_refund_exists', 'refund_request_mismatch',
       'refund_line_not_in_order', 'quantity_exceeds_unshipped', 'quantity_exceeds_shipped', 'shipping_exceeds',
       'exceeds_refundable', 'must_include_unshipped', 'must_be_full', 'invalid_argument',
+      'unit_pricing_stale', 'unit_pricing_invalid', 'unit_pricing_required',
     ]);
   });
 });
@@ -136,6 +141,8 @@ describe('ラベルの表', () => {
       legacy: '前からの写し',
       // 履歴の返金の行は、返品の番号が引ければ「返品（{番号}）」と出す。この言葉は、番号が引けない時の言葉
       return: '返品',
+      // 後の注文の返品で前の注文に留めていた割引の分を、前の注文へ返す返金（FREQ-642）
+      unit_hold_release: '返品に伴う割引の戻し',
     });
     expect(Object.keys(REFUND_SOURCE_LABELS)).toEqual([...ORDER_REFUND_SOURCES]);
   });

@@ -1,5 +1,6 @@
 import {
   confirmAwaitingRefund,
+  requestReleaseRefunds,
   type RefundServiceDeps,
   type RefundSubmitResult,
 } from '@/lib/orders/refund/refund-service';
@@ -17,7 +18,8 @@ import {
   releaseReturnExchange,
   reopenReturn,
 } from '@/lib/orders/returns/return-store';
-import type { ReturnErrorCode } from '@/lib/orders/returns/return-types';
+import type { ReceiveTreatment, ReturnErrorCode } from '@/lib/orders/returns/return-types';
+import { planReturnReceive, planReturnRefund, withFreshPricing } from '@/lib/orders/unit-pricing/unit-pricing-service';
 
 /**
  * 返品の流れ（グループ E-3 設計書 6-3・7・9-1）。窓口が呼ぶ入口。DB の関数（return-store.ts）を呼び、
@@ -42,6 +44,9 @@ export type ReturnRefused = { kind: 'refused'; code: ReturnErrorCode | RefundErr
 export type RefundNotAccepted = Exclude<RefundSubmitResult, { kind: 'accepted' }>;
 
 type Received = Awaited<ReturnType<typeof receiveReturn>>;
+
+/** 受け取りの入口の入力。値段の計画（pricing）はここで作るので受け取らず、店長が直した割引の扱い（treatments）を受ける */
+export type ReceiveReturnServiceInput = Omit<Parameters<typeof receiveReturn>[1], 'pricing'> & { treatments?: ReceiveTreatment[] };
 
 /**
  * 受け取りの返金の結果。pending・succeeded は Stripe が受け付けた返金。
@@ -88,17 +93,30 @@ function errorName(error: unknown): string {
  */
 export async function receiveReturnAndRefund(
   deps: ReturnServiceDeps,
-  input: Parameters<typeof receiveReturn>[1],
+  input: ReceiveReturnServiceInput,
 ): Promise<ReceiveReturnResult> {
+  const { treatments, ...receiveInput } = input;
   let received: Received;
   try {
-    received = await receiveReturn(deps.store, input);
+    // 注文の時の写しがある注文は、値段の計画をここで作って DB に渡す（FREQ-642）。版の食い違いの時だけ、材料を読み直して1回作り直す
+    received = await withFreshPricing(async () => {
+      const { plan } = await planReturnReceive(
+        deps.store,
+        input.returnId,
+        { ...receiveInput, treatments },
+        { canRefund: input.actorCanRefund },
+      );
+      return receiveReturn(deps.store, { ...receiveInput, pricing: plan });
+    });
   } catch (error) {
     if (error instanceof ReturnStoreError) {
       return { kind: 'refused', code: error.code };
     }
     throw error;
   }
+
+  // 前の注文へ割引の分を戻す返金は、この返金とは別の記録（返事待ち）で DB が作る。Stripe に頼まないと返事待ちのまま残る
+  const requestReleases = () => requestReleaseRefunds(deps, received.releaseRefundIds);
 
   // 送る処理を動かすのは、メールの予定を新しく書いた時だけ（送り直しは何も書かない）。
   // 返金の記録が無い受け取りは、お客様向けのメール（return_received・return_sent_back）を DB が予定する。0円で返金しない受け取りも同じ。
@@ -113,10 +131,12 @@ export async function receiveReturnAndRefund(
     // 返金の記録が無い。0円で返金しないことにした時（P20）は waived、相談・なしは null
     const refund: ReceivedRefund | null =
       refundStatus === 'waived' ? { refundId: null, amount: 0, status: 'waived' } : null;
+    await requestReleases();
     return { kind: 'received', receiptId, returnStatus, refund, feeDueAmount, exchangeOrderItemIds, replayed };
   }
 
   const refund = await settleReturnRefund(deps, refundId, replayed);
+  await requestReleases();
   if (refund.kind !== 'accepted') {
     // Stripe が断って返金の記録がエラーになった時、DB は受け取りのメール（return_received）を予定する（P25）。
     // E-2 の断りの道（recordRejection）は送る処理を動かさないので、予定を書いた後のここで動かす。
@@ -151,7 +171,10 @@ export async function refundReturnAndRequestStripe(
 ): Promise<RefundReturnResult> {
   let began: Awaited<ReturnType<typeof refundReturn>>;
   try {
-    began = await refundReturn(deps.store, input);
+    // 相談の返金は着の状態を変えない。計画は、前の注文へ戻す分があるときだけ（FREQ-642）
+    began = await withFreshPricing(async () =>
+      refundReturn(deps.store, { ...input, pricing: await planReturnRefund(deps.store, input.returnId) }),
+    );
   } catch (error) {
     if (error instanceof ReturnStoreError) {
       return { kind: 'refused', code: error.code };
@@ -159,9 +182,12 @@ export async function refundReturnAndRequestStripe(
     throw error;
   }
   if (began.refundId === null) {
+    await requestReleaseRefunds(deps, began.releaseRefundIds);
     return { kind: 'waived', replayed: began.replayed };
   }
-  return settleReturnRefund(deps, began.refundId, began.replayed);
+  const settled = await settleReturnRefund(deps, began.refundId, began.replayed);
+  await requestReleaseRefunds(deps, began.releaseRefundIds);
+  return settled;
 }
 
 /** 返品を作る。受付のお知らせの予定は DB が書くので、新しく作って知らせる時だけ送る処理を動かす */

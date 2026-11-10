@@ -1150,3 +1150,56 @@ describe('POST /api/admin/returns/[returnId]/refund（額を決めて返金す�
     }]]);
   });
 });
+
+describe('POST /api/admin/returns/[returnId]/receive（割引の扱い。FREQ-642）', () => {
+  const TREATMENTS = [{ returnLineId: LINE_ID, treatment: 'shop' }];
+
+  beforeEach(() => {
+    mockReceive.mockResolvedValue(RECEIVED);
+  });
+
+  it('FREQ-642-AC-25: 本文の割引の扱い（treatments）をそのまま入口へ渡す。省いた本文には足さない', async () => {
+    const response = await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, treatments: TREATMENTS } });
+
+    expect(response.status).toBe(200);
+    expect(mockReceive).toHaveBeenCalledWith(mockDeps, {
+      returnId: RETURN_ID, actorId: 'admin-1', actorCanRefund: true, ...RECEIVE_BODY, treatments: TREATMENTS,
+    });
+
+    mockReceive.mockClear();
+    await call(ENDPOINTS[0]);
+    expect(mockReceive.mock.calls[0][1]).not.toHaveProperty('treatments');
+  });
+
+  it.each([
+    ['扱いが知らない値', [{ returnLineId: LINE_ID, treatment: 'free' }]],
+    ['返品の行の番号が UUID でない', [{ returnLineId: 'line-1', treatment: 'shop' }]],
+    ['同じ行が2つ', [...TREATMENTS, { returnLineId: LINE_ID, treatment: 'customer' }]],
+    ['配列でない', 'shop'],
+  ])('FREQ-642-AC-25: %s は400で入口を呼ばない', async (_name, treatments) => {
+    const response = await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, treatments } });
+
+    expect(response.status).toBe(400);
+    expect(mockReceive).not.toHaveBeenCalled();
+  });
+
+  it('FREQ-642-AC-25: 割引の扱いを直す権限が無い断り（RETURN_FORBIDDEN）は、入口が返した断りのまま 403', async () => {
+    mockReceive.mockResolvedValue({ kind: 'refused', code: 'RETURN_FORBIDDEN' });
+
+    const response = await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, treatments: TREATMENTS } });
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ code: 'RETURN_FORBIDDEN' });
+  });
+
+  it('FREQ-642-AC-17: 値段の計画の版の食い違い（UNIT_PRICING_STALE）は 409 で画面を開き直してもらう', async () => {
+    mockReceive.mockResolvedValue({ kind: 'refused', code: 'UNIT_PRICING_STALE' });
+
+    const response = await call(ENDPOINTS[0]);
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: '他の操作で返金の額の計算が変わりました。画面を開き直してください。', code: 'UNIT_PRICING_STALE',
+    });
+  });
+});

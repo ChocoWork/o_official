@@ -1,8 +1,10 @@
 # APIルート一覧
 
+> 交換の印 Task 7 確認日: 2026-11-11。Route Handler を3ファイル・3メソッド足した（189ファイル・239メソッド、表は188行・238メソッド）: `/api/admin/returns/[returnId]/receive-estimate`・`/api/admin/orders/[id]/refund-estimate`・`/api/orders/[id]/return-request/estimate`（どれも `POST`。読むだけ）。契約は [API仕様](api-spec.md) の末尾「見込みの窓口と計画の受け渡し（FREQ-642 Task 7）」。
+>
 > 会計の作り直し 計画2 Task 15 確認日: 2026-11-09。Route Handler の追加・削除はない（186ファイル・236メソッドのまま）。既存の窓口の振る舞いの変更を[API仕様](api-spec.md)に写した: `/api/admin/kpi/monthly-record`（月の KPI の表を DB の関数で読み書き。503 の分岐をやめた）、`/api/admin/kpi`（受注高の数え方と応答の `backlog`・`intakeBreakdown`・`returnsThisMonth`）、`/api/admin/kpi/targets`（受注高の定義）、`/api/webhook/stripe`（18種）、`/api/cron/stripe-reconcile`（dispute の読み直し）、`/api/admin/accounting/journal`（`shipmentMeta`・権限の欄）、発送票の確定・取り消し・出荷日の直しと着金の確認（応答の後に計上係）。
 >
-> 会計の作り直し 計画2 Task 10 確認日: 2026-11-09。計上待ち・計上係・支払いの取り消し・Stripe の記録・照合・年末の照合の 12 ファイル・16 メソッド（`/api/admin/accounting/pending-events`・`pending-events/[id]/resolve`・`posting/run`・`dispute-settings`・`disputes`・`disputes/[id]/assign`・`stripe-invoices`・`balance-topups`・`reconciliation`・`deferred-revenue`・`year-end-shipments`・`shipment-trace`）と、10分ごとの cron `POST /api/cron/accounting-post` の 1 ファイル・1 メソッドを追加した。Route Handler は186ファイル・236メソッド、表は185行・235メソッド（`/api/e2e/server-info` を除く）。認可・CSRF・制限・監査の順序と応答は[API仕様](api-spec.md)の会計の表を参照。
+> 会計の作り直し 計画2 Task 10 確認日: 2026-11-09。計上待ち・計上係・支払いの取り消し・Stripe の記録・照合・年末の照合の 12 ファイル・16 メソッド（`/api/admin/accounting/pending-events`・`pending-events/[id]/resolve`・`posting/run`・`dispute-settings`・`disputes`・`disputes/[id]/assign`・`stripe-invoices`・`balance-topups`・`reconciliation`・`deferred-revenue`・`year-end-shipments`・`shipment-trace`）と、10分ごとの cron `POST /api/cron/accounting-post` の 1 ファイル・1 メソッドを追加した。Route Handler は189ファイル・239メソッド、表は188行・238メソッド（`/api/e2e/server-info` を除く）。認可・CSRF・制限・監査の順序と応答は[API仕様](api-spec.md)の会計の表を参照。
 >
 > 会計の作り直し 計画1 Task 15 確認日: 2026-11-08。Route Handler の追加・削除はない（173ファイル・219メソッドのまま）。`/api/admin/kpi/cost-profit` の GET に `periodId` と期間の欄、receipt に証憑の種類、権限の管理対象が 38 コードになったことを備考に足した。
 >
@@ -49,6 +51,7 @@
 | `/api/admin/order-attention/discounts/[orderId]/resolve` | `POST` | [route.ts](../../../src/app/api/admin/order-attention/discounts/%5BorderId%5D/resolve/route.ts) （H Task 7: `admin.orders.manage`、CSRF→IP/actor各30回/600秒→空object→確認済み→監査。200 `{data:{resolved}}`） |
 | `/api/webhook/17track` | `POST` | [route.ts](../../../src/app/api/webhook/17track/route.ts) |
 | `/api/orders/[id]/return-request` | `GET`, `POST` | [route.ts](../../../src/app/api/orders/%5Bid%5D/return-request/route.ts) |
+| `/api/orders/[id]/return-request/estimate` | `POST` | [route.ts](../../../src/app/api/orders/%5Bid%5D/return-request/estimate/route.ts) |
 | `/api/orders/[id]/return-request/photos` | `POST` | [route.ts](../../../src/app/api/orders/%5Bid%5D/return-request/photos/route.ts) |
 | `/api/orders/[id]/cancel-request` | `POST` | [route.ts](../../../src/app/api/orders/%5Bid%5D/cancel-request/route.ts) |
 | `/api/admin/returns/[returnId]/approve` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/approve/route.ts) |
@@ -133,6 +136,7 @@
 | `/api/admin/orders/[id]/emails/resend` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/emails/resend/route.ts) |
 | `/api/admin/orders/[id]/history` | `GET` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/history/route.ts) |
 | `/api/admin/orders/[id]/refund/confirm` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/refund/confirm/route.ts) |
+| `/api/admin/orders/[id]/refund-estimate` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/refund-estimate/route.ts) |
 | `/api/admin/orders/[id]/refund` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts) |
 | `/api/admin/orders/[id]/returns/materials` | `GET` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/returns/materials/route.ts) |
 | `/api/admin/orders/[id]/returns` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/returns/route.ts) |
@@ -144,6 +148,7 @@
 | `/api/admin/returns/[returnId]/close-missing` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/close-missing/route.ts) |
 | `/api/admin/returns/[returnId]/fee-payment` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/fee-payment/route.ts) |
 | `/api/admin/returns/[returnId]/inspect` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/inspect/route.ts) |
+| `/api/admin/returns/[returnId]/receive-estimate` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/receive-estimate/route.ts) |
 | `/api/admin/returns/[returnId]/receive` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/receive/route.ts) |
 | `/api/admin/returns/[returnId]/refund` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/refund/route.ts) |
 | `/api/admin/returns/[returnId]/release-exchange` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/release-exchange/route.ts) |

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CancelReason, OrderStatus } from '@/lib/orders/order-payment-types';
+import type { UnitPricingArg } from '@/lib/orders/unit-pricing/unit-pricing-types';
 import type {
   OrderRefundSource,
   OrderRefundStatus,
@@ -59,6 +60,9 @@ const DB_ERROR_WORDS: Array<readonly [string, RefundErrorCode]> = [
   ['REFUND_MUST_BE_FULL', 'must_be_full'],
   ['REFUND_ARGUMENT_INVALID', 'invalid_argument'],
   ['SETTINGS_ARGUMENT_INVALID', 'invalid_argument'],
+  ['UNIT_PRICING_STALE', 'unit_pricing_stale'],
+  ['UNIT_PRICING_INVALID', 'unit_pricing_invalid'],
+  ['UNIT_PRICING_REQUIRED', 'unit_pricing_required'],
 ];
 // 長い言葉から先に照らす。ある言葉が別の言葉の一部になる綴りが足されても、長い方が先に当たる（本計画 P3）
 DB_ERROR_WORDS.sort((a, b) => b[0].length - a[0].length);
@@ -123,7 +127,7 @@ function textOrNull(value: unknown): string | null {
 export type BeginRefundInput = {
   orderId: string;
   // 返品の返金（return）は、返品の受け取り・額を決めて返金の DB の関数が始める。ここ（公開の begin_order_refund）の道ではない
-  source: Exclude<OrderRefundSource, 'stripe_dashboard' | 'legacy' | 'return'>;
+  source: Exclude<OrderRefundSource, 'stripe_dashboard' | 'legacy' | 'return' | 'unit_hold_release'>;
   requestKey: string | null;
   lines: RefundLineRequest[];
   restock: boolean;
@@ -135,9 +139,18 @@ export type BeginRefundInput = {
   notifyCustomer: boolean;
   actorId: string | null;
   receivedAmount?: number | null;
+  /** 注文の時の写しがある注文の、発送前の品の返金・注文の取り消しの値段の計画（FREQ-642）。要らない道は null か省く */
+  pricing?: UnitPricingArg | null;
 };
 
-export type BeganRefund = { refundId: string; amount: number; status: OrderRefundStatus; replayed: boolean };
+export type BeganRefund = {
+  refundId: string;
+  amount: number;
+  status: OrderRefundStatus;
+  replayed: boolean;
+  /** 前の注文へ割引の分を戻す返金（source unit_hold_release）の番号。呼ぶ側が Stripe に頼む。無ければ空 */
+  releaseRefundIds: string[];
+};
 
 /**
  * 返金の記録を「返事待ち」で始める（Stripe に頼む前）。同じ requestKey の送り直しは前の記録を返す（replayed）。
@@ -163,6 +176,7 @@ export async function beginOrderRefund(store: RefundStore, input: BeginRefundInp
       _notify_customer: input.notifyCustomer,
       _actor_id: input.actorId,
       _received_amount: input.receivedAmount ?? null,
+      _pricing: input.pricing ?? null,
     }),
   )[0];
   if (!row) {
@@ -173,6 +187,7 @@ export async function beginOrderRefund(store: RefundStore, input: BeginRefundInp
     amount: Number(row.amount),
     status: row.status as OrderRefundStatus,
     replayed: row.replayed === true,
+    releaseRefundIds: Array.isArray(row.release_refund_ids) ? row.release_refund_ids.map(String) : [],
   };
 }
 

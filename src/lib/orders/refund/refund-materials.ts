@@ -38,7 +38,7 @@ function countsByItemId(value: unknown): Map<string, Record<string, unknown>> {
  * ここでは、商品の名前・色・サイズ（order_items）と支払い方法（checkout_drafts）を足し、商品を登録順に並べる。
  * サーバーだけで使う（画面から読まない）。単体テストが直接読むので、サーバー専用の印（server-only）は付けない。
  */
-export async function loadRefundMaterials(client: SupabaseClient, orderId: string): Promise<RefundMaterials | null> {
+export async function loadRefundMaterials(client: Pick<SupabaseClient, 'rpc' | 'from'>, orderId: string): Promise<RefundMaterials | null> {
   const { data, error } = await client.rpc('load_order_refund_materials', { _order_id: orderId });
   if (error) {
     throw new RefundStoreError('load_order_refund_materials', error);

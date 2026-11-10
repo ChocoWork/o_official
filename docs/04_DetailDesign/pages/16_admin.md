@@ -1,5 +1,7 @@
 # 1.16 管理画面（ADMIN）詳細設計
 
+> 交換の印を着に結び付ける作業 Task 7 確認日: 2026-11-11。DD-ADMIN-022（受け取りの見込みと入口。値段の計画をサーバーで作って DB に渡し、版の食い違いは1回だけ作り直す）と DD-ADMIN-023（注文の返金・取り消しの計画と、前の注文へ割引の分を戻す返金の Stripe への依頼）を DD-ADMIN-021 の次に足した。単体と PostgREST（手元）で確かめた。画面は後続の作業。
+
 > 交換の印を着に結び付ける作業 Task 5 確認日: 2026-11-10。DD-ADMIN-017 の既知の点4つ（`20261108063711` の節）を「直した（移行 C）」に直した。受け取りが値段の計画（`_pricing`）を受けて、返金・交換の結び・割引の扱いを1回の取引で書く。
 
 > 交換の印を着に結び付ける作業 Task 3 確認日: 2026-11-10。DD-ADMIN-021（値段の計画。籠・低い方・手数料・割り振りの式・前の注文から差し引く分）を DD-ADMIN-020 の次に足した。単体のみ実測済み（DB・窓口・画面は後続の作業）。レビューの直し1: 手数料の率の扱い、hold_release の返す額、hold の上限に手数料の累計を引くことを DD-ADMIN-021 に反映した。直し4: 戻しの出来事を率0の段にし（後の返品の率で戻しの分に掛けない）、返品の行が無い枠を1着ずつ段にした。
@@ -1280,6 +1282,38 @@ E と返す額（`unit-event-plan.ts` の `planUnitEvent`）: E′ ＝ 払った
 前の注文から差し引く分: お客様のご都合の返品で、同じ会員の後の注文 L（写しの「前の注文の着数」が1以上で、定義に `repeatPrevious` の2着目割引がある物）の着数を「写しの値 − L より前の注文で L の受け付けの後にお客様のご都合で返された枠の数（下限0）」に直して出し直し、`correctKeptPrice(L, 今の状態, {priorUnitsByItem: 直した数}) − correctKeptPrice(L, 今の状態)` を商品ごとの外れた分にする。今の holds の和より増えた分は、対象の注文の E（手数料の累計を引いた後）が0円より少なくならない範囲で対象の注文の holds に正で足し、L の手元にある枠（無ければ商品の枠）に `hold` の行（直し ＝ 増えた分、割り振り0、値段は変えない）を付ける。減った分（L 自身の着が返った時など）は holds の新しい順に負で戻し、戻す注文ごとに `kind: 'hold_release'` の計画を `releases` に入れる（E を戻した分だけ上げ、返す額 ＝ `max(新しい E − その注文の E の最高, 0)`。E が一度下がった注文では0円になり、その注文から返す合計が払った額を超えない。手数料は掛けない）。お店の側の返品では足さない。
 
 単体は [kept-price.test.ts](../../../tests/unit/lib/orders/unit-pricing/kept-price.test.ts)・[unit-event-plan.test.ts](../../../tests/unit/lib/orders/unit-pricing/unit-event-plan.test.ts)（道具は [fixtures.ts](../../../tests/unit/lib/orders/unit-pricing/fixtures.ts)。設計書3章の注文を本物の割引の計算で組み立てる）。
+
+### DD-ADMIN-022 受け取りの見込みと入口（値段の計画をサーバーで作って DB に渡す）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FREQ-642-REQ-01（範囲外）、AC-20・AC-21・AC-25・AC-26 |
+| 根拠 | 見込みと確定を同じ計算にし、サーバーは画面から額を受け取らない（設計書6-2・7章）。店長が額を変えない時は、見込みと確定の返金の額が同じになる |
+| 状態 | 現行（サーバーまで。画面は後続の作業） |
+| 確かめ方 | [unit-pricing-service.test.ts](../../../tests/unit/lib/orders/unit-pricing/unit-pricing-service.test.ts)・[unit-pricing-store.test.ts](../../../tests/unit/lib/orders/unit-pricing/unit-pricing-store.test.ts)・[unit-pricing-estimate-routes.test.ts](../../../tests/unit/api/admin/unit-pricing-estimate-routes.test.ts)・[return-request-estimate-route.test.ts](../../../tests/unit/api/orders/return-request-estimate-route.test.ts)・[return-service.test.ts](../../../tests/unit/lib/orders/returns/return-service.test.ts) の `DD-ADMIN-022`・`FREQ-642-AC-20/21/25/26` の単体 |
+| 出どころ | 2026-11-10 オーナー承認設計、交換の印を着に結び付ける作業 Task 7 |
+
+材料と計画（[unit-pricing-store.ts](../../../src/lib/orders/unit-pricing/unit-pricing-store.ts)・[unit-pricing-service.ts](../../../src/lib/orders/unit-pricing/unit-pricing-service.ts)）: `loadUnitPricingMaterials` は DB の `order_unit_pricing_materials` の jsonb（計画の型と同じ camelCase）を直さずに返し、注文の時の写しが無い注文は null（計画を作らず、今の計算のまま見込みを出す。AC-20）。`'server-only'` は付けない（return-store.ts と同じ。付けると、これを読む返品・返金の流れの試験が全部、印の差し替えを要る）。`planReturnReceive(client, returnId, body, {canRefund})` は、返品の注文・返品の中身（`listOrderReturns`）・返せる額（`loadRefundMaterials`）・材料から、受け取りの本文を計画の入力に直す。返金の品は、返金の行と、店長が「返金に変える」にした交換の行の、お返しでない品。品の選びは `units[].refundChoice`、省くと親の `refundChoice`（今すぐ/相談）。同じ返品の行・同じ選びは数を足す。割引の扱い（side）は、本文の `treatments` があればそれ、無ければ理由から（`defective`・`wrong_item` と、交換の頼みを店が返金に変えた行は shop、ほかは customer。設計2-3）。率は `order_returns.restocking_fee_percent`。割引の扱いを理由からの初めの値から変えられるのは返金の権限を持つ人だけで、持たない人が変えると `RETURN_FORBIDDEN`。交換の品に結ぶ枠は、DB の交換の結びの順（返品の行ごとに、結んだ枠 → 今の値段の安い順 → 注文の行・`unit_index`。返金の取り押さえが付いた枠は取らない）で写して `excludedSlots` にし、返金の枠の選びから除く。返品が無ければ `RETURN_NOT_FOUND`、計画の計算が断れば（枠が足りないなど）`UNIT_PRICING_INVALID` の断り。
+
+見込み: `ReturnReceiveEstimate = { legacy, standardRefund, nowRefund, consultRefund, feeAmount, fixedFees, refundAmount, refundCap, consultOutstanding? }`。写しのある注文は、`standardRefund`・`nowRefund`・`consultRefund`・`feeAmount` が計画の値。`fixedFees` は最初の受け取りだけの返送料（お店の送り状）・交換の手数料・交換の送料（E の外）。`refundAmount` ＝ min(max(`nowRefund` − `fixedFees`, 0) ＋ 送料の返金, 注文の返せる額)、今すぐの品が無ければ 0。`refundCap` ＝ min(注文の返せる額, `nowRefund` ＋ 送料の返金)（店長が直せる額の上限）。写しの率は E の中なので、ここでは引かない。写しの無い注文は `legacy: true` で、今の `computePerItemReturnRefundPreview` を返品の詳細から出した値を同じ形で返す。`consultOutstanding` は写しのある注文だけ（`estimateReturnReceive`）。この返品の相談の出来事のうち、相談の返金（失敗以外）がまだ付いていない出来事の相談の額の和で、全部に付いていれば 0。DB の `order_unit_outstanding` は店長が相談の返金の額を下げると正の残りを出すが、DB は相談の返金を二度は受けないので、見込みには残りとして出さない（[unit-pricing-store.ts](../../../src/lib/orders/unit-pricing/unit-pricing-store.ts) の `loadConsultOutstanding`）。
+
+窓口: `POST /api/admin/returns/[returnId]/receive-estimate`（権限 `admin.orders.return`。読むだけで CSRF・回数の制限・監査は通さない）、`POST /api/orders/[id]/return-request/estimate`（お客様。注文の持ち主の確かめは申し込みの材料を読む `GET` と同じ。`CustomerReturnEstimate = { refundAmount, moneyMoves }`、交換だけなら 0 と `moneyMoves: false`。見込みを出せない時は 409 `ESTIMATE_UNAVAILABLE`）。受け取り `POST …/receive` は本文に `treatments?: {returnLineId, treatment}[]` を足し、入口（`receiveReturnAndRefund`）が計画を作って `admin_receive_return` の `_pricing` に渡す。本文の額（`refundAmount`）で計画は変わらない。
+
+版の食い違い: 計画を作って DB の入口を呼ぶ一連を `withFreshPricing` で包み、`UNIT_PRICING_STALE`（投げられた誤りも、断りを答えで返す形も）の時だけ、材料を読み直して1回だけ作り直す。同じ `requestKey` の送り直しは DB が版を確かめる前に前の結果を返すので二重にならない。2回目も食い違えば 409 `UNIT_PRICING_STALE` の「画面を開き直してください」。DB の `UNIT_PRICING_STALE`・`UNIT_PRICING_INVALID`・`UNIT_PRICING_REQUIRED` は返品の記号（`RETURN_ERROR_CODES`）と返金の記号（`unit_pricing_*`）に足し、どちらも 409。
+
+### DD-ADMIN-023 注文の返金・取り消しと前の注文への戻し
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FREQ-642-REQ-01（範囲外）、AC-20・AC-27・AC-28 |
+| 根拠 | 発送前の品の返金・注文の取り消しは着の状態を変えるので値段の計画で行い、発送後の品を返品なしで選ぶ返金は着の状態も E も変えない（設計書2-3・5章） |
+| 状態 | 現行（サーバーまで。画面は後続の作業） |
+| 確かめ方 | [unit-pricing-service.test.ts](../../../tests/unit/lib/orders/unit-pricing/unit-pricing-service.test.ts)・[refund-service.test.ts](../../../tests/unit/lib/orders/refund/refund-service.test.ts)・[return-service.test.ts](../../../tests/unit/lib/orders/returns/return-service.test.ts)・[unit-pricing-estimate-routes.test.ts](../../../tests/unit/api/admin/unit-pricing-estimate-routes.test.ts) の `DD-ADMIN-023`・`FREQ-642-AC-27/28` の単体。`refund_postgrest.integration.test.ts`（PostgREST。引数と答えの形） |
+| 出どころ | 2026-11-10 オーナー承認設計、交換の印を着に結び付ける作業 Task 7 |
+
+計画（`planOrderRefund`・`planOrderCancel`・`planReturnRefund`）: 管理画面の返金は、発送前の品（`beforeShipment`）を選んだ時だけ `pre_shipment_cancel` の計画を作って `begin_order_refund` の `_pricing` に渡す。標準の額は E の増えた分（リピートの例で 17,000円）。発送後の品だけ・品を指定しない返金は計画を作らず（`_pricing` は null。AC-28）、見込みは今の計算（`estimateRefund`）。支払い済みの注文の取り消しは、まだ発送していない品（返金の材料の `unshipped`）を全部、発送前として取り消す計画。自動の返金（`auto_cancelled_order_payment`・`auto_amount_mismatch`）は計画を作らない。写しの無い注文は計画を作らない。`OrderRefundEstimate = { legacy, suggestedAmount, refundCap, changesUnits }`。窓口 `POST /api/admin/orders/[id]/refund-estimate`（権限 `admin.orders.refund`。読むだけ）。額（`amount`）は本文から受け取らない。相談の返金（`admin_refund_return`）は着の状態を変えないので、計画は前の注文へ戻す分（`releases`）があるときだけ `{orderId, version, releases}` を渡す。
+
+前の注文への戻し: 受け取り・返金・取り消しの DB の入口は、前の注文へ割引の分を戻す返金（source `unit_hold_release`）を同じ取引で「返事待ち」に作り、`release_refund_ids` で返す。入口（`receiveReturnAndRefund`・`refundReturnAndRequestStripe`・`startRefund`）は、主の返金の後で、この返金ごとに `requestReleaseRefunds`（`settleExistingRefund`。重複防止キー `order-refund-{返金の記録の番号}`）で Stripe に頼む。送り直し（replayed）でも DB が同じ番号を返し、頼み直しは同じキー・同じ中身。頼むのに失敗しても主の答えは変えず、返事待ちのまま、確かめ直しと毎時の見回り（`sweepAwaitingRefunds`。返金の種類を問わない）が片付ける。頼まないと、前の注文の以後の返金が `AWAITING_REFUND_EXISTS` で止まる。返金の道の記号 `ORDER_REFUND_SOURCES` に `unit_hold_release` を足し、履歴の言葉は「返品に伴う割引の戻し」。
 
 ## 注文の詳細の割引の内訳（H Task 10 / FREQ-552）
 

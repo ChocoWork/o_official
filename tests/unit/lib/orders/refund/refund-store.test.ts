@@ -126,6 +126,9 @@ const DB_WORDS = [
   ['REFUND_MUST_BE_FULL', 'must_be_full'],
   ['REFUND_ARGUMENT_INVALID', 'invalid_argument'],
   ['SETTINGS_ARGUMENT_INVALID', 'invalid_argument'],
+  ['UNIT_PRICING_STALE', 'unit_pricing_stale'],
+  ['UNIT_PRICING_INVALID', 'unit_pricing_invalid'],
+  ['UNIT_PRICING_REQUIRED', 'unit_pricing_required'],
 ] as const satisfies ReadonlyArray<readonly [string, RefundErrorCode]>;
 
 // TS が呼ぶ DB の関数（移行 B・C。load_order_refund_materials は refund-materials.ts が呼ぶ）
@@ -159,7 +162,7 @@ describe('toRefundErrorCode', () => {
     expect(toRefundErrorCode(`error: ${word} (detail)`)).toBe(code);
   });
 
-  it('13の記号が全部、どれかの DB の言葉から届く', () => {
+  it('16の記号が全部、どれかの DB の言葉から届く', () => {
     expect(new Set(DB_WORDS.map(([, code]) => code))).toEqual(new Set(REFUND_ERROR_CODES));
   });
 
@@ -181,7 +184,8 @@ describe('toRefundErrorCode', () => {
   });
 
   it('DB の関数が止める言葉は、移行の本文にある（綴りが食い違うと、画面に出る言葉が変わる）', () => {
-    const sql = `${migrationText('_order_refund_requests.sql')}\n${migrationText('_order_refund_results.sql')}`;
+    // 交換の印の直し（FREQ-642）の UNIT_PRICING_* は、受け取り・返金の入口を作り直した移行が止める
+    const sql = `${migrationText('_order_refund_requests.sql')}\n${migrationText('_order_refund_results.sql')}\n${migrationText('_unit_binding_refunds.sql')}`;
 
     for (const [word] of DB_WORDS) {
       expect(sql).toContain(word);
@@ -236,7 +240,7 @@ describe('beginOrderRefund', () => {
     });
 
     await expect(beginOrderRefund(store, BEGIN_INPUT)).resolves.toEqual({
-      refundId: REFUND_ID, amount: 4055, status: 'awaiting_response', replayed: false,
+      refundId: REFUND_ID, amount: 4055, status: 'awaiting_response', replayed: false, releaseRefundIds: [],
     });
 
     expect(rpc).toHaveBeenCalledTimes(1);
@@ -257,6 +261,7 @@ describe('beginOrderRefund', () => {
       _notify_customer: true,
       _actor_id: ACTOR_ID,
       _received_amount: null,
+      _pricing: null,
     });
   });
 
@@ -295,6 +300,7 @@ describe('beginOrderRefund', () => {
       _notify_customer: true,
       _actor_id: null,
       _received_amount: 8500,
+      _pricing: null,
     });
   });
 
@@ -305,7 +311,7 @@ describe('beginOrderRefund', () => {
     });
 
     await expect(beginOrderRefund(store, BEGIN_INPUT)).resolves.toEqual({
-      refundId: REFUND_ID, amount: 4055, status: 'pending', replayed: true,
+      refundId: REFUND_ID, amount: 4055, status: 'pending', replayed: true, releaseRefundIds: [],
     });
   });
 

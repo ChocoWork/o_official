@@ -35,6 +35,26 @@ export type RefundChoice = 'now' | 'consult' | 'none';
 export type ReceiveUnitRefundChoice = 'now' | 'consult';
 export type ReceiptRefundChoice = RefundChoice | 'mixed';
 export type OutOfStockExchange = 'make' | 'decline';
+/** 受け取りの返品の行ごとの「割引の扱い」（FREQ-642。shop はお店の側の事情、customer はお客様のご都合） */
+export type ReceiveTreatment = { returnLineId: string; treatment: 'shop' | 'customer' };
+/**
+ * 受け取りの窓口の本文と同じ形（サーバーが値段の計画を作る時の入力。画面の部品の同名の型と同じ形で、サーバーは部品を読まない）。
+ * treatments は店長が直した割引の扱いだけ（省くと理由から決まる）。額は本文から計画に入れない（refundAmount は店長が直す今の欄）
+ */
+export type ReceiveReturnRequest = {
+  requestKey: string;
+  units: Array<{ returnLineId: string; disposition: ReceiptDisposition; quantity: number; refundChoice?: ReceiveUnitRefundChoice }>;
+  exchangeOverrides: Array<{ returnLineId: string; action: 'make' | 'refund' }>;
+  refundChoice: ReceiptRefundChoice;
+  refundAmount: number | null;
+  refundShippingAmount: number;
+  note: string | null;
+  notifyCustomer: boolean;
+  sentBackMessage: string | null;
+  sentBackCarrier: ReturnCarrier | null;
+  sentBackTrackingNumber: string | null;
+  treatments?: ReceiveTreatment[];
+};
 // 返品・キャンセルの申し込みのお断りの理由（お店の中だけで使う。お客様には出さない）と、キャンセルの申し込みの状態（段2）
 export const RETURN_DECLINE_REASONS = ['window_passed', 'final_sale', 'other'] as const;
 export type ReturnDeclineReason = (typeof RETURN_DECLINE_REASONS)[number];
@@ -52,6 +72,8 @@ export const RETURN_ERROR_CODES = [
   'CANCEL_REQUEST_QUANTITY_EXCEEDS', 'CANCEL_REQUEST_STATE_CONFLICT', 'CANCEL_REQUEST_RESOLUTION_INVALID',
   // 返品の品ごとの返金: 受け取りで今返す額が min(注文の返せる残り, 今返す品の額 + 送料) を超えた
   'RETURN_RECEIVE_REFUND_CAP_EXCEEDED',
+  // 交換の印の直し（FREQ-642）: サーバーが作った値段の計画を DB が断った（版が古い・形が違う・要るのに無い）
+  'UNIT_PRICING_STALE', 'UNIT_PRICING_INVALID', 'UNIT_PRICING_REQUIRED',
 ] as const;
 export type ReturnErrorCode = (typeof RETURN_ERROR_CODES)[number];
 

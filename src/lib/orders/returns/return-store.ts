@@ -3,6 +3,7 @@ import type { OrderStatus } from '@/lib/orders/order-payment-types';
 import { RefundStoreError, toRefundErrorCode } from '@/lib/orders/refund/refund-store';
 import type { OrderRefundStatus, RefundErrorCode } from '@/lib/orders/refund/refund-types';
 import { formatReturnNumber } from '@/lib/orders/returns/return-messages';
+import type { UnitPricingArg } from '@/lib/orders/unit-pricing/unit-pricing-types';
 import {
   RETURN_DECLINE_REASONS,
   RETURN_DISPLAY_STATUSES,
@@ -302,6 +303,8 @@ export type ReceiveReturnInput = {
   sentBackMessage: string | null;
   sentBackCarrier: ReturnCarrier | null;
   sentBackTrackingNumber: string | null;
+  /** 注文の時の写しがある注文の値段の計画（FREQ-642。サーバーが作る。画面の本文には無い）。写しの無い注文は null か省く */
+  pricing?: UnitPricingArg | null;
 };
 
 export type ReceivedReturn = {
@@ -317,6 +320,8 @@ export type ReceivedReturn = {
   feeDueAmount: number;
   shopNoticeEnqueued: boolean;
   replayed: boolean;
+  /** 前の注文へ割引の分を戻す返金（source unit_hold_release）の番号。呼ぶ側が Stripe に頼む。無ければ空 */
+  releaseRefundIds: string[];
 };
 
 /**
@@ -355,6 +360,7 @@ export async function receiveReturn(store: ReturnStore, input: ReceiveReturnInpu
       _sent_back_message: input.sentBackMessage,
       _sent_back_carrier: input.sentBackCarrier,
       _sent_back_tracking_number: input.sentBackTrackingNumber,
+      _pricing: input.pricing ?? null,
     }),
     'admin_receive_return',
   );
@@ -368,6 +374,7 @@ export async function receiveReturn(store: ReturnStore, input: ReceiveReturnInpu
     feeDueAmount: Number(row.fee_due_amount),
     shopNoticeEnqueued: row.shop_notice_enqueued === true,
     replayed: row.replayed === true,
+    releaseRefundIds: stringsOf(row.release_refund_ids),
   };
 }
 
@@ -380,6 +387,8 @@ export type RefundReturnInput = {
   shippingAmount: number;
   note: string | null;
   notifyCustomer: boolean;
+  /** 前の注文へ戻す計画だけを持つ（FREQ-642。着の状態は変わらない）。戻す物が無い時、写しの無い注文は null か省く */
+  pricing?: UnitPricingArg | null;
 };
 
 /** 返金しないで終えた時（amount を 0 にして渡した時。P20）は、返金の記録が無いので refundId が null、status が waived */
@@ -388,6 +397,8 @@ export type RefundedReturn = {
   amount: number;
   status: OrderRefundStatus | 'waived';
   replayed: boolean;
+  /** 前の注文へ割引の分を戻す返金の番号。呼ぶ側が Stripe に頼む。無ければ空 */
+  releaseRefundIds: string[];
 };
 
 /**
@@ -404,6 +415,7 @@ export async function refundReturn(store: ReturnStore, input: RefundReturnInput)
       _shipping_amount: input.shippingAmount,
       _note: input.note,
       _notify_customer: input.notifyCustomer,
+      _pricing: input.pricing ?? null,
     }),
     'admin_refund_return',
   );
@@ -412,6 +424,7 @@ export async function refundReturn(store: ReturnStore, input: RefundReturnInput)
     amount: Number(row.amount),
     status: row.status as OrderRefundStatus | 'waived',
     replayed: row.replayed === true,
+    releaseRefundIds: stringsOf(row.release_refund_ids),
   };
 }
 

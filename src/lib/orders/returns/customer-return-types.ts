@@ -81,6 +81,11 @@ export type CustomerReturnRequestLineInput = {
   requestedExchangeVariantId: number | null;
   photos: ReturnPhotoMeta[];
 };
+/** 申し込みの確かめる段で、返金の見込みを出すために送る行（写真・詳しい内容は送らない） */
+export type CustomerReturnRequestLine = Pick<
+  CustomerReturnRequestLineInput,
+  'orderItemId' | 'quantity' | 'reason' | 'requestedResolution'
+>;
 export type CustomerReturnRequestInput = {
   orderId: string;
   customerId: string;

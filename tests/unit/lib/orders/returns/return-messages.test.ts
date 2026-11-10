@@ -71,6 +71,10 @@ const EXPECTED = [
   ['CANCEL_REQUEST_RESOLUTION_INVALID', 409, '返金・キャンセルの記録を確かめられませんでした。画面を開き直してください。'],
   // 返品の品ごとの返金（Task 2）。金額入りの画面の文は画面が見込みから作る
   ['RETURN_RECEIVE_REFUND_CAP_EXCEEDED', 400, '返金できる額を超えています。'],
+  // 交換の印の直し（FREQ-642）
+  ['UNIT_PRICING_STALE', 409, '他の操作で返金の額の計算が変わりました。画面を開き直してください。'],
+  ['UNIT_PRICING_INVALID', 409, '返金の額の計算を確かめられませんでした。画面を開き直してください。'],
+  ['UNIT_PRICING_REQUIRED', 409, '返金の額の計算が必要です。画面を開き直してください。'],
 ] as const;
 
 describe('返品の記号', () => {
@@ -90,7 +94,7 @@ describe('返品の記号', () => {
     expect([...CANCEL_REQUEST_STATUSES]).toEqual(['requested', 'resolved', 'declined', 'closed']);
   });
 
-  it('窓口が返す30の誤りの記号（段1の18と段2の11と品ごとの返金の1）は共通の約束 C-2 のとおり', () => {
+  it('窓口が返す33の誤りの記号（段1の18と段2の11と品ごとの返金の1と交換の印の3）は共通の約束 C-2 のとおり', () => {
     expect([...RETURN_ERROR_CODES]).toEqual([
       'RETURN_NOT_FOUND', 'RETURN_ARGUMENT_INVALID', 'RETURN_QUANTITY_EXCEEDS', 'RETURN_EXCHANGE_VARIANT_INVALID',
       'RETURN_ADDRESS_REQUIRED', 'RETURN_STATE_CONFLICT', 'RETURN_RECEIPT_EXCEEDS', 'RETURN_EXCHANGE_OUT_OF_STOCK',
@@ -101,6 +105,7 @@ describe('返品の記号', () => {
       'RETURN_DECLINE_MESSAGE_REQUIRED', 'CANCEL_REQUEST_NOT_FOUND', 'CANCEL_REQUEST_EXISTS', 'CANCEL_REQUEST_NOT_ELIGIBLE',
       'CANCEL_REQUEST_QUANTITY_EXCEEDS', 'CANCEL_REQUEST_STATE_CONFLICT', 'CANCEL_REQUEST_RESOLUTION_INVALID',
       'RETURN_RECEIVE_REFUND_CAP_EXCEEDED',
+      'UNIT_PRICING_STALE', 'UNIT_PRICING_INVALID', 'UNIT_PRICING_REQUIRED',
     ]);
   });
 

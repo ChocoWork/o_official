@@ -10,6 +10,12 @@ jest.mock('@/lib/orders/refund/refund-store', () => ({
   recordOrderRefundResult: jest.fn(),
 }));
 jest.mock('@/lib/orders/email/order-email-schedule', () => ({ scheduleOrderEmailDelivery: jest.fn() }));
+// 値段の計画（FREQ-642）は別の試験で確かめる。ここでは計画を作る部分だけ差し替え、作り直し（withFreshPricing）は本物を通す
+jest.mock('@/lib/orders/unit-pricing/unit-pricing-service', () => ({
+  ...jest.requireActual('@/lib/orders/unit-pricing/unit-pricing-service'),
+  planOrderRefund: jest.fn(),
+  planOrderCancel: jest.fn(),
+}));
 jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn() }));
 jest.mock('@/lib/stripe/server', () => ({ getStripeServerClient: jest.fn() }));
 // 照合の部品は、createDefaultRefundServiceDeps が関数の中で import() する。ここでは外から差し替える
@@ -20,6 +26,8 @@ jest.mock('@/lib/stripe/checkout-payment-reconciler-deps', () => ({
 }));
 
 import Stripe from 'stripe';
+import { planOrderCancel, planOrderRefund } from '@/lib/orders/unit-pricing/unit-pricing-service';
+import type { UnitPricingPlan } from '@/lib/orders/unit-pricing/unit-pricing-types';
 import { scheduleOrderEmailDelivery } from '@/lib/orders/email/order-email-schedule';
 import type { ShopPaymentAlert } from '@/lib/orders/order-lifecycle-emails';
 import {
@@ -58,6 +66,10 @@ const mockGet = getOrderRefund as jest.MockedFunction<typeof getOrderRefund>;
 const mockList = listOrderRefunds as jest.MockedFunction<typeof listOrderRefunds>;
 const mockMarkError = markOrderRefundError as jest.MockedFunction<typeof markOrderRefundError>;
 const mockRecord = recordOrderRefundResult as jest.MockedFunction<typeof recordOrderRefundResult>;
+const mockPlanRefund = planOrderRefund as jest.MockedFunction<typeof planOrderRefund>;
+const mockPlanCancel = planOrderCancel as jest.MockedFunction<typeof planOrderCancel>;
+/** 写しの無い注文: 計画は無い */
+const NO_PLAN = { plan: null, estimate: { legacy: true, suggestedAmount: 0, refundCap: 0, changesUnits: false } };
 
 const REQUEST_KEY = 'd1b2c3d4-1111-4222-8333-444455556666';
 const ITEM_ID = 'e1b2c3d4-1111-4222-8333-444455556666';
@@ -72,7 +84,7 @@ const EXACTLY_23_HOURS_AGO = '2026-10-10T04:00:00.000Z';
 /** 23時間と1秒前。Stripe は24時間以上たったキーを消してよいとしている（時計のずれも見込む）ので、頼み直さず一覧から探す */
 const OVER_23_HOURS_AGO = '2026-10-10T03:59:59.000Z';
 
-const BEGAN: BeganRefund = { refundId: REFUND_ID, amount: 5000, status: 'awaiting_response', replayed: false };
+const BEGAN: BeganRefund = { refundId: REFUND_ID, amount: 5000, status: 'awaiting_response', replayed: false, releaseRefundIds: [] };
 const REPLAYED: BeganRefund = { ...BEGAN, replayed: true };
 
 const ADMIN_REQUEST: CreateRefundRequest = {
@@ -238,6 +250,8 @@ function setup() {
   mockRecord.mockResolvedValue(resultRow());
   mockGet.mockResolvedValue(refundRef());
   mockList.mockResolvedValue([]);
+  mockPlanRefund.mockResolvedValue(NO_PLAN);
+  mockPlanCancel.mockResolvedValue(NO_PLAN);
 
   return { deps, tables, from, create, retrieve, list, notifyShop, schedule };
 }
@@ -278,6 +292,7 @@ describe('submitAdminRefund（管理画面の返金）', () => {
       cancelReason: null,
       notifyCustomer: true,
       actorId: ACTOR_ID,
+      pricing: null,
     });
     expect(create).toHaveBeenCalledTimes(1);
     expect(create).toHaveBeenCalledWith(
@@ -694,6 +709,7 @@ describe('submitPaidOrderCancel（支払い済みの注文のキャンセル）'
       cancelReason: reason,
       notifyCustomer: true,
       actorId: ACTOR_ID,
+      pricing: null,
     });
     const stripeParams = create.mock.calls[0][0];
     if (stripeReason === null) expect(stripeParams).not.toHaveProperty('reason');
@@ -736,6 +752,7 @@ describe('startAutomaticRefund（自動の返金）', () => {
       notifyCustomer: true,
       actorId: null,
       receivedAmount: 5500,
+      pricing: null,
     });
     const [params] = create.mock.calls[0];
     expect(params).not.toHaveProperty('reason');
@@ -763,6 +780,7 @@ describe('startAutomaticRefund（自動の返金）', () => {
       notifyCustomer: true,
       actorId: null,
       receivedAmount: null,
+      pricing: null,
     });
     // 理由を付けると、記録から作る確かめ直し（理由なし）と中身が違い、同じ重複防止キーで idempotency_error になる
     const [params] = create.mock.calls[0];
@@ -1248,5 +1266,89 @@ describe('createDefaultRefundServiceDeps', () => {
     } as ShopPaymentAlert;
     await expect(deps.notifyShopOfRefundFailure('ex-1', alert)).resolves.toBe(true);
     expect(notifyShopOfException).toHaveBeenCalledWith({ database, mailer }, 'ex-1', alert);
+  });
+});
+
+describe('FREQ-642: 値段の計画と、前の注文へ割引の分を戻す返金', () => {
+  const RELEASE_ID = 'b9b2c3d4-1111-4222-8333-444455556666';
+  const PLAN = { kind: 'pre_shipment_cancel', orderId: ORDER_ID, version: 'v1' } as unknown as UnitPricingPlan;
+  const PLANNED = { plan: PLAN, estimate: { legacy: false, suggestedAmount: 5000, refundCap: 5000, changesUnits: true } };
+
+  function withReleaseRef() {
+    mockGet.mockImplementation(async (_store, id) =>
+      id === RELEASE_ID
+        ? refundRef({ refundId: RELEASE_ID, source: 'unit_hold_release', amount: 3000 })
+        : refundRef(),
+    );
+  }
+
+  it('DD-ADMIN-023: 管理画面の返金は、発送前の品の計画を作って DB に渡す', async () => {
+    const { deps } = setup();
+    mockPlanRefund.mockResolvedValue(PLANNED);
+
+    await submitAdminRefund(deps, ADMIN_INPUT);
+
+    expect(mockPlanRefund).toHaveBeenCalledWith(deps.store, ORDER_ID, ADMIN_REQUEST);
+    expect(mockBegin).toHaveBeenCalledWith(deps.store, expect.objectContaining({ source: 'admin', pricing: PLAN }));
+  });
+
+  it('DD-ADMIN-023: 支払い済みの注文の取り消しは、取り消しの計画を作って DB に渡す', async () => {
+    const { deps } = setup();
+    mockPlanCancel.mockResolvedValue(PLANNED);
+
+    await submitPaidOrderCancel(deps, { orderId: ORDER_ID, actorId: ACTOR_ID, request: CANCEL_REQUEST });
+
+    expect(mockPlanCancel).toHaveBeenCalledWith(deps.store, ORDER_ID);
+    expect(mockBegin).toHaveBeenCalledWith(deps.store, expect.objectContaining({ source: 'order_cancel', pricing: PLAN }));
+  });
+
+  it('DD-ADMIN-023: 自動の返金は計画を作らない（自動の返金は着の状態を変えない）', async () => {
+    const { deps } = setup();
+
+    await startAutomaticRefund(deps, { orderId: ORDER_ID, source: 'auto_amount_mismatch', receivedAmount: null });
+
+    expect(mockPlanRefund).not.toHaveBeenCalled();
+    expect(mockPlanCancel).not.toHaveBeenCalled();
+    expect(mockBegin).toHaveBeenCalledWith(deps.store, expect.objectContaining({ pricing: null }));
+  });
+
+  it('DD-ADMIN-022: 版の食い違い（unit_pricing_stale）の時だけ、計画を作り直して1回やり直す', async () => {
+    const { deps } = setup();
+    mockPlanRefund.mockResolvedValue(PLANNED);
+    mockBegin.mockRejectedValueOnce(new RefundOperationError('unit_pricing_stale')).mockResolvedValueOnce(BEGAN);
+
+    await expect(submitAdminRefund(deps, ADMIN_INPUT)).resolves.toMatchObject({ kind: 'accepted' });
+    expect(mockPlanRefund).toHaveBeenCalledTimes(2);
+    expect(mockBegin).toHaveBeenCalledTimes(2);
+
+    mockBegin.mockReset();
+    mockBegin.mockRejectedValue(new RefundOperationError('unit_pricing_stale'));
+    await expect(submitAdminRefund(deps, ADMIN_INPUT)).resolves.toEqual({ kind: 'refused', code: 'unit_pricing_stale' });
+    expect(mockBegin).toHaveBeenCalledTimes(2);
+  });
+
+  it('DD-ADMIN-023: release_refund_ids の返金ごとに Stripe へ依頼する', async () => {
+    const { deps, create } = setup();
+    withReleaseRef();
+    mockBegin.mockResolvedValue({ ...BEGAN, releaseRefundIds: [RELEASE_ID] });
+
+    await expect(submitAdminRefund(deps, ADMIN_INPUT)).resolves.toMatchObject({ kind: 'accepted', refundId: REFUND_ID });
+
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ amount: 3000 }), { idempotencyKey: `order-refund-${RELEASE_ID}` });
+  });
+
+  it('DD-ADMIN-023: 同じ二重防止の番号の送り直し（replayed）でも、戻しの返金の返事待ちを頼み直す', async () => {
+    const { deps, create } = setup();
+    withReleaseRef();
+    mockBegin.mockResolvedValue({ ...REPLAYED, releaseRefundIds: [RELEASE_ID] });
+    mockGet.mockImplementation(async (_store, id) =>
+      id === RELEASE_ID ? refundRef({ refundId: RELEASE_ID, source: 'unit_hold_release', amount: 3000 }) : refundRef({ status: 'pending' }),
+    );
+
+    await expect(submitAdminRefund(deps, ADMIN_INPUT)).resolves.toMatchObject({ kind: 'accepted', replayed: true });
+
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ amount: 3000 }), { idempotencyKey: `order-refund-${RELEASE_ID}` });
   });
 });
