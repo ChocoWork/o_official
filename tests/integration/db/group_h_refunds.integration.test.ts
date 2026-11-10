@@ -104,6 +104,31 @@ describeLocalDb('H5 refunds / returns (controller only)', db => {
     await hReceive(db(), shipped, await hReturn(db(), shipped, 1), 1, 'now');
     expect(await priorOf(shipped.catalog.itemId)).toBe(1);
   });
+  test('FREQ-551-AC-03: 取り消された注文の着は前の注文の着数に数えない（自動の取消・Stripe の画面の全額の返金）。通常の取り消しと戻しは数える', async () => {
+    const buyer = await seedHMember(db());
+    const priorOf = async (itemId: number) => (await db().query("select public.get_checkout_discount_context($1,null,'{}',$2,now(),'confirm') j", [buyer, [itemId]])).rows[0].j.facts.priorUnitsByItem?.[String(itemId)] ?? 0;
+    // (a) 支払額の不一致の自動の取消（出来事なし・枠は kept のまま）で注文が cancelled になったら数えない
+    const auto = await hRefundFixture(db(), false, 2, 3000, buyer);
+    expect(await priorOf(auto.catalog.itemId)).toBe(2);
+    const r = (await db().query("select * from public.begin_order_refund($1,'auto_amount_mismatch',null,'[]',true,null,null,null,null,null,true,null)", [auto.orderId])).rows[0];
+    await hResult(db(), r.refund_id, 'succeeded');
+    expect((await db().query('select status from public.orders where id=$1', [auto.orderId])).rows[0].status).toBe('cancelled');
+    expect(await priorOf(auto.catalog.itemId)).toBe(0);
+    // (b) Stripe の画面からの全額の返金（発送前の全部）で cancelled になったら数えない
+    const ext = await hRefundFixture(db(), false, 2, 3000, buyer);
+    expect(await priorOf(ext.catalog.itemId)).toBe(2);
+    await db().query("select * from public.record_external_order_refund($1,$2,37000,'succeeded',null,null,null,'card',null,null,null,now())", [ext.orderId, `re_${randomUUID().replaceAll('-', '')}`]);
+    expect((await db().query('select status from public.orders where id=$1', [ext.orderId])).rows[0].status).toBe('cancelled');
+    expect(await priorOf(ext.catalog.itemId)).toBe(0);
+    // (c) 通常の取り消し（order_cancel・計画つき）は枠が returned_shop になり数えない。返金が止まって戻すと数え直す
+    const cancel = await hRefundFixture(db(), false, 2, 3000, buyer);
+    const plan = await cancelPlanFor(db(), cancel.orderId, cancel.itemId, 2);
+    const c = (await db().query("select * from public.begin_order_refund($1,'order_cancel',$2,'[]',false,null,null,null,null,'customer_request',false,$3,null,$4::jsonb)", [cancel.orderId, randomUUID(), cancel.actor, JSON.stringify(plan)])).rows[0];
+    expect(await priorOf(cancel.catalog.itemId)).toBe(0);
+    await hResult(db(), c.refund_id, 'failed');
+    await db().query('select public.order_unit_revert_cancel($1,$2)', [c.refund_id, cancel.actor]);
+    expect(await priorOf(cancel.catalog.itemId)).toBe(2);
+  });
   test('FREQ-551-AC-02: Stripeの管理画面からの返金も安い着から取り同じ着を二度返さない', async () => {
     const f = await hRefundFixture(db()); const a = await hBegin(db(), f, 17000, true); await hResult(db(), a.refund_id, 'succeeded');
     const stripeId = `re_${randomUUID().replaceAll('-', '')}`;
