@@ -371,7 +371,7 @@ describe('ReturnRequestConfirm の返金の見込み', () => {
 
   it('FREQ-642-AC-21: 交換だけならお金のやり取りはありません', async () => {
     mockEstimate.mockResolvedValue({ refundAmount: 0, moneyMoves: false });
-    setup();
+    setup({ ...SUMMARY, fees: [], feeNote: null });
 
     expect(await screen.findByText('お金のやり取りはありません')).toBeInTheDocument();
     expect(screen.queryByText(/返金の見込み/)).not.toBeInTheDocument();
@@ -386,6 +386,23 @@ describe('ReturnRequestConfirm の返金の見込み', () => {
     expect(screen.queryByText(/返金の見込み/)).not.toBeInTheDocument();
     fireEvent.click(submitButton());
     await waitFor(() => expect(props.onAccepted).toHaveBeenCalled());
+  });
+
+  it('FREQ-642-AC-21: 交換だけでも交換の手数料があれば「お金のやり取りはありません」は出さない', async () => {
+    mockEstimate.mockResolvedValue({ refundAmount: 0, moneyMoves: false });
+    setup({ ...SUMMARY, fees: ['交換の手数料: ￥500'], feeNote: 'お支払いのご案内をお送りします。' });
+
+    await waitFor(() => expect(mockEstimate).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId('return-request-estimate')).toHaveTextContent(''));
+    expect(screen.queryByText('お金のやり取りはありません')).not.toBeInTheDocument();
+  });
+
+  it('FREQ-642-AC-21: お店の送り状の返送料（ご返金から差し引く）があれば「お金のやり取りはありません」は出さない', async () => {
+    mockEstimate.mockResolvedValue({ refundAmount: 0, moneyMoves: false });
+    setup({ ...SUMMARY, fees: [], feeNote: null, shipping: '返送料: ￥800（ご返金から差し引きます）' });
+
+    await waitFor(() => expect(mockEstimate).toHaveBeenCalled());
+    expect(screen.queryByText('お金のやり取りはありません')).not.toBeInTheDocument();
   });
 
   it('FREQ-642-AC-21: 見込みを待つ間も申し込める', () => {

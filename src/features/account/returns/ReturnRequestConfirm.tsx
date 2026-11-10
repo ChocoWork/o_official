@@ -7,6 +7,7 @@ import { fetchCustomerReturnEstimate, submitCustomerReturnRequest } from '@/feat
 import {
   REQUEST_TEXT,
   type ConfirmSummary,
+  estimateTextOf,
   type SubmitBody,
 } from '@/features/account/returns/return-request-model';
 import { formatReturnNumber } from '@/lib/orders/returns/return-messages';
@@ -67,8 +68,7 @@ export function ReturnRequestConfirm({ orderId, body, summary, onBack, onAccepte
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [orderId, body]);
 
   // 段が変わったことが分かるように、見出しへ移る（押したボタンは消えるので、移さないと位置が失われる）
   useEffect(() => {
@@ -144,15 +144,9 @@ export function ReturnRequestConfirm({ orderId, body, summary, onBack, onAccepte
         ))}
         {summary.feeNote ? <p>{summary.feeNote}</p> : null}
       </div>
-      {estimate === undefined ? null : (
-        <p data-testid="return-request-estimate" className="font-acumin lk-text-sm text-black">
-          {estimate === null
-            ? REQUEST_TEXT.estimateUnavailable
-            : estimate.moneyMoves
-              ? REQUEST_TEXT.estimateRefund(estimate.refundAmount)
-              : REQUEST_TEXT.estimateNoMoney}
-        </p>
-      )}
+      <p data-testid="return-request-estimate" aria-live="polite" className="font-acumin lk-text-sm text-black">
+        {estimateTextOf(estimate, summary)}
+      </p>
       <p className="font-acumin lk-text-sm text-[#474747]">{REQUEST_TEXT.confirmNotice}</p>
       <LiveMessage className="font-acumin lk-text-sm text-red-600">{alertText}</LiveMessage>
       {uncertain ? (

@@ -956,6 +956,6 @@ limit 20;
 確認日: 2026-11-11
 
 - 最終確認（`FinalConfirmationStep`）の「返品・キャンセル」の文の後に、割引の扱いの文を `data-testid="checkout-discount-return-note"` で出す。
-- /legal の「返品・交換・キャンセルについて」の段落の後にも同じ文を出す（`legal-discount-return-note`）。あわせて「初期不良・誤送」の文を「交換（在庫が無ければ再制作）。お送りできない時だけ返金」に合わせて直した。
+- /legal の「返品・交換・キャンセルについて」の段落の後にも同じ文を出す（`legal-discount-return-note`）。あわせて「初期不良・誤送」の文を「交換（在庫が無ければ再制作）。お送りできない場合に限り、返金」に合わせて直した。
 - 文: お手元に残る商品の割引後の価格を差し引いて返金いたします（文は `src/lib/orders/returns/discount-return-note.ts` の `DISCOUNT_RETURN_NOTE` 1つを4か所が読む。設計 6-1 の案のまま、言い回しはオーナーが後で直す）。
 - 単体: tests/unit/components/FinalConfirmationStep.test.tsx・DiscountReturnNotePages.test.tsx。幅の E2E は FR-CHECKOUT-061・FR-LEGAL-008（Task 10）。

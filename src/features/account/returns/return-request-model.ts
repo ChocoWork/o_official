@@ -1,3 +1,4 @@
+import type { CustomerReturnEstimate } from '@/lib/orders/unit-pricing/unit-pricing-types';
 import { formatYen } from '@/lib/orders/refund/refund-messages';
 import { formatDeadline } from '@/lib/orders/returns/return-calc';
 import { RETURN_REASON_LABELS } from '@/lib/orders/returns/return-messages';
@@ -456,6 +457,18 @@ export function buildConfirmSummary(materials: CustomerReturnRequestMaterials, d
   // 手数料がある時だけ添え書きを付ける。返金の品があれば返金から差し引く文、交換だけなら（差し引く返金が無いので）お支払いのご案内の文
   const feeNote = fees.length === 0 ? null : hasRefund ? REQUEST_TEXT.feeNoteWithRefund : REQUEST_TEXT.feeNoteExchangeOnly;
   return { lines, shipping, fees, feeNote };
+}
+
+/**
+ * 確かめる段の返金の見込みの文。待っている間は空。「お金のやり取りはありません」は、手数料・お支払いのご案内・
+ * お店の送り状の返送料（ご返金から差し引く）が1つも無い時だけ。ある時は、見込みの文を出さない
+ */
+export function estimateTextOf(estimate: CustomerReturnEstimate | null | undefined, summary: ConfirmSummary): string {
+  if (estimate === undefined) return '';
+  if (estimate === null) return REQUEST_TEXT.estimateUnavailable;
+  if (estimate.moneyMoves) return REQUEST_TEXT.estimateRefund(estimate.refundAmount);
+  const hasCharge = summary.fees.length > 0 || summary.feeNote !== null || summary.shipping.includes('差し引きます');
+  return hasCharge ? '' : REQUEST_TEXT.estimateNoMoney;
 }
 
 /** 申し込めない時（受付がオフ・受付が終わった・対象が無い）に出す文。申し込める時は null */
