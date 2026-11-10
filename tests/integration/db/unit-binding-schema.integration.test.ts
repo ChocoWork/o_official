@@ -84,7 +84,7 @@ describeLocalDb('FREQ-642-AC-20: unit binding schema (controller only)', (db) =>
     expect(await priorUnits(userId, itemId)).toBe(3);
   });
 
-  test('FREQ-642-AC-16: 前の注文の着数は手元にある（kept）枠の数。交換の品を全部返金した後は0', async () => {
+  test('FREQ-642-AC-16: 前の注文の着数は手元にある（kept）枠の数（枠の状態を直接 UPDATE した場合の部分の確認。実際の交換 → 返金の通しは unit-binding-receive の AC-16）。交換の品を全部返金した後は0', async () => {
     const userId = await seedHMember(db()); const catalog = await createCatalogFixture(db());
     const order = await buyJacket(userId, catalog, 1);
     expect(await priorUnits(userId, catalog.itemId)).toBe(1);

@@ -5,7 +5,7 @@ import { describeLocalDb } from './helpers/local-db';
 import { withH1PermissionBaseline } from './helpers/group-h-fixtures';
 import { withS0PermissionBodies } from './helpers/accounting-fixtures';
 import { hBegin, hRefundFixture, hResult, withH5ReturnBaseline } from './helpers/group-h-refund-fixtures';
-import { G4_ALLOWLIST, H4_ALLOWLIST, H7_ALLOWLIST, replaceAllowlistSql } from './helpers/group-g-allowlist';
+import { G4_ALLOWLIST, H4_ALLOWLIST, H7_ALLOWLIST, replaceAllowlistSql, restoreH4AllowlistSql } from './helpers/group-g-allowlist';
 import { MAX_AUTOMATIC_DISCOUNTS, MAX_STACKABLE_AUTOMATIC_PER_CLASS } from '@/lib/discounts/discount-types';
 
 const directory = path.join(process.cwd(), 'supabase/migrations');
@@ -431,6 +431,8 @@ describeLocalDb('H4 semantic final assertions (controller only)', db => {
   async function attempt(change = ''): Promise<AssertFailure | null> {
     await db().query('savepoint h4_assert'); let failure: AssertFailure | null = null;
     try {
+      // 移行 C（FREQ-642）で受け取りの署名が15の引数になった。H4 の時点の一覧（14の引数）を取引の中に立ててから確かめる
+      await db().query(restoreH4AllowlistSql());
       await db().query('create temp table group_h4_writer_baseline on commit drop as select to_regprocedure(s)::oid as oid from unnest($1::text[]) as s', [G4_ALLOWLIST]);
       if (change) await db().query(change);
       await db().query(h4Assert);
@@ -620,6 +622,8 @@ describeLocalDb('H7 semantic final assertions (controller only; fill body MD5 fi
   async function attempt(change = '', assertionSql = h7Assert): Promise<AssertFailure | null> {
     await db().query('savepoint h7_assert');
     try {
+      // 移行 C（FREQ-642）で受け取りの署名が15の引数になった。H7 の時点の一覧（14の引数）を取引の中に立ててから確かめる
+      await db().query(restoreH4AllowlistSql());
       await db().query(h7Baseline);
       if (change) await db().query(change);
       await db().query(assertionSql);

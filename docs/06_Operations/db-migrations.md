@@ -1,5 +1,7 @@
 # DB マイグレーション運用
 
+> 交換の印 移行 C 確認日: 2026-11-10。移行 `20261110120611_unit_binding_receive.sql`（受け取りと返金の結果の結び・交換の結び・書き手の一覧の署名の入れ替え）を末尾の「交換の印と1着ずつの記録の移行 C（FREQ-642 Task 5、2026-11-10）」に追記した。手元の DB で確かめた。本番は未適用。
+
 > 交換の印 移行 B 確認日: 2026-11-10。移行 `20261110104605_unit_binding_core.sql`（値段の計画の材料・確かめと記録・返金の結び・取り押さえの重ね定義）を末尾の「交換の印と1着ずつの記録の移行 B（FREQ-642 Task 4、2026-11-10）」に追記した。手元の DB で確かめた。本番は未適用。
 >
 > 交換の印 移行 A 確認日: 2026-11-10。移行 `20261110090325_unit_binding_schema.sql` を末尾の「交換の印と1着ずつの記録の移行 A（FREQ-642 Task 2、2026-11-10）」に追記した。手元の DB で確かめた。本番は未適用。
@@ -1507,3 +1509,26 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 | 古い試験への影響 | 移行 A の末尾の確かめを再生する試験は、再生の前にこの移行の枠の守りを落とす（A は枠の表に UPDATE の守りが無いことを期待していた）。出来事を直接入れる試験は、金額の10列を全部書く。H5・RR の末尾の確かめを再生する試験の道具（`withH5ReturnBaseline`）と RR の試験は、重ね定義の2つを外して再生し（巻き戻しで戻る）、元の11本の名前を引く所は重ね定義を除く |
 | 戻し方 | 本番に当てた後は、新しい関数と守りを落とし金額列の既定値を戻す新しい移行を足す（適用済みの移行は直さない）。出来事・行・holds・結びができた後は表を消さない（追記だけ）。取り押さえの重ね定義は、使い手（Task 5・6）を戻した後で落とす |
 | 配備 | この移行は、返金の計算の入口（受け取り・額を決めて返金・発送前の取り消し）をまだ変えない。**移行 A・B だけを本番に当ててはいけない。** 枠を動かすのは Task 5・6 の入口の変更なので、一緒に本番へ当てる |
+
+## 交換の印と1着ずつの記録の移行 C（FREQ-642 Task 5、2026-11-10）
+
+確認日: 2026-11-10。移行は [20261110120611_unit_binding_receive.sql](../../supabase/migrations/20261110120611_unit_binding_receive.sql)。サイズ 82466 bytes、MD5 `fa87674c18e3ca19b1ec9167892a2701`。ASCII・BOM なし・LF。手元の DB（`npx supabase db reset`）で当てて確かめた。**本番は未適用**（移行 A・B と一緒に、当てる前にオーナーの許可を取る）。適用済みの移行は1字も変えていない。会計のセッションへ知らせる版は A の `20261110090325`・B の `20261110104605`・この `20261110120611`。
+
+| 項目 | 内容 |
+| --- | --- |
+| 目的 | 受け取りが値段の計画（`_pricing`）を受け、返金の額・返す着・交換の結び・割引の扱いを1回の取引で書く。返金の結果の error の後のやり直しが、出来事の返した着をそのまま付け直す。FREQ-641 の既知の点 1・3・4 を直す（設計書 4-1・5・7章） |
+| 置き換えた関数 | `private.admin_receive_return` と公開の入口 `public.admin_receive_return`（14の引数から15の引数へ。末尾の `_pricing jsonb DEFAULT NULL` を足し、答えに `release_refund_ids uuid[]` を足した10列。14の引数の private・public は DROP）。`private.record_group_g_refund_result`（同じ署名・本文だけ）。`private.group_g_writer_allowlist()`（受け取りの署名1本の入れ替え。本数は77本のまま） |
+| 写しの有無 | 注文の時の割引の写し（`order_discount_snapshots`）が有る注文は計画が要る（無ければ `UNIT_PRICING_REQUIRED` / `22023`）。写しの無い注文に計画を渡すと `UNIT_PRICING_INVALID`（DETAIL `ub_legacy`）。写しの無い注文は `20261108063711` の本文のまま（手数料の率を商品の額に掛け、H の安い順）。`_pricing` の既定値 NULL のため、14の引数の呼び方も写しの無い注文では通る |
+| 二重防止 | 同じ requestKey の送り直しは、計画・版を確かめる前に前の結果（`replayed=true`、`release_refund_ids` は出来事に結んだ `release` の返金）を返す。間に枠の状態や版が変わっていても同じ |
+| 鍵 | 共通の鍵 `(190521,1)` → `lock_group_g_inventory` の1回の呼び出しに、注文と同じ会員の関わる注文（`order_unit_related_orders`）も入れる。鍵を取った後で関わる注文の一覧が変わっていれば `UNIT_PRICING_STALE`（`40001`） |
+| 額 | 商品の額は計画の `nowRefund`（手数料の率の分は E の中）。`v_fees` は返送料・交換の手数料・送料だけ（`fee_pending_deduction` もそれだけ）。店長の額の上限は今と同じ `LEAST(返せる額, 今返す商品の額 + 送料)`。自動の額は注文の返せる額で止める。相談の分（`consultRefund`）は出来事に残す |
+| 計画の確かめ | 受け取りの側: 計画の注文・種類・額の形、返す着の数が受け取りの返金の品（返品の行 × 今返金／相談）と合うこと（`ub_receive_lines`）、割引の扱いが計画の側と合い返した行を指すこと（`ub_treatment`）。版・式・枠・割り振り・holds は `order_unit_apply_plan`（移行 B）。交換だけの受け取りは枠・価格・holds が動かないので出来事を書かない |
+| 交換の結び | 交換の品の着ごとに `order_unit_exchange_links` を1行。結ぶ枠は、持ち主がその返品の行の品で、この受け取りで返さず手元にある枠のうち、返品の行の取り押さえ（FREQ-641 の `return_line_id`）が有る枠を先に、次に安い枠（H の安い順）、次に注文の行・`unit_index`。足りなければ `ub_exchange_slots`。枠の持ち主を交換の品の着にし、交換の品をさらに交換した時は `previous_*` に前の持ち主を残す。`exchange_paid_amount` は結んだ枠の出来事の後の値段の和（表示だけ）。取り押さえは交換の結びでは外さない（H の通常の返金が交換に出した着を取らないため）。外れるのは、交換の品の返品の返金を結ぶ時（`order_unit_link_refund`） |
+| 割引の扱い | 計画の `treatments` を `order_return_line_treatments` に返品の行ごとに1行（受け取りの id と店長の id） |
+| 返金 | 返金の記録（`order_refunds` source `return`）と行（返品の行の品ごとに数と返した着の割り振りの和）を受け取りが書く。H の安い順の取り押さえ（`begin_order_refund_core`）は写しのある注文では使わない。返した着の取り押さえは `order_unit_link_refund(出来事, 返金, 'now')`。`adjustment_amount` は `額 − (割り振りの和 + 送料)` |
+| 返金の結果 | `record_group_g_refund_result`: 出来事に結んだ返金が error から pending / succeeded に直る時、結んだ出来事の返した着（部分が同じ物）の取り押さえを `order_unit_link_refund` で付け直す。別の返金が error / failed のまま握っている着は先に外す。付け直せなければ今までどおり支払いの例外（`group_h_refund_unit_mismatch`）。failed は取り押さえを外すだけで枠の状態は変えない。出来事に結んでいない返金は今までのまま |
+| 未対応（Task 6） | `_pricing.releases`（前の注文に戻す返金）はまだ書かず、`release_refund_ids` は常に空の列。相談後の返金・注文の返金・発送前の取り消し・取り消しの戻しも Task 6 |
+| 末尾の確かめ | `UNIT_BINDING_RECEIVE_MIGRATION_ASSERTION_FAILED`（SQLSTATE `P0001`）。DETAIL は `ubr_functions`（本文の MD5・所有者・設定・言語・名前ごとの本数・14の引数が消えたこと）・`ubr_acl`（関数の権限）・`ubr_allowlist`（書き手の一覧が77本のまま、受け取りの入口が新しい署名、それ以外の一覧のOIDが変わらないこと） |
+| 古い試験への影響 | 14の引数の署名を持つ時点の一覧（G2〜H の一覧）は、`replaceAllowlistSql` が前に付ける取引の中だけの14の引数の入口（`LEGACY_RECEIVE_STUB_SQL`）で型に通る。H4・H5・H7・RR・RD の末尾の確かめを再生する試験は、取引の中で14の引数の入口と H4 の一覧の関数（本文の指紋が同じ物）を立ててから流す（`withH5ReturnBaseline`・`installReceiveEra`・`restoreH4AllowlistSql`）。今の DB の一覧は `CURRENT_ALLOWLIST`（`UB_ALLOWLIST`）。写しのある注文（H の受け付けで作った注文）の受け取りの試験は、本物の計画を付けて呼ぶ（`ubReceive`。出荷済みの印は会計の発送の事実 `seedFactSlip` から） |
+| 戻し方 | 本番に当てた後は、14の引数の入口・RD の本文の `admin_receive_return`・RR の `record_group_g_refund_result`・H4 の一覧の関数を戻す新しい移行を足す（適用済みの移行は直さない）。出来事・結び・割引の扱いの行は追記だけの表なので消さない |
+| 配備 | **移行 A・B・C と Task 6・7 の入口の変更を一緒に本番へ当てる。** C だけを当てると、サーバー（`return-store.ts`）が計画を渡さないので、写しのある注文の受け取りが `UNIT_PRICING_REQUIRED` で止まる |

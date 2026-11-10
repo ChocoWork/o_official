@@ -3,8 +3,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
-import { CURRENT_ALLOWLIST, replaceAllowlistSql } from './helpers/group-g-allowlist';
-import { hReceive, hRefundFixture, hReturn, H5_RETURN_FUNCTION_NAMES, withH5ReturnBaseline } from './helpers/group-h-refund-fixtures';
+import { CURRENT_ALLOWLIST, H7_ALLOWLIST, replaceAllowlistSql } from './helpers/group-g-allowlist';
+import { hReceive, hRefundFixture, hReturn, H5_RETURN_FUNCTION_NAMES, installReceiveEra, withH5ReturnBaseline } from './helpers/group-h-refund-fixtures';
 
 const directory = path.join(process.cwd(), 'supabase/migrations');
 const migrationFiles = fs.readdirSync(directory).filter(name => /^\d+_return_receive_per_item\.sql$/.test(name));
@@ -13,7 +13,13 @@ const sql = migrationFiles.length === 1 ? fs.readFileSync(path.join(directory, m
 const dedupFiles = fs.readdirSync(directory).filter(name => /^\d+_return_receive_unit_dedup\.sql$/.test(name));
 const dedupSql = dedupFiles.length === 1 ? fs.readFileSync(path.join(directory, dedupFiles[0]), 'utf8') : '';
 const DEDUP_REPLACED = ['admin_receive_return', 'group_h_receiving_amount', 'group_h_return_refund_amount', 'return_receive_amounts'];
+// 2026-11-10 の交換の印の移行 C（FREQ-642）が、受け取りの入口（15の引数に作り直し）と、返金の結果を書く関数の本文を置き換えた。
+// 今の DB の本文はこの移行の物と比べる
+const unitReceiveFiles = fs.readdirSync(directory).filter(name => /^\d+_unit_binding_receive\.sql$/.test(name));
+const unitReceiveSql = unitReceiveFiles.length === 1 ? fs.readFileSync(path.join(directory, unitReceiveFiles[0]), 'utf8') : '';
+const UNIT_RECEIVE_REPLACED = ['admin_receive_return', 'record_group_g_refund_result'];
 const receiveArgs = 'uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text';
+const receiveArgs15 = `${receiveArgs},jsonb`;
 const resultNames = ['receipt_id', 'return_status', 'refund_id', 'refund_amount', 'refund_status',
   'exchange_order_item_ids', 'fee_due_amount', 'shop_notice_enqueued', 'replayed'];
 const inputNames = ['_return_id', '_actor_id', '_actor_can_refund', '_request_key', '_units', '_exchange_overrides',
@@ -135,20 +141,22 @@ describeLocalDb('受取明細の列・制約・ACL・本文・書き手77本（c
       where receipt_id=$1 and resolution='refund'`, [newReceipt.receipt_id])).rows).toEqual([{ refund_choice: choice }]);
   });
 
-  test('FREQ-641-AC-09: publicとprivateの14引数・既定値なし・9列と公開入口の本文を保つ', async () => {
+  test('FREQ-641-AC-09: publicとprivateの15引数（末尾の _pricing だけ既定値 NULL）・10列と公開入口の本文を保つ', async () => {
+    // 移行 C（FREQ-642）で14の引数の入口は15の引数（値段の計画）に変わり、答えに release_refund_ids が付いた
     for (const schema of ['public', 'private']) {
       const p = (await db().query(`select pronargs,pronargdefaults,proargnames,proargmodes::text[] as proargmodes,prosecdef,provolatile,proconfig
-        from pg_proc where oid=$1::regprocedure`, [`${schema}.admin_receive_return(${receiveArgs})`])).rows[0];
-      expect(p).toMatchObject({ pronargs: 14, pronargdefaults: 0, proargnames: [...inputNames, ...resultNames] });
-      expect(p.proargmodes.slice(14)).toEqual(Array(9).fill('t'));
+        from pg_proc where oid=$1::regprocedure`, [`${schema}.admin_receive_return(${receiveArgs15})`])).rows[0];
+      expect(p).toMatchObject({ pronargs: 15, pronargdefaults: 1, proargnames: [...inputNames, '_pricing', ...resultNames, 'release_refund_ids'] });
+      expect(p.proargmodes.slice(15)).toEqual(Array(10).fill('t'));
       expect(p.proconfig).toContain('search_path=""');
+      expect((await db().query('select to_regprocedure($1) is null as gone', [`${schema}.admin_receive_return(${receiveArgs})`])).rows[0].gone).toBe(true);
     }
-    const original = definition(fs.readFileSync(path.join(directory, '20261023211425_group_g1_allocation.sql'), 'utf8'), 'admin_receive_return', 'public');
+    const original = definition(unitReceiveSql, 'admin_receive_return', 'public');
     expect(original).not.toBeNull();
     expect((await db().query(`select md5(replace(prosrc,E'\\r','')) hash from pg_proc
-      where oid=$1::regprocedure`, [`public.admin_receive_return(${receiveArgs})`])).rows[0].hash).toBe(md5(original!.body));
+      where oid=$1::regprocedure`, [`public.admin_receive_return(${receiveArgs15})`])).rows[0].hash).toBe(md5(original!.body));
     const f = await hRefundFixture(db(), true), r = await hReturn(db(), f);
-    expect(Object.keys(await hReceive(db(), f, r)).sort()).toEqual([...resultNames].sort());
+    expect(Object.keys(await hReceive(db(), f, r)).sort()).toEqual([...resultNames, 'release_refund_ids'].sort());
   });
 
   test('FREQ-641-AC-10: 新しい見込みhelperはSTABLEで旧戻り型とJSONの既存キーを保つ', async () => {
@@ -184,7 +192,7 @@ describeLocalDb('受取明細の列・制約・ACL・本文・書き手77本（c
       const acl = (await db().query(`select has_function_privilege($1,$2,'EXECUTE') rpc,
         has_function_privilege($1,'private.return_receive_amounts(uuid)','EXECUTE') helper,
         has_table_privilege($1,'public.order_return_receipt_lines','INSERT,UPDATE,DELETE,TRUNCATE') dml`,
-      [role, `public.admin_receive_return(${receiveArgs})`])).rows[0];
+      [role, `public.admin_receive_return(${receiveArgs15})`])).rows[0];
       expect(acl).toEqual({ rpc: role === 'service_role', helper: false, dml: false });
     }
     const f = await hRefundFixture(db(), true), r = await hReturn(db(), f);
@@ -210,7 +218,8 @@ describeLocalDb('受取明細の列・制約・ACL・本文・書き手77本（c
   test('FREQ-641-AC-10: 新11本文と見込みhelperは移行に固定した本文・属性・ACLで過剰overloadを持たない', async () => {
     expect(sql).not.toBe('');
     for (const name of [...H5_RETURN_FUNCTION_NAMES, 'return_receive_amounts']) {
-      const expected = DEDUP_REPLACED.includes(name) ? definition(dedupSql, name) : definition(sql, name); expect(expected).not.toBeNull();
+      const expected = UNIT_RECEIVE_REPLACED.includes(name) ? definition(unitReceiveSql, name)
+        : DEDUP_REPLACED.includes(name) ? definition(dedupSql, name) : definition(sql, name); expect(expected).not.toBeNull();
       const rows = (await db().query(`select md5(replace(p.prosrc,E'\\r','')) hash,p.provolatile,p.proconfig,
         p.proowner=(select oid from pg_roles where rolname='postgres') owned,
         coalesce((select array_agg(a.grantee::regrole::text order by a.grantee::regrole::text)
@@ -233,6 +242,8 @@ describeLocalDb('受取明細の列・制約・ACL・本文・書き手77本（c
     return failure(db(), async () => {
       // The RR assertion counts functions by name; migration B's unit-list overloads are put back by the rollback.
       await db().query('drop function if exists private.group_h_claim_refund_units(uuid,uuid,integer[],boolean,uuid); drop function if exists private.group_h_release_return_units(uuid,integer[])');
+      // 移行 C が置き換えた2本は、RR・RD の時点の物に戻してから確かめる（巻き戻しで戻る）
+      await installReceiveEra(db());
       for (const baseline of baselines) await db().query(baseline);
       if (change) await change(); await db().query(currentAssertion);
     });
@@ -246,7 +257,7 @@ describeLocalDb('受取明細の列・制約・ACL・本文・書き手77本（c
     { detail: 'rr_receive', name: 'admin_receive_return' },
     { detail: 'rr_amounts', name: 'group_h_return_refund_amount' },
     { detail: 'rr_acl', change: 'grant execute on function private.return_receive_amounts(uuid) to service_role' },
-    { detail: 'rr_writers', change: replaceAllowlistSql(CURRENT_ALLOWLIST.slice(0, -1)) },
+    { detail: 'rr_writers', change: replaceAllowlistSql(H7_ALLOWLIST.slice(0, -1), { stub: false }) },
   ])('FREQ-641-AC-10: 新移行の改ざんはP0001と固定DETAIL=$detailで断る', async o => {
     expect(await attempt(async () => {
       if (o.change) await db().query(o.change);
@@ -261,7 +272,7 @@ describeLocalDb('受取明細の列・制約・ACL・本文・書き手77本（c
   async function dedupAttempt(change?: string) {
     expect(dedupAssertion).not.toBe('');
     await db().query('savepoint rd_migration_failure');
-    try { if (change) await db().query(change); await db().query(dedupAssertion); return null; }
+    try { await installReceiveEra(db()); if (change) await db().query(change); await db().query(dedupAssertion); return null; }
     catch (caught) { const e = caught as DbError; return { code: e.code, message: e.message, detail: e.detail }; }
     finally { await db().query('rollback to savepoint rd_migration_failure'); await db().query('release savepoint rd_migration_failure'); }
   }

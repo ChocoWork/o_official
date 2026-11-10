@@ -129,17 +129,57 @@ export const H4_ALLOWLIST: readonly string[] = Object.freeze([
 // H7 and RR replace existing writers in place; the 77 OIDs stay the same.
 // RR's return_receive_amounts is a read helper and must never enter this writer list.
 export const H7_ALLOWLIST: readonly string[] = H4_ALLOWLIST;
+
+/**
+ * 交換の印の移行 C（FREQ-642）で、受け取りの入口が15の引数（末尾に値段の計画 jsonb）になり、14の引数の関数は落ちた。
+ * 本数は同じ77本で、入れ替わったのは受け取りの署名の1本だけ（今の一覧は UB_ALLOWLIST）。
+ * それより前の時点の一覧（G2〜H の一覧）は14の引数の署名を持つ。その時点の末尾の確かめを今の DB で再生する試験は、
+ * 一覧を入れ替える文（replaceAllowlistSql）に含まれる14の引数の署名を型に通せるよう、同じ性質（DEFINER・search_path 空・
+ * service_role だけ EXECUTE）の14の引数の関数を、呼び出し元の取引の中だけに作る（巻き戻しで消える）。
+ */
+export const RECEIVE_RETURN_14 = 'private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text)';
+export const RECEIVE_RETURN_15 = 'private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)';
+export const UB_ALLOWLIST: readonly string[] = Object.freeze(H7_ALLOWLIST.map((entry) => (entry === RECEIVE_RETURN_14 ? RECEIVE_RETURN_15 : entry)));
 /**
  * 今の DB の書き手の一覧。「今の DB の一覧が固定の集合や本数と等しい」ことを確かめる生きた検査は、すべてこの定数に向ける。
  * 次の段階が本数を足す時は、この指し先だけを新しい一覧へ付け替える（時点の再実行が使う G3C/G3D/G4_ALLOWLIST は変えない）。
  */
-export const CURRENT_ALLOWLIST: readonly string[] = H7_ALLOWLIST;
+export const CURRENT_ALLOWLIST: readonly string[] = UB_ALLOWLIST;
 
-/** 書き手の閉じた一覧を、渡した一覧へ置き換える文（関数の所有者・SECURITY DEFINER・search_path 空は移行と同じ） */
-export function replaceAllowlistSql(entries: readonly string[]): string {
-  return `create or replace function private.group_g_writer_allowlist()
+/** 移行 C より前の時点の確かめを再生するための、14の引数の受け取りの入口（取引の中だけ。本体は15の引数へ渡すだけ） */
+const LEGACY_RECEIVE_STUB_SQL = `create or replace function private.admin_receive_return(_return_id uuid, _actor_id uuid, _actor_can_refund boolean, _request_key uuid,
+      _units jsonb, _exchange_overrides jsonb, _refund_choice text, _refund_amount integer, _refund_shipping_amount integer, _note text,
+      _notify_customer boolean, _sent_back_message text, _sent_back_carrier text, _sent_back_tracking_number text)
+    returns table(receipt_id uuid, return_status text, refund_id uuid, refund_amount integer, refund_status text, exchange_order_item_ids uuid[],
+      fee_due_amount integer, shop_notice_enqueued boolean, replayed boolean)
+    language sql security definer set search_path = '' as $stub$
+      select r.receipt_id, r.return_status, r.refund_id, r.refund_amount, r.refund_status, r.exchange_order_item_ids, r.fee_due_amount,
+        r.shop_notice_enqueued, r.replayed from private.admin_receive_return(_return_id, _actor_id, _actor_can_refund, _request_key, _units,
+        _exchange_overrides, _refund_choice, _refund_amount, _refund_shipping_amount, _note, _notify_customer, _sent_back_message,
+        _sent_back_carrier, _sent_back_tracking_number, null) as r $stub$;
+    alter function ${RECEIVE_RETURN_14} owner to postgres;
+    revoke all on function ${RECEIVE_RETURN_14} from public, anon, authenticated, service_role;
+    grant execute on function ${RECEIVE_RETURN_14} to service_role;`;
+
+/** 書き手の閉じた一覧を、渡した一覧へ置き換える文（関数の所有者・SECURITY DEFINER・search_path 空は移行と同じ）。14の引数の受け取りを含む一覧には、その入口を取引の中に作る文を前に付ける */
+export function replaceAllowlistSql(entries: readonly string[], options: { stub?: boolean } = {}): string {
+  const stub = (options.stub ?? true) && entries.includes(RECEIVE_RETURN_14) ? `${LEGACY_RECEIVE_STUB_SQL};
+` : '';
+  return `${stub}create or replace function private.group_g_writer_allowlist()
     returns pg_catalog.regprocedure[] language sql stable security definer set search_path = ''
     as $f$ select array[${entries.map((entry) => `'${entry}'`).join(', ')}]::pg_catalog.regprocedure[] $f$`;
+}
+
+/**
+ * H4 の移行が置いた書き手の一覧の関数の本文そのまま（H4・H5・H7・RR の確かめは、この関数の本文の指紋も確かめる）。
+ * 14の引数の受け取りの署名を含むので、stub を true にすると、その入口を取引の中に立てる文を前に付ける。
+ */
+export function restoreH4AllowlistSql(options: { stub?: boolean } = {}): string {
+  const text = fs.readFileSync(path.join(MIGRATION_DIRECTORY, '20261029130300_group_h_discounts_acceptance.sql'), 'utf8');
+  const body = text.match(/^CREATE OR REPLACE FUNCTION private\.group_g_writer_allowlist\(\)[\s\S]*?^\$\$;/m)?.[0];
+  if (!body) throw new Error('GROUP_H_H4_ALLOWLIST_FUNCTION_MISSING');
+  return `${options.stub ?? true ? `${LEGACY_RECEIVE_STUB_SQL};
+` : ''}${body}`;
 }
 
 /** 呼び出し元の取引の中で一覧を入れ替えてから、末尾の確かめの節を流す。戻すのは呼び出し元の rollback */

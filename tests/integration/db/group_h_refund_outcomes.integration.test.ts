@@ -6,6 +6,8 @@ import { hBegin, hClaims, hReceive, hRefundFixture, hResult, hReturn, type HRefu
 import { seedGroupG1Shipment, setOrderStatusForFixture } from './helpers/group-g1-fixtures';
 import { createCatalogFixture, insertCancelRequest, shipFixtureOrder } from './helpers/order-fixtures';
 import { hDiscount, seedHDiscount, seedHOrderUnits } from './helpers/group-h-fixtures';
+import { seedFactSlip } from './helpers/accounting-orders-fixtures';
+import { ubReceive } from './helpers/unit-binding-receive';
 
 type Outcome = 'sent_back' | 'missing' | 'waived';
 type AmountRow = { orderId: string; lineAmount: number; quantity: number };
@@ -14,8 +16,9 @@ type ReceiveOrder = typeof receiveOrders[number];
 
 async function receiveUnits(db: PgClient, f: HRefundFixture, r: Awaited<ReturnType<typeof hReturn>>,
   dispositions: Array<'sent_back' | 'not_restocked'>, choice: 'none' | 'now' | 'consult', amount: number | null = null) {
-  return (await db.query(`select * from public.admin_receive_return($1,$2,true,$3,$4::jsonb,'[]',$5,$6,0,null,true,'Fixture',null,null)`,
-    [r.returnId, f.actor, randomUUID(), JSON.stringify(dispositions.map(disposition => ({ return_line_id: r.lineId, disposition, quantity: 1 }))), choice, amount])).rows[0];
+  // 注文の時の写しのある注文は、値段の計画（FREQ-642）を付けて受け取る
+  return ubReceive(db, { returnId: r.returnId, actorId: f.actor, choice, amount, notify: true, sentBackMessage: 'Fixture',
+    units: dispositions.map(disposition => ({ return_line_id: r.lineId, disposition, quantity: 1 })) });
 }
 
 async function receivePair(db: PgClient, f: HRefundFixture, r: Awaited<ReturnType<typeof hReturn>>,
@@ -60,8 +63,8 @@ async function completed(db: PgClient, outcome: Outcome) {
   } else if (outcome === 'waived') {
     await hReceive(db, f, r, 1, 'now');
   } else {
-    await db.query(`select * from public.admin_receive_return($1,$2,true,$3,$4::jsonb,'[]','none',null,0,null,true,'Fixture',null,null)`,
-      [r.returnId, f.actor, randomUUID(), JSON.stringify([{ return_line_id: r.lineId, disposition: 'sent_back', quantity: 1 }])]);
+    await ubReceive(db, { returnId: r.returnId, actorId: f.actor, choice: 'none', notify: true, sentBackMessage: 'Fixture',
+      units: [{ return_line_id: r.lineId, disposition: 'sent_back', quantity: 1 }] });
   }
   await db.query(`insert into public.user_roles(user_id,role_id,active) select $1,id,true from public.roles where code='admin'`, [f.actor]);
   return { ...f, completedReturn: r };
@@ -190,6 +193,8 @@ describeLocalDb('H5 G-1 return outcomes and late refund recovery (controller)', 
     const shipments = [];
     for (const suffix of ['A', 'B']) shipments.push(await shipFixtureOrder(db(), { orderId: f.orderId, actorId: f.actor,
       trackingNumber: `H5-SPLIT-${suffix}`, lines: [{ order_item_id: f.itemId, quantity: 2 }] }));
+    // 会計の発送の事実（出荷済みの着の印）。値段の計画は出荷済みの枠からだけ発送後の返品を選ぶ
+    for (let i = 0; i < 2; i++) await seedFactSlip(db(), { orderItemId: f.itemId, quantity: 2 });
     for (const fulfillment of shipments) {
       const r = await hReturn(db(), { ...f, fulfillment }); await hReceive(db(), f, r);
       const refund = (await db().query('select * from public.admin_refund_return($1,$2,$3,null,0,null,false)', [r.returnId, f.actor, randomUUID()])).rows[0];

@@ -1,7 +1,7 @@
 /** @jest-environment node */
 import { describeLocalDb, type PgClient } from './helpers/local-db';
 import { createCatalogFixture } from './helpers/order-fixtures';
-import { G2_ALLOWLIST, H4_ALLOWLIST, H7_ALLOWLIST, CURRENT_ALLOWLIST } from './helpers/group-g-allowlist';
+import { G2_ALLOWLIST, H4_ALLOWLIST, H7_ALLOWLIST, CURRENT_ALLOWLIST, UB_ALLOWLIST, RECEIVE_RETURN_14, RECEIVE_RETURN_15 } from './helpers/group-g-allowlist';
 
 /**
  * G-1 Task 14（FREQ-522-AC-02・FREQ-524・FREQ-540-AC-05）: 書き手の閉じた一覧の構造の確かめ。
@@ -68,7 +68,7 @@ const ALLOWLIST = [
   'private.admin_close_return_missing(uuid,uuid,uuid)',
   'private.admin_reopen_return(uuid,uuid,uuid)',
   'private.admin_inspect_return(uuid,uuid,uuid,jsonb)',
-  'private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text)',
+  'private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)',
   'private.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean)',
   'private.refresh_order_return_status(uuid)',
   'private.admin_record_return_fee_payment(uuid,uuid,text,boolean)',
@@ -206,7 +206,9 @@ describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の�
   test('FREQ-549-AC-03: H7の例外解決は同じOIDで77本の書き手に残り、Hの予約helperを一覧へ足さない', async () => {
     const signature = 'private.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)';
     expect(H7_ALLOWLIST).toEqual(H4_ALLOWLIST);
-    expect(CURRENT_ALLOWLIST).toEqual(H7_ALLOWLIST);
+    // 移行 C（FREQ-642）で受け取りの署名だけが15の引数に入れ替わった（本数は同じ77本）
+    expect(CURRENT_ALLOWLIST).toEqual(UB_ALLOWLIST);
+    expect(UB_ALLOWLIST.filter((entry) => !H7_ALLOWLIST.includes(entry))).toEqual([RECEIVE_RETURN_15]);
     expect(H7_ALLOWLIST).toHaveLength(77);
     expect(H7_ALLOWLIST.filter(s => s === signature)).toEqual([signature]);
     expect((await db().query('select $1::regprocedure::oid=any(private.group_g_writer_allowlist()::oid[]) as present', [signature])).rows)
@@ -217,7 +219,7 @@ describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の�
 
   test('一覧はCURRENT_ALLOWLISTと同じ集合で、関数は postgres の SECURITY DEFINER・search_path 空・だれも EXECUTE できない', async () => {
     expect(ALLOWLIST).toEqual(CURRENT_ALLOWLIST);
-    expect(ALLOWLIST.slice(0, 65)).toEqual(G2_ALLOWLIST);
+    expect(ALLOWLIST.slice(0, 65)).toEqual(G2_ALLOWLIST.map((entry) => (entry === RECEIVE_RETURN_14 ? RECEIVE_RETURN_15 : entry)));
     const expected = (await db().query('select to_regprocedure(s)::oid::text as oid, s from unnest($1::text[]) as s', [ALLOWLIST])).rows;
     expect(expected.filter((row) => row.oid === null).map((row) => row.s)).toEqual([]);
     expect(new Set(expected.map((row) => row.oid)).size).toBe(CURRENT_ALLOWLIST.length);

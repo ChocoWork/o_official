@@ -6,7 +6,7 @@ import { createShippedOrderFixture, insertOrderWithLines, insertReturnRecord, va
 const WRITERS = [
   'admin_close_return_missing(uuid,uuid,uuid)', 'admin_reopen_return(uuid,uuid,uuid)',
   'admin_inspect_return(uuid,uuid,uuid,jsonb)',
-  'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text)',
+  'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)',
   'admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean)',
 ];
 type Fx = Awaited<ReturnType<typeof createShippedOrderFixture>> & {

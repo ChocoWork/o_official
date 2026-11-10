@@ -1,5 +1,7 @@
 # API仕様（現行実装）
 
+> 交換の印 移行 C（Task 5）確認日: 2026-11-10。窓口の追加・削除はまだない（サーバーの受け渡しは Task 7）。受け取りの DB の関数 `admin_receive_return` は15の引数（末尾に値段の計画 `_pricing jsonb`、既定値 NULL）・答えは10列（末尾に `release_refund_ids uuid[]`）になった。詳しくは末尾の「受け取りの値段の計画（FREQ-642 Task 5）」。
+>
 > 会計の作り直し 計画2 Task 15 確認日: 2026-11-09。計画2の確定した実装に合わせて既存の窓口の行を直した。(1) `GET`・`PUT /api/admin/kpi/monthly-record` は月の KPI の表（S13）を DB の関数（`list_kpi_monthly_records`・`admin_set_kpi_monthly_records`）で読み書きし、「表が無い」の 503 をやめた。(2) `GET /api/admin/kpi` は「売上」を「受注高」の数え方（支払いの仕訳の日）にし、応答に `backlog`・`intakeBreakdown`・`returnsThisMonth` を足した。(3) `GET /api/admin/kpi/targets` の `sales` は 受注高、`aov` は 受注高 ÷ 注文数。(4) `POST /api/webhook/stripe` は 18種を保存する（`charge.dispute.*` の5種を足した）。(5) `POST /api/cron/stripe-reconcile` は dispute の読み直し（`syncedDisputes`・`openDisputesCapped`）を足した。(6) 会計の読み（`GET /api/admin/accounting/*`）の `permissions` に `manageFinance`・`correctEntries` を、持っている時だけ足した。(7) 発送票の確定・取り消し・出荷日の直しと着金の確認は、応答の後に計上係を流す。実装の読み取りで確かめた。
 >
 > 会計の作り直し 計画2 Task 12 確認日: 2026-11-09。`GET /api/admin/kpi/cost-profit` が注文の表（`orders`）を読まなくなり、取引管理の注文の収入の行を取り消されていない出荷の仕訳（`shipment_confirmed`・`shipment_redated`）から作る（額は4010のcredit−debitの合計）ようにした。応答に `shipmentMeta`（出荷の仕訳の出荷した日と登録した日。200件ずつ読む。読めなかった時はGETを止めず null）を足した。実装の読み取りで確かめた。
@@ -1112,3 +1114,17 @@ GET `/api/admin/order-attention`（`admin.orders.read`）は`discounts:{orderId,
 受け取りの画面からの本文（Task 5 Step 3）: 返金になる各品の行内の選びを `units[].refundChoice` に入れ、同じ返品行・状態・選びを数量でまとめる。全品今すぐは親 `now`、全品相談は `consult`、混在は `mixed`。P9で返金権限の無い人は品ごとの選びだけを送り、`refundAmount:null`・`refundShippingAmount:0`。返金権限の無い人でP9外は、返金になる全品を `consult` にする。受け取りの額の入力の上限は上表の今回上限で、相談後の `POST /api/admin/returns/[returnId]/refund` は従来どおり、その返品の返金待ちの品全部を対象に注文の返せる額まで返す。
 
 [E2E helper](../../../e2e/return-test-utils.ts) の品ごとの選びと、[受け取りの窓口の差し替え](../../../e2e/return-request-test-utils.ts) の既存の任意指定を接続する。旧呼び出しで品の選びを省く時はキーを足さず、前からの本文を保つ。既存 FR-ADMIN-085・087・088・090・096 の画面の期待を品ごとの選びに合わせた。2026-11-06、既存の返品とFR-ADMIN-164は本番ビルド・手元のSupabase・3幅で337/337通過（調整役の手元の実行・ログ保管）。DB・PostgRESTの実測も[テスト仕様](../../05_Quality/tests/test-spec.md)に記録。実Stripe/SES・メールの実配送は未実行。新しいAPIや応答のキーは足していない。
+
+### 受け取りの値段の計画（FREQ-642 Task 5、2026-11-10）
+
+対応: FREQ-642-AC-02〜06・12・15・17・20・25・31。設計は [交換の印の設計書](../../superpowers/specs/2026-11-08-exchange-unit-binding-design.md)の2〜5・7章。移行は [20261110120611_unit_binding_receive.sql](../../../supabase/migrations/20261110120611_unit_binding_receive.sql)。
+
+`public.admin_receive_return(_return_id, _actor_id, _actor_can_refund, _request_key, _units, _exchange_overrides, _refund_choice, _refund_amount, _refund_shipping_amount, _note, _notify_customer, _sent_back_message, _sent_back_carrier, _sent_back_tracking_number, _pricing jsonb DEFAULT NULL)` は SECURITY INVOKER の委譲で、`service_role` だけが実行できる。14の引数の関数は無い。
+
+| 項目 | 内容 |
+| --- | --- |
+| 入力 `_pricing` | サーバーが `planUnitEvent`（kind `return_receive`）で作った値段の計画の JSON。注文の時の割引の写しが有る注文は必須、無い注文は渡せない。画面から額は受け取らない |
+| 答え | `receipt_id・return_status・refund_id・refund_amount・refund_status・exchange_order_item_ids・fee_due_amount・shop_notice_enqueued・replayed・release_refund_ids`。`release_refund_ids` は前の注文に戻した返金の id（今は常に空の列。Task 6 で埋まる）。送り直しの答えは前と同じ |
+| 断る記号 | `UNIT_PRICING_REQUIRED`（写しが有るのに計画が無い）、`UNIT_PRICING_INVALID`（DETAIL `ub_legacy`・`ub_receive_lines`・`ub_treatment`・`ub_exchange_slots`・`ub_plan_1〜9`）、`UNIT_PRICING_STALE`（`40001`。版が今と違う）。どれも `22023`（STALE を除く）で、何も書かない |
+| 返金の額 | 計画の `nowRefund`（手数料の率の分は E の中）から返送料・交換の手数料を引き、送料を足す。店長が直した額の上限は `LEAST(注文の返せる額, 今返す商品の額 + 送料)` |
+| 書く物 | 受け取りの記録・行、出来事（`order_unit_events`）・出来事の行・holds・枠の状態と値段、交換の結び、割引の扱い、返金の記録・行、返した着への返金の取り押さえ。1回の取引 |

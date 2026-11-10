@@ -3,11 +3,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isInTransaction } from './group-g1-fixtures';
 import { acceptHCheckout, hDiscount, seedHCheckout, seedHDiscount, seedHMember } from './group-h-fixtures';
+import { seedFactSlip } from './accounting-orders-fixtures';
 import { createCatalogFixture, shipFixtureOrder } from './order-fixtures';
 import type { PgClient } from './local-db';
+import { restoreH4AllowlistSql } from './group-g-allowlist';
+import { ubReceive } from './unit-binding-receive';
 
 /** Real H3 -> H4 acceptance and payment; each payment has its own intent. */
-export async function hRefundFixture(db: PgClient, shipped: boolean | number = false, quantity = 2, unitDiscount = 3000) {
+export async function hRefundFixture(db: PgClient, shipped: boolean | number = false, quantity = 2, unitDiscount = 3000, buyerUserId?: string) {
   await db.query('select pg_advisory_xact_lock(190521,1)');
   const actor = await seedHMember(db);
   const code = `H5-${randomUUID().toUpperCase()}`;
@@ -15,7 +18,7 @@ export async function hRefundFixture(db: PgClient, shipped: boolean | number = f
   const discountId = await seedHDiscount(db, hDiscount({ code, kind: 'repeat', value: { type: 'amount', value: unitDiscount },
     targetMode: 'include', itemIds: [catalog.itemId], minimum: { type: 'amount', value: 40000 },
     repeatInOrder: true, allowGuests: true }));
-  const f = await seedHCheckout(db, { discountId, code, lines: [{ catalog, quantity }] });
+  const f = await seedHCheckout(db, { discountId, code, userId: buyerUserId, lines: [{ catalog, quantity }] });
   const accepted = await acceptHCheckout(db, f);
   if (!accepted.order_id || accepted.rejection) throw new Error('H5_ACCEPTANCE_FAILED');
   const orderId = accepted.order_id;
@@ -26,6 +29,8 @@ export async function hRefundFixture(db: PgClient, shipped: boolean | number = f
   const itemId = (await db.query('select id from public.order_items where order_id=$1', [orderId])).rows[0].id as string;
   const fulfillment = shipped ? await shipFixtureOrder(db, { orderId, actorId: actor,
     trackingNumber: 'H5-TEST', lines: [{ order_item_id: itemId, quantity: typeof shipped === 'number' ? shipped : quantity }] }) : null;
+  // 会計の発送の事実（出荷済みの着の印）。1着ごとの値段の計画（FREQ-642）は、出荷済みの枠からだけ発送後の返品を選ぶ
+  if (shipped) await seedFactSlip(db, { orderItemId: itemId, quantity: typeof shipped === 'number' ? shipped : quantity });
   return { orderId, itemId, actor, discountId, catalog, f, fulfillment };
 }
 export type HRefundFixture = Awaited<ReturnType<typeof hRefundFixture>>;
@@ -48,8 +53,9 @@ export async function hReturn(db: PgClient, f: HRefundFixture, quantity = 1, exc
   return { returnId: r.return_id as string, lineId };
 }
 export async function hReceive(db: PgClient, f: HRefundFixture, r: Awaited<ReturnType<typeof hReturn>>, quantity = 1, choice = 'consult') {
-  return (await db.query(`select * from public.admin_receive_return($1,$2,true,$3,$4::jsonb,'[]'::jsonb,$5,null,0,null,false,null,null,null)`,
-    [r.returnId, f.actor, randomUUID(), JSON.stringify([{ return_line_id: r.lineId, disposition: 'not_restocked', quantity }]), choice])).rows[0];
+  // 注文の時の写しのある注文（H の受け付けで作った注文）は、本物の計画を付けて受け取る（FREQ-642）
+  return ubReceive(db, { returnId: r.returnId, actorId: f.actor, choice,
+    units: [{ return_line_id: r.lineId, disposition: 'not_restocked', quantity }] });
 }
 export const hClaims = async (db: PgClient, item: string) => (await db.query(`select paid_amount,refund_id,refund_before_shipment,return_line_id
   from public.order_line_unit_amounts where order_item_id=$1 order by paid_amount,unit_index`, [item])).rows;
@@ -68,7 +74,37 @@ const UNIT_LIST_OVERLOADS = Object.freeze([
   'private.group_h_claim_refund_units(uuid,uuid,integer[],boolean,uuid)', 'private.group_h_release_return_units(uuid,integer[])',
 ]);
 
-/** Restore only function definitions, never the H5 triggers, grants or final assertion. */
+const RECEIVE_ARGS_14 = 'uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text';
+const RECEIVE_ARGS_15 = `${RECEIVE_ARGS_14},jsonb`;
+
+/**
+ * 移行 RR・RD の末尾の確かめを今の DB で再生するための、取引の中だけの立て直し（巻き戻しで戻る）。移行 C（FREQ-642）が置き換えた
+ * 2本を RD の時点に戻す: 14の引数の admin_receive_return（RD の本文）と、その公開の入口（G1 の本文）、RR の record_group_g_refund_result、
+ * H4 の書き手の一覧の関数。ほかの RR・RD の本文は移行 C が触れていないので、そのまま。
+ */
+export async function installReceiveEra(client: PgClient): Promise<void> {
+  const read = (name: string) => fs.readFileSync(path.join(process.cwd(), 'supabase/migrations', name), 'utf8');
+  const pick = (source: string, pattern: RegExp, label: string) => {
+    const text = source.match(pattern)?.[0];
+    if (!text) throw new Error(`RECEIVE_ERA_DEFINITION_MISSING:${label}`);
+    return text;
+  };
+  await client.query(`drop function if exists public.admin_receive_return(${RECEIVE_ARGS_15}); drop function if exists private.admin_receive_return(${RECEIVE_ARGS_15})`);
+  await client.query(pick(read('20261108063711_return_receive_unit_dedup.sql'), /^CREATE OR REPLACE FUNCTION private\.admin_receive_return\([\s\S]*?^\$\$;/m, 'rd_receive'));
+  await client.query(pick(read('20261106005536_return_receive_per_item.sql'), /^CREATE OR REPLACE FUNCTION private\.record_group_g_refund_result\([\s\S]*?^\$\$;/m, 'rr_result'));
+  await client.query(pick(read('20261023211425_group_g1_allocation.sql'), /^CREATE OR REPLACE FUNCTION public\.admin_receive_return\([\s\S]*?^\$\$;/m, 'g1_public'));
+  for (const schema of ['private', 'public']) await client.query(`alter function ${schema}.admin_receive_return(${RECEIVE_ARGS_14}) owner to postgres;
+    revoke all on function ${schema}.admin_receive_return(${RECEIVE_ARGS_14}) from public, anon, authenticated, service_role;
+    grant execute on function ${schema}.admin_receive_return(${RECEIVE_ARGS_14}) to service_role`);
+  await client.query(restoreH4AllowlistSql({ stub: false }));
+}
+
+/**
+ * Restore only function definitions, never the H5 triggers, grants or final assertion.
+ * The unit binding migration C (FREQ-642) replaced the 14 argument admin_receive_return by a 15 argument one. Inside the savepoint the
+ * 15 argument pair is dropped and the H5 era pair is put back: the private body from the H5 text, the public wrapper from the G1 text,
+ * both with the grants of that time, and the writer list names the 14 argument signature (rolled back with the savepoint).
+ */
 export async function withH5ReturnBaseline(client: PgClient, work: () => Promise<void>): Promise<void> {
   if (!(await isInTransaction(client))) throw new Error('H5_RETURN_TRANSACTION_REQUIRED');
   const sql = fs.readFileSync(path.join(process.cwd(), 'supabase/migrations/20261029130400_group_h_discounts_refunds.sql'), 'utf8');
@@ -79,19 +115,30 @@ export async function withH5ReturnBaseline(client: PgClient, work: () => Promise
     from pg_proc p join pg_namespace n on n.oid=p.pronamespace
     where n.nspname='private' and p.proname=any($1::text[]) and ${H5_ORIGINAL_ONLY} order by p.oid`, [H5_RETURN_FUNCTION_NAMES])).rows;
   const before = await metadata();
+  const sansReceive = (rows: Awaited<ReturnType<typeof metadata>>) => rows.filter((row) => !row.signature.includes('admin_receive_return'));
+  const g1 = fs.readFileSync(path.join(process.cwd(), 'supabase/migrations/20261023211425_group_g1_allocation.sql'), 'utf8');
   const bodyHashes = async () => (await client.query(`select p.oid,md5(replace(p.prosrc,E'\\r','')) hash
     from pg_proc p join pg_namespace n on n.oid=p.pronamespace
     where n.nspname='private' and p.proname=any($1::text[]) and ${H5_ORIGINAL_ONLY} order by p.oid`, [H5_RETURN_FUNCTION_NAMES])).rows;
   const currentBodies = await bodyHashes();
   expect(before).toHaveLength(11);
+  expect(before.filter((row) => row.signature.includes('admin_receive_return'))).toHaveLength(1);
   await client.query('savepoint h5_return_baseline');
   try {
+    await client.query(`drop function if exists public.admin_receive_return(${RECEIVE_ARGS_15}); drop function if exists private.admin_receive_return(${RECEIVE_ARGS_15})`);
     for (const name of H5_RETURN_FUNCTION_NAMES) {
       const definition = sql.match(new RegExp(`^CREATE(?: OR REPLACE)? FUNCTION private\\.${name}\\([\\s\\S]*?^\\$\\$;`, 'm'))?.[0];
       if (!definition) throw new Error(`H5_RETURN_DEFINITION_MISSING:${name}`);
       await client.query(definition.replace(/^CREATE(?: OR REPLACE)? FUNCTION/, 'CREATE OR REPLACE FUNCTION'));
     }
-    expect(await metadata()).toEqual(before);
+    const publicWrapper = g1.match(/^CREATE OR REPLACE FUNCTION public\.admin_receive_return\([\s\S]*?^\$\$;/m)?.[0];
+    if (!publicWrapper) throw new Error('H5_RETURN_PUBLIC_WRAPPER_MISSING');
+    await client.query(publicWrapper);
+    for (const schema of ['private', 'public']) await client.query(`alter function ${schema}.admin_receive_return(${RECEIVE_ARGS_14}) owner to postgres;
+      revoke all on function ${schema}.admin_receive_return(${RECEIVE_ARGS_14}) from public, anon, authenticated, service_role;
+      grant execute on function ${schema}.admin_receive_return(${RECEIVE_ARGS_14}) to service_role`);
+    await client.query(restoreH4AllowlistSql({ stub: false }));
+    expect(sansReceive(await metadata())).toEqual(sansReceive(before));
     const bodies = (await client.query(`select p.proname,md5(replace(p.prosrc,E'\\r','')) hash
       from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname='private' and p.proname=any($1::text[]) and ${H5_ORIGINAL_ONLY} order by p.proname`, [H5_RETURN_FUNCTION_NAMES])).rows;
