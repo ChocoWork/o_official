@@ -43,7 +43,7 @@ export function buildOrder(spec: OrderSpec): OrderPricingState {
     return {
       orderItemId: l.orderItemId, unitIndex, itemId: l.itemId, paidAmount: paid, allocatedAmount: 0, currentPrice: paid,
       state: 'kept' as const, holderOrderItemId: l.orderItemId, holderUnitIndex: unitIndex,
-      shipped: spec.shipped ?? true, returnedCustomerAt: null, returnedFeePercent: null, returnedEventSeq: null, claimedReturnLineId: null,
+      shipped: spec.shipped ?? true, returnedCustomerAt: null, returnedFeePercent: null, returnedEventSeq: null, returnedReturnLineId: null, claimedReturnLineId: null,
     };
   }));
   return {
@@ -157,6 +157,7 @@ export function applyPlan(materials: UnitPricingMaterials, plan: UnitPricingPlan
         ...s, state: line.stateAfter, currentPrice: line.priceAfter, allocatedAmount: s.allocatedAmount + line.allocation,
         returnedCustomerAt: line.stateAfter === 'returned_customer' ? now : s.returnedCustomerAt,
         returnedEventSeq: line.stateAfter === 'returned_customer' ? eventSeq : s.returnedEventSeq,
+        returnedReturnLineId: line.stateAfter === 'returned_customer' ? line.returnLineId : s.returnedReturnLineId,
         returnedFeePercent: line.stateAfter === 'returned_customer' ? (feeByReturnLine[line.returnLineId ?? ''] ?? 0) : s.returnedFeePercent,
       };
     }),

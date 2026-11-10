@@ -400,3 +400,48 @@ describe('DD-ADMIN-021: 修正2 前の出来事の holds を、その出来事�
     expect(single.standardRefund).toBe(p1.standardRefund + p2.standardRefund);
   });
 });
+
+describe('DD-ADMIN-021: 修正3 前の出来事を出来事の時と同じ段取りで数え直す', () => {
+  const line = (oi: string, id: string, feePercent: number) =>
+    ({ returnLineId: id, holderOrderItemId: oi, quantity: 1, side: 'customer' as const, part: 'now' as const, feePercent });
+  const start = () => {
+    const first = buildOrder({
+      orderId: 'order-1', placedAt: '2026-11-01T00:00:00Z',
+      lines: [
+        { orderItemId: 'oi-a', itemId: JACKET, unitPrice: 20000, quantity: 1 },
+        { orderItemId: 'oi-c', itemId: 3, unitPrice: 1000, quantity: 1 },
+        { orderItemId: 'oi-d', itemId: 4, unitPrice: 500, quantity: 1 },
+      ],
+      definitions: [repeatPreviousDefinition()],
+    });
+    return materialsOf(first, [twoOrders().second]);
+  };
+
+  test.each([[10, 0, 1700], [30, 10, 5200]])('DD-ADMIN-021: ジャケット %i%% と小物 %i%% を同じ受け取りで返した後の返品は手数料0・合計は1回の受け取りと同じ（%i）', (r1, r2, total) => {
+    const e1 = receive([line('oi-a', 'rl-1', r1), line('oi-c', 'rl-2', r2)]);
+    const e2 = receive([line('oi-d', 'rl-3', 0)]);
+    const [p1, p2] = sequence(start(), 2, i => [e1, e2][i], step);
+    expect(p2.feeAmount).toBe(0);
+    const single = planUnitEvent(start(), receive([line('oi-a', 'rl-1', r1), line('oi-c', 'rl-2', r2), line('oi-d', 'rl-3', 0)]));
+    expect(p1.feeAmount + p2.feeAmount).toBe(single.feeAmount);
+    expect(p1.feeAmount + p2.feeAmount).toBe(total);
+    expect(p1.standardRefund + p2.standardRefund).toBe(single.standardRefund);
+  });
+
+  test('DD-ADMIN-021: お店の側の返品が入らない並びなら、出来事を分けても1回の受け取りと手数料・返す額の合計が同じ', () => {
+    const rl = (oi: string, id: string, fee: number) => line(oi, id, fee);
+    const all = [rl('oi-a', 'rl-1', 10), rl('oi-c', 'rl-2', 20), rl('oi-d', 'rl-3', 5)];
+    const splits: number[][][] = [[[0], [1], [2]], [[0, 1], [2]], [[0], [1, 2]], [[2], [0, 1]], [[1], [0], [2]], [[2], [1], [0]]];
+    const single = planUnitEvent(start(), receive(all));
+    for (const split of splits) {
+      const events = split.map(ix => receive(ix.map(n => all[n])));
+      const plans = sequence(start(), events.length, i => events[i], step);
+      const fee = plans.reduce((s, p) => s + p.feeAmount, 0);
+      const refund = plans.reduce((s, p) => s + p.standardRefund, 0);
+      expect(refund + fee).toBe(single.standardRefund + single.feeAmount);
+      // 返品の行の id の順を保つ分け方なら、手数料の合計も1回の受け取りと同じ
+      const inOrder = split.flat().every((n, i) => n === i);
+      if (inOrder) expect(fee).toBe(single.feeAmount);
+    }
+  });
+});

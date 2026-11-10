@@ -26,8 +26,10 @@ export interface UnitSlot {
   returnedCustomerAt: string | null;
   /** returned_customer の枠を返した返品の手数料の率（order_returns.restocking_fee_percent）。それ以外は null */
   returnedFeePercent: number | null;
-  /** returned_customer の枠を返した出来事の seq（UnitHold.seq と同じ数え方）。それ以外は null */
+  /** returned_customer の枠を返した出来事の seq。UnitHold.seq と同じ全体の出来事の数（order_unit_events.seq）で、注文をまたいで比べられる。それ以外は null */
   returnedEventSeq: number | null;
+  /** returned_customer の枠を返した返品の行の id（手数料の累計を出来事の時と同じ順で出し直すため）。それ以外・返品の行が無い時は null */
+  returnedReturnLineId: string | null;
   claimedReturnLineId: string | null;
 }
 
@@ -40,7 +42,7 @@ export interface OrderDiscountSnapshot {
   lines: { lineKey: string; orderItemId: string; itemId: number; unitPrice: number; quantity: number }[];
 }
 
-/** 前の注文から差し引いた額。heldOrderId の E から引き、laterOrderId の着の値段の直しを生んだ物 */
+/** 前の注文から差し引いた額。heldOrderId の E から引き、laterOrderId の着の値段の直しを生んだ物。seq は書いた出来事の全体の出来事の数（UnitSlot.returnedEventSeq と同じ数え方） */
 export interface UnitHold {
   heldOrderId: string;
   laterOrderId: string;

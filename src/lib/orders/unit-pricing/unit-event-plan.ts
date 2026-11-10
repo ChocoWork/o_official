@@ -241,51 +241,57 @@ function evaluate(materials: UnitPricingMaterials, kind: UnitEventChange['kind']
   const shopOnly = target.paidTotal - keptDefAfter;
 
   // 手数料の累計を正確に出し直す。元の額 (E′ − E′不備) の増えは、お客様のご都合の返品が生む。
-  // 返品を「前の出来事の返品（出来事の seq → 率 → 枠の並び順）→ この出来事の返品（返品の行の id の順）」に1つずつ足し、
-  // 足すごとの元の額 ＝ (holds を引く前の E′ − E′不備) − その出来事までに書かれた holds の正味（seq が出来事以下の行）。
-  // 増え（負にもなる）にその返品の率を floor(増え × 率 / 100) で掛けて足す。お店の側の返品は最初から返した状態で数え、率を持たない。
-  // この出来事の新しい holds は、同じ商品の枠を返した返品のうち最後の足しから引く（無ければ最後の足し）。この出来事の手数料 ＝ max(出し直した累計 − これまでの累計, 0)。
+  // 前の出来事も今の出来事も同じ段取りで数える（段取りは1つだけ持つ）:
+  //   段 ＝ 出来事の seq の順 → 出来事の中は返品の行の id の順（前の返品は枠の returnedReturnLineId）に、返品の枠を足していく。
+  //   足した後の元の額 ＝ (holds を引く前の E′ − E′不備) − 効いている holds の正味。
+  //   holds の行は、同じ出来事の中で同じ商品の枠を返した最後の段から効く（無ければその出来事の最後の段）。
+  //   その出来事に返品の段が無い行（戻しの行）は、次の出来事の段から効く。
+  // 増え（負にもなる）にその段の返品の率を floor(増え × 率 / 100) で掛けた合計が手数料の累計。
+  // お店の側の返品は最初から返した状態で数え、率を持たない。この出来事の手数料 ＝ max(出し直した累計 − これまでの累計, 0)。
+  interface FeeStep { seq: number; keys: SlotKey[]; rate: number }
   const shopBase = withPicks(new Map([...before].map(([k, v]) => [k, v === 'returned_customer' ? 'kept' : v] as [SlotKey, SlotState])),
     picks.filter(p => p.side === 'shop'));
-  interface FeeGroup { keys: SlotKey[]; rate: number; seq: number }
-  const pastGroups = new Map<string, FeeGroup>();
-  const pastSlots = target.slots.filter(s => s.state === 'returned_customer').sort((x, y) =>
-    (x.returnedEventSeq ?? 0) - (y.returnedEventSeq ?? 0) || (x.returnedFeePercent ?? 0) - (y.returnedFeePercent ?? 0)
-    || compareIds(slotKeyOfSlot(x), slotKeyOfSlot(y)));
-  for (const s of pastSlots) {
-    const rate = s.returnedFeePercent ?? 0;
-    const seq = s.returnedEventSeq ?? 0;
-    const g = pastGroups.get(`${seq}|${rate}`) ?? { keys: [], rate, seq };
-    g.keys.push(slotKeyOfSlot(s)); pastGroups.set(`${seq}|${rate}`, g);
-  }
-  const pickGroups = new Map<string, FeeGroup>();
-  for (const p of [...customerPicks].sort((x, y) => compareIds(x.returnLineId ?? '', y.returnLineId ?? '') || compareIds(x.key, y.key))) {
-    const gk = p.returnLineId ?? p.key;
-    const g = pickGroups.get(gk) ?? { keys: [], rate: p.feePercent, seq: Infinity };
-    g.keys.push(p.key); pickGroups.set(gk, g);
-  }
-  const groups = [...pastGroups.values(), ...pickGroups.values()];
   const itemOfKey = new Map(target.slots.map(s => [slotKeyOfSlot(s), s.itemId]));
-  const newHoldAt = new Map<number, number>();
-  for (const row of [...holdPlan.adds, ...ownRows]) {
-    let at = groups.length - 1;
-    groups.forEach((g, i) => { if (g.seq === Infinity && g.keys.some(k => itemOfKey.get(k) === row.itemId)) at = i; });
-    newHoldAt.set(at, (newHoldAt.get(at) ?? 0) + row.amount);
+  const stepGroups = new Map<string, FeeStep & { lineId: string }>();
+  const pushStep = (seq: number, lineId: string, key: SlotKey, rate: number) => {
+    const gk = `${seq}|${lineId}`;
+    const g = stepGroups.get(gk) ?? { seq, lineId, keys: [], rate };
+    g.keys.push(key); stepGroups.set(gk, g);
+  };
+  for (const s of target.slots.filter(x => x.state === 'returned_customer')) {
+    pushStep(s.returnedEventSeq ?? 0, s.returnedReturnLineId ?? '', slotKeyOfSlot(s), s.returnedFeePercent ?? 0);
   }
-  let newHoldsSoFar = 0;
-  const heldUpTo = (seq: number) => target.holds.filter(h => h.heldOrderId === target.orderId && h.seq <= seq)
-    .reduce((sum, h) => sum + h.amount, 0);
+  for (const p of customerPicks) pushStep(Infinity, p.returnLineId ?? '', p.key, p.feePercent);
+  const steps = [...stepGroups.values()].sort((x, y) =>
+    (x.seq === y.seq ? 0 : x.seq < y.seq ? -1 : 1) || compareIds(x.lineId, y.lineId));
+  const heldRows = [
+    ...target.holds.filter(h => h.heldOrderId === target.orderId).map(h => ({ seq: h.seq, itemId: h.itemId, amount: h.amount })),
+    ...[...holdPlan.adds, ...ownRows].map(h => ({ seq: Infinity, itemId: h.itemId, amount: h.amount })),
+  ];
+  const effectiveFrom = heldRows.map(row => {
+    let match = -1;
+    let lastOfSeq = -1;
+    steps.forEach((st, i) => {
+      if (st.seq !== row.seq) return;
+      lastOfSeq = i;
+      if (st.keys.some(k => itemOfKey.get(k) === row.itemId)) match = i;
+    });
+    if (match >= 0) return match;
+    if (lastOfSeq >= 0) return lastOfSeq;
+    const next = steps.findIndex(st => st.seq > row.seq);
+    return next >= 0 ? next : steps.length;
+  });
   let feeTotalNow = 0;
   let previousBase = 0;
   const done: SlotKey[] = [];
-  groups.forEach((g, i) => {
-    done.push(...g.keys);
+  steps.forEach((step, i) => {
+    done.push(...step.keys);
     const st = new Map(shopBase);
     for (const k of done) st.set(k, 'returned_customer');
     const raw = correctKeptPrice(target, shopOnlyStates(st)).total - correctKeptPrice(target, st).total;
-    newHoldsSoFar += newHoldAt.get(i) ?? 0;
-    const current = raw - (g.seq === Infinity ? holdsBefore + newHoldsSoFar : heldUpTo(g.seq));
-    feeTotalNow += Math.floor((current - previousBase) * g.rate / 100);
+    const held = heldRows.reduce((sum, row, n) => sum + (effectiveFrom[n] <= i ? row.amount : 0), 0);
+    const current = raw - held;
+    feeTotalNow += Math.floor((current - previousBase) * step.rate / 100);
     previousBase = current;
   });
   const fee = Math.max(feeTotalNow - target.feeTotal, 0);
