@@ -580,14 +580,17 @@ for (const viewport of viewports) {
         expect(settings).toEqual({ window_days: 7, window_start: 'each_item', delivery_buffer_days: 3 });
 
         const rows = (
-          await db.query('select reason, shipping_payer, out_of_stock_exchange from public.shop_return_reason_settings order by reason')
-        ).rows as Array<{ reason: string; shipping_payer: string; out_of_stock_exchange: string }>;
+          await db.query('select reason, resolutions, shipping_payer, out_of_stock_exchange from public.shop_return_reason_settings order by reason')
+        ).rows as Array<{ reason: string; resolutions: string; shipping_payer: string; out_of_stock_exchange: string }>;
         expect(rows).toHaveLength(10);
         // 仕様書 8-3 の表: 破損・不良と注文と違う品が届いたは、返送料をお店が持ち、在庫が無ければ作って送る。ほかは、お客様が持ち、受けない
         for (const row of rows) {
           const shop = row.reason === 'defective' || row.reason === 'wrong_item';
+          // FREQ-642-AC-30: 破損・不良と注文と違う品が届いたのご希望は交換だけ（移行で exchange_only にする）。ほかの理由は今のまま
+          const sizeOnly = row.reason === 'size_too_small' || row.reason === 'size_too_large';
           expect(row, row.reason).toEqual({
             reason: row.reason,
+            resolutions: shop || sizeOnly ? 'exchange_only' : 'refund_and_exchange',
             shipping_payer: shop ? 'shop' : 'customer',
             out_of_stock_exchange: shop ? 'make' : 'decline',
           });

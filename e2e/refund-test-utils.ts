@@ -260,6 +260,9 @@ export async function mockRefundRoutes(page: Page, orderId: string, state: Refun
     state.refundPosts.push(body);
     await state.answerRefund(route, body);
   });
+  // 返金の見込みの窓口（FREQ-642）。この道具の注文は注文の時の写しが無い注文なので、窓口と同じく legacy: true を答える（画面は今の計算で額を出す）
+  await page.route(`**/api/admin/orders/${orderId}/refund-estimate`, (route) =>
+    fulfillJson(route, { data: { legacy: true, suggestedAmount: 0, itemsAmount: 0, refundCap: 0, changesUnits: false } }));
   await page.route(`**/api/admin/orders/${orderId}/refund/confirm`, async (route) => {
     const body = route.request().postDataJSON() as { refundId: string };
     state.confirmPosts.push(body);

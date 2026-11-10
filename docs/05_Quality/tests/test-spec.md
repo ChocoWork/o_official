@@ -1,5 +1,7 @@
 # テスト仕様
 
+> 2026-11-11 確認日（交換の印と手元に残る服の正しい値段 / FREQ-642 の文書の正本）: 「返品の品ごとの返金（FREQ-641）」の次に「交換の印と手元に残る服の正しい値段（FREQ-642、2026-11-11）」を足した。新しい E2E 7本（`FR-ADMIN-165`・`166`、`FR-ACCOUNT-048`、`FR-ITEM-DETAIL-070`、`FR-CHECKOUT-061`、`FR-LEGAL-008`、`FR-TERMS-007`）、期待や道具を直した既存の E2E、Task 2〜9 の単体・画面・DB 結合の試験の対応。E2E は個別に流した実測（全件は調整役）。
+>
 > 2026-11-09 確認日（会計の計画 2 の文書の正本）: 末尾に「会計の前受金・出荷・Stripe・受注高（計画 2 / FREQ-562〜574、2026-11-09）」を足した。新しい DB 結合 21 ファイル、単体・画面 約 40 ファイル、E2E 5 本（`FR-ADMIN-132`〜`136`）と、題や期待を直した既存の試験。コミットする試験の流し方（`ACCOUNTING_COMMIT_SUITE=1`・単独・前後に `db reset`）と、E2E の流す回数の限り（dispute の spec は 1 回の `db reset` で 5 回）を書いた。数は各 Task の実装者の報告から引いた値で、今回は再実行していない。
 >
 > 2026-11-08 確認日（会計の計画 1 の文書の正本）: 末尾に「会計の仕訳の土台と期間（計画 1 / FREQ-553〜561）」を足した。会計の E2E の題を言い換えた 6 件（024・025・029・031・042）、新しい E2E（FR-ADMIN-128〜131）、単体・画面・DB 結合の試験の対応、E2E の後に DB 結合を流すときは `db:reset` する注意を書いた。
@@ -1547,6 +1549,73 @@ AC-07の3行・予備あり・介在受取とAC-08は旧本文だけで組み立
 | `tests/unit/lib/orders/email/order-email-compose-returns.test.ts` | `DD-ADMIN-020 mixedの受取は相談の品にだけ相談の一文を添える` | mixed正額返金の材料 | 相談品だけ相談文・お客様1通 | Task 4実装者 | 2026-11-06 Task 4の211/211通過に含む（調整役の手元の実行・ログ保管） |
 
 残りの単体の詳細は承認済み計画Task 2〜4に従う。E2Eは390/768/1280px、本番ビルド・手元DBで上記のとおり実測済み。横はみ出し・focus・名前・1POSTの試験を含む。実Stripe/SES・本番適用・メールの実配送は未実行で、この実測をそれらの証拠にはしない。旧H5で狙った箇所のDBのREDは、上記のとおり未取得のまま。
+
+## 交換の印と手元に残る服の正しい値段（FREQ-642、2026-11-11）
+
+根拠は[承認設計](../../superpowers/specs/2026-11-08-exchange-unit-binding-design.md)9章（AC-01〜AC-31）、[詳細設計](../../04_DetailDesign/pages/16_admin.md)のDD-ADMIN-021〜023と[お客様のページ](../../04_DetailDesign/pages/15_account.md)。返品は追跡の範囲外。試験名の先頭は `FREQ-642-AC-NN:`（受け入れ条件）か `DD-ADMIN-02N`（詳細設計）。実測日は2026-11-11。DB結合は手元のSupabase（`describeLocalDb`のBEGIN/ROLLBACK）、E2Eは本番ビルド（`next build && next start`）・手元のSupabase・390/768/1280px。
+
+### E2E（`FR-ADMIN-165`・`166`、`FR-ACCOUNT-048`、`FR-ITEM-DETAIL-070`、`FR-CHECKOUT-061`、`FR-LEGAL-008`、`FR-TERMS-007`）
+
+注文は注文の時の写し（割引の定義・1着ごとの払った額・着の状態）のある注文を、本物の割引の計算（`buildOrder`）で手元のDBに作る（`e2e/unit-binding-test-utils.ts`）。管理画面は本物のログイン（aal2）で動かし、見込みの窓口（`receive-estimate`・`refund-estimate`・`return-request/estimate`）は本物を通す。受け取り・返金の窓口だけ、Stripeを「すぐ成功する」偽物にした同じ入口（`receiveReturnAndRefund`・`submitAdminRefund`）に差し替える（外へ返金を頼まない）。額は手元のDB（`order_refunds`・`order_unit_events`・`order_unit_slots`）から読む。
+
+| ファイル | 試験名 | 入力 | 期待 | 担当 | 実測 |
+| --- | --- | --- | --- | --- | --- |
+| `e2e/FR-ADMIN-165-unit-binding-receive.spec.ts` | `FREQ-642-AC-02: 交換の受け取りは0円、続く返品の受け取りは見込みどおりの17,000円` | リピート（20,000円×2・払った額17,000/20,000）。交換の返品、続けて1着の返品を画面で受け取る | 交換で返金0件・出来事の返す額0。返品の画面の返金額と返した額が17,000円 | 実装者 | 2026-11-11 5件×3幅 通過 |
+| 同上 | `FREQ-642-AC-04: 交換の品を返すと20,000円で、2つの返品の合計は37,000円` | 交換、元の1着の返品17,000円、交換の品を発送して返品 | 画面の見込み20,000円、返金は[17,000, 20,000]、合計37,000円 | 実装者 | 2026-11-11 5件×3幅 通過 |
+| 同上 | `FREQ-642-AC-07: 画面に出た返送料・交換の手数料・お支払い待ち・返金額が、受け取りで DB に残った値と同じ` | 交換の手数料500円と送料300円の交換だけの返品、お店の送り状の返送料800円の返品 | 画面のお支払い待ち800円＝DBの`fee_due_amount`。返送料−800円・返金額16,200円＝DBの`return_shipping_fee`と返金の額 | 実装者 | 2026-11-11 5件×3幅 通過 |
+| 同上 | `FREQ-642-AC-25: 割引の扱いを直すと見込みが変わり、直した店長と時刻が記録に残る` | セットの組（17,000円と8,500円）。不良のジャケットの返金（例13） | 初めは「お店の側の事情」で17,000円、「お客様のご都合」へ直すと15,500円。`order_return_line_treatments`に店長・受け取りの番号・時刻 | 実装者 | 2026-11-11 5件×3幅 通過 |
+| 同上 | `FREQ-642-AC-09: セットのパンツをお客様のご都合で返すと、組がくずれて5,500円` | 例7（ジャケット20,000円×2・パンツ10,000円・組で4,500円引き） | 見込み・返金とも5,500円。パンツの着が`returned_customer`（8,500円）、残るジャケットは20,000円 | 実装者 | 2026-11-11 5件×3幅 通過 |
+| `e2e/FR-ADMIN-166-unit-binding-refund-cancel.spec.ts` | `FREQ-642-AC-27: 発送前の1着を取り消すと標準の額は17,000円で、その着が「お店の側で返した」になる` | 未発送のリピート注文で発送前の品を1着選ぶ返金 | 見込み・返金とも17,000円。着は`kept`と`returned_shop`、出来事は`pre_shipment_cancel` | 実装者 | 2026-11-11 3件×3幅 通過 |
+| 同上 | `FREQ-642-AC-28: 発送後の品を返品なしで選ぶ返金は見込みの窓口を呼ばず、額は店長の額の欄だけで、着の状態と E は変わらない` | 発送済みの品を選び、額の欄に12,345円 | `refund-estimate`の呼び出し0回、返金12,345円、着は全部`kept`、出来事0件 | 実装者 | 2026-11-11 3件×3幅 通過 |
+| 同上 | `FREQ-642-AC-10: 前の注文の返品は17,000円、後の注文の着も返すと後の注文から17,000円・前の注文から3,000円で合計37,000円` | 同じ会員の前の注文（20,000円）と後の注文（17,000円） | 前の注文17,000円（後の注文は変わらない）。後の返品で後の注文17,000円、前の注文に`unit_hold_release`3,000円。前の注文は20,000円以下、合計37,000円 | 実装者 | 2026-11-11 3件×3幅 通過 |
+| `e2e/FR-ACCOUNT-048-return-request-estimate.spec.ts` | `FREQ-642-AC-21: 確かめる段に返金の見込み 5,500円が出て、受け取りで返った額と同じ` | お客様の画面で例7のパンツを「その他」で申し込む | 「返金の見込み: 5,500円」。承認・受け取りで返した額も5,500円 | 実装者 | 2026-11-11 3件×3幅 通過 |
+| 同上 | `FREQ-642-AC-21: 交換だけの申し込みは「お金のやり取りはありません」と出て、返金の見込みは出ない` | 「サイズが小さい」で交換を申し込む | 「お金のやり取りはありません」が出て「返金の見込み」は0件 | 実装者 | 2026-11-11 3件×3幅 通過 |
+| 同上 | `FREQ-642-AC-30: 破損・不良と注文と違う品が届いた、を選ぶとご希望は交換だけで、返金は出ない` | 両方の理由を選ぶ。申し込みの窓口の材料も読む | 「ご希望」は無効で`exchange`だけ（`refund`の選択肢0件）。材料の`resolutions`が2つとも`exchange_only` | 実装者 | 2026-11-11 3件×3幅 通過 |
+| `e2e/FR-ITEM-DETAIL-070-discount-return-note.spec.ts` | `FREQ-642-AC-22: 商品ページに割引の扱いの文が出て、横にはみ出さない` | `/item/1` | `item-discount-return-note`に割引の扱いの文 | 実装者 | 2026-11-11 1件×3幅 通過 |
+| `e2e/FR-CHECKOUT-061-discount-return-note.spec.ts` | `FREQ-642-AC-22: …最終確認画面に割引の扱いの文が出る` | 入力画面から最終確認画面へ進む | `checkout-discount-return-note`に同じ文 | 実装者 | 2026-11-11 1件×3幅 通過 |
+| `e2e/FR-LEGAL-008-discount-return-policy.spec.ts` | `FREQ-642-AC-22: /legal に割引の扱いの文が出て、横にはみ出さない` | `/legal` | `legal-discount-return-note`に同じ文 | 実装者 | 2026-11-11 1件×3幅 通過 |
+| `e2e/FR-TERMS-007-discount-return-policy.spec.ts` | `FREQ-642-AC-22: /terms に割引の扱いの文が出て、横にはみ出さない` | `/terms` | `terms-discount-return-note`に同じ文 | 実装者 | 2026-11-11 1件×3幅 通過 |
+
+### 期待を直した既存のE2E（理由は新しい決まり）
+
+| ファイル | 試験 | 前から後 | 理由 |
+| --- | --- | --- | --- |
+| `e2e/FR-ADMIN-092-shop-return-settings.spec.ts` | 最初の値が手元のDBの設定と画面の見本で同じ（FREQ-470-AC-14） | 理由ごとの設定の`resolutions`は見ていなかった。後は、破損・不良と注文と違う品が届いた・サイズが小さい・大きいは`exchange_only`、ほかは`refund_and_exchange` | FREQ-642-AC-30。移行が2行を交換だけにする |
+| `e2e/FR-ACCOUNT-036-return-request-photos.spec.ts` | 画面で選んだ写真を2000pxまで縮め、…受付に付ける | 破損・不良のご希望が返金のまま。後は、交換にできる色・サイズを足して選ぶ | FREQ-642-AC-30。ご希望が交換だけになり、交換の品を選ばないと申し込めない |
+| `e2e/return-test-utils.ts`（`mockReturnRoutes`） | 窓口を差し替える受け取り・額を決めて返金の画面の試験（FR-ADMIN-085・087・088・164 ほか） | 見込みの窓口を呼ばない。後は、`receive-estimate`に`legacy: true`を答える | 画面が見込みの窓口の答えを待つようになった（DD-ADMIN-022）。写しの無い注文は窓口も`legacy`を答え、画面は今の計算で額を出す |
+| `e2e/refund-test-utils.ts`（`mockRefundRoutes`） | 窓口を差し替える返金の画面の試験 | 見込みの窓口を呼ばない。後は、`refund-estimate`に`legacy: true`を答える | 同上（DD-ADMIN-023） |
+| `e2e/discount-test-utils.ts`（`ship`・`refund`・`returnOne`） | 割引の試験（FR-ACCOUNT-045・FR-ADMIN-127・FR-CHECKOUT-056・057）が使う道具 | 発送の材料に会計の発送の事実（出荷済みの着の印）が無かった。発送前の取り消しの返金（`begin_order_refund`）に値段の計画を渡さなかった。後は、発送の事実を足し、`cancelPlanFor`の計画を渡す。受け取りの失敗の文に窓口の`code`も入れる | 写しのある注文（本物の受け付けで作った注文）の発送後の返品は出荷済みの着から選び、発送前の取り消しは計画が要る（FREQ-642。DBは計画の無い呼び出しを断る）。試験の期待は変えていない |
+
+### 単体・画面・DB結合の試験（Task 2〜9で足した物）
+
+| ファイル | 件数 | 受け入れ条件・詳細設計 | 内容 |
+| --- | --- | --- | --- |
+| `tests/integration/db/unit-binding-schema.integration.test.ts` | 11 | AC-16・20・30 | 移行A（表・列・着の状態・割引の扱いの記録・不良と誤送を交換だけにする設定）の形、守り、末尾のassert |
+| `tests/integration/db/unit-binding-core.integration.test.ts` | 27 | AC-04・10・14・17・18 | 移行B（材料・計画の記録・版の食い違い・Eの最高の下限・払った額を超えない式）。例7の計画、STALE、鍵、数の条件つき割引の1着ずつ |
+| `tests/integration/db/unit-binding-receive.integration.test.ts` | 22 | AC-02〜06・12・15〜17・20・23・25・31 | 移行C（受け取りの入口）。交換と返品の順、同じ受け取りの行の順、例4、既知の点4の順、手数料の控え、品指定なしの返金、写しの無い注文、割引の扱い |
+| `tests/integration/db/unit-binding-refunds.integration.test.ts` | 20 | AC-05・07・10・15・19・23・27・28 | 移行D（返金・取り消しの入口）。発送前の取り消し、発送後の返金は着を動かさない、前の注文への戻し（例10-2）、返金のerror・やり直し |
+| `tests/unit/lib/orders/unit-pricing/kept-price.test.ts` | 13 | DD-ADMIN-021 | 手元に残る服の正しい値段（籠・低い方・例6〜例17） |
+| `tests/unit/lib/orders/unit-pricing/unit-event-plan.test.ts` | 42 | DD-ADMIN-021・AC-27 | 出来事ごとのE・返す額・割り振り・直し・手数料の累計・前の注文から差し引く額 |
+| `tests/unit/lib/orders/unit-pricing/unit-pricing-service.test.ts` | 31 | AC-20・21・25〜28、DD-ADMIN-022・023 | 材料から計画・見込みを作る入口（受け取り・返金・取り消し・お客様の見込み・相談の残り） |
+| `tests/unit/lib/orders/unit-pricing/unit-pricing-store.test.ts` | 8 | AC-20、DD-ADMIN-022 | 材料と相談の残りを読む |
+| `tests/unit/lib/orders/unit-pricing/unit-pricing-replay.test.ts` | 10 | AC-17 | 同じ二重防止の番号の送り直しは計画を出し直さず前の結果を返す |
+| `tests/unit/api/admin/unit-pricing-estimate-routes.test.ts` | 14 | DD-ADMIN-022・023 | 受け取り・返金の見込みの窓口（権限・本文・読むだけ） |
+| `tests/unit/api/orders/return-request-estimate-route.test.ts` | 8 | AC-21・30 | お客様の見込みの窓口（持ち主・理由の設定と食い違うご希望は断る） |
+| `tests/unit/hooks/useUnitPricingEstimate.test.tsx` | 6 | DD-ADMIN-022 | 見込みを聞くフック（遅らせて聞く・古い答えを捨てる） |
+| `tests/unit/components/OrderReturnReceiveDialog.unitPricing.test.tsx` | 12 | AC-07・20・25、DD-ADMIN-022 | 受け取りの画面：窓口の値だけで内訳・お支払い待ち、割引の扱いの欄、待つ間と誤り |
+| `tests/unit/components/OrderReturnRefundDialog.unitPricing.test.tsx` | 5 | AC-20、DD-ADMIN-023 | 額を決めて返金の画面の標準の額（相談の残り） |
+| `tests/unit/components/OrderRefundDialog.unitPricing.test.tsx` | 8 | AC-20・28、DD-ADMIN-023 | 返金の画面：発送前の品だけ見込みを聞く、発送後の品は聞かない |
+| `tests/unit/components/DiscountReturnNotePages.test.tsx` | 2 | AC-22 | `/legal`・`/terms`の割引の扱いの文 |
+| `tests/unit/components/ItemDetailDiscountReturnNote.test.tsx` | 1 | AC-22 | 商品ページの文 |
+| 既存の試験の合わせ直し | — | — | `ReturnRequestConfirm`・`return-request-model`・`customer-return-client`・`FinalConfirmationStep`・`return-service`・`refund-service` などの単体と、`group_g1_*`・`group_h_*`・`return_postgrest`・`refund_postgrest` などのDB結合を、新しい引数（値段の計画）・記号・固定の数に合わせた（件数は各Taskの報告） |
+
+DB結合・単体の実測は各Taskの実装者と調整役の報告のとおり（2026-11-10〜11-11。手元のSupabase）。この節では再実行していない。
+
+### 流し方と限り
+
+- E2E: `npm run db:reset`の後、3000番の残りのアプリを止めてから`npx playwright test <ファイル> --project=chromium --no-deps`。既存の割引の試験（`FR-ACCOUNT-045`・`FR-ADMIN-127`）は`--project=isolated-global --no-deps`。`--no-deps`を付けないと`isolated-global`の後始末が他の試験まで流す。途中で止めた割引の試験は有効な自動の割引を手元のDBに残すので、止めた後は`db:reset`する。
+- 受け取り・返金の窓口の差し替えは、Stripeの呼び出し（返金の作成と支払い方法の読み取り）だけを偽物にする。値段の計画の作成・DBの関数・見込みの窓口は本物。Stripeとの実際のやり取りは別の試験が持つ。
+- 全件のE2Eと`trace:compare-e2e`は調整役が流す。ここの実測は上の表の試験ファイルを個別に流した結果。
 
 ## 会計の仕訳の土台と期間（計画 1 / FREQ-553〜561、2026-11-08）
 

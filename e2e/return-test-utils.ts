@@ -1333,7 +1333,15 @@ export async function mockReturnRoutes(page: Page, orderId: string, state: Retur
     state.posts[action].push(post);
     await state.answerAction(route, action, post);
   });
+  // 受け取りの見込みの窓口（FREQ-642）。この道具の注文は注文の時の写しが無い注文なので、窓口と同じく legacy: true を答える。
+  // 画面は今の計算（return-calc）で見込みを出す。後から登録した窓口が先に効くので、上の窓口より後に登録する
+  await page.route(/\/api\/admin\/returns\/[^/]+\/receive-estimate$/, (route) => fulfillJson(route, { data: LEGACY_RECEIVE_ESTIMATE }));
 }
+
+/** 写しの無い注文の受け取りの見込みの答え（estimateReturnReceive の legacy 側と同じ形。額は画面が今の計算で出すので 0） */
+const LEGACY_RECEIVE_ESTIMATE = {
+  legacy: true, standardRefund: 0, nowRefund: 0, consultRefund: 0, feeAmount: 0, fixedFees: 0, refundAmount: 0, refundCap: 0,
+};
 
 /** 窓口に届いた受け取りの本文の units から、返品の行と状態ごとの数を合わせた数を読む（1行にまとめて送る作りでも、1点ずつ送る作りでも同じ値になる） */
 export function unitTotal(body: Record<string, unknown>, lineId: string, disposition: ReceiptDisposition): number {

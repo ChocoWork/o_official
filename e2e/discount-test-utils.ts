@@ -12,6 +12,8 @@ import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { createCatalogFixture, insertRestockMovement, shipFixtureOrder } from '../tests/integration/db/helpers/order-fixtures';
 import { seedGroupG4MixedOrder } from '../tests/integration/db/helpers/group-g4-fixtures';
+import { seedFactSlip } from '../tests/integration/db/helpers/accounting-orders-fixtures';
+import { cancelPlanFor } from '../tests/integration/db/helpers/group-h-refund-fixtures';
 import { searchBestDiscountPlan } from '@/lib/discounts/discount-search';
 import type { DiscountDefinition, DiscountFacts, DiscountResult } from '@/lib/discounts/discount-types';
 import type { AdminDiscountDetail, DiscountCreateInput, DiscountPatch } from '@/lib/discounts/admin-discount-types';
@@ -331,6 +333,10 @@ export class DiscountScenario {
     const lines = (await this.db.query('select id,quantity from public.order_items where order_id=$1 order by id', [orderId])).rows;
     await shipFixtureOrder(this.db, { orderId, actorId: this.admin.userId, trackingNumber: `H11-${randomUUID().slice(0, 8)}`,
       lines: lines.map(r => ({ order_item_id: r.id as string, quantity: Number(r.quantity) })) });
+    // 会計の発送の事実（出荷済みの着の印）。値段の計画（FREQ-642）は、出荷済みの着の中からだけ発送後の返品の着を選ぶ
+    await withGroupG1Material(this.db, async () => {
+      for (const r of lines) await seedFactSlip(this.db, { orderItemId: r.id as string, quantity: Number(r.quantity) });
+    });
   }
   async repeatOrder(withOtherLine = false) {
     const item = await this.item(20_000);
@@ -357,7 +363,9 @@ export class DiscountScenario {
   async refund(orderId: string, orderItemId: string, quantity: number, amount: number) {
     const rows = await this.rpc<Array<{ refund_id: string; amount: number }>>('begin_order_refund', { _order_id: orderId, _source: 'admin', _request_key: randomUUID(),
       _lines: [{ order_item_id: orderItemId, before_shipment: true, quantity }], _restock: false, _shipping_amount: 0, _amount: amount,
-      _note: null, _stripe_reason: 'requested_by_customer', _cancel_reason: null, _notify_customer: false, _actor_id: this.admin.userId });
+      _note: null, _stripe_reason: 'requested_by_customer', _cancel_reason: null, _notify_customer: false, _actor_id: this.admin.userId,
+      // 注文の時の写しのある注文の発送前の取り消しは、サーバーが作る値段の計画が要る（FREQ-642。写しの無い注文は null）
+      _pricing: await cancelPlanFor(this.db, orderId, orderItemId, quantity) });
     await this.refundResult(rows[0].refund_id); return { refundId: rows[0].refund_id, amount: rows[0].amount };
   }
   private async refundResult(id: string): Promise<void> {
@@ -446,7 +454,7 @@ export class DiscountScenario {
     const received = await this.api('admin', `/api/admin/returns/${returnId}/receive`, 'POST', { requestKey: randomUUID(),
       units: [{ returnLineId: line.id, disposition: 'not_restocked', quantity: 1 }], exchangeOverrides: [], refundChoice: 'consult',
       refundAmount: null, refundShippingAmount: 0, note: null, notifyCustomer: false });
-    if (received.status !== 200) throw new Error(`H return receipt refused (${received.status})`);
+    if (received.status !== 200) throw new Error(`H return receipt refused (${received.status} ${JSON.stringify((received.body as { code?: string } | null)?.code ?? null)})`);
     const after = (await this.returns(orderId)).find(r => r.id === returnId)!.lines[0];
     return { returnId, amounts: available.map((_, i) => available.slice(0, i + 1).reduce((sum, n) => sum + n, 0)), waitingAmount: after.refundWaitingAmount };
   }

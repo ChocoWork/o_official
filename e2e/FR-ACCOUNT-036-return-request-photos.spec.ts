@@ -4,6 +4,7 @@ import {
   test, expect, viewports, shipped, openRequest, pick, photoFiles, directUpload, directUploadWithUrl, putToSignedUrl,
   uploadedObject, imageDimensions, appJson, line, counts, seedAgedPhoto, purge, expectPurged, noOverflow,
 } from './return-request-test-utils';
+import { addVariant } from './return-test-utils';
 
 test.use({ trace: 'off' });
 for (const viewport of viewports) {
@@ -37,8 +38,11 @@ for (const viewport of viewports) {
     test('画面で選んだ写真を2000pxまで縮め、実際の署名つき送り先へ JPEG で送り、受付に付ける', async ({ page, rr }) => {
       // FREQ-475-AC-04, FREQ-476-AC-01, FREQ-476-AC-02, FREQ-476-AC-03
       const fx = await shipped(rr);
+      // FREQ-642-AC-30: 破損・不良のご希望は交換だけなので、交換にできる色・サイズ（在庫あり）を足して選ぶ
+      const exchangeVariant = await addVariant(rr.db, fx.itemId, { color: 'ホワイト', size: 'L', stock: 3 });
       await openRequest(page, rr, fx.orderId);
       const row = await pick(page, 'E2Eシャツ', 'defective');
+      await row.getByRole('combobox', { name: '交換する色・サイズ', exact: true }).selectOption(String(exchangeVariant));
       const files = await photoFiles(page);
       const issued = page.waitForResponse((response) =>
         new URL(response.url()).pathname === '/api/orders/' + fx.orderId + '/return-request/photos' &&
