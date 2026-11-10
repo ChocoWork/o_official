@@ -119,44 +119,43 @@ export async function receiveReturnAndRefund(
   // 主の処理の途中で投げても頼む（頼まないと返事待ちのまま残る）
   const requestReleases = () => requestReleaseRefunds(deps, received.releaseRefundIds);
   try {
-
-  // 送る処理を動かすのは、メールの予定を新しく書いた時だけ（送り直しは何も書かない）。
-  // 返金の記録が無い受け取りは、お客様向けのメール（return_received・return_sent_back）を DB が予定する。0円で返金しない受け取りも同じ。
-  // 店への知らせ（返金待ち）も同じ処理で送る。
-  // 返金がある受け取りのお知らせは、Stripe が受け付けた後に予定される（E-2 の結果の後の始末が動かす。断られた時は下で動かす）
-  if (!received.replayed && (received.refundId === null || received.shopNoticeEnqueued)) {
-    deps.scheduleOrderEmailDelivery();
-  }
-
-  const { receiptId, returnStatus, refundId, refundStatus, feeDueAmount, exchangeOrderItemIds, replayed } = received;
-  if (refundId === null) {
-    // 返金の記録が無い。0円で返金しないことにした時（P20）は waived、相談・なしは null
-    const refund: ReceivedRefund | null =
-      refundStatus === 'waived' ? { refundId: null, amount: 0, status: 'waived' } : null;
-    return { kind: 'received', receiptId, returnStatus, refund, feeDueAmount, exchangeOrderItemIds, replayed };
-  }
-
-  const refund = await settleReturnRefund(deps, refundId, replayed);
-  if (refund.kind !== 'accepted') {
-    // Stripe が断って返金の記録がエラーになった時、DB は受け取りのメール（return_received）を予定する（P25）。
-    // E-2 の断りの道（recordRejection）は送る処理を動かさないので、予定を書いた後のここで動かす。
-    // 送り直し（replayed）でも動かす: 前の頼みが分からないままで、今回初めて断られて記録がエラーになることがあるため。
-    // unknown・refused は DB が何も書いていないので動かさない（見回りが後でエラーにした時の予定は、毎分の定期処理が送る）。
-    // DB が何を予定したかは分からないが、空振りしても害は無い
-    if (refund.kind === 'stripe_rejected') {
+    // 送る処理を動かすのは、メールの予定を新しく書いた時だけ（送り直しは何も書かない）。
+    // 返金の記録が無い受け取りは、お客様向けのメール（return_received・return_sent_back）を DB が予定する。0円で返金しない受け取りも同じ。
+    // 店への知らせ（返金待ち）も同じ処理で送る。
+    // 返金がある受け取りのお知らせは、Stripe が受け付けた後に予定される（E-2 の結果の後の始末が動かす。断られた時は下で動かす）
+    if (!received.replayed && (received.refundId === null || received.shopNoticeEnqueued)) {
       deps.scheduleOrderEmailDelivery();
     }
-    return { kind: 'refund_not_accepted', receiptId, returnStatus, refund };
-  }
-  return {
-    kind: 'received',
-    receiptId,
-    returnStatus,
-    refund: { refundId: refund.refundId, amount: refund.amount, status: refund.status },
-    feeDueAmount,
-    exchangeOrderItemIds,
-    replayed,
-  };
+
+    const { receiptId, returnStatus, refundId, refundStatus, feeDueAmount, exchangeOrderItemIds, replayed } = received;
+    if (refundId === null) {
+      // 返金の記録が無い。0円で返金しないことにした時（P20）は waived、相談・なしは null
+      const refund: ReceivedRefund | null =
+        refundStatus === 'waived' ? { refundId: null, amount: 0, status: 'waived' } : null;
+      return { kind: 'received', receiptId, returnStatus, refund, feeDueAmount, exchangeOrderItemIds, replayed };
+    }
+
+    const refund = await settleReturnRefund(deps, refundId, replayed);
+    if (refund.kind !== 'accepted') {
+      // Stripe が断って返金の記録がエラーになった時、DB は受け取りのメール（return_received）を予定する（P25）。
+      // E-2 の断りの道（recordRejection）は送る処理を動かさないので、予定を書いた後のここで動かす。
+      // 送り直し（replayed）でも動かす: 前の頼みが分からないままで、今回初めて断られて記録がエラーになることがあるため。
+      // unknown・refused は DB が何も書いていないので動かさない（見回りが後でエラーにした時の予定は、毎分の定期処理が送る）。
+      // DB が何を予定したかは分からないが、空振りしても害は無い
+      if (refund.kind === 'stripe_rejected') {
+        deps.scheduleOrderEmailDelivery();
+      }
+      return { kind: 'refund_not_accepted', receiptId, returnStatus, refund };
+    }
+    return {
+      kind: 'received',
+      receiptId,
+      returnStatus,
+      refund: { refundId: refund.refundId, amount: refund.amount, status: refund.status },
+      feeDueAmount,
+      exchangeOrderItemIds,
+      replayed,
+    };
   } finally {
     await requestReleases();
   }
@@ -175,12 +174,9 @@ export async function refundReturnAndRequestStripe(
   let began: Awaited<ReturnType<typeof refundReturn>>;
   try {
     // 相談の返金は着の状態を変えない。計画は、前の注文へ戻す分があるときだけ（FREQ-642）
-    began = await withFreshPricing(() =>
-      withPlanOrNull(
-        () => planReturnRefund(deps.store, input.returnId),
-        (pricing) => refundReturn(deps.store, { ...input, pricing }),
-        () => new ReturnStoreError('UNIT_PRICING_INVALID'),
-      ),
+    // 計画を作れない時は断る。計画なしで呼ぶと、DB は戻す返金を黙って落とす（この計画は着を動かさないので、送り直しでも作れる）
+    began = await withFreshPricing(async () =>
+      refundReturn(deps.store, { ...input, pricing: await planReturnRefund(deps.store, input.returnId) }),
     );
   } catch (error) {
     if (error instanceof ReturnStoreError) {

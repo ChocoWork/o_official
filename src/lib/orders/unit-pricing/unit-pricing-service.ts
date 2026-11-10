@@ -76,7 +76,7 @@ function codeOf(error: unknown): unknown {
 }
 
 /**
- * 計画を作って入口を呼ぶ。計画の計算が断った（UNIT_PRICING_INVALID。同じ requestKey の送り直しで、返す着がもう動いている時など）でも、
+ * 計画を作って入口を呼ぶ。計画の計算が「着がもう動いている」(unit_not_available。同じ requestKey の送り直しの時など）で断った時だけ、
  * 計画なし（null）で入口を呼び、送り直しなら DB に前の結果を答えさせる（DB は計画を確かめる前に requestKey で探す）。
  * 送り直しでなければ DB が UNIT_PRICING_REQUIRED で断るので、計画の断りと同じ断り（invalid）に戻す。
  * 要らない道（写しの無い注文など）は計画の計算が断らないので、ここに来ない。requestKey を先に調べる案より、入口を1回呼ぶだけで済む
@@ -91,7 +91,8 @@ export async function withPlanOrNull<P, T>(
   try {
     pricing = await plan();
   } catch (error) {
-    if (codeOf(error) !== 'UNIT_PRICING_INVALID' && codeOf(error) !== 'unit_pricing_invalid') throw error;
+    // 着がもう動いている時だけ（送り直しの可能性）。ほかの計画の誤りは、DB が計画なしを通さない道もあるので、断る
+    if ((error as { planCause?: unknown } | null)?.planCause !== UNITS_MOVED) throw error;
     planFailed = true;
   }
   try {
@@ -165,16 +166,19 @@ export interface PlanReceiveOptions {
   canRefund?: boolean;
 }
 
-function refused(code: 'RETURN_NOT_FOUND' | 'RETURN_FORBIDDEN' | 'UNIT_PRICING_INVALID'): never {
-  throw new ReturnStoreError(code);
+/** 計画の計算が「着がもう動いている」(unit_not_available) で断った印。送り直しの時の計画なしの呼び出しは、この断りだけに許す */
+export const UNITS_MOVED = 'unit_not_available';
+
+function refused(code: 'RETURN_NOT_FOUND' | 'RETURN_FORBIDDEN' | 'UNIT_PRICING_INVALID', planCause?: string): never {
+  throw Object.assign(new ReturnStoreError(code), planCause ? { planCause } : {});
 }
 
 /** 計画の計算が断った（枠が足りない・写しがおかしい）。画面を開き直してもらう断りにする */
-function guarded<T>(compute: () => T, fail: () => never): T {
+function guarded<T>(compute: () => T, fail: (cause: string) => never): T {
   try {
     return compute();
   } catch (error) {
-    if (error instanceof UnitPricingError) return fail();
+    if (error instanceof UnitPricingError) return fail(error.code);
     throw error;
   }
 }
@@ -229,7 +233,7 @@ export async function planReturnReceive(
   }));
   const plan = guarded(
     () => planUnitEvent(materials, { kind: 'return_receive', returns: returnInputs, excludedSlots }),
-    () => refused('UNIT_PRICING_INVALID'),
+    cause => refused('UNIT_PRICING_INVALID', cause),
   );
   const estimate: ReturnReceiveEstimate = {
     legacy: false,
@@ -290,8 +294,8 @@ function legacyReceiveEstimate(
 
 type RefundBody = Pick<CreateRefundRequest, 'lines' | 'shippingAmount'>;
 
-function refundRefused(code: 'order_not_found' | 'unit_pricing_invalid'): never {
-  throw new RefundOperationError(code);
+function refundRefused(code: 'order_not_found' | 'unit_pricing_invalid', planCause?: string): never {
+  throw Object.assign(new RefundOperationError(code), planCause ? { planCause } : {});
 }
 
 async function planOrderRefundFrom(
@@ -310,7 +314,7 @@ async function planOrderRefundFrom(
   const cancels = preLines.map(l => ({ orderItemId: l.orderItemId, quantity: l.quantity }));
   const plan = guarded(
     () => planUnitEvent(materials, { kind: 'pre_shipment_cancel', cancels }),
-    () => refundRefused('unit_pricing_invalid'),
+    cause => refundRefused('unit_pricing_invalid', cause),
   );
   // 発送後の品の分は着の状態を変えないので、今の計算の額。発送前の品の分は E の増えた分（設計 2-3）
   const shipped = selections.filter(s => !s.beforeShipment);
@@ -358,7 +362,7 @@ export async function planReturnRefund(client: PricingClient, returnId: string):
   if (materials === null) return null;
   const plan = guarded(
     () => planUnitEvent(materials, { kind: 'return_receive', returns: [], excludedSlots: [] }),
-    () => refused('UNIT_PRICING_INVALID'),
+    cause => refused('UNIT_PRICING_INVALID', cause),
   );
   return plan.releases.length === 0 ? null : { orderId, version: plan.version, releases: plan.releases };
 }

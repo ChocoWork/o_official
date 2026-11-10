@@ -16,7 +16,7 @@ import type Stripe from 'stripe';
 import { loadRefundMaterials } from '@/lib/orders/refund/refund-materials';
 import { submitAdminRefund, type RefundServiceDeps } from '@/lib/orders/refund/refund-service';
 import { listOrderReturns } from '@/lib/orders/returns/return-store';
-import { receiveReturnAndRefund } from '@/lib/orders/returns/return-service';
+import { receiveReturnAndRefund, refundReturnAndRequestStripe } from '@/lib/orders/returns/return-service';
 import type { UnitPricingMaterials } from '@/lib/orders/unit-pricing/unit-pricing-types';
 import { returnDetail } from '../returns/order-return-detail-fixture';
 import { buildOrder, JACKET, materialsOf, repeat, repeatDefinition } from './fixtures';
@@ -140,6 +140,40 @@ describe('FREQ-642-AC-17: 同じ requestKey の送り直しは、着がもう動
     const { deps } = depsWith(repeat(), { admin_receive_return: [{ data: null, error: { message: 'UNIT_PRICING_REQUIRED' } }] });
 
     await expect(receiveReturnAndRefund(deps, RECEIVE_INPUT)).resolves.toEqual({ kind: 'refused', code: 'UNIT_PRICING_REQUIRED' });
+  });
+
+  /** 計画の計算が snapshot_invalid（E の食い違い）で断る材料 */
+  const brokenOrder = (): UnitPricingMaterials => {
+    const m = repeat();
+    return { ...m, target: { ...m.target, entitlementPrevious: 999 } };
+  };
+
+  test('受け取り: 着が動いたのでない計画の誤り（snapshot_invalid）は、計画なしで DB を呼ばずに断る', async () => {
+    const { deps, rpc } = depsWith(brokenOrder(), { admin_receive_return: [{ data: [REPLAYED_ROW], error: null }] });
+
+    await expect(receiveReturnAndRefund(deps, RECEIVE_INPUT)).resolves.toEqual({ kind: 'refused', code: 'UNIT_PRICING_INVALID' });
+    expect(rpc).not.toHaveBeenCalledWith('admin_receive_return', expect.anything());
+  });
+
+  test('発送前の返金: snapshot_invalid も DB を呼ばずに断る', async () => {
+    const m = brokenOrder();
+    const { deps, rpc } = depsWith({ ...m, target: { ...m.target, slots: m.target.slots.map(s => ({ ...s, shipped: false })) } }, {
+      begin_order_refund: [{ data: [{ refund_id: 'rf', amount: 5000, status: 'pending', replayed: true }], error: null }],
+    });
+    mockRefundMaterials.mockResolvedValue({
+      order: { refundableAmount: 37000 }, lines: [{ orderItemId: 'oi-1', unshipped: 2, shipped: 0, availableUnitAmounts: [17000, 20000] }], awaitingRefund: null,
+    } as never);
+
+    await expect(submitAdminRefund(deps, ADMIN)).resolves.toEqual({ kind: 'refused', code: 'unit_pricing_invalid' });
+    expect(rpc).not.toHaveBeenCalledWith('begin_order_refund', expect.anything());
+  });
+
+  test('相談の返金: 計画の誤りは断り、admin_refund_return を呼ばない（呼ぶと戻す返金が黙って落ちる）', async () => {
+    const { deps, rpc } = depsWith(brokenOrder(), { admin_refund_return: [{ data: [{ refund_id: null, amount: 0, status: 'waived', replayed: false }], error: null }] });
+    const input = { returnId: RETURN_ID, actorId: 'actor', requestKey: 'k', amount: null, shippingAmount: 0, note: null, notifyCustomer: false };
+
+    await expect(refundReturnAndRequestStripe(deps, input)).resolves.toEqual({ kind: 'refused', code: 'UNIT_PRICING_INVALID' });
+    expect(rpc).not.toHaveBeenCalledWith('admin_refund_return', expect.anything());
   });
 
   const REFUND_REQUEST = {
