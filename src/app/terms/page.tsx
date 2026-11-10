@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { CSSProperties } from "react";
+import { DISCOUNT_RETURN_NOTE } from "@/lib/orders/returns/discount-return-note";
 
 const pageTitleStyle: CSSProperties = { fontSize: "var(--lk-size-5xl)" };
 const sectionTitleStyle: CSSProperties = { fontSize: "var(--lk-size-md)" };
@@ -131,7 +132,10 @@ export default function TermsPage() {
             第6条（返品・交換）
           </h2>
           <p className="text-[#474747]" style={bodyTextStyle}>
-            本サービスの商品は受注生産のため、お客様のご都合による返品・交換は原則としてお受けできません。商品に不良があった場合、または注文と異なる商品が届いた場合に限り、商品到着後7日以内にご連絡いただくことで、当社負担にて返品・交換または再制作の対応をいたします。
+            本サービスの商品は受注生産のため、お客様のご都合による返品・交換は原則としてお受けできません。商品に不良があった場合、または注文と異なる商品が届いた場合に限り、商品到着後7日以内にご連絡いただくことで、当社負担にて交換（在庫が無ければ再制作）の対応をいたします。お送りできない時だけ返金いたします。
+          </p>
+          <p className="mt-3 text-[#474747]" style={bodyTextStyle} data-testid="terms-discount-return-note">
+            {DISCOUNT_RETURN_NOTE}
           </p>
         </section>
 

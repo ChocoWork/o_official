@@ -2,8 +2,10 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 const mockSubmit = jest.fn();
+const mockEstimate = jest.fn();
 jest.mock('@/features/account/returns/customer-return-client', () => ({
   submitCustomerReturnRequest: (...args: unknown[]) => mockSubmit(...args),
+  fetchCustomerReturnEstimate: (...args: unknown[]) => mockEstimate(...args),
 }));
 jest.mock('next/link', () => ({ href, children, ...props }: any) => (
   <a href={href} {...props}>
@@ -66,6 +68,8 @@ const sentBody = (call: number) => mockSubmit.mock.calls[call][1] as SubmitBody;
 
 beforeEach(() => {
   mockSubmit.mockReset();
+  mockEstimate.mockReset();
+  mockEstimate.mockResolvedValue({ refundAmount: 17000, moneyMoves: true });
 });
 
 describe('ReturnRequestConfirm の内容', () => {
@@ -351,5 +355,44 @@ describe('ReturnRequestAccepted', () => {
     expect(message).toHaveFocus();
     expect(within(accepted).getByText('返品番号: ORD-A1B2C3D4-R3')).toBeInTheDocument();
     expect(within(accepted).getByRole('link', { name: '注文の画面に戻る' })).toHaveAttribute('href', `/account/orders/${ORDER_ID}`);
+  });
+});
+
+describe('ReturnRequestConfirm の返金の見込み', () => {
+  it('FREQ-642-AC-21: 確かめる段に返金の見込みが出る。呼ぶのは入った時の1回だけで、中身は選びの行', async () => {
+    setup();
+
+    expect(await screen.findByText('返金の見込み: 17,000円')).toBeInTheDocument();
+    expect(mockEstimate).toHaveBeenCalledTimes(1);
+    expect(mockEstimate).toHaveBeenCalledWith(ORDER_ID, [
+      { orderItemId: 'item-blouse', quantity: 2, reason: 'defective', requestedResolution: 'exchange' },
+    ]);
+  });
+
+  it('FREQ-642-AC-21: 交換だけならお金のやり取りはありません', async () => {
+    mockEstimate.mockResolvedValue({ refundAmount: 0, moneyMoves: false });
+    setup();
+
+    expect(await screen.findByText('お金のやり取りはありません')).toBeInTheDocument();
+    expect(screen.queryByText(/返金の見込み/)).not.toBeInTheDocument();
+  });
+
+  it('FREQ-642-AC-21: 見込みを出せない時は額を出さず、受け取りの後に知らせる文を出し、申し込みは止めない', async () => {
+    mockEstimate.mockResolvedValue(null);
+    mockSubmit.mockResolvedValue({ kind: 'ok', body: acceptedBody() });
+    const props = setup();
+
+    expect(await screen.findByText('返金の額は受け取りの後にお知らせします')).toBeInTheDocument();
+    expect(screen.queryByText(/返金の見込み/)).not.toBeInTheDocument();
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(props.onAccepted).toHaveBeenCalled());
+  });
+
+  it('FREQ-642-AC-21: 見込みを待つ間も申し込める', () => {
+    mockEstimate.mockReturnValue(new Promise(() => {}));
+    setup();
+
+    expect(submitButton()).toBeEnabled();
+    expect(screen.queryByText(/返金の見込み/)).not.toBeInTheDocument();
   });
 });

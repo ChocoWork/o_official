@@ -23,6 +23,7 @@ import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import { Sheet } from "@/components/ui/Sheet/Sheet";
 import "./ItemDetailClient.css";
 import { sortSizes } from "@/lib/items/sizes";
+import { DISCOUNT_RETURN_NOTE } from "@/lib/orders/returns/discount-return-note";
 
 type Props = { id: string };
 
@@ -917,6 +918,13 @@ export default function ItemDetailClient({ id }: Props) {
                   この商品は、初期不良・誤送を除き、返品・交換をお受けしていません
                 </p>
               ) : null}
+
+              <p
+                data-testid="item-discount-return-note"
+                className="mt-2 lk-text-3xs leading-relaxed text-[#474747]"
+              >
+                {DISCOUNT_RETURN_NOTE}
+              </p>
 
               {item.description && (
                 <div

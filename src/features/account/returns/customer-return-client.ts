@@ -8,6 +8,7 @@ import {
   type CustomerReturnErrorCode,
 } from '@/lib/orders/returns/customer-return-messages';
 import type { CustomerReturnRequestMaterials } from '@/lib/orders/returns/customer-return-types';
+import type { CustomerReturnEstimate } from '@/lib/orders/unit-pricing/unit-pricing-types';
 
 /**
  * お客様の画面（ブラウザ）から、返品・交換の申し込みの窓口を呼ぶ道具（グループ E-3 段2。共通の約束 C-2・C-3・P13）。
@@ -59,6 +60,29 @@ export async function fetchCustomerReturnMaterials(orderId: string): Promise<Cus
     return body?.data ? { kind: 'ok', data: body.data } : failed(false);
   } catch {
     return failed(false);
+  }
+}
+
+export type EstimateLine = { orderItemId: string; quantity: number; reason: string; requestedResolution: string };
+
+/**
+ * 確かめる段に入る時に1回呼ぶ、返金の見込み（読むだけの窓口）。見込みを出せない時（409・通信の切れ・読めない答え）は
+ * 例外にせず null を返す（画面は額を出さず、申し込みは止めない）
+ */
+export async function fetchCustomerReturnEstimate(orderId: string, lines: EstimateLine[]): Promise<CustomerReturnEstimate | null> {
+  try {
+    const response = await postJson(`${returnRequestUrl(orderId)}/estimate`, { lines });
+    if (!response.ok) {
+      void response.arrayBuffer?.().catch(() => {});
+      return null;
+    }
+    const body = (await response.json()) as { data?: Partial<CustomerReturnEstimate> | null } | null;
+    const data = body?.data;
+    return data && typeof data.refundAmount === 'number' && typeof data.moneyMoves === 'boolean'
+      ? { refundAmount: data.refundAmount, moneyMoves: data.moneyMoves }
+      : null;
+  } catch {
+    return null;
   }
 }
 

@@ -3,13 +3,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button/Button';
 import { LiveMessage } from '@/components/ui/LiveMessage/LiveMessage';
-import { submitCustomerReturnRequest } from '@/features/account/returns/customer-return-client';
+import { fetchCustomerReturnEstimate, submitCustomerReturnRequest } from '@/features/account/returns/customer-return-client';
 import {
   REQUEST_TEXT,
   type ConfirmSummary,
   type SubmitBody,
 } from '@/features/account/returns/return-request-model';
 import { formatReturnNumber } from '@/lib/orders/returns/return-messages';
+import type { CustomerReturnEstimate } from '@/lib/orders/unit-pricing/unit-pricing-types';
 
 type ReturnRequestConfirmProps = {
   orderId: string;
@@ -50,6 +51,24 @@ export function ReturnRequestConfirm({ orderId, body, summary, onBack, onAccepte
   const [uncertain, setUncertain] = useState(false);
   // 直近に送った中身。答えが分からない時の「もう一度確かめる」が、これをそのまま送り直す
   const [pending, setPending] = useState<SubmitBody | null>(null);
+
+  // 返金の見込み。undefined は待っている間、null は出せなかった時（額を出さず、申し込みは止めない）
+  const [estimate, setEstimate] = useState<CustomerReturnEstimate | null | undefined>(undefined);
+
+  // 確かめる段に入った時に1回だけ呼ぶ（この段の間、body の選びは変わらない）
+  useEffect(() => {
+    let cancelled = false;
+    const lines = body.lines.map(({ orderItemId, quantity, reason, requestedResolution }) => ({
+      orderItemId, quantity, reason, requestedResolution,
+    }));
+    void fetchCustomerReturnEstimate(orderId, lines).then((result) => {
+      if (!cancelled) setEstimate(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 段が変わったことが分かるように、見出しへ移る（押したボタンは消えるので、移さないと位置が失われる）
   useEffect(() => {
@@ -125,6 +144,15 @@ export function ReturnRequestConfirm({ orderId, body, summary, onBack, onAccepte
         ))}
         {summary.feeNote ? <p>{summary.feeNote}</p> : null}
       </div>
+      {estimate === undefined ? null : (
+        <p data-testid="return-request-estimate" className="font-acumin lk-text-sm text-black">
+          {estimate === null
+            ? REQUEST_TEXT.estimateUnavailable
+            : estimate.moneyMoves
+              ? REQUEST_TEXT.estimateRefund(estimate.refundAmount)
+              : REQUEST_TEXT.estimateNoMoney}
+        </p>
+      )}
       <p className="font-acumin lk-text-sm text-[#474747]">{REQUEST_TEXT.confirmNotice}</p>
       <LiveMessage className="font-acumin lk-text-sm text-red-600">{alertText}</LiveMessage>
       {uncertain ? (

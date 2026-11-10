@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 const mockSubmit = jest.fn();
 jest.mock('@/features/account/returns/customer-return-client', () => ({
   submitCustomerReturnRequest: (...args: unknown[]) => mockSubmit(...args),
+  fetchCustomerReturnEstimate: () => Promise.resolve({ refundAmount: 17000, moneyMoves: true }),
 }));
 const mockCheck = jest.fn();
 const mockResize = jest.fn();

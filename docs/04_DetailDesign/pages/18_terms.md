@@ -26,3 +26,11 @@
 1. `src/app/terms/page.tsx` に `generateMetadata` を追加し、利用規約ページ固有の title / description / Open Graph を返す
 2. 詳細設計の FR-TERMS-001 文言を現在の実装と上位仕様に合わせて「利用規約ページ」へ同期する
 3. E2E は本文表示と metadata を別ファイルに分けて回帰確認する
+
+## 第6条の割引の扱いの文（FREQ-642 / AC-22）
+
+確認日: 2026-11-11
+
+- 第6条（返品・交換）の本文の後に割引の扱いの文を出す（`terms-discount-return-note`）。第6条の「返品・交換または再制作」は「交換（在庫が無ければ再制作）。お送りできない時だけ返金」に合わせて直した。
+- 文: お手元に残る商品の割引後の価格を差し引いて返金いたします（文は `src/lib/orders/returns/discount-return-note.ts` の `DISCOUNT_RETURN_NOTE` 1つを4か所が読む。設計 6-1 の案のまま、言い回しはオーナーが後で直す）。
+- 単体: tests/unit/components/DiscountReturnNotePages.test.tsx。幅の E2E は FR-TERMS-007（Task 10）。

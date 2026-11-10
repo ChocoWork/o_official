@@ -108,6 +108,13 @@ describe('FinalConfirmationStep（設計書 2-3・第4章）', () => {
     });
   });
 
+  test('FREQ-642-AC-22: 最終確認に割引の扱いの文が出る', () => {
+    setReady();
+    renderStep();
+
+    expect(screen.getByTestId('checkout-terms')).toHaveTextContent(/お手元に残る商品の割引後の価格を差し引いて返金いたします/);
+  });
+
   test('表題と、特定商取引法の項目（支払いの時期・方法、明細ごとのお届けの時期、返品）を出す', () => {
     setReady();
     renderStep();

@@ -19,6 +19,7 @@ import type {
 import { placeOrder, type CheckoutRejection } from "@/app/checkout/_lib/checkout-api";
 import { clearPaymentAttempt, rememberPaymentAttempt } from "@/app/checkout/_lib/payment-attempt";
 import { reloadPage } from "@/app/checkout/_lib/page-reload";
+import { DISCOUNT_RETURN_NOTE } from "@/lib/orders/returns/discount-return-note";
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "");
 
@@ -421,6 +422,7 @@ function FinalConfirmationContent({
                   </Link>
                   をご覧ください
                 </p>
+                <p data-testid="checkout-discount-return-note">{DISCOUNT_RETURN_NOTE}</p>
               </div>
             </div>
           </section>

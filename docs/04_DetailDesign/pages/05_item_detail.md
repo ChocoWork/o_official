@@ -120,3 +120,11 @@ GET /api/items/[id] は returnIneligible: boolean を返す。画面の Item.ret
 
 - `src/styles/detail-layout.css` の `.detail-page-main`（`Providers.tsx` が `/item/:id`・`/look/:id` の main に付ける）は、768〜1023px で左右パディング 20px。ほかの幅は 6.25% のまま。以前は 6.25% が全幅に効き、`ItemDetailClient.tsx` の `md:-ml-5`・`md:pr-3`（20px 前提）と合わず間隔が 57〜69px になっていた
 - 2026-11-08: LOOK 詳細（`/look/[id]`）も同じ列の計算で同じずれ（右端 57〜76px）が残っていたので、オーナーの許可を得て同じ 20px を効かせた（FREQ-288-AC-04）。商品詳細だけに付けていた `.item-detail-page-main` の印は無くした。
+
+## 割引の扱いの文（FREQ-642 / AC-22）
+
+確認日: 2026-11-11
+
+- 商品名・価格・納期の近く（返品不可の一文の後、商品の説明の前）に、`data-testid="item-discount-return-note"` の段を1つ出す。文の型は `lk-text-3xs leading-relaxed text-[#474747]`。全商品に出す。
+- 文: お手元に残る商品の割引後の価格を差し引いて返金いたします（文は `src/lib/orders/returns/discount-return-note.ts` の `DISCOUNT_RETURN_NOTE` 1つを4か所が読む。設計 6-1 の案のまま、言い回しはオーナーが後で直す）。
+- 単体: tests/unit/components/ItemDetailDiscountReturnNote.test.tsx。幅の E2E は FR-ITEM-DETAIL-070（Task 10）。

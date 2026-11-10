@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import { getSiteUrl } from "@/lib/redirect";
 import { KONBINI_PAYMENT_DAYS } from "@/lib/constants/konbini";
+import { DISCOUNT_RETURN_NOTE } from "@/lib/orders/returns/discount-return-note";
 
 const pageTitleStyle: CSSProperties = { fontSize: "var(--lk-size-5xl)" };
 const labelStyle: CSSProperties = { fontSize: "var(--lk-size-md)" };
@@ -115,7 +116,7 @@ export default function LegalPage() {
           </p>
           <p className="mt-4">返品期限</p>
           <p className="mt-4">
-            初期不良（仕様上明らかな不具合がある場合）または誤送（ご注文と異なる商品が届いた場合）に限り、商品到着後7日以内にお問い合わせフォームよりご連絡いただいた場合に、返品・交換・修理を承ります。この場合、該当商品を当店までご返送いただく必要がございます。7日を過ぎたご連絡は、未使用であってもお受けできません。
+            初期不良（仕様上明らかな不具合がある場合）または誤送（ご注文と異なる商品が届いた場合）に限り、商品到着後7日以内にお問い合わせフォームよりご連絡いただいた場合に、交換（在庫が無ければ再制作）を承ります。お送りできない時だけ返金いたします。この場合、該当商品を当店までご返送いただく必要がございます。7日を過ぎたご連絡は、未使用であってもお受けできません。
           </p>
           <p className="mt-4">
             サイズ交換をご希望の場合は、未使用品かつ在庫があるものに限り対応いたします。
@@ -135,6 +136,9 @@ export default function LegalPage() {
           </p>
           <p className="mt-4">
             当社の商品は、素材の風合いを活かして一点一点丁寧に仕立てております。製造過程で避けられない細かな傷や掠れ、天然素材特有のへこみ・色むら・黒点などは、素材の個性および良品として取り扱っておりますので、これらを理由とする返品・交換はご容赦ください。
+          </p>
+          <p className="mt-4" data-testid="legal-discount-return-note">
+            {DISCOUNT_RETURN_NOTE}
           </p>
         </>
       ),

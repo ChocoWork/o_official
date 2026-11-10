@@ -950,3 +950,12 @@ limit 20;
 - 自動割引の変更（200 `reconfirmationRequired`）: `onReconfirmationRequired()`で入力へ戻さず、新しいrequestVersionのcreate-sessionから新しい最終確認へ進み、新しい合計と「割引の内容が変わりました。金額をご確認のうえ、もう一度「注文する」を押してください。」を出す。押し直すまで`confirm`は0回。入力画面を開いただけではSessionを作らない。
 - 入力コードが無い409: place-orderは先にSessionを閉じているので、文は「割引の条件が変わりました。もう一度「注文する」を押してください。」にする（押し直すと作り直しの流れに入る）。
 - ゲストの自動の初回割引: 入力画面の目安は「見込み」（`GET /api/cart`の内訳）。create-sessionで配送先メールで履歴を読み、外れた確定額で最終確認へ進む。受付で変わっても新しい最終確認へ進み、ループしない。
+
+### 割引の扱いの文（FREQ-642 / AC-22。最終確認と /legal）
+
+確認日: 2026-11-11
+
+- 最終確認（`FinalConfirmationStep`）の「返品・キャンセル」の文の後に、割引の扱いの文を `data-testid="checkout-discount-return-note"` で出す。
+- /legal の「返品・交換・キャンセルについて」の段落の後にも同じ文を出す（`legal-discount-return-note`）。あわせて「初期不良・誤送」の文を「交換（在庫が無ければ再制作）。お送りできない時だけ返金」に合わせて直した。
+- 文: お手元に残る商品の割引後の価格を差し引いて返金いたします（文は `src/lib/orders/returns/discount-return-note.ts` の `DISCOUNT_RETURN_NOTE` 1つを4か所が読む。設計 6-1 の案のまま、言い回しはオーナーが後で直す）。
+- 単体: tests/unit/components/FinalConfirmationStep.test.tsx・DiscountReturnNotePages.test.tsx。幅の E2E は FR-CHECKOUT-061・FR-LEGAL-008（Task 10）。

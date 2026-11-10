@@ -428,3 +428,10 @@ describe('availabilityMessageOf', () => {
     expect(availabilityMessageOf(availability)).toBe(expected);
   });
 });
+
+describe('破損・不良と注文と違う品', () => {
+  it('FREQ-642-AC-30: 破損・不良・注文と違う品の設定（交換だけ）では、ご希望は交換だけで返金は出ない', () => {
+    expect(resolutionOptionsOf('exchange_only', true)).toEqual(['exchange']);
+    expect(resolutionOptionsOf('exchange_only', true)).not.toContain('refund');
+  });
+});

@@ -7,6 +7,7 @@ jest.mock('@/lib/client-fetch', () => ({
 
 import {
   callCustomerReturnApi,
+  fetchCustomerReturnEstimate,
   fetchCustomerReturnMaterials,
   submitCustomerReturnRequest,
 } from '@/features/account/returns/customer-return-client';
@@ -244,5 +245,30 @@ describe('401（ログインの印が古い）', () => {
     mockClientFetch.mockResolvedValueOnce(json({ error: 'Unauthorized' }, 401)).mockRejectedValueOnce(new TypeError('Failed to fetch'));
 
     await expect(submitCustomerReturnRequest(ORDER_ID, BODY)).resolves.toEqual({ kind: 'unknown' });
+  });
+});
+
+describe('fetchCustomerReturnEstimate', () => {
+  const LINES = [{ orderItemId: 'item-blouse', quantity: 1, reason: 'size_too_small', requestedResolution: 'refund' }] as const;
+
+  it('FREQ-642-AC-21: 選びを見込みの窓口へ送り、答えの data を返す', async () => {
+    mockClientFetch.mockResolvedValueOnce(json({ data: { refundAmount: 17000, moneyMoves: true } }));
+
+    await expect(fetchCustomerReturnEstimate(ORDER_ID, [...LINES])).resolves.toEqual({ refundAmount: 17000, moneyMoves: true });
+    expect(mockClientFetch).toHaveBeenCalledWith(`${REQUEST_URL}/estimate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lines: LINES }),
+    });
+  });
+
+  it.each([
+    ['409', () => mockClientFetch.mockResolvedValueOnce(json({ error: 'x', code: 'ESTIMATE_UNAVAILABLE' }, 409))],
+    ['読めない成功', () => mockClientFetch.mockResolvedValueOnce(unreadable(200))],
+    ['形の違う答え', () => mockClientFetch.mockResolvedValueOnce(json({ data: { refundAmount: 'x' } }))],
+    ['通信の切れ', () => mockClientFetch.mockRejectedValueOnce(new Error('network'))],
+  ])('FREQ-642-AC-21: %s の時は例外にせず null を返す（申し込みは止めない）', async (_name, arrange) => {
+    arrange();
+    await expect(fetchCustomerReturnEstimate(ORDER_ID, [...LINES])).resolves.toBeNull();
   });
 });

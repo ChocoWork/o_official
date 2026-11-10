@@ -220,3 +220,14 @@ E2E は FR-ACCOUNT-035-return-request.spec.ts・036-return-request-photos.spec.t
 `buildCustomerOrderDetailView` へ表示計算だけを共有し、会員APIの認証・所有者条件・エラー・JSONのキー/値/null/省略/配列順を維持する。返品だけの読取失敗は `returnSection:null` のまま。会員APIの口座期限や完全な返品の既存位置も変えない。
 
 `OrderItemRow` と `OrderReturnsSection` の `readOnly:true` は注文状況の表示用。省略した会員側は既存の操作・ボタン・フォーム・送り返しの業者と番号の表記を維持する。公開の枝へダミーの個人情報やcallbackを渡さない。
+
+## 返品の申し込みの返金の見込み（FREQ-642 / AC-21・30）
+
+確認日: 2026-11-11
+
+- 確かめる段（`ReturnRequestConfirm`）に入った時に1回だけ、`POST /api/orders/[id]/return-request/estimate` を呼ぶ（`fetchCustomerReturnEstimate`。本文は選びの行の `orderItemId`・`quantity`・`reason`・`requestedResolution`）。読むだけの窓口で、段の間は選びが変わらないので呼び直さない。
+- 出す文: 返金がある時 `返金の見込み: {N}円`（例: `返金の見込み: 17,000円`）、交換だけ（`moneyMoves` が偽）の時 `お金のやり取りはありません`。待っている間は何も出さず、「申し込む」は押せる。
+- 見込みを出せない時（409・通信の切れ・読めない答え）は額を出さず `返金の額は受け取りの後にお知らせします` を出す。申し込み自体は止めない。
+- 初期不良（破損・不良）・誤送（注文と違う品）のご希望は、設定の `exchange_only` により既存の部品のまま「交換」だけが出る（コードの分岐は足さない。`resolutionOptionsOf` の試験で固定）。
+- 割引の扱いの文は /legal・/terms・商品ページ・最終確認と同じ（お手元に残る商品の割引後の価格を差し引いて返金いたします（文は `src/lib/orders/returns/discount-return-note.ts` の `DISCOUNT_RETURN_NOTE` 1つを4か所が読む。設計 6-1 の案のまま、言い回しはオーナーが後で直す））。
+- 単体: tests/unit/features/account/returns/ の ReturnRequestConfirm・customer-return-client・return-request-model。幅（390・768・1280px）の E2E は FR-ACCOUNT-048（Task 10）。
