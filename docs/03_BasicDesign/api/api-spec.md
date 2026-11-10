@@ -1,5 +1,7 @@
 # API仕様（現行実装）
 
+> 交換の印 移行 D（Task 6）確認日: 2026-11-10。窓口の追加・削除はない（サーバーの受け渡しは Task 7）。返金の DB の関数 `begin_order_refund`（14の引数・末尾に値段の計画 `_pricing jsonb`）・`admin_refund_return`（8の引数・同）が値段の計画を受け、答えに `release_refund_ids uuid[]` を足した。返金の道に `unit_hold_release` を足し、取り消しの戻し `order_unit_revert_cancel` を足した。詳しくは末尾の「返金・取り消し・前の注文への戻しの値段の計画（FREQ-642 Task 6）」。
+>
 > 交換の印 移行 C（Task 5）確認日: 2026-11-10。窓口の追加・削除はまだない（サーバーの受け渡しは Task 7）。受け取りの DB の関数 `admin_receive_return` は15の引数（末尾に値段の計画 `_pricing jsonb`、既定値 NULL）・答えは10列（末尾に `release_refund_ids uuid[]`）になった。詳しくは末尾の「受け取りの値段の計画（FREQ-642 Task 5）」。
 >
 > 会計の作り直し 計画2 Task 15 確認日: 2026-11-09。計画2の確定した実装に合わせて既存の窓口の行を直した。(1) `GET`・`PUT /api/admin/kpi/monthly-record` は月の KPI の表（S13）を DB の関数（`list_kpi_monthly_records`・`admin_set_kpi_monthly_records`）で読み書きし、「表が無い」の 503 をやめた。(2) `GET /api/admin/kpi` は「売上」を「受注高」の数え方（支払いの仕訳の日）にし、応答に `backlog`・`intakeBreakdown`・`returnsThisMonth` を足した。(3) `GET /api/admin/kpi/targets` の `sales` は 受注高、`aov` は 受注高 ÷ 注文数。(4) `POST /api/webhook/stripe` は 18種を保存する（`charge.dispute.*` の5種を足した）。(5) `POST /api/cron/stripe-reconcile` は dispute の読み直し（`syncedDisputes`・`openDisputesCapped`）を足した。(6) 会計の読み（`GET /api/admin/accounting/*`）の `permissions` に `manageFinance`・`correctEntries` を、持っている時だけ足した。(7) 発送票の確定・取り消し・出荷日の直しと着金の確認は、応答の後に計上係を流す。実装の読み取りで確かめた。
@@ -1124,7 +1126,25 @@ GET `/api/admin/order-attention`（`admin.orders.read`）は`discounts:{orderId,
 | 項目 | 内容 |
 | --- | --- |
 | 入力 `_pricing` | サーバーが `planUnitEvent`（kind `return_receive`）で作った値段の計画の JSON。注文の時の割引の写しが有る注文は必須、無い注文は渡せない。画面から額は受け取らない |
-| 答え | `receipt_id・return_status・refund_id・refund_amount・refund_status・exchange_order_item_ids・fee_due_amount・shop_notice_enqueued・replayed・release_refund_ids`。`release_refund_ids` は前の注文に戻した返金の id（今は常に空の列。Task 6 で埋まる）。送り直しの答えは前と同じ |
+| 答え | `receipt_id・return_status・refund_id・refund_amount・refund_status・exchange_order_item_ids・fee_due_amount・shop_notice_enqueued・replayed・release_refund_ids`。`release_refund_ids` は前の注文に戻した返金の id（後の注文の返品の計画に `releases` がある時。移行 D が埋める。無ければ空の列）。送り直しの答えは前と同じ |
 | 断る記号 | `UNIT_PRICING_REQUIRED`（写しが有るのに計画が無い）、`UNIT_PRICING_INVALID`（DETAIL `ub_legacy`・`ub_receive_lines`・`ub_treatment`・`ub_exchange_slots`・`ub_plan_1〜9`）、`UNIT_PRICING_STALE`（`40001`。版が今と違う）。どれも `22023`（STALE を除く）で、何も書かない |
 | 返金の額 | 計画の `nowRefund`（手数料の率の分は E の中）から返送料・交換の手数料を引き、送料を足す。店長が直した額の上限は `LEAST(注文の返せる額, 今返す商品の額 + 送料)` |
 | 書く物 | 受け取りの記録・行、出来事（`order_unit_events`）・出来事の行・holds・枠の状態と値段、交換の結び、割引の扱い、返金の記録・行、返した着への返金の取り押さえ。1回の取引 |
+
+### 返金・取り消し・前の注文への戻しの値段の計画（FREQ-642 Task 6、2026-11-10）
+
+対応: FREQ-642-AC-05・10・15・19・23・27・28。設計は [交換の印の設計書](../../superpowers/specs/2026-11-08-exchange-unit-binding-design.md)の2・4・5・7章。移行は [20261110135232_unit_binding_refunds.sql](../../../supabase/migrations/20261110135232_unit_binding_refunds.sql)。窓口（route）の追加・削除はない。
+
+| DB の入口 | 引数と答え | 変わる所 |
+| --- | --- | --- |
+| `public.begin_order_refund(_order_id, _source, _request_key, _lines, _restock, _shipping_amount, _amount, _note, _stripe_reason, _cancel_reason, _notify_customer, _actor_id, _received_amount DEFAULT NULL, _pricing jsonb DEFAULT NULL)` | 14の引数（13の引数の関数は DROP）。答え `refund_id・amount・status・replayed・release_refund_ids`。`service_role` だけ | 写しのある注文で発送前の行（`before_shipment=true`）か `order_cancel` がある時は `_pricing`（kind `pre_shipment_cancel`）が要る。発送後の行だけの返金・行の無い返金は計画なし |
+| `public.admin_refund_return(_return_id, _actor_id, _request_key, _amount, _shipping_amount, _note, _notify_customer, _pricing jsonb DEFAULT NULL)` | 8の引数（7の引数の関数は DROP）。答え `refund_id・amount・status・replayed・release_refund_ids`。`service_role` だけ | 標準の額は `order_unit_outstanding`（相談の分だけ）。`_pricing` は `{orderId, version, releases}` の形で、前の注文に戻す計画がある時だけ（無ければ NULL） |
+| `public.admin_receive_return(…15の引数)` | 引数は変えない | 返金の記録は共通のコアが書く。計画の `releases` を前の注文の返金にして `release_refund_ids` に返す |
+| `public.order_unit_revert_cancel(_refund_id uuid, _actor_id uuid) RETURNS uuid` | 戻しの出来事（`cancel_reverted`）の id。`service_role` だけ | 失敗した返金（`failed`）に結ばれた発送前の取り消しを戻す。呼ぶのは会計の計画3 |
+
+| 項目 | 内容 |
+| --- | --- |
+| 新しい返金の道 | `order_refunds.source` = `unit_hold_release`（前の注文に戻す返金。`return_id` は空、お客様へのメールは出さない）。`order_refunds_source_check` に足した |
+| コア | `private.begin_order_refund_core` は16の引数（末尾に `_unit_event_id uuid`。15の引数の関数は DROP）。出来事が有る時は、行の額を出来事の割り振りにし、位置での取り押さえをせず、返金を作った後に `order_unit_link_refund` を呼ぶ。写しのある注文の発送後の行を返品なしで選ぶ返金は取り押さえない（AC-28） |
+| 断る記号 | `UNIT_PRICING_REQUIRED`（計画が要るのに無い）、`UNIT_PRICING_INVALID`（DETAIL `ub_legacy`・`ub_refund_plan`・`ub_cancel_lines`・`ub_refund_event`・`ub_refund_lines`・`ub_release_plan`・`ub_release_order`・`ub_plan_1〜9`）、`UNIT_PRICING_STALE`（`40001`。計画・前の注文への戻しの版や状態が今と違う）、`UNIT_CANCEL_REVERT_REFUSED`（`22023`。戻せない取り消し）。送り直しは版の確かめより前に前の結果を返す |
+| 末尾の確かめ | `UNIT_BINDING_REFUNDS_MIGRATION_ASSERTION_FAILED`（SQLSTATE `P0001`）。DETAIL は `ubf_schema`・`ubf_functions`・`ubf_acl`・`ubf_allowlist` |

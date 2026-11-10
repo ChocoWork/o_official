@@ -1,5 +1,7 @@
 # 注文管理のシーケンス
 
+> 相談後の返金・発送前の取り消し・前の注文への戻し 確認日: 2026-11-10。末尾の「相談後の返金・注文の返金・発送前の取り消し・前の注文への戻し（FREQ-642 Task 6）」に、1着ずつの出来事で返金を決める流れ、前の注文に戻す返金、店が返金をやめた取り消しの戻しを足した。
+>
 > 受け取りの計画と交換の結び 確認日: 2026-11-10。末尾の「受け取りと返金の結果の結び（FREQ-642 Task 5）」に、受け取りが計画を受けて返金・交換の結び・割引の扱いを1回の取引で書く流れと、返金の error の後のやり直しの流れを足した。
 > 値段の計画の確かめと記録 確認日: 2026-11-10。末尾の「値段の計画の確かめと記録（FREQ-642 Task 4）」に、材料 → 計画 → 版と式の確かめ → 記録 → 取り押さえの流れを足した。
 
@@ -1199,7 +1201,7 @@ sequenceDiagram
 - `releases`（前の注文に戻す計画）は記録しない。呼び出し側が、出来事の後に別の出来事（`hold_release`）として呼ぶ。計画は前の注文（戻す先の注文）の `holds` に当たるので、`version` は出来事の後に、その前の注文の材料から読み直した版に付け替える（対象の注文の版ではない）。`hold_release` の行は前の注文の着を指すだけなので、その着の状態は照合しない。
 - 枠の更新は表の守りが見張る。鍵の列は変わらず、状態は `kept` から `returned_*` へ一度だけ動く。`returned_shop` から `kept` へ戻すのは、店が返金をやめた発送前の取り消しの戻しの道だけ。条件は3つ: その枠の最後の出来事が `pre_shipment_cancel` であること、G の共通鍵を持った取引の中であること、取引の設定 `app.unit_slot_revert` が今の取引の id と同じであること（戻しの道が UPDATE の直前に `select set_config('app.unit_slot_revert', txid_current()::text, true)` を呼ぶ。`on` のような固定の値や、前の取引の設定は通らない）。
 - 返金の結び（`order_unit_link_refund`）は、出来事の `returned` の行のうち部分が同じ着（部分の無い行は `now`）に、返金の取り押さえを付ける。同じ返品の返金なら返品の行の取り押さえを残し、交換の品の返品や別の返品の返金なら元の着の `return_line_id` を外して `refund_id` だけ付ける（H の守りの規則 e・f）。返金の error・やり直しでは枠の状態も割り振りも動かさない。
-- 返品の残り（`order_unit_outstanding`）は、返品の出来事の返す額の和から、結んだ返金（`awaiting_response`・`pending`・`succeeded`・`error`）の商品分（`amount − shipping_amount`）の和を引いた額。0 より少なくならない。
+- 返品の相談の残り（`order_unit_outstanding`）は、返品の出来事の相談の分（`consult_refund`）の和から、相談として結んだ返金（part `consult`。`awaiting_response`・`pending`・`succeeded`・`error`）の商品分（`amount − shipping_amount`）の和を引いた額。0 より少なくならない。今すぐの分を店長が下げても、相談の残りには戻らない（設計書 2-1: 店長の決定は持ち越さない）。
 
 ## 受け取りと返金の結果の結び（FREQ-642 Task 5）
 
@@ -1210,6 +1212,7 @@ sequenceDiagram
     participant S as サーバー（管理画面の受け取り）
     participant R as admin_receive_return（15引数）
     participant A as order_unit_apply_plan
+    participant C as begin_order_refund_core（16引数）
     participant L as order_unit_link_refund
     S->>R: 受け取り・値段の計画（_pricing）・二重防止の番号
     R->>R: 鍵（共通の鍵 → 注文と同じ会員の関わる注文）。二重防止の番号が前に有れば前の結果を返す
@@ -1217,12 +1220,53 @@ sequenceDiagram
     R->>R: 交換の品の行（結ぶ枠を選び、枠の今の値段の和を exchange_paid_amount に）・受け取りの記録
     R->>A: 計画（版・式・上限を確かめて出来事を記録）
     R->>R: 交換の結び・枠の持ち主の付け替え・割引の扱いの記録・受け取りの行
-    R->>R: 返金の記録（awaiting_response）と行（返した着の割り振り）
-    R->>L: 出来事と返金（now）。返した着だけに取り押さえ
+    R->>C: begin_order_refund_core（出来事つき。移行 D）。返金の記録（awaiting_response）と行（返した着の割り振り）
+    C->>L: 出来事と返金（now）。返した着だけに取り押さえ
 ```
 
 - 二重防止の番号の送り直しは、版・計画の確かめより前に探して、前の結果（`replayed=true`）を返す。間に枠の状態や版が変わっていても同じ。
 - 商品の額は計画の `nowRefund`（手数料の率の分は E の中）。`v_fees` は返送料と交換の手数料・送料だけ。相談の分（`consultRefund`）は出来事に残し、後の相談後の返金が `order_unit_outstanding` で払う。店長の額の上限は今と同じ `LEAST(返せる額, 今返す商品の額 + 送料)`。計画の額は注文の返せる額で止める。
 - 交換の品の着ごとに `order_unit_exchange_links` を1行。結ぶ枠は、持ち主がその返品の行の品で、その受け取りで返さず手元にある枠のうち、返品の行の取り押さえ（FREQ-641 の `return_line_id`）が有る枠を先に、次に安い枠、次に注文の行・`unit_index` の順（H の安い順を続ける）。ほかの返金（`refund_id`）が握っている枠は選ばない。結んだ枠の取り押さえ（`return_line_id`）は交換では外さず、その交換の品を返す返金を結ぶ時（`order_unit_link_refund`）に外す。材料は、持ち主が自分の着でない枠（交換に出した枠）の取り押さえを報告せず、返金が握っている枠は別の欄 `claimedRefundId`（`refund_id`）で報告するので、交換に出した枠は計画が選べ、返金が握っている枠は選ばない。交換だけの受け取りは出来事を書かず版が動かないので、枠の持ち主が計画の後に変わっていれば `order_unit_apply_plan` が `UNIT_PRICING_STALE`（`40001`）で断る。枠の持ち主は交換の品の着になり、交換の品をさらに交換した時は `previous_*` が前の持ち主を指す。
-- 返金の記録の行は、返品の行の品ごとに数と割り振りの和。H の安い順の取り押さえ（`begin_order_refund_core`）は使わない。返金の取り押さえは出来事の返した着だけ（交換の品の返品なら元の着に付く）。
+- 返金の記録の行は、返品の行の品ごとに数と割り振りの和。返金の記録は共通の `begin_order_refund_core`（16引数。移行 D）が書く。出来事つきのコアは H の安い順の取り押さえを使わない。返金の取り押さえは出来事の返した着だけ（交換の品の返品なら元の着に付く）。
 - 返金が error から pending / succeeded に直る時（`record_group_g_refund_result`）、出来事に結んだ返金は、結んだ出来事の返した着（部分が同じ物）の取り押さえを付け直す。別の返金が error / failed のまま握っている着は先に外す。付け直せない時は今までどおり支払いの例外を残す。failed は取り押さえを外すだけで、枠の状態は動かさない。
+
+## 相談後の返金・注文の返金・発送前の取り消し・前の注文への戻し（FREQ-642 Task 6）
+
+確認日: 2026-11-10。移行 `20261110135232_unit_binding_refunds.sql`（移行 D）。注文の時の割引の写しがある注文だけの流れ。写しの無い注文は今までのまま（計画を渡すと `UNIT_PRICING_INVALID`、DETAIL `ub_legacy`）。
+
+```mermaid
+sequenceDiagram
+    participant S as サーバー
+    participant B as begin_order_refund（14引数）
+    participant A as order_unit_apply_plan
+    participant C as begin_order_refund_core（16引数）
+    participant L as order_unit_link_refund
+    participant X as order_unit_apply_releases
+    S->>B: 発送前の行か取り消し・値段の計画（pre_shipment_cancel）・二重防止の番号
+    B->>B: 鍵（共通の鍵 → 注文と同じ会員の関わる注文）。二重防止の番号が前に有れば前の結果を返す
+    B->>B: 計画の返す着の数が、頼んだ発送前の行（取り消しなら未発送の全部）と合うか確かめる
+    B->>A: 計画（版・式・上限を確かめて出来事を記録。枠は returned_shop）
+    B->>C: 出来事つきで返金を作る（行の額は出来事の割り振り）
+    C->>L: 出来事と返金（now）。取り消した着だけに取り押さえ
+    B->>X: 前の注文に戻す計画（releases。普通は空）
+    X->>C: 前の注文に unit_hold_release の返金（出来事ごとに1件）
+```
+
+- 計画が要る時: 写しのある注文の `order_cancel`、または `admin` で発送前の行（`before_shipment=true`）がある返金。要らない時: 発送後の行だけの返金、行の無い返金（お詫び）。要る時に計画が無ければ `UNIT_PRICING_REQUIRED`、要らない時に計画があれば `UNIT_PRICING_INVALID`（DETAIL `ub_refund_plan`）。自動の返金（`auto_*`）は今までの安い順の取り押さえのまま。
+- 発送後の行を返品なしで選ぶ返金と行の無い返金は、枠も E も動かさず、着の取り押さえも付けない（設計書 2-3・AC-28）。上限は注文の返せる額。エラーの後の遅い成功（`record_group_g_refund_result`）でも着を取らないので、支払いの例外を作らない。
+- 返金の記録は、写しのある注文でも共通の `begin_order_refund_core` が書く（受け取りも同じ）。出来事つきのコアは、行の額を出来事の割り振り（返した着の持ち主の行ごと）にし、頼んだ行の数と出来事の返した着の数が合わなければ `UNIT_PRICING_INVALID`（DETAIL `ub_refund_lines`）で断る。取り押さえは返金を作った後に `order_unit_link_refund` が付ける。
+- 相談後の返金（`admin_refund_return`、8引数）: 標準の額は `order_unit_outstanding`（相談の分だけ）。コアは、その返品の相談の分を持つ出来事のうち、まだ相談の返金が覆っていない物を全部、part `consult` で結ぶ。`_pricing` は状態を変えないので、前の注文に戻す計画（`{orderId, version, releases}`）がある時だけ渡す。
+- まだ発送していない交換の品の行を取り消す時は、交換に出した出荷済みの元の枠（持ち主がその交換の品）を `returned_shop` にする。割り振りは元の枠に付き（`shipped=true`）、交換の結びは残る。
+
+前の注文への戻し（`order_unit_apply_releases` ＋ `unit_hold_release`）:
+
+- 後の注文の返品の計画に `releases` があれば、受け取り・発送前の取り消し・相談後の返金の中で、前の注文ごとに、同じ取引で `hold_release` の出来事を記録し、前の注文に `unit_hold_release` の返金を作って出来事に `release` として結ぶ。返金の番号は `release_refund_ids` に返す。
+- 鍵は、後の注文と同じ会員の関わる注文を全部、共通の鍵の下の `lock_group_g_inventory` の1回の呼び出しで取る。計画と各 `releases` の `version` は、呼び出しが読んだ後の注文の版と同じでなければならず、違えば `UNIT_PRICING_STALE`（`40001`）。前の注文の前の E・E の最高も計画と同じか確かめる。
+- 出来事を記録する時の版は、前の注文の今の版を読み直して付け替える（後の注文の出来事が前の注文の版も動かすため）。二重防止の番号は、元の番号と前の注文の id から決めた番号（`md5('ub_release:' || 番号 || ':' || 前の注文)`）。送り直しは同じ返金の番号を返す。
+- 返す額は戻した分を前の注文の返せる額で止めた額。0 円なら出来事だけを書く。
+
+店が返金をやめた発送前の取り消しの戻し（`order_unit_revert_cancel(_refund_id, _actor_id)`）:
+
+- 条件: 返金が `failed`（Stripe の `canceled` を含む）で、発送前の取り消しの出来事に `now` で結ばれていること。その出来事の後に同じ注文の出来事が無く、手数料も holds も無く、変えた枠が今もその出来事の状態と値段のままであること。合わなければ `UNIT_CANCEL_REVERT_REFUSED`（DETAIL `ubrr_refund`・`ubrr_event`・`ubrr_status`・`ubrr_later`・`ubrr_fee`・`ubrr_holds`・`ubrr_slot`・`ubrr_identity`）。同じ返金でもう一度呼ぶと、前に書いた出来事を返す。
+- 書く物: `cancel_reverted` の出来事（`reverts_event_id` は取り消した出来事。E は取り消す前の E、返す額は 0）、取り消した出来事の行を逆にした行（状態を `kept` へ、値段を前の値段へ、割り振り・直しの符号を逆に）。枠は `app.unit_slot_revert`（今の取引の id）を入れ、G の共通鍵を持った取引の中で `kept` に戻す。取り消した出来事と戻しの出来事は、枠ごとの割り振りの累計・E の最高・手数料の累計・前の注文の着数のどれにも数えない（取り消した出来事と、戻しの出来事の行の両方を除く）。
+- 呼ぶのは会計の計画3（「店が返金をやめた」の決定）。この作業は窓口を作らない。

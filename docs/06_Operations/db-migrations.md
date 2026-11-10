@@ -1,5 +1,7 @@
 # DB マイグレーション運用
 
+> 交換の印 移行 D 確認日: 2026-11-10。移行 `20261110135232_unit_binding_refunds.sql`（相談後の返金・注文の返金・発送前の取り消し・前の注文への戻し・取り消しの戻し）を末尾の「交換の印と1着ずつの記録の移行 D（FREQ-642 Task 6、2026-11-10）」に追記した。手元の DB で確かめた。本番は未適用。
+>
 > 交換の印 移行 C 確認日: 2026-11-10。移行 `20261110120611_unit_binding_receive.sql`（受け取りと返金の結果の結び・交換の結び・書き手の一覧の署名の入れ替え）を末尾の「交換の印と1着ずつの記録の移行 C（FREQ-642 Task 5、2026-11-10）」に追記した。手元の DB で確かめた。本番は未適用。
 
 > 交換の印 移行 B 確認日: 2026-11-10。移行 `20261110104605_unit_binding_core.sql`（値段の計画の材料・確かめと記録・返金の結び・取り押さえの重ね定義）を末尾の「交換の印と1着ずつの記録の移行 B（FREQ-642 Task 4、2026-11-10）」に追記した。手元の DB で確かめた。本番は未適用。
@@ -1495,7 +1497,7 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 
 ## 交換の印と1着ずつの記録の移行 B（FREQ-642 Task 4、2026-11-10）
 
-確認日: 2026-11-10。移行は [20261110104605_unit_binding_core.sql](../../supabase/migrations/20261110104605_unit_binding_core.sql)。サイズ 45939 bytes、MD5 `d1a280b5f7a53e721cd6ceb6188c0c81`（移行 C の修正1で、材料の `claimedReturnLineId` と `order_unit_apply_plan` の持ち主の食い違いの断り方を直した。下の「材料の取り押さえ」「持ち主の食い違い」）。ASCII・BOM なし・LF。手元の DB（`npx supabase db reset`）で当てて確かめた。**本番は未適用**（移行 A と一緒に、当てる前にオーナーの許可を取る）。適用済みの移行は1字も変えていない。版は移行 A（`20261110090325`）の後で、会計のセッションへ知らせる版は A の `20261110090325` とこの `20261110104605`。
+確認日: 2026-11-10。移行は [20261110104605_unit_binding_core.sql](../../supabase/migrations/20261110104605_unit_binding_core.sql)。サイズ 46293 bytes、MD5 `c59211449dd260da4b8463d93847b0aa`（移行 D の作業で、枠の守りが返した枠の最後の出来事も固定し、割り振りの累計が `cancel_reverted` の出来事を数えず、発送前の取り消しがまだ発送していない交換の品の行の出荷済みの元の枠を返せ、`order_unit_outstanding` が相談の分だけになった。移行 C の修正1で、材料の `claimedReturnLineId` と `order_unit_apply_plan` の持ち主の食い違いの断り方を直した。下の「材料の取り押さえ」「持ち主の食い違い」）。ASCII・BOM なし・LF。手元の DB（`npx supabase db reset`）で当てて確かめた。**本番は未適用**（移行 A と一緒に、当てる前にオーナーの許可を取る）。適用済みの移行は1字も変えていない。版は移行 A（`20261110090325`）の後で、会計のセッションへ知らせる版は A の `20261110090325` とこの `20261110104605`。
 
 | 項目 | 内容 |
 | --- | --- |
@@ -1514,7 +1516,7 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 
 ## 交換の印と1着ずつの記録の移行 C（FREQ-642 Task 5、2026-11-10）
 
-確認日: 2026-11-10。移行は [20261110120611_unit_binding_receive.sql](../../supabase/migrations/20261110120611_unit_binding_receive.sql)。サイズ 83267 bytes、MD5 `6201215852dab22ec165a831f1e45be8`。ASCII・BOM なし・LF。手元の DB（`npx supabase db reset`）で当てて確かめた。**本番は未適用**（移行 A・B と一緒に、当てる前にオーナーの許可を取る）。適用済みの移行は1字も変えていない。会計のセッションへ知らせる版は A の `20261110090325`・B の `20261110104605`・この `20261110120611`。
+確認日: 2026-11-10。移行は [20261110120611_unit_binding_receive.sql](../../supabase/migrations/20261110120611_unit_binding_receive.sql)。サイズ 83767 bytes、MD5 `f205dddad1584d004e43ae358e7351ce`（移行 D の作業で、`record_group_g_refund_result` が返品なしの発送後の返金の遅い成功で着を取り直さないようにした）。ASCII・BOM なし・LF。手元の DB（`npx supabase db reset`）で当てて確かめた。**本番は未適用**（移行 A・B と一緒に、当てる前にオーナーの許可を取る）。適用済みの移行は1字も変えていない。会計のセッションへ知らせる版は A の `20261110090325`・B の `20261110104605`・この `20261110120611`。
 
 | 項目 | 内容 |
 | --- | --- |
@@ -1529,8 +1531,30 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 | 割引の扱い | 計画の `treatments` を `order_return_line_treatments` に返品の行ごとに1行（受け取りの id と店長の id） |
 | 返金 | 返金の記録（`order_refunds` source `return`）と行（返品の行の品ごとに数と返した着の割り振りの和）を受け取りが書く。H の安い順の取り押さえ（`begin_order_refund_core`）は写しのある注文では使わない。返した着の取り押さえは `order_unit_link_refund(出来事, 返金, 'now')`。`adjustment_amount` は `額 − (割り振りの和 + 送料)` |
 | 返金の結果 | `record_group_g_refund_result`: 出来事に結んだ返金が error から pending / succeeded に直る時、結んだ出来事の返した着（部分が同じ物）の取り押さえを `order_unit_link_refund` で付け直す。別の返金が error / failed のまま握っている着は先に外す。付け直せなければ今までどおり支払いの例外（`group_h_refund_unit_mismatch`）。failed は取り押さえを外すだけで枠の状態は変えない。出来事に結んでいない返金は今までのまま |
-| 未対応（Task 6） | `_pricing.releases`（前の注文に戻す返金）はまだ書かず、`release_refund_ids` は常に空の列。相談後の返金・注文の返金・発送前の取り消し・取り消しの戻しも Task 6 |
+| 移行 D に移したこと | `_pricing.releases`（前の注文に戻す返金）・返金の記録を共通のコアで書くこと・相談後の返金・注文の返金・発送前の取り消し・取り消しの戻しは移行 D（次の節）。この移行の受け取りの本文は移行 D が置き換える |
 | 末尾の確かめ | `UNIT_BINDING_RECEIVE_MIGRATION_ASSERTION_FAILED`（SQLSTATE `P0001`）。DETAIL は `ubr_functions`（本文の MD5・所有者・設定・言語・名前ごとの本数・14の引数が消えたこと）・`ubr_acl`（関数の権限）・`ubr_allowlist`（書き手の一覧が77本のまま、受け取りの入口が新しい署名、それ以外の一覧のOIDが変わらないこと） |
 | 古い試験への影響 | 14の引数の署名を持つ時点の一覧（G2〜H の一覧）は、`replaceAllowlistSql` が前に付ける取引の中だけの14の引数の入口（`LEGACY_RECEIVE_STUB_SQL`）で型に通る。H4・H5・H7・RR・RD の末尾の確かめを再生する試験は、取引の中で14の引数の入口と H4 の一覧の関数（本文の指紋が同じ物）を立ててから流す（`withH5ReturnBaseline`・`installReceiveEra`・`restoreH4AllowlistSql`）。今の DB の一覧は `CURRENT_ALLOWLIST`（`UB_ALLOWLIST`）。写しのある注文（H の受け付けで作った注文）の受け取りの試験は、本物の計画を付けて呼ぶ（`ubReceive`。出荷済みの印は会計の発送の事実 `seedFactSlip` から） |
 | 戻し方 | 本番に当てた後は、14の引数の入口・RD の本文の `admin_receive_return`・RR の `record_group_g_refund_result`・H4 の一覧の関数を戻す新しい移行を足す（適用済みの移行は直さない）。出来事・結び・割引の扱いの行は追記だけの表なので消さない |
 | 配備 | **移行 A・B・C と Task 6・7 の入口の変更を一緒に本番へ当てる。** C だけを当てると、サーバー（`return-store.ts`）が計画を渡さないので、写しのある注文の受け取りが `UNIT_PRICING_REQUIRED` で止まる |
+
+## 交換の印と1着ずつの記録の移行 D（FREQ-642 Task 6、2026-11-10）
+
+確認日: 2026-11-10。移行は [20261110135232_unit_binding_refunds.sql](../../supabase/migrations/20261110135232_unit_binding_refunds.sql)。サイズ 130785 bytes、MD5 `ea38b4656d8eeb65b498b33ee909cf7a`。ASCII・BOM なし・LF。手元の DB（`npx supabase db reset`）で当てて確かめた。**本番は未適用**（移行 A・B・C と一緒に、当てる前にオーナーの許可を取る）。適用済みの移行は1字も変えていない（A・B・C は本番に未適用なので、この作業で B・C を直接直し、上の MD5 を更新した）。会計のセッションへ知らせる版は A の `20261110090325`・B の `20261110104605`・C の `20261110120611`・この `20261110135232`。
+
+| 項目 | 内容 |
+| --- | --- |
+| 目的 | 相談後の返金・注文の返金・発送前の取り消しを1着ずつの出来事で決め、前の注文に戻す返金と、店が返金をやめた取り消しの戻しを足す。返金の記録を作る道を共通のコア1本にする（会計の計画3がコアに掛ける）。設計書 2・4・5・7章 |
+| 列・制約 | `order_refunds_source_check` に `unit_hold_release` を足す |
+| 置き換えた関数（署名が変わる） | `private.begin_order_refund_core`（15→16の引数。末尾に `_unit_event_id uuid`。既定値なし）、`private.begin_order_refund` と `public.begin_order_refund`（13→14の引数。末尾に `_pricing jsonb DEFAULT NULL`。答えに `release_refund_ids uuid[]`）、`private.admin_refund_return` と `public.admin_refund_return`（7→8の引数。末尾に `_pricing jsonb DEFAULT NULL`。答えに `release_refund_ids uuid[]`）。古い署名は DROP |
+| 置き換えた関数（署名は同じ） | `private.admin_receive_return`（15の引数。返金の記録を自分では書かず、出来事つきでコアを呼び、計画の `releases` を前の注文の返金にする）、`private.group_g_writer_allowlist`（3本の署名を入れ替え。77本のまま） |
+| 足した関数 | `private.order_unit_apply_releases(jsonb,text,uuid,uuid,uuid)`（前の注文に戻す計画を確かめて `hold_release` の出来事を書く。誰にも実行を渡さない）、`private.order_unit_release_refund_ids(uuid,uuid)`（二重防止の送り直しで返す戻しの返金の番号）、`private.order_unit_revert_cancel(uuid,uuid)` と `public.order_unit_revert_cancel(uuid,uuid)`（店が返金をやめた発送前の取り消しの戻し。`service_role` だけ） |
+| コア | 出来事が有る時は、返金の行の額を出来事の割り振り（返した着の持ち主の行ごと）にし、位置での取り押さえをせず、返金を作った後に `order_unit_link_refund` を呼ぶ（part は、前の注文への戻しなら `release`、受け取りの `now`、受け取りの記録を持たない返品の返金なら `consult`）。相談の返金は、その返品の相談の分が残る出来事を全部結ぶ。頼んだ行と出来事の返した着の数が合わなければ `ub_refund_lines`。写しのある注文の `admin` の発送後の行（返品なし）は取り押さえず、額は返した数の後の安い着の額。自動の源（`auto_*`）と写しの無い注文は今までの安い順の取り押さえのまま |
+| 入口の計画 | `begin_order_refund`: 写しのある注文で `order_cancel`、または `admin` で発送前の行がある時だけ `pre_shipment_cancel` の計画が要る（無ければ `UNIT_PRICING_REQUIRED`、要らないのに有れば `ub_refund_plan`、写しの無い注文に有れば `ub_legacy`）。計画の返す着の数と頼んだ発送前の行の数が合うこと（`ub_cancel_lines`）。二重防止の送り直しは計画・版を確かめる前に前の結果を返す。鍵は後の注文と同じ会員の関わる注文も1回の `lock_group_g_inventory` に入れ、変わっていれば `UNIT_PRICING_STALE`。`admin_refund_return`: `_pricing` は `{orderId, version, releases}` で、状態は変えず前の注文に戻す計画だけを運ぶ（版が今と違えば STALE）。標準の額は `order_unit_outstanding` |
+| 前の注文への戻し | 計画と各 `releases` の版が、呼び出しが先に読んだ注文の版と同じでなければ STALE。前の注文の前の E・E の最高も合わせる。出来事の版は前の注文の今の版を読み直して付け替える。戻しの出来事ごとに `unit_hold_release` の返金（額は戻した分を前の注文の返せる額で止めた額。0 円なら出来事だけ）を共通のコアで作る。二重防止の番号は `md5('ub_release:' + 元の番号 + ':' + 前の注文)` |
+| 取り消しの戻し | 失敗した返金（`failed`）に結ばれた発送前の取り消しの出来事の後に、同じ注文の出来事が無く、手数料も holds も無く、変えた枠が今もその出来事のままなら、`cancel_reverted` の出来事を書き、枠を `kept` へ・値段を前の値段へ戻す（`app.unit_slot_revert` に今の取引の id を入れ、共通の鍵を持った取引で）。行の割り振り・直しは符号を逆にする。E は取り消す前の E（式を確かめる）。同じ返金でもう一度呼ぶと同じ出来事を返す。合わなければ `UNIT_CANCEL_REVERT_REFUSED`（DETAIL `ubrr_*`） |
+| 移行 B・C への直接の直し | 枠の守り: 返した枠の最後の出来事も固定（戻しの道だけ例外）。割り振りの累計（`order_unit_order_state`・`order_unit_plan_line_facts`）は取り消された出来事と `cancel_reverted` の出来事を数えない。`order_unit_apply_plan`: 発送前の取り消しは、持ち主が交換の品の行の出荷済みの枠も返せる（まだ発送していない交換の品の取り消し）。`order_unit_outstanding`: 相談の分（`consult_refund`）から相談として結んだ返金を引く。`record_group_g_refund_result`: 返品なしの発送後の返金の遅い成功で着を取り直さない |
+| 断る記号 | `UNIT_PRICING_REQUIRED`・`UNIT_PRICING_INVALID`（DETAIL `ub_legacy`・`ub_refund_plan`・`ub_cancel_lines`・`ub_refund_event`・`ub_refund_lines`・`ub_release_plan`・`ub_release_order`・`ub_plan_1〜9`）・`UNIT_PRICING_STALE`（`40001`）・`UNIT_CANCEL_REVERT_REFUSED`（`22023`） |
+| 末尾の確かめ | `UNIT_BINDING_REFUNDS_MIGRATION_ASSERTION_FAILED`（SQLSTATE `P0001`）。DETAIL は `ubf_schema`・`ubf_functions`（本文の MD5・所有者・設定・言語・名前ごとの本数・古い署名が消えたこと）・`ubf_acl`・`ubf_allowlist`（77本のまま、変わったのは3本の署名だけ） |
+| 古い試験への影響 | 写しのある注文の発送前の行・注文の取り消しは計画つきで呼ぶ（`hBegin` の `before` は本物の計画を付ける）。返品なしの発送後の返金は着を取り押さえないので、取り押さえを数える旧い試験は `[null, null]` に直した。H5・RR・RD の時点の確かめを再生する試験の道具（`withH5ReturnBaseline`・`installReceiveEra`）は、さらに `installRefundEra` で15・13・7の引数の返金の入口を取引の中だけ戻す。一覧の道具（`replaceAllowlistSql`・`restoreH4AllowlistSql`）は、今は無い旧い署名の代わりの関数を取引の中だけ立てる。今の DB の一覧は `CURRENT_ALLOWLIST`（`UB_REFUNDS_ALLOWLIST`） |
+| 戻し方 | 本番に当てた後は、古い署名の入口とコアを戻す新しい移行を足す（適用済みの移行は直さない）。出来事・結びは追記だけの表なので消さない |
+| 配備 | **移行 A・B・C・D と Task 7 のサーバーの入口の変更を一緒に本番へ当てる。** D だけ・サーバーだけでは、写しのある注文の発送前の取り消し・注文の取り消しが `UNIT_PRICING_REQUIRED` で止まる |
