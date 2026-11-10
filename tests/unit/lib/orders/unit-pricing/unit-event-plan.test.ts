@@ -356,3 +356,21 @@ test('DD-ADMIN-021: 修正3 手数料を引いた後の E が0円より少なく
   expect(plan.holds).toEqual([{ heldOrderId: 'order-1', laterOrderId: 'order-2', itemId: JACKET, amount: 2950 }]);
   expect(plan.entitlement).toBe(0);
 });
+
+describe('DD-ADMIN-021: 修正1b 手数料の累計を過去の返品の率で正確に出し直す', () => {
+  const r = (id: string, side: 'customer' | 'shop', feePercent: number) =>
+    ({ returnLineId: id, holderOrderItemId: 'oi-1', quantity: 1, side, part: 'now' as const, feePercent });
+
+  test('DD-ADMIN-021: 過去の 10% と 20% の返品の後に不良で増えた分を、過去の率で掛ける（3回に分けても1回でも同じ）', () => {
+    const m0 = materialsOf(buildOrder({
+      orderId: 'order-4', lines: [{ orderItemId: 'oi-1', itemId: JACKET, unitPrice: 20000, quantity: 3 }],
+      definitions: [repeatDefinition()],
+    }));
+    const cs = [receive([r('rl-a', 'customer', 10)]), receive([r('rl-b', 'customer', 20)]), receive([r('rl-c', 'shop', 0)])];
+    const plans = sequence(m0, 3, i => cs[i], step);
+    const oneReceipt = planUnitEvent(m0, receive([r('rl-a', 'customer', 10), r('rl-b', 'customer', 20), r('rl-c', 'shop', 0)]));
+    // 3回に分けた手数料の合計は、1回の受け取りで返品の行の id の順に足した手数料と同じ
+    expect(plans.reduce((s, p) => s + p.feeAmount, 0)).toBe(oneReceipt.feeAmount);
+    expect(plans.reduce((s, p) => s + p.standardRefund, 0)).toBe(oneReceipt.standardRefund);
+  });
+});

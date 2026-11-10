@@ -24,6 +24,8 @@ export interface UnitSlot {
   holderUnitIndex: number;
   shipped: boolean;
   returnedCustomerAt: string | null;
+  /** returned_customer の枠を返した返品の手数料の率（order_returns.restocking_fee_percent）。それ以外は null */
+  returnedFeePercent: number | null;
   claimedReturnLineId: string | null;
 }
 

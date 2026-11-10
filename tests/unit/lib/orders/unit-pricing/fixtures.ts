@@ -43,7 +43,7 @@ export function buildOrder(spec: OrderSpec): OrderPricingState {
     return {
       orderItemId: l.orderItemId, unitIndex, itemId: l.itemId, paidAmount: paid, allocatedAmount: 0, currentPrice: paid,
       state: 'kept' as const, holderOrderItemId: l.orderItemId, holderUnitIndex: unitIndex,
-      shipped: spec.shipped ?? true, returnedCustomerAt: null, claimedReturnLineId: null,
+      shipped: spec.shipped ?? true, returnedCustomerAt: null, returnedFeePercent: null, claimedReturnLineId: null,
     };
   }));
   return {
@@ -142,7 +142,8 @@ export function receive(returns: UnitReturnInput[], excludedSlots: SlotKey[] = [
 }
 
 /** 計画を確定した後の材料（DB が記録した後の状態）。状態・値段・割り振り・E・手数料・holds を更新する */
-export function applyPlan(materials: UnitPricingMaterials, plan: UnitPricingPlan, now = '2026-11-20T00:00:00Z'): UnitPricingMaterials {
+export function applyPlan(materials: UnitPricingMaterials, plan: UnitPricingPlan, now = '2026-11-20T00:00:00Z',
+  feeByReturnLine: Readonly<Record<string, number>> = {}): UnitPricingMaterials {
   const seqBase = Math.max(0, ...[materials.target, ...materials.related].flatMap(o => o.holds.map(h => h.seq)));
   let seq = seqBase;
   const nextHolds = (rows: UnitPricingPlan['holds']): UnitHold[] => rows.map(r => ({ ...r, seq: ++seq }));
@@ -154,6 +155,7 @@ export function applyPlan(materials: UnitPricingMaterials, plan: UnitPricingPlan
       return {
         ...s, state: line.stateAfter, currentPrice: line.priceAfter, allocatedAmount: s.allocatedAmount + line.allocation,
         returnedCustomerAt: line.stateAfter === 'returned_customer' ? now : s.returnedCustomerAt,
+        returnedFeePercent: line.stateAfter === 'returned_customer' ? (feeByReturnLine[line.returnLineId ?? ''] ?? 0) : s.returnedFeePercent,
       };
     }),
     entitlementPrevious: p.entitlement,
@@ -175,9 +177,12 @@ export function sequence(materials: UnitPricingMaterials, count: number, changeO
   const plans: UnitPricingPlan[] = [];
   let current = materials;
   for (let i = 0; i < count; i++) {
-    const p = plan(current, changeOf(i));
+    const change = changeOf(i);
+    const p = plan(current, change);
     plans.push(p);
-    current = applyPlan(current, p);
+    const fees: Record<string, number> = {};
+    if (change.kind === 'return_receive') for (const r of change.returns) if (r.returnLineId) fees[r.returnLineId] = r.feePercent;
+    current = applyPlan(current, p, `2026-11-${String(20 + i).padStart(2, '0')}T00:00:00Z`, fees);
   }
   return plans;
 }
