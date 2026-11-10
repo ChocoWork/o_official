@@ -1,5 +1,7 @@
 # ER 図（現行リポジトリの実装）
 
+> 交換の印と1着ずつの記録 確認日: 2026-11-10。新しい表 8 つ（`order_discount_snapshots`・`order_unit_slots`・`order_unit_exchange_links`・`order_unit_events`・`order_unit_event_lines`・`order_unit_holds`・`order_unit_event_refunds`・`order_return_line_treatments`）と関数 2 本の取り替えを、末尾の「交換の印と1着ずつの記録の表（FREQ-642 Task 2）」に追記した。移行 `20261110090325` は手元の DB で確かめた。本番は未適用。
+>
 > 会計の計画 2（前受金・出荷の日の売上・Stripe）確認日: 2026-11-09。新しい表 12 と、G・会計の既存の物への足し物（索引・連番・CHECK・関数 2 本）を、末尾の「会計の前受金・出荷・Stripe の表（計画 2 / FREQ-562〜574）」に追記した。外部キーは 11 本（G・H の `shipment_slips`・`order_items`・`order_line_unit_amounts` と会計の `accounting_journal_entries`・`accounting_accounts` へ）。移行 9 本（`20261108150000`〜`20261108230000`、S6〜S14）は手元の DB で確かめた。本番は未適用。旧 `admin_kpi_monthly_records` の食い違い（旧 `migrations/063` にだけ定義があった）は、S13 が `supabase/migrations/` に定義を持つことで解消した（6.1 の表を直した）。
 >
 > 会計の計画 1（仕訳の土台と期間）確認日: 2026-11-08。新しい表 9 つと `admin_finance_receipts` の列 2 つを、末尾の「会計の仕訳の土台と期間（計画 1 / FREQ-553〜561）」に追記した。移行 6 本（`20261107130000`〜`20261107130500`）は手元の DB で確かめた。本番は未適用。旧 `admin_kpi_monthly_records` との食い違いは計画 2 で扱う（この文書には書かない）。
@@ -2402,3 +2404,22 @@ erDiagram
 | 仕訳の印（`dedupe_key`） | `payment_confirmed:<payment intent>`、`shipment_confirmed:<発送票の番号>`、`shipment_redated:<日付の履歴の行>`、`stripe:fee:<取引>`、`dispute_event:<dispute>:<段>:<参照>`（段は `withdrawn`・`confirmed`・`reversal`・`assigned`）など。同じ印の内容が違うと 409 |
 
 G・H の表（`shipment_slips`・`order_items`・`order_line_unit_amounts`）へ外部キーを張ったため、G・H の既存の試験の TRUNCATE などの期待を直した（[db-migrations.md](../../06_Operations/db-migrations.md) の「G・H の試験に足した変更」）。G・H の表・列・制約は変えていない。
+
+## 交換の印と1着ずつの記録の表（FREQ-642 Task 2）
+
+確認日: 2026-11-10。移行 [20261110090325_unit_binding_schema.sql](../../../supabase/migrations/20261110090325_unit_binding_schema.sql) が public の表を 8 つ足す。手元の DB で確かめた。本番は未適用。設計は [交換の印の設計書](../../superpowers/specs/2026-11-08-exchange-unit-binding-design.md) の 2-2・4-1〜4-4。8 つとも RLS を有効にし、制限つきの方針「deny direct client access」を付け、表の権限を外して `service_role` に SELECT だけを渡す。書くのは private の関数だけ。`order_line_unit_amounts` の列・主キー・守りは変えていない。
+
+| 表 | 主キー | 中身 |
+| --- | --- | --- |
+| `order_discount_snapshots` | `(order_id)` | H の注文の注文の時の割引の写し。`engine_version`・`definitions`（額が付いた割引の定義の配列）・`codes`（使った割引コード）・`facts`（下書きの `priorUnitsByItem`・`buyer`・`at`・`hasPreviousOrder`・`hasFirstOrderReservation`・`usage`）・`lines`（`lineKey`・`orderItemId`・`itemId`・`unitPrice`・`quantity`）。追記だけ |
+| `order_unit_slots` | `(order_item_id, unit_index)` | 1着ごとの枠。`state`（`kept`・`returned_customer`・`returned_shop`）・`current_price`（初めは `paid_amount`）・持ち主（`holder_order_item_id`・`holder_unit_index`。初めは自分）・`last_event_id`。注文の行の着ごとに `order_line_unit_amounts` へ RESTRICT で結ぶ。唯一、状態を書き換える表で、行は消せない（DELETE・TRUNCATE は `GROUP_H_IMMUTABLE`） |
+| `order_unit_exchange_links` | `(exchange_order_item_id, exchange_unit_index)` | 交換の品の着から元の枠（`slot_*`）への結び。さらに交換した時は前の交換の品の着（`previous_*`）。追記だけ |
+| `order_unit_events` | `(id)`、`seq` は一意の連番 | 状態を変えた出来事（`return_receive`・`pre_shipment_cancel`・`cancel_reverted`・`hold_release`）と、その時の E・手数料・差し引いた合計・標準の返金（今すぐ `now_refund` と相談 `consult_refund` の和に一致）。`reverts_event_id` は一意。追記だけ |
+| `order_unit_event_lines` | `(id)` | 出来事の着ごとの行（`returned`・`kept`・`hold`）。状態と値段の前後・割り振り・直し・今すぐ／相談の別・発送済みかどうか。追記だけ |
+| `order_unit_holds` | `(id)` | 前の注文から差し引いた額（正）と戻した額（負）。どの出来事で、どの前の注文と後の注文か。追記だけ |
+| `order_unit_event_refunds` | `(event_id, refund_id)` | 出来事と返金（`order_refunds`）のつなぎ。`part` は `now`・`consult`・`release`。追記だけ |
+| `order_return_line_treatments` | `(id)` | 返品の行ごとの割引の扱い（`shop`・`customer`）の履歴。最後の行が今の扱い。誰がいつ直したかを持つ。追記だけ |
+
+足した外部キーは RESTRICT だけで、`orders`・`order_items`・`order_returns`・`order_return_receipts`・`order_return_lines`・`order_refunds`・`order_line_unit_amounts` と、この 8 表の間（枠 → 出来事、交換の結び → 枠、出来事の行 → 枠・出来事、差し引き → 出来事、出来事と返金のつなぎ → 出来事・返金）。`item_id` の型は `order_items.item_id` に合わせて `bigint`。出来事の金額の列は `NOT NULL DEFAULT 0`。`actor_id` に外部キーは付けない。
+
+足した連番は `public.order_unit_events_seq_seq`（権限はすべて外した）。関数の本文は 2 本取り替えた: `private.group_h_copy_order_discounts`（注文を受けた時に、写し 1 行と、着ごとの枠を足す）と `private.get_checkout_discount_context`（会員の前の注文の着数を、枠のある注文は `state = 'kept'` の枠の数、枠の無い古い注文は今までの式で数える）。理由ごとの設定は、`defective`・`wrong_item` の `resolutions` を `exchange_only` に直した。

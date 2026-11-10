@@ -45,10 +45,10 @@ const NEW_TABLES = [
   'shop_return_reason_settings',
 ];
 
-/** 設計書 8-3 の最初の値。理由は決まった順（TS の RETURN_REASONS と同じ） */
+/** 設計書 8-3 の最初の値（初期不良と誤送のご希望は、交換の印の移行 A（20261110090325）で交換だけに直った）。理由は決まった順（TS の RETURN_REASONS と同じ） */
 const INITIAL_REASON_SETTINGS = [
-  { reason: 'defective', shown: true, resolutions: 'refund_and_exchange', out_of_stock_exchange: 'make', photo: 'required', photo_instructions: '傷や不具合の場所がわかる写真をお送りください', shipping_payer: 'shop' },
-  { reason: 'wrong_item', shown: true, resolutions: 'refund_and_exchange', out_of_stock_exchange: 'make', photo: 'required', photo_instructions: '傷や不具合の場所がわかる写真をお送りください', shipping_payer: 'shop' },
+  { reason: 'defective', shown: true, resolutions: 'exchange_only', out_of_stock_exchange: 'make', photo: 'required', photo_instructions: '傷や不具合の場所がわかる写真をお送りください', shipping_payer: 'shop' },
+  { reason: 'wrong_item', shown: true, resolutions: 'exchange_only', out_of_stock_exchange: 'make', photo: 'required', photo_instructions: '傷や不具合の場所がわかる写真をお送りください', shipping_payer: 'shop' },
   { reason: 'size_too_small', shown: true, resolutions: 'exchange_only', out_of_stock_exchange: 'decline', photo: 'optional', photo_instructions: 'タグの付いた状態がわかる写真をお送りください', shipping_payer: 'customer' },
   { reason: 'size_too_large', shown: true, resolutions: 'exchange_only', out_of_stock_exchange: 'decline', photo: 'optional', photo_instructions: 'タグの付いた状態がわかる写真をお送りください', shipping_payer: 'customer' },
   { reason: 'color', shown: false, resolutions: 'refund_and_exchange', out_of_stock_exchange: 'decline', photo: 'optional', photo_instructions: '', shipping_payer: 'customer' },

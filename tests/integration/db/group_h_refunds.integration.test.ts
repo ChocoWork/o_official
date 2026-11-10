@@ -85,7 +85,10 @@ describeLocalDb('H5 refunds / returns (controller only)', db => {
     await db().query("select * from public.mark_order_refund_error($1,'stripe_rejected',false)", [a.refund_id]);
     expect(await prior()).toMatchObject({ [items[0].item_id]: 1, [items[1].item_id]: 1 });
     await hResult(db(), a.refund_id, 'pending'); expect(await prior()).toMatchObject({ [items[0].item_id]: 1 });
-    await hResult(db(), a.refund_id, 'succeeded'); expect((await prior())[String(items[0].item_id)] ?? 0).toBe(0);
+    await hResult(db(), a.refund_id, 'succeeded');
+    // 移行 A（FREQ-642）から、枠のある注文の前の注文の着数は手元にある（kept）枠の数。発送後の品を返品なしで選ぶ返金は着の状態を変えない
+    // （設計書 2-3）ので、成功した返金でも 1 のまま。発送前の取り消しの返金で枠を動かすのは、後の作業（設計書 4-1・Task 6）。
+    expect((await prior())[String(items[0].item_id)]).toBe(1);
     expect((await prior())[String(items[1].item_id)]).toBe(1);
     expect((await hClaims(db(), items[1].id))[0].paid_amount).toBe(17000);
     expect((await db().query('select state from public.discount_redemptions where order_id=$1', [order.order_id])).rows).toEqual([{ state: 'confirmed' }]);

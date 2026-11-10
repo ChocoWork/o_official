@@ -509,7 +509,7 @@ describeLocalDb('integration: お客様の側の関数（移行 E）', (db) => {
       ]);
       expect(materials.reasons[0]).toEqual({
         reason: 'defective',
-        resolutions: 'refund_and_exchange',
+        resolutions: 'exchange_only',
         out_of_stock_exchange: 'make',
         photo: 'required',
         photo_instructions: '傷や不具合の場所がわかる写真をお送りください',
@@ -921,6 +921,8 @@ describeLocalDb('integration: お客様の側の関数（移行 E）', (db) => {
 
     test('同じ二重防止の番号で同じ中身を送り直すと、前の返品を返し、返品・写真・メールの予定は増えない。使い済みの写真でも、承認が進んでいても、設定が変わっても同じ（Review Focus 1）', async () => {
       const order = await createCustomerOrder(db(), { lines: [{ quantity: 2 }, { quantity: 1 }] });
+      // 初期不良のご希望は交換だけが最初の値（FREQ-642-AC-30）。この試験の本題ではないので、返金も選べる設定にして流す
+      await updateReason(db(), 'defective', { resolutions: 'refund_and_exchange' });
       const upload = await insertUpload(db(), order);
       const key = crypto.randomUUID();
       const lines = [
@@ -1155,17 +1157,21 @@ describeLocalDb('integration: お客様の側の関数（移行 E）', (db) => {
       // 返品不可の品でも、破損・不良と注文と違う品は申し込める
       const defective = await insertUpload(db(), order);
       const wrong = await insertUpload(db(), order);
+      // 初期不良と誤送のご希望は交換だけ（FREQ-642-AC-30）なので、交換の色・サイズを付けて申し込む
+      const whiteOfSecond = await addItemVariant(db(), { itemId: order.itemIds[1], colorName: 'WHITE', sizeLabel: 'L', stock: 5 });
+      const exchangeOfSecond = { requested_resolution: 'exchange', requested_exchange_variant_id: whiteOfSecond.variantId };
       await expect(
-        requestReturn(db(), order, { lines: [reqLine(order, 1, 1, { reason: 'defective', photos: [photoOf(defective)] })] }),
+        requestReturn(db(), order, { lines: [reqLine(order, 1, 1, { reason: 'defective', photos: [photoOf(defective)], ...exchangeOfSecond })] }),
       ).resolves.toBeTruthy();
       await expect(
-        requestReturn(db(), order, { lines: [reqLine(order, 1, 1, { reason: 'wrong_item', customer_note: null, photos: [photoOf(wrong)] })] }),
+        requestReturn(db(), order, { lines: [reqLine(order, 1, 1, { reason: 'wrong_item', customer_note: null, photos: [photoOf(wrong)], ...exchangeOfSecond })] }),
       ).resolves.toBeTruthy();
     });
 
     test('詳しい内容は破損・不良とその他では必須（前後の空白・全角の空白・改行を外して 1〜300 字）、ほかは任意。301 字は RETURN_ARGUMENT_INVALID', async () => {
       const order = await createCustomerOrder(db(), { lines: [{ quantity: 6 }] });
       const photo = await insertUpload(db(), order);
+      const whiteOfFirst = await addItemVariant(db(), { itemId: order.itemIds[0], colorName: 'WHITE', sizeLabel: 'L', stock: 5 });
 
       for (const [label, extra] of [
         ['破損・不良で詳しい内容が空', { reason: 'defective', customer_note: null, photos: [photoOf(photo)] }],
@@ -1185,7 +1191,7 @@ describeLocalDb('integration: お客様の側の関数（移行 E）', (db) => {
       const long = await requestReturn(db(), order, { lines: [reqLine(order, 0, 1, { customer_note: 'あ'.repeat(300) })] });
       expect((await returnLineRows(db(), long.rows[0].return_id))[0].customer_note).toHaveLength(300);
       await expect(
-        requestReturn(db(), order, { lines: [reqLine(order, 0, 1, { reason: 'wrong_item', customer_note: null, photos: [photoOf(photo)] })] }),
+        requestReturn(db(), order, { lines: [reqLine(order, 0, 1, { reason: 'wrong_item', customer_note: null, photos: [photoOf(photo)], requested_resolution: 'exchange', requested_exchange_variant_id: whiteOfFirst.variantId })] }),
       ).resolves.toBeTruthy();
     });
 
@@ -1266,6 +1272,8 @@ describeLocalDb('integration: お客様の側の関数（移行 E）', (db) => {
       const gone = await insertUpload(db(), order, { purged: true });
       // 消す処理は作ってから 1 日を過ぎた物を消すので、申し込みに使えるのは 23 時間まで（1 時間あける。P6）
       const stale = await insertUpload(db(), order, { ageHours: 24 });
+      // 初期不良のご希望は交換だけが最初の値（FREQ-642-AC-30）。この試験の本題ではないので、返金も選べる設定にして流す
+      await updateReason(db(), 'defective', { resolutions: 'refund_and_exchange' });
       const defective = (photos: unknown[], extra: Record<string, unknown> = {}) =>
         reqLine(order, 0, 1, { reason: 'defective', customer_note: '破れています', photos, ...extra });
       const invalidPhoto = refusal('RETURN_PHOTO_INVALID');
@@ -1316,6 +1324,8 @@ describeLocalDb('integration: お客様の側の関数（移行 E）', (db) => {
       { label: '23 時間の 1 分後は RETURN_PHOTO_INVALID', ageMinutes: 1, allowed: false },
     ])('写真の送り先の期限の境目: $label', async ({ ageMinutes, allowed }) => {
       const order = await createCustomerOrder(db());
+      // 初期不良のご希望は交換だけが最初の値（FREQ-642-AC-30）。この試験の本題ではないので、返金も選べる設定にして流す
+      await updateReason(db(), 'defective', { resolutions: 'refund_and_exchange' });
       // now() が動かない同じ取引の中で、23 時間の直前・ちょうど・直後を作る（P6）。
       const upload = await insertUpload(db(), order, { ageHours: 23, ageMinutes });
       const lines = [reqLine(order, 0, 1, { reason: 'defective', customer_note: '破れています', photos: [photoOf(upload)] })];
@@ -1345,7 +1355,9 @@ describeLocalDb('integration: お客様の側の関数（移行 E）', (db) => {
         };
       };
       const ask = async (lines: unknown[]) => (await requestReturn(db(), order, { lines })).rows[0].return_id as string;
-      const shopPays = reqLine(order, 1, 1, { reason: 'wrong_item', customer_note: null, photos: [photoOf(photo)] });
+      const whiteOfSecond = await addItemVariant(db(), { itemId: order.itemIds[1], colorName: 'WHITE', sizeLabel: 'L', stock: 5 });
+      const shopPays = reqLine(order, 1, 1, { reason: 'wrong_item', customer_note: null, photos: [photoOf(photo)],
+        requested_resolution: 'exchange', requested_exchange_variant_id: whiteOfSecond.variantId });
 
       // 最初の設定: お客様が自分で送る。手数料は使わない（設定の値があっても 0）。
       // 手元の DB に E2E などが残した設定に頼らないよう、使う・使わないの印も自分で置く
@@ -1448,6 +1460,8 @@ describeLocalDb('integration: お客様の側の関数（移行 E）', (db) => {
       const order = await createCustomerOrder(db(), { lines: [{ quantity: 1 }] });
       const other = await createCustomerOrder(db(), { lines: [{ quantity: 1 }] }, order.customerId);
       const first = (target: CustomerOrder, input: RequestInput) => rejectionOf(db(), REQUEST_SQL, requestParams(target, input));
+      // 初期不良のご希望は交換だけが最初の値（FREQ-642-AC-30）。この試験の本題ではないので、返金も選べる設定にして流す
+      await updateReason(db(), 'defective', { resolutions: 'refund_and_exchange' });
 
       // 期限切れで、数も多い → 期限（RETURN_NOT_ELIGIBLE。数の誤りではない）
       expect(await first(expired, { lines: [reqLine(expired, 0, 5)] })).toEqual(refusal('RETURN_NOT_ELIGIBLE'));

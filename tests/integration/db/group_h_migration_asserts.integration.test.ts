@@ -356,7 +356,18 @@ const H4_ADMIN_DETAIL_MD5 = '87d26678c21c1d51f9beb469f681c398';
 const h6ForH4 = fs.existsSync(path.join(directory, '20261029130500_group_h_discounts_views.sql'))
   ? fs.readFileSync(path.join(directory, '20261029130500_group_h_discounts_views.sql'), 'utf8') : '';
 const CURRENT_ADMIN_DETAIL_MD5_SQL = `'${/\('private\.get_admin_order_detail\(uuid,uuid\)'[^\n]*'([0-9a-f]{32})'\)/.exec(h6ForH4)?.[1] ?? 'missing'}'`;
-const h4Assert = (h4.split('-- H4_FINAL_ASSERT_BEGIN\n')[1]?.split('-- H4_FINAL_ASSERT_END')[0] ?? '').replace(`'${H4_ADMIN_DETAIL_MD5}'`, CURRENT_ADMIN_DETAIL_MD5_SQL);
+// 移行 A（交換の印、*_unit_binding_schema.sql）は group_h_copy_order_discounts と get_checkout_discount_context の本文を置き換えた
+// （注文の時の写しと枠・手元にある着の数え方）。H4 の指紋のうちこの2本は H4 当時のものなので、移行 A のファイルが持つ指紋へ置き換えて流す。
+// 今の本文の指紋そのものは移行 A の末尾 assert が固定する（ファイルから読むので、本文を改ざんすれば見つかる）。
+const unitBindingSql = fs.readdirSync(directory).filter((name) => name.endsWith('_unit_binding_schema.sql'))
+  .map((name) => fs.readFileSync(path.join(directory, name), 'utf8'))[0] ?? '';
+const unitBindingMd5 = (signature: string) => [...unitBindingSql.matchAll(/\('([^']+)'[^\n]*'([0-9a-f]{32})'\)/g)].find((m) => m[1] === signature)?.[2] ?? 'missing';
+const H4_COPY_MD5 = 'fca08998ff46f1256001b27a519f1314';
+const H4_CONTEXT_MD5 = 'aa44f0698e74672ffab6df0949edf414';
+const h4Assert = (h4.split('-- H4_FINAL_ASSERT_BEGIN\n')[1]?.split('-- H4_FINAL_ASSERT_END')[0] ?? '')
+  .replace(`'${H4_ADMIN_DETAIL_MD5}'`, CURRENT_ADMIN_DETAIL_MD5_SQL)
+  .replace(`'${H4_COPY_MD5}'`, `'${unitBindingMd5('group_h_copy_order_discounts(uuid,uuid,jsonb)')}'`)
+  .replace(`'${H4_CONTEXT_MD5}'`, `'${unitBindingMd5('get_checkout_discount_context(uuid,text,text[],bigint[],timestamptz,text)')}'`);
 /** 名前の関数ひとつの定義（CREATE [OR REPLACE] FUNCTION から本文の閉じ $$; まで） */
 const h4Function = (name: string): string => new RegExp(`CREATE (?:OR REPLACE )?FUNCTION private\\.${name}\\([\\s\\S]*?\\n\\$\\$;`).exec(h4)?.[0] ?? '';
 

@@ -976,11 +976,11 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
   ] as const)('return request vs %s (return first=%s): no deadlock, no double allocation, oldest waiting wins', async (peer, returnFirst) => {
     const fx = await withGroupG1FixtureTransaction(db(), async () => {
       // Restore only the settings this fixture's earlier version committed. Use the reset baseline from
-      // 20261012235910_order_return_records.sql:467-530; the competing RPCs below never change settings.
+      // 20261012235910_order_return_records.sql:467-530 (defective accepts an exchange only since 20261110090325); the competing RPCs below never change settings.
       await db().query(`update public.shop_return_settings set requests_enabled=default,request_types=default,
         return_address_name=null,return_address_postal_code=null,return_address_line=null,return_address_phone=null where id=1`);
       await db().query(`update public.shop_return_reason_settings set shown=true,photo='required',
-        resolutions='refund_and_exchange',out_of_stock_exchange='make' where reason='defective'`);
+        resolutions='exchange_only',out_of_stock_exchange='make' where reason='defective'`);
       const f = await createShippedOrderFixture(db(), { lines: [{ quantity: 5, extraStock: 1 }],
         shipments: [{ lines: [{ lineIndex: 0, quantity: 3 }] }] });
       const owner = await actorId();

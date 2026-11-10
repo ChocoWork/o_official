@@ -1,5 +1,7 @@
 # DB マイグレーション運用
 
+> 交換の印 移行 A 確認日: 2026-11-10。移行 `20261110090325_unit_binding_schema.sql` を末尾の「交換の印と1着ずつの記録の移行 A（FREQ-642 Task 2、2026-11-10）」に追記した。手元の DB で確かめた。本番は未適用。
+>
 > 会計の計画 2 確認日: 2026-11-09。移行 S6〜S14（`20261108150000`〜`20261108230000`、9本）を末尾の「会計の作り直し 計画 2 の移行 S6〜S14（手元の DB で確認済み・2026-11-09 本番適用済み）」に追記した。本番へは 2026-11-09 にオーナーの承認で当てた（その節の「本番への適用の記録」）。適用の前提（計画1が本番にあること、接続先のオーナー確認、S6 前の発送票の件数）と、移行の間の呼び出しの依存（S8 → S11、S9 → S11）を、その節に書いた。
 >
 > 会計の計画 1 確認日: 2026-11-08。移行 S0〜S5（`20261107130000`〜`20261107130500`）を末尾の「会計の作り直し 計画 1 の移行 S0〜S5（手元の DB で確認済み・2026-11-08 本番適用済み）」に追記した。本番へは 2026-11-08 に当てた（その節の「本番への適用の記録」）。
@@ -1470,3 +1472,19 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 - `group_g3_date` の `FREQ-535-AC-04`（「`shipment_date` を含む関数は G-3 の物だけ」）: 会計の出荷の係の5関数（S8）と年末の2関数（S14）を、許す一覧に足した。出荷日を読む会計の関数を足す計画は、この一覧を広げる。
 - `group_g4_foundation` の `FREQ-540-AC-14`: `-- ACC_P<数字>_BEGIN … _END` の区間を両側から外して比べる。
 - 計画1の `accounting_p1_migration_asserts`・`accounting_p1_manual_entry`: 公開の入口 `public.accounting_run_posting` が出来たため、「`public.accounting_*` が無い」確かめの再生で、先にこの関数を落とす。計画1の移行は変えていない。
+
+## 交換の印と1着ずつの記録の移行 A（FREQ-642 Task 2、2026-11-10）
+
+確認日: 2026-11-10。移行は [20261110090325_unit_binding_schema.sql](../../supabase/migrations/20261110090325_unit_binding_schema.sql)。サイズ 40191 bytes、MD5 `94b259bfdb388c14f81d232a64df527d`。ASCII・BOM なし・LF。手元の DB（`npx supabase db reset`）で当てて確かめた。**本番は未適用**（当てる前にオーナーの許可を取る）。適用済みの移行は1字も変えていない。版は `20261108230000` より後で、会計のセッションへ知らせる版はこの `20261110090325`。
+
+| 項目 | 内容 |
+| --- | --- |
+| 目的 | 交換の印を着そのものに結び付け、返金を手元に残る服の正しい値段から決める（設計書 2-2・4-1〜4-4）ための表・注文の時の写し・前の注文の着数の数え直し・理由の設定 |
+| 足した表 | `order_discount_snapshots`・`order_unit_slots`・`order_unit_exchange_links`・`order_unit_events`・`order_unit_event_lines`・`order_unit_holds`・`order_unit_event_refunds`・`order_return_line_treatments`（RLS・制限つきの方針・service_role は SELECT だけ。枠の表以外は追記だけで、UPDATE・DELETE・TRUNCATE は `GROUP_H_IMMUTABLE`。枠の表は DELETE・TRUNCATE だけ断る）。詳しい列は [er.md](../03_BasicDesign/data/er.md) |
+| 取り替えた関数 | `private.group_h_copy_order_discounts(uuid,uuid,jsonb)`（今の本文に、写し 1 行と着ごとの枠を足すだけ）、`private.get_checkout_discount_context(uuid,text,text[],bigint[],timestamptz,text)`（前の注文の着数だけ変える）。署名・所有者・権限・`SECURITY DEFINER`・`search_path` は H4 のまま。G の書き手の一覧は変えない |
+| 設定の UPDATE | `shop_return_reason_settings` の `defective`・`wrong_item` の `resolutions` を `exchange_only` にする（ほかの列・ほかの理由の行は変えない）。店長が設定の画面で変えていた値も、この2行は `exchange_only` に上書きされる |
+| 末尾の確かめ | `UNIT_BINDING_SCHEMA_MIGRATION_ASSERTION_FAILED`（SQLSTATE `P0001`）。DETAIL は `ub_tables`（列・制約・守り）・`ub_acl`（RLS・権限・関数の権限）・`ub_functions`（取り替えた2本の本文の MD5・所有者・設定）・`ub_settings`（2行の値） |
+| 古い試験への影響 | H4 の末尾の確かめは取り替えた2本の本文の MD5 を持つため、`group_h_migration_asserts` の試験は H4 のその2つの MD5 を、この移行のファイルが持つ MD5 へ置き換えて流す（H2・H6 の時と同じ書き方） |
+| 戻し方 | 本番に当てた後に戻す時は、取り替えた2本を H4（`20261029130300`）の本文に戻す新しい移行を足す（適用済みの移行は直さない）。8 表は行が無ければ `DROP TABLE` できる。行ができた後は消さない（追記だけの表）。設定の2行は、戻す前の値を店長に確かめてから `UPDATE` する |
+| 前の注文の着数 | 枠のある注文は `state = 'kept'` の枠の数、枠の無い古い注文は今までの式（入金済みの行の数 − 成功した返金の数）。交換の品の行は枠で数えるので足さない |
+| 配備 | 移行 A は返金の計算を変えない（写しと枠を残し、前の注文の着数を数え直し、理由の設定を直す）。理由の設定の直しで、お客様の返品の申し込みと店長の返品の作成の画面は、初期不良・誤送のご希望を交換だけにする。返金の計算・入口の変更は後の作業で出す |
