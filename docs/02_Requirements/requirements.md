@@ -1932,7 +1932,7 @@
 
 ## 交換の印を着に結び付け返金を手元に残る服の正しい値段から決める（FREQ-642）
 
-状態: 現行の要求（2026-11-10 オーナー承認）。実装の状態: 実装は済み（移行 A〜D・サーバー・管理画面・お客様の画面・E2E。FREQ-642 の一連のコミット、未 push）。移行 A〜D は手元の DB だけに当て、本番の DB へは未適用。全件の本番ビルド E2E は調整役が流す。[設計書](../superpowers/specs/2026-11-08-exchange-unit-binding-design.md)の9章の AC-01〜AC-31 を FREQ-642-AC-01〜AC-31 に1対1で対応させた。返品は追跡の範囲外であり、FREQ-641 の次を採番した。E2E の予約は FR-ADMIN-165・166、FR-ACCOUNT-048、FR-ITEM-DETAIL-070、FR-CHECKOUT-061、FR-LEGAL-008、FR-TERMS-007。
+状態: 現行の要求（2026-11-10 オーナー承認）。実装の状態: 実装は済み（移行 A〜D・サーバー・管理画面・お客様の画面・E2E。FREQ-642 の一連のコミット、未 push）。移行 A〜D は手元の DB だけに当て、本番の DB へは未適用。全件の本番ビルド E2E は調整役が流す。[設計書](../superpowers/specs/2026-11-08-exchange-unit-binding-design.md)の9章の AC-01〜AC-31 を FREQ-642-AC-01〜AC-31 に1対1で対応させた。返品は追跡の範囲外であり、FREQ-641 の次を採番した。E2E は FR-ADMIN-165・166、FR-ACCOUNT-048、FR-ITEM-DETAIL-070、FR-CHECKOUT-061、FR-LEGAL-008、FR-TERMS-007。
 
 | 要求ID | 要求内容 | 要件ID | 要件内容 | 受け入れ条件ID | 受け入れ条件 |
 | --- | --- | --- | --- | --- | --- |

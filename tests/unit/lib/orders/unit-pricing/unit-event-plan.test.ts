@@ -10,24 +10,24 @@ const step = (m: UnitPricingMaterials, c: UnitEventChange): UnitPricingPlan => p
 
 describe('DD-ADMIN-021: 設計書3章の例の返す額', () => {
   test.each<[string, UnitPricingMaterials, UnitEventChange, number]>([
-    ['AC-01 例1 リピート ご都合1着', repeat(), ret(1, 'customer'), 17000],
-    ['AC-08 例5 リピート 不良で送れず返金', repeat(), ret(1, 'shop'), 17000],
-    ['AC-09 例6 セット ご都合でジャケット', set(), retJacket('customer'), 20000],
-    ['AC-09 例7 セット ご都合でパンツ', set(), retPants('customer'), 5500],
-    ['AC-08 例8 セット 不良のパンツ', set(), retPants('shop'), 8500],
-    ['AC-08 例12 セット 不良のジャケット', set(), retJacket('shop'), 20000],
-    ['AC-08 例13 ジャケットとパンツだけ 不良のジャケット', pairSet(), retJacket('shop'), 17000],
-    ['AC-29 例13 をご都合で返すと', pairSet(), retJacket('customer'), 15500],
-    ['AC-29 例14 10%引き ジャケットを返す', percent10(), retJacket('customer'), 18000],
-    ['AC-29 例15 30,000円以上で1,000円引き パンツを返す', threshold(), retPants('customer'), 9000],
-    ['AC-29 例15 交換できず返金', threshold(), retPants('shop'), 9667],
-    ['AC-29 例16 重ねた割引 1着返す', stacked(), ret(1, 'customer'), 15300],
+    ['FREQ-642-AC-01 例1 リピート ご都合1着', repeat(), ret(1, 'customer'), 17000],
+    ['FREQ-642-AC-08 例5 リピート 不良で送れず返金', repeat(), ret(1, 'shop'), 17000],
+    ['FREQ-642-AC-09 例6 セット ご都合でジャケット', set(), retJacket('customer'), 20000],
+    ['FREQ-642-AC-09 例7 セット ご都合でパンツ', set(), retPants('customer'), 5500],
+    ['FREQ-642-AC-08 例8 セット 不良のパンツ', set(), retPants('shop'), 8500],
+    ['FREQ-642-AC-08 例12 セット 不良のジャケット', set(), retJacket('shop'), 20000],
+    ['FREQ-642-AC-08 例13 ジャケットとパンツだけ 不良のジャケット', pairSet(), retJacket('shop'), 17000],
+    ['FREQ-642-AC-29 例13 をご都合で返すと', pairSet(), retJacket('customer'), 15500],
+    ['FREQ-642-AC-29 例14 10%引き ジャケットを返す', percent10(), retJacket('customer'), 18000],
+    ['FREQ-642-AC-29 例15 30,000円以上で1,000円引き パンツを返す', threshold(), retPants('customer'), 9000],
+    ['FREQ-642-AC-29 例15 交換できず返金', threshold(), retPants('shop'), 9667],
+    ['FREQ-642-AC-29 例16 重ねた割引 1着返す', stacked(), ret(1, 'customer'), 15300],
   ])('DD-ADMIN-021: %s', (_name, materials, change, refund) => {
     expect(planUnitEvent(materials, change).standardRefund).toBe(refund);
   });
 });
 
-test('DD-ADMIN-021: AC-14 3着以上で50%引きを1着ずつ返すと 5,000・0・5,000・10,000', () => {
+test('DD-ADMIN-021: FREQ-642-AC-14 3着以上で50%引きを1着ずつ返すと 5,000・0・5,000・10,000', () => {
   const plans = sequence(quantityTier(), 4, i => ret(1, 'customer', { returnLineId: `rl-${i}` }), step);
   expect(plans.map(p => p.standardRefund)).toEqual([5000, 0, 5000, 10000]);
   expect(plans.map(p => p.entitlement)).toEqual([5000, 0, 10000, 20000]);
@@ -91,7 +91,7 @@ describe('DD-ADMIN-021: 累計の2着目割引（前の注文から差し引く�
     expect(plan.holds).toEqual([]);
   });
 
-  test('AC-10 2回目の着が先に返っていれば、1回目の返品は 20,000', () => {
+  test('FREQ-642-AC-10 2回目の着が先に返っていれば、1回目の返品は 20,000', () => {
     const { first: one, second } = twoOrders();
     const m2 = materialsOf(second, [one]);
     const plan2 = planUnitEvent(m2, receive([{ returnLineId: 'rl-b', holderOrderItemId: 'oi-b', quantity: 1, side: 'customer', part: 'now', feePercent: 0 }]));
@@ -118,7 +118,7 @@ describe('DD-ADMIN-021: 累計の2着目割引（前の注文から差し引く�
 describe('DD-ADMIN-021: 手数料', () => {
   const lineA = (side: 'customer' | 'shop', quantity = 1) => ({ returnLineId: `rl-${side}`, holderOrderItemId: 'oi-1', quantity, side, part: 'now' as const, feePercent: 10 });
 
-  test('DD-ADMIN-021: AC-24・例11 手数料10% 不良とご都合を1回でも2回でもどちらの順でも 35,000', () => {
+  test('DD-ADMIN-021: FREQ-642-AC-24・FREQ-642-AC-11 例11 手数料10% 不良とご都合を1回でも2回でもどちらの順でも 35,000', () => {
     const totals: number[] = [];
     const fees: number[] = [];
     const run = (changes: UnitEventChange[]) => {
@@ -134,7 +134,7 @@ describe('DD-ADMIN-021: 手数料', () => {
     expect(fees).toEqual([2000, 2000, 2000, 2000]);
   });
 
-  test('DD-ADMIN-021: 不良の分は手数料なし 17,000、ご都合の分は 20,000 に 2,000', () => {
+  test('DD-ADMIN-021: FREQ-642-AC-24 不良の分は手数料なし 17,000、ご都合の分は 20,000 に 2,000', () => {
     const plan = planUnitEvent(repeat(), receive([lineA('shop'), lineA('customer')]));
     expect(plan.feeAmount).toBe(2000);
     expect(plan.entitlementGross).toBe(37000);
@@ -142,13 +142,13 @@ describe('DD-ADMIN-021: 手数料', () => {
     expect(plan.treatments).toEqual([{ returnLineId: 'rl-shop', treatment: 'shop' }, { returnLineId: 'rl-customer', treatment: 'customer' }]);
   });
 
-  test('DD-ADMIN-021: AC-06 10% を1着ずつ2回 手数料は 1,700 と 2,000', () => {
+  test('DD-ADMIN-021: FREQ-642-AC-06 10% を1着ずつ2回 手数料は 1,700 と 2,000', () => {
     const plans = sequence(repeat(), 2, i => ret(1, 'customer', { returnLineId: `rl-${i}`, feePercent: 10 }), step);
     expect([plans[0].feeAmount, plans[1].feeAmount]).toEqual([1700, 2000]);
     expect(plans[1].entitlement).toBe(33300);
   });
 
-  test('DD-ADMIN-021: お店の側の返品・発送前の取り消しには手数料を掛けない', () => {
+  test('DD-ADMIN-021: FREQ-642-AC-08 お店の側の返品・発送前の取り消しには手数料を掛けない', () => {
     expect(planUnitEvent(repeat(), ret(1, 'shop', { feePercent: 10 })).feeAmount).toBe(0);
   });
 
@@ -164,7 +164,7 @@ describe('DD-ADMIN-021: 手数料', () => {
   });
 });
 
-test('DD-ADMIN-021: AC-13 注文全体の1円引き 残る1着 9,999 返す額 10,000', () => {
+test('DD-ADMIN-021: FREQ-642-AC-13 注文全体の1円引き 残る1着 9,999 返す額 10,000', () => {
   const plan = planUnitEvent(oneYenOff(), ret(1, 'customer'));
   expect(plan.standardRefund).toBe(10000);
   // 払った額が返す額にいちばん近い 10,000円の枠を返すので、残る 9,999円の枠に直しは出ない
@@ -317,7 +317,7 @@ describe('DD-ADMIN-021: 修正1 手数料は率を持つご都合の返品が生
     expect(plan.standardRefund).toBe(35000);
   });
 
-  test.each([[0], [30]])('DD-ADMIN-021: 例11 不良が %i%% でも、どの順でも合計 35,000', defectRate => {
+  test.each([[0], [30]])('DD-ADMIN-021: FREQ-642-AC-11 例11 不良が %i%% でも、どの順でも合計 35,000', defectRate => {
     const orders: UnitEventChange[][] = [
       [receive([r('rl-a', 'customer', 10)]), receive([r('rl-b', 'shop', defectRate)])],
       [receive([r('rl-b', 'shop', defectRate)]), receive([r('rl-a', 'customer', 10)])],

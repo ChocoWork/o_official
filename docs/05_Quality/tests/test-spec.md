@@ -1596,7 +1596,7 @@ AC-07の3行・予備あり・介在受取とAC-08は旧本文だけで組み立
 | `tests/integration/db/unit-binding-core.integration.test.ts` | 27 | AC-04・10・14・17・18 | 移行B（材料・計画の記録・版の食い違い・Eの最高の下限・払った額を超えない式）。例7の計画、STALE、鍵、数の条件つき割引の1着ずつ |
 | `tests/integration/db/unit-binding-receive.integration.test.ts` | 22 | AC-02〜06・12・15〜17・20・23・25・31 | 移行C（受け取りの入口）。交換と返品の順、同じ受け取りの行の順、例4、既知の点4の順、手数料の控え、品指定なしの返金、写しの無い注文、割引の扱い |
 | `tests/integration/db/unit-binding-refunds.integration.test.ts` | 20 | AC-05・07・10・15・19・23・27・28 | 移行D（返金・取り消しの入口）。発送前の取り消し、発送後の返金は着を動かさない、前の注文への戻し（例10-2）、返金のerror・やり直し |
-| `tests/unit/lib/orders/unit-pricing/kept-price.test.ts` | 13 | DD-ADMIN-021 | 手元に残る服の正しい値段（籠・低い方・例6〜例17） |
+| `tests/unit/lib/orders/unit-pricing/kept-price.test.ts` | 13 | DD-ADMIN-021 | 手元に残る服の正しい値段（籠・低い方・手数料。題に例の番号は無い） |
 | `tests/unit/lib/orders/unit-pricing/unit-event-plan.test.ts` | 42 | DD-ADMIN-021・AC-27 | 出来事ごとのE・返す額・割り振り・直し・手数料の累計・前の注文から差し引く額 |
 | `tests/unit/lib/orders/unit-pricing/unit-pricing-service.test.ts` | 31 | AC-20・21・25〜28、DD-ADMIN-022・023 | 材料から計画・見込みを作る入口（受け取り・返金・取り消し・お客様の見込み・相談の残り） |
 | `tests/unit/lib/orders/unit-pricing/unit-pricing-store.test.ts` | 8 | AC-20、DD-ADMIN-022 | 材料と相談の残りを読む |
@@ -1623,7 +1623,7 @@ DB結合・単体の実測は各Taskの実装者と調整役の報告のとお�
 | AC-27 注文全体の取り消し | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-27: 注文全体の取り消しは全部の枠が returned_shop で払った合計を返す`。`tests/unit/lib/orders/unit-pricing/unit-pricing-service.test.ts`：`FREQ-642-AC-27: 発送前の品を選ぶ返金は計画を作り…` |
 | AC-30 店長が交換を返金に変える | `tests/integration/db/unit-binding-receive.integration.test.ts`：`FREQ-642-AC-30: 交換の頼みを返金に変えた行は、お店の側の事情で返った枠になる（17,000円）`（2026-11-11 足した）。`tests/unit/lib/orders/unit-pricing/unit-pricing-service.test.ts`：`FREQ-642-AC-26: 交換の頼みを店が返金に変えた行は shop の扱いで…` |
 
-穴: 無し（AC-07 の「一部の行だけ受け取る」と AC-30 の2つ目は試験が無かったので上の2本を足した）。
+穴: 受け入れ条件31件のすべてに、題の先頭に ID を持つ試験が結び付く（2026-11-11 の `npm run report:traceability`）。ただし単体の純関数だけで確かめている条件がある（AC-01・08・11・13・24・29 の一部。`unit-event-plan.test.ts`）。DB・画面で確かめていない分岐は下の「まだ試していない分岐」に書く。AC-01 の「残る着は手元にある」は `unit-binding-receive.integration.test.ts` の AC-02 の試験に足した確かめ（未実行。調整役が流す）。
 
 ### 流し方と限り
 
@@ -1633,8 +1633,9 @@ DB結合・単体の実測は各Taskの実装者と調整役の報告のとお�
 
 ### まだ試していない分岐（FREQ-642、2026-11-11）
 
-試験を足していない。足すなら次の3つ。
+試験を足していない。足すなら次の4つ。
 
+- AC-11（例11）は単体の純関数で、元の2着を使って確かめている。設計書の場面の交換の品を使う形は、DB・E2E の試験が無い。
 - 今すぐの返金で手数料の率が0より大きい場合の `refund_amount`・`return_fee_deduction`・`fee_pending_deduction`（手数料は今は0円なので、DB結合に入っていない）。
 - 返金のやり直しの枝のうち、ほかの返金が握っている枠を放す分岐、および関係する注文の鍵・`STALE` の読み直し。
 - 受け取りと返金のHTTP層（認可・CSRF・回数の制限）は FREQ-642 のE2E（`FR-ADMIN-165`・`166`）が通らない。窓口の単体試験（`tests/unit/api/admin/order-return-money-routes.test.ts` ほか）と、既存の085系のE2Eが持つ。

@@ -78,6 +78,8 @@ describeLocalDb('FREQ-642-AC-17: unit binding receive (controller only)', (db) =
     const b = await hRefundFixture(db(), true);
     const rc = await createUbReturn(db(), b, [{ quantity: 1 }]);
     const returnB = await ubReceive(db(), { returnId: rc.returnId, actorId: b.actor, choice: 'now', units: [unit(rc.lineIds[0])] });
+    // FREQ-642-AC-01: 例1 返品を1着受け取った後、返した着は returned_customer、残る着は手元にある（kept）
+    expect((await slotsOf(b.orderId)).map((s) => s.state).sort()).toEqual(['kept', 'returned_customer']);
     const rd = await createUbReturn(db(), b, [{ quantity: 1, exchange: true }]);
     const exchangeB = await ubReceive(db(), { returnId: rd.returnId, actorId: b.actor, choice: 'none', units: [unit(rd.lineIds[0])] });
     const byOrder = { exchangeFirst: [exchangeA.refund_amount ?? 0, returnA.refund_amount], returnFirst: [returnB.refund_amount, exchangeB.refund_amount ?? 0] };
