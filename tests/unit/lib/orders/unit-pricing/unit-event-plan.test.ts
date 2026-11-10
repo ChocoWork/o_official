@@ -1,7 +1,8 @@
 import { planUnitEvent, UnitPricingError } from '@/lib/orders/unit-pricing/unit-event-plan';
+import { definition } from '../../discounts/fixtures';
 import type { UnitEventChange, UnitPricingMaterials, UnitPricingPlan } from '@/lib/orders/unit-pricing/unit-pricing-types';
 import {
-  applyPlan, buildOrder, JACKET, materialsOf, oneYenOff, pairSet, percent10, quantityTier, receive, repeat, repeatDefinition,
+  applyPlan, buildOrder, JACKET, materialsOf, oneYenOff, pairSet, percent10, quantityTier, receive, repeat, repeatDefinition, repeatPreviousDefinition,
   ret, retJacket, retPants, sequence, set, stacked, threshold, tiny, twoOrders,
 } from './fixtures';
 
@@ -281,3 +282,77 @@ test('DD-ADMIN-021: 割引の写しの行が無い枠は snapshot_invalid', () =
   expect(() => planUnitEvent(materialsOf(broken), ret(1, 'customer'))).toThrow(UnitPricingError);
 });
 
+
+describe('DD-ADMIN-021: 修正1 手数料は率を持つご都合の返品が生む増えにだけ掛ける', () => {
+  const r = (id: string, side: 'customer' | 'shop', feePercent: number) =>
+    ({ returnLineId: id, holderOrderItemId: 'oi-1', quantity: 1, side, part: 'now' as const, feePercent });
+
+  test.each([[0], [30]])('DD-ADMIN-021: 不良 %i%% とご都合 10%% を1回の受け取りで 手数料 2,000・合計 35,000', defectRate => {
+    const plan = planUnitEvent(repeat(), receive([r('rl-a', 'shop', defectRate), r('rl-b', 'customer', 10)]));
+    expect(plan.feeAmount).toBe(2000);
+    expect(plan.standardRefund).toBe(35000);
+  });
+
+  test.each([[0], [30]])('DD-ADMIN-021: 例11 不良が %i%% でも、どの順でも合計 35,000', defectRate => {
+    const orders: UnitEventChange[][] = [
+      [receive([r('rl-a', 'customer', 10)]), receive([r('rl-b', 'shop', defectRate)])],
+      [receive([r('rl-b', 'shop', defectRate)]), receive([r('rl-a', 'customer', 10)])],
+      [receive([r('rl-b', 'shop', defectRate), r('rl-a', 'customer', 10)])],
+    ];
+    const totals = orders.map(cs => sequence(repeat(), cs.length, i => cs[i], step).reduce((s, p) => s + p.standardRefund, 0));
+    expect(totals).toEqual([35000, 35000, 35000]);
+  });
+
+  test('DD-ADMIN-021: 率の違うご都合の返品2つは、受け取りの行の並びを入れ替えても同じ手数料', () => {
+    const a = planUnitEvent(repeat(), receive([r('rl-a', 'customer', 10), r('rl-b', 'customer', 20)]));
+    const b = planUnitEvent(repeat(), receive([r('rl-b', 'customer', 20), r('rl-a', 'customer', 10)]));
+    expect(a.feeAmount).toBe(b.feeAmount);
+    expect(a.standardRefund).toBe(b.standardRefund);
+    expect(a.feeAmount).toBeGreaterThan(3700);
+  });
+});
+
+describe('DD-ADMIN-021: 修正2 hold_release の返す額は E の最高を起点にする', () => {
+  const lineOf = (orderItemId: string, id: string) =>
+    ({ returnLineId: id, holderOrderItemId: orderItemId, quantity: 1, side: 'customer' as const, part: 'now' as const, feePercent: 0 });
+
+  test('DD-ADMIN-021: E が一度下がった注文への戻しは0円で、その注文から返す合計は払った額を超えない', () => {
+    const first = buildOrder({
+      orderId: 'order-1', placedAt: '2026-11-01T00:00:00Z',
+      lines: [{ orderItemId: 'oi-a', itemId: JACKET, unitPrice: 20000, quantity: 1 }, { orderItemId: 'oi-p', itemId: 2, unitPrice: 10000, quantity: 3 }],
+      definitions: [repeatPreviousDefinition(), definition('tier', { kind: 'product', targetMode: 'exclude', itemIds: [JACKET], value: { type: 'percent', value: 50 }, minimum: { type: 'quantity', value: 3 } })],
+    });
+    const { second } = twoOrders();
+    expect(first.paidTotal).toBe(35000);
+    let m = materialsOf(first, [second]);
+    const p1 = planUnitEvent(m, receive([lineOf('oi-a', 'rl-1')]));
+    expect([p1.standardRefund, p1.entitlement]).toEqual([17000, 17000]);
+    m = applyPlan(m, p1);
+    const p2 = planUnitEvent(m, receive([lineOf('oi-p', 'rl-2')]));
+    expect([p2.entitlement, p2.standardRefund]).toEqual([12000, 0]);
+    m = applyPlan(m, p2);
+    const m3 = materialsOf(m.related[0], [m.target]);
+    const p3 = planUnitEvent(m3, receive([lineOf('oi-b', 'rl-3')]));
+    expect(p3.releases.map(x => [x.orderId, x.standardRefund, x.nowRefund])).toEqual([['order-1', 0, 0]]);
+    m = applyPlan(m3, p3);
+    const m4 = materialsOf(m.related[0], [m.target]);
+    const p4 = planUnitEvent(m4, receive([lineOf('oi-p', 'rl-4'), lineOf('oi-p', 'rl-5')]));
+    const total = p1.standardRefund + p2.standardRefund + p3.releases[0].standardRefund + p4.standardRefund;
+    expect(total).toBeLessThanOrEqual(35000);
+    expect(total).toBe(35000);
+  });
+});
+
+test('DD-ADMIN-021: 修正3 手数料を引いた後の E が0円より少なくなる分は前の注文から引かない', () => {
+  const first = buildOrder({
+    orderId: 'order-1', placedAt: '2026-11-01T00:00:00Z',
+    lines: [{ orderItemId: 'oi-a', itemId: JACKET, unitPrice: 3050, quantity: 1 }], definitions: [repeatPreviousDefinition()],
+  });
+  const { second } = twoOrders();
+  const charged = { ...first, feeTotal: 100, entitlementPrevious: -100 };
+  const plan = planUnitEvent(materialsOf(charged, [second]), receive([
+    { returnLineId: 'rl-a', holderOrderItemId: 'oi-a', quantity: 1, side: 'customer', part: 'now', feePercent: 0 },
+  ]));
+  expect(plan.holds).toEqual([{ heldOrderId: 'order-1', laterOrderId: 'order-2', itemId: JACKET, amount: 2950 }]);
+  expect(plan.entitlement).toBe(0);
+});

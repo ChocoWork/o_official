@@ -1,4 +1,3 @@
-import { allocateCumulative } from '@/lib/discounts/discount-allocation';
 import { compareIds } from '@/lib/discounts/discount-types';
 import {
   compareSlotsByPrice, correctKeptPrice, slotKeyOfSlot,
@@ -235,7 +234,7 @@ function evaluate(materials: UnitPricingMaterials, kind: UnitEventChange['kind']
   const holdsBefore = heldSum(target);
 
   const customerPicks = picks.filter(p => p.side === 'customer');
-  const addCap = Math.max(0, target.paidTotal - keptAfter.total - holdsBefore);
+  const addCap = Math.max(0, target.paidTotal - keptAfter.total - holdsBefore - target.feeTotal);
   const holdPlan = planHolds(materials, after, kind === 'return_receive' && customerPicks.length > 0, addCap);
   const ownRows = holdPlan.releases.filter(r => r.heldOrderId === target.orderId);
   const holdTotal = holdsBefore + holdPlan.adds.reduce((s, r) => s + r.amount, 0) + ownRows.reduce((s, r) => s + r.amount, 0);
@@ -246,17 +245,28 @@ function evaluate(materials: UnitPricingMaterials, kind: UnitEventChange['kind']
   const baseBefore = keptDefBefore - keptBefore - holdsBefore;
   const increase = Math.max(0, baseAfter - baseBefore);
 
+  // 手数料の元の額の増えは、お客様のご都合の返品が生む。返品の行の id の順に、1着ずつ足した時の増えをその返品の率で掛ける。
+  // お店の側の返品は率を持たない。この出来事の返品で説明できない増え（前のご都合の分）は、これまで掛けた手数料の平均の率で掛ける。
   let fee = 0;
-  if (picks.length > 0 && increase > 0) {
-    // 率は返品ごと。増えた分は、その出来事の返品の率で掛ける（お店の側の返品だけの出来事でも、前のご都合の分の増えが出る）
-    const rates = new Set(picks.map(p => p.feePercent));
-    if (rates.size === 1) {
-      fee = Math.floor(increase * picks[0].feePercent / 100);
-    } else {
-      const ordered = [...picks].sort((a, b) => compareIds(a.returnLineId ?? '', b.returnLineId ?? ''));
-      const shares = allocateCumulative(increase, ordered.map(() => 1));
-      fee = ordered.reduce((sum, p, i) => sum + Math.floor(shares[i] * p.feePercent / 100), 0);
-    }
+  if (increase > 0) {
+    const shopPicks = picks.filter(p => p.side === 'shop');
+    const orderedCustomer = [...customerPicks].sort((a, b) => compareIds(a.returnLineId ?? '', b.returnLineId ?? '') || compareIds(a.key, b.key));
+    const baseOf = (subset: readonly Pick[]) => {
+      const st = withPicks(before, subset);
+      return correctKeptPrice(target, shopOnlyStates(st)).total - correctKeptPrice(target, st).total - holdsBefore;
+    };
+    const newHolds = holdTotal - holdsBefore;
+    let previous = baseBefore;
+    let explained = 0;
+    orderedCustomer.forEach((p, i) => {
+      const now = baseOf([...shopPicks, ...orderedCustomer.slice(0, i + 1)]) - (i === orderedCustomer.length - 1 ? newHolds : 0);
+      const part = Math.max(0, now - previous);
+      previous = Math.max(previous, now);
+      explained += part;
+      fee += Math.floor(part * p.feePercent / 100);
+    });
+    const residual = Math.max(0, increase - explained);
+    if (residual > 0 && baseBefore > 0 && target.feeTotal > 0) fee += Math.floor(residual * target.feeTotal / baseBefore);
   }
   const entitlement = gross - target.feeTotal - fee;
 
@@ -308,13 +318,14 @@ function releasePlan(
   const states = stateMapOf(held);
   const holdsBefore = heldSum(held);
   const grossBefore = held.paidTotal - correctKeptPrice(held, states).total - holdsBefore;
+  const releaseRefund = Math.max(held.entitlementPrevious + given - held.entitlementMax, 0);
   return {
     version: materials.version, orderId: held.orderId, kind: 'hold_release',
     entitlementPrevious: held.entitlementPrevious, entitlementMaxBefore: held.entitlementMax,
     entitlementGross: grossBefore + given,
     entitlementShopOnly: held.paidTotal - correctKeptPrice(held, shopOnlyStates(states)).total,
     feeAmount: 0, holdTotal: holdsBefore - given, entitlement: held.entitlementPrevious + given,
-    standardRefund: given, nowRefund: given, consultRefund: 0,
+    standardRefund: releaseRefund, nowRefund: releaseRefund, consultRefund: 0,
     lines: lines.map(holdLineOf), holds: [...rows], releases: [], treatments: [],
   };
 }
