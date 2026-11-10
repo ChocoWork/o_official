@@ -346,7 +346,7 @@ BEGIN
     IF v_slot THEN
       -- Unit binding: the exchange units take kept slots held by the returned line's item: the slots bound to this return line
       -- (FREQ-641 return_line_id) first, then the cheapest slot (the H cheapest-first order the design allows, 4-1), then the order item
-      -- and unit_index order. A slot the plan returns is not taken. The exchange
+      -- and unit_index order. A slot the plan returns, or a slot another refund holds (refund_id), is not taken. The exchange
       -- price (display only) is the sum of the slots' prices after this event.
       v_item:=private.return_exchange_item_id(v_receipt,v_line.id,v_action);
       v_price_sum:=0;v_k:=0;
@@ -1114,7 +1114,7 @@ BEGIN
   -- ubr_functions: owner, security, settings, volatility, language and the exact body; the 14 argument functions are gone and each
   -- name has one definition in its schema.
   FOR e IN SELECT * FROM (VALUES
-    ('private', 'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)', 'v', true, 'plpgsql', '2a532f2b98a59718ba74409828ccac1b'),
+    ('private', 'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)', 'v', true, 'plpgsql', '7a22d1be620d118bb78a3cc95e155443'),
     ('public', 'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)', 'v', false, 'sql', 'dd060b0e28ac9450ca5f2fc218658b03'),
     ('private', 'record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb)', 'v', true, 'plpgsql', '4b6d2ce680d8db576cd1a9aadd4c4b22'),
     ('private', 'group_g_writer_allowlist()', 's', true, 'sql', '0c8a984982e81ef0342e3af887c93689')

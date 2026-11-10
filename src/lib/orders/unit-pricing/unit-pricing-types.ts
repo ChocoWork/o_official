@@ -30,7 +30,15 @@ export interface UnitSlot {
   returnedEventSeq: number | null;
   /** returned_customer の枠を返した返品の行の id（手数料の累計を出来事の時と同じ順で出し直すため）。それ以外・返品の行が無い時は null */
   returnedReturnLineId: string | null;
+  /**
+   * FREQ-641 の取り押さえ（order_line_unit_amounts.return_line_id）の返品の行の id。返品の行の id だけで、返金の id は入れない。
+   * 持ち主が自分の着でない枠（交換に出した枠）は、交換の取り押さえを使い切ったので null。
+   */
   claimedReturnLineId: string | null;
+  /**
+   * この枠の着を握っている返金（order_line_unit_amounts.refund_id）の id。通常の返金などが握っている枠で、計画は選ばない。握られていなければ null。
+   */
+  claimedRefundId: string | null;
 }
 
 /** 注文の時に残す割引の写し。`facts` に `phase` は残らず、値段の計算が 'acceptance' を付ける。 */

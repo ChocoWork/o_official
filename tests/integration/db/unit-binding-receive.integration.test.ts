@@ -8,7 +8,7 @@ import { seedFactSlip } from './helpers/accounting-orders-fixtures';
 import { hBegin, hClaims, hRefundFixture, hResult, type HRefundFixture } from './helpers/group-h-refund-fixtures';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
 import { acceptHCheckout, hDiscount, seedHCheckout, seedHDiscount, seedHMember } from './helpers/group-h-fixtures';
-import { createCatalogFixture, insertOrderWithLines, shipFixtureOrder } from './helpers/order-fixtures';
+import { createCatalogFixture, insertOrderWithLines, insertRestockMovement, shipFixtureOrder } from './helpers/order-fixtures';
 import { buildReceivePricing, createUbReturn, materialsOf, ubReceive, type ReceiveUnit } from './helpers/unit-binding-receive';
 
 jest.setTimeout(60000);
@@ -150,26 +150,45 @@ describeLocalDb('FREQ-642-AC-17: unit binding receive (controller only)', (db) =
     expect(claimsByRefund.map((r) => r.n).sort()).toEqual([1, 1]);
   });
 
-  test('FREQ-642-AC-05: 既知の点4の順（届かないで終える → ふつうの返金 → 開き直し → error → 交換 → 今すぐ → error → やり直し）で合計37,000円を超えず結びが動かない', async () => {
+  test('FREQ-642-AC-05: 既知の点4の順（数量2の交換の行を届かないで終える → ふつうの返金 → 開き直し → error → 交換 → 今すぐ返金 → error → やり直し）', async () => {
     const f = await hRefundFixture(db(), true);
-    const ret = await createUbReturn(db(), f, [{ quantity: 1, exchange: true }, { quantity: 1 }]);
-    const [exchangeLine, refundLine] = ret.lineIds;
+    // 数量2の交換の行 1本（在庫から交換）。2着目は在庫が無くなって、同じ行のまま返金（上書き refund）に変わる
+    const ret = await createUbReturn(db(), f, [{ quantity: 2, exchange: true, method: 'stock' }]);
+    const line = ret.lineIds[0];
     await q('select * from public.admin_close_return_missing($1,$2,$3)', [ret.returnId, f.actor, randomUUID()]);
     const ordinary = await hBegin(db(), f, 17000);
     await q('select * from public.admin_reopen_return($1,$2,$3)', [ret.returnId, f.actor, randomUUID()]);
     await q("select * from public.mark_order_refund_error($1,'stripe_rejected',false)", [ordinary.refund_id]);
-    const exchanged = await ubReceive(db(), { returnId: ret.returnId, actorId: f.actor, choice: 'none', units: [unit(exchangeLine)] });
+    await insertRestockMovement(db(), f.catalog.variantId, 1);
+    const exchanged = await ubReceive(db(), { returnId: ret.returnId, actorId: f.actor, choice: 'none', units: [unit(line)] });
+    expect(exchanged.exchange_order_item_ids).toHaveLength(1);
     const linksBefore = await linksOf(f.orderId);
     expect(linksBefore).toHaveLength(1);
-    const now = await ubReceive(db(), { returnId: ret.returnId, actorId: f.actor, choice: 'now', units: [unit(refundLine)] });
+    // 在庫を0にしてから、同じ行の2着目を今すぐ返金に変えて受け取る（店の側の扱い）
+    await q('delete from public.stock_movements where false');
+    const free = Number((await q('select stock_quantity n from public.item_variants where id=$1', [f.catalog.variantId])).rows[0].n);
+    if (free > 0) await insertRestockMovement(db(), f.catalog.variantId, -free);
+    const now = await ubReceive(db(), { returnId: ret.returnId, actorId: f.actor, choice: 'now', units: [unit(line)],
+      overrides: [{ return_line_id: line, action: 'refund' }] });
+    expect(now.refund_id).not.toBeNull();
     await q("select * from public.mark_order_refund_error($1,'stripe_rejected',false)", [now.refund_id]);
     await hResult(db(), now.refund_id, 'succeeded');
     await hResult(db(), ordinary.refund_id, 'succeeded');
-    expect(exchanged.exchange_order_item_ids).toHaveLength(1);
+    // 実際の限度: 受け取りの返金（E の流れ）の合計は E の最高以内、全部の返金は払った額以内
+    const max = Number((await q('select entitlement_max n from private.order_unit_totals($1)', [f.orderId])).rows[0].n);
+    const viaEvents = Number((await q(`select coalesce(sum(amount - shipping_amount),0) n from public.order_refunds
+      where order_id=$1 and source='return' and status<>'failed'`, [f.orderId])).rows[0].n);
+    expect(viaEvents).toBeLessThanOrEqual(max);
     expect(await refundedTotal(f.orderId)).toBeLessThanOrEqual(37000);
+    // 着ごとの割り振りは払った額以内。1着を2つの返金が握らない（取り押さえの列は1つ）
+    expect((await q(`select count(*)::int n from (select el.order_item_id, el.unit_index from public.order_unit_event_lines el
+      join public.order_line_unit_amounts u on u.order_item_id=el.order_item_id and u.unit_index=el.unit_index
+      group by el.order_item_id, el.unit_index, u.paid_amount having sum(el.allocation) > u.paid_amount) x`)).rows[0].n).toBe(0);
+    const claimed = (await q('select refund_id, count(*)::int n from public.order_line_unit_amounts where order_item_id=$1 and refund_id is not null group by 1', [f.itemId])).rows;
+    for (const c of claimed) expect(c.n).toBeLessThanOrEqual(1);
     expect(await linksOf(f.orderId)).toEqual(linksBefore);
     // error で外れた通常の返金の着を、その後の受け取りの返金が使った。通常の返金の遅い成功は着を取り直せず、見直しの印（支払いの例外）になる。
-    // 返し過ぎにはならず（合計は払った額以内）、受け取りの返金と交換の結びは動かない
+    // この道（通常の返金の取り押さえを着の出来事に合わせる）は Task 6 が直す。返し過ぎにはならず、受け取りの返金と交換の結びは動かない
     expect((await q('select detail,payment_ref from public.payment_exceptions where order_id=$1', [f.orderId])).rows)
       .toEqual([{ detail: 'group_h_refund_unit_mismatch', payment_ref: ordinary.refund_id }]);
   });

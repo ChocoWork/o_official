@@ -43,7 +43,7 @@ export function buildOrder(spec: OrderSpec): OrderPricingState {
     return {
       orderItemId: l.orderItemId, unitIndex, itemId: l.itemId, paidAmount: paid, allocatedAmount: 0, currentPrice: paid,
       state: 'kept' as const, holderOrderItemId: l.orderItemId, holderUnitIndex: unitIndex,
-      shipped: spec.shipped ?? true, returnedCustomerAt: null, returnedFeePercent: null, returnedEventSeq: null, returnedReturnLineId: null, claimedReturnLineId: null,
+      shipped: spec.shipped ?? true, returnedCustomerAt: null, returnedFeePercent: null, returnedEventSeq: null, returnedReturnLineId: null, claimedReturnLineId: null, claimedRefundId: null,
     };
   }));
   return {

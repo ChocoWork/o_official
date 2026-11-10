@@ -105,7 +105,7 @@ function selectPicks(
     for (let i = 0; i < r.quantity; i++) {
       const pool = order.slots.filter(s => {
         const key = slotKeyOfSlot(s);
-        if (s.state !== 'kept' || taken.has(key) || excluded.has(key)) return false;
+        if (s.state !== 'kept' || taken.has(key) || excluded.has(key) || s.claimedRefundId !== null) return false;
         if (r.cancel) return !s.shipped && s.orderItemId === r.holderOrderItemId;
         return s.shipped && s.holderOrderItemId === r.holderOrderItemId
           && (s.claimedReturnLineId === null || s.claimedReturnLineId === r.returnLineId);

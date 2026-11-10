@@ -134,9 +134,9 @@ BEGIN
       'returnedEventSeq', CASE WHEN s.state = 'returned_customer' THEN ret.seq END,
       'returnedReturnLineId', CASE WHEN s.state = 'returned_customer' THEN ret.return_line_id END,
       -- The claim of a slot held by an exchange unit is the exchange claim (spent): it is not reported, so a later return of the exchange item can pick the slot.
-      -- A unit an ordinary refund holds (refund_id) is reported with that refund id, which is no return line: the planner then skips the slot.
-      'claimedReturnLineId', CASE WHEN u.refund_id IS NOT NULL THEN u.refund_id
-        WHEN s.holder_order_item_id = s.order_item_id AND s.holder_unit_index = s.unit_index THEN u.return_line_id END) ORDER BY s.order_item_id, s.unit_index), '[]'::jsonb)
+      'claimedReturnLineId', CASE WHEN s.holder_order_item_id = s.order_item_id AND s.holder_unit_index = s.unit_index THEN u.return_line_id END,
+      -- The refund that holds the unit (refund_id); the planner does not pick such a slot.
+      'claimedRefundId', u.refund_id) ORDER BY s.order_item_id, s.unit_index), '[]'::jsonb)
   INTO v_slots
   FROM public.order_unit_slots AS s
   JOIN public.order_line_unit_amounts AS u ON u.order_item_id = s.order_item_id AND u.unit_index = s.unit_index
@@ -559,7 +559,7 @@ BEGIN
       ('private', 'order_unit_related_orders(uuid)', 'uuid[]', 's', true, '4008d3582ba5b9a27d834f2dced4a581'),
       ('private', 'order_unit_version(uuid)', 'text', 's', true, 'a3cc30f7ba6329a8dfb6a772d5b662c1'),
       ('private', 'order_unit_totals(uuid)', 'record', 's', true, '4aaecb3c271c62f983ef1d03480f1a4a'),
-      ('private', 'order_unit_order_state(uuid)', 'jsonb', 's', true, '249077aedfbd7f3d80a1d91411827ded'),
+      ('private', 'order_unit_order_state(uuid)', 'jsonb', 's', true, '1687dce7016aebf3572358815f98e6bf'),
       ('private', 'order_unit_pricing_materials(uuid)', 'jsonb', 's', true, 'f878db0be13a6dcf17cab5e381458f65'),
       ('public', 'order_unit_pricing_materials(uuid)', 'jsonb', 's', false, 'ce0476c87fa38d6e984c9cbe4a045034'),
       ('private', 'order_unit_plan_lines(jsonb)', 'record', 's', false, 'dc5b50fea718dcbe9b6a66a9dec003e2'),

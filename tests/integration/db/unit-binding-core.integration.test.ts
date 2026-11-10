@@ -114,7 +114,7 @@ describeLocalDb('FREQ-642-AC-18: unit binding core (controller only)', (db) => {
     expect(m.target.slots.every(s => s.shipped && s.state === 'kept' && s.allocatedAmount === 0 && s.currentPrice === s.paidAmount)).toBe(true);
     expect(m.target.slots.find(s => s.orderItemId === o.itemIds[0] && s.unitIndex === 0)).toEqual({ orderItemId: o.itemIds[0], unitIndex: 0, itemId: o.jacket.itemId, paidAmount: 17000, allocatedAmount: 0,
       currentPrice: 17000, state: 'kept', holderOrderItemId: o.itemIds[0], holderUnitIndex: 0, shipped: true, returnedCustomerAt: null,
-      returnedFeePercent: null, returnedEventSeq: null, returnedReturnLineId: null, claimedReturnLineId: null });
+      returnedFeePercent: null, returnedEventSeq: null, returnedReturnLineId: null, claimedReturnLineId: null, claimedRefundId: null });
     expect(m.target.snapshot.lines).toHaveLength(2);
     // An unshipped order has shipped=false slots.
     const unshipped = await seedOrder({ lines: [{ catalog: o.jacket, unitPrice: 20000, quantity: 1 }] });

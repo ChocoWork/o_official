@@ -56,7 +56,7 @@ export async function buildReceivePricing(db: PgClient, input: ReceiveInput): Pr
   const taken = new Set<SlotKey>();
   const excludedSlots: SlotKey[] = [];
   for (const ex of [...exchanges].sort((a, b) => (a.lineId < b.lineId ? -1 : 1))) {
-    const pool = materials.target.slots.filter(s => s.state === 'kept' && s.holderOrderItemId === ex.holder && !taken.has(`${s.orderItemId}:${s.unitIndex}`))
+    const pool = materials.target.slots.filter(s => s.state === 'kept' && s.claimedRefundId === null && s.holderOrderItemId === ex.holder && !taken.has(`${s.orderItemId}:${s.unitIndex}`))
       .sort((a, b) => Number(b.claimedReturnLineId === ex.lineId) - Number(a.claimedReturnLineId === ex.lineId)
         || a.currentPrice - b.currentPrice || (a.orderItemId < b.orderItemId ? -1 : a.orderItemId > b.orderItemId ? 1 : 0) || a.unitIndex - b.unitIndex);
     for (const s of pool.slice(0, ex.quantity)) { const key: SlotKey = `${s.orderItemId}:${s.unitIndex}`; taken.add(key); excludedSlots.push(key); }
@@ -83,7 +83,7 @@ export async function ubReceive(db: PgClient, input: ReceiveInput, pricing?: unk
 
 /** 返品を1件作って承認する（行ごとに数量・交換か返金か・理由）。FREQ-641 の取り押さえは承認が付ける。 */
 export async function createUbReturn(db: PgClient, f: { orderId: string; itemId: string; actor: string; fulfillment: { fulfillment_id?: string } | null; catalog: { variantId: number } },
-  groups: { quantity: number; exchange?: boolean; reason?: string; itemId?: string }[], o: { percent?: number; fixed?: number; itemId?: string } = {}) {
+  groups: { quantity: number; exchange?: boolean; reason?: string; itemId?: string; method?: 'make' | 'stock' }[], o: { percent?: number; fixed?: number; itemId?: string } = {}) {
   await db.query(`update public.shop_return_settings set return_address_name='Fixture',return_address_postal_code='1000001',
     return_address_line='Fixture',return_address_phone='0311112222',restocking_fee_enabled=true,exchange_fees_enabled=true where id=1`);
   const number = Number((await db.query('select coalesce(max(number),0)+1 as n from public.order_returns where order_id=$1', [f.orderId])).rows[0].n);
@@ -97,10 +97,10 @@ export async function createUbReturn(db: PgClient, f: { orderId: string; itemId:
       (id,return_id,fulfillment_id,order_item_id,quantity,reason,requested_resolution,requested_exchange_variant_id,resolution,exchange_variant_id,exchange_method)
       values($1,$2,$3,$4,$5,$6,$7,$8,$7,$8,$9)`,
     [lineIds[i], returnId, f.fulfillment?.fulfillment_id, g.itemId ?? f.itemId, g.quantity, g.reason ?? 'unknown',
-      g.exchange ? 'exchange' : 'refund', g.exchange ? f.catalog.variantId : null, g.exchange ? 'make' : null]);
+      g.exchange ? 'exchange' : 'refund', g.exchange ? f.catalog.variantId : null, g.exchange ? g.method ?? 'make' : null]);
   }
   const approval = groups.map((g, i) => ({ return_line_id: lineIds[i], resolution: g.exchange ? 'exchange' : 'refund',
-    exchange_variant_id: g.exchange ? f.catalog.variantId : null, exchange_method: g.exchange ? 'make' : null }));
+    exchange_variant_id: g.exchange ? f.catalog.variantId : null, exchange_method: g.exchange ? g.method ?? 'make' : null }));
   await db.query(`select * from public.admin_approve_return($1,$2,$3::jsonb,$4,'customer',null,null,$5,$6,0,0,null,false)`,
     [returnId, f.actor, JSON.stringify(approval), o.fixed ? 'shop_label' : 'customer_ships', o.fixed ?? 0, o.percent ?? 0]);
   return { returnId, lineIds };

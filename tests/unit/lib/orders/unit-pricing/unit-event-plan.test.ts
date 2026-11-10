@@ -233,6 +233,12 @@ describe('DD-ADMIN-021: 返す枠の選び方と誤り', () => {
     const target = { ...m.target, slots: m.target.slots.map(s => ({ ...s, claimedReturnLineId: 'rl-other' })) };
     expect(() => planUnitEvent(materialsOf(target), ret(1, 'customer'))).toThrow(UnitPricingError);
   });
+
+  test('返金が握っている枠（claimedRefundId）は選ばない', () => {
+    const m = repeat();
+    const target = { ...m.target, slots: m.target.slots.map(s => ({ ...s, claimedRefundId: 'refund-1' })) };
+    expect(() => planUnitEvent(materialsOf(target), ret(1, 'customer'))).toThrow(UnitPricingError);
+  });
 });
 
 describe('DD-ADMIN-021: 今すぐと相談の分け方', () => {
