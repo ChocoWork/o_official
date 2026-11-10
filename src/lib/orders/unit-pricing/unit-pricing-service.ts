@@ -323,7 +323,7 @@ async function planOrderRefundFrom(
     const suggestedAmount = safe(estimateRefund(refundMaterials.lines, selections, body.shippingAmount).total);
     return {
       plan: null,
-      estimate: { legacy: materials === null, suggestedAmount, itemsAmount: suggestedAmount - body.shippingAmount, refundCap, changesUnits: false },
+      estimate: { legacy: materials === null, suggestedAmount, itemsAmount: Math.max(suggestedAmount - body.shippingAmount, 0), refundCap, changesUnits: false },
     };
   }
   const cancels = preLines.map(l => ({ orderItemId: l.orderItemId, quantity: l.quantity }));
