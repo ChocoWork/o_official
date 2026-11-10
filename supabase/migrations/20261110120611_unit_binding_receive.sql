@@ -68,6 +68,7 @@ DECLARE
   v_k integer;
   v_price_sum integer;
   v_unshipped integer;
+  v_constraint text;
   v_released uuid[] := ARRAY[]::uuid[];
   v_operation uuid := pg_catalog.gen_random_uuid();
   v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
@@ -283,6 +284,12 @@ BEGIN
         ) AS h ON h.return_line_id=w.return_line_id AND h.part=w.part
         WHERE w.n IS DISTINCT FROM h.n
       ) THEN RAISE EXCEPTION 'UNIT_PRICING_INVALID' USING ERRCODE='22023',DETAIL='ub_receive_lines'; END IF;
+      -- Every returned plan line is held by the item of its return line (for an exchange item return, the exchange item).
+      IF EXISTS (
+        SELECT 1 FROM pg_catalog.jsonb_to_recordset(v_pricing->'lines') AS l("lineKind" text,"returnLineId" uuid,"holderOrderItemId" uuid)
+        LEFT JOIN public.order_return_lines AS rl ON rl.id=l."returnLineId"
+        WHERE l."lineKind"='returned' AND l."holderOrderItemId" IS DISTINCT FROM rl.order_item_id
+      ) THEN RAISE EXCEPTION 'UNIT_PRICING_INVALID' USING ERRCODE='22023',DETAIL='ub_receive_lines'; END IF;
       -- A discount treatment names a returned line and agrees with the side the plan gave that line.
       IF EXISTS (
         SELECT 1 FROM pg_catalog.jsonb_to_recordset(COALESCE(v_pricing->'treatments','[]'::jsonb)) AS t("returnLineId" uuid,treatment text)
@@ -349,7 +356,7 @@ BEGIN
         JOIN public.order_line_unit_amounts AS u ON u.order_item_id=s.order_item_id AND u.unit_index=s.unit_index
         LEFT JOIN pg_catalog.jsonb_to_recordset(v_pricing->'lines') AS pk("lineKind" text,"orderItemId" uuid,"unitIndex" integer,"priceAfter" integer)
           ON pk."lineKind" IN ('returned','kept') AND pk."orderItemId"=s.order_item_id AND pk."unitIndex"=s.unit_index
-        WHERE s.order_id=v_order AND s.state='kept' AND s.holder_order_item_id=v_line.order_item_id
+        WHERE s.order_id=v_order AND s.state='kept' AND s.holder_order_item_id=v_line.order_item_id AND u.refund_id IS NULL
           AND (pk."lineKind" IS NULL OR pk."lineKind"<>'returned')
           AND NOT ((s.order_item_id::text||':'||s.unit_index::text)=ANY(v_taken))
         ORDER BY (u.return_line_id IS NOT DISTINCT FROM v_line.id) DESC,s.current_price,s.order_item_id,s.unit_index
@@ -625,7 +632,11 @@ BEGIN
         _notify_customer,_actor_id,LEAST(v_fees,v_goods)
       FROM pg_catalog.jsonb_to_recordset(v_pricing->'lines') AS l("lineKind" text,part text,allocation integer)
       WHERE l."lineKind"='returned' AND l.part='now';
-    EXCEPTION WHEN unique_violation THEN RAISE EXCEPTION 'RETURN_REQUEST_MISMATCH' USING ERRCODE='22023'; END;
+    EXCEPTION WHEN unique_violation THEN
+      GET STACKED DIAGNOSTICS v_constraint = CONSTRAINT_NAME;
+      IF v_constraint = 'order_refunds_request_key_key' THEN RAISE EXCEPTION 'RETURN_REQUEST_MISMATCH' USING ERRCODE='22023'; END IF;
+      RAISE;
+    END;
     INSERT INTO public.order_refund_lines(refund_id,order_item_id,quantity,before_shipment,restock_type,amount)
     SELECT v_refund,c.item,c.n,false,'return',c.amount
     FROM (SELECT rl.order_item_id AS item,pg_catalog.count(*)::integer AS n,pg_catalog.sum(l.allocation)::integer AS amount
@@ -1103,7 +1114,7 @@ BEGIN
   -- ubr_functions: owner, security, settings, volatility, language and the exact body; the 14 argument functions are gone and each
   -- name has one definition in its schema.
   FOR e IN SELECT * FROM (VALUES
-    ('private', 'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)', 'v', true, 'plpgsql', '3118a1ec846048130f10ecd09b2a5102'),
+    ('private', 'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)', 'v', true, 'plpgsql', '2a532f2b98a59718ba74409828ccac1b'),
     ('public', 'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)', 'v', false, 'sql', 'dd060b0e28ac9450ca5f2fc218658b03'),
     ('private', 'record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb)', 'v', true, 'plpgsql', '4b6d2ce680d8db576cd1a9aadd4c4b22'),
     ('private', 'group_g_writer_allowlist()', 's', true, 'sql', '0c8a984982e81ef0342e3af887c93689')

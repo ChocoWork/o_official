@@ -8,7 +8,9 @@ import type { PgClient } from './local-db';
 /**
  * 受け取りの値段の計画（FREQ-642）を、サーバー（Task 7）と同じ決まりで本物の planUnitEvent から作る DB 試験の道具。
  * 返品の行の解決（交換・返金・上書き）から返す枠の依頼を作り、交換に出す枠は DB の結びの選び方
- * （FREQ-641 の return_line_id がその行の枠を先に、次に注文の行・unit_index の順）で excludedSlots に入れる。
+ * （FREQ-641 の return_line_id がその行の枠を先に、次に安い枠、次に注文の行・unit_index の順）で excludedSlots に入れる。
+ * 交換に出した枠の取り押さえは、交換の品の返品の返金を結ぶ時（order_unit_link_refund）まで残る。材料（order_unit_pricing_materials）は、
+ * 持ち主が自分の着でない枠の取り押さえを報告しないので、材料はそのまま計画に渡す。
  */
 export type ReceiveUnit = { return_line_id: string; disposition: string; quantity: number; refund_choice?: 'now' | 'consult' | null };
 export type ReceiveInput = {
@@ -59,11 +61,7 @@ export async function buildReceivePricing(db: PgClient, input: ReceiveInput): Pr
         || a.currentPrice - b.currentPrice || (a.orderItemId < b.orderItemId ? -1 : a.orderItemId > b.orderItemId ? 1 : 0) || a.unitIndex - b.unitIndex);
     for (const s of pool.slice(0, ex.quantity)) { const key: SlotKey = `${s.orderItemId}:${s.unitIndex}`; taken.add(key); excludedSlots.push(key); }
   }
-  // 交換に出した枠（持ち主が交換の品の着）の FREQ-641 の取り押さえは、その交換の返品の行の物。計画は他の返品の行の取り押さえがある枠を
-  // 選ばないので、交換の品の返品を計画する時は、交換に出した枠の取り押さえを無いものとして渡す（DB が返金を結ぶ時に外す）
-  const forPlan: UnitPricingMaterials = { ...materials, target: { ...materials.target, slots: materials.target.slots.map(s =>
-    (s.holderOrderItemId !== s.orderItemId || s.holderUnitIndex !== s.unitIndex ? { ...s, claimedReturnLineId: null } : s)) } };
-  return planUnitEvent(forPlan, { kind: 'return_receive', returns: [...returns.values()], excludedSlots });
+  return planUnitEvent(materials, { kind: 'return_receive', returns: [...returns.values()], excludedSlots });
 }
 
 /** public.admin_receive_return を15の引数で呼ぶ。pricing を省くと本物の計画を作って渡す。null を渡すと NULL のまま。 */

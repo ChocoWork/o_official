@@ -5,7 +5,7 @@ import path from 'node:path';
 import { planUnitEvent } from '@/lib/orders/unit-pricing/unit-event-plan';
 import type { UnitPricingMaterials } from '@/lib/orders/unit-pricing/unit-pricing-types';
 import { seedFactSlip } from './helpers/accounting-orders-fixtures';
-import { hClaims, hRefundFixture, hResult, type HRefundFixture } from './helpers/group-h-refund-fixtures';
+import { hBegin, hClaims, hRefundFixture, hResult, type HRefundFixture } from './helpers/group-h-refund-fixtures';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
 import { acceptHCheckout, hDiscount, seedHCheckout, seedHDiscount, seedHMember } from './helpers/group-h-fixtures';
 import { createCatalogFixture, insertOrderWithLines, shipFixtureOrder } from './helpers/order-fixtures';
@@ -130,7 +130,7 @@ describeLocalDb('FREQ-642-AC-17: unit binding receive (controller only)', (db) =
     expect((await slotsOf(f.orderId)).map((s) => s.state).sort()).toEqual(['returned_customer', 'returned_customer']);
   });
 
-  test('FREQ-642-AC-05: 既知の点4の順でも合計37,000円を超えず交換の結びが動かない', async () => {
+  test('FREQ-642-AC-05: 交換の品を2着とも error を挟んで返しても合計37,000円で交換の結びが動かない', async () => {
     const f = await hRefundFixture(db(), true);
     const x = await exchangedAll(f, 2);
     const linksBefore = await linksOf(f.orderId);
@@ -148,6 +148,50 @@ describeLocalDb('FREQ-642-AC-17: unit binding receive (controller only)', (db) =
     // やり直しで付け直した着は、出来事が返した着そのもの（取り押さえは位置では選ばない）
     const claimsByRefund = (await q(`select refund_id, count(*)::int n from public.order_line_unit_amounts where order_item_id=$1 and refund_id is not null group by 1`, [f.itemId])).rows;
     expect(claimsByRefund.map((r) => r.n).sort()).toEqual([1, 1]);
+  });
+
+  test('FREQ-642-AC-05: 既知の点4の順（届かないで終える → ふつうの返金 → 開き直し → error → 交換 → 今すぐ → error → やり直し）で合計37,000円を超えず結びが動かない', async () => {
+    const f = await hRefundFixture(db(), true);
+    const ret = await createUbReturn(db(), f, [{ quantity: 1, exchange: true }, { quantity: 1 }]);
+    const [exchangeLine, refundLine] = ret.lineIds;
+    await q('select * from public.admin_close_return_missing($1,$2,$3)', [ret.returnId, f.actor, randomUUID()]);
+    const ordinary = await hBegin(db(), f, 17000);
+    await q('select * from public.admin_reopen_return($1,$2,$3)', [ret.returnId, f.actor, randomUUID()]);
+    await q("select * from public.mark_order_refund_error($1,'stripe_rejected',false)", [ordinary.refund_id]);
+    const exchanged = await ubReceive(db(), { returnId: ret.returnId, actorId: f.actor, choice: 'none', units: [unit(exchangeLine)] });
+    const linksBefore = await linksOf(f.orderId);
+    expect(linksBefore).toHaveLength(1);
+    const now = await ubReceive(db(), { returnId: ret.returnId, actorId: f.actor, choice: 'now', units: [unit(refundLine)] });
+    await q("select * from public.mark_order_refund_error($1,'stripe_rejected',false)", [now.refund_id]);
+    await hResult(db(), now.refund_id, 'succeeded');
+    await hResult(db(), ordinary.refund_id, 'succeeded');
+    expect(exchanged.exchange_order_item_ids).toHaveLength(1);
+    expect(await refundedTotal(f.orderId)).toBeLessThanOrEqual(37000);
+    expect(await linksOf(f.orderId)).toEqual(linksBefore);
+    // error で外れた通常の返金の着を、その後の受け取りの返金が使った。通常の返金の遅い成功は着を取り直せず、見直しの印（支払いの例外）になる。
+    // 返し過ぎにはならず（合計は払った額以内）、受け取りの返金と交換の結びは動かない
+    expect((await q('select detail,payment_ref from public.payment_exceptions where order_id=$1', [f.orderId])).rows)
+      .toEqual([{ detail: 'group_h_refund_unit_mismatch', payment_ref: ordinary.refund_id }]);
+  });
+
+  test('FREQ-642-AC-17: 受け取りの計画の返す着は返品の行の品が持つ着でなければ断る', async () => {
+    const f = await hRefundFixture(db(), true);
+    const ret = await createUbReturn(db(), f, [{ quantity: 1 }]);
+    const input = { returnId: ret.returnId, actorId: f.actor, choice: 'now', units: [unit(ret.lineIds[0])] };
+    const plan = (await buildReceivePricing(db(), input))!;
+    const tampered = { ...plan, lines: plan.lines.map((l) => (l.lineKind === 'returned' ? { ...l, holderOrderItemId: randomUUID() } : l)) };
+    expect(await failure(() => ubReceive(db(), input, tampered))).toMatchObject({ code: '22023', message: 'UNIT_PRICING_INVALID', detail: 'ub_receive_lines' });
+  });
+
+  test('FREQ-642-AC-17: 計画の後に交換だけの受け取りが入ると、計画は STALE（40001）で断られる', async () => {
+    const f = await hRefundFixture(db(), true);
+    const refundReturn = await createUbReturn(db(), f, [{ quantity: 1 }]);
+    const input = { returnId: refundReturn.returnId, actorId: f.actor, choice: 'now', units: [unit(refundReturn.lineIds[0])] };
+    const plan = (await buildReceivePricing(db(), input))!;
+    // 別の交換だけの受け取りが、計画の返す枠を交換に出した（出来事は書かれず版は動かない。枠の持ち主だけが動く）
+    const planned = plan.lines.find((l) => l.lineKind === 'returned')!;
+    await q('update public.order_unit_slots set holder_unit_index=holder_unit_index+10 where order_item_id=$1 and unit_index=$2', [planned.orderItemId, planned.unitIndex]);
+    expect(await failure(() => ubReceive(db(), input, plan))).toMatchObject({ code: '40001', message: 'UNIT_PRICING_STALE' });
   });
 
   test('FREQ-642-AC-06: 10%で1着ずつ2回相談すると控えは1,700円と2,000円', async () => {

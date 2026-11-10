@@ -133,7 +133,10 @@ BEGIN
       'returnedFeePercent', CASE WHEN s.state = 'returned_customer' THEN ret.fee_percent END,
       'returnedEventSeq', CASE WHEN s.state = 'returned_customer' THEN ret.seq END,
       'returnedReturnLineId', CASE WHEN s.state = 'returned_customer' THEN ret.return_line_id END,
-      'claimedReturnLineId', u.return_line_id) ORDER BY s.order_item_id, s.unit_index), '[]'::jsonb)
+      -- The claim of a slot held by an exchange unit is the exchange claim (spent): it is not reported, so a later return of the exchange item can pick the slot.
+      -- A unit an ordinary refund holds (refund_id) is reported with that refund id, which is no return line: the planner then skips the slot.
+      'claimedReturnLineId', CASE WHEN u.refund_id IS NOT NULL THEN u.refund_id
+        WHEN s.holder_order_item_id = s.order_item_id AND s.holder_unit_index = s.unit_index THEN u.return_line_id END) ORDER BY s.order_item_id, s.unit_index), '[]'::jsonb)
   INTO v_slots
   FROM public.order_unit_slots AS s
   JOIN public.order_line_unit_amounts AS u ON u.order_item_id = s.order_item_id AND u.unit_index = s.unit_index
@@ -293,6 +296,12 @@ BEGIN
   -- (3) every line names a slot. A returned or kept line is on this order's slot with the state, price, holder and shipped mark the plan was
   -- made from. A hold line is on the slot of a related order and only records that slot (a plan applied one event earlier, such as
   -- the return that released the hold, may have moved the later order's slot since the plan was made).
+  -- A slot whose holder moved since the plan was made (an exchange-only receipt writes no event, so the version does not move) is a stale plan.
+  IF EXISTS (SELECT 1 FROM private.order_unit_plan_line_facts(_plan) AS f
+      WHERE f.line_kind <> 'hold' AND f.s_order_id = f.slot_order_id AND f.slot_order_id = v_order_id
+        AND (f.holder_order_item_id <> f.s_holder_item OR f.holder_unit_index <> f.s_holder_index)) THEN
+    RAISE EXCEPTION 'UNIT_PRICING_STALE' USING ERRCODE = '40001';
+  END IF;
   IF EXISTS (SELECT 1 FROM private.order_unit_plan_line_facts(_plan) AS f
       WHERE f.s_order_id IS NULL OR f.s_order_id <> f.slot_order_id
         OR (f.line_kind <> 'hold' AND (f.slot_order_id <> v_order_id OR f.state_before <> f.s_state OR f.price_before <> f.s_price
@@ -550,13 +559,13 @@ BEGIN
       ('private', 'order_unit_related_orders(uuid)', 'uuid[]', 's', true, '4008d3582ba5b9a27d834f2dced4a581'),
       ('private', 'order_unit_version(uuid)', 'text', 's', true, 'a3cc30f7ba6329a8dfb6a772d5b662c1'),
       ('private', 'order_unit_totals(uuid)', 'record', 's', true, '4aaecb3c271c62f983ef1d03480f1a4a'),
-      ('private', 'order_unit_order_state(uuid)', 'jsonb', 's', true, '5c3799202b974f74d029345ba848eced'),
+      ('private', 'order_unit_order_state(uuid)', 'jsonb', 's', true, '249077aedfbd7f3d80a1d91411827ded'),
       ('private', 'order_unit_pricing_materials(uuid)', 'jsonb', 's', true, 'f878db0be13a6dcf17cab5e381458f65'),
       ('public', 'order_unit_pricing_materials(uuid)', 'jsonb', 's', false, 'ce0476c87fa38d6e984c9cbe4a045034'),
       ('private', 'order_unit_plan_lines(jsonb)', 'record', 's', false, 'dc5b50fea718dcbe9b6a66a9dec003e2'),
       ('private', 'order_unit_plan_holds(jsonb)', 'record', 's', false, '3e441b7352524983a7097a25df2e06b3'),
       ('private', 'order_unit_plan_line_facts(jsonb)', 'record', 's', false, '3f7c0645a3dd3e0b01feef6578499f7f'),
-      ('private', 'order_unit_apply_plan(jsonb,uuid,uuid,uuid,uuid)', 'uuid', 'v', true, '06d94962c66c07ab1994a6720aeec17a'),
+      ('private', 'order_unit_apply_plan(jsonb,uuid,uuid,uuid,uuid)', 'uuid', 'v', true, 'f6d961168d661a1d6a4b548622753b7e'),
       ('private', 'group_h_claim_refund_units(uuid,uuid,integer[],boolean,uuid)', 'integer', 'v', true, '122b4819f9926b5e249861bb34f7ef90'),
       ('private', 'group_h_release_return_units(uuid,integer[])', 'void', 'v', true, '2321e7f708f89c92e8a19a32fe847836'),
       ('private', 'order_unit_link_refund(uuid,uuid,text)', 'void', 'v', true, '8b66fac61cc6a28bf9a4b2d634efb213'),
