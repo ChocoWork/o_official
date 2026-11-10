@@ -6,9 +6,11 @@ BEGIN;
 -- @design docs/superpowers/specs/2026-11-08-exchange-unit-binding-design.md
 -- 1. order_unit_events: the ten amount columns lose their DEFAULT 0 (NOT NULL stays), so a missing value fails loudly.
 -- 2. order_unit_slots: a BEFORE UPDATE guard. The key columns (order_item_id, unit_index, order_id, item_id) never change; the state moves
---    only kept -> returned_customer / returned_shop. returned_shop -> kept is allowed only while the transaction-local setting
---    app.unit_slot_revert is 'on' (the revert path of a stopped pre-shipment cancel sets it right before its UPDATE and the caller
---    must hold the G lock; the guard checks the lock in that path). A CHECK still answers for an unknown state value.
+--    only kept -> returned_customer / returned_shop. A returned slot keeps its price and holder. returned_shop -> kept is allowed only
+--    for a slot whose last_event_id is a pre_shipment_cancel event, while app.unit_slot_revert equals the current top-level
+--    transaction id (the revert path runs: select set_config('app.unit_slot_revert', txid_current()::text, true) right before its
+--    UPDATE; a non-local or older setting never equals the new transaction id) and the G lock is held. A CHECK still answers for
+--    an unknown state value.
 -- 3. private.order_unit_pricing_materials (+ public entry for service_role): the UnitPricingMaterials JSON of the TypeScript planner.
 --    version = the largest event seq that touched the target or a related order ('0' when none). related = every other paid order of the
 --    same member that has a snapshot. A hold row appears only in the materials of the order that is held_order_id.
@@ -40,12 +42,19 @@ BEGIN
     OR OLD.order_id IS DISTINCT FROM NEW.order_id OR OLD.item_id IS DISTINCT FROM NEW.item_id THEN
     RAISE EXCEPTION 'UNIT_SLOT_IMMUTABLE' USING ERRCODE = '55000', DETAIL = 'key';
   END IF;
+  -- A returned slot keeps its price and holder, except in the revert path below.
+  IF OLD.state IN ('returned_customer', 'returned_shop') AND NOT (OLD.state = 'returned_shop' AND NEW.state = 'kept')
+    AND (NEW.current_price IS DISTINCT FROM OLD.current_price OR NEW.holder_order_item_id IS DISTINCT FROM OLD.holder_order_item_id
+      OR NEW.holder_unit_index IS DISTINCT FROM OLD.holder_unit_index) THEN
+    RAISE EXCEPTION 'UNIT_SLOT_IMMUTABLE' USING ERRCODE = '55000', DETAIL = 'frozen';
+  END IF;
   IF NEW.state IS DISTINCT FROM OLD.state AND OLD.state IN ('kept', 'returned_customer', 'returned_shop')
     AND NEW.state IN ('kept', 'returned_customer', 'returned_shop') THEN
     IF OLD.state = 'kept' THEN
       NULL;
     ELSIF OLD.state = 'returned_shop' AND NEW.state = 'kept'
-      AND pg_catalog.current_setting('app.unit_slot_revert', true) IS NOT DISTINCT FROM 'on' THEN
+      AND pg_catalog.current_setting('app.unit_slot_revert', true) IS NOT DISTINCT FROM pg_catalog.txid_current()::text
+      AND EXISTS (SELECT 1 FROM public.order_unit_events AS e WHERE e.id = OLD.last_event_id AND e.kind = 'pre_shipment_cancel') THEN
       PERFORM private.group_h_assert_unit_lock();
     ELSE
       RAISE EXCEPTION 'UNIT_SLOT_IMMUTABLE' USING ERRCODE = '55000', DETAIL = 'state';
@@ -72,15 +81,18 @@ AS $$
     AND EXISTS (SELECT 1 FROM public.order_discount_snapshots AS s WHERE s.order_id = o.id)
 $$;
 
--- The largest seq of the events that touched the target or a related order (as event order or as a slot order of a line).
+-- Opaque version: '<largest seq of the events that touched the target or a related order (as event order or as a slot order of
+-- a line)>:<md5 of the sorted related order ids>'. A related order that appears or disappears without an event changes it too.
 CREATE FUNCTION private.order_unit_version(_order_id uuid) RETURNS text
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
 AS $$
-  SELECT COALESCE(pg_catalog.max(e.seq), 0)::text
-  FROM public.order_unit_events AS e
-  WHERE e.order_id = ANY (ARRAY[_order_id] || private.order_unit_related_orders(_order_id))
-    OR EXISTS (SELECT 1 FROM public.order_unit_event_lines AS l WHERE l.event_id = e.id
-      AND l.slot_order_id = ANY (ARRAY[_order_id] || private.order_unit_related_orders(_order_id)))
+  SELECT (SELECT COALESCE(pg_catalog.max(e.seq), 0)
+    FROM public.order_unit_events AS e
+    WHERE e.order_id = ANY (ARRAY[_order_id] || private.order_unit_related_orders(_order_id))
+      OR EXISTS (SELECT 1 FROM public.order_unit_event_lines AS l WHERE l.event_id = e.id
+        AND l.slot_order_id = ANY (ARRAY[_order_id] || private.order_unit_related_orders(_order_id))))::text
+    || ':' || pg_catalog.md5(COALESCE((SELECT pg_catalog.string_agg(t.x::text, ',' ORDER BY t.x)
+      FROM pg_catalog.unnest(private.order_unit_related_orders(_order_id)) AS t(x)), ''))
 $$;
 
 -- previous E = the entitlement of the newest event, max = the largest entitlement without the events a cancel_reverted event undid,
@@ -93,8 +105,8 @@ AS $$
     COALESCE((SELECT e.entitlement FROM public.order_unit_events AS e WHERE e.order_id = _order_id
       AND NOT EXISTS (SELECT 1 FROM public.order_unit_events AS r WHERE r.reverts_event_id = e.id)
       ORDER BY e.seq DESC LIMIT 1), 0),
-    COALESCE((SELECT pg_catalog.max(e.entitlement) FROM public.order_unit_events AS e WHERE e.order_id = _order_id
-      AND NOT EXISTS (SELECT 1 FROM public.order_unit_events AS r WHERE r.reverts_event_id = e.id)), 0),
+    GREATEST(COALESCE((SELECT pg_catalog.max(e.entitlement) FROM public.order_unit_events AS e WHERE e.order_id = _order_id
+      AND NOT EXISTS (SELECT 1 FROM public.order_unit_events AS r WHERE r.reverts_event_id = e.id)), 0), 0),
     COALESCE((SELECT pg_catalog.sum(e.fee_amount) FROM public.order_unit_events AS e WHERE e.order_id = _order_id
       AND NOT EXISTS (SELECT 1 FROM public.order_unit_events AS r WHERE r.reverts_event_id = e.id)), 0)::integer,
     COALESCE((SELECT pg_catalog.sum(h.amount) FROM public.order_unit_holds AS h WHERE h.held_order_id = _order_id), 0)::integer
@@ -302,7 +314,8 @@ BEGIN
   -- (5) allocations: not negative, none on kept and hold lines, the sum per slot within what was paid
   IF EXISTS (SELECT 1 FROM private.order_unit_plan_line_facts(_plan) AS f
       WHERE f.allocation < 0 OR (f.line_kind <> 'returned' AND f.allocation <> 0) OR f.price_after < 0
-        OR (f.line_kind = 'returned' AND f.s_allocated + f.allocation > f.s_paid)) THEN
+        OR (f.line_kind = 'returned' AND (f.s_allocated + f.allocation > f.s_paid
+          OR f.allocation <> GREATEST(0, LEAST(f.price_before, f.s_paid - f.s_allocated)) OR f.price_after <> f.allocation))) THEN
     RAISE EXCEPTION 'UNIT_PRICING_INVALID' USING ERRCODE = '22023', DETAIL = 'ub_plan_5';
   END IF;
   -- (6) the identity: sum(allocation) - sum(correction) - fee = E - previous E; a returned or kept line corrects its slot price by the difference
@@ -347,7 +360,7 @@ BEGIN
   FROM public.order_unit_slots AS s
   LEFT JOIN private.order_unit_plan_lines(_plan) AS f ON f.line_kind <> 'hold' AND f.order_item_id = s.order_item_id AND f.unit_index = s.unit_index
   WHERE s.order_id = v_order_id;
-  IF v_ent <> v_paid - v_kept_after - v_hold_total - v_tot.fee_total - v_fee THEN
+  IF v_ent <> v_paid - v_kept_after - v_hold_total - v_tot.fee_total - v_fee OR v_gross <> v_paid - v_kept_after - v_hold_total THEN
     RAISE EXCEPTION 'UNIT_PRICING_INVALID' USING ERRCODE = '22023', DETAIL = 'ub_plan_6';
   END IF;
   -- record
@@ -533,17 +546,17 @@ BEGIN
   -- ubc_functions: owner, security, settings, volatility, result type and the exact body of every function of this file.
   IF v_detail IS NULL THEN
     FOR e IN SELECT * FROM (VALUES
-      ('private', 'order_unit_slot_guard()', 'trigger', 'v', true, 'df6f24d50e73564f322dd270cc486143'),
+      ('private', 'order_unit_slot_guard()', 'trigger', 'v', true, '67215a81245148dd3ea65c6c4e39a39b'),
       ('private', 'order_unit_related_orders(uuid)', 'uuid[]', 's', true, '4008d3582ba5b9a27d834f2dced4a581'),
-      ('private', 'order_unit_version(uuid)', 'text', 's', true, '4ba63475bf12c3cb996fe97150b64e04'),
-      ('private', 'order_unit_totals(uuid)', 'record', 's', true, '591249f4d763238116874bd8671eafcb'),
+      ('private', 'order_unit_version(uuid)', 'text', 's', true, 'a3cc30f7ba6329a8dfb6a772d5b662c1'),
+      ('private', 'order_unit_totals(uuid)', 'record', 's', true, '4aaecb3c271c62f983ef1d03480f1a4a'),
       ('private', 'order_unit_order_state(uuid)', 'jsonb', 's', true, '5c3799202b974f74d029345ba848eced'),
       ('private', 'order_unit_pricing_materials(uuid)', 'jsonb', 's', true, 'f878db0be13a6dcf17cab5e381458f65'),
       ('public', 'order_unit_pricing_materials(uuid)', 'jsonb', 's', false, 'ce0476c87fa38d6e984c9cbe4a045034'),
       ('private', 'order_unit_plan_lines(jsonb)', 'record', 's', false, 'dc5b50fea718dcbe9b6a66a9dec003e2'),
       ('private', 'order_unit_plan_holds(jsonb)', 'record', 's', false, '3e441b7352524983a7097a25df2e06b3'),
       ('private', 'order_unit_plan_line_facts(jsonb)', 'record', 's', false, '3f7c0645a3dd3e0b01feef6578499f7f'),
-      ('private', 'order_unit_apply_plan(jsonb,uuid,uuid,uuid,uuid)', 'uuid', 'v', true, '9b12175d22330a1d47705902b72ec3c2'),
+      ('private', 'order_unit_apply_plan(jsonb,uuid,uuid,uuid,uuid)', 'uuid', 'v', true, '06d94962c66c07ab1994a6720aeec17a'),
       ('private', 'group_h_claim_refund_units(uuid,uuid,integer[],boolean,uuid)', 'integer', 'v', true, '122b4819f9926b5e249861bb34f7ef90'),
       ('private', 'group_h_release_return_units(uuid,integer[])', 'void', 'v', true, '2321e7f708f89c92e8a19a32fe847836'),
       ('private', 'order_unit_link_refund(uuid,uuid,text)', 'void', 'v', true, '8b66fac61cc6a28bf9a4b2d634efb213'),

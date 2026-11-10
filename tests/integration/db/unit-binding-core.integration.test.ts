@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { DiscountDefinition } from '@/lib/discounts/discount-types';
 import { planUnitEvent } from '@/lib/orders/unit-pricing/unit-event-plan';
 import type { UnitEventChange, UnitPricingMaterials, UnitPricingPlan } from '@/lib/orders/unit-pricing/unit-pricing-types';
-import { amount } from '../../unit/lib/discounts/fixtures';
+import { amount, definition } from '../../unit/lib/discounts/fixtures';
 import { buildOrder } from '../../unit/lib/orders/unit-pricing/fixtures';
 import { seedFactSlip } from './helpers/accounting-orders-fixtures';
 import { hDiscount, seedHDiscount, seedHMember, seedHOrderUnits, seedHUnitSlots, type HCatalog } from './helpers/group-h-fixtures';
@@ -103,7 +103,7 @@ describeLocalDb('FREQ-642-AC-18: unit binding core (controller only)', (db) => {
   test('FREQ-642-AC-18: 材料は型どおりの形で、版は出来事が無ければ 0・出荷済みの印は会計の道具から', async () => {
     const o = await setOrder();
     const m = (await materialsOf(o.orderId))!;
-    expect(m.version).toBe('0');
+    expect(m.version).toMatch(/^0:[0-9a-f]{32}$/);
     expect(m.related).toEqual([]);
     expect(m.target).toMatchObject({ orderId: o.orderId, paidTotal: 45500, entitlementPrevious: 0, entitlementMax: 0, feeTotal: 0, holds: [] });
     expect(typeof m.target.placedAt).toBe('string');
@@ -139,7 +139,7 @@ describeLocalDb('FREQ-642-AC-18: unit binding core (controller only)', (db) => {
     expect(pants).toMatchObject({ state: 'returned_customer', current_price: 8500, last_event_id: eventId });
     // The next read sees the event: version is its seq, previous E and the max follow, the returned slot carries the event.
     const next = (await materialsOf(o.orderId))!;
-    expect(next.version).toBe(String(event.seq));
+    expect(next.version).toMatch(new RegExp(`^${event.seq}:[0-9a-f]{32}$`));
     expect(next.target).toMatchObject({ entitlementPrevious: 5500, entitlementMax: 5500, feeTotal: 0 });
     const returned = next.target.slots.find(s => s.orderItemId === o.itemIds[1])!;
     expect(returned).toMatchObject({ state: 'returned_customer', allocatedAmount: 8500, returnedEventSeq: Number(event.seq), returnedFeePercent: null, returnedReturnLineId: null });
@@ -161,6 +161,60 @@ describeLocalDb('FREQ-642-AC-18: unit binding core (controller only)', (db) => {
     const plan = planUnitEvent((await materialsOf(o.orderId))!, returnOf(o.itemIds[1]));
     await q('rollback'); await q('begin');
     expect(await failure(() => lockedApply(plan))).toMatchObject({ message: 'GROUP_H_LOCK_REQUIRED', code: '55000' });
+  });
+
+  test('FREQ-642-AC-14: E が下がった後も、返す額の累計は払った額を超えない（E の最高は 0 円から）', async () => {
+    const catalog = await createCatalogFixture(db()); const userId = await seedHMember(db());
+    const o = await seedOrder({ userId, ship: true, lines: [{ catalog, unitPrice: 10000, quantity: 3 }],
+      definitions: [definition('tier', { kind: 'product', value: { type: 'percent', value: 50 }, minimum: { type: 'quantity', value: 3 } })] });
+    const first = planUnitEvent((await materialsOf(o.orderId))!, returnOf(o.itemIds[0]));
+    expect([first.entitlement, first.standardRefund]).toEqual([-5000, 0]);
+    await lockedApply(first);
+    const next = (await materialsOf(o.orderId))!;
+    expect(next.target).toMatchObject({ entitlementPrevious: -5000, entitlementMax: 0, paidTotal: 15000 });
+    const second = planUnitEvent(next, returnOf(o.itemIds[0], 'customer', { quantity: 2 }));
+    expect([second.entitlement, second.entitlementMaxBefore, second.standardRefund]).toEqual([15000, 0, 15000]);
+    await lockedApply(second);
+    expect((await q('select sum(standard_refund)::int n from public.order_unit_events where order_id=$1', [o.orderId])).rows[0].n).toBe(15000);
+  });
+
+  test('FREQ-642-AC-17: 材料を読んだ後に同じ会員の入金済みの注文が増えたら、古い計画は STALE', async () => {
+    const jacket = await createCatalogFixture(db()); const userId = await seedHMember(db());
+    const first = await seedOrder({ userId, ship: true, lines: [{ catalog: jacket, unitPrice: 20000, quantity: 1 }] });
+    const plan = planUnitEvent((await materialsOf(first.orderId))!, returnOf(first.itemIds[0]));
+    await seedOrder({ userId, lines: [{ catalog: jacket, unitPrice: 20000, quantity: 1 }] });
+    const before = await counts();
+    expect(await failure(() => lockedApply(plan))).toMatchObject({ message: 'UNIT_PRICING_STALE', code: '40001' });
+    expect(await counts()).toEqual(before);
+    expect((await materialsOf(first.orderId))!.related).toHaveLength(1);
+  });
+
+  test('FREQ-642-AC-18: 割り振りが払った額を超える計画は、直しで釣り合わせても断る。金額の取り方も計画どおりでなければ断る', async () => {
+    const o = await setOrder();
+    const plan = planUnitEvent((await materialsOf(o.orderId))!, returnOf(o.itemIds[1]));
+    const over = structuredClone(plan); over.lines[0].allocation = 9000; over.lines[0].priceAfter = 9000; over.lines[0].correction = 500;
+    expect(await failure(() => lockedApply(over))).toMatchObject({ message: 'UNIT_PRICING_INVALID', detail: 'ub_plan_5' });
+    const under = structuredClone(plan); under.lines[0].allocation = 8000; under.lines[0].priceAfter = 8000; under.lines[0].correction = -500;
+    expect(await failure(() => lockedApply(under))).toMatchObject({ message: 'UNIT_PRICING_INVALID', detail: 'ub_plan_5' });
+    const priced = structuredClone(plan); priced.lines[0].priceAfter = 8000; priced.lines[0].correction = -500;
+    expect(await failure(() => lockedApply(priced))).toMatchObject({ message: 'UNIT_PRICING_INVALID', detail: 'ub_plan_5' });
+  });
+
+  test('FREQ-642-AC-18: E の総額（entitlementGross）が払った額 − 残る着 − holds と違う計画は断る', async () => {
+    const o = await setOrder();
+    const plan = planUnitEvent((await materialsOf(o.orderId))!, returnOf(o.itemIds[1]));
+    plan.entitlementGross += 1;
+    expect(await failure(() => lockedApply(plan))).toMatchObject({ message: 'UNIT_PRICING_INVALID', detail: 'ub_plan_6' });
+  });
+
+  test('FREQ-642-AC-18: 関わらない注文の枠を指す hold の行は断る', async () => {
+    const o = await setOrder();
+    const stranger = await seedOrder({ userId: await seedHMember(db()), lines: [{ catalog: o.jacket, unitPrice: 20000, quantity: 1 }] });
+    const plan = planUnitEvent((await materialsOf(o.orderId))!, returnOf(o.itemIds[1]));
+    plan.lines.push({ lineKind: 'hold', orderItemId: stranger.itemIds[0], unitIndex: 0, slotOrderId: stranger.orderId,
+      holderOrderItemId: stranger.itemIds[0], holderUnitIndex: 0, stateBefore: 'kept', stateAfter: 'kept', priceBefore: 20000, priceAfter: 20000,
+      allocation: 0, correction: 0, part: null, returnLineId: null, shipped: false });
+    expect(await failure(() => lockedApply(plan))).toMatchObject({ message: 'UNIT_PRICING_INVALID', detail: 'ub_plan_3' });
   });
 
   describe('tampered plans', () => {
@@ -247,12 +301,12 @@ describeLocalDb('FREQ-642-AC-18: unit binding core (controller only)', (db) => {
     ]);
     // The later order's slot price does not move; the hold lives in the held order's materials only.
     const after = (await materialsOf(first.orderId))!;
-    expect(after.version).toBe(String(event.seq));
+    expect(after.version).toMatch(new RegExp(`^${event.seq}:`));
     expect(after.target.holds).toEqual([{ heldOrderId: first.orderId, laterOrderId: second.orderId, itemId: jacket.itemId, amount: 3000, seq: Number(event.seq) }]);
     expect(after.related[0].holds).toEqual([]);
     expect(after.related[0].slots[0].currentPrice).toBe(17000);
     const fromSecond = (await materialsOf(second.orderId))!;
-    expect(fromSecond.version).toBe(after.version);
+    expect(fromSecond.version.split(':')[0]).toBe(after.version.split(':')[0]);
     expect(fromSecond.target.holds).toEqual([]);
     expect(fromSecond.related[0].holds).toHaveLength(1);
     // Example 10-2: the later order's return plans a release of the hold; as its own event it gives the amount back.
@@ -260,7 +314,7 @@ describeLocalDb('FREQ-642-AC-18: unit binding core (controller only)', (db) => {
     expect(plan2.standardRefund).toBe(17000);
     expect(plan2.releases).toHaveLength(1);
     await lockedApply(plan2);
-    const release = { ...plan2.releases[0], version: (await materialsOf(second.orderId))!.version };
+    const release = { ...plan2.releases[0], version: (await materialsOf(first.orderId))!.version };
     const releaseId = await lockedApply(release);
     expect((await q('select kind,order_id,standard_refund,entitlement from public.order_unit_events where id=$1', [releaseId])).rows[0])
       .toEqual({ kind: 'hold_release', order_id: first.orderId, standard_refund: 3000, entitlement: 20000 });
@@ -389,20 +443,36 @@ describeLocalDb('FREQ-642-AC-18: unit binding core (controller only)', (db) => {
       for (const to of ['kept', 'returned_shop']) {
         expect(await failure(() => q('update public.order_unit_slots set state=$2 where order_item_id=$1', [slot, to]))).toMatchObject({ code: '55000', message: 'UNIT_SLOT_IMMUTABLE' });
       }
+      expect(await failure(() => q('update public.order_unit_slots set current_price=1 where order_item_id=$1', [slot]))).toMatchObject({ code: '55000', message: 'UNIT_SLOT_IMMUTABLE' });
       // The CHECK still answers for an unknown value.
       expect(await failure(() => q("update public.order_unit_slots set state='bogus' where order_item_id=$1", [o.itemIds[0]]))).toMatchObject({ code: '23514' });
     });
 
-    test('FREQ-642-AC-18: お店の側で返した枠だけ、戻しの印がある時に kept へ戻せる', async () => {
-      const o = await setOrder();
-      const slot = o.itemIds[1];
-      await q("update public.order_unit_slots set state='returned_shop' where order_item_id=$1", [slot]);
-      expect(await failure(() => q("update public.order_unit_slots set state='kept' where order_item_id=$1", [slot]))).toMatchObject({ message: 'UNIT_SLOT_IMMUTABLE' });
+    test('FREQ-642-AC-18: 戻せるのは発送前の取り消しで返した枠だけ。取引の印と G の鍵が要り、返した枠の値段は動かない', async () => {
+      await q('rollback'); await q('begin'); // no G lock yet
+      const jacket = await createCatalogFixture(db());
+      const o = await seedOrder({ lines: [{ catalog: jacket, unitPrice: 20000, quantity: 2 }] });
+      const slot = o.itemIds[0];
+      const insertEvent = async (kind: string) => (await q(`insert into public.order_unit_events(order_id,kind,entitlement_previous,entitlement_max_before,
+        entitlement_gross,entitlement_shop_only,fee_amount,hold_total,entitlement,standard_refund,now_refund,consult_refund)
+        values($1,$2,0,0,0,0,0,0,0,0,0,0) returning id`, [o.orderId, kind])).rows[0].id as string;
+      const cancelEvent = await insertEvent('pre_shipment_cancel'); const returnEvent = await insertEvent('return_receive');
+      await q("update public.order_unit_slots set state='returned_shop', last_event_id=$3 where order_item_id=$1 and unit_index=$2", [slot, 0, cancelEvent]);
+      await q("update public.order_unit_slots set state='returned_shop', last_event_id=$3 where order_item_id=$1 and unit_index=$2", [slot, 1, returnEvent]);
+      const revert = (i: number) => q("update public.order_unit_slots set state='kept' where order_item_id=$1 and unit_index=$2", [slot, i]);
+      const flag = () => q("select set_config('app.unit_slot_revert', txid_current()::text, true)");
+      expect(await failure(() => revert(0))).toMatchObject({ message: 'UNIT_SLOT_IMMUTABLE' });
+      await flag();
+      expect(await failure(() => revert(0))).toMatchObject({ message: 'GROUP_H_LOCK_REQUIRED' });
+      await q('select pg_advisory_xact_lock(190521,1)');
+      expect(await failure(() => revert(1))).toMatchObject({ message: 'UNIT_SLOT_IMMUTABLE' });
       await q("select set_config('app.unit_slot_revert','on',true)");
-      await q("update public.order_unit_slots set state='kept' where order_item_id=$1", [slot]);
-      expect((await q('select state from public.order_unit_slots where order_item_id=$1', [slot])).rows[0].state).toBe('kept');
-      await q("update public.order_unit_slots set state='returned_customer' where order_item_id=$1", [slot]);
-      expect(await failure(() => q("update public.order_unit_slots set state='kept' where order_item_id=$1", [slot]))).toMatchObject({ message: 'UNIT_SLOT_IMMUTABLE' });
+      expect(await failure(() => revert(0))).toMatchObject({ message: 'UNIT_SLOT_IMMUTABLE' });
+      await flag();
+      await revert(0);
+      expect((await q('select state from public.order_unit_slots where order_item_id=$1 and unit_index=0', [slot])).rows[0].state).toBe('kept');
+      expect(await failure(() => q('update public.order_unit_slots set current_price=1 where order_item_id=$1 and unit_index=1', [slot]))).toMatchObject({ message: 'UNIT_SLOT_IMMUTABLE' });
+      expect(await failure(() => q('update public.order_unit_slots set holder_unit_index=5 where order_item_id=$1 and unit_index=1', [slot]))).toMatchObject({ message: 'UNIT_SLOT_IMMUTABLE' });
     });
 
     test('FREQ-642-AC-18: 出来事の金額の列は既定値を持たず、入れ忘れは NOT NULL で断る', async () => {
