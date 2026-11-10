@@ -1,5 +1,7 @@
 # 1.16 管理画面（ADMIN）詳細設計
 
+> 交換の印を着に結び付ける作業 Task 11 確認日: 2026-11-11。DD-ADMIN-021 の確かめ方を、試験が実際に名前に持つ例だけに直し、DD-ADMIN-023 の画面に「返金額を上限で切った時は商品＋送料が返金額と合わない」を足し、DD-ADMIN-023 の後に FREQ-642 の既知の制限を足した。
+
 > 交換の印を着に結び付ける作業 Task 8 確認日: 2026-11-11。DD-ADMIN-022 に受け取りの画面（見込みの表示・「割引の扱い」の欄・本文の `treatments`）と相談の返金の画面の標準の額、DD-ADMIN-023 に管理画面の返金の画面の見込みを足した。画面と hook は単体（RTL）で確かめた。幅（390/768/1280px）の E2E は後続の作業。
 
 > 交換の印を着に結び付ける作業 Task 7 確認日: 2026-11-11。DD-ADMIN-022（受け取りの見込みと入口。値段の計画をサーバーで作って DB に渡し、版の食い違いは1回だけ作り直す）と DD-ADMIN-023（注文の返金・取り消しの計画と、前の注文へ割引の分を戻す返金の Stripe への依頼）を DD-ADMIN-021 の次に足した。単体と PostgREST（手元）で確かめた。画面は後続の作業。
@@ -1269,8 +1271,8 @@ DB の実装（Task 1 Step 3、2026-11-06）: 上の DD-ADMIN-017 と DD-ADMIN-0
 | --- | --- |
 | 上位 | FREQ-642-REQ-01（範囲外） |
 | 根拠 | 返す額を手元に残る服の正しい値段から決め、割引の計算を2つ持たない（設計書2・3・5・7章、J-1・J-12〜J-15） |
-| 状態 | 現行（純関数。DB の記録・窓口・画面は後続の作業） |
-| 確かめ方 | `kept-price.test.ts`・`unit-event-plan.test.ts` の `DD-ADMIN-021` の単体（設計書3章の例1〜例17の額）。DB・窓口・E2E は後続の作業で確かめる |
+| 状態 | 現行（純関数。DB の記録は移行 A〜D、窓口と画面は DD-ADMIN-022・DD-ADMIN-023 が受け持つ） |
+| 確かめ方 | `kept-price.test.ts`・`unit-event-plan.test.ts` の `DD-ADMIN-021` の単体。`unit-event-plan.test.ts` が名前に例の番号を持つのは例1・例5〜例16（例10-2 を含む）で、`kept-price.test.ts` は例の番号を名前に持たない。設計書3章の例のうち例2・例4・例17 はこの単体には無く、DB 結合の [unit-binding-refunds](../../../tests/integration/db/unit-binding-refunds.integration.test.ts)（例2・例9・例10-2）、[unit-binding-core](../../../tests/integration/db/unit-binding-core.integration.test.ts)（例7）、[unit-binding-receive](../../../tests/integration/db/unit-binding-receive.integration.test.ts)（例4・例17）で確かめる。例3 は番号を付けた試験が無い |
 | 出どころ | 2026-11-10 オーナー承認設計、交換の印を着に結び付ける作業 Task 3 |
 
 [unit-pricing-types.ts](../../../src/lib/orders/unit-pricing/unit-pricing-types.ts)・[kept-price.ts](../../../src/lib/orders/unit-pricing/kept-price.ts)・[unit-event-plan.ts](../../../src/lib/orders/unit-pricing/unit-event-plan.ts) の3ファイルで、サーバーが出来事（受け取り・発送前の取り消し）ごとに計画を出す。DB はこの計画の JSON を検証して記録する。`'server-only'` は付けず、DB にも時刻にも触らない。
@@ -1311,7 +1313,7 @@ E と返す額（`unit-event-plan.ts` の `planUnitEvent`）: E′ ＝ 払った
 | --- | --- |
 | 上位 | FREQ-642-REQ-01（範囲外）、AC-20・AC-27・AC-28 |
 | 根拠 | 発送前の品の返金・注文の取り消しは着の状態を変えるので値段の計画で行い、発送後の品を返品なしで選ぶ返金は着の状態も E も変えない（設計書2-3・5章） |
-| 状態 | 現行（サーバーと管理画面。幅の E2E は後続の作業） |
+| 状態 | 現行（サーバーと管理画面。3つの画面幅の E2E は FR-ADMIN-166） |
 | 確かめ方 | [OrderRefundDialog.unitPricing.test.tsx](../../../tests/unit/components/OrderRefundDialog.unitPricing.test.tsx)・[unit-pricing-service.test.ts](../../../tests/unit/lib/orders/unit-pricing/unit-pricing-service.test.ts)・[refund-service.test.ts](../../../tests/unit/lib/orders/refund/refund-service.test.ts)・[return-service.test.ts](../../../tests/unit/lib/orders/returns/return-service.test.ts)・[unit-pricing-estimate-routes.test.ts](../../../tests/unit/api/admin/unit-pricing-estimate-routes.test.ts) の `DD-ADMIN-023`・`FREQ-642-AC-27/28` の単体。`refund_postgrest.integration.test.ts`（PostgREST。引数と答えの形） |
 | 出どころ | 2026-11-10 オーナー承認設計、交換の印を着に結び付ける作業 Task 7 |
 
@@ -1319,7 +1321,16 @@ E と返す額（`unit-event-plan.ts` の `planUnitEvent`）: E′ ＝ 払った
 
 前の注文への戻し: 受け取り・返金・取り消しの DB の入口は、前の注文へ割引の分を戻す返金（source `unit_hold_release`）を同じ取引で「返事待ち」に作り、`release_refund_ids` で返す。入口（`receiveReturnAndRefund`・`refundReturnAndRequestStripe`・`startRefund`）は、主の返金の後で、この返金ごとに `requestReleaseRefunds`（`settleExistingRefund`。重複防止キー `order-refund-{返金の記録の番号}`）で Stripe に頼む。送り直し（replayed）でも DB が同じ番号を返し、頼み直しは同じキー・同じ中身。頼むのに失敗しても主の答えは変えず、返事待ちのまま、確かめ直しと毎時の見回り（`sweepAwaitingRefunds`。返金の種類を問わない）が片付ける。頼まないと、前の注文の以後の返金が `AWAITING_REFUND_EXISTS` で止まる。返金の道の記号 `ORDER_REFUND_SOURCES` に `unit_hold_release` を足し、履歴の言葉は「返品に伴う割引の戻し」。
 
-画面（交換の印を着に結び付ける作業 Task 8。[OrderRefundDialog](../../../src/components/OrderRefundDialog.tsx)）: 発送前の品を選んだ時だけ（全部を選んで額が固定される時を除く）、数・送料を変えるたびに 300ms 待って `refund-estimate` を呼ぶ。待つ間は「計算しています」を出して内訳と返金額の欄を隠し、返金のボタンを止める。誤りは額を出さず文を出して止める。窓口の標準の額（`suggestedAmount`）は上限で切られていないので、画面で `min(suggestedAmount, refundCap, 注文の返せる額)` に切って返金額の初めの値にする（店長が直す欄は今のまま）。内訳は 商品・送料・返金額。発送後の品だけの返金と、窓口が `legacy: true` の注文は今の計算（`estimateRefund`）のまま（窓口へ聞かない／同じ額）。発送前の品を選ぶ返金は、写しの無い注文でも窓口に1回聞き、答えが届くまで・誤りの間は確定できない。内訳の「商品」は窓口の `itemsAmount`。手で入れた額は選びを変えると捨て、窓口の上限（`refundCap`）で切る。
+画面（交換の印を着に結び付ける作業 Task 8。[OrderRefundDialog](../../../src/components/OrderRefundDialog.tsx)）: 発送前の品を選んだ時だけ（全部を選んで額が固定される時を除く）、数・送料を変えるたびに 300ms 待って `refund-estimate` を呼ぶ。待つ間は「計算しています」を出して内訳と返金額の欄を隠し、返金のボタンを止める。誤りは額を出さず文を出して止める。窓口の標準の額（`suggestedAmount`）は上限で切られていないので、画面で `min(suggestedAmount, refundCap, 注文の返せる額)` に切って返金額の初めの値にする（店長が直す欄は今のまま）。内訳は 商品・送料・返金額。返金額を「返金できる残り」で切った時は、商品＋送料が返金額と合わない（返金額のほうが小さい）。発送後の品だけの返金と、窓口が `legacy: true` の注文は今の計算（`estimateRefund`）のまま（窓口へ聞かない／同じ額）。発送前の品を選ぶ返金は、写しの無い注文でも窓口に1回聞き、答えが届くまで・誤りの間は確定できない。内訳の「商品」は窓口の `itemsAmount`。手で入れた額は選びを変えると捨て、窓口の上限（`refundCap`）で切る。
+
+既知の制限（FREQ-642。2026-11-11 時点。どれも設計書の範囲の外か、まれな場合として残した）:
+
+- 前の注文を放す返金（`unit_hold_release`）: 取り押さえている前の注文に「返事待ち」の返金か想定外の状態の返金があると、後の注文の操作全体が失敗する（失敗側に倒す。fail closed）。
+- 取り押さえの確かめ（Q10）: 取り押さえている交換の着が未発送かどうかを確かめない（数量が2以上で一部だけ発送した場合）。
+- 写しのある注文で、返品なしの発送後の返金は、発送ごとの行の額を固定しなくなった（`group_h_refund_outcomes` からの表示の変化）。
+- 取り押さえの枠: 未発送の交換の着が持つ枠は、注文が全額返金で `cancelled` になった後も、前の注文の着数に1と数える（まれ）。
+- 自動の取り消し・外部の取り消しの注文の着は、返金が成功するまで数える。Stripe の画面からの発送前の一部返金は、数え続ける。
+- 写しのある注文の受け取りで、店長の上限は `LEAST(返せる残り, 品の額から手数料の率を引いた分＋送料)`。受け取りの時に店長が手数料の率を免除できない（手数料は今は0円）。
 
 ## 注文の詳細の割引の内訳（H Task 10 / FREQ-552）
 
