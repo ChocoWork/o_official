@@ -189,6 +189,8 @@ describeLocalDb('FREQ-642-AC-20: unit binding migration A final assertion (contr
     ['alter table public.order_unit_holds disable row level security', 'ub_acl'],
     ['grant execute on function private.group_h_copy_order_discounts(uuid,uuid,jsonb) to service_role', 'ub_acl'],
     [replaceBody('private.group_h_copy_order_discounts(uuid,uuid,jsonb)', 'order_unit_slots', 'order_unit_slotz'), 'ub_functions'],
+    ['grant execute on function private.order_unit_shipped_slots(uuid) to service_role', 'ub_acl'],
+    [replaceBody('private.order_unit_shipped_slots(uuid)', "r.status <> ''failed''", "r.status = ''failed''"), 'ub_functions'],
     [replaceBody('private.get_checkout_discount_context(uuid,text,text[],bigint[],timestamptz,text)', "s.state=''kept''", "s.state=''kept'' OR true"), 'ub_functions'],
     ["update public.shop_return_reason_settings set resolutions='refund_and_exchange' where reason='defective'", 'ub_settings'],
     ["update public.shop_return_reason_settings set resolutions='refund_only' where reason='wrong_item'", 'ub_settings'],

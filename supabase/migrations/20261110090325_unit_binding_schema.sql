@@ -10,7 +10,8 @@ BEGIN;
 -- 2. private.group_h_copy_order_discounts also writes one order_discount_snapshots row and one order_unit_slots row per
 --    unit of an H order. Everything else it does is unchanged.
 -- 3. private.get_checkout_discount_context counts the prior units of a member by kept slots for an order that has slots
---    (a kept unit of a cancelled order counts only if it was shipped: private.accounting_shipped_units)
+--    (a kept unit of a cancelled order counts only if it was shipped: private.order_unit_shipped_slots, new here, which keeps a unit
+--    cancelled before shipment out of the shipped units)
 --    and by the old formula for an order that has none. Everything else it does is unchanged.
 -- 4. shop_return_reason_settings: defective and wrong_item accept an exchange only.
 -- Applied migrations are never edited. The G writer allowlist is not changed here.
@@ -262,6 +263,25 @@ REVOKE ALL ON SEQUENCE public.order_unit_events_seq_seq FROM PUBLIC, anon, authe
 -- UB_ACL_END
 
 -- UB_FUNCTIONS_BEGIN
+-- Which unit_index slots of an order item are shipped (FREQ-642, ruling R33). The number is the one private.accounting_shipped_units
+-- reports for the item now (the units of the alive slips). Which slots they are does not depend on the accounting allocations (plan 3
+-- writes them, nothing does yet): the lowest unit_index slots that no pre-shipment refund holds (order_line_unit_amounts.refund_before_shipment
+-- with a refund that has not failed). A unit cancelled before shipment is therefore never reported as shipped. Defined here, in the first
+-- file, because the prior-units count below needs it; the next files use it too.
+CREATE FUNCTION private.order_unit_shipped_slots(_order_item_id uuid) RETURNS TABLE(unit_index integer)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT x.unit_index FROM (
+    SELECT u.unit_index FROM public.order_line_unit_amounts AS u
+    WHERE u.order_item_id = _order_item_id
+      AND NOT EXISTS (SELECT 1 FROM public.order_refunds AS r WHERE r.id = u.refund_id AND u.refund_before_shipment AND r.status <> 'failed')
+    ORDER BY u.unit_index
+    LIMIT (SELECT pg_catalog.count(*) FROM private.accounting_shipped_units(_order_item_id, NULL))
+  ) AS x
+$$;
+ALTER FUNCTION private.order_unit_shipped_slots(uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.order_unit_shipped_slots(uuid) FROM PUBLIC, anon, authenticated, service_role;
+
 -- Same signature and body as H4 (20261029130300), plus the snapshot row and the slot rows after the unit amounts.
 CREATE OR REPLACE FUNCTION private.group_h_copy_order_discounts(_draft_id uuid,_order_id uuid,_line_map jsonb) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
@@ -367,7 +387,7 @@ BEGIN
       slotted AS (SELECT s.item_id,pg_catalog.count(*) FILTER (WHERE s.state='kept')::bigint AS n
         FROM public.orders AS o JOIN public.order_unit_slots AS s ON s.order_id=o.id
         WHERE o.user_id=_buyer_user_id AND (o.status IN ('paid','shipped') OR o.paid_amount>0) 
-          AND (o.status<>'cancelled' OR EXISTS (SELECT 1 FROM private.accounting_shipped_units(s.order_item_id,NULL) AS su WHERE su.unit_index=s.unit_index))
+          AND (o.status<>'cancelled' OR EXISTS (SELECT 1 FROM private.order_unit_shipped_slots(s.order_item_id) AS su WHERE su.unit_index=s.unit_index))
           AND s.item_id=ANY(_item_ids) GROUP BY s.item_id),
       units AS (SELECT t.item_id,pg_catalog.sum(t.n)::bigint AS n
         FROM (SELECT l.item_id,l.n FROM legacy AS l UNION ALL SELECT k.item_id,k.n FROM slotted AS k) AS t GROUP BY t.item_id)
@@ -491,8 +511,9 @@ BEGIN
   -- ub_functions: the two replaced bodies are exactly the ones this file wrote, with the H4 signature, owner, ACL and settings.
   IF v_detail IS NULL THEN
     FOR e IN SELECT * FROM (VALUES
+      ('order_unit_shipped_slots(uuid)','integer',false,'s',false,'ce14a4eb24ced0351076d8a5c187a999'),
       ('group_h_copy_order_discounts(uuid,uuid,jsonb)','void',false,'v',false,'7905f5e5323b8db102098f495a894aa0'),
-      ('get_checkout_discount_context(uuid,text,text[],bigint[],timestamptz,text)','jsonb',true,'s',true,'794575a0f5acde21fafaddf152f5778b')
+      ('get_checkout_discount_context(uuid,text,text[],bigint[],timestamptz,text)','jsonb',true,'s',true,'46019f9c10bce5dcddf306fbeade2cca')
     ) AS expected(signature,result_type,stable_reader,volatility,service,body_md5) LOOP
       v_oid := pg_catalog.to_regprocedure('private.'||e.signature);
       SELECT f.* INTO p FROM pg_catalog.pg_proc AS f WHERE f.oid=v_oid;

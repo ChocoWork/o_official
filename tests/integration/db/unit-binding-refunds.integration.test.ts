@@ -199,8 +199,7 @@ describeLocalDb('FREQ-642-AC-27: unit binding refunds, cancels and releases (con
       expect(received.refund_amount).toBe(5000);
       const [event] = await eventsOf(f.orderId);
       expect(event).toMatchObject({ now_refund: 17000, consult_refund: 20000, standard_refund: 37000, return_id: ret.returnId });
-      const outstanding = Number((await q('select private.order_unit_outstanding($1) n', [ret.returnId])).rows[0].n);
-      expect(outstanding).toBe(20000);
+      expect(await screenBasis(ret.returnId)).toBe(20000);
       await hResult(db(), received.refund_id, 'succeeded');
       const consult = (await q('select * from public.admin_refund_return($1,$2,$3,null,0,null,false)', [ret.returnId, f.actor, randomUUID()])).rows[0];
       expect(consult).toMatchObject({ amount: 20000, status: 'awaiting_response', replayed: false, release_refund_ids: [] });
@@ -209,8 +208,100 @@ describeLocalDb('FREQ-642-AC-27: unit binding refunds, cancels and releases (con
       // 相談の返金は相談の着だけを握る（今すぐの着は今すぐの返金が握ったまま）
       const claims = await hClaims(db(), f.itemId);
       expect(claims.map((u) => u.refund_id).sort()).toEqual([consult.refund_id, received.refund_id].sort());
-      expect(Number((await q('select private.order_unit_outstanding($1) n', [ret.returnId])).rows[0].n)).toBe(0);
+      expect(await screenBasis(ret.returnId)).toBe(0);
       expect((await q('select amount from public.order_refund_lines where refund_id=$1', [consult.refund_id])).rows).toEqual([{ amount: 20000 }]);
+    });
+
+    /** 画面の見込み(loadConsultOutstanding)と同じ基準: 失敗以外の相談の返金が付いていない返品の受け取りの出来事の consult_refund の和 */
+    const screenBasis = async (returnId: string) => Number((await q(`select coalesce(sum(e.consult_refund),0) n from public.order_unit_events e
+      where e.return_id=$1 and e.kind='return_receive' and e.consult_refund>0 and not exists (
+        select 1 from public.order_unit_event_refunds er join public.order_refunds rf on rf.id=er.refund_id
+        where er.event_id=e.id and er.part='consult' and rf.status<>'failed')`, [returnId])).rows[0].n);
+    /** 1つ目の相談の返金を (出来事E1の相談の分 + delta) に変えて出し、2つ目の相談の受け取りの後に、額を省いて(店長が見込みのまま)返金する。3着の注文なので、上げても注文の返せる額が残る */
+    async function consultTwice(delta: number) {
+      const f = await hRefundFixture(db(), true, 3);
+      const ret = await createUbReturn(db(), f, [{ quantity: 1 }, { quantity: 1 }]);
+      await ubReceive(db(), { returnId: ret.returnId, actorId: f.actor, choice: 'consult', units: [unit(ret.lineIds[0])] });
+      const [e1] = await eventsOf(f.orderId);
+      const firstAmount = e1.consult_refund + delta;
+      const first = (await q('select * from public.admin_refund_return($1,$2,$3,$4,0,null,false)', [ret.returnId, f.actor, randomUUID(), firstAmount])).rows[0];
+      expect(first.amount).toBe(firstAmount);
+      await hResult(db(), first.refund_id, 'succeeded');
+      await ubReceive(db(), { returnId: ret.returnId, actorId: f.actor, choice: 'consult', units: [unit(ret.lineIds[1])] });
+      const events = await eventsOf(f.orderId);
+      expect(events).toHaveLength(2);
+      const screen = await screenBasis(ret.returnId);
+      const second = (await q('select * from public.admin_refund_return($1,$2,$3,null,0,null,false)', [ret.returnId, f.actor, randomUUID()])).rows[0];
+      return { f, ret, screen, second, e2: events[1].consult_refund as number };
+    }
+
+    test('FREQ-642-AC-07: R34 1つ目の相談の返金を下げた後の2つ目の相談の返金は、画面の見込み(2つ目の出来事の分)と同じ額', async () => {
+      const r = await consultTwice(-11000);
+      expect(r.screen).toBe(r.e2);
+      expect(r.second.amount).toBe(r.screen);
+    });
+
+    test('FREQ-642-AC-07: R34 1つ目の相談の返金を上げた後の2つ目の相談の返金も、画面の見込みと同じ額', async () => {
+      const r = await consultTwice(1000);
+      expect(r.screen).toBe(r.e2);
+      expect(r.second.amount).toBe(r.screen);
+    });
+
+  });
+
+  describe('shipped slots after a partial pre-shipment cancel (R33)', () => {
+    /** 同じ値段(20,000円)の2着の注文。割引なし、写しあり、払い済み。取り消しは同値の時いちばん若い枠(0)を選ぶ。 */
+    async function equalOrder() {
+      const catalog = await createCatalogFixture(db(), { stock: 2 });
+      const userId = await seedHMember(db());
+      const seeded = await seedHOrderUnits(db(), { legacy: false, buyerUserId: userId, createdAt: '2026-11-01T00:00:00Z',
+        lines: [{ itemPrice: 20000, quantity: 2, catalog: catalog as HCatalog, unitAmounts: [20000, 20000], discounts: [] }] });
+      const itemId = seeded.orderItemIds[0];
+      const built = buildOrder({ orderId: seeded.orderId, lines: [{ orderItemId: itemId, itemId: catalog.itemId, unitPrice: 20000, quantity: 2 }] });
+      const facts = Object.fromEntries(Object.entries(built.snapshot.facts).filter(([k]) => k !== 'phase'));
+      facts.buyer = { kind: 'member', userId };
+      await seedHUnitSlots(db(), { orderId: seeded.orderId, snapshot: { engineVersion: 1, definitions: built.snapshot.definitions, codes: built.snapshot.codes, facts, lines: built.snapshot.lines } });
+      await q('update public.orders set paid_amount=total_amount, payment_intent_id=$2 where id=$1', [seeded.orderId, `pi_ubf_${randomUUID().replaceAll('-', '')}`]);
+      return { orderId: seeded.orderId, itemId, actor: userId, catalog, itemNumber: catalog.itemId };
+    }
+    /** 1着を発送前に取り消し(枠0が returned_shop)、残りの1着を発送して発送票を確定する */
+    async function cancelOneThenShip() {
+      const o = await equalOrder();
+      const refund = await beginRefund(o, { lines: [{ order_item_id: o.itemId, before_shipment: true, quantity: 1 }], amount: 20000, pricing: await cancelPlan(o.orderId, o.itemId, 1) });
+      await hResult(db(), refund.refund_id, 'succeeded');
+      expect((await slotsOf(o.orderId)).map((s) => [s.state, s.current_price])).toEqual([['returned_shop', 20000], ['kept', 20000]]);
+      const fulfillment = await shipFixtureOrder(db(), { orderId: o.orderId, actorId: o.actor, trackingNumber: 'UBF-R33', lines: [{ order_item_id: o.itemId, quantity: 1 }] });
+      await seedFactSlip(db(), { orderItemId: o.itemId, quantity: 1 });
+      return { ...o, fulfillment };
+    }
+    const shippedSlots = async (itemId: string) => (await q('select unit_index from private.order_unit_shipped_slots($1) order by unit_index', [itemId])).rows;
+
+    test('FREQ-642-AC-27: R33 同じ値段の2着の1着を発送前に取り消し、残りを発送したら、残りの1着を返金で受け取れる', async () => {
+      const o = await cancelOneThenShip();
+      const ret = await createUbReturn(db(), o, [{ quantity: 1 }]);
+      const received = await ubReceive(db(), { returnId: ret.returnId, actorId: o.actor, choice: 'now', units: [unit(ret.lineIds[0])] });
+      expect(received.refund_amount).toBe(20000);
+      const slots = await q('select unit_index, state from public.order_unit_slots where order_id=$1 order by unit_index', [o.orderId]);
+      expect(slots.rows).toEqual([{ unit_index: 0, state: 'returned_shop' }, { unit_index: 1, state: 'returned_customer' }]);
+      expect(await refundedTotal(o.orderId)).toBe(40000);
+      expect(await shippedSlots(o.itemId)).toEqual([{ unit_index: 1 }]);
+    });
+
+    test('FREQ-642-AC-27: R33 取り消しの返金が失敗したら、その着は発送の数え方に戻る', async () => {
+      const o = await equalOrder();
+      const refund = await beginRefund(o, { lines: [{ order_item_id: o.itemId, before_shipment: true, quantity: 1 }], amount: 20000, pricing: await cancelPlan(o.orderId, o.itemId, 1) });
+      await shipFixtureOrder(db(), { orderId: o.orderId, actorId: o.actor, trackingNumber: 'UBF-R33B', lines: [{ order_item_id: o.itemId, quantity: 1 }] });
+      await seedFactSlip(db(), { orderItemId: o.itemId, quantity: 1 });
+      expect(await shippedSlots(o.itemId)).toEqual([{ unit_index: 1 }]);
+      await hResult(db(), refund.refund_id, 'failed');
+      expect(await shippedSlots(o.itemId)).toEqual([{ unit_index: 0 }]);
+    });
+
+    test('FREQ-642-AC-20: R33 取り消しに全額返金された注文でも、発送済みで残した着は前の注文の数に入る', async () => {
+      const o = await cancelOneThenShip();
+      await q("update public.orders set status='cancelled' where id=$1", [o.orderId]);
+      const context = (await q("select private.get_checkout_discount_context($1,null,array[]::text[],$2::bigint[],now(),'confirm') as c", [o.actor, [o.itemNumber]])).rows[0].c;
+      expect(JSON.stringify(context)).toContain(`"priorUnitsByItem":{"${o.itemNumber}":1}`);
     });
   });
 

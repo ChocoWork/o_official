@@ -418,25 +418,6 @@ describeLocalDb('FREQ-642-AC-18: unit binding core (controller only)', (db) => {
       expect(await failure(() => q('select private.group_h_claim_refund_units($1,$2,$3::integer[],false,null)', [refund.refund_id, f.itemId, [5]])))
         .toMatchObject({ code: '23514' });
     });
-
-    test('FREQ-642-AC-04: order_unit_outstanding は返品の出来事の相談の分から、相談として結んだ返金（awaiting・pending・succeeded・error）を引く', async () => {
-      const f = await hRefundFixture(db(), true, 2);
-      const ret = await hReturn(db(), f, 1);
-      const outstanding = async () => (await q('select private.order_unit_outstanding($1) as n', [ret.returnId])).rows[0].n as number;
-      expect(await outstanding()).toBe(0);
-      const eventId = await insertEvent(f.orderId, { return_id: ret.returnId, standard_refund: 5000, now_refund: 0, consult_refund: 5000 });
-      expect(await outstanding()).toBe(5000);
-      const refund = await hBeginClaimed(f, 3000);
-      const claimed = (await q('select unit_index from public.order_line_unit_amounts where order_item_id=$1 and refund_id=$2', [f.itemId, refund.refund_id])).rows[0].unit_index as number;
-      await insertLine(eventId, f.orderId, f.itemId, claimed, { part: 'consult' });
-      // 相談として結んだ返金だけが相談の残りを減らす（今すぐの分を店長が下げても、その分は戻ってこない。設計書 2-1。受け取りの試験で確かめる）
-      await q('select private.order_unit_link_refund($1,$2,$3)', [eventId, refund.refund_id, 'consult']);
-      expect(await outstanding()).toBe(2000);
-      await q("update public.order_refunds set status='error' where id=$1", [refund.refund_id]);
-      expect(await outstanding()).toBe(2000);
-      await q("update public.order_refunds set status='failed' where id=$1", [refund.refund_id]);
-      expect(await outstanding()).toBe(5000);
-    });
   });
 
   describe('slot guard and event columns', () => {
@@ -495,7 +476,7 @@ describeLocalDb('FREQ-642-AC-18: unit binding core (controller only)', (db) => {
     const can = async (role: string, signature: string) =>
       (await q('select has_function_privilege($1,$2::regprocedure,\'EXECUTE\') as ok', [role, signature])).rows[0].ok as boolean;
     const hidden = [
-      'private.order_unit_apply_plan(jsonb,uuid,uuid,uuid,uuid)', 'private.order_unit_link_refund(uuid,uuid,text)', 'private.order_unit_outstanding(uuid)',
+      'private.order_unit_apply_plan(jsonb,uuid,uuid,uuid,uuid)', 'private.order_unit_link_refund(uuid,uuid,text)', 'private.order_unit_shipped_slots(uuid)',
       'private.group_h_claim_refund_units(uuid,uuid,integer[],boolean,uuid)', 'private.group_h_release_return_units(uuid,integer[])',
     ];
 
@@ -548,7 +529,6 @@ describeLocalDb('FREQ-642-AC-18: unit binding migration B final assertion (contr
     ['grant execute on function private.order_unit_apply_plan(jsonb,uuid,uuid,uuid,uuid) to service_role', 'ubc_acl'],
     ['grant execute on function private.group_h_claim_refund_units(uuid,uuid,integer[],boolean,uuid) to authenticated', 'ubc_acl'],
     ['revoke execute on function public.order_unit_pricing_materials(uuid) from service_role', 'ubc_acl'],
-    [replaceBody('private.order_unit_outstanding(uuid)', 'GREATEST', 'LEAST'), 'ubc_functions'],
     [replaceBody('private.order_unit_apply_plan(jsonb,uuid,uuid,uuid,uuid)', 'UNIT_PRICING_STALE', 'UNIT_PRICING_STALX'), 'ubc_functions'],
     [replaceBody('private.order_unit_pricing_materials(uuid)', 'STABLE', 'VOLATILE'), 'ubc_functions'],
     ['drop function private.order_unit_link_refund(uuid,uuid,text)', 'ubc_functions'],

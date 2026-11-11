@@ -15,7 +15,7 @@ BEGIN;
 --    release_refund_ids. An order with a snapshot needs a pre_shipment_cancel plan for a pre-shipment line or an order_cancel
 --    (UNIT_PRICING_REQUIRED); a refund of shipped lines or without lines takes none. A replay by request key is answered before any check.
 -- 4. private.admin_refund_return and its public entry take an 8th argument _pricing jsonb (the 7 argument functions are dropped) and return
---    release_refund_ids. The standard amount of a consult refund is order_unit_outstanding (the consult part of the return's events).
+--    release_refund_ids. The standard amount of a consult refund is the consult part of the events no consult refund covers yet (R34, as the screen counts it).
 -- 5. private.admin_receive_return (15 arguments, unchanged signature) no longer inserts the refund row itself: it calls the core with the
 --    event, and it applies the releases of the plan (money held on earlier orders given back), each as a hold_release event with its own
 --    refund on the held order, in the same transaction. private.order_unit_apply_releases checks and applies the release plans;
@@ -855,8 +855,14 @@ BEGIN
     ) AS t;
   IF pg_catalog.jsonb_array_length(v_lines)=0 THEN RAISE EXCEPTION 'RETURN_NOTHING_TO_REFUND' USING ERRCODE='22023'; END IF;
   IF v_slot THEN
-    -- The standard amount of a consult refund is the consult part the return's events still owe (a manager's change of the now part is not carried).
-    v_goods:=private.order_unit_outstanding(_return_id);
+    -- The standard amount of a consult refund is the consult part of the events no consult refund covers yet (R34): the same events the core
+    -- links to the refund and the screen (loadConsultOutstanding) counts. A manager's change of an earlier refund is not carried.
+    v_goods:=COALESCE((SELECT pg_catalog.sum(e.consult_refund) FROM public.order_unit_events AS e
+      WHERE e.order_id=v_order AND e.return_id=_return_id AND e.kind='return_receive'
+        AND NOT EXISTS (SELECT 1 FROM public.order_unit_events AS r WHERE r.reverts_event_id=e.id)
+        AND EXISTS (SELECT 1 FROM public.order_unit_event_lines AS l WHERE l.event_id=e.id AND l.line_kind='returned' AND l.part='consult')
+        AND NOT EXISTS (SELECT 1 FROM public.order_unit_event_refunds AS er JOIN public.order_refunds AS rf ON rf.id=er.refund_id
+          WHERE er.event_id=e.id AND er.part='consult' AND rf.status<>'failed')),0)::integer;
     SELECT e.id INTO v_event FROM public.order_unit_events AS e
     WHERE e.order_id=v_order AND e.return_id=_return_id AND e.kind='return_receive'
       AND EXISTS (SELECT 1 FROM public.order_unit_event_lines AS l WHERE l.event_id=e.id AND l.line_kind='returned' AND l.part='consult')
@@ -1844,7 +1850,7 @@ BEGIN
       ('private', 'begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer,uuid)', 'v', false, 'plpgsql', '8f3524cfe91aa584b9b4f920836415a8'),
       ('private', 'begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,jsonb)', 'v', true, 'plpgsql', '1e5958fcc5de211c18eb5c652efb7435'),
       ('public', 'begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,jsonb)', 'v', false, 'sql', 'a010341cb930728e76bb6b6eb5372162'),
-      ('private', 'admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean,jsonb)', 'v', true, 'plpgsql', '9cdec35fe90a74d1422c46287142e80d'),
+      ('private', 'admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean,jsonb)', 'v', true, 'plpgsql', '20e46a103d331e8f90d4d57ee6d9641b'),
       ('public', 'admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean,jsonb)', 'v', false, 'sql', '4b6151504b2b4559ec419212f48868e8'),
       ('private', 'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)', 'v', true, 'plpgsql', 'daea7cc9a531f61cb5a93a1afca5f95b'),
       ('private', 'order_unit_apply_releases(jsonb,text,uuid,uuid,uuid)', 'v', true, 'plpgsql', '129bc85f9df23d382dffbcd9dc6eb175'),

@@ -18,7 +18,7 @@ BEGIN;
 --    sum(allocation) - sum(correction) - fee = E - previous E, refund rule, bounds, holds) and records event, lines, holds and slot state.
 --    Detail codes ub_plan_1 .. ub_plan_9 (UNIT_PRICING_INVALID / 22023); a stale version is UNIT_PRICING_STALE / 40001.
 -- 5. private.group_h_claim_refund_units (units list) and private.group_h_release_return_units (units list): overloads of the H5 functions
---    (same names, so the H guard of order_line_unit_amounts accepts them). private.order_unit_link_refund, private.order_unit_outstanding.
+--    (same names, so the H guard of order_line_unit_amounts accepts them). private.order_unit_link_refund. The shipped slots come from private.order_unit_shipped_slots (migration A, R33), not from private.accounting_shipped_units.
 -- Applied migrations are never edited. The G writer allowlist is not changed here.
 
 -- UBC_SCHEMA_BEGIN
@@ -155,7 +155,7 @@ BEGIN
     ORDER BY ev.seq DESC LIMIT 1
   ) AS ret ON true
   LEFT JOIN LATERAL (
-    SELECT x.unit_index FROM private.accounting_shipped_units(s.order_item_id, NULL) AS x WHERE x.unit_index = s.unit_index
+    SELECT x.unit_index FROM private.order_unit_shipped_slots(s.order_item_id) AS x WHERE x.unit_index = s.unit_index
   ) AS sh ON true
   WHERE s.order_id = _order_id;
   SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
@@ -234,7 +234,7 @@ AS $$
       JOIN public.order_unit_events AS ev ON ev.id = el.event_id
       WHERE el.order_item_id = f.order_item_id AND el.unit_index = f.unit_index AND ev.kind <> 'cancel_reverted'
         AND NOT EXISTS (SELECT 1 FROM public.order_unit_events AS r WHERE r.reverts_event_id = ev.id)), 0)::integer,
-    EXISTS (SELECT 1 FROM private.accounting_shipped_units(f.order_item_id, NULL) AS x WHERE x.unit_index = f.unit_index)
+    EXISTS (SELECT 1 FROM private.order_unit_shipped_slots(f.order_item_id) AS x WHERE x.unit_index = f.unit_index)
   FROM private.order_unit_plan_lines(_plan) AS f
   LEFT JOIN public.order_unit_slots AS s ON s.order_item_id = f.order_item_id AND s.unit_index = f.unit_index
   LEFT JOIN public.order_line_unit_amounts AS u ON u.order_item_id = f.order_item_id AND u.unit_index = f.unit_index
@@ -478,22 +478,6 @@ BEGIN
   END LOOP;
 END;
 $$;
-
--- What the consult part of a return's events owes in goods and what the consult refunds tied to them already cover (awaiting_response,
--- pending, succeeded, error). The now part is settled by the receive (a manager may lower it; that never comes back as an outstanding
--- amount, 2-1). The shipping part of a refund is not E, so it is not counted. Not below 0.
-CREATE FUNCTION private.order_unit_outstanding(_return_id uuid) RETURNS integer
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
-AS $$
-  SELECT GREATEST(
-    COALESCE((SELECT pg_catalog.sum(e.consult_refund) FROM public.order_unit_events AS e WHERE e.return_id = _return_id
-      AND NOT EXISTS (SELECT 1 FROM public.order_unit_events AS r WHERE r.reverts_event_id = e.id)), 0)
-    - COALESCE((SELECT pg_catalog.sum(rf.amount - rf.shipping_amount) FROM public.order_refunds AS rf
-      WHERE rf.status IN ('awaiting_response', 'pending', 'succeeded', 'error')
-        AND rf.id IN (SELECT er.refund_id FROM public.order_unit_event_refunds AS er
-          JOIN public.order_unit_events AS e ON e.id = er.event_id WHERE e.return_id = _return_id AND er.part = 'consult')), 0),
-    0)::integer
-$$;
 -- UBC_FUNCTIONS_END
 
 -- UBC_ACL_BEGIN
@@ -511,7 +495,6 @@ ALTER FUNCTION private.order_unit_apply_plan(jsonb, uuid, uuid, uuid, uuid) OWNE
 ALTER FUNCTION private.group_h_claim_refund_units(uuid, uuid, integer[], boolean, uuid) OWNER TO postgres;
 ALTER FUNCTION private.group_h_release_return_units(uuid, integer[]) OWNER TO postgres;
 ALTER FUNCTION private.order_unit_link_refund(uuid, uuid, text) OWNER TO postgres;
-ALTER FUNCTION private.order_unit_outstanding(uuid) OWNER TO postgres;
 
 REVOKE ALL ON FUNCTION private.order_unit_slot_guard() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION private.order_unit_related_orders(uuid) FROM PUBLIC, anon, authenticated, service_role;
@@ -527,7 +510,6 @@ REVOKE ALL ON FUNCTION private.order_unit_apply_plan(jsonb, uuid, uuid, uuid, uu
 REVOKE ALL ON FUNCTION private.group_h_claim_refund_units(uuid, uuid, integer[], boolean, uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION private.group_h_release_return_units(uuid, integer[]) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION private.order_unit_link_refund(uuid, uuid, text) FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON FUNCTION private.order_unit_outstanding(uuid) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION private.order_unit_pricing_materials(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.order_unit_pricing_materials(uuid) TO service_role;
 -- UBC_ACL_END
@@ -560,17 +542,16 @@ BEGIN
       ('private', 'order_unit_related_orders(uuid)', 'uuid[]', 's', true, '4008d3582ba5b9a27d834f2dced4a581'),
       ('private', 'order_unit_version(uuid)', 'text', 's', true, 'a3cc30f7ba6329a8dfb6a772d5b662c1'),
       ('private', 'order_unit_totals(uuid)', 'record', 's', true, '4aaecb3c271c62f983ef1d03480f1a4a'),
-      ('private', 'order_unit_order_state(uuid)', 'jsonb', 's', true, 'a626d03293f51dec76627275ab4f77f7'),
+      ('private', 'order_unit_order_state(uuid)', 'jsonb', 's', true, '96a8454b21a652ea14966464ef0450ef'),
       ('private', 'order_unit_pricing_materials(uuid)', 'jsonb', 's', true, 'f878db0be13a6dcf17cab5e381458f65'),
       ('public', 'order_unit_pricing_materials(uuid)', 'jsonb', 's', false, 'ce0476c87fa38d6e984c9cbe4a045034'),
       ('private', 'order_unit_plan_lines(jsonb)', 'record', 's', false, 'dc5b50fea718dcbe9b6a66a9dec003e2'),
       ('private', 'order_unit_plan_holds(jsonb)', 'record', 's', false, '3e441b7352524983a7097a25df2e06b3'),
-      ('private', 'order_unit_plan_line_facts(jsonb)', 'record', 's', false, '604261a576d579c2f6ae4b3dbd25b866'),
+      ('private', 'order_unit_plan_line_facts(jsonb)', 'record', 's', false, '64f4a0bec8b721f267281703f139ac1d'),
       ('private', 'order_unit_apply_plan(jsonb,uuid,uuid,uuid,uuid)', 'uuid', 'v', true, '8735f95cadb6c7c60e9f9f305ba64d3e'),
       ('private', 'group_h_claim_refund_units(uuid,uuid,integer[],boolean,uuid)', 'integer', 'v', true, '122b4819f9926b5e249861bb34f7ef90'),
       ('private', 'group_h_release_return_units(uuid,integer[])', 'void', 'v', true, '2321e7f708f89c92e8a19a32fe847836'),
-      ('private', 'order_unit_link_refund(uuid,uuid,text)', 'void', 'v', true, '8b66fac61cc6a28bf9a4b2d634efb213'),
-      ('private', 'order_unit_outstanding(uuid)', 'integer', 's', true, 'e88a1ca4dad572c67701331c1e9a1378')
+      ('private', 'order_unit_link_refund(uuid,uuid,text)', 'void', 'v', true, '8b66fac61cc6a28bf9a4b2d634efb213')
     ) AS expected(schema_name, signature, result_type, volatility, definer, body_md5) LOOP
       v_oid := pg_catalog.to_regprocedure(e.schema_name || '.' || e.signature);
       SELECT f.* INTO p FROM pg_catalog.pg_proc AS f WHERE f.oid = v_oid;
@@ -593,8 +574,7 @@ BEGIN
       ('private.order_unit_plan_lines(jsonb)', false), ('private.order_unit_plan_holds(jsonb)', false),
       ('private.order_unit_plan_line_facts(jsonb)', false), ('private.order_unit_apply_plan(jsonb,uuid,uuid,uuid,uuid)', false),
       ('private.group_h_claim_refund_units(uuid,uuid,integer[],boolean,uuid)', false),
-      ('private.group_h_release_return_units(uuid,integer[])', false), ('private.order_unit_link_refund(uuid,uuid,text)', false),
-      ('private.order_unit_outstanding(uuid)', false)
+      ('private.group_h_release_return_units(uuid,integer[])', false), ('private.order_unit_link_refund(uuid,uuid,text)', false)
     ) AS expected(signature, service) LOOP
       v_oid := pg_catalog.to_regprocedure(e.signature);
       SELECT f.* INTO p FROM pg_catalog.pg_proc AS f WHERE f.oid = v_oid;
