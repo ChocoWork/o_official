@@ -125,6 +125,6 @@ GET /api/items/[id] は returnIneligible: boolean を返す。画面の Item.ret
 
 確認日: 2026-11-11
 
-- 商品名・価格・納期の近く（返品不可の一文の後、商品の説明の前）に、`data-testid="item-discount-return-note"` の段を1つ出す。文の型は `lk-text-3xs leading-relaxed text-[#474747]`。全商品に出す。
+- 商品名・価格・納期の塊（`item-detail-identity`）の中、割引の案内の後に（塊と商品の説明の間の間隔 FREQ-164・165・300 を変えないため。2026-11-11 に全件の E2E で間隔の試験が落ちて移した）、`data-testid="item-discount-return-note"` の段を1つ出す。文の型は `lk-text-3xs leading-relaxed text-[#474747]`。全商品に出す。
 - 文: お手元に残る商品の割引後の価格を差し引いて返金いたします（文は `src/lib/orders/returns/discount-return-note.ts` の `DISCOUNT_RETURN_NOTE` 1つを4か所が読む。設計 6-1 の案のまま、言い回しはオーナーが後で直す）。
 - 単体: tests/unit/components/ItemDetailDiscountReturnNote.test.tsx。幅の E2E は FR-ITEM-DETAIL-070（Task 10）。
