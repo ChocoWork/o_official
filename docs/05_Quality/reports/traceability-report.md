@@ -2252,7 +2252,7 @@
 | `FREQ-642-AC-17` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 4件（[unit-binding-core.integration.test.ts](../../../tests/integration/db/unit-binding-core.integration.test.ts)） |
 | `FREQ-642-AC-18` | なし | 1件（[unit-binding-core.integration.test.ts](../../../tests/integration/db/unit-binding-core.integration.test.ts)） |
 | `FREQ-642-AC-19` | なし | 1件（[unit-binding-refunds.integration.test.ts](../../../tests/integration/db/unit-binding-refunds.integration.test.ts)） |
-| `FREQ-642-AC-20` | 2件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 7件（[unit-binding-receive.integration.test.ts](../../../tests/integration/db/unit-binding-receive.integration.test.ts)） |
+| `FREQ-642-AC-20` | 2件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 8件（[unit-binding-receive.integration.test.ts](../../../tests/integration/db/unit-binding-receive.integration.test.ts)） |
 | `FREQ-642-AC-21` | なし | 6件（[FR-ACCOUNT-048-return-request-estimate.spec.ts](../../../e2e/FR-ACCOUNT-048-return-request-estimate.spec.ts)） |
 | `FREQ-642-AC-22` | なし | 7件（[FR-CHECKOUT-061-discount-return-note.spec.ts](../../../e2e/FR-CHECKOUT-061-discount-return-note.spec.ts)） |
 | `FREQ-642-AC-23` | なし | 2件（[unit-binding-receive.integration.test.ts](../../../tests/integration/db/unit-binding-receive.integration.test.ts)） |

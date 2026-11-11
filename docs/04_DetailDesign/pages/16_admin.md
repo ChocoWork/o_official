@@ -1,5 +1,7 @@
 # 1.16 管理画面（ADMIN）詳細設計
 
+> 交換の印 最終直し 確認日: 2026-11-11。DD-ADMIN-021〜023 の既知の制限に、発送した枠の決め方（R33）・Minor 3・Minor 4・Minor 5 を足し、相談の見込みの文を R34 に合わせた。
+>
 > 交換の印を着に結び付ける作業 Task 11 確認日: 2026-11-11。DD-ADMIN-021 の確かめ方を、試験が実際に名前に持つ例だけに直し、DD-ADMIN-023 の画面に「返金額を上限で切った時は商品＋送料が返金額と合わない」を足し、DD-ADMIN-023 の後に FREQ-642 の既知の制限を足した。
 
 > 交換の印を着に結び付ける作業 Task 8 確認日: 2026-11-11。DD-ADMIN-022 に受け取りの画面（見込みの表示・「割引の扱い」の欄・本文の `treatments`）と相談の返金の画面の標準の額、DD-ADMIN-023 に管理画面の返金の画面の見込みを足した。画面と hook は単体（RTL）で確かめた。幅（390/768/1280px）の E2E は後続の作業。
@@ -1299,7 +1301,7 @@ E と返す額（`unit-event-plan.ts` の `planUnitEvent`）: E′ ＝ 払った
 
 材料と計画（[unit-pricing-store.ts](../../../src/lib/orders/unit-pricing/unit-pricing-store.ts)・[unit-pricing-service.ts](../../../src/lib/orders/unit-pricing/unit-pricing-service.ts)）: `loadUnitPricingMaterials` は DB の `order_unit_pricing_materials` の jsonb（計画の型と同じ camelCase）を直さずに返し、注文の時の写しが無い注文は null（計画を作らず、今の計算のまま見込みを出す。AC-20）。`'server-only'` は付けない（return-store.ts と同じ。付けると、これを読む返品・返金の流れの試験が全部、印の差し替えを要る）。`planReturnReceive(client, returnId, body, {canRefund})` は、返品の注文・返品の中身（`listOrderReturns`）・返せる額（`loadRefundMaterials`）・材料から、受け取りの本文を計画の入力に直す。返金の品は、返金の行と、店長が「返金に変える」にした交換の行の、お返しでない品。品の選びは `units[].refundChoice`、省くと親の `refundChoice`（今すぐ/相談）。同じ返品の行・同じ選びは数を足す。割引の扱い（side）は、本文の `treatments` があればそれ、無ければ理由から（`defective`・`wrong_item` と、交換の頼みを店が返金に変えた行は shop、ほかは customer。設計2-3）。率は `order_returns.restocking_fee_percent`。割引の扱いを理由からの初めの値から変えられるのは返金の権限を持つ人だけで、持たない人が変えると `RETURN_FORBIDDEN`。交換の品に結ぶ枠は、DB の交換の結びの順（返品の行ごとに、結んだ枠 → 今の値段の安い順 → 注文の行・`unit_index`。返金の取り押さえが付いた枠は取らない）で写して `excludedSlots` にし、返金の枠の選びから除く。返品が無ければ `RETURN_NOT_FOUND`、計画の計算が断れば（枠が足りないなど）`UNIT_PRICING_INVALID` の断り。
 
-見込み: `ReturnReceiveEstimate = { legacy, standardRefund, nowRefund, consultRefund, feeAmount, fixedFees, fixedFeeParts?, feeDue?, feePending?, refundAmount, refundCap, consultOutstanding? }`（`fixedFeeParts`・`feeDue`・`feePending` は写しのある注文だけ）。写しのある注文は、`standardRefund`・`nowRefund`・`consultRefund`・`feeAmount` が計画の値。`fixedFees` は最初の受け取りだけの返送料（お店の送り状）・交換の手数料・交換の送料（E の外）。`refundAmount` ＝ min(max(`nowRefund` − `fixedFees`, 0) ＋ 送料の返金, 注文の返せる額)、今すぐの品が無ければ 0。`refundCap` ＝ min(注文の返せる額, `nowRefund` ＋ 送料の返金)（店長が直せる額の上限）。写しの率は E の中なので、ここでは引かない。写しの無い注文は `legacy: true` で、今の `computePerItemReturnRefundPreview` を返品の詳細から出した値を同じ形で返す。`consultOutstanding` は写しのある注文だけ（`estimateReturnReceive`）。この返品の相談の出来事のうち、相談の返金（失敗以外）がまだ付いていない出来事の相談の額の和で、全部に付いていれば 0。DB の `order_unit_outstanding` は店長が相談の返金の額を下げると正の残りを出すが、DB は相談の返金を二度は受けないので、見込みには残りとして出さない（[unit-pricing-store.ts](../../../src/lib/orders/unit-pricing/unit-pricing-store.ts) の `loadConsultOutstanding`）。
+見込み: `ReturnReceiveEstimate = { legacy, standardRefund, nowRefund, consultRefund, feeAmount, fixedFees, fixedFeeParts?, feeDue?, feePending?, refundAmount, refundCap, consultOutstanding? }`（`fixedFeeParts`・`feeDue`・`feePending` は写しのある注文だけ）。写しのある注文は、`standardRefund`・`nowRefund`・`consultRefund`・`feeAmount` が計画の値。`fixedFees` は最初の受け取りだけの返送料（お店の送り状）・交換の手数料・交換の送料（E の外）。`refundAmount` ＝ min(max(`nowRefund` − `fixedFees`, 0) ＋ 送料の返金, 注文の返せる額)、今すぐの品が無ければ 0。`refundCap` ＝ min(注文の返せる額, `nowRefund` ＋ 送料の返金)（店長が直せる額の上限）。写しの率は E の中なので、ここでは引かない。写しの無い注文は `legacy: true` で、今の `computePerItemReturnRefundPreview` を返品の詳細から出した値を同じ形で返す。`consultOutstanding` は写しのある注文だけ（`estimateReturnReceive`）。この返品の相談の出来事のうち、相談の返金（失敗以外）がまだ付いていない出来事の相談の額の和で、全部に付いていれば 0。DB の相談後の返金（`admin_refund_return`）の標準の額も、同じ出来事の和（R34）で、店長が前の相談の返金の額を下げても上げても持ち越さない（[unit-pricing-store.ts](../../../src/lib/orders/unit-pricing/unit-pricing-store.ts) の `loadConsultOutstanding`）。
 
 窓口: `POST /api/admin/returns/[returnId]/receive-estimate`（権限 `admin.orders.return`。読むだけで CSRF・回数の制限・監査は通さない）、`POST /api/orders/[id]/return-request/estimate`（お客様。注文の持ち主の確かめは申し込みの材料を読む `GET` と同じ。`CustomerReturnEstimate = { refundAmount, moneyMoves }`、交換だけなら 0 と `moneyMoves: false`。見込みを出せない時は 409 `ESTIMATE_UNAVAILABLE`）。受け取り `POST …/receive` は本文に `treatments?: {returnLineId, treatment}[]` を足し、入口（`receiveReturnAndRefund`）が計画を作って `admin_receive_return` の `_pricing` に渡す。本文の額（`refundAmount`）で計画は変わらない。
 
@@ -1331,6 +1333,10 @@ E と返す額（`unit-event-plan.ts` の `planUnitEvent`）: E′ ＝ 払った
 - 取り押さえの枠: 未発送の交換の着が持つ枠は、注文が全額返金で `cancelled` になった後も、前の注文の着数に1と数える（まれ）。
 - 自動の取り消し・外部の取り消しの注文の着は、返金が成功するまで数える。Stripe の画面からの発送前の一部返金は、数え続ける。
 - 写しのある注文の受け取りで、店長の上限は `LEAST(返せる残り, 品の額から手数料の率を引いた分＋送料)`。受け取りの時に店長が手数料の率を免除できない（手数料は今は0円）。
+- 発送した枠の決め方（R33）: 会計の `private.accounting_shipped_units` は割り振り（計画3で書き始める）が無い間、発送前に取り消した着を数えて別の着を発送済みと答えることがある。枠の側は `private.order_unit_shipped_slots` を使う。発送した数は会計の答えの数のまま、どの枠かは、失敗していない発送前の返金が付いていない若い番号の枠から順。会計の仕訳が指す着と枠の着は、計画3が会計の選び方をこの関数に合わせるまで食い違うことがある（仕訳の金額は変わらない）。
+- 発送前の返金の額は、店長が直した額のまま（Minor 3）: 発送前の取り消しの返金で、計画を作り直した後（版が古い `UNIT_PRICING_STALE` の後）に、店長が前に入れた額を計画の標準の額と照らし直さない。「店長が額を直せる」規則（上限は注文の返せる額）に従う。
+- 古い注文の枠は作り直さない（Minor 5）: 写しの無い古い注文に枠を後から足さない。前の注文からの差し引き（holds）は、写しのある注文の間だけで計算し、写しの無い注文は数えない。
+- 今すぐの返金額 `nowRefund` の整合（Minor 4）は DB で検めない: `nowRefund` は 標準の額と（今すぐ分の権利額 − それまでの最大の権利額）の小さい方で、今すぐ行の割り振りの合計から手数料・補正を引いた額とは一致しない（最大の権利額と上限が入る）。照らす式が正確でないため、入れない。DB は `今すぐ + 相談 = 標準` と行ごとの数だけを確かめる。
 
 ## 注文の詳細の割引の内訳（H Task 10 / FREQ-552）
 

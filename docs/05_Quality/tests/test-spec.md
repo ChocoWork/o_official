@@ -1,5 +1,7 @@
 # テスト仕様
 
+> 2026-11-11 確認日（交換の印 最終直し）: 発送した枠の決め方（R33）と相談後の返金の標準の額（R34）のDB結合試験を、下の「E2E に無い受け入れ条件の節」の表に足した。`order_unit_outstanding` を消したので、それを直接呼ぶ試験2本は画面の見込みと同じ基準を読む形にした。Minor 4（今すぐの返金額の整合の検め）は正確な式が無いので入れていない。
+>
 > 2026-11-11 確認日（交換の印 Task 11 の突き合わせ）: FREQ-642 の節の AC-02・AC-07 の行を今の試験の題・期待に合わせ、「流し方と限り」の差し替えの説明を節の初めに合わせ、「まだ試していない分岐」を足した。
 >
 > 2026-11-11 確認日（交換の印と手元に残る服の正しい値段 / FREQ-642 の文書の正本）: 「返品の品ごとの返金（FREQ-641）」の次に「交換の印と手元に残る服の正しい値段（FREQ-642、2026-11-11）」を足した。新しい E2E 7本（`FR-ADMIN-165`・`166`、`FR-ACCOUNT-048`、`FR-ITEM-DETAIL-070`、`FR-CHECKOUT-061`、`FR-LEGAL-008`、`FR-TERMS-007`）、期待や道具を直した既存の E2E、Task 2〜9 の単体・画面・DB 結合の試験の対応。E2E は個別に流した実測（全件は調整役）。
@@ -1621,6 +1623,9 @@ DB結合・単体の実測は各Taskの実装者と調整役の報告のとお�
 | AC-07 一部の行だけ受け取る | 同上：`FREQ-642-AC-07: 2行の返品の一部の行だけ受け取ると、計画の見込みと返した額が同じで、残りの行は未処理のまま`（2026-11-11 足した） |
 | AC-07 相談と今すぐの id の順・上限 | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-07: 相談の返金は相談の分だけで、今すぐの分を店長が下げても相談の残りに戻らない`。`e2e/FR-ADMIN-164-return-receive-per-item.spec.ts`：`FREQ-641-AC-02`（上限）・`FREQ-641-AC-04`（印が逆）。`tests/unit/components/OrderReturnReceiveDialog.unitPricing.test.tsx`：`FREQ-642-AC-07: 窓口の上限を超える額は…上限で切る` |
 | AC-27 注文全体の取り消し | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-27: 注文全体の取り消しは全部の枠が returned_shop で払った合計を返す`。`tests/unit/lib/orders/unit-pricing/unit-pricing-service.test.ts`：`FREQ-642-AC-27: 発送前の品を選ぶ返金は計画を作り…` |
+| AC-27 発送した枠の決め方（最終直し R33） | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-27: R33 同じ値段の2着の1着を発送前に取り消し、残りを発送したら、残りの1着を返金で受け取れる`（取り消した枠0が発送済みと読まれず、残りの枠1を返金で受け取れる）、`FREQ-642-AC-27: R33 取り消しの返金が失敗したら、その着は発送の数え方に戻る`（`order_unit_shipped_slots` が失敗した返金の取り押さえを除く）。`tests/integration/db/unit-binding-schema.integration.test.ts`：移行 A の末尾の確かめが `order_unit_shipped_slots` の権限・本体の改変を拒む（2件） |
+| AC-20 前の注文の着数（最終直し R33） | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-20: R33 取り消しに全額返金された注文でも、発送済みで残した着は前の注文の数に入る` |
+| AC-07 相談後の返金の標準の額（最終直し R34） | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-07: R34 1つ目の相談の返金を下げた後の2つ目の相談の返金は、画面の見込み(2つ目の出来事の分)と同じ額`・`FREQ-642-AC-07: R34 1つ目の相談の返金を上げた後の2つ目の相談の返金も、画面の見込みと同じ額`（3着の注文。DB の返金額 = 画面の見込みの基準 = 2つ目の出来事の `consult_refund`） |
 | AC-30 店長が交換を返金に変える | `tests/integration/db/unit-binding-receive.integration.test.ts`：`FREQ-642-AC-30: 交換の頼みを返金に変えた行は、お店の側の事情で返った枠になる（17,000円）`（2026-11-11 足した）。`tests/unit/lib/orders/unit-pricing/unit-pricing-service.test.ts`：`FREQ-642-AC-26: 交換の頼みを店が返金に変えた行は shop の扱いで…` |
 
 穴: 受け入れ条件31件のすべてに、題に ID を持つ試験が結び付く（2026-11-11 の `npm run report:traceability`）。ただし単体の純関数だけで確かめている条件がある（AC-01・08・11・13・24・29 の一部。`unit-event-plan.test.ts`）。DB・画面で確かめていない分岐は下の「まだ試していない分岐」に書く。AC-01 の「残る着は手元にある」は `unit-binding-receive.integration.test.ts` の AC-02 の試験に足した確かめ（未実行。調整役が流す）。

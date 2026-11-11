@@ -1,5 +1,7 @@
 # API仕様（現行実装）
 
+> 交換の印 最終直し 確認日: 2026-11-11。`public.admin_refund_return` の標準の額を、相談の返金が付いていない出来事の相談の分の和（R34）に直した。入口・引数・答えは変えていない。
+>
 > 交換の印 Task 7 確認日: 2026-11-11。見込みの窓口を3つ足した（189ファイル・239組、E2E 用を除く188ファイル・238組）: `POST /api/admin/returns/[returnId]/receive-estimate`・`POST /api/admin/orders/[id]/refund-estimate`・`POST /api/orders/[id]/return-request/estimate`。どれも読むだけ（DB に書かない）で、POST なのは選びを本文で渡すため。`POST /api/admin/returns/[returnId]/receive` の本文に `treatments?`（返品の行ごとの割引の扱い）を足し、受け取り・返金・取り消し・相談の返金の入口が値段の計画をサーバーで作って DB の `_pricing` に渡すようにした（版の食い違いは1回だけ作り直す）。前の注文へ割引の分を戻す返金（`release_refund_ids`）は入口が Stripe に頼む。詳しくは末尾の「見込みの窓口と計画の受け渡し（FREQ-642 Task 7）」。
 >
 > 交換の印 移行 D（Task 6）確認日: 2026-11-10。窓口の追加・削除はない（サーバーの受け渡しは Task 7）。返金の DB の関数 `begin_order_refund`（14の引数・末尾に値段の計画 `_pricing jsonb`）・`admin_refund_return`（8の引数・同）が値段の計画を受け、答えに `release_refund_ids uuid[]` を足した。返金の道に `unit_hold_release` を足し、取り消しの戻し `order_unit_revert_cancel` を足した。詳しくは末尾の「返金・取り消し・前の注文への戻しの値段の計画（FREQ-642 Task 6）」。
@@ -1143,7 +1145,7 @@ GET `/api/admin/order-attention`（`admin.orders.read`）は`discounts:{orderId,
 | DB の入口 | 引数と答え | 変わる所 |
 | --- | --- | --- |
 | `public.begin_order_refund(_order_id, _source, _request_key, _lines, _restock, _shipping_amount, _amount, _note, _stripe_reason, _cancel_reason, _notify_customer, _actor_id, _received_amount DEFAULT NULL, _pricing jsonb DEFAULT NULL)` | 14の引数（13の引数の関数は DROP）。答え `refund_id・amount・status・replayed・release_refund_ids`。`service_role` だけ | 写しのある注文で発送前の行（`before_shipment=true`）か `order_cancel` がある時は `_pricing`（kind `pre_shipment_cancel`）が要る。発送後の行だけの返金・行の無い返金は計画なし |
-| `public.admin_refund_return(_return_id, _actor_id, _request_key, _amount, _shipping_amount, _note, _notify_customer, _pricing jsonb DEFAULT NULL)` | 8の引数（7の引数の関数は DROP）。答え `refund_id・amount・status・replayed・release_refund_ids`。`service_role` だけ | 標準の額は `order_unit_outstanding`（相談の分だけ）。`_pricing` は `{orderId, version, releases}` の形で、前の注文に戻す計画がある時だけ（無ければ NULL） |
+| `public.admin_refund_return(_return_id, _actor_id, _request_key, _amount, _shipping_amount, _note, _notify_customer, _pricing jsonb DEFAULT NULL)` | 8の引数（7の引数の関数は DROP）。答え `refund_id・amount・status・replayed・release_refund_ids`。`service_role` だけ | 標準の額は、相談の返金（失敗以外）がまだ付いていない返品の受け取りの出来事の相談の分（`consult_refund`）の和（R34。画面の見込みと同じ出来事。店長が前の相談の返金の額を変えても持ち越さない）。`_pricing` は `{orderId, version, releases}` の形で、前の注文に戻す計画がある時だけ（無ければ NULL） |
 | `public.admin_receive_return(…15の引数)` | 引数は変えない | 返金の記録は共通のコアが書く。計画の `releases` を前の注文の返金にして `release_refund_ids` に返す |
 | `public.order_unit_revert_cancel(_refund_id uuid, _actor_id uuid) RETURNS uuid` | 戻しの出来事（`cancel_reverted`）の id。`service_role` だけ | 失敗した返金（`failed`）に結ばれた発送前の取り消しを戻す。呼ぶのは会計の計画3 |
 
