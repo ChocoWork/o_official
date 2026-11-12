@@ -2,7 +2,7 @@ BEGIN;
 
 -- Unit binding, migration A (FREQ-642), 2026-11-10: the tables of the per-unit record, the order-time discount snapshot,
 -- the prior-units count by kept slots, and the reason settings of defective and wrong-item returns.
--- @impl FREQ-642-AC-16 FREQ-642-AC-20 FREQ-642-AC-30
+-- @impl FREQ-642-AC-16 FREQ-642-AC-20 FREQ-642-AC-30 FREQ-642-AC-34
 -- @design docs/superpowers/specs/2026-11-08-exchange-unit-binding-design.md
 -- 1. Eight new public tables (RLS, service_role SELECT only, written by private functions only). Seven are append only
 --    (UPDATE, DELETE and TRUNCATE are refused with GROUP_H_IMMUTABLE); order_unit_slots is the one mutable state table
@@ -11,7 +11,7 @@ BEGIN;
 --    unit of an H order. Everything else it does is unchanged.
 -- 3. private.get_checkout_discount_context counts the prior units of a member by kept slots for an order that has slots
 --    (a kept unit of a cancelled order counts only if it was shipped: private.order_unit_shipped_slots, new here, which keeps a unit
---    cancelled before shipment out of the shipped units)
+--    with no live pre-shipment refund claim ahead of claimed units, up to the alive-slip count)
 --    and by the old formula for an order that has none. Everything else it does is unchanged.
 -- 4. shop_return_reason_settings: defective and wrong_item accept an exchange only.
 -- Applied migrations are never edited. The G writer allowlist is not changed here.
@@ -263,21 +263,20 @@ REVOKE ALL ON SEQUENCE public.order_unit_events_seq_seq FROM PUBLIC, anon, authe
 -- UB_ACL_END
 
 -- UB_FUNCTIONS_BEGIN
--- Which unit_index slots of an order item are shipped (FREQ-642, ruling R33). The number is the one private.accounting_shipped_units
--- reports for the item now (the units of the alive slips). Which slots they are does not depend on the accounting allocations (plan 3
--- writes them, nothing does yet): the lowest unit_index slots that no pre-shipment refund holds (order_line_unit_amounts.refund_before_shipment
--- with a refund that has not failed). A unit cancelled before shipment is therefore never reported as shipped. Defined here, in the first
--- file, because the prior-units count below needs it; the next files use it too.
+-- Which unit_index slots of an order item are shipped (FREQ-642, ruling R33, owner X1).
+-- The count stays "units on alive slips" (the row count of private.accounting_shipped_units(_order_item_id, NULL), as now).
+-- Which units: first the units with no live pre-shipment refund claim (public.order_line_unit_amounts.refund_before_shipment true
+-- with a refund_id whose order_refunds.status <> 'failed' = claimed), by unit_index ascending; if that is fewer than the count,
+-- add claimed units by unit_index ascending; always return exactly the count. Never decide by refund amount.
+-- This does not depend on accounting allocations (plan 3). Defined here because the prior-units count below needs it too.
 CREATE FUNCTION private.order_unit_shipped_slots(_order_item_id uuid) RETURNS TABLE(unit_index integer)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
 AS $$
-  SELECT x.unit_index FROM (
-    SELECT u.unit_index FROM public.order_line_unit_amounts AS u
-    WHERE u.order_item_id = _order_item_id
-      AND NOT EXISTS (SELECT 1 FROM public.order_refunds AS r WHERE r.id = u.refund_id AND u.refund_before_shipment AND r.status <> 'failed')
-    ORDER BY u.unit_index
-    LIMIT (SELECT pg_catalog.count(*) FROM private.accounting_shipped_units(_order_item_id, NULL))
-  ) AS x
+  SELECT u.unit_index FROM public.order_line_unit_amounts AS u
+  WHERE u.order_item_id = _order_item_id
+  ORDER BY EXISTS (SELECT 1 FROM public.order_refunds AS r WHERE r.id = u.refund_id AND u.refund_before_shipment AND r.status <> 'failed'),
+    u.unit_index
+  LIMIT (SELECT pg_catalog.count(*) FROM private.accounting_shipped_units(_order_item_id, NULL))
 $$;
 ALTER FUNCTION private.order_unit_shipped_slots(uuid) OWNER TO postgres;
 REVOKE ALL ON FUNCTION private.order_unit_shipped_slots(uuid) FROM PUBLIC, anon, authenticated, service_role;
@@ -511,7 +510,7 @@ BEGIN
   -- ub_functions: the two replaced bodies are exactly the ones this file wrote, with the H4 signature, owner, ACL and settings.
   IF v_detail IS NULL THEN
     FOR e IN SELECT * FROM (VALUES
-      ('order_unit_shipped_slots(uuid)','integer',false,'s',false,'ce14a4eb24ced0351076d8a5c187a999'),
+      ('order_unit_shipped_slots(uuid)','integer',false,'s',false,'a6d6e8ec722a6bbe051dfd68a5098e15'),
       ('group_h_copy_order_discounts(uuid,uuid,jsonb)','void',false,'v',false,'7905f5e5323b8db102098f495a894aa0'),
       ('get_checkout_discount_context(uuid,text,text[],bigint[],timestamptz,text)','jsonb',true,'s',true,'46019f9c10bce5dcddf306fbeade2cca')
     ) AS expected(signature,result_type,stable_reader,volatility,service,body_md5) LOOP

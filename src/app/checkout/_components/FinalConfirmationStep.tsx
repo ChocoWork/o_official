@@ -416,7 +416,7 @@ function FinalConfirmationContent({
               <div className="checkout-field">
                 <p className="checkout-label">返品・キャンセル</p>
                 <p>
-                  ご注文後のお客様都合による返品・交換・キャンセルはお受けできません。初期不良・誤送は、商品到着後7日以内にご連絡ください。詳しくは
+                  ご注文後のお客様都合による返品・交換・キャンセルは、原則としてお受けできません。初期不良・誤送は、商品到着後7日以内にご連絡ください。詳しくは
                   <Link href="/legal" className="underline">
                     特定商取引法の表記
                   </Link>

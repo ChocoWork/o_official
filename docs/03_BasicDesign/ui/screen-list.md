@@ -1,5 +1,6 @@
 # 画面一覧
 
+> 交換の印 オーナー修正 X1 確認日: 2026-11-12。FREQ-642-AC-32・33 の表示と導線を反映。
 > 会計の作り直し 計画2 Task 15 確認日: 2026-11-09。画面ルートの数は変えない（51件）。`/admin` の ACCOUNTING のサブタブに「計上待ち」「照合」を足して8つにし（URL の `?accountingTab=reconciliation` で最初に開くタブを選べる）、帳簿・Stripe 精算・設定・期間に欄を足し、KPI の「売上」を「受注高」に改めた。末尾の「会計の計上待ち・照合・受注高（FREQ-562〜574）」に書いた。
 >
 > 会計の作り直し 計画1 Task 15 確認日: 2026-11-08。画面ルートの数は変えない（51件）。`/admin` の ACCOUNTING の中に、6つ目のサブタブ「設定・期間」を足し、年の選択を会計期間の選択に替えた（末尾の「会計の設定・期間と期間の選択（FREQ-555・561）」）。
@@ -275,3 +276,7 @@ Task 5 fix round 1（2026-10-29）: DISCOUNT一覧の「使った回数」と「
 | KPI の「受注高」（`KpiSection.tsx`） | 「売上」の名前と文言を「受注高」に改めた（カード、推移、月次記録の指標名、算出式、tooltip）。説明は「期間内に支払いを受けた注文の額（出荷前の取り消しを引く）」。受注高の内訳のパネル（`IntakeSummary`）: 「受注高は帳簿の売上高ではありません。申告には使いません。」「支払いの確認が帳簿に入るまで数えません。」、受注残（件数と額）、今月の返品（出荷後の返品は引かない旨の注記）、内訳（割引前の額・割引・送料・支払い・出荷前の取り消し・カード会社の取り消し）、「支払いの件数（取り消しを含む）」、内訳が合わない時の警告。「帳簿との照らし合わせは会計の『照合』で見られます」から `/admin?tab=ACCOUNTING&accountingTab=reconciliation` へ。パネルは3つの欄（受注残・内訳・返品）が揃った時だけ出す |
 
 390/768/1280px の幅は E2E `FR-ADMIN-132`〜`136` が確かめる（横のはみ出しなし）。画面単体は `tests/unit/components/cost-profit/` の `pending-view`・`reconciliation-view`・`dispute-settings-panel`・`balance-topup-form`・`year-end-shipments-panel`・`journal-shipment-columns` と `tests/unit/components/KpiSection.intake.test.tsx`。
+
+## オーナー修正 X1 の表示と導線（FREQ-642）
+
+注文の最終確認は「ご注文後のお客様都合による返品・交換・キャンセルは、原則としてお受けできません。」を表示する（FREQ-642-AC-32）。返品の申し込みの選べる行で、不良・誤送の交換だけの理由が交換先不足で隠れた時は、選択前から案内と既存の `/contact` へのリンクを表示する。返品不可でチェックが無効でも表示し、使える交換先がある時は表示しない（FREQ-642-AC-33）。詳細は[チェックアウト](../../04_DetailDesign/pages/13_checkout.md)と[アカウント](../../04_DetailDesign/pages/15_account.md)。

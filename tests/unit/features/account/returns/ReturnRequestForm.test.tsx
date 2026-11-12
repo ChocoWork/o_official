@@ -24,7 +24,7 @@ jest.mock('next/link', () => ({ href, children, ...props }: any) => (
 
 import { ReturnRequestForm } from '@/features/account/returns/ReturnRequestForm';
 import type { SubmitBody } from '@/features/account/returns/return-request-model';
-import { BLOUSE, ORDER_ID, SHIPMENT_1, acceptedBody, materials, type Materials } from './return-request-fixtures';
+import { BLOUSE, ORDER_ID, REASONS, SHIPMENT_1, acceptedBody, materials, type Materials } from './return-request-fixtures';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const FIRST = '1回目の発送（10月10日発送）';
@@ -86,6 +86,33 @@ beforeEach(() => {
 });
 
 describe('ReturnRequestForm の見た目', () => {
+  it('FREQ-642-AC-33: 選択前と選択後に不良・誤送の問い合わせ案内を出し、既存のお問い合わせページへ結ぶ', () => {
+    const reasons = REASONS.map((setting) => ['defective', 'wrong_item'].includes(setting.reason)
+      ? { ...setting, resolutions: 'exchange_only' as const } : setting);
+    renderForm({ reasons });
+    const guide = 'この商品の不良・誤送は、お問い合わせフォームからご連絡ください。';
+    expect(within(belt()).getByRole('link', { name: 'お問い合わせフォーム' })).toHaveAttribute('href', '/contact');
+    expect(within(belt()).getByRole('link', { name: 'お問い合わせフォーム' }).parentElement).toHaveTextContent(guide);
+    expect(within(belt()).getByRole('checkbox')).not.toBeChecked();
+    choose(belt());
+    expect(within(belt()).getByRole('link', { name: 'お問い合わせフォーム' })).toBeVisible();
+    expect(within(blouse()).queryByRole('link', { name: 'お問い合わせフォーム' })).not.toBeInTheDocument();
+    expect(within(second()).queryByRole('link', { name: 'お問い合わせフォーム' })).not.toBeInTheDocument();
+  });
+
+  it('FREQ-642-AC-33: 返品不可で交換できずチェックが無効の行にも案内を出す', () => {
+    const reasons = REASONS.filter((setting) => ['defective', 'wrong_item'].includes(setting.reason))
+      .map((setting) => ({ ...setting, resolutions: 'exchange_only' as const }));
+    renderForm({ reasons });
+    expect(within(scarf()).getByRole('checkbox')).toBeDisabled();
+    expect(within(scarf()).getByRole('link', { name: 'お問い合わせフォーム' })).toHaveAttribute('href', '/contact');
+  });
+
+  it('FREQ-642-AC-33: 不良・誤送が交換不足で隠れていない行には案内を出さない', () => {
+    renderForm();
+    expect(screen.queryByRole('link', { name: 'お問い合わせフォーム' })).not.toBeInTheDocument();
+  });
+
   it('ご注文番号と3つの手順を出し、今の手順に aria-current を付ける。発送ごとに見出しと受付の期限を出す', () => {
     renderForm();
 

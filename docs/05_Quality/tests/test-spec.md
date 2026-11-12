@@ -1,5 +1,6 @@
 # テスト仕様
 
+> 2026-11-12 確認日（オーナー修正 X1）: AC-32〜34 と3幅の FR-ACCOUNT-049 を追加。調整役が手元の DB で確認（2026-11-12）: 旧本文で AC-34 の2件が失敗、新本文で AC-34・R33 が通過。db:reset 後に関連 DB 37ファイル1475件通過・8件スキップ。Fix round 1 の追加 DB 1件も調整役が実行して通過（AC-34・R33 の7件通過）。E2E は FR-ACCOUNT-049・FR-CHECKOUT-037・FR-CHECKOUT-061・FR-ACCOUNT-048 を3幅で本番ビルドに流し全件通過（048 は承認の手助けが返送先を入れるよう直した）。
 > 2026-11-11 確認日（交換の印 最終直し）: 発送した枠の決め方（R33）と相談後の返金の標準の額（R34）のDB結合試験を、下の「E2E に無い受け入れ条件の節」の表に足した。`order_unit_outstanding` を消したので、それを直接呼ぶ試験2本は画面の見込みと同じ基準を読む形にした。Minor 4（今すぐの返金額の整合の検め）は正確な式が無いので入れていない。
 >
 > 2026-11-11 確認日（交換の印 Task 11 の突き合わせ）: FREQ-642 の節の AC-02・AC-07 の行を今の試験の題・期待に合わせ、「流し方と限り」の差し替えの説明を節の初めに合わせ、「まだ試していない分岐」を足した。
@@ -1576,9 +1577,23 @@ AC-07の3行・予備あり・介在受取とAC-08は旧本文だけで組み立
 | 同上 | `FREQ-642-AC-21: 交換だけの申し込みは「お金のやり取りはありません」と出て、返金の見込みは出ない` | 「サイズが小さい」で交換を申し込む | 「お金のやり取りはありません」が出て「返金の見込み」は0件 | 実装者 | 2026-11-11 3件×3幅 通過 |
 | 同上 | `FREQ-642-AC-30: 破損・不良と注文と違う品が届いた、を選ぶとご希望は交換だけで、返金は出ない` | 両方の理由を選ぶ。申し込みの窓口の材料も読む | 「ご希望」は無効で`exchange`だけ（`refund`の選択肢0件）。材料の`resolutions`が2つとも`exchange_only` | 実装者 | 2026-11-11 3件×3幅 通過 |
 | `e2e/FR-ITEM-DETAIL-070-discount-return-note.spec.ts` | `FREQ-642-AC-22: 商品ページに割引の扱いの文が出て、横にはみ出さない` | `/item/1` | `item-discount-return-note`に割引の扱いの文 | 実装者 | 2026-11-11 1件×3幅 通過 |
-| `e2e/FR-CHECKOUT-061-discount-return-note.spec.ts` | `FREQ-642-AC-22: …最終確認画面に割引の扱いの文が出る` | 入力画面から最終確認画面へ進む | `checkout-discount-return-note`に同じ文 | 実装者 | 2026-11-11 1件×3幅 通過 |
+| `e2e/FR-CHECKOUT-061-discount-return-note.spec.ts` | `FREQ-642-AC-22, FREQ-642-AC-32: …最終確認画面に割引の扱いの文が出る` | 入力画面から最終確認画面へ進む | `checkout-discount-return-note`に同じ文 | 実装者 | 2026-11-11 1件×3幅 通過 |
 | `e2e/FR-LEGAL-008-discount-return-policy.spec.ts` | `FREQ-642-AC-22: /legal に割引の扱いの文が出て、横にはみ出さない` | `/legal` | `legal-discount-return-note`に同じ文 | 実装者 | 2026-11-11 1件×3幅 通過 |
 | `e2e/FR-TERMS-007-discount-return-policy.spec.ts` | `FREQ-642-AC-22: /terms に割引の扱いの文が出て、横にはみ出さない` | `/terms` | `terms-discount-return-note`に同じ文 | 実装者 | 2026-11-11 1件×3幅 通過 |
+
+### オーナー修正 X1（AC-32〜34、2026-11-12）
+
+| 条件 | 試験と期待 | 実行状態 |
+| --- | --- | --- |
+| AC-32 | `tests/unit/components/FinalConfirmationStep.test.tsx`、`e2e/FR-CHECKOUT-037-final-confirmation-screen.spec.ts`、`e2e/FR-CHECKOUT-061-discount-return-note.spec.ts`。最終確認に「ご注文後のお客様都合による返品・交換・キャンセルは、原則としてお受けできません。」 | 単体 RED（1失敗）→GREEN（25成功）。E2E は未実行 |
+| AC-33 | `tests/unit/features/account/returns/return-request-model.test.ts`（4件）・`ReturnRequestForm.test.tsx`（3件）。設定の不良・誤送が交換先不足だけで隠れる時、選択前・選択後・返品不可の無効チェックにも案内と `/contact` のリンク。交換先あり・設定なし・返金可・別の理由だけ・期限切れは案内なし | 関連単体3ファイル137件成功。新規7件のうち6件が RED、案内を出さない既存挙動の1件は初回から成功 |
+| AC-33 | `e2e/FR-ACCOUNT-049-no-exchange-contact-guide.spec.ts`。FR-ACCOUNT-048 と同じログイン・写しのある注文・本物の材料を使い、交換先を無効にした行の案内、通常行の選択前後、返品不可、交換先追加後の案内なしと理由の復帰、横はみ出しを390/768/1280pxで確認 | 1件×3幅。未実行（調整役） |
+| AC-34 | `tests/integration/db/unit-binding-refunds.integration.test.ts`。2着の枠0だけ／両方に5,000円の部分返金の取り押さえを残して2着の発送票を確定しても2枠。1円の取り押さえでも発送数1なら未取り押さえの枠1。既存 R33（枠0を全額取り消して枠1だけ発送）は枠1だけ | 当初の新規3件。seed は `private.group_h_claim_refund_units` を使用（`order_line_unit_amounts` への直接 UPDATE は H の守りが拒む）。調整役が手元の DB で確認（2026-11-12）: 旧本文で AC-34 の2件が失敗、新本文で AC-34・R33 が通過。db:reset 後に関連 DB 37ファイル1475件通過・8件スキップ。 |
+| AC-34（Fix round 1 / M-1） | `unit-binding-refunds.integration.test.ts`。枠0に5,000円、枠1に別の1円の発送前返金を、それぞれ `private.group_h_claim_refund_units(refund, item, array[i], true, null)` で取り押さえる。発送票を1着で確定し `[{ unit_index: 0 }]` を期待する。返金額の小さい枠1を選ぶ誤りを検出する | 今回追加の1件。調整役が手元の DB で実行して通過（AC-34・R33 の7件通過）。上の1475件通過には含めない |
+
+関連 DB 37ファイルの範囲は `unit-binding-*`・`group_h*`・`accounting_p2*`・`return-receive*`・`order_return_customer_requests`（2026-11-12 調整役の実測）。
+
+発送枠の規則: 数は `private.accounting_shipped_units(_order_item_id, NULL)` の行数（生きている発送票の着数）。`refund_before_shipment=true` かつ `refund_id` の返金が `status <> 'failed'` の着を取り押さえありとし、取り押さえの無い着を `unit_index` 昇順で先に選び、不足分を取り押さえのある着の `unit_index` 昇順で補う。必ずその数を返し、返金額で決めない。部分返金を残して発送した着が報告されず、数が減る制限を解消する。
 
 ### 期待を直した既存のE2E（理由は新しい決まり）
 
@@ -1624,11 +1639,12 @@ DB結合・単体の実測は各Taskの実装者と調整役の報告のとお�
 | AC-07 相談と今すぐの id の順・上限 | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-07: 相談の返金は相談の分だけで、今すぐの分を店長が下げても相談の残りに戻らない`。`e2e/FR-ADMIN-164-return-receive-per-item.spec.ts`：`FREQ-641-AC-02`（上限）・`FREQ-641-AC-04`（印が逆）。`tests/unit/components/OrderReturnReceiveDialog.unitPricing.test.tsx`：`FREQ-642-AC-07: 窓口の上限を超える額は…上限で切る` |
 | AC-27 注文全体の取り消し | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-27: 注文全体の取り消しは全部の枠が returned_shop で払った合計を返す`。`tests/unit/lib/orders/unit-pricing/unit-pricing-service.test.ts`：`FREQ-642-AC-27: 発送前の品を選ぶ返金は計画を作り…` |
 | AC-27 発送した枠の決め方（最終直し R33） | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-27: R33 同じ値段の2着の1着を発送前に取り消し、残りを発送したら、残りの1着を返金で受け取れる`（取り消した枠0が発送済みと読まれず、残りの枠1を返金で受け取れる）、`FREQ-642-AC-27: R33 取り消しの返金が失敗したら、その着は発送の数え方に戻る`（`order_unit_shipped_slots` が失敗した返金の取り押さえを除く）。`tests/integration/db/unit-binding-schema.integration.test.ts`：移行 A の末尾の確かめが `order_unit_shipped_slots` の権限・本体の改変を拒む（2件） |
+| AC-34 部分返金を残して発送する枠 | `unit-binding-refunds.integration.test.ts` の AC-34（当初3件と Fix round 1 追加1件）と既存 R33。規則と実行状態は上の X1 の表。2着発送では取り押さえ済みを補い2枠、1着発送では未取り押さえを先に選ぶ |
 | AC-20 前の注文の着数（最終直し R33） | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-20: R33 取り消しに全額返金された注文でも、発送済みで残した着は前の注文の数に入る` |
 | AC-07 相談後の返金の標準の額（最終直し R34） | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-07: R34 1つ目の相談の返金を下げた後の2つ目の相談の返金は、画面の見込み(2つ目の出来事の分)と同じ額`・`FREQ-642-AC-07: R34 1つ目の相談の返金を上げた後の2つ目の相談の返金も、画面の見込みと同じ額`（3着の注文。DB の返金額 = 画面の見込みの基準 = 2つ目の出来事の `consult_refund`） |
 | AC-30 店長が交換を返金に変える | `tests/integration/db/unit-binding-receive.integration.test.ts`：`FREQ-642-AC-30: 交換の頼みを返金に変えた行は、お店の側の事情で返った枠になる（17,000円）`（2026-11-11 足した）。`tests/unit/lib/orders/unit-pricing/unit-pricing-service.test.ts`：`FREQ-642-AC-26: 交換の頼みを店が返金に変えた行は shop の扱いで…` |
 
-穴: 受け入れ条件31件のすべてに、題に ID を持つ試験が結び付く（2026-11-11 の `npm run report:traceability`）。ただし単体の純関数だけで確かめている条件がある（AC-01・08・11・13・24・29 の一部。`unit-event-plan.test.ts`）。DB・画面で確かめていない分岐は下の「まだ試していない分岐」に書く。AC-01 の「残る着は手元にある」は `unit-binding-receive.integration.test.ts` の AC-02 の試験に足した確かめ（未実行。調整役が流す）。
+穴: 受け入れ条件34件のすべてに、題に ID を持つ試験が結び付く（AC-32〜34 は2026-11-12 X1 で追加。実行状態は下の X1 の表）。ただし単体の純関数だけで確かめている条件がある（AC-01・08・11・13・24・29 の一部。`unit-event-plan.test.ts`）。DB・画面で確かめていない分岐は下の「まだ試していない分岐」に書く。AC-01 の「残る着は手元にある」は `unit-binding-receive.integration.test.ts` の AC-02 の試験に足した確かめ（未実行。調整役が流す）。
 
 ### 流し方と限り
 

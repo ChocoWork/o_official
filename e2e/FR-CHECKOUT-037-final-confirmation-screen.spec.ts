@@ -48,7 +48,7 @@ test.describe('FR-CHECKOUT-037 最終確認画面', () => {
       // 「在庫あり」の文言でも通る形にすると、行が在庫ありに変わっても気づけない
       await expect(terms).toContainText('受注生産・発送まで数週間〜2か月以上（目安）');
       await expect(terms).toContainText(
-        'ご注文後のお客様都合による返品・交換・キャンセルはお受けできません。初期不良・誤送は、商品到着後7日以内にご連絡ください。詳しくは特定商取引法の表記をご覧ください',
+        'ご注文後のお客様都合による返品・交換・キャンセルは、原則としてお受けできません。初期不良・誤送は、商品到着後7日以内にご連絡ください。詳しくは特定商取引法の表記をご覧ください',
       );
       await expect(terms.getByRole('link', { name: '特定商取引法の表記' })).toHaveAttribute('href', '/legal');
       await expect(page.getByText('合計（税込）')).toBeVisible({ timeout: 30_000 });

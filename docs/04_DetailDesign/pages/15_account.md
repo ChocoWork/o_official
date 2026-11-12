@@ -1,5 +1,6 @@
 ﻿# 1.15 マイアカウントページ（ACCOUNT）詳細設計
 
+> オーナー修正 X1 確認日: 2026-11-12。交換先が無いため不良・誤送を選べない行に、常時の問い合わせ案内を追加（AC-33）。
 > 状態: 既存設計 | 実装状況は項目ごとに要再照合
 
 ## 概要
@@ -221,13 +222,14 @@ E2E は FR-ACCOUNT-035-return-request.spec.ts・036-return-request-photos.spec.t
 
 `OrderItemRow` と `OrderReturnsSection` の `readOnly:true` は注文状況の表示用。省略した会員側は既存の操作・ボタン・フォーム・送り返しの業者と番号の表記を維持する。公開の枝へダミーの個人情報やcallbackを渡さない。
 
-## 返品の申し込みの返金の見込み（FREQ-642 / AC-21・30）
+## 返品の申し込みの返金の見込みと連絡先（FREQ-642 / AC-21・30・33）
 
-確認日: 2026-11-11
+確認日: 2026-11-12
 
 - 確かめる段（`ReturnRequestConfirm`）に入った時に1回だけ、`POST /api/orders/[id]/return-request/estimate` を呼ぶ（`fetchCustomerReturnEstimate`。本文は選びの行の `orderItemId`・`quantity`・`reason`・`requestedResolution`）。読むだけの窓口で、段の間は選びが変わらないので呼び直さない。
 - 出す文: 返金がある時 `返金の見込み: {N}円`（例: `返金の見込み: 17,000円`）、交換だけ（`moneyMoves` が偽）で、手数料・お支払いのご案内・お店の送り状の返送料（ご返金から差し引く）が1つも無い時だけ `お金のやり取りはありません`。ある時は見込みの文を出さない（R28）。待っている間は何も出さず、「申し込む」は押せる。
 - 見込みを出せない時（409・通信の切れ・読めない答え）は額を出さず `返金の額は受け取りの後にお知らせします` を出す。申し込み自体は止めない。
+- 連絡先（AC-33、2026-11-12）: 選べる行（`state=selectable`、`selectable>=1`）で交換に使える色・サイズが0件、かつ `materials.reasons` の不良・誤送の少なくとも一方が `exchange_only` なら、選択前から「この商品の不良・誤送は、お問い合わせフォームからご連絡ください。」を出す。「お問い合わせフォーム」は既存の `/contact` に結ぶ。返品不可で理由が0件になりチェックが無効でも出す。設定に該当理由が無い・返金も選べる・別の理由だけが隠れる・期限切れなどの選べない行・交換先ありでは出さない。判断はモデルの純関数 `shouldShowNoExchangeContactGuide`、文は `REQUEST_TEXT` に持ち、行の部品が描く。単体はモデルと `ReturnRequestForm`、3幅の E2E は FR-ACCOUNT-049（未実行）。
 - 初期不良（破損・不良）・誤送（注文と違う品）のご希望は、設定の `exchange_only` により既存の部品のまま「交換」だけが出る（コードの分岐は足さない。`resolutionOptionsOf` の試験で固定）。
 - 割引の扱いの文は /legal・/terms・商品ページ・最終確認と同じ。文は `src/lib/orders/returns/discount-return-note.ts` の `DISCOUNT_RETURN_NOTE` 1つを4か所が読む（「お手元に残る商品の割引後の価格を差し引いて返金いたします」から始まる。設計 6-1 の案のまま、言い回しはオーナーが後で直す）。
 - 単体: tests/unit/features/account/returns/ の ReturnRequestConfirm・customer-return-client・return-request-model。幅（390・768・1280px）の E2E は FR-ACCOUNT-048（Task 10）。

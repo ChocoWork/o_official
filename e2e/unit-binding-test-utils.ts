@@ -202,6 +202,9 @@ export async function approveRequested(db: PgClient, returnId: string, actorId: 
   const approval = lines.map((l) => ({ return_line_id: l.id, resolution: l.requested_resolution,
     exchange_variant_id: l.requested_resolution === 'exchange' ? l.requested_exchange_variant_id : null,
     exchange_method: l.requested_resolution === 'exchange' ? 'make' : null }));
+  // 承認には返送先が要る。DB を作り直した直後の単独の実行でも通るように、createApprovedReturn と同じ返送先を入れる（手数料の設定は触らない）
+  await db.query(`update public.shop_return_settings set return_address_name='Fixture',return_address_postal_code='1000001',
+    return_address_line='Fixture',return_address_phone='0311112222' where id=1 and return_address_name is null`);
   await db.query("select * from public.admin_approve_return($1,$2,$3::jsonb,'customer_ships','customer',null,null,0,0,0,0,null,false)",
     [returnId, actorId, JSON.stringify(approval)]);
   return lines.map((l) => l.id as string);

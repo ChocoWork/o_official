@@ -36,6 +36,9 @@ export const REQUEST_TEXT = {
     deadlineDate === null ? '返品・交換の受付：期限なし' : `返品・交換の受付：${formatDeadline(deadlineDate)}まで`,
   exchangeBadge: '交換の品',
   ineligible: 'この商品は返品不可の商品です。初期不良・誤送の時だけお申し込みいただけます。',
+  contactGuideBeforeLink: 'この商品の不良・誤送は、',
+  contactGuideLink: 'お問い合わせフォーム',
+  contactGuideAfterLink: 'からご連絡ください。',
   selectItem: 'この商品を申し込む',
   quantity: '数',
   reason: '理由',
@@ -224,6 +227,12 @@ export function reasonOptionsOf(materials: CustomerReturnRequestMaterials, line:
       (!line.returnIneligible || INELIGIBLE_ALLOWED_REASONS.includes(setting.reason)) &&
       resolutionOptionsOf(setting.resolutions, exchangeUsable).length > 0,
   );
+}
+
+/** 不良・誤送の理由が交換先不足だけで隠れる行に、選択前から連絡先を案内する（FREQ-642-AC-33）。 */
+export function shouldShowNoExchangeContactGuide(materials: CustomerReturnRequestMaterials, line: RequestLine): boolean {
+  return isSelectableLine(line) && exchangeVariantsOf(materials, line.itemId).length === 0 &&
+    materials.reasons.some((setting) => INELIGIBLE_ALLOWED_REASONS.includes(setting.reason) && setting.resolutions === 'exchange_only');
 }
 
 export type VariantChoice = { variant: RequestVariant; status: 'in_stock' | 'make' | 'unavailable' };

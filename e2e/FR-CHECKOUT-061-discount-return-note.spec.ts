@@ -26,7 +26,7 @@ test.describe('FR-CHECKOUT-061 最終確認画面の割引の扱い', () => {
   test.use({ locale: 'ja-JP' });
 
   for (const viewport of CHECKOUT_VIEWPORTS) {
-    test(`FREQ-642-AC-22: ${viewport.name}（${viewport.width}px）最終確認画面に割引の扱いの文が出る`, async ({ page }) => {
+    test(`FREQ-642-AC-22, FREQ-642-AC-32: ${viewport.name}（${viewport.width}px）最終確認画面に割引の扱いの文が出る`, async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       const seeded = await seedCart(page);
       test.skip(!seeded.ok, seeded.ok ? '' : seeded.reason);
@@ -34,6 +34,7 @@ test.describe('FR-CHECKOUT-061 最終確認画面の割引の扱い', () => {
       await page.goto('/checkout');
       await fillShippingForm(page, `e2e-final-note-${viewport.name}@example.com`);
       await proceedToFinal(page);
+      await expect(page.getByTestId('checkout-terms')).toContainText('ご注文後のお客様都合による返品・交換・キャンセルは、原則としてお受けできません。');
       const note = page.getByTestId('checkout-discount-return-note');
       await expect(note).toBeVisible();
       for (const part of NOTE_PARTS) await expect(note).toContainText(part);

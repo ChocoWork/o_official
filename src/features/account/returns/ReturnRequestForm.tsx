@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/Button/Button';
 import { Checkbox } from '@/components/ui/Checkbox/Checkbox';
 import { LiveMessage } from '@/components/ui/LiveMessage/LiveMessage';
@@ -24,6 +25,7 @@ import {
   lineKey,
   normalizeLine,
   reasonOptionsOf,
+  shouldShowNoExchangeContactGuide,
   reasonSettingOf,
   resolutionOptionsOf,
   exchangeVariantsOf,
@@ -85,6 +87,11 @@ function RequestLineItem({ materials, line, idPrefix, input, photos, errors, onC
           {line.lineKind === 'exchange' ? <span className="account-status account-status-sm">{REQUEST_TEXT.exchangeBadge}</span> : null}
         </div>
         {line.returnIneligible ? <p className="break-words font-acumin lk-text-3xs text-[#474747]">{REQUEST_TEXT.ineligible}</p> : null}
+        {shouldShowNoExchangeContactGuide(materials, line) ? (
+          <p className="break-words font-acumin lk-text-3xs text-[#474747]">
+            {REQUEST_TEXT.contactGuideBeforeLink}<Link href="/contact" className="underline underline-offset-4">{REQUEST_TEXT.contactGuideLink}</Link>{REQUEST_TEXT.contactGuideAfterLink}
+          </p>
+        ) : null}
         {!selectable ? (
           <p className="break-words font-acumin lk-text-3xs text-[#474747]">
             {CUSTOMER_RETURN_LINE_STATE_LABELS[line.state === 'selectable' ? 'unavailable' : line.state]}

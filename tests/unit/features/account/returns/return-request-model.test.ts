@@ -12,6 +12,7 @@ import {
   lineKey,
   normalizeLine,
   reasonOptionsOf,
+  shouldShowNoExchangeContactGuide,
   resolutionOptionsOf,
   shippingTermsOf,
   validateDraft,
@@ -115,6 +116,30 @@ describe('reasonOptionsOf と resolutionOptionsOf', () => {
     ['refund_only', false, ['refund']],
   ] as const)('ご希望の設定 %s（交換にできる色・サイズ: %s）で選べるのは %j', (rule, usable, expected) => {
     expect(resolutionOptionsOf(rule, usable)).toEqual(expected);
+  });
+});
+
+describe('shouldShowNoExchangeContactGuide', () => {
+  it.each(['defective', 'wrong_item'] as const)('FREQ-642-AC-33: %s が交換だけで、交換できる色・サイズが無い行には案内を出す', (reason) => {
+    const reasons = REASONS.filter((setting) => setting.reason === reason).map((setting) => ({ ...setting, resolutions: 'exchange_only' as const }));
+    expect(shouldShowNoExchangeContactGuide(materials({ reasons }), BELT)).toBe(true);
+    expect(shouldShowNoExchangeContactGuide(materials({ reasons }), { ...BELT, returnIneligible: true })).toBe(true);
+    expect(shouldShowNoExchangeContactGuide(materials({ reasons }), BLOUSE)).toBe(false);
+    expect(shouldShowNoExchangeContactGuide(materials({ reasons, exchangeOptions: [{ itemId: BELT.itemId, variants: [] }] }), BELT)).toBe(true);
+  });
+
+  it('FREQ-642-AC-33: 設定に理由が無い・返金も選べる・別の理由だけが隠れた時は案内を出さない', () => {
+    expect(shouldShowNoExchangeContactGuide(materials({ reasons: [] }), BELT)).toBe(false);
+    expect(shouldShowNoExchangeContactGuide(materials(), BELT)).toBe(false);
+    const reasons = REASONS.filter((setting) => setting.reason === 'size_too_large');
+    expect(shouldShowNoExchangeContactGuide(materials({ reasons }), BELT)).toBe(false);
+  });
+
+  it('FREQ-642-AC-33: 受付期限切れ・選べる数0の行には案内を出さない', () => {
+    const reasons = REASONS.map((setting) => ({ ...setting, resolutions: 'exchange_only' as const }));
+    const m = materials({ reasons, exchangeOptions: [] });
+    expect(shouldShowNoExchangeContactGuide(m, COAT_PAST_DEADLINE)).toBe(false);
+    expect(shouldShowNoExchangeContactGuide(m, { ...BELT, selectable: 0 })).toBe(false);
   });
 });
 

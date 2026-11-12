@@ -276,6 +276,38 @@ describeLocalDb('FREQ-642-AC-27: unit binding refunds, cancels and releases (con
     }
     const shippedSlots = async (itemId: string) => (await q('select unit_index from private.order_unit_shipped_slots($1) order by unit_index', [itemId])).rows;
 
+    test.each([{ claimed: [0] }, { claimed: [0, 1] }])('FREQ-642-AC-34: 部分の発送前返金を残す着 $claimed も発送したら、発送枠を必ず2着返す', async ({ claimed }) => {
+      const o = await equalOrder();
+      // 取り消しではない部分返金が残る状態を作る。枠の状態は kept のまま。
+      const refundId = (await q(`insert into public.order_refunds(order_id,source,stripe_refund_id,status,amount,notify_customer)
+        values($1,'stripe_dashboard',$2,'succeeded',5000,false) returning id`, [o.orderId, `re_${randomUUID().replaceAll('-', '')}`])).rows[0].id;
+      await q('select private.group_h_claim_refund_units($1,$2,$3::integer[],true,null)', [refundId, o.itemId, claimed]);
+      expect((await slotsOf(o.orderId)).map((s) => s.state)).toEqual(['kept', 'kept']);
+      await seedFactSlip(db(), { orderItemId: o.itemId, quantity: 2 });
+      expect((await q('select count(*)::int n from private.accounting_shipped_units($1,NULL)', [o.itemId])).rows[0].n).toBe(2);
+      expect(await shippedSlots(o.itemId)).toEqual([{ unit_index: 0 }, { unit_index: 1 }]);
+    });
+
+    test('FREQ-642-AC-34: 発送数が1なら返金額に依らず取り押さえの無い枠1を先に選ぶ', async () => {
+      const o = await equalOrder();
+      const refundId = (await q(`insert into public.order_refunds(order_id,source,stripe_refund_id,status,amount,notify_customer)
+        values($1,'stripe_dashboard',$2,'pending',1,false) returning id`, [o.orderId, `re_${randomUUID().replaceAll('-', '')}`])).rows[0].id;
+      await q('select private.group_h_claim_refund_units($1,$2,array[0],true,null)', [refundId, o.itemId]);
+      await seedFactSlip(db(), { orderItemId: o.itemId, quantity: 1 });
+      expect(await shippedSlots(o.itemId)).toEqual([{ unit_index: 1 }]);
+    });
+
+    test('FREQ-642-AC-34: 枠0が5,000円・枠1が1円の取り押さえでも、発送数1なら枠0を選ぶ', async () => {
+      const o = await equalOrder();
+      for (const [unitIndex, amount] of [[0, 5000], [1, 1]]) {
+        const refundId = (await q(`insert into public.order_refunds(order_id,source,stripe_refund_id,status,amount,notify_customer)
+          values($1,'stripe_dashboard',$2,'succeeded',$3,false) returning id`, [o.orderId, `re_${randomUUID().replaceAll('-', '')}`, amount])).rows[0].id;
+        await q('select private.group_h_claim_refund_units($1,$2,array[$3::integer],true,null)', [refundId, o.itemId, unitIndex]);
+      }
+      await seedFactSlip(db(), { orderItemId: o.itemId, quantity: 1 });
+      expect(await shippedSlots(o.itemId)).toEqual([{ unit_index: 0 }]);
+    });
+
     test('FREQ-642-AC-27: R33 同じ値段の2着の1着を発送前に取り消し、残りを発送したら、残りの1着を返金で受け取れる', async () => {
       const o = await cancelOneThenShip();
       const ret = await createUbReturn(db(), o, [{ quantity: 1 }]);

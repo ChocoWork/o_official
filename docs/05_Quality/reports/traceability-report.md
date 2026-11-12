@@ -1,6 +1,6 @@
 # 要件IDの参照状況
 
-> 状態: 自動生成 | 生成日: 2026-11-11 | 対象: リポジトリ内の文字列参照
+> 状態: 自動生成 | 生成日: 2026-11-12 | 対象: リポジトリ内の文字列参照
 
 ## 概要
 
@@ -8,9 +8,9 @@
 
 | 指標 | 件数 |
 | --- | ---: |
-| 要件定義書の対象ID | 2427 |
-| 設計にID参照あり | 686 |
-| テストにID参照あり | 1729 |
+| 要件定義書の対象ID | 2430 |
+| 設計にID参照あり | 689 |
+| テストにID参照あり | 1732 |
 | 設計にID参照なし | 1741 |
 | テストにID参照なし | 698 |
 
@@ -52,7 +52,7 @@
 | `FR-ACCOUNT-043` | 2件（[privacy.md](../../03_BasicDesign/areas/privacy.md)） | 1件（[FR-ACCOUNT-043-delivery-visibility.spec.ts](../../../e2e/FR-ACCOUNT-043-delivery-visibility.spec.ts)） |
 | `FR-ACCOUNT-044` | 1件（[20_order_status.md](../../04_DetailDesign/pages/20_order_status.md)） | 1件（[order-status-traceability.test.ts](../../../tests/unit/docs/order-status-traceability.test.ts)） |
 | `FR-ACCOUNT-045` | なし | 1件（[FR-ACCOUNT-045-discounted-return.spec.ts](../../../e2e/FR-ACCOUNT-045-discounted-return.spec.ts)） |
-| `FR-ACCOUNT-048` | 2件（[15_account.md](../../04_DetailDesign/pages/15_account.md)） | 1件（[FR-ACCOUNT-048-return-request-estimate.spec.ts](../../../e2e/FR-ACCOUNT-048-return-request-estimate.spec.ts)） |
+| `FR-ACCOUNT-048` | 2件（[15_account.md](../../04_DetailDesign/pages/15_account.md)） | 2件（[FR-ACCOUNT-048-return-request-estimate.spec.ts](../../../e2e/FR-ACCOUNT-048-return-request-estimate.spec.ts)） |
 | `FR-ADMIN-001` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-001-kpi-dashboard-redesign.spec.ts](../../../e2e/FR-ADMIN-001-kpi-dashboard-redesign.spec.ts)） |
 | `FR-ADMIN-002` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-002-sidenav-panel.spec.ts](../../../e2e/FR-ADMIN-002-sidenav-panel.spec.ts)） |
 | `FR-ADMIN-003` | 7件（[news.md](../../03_BasicDesign/areas/news.md)） | 2件（[FR-ADMIN-003-sidenav-fullheight-square.spec.ts](../../../e2e/FR-ADMIN-003-sidenav-fullheight-square.spec.ts)） |
@@ -2264,6 +2264,9 @@
 | `FREQ-642-AC-29` | なし | 1件（[unit-event-plan.test.ts](../../../tests/unit/lib/orders/unit-pricing/unit-event-plan.test.ts)） |
 | `FREQ-642-AC-30` | なし | 8件（[FR-ACCOUNT-036-return-request-photos.spec.ts](../../../e2e/FR-ACCOUNT-036-return-request-photos.spec.ts)） |
 | `FREQ-642-AC-31` | なし | 1件（[unit-binding-receive.integration.test.ts](../../../tests/integration/db/unit-binding-receive.integration.test.ts)） |
+| `FREQ-642-AC-32` | 2件（[screen-flow.md](../../03_BasicDesign/ui/screen-flow.md)） | 2件（[FR-CHECKOUT-061-discount-return-note.spec.ts](../../../e2e/FR-CHECKOUT-061-discount-return-note.spec.ts)） |
+| `FREQ-642-AC-33` | 2件（[screen-flow.md](../../03_BasicDesign/ui/screen-flow.md)） | 3件（[FR-ACCOUNT-049-no-exchange-contact-guide.spec.ts](../../../e2e/FR-ACCOUNT-049-no-exchange-contact-guide.spec.ts)） |
+| `FREQ-642-AC-34` | 3件（[er.md](../../03_BasicDesign/data/er.md)） | 1件（[unit-binding-refunds.integration.test.ts](../../../tests/integration/db/unit-binding-refunds.integration.test.ts)） |
 | `FREQ-65-AC-01` | なし | 1件（[FR-LOGIN-012-auth-tab-and-button-states.spec.ts](../../../e2e/FR-LOGIN-012-auth-tab-and-button-states.spec.ts)） |
 | `FREQ-65-AC-02` | なし | 1件（[FR-LOGIN-012-auth-tab-and-button-states.spec.ts](../../../e2e/FR-LOGIN-012-auth-tab-and-button-states.spec.ts)） |
 | `FREQ-65-AC-03` | なし | 2件（[FR-LOGIN-012-auth-tab-and-button-states.spec.ts](../../../e2e/FR-LOGIN-012-auth-tab-and-button-states.spec.ts)） |

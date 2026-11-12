@@ -115,7 +115,7 @@ describe('FinalConfirmationStep（設計書 2-3・第4章）', () => {
     expect(screen.getByTestId('checkout-terms')).toHaveTextContent(/お手元に残る商品の割引後の価格を差し引いて返金いたします/);
   });
 
-  test('表題と、特定商取引法の項目（支払いの時期・方法、明細ごとのお届けの時期、返品）を出す', () => {
+  test('FREQ-642-AC-32: 表題と、特定商取引法の項目（支払いの時期・方法、明細ごとのお届けの時期、返品）を出す', () => {
     setReady();
     renderStep();
 
@@ -129,7 +129,7 @@ describe('FinalConfirmationStep（設計書 2-3・第4章）', () => {
     expect(terms).toHaveTextContent('シャツ（BLACK / M）× 1：在庫あり・ご注文（コンビニはご入金）の確認後、3〜7営業日で発送');
     expect(terms).toHaveTextContent('パンツ（NAVY / L）× 2：受注生産・発送まで数週間〜2か月以上（目安）');
     expect(terms).toHaveTextContent(
-      'ご注文後のお客様都合による返品・交換・キャンセルはお受けできません。初期不良・誤送は、商品到着後7日以内にご連絡ください。詳しくは特定商取引法の表記をご覧ください',
+      'ご注文後のお客様都合による返品・交換・キャンセルは、原則としてお受けできません。初期不良・誤送は、商品到着後7日以内にご連絡ください。詳しくは特定商取引法の表記をご覧ください',
     );
     expect(screen.getByRole('link', { name: '特定商取引法の表記' })).toHaveAttribute('href', '/legal');
     expect(screen.getByText('WELCOME10')).toBeInTheDocument();
