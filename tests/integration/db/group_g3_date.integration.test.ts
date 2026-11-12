@@ -221,12 +221,13 @@ describeLocalDb('G-3 date correction (local DB only)', (db) => {
     }
     expect((await db().query('select cardinality(private.group_g_writer_allowlist()) n')).rows[0].n).toBe(CURRENT_ALLOWLIST.length);
   });
-  test('FREQ-535-AC-04: shipment_dateを持つprosrcはG-3の関数と会計の出荷の係の5関数だけで、KPIなどほかの関数に広がらない', async () => {
+  test('FREQ-535-AC-04: shipment_dateを持つprosrcはG-3の関数と会計の出荷の係の5関数と返品の届いた日の確かめだけで、KPIなどほかの関数に広がらない', async () => {
     const actual = (await db().query(`select n.nspname||'.'||p.proname name from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname in ('public','private') and strpos(p.prosrc,'shipment_date')>0 order by 1`)).rows.map((p) => p.name);
     // Accounting plan 2 S8 reads the shipment day on purpose (design 6-a): its five functions are listed with the G-3 ones; S14 (6-d, 6-d2) adds its two reads and the check writer.
+    // Accounting plan 3 S18 (P3-T4a) reads the first shipment day as the floor of a shop-made return's arrival date.
     expect(actual).toEqual([
-      'private.accounting_post_shipment_events', 'private.accounting_shipment_date_reason',
+      'private.accounting_assert_arrival_date', 'private.accounting_post_shipment_events', 'private.accounting_shipment_date_reason',
       'private.admin_cancel_shipment_slip', 'private.admin_check_year_end_shipment', 'private.admin_confirm_shipment_slip', 'private.admin_correct_shipment_date',
       'private.admin_mark_shipment_slip_delivered', 'private.admin_update_shipment_slip_tracking', 'private.get_admin_shipment_slip',
       'private.get_shipment_journal_trace', 'private.group_g_writer_allowlist', 'private.guard_group_g_shipment_slip_change', 'private.list_admin_shipment_slips',
