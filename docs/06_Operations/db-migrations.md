@@ -1,6 +1,6 @@
 # DB マイグレーション運用
 
-> 2026-11-12 確認日（オーナー修正 X4 / FREQ-642-AC-37）: 新しい移行 `20261112064013_unit_binding_refund_retry.sql` を足した（本番未適用）。A〜D は本番適用済みなので直していない。末尾の節を参照。
+> 2026-11-12 確認日（オーナー修正 X4 / FREQ-642-AC-37）: 新しい移行 `20261112064013_unit_binding_refund_retry.sql` を足し、同じ日にオーナーの許可で本番に当てた。A〜D は本番適用済みなので直していない。末尾の節を参照。
 > 2026-11-12 確認日（FREQ-642 本番適用）: 移行 A〜D（20261110090325・20261110104605・20261110120611・20261110135232）を、オーナーの許可（2026-11-12「3つの直しの後に、本番適用と push をまとめて行う」）で本番に当てた。下の「交換の印の移行 A〜D の本番適用（2026-11-12）」の節。
 > 2026-11-12 確認日（X2 / FREQ-642-AC-35・Fix round 1）: 調整役の実測（2026-11-12）: `npm run db:reset` 後の関連DB101ファイルは3563件通過・12件スキップ・1件失敗（AC-35の旧注文seedが `ORDER_RETURN_IMMUTABLE`。承認時に10%を設定する経路へ修正）。その後、FREQ-642のDB136件すべて通過。本番ビルドのE2Eは `isolated-global` の FR-ADMIN-165/166/167 が27件通過、`chromium` の FR-ACCOUNT-048/049 が12件通過。Fix round 1で追加した相談後返金の2 assertionも、調整役が db:reset 後に流して通過（FREQ-642 ほかの DB 167件通過、2026-11-12）。X2は未 push。
 
@@ -1597,13 +1597,13 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 
 ## 受け取りの時の返金が失敗した後の返し直し（X4、2026-11-12）
 
-対応: FREQ-642-AC-37（オーナー決定 2026-11-12）。移行 A〜D は本番に当たっているので直さず、新しい移行を1本足した。**本番未適用。**
+対応: FREQ-642-AC-37（オーナー決定 2026-11-12）。移行 A〜D は本番に当たっているので直さず、新しい移行を1本足した。**2026-11-12 にオーナーの許可で本番に当てた**（下の「X4 の本番適用」）。
 
 | 移行 | bytes | MD5 |
 | --- | --- | --- |
 | `20261112064013_unit_binding_refund_retry.sql` | 56635 | `641eb34deb1223f6ee7f5c4f994e0126` |
 
-（Fix round 2 で直した版。最初の版は 50097 bytes・`09716d754ff077d2cdc055998a8fd6dc`、Fix round 1 の版は 55530 bytes・`827c1fd09e99f48b793c4e977c1536a8`。どれもまだ本番に当てていない。）
+（Fix round 2 で直した版。最初の版は 50097 bytes・`09716d754ff077d2cdc055998a8fd6dc`、Fix round 1 の版は 55530 bytes・`827c1fd09e99f48b793c4e977c1536a8`。本番に当てたのは Fix round 2 の版だけ。）
 
 サイズと MD5 は `wc -c`・`md5sum` で測った（LF・ASCII・単一取引）。
 
@@ -1621,3 +1621,14 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 | 戻し方 | 適用した後は、D の本文に戻す新しい移行を足す（新しい表は消さずに残し、読む関数だけを戻す）。主キーを戻す前に、同じ（出来事, 返金）に2行ある結びが無いことを確かめる（追記だけの表なので消さない） |
 
 手元の DB での実測（2026-11-12、`npm run db:reset` の後）: 移行が通り、末尾の確かめも通った。Fix round 2 の版で、X4 の DB 試験 38件通過。関係する DB 試験（unit-binding-*・group_g1_*・group_g4_reads・group_h_*・order_refund_*・order_return_receipts・return-receive-per-item・admin-misc/admin_rls_policy）は 50ファイル・1374件通過・2件スキップ。
+
+### X4 の本番適用（2026-11-12）
+
+オーナーの許可（2026-11-12）で、push の前に本番の DB へ当てた。
+
+| 段 | 結果 |
+| --- | --- |
+| 当てる前の確かめ | 本番を読むだけの問い合わせで、受け取りの出来事がある返品の `waive_refund` の受け取りは0件（`ubx_waive_backfill` で止まらない） |
+| 試しの当て | `npx supabase db push --linked --dry-run` が `20261112064013_unit_binding_refund_retry.sql` の1本だけを挙げた |
+| 当てる | `npx supabase db push --linked --yes` で当てた。末尾の確かめも通った。版 `20261112064013` が記録された |
+| 当てた後の確かめ | 関数5つ（`private.order_unit_return_refund_parts(uuid)`・`private.order_unit_link_refund(uuid,uuid,text)`・`private.begin_order_refund_core`（16引数）・`private.admin_refund_return`（8引数）・`public.admin_refund_return`（8引数））の `md5(pg_get_functiondef(...))` が手元と同じ。anon・authenticated は実行できない。`public.order_unit_event_refunds` の主キーは `(event_id, refund_id, part)`。`public.order_unit_event_waives` があり RLS が有効 |
