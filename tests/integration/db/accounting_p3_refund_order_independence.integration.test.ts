@@ -3,8 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { insertAccountingAdmin } from './helpers/accounting-fixtures';
 import { setAsideExistingSlips, setCutoverForTest } from './helpers/accounting-orders-fixtures';
 import {
-  bankTransfer, decideRefund, orderBalance, orderLines, postRefundEvents, receiveReturn, recordRefundResult, saveFailureTxn,
-  saveRefundTxn, seedCancelRefund, seedReturnArrivalEntries, seedReturnFlow, seedSlotPaidOrder, settleOwed,
+  bankTransfer, decideRefund, orderBalance, orderLines, postOrderPayment, postRefundEvents, receiveReturn, recordRefundResult, saveFailureTxn,
+  saveRefundTxn, seedCancelRefund, seedPreShipmentCancel, seedRefundFlow, seedReturnArrivalEntries, seedReturnFlow, seedSlotPaidOrder, settleOwed,
 } from './helpers/accounting-returns-fixtures';
 import { describeLocalDb } from './helpers/local-db';
 
@@ -14,8 +14,14 @@ import { describeLocalDb } from './helpers/local-db';
 jest.setTimeout(600000);
 
 type Step = { id: string; after?: string[]; run: () => Promise<unknown> };
-/** intake: 受注高の出来事（list_order_intake_events の支払い以外）の [日, 額]。undefined は計画3 Task 9 の読み口の直しを待つ行。 */
-type Expect = { owedPre: number; d2150: number; d1160: number; d1040: number; entries: number; undecided?: number; intake?: Array<[string, number]> };
+/**
+ * intake: 受注高の出来事（list_order_intake_events の支払い以外）の [日, 額]。undefined は計画3 Task 9 の読み口の直しを待つ行。
+ * allocation: [割り当ての鍵, 残り]（鍵とその戻しの合計）。表の「割り当てが戻る（0）／動かない・残る（割り当ての額）」。
+ */
+type Expect = {
+  owedPre: number; d2150: number; d1160: number; d1040: number; entries: number; undecided?: number; intake?: Array<[string, number]>;
+  allocation?: [() => string, number];
+};
 
 /** 依存（after）を守る並べ方をすべて返す。 */
 function orders(steps: Step[]): Step[][] {
@@ -73,6 +79,12 @@ describeLocalDb('FREQ-579-AC-06: S20 refund entries do not depend on the order o
             events: Array<{ order_id: string; event_date: string; kind: string; amount: number }> }).events
             .filter((e) => e.order_id === orderId && e.kind !== 'payment');
           expect([label, events.map((e) => [e.event_date, e.kind === 'pre_shipment_cancel' ? e.amount : `${e.kind}:${e.amount}`])]).toEqual([label, expected.intake]);
+        }
+        if (expected.allocation !== undefined) {
+          const [key, amount] = expected.allocation;
+          const left = Number((await q(`select coalesce(sum(amount),0)::int n from public.accounting_unit_refund_allocations
+            where refund_key=$1 or refund_key like 'release:' || $1 || ':%'`, [key()])).rows[0].n);
+          expect([label, 'allocation', left]).toEqual([label, 'allocation', amount]);
         }
         if (expected.undecided !== undefined) {
           expect((await q("select count(*)::int n from public.accounting_pending_events where order_id=$1 and reason='refund_cancel_undecided' and resolved_at is null",
@@ -256,6 +268,72 @@ describeLocalDb('FREQ-579-AC-06: S20 refund entries do not depend on the order o
         expect([name, await orderBalance(db(), c.orderId, '2130', 'return_refund'), -(await orderBalance(db(), c.orderId, '4020'))]).toEqual([name, 0, 18750]);
       } : undefined;
       await everyOrder(c.orderId, c.steps, c.expected, extra);
+      await q('rollback to savepoint s20_case');
+    }
+  });
+
+  test('FREQ-579-AC-06: 表の7・8・11・12（と succeeded の行が無い 2b・8b）の割り当ては、届く順によらず戻る・動かない・残る', async () => {
+    // 割り当ては発送前の取り消しの出来事が持つ（写しのある注文。出来事の無い返金の注文 shirtPants には割り当てが無い）。
+    // 2着（20,000円・17,000円）の1着を発送前に取り消した返金 A（17,000円、割り当ての鍵は出来事）
+    const actorId = await admin();
+    const psc = async () => {
+      const f = await seedRefundFlow(db(), false, 2);
+      await postOrderPayment(db(), f.orderId);
+      const c = await seedPreShipmentCancel(db(), f, { itemId: f.itemId, quantity: 1 });
+      expect(c.amount).toBe(17000);
+      return { orderId: f.orderId, a: c.refundId, event: c.eventId };
+    };
+    const cases: Array<[string, () => Promise<{ orderId: string; steps: Step[]; expected: Expect }>]> = [
+      ['2b. 引かれて戻された（succeeded の行が無いまま failed）', async () => {
+        const o = await psc();
+        return { orderId: o.orderId, steps: [
+          { id: 'txn', run: () => saveRefundTxn(db(), o.a, { at: '2026-11-05T03:00:00Z' }) },
+          { id: 'ftxn', after: ['txn'], run: () => saveFailureTxn(db(), o.a, { at: '2026-11-07T03:00:00Z' }) },
+          { id: 'fail', run: () => recordRefundResult(db(), o.a, 'failed') }],
+        expected: { owedPre: 17000, d2150: -17000, d1160: 0, d1040: 0, entries: 1, allocation: [() => o.event, 17000] } };
+      }],
+      ['7. 引かれた後に Stripe が取り消し → やめた', async () => {
+        const o = await psc();
+        return { orderId: o.orderId, steps: [...success(() => o.a),
+          { id: 'ftxn', after: ['txn'], run: () => saveFailureTxn(db(), o.a, { at: '2026-11-07T03:00:00Z' }) },
+          { id: 'cancel', after: ['succ'], run: () => recordRefundResult(db(), o.a, 'canceled') },
+          { id: 'abandon', after: ['cancel'], run: () => decideRefund(db(), o.a, 'abandoned', actorId) }],
+        expected: { owedPre: 0, d2150: 0, d1160: 0, d1040: 0, entries: 2, allocation: [() => o.event, 0] } };
+      }],
+      ['8. 引かれる前に Stripe が取り消し → やめた', async () => {
+        const o = await psc();
+        return { orderId: o.orderId, steps: [
+          { id: 'cancel', run: () => recordRefundResult(db(), o.a, 'canceled') },
+          { id: 'abandon', after: ['cancel'], run: () => decideRefund(db(), o.a, 'abandoned', actorId) }],
+        expected: { owedPre: 0, d2150: 0, d1160: 0, d1040: 0, entries: 0, allocation: [() => o.event, 0] } };
+      }],
+      ['8b. 引かれて戻された（succeeded の行が無いまま Stripe が取り消し）→ やめた', async () => {
+        const o = await psc();
+        return { orderId: o.orderId, steps: [
+          { id: 'txn', run: () => saveRefundTxn(db(), o.a, { at: '2026-11-05T03:00:00Z' }) },
+          { id: 'ftxn', after: ['txn'], run: () => saveFailureTxn(db(), o.a, { at: '2026-11-07T03:00:00Z' }) },
+          { id: 'cancel', run: () => recordRefundResult(db(), o.a, 'canceled') },
+          { id: 'abandon', after: ['cancel'], run: () => decideRefund(db(), o.a, 'abandoned', actorId) }],
+        expected: { owedPre: 0, d2150: 0, d1160: 0, d1040: 0, entries: 0, allocation: [() => o.event, 0] } };
+      }],
+      ['11. error の返金が後で成功', async () => {
+        const o = await psc();
+        return { orderId: o.orderId, steps: [{ id: 'error', run: () => q("select * from private.mark_order_refund_error($1,'timeout',false)", [o.a]) },
+          { id: 'txn', run: () => saveRefundTxn(db(), o.a, { at: '2026-11-05T03:00:00Z' }) },
+          { id: 'succ', after: ['error'], run: () => recordRefundResult(db(), o.a, 'succeeded') }],
+        expected: { owedPre: 0, d2150: -17000, d1160: -17000, d1040: 0, entries: 1, allocation: [() => o.event, 17000] } };
+      }],
+      ['12. error の返金が後で failed', async () => {
+        const o = await psc();
+        return { orderId: o.orderId, steps: [{ id: 'error', run: () => q("select * from private.mark_order_refund_error($1,'timeout',false)", [o.a]) },
+          { id: 'fail', after: ['error'], run: () => recordRefundResult(db(), o.a, 'failed') }],
+        expected: { owedPre: 17000, d2150: -17000, d1160: 0, d1040: 0, entries: 1, allocation: [() => o.event, 17000] } };
+      }],
+    ];
+    for (const [, build] of cases) {
+      await q('savepoint s20_case');
+      const c = await build();
+      await everyOrder(c.orderId, c.steps, c.expected);
       await q('rollback to savepoint s20_case');
     }
   });

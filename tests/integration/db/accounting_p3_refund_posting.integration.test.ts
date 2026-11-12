@@ -1,6 +1,6 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
-import { insertAccountingAdmin } from './helpers/accounting-fixtures';
+import { insertAccountingAdmin, insertAccountingPeriod } from './helpers/accounting-fixtures';
 import { seedFactSlip, setAsideExistingSlips, setCutoverForTest } from './helpers/accounting-orders-fixtures';
 import {
   cancelRefund, decideRefund, failRefund, orderBalance, orderLines, postOrderPayment, postRefundEvents, receiveReturn, recordRefundResult,
@@ -10,6 +10,7 @@ import {
 import { hBegin } from './helpers/group-h-refund-fixtures';
 import { describeLocalDb } from './helpers/local-db';
 import { createUbReturn, materialsOf, ubReceive } from './helpers/unit-binding-receive';
+import { ACCOUNTING_LABELS } from '@/lib/accounting/labels';
 import { planUnitEvent } from '@/lib/orders/unit-pricing/unit-event-plan';
 
 // 計画3 Task 6（S20）: 返金の成功の仕訳（出荷前・出荷後・返品の返金）、止める理由、計上係の入口の順と戻りの鍵。
@@ -252,6 +253,39 @@ describeLocalDb('FREQ-577-AC-01: S20 refund posting', (db) => {
       expect(await refundPending(db(), refundId)).toEqual([]);
       expect(-(await orderBalance(db(), orderId, '4020'))).toBe(20000);
     });
+
+    test('FREQ-579-AC-08: 前の注文から差し引いた分を返す返金に手数料 F（率の返品の手数料）があると、成功の仕訳に 4020 F／4050 F（摘要「返品の手数料」）が足され、引かれる前の失敗の借りには 4050 が無い', async () => {
+      // fixture: 手数料の付いた hold-back の事実を直接書く（S17 は holdback_release の事実にだけ order_unit_events.fee_amount を写す。値は率の手数料の例 10% = 300円）
+      const flow = await seedReturnFlow(db(), {});
+      const orderId = flow.f.orderId;
+      const holdback = async () => {
+        const eventId = (await q(`insert into public.order_unit_events(order_id, kind, entitlement_previous, entitlement_max_before, entitlement_gross,
+          entitlement_shop_only, fee_amount, hold_total, entitlement, standard_refund, now_refund, consult_refund)
+          values($1,'hold_release',0,0,0,0,300,0,0,3000,3000,0) returning id`, [orderId])).rows[0].id as string;
+        const refundId = (await q(`insert into public.order_refunds(order_id, source, request_key, request_fingerprint, status, amount, shipping_amount,
+          adjustment_amount, notify_customer) values($1,'admin',gen_random_uuid(),'fixture','awaiting_response',3000,0,3000,false) returning id`,
+        [orderId])).rows[0].id as string;
+        await q("select private.accounting_record_refund_event($1,'requested')", [refundId]);
+        await q(`insert into public.accounting_refund_facts(refund_id, order_id, source, event_id, event_kind, pre_shipment_amount,
+          post_shipment_amount, shipping_amount, fee_amount) values($1,$2,'unit_hold_release',$3,'holdback_release',0,3000,0,300)`,
+        [refundId, orderId, eventId]);
+        return refundId;
+      };
+      const paid = await holdback();
+      const txn = await succeedRefund(db(), paid, { at: '2026-11-09T03:00:00Z' });
+      expect((await postRefundEvents(db())).posted).toBe(1);
+      const lines = (await orderLines(db(), orderId)).filter((l) => l.source_id === paid);
+      expect(lines.every((l) => l.dedupe_key === `return_refund:${txn}`)).toBe(true);
+      expect(shape(lines)).toEqual([['4020', 3000, 0, null], ['1160', 0, 3000, null], ['4020', 300, 0, null], ['4050', 0, 300, null]]);
+      expect(lines.filter((l) => l.account_code === '4050' || l.debit === 300).map((l) => l.memo)).toEqual([ACCOUNTING_LABELS.returnFeeRevenue, ACCOUNTING_LABELS.returnFeeRevenue]);
+      // The same refund failing before the pull: the debt is Q only, F never reaches 4050.
+      const owed = await holdback();
+      await failRefund(db(), owed);
+      expect((await postRefundEvents(db())).posted).toBe(1);
+      const failed = (await orderLines(db(), orderId)).filter((l) => l.source_id === owed);
+      expect(shape(failed)).toEqual([['4020', 3000, 0, null], ['2130', 0, 3000, 'refund_owed_post']]);
+      expect(failed.every((l) => l.event_kind === 'refund_failed')).toBe(true);
+    });
   });
 
   describe('the entry point and the parked rows', () => {
@@ -267,6 +301,31 @@ describeLocalDb('FREQ-577-AC-01: S20 refund posting', (db) => {
       const run = (await q('select public.accounting_run_posting(50) as r')).rows[0].r;
       expect(Object.keys(run).sort()).toEqual(['disputes', 'has_more', 'parked', 'payments', 'refunds', 'resolved', 'returns', 'shipments', 'stripe']);
       expect(run).toMatchObject({ refunds: 1, returns: 0 });
+    });
+
+    test('FREQ-562-AC-05: 係の入口の parked・resolved・has_more は返金の係の分を数える', async () => {
+      const f = await seedRefundFlow(db(), false, 2);
+      await postOrderPayment(db(), f.orderId);
+      const run = async (limit: number) => (await q('select public.accounting_run_posting($1) as r', [limit])).rows[0].r as Record<string, number | boolean>;
+      await run(50);
+      // What the other posters still report each call (open rows they look at again) is the base.
+      const base = await run(50);
+      expect(base.has_more).toBe(false);
+      const a = await seedPreShipmentCancel(db(), f, { itemId: f.itemId, quantity: 1 });
+      await failRefund(db(), a.refundId);
+      const b = await seedPreShipmentCancel(db(), f, { itemId: f.itemId, quantity: 1 });
+      await cancelRefund(db(), b.refundId);
+      // _limit 1: the refund poster books one event, so the entry point says there is more.
+      expect(await run(1)).toMatchObject({ refunds: 1, has_more: true });
+      // The cancel waits for its decision: parked counts the refund poster's new parked row.
+      const parked = await run(50);
+      expect(parked).toMatchObject({ refunds: 0 });
+      expect((parked.parked as number) - (base.parked as number)).toBe(1);
+      // The decision books the debt and closes the undecided row: resolved counts it.
+      await decideRefund(db(), b.refundId, 'owed');
+      const resolved = await run(50);
+      expect(resolved).toMatchObject({ refunds: 1 });
+      expect((resolved.resolved as number) - (base.resolved as number)).toBe(1);
     });
 
     test('FREQ-569-AC-02: 返金の計上待ちは、直ると次の呼び出しで入り解決済みになる', async () => {
@@ -303,6 +362,14 @@ describeLocalDb('FREQ-577-AC-01: S20 refund posting', (db) => {
       await recordRefundResult(db(), abandoned, 'succeeded');
       await cancelRefund(db(), abandoned, { pulled: true, at: '2026-06-21T03:00:00Z' });
       await decideRefund(db(), abandoned, 'abandoned', admin);
+      // Given up before the pull with s != 0 (the AC-07 setup): the day of the decision.
+      const g = await seedRefundFlow(db(), 1);
+      const unpulledAbandoned = (await q(`select * from public.begin_order_refund($1,'admin',$2,'[]'::jsonb,false,0,1000,null,'requested_by_customer',null,false,$3,null,null)`,
+        [g.orderId, randomUUID(), g.actor])).rows[0].refund_id as string;
+      await seedFactSlip(db(), { orderItemId: g.itemId, quantity: 1 });
+      await cancelRefund(db(), unpulledAbandoned);
+      await decideRefund(db(), unpulledAbandoned, 'abandoned', admin);
+      expect((await q("select release_shortfall from public.accounting_refund_events where refund_id=$1 and state='abandoned'", [unpulledAbandoned])).rows[0].release_shortfall).not.toBe(0);
       await postRefundEvents(db());
       const parked = async (id: string, kind: string) =>
         (await refundPending(db(), id)).find((p) => p.event_kind === kind)?.detail;
@@ -311,7 +378,23 @@ describeLocalDb('FREQ-577-AC-01: S20 refund posting', (db) => {
       expect(await parked(unpulled, 'refund_failed')).toEqual({ entry_date: today });
       expect(await parked(pulled, 'refund_failed')).toEqual({ entry_date: '2026-06-20' });
       expect(await parked(abandoned, 'refund_abandoned')).toEqual({ entry_date: '2026-06-21' });
+      expect(await parked(unpulledAbandoned, 'refund_abandoned')).toEqual({ entry_date: today });
       expect(await orderLines(db(), f.orderId)).toEqual([]);
+    });
+
+    test('FREQ-569-AC-01: 個人事業をやめた日より後で法人へ未切り替えの日の返金は、period_missing の detail に cause=sole_ended_not_switched が付く', async () => {
+      const admin = await insertAccountingAdmin(db());
+      const existing = (await q("select id from public.accounting_periods where business_type='soleProprietor' and '2026-05-01'::date between starts_on and ends_on")).rows[0];
+      const period = existing ? existing.id as string : await insertAccountingPeriod(db(), { businessType: 'soleProprietor', startsOn: '2026-01-01', endsOn: '2026-12-31' });
+      const version = (await q('select version::text as v from public.accounting_settings where id = 1')).rows[0].v;
+      await q('select public.admin_shorten_final_sole_period($1::uuid, $2::uuid, $3::date, 1, $4::bigint, null, $5::uuid)',
+        [admin, period, '2026-03-31', version, randomUUID()]);
+      const f = await seedRefundFlow(db(), true, 2);
+      const r = (await hBegin(db(), f, 1000, false)).refund_id;
+      await succeedRefund(db(), r, { at: '2026-05-01T03:00:00Z' });
+      await postRefundEvents(db());
+      expect((await refundPending(db(), r)).find((p) => p.event_kind === 'return_refund')).toMatchObject({ reason: 'period_missing',
+        detail: { entry_date: '2026-05-01', cause: 'sole_ended_not_switched' }, resolved_at: null });
     });
   });
   describe('rule 3: the event of a pre-shipment cancel', () => {

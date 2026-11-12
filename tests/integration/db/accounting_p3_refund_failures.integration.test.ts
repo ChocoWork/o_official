@@ -310,9 +310,9 @@ describeLocalDb('FREQ-579-AC-02: S20 refund failures, cancels, bank transfers an
       expect(await orderBalance(db(), r.orderId, '2130', 'return_refund')).toBe(16875);
       expect(await entriesOf(r.orderId, 'refund_failed')).toEqual([]);
       expect(await entriesOf(r.orderId, 'refund_abandoned')).toEqual([]);
-      expect(await allocationLeft(r.refundId)).toBe(0);
-      // A psc refund: the allocation of the event comes back.
+      // A psc refund: the allocation of the event comes back (a return refund has none).
       const c = await pscRefund();
+      expect(await allocationLeft(c.eventId)).toBeGreaterThan(0);
       await succeedRefund(db(), c.refundId, { at: '2026-11-05T03:00:00Z' });
       await postRefundEvents(db());
       await cancelRefund(db(), c.refundId, { pulled: true, at: '2026-11-08T03:00:00Z' });
@@ -500,17 +500,29 @@ describeLocalDb('FREQ-579-AC-02: S20 refund failures, cancels, bank transfers an
     });
 
     test('FREQ-579-AC-02: 17,000円の今すぐの返金が失敗し、相談の20,000円と合わせた37,000円のやり直しが成功すると、成功の仕訳は37,000円ちょうどで二重にならない', async () => {
-      // P3-T6a: the retry pays the failed 'now' part and the consult part at once; the refund is counted once, from its own fact.
+      // P3-T6a（X4 の本物の道具）: 2着の受け取りを今すぐ（17,000円）と相談（20,000円）に分け、今すぐの返金が失敗した後、admin_refund_return が
+      // 両方を合わせた 37,000円の返金を作る。この返金は出来事の行を2つ（now・consult）持つが、額は自分の事実から1回だけ数える
       const f = await seedRefundFlow(db(), true, 2);
-      const failed = (await hBegin(db(), f, 17000, false)).refund_id;
+      const ret = await createUbReturn(db(), f, [{ quantity: 1 }, { quantity: 1 }]);
+      const received = await ubReceive(db(), { returnId: ret.returnId, actorId: f.actor, choice: 'mixed', units: [
+        { return_line_id: ret.lineIds[0], disposition: 'not_restocked', quantity: 1, refund_choice: 'now' },
+        { return_line_id: ret.lineIds[1], disposition: 'not_restocked', quantity: 1, refund_choice: 'consult' }] });
+      const failed = received.refund_id as string;
+      expect(received.refund_amount).toBe(17000);
       await failRefund(db(), failed);
       await postRefundEvents(db());
-      const retry = (await hBegin(db(), f, 37000, false, randomUUID(), 2)).refund_id;
+      const retry = (await q('select * from public.admin_refund_return($1,$2,$3,null,0,null,false)', [ret.returnId, f.actor, randomUUID()])).rows[0].refund_id as string;
+      expect((await q('select part from public.order_unit_event_refunds where refund_id=$1 order by part', [retry])).rows.map((r) => r.part)).toEqual(['consult', 'now']);
+      expect((await q('select post_shipment_amount::int q, event_kind from public.accounting_refund_facts where refund_id=$1', [retry])).rows[0])
+        .toEqual({ q: 37000, event_kind: 'return_receipt' });
+      await seedReturnArrivalEntries(db(), ret.returnId);
       const txn = await succeedRefund(db(), retry, { at: '2026-11-09T03:00:00Z' });
-      await postRefundEvents(db());
-      const lines = (await orderLines(db(), f.orderId)).filter((l) => l.dedupe_key === `return_refund:${txn}`);
-      expect(shape(lines)).toEqual([['4020', 37000, 0, null], ['1160', 0, 37000, null]]);
-      expect((await orderLines(db(), f.orderId)).filter((l) => l.account_code === '1160').reduce((s, l) => s + l.credit - l.debit, 0)).toBe(37000);
+      expect((await postRefundEvents(db())).posted).toBe(1);
+      const lines = (await orderLines(db(), f.orderId)).filter((l) => l.source_id === retry);
+      expect(lines.every((l) => l.dedupe_key === `return_refund:${txn}`)).toBe(true);
+      expect(shape(lines)).toEqual([['2130', 37000, 0, 'return_refund'], ['1160', 0, 37000, null]]);
+      expect(await refundPending(db(), failed)).toMatchObject([{ event_kind: 'refund_failed', reason: 'no_revenue' }]);
+      expect((await refundPending(db(), failed))[0].resolved_at).not.toBeNull();
     });
   });
 });

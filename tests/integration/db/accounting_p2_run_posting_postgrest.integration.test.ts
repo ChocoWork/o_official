@@ -85,7 +85,7 @@ describeLocalDb('S11 posting entry point over PostgREST: controller only, commit
     ['list_carrier_date_gaps', { _from: '2026-12-25', _to: '2027-01-10', _limit: 10 }],
   ];
 
-  test('FREQ-562-AC-05: 入口は service_role で呼べて、件数の7つの鍵を返す', async () => {
+  test('FREQ-562-AC-05: 入口は service_role で呼べて、件数の9つの鍵を返す', async () => {
     const { data, error } = await service.rpc('accounting_run_posting', { _limit: 50 });
     expect(error).toBeNull();
     expect(Object.keys(data as Record<string, unknown>).sort()).toEqual(['disputes', 'has_more', 'parked', 'payments', 'refunds', 'resolved', 'returns', 'shipments', 'stripe']);

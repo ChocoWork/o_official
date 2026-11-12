@@ -8,6 +8,8 @@ import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-
 // 計画3 Task 6（S20）: 規則5の表の⑦（FREQ-577-AC-09）。出荷の確定と発送前の取り消しを2つの接続で、G の鍵を取る順を入れ替えて流す。
 // 書き手の行（注文・発送票・取り消し・返金）だけをコミットし、仕訳は確かめの接続の中で入れて ROLLBACK で戻す
 // （消せない仕訳を残さないので ACCOUNTING_COMMIT_SUITE は要らない。残る発送票と返金はほかの suite の setAsideExistingSlips が外す）。
+// コミットした書き手の行は流すたびに増える（確かめの係は1回に200件まで）ので、続けて何度も流す時は db reset の間で流す。
+// setCutoverForTest は確かめの接続（ROLLBACK で戻す取引）の中だけで使う。
 jest.setTimeout(120000);
 
 const EXAMPLES = [['a', 10001, 2], ['b', 5000, 1], ['c', 10000, 1000]] as const;
@@ -46,6 +48,7 @@ describeLocalDb('FREQ-577-AC-09: S20 rule 5 lock order', () => {
     const second = await work[lockFirst === 'cancel' ? 'confirm' : 'cancel']();
     await starter.query('commit');
     const refundId = (lockFirst === 'cancel' ? first : second) as { refundId: string };
+    const slipId = (lockFirst === 'cancel' ? second : first) as { slipId: string };
 
     // 仕訳は確かめの接続の中だけで入れる
     const check = await open();
@@ -57,17 +60,23 @@ describeLocalDb('FREQ-577-AC-09: S20 rule 5 lock order', () => {
     const lines = await orderLines(check, o.orderId);
     const d = lines.filter((l) => l.account_code === '4010' && l.event_kind === 'pre_shipment_refund').reduce((s, l) => s + l.credit - l.debit, 0);
     const result = { d, revenue: await orderBalance(check, o.orderId, '4010'), b2150: await orderBalance(check, o.orderId, '2150') };
+    // Which was earlier: the confirm's confirmed_at or the cancel's requested row (both are the start time of their transaction).
+    const confirmedFirst = (await check.query(`select s.confirmed_at < x.occurred_at as b from public.shipment_slips s,
+      public.accounting_refund_events x where s.id=$1 and x.refund_id=$2 and x.state='requested'`, [slipId.slipId, refundId.refundId])).rows[0].b as boolean;
     await check.query('rollback');
-    return { o, result };
+    return { o, result, confirmedFirst };
   }
 
   test.each(EXAMPLES)('FREQ-577-AC-09: ⑦-1 例 %s（%i 円、割引 %i 円）: 確定を先に始め、取り消しが先に鍵を取ると、②と同じ（d 0、売上 p1、前受金 0）', async (_n, price, delta) => {
-    const { o, result } = await race(price, delta, 'cancel');
+    const { o, result, confirmedFirst } = await race(price, delta, 'cancel');
+    // The premise of 7-1: the confirm's confirmed_at is earlier than the cancel, yet the cancel took the lock first.
+    expect(confirmedFirst).toBe(true);
     expect(result).toEqual({ d: 0, revenue: o.p1, b2150: 0 });
   });
 
   test.each(EXAMPLES)('FREQ-577-AC-09: ⑦-2 例 %s（%i 円、割引 %i 円）: 取り消しを先に始め、確定が先に鍵を取ると、①と同じ（d Δ、売上 p1、前受金 0）', async (_n, price, delta) => {
-    const { o, result } = await race(price, delta, 'confirm');
+    const { o, result, confirmedFirst } = await race(price, delta, 'confirm');
+    expect(confirmedFirst).toBe(false);
     expect(result).toEqual({ d: delta, revenue: o.p1, b2150: 0 });
   });
 });

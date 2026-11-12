@@ -8,7 +8,8 @@ import {
 } from './helpers/accounting-orders-fixtures';
 
 // Accounting plan 2 Task 6 (FREQ-562-AC-05 / FREQ-569-AC-02 / FREQ-569-AC-06): the posting entry point public.accounting_run_posting.
-// ROLLBACK form (run with --runInBand). The entry point calls the payment, shipment, Stripe and dispute posters in that order.
+// ROLLBACK form (run with --runInBand). The entry point calls the payment, shipment, Stripe, refund (plan 3 Task 6) and dispute
+// posters in that order and returns 9 keys.
 jest.setTimeout(120000);
 
 type RunResult = { payments: number; shipments: number; stripe: number; disputes: number; refunds: number; returns: number; parked: number; resolved: number; has_more: boolean };
