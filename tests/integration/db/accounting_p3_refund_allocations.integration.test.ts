@@ -2,11 +2,12 @@
 import { randomUUID } from 'node:crypto';
 import { planUnitEvent } from '@/lib/orders/unit-pricing/unit-event-plan';
 import { buildOrder } from '../../unit/lib/orders/unit-pricing/fixtures';
+import { insertAccountingAdmin } from './helpers/accounting-fixtures';
 import { seedFactSlip, seedUnitOrder } from './helpers/accounting-orders-fixtures';
 import { seedPreShipmentCancel, seedRefundFlow } from './helpers/accounting-returns-fixtures';
 import { seedHMember, seedHOrderUnits, seedHUnitSlots, type HCatalog } from './helpers/group-h-fixtures';
 import { hResult } from './helpers/group-h-refund-fixtures';
-import { connectLocalDb, describeLocalDb } from './helpers/local-db';
+import { describeLocalDb } from './helpers/local-db';
 import { createCatalogFixture, shipFixtureOrder } from './helpers/order-fixtures';
 import { createUbReturn, materialsOf, ubReceive } from './helpers/unit-binding-receive';
 
@@ -33,6 +34,13 @@ describeLocalDb('FREQ-577-AC-03: S17 refund allocations', (db) => {
   const facts = async (refundId: string) => (await q('select * from public.accounting_refund_facts where refund_id=$1', [refundId])).rows[0];
   const pending = async (sourceId: string) => (await q(`select reason, detail from public.accounting_pending_events where source_id=$1`, [sourceId])).rows;
   const immediate = async () => { await q('set constraints all immediate'); await q('set constraints all deferred'); };
+  /** 返金を Stripe が取り消した後、店が「やめた」を選ぶ。戻せなかった額 s を返す。 */
+  const abandonCanceled = async (refundId: string) => {
+    const admin = await insertAccountingAdmin(db());
+    await q("select * from public.record_order_refund_result($1,$2,'canceled',null,'unknown',null,'card',null,null)", [refundId, `re_${refundId.replaceAll('-', '')}`]);
+    await q('select public.admin_decide_refund_cancellation($1,$2,$3,$4,$5)', [admin, refundId, 'abandoned', 'やめた', randomUUID()]);
+    return (await q("select release_shortfall from public.accounting_refund_events where refund_id=$1 and state='abandoned'", [refundId])).rows[0].release_shortfall as number;
+  };
 
   /** 着の行と枠（order_unit_slots）だけを持つ注文。値段の計画を通さない出来事を fixture で入れる時に使う。 */
   async function slotOrder(lines: number[][]) {
@@ -554,23 +562,6 @@ describeLocalDb('FREQ-577-AC-03: S17 refund allocations', (db) => {
       await seedFactSlip(db(), { orderItemId: o.itemId, quantity: 1 });
       expect(await bothShipped(o.itemId)).toEqual([1]);
     });
-
-    test('FREQ-563-AC-02: order_unit_shipped_slots は G の鍵の外で呼んでも断られず、accounting_shipped_units(品, NULL) と同じ着の組を返す', async () => {
-      // 試験の取引（G の鍵を持つ）で注文と発送票を作ってコミットし、鍵を持たない別の接続から読む。
-      const o = await seedUnitOrder(db(), [[1000, 1000]]);
-      await seedFactSlip(db(), { orderItemId: o.orderItemIds[0], quantity: 1 });
-      await q('commit');
-      await q('begin');
-      const other = await connectLocalDb();
-      try {
-        const held = (await other.query("select count(*)::int n from pg_locks where locktype='advisory' and classid=190521 and pid=pg_backend_pid()")).rows[0].n;
-        expect(held).toBe(0);
-        const b2 = (await other.query('select unit_index from private.order_unit_shipped_slots($1)', [o.orderItemIds[0]])).rows;
-        const c2 = (await other.query('select unit_index from private.accounting_shipped_units($1,null) order by unit_index', [o.orderItemIds[0]])).rows;
-        expect(b2).toEqual(c2);
-        expect(b2).toEqual([{ unit_index: 0 }]);
-      } finally { await other.end(); }
-    });
   });
 
   describe('Stripe dashboard refund claims by index (ruling P3-C7)', () => {
@@ -626,6 +617,11 @@ describeLocalDb('FREQ-577-AC-03: S17 refund allocations', (db) => {
       const fact = await facts(ext.refund_id);
       const shippedValue = (await values(o.orderId)).filter((v) => v.shipped).reduce((sum, v) => sum + v.value, 0);
       expect(paid - shippedValue - fact.pre_shipment_amount).toBe(0);
+      // 出来事の無い返金の出荷前の行も、H が確保した着へ全額の割り当てになり、その着の値打ちは0で終わる（裁定 P3-T3c）
+      expect(await allocs(ext.refund_id)).toEqual([{ order_item_id: o.itemId, unit_index: 1, amount: o.units[1].paid_amount }]);
+      expect((await values(o.orderId)).find((v) => v.unit_index === 1)).toMatchObject({ shipped: false, value: 0 });
+      expect(await pending(`allocation:${ext.refund_id}`)).toEqual([]);
+      await immediate();
     });
 
     test('FREQ-577-AC-10: 前の出荷後の返金の位置の確保が名指した組の外の着を取っていて、組の外の空きの着が足りない時も、全額に届く Stripe の画面の返金は記録され、GROUP_H_REFUND_UNIT_MISMATCH にならず、足りない分は名指した組の中の空きの着から安い順に確保する', async () => {
@@ -644,7 +640,115 @@ describeLocalDb('FREQ-577-AC-03: S17 refund allocations', (db) => {
       const ext = (await q(`select * from public.record_external_order_refund($1,$2,$3,'succeeded',null,null,null,'card',null,null,'requested_by_customer',now())`,
         [o.orderId, `re_${randomUUID().replaceAll('-', '')}`, paid - 500])).rows[0];
       expect(ext.refund_id).toBeTruthy();
-      expect((await q('select count(*)::int n from public.order_line_unit_amounts where refund_id=$1', [ext.refund_id])).rows[0].n).toBe(1);
+      // 確保したのは名指した組 {0} の中の空きの着（番号0）で、出荷前の行の額はその着の支払額
+      expect((await q('select unit_index from public.order_line_unit_amounts where refund_id=$1', [ext.refund_id])).rows).toEqual([{ unit_index: 0 }]);
+      expect((await q('select amount, before_shipment from public.order_refund_lines where refund_id=$1', [ext.refund_id])).rows)
+        .toEqual([{ amount: o.units[0].paid_amount, before_shipment: true }]);
+    });
+
+    test('FREQ-577-AC-04: 写しの無い注文の出来事の無い出荷前の返金（H の確保あり）は、確保した着へ出荷前の行の額の割り当てを書き、その着の値打ちは0で終わる。店がやめると release の負の行で戻り s は0', async () => {
+      // 写しの無い注文は、道具で作った注文の order_discount_snapshots の行を消して作る（P3-C7 の試験と同じ）。
+      const o = await snapshotOrder999();
+      await q('alter table public.order_discount_snapshots disable trigger user');
+      await q('delete from public.order_discount_snapshots where order_id=$1', [o.orderId]);
+      await q('alter table public.order_discount_snapshots enable trigger user');
+      const refundId = (await q(`select * from public.begin_order_refund($1,'admin',$2,$3::jsonb,false,0,$4,null,'requested_by_customer',null,false,$5,null,null)`,
+        [o.orderId, randomUUID(), JSON.stringify([{ order_item_id: o.itemId, before_shipment: true, quantity: 1 }]), o.units[0].paid_amount, o.actor])).rows[0].refund_id as string;
+      expect(await num('select count(*)::int n from public.order_unit_event_refunds where refund_id=$1', [refundId])).toBe(0);
+      const claimed = (await q('select unit_index, paid_amount from public.order_line_unit_amounts where refund_id=$1 and refund_before_shipment', [refundId])).rows;
+      expect(claimed).toHaveLength(1);
+      const line = (await q('select amount from public.order_refund_lines where refund_id=$1 and before_shipment', [refundId])).rows[0].amount as number;
+      expect(line).toBe(claimed[0].paid_amount);
+      const written = (await allocs(refundId)).filter((a) => a.unit_index === claimed[0].unit_index);
+      expect(written).toEqual([{ order_item_id: o.itemId, unit_index: claimed[0].unit_index, amount: line }]);
+      expect((await values(o.orderId)).find((v) => v.unit_index === claimed[0].unit_index)).toMatchObject({ shipped: false, value: 0 });
+      expect(await pending(`allocation:${refundId}`)).toEqual([]);
+      await immediate();
+      // Stripe が取り消し、店がやめる: 割り当ては release:<返金の id>:1 の負の行で戻り、s は0
+      const s = await abandonCanceled(refundId);
+      expect(s).toBe(0);
+      expect((await allocs(`release:${refundId}:1`)).reduce((sum, a) => sum + a.amount, 0))
+        .toBe(-(await allocs(refundId)).reduce((sum, a) => sum + a.amount, 0));
+      expect(await num('select coalesce(sum(amount),0)::int n from public.accounting_unit_refund_allocations where refund_key=$1 or refund_key like $2',
+        [refundId, `release:${refundId}:%`])).toBe(0);
+      expect((await values(o.orderId)).find((v) => v.unit_index === claimed[0].unit_index)!.value).toBe(claimed[0].paid_amount);
+      await immediate();
+    });
+  });
+
+  describe('the shop abandons a cancel refund after a later slip (rulings P3-T3b / P3-T3d)', () => {
+    /** 取り消した着より番号の大きい着を送る発送票を確定してから、取り消しの返金を Stripe が取り消し、店がやめる。 */
+    async function abandonAfterLaterSlip(o: { orderId: string; actor: string }, itemId: string) {
+      const c = await seedPreShipmentCancel(db(), o, { itemId, quantity: 1 });
+      const cancelled = (await q("select unit_index from public.order_unit_event_lines where event_id=$1 and line_kind='returned'", [c.eventId])).rows[0].unit_index as number;
+      await seedFactSlip(db(), { orderItemId: itemId, quantity: cancelled + 1 });
+      const before = await bothShipped(itemId);
+      expect(before).not.toContain(cancelled);
+      expect(before.some((u) => u > cancelled)).toBe(true);
+      const shippedValue = async () => (await values(o.orderId)).filter((v) => v.order_item_id === itemId && v.shipped).reduce((sum, v) => sum + v.value, 0);
+      const valueBefore = await shippedValue();
+      const s = await abandonCanceled(c.refundId);
+      const net = await num(`select coalesce(sum(amount),0)::int n from public.accounting_unit_refund_allocations
+        where refund_key=$1 or refund_key like $2`, [c.eventId, `release:${c.eventId}:%`]);
+      const adj = await num(`select coalesce(sum(amount),0)::int n from public.accounting_unit_price_adjusts
+        where adjust_key=$1 or adjust_key like $2`, [c.eventId, `release:${c.eventId}:%`]);
+      return { cancelled, before, after: await bothShipped(itemId), s, net, adj, valueBefore, valueAfter: await shippedValue() };
+    }
+
+    test('FREQ-579-AC-07: 同じ値段の2着で番号0を取り消し、番号1を送る発送票を確定した後に店が返金をやめても、割り当ては全部戻り s は0', async () => {
+      const o = await equalOrder();
+      const r = await abandonAfterLaterSlip(o, o.itemId);
+      expect(r.cancelled).toBe(0);
+      expect(r.before).toEqual([1]);
+      expect({ s: r.s, net: r.net, adj: r.adj }).toEqual({ s: 0, net: 0, adj: 0 });
+      // 既知の制約（裁定 P3-T3d）: やめた後は取り消した着が先に戻り、名指す着が番号1から番号0へ移る。同じ値段なので額は変わらない
+      expect(r.after).toEqual([0]);
+      expect(r.valueAfter).toBe(r.valueBefore);
+      await immediate();
+    });
+
+    test('FREQ-579-AC-07: 値段の違う着（番号0が17,000円、番号1が20,000円）で番号0を取り消し、番号1を送る発送票を確定した後に店が返金をやめても、割り当ては全部戻り s は0', async () => {
+      // fixture: 交換の設計の値段の計画は安い着を取り消し、割引の写しのある H の受け付けの注文では安い着が番号の大きい側になるので、
+      // 「安い着の番号が小さく、番号の大きい高い着を先に送る」場面を本物の関数で作れない。1つの品の2着（17,000円・20,000円）の注文に、
+      // 交換の設計の記録（番号0を返し、割り当て 17,000円、残る着の直し0）と、それに結んだ返金（Stripe が取り消した印つき）を直接入れる。
+      // 行と枠は取り消しを戻す関数の確かめ（ubrr_slot・ubrr_identity）を通る値にする。順番は上の試験と同じ（取り消し → 発送票 → 取り消し → やめる）。
+      const o = await slotOrder([[17000, 20000]]);
+      const item = o.orderItemIds[0];
+      const eventId = (await q(`insert into public.order_unit_events(order_id, kind, entitlement_previous, entitlement_max_before, entitlement_gross,
+        entitlement_shop_only, fee_amount, hold_total, entitlement, standard_refund, now_refund, consult_refund)
+        values($1,'pre_shipment_cancel',0,0,0,0,0,0,0,17000,17000,0) returning id`, [o.orderId])).rows[0].id as string;
+      for (const [unit, kind, before, after, allocation] of [[0, 'returned', 17000, 0, 17000], [1, 'kept', 20000, 20000, 0]] as Array<[number, string, number, number, number]>) {
+        const state = kind === 'returned' ? 'returned_shop' : 'kept';
+        await q(`insert into public.order_unit_event_lines(event_id, line_kind, order_item_id, unit_index, slot_order_id, holder_order_item_id, holder_unit_index,
+          state_before, state_after, price_before, price_after, allocation, correction, part, shipped)
+          values($1,$2,$3,$4,$5,$3,$4,'kept',$6,$7,$8,$9,0,$10,false)`,
+        [eventId, kind, item, unit, o.orderId, state, before, after, allocation, kind === 'returned' ? 'now' : null]);
+        await q('update public.order_unit_slots set state=$3, current_price=$4, last_event_id=$5 where order_item_id=$1 and unit_index=$2', [item, unit, state, after, eventId]);
+      }
+      const refundId = (await q(`insert into public.order_refunds(order_id, source, request_key, request_fingerprint, status, amount, shipping_amount, adjustment_amount, notify_customer)
+        values($1,'admin',gen_random_uuid(),'fixture','failed',17000,0,17000,false) returning id`, [o.orderId])).rows[0].id as string;
+      await q("insert into public.order_unit_event_refunds(event_id, refund_id, part) values($1,$2,'now')", [eventId, refundId]);
+      await q("select private.accounting_record_refund_event($1,'requested')", [refundId]);
+      await q('select private.accounting_record_refund_facts($1)', [refundId]);
+      await q('select private.accounting_record_event_allocations($1)', [eventId]);
+      expect(await allocs(eventId)).toEqual([{ order_item_id: item, unit_index: 0, amount: 17000 }]);
+      await seedFactSlip(db(), { orderItemId: item, quantity: 1 });
+      expect(await bothShipped(item)).toEqual([1]);
+      const shippedValue = async () => (await values(o.orderId)).filter((v) => v.shipped).reduce((sum, v) => sum + v.value, 0);
+      expect(await shippedValue()).toBe(20000);
+      await q("select private.accounting_record_refund_event($1,'canceled','canceled')", [refundId]);
+      const admin = await insertAccountingAdmin(db());
+      await q('select public.admin_decide_refund_cancellation($1,$2,$3,$4,$5)', [admin, refundId, 'abandoned', 'やめた', randomUUID()]);
+      const s = (await q("select release_shortfall from public.accounting_refund_events where refund_id=$1 and state='abandoned'", [refundId])).rows[0].release_shortfall;
+      expect(s).toBe(0);
+      expect(await num('select coalesce(sum(amount),0)::int n from public.accounting_unit_refund_allocations where refund_key=$1 or refund_key like $2',
+        [eventId, `release:${eventId}:%`])).toBe(0);
+      expect(await allocs(`release:${eventId}:1`)).toEqual([{ order_item_id: item, unit_index: 0, amount: -17000 }]);
+      // 既知の制約（裁定 P3-T3d）: やめた後は番号0が先に戻り、名指す着が番号1から番号0へ移って、出荷した着の値打ちが 3,000円 下がる
+      // （計上待ちの deferred_revenue_short か前受金の異常の一覧で見える）
+      expect(await bothShipped(item)).toEqual([0]);
+      expect(await shippedValue()).toBe(17000);
+      // 締めの確かめ（immediate）はしない: 道具の注文は品の合計が 2着の高い方の値段 × 2 で、割引の行が無いので H の行の合計の確かめに当たる
     });
   });
 });

@@ -1588,7 +1588,7 @@ BEGIN
 END;
 $$;
 
--- The facts of a refund, once (INSERT only; no lock of its own). A legacy refund has none. When P + Q + shipping is not
+-- The facts of a refund, once (INSERT only; under the group G lock it does not take itself). A legacy refund has none. When P + Q + shipping is not
 -- the refund amount, the refund is parked (amount_mismatch, mismatch='split').
 CREATE FUNCTION private.accounting_record_refund_facts(_refund_id uuid) RETURNS void
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
@@ -1599,6 +1599,7 @@ DECLARE
   v_split record;
   v_kind text;
 BEGIN
+  PERFORM private.group_h_assert_unit_lock();
   SELECT r.* INTO v_refund FROM public.order_refunds AS r WHERE r.id = _refund_id;
   IF NOT FOUND OR v_refund.source = 'legacy'
     OR EXISTS (SELECT 1 FROM public.accounting_refund_facts AS f WHERE f.refund_id = _refund_id) THEN
@@ -1766,9 +1767,15 @@ BEGIN
 END;
 $$;
 
--- P_adj (the facts' P minus the before_shipment lines) of a refund not tied to an event, on the units not shipped with a
--- value above 0, by their values (remainder from the lowest unit). Key = the refund id. Writes nothing when a row with the
--- key exists. When P_adj is more than the values can take, nothing is written and the refund is parked. Never raises.
+-- The allocations of a refund not tied to an event. Key = the refund id. Writes nothing when a row with the key exists.
+--   P0 (2026-11-13, ruling P3-T3c): each before_shipment line goes on the units its group H pre-shipment claim names (a refund
+--      not failed), unit by unit in unit order, min(the unit's value, what is left of the line). Units paid 0 and units
+--      shipped now take nothing; what is left of a line is parked (allocation_overflow) and the rest is kept. Exchange lines
+--      and the lines of an item without unit rows (an order from before group H) are skipped.
+--   P_adj (the facts' P minus the before_shipment lines): on the units not shipped with a value above 0 and not held, by
+--      their values (remainder from the lowest unit). When P_adj is more than the values can take, no P_adj row is written
+--      and the refund is parked.
+-- Rule 4 (release:<refund id>:<n>) gives both back. Never raises (except without the lock).
 CREATE FUNCTION private.accounting_write_refund_allocations(_refund_id uuid) RETURNS void
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
 AS $$
@@ -1784,6 +1791,11 @@ DECLARE
   v_split bigint[];
   v_i integer;
   v_overflow boolean := false;
+  v_line record;
+  v_unit record;
+  v_rest bigint;
+  v_take bigint;
+  v_short boolean := false;
 BEGIN
   PERFORM private.group_h_assert_unit_lock();
   SELECT r.* INTO v_refund FROM public.order_refunds AS r WHERE r.id = _refund_id;
@@ -1792,13 +1804,45 @@ BEGIN
     OR EXISTS (SELECT 1 FROM public.accounting_unit_refund_allocations AS a WHERE a.refund_key = v_key) THEN
     RETURN;
   END IF;
+  IF v_refund.status <> 'failed' THEN
+    BEGIN
+      FOR v_line IN
+        SELECT l.order_item_id, l.amount FROM public.order_refund_lines AS l
+        JOIN public.order_items AS oi ON oi.id = l.order_item_id AND oi.line_kind = 'order'
+        WHERE l.refund_id = _refund_id AND l.before_shipment AND l.amount > 0
+          AND EXISTS (SELECT 1 FROM public.order_line_unit_amounts AS u WHERE u.order_item_id = l.order_item_id)
+        ORDER BY l.order_item_id
+      LOOP
+        v_rest := v_line.amount;
+        FOR v_unit IN
+          SELECT v.unit_index, v.value FROM private.accounting_unit_values(v_refund.order_id, NULL) AS v
+          JOIN public.order_line_unit_amounts AS hu ON hu.order_item_id = v.order_item_id AND hu.unit_index = v.unit_index
+          WHERE v.order_item_id = v_line.order_item_id AND hu.refund_id = _refund_id AND hu.refund_before_shipment
+            AND hu.paid_amount > 0 AND NOT v.shipped
+          ORDER BY v.unit_index
+        LOOP
+          EXIT WHEN v_rest <= 0;
+          v_take := LEAST(GREATEST(v_unit.value, 0), v_rest);
+          CONTINUE WHEN v_take = 0;
+          PERFORM private.accounting_record_unit_refund(v_key, v_line.order_item_id, v_unit.unit_index, v_take::integer);
+          v_rest := v_rest - v_take;
+        END LOOP;
+        IF v_rest > 0 THEN
+          v_short := true;
+        END IF;
+      END LOOP;
+    EXCEPTION WHEN OTHERS THEN
+      IF SQLSTATE = '55000' AND SQLERRM = 'GROUP_H_LOCK_REQUIRED' THEN
+        RAISE;
+      END IF;
+      v_short := true;
+    END;
+  END IF;
   SELECT f.pre_shipment_amount INTO v_p FROM public.accounting_refund_facts AS f WHERE f.refund_id = _refund_id;
   SELECT COALESCE(pg_catalog.sum(l.amount) FILTER (WHERE l.before_shipment), 0) INTO v_p0
   FROM public.order_refund_lines AS l WHERE l.refund_id = _refund_id;
   v_adj := COALESCE(v_p, 0) - v_p0;
-  IF v_adj <= 0 THEN
-    RETURN;
-  END IF;
+  IF v_adj > 0 THEN
   BEGIN
     SELECT COALESCE(pg_catalog.array_agg(v.order_item_id ORDER BY v.order_item_id, v.unit_index), ARRAY[]::uuid[]),
       COALESCE(pg_catalog.array_agg(v.unit_index ORDER BY v.order_item_id, v.unit_index), ARRAY[]::integer[]),
@@ -1830,7 +1874,8 @@ BEGIN
     END IF;
     v_overflow := true;
   END;
-  IF v_overflow THEN
+  END IF;
+  IF v_overflow OR v_short THEN
     PERFORM private.accounting_park_event('pre_shipment_refund', 'accounting_unit_refund_allocations', 'allocation:' || v_key,
       v_refund.order_id, 'amount_mismatch', pg_catalog.jsonb_build_object('mismatch', 'allocation_overflow'));
   END IF;
@@ -1986,7 +2031,6 @@ BEGIN
       PERFORM private.accounting_record_refund_event(_refund_id, 'abandoned', NULL, _actor_id, _reason, _request_key, 0, v_d);
       RETURN pg_catalog.jsonb_build_object('refund_id', _refund_id, 'state', 'abandoned', 'event_id', NULL, 'replayed', false);
     END IF;
-    v_revert := private.order_unit_revert_cancel(_refund_id, _actor_id);
     v_key := v_event::text;
   ELSE
     v_key := _refund_id::text;
@@ -1999,7 +2043,12 @@ BEGIN
     UNION ALL
     SELECT t.adjust_key FROM public.accounting_refund_transfer_adjusts AS t WHERE pg_catalog.starts_with(t.adjust_key, 'release:' || v_key || ':')
   ) AS k;
+  -- Given back while the event still holds its units (2026-11-13, ruling P3-T3b): after the revert the held unit is no
+  -- longer last, accounting_shipped_units names it in place of a unit shipped meanwhile, and its allocation would be kept.
   v_s := private.accounting_release_allocations(v_key, v_n);
+  IF v_event IS NOT NULL THEN
+    v_revert := private.order_unit_revert_cancel(_refund_id, _actor_id);
+  END IF;
   PERFORM private.accounting_record_refund_event(_refund_id, 'abandoned', NULL, _actor_id, _reason, _request_key, v_s, NULL);
   RETURN pg_catalog.jsonb_build_object('refund_id', _refund_id, 'state', 'abandoned', 'event_id', v_revert, 'replayed', false);
 END;

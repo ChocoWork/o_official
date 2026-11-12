@@ -1,7 +1,7 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
 import { insertAccountingAdmin } from './helpers/accounting-fixtures';
-import { seedFactSlip } from './helpers/accounting-orders-fixtures';
+import { seedFactSlip, seedUnitOrder } from './helpers/accounting-orders-fixtures';
 import { seedPreShipmentCancel, seedRefundFlow } from './helpers/accounting-returns-fixtures';
 import { hBegin, hResult } from './helpers/group-h-refund-fixtures';
 import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
@@ -74,5 +74,22 @@ describeLocalDb('FREQ-577-AC-09: S17 refund writers under concurrency', () => {
     const net = (await check.query(`select coalesce(sum(amount),0)::int n from public.accounting_unit_refund_allocations where refund_key=$1 or refund_key like $2`,
       [noItem, `release:${noItem}:%`])).rows[0].n;
     expect(net).toBe(0);
+  });
+
+  test('FREQ-563-AC-02: order_unit_shipped_slots は G の鍵の外で呼んでも断られず、accounting_shipped_units(品, NULL) と同じ着の組を返す', async () => {
+    // 注文と発送票を G の鍵を持つ接続で作ってコミットし、鍵を持たない別の接続から読む（巻き戻しの suite から移した）。
+    const setup = await open();
+    await setup.query('begin');
+    await setup.query('select pg_advisory_xact_lock(190521,1)');
+    const o = await seedUnitOrder(setup, [[1000, 1000]]);
+    await seedFactSlip(setup, { orderItemId: o.orderItemIds[0], quantity: 1 });
+    await setup.query('commit');
+    const other = await open();
+    const held = (await other.query("select count(*)::int n from pg_locks where locktype='advisory' and classid=190521 and pid=pg_backend_pid()")).rows[0].n;
+    expect(held).toBe(0);
+    const b2 = (await other.query('select unit_index from private.order_unit_shipped_slots($1)', [o.orderItemIds[0]])).rows;
+    const c2 = (await other.query('select unit_index from private.accounting_shipped_units($1,null) order by unit_index', [o.orderItemIds[0]])).rows;
+    expect(b2).toEqual(c2);
+    expect(b2).toEqual([{ unit_index: 0 }]);
   });
 });
