@@ -280,6 +280,25 @@ export async function pinAccountingS18Baseline(client: PgClient): Promise<void> 
 	await client.query(pin);
 }
 
+// ---- Task 5（S19。発送票の確定を判断待ちの注文で止める）の道具 ----
+
+const s19Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p3_shipment_hold_guard.sql'));
+/** 計画3 S19（発送票の確定の止め）の移行の本文（無ければ空で、原文の確かめが目に見えて落ちる）。 */
+export const ACCOUNTING_S19_SQL = s19Files.length === 1 ? fs.readFileSync(path.join(directory, s19Files[0]), 'utf8') : '';
+export const ACCOUNTING_S19_FILES = s19Files;
+
+/** S19 の `-- ACC_S19_<name>_BEGIN` と `-- ACC_S19_<name>_END` の間。 */
+export function accountingS19Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S19_SQL.split(`-- ACC_S19_${name}_BEGIN\n`)[1]?.split(`-- ACC_S19_${name}_END`)[0] ?? '';
+}
+
+/** S19 の比べる元の控え（本文の最初の CREATE TEMP TABLE と INSERT）を、呼ぶ取引の中で作り直す。 */
+export async function pinAccountingS19Baseline(client: PgClient): Promise<void> {
+	const pin = accountingS19Section('BODY').split('\n-- 1. The confirm function')[0];
+	await client.query('drop table if exists pg_temp.accounting_s19_baseline');
+	await client.query(pin);
+}
+
 /** 写しの無い注文にする（道具で作った注文の order_discount_snapshots の行を消す。P3-C7・P3-D3 の試験と同じ形）。 */
 export async function dropDiscountSnapshot(client: PgClient, orderId: string): Promise<void> {
 	// 守りは ENABLE ALWAYS（移行 A の確かめが見る）なので、外した1本を ALWAYS で戻す（コミットする並行の試験でも形が残らない）

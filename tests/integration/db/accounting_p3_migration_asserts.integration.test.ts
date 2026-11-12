@@ -1,5 +1,7 @@
 /** @jest-environment node */
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { describeLocalDb } from './helpers/local-db';
 import {
   H7_ALLOWLIST, P3_ALLOWLIST, RECEIVE_RETURN_16, RECEIVE_RETURN_17, replaceAllowlistSql, UB_REFUNDS_ALLOWLIST,
@@ -8,7 +10,8 @@ import {
   ACCOUNTING_S15_FILES, ACCOUNTING_S15_SQL as sql, ACCOUNTING_S16_FILES, ACCOUNTING_S16_SQL as s16Sql, accountingS15Section,
   accountingS16Section, ACCOUNTING_S17_FILES, ACCOUNTING_S17_SQL as s17Sql, accountingS17Section, pinAccountingS15Baseline,
   pinAccountingS17Baseline, seedReturnRefundParents, ACCOUNTING_S18_FILES, ACCOUNTING_S18_SQL as s18Sql, accountingS18Section,
-  pinAccountingS18Baseline, restorePreS18Receive,
+  pinAccountingS18Baseline, restorePreS18Receive, ACCOUNTING_S19_FILES, ACCOUNTING_S19_SQL as s19Sql, accountingS19Section,
+  pinAccountingS19Baseline,
 } from './helpers/accounting-returns-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
 import { PENDING_REASONS } from '@/lib/accounting/posting-types';
@@ -499,6 +502,108 @@ describeLocalDb('S18 final assert: controller only', (db) => {
     ['update public.accounting_return_options set version = version + 1', 'acc_s18_existing_dml_allowlist'],
     ['drop table pg_temp.accounting_s18_baseline', 'acc_s18_existing_dml_allowlist'],
   ])('FREQ-576-AC-05: S18改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// Accounting plan 3 S19 (FREQ-576-AC-05 / FREQ-580-AC-02): the shipment slip confirm gets one dispute hold line; nothing else changes.
+const s19Assertion = accountingS19Section('FINAL_ASSERT');
+const s19Body = accountingS19Section('BODY');
+const s19Details = ['acc_s19_function_attrs', 'acc_s19_body_unchanged', 'acc_s19_g_allowlist_unchanged', 'acc_s19_existing_dml_allowlist'];
+const CONFIRM_SIG = '(uuid,integer,text,text,date,boolean,uuid,uuid)';
+const p2Path = path.join(process.cwd(), 'supabase/migrations/20261108150000_accounting_p2_posting_tables.sql');
+const confirmOf = (source: string) => source.match(/^CREATE OR REPLACE FUNCTION private\.admin_confirm_shipment_slip\([\s\S]*?^\$\$;/m)?.[0] ?? '';
+const withoutBlocks = (source: string) => source.replace(/ *-- ACC_P[0-9]_BEGIN[\s\S]*?-- ACC_P[0-9]_END\n/g, '');
+
+describe('S19 source contract (no DB)', () => {
+  test('FREQ-576-AC-05: S19はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S19_FILES).toHaveLength(1);
+    expect(ACCOUNTING_S19_FILES[0] > ACCOUNTING_S18_FILES[0]).toBe(true);
+    expect(s19Sql).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(s19Sql.startsWith('BEGIN;\n')).toBe(true);
+    expect(s19Sql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(s19Sql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(s19Sql.trimEnd()).toMatch(/-- ACC_S19_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect([...new Set([...s19Assertion.matchAll(/'(acc_s19_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...s19Details].sort());
+    expect(s19Assertion).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(s19Assertion).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(s19Sql).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+  });
+
+  test('FREQ-576-AC-05: 確定の関数の本文は計画2の定義の写しに、囲み1つ（判断待ちの止め1行）を足しただけ', () => {
+    const latest = confirmOf(fs.readFileSync(p2Path, 'utf8'));
+    const rebuilt = confirmOf(s19Body);
+    expect(latest).not.toBe('');
+    expect(rebuilt).not.toBe('');
+    const marker = '  -- (1) every order is paid\n';
+    expect(rebuilt.split(marker)).toHaveLength(2);
+    const added = '  -- ACC_P3_BEGIN\n  PERFORM private.accounting_assert_no_dispute_hold(v_orders);\n  -- ACC_P3_END\n';
+    expect(rebuilt).toBe(latest.replace(marker, added + marker));
+    // 止めは再送の枝（v_existing）より後で、注文の存在の確かめの後、「(1) every order is paid」の前
+    expect(rebuilt.indexOf('RETURN v_existing.result')).toBeGreaterThan(0);
+    expect(rebuilt.indexOf('RETURN v_existing.result')).toBeLessThan(rebuilt.indexOf(added));
+    expect(rebuilt).toContain(`<> pg_catalog.cardinality(v_items) THEN\n    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';\n  END IF;\n${added}${marker}`);
+    expect(withoutBlocks(rebuilt)).toBe(withoutBlocks(latest));
+    // 作り直すのは確定の関数1本だけ（公開の入口も取り消しの関数も触らない）
+    expect(s19Body.match(/CREATE OR REPLACE FUNCTION/g)).toHaveLength(1);
+    expect(s19Body).not.toMatch(/CREATE OR REPLACE FUNCTION public\./);
+  });
+});
+
+describeLocalDb('S19 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  /** 適用後の状態から控えを取り直し、改ざんと末尾の確かめを流す。 */
+  async function attempt(change = '', before = ''): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s19_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (before) await db().query(before);
+      await pinAccountingS19Baseline(db());
+      if (change) await db().query(change);
+      await db().query(s19Assertion);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s19_assert'); await db().query('release savepoint acc_s19_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const redefine = (sig: string, from: string, to: string) =>
+    `do $x$ begin execute regexp_replace(pg_get_functiondef('${sig}'::regprocedure), E'${from}', E'${to}'); end $x$`;
+
+  test('FREQ-576-AC-05: 確定の関数の本文は囲みを除いて最新の定義と同じで、属性とACLが前と同じ（呼出元のsearch_pathを問わない）', async () => {
+    expect(s19Assertion).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('', 'set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('', 'set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt('', "set local search_path = ''")).toBeNull();
+  });
+
+  test('FREQ-576-AC-05: G の書き手の一覧は S18 の後の一覧（77本）のまま', async () => {
+    const same = (await db().query('select private.group_g_writer_allowlist() = $1::text[]::regprocedure[] as same, cardinality(private.group_g_writer_allowlist()) as n',
+      [P3_ALLOWLIST])).rows[0];
+    expect(same).toEqual({ same: true, n: 77 });
+  });
+
+  test.each([
+    [`alter function public.admin_confirm_shipment_slip${CONFIRM_SIG} security definer`, 'acc_s19_function_attrs'],
+    [`alter function private.admin_confirm_shipment_slip${CONFIRM_SIG} set search_path = public`, 'acc_s19_function_attrs'],
+    [`alter function private.admin_confirm_shipment_slip${CONFIRM_SIG} stable`, 'acc_s19_function_attrs'],
+    [`grant execute on function private.admin_confirm_shipment_slip${CONFIRM_SIG} to authenticated`, 'acc_s19_function_attrs'],
+    [`revoke execute on function public.admin_confirm_shipment_slip${CONFIRM_SIG} from service_role`, 'acc_s19_function_attrs'],
+    [redefine(`private.admin_confirm_shipment_slip${CONFIRM_SIG}`, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s19_body_unchanged'],
+    [redefine(`private.admin_confirm_shipment_slip${CONFIRM_SIG}`, 'PERFORM private.accounting_assert_no_dispute_hold\\\\(v_orders\\\\);', 'NULL;'), 'acc_s19_body_unchanged'],
+    [redefine(`private.admin_confirm_shipment_slip${CONFIRM_SIG}`, '-- ACC_P3_BEGIN\\n', '-- ACC_P3_BEGIN\\n  -- ACC_P3_END\\n  -- ACC_P3_BEGIN\\n'), 'acc_s19_body_unchanged'],
+    [redefine(`private.admin_confirm_shipment_slip${CONFIRM_SIG}`, 'v_verdict text;', 'v_verdict text; v_probe integer;'), 'acc_s19_body_unchanged'],
+    ["update pg_temp.accounting_s19_baseline set payload = jsonb_set(payload, '{allowlist,0}', '1')", 'acc_s19_g_allowlist_unchanged'],
+    ["update pg_temp.accounting_s19_baseline set payload = payload - 'allowlist'", 'acc_s19_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s19_baseline set payload = jsonb_set(payload, '{counts,slips}', '999999')", 'acc_s19_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s19_baseline set payload = jsonb_set(payload, '{counts,operations}', '999999')", 'acc_s19_existing_dml_allowlist'],
+    ['drop table pg_temp.accounting_s19_baseline', 'acc_s19_existing_dml_allowlist'],
+  ])('FREQ-576-AC-05: S19改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });
