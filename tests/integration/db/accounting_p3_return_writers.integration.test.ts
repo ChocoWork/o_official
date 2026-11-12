@@ -4,7 +4,7 @@ import { amount } from '../../unit/lib/discounts/fixtures';
 import { buildOrder } from '../../unit/lib/orders/unit-pricing/fixtures';
 import { seedFactSlip } from './helpers/accounting-orders-fixtures';
 import {
-	dropDiscountSnapshot, receiveReturn, restorePreS18Receive, returnFacts, returnPayable, seedReturnFlow, type ReturnFlow,
+	receiveReturn, restorePreS18Receive, returnFacts, returnPayable, seedReturnFlow, type ReturnFlow,
 } from './helpers/accounting-returns-fixtures';
 import { hDiscount, seedHDiscount, seedHMember, seedHOrderUnits, seedHUnitSlots, type HCatalog } from './helpers/group-h-fixtures';
 import { hRefundFixture, hResult } from './helpers/group-h-refund-fixtures';
@@ -550,7 +550,6 @@ describeLocalDb('FREQ-578-AC-01: S18 return writers keep the return facts', (db)
 				[flow.returnId, flow.f.actor, randomUUID(), JSON.stringify([unit(flow.lineIds[0], 1, 'now')])])).rows[0];
 			expect(row.refund_amount).toBe(16875);
 			expect(await facts(flow.returnId)).toHaveLength(2);
-			await dropDiscountSnapshot(db(), flow.f.orderId);
 		});
 	});
 });

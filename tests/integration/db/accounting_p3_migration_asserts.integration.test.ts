@@ -159,8 +159,8 @@ describeLocalDb('S15 final assert: controller only', (db) => {
   test.each([
     ['alter table public.accounting_refund_events add column acc_probe text', 'acc_s15_tables'],
     ['alter table public.accounting_refund_facts alter column fee_amount drop default', 'acc_s15_tables'],
-    // S18 から受け取りが届いた日の事実（decided_on は空）を書き、コミットする試験の行が残るので、NOT NULL でなく既定を変える
-    ['alter table public.accounting_return_facts alter column decided_on set default current_date', 'acc_s15_tables'],
+    // S18 から受け取りが届いた日の事実（decided_on は空）を書き、コミットする試験の行が残るので、行に関わらず通る NOT NULL を外す改ざんにする
+    ['alter table public.accounting_return_facts alter column seq drop not null', 'acc_s15_tables'],
     ['alter table public.order_return_arrival_corrections rename column new_on to new_on_x', 'acc_s15_tables'],
     ['alter table public.accounting_return_options alter column use_carrier_delivery_date set default true', 'acc_s15_tables'],
     ['alter table public.accounting_refund_events drop constraint accounting_refund_events_refund_state_key', 'acc_s15_constraints'],

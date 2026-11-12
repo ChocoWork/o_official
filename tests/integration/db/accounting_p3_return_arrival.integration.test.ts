@@ -71,7 +71,6 @@ describeLocalDb('FREQ-575-AC-01: S18 return arrival date', (db) => {
 		await requestedDaysAgo(flow.returnId, 5);
 		expect(await failure(() => receive(flow, '2999-01-01'))).toMatchObject(invalidDate('future'));
 		expect(await failure(() => receive(flow, '2000-01-01'))).toMatchObject(invalidDate('before_request'));
-		expect(await failure(() => receive(flow, '2000-01-01'))).toMatchObject(invalidDate('before_request'));
 		expect(await failure(async () => receive(flow, await day(-1)))).toMatchObject(invalidDate('future'));
 		expect(await failure(async () => receive(flow, await day(6)))).toMatchObject(invalidDate('before_request'));
 		expect(await receipts(flow.returnId)).toEqual([]);
@@ -79,6 +78,36 @@ describeLocalDb('FREQ-575-AC-01: S18 return arrival date', (db) => {
 		const received = await receive(flow, await day(5));
 		expect(await receipts(flow.returnId)).toEqual([{ id: received.receipt_id, arrived_on: await day(5) }]);
 		expect(await returnFacts(db(), flow.returnId)).toHaveLength(1);
+	});
+
+	/** お店が作った返品にする（申し込みの時刻は空）。注文の確定した発送票の出荷の日を n 日前にする。 */
+	const shopMadeShippedDaysAgo = async (flow: ReturnFlow, n: number) => {
+		await q('alter table public.order_returns disable trigger user');
+		await q("update public.order_returns set source='shop', requested_at=null where id=$1", [flow.returnId]);
+		await q('alter table public.order_returns enable trigger user');
+		// 発送票には遅らせた確かめが残っていて表を ALTER できないので、試験の取引の中だけ複製の役で守り（ENABLE）を通さずに直す
+		await q("set local session_replication_role = 'replica'");
+		await q(`update public.shipment_slips s set shipment_date = (((now() at time zone 'Asia/Tokyo')::date) - $2::integer)
+			where s.confirmed_at is not null and exists (select 1 from public.shipment_slip_lines l join public.order_items i on i.id=l.order_item_id
+				where l.slip_id=s.id and i.order_id=$1)`, [flow.f.orderId, n]);
+		await q("set local session_replication_role = 'origin'");
+	};
+
+	test('FREQ-575-AC-01: お店が作った返品（申し込みの時刻が空）は、最初の出荷の日より前の日を before_request で断る', async () => {
+		const flow = await seedReturnFlow(db());
+		await shopMadeShippedDaysAgo(flow, 5);
+		expect((await q('select source, requested_at from public.order_returns where id=$1', [flow.returnId])).rows).toEqual([{ source: 'shop', requested_at: null }]);
+		expect(await failure(async () => receive(flow, await day(6)))).toMatchObject(invalidDate('before_request'));
+		expect(await receipts(flow.returnId)).toEqual([]);
+	});
+
+	test('FREQ-575-AC-01: お店が作った返品は、出荷の後で返品を作った日より前の日を選べる', async () => {
+		const flow = await seedReturnFlow(db());
+		await shopMadeShippedDaysAgo(flow, 5);
+		const created = (await q("select ((created_at at time zone 'Asia/Tokyo')::date)::text as d from public.order_returns where id=$1", [flow.returnId])).rows[0].d;
+		expect(created).toBe(await day(0));
+		const received = await receive(flow, await day(3));
+		expect(await receipts(flow.returnId)).toEqual([{ id: received.receipt_id, arrived_on: await day(3) }]);
 	});
 
 	test('FREQ-575-AC-01: 注文のカード会社の取り消しが確定した日以前の届いた日は断る', async () => {

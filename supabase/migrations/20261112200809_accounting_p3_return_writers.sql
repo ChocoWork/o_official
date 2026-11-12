@@ -81,16 +81,19 @@ AS $$
 $$;
 
 -- An arrival date may be any day from the Japan day the return was requested up to today in Japan, and must be after the
--- day the order's card dispute was confirmed lost. Otherwise RETURN_ARRIVAL_DATE_INVALID / 22023 with DETAIL future,
--- before_request or dispute_confirmed.
+-- day the order's card dispute was confirmed lost. A return the shop made has no request time (requested_at NULL): its
+-- floor is the earliest shipment date of a confirmed shipment slip of the order (cancelled later or not; the day the sale
+-- of the goods is booked), and with no confirmed slip there is no floor. Otherwise RETURN_ARRIVAL_DATE_INVALID / 22023
+-- with DETAIL future, before_request or dispute_confirmed.
 CREATE FUNCTION private.accounting_assert_arrival_date(_return_id uuid, _order_id uuid, _arrived_on date) RETURNS void
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
 AS $$
 DECLARE
   v_requested timestamptz;
+  v_floor date;
   v_confirmed date;
 BEGIN
-  SELECT COALESCE(r.requested_at, r.created_at) INTO v_requested FROM public.order_returns AS r
+  SELECT r.requested_at INTO v_requested FROM public.order_returns AS r
   WHERE r.id = _return_id AND r.order_id = _order_id;
   IF NOT FOUND OR _arrived_on IS NULL THEN
     RAISE EXCEPTION 'ACCOUNTING_ARGUMENT_INVALID' USING ERRCODE = '22023';
@@ -98,7 +101,14 @@ BEGIN
   IF _arrived_on > private.accounting_jst_date(pg_catalog.now()) THEN
     RAISE EXCEPTION 'RETURN_ARRIVAL_DATE_INVALID' USING ERRCODE = '22023', DETAIL = 'future';
   END IF;
-  IF _arrived_on < private.accounting_jst_date(v_requested) THEN
+  IF v_requested IS NOT NULL THEN
+    v_floor := private.accounting_jst_date(v_requested);
+  ELSE
+    SELECT pg_catalog.min(s.shipment_date) INTO v_floor FROM public.shipment_slips AS s
+    WHERE s.confirmed_at IS NOT NULL AND EXISTS (SELECT 1 FROM public.shipment_slip_lines AS l
+      JOIN public.order_items AS i ON i.id = l.order_item_id WHERE l.slip_id = s.id AND i.order_id = _order_id);
+  END IF;
+  IF v_floor IS NOT NULL AND _arrived_on < v_floor THEN
     RAISE EXCEPTION 'RETURN_ARRIVAL_DATE_INVALID' USING ERRCODE = '22023', DETAIL = 'before_request';
   END IF;
   v_confirmed := private.accounting_order_dispute_confirmed_on(_order_id);
@@ -1309,6 +1319,7 @@ DECLARE
   v_confirmed date;
   v_id uuid;
 BEGIN
+  PERFORM private.accounting_lock_all(NULL);
   IF NOT COALESCE(private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.accounting.entries.correct']), false) THEN
     RAISE EXCEPTION 'ACCOUNTING_FORBIDDEN' USING ERRCODE = '42501';
   END IF;
@@ -1316,7 +1327,6 @@ BEGIN
     OR _reason IS NULL OR pg_catalog.btrim(_reason) = '' OR pg_catalog.char_length(_reason) > 500 THEN
     RAISE EXCEPTION 'ACCOUNTING_ARGUMENT_INVALID' USING ERRCODE = '22023';
   END IF;
-  PERFORM private.accounting_lock_all(NULL);
   v_hash := private.accounting_request_hash(pg_catalog.jsonb_build_object('op', 'correct_return_arrival_date',
     'actor', _actor_id, 'receipt_id', _receipt_id, 'new_on', _new_on, 'reason', _reason, 'version', _expected_version));
   SELECT c.* INTO v_prior FROM public.order_return_arrival_corrections AS c WHERE c.request_key = _request_key;
