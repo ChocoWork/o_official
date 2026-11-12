@@ -7,8 +7,9 @@ import { insertAccountingAdmin } from './accounting-fixtures';
 import { ACCOUNTING_LABELS } from '@/lib/accounting/labels';
 import { cancelPlanFor, hBegin, hReceive, hRefundFixture, hResult, hReturn } from './group-h-refund-fixtures';
 import { createUbReturn, ubReceive, type ReceiveInput, type ReceiveUnit } from './unit-binding-receive';
-import { shipFixtureOrder } from './order-fixtures';
+import { addItemVariant, createCatalogFixture, shipFixtureOrder } from './order-fixtures';
 import { attachGroupG3SlipShipment, seedGroupG3Slip } from './group-g3-fixtures';
+import { acceptHCheckout, hDiscount, seedHCheckout, seedHDiscount, seedHMember } from './group-h-fixtures';
 
 // 会計の計画3（返品・返金）の DB 試験の道具。計画3の各 Task が必要な物をここへ足す。
 
@@ -575,16 +576,24 @@ export async function seedCancelRefund(client: PgClient, orderId: string, eventI
  * 道具（shipFixtureOrder）で送り、その出荷を発送票に結ぶ（G3 の道具）。
  */
 export async function shipAndPost(client: PgClient, orderId: string, orderItemId: string, quantity = 1, actorId?: string): Promise<unknown> {
-	if (actorId) {
-		const shipped = await shipFixtureOrder(client, { orderId, actorId, trackingNumber: `S20-${randomUUID().slice(0, 8)}`,
-			lines: [{ order_item_id: orderItemId, quantity }] });
-		const slipId = await seedGroupG3Slip(client, { stage: 'confirmed', actorId });
-		await attachGroupG3SlipShipment(client, { slipId, orderId, orderItemId, fulfillmentId: shipped.fulfillment_id, quantity, actorId });
-		await client.query('select private.accounting_record_slip_fact($1::uuid, $2::text)', [slipId, 'confirm']);
-	} else {
-		await seedConfirmedSlip(client, { orders: [{ orderId, lines: [{ orderItemId, quantity }] }] });
-	}
-	return (await client.query('select private.accounting_post_shipment_events(50) as r')).rows[0].r;
+	if (actorId) await shipUnits(client, orderId, orderItemId, quantity, actorId);
+	else await seedConfirmedSlip(client, { orders: [{ orderId, lines: [{ orderItemId, quantity }] }] });
+	return postShipments(client);
+}
+
+/** H の受け付けの注文の着を G の出荷の道具で送り、確定した発送票に結んで出荷の事実を残す（出荷の係は流さない）。 */
+export async function shipUnits(client: PgClient, orderId: string, orderItemId: string, quantity: number, actorId: string) {
+	const shipped = await shipFixtureOrder(client, { orderId, actorId, trackingNumber: `S20-${randomUUID().slice(0, 8)}`,
+		lines: [{ order_item_id: orderItemId, quantity }] });
+	const slipId = await seedGroupG3Slip(client, { stage: 'confirmed', actorId });
+	await attachGroupG3SlipShipment(client, { slipId, orderId, orderItemId, fulfillmentId: shipped.fulfillment_id, quantity, actorId });
+	await client.query('select private.accounting_record_slip_fact($1::uuid, $2::text)', [slipId, 'confirm']);
+	return { fulfillmentId: shipped.fulfillment_id, slipId };
+}
+
+/** 出荷の係を1回流す。 */
+export async function postShipments(client: PgClient): Promise<unknown> {
+	return (await client.query('select private.accounting_post_shipment_events(200) as r')).rows[0].r;
 }
 
 /** 銀行振込の記録（admin_record_refund_bank_transfer）。 */
@@ -612,4 +621,34 @@ export async function orderLines(client: PgClient, orderId: string) {
 export async function refundPending(client: PgClient, sourceId: string) {
 	return (await client.query(`select event_kind, source_table, reason, detail, resolved_at, resolved_entry_id from public.accounting_pending_events
 		where source_id=$1 order by first_detected_at`, [sourceId])).rows;
+}
+
+// ---- Task 6 の補い（規則5の表。値段の違う2着の写しのある注文）の道具 ----
+
+/**
+ * H の受け付けと支払いで作る、同じ品の2つの色違い（1着ずつ、2行）の写しのある注文。同じ品の2着目に付く繰り返しの割引 delta が
+ * 片方の行に付く（最低額 price × 2）。cheap は割引の付いた行（u0。支払額 p0 = price - delta）、dear はもう片方（u1。p1 = price）。
+ * 1行に2着だと割引は番号の大きい着に付き、出荷済みの着は番号の若い着から決まる（裁定 P3-6）ので、安い着だけを先に送れない。
+ * 行を分けると、送る着と取り消す着を行で名指せる。
+ */
+export async function seedPairFlow(client: PgClient, price: number, delta: number) {
+	await client.query('select pg_advisory_xact_lock(190521,1)');
+	const actor = await seedHMember(client);
+	const code = `S20-${randomUUID().toUpperCase()}`;
+	const first = await createCatalogFixture(client, { stock: 1 });
+	const { variantId } = await addItemVariant(client, { itemId: first.itemId, colorName: 'WHITE', sizeLabel: 'L', stock: 1 });
+	const catalogs = [first, { ...first, variantId, colorName: 'WHITE', sizeLabel: 'L' }];
+	const discountId = await seedHDiscount(client, hDiscount({ code, kind: 'repeat', value: { type: 'amount', value: delta },
+		targetMode: 'include', itemIds: [first.itemId], minimum: { type: 'amount', value: price * 2 }, repeatInOrder: true, allowGuests: true }));
+	const f = await seedHCheckout(client, { discountId, code, unitPrice: price, lines: catalogs.map((catalog) => ({ catalog, quantity: 1 })) });
+	const accepted = await acceptHCheckout(client, f);
+	if (!accepted.order_id || accepted.rejection) throw new Error('S20_PAIR_ACCEPTANCE_FAILED');
+	const orderId = accepted.order_id;
+	const paid = (await client.query("select * from public.mark_order_paid($1,'payment_in_progress',$2,$3,'jpy',true,'payment_received')",
+		[orderId, f.paymentIntentId, f.result.totalAmount])).rows[0];
+	if (!paid?.updated) throw new Error('S20_PAIR_PAYMENT_FAILED');
+	const units = (await client.query(`select u.order_item_id, u.unit_index, u.paid_amount from public.order_line_unit_amounts u where u.order_id=$1
+		order by u.paid_amount, u.order_item_id`, [orderId])).rows as Array<{ order_item_id: string; unit_index: number; paid_amount: number }>;
+	if (units.length !== 2 || units[0].paid_amount !== price - delta || units[1].paid_amount !== price) throw new Error(`S20_PAIR_AMOUNTS ${JSON.stringify(units)}`);
+	return { orderId, actor, cheap: units[0].order_item_id, dear: units[1].order_item_id, p0: price - delta, p1: price };
 }

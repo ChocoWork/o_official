@@ -9,10 +9,13 @@ import {
 import { describeLocalDb } from './helpers/local-db';
 
 // 計画3 Task 6（S20）: 返金の仕訳の額は届く順と係の流れる回数によらない（FREQ-579-AC-05・AC-06）。
+// 表の「受注高から引く額（日）」は計画2の読み口（list_order_intake_events）で確かめる。引かれた後の失敗・借りの仕訳（refund_failed）を
+// 受注高に足し戻すのは計画3 Task 9 の読み口の直しなので、2・3・6・16 の行はそこで確かめる（ここでは intake を書かない）。
 jest.setTimeout(600000);
 
 type Step = { id: string; after?: string[]; run: () => Promise<unknown> };
-type Expect = { owedPre: number; d2150: number; d1160: number; d1040: number; entries: number; undecided?: number };
+/** intake: 受注高の出来事（list_order_intake_events の支払い以外）の [日, 額]。undefined は計画3 Task 9 の読み口の直しを待つ行。 */
+type Expect = { owedPre: number; d2150: number; d1160: number; d1040: number; entries: number; undecided?: number; intake?: Array<[string, number]> };
 
 /** 依存（after）を守る並べ方をすべて返す。 */
 function orders(steps: Step[]): Step[][] {
@@ -65,6 +68,12 @@ describeLocalDb('FREQ-579-AC-06: S20 refund entries do not depend on the order o
         const label = `${order.map((s) => s.id).join('>')} ${mode}`;
         expect([label, now.owedPre, now.b2150 - base.b2150, now.b1160 - base.b1160, now.b1040 - base.b1040, (await entryIds(orderId)).size - baseEntries])
           .toEqual([label, expected.owedPre, expected.d2150, expected.d1160, expected.d1040, expected.entries]);
+        if (expected.intake !== undefined) {
+          const events = ((await q('select public.list_order_intake_events($1::date, $2::date, 5000) as r', ['2026-01-01', '2026-12-31'])).rows[0].r as {
+            events: Array<{ order_id: string; event_date: string; kind: string; amount: number }> }).events
+            .filter((e) => e.order_id === orderId && e.kind !== 'payment');
+          expect([label, events.map((e) => [e.event_date, e.kind === 'pre_shipment_cancel' ? e.amount : `${e.kind}:${e.amount}`])]).toEqual([label, expected.intake]);
+        }
         if (expected.undecided !== undefined) {
           expect((await q("select count(*)::int n from public.accounting_pending_events where order_id=$1 and reason='refund_cancel_undecided' and resolved_at is null",
             [orderId])).rows[0].n).toBe(expected.undecided);
@@ -103,7 +112,7 @@ describeLocalDb('FREQ-579-AC-06: S20 refund entries do not depend on the order o
     const cases: Array<[string, () => Promise<{ orderId: string; steps: Step[]; expected: Expect }>]> = [
       ['1. 成功のみ', async () => {
         const o = await shirtPants();
-        return { orderId: o.orderId, steps: success(() => o.a), expected: { owedPre: 0, d2150: -11250, d1160: -11250, d1040: 0, entries: 1 } };
+        return { orderId: o.orderId, steps: success(() => o.a), expected: { owedPre: 0, d2150: -11250, d1160: -11250, d1040: 0, entries: 1, intake: [['2026-11-05', -11250]] } };
       }],
       ['2. 引かれた後に失敗', async () => {
         const o = await shirtPants();
@@ -123,7 +132,7 @@ describeLocalDb('FREQ-579-AC-06: S20 refund entries do not depend on the order o
       ['4. 引かれる前に失敗', async () => {
         const o = await shirtPants();
         return { orderId: o.orderId, steps: [{ id: 'fail', run: () => recordRefundResult(db(), o.a, 'failed') }],
-          expected: { owedPre: 11250, d2150: -11250, d1160: 0, d1040: 0, entries: 1 } };
+          expected: { owedPre: 11250, d2150: -11250, d1160: 0, d1040: 0, entries: 1, intake: [] } };
       }],
       ['5. 4 の後に再試行が成功し結ぶ', async () => {
         const o = await shirtPants();
@@ -134,7 +143,7 @@ describeLocalDb('FREQ-579-AC-06: S20 refund entries do not depend on the order o
           { id: 'rtxn', after: ['retry'], run: () => saveRefundTxn(db(), retry, { at: '2026-11-08T03:00:00Z' }) },
           { id: 'rsucc', after: ['retry'], run: () => recordRefundResult(db(), retry, 'succeeded') },
           { id: 'settle', after: ['rtxn', 'rsucc'], run: settle(actor, () => o.a, () => retry) }],
-        expected: { owedPre: 0, d2150: -11250, d1160: -11250, d1040: 0, entries: 3 } };
+        expected: { owedPre: 0, d2150: -11250, d1160: -11250, d1040: 0, entries: 3, intake: [['2026-11-08', -11250]] } };
       }],
       ['6. 引かれた後に Stripe が取り消し → 返すつもり', async () => {
         const o = await shirtPants();
@@ -150,38 +159,38 @@ describeLocalDb('FREQ-579-AC-06: S20 refund entries do not depend on the order o
           { id: 'ftxn', after: ['txn'], run: () => saveFailureTxn(db(), o.a, { at: '2026-11-07T03:00:00Z' }) },
           { id: 'cancel', after: ['succ'], run: () => recordRefundResult(db(), o.a, 'canceled') },
           { id: 'abandon', after: ['cancel'], run: () => decideRefund(db(), o.a, 'abandoned', actorId) }],
-        expected: { owedPre: 0, d2150: 0, d1160: 0, d1040: 0, entries: 2 } };
+        expected: { owedPre: 0, d2150: 0, d1160: 0, d1040: 0, entries: 2, intake: [['2026-11-05', -11250], ['2026-11-07', 11250]] } };
       }],
       ['8. 引かれる前に Stripe が取り消し → やめた', async () => {
         const o = await shirtPants();
         return { orderId: o.orderId, steps: [
           { id: 'cancel', run: () => recordRefundResult(db(), o.a, 'canceled') },
           { id: 'abandon', after: ['cancel'], run: () => decideRefund(db(), o.a, 'abandoned', actorId) }],
-        expected: { owedPre: 0, d2150: 0, d1160: 0, d1040: 0, entries: 0 } };
+        expected: { owedPre: 0, d2150: 0, d1160: 0, d1040: 0, entries: 0, intake: [] } };
       }],
       ['9. 取り消しのまま', async () => {
         const o = await shirtPants();
         return { orderId: o.orderId, steps: [{ id: 'cancel', run: () => recordRefundResult(db(), o.a, 'canceled') }],
-          expected: { owedPre: 0, d2150: 0, d1160: 0, d1040: 0, entries: 0, undecided: 1 } };
+          expected: { owedPre: 0, d2150: 0, d1160: 0, d1040: 0, entries: 0, undecided: 1, intake: [] } };
       }],
       ['10. 2つの返金', async () => {
         const o = await shirtPants();
         const b = await seedCancelRefund(db(), o.orderId, null, 18750, [{ item: o.shirt, before: true, amount: 18750 }]);
         return { orderId: o.orderId, steps: [...success(() => o.a), { id: 'bfail', run: () => recordRefundResult(db(), b, 'failed') }],
-          expected: { owedPre: 18750, d2150: -30000, d1160: -11250, d1040: 0, entries: 2 } };
+          expected: { owedPre: 18750, d2150: -30000, d1160: -11250, d1040: 0, entries: 2, intake: [['2026-11-05', -11250]] } };
       }],
       ['11. error の返金が後で成功', async () => {
         const o = await shirtPants();
         return { orderId: o.orderId, steps: [{ id: 'error', run: () => q("select * from private.mark_order_refund_error($1,'timeout',false)", [o.a]) },
           { id: 'txn', run: () => saveRefundTxn(db(), o.a, { at: '2026-11-05T03:00:00Z' }) },
           { id: 'succ', after: ['error'], run: () => recordRefundResult(db(), o.a, 'succeeded') }],
-        expected: { owedPre: 0, d2150: -11250, d1160: -11250, d1040: 0, entries: 1 } };
+        expected: { owedPre: 0, d2150: -11250, d1160: -11250, d1040: 0, entries: 1, intake: [['2026-11-05', -11250]] } };
       }],
       ['12. error の返金が後で failed', async () => {
         const o = await shirtPants();
         return { orderId: o.orderId, steps: [{ id: 'error', run: () => q("select * from private.mark_order_refund_error($1,'timeout',false)", [o.a]) },
           { id: 'fail', after: ['error'], run: () => recordRefundResult(db(), o.a, 'failed') }],
-        expected: { owedPre: 11250, d2150: -11250, d1160: 0, d1040: 0, entries: 1 } };
+        expected: { owedPre: 11250, d2150: -11250, d1160: 0, d1040: 0, entries: 1, intake: [] } };
       }],
       ...[false, true].map((pulled): [string, () => Promise<{ orderId: string; steps: Step[]; expected: Expect }>] => [
         pulled ? '14. 返品の返金が引かれた後に失敗 → やり直し' : '13. 返品の返金が引かれる前に失敗 → やり直し', async () => {
@@ -201,7 +210,7 @@ describeLocalDb('FREQ-579-AC-06: S20 refund entries do not depend on the order o
             { id: 'rtxn', after: ['retry'], run: () => saveRefundTxn(db(), retry, { at: '2026-11-09T03:00:00Z' }) },
             { id: 'rsucc', after: ['retry'], run: () => recordRefundResult(db(), retry, 'succeeded') }],
           // The arrival entry was booked before the steps; the table counts it.
-          expected: { owedPre: 0, d2150: 0, d1160: -16875, d1040: 0, entries: pulled ? 3 : 1 } };
+          expected: { owedPre: 0, d2150: 0, d1160: -16875, d1040: 0, entries: pulled ? 3 : 1, intake: [] } };
         }]),
       ...[false, true].map((pulled): [string, () => Promise<{ orderId: string; steps: Step[]; expected: Expect }>] => [
         pulled ? '16. 1品の注文で引かれた後に失敗 → やり直し → 結ぶ' : '15. 1品の注文で引かれる前に失敗 → やり直し → 結ぶ', async () => {
@@ -218,7 +227,7 @@ describeLocalDb('FREQ-579-AC-06: S20 refund entries do not depend on the order o
             { id: 'rtxn', after: ['retry'], run: () => saveRefundTxn(db(), retry, { at: '2026-11-09T03:00:00Z' }) },
             { id: 'rsucc', after: ['retry'], run: () => recordRefundResult(db(), retry, 'succeeded') },
             { id: 'settle', after: ['rtxn', 'rsucc', ...(pulled ? ['ftxn'] : [])], run: settle(actor, () => a, () => retry) }],
-          expected: { owedPre: 0, d2150: -10000, d1160: -10000, d1040: 0, entries: pulled ? 4 : 3 } };
+          expected: { owedPre: 0, d2150: -10000, d1160: -10000, d1040: 0, entries: pulled ? 4 : 3, intake: pulled ? undefined : [['2026-11-09', -10000]] } };
         }]),
     ];
     for (const [name, build] of cases) {

@@ -8,6 +8,7 @@ import {
   seedReturnArrivalEntries, seedReturnFlow, settleOwed, shipAndPost, succeedRefund,
 } from './helpers/accounting-returns-fixtures';
 import { hBegin } from './helpers/group-h-refund-fixtures';
+import { createUbReturn, ubReceive } from './helpers/unit-binding-receive';
 import { describeLocalDb } from './helpers/local-db';
 
 // 計画3 Task 6（S20）: 返金の失敗・Stripe の取り消し・区分・振込・やり直しとの結びの仕訳。
@@ -201,6 +202,33 @@ describeLocalDb('FREQ-579-AC-02: S20 refund failures, cancels, bank transfers an
         expect(-(await orderBalance(db(), r.orderId, '4020'))).toBe(18750);
         await q('rollback to savepoint s20_case');
       }
+    });
+
+    test("FREQ-579-AC-02: 写しのある注文で送料つきの受け取りの今すぐの返金が引かれる前に失敗し、admin_refund_return で送料つきで返し直すと、失敗した返金は送料も含めて仕訳を作らず、送料で止まるのは返し直した返金だけ（order_not_postable・reason='shipping'。その返金自身の事実の shipping_amount）", async () => {
+      // 注文・受け取り・返し直しは本物の関数。ただし H の受け付け（割引の計算の版1）は送料を0に決めて作るので、写しのある注文に
+      // 送料のある物は今の受け付けでは作れない。受け付けた注文の送料の欄だけを、守りの trigger を取引の中で外して 500円にする（最小の fixture）。
+      const f = await seedRefundFlow(db(), true);
+      await q('alter table public.orders disable trigger protect_legal_order_immutable_fields');
+      await q('update public.orders set shipping_amount=500, total_amount=total_amount+500 where id=$1', [f.orderId]);
+      await q('alter table public.orders enable trigger protect_legal_order_immutable_fields');
+      const ret = await createUbReturn(db(), f, [{ quantity: 1 }]);
+      const received = await ubReceive(db(), { returnId: ret.returnId, actorId: f.actor, choice: 'now', shipping: 500,
+        units: [{ return_line_id: ret.lineIds[0], disposition: 'not_restocked', quantity: 1 }] });
+      const factOf = async (id: string) => (await q('select shipping_amount, event_kind from public.accounting_refund_facts where refund_id=$1', [id])).rows[0];
+      expect(await factOf(received.refund_id as string)).toEqual({ shipping_amount: 500, event_kind: 'return_receipt' });
+      await failRefund(db(), received.refund_id as string);
+      await postRefundEvents(db());
+      // The failed refund is a return refund not pulled: nothing is booked, the shipping included.
+      expect(await refundPending(db(), received.refund_id as string)).toMatchObject([{ event_kind: 'refund_failed', reason: 'no_revenue' }]);
+      expect((await refundPending(db(), received.refund_id as string))[0].resolved_at).not.toBeNull();
+      const retry = (await q('select * from public.admin_refund_return($1,$2,$3,null,500,null,false)', [ret.returnId, f.actor, randomUUID()])).rows[0].refund_id as string;
+      expect(await factOf(retry)).toEqual({ shipping_amount: 500, event_kind: 'return_receipt' });
+      await succeedRefund(db(), retry, { at: '2026-11-09T03:00:00Z' });
+      for (let i = 0; i < 2; i += 1) await postRefundEvents(db());
+      expect(await refundPending(db(), retry)).toMatchObject([{ event_kind: 'return_refund', reason: 'order_not_postable', detail: { reason: 'shipping' }, resolved_at: null }]);
+      expect((await orderLines(db(), f.orderId)).filter((l) => l.source_id === received.refund_id || l.source_id === retry)).toEqual([]);
+      expect((await q("select count(*)::int n from public.accounting_pending_events where order_id=$1 and reason='order_not_postable' and resolved_at is null",
+        [f.orderId])).rows[0].n).toBe(1);
     });
   });
 

@@ -5,11 +5,12 @@ import { seedFactSlip, setAsideExistingSlips, setCutoverForTest } from './helper
 import {
   cancelRefund, decideRefund, failRefund, orderBalance, orderLines, postOrderPayment, postRefundEvents, receiveReturn, recordRefundResult,
   refundPending, saveRefundTxn, seedCancelEvent, seedCancelRefund, takeFactSeq, seedPreShipmentCancel, seedRefundFlow, seedReturnArrivalEntries, seedReturnFlow,
-  seedSlotPaidOrder, shipAndPost, succeedRefund,
+  seedSlotPaidOrder, shipAndPost, postShipments, shipUnits, succeedRefund,
 } from './helpers/accounting-returns-fixtures';
 import { hBegin } from './helpers/group-h-refund-fixtures';
 import { describeLocalDb } from './helpers/local-db';
-import { createUbReturn, ubReceive } from './helpers/unit-binding-receive';
+import { createUbReturn, materialsOf, ubReceive } from './helpers/unit-binding-receive';
+import { planUnitEvent } from '@/lib/orders/unit-pricing/unit-event-plan';
 
 // 計画3 Task 6（S20）: 返金の成功の仕訳（出荷前・出荷後・返品の返金）、止める理由、計上係の入口の順と戻りの鍵。
 jest.setTimeout(120000);
@@ -473,27 +474,67 @@ describeLocalDb('FREQ-577-AC-01: S20 refund posting', (db) => {
   });
 
   describe('exchange items and hold-back releases', () => {
-    /** 2着とも出荷した注文の1着を交換の返品で受け取り、交換の品を発送前に取り消した返金（事実は Q だけ、event_kind pre_shipment_cancel）。 */
-    async function exchangeCancel() {
-      const f = await seedRefundFlow(db(), true);
-      const ex = await createUbReturn(db(), f, [{ quantity: 1, exchange: true }]);
+    /**
+     * quantity 着（20,000円・17,000円…）の注文に支払いの仕訳を入れ、2着を G で送って出荷の仕訳を入れ、送った1着を交換の返品で
+     * 受け取って交換の品を作る（本物の関数）。
+     */
+    async function exchanged(quantity = 2) {
+      const f = await seedRefundFlow(db(), false, quantity);
+      await postOrderPayment(db(), f.orderId);
+      const sent = await shipUnits(db(), f.orderId, f.itemId, 2, f.actor);
+      await postShipments(db());
+      const ex = await createUbReturn(db(), { ...f, fulfillment: { fulfillment_id: sent.fulfillmentId } }, [{ quantity: 1, exchange: true }]);
       const received = await ubReceive(db(), { returnId: ex.returnId, actorId: f.actor, choice: 'none',
         units: [{ return_line_id: ex.lineIds[0], disposition: 'not_restocked', quantity: 1 }] });
-      const exchangeItemId = received.exchange_order_item_ids[0] as string;
-      const c = await seedPreShipmentCancel(db(), f, { itemId: exchangeItemId, quantity: 1 });
-      return { f, ...c, returnId: ex.returnId };
+      return { f, exchangeItemId: received.exchange_order_item_ids[0] as string, returnId: ex.returnId };
     }
+    /** 2着とも出荷した注文の1着を交換の返品で受け取り、交換の品を発送前に取り消した返金（事実は Q だけ、event_kind pre_shipment_cancel）。 */
+    async function exchangeCancel() {
+      const e = await exchanged();
+      const c = await seedPreShipmentCancel(db(), e.f, { itemId: e.exchangeItemId, quantity: 1 });
+      return { ...e, ...c };
+    }
+    const openPending = async (orderId: string) =>
+      (await q('select count(*)::int n from public.accounting_pending_events where order_id=$1 and resolved_at is null', [orderId])).rows[0].n as number;
 
     test('FREQ-577-AC-03: 交換の品だけを発送前に取り消した返金（元の着は出荷済み）は、返金した日に 4020／1160 の1本で入り、前受金は0、売上は手元の服の値段、計上待ちは0', async () => {
       const c = await exchangeCancel();
       const txn = await succeedRefund(db(), c.refundId, { at: '2026-11-09T03:00:00Z' });
       expect((await postRefundEvents(db())).posted).toBe(1);
-      const lines = await orderLines(db(), c.f.orderId);
+      const lines = await entriesOf(c.f.orderId, 'return_refund');
       expect(shape(lines)).toEqual([['4020', c.amount, 0, null], ['1160', 0, c.amount, null]]);
       expect(lines.every((l) => l.dedupe_key === `return_refund:${txn}` && l.entry_date === '2026-11-09')).toBe(true);
+      // Both units were sent and posted (37,000 to 4010); the exchanged unit came back and its replacement was cancelled and refunded.
+      expect(c.amount).toBe(17000);
       expect(await orderBalance(db(), c.f.orderId, '2150')).toBe(0);
+      expect(await orderBalance(db(), c.f.orderId, '4010')).toBe(37000);
+      expect(await orderBalance(db(), c.f.orderId, '4010') + await orderBalance(db(), c.f.orderId, '4020')).toBe(20000);
       expect(await refundPending(db(), c.refundId)).toEqual([]);
-      expect((await q('select count(*)::int n from public.accounting_pending_events where order_id=$1 and resolved_at is null', [c.f.orderId])).rows[0].n).toBe(0);
+      expect(await openPending(c.f.orderId)).toBe(0);
+    });
+
+    test('FREQ-577-AC-03: 通常の着と交換の品を一緒に取り消した返金は、pre_shipment_refund（P と前受金から出た分の d）と 4020／1160（Q）の2本に分かれ、前受金は0、計上待ちは0', async () => {
+      // 3着（20,000・17,000・17,000円）のうち2着を送り、送った1着を交換の返品で受け取る。まだ送っていない通常の着と交換の品を1つの取り消しで返す
+      const e = await exchanged(3);
+      const cancels = [{ orderItemId: e.f.itemId, quantity: 1 }, { orderItemId: e.exchangeItemId, quantity: 1 }];
+      const plan = planUnitEvent((await materialsOf(db(), e.f.orderId))!, { kind: 'pre_shipment_cancel', cancels });
+      const row = (await q(`select * from public.begin_order_refund($1,'admin',$2,$3::jsonb,false,0,$4,null,'requested_by_customer',null,false,$5,null,$6::jsonb)`,
+        [e.f.orderId, randomUUID(), JSON.stringify(cancels.map((x) => ({ order_item_id: x.orderItemId, before_shipment: true, quantity: 1 }))),
+          plan.standardRefund, e.f.actor, JSON.stringify(plan)])).rows[0] as { refund_id: string; amount: number };
+      const fact = (await q('select pre_shipment_amount p, post_shipment_amount q from public.accounting_refund_facts where refund_id=$1', [row.refund_id])).rows[0];
+      expect(fact).toEqual({ p: 17000, q: 17000 });
+      const txn = await succeedRefund(db(), row.refund_id, { at: '2026-11-09T03:00:00Z' });
+      expect((await postRefundEvents(db())).posted).toBe(2);
+      const pre = (await orderLines(db(), e.f.orderId)).filter((l) => l.dedupe_key === `pre_shipment_refund:${txn}`);
+      const d = pre.filter((l) => l.account_code === '4010').reduce((s, l) => s + l.credit, 0);
+      // d is 0 here: the kept units keep their price (the d of a kept unit that loses its discount is in the rule 5 table ① of accounting_p3_refund_rule5).
+      expect(d).toBe(0);
+      expect(shape(pre)).toEqual([['2150', 17000, 0, null], ['1160', 0, 17000, null]]);
+      expect(shape((await orderLines(db(), e.f.orderId)).filter((l) => l.dedupe_key === `return_refund:${txn}`)))
+        .toEqual([['4020', 17000, 0, null], ['1160', 0, 17000, null]]);
+      expect(await orderBalance(db(), e.f.orderId, '2150')).toBe(0);
+      expect(await orderBalance(db(), e.f.orderId, '4010') + await orderBalance(db(), e.f.orderId, '4020')).toBe(20000);
+      expect(await openPending(e.f.orderId)).toBe(0);
     });
 
     test('FREQ-579-AC-08: 交換を返金に変えた返金（交換の品の行の発送前の取り消し。事実の event_kind は pre_shipment_cancel）は、返品の届いた日の仕訳を待たず、返金した日に 4020／1160 の1本', async () => {
@@ -503,6 +544,9 @@ describeLocalDb('FREQ-577-AC-01: S20 refund posting', (db) => {
       await succeedRefund(db(), c.refundId, { at: '2026-11-09T03:00:00Z' });
       expect(await postRefundEvents(db())).toMatchObject({ posted: 1, parked_new: 0 });
       expect(shape(await entriesOf(c.f.orderId, 'return_refund'))).toEqual([['4020', c.amount, 0, null], ['1160', 0, c.amount, null]]);
+      expect(await orderBalance(db(), c.f.orderId, '2150')).toBe(0);
+      expect(await orderBalance(db(), c.f.orderId, '4010') + await orderBalance(db(), c.f.orderId, '4020')).toBe(37000 - c.amount);
+      expect(await openPending(c.f.orderId)).toBe(0);
     });
 
     test('FREQ-579-AC-08: その返金が引かれる前に失敗すると 4020／2130（refund_owed_post）の借りが立つ', async () => {

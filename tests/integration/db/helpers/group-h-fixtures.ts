@@ -163,7 +163,8 @@ export type HCatalog = Awaited<ReturnType<typeof createCatalogFixture>>;
  * `lines` defaults to one line of 2 units at 20000; pass catalogs created earlier to target items from a discount definition.
  */
 export async function seedHCheckout(client: PgClient, input: { discountId?: string; code?: string; userId?: string; email?: string;
-  lines?: readonly { catalog?: HCatalog; quantity: number }[] } = {}) {
+  lines?: readonly { catalog?: HCatalog; quantity: number }[]; unitPrice?: number } = {}) {
+  const unitPrice = input.unitPrice ?? 20000;
   const sessionId = `h4-${randomUUID()}`, checkoutSessionId = `cs_test_h4${randomUUID().replaceAll('-', '')}`;
   // create-session stores the shipping email trimmed and lower-cased (checkoutShippingSchema); do the same here.
   const email = (input.email ?? `h4-${randomUUID()}@example.invalid`).trim().toLowerCase();
@@ -175,21 +176,21 @@ export async function seedHCheckout(client: PgClient, input: { discountId?: stri
   const built: { catalog: HCatalog; lineId: string; quantity: number }[] = [];
   for (const spec of specs) {
     const catalog = spec.catalog ?? await createCatalogFixture(client);
-    await client.query('update public.items set price=20000 where id=$1', [catalog.itemId]);
+    await client.query('update public.items set price=$2 where id=$1', [catalog.itemId, unitPrice]);
     const lineId = (await client.query('insert into public.cart_lines(cart_id,variant_id,quantity) values($1,$2,$3) returning id', [cartId, catalog.variantId, spec.quantity])).rows[0].id as string;
     built.push({ catalog, lineId, quantity: spec.quantity });
   }
   const catalog = built[0].catalog;
-  const subtotal = built.reduce((sum, line) => sum + 20000 * line.quantity, 0);
+  const subtotal = built.reduce((sum, line) => sum + unitPrice * line.quantity, 0);
   const context = await hRpc<{ discounts: DiscountDefinition[]; facts: DiscountFacts; refusals: DiscountRefusal[] }>(client,
     'get_checkout_discount_context', [input.userId ?? null, email, input.code ? [input.code] : [], built.map(line => line.catalog.itemId), new Date(), 'confirm']);
   const discounts = input.discountId ? context.discounts.filter(d => d.id === input.discountId) : [];
   const facts: DiscountFacts = { ...context.facts, usage: context.facts.usage.filter(u => discounts.some(d => d.id === u.discountId)) };
-  const result = calculateDiscounts({ lines: built.map(line => ({ lineKey: line.lineId, itemId: line.catalog.itemId, unitPrice: 20000, quantity: line.quantity, lineKind: 'order' as const })),
+  const result = calculateDiscounts({ lines: built.map(line => ({ lineKey: line.lineId, itemId: line.catalog.itemId, unitPrice, quantity: line.quantity, lineKind: 'order' as const })),
     codes: input.code ? [input.code] : [], discounts, facts });
   const claim: CheckoutDiscountClaim = { sessionId, requestVersion: 1, requestFingerprint: `v1:${'b'.repeat(64)}`, checkoutUiMode: 'custom', checkoutOrigin: 'https://shop.example.invalid', paymentMethod: 'stripe_card', currency: 'jpy', subtotalAmount: subtotal, taxAmount: 0, shippingAmount: 0, totalAmount: subtotal,
     shippingSnapshot: { email, fullName: 'Fixture', kanaName: null, postalCode: '1000001', prefecture: 'Tokyo', city: 'City', address: '1-1', building: null, phone: '0312345678' },
-    itemsSnapshot: built.map(line => ({ source_cart_line_id: line.lineId, item_id: line.catalog.itemId, item_name: 'Fixture', item_price: 20000, quantity: line.quantity, line_total: 20000 * line.quantity, color: 'BLACK', size: 'M', item_image_url: null })),
+    itemsSnapshot: built.map(line => ({ source_cart_line_id: line.lineId, item_id: line.catalog.itemId, item_name: 'Fixture', item_price: unitPrice, quantity: line.quantity, line_total: unitPrice * line.quantity, color: 'BLACK', size: 'M', item_image_url: null })),
     buyerUserId: input.userId ?? null, cartId };
   await client.query('set local role service_role');
   const saved = (await client.query('select public.claim_checkout_discount_draft($1::jsonb,$2::jsonb,$3::jsonb) result', [JSON.stringify(claim), JSON.stringify(result), JSON.stringify(facts)])).rows[0].result as CheckoutDiscountDraft;
