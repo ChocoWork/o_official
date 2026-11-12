@@ -257,7 +257,7 @@ describeLocalDb('S15 return and refund tables: controller only', (db) => {
       expect({ column, result: await failure(() => returnFact(p, { ...decision, seq: 9, refund_id: randomUUID(), [column]: -1 })) })
         .toEqual({ column, result: checkFailed });
     }
-    expect(await failure(() => returnFact(p, { seq: 0, receipt_id: null, kind: 'decision', refund_id: refund }))).toEqual(checkFailed);
+    expect(await failure(() => returnFact(p, { ...decision, seq: 0, refund_id: randomUUID() }))).toEqual(checkFailed);
     expect((await q('select kind, seq from public.accounting_return_facts order by seq')).rows)
       .toEqual([{ kind: 'arrival', seq: 1 }, { kind: 'decision', seq: 2 }, { kind: 'decision', seq: 3 }]);
   });
