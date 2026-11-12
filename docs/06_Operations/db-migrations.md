@@ -1,5 +1,6 @@
 # DB マイグレーション運用
 
+> 2026-11-12 確認日（FREQ-642 本番適用）: 移行 A〜D（20261110090325・20261110104605・20261110120611・20261110135232）を、オーナーの許可（2026-11-12「3つの直しの後に、本番適用と push をまとめて行う」）で本番に当てた。下の「交換の印の移行 A〜D の本番適用（2026-11-12）」の節。
 > 2026-11-12 確認日（X2 / FREQ-642-AC-35・Fix round 1）: 調整役の実測（2026-11-12）: `npm run db:reset` 後の関連DB101ファイルは3563件通過・12件スキップ・1件失敗（AC-35の旧注文seedが `ORDER_RETURN_IMMUTABLE`。承認時に10%を設定する経路へ修正）。その後、FREQ-642のDB136件すべて通過。本番ビルドのE2Eは `isolated-global` の FR-ADMIN-165/166/167 が27件通過、`chromium` の FR-ACCOUNT-048/049 が12件通過。Fix round 1で追加した相談後返金の2 assertionも、調整役が db:reset 後に流して通過（FREQ-642 ほかの DB 167件通過、2026-11-12）。X2は未 push。
 
 > 交換の印 オーナー修正 X1 確認日: 2026-11-12。本番未適用の移行 A だけを直接修正。サイズ・MD5 を再計測。調整役が手元の DB で確認（2026-11-12）: 旧本文で AC-34 の2件が失敗、新本文で AC-34・R33 が通過。db:reset 後に関連 DB 37ファイル1475件通過・8件スキップ。本番は未適用。
@@ -1578,3 +1579,17 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 | `20261110135232_unit_binding_refunds.sql` | 131944 | `a74218255ac9919db823a93af410d795` |
 
 サイズとMD5は `wc -c`・`md5sum` で照合。調整役の実測（2026-11-12）: `npm run db:reset` 後の関連DB101ファイルは3563件通過・12件スキップ・1件失敗（AC-35の旧注文seedが `ORDER_RETURN_IMMUTABLE`。承認時に10%を設定する経路へ修正）。その後、FREQ-642のDB136件すべて通過。本番ビルドのE2Eは `isolated-global` の FR-ADMIN-165/166/167 が27件通過、`chromium` の FR-ACCOUNT-048/049 が12件通過。移行Aの今回の変更はヘッダーの5番の説明だけで、SQLの挙動と関数本文は変えない。Fix round 1で追加した相談後返金の2 assertionも、調整役が db:reset 後に流して通過（FREQ-642 ほかの DB 167件通過、2026-11-12）。X2は未 push。会計計画3が受取関数を作り直す時も16引数・免除の保存・率0・認可・指紋を引き継ぐ。署名の全文と実行結果はX2報告書に記録する。
+
+## 交換の印の移行 A〜D の本番適用（2026-11-12）
+
+対応: FREQ-642（X1 は f408e800、X2 は e6a2c821 まで）。オーナーの許可は 2026-11-12。
+
+| 段 | 結果 |
+| --- | --- |
+| 当てる前の読み | 本番の移行の記録は 20261108230000 まで。手元との差は A〜D だけ。`private.accounting_shipped_units(uuid,bigint)`・`private.group_h_immutable()`・`public.order_line_unit_amounts` があり、`public.order_unit_slots` はまだ無い。理由の設定の破損・不良と注文と違う品の行が2つある |
+| 当てる前の試し | `npx supabase db push --linked --dry-run` で、当たるのが A〜D の4本だけと確かめた。ファイルのサイズと MD5 は上の X2 の節の表と同じ |
+| 当てた | `npx supabase db push --linked --yes`。4本とも当たり、版はファイル名のまま（改名は要らない） |
+| 当てた後の読み | 記録に4つの版。新しい表8つ。`admin_receive_return` は public・private とも16引数だけ（private は SECURITY DEFINER、どちらも search_path は空）。public の形は anon・authenticated が実行できず service_role だけが実行できる。`order_unit_outstanding` は無い。破損・不良と注文と違う品は exchange_only |
+| 手元との突き合わせ | `md5(pg_get_functiondef(...))` が本番と手元の DB で同じ: `order_unit_shipped_slots` 40d2cc63…、`admin_receive_return`（private）fc64b649…、`admin_refund_return`（private）f2d83999…、`begin_order_refund_core` ce916a0f… |
+
+本番のアプリはまだ公開していない（Vercel にプロジェクトが無い）。新しいサーバーのコードは、公開する時に同じ master から出す。
