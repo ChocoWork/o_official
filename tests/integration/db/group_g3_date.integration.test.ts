@@ -210,7 +210,7 @@ describeLocalDb('G-3 date correction (local DB only)', (db) => {
     await reject(slip.id, 'INJECTED_DATE_FAILURE', {}, 'P0001');
     expect((await db().query("select current_setting('app.fulfillment_change',true) mark")).rows[0].mark).toBe('manual');
   });
-  test('FREQ-540-AC-11: 公開入口は同signatureのSQL INVOKER、実効EXECUTEはservice_roleだけ・今の一覧（76本）', async () => {
+  test('FREQ-540-AC-11: 公開入口は同signatureのSQL INVOKER、実効EXECUTEはservice_roleだけ・今の一覧（77本）', async () => {
     for (const schema of ['public', 'private']) {
       const p = (await db().query(`select p.prosecdef,l.lanname,p.proconfig,p.proargnames,p.prorettype::regtype::text ret,
         pg_get_userbyid(p.proowner) owner,has_function_privilege('service_role',p.oid,'execute') service,

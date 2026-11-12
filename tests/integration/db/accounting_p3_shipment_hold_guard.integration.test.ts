@@ -98,4 +98,14 @@ describeLocalDb('S19 shipment slip confirm hold guard: controller only', (db) =>
     await seedDispute(db(), { orderId: a.orderId, amount: 5000, withdrawnAt: null, status: 'warning_needs_response' });
     expect(await confirm(slip.id)).toMatchObject({ id: slip.id, replayed: false });
   });
+
+  test('FREQ-576-AC-06: 発送票の確定の関数を作り直しても、既存の試験が無改造で通る', async () => {
+    // 既存の suite（group_g3_*・group_g4_*・accounting_p2_*）は GREEN で流す。ここでは本文が S19 の物（計画2の印を保ち、計画3の印が1つ）であることだけ確かめる。
+    const body = (await db().query(`select p.prosrc from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='private' and p.proname='admin_confirm_shipment_slip'`)).rows;
+    expect(body).toHaveLength(1);
+    const src = body[0].prosrc as string;
+    expect(src.split('ACC_P3_BEGIN').length - 1).toBe(1);
+    expect(src.split('ACC_P2_BEGIN').length - 1).toBe(1);
+  });
 });
