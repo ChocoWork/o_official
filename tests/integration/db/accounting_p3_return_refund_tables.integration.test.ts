@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
 import { seedDispute, seedPaidOrder } from './helpers/accounting-orders-fixtures';
 import {
-  S15_APPEND_ONLY, S15_TABLES, insertRow, seedReturnRefundParents, takeFactSeq, type ReturnRefundParents,
+  S15_APPEND_ONLY, S15_TABLES, insertRow, restorePreS17Bodies, seedReturnRefundParents, takeFactSeq, type ReturnRefundParents,
 } from './helpers/accounting-returns-fixtures';
 import { PENDING_REASONS } from '@/lib/accounting/posting-types';
 import { REFUND_EVENT_STATES } from '@/lib/accounting/return-refund-types';
@@ -69,6 +69,13 @@ describeLocalDb('S15 return and refund tables: controller only', (db) => {
     return insertRow(db(), 'accounting_unit_price_adjusts', { order_item_id: p.itemId, unit_index: 1, adjust_key: p.eventId,
       event_id: p.eventId, amount: 100, fact_seq: n.seq, locked_at: n.at, ...over });
   };
+  // The rows here are written by hand to check the shapes, so the parents are seeded with the refund functions of before
+  // S17 (Task 3), which write no refund event, fact or allocation (put back inside this test's transaction; the rollback
+  // restores S17).
+  const seedWithoutWriters = async () => {
+    await restorePreS17Bodies(db(), ['core', 'groupGResult']);
+    return seedReturnRefundParents(db());
+  };
   const sid = () => `src_${randomUUID().slice(0, 8)}`;
   const park = (reason: string, detail: unknown = {}) =>
     q('select private.accounting_park_event($1, $2, $3, $4::uuid, $5, $6::jsonb)',
@@ -104,7 +111,10 @@ describeLocalDb('S15 return and refund tables: controller only', (db) => {
   });
 
   test('FREQ-576-AC-04: 履歴と事実と直しの差と値段の直しの表はUPDATEとDELETEとTRUNCATEを断る', async () => {
-    const p = await seedReturnRefundParents(db());
+    // Counted against the rows already there: the S17 concurrency suite (Task 3) commits rows that cannot be removed.
+    const before = new Map<string, number>();
+    for (const table of S15_APPEND_ONLY) before.set(table, (await q(`select count(*)::int as n from public.${table}`)).rows[0].n as number);
+    const p = await seedWithoutWriters();
     await correction(p);
     await refundEvent(p);
     await refundFact(p);
@@ -117,7 +127,7 @@ describeLocalDb('S15 return and refund tables: controller only', (db) => {
     const canReplica = (await failure(() => q("set local session_replication_role = 'replica'"))) === null;
     for (const table of S15_APPEND_ONLY) {
       const column = table === 'accounting_refund_events' ? 'occurred_at' : 'created_at';
-      expect((await q(`select count(*)::int as n from public.${table}`)).rows[0].n).toBe(1);
+      expect((await q(`select count(*)::int as n from public.${table}`)).rows[0].n).toBe((before.get(table) ?? 0) + 1);
       expect({ table, result: await failure(() => q(`update public.${table} set ${column} = ${column}`)) }).toEqual({ table, result: immutable });
       expect({ table, result: await failure(() => q(`delete from public.${table}`)) }).toEqual({ table, result: immutable });
       expect({ table, result: await failure(() => q(`truncate public.${table}`)) }).toEqual({ table, result: immutable });
@@ -136,7 +146,7 @@ describeLocalDb('S15 return and refund tables: controller only', (db) => {
 
   // ---- refund states (FREQ-576-AC-01) ------------------------------------------------------------------------------
   test('FREQ-576-AC-01: 返金の状態は同じ返金に同じ状態を2行入れられず、abandonedとowedは理由・人・要求番号が無いと入らない', async () => {
-    const p = await seedReturnRefundParents(db());
+    const p = await seedWithoutWriters();
     let seq = 1;
     for (const state of ['requested', 'accepted', 'succeeded', 'failed', 'canceled', 'error', 'settled']) {
       await refundEvent(p, { seq: seq++, state, stripe_status: state === 'succeeded' ? 'succeeded' : null });
@@ -176,7 +186,7 @@ describeLocalDb('S15 return and refund tables: controller only', (db) => {
 
   // ---- refund facts (FREQ-576-AC-02) -------------------------------------------------------------------------------
   test('FREQ-576-AC-02: 返金の事実は返金1件に1行で、返品の返金は出荷前の額が0', async () => {
-    const p = await seedReturnRefundParents(db());
+    const p = await seedWithoutWriters();
     await refundFact(p, { source: 'return', return_id: p.returnId, event_id: p.eventId, event_kind: 'return_receipt' });
     expect(await failure(() => refundFact(p))).toEqual(duplicate);
     const other = { refund_id: p.refundIds[1] };
@@ -199,7 +209,8 @@ describeLocalDb('S15 return and refund tables: controller only', (db) => {
     // The refund of what an earlier order held back: no return, the event and its fee.
     await refundFact(p, { ...other, source: 'unit_hold_release', event_kind: 'holdback_release', event_id: p.eventId, fee_amount: 300,
       post_shipment_amount: 700 });
-    const rows = (await q('select refund_id, source, return_id, event_kind, fee_amount, pre_shipment_amount from public.accounting_refund_facts order by source')).rows;
+    const rows = (await q(`select refund_id, source, return_id, event_kind, fee_amount, pre_shipment_amount from public.accounting_refund_facts
+      where refund_id = any($1::uuid[]) order by source`, [p.refundIds])).rows;
     expect(rows).toEqual([
       { refund_id: p.refundIds[0], source: 'return', return_id: p.returnId, event_kind: 'return_receipt', fee_amount: 0, pre_shipment_amount: 0 },
       { refund_id: p.refundIds[1], source: 'unit_hold_release', return_id: null, event_kind: 'holdback_release', fee_amount: 300, pre_shipment_amount: 0 },
@@ -207,7 +218,7 @@ describeLocalDb('S15 return and refund tables: controller only', (db) => {
   });
 
   test('FREQ-576-AC-02: 直しの差と値段の直しの表は着の行と出来事に結び付き、額0と形の違う鍵と同じ番号を断る', async () => {
-    const p = await seedReturnRefundParents(db());
+    const p = await seedWithoutWriters();
     await transferAdjust(p);
     await transferAdjust(p, { adjust_key: `release:${p.eventId}:1`, amount: 100 });
     expect(await failure(() => transferAdjust(p))).toEqual(duplicate);
@@ -228,7 +239,7 @@ describeLocalDb('S15 return and refund tables: controller only', (db) => {
 
   // ---- return facts (FREQ-576-AC-03) -------------------------------------------------------------------------------
   test('FREQ-576-AC-03: 返品の事実は届いた日の行と決定の行の形を守り、同じ受け取り・同じ返金に2行入らない。返金を0円で終える決定は返金が無く受け取りの行に結び付き、額0だけが許される', async () => {
-    const p = await seedReturnRefundParents(db());
+    const p = await seedWithoutWriters();
     const [refund, other] = p.refundIds;
     // The arrival: a receipt, no refund, the goods at least the fee.
     await returnFact(p);
@@ -263,7 +274,7 @@ describeLocalDb('S15 return and refund tables: controller only', (db) => {
   });
 
   test('FREQ-576-AC-03: 返金を0円で終える決定は受け取り1件に1回だけ入る', async () => {
-    const p = await seedReturnRefundParents(db());
+    const p = await seedWithoutWriters();
     const waived = { kind: 'decision', receipt_id: p.receiptId, refund_id: null, goods_amount: 0, fee_amount: 100, covers_amount: 900,
       decided_amount: 0, decided_on: '2026-11-10' };
     await returnFact(p, { ...waived, seq: 1 });
@@ -279,7 +290,7 @@ describeLocalDb('S15 return and refund tables: controller only', (db) => {
       where a.attrelid = 'public.order_return_receipts'::regclass and a.attname = 'arrived_on' and not a.attisdropped`)).rows[0];
     expect(column).toEqual({ type: 'date', attnotnull: true, def: "((now() AT TIME ZONE 'Asia/Tokyo'::text))::date" });
     // A receipt written without the date gets the day of the recording in Japan.
-    const p = await seedReturnRefundParents(db());
+    const p = await seedWithoutWriters();
     const row = (await q(`select r.arrived_on::text as arrived_on, ((now() at time zone 'Asia/Tokyo')::date)::text as today
       from public.order_return_receipts r where r.id = $1`, [p.receiptId])).rows[0];
     expect(row.arrived_on).toBe(row.today);
@@ -296,7 +307,7 @@ describeLocalDb('S15 return and refund tables: controller only', (db) => {
       from pg_attribute a left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
       where a.attrelid = 'public.order_return_receipts'::regclass and a.attnum > 0 and not a.attisdropped`)).rows[0].c as string;
     expect(columns).toBe(`${RECEIPT_COLUMNS_BEFORE}, arrived_on date not null default ((now() AT TIME ZONE 'Asia/Tokyo'::text))::date`);
-    const p = await seedReturnRefundParents(db());
+    const p = await seedWithoutWriters();
     const appendOnly = { code: '23514', message: 'ORDER_RETURN_APPEND_ONLY' };
     expect(await failure(() => q("update public.order_return_receipts set arrived_on = '2026-01-01' where id = $1", [p.receiptId]))).toEqual(appendOnly);
     expect(await failure(() => q('delete from public.order_return_receipts where id = $1', [p.receiptId]))).toEqual(appendOnly);
@@ -308,7 +319,7 @@ describeLocalDb('S15 return and refund tables: controller only', (db) => {
   });
 
   test('FREQ-575-AC-02: 届いた日の直しは版ごとに1行で、前の日と同じ日は入らない', async () => {
-    const p = await seedReturnRefundParents(db());
+    const p = await seedWithoutWriters();
     await correction(p);
     await correction(p, { version: 2, previous_on: '2026-11-09', new_on: '2026-11-08' });
     expect(await failure(() => correction(p, { version: 2, previous_on: '2026-11-08', new_on: '2026-11-07' }))).toEqual(duplicate);

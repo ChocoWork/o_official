@@ -75,6 +75,8 @@ export const H5_RETURN_FUNCTION_NAMES = Object.freeze([
   'group_h_release_return_units', 'group_h_release_completed_return_claims',
   'group_h_return_refund_slices', 'group_h_receiving_amount', 'group_h_return_amounts',
   'group_h_claim_refund_units', 'record_group_g_refund_result', 'group_h_return_refund_amount',
+  // 会計の計画3 S17 が H の本文から作り直した2本（H5 の確かめが本文を固定する。再生では H の本文に戻す）
+  'record_external_order_refund', 'mark_order_refund_error',
 ]);
 
 /** Migration B (unit binding) adds unit-list overloads of two of these names; the H5 and RR assertions know only the original ones. */
@@ -172,7 +174,7 @@ export async function withH5ReturnBaseline(client: PgClient, work: () => Promise
     from pg_proc p join pg_namespace n on n.oid=p.pronamespace
     where n.nspname='private' and p.proname=any($1::text[]) and ${H5_ORIGINAL_ONLY} order by p.oid`, [H5_RETURN_FUNCTION_NAMES])).rows;
   const currentBodies = await bodyHashes();
-  expect(before).toHaveLength(11);
+  expect(before).toHaveLength(13);
   expect(before.filter((row) => row.signature.includes('admin_receive_return'))).toHaveLength(1);
   await client.query('savepoint h5_return_baseline');
   try {

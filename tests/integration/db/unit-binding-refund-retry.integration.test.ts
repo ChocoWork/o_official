@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { hClaims, hRefundFixture, hResult } from './helpers/group-h-refund-fixtures';
 import { describeLocalDb } from './helpers/local-db';
-import { withoutReturnFeeLock } from './helpers/accounting-returns-fixtures';
+import { restorePreS17Bodies, withoutReturnFeeLock } from './helpers/accounting-returns-fixtures';
 import { createUbReturn, ubReceive, type ReceiveUnit } from './helpers/unit-binding-receive';
 import { loadReturnRefundOutstanding, type UnitPricingClient } from '@/lib/orders/unit-pricing/unit-pricing-store';
 
@@ -337,6 +337,8 @@ describeLocalDb('FREQ-642-AC-37: unit binding refund retry migration final asser
     try {
       await db().query(`create temp table ubx_writer_baseline on commit drop as
         select x::oid as oid from unnest(private.group_g_writer_allowlist()) as t(x)`);
+      // 会計の計画3 S17 が begin_order_refund_core を作り直した（S17 の確かめが固定する）。X4 の本文に戻してから確かめる
+      await restorePreS17Bodies(db(), ['core']);
       if (change) await db().query(change);
       await db().query(ubxAssert);
     } catch (caught) { const e = caught as Failure; failure = { code: e.code, message: e.message, detail: e.detail }; }

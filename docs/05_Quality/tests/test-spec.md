@@ -1649,7 +1649,7 @@ AC-07の3行・予備あり・介在受取とAC-08は旧本文だけで組み立
 
 関連 DB 37ファイルの範囲は `unit-binding-*`・`group_h*`・`accounting_p2*`・`return-receive*`・`order_return_customer_requests`（2026-11-12 調整役の実測）。
 
-発送枠の規則: 数は `private.accounting_shipped_units(_order_item_id, NULL)` の行数（生きている発送票の着数）。`refund_before_shipment=true` かつ `refund_id` の返金が `status <> 'failed'` の着を取り押さえありとし、取り押さえの無い着を `unit_index` 昇順で先に選び、不足分を取り押さえのある着の `unit_index` 昇順で補う。必ずその数を返し、返金額で決めない。部分返金を残して発送した着が報告されず、数が減る制限を解消する。
+発送枠の規則: 数は `private.accounting_shipped_units(_order_item_id, NULL)` の行数（生きている発送票の着数）。`refund_before_shipment=true` かつ `refund_id` の返金が `status <> 'failed'` の着と、取りやめていない発送前の取り消し（`pre_shipment_cancel`）で最後に返した、まだ送っていなかった着を取り押さえありとし（2026-11-13 会計の計画3 S17。`order_unit_shipped_slots` は `accounting_shipped_units` を呼ぶだけ）、取り押さえの無い着を `unit_index` 昇順で先に選び、不足分を取り押さえのある着の `unit_index` 昇順で補う。必ずその数を返し、返金額で決めない。部分返金を残して発送した着が報告されず、数が減る制限を解消する。
 
 ### 期待を直した既存のE2E（理由は新しい決まり）
 
@@ -1694,7 +1694,7 @@ DB結合・単体の実測は各Taskの実装者と調整役の報告のとお�
 | AC-07 一部の行だけ受け取る | 同上：`FREQ-642-AC-07: 2行の返品の一部の行だけ受け取ると、計画の見込みと返した額が同じで、残りの行は未処理のまま`（2026-11-11 足した） |
 | AC-07 相談と今すぐの id の順・上限 | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-07: 相談の返金は相談の分だけで、今すぐの分を店長が下げても相談の残りに戻らない`。`e2e/FR-ADMIN-164-return-receive-per-item.spec.ts`：`FREQ-641-AC-02`（上限）・`FREQ-641-AC-04`（印が逆）。`tests/unit/components/OrderReturnReceiveDialog.unitPricing.test.tsx`：`FREQ-642-AC-07: 窓口の上限を超える額は…上限で切る` |
 | AC-27 注文全体の取り消し | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-27: 注文全体の取り消しは全部の枠が returned_shop で払った合計を返す`。`tests/unit/lib/orders/unit-pricing/unit-pricing-service.test.ts`：`FREQ-642-AC-27: 発送前の品を選ぶ返金は計画を作り…` |
-| AC-27 発送した枠の決め方（最終直し R33） | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-27: R33 同じ値段の2着の1着を発送前に取り消し、残りを発送したら、残りの1着を返金で受け取れる`（取り消した枠0が発送済みと読まれず、残りの枠1を返金で受け取れる）、`FREQ-642-AC-27: R33 取り消しの返金が失敗したら、その着は発送の数え方に戻る`（`order_unit_shipped_slots` が失敗した返金の取り押さえを除く）。`tests/integration/db/unit-binding-schema.integration.test.ts`：移行 A の末尾の確かめが `order_unit_shipped_slots` の権限・本体の改変を拒む（2件） |
+| AC-27 発送した枠の決め方（最終直し R33） | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-27: R33 同じ値段の2着の1着を発送前に取り消し、残りを発送したら、残りの1着を返金で受け取れる`（取り消した枠0が発送済みと読まれず、残りの枠1を返金で受け取れる）、`FREQ-642-AC-27: R33 取り消しの返金が失敗しても、取り消した着は取り消しの出来事で後に回り、残りの着が発送済みになる`（2026-11-13 S17 で期待を変えた: 失敗した返金の H の付きが外れても、取りやめていない発送前の取り消しの出来事が取り押さえ続けるので、発送済みは残りの枠1）。`tests/integration/db/unit-binding-schema.integration.test.ts`：移行 A の末尾の確かめが `order_unit_shipped_slots` の権限・本体の改変を拒む（2件） |
 | AC-34 部分返金を残して発送する枠 | `unit-binding-refunds.integration.test.ts` の AC-34（当初3件と Fix round 1 追加1件）と既存 R33。規則と実行状態は上の X1 の表。2着発送では取り押さえ済みを補い2枠、1着発送では未取り押さえを先に選ぶ |
 | AC-35 受け取りの率の免除 | 単体6ファイル22件、DB `unit-binding-receive.integration.test.ts` の7件、E2E `FR-ADMIN-167` の3幅。実行状態は上のX2の表 |
 | AC-20 前の注文の着数（最終直し R33） | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-20: R33 取り消しに全額返金された注文でも、発送済みで残した着は前の注文の数に入る` |

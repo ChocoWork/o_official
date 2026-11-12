@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { restorePreS17Bodies } from './helpers/accounting-returns-fixtures';
 import { describeLocalDb } from './helpers/local-db';
 import { acceptHCheckout, hDiscount, hFailure, seedHCheckout, seedHDiscount, seedHMember, seedHOrderUnits } from './helpers/group-h-fixtures';
 import { createCatalogFixture } from './helpers/order-fixtures';
@@ -165,6 +166,8 @@ describeLocalDb('FREQ-642-AC-20: unit binding migration A final assertion (contr
     try {
       // Migration B adds the slot guard (the BEFORE UPDATE trigger A's assertion did not expect); B's own assertion pins it.
       await db().query('drop trigger ub_order_unit_slots_guard on public.order_unit_slots');
+      // Accounting plan 3 S17 rebuilt order_unit_shipped_slots (it calls accounting_shipped_units); S17's own assertion pins it.
+      await restorePreS17Bodies(db(), ['shippedSlots']);
       if (change) await db().query(change);
       await db().query(ubAssert);
     }

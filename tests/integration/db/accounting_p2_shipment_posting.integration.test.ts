@@ -227,8 +227,12 @@ describeLocalDb('S8 shipment posting: controller only', (db) => {
     await setCutoverForTest(db(), '2026-01-01');
     const order = await seedPostedPayment(db(), { lines: shirtAndPants });
     const pants = order.orderItemIds[1];
-    // The whole unit is refunded before the shipment: no unit is left to send.
-    await q('select private.accounting_record_unit_refund($1, $2::uuid, 0, 11250)', ['RF-FULL', pants]);
+    // The unit rows are fewer than the slip (2026-11-13 plan 3 S17, ruling P3-6: the shipped units no longer skip a unit refunded
+    // in full before the shipment, so only missing unit rows leave the slip short). The fixture's unit row is removed here.
+    await q('set constraints all immediate');
+    await q('alter table public.order_line_unit_amounts disable trigger user');
+    await q('delete from public.order_line_unit_amounts where order_item_id = $1', [pants]);
+    await q('alter table public.order_line_unit_amounts enable trigger user');
     const slip = await seedConfirmedSlip(db(), { orders: [slipFor(order.orderId, [{ orderItemId: pants, quantity: 1 }])], shipmentDate: '2026-06-20' });
     expect(await run()).toEqual({ ...none, parked_new: 1 });
     expect(await pendingOf(slip.slipId)).toMatchObject({ reason: 'units_insufficient', detail: {} });

@@ -455,7 +455,7 @@ describeLocalDb('S6 posting foundation: controller only', (db) => {
   });
 
   // ---- which units are shipped (FREQ-563-AC-03) ---------------------------------------------------------------
-  test('FREQ-563-AC-03: 出荷済みの着は G の鍵の中で取った番号で決まり、出荷の仕訳が入る前でも後でも同じ着になる（全額の割り当てを受けた着は送る着から除かれ、H の確保は同じトランザクションで書く全額の割り当てを通して除かれ、番号の小さい着から数量ぶん取る）', async () => {
+  test('FREQ-563-AC-03: 出荷済みの着は G の鍵の中で取った番号で決まり、出荷の仕訳が入る前でも後でも同じ着になる（生きている発送票の着の数を、確保していない着の番号の小さい順に、発送票の確定の順で当て、割り当ての額では決めない。裁定 P3-6）', async () => {
     const order = await seedUnitOrder(db(), [[5000, 5000, 5000, 5000]]);
     const item = order.orderItemIds[0];
     const units = async (asOf: number | null = null) => (await shippedUnits(db(), item, asOf)).map((u) => `${u.unit}`);
@@ -472,18 +472,19 @@ describeLocalDb('S6 posting foundation: controller only', (db) => {
       lines: [{ account: '2150', debit: 10000 }, { account: '4010', credit: 10000 }] });
     await q('insert into public.accounting_shipment_units (entry_id, order_item_id, unit_index, paid_amount) values ($1, $2, 0, 5000), ($1, $2, 1, 5000)', [entry.entryId, item]);
     expect(await shippedUnits(db(), item)).toEqual(before);
-    // Cancel A: B keeps unit 2; C (confirmed after the cancel) takes the freed 0 and 1.
+    // Cancel A: the live slips take the lowest units again in confirm order (2026-11-13 plan 3 S17, ruling P3-6): B takes unit 0,
+    // and C (confirmed after the cancel) takes 1 and 2. The answer for a number before the cancel does not change (below).
     const xA = await recordSlipFact(db(), slipA, 'cancel');
-    expect(await units()).toEqual(['2']);
+    expect(await units()).toEqual(['0']);
     const slipC = await seedFactSlip(db(), { orderItemId: item, quantity: 2 });
     const cC = (await slipFactSeq(db(), slipC, 'confirm')) as number;
-    expect(await shippedUnits(db(), item)).toEqual([{ unit: 0, slipId: slipC }, { unit: 1, slipId: slipC }, { unit: 2, slipId: slipB }]);
+    expect(await shippedUnits(db(), item)).toEqual([{ unit: 0, slipId: slipB }, { unit: 1, slipId: slipC }, { unit: 2, slipId: slipC }]);
     // The answer for a number does not change with later rows.
     expect(await shippedUnits(db(), item, cA)).toEqual([{ unit: 0, slipId: slipA }, { unit: 1, slipId: slipA }]);
     expect(await shippedUnits(db(), item, cB)).toEqual([{ unit: 0, slipId: slipA }, { unit: 1, slipId: slipA }, { unit: 2, slipId: slipB }]);
     expect(await shippedUnits(db(), item, xA - 1)).toEqual([{ unit: 0, slipId: slipA }, { unit: 1, slipId: slipA }, { unit: 2, slipId: slipB }]);
-    expect(await shippedUnits(db(), item, xA)).toEqual([{ unit: 2, slipId: slipB }]);
-    expect(await shippedUnits(db(), item, cC)).toEqual([{ unit: 0, slipId: slipC }, { unit: 1, slipId: slipC }, { unit: 2, slipId: slipB }]);
+    expect(await shippedUnits(db(), item, xA)).toEqual([{ unit: 0, slipId: slipB }]);
+    expect(await shippedUnits(db(), item, cC)).toEqual([{ unit: 0, slipId: slipB }, { unit: 1, slipId: slipC }, { unit: 2, slipId: slipC }]);
     expect(await shippedUnits(db(), item, 0)).toEqual([]);
     // D takes the last unit; E finds nothing left and takes nothing.
     const slipD = await seedFactSlip(db(), { orderItemId: item, quantity: 1 });
@@ -491,20 +492,20 @@ describeLocalDb('S6 posting foundation: controller only', (db) => {
     const slipE = await seedFactSlip(db(), { orderItemId: item, quantity: 1 });
     expect((await shippedUnits(db(), item)).filter((u) => u.slipId === slipE)).toEqual([]);
 
-    // A unit refunded in full before the slip is confirmed is skipped; a partly refunded one is still shipped.
+    // The allocations do not choose the units (ruling P3-6): a unit refunded in full or in part without a pre-shipment claim is
+    // shipped by its number like any other unit.
     const second = await seedUnitOrder(db(), [[5000, 5000, 5000]]);
     const other = second.orderItemIds[0];
     await refund('RF-FULL', other, 0, 5000);
     await refund('RF-PART', other, 1, 2000);
     const slipF = await seedFactSlip(db(), { orderItemId: other, quantity: 2 });
-    expect(await shippedUnits(db(), other)).toEqual([{ unit: 1, slipId: slipF }, { unit: 2, slipId: slipF }]);
-    // Released in full before a later slip: the unit counts again for that slip.
-    await refund('release:RF-FULL:1', other, 0, -5000);
-    const slipG = await seedFactSlip(db(), { orderItemId: other, quantity: 1 });
-    expect((await shippedUnits(db(), other)).filter((u) => u.slipId === slipG)).toEqual([{ unit: 0, slipId: slipG }]);
-    // The group H claim is not read (it has no number and no time).
+    expect(await shippedUnits(db(), other)).toEqual([{ unit: 0, slipId: slipF }, { unit: 1, slipId: slipF }]);
+    // No time and no allocation is read; the held units (a live pre-shipment claim of group H, or a pre-shipment cancel event not
+    // reverted) only go last (2026-11-13 plan 3 S17, rulings P3-6 / P3-C1).
     const source = (await q("select prosrc from pg_catalog.pg_proc where oid = 'private.accounting_shipped_units(uuid,bigint)'::regprocedure")).rows[0].prosrc as string;
-    expect(source).not.toMatch(/refund_id|return_line_id|refund_before_shipment|confirmed_at|cancelled_at|created_at|now\(\)/);
+    expect(source).not.toMatch(/return_line_id|confirmed_at|cancelled_at|created_at|now\(\)|accounting_unit_refund_allocations/);
+    expect(source).toContain('u.refund_before_shipment');
+    expect(source).toContain("last.kind = 'pre_shipment_cancel'");
     expect(source).toContain("oi.line_kind = 'order'");
   });
 
@@ -625,11 +626,11 @@ describeLocalDb('S6 posting foundation: controller only', (db) => {
     expect(await shippedUnits(db(), item)).toEqual([{ unit: 0, slipId: slip }]);
     const values = (await q('select unit_index, shipped, value from private.accounting_unit_values($1::uuid, null) order by unit_index', [order.orderId])).rows;
     expect(values).toEqual([{ unit_index: 0, shipped: true, value: 0 }, { unit_index: 1, shipped: false, value: 1 }]);
-    // A fully refunded unit with a positive paid amount is still skipped (the rule needs paid_amount > 0 and sum = paid_amount).
+    // A fully refunded unit is not skipped either (2026-11-13 plan 3 S17, ruling P3-6: the allocations do not choose the units).
     const second = await seedUnitOrder(db(), [[0, 1]]);
     await refund('RF-FULL', second.orderItemIds[0], 1, 1);
     const next = await seedFactSlip(db(), { orderItemId: second.orderItemIds[0], quantity: 2 });
-    expect(await shippedUnits(db(), second.orderItemIds[0])).toEqual([{ unit: 0, slipId: next }]);
+    expect(await shippedUnits(db(), second.orderItemIds[0])).toEqual([{ unit: 0, slipId: next }, { unit: 1, slipId: next }]);
   });
 
   test('FREQ-563-AC-03: 交換の品（line_kind=exchange）の着は送った着にも着の値打ちにも出ない', async () => {

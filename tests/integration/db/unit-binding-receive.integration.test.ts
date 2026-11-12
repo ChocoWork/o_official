@@ -479,7 +479,9 @@ describeLocalDb('FREQ-642-AC-17: unit binding receive (controller only)', (db) =
     const [event] = await eventsOf(f.orderId);
     expect(event).toMatchObject({ standard_refund: 17000, now_refund: 17000 });
     expect((await slotsOf(f.orderId)).filter((s) => s.state === 'returned_customer')).toHaveLength(1);
-    expect((await q('select count(*)::int n from public.order_unit_event_refunds')).rows[0].n).toBe(0);
+    // Scoped to this order: the S17 concurrency suite commits event refunds of its own orders.
+    expect((await q('select count(*)::int n from public.order_unit_event_refunds er join public.order_unit_events e on e.id = er.event_id where e.order_id = $1',
+      [f.orderId])).rows[0].n).toBe(0);
     expect((await q("select count(*)::int n from public.order_return_receipt_lines where receipt_id=$1 and disposition='refund_waived'", [received.receipt_id])).rows[0].n).toBe(1);
   });
 

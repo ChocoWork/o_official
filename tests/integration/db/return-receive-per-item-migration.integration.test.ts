@@ -21,6 +21,10 @@ const UNIT_RECEIVE_REPLACED = ['admin_receive_return', 'record_group_g_refund_re
 // 移行 D（FREQ-642）は受け取りの本文を、返金の記録を共通のコアが書く形に置き換えた（record_group_g_refund_result は移行 C のまま）
 const unitRefundsFiles = fs.readdirSync(directory).filter(name => /^\d+_unit_binding_refunds\.sql$/.test(name));
 const unitRefundsSql = unitRefundsFiles.length === 1 ? fs.readFileSync(path.join(directory, unitRefundsFiles[0]), 'utf8') : '';
+// 会計の計画3 S17 が返金の結果を書く関数と H の2本の本文を作り直した。今の DB の本文はこの移行の物と比べる
+const s17Files = fs.readdirSync(directory).filter(name => /^\d+_accounting_p3_refund_writers\.sql$/.test(name));
+const s17Sql = s17Files.length === 1 ? fs.readFileSync(path.join(directory, s17Files[0]), 'utf8') : '';
+const S17_REPLACED = ['record_group_g_refund_result', 'record_external_order_refund', 'mark_order_refund_error'];
 const receiveArgs = 'uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text';
 const receiveArgs16 = `${receiveArgs},jsonb,boolean`;
 const resultNames = ['receipt_id', 'return_status', 'refund_id', 'refund_amount', 'refund_status',
@@ -221,7 +225,8 @@ describeLocalDb('受取明細の列・制約・ACL・本文・書き手77本（c
   test('FREQ-641-AC-10: 新11本文と見込みhelperは移行に固定した本文・属性・ACLで過剰overloadを持たない', async () => {
     expect(sql).not.toBe('');
     for (const name of [...H5_RETURN_FUNCTION_NAMES, 'return_receive_amounts']) {
-      const expected = UNIT_RECEIVE_REPLACED.includes(name) ? definition(name === 'admin_receive_return' ? unitRefundsSql : unitReceiveSql, name)
+      const expected = S17_REPLACED.includes(name) ? definition(s17Sql, name)
+        : UNIT_RECEIVE_REPLACED.includes(name) ? definition(name === 'admin_receive_return' ? unitRefundsSql : unitReceiveSql, name)
         : DEDUP_REPLACED.includes(name) ? definition(dedupSql, name) : definition(sql, name); expect(expected).not.toBeNull();
       const rows = (await db().query(`select md5(replace(p.prosrc,E'\\r','')) hash,p.provolatile,p.proconfig,
         p.proowner=(select oid from pg_roles where rolname='postgres') owned,
@@ -232,7 +237,8 @@ describeLocalDb('受取明細の列・制約・ACL・本文・書き手77本（c
           and pg_get_function_identity_arguments(p.oid) !~ 'integer\\[\\]'`, [name])).rows; // the unit-list overloads of migration B are not part of RR
       // public.admin_receive_return is SECURITY INVOKER, so service_role keeps EXECUTE on this private body only.
       expect(rows).toHaveLength(1); expect(rows[0]).toMatchObject({ hash: md5(expected!.body), owned: true,
-        other_executors: name === 'admin_receive_return' ? ['service_role'] : [] });
+        // H の2本（S17 の再生で数に入った）は H の時から service_role が呼ぶ
+        other_executors: ['admin_receive_return', 'record_external_order_refund', 'mark_order_refund_error'].includes(name) ? ['service_role'] : [] });
       expect(rows[0].proconfig).toContain('search_path=""');
       expect(rows[0].provolatile).toBe(['return_detail_json', 'group_h_receiving_amount', 'group_h_return_amounts',
         'group_h_return_unit_dispositions', 'group_h_return_refund_slices', 'group_h_return_refund_amount', 'return_receive_amounts'].includes(name) ? 's' : 'v');

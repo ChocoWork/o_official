@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { PgClient } from './local-db';
-import { hBegin, hReceive, hRefundFixture, hResult, hReturn } from './group-h-refund-fixtures';
+import { randomUUID } from 'node:crypto';
+import { seedDispute } from './accounting-orders-fixtures';
+import { cancelPlanFor, hBegin, hReceive, hRefundFixture, hResult, hReturn } from './group-h-refund-fixtures';
 
 // 会計の計画3（返品・返金）の DB 試験の道具。計画3の各 Task が必要な物をここへ足す。
 
@@ -83,6 +85,46 @@ export function accountingS16Section(name: 'BODY' | 'FINAL_ASSERT'): string {
 	return ACCOUNTING_S16_SQL.split(`-- ACC_S16_${name}_BEGIN\n`)[1]?.split(`-- ACC_S16_${name}_END`)[0] ?? '';
 }
 
+const s17Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p3_refund_writers.sql'));
+/** 計画3 S17（返金の関数に事実を残す）の移行の本文（無ければ空で、原文の確かめが目に見えて落ちる）。 */
+export const ACCOUNTING_S17_SQL = s17Files.length === 1 ? fs.readFileSync(path.join(directory, s17Files[0]), 'utf8') : '';
+export const ACCOUNTING_S17_FILES = s17Files;
+
+/** S17 の `-- ACC_S17_<name>_BEGIN` と `-- ACC_S17_<name>_END` の間。 */
+export function accountingS17Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S17_SQL.split(`-- ACC_S17_${name}_BEGIN\n`)[1]?.split(`-- ACC_S17_${name}_END`)[0] ?? '';
+}
+
+/** S17 が作り直した関数のうち、前の移行の末尾の確かめを再生する試験が戻す物と、その前の定義を持つ移行。 */
+const PRE_S17_SOURCES = {
+	core: ['_unit_binding_refund_retry.sql', 'begin_order_refund_core'],
+	shippedSlots: ['_unit_binding_schema.sql', 'order_unit_shipped_slots'],
+	groupGResult: ['_unit_binding_receive.sql', 'record_group_g_refund_result'],
+} as const;
+
+/**
+ * 前の移行の末尾の確かめを再生する時に、S17 が作り直した関数を S17 の前の本文に戻す（呼ぶ側の savepoint の中で。巻き戻しで S17 の本文に戻る）。
+ * 名前・引数・属性・ACL は変わらない（CREATE OR REPLACE）。
+ */
+export async function restorePreS17Bodies(client: PgClient, keys: Array<keyof typeof PRE_S17_SOURCES>): Promise<void> {
+	for (const key of keys) {
+		const [suffix, name] = PRE_S17_SOURCES[key];
+		const file = fs.readdirSync(directory).find((entry) => entry.endsWith(suffix));
+		if (!file) throw new Error(`PRE_S17_SOURCE_MISSING:${key}`);
+		const source = fs.readFileSync(path.join(directory, file), 'utf8');
+		const definition = source.match(new RegExp(`^CREATE(?: OR REPLACE)? FUNCTION private\\.${name}\\([\\s\\S]*?^\\$\\$;`, 'm'))?.[0];
+		if (!definition) throw new Error(`PRE_S17_DEFINITION_MISSING:${key}`);
+		await client.query(definition.replace(/^CREATE(?: OR REPLACE)? FUNCTION/, 'CREATE OR REPLACE FUNCTION'));
+	}
+}
+
+/** S17 の比べる元の控え（本文の最初の CREATE TEMP TABLE と INSERT）を、呼ぶ取引の中で作り直す。 */
+export async function pinAccountingS17Baseline(client: PgClient): Promise<void> {
+	const pin = accountingS17Section('BODY').split('\nCREATE OR REPLACE FUNCTION')[0];
+	await client.query('drop table if exists pg_temp.accounting_s17_baseline');
+	await client.query(pin);
+}
+
 /**
  * 定額の手数料（返送料・交換の手数料・交換の送料）の働きそのものを題にする試験だけが使う（裁定 P3-D5・P3-D8）。
  * 呼ぶ取引の中で savepoint を置き、S16 の CHECK（acc_p3_fee_lock_*）を外して work を流し、終わりに savepoint まで戻す
@@ -134,4 +176,50 @@ export async function withoutReturnFeeLockCommitted(client: PgClient, work: () =
 	} finally {
 		await restoreReturnFeeLock(client);
 	}
+}
+
+// ---- Task 3（S17。返金の書き手）の道具 ----
+
+/** 返金の流れの土台: H の受け付けと支払いで作った 20,000円と17,000円の2着の注文（写しあり）。shipped が数なら、その数だけ発送する。 */
+export async function seedRefundFlow(client: PgClient, shipped: boolean | number = false, quantity = 2) {
+	return hRefundFixture(client, shipped, quantity);
+}
+
+/** 交換の印の作業の関数（begin_order_refund に値段の計画を付ける）で、発送前の取り消しの出来事と返金を作る。 */
+export async function seedPreShipmentCancel(client: PgClient, f: { orderId: string; actor: string }, input: {
+	itemId: string; quantity: number; amount?: number | null; source?: 'admin' | 'order_cancel'; key?: string;
+}): Promise<{ refundId: string; eventId: string; amount: number }> {
+	const plan = await cancelPlanFor(client, f.orderId, input.itemId, input.quantity);
+	if (!plan) throw new Error('SEED_PRE_SHIPMENT_CANCEL_NO_SNAPSHOT');
+	const source = input.source ?? 'admin';
+	const lines = source === 'admin' ? [{ order_item_id: input.itemId, before_shipment: true, quantity: input.quantity }] : [];
+	const row = (await client.query(`select * from public.begin_order_refund($1,$2,$3,$4::jsonb,false,$5,$6,null,'requested_by_customer',$7,false,$8,null,$9::jsonb)`,
+		[f.orderId, source, input.key ?? randomUUID(), JSON.stringify(lines), source === 'admin' ? 0 : null,
+			input.amount === undefined ? (source === 'admin' ? plan.standardRefund : null) : input.amount,
+			source === 'order_cancel' ? 'customer_request' : null, f.actor, JSON.stringify(plan)])).rows[0] as { refund_id: string; amount: number };
+	const eventId = (await client.query('select event_id from public.order_unit_event_refunds where refund_id = $1', [row.refund_id])).rows[0].event_id as string;
+	return { refundId: row.refund_id, eventId, amount: row.amount };
+}
+
+/** Stripe の返金と残高の取引を直接入れる（failure なら失敗の戻りの取引も）。 */
+export async function seedStripeRefundTxn(client: PgClient, input: {
+	orderId: string; stripeRefundId: string; amount: number; status?: string; failure?: boolean; paymentIntentId?: string;
+}): Promise<{ txnId: string; failureTxnId: string | null }> {
+	const txnId = `txn_${randomUUID().replaceAll('-', '')}`;
+	const failureTxnId = input.failure ? `txn_${randomUUID().replaceAll('-', '')}` : null;
+	const pi = input.paymentIntentId ?? `pi_${randomUUID().replaceAll('-', '')}`;
+	for (const [id, amount, category] of [[txnId, -input.amount, 'refund'], ...(failureTxnId ? [[failureTxnId, input.amount, 'refund_failure']] : [])] as Array<[string, number, string]>) {
+		await client.query(`insert into public.stripe_balance_transactions (id, source_id, payment_intent_id, order_id, type, reporting_category, amount,
+			fee, net, currency, status, stripe_created_at, raw_payload) values ($1,$2,$3,$4,$5,$5,$6,0,$6,'jpy','available',now(),'{}'::jsonb)`,
+			[id, input.stripeRefundId, pi, input.orderId, category, amount]);
+	}
+	await client.query(`insert into public.stripe_refunds (id, payment_intent_id, order_id, amount, currency, status, balance_transaction_id,
+		failure_balance_transaction_id, stripe_created_at, raw_payload) values ($1,$2,$3,$4,'jpy',$5,$6,$7,now(),'{}'::jsonb)`,
+		[input.stripeRefundId, pi, input.orderId, input.amount, input.status ?? (input.failure ? 'failed' : 'succeeded'), txnId, failureTxnId]);
+	return { txnId, failureTxnId };
+}
+
+/** 注文に判断待ちの支払いの取り消し（needs_response、引かれた残高の取引あり）を置く。 */
+export async function seedDisputeHold(client: PgClient, orderId: string, amount = 5000): Promise<string> {
+	return (await seedDispute(client, { orderId, amount, withdrawnAt: '2026-11-01T00:00:00Z', createdAt: '2026-11-01T00:00:00Z' })).disputeId;
 }

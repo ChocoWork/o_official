@@ -3,7 +3,8 @@ import { createHash } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
 import {
   ACCOUNTING_S15_FILES, ACCOUNTING_S15_SQL as sql, ACCOUNTING_S16_FILES, ACCOUNTING_S16_SQL as s16Sql, accountingS15Section,
-  accountingS16Section, pinAccountingS15Baseline, seedReturnRefundParents,
+  accountingS16Section, ACCOUNTING_S17_FILES, ACCOUNTING_S17_SQL as s17Sql, accountingS17Section, pinAccountingS15Baseline,
+  pinAccountingS17Baseline, seedReturnRefundParents,
 } from './helpers/accounting-returns-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
 import { PENDING_REASONS } from '@/lib/accounting/posting-types';
@@ -86,6 +87,7 @@ describeLocalDb('S15 final assert: controller only', (db) => {
     await db().query('savepoint acc_s15_assert');
     let failure: AssertFailure | null = null;
     try {
+      await dropS17Trigger();
       if (baseline === 'pin') await pinAccountingS15Baseline(db());
       if (change) await db().query(change);
       await db().query(assertion);
@@ -96,6 +98,8 @@ describeLocalDb('S15 final assert: controller only', (db) => {
     return failure;
   }
   const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  /** S17 が値段の直しの表に足した遅らせた制約トリガー（S15 の数の確かめの外）を、再生の savepoint の中でだけ外す。 */
+  const dropS17Trigger = () => db().query('drop trigger if exists accounting_unit_price_adjusts_sum on public.accounting_unit_price_adjusts');
 
   test('FREQ-576-AC-04: S15末尾assertは適用後の状態と呼出元search_pathを許す', async () => {
     expect(assertion).not.toBe('');
@@ -105,6 +109,7 @@ describeLocalDb('S15 final assert: controller only', (db) => {
     expect(await attempt("set local search_path = ''")).toBeNull();
     await db().query('savepoint acc_s15_search_path');
     await db().query('set local search_path = public, private, extensions, pg_catalog');
+    await dropS17Trigger();
     await pinAccountingS15Baseline(db());
     await db().query(assertion);
     expect((await db().query('show search_path')).rows[0].search_path).toBe('public, private, extensions, pg_catalog');
@@ -279,6 +284,87 @@ describeLocalDb('S16 final assert: controller only', (db) => {
     ['alter table public.order_refunds add constraint acc_p3_fee_lock_probe check (true)', 'acc_s16_returns_checks'],
     ['delete from public.shop_return_settings', 'acc_s16_existing_dml_allowlist'],
   ])('FREQ-578-AC-05: S16改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// Accounting plan 3 S17 (FREQ-576-AC-05): the refund writers are rebuilt from their latest definitions; the final assert
+// pins the new tools, the rebuilt functions' attributes and bodies, the group G writer list and the row counts.
+const s17Assertion = accountingS17Section('FINAL_ASSERT');
+const s17Details = ['acc_s17_functions', 'acc_s17_function_attrs', 'acc_s17_body_unchanged', 'acc_s17_g_allowlist_unchanged',
+  'acc_s17_existing_dml_allowlist'];
+const decideSig = '(uuid,uuid,text,text,uuid)';
+
+describe('S17 source contract (no DB)', () => {
+  test('FREQ-576-AC-05: S17はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S17_FILES).toHaveLength(1);
+    expect(ACCOUNTING_S17_FILES[0] > ACCOUNTING_S16_FILES[0]).toBe(true);
+    expect(s17Sql).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(s17Sql.startsWith('BEGIN;\n')).toBe(true);
+    expect(s17Sql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(s17Sql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(s17Sql.trimEnd()).toMatch(/-- ACC_S17_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect([...new Set([...s17Assertion.matchAll(/'(acc_s17_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...s17Details].sort());
+    expect(s17Assertion).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(s17Assertion).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(s17Sql).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+  });
+});
+
+describeLocalDb('S17 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  /** The baseline is pinned first, then the tamper and the assertion run against it. */
+  async function attempt(change = '', before = ''): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s17_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      // The migration reads the baseline and runs the assert under one search_path (the caller's).
+      if (before) await db().query(before);
+      await pinAccountingS17Baseline(db());
+      if (change) await db().query(change);
+      await db().query(s17Assertion);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s17_assert'); await db().query('release savepoint acc_s17_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const redefine = (sig: string, from: string, to: string) =>
+    `do $x$ begin execute regexp_replace(pg_get_functiondef('${sig}'::regprocedure), E'${from}', E'${to}'); end $x$`;
+
+  test('FREQ-576-AC-05: 作り直した関数の本文は囲みを除いて最新の定義と同じで、属性とACLが前と同じ（S17末尾assertは適用後の状態と呼出元search_pathを許す）', async () => {
+    expect(s17Assertion).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('', 'set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('', 'set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt('', "set local search_path = ''")).toBeNull();
+  });
+
+  test.each([
+    ['grant execute on function private.accounting_split_refund(uuid) to service_role', 'acc_s17_functions'],
+    ['alter function private.accounting_record_refund_facts(uuid) security invoker', 'acc_s17_functions'],
+    ['alter function private.accounting_release_allocations(text,integer) reset search_path', 'acc_s17_functions'],
+    [`revoke execute on function private.admin_decide_refund_cancellation${decideSig} from service_role`, 'acc_s17_functions'],
+    [`grant execute on function public.admin_decide_refund_cancellation${decideSig} to authenticated`, 'acc_s17_functions'],
+    [`drop function public.admin_decide_refund_cancellation${decideSig}`, 'acc_s17_functions'],
+    ['drop trigger accounting_unit_price_adjusts_sum on public.accounting_unit_price_adjusts', 'acc_s17_functions'],
+    ['alter table public.accounting_unit_price_adjusts disable trigger accounting_unit_price_adjusts_sum', 'acc_s17_functions'],
+    ['grant execute on function private.order_unit_shipped_slots(uuid) to service_role', 'acc_s17_function_attrs'],
+    ['alter function private.accounting_unit_values(uuid,bigint) volatile', 'acc_s17_function_attrs'],
+    ['alter function private.mark_order_refund_error(uuid,text,boolean) set search_path = public', 'acc_s17_function_attrs'],
+    [redefine('private.mark_order_refund_error(uuid,text,boolean)', '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s17_body_unchanged'],
+    [redefine('private.accounting_check_unit_allocation_sum()', 'ACC_P3_REPLACE_BEGIN 6', 'ACC_P3_REPLACE_BEGIN 0'), 'acc_s17_body_unchanged'],
+    [redefine('private.record_group_g_refund_result(uuid,text,text,text,text,timestamp with time zone,text,text,text,text,uuid[],jsonb)',
+      '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s17_body_unchanged'],
+    ["update pg_temp.accounting_s17_baseline set payload = jsonb_set(payload, '{allowlist_md5}', '\"x\"')", 'acc_s17_g_allowlist_unchanged'],
+    ['drop table pg_temp.accounting_s17_baseline', 'acc_s17_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s17_baseline set payload = payload - 'counts'", 'acc_s17_existing_dml_allowlist'],
+    ["select private.accounting_park_event('return_refund', 'order_refunds', 's17_tamper', null, 'no_order', '{}')", 'acc_s17_existing_dml_allowlist'],
+  ])('FREQ-576-AC-05: S17改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });

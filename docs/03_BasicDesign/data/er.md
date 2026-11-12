@@ -3,6 +3,8 @@
 > 交換の印 オーナー修正 X4 Fix round 1 確認日: 2026-11-12。追記だけの表 `order_unit_event_waives`（返金しないで終えた (出来事, 分)）を足した（移行 20261112064013、本番未適用）。
 > 交換の印 オーナー修正 X4 確認日: 2026-11-12。`order_unit_event_refunds` の主キーを `(event_id, refund_id, part)` に広げた（1つの返金が同じ出来事の今すぐと相談の分を持てる。FREQ-642-AC-37。移行 20261112064013、本番未適用）。
 > 交換の印 オーナー修正 X1 確認日: 2026-11-12。発送枠は取り押さえの無い着から選び、不足分を取り押さえのある着で補う（FREQ-642-AC-34）。
+> 会計の計画3 Task 3 確認日: 2026-11-13。発送した着の取り押さえに、取りやめていない発送前の取り消しで返した着を足した（S17。表・列は変えていない）。
+
 > 交換の印 最終直し 確認日: 2026-11-11。前の注文の着数の「発送した着」を `private.order_unit_shipped_slots`（移行 A に足した関数。表・列は変えていない）で決める（R33）。
 >
 > 前の注文に戻す返金 確認日: 2026-11-10。`order_refunds.source` の値に `unit_hold_release` を足した（移行 `20261110135232_unit_binding_refunds.sql`、FREQ-642）。表・列は増えない。
@@ -2430,4 +2432,4 @@ G・H の表（`shipment_slips`・`order_items`・`order_line_unit_amounts`）�
 
 足した外部キーは RESTRICT だけで、`orders`・`order_items`・`order_returns`・`order_return_receipts`・`order_return_lines`・`order_refunds`・`order_line_unit_amounts` と、この 8 表の間（枠 → 出来事、交換の結び → 枠、出来事の行 → 枠・出来事、差し引き → 出来事、出来事と返金のつなぎ → 出来事・返金）。`item_id` の型は `order_items.item_id` に合わせて `bigint`。出来事の金額の列は `NOT NULL DEFAULT 0`。`actor_id` に外部キーは付けない。
 
-足した連番は `public.order_unit_events_seq_seq`（権限はすべて外した）。関数の本文は 2 本取り替えた: `private.group_h_copy_order_discounts`（注文を受けた時に、写し 1 行と、着ごとの枠を足す）と `private.get_checkout_discount_context`（会員の前の注文の着数を、枠のある注文は `state = 'kept'` の枠の数（status が `cancelled` の注文は、発送していない着を数えない。発送した着は `private.order_unit_shipped_slots` が決める。会計の `accounting_shipped_units` が答える数を、発送前の返金が付いていない若い番号の枠から順に当てる。数に足りなければ、取り押さえのある着を unit_index 昇順で補い、必ずその数を返す（返金額では決めない。FREQ-642-AC-34、2026-11-12 X1）。R33）、枠の無い古い注文は今までの式で数える）。理由ごとの設定は、`defective`・`wrong_item` の `resolutions` を `exchange_only` に直した。
+足した連番は `public.order_unit_events_seq_seq`（権限はすべて外した）。関数の本文は 2 本取り替えた: `private.group_h_copy_order_discounts`（注文を受けた時に、写し 1 行と、着ごとの枠を足す）と `private.get_checkout_discount_context`（会員の前の注文の着数を、枠のある注文は `state = 'kept'` の枠の数（status が `cancelled` の注文は、発送していない着を数えない。発送した着は `private.order_unit_shipped_slots` が決める。`order_unit_shipped_slots` は会計の `accounting_shipped_units` を呼ぶだけで、答える数を、取り押さえていない若い番号の枠から順に当てる。取り押さえは、失敗していない発送前の返金が付いた着と、取りやめていない発送前の取り消し（`pre_shipment_cancel`）で最後に返した、まだ送っていなかった着（2026-11-13 会計の計画3 S17）。数に足りなければ、取り押さえのある着を unit_index 昇順で補い、必ずその数を返す（返金額では決めない。FREQ-642-AC-34、2026-11-12 X1）。R33）、枠の無い古い注文は今までの式で数える）。理由ごとの設定は、`defective`・`wrong_item` の `resolutions` を `exchange_only` に直した。
