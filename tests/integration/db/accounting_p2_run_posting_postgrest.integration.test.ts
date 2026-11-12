@@ -88,7 +88,7 @@ describeLocalDb('S11 posting entry point over PostgREST: controller only, commit
   test('FREQ-562-AC-05: 入口は service_role で呼べて、件数の7つの鍵を返す', async () => {
     const { data, error } = await service.rpc('accounting_run_posting', { _limit: 50 });
     expect(error).toBeNull();
-    expect(Object.keys(data as Record<string, unknown>).sort()).toEqual(['disputes', 'has_more', 'parked', 'payments', 'resolved', 'shipments', 'stripe']);
+    expect(Object.keys(data as Record<string, unknown>).sort()).toEqual(['disputes', 'has_more', 'parked', 'payments', 'refunds', 'resolved', 'returns', 'shipments', 'stripe']);
     expect(typeof (data as { has_more: unknown }).has_more).toBe('boolean');
   });
 

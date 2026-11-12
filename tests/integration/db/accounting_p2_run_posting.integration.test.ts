@@ -11,7 +11,7 @@ import {
 // ROLLBACK form (run with --runInBand). The entry point calls the payment, shipment, Stripe and dispute posters in that order.
 jest.setTimeout(120000);
 
-type RunResult = { payments: number; shipments: number; stripe: number; disputes: number; parked: number; resolved: number; has_more: boolean };
+type RunResult = { payments: number; shipments: number; stripe: number; disputes: number; refunds: number; returns: number; parked: number; resolved: number; has_more: boolean };
 
 describeLocalDb('S11 posting entry point: controller only', (db) => {
   const q = (text: string, params?: unknown[]) => db().query(text, params);
@@ -24,7 +24,7 @@ describeLocalDb('S11 posting entry point: controller only', (db) => {
   afterEach(async () => { await q('rollback'); });
 
   const run = async (limit = 50): Promise<RunResult> => (await q('select public.accounting_run_posting($1::integer) as r', [limit])).rows[0].r as RunResult;
-  const quiet: RunResult = { payments: 0, shipments: 0, stripe: 0, disputes: 0, parked: 0, resolved: 0, has_more: false };
+  const quiet: RunResult = { payments: 0, shipments: 0, stripe: 0, disputes: 0, refunds: 0, returns: 0, parked: 0, resolved: 0, has_more: false };
   const entryOf = async (dedupeKey: string) => (await q('select id, entry_no from public.accounting_journal_entries where dedupe_key = $1', [dedupeKey])).rows[0];
   const pendingOf = async (sourceTable: string, sourceId: string) => (await q(
     `select reason, detail, resolved_at, resolved_entry_id from public.accounting_pending_events where source_table = $1 and source_id = $2`,
@@ -44,8 +44,8 @@ describeLocalDb('S11 posting entry point: controller only', (db) => {
     await slipFor(paid, 2);
     const d = await seedDispute(db(), { orderId: other.orderId, paymentIntentId: other.paymentIntentId, amount: 30000, withdrawnAt: '2026-06-20T03:00:00Z' });
     const first = await run();
-    expect(first).toEqual({ payments: 1, shipments: 1, stripe: 1, disputes: 1, parked: 0, resolved: 0, has_more: false });
-    expect(Object.keys(first).sort()).toEqual(['disputes', 'has_more', 'parked', 'payments', 'resolved', 'shipments', 'stripe']);
+    expect(first).toEqual({ payments: 1, shipments: 1, stripe: 1, disputes: 1, refunds: 0, returns: 0, parked: 0, resolved: 0, has_more: false });
+    expect(Object.keys(first).sort()).toEqual(['disputes', 'has_more', 'parked', 'payments', 'refunds', 'resolved', 'returns', 'shipments', 'stripe']);
     expect(await entryOf(`payment_confirmed:${paid.paymentIntentId}`)).toBeDefined();
     expect(await entryOf(`stripe:fee:${paid.txId}`)).toBeDefined();
     expect(await entryOf(`dispute_event:${d.disputeId}:withdrawn:${d.txnId}`)).toBeDefined();

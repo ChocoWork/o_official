@@ -2,9 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { PgClient } from './local-db';
 import { randomUUID } from 'node:crypto';
-import { seedDispute } from './accounting-orders-fixtures';
+import { seedConfirmedSlip, seedDispute, seedStripeCharge, seedUnitOrder } from './accounting-orders-fixtures';
+import { insertAccountingAdmin } from './accounting-fixtures';
+import { ACCOUNTING_LABELS } from '@/lib/accounting/labels';
 import { cancelPlanFor, hBegin, hReceive, hRefundFixture, hResult, hReturn } from './group-h-refund-fixtures';
 import { createUbReturn, ubReceive, type ReceiveInput, type ReceiveUnit } from './unit-binding-receive';
+import { shipFixtureOrder } from './order-fixtures';
+import { attachGroupG3SlipShipment, seedGroupG3Slip } from './group-g3-fixtures';
 
 // 会計の計画3（返品・返金）の DB 試験の道具。計画3の各 Task が必要な物をここへ足す。
 
@@ -355,4 +359,257 @@ export async function returnPayable(client: PgClient, returnId: string): Promise
       - coalesce((select sum(f.decided_amount) from public.accounting_return_facts f join public.order_refunds r on r.id=f.refund_id
           where f.return_id=$1 and f.kind='decision' and not (r.status='failed' or (r.status='canceled' and exists (
             select 1 from public.accounting_refund_events x where x.refund_id=r.id and x.state='abandoned')))),0) as n`, [returnId])).rows[0].n);
+}
+
+// ---- Task 6（S20。返金の仕訳・振込・結び）の道具 ----
+
+const s20Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p3_refund_posting.sql'));
+/** 計画3 S20（返金の仕訳）の移行の本文（無ければ空で、原文の確かめが目に見えて落ちる）。 */
+export const ACCOUNTING_S20_SQL = s20Files.length === 1 ? fs.readFileSync(path.join(directory, s20Files[0]), 'utf8') : '';
+export const ACCOUNTING_S20_FILES = s20Files;
+
+/** S20 の `-- ACC_S20_<name>_BEGIN` と `-- ACC_S20_<name>_END` の間。 */
+export function accountingS20Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S20_SQL.split(`-- ACC_S20_${name}_BEGIN\n`)[1]?.split(`-- ACC_S20_${name}_END`)[0] ?? '';
+}
+
+/** S20 の比べる元の控え（本文の最初の CREATE TEMP TABLE と INSERT）を、呼ぶ取引の中で作り直す。 */
+export async function pinAccountingS20Baseline(client: PgClient): Promise<void> {
+	const pin = accountingS20Section('BODY').split('\n-- 1. The settle rows')[0];
+	await client.query('drop table if exists pg_temp.accounting_s20_baseline');
+	await client.query(pin);
+	// The settle table is new in S20, so the migration's pin has no count of it; after it is applied, the rows already there are the base.
+	await client.query("update pg_temp.accounting_s20_baseline set payload = jsonb_set(payload, '{counts,settlements}', to_jsonb((select count(*) from public.accounting_refund_settlements)))");
+}
+
+export type RefundRun = { posted: number; parked_new: number; reparked: number; resolved: number; reversed: number };
+
+/** 返金の係を直接1回流す（入口 accounting_run_posting を通さない）。 */
+export async function postRefundEvents(client: PgClient, limit = 50): Promise<RefundRun> {
+	return (await client.query('select private.accounting_post_refund_events($1::integer) as r', [limit])).rows[0].r as RefundRun;
+}
+
+/** record_order_refund_result が付ける Stripe の返金の番号。 */
+export const stripeRefundIdOf = (refundId: string) => `re_${refundId.replaceAll('-', '')}`;
+
+/** 返金の結果を記録する（G の関数。canceled は Stripe が取り消した失敗）。 */
+export async function recordRefundResult(client: PgClient, refundId: string, status: 'pending' | 'succeeded' | 'failed' | 'canceled') {
+	const failure = status === 'failed' ? 'lost_or_stolen_card' : status === 'canceled' ? 'unknown' : null;
+	return (await client.query("select * from public.record_order_refund_result($1,$2,$3,null,$4,null,'card',null,null)",
+		[refundId, stripeRefundIdOf(refundId), status, failure])).rows[0];
+}
+
+/** Stripe の返金の行と、引かれた残高の取引（返金の額の負）を入れる。at は取引の時刻（無ければ今）。 */
+export async function saveRefundTxn(client: PgClient, refundId: string, input: { at?: string; amount?: number } = {}): Promise<string> {
+	const refund = (await client.query(`select r.order_id, r.amount,
+		coalesce(o.payment_intent_id, 'pi_' || replace(r.order_id::text, '-', '')) as pi
+		from public.order_refunds r join public.orders o on o.id = r.order_id where r.id=$1`, [refundId])).rows[0];
+	const txnId = `txn_${randomUUID().replaceAll('-', '')}`;
+	const amount = input.amount ?? (refund.amount as number);
+	await client.query(`insert into public.stripe_balance_transactions (id, source_id, payment_intent_id, order_id, type, reporting_category, amount,
+		fee, net, currency, status, stripe_created_at, raw_payload) values ($1,$2,null,$3,'refund','refund',$4,0,$4,'jpy','available',
+		coalesce($5::timestamptz, now()),'{}'::jsonb)`, [txnId, stripeRefundIdOf(refundId), refund.order_id, -amount, input.at ?? null]);
+	await client.query(`insert into public.stripe_refunds (id, payment_intent_id, order_id, amount, currency, status, balance_transaction_id,
+		stripe_created_at, succeeded_at, raw_payload) values ($1,$6,$2,$3,'jpy','succeeded',$4,coalesce($5::timestamptz, now()),
+		coalesce($5::timestamptz, now()),'{}'::jsonb)
+		on conflict (id) do update set balance_transaction_id = excluded.balance_transaction_id`,
+	[stripeRefundIdOf(refundId), refund.order_id, refund.amount, txnId, input.at ?? null, refund.pi]);
+	return txnId;
+}
+
+/** 引かれた返金の失敗の戻りの残高の取引（返金の額の正）を入れ、Stripe の返金の行に結ぶ。 */
+export async function saveFailureTxn(client: PgClient, refundId: string, input: { at?: string; amount?: number } = {}): Promise<string> {
+	const refund = (await client.query('select order_id, amount from public.order_refunds where id=$1', [refundId])).rows[0];
+	const txnId = `txn_${randomUUID().replaceAll('-', '')}`;
+	await client.query(`insert into public.stripe_balance_transactions (id, source_id, payment_intent_id, order_id, type, reporting_category, amount,
+		fee, net, currency, status, stripe_created_at, raw_payload) values ($1,$2,null,$3,'refund_failure','refund_failure',$4,0,$4,'jpy','available',
+		coalesce($5::timestamptz, now()),'{}'::jsonb)`, [txnId, stripeRefundIdOf(refundId), refund.order_id, input.amount ?? refund.amount, input.at ?? null]);
+	await client.query("update public.stripe_refunds set failure_balance_transaction_id=$2, status='failed' where id=$1", [stripeRefundIdOf(refundId), txnId]);
+	return txnId;
+}
+
+/** 返金を成功にする（Stripe の行と残高の取引、そして結果の記録）。 */
+export async function succeedRefund(client: PgClient, refundId: string, input: { at?: string } = {}): Promise<string> {
+	const txnId = await saveRefundTxn(client, refundId, input);
+	await recordRefundResult(client, refundId, 'succeeded');
+	return txnId;
+}
+
+/** 返金を失敗にする。pulled なら、先に引かれた（成功の取引がある）返金の戻りの取引も入れる。 */
+export async function failRefund(client: PgClient, refundId: string, input: { pulled?: boolean; at?: string } = {}): Promise<string | null> {
+	const txnId = input.pulled ? await saveFailureTxn(client, refundId, { at: input.at }) : null;
+	await recordRefundResult(client, refundId, 'failed');
+	return txnId;
+}
+
+/** Stripe が返金を取り消した（状態 canceled）。pulled なら戻りの取引も入れる。 */
+export async function cancelRefund(client: PgClient, refundId: string, input: { pulled?: boolean; at?: string } = {}): Promise<string | null> {
+	const txnId = input.pulled ? await saveFailureTxn(client, refundId, { at: input.at }) : null;
+	await recordRefundResult(client, refundId, 'canceled');
+	return txnId;
+}
+
+/** 取り消された返金の区分を選ぶ（admin_decide_refund_cancellation。人は会計の管理者）。 */
+export async function decideRefund(client: PgClient, refundId: string, kind: 'abandoned' | 'owed', actor?: string) {
+	const admin = actor ?? await insertAccountingAdmin(client);
+	return (await client.query('select public.admin_decide_refund_cancellation($1,$2,$3,$4,$5) as r',
+		[admin, refundId, kind, kind === 'abandoned' ? 'shop gave up' : 'shop still owes', randomUUID()])).rows[0].r;
+}
+
+/**
+ * 注文の支払いの仕訳を入れる（注文の payment_intent_id と合計で Stripe の支払いの取引を入れ、支払いの係を流す）。
+ * at は取引の時刻（初期値は 2026-11-01 の日本の昼）。
+ */
+export async function postOrderPayment(client: PgClient, orderId: string, at = '2026-11-01T03:00:00Z'): Promise<void> {
+	const order = (await client.query('select payment_intent_id, total_amount from public.orders where id=$1', [orderId])).rows[0];
+	await seedStripeCharge(client, { paymentIntentId: order.payment_intent_id, amount: order.total_amount, createdAt: at, orderId });
+	await client.query('select private.accounting_post_payment_events(200)');
+	const posted = (await client.query('select 1 from public.accounting_journal_entries where dedupe_key=$1',
+		[`payment_confirmed:${order.payment_intent_id}`])).rows.length;
+	if (posted !== 1) throw new Error('POST_ORDER_PAYMENT_NOT_POSTED');
+}
+
+/**
+ * 返品の届いた日と額の決定の仕訳を、計画1の core で直接入れる（Task 7 の返品の係と同じ種類・印・行。Task 6 の時点では
+ * 返品の係が無いので、返品の返金の試験の前提を作る）。今ある事実のうち、まだ仕訳の無い物だけ。入れた本数を返す。
+ */
+export async function seedReturnArrivalEntries(client: PgClient, returnId: string): Promise<number> {
+	const facts = (await client.query(`select f.id, f.kind, f.order_id, f.receipt_id, f.goods_amount, f.fee_amount, f.payable_delta,
+		coalesce(case when f.kind = 'arrival' then private.accounting_return_arrival_on(f.receipt_id) end, f.decided_on)::text as on_date
+		from public.accounting_return_facts f where f.return_id=$1 order by f.seq`, [returnId])).rows;
+	let made = 0;
+	for (const f of facts) {
+		const arrival = f.kind === 'arrival';
+		if (!arrival && Number(f.payable_delta) === 0) continue;
+		const kind = arrival ? 'return_arrived' : 'return_amount_decided';
+		const part = (arrival ? f.receipt_id : f.id) as string;
+		if ((await client.query('select 1 from public.accounting_journal_entries where dedupe_key=private.accounting_event_key($1, array[$2::text])',
+			[kind, part])).rows.length > 0) continue;
+		const order = f.order_id as string;
+		const line = (account: string, debit: number, credit: number, sub: string | null = null, memo: string | null = null) =>
+			({ account_code: account, debit, credit, sub_account: sub, order_id: order, memo });
+		let lines;
+		if (arrival) {
+			const goods = Number(f.goods_amount);
+			const fee = Number(f.fee_amount);
+			lines = [line('4020', goods, 0), line('2130', 0, goods, 'return_refund')];
+			if (fee > 0) {
+				lines.push(line('2130', fee, 0, 'return_refund', ACCOUNTING_LABELS.returnFeeRevenue),
+					line('4050', 0, fee, null, ACCOUNTING_LABELS.returnFeeRevenue));
+			}
+		} else {
+			const delta = Number(f.payable_delta);
+			lines = delta > 0 ? [line('4020', delta, 0), line('2130', 0, delta, 'return_refund')]
+				: [line('2130', -delta, 0, 'return_refund'), line('4020', 0, -delta)];
+		}
+		await client.query(`select private.accounting_post_journal_core(null, private.accounting_period_for_event($1::date), $1::date, $2,
+			array[$3::text], $4, $5::jsonb)`,
+		[f.on_date, kind, part, arrival ? ACCOUNTING_LABELS.returnArrived : ACCOUNTING_LABELS.returnAmountDecided, JSON.stringify(lines)]);
+		made += 1;
+	}
+	return made;
+}
+
+/** 注文の勘定の残高（貸方 − 借方。sub を渡すと補助を絞る）。資産（1160・1040）は符号を逆にして読む。 */
+export async function orderBalance(client: PgClient, orderId: string, account: string, sub: string | null = null): Promise<number> {
+	return Number((await client.query('select private.accounting_order_account_balance($1,$2,$3) as n', [orderId, account, sub])).rows[0].n);
+}
+
+/**
+ * 着の行と枠（order_unit_slots）を持ち、支払いの仕訳まで入った注文（lines の1要素が1つの品の着の支払額）。値段の計画を
+ * 通さない出来事を fixture で入れる試験の土台（計画3 Task 3 の割り当ての試験と同じ作り）。
+ */
+export async function seedSlotPaidOrder(client: PgClient, lines: number[][]): Promise<{ orderId: string; orderItemIds: string[] }> {
+	const o = await seedUnitOrder(client, lines);
+	await client.query(`insert into public.order_unit_slots(order_item_id, unit_index, order_id, item_id, state, current_price, holder_order_item_id, holder_unit_index)
+		select u.order_item_id, u.unit_index, oi.order_id, oi.item_id, 'kept', u.paid_amount, u.order_item_id, u.unit_index
+		from public.order_line_unit_amounts u join public.order_items oi on oi.id=u.order_item_id where oi.order_id=$1`, [o.orderId]);
+	await client.query('update public.orders set payment_intent_id=coalesce(payment_intent_id,$2) where id=$1',
+		[o.orderId, `pi_s20_${randomUUID().replaceAll('-', '')}`]);
+	await postOrderPayment(client, o.orderId);
+	return o;
+}
+
+export type CancelLine = { item: string; unit: number; kind: 'returned' | 'kept'; allocation?: number; correction?: number; shipped?: boolean };
+
+/** 発送前の取り消しの出来事を fixture で直接入れる（交換の設計の関数では作れない値の組を試す時。計画3 Task 3 の試験と同じ形）。 */
+export async function seedCancelEvent(client: PgClient, orderId: string, lines: CancelLine[], standard = 0): Promise<string> {
+	const eventId = (await client.query(`insert into public.order_unit_events(order_id, kind, entitlement_previous, entitlement_max_before, entitlement_gross,
+		entitlement_shop_only, fee_amount, hold_total, entitlement, standard_refund, now_refund, consult_refund)
+		values($1,'pre_shipment_cancel',0,0,0,0,0,0,0,$2,$2,0) returning id`, [orderId, standard])).rows[0].id as string;
+	for (const l of lines) {
+		await client.query(`insert into public.order_unit_event_lines(event_id, line_kind, order_item_id, unit_index, slot_order_id, holder_order_item_id, holder_unit_index,
+			state_before, state_after, price_before, price_after, allocation, correction, part, shipped)
+			values($1,$2,$3,$4,$5,$3,$4,'kept',$6,0,0,$7,$8,$9,$10)`,
+		[eventId, l.kind, l.item, l.unit, orderId, l.kind === 'returned' ? 'returned_shop' : 'kept', l.allocation ?? 0, l.correction ?? 0,
+			l.kind === 'returned' ? 'now' : null, l.shipped ?? false]);
+		if (l.kind === 'returned') {
+			await client.query("update public.order_unit_slots set state='returned_shop', last_event_id=$3 where order_item_id=$1 and unit_index=$2",
+				[l.item, l.unit, eventId]);
+		}
+	}
+	return eventId;
+}
+
+/** fixture の出来事に返金を1本結び、コアと同じ順（状態の行 → 事実 → 出来事の割り当て）で書く。eventId が null なら出来事の無い返金。 */
+export async function seedCancelRefund(client: PgClient, orderId: string, eventId: string | null, amount: number,
+	lines: Array<{ item: string; before: boolean; amount: number }> = []): Promise<string> {
+	const linesAmount = lines.reduce((s, l) => s + l.amount, 0);
+	const refundId = (await client.query(`insert into public.order_refunds(order_id, source, request_key, request_fingerprint, status, amount, shipping_amount,
+		adjustment_amount, notify_customer) values($1,'admin',gen_random_uuid(),'fixture','awaiting_response',$2,0,$3,false) returning id`,
+	[orderId, amount, amount - linesAmount])).rows[0].id as string;
+	for (const l of lines) {
+		await client.query(`insert into public.order_refund_lines(refund_id, order_item_id, quantity, before_shipment, restock_type, amount)
+			values($1,$2,1,$3,'no_restock',$4)`, [refundId, l.item, l.before, l.amount]);
+	}
+	if (eventId) await client.query("insert into public.order_unit_event_refunds(event_id, refund_id, part) values($1,$2,'now')", [eventId, refundId]);
+	await client.query("select private.accounting_record_refund_event($1,'requested')", [refundId]);
+	await client.query('select private.accounting_record_refund_facts($1)', [refundId]);
+	if (eventId) await client.query('select private.accounting_record_event_allocations($1)', [eventId]);
+	else await client.query('select private.accounting_write_refund_allocations($1)', [refundId]);
+	return refundId;
+}
+
+/**
+ * 確定した発送票（G の出荷と事実つき）で着を送り、出荷の係を1回流す。actorId を渡すと H の受け付けの注文として G の出荷の
+ * 道具（shipFixtureOrder）で送り、その出荷を発送票に結ぶ（G3 の道具）。
+ */
+export async function shipAndPost(client: PgClient, orderId: string, orderItemId: string, quantity = 1, actorId?: string): Promise<unknown> {
+	if (actorId) {
+		const shipped = await shipFixtureOrder(client, { orderId, actorId, trackingNumber: `S20-${randomUUID().slice(0, 8)}`,
+			lines: [{ order_item_id: orderItemId, quantity }] });
+		const slipId = await seedGroupG3Slip(client, { stage: 'confirmed', actorId });
+		await attachGroupG3SlipShipment(client, { slipId, orderId, orderItemId, fulfillmentId: shipped.fulfillment_id, quantity, actorId });
+		await client.query('select private.accounting_record_slip_fact($1::uuid, $2::text)', [slipId, 'confirm']);
+	} else {
+		await seedConfirmedSlip(client, { orders: [{ orderId, lines: [{ orderItemId, quantity }] }] });
+	}
+	return (await client.query('select private.accounting_post_shipment_events(50) as r')).rows[0].r;
+}
+
+/** 銀行振込の記録（admin_record_refund_bank_transfer）。 */
+export async function bankTransfer(client: PgClient, input: { actor: string; orderId: string; origin: 'pre_shipment' | 'post_shipment' | 'return';
+	amount: number; on: string; txn: string; note?: string | null; key?: string }) {
+	return (await client.query('select public.admin_record_refund_bank_transfer($1,$2,$3,$4,$5::date,$6,$7,$8) as r',
+		[input.actor, input.orderId, input.origin, input.amount, input.on, input.txn, input.note ?? null, input.key ?? randomUUID()])).rows[0].r as {
+		entry_id: string; created: boolean };
+}
+
+/** やり直しの返金で借りを結ぶ（admin_settle_owed_by_refund）。 */
+export async function settleOwed(client: PgClient, actor: string, owedRefundId: string, payingRefundId: string, key = randomUUID()) {
+	return (await client.query('select public.admin_settle_owed_by_refund($1,$2,$3,$4) as r', [actor, owedRefundId, payingRefundId, key])).rows[0].r;
+}
+
+/** 注文の仕訳の行（入った順）。 */
+export async function orderLines(client: PgClient, orderId: string) {
+	return (await client.query(`select e.id as entry_id, e.event_kind, e.dedupe_key, e.entry_date::text as entry_date, e.source_table, e.source_id,
+		e.reverses_entry_id, l.account_code, l.debit::int as debit, l.credit::int as credit, l.sub_account, l.order_id, l.memo
+		from public.accounting_journal_entries e join public.accounting_journal_lines l on l.entry_id=e.id
+		where l.order_id=$1 order by e.entry_no, l.line_no`, [orderId])).rows;
+}
+
+/** 返金の計上待ち（source_id の物）。 */
+export async function refundPending(client: PgClient, sourceId: string) {
+	return (await client.query(`select event_kind, source_table, reason, detail, resolved_at, resolved_entry_id from public.accounting_pending_events
+		where source_id=$1 order by first_detected_at`, [sourceId])).rows;
 }

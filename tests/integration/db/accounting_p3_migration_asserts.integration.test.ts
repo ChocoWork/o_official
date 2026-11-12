@@ -11,7 +11,7 @@ import {
   accountingS16Section, ACCOUNTING_S17_FILES, ACCOUNTING_S17_SQL as s17Sql, accountingS17Section, pinAccountingS15Baseline,
   pinAccountingS17Baseline, seedReturnRefundParents, ACCOUNTING_S18_FILES, ACCOUNTING_S18_SQL as s18Sql, accountingS18Section,
   pinAccountingS18Baseline, restorePreS18Receive, ACCOUNTING_S19_FILES, ACCOUNTING_S19_SQL as s19Sql, accountingS19Section,
-  pinAccountingS19Baseline,
+  pinAccountingS19Baseline, ACCOUNTING_S20_FILES, ACCOUNTING_S20_SQL as s20Sql, accountingS20Section, pinAccountingS20Baseline,
 } from './helpers/accounting-returns-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
 import { PENDING_REASONS } from '@/lib/accounting/posting-types';
@@ -604,6 +604,112 @@ describeLocalDb('S19 final assert: controller only', (db) => {
     ["update pg_temp.accounting_s19_baseline set payload = jsonb_set(payload, '{counts,operations}', '999999')", 'acc_s19_existing_dml_allowlist'],
     ['drop table pg_temp.accounting_s19_baseline', 'acc_s19_existing_dml_allowlist'],
   ])('FREQ-576-AC-05: S19改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// Accounting plan 3 S20 (FREQ-562-AC-05 / FREQ-577 / FREQ-579): the refund posting, the bank transfer, the settle table and the
+// rebuilt posting entry point.
+const s20Assertion = accountingS20Section('FINAL_ASSERT');
+const s20Body = accountingS20Section('BODY');
+const s20Details = ['acc_s20_tables', 'acc_s20_functions', 'acc_s20_function_attrs', 'acc_s20_run_posting', 'acc_s20_reads_stable',
+  'acc_s20_rls_acl', 'acc_s20_existing_dml_allowlist'];
+const p2DisputePath = path.join(process.cwd(), 'supabase/migrations/20261108200000_accounting_p2_dispute_posting.sql');
+const runPostingOf = (source: string) => ([...source.matchAll(/^CREATE (?:OR REPLACE )?FUNCTION private\.accounting_run_posting\([\s\S]*?^\$\$;/gm)].at(-1)?.[0] ?? '')
+  .replace(/^CREATE OR REPLACE FUNCTION/, 'CREATE FUNCTION');
+const SETTLE_SIG = '(uuid,uuid,uuid,uuid)';
+
+describe('S20 source contract (no DB)', () => {
+  test('FREQ-562-AC-05: S20はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S20_FILES).toHaveLength(1);
+    expect(ACCOUNTING_S20_FILES[0] > ACCOUNTING_S19_FILES[0]).toBe(true);
+    expect(s20Sql).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(s20Sql.startsWith('BEGIN;\n')).toBe(true);
+    expect(s20Sql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(s20Sql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(s20Sql.trimEnd()).toMatch(/-- ACC_S20_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect([...new Set([...s20Assertion.matchAll(/'(acc_s20_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...s20Details].sort());
+    expect(s20Assertion).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(s20Assertion).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(s20Sql).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+  });
+
+  test('FREQ-562-AC-05: 係の入口の本文は計画2の最新の定義の写しに、囲み2つ（返金の係の変数と呼び出し）と戻りの置き換え1つを足しただけ', () => {
+    const latest = runPostingOf(fs.readFileSync(p2DisputePath, 'utf8'));
+    const rebuilt = runPostingOf(s20Body);
+    expect(latest).not.toBe('');
+    expect(rebuilt).not.toBe('');
+    const replaced = rebuilt.match(/-- ACC_P3_REPLACE_BEGIN ([0-9a-f]{32})\n([\s\S]*?)-- ACC_P3_REPLACE_END\n/);
+    expect(replaced).not.toBeNull();
+    const original = latest.match(/^ {2}RETURN pg_catalog\.jsonb_build_object\([\s\S]*?>= _limit\);\n/m)?.[0] ?? '';
+    expect(createHash('md5').update(original).digest('hex')).toBe(replaced![1]);
+    const restored = rebuilt.replace(replaced![0], original).replace(/-- ACC_P3_BEGIN\n[\s\S]*?-- ACC_P3_END\n/g, '');
+    expect(restored).toBe(latest);
+    expect(rebuilt.match(/-- ACC_P3_BEGIN\n/g)).toHaveLength(2);
+    // 返金の係は Stripe の後・取り消し（dispute）の前に呼び、戻りに refunds と returns（0）が入る
+    expect(rebuilt.indexOf('accounting_post_stripe_events(_limit)')).toBeLessThan(rebuilt.indexOf('accounting_post_refund_events(_limit)'));
+    expect(rebuilt.indexOf('accounting_post_refund_events(_limit)')).toBeLessThan(rebuilt.indexOf('accounting_post_dispute_events(_limit)'));
+    expect(replaced![2]).toContain("'refunds', (v_refunds ->> 'posted')::integer, 'returns', 0,");
+    expect(s20Body).not.toMatch(/CREATE OR REPLACE FUNCTION public\./);
+  });
+});
+
+describeLocalDb('S20 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  /** 適用後の状態から控えを取り直し、改ざんと末尾の確かめを流す。 */
+  async function attempt(change = '', before = ''): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s20_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (before) await db().query(before);
+      await pinAccountingS20Baseline(db());
+      if (change) await db().query(change);
+      await db().query(s20Assertion);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s20_assert'); await db().query('release savepoint acc_s20_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const redefine = (sig: string, from: string, to: string) =>
+    `do $x$ begin execute regexp_replace(pg_get_functiondef('${sig}'::regprocedure), E'${from}', E'${to}'); end $x$`;
+
+  test('FREQ-562-AC-05: 適用後の状態で S20 の末尾の確かめが通る（呼出元のsearch_pathを問わない）', async () => {
+    expect(s20Assertion).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('', 'set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('', 'set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt('', "set local search_path = ''")).toBeNull();
+  });
+
+  test.each([
+    ['drop table pg_temp.accounting_s20_baseline', 'acc_s20_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s20_baseline set payload = payload - 'attrs'", 'acc_s20_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s20_baseline set payload = jsonb_set(payload, '{counts,entries}', '999999')", 'acc_s20_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s20_baseline set payload = jsonb_set(payload, '{counts,period_requests}', '999999')", 'acc_s20_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s20_baseline set payload = jsonb_set(payload, '{counts,settlements}', '999999')", 'acc_s20_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s20_baseline set payload = jsonb_set(payload, '{allowlist,0}', '1')", 'acc_s20_existing_dml_allowlist'],
+    ['alter table public.accounting_refund_settlements disable trigger accounting_refund_settlements_no_update_delete', 'acc_s20_tables'],
+    ['alter table public.accounting_refund_settlements add column probe integer', 'acc_s20_tables'],
+    ['alter table public.accounting_refund_settlements drop constraint accounting_refund_settlements_paying_refund_id_key', 'acc_s20_tables'],
+    ['grant select on public.accounting_refund_settlements to authenticated', 'acc_s20_rls_acl'],
+    ['grant insert on public.accounting_refund_settlements to service_role', 'acc_s20_rls_acl'],
+    ['create policy acc_s20_probe on public.accounting_refund_settlements for select using (true)', 'acc_s20_rls_acl'],
+    ['grant execute on function private.accounting_post_refund_events(integer) to service_role', 'acc_s20_functions'],
+    [`alter function private.admin_settle_owed_by_refund${SETTLE_SIG} security invoker`, 'acc_s20_functions'],
+    [`grant execute on function public.admin_settle_owed_by_refund${SETTLE_SIG} to authenticated`, 'acc_s20_functions'],
+    ['alter function private.accounting_refund_wait(uuid,text) set search_path = public', 'acc_s20_functions'],
+    ['alter function private.accounting_run_posting(integer) set search_path = public', 'acc_s20_function_attrs'],
+    ['revoke execute on function public.accounting_run_posting(integer) from service_role', 'acc_s20_function_attrs'],
+    [redefine('private.accounting_run_posting(integer)', '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s20_run_posting'],
+    [redefine('private.accounting_run_posting(integer)', "''returns'', 0,", "''returns'', 1,"), 'acc_s20_run_posting'],
+    [redefine('private.accounting_run_posting(integer)', '-- ACC_P3_BEGIN\\n', '-- ACC_P3_BEGIN\\n-- ACC_P3_END\\n-- ACC_P3_BEGIN\\n'), 'acc_s20_run_posting'],
+    ['alter function private.list_refund_accounting_states(integer,timestamptz,uuid) volatile', 'acc_s20_reads_stable'],
+  ])('FREQ-562-AC-05: S20改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });

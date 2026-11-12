@@ -320,11 +320,19 @@ export async function seedPostedPayment(client: PgClient, input: {
 /**
  * ROLLBACK の試験の始めに、すでに DB にある確定済みの発送票（ほかの suite がコミットした物）を「解決済みの計上待ち」にして
  * 出荷の係の候補から外す。外さないと、全件の実行で係が見知らぬ発送票を拾い、試験の件数が合わない。取引ごと ROLLBACK で戻る。
+ * 計画3 S20 から入口が返金の係も呼ぶので、すでにある返金（事実のある物）も同じように返金の係の候補から外す。
  */
 export async function setAsideExistingSlips(client: PgClient): Promise<void> {
 	await client.query(`insert into public.accounting_pending_events (event_kind, source_table, source_id, reason, resolved_at)
 		select 'shipment_confirmed', 'shipment_slips', s.id::text, 'no_revenue', now() from public.shipment_slips s
 		where s.stage = 'confirmed' on conflict do nothing`);
+	await client.query(`insert into public.accounting_pending_events (event_kind, source_table, source_id, reason, resolved_at)
+		select k.kind, 'order_refunds', f.refund_id::text, 'no_revenue', now() from public.accounting_refund_facts f
+		cross join (values ('pre_shipment_refund'), ('return_refund'), ('refund_failed'), ('refund_abandoned')) as k(kind)
+		on conflict do nothing`);
+	await client.query(`insert into public.accounting_pending_events (event_kind, source_table, source_id, reason, resolved_at)
+		select 'refund_abandoned', 'accounting_refund_events', x.id::text, 'no_revenue', now() from public.accounting_refund_events x
+		where x.state = 'canceled' on conflict do nothing`);
 }
 
 /**
