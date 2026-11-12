@@ -98,13 +98,14 @@ describeLocalDb('integration: 返金のお知らせの材料を、実際の Post
       return fulfillment.rows[0].id as string;
     });
 
+    // 返送料・交換の手数料・交換の送料は DB が 0 に止めている（acc_p3_fee_lock_returns。FREQ-578-AC-05）。0 でないのは割合の手数料だけ
     const returned = await db().query(
       `insert into public.order_returns
          (order_id, number, source, status, request_key, request_fingerprint, approved_at, return_method, return_shipping_payer,
           return_shipping_fee, restocking_fee_percent, exchange_fee, exchange_shipping_fee, notify_customer)
-       values ($1, 1, 'shop', 'open', gen_random_uuid(), 'fixture', now(), 'shop_label', 'customer', 800, $2, $3, $4, true)
+       values ($1, 1, 'shop', 'open', gen_random_uuid(), 'fixture', now(), 'shop_label', 'customer', 0, $2, 0, 0, true)
        returning id`,
-      [orderId, options.fee ? 10 : 0, options.fee ? 500 : 0, options.fee ? 600 : 0],
+      [orderId, options.fee ? 10 : 0],
     );
     const returnId = returned.rows[0].id as string;
     const lineSql = `insert into public.order_return_lines
@@ -170,10 +171,10 @@ describeLocalDb('integration: 返金のお知らせの材料を、実際の Post
         number: 1,
         returnMethod: 'shop_label',
         returnShippingPayer: 'customer',
-        returnShippingFee: 800,
+        returnShippingFee: 0,
         restockingFeePercent: 10,
-        exchangeFee: 500,
-        exchangeShippingFee: 600,
+        exchangeFee: 0,
+        exchangeShippingFee: 0,
         feeWaitingAmount: 0,
         returnAddress: { name: 'Le Fil des Heures 返品係', postalCode: '150-0001', address: '東京都渋谷区神宮前1-2-3', phone: '03-1234-5678' },
         // 同じ商品の3つの行は、3点の1行にまとめる

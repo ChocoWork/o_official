@@ -1,7 +1,7 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
-import { describeLocalDb, type PgClient } from './helpers/local-db';
-import { dropReturnFeeLockCommitted, restoreReturnFeeLock } from './helpers/accounting-returns-fixtures';
+import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
+import { dropReturnFeeLockCommitted, restoreReturnFeeLock, restoreReturnFeeLockIfMissing } from './helpers/accounting-returns-fixtures';
 import { withGroupG1FixtureTransaction } from './helpers/group-g1-fixtures';
 import { createShippedOrderFixture, insertOrderWithLines, insertReturnRecord } from './helpers/order-fixtures';
 
@@ -94,6 +94,11 @@ describeLocalDb('G-1 exchange fee payment, waiver and shipping hold release', ge
   // The material is committed and the entries run in new transactions, so the S16 CHECKs are taken out committed and
   // put back after the cleanup (rulings P3-D5 / P3-D8).
   beforeEach(async () => { await dropReturnFeeLockCommitted(db()); });
+  // If a test dies before afterEach's restore, put the lock back on a fresh connection.
+  afterAll(async () => {
+    const guard = await connectLocalDb();
+    try { await restoreReturnFeeLockIfMissing(guard); } finally { await guard.end(); }
+  });
   afterEach(async () => {
     try {
       await db().query('rollback');

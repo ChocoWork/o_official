@@ -204,7 +204,8 @@ for (const viewport of viewports) {
         expect(await returnSummaryRow(db, waiting.orderId)).toMatchObject({ display_status: 'refund_waiting', next_action: 'refund', refund_waiting_returns: 1 });
         expect(await returnSummaryRow(db, inspecting.orderId)).toMatchObject({ display_status: 'in_progress' });
         expect((await returnSummaryRow(db, inspecting.orderId)).marks).toContain('pending_inspection');
-        expect((await returnSummaryRow(db, fee.orderId)).marks).not.toContain('awaiting_fee');
+        // 交換だけの受け取りで返品は完了する（お支払い待ちで止まらない）ので「返品済み」で、印も次にすることも無い
+        expect(await returnSummaryRow(db, fee.orderId)).toMatchObject({ display_status: 'returned', marks: [], next_action: 'none' });
         expect(await returnSummaryRow(db, done.orderId)).toMatchObject({ display_status: 'returned', next_action: 'none' });
         // 返金待ちと受け取り待ちの返品が1つずつある注文は、いちばん手前の「返品中」を出す
         expect(await returnSummaryRow(db, two.orderId)).toMatchObject({ display_status: 'in_progress', refund_waiting_returns: 1 });
@@ -219,7 +220,8 @@ for (const viewport of viewports) {
         expect(waitingIds).toEqual(expect.arrayContaining([waiting.orderId, two.orderId]));
         expect(progressIds).toEqual(expect.arrayContaining([open.orderId, partial.orderId, inspecting.orderId, two.orderId]));
         expect(progressIds).not.toContain(waiting.orderId);
-        expect(returnedIds).toContain(done.orderId);
+        expect(returnedIds).toEqual(expect.arrayContaining([done.orderId, fee.orderId]));
+        expect(progressIds).not.toContain(fee.orderId);
         for (const ids of [waitingIds, progressIds, returnedIds]) expect(ids).not.toContain(cancelled.orderId);
         // 一覧の上の一行の数は、返金待ちの返品がある注文を数える（全部の注文の数なので、下限で見る）
         expect((await returnAttentionCounts(db)).refundWaiting).toBeGreaterThanOrEqual(2);

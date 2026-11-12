@@ -114,6 +114,18 @@ export async function restoreReturnFeeLock(client: PgClient): Promise<void> {
 	await client.query(accountingS16Section('BODY'));
 }
 
+/**
+ * S16 の2つの制約のどちらかが無ければ、両方を外して足し直す。コミットして外す試験の後片付けの最後の守り
+ * （外した後に接続や試験が落ちても、次の試験・E2E に外れたままの DB を残さない）。
+ */
+export async function restoreReturnFeeLockIfMissing(client: PgClient): Promise<void> {
+	const present = Number((await client.query(`select count(*)::int as n from pg_catalog.pg_constraint
+    where conname in ('acc_p3_fee_lock_settings', 'acc_p3_fee_lock_returns')`)).rows[0].n);
+	if (present === 2) return;
+	await dropReturnFeeLockCommitted(client);
+	await restoreReturnFeeLock(client);
+}
+
 /** dropReturnFeeLockCommitted → work → restoreReturnFeeLock（work が失敗しても足し直す）。 */
 export async function withoutReturnFeeLockCommitted(client: PgClient, work: () => Promise<void>): Promise<void> {
 	await dropReturnFeeLockCommitted(client);

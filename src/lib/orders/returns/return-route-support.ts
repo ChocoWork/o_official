@@ -61,11 +61,6 @@ export function returnFailureBody(kind: ReturnFailureKind) {
 // Postgres の integer の上限。これを超える額は DB が型の誤りで断って 500 になり、画面が同じ番号で送り直しを繰り返してしまうので、窓口で 400 にする
 export const MAX_AMOUNT = 2147483647;
 
-// 手数料の円の欄（返品を作る時の返送料・交換の手数料・交換の送料、設定の返送料の定額・交換の手数料・交換の送料）の上限。
-// 計画の冒頭の Global Constraints の「金額の入力の上限は 1,000,000 円」。DB の関数（Task 2 の admin_create_return の RETURN_FEE_INVALID・
-// admin_update_shop_return_settings の settings_int）と画面（Task 10・Task 12）と同じ値。返金の額は手数料ではない（DB が返せる額で確かめる）ので MAX_AMOUNT のまま
-export const MAX_FEE_YEN = 1000000;
-
 /** 店だけのメモ・お返しのメッセージなどの文。前後の空白を除き、空は持たない（null） */
 export const optionalText = (maxLength: number) =>
   z.string().trim().max(maxLength).nullish().transform((value) => value || null);

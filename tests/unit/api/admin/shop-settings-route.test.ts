@@ -886,7 +886,7 @@ describe('PUT /api/admin/settings/shop（返品の欄）', () => {
     expect(mockUpdateShopSettings).not.toHaveBeenCalled();
   });
 
-  it('FREQ-578-AC-05: 設定のrouteは0でない値をzodで400にする（0と「使わない」は通して保存に渡す）', async () => {
+  it('FREQ-578-AC-05: 設定のrouteは0と「使わない」を通して保存に渡す', async () => {
     const response = await PUT(putRequest({ ...NEXT, returns: RETURNS_REQUEST }));
 
     expect(response.status).toBe(200);

@@ -4,7 +4,8 @@ import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-
 import { addItemVariant, createCatalogFixture, createDraft, createShippedOrderFixture, insertOrderWithLines,
   insertReturnRecord, insertReturnReceipt, insertRefundRecord, insertCancelRequest } from './helpers/order-fixtures';
 import { withGroupG1FixtureTransaction } from './helpers/group-g1-fixtures';
-import { dropReturnFeeLockCommitted, restoreReturnFeeLock, withoutReturnFeeLockCommitted } from './helpers/accounting-returns-fixtures';
+import { dropReturnFeeLockCommitted, restoreReturnFeeLock, restoreReturnFeeLockIfMissing, withoutReturnFeeLockCommitted }
+  from './helpers/accounting-returns-fixtures';
 import { enableDeliveryTracking, leaseDeliveryRegistration, restoreCommittedDeliveryState, trackedShipment,
   waitForDeliveryLock } from './helpers/delivery-tracking-fixtures';
 
@@ -14,6 +15,12 @@ const ENTRIES = [{ name: 'private.lock_group_g_inventory(bigint[],uuid[],uuid)',
   sql: 'select private.lock_group_g_inventory($1::bigint[],$2::uuid[],$3::uuid)' }];
 
 describeLocalDb('G-1 advisory-first locking across separate connections', (db) => {
+  // Some materials drop the S16 fee lock committed. If a test dies before its own restore, put the lock back here.
+  afterAll(async () => {
+    const guard = await connectLocalDb();
+    try { await restoreReturnFeeLockIfMissing(guard); } finally { await guard.end(); }
+  });
+
   async function client() {
     const c = await connectLocalDb();
     await c.query("set statement_timeout='10s'");
@@ -508,11 +515,15 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
 
   test.each([...TASK6_ENTRIES, ...TASK7_ENTRIES, ...TASK8_ENTRIES, ...TASK9_ENTRIES, ...TASK10_ENTRIES, ...TASK11_ENTRIES, ...TASK12_ENTRIES])('$name waits for advisory before locking any existing business row', async ({ setup, check }) => {
     const material = await setup();
-    const a = await client();
-    const b = await client();
-    const c = await client();
+    // The clients connect inside the try, so a failed connect still runs the cleanup (and the fee lock restore) below.
+    let a: Awaited<ReturnType<typeof client>> | undefined;
+    let b: Awaited<ReturnType<typeof client>> | undefined;
+    let c: Awaited<ReturnType<typeof client>> | undefined;
     let pending: Promise<{ rows: any[] }> | undefined;
     try {
+      a = await client();
+      b = await client();
+      c = await client();
       const [blocker, waiter] = [await pid(a), await pid(b)];
       await a.query('begin');
       await a.query('select pg_advisory_xact_lock(190521,1)');
@@ -575,11 +586,11 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       }
       await c.query('rollback');
     } finally {
-      await a.query('rollback');
+      await a?.query('rollback');
       if (pending) await pending.catch(() => {});
-      await b.query('rollback');
-      await c.query('rollback');
-      await Promise.all([a.end(), b.end(), c.end()]);
+      await b?.query('rollback');
+      await c?.query('rollback');
+      await Promise.all([a?.end(), b?.end(), c?.end()]);
       // B rolled back: keep no committed open cancel request or awaiting refund in the global sweep lists.
       if (material.cancelRequestId) {
         await db().query(`update public.order_cancel_requests set status='closed', closed_at=now(), closed_by=gen_random_uuid()

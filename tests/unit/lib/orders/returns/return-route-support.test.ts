@@ -27,7 +27,6 @@ import { RefundOperationError, RefundStoreError } from '@/lib/orders/refund/refu
 import { REFUND_ERROR_CODES } from '@/lib/orders/refund/refund-types';
 import {
   MAX_AMOUNT,
-  MAX_FEE_YEN,
   RETURN_FAILURE_MESSAGES,
   RETURN_RATE_LIMITS,
   createReturnAudit,
@@ -113,10 +112,6 @@ describe('計画の冒頭の値（回数の制限の窓口名と回数・500 の
     });
     expect(returnFailureBody('receive')).toEqual({ error: '受け取りの記録に失敗しました。', code: 'failed' });
     expect(returnFailureBody('approve')).toEqual({ error: '返品の申し込みの承認に失敗しました。', code: 'failed' });
-  });
-
-  it('手数料の円の欄の上限は 1000000（Global Constraints の金額の上限。DB・画面と同じ値）', () => {
-    expect(MAX_FEE_YEN).toBe(1000000);
   });
 });
 
