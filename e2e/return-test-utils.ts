@@ -161,8 +161,6 @@ export const RETURN_MAIL = {
   received1: (label: string) => `ご返品いただいた商品をお受け取りしました（返品番号 ${label}）。`,
   refundLead: (orderNumber: string) => `ご注文（${orderNumber}）の返金の手続きをいたしました。`,
   refundLater: (label: string) => `ご返品いただいた商品のご返金です（返品番号 ${label}）。`,
-  payLater: (yen: string) =>
-    `交換の品は、手数料 ${yen} のお支払いを確かめてからお送りします。お支払いの方法は、別にご案内いたします。`,
   makeShort: 'お作りしてお送りします。',
   makeNote: (days: number) => `お作りしてお送りします。お届けの目安は ${days}日ほどです。`,
   sentBackLead: (label: string) =>
@@ -325,34 +323,6 @@ export type E2eCreateReturnInput = {
   shopNote?: string | null;
   notify?: boolean;
 };
-
-/** withoutReturnFeeLock を並行の試験の間で1つずつにする advisory lock の鍵（試験だけが使う） */
-const RETURN_FEE_LOCK_OFF_KEY = 578_005;
-
-/**
- * 返送料・交換の手数料・交換の送料の決まり（acc_p3_fee_lock_returns。FREQ-578-AC-05）を外して work を流し、終わったら戻す。
- * 0 でない返送料・交換の手数料・交換の送料の返品は、新しく作れず、作った後も行を直せない（NOT VALID の CHECK は UPDATE のたびに効く）。
- * 手数料の仕組みそのものを確かめる試験だけが使う（判断 P3-D8）。E2E は画面・窓口が別の接続で読むので ROLLBACK できず、
- * 外す・戻すはそれぞれ確定する（DB の関数は自分のトランザクションの決まりで動くので、work を1つのトランザクションに包まない）。
- * 戻す決まりは NOT VALID なので、確定した手数料の行は残る。手数料の行を直す手順（受け取り・入金の記録など）も work に入れる。
- * 外している間は、ほかの並行の試験も 0 でない額を入れられるが、窓口（zod）と設定の行の決まりが 0 を守るので、0 でない額は
- * この道具を使う試験だけが入れる。この道具を使う試験どうしは advisory lock で1つずつ流し、片方が戻した決まりで他方が断られないようにする。
- */
-export async function withoutReturnFeeLock<T>(db: PgClient, work: () => Promise<T>): Promise<T> {
-  await db.query('select pg_advisory_lock($1)', [RETURN_FEE_LOCK_OFF_KEY]);
-  try {
-    await db.query('alter table public.order_returns drop constraint if exists acc_p3_fee_lock_returns');
-    try {
-      return await work();
-    } finally {
-      await db.query(`alter table public.order_returns drop constraint if exists acc_p3_fee_lock_returns;
-        alter table public.order_returns add constraint acc_p3_fee_lock_returns check (
-          return_shipping_fee = 0 and exchange_fee = 0 and exchange_shipping_fee = 0) not valid`);
-    }
-  } finally {
-    await db.query('select pg_advisory_unlock($1)', [RETURN_FEE_LOCK_OFF_KEY]);
-  }
-}
 
 /** 返品を作る DB の関数 admin_create_return。管理画面の「返品を作る」の代わりに、窓口と同じ関数を直に呼ぶ */
 export async function createReturnInDb(
@@ -579,31 +549,6 @@ export async function inspectReturnInDb(
     JSON.stringify(lines.map((line) => ({ return_line_id: line.lineId, restocked: line.restocked, not_restocked: line.notRestocked }))),
   ]);
   return toReceiptOutcome(res.rows[0]);
-}
-
-/**
- * 手数料の受け取りを記録する DB の関数 admin_record_return_fee_payment（店長だけが押す操作）。
- * waive を付けると「いただかないで終える」（計画の冒頭 P27。受け取りの記録と同じく手数料のお支払い待ちを終えるが、
- * 受け取った物ではなく、いただかないことにした印 fee_waived を付ける）。
- */
-export async function recordFeePaymentInDb(
-  db: PgClient,
-  returnId: string,
-  actorId: string,
-  note: string | null = null,
-  waive = false,
-): Promise<string> {
-  const res = await db.query(
-    'select * from public.admin_record_return_fee_payment($1::uuid, $2::uuid, $3::text, $4::boolean)',
-    [returnId, actorId, note, waive],
-  );
-  return res.rows[0].return_status as string;
-}
-
-/** 支払いを待たずに送る DB の関数 admin_release_return_exchange（店長だけが押す操作） */
-export async function releaseExchangeInDb(db: PgClient, returnId: string, actorId: string): Promise<string> {
-  const res = await db.query('select * from public.admin_release_return_exchange($1::uuid, $2::uuid)', [returnId, actorId]);
-  return res.rows[0].return_status as string;
 }
 
 // ---- 手元の DB：読み出し ----

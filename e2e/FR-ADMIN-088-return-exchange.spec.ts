@@ -55,9 +55,6 @@ import {
   orderWithReturns,
   receiptUnitRows,
   receiveReturnInDb,
-  withoutReturnFeeLock,
-  recordFeePaymentInDb,
-  releaseExchangeInDb,
   returnCard,
   returnDetailOf,
   returnLabelOf,
@@ -449,112 +446,54 @@ for (const viewport of viewports) {
       });
     });
 
-    test('手数料のお支払い待ちの交換の品は送れず、手数料の受け取りを記録すると送れて返品が完了する。支払いを待たずに送ると送れるが、手数料は残って返品は完了しない。いただかないで終えると、返品が完了し送れて、決着した額は fee_settled_amount に残る（手元の DB）', async () => {
-      // FREQ-465-AC-07, FREQ-467-AC-04, FREQ-467-AC-05
-      await withLocalDb(async (db) => withoutReturnFeeLock(db, async () => {
-        // 返送料・交換の手数料・交換の送料の仕組みそのものを確かめるので、DB の 0 の決まり（FREQ-578-AC-05）を外して流す（判断 P3-D8）
-        const fx = await createShippedOrder(db, `exch-fee-${viewport.name}`, [{ name: 'E2Eシャツ', quantity: 3, fulfillmentType: 'stock' }]);
+    test('交換だけの受け取りには手数料が付かず、お支払い待ちにならないので、交換の品はすぐ送れて返品が完了する（手元の DB）', async () => {
+      // FREQ-465-AC-07, FREQ-467-AC-04, FREQ-578-AC-05
+      await withLocalDb(async (db) => {
+        const fx = await createShippedOrder(db, `exch-fee-${viewport.name}`, [{ name: 'E2Eシャツ', quantity: 1, fulfillmentType: 'stock' }]);
         const shirt = fx.orderItemIds[0];
         const variantL = await addVariant(db, fx.itemId, { color: 'ホワイト', size: 'L', stock: 4 });
-        const exchangeFee = { exchangeFee: 500, exchangeShippingFee: 300 };
-        const ship = (itemId: string, tracking: string) =>
-          createFulfillment(db, fx.orderId, fx.actorId, { trackingNumber: tracking, notify: false, lines: [{ orderItemId: itemId, quantity: 1 }] });
-
-        // 返品A: 交換だけの受け取り。手数料（500円 + 300円）は引く返金が無いので、そのままお支払い待ちになる
+        // 交換の手数料・交換の送料は、仕訳の決まりを決めるまで DB が 0 に止めている（FREQ-578-AC-05）
         const a = await createReturnInDb(db, fx, {
           lines: [{ orderItemId: shirt, quantity: 1, exchange: { variantId: variantL, method: 'stock' } }],
-          ...exchangeFee,
         });
+        expect(await returnRowOf(db, a.returnId)).toMatchObject({ exchange_fee: 0, exchange_shipping_fee: 0 });
         const receivedA = await receiveReturnInDb(db, a.returnId, fx.actorId, {
           units: [{ lineId: a.lineIds[shirt], disposition: 'not_restocked', quantity: 1 }],
           choice: 'none',
         });
-        expect(receivedA).toMatchObject({ feeDueAmount: 800, returnStatus: 'open' });
-        expect(await returnRowOf(db, a.returnId)).toMatchObject({ fee_due_amount: 800, fee_received_at: null, exchange_released_at: null });
-        expect((await returnSummaryRow(db, fx.orderId)).marks).toContain('awaiting_fee');
+        expect(receivedA).toMatchObject({ feeDueAmount: 0 });
+        expect(await returnRowOf(db, a.returnId)).toMatchObject({ fee_due_amount: 0 });
+        expect((await returnSummaryRow(db, fx.orderId)).marks).not.toContain('awaiting_fee');
         const itemA = receivedA.exchangeOrderItemIds[0];
-        // G-1: 手数料待ちの交換の品は、通常の自動の割当（FIFO）に参加せず、割当 A が 0 のまま「手数料待ち」で止まる。
-        // 在庫の台帳は動かず、空きの在庫（4）はそのまま。A が無いので送れない（旧の発送の関数の断りではなく、品物の状態で確かめる）
-        expect((await lineCounts(db, fx.orderId))[itemA]).toMatchObject({ completed: 0, inProduction: 1, readyUnshipped: 0, shipped: 0 });
-        expect(await itemState(db, fx.orderId, itemA)).toEqual({ status: 'in_production', reasons: ['exchange_fee_waiting'] });
-        expect(await returnLedger(db, fx.orderId)).toEqual([]);
-        expect((await variantStockState(db, variantL)).stock).toBe(4);
-
-        // 手数料の受け取りを記録すると、通常の自動の割当で A が付いて送れ、返品は完了する（台帳に交換の確保が1行、空きの在庫は 4 → 3）
-        await recordFeePaymentInDb(db, a.returnId, fx.actorId, '銀行振込');
+        // お支払い待ちで止めず、通常の自動の割当で A が付いて送れる（台帳に交換の確保が1行、空きの在庫は 4 → 3）
         expect(await itemState(db, fx.orderId, itemA)).toEqual({ status: 'ready', reasons: [] });
         expect(await returnLedger(db, fx.orderId)).toEqual([
           { reason: 'exchange', delta: -1, return_id: a.returnId, variant_id: variantL },
         ]);
         expect((await variantStockState(db, variantL)).stock).toBe(3);
         expect(await returnRowOf(db, a.returnId)).toMatchObject({ status: 'closed' });
-        expect((await returnRowOf(db, a.returnId)).fee_received_at).not.toBeNull();
-        expect(await ship(itemA, 'E2E-HOLD-A')).toMatchObject({ completesOrder: true, orderStatus: 'shipped' });
-
-        // 返品B: 同じ形。支払いを待たずに送ると送れるが、手数料は残り、返品は完了しない
-        const b = await createReturnInDb(db, fx, {
-          lines: [{ orderItemId: shirt, quantity: 1, exchange: { variantId: variantL, method: 'stock' } }],
-          ...exchangeFee,
+        const shipped = await createFulfillment(db, fx.orderId, fx.actorId, {
+          trackingNumber: 'E2E-HOLD-A', notify: false, lines: [{ orderItemId: itemA, quantity: 1 }],
         });
-        const receivedB = await receiveReturnInDb(db, b.returnId, fx.actorId, {
-          units: [{ lineId: b.lineIds[shirt], disposition: 'not_restocked', quantity: 1 }],
-          choice: 'none',
-        });
-        const itemB = receivedB.exchangeOrderItemIds[0];
-        expect(await itemState(db, fx.orderId, itemB)).toEqual({ status: 'in_production', reasons: ['exchange_fee_waiting'] });
-        expect((await lineCounts(db, fx.orderId))[itemB]).toMatchObject({ readyUnshipped: 0, inProduction: 1 });
-        await releaseExchangeInDb(db, b.returnId, fx.actorId);
-        expect(await itemState(db, fx.orderId, itemB)).toEqual({ status: 'ready', reasons: [] });
-        expect(await ship(itemB, 'E2E-HOLD-B')).toMatchObject({ completesOrder: true, orderStatus: 'shipped' });
-        const rowB = await returnRowOf(db, b.returnId);
-        expect(rowB).toMatchObject({ status: 'open', fee_due_amount: 800, fee_received_at: null });
-        expect(rowB.exchange_released_at).not.toBeNull();
-        // 手数料の受け取りを記録するまで、返品Bは完了にならない
-        await recordFeePaymentInDb(db, b.returnId, fx.actorId, null);
-        expect(await returnRowOf(db, b.returnId)).toMatchObject({ status: 'closed', fee_due_amount: 0, fee_settled_amount: 800, fee_waived: false });
-
-        // 返品C: 同じ形。「いただかないで終える」（実装計画 P27）と、返品は完了し、交換の品を送れる。
-        // 決着した額（800円）は fee_settled_amount に移り、fee_due_amount は0になる。受け取った物ではなく「いただかないことにした」印（fee_waived）が付く
-        const c = await createReturnInDb(db, fx, {
-          lines: [{ orderItemId: shirt, quantity: 1, exchange: { variantId: variantL, method: 'stock' } }],
-          ...exchangeFee,
-        });
-        const receivedC = await receiveReturnInDb(db, c.returnId, fx.actorId, {
-          units: [{ lineId: c.lineIds[shirt], disposition: 'not_restocked', quantity: 1 }],
-          choice: 'none',
-        });
-        const itemC = receivedC.exchangeOrderItemIds[0];
-        expect(await itemState(db, fx.orderId, itemC)).toEqual({ status: 'in_production', reasons: ['exchange_fee_waiting'] });
-        expect(await recordFeePaymentInDb(db, c.returnId, fx.actorId, '常連のお客様のため', true)).toBe('closed');
-        expect(await itemState(db, fx.orderId, itemC)).toEqual({ status: 'ready', reasons: [] });
-        const rowC = await returnRowOf(db, c.returnId);
-        expect(rowC).toMatchObject({ status: 'closed', fee_due_amount: 0, fee_settled_amount: 800, fee_waived: true });
-        expect(rowC.fee_received_at).not.toBeNull();
-        expect((await returnSummaryRow(db, fx.orderId)).marks).not.toContain('awaiting_fee');
-        expect(await ship(itemC, 'E2E-HOLD-C')).toMatchObject({ completesOrder: true, orderStatus: 'shipped' });
-      }));
+        expect(shipped).toMatchObject({ completesOrder: true, orderStatus: 'shipped' });
+      });
     });
 
-    test('交換の品を受け取ったお知らせに、交換の品・手数料のお支払い待ちの文が入る（手元の DB・Mailpit）', async ({ request }) => {
-      // FREQ-469-AC-03
+    test('交換の品を受け取ったお知らせに交換の品の文が入り、手数料が付かないので、お支払い待ちの文は入らない（手元の DB・Mailpit）', async ({ request }) => {
+      // FREQ-469-AC-03, FREQ-578-AC-05
       test.setTimeout(180_000);
       const { fx, label } = await withLocalDb(async (db) => {
         const fx = await createShippedOrder(db, `exch-mail-${viewport.name}`, [{ name: 'E2Eシャツ', quantity: 1, fulfillmentType: 'stock' }]);
         const shirt = fx.orderItemIds[0];
         const variantL = await addVariant(db, fx.itemId, { color: 'ホワイト', size: 'L', stock: 2 });
-        // お知らせのお支払い待ちの文を確かめるので、DB の 0 の決まり（FREQ-578-AC-05）を外して作って受け取る（判断 P3-D8）
-        const created = await withoutReturnFeeLock(db, async () => {
-          const created = await createReturnInDb(db, fx, {
-            lines: [{ orderItemId: shirt, quantity: 1, exchange: { variantId: variantL, method: 'stock' } }],
-            exchangeFee: 500,
-            exchangeShippingFee: 300,
-          });
-          await receiveReturnInDb(db, created.returnId, fx.actorId, {
-            units: [{ lineId: created.lineIds[shirt], disposition: 'not_restocked', quantity: 1 }],
-            choice: 'none',
-            notify: true,
-          });
-          return created;
+        // 交換の手数料・交換の送料は、仕訳の決まりを決めるまで DB が 0 に止めている（FREQ-578-AC-05）
+        const created = await createReturnInDb(db, fx, {
+          lines: [{ orderItemId: shirt, quantity: 1, exchange: { variantId: variantL, method: 'stock' } }],
+        });
+        await receiveReturnInDb(db, created.returnId, fx.actorId, {
+          units: [{ lineId: created.lineIds[shirt], disposition: 'not_restocked', quantity: 1 }],
+          choice: 'none',
+          notify: true,
         });
         return { fx, label: returnLabelOf(fx.orderId, created.number) };
       });
@@ -567,7 +506,7 @@ for (const viewport of viewports) {
       expect(text).toContain(RETURN_MAIL.received1(label));
       expect(text).toContain('交換の品をお送りします:');
       expect(text).toContain('・E2Eシャツ（ホワイト / L） × 1');
-      expect(text).toContain(RETURN_MAIL.payLater(formatYen(800)));
+      expect(text).not.toContain('のお支払いを確かめてからお送りします');
       // 返金は無いので、返金の額の案内（相談の文）は入らない
       expect(text).not.toContain(RETURN_MAIL.consult);
     });

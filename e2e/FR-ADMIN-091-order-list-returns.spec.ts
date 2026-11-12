@@ -23,7 +23,6 @@ import {
   receiveReturnInDb,
   returnAttentionCounts,
   returnSummaryRow,
-  withoutReturnFeeLock,
 } from './return-test-utils';
 
 for (const viewport of viewports) {
@@ -164,21 +163,17 @@ for (const viewport of viewports) {
           choice: 'consult',
           notify: false,
         });
-        // お支払い待ち（交換の手数料が残っている）
+        // 交換だけの受け取り。交換の手数料は DB が 0 に止めている（FREQ-578-AC-05）ので、お支払い待ちの印は付かない
         const fee = await make('list-fee', 1);
         const variantL = await addVariant(db, fee.itemId, { color: 'ホワイト', size: 'L', stock: 2 });
-        // お支払い待ちは交換の手数料でしか作れないので、DB の 0 の決まり（FREQ-578-AC-05）を外して作って受け取る（判断 P3-D8）
-        await withoutReturnFeeLock(db, async () => {
-          const feeReturn = await createReturnInDb(db, fee, {
-            lines: [{ orderItemId: fee.orderItemIds[0], quantity: 1, exchange: { variantId: variantL, method: 'stock' } }],
-            exchangeFee: 500,
-            notify: false,
-          });
-          await receiveReturnInDb(db, feeReturn.returnId, fee.actorId, {
-            units: [{ lineId: feeReturn.lineIds[fee.orderItemIds[0]], disposition: 'not_restocked', quantity: 1 }],
-            choice: 'none',
-            notify: false,
-          });
+        const feeReturn = await createReturnInDb(db, fee, {
+          lines: [{ orderItemId: fee.orderItemIds[0], quantity: 1, exchange: { variantId: variantL, method: 'stock' } }],
+          notify: false,
+        });
+        await receiveReturnInDb(db, feeReturn.returnId, fee.actorId, {
+          units: [{ lineId: feeReturn.lineIds[fee.orderItemIds[0]], disposition: 'not_restocked', quantity: 1 }],
+          choice: 'none',
+          notify: false,
         });
         // 返品済み（今返金し、Stripe が受け付けた）
         const done = await make('list-done', 1);
@@ -209,8 +204,7 @@ for (const viewport of viewports) {
         expect(await returnSummaryRow(db, waiting.orderId)).toMatchObject({ display_status: 'refund_waiting', next_action: 'refund', refund_waiting_returns: 1 });
         expect(await returnSummaryRow(db, inspecting.orderId)).toMatchObject({ display_status: 'in_progress' });
         expect((await returnSummaryRow(db, inspecting.orderId)).marks).toContain('pending_inspection');
-        expect(await returnSummaryRow(db, fee.orderId)).toMatchObject({ display_status: 'in_progress' });
-        expect((await returnSummaryRow(db, fee.orderId)).marks).toContain('awaiting_fee');
+        expect((await returnSummaryRow(db, fee.orderId)).marks).not.toContain('awaiting_fee');
         expect(await returnSummaryRow(db, done.orderId)).toMatchObject({ display_status: 'returned', next_action: 'none' });
         // 返金待ちと受け取り待ちの返品が1つずつある注文は、いちばん手前の「返品中」を出す
         expect(await returnSummaryRow(db, two.orderId)).toMatchObject({ display_status: 'in_progress', refund_waiting_returns: 1 });
@@ -223,7 +217,7 @@ for (const viewport of viewports) {
         const progressIds = await orderIdsByReturnStatus(db, 'in_progress');
         const returnedIds = await orderIdsByReturnStatus(db, 'returned');
         expect(waitingIds).toEqual(expect.arrayContaining([waiting.orderId, two.orderId]));
-        expect(progressIds).toEqual(expect.arrayContaining([open.orderId, partial.orderId, inspecting.orderId, fee.orderId, two.orderId]));
+        expect(progressIds).toEqual(expect.arrayContaining([open.orderId, partial.orderId, inspecting.orderId, two.orderId]));
         expect(progressIds).not.toContain(waiting.orderId);
         expect(returnedIds).toContain(done.orderId);
         for (const ids of [waitingIds, progressIds, returnedIds]) expect(ids).not.toContain(cancelled.orderId);

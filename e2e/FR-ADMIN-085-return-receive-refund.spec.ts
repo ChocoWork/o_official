@@ -48,7 +48,6 @@ import {
   receiptUnitRows,
   receiveData,
   receiveReturnInDb,
-  withoutReturnFeeLock,
   returnDetailOf,
   returnEmailRows,
   returnLabelOf,
@@ -319,44 +318,43 @@ for (const viewport of viewports) {
       });
     });
 
-    test('今返金は返金額から手数料を引き、返送料は最初の受け取りにだけ付く。返品の手数料は受け取った品の額に対して毎回計算する（手元の DB）', async () => {
-      // FREQ-467-AC-02
-      await withLocalDb(async (db) => withoutReturnFeeLock(db, async () => {
-        // 返送料・交換の手数料・交換の送料の仕組みそのものを確かめるので、DB の 0 の決まり（FREQ-578-AC-05）を外して流す（判断 P3-D8）
+    test('今返金は返金額から返品の手数料を引き、返品の手数料は受け取った品の額に対して毎回計算する。お店の送り状の返品でも返送料は引かない（手元の DB）', async () => {
+      // FREQ-467-AC-02, FREQ-578-AC-05
+      await withLocalDb(async (db) => {
         const fx = await createShippedOrder(db, `fees-${viewport.name}`, [
           { name: 'E2Eシャツ', quantity: 2, fulfillmentType: 'stock' },
           { name: 'E2Eスカート', quantity: 1, fulfillmentType: 'stock' },
         ]);
         const shirt = fx.orderItemIds[0];
+        // 返送料の定額は、仕訳の決まりを決めるまで DB が 0 に止めている（FREQ-578-AC-05）。お店の送り状でも返送料は 0
         const created = await createReturnInDb(db, fx, {
           lines: [{ orderItemId: shirt, quantity: 2 }],
           method: 'shop_label',
-          returnShippingFee: 800,
           restockingFeePercent: 10,
         });
         const lineId = created.lineIds[shirt];
         expect(await returnRowOf(db, created.returnId)).toMatchObject({
           return_method: 'shop_label',
-          return_shipping_fee: 800,
+          return_shipping_fee: 0,
           restocking_fee_percent: 10,
         });
 
-        // 1回目: 5,000円 − 返送料 800円 − 返品の手数料 500円（5,000円の10%）
+        // 1回目: 5,000円 − 返品の手数料 500円（5,000円の10%）。返送料は引かない
         const first = await receiveReturnInDb(db, created.returnId, fx.actorId, {
           units: [{ lineId, disposition: 'restocked', quantity: 1 }],
           choice: 'now',
         });
-        expect(first).toMatchObject({ refundAmount: 3_700, returnStatus: 'open', feeDueAmount: 0 });
+        expect(first).toMatchObject({ refundAmount: 4_500, returnStatus: 'open', feeDueAmount: 0 });
         await recordRefundResult(db, first.refundId as string);
 
-        // 2回目: 返送料は引かない。5,000円 − 返品の手数料 500円
+        // 2回目: 受け取った品の額に対してもう一度。5,000円 − 返品の手数料 500円
         const second = await receiveReturnInDb(db, created.returnId, fx.actorId, {
           units: [{ lineId, disposition: 'restocked', quantity: 1 }],
           choice: 'now',
         });
         expect(second).toMatchObject({ refundAmount: 4_500, returnStatus: 'closed', feeDueAmount: 0 });
-        expect((await returnRefundRows(db, fx.orderId)).map((row) => row.amount)).toEqual([3_700, 4_500]);
-      }));
+        expect((await returnRefundRows(db, fx.orderId)).map((row) => row.amount)).toEqual([4_500, 4_500]);
+      });
     });
 
     test('同じ二重防止の番号の送り直しは、受け取り・在庫・返金の記録を増やさず前の結果を返し、違う中身は断る（手元の DB）', async () => {
@@ -391,8 +389,8 @@ for (const viewport of viewports) {
       });
     });
 
-    test('今返金の額が0円になる時は、返金の記録を作らず「返金しない」数として受け取りに残し、在庫は戻す。手数料が商品の額に収まる時は返品が完了し、超える時は引けなかった手数料がお支払い待ちに残る（手元の DB）', async () => {
-      // FREQ-464-AC-15
+    test('今返金の額が0円になる時は、返金の記録を作らず「返金しない」数として受け取りに残し、在庫は戻す。手数料が商品の額に収まる時は返品が完了し、お店の送り状の返品でも返送料が付かないので、お支払い待ちは残らない（手元の DB）', async () => {
+      // FREQ-464-AC-15, FREQ-578-AC-05
       await withLocalDb(async (db) => {
         const fx = await createShippedOrder(db, `waived-${viewport.name}`, [
           { name: 'E2Eシャツ', quantity: 2, fulfillmentType: 'stock' },
@@ -424,26 +422,21 @@ for (const viewport of viewports) {
         // お客様へのメールの予定は、返金のお知らせではなく「返品をお受け取りしました」が1行（実装計画 P20・P24）
         expect((await returnEmailRows(db, fx.orderId)).map((row) => row.kind)).toEqual(['return_received']);
 
-        // 手数料が商品の額を超える時（返送料 800円 + 返品の手数料 100%）も、返金は0円で記録を作らず、引けなかった手数料 800円は
-        // お支払い待ち（fee_due_amount）に残り、返品は完了しない（シャツは2点なので、残りの1点で2つ目の返品を作る）
-        // 返送料の定額の仕組みそのものを確かめるので、DB の 0 の決まり（FREQ-578-AC-05）を外して作って受け取る（判断 P3-D8）
-        const { over, overReceived } = await withoutReturnFeeLock(db, async () => {
-          const over = await createReturnInDb(db, fx, {
-            lines: [{ orderItemId: shirt, quantity: 1 }],
-            method: 'shop_label',
-            returnShippingFee: 800,
-            restockingFeePercent: 100,
-            notify: false,
-          });
-          const overReceived = await receiveReturnInDb(db, over.returnId, fx.actorId, {
-            units: [{ lineId: over.lineIds[shirt], disposition: 'restocked', quantity: 1 }],
-            choice: 'now',
-            notify: false,
-          });
-          return { over, overReceived };
+        // お店の送り状の返品（返品の手数料 100%）。返送料の定額は DB が 0 に止めている（FREQ-578-AC-05）ので、手数料は商品の額を超えず、
+        // 返金は0円で記録を作らず、お支払い待ち（fee_due_amount）も残らずに返品が完了する（シャツは2点なので、残りの1点で2つ目の返品を作る）
+        const label = await createReturnInDb(db, fx, {
+          lines: [{ orderItemId: shirt, quantity: 1 }],
+          method: 'shop_label',
+          restockingFeePercent: 100,
+          notify: false,
         });
-        expect(overReceived).toMatchObject({ refundId: null, refundAmount: 0, refundStatus: 'waived', feeDueAmount: 800, returnStatus: 'open' });
-        expect(await returnRowOf(db, over.returnId)).toMatchObject({ fee_due_amount: 800, fee_received_at: null });
+        const labelReceived = await receiveReturnInDb(db, label.returnId, fx.actorId, {
+          units: [{ lineId: label.lineIds[shirt], disposition: 'restocked', quantity: 1 }],
+          choice: 'now',
+          notify: false,
+        });
+        expect(labelReceived).toMatchObject({ refundId: null, refundAmount: 0, refundStatus: 'waived', feeDueAmount: 0, returnStatus: 'closed' });
+        expect(await returnRowOf(db, label.returnId)).toMatchObject({ return_shipping_fee: 0, fee_due_amount: 0 });
         expect(await returnRefundRows(db, fx.orderId)).toEqual([]);
       });
     });

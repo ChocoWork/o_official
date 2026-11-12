@@ -1,5 +1,5 @@
 import type { CustomerReturnStatus } from '@/lib/orders/returns/customer-return-types';
-import { addVariant, receiveReturnInDb, exchangeItemRows, returnLabelOf, withoutReturnFeeLock } from './return-test-utils';
+import { addVariant, receiveReturnInDb, exchangeItemRows, returnLabelOf } from './return-test-utils';
 import { recordRefundResult, createFulfillment } from './order-email-test-utils';
 import {
   test, expect, viewports, shipped, requestDb, line, defaultApproval, approveDb, section, noOverflow,
@@ -18,27 +18,13 @@ async function stateOrder(rr: RR, state: CustomerReturnStatus) {
     return { fx, ret };
   }
   const approval = await defaultApproval(rr, fx, ret.id);
-  if (state === 'awaiting_fee') {
-    const variant = await addVariant(rr.db, fx.itemId, { color: 'ホワイト', size: 'L', stock: 2 });
-    approval.lines[0] = { ...approval.lines[0], resolution: 'exchange', exchangeVariantId: variant, exchangeMethod: 'stock' };
-    approval.exchangeFee = 500;
-  }
-  const receive = () => receiveReturnInDb(rr.db, ret.id, fx.actorId, {
-    units: [{ lineId: approval.lines[0].returnLineId, quantity: 1,
-      disposition: state === 'partially_received' || state === 'inspecting' ? 'pending_inspection' : 'restocked' }],
-    choice: state === 'awaiting_fee' ? 'none' : state === 'returned' ? 'now' : 'consult', notify: false,
-  });
-  if (state === 'awaiting_fee') {
-    // お支払い待ちは交換の手数料でしか作れないので、DB の 0 の決まり（FREQ-578-AC-05）を外して承認と受け取りを流す（判断 P3-D8）
-    await withoutReturnFeeLock(rr.db, async () => {
-      await approveDb(rr, ret.id, approval, fx.actorId);
-      await receive();
-    });
-    return { fx, ret };
-  }
   await approveDb(rr, ret.id, approval, fx.actorId);
   if (state === 'accepted') return { fx, ret };
-  const result = await receive();
+  const result = await receiveReturnInDb(rr.db, ret.id, fx.actorId, {
+    units: [{ lineId: approval.lines[0].returnLineId, quantity: 1,
+      disposition: state === 'partially_received' || state === 'inspecting' ? 'pending_inspection' : 'restocked' }],
+    choice: state === 'returned' ? 'now' : 'consult', notify: false,
+  });
   if (state === 'returned' && result.refundId) await recordRefundResult(rr.db, result.refundId);
   return { fx, ret };
 }
@@ -46,8 +32,8 @@ for (const viewport of viewports) {
   test.describe('FR-ACCOUNT-038 ' + viewport.name, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
-    test('返品の全8状態の言葉・添える文・返金額・お断りの文字を本物の注文 API と画面で確かめる', async ({ page, rr }) => {
-      // FREQ-479-AC-05, FREQ-480-AC-02, FREQ-480-AC-07
+    test('返品の7つの状態の言葉・添える文・返金額・お断りの文字を本物の注文 API と画面で確かめる（お支払い待ちは手数料が付かないので作れない）', async ({ page, rr }) => {
+      // FREQ-479-AC-05, FREQ-480-AC-02, FREQ-480-AC-07, FREQ-578-AC-05
       test.setTimeout(180_000);
       await rr.login();
       const cases: Array<[CustomerReturnStatus, string, string | null]> = [
@@ -55,7 +41,6 @@ for (const viewport of viewports) {
         ['accepted', '返品の受付済み', null],
         ['partially_received', '一部をお受け取りしました', '残りの商品の返送のしかたは、下のとおりです。'],
         ['inspecting', 'お受け取りしました（確かめています）', '確かめてから、ご連絡します。'],
-        ['awaiting_fee', 'お支払いをお待ちしています', 'ご案内のメールをご覧ください。'],
         ['refund_preparing', 'ご返金の準備中', null],
         ['returned', '返品済み', null],
         ['declined', 'お受けできませんでした', null],
