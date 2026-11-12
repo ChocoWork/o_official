@@ -397,11 +397,12 @@ export function planUnitEvent(materials: UnitPricingMaterials, change: UnitEvent
 
   const standardRefund = Math.max(full.entitlement - target.entitlementMax, 0);
   let nowRefund = standardRefund;
+  let nowFeeAmount = full.fee;
   if (picks.some(p => p.part === 'consult')) {
     const nowPicks = picks.filter(p => p.part !== 'consult');
-    const entitlementNow = nowPicks.length === 0
-      ? target.entitlementPrevious
-      : evaluate(materials, change.kind, nowPicks).entitlement;
+    const now = nowPicks.length === 0 ? null : evaluate(materials, change.kind, nowPicks);
+    const entitlementNow = now?.entitlement ?? target.entitlementPrevious;
+    nowFeeAmount = now?.fee ?? 0;
     nowRefund = Math.min(standardRefund, Math.max(entitlementNow - target.entitlementMax, 0));
   }
 
@@ -427,7 +428,7 @@ export function planUnitEvent(materials: UnitPricingMaterials, change: UnitEvent
   return {
     version: materials.version, orderId: target.orderId, kind: change.kind,
     entitlementPrevious: target.entitlementPrevious, entitlementMaxBefore: target.entitlementMax,
-    entitlementGross: full.gross, entitlementShopOnly: full.shopOnly, feeAmount: full.fee,
+    entitlementGross: full.gross, entitlementShopOnly: full.shopOnly, feeAmount: full.fee, nowFeeAmount,
     holdTotal: full.holdTotal, entitlement: full.entitlement,
     standardRefund, nowRefund, consultRefund: standardRefund - nowRefund,
     lines, holds: full.holds, releases,

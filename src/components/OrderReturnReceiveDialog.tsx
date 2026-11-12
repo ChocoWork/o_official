@@ -70,6 +70,7 @@ export type ReceiveReturnRequest = {
   refundChoice: ReceiptRefundChoice;
   refundAmount: number | null;
   refundShippingAmount: number;
+  restockingFeeWaived?: boolean;
   note: string | null;
   notifyCustomer: boolean;
   sentBackMessage: string | null;
@@ -350,6 +351,7 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
   const [rowStates, setRowStates] = useState<Record<string, RowState>>({});
   const [overrides, setOverrides] = useState<Record<string, ExchangeOverride>>({});
   const [shippingEntered, setShippingEntered] = useState(0);
+  const [restockingFeeWaived, setRestockingFeeWaived] = useState(false);
   // 返金額を手で直した時だけ入る。行・送料・選びを変えたら空に戻し、見込みの額に追い付かせる
   const [amountEntered, setAmountEntered] = useState<number | null>(null);
   // 店長が直した割引の扱い（返品の行ごと。直していない行は理由から決まる）
@@ -451,7 +453,7 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
       firstExchangeReceipt: !detail.firstExchangeReceiptDone,
       returnMethod: detail.returnMethod,
       returnShippingFee: detail.fees.returnShippingFee,
-      restockingFeePercent: detail.fees.restockingFeePercent,
+      restockingFeePercent: restockingFeeWaived ? 0 : detail.fees.restockingFeePercent,
       exchangeFee: detail.fees.exchangeFee,
       exchangeShippingFee: detail.fees.exchangeShippingFee,
       shippingRefund,
@@ -493,6 +495,7 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
           exchangeOverrides: exchangeOverridesOf(),
           refundChoice: effectiveChoice,
           refundShippingAmount: shippingAmount,
+          ...(restockingFeeWaived ? { restockingFeeWaived: true } : {}),
           ...(treatments.length > 0 ? { treatments } : {}),
         }
       : null;
@@ -519,10 +522,11 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
   const amount = amountEntered ?? Math.min(preview.refundAmount, preview.refundCap);
   const amountOverCap = canRefund && nowUnits > 0 && amount > preview.refundCap;
   const autoRefundOverLimit = p9Allowed && nowUnits > 0 && preview.refundAmount > refundableAmount;
-  const breakdownRows: Array<[string, string]> = [['商品', formatYen(preview.nowItemsAmount)]];
-  // 写しのある注文の返送料・交換の手数料・交換の送料は窓口の内訳。率の手数料は E の中なので行に出ない
+  // 率の手数料は E の中で差し引かれている。内訳の「商品」にだけ戻し、返金額から二度引かない。
+  const breakdownRows: Array<[string, string]> = [['商品', formatYen(preview.nowItemsAmount + (serverEstimate?.nowFeeAmount ?? 0))]];
+  // 写しのある注文は率の手数料も固定の費用も窓口の内訳。
   const feeRows = serverEstimate
-    ? { returnShipping: serverEstimate.fixedFeeParts?.returnShipping ?? 0, restocking: 0, exchange: serverEstimate.fixedFeeParts?.exchangeFee ?? 0, exchangeShipping: serverEstimate.fixedFeeParts?.exchangeShipping ?? 0 }
+    ? { returnShipping: serverEstimate.fixedFeeParts?.returnShipping ?? 0, restocking: serverEstimate.nowFeeAmount ?? 0, exchange: serverEstimate.fixedFeeParts?.exchangeFee ?? 0, exchangeShipping: serverEstimate.fixedFeeParts?.exchangeShipping ?? 0 }
     : localPreview.nowFees;
   if (feeRows.returnShipping > 0) breakdownRows.push(['返送料', `${MINUS}${formatYen(feeRows.returnShipping)}`]);
   if (feeRows.restocking > 0) breakdownRows.push(['返品の手数料', `${MINUS}${formatYen(feeRows.restocking)}`]);
@@ -620,6 +624,7 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
     // 見込みと同じ額なら送らない（DB が同じ式で計算する）。手で直した額と、上限で切った額だけを送る
     refundAmount: nowUnits > 0 && canRefund && amount !== preview.refundAmount ? amount : null, // P9 の人は額を送らない（DB が計算する）
     refundShippingAmount: nowUnits > 0 && canRefund ? shippingAmount : 0,
+    ...(restockingFeeWaived ? { restockingFeeWaived: true } : {}),
     note: null,
     // お返しのメッセージを伝えるため、お返しを含む時は必ず送る
     notifyCustomer: sentBackUnits > 0 ? true : notifyCustomer,
@@ -738,6 +743,18 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
                     )),
                 ])}
               </ul>
+
+              {canRefund && detail.fees.restockingFeePercent > 0 ? (
+                <Checkbox
+                  label="返品手数料免除"
+                  checked={restockingFeeWaived}
+                  disabled={stopped}
+                  onChange={(event) => {
+                    setRestockingFeeWaived(event.target.checked);
+                    setAmountEntered(null);
+                  }}
+                />
+              ) : null}
 
               {estimating ? <p role="status" className="font-acumin lk-text-sm text-black">{ESTIMATING_TEXT}</p> : null}
               {estimateState.status === 'error' ? (

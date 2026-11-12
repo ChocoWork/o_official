@@ -495,6 +495,13 @@ describe('createReturn', () => {
 });
 
 describe('receiveReturn', () => {
+  it('DD-ADMIN-018 FREQ-642-AC-35: 免除をDBの最後の引数へ渡す', async () => {
+    const { store, rpc } = storeWith({ admin_receive_return: { data: [{ receipt_id: RECEIPT_ID, return_status: 'closed' }] } });
+    const input = { ...RECEIVE_INPUT, restockingFeeWaived: true };
+    await receiveReturn(store, input);
+    expect(rpc).toHaveBeenCalledWith('admin_receive_return', expect.objectContaining({ _restocking_fee_waived: true }));
+  });
+
   const RECEIVED_ROW = {
     receipt_id: RECEIPT_ID, return_status: 'open', refund_id: REFUND_ID, refund_amount: 2400, refund_status: 'awaiting_response',
     exchange_order_item_ids: [EXCHANGE_ITEM_ID], fee_due_amount: 0, shop_notice_enqueued: false, replayed: false,

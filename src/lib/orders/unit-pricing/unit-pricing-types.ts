@@ -117,6 +117,8 @@ export interface UnitPricingPlan {
   entitlementGross: number;
   entitlementShopOnly: number;
   feeAmount: number;
+  /** 今すぐの品だけを同じ選択済みの枠で計算した率の手数料（表示用。nowRefund はすでに差し引いた額） */
+  nowFeeAmount?: number;
   holdTotal: number;
   entitlement: number;
   standardRefund: number;
@@ -153,6 +155,8 @@ export interface ReturnReceiveEstimate {
   nowRefund: number;
   consultRefund: number;
   feeAmount: number;
+  /** 今すぐ返金の内訳に出す率の手数料。nowRefund に含まれるため、再び引かない */
+  nowFeeAmount?: number;
   /** 返送料・交換の手数料・交換の送料（最初の受け取りだけ。E の外） */
   fixedFees: number;
   /** 写しのある注文だけ: fixedFees の内訳（合計が fixedFees）。画面は 返送料・交換の手数料・交換の送料 の行をこれで出す */

@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { INVALID_REQUEST_BODY } from '@/lib/orders/refund/refund-messages';
-import { MAX_AMOUNT, resolveCanRefund, respondToReturnReadError } from '@/lib/orders/returns/return-route-support';
+import { MAX_AMOUNT, resolveCanRefund, respondToReturnReadError, toRefusalReply } from '@/lib/orders/returns/return-route-support';
 import { estimateReturnReceive } from '@/lib/orders/unit-pricing/unit-pricing-service';
 
 const bodySchema = z.object({
@@ -32,6 +32,7 @@ const bodySchema = z.object({
     .default([]),
   refundChoice: z.enum(['now', 'consult', 'mixed', 'none']),
   refundShippingAmount: z.number().int().min(0).max(MAX_AMOUNT).default(0),
+  restockingFeeWaived: z.boolean().default(false),
   treatments: z
     .array(z.object({ returnLineId: z.string().uuid(), treatment: z.enum(['shop', 'customer']) }))
     .max(100)
@@ -61,6 +62,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ ret
   const parsedBody = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsedBody.success) {
     return NextResponse.json(INVALID_REQUEST_BODY, { status: 400 });
+  }
+  if (parsedBody.data.restockingFeeWaived && !refundSide.canRefund) {
+    const reply = toRefusalReply('RETURN_FORBIDDEN', 'Refund permission is missing');
+    return NextResponse.json(reply.body, { status: reply.status });
   }
 
   try {

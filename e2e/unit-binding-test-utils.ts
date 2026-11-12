@@ -252,6 +252,7 @@ export type UbReceiveBody = {
   refundChoice: 'now' | 'consult' | 'mixed' | 'none';
   refundAmount?: number | null;
   refundShippingAmount?: number;
+  restockingFeeWaived?: boolean;
   note?: string | null;
   notifyCustomer?: boolean;
   treatments?: Array<{ returnLineId: string; treatment: 'shop' | 'customer' }>;
@@ -262,6 +263,7 @@ function receiveInput(returnId: string, actorId: string, body: UbReceiveBody) {
     returnId, actorId, actorCanRefund: true,
     requestKey: body.requestKey ?? randomUUID(), units: body.units, exchangeOverrides: body.exchangeOverrides ?? [],
     refundChoice: body.refundChoice, refundAmount: body.refundAmount ?? null, refundShippingAmount: body.refundShippingAmount ?? 0,
+    restockingFeeWaived: body.restockingFeeWaived ?? false,
     note: body.note ?? null, notifyCustomer: body.notifyCustomer ?? false,
     sentBackMessage: null, sentBackCarrier: null, sentBackTrackingNumber: null, treatments: body.treatments,
   };

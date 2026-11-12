@@ -102,11 +102,11 @@ export default defineConfig({
        * 全部の公開の店を一時的に非公開にする・1001 件足す試験（FR-STOCKIST-017）、検索の回数の枠を使い切る・検索の関数の権限を
        * 一時的に外す試験（FR-SEARCH-022）、LOOK の読み出し・画像の置き場を一時的に壊す試験（FR-LOOK-SEC-005）、
        * 追跡の設定を読めなくする試験（FR-PRIVACY-009）、店全体に効く自動割引を作る グループ H の試験（FR-ADMIN-124〜127・
-       * FR-CHECKOUT-054〜058・FR-CART-025・FR-ITEM-DETAIL-068・FR-ACCOUNT-045・FR-ADMIN-165・166（返品の設定の行を書き換える）。同時に流れる他の試験のカートの合計・注文の額・割引の使用を
+       * FR-CHECKOUT-054〜058・FR-CART-025・FR-ITEM-DETAIL-068・FR-ACCOUNT-045・FR-ADMIN-165〜167（返品の設定の行を書き換える）。同時に流れる他の試験のカートの合計・注文の額・割引の使用を
        * 変えてしまう）は、同時に流れる他の試験を壊すので、下の isolated-global に分けて、
        * 他の全部が終わった後に流す。
        */
-      testIgnore: /FR-(STOCKIST-017|SEARCH-022|LOOK-SEC-005|PRIVACY-009|ADMIN-12[4-7]|ADMIN-16[56]|CHECKOUT-05[4-8]|CART-025|ITEM-DETAIL-068|ACCOUNT-045)-.*\.spec\.ts/,
+      testIgnore: /FR-(STOCKIST-017|SEARCH-022|LOOK-SEC-005|PRIVACY-009|ADMIN-12[4-7]|ADMIN-16[5-7]|CHECKOUT-05[4-8]|CART-025|ITEM-DETAIL-068|ACCOUNT-045)-.*\.spec\.ts/,
       teardown: 'isolated-global',
     },
     /*
@@ -117,7 +117,7 @@ export default defineConfig({
      */
     {
       name: 'isolated-global',
-      testMatch: /FR-(STOCKIST-017|SEARCH-022|LOOK-SEC-005|PRIVACY-009|ADMIN-12[4-7]|ADMIN-16[56]|CHECKOUT-05[4-8]|CART-025|ITEM-DETAIL-068|ACCOUNT-045)-.*\.spec\.ts/,
+      testMatch: /FR-(STOCKIST-017|SEARCH-022|LOOK-SEC-005|PRIVACY-009|ADMIN-12[4-7]|ADMIN-16[5-7]|CHECKOUT-05[4-8]|CART-025|ITEM-DETAIL-068|ACCOUNT-045)-.*\.spec\.ts/,
       fullyParallel: false,
       workers: 1,
       use: { ...devices['Desktop Chrome'] },

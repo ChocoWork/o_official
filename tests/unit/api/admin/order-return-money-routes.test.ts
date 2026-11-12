@@ -77,6 +77,7 @@ function jsonRequest(path: string, body: unknown, rawBody?: string) {
 
 const UNIT = { returnLineId: LINE_ID, disposition: 'restocked', quantity: 2 };
 const RECEIVE_BODY = {
+  restockingFeeWaived: false,
   requestKey: REQUEST_KEY,
   units: [UNIT],
   exchangeOverrides: [],
@@ -495,6 +496,7 @@ describe('POST /api/admin/returns/[returnId]/receive（受け取る）', () => {
       refundChoice: 'consult',
       refundAmount: null,
       refundShippingAmount: 0,
+      restockingFeeWaived: false,
       note: null,
       notifyCustomer: false,
       sentBackMessage: null,
@@ -523,7 +525,7 @@ describe('POST /api/admin/returns/[returnId]/receive（受け取る）', () => {
 
     expect(response.status).toBe(200);
     expect(mockReceive).toHaveBeenCalledWith(mockDeps, {
-      returnId: RETURN_ID, actorId: 'admin-1', actorCanRefund: true, ...SCREEN_BODY,
+      returnId: RETURN_ID, actorId: 'admin-1', actorCanRefund: true, ...SCREEN_BODY, restockingFeeWaived: false,
     });
   });
 
@@ -534,7 +536,7 @@ describe('POST /api/admin/returns/[returnId]/receive（受け取る）', () => {
 
     expect(response.status).toBe(200);
     expect(mockReceive).toHaveBeenCalledWith(mockDeps, {
-      returnId: RETURN_ID, actorId: 'admin-1', actorCanRefund: false, ...SCREEN_BODY,
+      returnId: RETURN_ID, actorId: 'admin-1', actorCanRefund: false, ...SCREEN_BODY, restockingFeeWaived: false,
     });
   });
 
@@ -1152,6 +1154,25 @@ describe('POST /api/admin/returns/[returnId]/refund（額を決めて返金す�
 });
 
 describe('POST /api/admin/returns/[returnId]/receive（割引の扱い。FREQ-642）', () => {
+  it('DD-ADMIN-018 FREQ-642-AC-35: 免除は返金の権限が無ければ403 RETURN_FORBIDDEN', async () => {
+    grant('admin.orders.return');
+    const response = await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, restockingFeeWaived: true } });
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ code: 'RETURN_FORBIDDEN' });
+    expect(mockReceive).not.toHaveBeenCalled();
+  });
+
+  it('DD-ADMIN-018 FREQ-642-AC-35: 店長の免除を入口に渡す', async () => {
+    const response = await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, restockingFeeWaived: true } });
+    expect(response.status).toBe(200);
+    expect(mockReceive.mock.calls[0][1]).toMatchObject({ restockingFeeWaived: true, actorCanRefund: true });
+  });
+
+  it.each([null, 'true', 1])('DD-ADMIN-018 FREQ-642-AC-35: 真偽でない免除 %s は400', async (restockingFeeWaived) => {
+    expect((await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, restockingFeeWaived } })).status).toBe(400);
+    expect(mockReceive).not.toHaveBeenCalled();
+  });
+
   const TREATMENTS = [{ returnLineId: LINE_ID, treatment: 'shop' }];
 
   beforeEach(() => {

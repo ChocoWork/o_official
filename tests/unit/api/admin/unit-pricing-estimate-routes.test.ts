@@ -57,6 +57,7 @@ const RECEIVE_ESTIMATE = {
   legacy: false, standardRefund: 17000, nowRefund: 17000, consultRefund: 0, feeAmount: 0, fixedFees: 0, refundAmount: 17000, refundCap: 17000,
 };
 const RECEIVE_BODY = {
+  restockingFeeWaived: false,
   units: [{ returnLineId: LINE_ID, disposition: 'restocked', quantity: 1, refundChoice: 'now' }],
   exchangeOverrides: [],
   refundChoice: 'now',
@@ -76,6 +77,26 @@ beforeEach(() => {
 });
 
 describe('POST /api/admin/returns/[returnId]/receive-estimate（FREQ-642）', () => {
+  test('DD-ADMIN-022 FREQ-642-AC-35: 見込みでも免除は店長だけで、持たない人は403', async () => {
+    const body = { ...RECEIVE_BODY, restockingFeeWaived: true };
+    grant('admin.orders.return');
+    const denied = await call(body);
+    expect(denied.status).toBe(403);
+    await expect(denied.json()).resolves.toMatchObject({ code: 'RETURN_FORBIDDEN' });
+    expect(mockEstimateReceive).not.toHaveBeenCalled();
+  });
+
+  test('DD-ADMIN-022 FREQ-642-AC-35: 見込みの免除を計画に渡す', async () => {
+    const body = { ...RECEIVE_BODY, restockingFeeWaived: true };
+    expect((await call(body)).status).toBe(200);
+    expect(mockEstimateReceive).toHaveBeenCalledWith(mockServiceClient, RETURN_ID, body, { canRefund: true });
+  });
+
+  test.each([null, 'true', 1])('DD-ADMIN-022 FREQ-642-AC-35: 見込みでも真偽でない免除 %s は400', async (restockingFeeWaived) => {
+    expect((await call({ ...RECEIVE_BODY, restockingFeeWaived })).status).toBe(400);
+    expect(mockEstimateReceive).not.toHaveBeenCalled();
+  });
+
   const call = (body: unknown = RECEIVE_BODY, rawBody?: string, context = RETURN_CONTEXT) =>
     postReceiveEstimate(post(`returns/${RETURN_ID}/receive-estimate`, body, rawBody), context);
 

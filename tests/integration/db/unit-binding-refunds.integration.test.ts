@@ -570,7 +570,7 @@ describeLocalDb('FREQ-642-AC-27: unit binding refunds, cancels and releases (con
 
   describe('the receive goes through the core (R20)', () => {
     test('FREQ-642-AC-05: 受け取りは返金の記録を自分では書かず begin_order_refund_core を通る', async () => {
-      const body = (await q("select prosrc from pg_proc where oid='private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)'::regprocedure")).rows[0].prosrc as string;
+      const body = (await q("select prosrc from pg_proc where oid='private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean)'::regprocedure")).rows[0].prosrc as string;
       expect(body).not.toMatch(/insert\s+into\s+public\.order_refunds/i);
       expect(body).toMatch(/begin_order_refund_core\(/);
       expect(body).toContain('v_event');

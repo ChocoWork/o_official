@@ -154,7 +154,7 @@ function exchangeSlots(
 
 type PlanReceiveBody = Pick<
   ReceiveReturnRequest,
-  'units' | 'exchangeOverrides' | 'refundChoice' | 'refundShippingAmount' | 'treatments'
+  'units' | 'exchangeOverrides' | 'refundChoice' | 'refundShippingAmount' | 'treatments' | 'restockingFeeWaived'
 >;
 
 export interface PlanReceiveOptions {
@@ -186,6 +186,7 @@ export async function planReturnReceive(
   body: PlanReceiveBody,
   options: PlanReceiveOptions = {},
 ): Promise<{ plan: UnitPricingPlan | null; estimate: ReturnReceiveEstimate }> {
+  if (body.restockingFeeWaived && options.canRefund !== true) return refused('RETURN_FORBIDDEN');
   const orderId = await loadReturnOrderId(client, returnId);
   if (orderId === null) return refused('RETURN_NOT_FOUND');
   const [materials, returns, refundMaterials] = await Promise.all([
@@ -218,14 +219,15 @@ export async function planReturnReceive(
     exchangeShipping: !detail.firstExchangeReceiptDone && exchangeUnits > 0 ? detail.fees.exchangeShippingFee : 0,
   };
   const fixedFees = fixedFeeParts.returnShipping + fixedFeeParts.exchangeFee + fixedFeeParts.exchangeShipping;
+  const feePercent = body.restockingFeeWaived ? 0 : detail.fees.restockingFeePercent;
 
   if (materials === null) {
-    return { plan: null, estimate: legacyReceiveEstimate(detail, picks, exchangeUnits, body.refundShippingAmount, refundable) };
+    return { plan: null, estimate: legacyReceiveEstimate(detail, picks, exchangeUnits, body.refundShippingAmount, refundable, feePercent) };
   }
 
   const returnInputs: UnitReturnInput[] = picks.map(p => ({
     returnLineId: p.line.id, holderOrderItemId: p.line.orderItemId, quantity: p.quantity,
-    side: treatmentOf(p.line), part: p.part, feePercent: detail.fees.restockingFeePercent,
+    side: treatmentOf(p.line), part: p.part, feePercent,
   }));
   const excludedSlots = exchangeSlots(materials, [...exchangeByLine].flatMap(([lineId, quantity]) => {
     const line = detail.lines.find(l => l.id === lineId);
@@ -250,7 +252,7 @@ export async function planReturnReceive(
   const estimate: ReturnReceiveEstimate = {
     legacy: false,
     standardRefund: plan.standardRefund, nowRefund: plan.nowRefund, consultRefund: plan.consultRefund,
-    feeAmount: plan.feeAmount, fixedFees, fixedFeeParts, feeDue, feePending,
+    feeAmount: plan.feeAmount, nowFeeAmount: plan.nowFeeAmount, fixedFees, fixedFeeParts, feeDue, feePending,
     // 受け取りの式（DB の admin_receive_return）: 写しのある注文の率は E の中なので、固定の費用だけを引く
     refundAmount: nowUnits > 0 ? Math.min(Math.max(plan.nowRefund - fixedFees, 0) + shipping, refundable) : 0,
     refundCap: nowUnits > 0 ? Math.min(refundable, plan.nowRefund + shipping) : 0,
@@ -271,7 +273,7 @@ export async function estimateReturnReceive(
 
 /** 写しの無い注文: 今の見込み（computePerItemReturnRefundPreview）を同じ形で返す */
 function legacyReceiveEstimate(
-  detail: OrderReturnDetail, picks: readonly UnitPick[], exchangeUnits: number, shippingRefund: number, refundable: number,
+  detail: OrderReturnDetail, picks: readonly UnitPick[], exchangeUnits: number, shippingRefund: number, refundable: number, feePercent: number,
 ): ReturnReceiveEstimate {
   const lines: ReceivePreviewLine[] = detail.lines.map(line => {
     const mine = picks.filter(p => p.line.id === line.id);
@@ -285,7 +287,7 @@ function legacyReceiveEstimate(
   const preview = computePerItemReturnRefundPreview({
     lines, firstReceipt: !detail.firstReceiptDone, hasExchangeInThisReceipt: exchangeUnits > 0,
     firstExchangeReceipt: !detail.firstExchangeReceiptDone, returnMethod: detail.returnMethod,
-    returnShippingFee: detail.fees.returnShippingFee, restockingFeePercent: detail.fees.restockingFeePercent,
+    returnShippingFee: detail.fees.returnShippingFee, restockingFeePercent: feePercent,
     exchangeFee: detail.fees.exchangeFee, exchangeShippingFee: detail.fees.exchangeShippingFee,
     shippingRefund: shippingRefund, refundableAmount: refundable,
   });

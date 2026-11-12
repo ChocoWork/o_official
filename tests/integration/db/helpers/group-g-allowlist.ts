@@ -131,15 +131,15 @@ export const H4_ALLOWLIST: readonly string[] = Object.freeze([
 export const H7_ALLOWLIST: readonly string[] = H4_ALLOWLIST;
 
 /**
- * 交換の印の移行 C（FREQ-642）で、受け取りの入口が15の引数（末尾に値段の計画 jsonb）になり、14の引数の関数は落ちた。
+ * 交換の印の移行 C（FREQ-642）で、受け取りの入口が16の引数（値段の計画 jsonb と率の免除 boolean）になり、14の引数の関数は落ちた。
  * 本数は同じ77本で、入れ替わったのは受け取りの署名の1本だけ（今の一覧は UB_ALLOWLIST）。
  * それより前の時点の一覧（G2〜H の一覧）は14の引数の署名を持つ。その時点の末尾の確かめを今の DB で再生する試験は、
  * 一覧を入れ替える文（replaceAllowlistSql）に含まれる14の引数の署名を型に通せるよう、同じ性質（DEFINER・search_path 空・
  * service_role だけ EXECUTE）の14の引数の関数を、呼び出し元の取引の中だけに作る（巻き戻しで消える）。
  */
 export const RECEIVE_RETURN_14 = 'private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text)';
-export const RECEIVE_RETURN_15 = 'private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)';
-export const UB_ALLOWLIST: readonly string[] = Object.freeze(H7_ALLOWLIST.map((entry) => (entry === RECEIVE_RETURN_14 ? RECEIVE_RETURN_15 : entry)));
+export const RECEIVE_RETURN_16 = 'private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean)';
+export const UB_ALLOWLIST: readonly string[] = Object.freeze(H7_ALLOWLIST.map((entry) => (entry === RECEIVE_RETURN_14 ? RECEIVE_RETURN_16 : entry)));
 /**
  * 交換の印の移行 D（FREQ-642）で、返金の入口3本が値段の計画（末尾の引数）を受けるようになり、13・15・7の引数の関数は落ちた。
  * 本数は同じ77本で、入れ替わったのは begin_order_refund（13→14）・begin_order_refund_core（15→16）・admin_refund_return（7→8）の署名の3本。
@@ -160,7 +160,7 @@ export const UB_REFUNDS_ALLOWLIST: readonly string[] = Object.freeze(UB_ALLOWLIS
  */
 export const CURRENT_ALLOWLIST: readonly string[] = UB_REFUNDS_ALLOWLIST;
 
-/** 移行 C より前の時点の確かめを再生するための、14の引数の受け取りの入口（取引の中だけ。本体は15の引数へ渡すだけ） */
+/** 移行 C より前の時点の確かめを再生するための、14の引数の受け取りの入口（取引の中だけ。本体は16の引数へ渡すだけ） */
 const LEGACY_RECEIVE_STUB_SQL = `create or replace function private.admin_receive_return(_return_id uuid, _actor_id uuid, _actor_can_refund boolean, _request_key uuid,
       _units jsonb, _exchange_overrides jsonb, _refund_choice text, _refund_amount integer, _refund_shipping_amount integer, _note text,
       _notify_customer boolean, _sent_back_message text, _sent_back_carrier text, _sent_back_tracking_number text)

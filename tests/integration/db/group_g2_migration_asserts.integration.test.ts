@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describeLocalDb } from './helpers/local-db';
-import { G2_ALLOWLIST, G3D_ALLOWLIST, CURRENT_ALLOWLIST, REFUND_SIGNATURE_SWAPS, RECEIVE_RETURN_14, RECEIVE_RETURN_15, replaceAllowlistSql, runWithAllowlist } from './helpers/group-g-allowlist';
+import { G2_ALLOWLIST, G3D_ALLOWLIST, CURRENT_ALLOWLIST, REFUND_SIGNATURE_SWAPS, RECEIVE_RETURN_14, RECEIVE_RETURN_16, replaceAllowlistSql, runWithAllowlist } from './helpers/group-g-allowlist';
 
 /**
  * G-2 Task 9（FREQ-540-AC-08）: G-2 の移行 2 本（基盤 foundation と書き手 writers）の形と、末尾の確かめの節（G2A_FINAL_ASSERT・G2B_FINAL_ASSERT）。
@@ -273,7 +273,7 @@ describeLocalDb('integration: G-2 の移行の末尾の確かめを流す（両�
   test('FREQ-540-AC-10: 今の DB の書き手の一覧のままでは G2B の確かめは止まる（本数・並びは CURRENT_ALLOWLIST と同じ）', async () => {
     expect(G2_ALLOWLIST).toHaveLength(65);
     // 移行 C（FREQ-642）で受け取りの署名が15の引数に入れ替わった（G-2 の65本の中の1本）
-    expect(CURRENT_ALLOWLIST.slice(0, 65)).toEqual(G2_ALLOWLIST.map((entry) => (entry === RECEIVE_RETURN_14 ? RECEIVE_RETURN_15 : (REFUND_SIGNATURE_SWAPS.find(([from]) => from === entry)?.[1] ?? entry))));
+    expect(CURRENT_ALLOWLIST.slice(0, 65)).toEqual(G2_ALLOWLIST.map((entry) => (entry === RECEIVE_RETURN_14 ? RECEIVE_RETURN_16 : (REFUND_SIGNATURE_SWAPS.find(([from]) => from === entry)?.[1] ?? entry))));
     const live = (await db().query('select x::oid::text as oid from unnest(private.group_g_writer_allowlist()) as a(x)')).rows.map((row) => String(row.oid));
     expect(live).toHaveLength(CURRENT_ALLOWLIST.length);
     const expected = (await db().query('select to_regprocedure(s)::oid::text as oid from unnest($1::text[]) as s', [CURRENT_ALLOWLIST])).rows.map((row) => row.oid);

@@ -84,7 +84,7 @@ const UNIT_LIST_OVERLOADS = Object.freeze([
 ]);
 
 const RECEIVE_ARGS_14 = 'uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text';
-const RECEIVE_ARGS_15 = `${RECEIVE_ARGS_14},jsonb`;
+const RECEIVE_ARGS_16 = `${RECEIVE_ARGS_14},jsonb,boolean`;
 
 const REFUND_ARGS_15 = 'uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer';
 const REFUND_BEGIN_13 = 'uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer';
@@ -139,7 +139,7 @@ export async function installReceiveEra(client: PgClient): Promise<void> {
     if (!text) throw new Error(`RECEIVE_ERA_DEFINITION_MISSING:${label}`);
     return text;
   };
-  await client.query(`drop function if exists public.admin_receive_return(${RECEIVE_ARGS_15}); drop function if exists private.admin_receive_return(${RECEIVE_ARGS_15})`);
+  await client.query(`drop function if exists public.admin_receive_return(${RECEIVE_ARGS_16}); drop function if exists private.admin_receive_return(${RECEIVE_ARGS_16})`);
   await client.query(pick(read('20261108063711_return_receive_unit_dedup.sql'), /^CREATE OR REPLACE FUNCTION private\.admin_receive_return\([\s\S]*?^\$\$;/m, 'rd_receive'));
   await client.query(pick(read('20261106005536_return_receive_per_item.sql'), /^CREATE OR REPLACE FUNCTION private\.record_group_g_refund_result\([\s\S]*?^\$\$;/m, 'rr_result'));
   await client.query(pick(read('20261023211425_group_g1_allocation.sql'), /^CREATE OR REPLACE FUNCTION public\.admin_receive_return\([\s\S]*?^\$\$;/m, 'g1_public'));
@@ -152,8 +152,8 @@ export async function installReceiveEra(client: PgClient): Promise<void> {
 
 /**
  * Restore only function definitions, never the H5 triggers, grants or final assertion.
- * The unit binding migration C (FREQ-642) replaced the 14 argument admin_receive_return by a 15 argument one. Inside the savepoint the
- * 15 argument pair is dropped and the H5 era pair is put back: the private body from the H5 text, the public wrapper from the G1 text,
+ * The unit binding migration C (FREQ-642) replaced the 14 argument admin_receive_return by a 16 argument one. Inside the savepoint the
+ * 16 argument pair is dropped and the H5 era pair is put back: the private body from the H5 text, the public wrapper from the G1 text,
  * both with the grants of that time, and the writer list names the 14 argument signature (rolled back with the savepoint).
  */
 export async function withH5ReturnBaseline(client: PgClient, work: () => Promise<void>): Promise<void> {
@@ -176,7 +176,7 @@ export async function withH5ReturnBaseline(client: PgClient, work: () => Promise
   expect(before.filter((row) => row.signature.includes('admin_receive_return'))).toHaveLength(1);
   await client.query('savepoint h5_return_baseline');
   try {
-    await client.query(`drop function if exists public.admin_receive_return(${RECEIVE_ARGS_15}); drop function if exists private.admin_receive_return(${RECEIVE_ARGS_15})`);
+    await client.query(`drop function if exists public.admin_receive_return(${RECEIVE_ARGS_16}); drop function if exists private.admin_receive_return(${RECEIVE_ARGS_16})`);
     for (const name of H5_RETURN_FUNCTION_NAMES) {
       const definition = sql.match(new RegExp(`^CREATE(?: OR REPLACE)? FUNCTION private\\.${name}\\([\\s\\S]*?^\\$\\$;`, 'm'))?.[0];
       if (!definition) throw new Error(`H5_RETURN_DEFINITION_MISSING:${name}`);

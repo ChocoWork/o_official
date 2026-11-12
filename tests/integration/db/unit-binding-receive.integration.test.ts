@@ -39,6 +39,90 @@ describeLocalDb('FREQ-642-AC-17: unit binding receive (controller only)', (db) =
 
   const q = (text: string, params?: unknown[]) => db().query(text, params);
 
+  test('FREQ-642-AC-35: 10%を免除した今すぐ返金は17,000円、次の受け取りにも率0で残る', async () => {
+    const f = await hRefundFixture(db(), true);
+    const ret = await createUbReturn(db(), f, [{ quantity: 2 }], { percent: 10 });
+    const input = { returnId: ret.returnId, actorId: f.actor, choice: 'now', units: [unit(ret.lineIds[0])], restockingFeeWaived: true };
+    const first = await ubReceive(db(), input);
+    expect(first.refund_amount).toBe(17000);
+    expect((await q('select restocking_fee_waived from public.order_return_receipts where id=$1', [first.receipt_id])).rows[0])
+      .toEqual({ restocking_fee_waived: true });
+    await hResult(db(), first.refund_id, 'succeeded');
+    const materials = (await materialsOf(db(), f.orderId))!;
+    expect(materials.target.slots.filter(s => s.state === 'returned_customer').map(s => s.returnedFeePercent)).toEqual([0]);
+    const nextInput = { ...input, restockingFeeWaived: false };
+    const nextPlan = (await buildReceivePricing(db(), nextInput))!;
+    expect(nextPlan).toMatchObject({ feeAmount: 2000, standardRefund: 18000 });
+    const second = await ubReceive(db(), nextInput, nextPlan);
+    expect(second.refund_amount).toBe(18000);
+    expect((await q('select restocking_fee_waived from public.order_return_receipts where id=$1', [second.receipt_id])).rows[0])
+      .toEqual({ restocking_fee_waived: false });
+  });
+
+  test('FREQ-642-AC-35: 同じ受け取りの今すぐと相談を両方免除し、固定の返送料800円だけ残す', async () => {
+    const f = await hRefundFixture(db(), true);
+    const ret = await createUbReturn(db(), f, [{ quantity: 2 }], { percent: 10, fixed: 800 });
+    const input = { returnId: ret.returnId, actorId: f.actor, choice: 'mixed', restockingFeeWaived: true,
+      units: [unit(ret.lineIds[0], 1, 'now'), unit(ret.lineIds[0], 1, 'consult')] };
+    const received = await ubReceive(db(), input);
+    expect(received.refund_amount).toBe(16200);
+    expect((await q('select fee_amount,now_refund,consult_refund from public.order_unit_events where receipt_id=$1', [received.receipt_id])).rows[0])
+      .toEqual({ fee_amount: 0, now_refund: 17000, consult_refund: 20000 });
+    expect((await q('select fee_pending_deduction,fee_due_amount from public.order_returns where id=$1', [ret.returnId])).rows[0])
+      .toEqual({ fee_pending_deduction: 0, fee_due_amount: 0 });
+    const materials = (await materialsOf(db(), f.orderId))!;
+    expect(materials.target.slots.map(s => s.returnedFeePercent)).toEqual([0, 0]);
+    expect(planUnitEvent(materials, { kind: 'return_receive', returns: [], excludedSlots: [] }).feeAmount).toBe(0);
+    await hResult(db(), received.refund_id, 'succeeded');
+    const refundMaterials = (await materialsOf(db(), f.orderId))!;
+    const refundPlan = planUnitEvent(refundMaterials, { kind: 'return_receive', returns: [], excludedSlots: [] });
+    const pricing = { orderId: f.orderId, version: refundPlan.version, releases: refundPlan.releases };
+    const consult = (await q('select * from public.admin_refund_return($1,$2,$3,NULL,0,NULL,false,$4::jsonb)',
+      [ret.returnId, f.actor, randomUUID(), JSON.stringify(pricing)])).rows[0];
+    expect(consult.amount).toBe(20000);
+  });
+
+  test.each(['now', 'consult'])('FREQ-642-AC-35: 返金の権限なしは免除をDBでも拒否（%s）', async (choice) => {
+    const f = await hRefundFixture(db(), true);
+    const ret = await createUbReturn(db(), f, [{ quantity: 1 }], { percent: 10 });
+    const input = { returnId: ret.returnId, actorId: f.actor, can: false, choice, restockingFeeWaived: true, units: [unit(ret.lineIds[0])] };
+    expect(await failure(() => ubReceive(db(), input))).toMatchObject({ code: '22023', message: 'RETURN_FORBIDDEN' });
+    expect((await q('select count(*)::int n from public.order_return_receipts where return_id=$1', [ret.returnId])).rows[0].n).toBe(0);
+  });
+
+  test.each([false, true])('FREQ-642-AC-35: 同じ免除の再送は同じ結果、免除を変えた再送は拒否（%s）', async (restockingFeeWaived) => {
+    const f = await hRefundFixture(db(), true);
+    const ret = await createUbReturn(db(), f, [{ quantity: 1 }], { percent: 10 });
+    const input = { returnId: ret.returnId, actorId: f.actor, choice: 'now', key: randomUUID(), units: [unit(ret.lineIds[0])], restockingFeeWaived };
+    const plan = (await buildReceivePricing(db(), input))!;
+    const first = await ubReceive(db(), input, plan);
+    const replay = await ubReceive(db(), input, plan);
+    expect(replay).toMatchObject({ receipt_id: first.receipt_id, refund_id: first.refund_id, refund_amount: first.refund_amount, replayed: true });
+    if (!restockingFeeWaived) {
+      const omitted = { ...input, restockingFeeWaived: undefined };
+      expect((await ubReceive(db(), omitted, plan)).replayed).toBe(true);
+    }
+    expect(await failure(() => ubReceive(db(), { ...input, restockingFeeWaived: !restockingFeeWaived }, plan)))
+      .toMatchObject({ code: '22023', message: 'RETURN_REQUEST_MISMATCH' });
+  });
+
+  test('FREQ-642-AC-35: 写しの無い注文も10%を今すぐと相談で免除する', async () => {
+    const f = await legacyFixture(db(), 2, 10);
+    expect((await q('select restocking_fee_percent from public.order_returns where id=$1', [f.returnId])).rows[0].restocking_fee_percent).toBe(10);
+    const input = { returnId: f.returnId, actorId: f.actor, choice: 'mixed', restockingFeeWaived: true,
+      units: [unit(f.lineIds[0], 1, 'now'), unit(f.lineIds[0], 1, 'consult')] };
+    const received = await ubReceive(db(), input);
+    expect(received.refund_amount).toBe(17000);
+    expect((await q('select restocking_fee_waived from public.order_return_receipts where id=$1', [received.receipt_id])).rows[0])
+      .toEqual({ restocking_fee_waived: true });
+    expect((await q('select fee_pending_deduction,fee_due_amount from public.order_returns where id=$1', [f.returnId])).rows[0])
+      .toEqual({ fee_pending_deduction: 0, fee_due_amount: 0 });
+    await hResult(db(), received.refund_id, 'succeeded');
+    const consult = (await q('select * from public.admin_refund_return($1,$2,$3,NULL,0,NULL,false,NULL)',
+      [f.returnId, f.actor, randomUUID()])).rows[0];
+    expect(consult.amount).toBe(20000);
+  });
+
   async function failure(run: () => Promise<unknown>): Promise<{ code?: string; message?: string; detail?: string }> {
     await q('savepoint ubr_expected');
     try { await run(); return {}; }
@@ -420,7 +504,7 @@ describeLocalDb('FREQ-642-AC-17: unit binding receive (controller only)', (db) =
 });
 
 /** 写しの無い（この変更より前の）注文: 2着 17,000円・20,000円の発送済み。返品1件（返金1着）。写しは作らない。 */
-async function legacyFixture(db: PgClient) {
+async function legacyFixture(db: PgClient, quantity = 1, restockingPercent = 0) {
   await db.query('select pg_advisory_xact_lock(190521,1)');
   const actor = (await db.query("insert into auth.users(id,email,raw_app_meta_data,raw_user_meta_data) values(gen_random_uuid(),$1,'{}','{}') returning id", [`ub-${randomUUID()}@example.invalid`])).rows[0].id as string;
   const catalog = await createCatalogFixture(db, { stock: 4 });
@@ -433,7 +517,7 @@ async function legacyFixture(db: PgClient) {
   for (const [index, amount] of [17000, 20000].entries()) await db.query(
     'insert into public.order_line_unit_amounts(order_id,order_item_id,unit_index,paid_amount) values($1,$2,$3,$4)', [order.orderId, itemId, index, amount]);
   const fulfillment = await shipFixtureOrder(db, { orderId: order.orderId, actorId: actor, trackingNumber: 'UB-LEGACY', lines: [{ order_item_id: itemId, quantity: 2 }] });
-  const ret = await createUbReturn(db, { orderId: order.orderId, itemId, actor, fulfillment, catalog }, [{ quantity: 1 }]);
+  const ret = await createUbReturn(db, { orderId: order.orderId, itemId, actor, fulfillment, catalog }, [{ quantity }], { percent: restockingPercent });
   return { orderId: order.orderId, itemId, actor, ...ret };
 }
 

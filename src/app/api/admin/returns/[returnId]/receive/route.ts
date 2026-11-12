@@ -62,6 +62,7 @@ const bodySchema = z.object({
   // 省く／null は「計算どおり」。0は返金しないで終える意味で、0のまま渡す。額を直せるのは店長だけ（DB が返せる額までを確かめる）
   refundAmount: optionalAmount,
   refundShippingAmount: z.number().int().min(0).max(MAX_AMOUNT).default(0),
+  restockingFeeWaived: z.boolean().default(false),
   // 返品の行ごとの「割引の扱い」（FREQ-642）。省くと理由から決まる（交換を返金に変えた行はお店の側）。直せるのは店長だけ（値段の計画を作る時に確かめる）
   treatments: z
     .array(z.object({ returnLineId: z.string().uuid(), treatment: z.enum(['shop', 'customer']) }))
@@ -91,7 +92,7 @@ const bodySchema = z.object({
  * 受け取る（グループ E-3 設計書 6-1・6-3）。品を1点ずつ確かめた結果（在庫に戻す・戻さない・検品待ち・お返し）を記録し、
  * 選んだ返金（今・相談・なし。品ごとに今と相談を選んだ時のまとめは mixed）を行う。今返金は Stripe に頼む（返金の流れが行う）。
  * 権限 → CSRF → 回数の制限（送信元ごとと管理者ごと）→ 返品の番号 → 本文 → 返金の権限 → 受け取りの流れの順に確かめる。
- * 返金の権限（admin.orders.refund）が要るのは、額の指定・送料の指定・交換の選び直しだけ。
+ * 返金の権限（admin.orders.refund）が要るのは、額の指定・送料の指定・交換の選び直し・返品手数料免除。
  * 持たない人（サポート）は相談・なしの受け取りができ、お客様の申し込みの返品（返送不要でない）なら今返金も送れる
  * （額は DB が計算する。窓口は断らず DB に渡し、DB が許さない返品は RETURN_FORBIDDEN で断る。グループ E-3 段2 の P9）。
  * 答えが分からない時（502）も返金の番号と受け取りの番号を返し、
@@ -123,12 +124,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ ret
   if (!refundSide.ok) {
     return refundSide.response;
   }
-  // 額の指定（0を含む）・送料の指定・交換の選び直しは店長だけ。DB も _actor_can_refund で断る（二重の守り）。
+  // 額の指定（0を含む）・送料の指定・交換の選び直し・返品手数料免除は店長だけ。DB も _actor_can_refund で断る（二重の守り）。
   // 今返金は、サポートも「お客様の申し込みの返品（返送不要でない）」なら DB が許す（P9）ので、ここでは断らず DB に任せる
   const needsRefundPermission =
     input.refundAmount !== null
     || input.refundShippingAmount > 0
-    || input.exchangeOverrides.length > 0;
+    || input.exchangeOverrides.length > 0
+    || input.restockingFeeWaived;
   if (needsRefundPermission && !refundSide.canRefund) {
     const reply = toRefusalReply('RETURN_FORBIDDEN', 'Refund permission is missing');
     await audit(reply.audit.outcome, reply.audit.detail, reply.audit.metadata);

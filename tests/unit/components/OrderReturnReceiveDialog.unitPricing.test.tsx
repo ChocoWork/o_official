@@ -94,6 +94,44 @@ function receiveUnit(dialog: HTMLElement, index: number, disposition = 'not_rest
 beforeEach(() => mockClientFetch.mockReset());
 
 describe('受け取りの画面の見込み（FREQ-642）', () => {
+  test.each([[true, 10, true], [false, 10, false], [true, 0, false]])(
+    'DD-ADMIN-022 FREQ-642-AC-35: 免除は返金権限と正の率がある時だけ1つ表示（%s,%s）',
+    async (canRefund, rate, visible) => {
+      const detail = returnDetail([blouse()]);
+      detail.fees.restockingFeePercent = rate as number;
+      const dialog = await open(detail, { estimate: async () => json({ data: estimateOf() }) }, canRefund as boolean);
+      expect(within(dialog).queryAllByRole('checkbox', { name: '返品手数料免除' })).toHaveLength(visible ? 1 : 0);
+    },
+  );
+
+  test.each([false, true])('DD-ADMIN-022 FREQ-642-AC-35: 免除で手数料行が消え額が上がり見込みと確定に渡る（legacy=%s）', async (legacy) => {
+    const detail = returnDetail([blouse()]);
+    detail.fees.restockingFeePercent = 10;
+    const dialog = await open(detail, {
+      estimate: async (body) => json({ data: estimateOf({
+        legacy, nowRefund: body.restockingFeeWaived ? 24000 : 21600,
+        nowFeeAmount: body.restockingFeeWaived ? 0 : 2400, feeAmount: body.restockingFeeWaived ? 0 : 2400,
+        refundAmount: body.restockingFeeWaived ? 24000 : 21600, refundCap: 24000,
+      }) }),
+    });
+    receiveUnit(dialog, 0);
+    receiveUnit(dialog, 1);
+    const group = await within(dialog).findByRole('group', { name: '返金の内訳' });
+    expect(within(group).getByText('返品の手数料').parentElement).toHaveTextContent('−￥2,400');
+    expect(within(group).getByText('商品').parentElement).toHaveTextContent('￥24,000');
+    expect(within(dialog).getByRole('spinbutton', { name: '返金額' })).toHaveValue(21600);
+    // 手で変えた額も免除の見込みへ追い付く。
+    fireEvent.change(within(dialog).getByRole('spinbutton', { name: '返金額' }), { target: { value: '1000' } });
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: '返品手数料免除' }));
+    await waitFor(() => expect(within(dialog).getByRole('spinbutton', { name: '返金額' })).toHaveValue(24000));
+    expect(within(dialog).queryByText('返品の手数料')).not.toBeInTheDocument();
+    expect(estimateBodies().at(-1)).toMatchObject({ restockingFeeWaived: true });
+    fireEvent.click(submit(dialog));
+    await waitFor(() => expect(mockClientFetch.mock.calls.some(([url]) => url === RECEIVE_URL)).toBe(true));
+    const [, init] = mockClientFetch.mock.calls.find(([url]) => url === RECEIVE_URL)!;
+    expect(JSON.parse((init as RequestInit).body as string)).toMatchObject({ restockingFeeWaived: true, refundAmount: null });
+  });
+
   test('FREQ-642-AC-07: 受け取りの見込みは窓口の額で、送った後の DB の額と同じ（額を直さなければ送らない）', async () => {
     const dialog = await open(returnDetail([blouse()]), { estimate: async () => json({ data: estimateOf() }) });
     receiveUnit(dialog, 0);

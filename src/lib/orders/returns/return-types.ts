@@ -48,6 +48,8 @@ export type ReceiveReturnRequest = {
   refundChoice: ReceiptRefundChoice;
   refundAmount: number | null;
   refundShippingAmount: number;
+  /** この受け取りの返品の率の手数料を免除する。店長だけ。省くと false。固定の費用は変えない */
+  restockingFeeWaived?: boolean;
   note: string | null;
   notifyCustomer: boolean;
   sentBackMessage: string | null;

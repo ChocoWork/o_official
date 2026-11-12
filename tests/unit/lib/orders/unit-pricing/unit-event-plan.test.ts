@@ -9,6 +9,17 @@ import {
 const step = (m: UnitPricingMaterials, c: UnitEventChange): UnitPricingPlan => planUnitEvent(m, c);
 
 describe('DD-ADMIN-021: 設計書3章の例の返す額', () => {
+  test('DD-ADMIN-021 FREQ-642-AC-35: 免除の率0は今すぐも相談も手数料0、内訳は今すぐの分だけ', () => {
+    const change = (feePercent: number): UnitEventChange => ({
+      kind: 'return_receive', excludedSlots: [], returns: [
+        { returnLineId: 'l1', holderOrderItemId: 'oi-1', quantity: 1, side: 'customer', part: 'now', feePercent },
+        { returnLineId: 'l2', holderOrderItemId: 'oi-1', quantity: 1, side: 'customer', part: 'consult', feePercent },
+      ],
+    });
+    expect(step(repeat(), change(10))).toMatchObject({ feeAmount: 3700, nowFeeAmount: 1700, nowRefund: 15300, consultRefund: 18000 });
+    expect(step(repeat(), change(0))).toMatchObject({ feeAmount: 0, nowFeeAmount: 0, nowRefund: 17000, consultRefund: 20000 });
+  });
+
   test.each<[string, UnitPricingMaterials, UnitEventChange, number]>([
     ['FREQ-642-AC-01 例1 リピート ご都合1着', repeat(), ret(1, 'customer'), 17000],
     ['FREQ-642-AC-08 例5 リピート 不良で送れず返金', repeat(), ret(1, 'shop'), 17000],

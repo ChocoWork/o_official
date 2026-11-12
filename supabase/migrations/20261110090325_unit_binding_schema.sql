@@ -2,7 +2,7 @@ BEGIN;
 
 -- Unit binding, migration A (FREQ-642), 2026-11-10: the tables of the per-unit record, the order-time discount snapshot,
 -- the prior-units count by kept slots, and the reason settings of defective and wrong-item returns.
--- @impl FREQ-642-AC-16 FREQ-642-AC-20 FREQ-642-AC-30 FREQ-642-AC-34
+-- @impl FREQ-642-AC-16 FREQ-642-AC-20 FREQ-642-AC-30 FREQ-642-AC-34 FREQ-642-AC-35
 -- @design docs/superpowers/specs/2026-11-08-exchange-unit-binding-design.md
 -- 1. Eight new public tables (RLS, service_role SELECT only, written by private functions only). Seven are append only
 --    (UPDATE, DELETE and TRUNCATE are refused with GROUP_H_IMMUTABLE); order_unit_slots is the one mutable state table
@@ -14,9 +14,15 @@ BEGIN;
 --    with no live pre-shipment refund claim ahead of claimed units, up to the alive-slip count)
 --    and by the old formula for an order that has none. Everything else it does is unchanged.
 -- 4. shop_return_reason_settings: defective and wrong_item accept an exchange only.
+-- 5. public.order_return_receipts gets restocking_fee_waived boolean NOT NULL DEFAULT false
+--    (X2, set only by admin_receive_return; asserted in ub_tables).
 -- Applied migrations are never edited. The G writer allowlist is not changed here.
 
 -- UB_SCHEMA_BEGIN
+-- X2: the waiver belongs to a receipt, never to the whole return.
+ALTER TABLE public.order_return_receipts
+  ADD COLUMN restocking_fee_waived boolean NOT NULL DEFAULT false;
+
 CREATE TABLE public.order_discount_snapshots (
   order_id uuid PRIMARY KEY REFERENCES public.orders(id) ON DELETE RESTRICT,
   engine_version smallint NOT NULL,
@@ -491,6 +497,13 @@ BEGIN
     OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_constraint AS c WHERE c.conrelid='public.order_unit_slots'::regclass AND c.contype='c')<>3
     OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_constraint AS c WHERE c.conrelid='public.order_unit_events'::regclass AND c.contype='u')<>2) THEN
     v_detail := 'ub_tables'; END IF;
+  IF v_detail IS NULL AND NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_attribute AS a
+    JOIN pg_catalog.pg_attrdef AS d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+    WHERE a.attrelid='public.order_return_receipts'::regclass AND a.attname='restocking_fee_waived'
+      AND a.atttypid='boolean'::regtype AND a.attnotnull AND NOT a.attisdropped
+      AND pg_catalog.pg_get_expr(d.adbin,d.adrelid)='false'
+  ) THEN v_detail := 'ub_tables'; END IF;
   -- ub_acl: RLS, the restrictive policy, SELECT only for service_role, nothing for anon and authenticated, postgres owner.
   IF v_detail IS NULL THEN
     FOR e IN SELECT pg_catalog.unnest(ARRAY['order_discount_snapshots','order_unit_slots','order_unit_exchange_links','order_unit_events',

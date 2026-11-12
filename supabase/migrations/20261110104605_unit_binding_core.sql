@@ -147,9 +147,10 @@ BEGIN
       AND NOT EXISTS (SELECT 1 FROM public.order_unit_events AS r WHERE r.reverts_event_id = ev.id)
   ) AS al ON true
   LEFT JOIN LATERAL (
-    SELECT ev.seq, ev.created_at, rr.restocking_fee_percent AS fee_percent, el.return_line_id
+    SELECT ev.seq, ev.created_at, CASE WHEN receipt.restocking_fee_waived THEN 0 ELSE rr.restocking_fee_percent END AS fee_percent, el.return_line_id
     FROM public.order_unit_event_lines AS el JOIN public.order_unit_events AS ev ON ev.id = el.event_id
     LEFT JOIN public.order_returns AS rr ON rr.id = ev.return_id
+    LEFT JOIN public.order_return_receipts AS receipt ON receipt.id = ev.receipt_id
     WHERE el.order_item_id = s.order_item_id AND el.unit_index = s.unit_index AND el.line_kind = 'returned' AND el.state_after = s.state
       AND NOT EXISTS (SELECT 1 FROM public.order_unit_events AS r WHERE r.reverts_event_id = ev.id)
     ORDER BY ev.seq DESC LIMIT 1
@@ -542,7 +543,7 @@ BEGIN
       ('private', 'order_unit_related_orders(uuid)', 'uuid[]', 's', true, '4008d3582ba5b9a27d834f2dced4a581'),
       ('private', 'order_unit_version(uuid)', 'text', 's', true, 'a3cc30f7ba6329a8dfb6a772d5b662c1'),
       ('private', 'order_unit_totals(uuid)', 'record', 's', true, '4aaecb3c271c62f983ef1d03480f1a4a'),
-      ('private', 'order_unit_order_state(uuid)', 'jsonb', 's', true, '96a8454b21a652ea14966464ef0450ef'),
+      ('private', 'order_unit_order_state(uuid)', 'jsonb', 's', true, 'b8686f3446cf43c15fc0d3492a910e9a'),
       ('private', 'order_unit_pricing_materials(uuid)', 'jsonb', 's', true, 'f878db0be13a6dcf17cab5e381458f65'),
       ('public', 'order_unit_pricing_materials(uuid)', 'jsonb', 's', false, 'ce0476c87fa38d6e984c9cbe4a045034'),
       ('private', 'order_unit_plan_lines(jsonb)', 'record', 's', false, 'dc5b50fea718dcbe9b6a66a9dec003e2'),

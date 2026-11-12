@@ -90,6 +90,37 @@ beforeEach(() => {
 });
 
 describe('DD-ADMIN-022: 受け取りの値段の計画と見込み', () => {
+  test.each([false, true])('DD-ADMIN-022 FREQ-642-AC-35: 免除は今すぐと相談の率を0にし固定費を残す（legacy=%s）', async (legacy) => {
+    mockList.mockResolvedValue([returnDetail({
+      id: RETURN_ID, returnMethod: 'shop_label', fees: { restockingFeePercent: 10, returnShippingFee: 800 },
+      lines: [line({ quantity: 2, progress: { ...line().progress, unprocessed: 2 } })],
+    })]);
+    const { client } = clientWith({ materials: legacy ? null : repeat() });
+    const body = {
+      ...BODY, restockingFeeWaived: true, refundChoice: 'mixed' as const,
+      units: [
+        { returnLineId: 'l1', disposition: 'restocked' as const, quantity: 1, refundChoice: 'now' as const },
+        { returnLineId: 'l1', disposition: 'restocked' as const, quantity: 1, refundChoice: 'consult' as const },
+      ],
+    };
+    const { plan, estimate } = await planReturnReceive(client, RETURN_ID, body, { canRefund: true });
+    expect(estimate).toMatchObject({ feeAmount: 0, fixedFees: 800, refundAmount: legacy ? 4200 : 16200 });
+    if (!legacy) expect(plan).toMatchObject({ feeAmount: 0, nowRefund: 17000, consultRefund: 20000 });
+  });
+
+  test.each([false, true])('DD-ADMIN-022 FREQ-642-AC-35: 返金の権限なしの免除は計画でも断る（legacy=%s）', async (legacy) => {
+    const { client } = clientWith({ materials: legacy ? null : repeat() });
+    const body = { ...BODY, restockingFeeWaived: true };
+    await expect(planReturnReceive(client, RETURN_ID, body, { canRefund: false }))
+      .rejects.toMatchObject({ code: 'RETURN_FORBIDDEN' });
+  });
+
+  test('DD-ADMIN-022 FREQ-642-AC-35: 見込みは今すぐの率の手数料を内訳用に返す', async () => {
+    mockList.mockResolvedValue([returnDetail({ id: RETURN_ID, fees: { restockingFeePercent: 10 }, lines: [line()] })]);
+    const { client } = clientWith({ materials: repeat() });
+    expect((await planReturnReceive(client, RETURN_ID, BODY)).estimate).toMatchObject({ nowFeeAmount: 1700, refundAmount: 15300 });
+  });
+
   test('DD-ADMIN-022: 受け取りの見込みは計画の今すぐの額から返送料を引いた額', async () => {
     const { client } = clientWith({ materials: repeat() });
 

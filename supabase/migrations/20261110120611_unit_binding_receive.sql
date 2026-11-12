@@ -4,7 +4,7 @@ BEGIN;
 -- the slots, writes the discount treatments, and a refund result retried after an error takes back the event's units.
 -- @impl FREQ-642-AC-02 FREQ-642-AC-04 FREQ-642-AC-05 FREQ-642-AC-06 FREQ-642-AC-17 FREQ-642-AC-20 FREQ-642-AC-25 FREQ-642-AC-31
 -- @design docs/superpowers/specs/2026-11-08-exchange-unit-binding-design.md docs/04_DetailDesign/pages/16_admin.md DD-ADMIN-017
--- 1. private.admin_receive_return and its public entry take a 15th argument _pricing jsonb (DEFAULT NULL) and return release_refund_ids uuid[]
+-- 1. private.admin_receive_return and its public entry take _pricing jsonb (DEFAULT NULL) and a 16th argument _restocking_fee_waived boolean (DEFAULT false) and return release_refund_ids uuid[]
 --    (always empty until the hold-release refunds of the next migration). The 14 argument functions are dropped and the G writer
 --    allowlist names the new signature (still 77 entries).
 --    - An order with a discount snapshot needs a plan (UNIT_PRICING_REQUIRED / 22023); an order without one refuses a plan
@@ -33,7 +33,8 @@ CREATE OR REPLACE FUNCTION private.admin_receive_return(
   _return_id uuid, _actor_id uuid, _actor_can_refund boolean, _request_key uuid,
   _units jsonb, _exchange_overrides jsonb, _refund_choice text, _refund_amount integer,
   _refund_shipping_amount integer, _note text, _notify_customer boolean,
-  _sent_back_message text, _sent_back_carrier text, _sent_back_tracking_number text, _pricing jsonb DEFAULT NULL
+  _sent_back_message text, _sent_back_carrier text, _sent_back_tracking_number text, _pricing jsonb DEFAULT NULL,
+  _restocking_fee_waived boolean DEFAULT false
 ) RETURNS TABLE(receipt_id uuid,return_status text,refund_id uuid,refund_amount integer,
   refund_status text,exchange_order_item_ids uuid[],fee_due_amount integer,shop_notice_enqueued boolean,replayed boolean,
   release_refund_ids uuid[])
@@ -75,7 +76,7 @@ DECLARE
   v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
 BEGIN
   IF _return_id IS NULL OR _actor_id IS NULL OR _actor_can_refund IS NULL OR _request_key IS NULL
-    OR _notify_customer IS NULL OR _refund_choice IS NULL OR _refund_choice NOT IN ('now','consult','mixed','none')
+    OR _restocking_fee_waived IS NULL OR _notify_customer IS NULL OR _refund_choice IS NULL OR _refund_choice NOT IN ('now','consult','mixed','none')
     OR _refund_shipping_amount IS NULL OR _refund_shipping_amount<0
     OR (_refund_amount IS NOT NULL AND _refund_amount<0) OR pg_catalog.char_length(_note)>500
     OR pg_catalog.char_length(_sent_back_message)>1000
@@ -91,7 +92,7 @@ BEGIN
     RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023';
   END IF;
   IF NOT _actor_can_refund AND (_refund_amount IS NOT NULL
-      OR _refund_shipping_amount<>0 OR pg_catalog.jsonb_array_length(_exchange_overrides)>0) THEN
+      OR _refund_shipping_amount<>0 OR pg_catalog.jsonb_array_length(_exchange_overrides)>0 OR _restocking_fee_waived) THEN
     RAISE EXCEPTION 'RETURN_FORBIDDEN' USING ERRCODE='22023';
   END IF;
   IF _refund_choice NOT IN ('now','mixed') AND (_refund_amount IS NOT NULL OR _refund_shipping_amount<>0) THEN
@@ -138,11 +139,12 @@ BEGIN
   SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('return_line_id',x.return_line_id,'action',x.action)
     ORDER BY x.return_line_id),'[]'::jsonb) INTO v_overrides
   FROM pg_catalog.jsonb_to_recordset(_exchange_overrides) AS x(return_line_id uuid,action text);
-  v_fp:=pg_catalog.md5(pg_catalog.jsonb_build_object('return_id',_return_id,'units',v_units,'exchange_overrides',v_overrides,
+  v_fp:=pg_catalog.md5((pg_catalog.jsonb_build_object('return_id',_return_id,'units',v_units,'exchange_overrides',v_overrides,
     'refund_choice',_refund_choice,'refund_amount',_refund_amount,'refund_shipping_amount',_refund_shipping_amount,
     'note',_note,'notify_customer',_notify_customer,'sent_back_message',_sent_back_message,
     'sent_back_carrier',_sent_back_carrier,'sent_back_tracking_number',_sent_back_tracking_number,
-    'actor_can_refund',_actor_can_refund)::text);
+    'actor_can_refund',_actor_can_refund)
+    || CASE WHEN _restocking_fee_waived THEN pg_catalog.jsonb_build_object('restocking_fee_waived',true) ELSE '{}'::jsonb END)::text);
   -- The outer body takes the advisory and complete row closure before the return helper.
   SELECT r.order_id INTO v_order_id FROM public.order_returns AS r WHERE r.id = _return_id;
   SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_variants
@@ -536,8 +538,8 @@ BEGIN
     -- The restocking rate is inside E: the plan's nowRefund and consultRefund are already net of it. Only the fixed fees remain.
     v_fees:=v_fixed;v_fee_consult:=0;
   ELSE
-    v_fees:=(v_goods::bigint*v_return.restocking_fee_percent/100)::integer+v_fixed;
-    v_fee_consult:=(v_goods_consult::bigint*v_return.restocking_fee_percent/100)::integer;
+    v_fees:=(v_goods::bigint*(CASE WHEN _restocking_fee_waived THEN 0 ELSE v_return.restocking_fee_percent END)/100)::integer+v_fixed;
+    v_fee_consult:=(v_goods_consult::bigint*(CASE WHEN _restocking_fee_waived THEN 0 ELSE v_return.restocking_fee_percent END)/100)::integer;
   END IF;
   IF v_now_total>0 THEN
     v_amount:=GREATEST(v_goods-v_fees,0)+_refund_shipping_amount;
@@ -572,9 +574,9 @@ BEGIN
   BEGIN
     -- N-1: keep the consult units this receipt made waiting (after the cover cap); not part of the fingerprint.
     INSERT INTO public.order_return_receipts(id,return_id,request_key,request_fingerprint,kind,refund_choice,refund_id,
-      notify_customer,sent_back_message,sent_back_carrier,sent_back_tracking_number,note,actor_id,actor_can_refund,consult_quantity)
+      notify_customer,sent_back_message,sent_back_carrier,sent_back_tracking_number,note,actor_id,actor_can_refund,consult_quantity,restocking_fee_waived)
     VALUES(v_receipt,_return_id,_request_key,v_fp,'receive',v_choice,v_refund,_notify_customer,
-      _sent_back_message,_sent_back_carrier,_sent_back_tracking_number,_note,_actor_id,_actor_can_refund,v_consult_total);
+      _sent_back_message,_sent_back_carrier,_sent_back_tracking_number,_note,_actor_id,_actor_can_refund,v_consult_total,_restocking_fee_waived);
   EXCEPTION WHEN unique_violation THEN RAISE EXCEPTION 'RETURN_REQUEST_MISMATCH' USING ERRCODE='22023'; END;
   IF v_slot THEN
     -- The discount treatment of each returned line (who set it and when stays on the receipt), then the plan: the version and the
@@ -711,12 +713,13 @@ CREATE OR REPLACE FUNCTION public.admin_receive_return(
   _return_id uuid, _actor_id uuid, _actor_can_refund boolean, _request_key uuid,
   _units jsonb, _exchange_overrides jsonb, _refund_choice text, _refund_amount integer,
   _refund_shipping_amount integer, _note text, _notify_customer boolean,
-  _sent_back_message text, _sent_back_carrier text, _sent_back_tracking_number text, _pricing jsonb DEFAULT NULL
+  _sent_back_message text, _sent_back_carrier text, _sent_back_tracking_number text, _pricing jsonb DEFAULT NULL,
+  _restocking_fee_waived boolean DEFAULT false
 ) RETURNS TABLE(receipt_id uuid,return_status text,refund_id uuid,refund_amount integer,
   refund_status text,exchange_order_item_ids uuid[],fee_due_amount integer,shop_notice_enqueued boolean,replayed boolean,
   release_refund_ids uuid[])
 LANGUAGE sql SECURITY INVOKER SET search_path = '' AS $$
-  SELECT * FROM private.admin_receive_return(_return_id, _actor_id, _actor_can_refund, _request_key, _units, _exchange_overrides, _refund_choice, _refund_amount, _refund_shipping_amount, _note, _notify_customer, _sent_back_message, _sent_back_carrier, _sent_back_tracking_number, _pricing);
+  SELECT * FROM private.admin_receive_return(_return_id, _actor_id, _actor_can_refund, _request_key, _units, _exchange_overrides, _refund_choice, _refund_amount, _refund_shipping_amount, _note, _notify_customer, _sent_back_message, _sent_back_carrier, _sent_back_tracking_number, _pricing, _restocking_fee_waived);
 $$;
 
 CREATE OR REPLACE FUNCTION private.record_group_g_refund_result(
@@ -1051,7 +1054,7 @@ AS $$
     'private.admin_close_return_missing(uuid,uuid,uuid)',
     'private.admin_reopen_return(uuid,uuid,uuid)',
     'private.admin_inspect_return(uuid,uuid,uuid,jsonb)',
-    'private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)',
+    'private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean)',
     'private.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean)',
     'private.refresh_order_return_status(uuid)',
     'private.admin_record_return_fee_payment(uuid,uuid,text,boolean)',
@@ -1094,15 +1097,17 @@ $$;
 
 DROP FUNCTION public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text);
 DROP FUNCTION private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text);
+DROP FUNCTION IF EXISTS public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb);
+DROP FUNCTION IF EXISTS private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb);
 -- UBR_FUNCTIONS_END
 
 -- UBR_ACL_BEGIN
-ALTER FUNCTION private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb) OWNER TO postgres;
-REVOKE ALL ON FUNCTION private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb) FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb) TO service_role;
-ALTER FUNCTION public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb) OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb) FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb) TO service_role;
+ALTER FUNCTION private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean) TO service_role;
+ALTER FUNCTION public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean) TO service_role;
 ALTER FUNCTION private.record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb) OWNER TO postgres;
 REVOKE ALL ON FUNCTION private.record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb)
   FROM PUBLIC, anon, authenticated, service_role;
@@ -1118,10 +1123,10 @@ BEGIN
   -- ubr_functions: owner, security, settings, volatility, language and the exact body; the 14 argument functions are gone and each
   -- name has one definition in its schema.
   FOR e IN SELECT * FROM (VALUES
-    ('private', 'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)', 'v', true, 'plpgsql', '7a22d1be620d118bb78a3cc95e155443'),
-    ('public', 'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)', 'v', false, 'sql', 'dd060b0e28ac9450ca5f2fc218658b03'),
+    ('private', 'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean)', 'v', true, 'plpgsql', '1e3e6d07e0b3f8d30e554d8a0c5f6443'),
+    ('public', 'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean)', 'v', false, 'sql', '1868a0af90ad986d512c590e54dd429a'),
     ('private', 'record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb)', 'v', true, 'plpgsql', '81ccb9dc619f089c26d8165523dff738'),
-    ('private', 'group_g_writer_allowlist()', 's', true, 'sql', '0c8a984982e81ef0342e3af887c93689')
+    ('private', 'group_g_writer_allowlist()', 's', true, 'sql', '044fff1488e8ee4c7dd84127cac79a64')
   ) AS expected(schema_name, signature, volatility, definer, lang, body_md5) LOOP
     v_oid := pg_catalog.to_regprocedure(e.schema_name || '.' || e.signature);
     SELECT f.* INTO p FROM pg_catalog.pg_proc AS f WHERE f.oid = v_oid;
@@ -1134,14 +1139,16 @@ BEGIN
     END IF;
   END LOOP;
   IF v_detail IS NULL AND (pg_catalog.to_regprocedure('private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text)') IS NOT NULL
-    OR pg_catalog.to_regprocedure('public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text)') IS NOT NULL) THEN
+    OR pg_catalog.to_regprocedure('public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text)') IS NOT NULL
+    OR pg_catalog.to_regprocedure('private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)') IS NOT NULL
+    OR pg_catalog.to_regprocedure('public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)') IS NOT NULL) THEN
     v_detail := 'ubr_functions';
   END IF;
   -- ubr_acl: service_role runs the receive entry and its body only.
   IF v_detail IS NULL THEN
     FOR e IN SELECT * FROM (VALUES
-      ('private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)', true),
-      ('public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)', true),
+      ('private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean)', true),
+      ('public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean)', true),
       ('private.record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb)', false),
       ('private.group_g_writer_allowlist()', false)
     ) AS expected(signature, service) LOOP
@@ -1157,7 +1164,7 @@ BEGIN
   END IF;
   -- ubr_allowlist: the writer list keeps its 77 entries; only the receive entry is the new signature.
   IF v_detail IS NULL THEN
-    v_new := pg_catalog.to_regprocedure('private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)')::oid;
+    v_new := pg_catalog.to_regprocedure('private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean)')::oid;
     IF (SELECT pg_catalog.count(*) FROM pg_catalog.unnest(private.group_g_writer_allowlist())) <> 77
       OR (SELECT pg_catalog.count(DISTINCT x) FROM pg_catalog.unnest(private.group_g_writer_allowlist()) AS t(x)) <> 77
       OR NOT EXISTS (SELECT 1 FROM pg_catalog.unnest(private.group_g_writer_allowlist()) AS t(x) WHERE x::oid = v_new)

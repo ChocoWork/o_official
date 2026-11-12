@@ -16,7 +16,7 @@ BEGIN;
 --    (UNIT_PRICING_REQUIRED); a refund of shipped lines or without lines takes none. A replay by request key is answered before any check.
 -- 4. private.admin_refund_return and its public entry take an 8th argument _pricing jsonb (the 7 argument functions are dropped) and return
 --    release_refund_ids. The standard amount of a consult refund is the consult part of the events no consult refund covers yet (R34, as the screen counts it).
--- 5. private.admin_receive_return (15 arguments, unchanged signature) no longer inserts the refund row itself: it calls the core with the
+-- 5. private.admin_receive_return (16 arguments, including the receipt fee waiver) no longer inserts the refund row itself: it calls the core with the
 --    event, and it applies the releases of the plan (money held on earlier orders given back), each as a hold_release event with its own
 --    refund on the held order, in the same transaction. private.order_unit_apply_releases checks and applies the release plans;
 --    private.order_unit_release_refund_ids reads them back for a replay.
@@ -961,7 +961,8 @@ CREATE OR REPLACE FUNCTION private.admin_receive_return(
   _return_id uuid, _actor_id uuid, _actor_can_refund boolean, _request_key uuid,
   _units jsonb, _exchange_overrides jsonb, _refund_choice text, _refund_amount integer,
   _refund_shipping_amount integer, _note text, _notify_customer boolean,
-  _sent_back_message text, _sent_back_carrier text, _sent_back_tracking_number text, _pricing jsonb DEFAULT NULL
+  _sent_back_message text, _sent_back_carrier text, _sent_back_tracking_number text, _pricing jsonb DEFAULT NULL,
+  _restocking_fee_waived boolean DEFAULT false
 ) RETURNS TABLE(receipt_id uuid,return_status text,refund_id uuid,refund_amount integer,
   refund_status text,exchange_order_item_ids uuid[],fee_due_amount integer,shop_notice_enqueued boolean,replayed boolean,
   release_refund_ids uuid[])
@@ -1004,7 +1005,7 @@ DECLARE
   v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
 BEGIN
   IF _return_id IS NULL OR _actor_id IS NULL OR _actor_can_refund IS NULL OR _request_key IS NULL
-    OR _notify_customer IS NULL OR _refund_choice IS NULL OR _refund_choice NOT IN ('now','consult','mixed','none')
+    OR _restocking_fee_waived IS NULL OR _notify_customer IS NULL OR _refund_choice IS NULL OR _refund_choice NOT IN ('now','consult','mixed','none')
     OR _refund_shipping_amount IS NULL OR _refund_shipping_amount<0
     OR (_refund_amount IS NOT NULL AND _refund_amount<0) OR pg_catalog.char_length(_note)>500
     OR pg_catalog.char_length(_sent_back_message)>1000
@@ -1020,7 +1021,7 @@ BEGIN
     RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023';
   END IF;
   IF NOT _actor_can_refund AND (_refund_amount IS NOT NULL
-      OR _refund_shipping_amount<>0 OR pg_catalog.jsonb_array_length(_exchange_overrides)>0) THEN
+      OR _refund_shipping_amount<>0 OR pg_catalog.jsonb_array_length(_exchange_overrides)>0 OR _restocking_fee_waived) THEN
     RAISE EXCEPTION 'RETURN_FORBIDDEN' USING ERRCODE='22023';
   END IF;
   IF _refund_choice NOT IN ('now','mixed') AND (_refund_amount IS NOT NULL OR _refund_shipping_amount<>0) THEN
@@ -1067,11 +1068,12 @@ BEGIN
   SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('return_line_id',x.return_line_id,'action',x.action)
     ORDER BY x.return_line_id),'[]'::jsonb) INTO v_overrides
   FROM pg_catalog.jsonb_to_recordset(_exchange_overrides) AS x(return_line_id uuid,action text);
-  v_fp:=pg_catalog.md5(pg_catalog.jsonb_build_object('return_id',_return_id,'units',v_units,'exchange_overrides',v_overrides,
+  v_fp:=pg_catalog.md5((pg_catalog.jsonb_build_object('return_id',_return_id,'units',v_units,'exchange_overrides',v_overrides,
     'refund_choice',_refund_choice,'refund_amount',_refund_amount,'refund_shipping_amount',_refund_shipping_amount,
     'note',_note,'notify_customer',_notify_customer,'sent_back_message',_sent_back_message,
     'sent_back_carrier',_sent_back_carrier,'sent_back_tracking_number',_sent_back_tracking_number,
-    'actor_can_refund',_actor_can_refund)::text);
+    'actor_can_refund',_actor_can_refund)
+    || CASE WHEN _restocking_fee_waived THEN pg_catalog.jsonb_build_object('restocking_fee_waived',true) ELSE '{}'::jsonb END)::text);
   -- The outer body takes the advisory and complete row closure before the return helper.
   SELECT r.order_id INTO v_order_id FROM public.order_returns AS r WHERE r.id = _return_id;
   SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_variants
@@ -1464,8 +1466,8 @@ BEGIN
     -- The restocking rate is inside E: the plan's nowRefund and consultRefund are already net of it. Only the fixed fees remain.
     v_fees:=v_fixed;v_fee_consult:=0;
   ELSE
-    v_fees:=(v_goods::bigint*v_return.restocking_fee_percent/100)::integer+v_fixed;
-    v_fee_consult:=(v_goods_consult::bigint*v_return.restocking_fee_percent/100)::integer;
+    v_fees:=(v_goods::bigint*(CASE WHEN _restocking_fee_waived THEN 0 ELSE v_return.restocking_fee_percent END)/100)::integer+v_fixed;
+    v_fee_consult:=(v_goods_consult::bigint*(CASE WHEN _restocking_fee_waived THEN 0 ELSE v_return.restocking_fee_percent END)/100)::integer;
   END IF;
   IF v_now_total>0 THEN
     v_amount:=GREATEST(v_goods-v_fees,0)+_refund_shipping_amount;
@@ -1500,9 +1502,9 @@ BEGIN
   BEGIN
     -- N-1: keep the consult units this receipt made waiting (after the cover cap); not part of the fingerprint.
     INSERT INTO public.order_return_receipts(id,return_id,request_key,request_fingerprint,kind,refund_choice,refund_id,
-      notify_customer,sent_back_message,sent_back_carrier,sent_back_tracking_number,note,actor_id,actor_can_refund,consult_quantity)
+      notify_customer,sent_back_message,sent_back_carrier,sent_back_tracking_number,note,actor_id,actor_can_refund,consult_quantity,restocking_fee_waived)
     VALUES(v_receipt,_return_id,_request_key,v_fp,'receive',v_choice,v_refund,_notify_customer,
-      _sent_back_message,_sent_back_carrier,_sent_back_tracking_number,_note,_actor_id,_actor_can_refund,v_consult_total);
+      _sent_back_message,_sent_back_carrier,_sent_back_tracking_number,_note,_actor_id,_actor_can_refund,v_consult_total,_restocking_fee_waived);
   EXCEPTION WHEN unique_violation THEN RAISE EXCEPTION 'RETURN_REQUEST_MISMATCH' USING ERRCODE='22023'; END;
   IF v_slot THEN
     -- The discount treatment of each returned line (who set it and when stays on the receipt), then the plan: the version and the
@@ -1663,7 +1665,7 @@ AS $$
     'private.admin_close_return_missing(uuid,uuid,uuid)',
     'private.admin_reopen_return(uuid,uuid,uuid)',
     'private.admin_inspect_return(uuid,uuid,uuid,jsonb)',
-    'private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)',
+    'private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean)',
     'private.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean,jsonb)',
     'private.refresh_order_return_status(uuid)',
     'private.admin_record_return_fee_payment(uuid,uuid,text,boolean)',
@@ -1852,12 +1854,12 @@ BEGIN
       ('public', 'begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,jsonb)', 'v', false, 'sql', 'a010341cb930728e76bb6b6eb5372162'),
       ('private', 'admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean,jsonb)', 'v', true, 'plpgsql', '20e46a103d331e8f90d4d57ee6d9641b'),
       ('public', 'admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean,jsonb)', 'v', false, 'sql', '4b6151504b2b4559ec419212f48868e8'),
-      ('private', 'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)', 'v', true, 'plpgsql', 'daea7cc9a531f61cb5a93a1afca5f95b'),
+      ('private', 'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean)', 'v', true, 'plpgsql', '53c8b4a16f7c21eb763ad86ed71debbc'),
       ('private', 'order_unit_apply_releases(jsonb,text,uuid,uuid,uuid)', 'v', true, 'plpgsql', '129bc85f9df23d382dffbcd9dc6eb175'),
       ('private', 'order_unit_release_refund_ids(uuid,uuid)', 's', true, 'sql', '9ca21a59ca78ea0aa891a26fa1e15227'),
       ('private', 'order_unit_revert_cancel(uuid,uuid)', 'v', true, 'plpgsql', 'ac5f2ce3b417a309b78dcbe446939198'),
       ('public', 'order_unit_revert_cancel(uuid,uuid)', 'v', false, 'sql', 'af5ef73d94942eae6bef817c3fdecdb9'),
-      ('private', 'group_g_writer_allowlist()', 's', true, 'sql', 'c69a0caaee1e7f0335a6c1f8536d9d53')
+      ('private', 'group_g_writer_allowlist()', 's', true, 'sql', '2a0be07a1ac43c64328f9287a9311e41')
     ) AS expected(schema_name, signature, volatility, definer, lang, body_md5) LOOP
       v_oid := pg_catalog.to_regprocedure(e.schema_name || '.' || e.signature);
       SELECT f.* INTO p FROM pg_catalog.pg_proc AS f WHERE f.oid = v_oid;
@@ -1886,7 +1888,7 @@ BEGIN
       ('public.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,jsonb)', true),
       ('private.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean,jsonb)', true),
       ('public.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean,jsonb)', true),
-      ('private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb)', true),
+      ('private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean)', true),
       ('private.order_unit_apply_releases(jsonb,text,uuid,uuid,uuid)', false),
       ('private.order_unit_release_refund_ids(uuid,uuid)', false),
       ('private.order_unit_revert_cancel(uuid,uuid)', true),

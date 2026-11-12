@@ -298,6 +298,8 @@ export type ReceiveReturnInput = {
   /** null は計算どおり。店長だけが直せる */
   refundAmount: number | null;
   refundShippingAmount: number;
+  /** この受け取りの率の手数料の免除（DB も返金の権限を確かめる）。省くと false */
+  restockingFeeWaived?: boolean;
   note: string | null;
   notifyCustomer: boolean;
   sentBackMessage: string | null;
@@ -361,6 +363,7 @@ export async function receiveReturn(store: ReturnStore, input: ReceiveReturnInpu
       _sent_back_carrier: input.sentBackCarrier,
       _sent_back_tracking_number: input.sentBackTrackingNumber,
       _pricing: input.pricing ?? null,
+      ...(input.restockingFeeWaived ? { _restocking_fee_waived: true } : {}),
     }),
     'admin_receive_return',
   );
