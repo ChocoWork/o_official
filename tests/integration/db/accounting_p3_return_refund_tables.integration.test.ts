@@ -71,10 +71,15 @@ describeLocalDb('S15 return and refund tables: controller only', (db) => {
   };
   // The rows here are written by hand to check the shapes, so the parents are seeded with the refund functions of before
   // S17 (Task 3), which write no refund event, fact or allocation (put back inside this test's transaction; the rollback
-  // restores S17).
+  // restores S17). The receive of S18 (Task 4) writes the arrival fact of the return, which is taken out again here so
+  // the hand-written rows start from an empty return (the rollback restores the row and the trigger).
   const seedWithoutWriters = async () => {
     await restorePreS17Bodies(db(), ['core', 'groupGResult']);
-    return seedReturnRefundParents(db());
+    const parents = await seedReturnRefundParents(db());
+    await q('alter table public.accounting_return_facts disable trigger accounting_return_facts_no_update_delete');
+    await q('delete from public.accounting_return_facts where return_id = $1', [parents.returnId]);
+    await q('alter table public.accounting_return_facts enable always trigger accounting_return_facts_no_update_delete');
+    return parents;
   };
   const sid = () => `src_${randomUUID().slice(0, 8)}`;
   const park = (reason: string, detail: unknown = {}) =>
@@ -269,7 +274,8 @@ describeLocalDb('S15 return and refund tables: controller only', (db) => {
         .toEqual({ column, result: checkFailed });
     }
     expect(await failure(() => returnFact(p, { ...decision, seq: 0, refund_id: randomUUID() }))).toEqual(checkFailed);
-    expect((await q('select kind, seq from public.accounting_return_facts order by seq')).rows)
+    // Only this return: suites that commit (the G and S18 concurrency suites) leave the arrival facts of their own returns.
+    expect((await q('select kind, seq from public.accounting_return_facts where return_id = $1 order by seq', [p.returnId])).rows)
       .toEqual([{ kind: 'arrival', seq: 1 }, { kind: 'decision', seq: 2 }, { kind: 'decision', seq: 3 }]);
   });
 

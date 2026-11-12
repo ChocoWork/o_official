@@ -4,6 +4,7 @@ import type { PgClient } from './local-db';
 import { randomUUID } from 'node:crypto';
 import { seedDispute } from './accounting-orders-fixtures';
 import { cancelPlanFor, hBegin, hReceive, hRefundFixture, hResult, hReturn } from './group-h-refund-fixtures';
+import { createUbReturn, ubReceive, type ReceiveInput, type ReceiveUnit } from './unit-binding-receive';
 
 // 会計の計画3（返品・返金）の DB 試験の道具。計画3の各 Task が必要な物をここへ足す。
 
@@ -100,6 +101,8 @@ const PRE_S17_SOURCES = {
 	core: ['_unit_binding_refund_retry.sql', 'begin_order_refund_core'],
 	shippedSlots: ['_unit_binding_schema.sql', 'order_unit_shipped_slots'],
 	groupGResult: ['_unit_binding_receive.sql', 'record_group_g_refund_result'],
+	// 計画3 S18 が作り直した（X4 の本文に決定の事実の囲みを足した）。前の移行の確かめを再生する時は X4 の本文に戻す
+	refundReturn: ['_unit_binding_refund_retry.sql', 'admin_refund_return'],
 } as const;
 
 /**
@@ -222,4 +225,115 @@ export async function seedStripeRefundTxn(client: PgClient, input: {
 /** 注文に判断待ちの支払いの取り消し（needs_response、引かれた残高の取引あり）を置く。 */
 export async function seedDisputeHold(client: PgClient, orderId: string, amount = 5000): Promise<string> {
 	return (await seedDispute(client, { orderId, amount, withdrawnAt: '2026-11-01T00:00:00Z', createdAt: '2026-11-01T00:00:00Z' })).disputeId;
+}
+
+// ---- Task 4（S18。返品の受け取り・返金の決定の事実と届いた日）の道具 ----
+
+const s18Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p3_return_writers.sql'));
+/** 計画3 S18（返品の書き手）の移行の本文（無ければ空で、原文の確かめが目に見えて落ちる）。 */
+export const ACCOUNTING_S18_SQL = s18Files.length === 1 ? fs.readFileSync(path.join(directory, s18Files[0]), 'utf8') : '';
+export const ACCOUNTING_S18_FILES = s18Files;
+
+/** S18 の `-- ACC_S18_<name>_BEGIN` と `-- ACC_S18_<name>_END` の間。 */
+export function accountingS18Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S18_SQL.split(`-- ACC_S18_${name}_BEGIN\n`)[1]?.split(`-- ACC_S18_${name}_END`)[0] ?? '';
+}
+
+const RECEIVE_ARGS_16 = 'uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean';
+
+/**
+ * 前の移行（交換の印の作業の移行 D など）の末尾の確かめを再生する時に、S18 が作り直した受け取りの関数と G の書き手の一覧を
+ * S18 の前の形に戻す（呼ぶ側の savepoint の中で。巻き戻しで S18 の形に戻る）: 17の引数の受け取りの組を DROP し、移行 D の16の引数の本体と
+ * 移行 C の公開の入口を同じ ACL で立て、移行 D の書き手の一覧の本文を戻す（一覧は16の引数の署名を名指すので、受け取りを先に立てる）。
+ */
+export async function restorePreS18Receive(client: PgClient, options: { dropNew?: boolean } = {}): Promise<void> {
+	const read = (suffix: string) => {
+		const file = fs.readdirSync(directory).find((entry) => entry.endsWith(suffix));
+		if (!file) throw new Error(`PRE_S18_SOURCE_MISSING:${suffix}`);
+		return fs.readFileSync(path.join(directory, file), 'utf8');
+	};
+	const pick = (source: string, pattern: RegExp, label: string) => {
+		const text = source.match(pattern)?.[0];
+		if (!text) throw new Error(`PRE_S18_DEFINITION_MISSING:${label}`);
+		return text;
+	};
+	const d = read('_unit_binding_refunds.sql');
+	// dropNew が偽なら17の引数の組を残す（S18 の末尾の確かめを再生する時。S18 の前の状態に16の引数の組を並べて控えを取る）
+	if (options.dropNew ?? true) await client.query(`drop function if exists public.admin_receive_return(${RECEIVE_ARGS_16},date);
+    drop function if exists private.admin_receive_return(${RECEIVE_ARGS_16},date)`);
+	await client.query(pick(d, /^CREATE OR REPLACE FUNCTION private\.admin_receive_return\([\s\S]*?^\$\$;/m, 'receive'));
+	// 17の引数の組を残す時、C の public の本文（SQL）は作る時の検査で private の16と17（既定あり）の呼び分けが付かず落ちるので、検査を切って作る
+	const prior = (await client.query("select current_setting('check_function_bodies') v")).rows[0].v as string;
+	await client.query("select set_config('check_function_bodies', 'off', true)");
+	await client.query(pick(read('_unit_binding_receive.sql'), /^CREATE OR REPLACE FUNCTION public\.admin_receive_return\([\s\S]*?^\$\$;/m, 'receive_public'));
+	await client.query("select set_config('check_function_bodies', $1, true)", [prior]);
+	for (const schema of ['private', 'public']) await client.query(`alter function ${schema}.admin_receive_return(${RECEIVE_ARGS_16}) owner to postgres;
+    revoke all on function ${schema}.admin_receive_return(${RECEIVE_ARGS_16}) from public, anon, authenticated, service_role;
+    grant execute on function ${schema}.admin_receive_return(${RECEIVE_ARGS_16}) to service_role`);
+	await client.query(pick(d, /^CREATE OR REPLACE FUNCTION private\.group_g_writer_allowlist\(\)[\s\S]*?^\$\$;/m, 'allowlist'));
+}
+
+/** S18 の比べる元の控え（本文の最初の CREATE TEMP TABLE と INSERT）を、呼ぶ取引の中で作り直す。 */
+export async function pinAccountingS18Baseline(client: PgClient): Promise<void> {
+	const pin = accountingS18Section('BODY').split('\n-- 1. Tools')[0];
+	await client.query('drop table if exists pg_temp.accounting_s18_baseline');
+	await client.query(pin);
+}
+
+/** 写しの無い注文にする（道具で作った注文の order_discount_snapshots の行を消す。P3-C7・P3-D3 の試験と同じ形）。 */
+export async function dropDiscountSnapshot(client: PgClient, orderId: string): Promise<void> {
+	// 守りは ENABLE ALWAYS（移行 A の確かめが見る）なので、外した1本を ALWAYS で戻す（コミットする並行の試験でも形が残らない）
+	await client.query('alter table public.order_discount_snapshots disable trigger ub_order_discount_snapshots_immutable');
+	await client.query('delete from public.order_discount_snapshots where order_id=$1', [orderId]);
+	await client.query('alter table public.order_discount_snapshots enable always trigger ub_order_discount_snapshots_immutable');
+}
+
+/**
+ * 返品の流れの土台: H の受け付けと支払いで作った2着（既定は 20,000円と18,750円）の注文を出荷し、返品を申し込み、承認する（割合の手数料。既定 10%）。
+ * snapshot を false にすると写しの無い注文で作る。groups は返品の行（既定は1着の返金）。
+ */
+export async function seedReturnFlow(client: PgClient, o: {
+	quantity?: number; unitDiscount?: number; percent?: number; snapshot?: boolean;
+	groups?: { quantity: number; exchange?: boolean; reason?: string }[];
+} = {}) {
+	const f = await hRefundFixture(client, true, o.quantity ?? 2, o.unitDiscount ?? 1250);
+	if (o.snapshot === false) await dropDiscountSnapshot(client, f.orderId);
+	const ret = await createUbReturn(client, f, o.groups ?? [{ quantity: 1 }], { percent: o.percent ?? 10 });
+	return { f, returnId: ret.returnId, lineIds: ret.lineIds };
+}
+export type ReturnFlow = Awaited<ReturnType<typeof seedReturnFlow>>;
+
+export type ReceiveResult = {
+	receipt_id: string; return_status: string; refund_id: string | null; refund_amount: number | null; refund_status: string | null;
+	fee_due_amount: number; replayed: boolean; release_refund_ids: string[];
+};
+
+/** 返品の流れの受け取り（public.admin_receive_return の17の引数。写しのある注文は本物の値段の計画を付ける）。 */
+export async function receiveReturn(client: PgClient, flow: ReturnFlow, input: Partial<ReceiveInput> & { units: ReceiveUnit[]; choice: string },
+	pricing?: unknown): Promise<ReceiveResult> {
+	return ubReceive(client, { returnId: flow.returnId, actorId: flow.f.actor, ...input }, pricing) as Promise<ReceiveResult>;
+}
+
+export type ReturnFact = {
+	seq: number; kind: 'arrival' | 'decision'; receipt_id: string | null; refund_id: string | null; goods_amount: number; fee_amount: number;
+	covers_amount: number | null; decided_amount: number | null; payable_delta: number | null; decided_on: string | null;
+};
+
+/** 返品の事実（seq の順）。 */
+export async function returnFacts(client: PgClient, returnId: string): Promise<ReturnFact[]> {
+	return (await client.query(`select seq, kind, receipt_id, refund_id, goods_amount, fee_amount, covers_amount, decided_amount,
+    payable_delta, decided_on::text as decided_on from public.accounting_return_facts where return_id=$1 order by seq`, [returnId])).rows as ReturnFact[];
+}
+
+/**
+ * 返品の未払金（2130 return_refund）の残り: 届いた日の G − F の和 ＋ 決定の差の和 − 成功しなかった返金を除く返金の決定額の和
+ * （計上係〔Task 7〕の前に、事実だけから決定の関数と同じ式で読む。0未満もそのまま返す）。
+ */
+export async function returnPayable(client: PgClient, returnId: string): Promise<number> {
+	return Number((await client.query(`select
+      coalesce((select sum(goods_amount - fee_amount) from public.accounting_return_facts where return_id=$1 and kind='arrival'),0)
+      + coalesce((select sum(payable_delta) from public.accounting_return_facts where return_id=$1 and kind='decision'),0)
+      - coalesce((select sum(f.decided_amount) from public.accounting_return_facts f join public.order_refunds r on r.id=f.refund_id
+          where f.return_id=$1 and f.kind='decision' and not (r.status='failed' or (r.status='canceled' and exists (
+            select 1 from public.accounting_refund_events x where x.refund_id=r.id and x.state='abandoned')))),0) as n`, [returnId])).rows[0].n);
 }

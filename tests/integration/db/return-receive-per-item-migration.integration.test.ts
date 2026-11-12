@@ -25,8 +25,13 @@ const unitRefundsSql = unitRefundsFiles.length === 1 ? fs.readFileSync(path.join
 const s17Files = fs.readdirSync(directory).filter(name => /^\d+_accounting_p3_refund_writers\.sql$/.test(name));
 const s17Sql = s17Files.length === 1 ? fs.readFileSync(path.join(directory, s17Files[0]), 'utf8') : '';
 const S17_REPLACED = ['record_group_g_refund_result', 'record_external_order_refund', 'mark_order_refund_error'];
+// 会計の計画3 S18 が受け取りの入口（private・public）を17の引数（届いた日）で作り直した。今の DB の本文はこの移行の物と比べる
+const s18Files = fs.readdirSync(directory).filter(name => /^\d+_accounting_p3_return_writers\.sql$/.test(name));
+const s18Sql = s18Files.length === 1 ? fs.readFileSync(path.join(directory, s18Files[0]), 'utf8') : '';
+const S18_REPLACED = ['admin_receive_return'];
 const receiveArgs = 'uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text';
 const receiveArgs16 = `${receiveArgs},jsonb,boolean`;
+const receiveArgs17 = `${receiveArgs16},date`;
 const resultNames = ['receipt_id', 'return_status', 'refund_id', 'refund_amount', 'refund_status',
   'exchange_order_item_ids', 'fee_due_amount', 'shop_notice_enqueued', 'replayed'];
 const inputNames = ['_return_id', '_actor_id', '_actor_can_refund', '_request_key', '_units', '_exchange_overrides',
@@ -148,20 +153,24 @@ describeLocalDb('受取明細の列・制約・ACL・本文・書き手77本（c
       where receipt_id=$1 and resolution='refund'`, [newReceipt.receipt_id])).rows).toEqual([{ refund_choice: choice }]);
   });
 
-  test('FREQ-641-AC-09: publicとprivateの16引数（_pricing はNULL、率の免除はfalseが既定値）・10列と公開入口の本文を保つ', async () => {
-    // 移行 C（FREQ-642）で14の引数の入口は16の引数（値段の計画と率の免除）に変わり、答えに release_refund_ids が付いた
+  test('FREQ-641-AC-09: publicとprivateの17引数（_pricing はNULL、率の免除はfalse、届いた日はNULLが既定値）・10列と公開入口の本文を保つ', async () => {
+    // 移行 C（FREQ-642）で14の引数の入口は16の引数（値段の計画と率の免除）に変わり、答えに release_refund_ids が付いた。
+    // 会計の計画3 S18 で17番目の引数（届いた日）が足され、16の引数の形は消えた
     for (const schema of ['public', 'private']) {
       const p = (await db().query(`select pronargs,pronargdefaults,proargnames,proargmodes::text[] as proargmodes,prosecdef,provolatile,proconfig
-        from pg_proc where oid=$1::regprocedure`, [`${schema}.admin_receive_return(${receiveArgs16})`])).rows[0];
-      expect(p).toMatchObject({ pronargs: 16, pronargdefaults: 2, proargnames: [...inputNames, '_pricing', '_restocking_fee_waived', ...resultNames, 'release_refund_ids'] });
-      expect(p.proargmodes.slice(16)).toEqual(Array(10).fill('t'));
+        from pg_proc where oid=$1::regprocedure`, [`${schema}.admin_receive_return(${receiveArgs17})`])).rows[0];
+      expect(p).toMatchObject({ pronargs: 17, pronargdefaults: 3,
+        proargnames: [...inputNames, '_pricing', '_restocking_fee_waived', '_arrived_on', ...resultNames, 'release_refund_ids'] });
+      expect(p.proargmodes.slice(17)).toEqual(Array(10).fill('t'));
       expect(p.proconfig).toContain('search_path=""');
-      expect((await db().query('select to_regprocedure($1) is null as gone', [`${schema}.admin_receive_return(${receiveArgs})`])).rows[0].gone).toBe(true);
+      for (const gone of [receiveArgs, receiveArgs16]) {
+        expect((await db().query('select to_regprocedure($1) is null as gone', [`${schema}.admin_receive_return(${gone})`])).rows[0].gone).toBe(true);
+      }
     }
-    const original = definition(unitReceiveSql, 'admin_receive_return', 'public');
+    const original = definition(s18Sql, 'admin_receive_return', 'public');
     expect(original).not.toBeNull();
     expect((await db().query(`select md5(replace(prosrc,E'\\r','')) hash from pg_proc
-      where oid=$1::regprocedure`, [`public.admin_receive_return(${receiveArgs16})`])).rows[0].hash).toBe(md5(original!.body));
+      where oid=$1::regprocedure`, [`public.admin_receive_return(${receiveArgs17})`])).rows[0].hash).toBe(md5(original!.body));
     const f = await hRefundFixture(db(), true), r = await hReturn(db(), f);
     expect(Object.keys(await hReceive(db(), f, r)).sort()).toEqual([...resultNames, 'release_refund_ids'].sort());
   });
@@ -199,7 +208,7 @@ describeLocalDb('受取明細の列・制約・ACL・本文・書き手77本（c
       const acl = (await db().query(`select has_function_privilege($1,$2,'EXECUTE') rpc,
         has_function_privilege($1,'private.return_receive_amounts(uuid)','EXECUTE') helper,
         has_table_privilege($1,'public.order_return_receipt_lines','INSERT,UPDATE,DELETE,TRUNCATE') dml`,
-      [role, `public.admin_receive_return(${receiveArgs16})`])).rows[0];
+      [role, `public.admin_receive_return(${receiveArgs17})`])).rows[0];
       expect(acl).toEqual({ rpc: role === 'service_role', helper: false, dml: false });
     }
     const f = await hRefundFixture(db(), true), r = await hReturn(db(), f);
@@ -225,7 +234,7 @@ describeLocalDb('受取明細の列・制約・ACL・本文・書き手77本（c
   test('FREQ-641-AC-10: 新11本文と見込みhelperは移行に固定した本文・属性・ACLで過剰overloadを持たない', async () => {
     expect(sql).not.toBe('');
     for (const name of [...H5_RETURN_FUNCTION_NAMES, 'return_receive_amounts']) {
-      const expected = S17_REPLACED.includes(name) ? definition(s17Sql, name)
+      const expected = S18_REPLACED.includes(name) ? definition(s18Sql, name) : S17_REPLACED.includes(name) ? definition(s17Sql, name)
         : UNIT_RECEIVE_REPLACED.includes(name) ? definition(name === 'admin_receive_return' ? unitRefundsSql : unitReceiveSql, name)
         : DEDUP_REPLACED.includes(name) ? definition(dedupSql, name) : definition(sql, name); expect(expected).not.toBeNull();
       const rows = (await db().query(`select md5(replace(p.prosrc,E'\\r','')) hash,p.provolatile,p.proconfig,

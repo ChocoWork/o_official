@@ -12,7 +12,7 @@ import { hClaims, hRefundFixture, hResult, type HRefundFixture } from './helpers
 import { describeLocalDb } from './helpers/local-db';
 import { createCatalogFixture, shipFixtureOrder } from './helpers/order-fixtures';
 import { withLatestBodies } from './helpers/unit-binding-latest';
-import { restorePreS17Bodies } from './helpers/accounting-returns-fixtures';
+import { restorePreS17Bodies, restorePreS18Receive } from './helpers/accounting-returns-fixtures';
 import { buildReceivePricing, createUbReturn, materialsOf, ubReceive, type ReceiveUnit } from './helpers/unit-binding-receive';
 
 jest.setTimeout(60000);
@@ -573,7 +573,7 @@ describeLocalDb('FREQ-642-AC-27: unit binding refunds, cancels and releases (con
 
   describe('the receive goes through the core (R20)', () => {
     test('FREQ-642-AC-05: 受け取りは返金の記録を自分では書かず begin_order_refund_core を通る', async () => {
-      const body = (await q("select prosrc from pg_proc where oid='private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean)'::regprocedure")).rows[0].prosrc as string;
+      const body = (await q("select prosrc from pg_proc where oid='private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean,date)'::regprocedure")).rows[0].prosrc as string;
       expect(body).not.toMatch(/insert\s+into\s+public\.order_refunds/i);
       expect(body).toMatch(/begin_order_refund_core\(/);
       expect(body).toContain('v_event');
@@ -597,6 +597,10 @@ describeLocalDb('FREQ-642-AC-27: unit binding migration D final assertion (contr
     await db().query('savepoint ubf_assert');
     let failure: Failure | null = null;
     try {
+      // 会計の計画3 S17 が begin_order_refund_core を、S18 が admin_refund_return と受け取り（16 → 17の引数）と書き手の一覧を作り直した
+      // （S17・S18 の確かめが固定する）。移行 D・X4 の形に戻してから控えを取り、確かめる
+      await restorePreS18Receive(db());
+      await restorePreS17Bodies(db(), ['core', 'refundReturn']);
       // 移行 D の始めの書き手の一覧（落とした3本の旧い署名は今は無いので、存在しない OID で代える）を、末尾の確かめの前に立てる
       await db().query(`create temp table ubf_writer_baseline on commit drop as
         select x::oid as oid from unnest(private.group_g_writer_allowlist()) as t(x)
@@ -604,8 +608,6 @@ describeLocalDb('FREQ-642-AC-27: unit binding migration D final assertion (contr
           to_regprocedure('private.begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer,uuid)')::oid,
           to_regprocedure('private.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean,jsonb)')::oid)
         union all select o::oid from unnest(array[4000000001::bigint, 4000000002, 4000000003]) as u(o)`);
-      // 会計の計画3 S17 が begin_order_refund_core を作り直した（S17 の確かめが固定する）。X4 の本文に戻してから確かめる
-      await restorePreS17Bodies(db(), ['core']);
       if (change) await db().query(change);
       await db().query(ubfAssert);
     } catch (caught) { const e = caught as Failure; failure = { code: e.code, message: e.message, detail: e.detail }; }

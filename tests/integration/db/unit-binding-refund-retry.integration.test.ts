@@ -337,8 +337,8 @@ describeLocalDb('FREQ-642-AC-37: unit binding refund retry migration final asser
     try {
       await db().query(`create temp table ubx_writer_baseline on commit drop as
         select x::oid as oid from unnest(private.group_g_writer_allowlist()) as t(x)`);
-      // 会計の計画3 S17 が begin_order_refund_core を作り直した（S17 の確かめが固定する）。X4 の本文に戻してから確かめる
-      await restorePreS17Bodies(db(), ['core']);
+      // 会計の計画3 S17 が begin_order_refund_core を、S18 が admin_refund_return を作り直した（S17・S18 の確かめが固定する）。X4 の本文に戻してから確かめる
+      await restorePreS17Bodies(db(), ['core', 'refundReturn']);
       if (change) await db().query(change);
       await db().query(ubxAssert);
     } catch (caught) { const e = caught as Failure; failure = { code: e.code, message: e.message, detail: e.detail }; }

@@ -21,6 +21,8 @@ export type ReceiveInput = {
   sides?: Record<string, ReturnSide>;
   sentBackMessage?: string | null;
   restockingFeeWaived?: boolean;
+  /** 届いた日（YYYY-MM-DD。計画3 S18 の17番目の引数）。省くと NULL（受け取りの行の既定）。 */
+  arrivedOn?: string | null;
 };
 
 const SHOP_REASONS = new Set(['defective', 'wrong_item']);
@@ -65,21 +67,29 @@ export async function buildReceivePricing(db: PgClient, input: ReceiveInput): Pr
   return planUnitEvent(materials, { kind: 'return_receive', returns: [...returns.values()], excludedSlots });
 }
 
-/** public.admin_receive_return を16の引数で呼ぶ。pricing を省くと本物の計画を作って渡す。null を渡すと NULL のまま。 */
+/** public.admin_receive_return を17の引数（計画3 S18）で呼ぶ。pricing を省くと本物の計画を作って渡す。null を渡すと NULL のまま。 */
 export async function ubReceive(db: PgClient, input: ReceiveInput, pricing?: unknown) {
-  const plan = pricing === undefined ? await buildReceivePricing(db, input) : pricing;
-  // 移行 C より前の入口（16の引数が無い）を、H5 の確かめの再生（withH5ReturnBaseline）が取引の中に立てている時は、14の引数で呼ぶ
-  const has16 = (await db.query(`select to_regprocedure('public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean)') is not null as ok`)).rows[0].ok as boolean;
-  if (!has16) {
+  const forms = (await db.query(`select
+      to_regprocedure('public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text,jsonb,boolean,date)') is not null as has17,
+      to_regprocedure('public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text)') is not null as has14`)).rows[0];
+  if (!forms.has17) {
+    // H5 の確かめの再生（withH5ReturnBaseline）が取引の中に14の引数の入口だけを立てている時に限り、14の引数で呼ぶ。
+    // 値段の計画・手数料の免除・届いた日は14の引数の形に渡せないので、呼ぶ側が渡した時に17の引数の形が無ければ黙って落とさずに止める
+    // （計画を省いた呼び出しは、14の引数の形には計画を作らずに渡す）。
+    if (!forms.has14 || pricing != null || input.restockingFeeWaived || input.arrivedOn != null) {
+      throw new Error('admin_receive_return(17 args) is missing');
+    }
     return (await db.query(`select * from public.admin_receive_return($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,$9,null,$10,$11,null,null)`,
       [input.returnId, input.actorId, input.can ?? true, input.key ?? randomUUID(), JSON.stringify(input.units),
         JSON.stringify(input.overrides ?? []), input.choice, input.amount ?? null, input.shipping ?? 0, input.notify ?? false,
         input.sentBackMessage ?? null])).rows[0];
   }
-  return (await db.query(`select * from public.admin_receive_return($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,$9,null,$10,$11,null,null,$12::jsonb,$13::boolean)`,
+  const plan = pricing === undefined ? await buildReceivePricing(db, input) : pricing;
+  return (await db.query(`select * from public.admin_receive_return($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,$9,null,$10,$11,null,null,$12::jsonb,$13::boolean,$14::date)`,
     [input.returnId, input.actorId, input.can ?? true, input.key ?? randomUUID(), JSON.stringify(input.units),
       JSON.stringify(input.overrides ?? []), input.choice, input.amount ?? null, input.shipping ?? 0, input.notify ?? false,
-      input.sentBackMessage ?? null, plan === null ? null : JSON.stringify(plan), input.restockingFeeWaived ?? false])).rows[0];
+      input.sentBackMessage ?? null, plan === null ? null : JSON.stringify(plan), input.restockingFeeWaived ?? false,
+      input.arrivedOn ?? null])).rows[0];
 }
 
 /** 返品を1件作って承認する（行ごとに数量・交換か返金か・理由）。FREQ-641 の取り押さえは承認が付ける。 */

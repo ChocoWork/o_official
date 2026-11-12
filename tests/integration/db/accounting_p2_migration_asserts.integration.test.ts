@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describeLocalDb } from './helpers/local-db';
+import { H7_ALLOWLIST, replaceAllowlistSql } from './helpers/group-g-allowlist';
 import { seedGroupG3Slip } from './helpers/group-g3-fixtures';
 import {
   ACCOUNTING_S6_FILES, ACCOUNTING_S6_SQL as sql, accountingS6Section, pinAccountingS6Baseline,
@@ -117,6 +118,8 @@ describeLocalDb('S6 final assert: controller only', (db) => {
     await db().query('savepoint acc_s6_assert');
     let failure: AssertFailure | null = null;
     try {
+      // 計画2の時点の書き手の一覧（H7）の中で流す（後の計画が一覧の署名を入れ替えても、その時点の一覧で比べる。計画3 Task 4）
+      await db().query(replaceAllowlistSql(H7_ALLOWLIST));
       if (baseline === 'pin') await pinAccountingS6Baseline(db());
       if (change) await db().query(change);
       await db().query(currentAssertion);

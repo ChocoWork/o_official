@@ -2,9 +2,13 @@
 import { createHash } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
 import {
+  H7_ALLOWLIST, P3_ALLOWLIST, RECEIVE_RETURN_16, RECEIVE_RETURN_17, replaceAllowlistSql, UB_REFUNDS_ALLOWLIST,
+} from './helpers/group-g-allowlist';
+import {
   ACCOUNTING_S15_FILES, ACCOUNTING_S15_SQL as sql, ACCOUNTING_S16_FILES, ACCOUNTING_S16_SQL as s16Sql, accountingS15Section,
   accountingS16Section, ACCOUNTING_S17_FILES, ACCOUNTING_S17_SQL as s17Sql, accountingS17Section, pinAccountingS15Baseline,
-  pinAccountingS17Baseline, seedReturnRefundParents,
+  pinAccountingS17Baseline, seedReturnRefundParents, ACCOUNTING_S18_FILES, ACCOUNTING_S18_SQL as s18Sql, accountingS18Section,
+  pinAccountingS18Baseline, restorePreS18Receive,
 } from './helpers/accounting-returns-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
 import { PENDING_REASONS } from '@/lib/accounting/posting-types';
@@ -155,7 +159,8 @@ describeLocalDb('S15 final assert: controller only', (db) => {
   test.each([
     ['alter table public.accounting_refund_events add column acc_probe text', 'acc_s15_tables'],
     ['alter table public.accounting_refund_facts alter column fee_amount drop default', 'acc_s15_tables'],
-    ['alter table public.accounting_return_facts alter column decided_on set not null', 'acc_s15_tables'],
+    // S18 から受け取りが届いた日の事実（decided_on は空）を書き、コミットする試験の行が残るので、NOT NULL でなく既定を変える
+    ['alter table public.accounting_return_facts alter column decided_on set default current_date', 'acc_s15_tables'],
     ['alter table public.order_return_arrival_corrections rename column new_on to new_on_x', 'acc_s15_tables'],
     ['alter table public.accounting_return_options alter column use_carrier_delivery_date set default true', 'acc_s15_tables'],
     ['alter table public.accounting_refund_events drop constraint accounting_refund_events_refund_state_key', 'acc_s15_constraints'],
@@ -323,6 +328,8 @@ describeLocalDb('S17 final assert: controller only', (db) => {
     try {
       // The migration reads the baseline and runs the assert under one search_path (the caller's).
       if (before) await db().query(before);
+      // S17 の時点の書き手の一覧（H7）の中で流す（S18 が受け取りの署名を入れ替えた後も、その時点の一覧で比べる）
+      await db().query(replaceAllowlistSql(H7_ALLOWLIST));
       await pinAccountingS17Baseline(db());
       if (change) await db().query(change);
       await db().query(s17Assertion);
@@ -365,6 +372,133 @@ describeLocalDb('S17 final assert: controller only', (db) => {
     ["update pg_temp.accounting_s17_baseline set payload = payload - 'counts'", 'acc_s17_existing_dml_allowlist'],
     ["select private.accounting_park_event('return_refund', 'order_refunds', 's17_tamper', null, 'no_order', '{}')", 'acc_s17_existing_dml_allowlist'],
   ])('FREQ-576-AC-05: S17改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// Accounting plan 3 S18 (FREQ-576-AC-05): the receive writer gets the arrival date (17 arguments; the 16 argument form is
+// dropped), admin_refund_return and the G writer list are rebuilt, and the arrival tools, writers and readers are added.
+const s18Assertion = accountingS18Section('FINAL_ASSERT');
+const s18Body = accountingS18Section('BODY');
+const s18Details = ['acc_s18_functions', 'acc_s18_function_attrs', 'acc_s18_body_unchanged', 'acc_s18_receive_signature',
+  'acc_s18_g_allowlist_replaced', 'acc_s18_rls_acl', 'acc_s18_existing_dml_allowlist'];
+const RECEIVE_SIG_16 = RECEIVE_RETURN_16.slice('private.admin_receive_return'.length);
+const RECEIVE_SIG_17 = RECEIVE_RETURN_17.slice('private.admin_receive_return'.length);
+const REFUND_SIG = '(uuid,uuid,uuid,integer,integer,text,boolean,jsonb)';
+
+describe('S18 source contract (no DB)', () => {
+  test('FREQ-576-AC-05: S18はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S18_FILES).toHaveLength(1);
+    expect(ACCOUNTING_S18_FILES[0] > ACCOUNTING_S17_FILES[0]).toBe(true);
+    expect(s18Sql).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(s18Sql.startsWith('BEGIN;\n')).toBe(true);
+    expect(s18Sql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(s18Sql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(s18Sql.trimEnd()).toMatch(/-- ACC_S18_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect([...new Set([...s18Assertion.matchAll(/'(acc_s18_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...s18Details].sort());
+    expect(s18Assertion).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(s18Assertion).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(s18Sql).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+  });
+
+  test('FREQ-576-AC-05: 新しい形の受け取りを作り、書き手の一覧を作り直してから、16の引数の古い形（public と private）を DROP する', () => {
+    const create17 = s18Body.indexOf('CREATE FUNCTION private.admin_receive_return(');
+    const createPublic17 = s18Body.indexOf('CREATE FUNCTION public.admin_receive_return(');
+    const allowlist = s18Body.indexOf('CREATE OR REPLACE FUNCTION private.group_g_writer_allowlist()');
+    const dropPublic = s18Body.indexOf(`DROP FUNCTION public.admin_receive_return${RECEIVE_SIG_16};`);
+    const dropPrivate = s18Body.indexOf(`DROP FUNCTION private.admin_receive_return${RECEIVE_SIG_16};`);
+    for (const index of [create17, createPublic17, allowlist, dropPublic, dropPrivate]) expect(index).toBeGreaterThan(0);
+    expect(create17).toBeLessThan(allowlist);
+    expect(createPublic17).toBeLessThan(allowlist);
+    expect(allowlist).toBeLessThan(dropPublic);
+    expect(dropPublic).toBeLessThan(dropPrivate);
+    expect(s18Body).toContain('_restocking_fee_waived boolean DEFAULT false, _arrived_on date DEFAULT NULL');
+    // 再送の指紋は、届いた日が NULL でない時だけ作り直す（NULL の時は前と同じ文字列）
+    expect(s18Body).toContain("IF _arrived_on IS NOT NULL THEN\n    v_fp:=pg_catalog.md5(v_fp||':'||pg_catalog.to_char(_arrived_on,'YYYY-MM-DD'));\n  END IF;");
+    // 書き手の一覧で置き換えるのは受け取りの1行だけ
+    expect(s18Body.match(/-- ACC_P3_REPLACE_BEGIN /g)).toHaveLength(1);
+    expect(s18Body).toContain(`'${RECEIVE_RETURN_17}',`);
+    expect(P3_ALLOWLIST).toHaveLength(77);
+    expect(P3_ALLOWLIST.filter((entry, i) => entry !== UB_REFUNDS_ALLOWLIST[i])).toEqual([RECEIVE_RETURN_17]);
+  });
+});
+
+describeLocalDb('S18 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  const s18Allowlist = s18Body.match(/^CREATE OR REPLACE FUNCTION private\.group_g_writer_allowlist\(\)[\s\S]*?^\$\$;/m)?.[0] ?? '';
+  const s18Drops = (s18Body.match(/^DROP FUNCTION (?:public|private)\.admin_receive_return\(.*\);$/gm) ?? []).join('\n');
+
+  /**
+   * S18 の前の形（16の引数の受け取りの組と移行 D の一覧）を17の引数の組の横に立てて控えを取り、移行の本文の一覧の作り直しと
+   * 古い形の DROP を流してから、改ざんと末尾の確かめを流す。
+   */
+  async function attempt(change = '', before = ''): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s18_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (before) await db().query(before);
+      await restorePreS18Receive(db(), { dropNew: false });
+      await pinAccountingS18Baseline(db());
+      await db().query(s18Allowlist);
+      await db().query(s18Drops);
+      if (change) await db().query(change);
+      await db().query(s18Assertion);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s18_assert'); await db().query('release savepoint acc_s18_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const redefine = (sig: string, from: string, to: string) =>
+    `do $x$ begin execute regexp_replace(pg_get_functiondef('${sig}'::regprocedure), E'${from}', E'${to}'); end $x$`;
+
+  test('FREQ-576-AC-05: 作り直した2本の本文は囲みを除いて最新の定義と同じで、属性とACLが前と同じ（受け取りの引数は1つ増えた期待。S18末尾assertは適用後の状態と呼出元search_pathを許す）', async () => {
+    expect(s18Assertion).not.toBe('');
+    expect(s18Allowlist).not.toBe('');
+    expect(s18Drops.split('\n')).toHaveLength(2);
+    expect(await attempt()).toBeNull();
+    expect(await attempt('', 'set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('', 'set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt('', "set local search_path = ''")).toBeNull();
+  });
+
+  test('FREQ-576-AC-05: G の書き手の一覧の admin_receive_return は新しい形で、本数は77のまま、古い形の関数は private にも public にも無い', async () => {
+    const same = (await db().query('select private.group_g_writer_allowlist() = $1::text[]::regprocedure[] as same, cardinality(private.group_g_writer_allowlist()) as n',
+      [P3_ALLOWLIST])).rows[0];
+    expect(same).toEqual({ same: true, n: 77 });
+    const forms = (await db().query(`select n.nspname, p.pronargs from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where p.proname = 'admin_receive_return' order by n.nspname`)).rows;
+    expect(forms.map((f) => [f.nspname, f.pronargs])).toEqual([['private', 17], ['public', 17]]);
+    expect((await db().query(`select to_regprocedure('private.admin_receive_return${RECEIVE_SIG_16}') is null
+      and to_regprocedure('public.admin_receive_return${RECEIVE_SIG_16}') is null as gone`)).rows[0].gone).toBe(true);
+  });
+
+  test.each([
+    ['grant execute on function private.accounting_record_return_arrival(uuid,uuid,uuid,integer,integer) to service_role', 'acc_s18_functions'],
+    ['alter function private.accounting_assert_arrival_date(uuid,uuid,date) security invoker', 'acc_s18_functions'],
+    ['alter function private.accounting_record_return_decision(uuid,uuid,uuid,integer,uuid,integer,integer,integer) reset search_path', 'acc_s18_functions'],
+    ['revoke execute on function public.get_return_arrival_info(uuid[]) from service_role', 'acc_s18_functions'],
+    ['grant execute on function public.admin_correct_return_arrival_date(uuid,uuid,date,text,integer,uuid) to authenticated', 'acc_s18_functions'],
+    ['drop function public.get_return_carrier_arrival(uuid)', 'acc_s18_functions'],
+    [`create function public.admin_receive_return${RECEIVE_SIG_16} returns void language sql set search_path = '' as $f$ select null::void $f$`, 'acc_s18_receive_signature'],
+    [`alter function private.admin_receive_return${RECEIVE_SIG_17} rename to admin_receive_return_x`, 'acc_s18_receive_signature'],
+    [`alter function public.admin_receive_return${RECEIVE_SIG_17} stable`, 'acc_s18_function_attrs'],
+    [`revoke execute on function private.admin_receive_return${RECEIVE_SIG_17} from service_role`, 'acc_s18_function_attrs'],
+    [`alter function private.admin_refund_return${REFUND_SIG} set search_path = public`, 'acc_s18_function_attrs'],
+    [redefine(`private.admin_refund_return${REFUND_SIG}`, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s18_body_unchanged'],
+    [redefine(`private.admin_receive_return${RECEIVE_SIG_17}`, 'v_free_by_variant jsonb;', 'v_free_by_variant jsonb; v_probe integer;'), 'acc_s18_body_unchanged'],
+    [redefine('private.group_g_writer_allowlist()', 'ACC_P3_REPLACE_BEGIN b', 'ACC_P3_REPLACE_BEGIN 0'), 'acc_s18_body_unchanged'],
+    ["update pg_temp.accounting_s18_baseline set payload = jsonb_set(payload, '{allowlist,0}', '1')", 'acc_s18_g_allowlist_replaced'],
+    ["update pg_temp.accounting_s18_baseline set payload = jsonb_set(payload, '{receive16}', '1')", 'acc_s18_g_allowlist_replaced'],
+    ['alter table public.accounting_return_facts disable row level security', 'acc_s18_rls_acl'],
+    ['grant select on public.order_return_arrival_corrections to authenticated', 'acc_s18_rls_acl'],
+    ['update public.accounting_return_options set version = version + 1', 'acc_s18_existing_dml_allowlist'],
+    ['drop table pg_temp.accounting_s18_baseline', 'acc_s18_existing_dml_allowlist'],
+  ])('FREQ-576-AC-05: S18改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });

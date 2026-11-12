@@ -155,10 +155,18 @@ export const REFUND_SIGNATURE_SWAPS: readonly (readonly [string, string])[] = Ob
 export const UB_REFUNDS_ALLOWLIST: readonly string[] = Object.freeze(UB_ALLOWLIST.map((entry) => REFUND_SIGNATURE_SWAPS.find(([from]) => from === entry)?.[1] ?? entry));
 
 /**
+ * 会計の計画3 S18 で、受け取りの入口が17の引数（届いた日 date）になり、16の引数の関数は落ちた。
+ * 本数は同じ77本で、入れ替わったのは受け取りの署名の1本だけ。16の引数の署名を名指す前の時点の一覧（UB_ALLOWLIST・UB_REFUNDS_ALLOWLIST）は、
+ * replaceAllowlistSql が取引の中だけの代わりの関数を立てて型に通す。
+ */
+export const RECEIVE_RETURN_17 = `${RECEIVE_RETURN_16.slice(0, -1)},date)`;
+export const P3_ALLOWLIST: readonly string[] = Object.freeze(UB_REFUNDS_ALLOWLIST.map((entry) => (entry === RECEIVE_RETURN_16 ? RECEIVE_RETURN_17 : entry)));
+
+/**
  * 今の DB の書き手の一覧。「今の DB の一覧が固定の集合や本数と等しい」ことを確かめる生きた検査は、すべてこの定数に向ける。
  * 次の段階が本数を足す時は、この指し先だけを新しい一覧へ付け替える（時点の再実行が使う G3C/G3D/G4_ALLOWLIST は変えない）。
  */
-export const CURRENT_ALLOWLIST: readonly string[] = UB_REFUNDS_ALLOWLIST;
+export const CURRENT_ALLOWLIST: readonly string[] = P3_ALLOWLIST;
 
 /** 移行 C より前の時点の確かめを再生するための、14の引数の受け取りの入口（取引の中だけ。本体は16の引数へ渡すだけ） */
 const LEGACY_RECEIVE_STUB_SQL = `create or replace function private.admin_receive_return(_return_id uuid, _actor_id uuid, _actor_can_refund boolean, _request_key uuid,
