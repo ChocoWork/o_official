@@ -171,6 +171,11 @@ export interface ReturnReceiveEstimate {
   refundCap: number;
   /** 写しのある注文だけ: この返品の相談の出来事がまだ返していない額。全部返金済みなら 0 */
   consultOutstanding?: number;
+  /**
+   * 写しのある注文だけ: 「額を決めて返金する」の送料の欄の初めの値。返し直す今すぐの分に結ばれた、失敗した返金の送料の和
+   * （FREQ-642-AC-37。画面が返せる送料で切る。店長は変えられる）
+   */
+  retryShipping?: number;
 }
 
 export interface OrderRefundEstimate {

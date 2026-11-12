@@ -1,5 +1,7 @@
 # ER 図（現行リポジトリの実装）
 
+> 交換の印 オーナー修正 X4 Fix round 1 確認日: 2026-11-12。追記だけの表 `order_unit_event_waives`（返金しないで終えた (出来事, 分)）を足した（移行 20261112064013、本番未適用）。
+> 交換の印 オーナー修正 X4 確認日: 2026-11-12。`order_unit_event_refunds` の主キーを `(event_id, refund_id, part)` に広げた（1つの返金が同じ出来事の今すぐと相談の分を持てる。FREQ-642-AC-37。移行 20261112064013、本番未適用）。
 > 交換の印 オーナー修正 X1 確認日: 2026-11-12。発送枠は取り押さえの無い着から選び、不足分を取り押さえのある着で補う（FREQ-642-AC-34）。
 > 交換の印 最終直し 確認日: 2026-11-11。前の注文の着数の「発送した着」を `private.order_unit_shipped_slots`（移行 A に足した関数。表・列は変えていない）で決める（R33）。
 >
@@ -2422,7 +2424,8 @@ G・H の表（`shipment_slips`・`order_items`・`order_line_unit_amounts`）�
 | `order_unit_events` | `(id)`、`seq` は一意の連番 | 状態を変えた出来事（`return_receive`・`pre_shipment_cancel`・`cancel_reverted`・`hold_release`）と、その時の E・手数料・差し引いた合計・標準の返金（今すぐ `now_refund` と相談 `consult_refund` の和に一致）。`reverts_event_id` は一意。追記だけ |
 | `order_unit_event_lines` | `(id)` | 出来事の着ごとの行（`returned`・`kept`・`hold`）。状態と値段の前後・割り振り・直し・今すぐ／相談の別・発送済みかどうか。追記だけ |
 | `order_unit_holds` | `(id)` | 前の注文から差し引いた額（正）と戻した額（負）。どの出来事で、どの前の注文と後の注文か。追記だけ |
-| `order_unit_event_refunds` | `(event_id, refund_id)` | 出来事と返金（`order_refunds`）のつなぎ。`part` は `now`・`consult`・`release`。追記だけ |
+| `order_unit_event_refunds` | `(event_id, refund_id, part)`（X4 で広げた。移行 A では `(event_id, refund_id)`） | 出来事と返金（`order_refunds`）のつなぎ。`part` は `now`・`consult`・`release`。受け取りの時の返金が失敗した後の返し直しは、1つの返金が同じ出来事の `now` と `consult` の2行を持つ（FREQ-642-AC-37）。`release` は他の分と同じ（出来事, 返金）を持たない。追記だけ |
+| `order_unit_event_waives` | `(event_id, part)` | 返品の「額を決めて返金する」を0円で行った（返金しないで終えた、`waive_refund` の受け取り `receipt_id`）時に閉じた (出来事, 分)。`part` は `now`・`consult`。この分は返し直しで二度持たない（FREQ-642-AC-37、X4 Fix round 1。移行 20261112064013、本番未適用）。`receipt_id` に索引。追記だけ・RLS で直接の読み書きを断り、service_role は読むだけ |
 | `order_return_line_treatments` | `(id)` | 返品の行ごとの割引の扱い（`shop`・`customer`）の履歴。最後の行が今の扱い。誰がいつ直したかを持つ。追記だけ |
 
 足した外部キーは RESTRICT だけで、`orders`・`order_items`・`order_returns`・`order_return_receipts`・`order_return_lines`・`order_refunds`・`order_line_unit_amounts` と、この 8 表の間（枠 → 出来事、交換の結び → 枠、出来事の行 → 枠・出来事、差し引き → 出来事、出来事と返金のつなぎ → 出来事・返金）。`item_id` の型は `order_items.item_id` に合わせて `bigint`。出来事の金額の列は `NOT NULL DEFAULT 0`。`actor_id` に外部キーは付けない。

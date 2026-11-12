@@ -1,5 +1,6 @@
 # DB マイグレーション運用
 
+> 2026-11-12 確認日（オーナー修正 X4 / FREQ-642-AC-37）: 新しい移行 `20261112064013_unit_binding_refund_retry.sql` を足した（本番未適用）。A〜D は本番適用済みなので直していない。末尾の節を参照。
 > 2026-11-12 確認日（FREQ-642 本番適用）: 移行 A〜D（20261110090325・20261110104605・20261110120611・20261110135232）を、オーナーの許可（2026-11-12「3つの直しの後に、本番適用と push をまとめて行う」）で本番に当てた。下の「交換の印の移行 A〜D の本番適用（2026-11-12）」の節。
 > 2026-11-12 確認日（X2 / FREQ-642-AC-35・Fix round 1）: 調整役の実測（2026-11-12）: `npm run db:reset` 後の関連DB101ファイルは3563件通過・12件スキップ・1件失敗（AC-35の旧注文seedが `ORDER_RETURN_IMMUTABLE`。承認時に10%を設定する経路へ修正）。その後、FREQ-642のDB136件すべて通過。本番ビルドのE2Eは `isolated-global` の FR-ADMIN-165/166/167 が27件通過、`chromium` の FR-ACCOUNT-048/049 が12件通過。Fix round 1で追加した相談後返金の2 assertionも、調整役が db:reset 後に流して通過（FREQ-642 ほかの DB 167件通過、2026-11-12）。X2は未 push。
 
@@ -1593,3 +1594,30 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 | 手元との突き合わせ | `md5(pg_get_functiondef(...))` が本番と手元の DB で同じ: `order_unit_shipped_slots` 40d2cc63…、`admin_receive_return`（private）fc64b649…、`admin_refund_return`（private）f2d83999…、`begin_order_refund_core` ce916a0f… |
 
 本番のアプリはまだ公開していない（Vercel にプロジェクトが無い）。新しいサーバーのコードは、公開する時に同じ master から出す。
+
+## 受け取りの時の返金が失敗した後の返し直し（X4、2026-11-12）
+
+対応: FREQ-642-AC-37（オーナー決定 2026-11-12）。移行 A〜D は本番に当たっているので直さず、新しい移行を1本足した。**本番未適用。**
+
+| 移行 | bytes | MD5 |
+| --- | --- | --- |
+| `20261112064013_unit_binding_refund_retry.sql` | 56635 | `641eb34deb1223f6ee7f5c4f994e0126` |
+
+（Fix round 2 で直した版。最初の版は 50097 bytes・`09716d754ff077d2cdc055998a8fd6dc`、Fix round 1 の版は 55530 bytes・`827c1fd09e99f48b793c4e977c1536a8`。どれもまだ本番に当てていない。）
+
+サイズと MD5 は `wc -c`・`md5sum` で測った（LF・ASCII・単一取引）。
+
+| 項目 | 中身 |
+| --- | --- |
+| 表 | `public.order_unit_event_refunds` の主キーを `(event_id, refund_id)` から `(event_id, refund_id, part)` に広げた（制約の名前は `order_unit_event_refunds_pkey` のまま）。追記だけの引き金2つ・`refund_id` の索引・RLS・権限は変えない |
+| 新しい表（Fix round 1） | `public.order_unit_event_waives`（主キー `(event_id, part)`、`receipt_id` は `waive_refund` の受け取り、`receipt_id` の索引）。返品の「額を決めて返金する」を0円で行った時に閉じた (出来事, 分)。追記だけの引き金2つ（ENABLE ALWAYS）・RLS と「deny direct client access」・service_role は読むだけ |
+| 当てる前の確かめ（Fix round 1） | 返品の受け取りの出来事がある返品に `waive_refund` の受け取りが既にあれば、移行は `ubx_waive_backfill` で止まる（どの分を閉じたかを後から決められないため）。本番に当てる前に `select count(*) from public.order_return_receipts rr where rr.kind='waive_refund' and exists (select 1 from public.order_unit_events e where e.return_id=rr.return_id and e.kind='return_receive')` が 0 であることを確かめる。0 でなければ当てずにオーナーに相談する |
+| 新しい関数 | `private.order_unit_return_refund_parts(uuid)`（STABLE・SECURITY DEFINER・search_path 空・実行はだれにも許さない）。返品の受け取りの出来事（取り消されていない）ごとに、相談の分（生きている相談の返金が無い時）と今すぐの分（失敗した今すぐの返金があり、生きている今すぐの返金が無い時）を、出来事に残した額と一緒に返す。0円で終えた (出来事, 分)（上の表）は返さない |
+| 置き換えた関数（署名は同じ） | `private.order_unit_link_refund(uuid,uuid,text)`（同じ出来事・返金に `now` と `consult` を足せる。`release` との二重は `ub_link_2`）、`private.begin_order_refund_core`（16引数。受け取りの後の返品の返金は上の関数の (出来事, 分) を持ち、行と結びをそこから作る）、`private.admin_refund_return`（8引数。標準の額と核に渡す出来事を上の関数から読む。0円で終える時は、その時に上の関数が返す (出来事, 分) を新しい表に書く。その分の着が返金待ちの着とちょうど同じでなければ（今すぐの返金が error の間など）`ub_refund_lines` で断る） |
+| 書き手の許可一覧 | 変えない（77本。署名が変わらないので OID も同じ） |
+| 末尾の確かめ | `UNIT_BINDING_REFUND_RETRY_MIGRATION_ASSERTION_FAILED`（`P0001`）。DETAIL は `ubx_schema`（主キー・引き金・索引。新しい表の主キー・引き金・RLS・方針・所有者・索引も）・`ubx_functions`（本文の MD5・所有者・設定）・`ubx_acl`（新しい表の権限も）・`ubx_allowlist`。当てる前の確かめは `ubx_waive_backfill` |
+| 古い試験への影響 | 移行 B・D の末尾の確かめを再生する試験は、X4 が置き換えた関数の MD5 を最後に定義した移行の物と比べる（`tests/integration/db/helpers/unit-binding-latest.ts`）。同じ返金の今すぐと相談の二重の結びを断ると決めていた B の試験は、X4 の決まりに合わせた |
+| 配備 | 移行を先に当て、その後にサーバー（見込みの `loadReturnRefundOutstanding` が新しい表を読む）を出す。サーバーを先に出すと、写しのある返品の見込みが表が無いことで失敗し、返金の画面が額を出せない |
+| 戻し方 | 適用した後は、D の本文に戻す新しい移行を足す（新しい表は消さずに残し、読む関数だけを戻す）。主キーを戻す前に、同じ（出来事, 返金）に2行ある結びが無いことを確かめる（追記だけの表なので消さない） |
+
+手元の DB での実測（2026-11-12、`npm run db:reset` の後）: 移行が通り、末尾の確かめも通った。Fix round 2 の版で、X4 の DB 試験 38件通過。関係する DB 試験（unit-binding-*・group_g1_*・group_g4_reads・group_h_*・order_refund_*・order_return_receipts・return-receive-per-item・admin-misc/admin_rls_policy）は 50ファイル・1374件通過・2件スキップ。

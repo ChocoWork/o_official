@@ -11,6 +11,7 @@ import { hDiscount, seedHDiscount, seedHMember, seedHOrderUnits, seedHUnitSlots,
 import { hClaims, hRefundFixture, hResult, type HRefundFixture } from './helpers/group-h-refund-fixtures';
 import { describeLocalDb } from './helpers/local-db';
 import { createCatalogFixture, shipFixtureOrder } from './helpers/order-fixtures';
+import { withLatestBodies } from './helpers/unit-binding-latest';
 import { buildReceivePricing, createUbReturn, materialsOf, ubReceive, type ReceiveUnit } from './helpers/unit-binding-receive';
 
 jest.setTimeout(60000);
@@ -212,7 +213,7 @@ describeLocalDb('FREQ-642-AC-27: unit binding refunds, cancels and releases (con
       expect((await q('select amount from public.order_refund_lines where refund_id=$1', [consult.refund_id])).rows).toEqual([{ amount: 20000 }]);
     });
 
-    /** 画面の見込み(loadConsultOutstanding)と同じ基準: 失敗以外の相談の返金が付いていない返品の受け取りの出来事の consult_refund の和 */
+    /** X4 より前の画面の見込み（相談の分だけ）と同じ基準: 失敗以外の相談の返金が付いていない返品の受け取りの出来事の consult_refund の和 */
     const screenBasis = async (returnId: string) => Number((await q(`select coalesce(sum(e.consult_refund),0) n from public.order_unit_events e
       where e.return_id=$1 and e.kind='return_receive' and e.consult_refund>0 and not exists (
         select 1 from public.order_unit_event_refunds er join public.order_refunds rf on rf.id=er.refund_id
@@ -584,7 +585,8 @@ describeLocalDb('FREQ-642-AC-27: unit binding refunds, cancels and releases (con
   });
 });
 
-const ubfAssert = sql.split('-- UBF_FINAL_ASSERT_BEGIN\n')[1]?.split('-- UBF_FINAL_ASSERT_END')[0] ?? '';
+// X4（FREQ-642-AC-37）が begin_order_refund_core と private.admin_refund_return を同じ署名で置き換えたので、その中身の md5 は最後に定義した移行の物と比べる
+const ubfAssert = withLatestBodies(sql.split('-- UBF_FINAL_ASSERT_BEGIN\n')[1]?.split('-- UBF_FINAL_ASSERT_END')[0] ?? '');
 
 describeLocalDb('FREQ-642-AC-27: unit binding migration D final assertion (controller only)', (db) => {
   beforeEach(async () => { await db().query('begin'); await db().query('select pg_advisory_xact_lock(190521,1)'); });

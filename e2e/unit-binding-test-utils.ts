@@ -40,9 +40,9 @@ async function loadServices() {
     loader.ubServerOnlyAllowed = true;
   }
   // Playwright が TypeScript を CommonJS に変えて読むので require を使う（動的な import は素の ESM になり TypeScript を読めない）
-  const { receiveReturnAndRefund } = require('@/lib/orders/returns/return-service') as typeof import('@/lib/orders/returns/return-service');
+  const { receiveReturnAndRefund, refundReturnAndRequestStripe } = require('@/lib/orders/returns/return-service') as typeof import('@/lib/orders/returns/return-service');
   const { submitAdminRefund } = require('@/lib/orders/refund/refund-service') as typeof import('@/lib/orders/refund/refund-service');
-  return { receiveReturnAndRefund, submitAdminRefund };
+  return { receiveReturnAndRefund, refundReturnAndRequestStripe, submitAdminRefund };
 }
 
 // ---- 注文の材料 ----
@@ -332,6 +332,40 @@ export async function installRefundBridge(page: Page, actorId: string): Promise<
       return;
     }
     await fulfillJson(route, { refundId: result.refundId, status: result.status, amount: result.amount, replayed: result.replayed });
+  });
+  return state;
+}
+
+/** 返品の「額を決めて返金する」が呼ぶ窓口（POST /api/admin/returns/{id}/refund）を、窓口と同じ入口（refundReturnAndRequestStripe）に差し替える */
+export async function installReturnRefundBridge(page: Page, actorId: string): Promise<{ posts: Array<{ returnId: string; body: Record<string, unknown> }>; results: unknown[] }> {
+  const state = { posts: [] as Array<{ returnId: string; body: Record<string, unknown> }>, results: [] as unknown[] };
+  await page.route(/\/api\/admin\/returns\/[^/]+\/refund$/, async (route: Route) => {
+    if (route.request().method() !== 'POST') { await route.fallback(); return; }
+    const returnId = new URL(route.request().url()).pathname.split('/')[4];
+    const body = route.request().postDataJSON() as { requestKey: string; amount: number | null; shippingAmount: number; note: string | null; notifyCustomer: boolean };
+    state.posts.push({ returnId, body });
+    let result;
+    try {
+      const { refundReturnAndRequestStripe } = await loadServices();
+      result = await refundReturnAndRequestStripe(stubDeps(), {
+        returnId, actorId, requestKey: body.requestKey, amount: body.amount ?? null, shippingAmount: body.shippingAmount ?? 0,
+        note: body.note ?? null, notifyCustomer: body.notifyCustomer,
+      });
+    } catch (error) {
+      state.results.push(error);
+      await fulfillJson(route, { error: String((error as Error)?.message ?? error), code: 'bridge_error' }, 500);
+      return;
+    }
+    state.results.push(result);
+    if (result.kind === 'waived') {
+      await fulfillJson(route, { data: { refundId: null, amount: 0, status: 'waived', replayed: result.replayed } });
+      return;
+    }
+    if (result.kind !== 'accepted') {
+      await fulfillJson(route, { error: '返金を受け付けられませんでした。', code: result.kind === 'refused' ? result.code : 'failed' }, 409);
+      return;
+    }
+    await fulfillJson(route, { data: { refundId: result.refundId, status: result.status, amount: result.amount, replayed: result.replayed } });
   });
   return state;
 }

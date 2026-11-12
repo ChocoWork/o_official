@@ -1,5 +1,7 @@
 # 注文管理のシーケンス
 
+> 交換の印 X4 Fix round 2 確認日: 2026-11-12。画面の見込みの関数の名前を `loadReturnRefundOutstanding` に改めた（`loadConsultOutstanding` は消した）。
+>
 > 交換の印 最終直し 確認日: 2026-11-11。相談後の返金の標準の額を、相談の返金が付いていない出来事の相談の分の和にし（R34）、`order_unit_outstanding` を消した。発送した枠を `order_unit_shipped_slots` で決める（R33）。
 >
 > 相談後の返金・発送前の取り消し・前の注文への戻し 確認日: 2026-11-10。末尾の「相談後の返金・注文の返金・発送前の取り消し・前の注文への戻し（FREQ-642 Task 6）」に、1着ずつの出来事で返金を決める流れ、前の注文に戻す返金、店が返金をやめた取り消しの戻しを足した。
@@ -1203,7 +1205,7 @@ sequenceDiagram
 - `releases`（前の注文に戻す計画）は記録しない。呼び出し側が、出来事の後に別の出来事（`hold_release`）として呼ぶ。計画は前の注文（戻す先の注文）の `holds` に当たるので、`version` は出来事の後に、その前の注文の材料から読み直した版に付け替える（対象の注文の版ではない）。`hold_release` の行は前の注文の着を指すだけなので、その着の状態は照合しない。
 - 枠の更新は表の守りが見張る。鍵の列は変わらず、状態は `kept` から `returned_*` へ一度だけ動く。`returned_shop` から `kept` へ戻すのは、店が返金をやめた発送前の取り消しの戻しの道だけ。条件は3つ: その枠の最後の出来事が `pre_shipment_cancel` であること、G の共通鍵を持った取引の中であること、取引の設定 `app.unit_slot_revert` が今の取引の id と同じであること（戻しの道が UPDATE の直前に `select set_config('app.unit_slot_revert', txid_current()::text, true)` を呼ぶ。`on` のような固定の値や、前の取引の設定は通らない）。
 - 返金の結び（`order_unit_link_refund`）は、出来事の `returned` の行のうち部分が同じ着（部分の無い行は `now`）に、返金の取り押さえを付ける。同じ返品の返金なら返品の行の取り押さえを残し、交換の品の返品や別の返品の返金なら元の着の `return_line_id` を外して `refund_id` だけ付ける（H の守りの規則 e・f）。返金の error・やり直しでは枠の状態も割り振りも動かさない。
-- 返品の相談の残りは、返品の出来事（取り消されていない）のうち、相談として結んだ返金（part `consult`。失敗以外）がまだ付いていない出来事の相談の分（`consult_refund`）の和（R34。`order_unit_outstanding` は消した。画面の `loadConsultOutstanding` と相談後の返金の標準の額が同じ出来事を数える）。店長が前の返金の額を下げても上げても、残りには戻らない（設計書 2-1: 店長の決定は持ち越さない）。
+- 返品の相談の残りは、返品の出来事（取り消されていない）のうち、相談として結んだ返金（part `consult`。失敗以外）がまだ付いていない出来事の相談の分（`consult_refund`）の和（R34。`order_unit_outstanding` は消した。画面の `loadReturnRefundOutstanding`（X4 で `loadConsultOutstanding` から改めた。FREQ-642-AC-37）と相談後の返金の標準の額が同じ出来事を数える）。店長が前の返金の額を下げても上げても、残りには戻らない（設計書 2-1: 店長の決定は持ち越さない）。
 
 ## 受け取りと返金の結果の結び（FREQ-642 Task 5）
 

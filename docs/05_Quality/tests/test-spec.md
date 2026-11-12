@@ -1,5 +1,11 @@
 # テスト仕様
 
+> 2026-11-12 確認日（オーナー修正 X4 Fix round 2）: 送料の欄の初めの値（一番新しい失敗した返金だけ）・0円で終える時の案内・エラーの間の0円の終わりの断りを単体・DB に足した。
+
+> 2026-11-12 確認日（オーナー修正 X4 Fix round 1）: 返金しないで終えた分・固定の費用・出来事2つ・error の断り・送料の欄の初めの値・画面の見込みと DB の読み手の一致を DB・単体・E2E に足した。E2E は未実行（調整役が実行）。
+
+> 2026-11-12 確認日（オーナー修正 X4 / FREQ-642-AC-37）: 受け取りの時の返金が失敗した後の返し直しを DB（新しい `unit-binding-refund-retry.integration.test.ts`）・単体（`unit-pricing-store.test.ts`）に追加し、390/768/1280px の FR-ADMIN-168 を追加。移行 B・D の末尾の確かめの再生は、X4 が置き換えた関数の本文の MD5 を最後に定義した移行の物と比べる。E2E は未実行（調整役が実行）。
+
 > 2026-11-12 確認日（オーナー修正 X3 / FREQ-642-AC-36）: 商品ページの案内の初期1行・全文の非表示と開いた後の表示を単体に追加し、390/768/1280px の FR-ITEM-DETAIL-071 を追加。mobile 390×844px の初期画面に「YOU MAY ALSO LIKE」が入ることも確かめる。FR-ITEM-DETAIL-070 は先に案内を開く。E2E は未実行（調整役が実行）。
 
 > 2026-11-12 確認日（X2 / FREQ-642-AC-35・Fix round 1）: 調整役の実測（2026-11-12）: `npm run db:reset` 後の関連DB101ファイルは3563件通過・12件スキップ・1件失敗（AC-35の旧注文seedが `ORDER_RETURN_IMMUTABLE`。承認時に10%を設定する経路へ修正）。その後、FREQ-642のDB136件すべて通過。本番ビルドのE2Eは `isolated-global` の FR-ADMIN-165/166/167 が27件通過、`chromium` の FR-ACCOUNT-048/049 が12件通過。Fix round 1で追加した相談後返金の2 assertionも、調整役が db:reset 後に流して通過（FREQ-642 ほかの DB 167件通過、2026-11-12）。X2は未 push。
@@ -1585,6 +1591,30 @@ AC-07の3行・予備あり・介在受取とAC-08は旧本文だけで組み立
 | `e2e/FR-CHECKOUT-061-discount-return-note.spec.ts` | `FREQ-642-AC-22, FREQ-642-AC-32: …最終確認画面に割引の扱いの文が出る` | 入力画面から最終確認画面へ進む | `checkout-discount-return-note`に同じ文 | 実装者 | 2026-11-11 1件×3幅 通過 |
 | `e2e/FR-LEGAL-008-discount-return-policy.spec.ts` | `FREQ-642-AC-22: /legal に割引の扱いの文が出て、横にはみ出さない` | `/legal` | `legal-discount-return-note`に同じ文 | 実装者 | 2026-11-11 1件×3幅 通過 |
 | `e2e/FR-TERMS-007-discount-return-policy.spec.ts` | `FREQ-642-AC-22: /terms に割引の扱いの文が出て、横にはみ出さない` | `/terms` | `terms-discount-return-note`に同じ文 | 実装者 | 2026-11-11 1件×3幅 通過 |
+
+### オーナー修正 X4（AC-37、2026-11-12）
+
+| レベル | 対象・手順と期待値 | 実行状態 |
+| --- | --- | --- |
+| DB | [unit-binding-refund-retry.integration.test.ts](../../../tests/integration/db/unit-binding-refund-retry.integration.test.ts)：今すぐ17,000円＋相談20,000円の受け取りで今すぐの返金を失敗にし、`admin_refund_return` が37,000円の返金1つ（返金の行37,000円、結び `now`・`consult`、2着とも新しい返金が取り押さえる）。今すぐだけ→17,000円。今すぐが成功・手続き中・受け取りで0円→相談の20,000円だけ。相談の返金の失敗→返し直し。両方失敗→37,000円。同じ番号の送り直しは前の結果。率10%と免除でも出来事に残した額の和。主キー `(event_id, refund_id, part)` と書き換えの拒否。移行の形（単一取引・ASCII・LF）と末尾の確かめの改変9通り | 22件。移行の無い状態で18件失敗（挙動7件は UNIT_PRICING_INVALID と主キーの違い・移行の形1件・末尾の確かめ10件。成功・手続き中・0円・相談の失敗の4件は前から通る）→移行の後で22件通過 |
+| DB（既存の合わせ直し） | `unit-binding-core.integration.test.ts`：同じ（出来事, 返金）の `now` と `consult` は持てる、`release` との二重は `ub_link_2`。`unit-binding-core`・`unit-binding-refunds` の末尾の確かめの再生は [unit-binding-latest.ts](../../../tests/integration/db/helpers/unit-binding-latest.ts) で、X4 が置き換えた関数の MD5 を最後に定義した移行の物に替える | 通過 |
+| 単体 | `unit-pricing-store.test.ts`：今すぐの返金が失敗した出来事は今すぐの分を足す（37,000円・今すぐだけ17,000円）、pending・awaiting_response・error・succeeded は相談の分だけ、返金の無い今すぐの分は数えない、返し直しが両方を持てば0。`unit-pricing-service.test.ts` の結びの行に `part` を付けた | 新規8件。旧実装で6件失敗→通過 |
+| E2E | [FR-ADMIN-168-unit-binding-refund-retry.spec.ts](../../../e2e/FR-ADMIN-168-unit-binding-refund-retry.spec.ts)：20,000円×2の写しのある注文、今すぐ1着・相談1着を DB で受け取り、今すぐの返金を失敗にすると「額を決めて返金する」の商品・返金額が40,000円で、押すと返金1つ（結び `now`・`consult`）。手続き中なら20,000円だけ。390/768/1280px、頁の横はみ出しなし。`isolated-global` | 2件×3幅を定義、未実行（調整役が実行） |
+
+### オーナー修正 X4 Fix round 1（AC-37、2026-11-12）
+
+| レベル | 対象・手順と期待値 | 実行状態 |
+| --- | --- | --- |
+| DB | [unit-binding-refund-retry.integration.test.ts](../../../tests/integration/db/unit-binding-refund-retry.integration.test.ts)：(I-1) 今すぐだけの受け取りの返金が失敗 → 0円で終える → 残りの品を相談で受け取る → 返金は新しい相談の分だけ・結びは2つめの出来事の `consult` だけ、`order_unit_event_waives` に (1つめの出来事, `now`)。相談の分を0円で終えた後も同じ（移行 D からの穴）。表は追記だけ（書き換えは 55000）。移行の前に写しのある返品の0円の終わりがあれば `ubx_waive_backfill`。(I-2) 返送料1,000円で失敗した今すぐの返金16,000円・`return_fee_deduction` 1,000円 → `fee_pending_deduction` 1,000円 → 返し直し36,000円・`return_fee_deduction` 1,000円。(M-1) 今すぐの返金が error の間は、今すぐ1着・相談1着なら `ub_refund_lines`、今すぐだけなら `ub_refund_event`。(M-3) 出来事2つ（今すぐだけで失敗・相談だけ）→ 1つの返金が両方の分を返して結ぶ。(M-4) 末尾の確かめの改変に、読み手の本文・読み手の実行の許可・表の主キー・引き金・RLS・表の許可（service_role の書き込み・authenticated の読み）を足した。(M-5) 移行の `@design`。(M-6) どの場面でも、サーバーの `loadReturnRefundOutstanding`（Fix round 2 で `loadConsultOutstanding` を消して移した）を取引の中の DB に向けて動かした額が、`private.order_unit_return_refund_parts` の額の和と同じ | 37件通過（新しい15件のうち、表が無い旧の移行では10件失敗） |
+| 単体 | `unit-pricing-store.test.ts`：返金しないで終えた `now`・`consult` の分は数えない、`retryShipping` は返し直す今すぐの分の失敗した返金の送料の和（同じ返金は1回・終えた分は除く）、今すぐの分を返し直さなければ 0。`unit-pricing-service.test.ts`：見込みが `retryShipping` を返す。`OrderReturnRefundDialog.unitPricing.test.tsx`：送料の欄が `retryShipping`（500円）で始まり、額を送らずに送料500円を送る、返せる送料800円で切る、店長が0円に変えられる、`retryShipping` 0 なら0円 | 新規7件（store 4・画面 3）と service の1件の追記。旧実装で7件失敗→通過 |
+| E2E | [FR-ADMIN-168-unit-binding-refund-retry.spec.ts](../../../e2e/FR-ADMIN-168-unit-binding-refund-retry.spec.ts)：注文の送料800円・受け取りの今すぐの返金に送料800円。失敗の後は送料の欄が800円で始まり返金額40,800円、送料800円を送る。手続き中なら送料0円。今すぐだけの失敗（20,800円）も追加。390/768/1280px | 3件×3幅を定義、未実行（調整役が実行） |
+
+### オーナー修正 X4 Fix round 2（AC-37、2026-11-12）
+
+| レベル | 対象・手順と期待値 | 実行状態 |
+| --- | --- | --- |
+| DB | [unit-binding-refund-retry.integration.test.ts](../../../tests/integration/db/unit-binding-refund-retry.integration.test.ts)：(m-1) 今すぐ1着・相談1着で今すぐの返金を error にし、0円で終えると `UNIT_PRICING_INVALID`・`ub_refund_lines`、返金待ちは2着のまま、`order_unit_event_waives` は0行。その後に失敗にすると37,000円の返金1つ | 38件通過（新しい1件は旧の版で失敗） |
+| 単体 | `unit-pricing-store.test.ts`：(I-3) 送料300円の R1 が失敗し、送料300円の R2 も失敗 → `retryShipping` 300円、R2 の送料0円 → 0円、時刻が同じなら番号の大きい方。`loadConsultOutstanding` を消し、試験を `loadReturnRefundOutstanding` に移した（m-3）。`OrderReturnRefundDialog.unitPricing.test.tsx`：(m-2) 送料500円が入ったまま返金額を0にすると案内の文を出して押せず、送料と返金額を0にすると「返金しないで終える」で押せる | 新規4件。旧実装で4件失敗→通過 |
 
 ### オーナー修正 X3（AC-36、2026-11-12）
 

@@ -8,9 +8,9 @@
 
 | 指標 | 件数 |
 | --- | ---: |
-| 要件定義書の対象ID | 2432 |
-| 設計にID参照あり | 693 |
-| テストにID参照あり | 1734 |
+| 要件定義書の対象ID | 2433 |
+| 設計にID参照あり | 694 |
+| テストにID参照あり | 1735 |
 | 設計にID参照なし | 1739 |
 | テストにID参照なし | 698 |
 
@@ -2269,6 +2269,7 @@
 | `FREQ-642-AC-34` | 3件（[er.md](../../03_BasicDesign/data/er.md)） | 1件（[unit-binding-refunds.integration.test.ts](../../../tests/integration/db/unit-binding-refunds.integration.test.ts)） |
 | `FREQ-642-AC-35` | 2件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 8件（[FR-ADMIN-167-return-restocking-fee-waiver.spec.ts](../../../e2e/FR-ADMIN-167-return-restocking-fee-waiver.spec.ts)） |
 | `FREQ-642-AC-36` | 1件（[05_item_detail.md](../../04_DetailDesign/pages/05_item_detail.md)） | 2件（[FR-ITEM-DETAIL-071-discount-return-note-disclosure.spec.ts](../../../e2e/FR-ITEM-DETAIL-071-discount-return-note-disclosure.spec.ts)） |
+| `FREQ-642-AC-37` | 4件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 7件（[FR-ADMIN-168-unit-binding-refund-retry.spec.ts](../../../e2e/FR-ADMIN-168-unit-binding-refund-retry.spec.ts)） |
 | `FREQ-65-AC-01` | なし | 1件（[FR-LOGIN-012-auth-tab-and-button-states.spec.ts](../../../e2e/FR-LOGIN-012-auth-tab-and-button-states.spec.ts)） |
 | `FREQ-65-AC-02` | なし | 1件（[FR-LOGIN-012-auth-tab-and-button-states.spec.ts](../../../e2e/FR-LOGIN-012-auth-tab-and-button-states.spec.ts)） |
 | `FREQ-65-AC-03` | なし | 2件（[FR-LOGIN-012-auth-tab-and-button-states.spec.ts](../../../e2e/FR-LOGIN-012-auth-tab-and-button-states.spec.ts)） |

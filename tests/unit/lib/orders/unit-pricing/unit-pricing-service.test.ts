@@ -329,8 +329,8 @@ describe('DD-ADMIN-022: 受け取りの値段の計画と見込み', () => {
   test('DD-ADMIN-022: 相談の残り（consultOutstanding）は相談の返金が付いた出来事を数えない', async () => {
     const { client } = clientWith({ materials: repeat() });
     const tables: Record<string, unknown[]> = {
-      order_unit_events: [{ id: 'e1', consult_refund: 5000 }],
-      order_unit_event_refunds: [{ event_id: 'e1', refund_id: 'r1' }],
+      order_unit_events: [{ id: 'e1', now_refund: 0, consult_refund: 5000 }],
+      order_unit_event_refunds: [{ event_id: 'e1', refund_id: 'r1', part: 'consult' }],
       order_refunds: [{ id: 'r1', status: 'succeeded' }],
     };
     (client.from as jest.Mock).mockImplementation((table: string) => {
@@ -348,6 +348,14 @@ describe('DD-ADMIN-022: 受け取りの値段の計画と見込み', () => {
     tables.order_refunds = [{ id: 'r1', status: 'failed' }];
     const failed = await estimateReturnReceive(client, RETURN_ID, BODY);
     expect(failed.consultOutstanding).toBe(5000);
+    expect(failed.retryShipping).toBe(0);
+
+    // FREQ-642-AC-37: 今すぐの返金が失敗した分を返し直す時は、その返金の送料を送料の初めの値として返す
+    tables.order_unit_events = [{ id: 'e1', now_refund: 17000, consult_refund: 0 }];
+    tables.order_unit_event_refunds = [{ event_id: 'e1', refund_id: 'r2', part: 'now' }];
+    tables.order_refunds = [{ id: 'r2', status: 'failed', shipping_amount: 800 }];
+    const retry = await estimateReturnReceive(client, RETURN_ID, BODY);
+    expect(retry).toMatchObject({ consultOutstanding: 17000, retryShipping: 800 });
   });
 });
 

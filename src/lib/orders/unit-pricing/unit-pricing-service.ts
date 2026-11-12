@@ -13,7 +13,7 @@ import type {
 import { planUnitEvent } from '@/lib/orders/unit-pricing/unit-event-plan';
 import { defaultTreatment } from '@/lib/orders/unit-pricing/unit-pricing-treatment';
 import {
-  loadConsultOutstanding, loadReturnOrderId, loadUnitPricingMaterials, type UnitPricingClient,
+  loadReturnOrderId, loadReturnRefundOutstanding, loadUnitPricingMaterials, type UnitPricingClient,
 } from '@/lib/orders/unit-pricing/unit-pricing-store';
 import {
   UnitPricingError, slotKeyOf,
@@ -268,7 +268,9 @@ export async function estimateReturnReceive(
   options: PlanReceiveOptions = {},
 ): Promise<ReturnReceiveEstimate> {
   const { estimate } = await planReturnReceive(client, returnId, body, options);
-  return estimate.legacy ? estimate : { ...estimate, consultOutstanding: await loadConsultOutstanding(client, returnId) };
+  if (estimate.legacy) return estimate;
+  const outstanding = await loadReturnRefundOutstanding(client, returnId);
+  return { ...estimate, consultOutstanding: outstanding.amount, retryShipping: outstanding.retryShipping };
 }
 
 /** 写しの無い注文: 今の見込み（computePerItemReturnRefundPreview）を同じ形で返す */

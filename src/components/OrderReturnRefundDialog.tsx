@@ -45,6 +45,8 @@ const ESTIMATE_FAILURE_MESSAGE = '返金の見込みを計算できませんで�
 // 品を選ばない本文。受け取りの見込みの窓口が、写しのある注文の「相談の残り」（consultOutstanding）だけを返すのに使う
 const NO_PICKS_BODY = { units: [], exchangeOverrides: [], refundChoice: 'none', refundShippingAmount: 0 } as const;
 const WAIVE_NOTICE = '返金しないで終えます。お客様に返金のメールは送りません。';
+// 返金額を0にしても送料が残る（送料の欄の初めの値が入っている）間は押せない。その理由（FREQ-642-AC-37）
+const WAIVE_NEEDS_NO_SHIPPING = '返金しないで終えるには、返金額と送料をどちらも0円にしてください。';
 const REFUND_NOTICES = {
   accepted: '返金を受け付けました。お金が戻ると、注文の状態が変わります。',
   succeeded: '返金しました。',
@@ -95,7 +97,8 @@ function OrderReturnRefundDialogBody({ loaded, onClose, onDone, onUncertain }: O
     onClose,
     onUncertain,
   });
-  const [shippingEntered, setShippingEntered] = useState(0);
+  // 送料の欄に店長が入れた値。入れるまでは null で、見込みの送料の初めの値（retryShipping）を使う
+  const [shippingEntered, setShippingEntered] = useState<number | null>(null);
   // 返金額を手で直した時だけ入る。送料を変えたら空に戻し、見込みの額に追い付かせる
   const [amountEntered, setAmountEntered] = useState<number | null>(null);
   const [note, setNote] = useState('');
@@ -103,7 +106,8 @@ function OrderReturnRefundDialogBody({ loaded, onClose, onDone, onUncertain }: O
 
   const stopped = flow.busy || flow.uncertain || flow.recorded;
   const waitingLines = detail.lines.filter((line) => line.progress.refundWaiting > 0);
-  // 商品の額は、写しのある注文では見込みの窓口の「相談の残り」（相談の出来事がまだ返していない額。全部返金済みなら 0）。
+  // 商品の額は、写しのある注文では見込みの窓口の「相談の残り」（相談の出来事がまだ返していない額に、受け取りの時の返金が失敗した
+  // 今すぐの分を足した額。返金しないで終えた分は除く。FREQ-642-AC-37。全部返金済みなら 0）。
   // 写しの無い注文（legacy）は、今の待ち額で出す（FREQ-642-AC-20）。窓口の答えを待つ間・出せない間は額を出さない
   const estimateState = useUnitPricingEstimate<ReturnReceiveEstimate>(
     waitingLines.length > 0 ? `/api/admin/returns/${detail.id}/receive-estimate` : null,
@@ -118,7 +122,9 @@ function OrderReturnRefundDialogBody({ loaded, onClose, onDone, onUncertain }: O
   const itemsAmount = outstanding ?? detail.lines.reduce((sum, line) => sum + line.refundWaitingAmount, 0);
   // 相談の受け取りで付いた手数料は、商品の額から引く。引ききれない分は DB がお支払い待ちに回す
   const deducted = Math.min(pendingFeeOf(detail), itemsAmount);
-  const shippingAmount = Math.min(shippingEntered, refundableShipping);
+  // 送料の初めの値は、返し直す今すぐの分の失敗した返金の送料（FREQ-642-AC-37）。返せる送料を超えない。店長は変えられる
+  const retryShipping = estimateState.status === 'ready' && !estimateState.estimate.legacy ? estimateState.estimate.retryShipping ?? 0 : 0;
+  const shippingAmount = Math.min(shippingEntered ?? retryShipping, refundableShipping);
   const calculated = itemsAmount - deducted + shippingAmount;
   const amount = Math.min(refundableAmount, amountEntered ?? calculated);
   // 返金額が0円なら、返金しないで終える。手数料が商品の額以上の時は、最初からこうなる（返金待ちの品が無い間は、ただ押せない）
@@ -204,7 +210,9 @@ function OrderReturnRefundDialogBody({ loaded, onClose, onDone, onUncertain }: O
                 onChange={(event) => setNotifyCustomer(event.target.checked)}
               />
             )}
-            <p className="font-acumin lk-text-3xs text-[#474747]">{waiving ? WAIVE_NOTICE : IRREVERSIBLE_NOTICE}</p>
+            <p className="font-acumin lk-text-3xs text-[#474747]">
+              {waiving ? (shippingAmount > 0 ? WAIVE_NEEDS_NO_SHIPPING : WAIVE_NOTICE) : IRREVERSIBLE_NOTICE}
+            </p>
           </div>
         </ReturnFlowContent>
       </form>

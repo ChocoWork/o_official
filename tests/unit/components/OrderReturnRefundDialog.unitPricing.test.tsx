@@ -118,6 +118,45 @@ describe('額を決めて返金の標準の額（FREQ-642）', () => {
     expect(submit(dialog)).toBeDisabled();
   });
 
+  test('FREQ-642-AC-37: 送料の欄は、返し直す今すぐの分の失敗した返金の送料（500円）で始まり、額を送らずに送料を送る', async () => {
+    const dialog = await open(async () => json({ data: estimateOf({ retryShipping: 500 }) }));
+    expect(await breakdown(dialog, '送料')).toBe('送料￥500');
+    expect(await breakdown(dialog, '返金額')).toBe('返金額￥17,500');
+    expect(within(dialog).getByRole('spinbutton', { name: /^送料/ })).toHaveValue(500);
+    await waitFor(() => expect(submit(dialog)).toBeEnabled());
+    fireEvent.click(submit(dialog));
+    await waitFor(() => expect(mockClientFetch.mock.calls.some(([url]) => url === REFUND_URL)).toBe(true));
+    const [, refundInit] = mockClientFetch.mock.calls.find(([url]) => url === REFUND_URL)!;
+    expect(JSON.parse((refundInit as RequestInit).body as string)).toMatchObject({ amount: null, shippingAmount: 500 });
+  });
+
+  test('FREQ-642-AC-37: 送料の初めの値は返せる送料（800円）を超えず、店長が変えられる', async () => {
+    const dialog = await open(async () => json({ data: estimateOf({ retryShipping: 1100 }) }));
+    expect(await breakdown(dialog, '送料')).toBe('送料￥800');
+    fireEvent.change(within(dialog).getByRole('spinbutton', { name: /^送料/ }), { target: { value: '0' } });
+    expect(await breakdown(dialog, '送料')).toBe('送料￥0');
+    expect(await breakdown(dialog, '返金額')).toBe('返金額￥17,000');
+  });
+
+  test('FREQ-642-AC-37: 送料の初めの値が入ったまま返金額を0にすると、押せない理由（返金額と送料をどちらも0円に）を出す', async () => {
+    const dialog = await open(async () => json({ data: estimateOf({ retryShipping: 500 }) }));
+    await waitFor(() => expect(submit(dialog)).toBeEnabled());
+    fireEvent.change(within(dialog).getByRole('spinbutton', { name: /^返金額/ }), { target: { value: '0' } });
+    expect(within(dialog).getByText('返金しないで終えるには、返金額と送料をどちらも0円にしてください。')).toBeInTheDocument();
+    expect(submit(dialog)).toBeDisabled();
+    fireEvent.change(within(dialog).getByRole('spinbutton', { name: /^送料/ }), { target: { value: '0' } });
+    fireEvent.change(within(dialog).getByRole('spinbutton', { name: /^返金額/ }), { target: { value: '0' } });
+    expect(within(dialog).queryByText('返金しないで終えるには、返金額と送料をどちらも0円にしてください。')).not.toBeInTheDocument();
+    expect(within(dialog).getByText('返金しないで終えます。お客様に返金のメールは送りません。')).toBeInTheDocument();
+    expect(submit(dialog)).toBeEnabled();
+    expect(submit(dialog)).toHaveTextContent('返金しないで終える');
+  });
+
+  test('FREQ-642-AC-37: 返し直す今すぐの分が無ければ、送料の欄は 0 で始まる（今までどおり）', async () => {
+    const dialog = await open(async () => json({ data: estimateOf({ retryShipping: 0 }) }));
+    expect(await breakdown(dialog, '送料')).toBe('送料￥0');
+  });
+
   test('FREQ-642-AC-20: 写しの無い注文（legacy）は今の画面の計算（待ち額 24,000円）のまま', async () => {
     const dialog = await open(async () => json({ data: estimateOf({ legacy: true, consultOutstanding: undefined }) }));
     expect(await breakdown(dialog, '商品')).toBe('商品￥24,000');

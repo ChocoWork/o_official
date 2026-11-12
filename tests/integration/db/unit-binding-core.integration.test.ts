@@ -12,6 +12,7 @@ import { hDiscount, seedHDiscount, seedHMember, seedHOrderUnits, seedHUnitSlots,
 import { hBegin, hClaims, hReceive, hRefundFixture, hResult, hReturn } from './helpers/group-h-refund-fixtures';
 import { describeLocalDb } from './helpers/local-db';
 import { createCatalogFixture } from './helpers/order-fixtures';
+import { withLatestBodies } from './helpers/unit-binding-latest';
 
 const directory = path.join(process.cwd(), 'supabase', 'migrations');
 const file = fs.readdirSync(directory).find((name) => name.endsWith('_unit_binding_core.sql'));
@@ -376,7 +377,7 @@ describeLocalDb('FREQ-642-AC-18: unit binding core (controller only)', (db) => {
       expect((await q('select count(*)::int n from public.order_unit_event_refunds where event_id=$1', [eventId])).rows[0].n).toBe(1);
     });
 
-    test('FREQ-642-AC-04: 別の返金が取っている着は結べず、部分の違う二重の結びも断る', async () => {
+    test('FREQ-642-AC-04: 別の返金が取っている着は結べず、返しに使う結び（release）と他の分の二重の結びは断る', async () => {
       const f = await hRefundFixture(db(), true, 2);
       const refundA = await hBeginClaimed(f, 3000);
       const taken = (await hClaims(db(), f.itemId)).find(c => c.refund_id === refundA.refund_id)!;
@@ -389,7 +390,12 @@ describeLocalDb('FREQ-642-AC-18: unit binding core (controller only)', (db) => {
       expect(await failure(() => q('select private.order_unit_link_refund($1,$2,$3)', [eventId, refundB.refund_id, 'now'])))
         .toMatchObject({ code: '23514', message: 'GROUP_H_REFUND_UNIT_MISMATCH' });
       await q('select private.order_unit_link_refund($1,$2,$3)', [eventId, refundA.refund_id, 'now']);
-      expect(await failure(() => q('select private.order_unit_link_refund($1,$2,$3)', [eventId, refundA.refund_id, 'consult']))).toMatchObject({ message: 'UNIT_PRICING_INVALID' });
+      // X4（FREQ-642-AC-37）: 1つの返金が同じ出来事の今すぐと相談の分を持てる。release だけは他の分と同じ（出来事, 返金）を持てない
+      await q('select private.order_unit_link_refund($1,$2,$3)', [eventId, refundA.refund_id, 'consult']);
+      expect((await q('select part from public.order_unit_event_refunds where event_id=$1 and refund_id=$2 order by part', [eventId, refundA.refund_id])).rows)
+        .toEqual([{ part: 'consult' }, { part: 'now' }]);
+      expect(await failure(() => q('select private.order_unit_link_refund($1,$2,$3)', [eventId, refundA.refund_id, 'release'])))
+        .toMatchObject({ message: 'UNIT_PRICING_INVALID', detail: 'ub_link_2' });
     });
 
     test('FREQ-642-AC-04: 取り押さえの重ね定義は共通の鍵を求め、番号を指定した着に付け外しする', async () => {
@@ -502,7 +508,8 @@ describeLocalDb('FREQ-642-AC-18: unit binding core (controller only)', (db) => {
   });
 });
 
-const ubcAssert = sql.split('-- UBC_FINAL_ASSERT_BEGIN\n')[1]?.split('-- UBC_FINAL_ASSERT_END')[0] ?? '';
+// X4（FREQ-642-AC-37）が order_unit_link_refund を同じ署名で置き換えたので、その中身の md5 は最後に定義した移行の物と比べる
+const ubcAssert = withLatestBodies(sql.split('-- UBC_FINAL_ASSERT_BEGIN\n')[1]?.split('-- UBC_FINAL_ASSERT_END')[0] ?? '');
 
 describeLocalDb('FREQ-642-AC-18: unit binding migration B final assertion (controller only)', (db) => {
   beforeEach(async () => { await db().query('begin'); await db().query('select pg_advisory_xact_lock(190521,1)'); });
