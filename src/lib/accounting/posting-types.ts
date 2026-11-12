@@ -22,6 +22,10 @@ export const PENDING_REASONS = [
 	'dispute_shipment_pending',
 	'shipment_lines_mismatch',
 	'no_revenue',
+	/** 計画3: 同じ注文の前の返金・返品の仕訳が済むまで待つ（または失敗・取り消しで元の返金の仕訳が無い）。 */
+	'refund_prior_unposted',
+	/** 計画3: Stripe の返金の取り消しの区分がまだ選ばれていない。 */
+	'refund_cancel_undecided',
 ] as const;
 
 export type PendingReason = (typeof PENDING_REASONS)[number];

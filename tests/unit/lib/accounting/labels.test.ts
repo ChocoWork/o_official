@@ -6,12 +6,14 @@ import { buildLabelsSql } from '@/../scripts/accounting/emit-labels';
 const directory = path.join(process.cwd(), 'supabase/migrations');
 /** 計画2の移行（在る物だけ）。S7〜S11 が無い間も通る。 */
 const p2Files = fs.readdirSync(directory).filter((name) => /_accounting_p2_.*\.sql$/.test(name));
+/** 計画3の移行（在る物だけ）。 */
+const p3Files = fs.readdirSync(directory).filter((name) => /_accounting_p3_.*\.sql$/.test(name));
 
 const decode = (escaped: string) =>
 	escaped.replace(/\\([0-9A-Fa-f]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16))).replace(/''/g, "'");
 
 describe('FREQ-562-AC-01: 仕訳の説明・メモ・相手の日本語は ACCOUNTING_LABELS が正本', () => {
-	it('計画2で使う17個の語を持ち、空でなく重ならない', () => {
+	it('計画2・3で使う29個の語を持ち、空でなく重ならない', () => {
 		expect(Object.keys(ACCOUNTING_LABELS).sort()).toEqual(
 			[
 				'bankArrived',
@@ -27,6 +29,18 @@ describe('FREQ-562-AC-01: 仕訳の説明・メモ・相手の日本語は ACCOU
 				'payoutFailed',
 				'payoutStarted',
 				'quantityTimes',
+				'refundAfterShipment',
+				'refundBankTransfer',
+				'refundCancelled',
+				'refundOwed',
+				'refundPreShipment',
+				'refundReturn',
+				'returnAmountDecided',
+				'returnArrivalRedated',
+				'returnArrived',
+				'returnFeeRevenue',
+				'disputeOffsetReturn',
+				'disputeOffsetReview',
 				'shipmentCancelled',
 				'shipmentRevenue',
 				'stripeJapan',
@@ -87,5 +101,47 @@ describe('FREQ-562-AC-01: 計画2の移行の本文の日本語は ACCOUNTING_LA
 				expect({ name, literal, allowed: allowed.has(literal) }).toEqual({ name, literal, allowed: true });
 			}
 		}
+	});
+});
+
+describe('FREQ-578-AC-01: 返品・返金のラベルはSQLと一致する', () => {
+	it('計画3の12個の語は計画で決めた文字のまま', () => {
+		const keys = [
+			'returnArrived', 'returnFeeRevenue', 'refundPreShipment', 'refundReturn', 'refundAfterShipment', 'refundOwed',
+			'refundBankTransfer', 'refundCancelled', 'returnAmountDecided', 'returnArrivalRedated', 'disputeOffsetReturn',
+			'disputeOffsetReview',
+		] as const;
+		expect(Object.fromEntries(keys.map((key) => [key, ACCOUNTING_LABELS[key]]))).toEqual({
+			returnArrived: '返品の到着',
+			returnFeeRevenue: '返品の手数料',
+			refundPreShipment: '出荷前の返金',
+			refundReturn: '返品の返金',
+			refundAfterShipment: '出荷後の返金・値引き',
+			refundOwed: '返金の未払い',
+			refundBankTransfer: '振込での返金',
+			refundCancelled: '返金の取り消し',
+			returnAmountDecided: '返金の額の決定',
+			returnArrivalRedated: '届いた日の直し',
+			disputeOffsetReturn: '返品の返金待ちとの相殺',
+			disputeOffsetReview: '返金済みと重なる分（分けて調べる）',
+		});
+	});
+
+	it('計画3の移行はASCIIだけで、U& の文字列は全部が語の出力のどれかと一致する', () => {
+		expect(p3Files.length).toBeGreaterThanOrEqual(1);
+		const allowed = new Set(Object.values(ACCOUNTING_LABELS).map(encodeSqlUnicodeLiteral));
+		for (const name of p3Files) {
+			const text = fs.readFileSync(path.join(directory, name), 'utf8');
+			expect({ name, ascii: /[^\x00-\x7f]/.test(text) }).toEqual({ name, ascii: false });
+			for (const literal of [...text.matchAll(/U&'(?:[^']|'')*'/g)].map((m) => m[0])) {
+				expect({ name, literal, allowed: allowed.has(literal) }).toEqual({ name, literal, allowed: true });
+			}
+		}
+	});
+
+	it('語の出力（buildLabelsSql）は計画3の語も1行ずつ持つ', () => {
+		const lines = buildLabelsSql().trimEnd().split('\n');
+		expect(lines).toContain(`-- returnArrived: ${encodeSqlUnicodeLiteral('返品の到着')}`);
+		expect(lines).toContain(`-- disputeOffsetReview: ${encodeSqlUnicodeLiteral('返金済みと重なる分（分けて調べる）')}`);
 	});
 });

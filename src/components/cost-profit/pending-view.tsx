@@ -69,6 +69,8 @@ const REASON_TEXT: Readonly<Record<Exclude<PendingReason, "period_missing" | "di
   dispute_shipment_pending: "引かれた時より前に確定した発送票で、出荷の仕訳がまだ入っていない物があります。出荷の仕訳が入ると自動で計上されます。",
   shipment_lines_mismatch: "発送票の明細と、発送ごとの明細の品ごとの数量が食い違っています。直ると自動で計上されます。",
   no_revenue: "仕訳にする額が0円です（交換の品だけの発送票など）。確かめて、確認済みにしてください。",
+  refund_prior_unposted: "同じ注文の前の返金や返品の仕訳がまだ入っていません。入ると自動で計上されます。",
+  refund_cancel_undecided: "返金の取り消しの扱いがまだ決まっていません。扱いを選ぶと計上されます。",
 };
 
 /** 止めの理由を、やさしい文にする。固定のコードはそのまま出さない。 */

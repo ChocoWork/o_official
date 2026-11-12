@@ -12,6 +12,12 @@ export const ACCOUNTING_SUB_ACCOUNTS = {
 	/** 確定した損失で、振り替え先の科目の設定がまだ無いまま置いた分（計画2 Task 6。設定を入れて振り替えると0に戻る）。 */
 	dispute_confirmed_unassigned: { accountCode: '1470' },
 	processor: { accountCode: '1130' },
+	/** 出荷前の返金を返せなかった時の返す借り（計画3）。 */
+	refund_owed_pre: { accountCode: '2130' },
+	/** 出荷後の返金を返せなかった時の返す借り（計画3）。 */
+	refund_owed_post: { accountCode: '2130' },
+	/** カード会社からの支払いの取り消しのうち、返金済みと重なる分を分けて調べる（計画3）。 */
+	dispute_refund_overlap_review: { accountCode: '1470' },
 } as const;
 
 export type SavedJournalLine = {

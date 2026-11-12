@@ -27,6 +27,14 @@ const details = ['acc_s6_tables', 'acc_s6_constraints', 'acc_s6_immutable', 'acc
 type AssertFailure = { code?: string; message?: string; detail?: string };
 const statements = body.replace(/\$\$[\s\S]*?\$\$/g, '$$$$').replace(/\$acc_s6_precheck\$[\s\S]*?\$acc_s6_precheck\$/g, '')
   .split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n');
+// Plan 3 S15 (Task 1) rebuilt the reason CHECK with two more reasons. The replay of the S6 assert on today's database uses
+// the CHECK text of S15 in place of the one of S6 (everything else of the assert is the S6 text); the S6 assert does not
+// read the body of accounting_pending_detail_valid (only its attributes, which S15 keeps).
+const REASON_CHECK_TEXT = /'CHECK \(\(reason = ANY \(ARRAY\[[^\]]*\]\)\)\)'/;
+const s15Files = fs.readdirSync(path.join(process.cwd(), 'supabase/migrations')).filter((name) => name.endsWith('_accounting_p3_return_refund_tables.sql'));
+const s15Sql = s15Files.length === 1 ? fs.readFileSync(path.join(process.cwd(), 'supabase/migrations', s15Files[0]), 'utf8') : '';
+const s15ReasonCheck = REASON_CHECK_TEXT.exec(s15Sql)?.[0] ?? '';
+const currentAssertion = s15ReasonCheck ? assertion.replace(REASON_CHECK_TEXT, () => s15ReasonCheck) : assertion;
 
 describe('S6 source contract (no DB)', () => {
   test('FREQ-569-AC-01: S6はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
@@ -111,7 +119,7 @@ describeLocalDb('S6 final assert: controller only', (db) => {
     try {
       if (baseline === 'pin') await pinAccountingS6Baseline(db());
       if (change) await db().query(change);
-      await db().query(assertion);
+      await db().query(currentAssertion);
     } catch (error) {
       const e = error as AssertFailure;
       failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
@@ -122,6 +130,10 @@ describeLocalDb('S6 final assert: controller only', (db) => {
 
   test('FREQ-569-AC-01: S6末尾assertは適用後の状態と呼出元search_pathを許す', async () => {
     expect(assertion).not.toBe('');
+    // The replay differs from the S6 text in the reason CHECK only (S15 added two reasons).
+    expect(s15ReasonCheck).toContain("''refund_cancel_undecided''::text");
+    expect(currentAssertion).not.toBe(assertion);
+    expect(currentAssertion.replace(REASON_CHECK_TEXT, '')).toBe(assertion.replace(REASON_CHECK_TEXT, ''));
     expect(await attempt()).toBeNull();
     expect(await attempt('set local search_path = pg_catalog')).toBeNull();
     expect(await attempt('set local search_path = public, private, extensions, pg_catalog')).toBeNull();
@@ -130,7 +142,7 @@ describeLocalDb('S6 final assert: controller only', (db) => {
     await db().query('savepoint acc_s6_search_path');
     await db().query('set local search_path = public, private, extensions, pg_catalog');
     await pinAccountingS6Baseline(db());
-    await db().query(assertion);
+    await db().query(currentAssertion);
     expect((await db().query('show search_path')).rows[0].search_path).toBe('public, private, extensions, pg_catalog');
     await db().query('rollback to savepoint acc_s6_search_path');
   });

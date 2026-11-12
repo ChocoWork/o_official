@@ -92,7 +92,7 @@ describeLocalDb('S6 posting foundation: controller only', (db) => {
   });
 
   test('FREQ-569-AC-01: 理由の値は決めた値だけを受ける', async () => {
-    expect(PENDING_REASONS).toHaveLength(18);
+    expect(PENDING_REASONS).toHaveLength(20);
     for (const reason of PENDING_REASONS) {
       const detail = reason === 'period_missing' ? { entry_date: '2026-11-08' } : {};
       const id = sid();

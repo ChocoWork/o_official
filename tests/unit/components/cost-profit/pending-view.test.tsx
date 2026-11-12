@@ -65,6 +65,8 @@ const REASON_SNIPPETS: Record<(typeof PENDING_REASONS)[number], string> = {
 	dispute_shipment_pending: '出荷の仕訳がまだ入っていない物',
 	shipment_lines_mismatch: '品ごとの数量が食い違っています',
 	no_revenue: '仕訳にする額が0円です',
+	refund_prior_unposted: '前の返金や返品の仕訳がまだ入っていません',
+	refund_cancel_undecided: '返金の取り消しの扱いがまだ決まっていません',
 };
 
 const pendingRegion = () => screen.getByRole('region', { name: '計上待ち' });

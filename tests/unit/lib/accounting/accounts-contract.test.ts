@@ -67,6 +67,9 @@ describe('FREQ-554-AC-06: 勘定の符号は重ならず、補助の符号は存
 			dispute_pending: { accountCode: '1470' },
 			dispute_confirmed_unassigned: { accountCode: '1470' },
 			processor: { accountCode: '1130' },
+			refund_owed_pre: { accountCode: '2130' },
+			refund_owed_post: { accountCode: '2130' },
+			dispute_refund_overlap_review: { accountCode: '1470' },
 		});
 		for (const { accountCode } of Object.values(ACCOUNTING_SUB_ACCOUNTS)) {
 			expect(accountByCode(accountCode)).toBeDefined();

@@ -25,6 +25,19 @@ export const ACCOUNTING_LABELS = {
 	disputeConfirmed: 'カード会社からの支払いの取り消しの確定',
 	disputeReversal: 'カード会社からの支払いの取り消しの取り下げ',
 	disputeAssigned: 'カード会社からの支払いの取り消しの科目の振り替え',
+	/** 計画3: 返品・返金の仕訳の説明。 */
+	returnArrived: '返品の到着',
+	returnFeeRevenue: '返品の手数料',
+	refundPreShipment: '出荷前の返金',
+	refundReturn: '返品の返金',
+	refundAfterShipment: '出荷後の返金・値引き',
+	refundOwed: '返金の未払い',
+	refundBankTransfer: '振込での返金',
+	refundCancelled: '返金の取り消し',
+	returnAmountDecided: '返金の額の決定',
+	returnArrivalRedated: '届いた日の直し',
+	disputeOffsetReturn: '返品の返金待ちとの相殺',
+	disputeOffsetReview: '返金済みと重なる分（分けて調べる）',
 } as const;
 
 export type AccountingLabelKey = keyof typeof ACCOUNTING_LABELS;
