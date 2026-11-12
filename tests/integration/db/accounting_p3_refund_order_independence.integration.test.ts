@@ -121,6 +121,15 @@ describeLocalDb('FREQ-579-AC-06: S20 refund entries do not depend on the order o
           { id: 'fail', after: ['succ'], run: () => recordRefundResult(db(), o.a, 'failed') }],
         expected: { owedPre: 11250, d2150: -11250, d1160: 0, d1040: 0, entries: 2 } };
       }],
+      ['2b. 引かれて戻された（succeeded の行が無いまま failed）', async () => {
+        // P3-T6f: 引かれる前の失敗（4）と同じ借り。割り当ては残る
+        const o = await shirtPants();
+        return { orderId: o.orderId, steps: [
+          { id: 'txn', run: () => saveRefundTxn(db(), o.a, { at: '2026-11-05T03:00:00Z' }) },
+          { id: 'ftxn', after: ['txn'], run: () => saveFailureTxn(db(), o.a, { at: '2026-11-07T03:00:00Z' }) },
+          { id: 'fail', run: () => recordRefundResult(db(), o.a, 'failed') }],
+        expected: { owedPre: 11250, d2150: -11250, d1160: 0, d1040: 0, entries: 1, intake: [] } };
+      }],
       ['3. 2 の後に振込で全額', async () => {
         const o = await shirtPants();
         return { orderId: o.orderId, steps: [...success(() => o.a),
@@ -164,6 +173,16 @@ describeLocalDb('FREQ-579-AC-06: S20 refund entries do not depend on the order o
       ['8. 引かれる前に Stripe が取り消し → やめた', async () => {
         const o = await shirtPants();
         return { orderId: o.orderId, steps: [
+          { id: 'cancel', run: () => recordRefundResult(db(), o.a, 'canceled') },
+          { id: 'abandon', after: ['cancel'], run: () => decideRefund(db(), o.a, 'abandoned', actorId) }],
+        expected: { owedPre: 0, d2150: 0, d1160: 0, d1040: 0, entries: 0, intake: [] } };
+      }],
+      ['8b. 引かれて戻された（succeeded の行が無いまま Stripe が取り消し）→ やめた', async () => {
+        // P3-T6f: 成功の仕訳が無いので取り消す物も無い。割り当ては戻る
+        const o = await shirtPants();
+        return { orderId: o.orderId, steps: [
+          { id: 'txn', run: () => saveRefundTxn(db(), o.a, { at: '2026-11-05T03:00:00Z' }) },
+          { id: 'ftxn', after: ['txn'], run: () => saveFailureTxn(db(), o.a, { at: '2026-11-07T03:00:00Z' }) },
           { id: 'cancel', run: () => recordRefundResult(db(), o.a, 'canceled') },
           { id: 'abandon', after: ['cancel'], run: () => decideRefund(db(), o.a, 'abandoned', actorId) }],
         expected: { owedPre: 0, d2150: 0, d1160: 0, d1040: 0, entries: 0, intake: [] } };

@@ -473,6 +473,41 @@ describeLocalDb('FREQ-577-AC-01: S20 refund posting', (db) => {
     });
   });
 
+  describe('P3-T6g: d when P = 0', () => {
+    test('FREQ-577-AC-10: 出荷前の額 P が0でも最初の返金の d があれば、成功では d だけの pre_shipment_refund（2150 d／4010 d）、引かれる前の失敗では借りの仕訳に 2150 d／4010 d が入り、前受金は0', async () => {
+      // P3-T6g: 指示書は d を P > 0 の時だけ足すが、P = 0 で d を落とすと前受金が d だけ残る。実装は P = 0 でも d を入れる（指示書の穴）。
+      // fixture: 送っていない着を割り当て0で返し、送った着を交換の品のように Q で返し、送った残る着に直しを入れる出来事（P = 0、Q = 17,000円、d = 20,000円）
+      for (const outcome of ['success', 'failure'] as const) {
+        await q('savepoint s20_case');
+        const o = await seedSlotPaidOrder(db(), [[20000], [17000], [17000]]);
+        const [unsent, sentBack, kept] = o.orderItemIds;
+        await shipAndPost(db(), o.orderId, sentBack);
+        await shipAndPost(db(), o.orderId, kept);
+        const eventId = await seedCancelEvent(db(), o.orderId, [{ item: unsent, unit: 0, kind: 'returned', allocation: 0 },
+          { item: sentBack, unit: 0, kind: 'returned', shipped: true }, { item: kept, unit: 0, kind: 'kept', correction: 3000, shipped: true }], 17000);
+        const refundId = await seedCancelRefund(db(), o.orderId, eventId, 17000);
+        expect((await q('select pre_shipment_amount::int p, post_shipment_amount::int q from public.accounting_refund_facts where refund_id=$1', [refundId])).rows[0])
+          .toEqual({ p: 0, q: 17000 });
+        const d = Number((await q('select coalesce(sum(amount),0)::int n from public.accounting_refund_transfer_adjusts where event_id=$1', [eventId])).rows[0].n);
+        expect(d).toBe(20000);
+        if (outcome === 'success') {
+          const txn = await succeedRefund(db(), refundId, { at: '2026-11-05T03:00:00Z' });
+          expect((await postRefundEvents(db())).posted).toBe(2);
+          const lines = (await orderLines(db(), o.orderId)).filter((l) => l.source_id === refundId);
+          expect(shape(lines.filter((l) => l.dedupe_key === `pre_shipment_refund:${txn}`))).toEqual([['2150', d, 0, null], ['4010', 0, d, null]]);
+          expect(shape(lines.filter((l) => l.dedupe_key === `return_refund:${txn}`))).toEqual([['4020', 17000, 0, null], ['1160', 0, 17000, null]]);
+        } else {
+          await failRefund(db(), refundId);
+          expect((await postRefundEvents(db())).posted).toBe(1);
+          expect(shape((await orderLines(db(), o.orderId)).filter((l) => l.source_id === refundId)))
+            .toEqual([['2150', d, 0, null], ['4010', 0, d, null], ['4020', 17000, 0, null], ['2130', 0, 17000, 'refund_owed_post']]);
+        }
+        expect(await orderBalance(db(), o.orderId, '2150')).toBe(0);
+        await q('rollback to savepoint s20_case');
+      }
+    });
+  });
+
   describe('exchange items and hold-back releases', () => {
     /**
      * quantity 着（20,000円・17,000円…）の注文に支払いの仕訳を入れ、2着を G で送って出荷の仕訳を入れ、送った1着を交換の返品で

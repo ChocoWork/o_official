@@ -21,7 +21,7 @@ BEGIN;
 -- Rebuilt (CREATE OR REPLACE; the latest definition copied as it is, new text between ACC_P3_BEGIN and ACC_P3_END, the
 -- replaced text between ACC_P3_REPLACE_BEGIN <md5 of the original> and ACC_P3_REPLACE_END; arguments, result,
 -- attributes, owner and ACL are unchanged):
---   private.accounting_run_posting (plan 2 S11, 20261108200000:1007-1036): the refund poster runs after the Stripe poster and
+--   private.accounting_run_posting (plan 2 S11, 20261108200000:1007-1037): the refund poster runs after the Stripe poster and
 --     before the dispute poster; the result gets refunds and returns (0 until Task 7), and the parked, resolved and has_more
 --     sums count the refund poster too.
 -- Labels (ACCOUNTING_LABELS, from scripts/accounting/emit-labels.ts):
@@ -35,7 +35,7 @@ BEGIN;
 --
 -- ROLLBACK (only while no entry of the kinds pre_shipment_refund, return_refund, refund_failed or refund_abandoned exists):
 --   re-run CREATE OR REPLACE FUNCTION private.accounting_run_posting from 20261108200000_accounting_p2_dispute_posting.sql
---     :1007-1036;
+--     :1007-1037;
 --   DROP FUNCTION public.list_refund_accounting_states(integer,timestamptz,uuid),
 --     private.list_refund_accounting_states(integer,timestamptz,uuid),
 --     public.admin_settle_owed_by_refund(uuid,uuid,uuid,uuid), private.admin_settle_owed_by_refund(uuid,uuid,uuid,uuid),
@@ -244,9 +244,12 @@ $$;
 --              return_refund:[txn] (Q, F), on the Japanese day of the transaction.
 --   failure    a failed row (else an owed row): refund_failed:[refund, row]. Not taken yet: on the day of the row (a plain
 --              return refund books nothing). Taken: on the day of the failure transaction, after the success entry.
+--              Taken and given back with no succeeded row (pending -> failed): booked as not taken, on the day of the
+--              failure transaction (waits only while that transaction is missing).
 --   undecided  a canceled row without a decision: parked as refund_cancel_undecided (closed when the decision comes).
 --   abandon    an abandoned row: taken: the success entries are reversed on the day of the failure transaction; s and the
---              carried d go to refund_abandoned:[refund, row]; nothing to book closes as no_revenue.
+--              carried d go to refund_abandoned:[refund, row]; nothing to book closes as no_revenue. Taken and given back
+--              with no succeeded row: no reversal, s and d only, on the day of the failure transaction.
 -- New events (no entry and no parked row of their step) are taken oldest state row first, at most _limit; then at most 10
 -- open parked rows, oldest last_detected_at first. Each event is one BEGIN ... EXCEPTION block (plan 2).
 CREATE FUNCTION private.accounting_post_refund_events(_limit integer DEFAULT 50) RETURNS jsonb
@@ -273,6 +276,7 @@ DECLARE
   v_s integer;
   v_plain boolean;
   v_pulled boolean;
+  v_back boolean;
   v_why text;
   v_lines jsonb;
   v_result jsonb;
@@ -401,6 +405,14 @@ BEGIN
       -- later; the failure and the cancel then wait for it instead of booking a debt that was never taken).
       v_pulled := v_sr.balance_transaction_id IS NOT NULL
         OR EXISTS (SELECT 1 FROM public.accounting_refund_events AS x WHERE x.refund_id = v_refund.id AND x.state = 'succeeded');
+      -- Taken and given back without a succeeded row (Stripe moved the refund pending -> failed or canceled, or the sync saw
+      -- only the end): the cash nets to 0 and no success will come, so the failure and the abandon are booked as not taken,
+      -- on the day of the failure transaction (P3-T6f).
+      v_back := v_pulled AND NOT EXISTS (SELECT 1 FROM public.accounting_refund_events AS x
+        WHERE x.refund_id = v_refund.id AND x.state = 'succeeded');
+      IF v_back AND v_job.step IN ('failure', 'abandon') THEN
+        SELECT t.* INTO v_bt FROM public.stripe_balance_transactions AS t WHERE t.id = v_sr.failure_balance_transaction_id;
+      END IF;
       IF v_job.step = 'success' THEN
         v_d := private.accounting_refund_first_adjust(v_refund.id, v_row.fact_seq);
         v_kind := COALESCE(v_job.pending_kind,
@@ -476,9 +488,18 @@ BEGIN
           END IF;
         END IF;
 
-      ELSIF v_job.step = 'failure' AND NOT v_pulled THEN
-        v_date := private.accounting_jst_date(v_row.occurred_at);
-        v_at := LEAST(v_row.occurred_at, pg_catalog.clock_timestamp());
+      ELSIF v_job.step = 'failure' AND v_back AND v_bt.id IS NULL THEN
+        v_reason := 'refund_prior_unposted';
+        v_detail := pg_catalog.jsonb_build_object('why', 'failure_txn_missing');
+
+      ELSIF v_job.step = 'failure' AND (NOT v_pulled OR v_back) THEN
+        IF v_back THEN
+          v_date := private.accounting_jst_date(v_bt.stripe_created_at);
+          v_at := LEAST(v_bt.synced_at, pg_catalog.clock_timestamp());
+        ELSE
+          v_date := private.accounting_jst_date(v_row.occurred_at);
+          v_at := LEAST(v_row.occurred_at, pg_catalog.clock_timestamp());
+        END IF;
         IF v_plain THEN
           -- The arrival entry's payable stays; nothing was taken.
           v_reason := 'no_revenue';
@@ -554,7 +575,10 @@ BEGIN
         v_s := COALESCE(v_row.release_shortfall, 0);
         v_d := COALESCE(v_row.carried_adjust, 0);
         v_at := LEAST(v_row.occurred_at, pg_catalog.clock_timestamp());
-        IF v_pulled THEN
+        IF v_back AND v_bt.id IS NULL THEN
+          v_reason := 'refund_prior_unposted';
+          v_detail := pg_catalog.jsonb_build_object('why', 'failure_txn_missing');
+        ELSIF v_pulled AND NOT v_back THEN
           SELECT t.* INTO v_bt FROM public.stripe_balance_transactions AS t WHERE t.id = v_sr.failure_balance_transaction_id;
           IF v_bt.id IS NULL THEN
             v_reason := 'refund_prior_unposted';
@@ -593,7 +617,7 @@ BEGIN
             END IF;
           END IF;
         ELSE
-          v_date := private.accounting_jst_date(v_row.occurred_at);
+          v_date := private.accounting_jst_date(CASE WHEN v_back THEN v_bt.stripe_created_at ELSE v_row.occurred_at END);
           IF v_s = 0 AND v_d = 0 THEN
             v_reason := 'no_revenue';
           ELSIF v_cutover IS NOT NULL AND v_date < v_cutover THEN

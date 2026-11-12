@@ -204,6 +204,43 @@ describeLocalDb('FREQ-579-AC-02: S20 refund failures, cancels, bank transfers an
       }
     });
 
+    test('FREQ-579-AC-02: 引かれて戻された（succeeded の行が無いまま failed になった）返金は、引かれる前の失敗と同じ借りを戻りの取引の日に立て、戻りの取引が無い間だけ failure_txn_missing で待ち、振込で返せる', async () => {
+      // P3-T6f: Stripe が pending のまま残高を引き、そのまま failed にした（または同期が最後の failed だけを見た）返金。お金は差し引き0
+      const admin = await insertAccountingAdmin(db());
+      const c = await pscRefund();
+      await saveRefundTxn(db(), c.refundId, { at: '2026-11-05T03:00:00Z' });
+      await recordRefundResult(db(), c.refundId, 'failed');
+      expect(await postRefundEvents(db())).toMatchObject({ posted: 0, parked_new: 1 });
+      expect((await refundPending(db(), c.refundId)).find((p) => p.event_kind === 'refund_failed')).toMatchObject({
+        reason: 'refund_prior_unposted', detail: { why: 'failure_txn_missing' }, resolved_at: null });
+      await saveFailureTxn(db(), c.refundId, { at: '2026-11-07T03:00:00Z' });
+      expect(await postRefundEvents(db())).toMatchObject({ posted: 1, resolved: 1 });
+      const failed = await entriesOf(c.f.orderId, 'refund_failed');
+      expect(shape(failed)).toEqual([['2150', 17000, 0, null], ['2130', 0, 17000, 'refund_owed_pre']]);
+      expect(failed.every((l) => l.entry_date === '2026-11-07')).toBe(true);
+      expect(await entriesOf(c.f.orderId, 'pre_shipment_refund')).toEqual([]);
+      expect(await orderBalance(db(), c.f.orderId, '1160')).toBe(-37000); // the payment only: the refund nets to 0
+      expect(await orderBalance(db(), c.f.orderId, '2150')).toBe(20000);
+      await bankTransfer(db(), { actor: admin, orderId: c.f.orderId, origin: 'pre_shipment', amount: 17000, on: '2026-11-10', txn: 'T6F-1' });
+      expect(await orderBalance(db(), c.f.orderId, '2130', 'refund_owed_pre')).toBe(0);
+      expect((await q('select count(*)::int n from public.accounting_pending_events where order_id=$1 and resolved_at is null', [c.f.orderId])).rows[0].n).toBe(0);
+      // 出荷後の返金（Q）は 4020／2130（refund_owed_post）、ふつうの返品の返金は仕訳を作らない（引かれる前の失敗と同じ）
+      const f = await seedRefundFlow(db(), true, 2);
+      const post = (await hBegin(db(), f, 5000, false)).refund_id;
+      await saveRefundTxn(db(), post, { at: '2026-11-05T03:00:00Z' });
+      await failRefund(db(), post, { pulled: true, at: '2026-11-08T03:00:00Z' });
+      await postRefundEvents(db());
+      expect(shape(await entriesOf(f.orderId, 'refund_failed'))).toEqual([['4020', 5000, 0, null], ['2130', 0, 5000, 'refund_owed_post']]);
+      expect((await entriesOf(f.orderId, 'refund_failed'))[0].entry_date).toBe('2026-11-08');
+      const r = await returnRefund();
+      await saveRefundTxn(db(), r.refundId, { at: '2026-11-05T03:00:00Z' });
+      await failRefund(db(), r.refundId, { pulled: true, at: '2026-11-08T03:00:00Z' });
+      await postRefundEvents(db());
+      expect(await refundPending(db(), r.refundId)).toMatchObject([{ event_kind: 'refund_failed', reason: 'no_revenue' }]);
+      expect(await entriesOf(r.orderId, 'refund_failed')).toEqual([]);
+      expect(await orderBalance(db(), r.orderId, '2130', 'return_refund')).toBe(16875);
+    });
+
     test("FREQ-579-AC-02: 写しのある注文で送料つきの受け取りの今すぐの返金が引かれる前に失敗し、admin_refund_return で送料つきで返し直すと、失敗した返金は送料も含めて仕訳を作らず、送料で止まるのは返し直した返金だけ（order_not_postable・reason='shipping'。その返金自身の事実の shipping_amount）", async () => {
       // 注文・受け取り・返し直しは本物の関数。ただし H の受け付け（割引の計算の版1）は送料を0に決めて作るので、写しのある注文に
       // 送料のある物は今の受け付けでは作れない。受け付けた注文の送料の欄だけを、守りの trigger を取引の中で外して 500円にする（最小の fixture）。
@@ -284,6 +321,23 @@ describeLocalDb('FREQ-579-AC-02: S20 refund failures, cancels, bank transfers an
       expect(await allocationLeft(c.eventId)).toBe(0);
       expect(await orderBalance(db(), c.f.orderId, '2130')).toBe(0);
       expect(await orderBalance(db(), c.f.orderId, '2150')).toBe(37000);
+    });
+
+    test('FREQ-579-AC-03: 引かれて戻された（succeeded の行が無いまま Stripe が取り消した）返金をやめると、取り消しの仕訳を作らず、戻りの取引が無い間だけ failure_txn_missing で待ち、割り当てが戻る', async () => {
+      // P3-T6f: 成功の仕訳が無いので取り消す物は無い。s・d が0なら何も入れずに閉じる
+      const c = await pscRefund();
+      await saveRefundTxn(db(), c.refundId, { at: '2026-11-05T03:00:00Z' });
+      await recordRefundResult(db(), c.refundId, 'canceled');
+      await decideRefund(db(), c.refundId, 'abandoned');
+      await postRefundEvents(db());
+      expect((await refundPending(db(), c.refundId)).find((p) => p.event_kind === 'refund_abandoned')).toMatchObject({
+        reason: 'refund_prior_unposted', detail: { why: 'failure_txn_missing' }, resolved_at: null });
+      await saveFailureTxn(db(), c.refundId, { at: '2026-11-07T03:00:00Z' });
+      expect(await postRefundEvents(db())).toMatchObject({ posted: 0, reversed: 0, resolved: 1 });
+      expect((await refundPending(db(), c.refundId)).find((p) => p.event_kind === 'refund_abandoned')).toMatchObject({ reason: 'no_revenue' });
+      expect(await entryCount(c.f.orderId)).toBe(1);
+      expect(await allocationLeft(c.eventId)).toBe(0);
+      expect((await q('select count(*)::int n from public.accounting_pending_events where order_id=$1 and resolved_at is null', [c.f.orderId])).rows[0].n).toBe(0);
     });
 
     test('FREQ-579-AC-03: 引かれる前にやめたなら仕訳を作らず、割り当てだけが戻る', async () => {
