@@ -4,6 +4,7 @@ import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-
 import { addItemVariant, createCatalogFixture, createDraft, createShippedOrderFixture, insertOrderWithLines,
   insertReturnRecord, insertReturnReceipt, insertRefundRecord, insertCancelRequest } from './helpers/order-fixtures';
 import { withGroupG1FixtureTransaction } from './helpers/group-g1-fixtures';
+import { dropReturnFeeLockCommitted, restoreReturnFeeLock, withoutReturnFeeLockCommitted } from './helpers/accounting-returns-fixtures';
 import { enableDeliveryTracking, leaseDeliveryRegistration, restoreCommittedDeliveryState, trackedShipment,
   waitForDeliveryLock } from './helpers/delivery-tracking-fixtures';
 
@@ -174,6 +175,8 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
     returnId?: string;
     receiptId?: string;
     exchangeVariants?: number[];
+    /** The material carries a non-zero exchange fee: the S16 CHECKs are out (committed) until the cleanup puts them back. */
+    feeLockOff?: boolean;
   };
   const TASK6_ENTRIES: Array<{ name: string; setup: () => Promise<Task6Material>; check: (rows: any[]) => void }> = [
     { name: 'public.place_order_from_checkout_draft', setup: async () => {
@@ -464,6 +467,8 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
     ['admin_record_return_fee_payment', 'admin_release_return_exchange'].map(name => ({
       name: `public.${name}`, setup: async () => {
         const actor = await actorId();
+        // The entry pays or releases the exchange fee itself, so the material keeps its fee (rulings P3-D5 / P3-D8).
+        await dropReturnFeeLockCommitted(db());
         const material = await withGroupG1FixtureTransaction(db(), async () => {
           const f = await createShippedOrderFixture(db(), { lines: [{ quantity: 1, extraStock: 1 }] });
           const ret = await insertReturnRecord(db(), { orderId: f.orderId, exchangeFee: 500, lines: [{
@@ -477,13 +482,13 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
             itemId: f.itemIds[0], variantId: f.variantIds[0], quantity: 1, fulfillmentType: 'backorder', reserved: false,
           }] });
           return { f, ret, received, neighbour };
-        });
+        }).catch(async (error: unknown) => { await restoreReturnFeeLock(db()); throw error; });
         return { sql: name === 'admin_record_return_fee_payment'
           ? 'select return_status from public.admin_record_return_fee_payment($1::uuid,$2::uuid,null,false)'
           : 'select return_status from public.admin_release_return_exchange($1::uuid,$2::uuid)',
         params: [material.ret.returnId, actor], itemId: material.f.itemIds[0], variantId: material.f.variantIds[0],
         orderIds: [material.f.orderId, material.neighbour.orderId].sort(), returnId: material.ret.returnId,
-        receiptId: material.received.receipt_id as string };
+        receiptId: material.received.receipt_id as string, feeLockOff: true };
       }, check: rows => expect(rows).toEqual([{ return_status: name === 'admin_release_return_exchange' ? 'open' : 'closed' }]),
     }));
 
@@ -591,6 +596,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
         decline_message=case when status='requested' then 'fixture cleanup' else decline_message end,
         cancelled_at=case when status='open' then now() else cancelled_at end
         where id=$1 and status in ('requested','open')`, [material.returnId]);
+      if (material.feeLockOff) await restoreReturnFeeLock(db());
     }
   });
 
@@ -819,7 +825,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
 
   test.each([
     ['payment', true], ['payment', false], ['waiver', true], ['waiver', false], ['release', true], ['release', false],
-  ] as const)('exchange fee %s vs restock (fee first=%s): serialize and allocate to the oldest eligible orders', async (action, feeFirst) => {
+  ] as const)('exchange fee %s vs restock (fee first=%s): serialize and allocate to the oldest eligible orders', (action, feeFirst) => withoutReturnFeeLockCommitted(db(), async () => {
     const fx = await withGroupG1FixtureTransaction(db(), async () => {
       const f = await createShippedOrderFixture(db(), { createdAt: '2026-01-02', lines: [{ quantity: 1 }] });
       await db().query('update public.orders set paid_at=now() where id=$1 and paid_at is null', [f.orderId]);
@@ -892,7 +898,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
           where id=$1 and status='open'`, [fx.ret.returnId]);
       });
     }
-  });
+  }));
 
   test.each([
     ['payment', true], ['payment', false], ['fifo', true], ['fifo', false],

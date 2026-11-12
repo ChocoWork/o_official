@@ -1,5 +1,6 @@
 /** @jest-environment node */
 import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
+import { withoutReturnFeeLock } from './helpers/accounting-returns-fixtures';
 import {
   withFixtureConsumption,
   addItemVariant,
@@ -534,7 +535,7 @@ describeLocalDb('integration: お客様の側の関数（移行 E）', (db) => {
       });
     });
 
-    test('手数料は設定の値で、使わない手数料は 0（返送料の定額はお店の送り状の時だけ）', async () => {
+    test('手数料は設定の値で、使わない手数料は 0（返送料の定額はお店の送り状の時だけ）', () => withoutReturnFeeLock(db(), async () => {
       const order = await createCustomerOrder(db(), {});
       await updateSettings(db(), {
         customer_paid_method: 'customer_ships',
@@ -561,7 +562,7 @@ describeLocalDb('integration: お客様の側の関数（移行 E）', (db) => {
         exchange_fee: 300,
         exchange_shipping_fee: 500,
       });
-    });
+    }));
 
     test('品の状態は 5 つ: selectable・past_deadline・requested・sent_back・unavailable。選べる数は selectable の行だけ', async () => {
       const order = await createCustomerOrder(db(), {
@@ -1340,7 +1341,7 @@ describeLocalDb('integration: お客様の側の関数（移行 E）', (db) => {
       }
     });
 
-    test('返送の方法と負担、手数料の仮の値（P5）: 理由のどれかがお店の負担ならお店・着払い、ほかは設定のお客様負担の送り方。手数料は設定で使う時だけ', async () => {
+    test('返送の方法と負担、手数料の仮の値（P5）: 理由のどれかがお店の負担ならお店・着払い、ほかは設定のお客様負担の送り方。手数料は設定で使う時だけ', () => withoutReturnFeeLock(db(), async () => {
       const order = await createCustomerOrder(db(), { lines: [{ quantity: 2 }, { quantity: 2 }, { quantity: 2 }] });
       const photo = await insertUpload(db(), order);
       const feesOf = async (returnId: string) => {
@@ -1396,7 +1397,7 @@ describeLocalDb('integration: お客様の側の関数（移行 E）', (db) => {
         payer: 'shop',
         shippingFee: 0,
       });
-    });
+    }));
 
     test('行の形が違えば RETURN_ARGUMENT_INVALID。交換なのに色・サイズが無ければ RETURN_EXCHANGE_VARIANT_INVALID', async () => {
       const order = await createCustomerOrder(db(), { lines: [{ quantity: 2 }] });

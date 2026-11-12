@@ -55,6 +55,7 @@ import {
   orderWithReturns,
   receiptUnitRows,
   receiveReturnInDb,
+  withoutReturnFeeLock,
   recordFeePaymentInDb,
   releaseExchangeInDb,
   returnCard,
@@ -450,7 +451,8 @@ for (const viewport of viewports) {
 
     test('手数料のお支払い待ちの交換の品は送れず、手数料の受け取りを記録すると送れて返品が完了する。支払いを待たずに送ると送れるが、手数料は残って返品は完了しない。いただかないで終えると、返品が完了し送れて、決着した額は fee_settled_amount に残る（手元の DB）', async () => {
       // FREQ-465-AC-07, FREQ-467-AC-04, FREQ-467-AC-05
-      await withLocalDb(async (db) => {
+      await withLocalDb(async (db) => withoutReturnFeeLock(db, async () => {
+        // 返送料・交換の手数料・交換の送料の仕組みそのものを確かめるので、DB の 0 の決まり（FREQ-578-AC-05）を外して流す（判断 P3-D8）
         const fx = await createShippedOrder(db, `exch-fee-${viewport.name}`, [{ name: 'E2Eシャツ', quantity: 3, fulfillmentType: 'stock' }]);
         const shirt = fx.orderItemIds[0];
         const variantL = await addVariant(db, fx.itemId, { color: 'ホワイト', size: 'L', stock: 4 });
@@ -530,7 +532,7 @@ for (const viewport of viewports) {
         expect(rowC.fee_received_at).not.toBeNull();
         expect((await returnSummaryRow(db, fx.orderId)).marks).not.toContain('awaiting_fee');
         expect(await ship(itemC, 'E2E-HOLD-C')).toMatchObject({ completesOrder: true, orderStatus: 'shipped' });
-      });
+      }));
     });
 
     test('交換の品を受け取ったお知らせに、交換の品・手数料のお支払い待ちの文が入る（手元の DB・Mailpit）', async ({ request }) => {
@@ -540,15 +542,19 @@ for (const viewport of viewports) {
         const fx = await createShippedOrder(db, `exch-mail-${viewport.name}`, [{ name: 'E2Eシャツ', quantity: 1, fulfillmentType: 'stock' }]);
         const shirt = fx.orderItemIds[0];
         const variantL = await addVariant(db, fx.itemId, { color: 'ホワイト', size: 'L', stock: 2 });
-        const created = await createReturnInDb(db, fx, {
-          lines: [{ orderItemId: shirt, quantity: 1, exchange: { variantId: variantL, method: 'stock' } }],
-          exchangeFee: 500,
-          exchangeShippingFee: 300,
-        });
-        await receiveReturnInDb(db, created.returnId, fx.actorId, {
-          units: [{ lineId: created.lineIds[shirt], disposition: 'not_restocked', quantity: 1 }],
-          choice: 'none',
-          notify: true,
+        // お知らせのお支払い待ちの文を確かめるので、DB の 0 の決まり（FREQ-578-AC-05）を外して作って受け取る（判断 P3-D8）
+        const created = await withoutReturnFeeLock(db, async () => {
+          const created = await createReturnInDb(db, fx, {
+            lines: [{ orderItemId: shirt, quantity: 1, exchange: { variantId: variantL, method: 'stock' } }],
+            exchangeFee: 500,
+            exchangeShippingFee: 300,
+          });
+          await receiveReturnInDb(db, created.returnId, fx.actorId, {
+            units: [{ lineId: created.lineIds[shirt], disposition: 'not_restocked', quantity: 1 }],
+            choice: 'none',
+            notify: true,
+          });
+          return created;
         });
         return { fx, label: returnLabelOf(fx.orderId, created.number) };
       });

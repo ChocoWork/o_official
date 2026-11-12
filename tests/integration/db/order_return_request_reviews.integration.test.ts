@@ -2,6 +2,7 @@
 import { randomUUID } from 'crypto';
 import { hClaims, hRefundFixture, hReturn } from './helpers/group-h-refund-fixtures';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
+import { withoutReturnFeeLock } from './helpers/accounting-returns-fixtures';
 import {
   PRICE, createCatalogFixture, createShippedOrderFixture, insertOrderWithLines,
   insertReturnRecord, insertReturnReceipt, uniqueSuffix,
@@ -20,7 +21,7 @@ async function fixture(db: PgClient, o: Row = {}): Promise<Fx> {
   await db.query(`update public.shop_return_settings set return_address_name='試験店舗',
     return_address_postal_code='1500001',return_address_line='東京都渋谷区神宮前1-1-1',
     return_address_phone='0311112222',no_return_needed_enabled=false,
-    restocking_fee_enabled=true,exchange_fees_enabled=true,inspection_enabled=true where id=1`);
+    restocking_fee_enabled=true,inspection_enabled=true where id=1`);
   const actor = (await db.query(`insert into auth.users(id,email,raw_user_meta_data,created_at,updated_at)
     values(gen_random_uuid(),$1,'{}',now(),now()) returning id`, [`review-${uniqueSuffix()}@example.com`])).rows[0].id;
   const s = await createShippedOrderFixture(db, { lines: [{ quantity: 2, extraStock: 2 }] });
@@ -112,12 +113,12 @@ describeLocalDb('お店の申し込みの確認（移行 F）', getDb => {
 
   test.each([false, true])('承認で3列と承認の記録を変え、ご希望を保持する。通知 %s', async notify => {
     const f = await fixture(db());
-    const r = await approve(db(), f, { notify, method: 'shop_label', shipping: 600, percent: 10, fee: 100,
-      exchangeShipping: 200, carrier: 'yamato', tracking: 'TEST-1' });
+    const r = await approve(db(), f, { notify, method: 'shop_label', shipping: 0, percent: 10, fee: 0,
+      exchangeShipping: 0, carrier: 'yamato', tracking: 'TEST-1' });
     expect(r).toEqual({ return_id: f.returnId, status: 'open' });
     const parent = (await db().query('select * from public.order_returns where id=$1', [f.returnId])).rows[0];
     expect(parent).toMatchObject({ approved_by: f.actor, return_method: 'shop_label', return_shipping_payer: 'customer',
-      return_shipping_fee: 600, restocking_fee_percent: 10, exchange_fee: 100, exchange_shipping_fee: 200,
+      return_shipping_fee: 0, restocking_fee_percent: 10, exchange_fee: 0, exchange_shipping_fee: 0,
       return_carrier: 'yamato', return_tracking_number: 'TEST-1', shop_note: '内部のメモ', notify_customer: notify });
     expect(parent.approved_at).not.toBeNull();
     expect((await db().query('select * from public.order_return_lines where id=$1', [f.lineId])).rows[0])
@@ -165,11 +166,11 @@ describeLocalDb('お店の申し込みの確認（移行 F）', getDb => {
       await fails(db(), () => approve(db(), f, { lines }), 'RETURN_ARGUMENT_INVALID');
       expect((await db().query('select status from public.order_returns where id=$1', [f.returnId])).rows[0].status).toBe('requested');
     });
-  test.each(['shipping', 'fee', 'exchangeShipping', 'percent'])('手数料 %s の必須と上下限を守る', async key => {
+  test.each(['shipping', 'fee', 'exchangeShipping', 'percent'])('手数料 %s の必須と上下限を守る', (key) => withoutReturnFeeLock(db(), async () => {
     const f = await fixture(db()); const max = key === 'percent' ? 100 : 1000000;
     for (const value of [null, -1, max + 1]) await fails(db(), () => approve(db(), f, { [key]: value }), 'RETURN_FEE_INVALID');
     await approve(db(), f, { [key]: max });
-  });
+  }));
   test.each(['foreign', 'inactive', 'missing'])('交換の色・サイズ %s は断る', async mode => {
     const f = await fixture(db()); let id = f.variantId;
     if (mode === 'foreign') id = (await createCatalogFixture(db(), { stock: 1 })).variantId;

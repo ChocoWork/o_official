@@ -2,6 +2,7 @@
 import { restoreGroupG1Shipment } from './helpers/group-g1-fixtures';
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
+import { withoutReturnFeeLock } from './helpers/accounting-returns-fixtures';
 import { withFixtureConsumption, createCatalogFixture, createShippedOrderFixture, insertOrderWithLines, insertRefundRecord, insertReturnRecord } from './helpers/order-fixtures';
 import {
   cancelDeliveryFixture, correctDeliveryTrackingFixture, createDeliveryActor, createDeliveryOrder, createDeliveryFulfillment,
@@ -515,7 +516,7 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
     await expectStopped(db(), target.orderId, () => legacyCancel(db(), target));
   });
 
-  test('交換の支払い待ちの品にも、手数料を払った後にも、旧の作成は固定の拒否を返す（交換の保留の発送の守りは G-3）', async () => {
+  test('交換の支払い待ちの品にも、手数料を払った後にも、旧の作成は固定の拒否を返す（交換の保留の発送の守りは G-3）', () => withoutReturnFeeLock(db(), async () => {
     const order = await createShippedOrderFixture(db(), { lines: [{ quantity: 1, extraStock: 1 }] });
     const actor = await createDeliveryActor(db());
     const returned = await insertReturnRecord(db(), { orderId: order.orderId, exchangeFee: 300,
@@ -534,7 +535,7 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
       lines: [{ order_item_id: exchange, quantity: 1 }] }));
     expect((await db().query('select count(*)::int as n from public.order_fulfillments where order_id=$1', [order.orderId])).rows[0].n)
       .toBe(order.fulfillments.length);
-  });
+  }));
 
   test('旧の取消は止まり、登録・要対応・配送メールを1つも変えず、2回目も同じ', async () => {
     const target = await deliveryShipment(db());

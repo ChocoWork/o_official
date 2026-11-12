@@ -85,8 +85,8 @@ const APPROVE_BODY = {
   returnTrackingNumber: null,
   returnShippingFee: 0,
   restockingFeePercent: 10,
-  exchangeFee: 300,
-  exchangeShippingFee: 500,
+  exchangeFee: 0,
+  exchangeShippingFee: 0,
   shopNote: '承認のメモ',
   notifyCustomer: true,
 };
@@ -129,17 +129,14 @@ const APPROVE_INVALID: Array<[string, unknown]> = [
   ['返送料が負', approveWith({ returnShippingFee: -1 })],
   ['返送料が小数', approveWith({ returnShippingFee: 1.5 })],
   ['返送料が1000001', approveWith({ returnShippingFee: 1000001 })],
-  ['返送料が無い', approveWith({ returnShippingFee: undefined })],
   ['返品の手数料の%が負', approveWith({ restockingFeePercent: -1 })],
   ['返品の手数料の%が101', approveWith({ restockingFeePercent: 101 })],
   ['返品の手数料の%が小数', approveWith({ restockingFeePercent: 10.5 })],
   ['返品の手数料の%が無い', approveWith({ restockingFeePercent: undefined })],
   ['交換の手数料が負', approveWith({ exchangeFee: -1 })],
   ['交換の手数料が1000001', approveWith({ exchangeFee: 1000001 })],
-  ['交換の手数料が無い', approveWith({ exchangeFee: undefined })],
   ['交換の送料が負', approveWith({ exchangeShippingFee: -1 })],
   ['交換の送料が1000001', approveWith({ exchangeShippingFee: 1000001 })],
-  ['交換の送料が無い', approveWith({ exchangeShippingFee: undefined })],
   ['メモが501文字', approveWith({ shopNote: 'あ'.repeat(501) })],
   ['メモが文字でない', approveWith({ shopNote: 5 })],
   ['お客様に知らせるが無い', approveWith({ notifyCustomer: undefined })],
@@ -502,16 +499,39 @@ describe('承認（POST /api/admin/returns/[returnId]/approve）の個別', () =
     }));
   });
 
-  it('返送不要（not_required）と、金額・%の上限ちょうど（1000000円・100%）も受ける。返送不要を使えるかは DB が決める', async () => {
+  it('返送不要（not_required）と、%の上限ちょうど（100%）も受ける。返送不要を使えるかは DB が決める', async () => {
     const response = await call(approve, {
-      body: approveWith({
-        returnMethod: 'not_required', returnShippingFee: 1000000, restockingFeePercent: 100, exchangeFee: 1000000, exchangeShippingFee: 1000000,
-      }),
+      body: approveWith({ returnMethod: 'not_required', restockingFeePercent: 100 }),
     });
 
     expect(response.status).toBe(200);
     expect(mockApprove).toHaveBeenCalledWith(mockServiceClient, expect.objectContaining({
-      returnMethod: 'not_required', returnShippingFee: 1000000, restockingFeePercent: 100, exchangeFee: 1000000, exchangeShippingFee: 1000000,
+      returnMethod: 'not_required', returnShippingFee: 0, restockingFeePercent: 100, exchangeFee: 0, exchangeShippingFee: 0,
+    }));
+  });
+
+  // 返送料・交換の手数料と送料は、仕訳の決まりを決めるまで DB が 0 に止める（S16 の acc_p3_fee_lock_returns）。画面は送らない
+  it.each<[string, Record<string, unknown>]>([
+    ['返送料が1', { returnShippingFee: 1 }],
+    ['返送料が1000000', { returnShippingFee: 1000000 }],
+    ['交換の手数料が1', { exchangeFee: 1 }],
+    ['交換の送料が1', { exchangeShippingFee: 1 }],
+  ])('FREQ-578-AC-05: 承認のrouteは0でない返送料・交換の手数料・交換の送料をzodで400にする（%s）', async (_label, change) => {
+    const response = await call(approve, { body: approveWith(change) });
+
+    expect(response.status).toBe(400);
+    expect(mockApprove).not.toHaveBeenCalled();
+  });
+
+  it('FREQ-578-AC-05: 承認のrouteは送られない返送料・交換の手数料・交換の送料を0にして渡す', async () => {
+    const body: Record<string, unknown> = { ...APPROVE_BODY };
+    for (const key of ['returnShippingFee', 'exchangeFee', 'exchangeShippingFee']) delete body[key];
+
+    const response = await call(approve, { body });
+
+    expect(response.status).toBe(200);
+    expect(mockApprove).toHaveBeenCalledWith(mockServiceClient, expect.objectContaining({
+      returnShippingFee: 0, restockingFeePercent: 10, exchangeFee: 0, exchangeShippingFee: 0,
     }));
   });
 

@@ -1,6 +1,7 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
+import { dropReturnFeeLockCommitted, restoreReturnFeeLock } from './helpers/accounting-returns-fixtures';
 import { withGroupG1FixtureTransaction } from './helpers/group-g1-fixtures';
 import { createShippedOrderFixture, insertOrderWithLines, insertReturnRecord } from './helpers/order-fixtures';
 
@@ -89,16 +90,24 @@ describeLocalDb('G-1 exchange fee payment, waiver and shipping hold release', ge
     expect((await db().query(`select exists(select 1 from pg_catalog.pg_locks where pid=pg_backend_pid()
       and locktype='advisory' and classid=190521 and objid=1 and objsubid=2 and granted) as held`)).rows).toEqual([{ held: false }]);
   }
+  // Every test here is about the exchange fee itself (payment, waiver, release), so its material carries a non-zero fee.
+  // The material is committed and the entries run in new transactions, so the S16 CHECKs are taken out committed and
+  // put back after the cleanup (rulings P3-D5 / P3-D8).
+  beforeEach(async () => { await dropReturnFeeLockCommitted(db()); });
   afterEach(async () => {
-    await db().query('rollback');
-    await withGroupG1FixtureTransaction(db(), async () => {
-      for (const f of cleanup.splice(0)) {
-        if (f.exceptionId) await db().query('select public.resolve_payment_exception_by_system($1::uuid,$2::text)',
-          [f.exceptionId, 'fixture cleanup']);
-        await db().query(`update public.order_returns set status='cancelled',cancelled_at=now()
-          where id=$1 and status='open'`, [f.returnId]);
-      }
-    });
+    try {
+      await db().query('rollback');
+      await withGroupG1FixtureTransaction(db(), async () => {
+        for (const f of cleanup.splice(0)) {
+          if (f.exceptionId) await db().query('select public.resolve_payment_exception_by_system($1::uuid,$2::text)',
+            [f.exceptionId, 'fixture cleanup']);
+          await db().query(`update public.order_returns set status='cancelled',cancelled_at=now()
+            where id=$1 and status='open'`, [f.returnId]);
+        }
+      });
+    } finally {
+      await restoreReturnFeeLock(db());
+    }
   });
 
   test.each(ACTIONS)('%s public entry takes its own advisory and rejoins FIFO at the original order date', async action => {

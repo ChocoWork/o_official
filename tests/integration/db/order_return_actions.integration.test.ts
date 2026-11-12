@@ -1,6 +1,7 @@
 /** @jest-environment node */
 import { cancelDeliveryFixture } from './helpers/delivery-tracking-fixtures';
 import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
+import { withoutReturnFeeLock } from './helpers/accounting-returns-fixtures';
 import {
   createCatalogFixture,
   insertOrderWithLines,
@@ -802,7 +803,7 @@ describeLocalDb('integration: 返品の操作・読み出し・設定の関数�
       expect(count.rows[0].n).toBe(1);
     });
 
-    test('手数料は、引数が空なら設定の値、設定で使わない手数料は0。返送料の定額は、お客様の負担でお店の送り状の時だけ付く', async () => {
+    test('手数料は、引数が空なら設定の値、設定で使わない手数料は0。返送料の定額は、お客様の負担でお店の送り状の時だけ付く', () => withoutReturnFeeLock(db(), async () => {
       const order = await createShippedOrder(db(), { lines: [{ quantity: 8 }] });
       const feesOf = async (returnId: string) => {
         const res = await db().query(
@@ -843,7 +844,7 @@ describeLocalDb('integration: 返品の操作・読み出し・設定の関数�
       expect((await feesOf(await create({ method: 'shop_label', payer: 'customer', shippingFee: 0 }))).return_shipping_fee).toBe(0);
       // お店の送り状でない返品に返送料を渡しても、0に直して残す
       expect((await feesOf(await create({ method: 'customer_ships', payer: 'customer', shippingFee: 1200 }))).return_shipping_fee).toBe(0);
-    });
+    }));
 
     test('返送不要は、設定で出している時だけ選べる。返送しないので配送業者と伝票番号は付けられない', async () => {
       const order = await createShippedOrder(db(), { lines: [{ quantity: 2 }] });
@@ -1829,12 +1830,12 @@ describeLocalDb('integration: 返品の操作・読み出し・設定の関数�
         window_start: 'each_item',
         no_return_needed_enabled: true,
         customer_paid_method: 'shop_label',
-        shop_label_fee: 800,
+        shop_label_fee: 0,
         restocking_fee_enabled: true,
         restocking_fee_percent: 10,
-        exchange_fees_enabled: true,
-        exchange_fee: 300,
-        exchange_shipping_fee: 500,
+        exchange_fees_enabled: false,
+        exchange_fee: 0,
+        exchange_shipping_fee: 0,
       });
       await db().query("update public.shop_return_reason_settings set shipping_payer = 'shop' where reason = 'defective'");
       await db().query("update public.shop_return_reason_settings set out_of_stock_exchange = 'make' where reason = 'size_too_small'");
@@ -1914,12 +1915,12 @@ describeLocalDb('integration: 返品の操作・読み出し・設定の関数�
         return_address_set: true,
         no_return_needed_enabled: true,
         customer_paid_method: 'shop_label',
-        shop_label_fee: 800,
+        shop_label_fee: 0,
         restocking_fee_enabled: true,
         restocking_fee_percent: 10,
-        exchange_fees_enabled: true,
-        exchange_fee: 300,
-        exchange_shipping_fee: 500,
+        exchange_fees_enabled: false,
+        exchange_fee: 0,
+        exchange_shipping_fee: 0,
       });
       expect(keysOf(materials.settings.reason_shipping_payers)).toEqual(sorted(reasons));
       expect(keysOf(materials.settings.reason_out_of_stock_exchange)).toEqual(sorted(reasons));
@@ -1992,7 +1993,7 @@ describeLocalDb('integration: 返品の操作・読み出し・設定の関数�
           line(order, 0, 1),
           line(order, 0, 1, { resolution: 'exchange', exchange_variant_id: white, exchange_method: 'stock', reason: 'size_too_small' }),
         ],
-        { method: 'shop_label', payer: 'customer', carrier: 'yamato', tracking: '1234-5678', shippingFee: 800, shopNote: 'メモ' },
+        { method: 'shop_label', payer: 'customer', carrier: 'yamato', tracking: '1234-5678', shippingFee: 0, shopNote: 'メモ' },
       );
       const refundLineId = await lineIdOf(db(), returnId, order.itemIds[0]);
       const exchangeLineId = await lineIdOf(db(), returnId, order.itemIds[0], 'exchange');
@@ -2032,7 +2033,7 @@ describeLocalDb('integration: 返品の操作・読み出し・設定の関数�
         return_carrier: 'yamato',
         return_tracking_number: '1234-5678',
         fees: {
-          return_shipping_fee: 800,
+          return_shipping_fee: 0,
           restocking_fee_percent: 0,
           exchange_fee: 0,
           exchange_shipping_fee: 0,
@@ -2559,7 +2560,7 @@ describeLocalDb('integration: 返品の操作・読み出し・設定の関数�
       return res.rows[0].settings as Row;
     }
 
-    test('渡した欄だけ保存し、値が変わったまとまりだけ、最後に変えた人と時刻を書く（返送料の定額は返送のまとまり）', async () => {
+    test('渡した欄だけ保存し、値が変わったまとまりだけ、最後に変えた人と時刻を書く（返送料の定額は返送のまとまり）', () => withoutReturnFeeLock(db(), async () => {
       const actor = await createActor(db());
       const before = await readSettings();
 
@@ -2586,14 +2587,14 @@ describeLocalDb('integration: 返品の操作・読み出し・設定の関数�
       expect(settings.updated).toMatchObject({ window: stamp, shipping: stamp, fees: stamp, receiving: stamp });
       expect(settings.updated.requests).toEqual(before.updated.requests);
       expect(settings.updated.reasons).toEqual(before.updated.reasons);
-    });
+    }));
 
     test('値が変わらない更新・キーの無い更新は、最後に変えた人も時刻も書き換えない', async () => {
       const first = await createActor(db());
       const second = await createActor(db());
-      const written = await updateSettings({ window_days: 14, shop_label_fee: 800 }, first.id);
+      const written = await updateSettings({ window_days: 14, customer_paid_method: 'shop_label' }, first.id);
 
-      const same = await updateSettings({ window_days: 14, shop_label_fee: 800 }, second.id);
+      const same = await updateSettings({ window_days: 14, customer_paid_method: 'shop_label' }, second.id);
       const empty = await updateSettings({}, second.id);
 
       expect(same.updated).toEqual(written.updated);

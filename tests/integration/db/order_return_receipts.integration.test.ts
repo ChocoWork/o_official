@@ -3,6 +3,7 @@ import { hClaims, hReceive, hRefundFixture, hReturn } from './helpers/group-h-re
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
+import { withoutReturnFeeLock } from './helpers/accounting-returns-fixtures';
 import { PRICE, createCatalogFixture, insertOrderWithLines, variantStock, uniqueSuffix, revisionsOf,
   ensureFixturePaidAllocation, shipFixtureOrder } from './helpers/order-fixtures';
 jest.setTimeout(30000);
@@ -19,7 +20,7 @@ async function fixture(db:PgClient,o:{quantity?:number;returnQuantity?:number;ex
   // 空の返送先では返品作成が止まるため、試験用の住所を取引の中だけ設定する。
   await db.query(`update public.shop_return_settings set return_address_name='試験店舗',return_address_postal_code='1500001',
     return_address_line='東京都渋谷区神宮前1-1-1',return_address_phone='0311112222',
-    restocking_fee_enabled=true,exchange_fees_enabled=true,inspection_enabled=true where id=1`);
+    restocking_fee_enabled=true,exchange_fees_enabled=${(o.fee??0)>0},inspection_enabled=true where id=1`);
   const q=o.quantity??1;
   const actor=(await db.query(`insert into auth.users(id,email,raw_user_meta_data,created_at,updated_at)
     values(gen_random_uuid(),$1,'{}',now(),now()) returning id`,[`returns-${uniqueSuffix()}@example.com`])).rows[0].id;
@@ -122,7 +123,7 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
   const db=()=>getDb();
   beforeEach(async()=>{
     await db().query('begin');await db().query('delete from private.order_email_outbox');
-    await db().query('update public.shop_return_settings set restocking_fee_enabled=true,exchange_fees_enabled=true,inspection_enabled=true');
+    await db().query('update public.shop_return_settings set restocking_fee_enabled=true,inspection_enabled=true');
     await db().query(`update public.shop_return_reason_settings set out_of_stock_exchange='decline' where reason='unknown'`);
   });
   afterEach(async()=>{await db().query('rollback');});
@@ -205,7 +206,7 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     const r=await refund(db(),f,4000);await result(db(),r.refund_id,'succeeded');
     expect((await db().query('select kind,variant from private.order_email_outbox where refund_id=$1',[r.refund_id])).rows).toEqual([{kind:'refund',variant:'return'}]);
   });
-  test('相談の手数料と額の上限を守り、返金の再送で二度引かない',async()=>{
+  test('相談の手数料と額の上限を守り、返金の再送で二度引かない',()=>withoutReturnFeeLock(db(),async()=>{
     const f=await fixture(db(),{shippingFee:600,percent:10});await receive(db(),f);
     expect((await db().query('select fee_pending_deduction from public.order_returns where id=$1',[f.returnId])).rows[0].fee_pending_deduction).toBe(1100);
     await fails(db(),()=>refund(db(),f,5001),'RETURN_REFUND_AMOUNT_INVALID');
@@ -214,13 +215,13 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     await fails(db(),()=>refund(db(),f,3799,key),'RETURN_REQUEST_MISMATCH');
     expect((await db().query('select fee_pending_deduction,fee_due_amount from public.order_returns where id=$1',[f.returnId])).rows[0]).toEqual({fee_pending_deduction:0,fee_due_amount:0});
     expect((await db().query('select adjustment_amount from public.order_refunds where id=$1',[r.refund_id])).rows[0].adjustment_amount).toBe(-1200);
-  });
-  test('今返金は返送料を最初だけ引き、部分受け取りの返品手数料は毎回計算する',async()=>{
+  }));
+  test('今返金は返送料を最初だけ引き、部分受け取りの返品手数料は毎回計算する',()=>withoutReturnFeeLock(db(),async()=>{
     const f=await fixture(db(),{quantity:2,shippingFee:600,percent:10});const a=await receive(db(),f,{choice:'now'});
     expect(a.refund_amount).toBe(3900);await result(db(),a.refund_id,'succeeded');
     expect((await receive(db(),f,{choice:'now'})).refund_amount).toBe(4500);
-  });
-  test('返金なしの交換の手数料は支払い待ちで発送を止め、支払い記録後に送れる',async()=>{
+  }));
+  test('返金なしの交換の手数料は支払い待ちで発送を止め、支払い記録後に送れる',()=>withoutReturnFeeLock(db(),async()=>{
     const f=await fixture(db(),{exchange:true,fee:600,shippingFee:400});const r=await receive(db(),f,{choice:'none',disposition:'not_restocked'});
     expect(r.fee_due_amount).toBe(1000);const lines=JSON.stringify([{order_item_id:r.exchange_order_item_ids[0],quantity:1}]);
     // The exchange allocation is G-1 material until Task 11; the hold must be the refusal, not a missing A.
@@ -233,8 +234,8 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     await db().query('select * from public.admin_record_return_fee_payment($1,$2,null,false)',[f.returnId,f.actor]);
     expect(await feeBlocked()).toBe(false);
     await shipFixtureOrder(db(),{orderId:f.orderId,actorId:f.actor,trackingNumber:'TEST-3',lines:JSON.parse(lines)});
-  });
-  test('手数料をいただかないで終えた後、次の受け取りで新しい手数料が付くと免除と受領の印を外してお支払い待ちに戻る',async()=>{
+  }));
+  test('手数料をいただかないで終えた後、次の受け取りで新しい手数料が付くと免除と受領の印を外してお支払い待ちに戻る',()=>withoutReturnFeeLock(db(),async()=>{
     const f=await fixture(db(),{quantity:2,exchange:true,stock:0,shippingFee:6000,fee:600});
     // 最初の1点を返金に変え、商品5000円を超える返送料の1000円だけを免除する。残り1点はまだ受け取らない。
     const first=await receive(db(),f,{choice:'now',disposition:'not_restocked',overrides:[{return_line_id:f.lineId,action:'refund'}]});
@@ -250,7 +251,7 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
       .toEqual({status:'open',fee_due_amount:600,fee_settled_amount:1000,fee_waived:false,fee_received_at:null,fee_received_by:null,fee_received_note:null});
     expect((await db().query('select * from private.return_display_state($1)',[f.returnId])).rows[0])
       .toEqual({display_status:'in_progress',marks:['awaiting_fee'],unprocessed:0,refund_waiting:0});
-  });
+  }));
   test('返金失敗で rw が戻るが closed を巻き戻さず、受け取りの在庫を動かさない',async()=>{
     const f=await fixture(db());const r=await receive(db(),f,{choice:'now'});expect(r.return_status).toBe('closed');
     await result(db(),r.refund_id,'pending');await result(db(),r.refund_id,'failed');expect((await progress(db(),f)).refund_waiting).toBe(1);
@@ -344,7 +345,7 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
       .toEqual([{disposition:'restocked',quantity:2}]);
     expect(await variantStock(db(),f.variantId)).toBe(3);
   });
-  test.each([{choice:'now',can:true},{choice:'consult',can:false}])('2点のうち届かない1点を普通の返金で覆った後は、開き直して %j で受け取っても返金と相談の手数料と店への知らせを増やさない（I-1 A）',async options=>{
+  test.each([{choice:'now',can:true},{choice:'consult',can:false}])('2点のうち届かない1点を普通の返金で覆った後は、開き直して %j で受け取っても返金と相談の手数料と店への知らせを増やさない（I-1 A）',(options)=>withoutReturnFeeLock(db(),async()=>{
     const f=await fixture(db(),{quantity:2,returnQuantity:1,shippingFee:600,percent:10});
     await db().query('select * from public.admin_close_return_missing($1,$2,$3)',[f.returnId,f.actor,randomUUID()]);
     const ordinary=await ordinaryRefund(db(),f);await result(db(),ordinary.refund_id,'succeeded');
@@ -360,7 +361,7 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     expect(await returnFees(db(),f)).toEqual({fee_pending_deduction:0,fee_due_amount:0});
     expect((await db().query('select count(*)::int n from public.order_refunds where order_id=$1',[f.orderId])).rows[0].n).toBe(1);
     expect((await db().query("select count(*)::int n from private.order_email_outbox where return_id=$1 and kind='return_refund_pending_shop'",[f.returnId])).rows[0].n).toBe(0);
-  });
+  }));
   test('1点目を返金しないで終え、普通の返金で1点を覆った後は2点目を今返金で受け取っても返金を作らない（I-1 B）',async()=>{
     const f=await fixture(db(),{quantity:2,percent:100});
     const first=await receive(db(),f,{choice:'now'});
@@ -374,7 +375,7 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     expect((await db().query('select count(*)::int n from public.order_refunds where order_id=$1',[f.orderId])).rows[0].n).toBe(1);
     expect((await db().query("select count(*)::int n from public.order_return_receipt_lines where receipt_id=$1 and disposition='refund_waived'",[received.receipt_id])).rows[0].n).toBe(0);
   });
-  test('決着後に額を決めて返金で引けない新しい手数料が付くと、決着済みを含めず免除と受領を戻す（M-2・I-2）',async()=>{
+  test('決着後に額を決めて返金で引けない新しい手数料が付くと、決着済みを含めず免除と受領を戻す（M-2・I-2）',()=>withoutReturnFeeLock(db(),async()=>{
     const f=await fixture(db(),{quantity:3,shippingFee:6000,percent:100});
     expect(await receive(db(),f,{choice:'now'})).toMatchObject({refund_status:'waived',fee_due_amount:6000});
     await db().query('select * from public.admin_record_return_fee_payment($1,$2,null,true)',[f.returnId,f.actor]);
@@ -390,7 +391,7 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     await db().query('select * from public.admin_record_return_fee_payment($1,$2,null,false)',[f.returnId,f.actor]);
     expect((await db().query('select status,fee_due_amount,fee_settled_amount from public.order_returns where id=$1',[f.returnId])).rows[0])
       .toEqual({status:'closed',fee_due_amount:0,fee_settled_amount:11000});
-  });
+  }));
   test('お返しと相談の返金待ちの品がある返品は、普通の返金で覆った時に自動で完了し、結果とエラーの後も数を確かめ直す（M-3）',async()=>{
     const f=await fixture(db(),{quantity:2});
     await receive(db(),f,{choice:'consult',message:'ご確認ください。',units:[
@@ -421,7 +422,7 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     expect(await progress(db(),f)).toMatchObject({unprocessed:1,exchanged:0,refund_waiting:1});
     expect((await refund(db(),f)).amount).toBe(5000);
   });
-  test.each([100,120])('返品手数料%s%%相当で受け取りの返金が0円なら同じ受け取りに refund_waived を追記する（P20）',async ratio=>{
+  test.each([100,120])('返品手数料%s%%相当で受け取りの返金が0円なら同じ受け取りに refund_waived を追記する（P20）',(ratio)=>withoutReturnFeeLock(db(),async()=>{
     // 100%は返品手数料、120%相当は商品の額を超える定額の返送料で再現する。
     const f=await fixture(db(),ratio===100?{percent:100,paymentIntent:null}:{shippingFee:6000,paymentIntent:null});
     const key=randomUUID();
@@ -436,8 +437,8 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     expect((await db().query('select kind from private.order_email_outbox where order_id=$1',[f.orderId])).rows).toEqual([{kind:'return_received'}]);
     expect(await variantStock(db(),f.variantId)).toBe(2);
     await fails(db(),()=>receive(db(),f,{choice:'consult',key}),'RETURN_REQUEST_MISMATCH');
-  });
-  test('額を決めて0円で終える時は waive_refund を作り、返金とメールを作らず再送は同じ結果になる（P20）',async()=>{
+  }));
+  test('額を決めて0円で終える時は waive_refund を作り、返金とメールを作らず再送は同じ結果になる（P20）',()=>withoutReturnFeeLock(db(),async()=>{
     const f=await fixture(db(),{shippingFee:600,percent:10,paymentIntent:null});
     await receive(db(),f,{notify:false});const key=randomUUID();
     expect(await refund(db(),f,0,key)).toEqual({refund_id:null,amount:0,status:'waived',replayed:false,release_refund_ids:[]});
@@ -453,14 +454,14 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     expect((await db().query('select count(*)::int n from public.order_refunds where order_id=$1',[f.orderId])).rows[0].n).toBe(0);
     expect((await db().query('select count(*)::int n from private.order_email_outbox where order_id=$1',[f.orderId])).rows[0].n).toBe(0);
     expect(await variantStock(db(),f.variantId)).toBe(2);
-  });
-  test('相談の手数料が商品を超え、計算どおりが0円でも単独の返金を作らず超過だけ支払い待ちにする',async()=>{
+  }));
+  test('相談の手数料が商品を超え、計算どおりが0円でも単独の返金を作らず超過だけ支払い待ちにする',()=>withoutReturnFeeLock(db(),async()=>{
     const f=await fixture(db(),{shippingFee:6000});await receive(db(),f,{notify:false});
     expect(await refund(db(),f)).toMatchObject({refund_id:null,amount:0,status:'waived'});
     expect((await db().query('select fee_pending_deduction,fee_due_amount from public.order_returns where id=$1',[f.returnId])).rows[0])
       .toEqual({fee_pending_deduction:0,fee_due_amount:1000});
     expect((await progress(db(),f)).refund_waiting).toBe(0);
-  });
+  }));
   test.each([{paymentIntent:null},{paymentIntent:'cs_fixture'},{paid:null}])('非0円の今返金は Stripe で返せない注文%jの受け取りを残さない',async options=>{
     const f=await fixture(db(),options);
     await fails(db(),()=>receive(db(),f,{choice:'now'}),'ORDER_NOT_REFUNDABLE');
@@ -479,13 +480,13 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     expect(await variantStock(db(),f.variantId)).toBe(2);
     expect((await db().query('select count(*)::int n from public.order_return_receipts where return_id=$1',[f.returnId])).rows[0].n).toBe(1);
   });
-  test('お返しだけの受け取りに返送料を付けず、交換の手数料は最初の交換だけ付ける',async()=>{
+  test('お返しだけの受け取りに返送料を付けず、交換の手数料は最初の交換だけ付ける',()=>withoutReturnFeeLock(db(),async()=>{
     const sent=await fixture(db(),{shippingFee:600});
     expect((await receive(db(),sent,{choice:'none',disposition:'sent_back',message:'ご確認ください。'})).fee_due_amount).toBe(0);
     const f=await fixture(db(),{quantity:2,exchange:true,method:'make',stock:0,fee:300,shippingFee:400});
     expect((await receive(db(),f,{choice:'none',disposition:'not_restocked'})).fee_due_amount).toBe(700);
     expect((await receive(db(),f,{choice:'none',disposition:'not_restocked'})).fee_due_amount).toBe(700);
-  });
+  }));
   test('返金の品が無ければ単独の返金は RETURN_NOTHING_TO_REFUND',async()=>{
     const f=await fixture(db());await fails(db(),()=>refund(db(),f),'RETURN_NOTHING_TO_REFUND');
   });
@@ -497,7 +498,7 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     await fails(db(),()=>receive(db(),f,{disposition:'pending_inspection'}),'RETURN_ARGUMENT_INVALID');
     expect((await db().query('select count(*)::int n from public.order_return_receipts where return_id=$1',[f.returnId])).rows[0].n).toBe(0);
   });
-  test('FREQ-641-AC-09: 相談後は注文残額まで今返金は今回の商品額まで手数料を負けられる',async()=>{
+  test('FREQ-641-AC-09: 相談後は注文残額まで今返金は今回の商品額まで手数料を負けられる',()=>withoutReturnFeeLock(db(),async()=>{
     const f=await fixture(db(),{shippingFee:600,percent:10});await receive(db(),f);
     // 計算どおりは 5000 − 1100 = 3900。返せる額は 5000
     const r=await refund(db(),f,4500);
@@ -509,7 +510,7 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     expect(a).toMatchObject({refund_amount:5000,refund_status:'awaiting_response'});
     expect((await db().query('select adjustment_amount,return_fee_deduction from public.order_refunds where id=$1',[a.refund_id])).rows[0])
       .toEqual({adjustment_amount:0,return_fee_deduction:500});
-  });
+  }));
 
   test('理由の設定が make の在庫不足の行は、店長だけが返金に変えられ、make の上書きと在庫が足りる行の上書きは受けない（C-1・仕様書 6-5）',async()=>{
     await db().query(`update public.shop_return_reason_settings set out_of_stock_exchange='make' where reason='unknown'`);
@@ -553,7 +554,7 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
       .toEqual(expect.arrayContaining([{return_line_id:g.lineId,exchange_method:'stock'},{return_line_id:g.secondLineId,exchange_method:'make'}]));
   });
 
-  test('今返金のエラー・返し直しの失敗と2回続いても、その返金で引いた手数料を fee_pending_deduction に戻し、計算どおりで引き直す（P26）',async()=>{
+  test('今返金のエラー・返し直しの失敗と2回続いても、その返金で引いた手数料を fee_pending_deduction に戻し、計算どおりで引き直す（P26）',()=>withoutReturnFeeLock(db(),async()=>{
     const f=await fixture(db(),{shippingFee:600,percent:10});
     const a=await receive(db(),f,{choice:'now'});
     expect(a.refund_amount).toBe(3900);expect(await deductionOf(db(),a.refund_id)).toBe(1100);
@@ -567,8 +568,8 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     const second=await refund(db(),f);
     expect(second).toMatchObject({amount:3900,status:'awaiting_response'});
     expect(await returnFees(db(),f)).toEqual({fee_pending_deduction:0,fee_due_amount:0});
-  });
-  test('エラーにした今返金が後で Stripe に見つかったら、戻した手数料を引き直し、返金待ちも無くなる（P26）',async()=>{
+  }));
+  test('エラーにした今返金が後で Stripe に見つかったら、戻した手数料を引き直し、返金待ちも無くなる（P26）',()=>withoutReturnFeeLock(db(),async()=>{
     const f=await fixture(db(),{shippingFee:600,percent:10});
     const a=await receive(db(),f,{choice:'now'});
     await markError(db(),a.refund_id);
@@ -576,15 +577,15 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     await result(db(),a.refund_id,'succeeded');
     expect(await returnFees(db(),f)).toEqual({fee_pending_deduction:0,fee_due_amount:0});
     expect((await progress(db(),f)).refund_waiting).toBe(0);
-  });
-  test('相談の受け取りの手数料を引いた額を決めて返金が失敗すると、引いた手数料が戻り、返し直しの計算どおりで引く（P26）',async()=>{
+  }));
+  test('相談の受け取りの手数料を引いた額を決めて返金が失敗すると、引いた手数料が戻り、返し直しの計算どおりで引く（P26）',()=>withoutReturnFeeLock(db(),async()=>{
     const f=await fixture(db(),{shippingFee:600,percent:10});await receive(db(),f);
     const r=await refund(db(),f,3800);expect(await deductionOf(db(),r.refund_id)).toBe(1100);
     await result(db(),r.refund_id,'failed');
     expect(await returnFees(db(),f)).toEqual({fee_pending_deduction:1100,fee_due_amount:0});
     expect((await refund(db(),f)).amount).toBe(3900);
     expect((await returnFees(db(),f)).fee_due_amount).toBe(0);
-  });
+  }));
 
   test.each([false,true])('今返金の断り・見回り（要対応 %s）は、知らせる受け取りの return_received を1通だけ予定する（P25）',async raise=>{
     const f=await fixture(db());const a=await receive(db(),f,{choice:'now'});
@@ -616,11 +617,11 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     expect((await db().query('select count(*)::int n from private.order_email_outbox where order_id=$1',[g.orderId])).rows[0].n).toBe(0);
   });
 
-  test('お返しだけの受け取りは「最初の受け取り」を使わず、次の返金の品の受け取りで返送料を引く',async()=>{
+  test('お返しだけの受け取りは「最初の受け取り」を使わず、次の返金の品の受け取りで返送料を引く',()=>withoutReturnFeeLock(db(),async()=>{
     const f=await fixture(db(),{quantity:2,shippingFee:600});
     await receive(db(),f,{choice:'none',disposition:'sent_back',message:'ご確認ください。'});
     expect((await receive(db(),f,{choice:'now'})).refund_amount).toBe(4400);
-  });
+  }));
 
   test('交換の品の行の番号は RFC 9562 の形（版4・変種8）で、窓口の z.string().uuid() を通る',async()=>{
     const f=await fixture(db(),{exchange:true});const r=await receive(db(),f,{choice:'none',disposition:'not_restocked'});
@@ -664,7 +665,7 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     expect(mail.kind).toBe(kind);
     await fails(db(),()=>db().query("select public.skip_order_email($1,$2,'superseded')",[mail.email_id,mail.lease_token]),'SUPERSEDE_NOT_ALLOWED');
   });
-  test('この受け取りで同じ色・サイズを在庫に戻す数は、交換の在庫不足の判定に入れない（03-2）',async()=>{
+  test('この受け取りで同じ色・サイズを在庫に戻す数は、交換の在庫不足の判定に入れない（03-2）',()=>withoutReturnFeeLock(db(),async()=>{
     // 方法選択だけを確かめる材料。G-1 の通常FIFOによる消費は手数料待ちで保留する。
     // 保留しない make も通常割当することは group_g1_return_exchange の実公開経路で別途検証する。
     const f=await fixture(db(),{exchange:true,stock:0,fee:500});
@@ -675,7 +676,7 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     expect((await db().query('select count(*)::int n from public.order_item_allocations where order_item_id=$1',
       [r.exchange_order_item_ids[0]])).rows[0].n).toBe(0);
     expect(await variantStock(db(),f.variantId)).toBe(1);
-  });
+  }));
   test('同じ商品の返金を2行に分けて受け取っても数を合算して1回計算し、Task 2 の商品ごとの見込みと同じ額になる（03-7・04-1・02-2）',async()=>{
     const f=await twoExchangeLines(db(),0,1);
     // 2点・割引1円。2行それぞれの1点の値を足すと9998円になるが、商品ごとに2点で出すと9999円。
@@ -686,7 +687,7 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     expect(r.refund_amount).toBe(9999);
     expect((await db().query('select quantity,amount from public.order_refund_lines where refund_id=$1',[r.refund_id])).rows).toEqual([{quantity:2,amount:9999}]);
   });
-  test('エラーの後の保留・成功と結果の再送では手数料を一度だけ引き直し、返し直し済みでも0未満にしない（P26）',async()=>{
+  test('エラーの後の保留・成功と結果の再送では手数料を一度だけ引き直し、返し直し済みでも0未満にしない（P26）',()=>withoutReturnFeeLock(db(),async()=>{
     const f=await fixture(db(),{shippingFee:600,percent:10});const a=await receive(db(),f,{choice:'now'});
     await markError(db(),a.refund_id);await markError(db(),a.refund_id);
     expect((await returnFees(db(),f)).fee_pending_deduction).toBe(1100);
@@ -698,7 +699,7 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     await markError(db(),b.refund_id);await refund(db(),g);
     await result(db(),b.refund_id,'pending');
     expect((await returnFees(db(),g)).fee_pending_deduction).toBe(0);
-  });
+  }));
   test.each(['return','admin'])('return_fee_deduction を省いた %s の直接 INSERT は既定の0になり、既存の試験の入力をそのまま通す（P26）',async source=>{
     const f=await fixture(db());
     const row=(await db().query(`insert into public.order_refunds
@@ -833,26 +834,26 @@ describeLocalDb('Task 4 の見込みの例 R1〜R4 と同じ入力で、受け�
     expect(r).toMatchObject({refund_amount:2666,refund_status:'awaiting_response',fee_due_amount:0});
     expect(await refundRowOf(r.refund_id)).toEqual({amount:2666,adjustment_amount:0});
   });
-  test('R2 返送料 800（最初の受け取り）と返品の手数料 10%: X を2点 → 5333 − (800 + 533) = 4000',async()=>{
+  test('R2 返送料 800（最初の受け取り）と返品の手数料 10%: X を2点 → 5333 − (800 + 533) = 4000',()=>withoutReturnFeeLock(db(),async()=>{
     const f=await valueA(db(),{item:'X',quantity:2,resolution:'refund',method:'shop_label',returnShippingFee:800,percent:10,exchangeFee:0,exchangeShippingFee:0});
     expect(await amountsOf(f)).toEqual([2666,5333]);
     const r=await receive(db(),f,{choice:'now',quantity:2});
     expect(r).toMatchObject({refund_amount:4000,fee_due_amount:0});
     expect(await refundRowOf(r.refund_id)).toEqual({amount:4000,adjustment_amount:-1333});
-  });
-  test('R3 交換だけ（返送料 800・交換の手数料 500・交換の送料 300）→ 返金なし、お支払い待ち 1600',async()=>{
+  }));
+  test('R3 交換だけ（返送料 800・交換の手数料 500・交換の送料 300）→ 返金なし、お支払い待ち 1600',()=>withoutReturnFeeLock(db(),async()=>{
     const f=await valueA(db(),{item:'X',quantity:1,resolution:'exchange',method:'shop_label',returnShippingFee:800,percent:0,exchangeFee:500,exchangeShippingFee:300});
     const r=await receive(db(),f,{choice:'none',disposition:'not_restocked'});
     expect(r).toMatchObject({refund_id:null,refund_amount:null,refund_status:null,fee_due_amount:1600});
     expect((await db().query('select exchange_paid_amount from public.order_items where id=$1',[r.exchange_order_item_ids[0]])).rows[0].exchange_paid_amount).toBe(2666);
-  });
-  test('R4 手数料が商品の額を超える: Y を1点（889）、返送料 800 と 20%（177）→ 返金なし（waived）、お支払い待ち 88',async()=>{
+  }));
+  test('R4 手数料が商品の額を超える: Y を1点（889）、返送料 800 と 20%（177）→ 返金なし（waived）、お支払い待ち 88',()=>withoutReturnFeeLock(db(),async()=>{
     const f=await valueA(db(),{item:'Y',quantity:1,resolution:'refund',method:'shop_label',returnShippingFee:800,percent:20,exchangeFee:0,exchangeShippingFee:0});
     expect(await amountsOf(f)).toEqual([889]);
     const r=await receive(db(),f,{choice:'now'});
     expect(r).toMatchObject({refund_id:null,refund_amount:0,refund_status:'waived',fee_due_amount:88});
     expect((await db().query('select count(*)::int n from public.order_refunds where order_id=$1',[f.orderId])).rows[0].n).toBe(0);
-  });
+  }));
 });
 
 describeLocalDb('H5 return receipt regression (controller)', db => {

@@ -86,7 +86,7 @@ export async function ubReceive(db: PgClient, input: ReceiveInput, pricing?: unk
 export async function createUbReturn(db: PgClient, f: { orderId: string; itemId: string; actor: string; fulfillment: { fulfillment_id?: string } | null; catalog: { variantId: number } },
   groups: { quantity: number; exchange?: boolean; reason?: string; itemId?: string; method?: 'make' | 'stock' }[], o: { percent?: number; fixed?: number; itemId?: string } = {}) {
   await db.query(`update public.shop_return_settings set return_address_name='Fixture',return_address_postal_code='1000001',
-    return_address_line='Fixture',return_address_phone='0311112222',restocking_fee_enabled=true,exchange_fees_enabled=true where id=1`);
+    return_address_line='Fixture',return_address_phone='0311112222',restocking_fee_enabled=true where id=1`);
   const number = Number((await db.query('select coalesce(max(number),0)+1 as n from public.order_returns where order_id=$1', [f.orderId])).rows[0].n);
   const returnId = (await db.query(`insert into public.order_returns
     (order_id,number,source,status,request_key,request_fingerprint,requested_at,requested_by,return_method,return_shipping_payer,notify_customer)

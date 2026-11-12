@@ -53,8 +53,8 @@ export const RETURN_TEXT = {
   empty: 'この注文にはまだ返品がありません。',
   created: '返品を作りました。',
   addressMissing: '返送先が設定されていません。ショップの設定で返送先を入れてから作ってください。',
-  /** 作る画面の円の欄（返送料・交換の手数料・交換の送料）が上限を超えた時の誤り。ショップの設定の画面の金額の欄と同じ言葉 */
-  yenLimit: '0から1000000までの整数（半角）で入れてください。',
+  /** 返送料・交換の手数料・交換の送料の欄を止めている理由（FREQ-578-AC-05。仕訳の決まりを決めるまで 0 に止める） */
+  feeLocked: '現在は使えません。仕訳の決まりを決めてから使えます',
   /** 作る画面の返品の手数料（%）の欄が0〜100の整数でない時の誤り。ショップの設定の画面の割合の欄と同じ言葉 */
   percentLimit: '0から100までの整数（半角）で入れてください。',
   notReturnable: 'この注文は返品を作れません。',
@@ -183,7 +183,8 @@ export const SHOP_ALERT_TO = process.env.SHOP_ALERT_EMAIL ?? 'shop-alert@e2e.tes
 // ---- 手元の DB：設定・注文・返品の DB の関数 ----
 
 /**
- * 返品の設定の1行（全部の試験で共有する）に、返送先と、手数料・要検品・返送不要を使う印を書く。
+ * 返品の設定の1行（全部の試験で共有する）に、返送先と、返品の手数料・要検品・返送不要を使う印を書く。
+ * 交換の手数料と送料は、DB が「使わない」に止めている（acc_p3_fee_lock_settings。FREQ-578-AC-05）ので書かない。
  * 毎回同じ値を書くので、並行して動く試験がぶつかっても同じ結果になる。ほかの欄（受付の期限・理由ごとの設定）は書き換えない。
  * 返送先が空だと返品を作れず、要検品がオフだと検品待ちを受け取れない（DB の関数が断る）ため、返品の試験の準備で必ず呼ぶ。
  */
@@ -191,7 +192,7 @@ export async function ensureReturnSettings(db: PgClient): Promise<void> {
   await db.query(
     `update public.shop_return_settings set
        return_address_name = $1, return_address_postal_code = $2, return_address_line = $3, return_address_phone = $4,
-       no_return_needed_enabled = true, restocking_fee_enabled = true, exchange_fees_enabled = true, inspection_enabled = true
+       no_return_needed_enabled = true, restocking_fee_enabled = true, inspection_enabled = true
      where id = 1`,
     [RETURN_ADDRESS.name, RETURN_ADDRESS.postalCode, RETURN_ADDRESS.address, RETURN_ADDRESS.phone],
   );
@@ -324,6 +325,34 @@ export type E2eCreateReturnInput = {
   shopNote?: string | null;
   notify?: boolean;
 };
+
+/** withoutReturnFeeLock を並行の試験の間で1つずつにする advisory lock の鍵（試験だけが使う） */
+const RETURN_FEE_LOCK_OFF_KEY = 578_005;
+
+/**
+ * 返送料・交換の手数料・交換の送料の決まり（acc_p3_fee_lock_returns。FREQ-578-AC-05）を外して work を流し、終わったら戻す。
+ * 0 でない返送料・交換の手数料・交換の送料の返品は、新しく作れず、作った後も行を直せない（NOT VALID の CHECK は UPDATE のたびに効く）。
+ * 手数料の仕組みそのものを確かめる試験だけが使う（判断 P3-D8）。E2E は画面・窓口が別の接続で読むので ROLLBACK できず、
+ * 外す・戻すはそれぞれ確定する（DB の関数は自分のトランザクションの決まりで動くので、work を1つのトランザクションに包まない）。
+ * 戻す決まりは NOT VALID なので、確定した手数料の行は残る。手数料の行を直す手順（受け取り・入金の記録など）も work に入れる。
+ * 外している間は、ほかの並行の試験も 0 でない額を入れられるが、窓口（zod）と設定の行の決まりが 0 を守るので、0 でない額は
+ * この道具を使う試験だけが入れる。この道具を使う試験どうしは advisory lock で1つずつ流し、片方が戻した決まりで他方が断られないようにする。
+ */
+export async function withoutReturnFeeLock<T>(db: PgClient, work: () => Promise<T>): Promise<T> {
+  await db.query('select pg_advisory_lock($1)', [RETURN_FEE_LOCK_OFF_KEY]);
+  try {
+    await db.query('alter table public.order_returns drop constraint if exists acc_p3_fee_lock_returns');
+    try {
+      return await work();
+    } finally {
+      await db.query(`alter table public.order_returns drop constraint if exists acc_p3_fee_lock_returns;
+        alter table public.order_returns add constraint acc_p3_fee_lock_returns check (
+          return_shipping_fee = 0 and exchange_fee = 0 and exchange_shipping_fee = 0) not valid`);
+    }
+  } finally {
+    await db.query('select pg_advisory_unlock($1)', [RETURN_FEE_LOCK_OFF_KEY]);
+  }
+}
 
 /** 返品を作る DB の関数 admin_create_return。管理画面の「返品を作る」の代わりに、窓口と同じ関数を直に呼ぶ */
 export async function createReturnInDb(

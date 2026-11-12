@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
+import { withoutReturnFeeLock } from './helpers/accounting-returns-fixtures';
 import {
   createDeliveryOrder, deliveryShipment, insertDeliveryFixture,
   markDeliveredFixture, correctDeliveryTrackingFixture,
@@ -368,7 +369,7 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
       expect(saved.rows[0].fee_waived).toBe(true);
     });
 
-    test('値の決まり: 道・状態・返送の方法と負担・配送業者・伝票番号の形・手数料の範囲・文の長さ', async () => {
+    test('値の決まり: 道・状態・返送の方法と負担・配送業者・伝票番号の形・手数料の範囲・文の長さ', () => withoutReturnFeeLock(db(), async () => {
       const order = await createShipped(db(), 1);
       const refused: Array<[Record<string, string>, string]> = [
         // 道・状態・番号
@@ -415,7 +416,7 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
       await insertReturnRow(db(), order.orderId, { number: '2', restocking_fee_percent: '0', status: "'requested'", source: "'customer_request'" });
       const count = await db().query('select count(*)::int as n from public.order_returns where order_id = $1', [order.orderId]);
       expect(count.rows[0].n).toBe(2);
-    });
+    }));
 
     test('番号は注文の中で一意。二重防止の番号は表全体で一意（制約の名前は移行 B が見分けに使う）', async () => {
       const first = await createShipped(db(), 1);
@@ -1356,7 +1357,7 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
       expect(byReason(res.rows)).toEqual(byReason(INITIAL_REASON_SETTINGS));
     });
 
-    test('全体の設定の値の決まり: 1 行だけ・日数と目安の範囲（日数は空で無制限）・手数料と額・返送先は 4 つとも空か 4 つとも入っている', async () => {
+    test('全体の設定の値の決まり: 1 行だけ・日数と目安の範囲（日数は空で無制限）・手数料と額・返送先は 4 つとも空か 4 つとも入っている', () => withoutReturnFeeLock(db(), async () => {
       const refused: Array<[string, string]> = [
         ['id = 2', 'shop_return_settings_id_check'],
         ['window_days = 0', 'shop_return_settings_window_days_check'],
@@ -1413,7 +1414,7 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
 
       // 2 行目は作れない
       await expectRejected(db(), 'insert into public.shop_return_settings (id) values (1)', [], { code: '23505', constraint: 'shop_return_settings_pkey' });
-    });
+    }));
 
     test('理由ごとの設定の値の決まり: 理由・ご希望・在庫の無い交換・写真・案内の文の長さ・返送料の負担', async () => {
       const refused: Array<[string, string]> = [

@@ -163,15 +163,14 @@ export type UbReturn = { returnId: string; lineIds: string[]; number: number };
 
 /**
  * 返品を1件作って承認する（お客様の申し込みの返品として）。返送先は試験が整える。
- * 返送料・交換の手数料・交換の送料・返品の手数料（%）を決められる（定額の返送料はお店の送り状の返品にして料金を決める）。
+ * 返品の手数料（%）を決められる。返送料・交換の手数料・交換の送料は DB が 0 に止めている（acc_p3_fee_lock_*。FREQ-578-AC-05）ので 0 で承認する。
  */
 export async function createApprovedReturn(
   db: PgClient,
-  o: { orderId: string; fulfillmentId: string; actorId: string; groups: UbReturnGroup[];
-    returnShippingFee?: number; restockingPercent?: number; exchangeFee?: number; exchangeShippingFee?: number },
+  o: { orderId: string; fulfillmentId: string; actorId: string; groups: UbReturnGroup[]; restockingPercent?: number },
 ): Promise<UbReturn> {
   await db.query(`update public.shop_return_settings set return_address_name='Fixture',return_address_postal_code='1000001',
-    return_address_line='Fixture',return_address_phone='0311112222',restocking_fee_enabled=true,exchange_fees_enabled=true where id=1`);
+    return_address_line='Fixture',return_address_phone='0311112222',restocking_fee_enabled=true where id=1`);
   const number = Number((await db.query('select coalesce(max(number),0)+1 as n from public.order_returns where order_id=$1', [o.orderId])).rows[0].n);
   const returnId = (await db.query(`insert into public.order_returns
     (order_id,number,source,status,request_key,request_fingerprint,requested_at,requested_by,return_method,return_shipping_payer,notify_customer)
@@ -188,10 +187,8 @@ export async function createApprovedReturn(
   }
   const approval = o.groups.map((g, i) => ({ return_line_id: lineIds[i], resolution: g.exchangeVariantId !== undefined ? 'exchange' : 'refund',
     exchange_variant_id: g.exchangeVariantId ?? null, exchange_method: g.exchangeVariantId !== undefined ? g.exchangeMethod ?? 'make' : null }));
-  const shopLabel = (o.returnShippingFee ?? 0) > 0;
-  await db.query("select * from public.admin_approve_return($1,$2,$3::jsonb,$4,'customer',null,null,$5,$6,$7,$8,null,false)",
-    [returnId, o.actorId, JSON.stringify(approval), shopLabel ? 'shop_label' : 'customer_ships', o.returnShippingFee ?? 0,
-      o.restockingPercent ?? 0, o.exchangeFee ?? 0, o.exchangeShippingFee ?? 0]);
+  await db.query("select * from public.admin_approve_return($1,$2,$3::jsonb,'customer_ships','customer',null,null,0,$4,0,0,null,false)",
+    [returnId, o.actorId, JSON.stringify(approval), o.restockingPercent ?? 0]);
   return { returnId, lineIds, number };
 }
 

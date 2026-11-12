@@ -219,7 +219,7 @@ const RETURNS_REQUEST = {
   noticeText: NOTICE,
   returnAddress: ADDRESS,
   customerPaidMethod: 'shop_label',
-  shopLabelFee: 800,
+  shopLabelFee: 0,
   noReturnNeededEnabled: true,
   windowDays: 14,
   windowStart: 'last_item',
@@ -235,9 +235,9 @@ const RETURNS_REQUEST = {
   })),
   restockingFeeEnabled: true,
   restockingFeePercent: 10,
-  exchangeFeesEnabled: true,
-  exchangeFee: 300,
-  exchangeShippingFee: 500,
+  exchangeFeesEnabled: false,
+  exchangeFee: 0,
+  exchangeShippingFee: 0,
   inspectionEnabled: true,
 };
 // 保存の後の返品の設定（RETURNS_REQUEST を保存した結果。6つのまとまりを admin@example.com が変えた）
@@ -248,7 +248,7 @@ const RETURNS_AFTER: ShopReturnSettings = {
   noticeText: NOTICE,
   returnAddress: ADDRESS,
   customerPaidMethod: 'shop_label',
-  shopLabelFee: 800,
+  shopLabelFee: 0,
   noReturnNeededEnabled: true,
   windowDays: 14,
   windowStart: 'last_item',
@@ -268,9 +268,9 @@ const RETURNS_AFTER: ShopReturnSettings = {
   })),
   restockingFeeEnabled: true,
   restockingFeePercent: 10,
-  exchangeFeesEnabled: true,
-  exchangeFee: 300,
-  exchangeShippingFee: 500,
+  exchangeFeesEnabled: false,
+  exchangeFee: 0,
+  exchangeShippingFee: 0,
   inspectionEnabled: true,
   updated: {
     ...RETURNS_BEFORE.updated, requests: CHANGED, shipping: CHANGED, window: CHANGED, reasons: CHANGED, fees: CHANGED, receiving: CHANGED,
@@ -800,7 +800,7 @@ describe('PUT /api/admin/settings/shop（返品の欄）', () => {
   it.each<[string, Record<string, unknown>, string[]]>([
     ['何も変えない', {}, []],
     ['受付の期限だけ', { windowDays: 14 }, ['window']],
-    ['返送料の定額だけ', { shopLabelFee: 500 }, ['shipping']],
+    ['お客様の負担の時の送り方だけ', { customerPaidMethod: 'shop_label' }, ['shipping']],
     ['数え始めと届いた日の目安', { windowStart: 'last_item', deliveryBufferDays: 0 }, ['window']],
     ['手数料だけ', { restockingFeeEnabled: true, restockingFeePercent: 5 }, ['fees']],
     ['要検品だけ', { inspectionEnabled: true }, ['receiving']],
@@ -871,14 +871,26 @@ describe('PUT /api/admin/settings/shop（返品の欄）', () => {
     expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('テスト商店');
   });
 
-  // Global Constraints の金額の上限（1,000,000 円）。DB の admin_update_shop_return_settings・画面（Task 12）と同じ値で、上限ちょうどは通す
-  it('円の3つの欄（返送料の定額・交換の手数料・交換の送料）は 1000000 まで受け、そのまま保存に渡す', async () => {
-    const returns = { ...RETURNS_REQUEST, shopLabelFee: 1000000, exchangeFee: 1000000, exchangeShippingFee: 1000000 };
+  // 返送料の定額・交換の手数料と送料は、仕訳の決まりを決めるまで DB が 0 に止める（S16 の acc_p3_fee_lock_settings）。窓口は zod で先に断る
+  it.each<[string, Record<string, unknown>]>([
+    ['返送料の定額が1', { shopLabelFee: 1 }],
+    ['返送料の定額が1000000', { shopLabelFee: 1000000 }],
+    ['交換の手数料と送料を使う', { exchangeFeesEnabled: true }],
+    ['交換の手数料が1', { exchangeFee: 1 }],
+    ['交換の送料が1', { exchangeShippingFee: 1 }],
+  ])('FREQ-578-AC-05: 設定のrouteは0でない値をzodで400にする（%s）', async (_label, change) => {
+    const response = await PUT(putRequest({ ...NEXT, returns: { ...RETURNS_REQUEST, ...change } }));
 
-    const response = await PUT(putRequest({ ...NEXT, returns }));
+    expect(response.status).toBe(400);
+    expect(mockUpdateShopReturnSettings).not.toHaveBeenCalled();
+    expect(mockUpdateShopSettings).not.toHaveBeenCalled();
+  });
+
+  it('FREQ-578-AC-05: 設定のrouteは0でない値をzodで400にする（0と「使わない」は通して保存に渡す）', async () => {
+    const response = await PUT(putRequest({ ...NEXT, returns: RETURNS_REQUEST }));
 
     expect(response.status).toBe(200);
-    expect(mockUpdateShopReturnSettings).toHaveBeenCalledWith(mockServiceClient, { settings: returns, actorId: 'admin-1' });
+    expect(mockUpdateShopReturnSettings).toHaveBeenCalledWith(mockServiceClient, { settings: RETURNS_REQUEST, actorId: 'admin-1' });
   });
 
   // 実際の DB は設定の引数の誤りを SETTINGS_ARGUMENT_INVALID で断り、store が E-2 の記号 invalid_argument の ReturnStoreError にする（Task 4）

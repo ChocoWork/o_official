@@ -152,51 +152,50 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
       }, { returnSettings: true });
     });
 
-    test('FREQ-642-AC-07: 画面に出た返送料・お支払い待ち・返金額が、受け取りで DB に残った値と同じ（交換の手数料と送料はお支払い待ちの合計で確かめる）', async ({ page }) => {
+    test('FREQ-642-AC-07: 割合の手数料の返品は、画面に出た返品の手数料・返金額が受け取りで DB に残った値と同じ。交換だけの返品には、お支払い待ちが出ない', async ({ page }) => {
       test.setTimeout(300_000);
       await withDiscountScenario(`ub165-ac07-${viewport.name}`, async (s) => {
         const order = await repeatOrder(s);
         const base = { orderId: order.orderId, fulfillmentId: order.fulfillmentId!, actorId: s.admin.userId };
-        // 交換だけの返品（交換の手数料 500円・交換の送料 300円）と、お店の送り状の返送料 800円つきの返品
-        const exchange = await createApprovedReturn(s.db, { ...base, exchangeFee: 500, exchangeShippingFee: 300,
+        // 交換だけの返品と、返品の手数料 10% の返品。返送料・交換の手数料・交換の送料は DB が 0 に止めている（FREQ-578-AC-05）
+        const exchange = await createApprovedReturn(s.db, { ...base,
           groups: [{ orderItemId: order.orderItemIds[0], quantity: 1, exchangeVariantId: order.catalogs[0].variantId }] });
-        const refund = await createApprovedReturn(s.db, { ...base, returnShippingFee: 800,
+        const refund = await createApprovedReturn(s.db, { ...base, restockingPercent: 10,
           groups: [{ orderItemId: order.orderItemIds[0], quantity: 1 }] });
         await installDiscountDbBridge(page, s, 'admin');
         const bridge = await installReceiveBridge(page, s.admin.userId);
 
-        // 交換だけの受け取り: お支払い待ちは手数料と送料の合計で、受け取り後の DB の値と同じ
+        // 交換だけの受け取り: お支払い待ちも割り当ての保留の文も出ず、受け取り後の DB にもお支払い待ちが残らない
         const exchangeDialog = await openReceive(page, order, exchange.number);
         await setUnitState(exchangeDialog, 0, UNIT_STATES.keep);
-        const due = exchangeDialog.getByText(/^お支払い待ち ￥[\d,]+/);
-        await expect(due).toBeVisible();
-        const shownDue = yenOf(await due.textContent() ?? undefined);
-        expect(shownDue).toBe(800);
+        await expect(exchangeDialog.getByText(ESTIMATING, { exact: true })).toHaveCount(0);
+        const confirmExchange = confirmButton(exchangeDialog, RETURN_TEXT.receiveAllExchange);
+        await expect(confirmExchange).toBeEnabled();
+        await expect(exchangeDialog.getByText(/^お支払い待ち ￥[\d,]+/)).toHaveCount(0);
+        await expect(exchangeDialog.getByText('手数料のお支払い待ちのため、交換品の割り当てを保留します。', { exact: true })).toHaveCount(0);
         await expectNoOverflow(page);
-        await confirmButton(exchangeDialog, RETURN_TEXT.receiveAllExchange).click();
+        await confirmExchange.click();
         await waitPosts(bridge, 1);
-        const exchangeFees = await returnFeeRow(s.db, exchange.returnId);
-        expect(exchangeFees.feeDueAmount).toBe(shownDue);
-        expect(exchangeFees.exchangeFee + exchangeFees.exchangeShippingFee).toBe(shownDue);
+        expect(await returnFeeRow(s.db, exchange.returnId)).toMatchObject({ exchangeFee: 0, exchangeShippingFee: 0, feeDueAmount: 0 });
 
-        // 返品の受け取り: 返送料の行と返金額が、DB に残った返送料・返金の額と同じ
+        // 返品の受け取り: 返品の手数料の行と返金額が、DB に残った手数料・返金の額と同じ。返送料の行は出ない
         await page.reload();
         const dialog = await openReceive(page, order, refund.number);
         await setUnitState(dialog, 0, UNIT_STATES.keep);
         const rows = await breakdownOf(dialog);
-        const shownShipping = yenOf(rows['返送料']);
+        expect(Object.keys(rows)).not.toContain('返送料');
+        expect(rows['返品の手数料']).toContain('−');
+        const shownFee = yenOf(rows['返品の手数料']);
         const shownRefund = yenOf(rows['返金額']);
-        expect(rows['返送料']).toContain('−');
-        expect([shownShipping, shownRefund]).toEqual([800, 16_200]); // 17,000円 − 返送料 800円
+        expect([shownFee, shownRefund]).toEqual([1_700, 15_300]); // 17,000円 − 返品の手数料 10%（1,700円）
         await confirmButton(dialog, RETURN_TEXT.receiveAll(formatYen(shownRefund))).click();
         await waitPosts(bridge, 2);
         const refunds = await refundsOf(s.db, order.orderId);
         expect(refunds.map((r) => r.amount)).toEqual([shownRefund]);
-        expect((await returnFeeRow(s.db, refund.returnId)).returnShippingFee).toBe(shownShipping);
+        expect(await returnFeeRow(s.db, refund.returnId)).toMatchObject({ returnShippingFee: 0, restockingFeePercent: 10 });
+        // 割合の手数料は E の中。出来事の返す額は手数料を引いた後の画面の返金額、手数料の累計（率）は画面の手数料と同じ
         const events = await eventsOf(s.db, order.orderId);
-        // 返送料は E の外。出来事の商品の額 17,000円は E のまま、手数料の累計（率）は0
-        expect(events.at(-1)).toMatchObject({ standard_refund: 17_000, now_refund: 17_000, fee_amount: 0 });
-        expect(shownRefund).toBe(events.at(-1)!.now_refund - shownShipping);
+        expect(events.at(-1)).toMatchObject({ standard_refund: shownRefund, fee_amount: shownFee });
       }, { returnSettings: true });
     });
 

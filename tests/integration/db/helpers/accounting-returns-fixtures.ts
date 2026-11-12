@@ -72,3 +72,54 @@ export async function insertRow(client: PgClient, table: string, values: Record<
 	await client.query(`insert into public.${table} (${columns.join(', ')}) values (${columns.map((_, i) => `$${i + 1}`).join(', ')})`,
 		columns.map((column) => values[column]));
 }
+
+const s16Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p3_return_fee_lock.sql'));
+/** 計画3 S16（返送料・交換の手数料・交換の送料を0に止める）の移行の本文（無ければ空で、原文の確かめが目に見えて落ちる）。 */
+export const ACCOUNTING_S16_SQL = s16Files.length === 1 ? fs.readFileSync(path.join(directory, s16Files[0]), 'utf8') : '';
+export const ACCOUNTING_S16_FILES = s16Files;
+
+/** S16 の `-- ACC_S16_<name>_BEGIN` と `-- ACC_S16_<name>_END` の間。 */
+export function accountingS16Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S16_SQL.split(`-- ACC_S16_${name}_BEGIN\n`)[1]?.split(`-- ACC_S16_${name}_END`)[0] ?? '';
+}
+
+/**
+ * 定額の手数料（返送料・交換の手数料・交換の送料）の働きそのものを題にする試験だけが使う（裁定 P3-D5・P3-D8）。
+ * 呼ぶ取引の中で savepoint を置き、S16 の CHECK（acc_p3_fee_lock_*）を外して work を流し、終わりに savepoint まで戻す
+ * （外した制約も work の行も残らない）。期待は work の中で確かめる。
+ */
+export async function withoutReturnFeeLock(client: PgClient, work: () => Promise<void>): Promise<void> {
+	await client.query('savepoint acc_p3_fee_lock_off');
+	try {
+		await client.query(`alter table public.shop_return_settings drop constraint acc_p3_fee_lock_settings;
+      alter table public.order_returns drop constraint acc_p3_fee_lock_returns`);
+		await work();
+	} finally {
+		await client.query('rollback to savepoint acc_p3_fee_lock_off');
+		await client.query('release savepoint acc_p3_fee_lock_off');
+	}
+}
+
+/**
+ * 別の接続やコミットした材料で定額の手数料の働きを確かめる試験だけが使う（裁定 P3-D5 の「同じ働きの形」）。savepoint では
+ * 他の接続から外した制約が見えないので、S16 の CHECK をコミットして外す。足し直しは restoreReturnFeeLock で必ず行う。
+ */
+export async function dropReturnFeeLockCommitted(client: PgClient): Promise<void> {
+	await client.query(`alter table public.shop_return_settings drop constraint if exists acc_p3_fee_lock_settings;
+    alter table public.order_returns drop constraint if exists acc_p3_fee_lock_returns`);
+}
+
+/** S16 の本文をそのまま流し、外した2つの制約を同じ定義で足し直す（返品の行は NOT VALID なので、コミットした手数料の行は残せる）。 */
+export async function restoreReturnFeeLock(client: PgClient): Promise<void> {
+	await client.query(accountingS16Section('BODY'));
+}
+
+/** dropReturnFeeLockCommitted → work → restoreReturnFeeLock（work が失敗しても足し直す）。 */
+export async function withoutReturnFeeLockCommitted(client: PgClient, work: () => Promise<void>): Promise<void> {
+	await dropReturnFeeLockCommitted(client);
+	try {
+		await work();
+	} finally {
+		await restoreReturnFeeLock(client);
+	}
+}

@@ -1,6 +1,7 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
+import { withoutReturnFeeLock } from './helpers/accounting-returns-fixtures';
 import { createCatalogFixture, insertOrderWithLines, shipFixtureOrder, variantStock } from './helpers/order-fixtures';
 import { hDiscount, seedHDiscount, seedHMember } from './helpers/group-h-fixtures';
 import { hResult, withH5ReturnBaseline } from './helpers/group-h-refund-fixtures';
@@ -21,7 +22,7 @@ async function fixture(db: PgClient, o: Options = {}) {
   await db.query('select pg_advisory_xact_lock(190521,1)');
   await db.query(`update public.shop_return_settings set return_address_name='Fixture',return_address_postal_code='1000001',
     return_address_line='Fixture',return_address_phone='0311112222',restocking_fee_enabled=true,
-    exchange_fees_enabled=true,inspection_enabled=true,no_return_needed_enabled=true where id=1`);
+    inspection_enabled=true,no_return_needed_enabled=true where id=1`);
   await db.query("update public.shop_return_reason_settings set out_of_stock_exchange='decline' where reason='unknown'");
   const actor = await seedHMember(db);
   const amounts = o.amounts;
@@ -326,7 +327,7 @@ describeLocalDb('返品の受取明細ごとの選び（controllerがREDを実�
     expect((await db().query('select return_fee_deduction from public.order_refunds where id=$1', [later.refund_id])).rows[0].return_fee_deduction).toBe(99);
   });
 
-  test('FREQ-641-AC-07: 固定費用の不足と返金失敗の控除戻しを混ぜない', async () => {
+  test('FREQ-641-AC-07: 固定費用の不足と返金失敗の控除戻しを混ぜない', () => withoutReturnFeeLock(db(), async () => {
     const f = await fixture(db(), { amounts: [100, 2000], fixed: 240, percent: 10 });
     const r = await receive(db(), f, [unit(f, 0, 'now'), unit(f, 0, 'consult')], 'mixed', { amount: 1 });
     expect(await fees(db(), f)).toMatchObject({ fee_pending_deduction: 350, fee_due_amount: 0 });
@@ -336,13 +337,13 @@ describeLocalDb('返品の受取明細ごとの選び（controllerがREDを実�
       expect((await fees(db(), f)).fee_pending_deduction).toBe(450);
     }
     await hResult(db(), r.refund_id, 'succeeded'); expect((await fees(db(), f)).fee_pending_deduction).toBe(350);
-  });
+  }));
   test.each([{ choice: 'now', pending: 0, due: 150 }, { choice: 'consult', pending: 250, due: 0 }])(
-    'FREQ-641-AC-07: 相談なしと全相談の固定費用は$choiceの規則へ残す', async o => {
+    'FREQ-641-AC-07: 相談なしと全相談の固定費用は$choiceの規則へ残す', (o) => withoutReturnFeeLock(db(), async () => {
       const f = await fixture(db(), { amounts: [100], fixed: 240, percent: 10 });
       await receive(db(), f, [unit(f, 0)], o.choice);
       expect(await fees(db(), f)).toMatchObject({ fee_pending_deduction: o.pending, fee_due_amount: o.due });
-    });
+    }));
 
   test('FREQ-641-AC-07: 0円のnowはその1点だけを終えconsultの1点を待ちに残す', async () => {
     const f = await fixture(db(), { amounts: [0, 20000] });

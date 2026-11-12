@@ -23,6 +23,7 @@ import {
   receiveReturnInDb,
   returnAttentionCounts,
   returnSummaryRow,
+  withoutReturnFeeLock,
 } from './return-test-utils';
 
 for (const viewport of viewports) {
@@ -166,15 +167,18 @@ for (const viewport of viewports) {
         // お支払い待ち（交換の手数料が残っている）
         const fee = await make('list-fee', 1);
         const variantL = await addVariant(db, fee.itemId, { color: 'ホワイト', size: 'L', stock: 2 });
-        const feeReturn = await createReturnInDb(db, fee, {
-          lines: [{ orderItemId: fee.orderItemIds[0], quantity: 1, exchange: { variantId: variantL, method: 'stock' } }],
-          exchangeFee: 500,
-          notify: false,
-        });
-        await receiveReturnInDb(db, feeReturn.returnId, fee.actorId, {
-          units: [{ lineId: feeReturn.lineIds[fee.orderItemIds[0]], disposition: 'not_restocked', quantity: 1 }],
-          choice: 'none',
-          notify: false,
+        // お支払い待ちは交換の手数料でしか作れないので、DB の 0 の決まり（FREQ-578-AC-05）を外して作って受け取る（判断 P3-D8）
+        await withoutReturnFeeLock(db, async () => {
+          const feeReturn = await createReturnInDb(db, fee, {
+            lines: [{ orderItemId: fee.orderItemIds[0], quantity: 1, exchange: { variantId: variantL, method: 'stock' } }],
+            exchangeFee: 500,
+            notify: false,
+          });
+          await receiveReturnInDb(db, feeReturn.returnId, fee.actorId, {
+            units: [{ lineId: feeReturn.lineIds[fee.orderItemIds[0]], disposition: 'not_restocked', quantity: 1 }],
+            choice: 'none',
+            notify: false,
+          });
         });
         // 返品済み（今返金し、Stripe が受け付けた）
         const done = await make('list-done', 1);

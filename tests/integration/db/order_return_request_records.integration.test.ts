@@ -1,5 +1,6 @@
 /** @jest-environment node */
 import { describeLocalDb, type PgClient } from './helpers/local-db';
+import { withoutReturnFeeLock } from './helpers/accounting-returns-fixtures';
 import {
   addItemVariant,
   createCatalogFixture,
@@ -832,7 +833,7 @@ describeLocalDb('integration: 返品の申し込みの記録と守り（移行 D
   });
 
   describe('返品の表の守り（承認で直せる列）', () => {
-    test('申し込み中（requested）から受付中（open）へ進める 1 回の更新でだけ、返送・手数料・知らせ・メモの 10 列を直せる', async () => {
+    test('申し込み中（requested）から受付中（open）へ進める 1 回の更新でだけ、返送・手数料・知らせ・メモの 10 列を直せる', () => withoutReturnFeeLock(db(), async () => {
       const order = await createShipped(db(), 3);
       const actor = crypto.randomUUID();
       const requested = await returnOf(db(), order, 1, 'requested');
@@ -873,9 +874,9 @@ describeLocalDb('integration: 返品の申し込みの記録と守り（移行 D
       for (const set of CHANGE_APPROVAL_COLUMNS) {
         await expectRejected(db(), `update public.order_returns set ${set} where id = $1`, [requested.returnId], IMMUTABLE);
       }
-    });
+    }));
 
-    test('承認の更新でも、10 列と時刻・する人・お断りの列のほかは直せない。お断り（requested → declined）では 10 列は直せない', async () => {
+    test('承認の更新でも、10 列と時刻・する人・お断りの列のほかは直せない。お断り（requested → declined）では 10 列は直せない', () => withoutReturnFeeLock(db(), async () => {
       const order = await createShipped(db(), 3);
       const other = await createShipped(db(), 1);
       const actor = crypto.randomUUID();
@@ -931,7 +932,7 @@ describeLocalDb('integration: 返品の申し込みの記録と守り（移行 D
       await db().query(APPROVE_SQL, [requested.returnId, actor]);
       const approved = await db().query('select status, number from public.order_returns where id = $1', [requested.returnId]);
       expect(approved.rows[0]).toEqual({ status: 'open', number: 1 });
-    });
+    }));
   });
 
   describe('返品の行の守り（承認で決める 3 列）', () => {

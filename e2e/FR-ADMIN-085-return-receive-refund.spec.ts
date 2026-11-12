@@ -48,6 +48,7 @@ import {
   receiptUnitRows,
   receiveData,
   receiveReturnInDb,
+  withoutReturnFeeLock,
   returnDetailOf,
   returnEmailRows,
   returnLabelOf,
@@ -320,7 +321,8 @@ for (const viewport of viewports) {
 
     test('今返金は返金額から手数料を引き、返送料は最初の受け取りにだけ付く。返品の手数料は受け取った品の額に対して毎回計算する（手元の DB）', async () => {
       // FREQ-467-AC-02
-      await withLocalDb(async (db) => {
+      await withLocalDb(async (db) => withoutReturnFeeLock(db, async () => {
+        // 返送料・交換の手数料・交換の送料の仕組みそのものを確かめるので、DB の 0 の決まり（FREQ-578-AC-05）を外して流す（判断 P3-D8）
         const fx = await createShippedOrder(db, `fees-${viewport.name}`, [
           { name: 'E2Eシャツ', quantity: 2, fulfillmentType: 'stock' },
           { name: 'E2Eスカート', quantity: 1, fulfillmentType: 'stock' },
@@ -354,7 +356,7 @@ for (const viewport of viewports) {
         });
         expect(second).toMatchObject({ refundAmount: 4_500, returnStatus: 'closed', feeDueAmount: 0 });
         expect((await returnRefundRows(db, fx.orderId)).map((row) => row.amount)).toEqual([3_700, 4_500]);
-      });
+      }));
     });
 
     test('同じ二重防止の番号の送り直しは、受け取り・在庫・返金の記録を増やさず前の結果を返し、違う中身は断る（手元の DB）', async () => {
@@ -424,17 +426,21 @@ for (const viewport of viewports) {
 
         // 手数料が商品の額を超える時（返送料 800円 + 返品の手数料 100%）も、返金は0円で記録を作らず、引けなかった手数料 800円は
         // お支払い待ち（fee_due_amount）に残り、返品は完了しない（シャツは2点なので、残りの1点で2つ目の返品を作る）
-        const over = await createReturnInDb(db, fx, {
-          lines: [{ orderItemId: shirt, quantity: 1 }],
-          method: 'shop_label',
-          returnShippingFee: 800,
-          restockingFeePercent: 100,
-          notify: false,
-        });
-        const overReceived = await receiveReturnInDb(db, over.returnId, fx.actorId, {
-          units: [{ lineId: over.lineIds[shirt], disposition: 'restocked', quantity: 1 }],
-          choice: 'now',
-          notify: false,
+        // 返送料の定額の仕組みそのものを確かめるので、DB の 0 の決まり（FREQ-578-AC-05）を外して作って受け取る（判断 P3-D8）
+        const { over, overReceived } = await withoutReturnFeeLock(db, async () => {
+          const over = await createReturnInDb(db, fx, {
+            lines: [{ orderItemId: shirt, quantity: 1 }],
+            method: 'shop_label',
+            returnShippingFee: 800,
+            restockingFeePercent: 100,
+            notify: false,
+          });
+          const overReceived = await receiveReturnInDb(db, over.returnId, fx.actorId, {
+            units: [{ lineId: over.lineIds[shirt], disposition: 'restocked', quantity: 1 }],
+            choice: 'now',
+            notify: false,
+          });
+          return { over, overReceived };
         });
         expect(overReceived).toMatchObject({ refundId: null, refundAmount: 0, refundStatus: 'waived', feeDueAmount: 800, returnStatus: 'open' });
         expect(await returnRowOf(db, over.returnId)).toMatchObject({ fee_due_amount: 800, fee_received_at: null });

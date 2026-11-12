@@ -273,7 +273,7 @@ describe('OrderReturnReviewDialog の承認の欄の最初の値', () => {
       returnCarrier: 'yamato',
       returnTrackingNumber: 'AB-123',
       fees: {
-        returnShippingFee: 800, restockingFeePercent: 10, exchangeFee: 500, exchangeShippingFee: 300,
+        returnShippingFee: 0, restockingFeePercent: 10, exchangeFee: 0, exchangeShippingFee: 0,
         feeDueAmount: 0, feePendingDeduction: 0, feeReceivedAt: null, exchangeReleasedAt: null,
       },
       shopNote: '先に確認',
@@ -287,7 +287,7 @@ describe('OrderReturnReviewDialog の承認の欄の最初の値', () => {
         }),
       ],
     });
-    const materials = reviewMaterials({ restockingFeeEnabled: true, restockingFeePercent: 10, exchangeFeesEnabled: true, noReturnNeededEnabled: true });
+    const materials = reviewMaterials({ restockingFeeEnabled: true, restockingFeePercent: 10, exchangeFeesEnabled: false, noReturnNeededEnabled: true });
     const { dialog } = await openDialog(detail, { materials: () => jsonResponse({ data: materials }) });
 
     expect(within(dialog).getByText('承認する時の内容')).toBeInTheDocument();
@@ -295,10 +295,10 @@ describe('OrderReturnReviewDialog の承認の欄の最初の値', () => {
     expect(within(dialog).getByRole('combobox', { name: '返送料の負担' })).toHaveValue('customer');
     expect(within(dialog).getByRole('combobox', { name: '返送の配送業者（任意）' })).toHaveValue('yamato');
     expect(within(dialog).getByRole('textbox', { name: '返送の伝票番号（任意）' })).toHaveValue('AB-123');
-    expect(within(dialog).getByLabelText('返送料（円）')).toHaveValue(800);
+    expect(within(dialog).getByLabelText('返送料（円）')).toHaveValue('0');
     expect(within(dialog).getByLabelText('返品の手数料（%）')).toHaveValue('10');
-    expect(within(dialog).getByLabelText('交換の手数料（円）')).toHaveValue(500);
-    expect(within(dialog).getByLabelText('交換の送料（円）')).toHaveValue(300);
+    expect(within(dialog).queryByLabelText('交換の手数料（円）')).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('交換の送料（円）')).not.toBeInTheDocument();
     expect(within(dialog).getByRole('textbox', { name: 'メモ（お客様には見えません）' })).toHaveValue('先に確認');
     expect(within(dialog).getByRole('checkbox', { name: 'お客様に返品の受付のお知らせを送る' })).not.toBeChecked();
 
@@ -347,17 +347,14 @@ describe('OrderReturnReviewDialog の承認', () => {
       returnShippingPayer: 'shop',
       returnCarrier: null,
       returnTrackingNumber: null,
-      returnShippingFee: 0,
       restockingFeePercent: 0,
-      exchangeFee: 0,
-      exchangeShippingFee: 0,
       shopNote: null,
       notifyCustomer: true,
     });
   });
 
   it('解決・交換の色・サイズ・送り方・返送・手数料・メモ・知らせを変えて承認すると、変えた値を送る', async () => {
-    const materials = reviewMaterials({ restockingFeeEnabled: true, exchangeFeesEnabled: true });
+    const materials = reviewMaterials({ restockingFeeEnabled: true, exchangeFeesEnabled: false });
     const { dialog, onApproved } = await openDialog(undefined, { materials: () => jsonResponse({ data: materials }) });
 
     const lineGroup = within(dialog).getByRole('group', { name: `${LINE_NAME}の解決` });
@@ -372,10 +369,7 @@ describe('OrderReturnReviewDialog の承認', () => {
 
     fireEvent.change(within(dialog).getByRole('combobox', { name: '返送の方法' }), { target: { value: 'shop_label' } });
     fireEvent.change(within(dialog).getByRole('combobox', { name: '返送料の負担' }), { target: { value: 'customer' } });
-    fireEvent.change(within(dialog).getByLabelText('返送料（円）'), { target: { value: '1200' } });
     fireEvent.change(within(dialog).getByLabelText('返品の手数料（%）'), { target: { value: '10' } });
-    fireEvent.change(within(dialog).getByLabelText('交換の手数料（円）'), { target: { value: '500' } });
-    fireEvent.change(within(dialog).getByLabelText('交換の送料（円）'), { target: { value: '300' } });
     fireEvent.change(within(dialog).getByRole('combobox', { name: '返送の配送業者（任意）' }), { target: { value: 'sagawa' } });
     fireEvent.change(within(dialog).getByRole('textbox', { name: '返送の伝票番号（任意）' }), { target: { value: ' ZZ-9 ' } });
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'メモ（お客様には見えません）' }), { target: { value: ' 交換に変更 ' } });
@@ -390,27 +384,28 @@ describe('OrderReturnReviewDialog の承認', () => {
       returnShippingPayer: 'customer',
       returnCarrier: 'sagawa',
       returnTrackingNumber: 'ZZ-9',
-      returnShippingFee: 1200,
       restockingFeePercent: 10,
-      exchangeFee: 500,
-      exchangeShippingFee: 300,
       shopNote: '交換に変更',
       notifyCustomer: false,
     });
   });
 
-  it('返送料の欄は、お店の送り状・お客様の負担に切り替えた時、設定の返送料から始まる（申し込みの時は 0 円）', async () => {
+  it('FREQ-578-AC-05: 承認の画面は返送料の欄を無効にして理由を出し、返送料・交換の手数料・交換の送料を送らない', async () => {
     const { dialog, onApproved } = await openDialog(undefined, {
-      materials: () => jsonResponse({ data: reviewMaterials({ shopLabelFee: 800 }) }),
+      materials: () => jsonResponse({ data: reviewMaterials({ shopLabelFee: 0 }) }),
     });
 
     fireEvent.change(within(dialog).getByRole('combobox', { name: '返送の方法' }), { target: { value: 'shop_label' } });
     fireEvent.change(within(dialog).getByRole('combobox', { name: '返送料の負担' }), { target: { value: 'customer' } });
-    expect(within(dialog).getByLabelText('返送料（円）')).toHaveValue(800);
+    const shippingFee = within(dialog).getByLabelText('返送料（円）');
+    expect(shippingFee).toBeDisabled();
+    expect(shippingFee).toHaveValue('0');
+    expect(shippingFee).toHaveAccessibleDescription('現在は使えません。仕訳の決まりを決めてから使えます');
     fireEvent.click(approveButton(dialog));
 
     await waitFor(() => expect(onApproved).toHaveBeenCalledTimes(1));
-    expect(postedBody(APPROVE_URL)).toMatchObject({ returnMethod: 'shop_label', returnShippingPayer: 'customer', returnShippingFee: 800 });
+    expect(postedBody(APPROVE_URL)).toMatchObject({ returnMethod: 'shop_label', returnShippingPayer: 'customer' });
+    for (const key of ['returnShippingFee', 'exchangeFee', 'exchangeShippingFee']) expect(postedBody(APPROVE_URL)).not.toHaveProperty(key);
   });
 
   it('2つの品は解決を別々に決めて送る（片方を交換に変えても、もう片方の最初の値は変わらない）', async () => {
@@ -509,7 +504,7 @@ describe('OrderReturnReviewDialog の承認', () => {
     expect(postedBody(APPROVE_URL)).toMatchObject({ returnMethod: 'not_required', returnCarrier: null, returnTrackingNumber: null });
   });
 
-  it('伝票番号・割合・金額が外れる間は、誤りを出して「承認する」を押せなくする', async () => {
+  it('伝票番号・割合が外れる間は、誤りを出して「承認する」を押せなくする', async () => {
     const { dialog } = await openDialog(undefined, { materials: () => jsonResponse({ data: reviewMaterials({ restockingFeeEnabled: true }) }) });
     expect(approveButton(dialog)).toBeEnabled();
 
@@ -525,15 +520,6 @@ describe('OrderReturnReviewDialog の承認', () => {
     expect(within(dialog).getByText('0から100までの整数（半角）で入れてください。')).toBeInTheDocument();
     expect(approveButton(dialog)).toBeDisabled();
     fireEvent.change(percent, { target: { value: '100' } });
-    expect(approveButton(dialog)).toBeEnabled();
-
-    fireEvent.change(within(dialog).getByRole('combobox', { name: '返送の方法' }), { target: { value: 'shop_label' } });
-    fireEvent.change(within(dialog).getByRole('combobox', { name: '返送料の負担' }), { target: { value: 'customer' } });
-    const shippingFee = within(dialog).getByLabelText('返送料（円）');
-    fireEvent.change(shippingFee, { target: { value: '1000001' } });
-    expect(within(dialog).getByText('0から1000000までの整数（半角）で入れてください。')).toBeInTheDocument();
-    expect(approveButton(dialog)).toBeDisabled();
-    fireEvent.change(shippingFee, { target: { value: '1000000' } });
     expect(approveButton(dialog)).toBeEnabled();
   });
 

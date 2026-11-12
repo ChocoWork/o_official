@@ -7,6 +7,7 @@ import type { UnitPricingMaterials } from '@/lib/orders/unit-pricing/unit-pricin
 import { seedFactSlip } from './helpers/accounting-orders-fixtures';
 import { hBegin, hClaims, hRefundFixture, hResult, type HRefundFixture } from './helpers/group-h-refund-fixtures';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
+import { withoutReturnFeeLock } from './helpers/accounting-returns-fixtures';
 import { acceptHCheckout, hDiscount, seedHCheckout, seedHDiscount, seedHMember } from './helpers/group-h-fixtures';
 import { createCatalogFixture, insertOrderWithLines, insertRestockMovement, shipFixtureOrder } from './helpers/order-fixtures';
 import { buildReceivePricing, createUbReturn, materialsOf, ubReceive, type ReceiveUnit } from './helpers/unit-binding-receive';
@@ -59,7 +60,7 @@ describeLocalDb('FREQ-642-AC-17: unit binding receive (controller only)', (db) =
       .toEqual({ restocking_fee_waived: false });
   });
 
-  test('FREQ-642-AC-35: 同じ受け取りの今すぐと相談を両方免除し、固定の返送料800円だけ残す', async () => {
+  test('FREQ-642-AC-35: 同じ受け取りの今すぐと相談を両方免除し、固定の返送料800円だけ残す', () => withoutReturnFeeLock(db(), async () => {
     const f = await hRefundFixture(db(), true);
     const ret = await createUbReturn(db(), f, [{ quantity: 2 }], { percent: 10, fixed: 800 });
     const input = { returnId: ret.returnId, actorId: f.actor, choice: 'mixed', restockingFeeWaived: true,
@@ -80,7 +81,7 @@ describeLocalDb('FREQ-642-AC-17: unit binding receive (controller only)', (db) =
     const consult = (await q('select * from public.admin_refund_return($1,$2,$3,NULL,0,NULL,false,$4::jsonb)',
       [ret.returnId, f.actor, randomUUID(), JSON.stringify(pricing)])).rows[0];
     expect(consult.amount).toBe(20000);
-  });
+  }));
 
   test.each(['now', 'consult'])('FREQ-642-AC-35: 返金の権限なしは免除をDBでも拒否（%s）', async (choice) => {
     const f = await hRefundFixture(db(), true);

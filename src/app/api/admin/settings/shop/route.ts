@@ -8,7 +8,6 @@ import { INVALID_REQUEST_BODY, refundFailureBody } from '@/lib/orders/refund/ref
 import { getShopSettings, updateShopSettings, type ShopSettingsRow } from '@/lib/orders/refund/refund-store';
 import type { ShopSettings, UpdateShopSettingsRequest } from '@/lib/orders/refund/refund-types';
 import {
-  MAX_FEE_YEN,
   refusalCodeOf,
   returnErrorLogFields,
   toRefusalReply,
@@ -46,7 +45,8 @@ const returnSettingsSchema = z
       .strict()
       .nullable(),
     customerPaidMethod: z.enum(['customer_ships', 'shop_label']),
-    shopLabelFee: z.number().int().min(0).max(MAX_FEE_YEN),
+    // 返送料の定額・交換の手数料と送料は、仕訳の決まりを決めるまで 0 と「使わない」だけを受ける（DB の CHECK acc_p3_fee_lock_settings と同じ。FREQ-578-AC-05）
+    shopLabelFee: z.literal(0),
     noReturnNeededEnabled: z.boolean(),
     windowDays: z.number().int().min(1).max(365).nullable(),
     windowStart: z.enum(['each_item', 'last_item']),
@@ -71,9 +71,9 @@ const returnSettingsSchema = z
       .refine((rows) => rows.every((row) => row.reason !== 'unknown' || row.shown !== true)),
     restockingFeeEnabled: z.boolean(),
     restockingFeePercent: z.number().int().min(0).max(100),
-    exchangeFeesEnabled: z.boolean(),
-    exchangeFee: z.number().int().min(0).max(MAX_FEE_YEN),
-    exchangeShippingFee: z.number().int().min(0).max(MAX_FEE_YEN),
+    exchangeFeesEnabled: z.literal(false),
+    exchangeFee: z.literal(0),
+    exchangeShippingFee: z.literal(0),
     inspectionEnabled: z.boolean(),
   })
   .strict();

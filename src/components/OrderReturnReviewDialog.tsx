@@ -12,10 +12,11 @@ import { TextField } from '@/components/ui/TextField/TextField';
 import { useLoadedReturn, type LoadedReturn } from '@/hooks/useLoadedReturn';
 import { blockEnterSubmit } from '@/hooks/useRefundSubmission';
 import { parseActionResponse, useReturnOperation } from '@/hooks/useReturnOperation';
-import { clampQuantity, lineLabel } from '@/lib/orders/fulfillment/fulfillment-client';
+import { lineLabel } from '@/lib/orders/fulfillment/fulfillment-client';
 import { ADMIN_NOTE_MAX_LENGTH } from '@/lib/orders/order-payment-types';
 import { fetchReturnData } from '@/lib/orders/returns/return-client';
 import {
+  FIXED_RETURN_FEE_LOCKED_TEXT,
   RETURN_CARRIER_LABELS,
   RETURN_DECLINE_REASON_LABELS,
   RETURN_ERROR_MESSAGES,
@@ -88,9 +89,7 @@ const DECLINED_NOTICE = 'お断りしました。';
 const DECLINE_CONFIRM_TEXT = 'お客様にメッセージが届きます。取り消せません。';
 // DB の order_returns.decline_message の上限（C-0）
 const DECLINE_MESSAGE_MAX_LENGTH = 1000;
-// 金額（円）の欄の上限と割合の欄の誤りは、返品を作る画面・ショップの設定の画面と同じ言葉と確かめ（Global Constraints「金額の入力の上限」）
-const FEE_MAX_YEN = 1_000_000;
-const FEE_OVER_MAX_MESSAGE = '0から1000000までの整数（半角）で入れてください。';
+// 割合の欄の誤りは、返品を作る画面・ショップの設定の画面と同じ言葉と確かめ
 const PERCENT_MESSAGE = '0から100までの整数（半角）で入れてください。';
 // 伝票番号の形は DB の CHECK と同じ（P16）
 const TRACKING_PATTERN = /^[0-9A-Za-z-]{1,64}$/;
@@ -180,45 +179,6 @@ function approvalLineOf(materials: Materials, line: OrderReturnLineDetail, input
 function viewablePhotosOf(links: ReturnPhotoLink[] | null, lineId: string): ViewablePhoto[] {
   return (links ?? []).flatMap((link): ViewablePhoto[] =>
     link.returnLineId === lineId && !link.purged && link.url !== null ? [{ photoId: link.photoId, url: link.url, purged: false }] : [],
-  );
-}
-
-type FeeFieldProps = {
-  id: string;
-  label: string;
-  value: number;
-  disabled: boolean;
-  onChange: (next: number) => void;
-};
-
-/** 金額（円）の欄。上限を超えた数も残して誤りを出す（桁の打ち間違いを、黙って別の額に変えない） */
-function FeeField({ id, label, value, disabled, onChange }: FeeFieldProps) {
-  const over = value > FEE_MAX_YEN;
-  return (
-    <div>
-      <label htmlFor={id} className="block font-acumin lk-text-3xs text-[#474747]">
-        {label}
-      </label>
-      <input
-        id={id}
-        type="number"
-        inputMode="numeric"
-        min={0}
-        max={FEE_MAX_YEN}
-        step={1}
-        value={value}
-        disabled={disabled}
-        aria-invalid={over ? true : undefined}
-        aria-describedby={over ? `${id}-error` : undefined}
-        onChange={(event) => onChange(clampQuantity(event.target.value, Number.MAX_SAFE_INTEGER))}
-        className="mt-1 h-9 w-full border border-[#d4d4d4] bg-white px-2 font-acumin lk-text-3xs text-black disabled:bg-[#f3f3f3]"
-      />
-      {over ? (
-        <p id={`${id}-error`} className="mt-1 font-acumin lk-text-3xs text-red-700">
-          {FEE_OVER_MAX_MESSAGE}
-        </p>
-      ) : null}
-    </div>
   );
 }
 
@@ -438,11 +398,7 @@ function OrderReturnReviewDialogBody({
   const [payer, setPayer] = useState<ShippingPayer>(detail.returnShippingPayer);
   const [carrier, setCarrier] = useState<ReturnCarrier | ''>(detail.returnCarrier ?? '');
   const [trackingNumber, setTrackingNumber] = useState(detail.returnTrackingNumber ?? '');
-  // 返送料は手で直した時だけ入る。直すまでは下の shippingFee（返品の今の値、無ければ設定の返送料）を使う
-  const [shippingFeeEntered, setShippingFeeEntered] = useState<number | null>(null);
   const [restockingPercentText, setRestockingPercentText] = useState(String(detail.fees.restockingFeePercent));
-  const [exchangeFee, setExchangeFee] = useState(detail.fees.exchangeFee);
-  const [exchangeShippingFee, setExchangeShippingFee] = useState(detail.fees.exchangeShippingFee);
   const [note, setNote] = useState(detail.shopNote ?? '');
   const [notifyCustomer, setNotifyCustomer] = useState(detail.notifyCustomer);
   // お断りの入力
@@ -501,36 +457,28 @@ function OrderReturnReviewDialogBody({
   const approvalLines = materials
     ? detail.lines.map((line) => approvalLineOf(materials, line, lineInputs[line.id] ?? initialLineInput(line)))
     : [];
-  const hasExchange = approvalLines.some((entry) => entry.input.resolution === 'exchange');
   const methodOptions = RETURN_METHODS.filter((option) => option !== 'not_required' || settings?.noReturnNeededEnabled).map((option) => ({
     value: option,
     label: RETURN_METHOD_LABELS[option],
   }));
 
-  // 手数料は、設定で使う物だけ出す。出さない欄は 0 で送る（返品を作る画面と同じ。DB も、設定で使わない手数料は 0）。
-  // 返送料の定額を差し引くのは、お客様の負担でお店の送り状の時だけ
+  // 割合の手数料は、設定で使う時だけ出す。出さない時は 0 で送る（返品を作る画面と同じ。DB も、設定で使わない手数料は 0）。
+  // 返送料の定額は、お客様の負担でお店の送り状の時だけ欄を出すが、仕訳の決まりを決めるまで無効にして理由を出し、送らない
+  // （窓口が 0 にする）。交換の手数料と送料は設定で使えない（DB が止める）ので出さない（FREQ-578-AC-05）
   const showShippingFee = method === 'shop_label' && payer === 'customer';
-  // 返送料の定額は、申し込みの時はお客様の負担でお店の送り状の時だけ入る（P5）ので、承認でその組み合わせに切り替えると 0 円から始まって取り損ねる。
-  // 手で直すまでは、返品の今の値が 0 なら設定の返送料から始める（返品を作る画面と同じ）
-  const shippingFee = shippingFeeEntered ?? (detail.fees.returnShippingFee > 0 ? detail.fees.returnShippingFee : (settings?.shopLabelFee ?? 0));
   const showRestocking = settings?.restockingFeeEnabled ?? false;
-  const showExchangeFees = (settings?.exchangeFeesEnabled ?? false) && hasExchange;
   const restockingText = restockingPercentText.trim();
   const restockingPercent = Number(restockingText);
   const restockingPercentInvalid = showRestocking && (!/^[0-9]{1,9}$/.test(restockingText) || restockingPercent > 100);
   const trackingText = trackingNumber.trim();
   // 返送不要の間は伝票番号の欄を隠して送らないので、確かめない
   const trackingInvalid = method !== 'not_required' && trackingText !== '' && !TRACKING_PATTERN.test(trackingText);
-  const feeOverMax =
-    (showShippingFee && shippingFee > FEE_MAX_YEN) ||
-    (showExchangeFees && (exchangeFee > FEE_MAX_YEN || exchangeShippingFee > FEE_MAX_YEN));
   const canApprove =
     reviewable &&
     settings !== null &&
     settings.returnAddressSet &&
     !stopped &&
     !trackingInvalid &&
-    !feeOverMax &&
     !restockingPercentInvalid &&
     approvalLines.every((entry) => entry.input.resolution === 'refund' || entry.variant !== null);
 
@@ -568,10 +516,7 @@ function OrderReturnReviewDialogBody({
       returnShippingPayer: payer,
       returnCarrier: method === 'not_required' || carrier === '' ? null : carrier,
       returnTrackingNumber: method === 'not_required' ? null : trackingText || null,
-      returnShippingFee: showShippingFee ? shippingFee : 0,
       restockingFeePercent: showRestocking ? restockingPercent : 0,
-      exchangeFee: showExchangeFees ? exchangeFee : 0,
-      exchangeShippingFee: showExchangeFees ? exchangeShippingFee : 0,
       shopNote: note.trim() || null,
       notifyCustomer,
     };
@@ -702,14 +647,21 @@ function OrderReturnReviewDialogBody({
             ) : null}
           </section>
 
-          {showShippingFee || showRestocking || showExchangeFees ? (
+          {showShippingFee || showRestocking ? (
             <section aria-labelledby="return-review-fees-heading" className="space-y-2">
               <h4 id="return-review-fees-heading" className="font-acumin lk-text-sm text-black">
                 手数料
               </h4>
               <div className="grid grid-cols-2 gap-3">
                 {showShippingFee ? (
-                  <FeeField id="return-review-shipping-fee" label="返送料（円）" value={shippingFee} disabled={stopped} onChange={setShippingFeeEntered} />
+                  <TextField
+                    id="return-review-shipping-fee"
+                    label="返送料（円）"
+                    value="0"
+                    inputMode="numeric"
+                    disabled
+                    helperText={FIXED_RETURN_FEE_LOCKED_TEXT}
+                  />
                 ) : null}
                 {showRestocking ? (
                   <TextField
@@ -721,18 +673,6 @@ function OrderReturnReviewDialogBody({
                     errorText={restockingPercentInvalid ? PERCENT_MESSAGE : undefined}
                     onChange={(event) => setRestockingPercentText(event.target.value)}
                   />
-                ) : null}
-                {showExchangeFees ? (
-                  <>
-                    <FeeField id="return-review-exchange-fee" label="交換の手数料（円）" value={exchangeFee} disabled={stopped} onChange={setExchangeFee} />
-                    <FeeField
-                      id="return-review-exchange-shipping-fee"
-                      label="交換の送料（円）"
-                      value={exchangeShippingFee}
-                      disabled={stopped}
-                      onChange={setExchangeShippingFee}
-                    />
-                  </>
                 ) : null}
               </div>
             </section>

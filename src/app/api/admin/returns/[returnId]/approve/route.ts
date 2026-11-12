@@ -4,7 +4,6 @@ import { scheduleOrderEmailDelivery } from '@/lib/orders/email/order-email-sched
 import { ADMIN_NOTE_MAX_LENGTH } from '@/lib/orders/order-payment-types';
 import { INVALID_REQUEST_BODY } from '@/lib/orders/refund/refund-messages';
 import {
-  MAX_FEE_YEN,
   RETURN_RATE_LIMITS,
   createReturnAudit,
   guardReturnWrite,
@@ -44,11 +43,12 @@ const bodySchema = z.object({
   returnShippingPayer: z.enum(['shop', 'customer']),
   returnCarrier: optionalCarrier,
   returnTrackingNumber: optionalTrackingNumber,
-  // 手数料の4つは必須の整数。画面は返品の今の値（申し込みの時の仮の値）を最初の値にして送る（Task 11）。円の3つは 1,000,000 円まで
-  returnShippingFee: z.number().int().min(0).max(MAX_FEE_YEN),
+  // 割合の手数料は必須の 0〜100 の整数。返送料・交換の手数料・交換の送料は、仕訳の決まりを決めるまで画面は送らず 0 にする
+  // （0 でない値は 400。DB の CHECK acc_p3_fee_lock_returns と同じ。FREQ-578-AC-05）
+  returnShippingFee: z.literal(0).default(0),
   restockingFeePercent: z.number().int().min(0).max(100),
-  exchangeFee: z.number().int().min(0).max(MAX_FEE_YEN),
-  exchangeShippingFee: z.number().int().min(0).max(MAX_FEE_YEN),
+  exchangeFee: z.literal(0).default(0),
+  exchangeShippingFee: z.literal(0).default(0),
   shopNote: optionalText(ADMIN_NOTE_MAX_LENGTH),
   notifyCustomer: z.boolean(),
 });

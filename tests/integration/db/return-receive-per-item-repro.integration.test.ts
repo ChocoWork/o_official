@@ -19,7 +19,7 @@ async function fixture(db: PgClient, o: Options = {}) {
   await db.query('select pg_advisory_xact_lock(190521,1)');
   await db.query(`update public.shop_return_settings set return_address_name='Fixture',return_address_postal_code='1000001',
     return_address_line='Fixture',return_address_phone='0311112222',restocking_fee_enabled=true,
-    exchange_fees_enabled=true,inspection_enabled=true,no_return_needed_enabled=true where id=1`);
+    inspection_enabled=true,no_return_needed_enabled=true where id=1`);
   const actor = await seedHMember(db);
   const amounts = o.amounts;
   const quantity = amounts?.length ?? o.quantity ?? 2;

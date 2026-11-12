@@ -368,12 +368,12 @@ describe('OrderReturnCreateForm の材料と画面', () => {
 
 describe('OrderReturnCreateForm の返送と手数料', () => {
   it('返送料の負担は、選んだ理由にお店の負担があればお店から始まり、返送の方法はそれに合わせる。手で直した負担は理由を変えても保つ', async () => {
-    const { dialog } = await openForm(materials({ settings: { customerPaidMethod: 'shop_label', shopLabelFee: 800 } }));
+    const { dialog } = await openForm(materials({ settings: { customerPaidMethod: 'shop_label', shopLabelFee: 0 } }));
     const shipping = () => within(dialog).getByRole('region', { name: '返送' });
     // 何も選ばない間はお客様の負担。お客様の負担の時の送り方（設定）から始まり、定額の返送料を出す
     expect(select(shipping(), '返送料の負担')).toHaveValue('customer');
     expect(select(shipping(), '返送の方法')).toHaveValue('shop_label');
-    expect(within(dialog).getByLabelText('返送料（円）')).toHaveValue(800);
+    expect(within(dialog).getByLabelText('返送料（円）')).toHaveValue('0');
 
     setQuantity(blouse(dialog), '1');
     fireEvent.change(select(blouse(dialog), '理由'), { target: { value: 'defective' } });
@@ -387,11 +387,11 @@ describe('OrderReturnCreateForm の返送と手数料', () => {
     expect(select(shipping(), '返送料の負担')).toHaveValue('customer');
   });
 
-  it('返送料の負担がお店の時は、お店の送り状で送るを選んでいても返送料の欄を出さず、0 で送る', async () => {
-    const { dialog, onCreated } = await openForm(materials({ settings: { shopLabelFee: 800 } }));
+  it('返送料の負担がお店の時は、お店の送り状で送るを選んでいても返送料の欄を出さず、返送料を送らない（窓口が 0 にする）', async () => {
+    const { dialog, onCreated } = await openForm(materials({ settings: { shopLabelFee: 0 } }));
     mockClientFetch.mockResolvedValueOnce(json(created()));
     fireEvent.change(select(dialog, '返送の方法'), { target: { value: 'shop_label' } });
-    expect(within(dialog).getByLabelText('返送料（円）')).toHaveValue(800);
+    expect(within(dialog).getByLabelText('返送料（円）')).toHaveValue('0');
 
     setQuantity(blouse(dialog), '1');
     fireEvent.change(select(blouse(dialog), '理由'), { target: { value: 'defective' } });
@@ -402,7 +402,8 @@ describe('OrderReturnCreateForm の返送と手数料', () => {
     fireEvent.click(submitButton(dialog));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
-    expect(requestBodyOf(1)).toMatchObject({ returnMethod: 'shop_label', returnShippingPayer: 'shop', returnShippingFee: 0 });
+    expect(requestBodyOf(1)).toMatchObject({ returnMethod: 'shop_label', returnShippingPayer: 'shop' });
+    expect(requestBodyOf(1)).not.toHaveProperty('returnShippingFee');
   });
 
   it('「返送不要」は設定でオンの時だけ選べる。選ぶと、負担・配送業者・伝票番号の欄を隠す', async () => {
@@ -422,32 +423,25 @@ describe('OrderReturnCreateForm の返送と手数料', () => {
     expect(within(shipping()).queryByLabelText('返送の伝票番号（任意）')).not.toBeInTheDocument();
   });
 
-  it('手数料は設定で使う物だけ出し、設定の値から始める。金額の負の数は 0 に収まる', async () => {
+  it('手数料は設定で使う物だけ出し、設定の値から始める。交換の手数料と送料の欄は、交換にする品を選んでも出さない', async () => {
     const { dialog } = await openForm(
       materials({
         settings: {
           restockingFeeEnabled: true, restockingFeePercent: 10,
-          exchangeFeesEnabled: true, exchangeFee: 500, exchangeShippingFee: 800,
+          exchangeFeesEnabled: false, exchangeFee: 0, exchangeShippingFee: 0,
         },
       }),
     );
     const fees = () => within(dialog).getByRole('region', { name: '手数料' });
     expect(within(fees()).getByLabelText('返品の手数料（%）')).toHaveValue('10');
-    // 交換の手数料と送料は、交換にする品を選んだ時だけ出す。返送料は、お店の送り状で送る時だけ出す
+    // 返送料は、お店の送り状で送る時だけ出す。交換の手数料と送料は使えない（FREQ-578-AC-05）
     expect(within(fees()).queryByLabelText('交換の手数料（円）')).not.toBeInTheDocument();
     expect(within(fees()).queryByLabelText('返送料（円）')).not.toBeInTheDocument();
 
     setQuantity(blouse(dialog), '1');
     fireEvent.change(select(blouse(dialog), '解決の方法'), { target: { value: 'exchange' } });
-    expect(within(fees()).getByLabelText('交換の手数料（円）')).toHaveValue(500);
-    expect(within(fees()).getByLabelText('交換の送料（円）')).toHaveValue(800);
-
-    const exchangeFee = within(fees()).getByLabelText('交換の手数料（円）');
-    fireEvent.change(exchangeFee, { target: { value: '-300' } });
-    expect(exchangeFee).toHaveValue(0);
-
-    fireEvent.change(select(blouse(dialog), '解決の方法'), { target: { value: 'refund' } });
     expect(within(fees()).queryByLabelText('交換の手数料（円）')).not.toBeInTheDocument();
+    expect(within(fees()).queryByLabelText('交換の送料（円）')).not.toBeInTheDocument();
   });
 
   it.each(['-1', '101', '1.5', 'abc', '', '1000000000'])(
@@ -487,49 +481,6 @@ describe('OrderReturnCreateForm の返送と手数料', () => {
     expect(requestBodyOf(1)).toMatchObject({ restockingFeePercent: Number(value) });
   });
 
-  it('金額（円）の欄は 100万円を超えたら、収めずに誤りを出し、作るボタンを押せなくする。100万円ちょうどは通し、出していない欄は見ない', async () => {
-    const { dialog } = await openForm(
-      materials({
-        settings: {
-          customerPaidMethod: 'shop_label', shopLabelFee: 800,
-          exchangeFeesEnabled: true, exchangeFee: 500, exchangeShippingFee: 800,
-        },
-      }),
-    );
-    const OVER_MAX = '0から1000000までの整数（半角）で入れてください。';
-    const fees = () => within(dialog).getByRole('region', { name: '手数料' });
-    setQuantity(blouse(dialog), '1');
-    fireEvent.change(select(blouse(dialog), '解決の方法'), { target: { value: 'exchange' } });
-    expect(submitButton(dialog)).toBeEnabled();
-
-    for (const label of ['返送料（円）', '交換の手数料（円）', '交換の送料（円）']) {
-      const input = within(fees()).getByLabelText(label);
-      fireEvent.change(input, { target: { value: '1000000' } });
-      expect(input).toHaveValue(1000000);
-      expect(input).not.toHaveAttribute('aria-invalid');
-      expect(within(fees()).queryByText(OVER_MAX)).not.toBeInTheDocument();
-      expect(submitButton(dialog)).toBeEnabled();
-
-      // 上限を超えた数は 100万円に収めず、そのまま残して誤りを出す（桁の打ち間違いを黙って別の額に変えない）
-      fireEvent.change(input, { target: { value: '1000001' } });
-      expect(input).toHaveValue(1000001);
-      expect(input).toHaveAttribute('aria-invalid', 'true');
-      expect(within(fees()).getByText(OVER_MAX)).toBeInTheDocument();
-      expect(submitButton(dialog)).toBeDisabled();
-
-      fireEvent.change(input, { target: { value: '500' } });
-      expect(within(fees()).queryByText(OVER_MAX)).not.toBeInTheDocument();
-      expect(submitButton(dialog)).toBeEnabled();
-    }
-
-    // 欄を出していない間は送らない値なので、上限を超えていても止めない
-    fireEvent.change(within(fees()).getByLabelText('返送料（円）'), { target: { value: '2000000' } });
-    expect(submitButton(dialog)).toBeDisabled();
-    fireEvent.change(select(dialog, '返送の方法'), { target: { value: 'customer_ships' } });
-    expect(within(fees()).queryByLabelText('返送料（円）')).not.toBeInTheDocument();
-    expect(submitButton(dialog)).toBeEnabled();
-  });
-
   it('返送の伝票番号は英数字とハイフンの 64 字まで。外れる間は文を出して、作るボタンを押せなくする', async () => {
     const { dialog } = await openForm();
     setQuantity(pants(dialog), '1');
@@ -552,7 +503,7 @@ describe('OrderReturnCreateForm の作る', () => {
       materials({
         settings: {
           restockingFeeEnabled: true, restockingFeePercent: 10,
-          exchangeFeesEnabled: true, exchangeFee: 500, exchangeShippingFee: 800,
+          exchangeFeesEnabled: false, exchangeFee: 0, exchangeShippingFee: 0,
         },
       }),
     );
@@ -593,10 +544,7 @@ describe('OrderReturnCreateForm の作る', () => {
       returnShippingPayer: 'shop',
       returnCarrier: 'yamato',
       returnTrackingNumber: 'ABC-123',
-      returnShippingFee: 0,
       restockingFeePercent: 10,
-      exchangeFee: 500,
-      exchangeShippingFee: 800,
       shopNote: '電話で連絡',
       notifyCustomer: false,
     });
@@ -624,10 +572,7 @@ describe('OrderReturnCreateForm の作る', () => {
       returnShippingPayer: 'customer',
       returnCarrier: null,
       returnTrackingNumber: null,
-      returnShippingFee: 0,
       restockingFeePercent: 0,
-      exchangeFee: 0,
-      exchangeShippingFee: 0,
       shopNote: null,
       notifyCustomer: true,
     });
@@ -682,15 +627,19 @@ describe('OrderReturnCreateForm の作る', () => {
     expect(submitButton(dialog)).toBeEnabled();
   });
 
-  it('お店の送り状で送る返品は、返送料の定額を設定の値から始めて、直した額を送る', async () => {
-    const { dialog, onCreated } = await openForm(materials({ settings: { customerPaidMethod: 'shop_label', shopLabelFee: 800 } }));
+  it('FREQ-578-AC-05: 返品を作る画面は返送料の欄を無効にして理由を出し、返送料・交換の手数料・交換の送料を送らない', async () => {
+    const { dialog, onCreated } = await openForm(materials({ settings: { customerPaidMethod: 'shop_label', shopLabelFee: 0 } }));
     mockClientFetch.mockResolvedValueOnce(json(created()));
     setQuantity(pants(dialog), '1');
-    fireEvent.change(within(dialog).getByLabelText('返送料（円）'), { target: { value: '650' } });
+    const shippingFee = within(dialog).getByLabelText('返送料（円）');
+    expect(shippingFee).toBeDisabled();
+    expect(shippingFee).toHaveValue('0');
+    expect(shippingFee).toHaveAccessibleDescription('現在は使えません。仕訳の決まりを決めてから使えます');
     fireEvent.click(submitButton(dialog));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
-    expect(requestBodyOf(1)).toMatchObject({ returnMethod: 'shop_label', returnShippingPayer: 'customer', returnShippingFee: 650 });
+    expect(requestBodyOf(1)).toMatchObject({ returnMethod: 'shop_label', returnShippingPayer: 'customer' });
+    for (const key of ['returnShippingFee', 'exchangeFee', 'exchangeShippingFee']) expect(requestBodyOf(1)).not.toHaveProperty(key);
     expect(onCreated).toHaveBeenCalledWith(created().data, 'shop_label');
   });
 

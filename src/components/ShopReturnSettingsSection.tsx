@@ -9,7 +9,7 @@ import { SwitchToggle } from '@/components/ui/SwitchToggle/SwitchToggle';
 import { TextAreaField } from '@/components/ui/TextAreaField/TextAreaField';
 import { TextField } from '@/components/ui/TextField/TextField';
 import { INVALID_REQUEST_MESSAGE } from '@/lib/orders/refund/refund-messages';
-import { RETURN_REASON_LABELS } from '@/lib/orders/returns/return-messages';
+import { FIXED_RETURN_FEE_LOCKED_TEXT, RETURN_REASON_LABELS } from '@/lib/orders/returns/return-messages';
 import {
   RETURN_REASONS,
   type OutOfStockExchange,
@@ -30,14 +30,8 @@ const POSTAL_CODE_PATTERN = /^[0-9]{3}-?[0-9]{4}$/;
 const PHONE_PATTERN = /^[0-9+-]{6,20}$/;
 /** 半角の数字だけを9桁まで受ける。長すぎる数字は、範囲を見る前に断る */
 const INTEGER_PATTERN = /^[0-9]{1,9}$/;
-/**
- * 金額の欄の上限（Global Constraints の「金額の入力の上限」）。DB の関数 admin_update_shop_return_settings（Task 2）と
- * 窓口の zod（Task 7）が、この額を超える値を断るので、画面も同じ所で断る（作る画面 Task 10 の上限とも同じ）
- */
-const MAX_FEE_YEN = 1_000_000;
 
 // 入力の誤りの言葉。DB の CHECK・関数と同じ範囲で、窓口に送る前に画面が断る（どの欄が誤りかを示すため）
-const AMOUNT_MESSAGE = '0から1000000までの整数（半角）で入れてください。';
 const PERCENT_MESSAGE = '0から100までの整数（半角）で入れてください。';
 const WINDOW_DAYS_MESSAGE = '1から365までの整数（半角）で入れてください。';
 const DELIVERY_BUFFER_MESSAGE = '0から14までの整数（半角）で入れてください。';
@@ -56,7 +50,6 @@ const UNKNOWN_NOT_SHOWN_NOTE = '「不明」はお客様に出しません。';
 
 type IntegerRange = { min: number; max: number; message: string };
 
-const AMOUNT_RANGE: IntegerRange = { min: 0, max: MAX_FEE_YEN, message: AMOUNT_MESSAGE };
 const PERCENT_RANGE: IntegerRange = { min: 0, max: 100, message: PERCENT_MESSAGE };
 const WINDOW_DAYS_RANGE: IntegerRange = { min: 1, max: 365, message: WINDOW_DAYS_MESSAGE };
 const DELIVERY_BUFFER_RANGE: IntegerRange = { min: 0, max: 14, message: DELIVERY_BUFFER_MESSAGE };
@@ -123,9 +116,7 @@ type TextKey =
   | 'windowDays'
   | 'deliveryBufferDays'
   | PhotoInstructionsKey
-  | 'restockingFeePercent'
-  | 'exchangeFee'
-  | 'exchangeShippingFee';
+  | 'restockingFeePercent';
 
 type ReasonDraft = {
   shown: boolean;
@@ -144,7 +135,6 @@ type Draft = Record<TextKey, string> & {
   windowStart: ShopReturnSettings['windowStart'];
   reasons: Record<ReturnReason, ReasonDraft>;
   restockingFeeEnabled: boolean;
-  exchangeFeesEnabled: boolean;
   inspectionEnabled: boolean;
 };
 
@@ -172,8 +162,6 @@ const FIELD_IDS: Record<TextKey, string> = {
   deliveryBufferDays: 'shop-return-delivery-buffer-days',
   ...PHOTO_INSTRUCTIONS_IDS,
   restockingFeePercent: 'shop-return-restocking-fee-percent',
-  exchangeFee: 'shop-return-exchange-fee',
-  exchangeShippingFee: 'shop-return-exchange-shipping-fee',
 };
 const FIELD_ORDER = Object.keys(FIELD_IDS) as TextKey[];
 
@@ -203,8 +191,6 @@ function toDraft(settings: ShopReturnSettings): Draft {
     windowDays: String(settings.windowDays ?? DEFAULT_WINDOW_DAYS),
     deliveryBufferDays: String(settings.deliveryBufferDays),
     restockingFeePercent: String(settings.restockingFeePercent),
-    exchangeFee: String(settings.exchangeFee),
-    exchangeShippingFee: String(settings.exchangeShippingFee),
     requestsEnabled: settings.requestsEnabled,
     requestTypes: settings.requestTypes,
     customerPaidMethod: settings.customerPaidMethod,
@@ -213,7 +199,6 @@ function toDraft(settings: ShopReturnSettings): Draft {
     windowStart: settings.windowStart,
     reasons,
     restockingFeeEnabled: settings.restockingFeeEnabled,
-    exchangeFeesEnabled: settings.exchangeFeesEnabled,
     inspectionEnabled: settings.inspectionEnabled,
   };
 }
@@ -283,16 +268,11 @@ function validate(draft: Draft, saved: ShopReturnSettings): Validation {
     return value;
   };
 
-  const shopLabelFee = read('shopLabelFee', AMOUNT_RANGE, saved.shopLabelFee);
   const windowDays = draft.windowUnlimited ? null : read('windowDays', WINDOW_DAYS_RANGE, DEFAULT_WINDOW_DAYS);
   const deliveryBufferDays = read('deliveryBufferDays', DELIVERY_BUFFER_RANGE, saved.deliveryBufferDays);
   const restockingFeePercent = draft.restockingFeeEnabled
     ? read('restockingFeePercent', PERCENT_RANGE, saved.restockingFeePercent)
     : saved.restockingFeePercent;
-  const exchangeFee = draft.exchangeFeesEnabled ? read('exchangeFee', AMOUNT_RANGE, saved.exchangeFee) : saved.exchangeFee;
-  const exchangeShippingFee = draft.exchangeFeesEnabled
-    ? read('exchangeShippingFee', AMOUNT_RANGE, saved.exchangeShippingFee)
-    : saved.exchangeShippingFee;
 
   // 理由ごとの行。10行そろえて、7つの欄を送る
   const reasons = RETURN_REASONS.map((reason) => {
@@ -324,7 +304,8 @@ function validate(draft: Draft, saved: ShopReturnSettings): Validation {
       noticeText,
       returnAddress,
       customerPaidMethod: draft.customerPaidMethod,
-      shopLabelFee,
+      // 返送料の定額・交換の手数料と送料は、仕訳の決まりを決めるまで 0 と「使わない」だけを送る（DB が止める。FREQ-578-AC-05）
+      shopLabelFee: 0,
       noReturnNeededEnabled: draft.noReturnNeededEnabled,
       windowDays,
       windowStart: draft.windowStart,
@@ -332,9 +313,9 @@ function validate(draft: Draft, saved: ShopReturnSettings): Validation {
       reasons,
       restockingFeeEnabled: draft.restockingFeeEnabled,
       restockingFeePercent,
-      exchangeFeesEnabled: draft.exchangeFeesEnabled,
-      exchangeFee,
-      exchangeShippingFee,
+      exchangeFeesEnabled: false,
+      exchangeFee: 0,
+      exchangeShippingFee: 0,
       inspectionEnabled: draft.inspectionEnabled,
     },
   };
@@ -527,7 +508,7 @@ export default function ShopReturnSettingsSection({ settings, saving, onSave, on
             value={draft.customerPaidMethod}
             onChange={(event) => setField('customerPaidMethod', event.target.value === 'shop_label' ? 'shop_label' : 'customer_ships')}
           />
-          {renderText('shopLabelFee', '返送料の定額（円）', { numeric: true })}
+          {renderText('shopLabelFee', '返送料の定額（円）', { numeric: true, disabled: true, helperText: FIXED_RETURN_FEE_LOCKED_TEXT })}
           <div className="space-y-1">
             <SwitchToggle
               label="「返送不要」を選べるようにする"
@@ -651,19 +632,8 @@ export default function ShopReturnSettingsSection({ settings, saving, onSave, on
             {draft.restockingFeeEnabled ? renderText('restockingFeePercent', '返品の手数料（%）', { numeric: true }) : null}
           </div>
           <div className="space-y-2">
-            <SwitchToggle
-              label="交換の手数料と送料を使う"
-              checked={draft.exchangeFeesEnabled}
-              fullWidth
-              size="sm"
-              onChange={(enabled) => setField('exchangeFeesEnabled', enabled)}
-            />
-            {draft.exchangeFeesEnabled ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {renderText('exchangeFee', '交換の手数料（円）', { numeric: true })}
-                {renderText('exchangeShippingFee', '交換の送料（円）', { numeric: true })}
-              </div>
-            ) : null}
+            <SwitchToggle label="交換の手数料と送料を使う" checked={false} disabled fullWidth size="sm" onChange={() => undefined} />
+            <p className="font-acumin lk-text-3xs text-[#474747]">{FIXED_RETURN_FEE_LOCKED_TEXT}</p>
           </div>
           <p className="font-acumin lk-text-3xs text-[#474747]">手で受け取った手数料は、帳簿に自動では入りません。</p>
         </Group>

@@ -22,8 +22,8 @@ const CHANGED_AT = '2026-10-12T02:30:00.000Z';
 const SAVED = '設定を保存しました。';
 const SAVE_FAILED = 'ショップの設定を保存できませんでした。';
 const SUMMARY = '入力を確かめてください。';
-/** 金額（返送料の定額・交換の手数料・交換の送料）が0〜1000000の整数でない時の誤り（Task 12 の T12-6。作る画面の円の欄と同じ言葉） */
-const YEN_LIMIT = '0から1000000までの整数（半角）で入れてください。';
+/** 返送料の定額・交換の手数料と送料を止めている理由（FREQ-578-AC-05。仕訳の決まりを決めるまで DB が 0・使わないに止める） */
+const FEE_LOCKED = '現在は使えません。仕訳の決まりを決めてから使えます';
 /** 保存の最中に「保存する」を押した時の知らせ（Task 12 の T12-6） */
 const PRESSED_WHILE_SAVING = '保存の最中です。済んでから、もう一度「保存する」を押してください。';
 const GROUPS = ['申し込み', '返送', '受付の期限', '理由ごとの設定', '手数料', '受け取り'] as const;
@@ -171,7 +171,7 @@ for (const viewport of viewports) {
     });
 
     test('「お客様の負担の時の送り方」の2つの選びと、送り方にかかわらず出る「返送料の定額（円）」が、最初の値で出る', async ({ page }) => {
-      // FREQ-470-AC-03
+      // FREQ-470-AC-03, FREQ-578-AC-05
       const state = await mockSettingsApis(page);
       await openSettings(page);
       const shipping = group(page, '返送');
@@ -182,11 +182,15 @@ for (const viewport of viewports) {
       const fee = shipping.getByLabel('返送料の定額（円）', { exact: true });
       await expect(fee).toHaveValue('0');
 
+      // 返送料の定額は 0 のまま入れられず、欄の下に止めている理由が出る
+      await expect(fee).toBeDisabled();
+      await expect(fee).toHaveAccessibleDescription(FEE_LOCKED);
+
       await method.selectOption({ label: 'お店の送り状で送っていただき、返送料を差し引く' });
-      await fee.fill('800');
       await expect(fee).toBeVisible();
+      await expect(fee).toBeDisabled();
       const saved = await save(page, state);
-      expect(saved).toMatchObject({ customerPaidMethod: 'shop_label', shopLabelFee: 800 });
+      expect(saved).toMatchObject({ customerPaidMethod: 'shop_label', shopLabelFee: 0 });
     });
 
     test('「「返送不要」を選べるようにする」のトグルと説明が出て、切り替えただけでは窓口が呼ばれず、保存で届く', async ({ page }) => {
@@ -290,8 +294,8 @@ for (const viewport of viewports) {
       });
     });
 
-    test('手数料のトグルをオンにした時だけ入力が出て、「手で受け取った手数料は、帳簿に自動では入りません。」の注意が出る。入れた値が保存で窓口へ届く', async ({ page }) => {
-      // FREQ-470-AC-09
+    test('返品の手数料のトグルをオンにした時だけ入力が出て、「手で受け取った手数料は、帳簿に自動では入りません。」の注意が出る。入れた値が保存で窓口へ届く。交換の手数料と送料のトグルは押せず、理由が出る', async ({ page }) => {
+      // FREQ-470-AC-09, FREQ-578-AC-05
       const state = await mockSettingsApis(page);
       await openSettings(page);
       const fees = group(page, '手数料');
@@ -304,19 +308,23 @@ for (const viewport of viewports) {
       await expect(fees.getByLabel('交換の手数料（円）', { exact: true })).toHaveCount(0);
       await expect(fees.getByLabel('交換の送料（円）', { exact: true })).toHaveCount(0);
 
+      // 交換の手数料と送料は、仕訳の決まりを決めるまで使えない。トグルは押せず、理由が出て、欄も出ない
+      await expect(exchange).toBeDisabled();
+      await expect(fees.getByText(FEE_LOCKED, { exact: true })).toBeVisible();
+
       await restocking.click();
-      await exchange.click();
       await fees.getByLabel('返品の手数料（%）', { exact: true }).fill('10');
-      await fees.getByLabel('交換の手数料（円）', { exact: true }).fill('500');
-      await fees.getByLabel('交換の送料（円）', { exact: true }).fill('300');
       await expect(fees.getByText('手で受け取った手数料は、帳簿に自動では入りません。')).toBeVisible();
+      await expect(exchange).toHaveAttribute('aria-checked', 'false');
+      await expect(fees.getByLabel('交換の手数料（円）', { exact: true })).toHaveCount(0);
+      await expect(fees.getByLabel('交換の送料（円）', { exact: true })).toHaveCount(0);
 
       expect(await save(page, state)).toMatchObject({
         restockingFeeEnabled: true,
         restockingFeePercent: 10,
-        exchangeFeesEnabled: true,
-        exchangeFee: 500,
-        exchangeShippingFee: 300,
+        exchangeFeesEnabled: false,
+        exchangeFee: 0,
+        exchangeShippingFee: 0,
       });
     });
 
@@ -404,7 +412,7 @@ for (const viewport of viewports) {
       }
     });
 
-    test('入力の誤り8つの言葉が、それぞれの欄の下に出て、欄が不正の印になり、窓口は呼ばれず、最初の誤りの欄へフォーカスが移る。直すと消える', async ({ page }) => {
+    test('入力の誤り7つの言葉が、それぞれの欄の下に出て、欄が不正の印になり、窓口は呼ばれず、最初の誤りの欄へフォーカスが移る。直すと消える', async ({ page }) => {
       // FREQ-470-AC-13
       const state = await mockSettingsApis(page);
       await openSettings(page);
@@ -416,28 +424,21 @@ for (const viewport of viewports) {
       const postal = address.getByLabel('郵便番号', { exact: true });
       const line = address.getByLabel('住所', { exact: true });
       const phone = address.getByLabel('電話番号', { exact: true });
-      const labelFee = shipping.getByLabel('返送料の定額（円）', { exact: true });
       const days = period.getByLabel('日数', { exact: true });
       const buffer = period.getByLabel('届いた日がわからない時の目安（日）', { exact: true });
 
-      // 手数料の入力は、使うトグルをオンにした時だけ出る
+      // 返品の手数料の入力は、使うトグルをオンにした時だけ出る（返送料の定額・交換の手数料と送料は入れられない。FREQ-578-AC-05）
       await fees.getByRole('switch', { name: '返品の手数料を使う', exact: true }).click();
-      await fees.getByRole('switch', { name: '交換の手数料と送料を使う', exact: true }).click();
       const percent = fees.getByLabel('返品の手数料（%）', { exact: true });
-      const exchangeFee = fees.getByLabel('交換の手数料（円）', { exact: true });
-      const exchangeShippingFee = fees.getByLabel('交換の送料（円）', { exact: true });
 
-      // 入力の誤りの言葉は 9 つのうち 8 つ（ほかの 1 つは保存の最中の知らせ）。住所は空のまま、返送先の一部だけを入れる
+      // 入力の誤りの言葉は 8 つのうち 7 つ（ほかの 1 つは保存の最中の知らせ）。住所は空のまま、返送先の一部だけを入れる
       const cases: Array<{ input: Locator; value: string; message: string }> = [
         { input: name, value: 'あ'.repeat(201), message: '200字までで入れてください。' },
         { input: postal, value: '12345', message: '郵便番号は 123-4567 の形で入れてください。' },
         { input: phone, value: 'abc', message: '電話番号は、数字と「+」「-」だけで6〜20文字にしてください。' },
-        { input: labelFee, value: '1000001', message: YEN_LIMIT },
         { input: days, value: '0', message: '1から365までの整数（半角）で入れてください。' },
         { input: buffer, value: '15', message: '0から14までの整数（半角）で入れてください。' },
         { input: percent, value: '101', message: '0から100までの整数（半角）で入れてください。' },
-        { input: exchangeFee, value: '1000001', message: YEN_LIMIT },
-        { input: exchangeShippingFee, value: '-1', message: YEN_LIMIT },
       ];
       for (const item of cases) await item.input.fill(item.value);
       // 押す前は、誤りを出さない
@@ -465,19 +466,13 @@ for (const viewport of viewports) {
       await postal.fill('150-0001');
       await line.fill('東京都渋谷区神宮前1-2-3');
       await phone.fill('03-1234-5678');
-      await labelFee.fill('800');
       await buffer.fill('5');
       await percent.fill('10');
-      await exchangeFee.fill('500');
-      await exchangeShippingFee.fill('300');
       await expect(page.getByRole('alert').filter({ hasText: SUMMARY })).toHaveCount(0);
       expect(await save(page, state)).toMatchObject({
         windowDays: 10,
         deliveryBufferDays: 5,
-        shopLabelFee: 800,
         restockingFeePercent: 10,
-        exchangeFee: 500,
-        exchangeShippingFee: 300,
         returnAddress: { name: '返品係 山田', postalCode: '150-0001', address: '東京都渋谷区神宮前1-2-3', phone: '03-1234-5678' },
       });
     });

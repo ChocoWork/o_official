@@ -227,8 +227,8 @@ for (const viewport of viewports) {
       ]);
     });
 
-    test('円の欄（返送料・交換の手数料・交換の送料）が上限を超えるか、返品の手数料（%）が0〜100の整数でないと、欄の下に誤りが出て作れず、範囲ちょうどなら作れる', async ({ page }) => {
-      // FREQ-462-AC-10
+    test('返品の手数料（%）が0〜100の整数でないと、欄の下に誤りが出て作れず、範囲ちょうどなら作れる。返送料の欄は入れられず理由が出て、交換の手数料・交換の送料の欄は出ない', async ({ page }) => {
+      // FREQ-462-AC-10, FREQ-578-AC-05
       const materials = returnMaterialsOf({
         orderId: ORDER_ID,
         shipments: [
@@ -243,15 +243,13 @@ for (const viewport of viewports) {
             ],
           },
         ],
-        // お店の送り状で送る（返送料を差し引く）と、返品の手数料、交換の手数料・交換の送料を使う設定：円の欄が3つと割合の欄が出る
+        // お店の送り状で送る（返送料を差し引く）と、返品の手数料を使う設定。返送料・交換の手数料・交換の送料は、
+        // 仕訳の決まりを決めるまで DB が 0・使わないに止めている（FREQ-578-AC-05）
         settings: {
           customerPaidMethod: 'shop_label',
-          shopLabelFee: 800,
+          shopLabelFee: 0,
           restockingFeeEnabled: true,
           restockingFeePercent: 10,
-          exchangeFeesEnabled: true,
-          exchangeFee: 500,
-          exchangeShippingFee: 300,
         },
       });
       const state = newReturnRouteState({ orderId: ORDER_ID, returnableUnits: 2, materials });
@@ -263,21 +261,14 @@ for (const viewport of viewports) {
       const shippingFee = dialog.getByLabel('返送料（円）', { exact: true });
       const exchangeFee = dialog.getByLabel('交換の手数料（円）', { exact: true });
       const exchangeShippingFee = dialog.getByLabel('交換の送料（円）', { exact: true });
-      const limitMessage = dialog.getByText(RETURN_TEXT.yenLimit, { exact: true });
       const percent = dialog.getByLabel('返品の手数料（%）', { exact: true });
       const percentMessage = dialog.getByText(RETURN_TEXT.percentLimit, { exact: true });
 
       await group.getByLabel('返品する数', { exact: true }).fill('1');
-      // 返送料（円）は設定の定額から始まる。上限を超えた数は収めずに残し、欄の下に誤りを出して、直るまで作れない
-      await expect(shippingFee).toHaveValue('800');
-      await shippingFee.fill('1000001');
-      await expect(shippingFee).toHaveValue('1000001');
-      await expect(shippingFee).toHaveAttribute('aria-invalid', 'true');
-      await expect(limitMessage).toHaveCount(1);
-      await expect(create).toBeDisabled();
-      await shippingFee.fill('1000000');
-      await expect(shippingFee).not.toHaveAttribute('aria-invalid', 'true');
-      await expect(limitMessage).toHaveCount(0);
+      // 返送料（円）は 0 のまま入れられず、欄の下に止めている理由が出る
+      await expect(shippingFee).toHaveValue('0');
+      await expect(shippingFee).toBeDisabled();
+      await expect(shippingFee).toHaveAccessibleDescription(RETURN_TEXT.feeLocked);
       await expect(create).toBeEnabled();
 
       // 返品の手数料（%）は設定の割合から始まる。0〜100の整数でない入力（範囲外・小数）は収めずに残し、欄の下に誤りを出して、直るまで作れない
@@ -299,36 +290,18 @@ for (const viewport of viewports) {
       await expect(percentMessage).toHaveCount(0);
       await expect(create).toBeEnabled();
 
-      // 交換の手数料・交換の送料は、交換を選んだ時に出る。どちらも超えると誤りが2つ
+      // 交換を選んでも、交換の手数料・交換の送料の欄は出ない
       await resolution.selectOption({ label: '交換' });
-      await expect(exchangeFee).toHaveValue('500');
-      await expect(exchangeShippingFee).toHaveValue('300');
-      await exchangeFee.fill('1000001');
-      await exchangeShippingFee.fill('2000000');
-      await expect(limitMessage).toHaveCount(2);
-      await expect(create).toBeDisabled();
-      // 欄を出していない間は送らない値なので、止めない
-      await resolution.selectOption({ label: '返金' });
       await expect(exchangeFee).toHaveCount(0);
-      await expect(limitMessage).toHaveCount(0);
-      await expect(create).toBeEnabled();
-      await resolution.selectOption({ label: '交換' });
-      await exchangeFee.fill('1000000');
-      await exchangeShippingFee.fill('0');
-      await expect(limitMessage).toHaveCount(0);
+      await expect(exchangeShippingFee).toHaveCount(0);
       await expect(create).toBeEnabled();
 
-      // 範囲ちょうどの額と割合は、そのまま（割合は整数で）窓口へ届く
+      // 範囲ちょうどの割合は、そのまま（整数で）窓口へ届く。返送料・交換の手数料・交換の送料は送らない（窓口が 0 にする）
       await create.click();
       await expect(page.getByRole('dialog', { name: `返品を作る（${orderNumberOf(ORDER_ID)}）` })).toHaveCount(0);
       expect(state.createPosts).toHaveLength(1);
-      expect(state.createPosts[0]).toMatchObject({
-        returnMethod: 'shop_label',
-        returnShippingFee: 1_000_000,
-        restockingFeePercent: 100,
-        exchangeFee: 1_000_000,
-        exchangeShippingFee: 0,
-      });
+      expect(state.createPosts[0]).toMatchObject({ returnMethod: 'shop_label', restockingFeePercent: 100 });
+      for (const key of ['returnShippingFee', 'exchangeFee', 'exchangeShippingFee']) expect(state.createPosts[0]).not.toHaveProperty(key);
     });
 
     test('返送先が設定されていない時は、その文が出て、返品を作れない', async ({ page }) => {
@@ -391,10 +364,7 @@ for (const viewport of viewports) {
         returnMethod: 'customer_ships',
         returnShippingPayer: 'shop',
         returnTrackingNumber: 'ABC-123',
-        returnShippingFee: 0,
         restockingFeePercent: 0,
-        exchangeFee: 0,
-        exchangeShippingFee: 0,
         shopNote: 'お客様の電話で受付',
         notifyCustomer: false,
       });

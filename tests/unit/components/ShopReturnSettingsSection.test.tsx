@@ -21,7 +21,7 @@ const GROUP_NAMES = ['申し込み', '返送', '受付の期限', '理由ごと�
 const SUMMARY = '入力を確かめてください。';
 const WINDOW_DAYS_MESSAGE = '1から365までの整数（半角）で入れてください。';
 const DELIVERY_BUFFER_MESSAGE = '0から14までの整数（半角）で入れてください。';
-const AMOUNT_MESSAGE = '0から1000000までの整数（半角）で入れてください。';
+const FEE_LOCKED_MESSAGE = '現在は使えません。仕訳の決まりを決めてから使えます';
 const PERCENT_MESSAGE = '0から100までの整数（半角）で入れてください。';
 const ADDRESS_REQUIRED_MESSAGE = '返送先は4つとも入れてください。';
 const TOO_LONG_MESSAGE = '200字までで入れてください。';
@@ -139,16 +139,16 @@ describe('ShopReturnSettingsSection の表示', () => {
     renderSection({
       returnAddress: ADDRESS,
       customerPaidMethod: 'shop_label',
-      shopLabelFee: 800,
+      shopLabelFee: 0,
       noReturnNeededEnabled: true,
       windowDays: 14,
       windowStart: 'last_item',
       deliveryBufferDays: 5,
       restockingFeeEnabled: true,
       restockingFeePercent: 10,
-      exchangeFeesEnabled: true,
-      exchangeFee: 300,
-      exchangeShippingFee: 700,
+      exchangeFeesEnabled: false,
+      exchangeFee: 0,
+      exchangeShippingFee: 0,
       inspectionEnabled: true,
     });
 
@@ -157,7 +157,7 @@ describe('ShopReturnSettingsSection の表示', () => {
     expect(screen.getByLabelText('住所')).toHaveValue(ADDRESS.address);
     expect(screen.getByLabelText('電話番号')).toHaveValue(ADDRESS.phone);
     expect(screen.getByLabelText('お客様の負担の時の送り方')).toHaveValue('shop_label');
-    expect(screen.getByLabelText('返送料の定額（円）')).toHaveValue('800');
+    expect(screen.getByLabelText('返送料の定額（円）')).toHaveValue('0');
     expect(screen.getByRole('switch', { name: '「返送不要」を選べるようにする' })).toBeChecked();
     expect(screen.getByLabelText('日数')).toHaveValue('14');
     expect(screen.getByRole('checkbox', { name: '無制限' })).not.toBeChecked();
@@ -165,9 +165,7 @@ describe('ShopReturnSettingsSection の表示', () => {
     expect(screen.getByLabelText('届いた日がわからない時の目安（日）')).toHaveValue('5');
     expect(screen.getByRole('switch', { name: '返品の手数料を使う' })).toBeChecked();
     expect(screen.getByLabelText('返品の手数料（%）')).toHaveValue('10');
-    expect(screen.getByRole('switch', { name: '交換の手数料と送料を使う' })).toBeChecked();
-    expect(screen.getByLabelText('交換の手数料（円）')).toHaveValue('300');
-    expect(screen.getByLabelText('交換の送料（円）')).toHaveValue('700');
+    expect(screen.getByRole('switch', { name: '交換の手数料と送料を使う' })).not.toBeChecked();
     expect(screen.getByRole('switch', { name: '要検品を使う' })).toBeChecked();
   });
 
@@ -193,7 +191,7 @@ describe('ShopReturnSettingsSection の表示', () => {
     }
   });
 
-  it('手数料の入力欄は、使うトグルをオンにした時だけ出す', () => {
+  it('返品の手数料の入力欄は、使うトグルをオンにした時だけ出す。交換の手数料と送料の欄は出さない', () => {
     renderSection();
     expect(screen.queryByLabelText('返品の手数料（%）')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('交換の手数料（円）')).not.toBeInTheDocument();
@@ -202,13 +200,31 @@ describe('ShopReturnSettingsSection の表示', () => {
     toggle('返品の手数料を使う');
     expect(screen.getByLabelText('返品の手数料（%）')).toHaveValue('0');
     expect(screen.queryByLabelText('交換の手数料（円）')).not.toBeInTheDocument();
-
-    toggle('交換の手数料と送料を使う');
-    expect(screen.getByLabelText('交換の手数料（円）')).toHaveValue('0');
-    expect(screen.getByLabelText('交換の送料（円）')).toHaveValue('0');
+    expect(screen.queryByLabelText('交換の送料（円）')).not.toBeInTheDocument();
 
     toggle('返品の手数料を使う');
     expect(screen.queryByLabelText('返品の手数料（%）')).not.toBeInTheDocument();
+  });
+
+  it('FREQ-578-AC-05: 設定の画面は手数料の入力欄を無効にして理由を出す', () => {
+    renderSection({ customerPaidMethod: 'shop_label' });
+
+    const shopLabelFee = screen.getByLabelText('返送料の定額（円）');
+    expect(shopLabelFee).toBeDisabled();
+    expect(shopLabelFee).toHaveValue('0');
+    expect(shopLabelFee).toHaveAccessibleDescription(FEE_LOCKED_MESSAGE);
+
+    const exchangeFees = screen.getByRole('switch', { name: '交換の手数料と送料を使う' });
+    expect(exchangeFees).toBeDisabled();
+    expect(exchangeFees).not.toBeChecked();
+    fireEvent.click(exchangeFees);
+    expect(exchangeFees).not.toBeChecked();
+    expect(screen.queryByLabelText('交換の手数料（円）')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('交換の送料（円）')).not.toBeInTheDocument();
+    expect(within(region('手数料')).getByText(FEE_LOCKED_MESSAGE)).toBeInTheDocument();
+
+    // 割合の手数料は今のとおり使える
+    expect(screen.getByRole('switch', { name: '返品の手数料を使う' })).toBeEnabled();
   });
 
   it('日数は「無制限」にチェックすると入力できなくなり、外すと元の日数で入力できる', () => {
@@ -316,7 +332,6 @@ describe('ShopReturnSettingsSection の保存', () => {
     setValue('住所', ADDRESS.address);
     setValue('電話番号', ADDRESS.phone);
     setValue('お客様の負担の時の送り方', 'shop_label');
-    setValue('返送料の定額（円）', '800');
     toggle('「返送不要」を選べるようにする');
     setValue('日数', '14');
     setValue('数え始め', 'last_item');
@@ -325,9 +340,6 @@ describe('ShopReturnSettingsSection の保存', () => {
     setReasonValue('不明', '返送料の負担', 'shop');
     toggle('返品の手数料を使う');
     setValue('返品の手数料（%）', '10');
-    toggle('交換の手数料と送料を使う');
-    setValue('交換の手数料（円）', '300');
-    setValue('交換の送料（円）', '700');
     toggle('要検品を使う');
     fireEvent.click(saveButton());
 
@@ -338,7 +350,7 @@ describe('ShopReturnSettingsSection の保存', () => {
       noticeText: '',
       returnAddress: ADDRESS,
       customerPaidMethod: 'shop_label',
-      shopLabelFee: 800,
+      shopLabelFee: 0,
       noReturnNeededEnabled: true,
       windowDays: 14,
       windowStart: 'last_item',
@@ -346,9 +358,9 @@ describe('ShopReturnSettingsSection の保存', () => {
       reasons: reasonsWith({ size_too_small: { outOfStockExchange: 'make' }, unknown: { shippingPayer: 'shop' } }),
       restockingFeeEnabled: true,
       restockingFeePercent: 10,
-      exchangeFeesEnabled: true,
-      exchangeFee: 300,
-      exchangeShippingFee: 700,
+      exchangeFeesEnabled: false,
+      exchangeFee: 0,
+      exchangeShippingFee: 0,
       inspectionEnabled: true,
     });
   });
@@ -378,7 +390,7 @@ describe('ShopReturnSettingsSection の保存', () => {
   });
 
   it('使わない手数料の欄は確かめず、保存してある値をそのまま渡す（変えたことにしない）', async () => {
-    const { onSave } = renderSection({ restockingFeePercent: 15, exchangeFee: 400, exchangeShippingFee: 600 });
+    const { onSave } = renderSection({ restockingFeePercent: 15 });
     // トグルがオフの間は欄が出ない。オンにして文字を入れ、またオフにする
     toggle('返品の手数料を使う');
     setValue('返品の手数料（%）', 'abc');
@@ -391,8 +403,8 @@ describe('ShopReturnSettingsSection の保存', () => {
       restockingFeeEnabled: false,
       restockingFeePercent: 15,
       exchangeFeesEnabled: false,
-      exchangeFee: 400,
-      exchangeShippingFee: 600,
+      exchangeFee: 0,
+      exchangeShippingFee: 0,
     });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
@@ -470,8 +482,6 @@ describe('ShopReturnSettingsSection の入力の確かめ', () => {
     { name: '日数が空', label: '日数', value: '', message: WINDOW_DAYS_MESSAGE },
     { name: '届いた日の目安が15', label: '届いた日がわからない時の目安（日）', value: '15', message: DELIVERY_BUFFER_MESSAGE },
     { name: '届いた日の目安がマイナス', label: '届いた日がわからない時の目安（日）', value: '-1', message: DELIVERY_BUFFER_MESSAGE },
-    { name: '返送料の定額が小数', label: '返送料の定額（円）', value: '1.5', message: AMOUNT_MESSAGE },
-    { name: '返送料の定額が1000001', label: '返送料の定額（円）', value: '1000001', message: AMOUNT_MESSAGE },
     {
       name: '返品の手数料が101%',
       prepare: () => toggle('返品の手数料を使う'),
@@ -485,20 +495,6 @@ describe('ShopReturnSettingsSection の入力の確かめ', () => {
       label: '返品の手数料（%）',
       value: '2.5',
       message: PERCENT_MESSAGE,
-    },
-    {
-      name: '交換の手数料がマイナス',
-      prepare: () => toggle('交換の手数料と送料を使う'),
-      label: '交換の手数料（円）',
-      value: '-1',
-      message: AMOUNT_MESSAGE,
-    },
-    {
-      name: '交換の送料が文字',
-      prepare: () => toggle('交換の手数料と送料を使う'),
-      label: '交換の送料（円）',
-      value: 'abc',
-      message: AMOUNT_MESSAGE,
     },
     { name: '郵便番号が短い', prepare: fillAddress, label: '郵便番号', value: '1234', message: POSTAL_CODE_MESSAGE },
     { name: '郵便番号の桁が多い', prepare: fillAddress, label: '郵便番号', value: '150-00011', message: POSTAL_CODE_MESSAGE },
@@ -537,7 +533,6 @@ describe('ShopReturnSettingsSection の入力の確かめ', () => {
     { name: '日数の前後に空白', label: '日数', value: ' 30 ', expected: { windowDays: 30 } },
     { name: '届いた日の目安0', label: '届いた日がわからない時の目安（日）', value: '0', expected: { deliveryBufferDays: 0 } },
     { name: '届いた日の目安14', label: '届いた日がわからない時の目安（日）', value: '14', expected: { deliveryBufferDays: 14 } },
-    { name: '返送料の定額1000000', label: '返送料の定額（円）', value: '1000000', expected: { shopLabelFee: 1000000 } },
     {
       name: '返品の手数料100%',
       prepare: () => toggle('返品の手数料を使う'),

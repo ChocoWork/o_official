@@ -1,5 +1,5 @@
 import type { CustomerReturnStatus } from '@/lib/orders/returns/customer-return-types';
-import { addVariant, receiveReturnInDb, exchangeItemRows, returnLabelOf } from './return-test-utils';
+import { addVariant, receiveReturnInDb, exchangeItemRows, returnLabelOf, withoutReturnFeeLock } from './return-test-utils';
 import { recordRefundResult, createFulfillment } from './order-email-test-utils';
 import {
   test, expect, viewports, shipped, requestDb, line, defaultApproval, approveDb, section, noOverflow,
@@ -23,13 +23,22 @@ async function stateOrder(rr: RR, state: CustomerReturnStatus) {
     approval.lines[0] = { ...approval.lines[0], resolution: 'exchange', exchangeVariantId: variant, exchangeMethod: 'stock' };
     approval.exchangeFee = 500;
   }
-  await approveDb(rr, ret.id, approval, fx.actorId);
-  if (state === 'accepted') return { fx, ret };
-  const result = await receiveReturnInDb(rr.db, ret.id, fx.actorId, {
+  const receive = () => receiveReturnInDb(rr.db, ret.id, fx.actorId, {
     units: [{ lineId: approval.lines[0].returnLineId, quantity: 1,
       disposition: state === 'partially_received' || state === 'inspecting' ? 'pending_inspection' : 'restocked' }],
     choice: state === 'awaiting_fee' ? 'none' : state === 'returned' ? 'now' : 'consult', notify: false,
   });
+  if (state === 'awaiting_fee') {
+    // お支払い待ちは交換の手数料でしか作れないので、DB の 0 の決まり（FREQ-578-AC-05）を外して承認と受け取りを流す（判断 P3-D8）
+    await withoutReturnFeeLock(rr.db, async () => {
+      await approveDb(rr, ret.id, approval, fx.actorId);
+      await receive();
+    });
+    return { fx, ret };
+  }
+  await approveDb(rr, ret.id, approval, fx.actorId);
+  if (state === 'accepted') return { fx, ret };
+  const result = await receive();
   if (state === 'returned' && result.refundId) await recordRefundResult(rr.db, result.refundId);
   return { fx, ret };
 }
@@ -80,7 +89,8 @@ for (const viewport of viewports) {
       for (const [method, payer, fee, message] of [
         ['customer_ships', 'shop', 0, '返送料は当店が負担いたします。着払いでお送りください。'],
         ['customer_ships', 'customer', 0, '恐れ入りますが、返送料はお客様のご負担でお送りください。'],
-        ['shop_label', 'customer', 800, '当店がご用意する送り状でお送りください。返送料 ￥800 をご返金額から差し引きます。'],
+        // 返送料の定額は DB が 0 に止めている（FREQ-578-AC-05）ので、お店の送り状は差し引く額の無い文になる
+        ['shop_label', 'customer', 0, '当店がご用意する送り状でお送りください。'],
         ['not_required', 'shop', 0, '品物のご返送は不要です。'],
       ] as const) {
         const fx = await shipped(rr);

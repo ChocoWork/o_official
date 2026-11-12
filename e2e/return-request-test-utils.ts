@@ -248,8 +248,9 @@ export async function approveDb(rr: RR, returnId: string, body: Omit<ApproveRetu
   return (await rr.db.query(
     'select * from public.admin_approve_return($1::uuid,$2::uuid,$3::jsonb,$4::text,$5::text,$6::text,$7::text,$8::integer,$9::integer,$10::integer,$11::integer,$12::text,$13::boolean)',
     [returnId, actorId, JSON.stringify(rows), body.returnMethod, body.returnShippingPayer,
-      body.returnCarrier ?? null, body.returnTrackingNumber ?? null, body.returnShippingFee,
-      body.restockingFeePercent, body.exchangeFee, body.exchangeShippingFee, body.shopNote ?? null, body.notifyCustomer],
+      // 画面は返送料・交換の手数料・交換の送料を送らない。窓口（zod）と同じく、送られない額は 0 にする（FREQ-578-AC-05）
+      body.returnCarrier ?? null, body.returnTrackingNumber ?? null, body.returnShippingFee ?? 0,
+      body.restockingFeePercent, body.exchangeFee ?? 0, body.exchangeShippingFee ?? 0, body.shopNote ?? null, body.notifyCustomer],
   )).rows[0];
 }
 export async function defaultApproval(rr: RR, fx: ReturnFixture, returnId: string) {

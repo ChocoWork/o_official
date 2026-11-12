@@ -179,10 +179,10 @@ const CREATE_BODY = {
   returnShippingPayer: 'shop',
   returnCarrier: 'yamato',
   returnTrackingNumber: 'AB-123',
-  returnShippingFee: 800,
+  returnShippingFee: 0,
   restockingFeePercent: 10,
-  exchangeFee: 300,
-  exchangeShippingFee: 500,
+  exchangeFee: 0,
+  exchangeShippingFee: 0,
   shopNote: '電話で依頼',
   notifyCustomer: true,
 };
@@ -536,8 +536,7 @@ describe('POST /api/admin/orders/[id]/returns（返品を作る）', () => {
     ['返送の配送業者が知らない値', { ...CREATE_BODY, returnCarrier: 'fedex' }],
     ['返送の伝票番号に空白', { ...CREATE_BODY, returnTrackingNumber: 'AB 123' }],
     ['返送の伝票番号が65文字', { ...CREATE_BODY, returnTrackingNumber: 'a'.repeat(65) }],
-    // 手数料の4つは必須（画面は使わない手数料を 0 にして送る。Task 10）
-    ['返送料が無い', { ...CREATE_BODY, returnShippingFee: undefined }],
+    // 割合の手数料は必須（画面は使わない時 0 にして送る。Task 10）。返送料・交換の手数料と送料は 0 だけを受ける（FREQ-578-AC-05）
     ['返送料が null', { ...CREATE_BODY, returnShippingFee: null }],
     ['返送料が負', { ...CREATE_BODY, returnShippingFee: -1 }],
     ['返送料が小数', { ...CREATE_BODY, returnShippingFee: 1.5 }],
@@ -548,9 +547,7 @@ describe('POST /api/admin/orders/[id]/returns（返品を作る）', () => {
     ['返品の手数料が101%', { ...CREATE_BODY, restockingFeePercent: 101 }],
     ['返品の手数料が負', { ...CREATE_BODY, restockingFeePercent: -1 }],
     ['返品の手数料が小数', { ...CREATE_BODY, restockingFeePercent: 10.5 }],
-    ['交換の手数料が無い', { ...CREATE_BODY, exchangeFee: undefined }],
     ['交換の手数料が負', { ...CREATE_BODY, exchangeFee: -1 }],
-    ['交換の送料が無い', { ...CREATE_BODY, exchangeShippingFee: undefined }],
     ['交換の送料が負', { ...CREATE_BODY, exchangeShippingFee: -1 }],
     ['店のメモが501文字', { ...CREATE_BODY, shopNote: 'あ'.repeat(501) }],
     ['店のメモが文字でない', { ...CREATE_BODY, shopNote: 5 }],
@@ -633,14 +630,29 @@ describe('POST /api/admin/orders/[id]/returns（返品を作る）', () => {
     expect(mockSubmitCreate).toHaveBeenCalledWith(mockDeps, { orderId: ORDER_ID, actorId: 'admin-1', ...body });
   });
 
-  // Global Constraints の金額の上限（1,000,000 円）。DB の RETURN_FEE_INVALID・画面（Task 10）と同じ値で、上限ちょうどは通す
-  it('円の手数料（返送料・交換の手数料・交換の送料）は 1000000 まで受け、そのまま入口に渡す', async () => {
-    const body = { ...CREATE_BODY, returnShippingFee: 1000000, exchangeFee: 1000000, exchangeShippingFee: 1000000 };
+  // 返送料・交換の手数料と送料は、仕訳の決まりを決めるまで DB が 0 に止める（S16 の acc_p3_fee_lock_returns）。画面は送らない
+  it.each<[string, Record<string, unknown>]>([
+    ['返送料が1', { returnShippingFee: 1 }],
+    ['返送料が1000000', { returnShippingFee: 1000000 }],
+    ['交換の手数料が1', { exchangeFee: 1 }],
+    ['交換の送料が1', { exchangeShippingFee: 1 }],
+  ])('FREQ-578-AC-05: 返品を作るrouteは0でない返送料・交換の手数料・交換の送料をzodで400にする（%s）', async (_label, change) => {
+    const response = await postReturn(createRequest({ ...CREATE_BODY, ...change }), ORDER_CONTEXT);
+
+    expect(response.status).toBe(400);
+    expect(mockSubmitCreate).not.toHaveBeenCalled();
+  });
+
+  it('FREQ-578-AC-05: 返品を作るrouteは送られない返送料・交換の手数料・交換の送料を0にして入口に渡す', async () => {
+    const body: Record<string, unknown> = { ...CREATE_BODY };
+    for (const key of ['returnShippingFee', 'exchangeFee', 'exchangeShippingFee']) delete body[key];
 
     const response = await postReturn(createRequest(body), ORDER_CONTEXT);
 
     expect(response.status).toBe(200);
-    expect(mockSubmitCreate).toHaveBeenCalledWith(mockDeps, { orderId: ORDER_ID, actorId: 'admin-1', ...body });
+    expect(mockSubmitCreate).toHaveBeenCalledWith(mockDeps, {
+      orderId: ORDER_ID, actorId: 'admin-1', ...body, returnShippingFee: 0, exchangeFee: 0, exchangeShippingFee: 0,
+    });
   });
 
   it('同じ発送の同じ品を、理由を変えて2行にできる（2点は不良、1点は不要）', async () => {

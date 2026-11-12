@@ -31,7 +31,7 @@ import { shipE2eOrder } from './group-g1-test-utils';
 import { uniqueEmail } from './order-email-test-utils';
 import { viewports } from './order-fulfillment-test-utils';
 import { createPermissionActor } from './permission-settings-test-utils';
-import { addVariant, ensureReturnSettings, createReturnInDb, receiveReturnInDb, recordFeePaymentInDb } from './return-test-utils';
+import { addVariant, ensureReturnSettings, createReturnInDb, receiveReturnInDb, recordFeePaymentInDb, withoutReturnFeeLock } from './return-test-utils';
 import {
   callShippingApi as send,
   confirmOnSlipPage,
@@ -238,14 +238,19 @@ for (const viewport of viewports) {
 
         // 交換の返品を受け取ると、手数料（500円 + 300円）のお支払いを待つ交換の品ができる。待っている間は票に選べない
         const variantL = await addVariant(client, base.itemId, { color: 'ホワイト', size: 'L', stock: 3 });
-        const created = await createReturnInDb(client, { orderId: base.orderId, actorId: ctx.actorId, fulfillmentId: fulfillmentIdOf(baseSlip, base) }, {
-          lines: [{ orderItemId: base.orderItemId, quantity: 1, exchange: { variantId: variantL, method: 'stock' } }],
-          exchangeFee: 500,
-          exchangeShippingFee: 300,
-        });
-        const received = await receiveReturnInDb(client, created.returnId, ctx.actorId, {
-          units: [{ lineId: created.lineIds[base.orderItemId], disposition: 'not_restocked', quantity: 1 }],
-          choice: 'none',
+        // 手数料のお支払い待ちは交換の手数料でしか作れないので、DB の 0 の決まり（FREQ-578-AC-05）を外して作って受け取る（判断 P3-D8）。
+        // 外している間は order_returns をつかむので、窓口を呼ぶ手順は外に置く
+        const { created, received } = await withoutReturnFeeLock(client, async () => {
+          const created = await createReturnInDb(client, { orderId: base.orderId, actorId: ctx.actorId, fulfillmentId: fulfillmentIdOf(baseSlip, base) }, {
+            lines: [{ orderItemId: base.orderItemId, quantity: 1, exchange: { variantId: variantL, method: 'stock' } }],
+            exchangeFee: 500,
+            exchangeShippingFee: 300,
+          });
+          const received = await receiveReturnInDb(client, created.returnId, ctx.actorId, {
+            units: [{ lineId: created.lineIds[base.orderItemId], disposition: 'not_restocked', quantity: 1 }],
+            choice: 'none',
+          });
+          return { created, received };
         });
         expect(received.feeDueAmount).toBe(800);
         const exchangeItemId = received.exchangeOrderItemIds[0];
@@ -258,7 +263,8 @@ for (const viewport of viewports) {
         });
 
         // 手数料の入金（今日）を記録すると交換の品は送れるが、入金日（orders.paid_at）は元のまま
-        await recordFeePaymentInDb(client, created.returnId, ctx.actorId, '銀行振込');
+        // 手数料の行を直すので、ここでも決まりを外す
+        await withoutReturnFeeLock(client, () => recordFeePaymentInDb(client, created.returnId, ctx.actorId, '銀行振込'));
         expect(await paidAtOf()).toEqual(paidAtBefore);
         await expect.poll(async () => {
           const snapshot = await readPackingSnapshot(ctx.actorId);

@@ -1,6 +1,7 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
 import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
+import { withoutReturnFeeLock } from './helpers/accounting-returns-fixtures';
 import { createShippedOrderFixture, insertOrderWithLines, insertReturnRecord, variantStock } from './helpers/order-fixtures';
 
 const WRITERS = [
@@ -136,7 +137,7 @@ describeLocalDb('G-1 return receipt, inspection, amount decision and exchange FI
     await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
   });
 
-  test('手数料待ちの交換はFを確保せず、次の注文へ通常割当する', async () => {
+  test('手数料待ちの交換はFを確保せず、次の注文へ通常割当する', () => withoutReturnFeeLock(db(), async () => {
     const f = await fixture({ method: 'make', stock: 1, fee: 500 });
     const next = await waiting(f, '2026-01-03T00:00:00Z');
     const r = await receive(f, { choice: 'none', units: [{ disposition: 'not_restocked', quantity: 1 }] });
@@ -147,7 +148,7 @@ describeLocalDb('G-1 return receipt, inspection, amount decision and exchange FI
       [next.orderItemIds[0]])).rows[0].n).toBe(1);
     expect((await db().query('select blocked_reasons from private.group_g_item_state_ranges($1::uuid[]) where order_item_id=$2',
       [[f.orderId], r.exchange_order_item_ids[0]])).rows[0].blocked_reasons).toContain('exchange_fee_waiting');
-  });
+  }));
 
   test('部分受取・検品・相談・未着/再開・お返しの数量和とpaid_atを保ち、検品再送で戻さない', async () => {
     const f = await fixture({ quantity: 5 });

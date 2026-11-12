@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { hClaims, hRefundFixture, hResult } from './helpers/group-h-refund-fixtures';
 import { describeLocalDb } from './helpers/local-db';
+import { withoutReturnFeeLock } from './helpers/accounting-returns-fixtures';
 import { createUbReturn, ubReceive, type ReceiveUnit } from './helpers/unit-binding-receive';
 import { loadReturnRefundOutstanding, type UnitPricingClient } from '@/lib/orders/unit-pricing/unit-pricing-store';
 
@@ -208,7 +209,7 @@ describeLocalDb('FREQ-642-AC-37: refund after the receive-time refund failed (co
     expect((await refundLines(retry.refund_id)).reduce((sum, l) => sum + Number(l.amount), 0)).toBe(37000);
   });
 
-  test('FREQ-642-AC-37: 返送料（固定の費用 1,000円）は失敗した今すぐの返金から返品の引く手数料に戻り、返し直しで引き直す（16,000円 → 36,000円）', async () => {
+  test('FREQ-642-AC-37: 返送料（固定の費用 1,000円）は失敗した今すぐの返金から返品の引く手数料に戻り、返し直しで引き直す（16,000円 → 36,000円）', () => withoutReturnFeeLock(db(), async () => {
     const { f, ret, received } = await mixedReceive({ fixed: 1000 });
     const fee = async () => Number((await q('select fee_pending_deduction n from public.order_returns where id=$1', [ret.returnId])).rows[0].n);
     const refundOf = async (id: string) => (await q('select amount, return_fee_deduction from public.order_refunds where id=$1', [id])).rows[0];
@@ -220,7 +221,7 @@ describeLocalDb('FREQ-642-AC-37: refund after the receive-time refund failed (co
     expect(retry.amount).toBe(36000);
     expect(await refundOf(retry.refund_id)).toEqual({ amount: 36000, return_fee_deduction: 1000 });
     expect(await fee()).toBe(0);
-  });
+  }));
 
   test('FREQ-642-AC-37: 失敗した今すぐの分を返金しないで終えた後、残りの品を相談で受け取ると、返金は新しい相談の分だけ', async () => {
     const f = await hRefundFixture(db(), true);

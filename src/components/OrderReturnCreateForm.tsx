@@ -16,7 +16,12 @@ import { callRefundApi } from '@/lib/orders/refund/refund-client';
 import { REFUND_ERROR_MESSAGES } from '@/lib/orders/refund/refund-messages';
 import { formatDeadline } from '@/lib/orders/returns/return-calc';
 import { fetchReturnData } from '@/lib/orders/returns/return-client';
-import { RETURN_CARRIER_LABELS, RETURN_ERROR_MESSAGES, RETURN_REASON_LABELS } from '@/lib/orders/returns/return-messages';
+import {
+  FIXED_RETURN_FEE_LOCKED_TEXT,
+  RETURN_CARRIER_LABELS,
+  RETURN_ERROR_MESSAGES,
+  RETURN_REASON_LABELS,
+} from '@/lib/orders/returns/return-messages';
 import {
   RETURN_CARRIERS,
   RETURN_REASONS,
@@ -46,7 +51,10 @@ export type CreateReturnLineRequest = {
   exchangeMethod: ExchangeMethod | null;
 };
 
-/** `POST /api/admin/orders/[id]/returns` の本文（C-3）。手数料の4つは、使わない欄も 0 の整数で送る */
+/**
+ * `POST /api/admin/orders/[id]/returns` の本文（C-3）。割合の手数料は、使わない時も 0 の整数で送る。
+ * 返送料・交換の手数料・交換の送料は、仕訳の決まりを決めるまで送らない（窓口が 0 にする。FREQ-578-AC-05）
+ */
 export type CreateReturnRequest = {
   requestKey: string;
   lines: CreateReturnLineRequest[];
@@ -54,10 +62,7 @@ export type CreateReturnRequest = {
   returnShippingPayer: ShippingPayer;
   returnCarrier: ReturnCarrier | null;
   returnTrackingNumber: string | null;
-  returnShippingFee: number;
   restockingFeePercent: number;
-  exchangeFee: number;
-  exchangeShippingFee: number;
   shopNote: string | null;
   notifyCustomer: boolean;
 };
@@ -80,9 +85,6 @@ const UNKNOWN_CREATE_OUTCOME_MESSAGE =
   '返品を作れたか確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。';
 // 理由のメモの上限は DB の order_return_lines.reason_note と同じ（C-0）
 const REASON_NOTE_MAX_LENGTH = 255;
-// 金額（円）の欄の上限（Global Constraints「金額の入力の上限」）。DB の関数・窓口・ショップの設定の画面と同じ値で、桁の打ち間違いを止める
-const FEE_MAX_YEN = 1_000_000;
-const FEE_OVER_MAX_MESSAGE = '0から1000000までの整数（半角）で入れてください。';
 // Task 12 と同じ言葉と入力の確かめ
 const PERCENT_MESSAGE = '0から100までの整数（半角）で入れてください。';
 // 伝票番号の形は DB の CHECK と同じ（P16）
@@ -138,10 +140,7 @@ const EMPTY_LINE_INPUT: LineInput = {
 
 /** 手数料の入力。null は「手で直していない」（設定の値から始める） */
 type FeesEntered = {
-  shipping: number | null;
   restockingPercent: string | null;
-  exchange: number | null;
-  exchangeShipping: number | null;
 };
 
 /** 選んだ品（数が1以上）。送る中身と、入力の確かめに使う */
@@ -254,16 +253,10 @@ type NumberFieldProps = {
   value: number;
   max: number;
   disabled: boolean;
-  /**
-   * 付けると、max を超えた数を収めずにそのまま持ち、この文を欄の下に出す（金額の欄。桁の打ち間違いを黙って別の額に変えない）。
-   * 付けなければ、0 から max までに収める
-   */
-  overMaxMessage?: string;
   onChange: (next: number) => void;
 };
 
-function NumberField({ id, label, value, max, disabled, overMaxMessage, onChange }: NumberFieldProps) {
-  const over = overMaxMessage !== undefined && value > max;
+function NumberField({ id, label, value, max, disabled, onChange }: NumberFieldProps) {
   return (
     <div>
       <label htmlFor={id} className="block font-acumin lk-text-3xs text-[#474747]">
@@ -278,17 +271,9 @@ function NumberField({ id, label, value, max, disabled, overMaxMessage, onChange
         step={1}
         value={value}
         disabled={disabled}
-        aria-invalid={over ? true : undefined}
-        aria-describedby={over ? `${id}-error` : undefined}
-        // 金額の欄は上限を超えた数も残して誤りに見せる。ほかは 0 から max までに収める
-        onChange={(event) => onChange(clampQuantity(event.target.value, overMaxMessage === undefined ? max : Number.MAX_SAFE_INTEGER))}
+        onChange={(event) => onChange(clampQuantity(event.target.value, max))}
         className="mt-1 h-9 w-full border border-[#d4d4d4] bg-white px-2 font-acumin lk-text-3xs text-black disabled:bg-[#f3f3f3]"
       />
-      {over ? (
-        <p id={`${id}-error`} className="mt-1 font-acumin lk-text-3xs text-red-700">
-          {overMaxMessage}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -441,12 +426,7 @@ export default function OrderReturnCreateForm({ orderId, onClose, onCreated, onU
   const [methodEntered, setMethodEntered] = useState<ReturnMethod | null>(null);
   const [carrier, setCarrier] = useState<ReturnCarrier | ''>('');
   const [trackingNumber, setTrackingNumber] = useState('');
-  const [feesEntered, setFeesEntered] = useState<FeesEntered>({
-    shipping: null,
-    restockingPercent: null,
-    exchange: null,
-    exchangeShipping: null,
-  });
+  const [feesEntered, setFeesEntered] = useState<FeesEntered>({ restockingPercent: null });
   const [note, setNote] = useState('');
   const [notifyCustomer, setNotifyCustomer] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -475,7 +455,6 @@ export default function OrderReturnCreateForm({ orderId, onClose, onCreated, onU
   const settings = materials?.settings ?? null;
   const stopped = busy || uncertain;
   const selected = materials ? selectedLinesOf(materials, inputs) : [];
-  const hasExchange = selected.some((entry) => entry.input.resolution === 'exchange');
   const visibleShipments = (materials?.shipments ?? [])
     .map((shipment) => ({ shipment, lines: shipment.lines.filter((line) => line.returnable >= 1) }))
     .filter((entry) => entry.lines.length > 0);
@@ -491,26 +470,19 @@ export default function OrderReturnCreateForm({ orderId, onClose, onCreated, onU
     label: RETURN_METHOD_LABELS[option],
   }));
 
-  // 手数料は、設定で使う物だけ出す。出さない欄は 0 で送る（DB も、設定で使わない手数料は 0）。
-  // 返送料の定額を差し引くのは、お客様の負担でお店の送り状の時だけ（設計書 8-3。DB の既定と同じ）。お店の負担なら欄を出さず 0 で送る
+  // 割合の手数料は、設定で使う時だけ出す。出さない時は 0 で送る（DB も、設定で使わない手数料は 0）。
+  // 返送料の定額は、お客様の負担でお店の送り状の時だけ欄を出すが、仕訳の決まりを決めるまで無効にして理由を出し、送らない
+  // （窓口が 0 にする）。交換の手数料と送料は設定で使えない（DB が止める）ので出さない（FREQ-578-AC-05）
   const showShippingFee = method === 'shop_label' && payer === 'customer';
   const showRestocking = settings?.restockingFeeEnabled ?? false;
-  const showExchangeFees = (settings?.exchangeFeesEnabled ?? false) && hasExchange;
-  const shippingFee = feesEntered.shipping ?? settings?.shopLabelFee ?? 0;
   const restockingPercentText = feesEntered.restockingPercent ?? String(settings?.restockingFeePercent ?? 0);
   const restockingPercent = Number(restockingPercentText.trim());
   const restockingPercentInvalid = showRestocking &&
     (!/^[0-9]{1,9}$/.test(restockingPercentText.trim()) || restockingPercent > 100);
-  const exchangeFee = feesEntered.exchange ?? settings?.exchangeFee ?? 0;
-  const exchangeShippingFee = feesEntered.exchangeShipping ?? settings?.exchangeShippingFee ?? 0;
 
   const trackingText = trackingNumber.trim();
   // 返送不要の間は伝票番号の欄を隠して送らないので、確かめない（T9-9・T9-11 と同じ「出している欄だけ」）
   const trackingInvalid = method !== 'not_required' && trackingText !== '' && !TRACKING_PATTERN.test(trackingText);
-  // 金額の欄は上限を超えた数を残して誤りを出す。出している欄だけを見る（出していない欄は 0 で送る）
-  const feeOverMax =
-    (showShippingFee && shippingFee > FEE_MAX_YEN) ||
-    (showExchangeFees && (exchangeFee > FEE_MAX_YEN || exchangeShippingFee > FEE_MAX_YEN));
   const noReturnable = materials !== null && visibleShipments.length === 0;
   const canSubmit =
     Boolean(materials) &&
@@ -518,7 +490,6 @@ export default function OrderReturnCreateForm({ orderId, onClose, onCreated, onU
     !stopped &&
     selected.length > 0 &&
     !trackingInvalid &&
-    !feeOverMax &&
     !restockingPercentInvalid &&
     selected.every(lineIsValid);
 
@@ -553,10 +524,7 @@ export default function OrderReturnCreateForm({ orderId, onClose, onCreated, onU
     returnShippingPayer: payer,
     returnCarrier: method === 'not_required' || carrier === '' ? null : carrier,
     returnTrackingNumber: method === 'not_required' ? null : trackingText || null,
-    returnShippingFee: showShippingFee ? shippingFee : 0,
     restockingFeePercent: showRestocking ? restockingPercent : 0,
-    exchangeFee: showExchangeFees ? exchangeFee : 0,
-    exchangeShippingFee: showExchangeFees ? exchangeShippingFee : 0,
     shopNote: note.trim() || null,
     notifyCustomer,
   });
@@ -726,21 +694,20 @@ export default function OrderReturnCreateForm({ orderId, onClose, onCreated, onU
               ) : null}
             </section>
 
-            {showShippingFee || showRestocking || showExchangeFees ? (
+            {showShippingFee || showRestocking ? (
               <section aria-labelledby="return-fees-heading" className="space-y-2">
                 <h4 id="return-fees-heading" className="font-acumin lk-text-sm text-black">
                   手数料
                 </h4>
                 <div className="grid grid-cols-2 gap-3">
                   {showShippingFee ? (
-                    <NumberField
+                    <TextField
                       id="return-shipping-fee"
                       label="返送料（円）"
-                      value={shippingFee}
-                      max={FEE_MAX_YEN}
-                      overMaxMessage={FEE_OVER_MAX_MESSAGE}
-                      disabled={stopped}
-                      onChange={(next) => updateFees({ shipping: next })}
+                      value="0"
+                      inputMode="numeric"
+                      disabled
+                      helperText={FIXED_RETURN_FEE_LOCKED_TEXT}
                     />
                   ) : null}
                   {showRestocking ? (
@@ -753,28 +720,6 @@ export default function OrderReturnCreateForm({ orderId, onClose, onCreated, onU
                       errorText={restockingPercentInvalid ? PERCENT_MESSAGE : undefined}
                       onChange={(event) => updateFees({ restockingPercent: event.target.value })}
                     />
-                  ) : null}
-                  {showExchangeFees ? (
-                    <>
-                      <NumberField
-                        id="return-exchange-fee"
-                        label="交換の手数料（円）"
-                        value={exchangeFee}
-                        max={FEE_MAX_YEN}
-                        overMaxMessage={FEE_OVER_MAX_MESSAGE}
-                        disabled={stopped}
-                        onChange={(next) => updateFees({ exchange: next })}
-                      />
-                      <NumberField
-                        id="return-exchange-shipping-fee"
-                        label="交換の送料（円）"
-                        value={exchangeShippingFee}
-                        max={FEE_MAX_YEN}
-                        overMaxMessage={FEE_OVER_MAX_MESSAGE}
-                        disabled={stopped}
-                        onChange={(next) => updateFees({ exchangeShipping: next })}
-                      />
-                    </>
                   ) : null}
                 </div>
               </section>

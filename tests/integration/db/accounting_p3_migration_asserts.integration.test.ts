@@ -2,7 +2,8 @@
 import { createHash } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
 import {
-  ACCOUNTING_S15_FILES, ACCOUNTING_S15_SQL as sql, accountingS15Section, pinAccountingS15Baseline, seedReturnRefundParents,
+  ACCOUNTING_S15_FILES, ACCOUNTING_S15_SQL as sql, ACCOUNTING_S16_FILES, ACCOUNTING_S16_SQL as s16Sql, accountingS15Section,
+  accountingS16Section, pinAccountingS15Baseline, seedReturnRefundParents,
 } from './helpers/accounting-returns-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
 import { PENDING_REASONS } from '@/lib/accounting/posting-types';
@@ -202,6 +203,82 @@ describeLocalDb('S15 final assert: controller only', (db) => {
     ["update pg_temp.accounting_s15_baseline set payload = payload - 'return_facts'", 'acc_s15_existing_dml_allowlist'],
     ["update pg_temp.accounting_s15_baseline set payload = jsonb_set(payload, '{refund_events}', '5')", 'acc_s15_existing_dml_allowlist'],
   ])('FREQ-576-AC-04: S15改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// Accounting plan 3 S16 (FREQ-578-AC-05): the fixed return fees are held at 0 by two CHECKs; no row is written.
+const s16Assertion = accountingS16Section('FINAL_ASSERT');
+const s16Body = accountingS16Section('BODY');
+const s16Details = ['acc_s16_settings_checks', 'acc_s16_returns_checks', 'acc_s16_existing_dml_allowlist'];
+
+describe('S16 source contract (no DB)', () => {
+  test('FREQ-578-AC-05: S16はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S16_FILES).toHaveLength(1);
+    expect(ACCOUNTING_S16_FILES[0] > ACCOUNTING_S15_FILES[0]).toBe(true);
+    expect(s16Sql).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(s16Sql.startsWith('BEGIN;\n')).toBe(true);
+    expect(s16Sql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(s16Sql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(s16Sql.trimEnd()).toMatch(/-- ACC_S16_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect(s16Assertion).not.toBe('');
+    expect([...new Set([...s16Assertion.matchAll(/'(acc_s16_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...s16Details].sort());
+    expect(s16Assertion).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(s16Assertion).not.toMatch(/ERRCODE = '(?!55000')/);
+  });
+
+  test('FREQ-578-AC-05: S16の本文は制約2つを足すだけで、行を書かず関数に触れず、割合の手数料を縛らない', () => {
+    const statements = s16Body.split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n');
+    expect([...statements.matchAll(/^ALTER TABLE ([\w.]+)\s+ADD CONSTRAINT (\w+) CHECK/gm)].map((m) => `${m[1]} ${m[2]}`))
+      .toEqual(['public.shop_return_settings acc_p3_fee_lock_settings', 'public.order_returns acc_p3_fee_lock_returns']);
+    expect(statements.match(/;/g)).toHaveLength(2);
+    expect(statements).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE|FUNCTION|GRANT|REVOKE|DO)\b/);
+    expect(statements).not.toContain('restocking');
+    expect(statements).toMatch(/acc_p3_fee_lock_returns CHECK \([^;]*\) NOT VALID;/);
+    expect(statements).not.toMatch(/acc_p3_fee_lock_settings CHECK \([^;]*\) NOT VALID;/);
+  });
+});
+
+describeLocalDb('S16 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  async function attempt(change = ''): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s16_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (change) await db().query(change);
+      await db().query(s16Assertion);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s16_assert'); await db().query('release savepoint acc_s16_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+
+  test('FREQ-578-AC-05: S16末尾assertは適用後の状態と呼出元search_pathを許す', async () => {
+    expect(s16Assertion).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt("set local search_path = ''")).toBeNull();
+  });
+
+  test.each([
+    ['alter table public.shop_return_settings drop constraint acc_p3_fee_lock_settings', 'acc_s16_settings_checks'],
+    [`alter table public.shop_return_settings drop constraint acc_p3_fee_lock_settings,
+      add constraint acc_p3_fee_lock_settings check (shop_label_fee = 0 and exchange_fee = 0 and exchange_shipping_fee = 0)`, 'acc_s16_settings_checks'],
+    [`alter table public.shop_return_settings drop constraint acc_p3_fee_lock_settings,
+      add constraint acc_p3_fee_lock_settings check (shop_label_fee = 0 and exchange_fees_enabled = false and exchange_fee = 0
+        and exchange_shipping_fee = 0) not valid`, 'acc_s16_settings_checks'],
+    ['alter table public.shop_return_settings add constraint acc_probe check (restocking_fee_percent = 0) not valid', 'acc_s16_settings_checks'],
+    ['alter table public.order_returns drop constraint acc_p3_fee_lock_returns', 'acc_s16_returns_checks'],
+    [`alter table public.order_returns drop constraint acc_p3_fee_lock_returns,
+      add constraint acc_p3_fee_lock_returns check (return_shipping_fee = 0 and exchange_fee = 0) not valid`, 'acc_s16_returns_checks'],
+    ['alter table public.order_refunds add constraint acc_p3_fee_lock_probe check (true)', 'acc_s16_returns_checks'],
+    ['delete from public.shop_return_settings', 'acc_s16_existing_dml_allowlist'],
+  ])('FREQ-578-AC-05: S16改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });

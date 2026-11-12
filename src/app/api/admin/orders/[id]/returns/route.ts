@@ -8,7 +8,6 @@ import { INVALID_REQUEST_BODY, REFUND_ERROR_MESSAGES, refundErrorBody } from '@/
 import { createDefaultRefundServiceDeps } from '@/lib/orders/refund/refund-service';
 import { loadReturnableUnits } from '@/lib/orders/returns/return-counts';
 import {
-  MAX_FEE_YEN,
   RETURN_RATE_LIMITS,
   createReturnAudit,
   guardReturnWrite,
@@ -52,12 +51,12 @@ const bodySchema = z.object({
   returnShippingPayer: z.enum(['shop', 'customer']),
   returnCarrier: optionalCarrier,
   returnTrackingNumber: optionalTrackingNumber,
-  // 手数料の4つは必須の0以上の整数。画面は設定から入れた値（使わない手数料は 0）を送る（Task 10）。
-  // 円の3つは Global Constraints の金額の上限（1,000,000 円。DB の RETURN_FEE_INVALID と同じ範囲）まで
-  returnShippingFee: z.number().int().min(0).max(MAX_FEE_YEN),
+  // 割合の手数料は必須の 0〜100 の整数。返送料・交換の手数料・交換の送料は、仕訳の決まりを決めるまで画面は送らず 0 にする
+  // （0 でない値は 400。DB の CHECK acc_p3_fee_lock_returns と同じ。FREQ-578-AC-05）
+  returnShippingFee: z.literal(0).default(0),
   restockingFeePercent: z.number().int().min(0).max(100),
-  exchangeFee: z.number().int().min(0).max(MAX_FEE_YEN),
-  exchangeShippingFee: z.number().int().min(0).max(MAX_FEE_YEN),
+  exchangeFee: z.literal(0).default(0),
+  exchangeShippingFee: z.literal(0).default(0),
   shopNote: optionalText(ADMIN_NOTE_MAX_LENGTH),
   notifyCustomer: z.boolean(),
 });

@@ -53,6 +53,12 @@ export const RETURN_ERROR_MESSAGES = {
   UNIT_PRICING_REQUIRED: { status: 409, message: '返金の額の計算が必要です。画面を開き直してください。' },
 } as const satisfies Record<ReturnErrorCode, { status: 400 | 403 | 404 | 409; message: string }>;
 
+/**
+ * 返送料の定額・交換の手数料・交換の送料が使えない理由（FREQ-578-AC-05）。仕訳の決まりを決めるまで DB が 0 に止める
+ * （CHECK acc_p3_fee_lock_*）ので、設定・返品を作る・承認の画面は、その欄を無効にしてこの文を出す。
+ */
+export const FIXED_RETURN_FEE_LOCKED_TEXT = '現在は使えません。仕訳の決まりを決めてから使えます';
+
 export const RETURN_DISPLAY_STATUS_LABELS: Record<ReturnDisplayStatus, string> = {
   requested: '返品の申し込み',
   in_progress: '返品中',
