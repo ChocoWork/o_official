@@ -1,5 +1,7 @@
 # テスト仕様
 
+> 2026-11-12 確認日（オーナー修正 X3 / FREQ-642-AC-36）: 商品ページの案内の初期1行・全文の非表示と開いた後の表示を単体に追加し、390/768/1280px の FR-ITEM-DETAIL-071 を追加。mobile 390×844px の初期画面に「YOU MAY ALSO LIKE」が入ることも確かめる。FR-ITEM-DETAIL-070 は先に案内を開く。E2E は未実行（調整役が実行）。
+
 > 2026-11-12 確認日（X2 / FREQ-642-AC-35・Fix round 1）: 調整役の実測（2026-11-12）: `npm run db:reset` 後の関連DB101ファイルは3563件通過・12件スキップ・1件失敗（AC-35の旧注文seedが `ORDER_RETURN_IMMUTABLE`。承認時に10%を設定する経路へ修正）。その後、FREQ-642のDB136件すべて通過。本番ビルドのE2Eは `isolated-global` の FR-ADMIN-165/166/167 が27件通過、`chromium` の FR-ACCOUNT-048/049 が12件通過。Fix round 1で追加した相談後返金の2 assertionも、調整役が db:reset 後に流して通過（FREQ-642 ほかの DB 167件通過、2026-11-12）。X2は未 push。
 
 > 2026-11-12 確認日（オーナー修正 X1）: AC-32〜34 と3幅の FR-ACCOUNT-049 を追加。調整役が手元の DB で確認（2026-11-12）: 旧本文で AC-34 の2件が失敗、新本文で AC-34・R33 が通過。db:reset 後に関連 DB 37ファイル1475件通過・8件スキップ。Fix round 1 の追加 DB 1件も調整役が実行して通過（AC-34・R33 の7件通過）。E2E は FR-ACCOUNT-049・FR-CHECKOUT-037・FR-CHECKOUT-061・FR-ACCOUNT-048 を3幅で本番ビルドに流し全件通過（048 は承認の手助けが返送先を入れるよう直した）。
@@ -1561,7 +1563,7 @@ AC-07の3行・予備あり・介在受取とAC-08は旧本文だけで組み立
 
 根拠は[承認設計](../../superpowers/specs/2026-11-08-exchange-unit-binding-design.md)9章（AC-01〜AC-31）、[詳細設計](../../04_DetailDesign/pages/16_admin.md)のDD-ADMIN-021〜023と[お客様のページ](../../04_DetailDesign/pages/15_account.md)。返品は追跡の範囲外。試験名の先頭は `FREQ-642-AC-NN:`（受け入れ条件）か `DD-ADMIN-02N`（詳細設計）。実測日は2026-11-11。DB結合は手元のSupabase（`describeLocalDb`のBEGIN/ROLLBACK）、E2Eは本番ビルド（`next build && next start`）・手元のSupabase・390/768/1280px。
 
-### E2E（`FR-ADMIN-165`・`166`、`FR-ACCOUNT-048`、`FR-ITEM-DETAIL-070`、`FR-CHECKOUT-061`、`FR-LEGAL-008`、`FR-TERMS-007`）
+### E2E（`FR-ADMIN-165`・`166`、`FR-ACCOUNT-048`、`FR-ITEM-DETAIL-070`・`071`、`FR-CHECKOUT-061`、`FR-LEGAL-008`、`FR-TERMS-007`）
 
 注文は注文の時の写し（割引の定義・1着ごとの払った額・着の状態）のある注文を、本物の割引の計算（`buildOrder`）で手元のDBに作る（`e2e/unit-binding-test-utils.ts`）。管理画面は本物のログイン（aal2）で動かし、見込みの窓口（`receive-estimate`・`refund-estimate`・`return-request/estimate`）は本物を通す。受け取り（`/receive`）と返金（`/refund`）のPOSTだけは、HTTPの窓口（route）の層ごと試験の中の入口（`receiveReturnAndRefund`・`submitAdminRefund`）に差し替え、Stripeを「すぐ成功する」偽物にする（外へ返金を頼まない）。入口は本物なので値段の計画の作成とDBの関数は通るが、認可・CSRF・回数の制限・画面の本文のzodの検証は通らない（窓口の検証は `tests/unit/api/admin/order-return-money-routes.test.ts` が持つ）。AC-25の `actor_id` は差し替えが渡す管理者の番号。額は手元のDB（`order_refunds`・`order_unit_events`・`order_unit_slots`）から読む。
 
@@ -1578,10 +1580,20 @@ AC-07の3行・予備あり・介在受取とAC-08は旧本文だけで組み立
 | `e2e/FR-ACCOUNT-048-return-request-estimate.spec.ts` | `FREQ-642-AC-21: 確かめる段に返金の見込み 5,500円が出て、受け取りで返った額と同じ` | お客様の画面で例7のパンツを「その他」で申し込む | 「返金の見込み: 5,500円」。承認・受け取りで返した額も5,500円 | 実装者 | 2026-11-11 3件×3幅 通過 |
 | 同上 | `FREQ-642-AC-21: 交換だけの申し込みは「お金のやり取りはありません」と出て、返金の見込みは出ない` | 「サイズが小さい」で交換を申し込む | 「お金のやり取りはありません」が出て「返金の見込み」は0件 | 実装者 | 2026-11-11 3件×3幅 通過 |
 | 同上 | `FREQ-642-AC-30: 破損・不良と注文と違う品が届いた、を選ぶとご希望は交換だけで、返金は出ない` | 両方の理由を選ぶ。申し込みの窓口の材料も読む | 「ご希望」は無効で`exchange`だけ（`refund`の選択肢0件）。材料の`resolutions`が2つとも`exchange_only` | 実装者 | 2026-11-11 3件×3幅 通過 |
-| `e2e/FR-ITEM-DETAIL-070-discount-return-note.spec.ts` | `FREQ-642-AC-22: 商品ページに割引の扱いの文が出て、横にはみ出さない` | `/item/1` | `item-discount-return-note`に割引の扱いの文 | 実装者 | 2026-11-11 1件×3幅 通過 |
+| `e2e/FR-ITEM-DETAIL-070-discount-return-note.spec.ts` | `FREQ-642-AC-22: 商品ページに割引の扱いの文が出て、横にはみ出さない` | `/item/1` で「詳しく」を開く | `item-discount-return-note`に割引の扱いの全文、横はみ出しなし | 実装者・調整役 | 2026-11-11 の変更前は1件×3幅 通過。X3 の開く操作を足した後は未実行 |
+| `e2e/FR-ITEM-DETAIL-071-discount-return-note-disclosure.spec.ts` | `FREQ-642-AC-36: 初めは要約の1行だけが見え、開くと割引の扱いの全文が見える` | `/item/1`、390×844・768×1024・1280×900px | 初期は「割引のあるご注文の返品・交換について」と「詳しく」の1行、全文は非表示。mobile は開く前に「YOU MAY ALSO LIKE」の上端が0以上844px未満。クリック後に現行の全文、横はみ出しなし | 実装者・調整役 | 1件×3幅を定義、未実行（調整役が実行） |
 | `e2e/FR-CHECKOUT-061-discount-return-note.spec.ts` | `FREQ-642-AC-22, FREQ-642-AC-32: …最終確認画面に割引の扱いの文が出る` | 入力画面から最終確認画面へ進む | `checkout-discount-return-note`に同じ文 | 実装者 | 2026-11-11 1件×3幅 通過 |
 | `e2e/FR-LEGAL-008-discount-return-policy.spec.ts` | `FREQ-642-AC-22: /legal に割引の扱いの文が出て、横にはみ出さない` | `/legal` | `legal-discount-return-note`に同じ文 | 実装者 | 2026-11-11 1件×3幅 通過 |
 | `e2e/FR-TERMS-007-discount-return-policy.spec.ts` | `FREQ-642-AC-22: /terms に割引の扱いの文が出て、横にはみ出さない` | `/terms` | `terms-discount-return-note`に同じ文 | 実装者 | 2026-11-11 1件×3幅 通過 |
+
+### オーナー修正 X3（AC-36、2026-11-12）
+
+| レベル | 対象・手順と期待値 | 実行状態 |
+| --- | --- | --- |
+| 単体（RTL） | `tests/unit/components/ItemDetailDiscountReturnNote.test.tsx`。既存 AC-22 の文を保ち、AC-36 の初期案内の表示・全文の非表示と「詳しく」を押した後の全文を確かめる | RED は新規2件失敗・既存1件成功、実装後は3件成功 |
+| E2E | 上の FR-ITEM-DETAIL-071 の3幅。見出しの位置はクリック前に測り、FR-ITEM-DETAIL-017 は変更しない。FR-ITEM-DETAIL-070 は先に開いて全文を確かめる | 未実行。実際の1行・見出し位置・既存の間隔の回帰確認は調整役が行う |
+
+商品ページだけを折りたたむ。`DISCOUNT_RETURN_NOTE`、注文の最終確認・`/legal`・`/terms` の初期の全文表示、名前・価格から説明までの間隔は保つ。
 
 ### オーナー修正 X2（AC-35、2026-11-12）
 
@@ -1639,7 +1651,7 @@ AC-07の3行・予備あり・介在受取とAC-08は旧本文だけで組み立
 | `tests/unit/components/OrderReturnRefundDialog.unitPricing.test.tsx` | 5 | AC-20、DD-ADMIN-023 | 額を決めて返金の画面の標準の額（相談の残り） |
 | `tests/unit/components/OrderRefundDialog.unitPricing.test.tsx` | 8 | AC-20・28、DD-ADMIN-023 | 返金の画面：発送前の品だけ見込みを聞く、発送後の品は聞かない |
 | `tests/unit/components/DiscountReturnNotePages.test.tsx` | 2 | AC-22 | `/legal`・`/terms`の割引の扱いの文 |
-| `tests/unit/components/ItemDetailDiscountReturnNote.test.tsx` | 1 | AC-22 | 商品ページの文 |
+| `tests/unit/components/ItemDetailDiscountReturnNote.test.tsx` | 3 | AC-22・36 | 商品ページの文、初期の案内と全文の非表示、開いた後の全文（X3） |
 | 既存の試験の合わせ直し | — | — | `ReturnRequestConfirm`・`return-request-model`・`customer-return-client`・`FinalConfirmationStep`・`return-service`・`refund-service` などの単体と、`group_g1_*`・`group_h_*`・`return_postgrest`・`refund_postgrest` などのDB結合を、新しい引数（値段の計画）・記号・固定の数に合わせた（件数は各Taskの報告） |
 
 DB結合・単体の実測は各Taskの実装者と調整役の報告のとおり（2026-11-10〜11-11。手元のSupabase）。この節では再実行していない。
@@ -1659,7 +1671,7 @@ DB結合・単体の実測は各Taskの実装者と調整役の報告のとお�
 | AC-07 相談後の返金の標準の額（最終直し R34） | `tests/integration/db/unit-binding-refunds.integration.test.ts`：`FREQ-642-AC-07: R34 1つ目の相談の返金を下げた後の2つ目の相談の返金は、画面の見込み(2つ目の出来事の分)と同じ額`・`FREQ-642-AC-07: R34 1つ目の相談の返金を上げた後の2つ目の相談の返金も、画面の見込みと同じ額`（3着の注文。DB の返金額 = 画面の見込みの基準 = 2つ目の出来事の `consult_refund`） |
 | AC-30 店長が交換を返金に変える | `tests/integration/db/unit-binding-receive.integration.test.ts`：`FREQ-642-AC-30: 交換の頼みを返金に変えた行は、お店の側の事情で返った枠になる（17,000円）`（2026-11-11 足した）。`tests/unit/lib/orders/unit-pricing/unit-pricing-service.test.ts`：`FREQ-642-AC-26: 交換の頼みを店が返金に変えた行は shop の扱いで…` |
 
-穴: 受け入れ条件35件のすべてに、題に ID を持つ試験が結び付く（AC-32〜34 は2026-11-12 X1、AC-35 はX2で追加。実行状態は上のX1・X2の表）。ただし単体の純関数だけで確かめている条件がある（AC-01・08・11・13・24・29 の一部。`unit-event-plan.test.ts`）。DB・画面で確かめていない分岐は下の「まだ試していない分岐」に書く。AC-01 の「残る着は手元にある」は `unit-binding-receive.integration.test.ts` の AC-02 の試験に足した確かめ（2026-11-12、調整役のFREQ-642 DB136件通過に含む）。
+穴: 受け入れ条件36件のすべてに、題に ID を持つ試験が結び付く（AC-32〜34 は2026-11-12 X1、AC-35 はX2、AC-36 はX3で追加。実行状態は上のX1・X2・X3の表。AC-36 の3幅のE2Eは未実行）。ただし単体の純関数だけで確かめている条件がある（AC-01・08・11・13・24・29 の一部。`unit-event-plan.test.ts`）。DB・画面で確かめていない分岐は下の「まだ試していない分岐」に書く。AC-01 の「残る着は手元にある」は `unit-binding-receive.integration.test.ts` の AC-02 の試験に足した確かめ（2026-11-12、調整役のFREQ-642 DB136件通過に含む）。
 
 ### 流し方と限り
 

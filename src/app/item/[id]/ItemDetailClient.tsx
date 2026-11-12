@@ -885,13 +885,19 @@ export default function ItemDetailClient({ id }: Props) {
                       {discountAds.join(" ")}
                     </p>
                   ) : null}
-                  {/* FREQ-642-AC-22: 割引の扱いの文。名前・価格の塊の中に置き、塊と説明文の間の間隔（FREQ-164・165・300）を変えない */}
-                  <p
-                    data-testid="item-discount-return-note"
-                    className="mt-2 lk-text-3xs leading-relaxed text-[#474747]"
-                  >
-                    {DISCOUNT_RETURN_NOTE}
-                  </p>
+                  {/* FREQ-642-AC-22・36: 割引の扱いの文は初めは折りたたむ。名前・価格の塊の中に置き、塊と説明文の間の間隔（FREQ-164・165・300）を変えない */}
+                  <details className="mt-2 lk-text-3xs leading-relaxed text-[#474747]">
+                    <summary className="flex cursor-pointer list-none items-center gap-2 whitespace-nowrap [&::-webkit-details-marker]:hidden">
+                      <span>割引のあるご注文の返品・交換について</span>
+                      <span className="underline underline-offset-2">詳しく</span>
+                    </summary>
+                    <p
+                      data-testid="item-discount-return-note"
+                      className="mt-2 lk-text-3xs leading-relaxed text-[#474747]"
+                    >
+                      {DISCOUNT_RETURN_NOTE}
+                    </p>
+                  </details>
                 </div>
                 {/* FREQ-299: md 以上のウィッシュリストは商品名の右端にハートのみ */}
                 <div

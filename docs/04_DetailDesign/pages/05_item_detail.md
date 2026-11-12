@@ -1,6 +1,6 @@
 # 1.5 商品詳細ページ（ITEM DETAIL）詳細設計
 
-> 状態: 既存設計 | 実装状況は項目ごとに要再照合
+> 状態: 既存設計 | 確認日: 2026-11-12 | 実装状況は項目ごとに要再照合（割引の扱いの折りたたみを X3 で更新）
 
 ## 概要
 
@@ -121,10 +121,12 @@ GET /api/items/[id] は returnIneligible: boolean を返す。画面の Item.ret
 - `src/styles/detail-layout.css` の `.detail-page-main`（`Providers.tsx` が `/item/:id`・`/look/:id` の main に付ける）は、768〜1023px で左右パディング 20px。ほかの幅は 6.25% のまま。以前は 6.25% が全幅に効き、`ItemDetailClient.tsx` の `md:-ml-5`・`md:pr-3`（20px 前提）と合わず間隔が 57〜69px になっていた
 - 2026-11-08: LOOK 詳細（`/look/[id]`）も同じ列の計算で同じずれ（右端 57〜76px）が残っていたので、オーナーの許可を得て同じ 20px を効かせた（FREQ-288-AC-04）。商品詳細だけに付けていた `.item-detail-page-main` の印は無くした。
 
-## 割引の扱いの文（FREQ-642 / AC-22）
+## 割引の扱いの文（FREQ-642-AC-22・FREQ-642-AC-36）
 
-確認日: 2026-11-11
+確認日: 2026-11-12（オーナー修正 X3）
 
-- 商品名・価格・納期の塊（`item-detail-identity`）の中、割引の案内の後に（塊と商品の説明の間の間隔 FREQ-164・165・300 を変えないため。2026-11-11 に全件の E2E で間隔の試験が落ちて移した）、`data-testid="item-discount-return-note"` の段を1つ出す。文の型は `lk-text-3xs leading-relaxed text-[#474747]`。全商品に出す。
-- 文: お手元に残る商品の割引後の価格を差し引いて返金いたします（文は `src/lib/orders/returns/discount-return-note.ts` の `DISCOUNT_RETURN_NOTE` 1つを4か所が読む。設計 6-1 の案のまま、言い回しはオーナーが後で直す）。
-- 単体: tests/unit/components/ItemDetailDiscountReturnNote.test.tsx。幅の E2E は FR-ITEM-DETAIL-070（Task 10）。
+- 商品名・価格・納期の塊（`item-detail-identity`）の中、割引の案内の後に、全商品で `<details>` / `<summary>` を出す。初めは閉じ、「割引のあるご注文の返品・交換について」と開く操作「詳しく」を1行に並べる。商品ページは既存の Accordion を説明・仕様欄で使っていないため、ネイティブの開閉を使い、追加の JavaScript や状態を持たない。
+- 開くと `DISCOUNT_RETURN_NOTE` の全文が表示される。全文を持つ段に `data-testid="item-discount-return-note"` と既存の `mt-2 lk-text-3xs leading-relaxed text-[#474747]` を保つ。閉じた時は全文を表示しない。名前・価格の塊から商品の説明までの間隔 FREQ-164・165・300 は変えない。
+- 文は [discount-return-note.ts](../../../src/lib/orders/returns/discount-return-note.ts) の `DISCOUNT_RETURN_NOTE` をそのまま読む。注文の最終確認・`/legal`・`/terms` は初めから全文を表示する。
+- 390/768/1280px で案内が1行に収まり、開くと全文が表示されることを確かめる。mobile 390×844px は、閉じた初期表示で「YOU MAY ALSO LIKE」の見出しの上端が高さ844px以内に入る（FREQ-155-AC-01）。
+- 単体: [ItemDetailDiscountReturnNote.test.tsx](../../../tests/unit/components/ItemDetailDiscountReturnNote.test.tsx)。E2E: 全文と横はみ出しは [FR-ITEM-DETAIL-070](../../../e2e/FR-ITEM-DETAIL-070-discount-return-note.spec.ts) で先に開いて確認し、初期非表示・1行・開閉・mobile の見出しは [FR-ITEM-DETAIL-071](../../../e2e/FR-ITEM-DETAIL-071-discount-return-note-disclosure.spec.ts) で確認する。既存の FR-ITEM-DETAIL-017 は変更しない。今回 E2E は未実行で、実際の配置は調整役が確認する。

@@ -27,6 +27,7 @@ for (const viewport of viewports) {
     test('FREQ-642-AC-22: 商品ページに割引の扱いの文が出て、横にはみ出さない', async ({ page }) => {
       await page.goto('/item/1');
       await expect(page.getByTestId('item-detail-identity')).toBeVisible();
+      await page.getByText('詳しく', { exact: true }).click();
       const note = page.getByTestId('item-discount-return-note');
       await expect(note).toBeVisible();
       for (const part of NOTE_PARTS) await expect(note).toContainText(part);
