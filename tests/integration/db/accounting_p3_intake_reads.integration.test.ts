@@ -9,7 +9,8 @@ import {
   saveFailureTxn, saveRefundTxn, seedCancelEvent, seedCancelRefund, seedDisputeFlow, seedReturnFlow, seedSlotPaidOrder, setRequestedAt,
   shipAndPost, shipUnits, type ReturnFlow,
 } from './helpers/accounting-returns-fixtures';
-import { hRefundFixture } from './helpers/group-h-refund-fixtures';
+import { acceptHCheckout, seedHCheckout, seedHMember } from './helpers/group-h-fixtures';
+import { createCatalogFixture } from './helpers/order-fixtures';
 import { describeLocalDb } from './helpers/local-db';
 import { createUbReturn } from './helpers/unit-binding-receive';
 
@@ -79,11 +80,20 @@ describeLocalDb('S23 intake reads: controller only', (db) => {
   // ---- design 8-3 with the plan-3 entries -------------------------------------------------------------------------------------
   /**
    * 設計 8-3: 1/20 に支払い、2/3 に出荷、3/10 に返品（18,750円の1着、手数料の割合10%）が届き、3/12 に返金16,875。
-   * 道具で18,750円の着を作るには、まとめ買いの割引（40,000円以上）で2着目を18,750円にするので、注文は2着（20,000円・18,750円、支払い 38,750円）。
+   * 注文は18,750円の1着（割引なし。H の受け付けと支払いの道具に単価を渡す）。
    */
   async function seedExample(): Promise<ReturnFlow> {
-    const f = await hRefundFixture(db(), false, 2, 1250);
-    const shipped = await shipUnits(db(), f.orderId, f.itemId, 2, f.actor);
+    const actor = await seedHMember(db());
+    const catalog = await createCatalogFixture(db(), { stock: 1 });
+    const checkout = await seedHCheckout(db(), { unitPrice: 18750, lines: [{ catalog, quantity: 1 }] });
+    const accepted = await acceptHCheckout(db(), checkout);
+    if (!accepted.order_id || accepted.rejection) throw new Error('S23_EXAMPLE_ACCEPTANCE_FAILED');
+    const paid = (await q("select * from public.mark_order_paid($1,'payment_in_progress',$2,$3,'jpy',true,'payment_received')",
+      [accepted.order_id, checkout.paymentIntentId, checkout.result.totalAmount])).rows[0];
+    if (!paid?.updated || checkout.result.totalAmount !== 18750) throw new Error('S23_EXAMPLE_PAYMENT_FAILED');
+    const itemId = (await q('select id from public.order_items where order_id=$1', [accepted.order_id])).rows[0].id as string;
+    const f = { orderId: accepted.order_id, itemId, actor, catalog, f: checkout, fulfillment: null };
+    const shipped = await shipUnits(db(), f.orderId, f.itemId, 1, f.actor);
     const fx = { ...f, fulfillment: { fulfillment_id: shipped.fulfillmentId } } as unknown as ReturnFlow['f'];
     const ret = await createUbReturn(db(), fx, [{ quantity: 1 }], { percent: 10 });
     const flow: ReturnFlow = { f: fx, returnId: ret.returnId, lineIds: ret.lineIds };
@@ -113,8 +123,8 @@ describeLocalDb('S23 intake reads: controller only', (db) => {
     const results = [];
     for (const [from, to] of months) results.push(await reconcile(from, to));
     const [january, february, march] = results;
-    expect(january).toMatchObject({ opening_backlog: 0, intake: 38750, sales_before_return: 0, closing_backlog: 38750, unexplained: 0 });
-    expect(february).toMatchObject({ opening_backlog: 38750, intake: 0, sales_before_return: 38750, closing_backlog: 0, unexplained: 0 });
+    expect(january).toMatchObject({ opening_backlog: 0, intake: 18750, sales_before_return: 0, closing_backlog: 18750, unexplained: 0 });
+    expect(february).toMatchObject({ opening_backlog: 18750, intake: 0, sales_before_return: 18750, closing_backlog: 0, unexplained: 0 });
     expect(march).toMatchObject({ opening_backlog: 0, intake: 0, sales_before_return: 0, closing_backlog: 0, unexplained: 0 });
     for (const result of results) {
       expect(result.exceptions.every((row) => row.amount === 0)).toBe(true);
