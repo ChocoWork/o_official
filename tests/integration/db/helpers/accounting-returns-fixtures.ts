@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { PgClient } from './local-db';
 import { randomUUID } from 'node:crypto';
-import { seedConfirmedSlip, seedDispute, seedFactSlip, seedStripeCharge, seedUnitOrder } from './accounting-orders-fixtures';
+import { addDisputeHistory, seedConfirmedSlip, seedDispute, seedDisputeReversal, seedFactSlip, seedStripeCharge, seedStripeFee, seedUnitOrder } from './accounting-orders-fixtures';
 import { insertAccountingAdmin } from './accounting-fixtures';
 import { cancelPlanFor, hBegin, hReceive, hRefundFixture, hResult, hReturn } from './group-h-refund-fixtures';
 import { createUbReturn, ubReceive, type ReceiveInput, type ReceiveUnit } from './unit-binding-receive';
@@ -680,6 +680,91 @@ export async function setRequestedAt(client: PgClient, returnId: string, at: str
 	await client.query('update public.order_returns set requested_at = $2::timestamptz where id=$1', [returnId, at]);
 	await client.query('alter table public.order_returns enable trigger user');
 }
+
+// ---- Task 8（S22。カード会社の取り消しの確定の相殺）の道具 ----
+
+const s22Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p3_dispute_offset.sql'));
+/** 計画3 S22（取り消しの確定の相殺）の移行の本文（無ければ空で、原文の確かめが目に見えて落ちる）。 */
+export const ACCOUNTING_S22_SQL = s22Files.length === 1 ? fs.readFileSync(path.join(directory, s22Files[0]), 'utf8') : '';
+export const ACCOUNTING_S22_FILES = s22Files;
+
+/** S22 の `-- ACC_S22_<name>_BEGIN` と `-- ACC_S22_<name>_END` の間。 */
+export function accountingS22Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S22_SQL.split(`-- ACC_S22_${name}_BEGIN\n`)[1]?.split(`-- ACC_S22_${name}_END`)[0] ?? '';
+}
+
+/** S22 の比べる元の控え（本文の最初の CREATE TEMP TABLE と INSERT）を、呼ぶ取引の中で作り直す。 */
+export async function pinAccountingS22Baseline(client: PgClient): Promise<void> {
+	const pin = accountingS22Section('BODY').split('\n-- 1. The wait of C')[0];
+	await client.query('drop table if exists pg_temp.accounting_s22_baseline');
+	await client.query(pin);
+}
+
+/**
+ * 取り消しの試験の日（2026年11月。今日より前の日だけを使う。返品の届いた日と振込の日は今日より後にできないため）。
+ * 支払い 11-01、発送の事実 11-02、引かれた時 11-03、返品の申し込み 11-04、届いた日 11-05、返金の成功 11-06、遅い失敗と振込 11-07、
+ * 確定（lost）11-09、確定の後の届いた日 11-10、遅れた取り下げ 2027-01-15。
+ */
+export const DISPUTE_DAYS = {
+	payment: '2026-11-01T03:00:00Z', slipFact: '2026-11-02T01:00:00Z', withdrawn: '2026-11-03T03:00:00Z', requested: '2026-11-04T03:00:00Z',
+	arrival: '2026-11-05', refund: '2026-11-06T03:00:00Z', failure: '2026-11-07T03:00:00Z', bank: '2026-11-07',
+	lost: '2026-11-09T03:00:00Z', lostOn: '2026-11-09', afterLost: '2026-11-10', late: '2027-01-15T03:00:00Z',
+} as const;
+
+/** 返金を作った時刻を at にする（作った時刻は書き手が変えない列なので、試験の取引の中だけ利用者のトリガーを止める）。 */
+export async function setRefundCreatedAt(client: PgClient, refundId: string, at: string = DISPUTE_DAYS.withdrawn): Promise<void> {
+	const mode = (await client.query("select tgenabled from pg_catalog.pg_trigger where tgrelid = 'public.order_refunds'::regclass and tgname = 'order_refunds_guard'"))
+		.rows[0].tgenabled as string;
+	await client.query('alter table public.order_refunds disable trigger order_refunds_guard');
+	await client.query('update public.order_refunds set created_at = $2::timestamptz where id = $1', [refundId, at]);
+	await client.query(`alter table public.order_refunds enable ${mode === 'A' ? 'always ' : ''}trigger order_refunds_guard`);
+}
+
+/**
+ * 注文の発送の事実の時刻を at に戻す（道具の発送は今の時刻で事実を残すので、過去の引かれた時が出荷済みとして数えるように）。
+ * 事実の表の守り（ENABLE ALWAYS）を取引の中だけ外し、同じ ALWAYS で戻す。コミットする試験では使わない。
+ */
+export async function backdateSlipFacts(client: PgClient, orderId: string, at: string = DISPUTE_DAYS.slipFact): Promise<void> {
+	await client.query('alter table public.accounting_g_slip_facts disable trigger accounting_g_slip_facts_no_update_delete');
+	await client.query(`update public.accounting_g_slip_facts f set locked_at = $2::timestamptz
+		where exists (select 1 from public.shipment_slip_lines sl join public.order_items oi on oi.id = sl.order_item_id
+			where sl.slip_id = f.slip_id and oi.order_id = $1)`, [orderId, at]);
+	await client.query('alter table public.accounting_g_slip_facts enable always trigger accounting_g_slip_facts_no_update_delete');
+}
+
+/**
+ * 取り消しの流れの土台: 返品の流れ（seedReturnFlow。2着とも出荷済み、割合の手数料 既定 10%）の注文の支払いと出荷の仕訳を入れ、
+ * 返品の申し込みを 11-04 にし、取り消し（needs_response、引かれた取引はまだ無い）を作る。原因の科目の設定（fraudulent → 7530）は
+ * setting が偽でなければ入れる。返す道具: withdraw（引かれた時の取引）、lose（lost の知らせ）、reverse（取り下げの戻りの取引）。
+ */
+export async function seedDisputeFlow(client: PgClient, o: { amount?: number; percent?: number; snapshot?: boolean; setting?: boolean } = {}) {
+	// The units go out through the G shipping tool and a confirmed slip bound to that shipment, so the shipment entry posts.
+	const f = await hRefundFixture(client, false, 2, 1250);
+	if (o.snapshot === false) await dropDiscountSnapshot(client, f.orderId);
+	const shipped = await shipUnits(client, f.orderId, f.itemId, 2, f.actor);
+	const fx = { ...f, fulfillment: { fulfillment_id: shipped.fulfillmentId } } as unknown as ReturnFlow['f'];
+	const ret = await createUbReturn(client, fx, [{ quantity: 1 }], { percent: o.percent ?? 10 });
+	const flow: ReturnFlow = { f: fx, returnId: ret.returnId, lineIds: ret.lineIds };
+	const orderId = flow.f.orderId;
+	await postOrderPayment(client, orderId, DISPUTE_DAYS.payment);
+	await backdateSlipFacts(client, orderId);
+	await postShipments(client);
+	await setRequestedAt(client, flow.returnId, DISPUTE_DAYS.requested);
+	const pi = (await client.query('select payment_intent_id from public.orders where id=$1', [orderId])).rows[0].payment_intent_id as string;
+	const admin = await insertAccountingAdmin(client);
+	if (o.setting !== false && (await client.query("select 1 from public.accounting_dispute_account_settings where reason='fraudulent'")).rows.length === 0) {
+		await client.query("select public.admin_set_dispute_account_setting($1::uuid, 'fraudulent', '7530', null, $2::uuid)", [admin, randomUUID()]);
+	}
+	const amount = o.amount ?? 30000;
+	const { disputeId } = await seedDispute(client, { orderId, paymentIntentId: pi, amount, withdrawnAt: null, createdAt: DISPUTE_DAYS.withdrawn });
+	const withdraw = (at: string = DISPUTE_DAYS.withdrawn) => seedStripeFee(client, { createdAt: at, type: 'adjustment', reportingCategory: 'dispute',
+		amount: -amount, sourceId: disputeId });
+	const lose = (at: string = DISPUTE_DAYS.lost) => addDisputeHistory(client, { disputeId, status: 'lost',
+		occurredAt: new Date(new Date(at).getTime() + 3600_000).toISOString(), stripeEventCreatedAt: at, eventType: 'charge.dispute.closed' });
+	const reverse = (value: number = amount, at: string = DISPUTE_DAYS.late) => seedDisputeReversal(client, { disputeId, amount: value, createdAt: at });
+	return { flow, orderId, disputeId, admin, amount, withdraw, lose, reverse };
+}
+export type DisputeFlow = Awaited<ReturnType<typeof seedDisputeFlow>>;
 
 /**
  * 値段の違う2着（10,000円の dear と 8,000円の cheap。同じ品の色違い2行、H の受け付けの写しのある注文）を送り、2つの返品の行

@@ -13,6 +13,7 @@ import {
   pinAccountingS18Baseline, restorePreS18Receive, ACCOUNTING_S19_FILES, ACCOUNTING_S19_SQL as s19Sql, accountingS19Section,
   pinAccountingS19Baseline, ACCOUNTING_S20_FILES, ACCOUNTING_S20_SQL as s20Sql, accountingS20Section, pinAccountingS20Baseline,
   ACCOUNTING_S21_FILES, ACCOUNTING_S21_SQL as s21Sql, accountingS21Section, pinAccountingS21Baseline, restoreS20RunPosting,
+  ACCOUNTING_S22_FILES, ACCOUNTING_S22_SQL as s22Sql, accountingS22Section, pinAccountingS22Baseline,
 } from './helpers/accounting-returns-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
 import { PENDING_REASONS } from '@/lib/accounting/posting-types';
@@ -818,6 +819,136 @@ describeLocalDb('S21 final assert: controller only', (db) => {
     [redefine('private.accounting_run_posting(integer)', '  v_returns := private.accounting_post_return_events\\\\(_limit\\\\);\\n', ''), 'acc_s21_run_posting'],
     ['alter function public.get_return_journal_trace(uuid) volatile', 'acc_s21_reads_stable'],
   ])('FREQ-562-AC-05: S21改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// Accounting plan 3 S22 (FREQ-581 / FREQ-568-AC-07 / FREQ-569-AC-01): the dispute poster of plan 2 rebuilt with the offset of
+// the confirmed entry, and its three tools.
+const s22Assertion = accountingS22Section('FINAL_ASSERT');
+const s22Body = accountingS22Section('BODY');
+const s22Details = ['acc_s22_functions', 'acc_s22_function_attrs', 'acc_s22_body_unchanged', 'acc_s22_existing_dml_allowlist'];
+const disputePosterOf = (source: string) => (source.match(
+  /^CREATE (?:OR REPLACE )?FUNCTION private\.accounting_post_dispute_events\(_limit integer DEFAULT 50\) RETURNS jsonb[\s\S]*?^\$\$;\n/m)?.[0] ?? '')
+  .replace(/^CREATE OR REPLACE FUNCTION/, 'CREATE FUNCTION');
+
+describe('S22 source contract (no DB)', () => {
+  test('FREQ-581-AC-01: S22はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S22_FILES).toHaveLength(1);
+    expect(ACCOUNTING_S22_FILES[0] > ACCOUNTING_S21_FILES[0]).toBe(true);
+    expect(s22Sql).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(s22Sql.startsWith('BEGIN;\n')).toBe(true);
+    expect(s22Sql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(s22Sql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(s22Sql.trimEnd()).toMatch(/-- ACC_S22_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect([...new Set([...s22Assertion.matchAll(/'(acc_s22_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...s22Details].sort());
+    expect(s22Assertion).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    // The original texts kept for the restore (dollar quoted) hold the plan-2 RAISE of the L part; the assert itself raises only 55000.
+    expect(s22Assertion.replace(/\$acc_s22_o\d\$[\s\S]*?\$acc_s22_o\d\$/g, '')).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(s22Sql).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+    // Nothing is granted and no public function is made or rebuilt.
+    expect(s22Body).not.toMatch(/\bGRANT\b/);
+    expect(s22Body).not.toMatch(/FUNCTION public\./);
+  });
+
+  test('FREQ-581-AC-01: 取り消しの係の本文は計画2の最新の定義の写しに、囲み2つと置き換え4つを足しただけで、引かれた時の止め2つを外し、理由の字は確定の待ちに残る', () => {
+    const latest = disputePosterOf(fs.readFileSync(p2DisputePath, 'utf8'));
+    const rebuilt = disputePosterOf(s22Body);
+    expect(latest).not.toBe('');
+    expect(rebuilt).not.toBe('');
+    const replaced = [...rebuilt.matchAll(/-- ACC_P3_REPLACE_BEGIN ([0-9a-f]{32})\n([\s\S]*?)-- ACC_P3_REPLACE_END\n/g)];
+    expect(replaced).toHaveLength(4);
+    // Each marker names the md5 of a run of whole lines of the plan-2 body that is there once; putting them back and dropping the
+    // added blocks gives that body.
+    const latestLines = [...latest.matchAll(/^.*\n/gm)].map((x) => x[0]);
+    const originalOf = (hash: string) => {
+      for (let i = 0; i < latestLines.length; i += 1) {
+        let text = '';
+        for (let j = i; j < latestLines.length; j += 1) {
+          text += latestLines[j];
+          if (createHash('md5').update(text).digest('hex') === hash) return text;
+        }
+      }
+      return null;
+    };
+    let restored = rebuilt;
+    const originals: string[] = [];
+    for (const m of replaced) {
+      const found = originalOf(m[1]);
+      expect(found).not.toBeNull();
+      expect(latest.split(found as string)).toHaveLength(2);
+      originals.push(found as string);
+      restored = restored.replace(m[0], () => found as string);
+    }
+    const added = [...restored.matchAll(/-- ACC_P3_BEGIN\n[\s\S]*?-- ACC_P3_END\n/g)].map((m) => m[0]);
+    expect(added).toHaveLength(2);
+    for (const block of added) restored = restored.replace(block, '');
+    expect(restored).toBe(latest);
+    // The withdrawal holds are gone (the first marker replaces them with nothing) and the reason strings stay in the C wait.
+    expect(replaced[0][2]).toBe('');
+    expect(originals[0]).toContain("v_reason := 'dispute_refund_overlap';");
+    expect(originals[0]).toContain("v_reason := 'dispute_return_refund_pending';");
+    expect(rebuilt).not.toContain('public.stripe_refunds');
+    expect(added[1]).toContain("v_reason := CASE v_why WHEN 'dispute_refund_overlap' THEN 'dispute_refund_overlap' ELSE 'dispute_return_refund_pending' END;");
+    expect(rebuilt).toContain('private.accounting_dispute_offset_ready(v_dispute_id, v_order_id, v_date)');
+    expect(rebuilt).toContain('private.accounting_dispute_offset_amounts(v_order_id, v_date, v_amount)');
+    expect(rebuilt).toContain('private.accounting_dispute_reversal_targets(v_dispute_id, v_shipped)');
+  });
+});
+
+describeLocalDb('S22 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  /** 適用後の状態から控えを取り直し、改ざんと末尾の確かめを流す。 */
+  async function attempt(change = '', before = ''): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s22_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (before) await db().query(before);
+      await pinAccountingS22Baseline(db());
+      if (change) await db().query(change);
+      await db().query(s22Assertion);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s22_assert'); await db().query('release savepoint acc_s22_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const redefine = (sig: string, from: string, to: string) =>
+    `do $x$ begin execute regexp_replace(pg_get_functiondef('${sig}'::regprocedure), E'${from}', E'${to}'); end $x$`;
+  const POSTER = 'private.accounting_post_dispute_events(integer)';
+
+  test('FREQ-581-AC-01: 適用後の状態で S22 の末尾の確かめが通る（呼出元のsearch_pathを問わない）', async () => {
+    expect(s22Assertion).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('', 'set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('', 'set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt('', "set local search_path = ''")).toBeNull();
+  });
+
+  test.each([
+    ['drop table pg_temp.accounting_s22_baseline', 'acc_s22_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s22_baseline set payload = payload - 'attrs'", 'acc_s22_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s22_baseline set payload = jsonb_set(payload, '{counts,entries}', '999999')", 'acc_s22_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s22_baseline set payload = jsonb_set(payload, '{counts,pending_events}', '999999')", 'acc_s22_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s22_baseline set payload = jsonb_set(payload, '{allowlist,0}', '1')", 'acc_s22_existing_dml_allowlist'],
+    ['grant execute on function private.accounting_dispute_offset_ready(text,uuid,date) to service_role', 'acc_s22_functions'],
+    ['alter function private.accounting_dispute_offset_amounts(uuid,date,bigint) security invoker', 'acc_s22_functions'],
+    ['alter function private.accounting_dispute_reversal_targets(text,bigint) volatile', 'acc_s22_functions'],
+    ['alter function private.accounting_dispute_offset_ready(text,uuid,date) set search_path = public', 'acc_s22_functions'],
+    [redefine('private.accounting_dispute_offset_amounts(uuid,date,bigint)', '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s22_functions'],
+    [`alter function ${POSTER} set search_path = public`, 'acc_s22_function_attrs'],
+    [`grant execute on function ${POSTER} to service_role`, 'acc_s22_function_attrs'],
+    [redefine(POSTER, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s22_body_unchanged'],
+    [redefine(POSTER, '-- ACC_P3_BEGIN\\n', '-- ACC_P3_BEGIN\\n-- ACC_P3_END\\n-- ACC_P3_BEGIN\\n'), 'acc_s22_body_unchanged'],
+    [redefine(POSTER, '-- ACC_P3_REPLACE_BEGIN [0-9a-f]{32}\\n', '-- ACC_P3_REPLACE_BEGIN 00000000000000000000000000000000\\n'), 'acc_s22_body_unchanged'],
+    [redefine(POSTER, 'accounting_dispute_offset_ready\\\\(v_dispute_id, v_order_id, v_date\\\\)', 'accounting_dispute_offset_ready(v_dispute_id, NULL, v_date)'),
+      'acc_s22_body_unchanged'],
+    [redefine(POSTER, 'THEN\\n            SELECT r\\\\.ready', 'THEN\\n            PERFORM 1 FROM public.stripe_refunds;\\n            SELECT r.ready'), 'acc_s22_body_unchanged'],
+  ])('FREQ-581-AC-01: S22改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });

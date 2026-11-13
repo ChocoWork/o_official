@@ -752,24 +752,25 @@ describeLocalDb('S11 dispute posting: controller only', (db) => {
   });
 
   // ---- stops (4-e2) -------------------------------------------------------------------------------------------------------
-  test('FREQ-568-AC-01: 成功した返金がある注文はdispute_refund_overlapで止まり、二重に費用にしない', async () => {
+  // 計画3 S22（FREQ-581-AC-01）で引かれた時の止め2つを外した。二重に費用にしない確かめは確定（C）の相殺へ移った（accounting_p3_dispute_offset）。
+  test('FREQ-568-AC-01: 成功した返金がある注文でも、引かれた時はdispute_refund_overlapで止まらず入る', async () => {
     const order = await seedOrder({ shipped: 5 });
     await q(`insert into public.stripe_refunds (id, payment_intent_id, order_id, amount, currency, status, stripe_created_at, succeeded_at, raw_payload)
       values ('re_overlap', $1, $2, 1000, 'jpy', 'succeeded', now(), now(), '{}'::jsonb)`, [order.paymentIntentId, order.orderId]);
     const d = await dispute(order, 30000, { amount: 30000 });
-    expect(await runDisputes()).toEqual({ ...none, parked_new: 1 });
-    expect(await pendingOf('stripe_balance_transactions', d.txnId as string)).toMatchObject({ reason: 'dispute_refund_overlap', detail: {}, order_id: order.orderId });
-    expect(await disputeEntryCount(d.disputeId)).toBe(0);
+    expect(await runDisputes()).toEqual({ ...none, posted: 1, withdrawn: 1 });
+    expect(await pendingOf('stripe_balance_transactions', d.txnId as string)).toBeUndefined();
+    expect(await disputeEntryCount(d.disputeId)).toBe(1);
   });
 
-  test('FREQ-568-AC-01: 返品の返金待ち（2130）がある注文はdispute_return_refund_pendingで止まる', async () => {
+  test('FREQ-568-AC-01: 返品の返金待ち（2130）がある注文でも、引かれた時はdispute_return_refund_pendingで止まらず入る', async () => {
     const order = await seedOrder({ shipped: 5 });
     await q(`select private.accounting_post_journal_core(null, private.accounting_period_for_event($1::date), $1::date, 'return_arrived',
         ARRAY['RT-0001']::text[], 'return', $2::jsonb)`,
       ['2026-06-18', JSON.stringify([{ account_code: '4010', debit: 1000, credit: 0 }, { account_code: '2130', debit: 0, credit: 1000, order_id: order.orderId, sub_account: 'return_refund' }])]);
     const d = await dispute(order, 30000, { amount: 30000 });
-    expect(await runDisputes()).toEqual({ ...none, parked_new: 1 });
-    expect(await pendingOf('stripe_balance_transactions', d.txnId as string)).toMatchObject({ reason: 'dispute_return_refund_pending', detail: {} });
+    expect(await runDisputes()).toEqual({ ...none, posted: 1, withdrawn: 1 });
+    expect(await pendingOf('stripe_balance_transactions', d.txnId as string)).toBeUndefined();
   });
 
   test('FREQ-568-AC-01: 結び付く注文が無い取り消しはno_orderで止まる', async () => {
