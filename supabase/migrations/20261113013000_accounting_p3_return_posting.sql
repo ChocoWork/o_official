@@ -332,6 +332,7 @@ BEGIN
           v_entry_id := (v_result ->> 'entry_id')::uuid;
           v_posted := v_posted + 1;
           v_redated := v_redated + 1;
+          v_reversed := v_reversed + 1;
           PERFORM private.accounting_unpark_event(v_kind, v_table, v_source, v_entry_id);
           IF v_job.lane = 1 THEN v_resolved := v_resolved + 1; END IF;
         END IF;

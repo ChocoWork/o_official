@@ -500,7 +500,7 @@ describeLocalDb('FREQ-578-AC-01: S21 return posting', (db) => {
       expect(await fee4050(flow.f.orderId)).toBe(0);
       const refundsBefore = Number((await q('select count(*) n from public.order_refunds where order_id=$1', [flow.f.orderId])).rows[0].n);
       const later = await failure(() => refundReturn(flow.returnId, flow.f.actor));
-      expect(later.message).toBeDefined();
+      expect(later.message).toBe('RETURN_NOTHING_TO_REFUND');
       expect(Number((await q('select count(*) n from public.order_refunds where order_id=$1', [flow.f.orderId])).rows[0].n)).toBe(refundsBefore);
     });
 
@@ -601,7 +601,7 @@ describeLocalDb('FREQ-578-AC-01: S21 return posting', (db) => {
       await q('alter table public.order_returns enable trigger user');
       // A correction books the arrival again from the fact: the fee is still 1,875 (never 50%).
       await correctArrival(db(), received.receipt_id, await day(1));
-      expect(await postReturnEvents(db())).toMatchObject({ posted: 1, redated: 1 });
+      expect(await postReturnEvents(db())).toMatchObject({ posted: 1, reversed: 1, redated: 1 });
       expect(shape(await kindLines(flow.f.orderId, 'return_arrival_redated'))).toEqual(STANDARD_ARRIVAL);
       expect(await payable(flow.f.orderId)).toBe(16875);
       expect(await fee4050(flow.f.orderId)).toBe(1875);
@@ -647,7 +647,7 @@ describeLocalDb('FREQ-578-AC-01: S21 return posting', (db) => {
       }
       // Once the corporation period exists, every one of them goes in.
       await insertAccountingPeriod(db(), { businessType: 'corporation', startsOn: '2026-01-01', endsOn: '2026-12-31' });
-      expect(await postReturnEvents(db())).toMatchObject({ posted: 3, resolved: 3, redated: 1 });
+      expect(await postReturnEvents(db())).toMatchObject({ posted: 3, resolved: 3, reversed: 1, redated: 1 });
     });
   });
 

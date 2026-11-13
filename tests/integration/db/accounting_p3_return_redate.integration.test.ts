@@ -55,7 +55,7 @@ describeLocalDb('FREQ-578-AC-03: S21 arrival redate', (db) => {
     const { flow, receiptId } = await arrived(5);
     const [original] = await entries(flow.f.orderId);
     const correction = await correctArrival(db(), receiptId, await day(3));
-    expect(await postReturnEvents(db())).toEqual({ ...NONE, posted: 1, redated: 1 });
+    expect(await postReturnEvents(db())).toEqual({ ...NONE, posted: 1, reversed: 1, redated: 1 });
     const all = await entries(flow.f.orderId);
     expect(all).toHaveLength(3);
     const [, reversal, redated] = all;
@@ -80,7 +80,7 @@ describeLocalDb('FREQ-578-AC-03: S21 arrival redate', (db) => {
       units: [{ return_line_id: flow.lineIds[0], disposition: 'not_restocked', quantity: 1, refund_choice: 'consult' }] });
     await postReturnEvents(db());
     await correctArrival(db(), received.receipt_id, '2026-01-05');
-    expect(await postReturnEvents(db())).toEqual({ ...NONE, posted: 1, redated: 1 });
+    expect(await postReturnEvents(db())).toEqual({ ...NONE, posted: 1, reversed: 1, redated: 1 });
     const [original, reversal, redated] = await entries(flow.f.orderId);
     expect(original.date).toBe('2025-12-25');
     expect(reversal.date).toBe('2025-12-25');
@@ -112,7 +112,7 @@ describeLocalDb('FREQ-578-AC-03: S21 arrival redate', (db) => {
     expect(after[0]).toMatchObject({ kind: 'return_arrived', date: '2025-12-25', lines: STANDARD_ARRIVAL });
     // A newer correction back into 2025 overtakes the parked one: the parked row closes, and the entry moves once.
     const second = await correctArrival(db(), received.receipt_id, '2025-12-27');
-    expect(await postReturnEvents(db())).toMatchObject({ posted: 1, redated: 1, resolved: 1 });
+    expect(await postReturnEvents(db())).toMatchObject({ posted: 1, reversed: 1, redated: 1, resolved: 1 });
     expect((await refundPending(db(), first.correction_id))[0].resolved_at).not.toBeNull();
     const moved = await entries(flow.f.orderId);
     expect(moved.map((e) => [e.kind, e.date])).toEqual([['return_arrived', '2025-12-25'], ['reversal', '2025-12-25'],
@@ -123,9 +123,9 @@ describeLocalDb('FREQ-578-AC-03: S21 arrival redate', (db) => {
   test('FREQ-578-AC-03: 届いた日を2回直しても、取り消しは1回ずつで最後の日の仕訳だけが残る', async () => {
     const { flow, receiptId } = await arrived(6);
     const one = await correctArrival(db(), receiptId, await day(4));
-    expect(await postReturnEvents(db())).toMatchObject({ posted: 1, redated: 1 });
+    expect(await postReturnEvents(db())).toMatchObject({ posted: 1, reversed: 1, redated: 1 });
     const two = await correctArrival(db(), receiptId, await day(2));
-    expect(await postReturnEvents(db())).toMatchObject({ posted: 1, redated: 1 });
+    expect(await postReturnEvents(db())).toMatchObject({ posted: 1, reversed: 1, redated: 1 });
     const all = await entries(flow.f.orderId);
     expect(all).toHaveLength(5);
     const live = all.filter((e) => e.reverses === null && !all.some((r) => r.reverses === e.id));
