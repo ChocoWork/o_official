@@ -27,10 +27,20 @@ BEGIN;
 -- arguments, result, attributes, owner and ACL are unchanged):
 --   private.accounting_post_dispute_events: W drops the two holds; C waits for offset_ready and books the offset lines
 --     (debit 2130 return_refund pay, debit 1470 dispute_refund_overlap_review review, the cost line only for the rest; memo
---     offset_pay:<n> and offset_review:<n>); L credits the targets.
+--     offset_pay:<n> and offset_review:<n>); L credits the targets. C is parked (order_not_postable, reason
+--     return_closed_after_lost) while a live 0 yen close of the order (no refund) is booked on a day after the loss day.
+-- Rebuilt the same way (P3-T8c / P3-T8d):
+--   private.accounting_pending_detail_valid (latest: S15 20261112145303:334-420): order_not_postable also takes the
+--     reasons dispute_lost and return_closed_after_lost.
+--   private.accounting_post_return_events (only definition: S21 20261113013000:92-367): a 0 yen close (no refund, C > 0)
+--     decided on or after the loss day (Japan) of a card dispute of the order is parked (order_not_postable, reason
+--     dispute_lost) for a person to book by hand.
 --
--- ROLLBACK (only while no confirmed entry has an offset line): re-run CREATE FUNCTION private.accounting_post_dispute_events
---   from 20261108200000_accounting_p2_dispute_posting.sql :352-771 as CREATE OR REPLACE;
+-- ROLLBACK (only while no confirmed entry has an offset line and no row is parked with the two new reasons): re-run
+--   CREATE FUNCTION private.accounting_post_dispute_events from 20261108200000_accounting_p2_dispute_posting.sql :352-771 and
+--   CREATE FUNCTION private.accounting_post_return_events from 20261113013000_accounting_p3_return_posting.sql :92-367 as
+--   CREATE OR REPLACE, and CREATE OR REPLACE FUNCTION private.accounting_pending_detail_valid from
+--   20261112145303_accounting_p3_return_refund_tables.sql :334-420;
 --   DROP FUNCTION private.accounting_dispute_reversal_targets(text,bigint), private.accounting_dispute_offset_amounts(uuid,date,bigint),
 --     private.accounting_dispute_offset_ready(text,uuid,date).
 
@@ -45,12 +55,14 @@ SELECT pg_catalog.jsonb_build_object(
     'entries', (SELECT pg_catalog.count(*) FROM public.accounting_journal_entries),
     'lines', (SELECT pg_catalog.count(*) FROM public.accounting_journal_lines),
     'pending_events', (SELECT pg_catalog.count(*) FROM public.accounting_pending_events)),
-  'attrs', (SELECT pg_catalog.md5(pg_catalog.concat_ws('|',
+  'attrs', (SELECT pg_catalog.jsonb_object_agg(s.sig, (SELECT pg_catalog.md5(pg_catalog.concat_ws('|',
       f.prorettype::oid::text, f.proargtypes::text, COALESCE(f.proargnames::text, ''), f.pronargdefaults, f.prolang, f.provolatile,
       f.prosecdef, f.proretset, f.proowner::regrole::text, COALESCE(f.proconfig::text, ''),
       (SELECT COALESCE(pg_catalog.string_agg(a.grantee::text || ':' || a.privilege_type, ',' ORDER BY a.grantee, a.privilege_type), '')
         FROM pg_catalog.aclexplode(COALESCE(f.proacl, pg_catalog.acldefault('f', f.proowner))) AS a)))
-    FROM pg_catalog.pg_proc AS f WHERE f.oid = 'private.accounting_post_dispute_events(integer)'::regprocedure));
+      FROM pg_catalog.pg_proc AS f WHERE f.oid = pg_catalog.to_regprocedure(s.sig)))
+    FROM pg_catalog.unnest(ARRAY['private.accounting_post_dispute_events(integer)',
+      'private.accounting_pending_detail_valid(text,jsonb)', 'private.accounting_post_return_events(integer)']) AS s(sig)));
 
 -- 1. The wait of C (FREQ-581-AC-05). The refund state is the latest accounting state row; a refund without accounting facts
 --    (never posted by the refund poster) is not looked at.
@@ -603,6 +615,16 @@ BEGIN
               v_detail := pg_catalog.jsonb_build_object('why', CASE WHEN v_reason = 'dispute_refund_overlap' THEN 'refund' ELSE 'return' END);
             END IF;
           END IF;
+          IF v_reason IS NULL AND v_order_id IS NOT NULL AND EXISTS (SELECT 1 FROM public.accounting_journal_entries AS e
+              JOIN public.accounting_return_facts AS f ON f.id::text = e.source_id
+              WHERE e.event_kind = 'return_amount_decided' AND e.source_table = 'accounting_return_facts'
+                AND f.order_id = v_order_id AND f.refund_id IS NULL AND e.entry_date > v_date
+                AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS r WHERE r.reverses_entry_id = e.id)) THEN
+            -- A 0 yen close of the order booked after the loss day took C and F back: how C and the close share the order is
+            -- decided by a person, who books it by hand.
+            v_reason := 'order_not_postable';
+            v_detail := pg_catalog.jsonb_build_object('reason', 'return_closed_after_lost');
+          END IF;
 -- ACC_P3_END
         END IF;
         IF v_reason IS NOT NULL THEN
@@ -674,6 +696,384 @@ BEGIN
 END;
 $$;
 
+-- 5. The detail list. CREATE OR REPLACE with the latest definition (S15) copied as it is.
+CREATE OR REPLACE FUNCTION private.accounting_pending_detail_valid(_reason text, _detail jsonb) RETURNS boolean
+LANGUAGE plpgsql IMMUTABLE SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_allowed text[];
+  v_key text;
+  v_value jsonb;
+  v_number numeric;
+BEGIN
+  IF _reason IS NULL OR _detail IS NULL OR pg_catalog.jsonb_typeof(_detail) <> 'object' THEN
+    RETURN false;
+  END IF;
+  v_allowed := CASE _reason
+    WHEN 'period_missing' THEN ARRAY['entry_date', 'cause']
+    WHEN 'posting_error' THEN ARRAY['error_sqlstate', 'error_code', 'entry_date']
+    WHEN 'amount_mismatch' THEN ARRAY['stripe_amount', 'order_total', 'mismatch']
+    WHEN 'order_not_postable' THEN ARRAY['reason']
+    WHEN 'payment_journal_missing' THEN ARRAY['order_count']
+    WHEN 'deferred_revenue_short' THEN ARRAY['shortage']
+    WHEN 'payout_mismatch' THEN ARRAY['payout_state']
+    WHEN 'dispute_withdrawal_missing' THEN ARRAY['waiting_on', 'dispute_status']
+    WHEN 'no_revenue' THEN ARRAY['lost_on']
+    WHEN 'refund_prior_unposted' THEN ARRAY['why']
+    WHEN 'refund_cancel_undecided' THEN ARRAY['refund_id', 'canceled_on']
+    WHEN 'dispute_refund_overlap' THEN ARRAY['why']
+    WHEN 'dispute_return_refund_pending' THEN ARRAY['why']
+    ELSE ARRAY[]::text[] END;
+  IF _reason = 'period_missing' AND NOT (_detail ? 'entry_date') THEN
+    RETURN false;
+  END IF;
+  FOR v_key, v_value IN SELECT d.key, d.value FROM pg_catalog.jsonb_each(_detail) AS d(key, value) LOOP
+    IF NOT (v_key = ANY (v_allowed)) THEN
+      RETURN false;
+    END IF;
+    IF v_key IN ('entry_date', 'lost_on', 'canceled_on') THEN
+      IF pg_catalog.jsonb_typeof(v_value) <> 'string' OR (v_value #>> '{}') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN
+        RETURN false;
+      END IF;
+      BEGIN
+        PERFORM (v_value #>> '{}')::date;
+      EXCEPTION WHEN OTHERS THEN
+        RETURN false;
+      END;
+    ELSIF v_key IN ('stripe_amount', 'order_total', 'order_count', 'shortage') THEN
+      IF pg_catalog.jsonb_typeof(v_value) <> 'number' THEN
+        RETURN false;
+      END IF;
+      v_number := (v_value #>> '{}')::numeric;
+      IF v_number < 0 OR v_number <> pg_catalog.trunc(v_number) OR v_number > 9007199254740991 THEN
+        RETURN false;
+      END IF;
+    ELSIF pg_catalog.jsonb_typeof(v_value) <> 'string' THEN
+      RETURN false;
+    ELSIF v_key = 'cause' THEN
+      IF (v_value #>> '{}') <> 'sole_ended_not_switched' THEN RETURN false; END IF;
+    ELSIF v_key = 'error_sqlstate' THEN
+      IF (v_value #>> '{}') !~ '^[0-9A-Z]{5}$' THEN RETURN false; END IF;
+    ELSIF v_key = 'error_code' THEN
+      IF (v_value #>> '{}') <> 'unexpected_error' AND (v_value #>> '{}') !~ '^(ACCOUNTING|GROUP_G|GROUP_H)_[A-Z0-9_]{1,80}$' THEN
+        RETURN false;
+      END IF;
+    ELSIF v_key = 'reason' THEN
+-- ACC_P3_REPLACE_BEGIN 514fbbef1dbd0c90f37215dc194c4946
+      IF (v_value #>> '{}') NOT IN ('shipping', 'units_sum', 'units_missing', 'dispute_lost', 'return_closed_after_lost') THEN
+        RETURN false;
+      END IF;
+-- ACC_P3_REPLACE_END
+    ELSIF v_key = 'payout_state' THEN
+      IF (v_value #>> '{}') NOT IN ('payout_not_posted', 'payout_net_zero') THEN RETURN false; END IF;
+    ELSIF v_key = 'waiting_on' THEN
+      IF (v_value #>> '{}') NOT IN ('dispute_account_unassigned', 'dispute_withdrawn') THEN RETURN false; END IF;
+    ELSIF v_key = 'dispute_status' THEN
+      IF (v_value #>> '{}') !~ '^[a-z_]{1,40}$' THEN RETURN false; END IF;
+    ELSIF v_key = 'mismatch' THEN
+      IF (v_value #>> '{}') NOT IN ('split', 'refund_amount', 'allocation_overflow', 'unit_value_left') THEN RETURN false; END IF;
+    ELSIF v_key = 'why' THEN
+      IF NOT ((_reason = 'refund_prior_unposted' AND (v_value #>> '{}') IN ('return_prior', 'original', 'failure_txn_missing'))
+        OR (_reason IN ('dispute_refund_overlap', 'dispute_return_refund_pending') AND (v_value #>> '{}') IN ('refund', 'return'))) THEN
+        RETURN false;
+      END IF;
+    ELSIF v_key = 'refund_id' THEN
+      IF (v_value #>> '{}') !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN RETURN false; END IF;
+    ELSE
+      RETURN false;
+    END IF;
+  END LOOP;
+  RETURN true;
+END;
+$$;
+
+-- 6. The return poster. CREATE OR REPLACE with the only definition (S21) copied as it is.
+CREATE OR REPLACE FUNCTION private.accounting_post_return_events(_limit integer DEFAULT 50) RETURNS jsonb
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_job record;
+  v_swept record;
+  v_fact public.accounting_return_facts%ROWTYPE;
+  v_receipt public.order_return_receipts%ROWTYPE;
+  v_hist public.order_return_arrival_corrections%ROWTYPE;
+  v_entry public.accounting_journal_entries%ROWTYPE;
+  v_cutover date;
+  v_kind text;
+  v_table text;
+  v_source text;
+  v_order_id uuid;
+  v_reason text;
+  v_detail jsonb;
+  v_date date;
+  v_period uuid;
+  v_lines jsonb;
+  v_result jsonb;
+  v_existing uuid;
+  v_entry_id uuid;
+  v_sqlstate text;
+  v_pg_detail text;
+  v_parked boolean;
+  v_posted integer := 0;
+  v_parked_new integer := 0;
+  v_reparked integer := 0;
+  v_resolved integer := 0;
+  v_reversed integer := 0;
+  v_redated integer := 0;
+BEGIN
+  IF _limit IS NULL OR _limit < 1 OR _limit > 200 THEN
+    RAISE EXCEPTION 'ACCOUNTING_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  PERFORM private.accounting_lock_all(NULL);
+  v_cutover := private.accounting_cutover_on();
+
+  -- A parked correction that a newer correction of the same receipt overtook cannot be posted any more: closed with no entry.
+  FOR v_swept IN
+    SELECT p.event_kind, p.source_table, p.source_id FROM public.accounting_pending_events AS p
+    JOIN public.order_return_arrival_corrections AS h ON h.id::text = p.source_id
+    WHERE p.resolved_at IS NULL AND p.event_kind = 'return_arrival_redated' AND p.source_table = 'order_return_arrival_corrections'
+      AND EXISTS (SELECT 1 FROM public.order_return_arrival_corrections AS d WHERE d.receipt_id = h.receipt_id AND d.version > h.version)
+    ORDER BY p.id
+  LOOP
+    BEGIN
+      PERFORM private.accounting_unpark_event(v_swept.event_kind, v_swept.source_table, v_swept.source_id, NULL);
+      v_resolved := v_resolved + 1;
+    EXCEPTION WHEN OTHERS THEN
+      -- One row that cannot be closed must not stop the call: it stays open and is tried again next time.
+      NULL;
+    END;
+  END LOOP;
+
+  FOR v_job IN
+    SELECT j.task, j.lane, j.fact_id, j.correction_id FROM (
+      (SELECT n.task, n.lane, n.phase, n.fact_id, n.correction_id, n.sort_a, n.sort_b, n.sort_c FROM (
+        (SELECT 'arrival'::text AS task, 0 AS lane, 1 AS phase, f.id AS fact_id, NULL::uuid AS correction_id,
+           f.created_at AS sort_a, f.return_id AS sort_b, f.seq AS sort_c
+         FROM public.accounting_return_facts AS f
+         WHERE f.kind = 'arrival'
+           AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS e
+             WHERE e.dedupe_key = private.accounting_event_key('return_arrived', ARRAY[f.receipt_id::text]))
+           AND NOT EXISTS (SELECT 1 FROM public.accounting_pending_events AS p
+             WHERE p.event_kind = 'return_arrived' AND p.source_table = 'order_return_receipts' AND p.source_id = f.receipt_id::text)
+         ORDER BY f.created_at, f.return_id, f.seq
+         LIMIT _limit)
+        UNION ALL
+        (SELECT 'decision'::text, 0, 2, f.id, NULL::uuid, f.created_at, f.return_id, f.seq
+         FROM public.accounting_return_facts AS f
+         WHERE f.kind = 'decision'
+           AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS e
+             WHERE e.dedupe_key = private.accounting_event_key('return_amount_decided', ARRAY[f.id::text]))
+           AND NOT EXISTS (SELECT 1 FROM public.accounting_pending_events AS p
+             WHERE p.event_kind = 'return_amount_decided' AND p.source_table = 'accounting_return_facts' AND p.source_id = f.id::text)
+         ORDER BY f.created_at, f.return_id, f.seq
+         LIMIT _limit)
+        UNION ALL
+        (SELECT 'redate'::text, 0, 3, f.id, h.id, h.created_at, e.id, 0
+         FROM public.accounting_journal_entries AS e
+         JOIN public.accounting_return_facts AS f ON f.kind = 'arrival' AND f.receipt_id::text = e.source_id
+         JOIN LATERAL (SELECT d.id, d.created_at, d.new_on FROM public.order_return_arrival_corrections AS d
+           WHERE d.receipt_id = f.receipt_id ORDER BY d.version DESC LIMIT 1) AS h ON true
+         WHERE e.source_table = 'order_return_receipts' AND e.event_kind IN ('return_arrived', 'return_arrival_redated')
+           AND e.entry_date <> h.new_on
+           AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS r WHERE r.reverses_entry_id = e.id)
+           AND NOT EXISTS (SELECT 1 FROM public.accounting_pending_events AS p
+             WHERE p.event_kind = 'return_arrival_redated' AND p.source_table = 'order_return_arrival_corrections'
+               AND p.source_id = h.id::text)
+           AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS r
+             WHERE r.dedupe_key = private.accounting_event_key('return_arrival_redated', ARRAY[h.id::text]))
+         ORDER BY h.created_at, e.id
+         LIMIT _limit)
+      ) AS n ORDER BY n.phase, n.sort_a, n.sort_b, n.sort_c LIMIT _limit)
+      UNION ALL
+      (SELECT CASE p.event_kind WHEN 'return_arrived' THEN 'arrival' WHEN 'return_amount_decided' THEN 'decision' ELSE 'redate' END,
+          1, CASE p.event_kind WHEN 'return_arrived' THEN 1 WHEN 'return_amount_decided' THEN 2 ELSE 3 END,
+          CASE p.event_kind
+            WHEN 'return_arrived' THEN (SELECT f.id FROM public.accounting_return_facts AS f
+              WHERE f.kind = 'arrival' AND f.receipt_id::text = p.source_id)
+            WHEN 'return_amount_decided' THEN p.source_id::uuid
+            ELSE (SELECT f.id FROM public.accounting_return_facts AS f JOIN public.order_return_arrival_corrections AS h
+              ON h.receipt_id = f.receipt_id WHERE f.kind = 'arrival' AND h.id::text = p.source_id) END,
+          CASE WHEN p.event_kind = 'return_arrival_redated' THEN p.source_id::uuid END,
+          p.last_detected_at, p.id, 0
+        FROM public.accounting_pending_events AS p
+        WHERE p.resolved_at IS NULL
+          AND p.source_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          AND ((p.event_kind = 'return_arrived' AND p.source_table = 'order_return_receipts')
+            OR (p.event_kind = 'return_amount_decided' AND p.source_table = 'accounting_return_facts')
+            OR (p.event_kind = 'return_arrival_redated' AND p.source_table = 'order_return_arrival_corrections'))
+        ORDER BY p.last_detected_at, p.id
+        LIMIT 10)
+    ) AS j
+    ORDER BY j.lane, j.phase, j.sort_a, j.sort_b, j.sort_c
+  LOOP
+    v_reason := NULL;
+    v_detail := '{}'::jsonb;
+    v_date := NULL;
+    v_period := NULL;
+    v_order_id := NULL;
+    v_fact := NULL;
+    IF v_job.task = 'arrival' THEN
+      v_kind := 'return_arrived';
+      v_table := 'order_return_receipts';
+    ELSIF v_job.task = 'decision' THEN
+      v_kind := 'return_amount_decided';
+      v_table := 'accounting_return_facts';
+      v_source := v_job.fact_id::text;
+    ELSE
+      v_kind := 'return_arrival_redated';
+      v_table := 'order_return_arrival_corrections';
+      v_source := v_job.correction_id::text;
+    END IF;
+    BEGIN
+      SELECT f.* INTO v_fact FROM public.accounting_return_facts AS f WHERE f.id = v_job.fact_id;
+      CONTINUE WHEN v_fact.id IS NULL;
+      v_order_id := v_fact.order_id;
+
+      IF v_job.task = 'arrival' THEN
+        v_source := v_fact.receipt_id::text;
+        SELECT e.id INTO v_existing FROM public.accounting_journal_entries AS e
+        WHERE e.dedupe_key = private.accounting_event_key('return_arrived', ARRAY[v_fact.receipt_id::text]);
+        IF FOUND THEN
+          IF v_job.lane = 1 THEN
+            PERFORM private.accounting_unpark_event(v_kind, v_table, v_source, v_existing);
+            v_resolved := v_resolved + 1;
+          END IF;
+          CONTINUE;
+        END IF;
+        SELECT rr.* INTO v_receipt FROM public.order_return_receipts AS rr WHERE rr.id = v_fact.receipt_id;
+        -- The arrival date now (the newest correction first): an arrival corrected before it was posted starts on the new day.
+        v_date := private.accounting_return_arrival_on(v_fact.receipt_id);
+        IF v_cutover IS NOT NULL AND v_date < v_cutover THEN
+          v_reason := 'before_cutover';
+        ELSE
+          v_period := private.accounting_period_for_event(v_date);
+          v_result := private.accounting_post_journal_core(NULL, v_period, v_date, 'return_arrived', ARRAY[v_fact.receipt_id::text],
+            U&'\8FD4\54C1\306E\5230\7740',
+            private.accounting_return_lines('arrival', v_fact.order_id, v_fact.goods_amount, v_fact.fee_amount),
+            _source_table => 'order_return_receipts', _source_id => v_fact.receipt_id::text,
+            _source_recorded_at => LEAST(v_receipt.created_at, pg_catalog.clock_timestamp()));
+          v_entry_id := (v_result ->> 'entry_id')::uuid;
+          IF (v_result ->> 'created')::boolean THEN v_posted := v_posted + 1; END IF;
+          PERFORM private.accounting_unpark_event(v_kind, v_table, v_source, v_entry_id);
+          IF v_job.lane = 1 THEN v_resolved := v_resolved + 1; END IF;
+        END IF;
+
+      ELSIF v_job.task = 'decision' THEN
+        SELECT e.id INTO v_existing FROM public.accounting_journal_entries AS e
+        WHERE e.dedupe_key = private.accounting_event_key('return_amount_decided', ARRAY[v_fact.id::text]);
+        IF FOUND THEN
+          IF v_job.lane = 1 THEN
+            PERFORM private.accounting_unpark_event(v_kind, v_table, v_source, v_existing);
+            v_resolved := v_resolved + 1;
+          END IF;
+          CONTINUE;
+        END IF;
+        v_date := v_fact.decided_on;
+        IF (v_fact.refund_id IS NOT NULL AND v_fact.payable_delta = 0)
+          OR (v_fact.refund_id IS NULL AND v_fact.covers_amount = 0) THEN
+          -- Nothing to book: the amount is as expected, or the 0 yen close has nothing left to cover (the fee revenue stays).
+          v_reason := 'no_revenue';
+        ELSIF EXISTS (SELECT 1 FROM public.accounting_return_facts AS a
+            WHERE a.return_id = v_fact.return_id AND a.kind = 'arrival' AND a.seq < v_fact.seq
+              AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS e
+                WHERE e.dedupe_key = private.accounting_event_key('return_arrived', ARRAY[a.receipt_id::text]))) THEN
+          v_reason := 'refund_prior_unposted';
+          v_detail := pg_catalog.jsonb_build_object('why', 'return_prior');
+        ELSIF v_cutover IS NOT NULL AND v_date < v_cutover THEN
+          v_reason := 'before_cutover';
+-- ACC_P3_BEGIN
+        ELSIF v_fact.refund_id IS NULL AND EXISTS (SELECT 1 FROM public.stripe_disputes AS d
+            WHERE private.accounting_dispute_order(d.id) = v_fact.order_id
+              AND private.accounting_jst_date(private.accounting_dispute_lost_at(d.id)) <= v_date) THEN
+          -- A 0 yen close on or after the loss day of a card dispute of the order: C already took the order's payable, so how
+          -- the close and C share the order is decided by a person, who books it by hand.
+          v_reason := 'order_not_postable';
+          v_detail := pg_catalog.jsonb_build_object('reason', 'dispute_lost');
+-- ACC_P3_END
+        ELSE
+          v_period := private.accounting_period_for_event(v_date);
+          v_lines := CASE WHEN v_fact.refund_id IS NULL
+            THEN private.accounting_return_lines('waive', v_fact.order_id, v_fact.covers_amount, v_fact.fee_amount)
+            ELSE private.accounting_return_lines('decision', v_fact.order_id, v_fact.payable_delta, 0) END;
+          v_result := private.accounting_post_journal_core(NULL, v_period, v_date, 'return_amount_decided', ARRAY[v_fact.id::text],
+            U&'\8FD4\91D1\306E\984D\306E\6C7A\5B9A', v_lines,
+            _source_table => 'accounting_return_facts', _source_id => v_fact.id::text,
+            _source_recorded_at => LEAST(v_fact.created_at, pg_catalog.clock_timestamp()));
+          v_entry_id := (v_result ->> 'entry_id')::uuid;
+          IF (v_result ->> 'created')::boolean THEN v_posted := v_posted + 1; END IF;
+          PERFORM private.accounting_unpark_event(v_kind, v_table, v_source, v_entry_id);
+          IF v_job.lane = 1 THEN v_resolved := v_resolved + 1; END IF;
+        END IF;
+
+      ELSE
+        SELECT d.* INTO v_hist FROM public.order_return_arrival_corrections AS d
+        WHERE d.receipt_id = v_fact.receipt_id ORDER BY d.version DESC LIMIT 1;
+        -- Only the newest correction moves the entry (an overtaken parked one was closed above).
+        CONTINUE WHEN v_hist.id IS DISTINCT FROM v_job.correction_id;
+        SELECT e.* INTO v_entry FROM public.accounting_journal_entries AS e
+        WHERE e.source_table = 'order_return_receipts' AND e.source_id = v_fact.receipt_id::text
+          AND e.event_kind IN ('return_arrived', 'return_arrival_redated')
+          AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS r WHERE r.reverses_entry_id = e.id)
+        ORDER BY e.entry_no DESC LIMIT 1;
+        IF NOT FOUND OR v_entry.entry_date = v_hist.new_on THEN
+          -- Nothing left to move: the live entry already has the corrected day (or there is none).
+          IF v_job.lane = 1 THEN
+            PERFORM private.accounting_unpark_event(v_kind, v_table, v_source, NULL);
+            v_resolved := v_resolved + 1;
+          END IF;
+          CONTINUE;
+        END IF;
+        -- The new day is checked first: when it cannot be posted the live entry is not reversed.
+        v_date := v_hist.new_on;
+        IF v_cutover IS NOT NULL AND v_date < v_cutover THEN
+          v_reason := 'before_cutover';
+        ELSE
+          v_period := private.accounting_period_for_event(v_date);
+          -- The reason of the reversal is the label; the reason the person wrote stays in the correction row only.
+          PERFORM private.accounting_reverse_journal_core(NULL, v_entry.id, U&'\5C4A\3044\305F\65E5\306E\76F4\3057',
+            v_entry.entry_date, LEAST(v_hist.created_at, pg_catalog.clock_timestamp()));
+          v_result := private.accounting_post_journal_core(NULL, v_period, v_date, 'return_arrival_redated', ARRAY[v_hist.id::text],
+            U&'\8FD4\54C1\306E\5230\7740',
+            private.accounting_return_lines('arrival', v_fact.order_id, v_fact.goods_amount, v_fact.fee_amount),
+            _source_table => 'order_return_receipts', _source_id => v_fact.receipt_id::text,
+            _source_recorded_at => LEAST(v_hist.created_at, pg_catalog.clock_timestamp()));
+          v_entry_id := (v_result ->> 'entry_id')::uuid;
+          v_posted := v_posted + 1;
+          v_redated := v_redated + 1;
+          v_reversed := v_reversed + 1;
+          PERFORM private.accounting_unpark_event(v_kind, v_table, v_source, v_entry_id);
+          IF v_job.lane = 1 THEN v_resolved := v_resolved + 1; END IF;
+        END IF;
+      END IF;
+
+      IF v_reason = 'no_revenue' THEN
+        -- Nothing to book: the row is closed at once and keeps the fact out of the next runs.
+        PERFORM private.accounting_park_event(v_kind, v_table, v_source, v_order_id, 'no_revenue', '{}'::jsonb);
+        PERFORM private.accounting_unpark_event(v_kind, v_table, v_source, NULL);
+        IF v_job.lane = 0 THEN
+          v_parked_new := v_parked_new + 1;
+        END IF;
+        v_resolved := v_resolved + 1;
+      ELSIF v_reason IS NOT NULL THEN
+        PERFORM private.accounting_park_event(v_kind, v_table, v_source, v_order_id, v_reason, v_detail);
+        IF v_job.lane = 0 THEN v_parked_new := v_parked_new + 1; ELSE v_reparked := v_reparked + 1; END IF;
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      -- The rows and the entry numbers of this one event (a correction: both halves) are undone with the block. Only the
+      -- SQLSTATE and a fixed code are kept; the text of the exception is never stored.
+      GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE, v_pg_detail = PG_EXCEPTION_DETAIL;
+      v_parked := private.accounting_park_failure(v_kind, v_table, v_source, v_order_id, v_sqlstate, SQLERRM, v_pg_detail, v_date);
+      IF v_parked THEN
+        IF v_job.lane = 0 THEN v_parked_new := v_parked_new + 1; ELSE v_reparked := v_reparked + 1; END IF;
+      END IF;
+    END;
+  END LOOP;
+
+  RETURN pg_catalog.jsonb_build_object('posted', v_posted, 'parked_new', v_parked_new, 'reparked', v_reparked,
+    'resolved', v_resolved, 'reversed', v_reversed, 'redated', v_redated);
+END;
+$$;
+
 ALTER FUNCTION private.accounting_dispute_offset_ready(text,uuid,date) OWNER TO postgres;
 ALTER FUNCTION private.accounting_dispute_offset_amounts(uuid,date,bigint) OWNER TO postgres;
 ALTER FUNCTION private.accounting_dispute_reversal_targets(text,bigint) OWNER TO postgres;
@@ -685,9 +1085,12 @@ FROM PUBLIC, anon, authenticated, service_role;
 -- ACC_S22_FINAL_ASSERT_BEGIN
 -- Compare catalog meaning, never ACL text serialization. acc_s22_functions: the three tools exist once, private, SECURITY
 -- DEFINER, STABLE plpgsql with search_path '', owned by postgres, with their arguments and results, and nobody runs them.
--- acc_s22_function_attrs: the poster keeps its arguments, result, language, volatility, security, owner, search_path and ACL.
--- acc_s22_body_unchanged: the poster has 4 replaced parts and 2 ACC_P3 blocks, and with the replaced parts restored from the
--- list below (by the md5 on the marker) and every ACC_P<n> block and all white space removed it is the plan 2 S11 body.
+-- acc_s22_function_attrs: the three rebuilt functions keep their arguments, result, language, volatility, security, owner,
+-- search_path and ACL.
+-- acc_s22_body_unchanged: the dispute poster has 4 replaced parts and 2 ACC_P3 blocks, the detail list 1 and 0, the return
+-- poster 0 and 1, and each with the replaced parts restored from the list below (by the md5 on the marker) and every
+-- ACC_P<n> block and all white space removed is the body it was copied from (plan 2 S11, S15, S21); the detail list takes
+-- the two new reasons of order_not_postable and still refuses one it does not know.
 -- acc_s22_existing_dml_allowlist: this migration writes no row, and the group G writer list is what it was.
 DO $acc_s22_final$
 DECLARE
@@ -747,12 +1150,15 @@ BEGIN
   END IF;
 
   v_stage := 'acc_s22_function_attrs';
-  IF v_failed IS NULL AND (v_baseline ->> 'attrs') IS DISTINCT FROM (SELECT pg_catalog.md5(pg_catalog.concat_ws('|',
-      f.prorettype::oid::text, f.proargtypes::text, COALESCE(f.proargnames::text, ''), f.pronargdefaults, f.prolang, f.provolatile,
-      f.prosecdef, f.proretset, f.proowner::regrole::text, COALESCE(f.proconfig::text, ''),
-      (SELECT COALESCE(pg_catalog.string_agg(a.grantee::text || ':' || a.privilege_type, ',' ORDER BY a.grantee, a.privilege_type), '')
-        FROM pg_catalog.aclexplode(COALESCE(f.proacl, pg_catalog.acldefault('f', f.proowner))) AS a)))
-    FROM pg_catalog.pg_proc AS f WHERE f.oid = pg_catalog.to_regprocedure('private.accounting_post_dispute_events(integer)')) THEN
+  IF v_failed IS NULL AND (
+    (SELECT pg_catalog.count(*) FROM pg_catalog.jsonb_object_keys(v_baseline -> 'attrs')) <> 3
+    OR EXISTS (SELECT 1 FROM pg_catalog.jsonb_each_text(v_baseline -> 'attrs') AS b(sig, attrs)
+      LEFT JOIN pg_catalog.pg_proc AS f ON f.oid = pg_catalog.to_regprocedure(b.sig)
+      WHERE f.oid IS NULL OR b.attrs IS DISTINCT FROM pg_catalog.md5(pg_catalog.concat_ws('|',
+        f.prorettype::oid::text, f.proargtypes::text, COALESCE(f.proargnames::text, ''), f.pronargdefaults, f.prolang, f.provolatile,
+        f.prosecdef, f.proretset, f.proowner::regrole::text, COALESCE(f.proconfig::text, ''),
+        (SELECT COALESCE(pg_catalog.string_agg(a.grantee::text || ':' || a.privilege_type, ',' ORDER BY a.grantee, a.privilege_type), '')
+          FROM pg_catalog.aclexplode(COALESCE(f.proacl, pg_catalog.acldefault('f', f.proowner))) AS a))))) THEN
     v_failed := 'acc_s22_function_attrs';
   END IF;
 
@@ -761,14 +1167,35 @@ BEGIN
     SELECT f.prosrc INTO v_src FROM pg_catalog.pg_proc AS f
     WHERE f.oid = pg_catalog.to_regprocedure('private.accounting_post_dispute_events(integer)');
     IF v_src IS NULL
-      OR (SELECT pg_catalog.count(*) FROM pg_catalog.regexp_matches(v_src, '-- ACC_P3_REPLACE_BEGIN', 'g')) <> 4
-      OR (SELECT pg_catalog.count(*) FROM pg_catalog.regexp_matches(v_src, '-- ACC_P3_BEGIN', 'g')) <> 2
       OR pg_catalog.strpos(v_src, 'private.accounting_dispute_offset_ready(v_dispute_id, v_order_id, v_date)') = 0
       OR pg_catalog.strpos(v_src, 'private.accounting_dispute_offset_amounts(v_order_id, v_date, v_amount)') = 0
       OR pg_catalog.strpos(v_src, 'private.accounting_dispute_reversal_targets(v_dispute_id, v_shipped)') = 0
-      OR pg_catalog.strpos(v_src, 'public.stripe_refunds') > 0 THEN
+      OR pg_catalog.strpos(v_src, '''reason'', ''return_closed_after_lost''') = 0
+      OR pg_catalog.strpos(v_src, 'public.stripe_refunds') > 0
+      OR pg_catalog.strpos(COALESCE((SELECT f.prosrc FROM pg_catalog.pg_proc AS f
+        WHERE f.oid = pg_catalog.to_regprocedure('private.accounting_post_return_events(integer)')), ''),
+        '''reason'', ''dispute_lost''') = 0
+      OR NOT private.accounting_pending_detail_valid('order_not_postable', '{"reason": "dispute_lost"}'::jsonb)
+      OR NOT private.accounting_pending_detail_valid('order_not_postable', '{"reason": "return_closed_after_lost"}'::jsonb)
+      OR NOT private.accounting_pending_detail_valid('order_not_postable', '{"reason": "units_missing"}'::jsonb)
+      OR private.accounting_pending_detail_valid('order_not_postable', '{"reason": "dispute_lost_x"}'::jsonb) THEN
       v_failed := 'acc_s22_body_unchanged';
-    ELSE
+    END IF;
+  END IF;
+  IF v_failed IS NULL THEN
+    FOR e IN SELECT * FROM (VALUES
+      ('private.accounting_post_dispute_events(integer)', 4, 2, 'be33247d41422ff1384c8037a7dba912'),
+      ('private.accounting_pending_detail_valid(text,jsonb)', 1, 0, '603ac7e9dd93f22a6c8fbfc54d68726e'),
+      ('private.accounting_post_return_events(integer)', 0, 1, 'df6bc5cf1eb282500e2643b825eaa986')
+    ) AS x(signature, replaced, added, digest)
+    LOOP
+      SELECT f.prosrc INTO v_src FROM pg_catalog.pg_proc AS f WHERE f.oid = pg_catalog.to_regprocedure(e.signature);
+      IF v_src IS NULL
+        OR (SELECT pg_catalog.count(*) FROM pg_catalog.regexp_matches(v_src, '-- ACC_P3_REPLACE_BEGIN', 'g')) <> e.replaced
+        OR (SELECT pg_catalog.count(*) FROM pg_catalog.regexp_matches(v_src, '-- ACC_P3_BEGIN', 'g')) <> e.added THEN
+        v_failed := 'acc_s22_body_unchanged';
+        EXIT;
+      END IF;
       LOOP
         v_match := pg_catalog.regexp_match(v_src, '-- ACC_P3_REPLACE_BEGIN (.*?)-- ACC_P3_REPLACE_END');
         EXIT WHEN v_match IS NULL;
@@ -810,7 +1237,9 @@ $acc_s22_o3$),
             v_lines := pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object('account_code', v_account, 'debit', v_amount,
               'credit', 0, 'memo', 'dispute_reason:' || v_cause));
           END IF;
-$acc_s22_o4$)
+$acc_s22_o4$),
+    ('514fbbef1dbd0c90f37215dc194c4946', $acc_s22_o5$      IF (v_value #>> '{}') NOT IN ('shipping', 'units_sum', 'units_missing') THEN RETURN false; END IF;
+$acc_s22_o5$)
         ) AS o(hash, original) WHERE o.hash = pg_catalog.left(v_match[1], 32);
         IF v_original IS NULL THEN
           v_failed := 'acc_s22_body_unchanged';
@@ -820,10 +1249,11 @@ $acc_s22_o4$)
         v_original := NULL;
       END LOOP;
       IF v_failed IS NULL AND pg_catalog.md5(pg_catalog.regexp_replace(pg_catalog.regexp_replace(v_src,
-          '-- ACC_P[0-9]_BEGIN.*?-- ACC_P[0-9]_END', '', 'g'), '[[:space:]]+', '', 'g')) IS DISTINCT FROM 'be33247d41422ff1384c8037a7dba912' THEN
+          '-- ACC_P[0-9]_BEGIN.*?-- ACC_P[0-9]_END', '', 'g'), '[[:space:]]+', '', 'g')) IS DISTINCT FROM e.digest THEN
         v_failed := 'acc_s22_body_unchanged';
       END IF;
-    END IF;
+      EXIT WHEN v_failed IS NOT NULL;
+    END LOOP;
   END IF;
 
   v_stage := 'acc_s22_existing_dml_allowlist';

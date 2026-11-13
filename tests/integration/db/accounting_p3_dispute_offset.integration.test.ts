@@ -306,17 +306,91 @@ describeLocalDb('S22 dispute offset: controller only', (db) => {
     expect(await confirmed(d)).toEqual(['7530:30000/0', '1470(dispute_pending):0/30000']);
     expect(await pendingOf('stripe_disputes', d.disputeId)).toBeUndefined();
     // 返金待ち（C = 16,875）を admin_refund_return(0) で0円で終えた返品も同じ: 0円の決定の仕訳（差 −16,875）が 2130 から外すので R = 0。
-    // 決定の日は今日なので、確定を今日にして決定の仕訳を確定の日以前に置く（確定の日より後の決定は相殺の外。報告の懸念）
+    // 決定の日は今日なので、確定を今日にして決定の仕訳を確定の日以前に置く（確定の日より後の決定は相殺の外。報告の懸念）。
+    // 0円の終わりの仕訳を確定の知らせより先に入れる（同じ日でも、確定が先に届くと0円の終わりは手で入れる待ちになる）。
     const waived = await seedDisputeFlow(db(), { snapshot: false });
     await receiveReturn(db(), waived.flow, { choice: 'consult', arrivedOn: DISPUTE_DAYS.arrival, units: unit(waived, 'consult') });
     await settle();
     expect((await q('select * from public.admin_refund_return($1,$2,$3,0,0,null,false)', [waived.flow.returnId, waived.flow.f.actor, randomUUID()])).rows[0])
       .toMatchObject({ refund_id: null, status: 'waived' });
+    await settle();
     await waived.withdraw();
     await waived.lose(new Date().toISOString());
     await settle();
     expect(await payableOf(waived.orderId)).toBe(0);
     expect(await confirmed(waived)).toEqual(['7530:30000/0', '1470(dispute_pending):0/30000']);
+  });
+
+  // ---- AC-05: a 0 yen close and a lost dispute of the same order (P3-T8c) ----------------------------------------------------
+  /** 返品を0円で終える（返金を作らない。写しの無い注文で、引かれた時の前か確定の後に呼ぶ）。決定の事実の id を返す。 */
+  const closeAtZero = async (d: DisputeFlow) => {
+    expect((await q('select * from public.admin_refund_return($1,$2,$3,0,0,null,false)', [d.flow.returnId, d.flow.f.actor, randomUUID()])).rows[0])
+      .toMatchObject({ refund_id: null, status: 'waived' });
+    return (await q("select id from public.accounting_return_facts where return_id = $1 and kind = 'decision' and refund_id is null",
+      [d.flow.returnId])).rows[0].id as string;
+  };
+  const decisionPending = async (factId: string) => (await q(
+    `select reason, detail, resolved_at from public.accounting_pending_events
+     where event_kind = 'return_amount_decided' and source_table = 'accounting_return_facts' and source_id = $1`, [factId])).rows[0];
+  const decisionEntry = (factId: string) => q(
+    "select 1 from public.accounting_journal_entries where event_kind = 'return_amount_decided' and source_id = $1", [factId]).then((r) => r.rows.length);
+
+  test('FREQ-581-AC-05: 確定の相殺が先に入った後で、確定の日以降に返品を0円で終えると、その0円の終わりは仕訳にならず手で入れる待ち（理由 dispute_lost）になり、返品の返金待ちはマイナスにならない', async () => {
+    const d = await seedDisputeFlow(db(), { snapshot: false });
+    await consultReceipt(d);
+    await d.withdraw();
+    await d.lose();
+    await settle();
+    expect(await confirmed(d)).toEqual(['7530:13125/0', '2130(return_refund):16875/0', '1470(dispute_pending):0/30000']);
+    expect(await payableOf(d.orderId)).toBe(0);
+    const factId = await closeAtZero(d);
+    await settle();
+    expect(await decisionPending(factId)).toEqual({ reason: 'order_not_postable', detail: { reason: 'dispute_lost' }, resolved_at: null });
+    expect(await decisionEntry(factId)).toBe(0);
+    expect(await payableOf(d.orderId)).toBe(0);
+    // 次の回も待ちのまま（入れ直さない）
+    await settle();
+    expect(await decisionEntry(factId)).toBe(0);
+    expect((await decisionPending(factId))?.resolved_at).toBeNull();
+  });
+
+  test('FREQ-581-AC-05: 返品を0円で終えた仕訳が先に入った後で、それより前の日の確定の知らせが届くと、確定は仕訳にならず手で入れる待ち（理由 return_closed_after_lost）になり、二重に数えない', async () => {
+    const d = await seedDisputeFlow(db(), { snapshot: false });
+    await consultReceipt(d);
+    await settle();
+    const factId = await closeAtZero(d);
+    await settle();
+    expect(await decisionEntry(factId)).toBe(1);
+    expect(await payableOf(d.orderId)).toBe(0);
+    await d.withdraw();
+    await d.lose();
+    await settle();
+    expect(await confirmed(d)).toBeNull();
+    const pending = await pendingOf('stripe_disputes', d.disputeId);
+    expect(pending).toMatchObject({ reason: 'order_not_postable', detail: { reason: 'return_closed_after_lost' }, resolved_at: null });
+    expect(await balance(d.disputeId, '1470', 'dispute_pending')).toBe(30000);
+    expect(await payableOf(d.orderId)).toBe(0);
+    expect(await reviewOf(d.orderId)).toBe(0);
+    await settle();
+    expect(await confirmed(d)).toBeNull();
+  });
+
+  test('FREQ-581-AC-05: 確定の日より前の日に返品を0円で終えた仕訳はふつうに入り、確定の相殺の返金待ちにはその分が入らない', async () => {
+    const d = await seedDisputeFlow(db(), { snapshot: false });
+    await consultReceipt(d);
+    await settle();
+    const factId = await closeAtZero(d);
+    await settle();
+    expect(await decisionEntry(factId)).toBe(1);
+    await d.withdraw();
+    // 決定の日は今日なので、確定を明日（日本の日付）にする
+    const tomorrow = (await q("select to_char((now() at time zone 'Asia/Tokyo')::date + 1, 'YYYY-MM-DD') as d")).rows[0].d as string;
+    await d.lose(`${tomorrow}T03:00:00Z`);
+    await settle();
+    expect(await decisionPending(factId)).toBeUndefined();
+    expect(await confirmed(d)).toEqual(['7530:30000/0', '1470(dispute_pending):0/30000']);
+    expect(await payableOf(d.orderId)).toBe(0);
+    expect(await pendingOf('stripe_disputes', d.disputeId)).toBeUndefined();
   });
 
   test('FREQ-581-AC-05: 確定の日より後に作った返金・届いた返品は、相殺に使わない', async () => {

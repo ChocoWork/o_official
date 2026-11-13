@@ -13,6 +13,7 @@ import {
   pinAccountingS18Baseline, restorePreS18Receive, ACCOUNTING_S19_FILES, ACCOUNTING_S19_SQL as s19Sql, accountingS19Section,
   pinAccountingS19Baseline, ACCOUNTING_S20_FILES, ACCOUNTING_S20_SQL as s20Sql, accountingS20Section, pinAccountingS20Baseline,
   ACCOUNTING_S21_FILES, ACCOUNTING_S21_SQL as s21Sql, accountingS21Section, pinAccountingS21Baseline, restoreS20RunPosting,
+  restoreS15DetailValid,
   ACCOUNTING_S22_FILES, ACCOUNTING_S22_SQL as s22Sql, accountingS22Section, pinAccountingS22Baseline,
 } from './helpers/accounting-returns-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
@@ -107,8 +108,14 @@ describeLocalDb('S15 final assert: controller only', (db) => {
     return failure;
   }
   const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
-  /** S17 が値段の直しの表に足した遅らせた制約トリガー（S15 の数の確かめの外）を、再生の savepoint の中でだけ外す。 */
-  const dropS17Trigger = () => db().query('drop trigger if exists accounting_unit_price_adjusts_sum on public.accounting_unit_price_adjusts');
+  /**
+   * S17 が値段の直しの表に足した遅らせた制約トリガー（S15 の数の確かめの外）を、再生の savepoint の中でだけ外す。
+   * S22 が作り直した detail の一覧も、同じ savepoint の中で S15 の本文へ戻す。
+   */
+  const dropS17Trigger = async () => {
+    await db().query('drop trigger if exists accounting_unit_price_adjusts_sum on public.accounting_unit_price_adjusts');
+    await restoreS15DetailValid(db());
+  };
 
   test('FREQ-576-AC-04: S15末尾assertは適用後の状態と呼出元search_pathを許す', async () => {
     expect(assertion).not.toBe('');
@@ -894,6 +901,31 @@ describe('S22 source contract (no DB)', () => {
     expect(rebuilt).toContain('private.accounting_dispute_offset_ready(v_dispute_id, v_order_id, v_date)');
     expect(rebuilt).toContain('private.accounting_dispute_offset_amounts(v_order_id, v_date, v_amount)');
     expect(rebuilt).toContain('private.accounting_dispute_reversal_targets(v_dispute_id, v_shipped)');
+    expect(added[1]).toContain("v_detail := pg_catalog.jsonb_build_object('reason', 'return_closed_after_lost');");
+  });
+
+  test('FREQ-581-AC-05: detail の一覧と返品の係は最新の定義（S15・S21）の写しに、取り消しの確定の後の0円の終わりの理由2つを足しただけ', () => {
+    const fnOf = (text: string, name: string) =>
+      text.match(new RegExp(`^CREATE (?:OR REPLACE )?FUNCTION private\\.${name}\\([\\s\\S]*?^\\$\\$;\\n`, 'm'))?.[0] ?? '';
+    const s15Fn = fnOf(sql, 'accounting_pending_detail_valid');
+    const s21Fn = fnOf(s21Sql, 'accounting_post_return_events');
+    const detail = fnOf(s22Body, 'accounting_pending_detail_valid');
+    const ret = fnOf(s22Body, 'accounting_post_return_events');
+    expect([s15Fn, s21Fn, detail, ret].every((x) => x !== '')).toBe(true);
+    // The detail list: one replaced line (md5 of the S15 line on the marker) that adds the two reasons.
+    const m = [...detail.matchAll(/-- ACC_P3_REPLACE_BEGIN ([0-9a-f]{32})\n([\s\S]*?)-- ACC_P3_REPLACE_END\n/g)];
+    expect(m).toHaveLength(1);
+    const original = "      IF (v_value #>> '{}') NOT IN ('shipping', 'units_sum', 'units_missing') THEN RETURN false; END IF;\n";
+    expect(createHash('md5').update(original).digest('hex')).toBe(m[0][1]);
+    expect(m[0][2]).toContain("'units_missing', 'dispute_lost', 'return_closed_after_lost'");
+    expect(detail.replace(m[0][0], () => original)).toBe(s15Fn);
+    expect(detail).not.toContain('-- ACC_P3_BEGIN');
+    // The return poster: one added block, the dispute_lost park of a 0 yen close.
+    const blocks = [...ret.matchAll(/-- ACC_P3_BEGIN\n[\s\S]*?-- ACC_P3_END\n/g)].map((x) => x[0]);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toContain("v_detail := pg_catalog.jsonb_build_object('reason', 'dispute_lost');");
+    expect(ret).not.toContain('-- ACC_P3_REPLACE_BEGIN');
+    expect(ret.replace(blocks[0], '').replace('CREATE OR REPLACE FUNCTION', 'CREATE FUNCTION')).toBe(s21Fn);
   });
 });
 
@@ -920,6 +952,8 @@ describeLocalDb('S22 final assert: controller only', (db) => {
   const redefine = (sig: string, from: string, to: string) =>
     `do $x$ begin execute regexp_replace(pg_get_functiondef('${sig}'::regprocedure), E'${from}', E'${to}'); end $x$`;
   const POSTER = 'private.accounting_post_dispute_events(integer)';
+  const DETAIL_VALID = 'private.accounting_pending_detail_valid(text,jsonb)';
+  const RETURN_POSTER = 'private.accounting_post_return_events(integer)';
 
   test('FREQ-581-AC-01: 適用後の状態で S22 の末尾の確かめが通る（呼出元のsearch_pathを問わない）', async () => {
     expect(s22Assertion).not.toBe('');
@@ -948,6 +982,14 @@ describeLocalDb('S22 final assert: controller only', (db) => {
     [redefine(POSTER, 'accounting_dispute_offset_ready\\\\(v_dispute_id, v_order_id, v_date\\\\)', 'accounting_dispute_offset_ready(v_dispute_id, NULL, v_date)'),
       'acc_s22_body_unchanged'],
     [redefine(POSTER, 'THEN\\n            SELECT r\\\\.ready', 'THEN\\n            PERFORM 1 FROM public.stripe_refunds;\\n            SELECT r.ready'), 'acc_s22_body_unchanged'],
+    [redefine(POSTER, '.reason., .return_closed_after_lost.', "''reason'', ''units_missing''"), 'acc_s22_body_unchanged'],
+    [`alter function ${DETAIL_VALID} volatile`, 'acc_s22_function_attrs'],
+    [`grant execute on function ${DETAIL_VALID} to service_role`, 'acc_s22_function_attrs'],
+    [`alter function ${RETURN_POSTER} set search_path = public`, 'acc_s22_function_attrs'],
+    [redefine(DETAIL_VALID, ', .return_closed_after_lost.\\\\)', ')'), 'acc_s22_body_unchanged'],
+    [redefine(DETAIL_VALID, '\\nBEGIN\\n', '\\nBEGIN\\n  v_number := 0;\\n'), 'acc_s22_body_unchanged'],
+    [redefine(RETURN_POSTER, '-- ACC_P3_BEGIN\\n', '-- ACC_P3_X\\n'), 'acc_s22_body_unchanged'],
+    [redefine(RETURN_POSTER, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s22_body_unchanged'],
   ])('FREQ-581-AC-01: S22改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();

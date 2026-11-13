@@ -511,7 +511,14 @@ export async function restoreS20RunPosting(client: PgClient): Promise<void> {
 	await client.query(body);
 }
 
-export type ReturnRun = { posted: number; parked_new: number; reparked: number; resolved: number; reversed: number; redated: number };
+/** S22 が detail の一覧を作り直したので、S15 の末尾の確かめを再生する前に S15 の本文へ戻す（呼ぶ取引の中だけ）。 */
+export async function restoreS15DetailValid(client: PgClient): Promise<void> {
+	const body = ACCOUNTING_S15_SQL.match(/^CREATE OR REPLACE FUNCTION private\.accounting_pending_detail_valid\([\s\S]*?^\$\$;/m)?.[0];
+	if (!body) throw new Error('ACC_S15_DETAIL_VALID_MISSING');
+	await client.query(body);
+}
+
+export type ReturnRun ={ posted: number; parked_new: number; reparked: number; resolved: number; reversed: number; redated: number };
 
 /** 返品の係を直接1回流す（入口 accounting_run_posting を通さない）。 */
 export async function postReturnEvents(client: PgClient, limit = 50): Promise<ReturnRun> {

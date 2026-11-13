@@ -95,6 +95,20 @@ describe('計上待ちのタブ', () => {
 		expect(region.textContent).not.toMatch(/[!！]/);
 	});
 
+	it('FREQ-581-AC-05: 取り消しの確定と返品の0円の終わりが重なった行は、どちらが先かで決めた補足を出し、手で仕訳を入れるよう伝える', async () => {
+		serve({
+			events: [
+				pendingEvent(1, { reason: 'order_not_postable', eventKind: 'return_amount_decided', detail: { reason: 'dispute_lost' } }),
+				pendingEvent(2, { reason: 'order_not_postable', eventKind: 'dispute_event', detail: { reason: 'return_closed_after_lost' } }),
+			],
+		});
+		render(<PendingView />);
+		const region = await screen.findByRole('region', { name: '計上待ち' });
+		expect(await within(region).findByText('カード会社の取り消しが確定した後に返品の返金を0円で終えました。分け方を決めて手で仕訳を入れてください')).toBeInTheDocument();
+		expect(within(region).getByText('返品の返金を0円で終えた後に、それより前の日のカード会社の取り消しの確定が届きました。分け方を決めて手で仕訳を入れてください')).toBeInTheDocument();
+		expect(region.textContent).not.toMatch(/dispute_lost|return_closed_after_lost/);
+	});
+
 	it('FREQ-569-AC-01: 理由の一覧は計上待ちの理由の全部を覆う（試験の表と型の一覧が食い違えば落ちる）', () => {
 		expect(Object.keys(REASON_SNIPPETS).sort()).toEqual([...PENDING_REASONS].sort());
 	});

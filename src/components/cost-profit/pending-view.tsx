@@ -102,6 +102,12 @@ function detailHint(event: PendingEvent): string | null {
     if (detail.reason === "shipping") return "送料の欄が0ではありません。";
     if (detail.reason === "units_sum") return "注文の合計と1着ごとの支払額の合計が合いません。";
     if (detail.reason === "units_missing") return "1着ごとの支払額が見つかりません。";
+    if (detail.reason === "dispute_lost") {
+      return "カード会社の取り消しが確定した後に返品の返金を0円で終えました。分け方を決めて手で仕訳を入れてください";
+    }
+    if (detail.reason === "return_closed_after_lost") {
+      return "返品の返金を0円で終えた後に、それより前の日のカード会社の取り消しの確定が届きました。分け方を決めて手で仕訳を入れてください";
+    }
   }
   if (event.reason === "amount_mismatch" && typeof detail.stripe_amount === "number" && typeof detail.order_total === "number") {
     return `Stripe の総額 ${currency(detail.stripe_amount)}、注文の支払額 ${currency(detail.order_total)}`;
