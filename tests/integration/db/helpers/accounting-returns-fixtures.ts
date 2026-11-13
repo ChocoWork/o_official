@@ -791,3 +791,22 @@ export async function seedTwoPriceReturnFlow(client: PgClient, o: { snapshot?: b
 	const lineIds = [byItem.get(p.dear) as string, byItem.get(p.cheap) as string];
 	return { orderId: p.orderId, actor: p.actor, returnId: ret.returnId, lineIds, dear: p.dear, cheap: p.cheap };
 }
+
+// ---- Task 9（S23。受注高・照合の読み口と消費税用の返金の一覧）の道具 ----
+
+const s23Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p3_intake_tax_reads.sql'));
+/** 計画3 S23（受注高・照合の読み口の作り直しと消費税用の返金の一覧）の移行の本文（無ければ空で、原文の確かめが目に見えて落ちる）。 */
+export const ACCOUNTING_S23_SQL = s23Files.length === 1 ? fs.readFileSync(path.join(directory, s23Files[0]), 'utf8') : '';
+export const ACCOUNTING_S23_FILES = s23Files;
+
+/** S23 の `-- ACC_S23_<name>_BEGIN` と `-- ACC_S23_<name>_END` の間。 */
+export function accountingS23Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S23_SQL.split(`-- ACC_S23_${name}_BEGIN\n`)[1]?.split(`-- ACC_S23_${name}_END`)[0] ?? '';
+}
+
+/** S23 の比べる元の控え（本文の最初の CREATE TEMP TABLE と INSERT）を、呼ぶ取引の中で作り直す。 */
+export async function pinAccountingS23Baseline(client: PgClient): Promise<void> {
+	const pin = accountingS23Section('BODY').split('\n-- 1. The intake events')[0];
+	await client.query('drop table if exists pg_temp.accounting_s23_baseline');
+	await client.query(pin);
+}

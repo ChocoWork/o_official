@@ -15,6 +15,7 @@ import {
   ACCOUNTING_S21_FILES, ACCOUNTING_S21_SQL as s21Sql, accountingS21Section, pinAccountingS21Baseline, restoreS20RunPosting,
   restoreS15DetailValid,
   ACCOUNTING_S22_FILES, ACCOUNTING_S22_SQL as s22Sql, accountingS22Section, pinAccountingS22Baseline,
+  ACCOUNTING_S23_FILES, ACCOUNTING_S23_SQL as s23Sql, accountingS23Section, pinAccountingS23Baseline,
 } from './helpers/accounting-returns-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
 import { PENDING_REASONS } from '@/lib/accounting/posting-types';
@@ -994,6 +995,162 @@ describeLocalDb('S22 final assert: controller only', (db) => {
     ["update pg_temp.accounting_s22_baseline set payload = jsonb_set(payload, '{counts,lines}', '999999')", 'acc_s22_existing_dml_allowlist'],
     ['drop function private.accounting_dispute_reversal_targets(text,bigint)', 'acc_s22_functions'],
   ])('FREQ-581-AC-01: S22改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// Accounting plan 3 S23 (FREQ-582 / FREQ-583 / FREQ-578-AC-09): the intake, reconciliation, Stripe reconciliation and anomaly
+// readers of plan 2 rebuilt to count the plan-3 entries, and the consumption tax refund reads.
+const s23Assertion = accountingS23Section('FINAL_ASSERT');
+const s23Body = accountingS23Section('BODY');
+const s23Details = ['acc_s23_functions', 'acc_s23_function_attrs', 'acc_s23_body_unchanged', 'acc_s23_reads_stable',
+  'acc_s23_existing_dml_allowlist'];
+const p2IntakePath = path.join(process.cwd(), 'supabase/migrations/20261108210000_accounting_p2_intake_reads.sql');
+const p2StripePath = path.join(process.cwd(), 'supabase/migrations/20261108180000_accounting_p2_stripe_posting.sql');
+const s23FnOf = (text: string, name: string) =>
+  (text.match(new RegExp(`^CREATE (?:OR REPLACE )?FUNCTION private\\.${name}\\([\\s\\S]*?^\\$\\$;\\n`, 'm'))?.[0] ?? '')
+    .replace(/^CREATE OR REPLACE FUNCTION/, 'CREATE FUNCTION');
+/** [name, source path, replaced parts, added blocks] of the five rebuilt readers. */
+const S23_REBUILT: Array<[string, string, number, number]> = [
+  ['accounting_intake_events', p2IntakePath, 1, 2],
+  ['get_intake_breakdown', p2IntakePath, 0, 3],
+  ['get_intake_reconciliation', p2IntakePath, 3, 0],
+  ['list_deferred_revenue_anomalies', p2IntakePath, 0, 1],
+  ['get_stripe_balance_reconciliation', p2StripePath, 0, 1],
+];
+
+describe('S23 source contract (no DB)', () => {
+  test('FREQ-582-AC-05: S23はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S23_FILES).toHaveLength(1);
+    expect(ACCOUNTING_S23_FILES[0] > ACCOUNTING_S22_FILES[0]).toBe(true);
+    expect(s23Sql).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(s23Sql.startsWith('BEGIN;\n')).toBe(true);
+    expect(s23Sql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(s23Sql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(s23Sql.trimEnd()).toMatch(/-- ACC_S23_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect([...new Set([...s23Assertion.matchAll(/'(acc_s23_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...s23Details].sort());
+    expect(s23Assertion).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(s23Assertion.replace(/\$acc_s23_o\d\$[\s\S]*?\$acc_s23_o\d\$/g, '')).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(s23Sql).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+    // The public entries of the rebuilt readers are not touched; only the two new reads get a public entry and a grant.
+    expect([...s23Body.matchAll(/^CREATE (?:OR REPLACE )?FUNCTION public\.([a-z_]+)\(/gm)].map((m) => m[1]).sort())
+      .toEqual(['get_consumption_tax_refund_totals', 'list_consumption_tax_refunds']);
+    expect(s23Body.match(/^GRANT\b/gm)).toHaveLength(1);
+    // No row is written by the body (the baseline pin is the only INSERT).
+    expect(s23Body.replace(/\$\$[\s\S]*?\$\$/g, '').match(/^\s*(INSERT|UPDATE|DELETE)\b/gim)?.map((x) => x.trim())).toEqual(['INSERT']);
+  });
+
+  test.each(S23_REBUILT)('FREQ-582-AC-05: 作り直した %s の本文は計画2の最新の定義の写しに、置き換えと囲みを足しただけ', (name, source, replacedCount, addedCount) => {
+    const latest = s23FnOf(fs.readFileSync(source, 'utf8'), name);
+    const rebuilt = s23FnOf(s23Body, name);
+    expect(latest).not.toBe('');
+    expect(rebuilt).not.toBe('');
+    // No migration before S23 but the plan-2 one defines it (the plan-2 text is the latest definition).
+    const dir = path.join(process.cwd(), 'supabase/migrations');
+    const defining = fs.readdirSync(dir).filter((f) => f.endsWith('.sql') && f < ACCOUNTING_S23_FILES[0])
+      .filter((f) => new RegExp(`^CREATE (?:OR REPLACE )?FUNCTION private\\.${name}\\(`, 'm').test(fs.readFileSync(path.join(dir, f), 'utf8')));
+    expect(defining).toEqual([path.basename(source)]);
+    const replaced = [...rebuilt.matchAll(/-- ACC_P3_REPLACE_BEGIN ([0-9a-f]{32})\n([\s\S]*?)-- ACC_P3_REPLACE_END\n/g)];
+    expect(replaced).toHaveLength(replacedCount);
+    const latestLines = [...latest.matchAll(/^.*\n/gm)].map((x) => x[0]);
+    const originalOf = (hash: string) => {
+      for (let i = 0; i < latestLines.length; i += 1) {
+        let text = '';
+        for (let j = i; j < latestLines.length; j += 1) {
+          text += latestLines[j];
+          if (createHash('md5').update(text).digest('hex') === hash) return text;
+        }
+      }
+      return null;
+    };
+    let restored = rebuilt;
+    for (const m of replaced) {
+      const found = originalOf(m[1]);
+      expect(found).not.toBeNull();
+      expect(latest.split(found as string)).toHaveLength(2);
+      restored = restored.replace(m[0], () => found as string);
+    }
+    const added = [...restored.matchAll(/-- ACC_P3_BEGIN\n[\s\S]*?-- ACC_P3_END\n/g)].map((m) => m[0]);
+    expect(added).toHaveLength(addedCount);
+    for (const block of added) restored = restored.replace(block, '');
+    expect(restored).toBe(latest);
+  });
+
+  test('FREQ-582-AC-06: Stripe の照合の足した囲みは計画2の読み口の確かめが断る字（INSERT・UPDATE・DELETE・PERFORM・EXECUTE・TRUNCATE）を含まない', () => {
+    const rebuilt = s23FnOf(s23Body, 'get_stripe_balance_reconciliation');
+    const blocks = [...rebuilt.matchAll(/-- ACC_P3_BEGIN\n[\s\S]*?-- ACC_P3_END\n/g)].map((m) => m[0]);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toContain("WHEN 'refund_principal' THEN");
+    expect(rebuilt.slice(rebuilt.indexOf('AS $$'))).not.toMatch(/(INSERT|UPDATE|DELETE|TRUNCATE|FOR (SHARE|UPDATE|NO KEY UPDATE|KEY SHARE)|PERFORM|EXECUTE)/i);
+  });
+});
+
+describeLocalDb('S23 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  /** 適用後の状態から控えを取り直し、改ざんと末尾の確かめを流す。 */
+  async function attempt(change = '', before = ''): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s23_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (before) await db().query(before);
+      await pinAccountingS23Baseline(db());
+      if (change) await db().query(change);
+      await db().query(s23Assertion);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s23_assert'); await db().query('release savepoint acc_s23_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const redefine = (sig: string, from: string, to: string) =>
+    `do $x$ begin execute regexp_replace(pg_get_functiondef('${sig}'::regprocedure), E'${from}', E'${to}'); end $x$`;
+  const INTAKE = 'private.accounting_intake_events(date,date)';
+  const RECON = 'private.get_intake_reconciliation(date,date)';
+  const ANOMALIES = 'private.list_deferred_revenue_anomalies()';
+  const STRIPE = 'private.get_stripe_balance_reconciliation(date)';
+  const ROWS = 'private.accounting_tax_refund_rows(date,date)';
+  const LIST = 'private.list_consumption_tax_refunds(date,date,integer,date,text)';
+  const TOTALS = 'public.get_consumption_tax_refund_totals(date,date)';
+
+  test('FREQ-582-AC-05: 適用後の状態で S23 の末尾の確かめが通る（呼出元のsearch_pathを問わない）', async () => {
+    expect(s23Assertion).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('', 'set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('', 'set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt('', "set local search_path = ''")).toBeNull();
+  });
+
+  test.each([
+    ['drop table pg_temp.accounting_s23_baseline', 'acc_s23_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s23_baseline set payload = payload - 'attrs'", 'acc_s23_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s23_baseline set payload = jsonb_set(payload, '{counts,entries}', '999999')", 'acc_s23_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s23_baseline set payload = jsonb_set(payload, '{counts,periods}', '999999')", 'acc_s23_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s23_baseline set payload = jsonb_set(payload, '{allowlist,0}', '1')", 'acc_s23_existing_dml_allowlist'],
+    [`grant execute on function ${ROWS} to service_role`, 'acc_s23_functions'],
+    [`revoke execute on function ${LIST} from service_role`, 'acc_s23_functions'],
+    [`grant execute on function ${TOTALS} to authenticated`, 'acc_s23_functions'],
+    [`alter function ${LIST} security invoker`, 'acc_s23_functions'],
+    [`alter function ${ROWS} set search_path = public`, 'acc_s23_functions'],
+    ['drop function public.list_consumption_tax_refunds(date,date,integer,date,text)', 'acc_s23_functions'],
+    [`alter function ${INTAKE} volatile`, 'acc_s23_function_attrs'],
+    [`grant execute on function ${STRIPE} to anon`, 'acc_s23_function_attrs'],
+    [`alter function ${ANOMALIES} set search_path = public`, 'acc_s23_function_attrs'],
+    [`do $x$ begin execute regexp_replace(pg_get_functiondef('${INTAKE}'::regprocedure), 'refund_moves', 'moves_r', 'g'); end $x$`,
+      'acc_s23_body_unchanged'],
+    [redefine(INTAKE, '-- ACC_P3_REPLACE_BEGIN [0-9a-f]{32}\\n', '-- ACC_P3_REPLACE_BEGIN 00000000000000000000000000000000\\n'), 'acc_s23_body_unchanged'],
+    [redefine(RECON, '\\nBEGIN\\n', '\\nBEGIN\\n  v_fee := 0;\\n'), 'acc_s23_body_unchanged'],
+    [redefine(RECON, '-- ACC_P3_REPLACE_END\\n', '-- ACC_P3_REPLACE_END\\n-- ACC_P3_BEGIN\\n-- ACC_P3_END\\n'), 'acc_s23_body_unchanged'],
+    [redefine(ANOMALIES, '.negative_balance.', "''negative''"), 'acc_s23_body_unchanged'],
+    [redefine(STRIPE, 'WHEN .payout. THEN', "WHEN ''payout_x'' THEN"), 'acc_s23_body_unchanged'],
+    [redefine(ROWS, 'l.order_id IS NOT NULL\\n', 'l.order_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.orders AS u WHERE u.user_id IS NULL AND false)\\n'),
+      'acc_s23_reads_stable'],
+    [`alter function ${ROWS} volatile`, 'acc_s23_functions'],
+    [redefine(LIST, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s23_reads_stable'],
+  ])('FREQ-582-AC-05: S23改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });

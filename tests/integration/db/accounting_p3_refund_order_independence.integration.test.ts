@@ -9,13 +9,13 @@ import {
 import { describeLocalDb } from './helpers/local-db';
 
 // 計画3 Task 6（S20）: 返金の仕訳の額は届く順と係の流れる回数によらない（FREQ-579-AC-05・AC-06）。
-// 表の「受注高から引く額（日）」は計画2の読み口（list_order_intake_events）で確かめる。引かれた後の失敗・借りの仕訳（refund_failed）を
-// 受注高に足し戻すのは計画3 Task 9 の読み口の直しなので、2・3・6・16 の行はそこで確かめる（ここでは intake を書かない）。
+// 表の「受注高から引く額（日）」は読み口（list_order_intake_events）で確かめる。引かれた後の失敗・借りの仕訳（refund_failed）を
+// 受注高に足し戻す 2・3・6・16 の行は、計画3 Task 9（S23）の読み口の直しで確かめる。
 jest.setTimeout(600000);
 
 type Step = { id: string; after?: string[]; run: () => Promise<unknown> };
 /**
- * intake: 受注高の出来事（list_order_intake_events の支払い以外）の [日, 額]。undefined は計画3 Task 9 の読み口の直しを待つ行。
+ * intake: 受注高の出来事（list_order_intake_events の支払い以外）の [日, 額]。undefined は確かめない行。
  * allocation: [割り当ての鍵, 残り]（鍵とその戻しの合計）。表の「割り当てが戻る（0）／動かない・残る（割り当ての額）」。
  */
 type Expect = {
@@ -131,7 +131,7 @@ describeLocalDb('FREQ-579-AC-06: S20 refund entries do not depend on the order o
         return { orderId: o.orderId, steps: [...success(() => o.a),
           { id: 'ftxn', after: ['txn'], run: () => saveFailureTxn(db(), o.a, { at: '2026-11-07T03:00:00Z' }) },
           { id: 'fail', after: ['succ'], run: () => recordRefundResult(db(), o.a, 'failed') }],
-        expected: { owedPre: 11250, d2150: -11250, d1160: 0, d1040: 0, entries: 2 } };
+        expected: { owedPre: 11250, d2150: -11250, d1160: 0, d1040: 0, entries: 2, intake: [['2026-11-05', -11250], ['2026-11-07', 11250]] } };
       }],
       ['2b. 引かれて戻された（succeeded の行が無いまま failed）', async () => {
         // P3-T6f: 引かれる前の失敗（4）と同じ借り。割り当ては残る
@@ -148,7 +148,8 @@ describeLocalDb('FREQ-579-AC-06: S20 refund entries do not depend on the order o
           { id: 'ftxn', after: ['txn'], run: () => saveFailureTxn(db(), o.a, { at: '2026-11-07T03:00:00Z' }) },
           { id: 'fail', after: ['succ'], run: () => recordRefundResult(db(), o.a, 'failed') },
           { id: 'bank', after: ['fail', 'ftxn'], run: bank(actor, o.orderId, 11250) }],
-        expected: { owedPre: 0, d2150: -11250, d1160: 0, d1040: -11250, entries: 3 } };
+        expected: { owedPre: 0, d2150: -11250, d1160: 0, d1040: -11250, entries: 3,
+          intake: [['2026-11-05', -11250], ['2026-11-07', 11250], ['2026-11-12', -11250]] } };
       }],
       ['4. 引かれる前に失敗', async () => {
         const o = await shirtPants();
@@ -172,7 +173,7 @@ describeLocalDb('FREQ-579-AC-06: S20 refund entries do not depend on the order o
           { id: 'ftxn', after: ['txn'], run: () => saveFailureTxn(db(), o.a, { at: '2026-11-07T03:00:00Z' }) },
           { id: 'cancel', after: ['succ'], run: () => recordRefundResult(db(), o.a, 'canceled') },
           { id: 'owed', after: ['cancel'], run: () => decideRefund(db(), o.a, 'owed', actorId) }],
-        expected: { owedPre: 11250, d2150: -11250, d1160: 0, d1040: 0, entries: 2 } };
+        expected: { owedPre: 11250, d2150: -11250, d1160: 0, d1040: 0, entries: 2, intake: [['2026-11-05', -11250], ['2026-11-07', 11250]] } };
       }],
       ['7. 引かれた後に Stripe が取り消し → やめた', async () => {
         const o = await shirtPants();
@@ -258,7 +259,8 @@ describeLocalDb('FREQ-579-AC-06: S20 refund entries do not depend on the order o
             { id: 'rtxn', after: ['retry'], run: () => saveRefundTxn(db(), retry, { at: '2026-11-09T03:00:00Z' }) },
             { id: 'rsucc', after: ['retry'], run: () => recordRefundResult(db(), retry, 'succeeded') },
             { id: 'settle', after: ['rtxn', 'rsucc', ...(pulled ? ['ftxn'] : [])], run: settle(actor, () => a, () => retry) }],
-          expected: { owedPre: 0, d2150: -10000, d1160: -10000, d1040: 0, entries: pulled ? 4 : 3, intake: pulled ? undefined : [['2026-11-09', -10000]] } };
+          expected: { owedPre: 0, d2150: -10000, d1160: -10000, d1040: 0, entries: pulled ? 4 : 3, intake: pulled
+            ? [['2026-11-05', -10000], ['2026-11-07', 10000], ['2026-11-09', -10000]] : [['2026-11-09', -10000]] } };
         }]),
     ];
     for (const [name, build] of cases) {

@@ -123,7 +123,8 @@ describeLocalDb('S11 posting entry point over PostgREST: controller only, commit
     const args = (name: string) => publicEntries.find(([entry]) => entry === name)?.[1] ?? {};
     expect(await keysOf('list_order_intake_events', args('list_order_intake_events'))).toEqual(['events', 'next_after_date', 'next_after_key']);
     expect(await keysOf('get_intake_breakdown', args('get_intake_breakdown'))).toEqual(['breakdown_ok', 'discount', 'dispute_unshipped',
-      'dispute_unshipped_restored', 'intake', 'order_count', 'payment', 'pre_shipment_cancel', 'shipping', 'subtotal_before_discount']);
+      'dispute_unshipped_restored', 'intake', 'order_count', 'payment', 'post_shipment_refund', 'pre_shipment_cancel', 'shipping',
+      'subtotal_before_discount']);
     expect(await keysOf('get_order_backlog', args('get_order_backlog'))).toEqual(['backlog_total', 'order_count']);
     expect(await keysOf('get_intake_reconciliation', args('get_intake_reconciliation'))).toEqual(['book_sales_total', 'booked_sales_net_orders',
       'closing_backlog', 'dispute_confirmed_by_account', 'exceptions', 'intake', 'opening_backlog', 'other_4010', 'other_4020',
