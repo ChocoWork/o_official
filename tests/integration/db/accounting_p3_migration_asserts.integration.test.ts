@@ -12,6 +12,7 @@ import {
   pinAccountingS17Baseline, seedReturnRefundParents, ACCOUNTING_S18_FILES, ACCOUNTING_S18_SQL as s18Sql, accountingS18Section,
   pinAccountingS18Baseline, restorePreS18Receive, ACCOUNTING_S19_FILES, ACCOUNTING_S19_SQL as s19Sql, accountingS19Section,
   pinAccountingS19Baseline, ACCOUNTING_S20_FILES, ACCOUNTING_S20_SQL as s20Sql, accountingS20Section, pinAccountingS20Baseline,
+  ACCOUNTING_S21_FILES, ACCOUNTING_S21_SQL as s21Sql, accountingS21Section, pinAccountingS21Baseline, restoreS20RunPosting,
 } from './helpers/accounting-returns-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
 import { PENDING_REASONS } from '@/lib/accounting/posting-types';
@@ -665,6 +666,8 @@ describeLocalDb('S20 final assert: controller only', (db) => {
     let failure: AssertFailure | null = null;
     try {
       if (before) await db().query(before);
+      // S21 rebuilt the entry point; the S20 assert checks the S20 body, so put it back inside this savepoint first.
+      await restoreS20RunPosting(db());
       await pinAccountingS20Baseline(db());
       if (change) await db().query(change);
       await db().query(s20Assertion);
@@ -710,6 +713,111 @@ describeLocalDb('S20 final assert: controller only', (db) => {
     [redefine('private.accounting_run_posting(integer)', '-- ACC_P3_BEGIN\\n', '-- ACC_P3_BEGIN\\n-- ACC_P3_END\\n-- ACC_P3_BEGIN\\n'), 'acc_s20_run_posting'],
     ['alter function private.list_refund_accounting_states(integer,timestamptz,uuid) volatile', 'acc_s20_reads_stable'],
   ])('FREQ-562-AC-05: S20改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// Accounting plan 3 S21 (FREQ-578 / FREQ-576-AC-03 / FREQ-562-AC-05 / FREQ-569-AC-01): the return poster, the trace read and
+// the posting entry point that now calls the return poster.
+const s21Assertion = accountingS21Section('FINAL_ASSERT');
+const s21Body = accountingS21Section('BODY');
+const s21Details = ['acc_s21_functions', 'acc_s21_function_attrs', 'acc_s21_run_posting', 'acc_s21_reads_stable',
+  'acc_s21_existing_dml_allowlist'];
+
+describe('S21 source contract (no DB)', () => {
+  test('FREQ-562-AC-05: S21はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S21_FILES).toHaveLength(1);
+    expect(ACCOUNTING_S21_FILES[0] > ACCOUNTING_S20_FILES[0]).toBe(true);
+    expect(s21Sql).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(s21Sql.startsWith('BEGIN;\n')).toBe(true);
+    expect(s21Sql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(s21Sql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(s21Sql.trimEnd()).toMatch(/-- ACC_S21_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect([...new Set([...s21Assertion.matchAll(/'(acc_s21_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...s21Details].sort());
+    expect(s21Assertion).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(s21Assertion).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(s21Sql).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+  });
+
+  test('FREQ-562-AC-05: 係の入口の本文は S20 の定義の写しに、囲み2つ（返品の係の変数と呼び出し）を足し、置き換えの中を返品の係を数える形に変えただけ', () => {
+    const s20 = runPostingOf(s20Body);
+    const rebuilt = runPostingOf(s21Body);
+    expect(s20).not.toBe('');
+    expect(rebuilt).not.toBe('');
+    const replaceOf = (text: string) => text.match(/-- ACC_P3_REPLACE_BEGIN ([0-9a-f]{32})\n[\s\S]*?-- ACC_P3_REPLACE_END\n/);
+    const s20Replace = replaceOf(s20);
+    const s21Replace = replaceOf(rebuilt);
+    expect(s21Replace![1]).toBe(s20Replace![1]);
+    const added = [...rebuilt.matchAll(/-- ACC_P3_BEGIN\n[\s\S]*?-- ACC_P3_END\n/g)].map((m) => m[0]).filter((b) => b.includes('v_returns'));
+    expect(added).toEqual(['-- ACC_P3_BEGIN\n  v_returns jsonb;\n-- ACC_P3_END\n',
+      '-- ACC_P3_BEGIN\n  v_returns := private.accounting_post_return_events(_limit);\n-- ACC_P3_END\n']);
+    let restored = rebuilt.replace(s21Replace![0], () => s20Replace![0]);
+    for (const block of added) restored = restored.replace(block, '');
+    expect(restored).toBe(s20);
+    expect(rebuilt.match(/-- ACC_P3_BEGIN\n/g)).toHaveLength(4);
+    // 返品の係は Stripe の後・返金の前に呼び、戻りの returns は返品の係の posted
+    expect(rebuilt.indexOf('accounting_post_stripe_events(_limit)')).toBeLessThan(rebuilt.indexOf('accounting_post_return_events(_limit)'));
+    expect(rebuilt.indexOf('accounting_post_return_events(_limit)')).toBeLessThan(rebuilt.indexOf('accounting_post_refund_events(_limit)'));
+    expect(s21Replace![0]).toContain("'refunds', (v_refunds ->> 'posted')::integer, 'returns', (v_returns ->> 'posted')::integer,");
+    // The S21 replaced text differs from S20's only by the v_returns terms.
+    const strip = (text: string) => text.replace(/\+ \(v_returns ->> '[a-z_]+'\)::integer/g, '').replace(/\s+/g, '');
+    expect(strip(s21Replace![0].replace("'returns', (v_returns ->> 'posted')::integer,", "'returns', 0,"))).toBe(strip(s20Replace![0]));
+    expect(s21Body).not.toMatch(/CREATE OR REPLACE FUNCTION public\./);
+  });
+});
+
+describeLocalDb('S21 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  /** 適用後の状態から控えを取り直し、改ざんと末尾の確かめを流す。 */
+  async function attempt(change = '', before = ''): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s21_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (before) await db().query(before);
+      await pinAccountingS21Baseline(db());
+      if (change) await db().query(change);
+      await db().query(s21Assertion);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s21_assert'); await db().query('release savepoint acc_s21_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const redefine = (sig: string, from: string, to: string) =>
+    `do $x$ begin execute regexp_replace(pg_get_functiondef('${sig}'::regprocedure), E'${from}', E'${to}'); end $x$`;
+
+  test('FREQ-562-AC-05: 適用後の状態で S21 の末尾の確かめが通る（呼出元のsearch_pathを問わない）', async () => {
+    expect(s21Assertion).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('', 'set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('', 'set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt('', "set local search_path = ''")).toBeNull();
+  });
+
+  test.each([
+    ['drop table pg_temp.accounting_s21_baseline', 'acc_s21_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s21_baseline set payload = payload - 'attrs'", 'acc_s21_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s21_baseline set payload = jsonb_set(payload, '{counts,entries}', '999999')", 'acc_s21_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s21_baseline set payload = jsonb_set(payload, '{counts,return_facts}', '999999')", 'acc_s21_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s21_baseline set payload = jsonb_set(payload, '{counts,corrections}', '999999')", 'acc_s21_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s21_baseline set payload = jsonb_set(payload, '{allowlist,0}', '1')", 'acc_s21_existing_dml_allowlist'],
+    ['grant execute on function private.accounting_post_return_events(integer) to service_role', 'acc_s21_functions'],
+    ['alter function private.accounting_return_lines(text,uuid,bigint,bigint) security invoker', 'acc_s21_functions'],
+    ['alter function private.accounting_post_return_events(integer) set search_path = public', 'acc_s21_functions'],
+    ['grant execute on function public.get_return_journal_trace(uuid) to authenticated', 'acc_s21_functions'],
+    ['revoke execute on function public.get_return_journal_trace(uuid) from service_role', 'acc_s21_functions'],
+    ['alter function private.accounting_run_posting(integer) set search_path = public', 'acc_s21_function_attrs'],
+    ['revoke execute on function public.accounting_run_posting(integer) from service_role', 'acc_s21_function_attrs'],
+    [redefine('private.accounting_run_posting(integer)', '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s21_run_posting'],
+    [redefine('private.accounting_run_posting(integer)', "''returns'', \\\\(v_returns ->> ''posted''\\\\)::integer,", "''returns'', 0,"), 'acc_s21_run_posting'],
+    [redefine('private.accounting_run_posting(integer)', '-- ACC_P3_BEGIN\\n', '-- ACC_P3_BEGIN\\n-- ACC_P3_END\\n-- ACC_P3_BEGIN\\n'), 'acc_s21_run_posting'],
+    [redefine('private.accounting_run_posting(integer)', '  v_returns := private.accounting_post_return_events\\\\(_limit\\\\);\\n', ''), 'acc_s21_run_posting'],
+    ['alter function public.get_return_journal_trace(uuid) volatile', 'acc_s21_reads_stable'],
+  ])('FREQ-562-AC-05: S21改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });

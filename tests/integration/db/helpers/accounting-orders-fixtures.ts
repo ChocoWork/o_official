@@ -333,6 +333,16 @@ export async function setAsideExistingSlips(client: PgClient): Promise<void> {
 	await client.query(`insert into public.accounting_pending_events (event_kind, source_table, source_id, reason, resolved_at)
 		select 'refund_abandoned', 'accounting_refund_events', x.id::text, 'no_revenue', now() from public.accounting_refund_events x
 		where x.state = 'canceled' on conflict do nothing`);
+	// Return facts and arrival corrections left by committed suites (plan 3 Task 7): the return poster skips them.
+	await client.query(`insert into public.accounting_pending_events (event_kind, source_table, source_id, reason, resolved_at)
+		select 'return_arrived', 'order_return_receipts', f.receipt_id::text, 'no_revenue', now() from public.accounting_return_facts f
+		where f.kind = 'arrival' on conflict do nothing`);
+	await client.query(`insert into public.accounting_pending_events (event_kind, source_table, source_id, reason, resolved_at)
+		select 'return_amount_decided', 'accounting_return_facts', f.id::text, 'no_revenue', now() from public.accounting_return_facts f
+		where f.kind = 'decision' on conflict do nothing`);
+	await client.query(`insert into public.accounting_pending_events (event_kind, source_table, source_id, reason, resolved_at)
+		select 'return_arrival_redated', 'order_return_arrival_corrections', c.id::text, 'no_revenue', now()
+		from public.order_return_arrival_corrections c on conflict do nothing`);
 }
 
 /**

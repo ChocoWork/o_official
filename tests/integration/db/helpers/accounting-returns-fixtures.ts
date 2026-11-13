@@ -2,9 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { PgClient } from './local-db';
 import { randomUUID } from 'node:crypto';
-import { seedConfirmedSlip, seedDispute, seedStripeCharge, seedUnitOrder } from './accounting-orders-fixtures';
+import { seedConfirmedSlip, seedDispute, seedFactSlip, seedStripeCharge, seedUnitOrder } from './accounting-orders-fixtures';
 import { insertAccountingAdmin } from './accounting-fixtures';
-import { ACCOUNTING_LABELS } from '@/lib/accounting/labels';
 import { cancelPlanFor, hBegin, hReceive, hRefundFixture, hResult, hReturn } from './group-h-refund-fixtures';
 import { createUbReturn, ubReceive, type ReceiveInput, type ReceiveUnit } from './unit-binding-receive';
 import { addItemVariant, createCatalogFixture, shipFixtureOrder } from './order-fixtures';
@@ -471,44 +470,66 @@ export async function postOrderPayment(client: PgClient, orderId: string, at = '
 }
 
 /**
- * 返品の届いた日と額の決定の仕訳を、計画1の core で直接入れる（Task 7 の返品の係と同じ種類・印・行。Task 6 の時点では
- * 返品の係が無いので、返品の返金の試験の前提を作る）。今ある事実のうち、まだ仕訳の無い物だけ。入れた本数を返す。
+ * 返品の届いた日と額の決定の仕訳を入れる。Task 6 の時点では返品の係が無かったので計画1の core で直接入れていたが、Task 7 の後は
+ * 本物の返品の係（private.accounting_post_return_events）を流す（final-review-b2 の小1。Task 6 の返品の返金の試験は、受け取りと
+ * 返品の係で入れた届いた日・決定の仕訳の上で流れる）。その返品の届いた日・額の決定の仕訳のうち、この呼び出しで入った本数を返す。
  */
 export async function seedReturnArrivalEntries(client: PgClient, returnId: string): Promise<number> {
-	const facts = (await client.query(`select f.id, f.kind, f.order_id, f.receipt_id, f.goods_amount, f.fee_amount, f.payable_delta,
-		coalesce(case when f.kind = 'arrival' then private.accounting_return_arrival_on(f.receipt_id) end, f.decided_on)::text as on_date
-		from public.accounting_return_facts f where f.return_id=$1 order by f.seq`, [returnId])).rows;
-	let made = 0;
-	for (const f of facts) {
-		const arrival = f.kind === 'arrival';
-		if (!arrival && Number(f.payable_delta) === 0) continue;
-		const kind = arrival ? 'return_arrived' : 'return_amount_decided';
-		const part = (arrival ? f.receipt_id : f.id) as string;
-		if ((await client.query('select 1 from public.accounting_journal_entries where dedupe_key=private.accounting_event_key($1, array[$2::text])',
-			[kind, part])).rows.length > 0) continue;
-		const order = f.order_id as string;
-		const line = (account: string, debit: number, credit: number, sub: string | null = null, memo: string | null = null) =>
-			({ account_code: account, debit, credit, sub_account: sub, order_id: order, memo });
-		let lines;
-		if (arrival) {
-			const goods = Number(f.goods_amount);
-			const fee = Number(f.fee_amount);
-			lines = [line('4020', goods, 0), line('2130', 0, goods, 'return_refund')];
-			if (fee > 0) {
-				lines.push(line('2130', fee, 0, 'return_refund', ACCOUNTING_LABELS.returnFeeRevenue),
-					line('4050', 0, fee, null, ACCOUNTING_LABELS.returnFeeRevenue));
-			}
-		} else {
-			const delta = Number(f.payable_delta);
-			lines = delta > 0 ? [line('4020', delta, 0), line('2130', 0, delta, 'return_refund')]
-				: [line('2130', -delta, 0, 'return_refund'), line('4020', 0, -delta)];
-		}
-		await client.query(`select private.accounting_post_journal_core(null, private.accounting_period_for_event($1::date), $1::date, $2,
-			array[$3::text], $4, $5::jsonb)`,
-		[f.on_date, kind, part, arrival ? ACCOUNTING_LABELS.returnArrived : ACCOUNTING_LABELS.returnAmountDecided, JSON.stringify(lines)]);
-		made += 1;
-	}
-	return made;
+	const count = async () => Number((await client.query(`select count(*) n from public.accounting_journal_entries e
+		where (e.event_kind = 'return_arrived' and e.source_table = 'order_return_receipts'
+			and e.source_id in (select f.receipt_id::text from public.accounting_return_facts f where f.return_id=$1))
+		or (e.event_kind = 'return_amount_decided' and e.source_table = 'accounting_return_facts'
+			and e.source_id in (select f.id::text from public.accounting_return_facts f where f.return_id=$1))`, [returnId])).rows[0].n);
+	const before = await count();
+	await postReturnEvents(client, 200);
+	return (await count()) - before;
+}
+
+// ---- Task 7（S21。返品の届いた日・額の決定・届いた日の直しの仕訳）の道具 ----
+
+const s21Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p3_return_posting.sql'));
+/** 計画3 S21（返品の仕訳）の移行の本文（無ければ空で、原文の確かめが目に見えて落ちる）。 */
+export const ACCOUNTING_S21_SQL = s21Files.length === 1 ? fs.readFileSync(path.join(directory, s21Files[0]), 'utf8') : '';
+export const ACCOUNTING_S21_FILES = s21Files;
+
+/** S21 の `-- ACC_S21_<name>_BEGIN` と `-- ACC_S21_<name>_END` の間。 */
+export function accountingS21Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S21_SQL.split(`-- ACC_S21_${name}_BEGIN\n`)[1]?.split(`-- ACC_S21_${name}_END`)[0] ?? '';
+}
+
+/** S21 の比べる元の控え（本文の最初の CREATE TEMP TABLE と INSERT）を、呼ぶ取引の中で作り直す。 */
+export async function pinAccountingS21Baseline(client: PgClient): Promise<void> {
+	const pin = accountingS21Section('BODY').split('\n-- 1. The lines of every return entry')[0];
+	await client.query('drop table if exists pg_temp.accounting_s21_baseline');
+	await client.query(pin);
+}
+
+/** S20 の計上係の入口（S21 が作り直す前の本文）を、呼ぶ取引の中で戻す（S20 の末尾の確かめを今の DB で流し直す時）。 */
+export async function restoreS20RunPosting(client: PgClient): Promise<void> {
+	const body = [...ACCOUNTING_S20_SQL.matchAll(/^CREATE OR REPLACE FUNCTION private\.accounting_run_posting\([\s\S]*?^\$\$;/gm)].at(-1)?.[0];
+	if (!body) throw new Error('ACC_S20_RUN_POSTING_MISSING');
+	await client.query(body);
+}
+
+export type ReturnRun = { posted: number; parked_new: number; reparked: number; resolved: number; reversed: number; redated: number };
+
+/** 返品の係を直接1回流す（入口 accounting_run_posting を通さない）。 */
+export async function postReturnEvents(client: PgClient, limit = 50): Promise<ReturnRun> {
+	return (await client.query('select private.accounting_post_return_events($1::integer) as r', [limit])).rows[0].r as ReturnRun;
+}
+
+/**
+ * 受け取りの届いた日を直す（public.admin_correct_return_arrival_date。人は会計の管理者、版は今の最新の直しの版）。
+ * 直しの行（id・版・前後の日）を返す。
+ */
+export async function correctArrival(client: PgClient, receiptId: string, newOn: string,
+	o: { actor?: string; reason?: string; key?: string } = {}) {
+	const actor = o.actor ?? await insertAccountingAdmin(client);
+	const version = Number((await client.query('select coalesce(max(version),0) v from public.order_return_arrival_corrections where receipt_id=$1',
+		[receiptId])).rows[0].v);
+	return (await client.query('select public.admin_correct_return_arrival_date($1,$2,$3::date,$4,$5,$6) as r',
+		[actor, receiptId, newOn, o.reason ?? '配送の記録を見直した', version, o.key ?? randomUUID()])).rows[0].r as {
+		receipt_id: string; version: number; previous_on: string; new_on: string; correction_id: string; replayed: boolean };
 }
 
 /** 注文の勘定の残高（貸方 − 借方。sub を渡すと補助を絞る）。資産（1160・1040）は符号を逆にして読む。 */
@@ -651,4 +672,30 @@ export async function seedPairFlow(client: PgClient, price: number, delta: numbe
 		order by u.paid_amount, u.order_item_id`, [orderId])).rows as Array<{ order_item_id: string; unit_index: number; paid_amount: number }>;
 	if (units.length !== 2 || units[0].paid_amount !== price - delta || units[1].paid_amount !== price) throw new Error(`S20_PAIR_AMOUNTS ${JSON.stringify(units)}`);
 	return { orderId, actor, cheap: units[0].order_item_id, dear: units[1].order_item_id, p0: price - delta, p1: price };
+}
+
+/** 返品の申し込みの時刻を at（timestamptz の字）にする（申し込みの時刻は変えられない列なので、試験の取引の中だけ利用者のトリガーを外す）。 */
+export async function setRequestedAt(client: PgClient, returnId: string, at: string): Promise<void> {
+	await client.query('alter table public.order_returns disable trigger user');
+	await client.query('update public.order_returns set requested_at = $2::timestamptz where id=$1', [returnId, at]);
+	await client.query('alter table public.order_returns enable trigger user');
+}
+
+/**
+ * 値段の違う2着（10,000円の dear と 8,000円の cheap。同じ品の色違い2行、H の受け付けの写しのある注文）を送り、2つの返品の行
+ * （lineIds[0] が dear、lineIds[1] が cheap）で返品を承認する（割合の手数料。既定 10%）。snapshot を false にすると写しの無い注文。
+ */
+export async function seedTwoPriceReturnFlow(client: PgClient, o: { snapshot?: boolean; percent?: number } = {}) {
+	const p = await seedPairFlow(client, 10000, 2000);
+	if (o.snapshot === false) await dropDiscountSnapshot(client, p.orderId);
+	const shipped = await shipFixtureOrder(client, { orderId: p.orderId, actorId: p.actor, trackingNumber: `S21-${randomUUID().slice(0, 8)}`,
+		lines: [{ order_item_id: p.dear, quantity: 1 }, { order_item_id: p.cheap, quantity: 1 }] });
+	for (const id of [p.dear, p.cheap]) await seedFactSlip(client, { orderItemId: id, quantity: 1 });
+	const ret = await createUbReturn(client, { orderId: p.orderId, itemId: p.dear, actor: p.actor, fulfillment: shipped, catalog: { variantId: 0 } },
+		[{ quantity: 1, itemId: p.dear }, { quantity: 1, itemId: p.cheap }], { percent: o.percent ?? 10 });
+	// createUbReturn sorts its random line ids, so read which line is which.
+	const byItem = new Map((await client.query('select id, order_item_id from public.order_return_lines where return_id=$1', [ret.returnId])).rows
+		.map((r: { id: string; order_item_id: string }) => [r.order_item_id, r.id]));
+	const lineIds = [byItem.get(p.dear) as string, byItem.get(p.cheap) as string];
+	return { orderId: p.orderId, actor: p.actor, returnId: ret.returnId, lineIds, dear: p.dear, cheap: p.cheap };
 }
