@@ -10,7 +10,8 @@ BEGIN;
 --     kind pre_shipment_refund or refund_failed and their reversals, minus (2150 and 2130 refund_owed_pre debit - credit less
 --     the entry's 4010 credit - debit); 0 is not listed. return_refund entries do not move the intake.
 --   private.get_intake_breakdown (only definition: S12 :212-249): adds post_shipment_refund (1160 and 1040 debit - credit
---     of the return_refund entries); breakdown_ok is unchanged.
+--     of the return_refund entries, less the money a failure after the pull took back: the 2130 refund_owed_post and
+--     return_refund credit - debit of refund_failed entries with a 1160 line); breakdown_ok is unchanged.
 --   private.get_intake_reconciliation (only definition: S12 :267-370): the exception return_refund_2130 is the debit - credit
 --     of 2130 refund_owed_pre in the window; the 2150 moves of refund_failed and refund_abandoned entries are explained by it
 --     and the intake (not other); sales_before_return also takes the 4010 of pre_shipment_refund, refund_failed and
@@ -162,9 +163,16 @@ BEGIN
   v_intake := v_payment + v_cancel + v_deducted + v_restored;
 -- ACC_P3_BEGIN
   -- Plan 3 Task 9: the refunds after shipment (return_refund entries and their reversals, the 1160 and 1040 debit - credit)
-  -- are shown apart; they are neither added to nor taken off the intake.
-  v_post_refund := COALESCE((SELECT pg_catalog.sum(l.debit - l.credit) FROM private.accounting_effective_lines(_from, _to) AS l
-    WHERE l.eff_kind = 'return_refund' AND l.account_code IN ('1160', '1040') AND l.order_id IS NOT NULL), 0);
+  -- are shown apart; they are neither added to nor taken off the intake. A failure after the pull gave the money back: the
+  -- 2130 refund_owed_post or return_refund line of a refund_failed entry with a 1160 line counts credit - debit (P3-T9c),
+  -- so a refund that failed after the pull and was paid by bank counts once.
+  v_post_refund := COALESCE((SELECT pg_catalog.sum(CASE WHEN l.account_code IN ('1160', '1040') THEN l.debit - l.credit
+        ELSE l.credit - l.debit END)
+    FROM private.accounting_effective_lines(_from, _to) AS l
+    WHERE l.order_id IS NOT NULL
+      AND ((l.eff_kind = 'return_refund' AND l.account_code IN ('1160', '1040'))
+        OR (l.eff_kind = 'refund_failed' AND l.account_code = '2130' AND l.sub_account IN ('refund_owed_post', 'return_refund')
+          AND EXISTS (SELECT 1 FROM public.accounting_journal_lines AS m WHERE m.entry_id = l.entry_id AND m.account_code = '1160')))), 0);
 -- ACC_P3_END
   -- Each order counts with the sign of its net payment in the window (a payment reversed in a later window is negative there).
   SELECT COALESCE(pg_catalog.sum(g.sign * o.subtotal_amount), 0), COALESCE(pg_catalog.sum(g.sign * o.discount_amount), 0),
@@ -493,8 +501,11 @@ $$;
 --    transaction or of the bank transfer; a reversal comes back with -), and the 2130 line of a refund_failed entry that
 --    took the money back into the Stripe balance (debit - credit, so -). The part is pre for the kind pre_shipment_refund
 --    and for the refund_owed_pre line of a failure, else post. A pre part has no original sale (before_sale: the units were
---    not shipped); a post part's original sale is the earliest live shipment entry of the order. The statuses are those of
---    the periods of the entries (taxable only from consumption_taxable_from on).
+--    not shipped). A post part's original sale is the earliest live shipment entry that carries a unit of the refund's
+--    after-shipment lines (accounting_shipment_units; P3-T9e), else the earliest live shipment entry of the order; with no
+--    live shipment entry it is sale_unbooked (P3-T9d). The statuses are those of the periods of the entries (taxable only
+--    from consumption_taxable_from on). A sale and a refund in periods of different business types is after_exit_14_1_7
+--    (the business that sold has ended; P3-T9f).
 CREATE FUNCTION private.accounting_tax_refund_rows(_from date, _to date)
 RETURNS TABLE(entry_id uuid, line_key text, refund_date date, order_id uuid, amount bigint, refund_id uuid,
   original_sale_date date, sale_period_status text, refund_period_status text, exclusion text)
@@ -510,33 +521,41 @@ AS $$
       AND ((l.eff_kind IN ('pre_shipment_refund', 'return_refund') AND l.account_code IN ('1160', '1040'))
         OR (l.eff_kind = 'refund_failed' AND l.account_code = '2130'
           AND EXISTS (SELECT 1 FROM public.accounting_journal_lines AS m WHERE m.entry_id = l.entry_id AND m.account_code = '1160')))
-  ), dated AS (
+  ), refunded AS (
     SELECT mo.*, e.period_id,
       CASE WHEN COALESCE(o.source_table, e.source_table) = 'order_refunds' THEN COALESCE(o.source_id, e.source_id)::uuid END
-        AS refund_id,
-      s.entry_date AS sale_date, s.period_id AS sale_period_id
+        AS refund_id
     FROM money AS mo
     JOIN public.accounting_journal_entries AS e ON e.id = mo.entry_id
     LEFT JOIN public.accounting_journal_entries AS o ON o.id = e.reverses_entry_id
+    WHERE mo.amount <> 0
+  ), dated AS (
+    SELECT rf.*, s.entry_date AS sale_date, s.period_id AS sale_period_id
+    FROM refunded AS rf
     LEFT JOIN LATERAL (
       SELECT se.entry_date, se.period_id FROM public.accounting_journal_entries AS se
-      WHERE mo.part = 'post' AND se.event_kind IN ('shipment_confirmed', 'shipment_redated') AND se.reverses_entry_id IS NULL
+      WHERE rf.part = 'post' AND se.event_kind IN ('shipment_confirmed', 'shipment_redated') AND se.reverses_entry_id IS NULL
         AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS sr WHERE sr.reverses_entry_id = se.id)
-        AND EXISTS (SELECT 1 FROM public.accounting_journal_lines AS sl WHERE sl.entry_id = se.id AND sl.order_id = mo.order_id)
-      ORDER BY se.entry_date, se.entry_no
+        AND EXISTS (SELECT 1 FROM public.accounting_journal_lines AS sl WHERE sl.entry_id = se.id AND sl.order_id = rf.order_id)
+      ORDER BY EXISTS (SELECT 1 FROM public.accounting_shipment_units AS su
+          JOIN public.order_refund_lines AS rl ON rl.order_item_id = su.order_item_id
+          WHERE su.entry_id = se.id AND rl.refund_id = rf.refund_id AND NOT rl.before_shipment) DESC,
+        se.entry_date, se.entry_no
       LIMIT 1
     ) AS s ON true
-    WHERE mo.amount <> 0
   ), stated AS (
     SELECT d.*, CASE WHEN d.sale_date IS NULL THEN NULL
         WHEN private.accounting_period_taxable(d.sale_period_id, d.sale_date) THEN 'taxable' ELSE 'exempt' END AS sale_status,
-      CASE WHEN private.accounting_period_taxable(d.period_id, d.entry_date) THEN 'taxable' ELSE 'exempt' END AS refund_status
+      CASE WHEN private.accounting_period_taxable(d.period_id, d.entry_date) THEN 'taxable' ELSE 'exempt' END AS refund_status,
+      (SELECT sp.business_type FROM public.accounting_periods AS sp WHERE sp.id = d.sale_period_id) AS sale_business,
+      (SELECT rp.business_type FROM public.accounting_periods AS rp WHERE rp.id = d.period_id) AS refund_business
     FROM dated AS d
   )
   SELECT st.entry_id, st.entry_id::text || ':' || st.line_no::text, st.entry_date, st.order_id, st.amount::bigint, st.refund_id,
     st.sale_date, st.sale_status, st.refund_status,
-    CASE WHEN st.sale_date IS NULL THEN 'before_sale' WHEN st.sale_status = 'exempt' THEN 'exempt_sale_14_1_6'
-      WHEN st.refund_status = 'exempt' THEN 'after_exit_14_1_7' ELSE 'none' END
+    CASE WHEN st.part = 'pre' THEN 'before_sale' WHEN st.sale_date IS NULL THEN 'sale_unbooked'
+      WHEN st.sale_status = 'exempt' THEN 'exempt_sale_14_1_6'
+      WHEN st.refund_status = 'exempt' OR st.sale_business <> st.refund_business THEN 'after_exit_14_1_7' ELSE 'none' END
   FROM stated AS st
 $$;
 
@@ -614,6 +633,7 @@ BEGIN
       'excluded_amount', COALESCE(pg_catalog.sum(r.amount) FILTER (WHERE r.exclusion <> 'none'), 0),
       'excluded_by', pg_catalog.jsonb_build_object(
         'before_sale', COALESCE(pg_catalog.sum(r.amount) FILTER (WHERE r.exclusion = 'before_sale'), 0),
+        'sale_unbooked', COALESCE(pg_catalog.sum(r.amount) FILTER (WHERE r.exclusion = 'sale_unbooked'), 0),
         'exempt_sale_14_1_6', COALESCE(pg_catalog.sum(r.amount) FILTER (WHERE r.exclusion = 'exempt_sale_14_1_6'), 0),
         'after_exit_14_1_7', COALESCE(pg_catalog.sum(r.amount) FILTER (WHERE r.exclusion = 'after_exit_14_1_7'), 0)))
   INTO v_result

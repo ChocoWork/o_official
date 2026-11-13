@@ -77,7 +77,10 @@ describeLocalDb('S23 intake reads: controller only', (db) => {
   };
 
   // ---- design 8-3 with the plan-3 entries -------------------------------------------------------------------------------------
-  /** 設計 8-3: 1/20 に支払い、2/3 に出荷、3/10 に返品（18,750円の1着、手数料の割合10%）が届き、3/12 に返金16,875。 */
+  /**
+   * 設計 8-3: 1/20 に支払い、2/3 に出荷、3/10 に返品（18,750円の1着、手数料の割合10%）が届き、3/12 に返金16,875。
+   * 道具で18,750円の着を作るには、まとめ買いの割引（40,000円以上）で2着目を18,750円にするので、注文は2着（20,000円・18,750円、支払い 38,750円）。
+   */
   async function seedExample(): Promise<ReturnFlow> {
     const f = await hRefundFixture(db(), false, 2, 1250);
     const shipped = await shipUnits(db(), f.orderId, f.itemId, 2, f.actor);
@@ -110,9 +113,8 @@ describeLocalDb('S23 intake reads: controller only', (db) => {
     const results = [];
     for (const [from, to] of months) results.push(await reconcile(from, to));
     const [january, february, march] = results;
-    expect(january.intake).toBeGreaterThan(0);
-    expect(january).toMatchObject({ opening_backlog: 0, sales_before_return: 0, closing_backlog: january.intake, unexplained: 0 });
-    expect(february).toMatchObject({ opening_backlog: january.intake, intake: 0, sales_before_return: january.intake, closing_backlog: 0, unexplained: 0 });
+    expect(january).toMatchObject({ opening_backlog: 0, intake: 38750, sales_before_return: 0, closing_backlog: 38750, unexplained: 0 });
+    expect(february).toMatchObject({ opening_backlog: 38750, intake: 0, sales_before_return: 38750, closing_backlog: 0, unexplained: 0 });
     expect(march).toMatchObject({ opening_backlog: 0, intake: 0, sales_before_return: 0, closing_backlog: 0, unexplained: 0 });
     for (const result of results) {
       expect(result.exceptions.every((row) => row.amount === 0)).toBe(true);
@@ -204,6 +206,24 @@ describeLocalDb('S23 intake reads: controller only', (db) => {
     const after = await breakdown();
     expect([(after.pre_shipment_cancel as number) - (breakdownBefore.pre_shipment_cancel as number),
       (after.post_shipment_refund as number) - (breakdownBefore.post_shipment_refund as number), after.breakdown_ok]).toEqual([-11250, -2000, true]);
+  });
+
+  test('FREQ-582-AC-04: 出荷後の返金が引かれた後に失敗して振込で返すと、内訳の post_shipment_refund は1回分（−P）だけ', async () => {
+    const o = await seedSlotPaidOrder(db(), [[18750], [11250]]);
+    const [shirt] = o.orderItemIds;
+    await shipAndPost(db(), o.orderId, shirt);
+    const before = await breakdown();
+    const refundId = await seedCancelRefund(db(), o.orderId, null, 2000, [{ item: shirt, before: false, amount: 2000 }]);
+    await succeed(refundId, '2026-11-05T03:00:00Z');
+    await settle();
+    await saveFailureTxn(db(), refundId, { at: '2026-11-07T03:00:00Z' });
+    await recordRefundResult(db(), refundId, 'failed');
+    await settle();
+    const actor = await insertAccountingAdmin(db());
+    await bankTransfer(db(), { actor, orderId: o.orderId, origin: 'post_shipment', amount: 2000, on: '2026-11-12', txn: `S23-${randomUUID().slice(0, 8)}` });
+    const after = await breakdown();
+    expect([(after.post_shipment_refund as number) - (before.post_shipment_refund as number),
+      (after.pre_shipment_cancel as number) - (before.pre_shipment_cancel as number), after.breakdown_ok]).toEqual([-2000, 0, true]);
   });
 
   test('FREQ-582-AC-04: 品を決めない額は、出荷した分とまだの分の値打ちの比で分かれ、出荷前の分だけが受注高から引かれ、出荷後の分が返品の額になる', async () => {

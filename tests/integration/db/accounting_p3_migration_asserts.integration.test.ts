@@ -1110,6 +1110,7 @@ describeLocalDb('S23 final assert: controller only', (db) => {
     `do $x$ begin execute regexp_replace(pg_get_functiondef('${sig}'::regprocedure), E'${from}', E'${to}'); end $x$`;
   const INTAKE = 'private.accounting_intake_events(date,date)';
   const RECON = 'private.get_intake_reconciliation(date,date)';
+  const BREAKDOWN = 'private.get_intake_breakdown(date,date)';
   const ANOMALIES = 'private.list_deferred_revenue_anomalies()';
   const STRIPE = 'private.get_stripe_balance_reconciliation(date)';
   const ROWS = 'private.accounting_tax_refund_rows(date,date)';
@@ -1143,6 +1144,8 @@ describeLocalDb('S23 final assert: controller only', (db) => {
       'acc_s23_body_unchanged'],
     [redefine(INTAKE, '-- ACC_P3_REPLACE_BEGIN [0-9a-f]{32}\\n', '-- ACC_P3_REPLACE_BEGIN 00000000000000000000000000000000\\n'), 'acc_s23_body_unchanged'],
     [redefine(RECON, '\\nBEGIN\\n', '\\nBEGIN\\n  v_fee := 0;\\n'), 'acc_s23_body_unchanged'],
+    [redefine(BREAKDOWN, "''post_shipment_refund'', v_post_refund", "''post_shipment_refund'', 0"), 'acc_s23_body_unchanged'],
+    [redefine(BREAKDOWN, 'v_intake := v_payment', 'v_intake := 0 + v_payment'), 'acc_s23_body_unchanged'],
     [redefine(RECON, '-- ACC_P3_REPLACE_END\\n', '-- ACC_P3_REPLACE_END\\n-- ACC_P3_BEGIN\\n-- ACC_P3_END\\n'), 'acc_s23_body_unchanged'],
     [redefine(ANOMALIES, '.negative_balance.', "''negative''"), 'acc_s23_body_unchanged'],
     [redefine(STRIPE, 'WHEN .payout. THEN', "WHEN ''payout_x'' THEN"), 'acc_s23_body_unchanged'],

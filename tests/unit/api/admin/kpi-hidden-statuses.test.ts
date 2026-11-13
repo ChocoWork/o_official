@@ -21,7 +21,7 @@ const mockRpcAnswer = (name: string): unknown => {
     case 'get_order_backlog':
       return { backlog_total: 0, order_count: 0 };
     case 'get_intake_breakdown':
-      return { subtotal_before_discount: 0, discount: 0, shipping: 0, payment: 0, pre_shipment_cancel: 0, dispute_unshipped: 0, dispute_unshipped_restored: 0, intake: 0, order_count: 0, breakdown_ok: true };
+      return { subtotal_before_discount: 0, discount: 0, shipping: 0, payment: 0, pre_shipment_cancel: 0, dispute_unshipped: 0, dispute_unshipped_restored: 0, post_shipment_refund: 0, intake: 0, order_count: 0, breakdown_ok: true };
     case 'get_intake_reconciliation':
       return { returns: 0 };
     default:

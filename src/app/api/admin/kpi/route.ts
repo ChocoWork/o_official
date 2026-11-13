@@ -349,6 +349,7 @@ const breakdownSchema = z
     pre_shipment_cancel: money,
     dispute_unshipped: money,
     dispute_unshipped_restored: money,
+    post_shipment_refund: money,
     intake: money,
     order_count: count,
     breakdown_ok: z.boolean(),

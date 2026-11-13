@@ -93,6 +93,7 @@ const BREAKDOWN = {
   pre_shipment_cancel: 0,
   dispute_unshipped: 0,
   dispute_unshipped_restored: 0,
+  post_shipment_refund: 0,
   intake: 12000,
   order_count: 1,
   breakdown_ok: true,
