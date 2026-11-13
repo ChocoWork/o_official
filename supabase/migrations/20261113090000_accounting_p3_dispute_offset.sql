@@ -15,9 +15,10 @@ BEGIN;
 --     Z = credit - debit of 1160 and 1040 in the entries of kind return_refund (bank transfers too) and their reversals, minus
 --     the post-shipment part a taken refund failure gave back (the 2130 refund_owed_post / return_refund credit of a
 --     refund_failed entry with a 1160 line, and its reversal with the sign), minus the present balance of 1470
---     dispute_refund_overlap_review of the order (used by another dispute); below 0 is 0. In R and Z an entry of the refund
---     poster (and its reversal) counts when its refund was created on or before the loss day (Japan), whatever its date;
---     every other entry (arrival, decision, bank transfer) counts when it is dated on or before the loss day (P3-T8g).
+--     dispute_refund_overlap_review of the order (used by another dispute); below 0 is 0. In R and Z a refund success entry
+--     of the refund poster (kind return_refund, source order_refunds) and its reversal count when the refund was created on
+--     or before the loss day (Japan), whatever their date (P3-T8g); every other entry (refund_failed, refund_abandoned and
+--     their reversals, bank transfers, arrival, decision) counts when it is dated on or before the loss day (P3-T8h).
 --     pay = min(max(R, 0), S), review = min(Z, S - pay).
 --   private.accounting_dispute_reversal_targets(_dispute_id text, _amount bigint)
 --     RETURNS TABLE(cost_account, cost_part, review_part, payable_part, waiting)
@@ -140,10 +141,11 @@ BEGIN
 END;
 $$;
 
--- 2. R and Z (FREQ-581-AC-02, AC-03); _amount is S. An entry of the refund poster (return_refund, refund_failed,
---    refund_abandoned, and the reversals of those) counts when its refund was created on or before the loss day (Japan),
---    whatever its own date, so a refund the wait of C waited on counts when it lands (P3-T8g); every other entry (arrival,
---    decision, bank transfer) counts when it is dated on or before the loss day.
+-- 2. R and Z (FREQ-581-AC-02, AC-03); _amount is S. A refund success entry of the refund poster (kind return_refund,
+--    source order_refunds) and its reversal count when the refund was created on or before the loss day (Japan), whatever
+--    their own date, so a refund the wait of C waited on counts when it lands (P3-T8g). Every other entry (refund_failed,
+--    refund_abandoned and their reversals, bank transfer, arrival, decision) counts when it is dated on or before the loss
+--    day, so a failure and the bank transfer that pays it after the loss day stay out together (P3-T8h).
 CREATE FUNCTION private.accounting_dispute_offset_amounts(_order_id uuid, _lost_on date, _amount bigint)
 RETURNS TABLE(pay bigint, review bigint)
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
@@ -167,7 +169,7 @@ BEGIN
       CASE WHEN o.id IS NULL THEN e.source_id ELSE o.source_id END AS src_id,
       CASE WHEN o.id IS NULL THEN e.event_kind ELSE o.event_kind END AS src_kind) AS s
   LEFT JOIN public.order_refunds AS f ON s.src_table = 'order_refunds'
-    AND s.src_kind IN ('return_refund', 'refund_failed', 'refund_abandoned') AND f.id::text = s.src_id
+    AND s.src_kind = 'return_refund' AND f.id::text = s.src_id
   WHERE l.order_id = _order_id AND l.account_code = '2130' AND l.sub_account = 'return_refund'
     AND CASE WHEN f.id IS NULL THEN e.entry_date ELSE private.accounting_jst_date(f.created_at) END <= _lost_on;
   SELECT COALESCE(pg_catalog.sum(l.credit - l.debit), 0)::bigint INTO v_z
@@ -178,7 +180,7 @@ BEGIN
       CASE WHEN o.id IS NULL THEN e.source_id ELSE o.source_id END AS src_id,
       CASE WHEN o.id IS NULL THEN e.event_kind ELSE o.event_kind END AS src_kind) AS s
   LEFT JOIN public.order_refunds AS f ON s.src_table = 'order_refunds'
-    AND s.src_kind IN ('return_refund', 'refund_failed', 'refund_abandoned') AND f.id::text = s.src_id
+    AND s.src_kind = 'return_refund' AND f.id::text = s.src_id
   WHERE l.order_id = _order_id AND l.account_code IN ('1160', '1040')
     AND CASE WHEN f.id IS NULL THEN e.entry_date ELSE private.accounting_jst_date(f.created_at) END <= _lost_on
     AND (e.event_kind = 'return_refund' OR (e.event_kind = 'reversal' AND o.event_kind = 'return_refund'));
@@ -190,7 +192,7 @@ BEGIN
         CASE WHEN o.id IS NULL THEN e.source_id ELSE o.source_id END AS src_id,
         CASE WHEN o.id IS NULL THEN e.event_kind ELSE o.event_kind END AS src_kind) AS s
     LEFT JOIN public.order_refunds AS f ON s.src_table = 'order_refunds'
-      AND s.src_kind IN ('return_refund', 'refund_failed', 'refund_abandoned') AND f.id::text = s.src_id
+      AND s.src_kind = 'return_refund' AND f.id::text = s.src_id
     WHERE l.order_id = _order_id AND l.account_code = '2130' AND l.sub_account IN ('refund_owed_post', 'return_refund')
       AND CASE WHEN f.id IS NULL THEN e.entry_date ELSE private.accounting_jst_date(f.created_at) END <= _lost_on
       AND (e.event_kind = 'refund_failed' OR (e.event_kind = 'reversal' AND o.event_kind = 'refund_failed'))
