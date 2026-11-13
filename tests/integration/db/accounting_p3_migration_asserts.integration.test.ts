@@ -990,6 +990,9 @@ describeLocalDb('S22 final assert: controller only', (db) => {
     [redefine(DETAIL_VALID, '\\nBEGIN\\n', '\\nBEGIN\\n  v_number := 0;\\n'), 'acc_s22_body_unchanged'],
     [redefine(RETURN_POSTER, '-- ACC_P3_BEGIN\\n', '-- ACC_P3_X\\n'), 'acc_s22_body_unchanged'],
     [redefine(RETURN_POSTER, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s22_body_unchanged'],
+    [redefine(RETURN_POSTER, 'private\\\\.accounting_dispute_key\\\\(d\\\\.id, .confirmed., .lost.\\\\)', 'NULL'), 'acc_s22_body_unchanged'],
+    ["update pg_temp.accounting_s22_baseline set payload = jsonb_set(payload, '{counts,lines}', '999999')", 'acc_s22_existing_dml_allowlist'],
+    ['drop function private.accounting_dispute_reversal_targets(text,bigint)', 'acc_s22_functions'],
   ])('FREQ-581-AC-01: S22改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();

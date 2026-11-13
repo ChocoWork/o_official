@@ -104,8 +104,8 @@ describe('計上待ちのタブ', () => {
 		});
 		render(<PendingView />);
 		const region = await screen.findByRole('region', { name: '計上待ち' });
-		expect(await within(region).findByText('カード会社の取り消しが確定した後に返品の返金を0円で終えました。分け方を決めて手で仕訳を入れてください')).toBeInTheDocument();
-		expect(within(region).getByText('返品の返金を0円で終えた後に、それより前の日のカード会社の取り消しの確定が届きました。分け方を決めて手で仕訳を入れてください')).toBeInTheDocument();
+		expect(await within(region).findByText('カード会社の取り消しが確定した後に返品の返金を0円で終えました。分け方を決めて手で仕訳を入れてください。')).toBeInTheDocument();
+		expect(within(region).getByText('返品の返金を0円で終えた後に、それより前の日のカード会社の取り消しの確定が届きました。分け方を決めて手で仕訳を入れてください。')).toBeInTheDocument();
 		expect(region.textContent).not.toMatch(/dispute_lost|return_closed_after_lost/);
 	});
 

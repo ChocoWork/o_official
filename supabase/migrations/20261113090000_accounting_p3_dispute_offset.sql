@@ -11,11 +11,13 @@ BEGIN;
 --     entry on its present arrival day, or a decision with a payable change decided on or before the loss day has no entry.
 --     A dispute with no order never waits.
 --   private.accounting_dispute_offset_amounts(_order_id uuid, _lost_on date, _amount bigint) RETURNS TABLE(pay, review)
---     R = credit - debit of 2130 return_refund of the order dated on or before the loss day (all entries, reversals too).
+--     R = credit - debit of 2130 return_refund of the order (all entries, reversals too).
 --     Z = credit - debit of 1160 and 1040 in the entries of kind return_refund (bank transfers too) and their reversals, minus
 --     the post-shipment part a taken refund failure gave back (the 2130 refund_owed_post / return_refund credit of a
---     refund_failed entry with a 1160 line, and its reversal with the sign), all dated on or before the loss day, minus the
---     present balance of 1470 dispute_refund_overlap_review of the order (used by another dispute); below 0 is 0.
+--     refund_failed entry with a 1160 line, and its reversal with the sign), minus the present balance of 1470
+--     dispute_refund_overlap_review of the order (used by another dispute); below 0 is 0. In R and Z an entry of the refund
+--     poster (and its reversal) counts when its refund was created on or before the loss day (Japan), whatever its date;
+--     every other entry (arrival, decision, bank transfer) counts when it is dated on or before the loss day (P3-T8g).
 --     pay = min(max(R, 0), S), review = min(Z, S - pay).
 --   private.accounting_dispute_reversal_targets(_dispute_id text, _amount bigint)
 --     RETURNS TABLE(cost_account, cost_part, review_part, payable_part, waiting)
@@ -33,8 +35,8 @@ BEGIN;
 --   private.accounting_pending_detail_valid (latest: S15 20261112145303:334-420): order_not_postable also takes the
 --     reasons dispute_lost and return_closed_after_lost.
 --   private.accounting_post_return_events (only definition: S21 20261113013000:92-367): a 0 yen close (no refund, C > 0)
---     decided on or after the loss day (Japan) of a card dispute of the order is parked (order_not_postable, reason
---     dispute_lost) for a person to book by hand.
+--     decided on or after the loss day (Japan) of a card dispute of the order whose C entry is already booked is parked
+--     (order_not_postable, reason dispute_lost) for a person to book by hand; before C is booked it posts as usual.
 --
 -- ROLLBACK (only while no confirmed entry has an offset line and no row is parked with the two new reasons): re-run
 --   CREATE FUNCTION private.accounting_post_dispute_events from 20261108200000_accounting_p2_dispute_posting.sql :352-771 and
@@ -138,7 +140,10 @@ BEGIN
 END;
 $$;
 
--- 2. R and Z (FREQ-581-AC-02, AC-03). Only entries dated on or before the loss day count; _amount is S.
+-- 2. R and Z (FREQ-581-AC-02, AC-03); _amount is S. An entry of the refund poster (return_refund, refund_failed,
+--    refund_abandoned, and the reversals of those) counts when its refund was created on or before the loss day (Japan),
+--    whatever its own date, so a refund the wait of C waited on counts when it lands (P3-T8g); every other entry (arrival,
+--    decision, bank transfer) counts when it is dated on or before the loss day.
 CREATE FUNCTION private.accounting_dispute_offset_amounts(_order_id uuid, _lost_on date, _amount bigint)
 RETURNS TABLE(pay bigint, review bigint)
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
@@ -157,19 +162,37 @@ BEGIN
   SELECT COALESCE(pg_catalog.sum(l.credit - l.debit), 0)::bigint INTO v_r
   FROM public.accounting_journal_lines AS l
   JOIN public.accounting_journal_entries AS e ON e.id = l.entry_id
-  WHERE l.order_id = _order_id AND l.account_code = '2130' AND l.sub_account = 'return_refund' AND e.entry_date <= _lost_on;
+  LEFT JOIN public.accounting_journal_entries AS o ON o.id = e.reverses_entry_id
+  CROSS JOIN LATERAL (SELECT CASE WHEN o.id IS NULL THEN e.source_table ELSE o.source_table END AS src_table,
+      CASE WHEN o.id IS NULL THEN e.source_id ELSE o.source_id END AS src_id,
+      CASE WHEN o.id IS NULL THEN e.event_kind ELSE o.event_kind END AS src_kind) AS s
+  LEFT JOIN public.order_refunds AS f ON s.src_table = 'order_refunds'
+    AND s.src_kind IN ('return_refund', 'refund_failed', 'refund_abandoned') AND f.id::text = s.src_id
+  WHERE l.order_id = _order_id AND l.account_code = '2130' AND l.sub_account = 'return_refund'
+    AND CASE WHEN f.id IS NULL THEN e.entry_date ELSE private.accounting_jst_date(f.created_at) END <= _lost_on;
   SELECT COALESCE(pg_catalog.sum(l.credit - l.debit), 0)::bigint INTO v_z
   FROM public.accounting_journal_lines AS l
   JOIN public.accounting_journal_entries AS e ON e.id = l.entry_id
   LEFT JOIN public.accounting_journal_entries AS o ON o.id = e.reverses_entry_id
-  WHERE l.order_id = _order_id AND l.account_code IN ('1160', '1040') AND e.entry_date <= _lost_on
+  CROSS JOIN LATERAL (SELECT CASE WHEN o.id IS NULL THEN e.source_table ELSE o.source_table END AS src_table,
+      CASE WHEN o.id IS NULL THEN e.source_id ELSE o.source_id END AS src_id,
+      CASE WHEN o.id IS NULL THEN e.event_kind ELSE o.event_kind END AS src_kind) AS s
+  LEFT JOIN public.order_refunds AS f ON s.src_table = 'order_refunds'
+    AND s.src_kind IN ('return_refund', 'refund_failed', 'refund_abandoned') AND f.id::text = s.src_id
+  WHERE l.order_id = _order_id AND l.account_code IN ('1160', '1040')
+    AND CASE WHEN f.id IS NULL THEN e.entry_date ELSE private.accounting_jst_date(f.created_at) END <= _lost_on
     AND (e.event_kind = 'return_refund' OR (e.event_kind = 'reversal' AND o.event_kind = 'return_refund'));
   v_z := v_z + (SELECT COALESCE(pg_catalog.sum(l.debit - l.credit), 0)::bigint
     FROM public.accounting_journal_lines AS l
     JOIN public.accounting_journal_entries AS e ON e.id = l.entry_id
     LEFT JOIN public.accounting_journal_entries AS o ON o.id = e.reverses_entry_id
+    CROSS JOIN LATERAL (SELECT CASE WHEN o.id IS NULL THEN e.source_table ELSE o.source_table END AS src_table,
+        CASE WHEN o.id IS NULL THEN e.source_id ELSE o.source_id END AS src_id,
+        CASE WHEN o.id IS NULL THEN e.event_kind ELSE o.event_kind END AS src_kind) AS s
+    LEFT JOIN public.order_refunds AS f ON s.src_table = 'order_refunds'
+      AND s.src_kind IN ('return_refund', 'refund_failed', 'refund_abandoned') AND f.id::text = s.src_id
     WHERE l.order_id = _order_id AND l.account_code = '2130' AND l.sub_account IN ('refund_owed_post', 'return_refund')
-      AND e.entry_date <= _lost_on
+      AND CASE WHEN f.id IS NULL THEN e.entry_date ELSE private.accounting_jst_date(f.created_at) END <= _lost_on
       AND (e.event_kind = 'refund_failed' OR (e.event_kind = 'reversal' AND o.event_kind = 'refund_failed'))
       AND EXISTS (SELECT 1 FROM public.accounting_journal_lines AS c WHERE c.entry_id = e.id AND c.account_code = '1160'));
   SELECT COALESCE(pg_catalog.sum(l.debit - l.credit), 0)::bigint INTO v_used
@@ -984,9 +1007,12 @@ BEGIN
 -- ACC_P3_BEGIN
         ELSIF v_fact.refund_id IS NULL AND EXISTS (SELECT 1 FROM public.stripe_disputes AS d
             WHERE private.accounting_dispute_order(d.id) = v_fact.order_id
-              AND private.accounting_jst_date(private.accounting_dispute_lost_at(d.id)) <= v_date) THEN
-          -- A 0 yen close on or after the loss day of a card dispute of the order: C already took the order's payable, so how
-          -- the close and C share the order is decided by a person, who books it by hand.
+              AND private.accounting_jst_date(private.accounting_dispute_lost_at(d.id)) <= v_date
+              AND EXISTS (SELECT 1 FROM public.accounting_journal_entries AS e
+                WHERE e.dedupe_key = private.accounting_dispute_key(d.id, 'confirmed', 'lost'))) THEN
+          -- A 0 yen close on or after the loss day of a card dispute of the order whose C is already booked: C already took
+          -- the order's payable, so how the close and C share the order is decided by a person, who books it by hand. While
+          -- C is not booked the close posts as usual and the wait of C counts it (P3-T8f).
           v_reason := 'order_not_postable';
           v_detail := pg_catalog.jsonb_build_object('reason', 'dispute_lost');
 -- ACC_P3_END
@@ -1088,9 +1114,9 @@ FROM PUBLIC, anon, authenticated, service_role;
 -- acc_s22_function_attrs: the three rebuilt functions keep their arguments, result, language, volatility, security, owner,
 -- search_path and ACL.
 -- acc_s22_body_unchanged: the dispute poster has 4 replaced parts and 2 ACC_P3 blocks, the detail list 1 and 0, the return
--- poster 0 and 1, and each with the replaced parts restored from the list below (by the md5 on the marker) and every
--- ACC_P<n> block and all white space removed is the body it was copied from (plan 2 S11, S15, S21); the detail list takes
--- the two new reasons of order_not_postable and still refuses one it does not know.
+-- poster 0 and 1 (its park needs the booked C), and each with the replaced parts restored from the list below (by the
+-- md5 on the marker) and every ACC_P<n> block and all white space removed is the body it was copied from (plan 2 S11, S15,
+-- S21); the detail list takes the two new reasons of order_not_postable and still refuses one it does not know.
 -- acc_s22_existing_dml_allowlist: this migration writes no row, and the group G writer list is what it was.
 DO $acc_s22_final$
 DECLARE
@@ -1175,6 +1201,9 @@ BEGIN
       OR pg_catalog.strpos(COALESCE((SELECT f.prosrc FROM pg_catalog.pg_proc AS f
         WHERE f.oid = pg_catalog.to_regprocedure('private.accounting_post_return_events(integer)')), ''),
         '''reason'', ''dispute_lost''') = 0
+      OR pg_catalog.strpos(COALESCE((SELECT f.prosrc FROM pg_catalog.pg_proc AS f
+        WHERE f.oid = pg_catalog.to_regprocedure('private.accounting_post_return_events(integer)')), ''),
+        'private.accounting_dispute_key(d.id, ''confirmed'', ''lost'')') = 0
       OR NOT private.accounting_pending_detail_valid('order_not_postable', '{"reason": "dispute_lost"}'::jsonb)
       OR NOT private.accounting_pending_detail_valid('order_not_postable', '{"reason": "return_closed_after_lost"}'::jsonb)
       OR NOT private.accounting_pending_detail_valid('order_not_postable', '{"reason": "units_missing"}'::jsonb)

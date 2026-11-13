@@ -258,6 +258,25 @@ describeLocalDb('S22 dispute offset: controller only', (db) => {
     expect(await pendingOf('stripe_disputes', d.disputeId)).toMatchObject({ resolved_entry_id: entry?.id });
   });
 
+  test('FREQ-581-AC-06: 確定の日までに作り確定の時に保留だった返金が、確定の日より後に済んでも、済んだ時に返金済みとして数え、分けて調べる補助16,875円で返品の返金待ちは0（確定の前に済んだ時と同じ）', async () => {
+    const d = await seedDisputeFlow(db());
+    const refundId = await nowReceipt(d);
+    await d.withdraw();
+    await recordRefundResult(db(), refundId, 'pending');
+    await settle();
+    await d.lose();
+    await settle();
+    expect(await entryOf(key(d.disputeId, 'confirmed', 'lost'))).toBeUndefined();
+    // 返金の成功の取引は確定（11-09）の後の 11-11
+    await succeedRefund(db(), refundId, { at: '2026-11-11T03:00:00Z' });
+    await settle();
+    expect((await q("select to_char(entry_date, 'YYYY-MM-DD') as d from public.accounting_journal_entries where event_kind = 'return_refund' and source_id = $1",
+      [refundId])).rows).toEqual([{ d: '2026-11-11' }]);
+    expect(await confirmed(d)).toEqual(['7530:13125/0', '1470(dispute_refund_overlap_review):16875/0', '1470(dispute_pending):0/30000']);
+    expect(await reviewOf(d.orderId)).toBe(16875);
+    expect(await payableOf(d.orderId)).toBe(0);
+  });
+
   test('FREQ-581-AC-05: 確定の日までに作った返金が Stripe へ送る前（awaiting_response）でも保留（pending）でも、確定は dispute_refund_overlap で待つ', async () => {
     for (const status of ['awaiting_response', 'pending'] as const) {
       await q('savepoint refund_state');
@@ -391,6 +410,60 @@ describeLocalDb('S22 dispute offset: controller only', (db) => {
     expect(await confirmed(d)).toEqual(['7530:30000/0', '1470(dispute_pending):0/30000']);
     expect(await payableOf(d.orderId)).toBe(0);
     expect(await pendingOf('stripe_disputes', d.disputeId)).toBeUndefined();
+  });
+
+  /** 今の時刻の1分前（日本の今日）の確定の知らせ。決定の日（今日）と同じ日になる。 */
+  const loseToday = (d: DisputeFlow) => d.lose(new Date(Date.now() - 60_000).toISOString());
+
+  test('FREQ-581-AC-05: 確定の知らせが届いて確定の仕訳がまだ無い同じ日に返品を0円で終えると、0円の終わりはふつうに入り、確定はそれを待って返金待ちに数えて入り、待ちは何も残らない', async () => {
+    const d = await seedDisputeFlow(db(), { snapshot: false });
+    await consultReceipt(d);
+    await settle();
+    await d.withdraw();
+    await settle();
+    await loseToday(d);
+    const factId = await closeAtZero(d);
+    await settle();
+    expect(await decisionEntry(factId)).toBe(1);
+    expect(await decisionPending(factId)).toBeUndefined();
+    // 0円の終わりが返品の返金待ちを 2130 から外すので R = 0、費用は 30,000
+    expect(await confirmed(d)).toEqual(['7530:30000/0', '1470(dispute_pending):0/30000']);
+    expect(await pendingOf('stripe_disputes', d.disputeId)).toBeUndefined();
+    expect(await payableOf(d.orderId)).toBe(0);
+    expect(Number((await q('select count(*) as n from public.accounting_pending_events where order_id = $1 and resolved_at is null',
+      [d.orderId])).rows[0].n)).toBe(0);
+  });
+
+  test('FREQ-581-AC-05: 同じ日に確定の仕訳が先に入った後で返品を0円で終えると、0円の終わりは手で入れる待ち（理由 dispute_lost）になる', async () => {
+    const d = await seedDisputeFlow(db(), { snapshot: false });
+    await consultReceipt(d);
+    await d.withdraw();
+    await loseToday(d);
+    await settle();
+    expect(await confirmed(d)).toEqual(['7530:13125/0', '2130(return_refund):16875/0', '1470(dispute_pending):0/30000']);
+    const factId = await closeAtZero(d);
+    await settle();
+    expect(await decisionPending(factId)).toEqual({ reason: 'order_not_postable', detail: { reason: 'dispute_lost' }, resolved_at: null });
+    expect(await decisionEntry(factId)).toBe(0);
+    expect(await payableOf(d.orderId)).toBe(0);
+  });
+
+  test('FREQ-581-AC-05: 確定で残りが0円になり確定の仕訳が無い（S = 0）注文で、確定の後に返品を0円で終えると、0円の終わりはふつうに入る', async () => {
+    const d = await seedDisputeFlow(db(), { snapshot: false });
+    await consultReceipt(d);
+    await d.withdraw();
+    await settle();
+    // 確定の前の全額の取り下げ（R）で、確定の時の残りが 0 円
+    await d.reverse(30000, '2026-11-08T03:00:00Z');
+    await d.lose();
+    await settle();
+    expect(await confirmed(d)).toBeNull();
+    expect(await pendingOf('stripe_disputes', d.disputeId)).toMatchObject({ reason: 'no_revenue' });
+    const factId = await closeAtZero(d);
+    await settle();
+    expect(await decisionEntry(factId)).toBe(1);
+    expect(await decisionPending(factId)).toBeUndefined();
+    expect(await payableOf(d.orderId)).toBe(0);
   });
 
   test('FREQ-581-AC-05: 確定の日より後に作った返金・届いた返品は、相殺に使わない', async () => {

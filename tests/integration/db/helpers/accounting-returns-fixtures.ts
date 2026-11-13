@@ -518,7 +518,7 @@ export async function restoreS15DetailValid(client: PgClient): Promise<void> {
 	await client.query(body);
 }
 
-export type ReturnRun ={ posted: number; parked_new: number; reparked: number; resolved: number; reversed: number; redated: number };
+export type ReturnRun = { posted: number; parked_new: number; reparked: number; resolved: number; reversed: number; redated: number };
 
 /** 返品の係を直接1回流す（入口 accounting_run_posting を通さない）。 */
 export async function postReturnEvents(client: PgClient, limit = 50): Promise<ReturnRun> {
