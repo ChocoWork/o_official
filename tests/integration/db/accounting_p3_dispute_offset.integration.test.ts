@@ -6,8 +6,8 @@ import {
   setCutoverForTest,
 } from './helpers/accounting-orders-fixtures';
 import {
-  bankTransfer, correctArrival, DISPUTE_DAYS, failRefund, orderBalance, receiveReturn, recordRefundResult, seedDisputeFlow, setRefundCreatedAt,
-  succeedRefund, type DisputeFlow,
+  bankTransfer, cancelRefund, correctArrival, decideRefund, DISPUTE_DAYS, failRefund, orderBalance, receiveReturn, recordRefundResult,
+  seedDisputeFlow, setRefundCreatedAt, succeedRefund, type DisputeFlow,
 } from './helpers/accounting-returns-fixtures';
 import { hBegin } from './helpers/group-h-refund-fixtures';
 import { describeLocalDb } from './helpers/local-db';
@@ -285,6 +285,28 @@ describeLocalDb('S22 dispute offset: controller only', (db) => {
     await settle();
     // 確定（11-09）の後の 11-12 に引き戻されて失敗し、同じ日に振込で返す
     await failRefund(db(), refundId, { pulled: true, at: '2026-11-12T03:00:00Z' });
+    await settle();
+    expect(await payableOf(d.orderId)).toBe(16875);
+    await bankTransfer(db(), { actor: d.admin, orderId: d.orderId, origin: 'return', amount: 16875, on: '2026-11-12', txn: `P-${randomUUID().slice(0, 8)}` });
+    await settle();
+    expect(await payableOf(d.orderId)).toBe(0);
+    await d.lose();
+    await settle();
+    expect(await confirmed(d)).toEqual(['7530:13125/0', '1470(dispute_refund_overlap_review):16875/0', '1470(dispute_pending):0/30000']);
+    expect(await reviewOf(d.orderId)).toBe(16875);
+    expect(await payableOf(d.orderId)).toBe(0);
+    expect(await balance(d.disputeId, '1470', 'dispute_pending')).toBe(0);
+  });
+
+  test('FREQ-581-AC-05: 確定の前に済んだ返金を確定の日より後に Stripe が取り消して引き戻し、お店が取りやめて振込で返した後に確定が入っても、取り消しの仕訳と振込は確定の日より後の分として一緒に外れ、分けて調べる補助16,875円で返品の返金待ちは0', async () => {
+    const d = await seedDisputeFlow(db());
+    const refundId = await nowReceipt(d);
+    await d.withdraw();
+    await succeedRefund(db(), refundId, { at: DISPUTE_DAYS.refund });
+    await settle();
+    // 確定（11-09）の後の 11-12 に取り消して引き戻し、取りやめ、同じ日に振込で返す
+    await cancelRefund(db(), refundId, { pulled: true, at: '2026-11-12T03:00:00Z' });
+    await decideRefund(db(), refundId, 'abandoned');
     await settle();
     expect(await payableOf(d.orderId)).toBe(16875);
     await bankTransfer(db(), { actor: d.admin, orderId: d.orderId, origin: 'return', amount: 16875, on: '2026-11-12', txn: `P-${randomUUID().slice(0, 8)}` });
