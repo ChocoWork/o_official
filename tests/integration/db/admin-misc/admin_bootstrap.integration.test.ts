@@ -53,7 +53,7 @@ describeLocalDb('integration: 最初の店長を作るコマンド', (db) => {
     return data.user.id;
   }
 
-  test('counts only active unexpired admins', async () => {
+  test('ARC-ADMIN-006 counts only active unexpired admins', async () => {
     const deps = createBootstrapDeps(client);
     const before = await deps.countActiveAdmins();
     const [active, inactive, expired] = [await makeUser('a'), await makeUser('i'), await makeUser('x')];
@@ -77,7 +77,7 @@ describeLocalDb('integration: 最初の店長を作るコマンド', (db) => {
     expect(await deps.countActiveAdmins()).toBe(before + 1);
   });
 
-  test('creates confirmed admin with role and audit', async () => {
+  test('ARC-ADMIN-006 creates confirmed admin with role and audit', async () => {
     const email = `e2e-bootstrap-${randomBytes(6).toString('hex')}@example.com`;
     const deps = { ...createBootstrapDeps(client), countActiveAdmins: async () => 0, checkPwned: async () => ({ status: 'ok' as const }) };
     const result = await bootstrapFirstAdmin({ email, password: PASSWORD, passwordConfirmation: PASSWORD, displayName: 'テスト店長' }, deps);
@@ -111,7 +111,7 @@ describeLocalDb('integration: 最初の店長を作るコマンド', (db) => {
     expect(audits).toHaveLength(1);
   });
 
-  test('refuses with real admin count', async () => {
+  test('ARC-ADMIN-006 refuses with real admin count', async () => {
     const email = `e2e-bootstrap-${randomBytes(6).toString('hex')}@example.com`;
     const result = await bootstrapFirstAdmin(
       { email, password: PASSWORD, passwordConfirmation: PASSWORD },

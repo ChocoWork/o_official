@@ -43,7 +43,7 @@ const input = (o: Partial<BootstrapInput> = {}): BootstrapInput => ({
 });
 
 describe('bootstrapFirstAdmin', () => {
-  it('creates admin when no admin exists', async () => {
+  it('DD-ADMIN-016 creates admin when no admin exists', async () => {
     const t = makeDeps();
     const r = await bootstrapFirstAdmin(input(), t.deps);
     expect(r).toEqual({ ok: true, userId: 'u1', email: 'owner@example.com', pwnedCheck: 'ok' });
@@ -59,13 +59,13 @@ describe('bootstrapFirstAdmin', () => {
     });
   });
 
-  it('normalizes email before creating', async () => {
+  it('DD-ADMIN-016 normalizes email before creating', async () => {
     const t = makeDeps();
     await bootstrapFirstAdmin(input({ email: '  Owner@Example.COM ' }), t.deps);
     expect((t.called('createUser')[0][1] as { email: string }).email).toBe('owner@example.com');
   });
 
-  it('refuses when an admin exists', async () => {
+  it('DD-ADMIN-016 refuses when an admin exists', async () => {
     const t = makeDeps({ countActiveAdmins: async () => 1 });
     const r = await bootstrapFirstAdmin(input(), t.deps);
     expect(r).toMatchObject({ ok: false, reason: 'admin_exists' });
@@ -74,35 +74,35 @@ describe('bootstrapFirstAdmin', () => {
     expect(t.called('audit')).toHaveLength(0);
   });
 
-  it('rejects mismatched confirmation', async () => {
+  it('DD-ADMIN-016 rejects mismatched confirmation', async () => {
     const t = makeDeps();
     const r = await bootstrapFirstAdmin(input({ passwordConfirmation: 'different-password-123' }), t.deps);
     expect(r).toMatchObject({ ok: false, reason: 'password_mismatch' });
     expect(t.called('countActiveAdmins')).toHaveLength(0);
   });
 
-  it('rejects short password', async () => {
+  it('DD-ADMIN-016 rejects short password', async () => {
     const t = makeDeps();
     const p = 'a'.repeat(15);
     const r = await bootstrapFirstAdmin(input({ password: p, passwordConfirmation: p }), t.deps);
     expect(r).toMatchObject({ ok: false, reason: 'invalid_password', message: 'パスワードは16文字以上で入力してください' });
   });
 
-  it('rejects password over 72 bytes', async () => {
+  it('DD-ADMIN-016 rejects password over 72 bytes', async () => {
     const t = makeDeps();
     const p = 'あ'.repeat(25);
     const r = await bootstrapFirstAdmin(input({ password: p, passwordConfirmation: p }), t.deps);
     expect(r).toMatchObject({ ok: false, reason: 'invalid_password' });
   });
 
-  it('rejects pwned password', async () => {
+  it('DD-ADMIN-016 rejects pwned password', async () => {
     const t = makeDeps({ checkPwned: async () => ({ status: 'pwned', count: 3 }) });
     const r = await bootstrapFirstAdmin(input(), t.deps);
     expect(r).toMatchObject({ ok: false, reason: 'pwned_password' });
     expect(t.called('createUser')).toHaveLength(0);
   });
 
-  it('continues when pwned check is unavailable', async () => {
+  it('DD-ADMIN-016 continues when pwned check is unavailable', async () => {
     const t = makeDeps({ checkPwned: async () => ({ status: 'unavailable', reason: 'timeout' }) });
     const r = await bootstrapFirstAdmin(input(), t.deps);
     expect(r).toMatchObject({ ok: true, pwnedCheck: 'unavailable' });
@@ -111,14 +111,14 @@ describe('bootstrapFirstAdmin', () => {
     expect(t.audits[1]).toMatchObject({ outcome: 'success' });
   });
 
-  it('refuses existing email', async () => {
+  it('DD-ADMIN-016 refuses existing email', async () => {
     const t = makeDeps({ createUser: async () => ({ kind: 'exists' }) });
     const r = await bootstrapFirstAdmin(input(), t.deps);
     expect(r).toMatchObject({ ok: false, reason: 'email_taken' });
     expect(t.called('grantAdminRole')).toHaveLength(0);
   });
 
-  it('reports create failure without auth message', async () => {
+  it('DD-ADMIN-016 reports create failure without auth message', async () => {
     const t = makeDeps({ createUser: async () => ({ kind: 'failed', status: 500, code: 'unexpected_failure' }) });
     const r = await bootstrapFirstAdmin(input(), t.deps);
     expect(r).toMatchObject({ ok: false, reason: 'create_failed' });
@@ -128,7 +128,21 @@ describe('bootstrapFirstAdmin', () => {
     }
   });
 
-  it('deletes created user when granting fails', async () => {
+  it('DD-ADMIN-016 rejects an invalid email', async () => {
+    const t = makeDeps();
+    const r = await bootstrapFirstAdmin(input({ email: 'not-an-email' }), t.deps);
+    expect(r).toMatchObject({ ok: false, reason: 'invalid_email' });
+    expect(t.called('createUser')).toHaveLength(0);
+  });
+
+  it('DD-ADMIN-016 reports create failure with unknown status and code', async () => {
+    const t = makeDeps({ createUser: async () => ({ kind: 'failed' }) });
+    const r = await bootstrapFirstAdmin(input(), t.deps);
+    expect(r).toMatchObject({ ok: false, reason: 'create_failed' });
+    if (!r.ok) expect(r.message).toContain('不明');
+  });
+
+  it('DD-ADMIN-016 deletes created user when granting fails', async () => {
     const t = makeDeps({
       grantAdminRole: async () => {
         throw new Error('boom');
@@ -141,7 +155,7 @@ describe('bootstrapFirstAdmin', () => {
     if (!r.ok) expect(r.message).toContain('消しました');
   });
 
-  it('still reports grant_failed when deleteUser also throws', async () => {
+  it('DD-ADMIN-016 still reports grant_failed when deleteUser also throws', async () => {
     const t = makeDeps({
       grantAdminRole: async () => {
         throw new Error('boom');
@@ -161,7 +175,7 @@ describe('bootstrapFirstAdmin', () => {
     }
   });
 
-  it('never passes password to audit', async () => {
+  it('DD-ADMIN-016 never passes password to audit', async () => {
     const scenarios: Array<Partial<BootstrapDeps>> = [
       {},
       { checkPwned: async () => ({ status: 'unavailable', reason: 'timeout' }) },

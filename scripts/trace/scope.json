@@ -296,7 +296,8 @@
       "src/app/api/admin/item-color-presets/**/*.ts",
       "src/app/admin/create-user/**/*.{ts,tsx}",
       "src/lib/contact/**/*.ts",
-      "src/lib/auditCleanup.ts"
+      "src/lib/auditCleanup.ts",
+      "scripts/admin/**/*.ts"
     ],
     "tests": [
       "tests/unit/**/*create-user*.test.{ts,tsx}",
@@ -311,6 +312,7 @@
       "tests/unit/**/*ItemColorPreset*.test.{ts,tsx}",
       "tests/unit/**/*reply-address*.test.{ts,tsx}",
       "tests/unit/**/admin-misc/**/*.test.{ts,tsx}",
+      "tests/unit/scripts/admin/**/*.test.{ts,tsx}",
       "tests/integration/**/*create-user*.test.{ts,tsx}",
       "tests/integration/**/*revoke-user-sessions*.test.{ts,tsx}",
       "tests/integration/**/*audit-logs*.test.{ts,tsx}",

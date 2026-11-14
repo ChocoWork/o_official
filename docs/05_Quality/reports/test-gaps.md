@@ -1,6 +1,6 @@
 # 試験の穴
 
-> 状態: 自動生成 | 生成日: 2026-11-09 | 対象: NEWS・HOME・LOOK・ABOUT・STOCKIST・SEARCH・PRIVACY・AUTH・ADMIN
+> 状態: 自動生成 | 生成日: 2026-11-14 | 対象: NEWS・HOME・LOOK・ABOUT・STOCKIST・SEARCH・PRIVACY・AUTH・ADMIN
 
 ## 概要
 
@@ -64,13 +64,13 @@
 | SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:4901` |
 | SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:5073` |
 | SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:5189` |
-| FREQ-508-AC-03 流し直しても付与が重ならず、ほかの結び付きが残り、「監査ログの閲覧」の名前で登録される | E2E | `docs/02_Requirements/areas/admin.md:206` |
-| SEC-ADMIN-003-AC-02 管理の表の権限が anon・authenticated に無い | E2E | `docs/02_Requirements/areas/admin.md:422` |
-| SEC-ADMIN-010-AC-01 監査ログの行を書き換えると検知の確かめで分かる | E2E | `docs/02_Requirements/areas/admin.md:642` |
-| SEC-ADMIN-010-AC-02 保持の期間を過ぎた行は写しを残してから消える | E2E | `docs/02_Requirements/areas/admin.md:654` |
-| SEC-ADMIN-012-AC-02 漏れたパスワードでの作成を断る | E2E | `docs/02_Requirements/areas/admin.md:720` |
-| SEC-ADMIN-017-AC-02 秘密が未設定なら Reply-To の無いメールを送る | E2E | `docs/02_Requirements/areas/admin.md:900` |
-| SEC-ADMIN-021-AC-02 メールを送らなかった返信は mailSent を false で返す | E2E | `docs/02_Requirements/areas/admin.md:1017` |
+| FREQ-508-AC-03 流し直しても付与が重ならず、ほかの結び付きが残り、「監査ログの閲覧」の名前で登録される | E2E | `docs/02_Requirements/areas/admin.md:237` |
+| SEC-ADMIN-003-AC-02 管理の表の権限が anon・authenticated に無い | E2E | `docs/02_Requirements/areas/admin.md:465` |
+| SEC-ADMIN-010-AC-01 監査ログの行を書き換えると検知の確かめで分かる | E2E | `docs/02_Requirements/areas/admin.md:685` |
+| SEC-ADMIN-010-AC-02 保持の期間を過ぎた行は写しを残してから消える | E2E | `docs/02_Requirements/areas/admin.md:697` |
+| SEC-ADMIN-012-AC-02 漏れたパスワードでの作成を断る | E2E | `docs/02_Requirements/areas/admin.md:763` |
+| SEC-ADMIN-017-AC-02 秘密が未設定なら Reply-To の無いメールを送る | E2E | `docs/02_Requirements/areas/admin.md:943` |
+| SEC-ADMIN-021-AC-02 メールを送らなかった返信は mailSent を false で返す | E2E | `docs/02_Requirements/areas/admin.md:1060` |
 
 ## 名前に ID の無い試験
 
@@ -178,3 +178,9 @@
 - `src/app/api/admin/revoke-user-sessions/route.ts:94` `POST` の `audit` の引数 `extra` の既定値 `= {}` は通らない。呼び出し5か所が全部 `{ resource_id: ... }` を渡し、この関数はファイルの中だけで使うため。確認: 未
 - `src/app/api/admin/users/mfa/reset/route.ts:92` `POST` の `audit` の `metadata ? { metadata } : {}` の偽の側は通らない。呼び出し9か所が全部 `metadata` を渡し、この関数はファイルの中だけで使うため。確認: 未
 - `src/app/api/auth/mfa/enroll-totp/route.ts:139` `POST` の未確認の要素を外した後の監査の `unenrollResult?.error` の `unenrollResult` が `null` の側は通らない。supabase-js の `mfa.unenroll` は `{ data, error }` の形を必ず返し、`null` を返さないため（型を満たすための `?.`）。確認: 未
+- `scripts/admin/bootstrap-core.ts:54` `bootstrapFirstAdmin` の `passwordParsed.error.issues[0]?.message ?? 'パスワードが正しくありません'` の右側は通らない。`passwordSchema` が失敗した時は必ず issue が1つ以上あるため。確認: 未
+- `scripts/admin/bootstrap.ts:97` `readHiddenFromStdin` の改行の字の分岐は通らない。標準入力を raw モードで読む関数は端末（TTY）が要り、単体テストでは動かさず、`readHidden` を差し替えて確かめるため。確認: 未
+- `scripts/admin/bootstrap.ts:103` `readHiddenFromStdin` の Ctrl+C の分岐は通らない。理由は改行の分岐と同じ。確認: 未
+- `scripts/admin/bootstrap.ts:109` `readHiddenFromStdin` の Backspace の分岐は通らない。理由は改行の分岐と同じ。確認: 未
+- `scripts/admin/bootstrap.ts:110` `readHiddenFromStdin` の通常の字を足す側は通らない。理由は改行の分岐と同じ。確認: 未
+- `scripts/admin/bootstrap.ts:124` ファイルの最後の `require.main === module` の偽の側は通らない。単体テストは import で読むので常に偽だが、真の側（コマンドとして流した時）が端末つきの実行でしか通らないため。確認: 未

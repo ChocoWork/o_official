@@ -9,9 +9,9 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 
 | 段 | 数 | ID |
 | --- | --- | --- |
-| 要求 | 2 | 既存の `FREQ-25`・`FREQ-508`（上位の無い要件が無いので `SR-ADMIN-` は起こしていない） |
-| 要件 | 3 | 既存の `FREQ-25-REQ-01`・`FREQ-508-REQ-01`・`FR-ADMIN-009` |
-| 受け入れ条件 | 10 | 既存の `FREQ-25-AC-01`・`FREQ-508-AC-01`〜`03`、新しい `FR-ADMIN-009-AC-01`〜`06` |
+| 要求 | 3 | 既存の `FREQ-25`・`FREQ-508`、新しい `SR-ADMIN-001`（新しい環境で最初の店長を作れる。2026-11-14） |
+| 要件 | 4 | 既存の `FREQ-25-REQ-01`・`FREQ-508-REQ-01`・`FR-ADMIN-009`、新しい `FR-ADMIN-010`（最初の店長を作るコマンド） |
+| 受け入れ条件 | 11 | 既存の `FREQ-25-AC-01`・`FREQ-508-AC-01`〜`03`、新しい `FR-ADMIN-009-AC-01`〜`06`・`FR-ADMIN-010-AC-01` |
 | 派生要件 | 8 | `DRV-ADMIN-001`〜`008` |
 | セキュリティ要件 | 23 | `SEC-ADMIN-001`〜`023`（受け入れ条件 41 件の `SEC-ADMIN-NNN-AC-NN` を含む。全部「推定」） |
 
@@ -62,7 +62,7 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 
 ### E2E と受け入れ条件の対応
 
-範囲の E2E は `e2e/FR-ADMIN-MISC-001`〜`007` の7本。テスト名の先頭に付けた受け入れ条件は次のとおり（2026-10-25 時点。`npm run validate-trace -- ADMIN` の `missing-child` が正）。
+範囲の E2E は `e2e/FR-ADMIN-MISC-001`〜`008` の8本。テスト名の先頭に付けた受け入れ条件は次のとおり（2026-10-25 時点。`npm run validate-trace -- ADMIN` の `missing-child` が正）。
 
 | E2E のファイル | テスト名の先頭に付けた受け入れ条件 |
 | --- | --- |
@@ -73,6 +73,7 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 | FR-ADMIN-MISC-005-item-color-presets-and-direct-db-access | SEC-ADMIN-002-AC-01、SEC-ADMIN-002-AC-02、SEC-ADMIN-003-AC-01、SEC-ADMIN-004-AC-01、SEC-ADMIN-022-AC-01 |
 | FR-ADMIN-MISC-006-contact-management | FR-ADMIN-009-AC-01、FR-ADMIN-009-AC-05、FR-ADMIN-009-AC-02、FR-ADMIN-009-AC-03、FR-ADMIN-009-AC-04、FR-ADMIN-009-AC-06、SEC-ADMIN-019-AC-01、SEC-ADMIN-020-AC-01、SEC-ADMIN-021-AC-01 |
 | FR-ADMIN-MISC-007-contact-reply-mail-and-threading | FREQ-25-AC-01、SEC-ADMIN-006-AC-01、SEC-ADMIN-006-AC-02、SEC-ADMIN-017-AC-01、SEC-ADMIN-018-AC-01、SEC-ADMIN-022-AC-02 |
+| FR-ADMIN-MISC-008-first-admin-bootstrap | FR-ADMIN-010-AC-01 |
 
 E2E が無い受け入れ条件（`missing-child` と同じ）: `FREQ-508-AC-03`、`SEC-ADMIN-003-AC-02`、`SEC-ADMIN-010-AC-01`・`AC-02`、`SEC-ADMIN-012-AC-02`、`SEC-ADMIN-017-AC-02`、`SEC-ADMIN-021-AC-02`。`FREQ-508-AC-03` は DB 結合 `tests/integration/db/audit_read_permission.integration.test.ts` が確かめる。
 
@@ -101,6 +102,16 @@ E2E が無い受け入れ条件（`missing-child` と同じ）: `FREQ-508-AC-03`
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記」の表の行） |
 
 要求の文: 監査ログを読む権限を店長に付ける機能を提供すること（波1 K-3）
+
+### SR-ADMIN-001 新しい環境で、最初の店長を作れる
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | 新しい環境（手元の `db reset` の後・検証用・作り直した本番）には店長が1人もおらず、店長だけが使える利用者の作成（DRV-ADMIN-001）に入る道が無い。環境を作る人が最初の1人を作れないと、管理画面を使い始められない |
+| 状態 | 現行 |
+| 出どころ | ユーザーの発言（オーナー 2026-11-14。使う場面は新しい環境を作る時だけ、やり方は手元で流すコマンド）、`docs/superpowers/specs/2026-11-14-admin-bootstrap-design.md` |
+
+要求の文: 環境を作る人が、新しい環境で最初の店長を作れること。
 
 ## 要件
 
@@ -159,6 +170,26 @@ CONTACT タブで問い合わせスレッドの一覧・ステータス/種別�
 - テンプレート: 一覧は `admin.contact.read`、作成・更新・削除は `admin.contact.manage`。題 1〜120 字、本文 1〜5000 字、分類（product・order・other・general・無し）、並び順 0〜9999。一覧は並び順の小さい順、同じなら作った順。作成・更新・削除は状態の変更と同じ枠（60 回 / 10 分）で数え、`id` が UUID でない・変えた行が 0 行のテンプレートの更新と削除は 404（SEC-ADMIN-021）
 - 権限の初期値: 店長とサポーターの両方が `admin.contact.read`・`admin.contact.manage` を持つ（権限の作業の移行）
 - 画面: 管理画面に CONTACT のタブがあり、`src/components/ContactSection.tsx` を開く（2026-10-28、波 4 で足した。FREQ-25-REQ-01 の今のコード）
+
+### FR-ADMIN-010 環境を作る人が、手元で流すコマンドで最初の店長を作る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-ADMIN-001 |
+| 根拠 | 公開の入口を増やさず（画面と使い捨ての鍵の案は退けた）、Supabase の住所と service role キーを持つ人だけが最初の店長を作れるようにする。Django の `createsuperuser` と同じ形 |
+| 状態 | 現行 |
+| 確かめ方 | E2E・結合テスト・単体テスト |
+| 出どころ | ユーザーの発言（オーナー 2026-11-14）、`docs/superpowers/specs/2026-11-14-admin-bootstrap-design.md` |
+| 優先度 | MUST |
+
+`npm run admin:bootstrap -- --email <店長のメール> [--name <表示名>]` で、メール確認済みの Auth の利用者を作り、`user_roles` に有効な `admin` の役割を付ける。
+
+- 止める時: 有効な店長が既に1人でもいる・同じメールのアカウントがある・パスワードが会員登録と同じ決まり（16〜128 字・UTF-8 で 72 バイト以内）に合わない・漏洩が分かっている・2回の入力が違う。止める時は何も作らない
+- 役割の書き込みが失敗したら、作った利用者を消して止める（流し直せるように）
+- 漏洩の照合先が使えない時は、通して警告を出し、監査に残す
+- 監査に `admin_bootstrap` を1行残す。パスワード・Supabase の誤りの文は残さない
+- TOTP は作らない。作った店長は最初のログインで、メール OTP の後に TOTP を登録する（SEC-AUTH-031。範囲外）
+- 目指さない: 店長が全員ログインできなくなった時の立て直し・Web の初回画面・2人目以降の店長・2回を同時に流した時の重なりの防止
 
 ## 受け入れ条件
 
@@ -291,6 +322,18 @@ FR-ADMIN-009 の文から起こした。今のコードで満たすかを「状�
 | 出どころ | 要件の文から起こした（FR-ADMIN-009）。権限の名前は実装から推定 |
 
 `admin.contact.read` の無い利用者は、問い合わせの一覧・詳細・テンプレートの一覧を読めず（401 か 403）、`admin.contact.manage` の無い利用者は、返信・状態の変更・テンプレートの作成・更新・削除が断られ（401 か 403）、中身が変わらないこと。初期の店長とサポーターは両方ができること。
+
+### FR-ADMIN-010-AC-01 コマンドで作った店長が、ログインの後に最初の TOTP の登録の画面へ進める
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-ADMIN-010 |
+| 根拠 | 作った店長が、そのままの流れ（メール OTP の後に TOTP の登録）で管理画面を使い始められることを、画面まで通して確かめる |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | 要件の文から起こした（FR-ADMIN-010）、`docs/superpowers/specs/2026-11-14-admin-bootstrap-design.md` |
+
+コマンドと同じ処理で作った店長が、確認済みのメールと作ったパスワードでログインし、`/auth/verified` に「管理画面利用のために2要素認証（TOTP）を登録してください。」の文と「2要素認証（TOTP）を登録」のボタンが出ること。mobile 390・tablet 768・desktop 1280 の3つの幅で試す。
 
 ## セキュリティ要件
 

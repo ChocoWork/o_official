@@ -9,7 +9,7 @@ ADMIN の領域の構成・画面・状態遷移・API・データを、追跡�
 
 | 種類 | 数 | ID | 中身 |
 | --- | --- | --- | --- |
-| 構成 | 5 | `ARC-ADMIN-001`〜`005` | 認可と service role、Origin の照合、監査ログの書き方と読み方、返信の宛先の印、監査ログの掃除の部品 |
+| 構成 | 6 | `ARC-ADMIN-001`〜`006` | 認可と service role、Origin の照合、監査ログの書き方と読み方、返信の宛先の印、監査ログの掃除の部品、最初の店長を作るコマンドの分け方 |
 | 画面 | 1 | `SCR-ADMIN-001` | 利用者の作成 `/admin/create-user` |
 | 状態遷移 | 1 | `STATE-ADMIN-001` | 問い合わせの状態 |
 | API | 15 | `API-ADMIN-001`〜`015` | 利用者の作成・強制失効・監査ログ・2要素のリセット・問い合わせの9つ・色見本の3つ |
@@ -180,6 +180,27 @@ sequenceDiagram
 - `cleanupAuditLogs` が、指定の日数（既定 365 日）より前に作られた `audit_logs` の行を service role で消し、消した数と消した行を返す。DB の誤りはそのまま投げる
 - 写しを残さずに消す。NFR-SEC-011（範囲外。保持と改ざんの防止）と旧設計の保存期間（`docs/04_DetailDesign/pages/16_admin.md`）と合わない（TM-ADMIN-06。SEC-ADMIN-010 を参照）
 - src・scripts・定時の仕事のどこからも呼ばれない。試験だけが呼ぶ（単体 `tests/unit/lib/auditCleanup.test.ts` の DD-ADMIN-015 と、結合 `tests/integration/api/admin-misc/admin-audit-cleanup-unused.test.ts` の ARC-ADMIN-005）
+
+### ARC-ADMIN-006 最初の店長を作るコマンドは、判断（core）・書き込み（deps）・入口（cli）の3つに分ける
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-ADMIN-010 |
+| 根拠 | 判断（既に店長がいれば止める・パスワードの決まり・失敗時の後始末）を、外への書き込みから切り離すと、書き込みを差し替えて単体で全分岐を確かめられる。Supabase への書き込みだけを deps に置くと、本物の Supabase に向けた確かめは結合テストの1か所で済む |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト |
+| 出どころ | `docs/superpowers/specs/2026-11-14-admin-bootstrap-design.md`（案1: コマンド） |
+
+| 部品 | 置き場 | 持つもの |
+| --- | --- | --- |
+| core | `scripts/admin/bootstrap-core.ts` の `bootstrapFirstAdmin` | 判断の筋道。外への書き込みは全部 deps に渡し、副作用を持たない |
+| deps | `scripts/admin/bootstrap-deps.ts` の `createBootstrapDeps` | 有効な店長の数・利用者の作成と削除・役割の付与・漏洩の照合・監査（`logAudit`）。service role の client を受ける |
+| cli | `scripts/admin/bootstrap.ts` の `runBootstrapCli` | 引数・環境変数（`SUPABASE_URL` か `NEXT_PUBLIC_SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY`）・向ける先のホスト名の表示・パスワードの隠した入力・出力。`.env` は読まない |
+
+- 認可: 持たない。Supabase の住所と service role キーを持つ人が端末で流すこと自体が権限（Web に入口が無い）
+- 役割の付与は2回の要求（旧い役割を止める・新しい役割を入れる）で、1つの取引ではない。失敗したら core が作った利用者を消す。消せなかった時は監査に `delete_failed` を残し、利用者の id を出して手で消してもらう
+- 2回を同時に流した時の重なりは防がない（環境を作る人が1人で1回流す前提）
+- 手順は `docs/06_Operations/first-admin-bootstrap.md`
 
 ## 画面
 

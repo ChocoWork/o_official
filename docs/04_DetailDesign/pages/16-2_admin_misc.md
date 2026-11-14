@@ -4,7 +4,7 @@
 
 ## 概要
 
-管理のそのほか（ADMIN）の範囲にある 14 ファイル・15 単位を、詳細設計の項目（`DD-ADMIN-001`〜`015`）で書く。2026-10-28（波 4）から、管理の監査には全部の結果の行に行為者のメール・IP・ブラウザの名乗りを付ける（共通の決めは ARC-ADMIN-003 と ADR-0462。IP の取り出しは DD-AUTH-038）。
+管理のそのほか（ADMIN）の範囲にある 14 ファイル・15 単位を、詳細設計の項目（`DD-ADMIN-001`〜`015`）で書く。2026-11-14 に、最初の店長を作るコマンド（`scripts/admin/` の3ファイル・3単位）を `DD-ADMIN-016`〜`018` で足した。2026-10-28（波 4）から、管理の監査には全部の結果の行に行為者のメール・IP・ブラウザの名乗りを付ける（共通の決めは ARC-ADMIN-003 と ADR-0462。IP の取り出しは DD-AUTH-038）。
 中身は 2026-10-24 の作業ツリーのコードを読んで起こした今の動きで、ユーザーの確認を受けていないので全部「推定」にした。構造設計・要件とコードが食い違う所は決めずに今のコードの動きを書き、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節（`TM-ADMIN-NN`）に載せた。今のコードがセキュリティ要件を満たさない所は、その `SEC-ADMIN-NNN` の項目に1回だけ書き、ここでは `SEC-ADMIN-NNN を参照` と指す。
 
 | ID | 題 | 単位 |
@@ -24,6 +24,9 @@
 | `DD-ADMIN-013` | 返信の宛先を作る | `src/lib/contact/reply-address.ts` の `buildReplyAddress` |
 | `DD-ADMIN-014` | 返信の宛先を確かめる | `src/lib/contact/reply-address.ts` の `parseReplyAddress` |
 | `DD-ADMIN-015` | 古い監査ログを消す（未使用（削除の判断待ち）） | `src/lib/auditCleanup.ts` の `cleanupAuditLogs` |
+| `DD-ADMIN-016` | 最初の店長を作る判断 | `scripts/admin/bootstrap-core.ts` の `bootstrapFirstAdmin` |
+| `DD-ADMIN-017` | 最初の店長を作るコマンドの入口 | `scripts/admin/bootstrap.ts` の `runBootstrapCli` |
+| `DD-ADMIN-018` | 最初の店長を作る書き込みの束 | `scripts/admin/bootstrap-deps.ts` の `createBootstrapDeps` |
 
 - 結論: 窓口は全部、頭で共有の認可（`authorizeAdminPermission`）を通し、通った後にだけ service role の client で表と Auth の管理の機能を使う。画面は利用者の作成の1つだけで、画面には守りが無い
 - 今のコードは、存在しない id への変更を 200 の成功として返す（問い合わせ・テンプレート）、一部の DB の書き込みの誤りを見ない、などの動きを持つ（強制失効・2要素のリセット・作成・色見本は 2026-10-26 に直した）。届かないセキュリティ要件は上位に書かず、本文では `SEC-ADMIN-NNN を参照` と指す（構造設計と同じ決め方）
@@ -74,6 +77,9 @@
 | `src/lib/contact/reply-address.ts` | `buildReplyAddress` | DD-ADMIN-013 |
 | `src/lib/contact/reply-address.ts` | `parseReplyAddress` | DD-ADMIN-014 |
 | `src/lib/auditCleanup.ts` | `cleanupAuditLogs` | DD-ADMIN-015 |
+| `scripts/admin/bootstrap-core.ts` | `bootstrapFirstAdmin` | DD-ADMIN-016 |
+| `scripts/admin/bootstrap.ts` | `runBootstrapCli` | DD-ADMIN-017 |
+| `scripts/admin/bootstrap-deps.ts` | `createBootstrapDeps` | DD-ADMIN-018 |
 
 - 窓口のファイルは、中の GET・POST などが別々の契約でも、単位がファイルなので1つの `DD-` にまとめた。項目の本文で方法ごとに分けて書く
 - 単位にならない物: 強制失効の窓口の中の `auditUnauthorized`・`isTargetNotFound`、2要素のリセットの窓口の中の `isMfaFactorList`・`readRoleCode`・`resolvePrivilegedRole`、問い合わせの一覧の窓口の中の `sanitizeSearchTerm`、`reply-address.ts` の `computeToken`・`safeEqual`（export しない関数。それぞれの項目に含める）、`auditCleanup.ts` の最後の既定の書き出し（後から出す形）
@@ -985,6 +991,97 @@ POST:
 - DB が誤りを返した時はその誤りを投げる（既存）
 - 引数を渡さない時は 365 日前を境にする（時刻を固定して確かめる）
 - 数が返らない時は消した数が 0
+
+### DD-ADMIN-016 最初の店長を作る判断
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | ARC-ADMIN-006 |
+| 根拠 | 外への書き込みを持たない1つの関数に判断を集め、止める条件と後始末を、書き込みを差し替えた単体テストで全部確かめる（ARC-ADMIN-006） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト |
+| 出どころ | `docs/superpowers/specs/2026-11-14-admin-bootstrap-design.md` |
+
+**入出力:** 入力は メール・パスワード・確認用のパスワード・表示名（任意）と、書き込みの束 deps。出力は成功（利用者の id・メール・漏洩の照合の結果）か、失敗の理由（`invalid_email`・`password_mismatch`・`invalid_password`・`admin_exists`・`pwned_password`・`email_taken`・`create_failed`・`grant_failed`）と文。
+
+**正常フロー:** メールの前後の空白を除いて形を確かめる → 2回の入力の一致 → パスワードの決まり（`passwordSchema`）→ 有効な店長が0人 → 漏洩の照合 → 利用者の作成 → 役割の付与 → 監査に成功を1行。
+
+**異常フロー:**
+
+| 条件 | 動き |
+| --- | --- |
+| 有効な店長が1人でもいる | 何も書かずに `admin_exists` |
+| 漏洩が分かっている | 作らずに `pwned_password` |
+| 漏洩の照合先が使えない | 通して、監査に `pwned_check_unavailable:<符号>` を残す |
+| 同じメールがある | `email_taken` |
+| 利用者の作成が失敗 | Auth の誤りの文は出さず、status と code だけで `create_failed` |
+| 役割の付与が失敗 | 作った利用者を消し、`grant_failed` を監査に残す。消すのに失敗しても `grant_failed` を返し、監査に `delete_failed` を残す |
+
+**状態・永続化:** 持たない（deps が持つ）。**認証認可:** 持たない（ARC-ADMIN-006）。
+
+**テスト観点:**（`tests/unit/scripts/admin/bootstrap-core.test.ts`）上の異常フローの全部と、メールの前後の空白を除くこと、パスワードを監査に渡さないこと。
+
+### DD-ADMIN-017 最初の店長を作るコマンドの入口
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | ARC-ADMIN-006 |
+| 根拠 | 引数・環境変数・端末の入力と出力を、判断から切り離して持つ。向け先を取り違えて別の環境に書かないよう、パスワードを聞く前にホスト名を出す（ARC-ADMIN-006） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト |
+| 出どころ | `docs/superpowers/specs/2026-11-14-admin-bootstrap-design.md` |
+
+**入出力:** 入力は引数（`--email` 必須・`--name` 任意）・環境変数・端末かどうか・パスワードを聞く関数・出力の関数。出力は終了コード（成功 0、止めた時と失敗 1）。
+
+**正常フロー:** 引数を読む → 環境変数を確かめる → 向ける先のホスト名を出す → 端末か確かめる → 有効な店長がいれば止める → パスワードを2回聞く → core を呼ぶ → 結果と次の手順（最初のログインで TOTP を登録する）を出す。
+
+**異常フロー:**
+
+| 条件 | 動き |
+| --- | --- |
+| `--email` が無い・引数が不正 | 使い方を出して 1 |
+| 環境変数が無い・住所の形が不正 | 理由を出して 1（鍵は出さない） |
+| 端末でない | パスワードを隠せないので 1 |
+| 有効な店長がいる | パスワードを聞く前に止めて 1 |
+| core が失敗を返す | 文を出して 1（パスワードは出さない） |
+| core が例外を投げる | 例外の文は出さず、確かめる先（Auth と `user_roles`）を出して 1 |
+| 漏洩の照合先が使えなかった | 警告を出して成功 |
+
+**状態・永続化:** 持たない。**認証認可:** 持たない（ARC-ADMIN-006）。
+
+**テスト観点:**（`tests/unit/scripts/admin/bootstrap-cli.test.ts`）上の異常フローの全部と、成功時の出力。パスワードを聞く関数と標準入力の読み取り（`readHiddenFromStdin`）・実行の入口は端末が要るので、単体では通さない。
+
+### DD-ADMIN-018 最初の店長を作る書き込みの束
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | ARC-ADMIN-006 |
+| 根拠 | Supabase への書き込みを1か所に置き、core の判断から切り離す。Auth の誤りの文（メールを含みうる）は返さず status と code だけを渡す（ARC-ADMIN-006） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト |
+| 出どころ | `docs/superpowers/specs/2026-11-14-admin-bootstrap-design.md` |
+
+**入出力:** 入力は service role の Supabase client。出力は `countActiveAdmins`・`checkPwned`・`createUser`・`grantAdminRole`・`deleteUser`・`audit` を持つ束。
+
+**正常フロー:**
+
+- `countActiveAdmins`: `user_roles` の `admin` で `active` かつ期限が無いか未来の行を数える
+- `createUser`: `email_confirm: true`・`app_metadata.role = 'admin'` で Auth の利用者を作る
+- `grantAdminRole`: その利用者の既存の役割を止め、`admin` を `active`・期限なしで入れる（2回の要求。1つの取引ではない）
+- `deleteUser`: Auth の利用者を消す
+- `audit`: `logAudit` をそのまま使う（`ALERT_AUDIT_URL` の通知を含む）
+
+**異常フロー:**
+
+| 条件 | 動き |
+| --- | --- |
+| 数える・役割を止める・入れる・消すのどれかが失敗 | 固定の文の例外を投げる（Supabase の誤りの文は含めない） |
+| `admin` の役割の行が無い | `admin role not found` を投げる |
+| 作成が失敗 | メールの重なり（`email_exists` か文に already）は `exists`、ほかは status と code だけの `failed` |
+
+**状態・永続化:** `auth.users`・`user_roles` に書く。**認証認可:** 持たない（service role の client を呼ぶ側が渡す）。
+
+**テスト観点:**（`tests/unit/scripts/admin/bootstrap-deps.test.ts`。本物の Supabase に向けた確かめは結合テスト `tests/integration/db/admin-misc/admin_bootstrap.integration.test.ts`）上の正常・異常フローの全部。
 
 ## 未確認事項
 

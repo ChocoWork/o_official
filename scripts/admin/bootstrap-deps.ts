@@ -9,6 +9,13 @@ import { checkPwnedPassword } from '@/lib/pwned-password';
 import { logAudit } from '@/lib/audit';
 import type { BootstrapDeps } from './bootstrap-core';
 
+/**
+ * 最初の店長を作る判断（bootstrap-core）に渡す、Supabase への書き込みの束。
+ *
+ * @impl IMPL-ADMIN-303
+ * @design DD-ADMIN-018
+ * @remarks 役割の付け替えは2回の要求（旧い役割を止める・新しい役割を入れる）で、1つの取引ではない。Auth の誤りの文は返さず status と code だけを渡す。
+ */
 export function createBootstrapDeps(client: SupabaseClient): BootstrapDeps {
   async function adminRoleId(): Promise<string> {
     const { data, error } = await client.from('roles').select('id').eq('code', 'admin').single();

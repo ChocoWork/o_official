@@ -15,6 +15,13 @@ export type CliIo = {
   print(line: string): void;
 };
 
+/**
+ * コマンドの入口。引数・環境変数・パスワードの入力を受け、判断は bootstrap-core に渡す。
+ *
+ * @impl IMPL-ADMIN-302
+ * @design DD-ADMIN-017
+ * @remarks 向け先の取り違えに気づけるよう、パスワードを聞く前にホスト名を出す。端末でない時はパスワードを隠せないので止める。
+ */
 export async function runBootstrapCli(io: CliIo, makeDeps?: (url: string, key: string) => BootstrapDeps): Promise<number> {
   let values: { email?: string; name?: string };
   try {
