@@ -28,6 +28,7 @@ import { installRefundBridge } from './unit-binding-test-utils';
 // 本文の検査・監査・計上の予約は通らない（単体の試験が持つ）。題の「本物の返金の処理」は、この返金の処理（値段の計画と DB の関数）を指す。FREQ-579-AC-02・AC-03 の返金の始まり・失敗・取り消しは
 // DB の関数（begin_order_refund・record_order_refund_result）と fixture の道具の差し替えで、route は通らない。
 // 計上は本物の係（accounting_run_posting）、取り消しの区分・振込の記録・一覧は本物の画面と route。E2E は今日の日付だけを使う。
+// ブラウザへ返る返金の応答の本文は橋のもの（{ refundId, status, amount, replayed }）で、route の toRefundReply・withHeldOrderIds の整形は通らない。store はテストのサービスロールの接続で、createDefaultRefundServiceDeps ではない。
 // 仕訳・返金・計上待ちは消せないので db reset してから流す。
 
 test.use({ trace: 'off', locale: 'ja-JP' });

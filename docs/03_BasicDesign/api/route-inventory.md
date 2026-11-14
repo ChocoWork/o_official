@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> 会計の計画3 Task 13 確認日: 2026-11-15。Route Handler の数は変えない（198ファイル・250メソッド、表は197行・249メソッド）。既存の窓口が DB の判断待ちの止めを 409 `DISPUTE_HOLD`（`orderIds`）で返すようになり（返金・返金の確かめ直し・支払い済みのキャンセル・返品の返金・受け取り・発送票の確定）、返金の材料・返品の画面・返品を作る材料の応答に `disputeHold` が付く。契約は [API仕様](api-spec.md)の各行。
+>
 > 会計の計画3 Task 11c 確認日: 2026-11-14。Route Handler を1ファイル・1メソッド足した（198ファイル・250メソッド、表は197行・249メソッド）: `/api/admin/accounting/refund-settlements/candidates`。契約は [API仕様](api-spec.md) の「管理:会計・法定保存」。
 >
 > 会計の計画3 Task 11a 確認日: 2026-11-14。Route Handler を1ファイル・1メソッド足した（197ファイル・249メソッド、表は196行・248メソッド）: `/api/admin/accounting/pending-events/[id]/link-entry`。契約は [API仕様](api-spec.md) の「管理:会計・法定保存」。

@@ -1,5 +1,7 @@
 # テスト仕様
 
+> 2026-11-15 確認日（会計の計画 3 Task 13）: 末尾に「会計の返品・返金（計画 3 / FREQ-575〜584、2026-11-15）」を足した（新しい E2E `FR-ADMIN-137`〜`140`、表示だけの証拠と本物の区分、DB 結合の75ファイル、単体・画面）。交換の印（FREQ-642）の節は変えていない。
+
 > 2026-11-12 確認日（オーナー修正 X4 Fix round 2）: 送料の欄の初めの値（一番新しい失敗した返金だけ）・0円で終える時の案内・エラーの間の0円の終わりの断りを単体・DB に足した。
 
 > 2026-11-12 確認日（オーナー修正 X4 Fix round 1）: 返金しないで終えた分・固定の費用・出来事2つ・error の断り・送料の欄の初めの値・画面の見込みと DB の読み手の一致を DB・単体・E2E に足した。E2E は未実行（調整役が実行）。
@@ -1920,3 +1922,108 @@ DB結合・単体の実測は各Taskの実装者と調整役の報告のとお�
 - Stripe の実機（`stripe trigger charge.dispute.*`、`tax_fee`・`fee_details` の形、請求書の符号）は未確認。Stripe MCP の再認証が要る（運用の手引きの未確認事項 1〜3・19）。
 - E2E は Stripe を呼ばない。画面の幅の確かめは Task 14 の 5 本（上）が全てで、本番の見た目は確かめていない。
 - 全件の E2E と、計画 2 の最終レビューは Task 16。
+
+## 会計の返品・返金（計画 3 / FREQ-575〜584、2026-11-15）
+
+対象は会計の計画 3（返品の届いた日、返金・返品の事実、出荷前の返金の前受金、返品の届いた日と額の仕訳、返金の成功・失敗・取り消し・振込・結び、判断待ちの注文の返金と出荷の止め、dispute の確定の相殺、2段の照らし合わせ、消費税用の返金、画面）。要求と受け入れ条件は[要件定義書](../../02_Requirements/requirements.md)の FREQ-575〜584（と FREQ-569・571 の足し分）、運用は[会計の返品・返金の運用](../../06_Operations/accounting-p3-returns-refunds.md)、移行は[DB 移行](../../06_Operations/db-migrations.md)の計画 3 の節。**移行 S15〜S25 は手元の DB だけで確かめた。本番には当てていない**。以下の試験名の先頭の ID は、要件定義書の受け入れ条件の ID。この節は交換の印（FREQ-642）の節を変えずに、会計の試験だけを足す。
+
+### 流し方の決まり
+
+| 種類 | 決まり |
+| --- | --- |
+| ロールバックの DB 結合 | `supabase db reset` の後、`DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db/accounting_p3 --runInBand`。ほかの試験が残した行（確定した発送票など）で数が狂わないよう、`db reset` の直後に流す |
+| コミットする試験（並行・届く順） | `ACCOUNTING_COMMIT_SUITE=1` を付け、**1 ファイルずつ単独の jest で**流す。前後に `db reset` を挟む。対象: `accounting_p3_refund_concurrency`・`…_refund_writers_concurrency`・`…_refund_rule5_concurrency`・`…_return_concurrency`・`…_return_writers_concurrency`・`…_dispute_offset_concurrency`・`…_refund_order_independence`・`…_dispute_order_independence` |
+| 移行の自己検査の試験 | `accounting_p3_migration_asserts`（S15〜S25 の本文の契約、再生、改ざんした本文を断る）。S17 以後は S15 の検査の数が変わるので、再生の道具が数を合わせる |
+| 固定の手数料の止め（S16）を外す試験 | 手数料の働きそのものが題の DB 試験は、試験の取引の中の savepoint で CHECK を外し、`ROLLBACK TO` で戻す（`withoutReturnFeeLock`）。E2E は DB の決まりを外さない |
+| E2E | 本番ビルド（`next build && next start`）・手元の Supabase。`db reset` の直後に流す。3000 番に残ったアプリは先に止める。`FR-ADMIN-140` は返品の設定の行を書き換えるので `isolated-global`（順に流す組）で流す |
+| E2E の後 | DB 結合に戻る前に `npm run db:reset` |
+
+### 新しい E2E（`FR-ADMIN-137`〜`140`。本番ビルド・手元の Supabase・390/768/1280px）
+
+試験名の先頭の ID はそのまま要件定義書の受け入れ条件の ID。実測（2026-11-15、Task 12 の修正の2回目）: 4 本、3 幅で 45 試験を `db reset` の直後に流して全部通過（既定の worker 数・`--retries=0`。`FR-ADMIN-133`・`FR-ACCOUNT-035`・`048`・`FR-ADMIN-165`〜`168` と合わせて 220 通過・失敗 0）。全件の実行: 1594 試験・1590 通過・0 失敗・4 飛ばし（`FR-ADMIN-044` はデスクトップ幅だけ）。
+
+| spec | 試験名の先頭の ID | 確かめること |
+| --- | --- | --- |
+| [FR-ADMIN-137](../../../e2e/FR-ADMIN-137-accounting-return-arrival.spec.ts) | FREQ-575-AC-01 | 返品の受け取りで届いた日（今日）を選ぶと、計上後の仕訳帳に届いた日の仕訳が出る |
+| 同上 | FREQ-575-AC-02 | 届いた日を前の日へ直すと、直した跡が返品の詳細に出る。切り替えの日より前へ直すと計上待ちに理由つきで出る（その行は DB で自分の直しのものを確かめる） |
+| 同上 | FREQ-578-AC-02 | 相談で受け取り、額を決めて返金すると、差の仕訳が決めた日に出る（DB の関数で始める） |
+| 同上 | FREQ-584-AC-01 | 未来の届いた日は選べない（受け取りの画面・届いた日を直す画面） |
+| 同上 | FREQ-584-AC-06 | 受け取りの画面・返品の詳細・計上待ち・消費税用の返金の一覧が3幅で横にはみ出さない |
+| [FR-ADMIN-138](../../../e2e/FR-ADMIN-138-accounting-refund-journals.spec.ts) | FREQ-577-AC-03 | 発送前に取り消した1着は返金した日に前受金から引かれ、残る1着の出荷の売上は引いた額になり前受金が0（本物の返金の画面と返金の処理。route は通らない。下の区分を参照） |
+| 同上 | FREQ-579-AC-02 | 失敗した返金は返金の未払いに立ち、借りの一覧に出て、振込の記録（本物の画面と route）で0になり、行が消える |
+| 同上 | FREQ-579-AC-03 | 取り消された返金が計上待ちに出て、「店が返金をやめた」を選ぶと元の仕訳が取り消される（取り消しの POST は自分の返金の番号のものだけを通す） |
+| 同上 | FREQ-583-AC-01 | 消費税用の返金の一覧に返金が出て、免税の売上の返金は対象外（課税の合計に入る場合は DB の試験） |
+| [FR-ADMIN-139](../../../e2e/FR-ADMIN-139-accounting-dispute-holds-offset.spec.ts) | FREQ-580-AC-01 | 判断待ちの注文の返金は本物の route が 409 `DISPUTE_HOLD`、DB の関数が 55000 で断り、理由が出る |
+| 同上 | FREQ-580-AC-02 | 判断待ちの注文を含む発送票は、本物の確定の route が 409 で止め、事前の止めを通らず DB の関数を直接呼んでも 55000 で断り、票は下書きのまま |
+| 同上 | FREQ-581-AC-02 | 返品の返金待ち 16,875 円がある注文の確定（30,000 円）で、返金待ちが先に消え、残り 13,125 円だけが費用（日本時間の0時の直前は流さない） |
+| 同上 | FREQ-581-AC-03 | 返金済みの 16,875 円が「分けて調べる」の補助へ移り、費用は 13,125 円だけ（同上） |
+| [FR-ADMIN-140](../../../e2e/FR-ADMIN-140-accounting-return-settings.spec.ts) | FREQ-578-AC-05 | 返品の設定の手数料欄は無効で、割合の手数料は設定できる |
+| 同上 | FREQ-575-AC-04 | 配達日を使う設定は既定がオフ（列の既定を毎回確かめる）で、切り替えられ、サポーターは切り替えられない（本物の route が403） |
+
+#### 表示だけの証拠と、本物の route・画面・DB の区分
+
+実 Stripe の証拠は1つも無い。Stripe の行はすべて手元の DB へ直に入れた表示の証拠。
+
+| 区分 | 内容 |
+| --- | --- |
+| 手元の DB へ直に入れた物・DB の関数で作った物（表示の証拠。実 Stripe ではない） | `stripe_balance_transactions`・`stripe_refunds`・dispute とその履歴の行すべて（`seedStripeCharge`・`succeedRefund`・`failRefund`・`cancelRefund`・`seedDispute`・`addDisputeHistory`）。返品の流れ（`seedReturnFlow`）の返品・返品の行の挿入、`seedSlotOrder` の枠の挿入、`seedRefundFlow` の H の材料。138 の FREQ-579-AC-02・03 の返金の開始（`begin_order_refund` と値段の計画の材料）と失敗・取り消し（`record_order_refund_result`）、FREQ-583-AC-01 の返金（`seedCancelRefund`）。137 の FREQ-578-AC-02 と 139 の FREQ-581 の受け取り・額を決めて返金（`admin_receive_return`・`admin_refund_return` を DB の関数で呼ぶ。Stripe を呼ぶ route は通らない）。139 の FREQ-580-AC-02 の発送票の下書き（`createDraftInDb`） |
+| 138 の FREQ-577-AC-03（部分的に本物） | 本物: 返金の画面と返金の材料の GET、値段の計画、DB の `begin_order_refund`、計上係、仕訳の route、元帳の画面。**本物でない: 返金の POST の route**。ブラウザの POST を `installRefundBridge`（FR-ADMIN-166 の道具）が横取りし、`submitAdminRefund` をテストのプロセスで直に呼ぶ。route の6段（権限・CSRF・回数の制限・本文の検査・監査・計上の予約）は通らず、応答の本文も橋のもの（`{refundId,status,amount,replayed}`）。route の段は単体の試験が持つ。Stripe の呼び出しは偽物で、`stripe_refunds`・残高の取引の行は直に入れる。残る1着の出荷は `shipUnits` の道具 |
+| 本物（route・画面・DB の断り） | 137: 受け取り・届いた日を直す画面と `return-arrival`・返品の route、仕訳の route、計上待ち、消費税用の返金の一覧の幅。138: 計上係の実行、帳簿の画面、借りの一覧と振込の記録（`refund-bank-transfers`）、計上待ちと取り消しの区分（`refund-cancellations`）、`tax-refunds` の route と画面。139: 返金の route と返金の材料の route（409 `DISPUTE_HOLD`）、発送票の確定の route（409）、DB の断り（55000）、確定した dispute の計上。140: 設定の画面と `return-options` の route、サポーターの403 |
+| 「分けて調べる」（M11） | 139 の FREQ-581-AC-03 は補助科目 `dispute_refund_overlap_review` の残高だけを確かめる。語 `disputeOffsetReview` はどの画面にも出ないので、画面の文言の確かめは無い（運用の手引きの 5） |
+
+### 直した既存の E2E
+
+E2E の既存の spec は、固定の手数料の止め（S16）に合わせて一部の入力と題を直した。一覧は[DB 移行](../../06_Operations/db-migrations.md)の計画 3 の節の「直した既存の試験」の表（`FR-ADMIN-084`・`085`・`088`・`091`・`092`・`118`・`165`、`FR-ACCOUNT-038`、道具）。ほかの既存の spec は直していない。
+
+### DB 結合（`tests/integration/db/accounting_p3_*.integration.test.ts`）
+
+件数は試験の記述（`test`・`it`）の数で、表で展開する物は展開の前の数。受け入れ条件は試験名の先頭の ID。
+
+| ファイル | 件数 | 受け入れ条件 | 確かめること |
+| --- | --- | --- | --- |
+| `accounting_p3_return_refund_tables` | 14 | FREQ-575-AC-01・02・04、576-AC-01〜04、580-AC-01 | S15 の表・制約・追記専用・列の既定・道具（判断待ちの道具） |
+| `accounting_p3_return_fee_lock` | 4 | FREQ-578-AC-05 | 固定の手数料の止め（CHECK 2つ。割合の手数料は使える） |
+| `accounting_p3_refund_writers` | 23 | FREQ-576-AC-01・02・05・06、577-AC-06・07、579-AC-03・07、580-AC-01・03・05 | 返金の書き手が残す事実・履歴・判断待ちの止め・取り消しの区分・やめた時の戻し |
+| `accounting_p3_refund_allocations` | 43 | FREQ-577-AC-03〜06・08・10、579-AC-07 | 割り当ての決め方（交換の設計の例）・値段の直し d・品を決めない額の分け方 |
+| `accounting_p3_refund_writers_concurrency`・`…_refund_rule5`・`…_refund_rule5_concurrency` | 3・1・2 | FREQ-577-AC-07・09 | 同じ返金を同時に流しても1本、出荷・返金・取り消し・error の届く順 |
+| `accounting_p3_return_arrival` | 17 | FREQ-575-AC-01〜05、581-AC-07 | 届いた日の検査・直し・今の届いた日・設定・要求番号 |
+| `accounting_p3_return_writers`・`…_return_writers_concurrency`・`…_return_concurrency` | 33・2・2 | FREQ-576-AC-03・06、578-AC-01・02・04・07・08・10 | 受け取りと額の決定の事実、0円の終わり、17引数の受け取り |
+| `accounting_p3_shipment_hold_guard` | 7 | FREQ-576-AC-06、580-AC-02・03 | 発送票の確定の止め（再送は前の結果・複数の注文を束ねた票） |
+| `accounting_p3_refund_posting` | 34 | FREQ-577-AC-01〜03・05・10、579-AC-01・05・07・08 | 返金の仕訳（出荷前・返品・返品でない出荷後・手数料） |
+| `accounting_p3_refund_failures` | 26 | FREQ-577-AC-03、579-AC-02〜05 | 失敗・取り消し・振込・結び（借りの二重消し・残高超え） |
+| `accounting_p3_refund_concurrency`・`…_refund_order_independence` | 2・4 | FREQ-577-AC-07、579-AC-04〜06 | 結びと振込の同時、16の例の届く順 |
+| `accounting_p3_return_posting`・`…_return_redate` | 36・6 | FREQ-576-AC-03、578-AC-01〜04・06・08・10 | 届いた日・額の決定・0円の終わり・届いた日の直しの仕訳、跡の読み |
+| `accounting_p3_dispute_offset`・`…_dispute_offset_concurrency`・`…_dispute_order_independence` | 27・2・3 | FREQ-580-AC-01、581-AC-01〜08 | 確定の相殺（R・Z）、遅れた取り下げ、待ち、確定の後の制限、届く順 |
+| `accounting_p3_intake_reads`・`…_deferred_revenue_anomalies` | 15・4 | FREQ-571-AC-05、582-AC-01〜05・07・08、578-AC-09 | 受注高の出来事・内訳・2段の照らし合わせ・前受金の異常 |
+| `accounting_p3_stripe_reconciliation` | 5 | FREQ-582-AC-06 | Stripe の残高の照合で返金系の取引が `planned_p3` から外れる |
+| `accounting_p3_tax_refunds` | 15 | FREQ-583-AC-01〜04 | 消費税用の返金の行・対象外・続きの読み・7年保存の注記 |
+| `accounting_p3_pending_manual_close` | 6 | FREQ-581-AC-05、582-AC-06 | 手で入れた仕訳と結ぶ・人が閉じた取引・2つ目の取り消し |
+| `accounting_p3_refund_debt_reads` | 7 | FREQ-579-AC-04・05 | 借りの一覧（返品の借り・処理中の返金・上限）、結びの候補、振込の断り（処理中） |
+| `accounting_p3_migration_asserts` | 42 | FREQ-575-AC-01、576-AC-03〜05、578-AC-05・09、579-AC-04・05、580-AC-02、581-AC-01・05、582-AC-05・06 | S15〜S25 の本文の契約と末尾の自己検査 |
+
+作り直した関数・直した既存の試験は[DB 移行](../../06_Operations/db-migrations.md)の計画 3 の節。新しい共通の材料は `tests/integration/db/helpers/accounting-returns-fixtures.ts`（`withoutReturnFeeLock` など）。
+
+### 単体・画面の試験
+
+| ファイル | 種類 | 受け入れ条件 |
+| --- | --- | --- |
+| `tests/unit/lib/accounting/return-refund-types.test.ts`・`return-refund-schema.test.ts`・`return-refund-store.test.ts`・`labels.test.ts`・`accounts-contract.test.ts` | 単体 | FREQ-575・576・578-AC-01・579・583（状態・入力の検査・store・SQL の日本語と TS の一致・補助科目） |
+| `tests/unit/api/admin/accounting-return-arrival-route`・`accounting-return-options-route`・`accounting-refund-cancellations-route`・`accounting-refund-bank-transfers-route`・`accounting-refund-settlements-route`・`accounting-tax-refunds-route`・`accounting-post-response-failure`（`.test.ts`） | 単体 | FREQ-575・579・583・576-AC-06（権限・CSRF・入力・応答に個人の情報が無いこと・監査の結果・応答の後の計上係） |
+| `tests/unit/api/admin/order-refund-route`・`order-return-money-routes`・`order-status-shipped`・`order-returns-routes`・`shipment-slip-confirm-route`・`accounting-pending-events-route`（`.test.ts`） | 単体 | FREQ-580-AC-02・04（409 `DISPUTE_HOLD` と `orderIds`・`disputeHold`）、FREQ-575-AC-01（`arrivedOn`）、`link-entry` |
+| `tests/unit/components/OrderReturnReceiveDialog.arrival`・`OrderReturnArrivalDialog`・`OrderReturnsDialog.arrival`・`RefundDialogs.disputeHold`・`OrderReturnRefundDialog.disputeHold`（`.test.tsx`） | 画面 | FREQ-584-AC-01・02・04・05（届いた日・直す画面・判断待ちの止め） |
+| `tests/unit/components/cost-profit/pending-view`・`refund-cancellation-dialog`・`refund-bank-transfer-form`・`refund-debts-panel`・`refund-settlement-dialog`・`tax-refunds-panel`・`return-arrival-option`・`dispute-list`（`.test.tsx`）、`accounting-api-labels.test.ts` | 画面 | FREQ-584-AC-02〜05、583-AC-01・04、579-AC-03〜05、575-AC-04 |
+| `tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts` | 単体 | Route Handler の数（198 ファイル・250 メソッド）の確認 |
+
+### 実測（各 Task の実装者の報告。今回は再実行していない）
+
+- DB 結合（計画 3 の試験）: 75 ファイル・2,781 件通過（`db reset` の直後、Task 11c の修正の2回目）。コミットする試験は 1 ファイルずつ単独で通過。
+- 単体（`tests/unit`）: 742 スイート・18,682 件通過（同上）。`tsc --noEmit`・lint・`validate-docs` は各 Task で通過。
+- E2E: 上のとおり（Task 12）。計画 3 の最後の全件の比べは Task 14 の担当。
+
+### 未実行・限界
+
+- 本番の DB には S15〜S25 を当てていない（適用後の確かめは運用の手引きの 13）。
+- 実 Stripe の返金・取り消し・dispute の知らせは確かめていない。E2E の Stripe は偽物か、手元の DB へ直に入れた行。
+- 138 の FREQ-577-AC-03 は返金の POST の route を通らない。route の権限・CSRF・回数の制限・本文の検査・監査・計上の予約は単体の試験が持つ（`order-refund-route.test.ts`・`accounting-post-response-failure.test.ts`）。
+- 「分けて調べる」の語を出す画面は無い（M11）。確かめるのは補助科目の残高だけ。
+- 固定の手数料（返送料の定額・交換の手数料・交換の送料）の画面の経路は、S16 が止めるので E2E に無い。DB の savepoint の試験が手数料の働きを確かめている。

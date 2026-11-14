@@ -4,6 +4,8 @@
 
 確認日: 2026-10-03（「Stripe 非同期処理」の行と「Stripe Webhook の処理」の図は、2026-10-07 に確認し直した。「HTTP ジョブ登録」の行は、照合の登録が抜けていたので足し、同じ日に確認し直した。「外部表示・リンク」の行の UI 見本の画像と、Proxy の CSP の許可先の記述は、2026-10-28 に直した）。対象ソース: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`（確認し直した行と図は `b54976d2`。「HTTP ジョブ登録」の行は、保留中の SQL 3本を `0781d3ff` で読んで確かめた）。
 
+会計の計画3（2026-11-15）: 末尾に「会計の返金・返品の事実と計上係の流れ（計画3）」の節を足した（返品・返金の事実を残す流れ、計上係の呼ぶ順〔返品→返金→dispute〕、鍵の順は変えないこと、判断待ちの止め）。手元の DB で確認済み・本番未適用。
+
 会計の計画2（2026-11-09）: 「Stripe 非同期処理」の行を18種に直し、worker の後に会計の計上係を流すことを足した。「HTTP Cron」「HTTP ジョブ登録」の行に10分ごとの会計の計上を足した。「Meta KPI」の行の月の KPI の表は S13 で `supabase/migrations/` に定義が入った。末尾に「会計の計上係の流れ」の節を足した。
 
 本書はリポジトリ内で確認した実装と呼び出し経路を示す。ブラウザ、Next.js サーバー、外部サービス、別プロセスの運用スクリプトを区別する。本番配置先、環境変数の値、外部サービスの有効化、適用済み migration、ジョブの稼働は未確認である。
@@ -154,3 +156,34 @@ flowchart TB
 | 失敗の扱い | 出来事1件ごとに別の枠。失敗は戻して保留（`accounting_pending_events`）に残し、ほかは続ける。保留した行は次の呼び出しで最大10件まで見直す。生の例外の文は残さない |
 | 呼び出し元の失敗 | 画面と worker は、計上の失敗で自分の応答や知らせの処理を失敗にしない（ログに入口の名前と記号だけ）。取りこぼしは10分ごとの定期処理が拾う |
 | 公開の入口 | `public.accounting_run_posting` ただ1つ。各係は `private.*` で、入口を持たない（EXECUTE は所有者だけ） |
+
+## 会計の返金・返品の事実と計上係の流れ（計画3）
+
+確認日: 2026-11-15（会計の計画3 Task 13）。**手元の DB で確認済み・本番未適用**。返金・返品・取り消しの区分・届いた日の直し・振込・結びの書き手は、お金や状態を書く取引の中で「事実」の表（[ER 図](../data/er.md)）に追記し、計上係がその事実と Stripe の残高の取引から仕訳を作る。判断待ちの注文では、返金を始める関数と発送票の確定が DB の中で断る。運用は[会計の返品・返金の運用](../../06_Operations/accounting-p3-returns-refunds.md)、仕訳の詳細は[計上係のシーケンス](../../04_DetailDesign/sequence/accounting-posting.md)。
+
+```mermaid
+flowchart TB
+  subgraph W["書き手（取引の中で事実を追記）"]
+    R1["返金を始める・結果を書く・error を書く・外の返金の記録"] --> F1["accounting_refund_events / facts / adjusts / 割り当て"]
+    R2["返品の受け取り・額を決めて返金"] --> F2["accounting_return_facts"]
+    R3["届いた日の直し・配達日の設定"] --> F3["order_return_arrival_corrections / accounting_return_options"]
+    R4["取り消しの区分・振込の記録・やり直しの結び"] --> F4["events（abandoned・owed）・仕訳・accounting_refund_settlements"]
+  end
+  H["判断待ちの dispute のある注文"] -.->|ACCOUNTING_DISPUTE_HOLD 55000| R1
+  H -.->|同じ止め| SLIP["発送票の確定 admin_confirm_shipment_slip"]
+  Run["public.accounting_run_posting"] --> P1["支払い"] --> P2["出荷"] --> P3["Stripe"] --> P4["返品 accounting_post_return_events"] --> P5["返金 accounting_post_refund_events"] --> P6["dispute accounting_post_dispute_events<br/>確定を返品の返金待ち R と返金済み Z で相殺"]
+  F1 & F2 & F3 --> P4
+  F1 & F4 --> P5
+  P4 & P5 & P6 --> Core["accounting_post_journal_core（計画1）"]
+  P4 & P5 & P6 -.->|出来事1件の失敗・待ち| Park["accounting_pending_events（理由つきの保留）"]
+```
+
+| 論点 | 内容 |
+| --- | --- |
+| 事実を残す流れ | 書き手は、返金の行・状態・額・割り当てと同じ取引の中で事実を書く。途中で失敗すれば事実も残らない。事実の番号 `fact_seq` は G の鍵の中で取り、番号の順がコミットの順になる（計画2と同じ）。事実の表は追記専用で、`service_role` も SELECT だけを持つ |
+| 計上係の呼ぶ順 | 支払い → 出荷 → Stripe → **返品 → 返金** → dispute。返品の届いた日の仕訳が先に入り、返金の仕訳（2130 を消す）が後に入る。dispute の確定は、返品と返金の仕訳が入った後で相殺する（結果が出ていない返金・仕訳が無い届いた日があれば、確定が待つ） |
+| 鍵の順 | 計画2のまま: `(190521, 1)`（G の鍵）→ `(190525, 0)` → `(190525, hashtext(期間))`。計画3の書き手・計上係・結び・振込も同じ順で、全部の係は最初に `private.accounting_lock_all(NULL)` を取る。計画3は鍵を足さない |
+| 判断待ちの止め | 返金を始める関数（管理者・支払い済みのキャンセル・返品の返金）と発送票の確定が、再送の枝の後に `private.accounting_assert_no_dispute_hold` を呼び、`ACCOUNTING_DISPUTE_HOLD`（55000）で断る。止めは DB の中にあり、route は断りを 409 `DISPUTE_HOLD` にして `orderIds` を読み直す。自動の返金と Stripe の画面からの返金の記録は止めない。解けるのは確定か取り下げの後 |
+| 結果の通知 | route は、記録ができた後に `scheduleAccountingPosting`（`refund`・`return`・`refund_cancel`・`refund_bank`・`refund_settle`）で計上係を流す（`after()`）。断り・失敗では流さない。流す失敗は握り、応答は変えない |
+| 公開の入口 | 計上の入口は今までどおり `public.accounting_run_posting` ただ1つ。計画3の書き手・読みは `service_role` だけが呼ぶ public の入口（INVOKER）で、本体は `private.*`（SECURITY DEFINER）。計上係と道具は入口を持たない |
+| 失敗の扱い | 計画2のまま。出来事1件ごとに別の枠で、失敗は戻して保留に残し、ほかは続ける。計画3の新しい待ちの理由は `refund_prior_unposted`・`refund_cancel_undecided` と、`order_not_postable` の詳細の理由（`dispute_lost`・`return_closed_after_lost` ほか） |

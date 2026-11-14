@@ -1,6 +1,6 @@
 # 会計の計上係のシーケンス（支払い・出荷・Stripe・dispute）
 
-> 状態: 現行のソース（会計の作り直し 計画2 Task 2〜10。手元の Supabase と使い捨てのコンテナで確かめた分。本番には未適用） | 確認日: 2026-11-13（出荷の着の選び方を計画3 S17 の決まりに直した） | 対象: 支払いを前受金にする計上（S7）、出荷の日の売上（S8）、Stripe の手数料・入金・着金（S9）、dispute の受け取り（S10）と計上（S11）、計上の入口 `accounting_run_posting`
+> 状態: 現行のソース（会計の作り直し 計画2 Task 2〜10。手元の Supabase と使い捨てのコンテナで確かめた分。本番には未適用） | 確認日: 2026-11-15（会計の計画3 Task 13: 6〜9 と計画3の対応表を足した。計画3の移行 S15〜S25 は本番未適用）／2026-11-13（出荷の着の選び方を計画3 S17 の決まりに直した） | 対象: 支払いを前受金にする計上（S7）、出荷の日の売上（S8）、Stripe の手数料・入金・着金（S9）、dispute の受け取り（S10）と計上（S11）、計上の入口 `accounting_run_posting`
 
 ## 概要
 
@@ -163,6 +163,151 @@ W（引かれた時）・C（確定）・R／L（戻り）・X（科目の振り
 | 出来事1件が例外 | その枠が戻り、`accounting_park_failure` が保留に書く。ほかの出来事は続く。保留に書くのも失敗したら、固定の `posting_error`（`XX000`・`unexpected_error`）に落とし、それも失敗したら何も書かない（次の呼び出しで新しい出来事として再び拾う） | 計上待ちの `posting_error`（記号と SQLSTATE） |
 | 係の入口が失敗 | アプリは例外を握り、ログ `[accounting.posting]`（入口の名前と記号）だけ残す。定期処理は 502 と heartbeat の失敗 | `ops_job_heartbeats` の `accounting_post`（30分で店へ知らせ） |
 | 同時実行 | 鍵で1つずつ。同じ出来事は印で1本 | なし |
+
+## 6. 返品の届いた日と額の決定（計画3 S18・S21）
+
+開始は返品の受け取り（`admin_receive_return`）と額を決めて返金（`admin_refund_return`）、届いた日の直し（`admin_correct_return_arrival_date`）。書き手が事実を残し、返品の係 `accounting_post_return_events` が仕訳にする。**本番未適用**（手元の DB で確認済み）。
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as 管理画面の route
+  participant W as admin_receive_return / admin_refund_return
+  participant F as accounting_return_facts
+  participant R as accounting_run_posting
+  participant P as accounting_post_return_events
+  participant C as 仕訳の核
+  participant Q as accounting_pending_events
+  U->>W: 受け取り（arrivedOn は省略可）
+  W->>W: 判断待ちの止め・届いた日の検査（未来・申し込みの前・確定した取り消しの日以前は断る）
+  W->>F: 届いた日の事実 arrival（goods G・fee F）と、返金を始める時は決定の事実 decision（decided・covers・payable_delta）
+  U->>R: 応答の後に計上係を流す
+  R->>P: 呼ぶ
+  loop 事実1件（1つの枠）
+    alt 送り返すだけ・交換だけの受け取り
+      P->>P: 事実が無いので何もしない（仕訳も保留も作らない）
+    else 日が切り替えの日より前
+      P->>Q: before_cutover
+    else 期間が無い
+      P->>Q: period_missing（entry_date つき）
+    else 通る（届いた日）
+      P->>C: 4020 G / 2130 G（return_refund）と 2130 F / 4050 F（印 return_arrived:<受け取り>）
+    end
+    opt 額の決定（相談・検品・額を決めて返金）
+      P->>C: 差 payable_delta を決めた日に（減は 2130 / 4020、増は逆向き。印 return_amount_decided:<…>）
+    end
+    opt 返金を0円で終えた
+      P->>C: 決めた日に 借方 2130 C・4050 F / 貸方 4020 C+F の1本
+    end
+  end
+  Note over P,C: 額は事実の G・F・payable_delta・covers_amount だけで決める（手数料の割合は読まない）
+```
+
+| 場面 | 起きること |
+| --- | --- |
+| 届いた日の直し | 事実は足さず、直しの行を足す。係は古い日の仕訳の取り消し（印 `reversal:<元>`）と直した日の同じ行の仕訳（印 `return_arrival_redated:<直しの番号>`）を入れる。直した日に期間が無ければ `period_missing`（`entry_date` は直した日）で止まり、元の仕訳は取り消されない。2回直しても取り消しは1回ずつ。仕訳から跡は `get_return_journal_trace` で引く（理由・人・前後の日） |
+| 相談で額が決まる | 見込みの額で届いた日に立て、決まった日に差を足す（増・減）。写しのある注文で額を変えた返金・失敗した返金でも、`covers_amount` は返金の額から前の分を引いた額で、0を下回らない |
+| 手元に残る着の値段の直し | 仕訳にしない。4020 の累計は実際に返した額と手数料の合計 |
+| 確定した取り消しのある注文 | 確定の日以前の届いた日の受け取りと、確定の日をまたぐ直しを断る（`RETURN_ARRIVAL_DATE_INVALID`） |
+| 失敗 | 書き手が失敗すると事実も残らない。係の失敗は枠ごと戻って保留（`posting_error`） |
+
+## 7. 返金の事実と仕訳（成功・失敗・取り消し・振込・結び）（計画3 S17・S20）
+
+開始は返金を始める関数（管理者・支払い済みのキャンセル・返品の返金・外の返金の記録）と、Stripe の結果を書く関数。事実（状態の履歴・額・割り当て）は同じ取引で残り、返金の係 `accounting_post_refund_events` が、その返金の事実と Stripe の残高の取引だけから仕訳にする（ほかの返金の残高は読まないので、入る順が入れ替わっても同じ額）。
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as 画面の route
+  participant W as 返金を始める関数
+  participant F as refund events / facts / 割り当て
+  participant S as Stripe
+  participant P as accounting_post_refund_events
+  participant C as 仕訳の核
+  U->>W: 返金を始める
+  W->>W: 再送の枝の後・行を作る前に判断待ちの止め（55000）
+  W->>F: requested・額の事実（P 出荷前・Q 出荷後・送料・F）・割り当て
+  W->>S: 返金を頼む
+  S-->>W: 受付・成功・失敗・取り消し
+  W->>F: accepted / succeeded / failed / canceled / error
+  P->>F: 返金ごとに最後の状態と事実を読む
+  alt 成功（残高の取引がある）
+    P->>C: 取引の日に 出荷前: 2150 / 1160、返品: 2130（return_refund）/ 1160、返品でない出荷後: 4020 / 1160、手数料があれば 4020 F / 4050 F
+  else 成功だが残高不足で保留（取引が無い）
+    P->>P: 仕訳を作らず取引ができた時に作る
+  else 失敗（引かれた後）
+    P->>C: 戻りの取引の日に 1160 / 2130（refund_owed_pre・refund_owed_post）。取引が無ければ refund_prior_unposted（failure_txn_missing）
+  else 失敗（引かれる前）
+    P->>C: 出荷前は決まった日に 2150 / 2130（refund_owed_pre）。返品は仕訳を作らず届いた日の未払金が残る
+  else 取り消し
+    P->>P: 区分を選ぶまで refund_cancel_undecided で待つ
+  end
+```
+
+| 場面 | 起きること |
+| --- | --- |
+| 取り消しの区分（`admin_decide_refund_cancellation`） | Stripe が取り消した返金だけに選べる。「やめた」は引かれた後なら元の仕訳の取り消しだけ、引かれる前なら仕訳を作らず、発送前の取り消しの返金なら交換の印の作業がその着を戻し割り当てを返す。「返すつもり」は失敗と同じ借り。2回目は前の結果、違う内容は `CANCEL_DECIDED` |
+| 振込（`admin_record_refund_bank_transfer`） | 振込の日に「返金の未払い／普通預金」（返品の借りは 2130 が減る）。同じ銀行の取引の番号・同じ種類（origin）の2回目は何も足さない。借りの残高を超える額は断る。origin `return` は同じ注文に処理中の返金がある間は断る（S25） |
+| 結び（`admin_settle_owed_by_refund`） | 借りの返金と成功したやり直しの返金を結び、借りの結んでいない額とやり直しの返金の額の小さい方だけ戻す。やり直しの返金は1回しか結べない（`accounting_refund_settlements`）。発送前の取り消しの借りは結べない（振込で返す） |
+| 発送前の取り消しの値段の直し | 発送済みの残る着の直し d は、その出来事の最初の返金の仕訳で売上へ寄せる（`accounting_refund_first_adjust`）。まだの着の直しは出荷の額に反映する。上限（V_P）を超えた分は 4020 / 1160 |
+| 判断待ち | 開始の関数が断るので、事実も行も Stripe の呼び出しも残らない。自動の返金・外の返金の記録は止めない |
+| 失敗 | 事実と同じ取引なので、失敗すると何も残らない。係の失敗は枠ごと戻って保留 |
+
+## 8. dispute の確定の相殺（計画3 S22・S24）
+
+計画2の dispute の係（W→R→C→L）から、返金・返品との止め2つ（`dispute_refund_overlap`・`dispute_return_refund_pending`）が外れ、確定（C）が返品の返金待ち R と返金済み Z を相殺する。
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant D as accounting_post_dispute_events（C）
+  participant K as accounting_dispute_offset_ready
+  participant A as accounting_dispute_offset_amounts
+  participant C as 仕訳の核
+  participant Q as accounting_pending_events
+  D->>K: 確定の日までの返金・返品の結果が出ているか
+  alt 返金の結果が未確定・仕訳が無い
+    K-->>D: 待つ（dispute_refund_overlap）
+    D->>Q: 保留
+  else 届いた日・決定の仕訳が無い
+    K-->>D: 待つ（dispute_return_refund_pending）
+    D->>Q: 保留
+  else 確定の日より後に返品を0円で終えた仕訳が先に入っている
+    D->>Q: order_not_postable（return_closed_after_lost）
+  else 通る
+    D->>A: R・Z・S から pay・review を決める
+    A-->>D: pay = min(R, S)、review = min(Z, S − pay)
+    D->>C: 2130（return_refund）pay / 1470（dispute_refund_overlap_review）review / 費用 残り
+  end
+```
+
+| 場面 | 起きること |
+| --- | --- |
+| 遅れた取り下げ（L） | 費用の科目（または振り替えた科目）→ 分けて調べる補助 → 返金待ち（2130）の順に戻す |
+| 確定の後の0円の終わり | 確定の日以降に返品を0円で終えると、仕訳にせず `order_not_postable`（`dispute_lost`）。手で入れた仕訳と結んで閉じる（S24） |
+| 2つ目の取り消し | 手で入れる待ちの `dispute_lost` の決定は待ちの数えに入れない（S24） |
+| 数える日 | 返金の成功の仕訳（返金の係）は返金を作った日（日本時間）が確定の日以前なら、仕訳の日にかかわらず数える。ほかの仕訳（取り消しを含む）は仕訳の日が確定の日以前の時だけ数える |
+
+## 9. 計上待ちを手で入れた仕訳と結んで閉じる（計画3 S24）
+
+`order_not_postable` の行は、人が手で仕訳を入れてから `admin_link_accounting_pending_entry` で結んで閉じる（権限 `admin.accounting.entries.correct`、メモ必須）。結べるのは、取り消されていない手入力の仕訳（`manual_entry`）。待ちに注文があり、仕訳に注文の付いた行があれば同じ注文の行が要る。どの行にも注文が付かない仕訳は結べる。結ぶと待ちの行に閉じた人・メモ・要求番号・仕訳の番号が残り、同じ仕訳で複数の待ちを閉じられる。route は計上係を流さない（計画2の「確認済みにする」と同じ）。
+
+## 受け入れ条件と設計の対応（計画3）
+
+要求 `FREQ-575`〜`FREQ-584` の受け入れ条件（要件定義書の表）が、どの設計に書かれているかを示す。試験は[テスト仕様](../../05_Quality/tests/test-spec.md)の計画 3 の節。
+
+| 要求 | 設計 |
+| --- | --- |
+| FREQ-575 返品の届いた日 | 本書の 6、[ER 図](../../03_BasicDesign/data/er.md)（`arrived_on`・直しの表・設定の表）、[運用の手引き](../../06_Operations/accounting-p3-returns-refunds.md)の 6 |
+| FREQ-576 返金・返品の事実を同じ取引で残す | 本書の 6・7、[ER 図](../../03_BasicDesign/data/er.md)、[DB 移行](../../06_Operations/db-migrations.md)の計画3の節 |
+| FREQ-577 出荷前の返金を前受金から減らす | 本書の 7（発送前の取り消しの値段の直し）、[運用の手引き](../../06_Operations/accounting-p3-returns-refunds.md)の 12 |
+| FREQ-578 返品の届いた日・額の決定の仕訳 | 本書の 6 |
+| FREQ-579 返金の仕訳・取り消しの区分・振込・結び | 本書の 7、[運用の手引き](../../06_Operations/accounting-p3-returns-refunds.md)の 2・3 |
+| FREQ-580 判断待ちの注文の返金・出荷の止め | [システム構成](../../03_BasicDesign/architecture/system-overview.md)の計画3の節、[API 仕様](../../03_BasicDesign/api/api-spec.md)の `DISPUTE_HOLD`、[運用の手引き](../../06_Operations/accounting-p3-returns-refunds.md)の 4 |
+| FREQ-581 dispute の確定の相殺 | 本書の 8、[dispute の状態](../states/accounting-dispute.md) |
+| FREQ-582 照らし合わせ（受注高・2段・Stripe の残高） | [運用の手引き](../../06_Operations/accounting-p3-returns-refunds.md)の 10・11、計画2の 5 |
+| FREQ-583 消費税用の返金の一覧 | [運用の手引き](../../06_Operations/accounting-p3-returns-refunds.md)の 7、[画面一覧](../../03_BasicDesign/ui/screen-list.md)の計画3の節 |
+| FREQ-584 画面 | [画面一覧](../../03_BasicDesign/ui/screen-list.md)・[画面遷移](../../03_BasicDesign/ui/screen-flow.md)の計画3の節、[管理の会計のページ](../pages/16-5_admin_accounting.md) |
 
 ## 受け入れ条件と設計の対応（計画2）
 

@@ -1,5 +1,7 @@
 # 1.16 管理画面（ADMIN）詳細設計
 
+> 2026-11-15 確認日（会計の計画 3 Task 13）: 末尾に、返品・返金の画面の会計の足し物の案内の節を足した（処理の詳細は 16-5 の「返品・返金（計画3）」）。DD-ADMIN-019〜023 の節は変えていない。
+
 > 2026-11-13 確認日（会計の計画 3 Task 3）: DD-ADMIN-021〜023 の既知の制限の発送した枠の決め方（R33）を S17 の決まりに直した（取り消しの時に取り押さえていた着を後に回す。`order_unit_shipped_slots` は `accounting_shipped_units` を呼ぶだけで同じ着を名指す。返金の誤り・失敗の間の制限は解消）。
 
 > 2026-11-12 確認日（オーナー修正 X4 Fix round 2）: DD-ADMIN-022 の X4 の送料の欄の初めの値を「今すぐの分ごとに一番新しい失敗した返金」に直し、相談の分だけの失敗は0円で始まること、0円で終える時の案内、エラーの間の0円の終わりの断りを足した。画面の見込みの関数は `loadReturnRefundOutstanding` だけにした。
@@ -1376,3 +1378,7 @@ DB は `private.order_unit_return_refund_parts(_return_id)` がこの (出来事
 | 行別の配分 | その割引が効いた商品の行を`品名（色 / サイズ）`と額で並べる（`aria-label="行別の割引額"`）。詳細の行に無い商品は「品物」。配分の合計は割引の額と一致し、`amounts.discount`は内訳の合計と一致する（食い違う材料は窓口が500にする） |
 | 表示の安全 | 名前とコードは文字として出し、HTMLは実行しない。折り返しは`break-words`で長い名前に耐える |
 | 試験 | 単体 [AdminOrderDetailSection](../../../tests/unit/components/AdminOrderDetailSection.test.tsx)・[admin-order-store](../../../tests/unit/lib/orders/admin-orders/admin-order-store.test.ts)。3幅（390/768/1280px）の表示・実DB・E2EはTask 11 |
+
+## 返品・返金の画面の会計の足し物（会計の計画3 / FREQ-575〜584）
+
+返品の受け取りの届いた日、判断待ちの止め、返品の詳細の届いた日の直し、返金・支払い済みのキャンセルの止めの処理は、[管理の会計のページ](16-5_admin_accounting.md)の「返品・返金（計画3）」に書いた。この頁の DD-ADMIN-019〜023（返品の品ごとの返金・交換の印）の節は変えていない。計画3の移行 S15〜S25 は本番未適用。

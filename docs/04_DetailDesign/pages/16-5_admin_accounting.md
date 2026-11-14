@@ -1,6 +1,6 @@
 # 1.16-5 管理の会計（ADMIN ACCOUNTING）詳細設計
 
-> 状態: 現行のソース（会計の作り直し 計画1 Task 8・10・11・12、計画2 Task 10〜13。画面と窓口は単体・RTL・E2E で確かめた分。本番には計画1が適用済み〔2026-11-08〕、計画2は未適用） | 確認日: 2026-11-09 | 対象: ACCOUNTING タブの会計期間の選択、「設定・期間」サブタブ、「計上待ち」「照合」サブタブ、期間で数える読み（保存した仕訳だけで数える）、証憑の種類、減価償却の月数、KPI の受注高
+> 状態: 現行のソース（会計の作り直し 計画1 Task 8・10・11・12、計画2 Task 10〜13。画面と窓口は単体・RTL・E2E で確かめた分。本番には計画1が適用済み〔2026-11-08〕、計画2は未適用） | 確認日: 2026-11-15（計画3の返品・返金の節を足した。本番未適用）／2026-11-09 | 対象: ACCOUNTING タブの会計期間の選択、「設定・期間」サブタブ、「計上待ち」「照合」サブタブ、期間で数える読み（保存した仕訳だけで数える）、証憑の種類、減価償却の月数、KPI の受注高
 
 ## 概要
 
@@ -92,3 +92,19 @@ ACCOUNTING タブ（`src/components/CostProfitSection.tsx`）は、年の選択�
 | 帳簿の出荷の列 | 仕訳帳・元帳の出荷の仕訳に、`shipmentMeta` から「出荷した日」「登録した日」を出す（取引管理の読みと同じ応答で、画面で読み直さない）。「出荷の跡」は `GET …/shipment-trace?slipId=` |
 | 発送票の確定の止め | 画面の発送票の確定が 409 `{code:'DISPUTE_HOLD'}` を受けたら、固定の文を出して票を読み直す（`disputeHoldMessage`） |
 | KPI の受注高 | `GET /api/admin/kpi` の応答（`backlog`・`intakeBreakdown`・`returnsThisMonth`）を `IntakeSummary` が出す。3つが揃った時だけパネルを出し、内訳が合わない時（`breakdownOk` が偽）は警告を出す。「照合」への案内は `?accountingTab=reconciliation` |
+
+## 返品・返金（計画3）
+
+画面の作りは[画面一覧](../../03_BasicDesign/ui/screen-list.md)の「会計の返品・返金の画面」、導線は[画面遷移](../../03_BasicDesign/ui/screen-flow.md)、窓口は[API 仕様](../../03_BasicDesign/api/api-spec.md)の `/api/admin/accounting/*`、運用は[会計の返品・返金の運用](../../06_Operations/accounting-p3-returns-refunds.md)。**本番未適用**。ここは処理の詳細だけを書く。
+
+| 部分 | 処理 |
+| --- | --- |
+| 受け取りの画面の届いた日（`OrderReturnReceiveDialog`） | 既定は今日、最大も今日（今日より後は理由を出して送らない）。`arrivedOn` は日を変えた時だけ送る本文に入れる（見込みの窓口へは送らない）。断られた後に日を変えると新しい要求番号（`requestKey`）を作り、結果が分からない時は日を変えられず、同じ本文で再送する。`RETURN_ARRIVAL_DATE_INVALID` では共通の説明（`RETURN_ARRIVAL_INVALID_NOTE`: お店が作った返品は最初の出荷の日、取り消しが確定した日以前は選べない）を出し、日が変わると消す |
+| 判断待ち | 返品の詳細の読み（`GET orders/[id]/returns`）の `disputeHold` が真なら、受け取りと返金の画面は「今すぐ返金」を選べず、理由を別の行に出す（0円の終わりは止めない）。読みが偽でも送ると 409 `DISPUTE_HOLD` で、`DISPUTE_HOLD` は読み直す印のコードに入っている（読み直すと理由が出る） |
+| 返品の詳細の届いた日 | 受け取りごとに `GET accounting/return-arrival?receiptIds=`（200件まで）で今の届いた日・元の日・直した跡を読む。受け取りがある時だけ読み、返品の一覧の読みと別。非 ok の応答は本文を読み切る。「届いた日を直す」（`OrderReturnArrivalDialog`）は権限 `correctEntries` の人だけで、版（`expectedVersion`）と理由を送る。送る度に新しい要求番号、二重に押せない |
+| 計上待ちの取り消しの区分 | `refund_cancel_undecided` の行で `refund-cancellation-dialog` を開き、区分（`abandoned`・`owed`）と理由を `POST accounting/refund-cancellations` へ送る。Stripe に届いていない返金の断り（`UNIT_CANCEL_REVERT_REFUSED` の `ubrr_status`）は、「店が返金をやめた」を選べなくする |
+| 手で結んで閉じる | `order_not_postable` の行で `link-entry-picker` を開く。期間（既定は待ちの日を含む期間）を選び、`GET journal` を200件ずつ最大10ページ読み、`manual_entry` で取り消されておらず取り消しの仕訳でない物を並べる（同じ注文の行がある物か、どの行にも注文が付かない物）。選んだ仕訳とメモを `POST accounting/pending-events/[id]/link-entry` へ送り、成功したら一覧を読み直す。route の 400/409 の文はそのまま出す |
+| 借りの一覧・振込・結び | `GET accounting/refund-states`（新しい順、同じ返金の行は返金の番号で1行にまとめる）。行の借りの種類は `owedPre` → 出荷前、`owedPost` → 出荷後、`owedReturn` → 返品の借り。振込の記録の欄は、未来の日・額0・形の違う番号を送る前に止め、`POST accounting/refund-bank-transfers`（要求番号は欄を送り直すまで同じ）。結びの画面は `GET accounting/refund-settlements/candidates?owedRefundId=` を読み、`eventKind === 'pre_shipment_cancel'` の借りには出さない。`POST accounting/refund-settlements` の断りの文を出す |
+| 消費税用の返金 | 期間（`YYYY-MM`・最大12か月）を送る前に確かめ、`GET accounting/tax-refunds` を続きの目印で読み、合計と注記を出す。対象外の語は `sale_unbooked` を含む4つ |
+| 設定の配達日 | `GET/PUT accounting/return-options`。`SwitchToggle` に `ariaDescribedBy` を渡し、追跡の注意の文と結ぶ。権限 `admin.accounting.settings.manage` が無い人は切り替えられず、その旨の文を出す |
+| 異常の欄 | 前受金の異常の行のキーは、注文・理由・並びの番号。新しい2つの理由は平易な文。取り消し（dispute）の一覧は、1つの取り消しに1つの科目だけを出す注記 |

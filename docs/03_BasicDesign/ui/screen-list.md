@@ -1,5 +1,7 @@
 # 画面一覧
 
+> 会計の計画3（返品・返金）Task 13 確認日: 2026-11-15。画面ルートの数は変えない（51件）。受け取りの画面の届いた日と判断待ちの止め、返品の詳細の届いた日の直し、計上待ちの取り消しの区分と手で結ぶ道、Stripe 精算の返金の借りと振込の記録とやり直しの結び、照合の消費税用の返金の一覧、設定の配達日の設定を足した。「会計の返品・返金の画面（FREQ-575〜584）」の節を参照。
+>
 > 交換の印 オーナー修正 X1 確認日: 2026-11-12。FREQ-642-AC-32・33 の表示と導線を反映。
 > 会計の作り直し 計画2 Task 15 確認日: 2026-11-09。画面ルートの数は変えない（51件）。`/admin` の ACCOUNTING のサブタブに「計上待ち」「照合」を足して8つにし（URL の `?accountingTab=reconciliation` で最初に開くタブを選べる）、帳簿・Stripe 精算・設定・期間に欄を足し、KPI の「売上」を「受注高」に改めた。末尾の「会計の計上待ち・照合・受注高（FREQ-562〜574）」に書いた。
 >
@@ -276,6 +278,23 @@ Task 5 fix round 1（2026-10-29）: DISCOUNT一覧の「使った回数」と「
 | KPI の「受注高」（`KpiSection.tsx`） | 「売上」の名前と文言を「受注高」に改めた（カード、推移、月次記録の指標名、算出式、tooltip）。説明は「期間内に支払いを受けた注文の額（出荷前の取り消しを引く）」。受注高の内訳のパネル（`IntakeSummary`）: 「受注高は帳簿の売上高ではありません。申告には使いません。」「支払いの確認が帳簿に入るまで数えません。」、受注残（件数と額）、今月の返品（出荷後の返品は引かない旨の注記）、内訳（割引前の額・割引・送料・支払い・出荷前の取り消し・カード会社の取り消し）、「支払いの件数（取り消しを含む）」、内訳が合わない時の警告。「帳簿との照らし合わせは会計の『照合』で見られます」から `/admin?tab=ACCOUNTING&accountingTab=reconciliation` へ。パネルは3つの欄（受注残・内訳・返品）が揃った時だけ出す |
 
 390/768/1280px の幅は E2E `FR-ADMIN-132`〜`136` が確かめる（横のはみ出しなし）。画面単体は `tests/unit/components/cost-profit/` の `pending-view`・`reconciliation-view`・`dispute-settings-panel`・`balance-topup-form`・`year-end-shipments-panel`・`journal-shipment-columns` と `tests/unit/components/KpiSection.intake.test.tsx`。
+
+## 会計の返品・返金の画面（FREQ-575〜584）
+
+確認日: 2026-11-15（会計の計画3 Task 13）。根拠は会計の作り直し 計画3（Task 11b・11c・12）の実装。ルートは増やさない（51件。注文の詳細の返品の欄・`/admin` の ACCOUNTING の中）。移行は手元の DB で確認済みで本番未適用（[運用の手引き](../../06_Operations/accounting-p3-returns-refunds.md)）。
+
+| 部分 | 表示と条件 |
+| --- | --- |
+| 受け取りの画面（`OrderReturnReceiveDialog`） | 「届いた日」の入力（既定は今日、今日より後は選べず理由を出す）。今日のままなら送る本文に `arrivedOn` を入れない（日を変えた時だけ入れ、断られた後に変えると新しい要求番号）。送った後に結果が分からない時は日を変えられない（同じ本文で再送）。判断待ちの注文では品ごとの「今すぐ返金」を選べず、理由を別の行に出し、全部の品を「相談」にすれば受け取れる（0円で終える操作は止めない）。受け取りが複数回ある時は行の頭に「n回目の受け取り」 |
+| 返品の詳細（`OrderReturnsDialog`・`OrderReturnArrivalDialog`） | 受け取りごとに、届いた日・元の届いた日・直した跡（版・前後の日・理由・直した人の番号の頭8文字）。「届いた日を直す」は権限 `admin.accounting.entries.correct` の人だけ。新しい日（今日まで）・理由（必須）を入れ、二重に押せない。断られた時は route の文を出し、確定した取り消しのある注文では「届いた日を確かめてください。」に理由の説明を足す |
+| 返金・返品の返金・支払い済みの注文のキャンセルの画面（`RefundFlowContent`・`OrderReturnRefundDialog`） | 判断待ちの注文では送れず、理由を別の行に出す（0円の返金は止めない）。画面を開く時の `disputeHold` が偽でも、送ると 409 `DISPUTE_HOLD` で止まり、断りの後に読み直して理由を出す |
+| 計上待ち（`PendingView`）への足し物 | 理由は20種。新しい理由（`refund_prior_unposted`・`refund_cancel_undecided`）、`order_not_postable` の確定の後の理由（`dispute_lost`・`return_closed_after_lost`）にやさしい文。`refund_cancel_undecided` の行に、権限 `admin.accounting.entries.correct` の人にだけ「取り消しの区分を選ぶ」（`refund-cancellation-dialog`。「店が返金をやめた」「返すつもりのまま返せなかった」と理由）。`order_not_postable` の行に同じ権限の人にだけ「手で入れた仕訳と結んで閉じる」（`link-entry-picker`。期間を選び、取り消されていない手入力の仕訳だけを `JE-番号 日付 説明` で並べて選び、メモ必須）。計上係の結果の表示に返金・返品の件数。不明のお金の行は今までどおり「仕訳が入るまで閉じられません」 |
+| Stripe 精算への足し物（`stripe-settlement-view.tsx`） | 「返金の借りと振込の記録」: 借りが残る返金の一覧（`refund-debts-panel`。同じ返金は1行。出荷前・出荷後・返品の借りの種類と額）と、権限 `admin.finance.manage` の人の振込の記録の欄（`refund-bank-transfer-form`。注文・借りの種類・額・振込の日・銀行の取引の番号・メモ。未来の日・額0・形の違う番号は送る前に止め、日の下に注意を出す）。権限 `admin.accounting.entries.correct` の人には各行に「やり直しと結ぶ」（`refund-settlement-dialog`。結べる返金の候補を読んで選ぶ。発送前の取り消しの借りには出さず、振込の記録へ案内する） |
+| 消費税用の返金の一覧（`tax-refunds-panel`、照合の中） | 期間（`YYYY-MM`、最大12か月）を選び、返金した日・注文番号・品の内容・税率・返金の額・税額・元の売上の日・対象外の理由の表と、合計に含む／外すの合計。「消費税法施行令58条の2により7年間保存する」の注記。名前・メール・住所は出さない。対象外の理由の語は `before_sale`・`sale_unbooked`（「元の売上の仕訳がまだ無い（手で確かめる）」）・`exempt_sale_14_1_6`・`after_exit_14_1_7` |
+| 設定への足し物（`settings-view.tsx`） | 「返品の届いた日に運送会社の配達日を使う」（既定オフ。`SwitchToggle`。追跡の登録が済むまで日が空になる注意の文を `aria-describedby` で結ぶ）。権限 `admin.accounting.settings.manage` |
+| 前受金の異常・取り消しの一覧 | 異常の理由2つ（`return_refund_retried_during_error`・`return_waived_with_failed_refund`）に平易な文。キーは注文と理由。取り消しの一覧には、1つの取り消しに1つの科目だけを出す注記 |
+
+390/768/1280px の幅は E2E `FR-ADMIN-137`〜`140` が確かめる（受け取り・直し・計上待ち・消費税用の返金の一覧が横にはみ出さない）。画面単体は `tests/unit/components/` の `OrderReturnReceiveDialog.arrival`・`OrderReturnArrivalDialog`・`RefundDialogs.disputeHold`・`OrderReturnRefundDialog.disputeHold` と `cost-profit/` の `pending-view`・`refund-cancellation-dialog`・`refund-bank-transfer-form`・`refund-settlement-dialog`・`refund-debts-panel`・`tax-refunds-panel`・`return-arrival-option`（手で結ぶ道の選び方は `pending-view` の試験が通す）。
 
 ## オーナー修正 X1 の表示と導線（FREQ-642）
 

@@ -1,6 +1,6 @@
 # 会計の計上待ち（仕訳にできていない出来事）の状態
 
-> 状態: 現行のソース（会計の作り直し 計画2 Task 1・2・3・4・6・10・11。手元の Supabase で確かめた分。本番には未適用） | 確認日: 2026-11-09 | 対象: `accounting_pending_events`（計上待ちの行）の「開いている」「解決済み」と、その間の遷移
+> 状態: 現行のソース（会計の作り直し 計画2 Task 1・2・3・4・6・10・11。手元の Supabase で確かめた分。本番には未適用） | 確認日: 2026-11-15（計画3の理由と閉じ方の節を足した）／2026-11-09 | 対象: `accounting_pending_events`（計上待ちの行）の「開いている」「解決済み」と、その間の遷移
 
 ## 概要
 
@@ -58,6 +58,23 @@ stateDiagram-v2
 - 数の意味: `detection_count`（見つけた回数）は、開いている間だけ増える。
 - 掃除: 係は毎回、取り消された票の保留の行と、後の直しに追い越された日の直しの行を、仕訳なしで閉じる。
 - 一覧: 新しい順（`first_detected_at`、`id`）の続きの目印で読む。目印が古いと `ACCOUNTING_LIST_RESTART`（409）で最初から読み直す。画面の既定は開いている行だけ。
+
+## 計画3で足した待ちの理由と閉じ方（2026-11-15）
+
+計画3（S15〜S25。**手元の DB で確認済み・本番未適用**）で、理由は18種から20種になり、手で閉じる道が1つ増えた。理由の一覧と運用は[会計の返品・返金の運用](../../06_Operations/accounting-p3-returns-refunds.md)の 1。
+
+| 理由 | 待つもの | 解消 |
+| --- | --- | --- |
+| `refund_prior_unposted` | 返金の仕訳の前に要る仕訳（返品の届いた日の仕訳・元の仕訳・戻りの取引）。詳細 `why`: `return_prior`・`original`・`failure_txn_missing` | 前の仕訳が入る・戻りの取引が同期されると自動で計上。手では閉じられない |
+| `refund_cancel_undecided` | Stripe が取り消した返金の区分（詳細 `refund_id`・`canceled_on`） | 人が区分を選ぶ（`admin_decide_refund_cancellation`）と次の計上で解消。手では閉じられない |
+| `order_not_postable`（計画3で増えた詳細の理由 `dispute_lost`・`return_closed_after_lost`、送料つきの返金の `shipping`） | 人が手で入れる仕訳 | **手で入れた仕訳と結んで閉じる**（`admin_link_accounting_pending_entry`。権限 `admin.accounting.entries.correct`・メモ必須）。結ぶと `resolved_by`・`resolution_note`・`resolved_entry_id` が付く |
+| `amount_mismatch`（詳細 `mismatch` に `refund_amount`・`allocation_overflow`・`unit_value_left` を足した） | 取引の同期、割り当ての見直し | 取引が同期し直されると再確認 |
+| `dispute_refund_overlap`・`dispute_return_refund_pending`（詳細 `why`: `refund`・`return`） | 確定の日までの返金の結果と、届いた日・額の決定の仕訳 | 計画2では「計画3で外す止め」だったが、計画3では**確定の待ち**に変わった（仕訳が入ると自動で計上）。手では閉じられない |
+
+- 人が閉じた行（`resolved_by` あり）の返金の取引は、Stripe の残高の照合の「計画3で計上する種類」（`planned_p3`）から外れる。自動の解決は外さない。
+- 結んだ仕訳が後で取り消されても、閉じた行は閉じたまま（再び開かない）。
+- 1つの仕訳で複数の待ちを閉じてよい。
+- 前受金の異常の理由 `return_refund_retried_during_error` は履歴の印で消えない（運用の手引き）。
 
 ## 関連テスト
 

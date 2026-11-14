@@ -1,5 +1,7 @@
 # ER 図（現行リポジトリの実装）
 
+> 会計の計画 3（返品・返金）確認日: 2026-11-15（Task 13）。新しい表 8 つ（`order_return_arrival_corrections`・`accounting_return_options`・`accounting_refund_events`・`accounting_refund_facts`・`accounting_refund_transfer_adjusts`・`accounting_unit_price_adjusts`・`accounting_return_facts`・`accounting_refund_settlements`）と、`order_return_receipts.arrived_on`・CHECK 2つを足した。末尾の「会計の返品・返金の表（計画 3 / FREQ-575〜584）」を参照（移行 S15・S16・S20。手元の DB で確認済み・本番未適用）。交換の印の節は変えていない。
+>
 > 交換の印 オーナー修正 X4 Fix round 1 確認日: 2026-11-12。追記だけの表 `order_unit_event_waives`（返金しないで終えた (出来事, 分)）を足した（移行 20261112064013、本番未適用）。
 > 交換の印 オーナー修正 X4 確認日: 2026-11-12。`order_unit_event_refunds` の主キーを `(event_id, refund_id, part)` に広げた（1つの返金が同じ出来事の今すぐと相談の分を持てる。FREQ-642-AC-37。移行 20261112064013、本番未適用）。
 > 交換の印 オーナー修正 X1 確認日: 2026-11-12。発送枠は取り押さえの無い着から選び、不足分を取り押さえのある着で補う（FREQ-642-AC-34）。
@@ -2433,3 +2435,43 @@ G・H の表（`shipment_slips`・`order_items`・`order_line_unit_amounts`）�
 足した外部キーは RESTRICT だけで、`orders`・`order_items`・`order_returns`・`order_return_receipts`・`order_return_lines`・`order_refunds`・`order_line_unit_amounts` と、この 8 表の間（枠 → 出来事、交換の結び → 枠、出来事の行 → 枠・出来事、差し引き → 出来事、出来事と返金のつなぎ → 出来事・返金）。`item_id` の型は `order_items.item_id` に合わせて `bigint`。出来事の金額の列は `NOT NULL DEFAULT 0`。`actor_id` に外部キーは付けない。
 
 足した連番は `public.order_unit_events_seq_seq`（権限はすべて外した）。関数の本文は 2 本取り替えた: `private.group_h_copy_order_discounts`（注文を受けた時に、写し 1 行と、着ごとの枠を足す）と `private.get_checkout_discount_context`（会員の前の注文の着数を、枠のある注文は `state = 'kept'` の枠の数（status が `cancelled` の注文は、発送していない着を数えない。発送した着は `private.order_unit_shipped_slots` が決める。`order_unit_shipped_slots` は会計の `accounting_shipped_units` を呼ぶだけで、答える数を、取り押さえていない若い番号の枠から順に当てる。取り押さえは、失敗していない発送前の返金が付いた着と、取りやめていない発送前の取り消し（`pre_shipment_cancel`）で最後に返した、まだ送っていなかった着（2026-11-13 会計の計画3 S17）。数に足りなければ、取り押さえのある着を unit_index 昇順で補い、必ずその数を返す（返金額では決めない。FREQ-642-AC-34、2026-11-12 X1）。R33）、枠の無い古い注文は今までの式で数える）。理由ごとの設定は、`defective`・`wrong_item` の `resolutions` を `exchange_only` に直した。
+
+
+## 会計の返品・返金の表（計画 3 / FREQ-575〜584）
+
+確認日: 2026-11-15（会計の計画3 Task 13）。移行は [S15 返品・返金の表](../../../supabase/migrations/20261112145303_accounting_p3_return_refund_tables.sql)・[S16 固定の手数料の止め](../../../supabase/migrations/20261112152626_accounting_p3_return_fee_lock.sql)・[S20 返金の計上](../../../supabase/migrations/20261112214341_accounting_p3_refund_posting.sql)（結びの表 1 つ）。**手元の DB で確認済み・本番未適用**。表は新しく8つ、既存の表に列1つ（受け取りの `arrived_on`）と CHECK 2つを足した。交換の印の節（`order_unit_events` ほか）は変えていない。追記専用の表は更新・削除・TRUNCATE を `private.reject_accounting_mutation` が断る（`ENABLE ALWAYS`）。8表とも RLS が有効で policy は無く、`PUBLIC`・`anon`・`authenticated` は何も持たず、`service_role` は SELECT だけを持つ。書くのは private の関数だけ（計画3の書き手）。
+
+```mermaid
+erDiagram
+    order_return_receipts ||--o{ order_return_arrival_corrections : "receipt_id"
+    order_refunds ||--o{ accounting_refund_events : "refund_id"
+    order_refunds ||--o| accounting_refund_facts : "refund_id"
+    order_unit_events ||--o{ accounting_refund_facts : "event_id"
+    order_unit_events ||--o{ accounting_refund_transfer_adjusts : "event_id"
+    order_unit_events ||--o{ accounting_unit_price_adjusts : "event_id"
+    order_line_unit_amounts ||--o{ accounting_refund_transfer_adjusts : "order_item_id, unit_index"
+    order_line_unit_amounts ||--o{ accounting_unit_price_adjusts : "order_item_id, unit_index"
+    order_returns ||--o{ accounting_return_facts : "return_id"
+    order_return_receipts ||--o{ accounting_return_facts : "receipt_id"
+    order_refunds ||--o{ accounting_return_facts : "refund_id"
+    order_refunds ||--o{ accounting_refund_settlements : "owed_refund_id, paying_refund_id"
+```
+
+| 表 | 主キー / 一意 | 中身 |
+| --- | --- | --- |
+| `public.order_return_receipts`（列を足す） | `arrived_on date NOT NULL DEFAULT 記録した日本時間の日` | 返品の品が店に届いた日。受け取り（`kind = 'receive'`）以外の行では意味が無い。受け取りの表は追記専用なので既存の行は埋められず、S15 は0行の時だけ当たる |
+| `public.order_return_arrival_corrections` | `(id)`、`(request_key)`、`(receipt_id, version)` | 届いた日の直し。1回の直しで1行（追記専用）。`version >= 1`、`new_on <> previous_on`、理由は1〜500文字。`actor_id`（直した人）・`request_hash` を持つ。受け取りの行は変えず、直しの行を足す。今の届いた日は最新の直しの `new_on`、無ければ `arrived_on` |
+| `public.accounting_return_options` | `(id)`。`id` は常に true の1行 | 返品の届いた日に運送会社の配達日を使う設定（`use_carrier_delivery_date`。既定は偽）。`changed_at`・`changed_by`・`version`・`admin_requests`（要求番号の記録） |
+| `public.accounting_refund_events` | `(id)`、`(refund_id, seq)`、`(refund_id, state)`、`(request_key)`、`(fact_seq)` | 返金の状態の履歴。1状態に1行（追記専用）。`state` は `requested`・`accepted`・`succeeded`・`failed`・`canceled`・`abandoned`・`owed`・`error`・`settled`。`abandoned`（店がやめた）・`owed`（返すつもりのまま）は取り消しの区分で、理由・人・要求番号が必須。`release_shortfall`・`carried_adjust` は店がやめた時に1回だけ数える。`occurred_at` は知った時刻で、2つの事実の前後の比べには使わない |
+| `public.accounting_refund_facts` | `(refund_id)` | 返金の額の事実。返金が始まる時に1回だけ書く。出荷前の額 P・出荷後の額 Q・送料・返品の手数料 F、`source`・`return_id`・`event_id`・`event_kind`（`none`・`pre_shipment_cancel`・`return_receipt`・`holdback_release`）。返品の返金は `return_id` が必須で出荷前の額は0。手数料 F は `holdback_release` の時だけ。`pre_shipment_cancel` の出来事は `order_unit_events` を指す |
+| `public.accounting_refund_transfer_adjusts` | `(event_id, adjust_key, order_item_id, unit_index)`、`(fact_seq)` | 発送前の取り消しの出来事の時にすでに出荷済みだった残る着の、値段の直し d（設計 3-2）。鍵は出来事の番号、店がやめた時は `release:<出来事の番号>:<n>`。額は0でない。1着の行は `order_line_unit_amounts` を指す |
+| `public.accounting_unit_price_adjusts` | `(order_item_id, unit_index, adjust_key)`、`(fact_seq)` | その出来事の時にまだ出荷していなかった残る着の値段の直し（出荷はその時の値段で入る。設計 3-1）。鍵は上と同じ。割り当てとの合計は遅延の制約トリガー `accounting_unit_price_adjusts_sum`（S17）が守る（割り当て ≧ 0 かつ 支払額 ＋ 直し 以下） |
+| `public.accounting_return_facts` | `(id)`、`(return_id, seq)`、部分一意3つ（届き: `receipt_id`、決定: `refund_id`・`receipt_id`） | 返品の届きと額の決定。`kind` は `arrival`（受け取りがあり返金は無く、商品の額 ≧ 手数料）と `decision`（返金が始まる、または返金0円で終える）。`goods_amount`・`fee_amount`・`covers_amount`・`decided_amount`・`payable_delta`・`decided_on` を持つ。返金0円の終わりは受け取りがあり決めた額0・商品の額0 |
+| `public.accounting_refund_settlements` | `(id)`、`(request_key)`、`(paying_refund_id)` | 借りの返金を、やり直しの返金で結んだ記録（追記専用。S20）。`owed_refund_id`・`paying_refund_id`・出荷前と出荷後の結んだ額・人・要求番号。やり直しの返金は1回しか結べない |
+
+### 既存の物への足し物
+
+- 計上待ちの理由の CHECK（`accounting_pending_events_reason_check`）に `refund_prior_unposted`・`refund_cancel_undecided` を足した（20種。行は変えない）。`order_not_postable` の詳細の理由には `dispute_lost`・`return_closed_after_lost`（S22）、`amount_mismatch` には `refund_amount`・`allocation_overflow`・`unit_value_left` などを足した（`accounting_pending_detail_valid` が検査する）。
+- 仕訳の種類に `pre_shipment_refund`・`return_arrived`・`return_amount_decided`・`return_refund`・`refund_failed`・`refund_abandoned`・`return_arrival_redated` を足した（`src/lib/accounting/event-kinds.ts`）。補助科目は 2130 に `return_refund`・`refund_owed_pre`・`refund_owed_post`、1470 に `dispute_refund_overlap_review` を使う（`journal-types.ts`）。
+- 固定の手数料の止め（S16）: `shop_return_settings` の CHECK `acc_p3_fee_lock_settings`（検査済み）、`order_returns` の CHECK `acc_p3_fee_lock_returns`（`NOT VALID`）。返送料の定額・交換の手数料・交換の送料が0でないと断る（SQLSTATE 23514）。
+- 外部キーはすべて RESTRICT。`order_unit_event_refunds`・`order_unit_event_waives` など交換の印の表は変えていない。
