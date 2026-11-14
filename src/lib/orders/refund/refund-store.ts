@@ -63,6 +63,8 @@ const DB_ERROR_WORDS: Array<readonly [string, RefundErrorCode]> = [
   ['UNIT_PRICING_STALE', 'unit_pricing_stale'],
   ['UNIT_PRICING_INVALID', 'unit_pricing_invalid'],
   ['UNIT_PRICING_REQUIRED', 'unit_pricing_required'],
+  // 会計の計画3（4-e3）。DB は注文の数だけを DETAIL に付ける（注文の番号は窓口が読み直す）
+  ['ACCOUNTING_DISPUTE_HOLD', 'dispute_hold'],
 ];
 // 長い言葉から先に照らす。ある言葉が別の言葉の一部になる綴りが足されても、長い方が先に当たる（本計画 P3）
 DB_ERROR_WORDS.sort((a, b) => b[0].length - a[0].length);

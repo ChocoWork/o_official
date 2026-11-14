@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { hasDisputeHold } from '@/lib/orders/refund/refund-dispute-hold';
 import { INVALID_REQUEST_BODY } from '@/lib/orders/refund/refund-messages';
 import { respondToReturnReadError } from '@/lib/orders/returns/return-route-support';
 import { loadReturnCreateMaterials } from '@/lib/orders/returns/return-store';
@@ -26,7 +27,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   try {
     const store = await createServiceRoleClient();
     const materials = await loadReturnCreateMaterials(store, parsedId.data);
-    return NextResponse.json({ data: materials }, { headers: { 'Cache-Control': 'no-store' } });
+    // 判断待ちの取り消しがある注文は、画面が品ごとの「今すぐ返金」を選べなくする（受け取りだけ記録できる）。
+    // 止めるのは DB で、読めなければ偽（読めなかったことはログに残る）。会計の計画3 FREQ-580-AC-04
+    const disputeHold = await hasDisputeHold(store, parsedId.data);
+    return NextResponse.json({ data: { ...materials, disputeHold } }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return respondToReturnReadError(error, {
       tag: '[admin.orders.return.materials] Failed to load materials',

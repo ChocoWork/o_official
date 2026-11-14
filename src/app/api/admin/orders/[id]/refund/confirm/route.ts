@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { logAudit } from '@/lib/audit';
+import { scheduleAccountingPosting } from '@/lib/accounting/posting-runner';
+import { readHeldOrderIds, withHeldOrderIds } from '@/lib/orders/refund/refund-dispute-hold';
 import { INVALID_REQUEST_BODY, refundFailureBody } from '@/lib/orders/refund/refund-messages';
 import { refundErrorLogFields, toRefundReply } from '@/lib/orders/refund/refund-route-support';
 import { confirmAwaitingRefund, createDefaultRefundServiceDeps } from '@/lib/orders/refund/refund-service';
@@ -71,8 +73,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     const deps = await createDefaultRefundServiceDeps();
     const result = await confirmAwaitingRefund(deps, { orderId: parsedId.data, refundId });
-    const reply = toRefundReply(result);
+    const reply = await withHeldOrderIds(toRefundReply(result), () => readHeldOrderIds(deps.store, [parsedId.data]));
     await audit(reply.audit.outcome, reply.audit.detail, { refund_id: refundId, ...reply.audit.metadata });
+    // 確かめ直しで返金の結果が書かれることがある。応答の後に会計の計上係を流す
+    if (result.kind !== 'refused') {
+      scheduleAccountingPosting('refund');
+    }
     return NextResponse.json(reply.body, { status: reply.status });
   } catch (error) {
     console.error('[admin.orders.refund.confirm] Failed to confirm refund', ...refundErrorLogFields(error));

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { ADMIN_NOTE_MAX_LENGTH } from '@/lib/orders/order-payment-types';
+import { scheduleAccountingPosting } from '@/lib/accounting/posting-runner';
+import { readHeldOrderIdsOfReturn, withHeldOrderIds } from '@/lib/orders/refund/refund-dispute-hold';
 import { INVALID_REQUEST_BODY } from '@/lib/orders/refund/refund-messages';
 import { createDefaultRefundServiceDeps } from '@/lib/orders/refund/refund-service';
 import {
@@ -14,6 +16,7 @@ import {
   toRefundReturnReply,
 } from '@/lib/orders/returns/return-route-support';
 import { refundReturnAndRequestStripe } from '@/lib/orders/returns/return-service';
+import { createServiceRoleClient } from '@/lib/supabase/server';
 
 const ACTION = 'admin.orders.return.refund';
 
@@ -63,8 +66,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ ret
       actorId: guard.userId,
       ...parsedBody.data,
     });
-    const reply = toRefundReturnReply(result);
+    // DB が判断待ちで断ったら、注文の番号を読み直して応答に添える（Stripe は呼んでいない）。
+    // 値段の計画の断り（UNIT_PRICING_*）・0円の終わり（waived）・Stripe の断りは、この道を通らず今までの答えのまま
+    const reply = await withHeldOrderIds(toRefundReturnReply(result), () => readHeldOrderIdsOfReturn(deps.store, parsedId.data));
     await audit(reply.audit.outcome, reply.audit.detail, { ...reply.audit.metadata, source: 'return' });
+    // 返金の記録（または0円の決定）ができたら（断りでなければ）、応答の後で会計の計上係を流す
+    if (result.kind !== 'refused') {
+      scheduleAccountingPosting('refund');
+    }
     return NextResponse.json(reply.body, { status: reply.status });
   } catch (error) {
     return respondToReturnError(error, {
@@ -73,6 +82,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ret
       refusedDetail: 'Return refund refused',
       failureDetail: 'Failed to refund return',
       failureKind: 'refund',
+      heldOrderIds: async () => readHeldOrderIdsOfReturn(await createServiceRoleClient(), parsedId.data),
     });
   }
 }

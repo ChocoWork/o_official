@@ -18,6 +18,16 @@ const bodySchema = z.object({
   requestKey: requestKeySchema,
 }).refine((body) => (body.carrier === null) === (body.trackingNumber === null));
 
+/** DB の止めを受けた後に、票の判断待ちの注文を読み直す。読めない時は空（止めの応答は変えない。番号・DB の文はログに出さない） */
+async function readSlipHeldOrderIds(client: Parameters<typeof getSlipDisputeHolds>[0], slipId: string): Promise<string[]> {
+  try {
+    return [...new Set((await getSlipDisputeHolds(client, slipId)).map((hold) => hold.orderId))];
+  } catch (error) {
+    console.error('[shipment-slip.confirm] hold re-read failed', error instanceof AccountingStoreError ? (error.code ?? error.sqlstate ?? 'AccountingStoreError') : 'UnknownError');
+    return [];
+  }
+}
+
 /** 判断待ちの取り消しがある注文を含む票の確定を止める印。共通窓口が code と固定の文で 409 にし、監査は failure と DISPUTE_HOLD だけを残す。 */
 class DisputeHoldError extends ShipmentSlipError {
   constructor() {
@@ -53,7 +63,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         held.orderIds = [...new Set(holds.map((hold) => hold.orderId))];
         throw new DisputeHoldError();
       }
-      const result = await confirmShipmentSlip(client, actorId, { ...body, slipId: slipId as string });
+      let result;
+      try {
+        result = await confirmShipmentSlip(client, actorId, { ...body, slipId: slipId as string });
+      } catch (error) {
+        // DB の止め（二重の守り）も、事前の止めと同じ 409 DISPUTE_HOLD にする。DETAIL は数だけなので、判断待ちの注文は読み直す（読めなければ空）
+        if (error instanceof ShipmentSlipError && error.code === 'ACCOUNTING_DISPUTE_HOLD') {
+          held.orderIds = await readSlipHeldOrderIds(client, slipId as string);
+          throw new DisputeHoldError();
+        }
+        throw error;
+      }
       scheduleAccountingPosting('shipment_confirm');
       return result;
     },

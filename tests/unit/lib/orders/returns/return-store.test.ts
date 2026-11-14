@@ -78,6 +78,8 @@ const MIGRATION_SUFFIXES = [
   '_unit_binding_core.sql',
   '_unit_binding_receive.sql',
   '_unit_binding_refunds.sql',
+  // 会計の計画3: 受け取りの入口に _arrived_on（17番目）を足し、RETURN_ARRIVAL_DATE_INVALID の言葉もここで止まる
+  '_accounting_p3_return_writers.sql',
 ];
 
 /** 移行 A〜F の本文をつないだ物（A・B・C は段1、D・E・F は段2） */
@@ -500,6 +502,33 @@ describe('receiveReturn', () => {
     const input = { ...RECEIVE_INPUT, restockingFeeWaived: true };
     await receiveReturn(store, input);
     expect(rpc).toHaveBeenCalledWith('admin_receive_return', expect.objectContaining({ _restocking_fee_waived: true }));
+  });
+
+  it('FREQ-575-AC-01: 届いた日（17番目の _arrived_on）は arrivedOn がある時だけ渡し、免除（16番目）は真の時だけ渡し続ける（省いた引数は DB の既定。再送の指紋を変えない）', async () => {
+    const { store, rpc } = storeWith({ admin_receive_return: { data: [{ receipt_id: RECEIPT_ID, return_status: 'closed' }] } });
+    await receiveReturn(store, RECEIVE_INPUT);
+    const [, plain] = rpc.mock.calls[0] as [string, Record<string, unknown>];
+    expect(Object.keys(plain)).not.toContain('_arrived_on');
+    expect(Object.keys(plain)).not.toContain('_restocking_fee_waived');
+    await receiveReturn(store, { ...RECEIVE_INPUT, restockingFeeWaived: false, arrivedOn: undefined });
+    const [, falsy] = rpc.mock.calls[1] as [string, Record<string, unknown>];
+    expect(Object.keys(falsy)).not.toContain('_arrived_on');
+    expect(Object.keys(falsy)).not.toContain('_restocking_fee_waived');
+    await receiveReturn(store, { ...RECEIVE_INPUT, arrivedOn: '2026-11-10' });
+    expect(rpc).toHaveBeenLastCalledWith('admin_receive_return', { ...plain, _arrived_on: '2026-11-10' });
+    await receiveReturn(store, { ...RECEIVE_INPUT, restockingFeeWaived: true, arrivedOn: '2026-11-10' });
+    expect(rpc).toHaveBeenLastCalledWith('admin_receive_return', { ...plain, _restocking_fee_waived: true, _arrived_on: '2026-11-10' });
+  });
+
+  it('FREQ-575-AC-01: 届いた日が不正（未来・申し込みの前・確定済み。DB の RETURN_ARRIVAL_DATE_INVALID）は、同じ綴りの記号で断り、副作用の道へ進まない', async () => {
+    await expectRefusal('admin_receive_return', 'RETURN_ARRIVAL_DATE_INVALID', 'RETURN_ARRIVAL_DATE_INVALID', (store) =>
+      receiveReturn(store, { ...RECEIVE_INPUT, arrivedOn: '2026-11-10' }),
+    );
+  });
+
+  it('FREQ-580-AC-01: 判断待ちの注文は DB の ACCOUNTING_DISPUTE_HOLD を E-2 の記号 dispute_hold で断る（受け取りも返金も記録しない）', async () => {
+    await expectRefusal('admin_receive_return', 'ACCOUNTING_DISPUTE_HOLD', 'dispute_hold', (store) => receiveReturn(store, RECEIVE_INPUT));
+    await expectRefusal('admin_refund_return', 'ACCOUNTING_DISPUTE_HOLD', 'dispute_hold', (store) => refundReturn(store, REFUND_INPUT));
   });
 
   const RECEIVED_ROW = {

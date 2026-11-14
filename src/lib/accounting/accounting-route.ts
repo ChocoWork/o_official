@@ -41,7 +41,12 @@ export type AccountingAuditAction =
 	| 'admin.accounting.stripe.invoice'
 	| 'admin.accounting.stripe.topup'
 	| 'admin.accounting.year_end.check'
-	| 'admin.accounting.shipping.options';
+	| 'admin.accounting.shipping.options'
+	| 'admin.accounting.return.arrival'
+	| 'admin.accounting.return.option'
+	| 'admin.accounting.refund.cancel_decision'
+	| 'admin.accounting.refund.bank'
+	| 'admin.accounting.refund.settle';
 /**
  * 監査に載せる値。名前・メール・金額・日付（開業日を含む）・メモの本文は載せない（FREQ-561-AC-04）。
  * 計画2: 対象の番号（event_id・dispute_id）、原因と勘定の符号、月、結果、係の件数だけを足せる。
@@ -51,6 +56,9 @@ export type AccountingAuditMetadata = {
 	event_id?: string;
 	dispute_id?: string;
 	slip_id?: string;
+	/** 計画3: 届いた日を直した受け取りの番号・取り消しの区分や結びの返金の番号（理由・日・額は載せない）。 */
+	receipt_id?: string;
+	refund_id?: string;
 	result_code?: string;
 	changed_fields?: string[];
 	reason?: string;
@@ -118,14 +126,15 @@ export async function readAccountingPeriods(client: SupabaseClient, today: strin
 	return { periods, settings, deadlines, interim, startup };
 }
 
-/** 読み: 認可(admin.finance.read) → 検証 → store。回数の制限・CSRF・監査は付けない。全応答が no-store。 */
+/** 読み: 認可(既定は admin.finance.read) → 検証 → store。回数の制限・CSRF・監査は付けない。全応答が no-store。 */
 export async function handleRead(
 	request: Request,
 	label: string,
 	load: (client: SupabaseClient, request: Request) => Promise<unknown>,
+	permission: PermissionCode = READ,
 ): Promise<Response> {
 	try {
-		const authz = await authorizeAdminPermission(READ, request);
+		const authz = await authorizeAdminPermission(permission, request);
 		if (!authz.ok) return noStore(authz.response);
 		const data = await load(await createServiceRoleClient(), request);
 		return json({ data, permissions: permissionsOf(authz.permissions) }, 200);

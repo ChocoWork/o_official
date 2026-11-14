@@ -19,7 +19,7 @@ const eventRow = (overrides: Record<string, unknown> = {}): Record<string, unkno
 	detail: { order_count: 1 }, first_detected_at: '2026-11-09T01:00:00+00:00', last_detected_at: '2026-11-09T01:10:00+00:00', detection_count: 2,
 	resolved_at: null, resolved_entry_id: null, ...overrides,
 });
-const POSTING = { payments: 1, shipments: 2, stripe: 3, disputes: 4, parked: 5, resolved: 6, has_more: true };
+const POSTING = { payments: 1, shipments: 2, stripe: 3, disputes: 4, refunds: 7, returns: 8, parked: 5, resolved: 6, has_more: true };
 
 beforeEach(() => {
 	jest.resetAllMocks();
@@ -29,10 +29,23 @@ beforeEach(() => {
 describe('runAccountingPostingOnce', () => {
 	test('FREQ-562-AC-05: accounting_run_postingを呼び、戻りのsnake_caseを直す（SQLが返した数のまま）', async () => {
 		rpc.mockResolvedValue(ok(POSTING));
-		await expect(store.runAccountingPostingOnce(client)).resolves.toEqual({ payments: 1, shipments: 2, stripe: 3, disputes: 4, parked: 5, resolved: 6, hasMore: true });
+		await expect(store.runAccountingPostingOnce(client)).resolves.toEqual({ payments: 1, shipments: 2, stripe: 3, disputes: 4, refunds: 7, returns: 8, parked: 5, resolved: 6, hasMore: true });
 		expect(rpc).toHaveBeenCalledWith('accounting_run_posting', { _limit: 50 });
 		await store.runAccountingPostingOnce(client, 20);
 		expect(rpc).toHaveBeenLastCalledWith('accounting_run_posting', { _limit: 20 });
+	});
+
+	test('FREQ-562-AC-05: 係の結果の型に refunds と returns があり、無い戻りは固定の失敗にする', async () => {
+		rpc.mockResolvedValue(ok(POSTING));
+		await expect(store.runAccountingPostingOnce(client)).resolves.toMatchObject({ refunds: 7, returns: 8 });
+		const withoutRefunds: Record<string, unknown> = { ...POSTING };
+		delete withoutRefunds.refunds;
+		const withoutReturns: Record<string, unknown> = { ...POSTING };
+		delete withoutReturns.returns;
+		for (const bad of [withoutRefunds, withoutReturns, { ...POSTING, refunds: -1 }, { ...POSTING, returns: 1.5 }]) {
+			rpc.mockResolvedValue(ok(bad));
+			await expect(store.runAccountingPostingOnce(client)).rejects.toMatchObject({ status: 500, code: null });
+		}
 	});
 
 	test('FREQ-562-AC-05: 件数の上限は1〜200の整数だけ。範囲外はDBを呼ばない', async () => {

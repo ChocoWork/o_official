@@ -42,6 +42,8 @@ export type RefundMaterials = {
   };
   lines: RefundMaterialLine[];
   awaitingRefund: { id: string; amount: number; createdAt: string } | null;
+  /** 窓口が足す: この注文にカード会社の判断待ちの取り消しがある（真なら返金できない。会計の計画3 FREQ-580-AC-04） */
+  disputeHold?: boolean;
 };
 export type CreateRefundRequest = {
   requestKey: string; lines: RefundLineRequest[]; restock: boolean; shippingAmount: number; amount: number;
@@ -57,12 +59,17 @@ export const REFUND_ERROR_CODES = [
   'exceeds_refundable', 'must_include_unshipped', 'must_be_full', 'invalid_argument',
   // 交換の印の直し（FREQ-642）: サーバーが作った値段の計画を DB が断った
   'unit_pricing_stale', 'unit_pricing_invalid', 'unit_pricing_required',
+  // 会計の計画3（4-e3）: カード会社の判断待ちの注文が含まれている。DB が ACCOUNTING_DISPUTE_HOLD で断る（Stripe は呼んでいない）
+  'dispute_hold',
 ] as const;
 export type RefundErrorCode = (typeof REFUND_ERROR_CODES)[number];
 export type RefundErrorResponse = {
   error: string;
-  code: RefundErrorCode | 'invalid_request' | 'failed' | 'stripe_rejected' | 'unknown_outcome';
+  // dispute_hold は応答では大文字の DISPUTE_HOLD（発送票の確定の止めと同じ。orderIds を添える）
+  code: Exclude<RefundErrorCode, 'dispute_hold'> | 'DISPUTE_HOLD' | 'invalid_request' | 'failed' | 'stripe_rejected' | 'unknown_outcome';
   refundId?: string;
+  /** DISPUTE_HOLD の時だけ。判断待ちの注文の番号（読めなければ空） */
+  orderIds?: string[];
 };
 export type ShopSettingToggle = { enabled: boolean; updatedAt: string | null; updatedByEmail: string | null };
 export type ShopSettings = { autoRefundCancelledOrderPayment: ShopSettingToggle; autoCancelAmountMismatch: ShopSettingToggle };

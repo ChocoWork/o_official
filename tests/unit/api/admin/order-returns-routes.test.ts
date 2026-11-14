@@ -382,6 +382,42 @@ describe('GET /api/admin/orders/[id]/returns（返品の一覧）', () => {
 });
 
 describe('GET /api/admin/orders/[id]/returns/materials（返品を作る画面の材料）', () => {
+  // 判断待ちの読み口（会計の計画3）。材料の窓口が service role の client で get_order_dispute_holds を読む
+  const mockHoldsRpc = jest.fn();
+  beforeEach(() => {
+    mockHoldsRpc.mockReset();
+    mockHoldsRpc.mockResolvedValue({ data: [], error: null });
+    Object.assign(mockServiceClient, { rpc: mockHoldsRpc });
+  });
+  afterEach(() => {
+    Reflect.deleteProperty(mockServiceClient, 'rpc');
+  });
+
+  it('FREQ-580-AC-04: 判断待ちの注文では disputeHold を真にし、無ければ偽にする。読めない時は偽（止めるのは DB）で、生の誤りを出さない', async () => {
+    mockLoadReturnCreateMaterials.mockResolvedValue(MATERIALS);
+    mockHoldsRpc.mockResolvedValue({ data: [{ order_id: ORDER_ID, dispute_id: 'dp_1', status: 'needs_response', amount: 100, since: '2026-11-10T00:00:00Z' }], error: null });
+    const held = await getMaterials(materialsRequest(), ORDER_CONTEXT);
+    expect(held.status).toBe(200);
+    expect(held.headers.get('cache-control')).toBe('no-store');
+    const heldBody = (await held.json()) as { data: { disputeHold: boolean } };
+    expect(heldBody.data.disputeHold).toBe(true);
+    expect(JSON.stringify(heldBody)).not.toContain('dp_1');
+    expect(mockHoldsRpc).toHaveBeenCalledWith('get_order_dispute_holds', { _order_ids: [ORDER_ID] });
+
+    mockHoldsRpc.mockResolvedValue({ data: [], error: null });
+    expect(((await (await getMaterials(materialsRequest(), ORDER_CONTEXT)).json()) as { data: { disputeHold: boolean } }).data.disputeHold).toBe(false);
+
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockHoldsRpc.mockResolvedValue({ data: null, error: { message: 'PRIVATE-MARKER', code: 'XX000' } });
+    const unreadable = await getMaterials(materialsRequest(), ORDER_CONTEXT);
+    expect(unreadable.status).toBe(200);
+    const unreadableText = await unreadable.text();
+    expect(JSON.parse(unreadableText).data.disputeHold).toBe(false);
+    expect(unreadableText).not.toContain('PRIVATE-MARKER');
+    expect(JSON.stringify(spy.mock.calls)).not.toContain('PRIVATE-MARKER');
+    spy.mockRestore();
+  });
+
   it('返品の権限で材料を返す。読むだけなので CSRF と回数の制限は通さない。返金の権限は確かめない', async () => {
     mockLoadReturnCreateMaterials.mockResolvedValue(MATERIALS);
 
@@ -389,7 +425,8 @@ describe('GET /api/admin/orders/[id]/returns/materials（返品を作る画面�
 
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
-    await expect(response.json()).resolves.toEqual({ data: MATERIALS });
+    // 材料に、窓口が判断待ちの印（disputeHold。会計の計画3）を足す
+    await expect(response.json()).resolves.toEqual({ data: { ...MATERIALS, disputeHold: false } });
     expect(mockLoadReturnCreateMaterials).toHaveBeenCalledWith(mockServiceClient, ORDER_ID);
     expect(mockAuthorize.mock.calls).toEqual([['admin.orders.return', expect.any(Request)]]);
     expect(mockRequireCsrf).not.toHaveBeenCalled();

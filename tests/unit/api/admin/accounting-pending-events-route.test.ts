@@ -38,7 +38,7 @@ const defaultRpc = (name: string): { data: unknown; error: null } => {
 		case 'list_accounting_pending_events': return { data: state.page, error: null };
 		case 'get_accounting_pending_summary': return { data: { open_count: 7, by_reason: { payment_journal_missing: 5, before_cutover: 2 }, oldest_at: '2026-11-08T00:00:00+00:00' }, error: null };
 		case 'admin_resolve_accounting_pending_event': return { data: eventRow(1, { reason: 'before_cutover', resolved_at: '2026-11-09T02:00:00+00:00' }), error: null };
-		case 'accounting_run_posting': return { data: { payments: 1, shipments: 2, stripe: 3, disputes: 0, parked: 4, resolved: 5, has_more: false }, error: null };
+		case 'accounting_run_posting': return { data: { payments: 1, shipments: 2, stripe: 3, disputes: 0, refunds: 6, returns: 7, parked: 4, resolved: 5, has_more: false }, error: null };
 		default: throw new Error(`unexpected rpc ${name}`);
 	}
 };
@@ -230,13 +230,13 @@ describe('POST /api/admin/accounting/posting/run', () => {
 		seq.length = 0;
 		const ok = await run();
 		expect(ok.status).toBe(200);
-		expect((await read(ok)).data).toEqual({ result: { payments: 1, shipments: 2, stripe: 3, disputes: 0, parked: 4, resolved: 5, hasMore: false } });
+		expect((await read(ok)).data).toEqual({ result: { payments: 1, shipments: 2, stripe: 3, disputes: 0, refunds: 6, returns: 7, parked: 4, resolved: 5, hasMore: false } });
 		expect(seq).toEqual(['auth', 'csrf', 'admin.accounting.write:ip', 'admin.accounting.write:actor', 'rpc:accounting_run_posting', 'audit']);
 		expect(rpcImpl).toHaveBeenCalledWith('accounting_run_posting', { _limit: 50 });
 		// 監査は件数だけ。
 		expect(mockAudit).toHaveBeenCalledWith({
 			action: 'admin.accounting.posting.run', actor_id: ACTOR, resource: 'accounting', resource_id: null, outcome: 'success',
-			metadata: { counts: { payments: 1, shipments: 2, stripe: 3, disputes: 0, parked: 4, resolved: 5, has_more: false } },
+			metadata: { counts: { payments: 1, shipments: 2, stripe: 3, disputes: 0, refunds: 6, returns: 7, parked: 4, resolved: 5, has_more: false } },
 		});
 	});
 
@@ -244,17 +244,17 @@ describe('POST /api/admin/accounting/posting/run', () => {
 		let calls = 0;
 		rpcImpl.mockImplementation(async () => {
 			calls += 1;
-			return { data: { payments: 1, shipments: 0, stripe: 0, disputes: 0, parked: 1, resolved: 0, has_more: calls < 3 }, error: null };
+			return { data: { payments: 1, shipments: 0, stripe: 0, disputes: 0, refunds: 0, returns: 0, parked: 1, resolved: 0, has_more: calls < 3 }, error: null };
 		});
 		grants.current = [PERM.manage];
 		const response = await run('');
 		expect(response.status).toBe(200);
-		expect((await read(response)).data).toEqual({ result: { payments: 3, shipments: 0, stripe: 0, disputes: 0, parked: 3, resolved: 0, hasMore: false } });
+		expect((await read(response)).data).toEqual({ result: { payments: 3, shipments: 0, stripe: 0, disputes: 0, refunds: 0, returns: 0, parked: 3, resolved: 0, hasMore: false } });
 		expect(calls).toBe(3);
 		calls = 0;
 		rpcImpl.mockImplementation(async () => {
 			calls += 1;
-			return { data: { payments: 0, shipments: 0, stripe: 0, disputes: 0, parked: 0, resolved: 0, has_more: true }, error: null };
+			return { data: { payments: 0, shipments: 0, stripe: 0, disputes: 0, refunds: 0, returns: 0, parked: 0, resolved: 0, has_more: true }, error: null };
 		});
 		const capped = await run();
 		expect(calls).toBe(20);

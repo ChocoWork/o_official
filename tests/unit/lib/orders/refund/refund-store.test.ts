@@ -129,6 +129,7 @@ const DB_WORDS = [
   ['UNIT_PRICING_STALE', 'unit_pricing_stale'],
   ['UNIT_PRICING_INVALID', 'unit_pricing_invalid'],
   ['UNIT_PRICING_REQUIRED', 'unit_pricing_required'],
+  ['ACCOUNTING_DISPUTE_HOLD', 'dispute_hold'],
 ] as const satisfies ReadonlyArray<readonly [string, RefundErrorCode]>;
 
 // TS が呼ぶ DB の関数（移行 B・C。load_order_refund_materials は refund-materials.ts が呼ぶ）
@@ -162,7 +163,7 @@ describe('toRefundErrorCode', () => {
     expect(toRefundErrorCode(`error: ${word} (detail)`)).toBe(code);
   });
 
-  it('16の記号が全部、どれかの DB の言葉から届く', () => {
+  it('17の記号が全部、どれかの DB の言葉から届く', () => {
     expect(new Set(DB_WORDS.map(([, code]) => code))).toEqual(new Set(REFUND_ERROR_CODES));
   });
 
@@ -185,7 +186,8 @@ describe('toRefundErrorCode', () => {
 
   it('DB の関数が止める言葉は、移行の本文にある（綴りが食い違うと、画面に出る言葉が変わる）', () => {
     // 交換の印の直し（FREQ-642）の UNIT_PRICING_* は、受け取り・返金の入口を作り直した移行が止める
-    const sql = `${migrationText('_order_refund_requests.sql')}\n${migrationText('_order_refund_results.sql')}\n${migrationText('_unit_binding_refunds.sql')}`;
+    // 会計の計画3の ACCOUNTING_DISPUTE_HOLD は、判断待ちの止めの道具を作った移行（S15）が止める
+    const sql = `${migrationText('_order_refund_requests.sql')}\n${migrationText('_order_refund_results.sql')}\n${migrationText('_unit_binding_refunds.sql')}\n${migrationText('_accounting_p3_return_refund_tables.sql')}`;
 
     for (const [word] of DB_WORDS) {
       expect(sql).toContain(word);

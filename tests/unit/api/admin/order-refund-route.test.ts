@@ -21,7 +21,9 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
 }));
 const mockLogAudit = jest.fn().mockResolvedValue(undefined);
 jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockLogAudit(...args) }));
-const mockServiceClient = { name: 'service-client' };
+// 判断待ちの読み口（会計の計画3）。材料の窓口は service role の client で get_order_dispute_holds を読む
+const mockHoldsRpc = jest.fn();
+const mockServiceClient = { name: 'service-client', rpc: (...args: unknown[]) => mockHoldsRpc(...args) };
 jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(async () => mockServiceClient),
 }));
@@ -29,6 +31,9 @@ const mockLoadMaterials = jest.fn();
 jest.mock('@/lib/orders/refund/refund-materials', () => ({
   loadRefundMaterials: (...args: unknown[]) => mockLoadMaterials(...args),
 }));
+// 応答の後に流す会計の計上係（実物は next の after を使う）。ここでは呼び出しだけ見る
+const mockSchedule = jest.fn();
+jest.mock('@/lib/accounting/posting-runner', () => ({ scheduleAccountingPosting: (...args: unknown[]) => mockSchedule(...args) }));
 const mockSubmitAdminRefund = jest.fn();
 const mockConfirmAwaitingRefund = jest.fn();
 const mockRefundDeps = { name: 'refund-deps' };
@@ -227,6 +232,8 @@ beforeEach(() => {
   mockLoadMaterials.mockReset();
   mockSubmitAdminRefund.mockReset();
   mockConfirmAwaitingRefund.mockReset();
+  mockHoldsRpc.mockReset();
+  mockHoldsRpc.mockResolvedValue({ data: [], error: null });
   mockAuthorize.mockResolvedValue({ ok: true, userId: 'admin-1', role: 'admin', actorEmail: 'admin@example.com' });
   mockRequireCsrf.mockResolvedValue(undefined);
   mockEnforceRateLimit.mockResolvedValue(undefined);
@@ -368,10 +375,39 @@ describe('GET /api/admin/orders/[id]/refund（返金の材料）', () => {
     expect(mockAuthorize).toHaveBeenCalledWith('admin.orders.refund', expect.any(Request));
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
-    await expect(response.json()).resolves.toEqual(MATERIALS);
+    // 材料に、窓口が判断待ちの印（disputeHold。会計の計画3）を足す
+    await expect(response.json()).resolves.toEqual({ ...MATERIALS, disputeHold: false });
     expect(mockLoadMaterials).toHaveBeenCalledWith(mockServiceClient, ORDER_ID);
     expect(mockRequireCsrf).not.toHaveBeenCalled();
     expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+  });
+
+  it('FREQ-580-AC-04: 返金の材料のrouteが判断待ちの注文で disputeHold を真にする。無ければ偽、読めない時は偽（止めるのは DB）で、生の誤りを出さない', async () => {
+    mockLoadMaterials.mockResolvedValue(MATERIALS);
+    mockHoldsRpc.mockResolvedValueOnce({ data: [{ order_id: ORDER_ID, dispute_id: 'dp_1', status: 'needs_response', amount: 100, since: '2026-11-10T00:00:00Z' }], error: null });
+    const held = await getMaterials(request(), ORDER_CONTEXT);
+    expect(held.status).toBe(200);
+    expect(held.headers.get('cache-control')).toBe('no-store');
+    const heldBody = (await held.json()) as { disputeHold: boolean };
+    expect(heldBody.disputeHold).toBe(true);
+    expect(JSON.stringify(heldBody)).not.toContain('dp_1');
+    expect(mockHoldsRpc).toHaveBeenCalledWith('get_order_dispute_holds', { _order_ids: [ORDER_ID] });
+
+    mockHoldsRpc.mockResolvedValueOnce({ data: [], error: null });
+    expect(((await (await getMaterials(request(), ORDER_CONTEXT)).json()) as { disputeHold: boolean }).disputeHold).toBe(false);
+
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mockHoldsRpc.mockResolvedValueOnce({ data: null, error: { message: 'PRIVATE-MARKER', code: 'XX000' } });
+      const unreadable = await getMaterials(request(), ORDER_CONTEXT);
+      expect(unreadable.status).toBe(200);
+      const text = await unreadable.text();
+      expect(JSON.parse(text).disputeHold).toBe(false);
+      expect(text).not.toContain('PRIVATE-MARKER');
+      expect(JSON.stringify(consoleError.mock.calls)).not.toContain('PRIVATE-MARKER');
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it('権限が無ければ認可の応答を返し、DB を読まない', async () => {
@@ -577,5 +613,108 @@ describe('POST /api/admin/orders/[id]/refund/confirm（返事待ちの確かめ�
     expect(response.status).toBe(400);
     expect(mockConfirmAwaitingRefund).not.toHaveBeenCalled();
     expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failure', detail: 'Invalid order id', metadata: null }));
+  });
+});
+
+// 会計の計画3: 判断待ちの止め（4-e3）と、応答の後の計上係。返金する窓口と確かめ直しの窓口は同じ答えを返す
+describe.each(ENDPOINTS)('$name の窓口の判断待ちの止めと計上係（会計の計画3）', ({ service, call, action }) => {
+  const HELD = 'e1b2c3d4-1111-4222-8333-444455556666';
+
+  beforeEach(() => {
+    Object.assign(mockRefundDeps, { store: { rpc: mockHoldsRpc } });
+  });
+  afterEach(() => {
+    Reflect.deleteProperty(mockRefundDeps, 'store');
+  });
+
+  it('FREQ-580-AC-01: DB の止め（dispute_hold）は 409 と DISPUTE_HOLD で、orderIds は読み直した判断待ちの注文。計上係を流さず、監査は conflict と dispute_hold だけ', async () => {
+    service.mockResolvedValue({ kind: 'refused', code: 'dispute_hold' });
+    mockHoldsRpc.mockResolvedValue({ data: [{ order_id: HELD, dispute_id: 'dp_1', status: 'needs_response', amount: 1, since: '2026-11-10T00:00:00Z' }, { order_id: HELD, dispute_id: 'dp_2', status: 'needs_response', amount: 1, since: '2026-11-10T00:00:00Z' }], error: null });
+
+    const response = await call();
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: 'カード会社の判断待ちの注文が含まれているため、返金できません。',
+      code: 'DISPUTE_HOLD',
+      orderIds: [HELD],
+    });
+    expect(mockHoldsRpc).toHaveBeenCalledTimes(1);
+    expect(mockHoldsRpc).toHaveBeenCalledWith('get_order_dispute_holds', { _order_ids: [ORDER_ID] });
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action, outcome: 'conflict', detail: 'Refund refused', metadata: expect.objectContaining({ code: 'dispute_hold' }),
+    }));
+    const audited = JSON.stringify(mockLogAudit.mock.calls);
+    for (const secret of [HELD, 'dp_1', 'dp_2']) expect(audited).not.toContain(secret);
+    expect(mockSchedule).not.toHaveBeenCalled();
+  });
+
+  it('FREQ-580-AC-01: 判断待ちの注文を読めなければ orderIds は空の配列で、断りの応答は変わらず、生の誤りを出さない', async () => {
+    service.mockResolvedValue({ kind: 'refused', code: 'dispute_hold' });
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mockHoldsRpc.mockResolvedValue({ data: null, error: { message: 'PRIVATE-MARKER', code: 'XX000' } });
+      const response = await call();
+      expect(response.status).toBe(409);
+      const text = await response.text();
+      expect(JSON.parse(text)).toEqual({ error: 'カード会社の判断待ちの注文が含まれているため、返金できません。', code: 'DISPUTE_HOLD', orderIds: [] });
+      expect(text).not.toContain('PRIVATE-MARKER');
+      expect(JSON.stringify(consoleError.mock.calls)).not.toContain('PRIVATE-MARKER');
+
+      // 読み口が例外を投げても同じ（応答は変わらない）
+      mockHoldsRpc.mockRejectedValue(new Error('PRIVATE-MARKER'));
+      const thrown = await call();
+      expect(thrown.status).toBe(409);
+      await expect(thrown.json()).resolves.toMatchObject({ code: 'DISPUTE_HOLD', orderIds: [] });
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('FREQ-580-AC-01: 判断待ちでない断り（値段の計画・返せる額など）は今までの記号と HTTP のままで、判断待ちを読みにいかない', async () => {
+    for (const code of ['unit_pricing_invalid', 'exceeds_refundable', 'order_not_refundable'] as const) {
+      service.mockResolvedValue({ kind: 'refused', code });
+      const response = await call();
+      expect(response.status).toBe(409);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.code).toBe(code);
+      expect(body).not.toHaveProperty('orderIds');
+    }
+    expect(mockHoldsRpc).not.toHaveBeenCalled();
+    expect(mockSchedule).not.toHaveBeenCalled();
+  });
+
+  it('FREQ-579-AC-06: 計上係は返金の流れ（前の注文へ戻す返金の送信を含む）が済んだ後に予約し、流れの順と戻りの値を変えない', async () => {
+    const events: string[] = [];
+    service.mockImplementation(async () => {
+      await Promise.resolve();
+      events.push('flow-done');
+      return ACCEPTED;
+    });
+    mockSchedule.mockImplementation((source: string) => {
+      events.push(`schedule:${source}`);
+    });
+
+    const response = await call();
+
+    expect(events).toEqual(['flow-done', 'schedule:refund']);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(ACCEPTED_BODY);
+  });
+
+  it('FREQ-579-AC-06: 返金の記録ができたら（受け付け・Stripe の断り・答えが分からない）応答の後に計上係を流す', async () => {
+    for (const result of [ACCEPTED, { kind: 'stripe_rejected', refundId: REFUND_ID, reasonLabel: null }, { kind: 'unknown', refundId: REFUND_ID }]) {
+      mockSchedule.mockClear();
+      service.mockResolvedValue(result);
+      await call();
+      expect(mockSchedule).toHaveBeenCalledTimes(1);
+      expect(mockSchedule).toHaveBeenCalledWith('refund');
+    }
+    mockSchedule.mockClear();
+    service.mockRejectedValue(new Error('boom'));
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    expect((await call()).status).toBe(500);
+    consoleError.mockRestore();
+    expect(mockSchedule).not.toHaveBeenCalled();
   });
 });

@@ -300,6 +300,8 @@ export type ReceiveReturnInput = {
   refundShippingAmount: number;
   /** この受け取りの率の手数料の免除（DB も返金の権限を確かめる）。省くと false */
   restockingFeeWaived?: boolean;
+  /** 届いた日（日本時間の YYYY-MM-DD。会計の計画3）。省くと渡さず、DB が受け取りを記録した日にする */
+  arrivedOn?: string;
   note: string | null;
   notifyCustomer: boolean;
   sentBackMessage: string | null;
@@ -364,6 +366,8 @@ export async function receiveReturn(store: ReturnStore, input: ReceiveReturnInpu
       _sent_back_tracking_number: input.sentBackTrackingNumber,
       _pricing: input.pricing ?? null,
       ...(input.restockingFeeWaived ? { _restocking_fee_waived: true } : {}),
+      // 17番目（会計の計画3）。省くと DB が受け取りを記録した日にする。省いた引数は渡さない（送り直しの指紋を変えないため）
+      ...(input.arrivedOn ? { _arrived_on: input.arrivedOn } : {}),
     }),
     'admin_receive_return',
   );

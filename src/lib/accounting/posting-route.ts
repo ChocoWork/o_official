@@ -122,6 +122,8 @@ export function handlePostingRun(request: Request): Promise<Response> {
 					shipments: result.shipments,
 					stripe: result.stripe,
 					disputes: result.disputes,
+					refunds: result.refunds,
+					returns: result.returns,
 					parked: result.parked,
 					resolved: result.resolved,
 					has_more: result.hasMore,

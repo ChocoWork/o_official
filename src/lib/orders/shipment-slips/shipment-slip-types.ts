@@ -1,6 +1,7 @@
 // File: src/lib/orders/shipment-slips/shipment-slip-types.ts
 // 発送票（G-3 / FREQ-531〜535）の段階・阻害理由・値の範囲・エラー表・固定の文・読取の行の型と検査。
 // 窓口・store・画面・E2E の橋が同じ定義を使う（サーバー専用の物は入れない）。
+import { DISPUTE_HOLD_MESSAGE } from '@/lib/orders/shipment-slips/shipment-slip-notice';
 import { SHIPPING_CARRIER_IDS, type ShippingCarrierId } from '@/lib/orders/shipping-carriers';
 import {
   DELIVERY_STATUSES,
@@ -101,6 +102,8 @@ export const SHIPMENT_SLIP_ERRORS: Record<string, readonly [sqlstate: string, st
   GROUP_G_SLIP_HAS_RETURN: ['22023', 409, '返品の対象になっている注文があるため、発送を取り消せません。'],
   GROUP_G_SLIP_REFUNDED: ['22023', 409, '発送後に返金した注文があるため、発送を取り消せません。'],
   GROUP_G_SLIP_CANCEL_NOT_ALLOWED: ['22023', 409, '取り消せない状態の注文があるため、発送を取り消せません。'],
+  // 会計の計画3（4-e3）: 確定の関数がカード会社の判断待ちの注文を断った（二重の守り。確定の窓口が DISPUTE_HOLD の409に直す）
+  ACCOUNTING_DISPUTE_HOLD: ['55000', 409, DISPUTE_HOLD_MESSAGE],
 };
 
 /** 表に載せない内部の誤り（GROUP_G_SHIPMENT_CONSUMPTION など）と、分類できない失敗に出す固定の文 */

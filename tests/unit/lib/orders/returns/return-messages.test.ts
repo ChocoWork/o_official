@@ -75,6 +75,7 @@ const EXPECTED = [
   ['UNIT_PRICING_STALE', 409, '他の操作で返金の額の計算が変わりました。画面を開き直してください。'],
   ['UNIT_PRICING_INVALID', 409, '返金の額の計算を確かめられませんでした。画面を開き直してください。'],
   ['UNIT_PRICING_REQUIRED', 409, '返金の額の計算が必要です。画面を開き直してください。'],
+  ['RETURN_ARRIVAL_DATE_INVALID', 400, '届いた日を確かめてください。'],
 ] as const;
 
 describe('返品の記号', () => {
@@ -94,7 +95,7 @@ describe('返品の記号', () => {
     expect([...CANCEL_REQUEST_STATUSES]).toEqual(['requested', 'resolved', 'declined', 'closed']);
   });
 
-  it('窓口が返す33の誤りの記号（段1の18と段2の11と品ごとの返金の1と交換の印の3）は共通の約束 C-2 のとおり', () => {
+  it('窓口が返す34の誤りの記号（段1の18と段2の11と品ごとの返金の1と交換の印の3と計画3の届いた日の1）は共通の約束 C-2 のとおり', () => {
     expect([...RETURN_ERROR_CODES]).toEqual([
       'RETURN_NOT_FOUND', 'RETURN_ARGUMENT_INVALID', 'RETURN_QUANTITY_EXCEEDS', 'RETURN_EXCHANGE_VARIANT_INVALID',
       'RETURN_ADDRESS_REQUIRED', 'RETURN_STATE_CONFLICT', 'RETURN_RECEIPT_EXCEEDS', 'RETURN_EXCHANGE_OUT_OF_STOCK',
@@ -106,6 +107,7 @@ describe('返品の記号', () => {
       'CANCEL_REQUEST_QUANTITY_EXCEEDS', 'CANCEL_REQUEST_STATE_CONFLICT', 'CANCEL_REQUEST_RESOLUTION_INVALID',
       'RETURN_RECEIVE_REFUND_CAP_EXCEEDED',
       'UNIT_PRICING_STALE', 'UNIT_PRICING_INVALID', 'UNIT_PRICING_REQUIRED',
+      'RETURN_ARRIVAL_DATE_INVALID',
     ]);
   });
 

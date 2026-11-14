@@ -8,7 +8,10 @@
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { arrivedOnSchema } from '@/lib/accounting/return-refund-schema';
+import { scheduleAccountingPosting } from '@/lib/accounting/posting-runner';
 import { ADMIN_NOTE_MAX_LENGTH } from '@/lib/orders/order-payment-types';
+import { readHeldOrderIdsOfReturn, withHeldOrderIds } from '@/lib/orders/refund/refund-dispute-hold';
 import { INVALID_REQUEST_BODY } from '@/lib/orders/refund/refund-messages';
 import { createDefaultRefundServiceDeps } from '@/lib/orders/refund/refund-service';
 import {
@@ -26,6 +29,7 @@ import {
   toRefusalReply,
 } from '@/lib/orders/returns/return-route-support';
 import { receiveReturnAndRefund } from '@/lib/orders/returns/return-service';
+import { createServiceRoleClient } from '@/lib/supabase/server';
 
 const ACTION = 'admin.orders.return.receive';
 
@@ -63,6 +67,8 @@ const bodySchema = z.object({
   refundAmount: optionalAmount,
   refundShippingAmount: z.number().int().min(0).max(MAX_AMOUNT).default(0),
   restockingFeeWaived: z.boolean().default(false),
+  // 届いた日（日本時間の YYYY-MM-DD。会計の計画3）。省くと DB が受け取りを記録した日にする。未来・申し込みの前・確定済みの取り消しの日以前は DB が断る
+  arrivedOn: arrivedOnSchema.optional(),
   // 返品の行ごとの「割引の扱い」（FREQ-642）。省くと理由から決まる（交換を返金に変えた行はお店の側）。直せるのは店長だけ（値段の計画を作る時に確かめる）
   treatments: z
     .array(z.object({ returnLineId: z.string().uuid(), treatment: z.enum(['shop', 'customer']) }))
@@ -145,12 +151,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ ret
       actorCanRefund: refundSide.canRefund,
       ...input,
     });
-    const reply = toReceiveReply(result);
+    // DB が判断待ちで断ったら、注文の番号を読み直して応答に添える（受け取りも返金も記録していない）
+    const reply = await withHeldOrderIds(toReceiveReply(result), () => readHeldOrderIdsOfReturn(deps.store, parsedId.data));
     await audit(reply.audit.outcome, reply.audit.detail, {
       ...reply.audit.metadata,
       refund_choice: input.refundChoice,
       unit_count: input.units.reduce((total, unit) => total + unit.quantity, 0),
     });
+    // 受け取りを記録できたら（断りでなければ）、返金の流れが済んだ後に、応答の後で会計の計上係を流す
+    if (result.kind !== 'refused') {
+      scheduleAccountingPosting('return');
+    }
     return NextResponse.json(reply.body, { status: reply.status });
   } catch (error) {
     return respondToReturnError(error, {
@@ -159,6 +170,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ret
       refusedDetail: 'Return receive refused',
       failureDetail: 'Failed to receive return',
       failureKind: 'receive',
+      heldOrderIds: async () => readHeldOrderIdsOfReturn(await createServiceRoleClient(), parsedId.data),
     });
   }
 }

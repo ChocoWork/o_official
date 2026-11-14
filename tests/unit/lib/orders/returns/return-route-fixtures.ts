@@ -21,7 +21,7 @@ export const HEADERS = { 'content-type': 'application/json', 'x-real-ip': '203.0
 
 export const UNKNOWN_MESSAGE = '返金の結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。';
 
-/** 共通の約束 C-4 の管理画面の言葉の表（記号・HTTP・言葉）。段1の18個と段2の11個の、29個すべて */
+/** 共通の約束 C-4 の管理画面の言葉の表（記号・HTTP・言葉）。段1の18個と段2の11個と、品ごとの返金・交換の印・届いた日の5個の、34個すべて */
 export const C4_CASES: Array<[ReturnErrorCode, number, string]> = [
   ['RETURN_NOT_FOUND', 404, '返品が見つかりません。'],
   ['RETURN_ARGUMENT_INVALID', 400, '入力を確かめてください。'],
@@ -56,6 +56,7 @@ export const C4_CASES: Array<[ReturnErrorCode, number, string]> = [
   ['UNIT_PRICING_STALE', 409, '他の操作で返金の額の計算が変わりました。画面を開き直してください。'],
   ['UNIT_PRICING_INVALID', 409, '返金の額の計算を確かめられませんでした。画面を開き直してください。'],
   ['UNIT_PRICING_REQUIRED', 409, '返金の額の計算が必要です。画面を開き直してください。'],
+  ['RETURN_ARRIVAL_DATE_INVALID', 400, '届いた日を確かめてください。'],
 ];
 
 /** E-2 の返金の誤り（refund-messages.ts の言葉と HTTP。返品の窓口もそのまま返す）。13個すべて */

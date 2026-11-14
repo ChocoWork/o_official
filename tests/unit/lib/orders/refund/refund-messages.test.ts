@@ -48,6 +48,8 @@ const EXPECTED = [
   ['unit_pricing_stale', 409, '他の操作で返金の額の計算が変わりました。画面を開き直してください。'],
   ['unit_pricing_invalid', 409, '返金の額の計算を確かめられませんでした。画面を開き直してください。'],
   ['unit_pricing_required', 409, '返金の額の計算が必要です。画面を開き直してください。'],
+  // 会計の計画3（4-e3）: 応答の code は DISPUTE_HOLD（下の専用の試験）
+  ['dispute_hold', 409, 'カード会社の判断待ちの注文が含まれているため、返金できません。'],
 ] as const;
 
 describe('返金の記号', () => {
@@ -60,12 +62,13 @@ describe('返金の記号', () => {
     expect([...STRIPE_REFUND_REASONS]).toEqual(['requested_by_customer', 'duplicate', 'fraudulent']);
   });
 
-  it('窓口が返す16の誤りの記号（13と交換の印の3）は共通の約束のとおり', () => {
+  it('窓口が返す17の誤りの記号（13と交換の印の3と計画3の判断待ちの1）は共通の約束のとおり', () => {
     expect([...REFUND_ERROR_CODES]).toEqual([
       'order_not_found', 'order_not_refundable', 'order_not_cancellable', 'awaiting_refund_exists', 'refund_request_mismatch',
       'refund_line_not_in_order', 'quantity_exceeds_unshipped', 'quantity_exceeds_shipped', 'shipping_exceeds',
       'exceeds_refundable', 'must_include_unshipped', 'must_be_full', 'invalid_argument',
       'unit_pricing_stale', 'unit_pricing_invalid', 'unit_pricing_required',
+      'dispute_hold',
     ]);
   });
 });
@@ -73,7 +76,8 @@ describe('返金の記号', () => {
 describe('誤りの記号ごとの HTTP と言葉', () => {
   it.each(EXPECTED)('%s は %i、言葉は「%s」', (code, status, message) => {
     expect(REFUND_ERROR_MESSAGES[code]).toEqual({ status, message });
-    expect(refundErrorBody(code)).toEqual({ error: message, code });
+    // 判断待ちだけは、応答の code が DISPUTE_HOLD で orderIds（窓口が読み直して差し替える。既定は空）を添える
+    expect(refundErrorBody(code)).toEqual(code === 'dispute_hold' ? { error: message, code: 'DISPUTE_HOLD', orderIds: [] } : { error: message, code });
   });
 
   it('表は誤りの記号を過不足なく持つ（記号を足したら言葉と HTTP も要る）', () => {

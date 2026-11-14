@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
+import { withHeldOrderIds } from '@/lib/orders/refund/refund-dispute-hold';
 import { REFUND_ERROR_MESSAGES, refundErrorBody } from '@/lib/orders/refund/refund-messages';
 import { toRefundReply, type RefundReply } from '@/lib/orders/refund/refund-route-support';
 import { RefundOperationError, RefundStoreError } from '@/lib/orders/refund/refund-store';
@@ -290,12 +291,17 @@ export async function resolveCanRefund(
 
 // ---- 失敗の答え ----
 
-/** 入口が答えで返した断り（refused）を、その HTTP と言葉で返し、断りとして監査に残す */
+/**
+ * 入口が答えで返した断り（refused）を、その HTTP と言葉で返し、断りとして監査に残す。
+ * heldOrderIds は判断待ちの断り（DISPUTE_HOLD）の時だけ読み、応答の orderIds にする（会計の計画3）
+ */
 export async function respondToRefusal(
   code: ReturnErrorCode | RefundErrorCode,
-  options: { audit: ReturnAudit; refusedDetail: string },
+  options: { audit: ReturnAudit; refusedDetail: string; heldOrderIds?: () => Promise<string[]> },
 ): Promise<Response> {
-  const reply = toRefusalReply(code, options.refusedDetail);
+  const reply = options.heldOrderIds
+    ? await withHeldOrderIds(toRefusalReply(code, options.refusedDetail), options.heldOrderIds)
+    : toRefusalReply(code, options.refusedDetail);
   await options.audit(reply.audit.outcome, reply.audit.detail, reply.audit.metadata);
   return NextResponse.json(reply.body, { status: reply.status });
 }
@@ -306,11 +312,19 @@ export async function respondToRefusal(
  */
 export async function respondToReturnError(
   error: unknown,
-  options: { audit: ReturnAudit; action: string; refusedDetail: string; failureDetail: string; failureKind: ReturnFailureKind },
+  options: {
+    audit: ReturnAudit;
+    action: string;
+    refusedDetail: string;
+    failureDetail: string;
+    failureKind: ReturnFailureKind;
+    /** 判断待ちの断り（DISPUTE_HOLD）の時だけ呼び、応答の orderIds にする */
+    heldOrderIds?: () => Promise<string[]>;
+  },
 ): Promise<Response> {
   const code = refusalCodeOf(error);
   if (code) {
-    return respondToRefusal(code, { audit: options.audit, refusedDetail: options.refusedDetail });
+    return respondToRefusal(code, { audit: options.audit, refusedDetail: options.refusedDetail, heldOrderIds: options.heldOrderIds });
   }
   console.error(`[${options.action}] ${options.failureDetail}`, ...returnErrorLogFields(error));
   await options.audit('error', options.failureDetail);

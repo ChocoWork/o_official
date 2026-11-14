@@ -25,6 +25,8 @@ import {
   type CancelReason,
   type OrderStatus,
 } from '@/lib/orders/order-payment-types';
+import { scheduleAccountingPosting } from '@/lib/accounting/posting-runner';
+import { readHeldOrderIds, withHeldOrderIds } from '@/lib/orders/refund/refund-dispute-hold';
 import { INVALID_REQUEST_BODY, refundFailureBody } from '@/lib/orders/refund/refund-messages';
 import { refundErrorLogFields, toRefundReply } from '@/lib/orders/refund/refund-route-support';
 import { createDefaultRefundServiceDeps, submitPaidOrderCancel } from '@/lib/orders/refund/refund-service';
@@ -248,8 +250,12 @@ async function cancelPaidOrder(
         notifyCustomer: cancel.notifyCustomer,
       },
     });
-    const reply = toRefundReply(result);
+    // DB が判断待ちで断ったら、注文の番号を読み直して応答に添える（Stripe は呼んでいない）
+    const reply = await withHeldOrderIds(toRefundReply(result), () => readHeldOrderIds(deps.store, [order.id]));
     await audit(reply.audit.outcome, reply.audit.detail, { ...reply.audit.metadata, source: 'order_cancel' });
+    if (result.kind !== 'refused') {
+      scheduleAccountingPosting('refund');
+    }
     return NextResponse.json(reply.body, { status: reply.status });
   } catch (error) {
     console.error('[admin.orders.status] Failed to cancel paid order', ...refundErrorLogFields(error));

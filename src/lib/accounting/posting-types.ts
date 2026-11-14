@@ -63,6 +63,9 @@ export type PostingRunResult = {
 	shipments: number;
 	stripe: number;
 	disputes: number;
+	/** 計画3: 返金の係と返品の係が新しく入れた仕訳の数。 */
+	refunds: number;
+	returns: number;
 	parked: number;
 	resolved: number;
 	hasMore: boolean;
@@ -83,7 +86,13 @@ export type PostingSource =
 	| 'bank_confirm'
 	| 'reconcile'
 	| 'cron'
-	| 'manual';
+	| 'manual'
+	/** 計画3: 返金・返品の route が応答の後に流す入口。 */
+	| 'refund'
+	| 'return'
+	| 'refund_cancel'
+	| 'refund_bank'
+	| 'refund_settle';
 
 /** 計上待ちの一覧の1ページ。`byReason` は未解決の理由ごとの件数。 */
 export type PendingEventsPage = {

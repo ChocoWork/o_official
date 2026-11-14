@@ -36,6 +36,14 @@ export const ACCOUNTING_ERRORS = {
 	ACCOUNTING_EVENT_NOT_POSTABLE: ['55000', 409, 'この出来事は今は仕訳にできません。計上待ちの一覧で理由を確かめてください。'],
 	ACCOUNTING_PENDING_RESOLVED: ['55000', 409, 'この計上待ちは既に解決されています。'],
 	ACCOUNTING_DISPUTE_ACCOUNT_INVALID: ['22023', 400, '選んだ勘定は、支払いの取り消しの振り替え先に使えません。'],
+	// 計画3（返金・返品）。返金の route は DISPUTE_HOLD を返金側の文と code で 409 にする（accounting の route には出ない）。
+	ACCOUNTING_DISPUTE_HOLD: ['55000', 409, 'カード会社の判断待ちの注文が含まれているため、返金できません。'],
+	ACCOUNTING_REFUND_NOT_CANCELED: ['55000', 409, 'この返金は取り消された状態ではありません。'],
+	ACCOUNTING_REFUND_CANCEL_DECIDED: ['55000', 409, 'この返金の取り消しの区分は、もう決まっています。'],
+	// 届いた日の直しが断られた時（DB は 22023 で RETURN_ARRIVAL_DATE_INVALID）。返品の route の表と同じ文。
+	RETURN_ARRIVAL_DATE_INVALID: ['22023', 400, '届いた日を確かめてください。'],
+	// 取り消しの区分の中で、交換の印が元に戻せない時（DETAIL ubrr_*。文は store が DETAIL で選ぶ）。
+	UNIT_CANCEL_REVERT_REFUSED: ['22023', 409, 'この取り消しは元に戻せません。「返すつもり」を選んで振込で返してください。'],
 } as const satisfies Readonly<Record<string, readonly [sqlstate: string, status: number, message: string]>>;
 
 export type AccountingErrorCode = keyof typeof ACCOUNTING_ERRORS;

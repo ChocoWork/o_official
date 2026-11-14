@@ -76,6 +76,8 @@ export const RETURN_ERROR_CODES = [
   'RETURN_RECEIVE_REFUND_CAP_EXCEEDED',
   // 交換の印の直し（FREQ-642）: サーバーが作った値段の計画を DB が断った（版が古い・形が違う・要るのに無い）
   'UNIT_PRICING_STALE', 'UNIT_PRICING_INVALID', 'UNIT_PRICING_REQUIRED',
+  // 会計の計画3: 届いた日が未来・返品の申し込みの前・確定した取り消しの日以前
+  'RETURN_ARRIVAL_DATE_INVALID',
 ] as const;
 export type ReturnErrorCode = (typeof RETURN_ERROR_CODES)[number];
 
@@ -94,6 +96,8 @@ export type ShopReturnSettings = {
 };
 export type ReturnCreateMaterials = {
   order: { id: string; status: OrderStatus; hasAwaitingRefund: boolean };
+  /** 窓口が足す: この注文にカード会社の判断待ちの取り消しがある（真なら品ごとの「今すぐ返金」を選べない。会計の計画3） */
+  disputeHold?: boolean;
   shipments: Array<{
     fulfillmentId: string; number: number; shippedAt: string; deadlineDate: string | null; pastDeadline: boolean;
     lines: Array<{ orderItemId: string; itemId: number; variantId: number | null; itemName: string; color: string | null; size: string | null;

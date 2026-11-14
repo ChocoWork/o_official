@@ -22,6 +22,9 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
 const mockLogAudit = jest.fn().mockResolvedValue(undefined);
 jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockLogAudit(...args) }));
 jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn() }));
+// 応答の後に流す会計の計上係（会計の計画3。実物は after() を使うので、試験では差し替える）
+const mockSchedule = jest.fn();
+jest.mock('@/lib/accounting/posting-runner', () => ({ scheduleAccountingPosting: (...args: unknown[]) => mockSchedule(...args) }));
 const mockDeps = { name: 'refund-deps' };
 const mockCreateDeps = jest.fn();
 jest.mock('@/lib/orders/refund/refund-service', () => ({
@@ -1222,5 +1225,200 @@ describe('POST /api/admin/returns/[returnId]/receive（割引の扱い。FREQ-64
     await expect(response.json()).resolves.toEqual({
       error: '他の操作で返金の額の計算が変わりました。画面を開き直してください。', code: 'UNIT_PRICING_STALE',
     });
+  });
+});
+
+// ---- 会計の計画3: 届いた日・判断待ちの止め・応答の後の計上係 ----
+
+/** 返品の注文を引く道（from）と判断待ちの読み口（rpc）を持つ store の代役。注文の番号は HELD_ORDER */
+const HELD_ORDER = '99b2c3d4-1111-4222-8333-444455556666';
+function useHoldStore(holds: jest.Mock) {
+  const chain: Record<string, unknown> = {};
+  Object.assign(chain, { select: () => chain, eq: () => chain, maybeSingle: async () => ({ data: { order_id: HELD_ORDER }, error: null }) });
+  Object.assign(mockDeps, { store: { from: () => chain, rpc: holds } });
+}
+
+describe('受け取りの窓口: 届いた日（arrivedOn。会計の計画3 FREQ-575-AC-01）', () => {
+  beforeEach(() => {
+    mockReceive.mockResolvedValue(RECEIVED);
+  });
+
+  it('FREQ-575-AC-01: 受け取りのrouteは arrivedOn を入口へ渡し、省略すると渡さない（値が無い）', async () => {
+    await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, arrivedOn: '2026-11-10' } });
+    expect(mockReceive).toHaveBeenLastCalledWith(mockDeps, expect.objectContaining({ arrivedOn: '2026-11-10', returnId: RETURN_ID }));
+
+    await call(ENDPOINTS[0]);
+    const [, omitted] = mockReceive.mock.calls[1] as [unknown, Record<string, unknown>];
+    expect(omitted.arrivedOn).toBeUndefined();
+  });
+
+  it('FREQ-575-AC-01: 日の形が不正（暦にない日・形の違い・日付でない値）は 400 で、入口も計上係も呼ばない', async () => {
+    for (const arrivedOn of ['2026-02-30', '2026/11/10', '20261110', '', 5, null, '2026-11-10T00:00:00Z']) {
+      const response = await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, arrivedOn } });
+      expect([String(arrivedOn), response.status]).toEqual([String(arrivedOn), 400]);
+    }
+    expect(mockReceive).not.toHaveBeenCalled();
+    expect(mockSchedule).not.toHaveBeenCalled();
+  });
+
+  it('FREQ-575-AC-01: 届いた日が不正（未来・申し込みの前・確定済み。DB の RETURN_ARRIVAL_DATE_INVALID）は 400 と固定の文で、計上係を流さない', async () => {
+    mockReceive.mockResolvedValue({ kind: 'refused', code: 'RETURN_ARRIVAL_DATE_INVALID' });
+    const response = await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, arrivedOn: '2099-01-01' } });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: '届いた日を確かめてください。', code: 'RETURN_ARRIVAL_DATE_INVALID' });
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failure', detail: 'Return receive refused', metadata: expect.objectContaining({ code: 'RETURN_ARRIVAL_DATE_INVALID' }) }));
+    expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('2099-01-01');
+    expect(mockSchedule).not.toHaveBeenCalled();
+
+    // 投げられた断り（ReturnStoreError）も同じ答え
+    mockReceive.mockRejectedValue(new ReturnStoreError('RETURN_ARRIVAL_DATE_INVALID'));
+    const thrown = await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, arrivedOn: '2099-01-01' } });
+    expect(thrown.status).toBe(400);
+    await expect(thrown.json()).resolves.toEqual({ error: '届いた日を確かめてください。', code: 'RETURN_ARRIVAL_DATE_INVALID' });
+    expect(mockSchedule).not.toHaveBeenCalled();
+  });
+});
+
+describe.each(ENDPOINTS)('$name の窓口の判断待ちの止めと計上係（会計の計画3）', (endpoint) => {
+  const holds = jest.fn();
+  beforeEach(() => {
+    holds.mockReset();
+    holds.mockResolvedValue({ data: [{ order_id: HELD_ORDER, dispute_id: 'dp_1', status: 'needs_response', amount: 1, since: '2026-11-10T00:00:00Z' }], error: null });
+    useHoldStore(holds);
+  });
+  afterEach(() => {
+    Reflect.deleteProperty(mockDeps, 'store');
+  });
+
+  it('FREQ-580-AC-01: 入口が dispute_hold で断ったら 409 と DISPUTE_HOLD で、orderIds は返品の注文を読み直した判断待ちの注文。計上係を流さない', async () => {
+    endpoint.service.mockResolvedValue({ kind: 'refused', code: 'dispute_hold' });
+
+    const response = await call(endpoint);
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: 'カード会社の判断待ちの注文が含まれているため、返金できません。',
+      code: 'DISPUTE_HOLD',
+      orderIds: [HELD_ORDER],
+    });
+    expect(holds).toHaveBeenCalledWith('get_order_dispute_holds', { _order_ids: [HELD_ORDER] });
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'conflict', detail: endpoint.refusedDetail, metadata: expect.objectContaining({ code: 'dispute_hold' }),
+    }));
+    expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain(HELD_ORDER);
+    expect(mockSchedule).not.toHaveBeenCalled();
+  });
+
+  it('FREQ-580-AC-01: 判断待ちを読めない時・投げられた断りの時も、orderIds は空の配列で 409 DISPUTE_HOLD になり、再試行の対象にしない（入口は1回だけ）', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      holds.mockResolvedValue({ data: null, error: { message: 'PRIVATE-MARKER', code: 'XX000' } });
+      endpoint.service.mockResolvedValue({ kind: 'refused', code: 'dispute_hold' });
+      const unreadable = await call(endpoint);
+      expect(unreadable.status).toBe(409);
+      const text = await unreadable.text();
+      expect(JSON.parse(text)).toEqual({ error: 'カード会社の判断待ちの注文が含まれているため、返金できません。', code: 'DISPUTE_HOLD', orderIds: [] });
+      expect(text).not.toContain('PRIVATE-MARKER');
+      expect(endpoint.service).toHaveBeenCalledTimes(1);
+
+      endpoint.service.mockReset();
+      endpoint.service.mockRejectedValue(new ReturnStoreError('dispute_hold'));
+      const thrown = await call(endpoint);
+      expect(thrown.status).toBe(409);
+      await expect(thrown.json()).resolves.toEqual({ error: 'カード会社の判断待ちの注文が含まれているため、返金できません。', code: 'DISPUTE_HOLD', orderIds: [] });
+      expect(endpoint.service).toHaveBeenCalledTimes(1);
+      expect(mockSchedule).not.toHaveBeenCalled();
+      expect(JSON.stringify(consoleError.mock.calls)).not.toContain('PRIVATE-MARKER');
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('FREQ-579-AC-06: 計上係は返金の流れ（前の注文へ戻す返金の送信を含む）が済んだ後に予約し、流れの順と戻りの値を変えない', async () => {
+    const events: string[] = [];
+    endpoint.service.mockImplementation(async () => {
+      await Promise.resolve();
+      events.push('flow-done');
+      return endpoint.okResult;
+    });
+    mockSchedule.mockImplementation((source: string) => {
+      events.push(`schedule:${source}`);
+    });
+
+    const response = await call(endpoint);
+
+    expect(events).toEqual(['flow-done', `schedule:${endpoint.path === 'receive' ? 'return' : 'refund'}`]);
+    expect(response.status).toBe(200);
+    expect(endpoint.service).toHaveBeenCalledTimes(1);
+  });
+
+  it('FREQ-579-AC-06: 記録ができた答え（受け付け・受け取りだけ・Stripe の断り・答えが分からない）のあとは応答の後に計上係を流し、断り・失敗の時は流さない', async () => {
+    const recorded =
+      endpoint.path === 'receive'
+        ? [RECEIVED, { ...RECEIVED, refund: null }, { kind: 'refund_not_accepted', receiptId: RECEIPT_ID, returnStatus: 'closed', refund: { kind: 'unknown', refundId: REFUND_ID } }]
+        : [ACCEPTED, { kind: 'waived', replayed: false }, { kind: 'stripe_rejected', refundId: REFUND_ID, reasonLabel: null }, { kind: 'unknown', refundId: REFUND_ID }];
+    const source = endpoint.path === 'receive' ? 'return' : 'refund';
+    for (const result of recorded) {
+      mockSchedule.mockClear();
+      endpoint.service.mockResolvedValue(result);
+      await call(endpoint);
+      expect(mockSchedule).toHaveBeenCalledTimes(1);
+      expect(mockSchedule).toHaveBeenCalledWith(source);
+    }
+    mockSchedule.mockClear();
+    endpoint.service.mockResolvedValue({ kind: 'refused', code: 'RETURN_STATE_CONFLICT' });
+    expect((await call(endpoint)).status).toBe(409);
+    endpoint.service.mockRejectedValue(new Error('boom'));
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    expect((await call(endpoint)).status).toBe(500);
+    consoleError.mockRestore();
+    expect(mockSchedule).not.toHaveBeenCalled();
+  });
+});
+
+// ピアの依頼（セキュリティレビュー）: 額を決めて返金の窓口の X4 の流れ（0円の終わり・値段の計画の断り・送料の渡し方）が、
+// 判断待ちの写しを足した後も別の 409 に飲まれない。判断待ちを読みにいかないことと、今までの記号のままであることで示す
+describe('額を決めて返金の窓口: X4 の流れは判断待ちの写しに飲まれない（会計の計画3）', () => {
+  const holds = jest.fn();
+  beforeEach(() => {
+    holds.mockReset();
+    useHoldStore(holds);
+  });
+  afterEach(() => {
+    Reflect.deleteProperty(mockDeps, 'store');
+  });
+
+  it('0円の終わり（額 0・送料 0）は 200 の waived のままで、判断待ちを読まず、応答の後に計上係を流す', async () => {
+    mockRefund.mockResolvedValue({ kind: 'waived', replayed: false });
+    const response = await postRefund(jsonRequest('refund', { ...REFUND_BODY, amount: 0, shippingAmount: 0 }), RETURN_CONTEXT);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ data: { refundId: null, amount: 0, status: 'waived', replayed: false } });
+    expect(mockRefund).toHaveBeenCalledWith(mockDeps, expect.objectContaining({ amount: 0, shippingAmount: 0 }));
+    expect(holds).not.toHaveBeenCalled();
+    expect(mockSchedule).toHaveBeenCalledWith('refund');
+  });
+
+  it('値段の計画の断り（UNIT_PRICING_INVALID。返金がエラーの間）は今までどおり 409 の UNIT_PRICING_INVALID で、DISPUTE_HOLD にも orderIds にもならない', async () => {
+    for (const code of ['UNIT_PRICING_INVALID', 'UNIT_PRICING_STALE', 'UNIT_PRICING_REQUIRED'] as const) {
+      mockRefund.mockResolvedValue({ kind: 'refused', code });
+      const response = await postRefund(jsonRequest('refund', REFUND_BODY), RETURN_CONTEXT);
+      expect(response.status).toBe(409);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.code).toBe(code);
+      expect(body).not.toHaveProperty('orderIds');
+    }
+    mockRefund.mockRejectedValue(new ReturnStoreError('UNIT_PRICING_INVALID'));
+    const thrown = await postRefund(jsonRequest('refund', REFUND_BODY), RETURN_CONTEXT);
+    expect(thrown.status).toBe(409);
+    await expect(thrown.json()).resolves.toEqual({ error: '返金の額の計算を確かめられませんでした。画面を開き直してください。', code: 'UNIT_PRICING_INVALID' });
+    expect(holds).not.toHaveBeenCalled();
+    expect(mockSchedule).not.toHaveBeenCalled();
+  });
+
+  it('返金が失敗した後のやり直し: 送料（画面が見込みの初めの値から入れた値）は、本文のまま入口へ渡す', async () => {
+    mockRefund.mockResolvedValue(ACCEPTED);
+    await postRefund(jsonRequest('refund', { ...REFUND_BODY, amount: 8000, shippingAmount: 500 }), RETURN_CONTEXT);
+    expect(mockRefund).toHaveBeenCalledWith(mockDeps, expect.objectContaining({ amount: 8000, shippingAmount: 500, requestKey: REQUEST_KEY }));
+    expect(holds).not.toHaveBeenCalled();
   });
 });

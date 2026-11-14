@@ -7,6 +7,10 @@ import type {
   StripeRefundReason,
 } from '@/lib/orders/refund/refund-types';
 
+/** カード会社の判断待ちの注文が含まれる返金の断り（409）。応答の code は DISPUTE_HOLD（発送票の確定の止めと同じ呼び名） */
+export const DISPUTE_HOLD_REFUND_MESSAGE = 'カード会社の判断待ちの注文が含まれているため、返金できません。';
+export const DISPUTE_HOLD_RESPONSE_CODE = 'DISPUTE_HOLD';
+
 /**
  * 返金の窓口の誤りの言葉と HTTP、履歴や画面に出す言葉（グループ E-2 設計書 5-5・9-2）。窓口と画面の両方が使うので、
  * サーバーだけの物を import しない。画面に出す言葉は、ここの1か所だけで持つ。
@@ -28,6 +32,7 @@ export const REFUND_ERROR_MESSAGES = {
   unit_pricing_stale: { status: 409, message: '他の操作で返金の額の計算が変わりました。画面を開き直してください。' },
   unit_pricing_invalid: { status: 409, message: '返金の額の計算を確かめられませんでした。画面を開き直してください。' },
   unit_pricing_required: { status: 409, message: '返金の額の計算が必要です。画面を開き直してください。' },
+  dispute_hold: { status: 409, message: DISPUTE_HOLD_REFUND_MESSAGE },
 } as const satisfies Record<RefundErrorCode, { status: 400 | 404 | 409; message: string }>;
 
 /** 窓口に届いた中身の形が誤っている時（400）。どこが誤りかは返さない */
@@ -55,6 +60,10 @@ export const UNKNOWN_REFUND_OUTCOME_MESSAGE =
   '返金の結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。';
 
 export function refundErrorBody(code: RefundErrorCode): RefundErrorResponse {
+  // 判断待ちの止めは、応答の code を DISPUTE_HOLD にし、orderIds を添える（中身は窓口が読み直して差し替える。既定は空）
+  if (code === 'dispute_hold') {
+    return { error: DISPUTE_HOLD_REFUND_MESSAGE, code: DISPUTE_HOLD_RESPONSE_CODE, orderIds: [] };
+  }
   return { error: REFUND_ERROR_MESSAGES[code].message, code };
 }
 

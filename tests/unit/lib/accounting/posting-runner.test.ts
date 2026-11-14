@@ -18,7 +18,7 @@ import { MAX_POSTING_LOOPS, type PostingRunResult } from '@/lib/accounting/posti
 
 const client = { name: 'service-role' } as unknown as SupabaseClient;
 const result = (overrides: Partial<PostingRunResult> = {}): PostingRunResult => ({
-	payments: 0, shipments: 0, stripe: 0, disputes: 0, parked: 0, resolved: 0, hasMore: false, ...overrides,
+	payments: 0, shipments: 0, stripe: 0, disputes: 0, refunds: 0, returns: 0, parked: 0, resolved: 0, hasMore: false, ...overrides,
 });
 
 let error: jest.SpyInstance;
@@ -37,7 +37,7 @@ describe('runAccountingPosting', () => {
 			.mockResolvedValueOnce(result({ shipments: 1, resolved: 1, hasMore: false }));
 
 		await expect(runAccountingPosting(client)).resolves.toEqual({
-			payments: 70, shipments: 6, stripe: 3, disputes: 1, parked: 3, resolved: 5, hasMore: false,
+			payments: 70, shipments: 6, stripe: 3, disputes: 1, refunds: 0, returns: 0, parked: 3, resolved: 5, hasMore: false,
 		});
 		expect(mockOnce).toHaveBeenCalledTimes(3);
 		// 1回の件数の上限の既定は50。

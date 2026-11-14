@@ -85,3 +85,13 @@ export type ReturnDecisionFact = {
 
 /** 届いた日の直しの理由の字数の上限（order_return_arrival_corrections_reason_check と同じ）。 */
 export const MAX_ARRIVAL_REASON = 500;
+
+/** 返金の振込の記録のメモの字数の上限（DB の admin_record_refund_bank_transfer と同じ）。 */
+export const MAX_REFUND_BANK_NOTE = 500;
+/** 銀行の取引の番号。DB と同じ形（preflight #11）。 */
+export const MAX_BANK_TXN_NO = 100;
+export const BANK_TXN_NO_PATTERN = /^[A-Za-z0-9_-]{1,100}$/;
+/** 消費税用の返金の一覧の1ページの上限（DB と同じ）。 */
+export const MAX_TAX_REFUND_PAGE = 200;
+/** 取り消しの区分・結びの理由の字数の上限（DB と同じ）。 */
+export const MAX_REFUND_DECISION_REASON = 500;

@@ -223,7 +223,16 @@ describe('refusalCodeOf（DB が決まった言葉で断った誤りだけを見
 describe('toRefusalReply（断りを HTTP・言葉・監査に直す）', () => {
   it('計画の冒頭 C-4 の表と E-2 の表の書き写しは、全部の記号を覆っている', () => {
     expect(C4_CASES.map(([code]) => code).sort()).toEqual([...RETURN_ERROR_CODES].sort());
-    expect(E2_CASES.map(([code]) => code).sort()).toEqual([...REFUND_ERROR_CODES].sort());
+    // dispute_hold（会計の計画3）は応答の code が DISPUTE_HOLD で orderIds を添えるので、下の別の試験で覆う
+    expect([...E2_CASES.map(([code]) => code), 'dispute_hold'].sort()).toEqual([...REFUND_ERROR_CODES].sort());
+  });
+
+  it('FREQ-580-AC-01: dispute_hold は 409 で、応答の code は DISPUTE_HOLD・orderIds は空（窓口が読み直して差し替える）。監査は conflict と dispute_hold だけ', () => {
+    expect(toRefusalReply('dispute_hold', 'Return refused')).toEqual({
+      status: 409,
+      body: { error: 'カード会社の判断待ちの注文が含まれているため、返金できません。', code: 'DISPUTE_HOLD', orderIds: [] },
+      audit: { outcome: 'conflict', detail: 'Return refused', metadata: { code: 'dispute_hold' } },
+    });
   });
 
   it.each(C4_CASES)('%s は HTTP %i と C-4 の言葉。409 は衝突、ほかは失敗として監査に残す', (code, status, message) => {

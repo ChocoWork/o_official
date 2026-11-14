@@ -5,6 +5,8 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { logAudit } from '@/lib/audit';
 import { ADMIN_NOTE_MAX_LENGTH } from '@/lib/orders/order-payment-types';
+import { scheduleAccountingPosting } from '@/lib/accounting/posting-runner';
+import { hasDisputeHold, readHeldOrderIds, withHeldOrderIds } from '@/lib/orders/refund/refund-dispute-hold';
 import { loadRefundMaterials } from '@/lib/orders/refund/refund-materials';
 import {
   INVALID_REQUEST_BODY,
@@ -68,7 +70,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (!materials) {
       return NextResponse.json(refundErrorBody('order_not_found'), { status: REFUND_ERROR_MESSAGES.order_not_found.status });
     }
-    return NextResponse.json(materials, { headers: { 'Cache-Control': 'no-store' } });
+    // 判断待ちの取り消しがある注文は、画面が返金を送れなくする。止めるのは DB で、読めなければ偽（読めなかったことはログに残る）
+    const disputeHold = await hasDisputeHold(client, parsedId.data);
+    return NextResponse.json({ ...materials, disputeHold }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     console.error('[admin.orders.refund.materials] Failed to load materials', ...refundErrorLogFields(error));
     return NextResponse.json(refundFailureBody('materials'), { status: 500 });
@@ -132,12 +136,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     const deps = await createDefaultRefundServiceDeps();
     const result = await submitAdminRefund(deps, { orderId: parsedId.data, actorId: authz.userId, request: refundRequest });
-    const reply = toRefundReply(result);
+    // DB が判断待ちで断ったら、注文の番号を読み直して応答に添える（Stripe は呼んでいない）
+    const reply = await withHeldOrderIds(toRefundReply(result), () => readHeldOrderIds(deps.store, [parsedId.data]));
     await audit(reply.audit.outcome, reply.audit.detail, {
       ...reply.audit.metadata,
       source: 'admin',
       line_count: refundRequest.lines.length,
     });
+    // 返金の記録ができたら（断りでなければ）、応答の後に会計の計上係を流す。前の注文へ戻す返金の送信は返金の流れの中で済んでいる
+    if (result.kind !== 'refused') {
+      scheduleAccountingPosting('refund');
+    }
     return NextResponse.json(reply.body, { status: reply.status });
   } catch (error) {
     console.error('[admin.orders.refund.create] Failed to create refund', ...refundErrorLogFields(error));

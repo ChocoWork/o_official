@@ -29,13 +29,15 @@ export const WEBHOOK_POSTING_OPTIONS: Required<PostingRunOptions> = { limit: 20,
 export async function runAccountingPosting(client: SupabaseClient, opts: PostingRunOptions = {}): Promise<PostingRunResult> {
 	const limit = opts.limit ?? DEFAULT_POSTING_BATCH;
 	const maxLoops = Math.min(opts.maxLoops ?? MAX_POSTING_LOOPS, MAX_POSTING_LOOPS);
-	const total: PostingRunResult = { payments: 0, shipments: 0, stripe: 0, disputes: 0, parked: 0, resolved: 0, hasMore: false };
+	const total: PostingRunResult = { payments: 0, shipments: 0, stripe: 0, disputes: 0, refunds: 0, returns: 0, parked: 0, resolved: 0, hasMore: false };
 	for (let loop = 0; loop < maxLoops; loop += 1) {
 		const result = await runAccountingPostingOnce(client, limit);
 		total.payments += result.payments;
 		total.shipments += result.shipments;
 		total.stripe += result.stripe;
 		total.disputes += result.disputes;
+		total.refunds += result.refunds;
+		total.returns += result.returns;
 		total.parked += result.parked;
 		total.resolved += result.resolved;
 		total.hasMore = result.hasMore;

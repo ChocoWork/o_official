@@ -103,10 +103,12 @@ describe('DB のエラー表', () => {
     ['GROUP_G_SLIP_HAS_RETURN', '22023', 409, '返品の対象になっている注文があるため、発送を取り消せません。'],
     ['GROUP_G_SLIP_REFUNDED', '22023', 409, '発送後に返金した注文があるため、発送を取り消せません。'],
     ['GROUP_G_SLIP_CANCEL_NOT_ALLOWED', '22023', 409, '取り消せない状態の注文があるため、発送を取り消せません。'],
+    // 会計の計画3（4-e3）。確定の関数の二重の守り。確定の窓口が DISPUTE_HOLD の409に直す
+    ['ACCOUNTING_DISPUTE_HOLD', '55000', 409, 'カード会社の判断待ちの注文が含まれているため、出荷できません。'],
   ];
 
-  test('FREQ-531-AC-04: エラー表は共通の値の全28行を、SQLSTATE・HTTP の状態・本文まで完全一致で持つ', () => {
-    expect(EXPECTED).toHaveLength(28);
+  test('FREQ-531-AC-04: エラー表は共通の値の全29行（28行と計画3の判断待ちの1行）を、SQLSTATE・HTTP の状態・本文まで完全一致で持つ', () => {
+    expect(EXPECTED).toHaveLength(29);
     expect(Object.keys(SHIPMENT_SLIP_ERRORS)).toEqual(EXPECTED.map(([message]) => message));
     for (const [message, sqlstate, status, body] of EXPECTED) {
       expect({ message, row: SHIPMENT_SLIP_ERRORS[message] }).toEqual({ message, row: [sqlstate, status, body] });

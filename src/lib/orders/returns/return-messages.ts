@@ -51,6 +51,8 @@ export const RETURN_ERROR_MESSAGES = {
   UNIT_PRICING_STALE: { status: 409, message: '他の操作で返金の額の計算が変わりました。画面を開き直してください。' },
   UNIT_PRICING_INVALID: { status: 409, message: '返金の額の計算を確かめられませんでした。画面を開き直してください。' },
   UNIT_PRICING_REQUIRED: { status: 409, message: '返金の額の計算が必要です。画面を開き直してください。' },
+  // 会計の計画3: 届いた日。未来の日・申し込みの前の日・確定した取り消しの日以前は選べない
+  RETURN_ARRIVAL_DATE_INVALID: { status: 400, message: '届いた日を確かめてください。' },
 } as const satisfies Record<ReturnErrorCode, { status: 400 | 403 | 404 | 409; message: string }>;
 
 /**
