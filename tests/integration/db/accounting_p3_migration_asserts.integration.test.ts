@@ -1440,7 +1440,7 @@ describeLocalDb('S25 final assert: controller only', (db) => {
     [redefine(STATES, "\\'holdback_release\\', ", ''), 'acc_s25_body_unchanged'],
     [redefine(STATES, "\\'2130\\', \\'return_refund\\'", "\\'2130\\', \\'refund_owed_post\\'"), 'acc_s25_body_unchanged'],
     [redefine(STATES, '-- ACC_P3_BEGIN\\n', '-- ACC_P3_X\\n'), 'acc_s25_body_unchanged'],
-    [redefine(STATES, 'f\\.post_shipment_amount', 'f.pre_shipment_amount'), 'acc_s25_body_unchanged'],
+    [redefine(STATES, 'post_shipment_amount., 0.', 'pre_shipment_amount), 0)'), 'acc_s25_body_unchanged'],
     [redefine(STATES, "x2\\.source = \\'return\\'", "x2.source = \\'admin\\'"), 'acc_s25_body_unchanged'],
     [`alter function ${BANK} set search_path = public`, 'acc_s25_function_attrs'],
     [`grant execute on function ${BANK_PUBLIC} to anon`, 'acc_s25_function_attrs'],

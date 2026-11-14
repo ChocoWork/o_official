@@ -370,7 +370,7 @@ BEGIN
   IF v_failed IS NULL THEN
     FOR e IN SELECT * FROM (VALUES
       ('private.list_refund_accounting_states(integer,timestamptz,uuid)', 2, 1, '28ec43c85c10e95fbf2644396a894f28', true,
-        'f.event_id, f.event_kind,|AS owed_return|OR s.owed_return > 0|''event_id'', q.event_id, ''event_kind'', q.event_kind, ''owed_return'', q.owed_return|f.source = ''return'' AND f.event_kind NOT IN (''holdback_release'', ''pre_shipment_cancel'')|IN (''owed'', ''failed'')|LEAST(private.accounting_order_account_balance(r.order_id, ''2130'', ''return_refund''),|accounting_order_account_balance(r.order_id, ''2130'', ''return_refund'')|f.post_shipment_amount|x2.source = ''return'' AND x2.status IN (''awaiting_response'', ''pending'')'),
+        'f.event_id, f.event_kind,|AS owed_return|OR s.owed_return > 0|''event_id'', q.event_id, ''event_kind'', q.event_kind, ''owed_return'', q.owed_return|f.source = ''return'' AND f.event_kind NOT IN (''holdback_release'', ''pre_shipment_cancel'')|IN (''owed'', ''failed'')|LEAST(private.accounting_order_account_balance(r.order_id, ''2130'', ''return_refund''),|accounting_order_account_balance(r.order_id, ''2130'', ''return_refund'')|f.post_shipment_amount), 0)|x2.source = ''return'' AND x2.status IN (''awaiting_response'', ''pending'')'),
       ('private.admin_record_refund_bank_transfer(uuid,uuid,text,bigint,date,text,text,uuid)', 0, 1, '316d2c2d7c61b6a3f00b7c499d44ec71', false,
         '_origin = ''return''|r.source = ''return'' AND r.status IN (''awaiting_response'', ''pending'')|''ACCOUNTING_REFUND_IN_FLIGHT''')
     ) AS x(signature, replaced, added, digest, readonly, needle)

@@ -7,6 +7,7 @@ import {
   seedCancelRefund, seedPreShipmentCancel, seedRefundFlow, seedReturnArrivalEntries, seedReturnFlow, seedSlotPaidOrder, settleOwed, succeedRefund,
 } from './helpers/accounting-returns-fixtures';
 import { hBegin } from './helpers/group-h-refund-fixtures';
+import { createUbReturn } from './helpers/unit-binding-receive';
 import { describeLocalDb } from './helpers/local-db';
 
 // 計画3 Task 11c（S25。Ruling P3-T11e・P3-T11f）: 借りの一覧に出来事と返品の借りを足し、やり直しの結びの候補を出す。
@@ -72,6 +73,8 @@ describeLocalDb('S25 refund debt reads: controller only', (db) => {
     await succeedRefund(db(), s.b, { at: '2026-11-06T03:00:00Z' });
     await succeedRefund(db(), s.a, { at: '2026-11-07T03:00:00Z' });
     await saveRefundTxn(db(), s.noSucceeded, { at: '2026-11-04T03:00:00Z' });
+    // Stripe の返金の番号まで持たせる（pending）。成功の行だけが無い状態で、成功の行の条件だけが候補から外す
+    await recordRefundResult(db(), s.noSucceeded, 'pending');
     await postRefundEvents(db());
     expect(await orderBalance(db(), s.o.orderId, '2130', 'refund_owed_post')).toBe(11250);
     // 同じ出来事の a が先頭。そのあとは成功の日（c、b の順に日付が若い物から）と返金の番号の順。owed 自身と、成功していない failedOnly は出ない
@@ -203,25 +206,38 @@ describeLocalDb('S25 refund debt reads: controller only', (db) => {
   const setStatus = (refundId: string, status: string) => q('update public.order_refunds set status = $2 where id = $1', [refundId, status]);
 
   test('FREQ-579-AC-04: 返品の借りの額は、その返金の額と、処理中の返品の返金を引いた注文の残高を超えない', async () => {
+    // 同じ注文の2つの返品の返金が、どちらも引かれる前に失敗した状態（本物の道で作れる）。残高は2つの借りの合計になる
     const d = await failedReturnDebt();
-    expect(await debtRow(d.refundId)).toMatchObject({ owed_return: 16875 });
-    // 処理中の返品の返金（5,000円）がある間は、その分を引く。pending になっても同じ
-    const live = await inFlightReturnRefund(d.flow, 5000);
-    expect(await debtRow(d.refundId)).toMatchObject({ owed_return: 11875 });
+    const ret2 = await createUbReturn(db(), d.flow.f, [{ quantity: 1 }], { percent: 10 });
+    const flow2 = { f: d.flow.f, returnId: ret2.returnId, lineIds: ret2.lineIds };
+    const received2 = await receiveReturn(db(), flow2, { units: [{ return_line_id: ret2.lineIds[0], disposition: 'not_restocked', quantity: 1 }], choice: 'now' });
+    await seedReturnArrivalEntries(db(), flow2.returnId);
+    const b = received2.refund_id as string;
+    await failRefund(db(), b);
+    await postRefundEvents(db());
+    const own = async (id: string) => Number((await q('select post_shipment_amount::int n from public.accounting_refund_facts where refund_id = $1', [id])).rows[0].n);
+    const [ownA, ownB] = [await own(d.refundId), await own(b)];
+    const balance = await orderBalance(db(), d.orderId, '2130', 'return_refund');
+    expect(balance).toBe(ownA + ownB);
+    // 注文の残高は両方の合計だが、各行はその返金自身の額まで（二重に見せない）
+    expect(await debtRow(d.refundId)).toMatchObject({ owed_return: ownA });
+    expect(await debtRow(b)).toMatchObject({ owed_return: ownB });
+    // 処理中の返品の返金は、注文の残高から引く。残高が各行の額より小さくなれば、その残高で止まる。pending になっても同じ
+    const live = await inFlightReturnRefund(d.flow, balance - 10000);
+    expect(await debtRow(d.refundId)).toMatchObject({ owed_return: Math.min(ownA, 10000) });
+    expect(await debtRow(b)).toMatchObject({ owed_return: Math.min(ownB, 10000) });
     await setStatus(live, 'pending');
-    expect(await debtRow(d.refundId)).toMatchObject({ owed_return: 11875 });
-    // 残高より大きい処理中の分があれば 0 で止まり（負にならない）、一覧から消える
-    const big = await inFlightReturnRefund(d.flow, 20000);
+    expect(await debtRow(d.refundId)).toMatchObject({ owed_return: Math.min(ownA, 10000) });
+    // 残高以上の処理中の分があれば 0 で止まり（負にならない）、どちらの行も消える
+    const big = await inFlightReturnRefund(d.flow, balance);
     expect(await debtRow(d.refundId)).toBeUndefined();
+    expect(await debtRow(b)).toBeUndefined();
     // 失敗した返金は引かない
     await setStatus(live, 'failed');
     await setStatus(big, 'failed');
-    expect(await debtRow(d.refundId)).toMatchObject({ owed_return: 16875 });
-    // その返金自身の出荷後の額（facts の post_shipment_amount）を超えない。facts は追記だけの表なので、この試験の中だけ触れる形で小さくして確かめる
-    await q('alter table public.accounting_refund_facts disable trigger user');
-    await q('update public.accounting_refund_facts set post_shipment_amount = 10000 where refund_id = $1', [d.refundId]);
-    await q('alter table public.accounting_refund_facts enable trigger user');
-    expect(await debtRow(d.refundId)).toMatchObject({ owed_return: 10000, owed_pre: 0, owed_post: 0 });
+    expect(await debtRow(d.refundId)).toMatchObject({ owed_return: ownA });
+    expect(await debtRow(b)).toMatchObject({ owed_return: ownB });
+    expect(await debtRow(d.refundId)).toMatchObject({ owed_pre: 0, owed_post: 0 });
   });
 
   test('FREQ-579-AC-04: 同じ注文に Stripe で処理中の返品の返金がある間は、返品の借りの振込を断る', async () => {
