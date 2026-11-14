@@ -85,7 +85,7 @@ describe('GET /api/admin/accounting/return-arrival', () => {
 });
 
 describe('POST /api/admin/accounting/return-arrival', () => {
-	test('直しは権限・CSRF・IP・actor の順に通ってから DB へ渡り、監査は受け取りの番号と結果だけ（理由の本文・日を入れない）', async () => {
+	test('FREQ-575-AC-02: 直しは権限・CSRF・IP・actor の順に通ってから DB へ渡り、監査は受け取りの番号と結果だけ（理由の本文・日を入れない）', async () => {
 		const response = await post();
 		expect(response.status).toBe(200);
 		expect((await read(response)).data).toEqual({ arrival: { receiptId: RECEIPT, version: 2, previousOn: '2026-11-03', newOn: '2026-11-02', correctionId: uuid(8), replayed: false } });

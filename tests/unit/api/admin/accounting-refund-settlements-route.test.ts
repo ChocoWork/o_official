@@ -60,7 +60,7 @@ describe('POST /api/admin/accounting/refund-settlements', () => {
 		for (const secret of ['6543', KEY, PAYING]) expect(audit).not.toContain(secret);
 	});
 
-	test('結びのrouteは admin.accounting.entries.correct の人だけで、順に通ってから DB へ渡り、応答の後に計上係を流す', async () => {
+	test('FREQ-579-AC-05: 結びのrouteは admin.accounting.entries.correct の人だけで、順に通ってから DB へ渡り、応答の後に計上係を流す', async () => {
 		grants.current = [PERM.read, PERM.manage, PERM.settings];
 		expect((await post()).status).toBe(403);
 		expect(rpcImpl).not.toHaveBeenCalled();

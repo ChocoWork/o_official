@@ -713,6 +713,8 @@ describe('POST /api/admin/orders/[id]/status - 支払い済みのキャンセル
       expect(res.status).toBe(409);
       expect(res.body).toEqual({ error: 'カード会社の判断待ちの注文が含まれているため、返金できません。', code: 'DISPUTE_HOLD', orderIds: [ORDER_ID] });
       expect(holdsRpc).toHaveBeenCalledWith('get_order_dispute_holds', { _order_ids: [ORDER_ID] });
+      // 再試行しない: 返金の流れは1回だけ
+      expect(mockSubmitPaidOrderCancel).toHaveBeenCalledTimes(1);
       expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
         outcome: 'conflict', detail: 'Refund refused', metadata: { code: 'dispute_hold', source: 'order_cancel' },
       }));
@@ -725,6 +727,7 @@ describe('POST /api/admin/orders/[id]/status - 支払い済みのキャンセル
       const unreadable = await post(PAID_CANCEL);
       expect(unreadable.status).toBe(409);
       expect(unreadable.body).toEqual({ error: 'カード会社の判断待ちの注文が含まれているため、返金できません。', code: 'DISPUTE_HOLD', orderIds: [] });
+      expect(mockSubmitPaidOrderCancel).toHaveBeenCalledTimes(2);
       expect(JSON.stringify(error.mock.calls)).not.toContain('PRIVATE-MARKER');
       error.mockRestore();
     } finally {

@@ -13,7 +13,7 @@ const decode = (escaped: string) =>
 	escaped.replace(/\\([0-9A-Fa-f]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16))).replace(/''/g, "'");
 
 describe('FREQ-562-AC-01: 仕訳の説明・メモ・相手の日本語は ACCOUNTING_LABELS が正本', () => {
-	it('計画2・3で使う29個の語を持ち、空でなく重ならない', () => {
+	it('計画2・3で使う31個の語を持ち、空でなく重ならない', () => {
 		expect(Object.keys(ACCOUNTING_LABELS).sort()).toEqual(
 			[
 				'bankArrived',
@@ -29,6 +29,7 @@ describe('FREQ-562-AC-01: 仕訳の説明・メモ・相手の日本語は ACCOU
 				'payoutFailed',
 				'payoutStarted',
 				'quantityTimes',
+				'quantityTimesCompact',
 				'refundAfterShipment',
 				'refundBankTransfer',
 				'refundCancelled',
@@ -45,6 +46,7 @@ describe('FREQ-562-AC-01: 仕訳の説明・メモ・相手の日本語は ACCOU
 				'shipmentRevenue',
 				'stripeJapan',
 				'taxAdjustment',
+				'taxRefundRetentionNote',
 			].sort(),
 		);
 		const values = Object.values(ACCOUNTING_LABELS);
@@ -105,15 +107,12 @@ describe('FREQ-562-AC-01: 計画2の移行の本文の日本語は ACCOUNTING_LA
 });
 
 /**
- * 語の出力（ACCOUNTING_LABELS）に入れず、前の移行の本文から S17 が写した文（裁定 P3-T10c）。仕訳の摘要ではない。
+ * 語の出力（ACCOUNTING_LABELS）に入れず、前の移行の本文から S17 が写した文（裁定 P3-T10c・P3-T10e）。仕訳の摘要ではない。
  * 足す時は、前の移行の本文にある物だけにする。
- * - 支払額の違いの自動の取消: begin_order_refund の auto_amount_mismatch の道のメモ（裁定が名指しした1件）
- * - Stripe で返金が見つかったため自動で解決: 要対応の自動の解決のメモ（20261023211425_group_g1_allocation.sql の写し。裁定の1件と同じ種類）
- * - 「 × 」: 計画2の出荷の移行の明細の摘要の区切り（20261108170000 の写し。裁定の1件と同じ種類）
- * - 「×」: 消費税用の返金の一覧の品の内容の区切り（S23。上と同じ種類の表示の区切り）
- * - 消費税法施行令58条の2により7年間保存する: 消費税用の返金の一覧の保存の注記（S23。仕訳の語ではなく読み口の固定の文。写しではなく Task 9 の固定の文で、同じ許可の表に置く）
+ * - 支払額の違いの自動の取消: begin_order_refund の auto_amount_mismatch の道のメモ
+ * - Stripe で返金が見つかったため自動で解決: 要対応の自動の解決のメモ（20261023211425_group_g1_allocation.sql の写し）
  */
-const CARRIED_OVER_REFUND_NOTES = ['支払額の違いの自動の取消', 'Stripe で返金が見つかったため自動で解決', ' × ', '×', '消費税法施行令58条の2により7年間保存する'];
+const CARRIED_OVER_REFUND_NOTES = ['支払額の違いの自動の取消', 'Stripe で返金が見つかったため自動で解決'];
 
 describe('FREQ-578-AC-01: 返品・返金のラベルはSQLと一致する', () => {
 	it('計画3の12個の語は計画で決めた文字のまま', () => {
@@ -136,6 +135,14 @@ describe('FREQ-578-AC-01: 返品・返金のラベルはSQLと一致する', () 
 			disputeOffsetReturn: '返品の返金待ちとの相殺',
 			disputeOffsetReview: '返金済みと重なる分（分けて調べる）',
 		});
+	});
+
+	it('FREQ-583-AC-04: 消費税用の返金の一覧の保存の注記と品の内容の区切りは、S23 の文のとおり', () => {
+		expect(ACCOUNTING_LABELS.taxRefundRetentionNote).toBe('消費税法施行令58条の2により7年間保存する');
+		expect(ACCOUNTING_LABELS.quantityTimesCompact).toBe('×');
+		const sql = fs.readFileSync(path.join(directory, fs.readdirSync(directory).filter((n) => n.endsWith('_accounting_p3_intake_tax_reads.sql'))[0]), 'utf8');
+		expect(sql).toContain(encodeSqlUnicodeLiteral(ACCOUNTING_LABELS.taxRefundRetentionNote));
+		expect(sql).toContain(encodeSqlUnicodeLiteral(ACCOUNTING_LABELS.quantityTimesCompact));
 	});
 
 	it('計画3の移行はASCIIだけで、U& の文字列は全部が語の出力のどれかと一致する', () => {

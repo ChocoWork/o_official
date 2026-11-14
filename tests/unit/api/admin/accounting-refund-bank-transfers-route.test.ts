@@ -101,7 +101,7 @@ describe('POST /api/admin/accounting/refund-bank-transfers', () => {
 		expect(mockAudit.mock.calls.map(([event]) => (event as { metadata: unknown }).metadata)).toEqual([{ result: 'recorded' }, { result: 'recorded' }]);
 	});
 
-	test('別の要求番号が同じ銀行の取引の番号・元を使うと、DB は created:false を返し、監査の結果は duplicate_bank_txn になる', async () => {
+	test('FREQ-579-AC-04: 別の要求番号が同じ銀行の取引の番号・元を使うと、DB は created:false を返し、監査の結果は duplicate_bank_txn になる', async () => {
 		rpcImpl.mockImplementation(async () => ({ data: { ...created, created: false }, error: null }));
 		const response = await post({ ...body, requestKey: uuid(95) });
 		expect(response.status).toBe(200);

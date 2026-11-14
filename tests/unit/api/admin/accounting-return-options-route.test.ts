@@ -86,7 +86,7 @@ describe('/api/admin/accounting/return-options', () => {
 		expect([conflict.status, await read(conflict)]).toEqual([409, { code: 'ACCOUNTING_VERSION_CONFLICT', error: '設定が変わりました。読み直してください。' }]);
 	});
 
-	test('設定のPUTの版違いは409、再送は前の結果で監査は replayed', async () => {
+	test('FREQ-575-AC-04: 設定のPUTの版違いは409、再送は前の結果で監査は replayed', async () => {
 		rpcImpl.mockImplementation(async () => dbError('ACCOUNTING_VERSION_CONFLICT', '40001'));
 		const conflict = await put();
 		expect([conflict.status, await read(conflict)]).toEqual([409, { code: 'ACCOUNTING_VERSION_CONFLICT', error: '設定が変わりました。読み直してください。' }]);

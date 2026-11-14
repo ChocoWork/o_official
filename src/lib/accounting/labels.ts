@@ -10,6 +10,10 @@ export const ACCOUNTING_LABELS = {
 	shipmentCancelled: '出荷の取り消し',
 	/** 出荷の仕訳の行のメモ「品名 × 数量」の間の字（前後に空白）。 */
 	quantityTimes: ' × ',
+	/** 消費税用の返金の一覧（S23）の品の内容「品名×数量」の間の字（前後に空白なし）。 */
+	quantityTimesCompact: '×',
+	/** 消費税用の返金の一覧（S23）の保存の注記。 */
+	taxRefundRetentionNote: '消費税法施行令58条の2により7年間保存する',
 	/** 決済会社の相手の名前。 */
 	stripeJapan: 'ストライプジャパン株式会社',
 	feePayment: '決済の手数料',
