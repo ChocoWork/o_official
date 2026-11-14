@@ -46,6 +46,8 @@ export const ACCOUNTING_ERRORS = {
 	RETURN_ARRIVAL_DATE_INVALID: ['22023', 400, '届いた日を確かめてください。'],
 	// 取り消しの区分の中で、交換の印が元に戻せない時（DETAIL ubrr_*。文は store が DETAIL で選ぶ）。
 	UNIT_CANCEL_REVERT_REFUSED: ['22023', 409, 'この取り消しは元に戻せません。「返すつもり」を選んで振込で返してください。'],
+	// Stripe に届いていない error の返金（DETAIL ubrr_status）。Stripe への返金のやり直しだけが道（裁定 P3-B7）。画面はこの印で選択肢を外す。
+	UNIT_CANCEL_REVERT_STRIPE_RETRY: ['22023', 409, 'Stripe への返金をやり直してください。'],
 } as const satisfies Readonly<Record<string, readonly [sqlstate: string, status: number, message: string]>>;
 
 export type AccountingErrorCode = keyof typeof ACCOUNTING_ERRORS;

@@ -148,13 +148,17 @@ describe('POST /api/admin/accounting/refund-cancellations', () => {
 
 	test('FREQ-579-AC-03: 取り消しの区分のrouteは UNIT_CANCEL_REVERT_REFUSED を 409 とコードで返し、理由ごとの文を出す', async () => {
 		const revert = 'この取り消しは元に戻せません。「返すつもり」を選んで振込で返してください。';
-		for (const [detail, text] of [['ubrr_later', revert], ['ubrr_holds', revert], ['ubrr_status', 'Stripe への返金をやり直してください。']] as const) {
+		for (const [detail, code, text] of [
+			['ubrr_later', 'UNIT_CANCEL_REVERT_REFUSED', revert],
+			['ubrr_holds', 'UNIT_CANCEL_REVERT_REFUSED', revert],
+			['ubrr_status', 'UNIT_CANCEL_REVERT_STRIPE_RETRY', 'Stripe への返金をやり直してください。'],
+		] as const) {
 			rpcImpl.mockImplementation(async () => dbError('UNIT_CANCEL_REVERT_REFUSED', '22023', detail));
 			const response = await post();
-			expect([detail, response.status, await read(response)]).toEqual([detail, 409, { code: 'UNIT_CANCEL_REVERT_REFUSED', error: text }]);
+			expect([detail, response.status, await read(response)]).toEqual([detail, 409, { code, error: text }]);
 			expect(JSON.stringify(mockAudit.mock.calls)).not.toContain(detail);
 		}
-		expect(mockAudit).toHaveBeenLastCalledWith(expect.objectContaining({ outcome: 'failure', metadata: { result_code: 'UNIT_CANCEL_REVERT_REFUSED' } }));
+		expect(mockAudit).toHaveBeenLastCalledWith(expect.objectContaining({ outcome: 'failure', metadata: { result_code: 'UNIT_CANCEL_REVERT_STRIPE_RETRY' } }));
 		expect(mockSchedule).not.toHaveBeenCalled();
 	});
 

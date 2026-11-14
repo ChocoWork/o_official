@@ -64,7 +64,7 @@ describe('やり直しの結び', () => {
 		expect(options[2]).toContain('BBBBBBBB');
 	});
 
-	it('FREQ-579-AC-05: 結べた時は onDone を呼ぶ。違う元の返金（400）は入力の誤りの文を出す', async () => {
+	it('FREQ-579-AC-05: 結べた時は onDone を呼ぶ', async () => {
 		serve();
 		const first = open();
 		fireEvent.change(payer(first.dialog), { target: { value: PAYING_A } });

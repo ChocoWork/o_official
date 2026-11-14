@@ -176,6 +176,7 @@ export function RefundBankTransferForm({
             />
           </label>
         </div>
+        <p className={noteClassName}>切り替えの日より前の日と、カード会社の取り消しが確定した日以前の日は、記録できません。</p>
         {amountProblem ? <p className="font-acumin lk-text-3xs text-red-700">{amountProblem}</p> : null}
         {dateProblem ? <p className="font-acumin lk-text-3xs text-red-700">{dateProblem}</p> : null}
         {txnProblem ? <p className="font-acumin lk-text-3xs text-red-700">{txnProblem}</p> : null}

@@ -32,7 +32,7 @@ const dateInput = (dialog: HTMLElement) => within(dialog).getByLabelText('新し
 const reasonInput = (dialog: HTMLElement) => within(dialog).getByLabelText('直す理由（必須）') as HTMLTextAreaElement;
 
 describe('届いた日を直す画面', () => {
-	it('FREQ-584-AC-02: 届いた日を直す操作は権限のある人だけに出て、理由が空なら送れない', async () => {
+	it('FREQ-584-AC-02: 理由が空なら送れず、二重に押せない', async () => {
 		const api = serve();
 		const { dialog, onDone } = open();
 		expect(dateInput(dialog).max).toBe(today());
@@ -78,6 +78,9 @@ describe('届いた日を直す画面', () => {
 		const alert = await within(dialog).findByRole('alert');
 		expect(alert).toHaveTextContent('届いた日を確かめてください。');
 		expect(alert).toHaveTextContent('カード会社の取り消しが確定した日以前');
+		// 店が作った返品の下限（最初の発送の日）と、今の日が確定した日以前の時の旨も添える
+		expect(alert).toHaveTextContent('店が作った返品は最初の発送の日');
+		expect(alert).toHaveTextContent('今の届いた日が確定した日以前の時は、直せません');
 		expect(alert.textContent).not.toMatch(/[!！]/);
 		expect(onDone).not.toHaveBeenCalled();
 	});

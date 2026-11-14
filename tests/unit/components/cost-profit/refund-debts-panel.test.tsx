@@ -87,7 +87,8 @@ describe('借りが残る返金の一覧', () => {
 		fireEvent.click(within(list).getByRole('button', { name: '振込を記録する' }));
 		const form = await within(region).findByRole('group', { name: '振込で返した分を記録する' });
 		expect(within(form).getByLabelText('注文')).toHaveValue(uuid(601));
-		expect(within(form).getByLabelText('借りの種類')).toHaveValue('return');
+		// 借りの種類は借りが載る枝で決める（出荷後の分は出荷後。返金の元が返品でも変えない）
+		expect(within(form).getByLabelText('借りの種類')).toHaveValue('post_shipment');
 	});
 
 	it('FREQ-579-AC-05: やり直しと結ぶを押すと、同じ注文のほかの返金を候補にした画面が開く', async () => {
@@ -103,5 +104,14 @@ describe('借りが残る返金の一覧', () => {
 		serve({ status: 500 });
 		const region = open();
 		expect(await within(region).findByRole('alert')).toHaveTextContent('会計の処理に失敗しました。');
+	});
+
+	it('FREQ-579-AC-04: 発送前の分の借りの行は、振込の記録の借りの種類が出荷前になる', async () => {
+		serve({ refunds: [state(2, { source: 'order_cancel', owedPre: 5000, owedPost: 0 })] });
+		const region = open();
+		const list = await within(region).findByRole('list', { name: '借りが残る返金の一覧' });
+		fireEvent.click(within(list).getByRole('button', { name: '振込を記録する' }));
+		const form = await within(region).findByRole('group', { name: '振込で返した分を記録する' });
+		expect(within(form).getByLabelText('借りの種類')).toHaveValue('pre_shipment');
 	});
 });

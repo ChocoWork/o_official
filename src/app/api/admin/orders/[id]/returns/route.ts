@@ -87,17 +87,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   try {
     const client = await createServiceRoleClient();
-    const [returns, returnableUnits, materials, settings] = await Promise.all([
+    const [returns, returnableUnits, materials, settings, disputeHold] = await Promise.all([
       listOrderReturns(client, parsedId.data),
       loadReturnableUnits(client, parsedId.data),
       loadRefundMaterials(client, parsedId.data),
       getShopReturnSettings(client),
+      // 判断待ちの取り消しがある注文は、画面が「今すぐ返金」を選べなくする。止めるのは DB で、読めなければ偽（会計の計画3 FREQ-584-AC-01）
+      hasDisputeHold(client, parsedId.data),
     ]);
     if (!materials) {
       return NextResponse.json(refundErrorBody('order_not_found'), { status: REFUND_ERROR_MESSAGES.order_not_found.status });
     }
-    // 判断待ちの取り消しがある注文は、画面が「今すぐ返金」を選べなくする。止めるのは DB で、読めなければ偽（会計の計画3 FREQ-584-AC-01）
-    const disputeHold = await hasDisputeHold(client, parsedId.data);
     return NextResponse.json(
       {
         data: {

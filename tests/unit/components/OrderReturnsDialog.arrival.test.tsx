@@ -54,12 +54,17 @@ const ARRIVAL = {
 	corrections: [{ version: 1, previousOn: '2026-11-09', newOn: '2026-11-08', reason: '配達の記録が前の日だった', actorId: ACTOR_ID, createdAt: '2026-11-10T01:00:00.000Z' }],
 };
 
+let lastArrivalErrorResponse: Response | null = null;
+
 function serve(options: { correctEntries: boolean; arrival?: unknown; arrivalStatus?: number }) {
 	mockClientFetch.mockImplementation(async (input: string) => {
 		const url = new URL(String(input), 'http://localhost');
 		if (url.pathname === `/api/admin/orders/${ORDER_ID}/returns`) return json(returnsBody());
 		if (url.pathname === '/api/admin/accounting/return-arrival') {
-			if (options.arrivalStatus && options.arrivalStatus !== 200) return json({ error: '会計の処理に失敗しました。' }, options.arrivalStatus);
+			if (options.arrivalStatus && options.arrivalStatus !== 200) {
+				lastArrivalErrorResponse = new Response(JSON.stringify({ error: '会計の処理に失敗しました。' }), { status: options.arrivalStatus });
+				return lastArrivalErrorResponse;
+			}
 			return json({
 				data: { arrivals: [options.arrival ?? ARRIVAL] },
 				permissions: { manageSettings: false, ...(options.correctEntries ? { correctEntries: true } : {}) },
@@ -121,5 +126,22 @@ describe('返品の欄の届いた日', () => {
 		const dialog = await openDialog();
 		expect(within(dialog).getByRole('group', { name: LABEL })).toBeInTheDocument();
 		expect(within(dialog).queryByText(/届いた日 20/)).not.toBeInTheDocument();
+		// 非okの本文は読み切る（FREQ-584-AC-05）
+		await waitFor(() => expect(lastArrivalErrorResponse?.bodyUsed).toBe(true));
+	});
+
+	it('FREQ-575-AC-02: 受け取りが2回ある返品は、届いた日の行に「n回目の受け取り」を付けて見分けられる', async () => {
+		const second = '00000000-0000-4000-8000-000000000032';
+		const base = returnsBody();
+		base.data.returns[0].receipts.push({ id: second, kind: 'receive', refundChoice: 'none', createdAt: '2026-11-10T02:00:00.000Z', actorEmail: null });
+		mockClientFetch.mockImplementation(async (input: string) => {
+			const url = new URL(String(input), 'http://localhost');
+			if (url.pathname === `/api/admin/orders/${ORDER_ID}/returns`) return json(base);
+			return json({ data: { arrivals: [ARRIVAL, { ...ARRIVAL, receiptId: second, arrivedOnCurrent: '2026-11-10', arrivedOnOriginal: '2026-11-10', corrections: [] }] }, permissions: { manageSettings: false } });
+		});
+		const dialog = await openDialog();
+		const card = within(dialog).getByRole('group', { name: LABEL });
+		expect(await within(card).findByText(/^1回目の受け取り\s+届いた日 2026\/11\/08$/)).toBeInTheDocument();
+		expect(within(card).getByText(/^2回目の受け取り\s+届いた日 2026\/11\/10$/)).toBeInTheDocument();
 	});
 });

@@ -65,10 +65,12 @@ function mergeByRefundId(current: readonly RefundStateRow[], incoming: readonly 
 
 const hasDebt = (row: RefundStateRow): boolean => row.state !== "canceled" && (row.owedPre > 0 || row.owedPost > 0);
 
-/** 借りの種類。発送前の分だけが残る物は出荷前、返品の返金は返品、ほかは出荷後 */
+/**
+ * 借りの種類。発送前の分の借りは出荷前、出荷後の分の借りは出荷後（借りは返金の未払いの発送前・出荷後の枝に載るので、返金の元では決めない）。
+ * 返品の返金の借り（origin `return`）の行は、DB の読みを直す次の段で足す。
+ */
 function originOf(row: RefundStateRow): BankTransferOrigin {
-  if (row.owedPre > 0 && row.owedPost === 0) return "pre_shipment";
-  return row.source === "return" ? "return" : "post_shipment";
+  return row.owedPre > 0 && row.owedPost === 0 ? "pre_shipment" : "post_shipment";
 }
 
 export function RefundDebtsPanel(): React.JSX.Element {

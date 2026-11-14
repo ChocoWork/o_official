@@ -28,3 +28,10 @@ test('ariaLabel 未指定は従来の label と操作・disabled を保つ', () 
   fireEvent.click(toggle);
   expect(onChange).toHaveBeenCalledTimes(1);
 });
+
+test('ariaDescribedBy を渡すと切り替えのボタンに aria-describedby が付き、渡さなければ付かない', () => {
+  const { rerender } = render(<SwitchToggle checked onChange={jest.fn()} label="設定" ariaDescribedBy="note-1" />);
+  expect(screen.getByRole('switch')).toHaveAttribute('aria-describedby', 'note-1');
+  rerender(<SwitchToggle checked onChange={jest.fn()} label="設定" />);
+  expect(screen.getByRole('switch')).not.toHaveAttribute('aria-describedby');
+});

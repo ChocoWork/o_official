@@ -145,7 +145,7 @@ describe('返金の状態・取り消しの区分', () => {
 		rpc.mockResolvedValue(fail('UNIT_CANCEL_REVERT_REFUSED', '22023', 'ubrr_status'));
 		await expect(store.decideRefundCancellation(client, ACTOR, body)).rejects.toMatchObject({
 			status: 409,
-			code: 'UNIT_CANCEL_REVERT_REFUSED',
+			code: 'UNIT_CANCEL_REVERT_STRIPE_RETRY',
 			message: 'Stripe への返金をやり直してください。',
 		});
 		// SQLSTATE が違う同名の誤りは表の拒否にしない

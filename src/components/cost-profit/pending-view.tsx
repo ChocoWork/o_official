@@ -25,6 +25,7 @@ import {
 } from "./accounting-api";
 import { DeferredRevenuePanel } from "./deferred-revenue-panel";
 import { currency } from "./constants";
+import { LinkEntryPicker } from "./link-entry-picker";
 import { RefundCancellationDialog } from "./refund-cancellation-dialog";
 import {
   errorNotice,
@@ -170,6 +171,8 @@ function PostingErrorGuide({ event }: { event: PendingEvent }) {
 
 /** 手で入れる待ち（order_not_postable）を、手で入れた仕訳と結んで閉じる欄。入力は仕訳の ID とメモ（必須）。失敗の文は route の文をそのまま出す */
 function LinkEntryForm({
+  orderId,
+  entryDate,
   entryId,
   memo,
   sending,
@@ -179,6 +182,8 @@ function LinkEntryForm({
   onSend,
   onCancel,
 }: {
+  orderId: string | null;
+  entryDate: string | null;
   entryId: string;
   memo: string;
   sending: boolean;
@@ -192,18 +197,7 @@ function LinkEntryForm({
   const canSend = !sending && entryOk && memo.trim() !== "";
   return (
     <div className="space-y-2">
-      <label className="block">
-        <span className={labelClassName}>手で入れた仕訳の ID</span>
-        <input
-          type="text"
-          autoComplete="off"
-          spellCheck={false}
-          className="h-10 w-full rounded-md border border-[#d4d4d4] bg-white px-3 font-acumin lk-text-sm text-black focus:border-black focus:outline-none"
-          value={entryId}
-          onChange={(e) => onEntryIdChange(e.target.value)}
-        />
-      </label>
-      <p className={noteClassName}>この注文の分け方を決めて、手で入れた仕訳（または注文を使わない手入力の仕訳）の ID を入れてください。</p>
+      <LinkEntryPicker orderId={orderId} entryDate={entryDate} value={entryId} onChange={onEntryIdChange} />
       <label className="block">
         <span className={labelClassName}>メモ（必須）</span>
         <textarea
@@ -262,6 +256,8 @@ export function PendingView(): React.JSX.Element {
 
   // 取り消しの区分を選ぶ返金（refund_cancel_undecided の行の refund_id）
   const [decidingRefundId, setDecidingRefundId] = useState<string | null>(null);
+  // この画面で区分を決めた返金。計上係が行を閉じるまでは、ボタンを出さない（もう一度押すと「もう決まっています」の409になる）
+  const [decidedRefundIds, setDecidedRefundIds] = useState<ReadonlySet<string>>(new Set());
 
   /** 先頭の1ページを読み直す（続きは捨てる）。 */
   const load = useCallback(async () => {
@@ -412,8 +408,10 @@ export function PendingView(): React.JSX.Element {
           refundId={decidingRefundId}
           onClose={() => setDecidingRefundId(null)}
           onDone={() => {
+            const decided = decidingRefundId;
+            setDecidedRefundIds((current) => (decided === null ? current : new Set(current).add(decided)));
             setDecidingRefundId(null);
-            setResolveNotice(successNotice("取り消しの区分を決めました。計上すると、この行は閉じます。"));
+            setResolveNotice(successNotice("取り消しの区分を決めました。まもなく自動で計上され、この行は閉じます。残っている時は読み直してください。"));
             void load();
           }}
           onStale={() => void load()}
@@ -528,15 +526,19 @@ export function PendingView(): React.JSX.Element {
                   ) : event.reason === "refund_cancel_undecided" && refundIdOf(event) !== null ? (
                     // この行が閉じる道は、取り消しの区分を選ぶこと（選ぶと計上係が仕訳を入れて閉じる）
                     permissions.correctEntries ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        shape="rounded"
-                        className="font-acumin"
-                        onClick={() => setDecidingRefundId(refundIdOf(event))}
-                      >
-                        取り消しの区分を選ぶ
-                      </Button>
+                      decidedRefundIds.has(refundIdOf(event) ?? "") ? (
+                        <p className={noteClassName}>区分は決めました。計上されると、この行は閉じます</p>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          shape="rounded"
+                          className="font-acumin"
+                          onClick={() => setDecidingRefundId(refundIdOf(event))}
+                        >
+                          取り消しの区分を選ぶ
+                        </Button>
+                      )
                     ) : (
                       <p className={noteClassName}>区分を選べるのは、権限のある人だけです</p>
                     )
@@ -544,6 +546,8 @@ export function PendingView(): React.JSX.Element {
                     // 手で仕訳を入れた後、その仕訳と結んで閉じる（権限のある人だけ。ほかのお金の理由は、仕訳が入るまで閉じない）
                     linkingId === event.id ? (
                       <LinkEntryForm
+                        orderId={event.orderId}
+                        entryDate={typeof event.detail.entry_date === "string" ? event.detail.entry_date : null}
                         entryId={linkEntryId}
                         memo={linkMemo}
                         sending={sendingLink}

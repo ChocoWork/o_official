@@ -241,8 +241,11 @@ function classifyDecision(error: unknown): AccountingStoreError {
 		error.code === '22023'
 	) {
 		const details = 'details' in error && typeof error.details === 'string' ? error.details : '';
-		const message = details === 'ubrr_status' ? UNIT_REVERT_REASON.ubrr_status : UNIT_REVERT_REASON.default;
-		return new AccountingStoreError('UNIT_CANCEL_REVERT_REFUSED', undefined, { message });
+		// Stripe に届いていない error の返金は別の固定コード（画面は文ではなくコードで選択肢を外す）
+		if (details === 'ubrr_status') {
+			return new AccountingStoreError('UNIT_CANCEL_REVERT_STRIPE_RETRY', undefined, { message: UNIT_REVERT_REASON.ubrr_status });
+		}
+		return new AccountingStoreError('UNIT_CANCEL_REVERT_REFUSED', undefined, { message: UNIT_REVERT_REASON.default });
 	}
 	return classify(error);
 }

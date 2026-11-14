@@ -52,6 +52,14 @@ describe('取り消しの区分の画面', () => {
 		expect(posts[0].body).toEqual({ refundId: REFUND_ID, kind: 'owed', reason: '振込で返す予定', requestKey: expect.stringMatching(/^[0-9a-f-]{36}$/) });
 	});
 
+	it('FREQ-584-AC-02: 選ぶと自動で計上されて行が閉じる旨と、返すつもりの案内を出し、振込の記録を約束しない', () => {
+		serve();
+		const { dialog } = open();
+		expect(dialog).toHaveTextContent('選ぶと、自動で計上されて、この行は閉じます。');
+		expect(dialog).toHaveTextContent('返すつもりのまま残ります。返し方は返品の画面か振込の記録から選びます。');
+		expect(dialog.textContent).not.toContain('振込の記録を入れます');
+	});
+
 	it('FREQ-579-AC-03: 「店が返金をやめた」を選ぶ前に、発送前の取り消しそのものが取りやめになり品をまた送れる場合があることを伝える', () => {
 		serve();
 		const { dialog } = open();
@@ -61,14 +69,16 @@ describe('取り消しの区分の画面', () => {
 		expect(dialog.textContent).not.toMatch(/[!！]/);
 	});
 
-	it('FREQ-579-AC-03: Stripe に届いていない error の返金で断られた時は「Stripe への返金をやり直してください。」を出し、「店が返金をやめた」を出さない', async () => {
-		serve({ status: 409, body: { error: 'Stripe への返金をやり直してください。', code: 'UNIT_CANCEL_REVERT_REFUSED' } });
+	it('FREQ-579-AC-03: Stripe に届いていない error の返金で断られた時は「Stripe への返金をやり直してください。」だけを出し、選択肢を出さない', async () => {
+		serve({ status: 409, body: { error: 'Stripe への返金をやり直してください。', code: 'UNIT_CANCEL_REVERT_STRIPE_RETRY' } });
 		const { dialog, onDone } = open();
 		fireEvent.click(within(dialog).getByRole('radio', { name: '店が返金をやめた' }));
 		fireEvent.change(reason(dialog), { target: { value: 'やめる' } });
 		fireEvent.click(submit(dialog));
 		expect(await within(dialog).findByRole('alert')).toHaveTextContent('Stripe への返金をやり直してください。');
-		expect(within(dialog).queryByRole('radio', { name: '店が返金をやめた' })).not.toBeInTheDocument();
+		// やり直しだけが道なので、選択肢も「区分を決める」も出さない
+		expect(within(dialog).queryAllByRole('radio')).toHaveLength(0);
+		expect(within(dialog).queryByRole('button', { name: '区分を決める' })).not.toBeInTheDocument();
 		expect(onDone).not.toHaveBeenCalled();
 	});
 

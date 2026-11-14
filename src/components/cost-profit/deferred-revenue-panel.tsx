@@ -49,8 +49,8 @@ const ANOMALY_TEXT: Readonly<Record<string, string>> = {
   negative_balance: "前受金の残りがマイナスです",
   balance_after_all_shipped_or_refunded: "すべて出荷または返金したのに、前受金が残っています",
   // 計画3: 返品の返金の異常。同じ注文が2つの理由で出ることがある（一覧の鍵は注文の番号と理由）
-  return_refund_retried_during_error: "返金が Stripe に届かないまま、同じ返品の返金をやり直しています。前受金の残りを確かめてください",
-  return_waived_with_failed_refund: "返金に失敗した返金が残っているのに、返品の返金を0円で終えています。前受金の残りを確かめてください",
+  return_refund_retried_during_error: "返金が Stripe に届かないまま、同じ返品の返金をやり直しました。前受金の残りを確かめてください",
+  return_waived_with_failed_refund: "失敗した返金が残っているのに、返品の返金を0円で終えています。前受金の残りを確かめてください",
 };
 
 /** 課税事業者になる期間の初めの前の日。課税の期間が無ければ null。 */
@@ -203,8 +203,8 @@ export function DeferredRevenuePanel(): React.JSX.Element {
               <p className={noteClassName}>異常はありません</p>
             ) : (
               <ul aria-label="前受金の異常" className="space-y-1">
-                {page.anomalies.map((anomaly) => (
-                  <li key={`${anomaly.order_id}:${anomaly.reason}`} className="font-acumin lk-text-4xs text-black">
+                {page.anomalies.map((anomaly, index) => (
+                  <li key={`${anomaly.order_id}:${anomaly.reason}:${index}`} className="font-acumin lk-text-4xs text-black">
                     {`${anomaly.order_number}　${ANOMALY_TEXT[anomaly.reason] ?? "確かめてください"}（前受金の残り ${currency(anomaly.balance)}）`}
                   </li>
                 ))}

@@ -213,9 +213,9 @@ function ArrivalBlock({ detail, arrivals, canCorrectArrival, onCorrectArrival }:
   if (infos.length === 0) return null;
   return (
     <ul aria-label="届いた日" className="space-y-2">
-      {infos.map((info) => (
+      {infos.map((info, index) => (
         <li key={info.receiptId} className="space-y-1">
-          <p className="font-acumin lk-text-3xs text-black">{`届いた日 ${dayLabel(info.arrivedOnCurrent)}`}</p>
+          <p className="font-acumin lk-text-3xs text-black">{`${infos.length > 1 ? `${index + 1}回目の受け取り　` : ''}届いた日 ${dayLabel(info.arrivedOnCurrent)}`}</p>
           {info.corrections.length > 0 ? (
             <>
               <p className="font-acumin lk-text-3xs text-[#474747]">{`はじめの届いた日 ${dayLabel(info.arrivedOnOriginal)}`}</p>

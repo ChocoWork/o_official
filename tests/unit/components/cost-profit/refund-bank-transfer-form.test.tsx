@@ -91,7 +91,7 @@ describe('振込の記録', () => {
 		});
 	});
 
-	it('FREQ-579-AC-04: 借りの残高を超える額で出たエラーの文を出す', async () => {
+	it('FREQ-579-AC-04: 振込の記録は借りの残高を超える額で出たエラーの文を出す', async () => {
 		const api = serve({ status: 409, body: { error: 'この出来事は今は仕訳にできません。計上待ちの一覧で理由を確かめてください。', code: 'ACCOUNTING_EVENT_NOT_POSTABLE' } });
 		const { form, onDone } = open();
 		fillValid(form);

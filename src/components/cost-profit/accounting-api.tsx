@@ -4,6 +4,7 @@ import { useEffect, useId, useState, type ReactNode } from "react";
 import { clientFetch } from "@/lib/client-fetch";
 import { ACCOUNTING_TEXT } from "@/lib/accounting/accounting-types";
 import { toJstDate } from "@/lib/accounting/jst-date";
+import { ACCOUNTING_LABELS } from "@/lib/accounting/labels";
 
 // 計画2の画面（計上待ち・照合・支払いの取り消し・年末の出荷）が、Task 10 の route を読む共通の入口。
 // 読みは no-store で本文を最後まで読み、ok でない応答も本文を読み切って route の日本語の本文（error）を返す。
@@ -173,7 +174,7 @@ const EVENT_KIND_LABELS: Readonly<Record<string, string>> = {
   shipment_redated: "出荷日を直した仕訳",
   pre_shipment_refund: "出荷前の返金",
   return_arrived: "返品の到着",
-  return_arrival_redated: "返品の届いた日の直し",
+  return_arrival_redated: ACCOUNTING_LABELS.returnArrivalRedated,
   return_amount_decided: "返品の額の決定",
   return_refund: "返品の返金",
   refund_failed: "返金の失敗",

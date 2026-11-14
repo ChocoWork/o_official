@@ -8,7 +8,7 @@ import { Dialog } from '@/components/ui/Dialog/Dialog';
 import { TextAreaField } from '@/components/ui/TextAreaField/TextAreaField';
 import { TextField } from '@/components/ui/TextField/TextField';
 import { toJstDate } from '@/lib/accounting/jst-date';
-import { MAX_ARRIVAL_REASON } from '@/lib/accounting/return-refund-types';
+import { MAX_ARRIVAL_REASON, RETURN_ARRIVAL_INVALID_NOTE } from '@/lib/accounting/return-refund-types';
 
 /**
  * 返品の届いた日を直す画面（FREQ-575-AC-01・FREQ-584-AC-02）。権限 admin.accounting.entries.correct を持つ人にだけ、
@@ -30,8 +30,6 @@ type OrderReturnArrivalDialogProps = {
 const DONE_NOTICE = '届いた日を直しました。';
 const FUTURE_TEXT = '未来の日は選べません。';
 const SAME_DAY_TEXT = '今の届いた日と同じ日です。';
-const INVALID_NOTE =
-  '届いた日は、今日より後の日、返品の申し込みより前の日、カード会社の取り消しが確定した日以前の日にはできません。';
 const INVALID_CODE = 'RETURN_ARRIVAL_DATE_INVALID';
 
 export default function OrderReturnArrivalDialog({ receiptId, currentOn, version, onClose, onDone }: OrderReturnArrivalDialogProps) {
@@ -77,7 +75,7 @@ export default function OrderReturnArrivalDialog({ receiptId, currentOn, version
       onDone(DONE_NOTICE);
       return;
     }
-    setError(result.code === INVALID_CODE ? `${result.message}${INVALID_NOTE}` : result.message);
+    setError(result.code === INVALID_CODE ? `${result.message}${RETURN_ARRIVAL_INVALID_NOTE}` : result.message);
   };
 
   return (

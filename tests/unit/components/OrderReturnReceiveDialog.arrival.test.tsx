@@ -1,11 +1,17 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { OrderReturnDetail, OrderReturnLineDetail } from '@/lib/orders/returns/return-types';
 import { toJstDate } from '@/lib/accounting/jst-date';
+import { RETURN_ARRIVAL_INVALID_NOTE } from '@/lib/accounting/return-refund-types';
 
 const mockClientFetch = jest.fn();
 jest.mock('@/lib/client-fetch', () => ({ clientFetch: (...args: unknown[]) => mockClientFetch(...args) }));
+// 見込みの窓口の本文（第2引数）を残して、届いた日が入らないことを確かめる
+const mockEstimateBodies: Array<Record<string, unknown> | null> = [];
 jest.mock('@/hooks/useUnitPricingEstimate', () => ({
-	useUnitPricingEstimate: (url: string | null) => (url ? { status: 'ready', estimate: { legacy: true } } : { status: 'idle' }),
+	useUnitPricingEstimate: (url: string | null, body: Record<string, unknown> | null) => {
+		mockEstimateBodies.push(body);
+		return url ? { status: 'ready', estimate: { legacy: true } } : { status: 'idle' };
+	},
 }));
 
 import OrderReturnReceiveDialog from '@/components/OrderReturnReceiveDialog';
@@ -88,6 +94,7 @@ const postBodies = () =>
 
 beforeEach(() => {
 	mockClientFetch.mockReset();
+	mockEstimateBodies.length = 0;
 });
 
 describe('受け取りの画面の届いた日', () => {
@@ -115,12 +122,17 @@ describe('受け取りの画面の届いた日', () => {
 		expect(postBodies()[0].arrivedOn).toBe('2026-11-01');
 	});
 
-	it('FREQ-584-AC-01: 見込みの窓口へ送る本文には arrivedOn を入れない', async () => {
+	it('FREQ-584-AC-01: 見込みの窓口へ送る本文には arrivedOn を入れず、届いた日を変えても本文は変わらない', async () => {
+		mockEstimateBodies.length = 0;
 		const { dialog } = await openDialog();
 		receiveAll(dialog);
+		const before = mockEstimateBodies.filter((body): body is Record<string, unknown> => body !== null);
+		expect(before.length).toBeGreaterThan(0);
+		const last = JSON.stringify(before[before.length - 1]);
 		fireEvent.change(arrivedInput(dialog), { target: { value: '2026-11-01' } });
-		// 見込みは useUnitPricingEstimate の本文。ここでは受け取りの本文にだけ入ることを、他の呼び出しが無いことで確かめる
-		expect(mockClientFetch.mock.calls.filter(([url]) => String(url).includes('receive-estimate'))).toHaveLength(0);
+		const after = mockEstimateBodies.filter((body): body is Record<string, unknown> => body !== null);
+		expect(after.every((body) => !('arrivedOn' in body))).toBe(true);
+		expect(JSON.stringify(after[after.length - 1])).toBe(last);
 	});
 
 	it('FREQ-584-AC-01: 断られた後に届いた日を直して送り直すと、新しい二重防止の番号で新しい日を送る。結果が分からない間は日を変えられない', async () => {
@@ -143,6 +155,38 @@ describe('受け取りの画面の届いた日', () => {
 		fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
 		await waitFor(() => expect(postBodies()).toHaveLength(3));
 		expect(postBodies()[2]).toEqual(second);
+	});
+});
+
+describe('受け取りの画面の断りの扱い', () => {
+	it('FREQ-575-AC-01: 届いた日が断られた時は、選べない日の説明を同じ文で添え、日を直すと消える', async () => {
+		const { dialog } = await openDialog({ replies: [json({ error: '届いた日を確かめてください。', code: 'RETURN_ARRIVAL_DATE_INVALID' }, 400)] });
+		receiveAll(dialog);
+		fireEvent.change(arrivedInput(dialog), { target: { value: '2026-11-01' } });
+		fireEvent.click(primaryButton(dialog));
+		expect(await within(dialog).findByText(RETURN_ARRIVAL_INVALID_NOTE)).toBeInTheDocument();
+		fireEvent.change(arrivedInput(dialog), { target: { value: '2026-11-02' } });
+		expect(within(dialog).queryByText(RETURN_ARRIVAL_INVALID_NOTE)).not.toBeInTheDocument();
+	});
+
+	it('FREQ-584-AC-01: 判断待ちの読みが偽だった注文で DISPUTE_HOLD に断られたら、返品を読み直して「今すぐ返金」を外す', async () => {
+		let returnsReads = 0;
+		const replies = [json({ error: 'カード会社の判断待ちの注文が含まれているため、返金できません。', code: 'DISPUTE_HOLD', orderIds: [] }, 409)];
+		mockClientFetch.mockImplementation(async (input: string) => {
+			if (String(input) === `/api/admin/orders/${ORDER_ID}/returns`) {
+				returnsReads += 1;
+				return json({ data: { returns: [returnDetail()], canRefund: true, returnableUnits: 0, refundableAmount: 54800, refundableShipping: 800, disputeHold: returnsReads > 1 } });
+			}
+			return replies.shift() ?? json({ data: receiveData() });
+		});
+		render(<OrderReturnReceiveDialog orderId={ORDER_ID} returnId={RETURN_ID} onClose={jest.fn()} onDone={jest.fn()} />);
+		await waitFor(() => expect(screen.queryByText('読み込み中です...')).not.toBeInTheDocument());
+		const dialog = screen.getByRole('dialog', { name: TITLE });
+		receiveAll(dialog);
+		fireEvent.click(primaryButton(dialog));
+		await waitFor(() => expect(returnsReads).toBe(2));
+		await waitFor(() => expect(within(dialog).getByText(HOLD_TEXT)).toBeInTheDocument());
+		within(dialog).getAllByRole('radio', { name: '今すぐ返金' }).forEach((radio) => expect(radio).toBeDisabled());
 	});
 });
 

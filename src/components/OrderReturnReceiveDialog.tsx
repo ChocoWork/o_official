@@ -14,6 +14,7 @@ import { blockEnterSubmit } from '@/hooks/useRefundSubmission';
 import { useUnitPricingEstimate } from '@/hooks/useUnitPricingEstimate';
 import { parseActionResponse, readRecord, useReturnOperation, type ReturnActionResponse } from '@/hooks/useReturnOperation';
 import { toJstDate } from '@/lib/accounting/jst-date';
+import { RETURN_ARRIVAL_INVALID_NOTE } from '@/lib/accounting/return-refund-types';
 import { lineLabel } from '@/lib/orders/fulfillment/fulfillment-client';
 import { formatYen } from '@/lib/orders/refund/refund-messages';
 import { buildReceiveButtonLabel, computePerItemReturnRefundPreview, type ReceivePreviewLine } from '@/lib/orders/returns/return-calc';
@@ -349,7 +350,9 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
     onRefused: (code) => {
       // 在庫不足の断り。画面を開いた後に同じ色・サイズの在庫が戻った行へ上書きを送ると、DB は足りる行への上書きを
       // RETURN_ARGUMENT_INVALID で断る。どちらも返品を読み直して今の在庫で数え直す（足りるようになった行の上書きは overrideOf が送らない）
-      if (code === 'RETURN_EXCHANGE_OUT_OF_STOCK' || code === 'RETURN_ARGUMENT_INVALID') {
+      // 届いた日が断られた時は、選べない日の説明を添える。判断待ちの断り（DISPUTE_HOLD）は、止めの印を読み直して「今すぐ返金」を外す
+      if (code === 'RETURN_ARRIVAL_DATE_INVALID') setArrivalRefused(true);
+      if (code === 'RETURN_EXCHANGE_OUT_OF_STOCK' || code === 'RETURN_ARGUMENT_INVALID' || code === 'DISPUTE_HOLD') {
         setStep('form');
         setAmountEntered(null);
         onReload?.();
@@ -370,6 +373,7 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
   const [notifyCustomer, setNotifyCustomer] = useState(true);
   // 届いた日。触るまでは null（今日。送らない）。未来の日は選べない
   const [arrivedOn, setArrivedOn] = useState<string | null>(null);
+  const [arrivalRefused, setArrivalRefused] = useState(false);
   const [step, setStep] = useState<Step>('form');
 
   const stopped = flow.busy || flow.uncertain || flow.recorded || reloading;
@@ -732,9 +736,13 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
                 value={arrivedOn ?? today}
                 max={today}
                 disabled={stopped}
-                onChange={(event) => setArrivedOn(event.target.value === '' ? null : event.target.value)}
+                onChange={(event) => {
+                  setArrivalRefused(false);
+                  setArrivedOn(event.target.value === '' ? null : event.target.value);
+                }}
               />
               {arrivedFuture ? <p className="font-acumin lk-text-3xs text-red-700">{ARRIVED_FUTURE_TEXT}</p> : null}
+              {arrivalRefused ? <p className="font-acumin lk-text-3xs text-[#474747]">{RETURN_ARRIVAL_INVALID_NOTE}</p> : null}
               {disputeHold ? <p className="font-acumin lk-text-3xs text-[#474747]">{DISPUTE_HOLD_RECEIVE_TEXT}</p> : null}
 
               <ul aria-label="受け取る品" className="space-y-3">

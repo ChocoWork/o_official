@@ -21,9 +21,11 @@ const KIND_LABEL: Readonly<Record<Kind, string>> = {
 /** 「店が返金をやめた」を選ぶ前に伝える。発送前の取り消しの返金か、ほかの返金かは、この画面では分からない */
 export const ABANDON_NOTE =
   "発送前の取り消しの返金でこれを選ぶと、その発送前の取り消しそのものが取りやめになり、品をまた送れる場合があります。同じ出来事でお金が出た返金や借りがほかにある時は、この返金だけをやめたことになります。";
-const OWED_NOTE = "返金は Stripe 側で取り消されましたが、お客様には返すつもりです。振込で返したら、振込の記録を入れます。";
-/** Stripe に届いていない error の返金で断られた時の文（route の store と同じ）。この時は「店が返金をやめた」を出さない */
-const STRIPE_RETRY_TEXT = "Stripe への返金をやり直してください。";
+const OWED_NOTE = "返すつもりのまま残ります。返し方は返品の画面か振込の記録から選びます。";
+/** 選んだ後の流れ（計上係が仕訳を入れると、計上待ちの行は閉じる） */
+const REFLECT_NOTE = "選ぶと、自動で計上されて、この行は閉じます。";
+/** Stripe に届いていない error の返金で断られた時の固定コード（store が ubrr_status で付ける）。この時は選択肢を出さず、やり直しだけを案内する（裁定 P3-B7） */
+const STRIPE_RETRY_CODE = "UNIT_CANCEL_REVERT_STRIPE_RETRY";
 /** 区分がもう決まっている・取り消されていない返金の時（一覧が古い）。親が一覧を読み直す */
 const STALE_CODES: ReadonlySet<string> = new Set(["ACCOUNTING_REFUND_CANCEL_DECIDED", "ACCOUNTING_REFUND_NOT_CANCELED"]);
 
@@ -54,7 +56,7 @@ export function RefundCancellationDialog({
 
   const trimmedReason = reason.trim();
   const canSubmit = !sending && kind !== null && trimmedReason !== "";
-  const kinds: Kind[] = retryOnly ? ["owed"] : ["abandoned", "owed"];
+  const kinds: Kind[] = retryOnly ? [] : ["abandoned", "owed"];
 
   const choose = (next: Kind) => {
     keyRef.current = crypto.randomUUID();
@@ -79,7 +81,7 @@ export function RefundCancellationDialog({
       return;
     }
     setError(result.message);
-    if (result.code === "UNIT_CANCEL_REVERT_REFUSED" && result.message === STRIPE_RETRY_TEXT) {
+    if (result.code === STRIPE_RETRY_CODE) {
       setRetryOnly(true);
       setKind(null);
     }
@@ -98,6 +100,7 @@ export function RefundCancellationDialog({
       >
         {orderNumber ? <p className="font-acumin lk-text-sm text-black">{`注文 ${orderNumber}`}</p> : null}
         <p className={noteClassName}>この返金は Stripe 側で取り消されました。どちらにあたるかを選んでください。</p>
+        {retryOnly ? null : <p className={noteClassName}>{REFLECT_NOTE}</p>}
         <div role="radiogroup" aria-label="取り消しの区分" className="space-y-3">
           {kinds.map((value) => (
             <div key={value} className="space-y-1">
@@ -146,9 +149,11 @@ export function RefundCancellationDialog({
           <Button variant="secondary" size="sm" className="w-full font-acumin" disabled={sending} onClick={onClose}>
             やめる
           </Button>
-          <Button type="submit" variant="primary" size="sm" className="w-full font-acumin" disabled={!canSubmit}>
-            区分を決める
-          </Button>
+          {retryOnly ? null : (
+            <Button type="submit" variant="primary" size="sm" className="w-full font-acumin" disabled={!canSubmit}>
+              区分を決める
+            </Button>
+          )}
         </div>
       </form>
     </Dialog>

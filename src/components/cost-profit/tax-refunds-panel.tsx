@@ -67,6 +67,8 @@ const EXCLUSION_TEXT: Readonly<Record<Exclusion, string>> = {
 
 const RANGE_TOO_LONG_TEXT = `期間は${MAX_MONTHS}か月までです。`;
 const RANGE_REVERSED_TEXT = "終わりの月は始まりの月と同じか後にしてください。";
+const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+const MONTH_FORMAT_TEXT = "月は 2026-10 の形で入れてください。";
 const RESTART_TEXT = "一覧が変わったため、最初から読み直しました。";
 
 function previousMonth(today: string): string {
@@ -95,7 +97,9 @@ export function TaxRefundsPanel({ today: todayProp }: { today?: string }): React
   const rangeProblem =
     from === "" || to === ""
       ? null
-      : from > to
+      : !MONTH_PATTERN.test(from) || !MONTH_PATTERN.test(to)
+        ? MONTH_FORMAT_TEXT
+        : from > to
         ? RANGE_REVERSED_TEXT
         : monthsBetween(from, to) > MAX_MONTHS
           ? RANGE_TOO_LONG_TEXT

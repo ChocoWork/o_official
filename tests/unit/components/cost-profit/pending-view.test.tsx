@@ -8,6 +8,7 @@ import { mockFetch, solePeriod } from './settings-fixtures';
 
 type Serve = {
 	cancellation?: { status: number; body: unknown };
+	journal?: unknown[];
 	link?: { status: number; body: unknown };
 	events?: ReturnType<typeof pendingEvent>[];
 	flags?: Flags;
@@ -17,6 +18,30 @@ type Serve = {
 	periods?: unknown[];
 	pendingStatus?: number;
 };
+
+function journalEntry(n: number, overrides: Record<string, unknown> = {}) {
+	return {
+		id: uuid(900 + n),
+		periodId: uuid(2026),
+		entryNo: n,
+		entryDate: '2026-11-08',
+		eventKind: 'manual_entry',
+		dedupeKey: `manual_entry:${n}:1`,
+		description: `手で入れた仕訳${n}`,
+		recordedAt: '2026-11-09T00:00:00+00:00',
+		recordedBy: null,
+		isLate: false,
+		reversesEntryId: null,
+		reason: null,
+		sourceTable: null,
+		sourceId: null,
+		migratedFrom: null,
+		migratedAt: null,
+		sourceRecordedAt: null,
+		lines: [{ accountCode: '6290', debit: 1000, credit: 0, subAccount: null, counterparty: null, orderId: null, memo: null }],
+		...overrides,
+	};
+}
 
 const EMPTY_DEFERRED = { orders: [], next_after_order: null, total_balance: 0, anomalies: [] };
 
@@ -48,6 +73,7 @@ function serve(state: Serve = {}) {
 			if (reply.status === 200) events = events.filter((event) => !url.pathname.includes(event.id));
 			return reply;
 		}
+		if (url.pathname === `${BASE}/journal`) return { status: 200, body: envelope({ entries: state.journal ?? [], nextAfter: null, opening: [], shipmentMeta: [] }, flags) };
 		if (url.pathname === `${BASE}/deferred-revenue`) return { status: 200, body: envelope(state.deferred ?? EMPTY_DEFERRED, flags) };
 		if (url.pathname === `${BASE}/periods`) {
 			return { status: 200, body: { data: { periods: state.periods ?? [], settings: {}, deadlines: {}, interim: {}, startup: [] }, permissions: { manageSettings: false } } };
@@ -479,11 +505,23 @@ describe('計上待ちのタブ', () => {
 	});
 
 	describe('手で入れた仕訳と結ぶ', () => {
-		const manual = () => pendingEvent(1, { reason: 'order_not_postable', eventKind: 'return_amount_decided', detail: { reason: 'dispute_lost' } });
-		const ENTRY_ID = uuid(900);
+		const manual = () => pendingEvent(1, { reason: 'order_not_postable', eventKind: 'return_amount_decided', detail: { reason: 'dispute_lost', entry_date: '2026-11-08' } });
+		const ORDER = uuid(601);
+		const other = (n: number, order: string) => ({ accountCode: '1470', debit: 0, credit: n, subAccount: null, counterparty: null, orderId: order, memo: null });
+		const JOURNAL = [
+			journalEntry(1, { lines: [other(500, ORDER)] }),
+			journalEntry(2, { lines: [other(500, uuid(999))] }),
+			journalEntry(3),
+			journalEntry(4, { eventKind: 'payment_confirmed', dedupeKey: 'payment_confirmed:x' }),
+			journalEntry(5),
+			journalEntry(6, { reversesEntryId: uuid(905), description: '取り消し' }),
+		];
+		const EXPECTED_ID = uuid(901);
+		const picker = () => screen.findByLabelText('手で入れた仕訳');
+		const periods = () => [solePeriod(2026)];
 
 		it('FREQ-569-AC-07: 手で入れる計上待ちの行は、権限のある人だけが手入力の仕訳と結んで閉じられ、メモが空なら送れない', async () => {
-			const api = serve({ events: [manual(), pendingEvent(2, { reason: 'payment_journal_missing' })] });
+			const api = serve({ events: [manual(), pendingEvent(2, { reason: 'payment_journal_missing' })], periods: periods(), journal: JOURNAL });
 			render(<PendingView />);
 			const region = await screen.findByRole('region', { name: '計上待ち' });
 			await within(region).findByText('未解決 2件');
@@ -491,27 +529,49 @@ describe('計上待ちのタブ', () => {
 			expect(within(region).getAllByRole('button', { name: '手で入れた仕訳と結んで閉じる' })).toHaveLength(1);
 			expect(within(region).getByText('仕訳が入るまで閉じられません')).toBeInTheDocument();
 			fireEvent.click(within(region).getByRole('button', { name: '手で入れた仕訳と結んで閉じる' }));
-			const entry = await within(region).findByLabelText('手で入れた仕訳の ID');
+			const entry = await picker();
+			await waitFor(() => expect(within(entry).getAllByRole('option').length).toBeGreaterThan(1));
 			const note = within(region).getByLabelText('メモ（必須）');
 			const send = within(region).getByRole('button', { name: '結んで閉じる' });
 			expect(send).toBeDisabled();
-			fireEvent.change(entry, { target: { value: ENTRY_ID } });
+			fireEvent.change(entry, { target: { value: EXPECTED_ID } });
 			expect(send).toBeDisabled();
 			fireEvent.change(note, { target: { value: '   ' } });
 			expect(send).toBeDisabled();
 			fireEvent.change(note, { target: { value: '分け方を決めて手で入れた' } });
-			fireEvent.change(entry, { target: { value: 'not-a-uuid' } });
-			expect(send).toBeDisabled();
-			fireEvent.change(entry, { target: { value: ENTRY_ID } });
 			expect(send).toBeEnabled();
 			fireEvent.click(send);
 			fireEvent.click(send);
 			await waitFor(() => expect(api.calls.filter((call) => call.url.endsWith('/link-entry'))).toHaveLength(1));
 			const post = api.calls.find((call) => call.url.endsWith('/link-entry'));
 			expect(post?.url).toBe(`${BASE}/pending-events/${uuid(201)}/link-entry`);
-			expect(post?.body).toEqual({ entryId: ENTRY_ID, note: '分け方を決めて手で入れた', requestKey: expect.stringMatching(/^[0-9a-f-]{36}$/) });
+			expect(post?.body).toEqual({ entryId: EXPECTED_ID, note: '分け方を決めて手で入れた', requestKey: expect.stringMatching(/^[0-9a-f-]{36}$/) });
 			// 結べたら読み直して、その行は消える
 			await waitFor(() => expect(within(region).queryByRole('button', { name: '手で入れた仕訳と結んで閉じる' })).not.toBeInTheDocument());
+		});
+
+		it('FREQ-569-AC-07: 選べるのは手入力で、取り消されておらず、この注文の行がある仕訳か注文の行が無い仕訳だけ。名前は JE-番号 日付 説明', async () => {
+			const api = serve({ events: [manual()], periods: periods(), journal: JOURNAL });
+			render(<PendingView />);
+			fireEvent.click(await screen.findByRole('button', { name: '手で入れた仕訳と結んで閉じる' }));
+			const entry = await picker();
+			await waitFor(() => expect(within(entry).getAllByRole('option').length).toBeGreaterThan(1));
+			const options = within(entry).getAllByRole('option').map((option) => option.textContent);
+			// 1: この注文の行がある  3: 注文の行が無い   2: 別の注文  4: 手入力でない  5: 取り消された（6が取り消す）  6: 取り消しの仕訳
+			expect(options).toEqual(['選んでください', 'JE-000001　2026/11/08　手で入れた仕訳1', 'JE-000003　2026/11/08　手で入れた仕訳3']);
+			// 期間は出来事の日を含む期間が既定で、その期間の仕訳を読む
+			const read = api.fn.mock.calls.map((call) => String(call[0])).find((url) => url.includes('/journal'));
+			expect(read).toContain(`periodId=${uuid(2026)}`);
+			expect(within(screen.getByRole('region', { name: '計上待ち' })).getByLabelText('仕訳を探す期間')).toHaveValue(uuid(2026));
+		});
+
+		it('FREQ-569-AC-07: 選べる仕訳が無い期間では、その旨を出して送れない', async () => {
+			serve({ events: [manual()], periods: periods(), journal: [journalEntry(2, { lines: [other(500, uuid(999))] })] });
+			render(<PendingView />);
+			fireEvent.click(await screen.findByRole('button', { name: '手で入れた仕訳と結んで閉じる' }));
+			expect(await screen.findByText(/この期間に、選べる手入力の仕訳はありません/)).toBeInTheDocument();
+			fireEvent.change(screen.getByLabelText('メモ（必須）'), { target: { value: 'メモ' } });
+			expect(screen.getByRole('button', { name: '結んで閉じる' })).toBeDisabled();
 		});
 
 		it('FREQ-569-AC-07: 結ぶ権限が無い人にはボタンを出さない', async () => {
@@ -528,10 +588,12 @@ describe('計上待ちのタブ', () => {
 			['この仕訳は取り消されているので結べません。'],
 			['選んだ仕訳が見つかりません。'],
 		])('FREQ-569-AC-07: 結べなかった時は route の理由の文「%s」をそのまま出し、非okの本文を読み切る', async (message) => {
-			const api = serve({ events: [manual()], link: { status: 400, body: { error: message, code: 'ACCOUNTING_ARGUMENT_INVALID' } } });
+			const api = serve({ events: [manual()], periods: periods(), journal: JOURNAL, link: { status: 400, body: { error: message, code: 'ACCOUNTING_ARGUMENT_INVALID' } } });
 			render(<PendingView />);
 			fireEvent.click(await screen.findByRole('button', { name: '手で入れた仕訳と結んで閉じる' }));
-			fireEvent.change(await screen.findByLabelText('手で入れた仕訳の ID'), { target: { value: ENTRY_ID } });
+			const entry = await picker();
+			await waitFor(() => expect(within(entry).getAllByRole('option').length).toBeGreaterThan(1));
+			fireEvent.change(entry, { target: { value: EXPECTED_ID } });
 			fireEvent.change(screen.getByLabelText('メモ（必須）'), { target: { value: '確かめた' } });
 			fireEvent.click(screen.getByRole('button', { name: '結んで閉じる' }));
 			expect(await screen.findByText(message)).toBeInTheDocument();
@@ -559,8 +621,8 @@ describe('計上待ちのタブ', () => {
 		const list = await within(panel).findByRole('list', { name: '前受金の異常' });
 		const items = within(list).getAllByRole('listitem');
 		expect(items).toHaveLength(3);
-		expect(items[0].textContent).toContain('返金が Stripe に届かないまま、同じ返品の返金をやり直しています');
-		expect(items[1].textContent).toContain('返金に失敗した返金が残っているのに、返品の返金を0円で終えています');
+		expect(items[0].textContent).toContain('返金が Stripe に届かないまま、同じ返品の返金をやり直しました');
+		expect(items[1].textContent).toContain('失敗した返金が残っているのに、返品の返金を0円で終えています');
 		// 知らない理由だけが今までの「確かめてください」になる
 		expect(items[2].textContent).toContain('確かめてください');
 		expect(items[0].textContent).not.toMatch(/^ORD-CCCC3333　確かめてください/);

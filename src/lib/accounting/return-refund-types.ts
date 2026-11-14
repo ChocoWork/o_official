@@ -95,3 +95,7 @@ export const BANK_TXN_NO_PATTERN = /^[A-Za-z0-9_-]{1,100}$/;
 export const MAX_TAX_REFUND_PAGE = 200;
 /** 取り消しの区分・結びの理由の字数の上限（DB と同じ）。 */
 export const MAX_REFUND_DECISION_REASON = 500;
+
+/** 届いた日が断られた時（RETURN_ARRIVAL_DATE_INVALID）に、route の文へ添える説明。受け取りの画面と直す画面で同じ文を使う */
+export const RETURN_ARRIVAL_INVALID_NOTE =
+	'届いた日は、今日より後の日、返品の申し込み（店が作った返品は最初の発送の日）より前の日、カード会社の取り消しが確定した日以前の日にはできません。今の届いた日が確定した日以前の時は、直せません。';
