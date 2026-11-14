@@ -62,8 +62,10 @@ for (const [index, viewport] of viewports.entries()) {
         await loginAsMember(page, { userId: result.userId, email }, `198.19.${index}.${randomBytes(1)[0] % 250 + 1}`);
         await page.goto('/auth/verified');
 
-        await expect(page.getByText('管理画面利用のために2要素認証（TOTP）を登録してください。')).toBeVisible();
-        await expect(page.getByRole('button', { name: '2要素認証（TOTP）を登録' })).toBeVisible();
+        // 画面は TOTP が未登録だと案内の文を出した後に自動で登録を始め、QR コードと確認コードの入力を出す。終わりの状態を確かめる。
+        await expect(page.getByText('認証アプリでQRコードを読み取り、生成されたコードを入力してください。')).toBeVisible();
+        await expect(page.getByRole('img', { name: 'TOTP QR code' })).toBeVisible();
+        await expect(page.getByRole('button', { name: '2要素認証を完了' })).toBeVisible();
       } finally {
         for (const k of ENV_KEYS) {
           if (saved[k] === undefined) delete process.env[k];
