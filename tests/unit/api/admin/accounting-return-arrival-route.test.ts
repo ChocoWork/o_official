@@ -85,7 +85,7 @@ describe('GET /api/admin/accounting/return-arrival', () => {
 });
 
 describe('POST /api/admin/accounting/return-arrival', () => {
-	test('FREQ-575-AC-02: 直しは権限・CSRF・IP・actor の順に通ってから DB へ渡り、監査は受け取りの番号と結果だけ（理由の本文・日を入れない）', async () => {
+	test('直しは権限・CSRF・IP・actor の順に通ってから DB へ渡り、監査は受け取りの番号と結果だけ（理由の本文・日を入れない）', async () => {
 		const response = await post();
 		expect(response.status).toBe(200);
 		expect((await read(response)).data).toEqual({ arrival: { receiptId: RECEIPT, version: 2, previousOn: '2026-11-03', newOn: '2026-11-02', correctionId: uuid(8), replayed: false } });
@@ -101,7 +101,7 @@ describe('POST /api/admin/accounting/return-arrival', () => {
 		for (const secret of ['SECRET-REASON', '2026-11-02', '2026-11-03', KEY]) expect(audit).not.toContain(secret);
 	});
 
-	test('FREQ-575-AC-02: aal1・権限なし・CSRF 欠落・429・不正入力は store を呼ばず、監査にも進まない', async () => {
+	test('FREQ-575-AC-02: 届いた日の直しのrouteは aal1・権限なし・CSRF欠落・429・不正入力で store を呼ばず、理由の本文と日を監査に入れない', async () => {
 		(verifyAccessToken as jest.Mock).mockImplementationOnce(async () => ({ ok: true, claims: claims('aal1') }));
 		expect((await post()).status).toBe(403);
 		grants.current = [ORDERS_READ, PERM.manage, PERM.settings, PERM.read];
@@ -124,6 +124,9 @@ describe('POST /api/admin/accounting/return-arrival', () => {
 		expect(mockSchedule).not.toHaveBeenCalled();
 		// 理由の長さの境界（500字・版0）は通る。
 		expect((await post({ ...body, reason: 'あ'.repeat(500), expectedVersion: 0 })).status).toBe(200);
+		// 断った時の監査（不正入力の失敗）にも、成功の監査にも、理由の本文と日は入らない
+		const audit = JSON.stringify(mockAudit.mock.calls);
+		for (const secret of ['SECRET-REASON', 'あああ', '2026-11-02', '2026-02-30']) expect(audit).not.toContain(secret);
 	});
 
 	test('FREQ-575-AC-01: 届いた日が不正（未来・申し込みの前・確定済み）なら400と固定の文で、DETAIL を出さず、監査は失敗だけ', async () => {

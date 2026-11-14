@@ -33,6 +33,10 @@ jest.mock('@/lib/orders/returns/return-service', () => ({
 
 import { POST as postRefund } from '@/app/api/admin/orders/[id]/refund/route';
 import { POST as postReceive } from '@/app/api/admin/returns/[returnId]/receive/route';
+import { POST as postBank } from '@/app/api/admin/accounting/refund-bank-transfers/route';
+import { POST as postCancellation } from '@/app/api/admin/accounting/refund-cancellations/route';
+import { POST as postSettlement } from '@/app/api/admin/accounting/refund-settlements/route';
+import { toJstDate } from '@/lib/accounting/jst-date';
 
 const ORDER_ID = 'a1b2c3d4-1111-4222-8333-444455556666';
 const RETURN_ID = 'b1b2c3d4-1111-4222-8333-444455556666';
@@ -63,7 +67,22 @@ const receiveRequest = () =>
     }),
   });
 
-const cases = [
+const accountingRequest = (path: string, body: unknown) =>
+  new Request(`http://localhost/api/admin/accounting/${path}`, { method: 'POST', headers: HEADERS, body: JSON.stringify(body) });
+const UUID_A = 'a0000000-0000-4000-8000-000000000001';
+const UUID_B = 'a0000000-0000-4000-8000-000000000002';
+
+type Case = {
+  name: string;
+  source: string;
+  call: () => Promise<Response>;
+  arrange: () => void;
+  expected: unknown;
+  /** 計上係以外の DB の入口の答え（会計の route だけ） */
+  rpcData?: (name: string) => unknown;
+};
+
+const cases: Case[] = [
   {
     name: '返金の受け付け',
     source: 'refund',
@@ -78,6 +97,30 @@ const cases = [
     arrange: () => mockReceive.mockResolvedValue({ kind: 'received', receiptId: RECEIPT_ID, returnStatus: 'closed', refund: { refundId: REFUND_ID, amount: 4000, status: 'pending' }, feeDueAmount: 0, exchangeOrderItemIds: [], replayed: false }),
     expected: { data: { receiptId: RECEIPT_ID, returnStatus: 'closed', refundId: REFUND_ID, refundAmount: 4000, refundStatus: 'pending', feeDueAmount: 0, replayed: false } },
   },
+  {
+    name: '取り消しの区分',
+    source: 'refund_cancel',
+    call: () => postCancellation(accountingRequest('refund-cancellations', { refundId: UUID_A, kind: 'owed', reason: '返す', requestKey: REQUEST_KEY })),
+    arrange: () => undefined,
+    rpcData: () => ({ refund_id: UUID_A, state: 'owed', event_id: null, replayed: false }),
+    expected: { data: { decision: { refundId: UUID_A, state: 'owed', eventId: null, replayed: false } } },
+  },
+  {
+    name: '振込の記録',
+    source: 'refund_bank',
+    call: () => postBank(accountingRequest('refund-bank-transfers', { orderId: ORDER_ID, origin: 'pre_shipment', amount: 1000, bankDate: toJstDate(new Date()), bankTxnNo: 'BANK-1', note: null, requestKey: REQUEST_KEY })),
+    arrange: () => undefined,
+    rpcData: () => ({ entry_id: UUID_A, entry_no: 1, period_id: UUID_B, created: true }),
+    expected: { data: { transfer: { entry_id: UUID_A, entry_no: 1, period_id: UUID_B, created: true } } },
+  },
+  {
+    name: 'やり直しの結び',
+    source: 'refund_settle',
+    call: () => postSettlement(accountingRequest('refund-settlements', { owedRefundId: UUID_A, payingRefundId: UUID_B, requestKey: REQUEST_KEY })),
+    arrange: () => undefined,
+    rpcData: () => ({ settlement_id: UUID_A, owed_refund_id: UUID_A, paying_refund_id: UUID_B, pre_amount: 1, post_amount: 0, entry_id: null, entry_no: null, replayed: false }),
+    expected: { data: { settlement: { settlementId: UUID_A, owedRefundId: UUID_A, payingRefundId: UUID_B, preAmount: 1, postAmount: 0, entryId: null, entryNo: null, replayed: false } } },
+  },
 ];
 
 let consoleError: jest.SpyInstance;
@@ -89,11 +132,14 @@ beforeEach(() => {
 });
 afterEach(() => consoleError.mockRestore());
 
-describe.each(cases)('$name の後の計上係', ({ source, call, arrange, expected }) => {
+describe.each(cases)('$name の後の計上係', ({ source, call, arrange, expected, rpcData }) => {
   beforeEach(arrange);
 
-  it('FREQ-579-AC-06: 応答を返した後に流す計上係が失敗しても、もう返した応答は変わらず、失敗は握ってログに種類だけ残す', async () => {
-    mockRpc.mockRejectedValue(new Error('PRIVATE-MARKER connection lost'));
+  it('FREQ-579-AC-06: 返金・受け取り・区分・振込のrouteの後に係が呼ばれ、係の失敗は応答を失敗にしない', async () => {
+    mockRpc.mockImplementation(async (name: string) => {
+      if (name === 'accounting_run_posting') throw new Error('PRIVATE-MARKER connection lost');
+      return { data: rpcData?.(name), error: null };
+    });
 
     const response = await call();
     const text = await response.text();
@@ -102,7 +148,7 @@ describe.each(cases)('$name の後の計上係', ({ source, call, arrange, expec
     expect(response.status).toBe(200);
     expect(JSON.parse(text)).toEqual(expected);
     expect(mockAfter).toHaveBeenCalledTimes(1);
-    expect(mockRpc).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalledWith('accounting_run_posting', expect.anything());
 
     // 応答の後に流れて、DB が失敗する。例外は外へ出ない
     await expect(Promise.all(afterCallbacks.map((callback) => callback()))).resolves.toBeDefined();
@@ -113,6 +159,10 @@ describe.each(cases)('$name の後の計上係', ({ source, call, arrange, expec
     // 返した応答の中身は、計上係の失敗で書き換わらない
     expect(response.status).toBe(200);
     expect(JSON.parse(text)).toEqual(expected);
+  });
+
+  beforeEach(() => {
+    mockRpc.mockImplementation(async (name: string) => ({ data: rpcData?.(name), error: null }));
   });
 
   it('FREQ-579-AC-06: after() が使えない時（予約そのものの失敗）も、応答は変わらず、ログに種類だけ残る', async () => {

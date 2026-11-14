@@ -40,7 +40,7 @@ jest.mock('@/lib/orders/returns/return-service', () => ({
 import { POST as postReceive } from '@/app/api/admin/returns/[returnId]/receive/route';
 import { POST as postRefund } from '@/app/api/admin/returns/[returnId]/refund/route';
 import { RefundStoreError } from '@/lib/orders/refund/refund-store';
-import { ReturnStoreError } from '@/lib/orders/returns/return-store';
+import { ReturnStoreError, receiveReturn } from '@/lib/orders/returns/return-store';
 import {
   C4_CASES,
   HEADERS,
@@ -1243,13 +1243,21 @@ describe('受け取りの窓口: 届いた日（arrivedOn。会計の計画3 FRE
     mockReceive.mockResolvedValue(RECEIVED);
   });
 
-  it('FREQ-575-AC-01: 受け取りのrouteは arrivedOn を入口へ渡し、省略すると渡さない（値が無い）', async () => {
+  it('FREQ-575-AC-01: 受け取りのrouteは arrivedOn を DB へ渡し、省略すると渡さない', async () => {
+    // route が入口へ渡した入力を、本物の store に通して DB の引数（_arrived_on）まで確かめる
+    const rpcCalls: Array<Record<string, unknown>> = [];
+    const store = { rpc: async (_name: string, args: Record<string, unknown>) => { rpcCalls.push(args); return { data: [{ receipt_id: RECEIPT_ID, return_status: 'closed' }], error: null }; } };
+
     await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, arrivedOn: '2026-11-10' } });
     expect(mockReceive).toHaveBeenLastCalledWith(mockDeps, expect.objectContaining({ arrivedOn: '2026-11-10', returnId: RETURN_ID }));
+    await receiveReturn(store as never, mockReceive.mock.calls[0][1]);
+    expect(rpcCalls[0]._arrived_on).toBe('2026-11-10');
 
     await call(ENDPOINTS[0]);
     const [, omitted] = mockReceive.mock.calls[1] as [unknown, Record<string, unknown>];
     expect(omitted.arrivedOn).toBeUndefined();
+    await receiveReturn(store as never, omitted as never);
+    expect(Object.keys(rpcCalls[1])).not.toContain('_arrived_on');
   });
 
   it('FREQ-575-AC-01: 日の形が不正（暦にない日・形の違い・日付でない値）は 400 で、入口も計上係も呼ばない', async () => {
@@ -1261,7 +1269,7 @@ describe('受け取りの窓口: 届いた日（arrivedOn。会計の計画3 FRE
     expect(mockSchedule).not.toHaveBeenCalled();
   });
 
-  it('FREQ-575-AC-01: 届いた日が不正（未来・申し込みの前・確定済み。DB の RETURN_ARRIVAL_DATE_INVALID）は 400 と固定の文で、計上係を流さない', async () => {
+  it('FREQ-575-AC-01: 届いた日が不正（未来・申し込みの前・確定済み）なら 400 で、store を呼んだ後の副作用が無い', async () => {
     mockReceive.mockResolvedValue({ kind: 'refused', code: 'RETURN_ARRIVAL_DATE_INVALID' });
     const response = await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, arrivedOn: '2099-01-01' } });
     expect(response.status).toBe(400);
@@ -1290,7 +1298,7 @@ describe.each(ENDPOINTS)('$name の窓口の判断待ちの止めと計上係（
     Reflect.deleteProperty(mockDeps, 'store');
   });
 
-  it('FREQ-580-AC-01: 入口が dispute_hold で断ったら 409 と DISPUTE_HOLD で、orderIds は返品の注文を読み直した判断待ちの注文。計上係を流さない', async () => {
+  it('FREQ-580-AC-01: 返金のroute3本は DISPUTE_HOLD を 409 とコードで返し、orderIds は読み直した判断待ちの注文で、読めなければ空の配列になり、再試行しない', async () => {
     endpoint.service.mockResolvedValue({ kind: 'refused', code: 'dispute_hold' });
 
     const response = await call(endpoint);
@@ -1307,6 +1315,19 @@ describe.each(ENDPOINTS)('$name の窓口の判断待ちの止めと計上係（
     }));
     expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain(HELD_ORDER);
     expect(mockSchedule).not.toHaveBeenCalled();
+
+    // 読めなければ空の配列になり、入口は1回だけ（再試行しない）
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      holds.mockResolvedValue({ data: null, error: { message: 'PRIVATE-MARKER', code: 'XX000' } });
+      endpoint.service.mockClear();
+      const unreadable = await call(endpoint);
+      expect(unreadable.status).toBe(409);
+      await expect(unreadable.json()).resolves.toEqual({ error: 'カード会社の判断待ちの注文が含まれているため、返金できません。', code: 'DISPUTE_HOLD', orderIds: [] });
+      expect(endpoint.service).toHaveBeenCalledTimes(1);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it('FREQ-580-AC-01: 判断待ちを読めない時・投げられた断りの時も、orderIds は空の配列で 409 DISPUTE_HOLD になり、再試行の対象にしない（入口は1回だけ）', async () => {

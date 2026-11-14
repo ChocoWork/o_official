@@ -80,7 +80,7 @@ describe('GET /api/admin/accounting/refund-states', () => {
 });
 
 describe('POST /api/admin/accounting/refund-cancellations', () => {
-	test('FREQ-579-AC-03: 取り消しの区分のrouteは権限のある人だけで、認可・CSRF・IP・actor の順に通り、監査は返金の番号と区分だけ（理由の本文を入れない）', async () => {
+	test('FREQ-579-AC-03: 取り消しの区分のrouteは権限のある人だけで、区分と理由が不正なら400、2回目は409', async () => {
 		grants.current = [PERM.read, PERM.manage, PERM.settings];
 		expect((await post()).status).toBe(403);
 		expect(rpcImpl).not.toHaveBeenCalled();
@@ -97,9 +97,20 @@ describe('POST /api/admin/accounting/refund-cancellations', () => {
 		});
 		const audit = JSON.stringify(mockAudit.mock.calls);
 		for (const secret of ['SECRET-REASON', KEY]) expect(audit).not.toContain(secret);
+		// 区分と理由が不正なら400、DBは呼ばない
+		rpcImpl.mockClear();
+		for (const value of [{ ...body, kind: 'settled' }, { ...body, reason: '  ' }]) {
+			const bad = await post(value);
+			expect([bad.status, await read(bad)]).toEqual([400, { code: 'ACCOUNTING_ARGUMENT_INVALID', error: '入力を確かめてください。' }]);
+		}
+		expect(rpcImpl).not.toHaveBeenCalled();
+		// 2回目は409
+		rpcImpl.mockImplementation(async () => dbError('ACCOUNTING_REFUND_CANCEL_DECIDED', '55000'));
+		const decided = await post();
+		expect([decided.status, (await read(decided)).code]).toEqual([409, 'ACCOUNTING_REFUND_CANCEL_DECIDED']);
 	});
 
-	test('FREQ-579-AC-03: 区分と理由が不正なら400で、DBを呼ばない。aal1・CSRF 欠落・429も呼ばない', async () => {
+	test('区分と理由が不正なら400で、DBを呼ばない。aal1・CSRF 欠落・429も呼ばない', async () => {
 		(verifyAccessToken as jest.Mock).mockImplementationOnce(async () => ({ ok: true, claims: claims('aal1') }));
 		expect((await post()).status).toBe(403);
 		mockCsrf.mockImplementationOnce(() => new Response('{}', { status: 403 }));
@@ -119,7 +130,7 @@ describe('POST /api/admin/accounting/refund-cancellations', () => {
 		expect((await post({ ...body, kind: 'owed', reason: 'あ'.repeat(500) })).status).toBe(200);
 	});
 
-	test('FREQ-579-AC-03: 2回目は409とコードで、取り消されていない返金も409。再送は前の結果', async () => {
+	test('2回目は409とコードで、取り消されていない返金も409。再送は前の結果', async () => {
 		rpcImpl.mockImplementation(async () => dbError('ACCOUNTING_REFUND_CANCEL_DECIDED', '55000', 'PRIVATE-MARKER'));
 		const decided = await post();
 		expect([decided.status, await read(decided)]).toEqual([409, { code: 'ACCOUNTING_REFUND_CANCEL_DECIDED', error: 'この返金の取り消しの区分は、もう決まっています。' }]);
@@ -135,7 +146,7 @@ describe('POST /api/admin/accounting/refund-cancellations', () => {
 		expect(((await read(replay)).data as { decision: { replayed: boolean } }).decision.replayed).toBe(true);
 	});
 
-	test('FREQ-579-AC-03: UNIT_CANCEL_REVERT_REFUSED は409とコードで、理由ごとの文を出し、DETAIL を出さない', async () => {
+	test('FREQ-579-AC-03: 取り消しの区分のrouteは UNIT_CANCEL_REVERT_REFUSED を 409 とコードで返し、理由ごとの文を出す', async () => {
 		const revert = 'この取り消しは元に戻せません。「返すつもり」を選んで振込で返してください。';
 		for (const [detail, text] of [['ubrr_later', revert], ['ubrr_holds', revert], ['ubrr_status', 'Stripe への返金をやり直してください。']] as const) {
 			rpcImpl.mockImplementation(async () => dbError('UNIT_CANCEL_REVERT_REFUSED', '22023', detail));

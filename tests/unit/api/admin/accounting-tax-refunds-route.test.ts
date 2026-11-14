@@ -46,7 +46,19 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 describe('GET /api/admin/accounting/tax-refunds', () => {
-	test('FREQ-583-AC-01: 消費税用の一覧のrouteは no-store で、finance.read だけで読め、応答に名前・メールの鍵が無い', async () => {
+	test('FREQ-583-AC-01: 消費税用の一覧のrouteは no-store で、応答に名前・メールの鍵が無く、期間と続きの目印を検証する', async () => {
+		const ok = await get();
+		expect(ok.status).toBe(200);
+		const json = await read(ok);
+		expect(JSON.stringify(json)).not.toMatch(/mail|name"|address|phone/i);
+		for (const query of ['?from=2026-12&to=2026-11', '?from=2026-01&to=2027-01', '?from=2026-11&to=2026-11&afterDate=2026-11-10', `?from=2026-11&to=2026-11&afterDate=2026-11-10&afterKey=${uuid(1)}:0`]) {
+			const bad = await get(query);
+			expect([query, bad.status]).toEqual([query, 400]);
+			expect(bad.headers.get('cache-control')).toContain('no-store');
+		}
+	});
+
+	test('FREQ-583-AC-01: 一覧は finance.read だけで読め、一覧と合計と続きの目印を返す', async () => {
 		const response = await get();
 		expect(response.status).toBe(200);
 		const json = await read(response);

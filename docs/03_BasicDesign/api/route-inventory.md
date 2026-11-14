@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> 会計の計画3 Task 10 確認日: 2026-11-14。Route Handler を7ファイル・9メソッド足した（196ファイル・248メソッド、表は195行・247メソッド）: `/api/admin/accounting/return-arrival`・`return-options`・`refund-states`・`refund-cancellations`・`refund-bank-transfers`・`refund-settlements`・`tax-refunds`。契約は [API仕様](api-spec.md) の「管理:会計・法定保存」。
+>
 > 交換の印 Task 7 確認日: 2026-11-11。Route Handler を3ファイル・3メソッド足した（189ファイル・239メソッド、表は188行・238メソッド）: `/api/admin/returns/[returnId]/receive-estimate`・`/api/admin/orders/[id]/refund-estimate`・`/api/orders/[id]/return-request/estimate`（どれも `POST`。読むだけ）。契約は [API仕様](api-spec.md) の末尾「見込みの窓口と計画の受け渡し（FREQ-642 Task 7）」。
 >
 > 会計の作り直し 計画2 Task 15 確認日: 2026-11-09。Route Handler の追加・削除はない（186ファイル・236メソッドのまま）。既存の窓口の振る舞いの変更を[API仕様](api-spec.md)に写した: `/api/admin/kpi/monthly-record`（月の KPI の表を DB の関数で読み書き。503 の分岐をやめた）、`/api/admin/kpi`（受注高の数え方と応答の `backlog`・`intakeBreakdown`・`returnsThisMonth`）、`/api/admin/kpi/targets`（受注高の定義）、`/api/webhook/stripe`（18種）、`/api/cron/stripe-reconcile`（dispute の読み直し）、`/api/admin/accounting/journal`（`shipmentMeta`・権限の欄）、発送票の確定・取り消し・出荷日の直しと着金の確認（応答の後に計上係）。
@@ -82,6 +84,13 @@
 | `/api/admin/accounting/deferred-revenue` | `GET` | [route.ts](../../../src/app/api/admin/accounting/deferred-revenue/route.ts) （会計 計画2 Task 10: 繰り越した前受金と異常。`admin.finance.read`） |
 | `/api/admin/accounting/year-end-shipments` | `GET`, `POST`, `PUT` | [route.ts](../../../src/app/api/admin/accounting/year-end-shipments/route.ts) （会計 計画2 Task 10: GET は `admin.finance.read`、POST は `admin.finance.manage`、PUT は `admin.accounting.settings.manage`） |
 | `/api/admin/accounting/shipment-trace` | `GET` | [route.ts](../../../src/app/api/admin/accounting/shipment-trace/route.ts) （会計 計画2 Task 10: 発送票の跡と仕訳。`admin.finance.read`） |
+| `/api/admin/accounting/return-arrival` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/accounting/return-arrival/route.ts) （会計 計画3 Task 10: GET は `admin.orders.read`、POST は `admin.accounting.entries.correct`。届いた日と直した跡） |
+| `/api/admin/accounting/return-options` | `GET`, `PUT` | [route.ts](../../../src/app/api/admin/accounting/return-options/route.ts) （会計 計画3 Task 10: GET は `admin.finance.read`、PUT は `admin.accounting.settings.manage`。配達日を使う設定） |
+| `/api/admin/accounting/refund-states` | `GET` | [route.ts](../../../src/app/api/admin/accounting/refund-states/route.ts) （会計 計画3 Task 10: 取り消しの区分待ち・借りが残る返金の一覧。`admin.finance.read`） |
+| `/api/admin/accounting/refund-cancellations` | `POST` | [route.ts](../../../src/app/api/admin/accounting/refund-cancellations/route.ts) （会計 計画3 Task 10: 取り消しの区分。`admin.accounting.entries.correct`） |
+| `/api/admin/accounting/refund-bank-transfers` | `POST` | [route.ts](../../../src/app/api/admin/accounting/refund-bank-transfers/route.ts) （会計 計画3 Task 10: 振込の記録。`admin.finance.manage`） |
+| `/api/admin/accounting/refund-settlements` | `POST` | [route.ts](../../../src/app/api/admin/accounting/refund-settlements/route.ts) （会計 計画3 Task 10: やり直しの結び。`admin.accounting.entries.correct`） |
+| `/api/admin/accounting/tax-refunds` | `GET` | [route.ts](../../../src/app/api/admin/accounting/tax-refunds/route.ts) （会計 計画3 Task 10: 消費税用の返金の一覧。`admin.finance.read`） |
 | `/api/admin/audit-logs` | `GET` | [route.ts](../../../src/app/api/admin/audit-logs/route.ts) |
 | `/api/admin/contact/[id]/reply` | `POST` | [route.ts](../../../src/app/api/admin/contact/%5Bid%5D/reply/route.ts) |
 | `/api/admin/contact/[id]` | `GET`, `PATCH` | [route.ts](../../../src/app/api/admin/contact/%5Bid%5D/route.ts) |

@@ -41,7 +41,26 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 describe('POST /api/admin/accounting/refund-settlements', () => {
-	test('FREQ-579-AC-05: 結びのrouteは admin.accounting.entries.correct の人だけで、順に通ってから DB へ渡り、応答の後に計上係を流す', async () => {
+	test('FREQ-579-AC-05: 結びのrouteは権限のある人だけで、不正な入力は400、借りの仕訳がまだの時と残高を超える時は409、監査に金額を入れない', async () => {
+		grants.current = [PERM.read, PERM.manage, PERM.settings];
+		expect((await post()).status).toBe(403);
+		expect(rpcImpl).not.toHaveBeenCalled();
+		grants.current = [PERM.correct];
+		const invalid = await post({ ...body, payingRefundId: OWED });
+		expect([invalid.status, await read(invalid)]).toEqual([400, { code: 'ACCOUNTING_ARGUMENT_INVALID', error: '入力を確かめてください。' }]);
+		expect(rpcImpl).not.toHaveBeenCalled();
+		// 借りの仕訳がまだの時・残高を超える時は、DB が同じ ACCOUNTING_EVENT_NOT_POSTABLE で断り、409
+		rpcImpl.mockImplementation(async () => dbError('ACCOUNTING_EVENT_NOT_POSTABLE', '55000'));
+		const notPostable = await post();
+		expect([notPostable.status, (await read(notPostable)).code]).toEqual([409, 'ACCOUNTING_EVENT_NOT_POSTABLE']);
+		// 成功の監査にも失敗の監査にも金額を入れない
+		rpcImpl.mockImplementation(async () => ({ data: settled, error: null }));
+		expect((await post()).status).toBe(200);
+		const audit = JSON.stringify(mockAudit.mock.calls);
+		for (const secret of ['6543', KEY, PAYING]) expect(audit).not.toContain(secret);
+	});
+
+	test('結びのrouteは admin.accounting.entries.correct の人だけで、順に通ってから DB へ渡り、応答の後に計上係を流す', async () => {
 		grants.current = [PERM.read, PERM.manage, PERM.settings];
 		expect((await post()).status).toBe(403);
 		expect(rpcImpl).not.toHaveBeenCalled();

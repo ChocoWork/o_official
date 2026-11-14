@@ -60,7 +60,7 @@ describe('POST /api/admin/accounting/refund-bank-transfers', () => {
 		expect(mockSchedule).toHaveBeenCalledWith('refund_bank');
 	});
 
-	test('FREQ-579-AC-04: 振込の記録の監査に金額・銀行の取引の番号・メモ・注文の番号を入れない', async () => {
+	test('FREQ-579-AC-04: 振込の記録の監査に金額・銀行の取引の番号を入れない', async () => {
 		await post();
 		expect(mockAudit).toHaveBeenCalledWith({
 			action: 'admin.accounting.refund.bank', actor_id: ACTOR, resource: 'accounting', resource_id: null, outcome: 'success', metadata: { result: 'recorded' },
@@ -69,7 +69,7 @@ describe('POST /api/admin/accounting/refund-bank-transfers', () => {
 		for (const secret of ['4321', 'BANK-20261114-77', 'SECRET-NOTE', ORDER, KEY, TODAY]) expect(audit).not.toContain(secret);
 	});
 
-	test('FREQ-579-AC-04: 未来の日・額0・長すぎるメモ・取引の番号の形の誤り・知らない鍵はDBを呼ばず400', async () => {
+	test('FREQ-579-AC-04: 振込の記録のrouteは未来の日・額0・長すぎるメモを断り、同じ要求番号の再送は前の結果', async () => {
 		const bad: [string, unknown][] = [
 			['未来の日', { ...body, bankDate: toJstDate(new Date(Date.now() + 2 * 86_400_000)) }], ['額0', { ...body, amount: 0 }], ['額が負', { ...body, amount: -5 }],
 			['額が小数', { ...body, amount: 10.5 }], ['額が文字', { ...body, amount: '100' }], ['額が上限超え', { ...body, amount: Number.MAX_SAFE_INTEGER + 1 }],
@@ -88,14 +88,25 @@ describe('POST /api/admin/accounting/refund-bank-transfers', () => {
 		expect((await post({ ...body, note: null, origin: 'post_shipment' })).status).toBe(200);
 		expect((await post({ ...body, note: '  ', origin: 'return' })).status).toBe(200);
 		expect(rpcImpl).toHaveBeenLastCalledWith('admin_record_refund_bank_transfer', expect.objectContaining({ _note: null, _origin: 'return' }));
+		// 同じ要求番号の再送: DB は最初の結果をそのまま返す（created は真のまま）ので、応答は最初と同じ本文で、監査の印も同じ
+		rpcImpl.mockReset();
+		rpcImpl.mockImplementation(async () => ({ data: created, error: null }));
+		mockAudit.mockClear();
+		const first = await read(await post());
+		const again = await read(await post());
+		expect(again).toEqual(first);
+		expect((first.data as { transfer: { created: boolean } }).transfer.created).toBe(true);
+		expect(rpcImpl).toHaveBeenCalledTimes(2);
+		expect(rpcImpl.mock.calls[1]).toEqual(rpcImpl.mock.calls[0]);
+		expect(mockAudit.mock.calls.map(([event]) => (event as { metadata: unknown }).metadata)).toEqual([{ result: 'recorded' }, { result: 'recorded' }]);
 	});
 
-	test('FREQ-579-AC-04: 同じ要求番号の再送は前の結果（created:false）で、監査は replayed', async () => {
+	test('別の要求番号が同じ銀行の取引の番号・元を使うと、DB は created:false を返し、監査の結果は duplicate_bank_txn になる', async () => {
 		rpcImpl.mockImplementation(async () => ({ data: { ...created, created: false }, error: null }));
-		const response = await post();
+		const response = await post({ ...body, requestKey: uuid(95) });
 		expect(response.status).toBe(200);
 		expect(((await read(response)).data as { transfer: { created: boolean } }).transfer.created).toBe(false);
-		expect(mockAudit).toHaveBeenLastCalledWith(expect.objectContaining({ outcome: 'success', metadata: { result: 'replayed' } }));
+		expect(mockAudit).toHaveBeenLastCalledWith(expect.objectContaining({ outcome: 'success', metadata: { result: 'duplicate_bank_txn' } }));
 	});
 
 	test.each([

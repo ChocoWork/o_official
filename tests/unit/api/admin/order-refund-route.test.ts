@@ -627,7 +627,7 @@ describe.each(ENDPOINTS)('$name の窓口の判断待ちの止めと計上係（
     Reflect.deleteProperty(mockRefundDeps, 'store');
   });
 
-  it('FREQ-580-AC-01: DB の止め（dispute_hold）は 409 と DISPUTE_HOLD で、orderIds は読み直した判断待ちの注文。計上係を流さず、監査は conflict と dispute_hold だけ', async () => {
+  it('FREQ-580-AC-01: 返金のroute3本は DISPUTE_HOLD を 409 とコードで返し、orderIds は読み直した判断待ちの注文で、読めなければ空の配列になり、再試行しない', async () => {
     service.mockResolvedValue({ kind: 'refused', code: 'dispute_hold' });
     mockHoldsRpc.mockResolvedValue({ data: [{ order_id: HELD, dispute_id: 'dp_1', status: 'needs_response', amount: 1, since: '2026-11-10T00:00:00Z' }, { order_id: HELD, dispute_id: 'dp_2', status: 'needs_response', amount: 1, since: '2026-11-10T00:00:00Z' }], error: null });
 
@@ -647,6 +647,19 @@ describe.each(ENDPOINTS)('$name の窓口の判断待ちの止めと計上係（
     const audited = JSON.stringify(mockLogAudit.mock.calls);
     for (const secret of [HELD, 'dp_1', 'dp_2']) expect(audited).not.toContain(secret);
     expect(mockSchedule).not.toHaveBeenCalled();
+
+    // 読めなければ空の配列になり、断りの応答は変わらず、返金の流れは1回だけ（再試行しない）
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mockHoldsRpc.mockResolvedValue({ data: null, error: { message: 'PRIVATE-MARKER', code: 'XX000' } });
+      service.mockClear();
+      const unreadable = await call();
+      expect(unreadable.status).toBe(409);
+      await expect(unreadable.json()).resolves.toEqual({ error: 'カード会社の判断待ちの注文が含まれているため、返金できません。', code: 'DISPUTE_HOLD', orderIds: [] });
+      expect(service).toHaveBeenCalledTimes(1);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it('FREQ-580-AC-01: 判断待ちの注文を読めなければ orderIds は空の配列で、断りの応答は変わらず、生の誤りを出さない', async () => {

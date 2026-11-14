@@ -134,7 +134,11 @@ export function handleRefundCancellationPost(request: Request): Promise<Response
 	);
 }
 
-/** 振込で返した分の記録。日は今日（日本時間）まで。監査は結果だけ（金額・銀行の取引の番号は入れない）。 */
+/**
+ * 振込で返した分の記録。日は今日（日本時間）まで。監査は結果だけ（金額・銀行の取引の番号は入れない）。
+ * 結果の印: created が真は `recorded`（初めての書き込みか、同じ要求番号の再送。DB は再送で最初の結果をそのまま返すので区別できない）、
+ * 偽は `duplicate_bank_txn`（別の要求番号が同じ銀行の取引の番号・元を使った）。
+ */
 export function handleRefundBankTransferPost(request: Request): Promise<Response> {
 	return thenPost(
 		'refund_bank',
@@ -146,7 +150,7 @@ export function handleRefundBankTransferPost(request: Request): Promise<Response
 			status: 200,
 			schema: refundBankTransferBodySchema(toJstDate(new Date())),
 			run: (client, actorId, _id, body) => recordRefundBankTransfer(client, actorId, body),
-			audit: (result) => ({ resourceId: null, metadata: { result: result.created === false ? 'replayed' : 'recorded' } }),
+			audit: (result) => ({ resourceId: null, metadata: { result: result.created === false ? 'duplicate_bank_txn' : 'recorded' } }),
 			respond: async (_client, result) => ({ transfer: result }),
 		}),
 	);

@@ -241,17 +241,19 @@ describe.each(ROUTES)('$name', (route) => {
     },
   );
 
-  // ACCOUNTING_DISPUTE_HOLD は確定の窓口が DISPUTE_HOLD の409に直す（下の「判断待ち」の試験）。表の行はそれ以外
-  test.each(Object.entries(SHIPMENT_SLIP_ERRORS).filter(([message]) => message !== 'ACCOUNTING_DISPUTE_HOLD').map(([message, [sqlstate, status, body]]) => [message, sqlstate, status, body] as const))('FREQ-533-AC-02: DB の %s は表の状態と本文を { code, error } で返し、監査は failure と結果コードだけ', async (message, sqlstate, status, body) => {
+  // ACCOUNTING_DISPUTE_HOLD の行も表の全行に含める。確定の窓口はこの行だけ、事前の止めと同じ 409 DISPUTE_HOLD（orderIds は読み直す。ここでは空）に直す
+  test.each(Object.entries(SHIPMENT_SLIP_ERRORS).map(([message, [sqlstate, status, body]]) => [message, sqlstate, status, body] as const))('FREQ-533-AC-02: DB の %s は表の状態と本文を { code, error } で返し、監査は failure と結果コードだけ', async (message, sqlstate, status, body) => {
     rpc.mockResolvedValue({ data: null, error: { message, code: sqlstate, details: 'PRIVATE-MARKER', hint: 'PRIVATE-MARKER' } });
     const result = await call(route);
+    const held = message === 'ACCOUNTING_DISPUTE_HOLD';
+    const code = held ? 'DISPUTE_HOLD' : message;
     expect(result.status).toBe(status);
     expect(result.response.headers.get('cache-control')).toBe('no-store');
-    expect(result.json).toEqual({ code: message, error: body });
+    expect(result.json).toEqual(held ? { code, error: body, orderIds: [] } : { code, error: body });
     expect(result.text).not.toContain('PRIVATE-MARKER');
     expect(mockLogAudit).toHaveBeenCalledTimes(1);
     expect(mockLogAudit).toHaveBeenCalledWith({
-      action: route.action, actor_id: 'authorized-actor', resource: 'shipment_slips', resource_id: SLIP_ID, outcome: 'failure', metadata: { ...route.failureMetadata, code: message },
+      action: route.action, actor_id: 'authorized-actor', resource: 'shipment_slips', resource_id: SLIP_ID, outcome: 'failure', metadata: { ...route.failureMetadata, code },
     });
     expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('PRIVATE-MARKER');
   });
@@ -296,7 +298,7 @@ const ORDER_A = '33333333-3333-4333-8333-333333333333';
 const ORDER_B = '44444444-4444-4444-8444-444444444444';
 
 describe('判断待ちのカード会社の取り消しがある票の確定（4-e3）', () => {
-  test('FREQ-580-AC-02: 発送票の確定のrouteは DB の ACCOUNTING_DISPUTE_HOLD も 409 DISPUTE_HOLD にし、orderIds は票の判断待ちを読み直して作る', async () => {
+  test('FREQ-580-AC-02: 発送票の確定のrouteは DB の ACCOUNTING_DISPUTE_HOLD も 409 DISPUTE_HOLD にする', async () => {
     rpc.mockResolvedValue({ data: null, error: { message: 'ACCOUNTING_DISPUTE_HOLD', code: '55000', details: '2', hint: 'PRIVATE-MARKER' } });
     // 事前の止めを通った後に、DB が（読んだ後に始まった取り消しなどで）断った。判断待ちを2回目に読むと2件
     holdsRpc.mockResolvedValueOnce({ data: [], error: null });

@@ -35,7 +35,7 @@ describe('runAccountingPostingOnce', () => {
 		expect(rpc).toHaveBeenLastCalledWith('accounting_run_posting', { _limit: 20 });
 	});
 
-	test('FREQ-562-AC-05: 係の結果の型に refunds と returns があり、無い戻りは固定の失敗にする', async () => {
+	test('FREQ-562-AC-05: 係の結果の型に refunds と returns がある', async () => {
 		rpc.mockResolvedValue(ok(POSTING));
 		await expect(store.runAccountingPostingOnce(client)).resolves.toMatchObject({ refunds: 7, returns: 8 });
 		const withoutRefunds: Record<string, unknown> = { ...POSTING };

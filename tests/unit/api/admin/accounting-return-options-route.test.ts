@@ -63,7 +63,7 @@ describe('/api/admin/accounting/return-options', () => {
 		expect(denied.headers.get('cache-control')).toContain('no-store');
 	});
 
-	test('FREQ-575-AC-04: 設定のPUTは権限のある人だけで、権限・CSRF・IP・actor の順に通り、監査は結果だけ', async () => {
+	test('FREQ-575-AC-04: 設定のPUTは権限のある人だけで、版違いは409', async () => {
 		grants.current = [PERM.read, PERM.manage, PERM.correct];
 		expect((await put()).status).toBe(403);
 		expect(rpcImpl).not.toHaveBeenCalled();
@@ -80,9 +80,13 @@ describe('/api/admin/accounting/return-options', () => {
 			action: 'admin.accounting.return.option', actor_id: ACTOR, resource: 'accounting', resource_id: null, outcome: 'success', metadata: { result: 'enabled' },
 		});
 		expect(JSON.stringify(mockAudit.mock.calls)).not.toContain(KEY);
+		// 版違いは 409
+		rpcImpl.mockImplementation(async () => dbError('ACCOUNTING_VERSION_CONFLICT', '40001'));
+		const conflict = await put();
+		expect([conflict.status, await read(conflict)]).toEqual([409, { code: 'ACCOUNTING_VERSION_CONFLICT', error: '設定が変わりました。読み直してください。' }]);
 	});
 
-	test('FREQ-575-AC-04: 設定のPUTの版違いは409、再送は前の結果で監査は replayed', async () => {
+	test('設定のPUTの版違いは409、再送は前の結果で監査は replayed', async () => {
 		rpcImpl.mockImplementation(async () => dbError('ACCOUNTING_VERSION_CONFLICT', '40001'));
 		const conflict = await put();
 		expect([conflict.status, await read(conflict)]).toEqual([409, { code: 'ACCOUNTING_VERSION_CONFLICT', error: '設定が変わりました。読み直してください。' }]);

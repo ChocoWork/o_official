@@ -703,7 +703,7 @@ describe('POST /api/admin/orders/[id]/status - 支払い済みのキャンセル
     expect(maskAuditEvent(event).metadata).toEqual(event.metadata);
   });
 
-  test('FREQ-580-AC-01: 判断待ちの注文は DB の止め（dispute_hold）を 409 と DISPUTE_HOLD で返し、orderIds は読み直した判断待ちの注文。計上係は流さない', async () => {
+  test('FREQ-580-AC-01: 返金のroute3本は DISPUTE_HOLD を 409 とコードで返し、orderIds は読み直した判断待ちの注文で、読めなければ空の配列になり、再試行しない', async () => {
     const holdsRpc = jest.fn().mockResolvedValue({ data: [{ order_id: ORDER_ID, dispute_id: 'dp_1', status: 'needs_response', amount: 1, since: '2026-11-10T00:00:00Z' }], error: null });
     Object.assign(mockRefundDeps, { store: { rpc: holdsRpc } });
     try {

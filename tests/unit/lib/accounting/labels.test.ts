@@ -104,6 +104,17 @@ describe('FREQ-562-AC-01: 計画2の移行の本文の日本語は ACCOUNTING_LA
 	});
 });
 
+/**
+ * 語の出力（ACCOUNTING_LABELS）に入れず、前の移行の本文から S17 が写した文（裁定 P3-T10c）。仕訳の摘要ではない。
+ * 足す時は、前の移行の本文にある物だけにする。
+ * - 支払額の違いの自動の取消: begin_order_refund の auto_amount_mismatch の道のメモ（裁定が名指しした1件）
+ * - Stripe で返金が見つかったため自動で解決: 要対応の自動の解決のメモ（20261023211425_group_g1_allocation.sql の写し。裁定の1件と同じ種類）
+ * - 「 × 」: 計画2の出荷の移行の明細の摘要の区切り（20261108170000 の写し。裁定の1件と同じ種類）
+ * - 「×」: 消費税用の返金の一覧の品の内容の区切り（S23。上と同じ種類の表示の区切り）
+ * - 消費税法施行令58条の2により7年間保存する: 消費税用の返金の一覧の保存の注記（S23。仕訳の語ではなく読み口の固定の文。写しではなく Task 9 の固定の文で、同じ許可の表に置く）
+ */
+const CARRIED_OVER_REFUND_NOTES = ['支払額の違いの自動の取消', 'Stripe で返金が見つかったため自動で解決', ' × ', '×', '消費税法施行令58条の2により7年間保存する'];
+
 describe('FREQ-578-AC-01: 返品・返金のラベルはSQLと一致する', () => {
 	it('計画3の12個の語は計画で決めた文字のまま', () => {
 		const keys = [
@@ -130,6 +141,12 @@ describe('FREQ-578-AC-01: 返品・返金のラベルはSQLと一致する', () 
 	it('計画3の移行はASCIIだけで、U& の文字列は全部が語の出力のどれかと一致する', () => {
 		expect(p3Files.length).toBeGreaterThanOrEqual(1);
 		const allowed = new Set(Object.values(ACCOUNTING_LABELS).map(encodeSqlUnicodeLiteral));
+		// 前の移行の本文の写しは、16進の大文字・小文字のどちらで書かれていてもよい（語の出力は大文字）
+		for (const note of CARRIED_OVER_REFUND_NOTES) {
+			const upper = encodeSqlUnicodeLiteral(note);
+			allowed.add(upper);
+			allowed.add(upper.replace(/\\([0-9A-F]{4})/g, (hex) => hex.toLowerCase()));
+		}
 		for (const name of p3Files) {
 			const text = fs.readFileSync(path.join(directory, name), 'utf8');
 			expect({ name, ascii: /[^\x00-\x7f]/.test(text) }).toEqual({ name, ascii: false });
