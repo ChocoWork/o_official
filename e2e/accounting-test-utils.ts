@@ -38,6 +38,7 @@ import {
   type ReceiveResult,
 } from '../tests/integration/db/helpers/accounting-returns-fixtures';
 import { hRefundFixture } from '../tests/integration/db/helpers/group-h-refund-fixtures';
+import { ensureReturnSettings } from './return-test-utils';
 import type { ReceiveUnit } from '../tests/integration/db/helpers/unit-binding-receive';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { createCatalogFixture } from '../tests/integration/db/helpers/order-fixtures';
@@ -454,6 +455,7 @@ export class AccountingScenario {
       shipmentMeta = shipmentMeta.concat(reply.body.data.shipmentMeta ?? []);
       const next = reply.body.data.nextAfter as { entryDate: string; entryNo: number } | null;
       if (!next) break;
+      if (page === 19) throw new Error('仕訳帳が20ページ（4,000件）を超えた。範囲をせばめる');
       cursor = `&afterEntryDate=${next.entryDate}&afterEntryNo=${next.entryNo}`;
     }
     return { entries, shipmentMeta };
@@ -473,11 +475,11 @@ export class AccountingScenario {
    */
   async seedReturnFlow(o: { requestedAt?: string; percent?: number } = {}): Promise<E2eReturnFlow> {
     await this.todayPeriod();
+    // 返品の設定（返送先ほか）は全部の返品の試験が共有する1行。どの試験も同じ値を書く ensureReturnSettings を使い、並列でも食い違わせない（G の取引の前に1文）
+    await ensureReturnSettings(this.db);
     const built = await withGroupG1Material(this.db, async () => {
       const f = await hRefundFixture(this.db, false, 2, 1250);
       const shipped = await shipUnitsFixture(this.db, f.orderId, f.itemId, 2, f.actor);
-      await this.db.query(`update public.shop_return_settings set return_address_name='Fixture',return_address_postal_code='1000001',
-        return_address_line='Fixture',return_address_phone='0311112222',restocking_fee_enabled=true where id=1`);
       const number = Number((await this.db.query('select coalesce(max(number),0)+1 as n from public.order_returns where order_id=$1', [f.orderId])).rows[0].n);
       const returnId = (await this.db.query(`insert into public.order_returns
         (order_id,number,source,status,request_key,request_fingerprint,requested_at,requested_by,return_method,return_shipping_payer,notify_customer)

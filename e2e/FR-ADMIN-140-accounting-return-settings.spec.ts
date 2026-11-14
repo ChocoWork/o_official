@@ -86,6 +86,10 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         const initial = await readOption(s);
         // 一度も切り替えていなければ既定はオフ（切り替えた日は空）。切り替えの記録は消せないので、既定そのものを確かめられるのは db reset の後の最初の幅だけ
         if (initial.changedAt === null) expect(initial.useCarrierDeliveryDate).toBe(false);
+        // 既定がオフであることは、切り替えの履歴に関わらず毎回確かめる: 列の既定値（DB の定義）と、行が1つしか無いこと
+        const column = await s.db.query(
+          "select column_default from information_schema.columns where table_schema = 'public' and table_name = 'accounting_return_options' and column_name = 'use_carrier_delivery_date'");
+        expect(column.rows).toEqual([{ column_default: 'false' }]);
         if (initial.useCarrierDeliveryDate) {
           const reset = await s.api(s.admin, '/api/admin/accounting/return-options', 'PUT', { enabled: false, expectedVersion: initial.version, requestKey: randomUUID() });
           expect(reset.status, reset.text.slice(0, 200)).toBe(200);

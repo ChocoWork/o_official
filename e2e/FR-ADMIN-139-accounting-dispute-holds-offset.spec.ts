@@ -14,7 +14,7 @@ import { createDraftInDb, createShippingMaterial, withShippingScenario } from '.
 // Stripe は呼ばない。入れた stripe_* の行は「画面と帳簿の表示の証拠」であって、実 Stripe の証拠ではない。
 // 止めは本物の route（409 DISPUTE_HOLD）と、事前の止めを通り越して DB の関数を直接呼んだ時の拒否（55000 ACCOUNTING_DISPUTE_HOLD）の2通りで確かめる。
 // E2E は今日の日付だけを使う。引かれた時・確定の時刻は今の少し先にして、返金・出荷の事実より後になるようにする。
-// 取り消しの原因の設定（原因ごとに1つで消せない）は fraudulent を使う（無ければ 7530 へ設定する）。仕訳・取り消しは消せないので db reset してから流す。
+// 取り消しの原因の設定（原因ごとに1つで消せない）は other を使う（無ければ 7530 へ設定する）。FR-ADMIN-133 は other を選ばない（知らない値は other 扱いなので）ので、並列で流れても取り合わない。仕訳・取り消しは消せないので db reset してから流す。
 
 test.use({ trace: 'off', locale: 'ja-JP' });
 // 仕訳・計上待ち・取り消しは全体で共有する状態なので、このファイルの中は1つずつ流す（他のファイルとは並列）。
@@ -22,6 +22,8 @@ test.describe.configure({ mode: 'default' });
 
 const DISPUTE_AMOUNT = 30_000;
 const isoAfter = (seconds: number) => new Date(Date.now() + seconds * 1000).toISOString();
+/** 日本時間の0時まで60秒を切っている（引かれた時・確定の時刻を数秒先に置くので、明日の日付にならないよう、この間は流さない） */
+const nearJstMidnight = () => ((Date.now() + 9 * 3_600_000) % 86_400_000) > 86_400_000 - 60_000;
 
 /** 注文の勘定の残高（貸方−借方。sub を渡すと補助を絞る） */
 async function balanceOf(s: AccountingScenario, orderId: string, account: string, sub: string | null = null): Promise<number> {
@@ -33,11 +35,11 @@ async function settle(s: AccountingScenario): Promise<void> {
   for (let i = 0; i < 4; i += 1) await s.runPosting(200);
 }
 
-/** 取り消しの原因 fraudulent の振り替え先の科目の符号。設定が無ければ 7530 に設定する */
+/** 取り消しの原因 other の振り替え先の科目の符号。設定が無ければ 7530 に設定する */
 async function disputeCostAccount(s: AccountingScenario): Promise<string> {
-  const row = await s.db.query("select account_code from public.accounting_dispute_account_settings where reason = 'fraudulent'");
+  const row = await s.db.query("select account_code from public.accounting_dispute_account_settings where reason = 'other'");
   if (row.rows[0]) return row.rows[0].account_code as string;
-  await s.db.query("select public.admin_set_dispute_account_setting($1::uuid, 'fraudulent', '7530', null, $2::uuid)", [s.admin.userId, randomUUID()]);
+  await s.db.query("select public.admin_set_dispute_account_setting($1::uuid, 'other', '7530', null, $2::uuid)", [s.admin.userId, randomUUID()]);
   return '7530';
 }
 
@@ -50,7 +52,7 @@ async function confirmedSummary(s: AccountingScenario, disputeId: string): Promi
 
 /** 返品の流れの注文に、判断待ちの取り消し（引かれた）を置く。引かれた時刻は今の少し先（返金・出荷の事実より後） */
 async function withdrawn(s: AccountingScenario, flow: E2eReturnFlow, at: string) {
-  return s.seedDispute({ orderId: flow.orderId, paymentIntentId: flow.paymentIntentId, amount: DISPUTE_AMOUNT, withdrawnAt: at, createdAt: at });
+  return s.seedDispute({ orderId: flow.orderId, paymentIntentId: flow.paymentIntentId, amount: DISPUTE_AMOUNT, reason: 'other', withdrawnAt: at, createdAt: at });
 }
 
 /** 取り消しが負けで確定した（Stripe 側の時刻 at） */
@@ -108,7 +110,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         await s.openOrder(page, f.orderId);
         const dialog = await openDetailRefundDialog(page, f.orderId);
         await expect(dialog.getByTestId('refund-dispute-hold')).toHaveText(DISPUTE_HOLD_REFUND_MESSAGE, { timeout: 60_000 });
-        await expect(dialog.getByRole('button', { name: /返金する$/ })).toBeDisabled();
+        await expect(dialog.getByRole('button', { name: /^(.+ を)?返金する$/ })).toBeDisabled();
         await expectNoHorizontalOverflow(page);
         expect(await refunds()).toBe(0);
       }, { period: 'none' });
@@ -148,6 +150,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
 
     test('FREQ-581-AC-02: 返品の返金待ちがある注文の確定で、返金待ちが消えて残りだけ費用になる', async ({ page }) => {
       test.setTimeout(300_000);
+      test.skip(nearJstMidnight(), '日本時間の0時の直前は、数秒先の時刻が明日の日付になるので流さない');
       await withAccountingScenario('dispute-offset-pay', async (s) => {
         await s.todayPeriod();
         const cost = await disputeCostAccount(s);
@@ -178,6 +181,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
 
     test('FREQ-581-AC-03: 返金済みと重なる分は「分けて調べる」に出て、費用にならない', async ({ page }) => {
       test.setTimeout(300_000);
+      test.skip(nearJstMidnight(), '日本時間の0時の直前は、数秒先の時刻が明日の日付になるので流さない');
       await withAccountingScenario('dispute-offset-review', async (s) => {
         await s.todayPeriod();
         const cost = await disputeCostAccount(s);

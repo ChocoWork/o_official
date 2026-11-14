@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { ACCOUNTING_LABELS } from '@/lib/accounting/labels';
 import { addDaysIso, withAccountingScenario, type AccountingScenario, type E2eReturnFlow } from './accounting-test-utils';
 import { CHECKOUT_VIEWPORTS, expectNoHorizontalOverflow } from './checkout-flow-helpers';
 import { detailSection } from './order-fulfillment-test-utils';
@@ -157,11 +158,11 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
 
         await s.openAccounting(page, '計上待ち');
         const list = page.getByRole('list', { name: '計上待ちの一覧' });
-        const rows = list.getByRole('listitem').filter({ hasText: '届いた日の直し' }).filter({ hasText: BEFORE_CUTOVER_TEXT });
+        const rows = list.getByRole('listitem').filter({ hasText: ACCOUNTING_LABELS.returnArrivalRedated }).filter({ hasText: BEFORE_CUTOVER_TEXT });
         // 一覧は50件ずつ。自分の行が出るまで「さらに読み込む」を押す
         await expect(list).toBeVisible({ timeout: 60_000 });
         for (let i = 0; i < 20 && (await rows.count()) === 0; i += 1) {
-          const more = page.getByRole('button', { name: 'さらに読み込む', exact: true });
+          const more = page.getByRole('region', { name: '計上待ち', exact: true }).getByRole('button', { name: 'さらに読み込む', exact: true });
           if ((await more.count()) === 0) break;
           await more.click();
         }

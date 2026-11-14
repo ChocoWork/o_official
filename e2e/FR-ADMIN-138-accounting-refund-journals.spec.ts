@@ -16,10 +16,15 @@ import {
   type AccountingScenario,
 } from './accounting-test-utils';
 import { CHECKOUT_VIEWPORTS, expectNoHorizontalOverflow } from './checkout-flow-helpers';
+import { openDetailRefundDialog } from './refund-test-utils';
+import { formatYen } from './return-test-utils';
+import { installRefundBridge } from './unit-binding-test-utils';
 
 // FREQ-577 / FREQ-579 / FREQ-583（計画3）: 返金の仕訳（発送前の返金・失敗と振込・取り消しの区分・消費税用の返金の一覧）を、本物の route・本物の画面・手元の Supabase で確かめる。
 // 返金は DB の道具で始める（begin_order_refund・record_order_refund_result は本物の関数）。Stripe は呼ばず、stripe_refunds と stripe_balance_transactions の行を
 // 手元の DB へ直に入れる。これは「画面と帳簿の表示の証拠」であって、実 Stripe の証拠ではない（本物の Stripe の読みは確かめない）。
+// 例外: FREQ-577-AC-03 の取り消しは本物の画面と本物の返金の入口（submitAdminRefund）を通し、Stripe だけを偽物にする（FR-ADMIN-166 と同じ bridge）。FREQ-579-AC-02・AC-03 の返金の始まり・失敗・取り消しは
+// DB の関数（begin_order_refund・record_order_refund_result）と fixture の道具の差し替えで、route は通らない。
 // 計上は本物の係（accounting_run_posting）、取り消しの区分・振込の記録・一覧は本物の画面と route。E2E は今日の日付だけを使う。
 // 仕訳・返金・計上待ちは消せないので db reset してから流す。
 
@@ -49,9 +54,9 @@ async function orderEntries(s: AccountingScenario, orderId: string, kind: string
 const shape = (rows: Array<{ account: string; debit: number; credit: number; sub: string | null }>) => rows.map((row) => [row.account, row.debit, row.credit, row.sub]);
 
 /** 計上待ち・借りの一覧は50件ずつ。自分の行が出るまで「さらに読み込む」を押す */
-async function showRow(page: Page, row: Locator): Promise<void> {
+async function showRow(scope: Locator, row: Locator): Promise<void> {
   for (let i = 0; i < 30 && (await row.count()) === 0; i += 1) {
-    const more = page.getByRole('button', { name: 'さらに読み込む', exact: true });
+    const more = scope.getByRole('button', { name: 'さらに読み込む', exact: true });
     if ((await more.count()) === 0) break;
     await more.first().click();
   }
@@ -80,9 +85,30 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         const f = await s.seedRefundFlow(false);
         const total = 37_000;
         expect(await balanceOf(s, f.orderId, '2150')).toBe(total);
-        const cancel = await s.material(() => seedPreShipmentCancel(s.db, f, { itemId: f.itemId, quantity: 1 }));
-        expect(cancel.amount).toBe(17_000);
-        const txn = await s.material(() => succeedRefund(s.db, cancel.refundId, { at: nowIso() }));
+        // 取り消しは本物の画面と本物の返金の入口（値段の計画を作る submitAdminRefund）を通す。差し替えるのは Stripe だけ
+        // （FR-ADMIN-166 と同じ bridge。Stripe は呼ばず、すぐ成功する偽物が返す）。残高の取引（stripe_*）は DB へ直に入れる表示の証拠
+        const bridge = await installRefundBridge(page, s.admin.userId);
+        await s.openOrder(page, f.orderId);
+        const dialog = await openDetailRefundDialog(page, f.orderId);
+        await dialog.getByRole('region', { name: '発送前の商品', exact: true }).getByLabel('返金する数', { exact: true }).first().fill('1');
+        await expect(dialog.getByText('計算しています', { exact: true })).toHaveCount(0);
+        await dialog.getByRole('button', { name: `${formatYen(17_000)} を返金する`, exact: true }).click();
+        await expect.poll(() => bridge.results.length, { timeout: 60_000 }).toBe(1);
+        expect(bridge.posts[0].lines).toEqual([{ orderItemId: f.itemId, quantity: 1, beforeShipment: true }]);
+        const refund = (await s.db.query('select id, amount, status, stripe_refund_id from public.order_refunds where order_id = $1', [f.orderId])).rows;
+        expect(refund).toHaveLength(1);
+        expect(refund[0]).toMatchObject({ amount: 17_000, status: 'succeeded' });
+        const cancel = { refundId: refund[0].id as string, amount: refund[0].amount as number };
+        // 偽物の Stripe が返した返金の番号で、残高の取引（引かれた額）を入れる（表示の証拠）
+        // 偽物の Stripe は返金の行を書かないので、引かれた残高の取引と返金の行（stripe_*）を DB へ直に入れる（表示の証拠）
+        const txn = `txn_${randomUUID().replaceAll('-', '')}`;
+        await s.db.query(`insert into public.stripe_balance_transactions (id, source_id, payment_intent_id, order_id, type, reporting_category, amount,
+          fee, net, currency, status, stripe_created_at, raw_payload) values ($1,$2,null,$3,'refund','refund',$4,0,$4,'jpy','available',now(),'{}'::jsonb)`,
+        [txn, refund[0].stripe_refund_id, f.orderId, -cancel.amount]);
+        const paymentIntentId = (await s.db.query('select payment_intent_id from public.orders where id = $1', [f.orderId])).rows[0].payment_intent_id as string;
+        await s.db.query(`insert into public.stripe_refunds (id, payment_intent_id, order_id, amount, currency, status, balance_transaction_id, stripe_created_at, succeeded_at, raw_payload)
+          values ($1,$2,$3,$4,'jpy','succeeded',$5,now(),now(),'{}'::jsonb) on conflict (id) do update set balance_transaction_id = excluded.balance_transaction_id`,
+        [refund[0].stripe_refund_id, paymentIntentId, f.orderId, cancel.amount, txn]);
         await s.runPosting(200);
 
         // 発送前の返金の仕訳: 返金した日（今日）に「前受金／Stripe未収金」。前受金の残りは取り消した分だけ減る
@@ -134,7 +160,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         await s.openAccounting(page, '財務概要');
         const panel = page.getByRole('region', { name: '返金の借りと振込の記録', exact: true });
         const row = panel.getByRole('list', { name: '借りが残る返金の一覧' }).getByRole('listitem').filter({ hasText: orderNumberOf(f.orderId) });
-        await showRow(page, row);
+        await showRow(panel, row);
         await expect(row.first()).toContainText(`出荷前の分の借り ¥${yen(17_000)}`);
         await expectNoHorizontalOverflow(page);
         await row.first().getByRole('button', { name: '振込を記録する', exact: true }).click();
@@ -180,8 +206,13 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         const list = page.getByRole('list', { name: '計上待ちの一覧' });
         // 取り消しの区分待ちの行には注文へのリンクが無い。一覧は新しく見つけた物が先なので、自分の返金の行は先頭の区分待ち。取り違えは DB の状態で確かめる
         const row = list.getByRole('listitem').filter({ hasText: 'Stripe 側で取り消されました' }).filter({ has: page.getByRole('button', { name: '取り消しの区分を選ぶ', exact: true }) });
-        await showRow(page, row);
+        await showRow(page.getByRole('region', { name: '計上待ち', exact: true }), row);
         await expectNoHorizontalOverflow(page);
+        // 行は位置で選ぶので、送る先が自分の返金でなければ送らない（決めると戻せない）
+        await page.route('**/api/admin/accounting/refund-cancellations', (route) => {
+          const body = route.request().postDataJSON() as { refundId?: string } | null;
+          return route.request().method() === 'POST' && body?.refundId !== cancel.refundId ? route.abort('blockedbyclient') : route.continue();
+        });
         await row.first().getByRole('button', { name: '取り消しの区分を選ぶ', exact: true }).click();
         const dialog = page.getByRole('dialog', { name: '返金の取り消しの区分を選ぶ', exact: true });
         await expect(dialog).toBeVisible();
@@ -244,7 +275,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         await section.getByRole('button', { name: '一覧を出す', exact: true }).click();
         const row = section.getByRole('table', { name: '消費税用の返金の一覧' }).getByRole('row').filter({ hasText: orderNumberOf(o.orderId) });
         await expect(section.getByRole('group', { name: '合計' })).toBeVisible({ timeout: 60_000 });
-        await showRow(page, row);
+        await showRow(section, row);
         await expect(row.first()).toContainText(`¥${yen(2_000)}`);
         await expect(row.first()).toContainText('元の売上が免税の期間です');
         await expect(section.getByTestId('tax-refund-retention-note')).toContainText('7年間保存する');
