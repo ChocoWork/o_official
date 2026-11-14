@@ -23,8 +23,8 @@ BEGIN;
 --     for the second kind skips a decision whose pending row is order_not_postable with detail reason dispute_lost, open or
 --     closed (P3-T8e, Task 8 new Minor 1).
 --   private.get_stripe_balance_reconciliation (latest: S23 20261113100000:377): a refund transaction whose pending row of
---     kind pre_shipment_refund, return_refund (balance transaction) or refund_failed (failure transaction) is closed is done
---     (Task 9 Minor 1).
+--     kind pre_shipment_refund, return_refund (balance transaction) or refund_failed (failure transaction) is closed by a
+--     person (resolved_by is set; Task 9 Minor 1, Task 11a Minor 1) is done.
 --
 -- ROLLBACK (only while no pending row has been closed through the new function): DROP FUNCTION
 --   public.admin_link_accounting_pending_entry(uuid,uuid,uuid,text,uuid), private.admin_link_accounting_pending_entry(uuid,uuid,uuid,text,uuid);
@@ -294,7 +294,7 @@ BEGIN
           OR EXISTS (SELECT 1 FROM public.stripe_refunds AS sm
             JOIN public.order_refunds AS rm ON rm.stripe_refund_id = sm.id
             JOIN public.accounting_pending_events AS pm ON pm.source_table = 'order_refunds' AND pm.source_id = rm.id::text
-            WHERE pm.resolved_at IS NOT NULL
+            WHERE pm.resolved_at IS NOT NULL AND pm.resolved_by IS NOT NULL
               AND ((pm.event_kind IN ('pre_shipment_refund', 'return_refund') AND sm.balance_transaction_id = c.id)
                 OR (pm.event_kind = 'refund_failed' AND sm.failure_balance_transaction_id = c.id)))
 -- ACC_P3_END
@@ -417,7 +417,7 @@ BEGIN
       ('private.accounting_dispute_offset_ready(text,uuid,date)', 1, 0, '5aadb4ec8cf0fc4dc22b183e0b516ec9',
         'p.reason = ''order_not_postable'' AND p.detail ->> ''reason'' = ''dispute_lost'''),
       ('private.get_stripe_balance_reconciliation(date)', 0, 2, '19017665c51c40ddd8733fc3e6c80807',
-        'pm.event_kind = ''refund_failed'' AND sm.failure_balance_transaction_id = c.id|WHERE pm.resolved_at IS NOT NULL')
+        'pm.event_kind = ''refund_failed'' AND sm.failure_balance_transaction_id = c.id|WHERE pm.resolved_at IS NOT NULL AND pm.resolved_by IS NOT NULL')
     ) AS x(signature, replaced, added, digest, needle)
     LOOP
       SELECT f.prosrc INTO v_src FROM pg_catalog.pg_proc AS f WHERE f.oid = pg_catalog.to_regprocedure(e.signature);

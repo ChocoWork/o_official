@@ -5,7 +5,7 @@ import {
   addDisputeHistory, seedDispute, seedPaidOrder, seedStripeFee, setAsideExistingSlips, setCutoverForTest,
 } from './helpers/accounting-orders-fixtures';
 import {
-  DISPUTE_DAYS, receiveReturn, recordRefundResult, saveRefundTxn, seedCancelRefund, seedDisputeFlow, seedSlotPaidOrder,
+  DISPUTE_DAYS, receiveReturn, recordRefundResult, saveFailureTxn, saveRefundTxn, seedCancelRefund, seedDisputeFlow, seedSlotPaidOrder,
 } from './helpers/accounting-returns-fixtures';
 import { describeLocalDb } from './helpers/local-db';
 
@@ -181,6 +181,10 @@ describeLocalDb('S24 pending manual close: controller only', (db) => {
     const second = await seedDispute(db(), { orderId: d.orderId, paymentIntentId: pi, amount: 10000, withdrawnAt: DISPUTE_DAYS.withdrawn, createdAt: DISPUTE_DAYS.withdrawn });
     // 今日の日本の日付で確定させる（0円の終わりの日と同じ日）。日本の0時の直後の1分は前の日になる
     const today = new Date(Date.now() - 60_000).toISOString();
+    // 前提: 0円の終わりの日と B の確定の日が同じ日本の日付であること。日本の0時の直後の1分は B が前の日になり、解放を使わずに通ってしまうので、
+    // その時は何も試さずに通らず、ここで大きく落ちる。
+    const decidedOn = (await q('select decided_on::text as d from public.accounting_return_facts where id = $1', [fact])).rows[0].d as string;
+    expect(decidedOn).toBe(new Date(today).toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' }));
     await addDisputeHistory(db(), { disputeId: second.disputeId, status: 'lost', occurredAt: today, stripeEventCreatedAt: today, eventType: 'charge.dispute.closed' });
     await settle();
     const confirmedKey = `dispute_event:${second.disputeId}:confirmed:lost`;
@@ -228,5 +232,37 @@ describeLocalDb('S24 pending manual close: controller only', (db) => {
     await seedStripeFee(db(), { createdAt: '2026-11-06T03:00:00Z', type: 'refund', reportingCategory: 'refund', amount: -2000 });
     await settle();
     expect(planned(await balanceRecon()).count - planned(before).count).toBe(1);
+  });
+
+  test('FREQ-582-AC-06: 手で閉じた返金の失敗の戻りの取引（refund_failed）も planned_p3 から外れ、人の操作でない閉じは外さない', async () => {
+    const balanceRecon = async () => (await q('select public.get_stripe_balance_reconciliation($1::date) as r', ['2026-11-30'])).rows[0].r as BalanceReconciliation;
+    const planned = (r: BalanceReconciliation) => r.unjournaled.find((row) => row.kind === 'planned_p3') ?? { count: 0, net_sum: 0 };
+    const o = await seedSlotPaidOrder(db(), [[18750], [11250]]);
+    const a = await seedCancelRefund(db(), o.orderId, null, 11250, [{ item: o.orderItemIds[1], before: true, amount: 11250 }]);
+    await settle();
+    const before = await balanceRecon();
+    // 切り替えを2つの取引の日より後にする。引かれた取引（5日）も戻りの取引（6日）も切り替え前で、返金の成功も失敗も before_cutover で止まる
+    await setCutoverForTest(db(), '2026-11-10');
+    await saveRefundTxn(db(), a, { at: '2026-11-05T03:00:00Z' });
+    await recordRefundResult(db(), a, 'succeeded');
+    await saveFailureTxn(db(), a, { at: '2026-11-06T03:00:00Z' });
+    await recordRefundResult(db(), a, 'failed');
+    await settle();
+    const rows = (await q("select id, event_kind, reason, resolved_at from public.accounting_pending_events where source_table = 'order_refunds' and source_id = $1 order by event_kind", [a])).rows;
+    expect(rows.map((r) => [r.event_kind, r.reason, r.resolved_at])).toEqual([['pre_shipment_refund', 'before_cutover', null], ['refund_failed', 'before_cutover', null]]);
+    const failedRow = rows.find((r) => r.event_kind === 'refund_failed');
+    const open = await balanceRecon();
+    // 2つの取引（-11,250 と +11,250）が planned_p3 に入る
+    expect([planned(open).count - planned(before).count, planned(open).net_sum - planned(before).net_sum]).toEqual([2, 0]);
+    // 人の操作でない閉じ（resolved_by が無い）は、取引を外さない
+    await q('update public.accounting_pending_events set resolved_at = now() where id = $1', [failedRow.id]);
+    const automatic = await balanceRecon();
+    expect([planned(automatic).count - planned(before).count, planned(automatic).net_sum - planned(before).net_sum]).toEqual([2, 0]);
+    await q('update public.accounting_pending_events set resolved_at = null where id = $1', [failedRow.id]);
+    // 人が閉じると、失敗の戻りの取引だけが外れる（引かれた取引は成功の行が開いたまま）
+    const admin = await insertAccountingAdmin(db());
+    await q('select public.admin_resolve_accounting_pending_event($1::uuid, $2::uuid, $3, $4::uuid)', [admin, failedRow.id, '切り替え前の返金の失敗なので確認済み', randomUUID()]);
+    const closed = await balanceRecon();
+    expect([planned(closed).count - planned(before).count, planned(closed).net_sum - planned(before).net_sum]).toEqual([1, -11250]);
   });
 });

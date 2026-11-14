@@ -1294,6 +1294,8 @@ describeLocalDb('S24 final assert: controller only', (db) => {
     [redefine(STRIPE, "pm\\.event_kind = .refund_failed.", "pm.event_kind = ''refund_failedx''"), 'acc_s24_body_unchanged'],
     [redefine(STRIPE, 'WHERE pm\\.resolved_at IS NOT NULL', 'WHERE true'), 'acc_s24_body_unchanged'],
     [redefine(STRIPE, '-- ACC_P3_BEGIN\\n          OR EXISTS', '-- ACC_P3_X\\n          OR EXISTS'), 'acc_s24_body_unchanged'],
+    // 人の操作に限る印（resolved_by）が外されても、自動の閉じ（resolved_by が無い）を数える形に戻るので拒む
+    [redefine(STRIPE, ' AND pm\\.resolved_by IS NOT NULL', ''), 'acc_s24_body_unchanged'],
     [redefine(STRIPE, 'WHEN .payout. THEN', "WHEN ''payout_x'' THEN"), 'acc_s24_body_unchanged'],
   ])('FREQ-569-AC-07: S24改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
