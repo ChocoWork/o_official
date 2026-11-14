@@ -2,11 +2,11 @@
  * 最初の店長を作るコマンドの、本物の deps（Supabase への書き込みを持つ）。
  *
  * @packageDocumentation
- * @remarks 判断は bootstrap-core が持つので、ここは Supabase の呼び出しだけを置く。Auth の誤りの文（メールを含みうる）は返さず status と code だけを渡す。監査は logAudit を使わず、渡された service role の client で audit_logs に入れる（logAudit は next/headers 経由の別の client を作るので、コマンドから使えない）。
+ * @remarks 判断は bootstrap-core が持つので、ここは Supabase の呼び出しだけを置く。Auth の誤りの文（メールを含みうる）は返さず status と code だけを渡す。監査は logAudit（ALERT_AUDIT_URL の通知も含む）をそのまま使う。
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { checkPwnedPassword } from '@/lib/pwned-password';
-import { maskAuditEvent } from '@/lib/audit';
+import { logAudit } from '@/lib/audit';
 import type { BootstrapDeps } from './bootstrap-core';
 
 export function createBootstrapDeps(client: SupabaseClient): BootstrapDeps {
@@ -63,24 +63,6 @@ export function createBootstrapDeps(client: SupabaseClient): BootstrapDeps {
       if (error) throw new Error('delete user failed');
     },
 
-    async audit(event) {
-      const masked = maskAuditEvent(event);
-      const { error } = await client.from('audit_logs').insert([
-        {
-          action: masked.action,
-          actor_id: masked.actor_id ?? null,
-          actor_email: masked.actor_email ?? null,
-          resource: masked.resource ?? null,
-          resource_id: masked.resource_id ?? null,
-          outcome: masked.outcome,
-          detail: masked.detail ?? null,
-          ip: masked.ip ?? null,
-          user_agent: masked.user_agent ?? null,
-          metadata: masked.metadata ?? null,
-          created_at: masked.created_at ?? new Date().toISOString(),
-        },
-      ]);
-      if (error) throw new Error('audit insert failed');
-    },
+    audit: logAudit,
   };
 }

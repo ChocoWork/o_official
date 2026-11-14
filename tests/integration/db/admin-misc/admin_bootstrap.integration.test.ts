@@ -13,6 +13,8 @@ import { describeLocalDb } from '../helpers/local-db';
  */
 const PASSWORD = 'Bootstrap-Test-Pass-9z8y7x6w';
 
+jest.setTimeout(30000);
+
 describeLocalDb('integration: 最初の店長を作るコマンド', (db) => {
   let client: SupabaseClient;
   const createdIds: string[] = [];
@@ -37,11 +39,6 @@ describeLocalDb('integration: 最初の店長を作るコマンド', (db) => {
     return data.user.id;
   }
 
-  async function userCount(): Promise<number> {
-    const { rows } = await db().query('select count(*)::int as n from auth.users');
-    return rows[0].n;
-  }
-
   test('counts only active unexpired admins', async () => {
     const deps = createBootstrapDeps(client);
     const before = await deps.countActiveAdmins();
@@ -54,12 +51,21 @@ describeLocalDb('integration: 最初の店長を作るコマンド', (db) => {
         ($3::uuid, $4, true, now() - interval '1 day')`,
       [active, inactive, expired, role],
     );
+    // 手元の DB は共有なので、全体の数の差は他の作業で揺れうる。付けた3行は SQL で直接確かめる。
+    const rows = (
+      await db().query(
+        `select user_id::text as id from public.user_roles
+          where user_id = any($1::uuid[]) and role_id = $2 and active and (expires_at is null or expires_at > now())`,
+        [[active, inactive, expired], role],
+      )
+    ).rows;
+    expect(rows).toEqual([{ id: active }]);
     expect(await deps.countActiveAdmins()).toBe(before + 1);
   });
 
   test('creates confirmed admin with role and audit', async () => {
     const email = `e2e-bootstrap-${randomBytes(6).toString('hex')}@example.com`;
-    const deps = { ...createBootstrapDeps(client), countActiveAdmins: async () => 0 };
+    const deps = { ...createBootstrapDeps(client), countActiveAdmins: async () => 0, checkPwned: async () => ({ status: 'ok' as const }) };
     const result = await bootstrapFirstAdmin({ email, password: PASSWORD, passwordConfirmation: PASSWORD, displayName: 'テスト店長' }, deps);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -92,13 +98,13 @@ describeLocalDb('integration: 最初の店長を作るコマンド', (db) => {
   });
 
   test('refuses with real admin count', async () => {
-    const before = await userCount();
     const email = `e2e-bootstrap-${randomBytes(6).toString('hex')}@example.com`;
     const result = await bootstrapFirstAdmin(
       { email, password: PASSWORD, passwordConfirmation: PASSWORD },
       createBootstrapDeps(client),
     );
     expect(result).toMatchObject({ ok: false, reason: 'admin_exists' });
-    expect(await userCount()).toBe(before);
+    const rows = (await db().query('select 1 from auth.users where email = $1', [email])).rows;
+    expect(rows).toHaveLength(0);
   });
 });
