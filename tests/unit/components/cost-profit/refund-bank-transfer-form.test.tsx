@@ -39,6 +39,17 @@ function fillValid(form: HTMLElement) {
 }
 
 describe('振込の記録', () => {
+	it('FREQ-584-AC-03: 振込の日の下に、切り替えの日より前とカード会社の取り消しが確定した日以前は記録できない旨を、日を入れる前から出す', () => {
+		serve();
+		const { form } = open();
+		const hint = '切り替えの日より前の日と、カード会社の取り消しが確定した日以前の日は、記録できません。';
+		expect(within(form).getByText(hint)).toBeInTheDocument();
+		// この断りは DB が決める（画面は日付を知らない）ので、入れた日では消えず、送る前に止めもしない
+		fireEvent.change(bankDate(form), { target: { value: '2026-11-10' } });
+		expect(within(form).getByText(hint)).toBeInTheDocument();
+		expect(form.textContent).not.toMatch(/[!！]/);
+	});
+
 	it('FREQ-584-AC-03: 振込の記録は未来の日と額0を送る前に止める', () => {
 		const api = serve();
 		const { form } = open();

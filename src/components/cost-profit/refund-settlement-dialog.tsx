@@ -1,22 +1,40 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button/Button";
 import { Dialog } from "@/components/ui/Dialog/Dialog";
-import { accountingUrl, inputClassName, labelClassName, noteClassName } from "./accounting-api";
+import {
+  accountingUrl,
+  dayLabel,
+  getAccountingData,
+  hasArray,
+  inputClassName,
+  labelClassName,
+  noteClassName,
+} from "./accounting-api";
 import { currency } from "./constants";
 import { sendAccountingJson } from "./period-form";
 
 // やり直しの返金と借りの結び（FREQ-579-AC-05。preflight #16）。借りが残る返金（元の返金）と、同じ注文のやり直しの返金を選んで結ぶ。
 // 開くのは権限 admin.accounting.entries.correct のある人だけ（呼ぶ側が出し分ける。route と DB が最後に確かめる）。
-// 同じ出来事の返金を候補の先頭に出す。借りの仕訳がまだ・残高を超える時（409）は、理由の文を出す。
+// 候補は GET /refund-settlements/candidates から読む（同じ注文で成功した返金のうち、結びの関数が受ける物だけ。同じ出来事の返金が先頭）。
+// 借りの仕訳がまだ・残高を超える時（409）は、理由の文を出す。
 
+/** route（GET /refund-settlements/candidates）が返す候補。名前・メール・住所は無い */
 export type SettlementCandidate = {
   refundId: string;
-  /** 候補の表示（注文の返金の番号の頭など。名前・メールは入れない） */
-  label: string;
-  /** 元の返金と同じ出来事の返金（先頭に出す） */
+  amount: number;
+  /** 成功を知った日（日本の日付） */
+  succeededOn: string;
+  eventId: string | null;
+  eventKind: string;
+  /** 元の返金と同じ出来事の返金（route が先頭に並べる） */
   sameEvent: boolean;
+};
+
+const labelOf = (candidate: SettlementCandidate): string => {
+  const base = `返金 ${candidate.refundId.slice(0, 8).toUpperCase()}　${dayLabel(candidate.succeededOn)}に成功　${currency(candidate.amount)}`;
+  return candidate.sameEvent ? `${base}（同じ出来事）` : base;
 };
 
 const NOT_POSTABLE_TEXT = "借りの仕訳がまだ入っていないか、返す額が借りの残高を超えています。内容を確かめてください。";
@@ -24,13 +42,11 @@ const NO_CANDIDATE_TEXT = "結べるやり直しの返金が見つかりませ�
 
 export function RefundSettlementDialog({
   owed,
-  candidates,
   onClose,
   onDone,
 }: {
   /** 借りが残る返金（元の返金） */
   owed: { refundId: string; orderNumber: string; owedPre: number; owedPost: number };
-  candidates: readonly SettlementCandidate[];
   onClose: () => void;
   /** 結べた（同じ要求の再送で前の結果が返った時も）。親が一覧を読み直す */
   onDone: () => void;
@@ -38,11 +54,33 @@ export function RefundSettlementDialog({
   const [payingId, setPayingId] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [candidates, setCandidates] = useState<SettlementCandidate[] | null>(null);
+  const [readError, setReadError] = useState<string | null>(null);
   const guard = useRef(false);
   const keyRef = useRef(crypto.randomUUID());
 
-  const ordered = [...candidates].sort((a, b) => Number(b.sameEvent) - Number(a.sameEvent));
-  const canSubmit = !sending && payingId !== "" && candidates.some((candidate) => candidate.refundId === payingId);
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const result = await getAccountingData<{ candidates: SettlementCandidate[] }>(
+        "refund-settlements/candidates",
+        { owedRefundId: owed.refundId },
+        (data) => hasArray(data, "candidates"),
+      );
+      if (!active) return;
+      if (!result.ok) {
+        setReadError(result.message);
+        setCandidates([]);
+        return;
+      }
+      setCandidates(result.data.candidates);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [owed.refundId]);
+
+  const canSubmit = !sending && payingId !== "" && (candidates ?? []).some((candidate) => candidate.refundId === payingId);
 
   const send = async () => {
     if (!canSubmit || guard.current) return;
@@ -82,7 +120,15 @@ export function RefundSettlementDialog({
             .filter((text): text is string => text !== null)
             .join("　")}
         </p>
-        {candidates.length === 0 ? (
+        {candidates === null ? (
+          <p role="status" className={noteClassName}>
+            読み込み中
+          </p>
+        ) : readError ? (
+          <p role="alert" className="font-acumin lk-text-3xs text-red-700">
+            {readError}
+          </p>
+        ) : candidates.length === 0 ? (
           <p className={noteClassName}>{NO_CANDIDATE_TEXT}</p>
         ) : (
           <label className="block">
@@ -99,9 +145,9 @@ export function RefundSettlementDialog({
               }}
             >
               <option value="">選んでください</option>
-              {ordered.map((candidate) => (
+              {candidates.map((candidate) => (
                 <option key={candidate.refundId} value={candidate.refundId}>
-                  {candidate.sameEvent ? `${candidate.label}（同じ出来事）` : candidate.label}
+                  {labelOf(candidate)}
                 </option>
               ))}
             </select>

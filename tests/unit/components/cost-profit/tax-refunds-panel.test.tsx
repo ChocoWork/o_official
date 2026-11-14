@@ -65,6 +65,29 @@ const from = (region: HTMLElement) => within(region).getByLabelText('期間の�
 const to = (region: HTMLElement) => within(region).getByLabelText('期間の終わり') as HTMLInputElement;
 const show = (region: HTMLElement) => within(region).getByRole('button', { name: '一覧を出す' });
 
+describe('月の形の確かめ', () => {
+	it('FREQ-583-AC-01: 月の入力が使えない環境で、2026-10 の形でない月が入ると、送る前に止めて「2026-10 の形」の文を出す', () => {
+		const api = serve();
+		const region = open();
+		// 月の入力が文字の欄になる環境（月の選びが無い）を再現する。画面を描き直すと月の入力に戻るので、入れる前に毎回文字の欄にする
+		const typeInto = (input: HTMLInputElement, value: string) => {
+			input.setAttribute('type', 'text');
+			fireEvent.change(input, { target: { value } });
+		};
+		typeInto(from(region), '2026/10');
+		expect(within(region).getByText('月は 2026-10 の形で入れてください。')).toBeInTheDocument();
+		expect(show(region)).toBeDisabled();
+		fireEvent.click(show(region));
+		expect(api.calls.filter((call) => call.url === `${BASE}/tax-refunds`)).toHaveLength(0);
+		// 13月は形が合わない。正しい月に直すと文が消えて送れる
+		typeInto(from(region), '2026-13');
+		expect(within(region).getByText('月は 2026-10 の形で入れてください。')).toBeInTheDocument();
+		typeInto(from(region), '2026-10');
+		expect(within(region).queryByText('月は 2026-10 の形で入れてください。')).not.toBeInTheDocument();
+		expect(show(region)).toBeEnabled();
+	});
+});
+
 describe('消費税用の返金の一覧', () => {
 	it('FREQ-583-AC-01: 消費税用の返金の一覧は項目と対象外の理由を出し、名前やメールを出さない', async () => {
 		const api = serve({

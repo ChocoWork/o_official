@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> 会計の計画3 Task 11c 確認日: 2026-11-14。Route Handler を1ファイル・1メソッド足した（198ファイル・250メソッド、表は197行・249メソッド）: `/api/admin/accounting/refund-settlements/candidates`。契約は [API仕様](api-spec.md) の「管理:会計・法定保存」。
+>
 > 会計の計画3 Task 11a 確認日: 2026-11-14。Route Handler を1ファイル・1メソッド足した（197ファイル・249メソッド、表は196行・248メソッド）: `/api/admin/accounting/pending-events/[id]/link-entry`。契約は [API仕様](api-spec.md) の「管理:会計・法定保存」。
 >
 > 会計の計画3 Task 10 確認日: 2026-11-14。Route Handler を7ファイル・9メソッド足した（196ファイル・248メソッド、表は195行・247メソッド）: `/api/admin/accounting/return-arrival`・`return-options`・`refund-states`・`refund-cancellations`・`refund-bank-transfers`・`refund-settlements`・`tax-refunds`。契約は [API仕様](api-spec.md) の「管理:会計・法定保存」。
@@ -93,6 +95,7 @@
 | `/api/admin/accounting/refund-cancellations` | `POST` | [route.ts](../../../src/app/api/admin/accounting/refund-cancellations/route.ts) （会計 計画3 Task 10: 取り消しの区分。`admin.accounting.entries.correct`） |
 | `/api/admin/accounting/refund-bank-transfers` | `POST` | [route.ts](../../../src/app/api/admin/accounting/refund-bank-transfers/route.ts) （会計 計画3 Task 10: 振込の記録。`admin.finance.manage`） |
 | `/api/admin/accounting/refund-settlements` | `POST` | [route.ts](../../../src/app/api/admin/accounting/refund-settlements/route.ts) （会計 計画3 Task 10: やり直しの結び。`admin.accounting.entries.correct`） |
+| `/api/admin/accounting/refund-settlements/candidates` | `GET` | [route.ts](../../../src/app/api/admin/accounting/refund-settlements/candidates/route.ts) （会計 計画3 Task 11c: やり直しの結びの候補。`admin.finance.read`） |
 | `/api/admin/accounting/tax-refunds` | `GET` | [route.ts](../../../src/app/api/admin/accounting/tax-refunds/route.ts) （会計 計画3 Task 10: 消費税用の返金の一覧。`admin.finance.read`） |
 | `/api/admin/audit-logs` | `GET` | [route.ts](../../../src/app/api/admin/audit-logs/route.ts) |
 | `/api/admin/contact/[id]/reply` | `POST` | [route.ts](../../../src/app/api/admin/contact/%5Bid%5D/reply/route.ts) |

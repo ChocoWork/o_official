@@ -18,12 +18,14 @@ function state(n: number, overrides: State = {}): State {
 		postAmount: 3000,
 		owedPre: 0,
 		owedPost: 3000,
+		owedReturn: 0,
+		eventKind: 'none',
 		canceledAt: '2026-11-08T01:00:00+00:00',
 		...overrides,
 	};
 }
 
-type Serve = { refunds?: State[]; flags?: Flags; status?: number; next?: { at: string; id: string } | null };
+type Serve = { refunds?: State[]; flags?: Flags; status?: number; next?: { at: string; id: string } | null; candidates?: unknown[] };
 
 function serve(config: Serve = {}) {
 	return mockFetch((url, method) => {
@@ -33,6 +35,9 @@ function serve(config: Serve = {}) {
 				status: 200,
 				body: envelope({ refunds: config.refunds ?? [state(1)], nextAfterAt: config.next?.at ?? null, nextAfterId: config.next?.id ?? null }, config.flags ?? ALL_FLAGS),
 			};
+		}
+		if (url.pathname === `${BASE}/refund-settlements/candidates` && method === 'GET') {
+			return { status: 200, body: envelope({ candidates: config.candidates ?? [] }, config.flags ?? ALL_FLAGS) };
 		}
 		return undefined;
 	});
@@ -62,15 +67,58 @@ describe('借りが残る返金の一覧', () => {
 		expect(region.textContent).toContain('取り消しの区分を選ぶ返金は、計上待ちのタブに出ます');
 	});
 
-	it('FREQ-579-AC-05: 結びの操作は権限のある人だけに出て、発送前の取り消しの借りには出さず、振込の記録へ案内する', async () => {
-		serve({ refunds: [state(1), state(2, { source: 'order_cancel', owedPre: 5000, owedPost: 0 })], flags: ALL_FLAGS });
+	it('FREQ-579-AC-05: 結びの操作は権限のある人だけに出て、発送前の取り消しの出来事の借りには出さず、振込の記録へ案内する（出荷前の分の借りでも、その出来事でなければ結べる）', async () => {
+		serve({
+			refunds: [
+				state(1),
+				state(2, { source: 'order_cancel', owedPre: 5000, owedPost: 0, eventKind: 'pre_shipment_cancel', eventId: uuid(700) }),
+				state(3, { source: 'admin', owedPre: 5000, owedPost: 0 }),
+				state(4, { source: 'admin', owedPre: 2000, owedPost: 1000 }),
+			],
+			flags: ALL_FLAGS,
+		});
 		const region = open();
 		const list = await within(region).findByRole('list', { name: '借りが残る返金の一覧' });
-		const [post, pre] = within(list).getAllByRole('listitem');
+		const [post, preCancel, pre, mixed] = within(list).getAllByRole('listitem');
 		expect(within(post).getByRole('button', { name: 'やり直しと結ぶ' })).toBeInTheDocument();
-		expect(within(pre).queryByRole('button', { name: 'やり直しと結ぶ' })).not.toBeInTheDocument();
-		expect(pre.textContent).toContain('発送前の取り消しの返金の借りは、振込で返して記録してください。');
-		expect(within(pre).getByRole('button', { name: '振込を記録する' })).toBeInTheDocument();
+		expect(within(preCancel).queryByRole('button', { name: 'やり直しと結ぶ' })).not.toBeInTheDocument();
+		expect(preCancel.textContent).toContain('発送前の取り消しの返金の借りは、振込で返して記録してください。');
+		expect(within(preCancel).getByRole('button', { name: '振込を記録する' })).toBeInTheDocument();
+		// 出荷前の分の借りでも、発送前の取り消しの出来事でなければ結べ、案内も出さない
+		expect(within(pre).getByRole('button', { name: 'やり直しと結ぶ' })).toBeInTheDocument();
+		expect(pre.textContent).not.toContain('発送前の取り消しの返金の借りは');
+		// 出荷前と出荷後の両方の借りも結べる
+		expect(within(mixed).getByRole('button', { name: 'やり直しと結ぶ' })).toBeInTheDocument();
+	});
+
+	it('FREQ-579-AC-04: 返すつもりのまま残る返品の返金の行は返品の借りとして出て、origin が return の振込の記録を開く（結ぶ操作は出さない）', async () => {
+		serve({ refunds: [state(5, { source: 'return', state: 'failed', owedPre: 0, owedPost: 0, owedReturn: 16875, eventKind: 'return_receipt', eventId: uuid(701) })] });
+		const region = open();
+		const list = await within(region).findByRole('list', { name: '借りが残る返金の一覧' });
+		const [item] = within(list).getAllByRole('listitem');
+		expect(item.textContent).toContain('返品の返金の借り ¥16,875');
+		expect(item.textContent).toContain('返品の返金の借りは、振込で返して記録してください。');
+		expect(within(item).queryByRole('button', { name: 'やり直しと結ぶ' })).not.toBeInTheDocument();
+		fireEvent.click(within(item).getByRole('button', { name: '振込を記録する' }));
+		const form = await within(region).findByRole('group', { name: '振込で返した分を記録する' });
+		expect(within(form).getByLabelText('借りの種類')).toHaveValue('return');
+	});
+
+	it('FREQ-579-AC-04: 1つの行に借りの枝が複数ある時は、枝ごとに振込の記録のボタンを出す', async () => {
+		serve({ refunds: [state(6, { owedPre: 2000, owedPost: 1000, owedReturn: 500 })] });
+		const region = open();
+		const list = await within(region).findByRole('list', { name: '借りが残る返金の一覧' });
+		const [item] = within(list).getAllByRole('listitem');
+		const cases = [
+			['振込を記録する（出荷前の返金）', 'pre_shipment'],
+			['振込を記録する（出荷後の返金・値引き）', 'post_shipment'],
+			['振込を記録する（返品の返金）', 'return'],
+		];
+		for (const [name, origin] of cases) {
+			fireEvent.click(within(item).getByRole('button', { name }));
+			const form = await within(region).findByRole('group', { name: '振込で返した分を記録する' });
+			expect(within(form).getByLabelText('借りの種類')).toHaveValue(origin);
+		}
 	});
 
 	it('FREQ-584-AC-02: 権限が無い人にはボタンを出さず、読み取りだけにする', async () => {
@@ -91,13 +139,23 @@ describe('借りが残る返金の一覧', () => {
 		expect(within(form).getByLabelText('借りの種類')).toHaveValue('post_shipment');
 	});
 
-	it('FREQ-579-AC-05: やり直しと結ぶを押すと、同じ注文のほかの返金を候補にした画面が開く', async () => {
-		serve({ refunds: [state(1), state(1, { refundId: uuid(550), state: 'succeeded', owedPost: 0 })] });
+	it('FREQ-579-AC-05: やり直しと結ぶを押すと、route が返した候補（同じ出来事の返金が先頭）を出した画面が開く', async () => {
+		const candidates = [
+			{ refundId: uuid(551), amount: 3000, succeededOn: '2026-11-07', eventId: uuid(702), eventKind: 'return_receipt', sameEvent: true },
+			{ refundId: uuid(552), amount: 3000, succeededOn: '2026-11-06', eventId: null, eventKind: 'none', sameEvent: false },
+		];
+		const api = serve({ refunds: [state(1)], candidates });
 		const region = open();
 		const list = await within(region).findByRole('list', { name: '借りが残る返金の一覧' });
 		fireEvent.click(within(list).getByRole('button', { name: 'やり直しと結ぶ' }));
 		const dialog = await screen.findByRole('dialog', { name: 'やり直しの返金と結ぶ' });
-		await waitFor(() => expect(within(within(dialog).getByLabelText('やり直しの返金')).getAllByRole('option')).toHaveLength(2));
+		await waitFor(() => expect(within(within(dialog).getByLabelText('やり直しの返金')).getAllByRole('option')).toHaveLength(3));
+		const texts = within(within(dialog).getByLabelText('やり直しの返金')).getAllByRole('option').map((option) => option.textContent);
+		expect(texts[1]).toContain('同じ出来事');
+		expect(texts[2]).not.toContain('同じ出来事');
+		// 候補は借りの返金の番号で読む（ほかの行から作らない）
+		const read = api.fn.mock.calls.map((call) => String(call[0])).find((url) => url.includes('/refund-settlements/candidates'));
+		expect(new URL(read ?? '', 'https://example.test').searchParams.get('owedRefundId')).toBe(uuid(501));
 	});
 
 	it('FREQ-584-AC-05: 読めなかった時は固定の文を出す', async () => {

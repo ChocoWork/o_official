@@ -13,12 +13,14 @@ import {
 } from "./accounting-api";
 import { currency } from "./constants";
 import { RefundBankTransferForm, type BankTransferOrigin } from "./refund-bank-transfer-form";
-import { RefundSettlementDialog, type SettlementCandidate } from "./refund-settlement-dialog";
+import { RefundSettlementDialog } from "./refund-settlement-dialog";
 import { NoticeLine, successNotice, type Notice } from "./period-form";
 
 // 借りが残る返金の一覧と、振込の記録・やり直しの結び（FREQ-579-AC-04・AC-05。計画3 Task 11）。
-// route（GET /refund-states）の答えは、取り消しの区分待ちと、借りが残る返金。区分待ちは計上待ちのタブで選ぶので、ここには借りが残る物だけを出す。
+// route（GET /refund-states）の答えは、取り消しの区分待ちと、借りが残る返金（出荷前・出荷後の分の借りと、返すつもりのまま残る返品の返金）。
+// 区分待ちは計上待ちのタブで選ぶので、ここには借りが残る物だけを出す。
 // 同じ返金が2行返ることがある（SQL の Minor 7）ので、返金の番号で1つにまとめる。名前・メールは出さない。
+// 結びの候補はやり直しの結びの画面が route（GET /refund-settlements/candidates）から読む。
 
 type RefundStateRow = {
   refundId: string;
@@ -30,6 +32,10 @@ type RefundStateRow = {
   postAmount: number;
   owedPre: number;
   owedPost: number;
+  /** 返すつもりのまま残る返品の返金の額（origin return の振込が受ける額） */
+  owedReturn: number;
+  /** 返金の出来事（出来事なしは none）。pre_shipment_cancel の借りは結べない */
+  eventKind: string;
   canceledAt: string | null;
 };
 
@@ -49,6 +55,7 @@ const SOURCE_LABEL: Readonly<Record<string, string>> = {
 };
 
 const PRE_SHIPMENT_GUIDE = "発送前の取り消しの返金の借りは、振込で返して記録してください。";
+const RETURN_DEBT_GUIDE = "返品の返金の借りは、振込で返して記録してください。";
 const CANCEL_TAB_NOTE = "取り消しの区分を選ぶ返金は、計上待ちのタブに出ます。ここには、借りが残る返金を出します。";
 
 /** 同じ返金の行は先に来た方（新しい方）だけ残す */
@@ -63,14 +70,25 @@ function mergeByRefundId(current: readonly RefundStateRow[], incoming: readonly 
   return merged;
 }
 
-const hasDebt = (row: RefundStateRow): boolean => row.state !== "canceled" && (row.owedPre > 0 || row.owedPost > 0);
+const hasDebt = (row: RefundStateRow): boolean =>
+  row.state !== "canceled" && (row.owedPre > 0 || row.owedPost > 0 || row.owedReturn > 0);
+
+const ORIGIN_TEXT: Readonly<Record<BankTransferOrigin, string>> = {
+  pre_shipment: ACCOUNTING_LABELS.refundPreShipment,
+  post_shipment: ACCOUNTING_LABELS.refundAfterShipment,
+  return: ACCOUNTING_LABELS.refundReturn,
+};
 
 /**
- * 借りの種類。発送前の分の借りは出荷前、出荷後の分の借りは出荷後（借りは返金の未払いの発送前・出荷後の枝に載るので、返金の元では決めない）。
- * 返品の返金の借り（origin `return`）の行は、DB の読みを直す次の段で足す。
+ * 借りの種類（振込の記録の元）。借りが載る枝で決める: 出荷前の分は出荷前、出荷後の分は出荷後、返すつもりのまま残る返品の返金は return
+ * （返金の元では決めない）。1つの行に複数の枝があれば、枝ごとに振込を記録する。
  */
-function originOf(row: RefundStateRow): BankTransferOrigin {
-  return row.owedPre > 0 && row.owedPost === 0 ? "pre_shipment" : "post_shipment";
+function originsOf(row: RefundStateRow): BankTransferOrigin[] {
+  return [
+    ...(row.owedPre > 0 ? (["pre_shipment"] as const) : []),
+    ...(row.owedPost > 0 ? (["post_shipment"] as const) : []),
+    ...(row.owedReturn > 0 ? (["return"] as const) : []),
+  ];
 }
 
 export function RefundDebtsPanel(): React.JSX.Element {
@@ -119,11 +137,6 @@ export function RefundDebtsPanel(): React.JSX.Element {
   };
 
   const debts = rows.filter(hasDebt);
-  // 結びの候補。同じ注文の、ほかの返金（この読みが返した行だけ。同じ出来事かどうかは、この読みには無い）
-  const candidatesOf = (row: RefundStateRow): SettlementCandidate[] =>
-    rows
-      .filter((other) => other.orderId === row.orderId && other.refundId !== row.refundId)
-      .map((other) => ({ refundId: other.refundId, label: `返金 ${other.refundId.slice(0, 8).toUpperCase()}`, sameEvent: false }));
 
   return (
     <Section title="返金の借りと振込の記録">
@@ -143,7 +156,10 @@ export function RefundDebtsPanel(): React.JSX.Element {
       {debts.length > 0 ? (
         <ul aria-label="借りが残る返金の一覧" className="space-y-3">
           {debts.map((row) => {
-            const preOnly = row.owedPre > 0;
+            const origins = originsOf(row);
+            // 発送前の取り消しの出来事の借りは結べない（DB が断る）。結ぶのは、出荷前・出荷後の分の借りだけ（返品の返金の借りは振込）
+            const preCancel = row.eventKind === "pre_shipment_cancel";
+            const canSettle = !preCancel && (row.owedPre > 0 || row.owedPost > 0);
             return (
               <li key={row.refundId} className="space-y-2 rounded-sm border border-[#ededed] p-3">
                 <p className="font-acumin lk-text-4xs text-black tabular-nums">
@@ -152,24 +168,29 @@ export function RefundDebtsPanel(): React.JSX.Element {
                     SOURCE_LABEL[row.source] ?? "返金",
                     row.owedPre > 0 ? `出荷前の分の借り ${currency(row.owedPre)}` : null,
                     row.owedPost > 0 ? `出荷後の分の借り ${currency(row.owedPost)}` : null,
+                    row.owedReturn > 0 ? `返品の返金の借り ${currency(row.owedReturn)}` : null,
                   ]
                     .filter((text): text is string => text !== null)
                     .join("　")}
                 </p>
-                {preOnly ? <p className={noteClassName}>{PRE_SHIPMENT_GUIDE}</p> : null}
+                {preCancel ? <p className={noteClassName}>{PRE_SHIPMENT_GUIDE}</p> : null}
+                {row.owedReturn > 0 ? <p className={noteClassName}>{RETURN_DEBT_GUIDE}</p> : null}
                 <div className="flex flex-wrap gap-2">
-                  {permissions.manageFinance ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      shape="rounded"
-                      className="font-acumin"
-                      onClick={() => setBankFor({ orderId: row.orderId, orderNumber: row.orderNumber, origin: originOf(row) })}
-                    >
-                      振込を記録する
-                    </Button>
-                  ) : null}
-                  {permissions.correctEntries && !preOnly ? (
+                  {permissions.manageFinance
+                    ? origins.map((origin) => (
+                        <Button
+                          key={origin}
+                          variant="outline"
+                          size="sm"
+                          shape="rounded"
+                          className="font-acumin"
+                          onClick={() => setBankFor({ orderId: row.orderId, orderNumber: row.orderNumber, origin })}
+                        >
+                          {origins.length > 1 ? `振込を記録する（${ORIGIN_TEXT[origin]}）` : "振込を記録する"}
+                        </Button>
+                      ))
+                    : null}
+                  {permissions.correctEntries && canSettle ? (
                     <Button variant="outline" size="sm" shape="rounded" className="font-acumin" onClick={() => setSettling(row)}>
                       やり直しと結ぶ
                     </Button>
@@ -197,7 +218,6 @@ export function RefundDebtsPanel(): React.JSX.Element {
       {settling ? (
         <RefundSettlementDialog
           owed={{ refundId: settling.refundId, orderNumber: settling.orderNumber, owedPre: settling.owedPre, owedPost: settling.owedPost }}
-          candidates={candidatesOf(settling)}
           onClose={() => setSettling(null)}
           onDone={() => {
             setSettling(null);

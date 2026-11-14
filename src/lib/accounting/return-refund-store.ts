@@ -8,10 +8,12 @@ import type {
 	RefundBankTransferBody,
 	RefundCancellationBody,
 	RefundSettlementBody,
+	RefundSettleCandidatesQuery,
 	RefundStatesQuery,
 	ReturnOptionBody,
 	TaxRefundsQuery,
 } from '@/lib/accounting/return-refund-schema';
+import { REFUND_FACT_EVENT_KINDS, type RefundFactEventKind } from '@/lib/accounting/return-refund-types';
 
 // 返品の届いた日・配達日の設定・返金の取り消しの区分・振込の記録・結び・消費税用の返金の一覧の public 入口を service_role で呼ぶ
 // （計画3 Task 10）。失敗は message と SQLSTATE が表と両方一致した時だけ固定コードにし、DB の生の文は持たない。
@@ -163,6 +165,9 @@ const refundStatesSchema = z
 					post_amount: count,
 					owed_pre: count,
 					owed_post: count,
+					owed_return: count,
+					event_id: uuid.nullable(),
+					event_kind: z.enum(REFUND_FACT_EVENT_KINDS),
 					canceled_at: timestamp.nullable(),
 				})
 				.strict(),
@@ -182,6 +187,11 @@ export type RefundStateRow = {
 	postAmount: number;
 	owedPre: number;
 	owedPost: number;
+	/** 返品の返金が返すつもりのまま残っている額（origin return の振込が受ける額）。0 なら返品の借りではない。 */
+	owedReturn: number;
+	/** 返金の出来事（出来事なしは null・`none`）。`pre_shipment_cancel` の借りは結べず、振込で返す。 */
+	eventId: string | null;
+	eventKind: RefundFactEventKind;
 	canceledAt: string | null;
 };
 export type RefundStatesPage = { refunds: RefundStateRow[]; nextAfterAt: string | null; nextAfterId: string | null };
@@ -207,11 +217,60 @@ export async function listRefundStates(client: SupabaseClient, query: RefundStat
 			postAmount: r.post_amount,
 			owedPre: r.owed_pre,
 			owedPost: r.owed_post,
+			owedReturn: r.owed_return,
+			eventId: r.event_id,
+			eventKind: r.event_kind,
 			canceledAt: r.canceled_at,
 		})),
 		nextAfterAt: page.next_after_at,
 		nextAfterId: page.next_after_id,
 	};
+}
+
+// ---- 結びの候補 ----
+
+const settleCandidatesSchema = z
+	.object({
+		candidates: z.array(
+			z
+				.object({
+					refund_id: uuid,
+					amount: count,
+					succeeded_on: date,
+					event_id: uuid.nullable(),
+					event_kind: z.enum(REFUND_FACT_EVENT_KINDS),
+					same_event: z.boolean(),
+				})
+				.strict(),
+		),
+	})
+	.strict();
+
+export type RefundSettleCandidate = {
+	refundId: string;
+	amount: number;
+	/** 成功を知った日（日本の日付）。 */
+	succeededOn: string;
+	eventId: string | null;
+	eventKind: RefundFactEventKind;
+	/** 借りの返金と同じ出来事の返金（候補の先頭に並ぶ）。 */
+	sameEvent: boolean;
+};
+
+/**
+ * 借りの返金を結べる返金（同じ注文で、成功して、まだ結ばれておらず、結びの関数が受けるもの）。同じ出来事の返金が先頭。
+ * 発送前の取り消しの出来事の借りには候補が無い（空）。名前・メール・住所は DB の読み口が持たない。
+ */
+export async function listRefundSettleCandidates(client: SupabaseClient, query: RefundSettleCandidatesQuery): Promise<RefundSettleCandidate[]> {
+	const data = parse(settleCandidatesSchema, await rpc(client, 'list_refund_settle_candidates', { _owed_refund_id: query.owedRefundId }));
+	return data.candidates.map((c) => ({
+		refundId: c.refund_id,
+		amount: c.amount,
+		succeededOn: c.succeeded_on,
+		eventId: c.event_id,
+		eventKind: c.event_kind,
+		sameEvent: c.same_event,
+	}));
 }
 
 // ---- 取り消しの区分 ----

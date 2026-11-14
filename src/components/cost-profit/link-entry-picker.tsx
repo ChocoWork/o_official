@@ -165,7 +165,7 @@ export function LinkEntryPicker({
         <p className={noteClassName}>この期間に、選べる手入力の仕訳はありません。別の期間を選ぶか、先に手で仕訳を入れてください。</p>
       ) : null}
       {truncated ? <p className={noteClassName}>仕訳が多いため、読み込めた範囲だけを出しています。</p> : null}
-      <p className={noteClassName}>この注文の行がある手入力の仕訳か、注文を使わない手入力の仕訳だけが選べます。取り消された仕訳は出ません。</p>
+      <p className={noteClassName}>この注文の行がある手入力の仕訳か、注文を使わない手入力の仕訳だけが選べます。この期間で取り消された仕訳は出ません。別の期間で取り消された仕訳は出てしまうので、選んでも結ぶ時に断られます。</p>
     </div>
   );
 }

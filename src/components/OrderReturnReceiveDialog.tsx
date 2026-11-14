@@ -14,7 +14,7 @@ import { blockEnterSubmit } from '@/hooks/useRefundSubmission';
 import { useUnitPricingEstimate } from '@/hooks/useUnitPricingEstimate';
 import { parseActionResponse, readRecord, useReturnOperation, type ReturnActionResponse } from '@/hooks/useReturnOperation';
 import { toJstDate } from '@/lib/accounting/jst-date';
-import { RETURN_ARRIVAL_INVALID_NOTE } from '@/lib/accounting/return-refund-types';
+import { RETURN_ARRIVAL_INVALID_NOTE_COMMON } from '@/lib/accounting/return-refund-types';
 import { lineLabel } from '@/lib/orders/fulfillment/fulfillment-client';
 import { formatYen } from '@/lib/orders/refund/refund-messages';
 import { buildReceiveButtonLabel, computePerItemReturnRefundPreview, type ReceivePreviewLine } from '@/lib/orders/returns/return-calc';
@@ -351,7 +351,8 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
       // 在庫不足の断り。画面を開いた後に同じ色・サイズの在庫が戻った行へ上書きを送ると、DB は足りる行への上書きを
       // RETURN_ARGUMENT_INVALID で断る。どちらも返品を読み直して今の在庫で数え直す（足りるようになった行の上書きは overrideOf が送らない）
       // 届いた日が断られた時は、選べない日の説明を添える。判断待ちの断り（DISPUTE_HOLD）は、止めの印を読み直して「今すぐ返金」を外す
-      if (code === 'RETURN_ARRIVAL_DATE_INVALID') setArrivalRefused(true);
+      // 説明は、届いた日の断りの時だけ出す。別の断りになったら消す
+      setArrivalRefused(code === 'RETURN_ARRIVAL_DATE_INVALID');
       if (code === 'RETURN_EXCHANGE_OUT_OF_STOCK' || code === 'RETURN_ARGUMENT_INVALID' || code === 'DISPUTE_HOLD') {
         setStep('form');
         setAmountEntered(null);
@@ -742,7 +743,7 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
                 }}
               />
               {arrivedFuture ? <p className="font-acumin lk-text-3xs text-red-700">{ARRIVED_FUTURE_TEXT}</p> : null}
-              {arrivalRefused ? <p className="font-acumin lk-text-3xs text-[#474747]">{RETURN_ARRIVAL_INVALID_NOTE}</p> : null}
+              {arrivalRefused ? <p className="font-acumin lk-text-3xs text-[#474747]">{RETURN_ARRIVAL_INVALID_NOTE_COMMON}</p> : null}
               {disputeHold ? <p className="font-acumin lk-text-3xs text-[#474747]">{DISPUTE_HOLD_RECEIVE_TEXT}</p> : null}
 
               <ul aria-label="受け取る品" className="space-y-3">

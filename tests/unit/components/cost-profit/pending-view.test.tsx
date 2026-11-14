@@ -9,6 +9,10 @@ import { mockFetch, solePeriod } from './settings-fixtures';
 type Serve = {
 	cancellation?: { status: number; body: unknown };
 	journal?: unknown[];
+	/** 仕訳帳を何ページかに分けて返す（afterEntryNo は続きの目印。最初のページは null） */
+	journalPager?: (afterEntryNo: number | null) => { entries: unknown[]; nextAfter: { entryDate: string; entryNo: number } | null };
+	/** 区分を決めても一覧から行を消さない（計上が間に合っていない状態） */
+	keepAfterDecision?: boolean;
 	link?: { status: number; body: unknown };
 	events?: ReturnType<typeof pendingEvent>[];
 	flags?: Flags;
@@ -65,7 +69,7 @@ function serve(state: Serve = {}) {
 		}
 		if (url.pathname === `${BASE}/refund-cancellations` && method === 'POST') {
 			const reply = state.cancellation ?? { status: 200, body: { data: { decision: { refundId: uuid(77), state: 'owed', eventId: null, replayed: false } } } };
-			if (reply.status === 200) events = events.filter((event) => event.reason !== 'refund_cancel_undecided');
+			if (reply.status === 200 && !state.keepAfterDecision) events = events.filter((event) => event.reason !== 'refund_cancel_undecided');
 			return reply;
 		}
 		if (/\/pending-events\/[^/]+\/link-entry$/.test(url.pathname) && method === 'POST') {
@@ -73,7 +77,14 @@ function serve(state: Serve = {}) {
 			if (reply.status === 200) events = events.filter((event) => !url.pathname.includes(event.id));
 			return reply;
 		}
-		if (url.pathname === `${BASE}/journal`) return { status: 200, body: envelope({ entries: state.journal ?? [], nextAfter: null, opening: [], shipmentMeta: [] }, flags) };
+		if (url.pathname === `${BASE}/journal`) {
+			if (state.journalPager) {
+				const after = url.searchParams.get('afterEntryNo');
+				const page = state.journalPager(after === null ? null : Number(after));
+				return { status: 200, body: envelope({ ...page, opening: [], shipmentMeta: [] }, flags) };
+			}
+			return { status: 200, body: envelope({ entries: state.journal ?? [], nextAfter: null, opening: [], shipmentMeta: [] }, flags) };
+		}
 		if (url.pathname === `${BASE}/deferred-revenue`) return { status: 200, body: envelope(state.deferred ?? EMPTY_DEFERRED, flags) };
 		if (url.pathname === `${BASE}/periods`) {
 			return { status: 200, body: { data: { periods: state.periods ?? [], settings: {}, deadlines: {}, interim: {}, startup: [] }, permissions: { manageSettings: false } } };
@@ -468,6 +479,7 @@ describe('計上待ちのタブ', () => {
 			render(<PendingView />);
 			fireEvent.click(await screen.findByRole('button', { name: '取り消しの区分を選ぶ' }));
 			const dialog = await screen.findByRole('dialog', { name: '返金の取り消しの区分を選ぶ' });
+			await waitFor(() => expect(within(dialog).getByTestId('abandon-note')).toBeInTheDocument());
 			expect(within(dialog).getAllByRole('radio')).toHaveLength(2);
 			const send = within(dialog).getByRole('button', { name: '区分を決める' });
 			expect(send).toBeDisabled();
@@ -492,6 +504,7 @@ describe('計上待ちのタブ', () => {
 			render(<PendingView />);
 			fireEvent.click(await screen.findByRole('button', { name: '取り消しの区分を選ぶ' }));
 			const dialog = await screen.findByRole('dialog', { name: '返金の取り消しの区分を選ぶ' });
+			await waitFor(() => expect(within(dialog).getByTestId('abandon-note')).toBeInTheDocument());
 			fireEvent.click(within(dialog).getByRole('radio', { name: '返すつもりのまま返せなかった' }));
 			fireEvent.change(within(dialog).getByLabelText('理由（必須）'), { target: { value: '振込で返す' } });
 			fireEvent.click(within(dialog).getByRole('button', { name: '区分を決める' }));
@@ -502,6 +515,22 @@ describe('計上待ちのタブ', () => {
 			expect(api.calls.filter((call) => call.url === `${BASE}/pending-events` && call.method === 'GET').length).toBeGreaterThanOrEqual(2);
 			expect(screen.queryByRole('dialog', { name: '返金の取り消しの区分を選ぶ' })).not.toBeInTheDocument();
 		});
+	});
+
+	it('FREQ-579-AC-03: 区分を決めた返金は、計上が間に合わず行が残っていても、取り消しの区分を選ぶボタンを外し、決めた旨を出す（二重に決めない）', async () => {
+		serve({
+			events: [pendingEvent(1, { reason: 'refund_cancel_undecided', eventKind: 'refund_failed', detail: { refund_id: uuid(77), canceled_on: '2026-11-08' } })],
+			keepAfterDecision: true,
+		});
+		render(<PendingView />);
+		fireEvent.click(await screen.findByRole('button', { name: '取り消しの区分を選ぶ' }));
+		const dialog = await screen.findByRole('dialog', { name: '返金の取り消しの区分を選ぶ' });
+		await waitFor(() => expect(within(dialog).getByTestId('abandon-note')).toBeInTheDocument());
+		fireEvent.click(within(dialog).getByRole('radio', { name: '返すつもりのまま返せなかった' }));
+		fireEvent.change(within(dialog).getByLabelText('理由（必須）'), { target: { value: '振込で返す' } });
+		fireEvent.click(within(dialog).getByRole('button', { name: '区分を決める' }));
+		expect(await screen.findByText('区分は決めました。計上されると、この行は閉じます')).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: '取り消しの区分を選ぶ' })).not.toBeInTheDocument();
 	});
 
 	describe('手で入れた仕訳と結ぶ', () => {
@@ -565,6 +594,54 @@ describe('計上待ちのタブ', () => {
 			expect(within(screen.getByRole('region', { name: '計上待ち' })).getByLabelText('仕訳を探す期間')).toHaveValue(uuid(2026));
 		});
 
+		it('FREQ-569-AC-07: 仕訳が何ページにもなる期間では続きを読んで、後のページの仕訳も選べる（続きの目印を送る）', async () => {
+			const api = serve({
+				events: [manual()],
+				periods: periods(),
+				journalPager: (after) => (after === null
+					? { entries: [journalEntry(1)], nextAfter: { entryDate: '2026-11-08', entryNo: 1 } }
+					: { entries: [journalEntry(2)], nextAfter: null }),
+			});
+			render(<PendingView />);
+			fireEvent.click(await screen.findByRole('button', { name: '手で入れた仕訳と結んで閉じる' }));
+			const entry = await picker();
+			await waitFor(() => expect(within(entry).getAllByRole('option')).toHaveLength(3));
+			expect(within(entry).getAllByRole('option').map((option) => option.textContent)).toEqual([
+				'選んでください', 'JE-000001　2026/11/08　手で入れた仕訳1', 'JE-000002　2026/11/08　手で入れた仕訳2',
+			]);
+			const reads = api.fn.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/journal'));
+			expect(reads).toHaveLength(2);
+			expect(reads[0]).not.toContain('afterEntryNo');
+			expect(reads[1]).toContain('afterEntryDate=2026-11-08');
+			expect(reads[1]).toContain('afterEntryNo=1');
+			expect(screen.queryByText('仕訳が多いため、読み込めた範囲だけを出しています。')).not.toBeInTheDocument();
+		});
+
+		it('FREQ-569-AC-07: 続きが10ページを超える期間では、10ページで読むのをやめて、読み込めた範囲だけの旨を出す', async () => {
+			const api = serve({
+				events: [manual()],
+				periods: periods(),
+				journalPager: (after) => {
+					const n = (after ?? 0) + 1;
+					return { entries: [journalEntry(n)], nextAfter: { entryDate: '2026-11-08', entryNo: n } };
+				},
+			});
+			render(<PendingView />);
+			fireEvent.click(await screen.findByRole('button', { name: '手で入れた仕訳と結んで閉じる' }));
+			expect(await screen.findByText('仕訳が多いため、読み込めた範囲だけを出しています。')).toBeInTheDocument();
+			const reads = api.fn.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/journal'));
+			expect(reads).toHaveLength(10);
+			const entry = await picker();
+			expect(within(entry).getAllByRole('option')).toHaveLength(11);
+		});
+
+		it('FREQ-569-AC-07: 別の期間で取り消された仕訳は出てしまうので、選んでも結ぶ時に断られる旨を添える', async () => {
+			serve({ events: [manual()], periods: periods(), journal: JOURNAL });
+			render(<PendingView />);
+			fireEvent.click(await screen.findByRole('button', { name: '手で入れた仕訳と結んで閉じる' }));
+			expect(await screen.findByText(/別の期間で取り消された仕訳は出てしまうので、選んでも結ぶ時に断られます/)).toBeInTheDocument();
+		});
+
 		it('FREQ-569-AC-07: 選べる仕訳が無い期間では、その旨を出して送れない', async () => {
 			serve({ events: [manual()], periods: periods(), journal: [journalEntry(2, { lines: [other(500, uuid(999))] })] });
 			render(<PendingView />);
@@ -626,6 +703,28 @@ describe('計上待ちのタブ', () => {
 		// 知らない理由だけが今までの「確かめてください」になる
 		expect(items[2].textContent).toContain('確かめてください');
 		expect(items[0].textContent).not.toMatch(/^ORD-CCCC3333　確かめてください/);
+		expect(spy.mock.calls.some((call) => String(call[0]).includes('same key'))).toBe(false);
+		spy.mockRestore();
+	});
+
+	it('FREQ-569-AC-04: 同じ注文で同じ理由の異常が2行返っても（返品を2つ0円で終えた時）、どちらも出し、行の鍵が重ならない', async () => {
+		const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+		serve({
+			events: [],
+			deferred: {
+				orders: [],
+				next_after_order: null,
+				total_balance: 0,
+				anomalies: [
+					{ order_id: uuid(3), order_number: 'ORD-CCCC3333', balance: 500, reason: 'return_waived_with_failed_refund' },
+					{ order_id: uuid(3), order_number: 'ORD-CCCC3333', balance: 500, reason: 'return_waived_with_failed_refund' },
+				],
+			},
+		});
+		render(<PendingView />);
+		const panel = await screen.findByRole('region', { name: '前受金の確認' });
+		const list = await within(panel).findByRole('list', { name: '前受金の異常' });
+		expect(within(list).getAllByRole('listitem')).toHaveLength(2);
 		expect(spy.mock.calls.some((call) => String(call[0]).includes('same key'))).toBe(false);
 		spy.mockRestore();
 	});

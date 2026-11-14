@@ -10,6 +10,7 @@ jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockAudit(..
 const mockSchedule = jest.fn();
 jest.mock('@/lib/accounting/posting-runner', () => ({ scheduleAccountingPosting: (...args: unknown[]) => mockSchedule(...args) }));
 import { POST as cancellationPost } from '@/app/api/admin/accounting/refund-cancellations/route';
+import { GET as candidatesGet } from '@/app/api/admin/accounting/refund-settlements/candidates/route';
 import { GET as statesGet } from '@/app/api/admin/accounting/refund-states/route';
 import { checkAuthSessionLiveness, verifyAccessToken } from '@/lib/auth/authenticate';
 import { createServiceRoleClient } from '@/lib/supabase/server';
@@ -28,13 +29,17 @@ const { seq, rpcImpl, grants, read } = harness;
 const REFUND = uuid(11);
 const REASON = '店で返金をやめた SECRET-REASON';
 const statesRow = {
-	refunds: [{ refund_id: REFUND, order_id: uuid(12), order_number: 'ORD-0000000C', source: 'admin', state: 'canceled', pre_amount: 3000, post_amount: 0, owed_pre: 0, owed_post: 0, canceled_at: '2026-11-10T00:00:00+00:00' }],
+	refunds: [{ refund_id: REFUND, order_id: uuid(12), order_number: 'ORD-0000000C', source: 'admin', state: 'canceled', pre_amount: 3000, post_amount: 0, owed_pre: 0, owed_post: 0, owed_return: 0, event_id: uuid(14), event_kind: 'pre_shipment_cancel', canceled_at: '2026-11-10T00:00:00+00:00' }],
 	next_after_at: null,
 	next_after_id: null,
+};
+const candidatesRow = {
+	candidates: [{ refund_id: uuid(15), amount: 11250, succeeded_on: '2026-11-07', event_id: uuid(14), event_kind: 'return_receipt', same_event: true }],
 };
 const defaultRpc = (name: string): { data: unknown; error: null } => {
 	switch (name) {
 		case 'list_refund_accounting_states': return { data: statesRow, error: null };
+		case 'list_refund_settle_candidates': return { data: candidatesRow, error: null };
 		case 'admin_decide_refund_cancellation': return { data: { refund_id: REFUND, state: 'abandoned', event_id: uuid(13), replayed: false }, error: null };
 		default: throw new Error(`unexpected rpc ${name}`);
 	}
@@ -43,6 +48,7 @@ const defaultRpc = (name: string): { data: unknown; error: null } => {
 const base = 'https://example.test/api/admin/accounting';
 const body = { refundId: REFUND, kind: 'abandoned', reason: REASON, requestKey: KEY };
 const post = (value: unknown = body) => cancellationPost(new Request(`${base}/refund-cancellations`, { method: 'POST', body: JSON.stringify(value) }));
+const getCandidates = (query = `?owedRefundId=${REFUND}`) => candidatesGet(new Request(`${base}/refund-settlements/candidates${query}`));
 const getStates = (query = '') => statesGet(new Request(`${base}/refund-states${query}`));
 
 beforeEach(() => {
@@ -59,7 +65,7 @@ describe('GET /api/admin/accounting/refund-states', () => {
 		expect(response.status).toBe(200);
 		const json = await read(response);
 		expect(json.data).toEqual({
-			refunds: [{ refundId: REFUND, orderId: uuid(12), orderNumber: 'ORD-0000000C', source: 'admin', state: 'canceled', preAmount: 3000, postAmount: 0, owedPre: 0, owedPost: 0, canceledAt: '2026-11-10T00:00:00+00:00' }],
+			refunds: [{ refundId: REFUND, orderId: uuid(12), orderNumber: 'ORD-0000000C', source: 'admin', state: 'canceled', preAmount: 3000, postAmount: 0, owedPre: 0, owedPost: 0, owedReturn: 0, eventId: uuid(14), eventKind: 'pre_shipment_cancel', canceledAt: '2026-11-10T00:00:00+00:00' }],
 			nextAfterAt: null,
 			nextAfterId: null,
 		});
@@ -76,6 +82,35 @@ describe('GET /api/admin/accounting/refund-states', () => {
 			expect([query, bad.status]).toEqual([query, 400]);
 			expect(bad.headers.get('cache-control')).toContain('no-store');
 		}
+	});
+});
+
+describe('GET /api/admin/accounting/refund-settlements/candidates', () => {
+	test('FREQ-579-AC-05: 結びの候補は finance.read で返し、名前・メール・住所を含めず、全応答 no-store、DB には借りの返金の番号だけを渡す', async () => {
+		grants.current = [PERM.read];
+		seq.length = 0;
+		const response = await getCandidates();
+		expect(response.status).toBe(200);
+		expect(response.headers.get('cache-control')).toContain('no-store');
+		const json = await read(response);
+		expect(json.data).toEqual({
+			candidates: [{ refundId: uuid(15), amount: 11250, succeededOn: '2026-11-07', eventId: uuid(14), eventKind: 'return_receipt', sameEvent: true }],
+		});
+		expect(JSON.stringify(json)).not.toMatch(/mail|name"|address/i);
+		expect(seq).toEqual(['auth', 'rpc:list_refund_settle_candidates']);
+		expect(rpcImpl).toHaveBeenCalledWith('list_refund_settle_candidates', { _owed_refund_id: REFUND });
+		grants.current = [PERM.correct];
+		const denied = await getCandidates();
+		expect(denied.status).toBe(403);
+		expect(denied.headers.get('cache-control')).toContain('no-store');
+		grants.current = [PERM.read];
+		rpcImpl.mockClear();
+		for (const query of ['', '?owedRefundId=x', `?owedRefundId=${REFUND}&x=1`, `?owedRefundId=${REFUND}&owedRefundId=${uuid(1)}`]) {
+			const bad = await getCandidates(query);
+			expect([query, bad.status]).toEqual([query, 400]);
+			expect(bad.headers.get('cache-control')).toContain('no-store');
+		}
+		expect(rpcImpl).not.toHaveBeenCalled();
 	});
 });
 

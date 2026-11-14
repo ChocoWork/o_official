@@ -78,6 +78,11 @@ const refundStatesQuerySchema = z
 export type RefundStatesQuery = z.output<typeof refundStatesQuerySchema>;
 export const parseRefundStatesQuery = (params: URLSearchParams): RefundStatesQuery | null => parseQuery(params, refundStatesQuerySchema);
 
+const refundSettleCandidatesQuerySchema = z.object({ owedRefundId: uuidSchema }).strict();
+export type RefundSettleCandidatesQuery = z.output<typeof refundSettleCandidatesQuerySchema>;
+export const parseRefundSettleCandidatesQuery = (params: URLSearchParams): RefundSettleCandidatesQuery | null =>
+	parseQuery(params, refundSettleCandidatesQuerySchema);
+
 /** 理由の本文は DB に渡すだけで、監査にも応答にも入れない。 */
 export const refundCancellationBodySchema = z
 	.object({

@@ -17,6 +17,7 @@ import {
   ACCOUNTING_S22_FILES, ACCOUNTING_S22_SQL as s22Sql, accountingS22Section, pinAccountingS22Baseline,
   ACCOUNTING_S23_FILES, ACCOUNTING_S23_SQL as s23Sql, accountingS23Section, pinAccountingS23Baseline,
   ACCOUNTING_S24_FILES, ACCOUNTING_S24_SQL as s24Sql, accountingS24Section, pinAccountingS24Baseline, restoreS23StripeReconciliation,
+  ACCOUNTING_S25_FILES, ACCOUNTING_S25_SQL as s25Sql, accountingS25Section, pinAccountingS25Baseline,
 } from './helpers/accounting-returns-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
 import { PENDING_REASONS } from '@/lib/accounting/posting-types';
@@ -1293,11 +1294,150 @@ describeLocalDb('S24 final assert: controller only', (db) => {
     [redefine(READY, 'ready := true;', 'ready := false;'), 'acc_s24_body_unchanged'],
     [redefine(STRIPE, "pm\\.event_kind = .refund_failed.", "pm.event_kind = ''refund_failedx''"), 'acc_s24_body_unchanged'],
     [redefine(STRIPE, 'WHERE pm\\.resolved_at IS NOT NULL', 'WHERE true'), 'acc_s24_body_unchanged'],
-    [redefine(STRIPE, '-- ACC_P3_BEGIN\\n          OR EXISTS', '-- ACC_P3_X\\n          OR EXISTS'), 'acc_s24_body_unchanged'],
     // 人の操作に限る印（resolved_by）が外されても、自動の閉じ（resolved_by が無い）を数える形に戻るので拒む
     [redefine(STRIPE, ' AND pm\\.resolved_by IS NOT NULL', ''), 'acc_s24_body_unchanged'],
+    [redefine(STRIPE, '-- ACC_P3_BEGIN\\n          OR EXISTS', '-- ACC_P3_X\\n          OR EXISTS'), 'acc_s24_body_unchanged'],
     [redefine(STRIPE, 'WHEN .payout. THEN', "WHEN ''payout_x'' THEN"), 'acc_s24_body_unchanged'],
   ])('FREQ-569-AC-07: S24改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// Accounting plan 3 S25 (Ruling P3-T11e / P3-T11f; FREQ-579-AC-04 / FREQ-579-AC-05): the debt read with the unit event and the
+// plain return debt, and the read of the refunds that can settle an owed refund.
+const s25Assertion = accountingS25Section('FINAL_ASSERT');
+const s25Body = accountingS25Section('BODY');
+const s25Details = ['acc_s25_functions', 'acc_s25_function_attrs', 'acc_s25_body_unchanged', 'acc_s25_reads_stable', 'acc_s25_existing_dml_allowlist'];
+const S25_SOURCE = 'supabase/migrations/20261112214341_accounting_p3_refund_posting.sql';
+const s25FnOf = (text: string, name: string) =>
+  (text.match(new RegExp(`^CREATE (?:OR REPLACE )?FUNCTION private\\.${name}\\([\\s\\S]*?^\\$\\$;\n`, 'm'))?.[0] ?? '')
+    .replace(/^CREATE OR REPLACE FUNCTION/, 'CREATE FUNCTION');
+
+describe('S25 source contract (no DB)', () => {
+  test('FREQ-579-AC-05: S25はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S25_FILES).toHaveLength(1);
+    expect(ACCOUNTING_S25_FILES[0] > ACCOUNTING_S24_FILES[0]).toBe(true);
+    expect(s25Sql).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(s25Sql.startsWith('BEGIN;\n')).toBe(true);
+    expect(s25Sql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(s25Sql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(s25Sql.trimEnd()).toMatch(/-- ACC_S25_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect([...new Set([...s25Assertion.matchAll(/'(acc_s25_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...s25Details].sort());
+    expect(s25Assertion).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(s25Assertion.replace(/\$acc_s25_o\d\$[\s\S]*?\$acc_s25_o\d\$/g, '')).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(s25Sql).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+    // Only the candidate read gets a public entry and a grant (service_role, private and public); the debt read keeps its own.
+    expect([...s25Body.matchAll(/^CREATE (?:OR REPLACE )?FUNCTION public\.([a-z_]+)\(/gm)].map((m) => m[1])).toEqual(['list_refund_settle_candidates']);
+    expect(s25Body.match(/^GRANT\b/gm)).toHaveLength(1);
+    expect([...s25Body.matchAll(/^CREATE (?:OR REPLACE )?FUNCTION ([a-z_.]+)\(/gm)].map((m) => m[1]))
+      .toEqual(['private.list_refund_accounting_states', 'private.list_refund_settle_candidates', 'public.list_refund_settle_candidates']);
+  });
+
+  test('FREQ-579-AC-04: 作り直した借りの一覧の本文は S20 の写しに、置き換え2つと囲み1つを足しただけ', () => {
+    const latest = s25FnOf(fs.readFileSync(path.join(process.cwd(), S25_SOURCE), 'utf8'), 'list_refund_accounting_states');
+    const rebuilt = s25FnOf(s25Body, 'list_refund_accounting_states');
+    expect(latest).not.toBe('');
+    expect(rebuilt).not.toBe('');
+    // No migration between S20 and S25 defines it again.
+    const dir = path.join(process.cwd(), 'supabase/migrations');
+    const defining = fs.readdirSync(dir).filter((f) => f.endsWith('.sql') && f > path.basename(S25_SOURCE) && f <= ACCOUNTING_S25_FILES[0])
+      .filter((f) => /^CREATE (?:OR REPLACE )?FUNCTION private\.list_refund_accounting_states\(/m.test(fs.readFileSync(path.join(dir, f), 'utf8')));
+    expect(defining).toEqual([ACCOUNTING_S25_FILES[0]]);
+    const replaced = [...rebuilt.matchAll(/-- ACC_P3_REPLACE_BEGIN ([0-9a-f]{32})\n([\s\S]*?)-- ACC_P3_REPLACE_END\n/g)];
+    expect(replaced).toHaveLength(2);
+    const latestLines = [...latest.matchAll(/^.*\n/gm)].map((x) => x[0]);
+    const originalOf = (hash: string) => {
+      for (let i = 0; i < latestLines.length; i += 1) {
+        let text = '';
+        for (let j = i; j < latestLines.length; j += 1) {
+          text += latestLines[j];
+          if (createHash('md5').update(text).digest('hex') === hash) return text;
+        }
+      }
+      return null;
+    };
+    let restored = rebuilt;
+    for (const m of replaced) {
+      const found = originalOf(m[1]);
+      expect(found).not.toBeNull();
+      expect(latest.split(found as string)).toHaveLength(2);
+      restored = restored.replace(m[0], () => found as string);
+    }
+    const blocks = [...restored.matchAll(/-- ACC_P3_BEGIN\n[\s\S]*?-- ACC_P3_END\n/g)].map((m) => m[0]);
+    expect(blocks).toHaveLength(1);
+    for (const block of blocks) restored = restored.replace(block, '');
+    expect(restored).toBe(latest);
+    expect(rebuilt.slice(rebuilt.indexOf('AS $$'))).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE|PERFORM|EXECUTE)\b|FOR (SHARE|UPDATE|NO KEY UPDATE|KEY SHARE)/i);
+  });
+});
+
+describeLocalDb('S25 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  async function attempt(change = '', before = ''): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s25_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (before) await db().query(before);
+      await pinAccountingS25Baseline(db());
+      if (change) await db().query(change);
+      await db().query(s25Assertion);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s25_assert'); await db().query('release savepoint acc_s25_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const redefine = (sig: string, from: string, to: string) =>
+    `do $x$ begin execute regexp_replace(pg_get_functiondef('${sig}'::regprocedure), E'${from}', E'${to}'); end $x$`;
+  const CAND = 'private.list_refund_settle_candidates(uuid)';
+  const CAND_PUBLIC = 'public.list_refund_settle_candidates(uuid)';
+  const STATES = 'private.list_refund_accounting_states(integer,timestamptz,uuid)';
+  const STATES_PUBLIC = 'public.list_refund_accounting_states(integer,timestamptz,uuid)';
+
+  test('FREQ-579-AC-05: 適用後の状態で S25 の末尾の確かめが通る（呼出元のsearch_pathを問わない）', async () => {
+    expect(s25Assertion).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('', 'set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('', 'set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt('', "set local search_path = ''")).toBeNull();
+  });
+
+  test.each([
+    ['drop table pg_temp.accounting_s25_baseline', 'acc_s25_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s25_baseline set payload = payload - 'attrs'", 'acc_s25_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s25_baseline set payload = jsonb_set(payload, '{counts,entries}', '999999')", 'acc_s25_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s25_baseline set payload = jsonb_set(payload, '{counts,pending_events}', '999999')", 'acc_s25_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s25_baseline set payload = jsonb_set(payload, '{counts,lines}', '999999')", 'acc_s25_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s25_baseline set payload = jsonb_set(payload, '{counts,settlements}', '999999')", 'acc_s25_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s25_baseline set payload = jsonb_set(payload, '{allowlist,0}', '1')", 'acc_s25_existing_dml_allowlist'],
+    [`grant execute on function ${CAND} to authenticated`, 'acc_s25_functions'],
+    [`grant execute on function ${CAND_PUBLIC} to anon`, 'acc_s25_functions'],
+    [`revoke execute on function ${CAND_PUBLIC} from service_role`, 'acc_s25_functions'],
+    [`alter function ${CAND} security invoker`, 'acc_s25_functions'],
+    [`alter function ${CAND} set search_path = public`, 'acc_s25_functions'],
+    [`alter function ${CAND_PUBLIC} volatile`, 'acc_s25_functions'],
+    [`alter function ${CAND} volatile`, 'acc_s25_functions'],
+    [`drop function ${CAND_PUBLIC}`, 'acc_s25_functions'],
+    [`alter function ${STATES} set search_path = public`, 'acc_s25_function_attrs'],
+    [`grant execute on function ${STATES_PUBLIC} to anon`, 'acc_s25_function_attrs'],
+    [`alter function ${STATES} volatile`, 'acc_s25_function_attrs'],
+    [`alter function ${STATES_PUBLIC} volatile`, 'acc_s25_function_attrs'],
+    [redefine(STATES, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s25_body_unchanged'],
+    [redefine(STATES, '-- ACC_P3_REPLACE_BEGIN [0-9a-f]{32}\\n', '-- ACC_P3_REPLACE_BEGIN 00000000000000000000000000000000\\n'), 'acc_s25_body_unchanged'],
+    [redefine(STATES, 'OR s\\.owed_return > 0', ''), 'acc_s25_body_unchanged'],
+    [redefine(STATES, "\\'event_kind\\', q\\.event_kind, ", ''), 'acc_s25_body_unchanged'],
+    [redefine(STATES, "\\'owed\\', \\'failed\\'", "\\'owed\\'"), 'acc_s25_body_unchanged'],
+    [redefine(STATES, "\\'holdback_release\\', ", ''), 'acc_s25_body_unchanged'],
+    [redefine(STATES, "\\'2130\\', \\'return_refund\\'", "\\'2130\\', \\'refund_owed_post\\'"), 'acc_s25_body_unchanged'],
+    [redefine(STATES, '-- ACC_P3_BEGIN\\n', '-- ACC_P3_X\\n'), 'acc_s25_body_unchanged'],
+    [redefine(STATES, 'ORDER BY s\\.created_at DESC', 'ORDER BY s.created_at ASC'), 'acc_s25_body_unchanged'],
+    [redefine(CAND, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s25_reads_stable'],
+    [redefine(CAND, 'WHERE s\\.owed_refund_id = _owed_refund_id', "WHERE s.owed_refund_id = _owed_refund_id AND s.request_hash <> \\'email\\'"), 'acc_s25_reads_stable'],
+  ])('FREQ-579-AC-05: S25改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });

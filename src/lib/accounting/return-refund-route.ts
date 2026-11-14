@@ -6,6 +6,7 @@ import { scheduleAccountingPosting } from '@/lib/accounting/posting-runner';
 import type { PostingSource } from '@/lib/accounting/posting-types';
 import {
 	correctArrivalBodySchema,
+	parseRefundSettleCandidatesQuery,
 	parseRefundStatesQuery,
 	parseReturnArrivalQuery,
 	parseTaxRefundsQuery,
@@ -20,6 +21,7 @@ import {
 	getReturnArrivalInfo,
 	getReturnArrivalOption,
 	listConsumptionTaxRefunds,
+	listRefundSettleCandidates,
 	listRefundStates,
 	recordRefundBankTransfer,
 	setReturnArrivalOption,
@@ -113,6 +115,15 @@ export function handleRefundStatesGet(request: Request): Promise<Response> {
 		const query = parseRefundStatesQuery(queryOf(req));
 		if (!query) throw invalid();
 		return listRefundStates(client, query);
+	});
+}
+
+/** やり直しの結びの候補（借りの返金を結べる、同じ注文の成功した返金）。名前・メール・住所を含めない。 */
+export function handleRefundSettleCandidatesGet(request: Request): Promise<Response> {
+	return handleRead(request, label('GET', 'refund-settlements/candidates'), async (client, req) => {
+		const query = parseRefundSettleCandidatesQuery(queryOf(req));
+		if (!query) throw invalid();
+		return { candidates: await listRefundSettleCandidates(client, query) };
 	});
 }
 

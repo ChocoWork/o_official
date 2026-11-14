@@ -105,19 +105,34 @@ describe('返金の状態・取り消しの区分', () => {
 	test('FREQ-579-AC-03: 状態の一覧は名前・メールの鍵を持たず、続きの目印を渡す', async () => {
 		rpc.mockResolvedValue(
 			ok({
-				refunds: [{ refund_id: uuid(1), order_id: uuid(2), order_number: 'ORD-00000000', source: 'admin', state: 'canceled', pre_amount: 100, post_amount: 0, owed_pre: 0, owed_post: 0, canceled_at: '2026-11-10T00:00:00+00:00' }],
+				refunds: [{ refund_id: uuid(1), order_id: uuid(2), order_number: 'ORD-00000000', source: 'admin', state: 'canceled', pre_amount: 100, post_amount: 0, owed_pre: 0, owed_post: 0, owed_return: 16875, event_id: uuid(7), event_kind: 'return_receipt', canceled_at: '2026-11-10T00:00:00+00:00' }],
 				next_after_at: '2026-11-09T00:00:00+00:00',
 				next_after_id: uuid(1),
 			}),
 		);
 		const page = await store.listRefundStates(client, { limit: 50, afterAt: '2026-11-11T00:00:00Z', afterId: uuid(9) });
 		expect(rpc).toHaveBeenCalledWith('list_refund_accounting_states', { _limit: 50, _after_at: '2026-11-11T00:00:00Z', _after_id: uuid(9) });
-		expect(page.refunds[0]).toEqual({ refundId: uuid(1), orderId: uuid(2), orderNumber: 'ORD-00000000', source: 'admin', state: 'canceled', preAmount: 100, postAmount: 0, owedPre: 0, owedPost: 0, canceledAt: '2026-11-10T00:00:00+00:00' });
+		expect(page.refunds[0]).toEqual({ refundId: uuid(1), orderId: uuid(2), orderNumber: 'ORD-00000000', source: 'admin', state: 'canceled', preAmount: 100, postAmount: 0, owedPre: 0, owedPost: 0, owedReturn: 16875, eventId: uuid(7), eventKind: 'return_receipt', canceledAt: '2026-11-10T00:00:00+00:00' });
 		expect(page.nextAfterId).toBe(uuid(1));
 		await store.listRefundStates(client, { limit: 50 });
 		expect(rpc).toHaveBeenLastCalledWith('list_refund_accounting_states', { _limit: 50, _after_at: null, _after_id: null });
 		rpc.mockResolvedValue(ok({ refunds: [{ refund_id: uuid(1), email: 'a@example.test' }], next_after_at: null, next_after_id: null }));
 		await expect(store.listRefundStates(client, { limit: 50 })).rejects.toMatchObject({ status: 500, code: null });
+	});
+
+	test('FREQ-579-AC-05: 結びの候補は借りの返金の番号を渡して読み、同じ出来事の印を持ち、名前・メールの鍵を持たない', async () => {
+		const row = { refund_id: uuid(3), amount: 11250, succeeded_on: '2026-11-07', event_id: uuid(4), event_kind: 'return_receipt', same_event: true };
+		rpc.mockResolvedValue(ok({ candidates: [row, { ...row, refund_id: uuid(5), event_id: null, event_kind: 'none', same_event: false }] }));
+		const list = await store.listRefundSettleCandidates(client, { owedRefundId: uuid(1) });
+		expect(rpc).toHaveBeenCalledWith('list_refund_settle_candidates', { _owed_refund_id: uuid(1) });
+		expect(list).toEqual([
+			{ refundId: uuid(3), amount: 11250, succeededOn: '2026-11-07', eventId: uuid(4), eventKind: 'return_receipt', sameEvent: true },
+			{ refundId: uuid(5), amount: 11250, succeededOn: '2026-11-07', eventId: null, eventKind: 'none', sameEvent: false },
+		]);
+		rpc.mockResolvedValue(ok({ candidates: [{ ...row, email: 'a@example.test' }] }));
+		await expect(store.listRefundSettleCandidates(client, { owedRefundId: uuid(1) })).rejects.toMatchObject({ status: 500, code: null });
+		rpc.mockResolvedValue(ok({ candidates: [{ ...row, event_kind: 'other' }] }));
+		await expect(store.listRefundSettleCandidates(client, { owedRefundId: uuid(1) })).rejects.toMatchObject({ status: 500, code: null });
 	});
 
 	test('FREQ-579-AC-03: 区分は DB の入口へ渡し、2回目と取り消されていない返金は 409 の固定コード', async () => {

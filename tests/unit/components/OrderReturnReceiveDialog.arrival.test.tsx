@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { OrderReturnDetail, OrderReturnLineDetail } from '@/lib/orders/returns/return-types';
 import { toJstDate } from '@/lib/accounting/jst-date';
-import { RETURN_ARRIVAL_INVALID_NOTE } from '@/lib/accounting/return-refund-types';
+import { RETURN_ARRIVAL_CORRECTION_ONLY_NOTE, RETURN_ARRIVAL_INVALID_NOTE_COMMON } from '@/lib/accounting/return-refund-types';
 
 const mockClientFetch = jest.fn();
 jest.mock('@/lib/client-fetch', () => ({ clientFetch: (...args: unknown[]) => mockClientFetch(...args) }));
@@ -164,9 +164,26 @@ describe('受け取りの画面の断りの扱い', () => {
 		receiveAll(dialog);
 		fireEvent.change(arrivedInput(dialog), { target: { value: '2026-11-01' } });
 		fireEvent.click(primaryButton(dialog));
-		expect(await within(dialog).findByText(RETURN_ARRIVAL_INVALID_NOTE)).toBeInTheDocument();
+		expect(await within(dialog).findByText(RETURN_ARRIVAL_INVALID_NOTE_COMMON)).toBeInTheDocument();
+		// 「直せません」の文は直す画面だけ。最初の受け取りの画面には出さない
+		expect(within(dialog).queryByText(RETURN_ARRIVAL_CORRECTION_ONLY_NOTE, { exact: false })).not.toBeInTheDocument();
 		fireEvent.change(arrivedInput(dialog), { target: { value: '2026-11-02' } });
-		expect(within(dialog).queryByText(RETURN_ARRIVAL_INVALID_NOTE)).not.toBeInTheDocument();
+		expect(within(dialog).queryByText(RETURN_ARRIVAL_INVALID_NOTE_COMMON)).not.toBeInTheDocument();
+	});
+
+	it('FREQ-575-AC-01: 届いた日の断りの後に別の理由で断られたら、届いた日の説明は消える', async () => {
+		const { dialog } = await openDialog({
+			replies: [
+				json({ error: '届いた日を確かめてください。', code: 'RETURN_ARRIVAL_DATE_INVALID' }, 400),
+				json({ error: '入力を確かめてください。', code: 'RETURN_ARGUMENT_INVALID' }, 400),
+			],
+		});
+		receiveAll(dialog);
+		fireEvent.change(arrivedInput(dialog), { target: { value: '2026-11-01' } });
+		fireEvent.click(primaryButton(dialog));
+		expect(await within(dialog).findByText(RETURN_ARRIVAL_INVALID_NOTE_COMMON)).toBeInTheDocument();
+		fireEvent.click(primaryButton(dialog));
+		await waitFor(() => expect(within(dialog).queryByText(RETURN_ARRIVAL_INVALID_NOTE_COMMON)).not.toBeInTheDocument());
 	});
 
 	it('FREQ-584-AC-01: 判断待ちの読みが偽だった注文で DISPUTE_HOLD に断られたら、返品を読み直して「今すぐ返金」を外す', async () => {

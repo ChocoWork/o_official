@@ -836,3 +836,22 @@ export async function restoreS23StripeReconciliation(client: PgClient): Promise<
 	if (!body) throw new Error('ACC_S23_STRIPE_RECONCILIATION_MISSING');
 	await client.query(body);
 }
+
+// ---- Task 11c（S25。借りの一覧に出来事と返品の借りを足し、結びの候補を出す）の道具 ----
+
+const s25Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p3_refund_debt_reads.sql'));
+/** 計画3 S25（借りの一覧の読みと結びの候補の読み）の移行の本文（無ければ空で、原文の確かめが目に見えて落ちる）。 */
+export const ACCOUNTING_S25_SQL = s25Files.length === 1 ? fs.readFileSync(path.join(directory, s25Files[0]), 'utf8') : '';
+export const ACCOUNTING_S25_FILES = s25Files;
+
+/** S25 の `-- ACC_S25_<name>_BEGIN` と `-- ACC_S25_<name>_END` の間。 */
+export function accountingS25Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S25_SQL.split(`-- ACC_S25_${name}_BEGIN\n`)[1]?.split(`-- ACC_S25_${name}_END`)[0] ?? '';
+}
+
+/** S25 の比べる元の控え（本文の最初の CREATE TEMP TABLE と INSERT）を、呼ぶ取引の中で作り直す。 */
+export async function pinAccountingS25Baseline(client: PgClient): Promise<void> {
+	const pin = accountingS25Section('BODY').split('\n-- 1. The debt read')[0];
+	await client.query('drop table if exists pg_temp.accounting_s25_baseline');
+	await client.query(pin);
+}
