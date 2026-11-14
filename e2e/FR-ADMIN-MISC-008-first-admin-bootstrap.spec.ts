@@ -1,6 +1,7 @@
 /**
  * FR-ADMIN-MISC-008 最初の店長を作るコマンド
  * 対応: FR-ADMIN-010-AC-01（作った店長がログインし、最初の TOTP の登録の画面まで進める）
+ * パスワードの段は結合テスト（ARC-ADMIN-006）で確かめる（この試験は loginAsMember でパスワードの段を飛ばす）
  *
  * コマンドの中身（bootstrapFirstAdmin と本物の deps）を、手元の Supabase に向けて直接呼ぶ。
  * 手元の DB には E2E の店長が残っているので、countActiveAdmins だけ 0 を返す物に替える。漏洩の照合は外へ出ないよう「問題なし」にする。

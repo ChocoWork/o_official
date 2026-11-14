@@ -88,6 +88,16 @@ describe('bootstrapFirstAdmin', () => {
     expect(r).toMatchObject({ ok: false, reason: 'invalid_password', message: 'パスワードは16文字以上で入力してください' });
   });
 
+  it.each([
+    ['arrow key sequence', `${'a'.repeat(16)}\u001b[D`],
+    ['tab', `${'a'.repeat(16)}\t`],
+  ])('DD-ADMIN-016 rejects password with control characters (%s)', async (_name, p) => {
+    const t = makeDeps();
+    const r = await bootstrapFirstAdmin(input({ password: p, passwordConfirmation: p }), t.deps);
+    expect(r).toMatchObject({ ok: false, reason: 'invalid_password', message: expect.stringContaining('制御文字') });
+    expect(t.called('createUser')).toHaveLength(0);
+  });
+
   it('DD-ADMIN-016 rejects password over 72 bytes', async () => {
     const t = makeDeps();
     const p = 'あ'.repeat(25);

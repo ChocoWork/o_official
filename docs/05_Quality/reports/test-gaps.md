@@ -178,9 +178,8 @@
 - `src/app/api/admin/revoke-user-sessions/route.ts:94` `POST` の `audit` の引数 `extra` の既定値 `= {}` は通らない。呼び出し5か所が全部 `{ resource_id: ... }` を渡し、この関数はファイルの中だけで使うため。確認: 未
 - `src/app/api/admin/users/mfa/reset/route.ts:92` `POST` の `audit` の `metadata ? { metadata } : {}` の偽の側は通らない。呼び出し9か所が全部 `metadata` を渡し、この関数はファイルの中だけで使うため。確認: 未
 - `src/app/api/auth/mfa/enroll-totp/route.ts:139` `POST` の未確認の要素を外した後の監査の `unenrollResult?.error` の `unenrollResult` が `null` の側は通らない。supabase-js の `mfa.unenroll` は `{ data, error }` の形を必ず返し、`null` を返さないため（型を満たすための `?.`）。確認: 未
-- `scripts/admin/bootstrap-core.ts:54` `bootstrapFirstAdmin` の `passwordParsed.error.issues[0]?.message ?? 'パスワードが正しくありません'` の右側は通らない。`passwordSchema` が失敗した時は必ず issue が1つ以上あるため。確認: 未
-- `scripts/admin/bootstrap.ts:97` `readHiddenFromStdin` の改行の字の分岐は通らない。標準入力を raw モードで読む関数は端末（TTY）が要り、単体テストでは動かさず、`readHidden` を差し替えて確かめるため。確認: 未
-- `scripts/admin/bootstrap.ts:103` `readHiddenFromStdin` の Ctrl+C の分岐は通らない。理由は改行の分岐と同じ。確認: 未
-- `scripts/admin/bootstrap.ts:109` `readHiddenFromStdin` の Backspace の分岐は通らない。理由は改行の分岐と同じ。確認: 未
-- `scripts/admin/bootstrap.ts:110` `readHiddenFromStdin` の通常の字を足す側は通らない。理由は改行の分岐と同じ。確認: 未
-- `scripts/admin/bootstrap.ts:124` ファイルの最後の `require.main === module` の偽の側は通らない。単体テストは import で読むので常に偽だが、真の側（コマンドとして流した時）が端末つきの実行でしか通らないため。確認: 未
+- `scripts/admin/bootstrap-core.ts:58` `bootstrapFirstAdmin` の `passwordParsed.error.issues[0]?.message ?? 'パスワードが正しくありません'` の右側は通らない。`passwordSchema` が失敗した時は必ず issue が1つ以上あるため。確認: 未
+- `scripts/admin/bootstrap.ts:111` `readHiddenFromStdin` の改行の字の分岐は通らない。標準入力を raw モードで読む関数は端末（TTY）が要り、単体テストでは動かさず、`readHidden` を差し替えて確かめるため。確認: 未
+- `scripts/admin/bootstrap.ts:117` `readHiddenFromStdin` の Ctrl+C の分岐は通らない。理由は改行の分岐と同じ。確認: 未
+- `scripts/admin/bootstrap.ts:123` `readHiddenFromStdin` の Backspace の分岐と、通常の字を足す側は通らない。理由は改行の分岐と同じ。確認: 未
+- `scripts/admin/bootstrap.ts:138` ファイルの最後の `require.main === module` の真の側（コマンドとして流した時）は通らない。単体テストは import で読むので常に偽で、真の側は端末つきの実行（E2E・手での確認）でしか通らないため。確認: 未

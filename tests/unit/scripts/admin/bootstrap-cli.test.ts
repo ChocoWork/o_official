@@ -1,4 +1,4 @@
-import { runBootstrapCli, type CliIo } from '../../../../scripts/admin/bootstrap';
+import { CANCELLED, runBootstrapCli, type CliIo } from '../../../../scripts/admin/bootstrap';
 import type { BootstrapDeps } from '../../../../scripts/admin/bootstrap-core';
 
 const PASSWORD = 'correct-horse-battery-1';
@@ -109,5 +109,24 @@ describe('runBootstrapCli', () => {
     expect(out).not.toContain('secret-detail');
     expect(out).not.toContain(PASSWORD);
     expect(out).toContain('すでに作られていないか');
+  });
+
+  test('DD-ADMIN-017 reports a failed admin count before prompting without the generic line', async () => {
+    const t = setup({ deps: { countActiveAdmins: async () => { throw new Error('relation "roles" does not exist'); } } });
+    expect(await runBootstrapCli(t.io, t.makeDeps)).toBe(1);
+    const out = t.lines.join('\n');
+    expect(out).toContain('店長の数を確かめられませんでした');
+    expect(out).not.toContain('すでに作られていないか');
+    expect(out).not.toContain('does not exist');
+    expect(t.readHidden).not.toHaveBeenCalled();
+  });
+
+  test('DD-ADMIN-017 prints its own line when the password prompt is cancelled', async () => {
+    const t = setup();
+    t.io.readHidden = jest.fn(async () => { throw new Error(CANCELLED); });
+    expect(await runBootstrapCli(t.io, t.makeDeps)).toBe(1);
+    const out = t.lines.join('\n');
+    expect(out).toContain('取りやめました。何も作っていません');
+    expect(out).not.toContain('すでに作られていないか');
   });
 });

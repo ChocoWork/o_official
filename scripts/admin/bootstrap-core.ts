@@ -49,6 +49,10 @@ export async function bootstrapFirstAdmin(input: BootstrapInput, deps: Bootstrap
     return fail('password_mismatch', 'パスワードと確認用のパスワードが一致しません');
   }
 
+  if (/\p{Cc}/u.test(input.password)) {
+    return fail('invalid_password', 'パスワードに制御文字（矢印・Tab・Esc など）が入っています。打ち直してください');
+  }
+
   const passwordParsed = passwordSchema.safeParse(input.password);
   if (!passwordParsed.success) {
     return fail('invalid_password', passwordParsed.error.issues[0]?.message ?? 'パスワードが正しくありません');

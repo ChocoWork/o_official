@@ -7,6 +7,9 @@
 import { parseArgs } from 'node:util';
 import { bootstrapFirstAdmin, type BootstrapDeps } from './bootstrap-core';
 
+/** 入力の途中で Ctrl+C が押された印（readHidden が投げる） */
+export const CANCELLED = 'cancelled';
+
 export type CliIo = {
   env: NodeJS.ProcessEnv;
   argv: string[];
@@ -55,12 +58,19 @@ export async function runBootstrapCli(io: CliIo, makeDeps?: (url: string, key: s
     return 1;
   }
 
+  let deps: BootstrapDeps;
   try {
-    const deps = makeDeps ? makeDeps(url, key) : await defaultDeps(url, key);
+    deps = makeDeps ? makeDeps(url, key) : await defaultDeps(url, key);
     if ((await deps.countActiveAdmins()) > 0) {
       io.print('有効な店長がすでにいるため、作りません');
       return 1;
     }
+  } catch {
+    io.print('店長の数を確かめられませんでした。住所・鍵・移行が当たっているかを確かめてください');
+    return 1;
+  }
+
+  try {
     const password = await io.readHidden('パスワード: ');
     const passwordConfirmation = await io.readHidden('パスワード（確認）: ');
     const result = await bootstrapFirstAdmin({ email: values.email, password, passwordConfirmation, displayName: values.name }, deps);
@@ -74,7 +84,11 @@ export async function runBootstrapCli(io: CliIo, makeDeps?: (url: string, key: s
     io.print(`最初の店長を作りました。id: ${result.userId}  メール: ${result.email}`);
     io.print('次の手順: このメールとパスワードでログインし、最初のログインで TOTP を登録してください');
     return 0;
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message === CANCELLED) {
+      io.print('取りやめました。何も作っていません');
+      return 1;
+    }
     io.print('処理の途中で失敗しました。店長がすでに作られていないか、Supabase の Auth と user_roles を確かめてください');
     return 1;
   }
@@ -103,7 +117,7 @@ function readHiddenFromStdin(prompt: string): Promise<string> {
         if (ch === '\u0003') {
           cleanup();
           process.stdout.write('\n');
-          reject(new Error('cancelled'));
+          reject(new Error(CANCELLED));
           return;
         }
         if (ch === '\u007f' || ch === '\b') buf = buf.slice(0, -1);
