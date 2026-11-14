@@ -9,9 +9,9 @@
 | 指標 | 件数 |
 | --- | ---: |
 | 要件定義書の対象ID | 2508 |
-| 設計にID参照あり | 700 |
+| 設計にID参照あり | 701 |
 | テストにID参照あり | 1809 |
-| 設計にID参照なし | 1808 |
+| 設計にID参照なし | 1807 |
 | テストにID参照なし | 699 |
 
 ## 参照一覧
@@ -2213,7 +2213,7 @@
 | `FREQ-575-AC-01` | なし | 11件（[FR-ADMIN-137-accounting-return-arrival.spec.ts](../../../e2e/FR-ADMIN-137-accounting-return-arrival.spec.ts)） |
 | `FREQ-575-AC-02` | なし | 7件（[FR-ADMIN-137-accounting-return-arrival.spec.ts](../../../e2e/FR-ADMIN-137-accounting-return-arrival.spec.ts)） |
 | `FREQ-575-AC-03` | なし | 2件（[accounting_p3_return_arrival.integration.test.ts](../../../tests/integration/db/accounting_p3_return_arrival.integration.test.ts)） |
-| `FREQ-575-AC-04` | なし | 7件（[FR-ADMIN-140-accounting-return-settings.spec.ts](../../../e2e/FR-ADMIN-140-accounting-return-settings.spec.ts)） |
+| `FREQ-575-AC-04` | 1件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 7件（[FR-ADMIN-140-accounting-return-settings.spec.ts](../../../e2e/FR-ADMIN-140-accounting-return-settings.spec.ts)） |
 | `FREQ-575-AC-05` | なし | 2件（[accounting_p3_return_arrival.integration.test.ts](../../../tests/integration/db/accounting_p3_return_arrival.integration.test.ts)） |
 | `FREQ-576-AC-01` | 1件（[accounting-refund.md](../../04_DetailDesign/states/accounting-refund.md)） | 3件（[accounting_p3_refund_writers.integration.test.ts](../../../tests/integration/db/accounting_p3_refund_writers.integration.test.ts)） |
 | `FREQ-576-AC-02` | なし | 2件（[accounting_p3_refund_writers.integration.test.ts](../../../tests/integration/db/accounting_p3_refund_writers.integration.test.ts)） |

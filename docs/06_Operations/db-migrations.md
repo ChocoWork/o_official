@@ -1708,7 +1708,7 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 
 ### 手元で当てて確かめる手順（`--linked` は使わない）
 
-`npm run db:reset` で全部の移行を当てる。計画3の DB 試験は `accounting_p3_*.integration.test.ts` と、`ACCOUNTING_COMMIT_SUITE=1` で流すコミットする試験（並行・届く順）で、単独で流し、前後に `db reset` を挟む（コミットする試験が行を残すため）。E2E の後に DB 結合を流す時も先に `db reset`。最後の実測は、手元の DB（`db reset` 後）で計画3の DB 試験 75 ファイル・2781 件が通った（Task 11c の修正の2回目、2026-11-14）。
+`npm run db:reset` で全部の移行を当てる。計画3の DB 試験は `accounting_p3_*.integration.test.ts` と、`ACCOUNTING_COMMIT_SUITE=1` で流すコミットする試験（並行・届く順）で、単独で流し、前後に `db reset` を挟む（コミットする試験が行を残すため）。E2E の後に DB 結合を流す時も先に `db reset`。最後の実測は、手元の DB（`db reset` 後）で計画3の回帰の DB 試験の組（計画2・交換の印などを含む）75 ファイル・2781 件が通った（Task 11c の修正の2回目、2026-11-14）。
 
 ### 直した既存の試験（意図して変えた所）
 
