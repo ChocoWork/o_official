@@ -23,7 +23,9 @@ import { installRefundBridge } from './unit-binding-test-utils';
 // FREQ-577 / FREQ-579 / FREQ-583（計画3）: 返金の仕訳（発送前の返金・失敗と振込・取り消しの区分・消費税用の返金の一覧）を、本物の route・本物の画面・手元の Supabase で確かめる。
 // 返金は DB の道具で始める（begin_order_refund・record_order_refund_result は本物の関数）。Stripe は呼ばず、stripe_refunds と stripe_balance_transactions の行を
 // 手元の DB へ直に入れる。これは「画面と帳簿の表示の証拠」であって、実 Stripe の証拠ではない（本物の Stripe の読みは確かめない）。
-// 例外: FREQ-577-AC-03 の取り消しは本物の画面と本物の返金の入口（submitAdminRefund）を通し、Stripe だけを偽物にする（FR-ADMIN-166 と同じ bridge）。FREQ-579-AC-02・AC-03 の返金の始まり・失敗・取り消しは
+// 例外: FREQ-577-AC-03 の取り消しは、本物の画面（返金の画面と材料の GET）から送る。ただし返金の POST（/api/admin/orders/{id}/refund）は FR-ADMIN-166 の installRefundBridge が
+// ブラウザ側で横取りし、テストのプロセスで submitAdminRefund（値段の計画と begin_order_refund は本物）を偽物の Stripe・何もしない通知つきで動かす。route の権限・CSRF・回数の制限・
+// 本文の検査・監査・計上の予約は通らない（単体の試験が持つ）。題の「本物の返金の処理」は、この返金の処理（値段の計画と DB の関数）を指す。FREQ-579-AC-02・AC-03 の返金の始まり・失敗・取り消しは
 // DB の関数（begin_order_refund・record_order_refund_result）と fixture の道具の差し替えで、route は通らない。
 // 計上は本物の係（accounting_run_posting）、取り消しの区分・振込の記録・一覧は本物の画面と route。E2E は今日の日付だけを使う。
 // 仕訳・返金・計上待ちは消せないので db reset してから流す。
@@ -77,7 +79,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
       await page.setViewportSize(viewport);
     });
 
-    test('FREQ-577-AC-03: 発送前に取り消したパンツが出荷の売上から引かれ、前受金が0になる（本物のroute。額は交換の設計の割り振りのまま）', async ({ page }) => {
+    test('FREQ-577-AC-03: 発送前に取り消したパンツが出荷の売上から引かれ、前受金が0になる（本物の返金の処理。額は交換の設計の割り振りのまま）', async ({ page }) => {
       test.setTimeout(300_000);
       await withAccountingScenario('pre-shipment-refund', async (s) => {
         const period = await s.todayPeriod();
@@ -85,8 +87,8 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         const f = await s.seedRefundFlow(false);
         const total = 37_000;
         expect(await balanceOf(s, f.orderId, '2150')).toBe(total);
-        // 取り消しは本物の画面と本物の返金の入口（値段の計画を作る submitAdminRefund）を通す。差し替えるのは Stripe だけ
-        // （FR-ADMIN-166 と同じ bridge。Stripe は呼ばず、すぐ成功する偽物が返す）。残高の取引（stripe_*）は DB へ直に入れる表示の証拠
+        // 取り消しは本物の画面から送るが、返金の POST は installRefundBridge（FR-ADMIN-166 と同じ）がブラウザ側で横取りし、テストのプロセスで submitAdminRefund を動かす
+        // （偽物の Stripe がすぐ成功を返す。route の権限・CSRF・回数の制限・本文の検査・監査・計上の予約は通らない）。残高の取引（stripe_*）は DB へ直に入れる表示の証拠
         const bridge = await installRefundBridge(page, s.admin.userId);
         await s.openOrder(page, f.orderId);
         const dialog = await openDetailRefundDialog(page, f.orderId);

@@ -66,7 +66,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
           await fees.getByLabel('返品の手数料（%）', { exact: true }).fill(String(percent));
           await expect(fees.getByText('手で受け取った手数料は、帳簿に自動では入りません。')).toBeVisible();
           await expectNoHorizontalOverflow(page);
-          await page.getByRole('button', { name: '保存する', exact: true }).first().click();
+          await page.getByRole('region', { name: '返品', exact: true }).getByRole('button', { name: '保存する', exact: true }).click();
           await expect(page.getByText(SAVED, { exact: true }).first()).toBeVisible({ timeout: 60_000 });
           const saved = await s.db.query(`select restocking_fee_enabled, restocking_fee_percent::int as restocking_fee_percent, exchange_fees_enabled,
             exchange_fee, exchange_shipping_fee, shop_label_fee from public.shop_return_settings where id = 1`);
@@ -86,7 +86,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         const initial = await readOption(s);
         // 一度も切り替えていなければ既定はオフ（切り替えた日は空）。切り替えの記録は消せないので、既定そのものを確かめられるのは db reset の後の最初の幅だけ
         if (initial.changedAt === null) expect(initial.useCarrierDeliveryDate).toBe(false);
-        // 既定がオフであることは、切り替えの履歴に関わらず毎回確かめる: 列の既定値（DB の定義）と、行が1つしか無いこと
+        // 既定がオフであることは、切り替えの履歴に関わらず毎回確かめる: 列の既定値（DB の定義）
         const column = await s.db.query(
           "select column_default from information_schema.columns where table_schema = 'public' and table_name = 'accounting_return_options' and column_name = 'use_carrier_delivery_date'");
         expect(column.rows).toEqual([{ column_default: 'false' }]);
