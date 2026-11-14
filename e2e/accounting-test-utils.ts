@@ -26,9 +26,19 @@ import {
   seedDisputeReversal as seedDisputeReversalFixture,
   seedStripeCharge as seedStripeChargeFixture,
   seedStripeFee as seedStripeFeeFixture,
+  seedUnitOrder as seedUnitOrderFixture,
   type SeedSlipOrder,
 } from '../tests/integration/db/helpers/accounting-orders-fixtures';
 import { seedHOrderUnits } from '../tests/integration/db/helpers/group-h-fixtures';
+import {
+  postOrderPayment as postOrderPaymentFixture,
+  receiveReturn as receiveReturnFixture,
+  seedRefundFlow as seedRefundFlowFixture,
+  shipUnits as shipUnitsFixture,
+  type ReceiveResult,
+} from '../tests/integration/db/helpers/accounting-returns-fixtures';
+import { hRefundFixture } from '../tests/integration/db/helpers/group-h-refund-fixtures';
+import type { ReceiveUnit } from '../tests/integration/db/helpers/unit-binding-receive';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { createCatalogFixture } from '../tests/integration/db/helpers/order-fixtures';
 import { mockAdminBackgroundApis } from './admin-test-utils';
@@ -36,6 +46,20 @@ import { withGroupG1Material } from './group-g1-test-utils';
 import { createAdminSessionActor, type AdminSessionActor, type AdminSessionAal, type AdminSessionRole } from './admin-session-test-utils';
 import { withLocalDb } from './order-email-test-utils';
 import { withPermissionScenario } from './permission-settings-test-utils';
+
+/** 返品の流れ（seedReturnFlow）。返品の行・番号と、H の受け付けの注文（実行者 actor は H の材料の管理者） */
+export type E2eReturnFlow = {
+  orderId: string;
+  itemId: string;
+  actor: string;
+  paymentIntentId: string;
+  returnId: string;
+  lineIds: string[];
+  number: number;
+  fulfillmentId: string;
+  /** 返品の受け取りの DB の道具に渡す形（accounting-returns-fixtures の ReturnFlow） */
+  fixture: Parameters<typeof receiveReturnFixture>[1];
+};
 
 const ORIGIN = 'http://localhost:3000';
 /** 設定（開業日・やめた日）と池の足し方を直列にする lock の鍵 */
@@ -435,6 +459,96 @@ export class AccountingScenario {
     return { entries, shipmentMeta };
   }
 
+  // ---- 返品・返金・判断待ちの材料（計画3。手元の DB へ直に入れる。Stripe は呼ばない。stripe_* の行は表示の証拠で、実 Stripe の証拠ではない） ----
+  /** G の共通の鍵を取る材料の取引の中で DB の道具を流す（道具は鍵を持つ取引の中で呼ぶ前提で書かれている） */
+  material<T>(run: () => Promise<T>): Promise<T> {
+    return withGroupG1Material(this.db, run);
+  }
+
+  /**
+   * 返品の流れの土台: H の受け付けと支払いで作った2着（20,000円・18,750円）の注文を発送し、返品を申し込み、承認し（割合の手数料 既定10%）、
+   * 支払いの仕訳まで入れる。出荷の仕訳は runPosting で入る。日付は今日だけ。
+   * requestedAt を渡すと、返品の申し込みの日時をその時刻にする（挿入の時に入れる。変えられない列なので後からは直せない。届いた日を前の日へ直す例の
+   * 土台。お店が作った返品は申し込みの日が空で、その下限は出荷の日になる〔裁定 P3-T4a〕ので、この道具は申し込みの返品だけを作る）。
+   */
+  async seedReturnFlow(o: { requestedAt?: string; percent?: number } = {}): Promise<E2eReturnFlow> {
+    await this.todayPeriod();
+    const built = await withGroupG1Material(this.db, async () => {
+      const f = await hRefundFixture(this.db, false, 2, 1250);
+      const shipped = await shipUnitsFixture(this.db, f.orderId, f.itemId, 2, f.actor);
+      await this.db.query(`update public.shop_return_settings set return_address_name='Fixture',return_address_postal_code='1000001',
+        return_address_line='Fixture',return_address_phone='0311112222',restocking_fee_enabled=true where id=1`);
+      const number = Number((await this.db.query('select coalesce(max(number),0)+1 as n from public.order_returns where order_id=$1', [f.orderId])).rows[0].n);
+      const returnId = (await this.db.query(`insert into public.order_returns
+        (order_id,number,source,status,request_key,request_fingerprint,requested_at,requested_by,return_method,return_shipping_payer,notify_customer)
+        values($1,$2,'customer_request','requested',$3,'e2e-fixture',coalesce($5::timestamptz, now()),$4,'customer_ships','customer',false) returning id`,
+      [f.orderId, number, randomUUID(), f.actor, o.requestedAt ?? null])).rows[0].id as string;
+      const lineId = randomUUID();
+      await this.db.query(`insert into public.order_return_lines
+        (id,return_id,fulfillment_id,order_item_id,quantity,reason,requested_resolution,requested_exchange_variant_id,resolution,exchange_variant_id,exchange_method)
+        values($1,$2,$3,$4,1,'unknown','refund',null,'refund',null,null)`, [lineId, returnId, shipped.fulfillmentId, f.itemId]);
+      await this.db.query(`select * from public.admin_approve_return($1,$2,$3::jsonb,'customer_ships','customer',null,null,0,$4,0,0,null,false)`,
+        [returnId, f.actor, JSON.stringify([{ return_line_id: lineId, resolution: 'refund', exchange_variant_id: null, exchange_method: null }]), o.percent ?? 10]);
+      await postOrderPaymentFixture(this.db, f.orderId, new Date().toISOString());
+      const pi = (await this.db.query('select payment_intent_id from public.orders where id=$1', [f.orderId])).rows[0].payment_intent_id as string;
+      const fixture = { f: { ...f, fulfillment: { fulfillment_id: shipped.fulfillmentId } }, returnId, lineIds: [lineId] } as unknown as E2eReturnFlow['fixture'];
+      return { orderId: f.orderId, itemId: f.itemId, actor: f.actor, paymentIntentId: pi, returnId, lineIds: [lineId], number, fulfillmentId: shipped.fulfillmentId as string, fixture };
+    });
+    await this.runPosting(200); // 出荷の仕訳
+    return built;
+  }
+
+  /** 返品の受け取りを DB の関数（admin_receive_return）で記録する。choice 'consult'（既定）は返金を作らない。arrivedOn を省くと記録した日 */
+  receiveReturn(flow: E2eReturnFlow, input: { choice?: 'now' | 'consult'; arrivedOn?: string | null; restockingFeeWaived?: boolean } = {}): Promise<ReceiveResult> {
+    const choice = input.choice ?? 'consult';
+    const units: ReceiveUnit[] = [{ return_line_id: flow.lineIds[0], disposition: 'not_restocked', quantity: 1, refund_choice: choice }];
+    return withGroupG1Material(this.db, () => receiveReturnFixture(this.db, flow.fixture, {
+      choice, units, arrivedOn: input.arrivedOn ?? null, restockingFeeWaived: input.restockingFeeWaived ?? false,
+    }));
+  }
+
+  /** 相談で受け取った返品の返金を、額を決めて DB の関数（admin_refund_return）で始める。amount を省くと見込みの額 */
+  async refundReturn(flow: E2eReturnFlow, amount: number | null = null): Promise<{ refund_id: string | null; amount: number; status: string }> {
+    return withGroupG1Material(this.db, async () => (await this.db.query(
+      'select * from public.admin_refund_return($1,$2,$3,$4,0,null,false)', [flow.returnId, flow.actor, randomUUID(), amount],
+    )).rows[0]);
+  }
+
+  /** 返金の流れの土台: H の受け付けと支払いで作った2着（20,000円と17,000円）の注文に、支払いの仕訳まで入れる。shipped が数ならその数だけ発送する（仕訳は runPosting） */
+  async seedRefundFlow(shipped: boolean | number = false): Promise<Awaited<ReturnType<typeof seedRefundFlowFixture>>> {
+    await this.todayPeriod();
+    const flow = await withGroupG1Material(this.db, async () => {
+      const f = await seedRefundFlowFixture(this.db, shipped, 2);
+      await postOrderPaymentFixture(this.db, f.orderId, new Date().toISOString());
+      return f;
+    });
+    await this.runPosting(200);
+    return flow;
+  }
+
+  /**
+   * 着の行と枠（order_unit_slots）を持ち、支払いの仕訳まで入った注文（lines の1要素が1つの品の着の支払額）。値段の計画を通さない出来事を
+   * fixture で入れる例の土台（accounting-returns-fixtures の seedSlotPaidOrder と同じ作り。違いは支払いの時刻が今であること）。
+   */
+  async seedSlotOrder(lines: number[][]): Promise<{ orderId: string; orderItemIds: string[] }> {
+    await this.todayPeriod();
+    const order = await withGroupG1Material(this.db, async () => {
+      const o = await seedUnitOrderFixture(this.db, lines);
+      await this.db.query(`insert into public.order_unit_slots(order_item_id, unit_index, order_id, item_id, state, current_price, holder_order_item_id, holder_unit_index)
+        select u.order_item_id, u.unit_index, oi.order_id, oi.item_id, 'kept', u.paid_amount, u.order_item_id, u.unit_index
+        from public.order_line_unit_amounts u join public.order_items oi on oi.id=u.order_item_id where oi.order_id=$1`, [o.orderId]);
+      await this.db.query('update public.orders set payment_intent_id=coalesce(payment_intent_id,$2) where id=$1', [o.orderId, `pi_e2e_${randomUUID().replaceAll('-', '')}`]);
+      await postOrderPaymentFixture(this.db, o.orderId, new Date().toISOString());
+      return o;
+    });
+    return order;
+  }
+
+  /** 判断待ちの支払いの取り消し（needs_response・今引かれた残高の取引つき）を注文に置く。取り消しの番号を返す */
+  async seedDisputeHold(orderId: string, amount = 5_000): Promise<string> {
+    return (await this.seedDispute({ orderId, amount })).disputeId;
+  }
+
   // ---- HTTP（本物の route。Authorization: Bearer なので CSRF は要らない） ----
   private async client(who: AdminSessionActor): Promise<APIRequestContext> {
     let client = this.clients.get(who.userId + who.accessToken);
@@ -626,6 +740,21 @@ export class AccountingScenario {
     await page.goto('/admin');
     await page.getByRole('button', { name: 'ACCOUNTING' }).click();
     await page.getByRole('tab', { name: tab, exact: true }).click();
+  }
+
+  /** 本物の session で注文の詳細の頁（/admin/orders/<id>）を開く。裏の読み込みだけは空の応答にする */
+  async openOrder(page: Page, orderId: string, who: AdminSessionActor = this.admin): Promise<void> {
+    await this.attach(page, who);
+    await mockAdminBackgroundApis(page);
+    await page.route('**/api/auth/refresh', (route) => route.continue());
+    await page.goto(`/admin/orders/${orderId}`);
+    await expect(page.getByRole('heading', { name: `注文 ORD-${orderId.slice(0, 8).toUpperCase()}`, level: 1, exact: true })).toBeVisible({ timeout: 60_000 });
+  }
+
+  /** 新しい帳簿を始めた日（切り替えの日）。これより前の日の出来事は計上待ちの before_cutover になる */
+  async cutoverOn(): Promise<string> {
+    const row = await this.db.query("select to_char(cutover_on, 'YYYY-MM-DD') as d from public.accounting_settings where id = 1");
+    return row.rows[0].d as string;
   }
 
   // ---- 後片付け ----
