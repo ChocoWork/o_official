@@ -38,7 +38,7 @@
 npx tsx --env-file=.env.development.local scripts/admin/bootstrap.ts --email <店長のメール> [--name <表示名>]
 ```
 
-ほかの環境に向ける時も同じ形にする。リポジトリの外に一時の環境変数ファイルを作り、`SUPABASE_URL` と `SUPABASE_SERVICE_ROLE_KEY` の2行だけを書く。キーを端末に打たない（PowerShell の履歴ファイルに平文で残るため）。
+ほかの環境に向ける時も同じ形にする。リポジトリの外に一時の環境変数ファイルを作り、`SUPABASE_URL` と `SUPABASE_SERVICE_ROLE_KEY` の2行だけを書く。キーを端末に打たない（PowerShell の履歴ファイルに平文で残るため）。ファイルはメモ帳などの編集画面で作り、キーを貼り付けて BOM なしの UTF-8 で保存する（`Set-Content`・`Out-File`・`echo ... >` で作ると、キーが履歴に残るうえ、BOM や UTF-16 で `--env-file` が読み損ねる）。同じ端末で前に `$env:SUPABASE_URL` などを置いていたら、そちらが勝つ（`--env-file` は置いてある値を上書きしない）ので、新しい端末で流す。
 
 ```powershell
 npx tsx --env-file=<リポジトリの外の一時ファイル> scripts/admin/bootstrap.ts --email <店長のメール> [--name <表示名>]
