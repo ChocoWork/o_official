@@ -13,10 +13,15 @@ import { describeLocalDb } from '../helpers/local-db';
  */
 const PASSWORD = 'Bootstrap-Test-Pass-9z8y7x6w';
 
+// 手元の Supabase の captcha は Turnstile の常に通る試験用の秘密（supabase/.env.example）で、どの印も通る。
+const CAPTCHA_TOKEN = 'XXXX.DUMMY.TOKEN.XXXX';
+
 jest.setTimeout(30000);
 
 describeLocalDb('integration: 最初の店長を作るコマンド', (db) => {
   let client: SupabaseClient;
+  let anonUrl = '';
+  let anonKey = '';
   const createdIds: string[] = [];
   const ENV_KEYS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'ALERT_AUDIT_URL'] as const;
   const savedEnv: Record<string, string | undefined> = {};
@@ -31,6 +36,8 @@ describeLocalDb('integration: 最初の店長を作るコマンド', (db) => {
     process.env.SUPABASE_URL = status.apiUrl;
     process.env.SUPABASE_SERVICE_ROLE_KEY = status.serviceRoleKey;
     delete process.env.ALERT_AUDIT_URL;
+    anonUrl = status.apiUrl;
+    anonKey = status.anonKey;
     client = createClient(status.apiUrl, status.serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
   });
 
@@ -84,6 +91,15 @@ describeLocalDb('integration: 最初の店長を作るコマンド', (db) => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     createdIds.push(result.userId);
+
+    // 作ったパスワードでログインでき、違うパスワードでは入れない（createUser がパスワードを正しく渡していること）。
+    const anon = createClient(anonUrl, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    const ok = await anon.auth.signInWithPassword({ email, password: PASSWORD, options: { captchaToken: CAPTCHA_TOKEN } });
+    expect(ok.error?.message ?? null).toBeNull();
+    expect(ok.data.user?.id).toBe(result.userId);
+    const bad = await anon.auth.signInWithPassword({ email, password: `${PASSWORD}-wrong`, options: { captchaToken: CAPTCHA_TOKEN } });
+    expect(bad.error).not.toBeNull();
+    expect(bad.data.user).toBeNull();
 
     const user = (
       await db().query(

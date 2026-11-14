@@ -1,6 +1,6 @@
 # ADMIN の要件
 
-> 状態: 推定 | 確認日: 2026-11-01 | 対象: ADMIN（管理のそのほか。利用者の作成・セッションの強制失効・2要素のリセット・監査ログの読み出しと掃除・問い合わせの管理・商品の色見本） | 基準コミット: `4facf63b`
+> 状態: 推定 | 確認日: 2026-11-14 | 対象: ADMIN（管理のそのほか。利用者の作成・セッションの強制失効・2要素のリセット・監査ログの読み出しと掃除・問い合わせの管理・商品の色見本） | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -15,7 +15,7 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 | 派生要件 | 8 | `DRV-ADMIN-001`〜`008` |
 | セキュリティ要件 | 23 | `SEC-ADMIN-001`〜`023`（受け入れ条件 41 件の `SEC-ADMIN-NNN-AC-NN` を含む。全部「推定」） |
 
-- 状態: 全部「推定」。元の行に理由が書かれていない物は根拠の「なぜ」を書き手が補い、コードと合わない行・新しく起こした項目・実装から読み取った項目も、ユーザーの確認を受けていない。ユーザーが確認したら「現行」にする。どちらが正しいかは決めず、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節（`TM-ADMIN-NN`）に載せた。今のコードがセキュリティ要件を満たさない所は、その `SEC-ADMIN-NNN` の項目に1回だけ書く
+- 状態: 全部「推定」（2026-11-14 に足した `SR-ADMIN-001`・`FR-ADMIN-010` はオーナーが決めたので「現行」）。元の行に理由が書かれていない物は根拠の「なぜ」を書き手が補い、コードと合わない行・新しく起こした項目・実装から読み取った項目も、ユーザーの確認を受けていない。ユーザーが確認したら「現行」にする。どちらが正しいかは決めず、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節（`TM-ADMIN-NN`）に載せた。今のコードがセキュリティ要件を満たさない所は、その `SEC-ADMIN-NNN` の項目に1回だけ書く
 - 結論: 問い合わせの管理（FREQ-25・FR-ADMIN-009）は、2026-10-28（波 4）に管理画面へ CONTACT のタブを足して画面からも動くようにした。監査ログ（FREQ-508）は読む画面が無い。利用者の作成・2要素のリセット・強制失効・色見本・監査ログの掃除は、どの要求にも書かれていない。画面を足すか、要件を直すかは、ユーザーに決めてもらう
 
 ## 範囲と根拠
@@ -25,7 +25,7 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 | 範囲 | `scripts/trace/scope.json` の ADMIN |
 | 写した元 | `docs/02_Requirements/requirements.md` の「要求と要件のトレーサビリティ」の表の FREQ-25（1つ目の行）、「1.16 管理画面（ADMIN）」節の FR-ADMIN-009、「要求トレーサビリティ追記」の表の FREQ-508。元の行は消していない |
 | 持ち主の決め方 | ADMIN が持つのは FREQ-25 とその子だけで、FREQ-508・FR-ADMIN-009 は ADMIN だけが触れる行。複数の領域が触れる行は、領域どうしで割り当てた持ち主が定義し、ほかは `（範囲外）` で指す |
-| 対象のコード | `src/app/api/admin/create-user/`、`src/app/api/admin/revoke-user-sessions/`、`src/app/api/admin/audit-logs/`、`src/app/api/admin/users/mfa/`、`src/app/api/admin/contact/`、`src/app/api/admin/item-color-presets/`、`src/app/admin/create-user/`、`src/lib/contact/reply-address.ts`、`src/lib/auditCleanup.ts`（14 ファイル） |
+| 対象のコード | `src/app/api/admin/create-user/`、`src/app/api/admin/revoke-user-sessions/`、`src/app/api/admin/audit-logs/`、`src/app/api/admin/users/mfa/`、`src/app/api/admin/contact/`、`src/app/api/admin/item-color-presets/`、`src/app/admin/create-user/`、`src/lib/contact/reply-address.ts`、`src/lib/auditCleanup.ts`、`scripts/admin/`（3 ファイル。最初の店長を作るコマンド）（17 ファイル） |
 | 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない。割当の作業が `src/app/admin/page.tsx` などを書き換え中で、コードの動きはずれうる） |
 
 ### 写した行と写さなかった行
@@ -62,7 +62,7 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 
 ### E2E と受け入れ条件の対応
 
-範囲の E2E は `e2e/FR-ADMIN-MISC-001`〜`008` の8本。テスト名の先頭に付けた受け入れ条件は次のとおり（2026-10-25 時点。`npm run validate-trace -- ADMIN` の `missing-child` が正）。
+範囲の E2E は `e2e/FR-ADMIN-MISC-001`〜`008` の8本。テスト名の先頭に付けた受け入れ条件は次のとおり（2026-11-14 時点。`npm run validate-trace -- ADMIN` の `missing-child` が正）。
 
 | E2E のファイル | テスト名の先頭に付けた受け入れ条件 |
 | --- | --- |
