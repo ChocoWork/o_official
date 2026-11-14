@@ -11,7 +11,7 @@ import { readRecord, useReturnOperation } from '@/hooks/useReturnOperation';
 import { useUnitPricingEstimate } from '@/hooks/useUnitPricingEstimate';
 import { lineLabel } from '@/lib/orders/fulfillment/fulfillment-client';
 import { ADMIN_NOTE_MAX_LENGTH } from '@/lib/orders/order-payment-types';
-import { UNKNOWN_REFUND_OUTCOME_MESSAGE, formatYen } from '@/lib/orders/refund/refund-messages';
+import { DISPUTE_HOLD_REFUND_MESSAGE, UNKNOWN_REFUND_OUTCOME_MESSAGE, formatYen } from '@/lib/orders/refund/refund-messages';
 import { RETURN_ERROR_MESSAGES } from '@/lib/orders/returns/return-messages';
 import type { OrderReturnDetail } from '@/lib/orders/returns/return-types';
 import type { ReturnReceiveEstimate } from '@/lib/orders/unit-pricing/unit-pricing-types';
@@ -90,7 +90,7 @@ export default function OrderReturnRefundDialog({ orderId, returnId, onClose, on
 }
 
 function OrderReturnRefundDialogBody({ loaded, onClose, onDone, onUncertain }: OrderReturnRefundDialogBodyProps) {
-  const { detail, refundableAmount, refundableShipping } = loaded;
+  const { detail, refundableAmount, refundableShipping, disputeHold } = loaded;
   const flow = useReturnOperation({
     unknownMessage: UNKNOWN_REFUND_OUTCOME_MESSAGE,
     fallbackMessage: RETURN_ERROR_MESSAGES.RETURN_ARGUMENT_INVALID.message,
@@ -134,7 +134,8 @@ function OrderReturnRefundDialogBody({ loaded, onClose, onDone, onUncertain }: O
   breakdownRows.push(['送料', formatYen(shippingAmount)], ['返金額', formatYen(calculated)]);
 
   // DB は「送料 ≤ 額」を入力の誤りにする。画面に新しい文は足さず、直るまで押せなくする（E-2 の返金の画面と同じ）
-  const canSubmit = !stopped && waitingLines.length > 0 && amount >= shippingAmount && !estimateBlocked;
+  // 判断待ちの注文は、お金を動かす返金を送れない（DB も断る）。返金しないで終える（0円。X4）は返金を作らないので、今までどおり送れる
+  const canSubmit = !stopped && waitingLines.length > 0 && amount >= shippingAmount && !estimateBlocked && !(disputeHold && !waiving);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -170,6 +171,9 @@ function OrderReturnRefundDialogBody({ loaded, onClose, onDone, onUncertain }: O
         >
           {/* 幅が 768px 以上の Dialog は高さを制限しないので、入力の部分だけを縦に動かし、誤りの文とボタンは動かさない */}
           <div className="space-y-3 md:max-h-[60vh] md:overflow-y-auto md:pr-1">
+            {disputeHold ? (
+              <p data-testid="return-refund-dispute-hold" className="font-acumin lk-text-sm text-black">{DISPUTE_HOLD_REFUND_MESSAGE}</p>
+            ) : null}
             <ul aria-label="返金する品" className="space-y-1 font-acumin lk-text-sm text-black">
               {waitingLines.map((line) => (
                 <li key={line.id}>{`${lineLabel({ name: line.itemName, color: line.color, size: line.size })} × ${line.progress.refundWaiting}`}</li>

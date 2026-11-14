@@ -19,6 +19,7 @@ import {
   NO_PERMISSIONS,
 } from "./accounting-api";
 import { currency, signedCurrency } from "./constants";
+import { TaxRefundsPanel } from "./tax-refunds-panel";
 import { YearEndShipmentsPanel } from "./year-end-shipments-panel";
 import {
   errorNotice,
@@ -29,7 +30,7 @@ import {
   type Notice,
 } from "./period-form";
 
-// 照合のタブ（FREQ-566・571）。Stripe の残高の照合、手数料の月の照合、受注高と帳簿の2段の照らし合わせ。
+// 照合のタブ（FREQ-566・571・583）。Stripe の残高の照合、手数料の月の照合、受注高と帳簿の2段の照らし合わせ、消費税用の返金の一覧。
 // route は読み口の答えを組み替えずに返す（平らな snake_case）。説明のつかない差が0でなければ赤字にする。
 // Stripe の手数料の2段目の符号は暫定（Ruling P2-T4-I3）なので、中立の言い方にする。
 
@@ -635,6 +636,7 @@ export function ReconciliationView({
       <BalanceSection today={today} />
       <FeeSection today={today} />
       <IntakeSection today={today} periodStart={periodStart} periodEnd={periodEnd} />
+      <TaxRefundsPanel today={today} />
       <YearEndShipmentsPanel today={today} />
     </div>
   );

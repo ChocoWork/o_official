@@ -115,7 +115,8 @@ export function useRefundSubmission({
     alertText,
     /** 返金（またはキャンセル）を送る。本文は、今の二重防止の番号を受け取って組む */
     submit: (makeBody: (requestKey: string) => object) => {
-      if (busy || uncertain) return;
+      // 判断待ちの注文は送らない（ボタンも押せない。DB も断る。会計の計画3 FREQ-584-AC-04）
+      if (busy || uncertain || materials?.disputeHold === true) return;
       void post({ url: submitUrl, body: makeBody(requestKey) });
     },
     /** 「もう一度確かめる」。答えが分からない時は同じ中身で送り直し、確かめ中の返金があれば記録の番号で確かめ直す */

@@ -13,6 +13,7 @@ import { useLoadedReturn, type LoadedReturn } from '@/hooks/useLoadedReturn';
 import { blockEnterSubmit } from '@/hooks/useRefundSubmission';
 import { useUnitPricingEstimate } from '@/hooks/useUnitPricingEstimate';
 import { parseActionResponse, readRecord, useReturnOperation, type ReturnActionResponse } from '@/hooks/useReturnOperation';
+import { toJstDate } from '@/lib/accounting/jst-date';
 import { lineLabel } from '@/lib/orders/fulfillment/fulfillment-client';
 import { formatYen } from '@/lib/orders/refund/refund-messages';
 import { buildReceiveButtonLabel, computePerItemReturnRefundPreview, type ReceivePreviewLine } from '@/lib/orders/returns/return-calc';
@@ -78,6 +79,8 @@ export type ReceiveReturnRequest = {
   sentBackTrackingNumber: string | null;
   /** 店長が直した「割引の扱い」だけ（省くと理由から決まる。FREQ-642） */
   treatments?: ReceiveTreatment[];
+  /** 届いた日（YYYY-MM-DD。会計の計画3）。今日と違う日を選んだ時だけ送る（省くと DB が今日にする）。見込みの窓口の本文には入れない */
+  arrivedOn?: string;
 };
 
 type OrderReturnReceiveDialogBodyProps = Pick<ReturnDialogProps, 'onClose' | 'onDone' | 'onUncertain'> & {
@@ -117,6 +120,9 @@ const TREATMENT_HINT = '返金する品にかかる割引の扱いです。理�
 const ESTIMATING_TEXT = '計算しています';
 const ESTIMATE_FAILURE_MESSAGE = '返金の見込みを計算できませんでした。選び直すか、画面を開き直してください。';
 const CONSULT_NOTE = '返金待ちになります。額はあとで「額を決めて返金する」で決めます。';
+// 会計の計画3: 届いた日と、カード会社の判断待ちの止め
+const ARRIVED_FUTURE_TEXT = '未来の日は選べません。';
+const DISPUTE_HOLD_RECEIVE_TEXT = 'カード会社の判断待ちのため、今は返金できません。受け取りだけ記録できます';
 const capErrorOf = (cap: number, orderLimited: boolean) => orderLimited
   ? `この注文で返せる額（${formatYen(cap)}）を超えて入れられません。`
   : `この受け取りの商品の額と送料（${formatYen(cap)}）を超えて入れられません。ほかの受け取りの分は、返品の画面の「額を決めて返金する」で返してください。`;
@@ -259,6 +265,8 @@ function UnitRowFrame({ line, children }: { line: OrderReturnLineDetail; childre
 type SelectableUnitProps = {
   line: OrderReturnLineDetail;
   state: RowState;
+  /** 判断待ちの注文では「今すぐ返金」を選べない（相談だけ。会計の計画3） */
+  nowDisabled: boolean;
   /** チェックできない理由の文（サポートが、在庫を超える交換の品を受け取ろうとした時）。無ければ null */
   blockedText: string | null;
   disabled: boolean;
@@ -276,7 +284,7 @@ type SelectableUnitProps = {
  *
  * @design DD-ADMIN-019
  */
-function SelectableUnit({ line, state, blockedText, disabled, dispositionOptions, onToggle, onSelect, choiceName, onChoose }: SelectableUnitProps) {
+function SelectableUnit({ line, state, nowDisabled, blockedText, disabled, dispositionOptions, onToggle, onSelect, choiceName, onChoose }: SelectableUnitProps) {
   const choiceLabelId = choiceName ? `${choiceName}-label` : undefined;
   return (
     <UnitRowFrame line={line}>
@@ -305,7 +313,7 @@ function SelectableUnit({ line, state, blockedText, disabled, dispositionOptions
                 value={value}
                 className="h-4 w-4 accent-black"
                 checked={state.refundChoice === value}
-                disabled={disabled}
+                disabled={disabled || (nowDisabled && value === 'now')}
                 onChange={() => onChoose(value)}
               />
               <span className="font-acumin lk-text-sm text-black">{text}</span>
@@ -332,7 +340,7 @@ export default function OrderReturnReceiveDialog({ orderId, returnId, onClose, o
 }
 
 function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, reloadError = null, onClose, onDone, onUncertain }: OrderReturnReceiveDialogBodyProps) {
-  const { detail, canRefund, refundableAmount, refundableShipping, inspectionEnabled } = loaded;
+  const { detail, canRefund, refundableAmount, refundableShipping, inspectionEnabled, disputeHold } = loaded;
   const flow = useReturnOperation({
     unknownMessage: UNKNOWN_RECEIVE_MESSAGE,
     fallbackMessage: RETURN_ERROR_MESSAGES.RETURN_ARGUMENT_INVALID.message,
@@ -360,9 +368,13 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
   const [sentBackCarrier, setSentBackCarrier] = useState<ReturnCarrier | ''>('');
   const [sentBackTracking, setSentBackTracking] = useState('');
   const [notifyCustomer, setNotifyCustomer] = useState(true);
+  // 届いた日。触るまでは null（今日。送らない）。未来の日は選べない
+  const [arrivedOn, setArrivedOn] = useState<string | null>(null);
   const [step, setStep] = useState<Step>('form');
 
   const stopped = flow.busy || flow.uncertain || flow.recorded || reloading;
+  const today = toJstDate(new Date());
+  const arrivedFuture = arrivedOn !== null && arrivedOn > today;
   const rows = selectableRows(detail);
   const tally = tallyOf(rows, rowStates);
   const checkedCount = rows.filter((row) => rowStates[row.key]?.checked).length;
@@ -467,7 +479,8 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
   // 額を切って送れず DB が受け取りごと断るので、押せなくして理由を出す（一部を「額を相談」にすれば下げられる）
   const p9Allowed = !canRefund && detail.source === 'customer_request' && detail.returnMethod !== 'not_required';
   const showsChoices = canRefund || p9Allowed;
-  const choiceOf = (row: UnitRow): ReceiveUnitRefundChoice => (showsChoices ? chosenOf(row) : 'consult');
+  // 判断待ちの注文は、返金の品を全部「額を相談」にする（返金は DB が断る。受け取りだけ記録できる）
+  const choiceOf = (row: UnitRow): ReceiveUnitRefundChoice => (showsChoices && !disputeHold ? chosenOf(row) : 'consult');
   const refundRows = rows.filter(isRefundUnit);
   const nowRows = refundRows.filter((row) => choiceOf(row) === 'now');
   const consultRows = refundRows.filter((row) => choiceOf(row) === 'consult');
@@ -559,7 +572,7 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
   // 押すボタンの言葉は buildReceiveButtonLabel が「返金なしで記録する」にする
   const amountInvalid = nowUnits > 0 && (amount < shippingAmount || amountOverCap || autoRefundOverLimit);
   const canSubmitForm =
-    !stopped && checkedCount >= 1 && undecidedCount === 0 && !sentBackInvalid && unresolvedCount === 0 && !amountInvalid && !supportStockExceeded && reloadError === null && !estimateBlocked;
+    !stopped && checkedCount >= 1 && undecidedCount === 0 && !sentBackInvalid && unresolvedCount === 0 && !amountInvalid && !supportStockExceeded && reloadError === null && !estimateBlocked && !arrivedFuture;
   // 一部だけ届いた時と、お返しを含む時は、送る前に確かめを挟む
   const needsConfirm = sentBackUnits > 0 || remaining > 0;
 
@@ -632,6 +645,8 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
     sentBackCarrier: sentBackUnits > 0 && sentBackCarrier !== '' ? sentBackCarrier : null,
     sentBackTrackingNumber: sentBackUnits > 0 && trimmedTracking !== '' ? trimmedTracking : null,
     ...(treatments.length > 0 ? { treatments } : {}),
+    // 届いた日は受け取りの本文にだけ入れる（見込みの窓口の本文には入れない）。今日のままなら省く（DB の既定。再送の指紋を変えない）
+    ...(arrivedOn !== null && arrivedOn !== toJstDate(new Date()) ? { arrivedOn } : {}),
   });
 
   const sendReceive = () => {
@@ -711,6 +726,16 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
             // 幅が 768px 以上の Dialog は高さを制限しないので、入力の部分だけを縦に動かし、誤りの文とボタンは動かさない
             <div className="space-y-3 md:max-h-[60vh] md:overflow-y-auto md:pr-1">
               <p className="font-acumin lk-text-sm text-black">{`${totalUnits}点中${arrivedBefore + checkedCount}点を確認`}</p>
+              <TextField
+                type="date"
+                label="届いた日"
+                value={arrivedOn ?? today}
+                max={today}
+                disabled={stopped}
+                onChange={(event) => setArrivedOn(event.target.value === '' ? null : event.target.value)}
+              />
+              {arrivedFuture ? <p className="font-acumin lk-text-3xs text-red-700">{ARRIVED_FUTURE_TEXT}</p> : null}
+              {disputeHold ? <p className="font-acumin lk-text-3xs text-[#474747]">{DISPUTE_HOLD_RECEIVE_TEXT}</p> : null}
 
               <ul aria-label="受け取る品" className="space-y-3">
                 {detail.lines.flatMap((line) => [
@@ -725,7 +750,8 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
                       <SelectableUnit
                         key={row.key}
                         line={line}
-                        state={rowStates[row.key] ?? EMPTY_ROW}
+                        state={disputeHold ? { ...(rowStates[row.key] ?? EMPTY_ROW), refundChoice: 'consult' } : (rowStates[row.key] ?? EMPTY_ROW)}
+                        nowDisabled={disputeHold}
                         blockedText={!rowStates[row.key]?.checked && row.index >= capOf(line) ? SUPPORT_STOCK_NOTICE : null}
                         disabled={stopped}
                         dispositionOptions={dispositionOptions}

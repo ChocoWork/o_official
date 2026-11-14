@@ -25,6 +25,7 @@ import {
 } from "./accounting-api";
 import { DeferredRevenuePanel } from "./deferred-revenue-panel";
 import { currency } from "./constants";
+import { RefundCancellationDialog } from "./refund-cancellation-dialog";
 import {
   errorNotice,
   failureNotice,
@@ -69,9 +70,17 @@ const REASON_TEXT: Readonly<Record<Exclude<PendingReason, "period_missing" | "di
   dispute_shipment_pending: "引かれた時より前に確定した発送票で、出荷の仕訳がまだ入っていない物があります。出荷の仕訳が入ると自動で計上されます。",
   shipment_lines_mismatch: "発送票の明細と、発送ごとの明細の品ごとの数量が食い違っています。直ると自動で計上されます。",
   no_revenue: "仕訳にする額が0円です（交換の品だけの発送票など）。確かめて、確認済みにしてください。",
-  refund_prior_unposted: "同じ注文の前の返金や返品の仕訳がまだ入っていません。入ると自動で計上されます。",
-  refund_cancel_undecided: "返金の取り消しの扱いがまだ決まっていません。扱いを選ぶと計上されます。",
+  refund_prior_unposted: "同じ注文の前の返金の仕訳がまだ入っていません。入ると自動で計上されます。",
+  refund_cancel_undecided: "この返金は Stripe 側で取り消されました。店が返金をやめたのか、返すつもりのまま返せなかったのかを選んでください。",
 };
+
+/** 手で仕訳を入れる待ち（order_not_postable）のうち、送料・合計の形ではなく、分け方を決めて手で入れる2つの理由の主な文 */
+const ORDER_NOT_POSTABLE_MANUAL_TEXT: Readonly<Record<string, string>> = {
+  dispute_lost: "カード会社の取り消しが確定した後に返品の返金を0円で終えました。分け方を決めて手で仕訳を入れてください。",
+  return_closed_after_lost: "返品の返金を0円で終えた後に、それより前の日のカード会社の取り消しの確定が届きました。分け方を決めて手で仕訳を入れてください。",
+};
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** 止めの理由を、やさしい文にする。固定のコードはそのまま出さない。 */
 export function reasonText(event: PendingEvent): string {
@@ -85,6 +94,10 @@ export function reasonText(event: PendingEvent): string {
       // 判断の待ちは dispute_status が付く時だけ。ほかは、前の段の仕訳（引かれた時・確定・戻りより前の段）を待っている。
       if (typeof event.detail.dispute_status === "string") return DISPUTE_WITHDRAWAL_TEXT.undecided;
       return DISPUTE_WITHDRAWAL_TEXT.earlier;
+    case "order_not_postable": {
+      const manual = typeof event.detail.reason === "string" ? ORDER_NOT_POSTABLE_MANUAL_TEXT[event.detail.reason] : undefined;
+      return manual ?? REASON_TEXT.order_not_postable;
+    }
     case "no_order":
       // 取り消しの出来事で、取り消しに結び付く注文が無い時は、支払いの文は合わない。
       return event.eventKind === "dispute_event"
@@ -102,12 +115,6 @@ function detailHint(event: PendingEvent): string | null {
     if (detail.reason === "shipping") return "送料の欄が0ではありません。";
     if (detail.reason === "units_sum") return "注文の合計と1着ごとの支払額の合計が合いません。";
     if (detail.reason === "units_missing") return "1着ごとの支払額が見つかりません。";
-    if (detail.reason === "dispute_lost") {
-      return "カード会社の取り消しが確定した後に返品の返金を0円で終えました。分け方を決めて手で仕訳を入れてください。";
-    }
-    if (detail.reason === "return_closed_after_lost") {
-      return "返品の返金を0円で終えた後に、それより前の日のカード会社の取り消しの確定が届きました。分け方を決めて手で仕訳を入れてください。";
-    }
   }
   if (event.reason === "amount_mismatch" && typeof detail.stripe_amount === "number" && typeof detail.order_total === "number") {
     return `Stripe の総額 ${currency(detail.stripe_amount)}、注文の支払額 ${currency(detail.order_total)}`;
@@ -129,8 +136,11 @@ function eventDay(event: PendingEvent): string {
 }
 
 function runSummary(result: PostingRunResult): string {
-  const total = result.payments + result.shipments + result.stripe + result.disputes;
-  return `${total}件を計上しました（支払い${result.payments}件・出荷${result.shipments}件・Stripe${result.stripe}件・支払いの取り消し${result.disputes}件）。新しく止めた${result.parked}件、解決した${result.resolved}件。`;
+  // 返金・返品は計画3で足した数。古い答えには無いので、無ければ0として数える
+  const refunds = result.refunds ?? 0;
+  const returns = result.returns ?? 0;
+  const total = result.payments + result.shipments + result.stripe + result.disputes + refunds + returns;
+  return `${total}件を計上しました（支払い${result.payments}件・出荷${result.shipments}件・Stripe${result.stripe}件・支払いの取り消し${result.disputes}件・返金${refunds}件・返品${returns}件）。新しく止めた${result.parked}件、解決した${result.resolved}件。`;
 }
 
 function PostingErrorGuide({ event }: { event: PendingEvent }) {
@@ -158,6 +168,69 @@ function PostingErrorGuide({ event }: { event: PendingEvent }) {
   );
 }
 
+/** 手で入れる待ち（order_not_postable）を、手で入れた仕訳と結んで閉じる欄。入力は仕訳の ID とメモ（必須）。失敗の文は route の文をそのまま出す */
+function LinkEntryForm({
+  entryId,
+  memo,
+  sending,
+  error,
+  onEntryIdChange,
+  onMemoChange,
+  onSend,
+  onCancel,
+}: {
+  entryId: string;
+  memo: string;
+  sending: boolean;
+  error: string | null;
+  onEntryIdChange: (value: string) => void;
+  onMemoChange: (value: string) => void;
+  onSend: () => void;
+  onCancel: () => void;
+}) {
+  const entryOk = UUID_PATTERN.test(entryId.trim());
+  const canSend = !sending && entryOk && memo.trim() !== "";
+  return (
+    <div className="space-y-2">
+      <label className="block">
+        <span className={labelClassName}>手で入れた仕訳の ID</span>
+        <input
+          type="text"
+          autoComplete="off"
+          spellCheck={false}
+          className="h-10 w-full rounded-md border border-[#d4d4d4] bg-white px-3 font-acumin lk-text-sm text-black focus:border-black focus:outline-none"
+          value={entryId}
+          onChange={(e) => onEntryIdChange(e.target.value)}
+        />
+      </label>
+      <p className={noteClassName}>この注文の分け方を決めて、手で入れた仕訳（または注文を使わない手入力の仕訳）の ID を入れてください。</p>
+      <label className="block">
+        <span className={labelClassName}>メモ（必須）</span>
+        <textarea
+          maxLength={MAX_NOTE}
+          className="h-20 w-full rounded-md border border-[#d4d4d4] bg-white px-3 py-2 font-acumin lk-text-sm text-black focus:border-black focus:outline-none"
+          value={memo}
+          onChange={(e) => onMemoChange(e.target.value)}
+        />
+      </label>
+      <p className={noteClassName}>{`何を確かめて、どう分けたかを${MAX_NOTE}文字までで書いてください。個人の名前やメールは書かないでください。`}</p>
+      {error ? (
+        <p role="alert" className="font-acumin lk-text-3xs text-red-700">
+          {error}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        <Button variant="primary" size="sm" shape="rounded" className="font-acumin" disabled={!canSend} onClick={onSend}>
+          結んで閉じる
+        </Button>
+        <Button variant="outline" size="sm" shape="rounded" className="font-acumin" onClick={onCancel}>
+          やめる
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function PendingView(): React.JSX.Element {
   const [events, setEvents] = useState<PendingEvent[]>([]);
   const [openCount, setOpenCount] = useState<number | null>(null);
@@ -176,6 +249,19 @@ export function PendingView(): React.JSX.Element {
   const [sendingResolve, setSendingResolve] = useState(false);
   const resolveGuard = useRef(false);
   const [resolveNotice, setResolveNotice] = useState<Notice | null>(null);
+
+  // 手で入れた仕訳と結んで閉じる（order_not_postable。11a の route）
+  const [linkingId, setLinkingId] = useState<string | null>(null);
+  const [linkEntryId, setLinkEntryId] = useState("");
+  const [linkMemo, setLinkMemo] = useState("");
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [sendingLink, setSendingLink] = useState(false);
+  const linkGuard = useRef(false);
+  // 同じ内容の再送は同じ番号、入力を変えたら作り直す（DB は同じ番号で違う内容を断る）
+  const linkKey = useRef(crypto.randomUUID());
+
+  // 取り消しの区分を選ぶ返金（refund_cancel_undecided の行の refund_id）
+  const [decidingRefundId, setDecidingRefundId] = useState<string | null>(null);
 
   /** 先頭の1ページを読み直す（続きは捨てる）。 */
   const load = useCallback(async () => {
@@ -279,8 +365,60 @@ export function PendingView(): React.JSX.Element {
     setSendingResolve(false);
   };
 
+  const openLink = (id: string) => {
+    setLinkingId(id);
+    setLinkEntryId("");
+    setLinkMemo("");
+    setLinkError(null);
+    linkKey.current = crypto.randomUUID();
+  };
+
+  const sendLink = async (id: string) => {
+    const entryId = linkEntryId.trim();
+    const note = linkMemo.trim();
+    if (!UUID_PATTERN.test(entryId) || note === "" || linkGuard.current) return;
+    linkGuard.current = true;
+    setSendingLink(true);
+    setLinkError(null);
+    const result = await sendAccountingJson(accountingUrl(`pending-events/${id}/link-entry`), "POST", {
+      entryId,
+      note,
+      requestKey: linkKey.current,
+    });
+    linkGuard.current = false;
+    setSendingLink(false);
+    if (result.ok) {
+      setLinkingId(null);
+      setResolveNotice(successNotice("手で入れた仕訳と結んで閉じました。"));
+      await load();
+      return;
+    }
+    // 結べない理由は route の文をそのまま出す（別の注文・手で入れた仕訳ではない・取り消し済み・見つからない）
+    setLinkError(result.message);
+    if (result.code === "ACCOUNTING_PENDING_RESOLVED" || result.code === "ACCOUNTING_EVENT_NOT_POSTABLE") {
+      setLinkingId(null);
+      setResolveNotice(failureNotice(result));
+      await load();
+    }
+  };
+
+  const refundIdOf = (event: PendingEvent): string | null =>
+    typeof event.detail.refund_id === "string" && UUID_PATTERN.test(event.detail.refund_id) ? event.detail.refund_id : null;
+
   return (
     <div className="space-y-5">
+      {decidingRefundId ? (
+        <RefundCancellationDialog
+          refundId={decidingRefundId}
+          onClose={() => setDecidingRefundId(null)}
+          onDone={() => {
+            setDecidingRefundId(null);
+            setResolveNotice(successNotice("取り消しの区分を決めました。計上すると、この行は閉じます。"));
+            void load();
+          }}
+          onStale={() => void load()}
+        />
+      ) : null}
       <Section title="計上待ち">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="font-acumin lk-text-3xs text-black">
@@ -386,6 +524,45 @@ export function PendingView(): React.JSX.Element {
                       )
                     ) : (
                       <p className={noteClassName}>確認済みにできるのは、権限のある人だけです</p>
+                    )
+                  ) : event.reason === "refund_cancel_undecided" && refundIdOf(event) !== null ? (
+                    // この行が閉じる道は、取り消しの区分を選ぶこと（選ぶと計上係が仕訳を入れて閉じる）
+                    permissions.correctEntries ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        shape="rounded"
+                        className="font-acumin"
+                        onClick={() => setDecidingRefundId(refundIdOf(event))}
+                      >
+                        取り消しの区分を選ぶ
+                      </Button>
+                    ) : (
+                      <p className={noteClassName}>区分を選べるのは、権限のある人だけです</p>
+                    )
+                  ) : event.reason === "order_not_postable" && permissions.correctEntries ? (
+                    // 手で仕訳を入れた後、その仕訳と結んで閉じる（権限のある人だけ。ほかのお金の理由は、仕訳が入るまで閉じない）
+                    linkingId === event.id ? (
+                      <LinkEntryForm
+                        entryId={linkEntryId}
+                        memo={linkMemo}
+                        sending={sendingLink}
+                        error={linkError}
+                        onEntryIdChange={(value) => {
+                          linkKey.current = crypto.randomUUID();
+                          setLinkEntryId(value);
+                        }}
+                        onMemoChange={(value) => {
+                          linkKey.current = crypto.randomUUID();
+                          setLinkMemo(value);
+                        }}
+                        onSend={() => void sendLink(event.id)}
+                        onCancel={() => setLinkingId(null)}
+                      />
+                    ) : (
+                      <Button variant="outline" size="sm" shape="rounded" className="font-acumin" onClick={() => openLink(event.id)}>
+                        手で入れた仕訳と結んで閉じる
+                      </Button>
                     )
                   ) : (
                     <p className={noteClassName}>仕訳が入るまで閉じられません</p>

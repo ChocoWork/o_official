@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { ADMIN_NOTE_MAX_LENGTH } from '@/lib/orders/order-payment-types';
+import { hasDisputeHold } from '@/lib/orders/refund/refund-dispute-hold';
 import { loadRefundMaterials } from '@/lib/orders/refund/refund-materials';
 import { INVALID_REQUEST_BODY, REFUND_ERROR_MESSAGES, refundErrorBody } from '@/lib/orders/refund/refund-messages';
 import { createDefaultRefundServiceDeps } from '@/lib/orders/refund/refund-service';
@@ -95,6 +96,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (!materials) {
       return NextResponse.json(refundErrorBody('order_not_found'), { status: REFUND_ERROR_MESSAGES.order_not_found.status });
     }
+    // 判断待ちの取り消しがある注文は、画面が「今すぐ返金」を選べなくする。止めるのは DB で、読めなければ偽（会計の計画3 FREQ-584-AC-01）
+    const disputeHold = await hasDisputeHold(client, parsedId.data);
     return NextResponse.json(
       {
         data: {
@@ -104,6 +107,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
           refundableAmount: materials.order.refundableAmount,
           refundableShipping: materials.order.refundableShipping,
           inspectionEnabled: settings.inspectionEnabled,
+          disputeHold,
         },
       },
       { headers: { 'Cache-Control': 'no-store' } },

@@ -309,6 +309,11 @@ export function DisputeList({
           </table>
         </div>
       ) : null}
+      {rows.length > 0 ? (
+        <p data-testid="dispute-account-note" className={noteClassName}>
+          振り替え先の科目が複数に分かれる取り消しは、そのうち1つだけを表示しています。
+        </p>
+      ) : null}
       {moreButton}
     </Section>
   );

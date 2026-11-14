@@ -8,6 +8,7 @@ export function SwitchToggle({
   onChange,
   label,
   ariaLabel,
+  ariaDescribedBy,
   disabled = false,
   fullWidth = false,
   size = 'md',
@@ -26,6 +27,7 @@ export function SwitchToggle({
         data-ui-switch-track=""
         role="switch"
         aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
         aria-checked={checked}
         onClick={() => onChange(!checked)}
         disabled={disabled}

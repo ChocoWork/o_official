@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/Button/Button";
+import { SwitchToggle } from "@/components/ui/SwitchToggle/SwitchToggle";
 import { clientFetch } from "@/lib/client-fetch";
 import {
   ACCOUNTING_TEXT,
@@ -14,6 +15,7 @@ import {
   type AccountingPeriod,
 } from "@/lib/accounting/period";
 import type { StartupDeadline } from "@/lib/accounting/startup-deadlines";
+import { accountingUrl, getAccountingData, isRecord } from "./accounting-api";
 import { DisputeSettingsPanel } from "./dispute-settings-panel";
 import { ShippingOptionsSection } from "./year-end-shipments-panel";
 import {
@@ -208,6 +210,119 @@ function FilingForm({
         </Button>
       </div>
     </div>
+  );
+}
+
+/** 返品の届いた日に運送会社の配達日を使う設定（GET/PUT /api/admin/accounting/return-options。計画3 FREQ-575-AC-04）の読み口の形 */
+type ReturnArrivalOption = { useCarrierDeliveryDate: boolean; changedAt: string | null; version: string; noticeKey: string };
+
+const RETURN_OPTION_TRACKING_NOTICE =
+  "返品の追跡番号を追跡のサービスに登録できるようになるまで、配達日は自動では入りません。届いた日は人が入れます。";
+const RETURN_OPTION_MIDYEAR_NOTICE =
+  "年の途中で切り替えると、その年の返品の届いた日の決め方が途中で変わります。切り替えるのは、年の初めを勧めます。";
+
+/**
+ * 設定・期間のタブの「返品の届いた日」。運送会社の配達日を届いた日に使うかのオン・オフ（既定オフ）。
+ * 切り替えは admin.accounting.settings.manage の人だけ。押すと、年の途中の注意を出し、同意してから送る（版つき）。
+ * 追跡のサービスへの登録の注意は、いつも出して、切り替えのボタンに aria-describedby で結ぶ。
+ */
+export function ReturnArrivalOptionSection() {
+  const noticeId = useId();
+  const [option, setOption] = useState<ReturnArrivalOption | null>(null);
+  const [manage, setManage] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<boolean | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [saving, setSaving] = useState(false);
+  const guard = useRef(false);
+
+  const load = useCallback(async () => {
+    const result = await getAccountingData<{ option: ReturnArrivalOption }>("return-options", {}, (data) => isRecord(data) && isRecord(data.option));
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    setError(null);
+    setOption(result.data.option);
+    setManage(result.permissions.manageSettings);
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const save = async (enabled: boolean) => {
+    if (!option || guard.current) return;
+    guard.current = true;
+    setSaving(true);
+    setNotice(null);
+    const result = await sendAccountingJson(accountingUrl("return-options"), "PUT", {
+      enabled,
+      expectedVersion: option.version,
+      requestKey: crypto.randomUUID(),
+    });
+    guard.current = false;
+    setSaving(false);
+    if (result.ok) {
+      const saved = isRecord(result.data) && isRecord(result.data.option) ? (result.data.option as unknown as ReturnArrivalOption) : null;
+      if (saved) setOption(saved);
+      setConfirming(null);
+      setNotice(successNotice("保存しました。"));
+      return;
+    }
+    setConfirming(null);
+    setNotice(failureNotice(result));
+  };
+
+  return (
+    <Section title="返品の届いた日">
+      <p className={noteClassName}>
+        返品を受け取った時の届いた日に、運送会社の配達日を使うかを決めます。既定はオフで、オフの間は、受け取りを記録した日（または受け取りの画面で選んだ日）が届いた日になります。
+      </p>
+      <p id={noticeId} data-testid="return-option-tracking-notice" className="font-acumin lk-text-4xs text-[#b45309]">
+        {RETURN_OPTION_TRACKING_NOTICE}
+      </p>
+      {error ? (
+        <div className="space-y-2">
+          <p role="alert" className="font-acumin lk-text-3xs text-red-700">
+            {error}
+          </p>
+          <Button variant="outline" size="2xs" shape="rounded" className="font-acumin" onClick={() => void load()}>
+            もう一度読み込む
+          </Button>
+        </div>
+      ) : null}
+      {option ? (
+        <div className="space-y-3">
+          <SwitchToggle
+            label="運送会社の配達日を届いた日に使う"
+            checked={option.useCarrierDeliveryDate}
+            ariaDescribedBy={noticeId}
+            disabled={!manage || saving}
+            size="sm"
+            onChange={(next) => {
+              setNotice(null);
+              setConfirming(next);
+            }}
+          />
+          {!manage ? <p className={noteClassName}>切り替えられるのは、権限のある人だけです</p> : null}
+          {manage && confirming !== null ? (
+            <div className="space-y-2 rounded-sm border border-[#ededed] p-3">
+              <p className="font-acumin lk-text-4xs text-black">{RETURN_OPTION_MIDYEAR_NOTICE}</p>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="primary" size="sm" shape="rounded" className="font-acumin" disabled={saving} onClick={() => void save(confirming)}>
+                  この内容で切り替える
+                </Button>
+                <Button variant="outline" size="sm" shape="rounded" className="font-acumin" disabled={saving} onClick={() => setConfirming(null)}>
+                  やめる
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      <NoticeLine notice={notice} onReload={() => void load()} />
+    </Section>
   );
 }
 
@@ -785,6 +900,7 @@ export function SettingsView({
 
       <DisputeSettingsPanel />
       <ShippingOptionsSection today={today} />
+      <ReturnArrivalOptionSection />
     </div>
   );
 }

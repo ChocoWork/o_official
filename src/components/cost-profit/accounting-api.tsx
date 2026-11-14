@@ -173,6 +173,7 @@ const EVENT_KIND_LABELS: Readonly<Record<string, string>> = {
   shipment_redated: "出荷日を直した仕訳",
   pre_shipment_refund: "出荷前の返金",
   return_arrived: "返品の到着",
+  return_arrival_redated: "返品の届いた日の直し",
   return_amount_decided: "返品の額の決定",
   return_refund: "返品の返金",
   refund_failed: "返金の失敗",

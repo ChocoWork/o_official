@@ -8,6 +8,8 @@ import {
   OrderReturnReleaseExchangeDialog,
   OrderReturnReopenDialog,
 } from '@/components/OrderReturnActionDialogs';
+import { dayLabel, getAccountingData, hasArray } from '@/components/cost-profit/accounting-api';
+import OrderReturnArrivalDialog from '@/components/OrderReturnArrivalDialog';
 import OrderReturnCreateForm, { type CreateReturnResponse } from '@/components/OrderReturnCreateForm';
 import OrderReturnReceiveDialog from '@/components/OrderReturnReceiveDialog';
 import OrderReturnRefundDialog from '@/components/OrderReturnRefundDialog';
@@ -63,8 +65,19 @@ type OrderReturnsDialogBodyProps = Omit<OrderReturnsDialogProps, 'open'>;
 /** 返品の欄から開く、返品ごとの操作の画面（Task 9 の部品と、段2の申し込みを確かめる画面） */
 type SubDialogKind = 'review' | 'receive' | 'refund' | 'inspect' | 'cancel' | 'reopen' | 'fee_payment' | 'release_exchange';
 
-/** 開いている画面。「返品を作る」か、返品ごとの操作。何も開いていない間だけ、この返品の欄を出す */
-type OpenScreen = { kind: 'create' } | { kind: SubDialogKind; returnId: string };
+/** 開いている画面。「返品を作る」か、返品ごとの操作か、届いた日を直す画面。何も開いていない間だけ、この返品の欄を出す */
+type OpenScreen = { kind: 'create' } | { kind: SubDialogKind; returnId: string } | { kind: 'arrival'; receiptId: string };
+
+/** 受け取りごとの届いた日と直した跡（GET /api/admin/accounting/return-arrival の arrivals の1つ。会計の計画3） */
+type ArrivalInfo = {
+  receiptId: string;
+  arrivedOnOriginal: string;
+  arrivedOnCurrent: string;
+  version: number;
+  corrections: Array<{ version: number; previousOn: string; newOn: string; reason: string; actorId: string; createdAt: string }>;
+};
+/** 一度に引ける受け取りの数（route と同じ） */
+const MAX_ARRIVAL_RECEIPTS = 200;
 
 const LOAD_FAILURE_MESSAGE = '返品の情報を読み込めませんでした。';
 const EMPTY_MESSAGE = 'この注文にはまだ返品がありません。';
@@ -184,9 +197,49 @@ type ReturnCardProps = {
   detail: OrderReturnDetail;
   canRefund: boolean;
   onOpen: (kind: SubDialogKind) => void;
+  /** 受け取りの番号ごとの届いた日と直した跡（読めなければ空） */
+  arrivals: ReadonlyMap<string, ArrivalInfo>;
+  /** 届いた日を直せる人（権限 admin.accounting.entries.correct。route の答えの旗） */
+  canCorrectArrival: boolean;
+  onCorrectArrival: (receiptId: string) => void;
 };
 
-function ReturnCard({ detail, canRefund, onOpen }: ReturnCardProps) {
+/** 受け取りごとの届いた日。直した跡（版・前後の日・理由・人）と、権限のある人の「届いた日を直す」。人は番号の先頭8字だけ */
+function ArrivalBlock({ detail, arrivals, canCorrectArrival, onCorrectArrival }: Pick<ReturnCardProps, 'detail' | 'arrivals' | 'canCorrectArrival' | 'onCorrectArrival'>) {
+  const infos = detail.receipts.flatMap((receipt) => {
+    const info = receipt.kind === 'receive' ? arrivals.get(receipt.id) : undefined;
+    return info ? [info] : [];
+  });
+  if (infos.length === 0) return null;
+  return (
+    <ul aria-label="届いた日" className="space-y-2">
+      {infos.map((info) => (
+        <li key={info.receiptId} className="space-y-1">
+          <p className="font-acumin lk-text-3xs text-black">{`届いた日 ${dayLabel(info.arrivedOnCurrent)}`}</p>
+          {info.corrections.length > 0 ? (
+            <>
+              <p className="font-acumin lk-text-3xs text-[#474747]">{`はじめの届いた日 ${dayLabel(info.arrivedOnOriginal)}`}</p>
+              <ul aria-label="届いた日の直しの跡" className="space-y-1">
+                {info.corrections.map((correction) => (
+                  <li key={correction.version} className="font-acumin lk-text-3xs text-[#474747]">
+                    {`版${correction.version}　${dayLabel(correction.previousOn)} → ${dayLabel(correction.newOn)}　理由 ${correction.reason}　直した人 ${correction.actorId.slice(0, 8)}`}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {canCorrectArrival ? (
+            <Button variant="secondary" size="sm" className="font-acumin" onClick={() => onCorrectArrival(info.receiptId)}>
+              届いた日を直す
+            </Button>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ReturnCard({ detail, canRefund, onOpen, arrivals, canCorrectArrival, onCorrectArrival }: ReturnCardProps) {
   const actions = returnActionsOf(detail, canRefund);
   const awaitingFee = detail.fees.feeDueAmount > 0 && detail.fees.feeReceivedAt === null;
   const requested = detail.status === 'requested';
@@ -221,6 +274,7 @@ function ReturnCard({ detail, canRefund, onOpen }: ReturnCardProps) {
             <ReturnLineRow key={line.id} line={line} requested={requested} />
           ))}
         </ul>
+        <ArrivalBlock detail={detail} arrivals={arrivals} canCorrectArrival={canCorrectArrival} onCorrectArrival={onCorrectArrival} />
         {awaitingFee ? (
           <p className="font-acumin lk-text-3xs text-black">{`お支払い待ち ${formatYen(detail.fees.feeDueAmount)}`}</p>
         ) : null}
@@ -300,6 +354,9 @@ function OrderReturnsDialogBody({ orderId, canRefund, onClose, onChanged }: Orde
   const [screen, setScreen] = useState<OpenScreen | null>(null);
   // 最初の読み込みの時だけ、申し込み中の返品の確かめる画面を開く。読み直しのたびには開かない（閉じた画面が勝手に戻らないように）
   const autoReviewDoneRef = useRef(false);
+  // 届いた日と直した跡（会計の route。読めなくても返品の欄は出す）と、直せる人の旗
+  const [arrivals, setArrivals] = useState<ReadonlyMap<string, ArrivalInfo>>(new Map());
+  const [canCorrectArrival, setCanCorrectArrival] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -323,6 +380,29 @@ function OrderReturnsDialogBody({ orderId, canRefund, onClose, onChanged }: Orde
       active = false;
     };
   }, [orderId, reloadCount]);
+
+  // 返品の中身を読めたら、受け取りの届いた日と直した跡を読む。受け取りが無い間は読まない。読めなければ何も出さない
+  useEffect(() => {
+    const receiptIds = (data?.returns ?? [])
+      .filter((detail) => detail.status !== 'cancelled' && detail.status !== 'declined')
+      .flatMap((detail) => detail.receipts.filter((receipt) => receipt.kind === 'receive').map((receipt) => receipt.id))
+      .slice(0, MAX_ARRIVAL_RECEIPTS);
+    if (receiptIds.length === 0) return;
+    let active = true;
+    void getAccountingData<{ arrivals: ArrivalInfo[] }>('return-arrival', { receiptIds: receiptIds.join(',') }, (answer) => hasArray(answer, 'arrivals')).then((result) => {
+      if (!active) return;
+      if (!result.ok) {
+        setArrivals(new Map());
+        setCanCorrectArrival(false);
+        return;
+      }
+      setArrivals(new Map(result.data.arrivals.map((info) => [info.receiptId, info])));
+      setCanCorrectArrival(result.permissions.correctEntries);
+    });
+    return () => {
+      active = false;
+    };
+  }, [data]);
 
   const openScreen = (next: OpenScreen) => {
     setNotice(null);
@@ -391,6 +471,9 @@ function OrderReturnsDialogBody({ orderId, canRefund, onClose, onChanged }: Orde
                         detail={detail}
                         canRefund={canRefund && data.canRefund}
                         onOpen={(kind) => openScreen({ kind, returnId: detail.id })}
+                        arrivals={arrivals}
+                        canCorrectArrival={canCorrectArrival}
+                        onCorrectArrival={(receiptId) => openScreen({ kind: 'arrival', receiptId })}
                       />
                     ))}
                   </ul>
@@ -428,7 +511,16 @@ function OrderReturnsDialogBody({ orderId, canRefund, onClose, onChanged }: Orde
       {screen?.kind === 'create' ? (
         <OrderReturnCreateForm orderId={orderId} onClose={closeScreen} onCreated={handleCreated} onUncertain={handleUncertain} />
       ) : null}
-      {screen && screen.kind !== 'create' ? (
+      {screen?.kind === 'arrival' ? (
+        <OrderReturnArrivalDialog
+          receiptId={screen.receiptId}
+          currentOn={arrivals.get(screen.receiptId)?.arrivedOnCurrent ?? ''}
+          version={arrivals.get(screen.receiptId)?.version ?? 0}
+          onClose={closeScreen}
+          onDone={handleDone}
+        />
+      ) : null}
+      {screen && screen.kind !== 'create' && screen.kind !== 'arrival' ? (
         <ReturnSubDialog
           kind={screen.kind}
           orderId={orderId}

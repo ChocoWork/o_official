@@ -18,6 +18,8 @@ type ReturnsReadData = {
   refundableAmount: number;
   refundableShipping: number;
   inspectionEnabled?: boolean;
+  /** 窓口が足す: 注文にカード会社の判断待ちの取り消しがある（会計の計画3 FREQ-584-AC-01）。無ければ偽として扱う */
+  disputeHold?: boolean;
 };
 
 /** 操作の画面が使う材料。操作する返品の中身と、返金に関わる分 */
@@ -30,6 +32,8 @@ export type LoadedReturn = {
   refundableShipping: number;
   /** ショップの設定の「要検品を使う」。オンの時だけ受け取りの画面で「検品待ち」を選べる */
   inspectionEnabled: boolean;
+  /** 注文にカード会社の判断待ちの取り消しがある。真なら返金は DB が断る（受け取りだけ記録できる）。読めなければ偽 */
+  disputeHold: boolean;
 };
 
 type LoadResult = { kind: 'error'; message: string } | ({ kind: 'ready' } & LoadedReturn);
@@ -53,6 +57,7 @@ function toLoadResult(read: ReturnReadResult<ReturnsReadData>, returnId: string)
     refundableAmount: amountOf(read.data.refundableAmount),
     refundableShipping: amountOf(read.data.refundableShipping),
     inspectionEnabled: read.data.inspectionEnabled === true,
+    disputeHold: read.data.disputeHold === true,
   };
 }
 

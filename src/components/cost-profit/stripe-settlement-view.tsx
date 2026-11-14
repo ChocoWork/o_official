@@ -6,6 +6,7 @@ import { TextField } from "@/components/ui/TextField/TextField";
 import { useAccountingPermissions } from "./accounting-api";
 import { BalanceTopupForm } from "./balance-topup-form";
 import { DisputeList } from "./dispute-list";
+import { RefundDebtsPanel } from "./refund-debts-panel";
 import { InvoiceRecordForm } from "./reconciliation-view";
 import {
   payoutConfirmBlockReason,
@@ -33,7 +34,7 @@ function InvoiceMonthSection(): React.JSX.Element {
   );
 }
 
-/** Stripe の精算に足す、残高の補充の入力・請求書の記録・カード会社からの支払いの取り消しの一覧（計画2）。 */
+/** Stripe の精算に足す、残高の補充の入力・請求書の記録・カード会社からの支払いの取り消しの一覧（計画2）と、返金の借りと振込の記録（計画3）。 */
 function StripeAccountingTools(): React.JSX.Element {
   const { permissions, error } = useAccountingPermissions();
   return (
@@ -44,6 +45,7 @@ function StripeAccountingTools(): React.JSX.Element {
       />
       <InvoiceMonthSection />
       <DisputeList />
+      <RefundDebtsPanel />
     </div>
   );
 }

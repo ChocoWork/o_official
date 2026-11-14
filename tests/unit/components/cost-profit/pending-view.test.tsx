@@ -7,6 +7,8 @@ import { mockFetch, solePeriod } from './settings-fixtures';
 // 計上待ちのタブ（FREQ-569）。route の答えは Task 10 の形（計上待ちは camelCase、前受金は snake_case）。
 
 type Serve = {
+	cancellation?: { status: number; body: unknown };
+	link?: { status: number; body: unknown };
 	events?: ReturnType<typeof pendingEvent>[];
 	flags?: Flags;
 	run?: Record<string, unknown>;
@@ -33,6 +35,16 @@ function serve(state: Serve = {}) {
 		}
 		if (/\/pending-events\/[^/]+\/resolve$/.test(url.pathname) && method === 'POST') {
 			const reply = state.resolve ?? { status: 200, body: { data: { event: {} } } };
+			if (reply.status === 200) events = events.filter((event) => !url.pathname.includes(event.id));
+			return reply;
+		}
+		if (url.pathname === `${BASE}/refund-cancellations` && method === 'POST') {
+			const reply = state.cancellation ?? { status: 200, body: { data: { decision: { refundId: uuid(77), state: 'owed', eventId: null, replayed: false } } } };
+			if (reply.status === 200) events = events.filter((event) => event.reason !== 'refund_cancel_undecided');
+			return reply;
+		}
+		if (/\/pending-events\/[^/]+\/link-entry$/.test(url.pathname) && method === 'POST') {
+			const reply = state.link ?? { status: 200, body: { data: { event: {} } } };
 			if (reply.status === 200) events = events.filter((event) => !url.pathname.includes(event.id));
 			return reply;
 		}
@@ -65,8 +77,8 @@ const REASON_SNIPPETS: Record<(typeof PENDING_REASONS)[number], string> = {
 	dispute_shipment_pending: '出荷の仕訳がまだ入っていない物',
 	shipment_lines_mismatch: '品ごとの数量が食い違っています',
 	no_revenue: '仕訳にする額が0円です',
-	refund_prior_unposted: '前の返金や返品の仕訳がまだ入っていません',
-	refund_cancel_undecided: '返金の取り消しの扱いがまだ決まっていません',
+	refund_prior_unposted: '同じ注文の前の返金の仕訳がまだ入っていません。入ると自動で計上されます。',
+	refund_cancel_undecided: 'この返金は Stripe 側で取り消されました。店が返金をやめたのか、返すつもりのまま返せなかったのかを選んでください。',
 };
 
 const pendingRegion = () => screen.getByRole('region', { name: '計上待ち' });
@@ -373,6 +385,187 @@ describe('計上待ちのタブ', () => {
 		await waitFor(() =>
 			expect(api.fn.mock.calls.some((call) => String(call[0]).includes('asOf=2027-03-31'))).toBe(true),
 		);
+	});
+
+	it('FREQ-569-AC-01: 計上待ちのタブに新しい2つの理由のやさしい文が出て、名前やメールが出ない', async () => {
+		serve({
+			events: [
+				pendingEvent(1, { reason: 'refund_prior_unposted', eventKind: 'return_refund', detail: { refund_id: uuid(71) } }),
+				pendingEvent(2, { reason: 'refund_cancel_undecided', eventKind: 'refund_abandoned', detail: { refund_id: uuid(72), canceled_on: '2026-11-08' } }),
+			],
+		});
+		render(<PendingView />);
+		const region = await screen.findByRole('region', { name: '計上待ち' });
+		const reasons = await within(region).findAllByTestId('pending-reason');
+		expect(reasons[0].textContent).toBe('同じ注文の前の返金の仕訳がまだ入っていません。入ると自動で計上されます。');
+		expect(reasons[1].textContent).toBe('この返金は Stripe 側で取り消されました。店が返金をやめたのか、返すつもりのまま返せなかったのかを選んでください。');
+		expect(region.textContent).not.toMatch(/@|様|メールアドレス|住所/);
+		expect(region.textContent).not.toMatch(/[!！]/);
+	});
+
+	it('FREQ-569-AC-01: 送料・合計が合わない行は今までの文のまま、取り消しの確定と返品の0円の終わりの行はその補足を主な文にする', async () => {
+		serve({
+			events: [
+				pendingEvent(1, { reason: 'order_not_postable', detail: { reason: 'shipping' } }),
+				pendingEvent(2, { reason: 'order_not_postable', eventKind: 'return_amount_decided', detail: { reason: 'dispute_lost' } }),
+				pendingEvent(3, { reason: 'order_not_postable', eventKind: 'dispute_event', detail: { reason: 'return_closed_after_lost' } }),
+			],
+		});
+		render(<PendingView />);
+		const reasons = await screen.findAllByTestId('pending-reason');
+		expect(reasons[0]).toHaveTextContent('この注文は送料や合計が決まりの形と合わないため、自動で計上できません。内容を確かめてください。');
+		expect(reasons[1].textContent).toBe('カード会社の取り消しが確定した後に返品の返金を0円で終えました。分け方を決めて手で仕訳を入れてください。');
+		expect(reasons[2].textContent).toBe('返品の返金を0円で終えた後に、それより前の日のカード会社の取り消しの確定が届きました。分け方を決めて手で仕訳を入れてください。');
+		// 主な文に回した補足を、同じ行に二重に出さない
+		const items = screen.getAllByRole('listitem');
+		expect(items[1].textContent?.split('分け方を決めて手で仕訳を入れてください。').length).toBe(2);
+		expect(items[1].textContent).not.toContain('送料や合計が決まりの形と合わない');
+	});
+
+	it('FREQ-562-AC-05: もう一度計上するの結果に返金と返品の件数が出る', async () => {
+		serve({
+			events: [pendingEvent(1)],
+			run: { payments: 1, shipments: 0, stripe: 0, disputes: 0, refunds: 2, returns: 3, parked: 0, resolved: 0, hasMore: false },
+		});
+		render(<PendingView />);
+		fireEvent.click(await screen.findByRole('button', { name: 'もう一度計上する' }));
+		const status = await screen.findByText(/6件を計上しました/);
+		expect(status).toHaveTextContent('返金2件');
+		expect(status).toHaveTextContent('返品3件');
+	});
+
+	describe('取り消しの区分の選択', () => {
+		const undecided = () => pendingEvent(1, { reason: 'refund_cancel_undecided', eventKind: 'refund_abandoned', detail: { refund_id: uuid(77), canceled_on: '2026-11-08' } });
+
+		it('FREQ-584-AC-02: 取り消しの区分の選択は権限のある人だけに出て、2つの選択肢と理由が必要で、送ると二重に押せない', async () => {
+			const api = serve({ events: [undecided()] });
+			render(<PendingView />);
+			fireEvent.click(await screen.findByRole('button', { name: '取り消しの区分を選ぶ' }));
+			const dialog = await screen.findByRole('dialog', { name: '返金の取り消しの区分を選ぶ' });
+			expect(within(dialog).getAllByRole('radio')).toHaveLength(2);
+			const send = within(dialog).getByRole('button', { name: '区分を決める' });
+			expect(send).toBeDisabled();
+			fireEvent.click(within(dialog).getByRole('radio', { name: '返すつもりのまま返せなかった' }));
+			expect(send).toBeDisabled();
+			fireEvent.change(within(dialog).getByLabelText('理由（必須）'), { target: { value: '振込で返す' } });
+			fireEvent.click(send);
+			fireEvent.click(send);
+			await waitFor(() => expect(api.calls.filter((call) => call.url === `${BASE}/refund-cancellations`)).toHaveLength(1));
+		});
+
+		it('FREQ-584-AC-02: 区分を選ぶ権限が無い人には、ボタンを出さず、権限のある人だけの旨を出す', async () => {
+			serve({ events: [undecided()], flags: { manageSettings: false, manageFinance: true } });
+			render(<PendingView />);
+			await screen.findByTestId('pending-reason');
+			expect(screen.queryByRole('button', { name: '取り消しの区分を選ぶ' })).not.toBeInTheDocument();
+			expect(screen.getByText('区分を選べるのは、権限のある人だけです')).toBeInTheDocument();
+		});
+
+		it('FREQ-579-AC-03: 区分を選ぶと一覧から消える（再取得する）', async () => {
+			const api = serve({ events: [undecided()] });
+			render(<PendingView />);
+			fireEvent.click(await screen.findByRole('button', { name: '取り消しの区分を選ぶ' }));
+			const dialog = await screen.findByRole('dialog', { name: '返金の取り消しの区分を選ぶ' });
+			fireEvent.click(within(dialog).getByRole('radio', { name: '返すつもりのまま返せなかった' }));
+			fireEvent.change(within(dialog).getByLabelText('理由（必須）'), { target: { value: '振込で返す' } });
+			fireEvent.click(within(dialog).getByRole('button', { name: '区分を決める' }));
+			expect(await screen.findByText('計上待ちはありません')).toBeInTheDocument();
+			const post = api.calls.find((call) => call.url === `${BASE}/refund-cancellations`);
+			expect(post?.body).toEqual({ refundId: uuid(77), kind: 'owed', reason: '振込で返す', requestKey: expect.stringMatching(/^[0-9a-f-]{36}$/) });
+			// 最初の読みの後に、もう1回読み直している
+			expect(api.calls.filter((call) => call.url === `${BASE}/pending-events` && call.method === 'GET').length).toBeGreaterThanOrEqual(2);
+			expect(screen.queryByRole('dialog', { name: '返金の取り消しの区分を選ぶ' })).not.toBeInTheDocument();
+		});
+	});
+
+	describe('手で入れた仕訳と結ぶ', () => {
+		const manual = () => pendingEvent(1, { reason: 'order_not_postable', eventKind: 'return_amount_decided', detail: { reason: 'dispute_lost' } });
+		const ENTRY_ID = uuid(900);
+
+		it('FREQ-569-AC-07: 手で入れる計上待ちの行は、権限のある人だけが手入力の仕訳と結んで閉じられ、メモが空なら送れない', async () => {
+			const api = serve({ events: [manual(), pendingEvent(2, { reason: 'payment_journal_missing' })] });
+			render(<PendingView />);
+			const region = await screen.findByRole('region', { name: '計上待ち' });
+			await within(region).findByText('未解決 2件');
+			// order_not_postable の行だけにボタンが出る。ほかのお金の理由の行は今までの案内のまま
+			expect(within(region).getAllByRole('button', { name: '手で入れた仕訳と結んで閉じる' })).toHaveLength(1);
+			expect(within(region).getByText('仕訳が入るまで閉じられません')).toBeInTheDocument();
+			fireEvent.click(within(region).getByRole('button', { name: '手で入れた仕訳と結んで閉じる' }));
+			const entry = await within(region).findByLabelText('手で入れた仕訳の ID');
+			const note = within(region).getByLabelText('メモ（必須）');
+			const send = within(region).getByRole('button', { name: '結んで閉じる' });
+			expect(send).toBeDisabled();
+			fireEvent.change(entry, { target: { value: ENTRY_ID } });
+			expect(send).toBeDisabled();
+			fireEvent.change(note, { target: { value: '   ' } });
+			expect(send).toBeDisabled();
+			fireEvent.change(note, { target: { value: '分け方を決めて手で入れた' } });
+			fireEvent.change(entry, { target: { value: 'not-a-uuid' } });
+			expect(send).toBeDisabled();
+			fireEvent.change(entry, { target: { value: ENTRY_ID } });
+			expect(send).toBeEnabled();
+			fireEvent.click(send);
+			fireEvent.click(send);
+			await waitFor(() => expect(api.calls.filter((call) => call.url.endsWith('/link-entry'))).toHaveLength(1));
+			const post = api.calls.find((call) => call.url.endsWith('/link-entry'));
+			expect(post?.url).toBe(`${BASE}/pending-events/${uuid(201)}/link-entry`);
+			expect(post?.body).toEqual({ entryId: ENTRY_ID, note: '分け方を決めて手で入れた', requestKey: expect.stringMatching(/^[0-9a-f-]{36}$/) });
+			// 結べたら読み直して、その行は消える
+			await waitFor(() => expect(within(region).queryByRole('button', { name: '手で入れた仕訳と結んで閉じる' })).not.toBeInTheDocument());
+		});
+
+		it('FREQ-569-AC-07: 結ぶ権限が無い人にはボタンを出さない', async () => {
+			serve({ events: [manual()], flags: { manageSettings: false, manageFinance: true } });
+			render(<PendingView />);
+			await screen.findByTestId('pending-reason');
+			expect(screen.queryByRole('button', { name: '手で入れた仕訳と結んで閉じる' })).not.toBeInTheDocument();
+			expect(screen.getByText('仕訳が入るまで閉じられません')).toBeInTheDocument();
+		});
+
+		it.each([
+			['別の注文の仕訳なので結べません。この注文の行がある仕訳か、注文を使わない仕訳を選んでください。'],
+			['手で入れた仕訳ではないので結べません。'],
+			['この仕訳は取り消されているので結べません。'],
+			['選んだ仕訳が見つかりません。'],
+		])('FREQ-569-AC-07: 結べなかった時は route の理由の文「%s」をそのまま出し、非okの本文を読み切る', async (message) => {
+			const api = serve({ events: [manual()], link: { status: 400, body: { error: message, code: 'ACCOUNTING_ARGUMENT_INVALID' } } });
+			render(<PendingView />);
+			fireEvent.click(await screen.findByRole('button', { name: '手で入れた仕訳と結んで閉じる' }));
+			fireEvent.change(await screen.findByLabelText('手で入れた仕訳の ID'), { target: { value: ENTRY_ID } });
+			fireEvent.change(screen.getByLabelText('メモ（必須）'), { target: { value: '確かめた' } });
+			fireEvent.click(screen.getByRole('button', { name: '結んで閉じる' }));
+			expect(await screen.findByText(message)).toBeInTheDocument();
+			expect(api.calls.find((call) => call.url.endsWith('/link-entry'))?.response.bodyUsed).toBe(true);
+		});
+	});
+
+	it('FREQ-569-AC-04: 前受金の異常は、同じ注文の2つの理由を別の行で出し、新しい2つの理由のやさしい文を出す', async () => {
+		const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+		serve({
+			events: [],
+			deferred: {
+				orders: [],
+				next_after_order: null,
+				total_balance: 0,
+				anomalies: [
+					{ order_id: uuid(3), order_number: 'ORD-CCCC3333', balance: 500, reason: 'return_refund_retried_during_error' },
+					{ order_id: uuid(3), order_number: 'ORD-CCCC3333', balance: 500, reason: 'return_waived_with_failed_refund' },
+					{ order_id: uuid(4), order_number: 'ORD-DDDD4444', balance: 100, reason: 'unknown_future_reason' },
+				],
+			},
+		});
+		render(<PendingView />);
+		const panel = await screen.findByRole('region', { name: '前受金の確認' });
+		const list = await within(panel).findByRole('list', { name: '前受金の異常' });
+		const items = within(list).getAllByRole('listitem');
+		expect(items).toHaveLength(3);
+		expect(items[0].textContent).toContain('返金が Stripe に届かないまま、同じ返品の返金をやり直しています');
+		expect(items[1].textContent).toContain('返金に失敗した返金が残っているのに、返品の返金を0円で終えています');
+		// 知らない理由だけが今までの「確かめてください」になる
+		expect(items[2].textContent).toContain('確かめてください');
+		expect(items[0].textContent).not.toMatch(/^ORD-CCCC3333　確かめてください/);
+		expect(spy.mock.calls.some((call) => String(call[0]).includes('same key'))).toBe(false);
+		spy.mockRestore();
 	});
 
 	describe('前受金の確認の読み直し', () => {

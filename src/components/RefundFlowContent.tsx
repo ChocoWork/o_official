@@ -4,7 +4,7 @@
 import type { ReactElement, ReactNode } from 'react';
 import { Button } from '@/components/ui/Button/Button';
 import type { useRefundSubmission } from '@/hooks/useRefundSubmission';
-import { formatYen } from '@/lib/orders/refund/refund-messages';
+import { DISPUTE_HOLD_REFUND_MESSAGE, formatYen } from '@/lib/orders/refund/refund-messages';
 
 type RefundFlowContentProps = {
   flow: Pick<
@@ -19,9 +19,17 @@ type RefundFlowContentProps = {
 
 /** 入力を挟む流れの表示を共有し、返金と支払い済みのキャンセルの状態ごとの操作を揃える。 */
 export function RefundFlowContent({ flow, backLabel, submitLabel, canSubmit, children }: RefundFlowContentProps): ReactElement {
+  // 材料に判断待ちの印がある注文は、送れない（DB も断る）。理由は発送票の確定の止めと同じ「カード会社の判断待ち」の言葉で、別の行に出す
+  const held = flow.materials?.disputeHold === true;
   return (
     <>
       {!flow.materials && !flow.loadError ? <p className="font-acumin lk-text-3xs text-[#474747]">読み込み中です...</p> : null}
+
+      {held ? (
+        <p data-testid="refund-dispute-hold" className="font-acumin lk-text-sm text-black">
+          {DISPUTE_HOLD_REFUND_MESSAGE}
+        </p>
+      ) : null}
 
       {flow.awaiting ? (
         <p className="font-acumin lk-text-sm text-black">{`確かめ中の返金があります（${formatYen(flow.awaiting.amount)}）。`}</p>
@@ -58,7 +66,7 @@ export function RefundFlowContent({ flow, backLabel, submitLabel, canSubmit, chi
           <Button variant="secondary" size="sm" className="w-full font-acumin" disabled={flow.busy} onClick={flow.close}>
             {backLabel}
           </Button>
-          <Button type="submit" variant="primary" size="sm" className="w-full font-acumin" disabled={!canSubmit}>
+          <Button type="submit" variant="primary" size="sm" className="w-full font-acumin" disabled={!canSubmit || held}>
             {submitLabel}
           </Button>
         </div>

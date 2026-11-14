@@ -550,8 +550,10 @@ describe('OrderReturnsDialog から操作の画面を開く', () => {
     expect(within(reopened).getByRole('status')).toHaveTextContent('受け取りを記録しました。');
     expect(onChanged).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(within(card(reopened)).getByText('受け取り済み 2点')).toBeInTheDocument());
-    expect(mockClientFetch).toHaveBeenCalledTimes(2);
-    expect(mockClientFetch).toHaveBeenNthCalledWith(2, RETURNS_URL, { cache: 'no-store' });
+    // 返品の窓口を2回読む（開いた時と読み直し）。受け取りがある返品が読めたら、届いた日の窓口を読む（会計の計画3 FREQ-575-AC-02）が、返品の窓口の読みとは数えない
+    const returnsCalls = mockClientFetch.mock.calls.filter(([url]) => url === RETURNS_URL);
+    expect(returnsCalls).toHaveLength(2);
+    expect(returnsCalls[1]).toEqual([RETURNS_URL, { cache: 'no-store' }]);
   });
 
   it('知らせの文が無いまま終わった時は、知らせを出さずに読み直す', async () => {

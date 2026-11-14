@@ -207,7 +207,12 @@ beforeEach(() => {
 });
 
 describe('GET /api/admin/orders/[id]/returns（返品の一覧）', () => {
+  // 判断待ちの読み口（会計の計画3）。一覧の窓口も service role の client で get_order_dispute_holds を読み、disputeHold を足す
+  const mockListHoldsRpc = jest.fn();
   beforeEach(() => {
+    mockListHoldsRpc.mockReset();
+    mockListHoldsRpc.mockResolvedValue({ data: [], error: null });
+    Object.assign(mockServiceClient, { rpc: mockListHoldsRpc });
     mockListOrderReturns.mockResolvedValue([RETURN_DETAIL]);
     mockLoadReturnableUnits.mockResolvedValue(3);
     mockLoadRefundMaterials.mockResolvedValue({ order: { refundableAmount: 8000, refundableShipping: 500 } });
@@ -227,6 +232,7 @@ describe('GET /api/admin/orders/[id]/returns（返品の一覧）', () => {
         refundableAmount: 8000,
         refundableShipping: 500,
         inspectionEnabled: true,
+        disputeHold: false,
       },
     });
     expect(mockListOrderReturns).toHaveBeenCalledWith(mockServiceClient, ORDER_ID);
@@ -378,6 +384,25 @@ describe('GET /api/admin/orders/[id]/returns（返品の一覧）', () => {
     } finally {
       consoleError.mockRestore();
     }
+  });
+
+  it('FREQ-584-AC-01: 判断待ちの注文では一覧の答えの disputeHold を真にし、読めない時は偽で、取り消しの番号を出さない', async () => {
+    mockListHoldsRpc.mockResolvedValue({ data: [{ order_id: ORDER_ID, dispute_id: 'dp_1', status: 'needs_response', amount: 100, since: '2026-11-10T00:00:00Z' }], error: null });
+    const held = await getReturns(listRequest(), ORDER_CONTEXT);
+    const heldText = await held.text();
+    expect(JSON.parse(heldText).data.disputeHold).toBe(true);
+    expect(heldText).not.toContain('dp_1');
+    expect(mockListHoldsRpc).toHaveBeenCalledWith('get_order_dispute_holds', { _order_ids: [ORDER_ID] });
+
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockListHoldsRpc.mockResolvedValue({ data: null, error: { message: 'PRIVATE-MARKER', code: 'XX000' } });
+    const unreadable = await getReturns(listRequest(), ORDER_CONTEXT);
+    expect(unreadable.status).toBe(200);
+    expect(JSON.parse(await unreadable.text()).data.disputeHold).toBe(false);
+    spy.mockRestore();
+  });
+  afterEach(() => {
+    Reflect.deleteProperty(mockServiceClient, 'rpc');
   });
 });
 
