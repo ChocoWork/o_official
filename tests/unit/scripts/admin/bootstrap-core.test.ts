@@ -137,7 +137,8 @@ describe('bootstrapFirstAdmin', () => {
     const r = await bootstrapFirstAdmin(input(), t.deps);
     expect(r).toMatchObject({ ok: false, reason: 'grant_failed' });
     expect(t.called('deleteUser')[0][1]).toBe('u1');
-    expect(t.audits).toContainEqual(expect.objectContaining({ outcome: 'failure', detail: 'grant_failed', resource_id: 'u1' }));
+    expect(t.audits).toContainEqual(expect.objectContaining({ outcome: 'failure', detail: 'grant_failed', resource_id: 'u1', metadata: { cleanup: 'deleted' } }));
+    if (!r.ok) expect(r.message).toContain('消しました');
   });
 
   it('still reports grant_failed when deleteUser also throws', async () => {
@@ -151,7 +152,13 @@ describe('bootstrapFirstAdmin', () => {
     });
     const r = await bootstrapFirstAdmin(input(), t.deps);
     expect(r).toMatchObject({ ok: false, reason: 'grant_failed' });
-    expect(t.audits).toContainEqual(expect.objectContaining({ outcome: 'failure', detail: 'grant_failed' }));
+    expect(t.audits).toContainEqual(expect.objectContaining({ outcome: 'failure', detail: 'grant_failed', metadata: { cleanup: 'delete_failed' } }));
+    if (!r.ok) {
+      expect(r.message).toContain('u1');
+      expect(r.message).toContain('手で消して');
+      expect(r.message).not.toContain('owner@example.com');
+      expect(r.message).not.toContain('消しました');
+    }
   });
 
   it('never passes password to audit', async () => {

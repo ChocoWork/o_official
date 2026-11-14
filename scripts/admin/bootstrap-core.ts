@@ -79,10 +79,11 @@ export async function bootstrapFirstAdmin(input: BootstrapInput, deps: Bootstrap
     await deps.grantAdminRole(userId);
   } catch {
     // 役割がない利用者を残さない。消すのに失敗しても、grant_failed として返し監査に残す。
+    let deleted = true;
     try {
       await deps.deleteUser(userId);
     } catch {
-      // 握りつぶす（監査の detail で grant_failed を残す）
+      deleted = false;
     }
     await deps.audit({
       action: 'admin_bootstrap',
@@ -92,8 +93,14 @@ export async function bootstrapFirstAdmin(input: BootstrapInput, deps: Bootstrap
       resource_id: userId,
       outcome: 'failure',
       detail: 'grant_failed',
+      metadata: { cleanup: deleted ? 'deleted' : 'delete_failed' },
     });
-    return fail('grant_failed', '店長の役割を付けられなかったため、作った利用者を消しました');
+    return fail(
+      'grant_failed',
+      deleted
+        ? '店長の役割を付けられなかったため、作った利用者を消しました'
+        : `店長の役割を付けられず、作った利用者も消せませんでした。Auth の利用者 ${userId} を手で消してください`,
+    );
   }
 
   await deps.audit({
