@@ -180,11 +180,9 @@ describeLocalDb('S24 pending manual close: controller only', (db) => {
     const pi = (await q('select payment_intent_id from public.orders where id = $1', [d.orderId])).rows[0].payment_intent_id as string;
     const second = await seedDispute(db(), { orderId: d.orderId, paymentIntentId: pi, amount: 10000, withdrawnAt: DISPUTE_DAYS.withdrawn, createdAt: DISPUTE_DAYS.withdrawn });
     // 今日の日本の日付で確定させる（0円の終わりの日と同じ日）。日本の0時の直後の1分は前の日になる
-    const today = new Date(Date.now() - 60_000).toISOString();
-    // 前提: 0円の終わりの日と B の確定の日が同じ日本の日付であること。日本の0時の直後の1分は B が前の日になり、解放を使わずに通ってしまうので、
-    // その時は何も試さずに通らず、ここで大きく落ちる。
+    // B の確定の時刻は、0円の終わりの日（decided_on。今日の日本の日付）の日本時間の0時に決める（今より前で、同じ日付）。0時の直後の1分に前の日になる窓が無い
     const decidedOn = (await q('select decided_on::text as d from public.accounting_return_facts where id = $1', [fact])).rows[0].d as string;
-    expect(decidedOn).toBe(new Date(today).toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' }));
+    const today = new Date(`${decidedOn}T00:00:00+09:00`).toISOString();
     await addDisputeHistory(db(), { disputeId: second.disputeId, status: 'lost', occurredAt: today, stripeEventCreatedAt: today, eventType: 'charge.dispute.closed' });
     await settle();
     const confirmedKey = `dispute_event:${second.disputeId}:confirmed:lost`;

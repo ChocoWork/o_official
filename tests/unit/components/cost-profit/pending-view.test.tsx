@@ -635,11 +635,11 @@ describe('計上待ちのタブ', () => {
 			expect(within(entry).getAllByRole('option')).toHaveLength(11);
 		});
 
-		it('FREQ-569-AC-07: 別の期間で取り消された仕訳は出てしまうので、選んでも結ぶ時に断られる旨を添える', async () => {
+		it('FREQ-569-AC-07: 別の期間で取り消された仕訳は一覧に出るので、選ぶと結ぶ時に断られる旨を添える', async () => {
 			serve({ events: [manual()], periods: periods(), journal: JOURNAL });
 			render(<PendingView />);
 			fireEvent.click(await screen.findByRole('button', { name: '手で入れた仕訳と結んで閉じる' }));
-			expect(await screen.findByText(/別の期間で取り消された仕訳は出てしまうので、選んでも結ぶ時に断られます/)).toBeInTheDocument();
+			expect(await screen.findByText(/別の期間で取り消された仕訳は一覧に出ますが、選ぶと結ぶ時に断られます/)).toBeInTheDocument();
 		});
 
 		it('FREQ-569-AC-07: 選べる仕訳が無い期間では、その旨を出して送れない', async () => {

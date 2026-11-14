@@ -9,9 +9,15 @@ BEGIN;
 --   private.list_refund_accounting_states (only definition: S20 20261112214341:907-966): every row gets event_id and
 --     event_kind (accounting_refund_facts, already joined) and owed_return (P3-T11f): for a plain return refund (source
 --     return, event kind not holdback_release or pre_shipment_cancel) whose last state is owed or failed, the 2130
---     return_refund balance of the order, never below 0, which is what admin_record_refund_bank_transfer accepts for origin
---     return (it refuses when that balance is below the amount); 0 for every other row. A row with owed_return above 0 is
---     listed too.
+--     return_refund balance of the order, never below 0 and never above the refund's own post-shipment amount, less the
+--     amounts of the return-origin refunds of the order still in flight at Stripe (order_refunds.status awaiting_response or
+--     pending, the open_total test of the refundable amount); 0 for every other row. A row with owed_return above 0 is
+--     listed too (Ruling P3-T11i).
+--   private.admin_record_refund_bank_transfer (only definition: S20 20261112214341:736-802): for origin return, a new key is
+--     refused with ACCOUNTING_REFUND_IN_FLIGHT / 55000 while a return-origin refund of the order is in flight (status
+--     awaiting_response or pending), before the balance check. Else unchanged; arguments, result, attributes, owner and ACL
+--     are unchanged and the public entry is not touched. Without it, a transfer recorded while a Stripe refund is still
+--     processing would pay the customer twice when that refund succeeds.
 -- New (STABLE; private body SECURITY DEFINER, public entry SECURITY INVOKER; service_role only):
 --   private/public.list_refund_settle_candidates(_owed_refund_id uuid) RETURNS jsonb  {"candidates": [...]}
 --     The refunds of the order of the owed refund that admin_settle_owed_by_refund would take as the paying refund: not the
@@ -20,14 +26,16 @@ BEGIN;
 --     refund paid, side by side) is above 0 and within the order balance of 2130 refund_owed_pre and refund_owed_post; the
 --     day of its balance transaction is not before the cutover. The owed refund needs a facts row and a refund_failed entry
 --     and must not be linked to a pre_shipment_cancel event, else there are no rows. Each row: refund_id, amount,
---     succeeded_on (JST day of the succeeded state row), event_id, event_kind, same_event (both facts event ids are not NULL
+--     succeeded_on (the JST day of the balance transaction of the Stripe refund, the day the settle entry is booked on:
+--     private.accounting_jst_date(stripe_balance_transactions.stripe_created_at), Ruling P3-T11h), event_id, event_kind, same_event (both facts event ids are not NULL
 --     and equal). Order: same_event first, then succeeded_on, then refund_id. Not mirrored (they raise when the settle
 --     writes): the period of the entry date (accounting_period_for_event) and the checks of the journal core. No name, mail
 --     or address is read.
 --
 -- ROLLBACK (no row is written by this migration): DROP FUNCTION public.list_refund_settle_candidates(uuid),
---   private.list_refund_settle_candidates(uuid); re-run CREATE FUNCTION private.list_refund_accounting_states from
---   20261112214341_accounting_p3_refund_posting.sql:907-966 as CREATE OR REPLACE.
+--   private.list_refund_settle_candidates(uuid); re-run CREATE FUNCTION private.list_refund_accounting_states and
+--   private.admin_record_refund_bank_transfer from 20261112214341_accounting_p3_refund_posting.sql:907-966 and :736-802 as
+--   CREATE OR REPLACE.
 
 -- ACC_S25_BODY_BEGIN
 
@@ -48,7 +56,9 @@ SELECT pg_catalog.jsonb_build_object(
         FROM pg_catalog.aclexplode(COALESCE(f.proacl, pg_catalog.acldefault('f', f.proowner))) AS a)))
       FROM pg_catalog.pg_proc AS f WHERE f.oid = pg_catalog.to_regprocedure(s.sig)))
     FROM pg_catalog.unnest(ARRAY['private.list_refund_accounting_states(integer,timestamptz,uuid)',
-      'public.list_refund_accounting_states(integer,timestamptz,uuid)']) AS s(sig)));
+      'public.list_refund_accounting_states(integer,timestamptz,uuid)',
+      'private.admin_record_refund_bank_transfer(uuid,uuid,text,bigint,date,text,text,uuid)',
+      'public.admin_record_refund_bank_transfer(uuid,uuid,text,bigint,date,text,text,uuid)']) AS s(sig)));
 
 -- 1. The debt read (P3-T11e, P3-T11f).
 CREATE OR REPLACE FUNCTION private.list_refund_accounting_states(_limit integer DEFAULT 50, _after_at timestamptz DEFAULT NULL,
@@ -70,11 +80,16 @@ BEGIN
       f.event_id, f.event_kind,
       -- owed_return (P3-T11f): a plain return refund (source return, not a hold-back release or a pre-shipment cancel) whose
       -- last state is owed or failed owes what admin_record_refund_bank_transfer takes for origin return: the 2130
-      -- return_refund balance of the order (its check is balance < amount), never below 0.
+      -- return_refund balance of the order (its check is balance < amount), less the return-origin refunds of the order
+      -- still in flight at Stripe, and at most the refund's own post-shipment amount; never below 0 (P3-T11i).
       CASE WHEN f.source = 'return' AND f.event_kind NOT IN ('holdback_release', 'pre_shipment_cancel')
           AND (SELECT x.state FROM public.accounting_refund_events AS x WHERE x.refund_id = r.id ORDER BY x.seq DESC LIMIT 1)
             IN ('owed', 'failed')
-        THEN GREATEST(private.accounting_order_account_balance(r.order_id, '2130', 'return_refund'), 0)
+        THEN GREATEST(LEAST(private.accounting_order_account_balance(r.order_id, '2130', 'return_refund'),
+          private.accounting_order_account_balance(r.order_id, '2130', 'return_refund')
+            - (SELECT COALESCE(pg_catalog.sum(x2.amount), 0) FROM public.order_refunds AS x2
+              WHERE x2.order_id = r.order_id AND x2.source = 'return' AND x2.status IN ('awaiting_response', 'pending')),
+          f.post_shipment_amount), 0)
         ELSE 0 END AS owed_return,
 -- ACC_P3_END
       (SELECT x.occurred_at FROM public.accounting_refund_events AS x WHERE x.refund_id = r.id AND x.state = 'canceled') AS canceled_at,
@@ -125,6 +140,86 @@ BEGIN
 END;
 $$;
 
+-- 1b. The bank transfer writer: a return transfer waits for the in-flight Stripe refunds (P3-T11i).
+CREATE OR REPLACE FUNCTION private.admin_record_refund_bank_transfer(_actor_id uuid, _order_id uuid, _origin text, _amount bigint,
+  _bank_date date, _bank_txn_no text, _note text, _request_key uuid) RETURNS jsonb
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_hash text;
+  v_prior jsonb;
+  v_cutover date;
+  v_confirmed date;
+  v_kind text;
+  v_sub text;
+  v_parts text[];
+  v_period uuid;
+  v_note text;
+  v_result jsonb;
+  v_label CONSTANT text := U&'\632F\8FBC\3067\306E\8FD4\91D1';
+BEGIN
+  IF NOT COALESCE(private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.finance.manage']), false) THEN
+    RAISE EXCEPTION 'ACCOUNTING_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+  v_note := NULLIF(pg_catalog.btrim(_note), '');
+  IF _order_id IS NULL OR _origin IS NULL OR _origin NOT IN ('pre_shipment', 'post_shipment', 'return')
+    OR _amount IS NULL OR _amount < 1 OR _amount > 9007199254740991 OR _bank_date IS NULL OR _request_key IS NULL
+    OR _bank_txn_no IS NULL OR _bank_txn_no !~ '^[A-Za-z0-9_-]{1,100}$' OR pg_catalog.char_length(_note) > 500
+    OR _bank_date > private.accounting_jst_date(pg_catalog.clock_timestamp()) THEN
+    RAISE EXCEPTION 'ACCOUNTING_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  PERFORM private.accounting_lock_all(NULL);
+  v_hash := private.accounting_request_hash(pg_catalog.jsonb_build_object('op', 'record_refund_bank_transfer',
+    'actor', _actor_id, 'order_id', _order_id, 'origin', _origin, 'amount', _amount, 'bank_date', _bank_date,
+    'bank_txn_no', _bank_txn_no, 'note', _note));
+  v_prior := private.accounting_request_replay(_request_key, v_hash);
+  IF v_prior IS NOT NULL THEN
+    RETURN v_prior;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.orders AS o WHERE o.id = _order_id) THEN
+    RAISE EXCEPTION 'ACCOUNTING_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  v_cutover := private.accounting_cutover_on();
+  IF v_cutover IS NOT NULL AND _bank_date < v_cutover THEN
+    RAISE EXCEPTION 'ACCOUNTING_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  v_confirmed := private.accounting_order_dispute_confirmed_on(_order_id);
+  IF v_confirmed IS NOT NULL AND _bank_date <= v_confirmed THEN
+    RAISE EXCEPTION 'ACCOUNTING_ARGUMENT_INVALID' USING ERRCODE = '22023', DETAIL = 'dispute_confirmed';
+  END IF;
+  v_kind := CASE WHEN _origin = 'pre_shipment' THEN 'pre_shipment_refund' ELSE 'return_refund' END;
+  v_sub := CASE _origin WHEN 'pre_shipment' THEN 'refund_owed_pre' WHEN 'post_shipment' THEN 'refund_owed_post'
+    ELSE 'return_refund' END;
+  v_parts := ARRAY['bank-' || _bank_txn_no || '.' || _origin];
+  v_period := private.accounting_period_for_event(_bank_date, _actor_id);
+-- ACC_P3_BEGIN
+  -- Ruling P3-T11i: while a return-origin refund of the order is in flight at Stripe (the open_total test of the refundable
+  -- amount), a new return transfer would pay the customer twice when that refund succeeds. A key seen before is still answered.
+  IF _origin = 'return'
+    AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS e
+      WHERE e.dedupe_key = private.accounting_event_key(v_kind, v_parts))
+    AND EXISTS (SELECT 1 FROM public.order_refunds AS r
+      WHERE r.order_id = _order_id AND r.source = 'return' AND r.status IN ('awaiting_response', 'pending')) THEN
+    RAISE EXCEPTION 'ACCOUNTING_REFUND_IN_FLIGHT' USING ERRCODE = '55000';
+  END IF;
+-- ACC_P3_END
+  -- A key seen before goes to the core as it is (created false, or DEDUPE_CONTENT_MISMATCH); a new one must fit the
+  -- payable of the order (no entry yet means nothing is owed).
+  IF NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS e
+      WHERE e.dedupe_key = private.accounting_event_key(v_kind, v_parts))
+    AND private.accounting_order_account_balance(_order_id, '2130', v_sub) < _amount THEN
+    RAISE EXCEPTION 'ACCOUNTING_EVENT_NOT_POSTABLE' USING ERRCODE = '55000';
+  END IF;
+  v_result := private.accounting_post_journal_core(_actor_id, v_period, _bank_date, v_kind, v_parts,
+    CASE WHEN v_note IS NULL THEN v_label ELSE v_label || ' / ' || v_note END,
+    private.accounting_refund_lines('bank_' || _origin, _order_id, _amount, 0, 0, 0, false));
+  UPDATE public.accounting_periods AS p SET admin_requests = p.admin_requests || pg_catalog.jsonb_build_object(
+    _request_key::text, pg_catalog.jsonb_build_object('hash', v_hash, 'result', v_result))
+  WHERE p.id = (v_result ->> 'period_id')::uuid;
+  RETURN v_result;
+END;
+$$;
+
 -- 2. The settle candidates (P3-T11e). Every test below is one of admin_settle_owed_by_refund (S20), in its order.
 CREATE FUNCTION private.list_refund_settle_candidates(_owed_refund_id uuid) RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
@@ -160,8 +255,7 @@ BEGIN
   ), c AS (
     SELECT p.id, p.amount, pf.event_id, pf.event_kind,
       (v_owed_fact.event_id IS NOT NULL AND pf.event_id IS NOT NULL AND pf.event_id = v_owed_fact.event_id) AS same_event,
-      private.accounting_jst_date(se.occurred_at) AS succeeded_on,
-      private.accounting_jst_date(t.stripe_created_at) AS balance_on,
+      private.accounting_jst_date(t.stripe_created_at) AS succeeded_on,
       GREATEST(LEAST(v_owed_fact.pre_shipment_amount - st.pre, pf.pre_shipment_amount), 0) AS pre,
       GREATEST(LEAST(v_owed_fact.post_shipment_amount - st.post, pf.post_shipment_amount), 0) AS post
     FROM public.order_refunds AS p
@@ -178,7 +272,7 @@ BEGIN
       'same_event', c.same_event) ORDER BY c.same_event DESC, c.succeeded_on, c.id), '[]'::jsonb)
   INTO v_rows FROM c
   WHERE c.pre + c.post > 0 AND c.pre <= v_bal_pre AND c.post <= v_bal_post
-    AND (v_cutover IS NULL OR c.balance_on >= v_cutover);
+    AND (v_cutover IS NULL OR c.succeeded_on >= v_cutover);
   RETURN pg_catalog.jsonb_build_object('candidates', v_rows);
 END;
 $$;
@@ -198,9 +292,10 @@ GRANT EXECUTE ON FUNCTION private.list_refund_settle_candidates(uuid), public.li
 -- Compare catalog meaning, never ACL text serialization. acc_s25_functions: the candidate read exists once as a private
 -- SECURITY DEFINER plpgsql body and a public SECURITY INVOKER sql entry, STABLE, search_path '', owned by postgres, and only
 -- service_role runs them. acc_s25_function_attrs: the rebuilt debt read (private body and public entry) keeps its arguments,
--- result, language, volatility, security, owner, search_path and ACL. acc_s25_body_unchanged: the rebuilt body has 2 replaced
--- parts and 1 added block, and with the replaced parts restored (by the md5 on the marker) and every ACC_P<n> block and all
--- white space removed it is the body it was copied from (S20). acc_s25_reads_stable: both reads, their bodies and the public
+-- result, language, volatility, security, owner, search_path and ACL, and so do the rebuilt bank transfer writer and its
+-- entry. acc_s25_body_unchanged: the rebuilt debt read has 2 replaced parts and 1 added block, the rebuilt bank transfer
+-- writer 0 and 1, and with the replaced parts restored (by the md5 on the marker) and every ACC_P<n> block and all white
+-- space removed each is the body it was copied from (S20). acc_s25_reads_stable: both reads, their bodies and the public
 -- entry, are STABLE, write nothing, take no row lock and name no personal column. acc_s25_existing_dml_allowlist: this
 -- migration writes no row, and the group G writer list is what it was.
 DO $acc_s25_final$
@@ -260,7 +355,7 @@ BEGIN
 
   v_stage := 'acc_s25_function_attrs';
   IF v_failed IS NULL AND (
-    (SELECT pg_catalog.count(*) FROM pg_catalog.jsonb_object_keys(v_baseline -> 'attrs')) <> 2
+    (SELECT pg_catalog.count(*) FROM pg_catalog.jsonb_object_keys(v_baseline -> 'attrs')) <> 4
     OR EXISTS (SELECT 1 FROM pg_catalog.jsonb_each_text(v_baseline -> 'attrs') AS b(sig, attrs)
       LEFT JOIN pg_catalog.pg_proc AS f ON f.oid = pg_catalog.to_regprocedure(b.sig)
       WHERE f.oid IS NULL OR b.attrs IS DISTINCT FROM pg_catalog.md5(pg_catalog.concat_ws('|',
@@ -274,14 +369,16 @@ BEGIN
   v_stage := 'acc_s25_body_unchanged';
   IF v_failed IS NULL THEN
     FOR e IN SELECT * FROM (VALUES
-      ('private.list_refund_accounting_states(integer,timestamptz,uuid)', 2, 1, '28ec43c85c10e95fbf2644396a894f28',
-        'f.event_id, f.event_kind,|AS owed_return|OR s.owed_return > 0|''event_id'', q.event_id, ''event_kind'', q.event_kind, ''owed_return'', q.owed_return|f.source = ''return'' AND f.event_kind NOT IN (''holdback_release'', ''pre_shipment_cancel'')|IN (''owed'', ''failed'')|accounting_order_account_balance(r.order_id, ''2130'', ''return_refund''), 0)')
-    ) AS x(signature, replaced, added, digest, needle)
+      ('private.list_refund_accounting_states(integer,timestamptz,uuid)', 2, 1, '28ec43c85c10e95fbf2644396a894f28', true,
+        'f.event_id, f.event_kind,|AS owed_return|OR s.owed_return > 0|''event_id'', q.event_id, ''event_kind'', q.event_kind, ''owed_return'', q.owed_return|f.source = ''return'' AND f.event_kind NOT IN (''holdback_release'', ''pre_shipment_cancel'')|IN (''owed'', ''failed'')|LEAST(private.accounting_order_account_balance(r.order_id, ''2130'', ''return_refund''),|accounting_order_account_balance(r.order_id, ''2130'', ''return_refund'')|f.post_shipment_amount|x2.source = ''return'' AND x2.status IN (''awaiting_response'', ''pending'')'),
+      ('private.admin_record_refund_bank_transfer(uuid,uuid,text,bigint,date,text,text,uuid)', 0, 1, '316d2c2d7c61b6a3f00b7c499d44ec71', false,
+        '_origin = ''return''|r.source = ''return'' AND r.status IN (''awaiting_response'', ''pending'')|''ACCOUNTING_REFUND_IN_FLIGHT''')
+    ) AS x(signature, replaced, added, digest, readonly, needle)
     LOOP
       SELECT f.prosrc INTO v_src FROM pg_catalog.pg_proc AS f WHERE f.oid = pg_catalog.to_regprocedure(e.signature);
       IF v_src IS NULL OR EXISTS (SELECT 1 FROM pg_catalog.unnest(pg_catalog.string_to_array(e.needle, '|')) AS n(part)
           WHERE pg_catalog.strpos(v_src, n.part) = 0)
-        OR v_src ~* '\m(INSERT|UPDATE|DELETE|TRUNCATE|FOR (SHARE|UPDATE|NO KEY UPDATE|KEY SHARE)|PERFORM|EXECUTE)\M'
+        OR (e.readonly AND v_src ~* '\m(INSERT|UPDATE|DELETE|TRUNCATE|FOR (SHARE|UPDATE|NO KEY UPDATE|KEY SHARE)|PERFORM|EXECUTE)\M')
         OR (SELECT pg_catalog.count(*) FROM pg_catalog.regexp_matches(v_src, '-- ACC_P3_REPLACE_BEGIN', 'g')) <> e.replaced
         OR (SELECT pg_catalog.count(*) FROM pg_catalog.regexp_matches(v_src, '-- ACC_P3_BEGIN', 'g')) <> e.added THEN
         v_failed := 'acc_s25_body_unchanged';

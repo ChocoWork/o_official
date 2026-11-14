@@ -112,6 +112,7 @@ describe('POST /api/admin/accounting/refund-bank-transfers', () => {
 	test.each([
 		['ACCOUNTING_ARGUMENT_INVALID', '22023', 400, '入力を確かめてください。'],
 		['ACCOUNTING_EVENT_NOT_POSTABLE', '55000', 409, 'この出来事は今は仕訳にできません。計上待ちの一覧で理由を確かめてください。'],
+		['ACCOUNTING_REFUND_IN_FLIGHT', '55000', 409, '同じ注文に Stripe で処理中の返金があります。結果が出てから振込を記録してください。'],
 		['ACCOUNTING_DEDUPE_CONTENT_MISMATCH', '23505', 409, '同じ出来事で内容の違う仕訳は入れられません。'],
 		['ACCOUNTING_REQUEST_KEY_CONFLICT', '23505', 409, '同じ要求番号で異なる操作は実行できません。'],
 		['ACCOUNTING_PERIOD_MISSING', '55000', 409, 'この日付の会計の期間がありません。先に期間を作ってください。'],

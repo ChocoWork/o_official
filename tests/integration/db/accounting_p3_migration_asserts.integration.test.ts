@@ -1331,21 +1331,25 @@ describe('S25 source contract (no DB)', () => {
     expect([...s25Body.matchAll(/^CREATE (?:OR REPLACE )?FUNCTION public\.([a-z_]+)\(/gm)].map((m) => m[1])).toEqual(['list_refund_settle_candidates']);
     expect(s25Body.match(/^GRANT\b/gm)).toHaveLength(1);
     expect([...s25Body.matchAll(/^CREATE (?:OR REPLACE )?FUNCTION ([a-z_.]+)\(/gm)].map((m) => m[1]))
-      .toEqual(['private.list_refund_accounting_states', 'private.list_refund_settle_candidates', 'public.list_refund_settle_candidates']);
+      .toEqual(['private.list_refund_accounting_states', 'private.admin_record_refund_bank_transfer', 'private.list_refund_settle_candidates',
+        'public.list_refund_settle_candidates']);
   });
 
-  test('FREQ-579-AC-04: 作り直した借りの一覧の本文は S20 の写しに、置き換え2つと囲み1つを足しただけ', () => {
-    const latest = s25FnOf(fs.readFileSync(path.join(process.cwd(), S25_SOURCE), 'utf8'), 'list_refund_accounting_states');
-    const rebuilt = s25FnOf(s25Body, 'list_refund_accounting_states');
+  test.each([
+    ['list_refund_accounting_states', 2, 1, true],
+    ['admin_record_refund_bank_transfer', 0, 1, false],
+  ])('FREQ-579-AC-04: 作り直した %s の本文は S20 の写しに、置き換え%i つと囲み%i つを足しただけ', (name, replacedCount, addedCount, readOnly) => {
+    const latest = s25FnOf(fs.readFileSync(path.join(process.cwd(), S25_SOURCE), 'utf8'), name);
+    const rebuilt = s25FnOf(s25Body, name);
     expect(latest).not.toBe('');
     expect(rebuilt).not.toBe('');
     // No migration between S20 and S25 defines it again.
     const dir = path.join(process.cwd(), 'supabase/migrations');
     const defining = fs.readdirSync(dir).filter((f) => f.endsWith('.sql') && f > path.basename(S25_SOURCE) && f <= ACCOUNTING_S25_FILES[0])
-      .filter((f) => /^CREATE (?:OR REPLACE )?FUNCTION private\.list_refund_accounting_states\(/m.test(fs.readFileSync(path.join(dir, f), 'utf8')));
+      .filter((f) => new RegExp(`^CREATE (?:OR REPLACE )?FUNCTION private\\.${name}\\(`, 'm').test(fs.readFileSync(path.join(dir, f), 'utf8')));
     expect(defining).toEqual([ACCOUNTING_S25_FILES[0]]);
     const replaced = [...rebuilt.matchAll(/-- ACC_P3_REPLACE_BEGIN ([0-9a-f]{32})\n([\s\S]*?)-- ACC_P3_REPLACE_END\n/g)];
-    expect(replaced).toHaveLength(2);
+    expect(replaced).toHaveLength(replacedCount);
     const latestLines = [...latest.matchAll(/^.*\n/gm)].map((x) => x[0]);
     const originalOf = (hash: string) => {
       for (let i = 0; i < latestLines.length; i += 1) {
@@ -1365,10 +1369,10 @@ describe('S25 source contract (no DB)', () => {
       restored = restored.replace(m[0], () => found as string);
     }
     const blocks = [...restored.matchAll(/-- ACC_P3_BEGIN\n[\s\S]*?-- ACC_P3_END\n/g)].map((m) => m[0]);
-    expect(blocks).toHaveLength(1);
+    expect(blocks).toHaveLength(addedCount);
     for (const block of blocks) restored = restored.replace(block, '');
     expect(restored).toBe(latest);
-    expect(rebuilt.slice(rebuilt.indexOf('AS $$'))).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE|PERFORM|EXECUTE)\b|FOR (SHARE|UPDATE|NO KEY UPDATE|KEY SHARE)/i);
+    if (readOnly) expect(rebuilt.slice(rebuilt.indexOf('AS $$'))).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE|PERFORM|EXECUTE)\b|FOR (SHARE|UPDATE|NO KEY UPDATE|KEY SHARE)/i);
   });
 });
 
@@ -1397,6 +1401,8 @@ describeLocalDb('S25 final assert: controller only', (db) => {
   const CAND_PUBLIC = 'public.list_refund_settle_candidates(uuid)';
   const STATES = 'private.list_refund_accounting_states(integer,timestamptz,uuid)';
   const STATES_PUBLIC = 'public.list_refund_accounting_states(integer,timestamptz,uuid)';
+  const BANK = 'private.admin_record_refund_bank_transfer(uuid,uuid,text,bigint,date,text,text,uuid)';
+  const BANK_PUBLIC = 'public.admin_record_refund_bank_transfer(uuid,uuid,text,bigint,date,text,text,uuid)';
 
   test('FREQ-579-AC-05: 適用後の状態で S25 の末尾の確かめが通る（呼出元のsearch_pathを問わない）', async () => {
     expect(s25Assertion).not.toBe('');
@@ -1434,6 +1440,16 @@ describeLocalDb('S25 final assert: controller only', (db) => {
     [redefine(STATES, "\\'holdback_release\\', ", ''), 'acc_s25_body_unchanged'],
     [redefine(STATES, "\\'2130\\', \\'return_refund\\'", "\\'2130\\', \\'refund_owed_post\\'"), 'acc_s25_body_unchanged'],
     [redefine(STATES, '-- ACC_P3_BEGIN\\n', '-- ACC_P3_X\\n'), 'acc_s25_body_unchanged'],
+    [redefine(STATES, 'f\\.post_shipment_amount', 'f.pre_shipment_amount'), 'acc_s25_body_unchanged'],
+    [redefine(STATES, "x2\\.source = \\'return\\'", "x2.source = \\'admin\\'"), 'acc_s25_body_unchanged'],
+    [`alter function ${BANK} set search_path = public`, 'acc_s25_function_attrs'],
+    [`grant execute on function ${BANK_PUBLIC} to anon`, 'acc_s25_function_attrs'],
+    [`alter function ${BANK} stable`, 'acc_s25_function_attrs'],
+    [redefine(BANK, "\\'ACCOUNTING_REFUND_IN_FLIGHT\\'", "\\'ACCOUNTING_REFUND_IN_FLIGHT_X\\'"), 'acc_s25_body_unchanged'],
+    [redefine(BANK, "r\\.source = \\'return\\'", "r.source = \\'admin\\'"), 'acc_s25_body_unchanged'],
+    [redefine(BANK, "IF _origin = \\'return\\'", "IF _origin = \\'post_shipment\\'"), 'acc_s25_body_unchanged'],
+    [redefine(BANK, '-- ACC_P3_BEGIN\\n', '-- ACC_P3_X\\n'), 'acc_s25_body_unchanged'],
+    [redefine(BANK, 'v_hash := ', 'v_hash := null; v_hash := '), 'acc_s25_body_unchanged'],
     [redefine(STATES, 'ORDER BY s\\.created_at DESC', 'ORDER BY s.created_at ASC'), 'acc_s25_body_unchanged'],
     [redefine(CAND, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s25_reads_stable'],
     [redefine(CAND, 'WHERE s\\.owed_refund_id = _owed_refund_id', "WHERE s.owed_refund_id = _owed_refund_id AND s.request_hash <> \\'email\\'"), 'acc_s25_reads_stable'],

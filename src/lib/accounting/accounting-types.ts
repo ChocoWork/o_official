@@ -41,6 +41,8 @@ export const ACCOUNTING_ERRORS = {
 	// 計画3（返金・返品）。返金の route は DISPUTE_HOLD を返金側の文と code で 409 にする（accounting の route には出ない）。
 	ACCOUNTING_DISPUTE_HOLD: ['55000', 409, 'カード会社の判断待ちの注文が含まれているため、返金できません。'],
 	ACCOUNTING_REFUND_NOT_CANCELED: ['55000', 409, 'この返金は取り消された状態ではありません。'],
+	// 返品の借りの振込は、同じ注文に Stripe で処理中の返品の返金がある間は断る（二重払いを防ぐ。裁定 P3-T11i）。
+	ACCOUNTING_REFUND_IN_FLIGHT: ['55000', 409, '同じ注文に Stripe で処理中の返金があります。結果が出てから振込を記録してください。'],
 	ACCOUNTING_REFUND_CANCEL_DECIDED: ['55000', 409, 'この返金の取り消しの区分は、もう決まっています。'],
 	// 届いた日の直しが断られた時（DB は 22023 で RETURN_ARRIVAL_DATE_INVALID）。返品の route の表と同じ文。
 	RETURN_ARRIVAL_DATE_INVALID: ['22023', 400, '届いた日を確かめてください。'],

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { accountingFailure, insertAccountingAdmin } from './helpers/accounting-fixtures';
 import { setAsideExistingSlips, setCutoverForTest } from './helpers/accounting-orders-fixtures';
 import {
-  bankTransfer, dropDiscountSnapshot, failRefund, orderBalance, postOrderPayment, postRefundEvents, receiveReturn, recordRefundResult,
+  bankTransfer, dropDiscountSnapshot, failRefund, orderBalance, postOrderPayment, postRefundEvents, receiveReturn, recordRefundResult, saveRefundTxn,
   seedCancelRefund, seedPreShipmentCancel, seedRefundFlow, seedReturnArrivalEntries, seedReturnFlow, seedSlotPaidOrder, settleOwed, succeedRefund,
 } from './helpers/accounting-returns-fixtures';
 import { hBegin } from './helpers/group-h-refund-fixtures';
@@ -58,7 +58,9 @@ describeLocalDb('S25 refund debt reads: controller only', (db) => {
     const b = await refund(none);
     const c = await refund(e2);
     const failedOnly = await refund(e1);
-    return { o, e1, e2, owed, a, b, c, failedOnly };
+    // 残高の取引はあるが、成功の行が無い返金（候補の「成功の行」の条件だけを確かめる）
+    const noSucceeded = await refund(e1);
+    return { o, e1, e2, owed, a, b, c, failedOnly, noSucceeded };
   }
 
   test('FREQ-579-AC-05: 結びの候補は同じ注文の成功した返金で、まだ結ばれていない物だけが出て、同じ出来事の返金が先頭に来る', async () => {
@@ -69,6 +71,7 @@ describeLocalDb('S25 refund debt reads: controller only', (db) => {
     await succeedRefund(db(), s.c, { at: '2026-11-05T03:00:00Z' });
     await succeedRefund(db(), s.b, { at: '2026-11-06T03:00:00Z' });
     await succeedRefund(db(), s.a, { at: '2026-11-07T03:00:00Z' });
+    await saveRefundTxn(db(), s.noSucceeded, { at: '2026-11-04T03:00:00Z' });
     await postRefundEvents(db());
     expect(await orderBalance(db(), s.o.orderId, '2130', 'refund_owed_post')).toBe(11250);
     // 同じ出来事の a が先頭。そのあとは成功の日（c、b の順に日付が若い物から）と返金の番号の順。owed 自身と、成功していない failedOnly は出ない
@@ -78,7 +81,11 @@ describeLocalDb('S25 refund debt reads: controller only', (db) => {
     expect(rows[0]).toEqual({ refund_id: s.a, amount: 11250, succeeded_on: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), event_id: s.e1, event_kind: 'return_receipt', same_event: true });
     expect(rows[1]).toMatchObject({ event_id: s.e2, event_kind: 'return_receipt', same_event: false });
     expect(rows[2]).toMatchObject({ event_id: null, event_kind: 'none', same_event: false });
-    expect(rows.slice(1).map((r) => r.succeeded_on)).toEqual([...rows.slice(1).map((r) => r.succeeded_on)].sort());
+    // 残高の取引の日（日本時間）が、結びの仕訳の日。並びは、同じ出来事の a、次に日の若い c（5日）、b（6日）で、番号の並びに頼らない
+    expect(rows.map((r) => r.succeeded_on)).toEqual(['2026-11-07', '2026-11-05', '2026-11-06']);
+    // 残高の取引だけがあって成功の行が無い返金は候補に出ず、結びの関数も断る
+    expect(rows.map((r) => r.refund_id)).not.toContain(s.noSucceeded);
+    expect(await fails(() => settleOwed(db(), admin, s.owed, s.noSucceeded))).toMatchObject({ message: 'ACCOUNTING_EVENT_NOT_POSTABLE' });
     // 結ばれた返金は、同じ注文の別の借りの候補からも消える。借りの残りが無ければ、どの返金も出ない
     await settleOwed(db(), admin, s.owed, s.a);
     expect(await candidatesOf(s.owed)).toEqual([]);
@@ -175,6 +182,69 @@ describeLocalDb('S25 refund debt reads: controller only', (db) => {
     expect(await fails(() => bankTransfer(db(), { ...base, amount: 16876, txn: 'R25-1' }))).toMatchObject({ message: 'ACCOUNTING_EVENT_NOT_POSTABLE' });
     expect((await bankTransfer(db(), { ...base, amount: 16875, txn: 'R25-2' })).created).toBe(true);
     expect(await debtRow(refundId)).toBeUndefined();
+  });
+
+  /** 返品の受け取りの返金が引かれる前に失敗した返品の借り（返品の返金 16,875 円）。 */
+  async function failedReturnDebt() {
+    const flow = await seedReturnFlow(db(), {});
+    const received = await receiveReturn(db(), flow, { units: [{ return_line_id: flow.lineIds[0], disposition: 'not_restocked', quantity: 1 }], choice: 'now' });
+    await seedReturnArrivalEntries(db(), flow.returnId);
+    const refundId = received.refund_id as string;
+    await failRefund(db(), refundId);
+    await postRefundEvents(db());
+    return { flow, refundId, orderId: flow.f.orderId as string };
+  }
+  /** 同じ返品の、Stripe で処理中の返品の返金（order_refunds の行だけ。open_total と同じく awaiting_response か pending）。 */
+  async function inFlightReturnRefund(flow: Awaited<ReturnType<typeof seedReturnFlow>>, amount: number) {
+    return (await q(`insert into public.order_refunds(order_id, source, return_id, request_key, request_fingerprint, status, amount, shipping_amount,
+      adjustment_amount, notify_customer) values($1,'return',$2,gen_random_uuid(),'fixture','awaiting_response',$3,0,$3,false) returning id`,
+    [flow.f.orderId, flow.returnId, amount])).rows[0].id as string;
+  }
+  const setStatus = (refundId: string, status: string) => q('update public.order_refunds set status = $2 where id = $1', [refundId, status]);
+
+  test('FREQ-579-AC-04: 返品の借りの額は、その返金の額と、処理中の返品の返金を引いた注文の残高を超えない', async () => {
+    const d = await failedReturnDebt();
+    expect(await debtRow(d.refundId)).toMatchObject({ owed_return: 16875 });
+    // 処理中の返品の返金（5,000円）がある間は、その分を引く。pending になっても同じ
+    const live = await inFlightReturnRefund(d.flow, 5000);
+    expect(await debtRow(d.refundId)).toMatchObject({ owed_return: 11875 });
+    await setStatus(live, 'pending');
+    expect(await debtRow(d.refundId)).toMatchObject({ owed_return: 11875 });
+    // 残高より大きい処理中の分があれば 0 で止まり（負にならない）、一覧から消える
+    const big = await inFlightReturnRefund(d.flow, 20000);
+    expect(await debtRow(d.refundId)).toBeUndefined();
+    // 失敗した返金は引かない
+    await setStatus(live, 'failed');
+    await setStatus(big, 'failed');
+    expect(await debtRow(d.refundId)).toMatchObject({ owed_return: 16875 });
+    // その返金自身の出荷後の額（facts の post_shipment_amount）を超えない。facts は追記だけの表なので、この試験の中だけ触れる形で小さくして確かめる
+    await q('alter table public.accounting_refund_facts disable trigger user');
+    await q('update public.accounting_refund_facts set post_shipment_amount = 10000 where refund_id = $1', [d.refundId]);
+    await q('alter table public.accounting_refund_facts enable trigger user');
+    expect(await debtRow(d.refundId)).toMatchObject({ owed_return: 10000, owed_pre: 0, owed_post: 0 });
+  });
+
+  test('FREQ-579-AC-04: 同じ注文に Stripe で処理中の返品の返金がある間は、返品の借りの振込を断る', async () => {
+    const admin = await insertAccountingAdmin(db());
+    const d = await failedReturnDebt();
+    const base = { actor: admin, orderId: d.orderId, origin: 'return' as const, on: '2026-11-10' };
+    const refused = { code: '55000', message: 'ACCOUNTING_REFUND_IN_FLIGHT' };
+    const live = await inFlightReturnRefund(d.flow, 5000);
+    expect(await fails(() => bankTransfer(db(), { ...base, amount: 10000, txn: 'IF-1' }))).toEqual(refused);
+    await setStatus(live, 'pending');
+    expect(await fails(() => bankTransfer(db(), { ...base, amount: 10000, txn: 'IF-1' }))).toEqual(refused);
+    // ほかの借りの種類（出荷後）は、この断りの対象外（残高の断りだけが出る）
+    expect(await fails(() => bankTransfer(db(), { ...base, origin: 'post_shipment', amount: 1, txn: 'IF-2' }))).toMatchObject({ message: 'ACCOUNTING_EVENT_NOT_POSTABLE' });
+    // 処理中の返金が失敗すると、同じ振込が通る。成功した場合も同じ
+    await setStatus(live, 'failed');
+    expect((await bankTransfer(db(), { ...base, amount: 10000, txn: 'IF-1' })).created).toBe(true);
+    const second = await inFlightReturnRefund(d.flow, 1000);
+    expect(await fails(() => bankTransfer(db(), { ...base, amount: 1000, txn: 'IF-3' }))).toEqual(refused);
+    await setStatus(second, 'succeeded');
+    expect((await bankTransfer(db(), { ...base, amount: 1000, txn: 'IF-3' })).created).toBe(true);
+    // 同じ銀行の取引の番号の再送は、処理中でも前の結果を返す（新しい記録ではない）
+    await inFlightReturnRefund(d.flow, 100);
+    expect(await bankTransfer(db(), { ...base, amount: 10000, txn: 'IF-1' })).toMatchObject({ created: false });
   });
 
   test('FREQ-579-AC-04: 借りの一覧の行に event_id と event_kind がある', async () => {

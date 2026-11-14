@@ -87,9 +87,12 @@ export function RefundCancellationDialog({
 
   useEffect(() => {
     let active = true;
-    void readRefundRow(refundId).then((found) => {
-      if (active) setRow(found);
-    });
+    // 形の違う答えで読みが落ちても、慎重な文（出来事が分からない時）に戻して、送れる状態にする
+    void readRefundRow(refundId)
+      .catch(() => null)
+      .then((found) => {
+        if (active) setRow(found);
+      });
     return () => {
       active = false;
     };
@@ -145,7 +148,7 @@ export function RefundCancellationDialog({
         {orderNumber ? <p className="font-acumin lk-text-sm text-black">{`注文 ${orderNumber}`}</p> : null}
         <p className={noteClassName}>{`この返金は Stripe 側で取り消されました。${retryOnly ? "" : "どちらにあたるかを選んでください。"}`}</p>
         {retryOnly ? null : <p className={noteClassName}>{REFLECT_NOTE}</p>}
-        <div role="radiogroup" aria-label="取り消しの区分" className="space-y-3">
+        <div role={retryOnly ? undefined : "radiogroup"} aria-label={retryOnly ? undefined : "取り消しの区分"} className="space-y-3">
           {kinds.map((value) => (
             <div key={value} className="space-y-1">
               <label className="flex min-h-9 cursor-pointer items-center gap-2">
@@ -165,7 +168,11 @@ export function RefundCancellationDialog({
                   <p data-testid="abandon-note" className={noteClassName}>
                     {abandonNote}
                   </p>
-                ) : null
+                ) : (
+                  <p role="status" className={noteClassName}>
+                    読み込み中
+                  </p>
+                )
               ) : (
                 <p className={noteClassName}>{owedNote}</p>
               )}

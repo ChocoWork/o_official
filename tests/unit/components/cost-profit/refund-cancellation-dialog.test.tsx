@@ -112,11 +112,42 @@ describe('取り消しの区分の画面', () => {
 		},
 	);
 
-	it('FREQ-579-AC-03: 出来事が読めない・一覧で見つからない時は、取りやめになる場合がある旨も含めて慎重に伝える', async () => {
+	it('FREQ-579-AC-03: 出来事が読めない時は、取りやめになる場合がある旨も含めて慎重に伝える', async () => {
 		serve({ rowsStatus: 500 });
 		const failed = await open();
 		expect(within(failed.dialog).getByTestId('abandon-note')).toHaveTextContent(PRE_CANCEL_TEXT);
 		expect(within(failed.dialog).getByTestId('abandon-note')).toHaveTextContent('同じ出来事でお金が出た返金や借りがほかにある時は');
+	});
+
+	it('FREQ-579-AC-03: 一覧に返金が見つからない時（5ページ読んでも無い）も、読むのを5ページで止めて、慎重な文を出し、送れる', async () => {
+		const pages = [0, 1, 2, 3, 4, 5].map((n) => ({ rows: [stateRow(uuid(10 + n))], next: { at: '2026-11-07T00:00:00+00:00', id: uuid(1001 + n) } }));
+		const api = serve({ pages });
+		const { dialog } = await open();
+		expect(within(dialog).getByTestId('abandon-note')).toHaveTextContent(PRE_CANCEL_TEXT);
+		// ちょうど5回で止める（6ページ目は読まない）
+		expect(api.calls.filter((call) => call.url === `${BASE}/refund-states`)).toHaveLength(5);
+		fireEvent.click(within(dialog).getByRole('radio', { name: '返すつもりのまま返せなかった' }));
+		fireEvent.change(reason(dialog), { target: { value: '振込' } });
+		expect(submit(dialog)).toBeEnabled();
+	});
+
+	it('FREQ-579-AC-03: 一覧を読んでいる間は「読み込み中」を出し、読み終わると注意書きに替わる', async () => {
+		serve();
+		render(<RefundCancellationDialog refundId={REFUND_ID} onClose={jest.fn()} onDone={jest.fn()} />);
+		const dialog = screen.getByRole('dialog', { name: '返金の取り消しの区分を選ぶ' });
+		expect(within(dialog).getByRole('status')).toHaveTextContent('読み込み中');
+		expect(within(dialog).queryByTestId('abandon-note')).not.toBeInTheDocument();
+		await waitFor(() => expect(within(dialog).getByTestId('abandon-note')).toBeInTheDocument());
+		expect(within(dialog).queryByRole('status')).not.toBeInTheDocument();
+	});
+
+	it('FREQ-579-AC-03: 一覧の行が壊れた形で返っても、読みが落ちたままにならず、慎重な文を出して送れる', async () => {
+		serve({ pages: [{ rows: [null], next: null }] });
+		const { dialog } = await open();
+		expect(within(dialog).getByTestId('abandon-note')).toHaveTextContent(PRE_CANCEL_TEXT);
+		fireEvent.click(within(dialog).getByRole('radio', { name: '返すつもりのまま返せなかった' }));
+		fireEvent.change(reason(dialog), { target: { value: '振込' } });
+		expect(submit(dialog)).toBeEnabled();
 	});
 
 	it('FREQ-579-AC-03: 一覧の2ページ目にある返金も探して出来事を知る', async () => {
@@ -140,6 +171,7 @@ describe('取り消しの区分の画面', () => {
 		expect(await within(dialog).findByRole('alert')).toHaveTextContent('Stripe への返金をやり直してください。');
 		// やり直しだけが道なので、選択肢も「区分を決める」も、選ぶ促しも、必須の理由の欄も出さない
 		expect(within(dialog).queryAllByRole('radio')).toHaveLength(0);
+		expect(within(dialog).queryByRole('radiogroup')).not.toBeInTheDocument();
 		expect(within(dialog).queryByRole('button', { name: '区分を決める' })).not.toBeInTheDocument();
 		expect(dialog.textContent).not.toContain('どちらにあたるかを選んでください');
 		expect(within(dialog).queryByLabelText('理由（必須）')).not.toBeInTheDocument();

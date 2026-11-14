@@ -114,6 +114,17 @@ describe('振込の記録', () => {
 		expect(api.calls.find((call) => call.method === 'POST' && !call.url.includes('/api/auth/'))?.response.bodyUsed).toBe(true);
 	});
 
+	it('FREQ-579-AC-04: 同じ注文に Stripe で処理中の返金がある時（409）は、route の文を出し、記録済みにはしない', async () => {
+		const text = '同じ注文に Stripe で処理中の返金があります。結果が出てから振込を記録してください。';
+		const api = serve({ status: 409, body: { error: text, code: 'ACCOUNTING_REFUND_IN_FLIGHT' } });
+		const { form, onDone } = open();
+		fillValid(form);
+		fireEvent.click(submit(form));
+		expect(await within(form).findByRole('alert')).toHaveTextContent(text);
+		expect(onDone).not.toHaveBeenCalled();
+		expect(api.calls.find((call) => call.method === 'POST' && !call.url.includes('/api/auth/'))?.response.bodyUsed).toBe(true);
+	});
+
 	it('FREQ-579-AC-04: 同じ銀行の取引の番号を別の要求で送った時（created が偽）は、もう記録済みの旨を出す', async () => {
 		serve({ status: 200, body: { data: { transfer: { entry_id: uuid(5), entry_no: 12, period_id: uuid(6), created: false } } } });
 		const { form, onDone } = open();

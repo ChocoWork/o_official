@@ -114,6 +114,17 @@ describe('GET /api/admin/accounting/refund-settlements/candidates', () => {
 	});
 });
 
+describe('GET /api/admin/accounting/refund-settlements/candidates (failure)', () => {
+	test('FREQ-579-AC-05: DB が失敗しても、結びの候補の route は固定の文の500を no-store で返し、DB の生の文を出さない', async () => {
+		grants.current = [PERM.read];
+		rpcImpl.mockImplementation(async () => dbError('PRIVATE-MARKER', 'XX000', 'PRIVATE-MARKER'));
+		const response = await getCandidates();
+		expect(response.status).toBe(500);
+		expect(response.headers.get('cache-control')).toContain('no-store');
+		expect(JSON.stringify(await read(response))).not.toContain('PRIVATE-MARKER');
+	});
+});
+
 describe('POST /api/admin/accounting/refund-cancellations', () => {
 	test('FREQ-579-AC-03: 取り消しの区分のrouteは権限のある人だけで、区分と理由が不正なら400、2回目は409', async () => {
 		grants.current = [PERM.read, PERM.manage, PERM.settings];
