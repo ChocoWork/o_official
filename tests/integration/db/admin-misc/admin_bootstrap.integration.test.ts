@@ -18,13 +18,27 @@ jest.setTimeout(30000);
 describeLocalDb('integration: 最初の店長を作るコマンド', (db) => {
   let client: SupabaseClient;
   const createdIds: string[] = [];
+  const ENV_KEYS = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'ALERT_AUDIT_URL'] as const;
+  const savedEnv: Record<string, string | undefined> = {};
 
   beforeAll(() => {
     const status = readLocalSupabaseStatus();
+    // logAudit は process.env から service role の client を作るので、手元の Supabase に向ける（遠い先には書かない）。
+    if (!['127.0.0.1', 'localhost'].includes(new URL(status.apiUrl).hostname)) {
+      throw new Error('手元の Supabase 以外には向けない');
+    }
+    for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
+    process.env.SUPABASE_URL = status.apiUrl;
+    process.env.SUPABASE_SERVICE_ROLE_KEY = status.serviceRoleKey;
+    delete process.env.ALERT_AUDIT_URL;
     client = createClient(status.apiUrl, status.serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
   });
 
   afterAll(async () => {
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k];
+    }
     for (const id of createdIds) await client.auth.admin.deleteUser(id);
   });
 
