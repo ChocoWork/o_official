@@ -154,6 +154,8 @@ npm run db:start   # ローカル Supabase を起動
 npm run db:reset   # supabase/migrations を最初から適用し直す
 ```
 
+ローカルで Google ログインを使う場合は、[Google Cloud の OAuth クライアント](https://console.cloud.google.com/auth/clients)で開発用のウェブアプリ用クライアントに `http://127.0.0.1:54321/auth/v1/callback` を「承認済みのリダイレクト URI」として登録する。既存の `supabase/.env` に [設定例](supabase/.env.example) の Google 用の3項目を追加し、クライアント ID とシークレットを設定して `SUPABASE_AUTH_EXTERNAL_GOOGLE_ENABLED=true` にする。`npm run db:stop` と `npm run db:start` で反映する。DB のリセットは不要。
+
 未入金注文の掃除ジョブは `supabase/pending/` に保留しているため、`db:reset` では登録されない。ローカルで掃除ジョブまで動かしたい場合だけ、ローカル専用の値を登録してから `supabase/pending/schedule_expire_pending_orders.sql` をローカル DB に流す（本番の値は入れない）。秘密が無くても登録自体は通るが、揃うまでは実行のたびに失敗し（`cron.job_run_details` に理由が残る）、認証ヘッダの無い要求は送られない（FREQ-368）。
 
 ```sql
