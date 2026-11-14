@@ -23,10 +23,12 @@ z.setErrorMap((issue) => {
   }
 });
 
+// 形の確認（.email()）は後続の transform より前に走るので、先に trim しないと前後に空白のあるメールが断られる。
 export const emailSchema = z
   .string()
-  .email({ message: 'メールアドレスの形式が正しくありません' })
-  .transform((s) => s.trim().toLowerCase());
+  .trim()
+  .toLowerCase()
+  .email({ message: 'メールアドレスの形式が正しくありません' });
 
 export const passwordSchema = z
   .string()

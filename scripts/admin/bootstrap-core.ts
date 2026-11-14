@@ -41,7 +41,7 @@ const fail = (reason: BootstrapFailureReason, message: string): BootstrapResult 
  * @remarks 役割の書き込みが2回の要求で、片方だけ通った利用者を残さないため、失敗したら作った利用者を消す。Auth の誤りの文（メールを含みうる）と、パスワードは、結果にも監査にも出さない。
  */
 export async function bootstrapFirstAdmin(input: BootstrapInput, deps: BootstrapDeps): Promise<BootstrapResult> {
-  const emailParsed = emailSchema.safeParse(input.email.trim()); // スキーマは形の確認の後に trim するので、前後の空白は先に除く
+  const emailParsed = emailSchema.safeParse(input.email);
   if (!emailParsed.success) return fail('invalid_email', 'メールアドレスの形式が正しくありません');
   const email = emailParsed.data;
 

@@ -1,6 +1,6 @@
 # 1.14 ログインと認証（AUTH）詳細設計
 
-> 状態: 推定 | 確認日: 2026-11-01 | 対象: ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の窓口 `/api/auth/*`、サイト共通のヘッダーとドロワー、認証の部品 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-11-14 | 対象: ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の窓口 `/api/auth/*`、サイト共通のヘッダーとドロワー、認証の部品 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -1183,7 +1183,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 向き | 中身 |
 | --- | --- |
-| 入力 | `POST /api/auth/register`。JSON の `email`・`password`・`display_name`（任意）・`turnstileToken`・`next`（任意。型は縛らない。古い `redirect_to`・`emailRedirectTo` は読まない）。形は共有の `RegisterRequestSchema`（16 文字はここ）。送り元の IP（`getClientIp`。DD-AUTH-038）。`x-admin-token`・Bearer は読まない |
+| 入力 | `POST /api/auth/register`。JSON の `email`・`password`・`display_name`（任意）・`turnstileToken`・`next`（任意。型は縛らない。古い `redirect_to`・`emailRedirectTo` は読まない）。形は共有の `RegisterRequestSchema`（16 文字はここ）。メールは共有の `emailSchema` が先に前後の空白を取り、小文字にしてから形を確かめる（前後に空白のあるメールも断らない。ログイン・再設定の申請も同じ部品。2026-11-14 に直した。単体テスト `email-schema.test.ts`）。送り元の IP（`getClientIp`。DD-AUTH-038）。`x-admin-token`・Bearer は読まない |
 | 出力 202 | `{ message: 'Confirmation email sent' }`（新規で確認が要る時・登録済み・除外の宛先）。戻り先の Cookie `sb-return-intent`（1 時間。`next` が無い・外れた時も既定の `/` で必ず付ける）は 3 つの枝で属性の並びが同じ |
 | 出力 201 | Supabase が session を返した時（Confirm email が OFF）だけ。`{ user: { id, email } }` と認証の Cookie（`access_token`・利用者の記録は載せない） |
 | 出力の失敗 | 400（形・漏洩）、403（Turnstile）、429（回数の制限。IP 単位と宛先単位）、500（作成・保存の失敗・例外）、503（住所の見張り・照会の失敗） |
