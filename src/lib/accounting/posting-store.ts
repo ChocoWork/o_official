@@ -152,6 +152,55 @@ export async function resolvePendingEvent(
 	);
 }
 
+/** 結べない仕訳の理由ごとの固定の文（DB の DETAIL は返さない）。 */
+const LINK_ENTRY_MESSAGE: Readonly<Record<string, string>> = {
+	link_not_found: '選んだ仕訳が見つかりません。',
+	link_not_manual: '手で入れた仕訳ではないので結べません。',
+	link_reversed: 'この仕訳は取り消されているので結べません。',
+	link_other_order: '別の注文の仕訳なので結べません。この注文の行がある仕訳か、注文を使わない仕訳を選んでください。',
+};
+
+/** `ACCOUNTING_LINK_ENTRY_INVALID / 22023` は DETAIL で文を分けて400にする。ほかは共通の classify。 */
+function classifyLink(error: unknown): AccountingStoreError {
+	if (
+		error !== null &&
+		typeof error === 'object' &&
+		'message' in error &&
+		'code' in error &&
+		error.message === 'ACCOUNTING_LINK_ENTRY_INVALID' &&
+		error.code === '22023'
+	) {
+		const details = 'details' in error && typeof error.details === 'string' ? error.details : '';
+		return new AccountingStoreError('ACCOUNTING_LINK_ENTRY_INVALID', undefined, { message: LINK_ENTRY_MESSAGE[details] });
+	}
+	return classify(error);
+}
+
+/**
+ * 手で入れる待ち（order_not_postable）の計上待ちを、手で入れた仕訳と結んで閉じる。メモの本文は DB に渡すだけで、返さない。
+ * 理由が違えば `ACCOUNTING_EVENT_NOT_POSTABLE`、閉じ済みなら `ACCOUNTING_PENDING_RESOLVED`（どちらも409）。
+ */
+export async function linkPendingEntry(
+	client: SupabaseClient,
+	actorId: string,
+	input: { eventId: string; entryId: string; note: string; requestKey: string },
+): Promise<PendingEvent> {
+	let response;
+	try {
+		response = await client.rpc('admin_link_accounting_pending_entry', {
+			_actor_id: actorId,
+			_event_id: input.eventId,
+			_entry_id: input.entryId,
+			_note: input.note,
+			_request_key: input.requestKey,
+		});
+	} catch (error) {
+		throw new AccountingStoreError(null, sqlstateOf(error));
+	}
+	if (response.error) throw classifyLink(response.error);
+	return parse(pendingEventSchema, response.data as unknown);
+}
+
 const slipHoldsSchema = z.array(z.object({ order_id: uuid, dispute_id: z.string().min(1) }).strict());
 
 /** 発送票の注文を止めている、判断待ちの支払いの取り消し（4-e3）。1件でもあれば確定の前に止める。 */

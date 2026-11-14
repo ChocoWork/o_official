@@ -16,7 +16,7 @@ beforeEach(() => {
 });
 
 describe('届いた日', () => {
-	test('FREQ-575-AC-02: 受け取りごとの届いた日と直しの跡を camelCase にし、直した人の番号を返さない', async () => {
+	test('FREQ-575-AC-02: 受け取りごとの届いた日と直しの跡を camelCase にし、直した人の番号 actorId を計画2の出荷の跡と同じく返す', async () => {
 		rpc.mockResolvedValue(
 			ok([
 				{
@@ -36,10 +36,9 @@ describe('届いた日', () => {
 				arrivedOnOriginal: '2026-11-01',
 				arrivedOnCurrent: '2026-11-03',
 				version: 1,
-				corrections: [{ version: 1, previousOn: '2026-11-01', newOn: '2026-11-03', reason: '到着日の確認', createdAt: '2026-11-04T01:00:00+00:00' }],
+				corrections: [{ version: 1, previousOn: '2026-11-01', newOn: '2026-11-03', reason: '到着日の確認', actorId: uuid(5), createdAt: '2026-11-04T01:00:00+00:00' }],
 			},
 		]);
-		expect(JSON.stringify(rows)).not.toContain(uuid(5));
 	});
 
 	test('FREQ-575-AC-02: 戻りの形が違う・知らない鍵は固定の500にし、DB の拒否は表の固定コードにする', async () => {

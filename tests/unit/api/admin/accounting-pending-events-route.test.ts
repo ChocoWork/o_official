@@ -9,6 +9,7 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: (..
 jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockAudit(...args) }));
 import { GET as pendingGet } from '@/app/api/admin/accounting/pending-events/route';
 import { POST as resolvePost } from '@/app/api/admin/accounting/pending-events/[id]/resolve/route';
+import { POST as linkPost } from '@/app/api/admin/accounting/pending-events/[id]/link-entry/route';
 import { POST as runPost, maxDuration } from '@/app/api/admin/accounting/posting/run/route';
 import { checkAuthSessionLiveness, verifyAccessToken } from '@/lib/auth/authenticate';
 import { createServiceRoleClient } from '@/lib/supabase/server';
@@ -217,6 +218,110 @@ describe('POST /api/admin/accounting/pending-events/[id]/resolve', () => {
 		const response = await resolve();
 		expect([response.status, await read(response)]).toEqual([500, { error: '会計の処理に失敗しました。' }]);
 		expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'error', metadata: { event_id: EVENT, result_code: 'ACCOUNTING_FAILED' } }));
+	});
+});
+
+describe('POST /api/admin/accounting/pending-events/[id]/link-entry', () => {
+	const ENTRY = uuid(301);
+	const linkBody = { entryId: ENTRY, note: '手で入れた仕訳と結ぶ SECRET-NOTE', requestKey: KEY };
+	const linkRow = eventRow(1, { reason: 'order_not_postable', detail: { reason: 'shipping' }, resolved_at: '2026-11-09T02:00:00+00:00', resolved_entry_id: ENTRY });
+	const link = (value: unknown = linkBody, id: string = EVENT) =>
+		linkPost(new Request(`${base}/pending-events/${id}/link-entry`, { method: 'POST', body: JSON.stringify(value) }), { params: Promise.resolve({ id }) });
+	const linkRpc = (result: { data: unknown; error: unknown }) =>
+		rpcImpl.mockImplementation(async (name: string) => (name === 'admin_link_accounting_pending_entry' ? result : defaultRpc(name)));
+	beforeEach(() => { linkRpc({ data: linkRow, error: null }); });
+
+	test('FREQ-569-AC-07: 手で入れた仕訳と結ぶのは admin.accounting.entries.correct の人だけで、認可 → CSRF → IP → actor → 入力 → store → 監査の順、監査にメモ・仕訳の番号・額を入れない', async () => {
+		grants.current = [PERM.correct];
+		const response = await link();
+		expect(response.status).toBe(200);
+		expect(response.headers.get('cache-control')).toContain('no-store');
+		const body = await read(response);
+		const event = (body.data as { event: Record<string, unknown> }).event;
+		expect(Object.keys(event).sort()).toEqual(EVENT_KEYS);
+		expect(event).toMatchObject({ id: uuid(201), reason: 'order_not_postable', resolvedEntryId: ENTRY });
+		expect(JSON.stringify(body)).not.toContain('SECRET-NOTE');
+		expect(seq).toEqual(['auth', 'csrf', 'admin.accounting.write:ip', 'admin.accounting.write:actor', 'rpc:admin_link_accounting_pending_entry', 'audit']);
+		expect(rpcImpl).toHaveBeenCalledWith('admin_link_accounting_pending_entry', {
+			_actor_id: ACTOR, _event_id: EVENT, _entry_id: ENTRY, _note: linkBody.note, _request_key: KEY,
+		});
+		expect(mockAudit).toHaveBeenCalledWith({
+			action: 'admin.accounting.pending.link_entry', actor_id: ACTOR, resource: 'accounting', resource_id: EVENT, outcome: 'success',
+			metadata: { event_id: EVENT, result: 'linked' },
+		});
+		const audit = JSON.stringify(mockAudit.mock.calls);
+		for (const secret of ['SECRET-NOTE', ENTRY, KEY, 'owner@example.test']) expect(audit).not.toContain(secret);
+		expect(mockRate).toHaveBeenCalledWith(expect.objectContaining({ endpoint: 'admin.accounting.write', limit: 30, windowSeconds: 600 }));
+	});
+
+	test('FREQ-569-AC-07: 権限なし・aal1・CSRF欠落・429・不正入力では DB を呼ばず、失敗の監査にもメモ・仕訳の番号は入らない', async () => {
+		const stops: StopCase[] = [
+			['aal1', () => (verifyAccessToken as jest.Mock).mockImplementationOnce(async () => ({ ok: true, claims: claims('aal1') })), 403],
+			['finance.manageだけ', () => { grants.current = [PERM.read, PERM.manage, PERM.settings]; }, 403],
+			['CSRF', () => mockCsrf.mockImplementationOnce(() => new Response('{}', { status: 403 })), 403],
+			['IP 429', () => mockRate.mockImplementationOnce(async () => new Response('{}', { status: 429 })), 429],
+		];
+		for (const [label, arrange, status] of stops) {
+			grants.current = [PERM.correct]; rpcImpl.mockClear(); mockAudit.mockClear();
+			arrange();
+			const denied = await link();
+			expect([label, denied.status]).toEqual([label, status]);
+			expect(denied.headers.get('cache-control')).toContain('no-store');
+			expect(rpcImpl).not.toHaveBeenCalled(); expect(mockAudit).not.toHaveBeenCalled();
+		}
+		grants.current = [PERM.correct];
+		const bad: [string, unknown, string?][] = [
+			['仕訳の番号なし', { note: 'x', requestKey: KEY }], ['仕訳の番号が不正', { ...linkBody, entryId: 'bad' }], ['メモなし', { entryId: ENTRY, requestKey: KEY }],
+			['空のメモ', { ...linkBody, note: '   ' }], ['501文字', { ...linkBody, note: 'あ'.repeat(501) }], ['要求番号なし', { entryId: ENTRY, note: 'x' }],
+			['知らない鍵', { ...linkBody, actorId: ACTOR }], ['本文がJSONでない', null], ['IDが不正', linkBody, 'not-a-uuid'],
+		];
+		for (const [label, value, id] of bad) {
+			rpcImpl.mockClear(); mockAudit.mockClear();
+			const response = await link(value, id);
+			expect([label, response.status, await read(response)]).toEqual([label, 400, { code: 'ACCOUNTING_ARGUMENT_INVALID', error: '入力を確かめてください。' }]);
+			expect(rpcImpl).not.toHaveBeenCalled();
+			expect(JSON.stringify(mockAudit.mock.calls)).not.toContain('SECRET-NOTE');
+		}
+		expect((await link({ ...linkBody, note: 'あ'.repeat(500) })).status).toBe(200);
+	});
+
+	test.each([
+		['link_not_found', '選んだ仕訳が見つかりません。'],
+		['link_not_manual', '手で入れた仕訳ではないので結べません。'],
+		['link_reversed', 'この仕訳は取り消されているので結べません。'],
+		['link_other_order', '別の注文の仕訳なので結べません。この注文の行がある仕訳か、注文を使わない仕訳を選んでください。'],
+	])('FREQ-569-AC-07: DB の ACCOUNTING_LINK_ENTRY_INVALID（DETAIL %s）は400と DETAIL ごとの固定の文で返し、生の DETAIL・メモは出さない', async (detail, text) => {
+		linkRpc(dbError('ACCOUNTING_LINK_ENTRY_INVALID', '22023', detail));
+		const response = await link();
+		expect([response.status, await read(response)]).toEqual([400, { code: 'ACCOUNTING_LINK_ENTRY_INVALID', error: text }]);
+		expect(mockAudit).toHaveBeenCalledWith({
+			action: 'admin.accounting.pending.link_entry', actor_id: ACTOR, resource: 'accounting', resource_id: EVENT, outcome: 'failure',
+			metadata: { event_id: EVENT, result_code: 'ACCOUNTING_LINK_ENTRY_INVALID' },
+		});
+		const audit = JSON.stringify(mockAudit.mock.calls);
+		for (const secret of [detail, 'SECRET-NOTE']) expect(audit).not.toContain(secret);
+	});
+
+	test.each([
+		['ACCOUNTING_EVENT_NOT_POSTABLE', '55000', 409, 'この出来事は今は仕訳にできません。計上待ちの一覧で理由を確かめてください。'],
+		['ACCOUNTING_PENDING_RESOLVED', '55000', 409, 'この計上待ちは既に解決されています。'],
+		['ACCOUNTING_NOT_FOUND', 'P0002', 404, '会計の記録が見つかりません。'],
+		['ACCOUNTING_REQUEST_KEY_CONFLICT', '23505', 409, '同じ要求番号で異なる操作は実行できません。'],
+		['ACCOUNTING_FORBIDDEN', '42501', 403, '会計を操作する権限がありません。'],
+	])('FREQ-569-AC-07: DB の%sは表の状態と本文で返す', async (message, sqlstate, status, text) => {
+		linkRpc(dbError(message, sqlstate, 'PRIVATE-MARKER'));
+		const response = await link();
+		expect([response.status, await read(response)]).toEqual([status, { code: message, error: text }]);
+		expect(JSON.stringify(mockAudit.mock.calls)).not.toContain('PRIVATE-MARKER');
+	});
+
+	test('FREQ-569-AC-07: SQLSTATE が表と違えば分類せず、壊れた応答とともに固定の500', async () => {
+		linkRpc(dbError('ACCOUNTING_LINK_ENTRY_INVALID', '23505', 'link_reversed'));
+		const response = await link();
+		expect([response.status, await read(response)]).toEqual([500, { error: '会計の処理に失敗しました。' }]);
+		linkRpc({ data: { ...linkRow, reason: 'unknown_reason' }, error: null });
+		const broken = await link();
+		expect([broken.status, await read(broken)]).toEqual([500, { error: '会計の処理に失敗しました。' }]);
 	});
 });
 

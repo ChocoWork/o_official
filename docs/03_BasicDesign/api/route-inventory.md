@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> 会計の計画3 Task 11a 確認日: 2026-11-14。Route Handler を1ファイル・1メソッド足した（197ファイル・249メソッド、表は196行・248メソッド）: `/api/admin/accounting/pending-events/[id]/link-entry`。契約は [API仕様](api-spec.md) の「管理:会計・法定保存」。
+>
 > 会計の計画3 Task 10 確認日: 2026-11-14。Route Handler を7ファイル・9メソッド足した（196ファイル・248メソッド、表は195行・247メソッド）: `/api/admin/accounting/return-arrival`・`return-options`・`refund-states`・`refund-cancellations`・`refund-bank-transfers`・`refund-settlements`・`tax-refunds`。契約は [API仕様](api-spec.md) の「管理:会計・法定保存」。
 >
 > 交換の印 Task 7 確認日: 2026-11-11。Route Handler を3ファイル・3メソッド足した（189ファイル・239メソッド、表は188行・238メソッド）: `/api/admin/returns/[returnId]/receive-estimate`・`/api/admin/orders/[id]/refund-estimate`・`/api/orders/[id]/return-request/estimate`（どれも `POST`。読むだけ）。契約は [API仕様](api-spec.md) の末尾「見込みの窓口と計画の受け渡し（FREQ-642 Task 7）」。
@@ -74,6 +76,7 @@
 | `/api/admin/accounting/journal` | `GET` | [route.ts](../../../src/app/api/admin/accounting/journal/route.ts) （会計 計画1 Task 8: 保存した仕訳と期首の残高。`admin.finance.read`、回数制限なし） |
 | `/api/admin/accounting/pending-events` | `GET` | [route.ts](../../../src/app/api/admin/accounting/pending-events/route.ts) （会計 計画2 Task 10: 計上待ちの一覧。`admin.finance.read`、全応答no-store） |
 | `/api/admin/accounting/pending-events/[id]/resolve` | `POST` | [route.ts](../../../src/app/api/admin/accounting/pending-events/%5Bid%5D/resolve/route.ts) （会計 計画2 Task 10: 確認済みにする。`admin.accounting.entries.correct`・CSRF→IP/actor各30回/600秒→strict本文→監査） |
+| `/api/admin/accounting/pending-events/[id]/link-entry` | `POST` | [route.ts](../../../src/app/api/admin/accounting/pending-events/%5Bid%5D/link-entry/route.ts) （会計 計画3 Task 11a: 手で入れる待ちを手で入れた仕訳と結んで閉じる。`admin.accounting.entries.correct`・CSRF→IP/actor各30回/600秒→strict本文→監査） |
 | `/api/admin/accounting/posting/run` | `POST` | [route.ts](../../../src/app/api/admin/accounting/posting/run/route.ts) （会計 計画2 Task 10: 計上係を今すぐ流す。`admin.finance.manage`） |
 | `/api/admin/accounting/dispute-settings` | `GET`, `PUT` | [route.ts](../../../src/app/api/admin/accounting/dispute-settings/route.ts) （会計 計画2 Task 10: GET は `admin.finance.read`、PUT は `admin.accounting.settings.manage`） |
 | `/api/admin/accounting/disputes` | `GET` | [route.ts](../../../src/app/api/admin/accounting/disputes/route.ts) （会計 計画2 Task 10: 支払いの取り消しの一覧。`admin.finance.read`） |

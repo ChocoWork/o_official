@@ -54,10 +54,10 @@ export type ReturnArrivalInfo = {
 	arrivedOnOriginal: string;
 	arrivedOnCurrent: string;
 	version: number;
-	corrections: Array<{ version: number; previousOn: string; newOn: string; reason: string; createdAt: string }>;
+	corrections: Array<{ version: number; previousOn: string; newOn: string; reason: string; actorId: string; createdAt: string }>;
 };
 
-/** 受け取りごとの届いた日と直しの跡（古い順）。直した人の番号は返さない。 */
+/** 受け取りごとの届いた日と直しの跡（古い順）。直した人の番号 `actorId` は、計画2の出荷の跡と同じく、DB が返した物をそのまま返す（名前・メールは付けない）。 */
 export async function getReturnArrivalInfo(client: SupabaseClient, receiptIds: string[]): Promise<ReturnArrivalInfo[]> {
 	const rows = parse(arrivalInfoSchema, await rpc(client, 'get_return_arrival_info', { _receipt_ids: receiptIds }));
 	return rows.map((row) => ({
@@ -65,7 +65,7 @@ export async function getReturnArrivalInfo(client: SupabaseClient, receiptIds: s
 		arrivedOnOriginal: row.arrived_on_original,
 		arrivedOnCurrent: row.arrived_on_current,
 		version: row.version,
-		corrections: row.corrections.map((c) => ({ version: c.version, previousOn: c.previous_on, newOn: c.new_on, reason: c.reason, createdAt: c.created_at })),
+		corrections: row.corrections.map((c) => ({ version: c.version, previousOn: c.previous_on, newOn: c.new_on, reason: c.reason, actorId: c.actor_id, createdAt: c.created_at })),
 	}));
 }
 

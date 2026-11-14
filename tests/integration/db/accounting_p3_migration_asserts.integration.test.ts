@@ -16,6 +16,7 @@ import {
   restoreS15DetailValid,
   ACCOUNTING_S22_FILES, ACCOUNTING_S22_SQL as s22Sql, accountingS22Section, pinAccountingS22Baseline,
   ACCOUNTING_S23_FILES, ACCOUNTING_S23_SQL as s23Sql, accountingS23Section, pinAccountingS23Baseline,
+  ACCOUNTING_S24_FILES, ACCOUNTING_S24_SQL as s24Sql, accountingS24Section, pinAccountingS24Baseline, restoreS23StripeReconciliation,
 } from './helpers/accounting-returns-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
 import { PENDING_REASONS } from '@/lib/accounting/posting-types';
@@ -1095,6 +1096,8 @@ describeLocalDb('S23 final assert: controller only', (db) => {
     await db().query('savepoint acc_s23_assert');
     let failure: AssertFailure | null = null;
     try {
+      // S24 が Stripe の照合を作り直したので、S23 の確かめの前に S23 の本文へ戻す（この savepoint の中だけ）。
+      await restoreS23StripeReconciliation(db());
       if (before) await db().query(before);
       await pinAccountingS23Baseline(db());
       if (change) await db().query(change);
@@ -1154,6 +1157,145 @@ describeLocalDb('S23 final assert: controller only', (db) => {
     [`alter function ${ROWS} volatile`, 'acc_s23_functions'],
     [redefine(LIST, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s23_reads_stable'],
   ])('FREQ-582-AC-05: S23改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// Accounting plan 3 S24 (Ruling P3-T11a / P3-T11b; FREQ-569 / FREQ-581 / FREQ-582): a pending row closed by linking a manual entry,
+// the wait of C that skips a 0 yen close parked for a person, and the Stripe reconciliation mark of a closed refund row.
+const s24Assertion = accountingS24Section('FINAL_ASSERT');
+const s24Body = accountingS24Section('BODY');
+const s24Details = ['acc_s24_functions', 'acc_s24_function_attrs', 'acc_s24_body_unchanged', 'acc_s24_existing_dml_allowlist'];
+const s24FnOf = (text: string, name: string) =>
+  (text.match(new RegExp(`^CREATE (?:OR REPLACE )?FUNCTION private\\.${name}\\([\\s\\S]*?^\\$\\$;\\n`, 'm'))?.[0] ?? '')
+    .replace(/^CREATE OR REPLACE FUNCTION/, 'CREATE FUNCTION');
+/** [name, source (the latest definition before S24), replaced parts, added blocks of S24 on top of the source]. */
+const S24_REBUILT: Array<[string, string, number, number]> = [
+  ['accounting_dispute_offset_ready', 'supabase/migrations/20261113090000_accounting_p3_dispute_offset.sql', 1, 0],
+  ['get_stripe_balance_reconciliation', 'supabase/migrations/20261113100000_accounting_p3_intake_tax_reads.sql', 0, 1],
+];
+
+describe('S24 source contract (no DB)', () => {
+  test('FREQ-569-AC-07: S24はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S24_FILES).toHaveLength(1);
+    expect(ACCOUNTING_S24_FILES[0] > ACCOUNTING_S23_FILES[0]).toBe(true);
+    expect(s24Sql).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(s24Sql.startsWith('BEGIN;\n')).toBe(true);
+    expect(s24Sql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(s24Sql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(s24Sql.trimEnd()).toMatch(/-- ACC_S24_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect([...new Set([...s24Assertion.matchAll(/'(acc_s24_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...s24Details].sort());
+    expect(s24Assertion).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(s24Assertion.replace(/\$acc_s24_o\d\$[\s\S]*?\$acc_s24_o\d\$/g, '')).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(s24Sql).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+    // Only the link function gets a public entry and a grant (service_role, private and public).
+    expect([...s24Body.matchAll(/^CREATE (?:OR REPLACE )?FUNCTION public\.([a-z_]+)\(/gm)].map((m) => m[1])).toEqual(['admin_link_accounting_pending_entry']);
+    expect(s24Body.match(/^GRANT\b/gm)).toHaveLength(1);
+  });
+
+  test.each(S24_REBUILT)('FREQ-569-AC-07: 作り直した %s の本文は最新の定義の写しに、置き換えと囲みを足しただけ', (name, source, replacedCount, addedCount) => {
+    const latest = s24FnOf(fs.readFileSync(path.join(process.cwd(), source), 'utf8'), name);
+    const rebuilt = s24FnOf(s24Body, name);
+    expect(latest).not.toBe('');
+    expect(rebuilt).not.toBe('');
+    // No migration between the source and S24 defines it again.
+    const dir = path.join(process.cwd(), 'supabase/migrations');
+    const defining = fs.readdirSync(dir).filter((f) => f.endsWith('.sql') && f > path.basename(source) && f <= ACCOUNTING_S24_FILES[0])
+      .filter((f) => new RegExp(`^CREATE (?:OR REPLACE )?FUNCTION private\\.${name}\\(`, 'm').test(fs.readFileSync(path.join(dir, f), 'utf8')));
+    expect(defining).toEqual([ACCOUNTING_S24_FILES[0]]);
+    const replaced = [...rebuilt.matchAll(/-- ACC_P3_REPLACE_BEGIN ([0-9a-f]{32})\n([\s\S]*?)-- ACC_P3_REPLACE_END\n/g)];
+    expect(replaced).toHaveLength(replacedCount);
+    const latestLines = [...latest.matchAll(/^.*\n/gm)].map((x) => x[0]);
+    const originalOf = (hash: string) => {
+      for (let i = 0; i < latestLines.length; i += 1) {
+        let text = '';
+        for (let j = i; j < latestLines.length; j += 1) {
+          text += latestLines[j];
+          if (createHash('md5').update(text).digest('hex') === hash) return text;
+        }
+      }
+      return null;
+    };
+    let restored = rebuilt;
+    for (const m of replaced) {
+      const found = originalOf(m[1]);
+      expect(found).not.toBeNull();
+      expect(latest.split(found as string)).toHaveLength(2);
+      restored = restored.replace(m[0], () => found as string);
+    }
+    // The blocks of the source stay; the blocks S24 adds are the ones that are not in the source.
+    const blocks = (text: string) => [...text.matchAll(/-- ACC_P3_BEGIN\n[\s\S]*?-- ACC_P3_END\n/g)].map((m) => m[0]);
+    const added = blocks(restored).filter((b) => !latest.includes(b));
+    expect(added).toHaveLength(addedCount);
+    for (const block of added) restored = restored.replace(block, '');
+    expect(restored).toBe(latest);
+    expect(rebuilt.slice(rebuilt.indexOf('AS $$'))).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE|PERFORM|EXECUTE)\b|FOR (SHARE|UPDATE|NO KEY UPDATE|KEY SHARE)/i);
+  });
+});
+
+describeLocalDb('S24 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  async function attempt(change = '', before = ''): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s24_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (before) await db().query(before);
+      await pinAccountingS24Baseline(db());
+      if (change) await db().query(change);
+      await db().query(s24Assertion);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s24_assert'); await db().query('release savepoint acc_s24_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const redefine = (sig: string, from: string, to: string) =>
+    `do $x$ begin execute regexp_replace(pg_get_functiondef('${sig}'::regprocedure), E'${from}', E'${to}'); end $x$`;
+  const LINK = 'private.admin_link_accounting_pending_entry(uuid,uuid,uuid,text,uuid)';
+  const LINK_PUBLIC = 'public.admin_link_accounting_pending_entry(uuid,uuid,uuid,text,uuid)';
+  const READY = 'private.accounting_dispute_offset_ready(text,uuid,date)';
+  const STRIPE = 'private.get_stripe_balance_reconciliation(date)';
+
+  test('FREQ-569-AC-07: 適用後の状態で S24 の末尾の確かめが通る（呼出元のsearch_pathを問わない）', async () => {
+    expect(s24Assertion).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('', 'set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('', 'set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt('', "set local search_path = ''")).toBeNull();
+  });
+
+  test.each([
+    ['drop table pg_temp.accounting_s24_baseline', 'acc_s24_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s24_baseline set payload = payload - 'attrs'", 'acc_s24_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s24_baseline set payload = jsonb_set(payload, '{counts,entries}', '999999')", 'acc_s24_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s24_baseline set payload = jsonb_set(payload, '{counts,pending_events}', '999999')", 'acc_s24_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s24_baseline set payload = jsonb_set(payload, '{counts,lines}', '999999')", 'acc_s24_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s24_baseline set payload = jsonb_set(payload, '{allowlist,0}', '1')", 'acc_s24_existing_dml_allowlist'],
+    [`grant execute on function ${LINK} to authenticated`, 'acc_s24_functions'],
+    [`grant execute on function ${LINK_PUBLIC} to anon`, 'acc_s24_functions'],
+    [`revoke execute on function ${LINK_PUBLIC} from service_role`, 'acc_s24_functions'],
+    [`alter function ${LINK} security invoker`, 'acc_s24_functions'],
+    [`alter function ${LINK} set search_path = public`, 'acc_s24_functions'],
+    [`alter function ${LINK_PUBLIC} stable`, 'acc_s24_functions'],
+    [`drop function ${LINK_PUBLIC}`, 'acc_s24_functions'],
+    [`alter function ${READY} set search_path = public`, 'acc_s24_function_attrs'],
+    [`grant execute on function ${READY} to service_role`, 'acc_s24_function_attrs'],
+    [`grant execute on function ${STRIPE} to anon`, 'acc_s24_function_attrs'],
+    [`alter function ${STRIPE} volatile`, 'acc_s24_function_attrs'],
+    [redefine(READY, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s24_body_unchanged'],
+    [redefine(READY, "p\\.detail ->> .reason. = .dispute_lost.", "p.detail ->> ''reason'' = ''dispute_lost_x''"), 'acc_s24_body_unchanged'],
+    [redefine(READY, '-- ACC_P3_REPLACE_BEGIN [0-9a-f]{32}\\n', '-- ACC_P3_REPLACE_BEGIN 00000000000000000000000000000000\\n'), 'acc_s24_body_unchanged'],
+    [redefine(READY, 'AND p\\.reason = .order_not_postable. ', 'AND true '), 'acc_s24_body_unchanged'],
+    [redefine(READY, 'ready := true;', 'ready := false;'), 'acc_s24_body_unchanged'],
+    [redefine(STRIPE, "pm\\.event_kind = .refund_failed.", "pm.event_kind = ''refund_failedx''"), 'acc_s24_body_unchanged'],
+    [redefine(STRIPE, 'WHERE pm\\.resolved_at IS NOT NULL', 'WHERE true'), 'acc_s24_body_unchanged'],
+    [redefine(STRIPE, '-- ACC_P3_BEGIN\\n          OR EXISTS', '-- ACC_P3_X\\n          OR EXISTS'), 'acc_s24_body_unchanged'],
+    [redefine(STRIPE, 'WHEN .payout. THEN', "WHEN ''payout_x'' THEN"), 'acc_s24_body_unchanged'],
+  ])('FREQ-569-AC-07: S24改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });

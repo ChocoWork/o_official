@@ -35,6 +35,7 @@ export type AccountingAuditAction =
 	| 'admin.accounting.period.filing'
 	| 'admin.accounting.settings.update'
 	| 'admin.accounting.pending.resolve'
+	| 'admin.accounting.pending.link_entry'
 	| 'admin.accounting.posting.run'
 	| 'admin.accounting.dispute.setting'
 	| 'admin.accounting.dispute.assign'

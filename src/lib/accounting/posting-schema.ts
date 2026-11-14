@@ -87,6 +87,12 @@ export const resolvePendingBodySchema = z
 	.strict();
 export type ResolvePendingBody = z.infer<typeof resolvePendingBodySchema>;
 
+/** 計上待ちを手で入れた仕訳と結ぶ。メモの本文は監査に入れない。 */
+export const linkPendingBodySchema = z
+	.object({ entryId: uuidSchema, note: z.string().trim().min(1).max(MAX_RESOLUTION_NOTE), requestKey: uuidSchema })
+	.strict();
+export type LinkPendingBody = z.infer<typeof linkPendingBodySchema>;
+
 /** 計上係を今すぐ流す。入力は無い（本文なしか空の `{}`）。 */
 export const runPostingBodySchema = z.union([z.object({}).strict(), z.null()]);
 

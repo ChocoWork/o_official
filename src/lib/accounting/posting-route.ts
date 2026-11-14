@@ -12,6 +12,7 @@ import {
 	disputeIdSchema,
 	disputeSettingBodySchema,
 	invoiceBodySchema,
+	linkPendingBodySchema,
 	parseDeferredRevenueQuery,
 	parseDisputesQuery,
 	parseInvoiceQuery,
@@ -41,6 +42,7 @@ import {
 	listDisputeSettings,
 	listDisputes,
 	listPendingEvents,
+	linkPendingEntry,
 	listYearEndShipments,
 	recordBalanceTopup,
 	resolvePendingEvent,
@@ -100,6 +102,23 @@ export function handlePendingResolve(request: Request, context: AccountingContex
 		schema: resolvePendingBodySchema,
 		run: (client, actorId, id, body) => resolvePendingEvent(client, actorId, { eventId: id as string, note: body.note, requestKey: body.requestKey }),
 		audit: (_result, id) => ({ resourceId: id, metadata: { event_id: id ?? undefined, result: 'resolved' } }),
+		respond: async (_client, event) => ({ event }),
+	});
+}
+
+/** 手で入れる待ちを、手で入れた仕訳と結んで閉じる。監査は待ちの番号と結果だけ（メモの本文・仕訳の番号・額は入れない）。 */
+export function handlePendingLinkEntry(request: Request, context: AccountingContext): Promise<Response> {
+	return handleAccountingWrite(request, context, {
+		label: label('POST', 'pending-events/[id]/link-entry'),
+		action: 'admin.accounting.pending.link_entry',
+		permission: ENTRIES_CORRECT,
+		withId: true,
+		idKey: 'event_id',
+		status: 200,
+		schema: linkPendingBodySchema,
+		run: (client, actorId, id, body) =>
+			linkPendingEntry(client, actorId, { eventId: id as string, entryId: body.entryId, note: body.note, requestKey: body.requestKey }),
+		audit: (_result, id) => ({ resourceId: id, metadata: { event_id: id ?? undefined, result: 'linked' } }),
 		respond: async (_client, event) => ({ event }),
 	});
 }

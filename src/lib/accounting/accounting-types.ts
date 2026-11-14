@@ -35,6 +35,8 @@ export const ACCOUNTING_ERRORS = {
 	// 計画2（計上待ち・支払いの取り消しの設定）。
 	ACCOUNTING_EVENT_NOT_POSTABLE: ['55000', 409, 'この出来事は今は仕訳にできません。計上待ちの一覧で理由を確かめてください。'],
 	ACCOUNTING_PENDING_RESOLVED: ['55000', 409, 'この計上待ちは既に解決されています。'],
+	// 計上待ちを手で入れた仕訳と結ぶ時（DETAIL link_*。文は store が DETAIL で選ぶ。生の DETAIL は返さない）。
+	ACCOUNTING_LINK_ENTRY_INVALID: ['22023', 400, 'この仕訳は計上待ちと結べません。仕訳を確かめてください。'],
 	ACCOUNTING_DISPUTE_ACCOUNT_INVALID: ['22023', 400, '選んだ勘定は、支払いの取り消しの振り替え先に使えません。'],
 	// 計画3（返金・返品）。返金の route は DISPUTE_HOLD を返金側の文と code で 409 にする（accounting の route には出ない）。
 	ACCOUNTING_DISPUTE_HOLD: ['55000', 409, 'カード会社の判断待ちの注文が含まれているため、返金できません。'],

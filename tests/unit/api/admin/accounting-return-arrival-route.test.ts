@@ -52,7 +52,7 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 describe('GET /api/admin/accounting/return-arrival', () => {
-	test('FREQ-575-AC-02: 届いた日と直しの跡を admin.orders.read で返し、直した人の番号を出さず、全応答 no-store', async () => {
+	test('FREQ-575-AC-02: 届いた日と直しの跡を admin.orders.read で返し、直した人の番号 actorId を計画2の出荷の跡と同じく返し（名前・メールは付けない）、全応答 no-store', async () => {
 		grants.current = [ORDERS_READ];
 		const response = await get();
 		expect(response.status).toBe(200);
@@ -60,10 +60,11 @@ describe('GET /api/admin/accounting/return-arrival', () => {
 		expect(json.data).toEqual({
 			arrivals: [{
 				receiptId: RECEIPT, arrivedOnOriginal: '2026-11-01', arrivedOnCurrent: '2026-11-03', version: 1,
-				corrections: [{ version: 1, previousOn: '2026-11-01', newOn: '2026-11-03', reason: '到着日の確認 SECRET-REASON', createdAt: '2026-11-04T01:00:00+00:00' }],
+				corrections: [{ version: 1, previousOn: '2026-11-01', newOn: '2026-11-03', reason: '到着日の確認 SECRET-REASON', actorId: uuid(5), createdAt: '2026-11-04T01:00:00+00:00' }],
 			}],
 		});
-		expect(JSON.stringify(json)).not.toContain(uuid(5));
+		expect(Object.keys((json.data as { arrivals: Array<{ corrections: object[] }> }).arrivals[0].corrections[0]).sort())
+			.toEqual(['actorId', 'createdAt', 'newOn', 'previousOn', 'reason', 'version']);
 		expect(seq).toEqual(['auth', 'rpc:get_return_arrival_info']);
 		expect(rpcImpl).toHaveBeenCalledWith('get_return_arrival_info', { _receipt_ids: [RECEIPT] });
 	});

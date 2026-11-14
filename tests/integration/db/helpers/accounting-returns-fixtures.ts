@@ -810,3 +810,29 @@ export async function pinAccountingS23Baseline(client: PgClient): Promise<void> 
 	await client.query('drop table if exists pg_temp.accounting_s23_baseline');
 	await client.query(pin);
 }
+
+// ---- Task 11a（S24。手で入れた仕訳と結んで計上待ちを閉じる）の道具 ----
+
+const s24Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p3_pending_manual_close.sql'));
+/** 計画3 S24（計上待ちを手で入れた仕訳と結ぶ道）の移行の本文（無ければ空で、原文の確かめが目に見えて落ちる）。 */
+export const ACCOUNTING_S24_SQL = s24Files.length === 1 ? fs.readFileSync(path.join(directory, s24Files[0]), 'utf8') : '';
+export const ACCOUNTING_S24_FILES = s24Files;
+
+/** S24 の `-- ACC_S24_<name>_BEGIN` と `-- ACC_S24_<name>_END` の間。 */
+export function accountingS24Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S24_SQL.split(`-- ACC_S24_${name}_BEGIN\n`)[1]?.split(`-- ACC_S24_${name}_END`)[0] ?? '';
+}
+
+/** S24 の比べる元の控え（本文の最初の CREATE TEMP TABLE と INSERT）を、呼ぶ取引の中で作り直す。 */
+export async function pinAccountingS24Baseline(client: PgClient): Promise<void> {
+	const pin = accountingS24Section('BODY').split('\n-- 1. The link of a pending row')[0];
+	await client.query('drop table if exists pg_temp.accounting_s24_baseline');
+	await client.query(pin);
+}
+
+/** S24 が Stripe の照合と取り消しの待ちを作り直したので、S23・S22 の末尾の確かめを再生する前に S23 の本文へ戻す（呼ぶ取引の中だけ）。 */
+export async function restoreS23StripeReconciliation(client: PgClient): Promise<void> {
+	const body = ACCOUNTING_S23_SQL.match(/^CREATE OR REPLACE FUNCTION private\.get_stripe_balance_reconciliation\([\s\S]*?^\$\$;/m)?.[0];
+	if (!body) throw new Error('ACC_S23_STRIPE_RECONCILIATION_MISSING');
+	await client.query(body);
+}
