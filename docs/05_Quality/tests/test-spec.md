@@ -1,5 +1,7 @@
 # テスト仕様
 
+> 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 7）: E2E `FR-ADMIN-169-pending-auto-posting.spec.ts` を3幅で足した（FREQ-643-AC-13）。画面の行の数は計上待ちの route の1ページ目と同じ瞬間に比べ（FR-ADMIN-132 の形）、足しの回数は止まっている返品の行の数から決める。場面は DB で先に確かめた（返金の途中は `dispute_refund_overlap` で待ち、返金の成功の後は「もう一度計上する」2回で借 2130 5,000／貸 4020 5,000）。
+
 > 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 5）: DB 結合の `accounting_p3_pending_auto_posting` に取り消し FREQ-643-AC-11（3件。0円の終わりの決定・直し・C を本物の入口 `public.admin_reverse_accounting_journal`〔service_role・`admin.finance.manage` の管理者〕で取り消し、結んだ行が閉じたまま、計上係を流しても入れ直されず、残高が取り消し分〔4,000円・6,000円〕だけ戻ること）を足し、コミットする試験 `accounting_p3_pending_auto_posting_concurrency`（FREQ-643-AC-10。8件。`ACCOUNTING_COMMIT_SUITE=1`・単独・前後に `db reset`）を作った。計上係を2接続で同時に流しても決定・C・直しが1本ずつ（取り消しの側は C と直しが各1本）、計上係と同じ注文の返金の書き込み（返品の返金を決める `admin_refund_return`・返品を受け取って返金を作る `admin_receive_return`）を、直列で両方の順と、同時の2通り（どちらかが先に取引を持つ）で流して、待った方が固まらず（接続ごとの `statement_timeout` 15秒）、2130 が負にならず、最後の円（2130 = 0・4020 の借 28,750・売上の純額 11,875・開いた待ち 0）が全部同じになることを固定した。0円の終わりの日が負けた日と同じなら、順で終わりの 2130 が変わり得る（原因: 負けた日の境の数え方の食い違い。返品の計上係の枝は負けた日と同じ日以後を「負けた後」と数え、取り消しの計上係の側〔D13・D15・直し・日の早い物が先の鍵〕は負けた日より後だけを数える。限り N18。設計 14章・15章 #17）ので、直しの効く「負けた日の明日」で固定している。共通の材料 `seedAutoOrder`・`seedSlotPaidOrder` に、支払いの日を決める省ける引数 `paidAt` を足した。
 >
 > 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 4）: `accounting_p3_migration_asserts` に S27 の節（105件）を足した。本文の契約（ASCII・LF・単一取引・関数の順・行は書かない）、作り直した3つの関数が最新の定義の写し（置き換えと囲みの数。`ACC_P3` の囲みと置き換えを戻して空白を除いた md5）、確かめに書いた md5 が写した元の本文と合うこと、理由の CHECK が TS の20個と同じ順であることを見る。末尾の確かめ（`acc_s27_functions`・`function_attrs`・`body_unchanged`・`c_shape_unchanged`・`no_new_reason`・`existing_dml_allowlist`）が適用後の状態で通り（呼出元の search_path を問わない）、97本の改ざん（新しい関数2つの本体・権限・所有者、3つの関数の属性、足した塊の条件〔D12〜D17〕の needle、置き換え・囲みの数、S22 の C の部分、理由の CHECK、控え）が決めた段で55000とDETAILで断られることを固定した。S22 の本文へ戻した取引の中では S27 の確かめが断ることも見る。`accounting_p3_pending_manual_close` の題を FREQ-643-AC-12（結ぶ関数は `shipping`・`units_*` の理由で今までどおり結べ、ほかの理由は断られる）にした。`accounting_p3_pending_auto_posting` は題の変更だけ（銀行振込の版が3通りと3通りに分かれることを固定した）。DB 実行は controller が `db reset` の後に流した。
@@ -9,8 +11,6 @@
 > 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 2）: DB 結合の `accounting_p3_pending_auto_posting` に返品の計上係の `dispute_lost`（FREQ-643-AC-01・02・03・05・06・08。38件）を足した。旧「止める」を期待した試験（`accounting_p3_dispute_offset` の2件、`accounting_p3_pending_manual_close` の1件）は `no_revenue` で閉じる期待に直し、S22 の末尾の確かめの再生は `restoreS22DisputeAndReturnPosters`（`accounting-returns-fixtures.ts`）で2つの計上係を S22 の本文に戻してから流す。
 
 > 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 1）: DB 結合に `accounting_p3_pending_auto_posting`（35件。FREQ-643-AC-03・06・12）を足した。S27 の前の確かめ・途中の返金の関数（5つの形と外す3条件）・R の式の関数（S22 の C の式と同じ）・返金の待ちの「入れない決定は済み」を、円と補助科目を固定して確かめる。共通の材料は `tests/integration/db/helpers/accounting-pending-auto-fixtures.ts`。
-
-> 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 7）: E2E `FR-ADMIN-169-pending-auto-posting.spec.ts` を3幅で足した（FREQ-643-AC-13）。場面は DB で先に確かめた（返金の途中は `dispute_refund_overlap` で待ち、返金の成功の後は「もう一度計上する」2回で借 2130 5,000／貸 4020 5,000）。
 
 > 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 6）: 計上待ちの一覧の単体（`pending-view.test.tsx`）に FREQ-643-AC-14（2つの理由の文・専用の文が無いこと・ほかの理由の文が変わらないこと）、`event-key.test.ts` に FREQ-643-AC-09（`dispute_event` の `closefix` の印の往復）を足し、FREQ-581-AC-05 の専用の文の期待と、FREQ-569-AC-01 の2つの理由の行の期待を消した。
 
