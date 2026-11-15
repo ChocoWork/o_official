@@ -1,5 +1,7 @@
 # ER 図（現行リポジトリの実装）
 
+> 会計の自動で入れる実装 S27 確認日: 2026-11-15。表・列・CHECK の変更なし（計上待ちの理由は20種のまま）。S27 は私用の関数2つを足し、計上係2つと返金の待ちを作り直すだけで、行は書かない。
+
 > 会計の計画 3（返品・返金）確認日: 2026-11-15（Task 13）。新しい表 8 つ（`order_return_arrival_corrections`・`accounting_return_options`・`accounting_refund_events`・`accounting_refund_facts`・`accounting_refund_transfer_adjusts`・`accounting_unit_price_adjusts`・`accounting_return_facts`・`accounting_refund_settlements`）と、`order_return_receipts.arrived_on`・CHECK 2つを足した。末尾の「会計の返品・返金の表（計画 3 / FREQ-575〜584）」を参照（移行 S15・S16・S20。手元の DB で確認済み・本番未適用）。交換の印の節は変えていない。
 >
 > 交換の印 オーナー修正 X4 Fix round 1 確認日: 2026-11-12。追記だけの表 `order_unit_event_waives`（返金しないで終えた (出来事, 分)）を足した（移行 20261112064013、本番未適用）。
@@ -2471,7 +2473,7 @@ erDiagram
 
 ### 既存の物への足し物
 
-- 計上待ちの理由の CHECK（`accounting_pending_events_reason_check`）に `refund_prior_unposted`・`refund_cancel_undecided` を足した（20種。行は変えない）。`order_not_postable` の詳細の理由には `dispute_lost`・`return_closed_after_lost`（S22）、`amount_mismatch` には `refund_amount`・`allocation_overflow`・`unit_value_left` などを足した（`accounting_pending_detail_valid` が検査する）。
+- 計上待ちの理由の CHECK（`accounting_pending_events_reason_check`）に `refund_prior_unposted`・`refund_cancel_undecided` を足した（20種。行は変えない）。`order_not_postable` の詳細の理由には `dispute_lost`・`return_closed_after_lost`（S22。S27 の後は計上係が自動で入れるので、新しく作られず、S27 の前に作った行だけが持つ。値の許可は残す。表・列・CHECK は S27 で変えない。FREQ-643）、`amount_mismatch` には `refund_amount`・`allocation_overflow`・`unit_value_left` などを足した（`accounting_pending_detail_valid` が検査する）。
 - 仕訳の種類に `pre_shipment_refund`・`return_arrived`・`return_amount_decided`・`return_refund`・`refund_failed`・`refund_abandoned`・`return_arrival_redated` を足した（`src/lib/accounting/event-kinds.ts`）。補助科目は 2130 に `return_refund`・`refund_owed_pre`・`refund_owed_post`、1470 に `dispute_refund_overlap_review` を使う（`journal-types.ts`）。
 - 固定の手数料の止め（S16）: `shop_return_settings` の CHECK `acc_p3_fee_lock_settings`（検査済み）、`order_returns` の CHECK `acc_p3_fee_lock_returns`（`NOT VALID`）。返送料の定額・交換の手数料・交換の送料が0でないと断る（SQLSTATE 23514）。
 - 外部キーはすべて RESTRICT。`order_unit_event_refunds`・`order_unit_event_waives` など交換の印の表は変えていない。

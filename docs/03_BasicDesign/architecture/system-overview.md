@@ -1,5 +1,7 @@
 # システム構成（現行実装）
 
+> 会計の自動で入れる実装 S27 確認日: 2026-11-15。計上係（返品の係・取り消しの係）が、負けた取り消しと返品の0円の終わりの重なり（`dispute_lost`・`return_closed_after_lost`）を、人の操作なしに入れる（FREQ-643）。構成・認証・権限は変えない（私用の関数2つを足し、誰にも実行権を渡さない）。
+
 ## 概要
 
 確認日: 2026-10-03（「Stripe 非同期処理」の行と「Stripe Webhook の処理」の図は、2026-10-07 に確認し直した。「HTTP ジョブ登録」の行は、照合の登録が抜けていたので足し、同じ日に確認し直した。「外部表示・リンク」の行の UI 見本の画像と、Proxy の CSP の許可先の記述は、2026-10-28 に直した）。対象ソース: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`（確認し直した行と図は `b54976d2`。「HTTP ジョブ登録」の行は、保留中の SQL 3本を `0781d3ff` で読んで確かめた）。
@@ -186,4 +188,4 @@ flowchart TB
 | 判断待ちの止め | 返金を始める関数（管理者・支払い済みのキャンセル・返品の返金）と発送票の確定が、再送の枝の後に `private.accounting_assert_no_dispute_hold` を呼び、`ACCOUNTING_DISPUTE_HOLD`（55000）で断る。止めは DB の中にあり、route は断りを 409 `DISPUTE_HOLD` にして `orderIds` を読み直す。自動の返金と Stripe の画面からの返金の記録は止めない。解けるのは確定か取り下げの後 |
 | 結果の通知 | route は、記録ができた後に `scheduleAccountingPosting`（`refund`・`return`・`refund_cancel`・`refund_bank`・`refund_settle`）で計上係を流す（`after()`）。断り・失敗では流さない。流す失敗は握り、応答は変えない |
 | 公開の入口 | 計上の入口は今までどおり `public.accounting_run_posting` ただ1つ。計画3の書き手・読みは `service_role` だけが呼ぶ public の入口（INVOKER）で、本体は `private.*`（SECURITY DEFINER）。計上係と道具は入口を持たない |
-| 失敗の扱い | 計画2のまま。出来事1件ごとに別の枠で、失敗は戻して保留に残し、ほかは続ける。計画3の新しい待ちの理由は `refund_prior_unposted`・`refund_cancel_undecided` と、`order_not_postable` の詳細の理由（`dispute_lost`・`return_closed_after_lost` ほか） |
+| 失敗の扱い | 計画2のまま。出来事1件ごとに別の枠で、失敗は戻して保留に残し、ほかは続ける。計画3の新しい待ちの理由は `refund_prior_unposted`・`refund_cancel_undecided` と、`order_not_postable` の詳細の理由（`dispute_lost`・`return_closed_after_lost` ほか。この2つは S27 の後は計上係が自動で入れるので新しく作られない。FREQ-643） |

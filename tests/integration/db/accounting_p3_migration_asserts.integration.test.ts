@@ -19,6 +19,7 @@ import {
   ACCOUNTING_S24_FILES, ACCOUNTING_S24_SQL as s24Sql, accountingS24Section, pinAccountingS24Baseline, restoreS23StripeReconciliation,
   ACCOUNTING_S25_FILES, ACCOUNTING_S25_SQL as s25Sql, accountingS25Section, pinAccountingS25Baseline,
   ACCOUNTING_S26_FILES, ACCOUNTING_S26_SQL as s26Sql, accountingS26Section, pinAccountingS26Baseline,
+  ACCOUNTING_S27_FILES, ACCOUNTING_S27_SQL as s27Sql, accountingS27Section, pinAccountingS27Baseline,
 } from './helpers/accounting-returns-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
 import { PENDING_REASONS } from '@/lib/accounting/posting-types';
@@ -1648,6 +1649,294 @@ describeLocalDb('S26 final assert: controller only', (db) => {
     [redefine(ANOM, '-- ACC_P3_BEGIN\\n', '-- ACC_P3_X\\n'), 'acc_s26_body_unchanged'],
     [redefine(CAND_PUBLIC, 'SELECT private', 'SELECT /* email */ private'), 'acc_s26_reads_stable'],
   ])('FREQ-579-AC-01: S26改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// Accounting plan 3 S27 (FREQ-643 / FREQ-643-AC-12): the two posters book the parked dispute_lost and return_closed_after_lost on their
+// own. Two private tools are new; the refund wait and the two posters are rebuilt. No table, row, public entry or grant changes.
+const s27Assertion = accountingS27Section('FINAL_ASSERT');
+const s27Body = accountingS27Section('BODY');
+const s27Details = ['acc_s27_functions', 'acc_s27_function_attrs', 'acc_s27_body_unchanged', 'acc_s27_c_shape_unchanged', 'acc_s27_no_new_reason',
+  'acc_s27_existing_dml_allowlist'];
+const S22_FILE = '20261113090000_accounting_p3_dispute_offset.sql';
+const S20_FILE = '20261112214341_accounting_p3_refund_posting.sql';
+const md5Of = (text: string) => createHash('md5').update(text).digest('hex');
+const s27BodyOf = (text: string) => text.slice(text.indexOf('AS $$') + 'AS $$'.length, text.lastIndexOf('$$;'));
+const noBlocks = (text: string) => text.replace(/-- ACC_P[0-9]_BEGIN[\s\S]*?-- ACC_P[0-9]_END/g, '').replace(/\s+/g, '');
+
+describe('S27 source contract (no DB)', () => {
+  test('FREQ-643-AC-12: S27はASCII・BOMなしLF・単一取引で、前の確かめ→本文→末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
+    expect(ACCOUNTING_S27_FILES).toHaveLength(1);
+    expect(ACCOUNTING_S27_FILES[0] > ACCOUNTING_S26_FILES[0]).toBe(true);
+    expect(s27Sql).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(s27Sql.startsWith('BEGIN;\n')).toBe(true);
+    expect(s27Sql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(s27Sql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(s27Sql.trimEnd()).toMatch(/-- ACC_S27_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect(s27Sql.indexOf('-- ACC_S27_PRECHECK_BEGIN')).toBeLessThan(s27Sql.indexOf('-- ACC_S27_BODY_BEGIN'));
+    expect(s27Sql.indexOf('-- ACC_S27_BODY_END')).toBeLessThan(s27Sql.indexOf('-- ACC_S27_FINAL_ASSERT_BEGIN'));
+    expect([...new Set([...s27Assertion.matchAll(/'(acc_s27_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...s27Details].sort());
+    expect(s27Assertion).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    // The original texts and the needles kept for the check (dollar quoted) are not part of the assert itself, which raises only 55000.
+    expect(s27Assertion.replace(/\$acc_s27_(?:o\d|n)\$[\s\S]*?\$acc_s27_(?:o\d|n)\$/g, '')).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(s27Sql).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+    expect([...s27Body.matchAll(/^CREATE (?:OR REPLACE )?FUNCTION ([a-z_.]+)\(/gm)].map((m) => m[1])).toEqual([
+      'private.accounting_order_return_payable', 'private.accounting_order_refunds_in_flight', 'private.accounting_refund_wait',
+      'private.accounting_post_return_events', 'private.accounting_post_dispute_events']);
+    // Nothing is granted, no table or public function is made, and the one INSERT of the body is the copy of the baseline.
+    expect(s27Body).not.toMatch(/^(GRANT|ALTER TABLE|CREATE TABLE)\b/m);
+    expect(s27Body).not.toMatch(/FUNCTION public\./);
+    const revoked = [...s27Body.matchAll(/^REVOKE ALL ON FUNCTION ([a-z_.]+)\(/gm)].map((m) => m[1]);
+    expect(revoked).toEqual(['private.accounting_order_return_payable', 'private.accounting_order_refunds_in_flight']);
+    const statements = s27Body.replace(/\$\$[\s\S]*?\$\$/g, '$$$$').split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n');
+    expect(statements).not.toMatch(/\b(UPDATE|DELETE|TRUNCATE)\b/);
+    expect(statements.match(/\bINSERT INTO\b/g)).toHaveLength(1);
+    // No reason is made: the CHECK is not touched here.
+    expect(s27Body).not.toMatch(/accounting_pending_events_reason_check/);
+  });
+
+  test.each([
+    ['accounting_refund_wait', 1, 0, S20_FILE],
+    ['accounting_post_return_events', 0, 1, S22_FILE],
+    ['accounting_post_dispute_events', 4, 3, S22_FILE],
+  ])('FREQ-643-AC-12: 作り直した %s の本文は最新の定義の写しに、置き換え%iつと囲み%iつを足しただけ（S27）', (name, replacedCount, addedCount, source) => {
+    const latest = s26FnOf(migrationText(source), name);
+    const rebuilt = s26FnOf(s27Body, name);
+    expect(latest).not.toBe('');
+    expect(rebuilt).not.toBe('');
+    // No migration between that definition and S27 defines it again.
+    const defining = fs.readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql') && f > source && f <= ACCOUNTING_S27_FILES[0])
+      .filter((f) => new RegExp(`^CREATE (?:OR REPLACE )?FUNCTION private\\.${name}\\(`, 'm').test(migrationText(f)));
+    expect(defining).toEqual([ACCOUNTING_S27_FILES[0]]);
+    const replaced = [...rebuilt.matchAll(/-- ACC_P3_REPLACE_BEGIN ([0-9a-f]{32})\n([\s\S]*?)-- ACC_P3_REPLACE_END\n/g)];
+    expect(replaced).toHaveLength(replacedCount);
+    const latestLines = [...latest.matchAll(/^.*\n/gm)].map((x) => x[0]);
+    const originalOf = (hash: string) => {
+      for (let i = 0; i < latestLines.length; i += 1) {
+        let text = '';
+        for (let j = i; j < latestLines.length; j += 1) {
+          text += latestLines[j];
+          if (createHash('md5').update(text).digest('hex') === hash) return text;
+        }
+      }
+      return null;
+    };
+    const stripBlocks = (text: string) => text.replace(/-- ACC_P3_BEGIN\n[\s\S]*?-- ACC_P3_END\n/g, '');
+    let restored = rebuilt;
+    for (const m of replaced) {
+      // A replaced part the latest definition already carries as the same marker (the dispute poster of S22) stays as it is.
+      if (latest.includes(m[0])) continue;
+      const found = originalOf(m[1]);
+      expect(found).not.toBeNull();
+      expect(latest.split(found as string)).toHaveLength(2);
+      restored = restored.replace(m[0], () => found as string);
+    }
+    expect([...rebuilt.matchAll(/-- ACC_P3_BEGIN\n[\s\S]*?-- ACC_P3_END\n/g)]).toHaveLength(addedCount);
+    expect(stripBlocks(restored)).toBe(stripBlocks(latest));
+  });
+
+  test('FREQ-643-AC-12: S27 の確かめに書いた md5 は、写した元の本文（囲みと空白を除く）の md5 と合い、置き換えの元の字の md5 も合う', () => {
+    const originals = Object.fromEntries([...s27Assertion.matchAll(/\('([0-9a-f]{32})', \$acc_s27_o\d\$([\s\S]*?)\$acc_s27_o\d\$\)/g)].map((m) => [m[1], m[2]]));
+    expect(Object.keys(originals)).toHaveLength(5);
+    for (const [hash, text] of Object.entries(originals)) expect(md5Of(text)).toBe(hash);
+    const restore = (text: string) =>
+      text.replace(/-- ACC_P3_REPLACE_BEGIN ([0-9a-f]{32})[\s\S]*?-- ACC_P3_REPLACE_END/g, (_all, h: string) => originals[h].replace(/\n$/, ''));
+    const fn = (name: string) => s26FnOf(s27Body, name);
+    // The two new tools: the whole body (white space removed).
+    const payable = md5Of(s27BodyOf(fn('accounting_order_return_payable')).replace(/\s+/g, ''));
+    const flight = md5Of(s27BodyOf(fn('accounting_order_refunds_in_flight')).replace(/\s+/g, ''));
+    expect(s27Assertion).toContain(`'${payable}'`);
+    expect(s27Assertion).toContain(`'${flight}'`);
+    // The rebuilt three: with the replaced parts restored and every ACC_P<n> block removed (the plan of the earlier migrations).
+    for (const [name, replaced, added] of [['accounting_post_return_events', 0, 1], ['accounting_post_dispute_events', 4, 3], ['accounting_refund_wait', 1, 0]] as const) {
+      const rows = [...s27Assertion.matchAll(new RegExp(`\\('private\\.${name}\\([^)]*\\)', (\\d), (\\d), '([0-9a-f]{32})'\\)`, 'g'))];
+      expect(rows).toHaveLength(1);
+      expect([Number(rows[0][1]), Number(rows[0][2])]).toEqual([replaced, added]);
+      expect(md5Of(noBlocks(restore(s27BodyOf(fn(name)))))).toBe(rows[0][3]);
+    }
+    // The wait: the whole body with its two markers removed (the new text of the replaced part is pinned).
+    const wait = s27BodyOf(fn('accounting_refund_wait')).replace(/-- ACC_P3_REPLACE_(?:BEGIN [0-9a-f]{32}|END)/g, '').replace(/\s+/g, '');
+    expect(s27Assertion).toContain(`'${md5Of(wait)}'`);
+    // The part of C that S22 wrote between its marker: S22 :652-676 (marker lines included), also the same in S27.
+    const s22Lines = migrationText(S22_FILE).split('\n');
+    const cOfS22 = s22Lines.slice(651, 676).join('\n');
+    expect(cOfS22.startsWith('-- ACC_P3_REPLACE_BEGIN ed2e91010e8299e8f87dd455dc13dfa9')).toBe(true);
+    expect(cOfS22.endsWith('-- ACC_P3_REPLACE_END')).toBe(true);
+    const cOfS27 = fn('accounting_post_dispute_events').match(/-- ACC_P3_REPLACE_BEGIN ed2e91010e8299e8f87dd455dc13dfa9[\s\S]*?-- ACC_P3_REPLACE_END/)?.[0] ?? '';
+    expect(md5Of(cOfS27.replace(/\s+/g, ''))).toBe(md5Of(cOfS22.replace(/\s+/g, '')));
+    expect(s27Assertion).toContain(`'${md5Of(cOfS22.replace(/\s+/g, ''))}'`);
+  });
+
+  test('FREQ-643-AC-12: 理由の CHECK の一覧は TS の20個と同じ順（S27 は理由を作らない）', () => {
+    const listed = [...(s27Assertion.match(/ARRAY\[(.*?)\]\)\)\)'\) <> 1/)?.[1] ?? '').matchAll(/''([a-z_]+)''::text/g)].map((m) => m[1]);
+    expect(listed).toEqual([...PENDING_REASONS]);
+    expect(listed).toHaveLength(20);
+  });
+});
+
+describeLocalDb('S27 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  async function attempt(change = '', before = ''): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s27_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (before) await db().query(before);
+      await pinAccountingS27Baseline(db());
+      if (change) await db().query(change);
+      await db().query(s27Assertion);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s27_assert'); await db().query('release savepoint acc_s27_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const redefine = (sig: string, from: string, to: string) =>
+    `do $x$ begin execute regexp_replace(pg_get_functiondef('${sig}'::regprocedure), E'${from}', E'${to}'); end $x$`;
+  const PAYABLE = 'private.accounting_order_return_payable(uuid,date)';
+  const FLIGHT = 'private.accounting_order_refunds_in_flight(uuid,uuid)';
+  const WAIT = 'private.accounting_refund_wait(uuid,text)';
+  const RET = 'private.accounting_post_return_events(integer)';
+  const DIS = 'private.accounting_post_dispute_events(integer)';
+  const REASON_CHECK = 'accounting_pending_events_reason_check';
+  const reasonList = (list: readonly string[]) => list.map((r) => `'${r}'`).join(', ');
+  const swapReasons = (list: readonly string[]) =>
+    `alter table public.accounting_pending_events drop constraint ${REASON_CHECK}, add constraint ${REASON_CHECK} check (reason in (${reasonList(list)}))`;
+
+  test('FREQ-643-AC-12: 適用後の状態で S27 の末尾の確かめが通る（呼出元のsearch_pathを問わない）', async () => {
+    expect(s27Assertion).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('', 'set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('', 'set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt('', "set local search_path = ''")).toBeNull();
+  });
+
+  test('FREQ-643-AC-12: S27 の確かめは S22 の再生と混ざらない（2つの計上係を S22 の本文へ戻した取引の中では S27 の確かめは断り、戻した後の今の状態では通る。S22 の確かめの再生は S22 の試験が受け持つ）', async () => {
+    // S22 の本文へ戻した savepoint の中では S27 の確かめは落ち、savepoint を戻した後の今の状態では通る。
+    await db().query('savepoint acc_s27_mix');
+    let mixed: AssertFailure | null = null;
+    try {
+      await restoreS22DisputeAndReturnPosters(db());
+      await pinAccountingS27Baseline(db());
+      await db().query(s27Assertion);
+    } catch (error) {
+      const e = error as AssertFailure;
+      mixed = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s27_mix'); await db().query('release savepoint acc_s27_mix'); }
+    expect(mixed).toEqual(failed('acc_s27_body_unchanged'));
+    expect(await attempt()).toBeNull();
+  });
+
+  test.each([
+    // The baseline (counts, writers, attributes) taken before the body.
+    ['drop table pg_temp.accounting_s27_baseline', 'acc_s27_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s27_baseline set payload = payload - 'attrs'", 'acc_s27_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s27_baseline set payload = jsonb_set(payload, '{counts,entries}', '999999')", 'acc_s27_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s27_baseline set payload = jsonb_set(payload, '{counts,lines}', '999999')", 'acc_s27_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s27_baseline set payload = jsonb_set(payload, '{counts,pending_events}', '999999')", 'acc_s27_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s27_baseline set payload = jsonb_set(payload, '{allowlist,0}', '1')", 'acc_s27_existing_dml_allowlist'],
+    // The three rebuilt functions keep their search_path, ACL and volatility.
+    [`alter function ${DIS} set search_path = public`, 'acc_s27_function_attrs'],
+    [`alter function ${RET} set search_path = public`, 'acc_s27_function_attrs'],
+    [`alter function ${WAIT} set search_path = public`, 'acc_s27_function_attrs'],
+    [`grant execute on function ${DIS} to service_role`, 'acc_s27_function_attrs'],
+    [`grant execute on function ${RET} to anon`, 'acc_s27_function_attrs'],
+    [`grant execute on function ${WAIT} to authenticated`, 'acc_s27_function_attrs'],
+    [`alter function ${WAIT} volatile`, 'acc_s27_function_attrs'],
+    [`alter function ${DIS} stable`, 'acc_s27_function_attrs'],
+    [`alter function ${RET} security invoker`, 'acc_s27_function_attrs'],
+    // The new R tool (accounting_order_return_payable): the whole body is pinned.
+    [redefine(PAYABLE, 'END <= _through', 'END < _through'), 'acc_s27_functions'],
+    [redefine(PAYABLE, 'CASE WHEN f\\.id IS NULL THEN e\\.entry_date ELSE private\\.accounting_jst_date\\\\(f\\.created_at\\\\) END', 'e.entry_date'), 'acc_s27_functions'],
+    [redefine(PAYABLE, 'RETURN v_r;', 'RETURN GREATEST(v_r, 0);'), 'acc_s27_functions'],
+    [redefine(PAYABLE, '\\\\(_through IS NULL OR ', '('), 'acc_s27_functions'],
+    [redefine(PAYABLE, "l\\.sub_account = \\'return_refund\\'", "l.sub_account = \\'refund_owed_post\\'"), 'acc_s27_functions'],
+    [redefine(PAYABLE, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s27_functions'],
+    [`alter function ${PAYABLE} set search_path = public`, 'acc_s27_functions'],
+    [`alter function ${PAYABLE} volatile`, 'acc_s27_functions'],
+    [`alter function ${PAYABLE} security invoker`, 'acc_s27_functions'],
+    [`grant create on schema private to service_role; alter function ${PAYABLE} owner to service_role`, 'acc_s27_functions'],
+    [`grant execute on function ${PAYABLE} to anon`, 'acc_s27_functions'],
+    [`grant execute on function ${PAYABLE} to authenticated`, 'acc_s27_functions'],
+    [`grant execute on function ${PAYABLE} to service_role`, 'acc_s27_functions'],
+    [`drop function ${PAYABLE}`, 'acc_s27_functions'],
+    // The new tool for the refunds in flight: five shapes, no day cut, the three conditions that leave a refund out.
+    [redefine(FLIGHT, "\\'requested\\', \\'accepted\\', \\'error\\'", "\\'requested\\', \\'accepted\\'"), 'acc_s27_functions'],
+    [redefine(FLIGHT, "\\'refund_abandoned\\'", "\\'refund_abandonedx\\'"), 'acc_s27_functions'],
+    [redefine(FLIGHT, 'WHERE r\\.order_id = _order_id', 'WHERE r.order_id = _order_id AND private.accounting_jst_date(r.created_at) <= current_date'), 'acc_s27_functions'],
+    [redefine(FLIGHT, "AND private\\.accounting_refund_wait\\\\(t\\.rid, \\'success\\'\\\\) IS NOT NULL", ''), 'acc_s27_functions'],
+    [redefine(FLIGHT, 'AND p\\.resolved_entry_id IS NULL', 'AND true'), 'acc_s27_functions'],
+    [redefine(FLIGHT, 'v_x\\.id IS NOT NULL AND t\\.early', 'v_x.id IS NOT NULL'), 'acc_s27_functions'],
+    [redefine(FLIGHT, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s27_functions'],
+    [`alter function ${FLIGHT} set search_path = public`, 'acc_s27_functions'],
+    [`alter function ${FLIGHT} volatile`, 'acc_s27_functions'],
+    [`grant execute on function ${FLIGHT} to anon`, 'acc_s27_functions'],
+    [`grant execute on function ${FLIGHT} to authenticated`, 'acc_s27_functions'],
+    [`grant execute on function ${FLIGHT} to service_role`, 'acc_s27_functions'],
+    [`grant create on schema private to service_role; alter function ${FLIGHT} owner to service_role`, 'acc_s27_functions'],
+    // The return poster: the calls of the two tools, min of P(D) and P(now)', the waits, w, the key.
+    [redefine(RET, 'private\\.accounting_order_return_payable\\\\(v_fact\\.order_id, v_date\\\\)', 'NULL::bigint'), 'acc_s27_body_unchanged'],
+    [redefine(RET, 'private\\.accounting_order_return_payable\\\\(v_fact\\.order_id, NULL\\\\)', 'NULL::bigint'), 'acc_s27_body_unchanged'],
+    [redefine(RET, 'LEAST\\\\(private\\.accounting_order_return_payable\\\\(v_fact\\.order_id, v_date\\\\),', 'GREATEST(0::bigint,'), 'acc_s27_body_unchanged'],
+    [redefine(RET, 'v_eff := LEAST\\\\(v_p_day, v_p_now - v_cut\\\\);', 'v_eff := v_p_day;'), 'acc_s27_body_unchanged'],
+    [redefine(RET, 'ELSIF EXISTS \\\\(SELECT 1 FROM private\\.accounting_order_refunds_in_flight\\\\(v_fact\\.order_id, v_fact\\.id\\\\) AS r WHERE NOT r\\.excluded\\\\) THEN', 'ELSIF false THEN'), 'acc_s27_body_unchanged'],
+    [redefine(RET, 'AS r WHERE r\\.excluded;', 'AS r WHERE false;'), 'acc_s27_body_unchanged'],
+    [redefine(RET, "AND p\\.source_id = a\\.id::text AND \\\\(p\\.resolved_at IS NOT NULL OR p\\.reason = \\'before_cutover\\'\\\\)\\\\)\\\\)", 'AND p.source_id = a.id::text AND (p.resolved_at IS NOT NULL)))'), 'acc_s27_body_unchanged'],
+    [redefine(RET, 'v_w := LEAST\\\\(v_fact\\.covers_amount, v_eff\\\\);', 'v_w := v_fact.covers_amount;'), 'acc_s27_body_unchanged'],
+    [redefine(RET, 'IF v_eff <= 0 THEN', 'IF v_eff < 0 THEN'), 'acc_s27_body_unchanged'],
+    [redefine(RET, 'IF v_check_day < 0 OR v_check_now < 0 THEN', 'IF v_check_day < 0 THEN'), 'acc_s27_body_unchanged'],
+    [redefine(RET, 'AND EXISTS \\\\(SELECT 1 FROM \\\\(SELECT DISTINCT o\\.return_id', 'AND false AND EXISTS (SELECT 1 FROM (SELECT DISTINCT o.return_id'), 'acc_s27_body_unchanged'],
+    [redefine(RET, 'WHERE r\\.excluded\\\\), 0\\\\)\\\\) > 0', 'WHERE r.excluded), 0)) > -1000000000000'), 'acc_s27_body_unchanged'],
+    [redefine(RET, 'v_w := LEAST\\\\(', "v_detail := jsonb_build_object(\\'reason\\', \\'dispute_lost\\'); v_w := LEAST("), 'acc_s27_body_unchanged'],
+    [redefine(RET, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s27_body_unchanged'],
+    [redefine(RET, '-- ACC_P3_BEGIN\\n', '-- ACC_P3_X\\n'), 'acc_s27_body_unchanged'],
+    [redefine(RET, '-- ACC_P3_BEGIN\\n', '-- ACC_P3_BEGIN\\n-- ACC_P3_END\\n-- ACC_P3_BEGIN\\n'), 'acc_s27_body_unchanged'],
+    // The dispute poster: the waits (D13 D14 D15), the fix entry and its caps (D12 D16 D17), the check.
+    [redefine(DIS, 'IF EXISTS \\\\(SELECT 1 FROM private\\.accounting_order_refunds_in_flight\\\\(v_order_id, NULL\\\\)\\\\) THEN', 'IF false THEN'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'v_wait_pay < v_wait_r', 'false'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'IF v_wait_now > 0 AND EXISTS', 'IF EXISTS'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'private\\.accounting_return_arrival_on\\\\(a\\.receipt_id\\\\) > v_date', 'false'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'v_wait_r := private\\.accounting_order_return_payable\\\\(v_order_id, v_date\\\\);', 'v_wait_r := 0;'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'AND a\\.decided_on <= v_close_last', 'AND a.decided_on < v_close_last'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'WHERE k\\.last_on < v_close_last OR', 'WHERE false OR'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, "ARRAY\\\\[\\'closefix\\', v_dispute_id", "ARRAY[\\'closefx\\', v_dispute_id"), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'v_fix_y := GREATEST\\\\(0 - private\\.accounting_order_return_payable', 'v_fix_y := GREATEST(1 - private.accounting_order_return_payable'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'LEAST\\\\(0 - v_fix_now, v_pay - v_fix_sum, v_fix_closes - v_fix_sum\\\\)', '0'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, ', v_fix_closes - v_fix_sum\\\\)', ')'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'GREATEST\\\\(LEAST\\\\(v_fix_y, v_fix_cap\\\\), 0\\\\)', 'GREATEST(v_fix_y, 0)'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'e\\.entry_date > v_fix_loss AND e\\.entry_date <= v_fix_date', 'e.entry_date > v_fix_loss'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, ' AND v_fix_y < v_fix_cap THEN', ' THEN'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'IF v_fix_review < 0 THEN', 'IF false THEN'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'v_fix_entry_id := \\\\(v_fix_result', 'v_entry_id := (v_fix_result'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'v_date := v_fix_date;', ''), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'v_fix_check_day := private\\.accounting_order_return_payable\\\\(v_order_id, v_date\\\\);', 'v_fix_check_day := 0;'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'v_wait_now := private\\.accounting_order_return_payable\\\\(v_order_id, NULL\\\\);', 'v_wait_now := 1;'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'v_fix_now := private\\.accounting_order_return_payable\\\\(v_order_id, NULL\\\\);', 'v_fix_now := 0;'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'v_fix_sum := v_fix_sum \\\\+ v_fix_y;', 'v_fix_sum := v_fix_y;'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, "v_reason := \\'dispute_return_refund_pending\\';", "v_reason := \\'order_not_postable\\'; v_detail := jsonb_build_object(\\'reason\\', \\'return_closed_after_lost\\');"), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'private\\.accounting_dispute_offset_ready\\\\(v_dispute_id, v_order_id, v_date\\\\)', 'private.accounting_dispute_offset_ready(v_dispute_id, NULL, v_date)'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1 FROM public.stripe_refunds;\\n'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, '-- ACC_P3_BEGIN\\n', '-- ACC_P3_BEGIN\\n-- ACC_P3_END\\n-- ACC_P3_BEGIN\\n'), 'acc_s27_body_unchanged'],
+    [redefine(DIS, '-- ACC_P3_BEGIN\\n          -- Fix entries[\\\\s\\\\S]*?-- ACC_P3_END\\n', ''), 'acc_s27_body_unchanged'],
+    [redefine(DIS, '-- ACC_P3_REPLACE_BEGIN [0-9a-f]{32}\\n', '-- ACC_P3_REPLACE_BEGIN 00000000000000000000000000000000\\n'), 'acc_s27_body_unchanged'],
+    // The refund wait: what the replaced part counts as done (a decision closed as no_revenue with no entry).
+    [redefine(WAIT, "p\\.reason = \\'no_revenue\\' AND ", ''), 'acc_s27_body_unchanged'],
+    [redefine(WAIT, 'AND p\\.resolved_entry_id IS NULL', 'AND true'), 'acc_s27_body_unchanged'],
+    [redefine(WAIT, "\\'return_prior\\'", "\\'return_prior_x\\'"), 'acc_s27_body_unchanged'],
+    [redefine(WAIT, '-- ACC_P3_REPLACE_BEGIN [0-9a-f]{32}\\n', '-- ACC_P3_REPLACE_BEGIN 00000000000000000000000000000000\\n'), 'acc_s27_body_unchanged'],
+    [redefine(WAIT, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s27_body_unchanged'],
+    // The part of C that S22 wrote (S22 :652-676) is one text: one character changed.
+    [redefine(DIS, "\\'offset_pay:\\'", "\\'offset_payx:\\'"), 'acc_s27_c_shape_unchanged'],
+    [redefine(DIS, 'v_rest := v_amount - v_pay - v_review;', 'v_rest := v_amount - v_pay + v_review;'), 'acc_s27_c_shape_unchanged'],
+    // The reason CHECK keeps the 20 reasons: one more or one less.
+    [swapReasons([...PENDING_REASONS, 'zzz_new_reason']), 'acc_s27_no_new_reason'],
+    [swapReasons(PENDING_REASONS.slice(0, -1)), 'acc_s27_no_new_reason'],
+  ])('FREQ-643-AC-12: S27改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });

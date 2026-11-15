@@ -1228,7 +1228,313 @@ $$;
 -- ACC_S27_BODY_END
 
 -- ACC_S27_FINAL_ASSERT_BEGIN
--- Filled in by Task 4 (function attributes, unchanged bodies, no new reason, no row written).
+-- Compare catalog meaning, never ACL text serialization. acc_s27_functions: the two new tools exist once (two functions in all),
+-- private, SECURITY DEFINER, STABLE plpgsql with search_path '', owned by postgres, with their arguments and results, nobody
+-- runs them, their bodies (white space removed) are the md5 pinned here and name the shapes of spec 2-2 and 3-3 and no day cut
+-- of the loss day, and they write nothing. acc_s27_function_attrs: the three rebuilt functions (the refund wait and the two
+-- posters) keep their arguments, result, language, volatility, security, owner, search_path and ACL.
+-- acc_s27_body_unchanged: the return poster has 0 replaced parts and 1 ACC_P3 block, the dispute poster 4 and 3, the refund
+-- wait 1 and 0, and each with the replaced parts restored from the list below (by the md5 on the marker) and every ACC_P<n>
+-- block and all white space removed is the body it was copied from (S20 for the wait, S22 for the posters); what the added
+-- blocks and the replaced part say is pinned by the needles (white space folded to one blank, counted: the calls of the two new
+-- tools, the waits and their conditions D13 D14 D15, the cap of the min of the return poster, the fix entry with its caps D12
+-- D16 D17 and the check that does not raise for a capped fix) and, for the wait, by the md5 of its whole body with the two
+-- markers removed. acc_s27_c_shape_unchanged: the part of C that S22 wrote between its marker (S22 :652-676) is the same text
+-- (white space removed). acc_s27_no_new_reason: the reason CHECK still names the 20 reasons and nothing else.
+-- acc_s27_existing_dml_allowlist: this migration writes no row, and the group G writer list is what it was.
+DO $acc_s27_final$
+DECLARE
+  v_failed text;
+  v_stage text;
+  v_search_path text;
+  v_baseline jsonb;
+  v_src text;
+  v_flat text;
+  v_match text[];
+  v_original text;
+  v_oid oid;
+  e record;
+  n record;
+BEGIN
+  v_search_path := pg_catalog.current_setting('search_path');
+  PERFORM pg_catalog.set_config('search_path', '', true);
+  v_stage := 'acc_s27_existing_dml_allowlist';
+  IF pg_catalog.to_regclass('pg_temp.accounting_s27_baseline') IS NULL
+    OR (SELECT pg_catalog.count(*) FROM pg_temp.accounting_s27_baseline) <> 1 THEN
+    v_failed := 'acc_s27_existing_dml_allowlist';
+  ELSE
+    SELECT b.payload INTO v_baseline FROM pg_temp.accounting_s27_baseline AS b;
+    IF pg_catalog.jsonb_typeof(v_baseline) IS DISTINCT FROM 'object' OR NOT (v_baseline ? 'allowlist')
+      OR NOT (v_baseline ? 'counts') OR NOT (v_baseline ? 'attrs') THEN
+      v_failed := 'acc_s27_existing_dml_allowlist';
+    END IF;
+  END IF;
+
+  v_stage := 'acc_s27_functions';
+  IF v_failed IS NULL AND (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc AS f
+      WHERE f.proname IN ('accounting_order_return_payable', 'accounting_order_refunds_in_flight')) <> 2 THEN
+    v_failed := 'acc_s27_functions';
+  END IF;
+  IF v_failed IS NULL THEN
+    FOR e IN SELECT * FROM (VALUES
+      ('private.accounting_order_return_payable(uuid,date)', '_order_id,_through', false, 'bigint', '117eb263eb0950049cad8515cb190412'),
+      ('private.accounting_order_refunds_in_flight(uuid,uuid)', '_order_id,_decision_fact_id,refund_id,excluded,post_shipment_amount', true,
+        'record', '7acd34a121b0298e342c167fd02884bd')
+    ) AS x(signature, arg_names, retset, rettype, digest)
+    LOOP
+      v_oid := pg_catalog.to_regprocedure(e.signature);
+      IF v_oid IS NULL OR NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc AS f JOIN pg_catalog.pg_language AS l ON l.oid = f.prolang
+          WHERE f.oid = v_oid AND f.prosecdef AND f.provolatile = 's' AND l.lanname = 'plpgsql' AND f.proretset = e.retset
+            AND f.prorettype = e.rettype::regtype AND f.proowner = 'postgres'::regrole AND f.prokind = 'f'
+            AND f.proconfig = ARRAY['search_path=""']::text[]
+            AND pg_catalog.array_to_string(f.proargnames, ',') = e.arg_names)
+        OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc AS o
+          WHERE o.proname = (SELECT f.proname FROM pg_catalog.pg_proc AS f WHERE f.oid = v_oid)) <> 1
+        OR pg_catalog.has_function_privilege('anon', v_oid, 'EXECUTE')
+        OR pg_catalog.has_function_privilege('authenticated', v_oid, 'EXECUTE')
+        OR pg_catalog.has_function_privilege('service_role', v_oid, 'EXECUTE')
+        OR EXISTS (SELECT 1 FROM pg_catalog.pg_proc AS f
+          CROSS JOIN LATERAL pg_catalog.aclexplode(COALESCE(f.proacl, pg_catalog.acldefault('f', f.proowner))) AS a
+          WHERE f.oid = v_oid AND a.grantee <> f.proowner)
+        OR (SELECT f.prosrc FROM pg_catalog.pg_proc AS f WHERE f.oid = v_oid)
+          ~* '\m(INSERT|UPDATE|DELETE|TRUNCATE|FOR (SHARE|UPDATE|NO KEY UPDATE|KEY SHARE)|PERFORM|EXECUTE)\M'
+        OR (SELECT pg_catalog.md5(pg_catalog.regexp_replace(f.prosrc, '[[:space:]]+', '', 'g')) FROM pg_catalog.pg_proc AS f WHERE f.oid = v_oid)
+          IS DISTINCT FROM e.digest THEN
+        v_failed := 'acc_s27_functions';
+        EXIT;
+      END IF;
+    END LOOP;
+  END IF;
+  IF v_failed IS NULL THEN
+    FOR n IN SELECT * FROM (VALUES
+      ('private.accounting_order_return_payable(uuid,date)', $acc_s27_n$l.account_code = '2130' AND l.sub_account = 'return_refund'$acc_s27_n$, 1),
+      ('private.accounting_order_return_payable(uuid,date)', $acc_s27_n$AND e.event_kind = 'return_refund' AND e.source_table = 'order_refunds' AND f.id::text = e.source_id$acc_s27_n$, 1),
+      ('private.accounting_order_return_payable(uuid,date)', $acc_s27_n$AND (_through IS NULL OR CASE WHEN f.id IS NULL THEN e.entry_date ELSE private.accounting_jst_date(f.created_at) END <= _through)$acc_s27_n$, 1),
+      ('private.accounting_order_return_payable(uuid,date)', $acc_s27_n$GREATEST($acc_s27_n$, 0),
+      ('private.accounting_order_return_payable(uuid,date)', $acc_s27_n$_lost_on$acc_s27_n$, 0),
+      ('private.accounting_order_refunds_in_flight(uuid,uuid)', $acc_s27_n$IN ('requested', 'accepted', 'error')$acc_s27_n$, 1),
+      ('private.accounting_order_refunds_in_flight(uuid,uuid)', $acc_s27_n$x.state IN ('failed', 'owed')$acc_s27_n$, 1),
+      ('private.accounting_order_refunds_in_flight(uuid,uuid)', $acc_s27_n$e.event_kind = 'refund_failed'$acc_s27_n$, 1),
+      ('private.accounting_order_refunds_in_flight(uuid,uuid)', $acc_s27_n$x.state = 'canceled'$acc_s27_n$, 1),
+      ('private.accounting_order_refunds_in_flight(uuid,uuid)', $acc_s27_n$x.state IN ('abandoned', 'owed')$acc_s27_n$, 1),
+      ('private.accounting_order_refunds_in_flight(uuid,uuid)', $acc_s27_n$e.event_kind = 'refund_abandoned'$acc_s27_n$, 1),
+      ('private.accounting_order_refunds_in_flight(uuid,uuid)', $acc_s27_n$p.event_kind = 'refund_abandoned'$acc_s27_n$, 1),
+      ('private.accounting_order_refunds_in_flight(uuid,uuid)', $acc_s27_n$AND private.accounting_refund_wait(t.rid, 'success') IS NOT NULL$acc_s27_n$, 1),
+      ('private.accounting_order_refunds_in_flight(uuid,uuid)', $acc_s27_n$p.reason = 'no_revenue' AND p.resolved_at IS NOT NULL AND p.resolved_entry_id IS NULL$acc_s27_n$, 1),
+      ('private.accounting_order_refunds_in_flight(uuid,uuid)', $acc_s27_n$_lost_on$acc_s27_n$, 0),
+      ('private.accounting_order_refunds_in_flight(uuid,uuid)', $acc_s27_n$accounting_jst_date$acc_s27_n$, 0)
+    ) AS x(signature, needle, cnt)
+    LOOP
+      SELECT pg_catalog.regexp_replace(f.prosrc, '[[:space:]]+', ' ', 'g') INTO v_flat FROM pg_catalog.pg_proc AS f
+      WHERE f.oid = pg_catalog.to_regprocedure(n.signature);
+      IF v_flat IS NULL OR (pg_catalog.length(v_flat) - pg_catalog.length(pg_catalog.replace(v_flat, n.needle, '')))
+        / pg_catalog.length(n.needle) <> n.cnt THEN
+        v_failed := 'acc_s27_functions';
+        EXIT;
+      END IF;
+    END LOOP;
+  END IF;
+
+  v_stage := 'acc_s27_function_attrs';
+  IF v_failed IS NULL AND (
+    (SELECT pg_catalog.count(*) FROM pg_catalog.jsonb_object_keys(v_baseline -> 'attrs')) <> 3
+    OR EXISTS (SELECT 1 FROM pg_catalog.jsonb_each_text(v_baseline -> 'attrs') AS b(sig, attrs)
+      LEFT JOIN pg_catalog.pg_proc AS f ON f.oid = pg_catalog.to_regprocedure(b.sig)
+      WHERE f.oid IS NULL OR b.attrs IS DISTINCT FROM pg_catalog.md5(pg_catalog.concat_ws('|',
+        f.prorettype::oid::text, f.proargtypes::text, COALESCE(f.proargnames::text, ''), f.pronargdefaults, f.prolang, f.provolatile,
+        f.prosecdef, f.proretset, f.proowner::regrole::text, COALESCE(f.proconfig::text, ''),
+        (SELECT COALESCE(pg_catalog.string_agg(a.grantee::text || ':' || a.privilege_type, ',' ORDER BY a.grantee, a.privilege_type), '')
+          FROM pg_catalog.aclexplode(COALESCE(f.proacl, pg_catalog.acldefault('f', f.proowner))) AS a))))) THEN
+    v_failed := 'acc_s27_function_attrs';
+  END IF;
+
+  v_stage := 'acc_s27_body_unchanged';
+  IF v_failed IS NULL THEN
+    FOR n IN SELECT * FROM (VALUES
+      ('private.accounting_post_return_events(integer)', $acc_s27_n$private.accounting_order_return_payable(v_fact.order_id, v_date)$acc_s27_n$, 3),
+      ('private.accounting_post_return_events(integer)', $acc_s27_n$private.accounting_order_return_payable(v_fact.order_id, NULL)$acc_s27_n$, 3),
+      ('private.accounting_post_return_events(integer)', $acc_s27_n$LEAST(private.accounting_order_return_payable(v_fact.order_id, v_date), private.accounting_order_return_payable(v_fact.order_id, NULL) - COALESCE((SELECT pg_catalog.sum(r.post_shipment_amount) FROM private.accounting_order_refunds_in_flight(v_fact.order_id, v_fact.id) AS r WHERE r.excluded), 0)) > 0 AND EXISTS (SELECT 1 FROM (SELECT DISTINCT o.return_id FROM public.accounting_return_facts AS o WHERE o.order_id = v_fact.order_id AND o.return_id <> v_fact.return_id) AS k$acc_s27_n$, 1),
+      ('private.accounting_post_return_events(integer)', $acc_s27_n$ELSIF EXISTS (SELECT 1 FROM private.accounting_order_refunds_in_flight(v_fact.order_id, v_fact.id) AS r WHERE NOT r.excluded) THEN$acc_s27_n$, 1),
+      ('private.accounting_post_return_events(integer)', $acc_s27_n$FROM private.accounting_order_refunds_in_flight(v_fact.order_id, v_fact.id) AS r WHERE r.excluded;$acc_s27_n$, 1),
+      ('private.accounting_post_return_events(integer)', $acc_s27_n$AND (a.decided_on, a.created_at, a.return_id, a.seq) < (v_fact.decided_on, v_fact.created_at, v_fact.return_id, v_fact.seq)$acc_s27_n$, 1),
+      ('private.accounting_post_return_events(integer)', $acc_s27_n$AND p.source_id = a.id::text AND (p.resolved_at IS NOT NULL OR p.reason = 'before_cutover')))$acc_s27_n$, 1),
+      ('private.accounting_post_return_events(integer)', $acc_s27_n$v_eff := LEAST(v_p_day, v_p_now - v_cut);$acc_s27_n$, 1),
+      ('private.accounting_post_return_events(integer)', $acc_s27_n$IF v_eff <= 0 THEN$acc_s27_n$, 1),
+      ('private.accounting_post_return_events(integer)', $acc_s27_n$v_reason := 'no_revenue';$acc_s27_n$, 2),
+      ('private.accounting_post_return_events(integer)', $acc_s27_n$v_w := LEAST(v_fact.covers_amount, v_eff);$acc_s27_n$, 1),
+      ('private.accounting_post_return_events(integer)', $acc_s27_n$private.accounting_return_lines('waive', v_fact.order_id, v_w, v_fact.fee_amount)$acc_s27_n$, 1),
+      ('private.accounting_post_return_events(integer)', $acc_s27_n$IF v_check_day < 0 OR v_check_now < 0 THEN$acc_s27_n$, 1),
+      ('private.accounting_post_return_events(integer)', $acc_s27_n$private.accounting_dispute_key(d.id, 'confirmed', 'lost')$acc_s27_n$, 1),
+      ('private.accounting_post_return_events(integer)', $acc_s27_n$private.accounting_jst_date(private.accounting_dispute_lost_at(d.id)) <= v_date$acc_s27_n$, 1),
+      ('private.accounting_post_return_events(integer)', $acc_s27_n$'dispute_lost'$acc_s27_n$, 0),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$private.accounting_dispute_offset_ready(v_dispute_id, v_order_id, v_date)$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$private.accounting_dispute_offset_amounts(v_order_id, v_date, v_amount)$acc_s27_n$, 2),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$private.accounting_dispute_reversal_targets(v_dispute_id, v_shipped)$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$return_closed_after_lost$acc_s27_n$, 0),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$public.stripe_refunds$acc_s27_n$, 0),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$IF EXISTS (SELECT 1 FROM private.accounting_order_refunds_in_flight(v_order_id, NULL)) THEN$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$SELECT o.pay INTO v_wait_pay FROM private.accounting_dispute_offset_amounts(v_order_id, v_date, v_amount) AS o;$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$v_wait_r := private.accounting_order_return_payable(v_order_id, v_date);$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$v_wait_now := private.accounting_order_return_payable(v_order_id, NULL);$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$IF v_wait_now > 0 AND EXISTS (SELECT 1 FROM (SELECT DISTINCT o.return_id FROM public.accounting_return_facts AS o WHERE o.order_id = v_order_id) AS k WHERE (v_wait_pay < v_wait_r OR EXISTS (SELECT 1 FROM public.accounting_return_facts AS a WHERE a.return_id = k.return_id AND a.kind = 'arrival' AND private.accounting_return_arrival_on(a.receipt_id) > v_date))$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$AND a.decided_on <= v_close_last$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$WHERE k.last_on < v_close_last OR (k.last_on = v_close_last AND k.did < v_dispute_id)$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$IF v_order_id IS NOT NULL AND (v_result ->> 'created')::boolean THEN$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$v_fix_y := GREATEST(0 - private.accounting_order_return_payable(v_order_id, v_fix_date), 0);$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$IF v_fix_date = v_fix_last THEN$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$v_fix_now := private.accounting_order_return_payable(v_order_id, NULL);$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$v_fix_y := GREATEST(v_fix_y, LEAST(0 - v_fix_now, v_pay - v_fix_sum, v_fix_closes - v_fix_sum), 0);$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$SELECT COALESCE(pg_catalog.sum(l.debit), 0) - v_fix_sum INTO v_fix_cap$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$AND e.entry_date > v_fix_loss AND e.entry_date <= v_fix_date$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$v_fix_y := GREATEST(LEAST(v_fix_y, v_fix_cap), 0);$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$v_date := v_fix_date;$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$ARRAY['closefix', v_dispute_id, v_fix_n::text]$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$'memo', 'closefix:' || v_fix_n::text$acc_s27_n$, 2),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$v_fix_entry_id := (v_fix_result ->> 'entry_id')::uuid;$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$v_fix_sum := v_fix_sum + v_fix_y;$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$v_fix_check_day := private.accounting_order_return_payable(v_order_id, v_date);$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$IF v_fix_check_day < 0 AND v_fix_y < v_fix_cap THEN$acc_s27_n$, 1),
+      ('private.accounting_post_dispute_events(integer)', $acc_s27_n$IF v_fix_review < 0 THEN$acc_s27_n$, 1),
+      ('private.accounting_refund_wait(uuid,text)', $acc_s27_n$p.reason = 'no_revenue' AND p.resolved_at IS NOT NULL AND p.resolved_entry_id IS NULL$acc_s27_n$, 1),
+      ('private.accounting_refund_wait(uuid,text)', $acc_s27_n$p.event_kind = 'return_amount_decided' AND p.source_table = 'accounting_return_facts'$acc_s27_n$, 1)
+    ) AS x(signature, needle, cnt)
+    LOOP
+      SELECT pg_catalog.regexp_replace(f.prosrc, '[[:space:]]+', ' ', 'g') INTO v_flat FROM pg_catalog.pg_proc AS f
+      WHERE f.oid = pg_catalog.to_regprocedure(n.signature);
+      IF v_flat IS NULL OR (pg_catalog.length(v_flat) - pg_catalog.length(pg_catalog.replace(v_flat, n.needle, '')))
+        / pg_catalog.length(n.needle) <> n.cnt THEN
+        v_failed := 'acc_s27_body_unchanged';
+        EXIT;
+      END IF;
+    END LOOP;
+  END IF;
+  IF v_failed IS NULL THEN
+    -- The wait of the refund poster: the whole body with the two markers removed (and all white space) is the md5 pinned here.
+    SELECT f.prosrc INTO v_src FROM pg_catalog.pg_proc AS f WHERE f.oid = pg_catalog.to_regprocedure('private.accounting_refund_wait(uuid,text)');
+    IF v_src IS NULL OR pg_catalog.md5(pg_catalog.regexp_replace(pg_catalog.regexp_replace(v_src,
+        '-- ACC_P3_REPLACE_(BEGIN [0-9a-f]{32}|END)', '', 'g'), '[[:space:]]+', '', 'g')) IS DISTINCT FROM '68fa3af09999f08a2ad869417d196551' THEN
+      v_failed := 'acc_s27_body_unchanged';
+    END IF;
+  END IF;
+  IF v_failed IS NULL THEN
+    FOR e IN SELECT * FROM (VALUES
+      ('private.accounting_post_return_events(integer)', 0, 1, 'df6bc5cf1eb282500e2643b825eaa986'),
+      ('private.accounting_post_dispute_events(integer)', 4, 3, 'be33247d41422ff1384c8037a7dba912'),
+      ('private.accounting_refund_wait(uuid,text)', 1, 0, '82f72e317effd6e2f6db849c9bd2f237')
+    ) AS x(signature, replaced, added, digest)
+    LOOP
+      SELECT f.prosrc INTO v_src FROM pg_catalog.pg_proc AS f WHERE f.oid = pg_catalog.to_regprocedure(e.signature);
+      IF v_src IS NULL
+        OR (SELECT pg_catalog.count(*) FROM pg_catalog.regexp_matches(v_src, '-- ACC_P3_REPLACE_BEGIN', 'g')) <> e.replaced
+        OR (SELECT pg_catalog.count(*) FROM pg_catalog.regexp_matches(v_src, '-- ACC_P3_BEGIN', 'g')) <> e.added
+        OR (SELECT pg_catalog.count(*) FROM pg_catalog.regexp_matches(v_src, '-- ACC_P3_END', 'g')) <> e.added
+        OR (SELECT pg_catalog.count(*) FROM pg_catalog.regexp_matches(v_src, '-- ACC_P3_REPLACE_END', 'g')) <> e.replaced THEN
+        v_failed := 'acc_s27_body_unchanged';
+        EXIT;
+      END IF;
+      LOOP
+        v_match := pg_catalog.regexp_match(v_src, '-- ACC_P3_REPLACE_BEGIN (.*?)-- ACC_P3_REPLACE_END');
+        EXIT WHEN v_match IS NULL;
+        SELECT o.original INTO v_original FROM (VALUES
+    ('78e0d53f69cd6a67741d23e9a151e38d', $acc_s27_o1$          IF EXISTS (SELECT 1 FROM public.stripe_refunds AS f
+            WHERE f.status = 'succeeded' AND (f.order_id = v_order_id
+              OR (v_dispute.payment_intent_id IS NOT NULL AND f.payment_intent_id = v_dispute.payment_intent_id))) THEN
+            v_reason := 'dispute_refund_overlap';
+          ELSIF (SELECT COALESCE(pg_catalog.sum(l.credit - l.debit), 0) FROM public.accounting_journal_lines AS l
+            WHERE l.order_id = v_order_id AND l.account_code = '2130') <> 0 THEN
+            v_reason := 'dispute_return_refund_pending';
+          END IF;
+$acc_s27_o1$),
+    ('5682703eb86477a5ab6406a7b0417970', $acc_s27_o2$          IF v_kind = 'L' AND v_shipped > 0 THEN
+            SELECT c.account_code, c.sub_account INTO v_debit_account, v_debit_sub
+            FROM private.accounting_dispute_confirmed_account(v_dispute_id) AS c;
+            IF NOT FOUND THEN
+              RAISE EXCEPTION 'ACCOUNTING_ARGUMENT_INVALID' USING ERRCODE = '22023';
+            END IF;
+            IF v_debit_account = '1470' THEN
+              v_account := private.accounting_dispute_assigned_account(v_dispute_id);
+              IF v_account IS NULL THEN
+                v_reason := 'dispute_withdrawal_missing';
+                v_detail := pg_catalog.jsonb_build_object('waiting_on', 'dispute_account_unassigned');
+              END IF;
+            ELSE
+              v_account := v_debit_account;
+            END IF;
+          END IF;
+$acc_s27_o2$),
+    ('e96d9d3db4de231a621b3c2957350bad', $acc_s27_o3$              v_lines := v_lines || pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object('account_code', v_account,
+                'debit', 0, 'credit', v_shipped));
+$acc_s27_o3$),
+    ('ed2e91010e8299e8f87dd455dc13dfa9', $acc_s27_o4$          SELECT s.account_code INTO v_account FROM public.accounting_dispute_account_settings AS s WHERE s.reason = v_cause;
+          IF v_account IS NULL THEN
+            v_lines := pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object('account_code', '1470', 'debit', v_amount,
+              'credit', 0, 'sub_account', 'dispute_confirmed_unassigned', 'memo', 'dispute_reason:' || v_cause));
+          ELSE
+            v_lines := pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object('account_code', v_account, 'debit', v_amount,
+              'credit', 0, 'memo', 'dispute_reason:' || v_cause));
+          END IF;
+$acc_s27_o4$),
+    ('34d9183df09973c30c4b44a410b9d25b', $acc_s27_o5$              AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS e
+                WHERE e.dedupe_key = private.accounting_event_key('return_amount_decided', ARRAY[a.id::text]))))) THEN
+$acc_s27_o5$)
+        ) AS o(hash, original) WHERE o.hash = pg_catalog.left(v_match[1], 32);
+        IF v_original IS NULL THEN
+          v_failed := 'acc_s27_body_unchanged';
+          EXIT;
+        END IF;
+        v_src := pg_catalog.replace(v_src, '-- ACC_P3_REPLACE_BEGIN ' || v_match[1] || '-- ACC_P3_REPLACE_END', v_original);
+        v_original := NULL;
+      END LOOP;
+      IF v_failed IS NULL AND pg_catalog.md5(pg_catalog.regexp_replace(pg_catalog.regexp_replace(v_src,
+          '-- ACC_P[0-9]_BEGIN.*?-- ACC_P[0-9]_END', '', 'g'), '[[:space:]]+', '', 'g')) IS DISTINCT FROM e.digest THEN
+        v_failed := 'acc_s27_body_unchanged';
+      END IF;
+      EXIT WHEN v_failed IS NOT NULL;
+    END LOOP;
+  END IF;
+
+  v_stage := 'acc_s27_c_shape_unchanged';
+  -- The part of C that S22 wrote between its marker (S22 :652-676, the marker lines included) is the same text.
+  IF v_failed IS NULL THEN
+    SELECT pg_catalog.regexp_match(f.prosrc, '(-- ACC_P3_REPLACE_BEGIN ed2e91010e8299e8f87dd455dc13dfa9.*?-- ACC_P3_REPLACE_END)') INTO v_match
+    FROM pg_catalog.pg_proc AS f WHERE f.oid = pg_catalog.to_regprocedure('private.accounting_post_dispute_events(integer)');
+    IF v_match IS NULL OR pg_catalog.md5(pg_catalog.regexp_replace(v_match[1], '[[:space:]]+', '', 'g'))
+      IS DISTINCT FROM '25c7b762a610bb23cd050f89f842d341' THEN
+      v_failed := 'acc_s27_c_shape_unchanged';
+    END IF;
+  END IF;
+
+  v_stage := 'acc_s27_no_new_reason';
+  -- The reason CHECK names the 20 reasons of S15 and nothing else (this migration makes no new reason).
+  IF v_failed IS NULL AND (SELECT pg_catalog.count(*) FROM pg_catalog.pg_constraint AS c
+      WHERE c.conrelid = 'public.accounting_pending_events'::regclass AND c.conname = 'accounting_pending_events_reason_check'
+        AND c.contype = 'c' AND c.convalidated AND NOT c.condeferrable
+        AND pg_catalog.regexp_replace(pg_catalog.pg_get_constraintdef(c.oid), '\s+', ' ', 'g')
+          = 'CHECK ((reason = ANY (ARRAY[''payment_journal_missing''::text, ''order_not_postable''::text, ''amount_mismatch''::text, ''no_order''::text, ''units_insufficient''::text, ''shipment_date_mismatch''::text, ''deferred_revenue_short''::text, ''period_missing''::text, ''posting_error''::text, ''before_cutover''::text, ''unknown_category''::text, ''payout_mismatch''::text, ''dispute_refund_overlap''::text, ''dispute_return_refund_pending''::text, ''dispute_withdrawal_missing''::text, ''dispute_shipment_pending''::text, ''shipment_lines_mismatch''::text, ''no_revenue''::text, ''refund_prior_unposted''::text, ''refund_cancel_undecided''::text])))') <> 1 THEN
+    v_failed := 'acc_s27_no_new_reason';
+  END IF;
+
+  v_stage := 'acc_s27_existing_dml_allowlist';
+  IF v_failed IS NULL AND (
+    (SELECT pg_catalog.count(*) FROM public.accounting_journal_entries) IS DISTINCT FROM (v_baseline #>> '{counts,entries}')::bigint
+    OR (SELECT pg_catalog.count(*) FROM public.accounting_journal_lines) IS DISTINCT FROM (v_baseline #>> '{counts,lines}')::bigint
+    OR (SELECT pg_catalog.count(*) FROM public.accounting_pending_events) IS DISTINCT FROM (v_baseline #>> '{counts,pending_events}')::bigint
+    OR (SELECT pg_catalog.jsonb_agg(w.proc::oid::bigint ORDER BY w.proc::oid) FROM pg_catalog.unnest(private.group_g_writer_allowlist()) AS w(proc))
+      IS DISTINCT FROM (v_baseline -> 'allowlist')) THEN
+    v_failed := 'acc_s27_existing_dml_allowlist';
+  END IF;
+
+  PERFORM pg_catalog.set_config('search_path', v_search_path, true);
+  IF v_failed IS NOT NULL THEN
+    RAISE EXCEPTION 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = v_failed;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  IF SQLERRM = 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' THEN RAISE; END IF;
+  -- An internal error still fails closed with the DETAIL of the check that was running; the HINT carries only the SQLSTATE.
+  RAISE EXCEPTION 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000',
+    DETAIL = COALESCE(v_failed, v_stage, 'acc_s27_functions'), HINT = SQLSTATE;
+END;
+$acc_s27_final$;
 -- ACC_S27_FINAL_ASSERT_END
 NOTIFY pgrst, 'reload schema';
 COMMIT;

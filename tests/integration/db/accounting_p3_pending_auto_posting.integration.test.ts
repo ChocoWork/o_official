@@ -2140,13 +2140,17 @@ describeLocalDb('FREQ-643: S27 order independence of C, the fix entries and the 
       steps: { lost, closeA: closeOf('a', 5000), failedB: failedRepaid(15000, DAY.d7, DAY.d7) }, before: [] };
     const { seen, total } = await runFamily(f2);
     expect(total).toBe(6);
-    const results = [...seen.keys()].map((k) => JSON.parse(k) as Outcome).sort((x, y) => Number(x.refused) - Number(y.refused));
+    const results = [...seen.entries()].map(([k, v]) => ({ result: JSON.parse(k) as Outcome, count: v.length }))
+      .sort((x, y) => Number(x.result.refused) - Number(y.result.refused));
+    // 6通りは3通りずつ: 振込が通る順（C の前に振込。2130 = -15,000）と、断られる順（C の後に振込。2130 = 0）。
     expect(results).toEqual([
-      { payable: -15000, d4020: 20000, review: 0, net: 0, anomaly: true, open: 0, refused: false },
-      { payable: 0, d4020: 20000, review: 0, net: 0, anomaly: false, open: 0, refused: true }]);
+      { result: { payable: -15000, d4020: 20000, review: 0, net: 0, anomaly: true, open: 0, refused: false }, count: 3 },
+      { result: { payable: 0, d4020: 20000, review: 0, net: 0, anomaly: false, open: 0, refused: true }, count: 3 }]);
   });
 
-  // N7 を鏡にした形（遅れて届いた B を0円で終え、早く届いた A を返金する）。C が A を覆っているので A の返金は二重払いだが、C が最後に入る1つの順
+  // N7 を鏡にした形（遅れて届いた B を0円で終え、早く届いた A を返金する）。C は A を覆っているが、負けた日より後に届いた B が0円で
+  // 終えられているので、A の返金は二重払いではなく、正しい終わりは 2130 = 0・売上の純額 0（遅れて届いた B の0円の終わりが無ければ、
+  // C が覆った返品への2回目の払いは二重払いで、2130 の負として残り異常の一覧に出る）。C が最後に入る1つの順
   // （arrivalB > closeB > lost > refund > success）だけ 2130 = −10,000・売上の純額 10,000・異常あり、残りの29通りは 2130 = 0・売上の純額 0 になる。
   // 正しい終わり（全部の順で 2130 = 0・売上の純額 0）を期待にした test.failing: 直ると（この試験が通るようになると）test.failing が落ちて気づく。
   const mirror: Family = { ...base, arrivals: [10000, 0], orders: 30, expected: { payable: 0, d4020: 20000, review: 0, net: 0, anomaly: false },

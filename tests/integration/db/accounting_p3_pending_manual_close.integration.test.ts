@@ -62,10 +62,13 @@ describeLocalDb('S24 pending manual close: controller only', (db) => {
   }
   const order = async () => (await seedPaidOrder(db(), { lines: [{ price: 10000, quantity: 1 }] })).orderId;
 
-  test('FREQ-569-AC-07: 手で入れた仕訳と結んで、送料や合計の形の違いと取り消しの確定の分け方の計上待ちを閉じられ、ほかの理由は断られる', async () => {
+  test('FREQ-643-AC-12: S24 の結ぶ関数は shipping・units_* の理由では今までどおり結べ（S27 の前に作った dispute_lost・return_closed_after_lost の行も結べ）、ほかの理由は断られる', async () => {
     const admin = await insertAccountingAdmin(db());
     const orderId = await order();
-    for (const detail of [{ reason: 'shipping' }, { reason: 'units_sum' }, { reason: 'units_missing' }]) {
+    // S27 の後は計上係が自動で入れるので、S27 の後に作られる行で結ぶのは shipping・units_* だけ。結ぶ関数は作り直していないので、
+    // S27 の前に作られた2つの理由の行（ここでは手で作る）は今も結べる。
+    for (const detail of [{ reason: 'shipping' }, { reason: 'units_sum' }, { reason: 'units_missing' }, { reason: 'dispute_lost' },
+      { reason: 'return_closed_after_lost' }]) {
       const row = await parkManual(orderId, 'order_not_postable', detail);
       const entry = await manualWithOrders([orderId]);
       const key = randomUUID();
