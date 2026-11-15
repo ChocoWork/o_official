@@ -143,10 +143,14 @@ export async function seedAnotherReturn(client: PgClient, o: AutoOrder, number: 
 	return { ...o, returnId };
 }
 
-/** 売上 4010 に amount 円（相手は現金 1010。注文つき）。売上の純額（4010 − 4020 + 4050）を円で読むための前提の仕訳。 */
+/**
+ * 売上 4010 に amount 円（相手は前受金 2150。注文つき）。売上の純額（4010 − 4020 + 4050）を円で読むための前提の仕訳。
+ * 本物の出荷の仕訳と同じ種類 shipment_confirmed・同じ形（借 2150／貸 4010）で入れる。ほかの種類で入れると、売上の照合
+ * （get_intake_reconciliation）の2段目が、4010 を数えて売上の種類を数えない差で狂う。
+ */
 export async function postSales(client: PgClient, orderId: string, amount: number, date: string): Promise<string> {
-	return postAutoEntry(client, { date, kind: 'return_arrived', parts: [randomUUID()], lines: [
-		{ account: '1010', debit: amount, orderId }, { account: '4010', credit: amount, orderId }] });
+	return postAutoEntry(client, { date, kind: 'shipment_confirmed', parts: [randomUUID()], lines: [
+		{ account: '2150', debit: amount, orderId }, { account: '4010', credit: amount, orderId }] });
 }
 
 /** 取り消しが引かれた時の仕訳（W。借 1470 dispute_pending S／貸 1160 S。1470 に注文は付かない）。 */
