@@ -281,6 +281,7 @@ sequenceDiagram
     D->>A: R・Z・S から pay・review を決める
     A-->>D: pay = min(R, S)、review = min(Z, S − pay)
     D->>C: 2130（return_refund）pay / 1470（dispute_refund_overlap_review）review / 費用 残り
+    D->>C: 直し（確定の日より後の0円の終わりがある時）借 4020 y_n／貸 2130（return_refund）y_n（印 closefix:<n>、日は d_n）
   end
 ```
 

@@ -657,6 +657,9 @@ DECLARE
   v_fix_check_day bigint;
   v_fix_check_now bigint;
   v_fix_review bigint;
+  v_fix_sum bigint;
+  v_fix_last date;
+  v_fix_now bigint;
 -- ACC_P3_END
 BEGIN
   IF _limit IS NULL OR _limit < 1 OR _limit > 200 THEN
@@ -1087,6 +1090,12 @@ BEGIN
           -- fixes. The fix has its own variables: v_result and v_entry_id stay C's, the pending row of lane 1 is tied to C.
           IF v_order_id IS NOT NULL AND (v_result ->> 'created')::boolean THEN
             v_fix_n := 0;
+            v_fix_sum := 0;
+            SELECT pg_catalog.max(e.entry_date) INTO v_fix_last FROM public.accounting_journal_entries AS e
+            JOIN public.accounting_return_facts AS f ON f.id::text = e.source_id
+            WHERE e.event_kind = 'return_amount_decided' AND e.source_table = 'accounting_return_facts'
+              AND f.order_id = v_order_id AND f.refund_id IS NULL AND e.entry_date > v_date
+              AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS r WHERE r.reverses_entry_id = e.id);
             FOR v_fix_date IN
               SELECT DISTINCT e.entry_date FROM public.accounting_journal_entries AS e
               JOIN public.accounting_return_facts AS f ON f.id::text = e.source_id
@@ -1097,6 +1106,12 @@ BEGIN
             LOOP
               v_fix_n := v_fix_n + 1;
               v_fix_y := GREATEST(0 - private.accounting_order_return_payable(v_order_id, v_fix_date), 0);
+              IF v_fix_date = v_fix_last THEN
+                -- D12: the last fix also takes back what C took more than the later money moves left, up to C's own 2130 debit (pay)
+                -- less the earlier fixes. A double payment that has nothing to do with C is not hidden: the check below fails.
+                v_fix_now := private.accounting_order_return_payable(v_order_id, NULL);
+                v_fix_y := GREATEST(v_fix_y, LEAST(0 - v_fix_now, v_pay - v_fix_sum), 0);
+              END IF;
               IF v_fix_y > 0 THEN
                 -- The day of the fix first: when its period is missing, the whole event (C too) goes back and the parked row names
                 -- this day.
@@ -1111,6 +1126,7 @@ BEGIN
                       'order_id', v_order_id::text, 'memo', 'closefix:' || v_fix_n::text)),
                   _source_table => 'stripe_disputes', _source_id => v_dispute_id);
                 v_fix_entry_id := (v_fix_result ->> 'entry_id')::uuid;
+                v_fix_sum := v_fix_sum + v_fix_y;
                 v_fix_check_day := private.accounting_order_return_payable(v_order_id, v_date);
                 IF v_fix_check_day < 0 THEN
                   RAISE EXCEPTION 'ACCOUNTING_POSTING_BALANCE_NEGATIVE' USING ERRCODE = '23514';

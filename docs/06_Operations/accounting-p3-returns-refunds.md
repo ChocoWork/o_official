@@ -241,6 +241,7 @@ Stripe の管理画面で返したが、アプリに記録していない返金�
 - **待ち**（この順。どれも解けると次の流しで自動で入る）: C の前提（引かれた分が全部入っている・負けた時刻以前の取り下げが未計上でない → `dispute_withdrawal_missing`、`accounting_dispute_offset_ready` → `dispute_refund_overlap`・`dispute_return_refund_pending`）→ 途中の返金が1つでもある（`dispute_refund_overlap`、`why` `refund`。負けた日で切らず、外さない）→ 日の早い物が先（`dispute_return_refund_pending`、`why` `return`。C の鍵の日は最後の0円の終わりの日。鍵が同じか小さい未計上の決定、または鍵の日が小さく、同じ日なら取り消しの番号が小さい別の取り消しの C。済んだ C・仕訳なしや人が結んで閉じた C の行・切り替えの前に負けた取り消しは数えない）。
 - **C**: 今の計上係の C の文のまま（印 `dispute_event:<dp>:confirmed:lost`・日は負けた日）。待ちが全部解けた時に、行の組み立てを変えずに入る。
 - **直し**: 0円の終わりの日（取り消されたものを除く）を早い順に n = 1, 2, … とし、各 d_n で y_n = max(−B(d_n), 0)。B(d_n) は d_n までの 2130 `return_refund`（C・前の直しを含む。返金の成功は作った日で数える）。y_n > 0 なら 借 4020 y_n／貸 2130 `return_refund` y_n（行に注文・memo `closefix:<n>`・日は d_n・見出しは 0円の終わりと同じ・記録の時刻は入れた時刻）を、印 `dispute_event:closefix:<dp>:<n>` で入れる。印の頭が `dispute_event:<dp>:` の外なので、取り消しごとの残高と遅れた取り下げ L の振り分けは直しを読まない。d_n の期間が無ければ C も直しも入らず、`period_missing` の `detail.entry_date` が d_n になる。
+- **最後の直し（D12）**: 最後の d_n だけ y = max(−B(d_n), min(−P(今), C の pay − 前の直しの合計), 0)。C の後に作った返金の成功で今の 2130 が負でも、C が取りすぎた分（pay まで）は戻す。pay を超える分は隠さず、次の確かめで `posting_error` になる。
 - **入れた後の確かめ**: 直しごとに d_n までの 2130 が0未満、全部入れた後に今の 2130 か 1470 `dispute_refund_overlap_review` が0未満なら `ACCOUNTING_POSTING_BALANCE_NEGATIVE` で巻き戻す。
 - **S27 の前に作った開いた `return_closed_after_lost` の行**: 最初の取り消しの計上係の流しで処理され、`resolved_entry_id` は C の仕訳（直しでなく）になる。人が結んで閉じた行がある時は S27 の前の確かめが移行を止める。
 

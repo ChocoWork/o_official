@@ -1527,6 +1527,7 @@ describeLocalDb('FREQ-643: S27 dispute poster return_closed_after_lost (Task 3)'
       expect(shapeOf(await linesOf((await entryByKey(fixKey(t.b, 1)))!.id))).toEqual([['4020', 2000, 0, null], ['2130', 0, 2000, 'return_refund']]);
       expect((await wait(t.b)).resolved_at).not.toBeNull();
       expect(await snap(t.o.orderId)).toEqual({ payable: 0, d4020: 5000, c4050: 0, review: 0, net: 5000 });
+      for (const [dp, w] of [[t.a, -3000], [t.b, -2000]] as const) expect(await pins(dp, t.o.orderId)).toEqual({ b1160: w, pending: 0, overlap: 0, unassigned: 0 });
     });
 
     test('FREQ-643-AC-05: 別の取り消し a の C の行を人が結んで閉じていれば（M5）数えず、b は待たずに C と直しで入る', async () => {
@@ -1550,16 +1551,18 @@ describeLocalDb('FREQ-643: S27 dispute poster return_closed_after_lost (Task 3)'
   describe('after C and the fix entries', () => {
     test('FREQ-643-AC-07: 入れた後に遅れての取り下げ L が来ると止めず入れる。取り消しごとの dispute_pending は0、一覧の確定の日は C の日、照合の確定の科目別は C の印の仕訳を読む。返金が failed の注文の owed_return は新しい残高', async () => {
       const s = await unconfirmed({ goods: 10000, s: 4000 });
-      const failed = await seedRefundInFlight(db(), s.o, 4000, ['requested', 'failed']);
+      const failed = await seedRefundInFlight(db(), s.o, 3000, ['requested', 'failed']);
       const mode = (await q("select tgenabled from pg_catalog.pg_trigger where tgrelid = 'public.order_refunds'::regclass and tgname = 'order_refunds_guard'")).rows[0].tgenabled as string;
       await q('alter table public.order_refunds disable trigger order_refunds_guard');
       await q("update public.order_refunds set status = 'failed' where id = $1", [failed.refundId]);
       await q(`alter table public.order_refunds enable ${mode === 'A' ? 'always ' : ''}trigger order_refunds_guard`);
       await postAutoEntry(db(), { date: DAY.d2, kind: 'refund_failed', parts: [failed.refundId, 'x1'], sourceTable: 'order_refunds', sourceId: failed.refundId,
-        lines: [{ account: '1160', debit: 4000, orderId: s.o.orderId }, { account: '2130', credit: 4000, sub: 'refund_owed_post', orderId: s.o.orderId }] });
+        lines: [{ account: '1160', debit: 3000, orderId: s.o.orderId }, { account: '2130', credit: 3000, sub: 'refund_owed_post', orderId: s.o.orderId }] });
       await closeEntry(s.o, 10000, 0, DAY.d8);
       await runDisputes();
       expect(await pendingBalOf(s.dp)).toBe(0);
+      const before = (await q("select private.list_refund_accounting_states(50, null, null) as r")).rows[0].r as { refunds?: Array<{ refund_id: string; owed_return: number }> } | Array<{ refund_id: string; owed_return: number }>;
+      expect((Array.isArray(before) ? before : (before.refunds ?? [])).find((x) => x.refund_id === failed.refundId)?.owed_return ?? 0).toBe(0);
       const listed = (await q('select private.accounting_dispute_json($1) as j', [s.dp])).rows[0].j as { confirmed_on: string; pending_reasons: string[] };
       expect(listed.confirmed_on).toBe(DAY.d5);
       expect(listed.pending_reasons).toEqual([]);
@@ -1574,7 +1577,7 @@ describeLocalDb('FREQ-643: S27 dispute poster return_closed_after_lost (Task 3)'
       expect(await pendingBalOf(s.dp)).toBe(0);
       const states = (await q('select private.list_refund_accounting_states(50, null, null) as r')).rows[0].r as { refunds?: Array<{ refund_id: string; owed_return: number }> } | Array<{ refund_id: string; owed_return: number }>;
       const rows = Array.isArray(states) ? states : (states.refunds ?? []);
-      expect(rows.find((x) => x.refund_id === failed.refundId)?.owed_return).toBe(4000);
+      expect(rows.find((x) => x.refund_id === failed.refundId)?.owed_return).toBe(3000);
     });
 
     test('FREQ-643-AC-07: 決定が w で入った後に、負けた日が D より前の2つ目の取り消し B（S=3,000・day6）が来ると、B は C と直しで入る。入れる前と後の 2130・4020・R を円で固定', async () => {
@@ -1616,6 +1619,86 @@ describeLocalDb('FREQ-643: S27 dispute poster return_closed_after_lost (Task 3)'
     });
   });
 
+  // ---- D12: a refund created after the last close day (controller ruling) and I2 / M3 --------------------------------------------
+  describe('D12 last fix bound, (b) bank transfer, key clauses', () => {
+    /** 注文 20,000。返品 A・B（各 10,000）は day1 に届く。W S=10,000（day3）・負け day5。A を day8 に0円で終え、B の返金（作った日 day9）が day10 に成功した後で C を入れる。 */
+    async function lateRefund() {
+      const { a, b } = await twoReturns([10000, 10000], [10000, 10000]);
+      const dp = (await addDispute(a, 10000)).dp;
+      await closeEntry(a, 10000, 0, DAY.d8);
+      const r = await seedRefundInFlight(db(), b, 10000, ['requested', 'succeeded'], { decided: 10000, covers: 10000, on: DAY.d9 });
+      await setCreatedOn(db(), r.refundId, DAY.d9);
+      await postRefundSuccess(db(), a.orderId, r.refundId, 10000, DAY.d10);
+      await runReturn();
+      return { a, dp };
+    }
+
+    test('FREQ-643-AC-04: D12 最後の直しは今の 2130 の負けも戻す。C の後に作った返金の成功（day10）で今が −10,000 になる注文は、y = 10,000 で 2130 = 0・4020 の純額 借 20,000・売上の純額 0 になり、C の行は C の仕訳に結ばれる', async () => {
+      const { a, dp } = await lateRefund();
+      expect(await snap(a.orderId)).toEqual({ payable: 0, d4020: 10000, c4050: 0, review: 0, net: 10000 });
+      expect(await pins(dp, a.orderId)).toEqual({ b1160: -10000, pending: 10000, overlap: 0, unassigned: 0 });
+      await q("select private.accounting_park_event('dispute_event', 'stripe_disputes', $1, $2::uuid, 'order_not_postable', $3::jsonb)",
+        [dp, a.orderId, JSON.stringify({ reason: 'return_closed_after_lost' })]);
+      await runDisputes();
+      const c = (await entryByKey(cKey(dp)))!;
+      expect(shapeOf(await linesOf(c.id))).toEqual([['2130', 10000, 0, 'return_refund'], ['1470', 0, 10000, 'dispute_pending']]);
+      const fix = (await entryByKey(fixKey(dp, 1)))!;
+      expect(fix.entry_date).toBe(DAY.d8);
+      expect(shapeOf(await linesOf(fix.id))).toEqual([['4020', 10000, 0, null], ['2130', 0, 10000, 'return_refund']]);
+      expect(await snap(a.orderId)).toEqual({ payable: 0, d4020: 20000, c4050: 0, review: 0, net: 0 });
+      expect(await pins(dp, a.orderId)).toEqual({ b1160: -10000, pending: 0, overlap: 0, unassigned: 0 });
+      expect((await disputeRow(dp))!.resolved_entry_id).toBe(c.id);
+    });
+
+    test('FREQ-643-AC-08: D12 の上限。C の 2130 の借方（pay）を超える分（無関係の二重払い −5,000）は直しで隠さず、直しは 10,000 で止まり、今の 2130 が負なので ACCOUNTING_POSTING_BALANCE_NEGATIVE（23514）で巻き戻り posting_error になる。C も直しも入らない（取り消しの計上係の入れた後の確かめ）', async () => {
+      const { a, dp } = await lateRefund();
+      await postAutoEntry(db(), { date: DAY.d10, kind: 'manual_entry', parts: ['dbl', randomUUID()], lines: [
+        { account: '2130', debit: 5000, sub: 'return_refund', orderId: a.orderId }, { account: '1160', credit: 5000 }] });
+      expect(await payableOf(a.orderId, null)).toBe(-5000);
+      const before = await entryCount();
+      await runDisputes();
+      expect(await disputeRow(dp)).toMatchObject({ reason: 'posting_error', detail: { error_code: 'ACCOUNTING_POSTING_BALANCE_NEGATIVE', error_sqlstate: '23514' }, resolved_at: null });
+      expect(await entryCount()).toBe(before);
+      expect(await entryByKey(cKey(dp))).toBeUndefined();
+      expect(await fixCount(dp)).toBe(0);
+    });
+
+    test('FREQ-643-AC-07: (b) 振込 6,000。C（2130 = 6,000）が先に入っている注文は、0円の終わり（返品の計上係が w=6,000）の前は 6,000 の銀行振込が通り（savepoint で戻す）、入れた後は ACCOUNTING_EVENT_NOT_POSTABLE で断られる', async () => {
+      const s = await unconfirmed({ goods: 10000, s: 4000 });
+      await runDisputes();
+      expect((await snap(s.o.orderId)).payable).toBe(6000);
+      await seedZeroClose(db(), s.o, 10000, 0, DAY.d8);
+      const transfer = () => bankTransfer(db(), { actor: s.o.actor, orderId: s.o.orderId, origin: 'return', amount: 6000, on: DAY.d10, txn: `S27-${randomUUID().slice(0, 8)}` });
+      expect(await failure(transfer)).toBeNull();
+      await runReturn();
+      expect((await snap(s.o.orderId)).payable).toBe(0);
+      expect(await failure(transfer)).toBe('ACCOUNTING_EVENT_NOT_POSTABLE');
+    });
+
+    test('FREQ-643-AC-05: 鍵の日と同じ日（day8）の決定が未計上なら、C は決定が先の順なので待つ（dispute_return_refund_pending）', async () => {
+      const s = await unconfirmed({ prices: [10000, 3000], goods: 10000, s: 4000 });
+      const b = await seedAnotherReturn(db(), s.o, 2);
+      await seedZeroClose(db(), b, 300, 0, DAY.d8);
+      await closeEntry(s.o, 10000, 0, DAY.d8);
+      await runDisputes();
+      expect(await disputeRow(s.dp)).toMatchObject({ reason: 'dispute_return_refund_pending', detail: { why: 'return' }, resolved_at: null });
+    });
+
+    test('FREQ-643-AC-05: 切り替えの日より前に負けた別の取り消し a の C が未計上でも、b は待たずに入る（a は before_cutover）', async () => {
+      const o = await seedAutoOrder(db(), [10000]);
+      await seedArrival(db(), o, 10000, 0, DAY.d1);
+      await runReturn();
+      await postSales(db(), o.orderId, 10000, DAY.d1);
+      const a = await addDispute(o, 3000, { id: 'dp_s27aaa', withdrawnOn: DAY.d1, lostOn: DAY.d2 });
+      const b = await addDispute(o, 2000, { id: 'dp_s27bbb' });
+      await closeEntry(o, 10000, 0, DAY.d8);
+      await setCutoverForTest(db(), DAY.d4);
+      await runDisputes();
+      expect(await disputeRow(a.dp)).toMatchObject({ reason: 'before_cutover', resolved_at: null });
+      expect(await entryByKey(cKey(b.dp))).toBeDefined();
+    });
+  });
+
   // ---- (i): the fix is kept by the same wait ------------------------------------------------------------------------------------------
   describe('(i) a refund that succeeds after the loss', () => {
     test('FREQ-643-AC-03: (i) B の返金（作った日 day7・成功の仕訳 day10）が途中の間は C ごと待ち、成功の仕訳が入った後に C と直し y_1 = 10,000 が入る。R の式は返金を作った日で数える', async () => {
@@ -1632,6 +1715,7 @@ describeLocalDb('FREQ-643: S27 dispute poster return_closed_after_lost (Task 3)'
       expect(await entryByKey(cKey(dp))).toBeUndefined();
       expect(await fixCount(dp)).toBe(0);
       expect(await snap(a.orderId)).toEqual({ payable: 10000, d4020: 10000, c4050: 0, review: 0, net: 10000 });
+      expect(await pins(dp, a.orderId)).toEqual({ b1160: -10000, pending: 10000, overlap: 0, unassigned: 0 });
       // day10 に成功
       await q("select private.accounting_record_refund_event($1, 'succeeded', null, null, null, null)", [r.refundId]);
       await postRefundSuccess(db(), a.orderId, r.refundId, 10000, DAY.d10);
@@ -1649,6 +1733,9 @@ describeLocalDb('FREQ-643: S27 dispute poster return_closed_after_lost (Task 3)'
           and e.entry_date <= $2::date and e.dedupe_key <> $3`, [a.orderId, DAY.d8, fixKey(dp, 1)])).rows[0].b);
       expect(byEntryDate).toBe(0);
       expect(await payableOf(a.orderId, null)).toBe(0);
+      // 直しが無ければ（y_1 = 0 なら）終わりの 2130 は −10,000
+      expect((await payableOf(a.orderId, null)) - 10000).toBe(-10000);
+      expect(await pins(dp, a.orderId)).toEqual({ b1160: -10000, pending: 0, overlap: 0, unassigned: 0 });
     });
   });
 
