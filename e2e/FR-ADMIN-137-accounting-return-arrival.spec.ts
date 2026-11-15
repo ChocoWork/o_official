@@ -27,8 +27,8 @@ test.use({ trace: 'off', locale: 'ja-JP' });
 // 仕訳・計上待ちは全体で共有する状態なので、このファイルの中は1つずつ流す（他のファイルとは並列）。
 test.describe.configure({ mode: 'default' });
 
-/** 日本時間の0時まで60秒を切っている（届いた日は今日・明日の getter で何度も読むので、0時をまたぐと日付が変わる。この間は流さない。FR-ADMIN-139 と同じ） */
-const nearJstMidnight = () => ((Date.now() + 9 * 3_600_000) % 86_400_000) > 86_400_000 - 60_000;
+/** 日本時間の0時まで6分（360秒）を切っている（届いた日は今日・明日の getter で何度も読み、1本の試験は最長300秒かかるので、0時をまたぐと日付が変わる。この間は流さない。FR-ADMIN-139 の60秒では足りないのでここは6分） */
+const nearJstMidnight = () => ((Date.now() + 9 * 3_600_000) % 86_400_000) > 86_400_000 - 360_000;
 
 const slash = (date: string) => date.replaceAll('-', '/');
 const AFTER_CORRECTION_NOTICE = '届いた日を直しました。';

@@ -17,7 +17,7 @@ BEGIN;
 --   private.admin_settle_owed_by_refund (only definition: S20 :807-): an owed refund that is a plain return refund (source
 --     return, event kind not holdback_release or pre_shipment_cancel, return_method not not_required) is refused with
 --     ACCOUNTING_ARGUMENT_INVALID / 22023, DETAIL settle_plain_return (P3-F2, P3-T11j).
---   private.list_refund_settle_candidates (latest: S25 20261114100000:280-): no candidates for such an owed refund.
+--   private.list_refund_settle_candidates (latest: S25 20261114100000:224-): no candidates for such an owed refund.
 --   private.list_refund_accounting_states (latest: S25 :64-): owed_return is 0 for a not_required return (its debt is
 --     refund_owed_post).
 --   private.list_deferred_revenue_anomalies (latest: S23 20261113100000:313-): a third reason,
@@ -709,6 +709,13 @@ BEGIN
     AND NOT EXISTS (SELECT 1 FROM public.order_returns AS rt WHERE rt.id = v_owed_fact.return_id AND rt.return_method = 'not_required') THEN
     RAISE EXCEPTION 'ACCOUNTING_ARGUMENT_INVALID' USING ERRCODE = '22023', DETAIL = 'settle_plain_return';
   END IF;
+  -- Ruling P3-F8: the paying side too. A plain return refund was paid out of 2130 return_refund (its success booked 2130 / 1160,
+  -- not 4020 / 1160), so using it to clear a refund_owed_post debt gives that debt back to 4020 with no money behind it.
+  IF v_pay_fact.refund_id IS NOT NULL AND v_pay_fact.source = 'return'
+    AND v_pay_fact.event_kind NOT IN ('holdback_release', 'pre_shipment_cancel')
+    AND NOT EXISTS (SELECT 1 FROM public.order_returns AS rt WHERE rt.id = v_pay_fact.return_id AND rt.return_method = 'not_required') THEN
+    RAISE EXCEPTION 'ACCOUNTING_ARGUMENT_INVALID' USING ERRCODE = '22023', DETAIL = 'settle_plain_return_payer';
+  END IF;
 -- ACC_P3_END
   SELECT t.* INTO v_bt FROM public.stripe_refunds AS sr
   JOIN public.stripe_balance_transactions AS t ON t.id = sr.balance_transaction_id
@@ -798,6 +805,11 @@ BEGIN
     JOIN public.stripe_balance_transactions AS t ON t.id = sr.balance_transaction_id
     CROSS JOIN settled AS st
     WHERE p.order_id = v_owed.order_id AND p.id <> _owed_refund_id
+-- ACC_P3_BEGIN
+      -- Ruling P3-F8: a plain return refund is never a paying refund (see admin_settle_owed_by_refund).
+      AND NOT (pf.source = 'return' AND pf.event_kind NOT IN ('holdback_release', 'pre_shipment_cancel')
+        AND NOT EXISTS (SELECT 1 FROM public.order_returns AS rt WHERE rt.id = pf.return_id AND rt.return_method = 'not_required'))
+-- ACC_P3_END
       AND NOT EXISTS (SELECT 1 FROM public.accounting_refund_settlements AS s2 WHERE s2.paying_refund_id = p.id)
   )
   SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('refund_id', c.id, 'amount', c.amount,
@@ -1022,11 +1034,11 @@ BEGIN
       ('private.accounting_post_refund_events(integer)', 1, 0, '2f20a946fdcad5e1266f868d55ff4e37', false,
         'AND NOT EXISTS (SELECT 1 FROM public.order_returns AS rt WHERE rt.id = v_fact.return_id AND rt.return_method = ''not_required'')|v_plain := v_fact.source = ''return'' AND v_fact.event_kind NOT IN (''holdback_release'', ''pre_shipment_cancel'')'),
       ('private.admin_settle_owed_by_refund(uuid,uuid,uuid,uuid)', 0, 1, 'ded09f6252f450fb9906d292971e1ac9', false,
-        '''settle_plain_return''|rt.id = v_owed_fact.return_id AND rt.return_method = ''not_required''|v_owed_fact.event_kind NOT IN (''holdback_release'', ''pre_shipment_cancel'')'),
+        '''settle_plain_return''|''settle_plain_return_payer''|rt.id = v_pay_fact.return_id AND rt.return_method = ''not_required''|rt.id = v_owed_fact.return_id AND rt.return_method = ''not_required''|v_owed_fact.event_kind NOT IN (''holdback_release'', ''pre_shipment_cancel'')'),
       ('private.list_refund_accounting_states(integer,timestamptz,uuid)', 2, 1, '28ec43c85c10e95fbf2644396a894f28', true,
         'f.event_id, f.event_kind,|AS owed_return|OR s.owed_return > 0|f.source = ''return'' AND f.event_kind NOT IN (''holdback_release'', ''pre_shipment_cancel'')|rt.id = f.return_id AND rt.return_method = ''not_required''|IN (''owed'', ''failed'')|f.post_shipment_amount), 0)'),
-      ('private.list_refund_settle_candidates(uuid)', 0, 1, 'c9e93920ebeb0aa6e84bae16d060878f', true,
-        'rt.id = v_owed_fact.return_id AND rt.return_method = ''not_required''|v_owed_fact.event_kind NOT IN (''holdback_release'', ''pre_shipment_cancel'')'),
+      ('private.list_refund_settle_candidates(uuid)', 0, 2, 'c9e93920ebeb0aa6e84bae16d060878f', true,
+        'rt.id = pf.return_id AND rt.return_method = ''not_required''|pf.event_kind NOT IN (''holdback_release'', ''pre_shipment_cancel'')|rt.id = v_owed_fact.return_id AND rt.return_method = ''not_required''|v_owed_fact.event_kind NOT IN (''holdback_release'', ''pre_shipment_cancel'')'),
       ('private.list_deferred_revenue_anomalies()', 0, 1, 'd891511d05127d0b0be979b7e3591c81', true,
         '''return_waived_with_failed_refund''|''return_refund_negative_balance''|l.account_code = ''2130'' AND l.sub_account = ''return_refund''')
     ) AS x(signature, replaced, added, digest, readonly, needle)

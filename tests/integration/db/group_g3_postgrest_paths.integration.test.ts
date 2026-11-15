@@ -8,6 +8,7 @@ import { connectLocalDb, describeLocalDb, isLocalDatabase } from './helpers/loca
 import { withGroupG1FixtureTransaction, setOrderStatusForFixture, seedGroupG1Shipment, seedGroupG1Allocation } from './helpers/group-g1-fixtures';
 import { seedGroupG3ReadyOrder, seedGroupG3Slip, attachGroupG3SlipShipment } from './helpers/group-g3-fixtures';
 import { insertRefundRecord, insertReturnRecord } from './helpers/order-fixtures';
+import { seedDisputeHold } from './helpers/accounting-returns-fixtures';
 import { createPurchaseFlow } from './helpers/purchase-order-flow';
 import {
   enableDeliveryTracking, leaseDeliveryRegistration, patchDeliveryRegistration, recordReadResult, restoreCommittedDeliveryState,
@@ -416,6 +417,10 @@ describeLocalDb('G-3 real supabase-js -> PostgREST -> SQL read paths', (db) => {
         await local(() => setOrderStatusForFixture(db(), [f.orderId], 'cancelled')); call = () => confirmShipmentSlip(service, manager, confirmation); break;
       case 'GROUP_G_SLIP_PAYMENT_REVIEW_REQUIRED':
         await local(() => db().query("select private.ensure_group_g_payment_review_hold($1,'fixture review',null,null,null)", [f.orderId]));
+        call = () => confirmShipmentSlip(service, manager, confirmation); break;
+      case 'ACCOUNTING_DISPUTE_HOLD':
+        // 計画3 S19: 判断待ちのカード会社の取り消し（引かれて同期が済み、まだ確定も取り下げも無い）がある注文を含む票の確定は、DB が 55000 で断る
+        await local(() => seedDisputeHold(db(), f.orderId));
         call = () => confirmShipmentSlip(service, manager, confirmation); break;
       case 'GROUP_G_SLIP_EXCHANGE_ON_HOLD': {
         const exchange = await local(async () => {

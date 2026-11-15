@@ -291,6 +291,39 @@ describeLocalDb('S25 refund debt reads: controller only', (db) => {
     expect(await orderBalance(db(), orderId, '2130', 'return_refund')).toBe(16875);
   });
 
+  test('FREQ-579-AC-05: 成功した普通の返品の返金（2130 return_refund から払った返金）を払い手にした結びは断り、出荷後の借りも返品の返金待ちも動かさず、候補にも出さない（P3-F8）', async () => {
+    const admin = await insertAccountingAdmin(db());
+    const flow = await seedReturnFlow(db(), {});
+    const received = await receiveReturn(db(), flow, { units: [{ return_line_id: flow.lineIds[0], disposition: 'not_restocked', quantity: 1 }], choice: 'now' });
+    await seedReturnArrivalEntries(db(), flow.returnId);
+    const payer = received.refund_id as string;
+    const orderId = flow.f.orderId as string;
+    // 払い手 P: 成功した普通の返品の返金（2130 return_refund ／ 1160）。借り X: 同じ注文の出荷後の返金で、引かれる前に失敗（4020 ／ 2130 refund_owed_post）
+    await succeedRefund(db(), payer, { at: '2026-11-08T03:00:00Z' });
+    const x = await seedCancelRefund(db(), orderId, null, 5000);
+    await failRefund(db(), x);
+    await postRefundEvents(db());
+    expect(await orderBalance(db(), orderId, '2130', 'return_refund')).toBe(0);
+    expect(await orderBalance(db(), orderId, '2130', 'refund_owed_post')).toBe(5000);
+    const before = (await q('select count(*)::int n from public.accounting_journal_entries')).rows[0].n;
+    // 候補に出ない
+    expect((await candidatesOf(x)).map((r) => r.refund_id)).not.toContain(payer);
+    expect(await candidatesOf(x)).toEqual([]);
+    // 結びは断る。仕訳も結びの行も増えず、残高は動かない
+    expect(await fails(() => settleOwed(db(), admin, x, payer))).toMatchObject({ code: '22023', message: 'ACCOUNTING_ARGUMENT_INVALID' });
+    expect((await q('select count(*)::int n from public.accounting_journal_entries')).rows[0].n).toBe(before);
+    expect((await q('select count(*)::int n from public.accounting_refund_settlements where owed_refund_id = $1', [x])).rows[0].n).toBe(0);
+    expect(await orderBalance(db(), orderId, '2130', 'refund_owed_post')).toBe(5000);
+    expect(await orderBalance(db(), orderId, '2130', 'return_refund')).toBe(0);
+    // 普通でない払い手（出荷後の管理者の返金）なら、同じ借りをこれまで通り結べる
+    const other = await seedCancelRefund(db(), orderId, null, 5000);
+    await succeedRefund(db(), other, { at: '2026-11-09T03:00:00Z' });
+    await postRefundEvents(db());
+    expect((await candidatesOf(x)).map((r) => r.refund_id)).toEqual([other]);
+    expect(await settleOwed(db(), admin, x, other)).toMatchObject({ pre_amount: 0, post_amount: 5000 });
+    expect(await orderBalance(db(), orderId, '2130', 'refund_owed_post')).toBe(0);
+  });
+
   test('FREQ-579-AC-04: 借りの一覧の行に event_id と event_kind がある', async () => {
     const f = await seedRefundFlow(db(), false, 2);
     await postOrderPayment(db(), f.orderId);
