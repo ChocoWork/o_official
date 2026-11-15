@@ -542,7 +542,7 @@ describeLocalDb('FREQ-643: S27 return poster dispute_lost (Task 2)', (db) => {
       expect(await payableOf(s.o.orderId, null)).toBe(-5000);
     });
 
-    test('FREQ-643-AC-02: (h) 2つの返品は両方決まるまで待ち（dispute_return_refund_pending・why return）、両方決まると両方 P_eff=0 で入れず 2130 = 0 のまま', async () => {
+    test('FREQ-643-AC-02: (h) 2つの返品。D14: C が 2130 を 0 にしているので、返品 B が未決でも A の0円の終わりは待たず P_eff=0 で入れず閉じ、B も同じ。2130 = 0 のまま', async () => {
       const a = await seedAutoOrder(db(), [10000, 10000]);
       const b = await seedAnotherReturn(db(), a, 2);
       await seedArrival(db(), a, 10000, 0, DAY.d1);
@@ -554,7 +554,7 @@ describeLocalDb('FREQ-643: S27 return poster dispute_lost (Task 2)', (db) => {
       expect((await snap(a.orderId)).payable).toBe(0);
       const closeA = await seedZeroClose(db(), a, 10000, 0, DAY.d8);
       await runReturn();
-      expect(await decisionRow(closeA.factId)).toMatchObject({ reason: 'dispute_return_refund_pending', detail: { why: 'return' }, resolved_at: null });
+      expect(await decisionRow(closeA.factId)).toMatchObject({ reason: 'no_revenue', detail: {}, resolved_entry_id: null });
       expect((await snap(a.orderId)).payable).toBe(0);
       const closeB = await seedZeroClose(db(), b, 10000, 0, DAY.d9);
       await runReturn();
@@ -1704,6 +1704,64 @@ describeLocalDb('FREQ-643: S27 dispute poster return_closed_after_lost (Task 3)'
       const fix = (await entryByKey(fixKey(dp, 2)))!;
       expect(fix.entry_date).toBe(DAY.d9);
       expect(shapeOf(await linesOf(fix.id))).toEqual([['4020', 10000, 0, null], ['2130', 0, 10000, 'return_refund']]);
+      expect(await snap(a.orderId)).toEqual({ payable: 0, d4020: 10000, c4050: 0, review: 0, net: 10000 });
+    });
+
+    /** 返金 R（B の分）は作った後に失敗し（失敗の行は仕訳なしで閉じる）、返金の借りは 2130 return_refund のまま、返品の銀行振込（origin return）で払う。決定は残らない。 */
+    const failedRepaid = async (b: AutoOrder, amount: number, createdOn: string, transferOn: string) => {
+      const r = await seedRefundInFlight(db(), b, amount, ['requested', 'failed'], { decided: amount, covers: amount, on: createdOn });
+      await setCreatedOn(db(), r.refundId, createdOn);
+      const mode = (await q("select tgenabled from pg_catalog.pg_trigger where tgrelid = 'public.order_refunds'::regclass and tgname = 'order_refunds_guard'")).rows[0].tgenabled as string;
+      await q('alter table public.order_refunds disable trigger order_refunds_guard');
+      await q("update public.order_refunds set status = 'failed' where id = $1", [r.refundId]);
+      await q(`alter table public.order_refunds enable ${mode === 'A' ? 'always ' : ''}trigger order_refunds_guard`);
+      await q("select private.accounting_park_event('refund_failed', 'order_refunds', $1, $2::uuid, 'no_revenue', '{}'::jsonb)", [r.refundId, b.orderId]);
+      await q("select private.accounting_unpark_event('refund_failed', 'order_refunds', $1, null)", [r.refundId]);
+      await runReturn();
+      await bankTransfer(db(), { actor: b.actor, orderId: b.orderId, origin: 'return', amount, on: transferOn, txn: `S27-${randomUUID().slice(0, 8)}` });
+      return r;
+    };
+
+    test('FREQ-643-AC-03: D14 B の返金が失敗し、返金の借りを返品の銀行振込で払った（決定は残らず v_left > 0 のまま・2130 = 0）注文は、C は待たず、D12 の直し 10,000 で 2130 = 0・4020 の純額 借 20,000・売上の純額 0 になる', async () => {
+      const { a, b, dp } = await undecidedB();
+      await failedRepaid(b, 10000, DAY.d9, DAY.d10);
+      expect(await payableOf(a.orderId, null)).toBe(0);
+      await runDisputes();
+      expect(await disputeRow(dp)).toBeUndefined();
+      expect(shapeOf(await linesOf((await entryByKey(cKey(dp)))!.id))).toEqual([['2130', 10000, 0, 'return_refund'], ['1470', 0, 10000, 'dispute_pending']]);
+      expect(shapeOf(await linesOf((await entryByKey(fixKey(dp, 1)))!.id))).toEqual([['4020', 10000, 0, null], ['2130', 0, 10000, 'return_refund']]);
+      expect(await snap(a.orderId)).toEqual({ payable: 0, d4020: 20000, c4050: 0, review: 0, net: 0 });
+      expect(await pins(dp, a.orderId)).toEqual({ b1160: -10000, pending: 0, overlap: 0, unassigned: 0 });
+    });
+
+    test('FREQ-643-AC-02: D14 返品の計上係の D3 も同じ。C が先に入った注文で、別の返品 B の返金が失敗し銀行振込で払われ 2130 = 0 なら、A の0円の終わりは待たず no_revenue で閉じる', async () => {
+      const { a, b } = await twoReturns([10000, 10000], [10000, 10000]);
+      const dp = (await addDispute(a, 10000)).dp;
+      await postConfirmed(db(), a.orderId, dp, DAY.d5, { pay: 10000 });
+      await failedRepaid(b, 10000, DAY.d9, DAY.d10);
+      expect(await payableOf(a.orderId, null)).toBe(0);
+      const close = await seedZeroClose(db(), a, 10000, 0, DAY.d8);
+      await runReturn();
+      expect((await q("select reason, detail, resolved_entry_id, resolved_at is not null as closed from public.accounting_pending_events where source_id = $1", [close.factId])).rows[0])
+        .toEqual({ reason: 'no_revenue', detail: {}, resolved_entry_id: null, closed: true });
+      expect(await payableOf(a.orderId, null)).toBe(0);
+    });
+
+    test('FREQ-643-AC-03: pay = R（S が R を覆う）なら別の返品 B が未決でも C は待たず、直しが要らなければ入れない（B の到着 day6 が 2130 に残る）', async () => {
+      const a = await seedAutoOrder(db(), [10000, 10000]);
+      const b = await seedAnotherReturn(db(), a, 2);
+      await seedArrival(db(), a, 10000, 0, DAY.d1);
+      await runReturn();
+      await postSales(db(), a.orderId, 20000, DAY.d1);
+      const dp = (await addDispute(a, 10000)).dp;
+      await seedArrival(db(), b, 10000, 0, DAY.d6);
+      await runReturn();
+      await closeEntry(a, 10000, 0, DAY.d8);
+      expect(await payableOf(a.orderId, DAY.d5)).toBe(10000);
+      await runDisputes();
+      expect(await disputeRow(dp)).toBeUndefined();
+      expect(await entryByKey(cKey(dp))).toBeDefined();
+      expect(await fixCount(dp)).toBe(0);
       expect(await snap(a.orderId)).toEqual({ payable: 0, d4020: 10000, c4050: 0, review: 0, net: 10000 });
     });
 

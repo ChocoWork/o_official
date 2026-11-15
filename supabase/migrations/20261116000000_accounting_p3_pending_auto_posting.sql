@@ -456,7 +456,10 @@ BEGIN
             ELSIF EXISTS (SELECT 1 FROM private.accounting_order_refunds_in_flight(v_fact.order_id, v_fact.id) AS r WHERE NOT r.excluded) THEN
               v_reason := 'dispute_refund_overlap';
               v_detail := pg_catalog.jsonb_build_object('why', 'refund');
-            ELSIF EXISTS (SELECT 1 FROM (SELECT DISTINCT o.return_id FROM public.accounting_return_facts AS o
+            ELSIF private.accounting_order_return_payable(v_fact.order_id, NULL)
+                - COALESCE((SELECT pg_catalog.sum(r.post_shipment_amount) FROM private.accounting_order_refunds_in_flight(v_fact.order_id, v_fact.id) AS r
+                  WHERE r.excluded), 0) > 0
+              AND EXISTS (SELECT 1 FROM (SELECT DISTINCT o.return_id FROM public.accounting_return_facts AS o
                   WHERE o.order_id = v_fact.order_id AND o.return_id <> v_fact.return_id) AS k
                 WHERE COALESCE((SELECT pg_catalog.sum(f.goods_amount - f.fee_amount) FROM public.accounting_return_facts AS f
                     WHERE f.return_id = k.return_id AND f.kind = 'arrival'), 0)
@@ -468,7 +471,8 @@ BEGIN
                       AND NOT (rf.status = 'failed' OR (rf.status = 'canceled' AND EXISTS (SELECT 1 FROM public.accounting_refund_events AS x
                         WHERE x.refund_id = rf.id AND x.state = 'abandoned')))), 0) > 0) THEN
               -- Another return of the order has an amount that is not decided yet: how much of the payable C took is its, not
-              -- this close's, cannot be told from the sum of 2130.
+              -- this close's, cannot be told from the sum of 2130. D14: only while 2130 of the order (P(now)') is still above 0; a
+              -- return whose debt was paid another way (a bank transfer) never gets a decision and would wait for ever.
               v_reason := 'dispute_return_refund_pending';
               v_detail := pg_catalog.jsonb_build_object('why', 'return');
             ELSE
@@ -662,6 +666,7 @@ DECLARE
   v_fix_now bigint;
   v_wait_pay bigint;
   v_wait_r bigint;
+  v_wait_now bigint;
 -- ACC_P3_END
 BEGIN
   IF _limit IS NULL OR _limit < 1 OR _limit > 200 THEN
@@ -1007,10 +1012,13 @@ BEGIN
               -- D13: when the card did not cover all of the returns payable (pay < R at the loss day), another return of the order whose
               -- amount is not decided yet (the v_left of accounting_record_return_decision, as in the return poster) is waited for: a
               -- refund of it later would drive 2130 below 0. When pay = R nothing waits (a later refund is a real double payment).
-              -- It stands after the refunds in flight and before the earlier-day key, the order of the return poster (spec 3-3).
+              -- D14: and only while 2130 of the order (read before C) is still above 0; a return whose debt was paid another way (a
+              -- bank transfer) never gets a decision, and D12 alone puts the yen right. The refunds in flight come before the returns
+              -- undecided, as in the return poster (the return poster puts the earlier-day key first; the reason is the same).
               SELECT o.pay INTO v_wait_pay FROM private.accounting_dispute_offset_amounts(v_order_id, v_date, v_amount) AS o;
               v_wait_r := private.accounting_order_return_payable(v_order_id, v_date);
-              IF v_wait_pay < v_wait_r AND EXISTS (SELECT 1 FROM (SELECT DISTINCT o.return_id FROM public.accounting_return_facts AS o
+              v_wait_now := private.accounting_order_return_payable(v_order_id, NULL);
+              IF v_wait_pay < v_wait_r AND v_wait_now > 0 AND EXISTS (SELECT 1 FROM (SELECT DISTINCT o.return_id FROM public.accounting_return_facts AS o
                     WHERE o.order_id = v_order_id) AS k
                   WHERE COALESCE((SELECT pg_catalog.sum(f.goods_amount - f.fee_amount) FROM public.accounting_return_facts AS f
                       WHERE f.return_id = k.return_id AND f.kind = 'arrival'), 0)

@@ -275,6 +275,8 @@ sequenceDiagram
     D->>Q: 保留
   else 確定の日より後に返品を0円で終えた仕訳が先に入っていて、途中の返金がある（外さない）
     D->>Q: 待つ（dispute_refund_overlap・why refund）
+  else 同じ場合で、pay が負けた日の R より小さく、注文の 2130 が 0 より大きく、額が未決の返品がある（D13・D14）
+    D->>Q: 待つ（dispute_return_refund_pending・why return）
   else 同じ場合で、日の鍵が小さい未計上の決定か別の取り消しの C がある
     D->>Q: 待つ（dispute_return_refund_pending・why return）
   else 通る
