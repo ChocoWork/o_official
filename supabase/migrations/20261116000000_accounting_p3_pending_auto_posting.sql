@@ -660,7 +660,7 @@ DECLARE
   v_fix_y bigint;
   v_fix_date date;
   v_fix_check_day bigint;
-  v_fix_check_now bigint;
+  v_fix_closes bigint;
   v_fix_review bigint;
   v_fix_sum bigint;
   v_fix_last date;
@@ -1133,6 +1133,13 @@ BEGIN
             WHERE e.event_kind = 'return_amount_decided' AND e.source_table = 'accounting_return_facts'
               AND f.order_id = v_order_id AND f.refund_id IS NULL AND e.entry_date > v_date
               AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS r WHERE r.reverses_entry_id = e.id);
+            -- D16: the 2130 the 0 yen closes (not reversed) took off after the loss day: the fix only gives back what they took.
+            SELECT COALESCE(pg_catalog.sum(l.debit), 0) INTO v_fix_closes FROM public.accounting_journal_entries AS e
+            JOIN public.accounting_return_facts AS f ON f.id::text = e.source_id
+            JOIN public.accounting_journal_lines AS l ON l.entry_id = e.id AND l.account_code = '2130' AND l.sub_account = 'return_refund'
+            WHERE e.event_kind = 'return_amount_decided' AND e.source_table = 'accounting_return_facts'
+              AND f.order_id = v_order_id AND f.refund_id IS NULL AND e.entry_date > v_date
+              AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS r WHERE r.reverses_entry_id = e.id);
             FOR v_fix_date IN
               SELECT DISTINCT e.entry_date FROM public.accounting_journal_entries AS e
               JOIN public.accounting_return_facts AS f ON f.id::text = e.source_id
@@ -1145,9 +1152,10 @@ BEGIN
               v_fix_y := GREATEST(0 - private.accounting_order_return_payable(v_order_id, v_fix_date), 0);
               IF v_fix_date = v_fix_last THEN
                 -- D12: the last fix also takes back what C took more than the later money moves left, up to C's own 2130 debit (pay)
-                -- less the earlier fixes. A double payment that has nothing to do with C is not hidden: the check below fails.
+                -- less the earlier fixes, and up to what the 0 yen closes took (D16). A double payment that has nothing to do with C is not hidden: it
+                -- stays as a negative 2130 and the anomaly list shows it (no error is raised for it).
                 v_fix_now := private.accounting_order_return_payable(v_order_id, NULL);
-                v_fix_y := GREATEST(v_fix_y, LEAST(0 - v_fix_now, v_pay - v_fix_sum), 0);
+                v_fix_y := GREATEST(v_fix_y, LEAST(0 - v_fix_now, v_pay - v_fix_sum, v_fix_closes - v_fix_sum), 0);
               END IF;
               IF v_fix_y > 0 THEN
                 -- The day of the fix first: when its period is missing, the whole event (C too) goes back and the parked row names
@@ -1171,10 +1179,9 @@ BEGIN
               END IF;
             END LOOP;
             IF v_fix_n > 0 THEN
-              v_fix_check_now := private.accounting_order_return_payable(v_order_id, NULL);
               v_fix_review := (SELECT COALESCE(pg_catalog.sum(l.debit - l.credit), 0) FROM public.accounting_journal_lines AS l
                 WHERE l.order_id = v_order_id AND l.account_code = '1470' AND l.sub_account = 'dispute_refund_overlap_review');
-              IF v_fix_check_now < 0 OR v_fix_review < 0 THEN
+              IF v_fix_review < 0 THEN
                 RAISE EXCEPTION 'ACCOUNTING_POSTING_BALANCE_NEGATIVE' USING ERRCODE = '23514';
               END IF;
             END IF;
