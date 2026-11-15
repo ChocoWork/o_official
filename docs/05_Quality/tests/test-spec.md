@@ -1778,7 +1778,7 @@ DB結合・単体の実測は各Taskの実装者と調整役の報告のとお�
 | [`tests/unit/api/admin/receipt-route.test.ts`](../../../tests/unit/api/admin/receipt-route.test.ts) | 単体 | FREQ-559-AC-02 |
 | [`tests/unit/lib/accounting/accounting-store.test.ts`](../../../tests/unit/lib/accounting/accounting-store.test.ts) | 単体 | FREQ-555-AC-01・04 |
 | [`tests/unit/lib/accounting/accounts-contract.test.ts`](../../../tests/unit/lib/accounting/accounts-contract.test.ts) | 単体 | FREQ-554-AC-06 |
-| [`tests/unit/lib/accounting/event-key.test.ts`](../../../tests/unit/lib/accounting/event-key.test.ts) | 単体 | FREQ-554-AC-03 |
+| [`tests/unit/lib/accounting/event-key.test.ts`](../../../tests/unit/lib/accounting/event-key.test.ts) | 単体 | FREQ-554-AC-03、FREQ-643-AC-09 |
 | [`tests/unit/lib/accounting/filing-deadlines.test.ts`](../../../tests/unit/lib/accounting/filing-deadlines.test.ts) | 単体 | FREQ-561-AC-01 |
 | [`tests/unit/lib/accounting/jst-date.test.ts`](../../../tests/unit/lib/accounting/jst-date.test.ts) | 単体 | FREQ-554-AC-05 |
 | [`tests/unit/lib/accounting/manual-account-map.test.ts`](../../../tests/unit/lib/accounting/manual-account-map.test.ts) | 単体 | FREQ-556-AC-01・03 |

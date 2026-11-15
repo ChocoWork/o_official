@@ -151,11 +151,6 @@ describe('計上待ちのタブ', () => {
 		expect(reasonText(pendingEvent(1, { reason: 'dispute_return_refund_pending' }))).toBe(
 			'カード会社からの支払いの取り消しがある注文に、返品の返金待ちがあります。額がまだ決まっていないほかの返品があれば、その返品の返金の額を決めてください。日の早い返品や取り消しが先に計上されるのを待っている時は、そのまま待ってください。先の行が止まっている時は、その行の文のとおりに進めてください。仕訳が入ると、自動で計上されます。',
 		);
-		const overlap = reasonText(pendingEvent(1, { reason: 'dispute_refund_overlap' }));
-		expect(overlap).toContain('処理中なら、そのまま待ってください');
-		expect(overlap).toContain('「エラー」の返金は、やり直してください');
-		expect(overlap).toContain('取り消しの区分を選んでください');
-		expect(reasonText(pendingEvent(1, { reason: 'dispute_return_refund_pending' }))).toContain('その返品の返金の額を決めてください');
 	});
 
 	it('FREQ-643-AC-14: order_not_postable の dispute_lost・return_closed_after_lost は専用の文を持たず、shipping と同じ文になる', () => {
@@ -165,10 +160,45 @@ describe('計上待ちのタブ', () => {
 		expect(reasonText(pendingEvent(2, { reason: 'order_not_postable', eventKind: 'dispute_event', detail: { reason: 'return_closed_after_lost' } }))).toBe(base);
 	});
 
+	/** 直前（14c6c41d）の文。2つの理由と order_not_postable の専用の文以外は、一字も変えない。 */
+	const PREVIOUS_TEXT: Record<string, string> = {
+		payment_journal_missing: "この出荷の注文の支払いが、まだ帳簿に入っていません。支払いが入ると自動で計上されます。",
+		order_not_postable: "この注文は送料や合計が決まりの形と合わないため、自動で計上できません。内容を確かめてください。",
+		amount_mismatch: "Stripe の取引の総額が、注文の支払額と違います。取引が同期し直されると、もう一度確かめます。",
+		no_order: "Stripe に、注文と結び付かない支払いが届いています。注文以外の入金でないか、内容を確かめてください。",
+		units_insufficient: "この発送票で送る着の数が、まだ送っていない着の数より多くなっています。この発送票を取り消すと、この行は閉じます。",
+		shipment_date_mismatch: "発送ごとの出荷日と発送票の出荷日が食い違っています。日が直されると自動で計上されます。",
+		deferred_revenue_short: "出荷の額が、この注文の前受金の残りより多くなっています。支払いや戻しが入ると自動で計上されます。",
+		posting_error: "この出来事を帳簿に入れる処理で失敗しました。元の記録や設定を確かめ、直してから『もう一度計上する』を押してください。他の出来事の計上は続けています。",
+		before_cutover: "新しい帳簿を始めた日より前の出来事です。確かめて、確認済みにしてください。",
+		unknown_category: "Stripe の残高の取引に、まだ知らない種類のものがあります。種類の対応が足されると自動で計上されます。",
+		payout_mismatch: "入金の中身の合計と額が合っていません。Stripe の精算のタブで照合が済むと、自動で計上されます。",
+		dispute_shipment_pending: "引かれた時より前に確定した発送票で、出荷の仕訳がまだ入っていない物があります。出荷の仕訳が入ると自動で計上されます。",
+		shipment_lines_mismatch: "発送票の明細と、発送ごとの明細の品ごとの数量が食い違っています。直ると自動で計上されます。",
+		no_revenue: "仕訳にする額が0円です（交換の品だけの発送票など）。確かめて、確認済みにしてください。",
+		refund_prior_unposted: "同じ注文の前の返金の仕訳がまだ入っていません。入ると自動で計上されます。",
+		refund_cancel_undecided: "この返金は Stripe 側で取り消されました。店が返金をやめたのか、返すつもりのまま返せなかったのかを選んでください。",
+	};
+	const PREVIOUS_PERIOD_MISSING = {
+		sole_ended_not_switched: 'この日はやめた日より後です。やめた日が正しいか確かめ、正しければ事業の形を法人へ切り替えてください。設定・期間のタブで行えます。',
+		other: 'この日を含む会計の期間がありません。設定・期間のタブで期間を作ると、自動で計上されます。',
+	};
+
 	it.each(PENDING_REASONS.filter((reason) => reason !== 'dispute_refund_overlap' && reason !== 'dispute_return_refund_pending'))(
 		'FREQ-643-AC-14: ほかの理由 %s の文は変わっていない（直前の文のまま）',
 		(reason) => {
-			expect(reasonText(pendingEvent(1, { reason, detail: reason === 'period_missing' ? { entry_date: '2026-11-08' } : reason === 'dispute_withdrawal_missing' ? { dispute_status: 'under_review' } : {} }))).toContain(REASON_SNIPPETS[reason]);
+			if (reason === 'period_missing') {
+				expect(reasonText(pendingEvent(1, { reason, detail: { entry_date: '2026-11-08' } }))).toBe(PREVIOUS_PERIOD_MISSING.other);
+				expect(reasonText(pendingEvent(1, { reason, detail: { cause: 'sole_ended_not_switched' } }))).toBe(PREVIOUS_PERIOD_MISSING.sole_ended_not_switched);
+				return;
+			}
+			if (reason === 'dispute_withdrawal_missing') {
+				expect(reasonText(pendingEvent(1, { reason, detail: { waiting_on: 'dispute_account_unassigned' } }))).toBe('確定した損失を、振り替え先の科目が決まっていない仮払金に置いています。設定のタブで科目を決め、「確定・科目の決定待ち」を振り替えると、計上が進みます。');
+				expect(reasonText(pendingEvent(1, { reason, detail: { dispute_status: 'under_review' } }))).toBe('カード会社からの支払いの取り消しの判断がまだ決着していません。決着すると、戻りの扱いを決めて計上します。');
+				expect(reasonText(pendingEvent(1, { reason, detail: {} }))).toBe('前の段の仕訳（カード会社に引かれた時や、確定の仕訳）がまだ入っていません。入ると自動で計上されます。');
+				return;
+			}
+			expect(reasonText(pendingEvent(1, { reason, detail: {} }))).toBe(PREVIOUS_TEXT[reason]);
 		},
 	);
 
