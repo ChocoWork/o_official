@@ -69,6 +69,30 @@ describeLocalDb('S23 deferred revenue anomalies: controller only', (db) => {
     }
   });
 
+  test('FREQ-578-AC-09: 返品の返金待ち（2130 return_refund）が注文でマイナスになると（返金の二重払い。P3-T11k）、前受金の異常の一覧に理由 return_refund_negative_balance で出る。0以上の間は出ない', async () => {
+    const flow = await seedReturnFlow(db(), { snapshot: false });
+    const orderId = flow.f.orderId;
+    const rr = (credit: number, debit: number) => ({ account: '2130', credit, debit, orderId, subAccount: 'return_refund' });
+    // 返品の返金待ち 17,000円（届いた日の仕訳）。そのままでは異常ではない
+    await postManualEntryFixture(db(), { entryDate: '2026-11-03', kind: 'return_arrived', parts: [randomUUID()], lines: [
+      { account: '4020', debit: 17000, orderId }, rr(17000, 0)] });
+    expect(await reasonsOf(orderId)).toEqual([]);
+    // 振込で全額を返すと 0（異常ではない）。その後で Stripe の返金が成功して同じ額をもう一度返すと、残高が -3,000円になる
+    await postManualEntryFixture(db(), { entryDate: '2026-11-04', kind: 'return_refund', parts: ['bank-fixture.return'], lines: [
+      rr(0, 17000), { account: '1040', credit: 17000 }] });
+    expect(await reasonsOf(orderId)).toEqual([]);
+    await postManualEntryFixture(db(), { entryDate: '2026-11-05', kind: 'return_refund', parts: [randomUUID()], lines: [
+      rr(0, 3000), { account: '1160', credit: 3000 }] });
+    expect(await reasonsOf(orderId)).toEqual(['return_refund_negative_balance']);
+    const row = (await anomalies()).find((a) => a.order_id === orderId);
+    expect(Object.keys(row as object).sort()).toEqual(['balance', 'order_id', 'order_number', 'reason']);
+    expect(row).toMatchObject({ order_number: `ORD-${orderId.slice(0, 8).toUpperCase()}` });
+    // 残高が 0 に戻れば（-3,000円分の取り戻し）消える
+    await postManualEntryFixture(db(), { entryDate: '2026-11-06', kind: 'return_refund', parts: [randomUUID()], lines: [
+      rr(3000, 0), { account: '1160', debit: 3000 }] });
+    expect(await reasonsOf(orderId)).toEqual([]);
+  });
+
   test('FREQ-578-AC-09: list_deferred_revenue_anomalies の本文は囲みを除いて計画2の最新の定義と同じ', async () => {
     const s12 = fs.readFileSync(path.join(process.cwd(), 'supabase/migrations/20261108210000_accounting_p2_intake_reads.sql'), 'utf8');
     const fn = s12.match(/^CREATE FUNCTION private\.list_deferred_revenue_anomalies\(\)[\s\S]*?^\$\$;\n/m)?.[0] ?? '';

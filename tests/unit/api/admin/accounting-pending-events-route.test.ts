@@ -7,6 +7,8 @@ const mockCsrf = jest.fn(); const mockRate = jest.fn(); const mockAudit = jest.f
 jest.mock('@/lib/csrfMiddleware', () => ({ requireCsrfOrDeny: () => mockCsrf() }));
 jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: (...args: unknown[]) => mockRate(...args) }));
 jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockAudit(...args) }));
+const mockSchedule = jest.fn();
+jest.mock('@/lib/accounting/posting-runner', () => ({ ...jest.requireActual('@/lib/accounting/posting-runner'), scheduleAccountingPosting: (...args: unknown[]) => mockSchedule(...args) }));
 import { GET as pendingGet } from '@/app/api/admin/accounting/pending-events/route';
 import { POST as resolvePost } from '@/app/api/admin/accounting/pending-events/[id]/resolve/route';
 import { POST as linkPost } from '@/app/api/admin/accounting/pending-events/[id]/link-entry/route';
@@ -252,6 +254,24 @@ describe('POST /api/admin/accounting/pending-events/[id]/link-entry', () => {
 		const audit = JSON.stringify(mockAudit.mock.calls);
 		for (const secret of ['SECRET-NOTE', ENTRY, KEY, 'owner@example.test']) expect(audit).not.toContain(secret);
 		expect(mockRate).toHaveBeenCalledWith(expect.objectContaining({ endpoint: 'admin.accounting.write', limit: 30, windowSeconds: 600 }));
+	});
+
+	test('FREQ-569-AC-07: 結んで閉じた時だけ応答の後に計上係を流し（入口の名前 pending_link）、断り・入力の誤り・DB の失敗では流さない', async () => {
+		grants.current = [PERM.correct];
+		mockSchedule.mockClear();
+		expect((await link()).status).toBe(200);
+		expect(mockSchedule).toHaveBeenCalledTimes(1);
+		expect(mockSchedule).toHaveBeenCalledWith('pending_link');
+		mockSchedule.mockClear();
+		expect((await link({ ...linkBody, entryId: 'bad' })).status).toBe(400);
+		grants.current = [PERM.read, PERM.manage, PERM.settings];
+		expect((await link()).status).toBe(403);
+		grants.current = [PERM.correct];
+		linkRpc(dbError('ACCOUNTING_LINK_ENTRY_INVALID', '22023', 'link_not_found'));
+		expect((await link()).status).toBe(400);
+		linkRpc(dbError('ACCOUNTING_PENDING_RESOLVED', '55000'));
+		expect((await link()).status).toBe(409);
+		expect(mockSchedule).not.toHaveBeenCalled();
 	});
 
 	test('FREQ-569-AC-07: 権限なし・aal1・CSRF欠落・429・不正入力では DB を呼ばず、失敗の監査にもメモ・仕訳の番号は入らない', async () => {

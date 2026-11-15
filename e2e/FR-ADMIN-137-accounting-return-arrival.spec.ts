@@ -27,6 +27,9 @@ test.use({ trace: 'off', locale: 'ja-JP' });
 // 仕訳・計上待ちは全体で共有する状態なので、このファイルの中は1つずつ流す（他のファイルとは並列）。
 test.describe.configure({ mode: 'default' });
 
+/** 日本時間の0時まで60秒を切っている（届いた日は今日・明日の getter で何度も読むので、0時をまたぐと日付が変わる。この間は流さない。FR-ADMIN-139 と同じ） */
+const nearJstMidnight = () => ((Date.now() + 9 * 3_600_000) % 86_400_000) > 86_400_000 - 60_000;
+
 const slash = (date: string) => date.replaceAll('-', '/');
 const AFTER_CORRECTION_NOTICE = '届いた日を直しました。';
 const FUTURE_TEXT = '未来の日は選べません。';
@@ -76,6 +79,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
 
     test('FREQ-575-AC-01: 返品を受け取る時に届いた日（今日）を選ぶと、計上後の仕訳帳に届いた日の仕訳が出る', async ({ page }) => {
       test.setTimeout(300_000);
+      test.skip(nearJstMidnight(), '日本時間の0時の直前は、届いた日の今日と明日が入れ替わるので流さない');
       await withAccountingScenario('return-arrival-today', async (s) => {
         const period = await s.todayPeriod();
         const flow = await s.seedReturnFlow();
@@ -113,6 +117,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
 
     test('FREQ-575-AC-02: 届いた日を前の日へ直すと直した跡が返品の詳細に出て、切り替えの日より前の日なら計上待ちに理由つきで出る', async ({ page }) => {
       test.setTimeout(300_000);
+      test.skip(nearJstMidnight(), '日本時間の0時の直前は、届いた日の今日と明日が入れ替わるので流さない');
       await withAccountingScenario('return-arrival-redate', async (s) => {
         const period = await s.todayPeriod();
         const cutover = await s.cutoverOn();
@@ -173,6 +178,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
 
     test('FREQ-578-AC-02: 相談で受け取り、額を決めて返金すると、差の仕訳が決めた日に出る', async () => {
       test.setTimeout(300_000);
+      test.skip(nearJstMidnight(), '日本時間の0時の直前は、届いた日の今日と明日が入れ替わるので流さない');
       await withAccountingScenario('return-amount-decided', async (s) => {
         const period = await s.todayPeriod();
         const flow = await s.seedReturnFlow();
@@ -205,6 +211,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
 
     test('FREQ-584-AC-01: 未来の届いた日は選べない', async ({ page }) => {
       test.setTimeout(300_000);
+      test.skip(nearJstMidnight(), '日本時間の0時の直前は、届いた日の今日と明日が入れ替わるので流さない');
       await withAccountingScenario('return-arrival-future', async (s) => {
         await s.todayPeriod();
         const flow = await s.seedReturnFlow();
@@ -239,6 +246,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
 
     test('FREQ-584-AC-06: 受け取りの画面・返品の詳細・計上待ちのタブ・消費税用の返金の一覧が3つの幅で横にはみ出さない', async ({ page }) => {
       test.setTimeout(300_000);
+      test.skip(nearJstMidnight(), '日本時間の0時の直前は、届いた日の今日と明日が入れ替わるので流さない');
       await withAccountingScenario('return-arrival-overflow', async (s) => {
         await s.todayPeriod();
         const cutover = await s.cutoverOn();

@@ -34,14 +34,15 @@ const TOTALS = {
 	excludedBy: { beforeSale: 5000, saleUnbooked: 7000, exemptSale1416: 20000, afterExit1417: 6000 },
 };
 
-type Serve = { rows?: Row[]; next?: { date: string; key: string } | null; totals?: unknown; status?: number; restartOnCursor?: boolean };
+type Serve = { rows?: Row[]; next?: { date: string; key: string } | null; totals?: unknown; status?: number; cursorStatus?: number };
 
 function serve(state: Serve = {}) {
 	return mockFetch((url, method) => {
 		if (url.pathname !== `${BASE}/tax-refunds` || method !== 'GET') return undefined;
 		if (state.status) return { status: state.status, body: { error: '会計の処理に失敗しました。' } };
-		if (state.restartOnCursor && url.searchParams.get('afterDate')) {
-			return { status: 409, body: { code: 'ACCOUNTING_LIST_RESTART', error: '一覧が変わりました。最初から読み直してください。' } };
+		// 続きの目印が正しくない時、DB は 22023 を返し、route は 400 の固定の文にする（目印は日と行の鍵だけなので、409 のやり直しは無い）
+		if (state.cursorStatus && url.searchParams.get('afterDate')) {
+			return { status: state.cursorStatus, body: { code: 'ACCOUNTING_ARGUMENT_INVALID', error: '入力を確かめてください。' } };
 		}
 		return {
 			status: 200,
@@ -103,7 +104,7 @@ describe('消費税用の返金の一覧', () => {
 		fireEvent.click(show(region));
 		const table = await within(region).findByRole('table', { name: '消費税用の返金の一覧' });
 		const headers = within(table).getAllByRole('columnheader').map((cell) => cell.textContent);
-		expect(headers).toEqual(['返金した日', '注文番号', '品の内容', '税率', '返金の額', '税額', '元の売上の日', '対象外の理由']);
+		expect(headers).toEqual(['返金した日', '注文番号', '品の内容', '税率', '返金の額', '税額', '元の売上の日', '元の売上の期間', '返金の期間', '対象外の理由']);
 		const rows = within(table).getAllByRole('row').slice(1);
 		expect(rows).toHaveLength(5);
 		expect(rows[0].textContent).toContain('2026/10/11');
@@ -125,6 +126,29 @@ describe('消費税用の返金の一覧', () => {
 		const sent = String(api.fn.mock.calls[0][0]);
 		expect(sent).toContain('from=2026-10');
 		expect(sent).toContain('to=2026-10');
+	});
+
+	it('FREQ-583-AC-01: 元の売上の期間と返金の期間の課税・免税を出し、区分が無い（NULL）時は「不明」と出す（設計 5-j）', async () => {
+		serve({
+			rows: [
+				row(1),
+				row(2, { salePeriodStatus: 'exempt', refundPeriodStatus: 'taxable', exclusion: 'exempt_sale_14_1_6' }),
+				row(3, { originalSaleDate: null, salePeriodStatus: null, refundPeriodStatus: 'exempt', exclusion: 'before_sale' }),
+				row(4, { originalSaleDate: null, salePeriodStatus: null, refundPeriodStatus: null, exclusion: 'sale_unbooked' }),
+			],
+		});
+		const region = open();
+		fireEvent.click(show(region));
+		const table = await within(region).findByRole('table', { name: '消費税用の返金の一覧' });
+		const headers = within(table).getAllByRole('columnheader').map((cell) => cell.textContent);
+		const saleAt = headers.indexOf('元の売上の期間');
+		const refundAt = headers.indexOf('返金の期間');
+		expect([saleAt, refundAt]).toEqual([7, 8]);
+		const cells = within(table).getAllByRole('row').slice(1).map((r) => {
+			const tds = within(r).getAllByRole('cell');
+			return [tds[saleAt].textContent, tds[refundAt].textContent];
+		});
+		expect(cells).toEqual([['課税', '課税'], ['免税', '課税'], ['不明', '免税'], ['不明', '不明']]);
 	});
 
 	it('FREQ-583-AC-01: 合計は含む額と外す額を分け、外す額の内訳（5つ目の理由を含む）を出す', async () => {
@@ -165,7 +189,7 @@ describe('消費税用の返金の一覧', () => {
 		expect(show(region)).toBeEnabled();
 	});
 
-	it('FREQ-583-AC-03: 続きは日と行の印で読み、古い目印（409 のやり直し）は最初から読み直す', async () => {
+	it('FREQ-583-AC-03: 続きは日と行の印で読み、前のページの行の後ろに足す', async () => {
 		const api = serve({ rows: [row(1)], next: { date: '2026-10-11', key: `${uuid(301)}:1` } });
 		const region = open();
 		fireEvent.click(show(region));
@@ -174,6 +198,17 @@ describe('消費税用の返金の一覧', () => {
 		const second = String(api.fn.mock.calls[1][0]);
 		expect(second).toContain('afterDate=2026-10-11');
 		expect(second).toContain('afterKey=');
+	});
+
+	it('FREQ-583-AC-03: 続きの目印が正しくないと400の固定の文を穏やかに出し、読めた行は残す（やり直しの合図や読み直しは無い）', async () => {
+		const api = serve({ rows: [row(1)], next: { date: '2026-10-11', key: `${uuid(301)}:1` }, cursorStatus: 400 });
+		const region = open();
+		fireEvent.click(show(region));
+		fireEvent.click(await within(region).findByRole('button', { name: 'さらに読み込む' }));
+		expect(await within(region).findByRole('alert')).toHaveTextContent('入力を確かめてください。');
+		expect(api.calls).toHaveLength(2);
+		expect(within(region).queryByText('一覧が変わったため、最初から読み直しました。')).not.toBeInTheDocument();
+		expect(within(within(region).getByRole('table', { name: '消費税用の返金の一覧' })).getAllByRole('row').slice(1)).toHaveLength(1);
 	});
 
 	it('FREQ-583-AC-01: 読めなかった時は固定の文を出し、前の一覧を残さない', async () => {

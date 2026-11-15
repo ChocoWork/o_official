@@ -18,6 +18,7 @@ import {
   ACCOUNTING_S23_FILES, ACCOUNTING_S23_SQL as s23Sql, accountingS23Section, pinAccountingS23Baseline,
   ACCOUNTING_S24_FILES, ACCOUNTING_S24_SQL as s24Sql, accountingS24Section, pinAccountingS24Baseline, restoreS23StripeReconciliation,
   ACCOUNTING_S25_FILES, ACCOUNTING_S25_SQL as s25Sql, accountingS25Section, pinAccountingS25Baseline,
+  ACCOUNTING_S26_FILES, ACCOUNTING_S26_SQL as s26Sql, accountingS26Section, pinAccountingS26Baseline,
 } from './helpers/accounting-returns-fixtures';
 import { ACCOUNTING_LABELS, encodeSqlUnicodeLiteral } from '@/lib/accounting/labels';
 import { PENDING_REASONS } from '@/lib/accounting/posting-types';
@@ -1454,6 +1455,193 @@ describeLocalDb('S25 final assert: controller only', (db) => {
     [redefine(CAND, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s25_reads_stable'],
     [redefine(CAND, 'WHERE s\\.owed_refund_id = _owed_refund_id', "WHERE s.owed_refund_id = _owed_refund_id AND s.request_hash <> \\'email\\'"), 'acc_s25_reads_stable'],
   ])('FREQ-579-AC-05: S25改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+});
+
+// Accounting plan 3 S26 (Ruling P3-F1, P3-F2, P3-F3; FREQ-579-AC-01 / FREQ-579-AC-05 / FREQ-578-AC-09): the final review fixes.
+// Seven function bodies are rebuilt; no table, row, public entry or grant changes.
+const s26Assertion = accountingS26Section('FINAL_ASSERT');
+const s26Body = accountingS26Section('BODY');
+const s26Details = ['acc_s26_function_attrs', 'acc_s26_body_unchanged', 'acc_s26_reads_stable', 'acc_s26_existing_dml_allowlist'];
+const MIGRATIONS = path.join(process.cwd(), 'supabase/migrations');
+const migrationText = (file: string) => fs.readFileSync(path.join(MIGRATIONS, file), 'utf8');
+const s26FnOf = (text: string, name: string) =>
+  (text.match(new RegExp(`^CREATE (?:OR REPLACE )?FUNCTION private\\.${name}\\([\\s\\S]*?^\\$\\$;\n`, 'm'))?.[0] ?? '')
+    .replace(/^CREATE OR REPLACE FUNCTION/, 'CREATE FUNCTION');
+
+describe('S26 source contract (no DB)', () => {
+  test('FREQ-579-AC-01: S26はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持ち、行を書かず公開の入口も権限も足さない', () => {
+    expect(ACCOUNTING_S26_FILES).toHaveLength(1);
+    expect(ACCOUNTING_S26_FILES[0] > ACCOUNTING_S25_FILES[0]).toBe(true);
+    expect(s26Sql).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(s26Sql.startsWith('BEGIN;\n')).toBe(true);
+    expect(s26Sql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(s26Sql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(s26Sql.trimEnd()).toMatch(/-- ACC_S26_FINAL_ASSERT_END\nNOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    expect([...new Set([...s26Assertion.matchAll(/'(acc_s26_[a-z_]+)'/g)].map((m) => m[1]))].sort()).toEqual([...s26Details].sort());
+    expect(s26Assertion).toContain("'ACCOUNTING_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000'");
+    expect(s26Assertion.replace(/\$acc_s26_o\d\$[\s\S]*?\$acc_s26_o\d\$/g, '')).not.toMatch(/ERRCODE = '(?!55000')/);
+    expect(s26Sql).not.toMatch(/(?:proacl|relacl|attacl)\s*::\s*text/i);
+    expect([...s26Body.matchAll(/^CREATE (?:OR REPLACE )?FUNCTION ([a-z_.]+)\(/gm)].map((m) => m[1])).toEqual([
+      'private.accounting_record_return_arrival', 'private.accounting_record_return_decision', 'private.accounting_post_refund_events',
+      'private.admin_settle_owed_by_refund', 'private.list_refund_settle_candidates', 'private.list_refund_accounting_states',
+      'private.list_deferred_revenue_anomalies']);
+    // No grant, no new table and no new function: the body is the rebuilt bodies and the baseline copy only.
+    expect(s26Body).not.toMatch(/^(GRANT|REVOKE|ALTER FUNCTION|CREATE FUNCTION|CREATE TABLE|ALTER TABLE)\b/m);
+    const statements26 = s26Body.replace(/\$\$[\s\S]*?\$\$/g, '$$$$').split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n');
+    expect(statements26).not.toMatch(/\b(UPDATE|DELETE|TRUNCATE)\b/);
+    expect(statements26.match(/\bINSERT INTO\b/g)).toHaveLength(1);
+  });
+
+  test.each([
+    ['accounting_record_return_arrival', 0, 1, '20261112200809_accounting_p3_return_writers.sql'],
+    ['accounting_record_return_decision', 0, 1, '20261112200809_accounting_p3_return_writers.sql'],
+    ['accounting_post_refund_events', 1, 0, '20261112214341_accounting_p3_refund_posting.sql'],
+    ['admin_settle_owed_by_refund', 0, 1, '20261112214341_accounting_p3_refund_posting.sql'],
+    ['list_refund_settle_candidates', 0, 1, '20261114100000_accounting_p3_refund_debt_reads.sql'],
+    ['list_refund_accounting_states', 2, 1, '20261114100000_accounting_p3_refund_debt_reads.sql'],
+    ['list_deferred_revenue_anomalies', 0, 1, '20261113100000_accounting_p3_intake_tax_reads.sql'],
+  ])('FREQ-579-AC-01: 作り直した %s の本文は最新の定義の写しに、置き換え%i つと囲み%i つを足しただけ（S26）', (name, replacedCount, addedCount, source) => {
+    const latest = s26FnOf(migrationText(source), name);
+    const rebuilt = s26FnOf(s26Body, name);
+    expect(latest).not.toBe('');
+    expect(rebuilt).not.toBe('');
+    // No migration between that definition and S26 defines it again.
+    const defining = fs.readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql') && f > source && f <= ACCOUNTING_S26_FILES[0])
+      .filter((f) => new RegExp(`^CREATE (?:OR REPLACE )?FUNCTION private\\.${name}\\(`, 'm').test(migrationText(f)));
+    expect(defining).toEqual([ACCOUNTING_S26_FILES[0]]);
+    const replaced = [...rebuilt.matchAll(/-- ACC_P3_REPLACE_BEGIN ([0-9a-f]{32})\n([\s\S]*?)-- ACC_P3_REPLACE_END\n/g)];
+    expect(replaced).toHaveLength(replacedCount);
+    const latestLines = [...latest.matchAll(/^.*\n/gm)].map((x) => x[0]);
+    const originalOf = (hash: string) => {
+      for (let i = 0; i < latestLines.length; i += 1) {
+        let text = '';
+        for (let j = i; j < latestLines.length; j += 1) {
+          text += latestLines[j];
+          if (createHash('md5').update(text).digest('hex') === hash) return text;
+        }
+      }
+      return null;
+    };
+    const stripBlocks = (text: string) => text.replace(/-- ACC_P3_BEGIN\n[\s\S]*?-- ACC_P3_END\n/g, '');
+    let restored = rebuilt;
+    for (const m of replaced) {
+      // A replaced part the latest definition already carries as the same marker stays; a new one is put back from the latest text.
+      if (latest.includes(m[0])) continue;
+      const found = originalOf(m[1]);
+      expect(found).not.toBeNull();
+      expect(latest.split(found as string)).toHaveLength(2);
+      restored = restored.replace(m[0], () => found as string);
+    }
+    // The debt read and the anomalies keep the one block they had (edited inside); the others get the one new block.
+    expect([...rebuilt.matchAll(/-- ACC_P3_BEGIN\n[\s\S]*?-- ACC_P3_END\n/g)]).toHaveLength(addedCount);
+    expect(stripBlocks(restored)).toBe(stripBlocks(latest));
+    if (['list_refund_settle_candidates', 'list_refund_accounting_states', 'list_deferred_revenue_anomalies'].includes(name)) {
+      expect(rebuilt.slice(rebuilt.indexOf('AS $$'))).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE|PERFORM|EXECUTE)\b|FOR (SHARE|UPDATE|NO KEY UPDATE|KEY SHARE)/i);
+    }
+  });
+
+  test('FREQ-579-AC-01: S26 の確かめに書いた md5 は、写した元の本文（囲みと空白を除く）の md5 と合い、置き換えの元の字の md5 も合う', () => {
+    const digestOf = (text: string) => {
+      const src = text.slice(text.indexOf('AS $$') + 'AS $$'.length, text.lastIndexOf('$$;'));
+      return createHash('md5').update(src.replace(/-- ACC_P[0-9]_BEGIN[\s\S]*?-- ACC_P[0-9]_END/g, '').replace(/\s+/g, '')).digest('hex');
+    };
+    const originals = Object.fromEntries([...s26Assertion.matchAll(/\('([0-9a-f]{32})', \$acc_s26_o\d\$([\s\S]*?)\$acc_s26_o\d\$\)/g)].map((m) => [m[1], m[2]]));
+    expect(Object.keys(originals)).toHaveLength(3);
+    for (const [hash, text] of Object.entries(originals)) expect(createHash('md5').update(text).digest('hex')).toBe(hash);
+    const restore = (text: string) =>
+      text.replace(/-- ACC_P3_REPLACE_BEGIN ([0-9a-f]{32})[\s\S]*?-- ACC_P3_REPLACE_END/g, (_all, h: string) => originals[h].replace(/\n$/, ''));
+    const rows = [...s26Assertion.matchAll(/\('(private\.[a-z_]+)\([^)]*\)', \d, \d, '([0-9a-f]{32})', (?:true|false),/g)];
+    expect(rows).toHaveLength(7);
+    for (const [, signature, digest] of rows) {
+      expect(digestOf(restore(s26FnOf(s26Body, signature.replace('private.', ''))))).toBe(digest);
+    }
+  });
+});
+
+describeLocalDb('S26 final assert: controller only', (db) => {
+  beforeEach(async () => { await db().query('begin'); });
+  afterEach(async () => { await db().query('rollback'); });
+
+  async function attempt(change = '', before = ''): Promise<AssertFailure | null> {
+    await db().query('savepoint acc_s26_assert');
+    let failure: AssertFailure | null = null;
+    try {
+      if (before) await db().query(before);
+      await pinAccountingS26Baseline(db());
+      if (change) await db().query(change);
+      await db().query(s26Assertion);
+    } catch (error) {
+      const e = error as AssertFailure;
+      failure = { code: e.code, message: e.message === 'ACCOUNTING_MIGRATION_ASSERTION_FAILED' ? e.message : 'ACC_UNEXPECTED_DB_ERROR', detail: e.detail };
+    } finally { await db().query('rollback to savepoint acc_s26_assert'); await db().query('release savepoint acc_s26_assert'); }
+    return failure;
+  }
+  const failed = (detail: string) => ({ code: '55000', message: 'ACCOUNTING_MIGRATION_ASSERTION_FAILED', detail });
+  const redefine = (sig: string, from: string, to: string) =>
+    `do $x$ begin execute regexp_replace(pg_get_functiondef('${sig}'::regprocedure), E'${from}', E'${to}'); end $x$`;
+  const ARRIVAL = 'private.accounting_record_return_arrival(uuid,uuid,uuid,integer,integer)';
+  const DECISION = 'private.accounting_record_return_decision(uuid,uuid,uuid,integer,uuid,integer,integer,integer)';
+  const POSTER = 'private.accounting_post_refund_events(integer)';
+  const SETTLE = 'private.admin_settle_owed_by_refund(uuid,uuid,uuid,uuid)';
+  const SETTLE_PUBLIC = 'public.admin_settle_owed_by_refund(uuid,uuid,uuid,uuid)';
+  const STATES = 'private.list_refund_accounting_states(integer,timestamptz,uuid)';
+  const CAND = 'private.list_refund_settle_candidates(uuid)';
+  const CAND_PUBLIC = 'public.list_refund_settle_candidates(uuid)';
+  const ANOM = 'private.list_deferred_revenue_anomalies()';
+  const NOT_REQUIRED = "return_method = \\'not_required\\'";
+  const NOT_REQUIRED_X = "return_method = \\'zzz\\'";
+
+  test('FREQ-579-AC-01: 適用後の状態で S26 の末尾の確かめが通る（呼出元のsearch_pathを問わない）', async () => {
+    expect(s26Assertion).not.toBe('');
+    expect(await attempt()).toBeNull();
+    expect(await attempt('', 'set local search_path = pg_catalog')).toBeNull();
+    expect(await attempt('', 'set local search_path = public, private, extensions, pg_catalog')).toBeNull();
+    expect(await attempt('', "set local search_path = ''")).toBeNull();
+  });
+
+  test.each([
+    ['drop table pg_temp.accounting_s26_baseline', 'acc_s26_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s26_baseline set payload = payload - 'attrs'", 'acc_s26_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s26_baseline set payload = jsonb_set(payload, '{counts,entries}', '999999')", 'acc_s26_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s26_baseline set payload = jsonb_set(payload, '{counts,lines}', '999999')", 'acc_s26_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s26_baseline set payload = jsonb_set(payload, '{counts,pending_events}', '999999')", 'acc_s26_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s26_baseline set payload = jsonb_set(payload, '{counts,settlements}', '999999')", 'acc_s26_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s26_baseline set payload = jsonb_set(payload, '{counts,return_facts}', '999999')", 'acc_s26_existing_dml_allowlist'],
+    ["update pg_temp.accounting_s26_baseline set payload = jsonb_set(payload, '{allowlist,0}', '1')", 'acc_s26_existing_dml_allowlist'],
+    [`alter function ${ARRIVAL} set search_path = public`, 'acc_s26_function_attrs'],
+    [`alter function ${DECISION} security invoker`, 'acc_s26_function_attrs'],
+    [`alter function ${POSTER} stable`, 'acc_s26_function_attrs'],
+    [`grant execute on function ${SETTLE_PUBLIC} to anon`, 'acc_s26_function_attrs'],
+    [`alter function ${SETTLE} set search_path = public`, 'acc_s26_function_attrs'],
+    [`grant execute on function ${CAND_PUBLIC} to authenticated`, 'acc_s26_function_attrs'],
+    [`alter function ${STATES} volatile`, 'acc_s26_function_attrs'],
+    [`alter function ${ANOM} volatile`, 'acc_s26_function_attrs'],
+    [redefine(ARRIVAL, NOT_REQUIRED, NOT_REQUIRED_X), 'acc_s26_body_unchanged'],
+    [redefine(ARRIVAL, '-- ACC_P3_BEGIN\\n', '-- ACC_P3_X\\n'), 'acc_s26_body_unchanged'],
+    [redefine(ARRIVAL, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s26_body_unchanged'],
+    [redefine(DECISION, NOT_REQUIRED, NOT_REQUIRED_X), 'acc_s26_body_unchanged'],
+    [redefine(DECISION, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s26_body_unchanged'],
+    [redefine(POSTER, NOT_REQUIRED, NOT_REQUIRED_X), 'acc_s26_body_unchanged'],
+    [redefine(POSTER, '-- ACC_P3_REPLACE_BEGIN [0-9a-f]{32}\\n', '-- ACC_P3_REPLACE_BEGIN 00000000000000000000000000000000\\n'), 'acc_s26_body_unchanged'],
+    [redefine(POSTER, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s26_body_unchanged'],
+    [redefine(POSTER, "\\'holdback_release\\', ", ''), 'acc_s26_body_unchanged'],
+    [redefine(SETTLE, "\\'settle_plain_return\\'", "\\'settle_x\\'"), 'acc_s26_body_unchanged'],
+    [redefine(SETTLE, NOT_REQUIRED, NOT_REQUIRED_X), 'acc_s26_body_unchanged'],
+    [redefine(SETTLE, '-- ACC_P3_BEGIN\\n', '-- ACC_P3_X\\n'), 'acc_s26_body_unchanged'],
+    [redefine(SETTLE, 'v_hash := ', 'v_hash := null; v_hash := '), 'acc_s26_body_unchanged'],
+    [redefine(CAND, NOT_REQUIRED, NOT_REQUIRED_X), 'acc_s26_body_unchanged'],
+    [redefine(CAND, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s26_body_unchanged'],
+    [redefine(STATES, NOT_REQUIRED, NOT_REQUIRED_X), 'acc_s26_body_unchanged'],
+    [redefine(STATES, '-- ACC_P3_REPLACE_BEGIN [0-9a-f]{32}\\n', '-- ACC_P3_REPLACE_BEGIN 00000000000000000000000000000000\\n'), 'acc_s26_body_unchanged'],
+    [redefine(STATES, 'OR s\\.owed_return > 0', ''), 'acc_s26_body_unchanged'],
+    [redefine(STATES, "\\'owed\\', \\'failed\\'", "\\'owed\\'"), 'acc_s26_body_unchanged'],
+    [redefine(ANOM, "\\'return_refund_negative_balance\\'", "\\'return_refund_negative_x\\'"), 'acc_s26_body_unchanged'],
+    [redefine(ANOM, '-- ACC_P3_BEGIN\\n', '-- ACC_P3_X\\n'), 'acc_s26_body_unchanged'],
+    [redefine(CAND_PUBLIC, 'SELECT private', 'SELECT /* email */ private'), 'acc_s26_reads_stable'],
+  ])('FREQ-579-AC-01: S26改ざん %s は55000とDETAIL=%sで拒む', async (change, detail) => {
     expect(await attempt(change)).toEqual(failed(detail));
     expect(await attempt()).toBeNull();
   });

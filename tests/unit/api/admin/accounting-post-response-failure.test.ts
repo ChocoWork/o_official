@@ -111,7 +111,7 @@ const cases: Case[] = [
     call: () => postBank(accountingRequest('refund-bank-transfers', { orderId: ORDER_ID, origin: 'pre_shipment', amount: 1000, bankDate: toJstDate(new Date()), bankTxnNo: 'BANK-1', note: null, requestKey: REQUEST_KEY })),
     arrange: () => undefined,
     rpcData: () => ({ entry_id: UUID_A, entry_no: 1, period_id: UUID_B, created: true }),
-    expected: { data: { transfer: { entry_id: UUID_A, entry_no: 1, period_id: UUID_B, created: true } } },
+    expected: { data: { transfer: { entryId: UUID_A, entryNo: 1, periodId: UUID_B, created: true } } },
   },
   {
     name: 'やり直しの結び',

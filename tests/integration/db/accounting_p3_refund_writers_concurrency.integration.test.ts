@@ -7,9 +7,17 @@ import { hBegin, hResult } from './helpers/group-h-refund-fixtures';
 import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
 
 // 計画3 Task 3（S17）の並行の試験。2つの接続でコミットまで流す（使い捨ての手元の DB だけ）。
+// 注文・返金・消せない仕訳の行をコミットして残すので、計画2の並行の試験と同じく ACCOUNTING_COMMIT_SUITE=1 で、2つの db reset の間に単独で流す。
+//   db reset; ACCOUNTING_COMMIT_SUITE=1 DATABASE_URL=... npx jest tests/integration/db/accounting_p3_refund_writers_concurrency --runInBand; db reset
 jest.setTimeout(120000);
 
+const COMMIT_SUITE = process.env.ACCOUNTING_COMMIT_SUITE === '1';
+
 describeLocalDb('FREQ-577-AC-09: S17 refund writers under concurrency', () => {
+  if (!COMMIT_SUITE) {
+    test.skip('ACCOUNTING_COMMIT_SUITE=1 未設定のためスキップ', () => {});
+    return;
+  }
   const clients: PgClient[] = [];
   const open = async () => { const c = await connectLocalDb(); clients.push(c); return c; };
   afterEach(async () => {

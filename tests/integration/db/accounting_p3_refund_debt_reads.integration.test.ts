@@ -263,6 +263,34 @@ describeLocalDb('S25 refund debt reads: controller only', (db) => {
     expect(await bankTransfer(db(), { ...base, amount: 10000, txn: 'IF-1' })).toMatchObject({ created: false });
   });
 
+  test('FREQ-579-AC-05: 普通の返品の借り（2130 return_refund）は結びを断り、同じ注文の出荷後の借り（refund_owed_post）を消さない。候補も出ない。出荷後の借りはこれまで通り結べる（P3-F2）', async () => {
+    const admin = await insertAccountingAdmin(db());
+    const d = await failedReturnDebt();
+    const orderId = d.orderId;
+    // 同じ注文の出荷後の返金 Y（失敗。引かれる前なので 4020／2130 refund_owed_post）と、成功した返金 P（候補になる）
+    const y = await seedCancelRefund(db(), orderId, null, 5000);
+    const p = await seedCancelRefund(db(), orderId, null, 5000);
+    const fact = async (id: string) => (await q('select pre_shipment_amount::int p, post_shipment_amount::int q from public.accounting_refund_facts where refund_id=$1', [id])).rows[0];
+    expect(await fact(y)).toEqual({ p: 0, q: 5000 });
+    expect(await fact(p)).toEqual({ p: 0, q: 5000 });
+    await failRefund(db(), y);
+    await succeedRefund(db(), p, { at: '2026-11-08T03:00:00Z' });
+    await postRefundEvents(db());
+    expect(await orderBalance(db(), orderId, '2130', 'return_refund')).toBe(16875);
+    expect(await orderBalance(db(), orderId, '2130', 'refund_owed_post')).toBe(5000);
+    // 普通の返品の借り X: 断る（残高の合計は足りるので、断りが無ければ Y の借りを減らしてしまう形）。候補も出ない
+    expect(await candidatesOf(d.refundId)).toEqual([]);
+    expect(await fails(() => settleOwed(db(), admin, d.refundId, p))).toMatchObject({ code: '22023', message: 'ACCOUNTING_ARGUMENT_INVALID' });
+    expect(await orderBalance(db(), orderId, '2130', 'refund_owed_post')).toBe(5000);
+    expect(await orderBalance(db(), orderId, '2130', 'return_refund')).toBe(16875);
+    expect((await q('select count(*)::int n from public.accounting_refund_settlements where owed_refund_id = $1', [d.refundId])).rows[0].n).toBe(0);
+    // 出荷後の借り Y は、P で結べる
+    expect((await candidatesOf(y)).map((r) => r.refund_id)).toEqual([p]);
+    expect(await settleOwed(db(), admin, y, p)).toMatchObject({ pre_amount: 0, post_amount: 5000, replayed: false });
+    expect(await orderBalance(db(), orderId, '2130', 'refund_owed_post')).toBe(0);
+    expect(await orderBalance(db(), orderId, '2130', 'return_refund')).toBe(16875);
+  });
+
   test('FREQ-579-AC-04: 借りの一覧の行に event_id と event_kind がある', async () => {
     const f = await seedRefundFlow(db(), false, 2);
     await postOrderPayment(db(), f.orderId);

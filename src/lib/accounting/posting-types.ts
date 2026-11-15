@@ -92,7 +92,9 @@ export type PostingSource =
 	| 'return'
 	| 'refund_cancel'
 	| 'refund_bank'
-	| 'refund_settle';
+	| 'refund_settle'
+	/** 手で入れた仕訳と結んで待ちを閉じた後（止まっていた取り消しの確定が進む）。 */
+	| 'pending_link';
 
 /** 計上待ちの一覧の1ページ。`byReason` は未解決の理由ごとの件数。 */
 export type PendingEventsPage = {

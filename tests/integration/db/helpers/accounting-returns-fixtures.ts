@@ -855,3 +855,32 @@ export async function pinAccountingS25Baseline(client: PgClient): Promise<void> 
 	await client.query('drop table if exists pg_temp.accounting_s25_baseline');
 	await client.query(pin);
 }
+
+// ---- 最終レビューの直し（S26。返送不要の返品・普通の返品の借りの結びの断り・返品の返金待ちの負）の道具 ----
+
+const s26Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p3_final_fixes.sql'));
+/** 計画3 S26（最終レビューの直し）の移行の本文（無ければ空で、原文の確かめが目に見えて落ちる）。 */
+export const ACCOUNTING_S26_SQL = s26Files.length === 1 ? fs.readFileSync(path.join(directory, s26Files[0]), 'utf8') : '';
+export const ACCOUNTING_S26_FILES = s26Files;
+
+/** S26 の `-- ACC_S26_<name>_BEGIN` と `-- ACC_S26_<name>_END` の間。 */
+export function accountingS26Section(name: 'BODY' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S26_SQL.split(`-- ACC_S26_${name}_BEGIN\n`)[1]?.split(`-- ACC_S26_${name}_END`)[0] ?? '';
+}
+
+/** S26 の比べる元の控え（本文の最初の CREATE TEMP TABLE と INSERT）を、呼ぶ取引の中で作り直す。 */
+export async function pinAccountingS26Baseline(client: PgClient): Promise<void> {
+	const pin = accountingS26Section('BODY').split('\n-- 1. A return that sends nothing back')[0];
+	await client.query('drop table if exists pg_temp.accounting_s26_baseline');
+	await client.query(pin);
+}
+
+/**
+ * 返品を「品を送り返さない返品」（return_method not_required）にする。承認の後は返送の方法を変えられないので、守りの1本を
+ * この取引の中だけ外して直す（取引は呼び出し側が巻き戻す。dropDiscountSnapshot と同じ形）。
+ */
+export async function setReturnNotRequired(client: PgClient, returnId: string): Promise<void> {
+	await client.query('alter table public.order_returns disable trigger order_returns_guard');
+	await client.query("update public.order_returns set return_method = 'not_required' where id = $1", [returnId]);
+	await client.query('alter table public.order_returns enable trigger order_returns_guard');
+}

@@ -707,6 +707,25 @@ describe('計上待ちのタブ', () => {
 		spy.mockRestore();
 	});
 
+	it('FREQ-578-AC-09: 返品の返金待ちがマイナスの異常（return_refund_negative_balance）は、二重に返していないか確かめるやさしい文で出す', async () => {
+		serve({
+			events: [],
+			deferred: {
+				orders: [],
+				next_after_order: null,
+				total_balance: 0,
+				anomalies: [{ order_id: uuid(5), order_number: 'ORD-EEEE5555', balance: 0, reason: 'return_refund_negative_balance' }],
+			},
+		});
+		render(<PendingView />);
+		const panel = await screen.findByRole('region', { name: '前受金の確認' });
+		const list = await within(panel).findByRole('list', { name: '前受金の異常' });
+		const [item] = within(list).getAllByRole('listitem');
+		expect(item.textContent).toContain('ORD-EEEE5555');
+		expect(item.textContent).toContain('二重に返していないか確かめてください');
+		expect(item.textContent).not.toMatch(/[!！]/);
+	});
+
 	it('FREQ-569-AC-04: 同じ注文で同じ理由の異常が2行返っても（返品を2つ0円で終えた時）、どちらも出し、行の鍵が重ならない', async () => {
 		const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 		serve({

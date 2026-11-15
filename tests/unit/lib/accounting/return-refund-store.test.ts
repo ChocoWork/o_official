@@ -174,7 +174,7 @@ describe('振込の記録・結び', () => {
 
 	test('FREQ-579-AC-04: 振込の記録は DB の入口へ渡し、残高を超える額と別の内容の再送は 409 の固定コード', async () => {
 		rpc.mockResolvedValue(ok({ entry_id: uuid(1), entry_no: 3, period_id: uuid(2), created: true }));
-		await expect(store.recordRefundBankTransfer(client, ACTOR, bank)).resolves.toEqual({ entry_id: uuid(1), entry_no: 3, period_id: uuid(2), created: true });
+		await expect(store.recordRefundBankTransfer(client, ACTOR, bank)).resolves.toEqual({ entryId: uuid(1), entryNo: 3, periodId: uuid(2), created: true });
 		expect(rpc).toHaveBeenCalledWith('admin_record_refund_bank_transfer', {
 			_actor_id: ACTOR,
 			_order_id: uuid(4),
@@ -193,6 +193,25 @@ describe('振込の記録・結び', () => {
 		const error = await store.recordRefundBankTransfer(client, ACTOR, bank).catch((e: unknown) => e);
 		expect(error).toMatchObject({ status: 400, code: 'ACCOUNTING_ARGUMENT_INVALID' });
 		expect(JSON.stringify(error)).not.toContain('dispute_confirmed');
+	});
+
+	test('FREQ-579-AC-04: 振込の応答は4つの鍵だけを持つ物に絞り（entryId・entryNo・periodId・created）、鍵が増える・消える・型が違う応答は500にして画面へ通さない', async () => {
+		const good = { entry_id: uuid(1), entry_no: 3, period_id: uuid(2), created: false };
+		rpc.mockResolvedValue(ok(good));
+		await expect(store.recordRefundBankTransfer(client, ACTOR, bank)).resolves.toEqual({ entryId: uuid(1), entryNo: 3, periodId: uuid(2), created: false });
+		for (const bad of [
+			{ ...good, extra: 1 },
+			{ entry_id: good.entry_id, entry_no: good.entry_no, period_id: good.period_id },
+			{ ...good, created: 'false' },
+			{ ...good, entry_id: 'not-a-uuid' },
+			{ ...good, entry_no: 1.5 },
+			{ ...good, entry_no: null },
+			[good],
+			null,
+		]) {
+			rpc.mockResolvedValue(ok(bad));
+			await expect(store.recordRefundBankTransfer(client, ACTOR, bank)).rejects.toMatchObject({ status: 500 });
+		}
 	});
 
 	test('FREQ-579-AC-05: 結びは DB の入口へ渡し、借りの仕訳がまだ・残高を超える時は 409、違う元の返金は 400', async () => {
@@ -217,6 +236,12 @@ describe('振込の記録・結び', () => {
 		await expect(store.settleOwedByRefund(client, ACTOR, body)).rejects.toMatchObject({ status: 400, code: 'ACCOUNTING_ARGUMENT_INVALID' });
 		rpc.mockResolvedValue(fail('ACCOUNTING_REQUEST_KEY_CONFLICT', '23505'));
 		await expect(store.settleOwedByRefund(client, ACTOR, body)).rejects.toMatchObject({ status: 409, code: 'ACCOUNTING_REQUEST_KEY_CONFLICT' });
+	});
+	test('FREQ-579-AC-05: 普通の返品の借り（2130 return_refund）を結ぶ要求を DB が断ると（ACCOUNTING_ARGUMENT_INVALID・DETAIL settle_plain_return）400 の固定コードで、DETAIL の字を応答へ出さない（P3-F2）', async () => {
+		rpc.mockResolvedValue(fail('ACCOUNTING_ARGUMENT_INVALID', '22023', 'settle_plain_return'));
+		const error = await store.settleOwedByRefund(client, ACTOR, { owedRefundId: uuid(2), payingRefundId: uuid(3), requestKey: KEY }).catch((e: unknown) => e);
+		expect(error).toMatchObject({ status: 400, code: 'ACCOUNTING_ARGUMENT_INVALID' });
+		expect(JSON.stringify(error)).not.toContain('settle_plain_return');
 	});
 });
 

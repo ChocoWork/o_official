@@ -9,7 +9,6 @@ import {
   hasArray,
   inputClassName,
   labelClassName,
-  LIST_RESTART_CODE,
   noteClassName,
   Section,
   tableClassName,
@@ -69,7 +68,9 @@ const RANGE_TOO_LONG_TEXT = `期間は${MAX_MONTHS}か月までです。`;
 const RANGE_REVERSED_TEXT = "終わりの月は始まりの月と同じか後にしてください。";
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 const MONTH_FORMAT_TEXT = "月は 2026-10 の形で入れてください。";
-const RESTART_TEXT = "一覧が変わったため、最初から読み直しました。";
+/** 課税・免税の区分の文。区分が分からない（元の売上の仕訳がまだ無いなど）時は「不明」（設計 5-j、FREQ-583-REQ-01） */
+const PERIOD_STATUS_TEXT: Readonly<Record<"taxable" | "exempt", string>> = { taxable: "課税", exempt: "免税" };
+const periodStatusText = (status: "taxable" | "exempt" | null | undefined): string => (status ? PERIOD_STATUS_TEXT[status] : "不明");
 
 function previousMonth(today: string): string {
   const [year, month] = today.split("-").map(Number);
@@ -90,7 +91,6 @@ export function TaxRefundsPanel({ today: todayProp }: { today?: string }): React
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [restartNote, setRestartNote] = useState(false);
   // 期間を替えた後に、古い答えで上書き・追記しない
   const ticket = useTicket();
 
@@ -112,7 +112,6 @@ export function TaxRefundsPanel({ today: todayProp }: { today?: string }): React
     setRows([]);
     setShownRange(null);
     setError(null);
-    setRestartNote(false);
     setLoading(false);
     setLoadingMore(false);
   };
@@ -122,7 +121,6 @@ export function TaxRefundsPanel({ today: todayProp }: { today?: string }): React
     const mine = ticket.next();
     setLoading(true);
     setError(null);
-    setRestartNote(false);
     const result = await getAccountingData<TaxRefundsPage>("tax-refunds", { from, to, limit: PAGE_LIMIT }, (data) => hasArray(data, "rows"));
     if (!ticket.isCurrent(mine)) return;
     setLoading(false);
@@ -151,13 +149,7 @@ export function TaxRefundsPanel({ today: todayProp }: { today?: string }): React
     if (!ticket.isCurrent(mine)) return;
     setLoadingMore(false);
     if (!result.ok) {
-      if (result.code === LIST_RESTART_CODE) {
-        // 続きの目印が古い。最初から読み直す
-        setRestartNote(true);
-        await show();
-        setRestartNote(true);
-        return;
-      }
+      // 続きの目印は日と行の鍵だけ（一覧が変わっても目印は古くならない）ので、やり直しの合図は無い。不正な目印は400の固定の文
       setError(result.message);
       return;
     }
@@ -210,7 +202,6 @@ export function TaxRefundsPanel({ today: todayProp }: { today?: string }): React
           {error}
         </p>
       ) : null}
-      {restartNote ? <p className={noteClassName}>{RESTART_TEXT}</p> : null}
 
       {page ? (
         <div className="space-y-3">
@@ -240,7 +231,7 @@ export function TaxRefundsPanel({ today: todayProp }: { today?: string }): React
             <p className={noteClassName}>この期間の返金はありません</p>
           ) : (
             <div className="overflow-x-auto">
-              <table aria-label="消費税用の返金の一覧" className={`${tableClassName} min-w-[760px]`}>
+              <table aria-label="消費税用の返金の一覧" className={`${tableClassName} min-w-[960px]`}>
                 <thead>
                   <tr className="border-b border-[#d4d4d4] text-left text-[#474747]">
                     <th scope="col" className="py-2 pr-3 font-normal">返金した日</th>
@@ -250,6 +241,8 @@ export function TaxRefundsPanel({ today: todayProp }: { today?: string }): React
                     <th scope="col" className="py-2 pr-3 text-right font-normal">返金の額</th>
                     <th scope="col" className="py-2 pr-3 text-right font-normal">税額</th>
                     <th scope="col" className="py-2 pr-3 font-normal">元の売上の日</th>
+                    <th scope="col" className="py-2 pr-3 font-normal">元の売上の期間</th>
+                    <th scope="col" className="py-2 pr-3 font-normal">返金の期間</th>
                     <th scope="col" className="py-2 font-normal">対象外の理由</th>
                   </tr>
                 </thead>
@@ -263,6 +256,8 @@ export function TaxRefundsPanel({ today: todayProp }: { today?: string }): React
                       <td className="py-2 pr-3 text-right">{currency(row.amount)}</td>
                       <td className="py-2 pr-3 text-right">{currency(row.taxAmount)}</td>
                       <td className="py-2 pr-3">{dayLabel(row.originalSaleDate)}</td>
+                      <td className="py-2 pr-3">{periodStatusText(row.salePeriodStatus)}</td>
+                      <td className="py-2 pr-3">{periodStatusText(row.refundPeriodStatus)}</td>
                       <td className="py-2">{EXCLUSION_TEXT[row.exclusion]}</td>
                     </tr>
                   ))}

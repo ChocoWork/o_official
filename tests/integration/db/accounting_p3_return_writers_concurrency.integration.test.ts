@@ -5,9 +5,17 @@ import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-
 import { buildReceivePricing, ubReceive, type ReceiveInput } from './helpers/unit-binding-receive';
 
 // 計画3 Task 4（S18）の並行の試験。2つの接続でコミットまで流す（使い捨ての手元の DB だけ）。
+// 注文・受け取り・返品の事実をコミットして残すので、計画2の並行の試験と同じく ACCOUNTING_COMMIT_SUITE=1 で、2つの db reset の間に単独で流す。
+//   db reset; ACCOUNTING_COMMIT_SUITE=1 DATABASE_URL=... npx jest tests/integration/db/accounting_p3_return_writers_concurrency --runInBand; db reset
 jest.setTimeout(120000);
 
+const COMMIT_SUITE = process.env.ACCOUNTING_COMMIT_SUITE === '1';
+
 describeLocalDb('FREQ-578-AC-07: S18 return facts under concurrency', () => {
+	if (!COMMIT_SUITE) {
+		test.skip('ACCOUNTING_COMMIT_SUITE=1 未設定のためスキップ', () => {});
+		return;
+	}
 	const clients: PgClient[] = [];
 	const open = async () => { const c = await connectLocalDb(); clients.push(c); return c; };
 	const returnIds: string[] = [];

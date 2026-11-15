@@ -48,9 +48,10 @@ const PAGE_LIMIT = 100;
 const ANOMALY_TEXT: Readonly<Record<string, string>> = {
   negative_balance: "前受金の残りがマイナスです",
   balance_after_all_shipped_or_refunded: "すべて出荷または返金したのに、前受金が残っています",
-  // 計画3: 返品の返金の異常。同じ注文が2つの理由で出ることがある（一覧の鍵は注文の番号と理由）
+  // 計画3: 返品の返金の異常。同じ注文が複数の理由で出ることがある（一覧の鍵は注文の番号と理由）
   return_refund_retried_during_error: "返金が Stripe に届かないまま、同じ返品の返金をやり直しました。前受金の残りを確かめてください",
   return_waived_with_failed_refund: "失敗した返金が残っているのに、返品の返金を0円で終えています。前受金の残りを確かめてください",
+  return_refund_negative_balance: "返品の返金待ちがマイナスです。振込と Stripe の返金が重なって、二重に返していないか確かめてください",
 };
 
 /** 課税事業者になる期間の初めの前の日。課税の期間が無ければ null。 */

@@ -26,7 +26,7 @@ import {
 	topupBodySchema,
 	yearEndCheckBodySchema,
 } from '@/lib/accounting/posting-schema';
-import { runAccountingPosting } from '@/lib/accounting/posting-runner';
+import { runAccountingPosting, scheduleAccountingPosting } from '@/lib/accounting/posting-runner';
 import {
 	assignDisputeConfirmed,
 	checkYearEndShipment,
@@ -106,9 +106,12 @@ export function handlePendingResolve(request: Request, context: AccountingContex
 	});
 }
 
-/** 手で入れる待ちを、手で入れた仕訳と結んで閉じる。監査は待ちの番号と結果だけ（メモの本文・仕訳の番号・額は入れない）。 */
-export function handlePendingLinkEntry(request: Request, context: AccountingContext): Promise<Response> {
-	return handleAccountingWrite(request, context, {
+/**
+ * 手で入れる待ちを、手で入れた仕訳と結んで閉じる。監査は待ちの番号と結果だけ（メモの本文・仕訳の番号・額は入れない）。
+ * 結んで閉じると止まっていた取り消しの確定の仕訳が進められるので、成功（2xx）の時だけ応答の後に計上係を流す（失敗は握る。応答は変えない）。
+ */
+export async function handlePendingLinkEntry(request: Request, context: AccountingContext): Promise<Response> {
+	const response = await handleAccountingWrite(request, context, {
 		label: label('POST', 'pending-events/[id]/link-entry'),
 		action: 'admin.accounting.pending.link_entry',
 		permission: ENTRIES_CORRECT,
@@ -121,6 +124,8 @@ export function handlePendingLinkEntry(request: Request, context: AccountingCont
 		audit: (_result, id) => ({ resourceId: id, metadata: { event_id: id ?? undefined, result: 'linked' } }),
 		respond: async (_client, event) => ({ event }),
 	});
+	if (response.status >= 200 && response.status < 300) scheduleAccountingPosting('pending_link');
+	return response;
 }
 
 /** 計上係を今すぐ流す。監査は件数だけ。 */

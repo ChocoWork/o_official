@@ -455,8 +455,16 @@ describeLocalDb('S22 dispute offset: controller only', (db) => {
     expect(await pendingOf('stripe_disputes', d.disputeId)).toBeUndefined();
   });
 
-  /** 今の時刻の1分前（日本の今日）の確定の知らせ。決定の日（今日）と同じ日になる。 */
-  const loseToday = (d: DisputeFlow) => d.lose(new Date(Date.now() - 60_000).toISOString());
+  /**
+   * 今の時刻の1分前（日本の今日）の確定の知らせ。決定の日（今日）と同じ日になる。日本の0時の直後の1分は、1分前が昨日に落ちて
+   * 同じ日でなくなるので、日本の今日の0時1秒より前にならない（それでも今より前）ように押さえる（最終レビュー A-M2）。
+   */
+  const loseToday = async (d: DisputeFlow) => {
+    const at = (await q(`select to_char(greatest(now() - interval '60 seconds',
+      (date_trunc('day', now() at time zone 'Asia/Tokyo') at time zone 'Asia/Tokyo') + interval '1 second') at time zone 'UTC',
+      'YYYY-MM-DD"T"HH24:MI:SS"Z"') as at`)).rows[0].at as string;
+    return d.lose(at);
+  };
 
   test('FREQ-581-AC-05: 確定の知らせが届いて確定の仕訳がまだ無い同じ日に返品を0円で終えると、0円の終わりはふつうに入り、確定はそれを待って返金待ちに数えて入り、待ちは何も残らない', async () => {
     const d = await seedDisputeFlow(db(), { snapshot: false });

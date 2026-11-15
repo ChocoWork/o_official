@@ -24,7 +24,6 @@ const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const timestamp = z.string().refine((value) => !Number.isNaN(Date.parse(value)));
 const count = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const signed = z.number().int().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER);
-const objectSchema = z.record(z.string(), z.unknown());
 
 // ---- 届いた日 ----
 
@@ -333,13 +332,31 @@ export async function decideRefundCancellation(client: SupabaseClient, actorId: 
 
 // ---- 振込の記録・結び ----
 
+const bankTransferSchema = z
+	.object({
+		entry_id: uuid,
+		entry_no: signed,
+		period_id: uuid,
+		created: z.boolean(),
+	})
+	.strict();
+
+export type RecordedRefundBankTransfer = {
+	entryId: string;
+	entryNo: number;
+	periodId: string;
+	/** 同じ銀行の取引の番号・元の再送は、前の結果で `false`（何も足していない）。 */
+	created: boolean;
+};
+
 /**
  * 振込で返した分を記録する。同じ番号・同じ元の再送は何も足さず前の結果（`created: false`）、内容が違うと
  * `ACCOUNTING_DEDUPE_CONTENT_MISMATCH`、借りの残高を超える額は `ACCOUNTING_EVENT_NOT_POSTABLE`。
+ * 応答は4つの鍵だけを持つ物に絞る（鍵が増える・消える・型が違うと失敗にする。画面は `created` で重複の文を出す）。
  */
-export async function recordRefundBankTransfer(client: SupabaseClient, actorId: string, input: RefundBankTransferBody): Promise<Record<string, unknown>> {
-	return parse(
-		objectSchema,
+export async function recordRefundBankTransfer(client: SupabaseClient, actorId: string, input: RefundBankTransferBody): Promise<RecordedRefundBankTransfer> {
+	const row = parse(
+		bankTransferSchema,
 		await rpc(client, 'admin_record_refund_bank_transfer', {
 			_actor_id: actorId,
 			_order_id: input.orderId,
@@ -351,6 +368,7 @@ export async function recordRefundBankTransfer(client: SupabaseClient, actorId: 
 			_request_key: input.requestKey,
 		}),
 	);
+	return { entryId: row.entry_id, entryNo: row.entry_no, periodId: row.period_id, created: row.created };
 }
 
 const settlementSchema = z
@@ -377,7 +395,10 @@ export type SettledOwedRefund = {
 	replayed: boolean;
 };
 
-/** やり直しの返金で借りを結ぶ。借りの仕訳がまだ・残高を超える時は `ACCOUNTING_EVENT_NOT_POSTABLE` の409、違う元の返金は400。 */
+/**
+ * やり直しの返金で借りを結ぶ。借りの仕訳がまだ・残高を超える時は `ACCOUNTING_EVENT_NOT_POSTABLE` の409、違う元の返金は400。
+ * 普通の返品の返金の借り（届いた日の返品の返金待ち。振込で返す）と発送前の取り消しの借りは、DB が `ACCOUNTING_ARGUMENT_INVALID` の400で断る（画面は結ぶ操作を出さない）。
+ */
 export async function settleOwedByRefund(client: SupabaseClient, actorId: string, input: RefundSettlementBody): Promise<SettledOwedRefund> {
 	const row = parse(
 		settlementSchema,

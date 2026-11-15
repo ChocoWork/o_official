@@ -51,7 +51,7 @@ describe('POST /api/admin/accounting/refund-bank-transfers', () => {
 		seq.length = 0;
 		const response = await post();
 		expect(response.status).toBe(200);
-		expect((await read(response)).data).toEqual({ transfer: created });
+		expect((await read(response)).data).toEqual({ transfer: { entryId: uuid(22), entryNo: 5, periodId: uuid(23), created: true } });
 		expect(seq).toEqual(['auth', 'csrf', 'admin.accounting.write:ip', 'admin.accounting.write:actor', 'rpc:admin_record_refund_bank_transfer', 'audit']);
 		expect(rpcImpl).toHaveBeenCalledWith('admin_record_refund_bank_transfer', {
 			_actor_id: ACTOR, _order_id: ORDER, _origin: 'pre_shipment', _amount: 4321, _bank_date: TODAY, _bank_txn_no: 'BANK-20261114-77', _note: '振込で返金 SECRET-NOTE', _request_key: KEY,
