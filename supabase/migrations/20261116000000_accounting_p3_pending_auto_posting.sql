@@ -482,6 +482,7 @@ BEGIN
                   _source_recorded_at => LEAST(v_fact.created_at, pg_catalog.clock_timestamp()));
                 v_entry_id := (v_result ->> 'entry_id')::uuid;
                 IF (v_result ->> 'created')::boolean THEN v_posted := v_posted + 1; END IF;
+                -- 1470 dispute_refund_overlap_review is not read: this entry never touches 1470.
                 -- Read after the entry, in statements of their own (a STABLE function reads the start of its statement).
                 v_check_day := private.accounting_order_return_payable(v_fact.order_id, v_date);
                 v_check_now := private.accounting_order_return_payable(v_fact.order_id, NULL);

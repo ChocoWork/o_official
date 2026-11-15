@@ -488,8 +488,10 @@ describeLocalDb('FREQ-643: S27 return poster dispute_lost (Task 2)', (db) => {
     test('FREQ-643-AC-02: (a) 返品が引かれた額と同じ（G=10,000・S=10,000）なら入れず no_revenue で閉じる（detail {}・resolved_entry_id NULL）。入れていれば 2130 は −10,000 だった', async () => {
       const s = await lostOrder({ goods: 10000, s: 10000, pay: 10000 });
       expect(await snap(s.o.orderId)).toEqual({ payable: 0, d4020: 10000, c4050: 0, review: 0, net: 0 });
+      expect(await pendingBal(s.dp)).toBe(0);
       const d = await seedZeroClose(db(), s.o, 10000, 0, DAY.d8);
       expect(await runReturn()).toMatchObject({ posted: 0, parked_new: 1 });
+      expect(await pendingBal(s.dp)).toBe(0);
       expect(await entryOf(d.factId)).toBeUndefined();
       const row = (await decisionRow(d.factId))!;
       expect(row).toMatchObject({ reason: 'no_revenue', detail: {}, resolved_entry_id: null, order_id: s.o.orderId });
@@ -509,6 +511,7 @@ describeLocalDb('FREQ-643: S27 return poster dispute_lost (Task 2)', (db) => {
       expect(await entryOf(d.factId)).toBeUndefined();
       expect(await decisionRow(d.factId)).toMatchObject({ reason: 'no_revenue', detail: {}, resolved_entry_id: null });
       expect(await snap(s.o.orderId)).toEqual({ payable: 0, d4020: 10000, c4050: 1000, review: 0, net: 1000 });
+      expect(await pendingBal(s.dp)).toBe(0);
       expect(Number((await q(`select coalesce(sum(l.debit - l.credit), 0) as b from public.accounting_journal_lines l
         join public.accounting_journal_entries e on e.id = l.entry_id where l.account_code = '7530' and e.event_kind = 'dispute_event' and e.source_id = $1`, [s.dp])).rows[0].b)).toBe(1000);
     });
@@ -708,26 +711,27 @@ describeLocalDb('FREQ-643: S27 return poster dispute_lost (Task 2)', (db) => {
       const closeB = await seedZeroClose(db(), b, 10000, 0, DAY.d8);
       await runReturn();
       expect(await decisionRow(closeB.factId)).toMatchObject({ reason: 'dispute_return_refund_pending', detail: { why: 'return' }, resolved_at: null });
-      // day9: A の決定（lane 0）が B の行（lane 1）より先に評価される。A は B を待ち、B が入る
+      // day9: A の決定。day10 の取り下げ L（10,000円）は、この流しの前に入っている（L が先の形）
       const closeA = await seedZeroClose(db(), a, 10000, 0, DAY.d9);
+      await postAutoEntry(db(), { date: DAY.d10, kind: 'dispute_event', parts: [w.disputeId, 'reversal', 'txn_late'], sourceTable: 'stripe_disputes', sourceId: w.disputeId,
+        lines: [{ account: '1160', debit: 10000 }, { account: '2130', credit: 10000, sub: 'return_refund', orderId: a.orderId }] });
+      expect(await payableOf(a.orderId, DAY.d8)).toBe(10000);
+      expect(await payableOf(a.orderId, null)).toBe(20000);
+      // A の決定（lane 0）が B の行（lane 1）より先に評価される。A は B を待ち、B は P(day8)=10,000・P(今)=20,000 で w=10,000 を入れる
       await runReturn();
       expect(await decisionRow(closeA.factId)).toMatchObject({ reason: 'dispute_return_refund_pending', detail: { why: 'return' }, resolved_at: null });
+      expect(await entryOf(closeA.factId)).toBeUndefined();
       const entryB = (await entryOf(closeB.factId))!;
       expect(entryB.entry_date).toBe(DAY.d8);
       expect(shapeOf(await linesOf(entryB.id))).toEqual([['2130', 10000, 0, 'return_refund'], ['4020', 0, 10000, null]]);
-      expect((await snap(a.orderId)).payable).toBe(0);
-      // 次の流しで A（P(day9) = 0）は入れず、閉じる
+      expect((await snap(a.orderId)).payable).toBe(10000);
+      // 次の流しで A（P(day9) = 0）は入れず、閉じる。2130 は L の借りの 10,000 のまま
       await runReturn();
       expect(await entryOf(closeA.factId)).toBeUndefined();
       expect(await decisionRow(closeA.factId)).toMatchObject({ reason: 'no_revenue', detail: {}, resolved_entry_id: null });
-      expect((await snap(a.orderId)).payable).toBe(0);
-      // day10: 取り下げ L（10,000円）。2130 は L の借りで 10,000
-      await postAutoEntry(db(), { date: DAY.d10, kind: 'dispute_event', parts: [w.disputeId, 'reversal', 'txn_late'], sourceTable: 'stripe_disputes', sourceId: w.disputeId,
-        lines: [{ account: '1160', debit: 10000 }, { account: '2130', credit: 10000, sub: 'return_refund', orderId: a.orderId }] });
       expect((await snap(a.orderId)).payable).toBe(10000);
     });
-
-    test('FREQ-643-AC-05: 逆の順（A を先に day9、B を後に day8 で入れる）の比べ。両方入ると 2130 は L の後に 0 で、L の借りが消える（日の早い物が先の待ちが止める形）', async () => {
+    test('FREQ-643-AC-05: 逆の順（A を先に day9、B を後に day8 で入れる。L が先の形）の比べ。両方入ると 2130 は L の後に 0 で、L の借りが消える（日の早い物が先の待ちが止める形）', async () => {
       const a = await seedAutoOrder(db(), [10000, 10000]);
       const orderId = a.orderId;
       await postPayableCredit(db(), orderId, 10000, DAY.d1);
@@ -742,6 +746,50 @@ describeLocalDb('FREQ-643: S27 return poster dispute_lost (Task 2)', (db) => {
       await postAutoEntry(db(), { date: DAY.d10, kind: 'dispute_event', parts: [dp, 'reversal', 'txn_late'], sourceTable: 'stripe_disputes', sourceId: dp,
         lines: [{ account: '1160', debit: 10000 }, { account: '2130', credit: 10000, sub: 'return_refund', orderId }] });
       expect((await snap(orderId)).payable).toBe(0);
+    });
+
+    /**
+     * 取り消し d1 の C は入っている注文（G=10,000・S=4,000・C pay 4,000）に、取り消し d2（day3 に引かれ day5 に負け、C は未計上）と、
+     * 負けた日より後の day6 の返金なしの決定の仕訳（返品 B。取り消されていない）を足す。d2 の C の鍵の日は day6。
+     */
+    async function secondDispute() {
+      const s = await lostOrder({ goods: 10000, s: 4000, pay: 4000 });
+      const b = await seedAnotherReturn(db(), s.o, 2);
+      await seedArrival(db(), b, 1000, 0, DAY.d1);
+      await runReturn();
+      const closeB = await seedZeroClose(db(), b, 1000, 0, DAY.d6);
+      await postAutoEntry(db(), { date: DAY.d6, kind: 'return_amount_decided', parts: [closeB.factId], sourceTable: 'accounting_return_facts', sourceId: closeB.factId,
+        lines: [{ account: '2130', debit: 1000, sub: 'return_refund', orderId: s.o.orderId }, { account: '4020', credit: 1000, orderId: s.o.orderId }] });
+      const d2 = await seedWithdrawn(db(), s.o.orderId, 3000, at(DAY.d3));
+      await seedLost(db(), d2.disputeId, at(DAY.d5));
+      return { ...s, d2: d2.disputeId };
+    }
+
+    test('FREQ-643-AC-05: 別の取り消し d2 の C が未計上で、その負けた日より後の返金なしの決定の仕訳（day6）があると、それより後の日（day8）の決定は dispute_return_refund_pending（why return）で待つ', async () => {
+      const s = await secondDispute();
+      const x = await seedZeroClose(db(), s.o, 10000, 0, DAY.d8);
+      await runReturn();
+      expect(await decisionRow(x.factId)).toMatchObject({ reason: 'dispute_return_refund_pending', detail: { why: 'return' }, resolved_at: null });
+      expect(await entryOf(x.factId)).toBeUndefined();
+      expect((await snap(s.o.orderId)).payable).toBe(6000);
+    });
+
+    test('FREQ-643-AC-05: その仕訳と同じ日（day6）の決定は、決定が確定より先の順なので d2 の C を待たず、w で入る', async () => {
+      const s = await secondDispute();
+      const x = await seedZeroClose(db(), s.o, 10000, 0, DAY.d6);
+      await runReturn();
+      expect(await decisionRow(x.factId)).toBeUndefined();
+      expect(shapeOf(await linesOf((await entryOf(x.factId))!.id))).toEqual([['2130', 6000, 0, 'return_refund'], ['4020', 0, 6000, null]]);
+    });
+
+    test('FREQ-643-AC-05: d2 の C が済んでいる（no_revenue で閉じた）なら数えず、day8 の決定は待たずに入る', async () => {
+      const s = await secondDispute();
+      await q("select private.accounting_park_event('dispute_event', 'stripe_disputes', $1, $2::uuid, 'no_revenue', '{}'::jsonb)", [s.d2, s.o.orderId]);
+      await q("select private.accounting_unpark_event('dispute_event', 'stripe_disputes', $1, null)", [s.d2]);
+      const x = await seedZeroClose(db(), s.o, 10000, 0, DAY.d8);
+      await runReturn();
+      expect(await decisionRow(x.factId)).toBeUndefined();
+      expect(shapeOf(await linesOf((await entryOf(x.factId))!.id))).toEqual([['2130', 6000, 0, 'return_refund'], ['4020', 0, 6000, null]]);
     });
 
     /** 注文 [10000, 10000]・返品 A・B の到着 day1・C（S=4,000）・A の決定 day8（返品 B も決めて v_left は0）。 */
@@ -778,7 +826,7 @@ describeLocalDb('FREQ-643: S27 return poster dispute_lost (Task 2)', (db) => {
         expect(lines).toEqual([['2130', lines[0][1], 0, 'return_refund'], ['4020', 0, lines[0][1], null]]);
         amounts.push(lines[0][1] as number);
       }
-      expect(amounts.sort()).toEqual([10000, 6000].sort());
+      expect([...amounts].sort((x, y) => x - y)).toEqual([6000, 10000]);
       expect((await snap(s.o.orderId)).payable).toBe(0);
     });
 
