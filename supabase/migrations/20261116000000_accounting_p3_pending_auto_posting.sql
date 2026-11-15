@@ -660,6 +660,8 @@ DECLARE
   v_fix_sum bigint;
   v_fix_last date;
   v_fix_now bigint;
+  v_wait_pay bigint;
+  v_wait_r bigint;
 -- ACC_P3_END
 BEGIN
   IF _limit IS NULL OR _limit < 1 OR _limit > 200 THEN
@@ -1002,6 +1004,28 @@ BEGIN
               v_reason := 'dispute_refund_overlap';
               v_detail := pg_catalog.jsonb_build_object('why', 'refund');
             ELSE
+              -- D13: when the card did not cover all of the returns payable (pay < R at the loss day), another return of the order whose
+              -- amount is not decided yet (the v_left of accounting_record_return_decision, as in the return poster) is waited for: a
+              -- refund of it later would drive 2130 below 0. When pay = R nothing waits (a later refund is a real double payment).
+              -- It stands after the refunds in flight and before the earlier-day key, the order of the return poster (spec 3-3).
+              SELECT o.pay INTO v_wait_pay FROM private.accounting_dispute_offset_amounts(v_order_id, v_date, v_amount) AS o;
+              v_wait_r := private.accounting_order_return_payable(v_order_id, v_date);
+              IF v_wait_pay < v_wait_r AND EXISTS (SELECT 1 FROM (SELECT DISTINCT o.return_id FROM public.accounting_return_facts AS o
+                    WHERE o.order_id = v_order_id) AS k
+                  WHERE COALESCE((SELECT pg_catalog.sum(f.goods_amount - f.fee_amount) FROM public.accounting_return_facts AS f
+                      WHERE f.return_id = k.return_id AND f.kind = 'arrival'), 0)
+                    + COALESCE((SELECT pg_catalog.sum(f.payable_delta) FROM public.accounting_return_facts AS f
+                      WHERE f.return_id = k.return_id AND f.kind = 'decision'), 0)
+                    - COALESCE((SELECT pg_catalog.sum(f.decided_amount) FROM public.accounting_return_facts AS f
+                      JOIN public.order_refunds AS rf ON rf.id = f.refund_id
+                      WHERE f.return_id = k.return_id AND f.kind = 'decision'
+                        AND NOT (rf.status = 'failed' OR (rf.status = 'canceled' AND EXISTS (SELECT 1 FROM public.accounting_refund_events AS x
+                          WHERE x.refund_id = rf.id AND x.state = 'abandoned')))), 0) > 0) THEN
+                v_reason := 'dispute_return_refund_pending';
+                v_detail := pg_catalog.jsonb_build_object('why', 'return');
+              END IF;
+            END IF;
+            IF v_reason IS NULL THEN
               -- The key day of this C: the day of the last 0 yen close entry after the loss day (not reversed).
               SELECT pg_catalog.max(e.entry_date) INTO v_close_last FROM public.accounting_journal_entries AS e
               JOIN public.accounting_return_facts AS f ON f.id::text = e.source_id
