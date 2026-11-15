@@ -2169,3 +2169,140 @@ describeLocalDb('FREQ-643: S27 order independence of C, the fix entries and the 
     await expectSame(mirror);
   });
 });
+
+// 計画 S27 Task 5 AC-11: この設計の仕訳（0円の終わりの決定・C・直し）を、今の一般の取り消し（public.admin_reverse_accounting_journal。service_role だけが呼べる）で取り消す。
+// 取り消した後も行は閉じたまま、計上係を流しても入れ直されず（印が残る）、残高が取り消し分だけ元に戻る。ROLLBACK の形。
+describeLocalDb('FREQ-643: S27 reversal of the auto entries (Task 5; FREQ-643-AC-11)', (db) => {
+  const q = (text: string, params?: unknown[]) => db().query(text, params);
+  beforeEach(async () => {
+    await q('begin');
+    await q('select pg_catalog.pg_advisory_xact_lock(190521,1)');
+    await setAsideExistingSlips(db());
+    await setCutoverForTest(db(), '2026-01-01');
+  });
+  afterEach(async () => { await q('rollback'); });
+
+  const DAY = { d1: '2026-11-01', d3: '2026-11-03', d5: '2026-11-05', d8: '2026-11-08' };
+  const at = (day: string) => `${day}T03:00:00Z`;
+  const runReturn = async () => (await q('select private.accounting_post_return_events(50) as r')).rows[0].r as Record<string, number>;
+  const runDisputes = async () => (await q('select private.accounting_post_dispute_events(50) as r')).rows[0].r as Record<string, number>;
+  const bal = async (orderId: string, account: string, sub?: string) => Number((await q(
+    `select coalesce(sum(l.debit - l.credit), 0) as b from public.accounting_journal_lines l
+     where l.order_id = $1 and l.account_code = $2 and ($3::text is null or l.sub_account = $3)`, [orderId, account, sub ?? null])).rows[0].b);
+  const snap = async (orderId: string) => ({
+    payable: 0 - (await bal(orderId, '2130', 'return_refund')),
+    d4020: await bal(orderId, '4020'),
+    net: 0 - ((await bal(orderId, '4010')) + (await bal(orderId, '4020')) + (await bal(orderId, '4050'))),
+  });
+  /** 仕訳の行の 科目ごとの 借方 − 貸方 の合計（0 でない科目だけ）。 */
+  const sumOf = async (...entryIds: string[]) => Object.fromEntries((await q(
+    `select account_code || coalesce('(' || sub_account || ')', '') as a, sum(debit - credit)::int as b from public.accounting_journal_lines
+     where entry_id = any($1::uuid[]) group by 1 having sum(debit - credit) <> 0 order by 1`, [entryIds])).rows.map((r) => [r.a as string, Number(r.b)]));
+  const entryCount = async () => Number((await q('select count(*) as n from public.accounting_journal_entries')).rows[0].n);
+  const keyId = async (key: string) => (await q('select id from public.accounting_journal_entries where dedupe_key = $1', [key])).rows[0]?.id as string | undefined;
+  const rowOf = async (kind: string, table: string, sourceId: string) => (await q(
+    `select reason, resolved_at, resolved_entry_id from public.accounting_pending_events where event_kind = $1 and source_table = $2 and source_id = $3`,
+    [kind, table, sourceId])).rows[0] as { reason: string; resolved_at: Date | null; resolved_entry_id: string | null } | undefined;
+  /** 本物の入口（service_role・admin.finance.manage の管理者）で取り消す。取り消しの仕訳の番号を返す。 */
+  async function reverse(entryId: string): Promise<string> {
+    const admin = await insertAccountingAdmin(db());
+    await q('set local role service_role');
+    try {
+      const r = (await q('select public.admin_reverse_accounting_journal($1::uuid, $2::uuid, $3::text) as r', [admin, entryId, 'FREQ-643-AC-11'])).rows[0].r as { entry_id: string; created: boolean };
+      expect(r.created).toBe(true);
+      return r.entry_id;
+    } finally { await q('reset role'); }
+  }
+  const park = (kind: string, table: string, sourceId: string, orderId: string, detail: Record<string, unknown>) => q(
+    "select private.accounting_park_event($1, $2, $3, $4::uuid, 'order_not_postable', $5::jsonb)", [kind, table, sourceId, orderId, JSON.stringify(detail)]);
+
+  /** G=10,000 の返品 A、売上 10,000、4,000 円の取り消し（day3 に引かれ day5 に負け。W の仕訳あり）。C はまだ無い。 */
+  async function lostDispute() {
+    const o = await seedAutoOrder(db(), [10000]);
+    await seedArrival(db(), o, 10000, 0, DAY.d1);
+    await runReturn();
+    await postSales(db(), o.orderId, 10000, DAY.d1);
+    const w = await seedWithdrawn(db(), o.orderId, 4000, at(DAY.d3));
+    await seedLost(db(), w.disputeId, at(DAY.d5));
+    await postWithdrawal(db(), w.disputeId, w.txnId, 4000, DAY.d3);
+    return { o, dp: w.disputeId };
+  }
+
+  test('FREQ-643-AC-11: 返品の計上係が入れた0円の終わりの決定（借 2130 6,000／貸 4020 6,000）を取り消すと、2130 が 6,000・4020 の借が 10,000 の元の残高に戻り、結んだ行は閉じたまま、計上係を流しても入れ直されない', async () => {
+    const s = await lostDispute();
+    await postConfirmed(db(), s.o.orderId, s.dp, DAY.d5, { pay: 4000 });
+    const d = await seedZeroClose(db(), s.o, 10000, 0, DAY.d8);
+    await park('return_amount_decided', 'accounting_return_facts', d.factId, s.o.orderId, { reason: 'dispute_lost' });
+    const before = await snap(s.o.orderId);
+    expect(before).toEqual({ payable: 6000, d4020: 10000, net: 0 });
+    expect(await runReturn()).toMatchObject({ posted: 1, resolved: 1 });
+    const entryId = (await keyId(`return_amount_decided:${d.factId}`))!;
+    expect(await snap(s.o.orderId)).toEqual({ payable: 0, d4020: 4000, net: 6000 });
+    const row = (await rowOf('return_amount_decided', 'accounting_return_facts', d.factId))!;
+    expect(row.resolved_entry_id).toBe(entryId);
+
+    const reversal = await reverse(entryId);
+    expect(await sumOf(entryId, reversal)).toEqual({});
+    expect(await snap(s.o.orderId)).toEqual(before);
+    const afterReverse = await entryCount();
+    for (let i = 0; i < 2; i += 1) expect(await runReturn()).toMatchObject({ posted: 0, parked_new: 0, reparked: 0, resolved: 0 });
+    expect(await runDisputes()).toMatchObject({ posted: 0, parked_new: 0 });
+    expect(await entryCount()).toBe(afterReverse);
+    expect(await snap(s.o.orderId)).toEqual(before);
+    expect(await rowOf('return_amount_decided', 'accounting_return_facts', d.factId)).toEqual(row);
+    expect((await q('select count(*) as n from public.accounting_pending_events where order_id = $1 and resolved_at is null', [s.o.orderId])).rows[0].n).toBe('0');
+  });
+
+  test('FREQ-643-AC-11: 取り消しの計上係が入れた直し（借 4020 4,000／貸 2130 4,000）と C（借 2130 4,000／貸 1470 dispute_pending 4,000）を取り消すと、残高が4,000円ずつ元に戻り、結んだ行は閉じたまま、計上係を流しても C も直しも入れ直されない', async () => {
+    const s = await lostDispute();
+    const close = await seedZeroClose(db(), s.o, 10000, 0, DAY.d8);
+    await postAutoEntry(db(), { date: DAY.d8, kind: 'return_amount_decided', parts: [close.factId], sourceTable: 'accounting_return_facts', sourceId: close.factId, lines: [
+      { account: '2130', debit: 10000, sub: 'return_refund', orderId: s.o.orderId }, { account: '4020', credit: 10000, orderId: s.o.orderId }] });
+    await park('dispute_event', 'stripe_disputes', s.dp, s.o.orderId, { reason: 'return_closed_after_lost' });
+    expect(await snap(s.o.orderId)).toEqual({ payable: 0, d4020: 0, net: 10000 });
+    expect(await runDisputes()).toMatchObject({ posted: 1, resolved: 1 });
+    const cId = (await keyId(`dispute_event:${s.dp}:confirmed:lost`))!;
+    const fixId = (await keyId(`dispute_event:closefix:${s.dp}:1`))!;
+    expect(await snap(s.o.orderId)).toEqual({ payable: 0, d4020: 4000, net: 6000 });
+    const row = (await rowOf('dispute_event', 'stripe_disputes', s.dp))!;
+    expect(row.resolved_at).not.toBeNull();
+    expect(row.resolved_entry_id).toBe(cId);
+
+    // 直しだけ取り消す: 4020 の借が4,000 減り、2130 の借が 4,000 増える（返金待ちの貸が 4,000 減る）
+    const fixReversal = await reverse(fixId);
+    expect(await sumOf(fixId, fixReversal)).toEqual({});
+    expect(await snap(s.o.orderId)).toEqual({ payable: -4000, d4020: 0, net: 10000 });
+    // C も取り消す: 2130 が 4,000 減り、1470 dispute_pending が 4,000 戻る
+    const cReversal = await reverse(cId);
+    expect(await sumOf(cId, cReversal)).toEqual({});
+    expect(await snap(s.o.orderId)).toEqual({ payable: 0, d4020: 0, net: 10000 });
+    expect(await sumOf(cId)).toEqual({ '2130(return_refund)': 4000, '1470(dispute_pending)': -4000 });
+    expect(await sumOf(fixId)).toEqual({ '4020': 4000, '2130(return_refund)': -4000 });
+
+    const afterReverse = await entryCount();
+    for (let i = 0; i < 2; i += 1) {
+      expect(await runDisputes()).toMatchObject({ posted: 0, parked_new: 0, reparked: 0, resolved: 0 });
+      expect(await runReturn()).toMatchObject({ posted: 0, parked_new: 0 });
+    }
+    expect(await entryCount()).toBe(afterReverse);
+    expect(await snap(s.o.orderId)).toEqual({ payable: 0, d4020: 0, net: 10000 });
+    expect(await rowOf('dispute_event', 'stripe_disputes', s.dp)).toEqual(row);
+    expect(Number((await q('select count(*) as n from public.accounting_journal_entries where dedupe_key like $1', [`dispute_event:%${s.dp}%`])).rows[0].n)).toBe(3);
+  });
+
+  test('FREQ-643-AC-11: C だけを取り消しても（直しは残す）、C は入れ直されず、取り消しの2130 は C の4,000円ぶんだけ動く', async () => {
+    const s = await lostDispute();
+    const close = await seedZeroClose(db(), s.o, 10000, 0, DAY.d8);
+    await postAutoEntry(db(), { date: DAY.d8, kind: 'return_amount_decided', parts: [close.factId], sourceTable: 'accounting_return_facts', sourceId: close.factId, lines: [
+      { account: '2130', debit: 10000, sub: 'return_refund', orderId: s.o.orderId }, { account: '4020', credit: 10000, orderId: s.o.orderId }] });
+    await runDisputes();
+    const cId = (await keyId(`dispute_event:${s.dp}:confirmed:lost`))!;
+    expect(await snap(s.o.orderId)).toEqual({ payable: 0, d4020: 4000, net: 6000 });
+    await reverse(cId);
+    expect(await snap(s.o.orderId)).toEqual({ payable: 4000, d4020: 4000, net: 6000 });
+    const afterReverse = await entryCount();
+    expect(await runDisputes()).toMatchObject({ posted: 0, parked_new: 0 });
+    expect(await entryCount()).toBe(afterReverse);
+    expect(await snap(s.o.orderId)).toEqual({ payable: 4000, d4020: 4000, net: 6000 });
+  });
+});

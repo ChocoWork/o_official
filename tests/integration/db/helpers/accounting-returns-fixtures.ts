@@ -548,14 +548,14 @@ export async function orderBalance(client: PgClient, orderId: string, account: s
  * 着の行と枠（order_unit_slots）を持ち、支払いの仕訳まで入った注文（lines の1要素が1つの品の着の支払額）。値段の計画を
  * 通さない出来事を fixture で入れる試験の土台（計画3 Task 3 の割り当ての試験と同じ作り）。
  */
-export async function seedSlotPaidOrder(client: PgClient, lines: number[][]): Promise<{ orderId: string; orderItemIds: string[] }> {
+export async function seedSlotPaidOrder(client: PgClient, lines: number[][], paidAt?: string): Promise<{ orderId: string; orderItemIds: string[] }> {
 	const o = await seedUnitOrder(client, lines);
 	await client.query(`insert into public.order_unit_slots(order_item_id, unit_index, order_id, item_id, state, current_price, holder_order_item_id, holder_unit_index)
 		select u.order_item_id, u.unit_index, oi.order_id, oi.item_id, 'kept', u.paid_amount, u.order_item_id, u.unit_index
 		from public.order_line_unit_amounts u join public.order_items oi on oi.id=u.order_item_id where oi.order_id=$1`, [o.orderId]);
 	await client.query('update public.orders set payment_intent_id=coalesce(payment_intent_id,$2) where id=$1',
 		[o.orderId, `pi_s20_${randomUUID().replaceAll('-', '')}`]);
-	await postOrderPayment(client, o.orderId);
+	await postOrderPayment(client, o.orderId, paidAt);
 	return o;
 }
 

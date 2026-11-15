@@ -10,8 +10,8 @@ import { seedSlotPaidOrder } from './accounting-returns-fixtures';
 export type AutoOrder = { orderId: string; orderItemIds: string[]; returnId: string; actor: string };
 
 /** 品の値段の並び（1品1着）の支払い済みの注文と、その注文の返品1件（申し込みだけ。受け取りと返金は下の部品で足す）。 */
-export async function seedAutoOrder(client: PgClient, items: number[]): Promise<AutoOrder> {
-	const o = await seedSlotPaidOrder(client, items.map((price) => [price]));
+export async function seedAutoOrder(client: PgClient, items: number[], paidAt?: string): Promise<AutoOrder> {
+	const o = await seedSlotPaidOrder(client, items.map((price) => [price]), paidAt);
 	const actor = await insertAccountingAdmin(client);
 	const returnId = (await client.query(`insert into public.order_returns
     (order_id,number,source,status,request_key,request_fingerprint,requested_at,requested_by,return_method,return_shipping_payer,notify_customer)
