@@ -184,6 +184,10 @@ describe('計上待ちのタブ', () => {
 		other: 'この日を含む会計の期間がありません。設定・期間のタブで期間を作ると、自動で計上されます。',
 	};
 
+	it('FREQ-643-AC-14: no_order の取り消しの出来事の文は変わっていない（直前の文のまま）', () => {
+		expect(reasonText(pendingEvent(1, { reason: 'no_order', eventKind: 'dispute_event' }))).toBe('カード会社からの支払いの取り消しに、結び付く注文が見つかりません。取り消しの内容を確かめてください。');
+	});
+
 	it.each(PENDING_REASONS.filter((reason) => reason !== 'dispute_refund_overlap' && reason !== 'dispute_return_refund_pending'))(
 		'FREQ-643-AC-14: ほかの理由 %s の文は変わっていない（直前の文のまま）',
 		(reason) => {
