@@ -1,6 +1,6 @@
 # AUTH の要件
 
-> 状態: 推定 | 確認日: 2026-11-01 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-11-15 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -3957,7 +3957,7 @@ POST /api/auth/otp/verify の本文が code のみであること。本文に em
 | 確かめ方 | E2E |
 | 出どころ | 要件の文から起こした（FR-LOGIN-002） |
 
-`/login` に「Googleでサインイン」のボタンが表示され、押すと `/api/auth/oauth/start` を経て、URL に `prompt=select_account` を含む Google の画面へ移ること。
+`/login` に「Googleでサインイン」のボタンが表示され、押すと `/api/auth/oauth/start` を経て、URL に `provider=google` と `prompt=select_account` を含む Google のログインの開始の URL（Supabase の `/auth/v1/authorize`）へ移ること。E2E は本物の Google の画面を開かない（authorize への移動を作り物のページで受ける）。手元の Supabase で Google を有効にしているかと、Google 側のクライアントの登録に結果を左右させないため（2026-11-15）。
 
 ### FR-LOGIN-003-AC-01 ログインの画面から再設定のページへ移れる
 

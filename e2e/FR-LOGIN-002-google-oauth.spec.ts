@@ -18,6 +18,11 @@ for (const viewport of viewports) {
     });
 
     test('FR-LOGIN-002-AC-01 starts Google OAuth with account chooser enabled', async ({ page }) => {
+      // 本物の Google の画面は開かない（FR-LOGIN-038 と同じ）。手元の Supabase で Google を有効にすると
+      // authorize が Google へ送り、Google 側のクライアントの登録しだいで落ちるため、authorize への移動を作り物のページで受ける。
+      await page.route('**/auth/v1/authorize?**', (route) =>
+        route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>authorize stub</title>' })
+      );
       await page.goto('/login');
 
       const oauthStartResponsePromise = page.waitForResponse((response) => {
@@ -36,10 +41,16 @@ for (const viewport of viewports) {
           async () => page.url(),
           {
             timeout: 20000,
-            message: 'Google OAuth URL should include prompt=select_account',
+            message: 'Browser should move to the authorize url with prompt=select_account',
           }
         )
         .toContain('prompt=select_account');
+
+      // 移った先は本文の url（端末が移ると応答の本文は読めなくなるので、移った先の URL で確かめる）。
+      const authorizeUrl = new URL(page.url());
+      expect(authorizeUrl.pathname).toBe('/auth/v1/authorize');
+      expect(authorizeUrl.searchParams.get('provider')).toBe('google');
+      expect(authorizeUrl.searchParams.get('prompt')).toBe('select_account');
     });
   });
 }
