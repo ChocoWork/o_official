@@ -1,7 +1,7 @@
 BEGIN;
 -- Accounting plan 3 S27 (spec 2026-11-15-accounting-pending-manual-entry-design; FREQ-643): the two posters book the two parked
--- kinds of order_not_postable (dispute_lost, return_closed_after_lost) on their own. This file is built task by task; the
--- first part (Task 1) holds the precheck, two private helpers and the rebuilt wait of the refund poster.
+-- kinds of order_not_postable (dispute_lost, return_closed_after_lost) on their own. The file holds the precheck, two private
+-- helpers, the rebuilt wait of the refund poster, the two rebuilt posters and the final assert.
 --
 -- New (private; LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''; owner postgres; no grant to anyone):
 --   private.accounting_order_refunds_in_flight(_order_id uuid, _decision_fact_id uuid)
@@ -26,9 +26,13 @@ BEGIN;
 --     earlier day; the fix entries after C). C is booked as it is, then for each later 0 yen close day d_n a fix entry (debit 4020,
 --     credit 2130 return_refund, y_n = max(-B(d_n), 0), key dispute_event:closefix:<dp>:<n>) is booked in the same event.
 --
--- ROLLBACK (no row is written by this migration): DROP FUNCTION private.accounting_order_refunds_in_flight(uuid,uuid),
---   private.accounting_order_return_payable(uuid,date); re-run CREATE OR REPLACE of private.accounting_refund_wait from
---   20261112214341_accounting_p3_refund_posting.sql :199-240.
+-- ROLLBACK (no row is written by this migration): in ONE transaction, CREATE OR REPLACE private.accounting_post_return_events and
+--   private.accounting_post_dispute_events from 20261113090000_accounting_p3_dispute_offset.sql, then DROP FUNCTION
+--   private.accounting_order_refunds_in_flight(uuid,uuid), private.accounting_order_return_payable(uuid,date) (the posters call them),
+--   and re-run CREATE OR REPLACE of private.accounting_refund_wait from 20261112214341_accounting_p3_refund_posting.sql :199-240.
+--   Before putting the S20 wait back, count the decisions closed as no_revenue with no entry (reason no_revenue, resolved_entry_id
+--   NULL, event_kind return_amount_decided): with the S20 wait the later refund of that return waits for ever (return_prior);
+--   if there are any, keep the S27 wait. Entries and rows the posters wrote after S27 stay (undo them with reversal entries).
 
 -- ACC_S27_PRECHECK_BEGIN
 -- A pending row of order_not_postable (dispute_lost or return_closed_after_lost) that a person already closed through the link
@@ -94,6 +98,7 @@ BEGIN
   RETURN v_r;
 END;
 $$;
+ALTER FUNCTION private.accounting_order_return_payable(uuid, date) OWNER TO postgres;
 REVOKE ALL ON FUNCTION private.accounting_order_return_payable(uuid, date) FROM PUBLIC, anon, authenticated, service_role;
 
 -- 2. The refunds of an order that are in the way of a lost dispute (the five shapes of spec 3-3; no day cut) and which of them
@@ -163,6 +168,7 @@ BEGIN
   ORDER BY t.rid;
 END;
 $$;
+ALTER FUNCTION private.accounting_order_refunds_in_flight(uuid, uuid) OWNER TO postgres;
 REVOKE ALL ON FUNCTION private.accounting_order_refunds_in_flight(uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
 
 -- 3. The wait of the refund poster: a decision that was closed as no_revenue with no entry is done (spec 3-6).
@@ -1502,6 +1508,16 @@ $acc_s27_o5$)
       IS DISTINCT FROM '25c7b762a610bb23cd050f89f842d341' THEN
       v_failed := 'acc_s27_c_shape_unchanged';
     END IF;
+  END IF;
+
+  v_stage := 'acc_s27_body_unchanged';
+  IF v_failed IS NULL AND EXISTS (SELECT 1 FROM (VALUES
+      ('private.accounting_post_return_events(integer)', 'e00d3573bb060abe423aa1cb343eb58e'),
+      ('private.accounting_post_dispute_events(integer)', '38d25fa57a77da2854846583515a5a07')
+    ) AS x(signature, digest) WHERE (SELECT pg_catalog.md5(pg_catalog.regexp_replace(f.prosrc, '[[:space:]]+', '', 'g')) FROM pg_catalog.pg_proc AS f
+      WHERE f.oid = pg_catalog.to_regprocedure(x.signature)) IS DISTINCT FROM x.digest) THEN
+    -- The two posters whole (the added blocks and the replaced parts included, white space removed): what no needle names is pinned too.
+    v_failed := 'acc_s27_body_unchanged';
   END IF;
 
   v_stage := 'acc_s27_no_new_reason';

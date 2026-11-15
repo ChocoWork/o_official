@@ -1756,6 +1756,10 @@ describe('S27 source contract (no DB)', () => {
       expect([Number(rows[0][1]), Number(rows[0][2])]).toEqual([replaced, added]);
       expect(md5Of(noBlocks(restore(s27BodyOf(fn(name)))))).toBe(rows[0][3]);
     }
+    // The two posters whole (blocks and replaced parts kept, white space removed).
+    for (const name of ['accounting_post_return_events', 'accounting_post_dispute_events']) {
+      expect(s27Assertion).toContain(`'${md5Of(s27BodyOf(fn(name)).replace(/\s+/g, ''))}'`);
+    }
     // The wait: the whole body with its two markers removed (the new text of the replaced part is pinned).
     const wait = s27BodyOf(fn('accounting_refund_wait')).replace(/-- ACC_P3_REPLACE_(?:BEGIN [0-9a-f]{32}|END)/g, '').replace(/\s+/g, '');
     expect(s27Assertion).toContain(`'${md5Of(wait)}'`);
@@ -1913,6 +1917,8 @@ describeLocalDb('S27 final assert: controller only', (db) => {
     [redefine(DIS, 'IF v_fix_review < 0 THEN', 'IF false THEN'), 'acc_s27_body_unchanged'],
     [redefine(DIS, 'v_fix_entry_id := \\\\(v_fix_result', 'v_entry_id := (v_fix_result'), 'acc_s27_body_unchanged'],
     [redefine(DIS, 'v_date := v_fix_date;', ''), 'acc_s27_body_unchanged'],
+    [redefine(DIS, 'v_fix_sum := v_fix_sum \\\\+ v_fix_y;', 'v_fix_sum := v_fix_sum + v_fix_y; v_fix_y := v_fix_y * 2;'), 'acc_s27_body_unchanged'],
+    [redefine(RET, 'v_w := LEAST\\\\(v_fact', 'v_w := 0; v_w := LEAST(v_fact'), 'acc_s27_body_unchanged'],
     [redefine(DIS, 'v_fix_check_day := private\\.accounting_order_return_payable\\\\(v_order_id, v_date\\\\);', 'v_fix_check_day := 0;'), 'acc_s27_body_unchanged'],
     [redefine(DIS, 'v_wait_now := private\\.accounting_order_return_payable\\\\(v_order_id, NULL\\\\);', 'v_wait_now := 1;'), 'acc_s27_body_unchanged'],
     [redefine(DIS, 'v_fix_now := private\\.accounting_order_return_payable\\\\(v_order_id, NULL\\\\);', 'v_fix_now := 0;'), 'acc_s27_body_unchanged'],

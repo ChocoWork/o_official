@@ -905,7 +905,7 @@ export async function pinAccountingS27Baseline(client: PgClient): Promise<void> 
 }
 
 /**
- * S27 が返品の計上係（と、後の Task で取り消しの計上係）を作り直したので、S22 の末尾の確かめを再生する前に、2つの計上係を
+ * S27 が返品の計上係と取り消しの計上係を作り直したので、S22 の末尾の確かめを再生する前に、2つの計上係を
  * S22 の本文で作り直す（呼ぶ取引の中だけ。S21 の restoreS20RunPosting、S24 の restoreS23StripeReconciliation と同じ形）。
  */
 export async function restoreS22DisputeAndReturnPosters(client: PgClient): Promise<void> {
