@@ -2275,6 +2275,8 @@ describeLocalDb('FREQ-643: S27 reversal of the auto entries (Task 5; FREQ-643-AC
     // C も取り消す: 2130 が 4,000 減り、1470 dispute_pending が 4,000 戻る
     const cReversal = await reverse(cId);
     expect(await sumOf(cId, cReversal)).toEqual({});
+    // 取り消しごとの 1470 dispute_pending（取り消しを数える）も、C の前（W の 4,000）に戻る
+    expect(Number((await q("select private.accounting_dispute_balance($1, '1470', 'dispute_pending') as b", [s.dp])).rows[0].b)).toBe(4000);
     expect(await snap(s.o.orderId)).toEqual({ payable: 0, d4020: 0, net: 10000 });
     expect(await sumOf(cId)).toEqual({ '2130(return_refund)': 4000, '1470(dispute_pending)': -4000 });
     expect(await sumOf(fixId)).toEqual({ '4020': 4000, '2130(return_refund)': -4000 });

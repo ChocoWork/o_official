@@ -28,6 +28,11 @@ describeLocalDb('S27 auto posting under concurrency: controller only (commits)',
   }
 
   const nowIso = () => new Date().toISOString();
+  // 各試験は数秒で終わる。日本時間 0 時の2分前から後に始まる試験は、0 時を過ぎるまで待つ（今日・明日と負けた時刻の日がずれない）
+  beforeEach(async () => {
+    const jstMs = (Date.now() + 9 * 3600_000) % 86_400_000;
+    if (jstMs > 86_400_000 - 120_000) await new Promise((resolve) => setTimeout(resolve, 86_400_000 - jstMs + 1000));
+  }, 300_000);
   const run = async (client: PgClient) => (await client.query('select public.accounting_run_posting(50) as r')).rows[0].r as Record<string, number>;
   async function waitUntilBlocked(observer: PgClient, pid: number): Promise<number[]> {
     for (let attempt = 0; attempt < 400; attempt += 1) {
@@ -134,6 +139,12 @@ describeLocalDb('S27 auto posting under concurrency: controller only (commits)',
 
   const receiveNow = (client: PgClient, flow: ReturnFlow) => receiveReturn(client, flow, { choice: 'now',
     units: [{ return_line_id: flow.lineIds[0], disposition: 'not_restocked', quantity: 1, refund_choice: 'now' }] });
+  const waits = async (client: PgClient, orderId: string) => (await client.query(
+    `select event_kind || '/' || reason || coalesce('/' || (detail ->> 'why'), '') as w from public.accounting_pending_events
+     where order_id = $1 and resolved_at is null order by 1`, [orderId])).rows.map((r) => r.w as string);
+  /** 競った後（返金の成功の前）に、どの待ちが C を止めていたか。書き込みが先に入っていれば途中の返金（refund）、計上係が先で返金が未決なら返品が未決（return）、返品を受け取る前に計上係が流れたなら何も待たない。 */
+  const WAIT_AFTER = (how: Write, first: 'poster' | 'writer'): string[] => first === 'writer' ? ['dispute_event/dispute_refund_overlap/refund']
+    : how === 'decide' ? ['dispute_event/dispute_return_refund_pending/return'] : [];
   type Final = { payable: number; d4020: number; review: number; net: number; open: number };
   const full = async (client: PgClient, orderId: string): Promise<Final> => ({ ...(await snap(client, orderId)), open: await openRows(client, orderId) });
   /** どの順でも同じ最後の円: 返金 16,875円（B）と負けた取り消し 10,000円と A の0円の終わり（明日、10,000円）で 2130 = 0。 */
@@ -158,7 +169,8 @@ describeLocalDb('S27 auto posting under concurrency: controller only (commits)',
   /** 返金を成功にして係を流し、最後の円を返す。 */
   async function finish(setup: PgClient, s: Seed, refundId: string): Promise<Final> {
     await succeedRefund(setup, refundId, { at: nowIso() });
-    await settle(setup);
+    // 同じ日の決定の取り出しの順は決まっていない（返金の成功・A の終わり・C が1回の流しずつで解ける）ので、待ちが無くなるまで最大 8 回流す
+    for (let i = 0; i < 8; i += 1) { await settle(setup); if ((await openRows(setup, s.orderId)) === 0) break; }
     return full(setup, s.orderId);
   }
 
@@ -174,11 +186,13 @@ describeLocalDb('S27 auto posting under concurrency: controller only (commits)',
           if (first === 'poster') {
             await settle(setup);
             expect((await full(setup, s.orderId)).payable).toBeGreaterThanOrEqual(0);
+            expect(await waits(setup, s.orderId)).toEqual(WAIT_AFTER(how, 'poster'));
             refundId = await write(setup, s, how);
           } else {
             refundId = await write(setup, s, how);
             await settle(setup);
             expect((await full(setup, s.orderId)).payable).toBeGreaterThanOrEqual(0);
+            expect(await waits(setup, s.orderId)).toEqual(WAIT_AFTER(how, 'writer'));
           }
           finals[first] = await finish(setup, s, refundId);
         }
@@ -197,6 +211,7 @@ describeLocalDb('S27 auto posting under concurrency: controller only (commits)',
             await a.query('begin');
             await run(a);
             const writing = write(b, s, how);
+            writing.catch(() => undefined);
             expect(await waitUntilBlocked(observer, pidB)).toContain(pidA);
             await a.query('commit');
             refundId = await writing;
@@ -204,11 +219,13 @@ describeLocalDb('S27 auto posting under concurrency: controller only (commits)',
             await b.query('begin');
             refundId = await write(b, s, how);
             const posting = run(a);
+            posting.catch(() => undefined);
             expect(await waitUntilBlocked(observer, pidA)).toContain(pidB);
             await b.query('commit');
             await posting;
           }
           expect((await full(setup, s.orderId)).payable).toBeGreaterThanOrEqual(0);
+          expect(await waits(setup, s.orderId)).toEqual(WAIT_AFTER(how, holder));
           expect(await finish(setup, s, refundId)).toEqual(SAME);
         });
       });
@@ -230,6 +247,7 @@ describeLocalDb('S27 auto posting under concurrency: controller only (commits)',
       await a.query('begin');
       const first = await run(a);
       const second = run(b);
+      second.catch(() => undefined);
       expect(await waitUntilBlocked(observer, pidB)).toContain(pidA);
       await a.query('commit');
       expect(first).toMatchObject({ returns: 1 });
