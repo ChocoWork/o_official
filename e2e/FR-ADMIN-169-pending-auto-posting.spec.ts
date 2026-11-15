@@ -131,8 +131,7 @@ for (const viewport of CHECKOUT_VIEWPORTS) {
         }
         const entry = await decisionEntry();
         expect(entry, `A の決定の仕訳が、ボタン2回と足し ${reruns} 回（止まっている返品の行 ${openReturnRows} 件）で入らない`).toBeDefined();
-        // 止まっている行が少ない（10件以下）なら、ボタン2回で足りる（足しが要らない）
-        if (openReturnRows <= 9) expect(reruns).toBe(0);
+        // 2回で足りること（足しが要らないこと）は DB の試験が確かめる。ここは足しの回数に上限があることだけを見る
         expect((await s.pendingOf('return_amount_decided', scene.closeFactId))?.resolvedAt).not.toBeNull();
         const entryLines = await s.linesOf(entry!.id);
         expect(entryLines.length).toBeGreaterThanOrEqual(2);
