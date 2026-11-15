@@ -1176,6 +1176,51 @@ describeLocalDb('FREQ-643: S27 dispute poster return_closed_after_lost (Task 3)'
 
   // ---- AC-04: (d) the reverse order -----------------------------------------------------------------------------------------------
   describe('C and the fix entries', () => {
+    /** 注文に結び付かない負けた取り消し（注文 NULL・引かれた時の取引つき。負けた日 day5）。 */
+    async function noOrderLost(amount: number) {
+      const d = await seedDispute(db(), { orderId: null, paymentIntentId: null, amount, withdrawnAt: at(DAY.d3), createdAt: at(DAY.d3) });
+      await seedLost(db(), d.disputeId, at(DAY.d5));
+      return { dp: d.disputeId, txnId: d.txnId as string };
+    }
+    const txnRow = async (txnId: string) => (await q(
+      `select reason, resolved_at from public.accounting_pending_events where source_table = 'stripe_balance_transactions' and source_id = $1`,
+      [txnId])).rows[0] as { reason: string; resolved_at: Date | null } | undefined;
+    const S27_WAITS = ['dispute_refund_overlap', 'dispute_return_refund_pending'];
+
+    test('FREQ-643-AC-04: 注文の無い負けは S27 の後も no_order で止まり、C・直し・2130・4020 は入らず、待ちの理由も使わない。2回流しても同じ', async () => {
+      const x = await noOrderLost(30000);
+      const before = await entryCount();
+      await runDisputes();
+      expect(await txnRow(x.txnId)).toMatchObject({ reason: 'no_order', resolved_at: null });
+      const c = await disputeRow(x.dp);
+      expect(c).toMatchObject({ reason: 'dispute_withdrawal_missing', resolved_at: null, resolved_entry_id: null });
+      expect(S27_WAITS).not.toContain(c!.reason);
+      expect(S27_WAITS).not.toContain((await txnRow(x.txnId))!.reason);
+      expect(await entryByKey(cKey(x.dp))).toBeUndefined();
+      expect(await fixCount(x.dp)).toBe(0);
+      expect(await entryCount()).toBe(before);
+      const again = await runDisputes();
+      expect(again).toMatchObject({ posted: 0, parked_new: 0 });
+      expect(await txnRow(x.txnId)).toMatchObject({ reason: 'no_order', resolved_at: null });
+      expect(await disputeRow(x.dp)).toMatchObject({ reason: 'dispute_withdrawal_missing', resolved_at: null });
+      expect(await entryCount()).toBe(before);
+    });
+
+    test('FREQ-643-AC-04: 注文の無い負けは引かれた時の仕訳が入っても S27 の前と同じ形（C は 1470 の2行だけ。直し・2130・4020 なし・待ちなし）', async () => {
+      const x = await noOrderLost(30000);
+      await postWithdrawal(db(), x.dp, x.txnId, 30000, DAY.d3);
+      expect(await runDisputes()).toMatchObject({ posted: 1, confirmed: 1, parked_new: 0 });
+      const c = (await entryByKey(cKey(x.dp)))!;
+      expect(shapeOf(await linesOf(c.id))).toEqual([['1470', 30000, 0, 'dispute_confirmed_unassigned'], ['1470', 0, 30000, 'dispute_pending']]);
+      expect((await linesOf(c.id)).every((l) => l.order_id === null)).toBe(true);
+      expect(await fixCount(x.dp)).toBe(0);
+      expect(await disputeRow(x.dp)).toBeUndefined();
+      const n = await entryCount();
+      expect(await runDisputes()).toMatchObject({ posted: 0, confirmed: 0 });
+      expect(await entryCount()).toBe(n);
+      expect(await fixCount(x.dp)).toBe(0);
+    });
+
     test('FREQ-643-AC-04: (d) 逆の順（A=S=4,000、0円の終わりが day8 に先）は C（日 day5）と直し1本（日 day8）を入れる。印・日・見出し・source・memo・記録の時刻、2130 = 0、4020 の純額 借 4,000、売上の純額 6,000。2回流しても1本ずつ', async () => {
       const s = await unconfirmed({ goods: 10000, s: 4000 });
       const x = await closeEntry(s.o, 10000, 0, DAY.d8);
