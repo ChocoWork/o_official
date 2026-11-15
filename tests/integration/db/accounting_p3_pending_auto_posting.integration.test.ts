@@ -1747,7 +1747,22 @@ describeLocalDb('FREQ-643: S27 dispute poster return_closed_after_lost (Task 3)'
       expect(await payableOf(a.orderId, null)).toBe(0);
     });
 
-    test('FREQ-643-AC-03: pay = R（S が R を覆う）なら別の返品 B が未決でも C は待たず、直しが要らなければ入れない（B の到着 day6 が 2130 に残る）', async () => {
+    test('FREQ-643-AC-02: D15 返品の計上係の D3 は P_eff = min(P(D), P(今)′) が 0 より大きい間だけ待つ。C が 2130 を 0 にした後に取り下げ L（day11）が 2130 を戻しても、決定の日（day8）の P(D) = 0 なら、別の返品 B が未決でも A の0円の終わりは待たず no_revenue で閉じる', async () => {
+      const { a } = await twoReturns([10000, 10000], [10000, 10000]);
+      const dp = (await addDispute(a, 20000)).dp;
+      await postConfirmed(db(), a.orderId, dp, DAY.d5, { pay: 20000 });
+      await postAutoEntry(db(), { date: '2026-11-11', kind: 'dispute_event', parts: [dp, 'reversal', 'txn_late'], sourceTable: 'stripe_disputes', sourceId: dp,
+        lines: [{ account: '1160', debit: 10000 }, { account: '2130', credit: 10000, sub: 'return_refund', orderId: a.orderId }] });
+      expect(await payableOf(a.orderId, DAY.d8)).toBe(0);
+      expect(await payableOf(a.orderId, null)).toBe(10000);
+      const close = await seedZeroClose(db(), a, 10000, 0, DAY.d8);
+      await runReturn();
+      expect((await q('select reason, detail, resolved_entry_id from public.accounting_pending_events where source_id = $1', [close.factId])).rows[0])
+        .toEqual({ reason: 'no_revenue', detail: {}, resolved_entry_id: null });
+      expect(await payableOf(a.orderId, null)).toBe(10000);
+    });
+
+    test('FREQ-643-AC-03: D15 pay = R でも、負けた日より後に届いた返品 B が未決なら C は待ち（dispute_return_refund_pending・why return）、B を返金（day9 に作り day10 に成功）した後に C と直し 10,000 が入る。2130 = 0・売上の純額 0（pay = R で届いた日が全部負けた日以前の (e) は待たない）', async () => {
       const a = await seedAutoOrder(db(), [10000, 10000]);
       const b = await seedAnotherReturn(db(), a, 2);
       await seedArrival(db(), a, 10000, 0, DAY.d1);
@@ -1759,10 +1774,12 @@ describeLocalDb('FREQ-643: S27 dispute poster return_closed_after_lost (Task 3)'
       await closeEntry(a, 10000, 0, DAY.d8);
       expect(await payableOf(a.orderId, DAY.d5)).toBe(10000);
       await runDisputes();
-      expect(await disputeRow(dp)).toBeUndefined();
-      expect(await entryByKey(cKey(dp))).toBeDefined();
-      expect(await fixCount(dp)).toBe(0);
-      expect(await snap(a.orderId)).toEqual({ payable: 0, d4020: 10000, c4050: 0, review: 0, net: 10000 });
+      expect(await disputeRow(dp)).toMatchObject({ reason: 'dispute_return_refund_pending', detail: { why: 'return' }, resolved_at: null });
+      expect(await entryByKey(cKey(dp))).toBeUndefined();
+      await refundB(b, 10000, DAY.d9, DAY.d10);
+      await runDisputes();
+      expect(shapeOf(await linesOf((await entryByKey(fixKey(dp, 1)))!.id))).toEqual([['4020', 10000, 0, null], ['2130', 0, 10000, 'return_refund']]);
+      expect(await snap(a.orderId)).toEqual({ payable: 0, d4020: 20000, c4050: 0, review: 0, net: 0 });
     });
 
     test('FREQ-643-AC-08: D12 の上限。C の 2130 の借方（pay）を超える分（無関係の二重払い −5,000）は直しで隠さず、直しは 10,000 で止まり、今の 2130 が負なので ACCOUNTING_POSTING_BALANCE_NEGATIVE（23514）で巻き戻り posting_error になる。C も直しも入らない（取り消しの計上係の入れた後の確かめ）', async () => {
@@ -1912,5 +1929,162 @@ describeLocalDb('FREQ-643: S27 dispute poster return_closed_after_lost (Task 3)'
       await runReturn();
       expect(await lines8(x.factId)).toEqual([['2130', 6100, 0, 'return_refund'], ['4020', 0, 6100, null]]);
     });
+  });
+});
+
+// 計画 S27 Task 3 D15: 順序によらない帳簿。同じ事実を、現実の計上係の流しが作りうる全部の順（事実が1つ届くたびに計上係を流す）で入れて、
+// 終わりの 2130・4020・売上の純額・1470 review が同じになることを確かめる。待ち（D3・D13・D14・D15）が順の差を消す。
+describeLocalDb('FREQ-643: S27 order independence of C, the fix entries and the 0 yen closes (D15; FREQ-643-AC-03・04・05・06・07)', (db) => {
+  const q = (text: string, params?: unknown[]) => db().query(text, params);
+  beforeEach(async () => {
+    await q('begin');
+    await q('select pg_catalog.pg_advisory_xact_lock(190521,1)');
+    await setAsideExistingSlips(db());
+    await setCutoverForTest(db(), '2026-01-01');
+  });
+  afterEach(async () => { await q('rollback'); });
+
+  const DAY = { d1: '2026-11-01', d3: '2026-11-03', d5: '2026-11-05', d6: '2026-11-06', d7: '2026-11-07', d8: '2026-11-08', d9: '2026-11-09', d10: '2026-11-10', d11: '2026-11-11', d12: '2026-11-12' };
+  const at = (day: string) => `${day}T03:00:00Z`;
+  const runAll = async () => {
+    for (let i = 0; i < 4; i += 1) {
+      await q('select private.accounting_post_return_events(50)');
+      await q('select private.accounting_post_dispute_events(50)');
+    }
+  };
+  const bal = async (orderId: string, account: string, sub?: string) => Number((await q(
+    `select coalesce(sum(l.debit - l.credit), 0) as b from public.accounting_journal_lines l
+     where l.order_id = $1 and l.account_code = $2 and ($3::text is null or l.sub_account = $3)`, [orderId, account, sub ?? null])).rows[0].b);
+  const snap = async (orderId: string) => ({
+    payable: 0 - (await bal(orderId, '2130', 'return_refund')),
+    d4020: await bal(orderId, '4020'),
+    review: await bal(orderId, '1470', 'dispute_refund_overlap_review'),
+    net: 0 - ((await bal(orderId, '4010')) + (await bal(orderId, '4020')) + (await bal(orderId, '4050'))),
+  });
+  class Infeasible extends Error {}
+
+  type Ctx = { a: AutoOrder; b: AutoOrder; dp: string; refunds: Record<string, string> };
+  type Family = {
+    name: string; prices: number[]; arrivals: [number, number]; s: number; expected: { payable: number; d4020: number; review: number; net: number };
+    steps: Record<string, (c: Ctx) => Promise<void>>; before: Array<[string, string]>;
+  };
+
+  const lost = async (c: Ctx) => { await seedLost(db(), c.dp, at(DAY.d5)); };
+  const closeA = (covers: number, on = DAY.d8) => async (c: Ctx) => { await seedZeroClose(db(), c.a, covers, 0, on); };
+  const arrivalB = (amount: number) => async (c: Ctx) => { await seedArrival(db(), c.b, amount, 0, DAY.d6); };
+  const refundCreate = (id: string, amount: number, createdOn: string) => async (c: Ctx) => {
+    const r = await seedRefundInFlight(db(), c.b, amount, ['requested'], { decided: amount, covers: amount, on: createdOn });
+    await setCreatedOn(db(), r.refundId, createdOn);
+    c.refunds[id] = r.refundId;
+  };
+  const refundSucceed = (id: string, amount: number, on: string) => async (c: Ctx) => {
+    await q("select private.accounting_record_refund_event($1, 'succeeded', null, null, null, null)", [c.refunds[id]]);
+    await postRefundSuccess(db(), c.b.orderId, c.refunds[id], amount, on);
+  };
+  /** 返金が失敗し、返金の借り（2130 return_refund）を返品の銀行振込で払う。振込が断られる順は現実に起きないので除く。 */
+  const failedRepaid = (amount: number) => async (c: Ctx) => {
+    const r = await seedRefundInFlight(db(), c.b, amount, ['requested', 'failed'], { decided: amount, covers: amount, on: DAY.d9 });
+    await setCreatedOn(db(), r.refundId, DAY.d9);
+    const mode = (await q("select tgenabled from pg_catalog.pg_trigger where tgrelid = 'public.order_refunds'::regclass and tgname = 'order_refunds_guard'")).rows[0].tgenabled as string;
+    await q('alter table public.order_refunds disable trigger order_refunds_guard');
+    await q("update public.order_refunds set status = 'failed' where id = $1", [r.refundId]);
+    await q(`alter table public.order_refunds enable ${mode === 'A' ? 'always ' : ''}trigger order_refunds_guard`);
+    await q("select private.accounting_park_event('refund_failed', 'order_refunds', $1, $2::uuid, 'no_revenue', '{}'::jsonb)", [r.refundId, c.b.orderId]);
+    await q("select private.accounting_unpark_event('refund_failed', 'order_refunds', $1, null)", [r.refundId]);
+    await q('savepoint oi_transfer');
+    try {
+      await bankTransfer(db(), { actor: c.b.actor, orderId: c.b.orderId, origin: 'return', amount, on: DAY.d10, txn: `S27-${randomUUID().slice(0, 8)}` });
+    } catch (e) {
+      await q('rollback to savepoint oi_transfer');
+      throw new Infeasible((e as Error).message);
+    } finally {
+      await q('release savepoint oi_transfer').catch(() => undefined);
+    }
+  };
+
+  const orders = (names: string[], before: Array<[string, string]>): string[][] => {
+    const out: string[][] = [];
+    const go = (done: string[], rest: string[]) => {
+      if (rest.length === 0) { out.push(done); return; }
+      for (const n of rest) {
+        if (before.some(([x, y]) => y === n && rest.includes(x))) continue;
+        go([...done, n], rest.filter((r) => r !== n));
+      }
+    };
+    go([], names);
+    return out;
+  };
+
+  async function runFamily(f: Family) {
+    const seen = new Map<string, string[]>();
+    let infeasible = 0;
+    for (const perm of orders(Object.keys(f.steps), f.before)) {
+      await q('savepoint oi_perm');
+      try {
+        const a = await seedAutoOrder(db(), f.prices);
+        const b = await seedAnotherReturn(db(), a, 2);
+        await seedArrival(db(), a, f.arrivals[0], 0, DAY.d1);
+        if (f.arrivals[1] > 0) await seedArrival(db(), b, f.arrivals[1], 0, DAY.d1);
+        await runAll();
+        await postSales(db(), a.orderId, f.prices.reduce((x, y) => x + y, 0), DAY.d1);
+        const pi = (await q('select payment_intent_id from public.orders where id = $1', [a.orderId])).rows[0].payment_intent_id as string;
+        const d = await seedDispute(db(), { orderId: a.orderId, paymentIntentId: pi, amount: f.s, withdrawnAt: at(DAY.d3), createdAt: at(DAY.d3) });
+        await postWithdrawal(db(), d.disputeId, d.txnId, f.s, DAY.d3);
+        const ctx: Ctx = { a, b, dp: d.disputeId, refunds: {} };
+        let ok = true;
+        for (const name of perm) {
+          try { await f.steps[name](ctx); } catch (e) { if (e instanceof Infeasible) { ok = false; break; } throw e; }
+          await runAll();
+        }
+        if (!ok) { infeasible += 1; continue; }
+        const key = JSON.stringify(await snap(a.orderId));
+        seen.set(key, [...(seen.get(key) ?? []), perm.join(' > ')]);
+      } finally {
+        await q('rollback to savepoint oi_perm');
+        await q('release savepoint oi_perm');
+      }
+    }
+    return { seen, infeasible };
+  }
+  const expectSame = async (f: Family) => {
+    const { seen } = await runFamily(f);
+    expect([...seen.entries()].map(([result, orders2]) => ({ result: JSON.parse(result), count: orders2.length, example: orders2[0] }))).toEqual([
+      { result: f.expected, count: [...seen.values()][0]?.length ?? 0, example: [...seen.values()][0]?.[0] }]);
+  };
+
+  const fullRefund = (createdOn: string, successOn: string): Pick<Family, 'steps' | 'before'> => ({
+    steps: { lost, closeA: closeA(10000), refund: refundCreate('r1', 10000, createdOn), success: refundSucceed('r1', 10000, successOn) },
+    before: [['refund', 'success']],
+  });
+
+  test('FREQ-643-AC-04: N1・(k) 返品 A・B（各 10,000）が day1 に届き、A の0円の終わり・B の返金（day9 に作り day10 に成功）・負けの確定が、どの順でも 2130 = 0・4020 の純額 借 20,000・売上の純額 0', async () => {
+    await expectSame({ name: 'N1', prices: [10000, 10000], arrivals: [10000, 10000], s: 10000, expected: { payable: 0, d4020: 20000, review: 0, net: 0 }, ...fullRefund(DAY.d9, DAY.d10) });
+  });
+
+  test('FREQ-643-AC-03: (i) B の返金を作った日が最後の0円の終わりの日（day8）より前（day7）でも、どの順でも同じ円（2130 = 0・4020 の純額 借 20,000・売上の純額 0）', async () => {
+    await expectSame({ name: 'i', prices: [10000, 10000], arrivals: [10000, 10000], s: 10000, expected: { payable: 0, d4020: 20000, review: 0, net: 0 }, ...fullRefund(DAY.d7, DAY.d10) });
+  });
+
+  test('FREQ-643-AC-03: (h) 組2・N7 返品 B が負けた日の後（day6）に届く。B の到着・A の0円の終わり・B の返金・負けの確定が、どの順でも 2130 = 0・4020 の純額 借 20,000・売上の純額 0', async () => {
+    await expectSame({ name: 'h2/N7', prices: [10000, 10000], arrivals: [10000, 0], s: 10000, expected: { payable: 0, d4020: 20000, review: 0, net: 0 },
+      steps: { lost, closeA: closeA(10000), arrivalB: arrivalB(10000), refund: refundCreate('r1', 10000, DAY.d9), success: refundSucceed('r1', 10000, DAY.d10) },
+      before: [['arrivalB', 'refund'], ['refund', 'success']] });
+  });
+
+  test('FREQ-643-AC-03: 6,000 + 4,000 の返金（B の2回の返金。day9・day11 に作り day10・day12 に成功）が、A の0円の終わり・負けの確定とどの順でも 2130 = 0・4020 の純額 借 20,000・売上の純額 0', async () => {
+    await expectSame({ name: '6000/4000', prices: [10000, 10000], arrivals: [10000, 10000], s: 10000, expected: { payable: 0, d4020: 20000, review: 0, net: 0 },
+      steps: { lost, closeA: closeA(10000), refund1: refundCreate('r1', 6000, DAY.d9), success1: refundSucceed('r1', 6000, DAY.d10),
+        refund2: refundCreate('r2', 4000, '2026-11-11'), success2: refundSucceed('r2', 4000, DAY.d12) },
+      before: [['refund1', 'success1'], ['refund1', 'refund2'], ['refund2', 'success2']] });
+  });
+
+  test('FREQ-643-AC-03: N5 B の返金が失敗し返品の銀行振込で払われた（決定は数えられない）注文は、A の0円の終わり・負けの確定とどの順でも 2130 = 0・4020 の純額 借 20,000・売上の純額 0（振込が断られる順は除く）', async () => {
+    await expectSame({ name: 'N5', prices: [10000, 10000], arrivals: [10000, 10000], s: 10000, expected: { payable: 0, d4020: 20000, review: 0, net: 0 },
+      steps: { lost, closeA: closeA(10000), failedB: failedRepaid(10000) }, before: [] });
+  });
+
+  test('FREQ-643-AC-04: (e) 返品 A（5,000）・B（15,000）・S=20,000。A だけ終えた0円の終わりと負けの確定が、どの順でも 2130 = 0・4020 の純額 借 20,000・売上の純額 0', async () => {
+    await expectSame({ name: 'e', prices: [5000, 15000], arrivals: [5000, 15000], s: 20000, expected: { payable: 0, d4020: 20000, review: 0, net: 0 },
+      steps: { lost, closeA: closeA(5000) }, before: [] });
   });
 });

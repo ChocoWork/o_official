@@ -225,7 +225,7 @@ Stripe の管理画面で返したが、アプリに記録していない返金�
 
 確定 C が入った取り消しの負けた日以降に、返品を0円で終えた（返金なしの決定の）仕訳は、人が手で入れず、返品の計上係が自動で入れる。
 
-- **待ち**（この順。どれも解けると次の流しで自動で入る）: 日の早い物が先（同じ注文に、日の鍵が小さくてまだ入っていない決定がある。切り替えの日より前の `before_cutover` の開いた行は数えない）→ 途中の返金（`dispute_refund_overlap`、詳細 `why` `refund`）→ ほかの返品の返金の額が未決（`dispute_return_refund_pending`、`why` `return`）。
+- **待ち**（この順。どれも解けると次の流しで自動で入る）: 日の早い物が先（同じ注文に、日の鍵が小さくてまだ入っていない決定がある。切り替えの日より前の `before_cutover` の開いた行は数えない）→ 途中の返金（`dispute_refund_overlap`、詳細 `why` `refund`）→ ほかの返品の返金の額が未決（P_eff = min(P(決定の日)、P(今)′) が 0 より大きい間だけ。D14・D15。返金が失敗して銀行振込で払われた返品のように決定が数えられない返品では待たない。`dispute_return_refund_pending`、`why` `return`）。
 - **途中の返金から外す例外**: 同じ返品の後の返金 R が、この決定（と日の鍵がそれより後の決定）を待っているだけで、成功の仕訳がまだ入っていない時は、互いに待たないよう途中の数から外す。
 - **入れる額**: P_eff = min(P(決定の日)、P(今)′)。w = min(決めた額 c、max(P_eff、0))。w が正なら w だけ入れる。P_eff が0以下なら入れず `no_revenue` で閉じる（返金の係は、閉じた決定を済みと数えて同じ返品の後の返金を入れる）。
 - **入れた後の確かめ**: 入れた後に 2130 が負になる時は `ACCOUNTING_POSTING_BALANCE_NEGATIVE` で巻き戻し、計上待ちに `posting_error` が出る。通常は起きない守り。
@@ -238,7 +238,7 @@ Stripe の管理画面で返したが、アプリに記録していない返金�
 
 確定 C の前に、負けた日より後の日付の返金なしの決定の仕訳（取り消されていない）が入っている注文は、S27 の後は取り消しの計上係が止めず、C と直しを1つのトランザクションで入れる。
 
-- **待ち**（この順。どれも解けると次の流しで自動で入る）: C の前提（引かれた分が全部入っている・負けた時刻以前の取り下げが未計上でない → `dispute_withdrawal_missing`、`accounting_dispute_offset_ready` → `dispute_refund_overlap`・`dispute_return_refund_pending`）→ 途中の返金が1つでもある（`dispute_refund_overlap`、`why` `refund`。負けた日で切らず、外さない）→ D13: C の `pay` が負けた日の R より小さく、かつ C の前の 2130 が 0 より大きい時だけ（D14）、額が未決の別の返品（その注文の全部の返品）があれば `dispute_return_refund_pending`（`why` `return`）で待つ → 日の早い物が先（`dispute_return_refund_pending`、`why` `return`。C の鍵の日は最後の0円の終わりの日。鍵が同じか小さい未計上の決定、または鍵の日が小さく、同じ日なら取り消しの番号が小さい別の取り消しの C。済んだ C・仕訳なしや人が結んで閉じた C の行・切り替えの前に負けた取り消しは数えない）。
+- **待ち**（この順。どれも解けると次の流しで自動で入る）: C の前提（引かれた分が全部入っている・負けた時刻以前の取り下げが未計上でない → `dispute_withdrawal_missing`、`accounting_dispute_offset_ready` → `dispute_refund_overlap`・`dispute_return_refund_pending`）→ 途中の返金が1つでもある（`dispute_refund_overlap`、`why` `refund`。負けた日で切らず、外さない）→ D13・D15: C の `pay` が負けた日の R より小さい、または額が未決の返品に負けた日より後に届いた到着がある時で、かつ C の前の 2130 が 0 より大きい時だけ（D14）、額が未決の別の返品（その注文の全部の返品）があれば `dispute_return_refund_pending`（`why` `return`）で待つ → 日の早い物が先（`dispute_return_refund_pending`、`why` `return`。C の鍵の日は最後の0円の終わりの日。鍵が同じか小さい未計上の決定、または鍵の日が小さく、同じ日なら取り消しの番号が小さい別の取り消しの C。済んだ C・仕訳なしや人が結んで閉じた C の行・切り替えの前に負けた取り消しは数えない）。
 - **C**: 今の計上係の C の文のまま（印 `dispute_event:<dp>:confirmed:lost`・日は負けた日）。待ちが全部解けた時に、行の組み立てを変えずに入る。
 - **直し**: 0円の終わりの日（取り消されたものを除く）を早い順に n = 1, 2, … とし、各 d_n で y_n = max(−B(d_n), 0)。B(d_n) は d_n までの 2130 `return_refund`（C・前の直しを含む。返金の成功は作った日で数える）。y_n > 0 なら 借 4020 y_n／貸 2130 `return_refund` y_n（行に注文・memo `closefix:<n>`・日は d_n・見出しは 0円の終わりと同じ・記録の時刻は入れた時刻）を、印 `dispute_event:closefix:<dp>:<n>` で入れる。印の頭が `dispute_event:<dp>:` の外なので、取り消しごとの残高と遅れた取り下げ L の振り分けは直しを読まない。d_n の期間が無ければ C も直しも入らず、`period_missing` の `detail.entry_date` が d_n になる。
 - **最後の直し（D12）**: 最後の d_n だけ y = max(−B(d_n), min(−P(今), C の pay − 前の直しの合計), 0)。最後の0円の終わりの日 d_last より後に作った返金の成功が C の前に入っていて今の 2130 が負でも、C が取りすぎた分（pay まで）は戻す。pay を超える分は隠さず、次の確かめで `posting_error` になる。
