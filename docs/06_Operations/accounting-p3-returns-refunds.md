@@ -1,6 +1,6 @@
 # 会計の返品・返金の運用（会計の作り直し 計画3）
 
-> 状態: 運用手順（**移行 S15〜S26 は 2026-11-15 に本番適用済み**〔CLI `db push --linked --include-all`、版はファイル名のまま〕。画面・route の配備と push はまだ） | 確認日: 2026-11-15（16節: S27 を当てる手順と開いた行の件数の記録欄を足した） | 対象: 移行 S15〜S27（`supabase/migrations/20261112145303` 〜 `20261115100000_accounting_p3_*.sql`）、返金・返品の route と画面、計上係の返金の係・返品の係、消費税用の返金の一覧
+> 状態: 運用手順（**移行 S15〜S26 は 2026-11-15 に本番適用済み**〔CLI `db push --linked --include-all`、版はファイル名のまま〕。画面・route の配備と push はまだ） | 確認日: 2026-11-15（16節: S27 を当てる手順と開いた行の件数の記録欄を足した） | 対象: 移行 S15〜S27（`supabase/migrations/20261112145303` 〜 `20261116000000_accounting_p3_*.sql`）、返金・返品の route と画面、計上係の返金の係・返品の係、消費税用の返金の一覧
 
 ## 概要
 
@@ -257,8 +257,9 @@ Stripe の管理画面で返したが、アプリに記録していない返金�
 1. 当てる前に、本番を**読むだけの問い合わせ**で次の2つの件数を数え、下の記録欄に書く（実装者は本番に触れない。本番を読む・当てるのはオーナーの許可を得た人だけ）。
    - 閉じた行（`order_not_postable`・`detail.reason` が `dispute_lost`／`return_closed_after_lost`・`resolved_at`・`resolved_entry_id`・`resolved_by` がそろった行）。**1件でもあれば、移行は `acc_s27_precheck` で止まる**。止まったら、その注文を人が個別に直してから流す。
    - 開いた行（同じ理由・`resolved_at` が NULL）。止めずに通る。S27 の後の最初の計上係の流しで、自動で入る・待ちの理由に変わる・`no_revenue` で閉じる、のどれかになる。
-2. CLI で当てる（`--linked`。`db-migrations.md` の手順）。移行そのものは開いた行を変えない。S27 の後の最初の計上係の流しの後に、同じ読むだけの問い合わせで、開いた行が0件になった（または待ちの理由で読める）ことを確かめ、記録欄に書く。push の直前には、移行ファイルが LF（CR が0件、`git ls-files --eol` が `w/lf`）で、大きさと MD5 が[DB 移行](db-migrations.md)の S27 の節と同じことを確かめ、その後 `git checkout`・`stash` を流さない。
-3. 計上待ちの一覧に、`dispute_refund_overlap`・`dispute_return_refund_pending` の行が残っていれば、その文（人が何をするか）に従う。画面の変更は無い。
+2. push の直前（CLI `db push --linked --include-all` の前）に、移行ファイルが LF（CR が0件、`git ls-files --eol` が `w/lf`）で、大きさと MD5 が[DB 移行](db-migrations.md)の S27 の節と同じことを確かめ、その後 `git checkout`・`stash` を流さない。
+3. CLI で当てる（`--linked`。`db-migrations.md` の手順）。移行そのものは開いた行を変えない。S27 の後の最初の計上係の流しの後に、同じ読むだけの問い合わせで、開いた行が0件になった（または待ちの理由で読める）ことを確かめ、記録欄に書く。
+4. 計上待ちの一覧に、`dispute_refund_overlap`・`dispute_return_refund_pending` の行が残っていれば、その文（人が何をするか）に従う。画面の変更は無い。
 
 | 記録 | 件数 | 確かめた日 |
 | --- | --- | --- |
