@@ -1,5 +1,7 @@
 # 要件定義書
 
+> 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 3）: FREQ-581-AC-05 の「確定の日より後に返品を0円で終えた仕訳が先に入っている」場合は、取り消しの計上係が C と直し（`dispute_event:closefix:<dp>:<n>`）を自動で入れる（FREQ-643-AC-04）。証明は `accounting_p3_pending_auto_posting`。
+
 > 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 6）: FREQ-569-AC-01・AC-07、FREQ-581-AC-05 の行を、計上待ちの `dispute_lost`・`return_closed_after_lost` の専用の文（手で仕訳を入れる案内）が無くなり、`dispute_refund_overlap`・`dispute_return_refund_pending` の文が人の操作を書く文になったことに直した（画面の文字だけ。移行は無い）。
 
 > 2026-11-15 確認日（会計の計画 3 最終レビューの直し）: FREQ-579-AC-01（返送不要の返品の返金。S26）、FREQ-579-AC-04（振込の応答の strict な読み）、FREQ-579-AC-05（普通の返品の借りの結びの断り。S26）、FREQ-578-AC-09（返品の返金待ちの負の異常。S26）、FREQ-583-AC-01・AC-03（期間の課税・免税の列、やり直しの409の無い続き）、FREQ-569-AC-07（結んだ後に計上係を流す）の行に、証明する部分を足した。ACの文は変えていない。

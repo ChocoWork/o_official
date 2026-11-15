@@ -416,7 +416,7 @@ describeLocalDb('S22 dispute offset: controller only', (db) => {
     expect((await decisionPending(factId))?.resolved_at).toBeInstanceOf(Date);
   });
 
-  test('FREQ-581-AC-05: 返品を0円で終えた仕訳が先に入った後で、それより前の日の確定の知らせが届くと、確定は仕訳にならず手で入れる待ち（理由 return_closed_after_lost）になり、二重に数えない', async () => {
+  test('FREQ-581-AC-05: 返品を0円で終えた仕訳が先に入った後で、それより前の日の確定の知らせが届くと（S27 の後）、確定は止めず入り、戻しすぎは直し（借 4020／貸 2130）で戻って、二重に数えない', async () => {
     const d = await seedDisputeFlow(db(), { snapshot: false });
     await consultReceipt(d);
     await settle();
@@ -427,14 +427,15 @@ describeLocalDb('S22 dispute offset: controller only', (db) => {
     await d.withdraw();
     await d.lose();
     await settle();
-    expect(await confirmed(d)).toBeNull();
-    const pending = await pendingOf('stripe_disputes', d.disputeId);
-    expect(pending).toMatchObject({ reason: 'order_not_postable', detail: { reason: 'return_closed_after_lost' }, resolved_at: null });
-    expect(await balance(d.disputeId, '1470', 'dispute_pending')).toBe(30000);
+    // C は負けた日で R(負けた日) = 16,875 を相殺し、費用 13,125 が残る。0円の終わりが先に 2130 を 0 にしているので、直しが 16,875 を戻す
+    expect(await confirmed(d)).toEqual(['7530:13125/0', '2130(return_refund):16875/0', '1470(dispute_pending):0/30000']);
+    expect(await pendingOf('stripe_disputes', d.disputeId)).toBeUndefined();
+    expect(await balance(d.disputeId, '1470', 'dispute_pending')).toBe(0);
+    expect(await summary(`dispute_event:closefix:${d.disputeId}:1`)).toEqual(['4020:16875/0', '2130(return_refund):0/16875']);
     expect(await payableOf(d.orderId)).toBe(0);
     expect(await reviewOf(d.orderId)).toBe(0);
     await settle();
-    expect(await confirmed(d)).toBeNull();
+    expect(await disputeEntryCount(d.disputeId)).toBe(2);
   });
 
   test('FREQ-581-AC-05: 確定の日より前の日に返品を0円で終えた仕訳はふつうに入り、確定の相殺の返金待ちにはその分が入らない', async () => {

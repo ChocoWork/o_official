@@ -65,7 +65,7 @@ describeLocalDb('S24 pending manual close: controller only', (db) => {
   test('FREQ-569-AC-07: 手で入れた仕訳と結んで、送料や合計の形の違いと取り消しの確定の分け方の計上待ちを閉じられ、ほかの理由は断られる', async () => {
     const admin = await insertAccountingAdmin(db());
     const orderId = await order();
-    for (const detail of [{ reason: 'shipping' }, { reason: 'units_sum' }, { reason: 'units_missing' }, { reason: 'dispute_lost' }, { reason: 'return_closed_after_lost' }]) {
+    for (const detail of [{ reason: 'shipping' }, { reason: 'units_sum' }, { reason: 'units_missing' }]) {
       const row = await parkManual(orderId, 'order_not_postable', detail);
       const entry = await manualWithOrders([orderId]);
       const key = randomUUID();

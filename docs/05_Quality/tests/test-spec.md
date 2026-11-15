@@ -1,5 +1,7 @@
 # テスト仕様
 
+> 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 3）: DB 結合の `accounting_p3_pending_auto_posting` に取り消しの計上係の `return_closed_after_lost`（C と直し。FREQ-643-AC-03・04・05・07・08・09。33件）を足した。円は (d)(d2)(e)(f)(i)・遅れての取り下げ L・2つ目の取り消し B・年またぎ・取り消された0円の終わり・期間なしを固定し、待ちは文の順に1本ずつ、返品の計上係の日の早い物の条件（切り替えの前に負けた取り消し・取り消された0円の終わり・人が結んで閉じた C の行）も確かめる。`accounting_p3_dispute_offset` の旧「止める」の1件を C と直しの期待に、`accounting_p3_pending_manual_close` の結ぶ理由の一覧から `dispute_lost`・`return_closed_after_lost` を外した。
+
 > 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 2）: DB 結合の `accounting_p3_pending_auto_posting` に返品の計上係の `dispute_lost`（FREQ-643-AC-01・02・03・05・06・08。38件）を足した。旧「止める」を期待した試験（`accounting_p3_dispute_offset` の2件、`accounting_p3_pending_manual_close` の1件）は `no_revenue` で閉じる期待に直し、S22 の末尾の確かめの再生は `restoreS22DisputeAndReturnPosters`（`accounting-returns-fixtures.ts`）で2つの計上係を S22 の本文に戻してから流す。
 
 > 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 1）: DB 結合に `accounting_p3_pending_auto_posting`（35件。FREQ-643-AC-03・06・12）を足した。S27 の前の確かめ・途中の返金の関数（5つの形と外す3条件）・R の式の関数（S22 の C の式と同じ）・返金の待ちの「入れない決定は済み」を、円と補助科目を固定して確かめる。共通の材料は `tests/integration/db/helpers/accounting-pending-auto-fixtures.ts`。
@@ -2006,7 +2008,7 @@ E2E の既存の spec は、固定の手数料の止め（S16）に合わせて�
 | `accounting_p3_pending_manual_close` | 6 | FREQ-581-AC-05、582-AC-06 | 手で入れた仕訳と結ぶ・人が閉じた取引・2つ目の取り消し |
 | `accounting_p3_refund_debt_reads` | 10 | FREQ-579-AC-04・05 | 借りの一覧（返品の借り・処理中の返金・上限）、結びの候補、振込の断り（処理中）、普通の返品の借りの結びの断り・普通の返品の返金を払い手にした結びの断り（S26） |
 | `accounting_p3_return_not_required` | 4 | FREQ-579-AC-01 | 返送不要の返品（S26）: 届いた日・額の決定の事実と仕訳が無く、返金した日（次の年ならその年）に 4020／1160 の1本、失敗の借りは出荷後の借り。普通の返品は今までどおり |
-| `accounting_p3_pending_auto_posting` | 76（展開後。Task 1 の35件と Task 2 の41件。以後の Task が増やす） | FREQ-643-AC-01・02・03・05・06・08・12 | S27 の前の確かめ（閉じた行で止まる・開いた行は通る）、途中の返金の5つの形と外す3条件、R の式（作った日で数える・負をそのまま返す・S22 の C の式と同じ）、返金の待ちが入れない決定を済みと数える。Task 2: 返品の計上係の `dispute_lost`（0円の終わり）の円（設計 3-8 の (a)(b)(c1)(c2)(e)(g)(h)(j) を、本物の返品の計上係・返金の計上係で固定。待ち5つの形・ほかの返品が未決・日の鍵・期間が無い日・切り替え前・入れた後に負になる細工・S27 の前の開いた行） |
+| `accounting_p3_pending_auto_posting` | 109（展開後。Task 1 の35件・Task 2 の41件・Task 3 の33件。以後の Task が増やす） | FREQ-643-AC-01・02・03・04・05・06・07・08・09・12 | S27 の前の確かめ（閉じた行で止まる・開いた行は通る）、途中の返金の5つの形と外す3条件、R の式（作った日で数える・負をそのまま返す・S22 の C の式と同じ）、返金の待ちが入れない決定を済みと数える。Task 2: 返品の計上係の `dispute_lost`（0円の終わり）の円（設計 3-8 の (a)(b)(c1)(c2)(e)(g)(h)(j) を、本物の返品の計上係・返金の計上係で固定。待ち5つの形・ほかの返品が未決・日の鍵・期間が無い日・切り替え前・入れた後に負になる細工・S27 の前の開いた行） |
 | `accounting_p3_migration_asserts` | 58（`test` 42・`test.each` 16。展開前） | FREQ-562-AC-05、569-AC-01・07、575-AC-01、576-AC-03〜05、578-AC-05・09、579-AC-01・04・05、580-AC-02、581-AC-01・05、582-AC-05・06 | S15〜S26 の本文の契約と末尾の自己検査 |
 
 作り直した関数・直した既存の試験は[DB 移行](../../06_Operations/db-migrations.md)の計画 3 の節。新しい共通の材料は `tests/integration/db/helpers/accounting-returns-fixtures.ts`（`withoutReturnFeeLock` など）。

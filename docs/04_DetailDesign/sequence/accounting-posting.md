@@ -273,8 +273,10 @@ sequenceDiagram
   else 届いた日・決定の仕訳が無い
     K-->>D: 待つ（dispute_return_refund_pending）
     D->>Q: 保留
-  else 確定の日より後に返品を0円で終えた仕訳が先に入っている
-    D->>Q: order_not_postable（return_closed_after_lost）
+  else 確定の日より後に返品を0円で終えた仕訳が先に入っていて、途中の返金がある（外さない）
+    D->>Q: 待つ（dispute_refund_overlap・why refund）
+  else 同じ場合で、日の鍵が小さい未計上の決定か別の取り消しの C がある
+    D->>Q: 待つ（dispute_return_refund_pending・why return）
   else 通る
     D->>A: R・Z・S から pay・review を決める
     A-->>D: pay = min(R, S)、review = min(Z, S − pay)

@@ -1,6 +1,6 @@
 # カード会社からの支払いの取り消し（dispute）の状態と計上の段
 
-> 状態: 現行のソース（会計の作り直し 計画2 Task 5・6・7。手元の Supabase で確かめた分。本番には未適用） | 確認日: 2026-11-15（計画3で変わった段と待ちの節を足した）／2026-11-09 | 対象: `stripe_disputes`（dispute の状態）、`stripe_dispute_events`（履歴）、dispute の仕訳の4つの段（W・C・R／L・X）とその待ち合い
+> 状態: 現行のソース（会計の作り直し 計画2 Task 5・6・7。手元の Supabase で確かめた分。本番には未適用） | 確認日: 2026-11-15（S27 Task 3: 確定の後の直しを足した。計画3で変わった段と待ちの節を足した）／2026-11-09 | 対象: `stripe_disputes`（dispute の状態）、`stripe_dispute_events`（履歴）、dispute の仕訳の4つの段（W・C・R／L・X）とその待ち合い
 
 ## 概要
 
@@ -81,7 +81,7 @@ flowchart LR
 | 段 | 計画3での変わり方 |
 | --- | --- |
 | W（引かれた時） | 返金・返品があっても止まらない。判断待ちの間は、その注文の返金の開始と発送票の確定を DB が断る（`ACCOUNTING_DISPUTE_HOLD`） |
-| C（確定） | 確定の日までの返金の結果が出ていない間、または確定の日以前の届いた日・額の決定の仕訳が無い間は待つ（`dispute_refund_overlap`・`dispute_return_refund_pending`）。通ると、返品の返金待ち R を「2130 `return_refund`／1470」で消し（`pay = min(R, 取り消しの額 S)`）、返金済みと重なる分 Z を 1470 補助 `dispute_refund_overlap_review` へ移し（`review = min(Z, S − pay)`）、残りだけを原因の科目の費用にする。確定の日以降に返品を0円で終えた仕訳が先に入っている時は `order_not_postable`（`return_closed_after_lost`）、確定の後に確定の日以降の0円の終わりが来た時は `order_not_postable`（`dispute_lost`）で、手で仕訳を入れて結ぶ |
+| C（確定） | 確定の日までの返金の結果が出ていない間、または確定の日以前の届いた日・額の決定の仕訳が無い間は待つ（`dispute_refund_overlap`・`dispute_return_refund_pending`）。通ると、返品の返金待ち R を「2130 `return_refund`／1470」で消し（`pay = min(R, 取り消しの額 S)`）、返金済みと重なる分 Z を 1470 補助 `dispute_refund_overlap_review` へ移し（`review = min(Z, S − pay)`）、残りだけを原因の科目の費用にする。確定の日より後に返品を0円で終えた仕訳（返金なし・取り消されていない）が先に入っている時も、S27 の後は止めず、取り消しの計上係が C をそのまま入れ、0円の終わりの日 d_n ごとに直し（借 4020 y_n／貸 2130 `return_refund` y_n、印 `dispute_event:closefix:<dp>:<n>`）を同じトランザクションで入れる。待ちは、途中の返金（全部。外さない）→ `dispute_refund_overlap`、日の早い物が先（鍵が小さい未計上の決定、または鍵が小さい別の取り消しの C）→ `dispute_return_refund_pending`。確定の後に確定の日以降の0円の終わりが来た時は、返品の計上係が自動で扱う（14節） |
 | R／L（戻り） | 遅れた取り下げ（L）は、費用の科目（振り替えた科目）→ 補助 `dispute_refund_overlap_review` → 返金待ち（2130）の順に戻す。確定の前の戻り（R）は相殺しない |
 | X（振り替え） | 変わらない（待ちの規則は計画2のまま） |
 
