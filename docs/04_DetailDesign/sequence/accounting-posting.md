@@ -283,7 +283,7 @@ sequenceDiagram
     D->>A: R・Z・S から pay・review を決める
     A-->>D: pay = min(R, S)、review = min(Z, S − pay)
     D->>C: 2130（return_refund）pay / 1470（dispute_refund_overlap_review）review / 費用 残り
-    D->>C: 直し（確定の日より後の0円の終わりがある時）借 4020 y_n／貸 2130（return_refund）y_n（印 closefix:<n>、日は d_n）
+    D->>C: 直し（確定の日より後の0円の終わりがある時）借 4020 y_n／貸 2130（return_refund）y_n（印 closefix:<n>、日は d_n。y_n = max(−B(d_n), 0)。最後の直しは D12・D16 で今の 2130 の負も pay と0円の終わりの額まで戻す。どの直しも D17 で、その日までの0円の終わりが取った額に上限）
   end
 ```
 
@@ -291,7 +291,8 @@ sequenceDiagram
 | --- | --- |
 | 遅れた取り下げ（L） | 費用の科目（または振り替えた科目）→ 分けて調べる補助 → 返金待ち（2130）の順に戻す |
 | 確定の後の0円の終わり（S27） | 返金なしの決定が、確定 C の入った取り消しの負けた日以降の日付なら、返品の計上係が自動で扱う。待ち（日の早い物が先 → 途中の返金 `dispute_refund_overlap`（`why` `refund`）→ ほかの返品が未決 `dispute_return_refund_pending`（`why` `return`。P_eff = min(P(D)、P(今)′) が 0 より大きい間だけ））に当たらなければ、P(D)（決定の日までの 2130 の貸方 − 借方）と P(今)′（今までの全部から、途中から外した返金の分を引いた値）の小さい方 P_eff を出し、w = min(c, max(P_eff, 0)) とする。w > 0 なら決定の印 `return_amount_decided:<事実の番号>` で w だけ入れる（借 2130 w・借 4050 f／貸 4020 w + f。見出し・記録の時刻・source は普通の0円の終わりと同じ）。P_eff ≤ 0 なら仕訳は入れず、理由 `no_revenue`（`detail` `{}`・`resolved_entry_id` NULL）で閉じ、返金の係の待ち `return_prior` は済みと数える |
-| 入れた後の確かめ（S27） | 入れた後に、その注文の 2130 を決定の日まででも今でも読み直し、どちらかが0未満なら `ACCOUNTING_POSTING_BALANCE_NEGATIVE`（SQLSTATE `23514`）で巻き戻す。計上係の例外の道に入り、`posting_error`（`error_code` にこの名前）で止まる |
+| 入れた後の確かめ（S27。取り消しの計上係の C と直しは下の別の行） | 入れた後に、その注文の 2130 を決定の日まででも今でも読み直し、どちらかが0未満なら `ACCOUNTING_POSTING_BALANCE_NEGATIVE`（SQLSTATE `23514`）で巻き戻す。計上係の例外の道に入り、`posting_error`（`error_code` にこの名前）で止まる |
+| 入れた後の確かめ（S27。取り消しの計上係の C と直し） | 直しごとに d_n までの 2130 が0未満（上限に止められなかった直しだけが対象）、全部入れた後に 1470 `dispute_refund_overlap_review` が0未満なら `ACCOUNTING_POSTING_BALANCE_NEGATIVE`（`23514`）で C ごと巻き戻し、`posting_error` で止まる。今の 2130 の負（C と関係ない二重払い）は例外にせず、異常の一覧（`return_refund_negative_balance`）に出す（D16・D17） |
 | 取り出しの順（S27 で確かめた） | 返金なしの決定を取り出す順は、返品の計上係が `ORDER BY lane, phase`（lane 0 は作った時刻・返品・番号の順、lane 1 は検出の時刻の順）、取り消しの計上係が `ORDER BY j.phase, j.lane`（S22）で、**違う**。同じ流しの中でも、日の遅い新しい決定（lane 0）が、日の早い前に待たせた行（lane 1）より先に評価されうる。そこで返品の計上係は「日の鍵が小さい未計上の物があれば待つ」を持つ |
 | 2つ目の取り消し | 手で入れる待ちの `dispute_lost` の決定は待ちの数えに入れない（S24。S27 の後は `dispute_lost` の行が新しく作られないので、S27 の前に作った開いた行のための物） |
 | 数える日 | 返金の成功の仕訳（返金の係）は返金を作った日（日本時間）が確定の日以前なら、仕訳の日にかかわらず数える。ほかの仕訳（取り消しを含む）は仕訳の日が確定の日以前の時だけ数える |

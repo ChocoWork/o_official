@@ -661,6 +661,8 @@ DECLARE
   v_fix_date date;
   v_fix_check_day bigint;
   v_fix_closes bigint;
+  v_fix_cap bigint;
+  v_fix_loss date;
   v_fix_review bigint;
   v_fix_sum bigint;
   v_fix_last date;
@@ -1128,6 +1130,7 @@ BEGIN
           IF v_order_id IS NOT NULL AND (v_result ->> 'created')::boolean THEN
             v_fix_n := 0;
             v_fix_sum := 0;
+            v_fix_loss := v_date;
             SELECT pg_catalog.max(e.entry_date) INTO v_fix_last FROM public.accounting_journal_entries AS e
             JOIN public.accounting_return_facts AS f ON f.id::text = e.source_id
             WHERE e.event_kind = 'return_amount_decided' AND e.source_table = 'accounting_return_facts'
@@ -1157,6 +1160,15 @@ BEGIN
                 v_fix_now := private.accounting_order_return_payable(v_order_id, NULL);
                 v_fix_y := GREATEST(v_fix_y, LEAST(0 - v_fix_now, v_pay - v_fix_sum, v_fix_closes - v_fix_sum), 0);
               END IF;
+              -- D17: every fix only gives back what the 0 yen closes up to its day took off 2130 (less the earlier fixes). What is left
+              -- negative is a double payment of its own: it stays and the anomaly list shows it.
+              SELECT COALESCE(pg_catalog.sum(l.debit), 0) - v_fix_sum INTO v_fix_cap FROM public.accounting_journal_entries AS e
+              JOIN public.accounting_return_facts AS f ON f.id::text = e.source_id
+              JOIN public.accounting_journal_lines AS l ON l.entry_id = e.id AND l.account_code = '2130' AND l.sub_account = 'return_refund'
+              WHERE e.event_kind = 'return_amount_decided' AND e.source_table = 'accounting_return_facts'
+                AND f.order_id = v_order_id AND f.refund_id IS NULL AND e.entry_date > v_fix_loss AND e.entry_date <= v_fix_date
+                AND NOT EXISTS (SELECT 1 FROM public.accounting_journal_entries AS r WHERE r.reverses_entry_id = e.id);
+              v_fix_y := GREATEST(LEAST(v_fix_y, v_fix_cap), 0);
               IF v_fix_y > 0 THEN
                 -- The day of the fix first: when its period is missing, the whole event (C too) goes back and the parked row names
                 -- this day.
@@ -1173,7 +1185,9 @@ BEGIN
                 v_fix_entry_id := (v_fix_result ->> 'entry_id')::uuid;
                 v_fix_sum := v_fix_sum + v_fix_y;
                 v_fix_check_day := private.accounting_order_return_payable(v_order_id, v_date);
-                IF v_fix_check_day < 0 THEN
+                -- Only a fix that the cap did not hold back can be checked: a fix that took all the closes took off leaves what is
+                -- negative to the anomaly list (D17). A fix below the cap that still leaves the day negative is a defect.
+                IF v_fix_check_day < 0 AND v_fix_y < v_fix_cap THEN
                   RAISE EXCEPTION 'ACCOUNTING_POSTING_BALANCE_NEGATIVE' USING ERRCODE = '23514';
                 END IF;
               END IF;

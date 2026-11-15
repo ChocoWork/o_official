@@ -2018,9 +2018,9 @@ describeLocalDb('FREQ-643: S27 order independence of C, the fix entries and the 
     await postRefundSuccess(db(), c[who].orderId, c.refunds[id], amount, on);
   };
   /** 返金が失敗し、返金の借り（2130 return_refund）を返品の銀行振込で払う。振込が断られたら、その印を結果に残す（比べる）。 */
-  const failedRepaid = (amount: number) => async (c: Ctx) => {
-    const r = await seedRefundInFlight(db(), c.b, amount, ['requested', 'failed'], { decided: amount, covers: amount, on: DAY.d9 });
-    await setCreatedOn(db(), r.refundId, DAY.d9);
+  const failedRepaid = (amount: number, createdOn = DAY.d9, transferOn = DAY.d10) => async (c: Ctx) => {
+    const r = await seedRefundInFlight(db(), c.b, amount, ['requested', 'failed'], { decided: amount, covers: amount, on: createdOn });
+    await setCreatedOn(db(), r.refundId, createdOn);
     const mode = (await q("select tgenabled from pg_catalog.pg_trigger where tgrelid = 'public.order_refunds'::regclass and tgname = 'order_refunds_guard'")).rows[0].tgenabled as string;
     await q('alter table public.order_refunds disable trigger order_refunds_guard');
     await q("update public.order_refunds set status = 'failed' where id = $1", [r.refundId]);
@@ -2029,7 +2029,7 @@ describeLocalDb('FREQ-643: S27 order independence of C, the fix entries and the 
     await q("select private.accounting_unpark_event('refund_failed', 'order_refunds', $1, null)", [r.refundId]);
     await q('savepoint oi_transfer');
     try {
-      await bankTransfer(db(), { actor: c.b.actor, orderId: c.b.orderId, origin: 'return', amount, on: DAY.d10, txn: `S27-${randomUUID().slice(0, 8)}` });
+      await bankTransfer(db(), { actor: c.b.actor, orderId: c.b.orderId, origin: 'return', amount, on: transferOn, txn: `S27-${randomUUID().slice(0, 8)}` });
     } catch {
       await q('rollback to savepoint oi_transfer');
       c.refused = true;
@@ -2128,11 +2128,40 @@ describeLocalDb('FREQ-643: S27 order independence of C, the fix entries and the 
       steps: { lost, closeA: closeOf('a', 5000), refund: refundCreate('r1', 'b', 15000, DAY.d9), success: refundSucceed('r1', 'b', 15000, DAY.d10) }, before: [['refund', 'success']] });
   });
 
-  // N7 を鏡にした形（遅れて届いた B を0円で終え、早く届いた A を返金する）は、C が A を覆っているので A の返金は二重払い（2130 = −10,000・売上の純額 10,000）になるはずだが、
-  // 負けの確定が先の順では B の0円の終わりが A の返金を待ち、閉じて 2130 = 0・売上の純額 0 になる。順で円が変わるので、直さずにここで失敗として固定する（D16 の報告）。
-  test.failing('FREQ-643-AC-04: N7 の鏡（遅れて届いた B を0円で終え、早く届いた A を返金する）は、順（30通り）によって終わりの円が変わる（既知の限り。直さない）', async () => {
-    await expectSame({ ...base, arrivals: [10000, 0], orders: 30, expected: { payable: -10000, d4020: 10000, review: 0, net: 10000, anomaly: true },
-      steps: { lost, arrivalB: arrivalB(10000), closeB: closeOf('b', 10000), refund: refundCreate('r1', 'a', 10000, DAY.d9), success: refundSucceed('r1', 'a', 10000, DAY.d10) },
-      before: [['arrivalB', 'closeB'], ['refund', 'success']] });
+  // N17: C が覆った返品（pay = R）への2回目の払いの日が最後の0円の終わりの日以前（返金を day7 に作る）でも、C が後で入る順でも、直しは0円の終わりが取った額までなので、
+  // 二重払いは 2130 の負として残り異常の一覧に出る（時間どおりの順と同じ）。
+  test('FREQ-643-AC-04: D17 N17 (e) に B の返金 15,000（day7 に作り day10 に成功。0円の終わりは day8）を足すと、どの順（12通り）でも 2130 = −15,000・4020 の純額 借 20,000・売上の純額 0 で、異常の一覧に出る（C が最後の順で二重払いが直しに吸われない）', async () => {
+    await expectSame({ prices: [5000, 15000], arrivals: [5000, 15000], s: 20000, orders: 12, expected: { payable: -15000, d4020: 20000, review: 0, net: 0, anomaly: true },
+      steps: { lost, closeA: closeOf('a', 5000), refund: refundCreate('r1', 'b', 15000, DAY.d7), success: refundSucceed('r1', 'b', 15000, DAY.d10) }, before: [['refund', 'success']] });
+  });
+
+  test('FREQ-643-AC-04: D17 N17 の銀行振込版（B の返金が失敗し、返品の銀行振込を day7 の日付で払う）は、振込が断られる順（C が先で 2130 = 0）は 2130 = 0・売上の純額 0・異常なし、振込が通る順は 2130 = −15,000・売上の純額 0・異常の一覧に出る。無言で売上がマイナスになる順は無い（6通り）', async () => {
+    const f2: Family = { prices: [5000, 15000], arrivals: [5000, 15000], s: 20000, orders: 6, expected: same,
+      steps: { lost, closeA: closeOf('a', 5000), failedB: failedRepaid(15000, DAY.d7, DAY.d7) }, before: [] };
+    const { seen, total } = await runFamily(f2);
+    expect(total).toBe(6);
+    const results = [...seen.keys()].map((k) => JSON.parse(k) as Outcome).sort((x, y) => Number(x.refused) - Number(y.refused));
+    expect(results).toEqual([
+      { payable: -15000, d4020: 20000, review: 0, net: 0, anomaly: true, open: 0, refused: false },
+      { payable: 0, d4020: 20000, review: 0, net: 0, anomaly: false, open: 0, refused: true }]);
+  });
+
+  // N7 を鏡にした形（遅れて届いた B を0円で終え、早く届いた A を返金する）。C が A を覆っているので A の返金は二重払いだが、C が最後に入る1つの順
+  // （arrivalB > closeB > lost > refund > success）だけ 2130 = −10,000・売上の純額 10,000・異常あり、残りの29通りは 2130 = 0・売上の純額 0 になる。
+  // 正しい終わり（全部の順で 2130 = 0・売上の純額 0）を期待にした test.failing: 直ると（この試験が通るようになると）test.failing が落ちて気づく。
+  const mirror: Family = { ...base, arrivals: [10000, 0], orders: 30, expected: { payable: 0, d4020: 20000, review: 0, net: 0, anomaly: false },
+    steps: { lost, arrivalB: arrivalB(10000), closeB: closeOf('b', 10000), refund: refundCreate('r1', 'a', 10000, DAY.d9), success: refundSucceed('r1', 'a', 10000, DAY.d10) },
+    before: [['arrivalB', 'closeB'], ['refund', 'success']] };
+  test('FREQ-643-AC-04: N7 の鏡の既知の限りは29通りと1通りに分かれる（C が最後の1通り arrivalB > closeB > lost > refund > success だけ 2130 = −10,000・4020 の純額 借 10,000・売上の純額 10,000・異常あり）。これを固定する', async () => {
+    const { seen, total } = await runFamily(mirror);
+    expect(total).toBe(30);
+    const results = [...seen.entries()].map(([k, v]) => ({ result: JSON.parse(k) as Outcome, count: v.length, example: v.length === 1 ? v[0] : undefined }))
+      .sort((x, y) => y.count - x.count);
+    expect(results).toEqual([
+      { result: { payable: 0, d4020: 20000, review: 0, net: 0, anomaly: false, open: 0, refused: false }, count: 29, example: undefined },
+      { result: { payable: -10000, d4020: 10000, review: 0, net: 10000, anomaly: true, open: 0, refused: false }, count: 1, example: 'arrivalB > closeB > lost > refund > success' }]);
+  });
+  test.failing('FREQ-643-AC-04: N7 の鏡（遅れて届いた B を0円で終え、早く届いた A を返金する）が、全部の順（30通り）で 2130 = 0・売上の純額 0 になる（既知の限りで今は落ちる。直したらこの印を外す）', async () => {
+    await expectSame(mirror);
   });
 });
