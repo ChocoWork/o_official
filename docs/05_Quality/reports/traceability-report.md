@@ -134,7 +134,7 @@
 | `FR-ADMIN-127` | なし | 1件（[FR-ADMIN-127-discount-refund-amounts.spec.ts](../../../e2e/FR-ADMIN-127-discount-refund-amounts.spec.ts)） |
 | `FR-ADMIN-137` | 1件（[screen-list.md](../../03_BasicDesign/ui/screen-list.md)） | 1件（[FR-ADMIN-137-accounting-return-arrival.spec.ts](../../../e2e/FR-ADMIN-137-accounting-return-arrival.spec.ts)） |
 | `FR-ADMIN-138` | なし | 1件（[FR-ADMIN-138-accounting-refund-journals.spec.ts](../../../e2e/FR-ADMIN-138-accounting-refund-journals.spec.ts)） |
-| `FR-ADMIN-139` | なし | 1件（[FR-ADMIN-139-accounting-dispute-holds-offset.spec.ts](../../../e2e/FR-ADMIN-139-accounting-dispute-holds-offset.spec.ts)） |
+| `FR-ADMIN-139` | なし | 2件（[FR-ADMIN-137-accounting-return-arrival.spec.ts](../../../e2e/FR-ADMIN-137-accounting-return-arrival.spec.ts)） |
 | `FR-ADMIN-140` | なし | 1件（[FR-ADMIN-140-accounting-return-settings.spec.ts](../../../e2e/FR-ADMIN-140-accounting-return-settings.spec.ts)） |
 | `FR-ADMIN-164` | 4件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 2件（[FR-ADMIN-164-return-receive-per-item.spec.ts](../../../e2e/FR-ADMIN-164-return-receive-per-item.spec.ts)） |
 | `FR-ADMIN-165` | 2件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 1件（[FR-ADMIN-165-unit-binding-receive.spec.ts](../../../e2e/FR-ADMIN-165-unit-binding-receive.spec.ts)） |
@@ -2239,9 +2239,9 @@
 | `FREQ-578-AC-06` | なし | 2件（[accounting_p3_return_posting.integration.test.ts](../../../tests/integration/db/accounting_p3_return_posting.integration.test.ts)） |
 | `FREQ-578-AC-07` | なし | 3件（[accounting_p3_return_concurrency.integration.test.ts](../../../tests/integration/db/accounting_p3_return_concurrency.integration.test.ts)） |
 | `FREQ-578-AC-08` | なし | 3件（[accounting_p3_return_concurrency.integration.test.ts](../../../tests/integration/db/accounting_p3_return_concurrency.integration.test.ts)） |
-| `FREQ-578-AC-09` | なし | 2件（[accounting_p3_deferred_revenue_anomalies.integration.test.ts](../../../tests/integration/db/accounting_p3_deferred_revenue_anomalies.integration.test.ts)） |
+| `FREQ-578-AC-09` | なし | 3件（[accounting_p3_deferred_revenue_anomalies.integration.test.ts](../../../tests/integration/db/accounting_p3_deferred_revenue_anomalies.integration.test.ts)） |
 | `FREQ-578-AC-10` | なし | 2件（[accounting_p3_return_posting.integration.test.ts](../../../tests/integration/db/accounting_p3_return_posting.integration.test.ts)） |
-| `FREQ-579-AC-01` | なし | 1件（[accounting_p3_refund_posting.integration.test.ts](../../../tests/integration/db/accounting_p3_refund_posting.integration.test.ts)） |
+| `FREQ-579-AC-01` | なし | 3件（[accounting_p3_migration_asserts.integration.test.ts](../../../tests/integration/db/accounting_p3_migration_asserts.integration.test.ts)） |
 | `FREQ-579-AC-02` | 1件（[accounting-refund.md](../../04_DetailDesign/states/accounting-refund.md)） | 2件（[FR-ADMIN-138-accounting-refund-journals.spec.ts](../../../e2e/FR-ADMIN-138-accounting-refund-journals.spec.ts)） |
 | `FREQ-579-AC-03` | なし | 8件（[FR-ADMIN-138-accounting-refund-journals.spec.ts](../../../e2e/FR-ADMIN-138-accounting-refund-journals.spec.ts)） |
 | `FREQ-579-AC-04` | なし | 9件（[accounting_p3_migration_asserts.integration.test.ts](../../../tests/integration/db/accounting_p3_migration_asserts.integration.test.ts)） |

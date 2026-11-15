@@ -1,6 +1,7 @@
 # DB マイグレーション運用
 
-> 2026-11-15 確認日（会計の計画3 Task 13）: 末尾に「会計の作り直し 計画 3 の移行 S15〜S25（手元の DB で確認済み・本番未適用）」の節を足した（目的・順・大きさと MD5・作り直した関数・末尾の検査と戻し方・直した既存の試験）。X4 など交換の印の節は変えていない。本番へ当てる作業と記録は計画3の Task 14。
+> 2026-11-15 確認日（会計の計画3 Task 13）: 末尾に「会計の作り直し 計画 3 の移行 S15〜S26（手元の DB で確認済み・本番未適用）」の節を足した（目的・順・大きさと MD5・作り直した関数・末尾の検査と戻し方・直した既存の試験）。X4 など交換の印の節は変えていない。本番へ当てる作業と記録は計画3の Task 14。
+> 2026-11-15 確認日（会計の計画3 最終レビューの直し）: 新しい移行 `20261115100000_accounting_p3_final_fixes.sql`（S26。本番未適用）を足した。行も表も足さず、関数7本の本文だけ作り直す（返送不要の返品の返金・普通の返品の借りの結びの断り・返品の返金待ちの負の異常）。末尾の計画3の節に行と戻し方を足した。
 
 > 2026-11-12 確認日（オーナー修正 X4 / FREQ-642-AC-37）: 新しい移行 `20261112064013_unit_binding_refund_retry.sql` を足し、同じ日にオーナーの許可で本番に当てた。A〜D は本番適用済みなので直していない。末尾の節を参照。
 > 2026-11-12 確認日（FREQ-642 本番適用）: 移行 A〜D（20261110090325・20261110104605・20261110120611・20261110135232）を、オーナーの許可（2026-11-12「3つの直しの後に、本番適用と push をまとめて行う」）で本番に当てた。下の「交換の印の移行 A〜D の本番適用（2026-11-12）」の節。
@@ -1636,7 +1637,7 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 | 当てた後の確かめ | 関数5つ（`private.order_unit_return_refund_parts(uuid)`・`private.order_unit_link_refund(uuid,uuid,text)`・`private.begin_order_refund_core`（16引数）・`private.admin_refund_return`（8引数）・`public.admin_refund_return`（8引数））の `md5(pg_get_functiondef(...))` が手元と同じ。anon・authenticated は実行できない。`public.order_unit_event_refunds` の主キーは `(event_id, refund_id, part)`。`public.order_unit_event_waives` があり RLS が有効 |
 
 
-## 会計の作り直し 計画 3 の移行 S15〜S25（手元の DB で確認済み・本番未適用）
+## 会計の作り直し 計画 3 の移行 S15〜S26（手元の DB で確認済み・本番未適用）
 
 確認日: 2026-11-15（会計の計画3 Task 13）。FREQ-575〜584。計画は [会計の作り直し 計画3](../superpowers/plans/2026-11-04-accounting-p3-returns-refunds.md)。使い方・取り消された返金の扱い・振込の記録・判断待ちの止め・相殺の見方は[運用の手引き](accounting-p3-returns-refunds.md)が正本で、ここは移行の台帳として目的・順・末尾の検査・戻し方を写す。11本すべて手元の DB（`npm run db:reset`）で当てて確かめた。**本番には当てていない。push もしていない**（コミットは `b6fc56d3`〜`64c3ea83`）。本番へ当てる作業と記録は計画3の Task 14 が行い、その時にこの節の状態の欄と「本番への適用の記録」を書き換える。
 
@@ -1649,7 +1650,7 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 
 ### 順番と各ファイル
 
-適用の順はファイル名の順（S15 → S25）。各移行は1本の取引（`BEGIN`〜`COMMIT`）で、末尾に自己検査を持つ。検査が崩れると全部戻り、失敗の詳細は固定の `DETAIL` の語（`acc_s15_*`〜`acc_s25_*`）だけを返す。ファイルの MD5 はコミットしたファイルのもの。状態はすべて「本番未適用」。
+適用の順はファイル名の順（S15 → S26）。各移行は1本の取引（`BEGIN`〜`COMMIT`）で、末尾に自己検査を持つ。検査が崩れると全部戻り、失敗の詳細は固定の `DETAIL` の語（`acc_s15_*`〜`acc_s26_*`）だけを返す。ファイルの MD5 はコミットしたファイルのもの。状態はすべて「本番未適用」。
 
 | 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
 | --- | --- | --- | --- |
@@ -1664,6 +1665,7 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 | S23 `20261113100000_accounting_p3_intake_tax_reads.sql` | 54,924 bytes / `42686f0324b711b9bd61a6d96cbd6840` | 本番未適用 | 受注高の出来事・内訳（`post_shipment_refund`）・2段の照らし合わせ・前受金の異常（2つの理由）・Stripe の残高の照合が計画3の仕訳を数える。消費税用の返金の一覧と合計（`list_consumption_tax_refunds`・`get_consumption_tax_refund_totals`）。公開の入口は変えない |
 | S24 `20261113110000_accounting_p3_pending_manual_close.sql` | 32,592 bytes / `8c62d6511063501443dd116b24a71b33` | 本番未適用 | 計上待ち `order_not_postable` を、手で入れた仕訳と結んで閉じる書き手 `admin_link_accounting_pending_entry`。2つ目の取り消しが、人の手待ちの0円の終わりで待たない（`accounting_dispute_offset_ready`）。Stripe の残高の照合が、人が閉じた返金の取引を済みと見る |
 | S25 `20261114100000_accounting_p3_refund_debt_reads.sql` | 29,947 bytes / `53c4a07aaac53466362ecd5bd0d48f8b` | 本番未適用 | 借りの一覧の読み `list_refund_accounting_states` に `event_id`・`event_kind`・`owed_return`（返品の借りを1行足す）。`admin_record_refund_bank_transfer` が origin `return` で同じ注文に処理中の返品の返金がある間 `ACCOUNTING_REFUND_IN_FLIGHT / 55000` で断る。結びの候補の読み `list_refund_settle_candidates` |
+| S26 `20261115100000_accounting_p3_final_fixes.sql` | 68,080 bytes / `f829b9d9416fa1f3f4ad874ff772e45c` | 本番未適用 | 最終レビューの直し（P3-F1〜F3）。行も表も足さず、関数7本の本文だけ作り直す。①品を送り返さない返品（`return_method='not_required'`）は届いた日・額の決定の事実を残さず（`accounting_record_return_arrival`・`accounting_record_return_decision`）、返金の係（`accounting_post_refund_events`）は返品の返金待ち 2130 を通さず、返金した日に 4020／1160 の1本を入れる。失敗の借りは `refund_owed_post`（借りの一覧の `owed_return` は 0）。②結びの書き手 `admin_settle_owed_by_refund` が普通の返品の借りを `ACCOUNTING_ARGUMENT_INVALID`（DETAIL `settle_plain_return`）で断り、結びの候補の読み `list_refund_settle_candidates` もその借りには空を返す。③前受金の異常の一覧 `list_deferred_revenue_anomalies` に理由 `return_refund_negative_balance`（注文の 2130 `return_refund` の残高が負）を足す |
 
 ### 作り直した関数の一覧
 
@@ -1685,6 +1687,10 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 | `private.get_stripe_balance_reconciliation` | S9 | S23 → S24 |
 | `private.accounting_dispute_offset_ready` | S22 | S24 |
 | `private.list_refund_accounting_states`・`private.admin_record_refund_bank_transfer` | S20 | S25 |
+| `private.accounting_record_return_arrival`・`private.accounting_record_return_decision` | S18 | S26（返送不要の返品は記録しない） |
+| `private.accounting_post_refund_events`・`private.admin_settle_owed_by_refund` | S20 | S26（返送不要の返品は普通の返金にしない・普通の返品の借りの結びを断る） |
+| `private.list_refund_accounting_states`・`private.list_refund_settle_candidates` | S25 | S26 |
+| `private.list_deferred_revenue_anomalies` | S23 | S26 |
 
 ### 末尾の検査（DETAIL）と戻し方
 
@@ -1703,6 +1709,7 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 | S23 | `functions`・`function_attrs`・`body_unchanged`・`reads_stable`・`existing_dml_allowlist` | 行は書かない。S12・S9 の定義に戻し、消費税用の返金の関数5つを落とす |
 | S24 | `functions`・`function_attrs`・`body_unchanged`・`existing_dml_allowlist` | 新しい書き手で閉じた計上待ちが無い間だけ。書き手2つを落とし、S22・S23 の定義に戻す |
 | S25 | `functions`・`function_attrs`・`body_unchanged`・`reads_stable`・`existing_dml_allowlist` | 行は書かない。結びの候補の関数2つを落とし、S20 の定義に戻す |
+| S26 | `function_attrs`・`body_unchanged`・`reads_stable`・`existing_dml_allowlist` | 行は書かない。7本の関数を S18・S20・S23・S25 の定義に戻す（戻すと返送不要の返品の返金が届いた日の仕訳の形に戻る。返送不要の返品の返金が入る前だけ） |
 
 仕訳・計上待ち・事実の行は消せない。本番に当てた後に戻せるのは、行が無い間（または上の条件）だけで、それを過ぎたら前へ直す（新しい移行を足す）。S15 の検査の再生は、S17 が `accounting_unit_price_adjusts` に遅延の制約トリガーを足したため、制約60・トリガー12の数を S17 以後の数に直すか、トリガーを savepoint の中で外してから流す（`accounting_p3_migration_asserts` の再生の道具）。
 
