@@ -1634,7 +1634,7 @@ describeLocalDb('S26 final assert: controller only', (db) => {
     [redefine(SETTLE, 'v_hash := ', 'v_hash := null; v_hash := '), 'acc_s26_body_unchanged'],
     [redefine(CAND, NOT_REQUIRED, NOT_REQUIRED_X), 'acc_s26_body_unchanged'],
     [redefine(CAND, "pf.return_id", "pf.order_id"), 'acc_s26_body_unchanged'],
-    [redefine(CAND, "pf.event_kind", "pf.event_x"), 'acc_s26_body_unchanged'],
+    [redefine(CAND, "pf.event_kind NOT IN", "pf.event_kind IN"), 'acc_s26_body_unchanged'],
     [redefine(SETTLE, "\\'settle_plain_return_payer\\'", "\\'settle_x\\'"), 'acc_s26_body_unchanged'],
     [redefine(SETTLE, "v_pay_fact.return_id", "v_owed_fact.return_id"), 'acc_s26_body_unchanged'],
     [redefine(CAND, '\\nBEGIN\\n', '\\nBEGIN\\n  PERFORM 1;\\n'), 'acc_s26_body_unchanged'],

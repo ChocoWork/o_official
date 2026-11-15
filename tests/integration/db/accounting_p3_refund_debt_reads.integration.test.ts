@@ -4,7 +4,7 @@ import { accountingFailure, insertAccountingAdmin } from './helpers/accounting-f
 import { setAsideExistingSlips, setCutoverForTest } from './helpers/accounting-orders-fixtures';
 import {
   bankTransfer, dropDiscountSnapshot, failRefund, orderBalance, postOrderPayment, postRefundEvents, receiveReturn, recordRefundResult, saveRefundTxn,
-  seedCancelRefund, seedPreShipmentCancel, seedRefundFlow, seedReturnArrivalEntries, seedReturnFlow, seedSlotPaidOrder, settleOwed, succeedRefund,
+  seedCancelRefund, seedPreShipmentCancel, seedRefundFlow, seedReturnArrivalEntries, seedReturnFlow, seedSlotPaidOrder, setReturnNotRequired, settleOwed, succeedRefund,
 } from './helpers/accounting-returns-fixtures';
 import { hBegin } from './helpers/group-h-refund-fixtures';
 import { createUbReturn } from './helpers/unit-binding-receive';
@@ -280,7 +280,7 @@ describeLocalDb('S25 refund debt reads: controller only', (db) => {
     expect(await orderBalance(db(), orderId, '2130', 'refund_owed_post')).toBe(5000);
     // 普通の返品の借り X: 断る（残高の合計は足りるので、断りが無ければ Y の借りを減らしてしまう形）。候補も出ない
     expect(await candidatesOf(d.refundId)).toEqual([]);
-    expect(await fails(() => settleOwed(db(), admin, d.refundId, p))).toMatchObject({ code: '22023', message: 'ACCOUNTING_ARGUMENT_INVALID' });
+    expect(await fails(() => settleOwed(db(), admin, d.refundId, p))).toEqual({ code: '22023', message: 'ACCOUNTING_ARGUMENT_INVALID', detail: 'settle_plain_return' });
     expect(await orderBalance(db(), orderId, '2130', 'refund_owed_post')).toBe(5000);
     expect(await orderBalance(db(), orderId, '2130', 'return_refund')).toBe(16875);
     expect((await q('select count(*)::int n from public.accounting_refund_settlements where owed_refund_id = $1', [d.refundId])).rows[0].n).toBe(0);
@@ -310,7 +310,7 @@ describeLocalDb('S25 refund debt reads: controller only', (db) => {
     expect((await candidatesOf(x)).map((r) => r.refund_id)).not.toContain(payer);
     expect(await candidatesOf(x)).toEqual([]);
     // 結びは断る。仕訳も結びの行も増えず、残高は動かない
-    expect(await fails(() => settleOwed(db(), admin, x, payer))).toMatchObject({ code: '22023', message: 'ACCOUNTING_ARGUMENT_INVALID' });
+    expect(await fails(() => settleOwed(db(), admin, x, payer))).toEqual({ code: '22023', message: 'ACCOUNTING_ARGUMENT_INVALID', detail: 'settle_plain_return_payer' });
     expect((await q('select count(*)::int n from public.accounting_journal_entries')).rows[0].n).toBe(before);
     expect((await q('select count(*)::int n from public.accounting_refund_settlements where owed_refund_id = $1', [x])).rows[0].n).toBe(0);
     expect(await orderBalance(db(), orderId, '2130', 'refund_owed_post')).toBe(5000);
@@ -321,6 +321,37 @@ describeLocalDb('S25 refund debt reads: controller only', (db) => {
     await postRefundEvents(db());
     expect((await candidatesOf(x)).map((r) => r.refund_id)).toEqual([other]);
     expect(await settleOwed(db(), admin, x, other)).toMatchObject({ pre_amount: 0, post_amount: 5000 });
+    expect(await orderBalance(db(), orderId, '2130', 'refund_owed_post')).toBe(0);
+  });
+
+  test('FREQ-579-AC-05: 前の注文から差し引いた分を返す返金（holdback_release）と返送不要の返品の返金は、払い手としてこれまで通り出荷後の借りを結べる（P3-F8 は普通の返品の返金だけを断る）', async () => {
+    const admin = await insertAccountingAdmin(db());
+    const flow = await seedReturnFlow(db(), {});
+    await setReturnNotRequired(db(), flow.returnId);
+    const received = await receiveReturn(db(), flow, { units: [{ return_line_id: flow.lineIds[0], disposition: 'not_restocked', quantity: 1 }], choice: 'now' });
+    const notRequired = received.refund_id as string;
+    const orderId = flow.f.orderId as string;
+    // 払い手 H: 前の注文から差し引いた分を返す返金の事実を直接書く（refund_posting の試験と同じ fixture）
+    const eventId = (await q(`insert into public.order_unit_events(order_id, kind, entitlement_previous, entitlement_max_before, entitlement_gross,
+      entitlement_shop_only, fee_amount, hold_total, entitlement, standard_refund, now_refund, consult_refund)
+      values($1,'hold_release',0,0,0,0,0,0,0,3000,3000,0) returning id`, [orderId])).rows[0].id as string;
+    const hold = (await q(`insert into public.order_refunds(order_id, source, request_key, request_fingerprint, status, amount, shipping_amount,
+      adjustment_amount, notify_customer) values($1,'admin',gen_random_uuid(),'fixture','awaiting_response',3000,0,3000,false) returning id`, [orderId])).rows[0].id as string;
+    await q("select private.accounting_record_refund_event($1,'requested')", [hold]);
+    await q(`insert into public.accounting_refund_facts(refund_id, order_id, source, event_id, event_kind, pre_shipment_amount,
+      post_shipment_amount, shipping_amount, fee_amount) values($1,$2,'unit_hold_release',$3,'holdback_release',0,3000,0,0)`, [hold, orderId, eventId]);
+    // 借り X1・X2: 同じ注文の出荷後の返金が、引かれる前に失敗（各 2,000円。4020／2130 refund_owed_post）
+    const x1 = await seedCancelRefund(db(), orderId, null, 2000);
+    const x2 = await seedCancelRefund(db(), orderId, null, 2000);
+    await failRefund(db(), x1);
+    await failRefund(db(), x2);
+    await succeedRefund(db(), hold, { at: '2026-11-08T03:00:00Z' });
+    await succeedRefund(db(), notRequired, { at: '2026-11-09T03:00:00Z' });
+    await postRefundEvents(db());
+    expect(await orderBalance(db(), orderId, '2130', 'refund_owed_post')).toBe(4000);
+    expect((await candidatesOf(x1)).map((r) => r.refund_id).sort()).toEqual([hold, notRequired].sort());
+    expect(await settleOwed(db(), admin, x1, hold)).toMatchObject({ pre_amount: 0, post_amount: 2000 });
+    expect(await settleOwed(db(), admin, x2, notRequired)).toMatchObject({ pre_amount: 0, post_amount: 2000 });
     expect(await orderBalance(db(), orderId, '2130', 'refund_owed_post')).toBe(0);
   });
 
