@@ -884,3 +884,22 @@ export async function setReturnNotRequired(client: PgClient, returnId: string): 
 	await client.query("update public.order_returns set return_method = 'not_required' where id = $1", [returnId]);
 	await client.query('alter table public.order_returns enable trigger order_returns_guard');
 }
+
+// ---- 負けた取り消しと返品の0円の終わりの自動計上（S27）の道具 ----
+
+const s27Files = fs.readdirSync(directory).filter((name) => name.endsWith('_accounting_p3_pending_auto_posting.sql'));
+/** 計画3 S27（負けた取り消しと返品の0円の終わりの自動計上）の移行の本文（無ければ空で、原文の確かめが目に見えて落ちる）。 */
+export const ACCOUNTING_S27_SQL = s27Files.length === 1 ? fs.readFileSync(path.join(directory, s27Files[0]), 'utf8') : '';
+export const ACCOUNTING_S27_FILES = s27Files;
+
+/** S27 の `-- ACC_S27_<name>_BEGIN` と `-- ACC_S27_<name>_END` の間。 */
+export function accountingS27Section(name: 'PRECHECK' | 'BODY' | 'FINAL_ASSERT'): string {
+	return ACCOUNTING_S27_SQL.split(`-- ACC_S27_${name}_BEGIN\n`)[1]?.split(`-- ACC_S27_${name}_END`)[0] ?? '';
+}
+
+/** S27 の比べる元の控え（本文の最初の CREATE TEMP TABLE と INSERT）を、呼ぶ取引の中で作り直す。 */
+export async function pinAccountingS27Baseline(client: PgClient): Promise<void> {
+	const pin = accountingS27Section('BODY').split('\n-- 1. The 2130 return_refund balance')[0];
+	await client.query('drop table if exists pg_temp.accounting_s27_baseline');
+	await client.query(pin);
+}
