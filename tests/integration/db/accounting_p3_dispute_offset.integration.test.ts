@@ -392,12 +392,12 @@ describeLocalDb('S22 dispute offset: controller only', (db) => {
       [d.flow.returnId])).rows[0].id as string;
   };
   const decisionPending = async (factId: string) => (await q(
-    `select reason, detail, resolved_at from public.accounting_pending_events
+    `select reason, detail, resolved_at, resolved_entry_id from public.accounting_pending_events
      where event_kind = 'return_amount_decided' and source_table = 'accounting_return_facts' and source_id = $1`, [factId])).rows[0];
   const decisionEntry = (factId: string) => q(
     "select 1 from public.accounting_journal_entries where event_kind = 'return_amount_decided' and source_id = $1", [factId]).then((r) => r.rows.length);
 
-  test('FREQ-581-AC-05: 確定の相殺が先に入った後で、確定の日以降に返品を0円で終えると、その0円の終わりは仕訳にならず手で入れる待ち（理由 dispute_lost）になり、返品の返金待ちはマイナスにならない', async () => {
+  test('FREQ-581-AC-05: 確定の相殺が先に入った後で、確定の日以降に返品を0円で終えると、その0円の終わりは入れる物が無く（S27 の後）仕訳にならず no_revenue で閉じ、返品の返金待ちはマイナスにならない', async () => {
     const d = await seedDisputeFlow(db(), { snapshot: false });
     await consultReceipt(d);
     await d.withdraw();
@@ -407,13 +407,13 @@ describeLocalDb('S22 dispute offset: controller only', (db) => {
     expect(await payableOf(d.orderId)).toBe(0);
     const factId = await closeAtZero(d);
     await settle();
-    expect(await decisionPending(factId)).toEqual({ reason: 'order_not_postable', detail: { reason: 'dispute_lost' }, resolved_at: null });
+    expect(await decisionPending(factId)).toEqual({ reason: 'no_revenue', detail: {}, resolved_at: expect.any(Date), resolved_entry_id: null });
     expect(await decisionEntry(factId)).toBe(0);
     expect(await payableOf(d.orderId)).toBe(0);
-    // 次の回も待ちのまま（入れ直さない）
+    // 次の回も何も増えない（閉じた行は開き直さず、入れ直さない）
     await settle();
     expect(await decisionEntry(factId)).toBe(0);
-    expect((await decisionPending(factId))?.resolved_at).toBeNull();
+    expect((await decisionPending(factId))?.resolved_at).toBeInstanceOf(Date);
   });
 
   test('FREQ-581-AC-05: 返品を0円で終えた仕訳が先に入った後で、それより前の日の確定の知らせが届くと、確定は仕訳にならず手で入れる待ち（理由 return_closed_after_lost）になり、二重に数えない', async () => {
@@ -485,7 +485,7 @@ describeLocalDb('S22 dispute offset: controller only', (db) => {
       [d.orderId])).rows[0].n)).toBe(0);
   });
 
-  test('FREQ-581-AC-05: 同じ日に確定の仕訳が先に入った後で返品を0円で終えると、0円の終わりは手で入れる待ち（理由 dispute_lost）になる', async () => {
+  test('FREQ-581-AC-05: 同じ日に確定の仕訳が先に入った後で返品を0円で終えると、0円の終わりは入れる物が無く（S27 の後）no_revenue で閉じる', async () => {
     const d = await seedDisputeFlow(db(), { snapshot: false });
     await consultReceipt(d);
     await d.withdraw();
@@ -494,7 +494,7 @@ describeLocalDb('S22 dispute offset: controller only', (db) => {
     expect(await confirmed(d)).toEqual(['7530:13125/0', '2130(return_refund):16875/0', '1470(dispute_pending):0/30000']);
     const factId = await closeAtZero(d);
     await settle();
-    expect(await decisionPending(factId)).toEqual({ reason: 'order_not_postable', detail: { reason: 'dispute_lost' }, resolved_at: null });
+    expect(await decisionPending(factId)).toEqual({ reason: 'no_revenue', detail: {}, resolved_at: expect.any(Date), resolved_entry_id: null });
     expect(await decisionEntry(factId)).toBe(0);
     expect(await payableOf(d.orderId)).toBe(0);
   });

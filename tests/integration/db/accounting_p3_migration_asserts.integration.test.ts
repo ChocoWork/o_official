@@ -13,7 +13,7 @@ import {
   pinAccountingS18Baseline, restorePreS18Receive, ACCOUNTING_S19_FILES, ACCOUNTING_S19_SQL as s19Sql, accountingS19Section,
   pinAccountingS19Baseline, ACCOUNTING_S20_FILES, ACCOUNTING_S20_SQL as s20Sql, accountingS20Section, pinAccountingS20Baseline,
   ACCOUNTING_S21_FILES, ACCOUNTING_S21_SQL as s21Sql, accountingS21Section, pinAccountingS21Baseline, restoreS20RunPosting,
-  restoreS15DetailValid,
+  restoreS15DetailValid, restoreS22DisputeAndReturnPosters,
   ACCOUNTING_S22_FILES, ACCOUNTING_S22_SQL as s22Sql, accountingS22Section, pinAccountingS22Baseline,
   ACCOUNTING_S23_FILES, ACCOUNTING_S23_SQL as s23Sql, accountingS23Section, pinAccountingS23Baseline,
   ACCOUNTING_S24_FILES, ACCOUNTING_S24_SQL as s24Sql, accountingS24Section, pinAccountingS24Baseline, restoreS23StripeReconciliation,
@@ -942,6 +942,8 @@ describeLocalDb('S22 final assert: controller only', (db) => {
     await db().query('savepoint acc_s22_assert');
     let failure: AssertFailure | null = null;
     try {
+      // S27 が返品の計上係を作り直したので、S22 の確かめの前に S22 の本文へ戻す（この savepoint の中だけ）。
+      await restoreS22DisputeAndReturnPosters(db());
       if (before) await db().query(before);
       await pinAccountingS22Baseline(db());
       if (change) await db().query(change);

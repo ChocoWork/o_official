@@ -1,6 +1,6 @@
 # 会計の計上待ち（仕訳にできていない出来事）の状態
 
-> 状態: 現行のソース（会計の作り直し 計画2 Task 1・2・3・4・6・10・11。手元の Supabase で確かめた分。本番には未適用） | 確認日: 2026-11-15（計画3の理由と閉じ方の節を足した）／2026-11-09 | 対象: `accounting_pending_events`（計上待ちの行）の「開いている」「解決済み」と、その間の遷移
+> 状態: 現行のソース（会計の作り直し 計画2 Task 1・2・3・4・6・10・11。手元の Supabase で確かめた分。本番には未適用） | 確認日: 2026-11-15（S27 の返品の計上係で、理由 `dispute_lost` の行が新しく作られなくなったことを足した）／2026-11-15（計画3の理由と閉じ方の節を足した）／2026-11-09 | 対象: `accounting_pending_events`（計上待ちの行）の「開いている」「解決済み」と、その間の遷移
 
 ## 概要
 
@@ -67,9 +67,9 @@ stateDiagram-v2
 | --- | --- | --- |
 | `refund_prior_unposted` | 返金の仕訳の前に要る仕訳（返品の届いた日の仕訳・元の仕訳・戻りの取引）。詳細 `why`: `return_prior`・`original`・`failure_txn_missing` | 前の仕訳が入る・戻りの取引が同期されると自動で計上。手では閉じられない |
 | `refund_cancel_undecided` | Stripe が取り消した返金の区分（詳細 `refund_id`・`canceled_on`） | 人が区分を選ぶ（`admin_decide_refund_cancellation`）と次の計上で解消。手では閉じられない |
-| `order_not_postable`（計画3で増えた詳細の理由 `dispute_lost`・`return_closed_after_lost`、送料つきの返金の `shipping`） | 人が手で入れる仕訳 | **手で入れた仕訳と結んで閉じる**（`admin_link_accounting_pending_entry`。権限 `admin.accounting.entries.correct`・メモ必須）。結ぶと `resolved_by`・`resolution_note`・`resolved_entry_id` が付く |
+| `order_not_postable`（計画3で増えた詳細の理由 `return_closed_after_lost`、送料つきの返金の `shipping` ほか。`dispute_lost` は S27 の後は新しく作られない） | 人が手で入れる仕訳 | **手で入れた仕訳と結んで閉じる**（`admin_link_accounting_pending_entry`。権限 `admin.accounting.entries.correct`・メモ必須）。結ぶと `resolved_by`・`resolution_note`・`resolved_entry_id` が付く。**`dispute_lost`（確定の後の0円の終わり）は、S27 から返品の計上係が自動で扱う**。S27 の前に作った開いた行は、次の流しで「仕訳が入って閉じる」「待ちの理由（`dispute_refund_overlap`・`dispute_return_refund_pending`）に変わる」「`no_revenue` で閉じる（`resolved_entry_id` が NULL）」のどれかになり、開いたまま残らない |
 | `amount_mismatch`（詳細 `mismatch` に `refund_amount`・`allocation_overflow`・`unit_value_left` を足した） | 取引の同期、割り当ての見直し | 取引が同期し直されると再確認 |
-| `dispute_refund_overlap`・`dispute_return_refund_pending`（詳細 `why`: `refund`・`return`） | 確定の日までの返金の結果と、届いた日・額の決定の仕訳 | 計画2では「計画3で外す止め」だったが、計画3では**確定の待ち**に変わった（仕訳が入ると自動で計上）。手では閉じられない |
+| `dispute_refund_overlap`・`dispute_return_refund_pending`（詳細 `why`: `refund`・`return`） | 確定の日までの返金の結果と、届いた日・額の決定の仕訳。S27 から、返品の計上係の0円の終わり（確定の後）の待ちにも使う（途中の返金は `refund`、日の早い物が先・ほかの返品が未決は `return`） | 計画2では「計画3で外す止め」だったが、計画3では**確定の待ち**に変わった（仕訳が入ると自動で計上）。手では閉じられない |
 
 - 人が閉じた行（`resolved_by` あり）の返金の取引は、Stripe の残高の照合の「計画3で計上する種類」（`planned_p3`）から外れる。自動の解決は外さない。
 - 結んだ仕訳が後で取り消されても、閉じた行は閉じたまま（再び開かない）。

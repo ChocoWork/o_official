@@ -133,3 +133,39 @@ export async function postRefundSuccess(client: PgClient, orderId: string, refun
 	return postAutoEntry(client, { date, kind: 'return_refund', parts: [`txn_${refundId.replaceAll('-', '')}`], sourceTable: 'order_refunds', sourceId: refundId,
 		lines: [{ account: '2130', debit: amount, sub: 'return_refund', orderId }, { account: '1160', credit: amount, orderId }] });
 }
+
+/** 同じ注文のもう1つの返品（申し込みだけ。number は注文の中の番号で、1は seedAutoOrder が使う）。返す物は returnId だけが違う AutoOrder。 */
+export async function seedAnotherReturn(client: PgClient, o: AutoOrder, number: number): Promise<AutoOrder> {
+	const returnId = (await client.query(`insert into public.order_returns
+    (order_id,number,source,status,request_key,request_fingerprint,requested_at,requested_by,return_method,return_shipping_payer,notify_customer)
+    values($1,$2,'customer_request','requested',$3,'auto-fixture',now(),$4,'customer_ships','customer',false) returning id`,
+	[o.orderId, number, randomUUID(), o.actor])).rows[0].id as string;
+	return { ...o, returnId };
+}
+
+/** 売上 4010 に amount 円（相手は現金 1010。注文つき）。売上の純額（4010 − 4020 + 4050）を円で読むための前提の仕訳。 */
+export async function postSales(client: PgClient, orderId: string, amount: number, date: string): Promise<string> {
+	return postAutoEntry(client, { date, kind: 'return_arrived', parts: [randomUUID()], lines: [
+		{ account: '1010', debit: amount, orderId }, { account: '4010', credit: amount, orderId }] });
+}
+
+/** 取り消しが引かれた時の仕訳（W。借 1470 dispute_pending S／貸 1160 S。1470 に注文は付かない）。 */
+export async function postWithdrawal(client: PgClient, disputeId: string, txnId: string | null, amount: number, date: string): Promise<string> {
+	return postAutoEntry(client, { date, kind: 'dispute_event', parts: [disputeId, 'withdrawn', txnId ?? 'none'], sourceTable: 'stripe_disputes', sourceId: disputeId,
+		lines: [{ account: '1470', debit: amount, sub: 'dispute_pending' }, { account: '1160', credit: amount }] });
+}
+
+/**
+ * 確定 C の仕訳（C の印 dispute_event:<dp>:confirmed:lost。日は負けた日）。pay は 2130 の相殺、review は 1470 dispute_refund_overlap_review、
+ * rest は費用（7530）。貸方は 1470 dispute_pending の合計。
+ */
+export async function postConfirmed(client: PgClient, orderId: string, disputeId: string, date: string, parts: { pay: number; review?: number; rest?: number }): Promise<string> {
+	const review = parts.review ?? 0;
+	const rest = parts.rest ?? 0;
+	const lines: AutoLine[] = [];
+	if (rest > 0) lines.push({ account: '7530', debit: rest });
+	if (parts.pay > 0) lines.push({ account: '2130', debit: parts.pay, sub: 'return_refund', orderId });
+	if (review > 0) lines.push({ account: '1470', debit: review, sub: 'dispute_refund_overlap_review', orderId });
+	lines.push({ account: '1470', credit: parts.pay + review + rest, sub: 'dispute_pending' });
+	return postAutoEntry(client, { date, kind: 'dispute_event', parts: [disputeId, 'confirmed', 'lost'], sourceTable: 'stripe_disputes', sourceId: disputeId, lines });
+}

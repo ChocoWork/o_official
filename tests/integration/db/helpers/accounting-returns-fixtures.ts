@@ -903,3 +903,15 @@ export async function pinAccountingS27Baseline(client: PgClient): Promise<void> 
 	await client.query('drop table if exists pg_temp.accounting_s27_baseline');
 	await client.query(pin);
 }
+
+/**
+ * S27 が返品の計上係（と、後の Task で取り消しの計上係）を作り直したので、S22 の末尾の確かめを再生する前に、2つの計上係を
+ * S22 の本文で作り直す（呼ぶ取引の中だけ。S21 の restoreS20RunPosting、S24 の restoreS23StripeReconciliation と同じ形）。
+ */
+export async function restoreS22DisputeAndReturnPosters(client: PgClient): Promise<void> {
+	for (const name of ['accounting_post_dispute_events', 'accounting_post_return_events']) {
+		const body = ACCOUNTING_S22_SQL.match(new RegExp(`^CREATE OR REPLACE FUNCTION private\\.${name}\\(_limit integer DEFAULT 50\\)[\\s\\S]*?^\\$\\$;`, 'm'))?.[0];
+		if (!body) throw new Error(`ACC_S22_${name.toUpperCase()}_MISSING`);
+		await client.query(body);
+	}
+}

@@ -162,21 +162,22 @@ describeLocalDb('S24 pending manual close: controller only', (db) => {
     }
   });
 
-  test('FREQ-581-AC-05: 同じ注文で2つ目の取り消しが確定しても、手で入れる待ちに置いた0円の終わりを待ち続けない', async () => {
+  test('FREQ-581-AC-05: 同じ注文で2つ目の取り消しが確定しても、入れる物が無く no_revenue で閉じた0円の終わり（S27 の後）を待たず、確定は普通に1本入る', async () => {
     const d = await seedDisputeFlow(db(), { snapshot: false });
     await receiveReturn(db(), d.flow, { choice: 'consult', arrivedOn: DISPUTE_DAYS.arrival,
       units: [{ return_line_id: d.flow.lineIds[0], disposition: 'not_restocked', quantity: 1, refund_choice: 'consult' }] });
     await d.withdraw();
     await d.lose();
     await settle();
-    // 取り消し A の確定 C が入った後に、返品を0円で終えると、その終わりは手で入れる待ち（dispute_lost）に置かれる
+    // 取り消し A の確定 C が入った後に、返品を0円で終えると、P = 0（(a) の形）なので入れる物が無く、no_revenue で閉じる（S27 の後）
     expect((await q('select public.admin_refund_return($1,$2,$3,0,0,null,false)', [d.flow.returnId, d.flow.f.actor, randomUUID()])).rows).toHaveLength(1);
     const fact = (await q("select id from public.accounting_return_facts where return_id = $1 and kind = 'decision' and refund_id is null", [d.flow.returnId])).rows[0].id as string;
     await settle();
-    const parked = (await q(`select id, reason, detail, resolved_at from public.accounting_pending_events
+    const parked = (await q(`select id, reason, detail, resolved_at, resolved_entry_id from public.accounting_pending_events
       where event_kind = 'return_amount_decided' and source_id = $1`, [fact])).rows[0];
-    expect(parked).toMatchObject({ reason: 'order_not_postable', detail: { reason: 'dispute_lost' }, resolved_at: null });
-    // 同じ注文の2つ目の取り消し B が、0円の終わりの日（今日）に確定する。0円の終わりは開いたまま
+    expect(parked).toMatchObject({ reason: 'no_revenue', detail: {}, resolved_entry_id: null });
+    expect(parked.resolved_at).not.toBeNull();
+    // 同じ注文の2つ目の取り消し B が、0円の終わりの日（今日）に確定する。0円の終わりは仕訳として入っていないので、B の確定は待たずに入る
     const pi = (await q('select payment_intent_id from public.orders where id = $1', [d.orderId])).rows[0].payment_intent_id as string;
     const second = await seedDispute(db(), { orderId: d.orderId, paymentIntentId: pi, amount: 10000, withdrawnAt: DISPUTE_DAYS.withdrawn, createdAt: DISPUTE_DAYS.withdrawn });
     // 今日の日本の日付で確定させる（0円の終わりの日と同じ日）。日本の0時の直後の1分は前の日になる
@@ -194,13 +195,9 @@ describeLocalDb('S24 pending manual close: controller only', (db) => {
     const sums = (await q('select sum(debit)::int d, sum(credit)::int c from public.accounting_journal_lines where entry_id = $1', [entry.id])).rows[0];
     expect(sums.d).toBe(sums.c);
     expect(Number((await q('select private.accounting_dispute_balance($1, $2, $3) as b', [second.disputeId, '1470', 'dispute_pending'])).rows[0].b)).toBe(0);
-    // 0円の終わりは開いたまま（人が手で入れるまで）
-    expect((await q('select resolved_at from public.accounting_pending_events where id = $1', [parked.id])).rows[0].resolved_at).toBeNull();
-    // 手で入れた仕訳と結んで閉じた後も、B はそのまま
-    const admin = await insertAccountingAdmin(db());
-    const manual = await manualWithOrders([d.orderId]);
-    await link(admin, parked.id, manual);
-    await settle();
+    // 0円の終わりは閉じたまま、仕訳は1本も入らない。B の確定は1本だけ
+    expect((await q('select resolved_entry_id from public.accounting_pending_events where id = $1', [parked.id])).rows[0].resolved_entry_id).toBeNull();
+    expect((await q("select count(*)::int n from public.accounting_journal_entries where event_kind = 'return_amount_decided' and source_id = $1", [fact])).rows[0].n).toBe(0);
     expect((await q('select count(*)::int n from public.accounting_journal_entries where dedupe_key = $1', [confirmedKey])).rows[0].n).toBe(1);
   });
 
