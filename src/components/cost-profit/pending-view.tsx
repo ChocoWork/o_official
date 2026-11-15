@@ -66,19 +66,13 @@ const REASON_TEXT: Readonly<Record<Exclude<PendingReason, "period_missing" | "di
   before_cutover: "新しい帳簿を始めた日より前の出来事です。確かめて、確認済みにしてください。",
   unknown_category: "Stripe の残高の取引に、まだ知らない種類のものがあります。種類の対応が足されると自動で計上されます。",
   payout_mismatch: "入金の中身の合計と額が合っていません。Stripe の精算のタブで照合が済むと、自動で計上されます。",
-  dispute_refund_overlap: "カード会社からの支払いの取り消しがある注文に、成功した返金があります。二重に費用にしないため止めています。返金や返品の仕訳と合わせた後に計上されます。",
-  dispute_return_refund_pending: "カード会社からの支払いの取り消しがある注文に、返品の返金待ちがあります。返金や返品の仕訳が入った後に計上されます。",
+  dispute_refund_overlap: "カード会社からの支払いの取り消しがある注文に、終わっていない返金か、成功したのに仕訳がまだ入っていない返金があります。二重に費用にしないため止めています。返金や返品の仕訳が入ると、自動で計上されます。返金が処理中なら、そのまま待ってください。「エラー」の返金は、やり直してください。Stripe で取り消された返金は、返金の画面で取り消しの区分を選んでください。成功や失敗の仕訳が止まっている返金は、その返金の計上待ちの行の文のとおりに進めてください。",
+  dispute_return_refund_pending: "カード会社からの支払いの取り消しがある注文に、返品の返金待ちがあります。額がまだ決まっていないほかの返品があれば、その返品の返金の額を決めてください。日の早い返品や取り消しが先に計上されるのを待っている時は、そのまま待ってください。先の行が止まっている時は、その行の文のとおりに進めてください。仕訳が入ると、自動で計上されます。",
   dispute_shipment_pending: "引かれた時より前に確定した発送票で、出荷の仕訳がまだ入っていない物があります。出荷の仕訳が入ると自動で計上されます。",
   shipment_lines_mismatch: "発送票の明細と、発送ごとの明細の品ごとの数量が食い違っています。直ると自動で計上されます。",
   no_revenue: "仕訳にする額が0円です（交換の品だけの発送票など）。確かめて、確認済みにしてください。",
   refund_prior_unposted: "同じ注文の前の返金の仕訳がまだ入っていません。入ると自動で計上されます。",
   refund_cancel_undecided: "この返金は Stripe 側で取り消されました。店が返金をやめたのか、返すつもりのまま返せなかったのかを選んでください。",
-};
-
-/** 手で仕訳を入れる待ち（order_not_postable）のうち、送料・合計の形ではなく、分け方を決めて手で入れる2つの理由の主な文 */
-const ORDER_NOT_POSTABLE_MANUAL_TEXT: Readonly<Record<string, string>> = {
-  dispute_lost: "カード会社の取り消しが確定した後に返品の返金を0円で終えました。分け方を決めて手で仕訳を入れてください。",
-  return_closed_after_lost: "返品の返金を0円で終えた後に、それより前の日のカード会社の取り消しの確定が届きました。分け方を決めて手で仕訳を入れてください。",
 };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -95,10 +89,8 @@ export function reasonText(event: PendingEvent): string {
       // 判断の待ちは dispute_status が付く時だけ。ほかは、前の段の仕訳（引かれた時・確定・戻りより前の段）を待っている。
       if (typeof event.detail.dispute_status === "string") return DISPUTE_WITHDRAWAL_TEXT.undecided;
       return DISPUTE_WITHDRAWAL_TEXT.earlier;
-    case "order_not_postable": {
-      const manual = typeof event.detail.reason === "string" ? ORDER_NOT_POSTABLE_MANUAL_TEXT[event.detail.reason] : undefined;
-      return manual ?? REASON_TEXT.order_not_postable;
-    }
+    case "order_not_postable":
+      return REASON_TEXT.order_not_postable;
     case "no_order":
       // 取り消しの出来事で、取り消しに結び付く注文が無い時は、支払いの文は合わない。
       return event.eventKind === "dispute_event"

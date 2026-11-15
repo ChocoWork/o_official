@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { PendingView } from '@/components/cost-profit/pending-view';
+import { PendingView, reasonText } from '@/components/cost-profit/pending-view';
 import { PENDING_REASONS } from '@/lib/accounting/posting-types';
 import { ALL_FLAGS, BASE, envelope, pendingEvent, pendingPage, uuid, type Flags } from './accounting-fixtures';
 import { mockFetch, solePeriod } from './settings-fixtures';
@@ -108,8 +108,8 @@ const REASON_SNIPPETS: Record<(typeof PENDING_REASONS)[number], string> = {
 	before_cutover: '新しい帳簿を始めた日より前の出来事です',
 	unknown_category: 'まだ知らない種類',
 	payout_mismatch: '入金の中身の合計と額が合っていません',
-	dispute_refund_overlap: '成功した返金があります',
-	dispute_return_refund_pending: '返品の返金待ちがあります',
+	dispute_refund_overlap: '終わっていない返金か、成功したのに仕訳がまだ入っていない返金があります',
+	dispute_return_refund_pending: '額がまだ決まっていないほかの返品があれば',
 	dispute_withdrawal_missing: '決着していません',
 	dispute_shipment_pending: '出荷の仕訳がまだ入っていない物',
 	shipment_lines_mismatch: '品ごとの数量が食い違っています',
@@ -144,19 +144,33 @@ describe('計上待ちのタブ', () => {
 		expect(region.textContent).not.toMatch(/[!！]/);
 	});
 
-	it('FREQ-581-AC-05: 取り消しの確定と返品の0円の終わりが重なった行は、どちらが先かで決めた補足を出し、手で仕訳を入れるよう伝える', async () => {
-		serve({
-			events: [
-				pendingEvent(1, { reason: 'order_not_postable', eventKind: 'return_amount_decided', detail: { reason: 'dispute_lost' } }),
-				pendingEvent(2, { reason: 'order_not_postable', eventKind: 'dispute_event', detail: { reason: 'return_closed_after_lost' } }),
-			],
-		});
-		render(<PendingView />);
-		const region = await screen.findByRole('region', { name: '計上待ち' });
-		expect(await within(region).findByText('カード会社の取り消しが確定した後に返品の返金を0円で終えました。分け方を決めて手で仕訳を入れてください。')).toBeInTheDocument();
-		expect(within(region).getByText('返品の返金を0円で終えた後に、それより前の日のカード会社の取り消しの確定が届きました。分け方を決めて手で仕訳を入れてください。')).toBeInTheDocument();
-		expect(region.textContent).not.toMatch(/dispute_lost|return_closed_after_lost/);
+	it('FREQ-643-AC-14: dispute_refund_overlap と dispute_return_refund_pending の文が、設計 3-3 の文そのもの', () => {
+		expect(reasonText(pendingEvent(1, { reason: 'dispute_refund_overlap' }))).toBe(
+			'カード会社からの支払いの取り消しがある注文に、終わっていない返金か、成功したのに仕訳がまだ入っていない返金があります。二重に費用にしないため止めています。返金や返品の仕訳が入ると、自動で計上されます。返金が処理中なら、そのまま待ってください。「エラー」の返金は、やり直してください。Stripe で取り消された返金は、返金の画面で取り消しの区分を選んでください。成功や失敗の仕訳が止まっている返金は、その返金の計上待ちの行の文のとおりに進めてください。',
+		);
+		expect(reasonText(pendingEvent(1, { reason: 'dispute_return_refund_pending' }))).toBe(
+			'カード会社からの支払いの取り消しがある注文に、返品の返金待ちがあります。額がまだ決まっていないほかの返品があれば、その返品の返金の額を決めてください。日の早い返品や取り消しが先に計上されるのを待っている時は、そのまま待ってください。先の行が止まっている時は、その行の文のとおりに進めてください。仕訳が入ると、自動で計上されます。',
+		);
+		const overlap = reasonText(pendingEvent(1, { reason: 'dispute_refund_overlap' }));
+		expect(overlap).toContain('処理中なら、そのまま待ってください');
+		expect(overlap).toContain('「エラー」の返金は、やり直してください');
+		expect(overlap).toContain('取り消しの区分を選んでください');
+		expect(reasonText(pendingEvent(1, { reason: 'dispute_return_refund_pending' }))).toContain('その返品の返金の額を決めてください');
 	});
+
+	it('FREQ-643-AC-14: order_not_postable の dispute_lost・return_closed_after_lost は専用の文を持たず、shipping と同じ文になる', () => {
+		const base = reasonText(pendingEvent(1, { reason: 'order_not_postable', detail: { reason: 'shipping' } }));
+		expect(base).toBe('この注文は送料や合計が決まりの形と合わないため、自動で計上できません。内容を確かめてください。');
+		expect(reasonText(pendingEvent(1, { reason: 'order_not_postable', eventKind: 'return_amount_decided', detail: { reason: 'dispute_lost' } }))).toBe(base);
+		expect(reasonText(pendingEvent(2, { reason: 'order_not_postable', eventKind: 'dispute_event', detail: { reason: 'return_closed_after_lost' } }))).toBe(base);
+	});
+
+	it.each(PENDING_REASONS.filter((reason) => reason !== 'dispute_refund_overlap' && reason !== 'dispute_return_refund_pending'))(
+		'FREQ-643-AC-14: ほかの理由 %s の文は変わっていない（直前の文のまま）',
+		(reason) => {
+			expect(reasonText(pendingEvent(1, { reason, detail: reason === 'period_missing' ? { entry_date: '2026-11-08' } : reason === 'dispute_withdrawal_missing' ? { dispute_status: 'under_review' } : {} }))).toContain(REASON_SNIPPETS[reason]);
+		},
+	);
 
 	it('FREQ-569-AC-01: 理由の一覧は計上待ちの理由の全部を覆う（試験の表と型の一覧が食い違えば落ちる）', () => {
 		expect(Object.keys(REASON_SNIPPETS).sort()).toEqual([...PENDING_REASONS].sort());
@@ -440,23 +454,13 @@ describe('計上待ちのタブ', () => {
 		expect(region.textContent).not.toMatch(/[!！]/);
 	});
 
-	it('FREQ-569-AC-01: 送料・合計が合わない行は今までの文のまま、取り消しの確定と返品の0円の終わりの行はその補足を主な文にする', async () => {
+	it('FREQ-569-AC-01: 送料・合計が合わない行は今までの文のまま出る', async () => {
 		serve({
-			events: [
-				pendingEvent(1, { reason: 'order_not_postable', detail: { reason: 'shipping' } }),
-				pendingEvent(2, { reason: 'order_not_postable', eventKind: 'return_amount_decided', detail: { reason: 'dispute_lost' } }),
-				pendingEvent(3, { reason: 'order_not_postable', eventKind: 'dispute_event', detail: { reason: 'return_closed_after_lost' } }),
-			],
+			events: [pendingEvent(1, { reason: 'order_not_postable', detail: { reason: 'shipping' } })],
 		});
 		render(<PendingView />);
 		const reasons = await screen.findAllByTestId('pending-reason');
 		expect(reasons[0]).toHaveTextContent('この注文は送料や合計が決まりの形と合わないため、自動で計上できません。内容を確かめてください。');
-		expect(reasons[1].textContent).toBe('カード会社の取り消しが確定した後に返品の返金を0円で終えました。分け方を決めて手で仕訳を入れてください。');
-		expect(reasons[2].textContent).toBe('返品の返金を0円で終えた後に、それより前の日のカード会社の取り消しの確定が届きました。分け方を決めて手で仕訳を入れてください。');
-		// 主な文に回した補足を、同じ行に二重に出さない
-		const items = screen.getAllByRole('listitem');
-		expect(items[1].textContent?.split('分け方を決めて手で仕訳を入れてください。').length).toBe(2);
-		expect(items[1].textContent).not.toContain('送料や合計が決まりの形と合わない');
 	});
 
 	it('FREQ-562-AC-05: もう一度計上するの結果に返金と返品の件数が出る', async () => {
@@ -534,7 +538,7 @@ describe('計上待ちのタブ', () => {
 	});
 
 	describe('手で入れた仕訳と結ぶ', () => {
-		const manual = () => pendingEvent(1, { reason: 'order_not_postable', eventKind: 'return_amount_decided', detail: { reason: 'dispute_lost', entry_date: '2026-11-08' } });
+		const manual = () => pendingEvent(1, { reason: 'order_not_postable', detail: { reason: 'shipping', entry_date: '2026-11-08' } });
 		const ORDER = uuid(601);
 		const other = (n: number, order: string) => ({ accountCode: '1470', debit: 0, credit: n, subAccount: null, counterparty: null, orderId: order, memo: null });
 		const JOURNAL = [

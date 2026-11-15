@@ -1,5 +1,7 @@
 # テスト仕様
 
+> 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 6）: 計上待ちの一覧の単体（`pending-view.test.tsx`）に FREQ-643-AC-14（2つの理由の文・専用の文が無いこと・ほかの理由の文が変わらないこと）、`event-key.test.ts` に FREQ-643-AC-09（`dispute_event` の `closefix` の印の往復）を足し、FREQ-581-AC-05 の専用の文の期待と、FREQ-569-AC-01 の2つの理由の行の期待を消した。
+
 > 2026-11-15 確認日（会計の計画 3 Task 13）: 末尾に「会計の返品・返金（計画 3 / FREQ-575〜584、2026-11-15）」を足した（新しい E2E `FR-ADMIN-137`〜`140`、表示だけの証拠と本物の区分、DB 結合は計画3の `accounting_p3_*` の28ファイル、単体・画面）。交換の印（FREQ-642）の節は変えていない。
 
 > 2026-11-12 確認日（オーナー修正 X4 Fix round 2）: 送料の欄の初めの値（一番新しい失敗した返金だけ）・0円で終える時の案内・エラーの間の0円の終わりの断りを単体・DB に足した。
@@ -2012,7 +2014,7 @@ E2E の既存の spec は、固定の手数料の止め（S16）に合わせて�
 | `tests/unit/api/admin/accounting-return-arrival-route`・`accounting-return-options-route`・`accounting-refund-cancellations-route`・`accounting-refund-bank-transfers-route`・`accounting-refund-settlements-route`・`accounting-tax-refunds-route`・`accounting-post-response-failure`（`.test.ts`） | 単体 | FREQ-575・579・583・576-AC-06（権限・CSRF・入力・応答に個人の情報が無いこと・監査の結果・応答の後の計上係） |
 | `tests/unit/api/admin/order-refund-route`・`order-return-money-routes`・`order-status-shipped`・`order-returns-routes`・`shipment-slip-confirm-route`・`accounting-pending-events-route`（`.test.ts`） | 単体 | FREQ-580-AC-02・04（409 `DISPUTE_HOLD` と `orderIds`・`disputeHold`）、FREQ-575-AC-01（`arrivedOn`）、`link-entry`（結べた時だけ計上係を流す） |
 | `tests/unit/components/OrderReturnReceiveDialog.arrival`・`OrderReturnArrivalDialog`・`OrderReturnsDialog.arrival`・`RefundDialogs.disputeHold`・`OrderReturnRefundDialog.disputeHold`（`.test.tsx`） | 画面 | FREQ-584-AC-01・02・04・05（届いた日・直す画面・判断待ちの止め） |
-| `tests/unit/components/cost-profit/pending-view`・`refund-cancellation-dialog`・`refund-bank-transfer-form`・`refund-debts-panel`・`refund-settlement-dialog`・`tax-refunds-panel`・`return-arrival-option`・`dispute-list`（`.test.tsx`）、`accounting-api-labels.test.ts` | 画面 | FREQ-584-AC-02〜05、583-AC-01・03・04（期間の課税・免税の列、400の目印）、579-AC-03〜05、575-AC-04、578-AC-09（返品の返金待ちの負の文） |
+| `tests/unit/components/cost-profit/pending-view`・`refund-cancellation-dialog`・`refund-bank-transfer-form`・`refund-debts-panel`・`refund-settlement-dialog`・`tax-refunds-panel`・`return-arrival-option`・`dispute-list`（`.test.tsx`）、`accounting-api-labels.test.ts` | 画面 | FREQ-584-AC-02〜05、583-AC-01・03・04（期間の課税・免税の列、400の目印）、579-AC-03〜05、575-AC-04、578-AC-09（返品の返金待ちの負の文）、643-AC-14（計上待ちの2つの理由の文） |
 | `tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts` | 単体 | Route Handler の数（198 ファイル・250 メソッド）の確認 |
 
 ### 実測（各 Task の実装者の報告。今回は再実行していない）

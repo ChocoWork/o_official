@@ -55,6 +55,12 @@ describe('FREQ-554-AC-03: 印は種類と番号の組で作り個数と文字を
 		expect(parseEventKey('stripe:fee:txn_1')).toEqual({ kind: 'stripe_fee', parts: ['txn_1'] });
 	});
 
+	it('FREQ-643-AC-09: dispute_event の closefix の印は3つの部品で往復できる', () => {
+		const key = buildEventKey('dispute_event', ['closefix', 'dp_1', '1']);
+		expect(key).toBe('dispute_event:closefix:dp_1:1');
+		expect(parseEventKey(key)).toEqual({ kind: 'dispute_event', parts: ['closefix', 'dp_1', '1'] });
+	});
+
 	it('前置きは種類ごとに重ならない', () => {
 		const prefixes = ACCOUNTING_EVENT_KINDS.map((kind) => EVENT_KEY_PREFIX[kind]);
 		expect(new Set(prefixes).size).toBe(27);

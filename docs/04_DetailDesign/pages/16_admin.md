@@ -1,5 +1,7 @@
 # 1.16 管理画面（ADMIN）詳細設計
 
+> 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 6）: 末尾の会計の足し物の節に、計上待ちの一覧の文の直し（2つの理由の文・専用の文の削除）を足した。
+
 > 2026-11-15 確認日（会計の計画 3 Task 13）: 末尾に、返品・返金の画面の会計の足し物の案内の節を足した（処理の詳細は 16-5 の「返品・返金（計画3）」）。DD-ADMIN-019〜023 の節は変えていない。
 
 > 2026-11-13 確認日（会計の計画 3 Task 3）: DD-ADMIN-021〜023 の既知の制限の発送した枠の決め方（R33）を S17 の決まりに直した（取り消しの時に取り押さえていた着を後に回す。`order_unit_shipped_slots` は `accounting_shipped_units` を呼ぶだけで同じ着を名指す。返金の誤り・失敗の間の制限は解消）。
@@ -1382,3 +1384,5 @@ DB は `private.order_unit_return_refund_parts(_return_id)` がこの (出来事
 ## 返品・返金の画面の会計の足し物（会計の計画3 / FREQ-575〜584）
 
 返品の受け取りの届いた日、判断待ちの止め、返品の詳細の届いた日の直し、返金・支払い済みのキャンセルの止めの処理は、[管理の会計のページ](16-5_admin_accounting.md)の「返品・返金（計画3）」に書いた。このページの DD-ADMIN-019〜023（返品の品ごとの返金・交換の印）の節は変えていない。計画3の移行 S15〜S25 は本番未適用。
+
+計上待ちの一覧（`src/components/cost-profit/pending-view.tsx` の `REASON_TEXT`・`reasonText`、FREQ-643 / S27 Task 6）: `dispute_refund_overlap` と `dispute_return_refund_pending` の文は、人が何をするか（処理中は待つ・「エラー」の返金はやり直す・取り消された返金は区分を選ぶ・ほかの返品が未決ならその額を決める・日の早い物が先なら待つ）を書いた文にした（設計 3-3）。`order_not_postable` の `dispute_lost`・`return_closed_after_lost` の専用の文（`ORDER_NOT_POSTABLE_MANUAL_TEXT`）は消し、`reasonText` は `order_not_postable` で常に送料・合計の文を返す（この2つの行は計上係が自動で入れるので、新しくは作られない）。判定・route・型は変えない。
