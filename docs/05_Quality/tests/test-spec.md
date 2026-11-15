@@ -1829,7 +1829,7 @@ DB結合・単体の実測は各Taskの実装者と調整役の報告のとお�
 | 種類 | 決まり |
 | --- | --- |
 | ロールバックの DB 結合 | `supabase db reset` の後、`DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db/accounting_p2 --runInBand`。計画 1 も含めるなら `accounting_p1 accounting_p2`。ほかの試験が残した行（確定した発送票など）で数が狂わないよう、出荷の試験は `setAsideExistingSlips` で既存の票を除いて数える |
-| コミットする試験（並行・PostgREST） | `ACCOUNTING_COMMIT_SUITE=1` を付け、**1 ファイルずつ単独の jest で**流す。前後に `db reset` を挟む。同じ jest にロールバックの試験を混ぜると、残った行で落ちる。対象: `accounting_p2_payment_concurrency`・`…_shipment_concurrency`・`…_stripe_concurrency`・`…_dispute_concurrency`・`…_run_posting_postgrest`・`…_kpi_monthly_records_postgrest`。PostgREST の 2 本は `LOCAL_SUPABASE_URL`・`LOCAL_SUPABASE_ANON_KEY`・`LOCAL_SUPABASE_SERVICE_ROLE_KEY`・`LOCAL_SUPABASE_JWT_SECRET`（`supabase status` の値）も要る。`accounting_p2_posting_tables` の最後の 1 ブロックも同じフラグで動く（フラグなしでは飛ばす） |
+| コミットする試験（並行・PostgREST） | `ACCOUNTING_COMMIT_SUITE=1` を付け、**1 ファイルずつ単独の jest で**流す。前後に `db reset` を挟む。同じ jest にロールバックの試験を混ぜると、残った行で落ちる。`group_g3_postgrest_paths`（計画3で判断待ちの注文の確定の事例を足した）も、注文・取り消しの行をコミットして残すので、同じく単独で流し、前後に `db reset` を挟む。対象: `accounting_p2_payment_concurrency`・`…_shipment_concurrency`・`…_stripe_concurrency`・`…_dispute_concurrency`・`…_run_posting_postgrest`・`…_kpi_monthly_records_postgrest`。PostgREST の 2 本は `LOCAL_SUPABASE_URL`・`LOCAL_SUPABASE_ANON_KEY`・`LOCAL_SUPABASE_SERVICE_ROLE_KEY`・`LOCAL_SUPABASE_JWT_SECRET`（`supabase status` の値）も要る。`accounting_p2_posting_tables` の最後の 1 ブロックも同じフラグで動く（フラグなしでは飛ばす） |
 | 移行の自己検査の試験 | `accounting_p2_migration_asserts`（S6〜S14 の本文の契約、再生、改ざんした本文を断る）。移行ファイルの本文を変えたら、固定の needle と合わせて直す |
 | E2E | 本番ビルド（`next build && next start`）・手元の Supabase。`db reset` の直後に流す。3000 番に残ったアプリは先に止める。1 回の `db reset` で `FR-ADMIN-133` の dispute の試験は 5 回までしか流せない（原因 16 種のうち設定の無い物を 1 回に 3 つ使う。`other` は選ばないので使えるのは 15。6 回目は最後の幅で落ちる）。ほかの 4 本は `db reset` なしで繰り返せる（確かめた） |
 | E2E の後 | DB 結合に戻る前に `npm run db:reset`（計画 1 と同じ） |
@@ -1998,7 +1998,7 @@ E2E の既存の spec は、固定の手数料の止め（S16）に合わせて�
 | `accounting_p3_stripe_reconciliation` | 5 | FREQ-582-AC-06 | Stripe の残高の照合で返金系の取引が `planned_p3` から外れる |
 | `accounting_p3_tax_refunds` | 15 | FREQ-583-AC-01〜04 | 消費税用の返金の行・対象外・続きの読み・7年保存の注記 |
 | `accounting_p3_pending_manual_close` | 6 | FREQ-581-AC-05、582-AC-06 | 手で入れた仕訳と結ぶ・人が閉じた取引・2つ目の取り消し |
-| `accounting_p3_refund_debt_reads` | 9 | FREQ-579-AC-04・05 | 借りの一覧（返品の借り・処理中の返金・上限）、結びの候補、振込の断り（処理中）、普通の返品の借りの結びの断り・普通の返品の返金を払い手にした結びの断り（S26） |
+| `accounting_p3_refund_debt_reads` | 10 | FREQ-579-AC-04・05 | 借りの一覧（返品の借り・処理中の返金・上限）、結びの候補、振込の断り（処理中）、普通の返品の借りの結びの断り・普通の返品の返金を払い手にした結びの断り（S26） |
 | `accounting_p3_return_not_required` | 4 | FREQ-579-AC-01 | 返送不要の返品（S26）: 届いた日・額の決定の事実と仕訳が無く、返金した日（次の年ならその年）に 4020／1160 の1本、失敗の借りは出荷後の借り。普通の返品は今までどおり |
 | `accounting_p3_migration_asserts` | 58（`test` 42・`test.each` 16。展開前） | FREQ-562-AC-05、569-AC-01・07、575-AC-01、576-AC-03〜05、578-AC-05・09、579-AC-01・04・05、580-AC-02、581-AC-01・05、582-AC-05・06 | S15〜S26 の本文の契約と末尾の自己検査 |
 

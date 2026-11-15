@@ -1478,7 +1478,7 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 
 1. `npx supabase db reset`（手元だけ。末尾の検査が落ちると取引ごと戻り、reset が止まる）
 2. `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db/accounting_p2 --runInBand`（`accounting_p2_*` の DB 結合）。計画1も流すなら `accounting_p1 accounting_p2` を並べる。
-3. コミットする試験（`ACCOUNTING_COMMIT_SUITE=1`）は**単独の jest で1ファイルずつ**流し、前後に `db reset` を挟む。同じ jest にロールバックの試験を混ぜると、残った行で落ちる。PostgREST の試験（`accounting_p2_run_posting_postgrest`・`accounting_p2_kpi_monthly_records_postgrest`）は `LOCAL_SUPABASE_URL`・`LOCAL_SUPABASE_ANON_KEY`・`LOCAL_SUPABASE_SERVICE_ROLE_KEY`・`LOCAL_SUPABASE_JWT_SECRET` も要る。
+3. コミットする試験（`ACCOUNTING_COMMIT_SUITE=1`）は**単独の jest で1ファイルずつ**流し、前後に `db reset` を挟む。同じ jest にロールバックの試験を混ぜると、残った行で落ちる。PostgREST の試験（`group_g3_postgrest_paths` は計画3で判断待ちの取り消しの行をコミットするので、これも単独で流して前後に `db reset` を挟む。`accounting_p2_run_posting_postgrest`・`accounting_p2_kpi_monthly_records_postgrest`）は `LOCAL_SUPABASE_URL`・`LOCAL_SUPABASE_ANON_KEY`・`LOCAL_SUPABASE_SERVICE_ROLE_KEY`・`LOCAL_SUPABASE_JWT_SECRET` も要る。
 4. E2E の後に DB 結合を流すときは、先に `npm run db:reset` する。
 
 ### G・H の試験に足した変更（計画2の移行が G のテーブルに外部キーを張るため）
