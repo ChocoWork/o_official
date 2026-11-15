@@ -169,8 +169,11 @@ describeLocalDb('S27 auto posting under concurrency: controller only (commits)',
   /** 返金を成功にして係を流し、最後の円を返す。 */
   async function finish(setup: PgClient, s: Seed, refundId: string): Promise<Final> {
     await succeedRefund(setup, refundId, { at: nowIso() });
-    // 同じ日の決定の取り出しの順は決まっていない（返金の成功・A の終わり・C が1回の流しずつで解ける）ので、待ちが無くなるまで最大 8 回流す
-    for (let i = 0; i < 8; i += 1) { await settle(setup); if ((await openRows(setup, s.orderId)) === 0) break; }
+    // 流す回数の上限は式で決める。1回の流しは、返品・返金・取り消しの順に進み、返金の成功を入れてから C の待ちが解けるので、C の行は同じ流しの中で入る。
+    // ただし取り消しの計上係が1回に見る開いた行は、検知の古い順の10本まで（S27 の取り消しの計上係の lane 1 の LIMIT 10）。この DB に開いた行が
+    // n 本（この注文の C を含む）あれば、C の行の番は ⌈n / 10⌉ 回目までに来る。返金の成功の仕訳を入れる流しが先に要るので、最低 1 回（開いた行が0本の形もある）。きれいな DB では 1 回。前の試験の残りの開いた行が10本を超えても、この式を超えない。
+    const open = Number((await setup.query('select count(*) as n from public.accounting_pending_events where resolved_at is null')).rows[0].n);
+    for (let i = 0; i < Math.max(1, Math.ceil(open / 10)); i += 1) { await setup.query('begin'); await run(setup); await setup.query('commit'); }
     return full(setup, s.orderId);
   }
 
@@ -277,6 +280,7 @@ describeLocalDb('S27 auto posting under concurrency: controller only (commits)',
       await a.query('begin');
       const first = await run(a);
       const second = run(b);
+      second.catch(() => undefined);
       expect(await waitUntilBlocked(observer, pidB)).toContain(pidA);
       await a.query('commit');
       expect(first).toMatchObject({ disputes: 1 });
