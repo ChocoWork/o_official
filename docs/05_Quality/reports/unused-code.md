@@ -1,6 +1,6 @@
 # 使われていないコードの候補
 
-> 状態: 自動生成 | 生成日: 2026-11-16 | 対象: NEWS・HOME・LOOK・ABOUT・STOCKIST・SEARCH・PRIVACY・AUTH・ADMIN
+> 状態: 自動生成 | 生成日: 2026-11-17 | 対象: NEWS・HOME・LOOK・ABOUT・STOCKIST・SEARCH・PRIVACY・AUTH・ADMIN
 
 ## 概要
 

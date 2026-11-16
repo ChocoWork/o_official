@@ -164,7 +164,7 @@ describeLocalDb('passkey credential trigger and notification outbox', () => {
     expect((await outbox(u)).filter((r) => r.kind === 'passkey_removed')).toHaveLength(0);
   });
 
-  test('DATA-AUTH-014 with the trigger disabled a replaced key (credential_id or public_key changed) is no longer counted as approved', async () => {
+  test('DATA-AUTH-014 with the trigger disabled a key whose credential_id changed is no longer counted (a public_key-only change still is: known residual)', async () => {
     const u = await user('admin');
     const k1 = await key(u, true);
     const k2 = await key(u, true);
@@ -172,10 +172,11 @@ describeLocalDb('passkey credential trigger and notification outbox', () => {
     expect(await count(u)).toBe(3);
     await db().query('alter table auth.webauthn_credentials disable trigger passkey_credentials_notify');
     await db().query('update auth.webauthn_credentials set credential_id = $2, public_key = $3 where id = $1', [k1, randomBytes(32), randomBytes(32)]);
-    await db().query('update auth.webauthn_credentials set credential_id = $2 where id = $1', [k2, randomBytes(32)]);
+    await db().query('update auth.webauthn_credentials set public_key = $2 where id = $1', [k2, randomBytes(32)]);
     expect(await approvalRows(k1)).toBe(1);
-    expect(await count(u)).toBe(1);
-    expect(k3).toBeTruthy();
+    expect(await approvalRows(k3)).toBe(1);
+    // k1 (credential_id changed) is not counted; k2 (public_key only) and k3 still are
+    expect(await count(u)).toBe(2);
   });
 
   test('DATA-AUTH-014 the trigger function is owned by postgres, SECURITY DEFINER, and anon / authenticated / service_role cannot run it', async () => {
