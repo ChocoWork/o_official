@@ -3,6 +3,15 @@
 > 目的: [パスキー設計書](2026-11-07-passkey-auth-design.md) の 5-1（始めの呼び方）の決定の根拠として、回数の制限（IP ごとに5分30回）を上げられるかを調べた記録
 > 確認日: 2026-11-16。本文は調べた時の英語のまま。「有力・確定・暫定」は、確定 = 文書やソースで確かめた、有力 = 裏付けはあるが動かして確かめていない、暫定 = 推測を含む
 
+## 日本語の結論
+
+- 回数の制限（IP ごとに5分30回）を上げる設定は、Supabase の文書・API・CLI の設定のどれにも無い（確定）。ホスト版でオーナーが変えられないことは有力（API を呼んで確かめてはいない）。
+- 添え書き（`Sb-Forwarded-For`）が無いサーバーの呼び出しが、どう数えられるかは、公開のソースに無く暫定。ホスト版が見出しを設定していれば、店のサーバーの IP 1つで数える（店全体で5分30回）。設定が無ければ制限が一切効かない（ソースで確定）。
+- 添え書きでお客さんの IP を渡せば、お客さんごとに数えられる。これには新しい秘密の鍵（`sb_secret_`）と、プロジェクトの設定で有効にすることが要る。
+- 管理者の鍵に、回数の制限の免除は無い（ソースで確認）。
+
+用語: IP は「つないできた機械の住所」、添え書きは「サーバーから呼ぶ時に、本当のお客さんの IP を伝える見出し」。以下は英語の原文（根拠）。
+
 ## 結論（原文は英語）
 - Raise via owner settings: NO (as of docs/OpenAPI fetched 2026-11-16). 確定 for "no documented knob"; 有力 that hosted does not let owner change GOTRUE_RATE_LIMIT_PASSKEY (not verified by calling API; forbidden).
 - Counting without Sb-Forwarded-For: 有力 per server egress IP only if hosted sets GOTRUE_RATE_LIMIT_HEADER; if header is unset AND no sbff, source applies NO limit at all (確定 from source). Hosted header setting is not in public source -> 暫定.

@@ -216,7 +216,7 @@ T4 の UV 必須は、この仮想の認証器でも確かめられる。`hasUse
 **Interfaces:**
 
 - Consumes: `startBrowser`（`setUserVerified`・`recreateAuthenticator`・`addAuthenticator`・`removeAuthenticator`）、`registerPasskey`・`loginWithPasskey`（Task 3）。
-- Produces: `readUvFlag(authenticatorDataB64url: string): boolean`（`authenticatorData` の37バイト目の flags の `0x04`）。
+- Produces: `readUvFlag(authenticatorDataB64url: string): boolean`（`authenticatorData` の位置 32（33バイト目）の flags の `0x04`）。
 
 - [ ] **Step 1: `lib/uv.mjs` の `readUvFlag` を書く。** 入力は base64url の `authenticatorData`、戻りは UV の印の有無。
 - [ ] **Step 2: 失敗する試しを書く。** `t4.mjs` は次をアサートする。UV 無しの認証器は `hasUserVerification: false` の別の認証器を作って得る（作った後に変えられないため）。
