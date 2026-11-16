@@ -1,5 +1,6 @@
 # DB マイグレーション運用
 
+> 2026-11-16 確認日（パスキー段1a Task 6）: 新しい移行 `20261116232141_passkey_credential_events.sql`（`auth.webauthn_credentials` への引き金。手元の DB のみ・本番未適用）を足した。下の「パスキー段1a 移行 C」の節に書いた。
 > 2026-11-16 確認日（パスキー段1a Task 5）: 新しい移行 `20261116230000_passkey_access_token_hook.sql`（Custom Access Token フックの関数。手元の DB のみ・本番未適用。`config.toml` では有効にしない）を足した。下の「パスキー段1a 移行 B」の節に書いた。
 > 2026-11-16 確認日（パスキー段1a Task 4）: 新しい移行 `20261116215034_passkey_foundation_tables.sql`（パスキーの設定・認め・窓・知らせの表と関数。手元の DB のみ・本番未適用）を足した。下の「パスキー段1a 移行 A」の節に書いた。
 > 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 1）: 新しい移行 `20261116000000_accounting_p3_pending_auto_posting.sql`（S27。手元の DB のみ・本番未適用。残りの Task が育てる途中の形）の骨組みを足した。前の確かめ（`acc_s27_precheck`。S24 の結ぶ関数で閉じた `dispute_lost`／`return_closed_after_lost` の行が1件でもあれば止まる。開いた行の件数は NOTICE で出す）、私用の関数2つ（`private.accounting_order_refunds_in_flight`・`private.accounting_order_return_payable`。誰にも EXECUTE を渡さない）、`private.accounting_refund_wait` の作り直し（置き換え1つ。入れない決定を済みと数える）まで。行は書かない。末尾の確かめ（Task 4）は6段そろい、大きさと MD5・作り直した関数・戻し方は末尾の「計画 3 の移行 S27」の節に書いた。本番の適用手順の最後の確認（開いた行の件数・適用の許可）は、本番に当てる時に追記する。
@@ -95,6 +96,23 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 - 戻し方（移行のヘッダーの ROLLBACK）: `DROP FUNCTION public.passkey_access_token_hook(jsonb);`。有効にする前なら他に影響しない。有効にした後は、先に `config.toml` のフックを外す
 - **本番へ当てない**: 段1b と段3が済むまで当てない（理由と当て方は移行 A と同じ。1本ずつ、オーナーの許可を得て、Supabase の MCP の `apply_migration`）。本番の Auth のフックの登録は、当てた後に別の手順で行う
 - 手元で確かめた結果（2026-11-16、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_access_token_hook.integration.test.ts` 37件通過（`supabase_auth_admin` の権限で呼ぶ）、`auth_passkey_foundation.integration.test.ts` は通過のまま。単体 `staff-passkey-reject.test.ts` 4件通過
+
+## パスキー段1a 移行 C: 鍵の足し・消しの引き金と送る予定の積み込み（手元で確認済み・本番未適用）
+
+確認日: 2026-11-16（パスキー段1a Task 6）。SR-AUTH-012・FR-AUTH-009・SEC-AUTH-038・ADR-0465・DATA-AUTH-014・DD-AUTH-045。設計は [パスキー設計](../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-4・8-2）、計画は [段1a の計画](../superpowers/plans/2026-11-16-passkey-stage1a-foundation.md)。
+
+| 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
+| --- | --- | --- | --- |
+| `20261116232141_passkey_credential_events.sql` | 6416 bytes / `5fb494edb2018185a12d21c81c491f7e` | 本番未適用（手元の `db reset` で適用済み） | `auth.webauthn_credentials` への引き金 `passkey_credentials_notify` と関数 `private.passkey_credentials_notify()` を足す。足し・消し・鍵の差し替えを outbox に積み、消し・差し替えで認めの控えを外す |
+
+- 変えるもの: 関数1本と引き金1本を足すだけ。ログインの動きは変わらない（フックは有効にしない）。送るのは段2・3
+- 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `3d3f65c20028f16397437ca0d84213ac`（本番に当てた後、これと突き合わせる）
+- 前の確かめ: `auth.webauthn_credentials`・移行 A の表・`public.user_roles` が在り、現在の役割が `TRIGGER` の権限を持つこと。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`
+- 末尾の確かめ: 引き金が在り有効（`tgenabled = 'O'`）、関数が `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空、`anon`・`authenticated`・`service_role`・`PUBLIC` に `execute` が無い。失敗は `PASSKEY_MIGRATION_ASSERTION_FAILED`
+- 戻し方（移行のヘッダーの ROLLBACK）: `DROP TRIGGER passkey_credentials_notify ON auth.webauthn_credentials; DROP FUNCTION private.passkey_credentials_notify();`
+- **未確認**: 本番で `postgres` がこの引き金を作れるか、GoTrue の更新で引き金が消えないか（設計 8-2 の3）。本番へ当てる前に、読むだけで `select has_table_privilege('postgres','auth.webauthn_credentials','TRIGGER');` を確かめる
+- **本番へ当てない**: 段1b と段3が済むまで当てない（理由と当て方は移行 A と同じ）
+- 手元で確かめた結果（2026-11-16、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_credential_events.integration.test.ts` 通過、`auth_passkey_foundation`・`auth_passkey_access_token_hook` も通過のまま（3つで60件）。単体 `staff-passkey-credential-trigger.test.ts` 通過
 
 ## CI の引き金を止めた記録（2026-11-16）
 

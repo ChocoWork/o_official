@@ -1620,6 +1620,25 @@ stateDiagram-v2
 - 読む表: `public.user_roles`・`public.roles`・`private.passkey_staff_config`（`private.passkey_staff_settings()` 経由）・`private.passkey_registration_windows`。数えるのは `public.passkey_approved_count`。書く表は無い
 - 戻す: 移行のヘッダーの ROLLBACK（関数を1本落とす）
 
+### DATA-AUTH-014 auth.webauthn_credentials の引き金は、足し・消し・鍵の差し替えを outbox に積み、認めの控えを外す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-009、SEC-AUTH-038、ADR-0465 |
+| 根拠 | 鍵の足し・消しはどの道（GoTrue の窓口・直叩き・ユーザー削除の連鎖）でも DB の1か所で拾い、認めの控えを鍵と同時に消す。判断は DD-AUTH-045 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_credential_events.integration.test.ts`）、E2E（FR-AUTH-009-AC-01）、移行の末尾の確かめ（`PASSKEY_MIGRATION_ASSERTION_FAILED`） |
+| 出どころ | 移行 `supabase/migrations/20261116232141_passkey_credential_events.sql`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4） |
+
+| 物 | 内容 |
+| --- | --- |
+| 引き金 `passkey_credentials_notify` | `auth.webauthn_credentials` への `AFTER INSERT OR UPDATE OR DELETE ... FOR EACH ROW` |
+| 関数 `private.passkey_credentials_notify()` | `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空。`execute` はだれにも渡さない |
+| 書く表 | `private.passkey_notification_outbox`（積む）、`private.approved_passkeys`（消す）。読む表は `public.user_roles`・`public.roles`・`auth.users` |
+
+- 戻す: 移行のヘッダーの ROLLBACK（引き金と関数を落とす）。本番で作れるか・GoTrue の更新で消えないかは未確認（設計 8-2 の3）
+
+
 ### 手元の Supabase Auth の設定の表（波 6 の目標。手元は 2026-11-01 に切り替え済み）
 
 目標の値は `supabase/config.toml` に反映済み（表の「今」は切り替え前の値）。切り替えまでは目標の写し `supabase/pending-wave6/config.toml` と差分 `config.patch` に置いていた。切り替えの日は 2026-11-01（手元だけ。本番は未反映）。本番の目標値と手順は `docs/06_Operations/supabase-auth-config.md`（波 6 の Task 9）。

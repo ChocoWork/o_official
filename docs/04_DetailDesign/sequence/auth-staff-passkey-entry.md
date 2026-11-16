@@ -1,6 +1,6 @@
 # 店員のパスキーの入口（設定・登録の窓・認めたパスキー）
 
-> 状態: 推定 | 確認日: 2026-11-16 | 対象: `supabase/migrations/20261116215034_passkey_foundation_tables.sql`、`supabase/migrations/20261116230000_passkey_access_token_hook.sql`、`src/lib/auth/staff-passkey-defaults.ts`、`src/lib/auth/staff-passkey-reject.ts` | 親: [シーケンス設計の方針](README.md)
+> 状態: 推定 | 確認日: 2026-11-16 | 対象: `supabase/migrations/20261116215034_passkey_foundation_tables.sql`、`supabase/migrations/20261116230000_passkey_access_token_hook.sql`、`supabase/migrations/20261116232141_passkey_credential_events.sql`、`src/lib/auth/staff-passkey-defaults.ts`、`src/lib/auth/staff-passkey-reject.ts`、`src/lib/auth/staff-passkey-credential-events.ts` | 親: [シーケンス設計の方針](README.md)
 
 ## 概要
 
@@ -10,8 +10,8 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | FR-AUTH-007、FR-AUTH-008、SEC-AUTH-036、SEC-AUTH-037、DATA-AUTH-011、DATA-AUTH-012、DATA-AUTH-013、ADR-0464 |
-| 対象のコード | 移行 `supabase/migrations/20261116215034_passkey_foundation_tables.sql`・`20261116230000_passkey_access_token_hook.sql`、`src/lib/auth/staff-passkey-defaults.ts`・`staff-passkey-reject.ts` |
+| 対応する ID | FR-AUTH-007、FR-AUTH-008、SEC-AUTH-036、SEC-AUTH-037、DATA-AUTH-011、DATA-AUTH-012、DATA-AUTH-013、SR-AUTH-012、FR-AUTH-009、SEC-AUTH-038、DATA-AUTH-014、ADR-0464、ADR-0465 |
+| 対象のコード | 移行 `supabase/migrations/20261116215034_passkey_foundation_tables.sql`・`20261116230000_passkey_access_token_hook.sql`・`20261116232141_passkey_credential_events.sql`、`src/lib/auth/staff-passkey-defaults.ts`・`staff-passkey-reject.ts`・`staff-passkey-credential-events.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-2・5-5・6-2） |
 | 調べた時点 | 2026-11-16（手元の DB で結合試験を流した） |
 
@@ -92,8 +92,46 @@ flowchart TD
 - アプリの側: `isStaffPasskeyRequiredError(error)` は `status === 403` かつ `message` が `STAFF_PASSKEY_REQUIRED_MARKER`（`[staff-passkey-required]`）で始まる時だけ真。GoTrue は拒否を HTTP 403・`code: unknown` で返す（手元の試し T2）
 - テスト観点: 24時間の境目（86400・86401・未来）、`timestamp` の型、`amr` の形、方法の種類、窓（開いた・閉じた・期限切れ・別のセッション・別の利用者）、お客さんの素通しと旗、壊れた入力（`claims`・`amr`・`user_id`・`event` の形）、権限
 
+### DD-AUTH-045 パスキーの足し・消しの引き金の順番と、店員の判断
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | DATA-AUTH-014、SEC-AUTH-038 |
+| 根拠 | 認めの控えの削除を先に、例外の囲みの外で行い、outbox への書き込みだけを囲みに入れる。囲みの中に削除を入れると、書き込みの失敗で削除が取り消され、消えた鍵の認めが残る。削除を先にしても店員と分かるように、削除の結果（`FOUND`）を次の文で控える（ADR-0465） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（移行の文の順番）、DB 結合テスト（DATA-AUTH-014） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・8-2）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 6、Review Focus 4・5） |
+
+```mermaid
+flowchart TD
+    A[行の変更を受ける] --> B{INSERT か UPDATE か DELETE か}
+    B -- INSERT --> K1[passkey_added]
+    B -- UPDATE --> U{credential_id か public_key が変わったか}
+    U -- いいえ --> Z[何もしない]
+    U -- はい --> K2[passkey_key_replaced]
+    B -- DELETE --> K3[passkey_removed]
+    K2 --> D[認めの行を DELETE し 次の文で FOUND を v_was_approved に控える]
+    K3 --> D
+    K1 --> S
+    D --> S[店員か を決める user_roles の有効な admin か supporter か 認めの行を消したか]
+    S --> E[auth.users の行が在るか を notify_subject にし メールを写す]
+    E --> Q{店員か 行が在るか のどちらかが真か}
+    Q -- いいえ お客さんの削除の連鎖 --> Z
+    Q -- はい --> W[outbox に積む 失敗は WARNING だけ]
+```
+
+- アプリの側: `isPasskeyOutboxKind(value)`（IMPL-AUTH-242）は、outbox の `kind` が3つの種類（`passkey_added`・`passkey_removed`・`passkey_key_replaced`）のどれかの時だけ真。送る側（段2・3）が未知の種類を送らないため
+- 入力と出力: 行の変更。戻り値は無し（`AFTER`）。更新は `credential_id`・`public_key` が変わった時だけ
+- 順番: ① 認めの行を `DELETE FROM private.approved_passkeys WHERE passkey_id = OLD.id`（`RETURNING` は付けない）で消し、その次の文で `v_was_approved := FOUND`（間に別の文を挟まない）。② その後、店員の判断・`auth.users` の確認・outbox への書き込みを `BEGIN ... EXCEPTION WHEN OTHERS THEN RAISE WARNING ... END` の中で行う
+- 店員: `user_roles` で有効（`active`・期限切れでない）な admin・supporter（フックと同じ規則）、または今回認めの行を消した
+- 異常: outbox への書き込みが落ちても、鍵とユーザーの削除は成功し、認めの行の削除は取り消されない。`RAISE WARNING` だけ残る
+- 連鎖: ユーザーごと店員を削除する時、`user_roles` が先に消えても、認めた鍵なら店員と分かる。認めた鍵が無い店員で `user_roles` が先に消えた時は店長への知らせが出ない（SEC-AUTH-038 で受け入れる）
+- 認可: `execute` はだれにも渡さない。引き金の起動はテーブルの権限に左右されない
+- テスト観点: 足し・消し・差し替え・名前や回数だけの更新、お客さんの削除の連鎖、店員の削除（`user_roles` が先か同時か）、outbox の失敗（制約）、`DISABLE TRIGGER` 時の数え方、権限
+
 ## 未確認事項
 
+- 本番で `auth.webauthn_credentials` に引き金を作れるか、GoTrue の更新で引き金が消えないか（設計 8-2 の3）。本番へ当てる前に `has_table_privilege('postgres', 'auth.webauthn_credentials', 'TRIGGER')` を読む
 - 本番の `auth.webauthn_credentials` に同じ列があるか（パスキーを有効にする前は表が無い可能性がある）
 - 本物の Google のログイン（`amr` が `oauth`）でフックが走る形は未確認。店員は「パスキー（と窓）以外は全部拒否」なので、形が違っても店員は通らない
 - 有効にした後にフックが壊れた時の外し方（設定で止める）は Task 9 と運用の文書で決める

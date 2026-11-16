@@ -573,6 +573,21 @@ flowchart LR
 
 ---
 
+### THR-AUTH-038 鍵が消されたのに認めの控えが残る、または足し・消しが記録されない
+
+| 属性 | 値 |
+| --- | --- |
+| 守るもの | 認めたパスキーの数え方（管理の入口の3つ目の条件）、店長への知らせ |
+| 脅威 | 鍵を GoTrue の窓口・直叩きで消した・差し替えたのに、認めの控えが残り、管理の入口の数が実際より多く見える。または、足し・消しの記録が無く、乗っ取りに気づけない。引き金を止める・outbox を壊す |
+| 起こり方 | 店員や外の人が GoTrue を直に叩く。表の持ち主か superuser が `TRUNCATE`・`DISABLE TRIGGER`・`session_replication_role = replica` を使う。outbox への書き込みが落ちる |
+| 影響 | 管理の権限が実際の鍵より多く見える（ただし数え方が実在の鍵と突き合わせるので防げる）。知らせの取りこぼし |
+| 対策 | SEC-AUTH-038（引き金で認めの行を消す・数え方の突き合わせ・outbox の失敗を握る。ADR-0465、DD-AUTH-045） |
+| ASVS | V7.1.1・V4.1.3（当てはめは推定） |
+| 根拠 | 設計 5-4。引き金は GoTrue の表に付くので、GoTrue の更新で消える・本番で作れない恐れがある（設計 8-2 の3、未確認） |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・8-2）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 6、Review Focus 4・5） |
+
+
 ## 未確認事項
 
 - 本番の Supabase Auth の設定（OTP の期限・Confirm email・最小の長さ・漏洩の照合・captcha・TOTP・回数の制限・`secure_password_change`・現行パスワードの要求）。手元の `supabase/config.toml` は波 6 の切り替えで本番の前提にそろえたが、本番の実際の値は Management API で読むまで未確認（THR-AUTH-015・029）

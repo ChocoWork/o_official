@@ -229,6 +229,17 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: 店員（店長・サポーター）は、パスキーでログインしてから24時間以内の時だけトークンを受け取れる。招待の登録の窓が開いている間のセッションだけは、パスキーを足すためにトークンを受け取れるが、管理の入口は通れない。お客さんのふだんのログインは変えない。段1aでは、この判断をする関数だけを作り、有効にはしない。
 
+### SR-AUTH-012 パスキーが足されたり消されたり差し替えられたりしたら、DB が必ず記録し、認めた鍵の控えを正しく保つ
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | 店員のパスキーは、GoTrue の窓口や直叩きでも足し・消しができる。アプリの窓口だけで拾うと、直叩きの道が漏れる。DB の表の引き金なら、どの道でも拾える（設計 5-4）。鍵が消えたのに「認めた鍵」の控えが残ると、管理の入口の数え方が狂うので、消す時に控えも消す |
+| 状態 | 推定 |
+| 出どころ | ユーザーの発言 2026-11-06〜07・2026-11-16（`.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・8-2）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 6、Review Focus 4・5）） |
+
+要求の文: パスキーが足された・消された・鍵そのものが差し替えられた時、店長に知らせる予定を DB が自動で残す。消された・差し替えられた鍵は、「認めた鍵」の控えからも同時に外す。お客さんがユーザーごと削除される連鎖では、知らせを積まない。店員がユーザーごと削除される時は、削除された本人にでなく店長に知らせる行を残す。段1aでは、予定の表に積むだけで、送らない。
+
+
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
 | 属性 | 値 |
@@ -2121,6 +2132,20 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 店員は `user_roles` で有効（`active` で期限切れでない）な admin・supporter。結果は、(1) 方法が `passkey` か `token_refresh` で、`amr` の `passkey` の数の `timestamp` から `staff_max_session_seconds`（86400）秒以内なら通し、`staff_passkeys_ok`（認めたパスキーが2本以上か。ヒントで、判定には使わない）を足す。(2) 方法が `otp`・`token_refresh`・`passkey` で、`claims.session_id` と `user_id` の両方が同じ開いた窓があれば通す（`staff_passkeys_ok` は偽）。(3) それ以外の店員は拒否（HTTP 403・文の頭に `[staff-passkey-required]`）。お客さんは、方法が `password` で設定の旗 `reject_customer_password` が真の時だけ、別の印 `[customer-password-disabled]` で拒否し（店員の印と分ける）、それ以外は入力をそのまま返す。どんな入力でも例外を投げず、店員を判定できない時は拒否する。フックは窓の表を書かない。段1aでは `config.toml` で有効にしない（Task 9）。
 
 ## 受け入れ条件
+
+### FR-AUTH-009 パスキーの足し・消し・鍵の差し替えを DB の引き金で拾い、送る予定の表に積み、認めた鍵の控えを外す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-012 |
+| 根拠 | SR-AUTH-012 を、`auth.webauthn_credentials` への引き金 `passkey_credentials_notify` と関数 `private.passkey_credentials_notify()` にする。表の持ち主が GoTrue でも、引き金は足し・消し・更新のどの道でも走る。関数は持ち主 `postgres` の権限で動き、だれにも `execute` を渡さない（ADR-0465） |
+| 状態 | 推定 |
+| 確かめ方 | E2E・結合テスト |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・8-2）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 6、Review Focus 4・5） |
+| 優先度 | MUST |
+
+規則: 足し（INSERT）は `passkey_added`、消し（DELETE）は `passkey_removed` を積み、同じ `passkey_id` の認めの行を消す。更新（UPDATE）は `credential_id` か `public_key` が変わった時だけ `passkey_key_replaced` を積み、認めの行を消す（名前・回数・最後に使った時刻だけの更新では何もしない）。`subject_is_staff` は、積む時点で有効な店員（`user_roles` の admin・supporter）か、その鍵の認めの行を今回消したか。`notify_subject` は `auth.users` の行がまだ在るか（ユーザー削除の連鎖の途中は偽）。真の時は `subject_email` に本人のメールを写す。お客さんがユーザーごと削除された時は積まない。認めの行の削除は例外の囲みの外、outbox への書き込みだけを囲みの中に入れ、書き込みが落ちても鍵・ユーザーの削除は止めない。
+
 
 ### 要求の表から写した受け入れ条件
 
@@ -4377,6 +4402,19 @@ anon の鍵と service_role の鍵のそれぞれで `passkey_access_token_hook`
 
 ## セキュリティ要件
 
+### FR-AUTH-009-AC-01 anon と service_role の鍵では引き金の関数を直接呼べない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-009 |
+| 根拠 | 引き金の関数が外の人やアプリの service_role から呼べると、outbox に偽の行を積ませたり認めの行を消させたりできる。`execute` を誰にも渡していないことを、アプリを通さず直に叩いて確かめる |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-043-passkey-trigger-function-grants.spec.ts`。HTTP の試験で幅で結果は変わらない） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・8-2）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 6、Review Focus 4・5） |
+
+anon の鍵と service_role の鍵のそれぞれで `passkey_credentials_notify` を PostgREST（`/rest/v1/rpc/passkey_credentials_notify`）から呼ぶと、どちらも誤りになり、値は返らないこと。
+
+
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 
 | 属性 | 値 |
@@ -5745,6 +5783,24 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 優先度 | MUST |
 
 守ること: (1) 関数は `EXCEPTION WHEN OTHERS` で受け、お客さんと判った後の失敗は入力をそのまま返し、店員の失敗と、店員かどうか判らない失敗（`user_id` が無い・不正）は拒否する。(2) `claims` が無い・`amr` が配列でない・`timestamp` が文字列・未来・86400秒を超える・方法が未知の店員は拒否する。(3) `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空で、`execute` は `supabase_auth_admin` だけに渡し、`public`・`anon`・`authenticated`・`service_role` から外す。表の `select` は渡さない。(4) 店員の拒否の文の頭に `[staff-passkey-required]` を付け（お客さんの `password` の拒否は別の印 `[customer-password-disabled]`）、アプリが言い回しに頼らず見分けられるようにする。(5) 本番へは段1bと段3が済むまで当てず、有効にする前の関数だけでは何も変わらないことを保つ。
+
+### SEC-AUTH-038 パスキーの足し・消しの記録と認めの控えの掃除は引き金に任せ、引き金が働かない道は受け入れる危険として書き、数え方でも突き合わせる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-038 |
+| 根拠 | 引き金だけが「鍵が消えたら認めの控えも消す」を行うので、引き金が働かない道（TRUNCATE・DISABLE TRIGGER・`session_replication_role = replica`）では控えが残る。そこで、認めた鍵の数え方（`passkey_approved_count`）が `auth.webauthn_credentials` の実在の鍵と突き合わせ、残った控えは数えない（SEC-AUTH-036）。知らせの取りこぼしは、鍵とユーザーの削除を止めないことを優先して受け入れる（設計 5-4） |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_credential_events.integration.test.ts`）、単体テスト（DD-AUTH-045）、E2E（FR-AUTH-009-AC-01） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・8-2）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 6、Review Focus 4・5）、OWASP ASVS 4.0.3 V7.1.1・V4.1.3（当てはめは推定） |
+| 優先度 | MUST |
+
+守ること: (1) 認めの行の削除は、例外の囲みの外で先に行い、outbox への書き込みの失敗で取り消されない。(2) outbox への書き込みが落ちても、鍵の削除・ユーザーの削除は成功し、`RAISE WARNING` だけ残す。(3) `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空で、`execute` を `anon`・`authenticated`・`service_role` に渡さない。(4) `subject_email` には積んだ時点のメールを写す。
+
+拾えない道（受け入れる）: `TRUNCATE`、`ALTER TABLE ... DISABLE TRIGGER`、`session_replication_role = replica`、outbox の書き込みの失敗を握りつぶすこと、GoTrue の複製の検知（鍵の複製は GoTrue が `sign_count` で見るが、DB では検知しない）。この道は表の持ち主か superuser だけが通れる。数え方が実在の鍵と突き合わせるので、控えが残っても管理の権限にはならない。
+
+残る危険として受け入れること: 認めた鍵が1本も無い店員を削除した時、連鎖で `user_roles` が先に消えると、店員かどうかが分からず、店長への知らせが出ないことがある。認めた鍵が無い店員は管理の権限を持てず、ユーザーの削除は別に記録が残るので受け入れる。`subject_email` は、積んだ時点のメールの写しで、後でメールが変わっても書き換えない。
+
 
 ## 派生要件
 
