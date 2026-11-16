@@ -122,18 +122,22 @@ describeLocalDb('passkey foundation tables and functions', (db) => {
     await db().query('rollback to savepoint b');
   });
 
-  test('DATA-AUTH-012 approve replaces a stale row that has the same credential_id under another passkey id', async () => {
+  test('DATA-AUTH-012 approve refuses a credential_id already approved under another passkey id and deletes nothing', async () => {
     const u = await user();
     const k = await key(u);
     const cred = (await db().query('select credential_id from auth.webauthn_credentials where id = $1', [k])).rows[0].credential_id;
+    const stale = randomUUID();
     await db().query(
       `insert into private.approved_passkeys (passkey_id, user_id, credential_id, approved_via) values ($1,$2,$3,'script')`,
-      [randomUUID(), u, cred],
+      [stale, u, cred],
     );
-    await db().query('select public.passkey_approve($1,$2,$3)', [u, k, 'reauth']);
-    const rows = await db().query('select passkey_id::text as id, approved_via from private.approved_passkeys where credential_id = $1', [cred]);
-    expect(rows.rows).toEqual([{ id: k, approved_via: 'reauth' }]);
-    expect(await count(u)).toBe(1);
+    await db().query('savepoint c');
+    await expect(db().query('select public.passkey_approve($1,$2,$3)', [u, k, 'reauth'])).rejects.toMatchObject({
+      code: '23505', message: expect.stringContaining('credential already approved under another passkey'),
+    });
+    await db().query('rollback to savepoint c');
+    const rows = await db().query('select passkey_id::text as id from private.approved_passkeys where credential_id = $1', [cred]);
+    expect(rows.rows).toEqual([{ id: stale }]);
   });
 
   test('DATA-AUTH-012 window open keeps one open row per session and expires in 30 minutes', async () => {
@@ -198,9 +202,11 @@ describeLocalDb('passkey foundation tables and functions', (db) => {
     expect(await count(u)).toBe(2);
     // the key row vanishes while the approval row stays (trigger did not run)
     await db().query('delete from auth.webauthn_credentials where id = $1', [k1]);
-    // Task 6's trigger may remove the approval row with the key; the orphan path is only tested while the row stays.
+    // Task 6 adds the trigger that removes the approval row with the key; it then switches this step to
+    // DISABLE TRIGGER / a direct insert (its case f2). Until then the row must still be here.
     const left = await db().query('select 1 from private.approved_passkeys where passkey_id = $1', [k1]);
-    if (left.rowCount === 1) expect(await count(u)).toBe(1);
+    expect(left.rowCount).toBe(1);
+    expect(await count(u)).toBe(1);
     // an approval row with no key at all
     await db().query(
       `insert into private.approved_passkeys (passkey_id, user_id, credential_id, approved_via) values ($1,$2,$3,'script')`,

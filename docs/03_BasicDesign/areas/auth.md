@@ -1594,7 +1594,7 @@ stateDiagram-v2
 | 関数 | 引数 | 返り値 | 動き |
 | --- | --- | --- | --- |
 | `private.passkey_staff_settings` | なし | `jsonb` | 設定の1行を `id` を除いて返す。`STABLE`。`public`・`anon`・`authenticated` に `execute` を渡さない（`has_permission` とフックが所有者の権限で呼ぶ） |
-| `public.passkey_approve` | 利用者・鍵の id・`window`/`reauth`/`script` | なし | 鍵が無い、または持ち主が渡した利用者でなければ例外（`42501`）。あれば `credential_id` を写して認めの行を入れる。2回呼んでも1行 |
+| `public.passkey_approve` | 利用者・鍵の id・`window`/`reauth`/`script` | なし | 鍵が無い、または持ち主が渡した利用者でなければ例外（`42501`）。同じ `credential_id` が別の `passkey_id` で既に認められていれば例外（`23505`。行は消さない）。そうでなければ `credential_id` を写して認めの行を入れる。同じ鍵の2回目は何もしない |
 | `public.passkey_window_open` | 利用者・セッションの id | `timestamptz` | `auth.sessions` でそのセッションがその利用者の物でなければ例外（`42501`）。期限切れの開いた行は閉じる。開いた行が無ければ作り（`window_minutes` 後が期限）、あれば作らず既存の期限を返す |
 | `public.passkey_window_close` | セッションの id | なし | そのセッションの開いた窓を閉じる |
 | `public.passkey_window_is_open` | 利用者・セッションの id | `boolean` | 利用者とセッションの両方が合い、閉じておらず、期限内なら真 |

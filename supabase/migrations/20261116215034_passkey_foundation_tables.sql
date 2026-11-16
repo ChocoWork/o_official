@@ -26,7 +26,8 @@
 --                                                     and the hook run as owner)
 --   public.passkey_approve(user, passkey, via)        copies credential_id from auth.webauthn_credentials; raises when the
 --                                                     key is missing or owned by someone else; idempotent (same passkey:
---                                                     no-op; stale row with the same credential_id: replaced)
+--                                                     no-op); raises when the credential_id is already
+--                                                     approved under another passkey id. Never deletes.
 --   public.passkey_window_open(user, session)         checks auth.sessions; returns expires_at (existing one if open)
 --   public.passkey_window_close(session)
 --   public.passkey_window_is_open(user, session)
@@ -130,9 +131,11 @@ BEGIN
   IF NOT FOUND OR v_owner IS DISTINCT FROM p_user_id THEN
     RAISE EXCEPTION 'passkey_not_owned' USING ERRCODE = '42501';
   END IF;
-  -- A row with the same credential_id but another passkey_id is stale: auth keeps credential_id unique, so the key
-  -- it pointed at is gone and the credential now lives in p_passkey_id. Drop it, then approve (same passkey: no-op).
-  DELETE FROM private.approved_passkeys WHERE credential_id = v_cred AND passkey_id <> p_passkey_id;
+  -- Only the Task 6 trigger deletes approval rows. A row with the same credential_id under another passkey_id is
+  -- refused, not replaced.
+  IF EXISTS (SELECT 1 FROM private.approved_passkeys a WHERE a.credential_id = v_cred AND a.passkey_id <> p_passkey_id) THEN
+    RAISE EXCEPTION 'passkey_approve: credential already approved under another passkey' USING ERRCODE = '23505';
+  END IF;
   INSERT INTO private.approved_passkeys (passkey_id, user_id, credential_id, approved_via)
   VALUES (p_passkey_id, p_user_id, v_cred, p_via)
   ON CONFLICT (passkey_id) DO NOTHING;
