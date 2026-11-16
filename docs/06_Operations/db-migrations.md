@@ -1,6 +1,7 @@
 # DB マイグレーション運用
 
 > 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 1）: 新しい移行 `20261116000000_accounting_p3_pending_auto_posting.sql`（S27。手元の DB のみ・本番未適用。残りの Task が育てる途中の形）の骨組みを足した。前の確かめ（`acc_s27_precheck`。S24 の結ぶ関数で閉じた `dispute_lost`／`return_closed_after_lost` の行が1件でもあれば止まる。開いた行の件数は NOTICE で出す）、私用の関数2つ（`private.accounting_order_refunds_in_flight`・`private.accounting_order_return_payable`。誰にも EXECUTE を渡さない）、`private.accounting_refund_wait` の作り直し（置き換え1つ。入れない決定を済みと数える）まで。行は書かない。末尾の確かめ（Task 4）は6段そろい、大きさと MD5・作り直した関数・戻し方は末尾の「計画 3 の移行 S27」の節に書いた。本番の適用手順の最後の確認（開いた行の件数・適用の許可）は、本番に当てる時に追記する。
+> 2026-11-16 確認日（パスキー段1a Task 1 の直し）: 「以後の追加手順」と「まだ本番に入れないマイグレーション」に、push の引き金を止めた注を足した。
 > 2026-11-16 確認日（会計の自動で入れる実装 S27 の本番適用）: 移行 `20261116000000_accounting_p3_pending_auto_posting.sql`（S27）を、オーナーの許可で本番 `pjidrgofvaglnuuznnyj` へ CLI の `db push --linked --include-all` で当てた。当てた後の読み取りの確かめはすべて期待と一致した。末尾の S27 の節の状態の欄と「本番への適用の記録（2026-11-16）」に書いた。以下の確認日の「本番未適用」は当時の記録。
 > 2026-11-15 確認日（会計の計画3 Task 14）: 計画3の移行 S15〜S26 の12本を、オーナーの承認で本番 `pjidrgofvaglnuuznnyj` へ CLI の `db push --linked --include-all` で当てた。版はファイル名のまま。当てた後の読み取りの確かめはすべて期待と一致し、関数407個の本文の指紋も手元と同じ。末尾の計画3の節の状態の欄と「本番への適用の記録（2026-11-15）」に書いた。以下2つの確認日の「本番未適用」は当時の記録。
 > 2026-11-15 確認日（会計の計画3 Task 13）: 末尾に「会計の作り直し 計画 3 の移行 S15〜S26（手元の DB で確認済み・本番未適用）」の節を足した（目的・順・大きさと MD5・作り直した関数・末尾の検査と戻し方・直した既存の試験）。X4 など交換の印の節は変えていない。本番へ当てる作業と記録は計画3の Task 14。
@@ -64,7 +65,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 
 - 止めたもの: `.github/workflows/db-migrations.yml` の `on:` から `push:` を消した。master に push しても、本番への移行の適用は動かない。`pull_request`（`supabase db push --dry-run` だけ。DB は変えない）と `workflow_dispatch` は残る。`deploy` の job は `if: github.event_name == 'workflow_dispatch'` の時だけ動く（手動の入口は残すが、使わない決まり）。
 - 理由: `supabase db push` は未適用の移行を全部流す。パスキーの段1a の移行（`passkey` を含む5本）を、段3より前に push だけで本番へ当てないため。本番に当てると、パスキーを有効にするまでだれも管理の権限を持てなくなる。
-- 本番へ当てる決まり: 調整役だけが、オーナーの許可を得て、Supabase の MCP の `apply_migration` を1本ずつ呼ぶ。名前はファイルの版（`version_name`）と同じにする。当てた後、`schema_migrations` の `md5(statements[1])` を読んでファイルと突き合わせる。`apply_migration` は当てた時刻で版を付け直すので、当てた後にファイル名を当てた版に合わせて変える。
+- 本番へ当てる決まり: 調整役だけが、オーナーの許可を得て、Supabase の MCP の `apply_migration` を1本ずつ呼ぶ。`name` はファイル名から版（先頭の時刻と `_`）を除いた部分にする。版は当てた時刻で付くので、当てた後にファイル名をその版に直す。当てた後、`schema_migrations` の `md5(statements[1])` を読んでファイルと突き合わせる。`apply_migration` は当てた時刻で版を付け直すので、当てた後にファイル名を当てた版に合わせて変える。
 - 動かさないもの: `supabase db push`（どの形でも）と、GitHub の `workflow_dispatch`。どちらも未適用の移行を全部流す。
 - 戻す時: パスキーの段3の後。`on:` に `push:`（`branches`・`paths`）を戻し、`deploy` の `if` を元の `github.event_name != 'pull_request'` に戻す。戻す前に、本番に未適用の移行が残っていないことを確かめる。
 - 試験: `tests/unit/ci/db-migrations-workflow.test.ts` が、`push:` が無いこと・`workflow_dispatch` と `pull_request` が残ること・`deploy` が手動の時だけ動くことを確かめる。
@@ -494,11 +495,13 @@ npx supabase migration repair --status reverted <version>  # 台帳にあるが�
 ```bash
 npx supabase migration new <name>      # supabase/migrations/<timestamp>_<name>.sql
 # SQL を書く（規約は下記）
-git commit && git push                 # master への push で CI が db push する
+git commit && git push                 # 2026-11-16 から push では本番に当たらない（下の注を参照）
 ```
 
 PR を作ると CI が `supabase db push --dry-run` で「何が当たるか」だけを出す。
-master への push で実際に適用される。
+master への push で実際に適用される（段3の後に引き金を戻した時の形）。
+
+**注: 2026-11-16 からパスキーの段3まで、push の引き金は止めている（「CI の引き金を止めた記録」の節）。本番へは調整役が MCP の `apply_migration` で1本ずつ当てる。**
 
 ### 本番に当てる前の試行（取り消し前提）
 
@@ -557,7 +560,7 @@ supabase/migrations/<作ったときの番号>_<name>.sql  →  <台帳に記録
 
 ### まだ本番に入れないマイグレーション
 
-`supabase/migrations/` に置いたものは、master への push で本番に流れる。
+`supabase/migrations/` に置いたものは、段3の後に引き金を戻したあとは master への push で本番に流れる。2026-11-16 からパスキーの段3まで、push の引き金は止めている（「CI の引き金を止めた記録」の節）。本番へは調整役が MCP の `apply_migration` で1本ずつ当てる。
 公開時まで入れないものは `supabase/pending/` に置く（[supabase/pending/README.md](../../supabase/pending/README.md)）。
 入れるときは新しい version を付けて `supabase/migrations/` へ移す。元の古い日付のまま戻さないこと。
 
