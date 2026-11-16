@@ -8,13 +8,10 @@ name: Deploy DB migrations
 # PUBLIC EXECUTE の窓ができる。Supabase CLI の db push へ寄せて両方を解消する。
 # 適用済みは supabase_migrations.schema_migrations で判定されるためスキップされる。
 
+# 2026-11-16: push の引き金を止めた。`supabase db push` は未適用の移行を全部流すので、
+# パスキーの段3まで動かさない。本番へは調整役が MCP の `apply_migration` で1本ずつ当てる。
+# `deploy` の job は手動の入口として残すが、使わない決まり（docs/06_Operations/db-migrations.md）。
 on:
-  push:
-    branches: [master, main]
-    paths:
-      - 'supabase/migrations/**'
-      - 'supabase/config.toml'
-      - '.github/workflows/db-migrations.yml'
   pull_request:
     paths:
       - 'supabase/migrations/**'
@@ -63,7 +60,7 @@ jobs:
 
   deploy:
     name: Apply to production
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
