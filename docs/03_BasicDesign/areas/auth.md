@@ -1598,7 +1598,7 @@ stateDiagram-v2
 | `public.passkey_window_open` | 利用者・セッションの id | `timestamptz` | `auth.sessions` でそのセッションがその利用者の物でなければ例外（`42501`）。期限切れの開いた行は閉じる。開いた行が無ければ作り（`window_minutes` 後が期限）、あれば作らず既存の期限を返す |
 | `public.passkey_window_close` | セッションの id | なし | そのセッションの開いた窓を閉じる |
 | `public.passkey_window_is_open` | 利用者・セッションの id | `boolean` | 利用者とセッションの両方が合い、閉じておらず、期限内なら真 |
-| `public.passkey_approved_count` | 利用者 | `integer` | 認めの行と `auth.webauthn_credentials` を `c.id = ap.passkey_id and c.user_id = ap.user_id` でつなぎ、その行だけを数える（引き金が動かなかった時でも、消えた鍵は数えない） |
+| `public.passkey_approved_count` | 利用者 | `integer` | 認めの行と `auth.webauthn_credentials` を `c.id = ap.passkey_id and c.user_id = ap.user_id and c.credential_id = ap.credential_id`（鍵が差し替えられた時も数えない） でつなぎ、その行だけを数える（引き金が動かなかった時でも、消えた鍵は数えない） |
 
 - 設定と権限: `SECURITY DEFINER`・`SET search_path = ''`・所有者 `postgres`。`public.passkey_*` は `service_role` だけが `execute` できる（`public`・`anon`・`authenticated` から外す）。移行は `CREATE OR REPLACE`
 

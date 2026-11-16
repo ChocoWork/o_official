@@ -164,6 +164,20 @@ describeLocalDb('passkey credential trigger and notification outbox', () => {
     expect((await outbox(u)).filter((r) => r.kind === 'passkey_removed')).toHaveLength(0);
   });
 
+  test('DATA-AUTH-014 with the trigger disabled a replaced key (credential_id or public_key changed) is no longer counted as approved', async () => {
+    const u = await user('admin');
+    const k1 = await key(u, true);
+    const k2 = await key(u, true);
+    const k3 = await key(u, true);
+    expect(await count(u)).toBe(3);
+    await db().query('alter table auth.webauthn_credentials disable trigger passkey_credentials_notify');
+    await db().query('update auth.webauthn_credentials set credential_id = $2, public_key = $3 where id = $1', [k1, randomBytes(32), randomBytes(32)]);
+    await db().query('update auth.webauthn_credentials set credential_id = $2 where id = $1', [k2, randomBytes(32)]);
+    expect(await approvalRows(k1)).toBe(1);
+    expect(await count(u)).toBe(1);
+    expect(k3).toBeTruthy();
+  });
+
   test('DATA-AUTH-014 the trigger function is owned by postgres, SECURITY DEFINER, and anon / authenticated / service_role cannot run it', async () => {
     const r = await db().query(
       `select p.prosecdef, p.proowner::regrole::text as owner, p.proconfig,

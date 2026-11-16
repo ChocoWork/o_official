@@ -31,7 +31,7 @@
 --   public.passkey_window_open(user, session)         checks auth.sessions; returns expires_at (existing one if open)
 --   public.passkey_window_close(session)
 --   public.passkey_window_is_open(user, session)
---   public.passkey_approved_count(user)               counts only approvals whose key still exists for that user
+--   public.passkey_approved_count(user)               counts only approvals whose key still exists for that user with the same credential_id (a replaced key is not counted)
 --   public.passkey_* : execute for service_role only.
 --
 -- ROLLBACK (reverse order; run in one transaction, only when nothing uses them yet):
@@ -185,7 +185,7 @@ RETURNS integer LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
 AS $$
   SELECT count(*)::integer
     FROM private.approved_passkeys ap
-    JOIN auth.webauthn_credentials c ON c.id = ap.passkey_id AND c.user_id = ap.user_id
+    JOIN auth.webauthn_credentials c ON c.id = ap.passkey_id AND c.user_id = ap.user_id AND c.credential_id = ap.credential_id
    WHERE ap.user_id = p_user_id;
 $$;
 

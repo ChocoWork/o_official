@@ -15,7 +15,7 @@
 --   subject_email is copied from auth.users.email when notify_subject is true.
 --
 -- NOT covered (SEC-AUTH-038): TRUNCATE, DISABLE TRIGGER, session_replication_role = replica, a failing outbox write
---   (WARNING only), a cloned credential detected by GoTrue. The approved count also checks auth.webauthn_credentials.
+--   (WARNING only), a cloned credential detected by GoTrue. The approved count also checks auth.webauthn_credentials (same id, user and credential_id, so a replaced key is not counted).
 -- NOT verified: whether production lets postgres create this trigger, and whether a GoTrue update drops it
 --   (design 8-2 item 3). Check before production: select has_table_privilege('postgres','auth.webauthn_credentials','TRIGGER');
 --
@@ -123,6 +123,7 @@ BEGIN
     SELECT 1 FROM pg_trigger t
      WHERE t.tgrelid = 'auth.webauthn_credentials'::regclass AND t.tgname = 'passkey_credentials_notify'
        AND NOT t.tgisinternal AND t.tgenabled = 'O' AND t.tgfoid = f::regprocedure
+       AND t.tgtype = 29 AND t.tgattr = ''::int2vector AND t.tgqual IS NULL
   ) THEN
     RAISE EXCEPTION 'PASSKEY_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_trigger_missing';
   END IF;

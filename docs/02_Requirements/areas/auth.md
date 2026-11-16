@@ -5789,7 +5789,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-038 |
-| 根拠 | 引き金だけが「鍵が消えたら認めの控えも消す」を行うので、引き金が働かない道（TRUNCATE・DISABLE TRIGGER・`session_replication_role = replica`）では控えが残る。そこで、認めた鍵の数え方（`passkey_approved_count`）が `auth.webauthn_credentials` の実在の鍵と突き合わせ、残った控えは数えない（SEC-AUTH-036）。知らせの取りこぼしは、鍵とユーザーの削除を止めないことを優先して受け入れる（設計 5-4） |
+| 根拠 | 引き金だけが「鍵が消えたら認めの控えも消す」を行うので、引き金が働かない道（TRUNCATE・DISABLE TRIGGER・`session_replication_role = replica`）では控えが残る。そこで、認めた鍵の数え方（`passkey_approved_count`）が `auth.webauthn_credentials` の実在の鍵と突き合わせる（`id`・`user_id`・`credential_id` が全部同じ物だけを数える）。引き金が働かない道で消された鍵・差し替えられた鍵の控えは数えない（SEC-AUTH-036）。知らせの取りこぼしは、鍵とユーザーの削除を止めないことを優先して受け入れる（設計 5-4） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_credential_events.integration.test.ts`）、単体テスト（DD-AUTH-045）、E2E（FR-AUTH-009-AC-01） |
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・8-2）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 6、Review Focus 4・5）、OWASP ASVS 4.0.3 V7.1.1・V4.1.3（当てはめは推定） |
