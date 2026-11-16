@@ -1,5 +1,6 @@
 # DB マイグレーション運用
 
+> 2026-11-16 確認日（パスキー段1a Task 4）: 新しい移行 `20261116215034_passkey_foundation_tables.sql`（パスキーの設定・認め・窓・知らせの表と関数。手元の DB のみ・本番未適用）を足した。下の「パスキー段1a 移行 A」の節に書いた。
 > 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 1）: 新しい移行 `20261116000000_accounting_p3_pending_auto_posting.sql`（S27。手元の DB のみ・本番未適用。残りの Task が育てる途中の形）の骨組みを足した。前の確かめ（`acc_s27_precheck`。S24 の結ぶ関数で閉じた `dispute_lost`／`return_closed_after_lost` の行が1件でもあれば止まる。開いた行の件数は NOTICE で出す）、私用の関数2つ（`private.accounting_order_refunds_in_flight`・`private.accounting_order_return_payable`。誰にも EXECUTE を渡さない）、`private.accounting_refund_wait` の作り直し（置き換え1つ。入れない決定を済みと数える）まで。行は書かない。末尾の確かめ（Task 4）は6段そろい、大きさと MD5・作り直した関数・戻し方は末尾の「計画 3 の移行 S27」の節に書いた。本番の適用手順の最後の確認（開いた行の件数・適用の許可）は、本番に当てる時に追記する。
 > 2026-11-16 確認日（パスキー段1a Task 1 の直し）: 「以後の追加手順」と「まだ本番に入れないマイグレーション」に、push の引き金を止めた注を足した。
 > 2026-11-16 確認日（会計の自動で入れる実装 S27 の本番適用）: 移行 `20261116000000_accounting_p3_pending_auto_posting.sql`（S27）を、オーナーの許可で本番 `pjidrgofvaglnuuznnyj` へ CLI の `db push --linked --include-all` で当てた。当てた後の読み取りの確かめはすべて期待と一致した。末尾の S27 の節の状態の欄と「本番への適用の記録（2026-11-16）」に書いた。以下の確認日の「本番未適用」は当時の記録。
@@ -60,6 +61,23 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 
 本番 Supabase（`pjidrgofvaglnuuznnyj`）へのスキーマ適用手順と、
 マイグレーションの書き方の規約。
+
+## パスキー段1a 移行 A: 設定・認めたパスキー・登録の窓・知らせの表と関数（手元で確認済み・本番未適用）
+
+確認日: 2026-11-16（パスキー段1a Task 4）。SR-AUTH-010・FR-AUTH-007・SEC-AUTH-036・ADR-0464・DATA-AUTH-011・DATA-AUTH-012・DD-AUTH-043。設計は [パスキー設計](../superpowers/specs/2026-11-07-passkey-auth-design.md)、計画は [段1a の計画](../superpowers/plans/2026-11-16-passkey-stage1a-foundation.md)。
+
+| 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
+| --- | --- | --- | --- |
+| `20261116215034_passkey_foundation_tables.sql` | 11946 bytes / `26b74cc211eca81a0379e6f9e502238c` | 本番未適用（手元の `db reset` で適用済み） | `private` の4つの表（設定・認めたパスキー・登録の窓・知らせの予定）と、`private.passkey_staff_settings` と `public.passkey_approve`・`passkey_window_open`・`passkey_window_close`・`passkey_window_is_open`・`passkey_approved_count` を足す |
+
+- 変えるもの: 表と関数を足すだけ。既存の挙動は変えない（呼ぶ物はまだ無い）
+- 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `b37296326cfb934498d82000463a9c51`（本番に当てた後、これと突き合わせる）
+- 前の確かめ: `auth.webauthn_credentials` と `private` スキーマが無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（SQLSTATE 55000）で止まる
+- 末尾の確かめ: 4表の権限（`anon`・`authenticated` が無い・RLS が有効）、`public.passkey_*` の権限（`service_role` だけ・`SECURITY DEFINER`）、設定の表が1行。失敗は `PASSKEY_MIGRATION_ASSERTION_FAILED`（DETAIL は項目名だけ）
+- 戻し方（移行のヘッダーの ROLLBACK）: 1つの取引で、関数6本を落としてから表4つを落とす。まだ何も呼んでいない間だけ戻せる
+- **本番へ当てない**: 本番に当てると、パスキーを有効にするまでだれも管理の権限を持てない。段1b と段3が済むまで当てない。当てるのは調整役だけで、オーナーの許可を得て、Supabase の MCP の `apply_migration` を `name` をファイル名から版を除いた部分にして1本ずつ呼び、当てた後にファイルの名前を当てた版に直し、`md5(statements[1])` をファイルと突き合わせる（上の「CI の引き金を止めた記録」と同じ。`db push` と `workflow_dispatch` は動かさない）
+- 手元で確かめた結果（2026-11-16、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_foundation.integration.test.ts` 10件通過
+- `auth.webauthn_credentials` の列を `\d` で実測した（`credential_id` は `bytea`・一意）。移行のコメントにも書いた
 
 ## CI の引き金を止めた記録（2026-11-16）
 

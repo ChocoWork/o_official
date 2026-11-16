@@ -9,11 +9,11 @@ AUTH の領域の要求・要件・受け入れ条件・派生要件を、追跡
 
 | 段 | 数 | ID |
 | --- | --- | --- |
-| 要求 | 48 | 既存の `FREQ-` 39（うち廃止 1。FREQ-316・327・515 を含む）、新しい `SR-AUTH-001`〜`009`（うち `004`〜`007` は振り替え） |
-| 要件 | 108 | 既存の `FREQ-NN-REQ-NN` 94（うち廃止 1）、`FR-LOGIN-001`〜`008`、新しい `FR-AUTH-001`〜`006`（`001`〜`004` は振り替え） |
-| 受け入れ条件 | 173 | 既存の `FREQ-NN-AC-NN` 138（うち廃止 2）、新しい `<要件ID>-AC-NN` 35（`FR-…-AC-NN` 30（`FR-AUTH-005-AC-01`〜`07`、`FR-AUTH-006-AC-01`〜`07` を含む）、`FREQ-330-REQ-02-AC-01`、`FREQ-316-REQ-01`〜`03-AC-01`） |
+| 要求 | 49 | 既存の `FREQ-` 39（うち廃止 1。FREQ-316・327・515 を含む）、新しい `SR-AUTH-001`〜`010`（うち `004`〜`007` は振り替え） |
+| 要件 | 109 | 既存の `FREQ-NN-REQ-NN` 94（うち廃止 1）、`FR-LOGIN-001`〜`008`、新しい `FR-AUTH-001`〜`007`（`001`〜`004` は振り替え） |
+| 受け入れ条件 | 175 | 既存の `FREQ-NN-AC-NN` 138（うち廃止 2）、新しい `<要件ID>-AC-NN` 35（`FR-…-AC-NN` 30（`FR-AUTH-005-AC-01`〜`07`、`FR-AUTH-006-AC-01`〜`07` を含む）、`FREQ-330-REQ-02-AC-01`、`FREQ-316-REQ-01`〜`03-AC-01`） |
 | 派生要件 | 9 | `DRV-AUTH-001`〜`009` |
-| セキュリティ要件 | 35 | `SEC-AUTH-001`〜`035`（上位は脅威の文書 `docs/05_Quality/security/threats/auth.md` の同じ番号）。受け入れ条件 `SEC-AUTH-NNN-AC-NN` 71。全部「推定」 |
+| セキュリティ要件 | 36 | `SEC-AUTH-001`〜`036`（上位は脅威の文書 `docs/05_Quality/security/threats/auth.md` の同じ番号）。受け入れ条件 `SEC-AUTH-NNN-AC-NN` 71。全部「推定」 |
 
 - 状態: 写した要求・要件の行は、元の行に理由の記述がある物だけ「現行」。元の行に理由が無く、根拠の「なぜ」を推定で補った行は「推定」。写した受け入れ条件は元の文のままなので「現行」。後の行が置き換えたのに廃止の印が無い行・コードと合わない行・新しく起こした項目・実装から読み取った項目も「推定」。行の中に廃止と書いてある FREQ-62 だけを「廃止」にした。食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節に載せる
 - 結論: ログインの入口・パスワードの再設定・管理者の TOTP を求める元の要求は表に無かった（`SR-AUTH-001`〜`003` を推定で起こした）。`/register` を求める FR-LOGIN-004・FREQ-59・61 と、角丸の見た目の FREQ-64・70 は、後の行が置き換えたのに印が無い。廃止にするかはユーザーに決めてもらう
@@ -206,6 +206,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 出どころ | ユーザーの発言 2026-11-01（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`「パスワードの変更」。現行パスワード＋新しいパスワード〔16 文字以上〕＋アプリが送るメールの数字、変更の後は全 session を失効、通知のメール、本人ごと 10 分 5 回） |
 
 要求の文: ログイン中の会員が、アカウントの画面から、現行のパスワードを確かめたうえで、新しいパスワードに変えられる。本人の確かめは、現行のパスワードと、登録のメールへ届く確認コードの 2 つ。変えた後はこの端末を含む全部の session を失効し、本人に通知のメールを送る。パスワードの変更を繰り返し試す道（現行パスワードの総当たり・コードの総当たり）は回数で止める。
+
+### SR-AUTH-010 店員のパスキーの設定・登録の窓・認めたパスキーを DB に持つ
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | ログインをパスキーに置き換える設計（2026-11-07）で、店員（店長・サポーター）は「アプリが認めたパスキーを2本以上持つ」人だけが管理に入れる（設計 5-2・5-5）。その判定の元になる、設定・登録の窓・認めたパスキーの控えは、アプリと DB の両方が同じ答えを出すために DB に置く必要がある。段1a の土台で、これを足さないとフック・管理の入口・登録の窓口が作れない |
+| 状態 | 推定 |
+| 出どころ | ユーザーの発言 2026-11-06〜07・2026-11-16（`docs/superpowers/specs/2026-11-07-passkey-auth-design.md` の 3・12-2）、`.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-4-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・5-5・6-2、12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 4） |
+
+要求の文: 店員の入口を決める値（24時間・1時間・窓の長さ・認めたパスキーの最小の本数・お客さんのパスワードの拒否の旗）を DB の1行に持つ。店員がパスキーを足すための「登録の窓」を、ユーザーとセッションに結んで開け閉めできる。アプリが認めたパスキーを控え、本数をその場で数えられる。
 
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
@@ -2071,6 +2081,19 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 優先度 | MUST |
 
 画面 `/account/password` は、会員ページの「お客様情報」のリンクから入る。1 段目は現行のパスワードを入れて「確認コードをメールに送る」。2 段目は 8 桁の確認コード（有効期限 10 分）と新しいパスワード（16〜128 文字）とその確認を入れて「パスワードを変更する」。成功したらログインの画面へ移る。窓口は `POST /api/auth/password/change/start`（会員の認証と CSRF の印が要る。管理者・サポーターは aal2。現行パスワードを確かめ、8 桁のコードをメールで送り、コードは今の session に結ぶ）と `POST /api/auth/password/change/confirm`（コードを間違えると 5 回で使えなくなる。書式と漏洩の照合を通ってからコードを使い切り、パスワードを更新し、全 session を失効し、認証の Cookie を消し、通知のメールを送る）。どちらも本人ごとに 10 分 5 回、送り元の IP ごとに 10 分 20 回に制限し、結果を監査に残す。Google だけで登録した会員はパスワードを持たないので、1 段目に再設定への案内を誰にでも固定の文で出す。
+
+### FR-AUTH-007 店員のパスキーの設定の表・登録の窓の表・認めたパスキーの表・知らせの表と、窓・認めたパスキーの関数
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-010 |
+| 根拠 | SR-AUTH-010 の「設定・窓・認めたパスキーを DB に持つ」を、1行の設定の表・登録の窓の表・認めたパスキーの表・送る予定（知らせ）の表と、それを触る関数 `private.passkey_staff_settings`・`public.passkey_approve`・`passkey_window_open`・`passkey_window_close`・`passkey_window_is_open`・`passkey_approved_count` にする。後のタスク（フック・引き金・管理の入口）がこの名前と型に頼るので、決めた名前を変えない |
+| 状態 | 推定 |
+| 確かめ方 | E2E・結合テスト |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-4-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・5-5・6-2、12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 4） |
+| 優先度 | MUST |
+
+設定の表は1行で、24時間（86400秒）・1時間（3600秒）・窓30分・認めたパスキー2本・お客さんのパスワードの拒否は偽が初めの値。認めたパスキーの数は、認めの行と `auth.webauthn_credentials` の鍵が同じ持ち主でつながる行だけを数える。表は `private` に置き、`anon`・`authenticated` に権限を渡さない。`public` の関数は `service_role` だけが呼べる。
 
 ## 受け入れ条件
 
@@ -4291,6 +4314,30 @@ SNSアイコンのリンク要素が flex かつ items-center justify-center で
 
 Google だけで登録した会員が `/account/password` を開くと、1 段目に「Google でログインしていてパスワードを設定していない場合は、先にパスワードの再設定からパスワードを設定してください」の案内が出て、「パスワードの再設定」のリンクが `/auth/password-reset` に着くこと。この会員の `start` は、パスワードを持つ会員が誤ったパスワードを送った時と同じ 401 と本文を返し、コードのメールが届かないこと。
 
+### FR-AUTH-007-AC-01 anon の鍵では passkey の関数を直接呼べない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-007 |
+| 根拠 | 認めたパスキーの控えや窓を、鍵を持たない外の人が PostgREST から書き換えると、店員でない人が管理の入口の条件を満たせる。関数の権限を `service_role` に絞ったことを、アプリを通さず直に叩いて確かめる |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-041-passkey-foundation-grants.spec.ts`。HTTP の試験で幅で結果は変わらない） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-4-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・5-5・6-2、12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 4） |
+
+anon の鍵で `passkey_approved_count`・`passkey_approve`・`passkey_window_open`・`passkey_window_close`・`passkey_window_is_open` を PostgREST（`/rest/v1/rpc/<関数>`）から呼ぶと、どれも誤り（権限の拒否）になり、値は返らないこと。
+
+### FR-AUTH-007-AC-02 service_role は認めたパスキーの数を数えられ、private の表は PostgREST に出ていない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-007 |
+| 根拠 | アプリのサーバーが本数をその場で数える道（`service_role`）が通ることと、表そのものは PostgREST に出ていないことを確かめる。道が塞がっていると店員が管理に入れず、表が出ていると鍵なしで読み書きされる |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-041-passkey-foundation-grants.spec.ts`。HTTP の試験で幅で結果は変わらない） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-4-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・5-5・6-2、12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 4） |
+
+service_role の鍵で、持ち主のいない利用者の id の `passkey_approved_count` を呼ぶと誤りなしで 0 が返ること。同じ鍵で `approved_passkeys` の表を PostgREST から読もうとすると、表が見つからない誤りになること。
+
 ## セキュリティ要件
 
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
@@ -5635,6 +5682,19 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 `signInWithPassword`・`signInWithOtp`・`signUp` が `code: 'captcha_failed'`（または status 400 で本文に captcha を含む誤り）を返した時、ログインは 500 `Internal server error`、再送は 500、登録は 500 `Failed to create user` を返し、`audit_logs` に `outcome: 'error'`・`detail: 'supabase_captcha_rejected'` を 1 行残すこと。誤りの本文は監査に残さないこと。ログインでは確認コードも保留の Cookie も出さず、登録では重複の本人通知のメールを送らないこと。資格情報の誤り（400 `Invalid login credentials`）は今までどおり 401 のままであること。
 
 あわせて、ログインのパスワードの確かめ（`/api/auth/login` の `signInWithPassword`）で GoTrue が回数の制限（`status` 429）を返した時は、401 にせず 429 と `Retry-After` を返し、`audit_logs` に `outcome: 'error'`・`detail: 'supabase_rate_limited'` を 1 行残すこと。GoTrue が 5xx・`status` 0・`AuthRetryableFetchError`（通信の失敗）を返した時は 503 と `Retry-After` を返し、`detail: 'supabase_unavailable'` を残すこと。どちらも誤りの本文を監査に残さず、確認コードも保留の Cookie も出さないこと。理由: アプリのサーバーが全員分の GoTrue の呼び出しを少数の出口の IP から送るので、GoTrue の IP ごとの枠（既定 30 回／5 分）を店の全員で分け合う。枠に当たった時や障害で、正しいパスワードの会員が「パスワードが違う」と言われ、監視に `failure` の行しか残らないのを避ける（captcha の拒否を 401 に丸めない理屈と同じ。最終レビュー指摘 2、2026-11-01）。資格情報の誤りと未確認のメール（400 `email_not_confirmed`）は、同じ状態・同じ本文の 401 のままであること（未確認か誤りかを見分けさせない）。この追加分は単体テスト（`tests/unit/api/auth/login-route.test.ts`。名前の先頭は `DD-AUTH-014 SEC-AUTH-035-AC-02`）で確かめ、GoTrue の 429・5xx を手元で起こす手段が無いので E2E では見られない。
+
+### SEC-AUTH-036 店員のパスキーの表は private に置いて権限を渡さず、窓は持ち主とセッションの両方で合わせ、認めたパスキーは鍵が実在する分だけ数える
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-036 |
+| 根拠 | 認めたパスキーの控え・登録の窓・設定の表を外の人や会員が書き換えられると、店員でない人が管理の入口の条件を満たせたり、他人のセッションの窓で鍵を足せたりする。認めの行は引き金が動かない道（`TRUNCATE`・`DISABLE TRIGGER`）で鍵より長く残りうるので、数える側で鍵の実在を見る（設計 5-2・5-5） |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_foundation.integration.test.ts`）、E2E（FR-AUTH-007-AC-01・02） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-4-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・5-5・6-2、12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 4）、OWASP ASVS 4.0.3 V4.1.3（当てはめは推定） |
+| 優先度 | MUST |
+
+守ること: (1) 4つの表（設定・窓・認め・知らせ）は `private` に置き、RLS を有効にし、`anon`・`authenticated` に権限を渡さない。(2) `public.passkey_*` の関数は `service_role` だけが `execute` できる。`private.passkey_staff_settings()` は `public`・`anon`・`authenticated` から `execute` を外す。(3) 窓を開ける時は `auth.sessions` で、そのセッションがその利用者の物かを確かめ、違えば例外にする。窓が開いているかは `user_id` と `session_id` の両方が合うことを見る。(4) `passkey_approve` は、鍵の持ち主が渡された利用者でなければ例外にする。(5) `passkey_approved_count` は、認めの行と鍵の行が同じ持ち主でつながる分だけ数える。(6) 認めの表の `user_id` に外部キーを張らない（利用者の削除の連鎖で認めの行が先に消えると、引き金が店員かを判れなくなるため）。認めの行を消すのは後のタスクの引き金だけ。
 
 ## 派生要件
 

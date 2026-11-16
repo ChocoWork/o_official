@@ -1560,6 +1560,48 @@ stateDiagram-v2
 - 設定と権限: `LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''`、所有者 `postgres`。EXECUTE は `service_role`（と所有者）だけで、PUBLIC・`anon`・`authenticated` には許さない。移行は `CREATE OR REPLACE` で、権限を明示する（ADR-0414）。`auth_grants_inventory` の関数の一覧に 2 本を載せた（DATA-AUTH-006）
 - 古い行の掃除は `issue` が 1 日より古い行を消すだけで足りる。定期処理は作らない
 
+### DATA-AUTH-011 private の4つの表は、店員のパスキーの設定・認めたパスキー・登録の窓・知らせの予定を持つ
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-007、SEC-AUTH-036、ADR-0464 |
+| 根拠 | 店員の入口の判定（認めたパスキーの本数・窓・24時間）の元を DB の1か所に置く。表は `private` に置いて外へ出さず、鍵（`auth.webauthn_credentials`）の外にアプリの認めを別に持つ（設計 5-5） |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_foundation.integration.test.ts`）、移行の末尾の確かめ（`PASSKEY_MIGRATION_ASSERTION_FAILED`） |
+| 出どころ | 移行 `supabase/migrations/20261116215034_passkey_foundation_tables.sql`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・5-5） |
+
+| 表 | 列と決まり |
+| --- | --- |
+| `private.passkey_staff_config`（1行） | `id boolean` 主キー（既定 true・check で true だけ）、`staff_max_session_seconds integer` 86400、`staff_idle_seconds integer` 3600、`window_minutes integer` 30、`min_approved_passkeys integer` 2、`reject_customer_password boolean` false。数は正（本数は1以上） |
+| `private.approved_passkeys` | `passkey_id uuid` 主キー、`user_id uuid`（**外部キー無し**。利用者の削除の連鎖で行が先に消えると、引き金が店員かを判れなくなるため）、`credential_id bytea` 一意（手元の `auth.webauthn_credentials.credential_id` を実測した型に合わせた）、`approved_via text`（`window`・`reauth`・`script`）、`approved_at`。`user_id` に索引 |
+| `private.passkey_registration_windows` | `id`、`user_id`、`session_id`（ともに NOT NULL）、`opened_at`、`expires_at`、`closed_at`。案 B（アプリがセッションを作った後に、分かった番号で開ける）。開いた行は `session_id` ごとに1つだけ（部分の一意の索引） |
+| `private.passkey_notification_outbox` | `id`、`seq`（自動の連番）、`user_id`（外部キー無し）、`kind`（`passkey_added`・`passkey_removed`・`passkey_key_replaced`）、`passkey_id`、`friendly_name`、`subject_is_staff`、`notify_subject`、`subject_email`（本人にも送る行は、積んだ時のメールを写す。送る時に引き直すと、乗っ取った人が積んだ後にメールを変えた場合に宛先が変わるため）、`occurred_at`、`status`（`pending`・`sending`・`retry_wait`・`sent`・`skipped`・`dead`）、`attempts`、`next_attempt_at`。送る処理は段2・段3 |
+
+- 4つの表とも RLS を有効にし、`anon`・`authenticated` の権限を外す（方針は置かない。`service_role` と所有者だけが触る）。`ALTER DEFAULT PRIVILEGES` は使わない（ADR-0414）
+- 当てる順序: 本番へは段1b と段3が済むまで当てない（本番に当てると、パスキーを有効にするまでだれも管理の権限を持てないため）
+- 戻す: 移行のヘッダーの ROLLBACK（関数を落としてから表を落とす）
+
+### DATA-AUTH-012 passkey の関数は、窓の開け閉めと認めと数え方を service_role だけに渡す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-007、SEC-AUTH-036、ADR-0464 |
+| 根拠 | 窓を開ける・認める・数える処理は、アプリが並列に呼んでも、他人のセッション・他人の鍵・消えた鍵で壊れない1つの取引にする。権限を `service_role` に絞り、会員の JWT では呼べなくする |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_foundation.integration.test.ts`）、E2E（FR-AUTH-007-AC-01・02） |
+| 出どころ | 移行 `supabase/migrations/20261116215034_passkey_foundation_tables.sql` |
+
+| 関数 | 引数 | 返り値 | 動き |
+| --- | --- | --- | --- |
+| `private.passkey_staff_settings` | なし | `jsonb` | 設定の1行を `id` を除いて返す。`STABLE`。`public`・`anon`・`authenticated` に `execute` を渡さない（`has_permission` とフックが所有者の権限で呼ぶ） |
+| `public.passkey_approve` | 利用者・鍵の id・`window`/`reauth`/`script` | なし | 鍵が無い、または持ち主が渡した利用者でなければ例外（`42501`）。あれば `credential_id` を写して認めの行を入れる。2回呼んでも1行 |
+| `public.passkey_window_open` | 利用者・セッションの id | `timestamptz` | `auth.sessions` でそのセッションがその利用者の物でなければ例外（`42501`）。期限切れの開いた行は閉じる。開いた行が無ければ作り（`window_minutes` 後が期限）、あれば作らず既存の期限を返す |
+| `public.passkey_window_close` | セッションの id | なし | そのセッションの開いた窓を閉じる |
+| `public.passkey_window_is_open` | 利用者・セッションの id | `boolean` | 利用者とセッションの両方が合い、閉じておらず、期限内なら真 |
+| `public.passkey_approved_count` | 利用者 | `integer` | 認めの行と `auth.webauthn_credentials` を `c.id = ap.passkey_id and c.user_id = ap.user_id` でつなぎ、その行だけを数える（引き金が動かなかった時でも、消えた鍵は数えない） |
+
+- 設定と権限: `SECURITY DEFINER`・`SET search_path = ''`・所有者 `postgres`。`public.passkey_*` は `service_role` だけが `execute` できる（`public`・`anon`・`authenticated` から外す）。移行は `CREATE OR REPLACE`
+
 ### 手元の Supabase Auth の設定の表（波 6 の目標。手元は 2026-11-01 に切り替え済み）
 
 目標の値は `supabase/config.toml` に反映済み（表の「今」は切り替え前の値）。切り替えまでは目標の写し `supabase/pending-wave6/config.toml` と差分 `config.patch` に置いていた。切り替えの日は 2026-11-01（手元だけ。本番は未反映）。本番の目標値と手順は `docs/06_Operations/supabase-auth-config.md`（波 6 の Task 9）。

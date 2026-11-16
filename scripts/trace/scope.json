@@ -224,6 +224,7 @@
       "docs/05_Quality/security/threats/auth.md",
       "docs/03_BasicDesign/areas/auth.md",
       "docs/03_BasicDesign/decisions/ADR-04[0-4]*.md",
+      "docs/03_BasicDesign/decisions/ADR-046[3-9]*.md",
       "docs/04_DetailDesign/pages/14_login.md",
       "docs/04_DetailDesign/sequence/auth-*.md"
     ],
@@ -245,7 +246,9 @@
       "src/lib/auth/service-role-auth-client.ts",
       "src/features/auth/services/password-change.ts",
       "src/features/auth/schemas/password-change.ts",
-      "src/app/account/password/**/*.{ts,tsx}"
+      "src/app/account/password/**/*.{ts,tsx}",
+      "src/lib/auth/staff-passkey*.ts",
+      "scripts/dev/passkey-dev-staff.ts"
     ],
     "tests": [
       "tests/unit/components/{LoginModal,RegisterModal,AuthTabs,AuthResultScreen,VerifyOtpClient,Header}.test.tsx",
@@ -262,6 +265,11 @@
       "tests/unit/features/auth/password-change*.test.ts",
       "tests/unit/app/account/password/**/*.test.{ts,tsx}",
       "tests/unit/migrations/auth-return-intents*.test.ts",
+      "tests/unit/lib/auth/staff-passkey*.test.ts",
+      "tests/unit/ci/db-migrations-workflow.test.ts",
+      "tests/unit/config/supabase-js-pin.test.ts",
+      "tests/unit/scripts/passkey-dev-staff.test.ts",
+      "tests/unit/e2e/passkey-*.test.ts",
       "tests/integration/api/auth/**/*.test.{ts,tsx}",
       "tests/integration/api/auth.test.ts",
       "tests/integration/auth-flow.test.ts",
@@ -284,7 +292,8 @@
       "docs/02_Requirements/areas/admin.md",
       "docs/05_Quality/security/threats/admin.md",
       "docs/03_BasicDesign/areas/admin.md",
-      "docs/03_BasicDesign/decisions/ADR-04[5-9]*.md",
+      "docs/03_BasicDesign/decisions/ADR-045*.md",
+      "docs/03_BasicDesign/decisions/ADR-046[0-2]*.md",
       "docs/04_DetailDesign/pages/16-2_admin_misc.md"
     ],
     "src": [

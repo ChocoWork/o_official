@@ -24,18 +24,18 @@ const runsRealDbPush = (job: Job) =>
   (job.steps ?? []).some((s) => /supabase db push(?![^\n]*--dry-run)/.test(s.run ?? ''));
 
 describe('db-migrations workflow', () => {
-  it('引き金は pull_request と workflow_dispatch だけ（push が無い）', () => {
+  it('DD-AUTH-043 引き金は pull_request と workflow_dispatch だけ（push が無い）', () => {
     expect(Object.keys(triggers).sort()).toEqual(['pull_request', 'workflow_dispatch']);
   });
 
-  it('pull_request の job は db push --dry-run だけ', () => {
+  it('DD-AUTH-043 pull_request の job は db push --dry-run だけ', () => {
     const plan = doc.jobs.plan;
     expect(plan.if).toBe("github.event_name == 'pull_request'");
     expect(JSON.stringify(plan.steps)).toContain('supabase db push --dry-run');
     expect(runsRealDbPush(plan)).toBe(false);
   });
 
-  it('実適用の db push を流す job は、全部 workflow_dispatch の時だけ動く', () => {
+  it('DD-AUTH-043 実適用の db push を流す job は、全部 workflow_dispatch の時だけ動く', () => {
     const appliers = Object.entries(doc.jobs).filter(([, job]) => runsRealDbPush(job));
     expect(appliers.map(([name]) => name)).toContain('deploy');
     for (const [, job] of appliers) {
