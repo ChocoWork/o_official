@@ -83,14 +83,14 @@ flowchart TD
 ```
 
 - 入力と出力: 入力は GoTrue の `event`（`user_id`・`authentication_method`・`claims`）。出力は、通す時は `event`（`claims.staff_passkeys_ok` を足す場合がある）、店員の拒否は `{"error":{"http_code":403,"message":"[staff-passkey-required] ..."}}`、お客さんの `password` の拒否（旗が真の時）は別の印 `[customer-password-disabled]` の403
-- 24時間の比べ: `amr` が配列で、`method` が `passkey` の要素の `timestamp` が JSON の数で `^[0-9]+$`（文字列・小数・負・欠落・null は無効）。`今の秒（切り捨て）- timestamp` が `0` 以上 `staff_max_session_seconds` 以下で通す。ちょうど86400は通し、86401と未来の時刻は拒否
+- 24時間の比べ: `amr` が配列で、`method` が `passkey` の要素の `timestamp` が JSON の数で `^[0-9]+$`（文字列・小数・負・欠落・null は無効）。`今の秒（切り捨て）- timestamp` が `-60` 以上 `staff_max_session_seconds` 以下で通す（60秒までの時計のずれは許す）。ちょうど86400は通し、86401と61秒以上先の時刻は拒否
 - `staff_passkeys_ok`: `public.passkey_approved_count(user)` が `min_approved_passkeys` 以上か。ヒントで、判定には使わない。数える関数が例外を出した時は、偽にして新しいパスキーの店員はそのまま通す（ヒントの失敗でログインを止めない）（管理の入口は API・RLS でその場で数える）
 - 窓: 案 B。窓の表は読むだけで書かない。窓で通すのは方法が `otp`・`token_refresh`・`passkey` の時だけ（招待の入口と、その更新）。`oauth`・`password`・未知の方法は窓があっても拒否
 - 異常: 関数全体を `EXCEPTION WHEN OTHERS` で囲む。お客さんと判った後の失敗は入力をそのまま返す。店員の失敗、`user_id` が無い・不正、店員かどうか調べられなかった失敗は拒否する（店員を素通しにしない）。設定の行が無い時は、パスキーで入る店員は拒否（24時間の上限が決まらない）、お客さんは素通し。窓で通す枝は設定を読まないので、開いた窓の店員は設定の行が無くても通る（窓の枝に設定の行を要るようにはしない。窓の枝は管理の入口を通れないので、簡単さを優先した）
 - 認可: `supabase_auth_admin` だけが呼べる。表の `select` は渡さず、関数が持ち主 `postgres` の権限で読む
 - お客さんの拒否の印: `[customer-password-disabled]`。店員の印と分け、`isStaffPasskeyRequiredError` は真にしない（お客さんを「店員はパスキーで」の画面に送らないため）
 - アプリの側: `isStaffPasskeyRequiredError(error)` は `status === 403` かつ `message` が `STAFF_PASSKEY_REQUIRED_MARKER`（`[staff-passkey-required]`）で始まる時だけ真。GoTrue は拒否を HTTP 403・`code: unknown` で返す（手元の試し T2）
-- テスト観点: 24時間の境目（86400・86401・未来）、`timestamp` の型、`amr` の形、方法の種類、窓（開いた・閉じた・期限切れ・別のセッション・別の利用者）、お客さんの素通しと旗、壊れた入力（`claims`・`amr`・`user_id`・`event` の形）、権限
+- テスト観点: 24時間の境目（86400・86401・1秒先・60秒先・61秒先）、`timestamp` の型、`amr` の形、方法の種類、窓（開いた・閉じた・期限切れ・別のセッション・別の利用者）、お客さんの素通しと旗、壊れた入力（`claims`・`amr`・`user_id`・`event` の形）、権限
 
 ### DD-AUTH-045 パスキーの足し・消しの引き金の順番と、店員の判断
 
@@ -189,7 +189,7 @@ flowchart TD
     G -- はい --> OK[ok]
 ```
 
-- 順番: 条件1（`passkey` が無ければ `no_passkey`）→ 条件2（外れたら `passkey_expired`。未来の時刻も外れ）→ 条件3（`passkeys_insufficient`）。SQL は `staff_passkey_amr_ok`（1・2）と `staff_passkey_count_ok`（3）を、`staff_passkey_entry_ok` が両方つなぐ
+- 順番: 条件1（`passkey` が無ければ `no_passkey`）→ 条件2（外れたら `passkey_expired`。61秒以上先の時刻も外れ。60秒までの先は時計のずれとして通す）→ 条件3（`passkeys_insufficient`）。SQL は `staff_passkey_amr_ok`（1・2）と `staff_passkey_count_ok`（3）を、`staff_passkey_entry_ok` が両方つなぐ
 - 時刻: `timestamp` は JSON の数で整数の物だけ。文字列・小数・null・欠落は `passkey` と数えない。`passkey` の要素が複数なら最新を使う。`now` は秒に切り捨てる（SQL は `floor(extract(epoch from now()))`。取引の中で変わらない）
 - 定数: TS の `STAFF_MAX_SESSION_SECONDS`・`STAFF_MIN_APPROVED_PASSKEYS` は `defaultStaffPasskeySettings()` から取る（3つ目の写しを作らない）。SQL は設定の行（`private.passkey_staff_settings()`）から読む。値を変える時は、初めの値の関数と設定の行の既定値を同じコミットで変える（単体テストが一致を確かめる）
 - 異常: SQL は例外を握って偽（閉じる側）を返し、`RAISE WARNING` で SQLSTATE と文を残す。claims が NULL でも例外を投げない
@@ -198,7 +198,7 @@ flowchart TD
 - 認可: 3つの関数は `public`・`anon`・`authenticated`・`service_role` に `execute` を渡さない
 - つなぎ: Task 9 で API（`admin-rbac.ts`）と RLS（`has_permission`）につないだ（DD-AUTH-048）。TS は RPC が返した本数を `evaluateStaffEntry` に渡し、SQL は `has_permission` の中の位置で呼ぶ
 - 文言: 403 の本文 `MFA required` と `denial.reason = 'mfa'` はこの段では変えない（意味だけパスキーの条件に変わる。名前の変更は段4。ADR-0463）
-- テスト観点: `amr` の欠落・空・配列でない・文字列の時刻・小数・未来・86400秒・86401秒・`oauth`/`otp` だけ、本数 0・1・2、印が真でも1本なら断る、認めた鍵を消した直後に偽、引き金が働かなくても実在しない鍵は数えない、設定の行の変更が効く、権限
+- テスト観点: `amr` の欠落・空・配列でない・文字列の時刻・小数・1秒先・60秒先・61秒先・86400秒・86401秒・`oauth`/`otp` だけ、本数 0・1・2、印が真でも1本なら断る、認めた鍵を消した直後に偽、引き金が働かなくても実在しない鍵は数えない、設定の行の変更が効く、権限
 
 ### DD-AUTH-048 管理の入口の切り替え（`has_permission`・`admin-rbac`・`/api/auth/me`・フックの有効化）
 

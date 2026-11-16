@@ -6,6 +6,9 @@ export const STAFF_MAX_SESSION_SECONDS: number = defaultStaffPasskeySettings().s
 /** 管理の入口に要る認めたパスキーの本数。DB の設定の行と同じ値（初めの値の1か所から取る。ADR-0463）。 */
 export const STAFF_MIN_APPROVED_PASSKEYS: number = defaultStaffPasskeySettings().minApprovedPasskeys;
 
+/** 時計のずれとして許す秒数。GoTrue は amr の時刻を DB のトランザクションが始まった後に付けるので、時刻が最大1秒先になりうる（ADR-0463）。DB の関数と同じ値。 */
+export const STAFF_CLOCK_SKEW_SECONDS = 60;
+
 export type StaffEntryResult =
   | { ok: true }
   | { ok: false; reason: 'no_passkey' | 'passkey_expired' | 'passkeys_insufficient' };
@@ -18,7 +21,7 @@ export type StaffEntryResult =
  * @remarks `amr` の `passkey` の `timestamp`（整数の数）の最新で時刻を見る。`aal` は見ない（パスキーは aal1 のまま）。
  * `approvedCount` は呼び手が DB でその場で数えた値で、JWT の印 `staff_passkeys_ok` は使わない（SEC-AUTH-039）。
  * DB の関数 `private.staff_passkey_amr_ok`・`staff_passkey_count_ok` と同じ判定にする。
- * 今の秒は切り捨てる（SQL と同じ）。本数が整数でない・負・NaN・無限大・文字列なら閉じる側（`passkeys_insufficient`）に倒す。
+ * 今の秒は切り捨てる（SQL と同じ）。未来の時刻は60秒までの時計のずれとして通す（それ以上は断る）。本数が整数でない・負・NaN・無限大・文字列なら閉じる側（`passkeys_insufficient`）に倒す。
  */
 export function evaluateStaffEntry(
   claims: { amr?: unknown; [key: string]: unknown } | null | undefined,
@@ -37,7 +40,7 @@ export function evaluateStaffEntry(
   }
   if (latest === null) return { ok: false, reason: 'no_passkey' };
   const age = Math.floor(nowSeconds) - latest;
-  if (age < 0 || age > STAFF_MAX_SESSION_SECONDS) return { ok: false, reason: 'passkey_expired' };
+  if (age < -STAFF_CLOCK_SKEW_SECONDS || age > STAFF_MAX_SESSION_SECONDS) return { ok: false, reason: 'passkey_expired' };
   if (!Number.isInteger(approvedCount) || approvedCount < STAFF_MIN_APPROVED_PASSKEYS) return { ok: false, reason: 'passkeys_insufficient' };
   return { ok: true };
 }

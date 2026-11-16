@@ -103,12 +103,14 @@ describeLocalDb('passkey access token hook function', () => {
       expect(out.claims.staff_passkeys_ok).toBe(false);
     });
 
-    test('DATA-AUTH-013 exactly 86400 seconds passes, 86401 is rejected, a future timestamp is rejected', async () => {
+    test('DATA-AUTH-013 exactly 86400 seconds passes, 86401 is rejected, a timestamp up to 60 s ahead passes (clock skew), 61 s ahead is rejected', async () => {
       const u = await user('admin');
       const n = await nowEpoch();
       expect((await hook(ev(u, 'passkey', { amr: passkeyAmr(n - 86400) }))).claims).toBeDefined();
       isReject(await hook(ev(u, 'passkey', { amr: passkeyAmr(n - 86401) })));
-      isReject(await hook(ev(u, 'passkey', { amr: passkeyAmr(n + 5) })));
+      expect((await hook(ev(u, 'passkey', { amr: passkeyAmr(n + 1) }))).claims).toBeDefined();
+      expect((await hook(ev(u, 'passkey', { amr: passkeyAmr(n + 60) }))).claims).toBeDefined();
+      isReject(await hook(ev(u, 'passkey', { amr: passkeyAmr(n + 61) })));
       isReject(await hook(ev(u, 'token_refresh', { amr: passkeyAmr(n - 90000) })));
     });
 

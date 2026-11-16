@@ -2175,7 +2175,7 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18・12-2 の8）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 8、Review Focus 1・2・5） |
 | 優先度 | MUST |
 
-規則: (1) `amr` は配列で、要素が `method` が `passkey`・`timestamp` が整数の JSON の数の物だけを見て、最新の時刻を使う。配列でない・空・文字列の時刻・小数・未来の時刻は `passkey` と数えない／断る。(2) `0 <= 今 - 時刻 <= 86400`（ちょうど86400秒は通し、86401秒は断る）。(3) 認めたパスキーは、認めの控えと `auth.webauthn_credentials`（`id`・`user_id`・`credential_id` が同じ）を突き合わせて数え、2本以上。(4) 86400 と 2 は設定の行から読み、TS の定数は初めの値の関数から取る。(5) `aal` は見ない。
+規則: (1) `amr` は配列で、要素が `method` が `passkey`・`timestamp` が整数の JSON の数の物だけを見て、最新の時刻を使う。配列でない・空・文字列の時刻・小数の時刻は `passkey` と数えない／断る。(2) `-60 <= 今 - 時刻 <= 86400`（ちょうど86400秒は通し、86401秒は断る。60秒までの未来は時計のずれとして通し、61秒先は断る）。(3) 認めたパスキーは、認めの控えと `auth.webauthn_credentials`（`id`・`user_id`・`credential_id` が同じ）を突き合わせて数え、2本以上。(4) 86400 と 2 は設定の行から読み、TS の定数は初めの値の関数から取る。(5) `aal` は見ない。
 
 ### FR-AUTH-012 管理の入口を、パスキー・24時間以内・DB で数えた認めたパスキー2本以上につなぐ（API と RLS）
 
@@ -5974,7 +5974,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2）、`docs/superpowers/specs/2026-11-16-passkey-local-trial-results.md`（T1・T2）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 5）、OWASP ASVS 4.0.3 V4.1.3（当てはめは推定） |
 | 優先度 | MUST |
 
-守ること: (1) 関数は `EXCEPTION WHEN OTHERS` で受け、お客さんと判った後の失敗は入力をそのまま返し、店員の失敗と、店員かどうか判らない失敗（`user_id` が無い・不正）は拒否する。(2) `claims` が無い・`amr` が配列でない・`timestamp` が文字列・未来・86400秒を超える・方法が未知の店員は拒否する。(3) `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空で、`execute` は `supabase_auth_admin` だけに渡し、`public`・`anon`・`authenticated`・`service_role` から外す。表の `select` は渡さない。(4) 店員の拒否の文の頭に `[staff-passkey-required]` を付け（お客さんの `password` の拒否は別の印 `[customer-password-disabled]`）、アプリが言い回しに頼らず見分けられるようにする。(5) 本番へは段1bと段3が済むまで当てず、有効にする前の関数だけでは何も変わらないことを保つ。
+守ること: (1) 関数は `EXCEPTION WHEN OTHERS` で受け、お客さんと判った後の失敗は入力をそのまま返し、店員の失敗と、店員かどうか判らない失敗（`user_id` が無い・不正）は拒否する。(2) `claims` が無い・`amr` が配列でない・`timestamp` が文字列・61秒以上先・86400秒を超える・方法が未知の店員は拒否する。(3) `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空で、`execute` は `supabase_auth_admin` だけに渡し、`public`・`anon`・`authenticated`・`service_role` から外す。表の `select` は渡さない。(4) 店員の拒否の文の頭に `[staff-passkey-required]` を付け（お客さんの `password` の拒否は別の印 `[customer-password-disabled]`）、アプリが言い回しに頼らず見分けられるようにする。(5) 本番へは段1bと段3が済むまで当てず、有効にする前の関数だけでは何も変わらないことを保つ。
 
 ### SEC-AUTH-038 パスキーの足し・消しの記録と認めの控えの掃除は引き金に任せ、引き金が働かない道は受け入れる危険として書き、数え方でも突き合わせる
 
@@ -6020,7 +6020,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 9、Review Focus 1〜3） |
 | 優先度 | MUST |
 
-守ること: (1) 管理の入口は `aal` を見ない。`aal2` でも `amr` に `passkey` が無ければ断る（API・RLS の両方）。(2) JWT の印 `staff_passkeys_ok` が真でも、DB で数えた認めたパスキーが2本未満なら断る。(3) 24時間を過ぎた・未来の `passkey` の時刻は断る。(4) RPC が数えられない時は 503（閉じる側）、数でない値は0本。(5) 店員のメールのコード・パスワードは GoTrue のフックが拒否する。(6) 試験の道具は、本番に試験専用の入口を作らない（手元の Supabase だけで動く）。
+守ること: (1) 管理の入口は `aal` を見ない。`aal2` でも `amr` に `passkey` が無ければ断る（API・RLS の両方）。(2) JWT の印 `staff_passkeys_ok` が真でも、DB で数えた認めたパスキーが2本未満なら断る。(3) 24時間を過ぎた・61秒以上先の `passkey` の時刻は断る（60秒までのずれは通す）。(4) RPC が数えられない時は 503（閉じる側）、数でない値は0本。(5) 店員のメールのコード・パスワードは GoTrue のフックが拒否する。(6) 試験の道具は、本番に試験専用の入口を作らない（手元の Supabase だけで動く）。
 
 残る危険として受け入れること: 手元で店員がアプリの画面から入れない間（段1b まで）、画面を使う E2E のうち店員のパスワード＋TOTP のログインを通す物は、段4で消す機能として skip にした（台帳の「skip の一覧」）。最初の店長のコマンド `admin:bootstrap`（パスワード＋TOTP）は本番用に残し、手元では使わない（`docs/06_Operations/first-admin-bootstrap.md`）。
 

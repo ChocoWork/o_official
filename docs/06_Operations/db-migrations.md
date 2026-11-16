@@ -87,7 +87,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 
 | 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
 | --- | --- | --- | --- |
-| `20261116230000_passkey_access_token_hook.sql` | 8091 bytes / `69280d7efd002233a3918fc327d5c2ae` | 本番未適用（手元の `db reset` で適用済み） | `public.passkey_access_token_hook(event jsonb)` を足す。店員をパスキーの新しいログインと窓の中のセッションだけに通し、それ以外の店員は拒否し、お客さんは素通し（`password` は旗が真の時だけ拒否） |
+| `20261116230000_passkey_access_token_hook.sql` | 8233 bytes / `cad84ad469e5480dd94412c1bca21d44` | 本番未適用（手元の `db reset` で適用済み） | `public.passkey_access_token_hook(event jsonb)` を足す。店員をパスキーの新しいログインと窓の中のセッションだけに通し、それ以外の店員は拒否し、お客さんは素通し（`password` は旗が真の時だけ拒否） |
 
 - 変えるもの: 関数を1本足すだけ。`supabase/config.toml` は触らないので、フックは呼ばれず、今のログインは変わらない（有効にするのは段1a の Task 9）
 - 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `9b2618eb07a4f4071d566ffa8c3c3d72`（本番に当てた後、これと突き合わせる）
@@ -120,7 +120,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 
 | 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
 | --- | --- | --- | --- |
-| `20261117001500_passkey_staff_entry_conditions_fn.sql` | 5517 bytes / `7cdf0ccb115a040ac26f838e728fa351` | 本番未適用（手元の `db reset` で適用済み） | `private.staff_passkey_amr_ok(jsonb)`・`staff_passkey_count_ok(uuid)`・`staff_passkey_entry_ok(uuid, jsonb)` の3つの関数を足す |
+| `20261117001500_passkey_staff_entry_conditions_fn.sql` | 5640 bytes / `92278824cd3588604f17e889ca7d6a58` | 本番未適用（手元の `db reset` で適用済み） | `private.staff_passkey_amr_ok(jsonb)`・`staff_passkey_count_ok(uuid)`・`staff_passkey_entry_ok(uuid, jsonb)` の3つの関数を足す |
 
 - 変えるもの: 関数3本を足すだけ（例外は握って偽を返し、`RAISE WARNING` で SQLSTATE と文を残す）。`has_permission`・`admin-rbac` は変えない（Task 9 でつなぐ）ので、ログインも管理の入口も今のまま
 - 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `467486a932883ea4afb85f8c6d656183`（本番に当てた後、これと突き合わせる）

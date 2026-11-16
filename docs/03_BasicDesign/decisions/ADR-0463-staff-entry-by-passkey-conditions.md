@@ -42,6 +42,7 @@
 - 3つ目の条件は、JWT の `staff_passkeys_ok` を使わず、判定のたびに DB で数える。数え方は認めの控えと実在の鍵（`id`・`user_id`・`credential_id`）の突き合わせ（ADR-0464）。印はヒントとして残す
 - 定数と設定の行は同じ値にする。`STAFF_MAX_SESSION_SECONDS`（86400）・`STAFF_MIN_APPROVED_PASSKEYS`（2）は `defaultStaffPasskeySettings()` から取り、DB の設定の行の既定値と同時に変える（単体テストが一致を確かめる）。SQL の関数は設定の行を読む
 - 3つの SQL の関数は `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空・`STABLE`。`public`・`anon`・`authenticated`・`service_role` から `execute` を外す（`private.app_session_is_live` と同じ）。`has_permission` が定義者の権限で呼ぶので、新しい権限は要らない
+- 時計のずれ（2026-11-17 追記）: 未来の時刻は不可というオーナーの決定に、60秒までの時計のずれは許す手当てを足す。GoTrue は `amr` の時刻を DB のトランザクションが始まった後に付けるので、フック（`now()` はトランザクション開始時刻）から見て時刻が1秒先になりうる（手元で833回のログインのうち8回で、トランザクション開始が x.994〜x.998 秒・時刻が次の秒だった）。判定は `-60 <= 今の秒 - 時刻 <= 86400`（フック・`staff_passkey_amr_ok`・`evaluateStaffEntry` で同じ。TS の定数は `STAFF_CLOCK_SKEW_SECONDS`）。61秒以上先は断る。
 - 403 の本文 `MFA required` と `denial.reason = 'mfa'` は変えない。画面の判定が6ファイル・試験が76ファイルで使っているため、意味だけがパスキーの条件に変わる。名前の変更は MFA を消す段4
 
 #### 退けた案

@@ -56,7 +56,10 @@ describe('staff passkey entry conditions', () => {
     expect(evaluateStaffEntry({ amr: at(86400) }, 2, NOW + 0.9)).toEqual({ ok: true });
     expect(evaluateStaffEntry({ amr: at(86401) }, 2, NOW + 0.9)).toEqual({ ok: false, reason: 'passkey_expired' });
     expect(evaluateStaffEntry({ amr: at(0) }, 2, NOW + 0.9)).toEqual({ ok: true });
-    expect(evaluateStaffEntry({ amr: [{ method: 'passkey', timestamp: NOW + 1 }] }, 2, NOW + 0.9))
+    // 時計のずれ: 60秒先までは通し、61秒先は断る（今の秒は切り捨て）
+    expect(evaluateStaffEntry({ amr: [{ method: 'passkey', timestamp: NOW + 1 }] }, 2, NOW + 0.9)).toEqual({ ok: true });
+    expect(evaluateStaffEntry({ amr: [{ method: 'passkey', timestamp: NOW + 60 }] }, 2, NOW + 0.9)).toEqual({ ok: true });
+    expect(evaluateStaffEntry({ amr: [{ method: 'passkey', timestamp: NOW + 61 }] }, 2, NOW + 0.9))
       .toEqual({ ok: false, reason: 'passkey_expired' });
   });
 

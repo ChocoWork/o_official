@@ -5,7 +5,8 @@
 -- public.passkey_access_token_hook(event jsonb) returns jsonb   SECURITY DEFINER, owner postgres, search_path empty.
 -- Behaviour (design 5-2). "Staff" = an active, unexpired user_roles row with role code admin or supporter.
 --   staff, authentication_method passkey / token_refresh, claims.amr (a jsonb array) holds a passkey element whose
---     numeric timestamp T satisfies T <= now and now - T <= staff_max_session_seconds  -> pass; claims.staff_passkeys_ok
+--     numeric timestamp T satisfies T <= now + 60 and now - T <= staff_max_session_seconds  -> pass (60 s clock skew: GoTrue
+--     stamps T with its own clock AFTER this transaction started, so T can sit one second ahead of now()); claims.staff_passkeys_ok
 --     is added (true when public.passkey_approved_count(user) >= min_approved_passkeys; a HINT only, never a decision)
 --   staff, authentication_method otp / token_refresh / passkey and an open registration window for BOTH
 --     claims.session_id and user_id -> pass (staff_passkeys_ok false; amr has no fresh passkey, so the admin gate stops)
@@ -107,7 +108,7 @@ BEGIN
        AND e ->> 'method' = 'passkey'
        AND jsonb_typeof(e -> 'timestamp') = 'number'
        AND (e ->> 'timestamp') ~ '^[0-9]+$';
-    IF v_ts IS NOT NULL AND v_ts <= v_now AND v_now - v_ts <= v_max THEN
+    IF v_ts IS NOT NULL AND v_ts <= v_now + 60 AND v_now - v_ts <= v_max THEN
       -- staff_passkeys_ok is only a hint: if counting fails, say false and still let the fresh passkey through.
       BEGIN
         v_ok := public.passkey_approved_count(v_uid) >= v_min;

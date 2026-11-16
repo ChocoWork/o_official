@@ -3,7 +3,7 @@
 --
 -- private.staff_passkey_amr_ok(claims jsonb) boolean     conditions 1 and 2 (cheap; reads claims and settings only)
 --   claims.amr must be a JSON array. Valid elements: object, method = 'passkey', timestamp a JSON number holding an integer.
---   The latest valid timestamp T wins. true when 0 <= floor(now) - T <= staff_max_session_seconds (future T is false).
+--   The latest valid timestamp T wins. true when -60 <= floor(now) - T <= staff_max_session_seconds (T more than 60 s in the future is false).
 --   Anything else (no claims, amr missing / null / not an array / empty, string timestamp, only oauth / otp) is false.
 -- private.staff_passkey_count_ok(p_user_id uuid) boolean  condition 3, counted in the DB on every call (never from the JWT hint
 --   staff_passkeys_ok): public.passkey_approved_count(user) >= min_approved_passkeys (same join incl. credential_id).
@@ -53,7 +53,8 @@ BEGIN
     RETURN false;
   END IF;
   v_now := floor(extract(epoch FROM now()));
-  RETURN v_now - v_ts >= 0 AND v_now - v_ts <= v_max;
+  -- 60 s of clock skew is allowed (GoTrue stamps the amr time after the DB transaction started)
+  RETURN v_now - v_ts >= -60 AND v_now - v_ts <= v_max;
 EXCEPTION WHEN OTHERS THEN
   RAISE WARNING 'staff_passkey_amr_ok failed: % %', SQLSTATE, SQLERRM;
   RETURN false;
