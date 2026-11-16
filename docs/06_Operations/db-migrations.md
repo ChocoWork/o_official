@@ -1,5 +1,6 @@
 # DB マイグレーション運用
 
+> 2026-11-16 確認日（パスキー段1a Task 5）: 新しい移行 `20261116230000_passkey_access_token_hook.sql`（Custom Access Token フックの関数。手元の DB のみ・本番未適用。`config.toml` では有効にしない）を足した。下の「パスキー段1a 移行 B」の節に書いた。
 > 2026-11-16 確認日（パスキー段1a Task 4）: 新しい移行 `20261116215034_passkey_foundation_tables.sql`（パスキーの設定・認め・窓・知らせの表と関数。手元の DB のみ・本番未適用）を足した。下の「パスキー段1a 移行 A」の節に書いた。
 > 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 1）: 新しい移行 `20261116000000_accounting_p3_pending_auto_posting.sql`（S27。手元の DB のみ・本番未適用。残りの Task が育てる途中の形）の骨組みを足した。前の確かめ（`acc_s27_precheck`。S24 の結ぶ関数で閉じた `dispute_lost`／`return_closed_after_lost` の行が1件でもあれば止まる。開いた行の件数は NOTICE で出す）、私用の関数2つ（`private.accounting_order_refunds_in_flight`・`private.accounting_order_return_payable`。誰にも EXECUTE を渡さない）、`private.accounting_refund_wait` の作り直し（置き換え1つ。入れない決定を済みと数える）まで。行は書かない。末尾の確かめ（Task 4）は6段そろい、大きさと MD5・作り直した関数・戻し方は末尾の「計画 3 の移行 S27」の節に書いた。本番の適用手順の最後の確認（開いた行の件数・適用の許可）は、本番に当てる時に追記する。
 > 2026-11-16 確認日（パスキー段1a Task 1 の直し）: 「以後の追加手順」と「まだ本番に入れないマイグレーション」に、push の引き金を止めた注を足した。
@@ -78,6 +79,22 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 - **本番へ当てない**: 本番に当てると、パスキーを有効にするまでだれも管理の権限を持てない。段1b と段3が済むまで当てない。当てるのは調整役だけで、オーナーの許可を得て、Supabase の MCP の `apply_migration` を `name` をファイル名から版を除いた部分にして1本ずつ呼び、当てた後にファイルの名前を当てた版に直し、`md5(statements[1])` をファイルと突き合わせる（上の「CI の引き金を止めた記録」と同じ。`db push` と `workflow_dispatch` は動かさない）
 - 手元で確かめた結果（2026-11-16、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_foundation.integration.test.ts` 11件通過（持ち主・search_path の確かめと、同じ credential_id の古い認めの置き換えを足した）
 - `auth.webauthn_credentials` の列を `\d` で実測した（`credential_id` は `bytea`・一意）。移行のコメントにも書いた
+
+## パスキー段1a 移行 B: Custom Access Token フックの関数（手元で確認済み・本番未適用・有効にしない）
+
+確認日: 2026-11-16（パスキー段1a Task 5）。SR-AUTH-011・FR-AUTH-008・SEC-AUTH-037・ADR-0464（Task 5 の追記）・DATA-AUTH-013・DD-AUTH-044。設計は [パスキー設計](../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-2）、計画は [段1a の計画](../superpowers/plans/2026-11-16-passkey-stage1a-foundation.md)。
+
+| 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
+| --- | --- | --- | --- |
+| `20261116230000_passkey_access_token_hook.sql` | 7337 bytes / `b5047223e3c90becafc736638221779c` | 本番未適用（手元の `db reset` で適用済み） | `public.passkey_access_token_hook(event jsonb)` を足す。店員をパスキーの新しいログインと窓の中のセッションだけに通し、それ以外の店員は拒否し、お客さんは素通し（`password` は旗が真の時だけ拒否） |
+
+- 変えるもの: 関数を1本足すだけ。`supabase/config.toml` は触らないので、フックは呼ばれず、今のログインは変わらない（有効にするのは段1a の Task 9）
+- 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `5d5b0864200298d6838d3ebb249743bc`（本番に当てた後、これと突き合わせる）
+- 前の確かめ: 移行 A の表・関数と `public.user_roles` が無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（SQLSTATE 55000）で止まる
+- 末尾の確かめ: 所有者 `postgres`・`SECURITY DEFINER`・`search_path` が空、`execute` が `supabase_auth_admin` だけ（`PUBLIC`・`anon`・`authenticated`・`service_role` に無い）、`supabase_auth_admin` が `private` の3つの表を `select` できない。失敗は `PASSKEY_MIGRATION_ASSERTION_FAILED`（DETAIL は項目名だけ）
+- 戻し方（移行のヘッダーの ROLLBACK）: `DROP FUNCTION public.passkey_access_token_hook(jsonb);`。有効にする前なら他に影響しない。有効にした後は、先に `config.toml` のフックを外す
+- **本番へ当てない**: 段1b と段3が済むまで当てない（理由と当て方は移行 A と同じ。1本ずつ、オーナーの許可を得て、Supabase の MCP の `apply_migration`）。本番の Auth のフックの登録は、当てた後に別の手順で行う
+- 手元で確かめた結果（2026-11-16、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_access_token_hook.integration.test.ts` 35件通過（`supabase_auth_admin` の権限で呼ぶ）、`auth_passkey_foundation.integration.test.ts` は通過のまま。単体 `staff-passkey-reject.test.ts` 3件通過
 
 ## CI の引き金を止めた記録（2026-11-16）
 

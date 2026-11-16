@@ -219,6 +219,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 検証の置き方: 追跡の決まり（受け入れ条件には E2E が要る）により、FR-AUTH-007 の受け入れ条件は権限（AC-01・02）だけにした。認める・窓・数え方の振る舞い（設計の試験の項目 c〜f）は、DATA-AUTH-012 の DB 結合テスト（`tests/integration/db/auth_passkey_foundation.integration.test.ts`）で確かめる（2026-11-16 に調整役が了承）。
 
+### SR-AUTH-011 店員はパスキーでログインした時だけトークンを受け取れ、ほかの方法では受け取れない
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | 店員のログインの状態を、メールのコード・Google・パスワード・GoTrue の直叩きのどれでも作れないようにするには、トークンを出す時に毎回走るフック1か所で締めるのがいちばん確実（設計 5-2）。アプリの窓口だけで止めると、GoTrue を直に叩く道が残る |
+| 状態 | 推定 |
+| 出どころ | ユーザーの発言 2026-11-06〜07・2026-11-16（`.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2）、`docs/superpowers/specs/2026-11-16-passkey-local-trial-results.md`（T1・T2）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 5）） |
+
+要求の文: 店員（店長・サポーター）は、パスキーでログインしてから24時間以内の時だけトークンを受け取れる。招待の登録の窓が開いている間のセッションだけは、パスキーを足すためにトークンを受け取れるが、管理の入口は通れない。お客さんのふだんのログインは変えない。段1aでは、この判断をする関数だけを作り、有効にはしない。
+
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
 | 属性 | 値 |
@@ -2096,6 +2106,19 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 優先度 | MUST |
 
 設定の表は1行で、24時間（86400秒）・1時間（3600秒）・窓30分・認めたパスキー2本・お客さんのパスワードの拒否は偽が初めの値。認めたパスキーの数は、認めの行と `auth.webauthn_credentials` の鍵が同じ持ち主でつながる行だけを数える。表は `private` に置き、`anon`・`authenticated` に権限を渡さない。`public` の関数は `service_role` だけが呼べる。
+
+### FR-AUTH-008 Custom Access Token フックの関数は、店員をパスキーの新しいログインと窓の中のセッションだけに通し、壊れた入力でも店員を通さない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-011 |
+| 根拠 | SR-AUTH-011 の「パスキーでログインした時だけトークンを受け取れる」を、DB の関数 `public.passkey_access_token_hook(event jsonb)` 1つにする。呼べるのは GoTrue が使う `supabase_auth_admin` だけにして、会員・外の人・アプリの service_role から呼べないようにする（ADR-0464） |
+| 状態 | 推定 |
+| 確かめ方 | E2E・結合テスト |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2）、`docs/superpowers/specs/2026-11-16-passkey-local-trial-results.md`（T1・T2）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 5） |
+| 優先度 | MUST |
+
+店員は `user_roles` で有効（`active` で期限切れでない）な admin・supporter。結果は、(1) 方法が `passkey` か `token_refresh` で、`amr` の `passkey` の数の `timestamp` から `staff_max_session_seconds`（86400）秒以内なら通し、`staff_passkeys_ok`（認めたパスキーが2本以上か。ヒントで、判定には使わない）を足す。(2) 方法が `otp`・`token_refresh`・`passkey` で、`claims.session_id` と `user_id` の両方が同じ開いた窓があれば通す（`staff_passkeys_ok` は偽）。(3) それ以外の店員は拒否（HTTP 403・文の頭に `[staff-passkey-required]`）。お客さんは、方法が `password` で設定の旗 `reject_customer_password` が真の時だけ拒否し、それ以外は入力をそのまま返す。どんな入力でも例外を投げず、店員を判定できない時は拒否する。フックは窓の表を書かない。段1aでは `config.toml` で有効にしない（Task 9）。
 
 ## 受け入れ条件
 
@@ -4340,6 +4363,18 @@ anon の鍵で `passkey_approved_count`・`passkey_approve`・`passkey_window_op
 
 service_role の鍵で、持ち主のいない利用者の id の `passkey_approved_count` を呼ぶと誤りなしで 0 が返ること。同じ鍵で `approved_passkeys` の表を PostgREST から読もうとすると、表が見つからない誤りになること。
 
+### FR-AUTH-008-AC-01 anon と service_role の鍵ではフックの関数を直接呼べない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-008 |
+| 根拠 | フックの関数を外の人やアプリの service_role が呼べると、店員の判断を調べる道具に使われる。`supabase_auth_admin` だけに `execute` を渡したことを、アプリを通さず直に叩いて確かめる |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-042-passkey-hook-function-grants.spec.ts`。HTTP の試験で幅で結果は変わらない） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2）、`docs/superpowers/specs/2026-11-16-passkey-local-trial-results.md`（T1・T2）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 5） |
+
+anon の鍵と service_role の鍵のそれぞれで `passkey_access_token_hook` を PostgREST（`/rest/v1/rpc/passkey_access_token_hook`）から呼ぶと、どちらも誤り（権限の拒否）になり、値は返らないこと。
+
 ## セキュリティ要件
 
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
@@ -5697,6 +5732,19 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 優先度 | MUST |
 
 守ること: (1) 4つの表（設定・窓・認め・知らせ）は `private` に置き、RLS を有効にし、`anon`・`authenticated` に権限を渡さない。(2) `public.passkey_*` の関数は `service_role` だけが `execute` できる。`private.passkey_staff_settings()` は `public`・`anon`・`authenticated` から `execute` を外す。(3) 窓を開ける時は `auth.sessions` で、そのセッションがその利用者の物かを確かめ、違えば例外にする。窓が開いているかは `user_id` と `session_id` の両方が合うことを見る。(4) `passkey_approve` は、鍵の持ち主が渡された利用者でなければ例外にする。(5) `passkey_approved_count` は、認めの行と鍵の行が同じ持ち主でつながる分だけ数える。(6) 認めの表の `user_id` に外部キーを張らない（利用者の削除の連鎖で認めの行が先に消えると、引き金が店員かを判れなくなるため）。認めの行を消すのは後のタスクの引き金だけ。
+
+### SEC-AUTH-037 フックが壊れると全員のログインが止まるので、フックは例外を投げず、店員は判定できなければ拒否し、権限は supabase_auth_admin だけにする
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-037 |
+| 根拠 | Custom Access Token フックが例外を投げるとトークンが出せず、お客さんを含む全員がログインも更新もできなくなる。逆に、壊れた入力を「お客さん」として通すと、店員がパスキー無しで入れる。両方を防ぐには、お客さんと判った時だけ素通しにし、店員か判らない時は拒否する必要がある（設計 5-2） |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_access_token_hook.integration.test.ts`。`supabase_auth_admin` の権限で呼ぶ）、E2E（FR-AUTH-008-AC-01） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2）、`docs/superpowers/specs/2026-11-16-passkey-local-trial-results.md`（T1・T2）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 5）、OWASP ASVS 4.0.3 V4.1.3（当てはめは推定） |
+| 優先度 | MUST |
+
+守ること: (1) 関数は `EXCEPTION WHEN OTHERS` で受け、お客さんと判った後の失敗は入力をそのまま返し、店員の失敗と、店員かどうか判らない失敗（`user_id` が無い・不正）は拒否する。(2) `claims` が無い・`amr` が配列でない・`timestamp` が文字列・未来・86400秒を超える・方法が未知の店員は拒否する。(3) `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空で、`execute` は `supabase_auth_admin` だけに渡し、`public`・`anon`・`authenticated`・`service_role` から外す。表の `select` は渡さない。(4) 拒否の文の頭に `[staff-passkey-required]` を付け、アプリが言い回しに頼らず見分けられるようにする。(5) 本番へは段1bと段3が済むまで当てず、有効にする前の関数だけでは何も変わらないことを保つ。
 
 ## 派生要件
 

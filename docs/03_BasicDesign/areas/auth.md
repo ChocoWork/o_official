@@ -1602,6 +1602,24 @@ stateDiagram-v2
 
 - 設定と権限: `SECURITY DEFINER`・`SET search_path = ''`・所有者 `postgres`。`public.passkey_*` は `service_role` だけが `execute` できる（`public`・`anon`・`authenticated` から外す）。移行は `CREATE OR REPLACE`
 
+### DATA-AUTH-013 passkey_access_token_hook は、店員の入口の判断を1つの関数で行い、supabase_auth_admin だけが呼べる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-008、SEC-AUTH-037、ADR-0464 |
+| 根拠 | トークンを出す時（ログイン時と更新時）に毎回走る判断を DB の1か所に置き、店員の締め付けを GoTrue の直叩きの道まで効かせる（設計 5-2）。判断は DD-AUTH-044 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_access_token_hook.integration.test.ts`）、E2E（FR-AUTH-008-AC-01）、移行の末尾の確かめ（`PASSKEY_MIGRATION_ASSERTION_FAILED`） |
+| 出どころ | 移行 `supabase/migrations/20261116230000_passkey_access_token_hook.sql`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2） |
+
+| 関数 | 引数 | 返り値 | 動き |
+| --- | --- | --- | --- |
+| `public.passkey_access_token_hook` | `event jsonb`（`claims`・`user_id`・`metadata`・`authentication_method`） | `jsonb` | 店員（`user_roles` で有効な admin・supporter）かをその場で調べ、結果は DD-AUTH-044 の図のとおり。通す時は入力に `claims.staff_passkeys_ok` を足すか、そのまま返す。拒否は `{"error":{"http_code":403,"message":"[staff-passkey-required] ..."}}` |
+
+- 設定と権限: `LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''`・所有者 `postgres`。`execute` は `supabase_auth_admin` だけ。`public`・`anon`・`authenticated`・`service_role` から外す。表の `select` は渡さない（関数が持ち主の権限で読む）。有効にするのは `config.toml` の `[auth.hook.custom_access_token]`（Task 9）
+- 読む表: `public.user_roles`・`public.roles`・`private.passkey_staff_config`（`private.passkey_staff_settings()` 経由）・`private.passkey_registration_windows`。数えるのは `public.passkey_approved_count`。書く表は無い
+- 戻す: 移行のヘッダーの ROLLBACK（関数を1本落とす）
+
 ### 手元の Supabase Auth の設定の表（波 6 の目標。手元は 2026-11-01 に切り替え済み）
 
 目標の値は `supabase/config.toml` に反映済み（表の「今」は切り替え前の値）。切り替えまでは目標の写し `supabase/pending-wave6/config.toml` と差分 `config.patch` に置いていた。切り替えの日は 2026-11-01（手元だけ。本番は未反映）。本番の目標値と手順は `docs/06_Operations/supabase-auth-config.md`（波 6 の Task 9）。
