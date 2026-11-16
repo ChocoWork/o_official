@@ -1,6 +1,6 @@
 # 店員のパスキーの入口（設定・登録の窓・認めたパスキー）
 
-> 状態: 推定 | 確認日: 2026-11-16 | 対象: `supabase/migrations/20261116215034_passkey_foundation_tables.sql`、`supabase/migrations/20261116230000_passkey_access_token_hook.sql`、`supabase/migrations/20261116232141_passkey_credential_events.sql`、`src/lib/auth/staff-passkey-defaults.ts`、`src/lib/auth/staff-passkey-reject.ts`、`src/lib/auth/staff-passkey-credential-events.ts` | 親: [シーケンス設計の方針](README.md)
+> 状態: 推定 | 確認日: 2026-11-16 | 対象: `supabase/migrations/20261116215034_passkey_foundation_tables.sql`、`supabase/migrations/20261116230000_passkey_access_token_hook.sql`、`supabase/migrations/20261116232141_passkey_credential_events.sql`、`src/lib/auth/staff-passkey-defaults.ts`、`src/lib/auth/staff-passkey-reject.ts`、`src/lib/auth/staff-passkey-credential-events.ts`、`e2e/passkey-soft-authenticator.ts`、`scripts/e2e/passkey-staff.ts` | 親: [シーケンス設計の方針](README.md)
 
 ## 概要
 
@@ -10,8 +10,8 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | FR-AUTH-007、FR-AUTH-008、SEC-AUTH-036、SEC-AUTH-037、DATA-AUTH-011、DATA-AUTH-012、DATA-AUTH-013、SR-AUTH-012、FR-AUTH-009、SEC-AUTH-038、DATA-AUTH-014、ADR-0464、ADR-0465 |
-| 対象のコード | 移行 `supabase/migrations/20261116215034_passkey_foundation_tables.sql`・`20261116230000_passkey_access_token_hook.sql`・`20261116232141_passkey_credential_events.sql`、`src/lib/auth/staff-passkey-defaults.ts`・`staff-passkey-reject.ts`・`staff-passkey-credential-events.ts` |
+| 対応する ID | FR-AUTH-007、FR-AUTH-008、SEC-AUTH-036、SEC-AUTH-037、DATA-AUTH-011、DATA-AUTH-012、DATA-AUTH-013、SR-AUTH-012、FR-AUTH-009、SEC-AUTH-038、DATA-AUTH-014、SR-AUTH-013、FR-AUTH-010、DATA-AUTH-015、ADR-0464、ADR-0465 |
+| 対象のコード | 移行 `supabase/migrations/20261116215034_passkey_foundation_tables.sql`・`20261116230000_passkey_access_token_hook.sql`・`20261116232141_passkey_credential_events.sql`、`src/lib/auth/staff-passkey-defaults.ts`・`staff-passkey-reject.ts`・`staff-passkey-credential-events.ts`、`e2e/passkey-soft-authenticator.ts`、`scripts/e2e/passkey-staff.ts`（Task 7） |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-2・5-5・6-2） |
 | 調べた時点 | 2026-11-16（手元の DB で結合試験を流した） |
 
@@ -129,6 +129,40 @@ flowchart TD
 - 戻し方: `postgres` は引き金を落とせない。関数を `RETURN NULL` だけの空の関数に置き換えて止め、引き金の削除は `supabase_auth_admin` の手順にする（本番へ当てる前の確認の一覧に入れる。設計 8-2 の3）
 - 認可: `execute` はだれにも渡さない。引き金の起動はテーブルの権限に左右されない
 - テスト観点: 足し・消し・差し替え・名前や回数だけの更新、お客さんの削除の連鎖、店員の削除（`user_roles` が先か同時か）、outbox の失敗（制約）、`DISABLE TRIGGER` 時の数え方、権限
+
+### DD-AUTH-046 ソフトの認証器と、店員の用意・パスキーのログインの順番
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | DATA-AUTH-015 |
+| 根拠 | 店員の入口を締めるフックは、有効な店員の magiclink を拒否し、TOTP の要素が残る利用者のパスキーの登録に GoTrue が aal2 を求める。だから店員は、役割を付ける前の利用者として登録まで済ませ、役割を最後に有効にする（案 B。手元の試し T6）。既にいる店員は再利用せず、同じメールがあれば投げる |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/e2e/passkey-soft-authenticator.test.ts`）、DB 結合テスト（DATA-AUTH-015）、E2E（FR-AUTH-010-AC-01） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-7-brief.md`、`docs/superpowers/specs/2026-11-16-passkey-local-trial-results.md`（T1・T6）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 7） |
+
+```mermaid
+sequenceDiagram
+    participant H as provisionStaff
+    participant A as GoTrue 管理 API
+    participant G as GoTrue パスキー
+    participant D as DB
+    H->>D: 同じメールの利用者が無いか確かめる
+    H->>A: createUser（パスワード無し・app_metadata.role）
+    H->>A: generateLink magiclink
+    H->>G: verifyOtp で session を得る
+    loop approvedPasskeys 本
+        H->>G: startRegistration
+        H->>G: verifyRegistration（ソフトの認証器の応答）
+        H->>D: passkey_approve(user, passkey, script)
+    end
+    H->>D: user_roles を有効にする（最後）
+```
+
+- ソフトの認証器: ES256 の鍵の対を `node:crypto` で作る。登録は fmt `none` の `attestationObject`（CBOR は登録の応答の形だけを手で書く）。`authenticatorData` の位置 32 の flags は、登録が UV ありで `0x45`・なしで `0x41`、ログインが `0x05`・`0x01`。署名は `authenticatorData` と `clientDataJSON` の SHA-256 をつないだ物で、ログインごとに `signCount` が1増える。`userHandle` は登録の選択肢の `user.id`
+- `provisionStaff`: 呼ぶごとに別の送り元（`x-forwarded-for`）で GoTrue を叩き、回数の制限の枠を共有しない。手元の住所でなければ投げる。失敗の文面は status・code だけで、JWT・鍵・token を出さない
+- `loginWithPasskey`: 始めの要求に `e2e/captcha-test-utils.ts` のダミーのトークンを `options.captchaToken` で渡す（手元の config は captcha 有効。秘密は Cloudflare の公開のテスト用）。返った利用者のメールが合わなければ投げる
+- 異常: 登録・認めの途中で落ちると、利用者は作られたままで役割は付かない（役割は最後）。`db reset` で消える
+- テスト観点: flags の位置と値、署名の検証、回数の増え方、2本の認証器が別の鍵、認めの行が2つ・役割が有効、JWT の `amr` に `passkey`・`aal1`、同じメールで投げる
 
 ## 未確認事項
 

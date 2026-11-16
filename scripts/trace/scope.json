@@ -248,7 +248,8 @@
       "src/features/auth/schemas/password-change.ts",
       "src/app/account/password/**/*.{ts,tsx}",
       "src/lib/auth/staff-passkey*.ts",
-      "scripts/dev/passkey-dev-staff.ts"
+      "scripts/dev/passkey-dev-staff.ts",
+      "e2e/passkey-soft-authenticator.ts"
     ],
     "tests": [
       "tests/unit/components/{LoginModal,RegisterModal,AuthTabs,AuthResultScreen,VerifyOtpClient,Header}.test.tsx",

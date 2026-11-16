@@ -239,6 +239,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: パスキーが足された・消された・鍵そのものが差し替えられた時、店長に知らせる予定を DB が自動で残す。消された・差し替えられた鍵は、「認めた鍵」の控えからも同時に外す。お客さんがユーザーごと削除される連鎖では、知らせを積まない。店員がユーザーごと削除される時は、削除された本人にでなく店長に知らせる行を残す。段1aでは、予定の表に積むだけで、送らない。
 
+### SR-AUTH-013 手元の試験の道具は、パスキーの店員を用意し、パスキーでログインできる（本番に試験専用の入口を作らない）
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | 段1a の切り替え（Task 9）で、全部の試験の道具と偽装が「店員はパスキーで入る」形に作り直される。手元の試験と開発が店員として入れる土台を、先に1か所の道具として用意する。道具はブラウザ無しでパスキーの登録・ログインを通すソフトの認証器と、店員を用意する・ログインする共有の関数で、手元の Supabase だけで動く。本番に試験専用の入口（パスキーを確かめずに店員にする道）は作らない |
+| 状態 | 推定 |
+| 出どころ | ユーザーの発言 2026-11-16（`.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-2・手元の開発）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 7）、`docs/superpowers/specs/2026-11-16-passkey-local-trial-results.md`（T1・T6）） |
+
+要求の文: 手元の試験と開発は、ソフトの認証器で店員のパスキーを2本までそろえ、そのパスキーでログインして店員のトークンを得られる。この道具は手元の Supabase の住所でなければ動かず、アプリ本体（`src/`）からは読まれない。
+
 
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
@@ -2130,6 +2140,19 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 優先度 | MUST |
 
 店員は `user_roles` で有効（`active` で期限切れでない）な admin・supporter。結果は、(1) 方法が `passkey` か `token_refresh` で、`amr` の `passkey` の数の `timestamp` から `staff_max_session_seconds`（86400）秒以内なら通し、`staff_passkeys_ok`（認めたパスキーが2本以上か。ヒントで、判定には使わない）を足す。(2) 方法が `otp`・`token_refresh`・`passkey` で、`claims.session_id` と `user_id` の両方が同じ開いた窓があれば通す（`staff_passkeys_ok` は偽）。(3) それ以外の店員は拒否（HTTP 403・文の頭に `[staff-passkey-required]`）。お客さんは、方法が `password` で設定の旗 `reject_customer_password` が真の時だけ、別の印 `[customer-password-disabled]` で拒否し（店員の印と分ける）、それ以外は入力をそのまま返す。どんな入力でも例外を投げず、店員を判定できない時は拒否する。フックは窓の表を書かない。段1aでは `config.toml` で有効にしない（Task 9）。
+
+### FR-AUTH-010 ソフトの認証器と、店員の用意・パスキーのログインの共有の道具
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-013 |
+| 根拠 | SR-AUTH-013 を、ソフトの認証器 `createSoftAuthenticator`（`e2e/passkey-soft-authenticator.ts`）と、共有の関数 `provisionStaff`・`loginWithPasskey`（`scripts/e2e/passkey-staff.ts`）にする。用意の順は設計 6-2 の案 B（利用者を作る → magiclink の session → パスキーを登録 → 認める → 役割を有効にする）。既にいる店員は再利用しない（有効な店員の magiclink はフックに拒否され、TOTP の要素が残ると GoTrue が登録に aal2 を求めるため）。後のタスク（Task 9 の道具の作り直し、Task 10 の手元の開発のスクリプト）がこの名前に頼る |
+| 状態 | 推定 |
+| 確かめ方 | E2E・結合テスト・単体テスト |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-7-brief.md`、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 7）、`docs/superpowers/specs/2026-11-16-passkey-local-trial-results.md`（T1・T6） |
+| 優先度 | MUST |
+
+認証器は ES256 の鍵の対を持ち、attestation は `none`。登録の `authenticatorData` の flags は UV ありで `0x45`、なしで `0x41`、ログインは `0x05`・`0x01`（位置 32）。署名は `authenticatorData` と `clientDataJSON` の SHA-256 をつないだ物に付け、ログインごとに回数が1増える。`provisionStaff` は手元の Supabase の住所でなければ投げ、同じメールの利用者が既にいれば投げる。`loginWithPasskey` は captcha のダミーのトークンを始めの要求に付ける。失敗の文面に JWT・鍵を出さない。
 
 ## 受け入れ条件
 
@@ -4413,6 +4436,18 @@ anon の鍵と service_role の鍵のそれぞれで `passkey_access_token_hook`
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・8-2）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 6、Review Focus 4・5） |
 
 anon の鍵と service_role の鍵のそれぞれで `passkey_credentials_notify` を PostgREST（`/rest/v1/rpc/passkey_credentials_notify`）から呼ぶと、どちらも HTTP 404・コード `PGRST202`（関数が見つからない）になり、値は返らないこと。
+
+### FR-AUTH-010-AC-01 ソフトの認証器で登録した店員がパスキーでログインでき、トークンの amr に passkey が付き aal が aal1 になる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-010 |
+| 根拠 | 道具が本物の GoTrue のパスキーの登録・ログインを最後まで通すことを、外からトークンを読んで確かめる。パスキーでは `aal` が `aal1` のままで、管理の入口の判定が `aal2` に頼れないこと（計画の守り）の前提でもある |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-044-passkey-soft-authenticator-login.spec.ts`。HTTP の試験で幅で結果は変わらない） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-7-brief.md`、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 7） |
+
+`provisionStaff` で admin に認めたパスキーを2本そろえ、1本目の認証器で `loginWithPasskey` すると、返ったトークンの `amr` に方法 `passkey` があり、`aal` が `aal1` で、`session_id` があること。
 
 
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める

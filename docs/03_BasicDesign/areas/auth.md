@@ -1639,6 +1639,27 @@ stateDiagram-v2
 - 戻す: 移行のヘッダーの ROLLBACK。`postgres` は表の持ち主でなく引き金を落とせないので、関数を空の関数（`RETURN NULL`）に置き換え、引き金を落とすのは `supabase_auth_admin` の手順にする。本番で作れるか・GoTrue の更新で消えないかは未確認（設計 8-2 の3）
 
 
+### DATA-AUTH-015 手元の試験の道具は、ソフトの認証器と店員の用意・ログインの2つの関数を、手元の Supabase だけで動かす
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-010、ADR-0464 |
+| 根拠 | 店員の入口をフック1か所で締めると、試験と手元の開発は、パスキーで入る店員を自分で作れなければ管理に入れない。その道具を1か所に置き、手元の Supabase の住所でなければ投げる。アプリ（`src/`）は読まない。判断は DD-AUTH-046 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_provisioning.integration.test.ts`）、E2E（FR-AUTH-010-AC-01）、単体テスト（DD-AUTH-046） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-7-brief.md`、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 7） |
+
+| 物 | 内容 |
+| --- | --- |
+| `createSoftAuthenticator`（`e2e/passkey-soft-authenticator.ts`） | ES256・attestation `none` のソフトの認証器。1本ごとに別の鍵・`credentialId` |
+| `provisionStaff`（`scripts/e2e/passkey-staff.ts`） | パスワード無しの店員を作り、パスキーを0〜2本登録して `passkey_approve(..., 'script')` で認め、最後に `user_roles` を有効にする |
+| `loginWithPasskey`（同上） | `auth.passkey.startAuthentication`（captcha のダミーのトークン付き）→ 認証器の応答 → `verifyAuthentication` |
+
+- 接続情報: 環境変数 `NEXT_PUBLIC_SUPABASE_URL`・`NEXT_PUBLIC_SUPABASE_ANON_KEY`・`SUPABASE_SERVICE_ROLE_KEY` が揃えばそれを使い、無ければ手元の `supabase status -o json` をプロセスの中で読む。`.env*` は読まない。住所が手元でなければ投げる
+- 書く表: `provisionStaff` が `auth.users`・`auth.webauthn_credentials`（GoTrue 経由）、`private.approved_passkeys`・`public.user_roles`（呼び手の DB 接続）を変える。手元の DB だけで、`db reset` で消える
+- 戻す: ファイルを消すだけ。DB の移行は無い
+
+
 ### 手元の Supabase Auth の設定の表（波 6 の目標。手元は 2026-11-01 に切り替え済み）
 
 目標の値は `supabase/config.toml` に反映済み（表の「今」は切り替え前の値）。切り替えまでは目標の写し `supabase/pending-wave6/config.toml` と差分 `config.patch` に置いていた。切り替えの日は 2026-11-01（手元だけ。本番は未反映）。本番の目標値と手順は `docs/06_Operations/supabase-auth-config.md`（波 6 の Task 9）。
