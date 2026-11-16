@@ -274,7 +274,8 @@ export async function authorizeAdminPermissions(required: readonly PermissionCod
 
     const getService = onceServiceClient();
     const [liveness, aclPermissions, approvedCount] = await Promise.all([
-      checkAuthSessionLiveness(claims.session_id),
+      // 旗 AUTH_REQUIRE_APP_SESSION に関わらず、アプリに結び付いた生きた session を求める（RLS の has_permission と同じ。SEC-AUTH-039）
+      checkAuthSessionLiveness(claims.session_id, true),
       resolveAclPermissions(userId, getService),
       resolveApprovedPasskeyCount(userId, getService),
     ]);

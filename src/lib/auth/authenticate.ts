@@ -134,6 +134,9 @@ export async function verifyAccessToken(
  * RPC が落ちたときは `unavailable` を返す。`revoked` に丸めないこと（型の定義を参照）。
  * 自前の行の引きの失敗も RPC の誤りとして同じ `unavailable` になり、「結び付いていない」とは取り違えない。
  *
+ * 第2引数 `forceAppSession` が真なら、旗に関わらず結び付き込みの RPC で確かめる（管理の認可 admin-rbac が使う。RLS の `has_permission` が
+ * 常に `app_session_is_live` を求めるのと同じにするため。旗を切った間に店員の session が盗まれても、結び付かない session で
+ * GoTrue に自分の鍵を足して管理 API を使い続けられないようにする。SEC-AUTH-039、ADR-0463）。
  * 名前・引数・戻り値を変えないのは、窓口と管理の認可がこの関数を同じ形で呼び、多数の試験が差し替えているため。
  * 切り替えは中の RPC 名だけで、admin-rbac も自動で結び付きを求める（DD-AUTH-039、ADR-0417・0419）。
  *
@@ -143,7 +146,7 @@ export async function verifyAccessToken(
  * あくまで往復を減らす最適化であり、正しさはこれに依存しない。
  */
 export const checkAuthSessionLiveness = cache(
-  async (sessionId: string | undefined): Promise<SessionLiveness> => {
+  async (sessionId: string | undefined, forceAppSession = false): Promise<SessionLiveness> => {
     if (!sessionId) {
       // session_id が無い JWT は失効の確認ができない。通してはいけないが、
       // これは「DB が落ちている」ではないので revoked として扱う。
@@ -152,7 +155,7 @@ export const checkAuthSessionLiveness = cache(
 
     try {
       const service = await createServiceRoleClient();
-      const rpcName = isAppSessionRequired() ? 'is_app_session_active' : 'is_auth_session_active';
+      const rpcName = forceAppSession || isAppSessionRequired() ? 'is_app_session_active' : 'is_auth_session_active';
       const { data, error } = await service.rpc(rpcName, { p_session_id: sessionId });
 
       if (error) {

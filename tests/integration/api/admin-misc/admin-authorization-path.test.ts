@@ -412,7 +412,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
 
       await actualRbac.authorizeAdminPermission('admin.audit.read');
 
-      expect(checkAuthSessionLiveness).toHaveBeenCalledWith('sess-1');
+      expect(checkAuthSessionLiveness).toHaveBeenCalledWith('sess-1', true);
       expect(client.from).toHaveBeenCalledWith('user_roles');
     });
 

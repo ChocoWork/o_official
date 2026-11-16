@@ -162,6 +162,22 @@ describe('verifyAccessToken / authenticateRequest', () => {
     });
 
     test.each(['off', 'OFF', '0', 'false'])(
+      'SEC-AUTH-039 旗が %s でも、結び付きを必ず求める呼び方（第2引数 true）は is_app_session_active で確かめ、結び付いていない session は revoked',
+      async (flag) => {
+        process.env.AUTH_REQUIRE_APP_SESSION = flag;
+        rpcMock.mockImplementation(async (name: string) => ({ data: name === 'is_auth_session_active', error: null }));
+
+        const forced = await mod.checkAuthSessionLiveness('session-forced', true);
+        const plain = await mod.checkAuthSessionLiveness('session-plain');
+
+        expect(forced).toBe('revoked');
+        expect(rpcMock).toHaveBeenCalledWith('is_app_session_active', { p_session_id: 'session-forced' });
+        expect(plain).toBe('active');
+        expect(rpcMock).toHaveBeenCalledWith('is_auth_session_active', { p_session_id: 'session-plain' });
+      },
+    );
+
+    test.each(['off', 'OFF', '0', 'false'])(
       'DD-AUTH-039 旗が %s なら、従来の is_auth_session_active で確かめる',
       async (flag) => {
         process.env.AUTH_REQUIRE_APP_SESSION = flag;
