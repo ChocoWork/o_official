@@ -29,7 +29,7 @@ export async function ensureOwnerRowId(
   owner: ShoppingOwnerRef,
 ): Promise<string> {
   const { column, value } = ownerColumn(owner);
-  const { error } = await supabase.from(table).upsert({ [column]: value }, { onConflict: column, ignoreDuplicates: true });
+  const { error } = await supabase.from(table).upsert({ [column]: value } as never, { onConflict: column, ignoreDuplicates: true });
   if (error) {
     throw error;
   }
