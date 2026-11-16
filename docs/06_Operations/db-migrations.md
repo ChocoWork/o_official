@@ -65,7 +65,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 
 - 止めたもの: `.github/workflows/db-migrations.yml` の `on:` から `push:` を消した。master に push しても、本番への移行の適用は動かない。`pull_request`（`supabase db push --dry-run` だけ。DB は変えない）と `workflow_dispatch` は残る。`deploy` の job は `if: github.event_name == 'workflow_dispatch'` の時だけ動く（手動の入口は残すが、使わない決まり）。
 - 理由: `supabase db push` は未適用の移行を全部流す。パスキーの段1a の移行（`passkey` を含む5本）を、段3より前に push だけで本番へ当てないため。本番に当てると、パスキーを有効にするまでだれも管理の権限を持てなくなる。
-- 本番へ当てる決まり: 調整役だけが、オーナーの許可を得て、Supabase の MCP の `apply_migration` を1本ずつ呼ぶ。`name` はファイル名から版（先頭の時刻と `_`）を除いた部分にする。版は当てた時刻で付くので、当てた後にファイル名をその版に直す。当てた後、`schema_migrations` の `md5(statements[1])` を読んでファイルと突き合わせる。`apply_migration` は当てた時刻で版を付け直すので、当てた後にファイル名を当てた版に合わせて変える。
+- 本番へ当てる決まり: 調整役だけが、オーナーの許可を得て、Supabase の MCP の `apply_migration` を1本ずつ呼ぶ。`name` はファイル名から版（先頭の時刻と `_`）を除いた部分にする。版は当てた時刻で付くので、当てた後にファイル名をその版に直す。当てた後、`schema_migrations` の `md5(statements[1])` を読んでファイルと突き合わせる。
 - 動かさないもの: `supabase db push`（どの形でも）と、GitHub の `workflow_dispatch`。どちらも未適用の移行を全部流す。
 - 戻す時: パスキーの段3の後。`on:` に `push:`（`branches`・`paths`）を戻し、`deploy` の `if` を元の `github.event_name != 'pull_request'` に戻す。戻す前に、本番に未適用の移行が残っていないことを確かめる。
 - 試験: `tests/unit/ci/db-migrations-workflow.test.ts` が、`push:` が無いこと・`workflow_dispatch` と `pull_request` が残ること・`deploy` が手動の時だけ動くことを確かめる。

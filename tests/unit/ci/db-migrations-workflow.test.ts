@@ -7,7 +7,6 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // js-yaml には型の宣言が無い（@types を足さない）ので、必要な形だけ書いて読み込む。
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { load } = require('js-yaml') as { load: (text: string) => unknown };
 
 type Step = { run?: string };
@@ -22,7 +21,7 @@ const doc = load(
 const triggers = (doc.on ?? doc.true ?? {}) as Record<string, unknown>;
 
 const runsRealDbPush = (job: Job) =>
-  (job.steps ?? []).some((s) => /supabase db push(?!\S*\s+--dry-run)(?![^\n]*--dry-run)/.test(s.run ?? ''));
+  (job.steps ?? []).some((s) => /supabase db push(?![^\n]*--dry-run)/.test(s.run ?? ''));
 
 describe('db-migrations workflow', () => {
   it('引き金は pull_request と workflow_dispatch だけ（push が無い）', () => {
