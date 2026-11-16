@@ -188,6 +188,8 @@ minimum_password_length = 16
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
 password_requirements = ""
 
+# Local only. Do NOT run `supabase config push` to production: the RP below is localhost and the hook function below does not exist in production.
+# (Production passkey settings are set in stage 3; see docs/06_Operations/supabase-auth-config.md.)
 # Configure passkey sign-ins.
 [auth.passkey]
 enabled = true
@@ -301,6 +303,7 @@ max_frequency = "5s"
 # uri = "pg-functions://postgres/auth/before-user-created-hook"
 
 # This hook runs before a token is issued and allows you to add additional claims based on the authentication method used.
+# Local only: do NOT `config push` to production (public.passkey_access_token_hook does not exist there, so every login would stop).
 # Passkey stage 1a (ADR-0464): rejects staff who did not enter with a fresh passkey. Taking it in needs supabase stop and start.
 [auth.hook.custom_access_token]
 enabled = true

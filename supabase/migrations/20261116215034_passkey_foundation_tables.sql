@@ -31,7 +31,7 @@
 --   public.passkey_window_open(user, session)         checks auth.sessions; returns expires_at (existing one if open)
 --   public.passkey_window_close(session)
 --   public.passkey_window_is_open(user, session)
---   public.passkey_approved_count(user)               counts only approvals whose key still exists for that user with the same credential_id (a replaced key is not counted)
+--   public.passkey_approved_count(user)               counts only approvals whose key still exists for that user with the same credential_id (a key whose credential_id was replaced is not counted; the id and user_id must also match)
 --   public.passkey_* : execute for service_role only.
 --
 -- ROLLBACK (reverse order; run in one transaction, only when nothing uses them yet):

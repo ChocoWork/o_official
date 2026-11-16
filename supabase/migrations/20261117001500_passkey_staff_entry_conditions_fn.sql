@@ -41,7 +41,6 @@ BEGIN
   IF claims IS NULL OR jsonb_typeof(claims) <> 'object' OR jsonb_typeof(claims -> 'amr') <> 'array' THEN
     RETURN false;
   END IF;
-  v_max := (private.passkey_staff_settings() ->> 'staff_max_session_seconds')::numeric;
   SELECT max(t.ts) INTO v_ts
     FROM (
       SELECT CASE WHEN jsonb_typeof(e -> 'timestamp') = 'number' THEN (e -> 'timestamp')::numeric END AS ts
@@ -49,7 +48,12 @@ BEGIN
        WHERE jsonb_typeof(e) = 'object' AND e ->> 'method' = 'passkey'
     ) t
    WHERE t.ts IS NOT NULL AND t.ts = trunc(t.ts);
-  IF v_ts IS NULL OR v_max IS NULL THEN
+  IF v_ts IS NULL THEN
+    RETURN false;
+  END IF;
+  -- settings are read only when a passkey element exists (customers have none, so they never reach the settings read)
+  v_max := (private.passkey_staff_settings() ->> 'staff_max_session_seconds')::numeric;
+  IF v_max IS NULL THEN
     RETURN false;
   END IF;
   v_now := floor(extract(epoch FROM now()));

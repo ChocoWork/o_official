@@ -59,9 +59,16 @@ export function mockApprovedCount(
     name === 'passkey_approved_count' ? { data: count, error: null } : { data: null, error: null });
 }
 
+/** JSON の文字をそのまま出す数（`1.0` など。JSON.stringify が整数に直さない）。DB 結合の試験だけが使う。 */
+export function rawJsonNumber(text: string): unknown {
+  return (JSON as unknown as { rawJSON: (value: string) => unknown }).rawJSON(text);
+}
+
 export type AmrCase = {
   name: string;
   claims: unknown;
+  /** DB 結合の試験が使う claims。JSON の文字が JS の値と違う場合（`1794861306.0` など）だけ指す。無ければ claims を使う。 */
+  dbClaims?: unknown;
   /** DB の `staff_passkey_amr_ok` の期待（条件1・2） */
   amrOk: boolean;
   /** TS の `evaluateStaffEntry` の理由（本数は足りている前提） */
@@ -97,6 +104,10 @@ export function amrCases(now: number): AmrCase[] {
     c('timestamp が無い', [{ method: 'passkey' }], false, 'no_passkey'),
     c('timestamp が null', [pk(null)], false, 'no_passkey'),
     c('timestamp が小数', [pk(now - 0.5)], false, 'no_passkey'),
+    c('timestamp が .5 の小数は断る', [pk(now + 0.5)], false, 'no_passkey'),
+    // JSON の文字が `<now>.0` の整数値は通す（JS では整数、DB の3か所とも同じ）。DB 結合の試験だけ、文字のとおり `.0` を送る
+    { name: 'timestamp が .0 の整数値は通す', claims: { amr: [pk(now)] },
+      dbClaims: { amr: [pk(rawJsonNumber(`${now}.0`))] }, amrOk: true },
     c('method の大文字小文字違い', [{ method: 'Passkey', timestamp: now }], false, 'no_passkey'),
     { name: 'amr の欄が無い', claims: {}, amrOk: false, reason: 'no_passkey' },
     { name: 'claims が null', claims: null, amrOk: false, reason: 'no_passkey' },

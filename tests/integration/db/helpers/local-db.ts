@@ -41,9 +41,10 @@ export function describeLocalDb(name: string, body: (getClient: () => PgClient) 
       return;
     }
 
+    // body が getClient を受け取らない場合（自分で別の役の接続を開く試験）は、共有の接続を開かない
     let client: PgClient;
     beforeAll(async () => {
-      client = await connectLocalDb();
+      if (body.length > 0) client = await connectLocalDb();
     });
     afterAll(async () => {
       if (client) await client.end();

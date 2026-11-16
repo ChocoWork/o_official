@@ -1,6 +1,7 @@
 /** @jest-environment node */
 import { randomBytes, randomUUID } from 'node:crypto';
 import { LOCAL_DATABASE_URL, describeLocalDb, type PgClient } from './helpers/local-db';
+import { rawJsonNumber } from '../../unit/helpers/staff-claims';
 
 const { Client } = require('pg');
 
@@ -122,6 +123,16 @@ describeLocalDb('passkey access token hook function', () => {
       }
       isReject(await hook(ev(u, 'passkey', { amr: [{ method: 'passkey' }] })));
       isReject(await hook(ev(u, 'passkey', { amr: [{ method: 'otp', timestamp: n }] })));
+    });
+
+    test('DATA-AUTH-013 an integral timestamp written as <n>.0 passes and <n>.5 is rejected (same as staff_passkey_amr_ok and TS)', async () => {
+      const u = await user('admin');
+      await approvedKeys(u, 2);
+      const n = await nowEpoch();
+      const ok = await hook(ev(u, 'passkey', { amr: passkeyAmr(rawJsonNumber(`${n}.0`)) }));
+      expect(ok.error).toBeUndefined();
+      expect(ok.claims.staff_passkeys_ok).toBe(true);
+      isReject(await hook(ev(u, 'passkey', { amr: passkeyAmr(rawJsonNumber(`${n}.5`)) })));
     });
 
     test('DATA-AUTH-013 staff_passkeys_ok is true with 2 approved keys and false with 1 or 0', async () => {

@@ -2,6 +2,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { LOCAL_DATABASE_URL, describeLocalDb, type PgClient } from './helpers/local-db';
 import { amrCases } from '../../unit/helpers/staff-claims';
+import { defaultStaffPasskeySettings } from '@/lib/auth/staff-passkey-defaults';
 
 const { Client } = require('pg');
 
@@ -52,7 +53,7 @@ describeLocalDb('passkey staff entry condition functions', () => {
   test('DATA-AUTH-016 条件1・2は TS と同じ値の表のとおりに判定する', async () => {
     const now = await nowEpoch();
     for (const c of amrCases(now)) {
-      expect({ name: c.name, ok: await amrOk(c.claims) }).toEqual({ name: c.name, ok: c.amrOk });
+      expect({ name: c.name, ok: await amrOk(c.dbClaims ?? c.claims) }).toEqual({ name: c.name, ok: c.amrOk });
     }
   });
 
@@ -116,6 +117,18 @@ describeLocalDb('passkey staff entry condition functions', () => {
     expect(await entryOk(u, { amr: [{ method: 'passkey', timestamp: now - 86401 }] })).toBe(false);
     expect(await entryOk(u, { amr: [{ method: 'otp', timestamp: now }] })).toBe(false);
     expect(await entryOk(await user(), { amr: [{ method: 'passkey', timestamp: now }] })).toBe(false);
+  });
+
+  test('DATA-AUTH-016 設定の行は TS の初めの値（defaultStaffPasskeySettings）と同じ（API は TS の定数、DB は行を使うので、ずれると3か所の判定が割れる）', async () => {
+    const d = defaultStaffPasskeySettings();
+    const r = await db().query('select private.passkey_staff_settings() as s');
+    expect(r.rows[0].s).toMatchObject({
+      staff_max_session_seconds: d.staffMaxSessionSeconds,
+      staff_idle_seconds: d.staffIdleSeconds,
+      window_minutes: d.windowMinutes,
+      min_approved_passkeys: d.minApprovedPasskeys,
+      reject_customer_password: d.rejectCustomerPassword,
+    });
   });
 
   test('DATA-AUTH-016 24時間と本数は設定の表から読む（表を変えると判定が変わる）', async () => {

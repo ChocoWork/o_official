@@ -15,7 +15,7 @@
 --   subject_email is copied from auth.users.email when notify_subject is true.
 --
 -- NOT covered (SEC-AUTH-038): TRUNCATE, DISABLE TRIGGER, session_replication_role = replica, a failing outbox write
---   (WARNING only), a cloned credential detected by GoTrue. The approved count also checks auth.webauthn_credentials (same id, user and credential_id, so a replaced key is not counted).
+--   (WARNING only), a cloned credential detected by GoTrue. The approved count also checks auth.webauthn_credentials (same id, user and credential_id, so an approval whose credential_id no longer matches is not counted).
 -- NOT verified: whether production lets postgres create this trigger, and whether a GoTrue update drops it
 --   (design 8-2 item 3). Check before production: select has_table_privilege('postgres','auth.webauthn_credentials','TRIGGER');
 --

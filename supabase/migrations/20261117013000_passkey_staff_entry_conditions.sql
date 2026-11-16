@@ -22,6 +22,8 @@
 -- BEFORE applying to production (read only; NOT applied to production until stage 1b and 3 are done):
 --   select md5(pg_get_functiondef('public.has_permission(text)'::regprocedure));   -- expect the md5 above
 --   select to_regprocedure('private.staff_passkey_amr_ok(jsonb)'), to_regprocedure('private.staff_passkey_count_ok(uuid)');   -- expect not null (migration D)
+-- The migration itself stops (PASSKEY_MIGRATION_PRECHECK_FAILED) when the has_permission md5 differs from the value above, and when active
+-- staff exist but none of them has the required number of approved keys (never `db push` while these migrations are in supabase/migrations).
 -- Applying this before the passkey entry is usable means nobody holds an admin permission (every staff JWT lacks the passkey amr).
 --
 -- ROLLBACK: CREATE OR REPLACE FUNCTION public.has_permission with the body of 20261029120100_sec_has_permission_aal2_member_rls.sql
@@ -37,6 +39,44 @@ BEGIN
   END IF;
 END
 $passkey_entry_precheck$;
+
+-- Baseline check (M-4): the has_permission being replaced must be the one this migration was written against (the aal2 body of
+-- 20261029120100). If someone changed it since, stop instead of silently overwriting that change.
+DO $passkey_entry_baseline$
+BEGIN
+  IF pg_catalog.md5(pg_catalog.pg_get_functiondef('public.has_permission(text)'::regprocedure)) <> '61536a72ff10e073a731a903ed6acd10' THEN
+    RAISE EXCEPTION 'PASSKEY_MIGRATION_PRECHECK_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_entry_switch_baseline';
+  END IF;
+END
+$passkey_entry_baseline$;
+
+-- Lock-out guard (I-2): stop when at least one active staff member (admin or supporter in user_roles) exists and none of them has
+-- min_approved_passkeys approved keys. Applying this switch then would lock every staff member out of RLS. Locally, db reset runs the
+-- migrations before the seed, so user_roles is empty and the guard passes.
+DO $passkey_entry_staff_guard$
+BEGIN
+  IF EXISTS (
+       SELECT 1
+       FROM public.user_roles ur
+       JOIN public.roles r ON r.id = ur.role_id
+       WHERE r.code IN ('admin', 'supporter')
+         AND ur.active = true
+         AND (ur.expires_at IS NULL OR ur.expires_at > now())
+     )
+     AND NOT EXISTS (
+       SELECT 1
+       FROM public.user_roles ur
+       JOIN public.roles r ON r.id = ur.role_id
+       WHERE r.code IN ('admin', 'supporter')
+         AND ur.active = true
+         AND (ur.expires_at IS NULL OR ur.expires_at > now())
+         AND public.passkey_approved_count(ur.user_id)
+             >= (private.passkey_staff_settings() ->> 'min_approved_passkeys')::integer
+     ) THEN
+    RAISE EXCEPTION 'PASSKEY_MIGRATION_PRECHECK_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_entry_switch_no_ready_staff';
+  END IF;
+END
+$passkey_entry_staff_guard$;
 
 CREATE OR REPLACE FUNCTION public.has_permission (
   permission_code text

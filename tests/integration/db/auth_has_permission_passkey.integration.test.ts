@@ -1,4 +1,6 @@
 /** @jest-environment node */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
 import { createLiveAppSession, jwtClaims, seedApprovedPasskeys } from './helpers/app-session';
@@ -152,7 +154,7 @@ describeLocalDb('integration: has_permission の管理の入口の3条件と結�
       const admin = await insertUser('admin');
       const session = await createLiveAppSession(db(), admin);
       const claims: Claims = { ...jwtClaims(admin, session) };
-      const given = amrCase.claims as { amr?: unknown };
+      const given = (amrCase.dbClaims ?? amrCase.claims) as { amr?: unknown };
       if ('amr' in given) claims.amr = given.amr;
       else delete claims.amr;
 
@@ -372,5 +374,75 @@ describeLocalDb('integration: has_permission の管理の入口の3条件と結�
     expect(await allowed({ sub: member, role: 'authenticated', aal: 'aal1', session_id: randomUUID() })).toBe(false);
     const outcome = await attempt('authenticated', { sub: member, role: 'authenticated', aal: 'aal1' }, "select public.has_permission('admin.items.read') as value");
     expect(outcome).toMatchObject({ rows: [{ value: false }] });
+  });
+
+  // 移行 E の前の確かめ（本番に当てる時の締め出しの防止）。移行ファイルの DO ブロックをそのまま取り出して流す
+  describe('移行 E の前の確かめ（締め出しの防止・土台の本体の一致）', () => {
+    const migration = readFileSync(
+      join(process.cwd(), 'supabase', 'migrations', '20261117013000_passkey_staff_entry_conditions.sql'),
+      'utf8',
+    );
+    const block = (tag: string): string => {
+      const found = new RegExp(`DO \\$${tag}\\$[\\s\\S]*?\\$${tag}\\$;`).exec(migration);
+      if (!found) throw new Error(`移行に DO ブロックが無い: ${tag}`);
+      return found[0];
+    };
+    const run = async (sql: string): Promise<string | null> => {
+      await db().query('savepoint guard');
+      try {
+        await db().query(sql);
+        return null;
+      } catch (caught) {
+        return (caught as { message?: string }).message ?? 'unknown';
+      } finally {
+        await db().query('rollback to savepoint guard');
+      }
+    };
+    const GUARD = 'passkey_entry_staff_guard';
+    // 取引の中だけで、いまいる店員を外した扱いにする（取引は afterEach で巻き戻る）
+    const noStaff = () => db().query(
+      "update public.user_roles set active = false where role_id in (select id from public.roles where code in ('admin','supporter'))",
+    );
+
+    test('DATA-AUTH-008 ⑭有効な店員がいなければ（手元の db reset と同じ空の状態）前の確かめは通る', async () => {
+      await noStaff();
+      expect(await run(block(GUARD))).toBeNull();
+    });
+
+    test('DATA-AUTH-008 ⑭有効な店員がいて、認めた鍵が足りる店員が1人もいなければ PASSKEY_MIGRATION_PRECHECK_FAILED で止まる（0本）', async () => {
+      await noStaff();
+      await insertUser('admin');
+      expect(await run(block(GUARD))).toBe('PASSKEY_MIGRATION_PRECHECK_FAILED');
+    });
+
+    test('DATA-AUTH-008 ⑭店員が認めた鍵1本だけ（足りない）でも止まる。supporter でも同じ', async () => {
+      await noStaff();
+      const supporter = await insertUser('supporter');
+      await seedApprovedPasskeys(db(), supporter, 1);
+      expect(await run(block(GUARD))).toBe('PASSKEY_MIGRATION_PRECHECK_FAILED');
+    });
+
+    test('DATA-AUTH-008 ⑭認めた鍵が足りる店員が1人でもいれば通る（ほかに0本の店員がいても）', async () => {
+      await noStaff();
+      await insertUser('admin');
+      const ready = await insertUser('admin');
+      await seedApprovedPasskeys(db(), ready, 2);
+      expect(await run(block(GUARD))).toBeNull();
+    });
+
+    test('DATA-AUTH-008 ⑭外した店員（active=false）と会員だけなら、鍵が0本でも通る', async () => {
+      await noStaff();
+      const gone = await insertUser('admin');
+      await db().query('update public.user_roles set active = false where user_id = $1', [gone]);
+      await insertUser(null);
+      expect(await run(block(GUARD))).toBeNull();
+    });
+
+    test('DATA-AUTH-008 ⑭has_permission の本体が土台と違えば（移行 E の後の本体は違う）PASSKEY_MIGRATION_PRECHECK_FAILED で止まる。値を今の本体に合わせれば通る', async () => {
+      const baseline = block('passkey_entry_baseline');
+      expect(await run(baseline)).toBe('PASSKEY_MIGRATION_PRECHECK_FAILED');
+      const current = (await db().query("select md5(pg_get_functiondef('public.has_permission(text)'::regprocedure)) as m")).rows[0].m;
+      expect(await run(baseline.replace('61536a72ff10e073a731a903ed6acd10', current))).toBeNull();
+    });
   });
 });

@@ -102,12 +102,14 @@ BEGIN
      AND jsonb_typeof(v_claims) = 'object'
      AND jsonb_typeof(v_claims -> 'amr') = 'array' THEN
     v_now := floor(extract(epoch FROM now()));
-    SELECT max((e ->> 'timestamp')::numeric) INTO v_ts
-      FROM jsonb_array_elements(v_claims -> 'amr') AS e
-     WHERE jsonb_typeof(e) = 'object'
-       AND e ->> 'method' = 'passkey'
-       AND jsonb_typeof(e -> 'timestamp') = 'number'
-       AND (e ->> 'timestamp') ~ '^[0-9]+$';
+    -- the timestamp must be a JSON number holding an integer (1794861306 and 1794861306.0 pass, 1794861306.5 does not): same as staff_passkey_amr_ok and TS
+    SELECT max(t.ts) INTO v_ts
+      FROM (
+        SELECT CASE WHEN jsonb_typeof(e -> 'timestamp') = 'number' THEN (e -> 'timestamp')::numeric END AS ts
+          FROM jsonb_array_elements(v_claims -> 'amr') AS e
+         WHERE jsonb_typeof(e) = 'object' AND e ->> 'method' = 'passkey'
+      ) t
+     WHERE t.ts IS NOT NULL AND t.ts = trunc(t.ts);
     IF v_ts IS NOT NULL AND v_ts <= v_now + 60 AND v_now - v_ts <= v_max THEN
       -- staff_passkeys_ok is only a hint: if counting fails, say false and still let the fresh passkey through.
       BEGIN
