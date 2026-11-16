@@ -12,9 +12,9 @@
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の AUTH |
 | 対応する ID | FR-AUTH-007、FR-AUTH-008、SEC-AUTH-036、SEC-AUTH-037、THR-AUTH-036、THR-AUTH-037、DATA-AUTH-011、DATA-AUTH-012、DATA-AUTH-013、DD-AUTH-043、DD-AUTH-044 |
-| 対象のコード | 移行 `supabase/migrations/20261116215034_passkey_foundation_tables.sql`、`src/lib/auth/staff-passkey-defaults.ts` |
+| 対象のコード | 移行 `supabase/migrations/20261116215034_passkey_foundation_tables.sql`・`20261116230000_passkey_access_token_hook.sql`、`src/lib/auth/staff-passkey-defaults.ts`・`staff-passkey-reject.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-2・5-5・6-2・12 の18）、[計画](../../superpowers/plans/2026-11-16-passkey-stage1a-foundation.md)、[手元の試しの結果](../../superpowers/specs/2026-11-16-passkey-local-trial-results.md) |
-| 試験 | DB 結合 `tests/integration/db/auth_passkey_foundation.integration.test.ts`、単体 `tests/unit/lib/auth/staff-passkey-defaults.test.ts`、E2E `e2e/FR-LOGIN-041-passkey-foundation-grants.spec.ts` |
+| 試験 | DB 結合 `tests/integration/db/auth_passkey_foundation.integration.test.ts`、単体 `tests/unit/lib/auth/staff-passkey-defaults.test.ts`、E2E `e2e/FR-LOGIN-041-passkey-foundation-grants.spec.ts`、DB 結合 `tests/integration/db/auth_passkey_access_token_hook.integration.test.ts`、単体 `tests/unit/lib/auth/staff-passkey-reject.test.ts`、E2E `e2e/FR-LOGIN-042-passkey-hook-function-grants.spec.ts` |
 | 調べた時点 | 2026-11-16（手元の Supabase で `db reset` の後に DB 結合を流した。E2E は書いただけで、調整役が流す） |
 
 ## 判断
@@ -68,7 +68,9 @@
 - フックは `public.passkey_access_token_hook(event jsonb)` の1本だけにする。店員の入口の判断（パスキー・24時間・窓）を、トークンを出す全部の道（ログイン時・更新時）で同じ関数が行う。アプリの窓口や別のフックに判断を分けない。処理は DD-AUTH-044、データは DATA-AUTH-013
 - 窓は案 B のまま、フックは窓の表を書かない（読むだけ）。窓で通すのは方法が `otp`・`token_refresh`・`passkey` の時だけにした（招待の入口とその更新）。`oauth`・`password`・未知の方法は窓があっても拒否する。窓の中のセッションは `amr` に `passkey` が付かないので、管理の入口（API と RLS）は通れない
 - `staff_passkeys_ok` は JWT に残すヒントで、判定には使わない（認めたパスキーの本数は API と RLS がその場で数える）。数え方は `public.passkey_approved_count` と同じで、フックはその関数を呼ぶ
-- お客さんの `password` の拒否は設定の旗 `reject_customer_password`（初めは偽）が真の時だけ。有効にするのは段4。それまではお客さんのログインを変えない
+- お客さんの `password` の拒否は設定の旗 `reject_customer_password`（初めは偽）が真の時だけ。有効にするのは段4。それまではお客さんのログインを変えない。拒否の文の印は店員と別の `[customer-password-disabled]`（403）にする。店員の印と同じだと、アプリがお客さんを「店員はパスキーで」の画面に送ってしまうため。`isStaffPasskeyRequiredError` はこの印では偽
+- 「店員」は `user_roles` で有効（`active` で期限切れでない）な、役割の code が `admin` か `supporter` の人と決める。今の `has_permission` と合う理由: `user` の役割は権限が0件で、`admin_set_role_permissions` は他の役割への権限の付与を断る（`admin`・`supporter` 以外は権限を持たない）ので、「権限を持つ人」と「admin・supporter」は今は同じ集合になる。フックは役割の code で決め、権限の表は読まない。なお `has_permission` は、Task 8・9 で、`amr` の `passkey`・24時間・認めたパスキー2本の3つ（API と RLS）を求めるように変わるので、フックが通した店員でも、窓の中のセッションなど `amr` に `passkey` が無ければ管理の入口は通れない
+- `staff_passkeys_ok` を数える関数が例外を出した時は、偽にして新しいパスキーの店員は通す（ヒントの失敗でログインを止めない）
 - 失敗の倒し方: 例外は投げない。お客さんと判った後の失敗は入力を返し、店員の失敗と、店員かどうか判らない失敗（`user_id` が無い・不正）は拒否する。「判らなければお客さん扱いで通す」を避ける
 - 拒否の印: 文の頭に `[staff-passkey-required]` を付け、HTTP 403（GoTrue は `code: unknown` で返す）。アプリは `isStaffPasskeyRequiredError`（`src/lib/auth/staff-passkey-reject.ts`）で見分ける。印は DB の関数と TS で同じ文字列で、単体テストが移行の文と一致を確かめる
 - 権限: `execute` は `supabase_auth_admin` だけ（`public`・`anon`・`authenticated`・`service_role` から外す）。表の `select` は渡さない。関数が持ち主 `postgres` の権限で読む

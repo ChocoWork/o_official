@@ -75,6 +75,12 @@ describeLocalDb('passkey access token hook function', () => {
     ...(claims === undefined ? {} : { claims }),
   });
   const passkeyAmr = (ts: unknown) => [{ method: 'passkey', timestamp: ts }];
+  const CUSTOMER_MARKER = '[customer-password-disabled]';
+  const isCustomerReject = (r: any) => {
+    expect(r?.error?.http_code).toBe(403);
+    expect(String(r.error.message).startsWith(CUSTOMER_MARKER)).toBe(true);
+    expect(String(r.error.message)).not.toContain(MARKER);
+  };
   const isReject = (r: any) => {
     expect(r?.error?.http_code).toBe(403);
     expect(String(r.error.message).startsWith(MARKER)).toBe(true);
@@ -162,14 +168,46 @@ describeLocalDb('passkey access token hook function', () => {
       expect(refreshed.claims.staff_passkeys_ok).toBe(false);
     });
 
-    test('DATA-AUTH-013 the hook does not write the window table', async () => {
+    // Reads the window rows INSIDE the savepoint, before the rollback, so a row the hook inserted or changed is seen.
+    async function hookAndWindows(event: unknown, userId: string): Promise<{ out: any; windows: any[] }> {
+      await db().query('savepoint hw');
+      try {
+        await db().query('set local role supabase_auth_admin');
+        const r = await db().query('select public.passkey_access_token_hook($1::jsonb) as r', [JSON.stringify(event)]);
+        await db().query('reset role');
+        const w = await db().query(
+          'select * from private.passkey_registration_windows where user_id = $1 order by id', [userId]);
+        return { out: r.rows[0].r, windows: w.rows };
+      } finally {
+        await db().query('rollback to savepoint hw');
+      }
+    }
+
+    test('DATA-AUTH-013 the hook does not write the window table (rows read inside the savepoint)', async () => {
       const u = await user('admin');
       const s = await session(u);
+      const noWindow = await session(u);
       await db().query('select public.passkey_window_open($1,$2)', [u, s]);
-      const before = (await db().query('select * from private.passkey_registration_windows where session_id = $1', [s])).rows;
-      await hook(ev(u, 'otp', { amr: [], session_id: s }));
-      const after = (await db().query('select * from private.passkey_registration_windows where session_id = $1', [s])).rows;
-      expect(after).toEqual(before);
+      const before = (await db().query('select * from private.passkey_registration_windows where user_id = $1 order by id', [u])).rows;
+      expect(before).toHaveLength(1);
+      const passed = await hookAndWindows(ev(u, 'otp', { amr: [], session_id: s }), u);
+      expect(passed.out.error).toBeUndefined();
+      expect(passed.windows).toEqual(before);
+      const rejected = await hookAndWindows(ev(u, 'otp', { amr: [], session_id: noWindow }), u);
+      isReject(rejected.out);
+      expect(rejected.windows).toEqual(before);
+    });
+
+    test('DATA-AUTH-013 the window probe sees a write (a hook that inserted a window would fail the test above)', async () => {
+      const u = await user('admin');
+      const s = await session(u);
+      await db().query(
+        `create or replace function public.passkey_access_token_hook(event jsonb) returns jsonb language plpgsql security definer set search_path = ''
+         as $$ begin insert into private.passkey_registration_windows (user_id, session_id, expires_at)
+           values ((event->>'user_id')::uuid, (event->'claims'->>'session_id')::uuid, now() + interval '1 minute'); return event; end $$`,
+      );
+      const r = await hookAndWindows(ev(u, 'otp', { amr: [], session_id: s }), u);
+      expect(r.windows).toHaveLength(1);
     });
 
     test('DATA-AUTH-013 a closed window, an expired window, another session and another user window are rejected', async () => {
@@ -209,6 +247,20 @@ describeLocalDb('passkey access token hook function', () => {
     });
   });
 
+  describe('the count is only a hint', () => {
+    test('DATA-AUTH-013 when counting approved passkeys raises, a fresh passkey still passes with staff_passkeys_ok false', async () => {
+      const u = await user('admin');
+      await approvedKeys(u, 2);
+      await db().query(
+        `create or replace function public.passkey_approved_count(p_user_id uuid) returns integer language plpgsql
+         as $$ begin raise exception 'forced count failure'; end $$`,
+      );
+      const out = await hook(ev(u, 'passkey', { amr: passkeyAmr(await nowEpoch()) }));
+      expect(out.error).toBeUndefined();
+      expect(out.claims.staff_passkeys_ok).toBe(false);
+    });
+  });
+
   describe('who counts as staff', () => {
     test('DATA-AUTH-013 an inactive, expired or role-less user is not staff', async () => {
       const notActive = await user('admin', { active: false });
@@ -233,7 +285,7 @@ describeLocalDb('passkey access token hook function', () => {
       const input = ev(u, 'password', { aal: 'aal1', amr: [{ method: 'password', timestamp: 1 }] });
       expect(await hook(input)).toEqual(input);
       await db().query('update private.passkey_staff_config set reject_customer_password = true');
-      isReject(await hook(input));
+      isCustomerReject(await hook(input));
       const otp = ev(u, 'otp', { amr: [] });
       expect(await hook(otp)).toEqual(otp);
     });
@@ -304,11 +356,14 @@ describeLocalDb('passkey access token hook function', () => {
       isReject(await hook({ user_id: staff, authentication_method: { a: 1 }, claims: {} }));
     });
 
-    test('DATA-AUTH-013 when the settings row is gone a staff user is rejected and a customer passes', async () => {
+    test('DATA-AUTH-013 when the settings row is gone a staff user with a passkey is rejected, a customer passes, and an open window still passes', async () => {
       const staff = await user('admin');
       const customer = await user();
+      const s = await session(staff);
+      await db().query('select public.passkey_window_open($1,$2)', [staff, s]);
       await db().query('delete from private.passkey_staff_config');
       isReject(await hook(ev(staff, 'passkey', { amr: passkeyAmr(await nowEpoch()) })));
+      expect((await hook(ev(staff, 'otp', { amr: [], session_id: s }))).claims.staff_passkeys_ok).toBe(false);
       const c = ev(customer, 'passkey', { amr: [] });
       expect(await hook(c)).toEqual(c);
     });

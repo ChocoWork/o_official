@@ -2118,7 +2118,7 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2）、`docs/superpowers/specs/2026-11-16-passkey-local-trial-results.md`（T1・T2）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 5） |
 | 優先度 | MUST |
 
-店員は `user_roles` で有効（`active` で期限切れでない）な admin・supporter。結果は、(1) 方法が `passkey` か `token_refresh` で、`amr` の `passkey` の数の `timestamp` から `staff_max_session_seconds`（86400）秒以内なら通し、`staff_passkeys_ok`（認めたパスキーが2本以上か。ヒントで、判定には使わない）を足す。(2) 方法が `otp`・`token_refresh`・`passkey` で、`claims.session_id` と `user_id` の両方が同じ開いた窓があれば通す（`staff_passkeys_ok` は偽）。(3) それ以外の店員は拒否（HTTP 403・文の頭に `[staff-passkey-required]`）。お客さんは、方法が `password` で設定の旗 `reject_customer_password` が真の時だけ拒否し、それ以外は入力をそのまま返す。どんな入力でも例外を投げず、店員を判定できない時は拒否する。フックは窓の表を書かない。段1aでは `config.toml` で有効にしない（Task 9）。
+店員は `user_roles` で有効（`active` で期限切れでない）な admin・supporter。結果は、(1) 方法が `passkey` か `token_refresh` で、`amr` の `passkey` の数の `timestamp` から `staff_max_session_seconds`（86400）秒以内なら通し、`staff_passkeys_ok`（認めたパスキーが2本以上か。ヒントで、判定には使わない）を足す。(2) 方法が `otp`・`token_refresh`・`passkey` で、`claims.session_id` と `user_id` の両方が同じ開いた窓があれば通す（`staff_passkeys_ok` は偽）。(3) それ以外の店員は拒否（HTTP 403・文の頭に `[staff-passkey-required]`）。お客さんは、方法が `password` で設定の旗 `reject_customer_password` が真の時だけ、別の印 `[customer-password-disabled]` で拒否し（店員の印と分ける）、それ以外は入力をそのまま返す。どんな入力でも例外を投げず、店員を判定できない時は拒否する。フックは窓の表を書かない。段1aでは `config.toml` で有効にしない（Task 9）。
 
 ## 受け入れ条件
 
@@ -5744,7 +5744,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2）、`docs/superpowers/specs/2026-11-16-passkey-local-trial-results.md`（T1・T2）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 5）、OWASP ASVS 4.0.3 V4.1.3（当てはめは推定） |
 | 優先度 | MUST |
 
-守ること: (1) 関数は `EXCEPTION WHEN OTHERS` で受け、お客さんと判った後の失敗は入力をそのまま返し、店員の失敗と、店員かどうか判らない失敗（`user_id` が無い・不正）は拒否する。(2) `claims` が無い・`amr` が配列でない・`timestamp` が文字列・未来・86400秒を超える・方法が未知の店員は拒否する。(3) `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空で、`execute` は `supabase_auth_admin` だけに渡し、`public`・`anon`・`authenticated`・`service_role` から外す。表の `select` は渡さない。(4) 拒否の文の頭に `[staff-passkey-required]` を付け、アプリが言い回しに頼らず見分けられるようにする。(5) 本番へは段1bと段3が済むまで当てず、有効にする前の関数だけでは何も変わらないことを保つ。
+守ること: (1) 関数は `EXCEPTION WHEN OTHERS` で受け、お客さんと判った後の失敗は入力をそのまま返し、店員の失敗と、店員かどうか判らない失敗（`user_id` が無い・不正）は拒否する。(2) `claims` が無い・`amr` が配列でない・`timestamp` が文字列・未来・86400秒を超える・方法が未知の店員は拒否する。(3) `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空で、`execute` は `supabase_auth_admin` だけに渡し、`public`・`anon`・`authenticated`・`service_role` から外す。表の `select` は渡さない。(4) 店員の拒否の文の頭に `[staff-passkey-required]` を付け（お客さんの `password` の拒否は別の印 `[customer-password-disabled]`）、アプリが言い回しに頼らず見分けられるようにする。(5) 本番へは段1bと段3が済むまで当てず、有効にする前の関数だけでは何も変わらないことを保つ。
 
 ## 派生要件
 

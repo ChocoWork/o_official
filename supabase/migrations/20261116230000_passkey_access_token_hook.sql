@@ -11,7 +11,9 @@
 --     claims.session_id and user_id -> pass (staff_passkeys_ok false; amr has no fresh passkey, so the admin gate stops)
 --   staff, anything else (otp, oauth, password, stale passkey / refresh, closed window, unknown method) -> reject
 --     {"error":{"http_code":403,"message":"[staff-passkey-required] ..."}}
---   customer: rejected only when authentication_method = 'password' AND reject_customer_password; else event unchanged
+--   customer: rejected only when authentication_method = 'password' AND reject_customer_password, with its own marker
+--     "[customer-password-disabled]" (never the staff marker); else event unchanged
+--   if counting approved passkeys raises, staff_passkeys_ok is false (it is only a hint) and the fresh passkey still passes
 --   never raises: EXCEPTION WHEN OTHERS -> if the user was already known NOT to be staff, return the event;
 --     otherwise (staff, or staff could not be determined) reject. A staff user never passes by accident.
 -- The hook never writes the window table (plan B).
@@ -43,6 +45,9 @@ DECLARE
   c_reject CONSTANT jsonb := jsonb_build_object('error', jsonb_build_object(
     'http_code', 403,
     'message', '[staff-passkey-required] staff must sign in with a fresh passkey'));
+  c_reject_customer CONSTANT jsonb := jsonb_build_object('error', jsonb_build_object(
+    'http_code', 403,
+    'message', '[customer-password-disabled] password sign-in is no longer available'));
   v_uid uuid;
   v_method text;
   v_claims jsonb;
@@ -55,6 +60,7 @@ DECLARE
   v_ts numeric;
   v_sid uuid;
   v_window boolean := false;
+  v_ok boolean;
 BEGIN
   v_uid := (event ->> 'user_id')::uuid;
   v_method := event ->> 'authentication_method';
@@ -81,7 +87,7 @@ BEGIN
     v_customer_known := true;
     v_cfg := private.passkey_staff_settings();
     IF v_method = 'password' AND COALESCE((v_cfg ->> 'reject_customer_password')::boolean, false) THEN
-      RETURN c_reject;
+      RETURN c_reject_customer;
     END IF;
     RETURN event;
   END IF;
@@ -102,8 +108,13 @@ BEGIN
        AND jsonb_typeof(e -> 'timestamp') = 'number'
        AND (e ->> 'timestamp') ~ '^[0-9]+$';
     IF v_ts IS NOT NULL AND v_ts <= v_now AND v_now - v_ts <= v_max THEN
-      RETURN jsonb_set(event, '{claims,staff_passkeys_ok}',
-        to_jsonb(public.passkey_approved_count(v_uid) >= v_min));
+      -- staff_passkeys_ok is only a hint: if counting fails, say false and still let the fresh passkey through.
+      BEGIN
+        v_ok := public.passkey_approved_count(v_uid) >= v_min;
+      EXCEPTION WHEN OTHERS THEN
+        v_ok := false;
+      END;
+      RETURN jsonb_set(event, '{claims,staff_passkeys_ok}', to_jsonb(COALESCE(v_ok, false)));
     END IF;
   END IF;
 
@@ -156,6 +167,7 @@ BEGIN
     RAISE EXCEPTION 'PASSKEY_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_hook_acl';
   END IF;
   IF has_table_privilege('supabase_auth_admin', 'private.passkey_staff_config', 'SELECT')
+     OR has_table_privilege('supabase_auth_admin', 'private.passkey_notification_outbox', 'SELECT')
      OR has_table_privilege('supabase_auth_admin', 'private.approved_passkeys', 'SELECT')
      OR has_table_privilege('supabase_auth_admin', 'private.passkey_registration_windows', 'SELECT') THEN
     RAISE EXCEPTION 'PASSKEY_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_hook_table_acl';

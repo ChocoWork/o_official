@@ -18,6 +18,15 @@ describe('staff passkey reject helper', () => {
     expect(isStaffPasskeyRequiredError(undefined)).toBe(false);
   });
 
+  it('DD-AUTH-044 お客さんのパスワード拒否の印 [customer-password-disabled] は店員の拒否として扱わない', () => {
+    expect(isStaffPasskeyRequiredError({ status: 403, message: '[customer-password-disabled] password sign-in is no longer available' })).toBe(false);
+    const sql = readFileSync(
+      path.join(process.cwd(), 'supabase/migrations/20261116230000_passkey_access_token_hook.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("'[customer-password-disabled] ");
+  });
+
   it('DD-AUTH-044 印は移行のフックの拒否の文の頭と同じ', () => {
     const sql = readFileSync(
       path.join(process.cwd(), 'supabase/migrations/20261116230000_passkey_access_token_hook.sql'),

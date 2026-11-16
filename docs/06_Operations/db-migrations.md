@@ -86,15 +86,15 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 
 | 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
 | --- | --- | --- | --- |
-| `20261116230000_passkey_access_token_hook.sql` | 7337 bytes / `b5047223e3c90becafc736638221779c` | 本番未適用（手元の `db reset` で適用済み） | `public.passkey_access_token_hook(event jsonb)` を足す。店員をパスキーの新しいログインと窓の中のセッションだけに通し、それ以外の店員は拒否し、お客さんは素通し（`password` は旗が真の時だけ拒否） |
+| `20261116230000_passkey_access_token_hook.sql` | 8091 bytes / `69280d7efd002233a3918fc327d5c2ae` | 本番未適用（手元の `db reset` で適用済み） | `public.passkey_access_token_hook(event jsonb)` を足す。店員をパスキーの新しいログインと窓の中のセッションだけに通し、それ以外の店員は拒否し、お客さんは素通し（`password` は旗が真の時だけ拒否） |
 
 - 変えるもの: 関数を1本足すだけ。`supabase/config.toml` は触らないので、フックは呼ばれず、今のログインは変わらない（有効にするのは段1a の Task 9）
-- 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `5d5b0864200298d6838d3ebb249743bc`（本番に当てた後、これと突き合わせる）
+- 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `9b2618eb07a4f4071d566ffa8c3c3d72`（本番に当てた後、これと突き合わせる）
 - 前の確かめ: 移行 A の表・関数と `public.user_roles` が無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（SQLSTATE 55000）で止まる
-- 末尾の確かめ: 所有者 `postgres`・`SECURITY DEFINER`・`search_path` が空、`execute` が `supabase_auth_admin` だけ（`PUBLIC`・`anon`・`authenticated`・`service_role` に無い）、`supabase_auth_admin` が `private` の3つの表を `select` できない。失敗は `PASSKEY_MIGRATION_ASSERTION_FAILED`（DETAIL は項目名だけ）
+- 末尾の確かめ: 所有者 `postgres`・`SECURITY DEFINER`・`search_path` が空、`execute` が `supabase_auth_admin` だけ（`PUBLIC`・`anon`・`authenticated`・`service_role` に無い）、`supabase_auth_admin` が `private` の設定・認め・窓・知らせの4つの表を `select` できない。失敗は `PASSKEY_MIGRATION_ASSERTION_FAILED`（DETAIL は項目名だけ）
 - 戻し方（移行のヘッダーの ROLLBACK）: `DROP FUNCTION public.passkey_access_token_hook(jsonb);`。有効にする前なら他に影響しない。有効にした後は、先に `config.toml` のフックを外す
 - **本番へ当てない**: 段1b と段3が済むまで当てない（理由と当て方は移行 A と同じ。1本ずつ、オーナーの許可を得て、Supabase の MCP の `apply_migration`）。本番の Auth のフックの登録は、当てた後に別の手順で行う
-- 手元で確かめた結果（2026-11-16、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_access_token_hook.integration.test.ts` 35件通過（`supabase_auth_admin` の権限で呼ぶ）、`auth_passkey_foundation.integration.test.ts` は通過のまま。単体 `staff-passkey-reject.test.ts` 3件通過
+- 手元で確かめた結果（2026-11-16、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_access_token_hook.integration.test.ts` 37件通過（`supabase_auth_admin` の権限で呼ぶ）、`auth_passkey_foundation.integration.test.ts` は通過のまま。単体 `staff-passkey-reject.test.ts` 4件通過
 
 ## CI の引き金を止めた記録（2026-11-16）
 
