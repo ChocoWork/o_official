@@ -20,7 +20,8 @@ describe('staff passkey defaults', () => {
 
   it('DD-AUTH-043 TS の初めの値は移行の設定の表の既定値と同じ', () => {
     const d = defaultStaffPasskeySettings();
-    const column = (name: string) => new RegExp(name + ' (?:integer|boolean) NOT NULL DEFAULT ([a-z0-9]+)').exec(migration)?.[1];
+    const column = (name: string) =>
+      new RegExp(name + '\\s+(?:integer|boolean)\\s+NOT\\s+NULL\\s+DEFAULT\\s+([a-z0-9]+)', 'i').exec(migration)?.[1];
     expect(column('staff_max_session_seconds')).toBe(String(d.staffMaxSessionSeconds));
     expect(column('staff_idle_seconds')).toBe(String(d.staffIdleSeconds));
     expect(column('window_minutes')).toBe(String(d.windowMinutes));

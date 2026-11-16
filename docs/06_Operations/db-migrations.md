@@ -68,15 +68,15 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 
 | 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
 | --- | --- | --- | --- |
-| `20261116215034_passkey_foundation_tables.sql` | 11946 bytes / `26b74cc211eca81a0379e6f9e502238c` | 本番未適用（手元の `db reset` で適用済み） | `private` の4つの表（設定・認めたパスキー・登録の窓・知らせの予定）と、`private.passkey_staff_settings` と `public.passkey_approve`・`passkey_window_open`・`passkey_window_close`・`passkey_window_is_open`・`passkey_approved_count` を足す |
+| `20261116215034_passkey_foundation_tables.sql` | 13747 bytes / `efbffc236d7fa6753481c06b1a934f4a` | 本番未適用（手元の `db reset` で適用済み） | `private` の4つの表（設定・認めたパスキー・登録の窓・知らせの予定）と、`private.passkey_staff_settings` と `public.passkey_approve`・`passkey_window_open`・`passkey_window_close`・`passkey_window_is_open`・`passkey_approved_count` を足す |
 
 - 変えるもの: 表と関数を足すだけ。既存の挙動は変えない（呼ぶ物はまだ無い）
-- 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `b37296326cfb934498d82000463a9c51`（本番に当てた後、これと突き合わせる）
+- 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `1f344f8dfd221d64868ced0ddf602d0e`（本番に当てた後、これと突き合わせる）
 - 前の確かめ: `auth.webauthn_credentials` と `private` スキーマが無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（SQLSTATE 55000）で止まる
 - 末尾の確かめ: 4表の権限（`anon`・`authenticated` が無い・RLS が有効）、`public.passkey_*` の権限（`service_role` だけ・`SECURITY DEFINER`）、設定の表が1行。失敗は `PASSKEY_MIGRATION_ASSERTION_FAILED`（DETAIL は項目名だけ）
 - 戻し方（移行のヘッダーの ROLLBACK）: 1つの取引で、関数6本を落としてから表4つを落とす。まだ何も呼んでいない間だけ戻せる
 - **本番へ当てない**: 本番に当てると、パスキーを有効にするまでだれも管理の権限を持てない。段1b と段3が済むまで当てない。当てるのは調整役だけで、オーナーの許可を得て、Supabase の MCP の `apply_migration` を `name` をファイル名から版を除いた部分にして1本ずつ呼び、当てた後にファイルの名前を当てた版に直し、`md5(statements[1])` をファイルと突き合わせる（上の「CI の引き金を止めた記録」と同じ。`db push` と `workflow_dispatch` は動かさない）
-- 手元で確かめた結果（2026-11-16、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_foundation.integration.test.ts` 10件通過
+- 手元で確かめた結果（2026-11-16、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_foundation.integration.test.ts` 11件通過（持ち主・search_path の確かめと、同じ credential_id の古い認めの置き換えを足した）
 - `auth.webauthn_credentials` の列を `\d` で実測した（`credential_id` は `bytea`・一意）。移行のコメントにも書いた
 
 ## CI の引き金を止めた記録（2026-11-16）

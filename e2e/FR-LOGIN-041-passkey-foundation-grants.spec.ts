@@ -3,7 +3,7 @@
  * 対応: FR-AUTH-007-AC-01 / FR-AUTH-007-AC-02
  *
  * 手元の Supabase の PostgREST（/rest/v1/rpc/<関数>）を、anon の鍵と service_role の鍵で直接叩く。画面は開かない
- * （HTTP の試験なので幅で結果は変わらない。幅のくり返しはせず AC ごとに1本だけ流す）。表は private スキーマにあり、
+ * （HTTP の試験なので幅で結果は変わらないが、3つの幅（390・768・1280）でくり返す）。表は private スキーマにあり、
  * PostgREST に出ていないので、service_role でも表を直には読めない。
  */
 import { randomUUID } from 'node:crypto';
@@ -24,29 +24,41 @@ function requireLocalEnv(): void {
   }
 }
 
-test('FR-AUTH-007-AC-01 anon の鍵では passkey の関数を直接呼べない', async () => {
-  requireLocalEnv();
-  const anon = createClient(SUPABASE_URL, ANON_KEY, clientOptions);
-  const id = randomUUID();
-  const calls = await Promise.all([
-    anon.rpc('passkey_approved_count', { p_user_id: id }),
-    anon.rpc('passkey_approve', { p_user_id: id, p_passkey_id: id, p_via: 'script' }),
-    anon.rpc('passkey_window_open', { p_user_id: id, p_session_id: id }),
-    anon.rpc('passkey_window_close', { p_session_id: id }),
-    anon.rpc('passkey_window_is_open', { p_user_id: id, p_session_id: id }),
-  ]);
-  for (const { data, error } of calls) {
-    expect(data).toBeNull();
-    expect(error).not.toBeNull();
-  }
-});
+const viewports = [
+  { name: 'mobile', width: 390, height: 844 },
+  { name: 'tablet', width: 768, height: 1024 },
+  { name: 'desktop', width: 1280, height: 800 },
+] as const;
 
-test('FR-AUTH-007-AC-02 service_role は認めたパスキーの数を数えられ、private の表は PostgREST に出ていない', async () => {
-  requireLocalEnv();
-  const service = createClient(SUPABASE_URL, SERVICE_KEY, clientOptions);
-  const count = await service.rpc('passkey_approved_count', { p_user_id: randomUUID() });
-  expect(count.error).toBeNull();
-  expect(count.data).toBe(0);
-  const table = await service.from('approved_passkeys').select('passkey_id').limit(1);
-  expect(table.error).not.toBeNull();
-});
+for (const viewport of viewports) {
+  test.describe(`${viewport.name}`, () => {
+    test.use({ viewport: { width: viewport.width, height: viewport.height } });
+
+  test(`FR-AUTH-007-AC-01 anon の鍵では passkey の関数を直接呼べない (${viewport.name})`, async () => {
+    requireLocalEnv();
+    const anon = createClient(SUPABASE_URL, ANON_KEY, clientOptions);
+    const id = randomUUID();
+    const calls = await Promise.all([
+      anon.rpc('passkey_approved_count', { p_user_id: id }),
+      anon.rpc('passkey_approve', { p_user_id: id, p_passkey_id: id, p_via: 'script' }),
+      anon.rpc('passkey_window_open', { p_user_id: id, p_session_id: id }),
+      anon.rpc('passkey_window_close', { p_session_id: id }),
+      anon.rpc('passkey_window_is_open', { p_user_id: id, p_session_id: id }),
+    ]);
+    for (const { data, error } of calls) {
+      expect(data).toBeNull();
+      expect(error?.code).toBe('42501');
+    }
+  });
+
+  test(`FR-AUTH-007-AC-02 service_role は認めたパスキーの数を数えられ、private の表は PostgREST に出ていない (${viewport.name})`, async () => {
+    requireLocalEnv();
+    const service = createClient(SUPABASE_URL, SERVICE_KEY, clientOptions);
+    const count = await service.rpc('passkey_approved_count', { p_user_id: randomUUID() });
+    expect(count.error).toBeNull();
+    expect(count.data).toBe(0);
+    const table = await service.from('approved_passkeys').select('passkey_id').limit(1);
+    expect(table.error).not.toBeNull();
+  });
+  });
+}

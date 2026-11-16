@@ -41,6 +41,8 @@
 - 設定は `private.passkey_staff_config`（1行・check で複数行を禁止）に置く。外へは `private.passkey_staff_settings()`（`security definer`・`stable`）だけで読ませ、`public`・`anon`・`authenticated` から `execute` を外す
 - 認めたパスキーは `private.approved_passkeys` に控える。`user_id` に外部キーを張らない。利用者の削除の連鎖で認めの行が先に消えると、引き金が店員かを判れなくなるため。認めの行を消すのは Task 6 の引き金だけ
 - `credential_id` は手元の `auth.webauthn_credentials.credential_id` を実測して `bytea` にした
+- `passkey_approve` は、同じ鍵の2回目は何もしない。同じ `credential_id` で別の `passkey_id` の古い認めの行があれば、鍵は消えて資格情報が新しい鍵に移ったとみなし、古い行を消して新しい行を入れる（`auth` が `credential_id` を一意に保つため、古い行の鍵は実在しない）
+- 関数と表の所有者は `postgres` と移行に明記し、末尾の確かめで所有者・`SECURITY DEFINER`・`search_path` が空であることを見る
 - 数え方は `passkey_approved_count`。認めの行と鍵の行を `c.id = ap.passkey_id and c.user_id = ap.user_id` でつなぎ、その行だけを数える。引き金が動かなかった時（`TRUNCATE`・`DISABLE TRIGGER`・引き金の例外の囲み）でも、消えた鍵・他人の鍵を指す認めは数えない
 - 登録の窓は案 B。アプリが `auth.sessions` に在るセッションを確かめてから `passkey_window_open(user, session)` で開ける。同じ `session_id` の開いた窓は1つだけ（部分の一意の索引）で、2回目は既存の期限を返す
 - `public.passkey_*` は全部 `service_role` だけが `execute` できる

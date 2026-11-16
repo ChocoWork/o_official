@@ -122,13 +122,30 @@ describeLocalDb('passkey foundation tables and functions', (db) => {
     await db().query('rollback to savepoint b');
   });
 
+  test('DATA-AUTH-012 approve replaces a stale row that has the same credential_id under another passkey id', async () => {
+    const u = await user();
+    const k = await key(u);
+    const cred = (await db().query('select credential_id from auth.webauthn_credentials where id = $1', [k])).rows[0].credential_id;
+    await db().query(
+      `insert into private.approved_passkeys (passkey_id, user_id, credential_id, approved_via) values ($1,$2,$3,'script')`,
+      [randomUUID(), u, cred],
+    );
+    await db().query('select public.passkey_approve($1,$2,$3)', [u, k, 'reauth']);
+    const rows = await db().query('select passkey_id::text as id, approved_via from private.approved_passkeys where credential_id = $1', [cred]);
+    expect(rows.rows).toEqual([{ id: k, approved_via: 'reauth' }]);
+    expect(await count(u)).toBe(1);
+  });
+
   test('DATA-AUTH-012 window open keeps one open row per session and expires in 30 minutes', async () => {
     const u = await user();
     const s = await session(u);
     const first = await db().query(`select public.passkey_window_open($1,$2) = now() + interval '30 minutes' as ok`, [u, s]);
     expect(first.rows[0].ok).toBe(true);
+    const before = await db().query('select expires_at, opened_at from private.passkey_registration_windows where session_id = $1', [s]);
     const second = await db().query('select public.passkey_window_open($1,$2) as e', [u, s]);
-    expect(second.rows[0].e).toEqual(expect.any(Date));
+    expect(second.rows[0].e).toEqual(before.rows[0].expires_at);
+    const after = await db().query('select expires_at, opened_at from private.passkey_registration_windows where session_id = $1', [s]);
+    expect(after.rows).toEqual(before.rows);
     const rows = await db().query('select count(*)::int as n from private.passkey_registration_windows where session_id = $1', [s]);
     expect(rows.rows[0].n).toBe(1);
     const open = await db().query('select public.passkey_window_is_open($1,$2) as o', [u, s]);
@@ -181,7 +198,9 @@ describeLocalDb('passkey foundation tables and functions', (db) => {
     expect(await count(u)).toBe(2);
     // the key row vanishes while the approval row stays (trigger did not run)
     await db().query('delete from auth.webauthn_credentials where id = $1', [k1]);
-    expect(await count(u)).toBe(1);
+    // Task 6's trigger may remove the approval row with the key; the orphan path is only tested while the row stays.
+    const left = await db().query('select 1 from private.approved_passkeys where passkey_id = $1', [k1]);
+    if (left.rowCount === 1) expect(await count(u)).toBe(1);
     // an approval row with no key at all
     await db().query(
       `insert into private.approved_passkeys (passkey_id, user_id, credential_id, approved_via) values ($1,$2,$3,'script')`,

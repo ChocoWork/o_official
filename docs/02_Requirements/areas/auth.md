@@ -11,7 +11,7 @@ AUTH の領域の要求・要件・受け入れ条件・派生要件を、追跡
 | --- | --- | --- |
 | 要求 | 49 | 既存の `FREQ-` 39（うち廃止 1。FREQ-316・327・515 を含む）、新しい `SR-AUTH-001`〜`010`（うち `004`〜`007` は振り替え） |
 | 要件 | 109 | 既存の `FREQ-NN-REQ-NN` 94（うち廃止 1）、`FR-LOGIN-001`〜`008`、新しい `FR-AUTH-001`〜`007`（`001`〜`004` は振り替え） |
-| 受け入れ条件 | 175 | 既存の `FREQ-NN-AC-NN` 138（うち廃止 2）、新しい `<要件ID>-AC-NN` 35（`FR-…-AC-NN` 30（`FR-AUTH-005-AC-01`〜`07`、`FR-AUTH-006-AC-01`〜`07` を含む）、`FREQ-330-REQ-02-AC-01`、`FREQ-316-REQ-01`〜`03-AC-01`） |
+| 受け入れ条件 | 175 | 既存の `FREQ-NN-AC-NN` 138（うち廃止 2）、新しい `<要件ID>-AC-NN` 37（`FR-…-AC-NN` 32（`FR-AUTH-005-AC-01`〜`07`、`FR-AUTH-006-AC-01`〜`07`、`FR-AUTH-007-AC-01`・`02` を含む）、`FREQ-330-REQ-02-AC-01`、`FREQ-316-REQ-01`〜`03-AC-01`） |
 | 派生要件 | 9 | `DRV-AUTH-001`〜`009` |
 | セキュリティ要件 | 36 | `SEC-AUTH-001`〜`036`（上位は脅威の文書 `docs/05_Quality/security/threats/auth.md` の同じ番号）。受け入れ条件 `SEC-AUTH-NNN-AC-NN` 71。全部「推定」 |
 
@@ -216,6 +216,8 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 出どころ | ユーザーの発言 2026-11-06〜07・2026-11-16（`docs/superpowers/specs/2026-11-07-passkey-auth-design.md` の 3・12-2）、`.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-4-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・5-5・6-2、12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 4） |
 
 要求の文: 店員の入口を決める値（24時間・1時間・窓の長さ・認めたパスキーの最小の本数・お客さんのパスワードの拒否の旗）を DB の1行に持つ。店員がパスキーを足すための「登録の窓」を、ユーザーとセッションに結んで開け閉めできる。アプリが認めたパスキーを控え、本数をその場で数えられる。
+
+検証の置き方: 追跡の決まり（受け入れ条件には E2E が要る）により、FR-AUTH-007 の受け入れ条件は権限（AC-01・02）だけにした。認める・窓・数え方の振る舞い（設計の試験の項目 c〜f）は、DATA-AUTH-012 の DB 結合テスト（`tests/integration/db/auth_passkey_foundation.integration.test.ts`）で確かめる（2026-11-16 に調整役が了承）。
 
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 

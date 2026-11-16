@@ -25,7 +25,8 @@
 --   private.passkey_staff_settings() jsonb            STABLE; no execute for public / anon / authenticated (has_permission
 --                                                     and the hook run as owner)
 --   public.passkey_approve(user, passkey, via)        copies credential_id from auth.webauthn_credentials; raises when the
---                                                     key is missing or owned by someone else; idempotent
+--                                                     key is missing or owned by someone else; idempotent (same passkey:
+--                                                     no-op; stale row with the same credential_id: replaced)
 --   public.passkey_window_open(user, session)         checks auth.sessions; returns expires_at (existing one if open)
 --   public.passkey_window_close(session)
 --   public.passkey_window_is_open(user, session)
@@ -129,6 +130,9 @@ BEGIN
   IF NOT FOUND OR v_owner IS DISTINCT FROM p_user_id THEN
     RAISE EXCEPTION 'passkey_not_owned' USING ERRCODE = '42501';
   END IF;
+  -- A row with the same credential_id but another passkey_id is stale: auth keeps credential_id unique, so the key
+  -- it pointed at is gone and the credential now lives in p_passkey_id. Drop it, then approve (same passkey: no-op).
+  DELETE FROM private.approved_passkeys WHERE credential_id = v_cred AND passkey_id <> p_passkey_id;
   INSERT INTO private.approved_passkeys (passkey_id, user_id, credential_id, approved_via)
   VALUES (p_passkey_id, p_user_id, v_cred, p_via)
   ON CONFLICT (passkey_id) DO NOTHING;
@@ -189,6 +193,17 @@ GRANT EXECUTE ON FUNCTION public.passkey_approve(uuid, uuid, text), public.passk
   public.passkey_window_close(uuid), public.passkey_window_is_open(uuid, uuid),
   public.passkey_approved_count(uuid) TO service_role;
 
+ALTER TABLE private.passkey_staff_config OWNER TO postgres;
+ALTER TABLE private.approved_passkeys OWNER TO postgres;
+ALTER TABLE private.passkey_registration_windows OWNER TO postgres;
+ALTER TABLE private.passkey_notification_outbox OWNER TO postgres;
+ALTER FUNCTION private.passkey_staff_settings() OWNER TO postgres;
+ALTER FUNCTION public.passkey_approve(uuid, uuid, text) OWNER TO postgres;
+ALTER FUNCTION public.passkey_window_open(uuid, uuid) OWNER TO postgres;
+ALTER FUNCTION public.passkey_window_close(uuid) OWNER TO postgres;
+ALTER FUNCTION public.passkey_window_is_open(uuid, uuid) OWNER TO postgres;
+ALTER FUNCTION public.passkey_approved_count(uuid) OWNER TO postgres;
+
 -- PASSKEY_A_FINAL_ASSERT
 DO $$
 DECLARE
@@ -199,7 +214,7 @@ BEGIN
     'passkey_notification_outbox'] LOOP
     IF has_table_privilege('anon', 'private.' || t, 'SELECT,INSERT,UPDATE,DELETE')
        OR has_table_privilege('authenticated', 'private.' || t, 'SELECT,INSERT,UPDATE,DELETE')
-       OR NOT (SELECT relrowsecurity FROM pg_class WHERE oid = ('private.' || t)::regclass) THEN
+       OR NOT (SELECT relrowsecurity AND relowner = 'postgres'::regrole FROM pg_class WHERE oid = ('private.' || t)::regclass) THEN
       RAISE EXCEPTION 'PASSKEY_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_table_acl';
     END IF;
   END LOOP;
@@ -210,6 +225,17 @@ BEGIN
        OR NOT has_function_privilege('service_role', f, 'EXECUTE')
        OR NOT (SELECT prosecdef FROM pg_proc WHERE oid = f::regprocedure) THEN
       RAISE EXCEPTION 'PASSKEY_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_function_acl';
+    END IF;
+  END LOOP;
+  FOREACH f IN ARRAY ARRAY['public.passkey_approve(uuid,uuid,text)', 'public.passkey_window_open(uuid,uuid)',
+    'public.passkey_window_close(uuid)', 'public.passkey_window_is_open(uuid,uuid)',
+    'public.passkey_approved_count(uuid)', 'private.passkey_staff_settings()'] LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_proc p
+      WHERE p.oid = f::regprocedure AND p.prosecdef AND p.proowner = 'postgres'::regrole
+        AND p.proconfig @> ARRAY['search_path=""']
+    ) THEN
+      RAISE EXCEPTION 'PASSKEY_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_function_attrs';
     END IF;
   END LOOP;
   IF has_function_privilege('anon', 'private.passkey_staff_settings()', 'EXECUTE')
