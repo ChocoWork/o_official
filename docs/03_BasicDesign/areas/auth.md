@@ -1636,7 +1636,7 @@ stateDiagram-v2
 | 関数 `private.passkey_credentials_notify()` | `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空。`execute` はだれにも渡さない |
 | 書く表 | `private.passkey_notification_outbox`（積む）、`private.approved_passkeys`（消す）。読む表は `public.user_roles`・`public.roles`・`auth.users` |
 
-- 戻す: 移行のヘッダーの ROLLBACK（引き金と関数を落とす）。本番で作れるか・GoTrue の更新で消えないかは未確認（設計 8-2 の3）
+- 戻す: 移行のヘッダーの ROLLBACK。`postgres` は表の持ち主でなく引き金を落とせないので、関数を空の関数（`RETURN NULL`）に置き換え、引き金を落とすのは `supabase_auth_admin` の手順にする。本番で作れるか・GoTrue の更新で消えないかは未確認（設計 8-2 の3）
 
 
 ### 手元の Supabase Auth の設定の表（波 6 の目標。手元は 2026-11-01 に切り替え済み）

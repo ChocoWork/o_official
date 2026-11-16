@@ -1,6 +1,13 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { STAFF_PASSKEY_REQUIRED_MARKER, isStaffPasskeyRequiredError } from '@/lib/auth/staff-passkey-reject';
+
+function readMigration(suffix: string): string {
+  const dir = path.join(process.cwd(), 'supabase/migrations');
+  const file = readdirSync(dir).find((f) => f.endsWith(suffix));
+  if (!file) throw new Error('migration not found: ' + suffix);
+  return readFileSync(path.join(dir, file), 'utf8').replaceAll('\r\n', '\n');
+}
 
 describe('staff passkey reject helper', () => {
   it('DD-AUTH-044 印で始まる 403 は真', () => {
@@ -20,18 +27,12 @@ describe('staff passkey reject helper', () => {
 
   it('DD-AUTH-044 お客さんのパスワード拒否の印 [customer-password-disabled] は店員の拒否として扱わない', () => {
     expect(isStaffPasskeyRequiredError({ status: 403, message: '[customer-password-disabled] password sign-in is no longer available' })).toBe(false);
-    const sql = readFileSync(
-      path.join(process.cwd(), 'supabase/migrations/20261116230000_passkey_access_token_hook.sql'),
-      'utf8',
-    );
+    const sql = readMigration('_passkey_access_token_hook.sql');
     expect(sql).toContain("'[customer-password-disabled] ");
   });
 
   it('DD-AUTH-044 印は移行のフックの拒否の文の頭と同じ', () => {
-    const sql = readFileSync(
-      path.join(process.cwd(), 'supabase/migrations/20261116230000_passkey_access_token_hook.sql'),
-      'utf8',
-    );
+    const sql = readMigration('_passkey_access_token_hook.sql');
     expect(sql).toContain(`'${STAFF_PASSKEY_REQUIRED_MARKER} `);
   });
 });

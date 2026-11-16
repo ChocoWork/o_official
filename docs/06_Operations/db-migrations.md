@@ -103,16 +103,16 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 
 | 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
 | --- | --- | --- | --- |
-| `20261116232141_passkey_credential_events.sql` | 6416 bytes / `5fb494edb2018185a12d21c81c491f7e` | 本番未適用（手元の `db reset` で適用済み） | `auth.webauthn_credentials` への引き金 `passkey_credentials_notify` と関数 `private.passkey_credentials_notify()` を足す。足し・消し・鍵の差し替えを outbox に積み、消し・差し替えで認めの控えを外す |
+| `20261116232141_passkey_credential_events.sql` | 7225 bytes / `d7f3493373f276763132a82430b852ff` | 本番未適用（手元の `db reset` で適用済み） | `auth.webauthn_credentials` への引き金 `passkey_credentials_notify` と関数 `private.passkey_credentials_notify()` を足す。足し・消し・鍵の差し替えを outbox に積み、消し・差し替えで認めの控えを外す |
 
 - 変えるもの: 関数1本と引き金1本を足すだけ。ログインの動きは変わらない（フックは有効にしない）。送るのは段2・3
-- 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `3d3f65c20028f16397437ca0d84213ac`（本番に当てた後、これと突き合わせる）
-- 前の確かめ: `auth.webauthn_credentials`・移行 A の表・`public.user_roles` が在り、現在の役割が `TRIGGER` の権限を持つこと。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`
+- 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `df889b1e746e279c24dc59d4d772a07c`（本番に当てた後、これと突き合わせる）
+- 前の確かめ: `auth.webauthn_credentials`・移行 A の表・`public.user_roles` が在ること（先に存在を確かめる）、次に現在の役割が `TRIGGER` の権限を持つこと。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`
 - 末尾の確かめ: 引き金が在り有効（`tgenabled = 'O'`）、関数が `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空、`anon`・`authenticated`・`service_role`・`PUBLIC` に `execute` が無い。失敗は `PASSKEY_MIGRATION_ASSERTION_FAILED`
-- 戻し方（移行のヘッダーの ROLLBACK）: `DROP TRIGGER passkey_credentials_notify ON auth.webauthn_credentials; DROP FUNCTION private.passkey_credentials_notify();`
+- 戻し方（移行のヘッダーの ROLLBACK）: 表の持ち主は `supabase_auth_admin` で、`postgres` は `DROP TRIGGER`・`DISABLE TRIGGER` を流せない。①`postgres` で関数を `CREATE OR REPLACE` して `RETURN NULL` だけの空の関数にする（引き金は残るが何もしない）。②引き金を落とすのは `supabase_auth_admin` の手順（サポートに依頼）で、その後 `postgres` で `DROP FUNCTION private.passkey_credentials_notify();`。同じ理由で、移行の再実行は引き金が無い時だけ作る（持ち主の権限を要らなくする）
 - **未確認**: 本番で `postgres` がこの引き金を作れるか、GoTrue の更新で引き金が消えないか（設計 8-2 の3）。本番へ当てる前に、読むだけで `select has_table_privilege('postgres','auth.webauthn_credentials','TRIGGER');` を確かめる
 - **本番へ当てない**: 段1b と段3が済むまで当てない（理由と当て方は移行 A と同じ）
-- 手元で確かめた結果（2026-11-16、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_credential_events.integration.test.ts` 通過、`auth_passkey_foundation`・`auth_passkey_access_token_hook` も通過のまま（3つで60件）。単体 `staff-passkey-credential-trigger.test.ts` 通過
+- 手元で確かめた結果（2026-11-16、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_credential_events.integration.test.ts` 通過、`auth_passkey_foundation`・`auth_passkey_access_token_hook` も通過のまま（3つで62件）。単体 `staff-passkey-credential-trigger.test.ts` 通過
 
 ## CI の引き金を止めた記録（2026-11-16）
 

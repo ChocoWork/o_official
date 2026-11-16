@@ -1,11 +1,15 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { defaultStaffPasskeySettings } from '@/lib/auth/staff-passkey-defaults';
 
-const migration = readFileSync(
-  path.join(process.cwd(), 'supabase/migrations/20261116215034_passkey_foundation_tables.sql'),
-  'utf8',
-);
+function readMigration(suffix: string): string {
+  const dir = path.join(process.cwd(), 'supabase/migrations');
+  const file = readdirSync(dir).find((f) => f.endsWith(suffix));
+  if (!file) throw new Error('migration not found: ' + suffix);
+  return readFileSync(path.join(dir, file), 'utf8').replaceAll('\r\n', '\n');
+}
+
+const migration = readMigration('_passkey_foundation_tables.sql');
 
 describe('staff passkey defaults', () => {
   it('DD-AUTH-043 設定の初めの値は 24 時間・1 時間・窓 30 分・認めたパスキー 2 本・お客さんのパスワードは拒否しない', () => {

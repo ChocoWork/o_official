@@ -200,18 +200,10 @@ describeLocalDb('passkey foundation tables and functions', (db) => {
     await db().query('select public.passkey_approve($1,$2,$3)', [u, k1, 'script']);
     await db().query('select public.passkey_approve($1,$2,$3)', [u, k2, 'script']);
     expect(await count(u)).toBe(2);
-    // the key row vanishes while the approval row stays (the Task 6 trigger did not run). The shared test role does not own
-    // auth.webauthn_credentials, so the orphan is made with a direct insert: an approval row whose key does not exist.
-    await db().query('delete from private.approved_passkeys where passkey_id = $1', [k1]);
+    // the key goes away (the Task 6 trigger also removes its approval row)
     await db().query('delete from auth.webauthn_credentials where id = $1', [k1]);
-    await db().query(
-      `insert into private.approved_passkeys (passkey_id, user_id, credential_id, approved_via) values ($1,$2,$3,'script')`,
-      [k1, u, randomBytes(32)],
-    );
-    const left = await db().query('select 1 from private.approved_passkeys where passkey_id = $1', [k1]);
-    expect(left.rowCount).toBe(1);
     expect(await count(u)).toBe(1);
-    // an approval row with no key at all
+    // an approval row whose key does not exist (the shared test role cannot disable the trigger, so insert it directly)
     await db().query(
       `insert into private.approved_passkeys (passkey_id, user_id, credential_id, approved_via) values ($1,$2,$3,'script')`,
       [randomUUID(), u, randomBytes(32)],

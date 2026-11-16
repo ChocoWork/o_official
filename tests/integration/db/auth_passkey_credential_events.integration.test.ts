@@ -182,5 +182,31 @@ describeLocalDb('passkey credential trigger and notification outbox', () => {
     await key(u, true);
     await key(u);
     expect(await count(u)).toBe(1);
+    const added = await outbox(u);
+    expect(added.map((r) => [r.kind, r.subject_is_staff, r.notify_subject])).toEqual([
+      ['passkey_added', true, true],
+      ['passkey_added', true, true],
+    ]);
+  });
+
+  test('DATA-AUTH-014 deleting a staff key that was never approved is staff through user_roles alone', async () => {
+    const u = await user('admin');
+    const k = await key(u);
+    await db().query('delete from auth.webauthn_credentials where id = $1', [k]);
+    const rows = await outbox(u);
+    expect(rows.map((r) => [r.kind, r.subject_is_staff, r.notify_subject])).toEqual([
+      ['passkey_added', true, true],
+      ['passkey_removed', true, true],
+    ]);
+  });
+
+  test('DATA-AUTH-014 a demoted staff user whose approval survives is still staff when the key is deleted (approval is the clue)', async () => {
+    const u = await user('admin');
+    const k = await key(u, true);
+    await db().query('delete from public.user_roles where user_id = $1', [u]);
+    await db().query('delete from auth.webauthn_credentials where id = $1', [k]);
+    const removed = (await outbox(u)).filter((r) => r.kind === 'passkey_removed');
+    expect(removed).toEqual([expect.objectContaining({ subject_is_staff: true, notify_subject: true })]);
+    expect(await approvalRows(k)).toBe(0);
   });
 });

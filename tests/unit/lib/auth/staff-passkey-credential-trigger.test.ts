@@ -1,23 +1,24 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { PASSKEY_OUTBOX_KINDS, isPasskeyOutboxKind } from '@/lib/auth/staff-passkey-credential-events';
 
 // DD-AUTH-045: the order inside the trigger function is a safety rule (approval delete first, outside the exception
 // block; FOUND read on the very next statement). The DB suite proves the behaviour; this reads the migration text so a
 // careless edit of the order fails fast without a database.
-const sql = readFileSync(
-  path.join(process.cwd(), 'supabase/migrations/20261116232141_passkey_credential_events.sql'),
-  'utf8',
-);
+function readMigration(suffix: string): string {
+  const dir = path.join(process.cwd(), 'supabase/migrations');
+  const file = readdirSync(dir).find((f) => f.endsWith(suffix));
+  if (!file) throw new Error('migration not found: ' + suffix);
+  return readFileSync(path.join(dir, file), 'utf8').replaceAll('\r\n', '\n');
+}
+
+const sql = readMigration('_passkey_credential_events.sql');
 const body = sql.slice(sql.indexOf('CREATE OR REPLACE FUNCTION private.passkey_credentials_notify()'));
 const exceptionBlockStart = body.indexOf('  BEGIN\n    SELECT EXISTS');
 
 describe('passkey credential trigger migration text', () => {
   it('DD-AUTH-045 outbox の種類の表は、移行 A の CHECK 制約と引き金が積む種類に同じ', () => {
-    const foundation = readFileSync(
-      path.join(process.cwd(), 'supabase/migrations/20261116215034_passkey_foundation_tables.sql'),
-      'utf8',
-    );
+    const foundation = readMigration('_passkey_foundation_tables.sql');
     for (const kind of PASSKEY_OUTBOX_KINDS) {
       expect(foundation).toContain(`'${kind}'`);
       expect(sql).toContain(`'${kind}'`);

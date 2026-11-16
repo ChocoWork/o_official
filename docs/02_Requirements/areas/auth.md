@@ -4402,17 +4402,17 @@ anon の鍵と service_role の鍵のそれぞれで `passkey_access_token_hook`
 
 ## セキュリティ要件
 
-### FR-AUTH-009-AC-01 anon と service_role の鍵では引き金の関数を直接呼べない
+### FR-AUTH-009-AC-01 anon と service_role の鍵では引き金の関数を PostgREST から呼べない（関数が公開されていない）
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-AUTH-009 |
-| 根拠 | 引き金の関数が外の人やアプリの service_role から呼べると、outbox に偽の行を積ませたり認めの行を消させたりできる。`execute` を誰にも渡していないことを、アプリを通さず直に叩いて確かめる |
+| 根拠 | 引き金の関数が外の人やアプリの service_role から呼べると、outbox に偽の行を積ませたり認めの行を消させたりできる。関数は `private` にあり PostgREST に公開されていない。それを、アプリを通さず直に叩いて確かめる。`execute` を誰にも渡していないことそのものは、DB 結合テスト（DATA-AUTH-014 の権限の試験）と移行の末尾の確かめで示す |
 | 状態 | 推定 |
 | 確かめ方 | E2E（`e2e/FR-LOGIN-043-passkey-trigger-function-grants.spec.ts`。HTTP の試験で幅で結果は変わらない） |
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・8-2）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 6、Review Focus 4・5） |
 
-anon の鍵と service_role の鍵のそれぞれで `passkey_credentials_notify` を PostgREST（`/rest/v1/rpc/passkey_credentials_notify`）から呼ぶと、どちらも誤りになり、値は返らないこと。
+anon の鍵と service_role の鍵のそれぞれで `passkey_credentials_notify` を PostgREST（`/rest/v1/rpc/passkey_credentials_notify`）から呼ぶと、どちらも HTTP 404・コード `PGRST202`（関数が見つからない）になり、値は返らないこと。
 
 
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める

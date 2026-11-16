@@ -19,8 +19,13 @@
 -- NOT verified: whether production lets postgres create this trigger, and whether a GoTrue update drops it
 --   (design 8-2 item 3). Check before production: select has_table_privilege('postgres','auth.webauthn_credentials','TRIGGER');
 --
--- ROLLBACK:  DROP TRIGGER passkey_credentials_notify ON auth.webauthn_credentials;
---            DROP FUNCTION private.passkey_credentials_notify();
+-- ROLLBACK (postgres does NOT own auth.webauthn_credentials, so it cannot DROP or DISABLE the trigger):
+--   1. as postgres, make the function a no-op:
+--        CREATE OR REPLACE FUNCTION private.passkey_credentials_notify() RETURNS trigger LANGUAGE plpgsql
+--          SECURITY DEFINER SET search_path = '' AS $f$ BEGIN RETURN NULL; END $f$;
+--   2. as supabase_auth_admin (the table owner; support step):
+--        DROP TRIGGER passkey_credentials_notify ON auth.webauthn_credentials;
+--      then, as postgres:  DROP FUNCTION private.passkey_credentials_notify();
 -- NOT applied to production until stage 1b and 3 are done.
 
 BEGIN;
@@ -30,9 +35,11 @@ BEGIN
   IF to_regclass('auth.webauthn_credentials') IS NULL
      OR to_regclass('private.approved_passkeys') IS NULL
      OR to_regclass('private.passkey_notification_outbox') IS NULL
-     OR to_regclass('public.user_roles') IS NULL
-     OR NOT has_table_privilege(current_user, 'auth.webauthn_credentials', 'TRIGGER') THEN
+     OR to_regclass('public.user_roles') IS NULL THEN
     RAISE EXCEPTION 'PASSKEY_MIGRATION_PRECHECK_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_trigger_precheck';
+  END IF;
+  IF NOT has_table_privilege(current_user, 'auth.webauthn_credentials', 'TRIGGER') THEN
+    RAISE EXCEPTION 'PASSKEY_MIGRATION_PRECHECK_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_trigger_privilege';
   END IF;
 END
 $$;
@@ -93,10 +100,19 @@ $$;
 ALTER FUNCTION private.passkey_credentials_notify() OWNER TO postgres;
 REVOKE ALL ON FUNCTION private.passkey_credentials_notify() FROM PUBLIC, anon, authenticated, service_role;
 
-DROP TRIGGER IF EXISTS passkey_credentials_notify ON auth.webauthn_credentials;
-CREATE TRIGGER passkey_credentials_notify
-  AFTER INSERT OR UPDATE OR DELETE ON auth.webauthn_credentials
-  FOR EACH ROW EXECUTE FUNCTION private.passkey_credentials_notify();
+-- Create only when missing: a re-run must not need table ownership (the function above is replaced in place).
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger t
+     WHERE t.tgrelid = 'auth.webauthn_credentials'::regclass AND t.tgname = 'passkey_credentials_notify' AND NOT t.tgisinternal
+  ) THEN
+    CREATE TRIGGER passkey_credentials_notify
+      AFTER INSERT OR UPDATE OR DELETE ON auth.webauthn_credentials
+      FOR EACH ROW EXECUTE FUNCTION private.passkey_credentials_notify();
+  END IF;
+END
+$$;
 
 -- PASSKEY_C_FINAL_ASSERT
 DO $$
