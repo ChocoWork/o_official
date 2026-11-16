@@ -1,5 +1,6 @@
 # DB マイグレーション運用
 
+> 2026-11-17 確認日（パスキー段1a Task 9 の調べ）: 手元だけの移行 `20261116230000_passkey_access_token_hook.sql`・`20261117001500_passkey_staff_entry_conditions_fn.sql` を、管理の入口の時刻に60秒までの時計のずれを許すよう直した（本番未適用・手元で `db reset` 済み。サイズと md5 は下の各行）。
 > 2026-11-16 確認日（パスキー段1a Task 6）: 新しい移行 `20261116232141_passkey_credential_events.sql`（`auth.webauthn_credentials` への引き金。手元の DB のみ・本番未適用）を足した。下の「パスキー段1a 移行 C」の節に書いた。
 > 2026-11-16 確認日（パスキー段1a Task 5）: 新しい移行 `20261116230000_passkey_access_token_hook.sql`（Custom Access Token フックの関数。手元の DB のみ・本番未適用。`config.toml` では有効にしない）を足した。下の「パスキー段1a 移行 B」の節に書いた。
 > 2026-11-16 確認日（パスキー段1a Task 4）: 新しい移行 `20261116215034_passkey_foundation_tables.sql`（パスキーの設定・認め・窓・知らせの表と関数。手元の DB のみ・本番未適用）を足した。下の「パスキー段1a 移行 A」の節に書いた。
@@ -90,7 +91,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 | `20261116230000_passkey_access_token_hook.sql` | 8233 bytes / `cad84ad469e5480dd94412c1bca21d44` | 本番未適用（手元の `db reset` で適用済み） | `public.passkey_access_token_hook(event jsonb)` を足す。店員をパスキーの新しいログインと窓の中のセッションだけに通し、それ以外の店員は拒否し、お客さんは素通し（`password` は旗が真の時だけ拒否） |
 
 - 変えるもの: 関数を1本足すだけ。`supabase/config.toml` は触らないので、フックは呼ばれず、今のログインは変わらない（有効にするのは段1a の Task 9）
-- 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `9b2618eb07a4f4071d566ffa8c3c3d72`（本番に当てた後、これと突き合わせる）
+- 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `c943ffcc573b5bd07c8dab0d29036905`（本番に当てた後、これと突き合わせる）
 - 前の確かめ: 移行 A の表・関数と `public.user_roles` が無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（SQLSTATE 55000）で止まる
 - 末尾の確かめ: 所有者 `postgres`・`SECURITY DEFINER`・`search_path` が空、`execute` が `supabase_auth_admin` だけ（`PUBLIC`・`anon`・`authenticated`・`service_role` に無い）、`supabase_auth_admin` が `private` の設定・認め・窓・知らせの4つの表を `select` できない。失敗は `PASSKEY_MIGRATION_ASSERTION_FAILED`（DETAIL は項目名だけ）
 - 戻し方（移行のヘッダーの ROLLBACK）: `DROP FUNCTION public.passkey_access_token_hook(jsonb);`。有効にする前なら他に影響しない。有効にした後は、先に `config.toml` のフックを外す
@@ -123,7 +124,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 | `20261117001500_passkey_staff_entry_conditions_fn.sql` | 5640 bytes / `92278824cd3588604f17e889ca7d6a58` | 本番未適用（手元の `db reset` で適用済み） | `private.staff_passkey_amr_ok(jsonb)`・`staff_passkey_count_ok(uuid)`・`staff_passkey_entry_ok(uuid, jsonb)` の3つの関数を足す |
 
 - 変えるもの: 関数3本を足すだけ（例外は握って偽を返し、`RAISE WARNING` で SQLSTATE と文を残す）。`has_permission`・`admin-rbac` は変えない（Task 9 でつなぐ）ので、ログインも管理の入口も今のまま
-- 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `467486a932883ea4afb85f8c6d656183`（本番に当てた後、これと突き合わせる）
+- 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `420c1527983d577aee2cf0c77a382188`（本番に当てた後、これと突き合わせる）
 - 前の確かめ: `private.passkey_staff_settings()`・`public.passkey_approved_count(uuid)` が在ること。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`
 - 末尾の確かめ: 3本が `SECURITY DEFINER`・`STABLE`・持ち主 `postgres`・`search_path` 空で、`PUBLIC`・`anon`・`authenticated`・`service_role` に `execute` が無い。外れたら `PASSKEY_MIGRATION_ASSERTION_FAILED`（`passkey_entry_function_acl`）
 - 権限の選び方: `service_role` にも渡さない（`private.app_session_is_live` と同じ）。`has_permission` は `SECURITY DEFINER` で持ち主が `postgres` なので、Task 9 で呼べる

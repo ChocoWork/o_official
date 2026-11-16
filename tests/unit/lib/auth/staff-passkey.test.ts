@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { defaultStaffPasskeySettings } from '@/lib/auth/staff-passkey-defaults';
 import {
+  STAFF_CLOCK_SKEW_SECONDS,
   STAFF_MAX_SESSION_SECONDS,
   STAFF_MIN_APPROVED_PASSKEYS,
   approvedCountHint,
@@ -58,8 +59,8 @@ describe('staff passkey entry conditions', () => {
     expect(evaluateStaffEntry({ amr: at(0) }, 2, NOW + 0.9)).toEqual({ ok: true });
     // 時計のずれ: 60秒先までは通し、61秒先は断る（今の秒は切り捨て）
     expect(evaluateStaffEntry({ amr: [{ method: 'passkey', timestamp: NOW + 1 }] }, 2, NOW + 0.9)).toEqual({ ok: true });
-    expect(evaluateStaffEntry({ amr: [{ method: 'passkey', timestamp: NOW + 60 }] }, 2, NOW + 0.9)).toEqual({ ok: true });
-    expect(evaluateStaffEntry({ amr: [{ method: 'passkey', timestamp: NOW + 61 }] }, 2, NOW + 0.9))
+    expect(evaluateStaffEntry({ amr: [{ method: 'passkey', timestamp: NOW + STAFF_CLOCK_SKEW_SECONDS }] }, 2, NOW + 0.9)).toEqual({ ok: true });
+    expect(evaluateStaffEntry({ amr: [{ method: 'passkey', timestamp: NOW + STAFF_CLOCK_SKEW_SECONDS + 1 }] }, 2, NOW + 0.9))
       .toEqual({ ok: false, reason: 'passkey_expired' });
   });
 

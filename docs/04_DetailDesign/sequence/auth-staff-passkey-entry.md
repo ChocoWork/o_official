@@ -83,7 +83,7 @@ flowchart TD
 ```
 
 - 入力と出力: 入力は GoTrue の `event`（`user_id`・`authentication_method`・`claims`）。出力は、通す時は `event`（`claims.staff_passkeys_ok` を足す場合がある）、店員の拒否は `{"error":{"http_code":403,"message":"[staff-passkey-required] ..."}}`、お客さんの `password` の拒否（旗が真の時）は別の印 `[customer-password-disabled]` の403
-- 24時間の比べ: `amr` が配列で、`method` が `passkey` の要素の `timestamp` が JSON の数で `^[0-9]+$`（文字列・小数・負・欠落・null は無効）。`今の秒（切り捨て）- timestamp` が `-60` 以上 `staff_max_session_seconds` 以下で通す（60秒までの時計のずれは許す）。ちょうど86400は通し、86401と61秒以上先の時刻は拒否
+- 24時間の比べ: `amr` が配列で、`method` が `passkey` の要素の `timestamp` が JSON の数で `^[0-9]+$`（文字列・小数・負・欠落・null は無効）。`今の秒（切り捨て）- timestamp` が `-60` 以上 `staff_max_session_seconds` 以下で通す（60秒までの時計のずれは許す。この60は SQL のフック・`staff_passkey_amr_ok` に数で、TS の `STAFF_CLOCK_SKEW_SECONDS` に定数で、計3か所にあり、共有の値の表 `amrCases`（+1・+60・+61）が3か所を同じ値に固定する）。ちょうど86400は通し、86401と61秒以上先の時刻は拒否
 - `staff_passkeys_ok`: `public.passkey_approved_count(user)` が `min_approved_passkeys` 以上か。ヒントで、判定には使わない。数える関数が例外を出した時は、偽にして新しいパスキーの店員はそのまま通す（ヒントの失敗でログインを止めない）（管理の入口は API・RLS でその場で数える）
 - 窓: 案 B。窓の表は読むだけで書かない。窓で通すのは方法が `otp`・`token_refresh`・`passkey` の時だけ（招待の入口と、その更新）。`oauth`・`password`・未知の方法は窓があっても拒否
 - 異常: 関数全体を `EXCEPTION WHEN OTHERS` で囲む。お客さんと判った後の失敗は入力をそのまま返す。店員の失敗、`user_id` が無い・不正、店員かどうか調べられなかった失敗は拒否する（店員を素通しにしない）。設定の行が無い時は、パスキーで入る店員は拒否（24時間の上限が決まらない）、お客さんは素通し。窓で通す枝は設定を読まないので、開いた窓の店員は設定の行が無くても通る（窓の枝に設定の行を要るようにはしない。窓の枝は管理の入口を通れないので、簡単さを優先した）
@@ -181,7 +181,7 @@ flowchart TD
     B -- はい --> C[method が passkey で timestamp が整数の数の要素の最新を取る]
     C --> D{要素があるか}
     D -- いいえ --> N
-    D -- はい --> E{0 以上 86400 以下か}
+    D -- はい --> E{-60 以上 86400 以下か}
     E -- いいえ --> X[passkey_expired]
     E -- はい --> F[DB でその場で認めたパスキーを数える]
     F --> G{2本以上か}

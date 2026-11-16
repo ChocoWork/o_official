@@ -289,10 +289,10 @@ describe('authorizeAdminPermission', () => {
       if (!result.ok) expect(result.response.status).toBe(401);
     });
 
-    it('24時間を過ぎた passkey・61秒以上先の passkey は 403 MFA required', async () => {
+    it('24時間を過ぎた passkey・60秒より先の passkey は 403 MFA required', async () => {
       const now = Math.floor(Date.now() / 1000);
       grantPermission('admin.users.manage');
-      for (const timestamp of [now - 86401, now + 61]) {
+      for (const timestamp of [now - 86401, now + 120]) {
         (verifyAccessToken as jest.Mock).mockResolvedValue({
           ok: true,
           claims: { ...adminClaims, amr: [{ method: 'passkey', timestamp }] },
