@@ -21,8 +21,8 @@ import {
   accessCookieName,
   csrfCookieName,
   refreshCookieName,
-  csrfCookieMaxAgeSeconds,
 } from '../../src/lib/cookie';
+import { REFRESH_TOKEN_MAX_AGE_SECONDS } from '../../src/features/auth/services/session';
 import { isLocalUrl, parseSupabaseStatus, runSupabaseStatus } from '../e2e/environment';
 import { loginWithPasskey, provisionStaff } from '../e2e/passkey-staff';
 import type { PgClient } from '../../tests/integration/db/helpers/local-db';
@@ -44,18 +44,29 @@ export type DevStaffDeps = {
   print: (line: string) => void;
 };
 
-/** 呼び手が環境変数で渡した値を優先し、無ければ手元の `supabase status -o json` をプロセスの中で読む。DB の住所は status の値だけを使う */
+/** 住所・鍵・DB の住所は、全部、手元の `supabase status -o json` だけから読む（環境変数・.env* は読まない） */
 function readLocalConnection(): LocalConnection {
-  const raw = runSupabaseStatus();
+  let raw: string;
+  try {
+    raw = runSupabaseStatus();
+  } catch {
+    throw new Error('手元の Supabase の状態を読めません。Docker を起動し、npx supabase start で手元の Supabase を起動してください。');
+  }
   const status = parseSupabaseStatus(raw);
   const databaseUrl = (JSON.parse(raw) as Record<string, unknown>).DB_URL;
-  const env: LocalConnection = {
-    url: process.env.NEXT_PUBLIC_SUPABASE_URL || status.apiUrl,
-    anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || status.anonKey,
-    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || status.serviceRoleKey,
+  return {
+    url: status.apiUrl,
+    anonKey: status.anonKey,
+    serviceRoleKey: status.serviceRoleKey,
     databaseUrl: typeof databaseUrl === 'string' ? databaseUrl : '',
   };
-  return env;
+}
+
+/** DB の住所が手元か。pg は接続文字列の ?host=・?hostaddr= で接続先を替えられるので、それがあれば断る */
+function isLocalDatabaseUrl(raw: string): boolean {
+  if (!isLocalUrl(raw)) return false;
+  const params = new URL(raw).searchParams;
+  return !params.has('host') && !params.has('hostaddr');
 }
 
 async function connectDb(databaseUrl: string): Promise<PgClient> {
@@ -106,7 +117,8 @@ function readSessionId(accessToken: string): string {
  * @impl IMPL-AUTH-247
  * @design DD-AUTH-049
  */
-export async function main(argv: string[], deps: DevStaffDeps = defaultDeps): Promise<{ profileDir: string }> {
+export async function main(argv: string[], overrides: Partial<DevStaffDeps> = {}): Promise<{ profileDir: string }> {
+  const deps: DevStaffDeps = { ...defaultDeps, ...overrides };
   const { values } = parseArgs({
     args: argv,
     options: { email: { type: 'string' }, role: { type: 'string' }, open: { type: 'boolean' } },
@@ -117,16 +129,21 @@ export async function main(argv: string[], deps: DevStaffDeps = defaultDeps): Pr
 
   const env = deps.readEnv();
   if (!isLocalUrl(env.url)) throw new Error('店員として入るスクリプトは手元の Supabase だけで使える');
-  if (!env.databaseUrl || !isLocalUrl(env.databaseUrl)) throw new Error('手元の DB の住所を読めない（supabase start を確かめる）');
-  // 共有の道具（provisionStaff・loginWithPasskey）は、環境変数が無ければ自分で status を読む。ここで読んだ値を渡して二重に読まない
+  if (!env.databaseUrl || !isLocalDatabaseUrl(env.databaseUrl)) throw new Error('手元の DB の住所を読めない（supabase start を確かめる）');
+
+  // リポジトリの根（このファイルの2つ上）から決める。cwd で決めると、下のフォルダーから流した時に git が無視しない場所にできる
+  const profileDir = path.resolve(__dirname, '..', '..', '.tmp-dev-staff', 'profile');
+  // 共有の道具（provisionStaff・loginWithPasskey）は接続情報を環境変数から読む。使う間だけ status の値を置き、終わったら元に戻す
+  // （ブラウザの子のプロセスに手元の鍵を渡さない・同じプロセスの後の処理に効かせない）
+  const envKeys = ['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'] as const;
+  const savedEnv = envKeys.map((key) => [key, process.env[key]] as const);
   process.env.NEXT_PUBLIC_SUPABASE_URL = env.url;
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = env.anonKey;
   process.env.SUPABASE_SERVICE_ROLE_KEY = env.serviceRoleKey;
-
-  const profileDir = path.resolve('.tmp-dev-staff', 'profile');
-  const db = await deps.connectDb(env.databaseUrl);
+  let db: PgClient | undefined;
   let cookies: BrowserCookie[];
   try {
+    db = await deps.connectDb(env.databaseUrl);
     const staff = await deps.provisionStaff(db, { role: role as StaffRole, approvedPasskeys: 2, email });
     const { session } = await deps.loginWithPasskey({ email: staff.email, authenticator: staff.authenticators[0] });
     const authSessionId = readSessionId(session.access_token);
@@ -136,12 +153,12 @@ export async function main(argv: string[], deps: DevStaffDeps = defaultDeps): Pr
     const csrfToken = randomBytes(32).toString('hex');
     const inserted = await db.query(
       `insert into public.sessions (user_id, refresh_token_hash, csrf_token_hash, auth_session_id, expires_at, last_seen_at)
-       values ($1::uuid, $2, $3, $4::uuid, now() + interval '7 days', now())`,
-      [staff.userId, sha256Hex(session.refresh_token), sha256Hex(csrfToken), authSessionId],
+       values ($1::uuid, $2, $3, $4::uuid, now() + make_interval(secs => $5::double precision), now())`,
+      [staff.userId, sha256Hex(session.refresh_token), sha256Hex(csrfToken), authSessionId, REFRESH_TOKEN_MAX_AGE_SECONDS],
     );
     if (inserted.rowCount !== 1) throw new Error('結び付けた sessions の行を作れない');
 
-    const expires = Math.floor(Date.now() / 1000) + csrfCookieMaxAgeSeconds;
+    const expires = Math.floor(Date.now() / 1000) + REFRESH_TOKEN_MAX_AGE_SECONDS;
     const make = (name: string, value: string, httpOnly: boolean): BrowserCookie => ({
       name,
       value,
@@ -151,12 +168,16 @@ export async function main(argv: string[], deps: DevStaffDeps = defaultDeps): Pr
       expires,
     });
     cookies = [
-      make(accessCookieName, session.access_token, cookieOptionsForAccess(csrfCookieMaxAgeSeconds).httpOnly),
-      make(refreshCookieName, session.refresh_token, cookieOptionsForRefresh(csrfCookieMaxAgeSeconds).httpOnly),
-      make(csrfCookieName, csrfToken, cookieOptionsForCsrf(csrfCookieMaxAgeSeconds).httpOnly),
+      make(accessCookieName, session.access_token, cookieOptionsForAccess(REFRESH_TOKEN_MAX_AGE_SECONDS).httpOnly),
+      make(refreshCookieName, session.refresh_token, cookieOptionsForRefresh(REFRESH_TOKEN_MAX_AGE_SECONDS).httpOnly),
+      make(csrfCookieName, csrfToken, cookieOptionsForCsrf(REFRESH_TOKEN_MAX_AGE_SECONDS).httpOnly),
     ];
   } finally {
-    await db.end();
+    for (const [key, value] of savedEnv) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    if (db) await db.end();
   }
 
   deps.print(`店員を用意した: ${email}（役割 ${role}）`);
@@ -170,10 +191,27 @@ export async function main(argv: string[], deps: DevStaffDeps = defaultDeps): Pr
   return { profileDir };
 }
 
+/** 失敗の文面は共有の道具が status・code だけにしてある。Error の message だけを出し、それ以外は決まった文にする（JWT・鍵は出さない）
+ *
+ * @impl IMPL-AUTH-248
+ * @design DD-AUTH-049
+ */
+export async function run(
+  argv: string[],
+  overrides: Partial<DevStaffDeps> = {},
+  printError: (line: string) => void = (line) => console.error(line),
+): Promise<number> {
+  try {
+    await main(argv, overrides);
+    return 0;
+  } catch (error: unknown) {
+    printError(error instanceof Error ? error.message : '店員として入る用意に失敗した');
+    return 1;
+  }
+}
+
 if (require.main === module) {
-  main(process.argv.slice(2)).catch((error: unknown) => {
-    // 失敗の文面は、共有の道具が status・code だけにしてある。JWT・鍵は出さない
-    console.error(error instanceof Error ? error.message : '店員として入る用意に失敗した');
-    process.exitCode = 1;
+  run(process.argv.slice(2)).then((code) => {
+    process.exitCode = code;
   });
 }

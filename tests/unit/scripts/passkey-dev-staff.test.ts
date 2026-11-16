@@ -6,7 +6,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { main, type DevStaffDeps } from '../../../scripts/dev/passkey-dev-staff';
+import { main, run, type DevStaffDeps } from '../../../scripts/dev/passkey-dev-staff';
 
 const FAKE_JWT_BODY = Buffer.from(JSON.stringify({ sub: 'user-1', session_id: 'auth-session-1' })).toString('base64url');
 const ACCESS_TOKEN = `aaa.${FAKE_JWT_BODY}.sig-access-secret`;
@@ -108,7 +108,7 @@ describe('SR-AUTH-015 passkey-dev-staff', () => {
     expect(csrfHash).toBe(createHash('sha256').update(csrf!.value).digest('hex'));
     expect(cookies.find((c) => c.name === 'sb-access-token')).toMatchObject({ value: ACCESS_TOKEN, httpOnly: true });
     expect(cookies.find((c) => c.name === 'sb-refresh-token')).toMatchObject({ value: REFRESH_TOKEN, httpOnly: true });
-    expect(result.profileDir).toBe(path.resolve('.tmp-dev-staff', 'profile'));
+    expect(result.profileDir).toBe(path.resolve(__dirname, '../../..', '.tmp-dev-staff', 'profile'));
     expect(t.opened[0].profileDir).toBe(result.profileDir);
     expect(t.db.end).toHaveBeenCalled();
   });
@@ -154,5 +154,74 @@ describe('SR-AUTH-015 passkey-dev-staff', () => {
     await expect(main([], b.deps)).rejects.toThrow('sessions の行');
     expect(b.mocks.openBrowser).not.toHaveBeenCalled();
     expect(b.db.end).toHaveBeenCalled();
+  });
+
+  test('DD-AUTH-049 DB の住所の ?host=・?hostaddr= で接続先を替えるものは、何も書かずに投げる', async () => {
+    for (const q of ['host=db.x.supabase.co', 'hostaddr=203.0.113.1']) {
+      const t = setup({ databaseUrl: `postgresql://postgres:postgres@127.0.0.1:54322/postgres?${q}` });
+      await expect(main([], t.deps)).rejects.toThrow();
+      expect(t.mocks.connectDb).not.toHaveBeenCalled();
+      expect(t.mocks.provisionStaff).not.toHaveBeenCalled();
+    }
+  });
+
+  test('DD-AUTH-049 共有の道具には status の値を渡し、終わったら環境変数を元に戻す（成功でも失敗でも）', async () => {
+    const keys = ['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'] as const;
+    const saved = keys.map((k) => process.env[k]);
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://127.0.0.1:9';
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    try {
+      const a = setup();
+      a.mocks.provisionStaff.mockImplementationOnce(async (_db: unknown, input: { email?: string }) => {
+        expect(process.env.NEXT_PUBLIC_SUPABASE_URL).toBe('http://127.0.0.1:54321');
+        expect(process.env.SUPABASE_SERVICE_ROLE_KEY).toBe('service');
+        return { userId: 'user-1', email: input.email as string, authenticators: [{}, {}] };
+      });
+      await main([], a.deps);
+      expect(process.env.NEXT_PUBLIC_SUPABASE_URL).toBe('http://127.0.0.1:9');
+      expect(process.env.SUPABASE_SERVICE_ROLE_KEY).toBeUndefined();
+
+      const b = setup();
+      b.mocks.loginWithPasskey.mockRejectedValueOnce(new Error('x'));
+      await expect(main([], b.deps)).rejects.toThrow('x');
+      expect(process.env.NEXT_PUBLIC_SUPABASE_URL).toBe('http://127.0.0.1:9');
+      expect(process.env.SUPABASE_SERVICE_ROLE_KEY).toBeUndefined();
+    } finally {
+      keys.forEach((k, i) => {
+        if (saved[i] === undefined) delete process.env[k];
+        else process.env[k] = saved[i];
+      });
+    }
+  });
+
+  test('DD-AUTH-049 行の期限はアプリの REFRESH_TOKEN_MAX_AGE_SECONDS（7日）で、Cookie の寿命と同じ', async () => {
+    const t = setup();
+    await main(['--open'], t.deps);
+    const ins = t.queries.find((q) => /insert into public\.sessions/i.test(q.text));
+    expect(ins!.params[4]).toBe(7 * 24 * 60 * 60);
+    const nowSec = Math.floor(Date.now() / 1000);
+    for (const c of t.opened[0].cookies) {
+      expect((c as unknown as { expires: number }).expires - nowSec).toBeGreaterThan(7 * 24 * 60 * 60 - 60);
+      expect((c as unknown as { expires: number }).expires - nowSec).toBeLessThanOrEqual(7 * 24 * 60 * 60);
+    }
+  });
+
+  test('DD-AUTH-049 失敗の時の出力は Error の message だけで、JWT・token・鍵を含まない（Error 以外は決まった文）', async () => {
+    const a = setup();
+    a.mocks.loginWithPasskey.mockRejectedValueOnce(new Error('パスキーログインの始めに失敗した（status: 400, code: unknown）'));
+    const errors: string[] = [];
+    expect(await run([], a.deps, (l) => errors.push(l))).toBe(1);
+    expect(errors).toEqual(['パスキーログインの始めに失敗した（status: 400, code: unknown）']);
+
+    const b = setup();
+    b.mocks.provisionStaff.mockRejectedValueOnce({ token: ACCESS_TOKEN, key: REFRESH_TOKEN });
+    const errors2: string[] = [];
+    expect(await run([], b.deps, (l) => errors2.push(l))).toBe(1);
+    const out = [...b.lines, ...errors2].join(String.fromCharCode(10));
+    for (const secret of [ACCESS_TOKEN, REFRESH_TOKEN, 'service', 'anon']) expect(out).not.toContain(secret);
+    expect(errors2).toHaveLength(1);
+
+    const c = setup();
+    expect(await run([], c.deps, (l) => errors.push(l))).toBe(0);
   });
 });

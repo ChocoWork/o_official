@@ -1,6 +1,6 @@
 # AUTH の構造設計
 
-> 状態: 推定 | 確認日: 2026-11-01 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の窓口 `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-11-17 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の窓口 `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -1683,6 +1683,22 @@ stateDiagram-v2
 - 約100の決まり（RLS）から行ごとに呼ばれうる: 手元で `has_permission` を `( SELECT ... )` で包まずに呼ぶ決まりは21の表の77件ある（財務の表群・`items`・`looks`・`look_items`・`news_articles`・`stockists`・`orders`・`order_items`・`item_color_presets`・`user_roles`）。条件3の数えは、パスキーの amr と ACL を通った人（店員）だけが行ごとに1回ずつ払う。お客さん・anon は条件1・2か ACL で止まり、認めの控えまで届かない。決まりを書き換えて包む作業は、費用が見える時の別の課題
 - `/api/auth/me` の `mfaVerified`: 認めた本数は JWT の印 `staff_passkeys_ok` から取る表示のヒント（真なら足りる数、偽なら0）。権限の判定は `admin-rbac` が DB で数える（ADR-0463）
 - 手元の設定: `supabase/config.toml` の `[auth.hook.custom_access_token]` を有効にした（`pg-functions://postgres/public/passkey_access_token_hook`。取り込みは `supabase stop`・`start` が要る）。`[auth.webauthn] rp_origins` は `http://localhost:3000` だけ（`rp_id` が `localhost` では `127.0.0.1` の出所で WebAuthn は使えないので外した）
+
+
+### DATA-AUTH-017 手元の開発で店員として入るスクリプトは、店員の用意・ログインの2つの関数と結び付けた行・Cookie を、手元の専用のブラウザにだけ置く
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-014、ADR-0464 |
+| 根拠 | DATA-AUTH-015 の共有の道具を使い、手元の開発者が画面で /admin に入れるようにする。アプリのログインと同じ形の `public.sessions` の行を作らないと、管理の入口が session の生存の確かめで 401 にする。CSRF の値の hash を行に入れ、同じ値を Cookie に載せないと、管理の書き込みが CSRF の確かめで落ちる。判断は DD-AUTH-049 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_dev_staff.integration.test.ts`）、E2E（FR-AUTH-014-AC-01〜03）、単体テスト（DD-AUTH-049） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-10-brief.md`、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 10） |
+
+- 書く表: `public.sessions`（1行。`refresh_token_hash`・`csrf_token_hash` は SHA-256、`auth_session_id` は JWT の `session_id`、`expires_at` はアプリの `REFRESH_TOKEN_MAX_AGE_SECONDS` 先）。`auth.sessions` は、パスキーのログインの session 以外を消す。そのほかは DATA-AUTH-015 と同じ。手元の DB だけで、`db reset` で消える
+- 書くファイル: ブラウザのプロファイルだけ（リポジトリの根の `.tmp-dev-staff/profile/`。`.gitignore` に `/.tmp-dev-staff/`）。Cookie・token・JWT・鍵は標準出力に書かない。Cookie は Chromium のプロファイルの保存（Windows では暗号化）にだけ残る
+- 接続情報: 手元の `supabase status -o json` だけ。環境変数・`.env*` は読まない
+- 戻す: スクリプトとプロファイルの置き場を消すだけ。DB の移行は無い
 
 
 ### 手元の Supabase Auth の設定の表（波 6 の目標。手元は 2026-11-01 に切り替え済み）

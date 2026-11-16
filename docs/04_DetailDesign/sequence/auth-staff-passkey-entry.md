@@ -247,10 +247,10 @@ flowchart TD
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | DATA-AUTH-015 |
+| 上位 | DATA-AUTH-017 |
 | 根拠 | 段1a の切り替え（DD-AUTH-048）の後、手元の開発者が画面で /admin を確かめる手段が無くなる。DD-AUTH-046 の共有の道具で新しい店員を作ってログインし、アプリのログインと同じ形の `public.sessions` の行と Cookie を専用のブラウザに入れる。番号は、計画の予約（048）が Task 9 の切り替えで先に使われたため 049 にした |
 | 状態 | 推定 |
-| 確かめ方 | 単体テスト（`tests/unit/scripts/passkey-dev-staff.test.ts`）、E2E（FR-AUTH-014-AC-01・02）。実際のブラウザでの確認は調整役が手元のアプリで行う |
+| 確かめ方 | 単体テスト（`tests/unit/scripts/passkey-dev-staff.test.ts`）、結合テスト（DATA-AUTH-017）、E2E（FR-AUTH-014-AC-01〜03） |
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-10-brief.md`、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 10） |
 
 ```mermaid
@@ -260,7 +260,7 @@ sequenceDiagram
     participant D as 手元の DB
     participant G as GoTrue
     participant B as 専用のブラウザ
-    S->>C: 住所と鍵を読む（.env は読まない）
+    S->>C: 住所・鍵・DB の住所を読む（環境変数・.env は読まない）
     S->>S: 住所が手元でなければ、ここで投げる
     S->>D: 接続
     S->>G: provisionStaff（認めたパスキー2本）
@@ -270,10 +270,13 @@ sequenceDiagram
     S->>B: --open なら、Cookie を入れて /admin を開く
 ```
 
+- 接続情報は `supabase status -o json` だけから読み（止まっている時は起動を促す文で投げる）、共有の道具には、使う間だけ環境変数として渡して `finally` で元に戻す（ブラウザの子のプロセスに鍵を渡さない）
+- DB の住所は、手元であることに加え、`?host=`・`?hostaddr=` で接続先を替えるものを断る
 - 住所の確かめは、DB にも GoTrue にも触れる前。Supabase の住所と DB の住所のどちらかが手元でなければ、何も書かずに投げる。役割は admin・supporter だけ（引数の誤りは、住所を読む前に投げる）
 - 既にいる店員は再利用せず、新しいメールを使う（`provisionStaff` が同じメールで投げる）。メールの既定は `dev-staff-<乱数>@example.com`
-- Cookie は `src/lib/cookie.ts` の名前と属性（`sb-access-token`・`sb-refresh-token`・`sb-csrf-token`。csrf だけ httpOnly でない）。ブラウザのプロファイルは `.tmp-dev-staff/profile/`（git が無視する）。Cookie・token・JWT・鍵はファイルにも標準出力にも出さない
+- Cookie は `src/lib/cookie.ts` の名前と属性（`sb-access-token`・`sb-refresh-token`・`sb-csrf-token`。csrf だけ httpOnly でない）。ブラウザのプロファイルはリポジトリの根の `.tmp-dev-staff/profile/`（このファイルの位置から決める。cwd に頼らない。git が無視する）。行の期限と Cookie の寿命は、アプリの `REFRESH_TOKEN_MAX_AGE_SECONDS`（`session.ts`）。Cookie・token・JWT・鍵は標準出力に出さず、ファイルは Chromium のプロファイルだけ
 - パスキーのログインは24時間で切れる（管理の入口の条件2）。毎日、そして `db reset` の後（店員が消える）に流し直す
+- `--open` の間は、窓を閉じるまでコマンドが終わらない。前の窓が開いたままだと、DB に店員と行を作った後でプロファイルの使用中で落ちる（窓を閉じ、新しいメールで流し直す）。Chromium が要る（`npx playwright install chromium`）
 - 異常: 途中で落ちると利用者は作られたままで役割だけ付く場合がある。`db reset` で消える。DB の接続は成功・失敗のどちらでも閉じる
 - テスト観点: 本番の住所・手元でない DB の住所・`--role owner` で何も触れずに投げる、既定の引数、auth.sessions の削除の引数、`csrf_token_hash` と Cookie の値の SHA-256 の一致、出力に秘密を含まない、`.gitignore`
 

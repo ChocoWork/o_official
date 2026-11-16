@@ -2220,13 +2220,13 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 上位 | SR-AUTH-015 |
 | 根拠 | SR-AUTH-015 を、`scripts/dev/passkey-dev-staff.ts` の `main` にする。共有の道具（`provisionStaff`・`loginWithPasskey`）で新しい店員を作ってログインし、アプリのログインと同じ形で `public.sessions` の行（`csrf_token_hash` つき）を作り、同じ値を Cookie `sb-csrf-token` に載せる（管理の書き込みが CSRF の確かめで落ちないため）。`--open` で専用のプロファイルの Chromium を開く |
 | 状態 | 推定 |
-| 確かめ方 | 単体テスト（`tests/unit/scripts/passkey-dev-staff.test.ts`）。実際のブラウザでの確認は調整役が手元のアプリで行う |
+| 確かめ方 | 単体テスト（`tests/unit/scripts/passkey-dev-staff.test.ts`）、結合テスト（`tests/integration/db/auth_passkey_dev_staff.integration.test.ts`）、E2E（FR-AUTH-014-AC-01〜03） |
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-10-brief.md`、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 10） |
 | 優先度 | SHOULD |
 
 受け入れの内容: 本番の住所（`https://x.supabase.co`）や手元でない DB の住所を渡すと、DB への接続・店員の用意・ログイン・ブラウザの起動がどれも0回で投げること（`--role owner` も何もせずに投げる）。作る `public.sessions` の行の `csrf_token_hash` が、ブラウザに入れる `sb-csrf-token`（httpOnly でない）の値の SHA-256 と一致すること。標準出力に JWT・Cookie・token・CSRF の値が含まれず、`.gitignore` に `/.tmp-dev-staff/` があること。
 
-引数は `--email`（既定は `dev-staff-<乱数>@example.com`。既にいる店員は再利用しないので新しいメールを使う）・`--role admin|supporter`（既定 admin）・`--open`。ブラウザのプロファイルは `.tmp-dev-staff/profile/`（git が無視する）。パスキーのログインの session 以外の `auth.sessions` は消す。
+接続情報（Supabase の住所・鍵・DB の住所）は、環境変数や `.env*` でなく、手元の `supabase status -o json` だけから読む。引数は `--email`（既定は `dev-staff-<乱数>@example.com`。既にいる店員は再利用しないので新しいメールを使う）・`--role admin|supporter`（既定 admin）・`--open`。ブラウザのプロファイルは `.tmp-dev-staff/profile/`（git が無視する）。パスキーのログインの session 以外の `auth.sessions` は消す。
 
 ## 受け入れ条件
 
@@ -4642,7 +4642,7 @@ anon の鍵と service_role の鍵のそれぞれで `staff_passkey_amr_ok`・`s
 | 確かめ方 | E2E（`e2e/FR-LOGIN-046-passkey-dev-staff-script.spec.ts`。画面を開かない試験で、幅で結果は変わらない）、単体テスト（`tests/unit/scripts/passkey-dev-staff.test.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-10-brief.md` |
 
-本番の住所（`https://x.supabase.co`）を環境に入れて `main` を呼ぶと、投げること（店員も行も作らない）。
+本番の住所（`https://x.supabase.co`）を読み取り結果として渡すと、「手元の Supabase だけ」の文で投げ、DB への接続・店員の用意が0回で、`auth.users` に店員が増えないこと。DB の住所が手元でない・`?host=`・`?hostaddr=` で接続先を替えるものも、何も書かずに投げること。
 
 ### FR-AUTH-014-AC-02 作った店員の public.sessions の行は、パスキーのログインの session に結び付き、csrf_token_hash が入る
 
@@ -4655,6 +4655,18 @@ anon の鍵と service_role の鍵のそれぞれで `staff_passkey_amr_ok`・`s
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-10-brief.md` |
 
 `main` を `--open` なしで呼ぶと、新しい店員（認めたパスキー2本）の `auth.sessions` はパスキーのログインの1行だけで、`public.sessions` にその `auth_session_id` に結び付いた失効していない行が1つあり、`csrf_token_hash` が64桁の16進であること。
+
+### FR-AUTH-014-AC-03 作った Cookie で /admin に入れ、CSRF のヘッダーが無い管理の書き込みは 403、ヘッダーがあれば 403 でない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-014 |
+| 根拠 | 行の形だけでは、アプリ側が判定を変えた時（`csrf_token_hash` の作り・session の確かめ・Cookie の名前）に、手元で /admin に入る道が黙って壊れる。本物のアプリに、スクリプトが作った Cookie を入れて確かめる |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-046-passkey-dev-staff-script.spec.ts`。`openBrowser` を試験のブラウザに入れ替える。390・768・1280 の3幅） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-10-brief.md` |
+
+スクリプトが作った Cookie を試験のブラウザに入れて `/admin` を開くと、200 で `/admin` に留まること。`PATCH /api/admin/users`（本文 `{}`）は、`x-csrf-token` が無ければ 403 で本文に `CSRF validation failed` を含み、`sb-csrf-token` の値を `x-csrf-token` に付ければ 403 にならないこと。
 
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 

@@ -59,11 +59,11 @@
 | FREQ-335-AC-03 1回送ると verifyOtp が type email で1回だけ呼ばれる | E2E | `docs/02_Requirements/areas/auth.md:3962` |
 | FREQ-515-AC-01 管理画面のユーザー一覧で選んだ役割で送られ、失敗したら元の役割に戻る | E2E | `docs/02_Requirements/areas/auth.md:4053` |
 | FREQ-515-AC-03 お知らせの作成・編集で選んだカテゴリーで保存される | E2E | `docs/02_Requirements/areas/auth.md:4079` |
-| SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | E2E | `docs/02_Requirements/areas/auth.md:4991` |
-| SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | E2E | `docs/02_Requirements/areas/auth.md:5172` |
-| SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:5264` |
-| SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:5436` |
-| SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:5552` |
+| SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | E2E | `docs/02_Requirements/areas/auth.md:5003` |
+| SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | E2E | `docs/02_Requirements/areas/auth.md:5184` |
+| SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:5276` |
+| SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:5448` |
+| SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:5564` |
 | FREQ-508-AC-03 流し直しても付与が重ならず、ほかの結び付きが残り、「監査ログの閲覧」の名前で登録される | E2E | `docs/02_Requirements/areas/admin.md:237` |
 | SEC-ADMIN-003-AC-02 管理の表の権限が anon・authenticated に無い | E2E | `docs/02_Requirements/areas/admin.md:465` |
 | SEC-ADMIN-010-AC-01 監査ログの行を書き換えると検知の確かめで分かる | E2E | `docs/02_Requirements/areas/admin.md:685` |
@@ -183,11 +183,9 @@
 - `scripts/admin/bootstrap.ts:117` `readHiddenFromStdin` の Ctrl+C の分岐は通らない。理由は改行の分岐と同じ。確認: 未
 - `scripts/admin/bootstrap.ts:123` `readHiddenFromStdin` の Backspace の分岐と、通常の字を足す側は通らない。理由は改行の分岐と同じ。確認: 未
 - `scripts/admin/bootstrap.ts:138` ファイルの最後の `require.main === module` の真の側（コマンドとして流した時）は通らない。単体テストは import で読むので常に偽で、真の側は端末つきの実行（E2E・手での確認）でしか通らないため。確認: 未
-- `scripts/dev/passkey-dev-staff.ts:53` の `readLocalConnection` の `NEXT_PUBLIC_SUPABASE_URL || status.apiUrl` の右側は、単体では通らない。単体は `readEnv` を偽物に入れ替えるため。本物の `supabase status` を読む道は E2E（FR-AUTH-014-AC-02）が通る。確認: 未
-- `scripts/dev/passkey-dev-staff.ts:54` の `NEXT_PUBLIC_SUPABASE_ANON_KEY || status.anonKey` の右側は通らない。理由は :53 と同じ。確認: 未
-- `scripts/dev/passkey-dev-staff.ts:55` の `SUPABASE_SERVICE_ROLE_KEY || status.serviceRoleKey` の右側は通らない。理由は :53 と同じ。確認: 未
-- `scripts/dev/passkey-dev-staff.ts:56` の `DB_URL` が文字列でない側（空文字にする）は通らない。理由は :53 と同じ（手元の status は必ず文字列を返す）。確認: 未
-- `scripts/dev/passkey-dev-staff.ts:74` の `openBrowser` の `context.pages()[0] ?? newPage()` の右側は通らない。`openBrowser` は本物の Chromium を開くので単体では流さず、調整役が手元で確かめる。確認: 未
-- `scripts/dev/passkey-dev-staff.ts:109` の `main` の引数 `deps` の既定値 `= defaultDeps` は、単体は必ず偽物を渡すので通らない。E2E（FR-AUTH-014-AC-01・02）が既定の道を通る。確認: 未
-- `scripts/dev/passkey-dev-staff.ts:173` の `if (require.main === module)` の真の側は、コマンドとして起動した時だけ通るので単体では通らない。確認: 未
-- `scripts/dev/passkey-dev-staff.ts:176` の `error instanceof Error` の偽の側（Error でない値を投げた時の文）は通らない。共有の道具は必ず Error を投げる。確認: 未
+- `scripts/dev/passkey-dev-staff.ts:61` の `readLocalConnection` の `DB_URL` が文字列でない側（空文字にする）は通らない。手元の `supabase status` は必ず文字列を返し、単体は `readEnv` を偽物に入れ替えるため。status を読む道そのものは、結合テスト（DATA-AUTH-017）と E2E（FR-AUTH-014-AC-02）が通る。確認: 未
+- `scripts/dev/passkey-dev-staff.ts:85` の `openBrowser` の `context.pages()[0] ?? newPage()` の右側は通らない。`openBrowser` は本物の Chromium を開くので単体では流さず、E2E（FR-AUTH-014-AC-03）は `openBrowser` を入れ替える。調整役が手元で確かめる。確認: 未
+- `scripts/dev/passkey-dev-staff.ts:120` の `main` の引数 `overrides` の既定値 `= {}` は、単体は必ず偽物を渡すので通らない。結合テスト・E2E（AC-02）が既定の道を通る。確認: 未
+- `scripts/dev/passkey-dev-staff.ts:201` の `run` の引数 `overrides` の既定値 `= {}` は、単体は必ず偽物を渡すので通らない。コマンドとして起動した時に通る。確認: 未
+- `scripts/dev/passkey-dev-staff.ts:202` の `run` の引数 `printError` の既定値（`console.error`）は、単体は必ず記録する関数を渡すので通らない。コマンドとして起動した時に通る。確認: 未
+- `scripts/dev/passkey-dev-staff.ts:213` の `if (require.main === module)` の真の側は、コマンドとして起動した時だけ通るので単体では通らない。確認: 未
