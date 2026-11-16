@@ -71,3 +71,6 @@ graphify-out/
 
 # ローカル検証用の一時ファイル（スキーマ比較など）
 tmp/
+
+# 手元の開発で店員として入る専用のブラウザのプロファイル（scripts/dev/passkey-dev-staff.ts）
+/.tmp-dev-staff/

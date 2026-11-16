@@ -1,6 +1,6 @@
 # 店員のパスキーの入口（設定・登録の窓・認めたパスキー）
 
-> 状態: 推定 | 確認日: 2026-11-17 | 対象: `supabase/migrations/20261116215034_passkey_foundation_tables.sql`、`supabase/migrations/20261116230000_passkey_access_token_hook.sql`、`supabase/migrations/20261116232141_passkey_credential_events.sql`、`src/lib/auth/staff-passkey-defaults.ts`、`src/lib/auth/staff-passkey-reject.ts`、`src/lib/auth/staff-passkey-credential-events.ts`、`e2e/passkey-soft-authenticator.ts`、`scripts/e2e/passkey-staff.ts` | 親: [シーケンス設計の方針](README.md)
+> 状態: 推定 | 確認日: 2026-11-17 | 対象: `supabase/migrations/20261116215034_passkey_foundation_tables.sql`、`supabase/migrations/20261116230000_passkey_access_token_hook.sql`、`supabase/migrations/20261116232141_passkey_credential_events.sql`、`src/lib/auth/staff-passkey-defaults.ts`、`src/lib/auth/staff-passkey-reject.ts`、`src/lib/auth/staff-passkey-credential-events.ts`、`e2e/passkey-soft-authenticator.ts`、`scripts/e2e/passkey-staff.ts`、`scripts/dev/passkey-dev-staff.ts` | 親: [シーケンス設計の方針](README.md)
 
 ## 概要
 
@@ -10,8 +10,8 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | FR-AUTH-007、FR-AUTH-008、SEC-AUTH-036、SEC-AUTH-037、DATA-AUTH-011、DATA-AUTH-012、DATA-AUTH-013、SR-AUTH-012、FR-AUTH-009、SEC-AUTH-038、DATA-AUTH-014、SR-AUTH-013、FR-AUTH-010、DATA-AUTH-015、SR-AUTH-014、FR-AUTH-011、SEC-AUTH-039、DATA-AUTH-016、ADR-0463、ADR-0464、ADR-0465 |
-| 対象のコード | 移行 `supabase/migrations/20261116215034_passkey_foundation_tables.sql`・`20261116230000_passkey_access_token_hook.sql`・`20261116232141_passkey_credential_events.sql`、`src/lib/auth/staff-passkey-defaults.ts`・`staff-passkey-reject.ts`・`staff-passkey-credential-events.ts`、`e2e/passkey-soft-authenticator.ts`、`scripts/e2e/passkey-staff.ts`（Task 7） |
+| 対応する ID | FR-AUTH-007、FR-AUTH-008、SEC-AUTH-036、SEC-AUTH-037、DATA-AUTH-011、DATA-AUTH-012、DATA-AUTH-013、SR-AUTH-012、FR-AUTH-009、SEC-AUTH-038、DATA-AUTH-014、SR-AUTH-013、FR-AUTH-010、DATA-AUTH-015、SR-AUTH-014、FR-AUTH-011、SEC-AUTH-039、DATA-AUTH-016、SR-AUTH-015、FR-AUTH-014、ADR-0463、ADR-0464、ADR-0465 |
+| 対象のコード | 移行 `supabase/migrations/20261116215034_passkey_foundation_tables.sql`・`20261116230000_passkey_access_token_hook.sql`・`20261116232141_passkey_credential_events.sql`、`src/lib/auth/staff-passkey-defaults.ts`・`staff-passkey-reject.ts`・`staff-passkey-credential-events.ts`、`e2e/passkey-soft-authenticator.ts`、`scripts/e2e/passkey-staff.ts`（Task 7）、`scripts/dev/passkey-dev-staff.ts`（Task 10） |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-2・5-5・6-2） |
 | 調べた時点 | 2026-11-16（手元の DB で結合試験を流した） |
 
@@ -242,6 +242,40 @@ flowchart TD
 - DB の `now()` は取引の始めの時刻で固定なので、取引の中の試験で claims の時刻を作る時は少し前（5秒）にする（本物の JWT は要求より前に出る）
 - 異常: `has_permission` の中の関数は例外を握って偽を返す（閉じる側）
 - テスト観点: 本数 0・1・2・消した直後・印の偽装・amr の値の表（TS と同じ）・`aal2` でも passkey が無ければ断る・RPC の誤り・数でない値・session の失効が先・権限が無ければ 403 のまま・お客さんが認めの控えまで届かない
+
+### DD-AUTH-049 手元の開発で店員として入る専用のブラウザのスクリプトの順番
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | DATA-AUTH-015 |
+| 根拠 | 段1a の切り替え（DD-AUTH-048）の後、手元の開発者が画面で /admin を確かめる手段が無くなる。DD-AUTH-046 の共有の道具で新しい店員を作ってログインし、アプリのログインと同じ形の `public.sessions` の行と Cookie を専用のブラウザに入れる。番号は、計画の予約（048）が Task 9 の切り替えで先に使われたため 049 にした |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/scripts/passkey-dev-staff.test.ts`）、E2E（FR-AUTH-014-AC-01・02）。実際のブラウザでの確認は調整役が手元のアプリで行う |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-10-brief.md`、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 10） |
+
+```mermaid
+sequenceDiagram
+    participant S as passkey-dev-staff
+    participant C as supabase status
+    participant D as 手元の DB
+    participant G as GoTrue
+    participant B as 専用のブラウザ
+    S->>C: 住所と鍵を読む（.env は読まない）
+    S->>S: 住所が手元でなければ、ここで投げる
+    S->>D: 接続
+    S->>G: provisionStaff（認めたパスキー2本）
+    S->>G: loginWithPasskey
+    S->>D: パスキーのログインの session 以外の auth.sessions を消す
+    S->>D: public.sessions に結び付けた行（csrf_token_hash は CSRF の値の SHA-256）
+    S->>B: --open なら、Cookie を入れて /admin を開く
+```
+
+- 住所の確かめは、DB にも GoTrue にも触れる前。Supabase の住所と DB の住所のどちらかが手元でなければ、何も書かずに投げる。役割は admin・supporter だけ（引数の誤りは、住所を読む前に投げる）
+- 既にいる店員は再利用せず、新しいメールを使う（`provisionStaff` が同じメールで投げる）。メールの既定は `dev-staff-<乱数>@example.com`
+- Cookie は `src/lib/cookie.ts` の名前と属性（`sb-access-token`・`sb-refresh-token`・`sb-csrf-token`。csrf だけ httpOnly でない）。ブラウザのプロファイルは `.tmp-dev-staff/profile/`（git が無視する）。Cookie・token・JWT・鍵はファイルにも標準出力にも出さない
+- パスキーのログインは24時間で切れる（管理の入口の条件2）。毎日、そして `db reset` の後（店員が消える）に流し直す
+- 異常: 途中で落ちると利用者は作られたままで役割だけ付く場合がある。`db reset` で消える。DB の接続は成功・失敗のどちらでも閉じる
+- テスト観点: 本番の住所・手元でない DB の住所・`--role owner` で何も触れずに投げる、既定の引数、auth.sessions の削除の引数、`csrf_token_hash` と Cookie の値の SHA-256 の一致、出力に秘密を含まない、`.gitignore`
 
 ## 未確認事項
 

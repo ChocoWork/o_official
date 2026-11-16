@@ -225,7 +225,7 @@ export function decideServerReuse(probe: ServerProbe, expectedFingerprint: strin
   return true;
 }
 
-function runSupabaseStatus(): string {
+export function runSupabaseStatus(): string {
   return execFileSync('npx', ['supabase', 'status', '-o', 'json'], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'ignore'],

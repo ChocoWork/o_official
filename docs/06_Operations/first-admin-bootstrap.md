@@ -25,7 +25,7 @@
 
 ## 前提
 
-- 手元: **本番用。手元は段1a の新しい手順（dev の店員のスクリプト。[Task 10](../superpowers/plans/2026-11-16-passkey-stage1a-foundation.md)）**。段1a の切り替え（Task 9）の後は、このコマンドで作った店長（パスワード＋TOTP）は、手元で `npm run db:reset` の後に動かない（フックが店員のパスワード・メールのコードを拒否する。SEC-AUTH-040）
+- このコマンドは**本番用**。手元は段1a の新しい手順（`npm run dev:staff`。[Task 10](../superpowers/plans/2026-11-16-passkey-stage1a-foundation.md)。下の「手元の開発で店員として入る」）を使う。段1a の切り替え（Task 9）の後は、このコマンドで作った店長（パスワード＋TOTP）は、手元で `npm run db:reset` の後に動かない（フックが店員のパスワード・メールのコードを拒否する。SEC-AUTH-040）
 - ほかの環境: 新しい Supabase に、全部の移行（`supabase/migrations/`）を当てた後。`roles` の表に `admin` の行があること
 - 環境変数 `SUPABASE_URL`（無ければ `NEXT_PUBLIC_SUPABASE_URL`）と `SUPABASE_SERVICE_ROLE_KEY` が要る。コマンド自体は `.env` を読まない
 - 端末（TTY）から流す。パスワードを字を出さずに聞くため、パイプやリダイレクトでは動かない
@@ -71,6 +71,20 @@ PowerShell か Windows Terminal で流す（Git Bash の標準の端末は TTY �
 | 店長の役割を付けられず、作った利用者も消せませんでした | 利用者が役割なしで残った | 出た id の Auth の利用者を、Supabase の画面で手で消してから流し直す |
 | 処理の途中で失敗しました | 想定外の失敗 | 店長が作られていないか、Auth の利用者と `user_roles` を見てから、必要なら流し直す |
 | 引数・環境変数・端末の誤り | 使い方の誤り | 出た文に従って直す |
+
+## 手元の開発で店員として入る
+
+手元の Supabase で /admin を確かめる時は、上のコマンドではなく次を使う（SR-AUTH-015・DD-AUTH-049）。新しい店員を作り、パスキーでログインし、専用のブラウザ（プロファイルは `.tmp-dev-staff/profile/`。git が無視する）に Cookie を入れて /admin を開く。手元の Supabase の住所でなければ、何も書かずに止まる。
+
+```powershell
+npm run dev:staff -- --open [--role admin|supporter] [--email <新しいメール>]
+```
+
+- 先に手元の Supabase（`npm run db:start`）と手元のアプリ（3000番）を起動しておく
+- 毎日流し直す。パスキーのログインは24時間で切れ、切れると管理の入口が閉じる
+- `npm run db:reset` の後も流し直す。店員が消える
+- 既にいる店員は再利用しない。毎回、新しいメールを使う（`--email` を省くと乱数のメールになる）
+- Cookie・token・JWT は、ファイルにも画面にも出ない。ブラウザは、この専用のものだけで使う（普段のブラウザの Cookie には触れない）
 
 ## 注意（守られていないこと）
 

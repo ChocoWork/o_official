@@ -1,6 +1,6 @@
 # AUTH の要件
 
-> 状態: 推定 | 確認日: 2026-11-15 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-11-17 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -259,6 +259,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 出どころ | ユーザーの発言 2026-11-16（`.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18・12-2 の8）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 8、Review Focus 1・2・5）） |
 
 要求の文: 店員（店長・サポーター）が管理の機能を使えるのは、パスキーでログインしてから24時間以内で、認めたパスキーが2本以上ある時だけ。認めたパスキーの本数は、判定のたびに DB で数え、JWT の印は判定に使わない。認めた鍵が消されたら、次の更新を待たずにその場で止まる。段1a の切り替え（Task 9）で、API の窓口（`admin-rbac`）と RLS（`has_permission`）をこの判定につないだ。受け入れ条件は FR-AUTH-012-AC-01〜04（管理の入口。E2E FR-LOGIN-039）、FR-AUTH-013-AC-01〜04（フックの拒否と更新。E2E FR-LOGIN-040）、SEC-AUTH-040（切り替えで抜け道を作らない）。
+
+### SR-AUTH-015 手元の開発では、専用のブラウザで店員としてパスキーで /admin に入れる
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | 段1a の切り替え（Task 9）の後、店員はパスキーでログインした時だけ管理の入口を通る。手元の開発者が画面で /admin を確かめるには、本物のパスキーの設定（認証器）を使わずに、パスキーのログインと同じ道で入れる手段が要る。そこで手元の Supabase だけで動くスクリプトを足す。本番に試験専用の入口は作らない |
+| 状態 | 推定 |
+| 出どころ | ユーザーの発言 2026-11-16（`.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-10-brief.md`、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 10）） |
+
+要求の文: 手元の開発者は、コマンド `npm run dev:staff -- --open` で新しい店員（店長またはサポーター）を作り、その店員として専用のブラウザで /admin を開ける。入れるのは手元の Supabase の時だけで、Cookie・token・JWT・鍵はファイルにも画面の出力にも出ない。パスキーのログインは24時間で切れるので、毎日と `db reset` の後に流し直す。
 
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
@@ -2202,6 +2212,21 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 優先度 | MUST |
 
 規則: (1) 店員がパスキーで入ると JWT の `staff_passkeys_ok` が、認めた鍵2本なら真・1本なら偽。(2) 店員がメールのコード・パスワードで入ろうとすると 403 で、拒否の印で始まる。(3) お客さんのパスキー・メールのコード・パスワードは入れて（旗 `reject_customer_password` は偽）、本物の更新（`token_refresh`）も通る。(4) 窓を閉じた後の店員の更新は拒否され、同じ更新トークンを送っても同じ拒否・`auth.sessions` の行は残る。拒否の後、前のアクセストークンは `/auth/v1/user` が 200 のままだが、管理の表は `has_permission` が断るので0行。
+
+### FR-AUTH-014 店員のパスキーのログインを、手元の専用のブラウザの Cookie に載せるスクリプト
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-015 |
+| 根拠 | SR-AUTH-015 を、`scripts/dev/passkey-dev-staff.ts` の `main` にする。共有の道具（`provisionStaff`・`loginWithPasskey`）で新しい店員を作ってログインし、アプリのログインと同じ形で `public.sessions` の行（`csrf_token_hash` つき）を作り、同じ値を Cookie `sb-csrf-token` に載せる（管理の書き込みが CSRF の確かめで落ちないため）。`--open` で専用のプロファイルの Chromium を開く |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/scripts/passkey-dev-staff.test.ts`）。実際のブラウザでの確認は調整役が手元のアプリで行う |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-10-brief.md`、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 10） |
+| 優先度 | SHOULD |
+
+受け入れの内容: 本番の住所（`https://x.supabase.co`）や手元でない DB の住所を渡すと、DB への接続・店員の用意・ログイン・ブラウザの起動がどれも0回で投げること（`--role owner` も何もせずに投げる）。作る `public.sessions` の行の `csrf_token_hash` が、ブラウザに入れる `sb-csrf-token`（httpOnly でない）の値の SHA-256 と一致すること。標準出力に JWT・Cookie・token・CSRF の値が含まれず、`.gitignore` に `/.tmp-dev-staff/` があること。
+
+引数は `--email`（既定は `dev-staff-<乱数>@example.com`。既にいる店員は再利用しないので新しいメールを使う）・`--role admin|supporter`（既定 admin）・`--open`。ブラウザのプロファイルは `.tmp-dev-staff/profile/`（git が無視する）。パスキーのログインの session 以外の `auth.sessions` は消す。
 
 ## 受け入れ条件
 
@@ -4606,6 +4631,30 @@ anon の鍵と service_role の鍵のそれぞれで `staff_passkey_amr_ok`・`s
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 9、Review Focus 1〜3） |
 
 窓が開いている間の更新は 200、窓を閉じた後の更新は HTTP 403（印で始まる message）で、同じ更新トークンを送っても同じ拒否になり、`auth.sessions` の行は残ること。拒否の後、前のアクセストークンは `/auth/v1/user` が 200、管理の表（非公開のお知らせ）は0行であること。`auth.sessions.not_after` の値は試験の出力に記録する。
+
+### FR-AUTH-014-AC-01 Supabase の住所が手元でない時、何も書かずに投げる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-014 |
+| 根拠 | 本番の店員を作ったり本番の DB に行を足したりしないため。住所を確かめる前には、DB にも GoTrue にも触れない |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-046-passkey-dev-staff-script.spec.ts`。画面を開かない試験で、幅で結果は変わらない）、単体テスト（`tests/unit/scripts/passkey-dev-staff.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-10-brief.md` |
+
+本番の住所（`https://x.supabase.co`）を環境に入れて `main` を呼ぶと、投げること（店員も行も作らない）。
+
+### FR-AUTH-014-AC-02 作った店員の public.sessions の行は、パスキーのログインの session に結び付き、csrf_token_hash が入る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-014 |
+| 根拠 | アプリのログインと同じ形の行がないと、管理の入口が session の生存の確かめで 401 にする。csrf_token_hash が入っていないと、管理の書き込みが CSRF の確かめで落ちる。Cookie に載せる値との SHA-256 の一致は単体テストで確かめる |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-046-passkey-dev-staff-script.spec.ts`）、単体テスト（`tests/unit/scripts/passkey-dev-staff.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-10-brief.md` |
+
+`main` を `--open` なしで呼ぶと、新しい店員（認めたパスキー2本）の `auth.sessions` はパスキーのログインの1行だけで、`public.sessions` にその `auth_session_id` に結び付いた失効していない行が1つあり、`csrf_token_hash` が64桁の16進であること。
 
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 
