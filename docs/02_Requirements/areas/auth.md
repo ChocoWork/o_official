@@ -250,6 +250,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 要求の文: 手元の試験と開発は、ソフトの認証器で店員のパスキーを2本までそろえ、そのパスキーでログインして店員のトークンを得られる。この道具は手元の Supabase の住所でなければ動かず、アプリ本体（`src/`）からは読まれない。
 
 
+### SR-AUTH-014 店員の入口は、パスキー・24時間以内・認めたパスキー2本以上を、その場で数えて判定する
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | 店員のパスキーのログインは `aal1` のままなので、今の管理の入口の判定（`aal2`）は使えない。入口を「パスキーで入った」「その時刻から24時間以内」「認めたパスキーが2本以上」の3つ全部にする（設計 5-2）。3つ目を JWT の印に頼ると、認めた鍵が消された後も、JWT の期限（最長1時間）まで管理の権限が残る。そのためオーナーが、DB でその場で数えて止めると決めた（2026-11-16、設計 12-2 の8） |
+| 状態 | 推定 |
+| 出どころ | ユーザーの発言 2026-11-16（`.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18・12-2 の8）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 8、Review Focus 1・2・5）） |
+
+要求の文: 店員（店長・サポーター）が管理の機能を使えるのは、パスキーでログインしてから24時間以内で、認めたパスキーが2本以上ある時だけ。認めたパスキーの本数は、判定のたびに DB で数え、JWT の印は判定に使わない。認めた鍵が消されたら、次の更新を待たずにその場で止まる。段1a では判定の部品だけを作り、管理の入口にはまだつながない（つなぐのは Task 9）。
+
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
 | 属性 | 値 |
@@ -2153,6 +2163,19 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 優先度 | MUST |
 
 認証器は ES256 の鍵の対を持ち、attestation は `none`。登録の `authenticatorData` の flags は UV ありで `0x45`、なしで `0x41`、ログインは `0x05`・`0x01`（位置 32）。署名は `authenticatorData` と `clientDataJSON` の SHA-256 をつないだ物に付け、ログインごとに回数が1増える。`provisionStaff` は手元の Supabase の住所でなければ投げ、同じメールの利用者が既にいれば投げる。`loginWithPasskey` は captcha のダミーのトークンを始めの要求に付ける。失敗の文面に JWT・鍵を出さない。
+
+### FR-AUTH-011 管理の入口の3つの条件を、TS と SQL の同じ判定で作る（まだ管理の入口につながない）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-014 |
+| 根拠 | SR-AUTH-014 を、TS の `evaluateStaffEntry`（`src/lib/auth/staff-passkey.ts`）と、DB の関数 `private.staff_passkey_amr_ok`・`staff_passkey_count_ok`・`staff_passkey_entry_ok`（移行 `20261117001500_passkey_staff_entry_conditions_fn.sql`）にする。API は TS と RPC、RLS は `has_permission` の中の関数で、同じ値の表で判定する（ADR-0463）。`has_permission`・`admin-rbac.ts` は Task 9 までそのまま |
+| 状態 | 推定 |
+| 確かめ方 | E2E・結合テスト・単体テスト |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18・12-2 の8）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 8、Review Focus 1・2・5） |
+| 優先度 | MUST |
+
+規則: (1) `amr` は配列で、要素が `method` が `passkey`・`timestamp` が整数の JSON の数の物だけを見て、最新の時刻を使う。配列でない・空・文字列の時刻・小数・未来の時刻は `passkey` と数えない／断る。(2) `0 <= 今 - 時刻 <= 86400`（ちょうど86400秒は通し、86401秒は断る）。(3) 認めたパスキーは、認めの控えと `auth.webauthn_credentials`（`id`・`user_id`・`credential_id` が同じ）を突き合わせて数え、2本以上。(4) 86400 と 2 は設定の行から読み、TS の定数は初めの値の関数から取る。(5) `aal` は見ない。
 
 ## 受け入れ条件
 
@@ -4450,6 +4473,18 @@ anon の鍵と service_role の鍵のそれぞれで `passkey_credentials_notify
 `provisionStaff` で admin に認めたパスキーを2本そろえ、1本目の認証器で `loginWithPasskey` すると、返ったトークンの `amr` に方法 `passkey` があり、`aal` が `aal1` で、`session_id` があること。
 
 
+### FR-AUTH-011-AC-01 anon と service_role の鍵では、管理の入口の条件の3つの関数を PostgREST から呼べない（関数が公開されていない）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-011、SEC-AUTH-039 |
+| 根拠 | 条件の関数が外の人やアプリの service_role から呼べると、判定の道具を探りに使われる。関数は `private` にあり PostgREST に公開されていない。それを、アプリを通さず直に叩いて確かめる。`execute` をだれにも渡していないことそのものは、DB 結合テスト（DATA-AUTH-016 の権限の試験）と移行の末尾の確かめで示す |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-045-passkey-staff-entry-function-grants.spec.ts`。HTTP の試験で幅で結果は変わらない） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18・12-2 の8）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 8、Review Focus 1・2・5） |
+
+anon の鍵と service_role の鍵のそれぞれで `staff_passkey_amr_ok`・`staff_passkey_count_ok`・`staff_passkey_entry_ok` を PostgREST（`/rest/v1/rpc/<関数名>`）から呼ぶと、どれも HTTP 404・コード `PGRST202`（関数が見つからない）になり、値は返らないこと。
+
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 
 | 属性 | 値 |
@@ -5836,6 +5871,21 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 
 残る危険として受け入れること: 認めた鍵が1本も無い店員を削除した時、連鎖で `user_roles` が先に消えると、店員かどうかが分からず、店長への知らせが出ないことがある。認めた鍵が無い店員は管理の権限を持てず、ユーザーの削除は別に記録が残るので受け入れる。`subject_email` は、積んだ時点のメールの写しで、後でメールが変わっても書き換えない。
 
+
+### SEC-AUTH-039 管理の入口の3つ目の条件は JWT の印を信じず、判定のたびに DB で数える
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-039 |
+| 根拠 | JWT の印 `staff_passkeys_ok` は、トークンを出した時の本数で、JWT の期限（最長1時間）の間は変わらない。認めた鍵が GoTrue の直叩きなどで消された後も印が真のままだと、管理の権限が残る。そこで、API は RPC `passkey_approved_count`、RLS は `has_permission` の中の `private.staff_passkey_count_ok` で、判定のたびに数える（鍵の実在と突き合わせる。SEC-AUTH-036・038）。印は表示などのヒントに残し、判定には使わない。オーナー決定 2026-11-16（設計 12-2 の8、ADR-0463） |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_entry_conditions.integration.test.ts`）、単体テスト（DD-AUTH-047）、E2E（FR-AUTH-011-AC-01） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18・12-2 の8）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 8、Review Focus 1・2・5）、OWASP ASVS 4.0.3 V4.1.3・V3.3.1（当てはめは推定） |
+| 優先度 | MUST |
+
+守ること: (1) 印が真でも、DB で数えた認めたパスキーが2本未満なら断る。(2) 認めた鍵を `auth.webauthn_credentials` から消した直後に、本数が減って判定が偽になる。(3) 認めていない鍵（GoTrue の直叩きで足した鍵）は数に入らない。(4) 3つの関数は `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空・`STABLE` で、`public`・`anon`・`authenticated`・`service_role` から `execute` を外す。`has_permission`（`SECURITY DEFINER`・持ち主 `postgres`）が呼ぶので、新しい権限は渡さない。(5) 失敗は偽（閉じる側）に倒す。
+
+残る危険として受け入れること: 判定ごとに DB を数えるので、1回の管理の要求で数える手間が増える。数えるのは認めの控え（店員1人に数本）だけで、索引のある表なので受け入れる。
 
 ## 派生要件
 

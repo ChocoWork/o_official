@@ -1660,6 +1660,28 @@ stateDiagram-v2
 - 戻す: ファイルを消すだけ。DB の移行は無い
 
 
+### DATA-AUTH-016 管理の入口の3つの条件は、DB の3つの関数で判定し、3つ目は認めた鍵をその場で数える
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-011、SEC-AUTH-039、ADR-0463 |
+| 根拠 | 管理の入口（API と RLS）が同じ判定を使えるよう、条件1・2（`amr` の `passkey` と24時間）、条件3（認めた鍵が2本以上）、両方、の3つを DB の関数にする。条件3は `public.passkey_approved_count`（認めの控えと実在の鍵の突き合わせ）を呼び、JWT の印を使わない。判断は DD-AUTH-047 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_entry_conditions.integration.test.ts`）、E2E（FR-AUTH-011-AC-01）、単体テスト（DD-AUTH-047）、移行の末尾の確かめ（`PASSKEY_MIGRATION_ASSERTION_FAILED`） |
+| 出どころ | 移行 `supabase/migrations/20261117001500_passkey_staff_entry_conditions_fn.sql`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2） |
+
+| 物 | 内容 |
+| --- | --- |
+| `private.staff_passkey_amr_ok(claims jsonb)` | 条件1・2。`STABLE`・`SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空 |
+| `private.staff_passkey_count_ok(p_user_id uuid)` | 条件3。同じ作り |
+| `private.staff_passkey_entry_ok(p_user_id uuid, claims jsonb)` | 上の2つの両方（安い方を先に）。同じ作り |
+
+- 権限: `public`・`anon`・`authenticated`・`service_role` から `execute` を外す（`private.app_session_is_live` と同じ）。`has_permission` は `SECURITY DEFINER` で持ち主が `postgres` なので、Task 9 でこの3つを呼べる。新しい権限は渡さない
+- 読む表: `private.passkey_staff_config`（`private.passkey_staff_settings()` 経由）、`private.approved_passkeys`・`auth.webauthn_credentials`（`public.passkey_approved_count` 経由）。書く表は無い
+- 戻す: 移行のヘッダーの ROLLBACK（関数を3本落とす。Task 9 が使う前に限る）
+- つなぐ予定: `has_permission` は2つを別々の位置で呼ぶ（Task 9）。いまは何もつながず、今のログインと管理の入口は変わらない
+
+
 ### 手元の Supabase Auth の設定の表（波 6 の目標。手元は 2026-11-01 に切り替え済み）
 
 目標の値は `supabase/config.toml` に反映済み（表の「今」は切り替え前の値）。切り替えまでは目標の写し `supabase/pending-wave6/config.toml` と差分 `config.patch` に置いていた。切り替えの日は 2026-11-01（手元だけ。本番は未反映）。本番の目標値と手順は `docs/06_Operations/supabase-auth-config.md`（波 6 の Task 9）。

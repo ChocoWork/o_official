@@ -114,6 +114,23 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 - **本番へ当てない**: 段1b と段3が済むまで当てない（理由と当て方は移行 A と同じ）
 - 手元で確かめた結果（2026-11-16、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_credential_events.integration.test.ts` 通過、`auth_passkey_foundation`・`auth_passkey_access_token_hook` も通過のまま（3つで63件）。単体 `staff-passkey-credential-trigger.test.ts` 通過
 
+## パスキー段1a 移行 D: 管理の入口の3つの条件の関数（手元で確認済み・本番未適用）
+
+確認日: 2026-11-17（パスキー段1a Task 8）。SR-AUTH-014・FR-AUTH-011・SEC-AUTH-039・ADR-0463・DATA-AUTH-016・DD-AUTH-047。設計は [パスキー設計](../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-2）、計画は [段1a の計画](../superpowers/plans/2026-11-16-passkey-stage1a-foundation.md)。
+
+| 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
+| --- | --- | --- | --- |
+| `20261117001500_passkey_staff_entry_conditions_fn.sql` | 5292 bytes / `d5d13cd072dc3b65dabf19825c7c36b1` | 本番未適用（手元の `db reset` で適用済み） | `private.staff_passkey_amr_ok(jsonb)`・`staff_passkey_count_ok(uuid)`・`staff_passkey_entry_ok(uuid, jsonb)` の3つの関数を足す |
+
+- 変えるもの: 関数3本を足すだけ。`has_permission`・`admin-rbac` は変えない（Task 9 でつなぐ）ので、ログインも管理の入口も今のまま
+- 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `e830a51a5b94477382d9d45bb55dee72`（本番に当てた後、これと突き合わせる）
+- 前の確かめ: `private.passkey_staff_settings()`・`public.passkey_approved_count(uuid)` が在ること。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`
+- 末尾の確かめ: 3本が `SECURITY DEFINER`・`STABLE`・持ち主 `postgres`・`search_path` 空で、`PUBLIC`・`anon`・`authenticated`・`service_role` に `execute` が無い。外れたら `PASSKEY_MIGRATION_ASSERTION_FAILED`（`passkey_entry_function_acl`）
+- 権限の選び方: `service_role` にも渡さない（`private.app_session_is_live` と同じ）。`has_permission` は `SECURITY DEFINER` で持ち主が `postgres` なので、Task 9 で呼べる
+- 戻し方（移行のヘッダーの ROLLBACK）: `DROP FUNCTION` を3本。Task 9 が使う前に限る
+- **本番へ当てない**: 段1b と段3が済むまで当てない（理由と当て方は移行 A と同じ）
+- 手元で確かめた結果（2026-11-17、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_staff_entry_conditions.integration.test.ts` 通過、ほかの `auth_passkey_*` の DB 結合も通過のまま（5つで77件）。単体 `staff-passkey.test.ts` 通過
+
 ## CI の引き金を止めた記録（2026-11-16）
 
 - 止めたもの: `.github/workflows/db-migrations.yml` の `on:` から `push:` を消した。master に push しても、本番への移行の適用は動かない。`pull_request`（`supabase db push --dry-run` だけ。DB は変えない）と `workflow_dispatch` は残る。`deploy` の job は `if: github.event_name == 'workflow_dispatch'` の時だけ動く（手動の入口は残すが、使わない決まり）。

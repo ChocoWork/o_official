@@ -10,7 +10,7 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | FR-AUTH-007、FR-AUTH-008、SEC-AUTH-036、SEC-AUTH-037、DATA-AUTH-011、DATA-AUTH-012、DATA-AUTH-013、SR-AUTH-012、FR-AUTH-009、SEC-AUTH-038、DATA-AUTH-014、SR-AUTH-013、FR-AUTH-010、DATA-AUTH-015、ADR-0464、ADR-0465 |
+| 対応する ID | FR-AUTH-007、FR-AUTH-008、SEC-AUTH-036、SEC-AUTH-037、DATA-AUTH-011、DATA-AUTH-012、DATA-AUTH-013、SR-AUTH-012、FR-AUTH-009、SEC-AUTH-038、DATA-AUTH-014、SR-AUTH-013、FR-AUTH-010、DATA-AUTH-015、SR-AUTH-014、FR-AUTH-011、SEC-AUTH-039、DATA-AUTH-016、ADR-0463、ADR-0464、ADR-0465 |
 | 対象のコード | 移行 `supabase/migrations/20261116215034_passkey_foundation_tables.sql`・`20261116230000_passkey_access_token_hook.sql`・`20261116232141_passkey_credential_events.sql`、`src/lib/auth/staff-passkey-defaults.ts`・`staff-passkey-reject.ts`・`staff-passkey-credential-events.ts`、`e2e/passkey-soft-authenticator.ts`、`scripts/e2e/passkey-staff.ts`（Task 7） |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-2・5-5・6-2） |
 | 調べた時点 | 2026-11-16（手元の DB で結合試験を流した） |
@@ -163,6 +163,39 @@ sequenceDiagram
 - `loginWithPasskey`: 始めの要求に `e2e/captcha-test-utils.ts` のダミーのトークンを `options.captchaToken` で渡す（手元の config は captcha 有効。秘密は Cloudflare の公開のテスト用）。返った利用者のメールが合わなければ投げる
 - 異常: 登録・認めの途中で落ちると、利用者は作られたままで役割は付かない（役割は最後）。`db reset` で消える
 - テスト観点: flags の位置と値、署名の検証、回数の増え方、2本の認証器が別の鍵、認めの行が2つ・役割が有効、JWT の `amr` に `passkey`・`aal1`、同じメールで投げる
+
+### DD-AUTH-047 管理の入口の3つの条件の判定（TS と SQL は同じ値の表で確かめる）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | DATA-AUTH-016、SEC-AUTH-039 |
+| 根拠 | 管理の入口を `aal2` から「パスキー・24時間以内・認めたパスキー2本以上」に変える（ADR-0463）。TS（API 側）と SQL（RLS 側）が食い違うと、片方だけ通る・断る穴になる。そこで同じ値の表（`tests/unit/helpers/staff-claims.ts` の `amrCases`）で両方を確かめる。3つ目は JWT の印を信じず、その場の DB の本数で判定する |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/staff-passkey.test.ts`）、DB 結合テスト（DATA-AUTH-016）、E2E（FR-AUTH-011-AC-01） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18・12-2 の8）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 8、Review Focus 1・2・5） |
+
+```mermaid
+flowchart TD
+    A[claims と user_id と今の時刻] --> B{amr は配列か}
+    B -- いいえ --> N[no_passkey]
+    B -- はい --> C[method が passkey で timestamp が整数の数の要素の最新を取る]
+    C --> D{要素があるか}
+    D -- いいえ --> N
+    D -- はい --> E{0 以上 86400 以下か}
+    E -- いいえ --> X[passkey_expired]
+    E -- はい --> F[DB でその場で認めたパスキーを数える]
+    F --> G{2本以上か}
+    G -- いいえ --> I[passkeys_insufficient]
+    G -- はい --> OK[ok]
+```
+
+- 順番: 条件1（`passkey` が無ければ `no_passkey`）→ 条件2（外れたら `passkey_expired`。未来の時刻も外れ）→ 条件3（`passkeys_insufficient`）。SQL は `staff_passkey_amr_ok`（1・2）と `staff_passkey_count_ok`（3）を、`staff_passkey_entry_ok` が両方つなぐ
+- 時刻: `timestamp` は JSON の数で整数の物だけ。文字列・小数・null・欠落は `passkey` と数えない。`passkey` の要素が複数なら最新を使う。`now` は秒に切り捨てる（SQL は `floor(extract(epoch from now()))`。取引の中で変わらない）
+- 定数: TS の `STAFF_MAX_SESSION_SECONDS`・`STAFF_MIN_APPROVED_PASSKEYS` は `defaultStaffPasskeySettings()` から取る（3つ目の写しを作らない）。SQL は設定の行（`private.passkey_staff_settings()`）から読む。値を変える時は、初めの値の関数と設定の行の既定値を同じコミットで変える（単体テストが一致を確かめる）
+- 異常: SQL は例外を握って偽（閉じる側）を返す。claims が NULL でも例外を投げない
+- 認可: 3つの関数は `public`・`anon`・`authenticated`・`service_role` に `execute` を渡さない
+- 文言: 403 の本文 `MFA required` と `denial.reason = 'mfa'` はこの段では変えない（意味だけパスキーの条件に変わる。名前の変更は段4。ADR-0463）
+- テスト観点: `amr` の欠落・空・配列でない・文字列の時刻・小数・未来・86400秒・86401秒・`oauth`/`otp` だけ、本数 0・1・2、印が真でも1本なら断る、認めた鍵を消した直後に偽、引き金が働かなくても実在しない鍵は数えない、設定の行の変更が効く、権限
 
 ## 未確認事項
 

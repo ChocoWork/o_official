@@ -588,6 +588,20 @@ flowchart LR
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・8-2）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 6、Review Focus 4・5） |
 
 
+### THR-AUTH-039 認めた鍵が消された後も、JWT の印のせいで管理の権限が残る
+
+| 属性 | 値 |
+| --- | --- |
+| 守るもの | 管理の入口の3つ目の条件（認めたパスキーが2本以上）、管理の機能と管理の表 |
+| 脅威 | 認めた鍵が消された（または差し替えられた）後も、JWT の `staff_passkeys_ok` が真のまま残り、判定が印を信じて管理の権限が続く。または、印を偽った JWT で通ろうとする |
+| 起こり方 | 店員のアカウントを奪った人が、GoTrue を直に叩いて認めた鍵を消す・差し替える。店員が鍵を無くして店長が消す。JWT の期限（最長1時間）の間、印は変わらない |
+| 影響 | 条件を満たさない店員（認めた鍵が2本未満）が、最長1時間、管理の機能と管理の表を使える |
+| 対策 | SEC-AUTH-039（印を判定に使わず、判定のたびに DB で数える。ADR-0463、DD-AUTH-047） |
+| ASVS | V4.1.3・V3.3.1（当てはめは推定） |
+| 根拠 | 設計 5-2 の3つ目の条件の変更（オーナー決定 2026-11-16）。JWT は署名されていても、中身は出した時の値で古くなる |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18・12-2 の8）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 8、Review Focus 1・2・5） |
+
 ## 未確認事項
 
 - 本番の Supabase Auth の設定（OTP の期限・Confirm email・最小の長さ・漏洩の照合・captcha・TOTP・回数の制限・`secure_password_change`・現行パスワードの要求）。手元の `supabase/config.toml` は波 6 の切り替えで本番の前提にそろえたが、本番の実際の値は Management API で読むまで未確認（THR-AUTH-015・029）
