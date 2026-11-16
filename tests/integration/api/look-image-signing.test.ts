@@ -1,3 +1,4 @@
+import { aalFields, withApprovedCount } from '../../unit/helpers/staff-claims';
 export {};
 
 // 画像の書き込み（管理の POST・PUT）と配り（管理の GET・公開の取り出し・検索の署名）を、
@@ -167,11 +168,11 @@ function setup(
     'previousImages' in options ? options.previousImages : undefined,
   );
   publicClient = createFakeClient(options.publicTables ?? {});
-  createServiceRoleClient.mockResolvedValue(serviceClient);
+  createServiceRoleClient.mockResolvedValue(withApprovedCount(serviceClient));
   createPublicClient.mockResolvedValue(publicClient);
   verifyAccessToken.mockResolvedValue({
     ok: true,
-    claims: { sub: 'admin-1', session_id: 'sess-1', aal: 'aal2', app_metadata: { role: 'admin' } },
+    claims: { sub: 'admin-1', session_id: 'sess-1', ...aalFields('aal2'), app_metadata: { role: 'admin' } },
   });
   checkAuthSessionLiveness.mockResolvedValue('active');
 }

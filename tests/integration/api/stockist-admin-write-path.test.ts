@@ -1,3 +1,4 @@
+import { aalFields, withApprovedCount } from '../../unit/helpers/staff-claims';
 export {};
 
 // 管理の書き換えの道（認可 → 送り元と操作者の回数 → CSRF の token → 利用者の JWT の client で DB → 監査）を、
@@ -200,13 +201,13 @@ function setup(
     order.push('client');
     return userClient;
   });
-  createServiceRoleClient.mockResolvedValue(serviceClient);
+  createServiceRoleClient.mockResolvedValue(withApprovedCount(serviceClient));
   verifyAccessToken.mockImplementation(async () => {
     order.push('authz');
     return (
       options.verified ?? {
         ok: true,
-        claims: { sub: 'admin-1', email: 'admin@example.com', session_id: 'sess-1', aal: options.aal ?? 'aal2', app_metadata: { role: 'admin' } },
+        claims: { sub: 'admin-1', email: 'admin@example.com', session_id: 'sess-1', ...aalFields(options.aal ?? 'aal2'), app_metadata: { role: 'admin' } },
       }
     );
   });
@@ -476,7 +477,7 @@ describe('管理の書き換えの道（ARC-STOCKIST-002）', () => {
     // CSRF の確かめを過ぎた後（書き換えの client の作成）だけ失敗させる
     createServiceRoleClient.mockImplementation(async () => {
       if (order.includes('csrf')) throw new Error('boom');
-      return serviceClient;
+      return withApprovedCount(serviceClient);
     });
 
     const res = await listRoute.POST(makeRequest(VALID));

@@ -14,11 +14,9 @@
  * - 002-AC-01 は他の試験が足した公開の行に左右されないよう、E2E-STK- で始まらない店（見本）の名前の並びで比べる。
  *   非公開の行はホームの「最初の 6 件」に入る小さい id で足し、公開の絞りが壊れた時にホームにも出るようにする。
  */
-import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { expect, test, type APIResponse, type Locator, type Page } from '@playwright/test';
-import { createAdminSessionActor, type AdminSessionActor } from './admin-session-test-utils';
-import { DUMMY_CAPTCHA_TOKEN } from './captcha-test-utils';
+import { createAdminSessionActor, toSupabaseSession, type AdminSessionActor } from './admin-session-test-utils';
 import { withLocalDb } from './order-email-test-utils';
 import {
   randomLowId,
@@ -131,33 +129,12 @@ function authCookies(baseURL: string, session: Record<string, unknown>): Array<{
   return cookies;
 }
 
-// Cookie 用の管理者の session（メールとパスワードのログインで得た、supabase-js の session の形）も worker ごとに 1 回だけ作る
+// Cookie 用の管理者の session（supabase-js の session の形）も worker ごとに 1 回だけ作る。
+// 管理の入口を通れない店員（認めたパスキー1本。古い名前の aal1）の session を使う。入口を通る店員だと、公開の読みの方針が
+// has_permission を通して非公開の店を返すので、この試験の前提（aal1 の管理者は公開の画面で非公開の店が見えない）が変わる
 let cookieSessionPromise: Promise<Record<string, unknown>> | null = null;
 function adminCookieSession(): Promise<Record<string, unknown>> {
-  cookieSessionPromise ??= (async () => {
-    const email = `e2e-stockist016-${Date.now().toString(36)}${randomBytes(3).toString('hex')}@example.com`;
-    const password = `E2e-${randomBytes(12).toString('hex')}!`;
-    const admin = createClient(env().url, env().serviceKey, clientOptions);
-    const created = await admin.auth.admin.createUser({ email, password, email_confirm: true, app_metadata: { role: 'admin' } });
-    if (created.error || !created.data.user) {
-      throw new Error(`手元の管理者を作れない（status: ${created.error?.status ?? '不明'}）`);
-    }
-    const userId = created.data.user.id;
-    createdUserIds.push(userId);
-    await withLocalDb(async (db) => {
-      const assigned = await db.query(
-        `insert into public.user_roles (user_id, role_id, active, expires_at)
-         select $1::uuid, r.id, true, null from public.roles r where r.code = 'admin'`,
-        [userId],
-      );
-      if (assigned.rowCount !== 1) throw new Error('役割 admin の行が手元の DB に無い');
-    });
-    const signedIn = await createClient(env().url, env().anonKey, clientOptions).auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
-    if (signedIn.error || !signedIn.data.session) {
-      throw new Error(`手元の管理者でログインできない（status: ${signedIn.error?.status ?? '不明'}）`);
-    }
-    return signedIn.data.session as unknown as Record<string, unknown>;
-  })();
+  cookieSessionPromise ??= aal1Admin().then(async (actor) => (await toSupabaseSession(actor)) as unknown as Record<string, unknown>);
   return cookieSessionPromise;
 }
 

@@ -1,21 +1,23 @@
 /**
  * NEWS（お知らせ）の管理の窓口（/api/admin/news）を HTTP で確かめる E2E の道具。手元の Supabase だけで使う。
  *
- * 本物の管理者のログイン（2段階認証が要る）は E2E の道具に無いので、次の道で token を得る。
- * 1. service role で利用者を作り（パスワード付き）、試験用の役割を DB へ割り当てる（権限は役割の ACL で決まる）。
- * 2. 本物の GoTrue にパスワードでログインして aal1 の access token を得る。
- * 3. aal2 が要る時は、その session の auth.mfa_amr_claims に totp の行を足してから refresh し、
- *    GoTrue に aal2 の token を発行させる（署名は本物の GoTrue の鍵）。
- * 窓口の認可は token の署名・session の生存・DB の ACL・aal を本物のまま確かめる（差し替えない）。
+ * 管理の入口はパスキーのログイン＋認めたパスキー2本以上（SR-AUTH-014）なので、次の道で token を得る。
+ * 1. 利用者を作り（パスワード無し）、パスキーを1本登録して認め（scripts/e2e/passkey-staff.ts の provisionPasskeyUser）、
+ *    試験用の役割を DB へ割り当てる（権限は役割の ACL で決まる）。この間は認めたパスキー1本（古い名前の aal1）。
+ * 2. 本物の GoTrue にパスキーでログインして access token を得る。
+ * 3. 古い名前の aal2 が要る時（elevateWith）は、同じ session で2本目を登録して認める（elevateAdminSessionToAal2 と同じ。認めたパスキー2本）。
+ * 窓口の認可は token の署名・session の生存・DB の ACL・パスキーの条件を本物のまま確かめる（差し替えない）。
  * 通行証は既定でアプリの sessions に結び付ける（signInWithPassword の bindApp。DD-AUTH-039）。
+ * 関数の名前 signInWithPassword と AdminUser.password は、呼び手を変えないために残す（中身はパスキー。password は空）。
  */
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import type { PermissionCode } from '@/lib/auth/admin-rbac';
+import { addApprovedPasskey, loginWithPasskey, provisionPasskeyUser } from '../scripts/e2e/passkey-staff';
 import { bindAppSession } from './admin-session-test-utils';
-import { DUMMY_CAPTCHA_TOKEN } from './captcha-test-utils';
+import type { SoftAuthenticator } from './passkey-soft-authenticator';
 import { withLocalDb } from './order-email-test-utils';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
@@ -27,7 +29,7 @@ const AUTH_OPTIONS = { auth: { persistSession: false, autoRefreshToken: false } 
 export type Cleanups = Array<() => Promise<void>>;
 
 export type NewsRow = { id: number; title: string };
-export type AdminUser = { userId: string; email: string; password: string };
+export type AdminUser = { userId: string; email: string; password: string; authenticators: SoftAuthenticator[] };
 export type SignedInSession = { accessToken: string; aal: string };
 
 function requireLocalEnv(): void {
@@ -94,8 +96,11 @@ export async function readNewsRow(admin: SupabaseClient, id: number): Promise<Re
   return result.data;
 }
 
+/** メール → 認証器。signInWithPassword が、createAdminWithPermissions で作った利用者のパスキーを引くための控え */
+const authenticatorsByEmail = new Map<string, SoftAuthenticator[]>();
+
 /**
- * 与えた権限だけを持つ試験用の役割を作り、パスワード付きの利用者へ割り当てる。
+ * 与えた権限だけを持つ試験用の役割を作り、パスキー1本の利用者へ割り当てる。
  * 権限は役割の ACL（user_roles → role_permissions → permissions）で決まる。終わりに利用者と役割を消す片づけを登録する。
  */
 export async function createAdminWithPermissions(
@@ -107,17 +112,9 @@ export async function createAdminWithPermissions(
   appRole?: 'admin' | 'supporter',
 ): Promise<AdminUser> {
   const email = `e2e-news-${label}-${randomBytes(6).toString('hex')}@example.com`;
-  const password = `E2e-${randomBytes(12).toString('hex')}!`;
-  const created = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    ...(appRole ? { app_metadata: { role: appRole } } : {}),
-  });
-  if (created.error || !created.data.user) {
-    throw new Error(`手元の利用者を作れない（status: ${created.error?.status ?? '不明'}）`);
-  }
-  const userId = created.data.user.id;
+  const provisioned = await provisionPasskeyUser(db, { approvedPasskeys: 1, email, appRole });
+  const userId = provisioned.userId;
+  authenticatorsByEmail.set(email, provisioned.authenticators);
   cleanups.push(async () => {
     // public.user_roles は利用者の削除で連鎖して消える
     const removed = await admin.auth.admin.deleteUser(userId);
@@ -146,53 +143,42 @@ export async function createAdminWithPermissions(
     'insert into public.user_roles (user_id, role_id, active, expires_at) values ($1::uuid, $2, true, null)',
     [userId, roleId],
   );
-  return { userId, email, password };
+  return { userId, email, password: '', authenticators: provisioned.authenticators };
 }
 
-function decodeClaims(accessToken: string): { aal?: string; session_id?: string } {
+function decodeClaims(accessToken: string): { aal?: string; session_id?: string; staff_passkeys_ok?: boolean } {
   return JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64url').toString('utf8'));
 }
 
 /**
- * 本物の GoTrue にパスワードでログインして access token を得る（aal1）。
- * elevateWith に DB の接続を渡すと、session を DB で aal2 に整えて refresh し、aal2 の token を得る。
+ * 本物の GoTrue にパスキーでログインして access token を得る（認めたパスキー1本。古い名前の aal1）。password は使わない（呼び手を変えないために残した引数）。
+ * elevateWith に DB の接続を渡すと、同じ session で2本目のパスキーを登録して認め、refresh して認めたパスキー2本の token を得る（古い名前の aal2）。
+ * 返す aal は、JWT の aal クレームではなく、頼んだ側の名前（elevateWith あり → aal2）。
  */
 export async function signInWithPassword(
   email: string,
-  password: string,
+  _password: string,
   options: { elevateWith?: PgClient; bindApp?: boolean } = {},
 ): Promise<SignedInSession> {
   requireLocalEnv();
-  // Auth の回数の制限を他の試験と取り合わないよう、この呼び出しだけの送り元（x-forwarded-for）を付ける。
-  // x-forwarded-for を送り元に数える作りに頼る分離で、その作りが変わる（SEC-*-006 の食い違いが直る）と効かなくなる。値が使われなくても害は無い。
-  const [a, b, c] = randomBytes(3);
-  const gotrue = createClient(SUPABASE_URL, ANON_KEY, { ...AUTH_OPTIONS, global: { headers: { 'x-forwarded-for': `10.${a}.${b}.${c}` } } });
-  const signedIn = await gotrue.auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
-  if (signedIn.error || !signedIn.data.session) {
-    throw new Error(`手元の利用者でログインできない（status: ${signedIn.error?.status ?? '不明'}）`);
-  }
-  let session = signedIn.data.session;
+  const authenticators = authenticatorsByEmail.get(email);
+  if (!authenticators?.[0]) throw new Error('この利用者のパスキーの控えが無い（createAdminWithPermissions で作った利用者だけ）');
+  const { session: loggedIn } = await loginWithPasskey({ email, authenticator: authenticators[0] });
+  let session = loggedIn;
+  const userId = session.user?.id ?? '';
   if (options.elevateWith) {
-    const sessionId = decodeClaims(session.access_token).session_id;
-    if (!sessionId) throw new Error('access token に session_id が無い');
-    await options.elevateWith.query(
-      `insert into auth.mfa_amr_claims (session_id, created_at, updated_at, authentication_method, id)
-       values ($1::uuid, now(), now(), 'totp', gen_random_uuid())`,
-      [sessionId],
-    );
-    const refreshed = await gotrue.auth.refreshSession({ refresh_token: session.refresh_token });
-    if (refreshed.error || !refreshed.data.session) {
-      throw new Error(`aal2 の token を発行させられない（status: ${refreshed.error?.status ?? '不明'}）`);
-    }
-    session = refreshed.data.session;
-    if (decodeClaims(session.access_token).aal !== 'aal2') throw new Error('refresh した token の aal が aal2 ではない');
+    const db = options.elevateWith;
+    const added = await addApprovedPasskey(db, { userId, accessToken: session.access_token, refreshToken: session.refresh_token });
+    authenticators.push(added.authenticator);
+    session = added.session;
+    if (decodeClaims(session.access_token).staff_passkeys_ok !== true) throw new Error('2本目の後の token の staff_passkeys_ok が真ではない');
   }
   // アプリの sessions に結び付ける（DD-AUTH-039）。アプリは結び付かない session の通行証を 401 にする。
   // 結び付けない通行証（攻撃側の対照）は bindApp: false。行を作る処理は admin-session-test-utils の bindAppSession に 1 つだけ置く
   if (options.bindApp ?? true) {
-    const binding = { userId: signedIn.data.user?.id ?? '', accessToken: session.access_token, refreshToken: session.refresh_token };
+    const binding = { userId, accessToken: session.access_token, refreshToken: session.refresh_token };
     if (options.elevateWith) await bindAppSession(options.elevateWith, binding);
     else await withLocalDb((db) => bindAppSession(db, binding));
   }
-  return { accessToken: session.access_token, aal: decodeClaims(session.access_token).aal ?? '不明' };
+  return { accessToken: session.access_token, aal: options.elevateWith ? 'aal2' : 'aal1' };
 }

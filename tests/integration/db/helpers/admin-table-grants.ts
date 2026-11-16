@@ -67,8 +67,8 @@ export function adminTableTools(db: () => PgClient) {
   }
 
   /**
-   * manage の権限を持つ管理者（店長の役）を作る。has_permission は aal2 とアプリに結び付いた生きた session を求める
-   * （SEC-AUTH-010-AC-03）ので、session を作って aal2 と session_id を入れ、管理者の窓口と同じ入り口を再現する
+   * manage の権限を持つ管理者（店長の役）を作る。has_permission はパスキーの amr・認めたパスキー2本とアプリに結び付いた生きた session を求める
+   * （SEC-AUTH-010-AC-03）ので、session と認めたパスキー2本を作って passkey の amr と session_id を入れ、管理者の窓口と同じ入り口を再現する
    */
   async function insertAdmin(): Promise<Claims> {
     const id = randomUUID();

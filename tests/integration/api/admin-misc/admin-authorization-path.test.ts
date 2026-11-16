@@ -1,3 +1,4 @@
+import { withApprovedCount, aalFields } from '../../../unit/helpers/staff-claims';
 export {};
 
 // jsdom の Response には静的メソッド json() が無い。NextResponse.json が内部で使うため補う。
@@ -238,7 +239,7 @@ function claims(overrides: Record<string, unknown> = {}) {
   return {
     sub: USER_ID,
     session_id: 'sess-1',
-    aal: 'aal2',
+    ...aalFields('aal2'),
     email: 'owner@example.com',
     app_metadata: { role: 'admin' },
     ...overrides,
@@ -267,7 +268,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
       async (_label, route) => {
         const denied = new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 });
         authorize.mockResolvedValue({ ok: false, response: denied });
-        createServiceRoleClient.mockResolvedValue(stubServiceClient());
+        createServiceRoleClient.mockResolvedValue(withApprovedCount(stubServiceClient()));
 
         const { result } = invoke(route);
 
@@ -298,7 +299,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
           role: 'admin',
           actorEmail: 'owner@example.com',
         });
-        createServiceRoleClient.mockResolvedValue(stubServiceClient());
+        createServiceRoleClient.mockResolvedValue(withApprovedCount(stubServiceClient()));
 
         const { result } = invoke(route);
         await result;
@@ -329,7 +330,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
         role: 'admin',
         actorEmail: 'owner@example.com',
       });
-      createServiceRoleClient.mockResolvedValue(stubServiceClient());
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(stubServiceClient()));
       const route = ROUTES[1];
       const request = new Request(route.url, { method: route.method, headers: JSON_HEADERS, body: '{broken' });
 
@@ -381,7 +382,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
     it('ARC-ADMIN-001 session が失効していたら権限があっても 401 を返す', async () => {
       verifyAccessToken.mockResolvedValue({ ok: true, claims: claims() });
       checkAuthSessionLiveness.mockResolvedValue('revoked');
-      createServiceRoleClient.mockResolvedValue(aclClient(aclRows('admin.users.manage')));
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(aclClient(aclRows('admin.users.manage'))));
 
       const result = await actualRbac.authorizeAdminPermission('admin.users.manage');
 
@@ -393,7 +394,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
     it('ARC-ADMIN-001 session の生存を確かめられなければ 503 と Retry-After を返す（401 にしない）', async () => {
       verifyAccessToken.mockResolvedValue({ ok: true, claims: claims() });
       checkAuthSessionLiveness.mockResolvedValue('unavailable');
-      createServiceRoleClient.mockResolvedValue(aclClient(aclRows('admin.users.manage')));
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(aclClient(aclRows('admin.users.manage'))));
 
       const result = await actualRbac.authorizeAdminPermission('admin.users.manage');
 
@@ -407,7 +408,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
       verifyAccessToken.mockResolvedValue({ ok: true, claims: claims() });
       checkAuthSessionLiveness.mockResolvedValue('active');
       const client = aclClient(aclRows('admin.audit.read'));
-      createServiceRoleClient.mockResolvedValue(client);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(client));
 
       await actualRbac.authorizeAdminPermission('admin.audit.read');
 
@@ -418,7 +419,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
     it('ARC-ADMIN-001 権限が無ければ 403 に権限の印と token の役割を添える', async () => {
       verifyAccessToken.mockResolvedValue({ ok: true, claims: claims({ app_metadata: { role: 'supporter' } }) });
       checkAuthSessionLiveness.mockResolvedValue('active');
-      createServiceRoleClient.mockResolvedValue(aclClient(aclRows('admin.contact.read')));
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(aclClient(aclRows('admin.contact.read'))));
 
       const result = await actualRbac.authorizeAdminPermission('admin.users.manage');
 
@@ -433,7 +434,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
 
     it('ARC-ADMIN-001 役割の印が app_metadata に無い・壊れていれば役割は user として 403 を返す', async () => {
       checkAuthSessionLiveness.mockResolvedValue('active');
-      createServiceRoleClient.mockResolvedValue(aclClient(aclRows()));
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(aclClient(aclRows())));
 
       for (const appMetadata of [undefined, { role: 'owner' }]) {
         verifyAccessToken.mockResolvedValue({ ok: true, claims: claims({ app_metadata: appMetadata }) });
@@ -446,9 +447,9 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
     });
 
     it('ARC-ADMIN-001 権限があっても aal2 でなければ 403 と理由 MFA required を返す', async () => {
-      verifyAccessToken.mockResolvedValue({ ok: true, claims: claims({ aal: 'aal1' }) });
+      verifyAccessToken.mockResolvedValue({ ok: true, claims: claims({ ...aalFields('aal1') }) });
       checkAuthSessionLiveness.mockResolvedValue('active');
-      createServiceRoleClient.mockResolvedValue(aclClient(aclRows('admin.users.manage')));
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(aclClient(aclRows('admin.users.manage'))));
 
       const result = await actualRbac.authorizeAdminPermission('admin.users.manage');
 
@@ -465,7 +466,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
     it('ARC-ADMIN-001 権限があって aal2 なら利用者の id・役割・メールを返す', async () => {
       verifyAccessToken.mockResolvedValue({ ok: true, claims: claims() });
       checkAuthSessionLiveness.mockResolvedValue('active');
-      createServiceRoleClient.mockResolvedValue(aclClient(aclRows('admin.users.manage')));
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(aclClient(aclRows('admin.users.manage'))));
 
       const result = await actualRbac.authorizeAdminPermission('admin.users.manage');
 
@@ -481,7 +482,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
     it('ARC-ADMIN-001 token にメールが無ければ操作した人のメールは null になる', async () => {
       verifyAccessToken.mockResolvedValue({ ok: true, claims: claims({ email: undefined }) });
       checkAuthSessionLiveness.mockResolvedValue('active');
-      createServiceRoleClient.mockResolvedValue(aclClient(aclRows('admin.users.manage')));
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(aclClient(aclRows('admin.users.manage'))));
 
       const result = await actualRbac.authorizeAdminPermission('admin.users.manage');
 
@@ -492,7 +493,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
     it('ARC-ADMIN-001 ACL の照会が誤りを返したら権限なしとして 403 を返す', async () => {
       verifyAccessToken.mockResolvedValue({ ok: true, claims: claims() });
       checkAuthSessionLiveness.mockResolvedValue('active');
-      createServiceRoleClient.mockResolvedValue(aclClient(null, { message: 'db down' }));
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(aclClient(null, { message: 'db down' })));
 
       const result = await actualRbac.authorizeAdminPermission('admin.users.manage');
 
@@ -512,7 +513,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
         [{ roles: { role_permissions: [{ permissions: { code: 42 } }] } }],
       ];
       for (const rows of shapes) {
-        createServiceRoleClient.mockResolvedValue(aclClient(rows));
+        createServiceRoleClient.mockResolvedValue(withApprovedCount(aclClient(rows)));
 
         const result = await actualRbac.authorizeAdminPermission('admin.users.manage');
 
@@ -544,7 +545,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
       useActualAuthorize();
       verifyAccessToken.mockResolvedValue({ ok: false, reason: 'invalid' });
       const client = stubServiceClient();
-      createServiceRoleClient.mockResolvedValue(client);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(client));
 
       const { result } = invoke(ROUTES[0]);
       const res = await result;
@@ -558,7 +559,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
       verifyAccessToken.mockResolvedValue({ ok: true, claims: claims({ app_metadata: { role: 'supporter' } }) });
       checkAuthSessionLiveness.mockResolvedValue('active');
       const client = aclClient(aclRows('admin.contact.read'));
-      createServiceRoleClient.mockResolvedValue(client);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(client));
 
       const { result } = invoke(ROUTES[0]);
       const res = await result;
@@ -569,10 +570,10 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
 
     it('ARC-ADMIN-001 窓口は aal1 の店長の要求を 403 MFA required で止める', async () => {
       useActualAuthorize();
-      verifyAccessToken.mockResolvedValue({ ok: true, claims: claims({ aal: 'aal1' }) });
+      verifyAccessToken.mockResolvedValue({ ok: true, claims: claims({ ...aalFields('aal1') }) });
       checkAuthSessionLiveness.mockResolvedValue('active');
       const client = aclClient(aclRows('admin.users.manage'));
-      createServiceRoleClient.mockResolvedValue(client);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(client));
 
       const { result } = invoke(ROUTES[1]);
       const res = await result;
@@ -591,7 +592,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
         data: { user: { id: TARGET_ID, email: 'new@example.com' } },
         error: null,
       } as never);
-      createServiceRoleClient.mockResolvedValue(client);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(client));
 
       const { result } = invoke(ROUTES[0]);
       const res = await result;
@@ -608,7 +609,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
       verifyAccessToken.mockResolvedValue({ ok: true, claims: claims({ app_metadata: { role: 'supporter' } }) });
       checkAuthSessionLiveness.mockResolvedValue('active');
       const client = aclClient(aclRows('admin.items.read'));
-      createServiceRoleClient.mockResolvedValue(client);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(client));
 
       const read = await invoke(ROUTES[12]).result;
       const write = await invoke(ROUTES[13]).result;

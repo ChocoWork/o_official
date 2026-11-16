@@ -1,3 +1,4 @@
+import { aalFields, withApprovedCount } from '../../unit/helpers/staff-claims';
 export {};
 
 // 窓口・認可（admin-rbac）・回数の制限・守りの部品（admin-security）・監査（audit）は本物を通し、外との境目
@@ -120,7 +121,7 @@ function setup(
     options.rpcImpl,
   );
   createClient.mockResolvedValue(userClient);
-  createServiceRoleClient.mockResolvedValue(serviceClient);
+  createServiceRoleClient.mockResolvedValue(withApprovedCount(serviceClient));
   verifyAccessToken.mockResolvedValue(
     options.verified ?? {
       ok: true,
@@ -128,7 +129,7 @@ function setup(
         sub: 'admin-1',
         email: 'admin@example.com',
         session_id: 'sess-1',
-        aal: options.aal ?? 'aal2',
+        ...aalFields(options.aal ?? 'aal2'),
         app_metadata: { role: 'admin' },
       },
     },
@@ -505,7 +506,7 @@ describe('POST /api/admin/stockists（取扱店の作成）', () => {
     const order: string[] = [];
     verifyAccessToken.mockImplementation(async () => {
       order.push('authz');
-      return { ok: true, claims: { sub: 'admin-1', session_id: 's', aal: 'aal2', app_metadata: {} } };
+      return { ok: true, claims: { sub: 'admin-1', session_id: 's', ...aalFields('aal2'), app_metadata: {} } };
     });
     serviceClient.rpc.mockImplementation(async (_name: string, args: Record<string, unknown>) => {
       order.push(`rate:${String(args._endpoint).split('|')[0]}`);

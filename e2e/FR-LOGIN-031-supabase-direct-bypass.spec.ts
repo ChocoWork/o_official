@@ -16,6 +16,7 @@
  * SEC-AUTH-005-AC-02・005-AC-03 の PostgREST の側・010-AC-01・010-AC-03 は、DB の移行 M2（波 5。has_permission に aal2 と結び付いた生きた session を求め、
  * profiles・orders・order_items に RESTRICTIVE の方針を足す）を当てた DB で通る（test.fail は外した。M2 を当てていない DB では赤）。
  * SEC-AUTH-005-AC-01・03・05、SEC-AUTH-030-AC-03、SEC-AUTH-031-AC-02 は波 5 でアプリの窓口が満たす（旗 AUTH_REQUIRE_APP_SESSION は E2E で固定の on）。
+ * 段1a の切り替え（Task 9）の後、管理者の010-AC-01・010-AC-03 はパスキーのログイン（認めた1本・2本。古い名前の aal1・aal2）で作る。SEC-AUTH-031-AC-02 は段4で消す TOTP の窓口なので skip。
  * SEC-AUTH-028-AC-02 は満たす。AC ごとに describe を分け、赤を互いに混ぜない。
  * （012 は G-2 の移行 20261024153505 が anon・authenticated の EXECUTE を外すので、その移行を当てた DB では緑になる。
  *  011 は移行 sec_grants_hardening が認証の表の権限を外すので、その移行を当てた DB では緑になる）
@@ -213,7 +214,12 @@ async function requestOtpOnlyTokens(email: string): Promise<{ accessToken: strin
 let sharedMemberPromise: Promise<Actor> | null = null;
 let sharedAdminPromise: Promise<Actor> | null = null;
 const sharedMember = (): Promise<Actor> => (sharedMemberPromise ??= createSignedInActor('member'));
-const sharedAdmin = (): Promise<Actor> => (sharedAdminPromise ??= createSignedInActor('admin', { admin: true }));
+// 管理者は、管理の入口を通れない店員（認めたパスキー1本。古い名前の aal1）をパスキーのログインで作る（SR-AUTH-014。パスワードでは店員は入れない）
+const sharedAdmin = (): Promise<Actor> =>
+  (sharedAdminPromise ??= withDb((db) => createAdminSessionActor(db as unknown as PgClient, 'admin', 'aal1')).then((actor) => {
+    adminUserIds.push(actor.userId);
+    return { userId: actor.userId, email: actor.email, password: '', accessToken: actor.accessToken, refreshToken: actor.refreshToken };
+  }));
 
 /** 管理者が DB の ACL で admin.orders.read を持つこと（権限が無くて読めないのでは試験にならない） */
 async function expectHoldsOrdersRead(userId: string): Promise<void> {
@@ -499,31 +505,33 @@ for (const viewport of viewports) {
     test(`SEC-AUTH-010-AC-03 アプリのログインと同じ形で結び付けた admin の aal1 の JWT で PostgREST の orders を select した結果に他人の注文の行が含まれず、同じ session を aal2 に上げた JWT では含まれる (${viewport.name})`, async ({ request }) => {
       const member = await sharedMember();
       const foreignOrderId = await ensureOwnedRows(member);
-      // 結び付けた（生きた session がある）admin。aal1 の JWT と、同じ session を上げた aal2 の JWT。違いは aal だけ
+      // 結び付けた（生きた session がある）admin。認めたパスキー1本の JWT（古い名前の aal1）と、同じ session で2本目を認めた JWT（aal2）。違いは認めた本数だけ。
+      // 認めた本数は DB でその場で数えるので、1本の側の確かめは2本目を足す前に済ませる
       const aal1Admin = await withDb((db) => createAdminSessionActor(db as unknown as PgClient, 'admin', 'aal1'));
       adminUserIds.push(aal1Admin.userId);
-      const aal2Admin = await withDb((db) => elevateAdminSessionToAal2(db as unknown as PgClient, aal1Admin));
       expect(aal1Admin.appBound, '管理者の通行証が結び付いている（準備）').toBe(true);
-      expect(claimsOf(aal1Admin.accessToken).aal, '一方の JWT の aal').toBe('aal1');
-      expect(claimsOf(aal2Admin.accessToken).aal, 'もう一方の JWT の aal').toBe('aal2');
-      expect(claimsOf(aal1Admin.accessToken).session_id, '二つの JWT は同じ session').toBe(claimsOf(aal2Admin.accessToken).session_id);
+      expect(claimsOf(aal1Admin.accessToken).aal, '一方の JWT の aal（パスキーは aal1 のまま）').toBe('aal1');
       await expectHoldsOrdersRead(aal1Admin.userId);
-
-      // 対照: aal2 の JWT では他人の注文が読める（権限・結び付き・生存は揃っている。止めているのは aal だけ）
-      const viaAal2 = await request.get(`${SUPABASE_URL}/rest/v1/orders?select=id,user_id&id=eq.${foreignOrderId}`, {
-        headers: postgrestHeaders(aal2Admin.accessToken),
-      });
-      expect((await selectedRows(viaAal2, 'aal2 の管理者の他人の注文')).map((row) => row.id), 'aal2 の管理者に見えた他人の注文').toEqual([foreignOrderId]);
 
       const viaAal1 = await request.get(`${SUPABASE_URL}/rest/v1/orders?select=id,user_id&id=eq.${foreignOrderId}`, {
         headers: postgrestHeaders(aal1Admin.accessToken),
       });
-      expect(await selectedRows(viaAal1, 'aal1 の管理者の他人の注文'), 'aal1 の管理者に見えた他人の注文の行').toEqual([]);
+      expect(await selectedRows(viaAal1, '1本の管理者の他人の注文'), '1本の管理者に見えた他人の注文の行').toEqual([]);
       const others = await request.get(
         `${SUPABASE_URL}/rest/v1/orders?select=id,user_id&or=(user_id.is.null,user_id.neq.${aal1Admin.userId})&limit=5`,
         { headers: postgrestHeaders(aal1Admin.accessToken) },
       );
-      expect(await selectedRows(others, 'aal1 の管理者の他人の注文（絞らない）'), 'aal1 の管理者に見えた管理者以外の注文の行').toEqual([]);
+      expect(await selectedRows(others, '1本の管理者の他人の注文（絞らない）'), '1本の管理者に見えた管理者以外の注文の行').toEqual([]);
+
+      const aal2Admin = await withDb((db) => elevateAdminSessionToAal2(db as unknown as PgClient, aal1Admin));
+      expect(claimsOf(aal2Admin.accessToken).aal, 'もう一方の JWT の aal（パスキーは aal1 のまま）').toBe('aal1');
+      expect(claimsOf(aal1Admin.accessToken).session_id, '二つの JWT は同じ session').toBe(claimsOf(aal2Admin.accessToken).session_id);
+
+      // 対照: 2本目を認めた JWT では他人の注文が読める（権限・結び付き・生存・パスキーの amr は揃っている。止めているのは認めた本数だけ）
+      const viaAal2 = await request.get(`${SUPABASE_URL}/rest/v1/orders?select=id,user_id&id=eq.${foreignOrderId}`, {
+        headers: postgrestHeaders(aal2Admin.accessToken),
+      });
+      expect((await selectedRows(viaAal2, '2本の管理者の他人の注文')).map((row) => row.id), '2本の管理者に見えた他人の注文').toEqual([foreignOrderId]);
     });
   });
 }
@@ -856,6 +864,7 @@ for (const viewport of viewports) {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
     test(`SEC-AUTH-031-AC-02 TOTP の無い管理者が /auth/v1/otp と /auth/v1/verify を直接呼んで得た通行証で /api/auth/mfa/enroll-totp を叩くと、401 になり、要素が作られず、mfa_enroll・denied・app_session_required の行が監査に 1 つ増える (${viewport.name})`, async ({ request, baseURL }) => {
+      test.skip(true, '段4で消す機能: TOTP の登録の窓口 /api/auth/mfa/enroll-totp（段4で TOTP ごと消す）。店員のメールのコードは GoTrue のフックが拒否するので、この前提の通行証を作れない');
       requireLocalApp(baseURL);
       const origin = new URL(baseURL ?? '').origin;
       // 役割 admin を付けた利用者（afterAll で user_roles を無効にする）。TOTP は登録しない

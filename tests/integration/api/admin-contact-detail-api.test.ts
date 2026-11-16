@@ -1,3 +1,4 @@
+import { aalFields, withApprovedCount } from '../../unit/helpers/staff-claims';
 export {};
 
 // 窓口・認可（admin-rbac）と監査（audit）は本物を通し、外との境目（Supabase の client・token の検証・応答の型）だけを差し替える。
@@ -82,7 +83,7 @@ function setup(
     },
     options.custom,
   );
-  createServiceRoleClient.mockResolvedValue(serviceClient);
+  createServiceRoleClient.mockResolvedValue(withApprovedCount(serviceClient));
   verifyAccessToken.mockResolvedValue(
     options.verified ?? {
       ok: true,
@@ -90,7 +91,7 @@ function setup(
         sub: 'admin-1',
         email: 'admin@example.com',
         session_id: 'sess-1',
-        aal: options.aal ?? 'aal2',
+        ...aalFields(options.aal ?? 'aal2'),
         app_metadata: { role: 'admin' },
       },
     },
@@ -303,7 +304,7 @@ describe('API-ADMIN-006 GET /api/admin/contact/[id]', () => {
 
   it('API-ADMIN-006 認可の後に表のための client を作れず例外が出たら 500 Internal server error を返す', async () => {
     setupDb();
-    createServiceRoleClient.mockImplementationOnce(async () => serviceClient); // 認可の ACL の照会
+    createServiceRoleClient.mockImplementationOnce(async () => withApprovedCount(serviceClient)); // 認可の ACL の照会
     createServiceRoleClient.mockImplementationOnce(async () => {
       throw new Error('boom');
     });

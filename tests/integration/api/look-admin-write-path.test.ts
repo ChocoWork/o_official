@@ -1,3 +1,4 @@
+import { aalFields, withApprovedCount } from '../../unit/helpers/staff-claims';
 export {};
 
 // 管理の書き換えの道（認可 → 送り元と操作者の回数 → service role で DB → 監査）を、
@@ -266,11 +267,11 @@ function setup(
       updateLookResult: options.lookWriteError ? { data: null, error: options.lookWriteError } : undefined,
     },
   );
-  createServiceRoleClient.mockResolvedValue(serviceClient);
+  createServiceRoleClient.mockResolvedValue(withApprovedCount(serviceClient));
   verifyAccessToken.mockResolvedValue(
     options.verified ?? {
       ok: true,
-      claims: { sub: 'admin-1', email: 'admin@example.com', session_id: 'sess-1', aal: options.aal ?? 'aal2', app_metadata: { role: 'admin' } },
+      claims: { sub: 'admin-1', email: 'admin@example.com', session_id: 'sess-1', ...aalFields(options.aal ?? 'aal2'), app_metadata: { role: 'admin' } },
     },
   );
   checkAuthSessionLiveness.mockResolvedValue(options.liveness ?? 'active');

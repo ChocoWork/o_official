@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { checkAuthSessionLiveness, verifyAccessToken } from '@/lib/auth/authenticate';
+import { evaluateStaffEntry } from '@/lib/auth/staff-passkey';
 
 export type AppRole = 'admin' | 'supporter' | 'user';
 export type PermissionCode =
@@ -153,9 +154,17 @@ function resolveTokenRole(user: { app_metadata?: unknown } | null | undefined): 
   return isAppRole(rawRole) ? rawRole : 'user';
 }
 
-async function resolveAclPermissions(userId: string): Promise<Set<PermissionCode>> {
+type ServiceClientProvider = () => ReturnType<typeof createServiceRoleClient>;
+
+/** 1回の認可で、service role の client を1回だけ作る（ACL の照会と認めたパスキーの本数の照会が同じ client を使う） */
+function onceServiceClient(): ServiceClientProvider {
+  let created: ReturnType<typeof createServiceRoleClient> | null = null;
+  return () => (created ??= createServiceRoleClient());
+}
+
+async function resolveAclPermissions(userId: string, getService: ServiceClientProvider): Promise<Set<PermissionCode>> {
   try {
-    const service = await createServiceRoleClient();
+    const service = await getService();
 
     const { data, error } = await service
       .from('user_roles')
@@ -207,13 +216,34 @@ async function resolveAclPermissions(userId: string): Promise<Set<PermissionCode
   }
 }
 
+/**
+ * 認めたパスキーの本数を DB でその場で数える（RPC passkey_approved_count。JWT の印 staff_passkeys_ok は使わない。SEC-AUTH-039）。
+ *
+ * @design DD-AUTH-047, DD-AUTH-048
+ * @remarks 数でない値・null は 0 本として扱い（閉じる側）、RPC が誤りを返したか投げたら 'unavailable'（呼び手が 503 にする）。
+ */
+async function resolveApprovedPasskeyCount(userId: string, getService: ServiceClientProvider): Promise<number | 'unavailable'> {
+  try {
+    const service = await getService();
+    const { data, error } = await service.rpc('passkey_approved_count', { p_user_id: userId });
+    if (error) {
+      console.error('[RBAC.resolveApprovedPasskeyCount] RPC error:', error);
+      return 'unavailable';
+    }
+    return typeof data === 'number' && Number.isInteger(data) ? data : 0;
+  } catch (err) {
+    console.error('[RBAC.resolveApprovedPasskeyCount] Exception:', err);
+    return 'unavailable';
+  }
+}
+
 export async function authorizeAdminPermission(requiredPermission: PermissionCode, request?: Request): Promise<AuthzResult> {
   return authorizeAdminPermissions([requiredPermission], request);
 }
 
 /**
  * 要るコードを全部持つ時だけ通す。持つコードは有効な全ての役割の和集合で数える（1つの役割に全部そろっていなくてよい）。
- * 403 の permission は、渡した並びで足りない最初のコード。MFA（aal2）が無い時の 403 の permission は先頭の要るコード。
+ * 403 の permission は、渡した並びで足りない最初のコード。管理の入口の条件（パスキー）を満たさない時の 403 の permission は先頭の要るコード。
  * 空の一覧は権限の確認なしで通る道になるので、通さずに 500 にする。
  */
 export async function authorizeAdminPermissions(required: readonly PermissionCode[], request?: Request): Promise<AuthzResult> {
@@ -242,9 +272,11 @@ export async function authorizeAdminPermissions(required: readonly PermissionCod
 
     const tokenRole = resolveTokenRole({ app_metadata: claims.app_metadata });
 
-    const [liveness, aclPermissions] = await Promise.all([
+    const getService = onceServiceClient();
+    const [liveness, aclPermissions, approvedCount] = await Promise.all([
       checkAuthSessionLiveness(claims.session_id),
-      resolveAclPermissions(userId),
+      resolveAclPermissions(userId, getService),
+      resolveApprovedPasskeyCount(userId, getService),
     ]);
 
     if (liveness !== 'active') {
@@ -284,9 +316,22 @@ export async function authorizeAdminPermissions(required: readonly PermissionCod
       };
     }
 
-    // MFA はセッション単位の性質。app_metadata のフラグはユーザー単位で永続してしまうため、
-    // JWT の aal クレーム（Supabase 標準）で判定する。
-    if (claims.aal !== 'aal2') {
+    // 認めたパスキーの本数を数えられなかった時は、liveness の unavailable と同じく 503（拒否は変わらず、client に更新を撃たせない）。
+    // 権限が無い人は先に 403 permission で止まるので、本数の照会が落ちていても権限の誤りは変わらない。
+    if (approvedCount === 'unavailable') {
+      return {
+        ok: false,
+        response: NextResponse.json(
+          { error: 'Service temporarily unavailable' },
+          { status: 503, headers: { 'Retry-After': '30' } },
+        ),
+      };
+    }
+
+    // 管理の入口の3つの条件（パスキー・24時間以内・DB で数えた認めたパスキー2本以上。SR-AUTH-014）で判定する。
+    // パスキーのログインは aal1 のままなので aal は見ない。403 の文言 'MFA required' と denial.reason 'mfa' は段4まで変えない（ADR-0463）。
+    const entry = evaluateStaffEntry(claims, approvedCount, Date.now() / 1000);
+    if (!entry.ok) {
       console.warn(`[RBAC] MFA required for ${userId}: ${firstRequired}`);
       return {
         ok: false,

@@ -1,3 +1,4 @@
+import { aalFields, withApprovedCount } from '../../unit/helpers/staff-claims';
 export {};
 
 // 取扱店の守りの部品（admin-security）を、共有の回数の数え（rateLimit と ratelimit）と CSRF の照合（csrfMiddleware）を
@@ -159,10 +160,10 @@ function setupRoute(serviceOptions: Parameters<typeof createServiceClient>[0] = 
     }),
   };
   createClient.mockResolvedValue(userClient);
-  createServiceRoleClient.mockResolvedValue(service);
+  createServiceRoleClient.mockResolvedValue(withApprovedCount(service));
   verifyAccessToken.mockResolvedValue({
     ok: true,
-    claims: { sub: 'admin-1', session_id: 'sess-1', aal: 'aal2', app_metadata: { role: 'admin' } },
+    claims: { sub: 'admin-1', session_id: 'sess-1', ...aalFields('aal2'), app_metadata: { role: 'admin' } },
   });
   checkAuthSessionLiveness.mockResolvedValue('active');
   return userClient;
@@ -184,7 +185,7 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
   describe('回数の制限', () => {
     it('ARC-STOCKIST-003 送り元の枠（読み）は名前 admin:stockists:read で、600 秒ごとの窓に subject なしの 1 本だけを数える', async () => {
       service = createServiceClient();
-      createServiceRoleClient.mockResolvedValue(service);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(service));
 
       const res = await security.enforceAdminStockistIpRateLimit(makeRequest('203.0.113.9'), 'read');
 
@@ -194,7 +195,7 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
 
     it('ARC-STOCKIST-003 操作者の枠（読み）は名前 admin:stockists:read に操作者の印を付け、送り元を捨てた 1 本だけを数える', async () => {
       service = createServiceClient();
-      createServiceRoleClient.mockResolvedValue(service);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(service));
 
       const res = await security.enforceAdminStockistActorRateLimit(makeRequest('203.0.113.9'), 'admin-1', 'read');
 
@@ -207,7 +208,7 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
 
     it('ARC-STOCKIST-003 変更の枠は名前 admin:stockists:mutation で、読みの枠とは別に数える', async () => {
       service = createServiceClient();
-      createServiceRoleClient.mockResolvedValue(service);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(service));
 
       await security.enforceAdminStockistIpRateLimit(makeRequest(), 'mutation');
       await security.enforceAdminStockistActorRateLimit(makeRequest(), 'admin-1', 'mutation');
@@ -220,7 +221,7 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
 
     it('ARC-STOCKIST-003 操作者の枠は操作者ごとに別で、同じ ID なら同じ枠、違う ID なら違う枠に数える', async () => {
       service = createServiceClient();
-      createServiceRoleClient.mockResolvedValue(service);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(service));
 
       await security.enforceAdminStockistActorRateLimit(makeRequest(), 'admin-1', 'read');
       await security.enforceAdminStockistActorRateLimit(makeRequest(), 'admin-1', 'read');
@@ -234,7 +235,7 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
 
     it('ARC-STOCKIST-003 窓が 600 秒を越えると新しい窓の数えに移る', async () => {
       service = createServiceClient();
-      createServiceRoleClient.mockResolvedValue(service);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(service));
 
       await security.enforceAdminStockistIpRateLimit(makeRequest(), 'read');
       (Date.now as jest.Mock).mockReturnValue(NOW + 600_000);
@@ -254,11 +255,11 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
       ];
       for (const call of calls) {
         service = createServiceClient({ count: () => ({ data: limit, error: null }) });
-        createServiceRoleClient.mockResolvedValue(service);
+        createServiceRoleClient.mockResolvedValue(withApprovedCount(service));
         expect(await call(makeRequest())).toBeUndefined();
 
         service = createServiceClient({ count: () => ({ data: limit + 1, error: null }) });
-        createServiceRoleClient.mockResolvedValue(service);
+        createServiceRoleClient.mockResolvedValue(withApprovedCount(service));
         const res = await call(makeRequest());
 
         expect(res.status).toBe(429);
@@ -269,7 +270,7 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
 
     it('ARC-STOCKIST-003 送り元の見出しを偽って変えても、操作者の枠を超えていれば 429 で断る', async () => {
       service = createServiceClient({ count: (args) => ({ data: args._ip === null ? 21 : 1, error: null }) });
-      createServiceRoleClient.mockResolvedValue(service);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(service));
 
       expect(await security.enforceAdminStockistIpRateLimit(makeRequest('198.51.100.77'), 'mutation')).toBeUndefined();
       const res = await security.enforceAdminStockistActorRateLimit(makeRequest('198.51.100.77'), 'admin-1', 'mutation');
@@ -280,7 +281,7 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
 
     it('ARC-STOCKIST-003 数えの DB が使えない時は 503 と Retry-After 600 で断る', async () => {
       service = createServiceClient({ count: () => ({ data: null, error: { message: 'rpc down' } }) });
-      createServiceRoleClient.mockResolvedValue(service);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(service));
 
       const res = await security.enforceAdminStockistIpRateLimit(makeRequest(), 'read');
 
@@ -291,7 +292,7 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
 
     it('ARC-STOCKIST-003 送り元の見出しが無ければ ip null の枠に数える', async () => {
       service = createServiceClient();
-      createServiceRoleClient.mockResolvedValue(service);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(service));
 
       await security.enforceAdminStockistIpRateLimit(makeRequest(null), 'read');
 
@@ -302,7 +303,7 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
   describe('CSRF の token', () => {
     it('ARC-STOCKIST-003 refresh の Cookie が無ければ確かめず通す', async () => {
       service = createServiceClient();
-      createServiceRoleClient.mockResolvedValue(service);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(service));
       setBrowser({});
 
       const result = await security.requireAdminStockistCsrf();
@@ -314,7 +315,7 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
 
     it('ARC-STOCKIST-003 Cookie があるのに x-csrf-token の見出しが無ければ 403 の拒否にする', async () => {
       service = createServiceClient();
-      createServiceRoleClient.mockResolvedValue(service);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(service));
       setBrowser({ refreshToken: 'refresh-1' });
 
       const deny = security.toCsrfDenyResponse(await security.requireAdminStockistCsrf());
@@ -326,7 +327,7 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
 
     it('ARC-STOCKIST-003 session の token の hash と見出しの hash が合えば通す', async () => {
       service = createServiceClient({ storedHash: 'hash(csrf-ok)' });
-      createServiceRoleClient.mockResolvedValue(service);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(service));
       setBrowser({ refreshToken: 'refresh-1', csrfHeader: 'csrf-ok' });
 
       const result = await security.requireAdminStockistCsrf();
@@ -337,7 +338,7 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
 
     it('ARC-STOCKIST-003 URL の符号化をされた見出しの token も元に戻して照合する', async () => {
       service = createServiceClient({ storedHash: 'hash(a b)' });
-      createServiceRoleClient.mockResolvedValue(service);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(service));
       setBrowser({ refreshToken: 'refresh-1', csrfHeader: 'a%20b' });
 
       expect(security.toCsrfDenyResponse(await security.requireAdminStockistCsrf())).toBeNull();
@@ -346,7 +347,7 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
     it('ARC-STOCKIST-003 token が session のものと違う時も、session に token が無い時も 403 で拒む', async () => {
       for (const storedHash of ['hash(other)', null, undefined]) {
         service = createServiceClient({ storedHash });
-        createServiceRoleClient.mockResolvedValue(service);
+        createServiceRoleClient.mockResolvedValue(withApprovedCount(service));
         setBrowser({ refreshToken: 'refresh-1', csrfHeader: 'csrf-ok' });
 
         const deny = security.toCsrfDenyResponse(await security.requireAdminStockistCsrf());
@@ -358,7 +359,7 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
 
     it('ARC-STOCKIST-003 照合の DB が失敗したら 500 で拒む', async () => {
       service = createServiceClient({ sessionsThrows: true });
-      createServiceRoleClient.mockResolvedValue(service);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(service));
       setBrowser({ refreshToken: 'refresh-1', csrfHeader: 'csrf-ok' });
 
       const deny = security.toCsrfDenyResponse(await security.requireAdminStockistCsrf());
@@ -443,10 +444,10 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
           return { data: counts.get(key), error: null };
         },
       });
-      createServiceRoleClient.mockResolvedValue(service);
+      createServiceRoleClient.mockResolvedValue(withApprovedCount(service));
       verifyAccessToken.mockResolvedValue({
         ok: true,
-        claims: { sub: 'member-1', session_id: 'sess-1', aal: 'aal1', app_metadata: { role: 'user' } },
+        claims: { sub: 'member-1', session_id: 'sess-1', ...aalFields('aal1'), app_metadata: { role: 'user' } },
       });
 
       const statuses: number[] = [];

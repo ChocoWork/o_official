@@ -1,3 +1,4 @@
+import { aalFields, withApprovedCount } from '../../unit/helpers/staff-claims';
 export {};
 
 // 窓口・認可（admin-rbac）・回数の制限（rateLimit）・CSRF の確かめ・監査（audit）は本物を通し、
@@ -107,10 +108,10 @@ function setup(
     ...options.tables,
   });
   createClient.mockResolvedValue(client);
-  createServiceRoleClient.mockResolvedValue(client);
+  createServiceRoleClient.mockResolvedValue(withApprovedCount(client));
   verifyAccessToken.mockResolvedValue({
     ok: true,
-    claims: { sub: 'admin-1', session_id: 'sess-1', aal: options.aal ?? 'aal2', app_metadata: { role: 'admin' } },
+    claims: { sub: 'admin-1', session_id: 'sess-1', ...aalFields(options.aal ?? 'aal2'), app_metadata: { role: 'admin' } },
   });
   checkAuthSessionLiveness.mockResolvedValue('active');
   incrementCounter.mockResolvedValue(1);

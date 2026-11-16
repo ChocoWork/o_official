@@ -1497,7 +1497,7 @@ stateDiagram-v2
 | 上位 | SEC-AUTH-005、SEC-AUTH-010、ADR-0418 |
 | 根拠 | API の窓口（ADR-0417）だけが結び付きを求めても、PostgREST は `has_permission` の ACL だけを見て通すので、anon キーで取った通行証が DB から直に管理の表や会員の行に届く。`has_permission` の本体 1 本を直せば、それを使う約 100 の RLS の方針が書き換えなしで従う。`has_permission` を使わず `auth.uid() = user_id` で本人の行を返す表だけは、別の方針で閉じる |
 | 状態 | 推定 |
-| 確かめ方 | 移行の文面の単体テスト（`tests/unit/migrations/sec-has-permission-aal2.test.ts`）、DB 結合テスト（`tests/integration/db/auth_has_permission_aal2.integration.test.ts`。M2 を当てた手元の DB で controller が流す） |
+| 確かめ方 | 移行の文面の単体テスト（`tests/unit/migrations/sec-has-permission-aal2.test.ts`）、DB 結合テスト（`tests/integration/db/auth_has_permission_passkey.integration.test.ts`。M2 を当てた手元の DB で controller が流す） |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave5-decisions.md`（Q2 案 B）、計画 `docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md`（Task 6、P14・P15）、移行 `supabase/pending-wave5/20261029120100_sec_has_permission_aal2_member_rls.sql`（2026-10-29 に本番へ単独で適用済み。利用者はアプリでログインし直す） |
 
 | 部品 | 中身 |
@@ -1679,7 +1679,10 @@ stateDiagram-v2
 - 権限: `public`・`anon`・`authenticated`・`service_role` から `execute` を外す（`private.app_session_is_live` と同じ）。`has_permission` は `SECURITY DEFINER` で持ち主が `postgres` なので、Task 9 でこの3つを呼べる。新しい権限は渡さない
 - 読む表: `private.passkey_staff_config`（`private.passkey_staff_settings()` 経由）、`private.approved_passkeys`・`auth.webauthn_credentials`（`public.passkey_approved_count` 経由）。書く表は無い
 - 戻す: 移行のヘッダーの ROLLBACK（関数を3本落とす。Task 9 が使う前に限る）
-- つなぐ予定: `has_permission` は2つを別々の位置で呼ぶ（Task 9）。いまは何もつながず、今のログインと管理の入口は変わらない
+- つないだ（Task 9、移行 E `20261117013000_passkey_staff_entry_conditions.sql`、DD-AUTH-048）: `has_permission` が `staff_passkey_amr_ok` を今までの `aal2` の位置（ACL の前）、`staff_passkey_count_ok` を ACL が真になった後・`app_session_is_live` の前に呼ぶ。API は `admin-rbac.ts` が RPC `passkey_approved_count` を、失効の確かめ・ACL の照会と並べて（同じ service role の client で）呼び、`evaluateStaffEntry` で判定する
+- 約100の決まり（RLS）から行ごとに呼ばれうる: 手元で `has_permission` を `( SELECT ... )` で包まずに呼ぶ決まりは21の表の77件ある（財務の表群・`items`・`looks`・`look_items`・`news_articles`・`stockists`・`orders`・`order_items`・`item_color_presets`・`user_roles`）。条件3の数えは、パスキーの amr と ACL を通った人（店員）だけが行ごとに1回ずつ払う。お客さん・anon は条件1・2か ACL で止まり、認めの控えまで届かない。決まりを書き換えて包む作業は、費用が見える時の別の課題
+- `/api/auth/me` の `mfaVerified`: 認めた本数は JWT の印 `staff_passkeys_ok` から取る表示のヒント（真なら足りる数、偽なら0）。権限の判定は `admin-rbac` が DB で数える（ADR-0463）
+- 手元の設定: `supabase/config.toml` の `[auth.hook.custom_access_token]` を有効にした（`pg-functions://postgres/public/passkey_access_token_hook`。取り込みは `supabase stop`・`start` が要る）。`[auth.webauthn] rp_origins` は `http://localhost:3000` だけ（`rp_id` が `localhost` では `127.0.0.1` の出所で WebAuthn は使えないので外した）
 
 
 ### 手元の Supabase Auth の設定の表（波 6 の目標。手元は 2026-11-01 に切り替え済み）

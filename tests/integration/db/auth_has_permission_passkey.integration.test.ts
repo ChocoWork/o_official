@@ -1,13 +1,16 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
-import { createLiveAppSession, jwtClaims } from './helpers/app-session';
+import { createLiveAppSession, jwtClaims, seedApprovedPasskeys } from './helpers/app-session';
+import { amrCases } from '../../unit/helpers/staff-claims';
 
 /**
- * SEC-AUTH-010-AC-03 / DATA-AUTH-008: 波 5 の M2。`public.has_permission` は aal2 と、結び付いた生きた session を
- * 求める。会員の本人の行の表（profiles・orders・order_items）は RESTRICTIVE の方針で、結び付いた生きた session を求める。
- * 手元の使い捨て DB（M1・M2 を当てた後）でだけ流す。各試験は取引の中で動かし、最後に巻き戻して足した行を残さない。
- * 計画: docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md（Task 6）
+ * SEC-AUTH-010-AC-03 / DATA-AUTH-008 / SEC-AUTH-039 / SEC-AUTH-040: `public.has_permission` は、管理の入口の3条件
+ * （amr に passkey・24時間以内・DB で数えた認めたパスキー2本以上。SR-AUTH-014）と、結び付いた生きた session を求める（波 5 の M2 を、
+ * パスキーの入口に切り替えた移行 E）。JWT の aal・staff_passkeys_ok は見ない。会員の本人の行の表（profiles・orders・order_items）は
+ * RESTRICTIVE の方針で、結び付いた生きた session を求める（変わらない）。
+ * 手元の使い捨て DB でだけ流す。各試験は取引の中で動かし、最後に巻き戻して足した行を残さない。
+ * 古い名前の aal1・aal2 は、認めたパスキー1本・2本に読み替える（helpers/app-session.ts）。
  */
 type Claims = Record<string, unknown>;
 type Outcome = { rows: any[]; rowCount: number } | { code: string };
@@ -15,7 +18,7 @@ type Role = 'anon' | 'authenticated';
 
 const ADMIN_PERMISSION = 'admin.orders.read';
 
-describeLocalDb('integration: has_permission の aal2 と結び付き（M2）', (db) => {
+describeLocalDb('integration: has_permission の管理の入口の3条件と結び付き（移行 E）', (db) => {
   beforeEach(async () => {
     await db().query('begin');
   });
@@ -43,7 +46,7 @@ describeLocalDb('integration: has_permission の aal2 と結び付き（M2）', 
 
   /** PostgREST が取引ごとに入れる役と claims を再現する。断られても取引を壊さないよう savepoint で包む。 */
   async function attempt(role: Role, claims: Claims | string | null, sql: string, params: unknown[] = []): Promise<Outcome> {
-    await db().query('savepoint aal2_attempt');
+    await db().query('savepoint passkey_attempt');
     try {
       await db().query(`set local role ${role}`);
       if (claims !== null) {
@@ -56,8 +59,8 @@ describeLocalDb('integration: has_permission の aal2 と結び付き（M2）', 
     } catch (caught) {
       return { code: (caught as { code?: string }).code ?? 'unknown' };
     } finally {
-      await db().query('rollback to savepoint aal2_attempt');
-      await db().query('release savepoint aal2_attempt');
+      await db().query('rollback to savepoint passkey_attempt');
+      await db().query('release savepoint passkey_attempt');
     }
   }
 
@@ -67,24 +70,109 @@ describeLocalDb('integration: has_permission の aal2 と結び付き（M2）', 
     return outcome.rows[0].value;
   }
 
-  test('DATA-AUTH-008 ①aal2 かつ結び付いた生きた session の管理者は true', async () => {
+  test('DATA-AUTH-008 ①今の passkey の amr・認めたパスキー2本・結び付いた生きた session の管理者は true（aal は aal1 のまま）', async () => {
     const admin = await insertUser('admin');
     const session = await createLiveAppSession(db(), admin, { aal: 'aal2' });
 
-    expect(await allowed(jwtClaims(admin, session, 'aal2'))).toBe(true);
+    const claims = jwtClaims(admin, session, 'aal2');
+    expect(claims.aal).toBe('aal1');
+    expect(await allowed(claims)).toBe(true);
   });
 
-  test('DATA-AUTH-008 ②aal1 の claims は、結び付いた生きた session があっても false', async () => {
+  test('DATA-AUTH-008 ②認めたパスキーが1本の店員は、今の passkey の amr・結び付いた生きた session があっても false', async () => {
     const admin = await insertUser('admin');
     const session = await createLiveAppSession(db(), admin, { aal: 'aal1' });
 
-    expect(await allowed(jwtClaims(admin, session, 'aal1'))).toBe(false);
+    expect(await allowed(jwtClaims(admin, session, 'aal2'))).toBe(false);
   });
 
-  test('DATA-AUTH-008 ③aal が無い claims は aal1 として false', async () => {
+  test('DATA-AUTH-016 ②認めたパスキーが0本の店員は false', async () => {
+    const admin = await insertUser('admin');
+    const session = await createLiveAppSession(db(), admin, { aal: 'aal1' });
+    await db().query('delete from private.approved_passkeys where user_id = $1', [admin]);
+
+    expect(await allowed(jwtClaims(admin, session, 'aal2'))).toBe(false);
+  });
+
+  test('DATA-AUTH-016 ②JWT の印 staff_passkeys_ok が真でも、認めたパスキーが1本なら false（印は判定に使わない）', async () => {
+    const admin = await insertUser('admin');
+    const session = await createLiveAppSession(db(), admin, { aal: 'aal1' });
+
+    expect(await allowed({ ...jwtClaims(admin, session), staff_passkeys_ok: true })).toBe(false);
+  });
+
+  test('DATA-AUTH-016 ②認めた鍵が GoTrue で消された直後（更新を待たない）は、JWT の印が真のままでも false', async () => {
+    const admin = await insertUser('admin');
+    const session = await createLiveAppSession(db(), admin);
+    const claims = { ...jwtClaims(admin, session), staff_passkeys_ok: true };
+    expect(await allowed(claims)).toBe(true);
+
+    await db().query(
+      'delete from auth.webauthn_credentials where id = (select id from auth.webauthn_credentials where user_id = $1 order by created_at limit 1)',
+      [admin],
+    );
+
+    expect(await allowed(claims)).toBe(false);
+  });
+
+  test('DATA-AUTH-016 ②認めた鍵が足りなくなった後に別の鍵を認めて2本に戻すと true に戻る', async () => {
     const admin = await insertUser('admin');
     const session = await createLiveAppSession(db(), admin);
     const claims = jwtClaims(admin, session);
+    await db().query(
+      'delete from auth.webauthn_credentials where id = (select id from auth.webauthn_credentials where user_id = $1 order by created_at limit 1)',
+      [admin],
+    );
+    expect(await allowed(claims)).toBe(false);
+
+    await seedApprovedPasskeys(db(), admin, 2);
+
+    expect(await allowed(claims)).toBe(true);
+  });
+
+  test('DATA-AUTH-016 ③認めていない鍵（GoTrue に直に足した鍵）は数えない', async () => {
+    const admin = await insertUser('admin');
+    const session = await createLiveAppSession(db(), admin, { aal: 'aal1' });
+    await db().query(
+      `insert into auth.webauthn_credentials (user_id, credential_id, public_key, friendly_name)
+       values ($1::uuid, gen_random_bytes(32), gen_random_bytes(32), 'direct')`,
+      [admin],
+    );
+
+    expect(await allowed(jwtClaims(admin, session))).toBe(false);
+  });
+
+  // 表の時刻は、取引の中で固定の now()（DB の秒）を基準に作り直す（86400秒ちょうどの境が、試験の動いた時間でずれないように）
+  test.each(amrCases(0).filter((c) => c.claims !== null).map((c) => c.name))(
+    'DATA-AUTH-016 ③amr の値の表（TS と同じ表）: %s',
+    async (name) => {
+      const dbNow = Number((await db().query('select floor(extract(epoch from now()))::bigint as n')).rows[0].n);
+      const amrCase = amrCases(dbNow).find((c) => c.name === name);
+      if (!amrCase) throw new Error(`表に無い: ${name}`);
+      const admin = await insertUser('admin');
+      const session = await createLiveAppSession(db(), admin);
+      const claims: Claims = { ...jwtClaims(admin, session) };
+      const given = amrCase.claims as { amr?: unknown };
+      if ('amr' in given) claims.amr = given.amr;
+      else delete claims.amr;
+
+      expect(await allowed(claims)).toBe(amrCase.amrOk);
+    },
+  );
+
+  test('DATA-AUTH-008 ③aal が aal2 でも passkey の amr が無ければ false（aal は見ない）', async () => {
+    const admin = await insertUser('admin');
+    const session = await createLiveAppSession(db(), admin);
+    const claims: Claims = { ...jwtClaims(admin, session), aal: 'aal2' };
+    delete claims.amr;
+
+    expect(await allowed(claims)).toBe(false);
+  });
+
+  test('DATA-AUTH-008 ③amr が otp だけの claims（パスワード・メールのコードの通行証）は false', async () => {
+    const admin = await insertUser('admin');
+    const session = await createLiveAppSession(db(), admin);
+    const claims: Claims = { ...jwtClaims(admin, session), amr: [{ method: 'otp', timestamp: Math.floor(Date.now() / 1000) }] };
     delete claims.aal;
 
     expect(await allowed(claims)).toBe(false);
@@ -92,18 +180,20 @@ describeLocalDb('integration: has_permission の aal2 と結び付き（M2）', 
 
   test('DATA-AUTH-008 ④session_id が無い claims は false', async () => {
     const admin = await insertUser('admin');
-    await createLiveAppSession(db(), admin);
+    const session = await createLiveAppSession(db(), admin);
+    const claims = jwtClaims(admin, session);
+    delete claims.session_id;
 
-    expect(await allowed({ sub: admin, role: 'authenticated', aal: 'aal2' })).toBe(false);
+    expect(await allowed(claims)).toBe(false);
   });
 
   test.each(['not-a-uuid', '', '00000000-0000-0000-0000-00000000000z', 'DROP TABLE x'])(
     'DATA-AUTH-008 ⑤形が悪い session_id（%j）は例外でなく false',
     async (bad) => {
       const admin = await insertUser('admin');
-      await createLiveAppSession(db(), admin);
+      const session = await createLiveAppSession(db(), admin);
 
-      expect(await allowed({ sub: admin, role: 'authenticated', aal: 'aal2', session_id: bad })).toBe(false);
+      expect(await allowed({ ...jwtClaims(admin, session), session_id: bad })).toBe(false);
     },
   );
 
@@ -134,7 +224,7 @@ describeLocalDb('integration: has_permission の aal2 と結び付き（M2）', 
     expect(await allowed(jwtClaims(admin, session))).toBe(false);
   });
 
-  test('DATA-AUTH-008 ⑨ACL の無い会員は、aal2 で結び付いた生きた session でも false', async () => {
+  test('DATA-AUTH-008 ⑨ACL の無い会員は、認めたパスキー2本・今の passkey・結び付いた生きた session でも false', async () => {
     const member = await insertUser(null);
     const session = await createLiveAppSession(db(), member, { aal: 'aal2' });
 
@@ -258,19 +348,21 @@ describeLocalDb('integration: has_permission の aal2 と結び付き（M2）', 
       expect(items.rows).toHaveLength(1);
     });
 
-    test('DATA-AUTH-008 ⑫aal2 で結び付いた生きた session の管理者は、他人の注文を読める。aal1 の結び付いた管理者は読めない', async () => {
+    test('DATA-AUTH-008 ⑫認めたパスキー2本で結び付いた生きた session の管理者は、他人の注文を読める。1本の管理者は読めない', async () => {
       const owner = await insertUser(null);
       const { orderId } = await seedMemberOrder(owner, `guest-${randomUUID()}`);
       const admin = await insertUser('admin');
+      // 認めた本数は利用者ごとなので、1本の対照は別の店員で作る
       const aal2 = await createLiveAppSession(db(), admin, { aal: 'aal2' });
-      const aal1 = await createLiveAppSession(db(), admin, { aal: 'aal1' });
+      const other = await insertUser('admin');
+      const aal1 = await createLiveAppSession(db(), other, { aal: 'aal1' });
 
       const read = async (claims: Claims) => {
         const outcome = await attempt('authenticated', claims, 'select id from public.orders where id = $1', [orderId]);
         return 'code' in outcome ? outcome.code : outcome.rowCount;
       };
       expect(await read(jwtClaims(admin, aal2, 'aal2'))).toBe(1);
-      expect(await read(jwtClaims(admin, aal1, 'aal1'))).toBe(0);
+      expect(await read(jwtClaims(other, aal1, 'aal2'))).toBe(0);
     });
   });
 

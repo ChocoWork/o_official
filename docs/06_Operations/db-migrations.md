@@ -131,6 +131,25 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 - **本番へ当てない**: 段1b と段3が済むまで当てない（理由と当て方は移行 A と同じ）
 - 手元で確かめた結果（2026-11-17、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_staff_entry_conditions.integration.test.ts` 通過、ほかの `auth_passkey_*` の DB 結合も通過のまま（5つで77件）。単体 `staff-passkey.test.ts` 通過
 
+## パスキー段1a 移行 E: `has_permission` を管理の入口の3つの条件に切り替える（手元で確認済み・本番未適用）
+
+確認日: 2026-11-17（パスキー段1a Task 9）。SR-AUTH-014・FR-AUTH-012・FR-AUTH-013・SEC-AUTH-039・SEC-AUTH-040・ADR-0463・DD-AUTH-048。設計は [パスキー設計](../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-2）、計画は [段1a の計画](../superpowers/plans/2026-11-16-passkey-stage1a-foundation.md)。
+
+| 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
+| --- | --- | --- | --- |
+| `20261117013000_passkey_staff_entry_conditions.sql` | 6733 bytes / `a2dc03e0e0c262480f83d83f3cf4f5e8` | 本番未適用（手元の `db reset` で適用済み） | `public.has_permission(text)` の `aal2` の枝を、管理の入口の3つの条件に置き換える |
+
+- 変えるもの: `has_permission` の本体だけ（`CREATE OR REPLACE`。持ち主・`SECURITY DEFINER`・`STABLE`・`SET search_path = ''`・権限は `20261029120100` のまま）。順は uid → `private.staff_passkey_amr_ok(claims)`（今までの `aal2` の位置）→ ACL → `private.staff_passkey_count_ok(uid)`（ACL が真になった後）→ `private.app_session_is_live`。claims の `aal` は見ない
+- 置き換える前の本体の md5（`select md5(pg_get_functiondef('public.has_permission(text)'::regprocedure))`）: `61536a72ff10e073a731a903ed6acd10`（本番に当てる前にこの値を読み、一致を確かめる）
+- 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `e8d1eb99a81a8e4f6ad4cc30fcd635ba`（本番に当てた後、これと突き合わせる）
+- 前の確かめ: 移行 D の関数2本と `private.app_session_is_live(uuid)` が在ること。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`
+- 末尾の確かめ: 本体に `aal2` が無く、`staff_passkey_amr_ok` < `user_roles` < `staff_passkey_count_ok` < `app_session_is_live` の順で、持ち主・`SECURITY DEFINER`・`STABLE`・`search_path` 空・`authenticated` と `service_role` に `execute` が有り `anon` に無いこと。外れたら `PASSKEY_MIGRATION_ASSERTION_FAILED`
+- 戻し方（移行のヘッダーの ROLLBACK）: `20261029120100_sec_has_permission_aal2_member_rls.sql` の本体（`aal2` の枝）に `CREATE OR REPLACE` で戻す
+- 費用: `has_permission` を `( SELECT ... )` で包まずに呼ぶ決まりが21の表に77件ある（行ごとに呼ばれうる）。条件3の数えは、パスキーの amr と ACL を通った人（店員）だけが払う。お客さん・anon は条件1・2か ACL で止まる
+- 手元で必要な操作: 同じコミットで `supabase/config.toml` の `[auth.hook.custom_access_token]` を有効にしたので、取り込みに `supabase stop`・`start` が要る（その後 `db reset`）。フックを外す時は `enabled` を戻して同じく `stop`・`start`
+- **本番へ当てない**: 段1b と段3が済むまで当てない。当てると、パスキーを有効にするまでだれも管理の権限を持てない（`amr` に `passkey` を持つ店員がいない）。理由と当て方は移行 A と同じ
+- 手元で確かめた結果（2026-11-17、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_has_permission_passkey.integration.test.ts` ほか `auth_passkey_*` の DB 結合が通過、`has_permission` を使う DB 結合（RLS・付与・権限の57ファイル）も通過。単体は全件通過
+
 ## CI の引き金を止めた記録（2026-11-16）
 
 - 止めたもの: `.github/workflows/db-migrations.yml` の `on:` から `push:` を消した。master に push しても、本番への移行の適用は動かない。`pull_request`（`supabase db push --dry-run` だけ。DB は変えない）と `workflow_dispatch` は残る。`deploy` の job は `if: github.event_name == 'workflow_dispatch'` の時だけ動く（手動の入口は残すが、使わない決まり）。

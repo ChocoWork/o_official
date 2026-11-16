@@ -302,6 +302,7 @@ for (const viewport of viewports) {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
     test(`FR-LOGIN-007-AC-02 管理者とサポーターは TOTP を通るまで管理画面へ進めない (${viewport.name})`, async ({ page }) => {
+      test.skip(true, '段4で消す機能: 店員のパスワード＋確認コード＋TOTP のログインと TOTP の窓口（段4で消す）。手元では店員がアプリの画面から入れない（GoTrue のフックが拒否。SEC-AUTH-040）');
       requireLocalEnv();
       for (const role of ['admin', 'supporter'] as const) {
         const ip = uniqueSourceIp();
@@ -350,6 +351,7 @@ for (const viewport of viewports) {
     });
 
     test(`SEC-AUTH-009-AC-01 同じ利用者の6回目の TOTP の確認が 429 (${viewport.name})`, async ({ page }) => {
+      test.skip(true, '段4で消す機能: 店員のパスワード＋確認コード＋TOTP のログインと TOTP の窓口（段4で消す）。手元では店員がアプリの画面から入れない（GoTrue のフックが拒否。SEC-AUTH-040）');
       // 利用者単位の枠（5 回 / 600 秒）は challenge より前に数えるので、TOTP を有効にする ENV に関係なく 6 回目は 429 になる。
       const { member } = await loginPrivilegedAsAal1(page, 'login032-009a', 'admin');
       const factorId = await withLocalDb((db) => addVerifiedTotpFactor(db, member.userId));
@@ -366,6 +368,7 @@ for (const viewport of viewports) {
     });
 
     test(`SEC-AUTH-009-AC-02 TOTP の失敗が監査に残る (${viewport.name})`, async ({ page }) => {
+      test.skip(true, '段4で消す機能: 店員のパスワード＋確認コード＋TOTP のログインと TOTP の窓口（段4で消す）。手元では店員がアプリの画面から入れない（GoTrue のフックが拒否。SEC-AUTH-040）');
       // 手元で TOTP が無効（challenge が 400）でも、challenge の失敗の分岐が failure の行を 1 つ書く。
       const { member } = await loginPrivilegedAsAal1(page, 'login032-009b', 'admin');
       const factorId = await withLocalDb((db) => addVerifiedTotpFactor(db, member.userId));
@@ -380,6 +383,7 @@ for (const viewport of viewports) {
     });
 
     test(`SEC-AUTH-010-AC-02 aal2 の管理者の JWT では今どおり他人の注文が読める (${viewport.name})`, async ({ page, request }) => {
+      test.skip(true, '段4で消す機能: 店員のパスワード＋確認コード＋TOTP のログインと TOTP の窓口（段4で消す）。手元では店員がアプリの画面から入れない（GoTrue のフックが拒否。SEC-AUTH-040）');
       const { ip } = await loginPrivilegedAsAal1(page, 'login032-010b', 'admin');
       const aal2Token = await elevateCookieToAal2(page, ip);
       const admin = claimsOf(aal2Token);
@@ -400,6 +404,7 @@ for (const viewport of viewports) {
     });
 
     test(`SEC-AUTH-030-AC-01 TOTP の登録と確認の成功が監査に残る (${viewport.name})`, async ({ page }) => {
+      test.skip(true, '段4で消す機能: 店員のパスワード＋確認コード＋TOTP のログインと TOTP の窓口（段4で消す）。手元では店員がアプリの画面から入れない（GoTrue のフックが拒否。SEC-AUTH-040）');
       const { member } = await loginPrivilegedAsAal1(page, 'login032-030a', 'admin');
       const before = (await auditRowsOf(member.userId, 'mfa')).filter((row) => row.outcome === 'success');
 
@@ -416,6 +421,7 @@ for (const viewport of viewports) {
     });
 
     test(`SEC-AUTH-031-AC-01 メール OTP を通っていない aal1 の session では初めての TOTP を登録できない (${viewport.name})`, async ({ request, baseURL }) => {
+      test.skip(true, '段4で消す機能: 店員のパスワード＋確認コード＋TOTP のログインと TOTP の窓口（段4で消す）。手元では店員がアプリの画面から入れない（GoTrue のフックが拒否。SEC-AUTH-040）');
       // 2 段目の確かめは listFactors より前（amr が password だけなら 403）なので、TOTP を有効にする ENV に関係なく断られる。
       requireLocalEnv();
       const origin = originOf(baseURL);
@@ -458,6 +464,7 @@ for (const viewport of viewports) {
     });
 
     test(`FREQ-316-REQ-01-AC-01 Cookie の access token だけで管理の窓口が通り、iss か aud の違うトークンは断られる (${viewport.name})`, async ({ page, request }) => {
+      test.skip(true, '段4で消す機能: 店員のパスワード＋確認コード＋TOTP のログインと TOTP の窓口（段4で消す）。手元では店員がアプリの画面から入れない（GoTrue のフックが拒否。SEC-AUTH-040）');
       requireLocalEnv();
       if (!JWT_SECRET) throw new Error('JWT_SECRET が env に無い（署名し直した JWT の確かめに要る）');
       const { ip } = await loginPrivilegedAsAal1(page, 'login032-316a', 'admin');
@@ -485,6 +492,7 @@ for (const viewport of viewports) {
     });
 
     test(`FREQ-316-REQ-02-AC-01 TOTP の確認の後の Cookie の access token が aal2 になり、aal1 のトークンでは管理の窓口が 403 になる (${viewport.name})`, async ({ page }) => {
+      test.skip(true, '段4で消す機能: 店員のパスワード＋確認コード＋TOTP のログインと TOTP の窓口（段4で消す）。手元では店員がアプリの画面から入れない（GoTrue のフックが拒否。SEC-AUTH-040）');
       await loginPrivilegedAsAal1(page, 'login032-316b', 'admin');
 
       // aal1 のトークンで管理の窓口を呼ぶと 403（MFA required）
@@ -509,6 +517,7 @@ for (const viewport of viewports) {
     });
 
     test(`FREQ-316-REQ-03-AC-01 ログアウトの後、その前の access token で管理の窓口が 401 になる (${viewport.name})`, async ({ page, request }) => {
+      test.skip(true, '段4で消す機能: 店員のパスワード＋確認コード＋TOTP のログインと TOTP の窓口（段4で消す）。手元では店員がアプリの画面から入れない（GoTrue のフックが拒否。SEC-AUTH-040）');
       const { ip } = await loginPrivilegedAsAal1(page, 'login032-316c', 'admin');
       const aal2Token = await elevateCookieToAal2(page, ip);
       const origin = new URL(page.url()).origin;

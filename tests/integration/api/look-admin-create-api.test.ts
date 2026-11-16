@@ -1,3 +1,4 @@
+import { aalFields, withApprovedCount } from '../../unit/helpers/staff-claims';
 export {};
 
 // 窓口・認可（admin-rbac）・監査（audit）・変更の回数の制限（admin-rate-limit と ratelimit）は本物を通し、
@@ -187,7 +188,7 @@ function setup(
     },
     { uploadImpl: options.uploadImpl, removeImpl: options.removeImpl, rpcImpl: options.rpcImpl },
   );
-  createServiceRoleClient.mockResolvedValue(serviceClient);
+  createServiceRoleClient.mockResolvedValue(withApprovedCount(serviceClient));
   verifyAccessToken.mockResolvedValue(
     options.verified ?? {
       ok: true,
@@ -195,7 +196,7 @@ function setup(
         sub: 'admin-1',
         email: 'admin@example.com',
         session_id: 'sess-1',
-        aal: options.aal ?? 'aal2',
+        ...aalFields(options.aal ?? 'aal2'),
         app_metadata: { role: 'admin' },
       },
     },

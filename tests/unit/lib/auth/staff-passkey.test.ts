@@ -4,6 +4,7 @@ import { defaultStaffPasskeySettings } from '@/lib/auth/staff-passkey-defaults';
 import {
   STAFF_MAX_SESSION_SECONDS,
   STAFF_MIN_APPROVED_PASSKEYS,
+  approvedCountHint,
   evaluateStaffEntry,
 } from '@/lib/auth/staff-passkey';
 import { amrCases, mockApprovedCount, staffEntryClaims } from '../../helpers/staff-claims';
@@ -81,5 +82,24 @@ describe('staff passkey entry conditions', () => {
     mockApprovedCount(rpc, 1);
     await expect(rpc('passkey_approved_count', { p_user_id: 'x' })).resolves.toEqual({ data: 1, error: null });
     await expect(rpc('other')).resolves.toEqual({ data: null, error: null });
+  });
+});
+
+describe('approvedCountHint（表示のヒント。判定には使わない）', () => {
+  it('DD-AUTH-048 印 staff_passkeys_ok が true のときだけ足りる本数、それ以外は 0（閉じる側）', () => {
+    expect(approvedCountHint({ staff_passkeys_ok: true })).toBe(STAFF_MIN_APPROVED_PASSKEYS);
+    for (const value of [false, undefined, null, 'true', 1, {}]) {
+      expect(approvedCountHint({ staff_passkeys_ok: value })).toBe(0);
+    }
+    expect(approvedCountHint({})).toBe(0);
+    expect(approvedCountHint(null)).toBe(0);
+    expect(approvedCountHint(undefined)).toBe(0);
+  });
+
+  it('DD-AUTH-048 ヒントの本数は evaluateStaffEntry を通すと、印が真なら通り、偽なら passkeys_insufficient', () => {
+    const claims = staffEntryClaims();
+    expect(evaluateStaffEntry(claims, approvedCountHint(claims), Date.now() / 1000)).toEqual({ ok: true });
+    const noMark = staffEntryClaims({ staff_passkeys_ok: false });
+    expect(evaluateStaffEntry(noMark, approvedCountHint(noMark), Date.now() / 1000)).toEqual({ ok: false, reason: 'passkeys_insufficient' });
   });
 });

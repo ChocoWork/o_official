@@ -1,4 +1,5 @@
 import { minimalGif, minimalJpeg, minimalPng, minimalWebp, textAsImage } from '../../fixtures/images';
+import { aalFields, withApprovedCount } from '../../unit/helpers/staff-claims';
 
 // 窓口・認可（admin-rbac）・監査（audit）は本物を通し、外との境目（Supabase の client・token の検証・応答の型）だけを差し替える
 jest.mock('next/server', () => ({
@@ -153,8 +154,8 @@ function setup(options: { uploadResult?: Result; updateResult?: Result; readResu
     options.uploadResult,
   );
   createClient.mockResolvedValue(userClient);
-  createServiceRoleClient.mockResolvedValue(serviceClient);
-  verifyAccessToken.mockResolvedValue({ ok: true, claims: { sub: 'admin-1', session_id: 'sess-1', aal: 'aal2', app_metadata: { role: 'admin' } } });
+  createServiceRoleClient.mockResolvedValue(withApprovedCount(serviceClient));
+  verifyAccessToken.mockResolvedValue({ ok: true, claims: { sub: 'admin-1', session_id: 'sess-1', ...aalFields('aal2'), app_metadata: { role: 'admin' } } });
   checkAuthSessionLiveness.mockResolvedValue('active');
 }
 
@@ -561,7 +562,7 @@ describe('PUT /api/admin/news/[id]（管理の記事1件の更新）', () => {
       user_roles: { data: aclRows(['admin.news.manage']), error: null },
       audit_logs: { data: null, error: { message: 'audit down' } },
     });
-    createServiceRoleClient.mockResolvedValue(serviceClient);
+    createServiceRoleClient.mockResolvedValue(withApprovedCount(serviceClient));
 
     const res = await PUT(makeRequest(), ctx('7'));
 

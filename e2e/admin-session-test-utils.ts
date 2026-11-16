@@ -1,23 +1,26 @@
 /**
- * 管理 API の E2E の道具。本物の管理者の JWT（店長・サポーター、aal1・aal2）を手元の Supabase で作る。
+ * 管理 API の E2E の道具。本物の管理者の JWT（店長・サポーター）を手元の Supabase で作る。
  *
- * 手元の Supabase は2要素（TOTP）が無効なので、管理画面のログインは通れない。代わりに次の道を使う。
- * 1. auth.admin.createUser で利用者を作り、有効な user_roles（DB の ACL）を同じ役割で付ける
- * 2. 手元の Auth のパスワードのログインで session と aal1 の JWT を得る（アプリの OTP・Turnstile は通らない）
- * 3. aal2 が要る時は、その session の auth.mfa_amr_claims に totp の行を足して refresh する。
- *    Auth は session の amr から aal を数えるので、refresh で返る JWT が aal2 になる
- *    （auth.sessions の aal 列だけを書き換えても JWT は aal1 のまま）
- * 4. 既定では、アプリのログインを通った session と同じ形で public.sessions に結び付けた行を作る（bindAppSession。DD-AUTH-039）。
- *    アプリは AUTH_REQUIRE_APP_SESSION が有効（既定）の間、自前の sessions に結び付かない session の通行証を 401 にするため。
- *    結び付けない通行証（攻撃側の対照）は { bindApp: false } で作る
+ * 管理の入口は、パスキーのログイン（JWT の amr に passkey・24時間以内）と DB で数えた認めたパスキー2本以上（SR-AUTH-014）。
+ * aal は見ない（パスキーは aal1 のまま）。そこで古い名前の aal を次のように読み替える（AdminSessionActor.aal は、頼んだ側の名前）。
+ * - 店員（admin・supporter）の 'aal2' → 認めたパスキー2本の店員がパスキーでログインした JWT（管理の入口を通る）
+ * - 店員の 'aal1' → 認めたパスキー1本の店員がパスキーでログインした JWT（入口の条件を満たさず、403 MFA required になる）
+ * - 'user' → 管理の役割を持たない一般の利用者。今のパスワードの道（auth.admin.createUser → パスワードのログイン）。aal2 を頼まれた時だけ
+ *   session に totp の印を足して refresh する（意味は無いが、JWT の aal は aal2 になる）
+ * 店員の用意は scripts/e2e/passkey-staff.ts（provisionStaff・loginWithPasskey。ソフトの認証器）。ログインの後、既定では
+ * アプリのログインを通った session と同じ形で public.sessions に結び付けた行を作る（bindAppSession。DD-AUTH-039）。
+ * アプリは AUTH_REQUIRE_APP_SESSION が有効（既定）の間、自前の sessions に結び付かない session の通行証を 401 にするため。
+ * 結び付けない通行証（攻撃側の対照）は { bindApp: false } で作る。
  * 管理 API は Authorization: Bearer の JWT をそのまま読むので、Cookie もアプリのログインも要らない。
- * 作った利用者・session は消さない（db reset で消える）。JWT・パスワードは失敗の文面に出さない。
+ * 作った利用者・session は消さない（db reset で消える）。JWT・パスワード・鍵は失敗の文面に出さない。
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createClient, type Session } from '@supabase/supabase-js';
 import { isLocalUrl } from '../scripts/e2e/environment';
+import { addApprovedPasskey, loginWithPasskey, provisionStaff } from '../scripts/e2e/passkey-staff';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { withDummyCaptcha } from './captcha-test-utils';
+import type { SoftAuthenticator } from './passkey-soft-authenticator';
 
 /** 'user' は管理の役割を持たない一般の利用者（user_roles の行はある。管理 API が断ることを見せるための対照） */
 export type AdminSessionRole = 'admin' | 'supporter' | 'user';
@@ -27,6 +30,7 @@ export type AdminSessionActor = {
   userId: string;
   email: string;
   role: AdminSessionRole;
+  /** 頼んだ側の名前（上の読み替えを参照）。JWT の aal クレームではない */
   aal: AdminSessionAal;
   sessionId: string;
   accessToken: string;
@@ -35,6 +39,8 @@ export type AdminSessionActor = {
   expiresAt: number;
   /** public.sessions に結び付いた行があるか（elevateAdminSessionToAal2 が行の refresh_token_hash を合わせるかを決める） */
   appBound: boolean;
+  /** 店員が登録した順の認証器（ソフト）。'user' は空 */
+  authenticators: SoftAuthenticator[];
 };
 
 export type AdminSessionOptions = {
@@ -54,7 +60,14 @@ function localAuthEnv(): LocalAuthEnv {
   return { url, anonKey, serviceRoleKey };
 }
 
-type JwtClaims = { aal?: string; session_id?: string; sub?: string; exp?: number };
+type JwtClaims = {
+  aal?: string;
+  session_id?: string;
+  sub?: string;
+  exp?: number;
+  amr?: Array<{ method?: string; timestamp?: number }>;
+  staff_passkeys_ok?: boolean;
+};
 
 function readClaims(token: string): JwtClaims {
   const payload = token.split('.')[1];
@@ -91,7 +104,7 @@ async function requestToken(env: LocalAuthEnv, grantType: 'password' | 'refresh_
   return { access_token: reply.access_token, refresh_token: reply.refresh_token };
 }
 
-/** session に totp の確認済みの印（amr の行）を足し、refresh で aal2 の JWT を出させる */
+/** session に totp の確認済みの印（amr の行）を足し、refresh で aal2 の JWT を出させる（'user' の aal2 だけが使う。管理の入口とは関係が無い） */
 async function raiseSessionToAal2(db: PgClient, env: LocalAuthEnv, sessionId: string, refreshToken: string): Promise<Required<TokenReply>> {
   await db.query(
     `insert into auth.mfa_amr_claims (id, session_id, created_at, updated_at, authentication_method)
@@ -150,10 +163,40 @@ export async function rebindRefreshToken(
   if (updated.rowCount !== 1) throw new Error('refresh token を合わせる sessions の行が 1 行ではない');
 }
 
+/** 一般の利用者（管理の役割なし）を作り、パスワードのログインで JWT を得る。aal2 を頼まれた時だけ totp の印を足して refresh する */
+async function createMemberTokens(
+  db: PgClient,
+  env: LocalAuthEnv,
+  aal: AdminSessionAal,
+): Promise<{ userId: string; email: string; tokens: Required<TokenReply> }> {
+  const email = `e2e-admin-session-user-${randomUUID().slice(0, 8)}@example.com`;
+  const password = `E2e-${randomBytes(12).toString('hex')}!`;
+  const admin = createClient(env.url, env.serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  const created = await admin.auth.admin
+    .createUser({ email, password, email_confirm: true, app_metadata: { role: 'user' } })
+    .catch(() => {
+      throw new Error('手元の管理者を作る要求に失敗した');
+    });
+  if (created.error || !created.data.user) {
+    throw new Error(`手元の管理者を作れない（status: ${created.error?.status ?? '不明'}, code: ${created.error?.code ?? '不明'}）`);
+  }
+  const userId = created.data.user.id;
+  const assigned = await db.query(
+    `insert into public.user_roles (user_id, role_id, active, expires_at)
+     select $1::uuid, r.id, true, null from public.roles r where r.code = 'user'`,
+    [userId],
+  );
+  if (assigned.rowCount !== 1) throw new Error('役割 user の行が手元の DB に無い');
+  let tokens = await requestToken(env, 'password', { email, password });
+  const sessionId = readClaims(tokens.access_token).session_id;
+  if (!sessionId) throw new Error('JWT に session_id が無い');
+  if (aal === 'aal2') tokens = await raiseSessionToAal2(db, env, sessionId, tokens.refresh_token);
+  return { userId, email, tokens };
+}
+
 /**
- * 役割つきの利用者を作り、その session の JWT を返す。
- * auth.users の role（app_metadata）と有効な user_roles（active・期限なし）を同じ役割で作る（createPermissionActor と同じ）。
- * 通行証を作って aal を確かめた後、既定ではアプリの sessions に結び付ける（昇格後の refresh token で行を作る）。
+ * 役割つきの利用者を作り、その session の JWT を返す（aal の読み替えは先頭の説明）。
+ * 店員は provisionStaff（user_roles は最後）→ パスキーのログイン。通行証を作って確かめた後、既定ではアプリの sessions に結び付ける。
  */
 export async function createAdminSessionActor(
   db: PgClient,
@@ -163,37 +206,35 @@ export async function createAdminSessionActor(
 ): Promise<AdminSessionActor> {
   const bindApp = options.bindApp ?? true;
   const env = localAuthEnv();
-  const email = `e2e-admin-session-${role}-${randomUUID().slice(0, 8)}@example.com`;
-  const password = `E2e-${randomBytes(12).toString('hex')}!`;
 
-  const admin = createClient(env.url, env.serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
-  const created = await admin.auth.admin
-    .createUser({ email, password, email_confirm: true, app_metadata: { role } })
-    .catch(() => {
-      throw new Error('手元の管理者を作る要求に失敗した');
-    });
-  if (created.error || !created.data.user) {
-    throw new Error(`手元の管理者を作れない（status: ${created.error?.status ?? '不明'}, code: ${created.error?.code ?? '不明'}）`);
+  let userId: string;
+  let email: string;
+  let tokens: Required<TokenReply>;
+  let authenticators: SoftAuthenticator[] = [];
+  if (role === 'user') {
+    ({ userId, email, tokens } = await createMemberTokens(db, env, aal));
+  } else {
+    const staff = await provisionStaff(db, { role, approvedPasskeys: aal === 'aal2' ? 2 : 1 });
+    userId = staff.userId;
+    email = staff.email;
+    authenticators = staff.authenticators;
+    const { session } = await loginWithPasskey({ email, authenticator: authenticators[0] });
+    tokens = { access_token: session.access_token, refresh_token: session.refresh_token };
   }
-  const userId = created.data.user.id;
-
-  const assigned = await db.query(
-    `insert into public.user_roles (user_id, role_id, active, expires_at)
-     select $1::uuid, r.id, true, null from public.roles r where r.code = $2`,
-    [userId, role],
-  );
-  if (assigned.rowCount !== 1) throw new Error(`役割 ${role} の行が手元の DB に無い`);
-
-  let tokens = await requestToken(env, 'password', { email, password });
-  const sessionId = readClaims(tokens.access_token).session_id;
-  if (!sessionId) throw new Error('JWT に session_id が無い');
-
-  if (aal === 'aal2') tokens = await raiseSessionToAal2(db, env, sessionId, tokens.refresh_token);
 
   const claims = readClaims(tokens.access_token);
-  if (claims.sub !== userId || claims.session_id !== sessionId) throw new Error('作った JWT の利用者か session が合わない');
-  if (claims.aal !== aal) throw new Error(`作った JWT の aal が ${aal} ではない（${claims.aal ?? '無し'}）`);
+  const sessionId = claims.session_id;
+  if (!sessionId) throw new Error('JWT に session_id が無い');
+  if (claims.sub !== userId) throw new Error('作った JWT の利用者が合わない');
   if (!claims.exp) throw new Error('JWT に exp が無い');
+  if (role === 'user') {
+    if (claims.aal !== aal) throw new Error(`作った JWT の aal が ${aal} ではない（${claims.aal ?? '無し'}）`);
+  } else {
+    if (!claims.amr?.some((entry) => entry.method === 'passkey' && typeof entry.timestamp === 'number')) {
+      throw new Error('作った JWT の amr に passkey が無い');
+    }
+    if (claims.staff_passkeys_ok !== (aal === 'aal2')) throw new Error('作った JWT の staff_passkeys_ok が頼んだ aal と合わない');
+  }
   if (bindApp) {
     await bindAppSession(db, { userId, accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
   }
@@ -207,23 +248,38 @@ export async function createAdminSessionActor(
     refreshToken: tokens.refresh_token,
     expiresAt: claims.exp,
     appBound: bindApp,
+    authenticators,
   };
 }
 
 /**
- * aal1 の利用者の同じ session を aal2 に上げ、aal2 の JWT を持つ利用者を返す（同じ人の aal1・aal2 の JWT を並べたい時に使う）。
- * 先に出した aal1 の JWT は、期限まで aal1 のクレームのまま使える。
+ * 認めたパスキー1本の店員（'aal1'）の同じ session（session_id は変わらない）で、2本目を登録して認め、refresh して、
+ * 認めたパスキー2本（'aal2'）の JWT を持つ利用者を返す（同じ人の1本・2本の JWT を並べたい時に使う）。
+ * 認めた本数は DB でその場で数えるので、先に出した JWT も、この呼び出しの後は2本として扱われる。
+ * 1本の側の結果（403・0行）を見るなら、この関数を呼ぶ前に見ること。
  */
 export async function elevateAdminSessionToAal2(db: PgClient, actor: AdminSessionActor): Promise<AdminSessionActor> {
   if (actor.aal !== 'aal1') throw new Error('aal1 の利用者だけを aal2 に上げられる');
-  const env = localAuthEnv();
-  const tokens = await raiseSessionToAal2(db, env, actor.sessionId, actor.refreshToken);
-  const claims = readClaims(tokens.access_token);
+  if (actor.role === 'user') throw new Error('パスキーの2本目を足せるのは店員だけ');
+  localAuthEnv();
+  const { authenticator, session } = await addApprovedPasskey(db, {
+    userId: actor.userId,
+    accessToken: actor.accessToken,
+    refreshToken: actor.refreshToken,
+  });
+  const claims = readClaims(session.access_token);
   if (claims.sub !== actor.userId || claims.session_id !== actor.sessionId) throw new Error('上げた JWT の利用者か session が合わない');
-  if (claims.aal !== 'aal2' || !claims.exp) throw new Error(`上げた JWT の aal が aal2 ではない（${claims.aal ?? '無し'}）`);
-  // 昇格の refresh で token が替わるので、結び付いた行の refresh_token_hash も合わせる（session_id は変わらない）
-  if (actor.appBound) await rebindRefreshToken(db, { authSessionId: actor.sessionId, refreshToken: tokens.refresh_token });
-  return { ...actor, aal: 'aal2', accessToken: tokens.access_token, refreshToken: tokens.refresh_token, expiresAt: claims.exp };
+  if (claims.staff_passkeys_ok !== true || !claims.exp) throw new Error('上げた JWT の staff_passkeys_ok が真ではない');
+  // refresh で token が替わるので、結び付いた行の refresh_token_hash も合わせる（session_id は変わらない）
+  if (actor.appBound) await rebindRefreshToken(db, { authSessionId: actor.sessionId, refreshToken: session.refresh_token });
+  return {
+    ...actor,
+    aal: 'aal2',
+    accessToken: session.access_token,
+    refreshToken: session.refresh_token,
+    expiresAt: claims.exp,
+    authenticators: [...actor.authenticators, authenticator],
+  };
 }
 
 /** 2要素の登録（検証済みの totp）を1件足す。強制失効・MFA のリセットが「消さなかった」ことを数えるための材料 */

@@ -1,3 +1,4 @@
+import { aalFields } from '../../../unit/helpers/staff-claims';
 export {};
 
 jest.mock('@/lib/auth/authenticate', () => ({
@@ -54,7 +55,8 @@ describe('GET /api/auth/me', () => {
       claims: {
         sub: 'user-1',
         email: 'user@example.com',
-        aal: 'aal2',
+        ...aalFields('aal2'),
+        staff_passkeys_ok: true,
         app_metadata: { role: 'admin' },
       },
     });
@@ -84,13 +86,15 @@ describe('GET /api/auth/me', () => {
     expect(passed.headers.get('authorization')).toBe('Bearer abc');
   });
 
-  test('API-AUTH-013 JWT の aal が aal1 の間は mfaVerified を false にする', async () => {
+  test('API-AUTH-013 JWT にパスキーの amr が無い間は mfaVerified を false にする（aal2 でも）', async () => {
     authenticateRequest.mockResolvedValue({
       ok: true,
       claims: {
         sub: 'user-1',
         email: 'user@example.com',
-        aal: 'aal1',
+        ...aalFields('aal1'),
+        aal: 'aal2',
+        staff_passkeys_ok: true,
         app_metadata: { role: 'admin' },
       },
     });

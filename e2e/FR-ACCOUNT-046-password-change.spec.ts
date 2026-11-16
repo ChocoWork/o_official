@@ -577,6 +577,7 @@ for (const viewport of apiOnlyViewports) {
     });
 
     test(`FR-AUTH-006-AC-06 ${viewport.name}: aal1 の管理者は start が 403 で、コードのメールが届かず、監査に denied と aal2_required が残る`, async ({ page, baseURL }) => {
+      test.skip(true, '段4で消す機能: 店員のパスワード変更の窓口（パスワードの機能。段4で消す）。店員はメールのコードで入れず aal1 の店員のログインを作れない（SEC-AUTH-040）');
       test.setTimeout(120_000);
       const origin = originOf(baseURL);
       const admin = await createMember('api-admin-aal1', { admin: true });

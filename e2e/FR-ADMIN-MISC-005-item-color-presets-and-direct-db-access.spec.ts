@@ -21,7 +21,6 @@ import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import {
   createAdminSessionActor,
-  elevateAdminSessionToAal2,
   type AdminSessionActor,
   type AdminSessionRole,
 } from './admin-session-test-utils';
@@ -71,9 +70,11 @@ let sharedAdminAal1Promise: Promise<AdminSessionActor> | null = null;
 let sharedAdminAal2Promise: Promise<AdminSessionActor> | null = null;
 let sharedMemberPromise: Promise<AdminSessionActor> | null = null;
 const sharedAdminAal1 = (): Promise<AdminSessionActor> => (sharedAdminAal1Promise ??= actorOf('admin', 'aal1'));
-/** sharedAdminAal1 と同じ人・同じ session を aal2 に上げたもの（同じ人の aal1・aal2 の JWT を比べるため） */
-const sharedAdminAal2 = (): Promise<AdminSessionActor> =>
-  (sharedAdminAal2Promise ??= sharedAdminAal1().then((aal1) => withLocalDb((db) => elevateAdminSessionToAal2(db, aal1))));
+/**
+ * 認めたパスキー2本の管理者（対照）。認めた本数は利用者ごとに DB で数えるので、同じ人を2本に上げると先に出した1本の JWT も通る。
+ * 1本・2本の JWT を並べる時は別の人にする（役割は同じ admin）
+ */
+const sharedAdminAal2 = (): Promise<AdminSessionActor> => (sharedAdminAal2Promise ??= actorOf('admin', 'aal2'));
 const sharedMember = (): Promise<AdminSessionActor> => (sharedMemberPromise ??= actorOf('user', 'aal1'));
 
 async function expectPermissions(db: PgClient, userId: string, codes: readonly string[]): Promise<void> {

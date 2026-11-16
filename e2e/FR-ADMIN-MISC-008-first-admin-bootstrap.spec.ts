@@ -37,6 +37,7 @@ for (const [index, viewport] of viewports.entries()) {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
     test(`FR-ADMIN-010-AC-01 コマンドで作った店長が、ログインの後に最初の TOTP の登録の画面へ進める (${viewport.name})`, async ({ page }) => {
+      test.skip(true, '段4で消す機能: 最初の店長のコマンド admin:bootstrap（パスワード＋TOTP。本番用に残し、コードは変えない）。手元の DB では店員がアプリの画面から入れない（SEC-AUTH-040）。手元の手順は Task 10 の dev の店員のスクリプト');
       test.setTimeout(120_000);
       const client = localClient();
       const saved: Record<string, string | undefined> = {};

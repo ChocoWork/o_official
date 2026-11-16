@@ -1,3 +1,4 @@
+import { aalFields, withApprovedCount } from '../../unit/helpers/staff-claims';
 export {};
 
 // 窓口・認可（admin-rbac）・署名（look-images）は本物を通し、外との境目（Supabase の client・token の検証・応答の型）だけを差し替える。
@@ -125,11 +126,11 @@ function setup(
     },
     options.sign,
   );
-  createServiceRoleClient.mockResolvedValue(serviceClient);
+  createServiceRoleClient.mockResolvedValue(withApprovedCount(serviceClient));
   verifyAccessToken.mockResolvedValue(
     options.verified ?? {
       ok: true,
-      claims: { sub: 'admin-1', session_id: 'sess-1', aal: options.aal ?? 'aal2', app_metadata: { role: 'admin' } },
+      claims: { sub: 'admin-1', session_id: 'sess-1', ...aalFields(options.aal ?? 'aal2'), app_metadata: { role: 'admin' } },
     },
   );
   checkAuthSessionLiveness.mockResolvedValue(options.liveness ?? 'active');
@@ -358,7 +359,7 @@ describe('GET /api/admin/looks（管理の LOOK の一覧）', () => {
 
   it('API-LOOK-001 認可の後の client の用意で例外が出たら 500 Internal server error を返す', async () => {
     setup();
-    createServiceRoleClient.mockImplementationOnce(async () => serviceClient); // 認可（read）の ACL の照会（権限の集合もここから取る。認可は 1 回だけ）
+    createServiceRoleClient.mockImplementationOnce(async () => withApprovedCount(serviceClient)); // 認可（read）の ACL の照会（権限の集合もここから取る。認可は 1 回だけ）
     createServiceRoleClient.mockImplementationOnce(async () => {
       throw new Error('boom');
     });

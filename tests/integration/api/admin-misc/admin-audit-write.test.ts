@@ -1,3 +1,4 @@
+import { aalFields, withApprovedCount } from '../../../unit/helpers/staff-claims';
 export {};
 
 // jsdom の Response には静的メソッド json() が無い。NextResponse.json が内部で使うため補う。
@@ -121,15 +122,15 @@ function aclChain() {
 
 /** 認可の権限の照会（user_roles）だけを差し替え、ほかの表と rpc・Auth は渡された client のまま。 */
 function setService(service: { from: (table: string) => unknown } & Record<string, unknown>) {
-  createServiceRoleClient.mockResolvedValue({
+  createServiceRoleClient.mockResolvedValue(withApprovedCount({
     ...service,
     from: (table: string) => (table === 'user_roles' ? aclChain() : service.from(table)),
-  });
+  }));
 }
 
 /** 認可の権限の照会までは通し、その後の client の用意で投げる。 */
 function failServiceAfterAuthorization(error: Error) {
-  createServiceRoleClient.mockResolvedValueOnce({ from: () => aclChain() });
+  createServiceRoleClient.mockResolvedValueOnce(withApprovedCount({ from: () => aclChain() }));
   createServiceRoleClient.mockRejectedValue(error);
 }
 
@@ -137,7 +138,7 @@ function allowAdmin() {
   aclCodes = ALL_ADMIN_CODES;
   verifyAccessToken.mockResolvedValue({
     ok: true,
-    claims: { sub: ACTOR_ID, email: ACTOR_EMAIL, session_id: 'sess-1', aal: 'aal2', app_metadata: { role: 'admin' } },
+    claims: { sub: ACTOR_ID, email: ACTOR_EMAIL, session_id: 'sess-1', ...aalFields('aal2'), app_metadata: { role: 'admin' } },
   });
   checkAuthSessionLiveness.mockResolvedValue('active');
 }

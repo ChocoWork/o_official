@@ -8,7 +8,7 @@
  * 本物の管理者のログイン（2段階認証が要る）は E2E の道具に無いので、この spec の中で次の道で作る（手元の Supabase だけ）。
  * 1. service role で利用者を作り（パスワード付き）、役割を DB へ割り当てる（店長 admin・サポーター supporter は既存の役割、
  *    読みだけは試験用の役割 e2e-stk014-ro-* を作って admin.stockists.read だけを付け、終わりに消す）。
- * 2. 本物の GoTrue にパスワードでログインして aal1 の access token を得る。aal2 は、その session の auth.sessions.aal と
+ * 2. 店員は本物の GoTrue にパスキーでログインして access token を得る（aal2 は認めたパスキー2本・aal1 は1本。SR-AUTH-014）。以前の aal2 は、その session の auth.sessions.aal と
  *    auth.mfa_amr_claims（authentication_method = 'totp'）を DB で整えてから refresh し、GoTrue に aal2 の token を発行させる
  *    （TOTP の登録・確認は手元の config で止めてあるので、この道を使う。署名は本物の GoTrue の鍵）。
  * 3. アプリの Cookie の session（sb-access-token・sb-refresh-token）は、public.sessions に refresh token と CSRF token の
@@ -28,6 +28,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { expect, test, type APIRequestContext, type PlaywrightWorkerArgs } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
+import { loginWithPasskey, provisionPasskeyUser, provisionStaff } from '../scripts/e2e/passkey-staff';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { DUMMY_CAPTCHA_TOKEN } from './captcha-test-utils';
 import { withLocalDb } from './order-email-test-utils';
@@ -124,87 +125,78 @@ async function withScenario(options: { permissionLock: boolean }, run: (scenario
   }
 }
 
-function decodeClaims(accessToken: string): { aal?: string; session_id?: string } {
+function decodeClaims(accessToken: string): { aal?: string; session_id?: string; staff_passkeys_ok?: boolean } {
   return JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64url').toString('utf8'));
 }
 
-/** 本物の GoTrue のログインで得た token の利用者を作る。片づけ（利用者・試験用の役割）は場面に登録する */
+/**
+ * 本物の GoTrue のログインで得た token の利用者を作る。片づけ（利用者・試験用の役割）は場面に登録する。
+ * 店員（admin・supporter・readonly の試験用の役割）は、パスキーを登録して認め（aal2 は2本・aal1 は1本）、パスキーでログインする（SR-AUTH-014）。
+ * member はパスワードのログイン。
+ */
 async function createActor(scenario: Scenario, kind: ActorKind, aal: Aal): Promise<Actor> {
   const authOptions = { auth: { persistSession: false, autoRefreshToken: false } };
   const email = `e2e-stk014-${kind}-${randomBytes(6).toString('hex')}@example.com`;
-  const password = `E2e-${randomBytes(12).toString('hex')}!`;
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, authOptions);
-  const created = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    ...(kind === 'admin' || kind === 'supporter' ? { app_metadata: { role: kind } } : {}),
-  });
-  if (created.error || !created.data.user) {
-    throw new Error(`手元の利用者を作れない（status: ${created.error?.status ?? '不明'}）`);
+  let userId: string;
+  let session: { access_token: string; refresh_token: string };
+
+  if (kind === 'member') {
+    const password = `E2e-${randomBytes(12).toString('hex')}!`;
+    const created = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+    if (created.error || !created.data.user) {
+      throw new Error(`手元の利用者を作れない（status: ${created.error?.status ?? '不明'}）`);
+    }
+    userId = created.data.user.id;
+    const gotrue = createClient(SUPABASE_URL, ANON_KEY, authOptions);
+    const signedIn = await gotrue.auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
+    if (signedIn.error || !signedIn.data.session) {
+      throw new Error(`手元の利用者でログインできない（status: ${signedIn.error?.status ?? '不明'}）`);
+    }
+    session = signedIn.data.session;
+  } else {
+    const approvedPasskeys = aal === 'aal2' ? 2 : 1;
+    const staff =
+      kind === 'readonly'
+        ? await provisionPasskeyUser(scenario.db, { approvedPasskeys, email })
+        : await provisionStaff(scenario.db, { role: kind, approvedPasskeys, email });
+    userId = staff.userId;
+    if (kind === 'readonly') {
+      const role = await scenario.db.query(
+        'insert into public.roles (code, name) values ($1, $2) returning id',
+        [`e2e-stk014-ro-${randomBytes(6).toString('hex')}`, 'E2E STOCKIST read only'],
+      );
+      const roleId: number = role.rows[0].id;
+      scenario.cleanups.push(async () => {
+        await scenario.db.query('delete from public.user_roles where role_id = $1', [roleId]);
+        await scenario.db.query('delete from public.role_permissions where role_id = $1', [roleId]);
+        await scenario.db.query('delete from public.roles where id = $1', [roleId]);
+      });
+      const granted = await scenario.db.query(
+        `insert into public.role_permissions (role_id, permission_id)
+         select $1, p.id from public.permissions p where p.code = $2`,
+        [roleId, READ_PERMISSION],
+      );
+      if (granted.rowCount !== 1) throw new Error(`権限 ${READ_PERMISSION} の行が手元の DB に無い`);
+      await scenario.db.query(
+        'insert into public.user_roles (user_id, role_id, active, expires_at) values ($1::uuid, $2, true, null)',
+        [userId, roleId],
+      );
+    }
+    ({ session } = await loginWithPasskey({ email, authenticator: staff.authenticators[0] }));
   }
-  const userId = created.data.user.id;
   scenario.cleanups.push(async () => {
     // public.sessions と public.user_roles は利用者の削除で連鎖して消える
     const removed = await admin.auth.admin.deleteUser(userId);
     if (removed.error) throw new Error(`手元の利用者を消せない（status: ${removed.error.status ?? '不明'}）`);
   });
 
-  if (kind === 'admin' || kind === 'supporter') {
-    const assigned = await scenario.db.query(
-      `insert into public.user_roles (user_id, role_id, active, expires_at)
-       select $1::uuid, r.id, true, null from public.roles r where r.code = $2`,
-      [userId, kind],
-    );
-    if (assigned.rowCount !== 1) throw new Error(`役割 ${kind} の行が手元の DB に無い`);
-  } else if (kind === 'readonly') {
-    const role = await scenario.db.query(
-      'insert into public.roles (code, name) values ($1, $2) returning id',
-      [`e2e-stk014-ro-${randomBytes(6).toString('hex')}`, 'E2E STOCKIST read only'],
-    );
-    const roleId: number = role.rows[0].id;
-    scenario.cleanups.push(async () => {
-      await scenario.db.query('delete from public.user_roles where role_id = $1', [roleId]);
-      await scenario.db.query('delete from public.role_permissions where role_id = $1', [roleId]);
-      await scenario.db.query('delete from public.roles where id = $1', [roleId]);
-    });
-    const granted = await scenario.db.query(
-      `insert into public.role_permissions (role_id, permission_id)
-       select $1, p.id from public.permissions p where p.code = $2`,
-      [roleId, READ_PERMISSION],
-    );
-    if (granted.rowCount !== 1) throw new Error(`権限 ${READ_PERMISSION} の行が手元の DB に無い`);
-    await scenario.db.query(
-      'insert into public.user_roles (user_id, role_id, active, expires_at) values ($1::uuid, $2, true, null)',
-      [userId, roleId],
-    );
-  }
-
-  const gotrue = createClient(SUPABASE_URL, ANON_KEY, authOptions);
-  const signedIn = await gotrue.auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
-  if (signedIn.error || !signedIn.data.session) {
-    throw new Error(`手元の利用者でログインできない（status: ${signedIn.error?.status ?? '不明'}）`);
-  }
-  let session = signedIn.data.session;
-  if (aal === 'aal2') {
-    const sessionId = decodeClaims(session.access_token).session_id;
-    if (!sessionId) throw new Error('access token に session_id が無い');
-    await scenario.db.query(`update auth.sessions set aal = 'aal2' where id = $1::uuid`, [sessionId]);
-    await scenario.db.query(
-      `insert into auth.mfa_amr_claims (session_id, created_at, updated_at, authentication_method, id)
-       values ($1::uuid, now(), now(), 'totp', gen_random_uuid())`,
-      [sessionId],
-    );
-    const refreshed = await gotrue.auth.refreshSession({ refresh_token: session.refresh_token });
-    if (refreshed.error || !refreshed.data.session) {
-      throw new Error(`aal2 の token を発行させられない（status: ${refreshed.error?.status ?? '不明'}）`);
-    }
-    session = refreshed.data.session;
-  }
-  const authSessionId = decodeClaims(session.access_token).session_id;
+  const claims = decodeClaims(session.access_token);
+  const authSessionId = claims.session_id;
   if (!authSessionId) throw new Error('access token に session_id が無い');
-  const issuedAal = decodeClaims(session.access_token).aal;
-  if (issuedAal !== aal) throw new Error(`token の aal が ${aal} でない（${issuedAal ?? '不明'}）`);
+  if (kind !== 'member' && claims.staff_passkeys_ok !== (aal === 'aal2')) {
+    throw new Error(`token の staff_passkeys_ok が ${aal} の頼みと合わない`);
+  }
 
   // アプリの Cookie の session。refresh token と CSRF token は、それぞれの sha256 を行に持つ（requireCsrfOrDeny が突き合わせる）
   const refreshToken = randomBytes(32).toString('hex');

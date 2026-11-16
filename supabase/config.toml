@@ -196,7 +196,7 @@ enabled = true
 [auth.webauthn]
 rp_display_name = "Le Fil des Heures (local)"
 rp_id = "localhost"
-rp_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+rp_origins = ["http://localhost:3000"]
 
 [auth.rate_limit]
 # Number of emails that can be sent per hour. Requires auth.email.smtp to be enabled.
@@ -301,9 +301,10 @@ max_frequency = "5s"
 # uri = "pg-functions://postgres/auth/before-user-created-hook"
 
 # This hook runs before a token is issued and allows you to add additional claims based on the authentication method used.
-# [auth.hook.custom_access_token]
-# enabled = true
-# uri = "pg-functions://<database>/<schema>/<hook_name>"
+# Passkey stage 1a (ADR-0464): rejects staff who did not enter with a fresh passkey. Taking it in needs supabase stop and start.
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/public/passkey_access_token_hook"
 
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 [auth.sms.twilio]

@@ -8,6 +8,7 @@ const mockCsrf = jest.fn(); const mockRate = jest.fn(); const mockAudit = jest.f
 jest.mock('@/lib/csrfMiddleware', () => ({ requireCsrfOrDeny: () => mockCsrf() }));
 jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: (...args: unknown[]) => mockRate(...args) }));
 jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockAudit(...args) }));
+import { aalClaims } from '../../helpers/staff-claims';
 import fs from 'node:fs';
 import path from 'node:path';
 import { GET as listGet, POST as createPost } from '@/app/api/admin/discounts/route';
@@ -26,7 +27,7 @@ import { GROUP_H_ERRORS } from '@/lib/discounts/admin-discount-types';
 const uuid = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const id = uuid(1); const key = uuid(2); const codeId = uuid(3); const newId = uuid(4); const user1 = uuid(5); const user2 = uuid(6);
 const ACTOR = 'actor-1';
-const claims = (aal: string) => ({ sub: ACTOR, session_id: 'session-1', aal, email: 'admin@example.test', app_metadata: { role: 'admin' } });
+const claims = (aal: string) => aalClaims(aal, { sub: ACTOR, session_id: 'session-1', email: 'admin@example.test', app_metadata: { role: 'admin' } });
 const candidate = {
   name: '春の割引', kind: 'order_percent', method: 'automatic', value: { type: 'percent', value: 10 }, targetMode: 'all', itemIds: [],
   minimum: { type: 'none', value: 0 }, audience: 'anyone', allowGuests: true, firstOrderOnly: false, usageLimit: null, oncePerCustomer: false,
@@ -45,7 +46,7 @@ const service = {
     const chain = { select: () => chain, eq: () => chain, or: async () => ({ data: [{ roles: { role_permissions: grants.current.map((code) => ({ permissions: { code } })) } }], error: null }) };
     return chain;
   },
-  rpc: (name: string, args: Record<string, unknown>) => { seq.push(`rpc:${name}`); return rpcImpl(name, args); },
+  rpc: (name: string, args: Record<string, unknown>) => { if (name === 'passkey_approved_count') return Promise.resolve({ data: 2, error: null }); seq.push(`rpc:${name}`); return rpcImpl(name, args); },
 };
 const defaultRpc = (name: string): { data: unknown; error: null } => {
   const write = (discountId: string) => ({ data: { discountId, version: '4', replayed: false }, error: null as null });

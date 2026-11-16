@@ -34,7 +34,7 @@ const ALLOWED_COLUMNS = ['id', 'created_at', 'action', 'actor_id', 'resource', '
 const FORBIDDEN_COLUMNS = ['actor_email', 'ip', 'user_agent', 'metadata'] as const;
 
 type Actor = { id: string; email: string; accessToken: string };
-type Claims = { aal?: string; session_id?: string; sub?: string; app_metadata?: { role?: string } };
+type Claims = { aal?: string; amr?: Array<{ method?: string }>; session_id?: string; sub?: string; app_metadata?: { role?: string } };
 type AuditRow = Record<string, unknown>;
 
 function claimsOf(accessToken: string): Claims {
@@ -42,7 +42,7 @@ function claimsOf(accessToken: string): Claims {
 }
 
 /**
- * 実際にログインできる aal2 の利用者を作る（共有の道具）。役割は app_metadata.role と user_roles（active）の両方に付く。
+ * 実際にログインできる、管理の入口を通る（認めたパスキー2本。古い名前の aal2）利用者を作る（共有の道具）。役割は app_metadata.role と user_roles（active）の両方に付く。
  * 窓口の ACL は user_roles だけを見る。deactivateRole なら、有効な割り当てを外す（app_metadata の役割名は残る）。
  */
 async function createActor(
@@ -179,10 +179,12 @@ test.describe('FR-ADMIN-MISC-004 監査ログの閲覧', () => {
       expect(holders).not.toContain('user');
       expect(holders).toEqual(['admin']);
 
-      // 前提: 3人とも aal2 で、役割の名前（店長）だけでは通らないことを見せるため、無効な店長の app_metadata は admin のまま
-      for (const actor of [supporter, user, deactivatedAdmin]) {
-        expect(claimsOf(actor.accessToken).aal).toBe('aal2');
+      // 前提: 店員2人は管理の入口を通るパスキーの JWT（amr に passkey。認めたパスキー2本）、一般の利用者は aal2 のパスワードの JWT。
+      // 役割の名前（店長）だけでは通らないことを見せるため、無効な店長の app_metadata は admin のまま
+      for (const actor of [supporter, deactivatedAdmin]) {
+        expect(claimsOf(actor.accessToken).amr?.some((entry) => entry.method === 'passkey')).toBe(true);
       }
+      expect(claimsOf(user.accessToken).aal).toBe('aal2');
       expect(claimsOf(deactivatedAdmin.accessToken).app_metadata?.role).toBe('admin');
       expect(await activeRoleCount(client, deactivatedAdmin)).toBe(0);
       expect(await activeRoleCount(client, admin)).toBeGreaterThan(0);

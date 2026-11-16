@@ -53,24 +53,29 @@ function fail(step: string, error: { status?: number; code?: string } | null | u
   throw new Error(`${step}に失敗した（status: ${error?.status ?? '不明'}, code: ${error?.code ?? '不明'}）`);
 }
 
+type ProvisionedUser = { userId: string; email: string; authenticators: SoftAuthenticator[] };
+
 /**
- * パスワード無しの店員を作り、パスキーを approvedPasskeys 本登録して認める。同じメールが既にあれば投げる。
- * 返す authenticators は、登録した順の認証器（loginWithPasskey に渡す）。
+ * パスワード無しの利用者を作り、パスキーを approvedPasskeys 本登録して認める。役割（user_roles）は付けない。
+ * 店員（admin・supporter）は provisionStaff、試験用の役割の利用者は呼び手が後から user_roles を足す。
+ * appRole は app_metadata.role（画面の出し分けの値）。同じメールが既にあれば投げる。
  */
-export async function provisionStaff(
+export async function provisionPasskeyUser(
   db: PgClient,
-  input: { role: 'admin' | 'supporter'; approvedPasskeys: 0 | 1 | 2; email?: string },
-): Promise<{ userId: string; email: string; authenticators: SoftAuthenticator[] }> {
+  input: { approvedPasskeys: 0 | 1 | 2; email?: string; appRole?: 'admin' | 'supporter' | 'user' },
+): Promise<ProvisionedUser> {
   const env = localEnv();
-  const email = input.email ?? `passkey-staff-${input.role}-${randomUUID().slice(0, 8)}@example.com`;
+  const email = input.email ?? `passkey-user-${randomUUID().slice(0, 8)}@example.com`;
 
   const existing = await db.query('select 1 from auth.users where lower(email) = lower($1)', [email]);
   if (existing.rowCount > 0) throw new Error('同じメールの利用者が既にいる（既にいる店員は再利用しない）');
 
   const admin = client(env, env.serviceRoleKey);
-  const created = await admin.auth.admin.createUser({ email, email_confirm: true, app_metadata: { role: input.role } }).catch(() => {
-    throw new Error('店員を作る要求に失敗した');
-  });
+  const created = await admin.auth.admin
+    .createUser({ email, email_confirm: true, ...(input.appRole ? { app_metadata: { role: input.appRole } } : {}) })
+    .catch(() => {
+      throw new Error('店員を作る要求に失敗した');
+    });
   if (created.error || !created.data.user) fail('店員を作ること', created.error);
   const userId = created.data.user.id;
 
@@ -84,26 +89,60 @@ export async function provisionStaff(
 
   const authenticators: SoftAuthenticator[] = [];
   for (let i = 0; i < input.approvedPasskeys; i += 1) {
-    const authenticator = createSoftAuthenticator(RELYING_PARTY);
-    const start = await user.auth.passkey.startRegistration();
-    if (start.error || !start.data) fail('パスキー登録の始め', start.error);
-    const done = await user.auth.passkey.verifyRegistration({
-      challengeId: start.data.challenge_id,
-      credential: authenticator.register(start.data.options),
-    });
-    if (done.error || !done.data) fail('パスキー登録の終わり', done.error);
-    await db.query('select public.passkey_approve($1::uuid, $2::uuid, $3)', [userId, done.data.id, 'script']);
-    authenticators.push(authenticator);
+    authenticators.push(await registerAndApprove(db, user, userId));
   }
+  return { userId, email, authenticators };
+}
 
+/** user の session で新しいパスキーを登録し、passkey_approve で認める（DB の認めの行を足す） */
+async function registerAndApprove(db: PgClient, user: SupabaseClient, userId: string): Promise<SoftAuthenticator> {
+  const authenticator = createSoftAuthenticator(RELYING_PARTY);
+  const start = await user.auth.passkey.startRegistration();
+  if (start.error || !start.data) fail('パスキー登録の始め', start.error);
+  const done = await user.auth.passkey.verifyRegistration({
+    challengeId: start.data.challenge_id,
+    credential: authenticator.register(start.data.options),
+  });
+  if (done.error || !done.data) fail('パスキー登録の終わり', done.error);
+  await db.query('select public.passkey_approve($1::uuid, $2::uuid, $3)', [userId, done.data.id, 'script']);
+  return authenticator;
+}
+
+/**
+ * 店員（admin・supporter）をパスキー付きで用意する。役割は最後に付ける（登録の間は役割が無い。案 B）。
+ * 返す authenticators は、登録した順の認証器（loginWithPasskey に渡す）。
+ */
+export async function provisionStaff(
+  db: PgClient,
+  input: { role: 'admin' | 'supporter'; approvedPasskeys: 0 | 1 | 2; email?: string },
+): Promise<ProvisionedUser> {
+  const email = input.email ?? `passkey-staff-${input.role}-${randomUUID().slice(0, 8)}@example.com`;
+  const provisioned = await provisionPasskeyUser(db, { approvedPasskeys: input.approvedPasskeys, email, appRole: input.role });
   const assigned = await db.query(
     `insert into public.user_roles (user_id, role_id, active, expires_at)
      select $1::uuid, r.id, true, null from public.roles r where r.code = $2`,
-    [userId, input.role],
+    [provisioned.userId, input.role],
   );
   if (assigned.rowCount !== 1) throw new Error(`役割 ${input.role} の行が手元の DB に無い`);
+  return provisioned;
+}
 
-  return { userId, email, authenticators };
+/**
+ * ログイン中の利用者の同じ session（session_id は変わらない）で、新しいパスキーを登録して認め、refresh した session を返す。
+ * 認めた本数を1本から2本にそろえる時に使う（elevateAdminSessionToAal2）。refresh で refresh token が替わるので、結び付けた行は呼び手が合わせる。
+ */
+export async function addApprovedPasskey(
+  db: PgClient,
+  input: { userId: string; accessToken: string; refreshToken: string },
+): Promise<{ authenticator: SoftAuthenticator; session: Session }> {
+  const env = localEnv();
+  const user = client(env, env.anonKey);
+  const set = await user.auth.setSession({ access_token: input.accessToken, refresh_token: input.refreshToken });
+  if (set.error || !set.data.session) fail('session の読み込み', set.error);
+  const authenticator = await registerAndApprove(db, user, input.userId);
+  const refreshed = await user.auth.refreshSession({ refresh_token: set.data.session.refresh_token });
+  if (refreshed.error || !refreshed.data.session) fail('session の更新', refreshed.error);
+  return { authenticator, session: refreshed.data.session };
 }
 
 /** パスキーでログインし、session を返す。メールは、返った利用者が期待どおりかの確かめにだけ使う */

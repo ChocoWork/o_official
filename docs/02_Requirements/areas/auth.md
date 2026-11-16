@@ -258,7 +258,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 状態 | 推定 |
 | 出どころ | ユーザーの発言 2026-11-16（`.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18・12-2 の8）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 8、Review Focus 1・2・5）） |
 
-要求の文: 店員（店長・サポーター）が管理の機能を使えるのは、パスキーでログインしてから24時間以内で、認めたパスキーが2本以上ある時だけ。認めたパスキーの本数は、判定のたびに DB で数え、JWT の印は判定に使わない。認めた鍵が消されたら、次の更新を待たずにその場で止まる。段1a では判定の部品だけを作り、管理の入口にはまだつながない（つなぐのは Task 9）。
+要求の文: 店員（店長・サポーター）が管理の機能を使えるのは、パスキーでログインしてから24時間以内で、認めたパスキーが2本以上ある時だけ。認めたパスキーの本数は、判定のたびに DB で数え、JWT の印は判定に使わない。認めた鍵が消されたら、次の更新を待たずにその場で止まる。段1a の切り替え（Task 9）で、API の窓口（`admin-rbac`）と RLS（`has_permission`）をこの判定につないだ。受け入れ条件は FR-AUTH-012-AC-01〜04（管理の入口。E2E FR-LOGIN-039）、FR-AUTH-013-AC-01〜04（フックの拒否と更新。E2E FR-LOGIN-040）、SEC-AUTH-040（切り替えで抜け道を作らない）。
 
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
@@ -2164,7 +2164,7 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 
 認証器は ES256 の鍵の対を持ち、attestation は `none`。登録の `authenticatorData` の flags は UV ありで `0x45`、なしで `0x41`、ログインは `0x05`・`0x01`（位置 32）。署名は `authenticatorData` と `clientDataJSON` の SHA-256 をつないだ物に付け、ログインごとに回数が1増える。`provisionStaff` は手元の Supabase の住所でなければ投げ、同じメールの利用者が既にいれば投げる。`loginWithPasskey` は captcha のダミーのトークンを始めの要求に付ける。失敗の文面に JWT・鍵を出さない。
 
-### FR-AUTH-011 管理の入口の3つの条件を、TS と SQL の同じ判定で作る（まだ管理の入口につながない）
+### FR-AUTH-011 管理の入口の3つの条件を、TS と SQL の同じ判定で作る（Task 8 で作り、Task 9 で管理の入口につないだ。FR-AUTH-012）
 
 | 属性 | 値 |
 | --- | --- |
@@ -2176,6 +2176,32 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 優先度 | MUST |
 
 規則: (1) `amr` は配列で、要素が `method` が `passkey`・`timestamp` が整数の JSON の数の物だけを見て、最新の時刻を使う。配列でない・空・文字列の時刻・小数・未来の時刻は `passkey` と数えない／断る。(2) `0 <= 今 - 時刻 <= 86400`（ちょうど86400秒は通し、86401秒は断る）。(3) 認めたパスキーは、認めの控えと `auth.webauthn_credentials`（`id`・`user_id`・`credential_id` が同じ）を突き合わせて数え、2本以上。(4) 86400 と 2 は設定の行から読み、TS の定数は初めの値の関数から取る。(5) `aal` は見ない。
+
+### FR-AUTH-012 管理の入口を、パスキー・24時間以内・DB で数えた認めたパスキー2本以上につなぐ（API と RLS）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-014 |
+| 根拠 | SR-AUTH-014 を、API の窓口（`src/lib/auth/admin-rbac.ts` の `authorizeAdminPermissions`）と RLS（移行 `20261117013000_passkey_staff_entry_conditions.sql` で作り直した `public.has_permission`）につなぐ。API は認めた本数を RPC `passkey_approved_count` で、ACL・session の生存の確かめと並べて数え、`evaluateStaffEntry` で判定する。RLS は `has_permission` の中で、条件1・2（`staff_passkey_amr_ok`。今までの `aal2` の位置）を ACL の前、条件3（`staff_passkey_count_ok`）を ACL が真になった後・`app_session_is_live` の前に置く（約100の決まりから行ごとに呼ばれても、お客さんが認めの控えまで届かないようにする）。403 の本文の `MFA required`・`denial.reason = 'mfa'` は段4まで変えない（ADR-0463）。判断は DD-AUTH-048 |
+| 状態 | 推定 |
+| 確かめ方 | E2E・結合テスト・単体テスト |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 9、Review Focus 1〜3） |
+| 優先度 | MUST |
+
+規則: (1) 認めたパスキー2本の店員がパスキーで入った JWT（`aal` は `aal1` のまま）は管理 API が通る。(2) 認めたパスキーが2本に満たない店員・役割の無い人は 403 `MFA required`。(3) RPC が誤りを返したら 503 と `Retry-After: 30`（liveness の `unavailable` と同じ扱い）。数でない値・`null` は0本として 403。(4) 認めた鍵を GoTrue で消した直後は、次の更新を待たず 403。(5) `/api/auth/me` の `mfaVerified` は表示のヒントで、認めた本数は JWT の印から取る（認めた鍵が消えた後、最長1時間は枠が見えるが、API は DB で数えて 403）。
+
+### FR-AUTH-013 GoTrue のフックを手元で有効にし、店員の拒否と更新・お客さんの道を試験で確かめる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-014、SR-AUTH-011 |
+| 根拠 | フック（SR-AUTH-011。`public.passkey_access_token_hook`）を `supabase/config.toml` の `[auth.hook.custom_access_token]` で手元だけ有効にする（取り込みは `supabase stop`・`start` が要る）。フックの拒否は HTTP 403・`code` が `unknown`・`message` が印 `[staff-passkey-required]` で始まる。設計 5-2 の「段1の試験に入れること」を GoTrue に直に当てて確かめる。手元の `[auth.webauthn] rp_origins` は `http://localhost:3000` だけにする（`rp_id` が `localhost` では `127.0.0.1` の出所で WebAuthn は使えない）。判断は DD-AUTH-048 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-040-staff-hook-gotrue-rejections.spec.ts`）、単体テスト（`tests/unit/supabase/config-wave6.test.ts`）、結合テスト（`tests/integration/db/auth_passkey_access_token_hook.integration.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 9、Review Focus 1〜3） |
+| 優先度 | MUST |
+
+規則: (1) 店員がパスキーで入ると JWT の `staff_passkeys_ok` が、認めた鍵2本なら真・1本なら偽。(2) 店員がメールのコード・パスワードで入ろうとすると 403 で、拒否の印で始まる。(3) お客さんのパスキー・メールのコード・パスワードは入れて（旗 `reject_customer_password` は偽）、本物の更新（`token_refresh`）も通る。(4) 窓を閉じた後の店員の更新は拒否され、同じ更新トークンを送っても同じ拒否・`auth.sessions` の行は残る。拒否の後、前のアクセストークンは `/auth/v1/user` が 200 のままだが、管理の表は `has_permission` が断るので0行。
 
 ## 受け入れ条件
 
@@ -4485,6 +4511,102 @@ anon の鍵と service_role の鍵のそれぞれで `passkey_credentials_notify
 
 anon の鍵と service_role の鍵のそれぞれで `staff_passkey_amr_ok`・`staff_passkey_count_ok`・`staff_passkey_entry_ok` を PostgREST（`/rest/v1/rpc/<関数名>`）から呼ぶと、どれも HTTP 404・コード `PGRST202`（関数が見つからない）になり、値は返らないこと。
 
+### FR-AUTH-012-AC-01 認めたパスキー2本の店員がパスキーで入った JWT は、管理 API が 200 で通り、JWT の aal は aal1 のまま
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-012、SEC-AUTH-039 |
+| 根拠 | 切り替えの後も、条件を満たす店員が管理の機能を使えることの確かめ。`aal2` に頼らないことも同時に示す |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-039-staff-passkey-entry-conditions.spec.ts`。HTTP の試験で、3つの幅で流す） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 9、Review Focus 1〜3） |
+
+共有の道具で作った認めたパスキー2本の店員の JWT で `/api/admin/permissions` を呼ぶと HTTP 200 になり、その JWT の `aal` は `aal1` であること。
+
+### FR-AUTH-012-AC-02 認めたパスキーが1本の店員は、パスキーで入っていても 403 で、reason が MFA required
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-012、SEC-AUTH-039 |
+| 根拠 | 3つ目の条件（認めたパスキー2本以上）を満たさない店員を止める確かめ |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-039-staff-passkey-entry-conditions.spec.ts`。HTTP の試験で、3つの幅で流す） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 9、Review Focus 1〜3） |
+
+認めたパスキー1本の店員の JWT で管理 API を呼ぶと HTTP 403・本文の `reason` が `MFA required` になること。
+
+### FR-AUTH-012-AC-03 管理の役割を持たないお客さんは 403 になる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-012 |
+| 根拠 | お客さんが管理の入口を通らないことの確かめ（パスワードで入った一般の利用者） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-039-staff-passkey-entry-conditions.spec.ts`。HTTP の試験で、3つの幅で流す） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 9、Review Focus 1〜3） |
+
+管理の役割の無い利用者の JWT で管理 API を呼ぶと HTTP 403 になること。
+
+### FR-AUTH-012-AC-04 認めた鍵を GoTrue の auth.passkey.delete で消した直後に、更新を待たず同じ JWT の管理 API が 403 になる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-012、SEC-AUTH-039 |
+| 根拠 | JWT の印 `staff_passkeys_ok` は更新まで変わらないので、印に頼ると鍵を消した後も権限が残る。API が DB で数え直すことの確かめ |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-039-staff-passkey-entry-conditions.spec.ts`。HTTP の試験で、3つの幅で流す） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 9、Review Focus 1〜3） |
+
+認めたパスキー2本の店員の JWT で管理 API が 200 になった後、GoTrue の `auth.passkey.delete` で鍵を1本消すと、同じ JWT（印は真のまま）で管理 API が HTTP 403・`reason` が `MFA required` になること。
+
+### FR-AUTH-013-AC-01 店員がパスキーで入ると 200 で、JWT の staff_passkeys_ok が、認めた鍵2本なら真・1本なら偽になる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-013 |
+| 根拠 | フックが店員のパスキーのログインを通し、ヒントの印を正しく付けることの確かめ（印は判定に使わない） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-040-staff-hook-gotrue-rejections.spec.ts`。GoTrue に直に当てる HTTP の試験で、3つの幅で流す） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 9、Review Focus 1〜3） |
+
+店員がパスキーでログインすると HTTP 200 で、`amr` に `passkey` があり、`staff_passkeys_ok` が認めた鍵2本で真・1本で偽になること。
+
+### FR-AUTH-013-AC-02 店員がメールのコードで入ろうとすると 403 で message が印で始まり、パスワードでも 403
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-013、SEC-AUTH-037 |
+| 根拠 | 店員の入口をパスキーだけに絞る。静かにお客さん扱いで通さないことの確かめ |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-040-staff-hook-gotrue-rejections.spec.ts`。GoTrue に直に当てる HTTP の試験で、3つの幅で流す） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 9、Review Focus 1〜3） |
+
+店員がメールのコードで入ろうとすると HTTP 403・`message` が `[staff-passkey-required]` で始まり `isStaffPasskeyRequiredError` が真になり、トークンは返らないこと。店員にパスワードを付けてパスワードで入ろうとしても同じく 403 になること。
+
+### FR-AUTH-013-AC-03 お客さんのパスキー・メールのコード・パスワードは入れて、本物の更新も通る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-013 |
+| 根拠 | フックを有効にしても、お客さんのログインと更新を壊さないことの確かめ（旗 `reject_customer_password` は偽） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-040-staff-hook-gotrue-rejections.spec.ts`。GoTrue に直に当てる HTTP の試験で、3つの幅で流す） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 9、Review Focus 1〜3） |
+
+お客さんがパスワード・メールのコード・パスキーのそれぞれで入れて（パスキーのトークンに店員の印は付かない）、本物の更新（`token_refresh`）も HTTP 200 で通ること。
+
+### FR-AUTH-013-AC-04 窓を閉じた後の店員の更新は拒否され、前のアクセストークンは管理の表を読めない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-013、SEC-AUTH-037 |
+| 根拠 | 24時間は待てないので、案 B の窓（役割の無い間にメールのコードで入る → 窓を開ける → 役割を有効にする → 更新が通る → 窓を閉じる → 更新が拒否される）で作る確かめ |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-040-staff-hook-gotrue-rejections.spec.ts`。GoTrue に直に当てる HTTP の試験で、3つの幅で流す） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 9、Review Focus 1〜3） |
+
+窓が開いている間の更新は 200、窓を閉じた後の更新は HTTP 403（印で始まる message）で、同じ更新トークンを送っても同じ拒否になり、`auth.sessions` の行は残ること。拒否の後、前のアクセストークンは `/auth/v1/user` が 200、管理の表（非公開のお知らせ）は0行であること。`auth.sessions.not_after` の値は試験の出力に記録する。
+
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 
 | 属性 | 値 |
@@ -4912,7 +5034,7 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 | 上位 | SEC-AUTH-010 |
 | 根拠 | `aal2` の検査だけでは、アプリを通らずに作った任意の session（パスワードだけ・メール OTP だけ・anon キーで作った物）の通行証に `aal` を持たせる道が残り、本物の管理者でなくても session が生きている限り通る。DB でも「アプリが作った生きた session」を求めれば、API の窓口（ADR-0417）と同じ基準になる。公開の読みの方針（`status = 'published' OR has_permission(...)`）は RESTRICTIVE にせず、`has_permission` が偽になるだけにして、一般の会員が公開の行を読むのを止めない（ADR-0418） |
 | 状態 | 推定 |
-| 確かめ方 | DB 結合テスト（`tests/integration/db/auth_has_permission_aal2.integration.test.ts`。手元の使い捨て DB で M2 を当てた後に controller が流す）、移行の文面の単体テスト（`tests/unit/migrations/sec-has-permission-aal2.test.ts`）。E2E は `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`（アプリのログインと同じ形で結び付けた admin の aal1 の JWT では他人の注文が読めず、同じ session を aal2 に上げた JWT では読める。止めているのが aal だけであることを示す）。ほかの領域の DB の直接の道の E2E（`FR-ADMIN-MISC-005`・`FR-HOME-024`・`FR-LOOK-SEC-002`・`FR-NEWS-SEC-002`・`FR-STOCKIST-016`）も、M2 を当てた DB で `test.fail` 無しで通る |
+| 確かめ方 | DB 結合テスト（`tests/integration/db/auth_has_permission_passkey.integration.test.ts`。手元の使い捨て DB で M2 を当てた後に controller が流す）、移行の文面の単体テスト（`tests/unit/migrations/sec-has-permission-aal2.test.ts`）。E2E は `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`（アプリのログインと同じ形で結び付けた admin の aal1 の JWT では他人の注文が読めず、同じ session を aal2 に上げた JWT では読める。止めているのが aal だけであることを示す）。ほかの領域の DB の直接の道の E2E（`FR-ADMIN-MISC-005`・`FR-HOME-024`・`FR-LOOK-SEC-002`・`FR-NEWS-SEC-002`・`FR-STOCKIST-016`）も、M2 を当てた DB で `test.fail` 無しで通る |
 | 出どころ | `docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md`（Task 6、P14・P15）、`.superpowers/sdd/2026-10-25-security-gap-fixes/wave5-decisions.md`（Q2 案 B） |
 
 `public.has_permission(permission_code)` は、`auth.uid()` があり、JWT の `aal` が `aal2` で、その利用者に ACL の権限があり、さらに JWT の `session_id` が「`auth.sessions` に生きている行があり、自前の `sessions` に同じ `auth_session_id` と利用者の失効していない行がある」時だけ真を返す。`aal1`・`aal` が無い・`session_id` が無い・uuid の形でない・結び付いていない・失効した・`auth.sessions` に行が無い、のどれでも偽を返し、例外は出さない。ACL の無い利用者は常に偽。あわせて、会員の本人の行を返す表（`profiles`・`orders`・`order_items`）は、`authenticated` が結び付いた生きた session を持たなければ 0 行になる（書き込みも 0 行）。anon がゲストの注文を `app.session_id` で読む道は変えない。
@@ -5886,6 +6008,21 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 守ること: (1) 印が真でも、DB で数えた認めたパスキーが2本未満なら断る。(2) 認めた鍵を `auth.webauthn_credentials` から消した直後に、本数が減って判定が偽になる。(3) 認めていない鍵（GoTrue の直叩きで足した鍵）は数に入らない。(4) 3つの関数は `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空・`STABLE` で、`public`・`anon`・`authenticated`・`service_role` から `execute` を外す。`has_permission`（`SECURITY DEFINER`・持ち主 `postgres`）が呼ぶので、新しい権限は渡さない。(5) 失敗は偽（閉じる側）に倒す。
 
 残る危険として受け入れること: 判定ごとに DB を数えるので、1回の管理の要求で数える手間が増える。数えるのは認めの控え（店員1人に数本）だけで、索引のある表なので受け入れる。
+
+### SEC-AUTH-040 切り替えの間、手元で店員がアプリの画面から入れない。管理の入口にパスキー以外の抜け道を残さない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-040 |
+| 根拠 | 段1a の切り替え（`has_permission`・`admin-rbac`・フックを同じコミットで変える）の後は、店員がパスワード・メールのコード・TOTP でアプリの画面から入れない（フックが拒否する）。パスキーの画面は段1b で作る。この間に管理の入口へ別の道が残ると、条件（パスキー・24時間・認めたパスキー2本）が抜け道で効かなくなる。手元は新しい手順（dev の店員のスクリプト。Task 10）で入る。ADR-0463・ADR-0464 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-039-staff-passkey-entry-conditions.spec.ts`、`e2e/FR-LOGIN-040-staff-hook-gotrue-rejections.spec.ts`）、結合テスト（`tests/integration/db/auth_has_permission_passkey.integration.test.ts`）、単体テスト（`tests/unit/lib/auth/admin-rbac.test.ts`、`tests/unit/supabase/config-wave6.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 9、Review Focus 1〜3） |
+| 優先度 | MUST |
+
+守ること: (1) 管理の入口は `aal` を見ない。`aal2` でも `amr` に `passkey` が無ければ断る（API・RLS の両方）。(2) JWT の印 `staff_passkeys_ok` が真でも、DB で数えた認めたパスキーが2本未満なら断る。(3) 24時間を過ぎた・未来の `passkey` の時刻は断る。(4) RPC が数えられない時は 503（閉じる側）、数でない値は0本。(5) 店員のメールのコード・パスワードは GoTrue のフックが拒否する。(6) 試験の道具は、本番に試験専用の入口を作らない（手元の Supabase だけで動く）。
+
+残る危険として受け入れること: 手元で店員がアプリの画面から入れない間（段1b まで）、画面を使う E2E のうち店員のパスワード＋TOTP のログインを通す物は、段4で消す機能として skip にした（台帳の「skip の一覧」）。最初の店長のコマンド `admin:bootstrap`（パスワード＋TOTP）は本番用に残し、手元では使わない（`docs/06_Operations/first-admin-bootstrap.md`）。
 
 ## 派生要件
 

@@ -602,6 +602,20 @@ flowchart LR
 | 状態 | 推定 |
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18・12-2 の8）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 8、Review Focus 1・2・5） |
 
+### THR-AUTH-040 切り替えの後、管理の入口にパスキー以外の抜け道が残る
+
+| 属性 | 値 |
+| --- | --- |
+| 守るもの | 管理の入口の3つの条件（パスキー・24時間以内・認めたパスキー2本以上）、管理の機能と管理の表 |
+| 脅威 | `has_permission`・`admin-rbac` の切り替えで `aal2` の枝を置き換えた後も、パスワード・メールのコード・TOTP の通行証、または JWT の `aal`・印の偽装で、管理の機能・管理の表に入れる |
+| 起こり方 | 店員のパスワードやメールを奪った人が、GoTrue を直に叩いて通行証を取る。`aal2` の JWT・`staff_passkeys_ok: true` の claims を作る。お客さんが管理の表を読もうとする |
+| 影響 | 条件を満たさない人が、管理の機能と管理の表を使える |
+| 対策 | SEC-AUTH-040（`aal` を見ない・印を信じない・フックが店員のパスワード・メールのコードを拒否する・数えられなければ閉じる）、SEC-AUTH-039、ADR-0463・ADR-0464、DD-AUTH-048 |
+| ASVS | V4.1.3・V3.3.1・V2.8（当てはめは推定） |
+| 根拠 | 設計 5-2。切り替えは1つのコミットで行い、試験の道具も同時に作り直して、抜け道が無いことを E2E・結合・単体で確かめる |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 9、Review Focus 1〜3） |
+
 ## 未確認事項
 
 - 本番の Supabase Auth の設定（OTP の期限・Confirm email・最小の長さ・漏洩の照合・captcha・TOTP・回数の制限・`secure_password_change`・現行パスワードの要求）。手元の `supabase/config.toml` は波 6 の切り替えで本番の前提にそろえたが、本番の実際の値は Management API で読むまで未確認（THR-AUTH-015・029）

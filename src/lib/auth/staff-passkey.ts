@@ -41,3 +41,15 @@ export function evaluateStaffEntry(
   if (!Number.isInteger(approvedCount) || approvedCount < STAFF_MIN_APPROVED_PASSKEYS) return { ok: false, reason: 'passkeys_insufficient' };
   return { ok: true };
 }
+
+/**
+ * JWT の印 `staff_passkeys_ok` から、表示のヒントの「認めたパスキーの本数」を出す（真なら足りる本数、そうでなければ0）。
+ *
+ * @impl IMPL-AUTH-246
+ * @design DD-AUTH-048
+ * @remarks `/api/auth/me` の `mfaVerified` だけが使う表示のヒント。権限の判定には使わない（認めた本数は API が DB で数える。SEC-AUTH-039）。
+ * 印は真（`true`）のときだけ足りるとみなし、文字列の `"true"` や他の値は0本にする（閉じる側）。
+ */
+export function approvedCountHint(claims: { staff_passkeys_ok?: unknown; [key: string]: unknown } | null | undefined): number {
+  return claims?.staff_passkeys_ok === true ? STAFF_MIN_APPROVED_PASSKEYS : 0;
+}

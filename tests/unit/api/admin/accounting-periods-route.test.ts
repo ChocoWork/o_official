@@ -8,6 +8,7 @@ const mockCsrf = jest.fn(); const mockRate = jest.fn(); const mockAudit = jest.f
 jest.mock('@/lib/csrfMiddleware', () => ({ requireCsrfOrDeny: () => mockCsrf() }));
 jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: (...args: unknown[]) => mockRate(...args) }));
 jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockAudit(...args) }));
+import { aalClaims } from '../../helpers/staff-claims';
 import { GET as periodsGet, POST as periodsPost } from '@/app/api/admin/accounting/periods/route';
 import { POST as finalSolePost } from '@/app/api/admin/accounting/periods/[id]/final-sole/route';
 import { PUT as filingPut } from '@/app/api/admin/accounting/periods/[id]/filing/route';
@@ -20,7 +21,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 const uuid = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const ACTOR = uuid(90); const KEY = uuid(91); const SOLE = uuid(1); const CORP = uuid(2); const NEW = uuid(3);
 const READ = 'admin.finance.read'; const MANAGE = 'admin.accounting.settings.manage';
-const claims = (aal: string) => ({ sub: ACTOR, session_id: 'session-1', aal, email: 'owner@example.test', app_metadata: { role: 'admin' } });
+const claims = (aal: string) => aalClaims(aal, { sub: ACTOR, session_id: 'session-1', email: 'owner@example.test', app_metadata: { role: 'admin' } });
 
 const periodRow = (id: string, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   id, business_type: 'soleProprietor', name: '2026年（個人）', starts_on: '2026-01-01', ends_on: '2026-12-31',
@@ -50,7 +51,7 @@ const service = {
     const chain = { select: () => chain, eq: () => chain, or: async () => ({ data: [{ roles: { role_permissions: grants.current.map((code) => ({ permissions: { code } })) } }], error: null }) };
     return chain;
   },
-  rpc: (name: string, args: Record<string, unknown>) => { seq.push(`rpc:${name}`); return rpcImpl(name, args); },
+  rpc: (name: string, args: Record<string, unknown>) => { if (name === 'passkey_approved_count') return Promise.resolve({ data: 2, error: null }); seq.push(`rpc:${name}`); return rpcImpl(name, args); },
 };
 const defaultRpc = (name: string): { data: unknown; error: null } => {
   switch (name) {

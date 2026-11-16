@@ -1,4 +1,5 @@
 import { minimalJpeg } from '../../fixtures/images';
+import { aalFields, withApprovedCount } from '../../unit/helpers/staff-claims';
 
 // 管理の書き換えの道（認可 → 利用者の JWT の client → 監査）を、窓口・admin-rbac・audit を本物のまま通して確かめる。
 // 差し替えるのは外との境目（Supabase の client・token の検証・応答の型）だけ
@@ -173,9 +174,9 @@ function setup(options: {
     news_articles: newsResult,
   });
   createClient.mockResolvedValue(userClient);
-  createServiceRoleClient.mockResolvedValue(serviceClient);
+  createServiceRoleClient.mockResolvedValue(withApprovedCount(serviceClient));
   verifyAccessToken.mockResolvedValue(
-    options.verified ?? { ok: true, claims: { sub: 'admin-1', session_id: 'sess-1', aal: options.aal ?? 'aal2', app_metadata: { role: 'admin' } } },
+    options.verified ?? { ok: true, claims: { sub: 'admin-1', session_id: 'sess-1', ...aalFields(options.aal ?? 'aal2'), app_metadata: { role: 'admin' } } },
   );
   checkAuthSessionLiveness.mockResolvedValue(options.liveness ?? 'active');
 }

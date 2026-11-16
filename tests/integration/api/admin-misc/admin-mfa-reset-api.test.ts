@@ -1,6 +1,7 @@
 export {};
 
 import { createHash } from 'node:crypto';
+import { aalFields, withApprovedCount } from '../../../unit/helpers/staff-claims';
 
 // 本物の認可（admin-rbac）と本物の監査（audit）と本物の失効の部品（revoke-user-sessions）を通し、外側の境界
 // （トークンの検証・セッションの生存確認・service role の DB・Auth の管理の機能・回数の制限）だけを差し替える。
@@ -98,14 +99,14 @@ function installServiceClient() {
       throw new Error(`unexpected table ${table}`);
     },
   };
-  createServiceRoleClient.mockResolvedValue(client);
+  createServiceRoleClient.mockResolvedValue(withApprovedCount(client));
   return client;
 }
 
 function signIn(claims: Record<string, unknown> = {}) {
   verifyAccessToken.mockResolvedValue({
     ok: true,
-    claims: { sub: ACTOR_ID, email: 'admin@example.com', aal: 'aal2', session_id: 's1', app_metadata: { role: 'admin' }, ...claims },
+    claims: { sub: ACTOR_ID, email: 'admin@example.com', ...aalFields('aal2'), session_id: 's1', app_metadata: { role: 'admin' }, ...claims },
   });
 }
 
@@ -192,7 +193,7 @@ describe('POST /api/admin/users/mfa/reset', () => {
     });
 
     test('API-ADMIN-004 権限があっても aal2 でなければ 403（MFA required）を返し、消さない', async () => {
-      signIn({ aal: 'aal1' });
+      signIn({ ...aalFields('aal1') });
 
       const res = await POST(makeRequest(validBody));
 
@@ -598,7 +599,7 @@ describe('POST /api/admin/users/mfa/reset', () => {
       createServiceRoleClient.mockImplementation(async () => {
         n += 1;
         if (n === 2) throw new Error('no client');
-        return base;
+        return withApprovedCount(base);
       });
 
       const res = await POST(makeRequest(validBody));

@@ -1,6 +1,6 @@
 # 最初の店長を作る手順
 
-> 状態: 現行 | 確認日: 2026-11-14 | 対象: 新しい環境（手元の `db reset` の後・検証用・作り直した本番）の最初の店長。コマンド `npm run admin:bootstrap`
+> 状態: 現行 | 確認日: 2026-11-17 | 対象: 新しい環境（手元の `db reset` の後・検証用・作り直した本番）の最初の店長。コマンド `npm run admin:bootstrap`
 
 ## 概要
 
@@ -25,7 +25,7 @@
 
 ## 前提
 
-- 手元: `npm run db:reset` の後（店長が0人の状態）
+- 手元: **本番用。手元は段1a の新しい手順（dev の店員のスクリプト。[Task 10](../superpowers/plans/2026-11-16-passkey-stage1a-foundation.md)）**。段1a の切り替え（Task 9）の後は、このコマンドで作った店長（パスワード＋TOTP）は、手元で `npm run db:reset` の後に動かない（フックが店員のパスワード・メールのコードを拒否する。SEC-AUTH-040）
 - ほかの環境: 新しい Supabase に、全部の移行（`supabase/migrations/`）を当てた後。`roles` の表に `admin` の行があること
 - 環境変数 `SUPABASE_URL`（無ければ `NEXT_PUBLIC_SUPABASE_URL`）と `SUPABASE_SERVICE_ROLE_KEY` が要る。コマンド自体は `.env` を読まない
 - 端末（TTY）から流す。パスワードを字を出さずに聞くため、パイプやリダイレクトでは動かない

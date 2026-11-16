@@ -10,6 +10,7 @@
 
 import { NextResponse } from 'next/server';
 import { authenticateRequest } from '@/lib/auth/authenticate';
+import { approvedCountHint, evaluateStaffEntry } from '@/lib/auth/staff-passkey';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -49,9 +50,11 @@ export async function GET(request: Request) {
     const { claims } = verified;
     const role = isUserRole(claims.app_metadata?.role) ? claims.app_metadata.role : 'user';
 
-    // 認可側（admin-rbac）と同じ根拠で MFA を判定する。ここがずれると
-    // 画面は管理者向け UI を出すのに API は 403 という状態になる。
-    const mfaVerified = claims.aal === 'aal2';
+    // 管理の入口の条件（パスキー・24時間以内・認めた2本以上）を、画面に出す「ヒント」として判定する（SR-AUTH-014）。
+    // 認めた本数は DB で数えず JWT の印 staff_passkeys_ok から取る（真なら足りる数、偽なら0）ので、認めた鍵が消えた後は
+    // 最長1時間（次の更新まで）枠が見える。権限の判定は admin-rbac が DB で数えて行うので、API は 403 になる。
+    // 応答の項目名 mfaVerified は段4まで変えない（ADR-0463）。
+    const mfaVerified = evaluateStaffEntry(claims, approvedCountHint(claims), Date.now() / 1000).ok;
 
     return buildResponse({
       authenticated: true,

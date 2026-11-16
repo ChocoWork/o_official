@@ -1,14 +1,9 @@
 /**
- * 取扱店の管理画面（FR-STOCKIST-013）の E2E の道具。本物の aal2 の店長・サポーターと、試験用の店の行を作る。
+ * 取扱店の管理画面（FR-STOCKIST-013）の E2E の道具。管理の入口を通る店長・サポーター（認めたパスキー2本の店員）と、試験用の店の行を作る。
  *
- * ログインは本物の道を通す: 会員の作成（GoTrue） → 確認コードのログイン（/api/auth/login/resend・/api/auth/otp/verify）
- * → aal2 への昇格（下記） → /api/auth/refresh で aal2 のトークンを Cookie に受ける。窓口の認可・MFA の判定は差し替えない。
- *
- * aal2 への昇格だけは、本物の TOTP（/api/auth/mfa/enroll-totp・/api/auth/mfa/verify）を通さない。本物の流れは FR-LOGIN-032 が通す
- * （手元の Supabase は波 6 から supabase/config.toml の [auth.mfa.totp] を有効にしている）。
- * そこで、GoTrue が aal2 を数える根拠（auth.mfa_amr_claims に authentication_method = 'totp' の行がある session）を DB へ直に足し、
- * 本物の refresh で aal2 のトークンを発行させる（2026-10-25 に手元の GoTrue で aal1 → aal2 になることを確かめた）。
- * TOTP の入力の画面と /api/auth/mfa/* の窓口そのものは、この道具の範囲の外。
+ * 管理の入口はパスキーのログイン＋認めたパスキー2本以上（SR-AUTH-014）で、アプリの画面からは店員が入れない（1b でパスキーの画面ができるまで。
+ * SEC-AUTH-040）。そこで共有の道具 createAdminSessionActor（provisionStaff → パスキーのログイン → アプリの sessions に結び付ける）で
+ * 店員の JWT を作り、その access・refresh token を Cookie に置く。窓口の認可・管理の入口の判定は差し替えない。
  *
  * この道具を呼ぶ spec は、ファイルの最上位に `test.use({ trace: 'off' })` が必須（member-session-helpers.ts と同じ理由）。
  */
@@ -17,7 +12,8 @@ import { createClient } from '@supabase/supabase-js';
 import type { Locator, Page } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
-import { createTestMember, loginAsMember, type TestMember } from './member-session-helpers';
+import { createAdminSessionActor } from './admin-session-test-utils';
+import type { TestMember } from './member-session-helpers';
 import { withLocalDb } from './order-email-test-utils';
 
 export type StaffRole = 'admin' | 'supporter';
@@ -42,53 +38,25 @@ function randomSourceIp(): string {
 }
 
 /**
- * 本物の aal2 の店長・サポーターとして、この page でログインする。終わったら removeStaff で消す。
- * label は小文字の英数字とハイフンだけ（createTestMember の決まり）。
+ * 管理の入口を通る店長・サポーター（認めたパスキー2本。古い名前の aal2）として、この page に Cookie を置く。終わったら removeStaff で消す。
+ * label は呼び手の区別のための印（メールには入らない。互換のために残した引数）。
  */
 export async function loginAsStaffAal2(page: Page, role: StaffRole, label: string): Promise<TestMember> {
-  const member = await createTestMember(label);
-
-  // 役割は JWT の app_metadata.role（画面の出し分け）と user_roles（窓口の認可の ACL）の両方に要る
-  const updated = await localAuthAdmin().auth.admin.updateUserById(member.userId, { app_metadata: { role } });
-  if (updated.error) {
-    throw new Error(`役割を付けられない（status: ${updated.error.status ?? '不明'}）`);
-  }
-  await withLocalDb(async (db) => {
-    const assigned = await db.query(
-      `insert into public.user_roles (user_id, role_id, active, expires_at)
-       select $1::uuid, r.id, true, null from public.roles r where r.code = $2
-       on conflict (user_id, role_id) do update set active = true, expires_at = null`,
-      [member.userId, role],
-    );
-    if (assigned.rowCount !== 1) throw new Error(`役割 ${role} の行が手元の DB に無い`);
-  });
-
+  void label;
+  const actor = await withLocalDb((db) => createAdminSessionActor(db, role, 'aal2'));
   const sourceIp = randomSourceIp();
-  await loginAsMember(page, member, sourceIp);
   // 以後のブラウザの要求（画面が撃つ /api/auth/refresh と、管理 API の変更の枠 20 回/600 秒）もこの送り元で数える。
   // 付けないと、FR-STOCKIST-013 の 3 つの幅の変更（1 つの幅で作成 2・更新 2・切り替え 2・削除 2 の 8 回、計 24 回）が
   // ip null の 1 つの枠（20 回）を使い切り、最後の幅（desktop）の更新・削除が 429 で落ちる。
   await page.setExtraHTTPHeaders({ 'x-real-ip': sourceIp });
-
-  // aal2 の根拠を足す（先頭のコメントを参照）。ログインで出来た session だけが対象
-  await withLocalDb(async (db) => {
-    await db.query(
-      `insert into auth.mfa_amr_claims (id, session_id, created_at, updated_at, authentication_method)
-       select gen_random_uuid(), s.id, now(), now(), 'totp' from auth.sessions s where s.user_id = $1::uuid
-       on conflict do nothing`,
-      [member.userId],
-    );
-    await db.query(`update auth.sessions set aal = 'aal2' where user_id = $1::uuid`, [member.userId]);
-  });
-
+  await page.goto('/');
   const origin = new URL(page.url()).origin;
-  const refreshed = await page.request.post(new URL('/api/auth/refresh', origin).toString(), {
-    headers: { origin, 'x-real-ip': sourceIp },
-    maxRedirects: 0,
-  });
-  if (!refreshed.ok()) {
-    throw new Error(`aal2 のトークンを受けられない: ${refreshed.status()}`);
-  }
+  if (!isLocalUrl(origin)) throw new Error('ブラウザへのログインは手元のアプリだけ');
+  await page.context().clearCookies();
+  await page.context().addCookies([
+    { name: 'sb-access-token', value: actor.accessToken, url: origin, httpOnly: true, sameSite: 'Lax' },
+    { name: 'sb-refresh-token', value: actor.refreshToken, url: origin, httpOnly: true, sameSite: 'Lax' },
+  ]);
   const me = await page.request.get(new URL('/api/auth/me', origin).toString(), {
     headers: { 'x-real-ip': sourceIp },
     maxRedirects: 0,
@@ -97,10 +65,10 @@ export async function loginAsStaffAal2(page: Page, role: StaffRole, label: strin
     authenticated?: boolean;
     user?: { id?: string; role?: string; mfaVerified?: boolean };
   };
-  if (body.authenticated !== true || body.user?.id !== member.userId || body.user.role !== role || body.user.mfaVerified !== true) {
-    throw new Error(`${role} の aal2 のログインになっていない`);
+  if (body.authenticated !== true || body.user?.id !== actor.userId || body.user.role !== role || body.user.mfaVerified !== true) {
+    throw new Error(`${role} の管理の入口を通るログインになっていない`);
   }
-  return member;
+  return { userId: actor.userId, email: actor.email };
 }
 
 /** 試験用の店長・サポーターを消す。消せなくても試験の結果は変えない（db reset で消える） */

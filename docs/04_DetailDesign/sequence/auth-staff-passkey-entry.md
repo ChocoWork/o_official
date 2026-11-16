@@ -1,6 +1,6 @@
 # 店員のパスキーの入口（設定・登録の窓・認めたパスキー）
 
-> 状態: 推定 | 確認日: 2026-11-16 | 対象: `supabase/migrations/20261116215034_passkey_foundation_tables.sql`、`supabase/migrations/20261116230000_passkey_access_token_hook.sql`、`supabase/migrations/20261116232141_passkey_credential_events.sql`、`src/lib/auth/staff-passkey-defaults.ts`、`src/lib/auth/staff-passkey-reject.ts`、`src/lib/auth/staff-passkey-credential-events.ts`、`e2e/passkey-soft-authenticator.ts`、`scripts/e2e/passkey-staff.ts` | 親: [シーケンス設計の方針](README.md)
+> 状態: 推定 | 確認日: 2026-11-17 | 対象: `supabase/migrations/20261116215034_passkey_foundation_tables.sql`、`supabase/migrations/20261116230000_passkey_access_token_hook.sql`、`supabase/migrations/20261116232141_passkey_credential_events.sql`、`src/lib/auth/staff-passkey-defaults.ts`、`src/lib/auth/staff-passkey-reject.ts`、`src/lib/auth/staff-passkey-credential-events.ts`、`e2e/passkey-soft-authenticator.ts`、`scripts/e2e/passkey-staff.ts` | 親: [シーケンス設計の方針](README.md)
 
 ## 概要
 
@@ -196,12 +196,56 @@ flowchart TD
 - TS の入力の締め: 今の秒は切り捨てる（SQL と同じ）。本数が整数でない・負・NaN・無限大・文字列なら `passkeys_insufficient`（閉じる側）
 - 既知の精度の差（受け入れる）: `timestamp` が `1800000000.0000000000000001` のように、JS の数で丸めると整数になる小数だと、SQL は小数として断り、TS は `JSON.parse` の丸めで整数と見て通す。作れるのは署名された JWT を偽造できる人だけで、GoTrue は整数の秒しか出さない。SQL のほうが厳しい側なので、そのまま受け入れる
 - 認可: 3つの関数は `public`・`anon`・`authenticated`・`service_role` に `execute` を渡さない
+- つなぎ: Task 9 で API（`admin-rbac.ts`）と RLS（`has_permission`）につないだ（DD-AUTH-048）。TS は RPC が返した本数を `evaluateStaffEntry` に渡し、SQL は `has_permission` の中の位置で呼ぶ
 - 文言: 403 の本文 `MFA required` と `denial.reason = 'mfa'` はこの段では変えない（意味だけパスキーの条件に変わる。名前の変更は段4。ADR-0463）
 - テスト観点: `amr` の欠落・空・配列でない・文字列の時刻・小数・未来・86400秒・86401秒・`oauth`/`otp` だけ、本数 0・1・2、印が真でも1本なら断る、認めた鍵を消した直後に偽、引き金が働かなくても実在しない鍵は数えない、設定の行の変更が効く、権限
+
+### DD-AUTH-048 管理の入口の切り替え（`has_permission`・`admin-rbac`・`/api/auth/me`・フックの有効化）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | DATA-AUTH-016、SEC-AUTH-040 |
+| 根拠 | 管理の入口の置き換え（ADR-0463）を、フックの有効化・`has_permission`・`admin-rbac`・`/api/auth/me`・全部の試験の道具と偽装を1つのコミットで切り替える。途中の状態（フックだけ有効・`has_permission` だけ新しい）では、店員が入れない・古い判定のままの穴ができるため |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/admin-rbac.test.ts`、`tests/unit/api/auth/me-route.test.ts`、`tests/unit/supabase/config-wave6.test.ts`）、DB 結合テスト（`tests/integration/db/auth_has_permission_passkey.integration.test.ts`）、E2E（FR-LOGIN-039・040） |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 9、Review Focus 1〜3） |
+
+```mermaid
+flowchart TD
+    A[管理の要求] --> B[admin-rbac: 失効の確かめ・ACL の照会・RPC passkey_approved_count を並べて呼ぶ]
+    B --> C{session が生きている}
+    C -- いいえ・確認できない --> C1[401 または 503]
+    C -- はい --> D{権限がある}
+    D -- いいえ --> D1[403 permission]
+    D -- はい --> E{本数を数えられた}
+    E -- いいえ --> E1[503 Retry-After 30]
+    E -- はい --> F[evaluateStaffEntry]
+    F -- 満たさない --> F1[403 MFA required・denial.reason mfa]
+    F -- 満たす --> OK[通す]
+    R[RLS から has_permission] --> R1{amr が条件1・2を満たす}
+    R1 -- いいえ --> R0[false]
+    R1 -- はい --> R2{ACL がある}
+    R2 -- いいえ --> R0
+    R2 -- はい --> R3{認めたパスキーが2本以上}
+    R3 -- いいえ --> R0
+    R3 -- はい --> R4{結び付いた生きた session}
+    R4 -- はい --> RT[true]
+    R4 -- いいえ --> R0
+```
+
+- `admin-rbac.ts`: 本数は RPC `passkey_approved_count`（`{ p_user_id }`）。誤りか例外は `unavailable`（503 と `Retry-After: 30`。liveness の `unavailable` と同じ。ただし権限が無い人は先に 403 permission）、整数でない値・`null` は0本（403）。service role の client は1回の認可で1回だけ作り、ACL の照会と本数の照会が使い回す
+- 403 の応答: 本文の `reason: 'MFA required'`・`denial.reason = 'mfa'` は変えない（意味だけパスキーの条件。名前の変更は段4）
+- `has_permission`（移行 E）: 順は uid → 条件1・2（claims だけ。お客さんと anon はここで止まる）→ ACL → 条件3（認めの控えを数える）→ 結び付いた生きた session。置き換える前の本体の md5 は `61536a72ff10e073a731a903ed6acd10`。claims の `aal` は見ない
+- `/api/auth/me`: `evaluateStaffEntry(claims, 認めた本数のヒント, 今)`。本数のヒントは JWT の `staff_passkeys_ok` が真なら足りる数（`STAFF_MIN_APPROVED_PASSKEYS`）、そうでなければ0。表示だけで、権限の判定は `admin-rbac`
+- フック: `supabase/config.toml` の `[auth.hook.custom_access_token]` を有効にした（`supabase stop`・`start` の後に効く）。WebAuthn の出所は `http://localhost:3000` だけ
+- 試験の読み替え: 古い名前の `aal1`・`aal2` は、認めたパスキー1本・2本（または passkey の amr の有無）に読み替える。DB 結合の道具は `tests/integration/db/helpers/app-session.ts`（`createLiveAppSession`・`jwtClaims`）、API の単体と結合は `tests/unit/helpers/staff-claims.ts`（`aalClaims`・`aalFields`・`withApprovedCount`）、E2E は `e2e/admin-session-test-utils.ts`。同じ人の1本・2本の JWT を並べても、認めた本数は DB で数えるので先の JWT も2本として扱われる。1本の側の確かめは2本目を足す前に済ませる
+- DB の `now()` は取引の始めの時刻で固定なので、取引の中の試験で claims の時刻を作る時は少し前（5秒）にする（本物の JWT は要求より前に出る）
+- 異常: `has_permission` の中の関数は例外を握って偽を返す（閉じる側）
+- テスト観点: 本数 0・1・2・消した直後・印の偽装・amr の値の表（TS と同じ）・`aal2` でも passkey が無ければ断る・RPC の誤り・数でない値・session の失効が先・権限が無ければ 403 のまま・お客さんが認めの控えまで届かない
 
 ## 未確認事項
 
 - 本番で `auth.webauthn_credentials` に引き金を作れるか、GoTrue の更新で引き金が消えないか（設計 8-2 の3）。本番へ当てる前に `has_table_privilege('postgres', 'auth.webauthn_credentials', 'TRIGGER')` を読む
 - 本番の `auth.webauthn_credentials` に同じ列があるか（パスキーを有効にする前は表が無い可能性がある）
 - 本物の Google のログイン（`amr` が `oauth`）でフックが走る形は未確認。店員は「パスキー（と窓）以外は全部拒否」なので、形が違っても店員は通らない
-- 有効にした後にフックが壊れた時の外し方（設定で止める）は Task 9 と運用の文書で決める
+- 有効にした後にフックが壊れた時の外し方（設定で止める）は、運用の文書（`docs/06_Operations/supabase-auth-config.md`）で本番の段3までに決める。手元は `supabase/config.toml` の `[auth.hook.custom_access_token]` の `enabled` を戻して `supabase stop`・`start`

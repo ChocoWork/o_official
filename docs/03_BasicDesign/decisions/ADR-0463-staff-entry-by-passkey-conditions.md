@@ -1,10 +1,10 @@
 # ADR-0463 管理の入口は `aal2` をやめ、パスキー・24時間以内・認めたパスキー2本以上を、その場で数えて判定する
 
-> 状態: 推定（判定の部品は作った。管理の入口につなぐのは段1a の Task 9） | 確認日: 2026-11-17 | 対象: `src/lib/auth/staff-passkey.ts`、`supabase/migrations/20261117001500_passkey_staff_entry_conditions_fn.sql`
+> 状態: 推定（段1a の Task 9 で管理の入口につないだ。本番へは段3まで当てない） | 確認日: 2026-11-17 | 対象: `src/lib/auth/staff-passkey.ts`、`src/lib/auth/admin-rbac.ts`、`src/app/api/auth/me/route.ts`、`supabase/migrations/20261117001500_passkey_staff_entry_conditions_fn.sql`、`supabase/migrations/20261117013000_passkey_staff_entry_conditions.sql`
 
 ## 概要
 
-店員（店長・サポーター）が管理の入口を通る条件を、「`aal2`（TOTP）」から次の3つ全部に置き換える。(1) `amr` に `passkey` がある、(2) その時刻から24時間以内、(3) 認めたパスキーが2本以上。3つ目は JWT の印を信じず、API も RLS も判定のたびに DB で数える。置き換えは Task 9 で有効になり、この ADR では判定の部品を作り、決めを記録する。
+店員（店長・サポーター）が管理の入口を通る条件を、「`aal2`（TOTP）」から次の3つ全部に置き換える。(1) `amr` に `passkey` がある、(2) その時刻から24時間以内、(3) 認めたパスキーが2本以上。3つ目は JWT の印を信じず、API も RLS も判定のたびに DB で数える。置き換えは Task 9 で有効にした（`has_permission`・`admin-rbac`・フックを同じコミットで切り替え）。
 
 ## 範囲と根拠
 
@@ -58,5 +58,6 @@
 
 - 良くなること: 鍵を消すとその場で管理の権限が止まる。TS と SQL が同じ表で確かめられ、食い違いに気づける
 - 悪くなること: 判定のたびに認めの控えを数える（店員1人に数本の行。受け入れる）。「MFA required」の文言が、中身はパスキーの条件を指す（段4まで）
-- 置き換え済みの決め: [ADR-0409](ADR-0409-mfa-role-from-jwt-claims.md)・[ADR-0418](ADR-0418-auth-has-permission-requires-aal2-and-bound-session.md) の `aal2` を求める部分は、この ADR で置き換える（有効になるのは Task 9）
+- 表示の遅れ: `/api/auth/me` の `mfaVerified` は表示のヒントで、認めた本数を JWT の印 `staff_passkeys_ok` から取る。認めた鍵が消えた後、最長1時間（次の更新まで）は管理画面の枠が見えるが、API は DB で数えて 403 になる
+- 置き換え済みの決め: [ADR-0409](ADR-0409-mfa-role-from-jwt-claims.md)・[ADR-0418](ADR-0418-auth-has-permission-requires-aal2-and-bound-session.md) の `aal2` を求める部分は、この ADR で置き換える（Task 9 で有効にした）
 - 見直す条件: 判定の費用が目に見える時（キャッシュを考える）。本番でフックや引き金が働かない道が見つかった時（SEC-AUTH-038）

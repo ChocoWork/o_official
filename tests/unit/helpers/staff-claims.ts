@@ -17,6 +17,39 @@ export function staffEntryClaims(overrides: Record<string, unknown> = {}): JwtPa
   };
 }
 
+/**
+ * 古い試験の名前（aal1・aal2）を管理の入口の条件に読み替える（SR-AUTH-014）。'aal2' は入口を通る店員の claims、
+ * それ以外は passkey の無い通行証（認めた本数に関わらず 403 MFA required になる側）。
+ */
+export function aalClaims(aal: string, overrides: Record<string, unknown> = {}): JwtPayload {
+  return staffEntryClaims(aal === 'aal2' ? overrides : { ...overrides, amr: [{ method: 'otp', timestamp: Math.floor(Date.now() / 1000) }] });
+}
+
+/**
+ * claims のオブジェクトの中に `...aalFields('aal2')` と書けば、古い試験の `aal: 'aal2'` を管理の入口の条件に読み替える
+ * （'aal2' は今の時刻の passkey の amr、それ以外は otp だけの amr。claims の aal は常に aal1）。
+ */
+export function aalFields(aal: string): { aal: string; amr: Array<{ method: string; timestamp: number }> } {
+  const timestamp = Math.floor(Date.now() / 1000);
+  return { aal: 'aal1', amr: [{ method: aal === 'aal2' ? 'passkey' : 'otp', timestamp }] };
+}
+
+/**
+ * 認可の窓口が RPC `passkey_approved_count` で本数を数えるので、`createServiceRoleClient` の偽の service に、その RPC だけを足す。
+ * 元の service の他の項目・`rpc` はそのまま（`rpc` が無ければ、他の名前の呼び出しは空で返す）。本数は既定 2。
+ */
+export function withApprovedCount<T extends object>(service: T, count: number | null = 2): T {
+  const original = (service as { rpc?: (...args: unknown[]) => unknown }).rpc;
+  return Object.assign(Object.create(service), {
+    rpc: (name: string, ...rest: unknown[]) =>
+      name === 'passkey_approved_count'
+        ? Promise.resolve({ data: count, error: null })
+        : original
+          ? original.call(service, name, ...rest)
+          : Promise.resolve({ data: null, error: null }),
+  }) as T;
+}
+
 /** `passkey_approved_count` の RPC の戻りを差す（ほかの RPC は空で返す）。 */
 export function mockApprovedCount(
   rpcMock: { mockImplementation: (fn: (...args: any[]) => unknown) => unknown },

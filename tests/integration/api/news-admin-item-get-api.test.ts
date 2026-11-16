@@ -1,3 +1,4 @@
+import { aalFields, withApprovedCount } from '../../unit/helpers/staff-claims';
 export {};
 
 // 窓口・認可（admin-rbac）・監査（audit）・画像の署名（news-images）は本物を通し、外との境目（Supabase の client・token の検証・応答の型）だけを差し替える
@@ -91,8 +92,8 @@ function setup(options: { row?: Result; signResult?: Result | Error; codes?: str
     options.signResult,
   );
   createClient.mockResolvedValue(userClient);
-  createServiceRoleClient.mockResolvedValue(serviceClient);
-  verifyAccessToken.mockResolvedValue({ ok: true, claims: { sub: 'admin-1', session_id: 'sess-1', aal: options.aal ?? 'aal2', app_metadata: { role: 'admin' } } });
+  createServiceRoleClient.mockResolvedValue(withApprovedCount(serviceClient));
+  verifyAccessToken.mockResolvedValue({ ok: true, claims: { sub: 'admin-1', session_id: 'sess-1', ...aalFields(options.aal ?? 'aal2'), app_metadata: { role: 'admin' } } });
   checkAuthSessionLiveness.mockResolvedValue('active');
 }
 

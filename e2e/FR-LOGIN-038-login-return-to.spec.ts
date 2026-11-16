@@ -354,6 +354,7 @@ for (const viewport of viewports) {
     });
 
     test(`FR-AUTH-005-AC-05 管理者は確認コードの後に /auth/verified で 2 段目を通してから戻り先（/item）へ移る (${viewport.name})`, async ({ page }) => {
+      test.skip(true, '段4で消す機能: 管理者が確認コードの後に TOTP の 2 段目を通す流れ（段4で消す）。手元では店員がアプリの画面から入れない（SEC-AUTH-040）');
       const ip = uniqueSourceIp();
       const member = await createMember(`ac05-next-${viewport.name}`, 'admin');
       await withLocalDb((db) => addVerifiedTotpFactor(db, member.userId));
@@ -374,6 +375,7 @@ for (const viewport of viewports) {
     });
 
     test(`FR-AUTH-005-AC-05 戻り先の無い管理者は 2 段目の後に /admin へ移る (${viewport.name})`, async ({ page }) => {
+      test.skip(true, '段4で消す機能: 管理者が確認コードの後に TOTP の 2 段目を通す流れ（段4で消す）。手元では店員がアプリの画面から入れない（SEC-AUTH-040）');
       const ip = uniqueSourceIp();
       const member = await createMember(`ac05-none-${viewport.name}`, 'admin');
       await withLocalDb((db) => addVerifiedTotpFactor(db, member.userId));

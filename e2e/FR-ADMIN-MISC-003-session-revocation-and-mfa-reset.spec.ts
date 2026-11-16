@@ -4,20 +4,20 @@
  *       SEC-ADMIN-015-AC-01 / SEC-ADMIN-015-AC-02 / SEC-ADMIN-016-AC-01
  *
  * 本物の窓口（POST /api/admin/revoke-user-sessions・POST /api/admin/users/mfa/reset）を、本物の JWT で HTTP から叩く。
- * - 管理者: 共有の道具（e2e/admin-session-test-utils.ts）で作る。GoTrue が署名した本物の aal2 の JWT を出す。
- *   サポーター側の aal2 は、本物のログインの session に amr の行（手元の Supabase は TOTP の登録・確認が使えないため DB へ直に足す）を足して
- *   refresh して作る。役割は auth.users の app_metadata と public.user_roles（有効な割り当て）を同じ役割にそろえる。
+ * - 管理者・対象のサポーター: 共有の道具（e2e/admin-session-test-utils.ts）で作る。管理の入口を通る（認めたパスキー2本）店員がパスキーで入った、
+ *   GoTrue が署名した本物の JWT（アプリの sessions に結び付いた session）。パスワード・TOTP の道は店員が入れない（SR-AUTH-014）。
+ *   役割は auth.users の app_metadata と public.user_roles（有効な割り当て）を同じ役割にそろえる。
  * - 画面を描かない HTTP の試験なので、viewport の繰り返しは無い（1本ずつ）。
- * - 対象のサポーター: createTestMember で作り、loginAsMember（確認コードの本物のログイン）で auth.sessions と public.sessions の行を作る。
- *   2要素の登録は auth.mfa_factors に verified の行を直に足す（GoTrue の管理 API が一覧・削除できる形）。
+ * - 2要素の登録は auth.mfa_factors に verified の行を直に足す（GoTrue の管理 API が一覧・削除できる形）。MFA のリセット自体は段4まで残る。
  * - 監査ログ（public.audit_logs）は手元の DB の接続で直に読む。
  * JWT が通信記録に残らないよう trace は切る。
  */
 import { randomBytes, randomUUID } from 'node:crypto';
-import { expect, test, type APIRequestContext, type APIResponse, type Browser, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type APIResponse } from '@playwright/test';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
-import { createAdminSessionActor } from './admin-session-test-utils';
-import { createTestMember, loginAsMember, type TestMember } from './member-session-helpers';
+import { loginWithPasskey } from '../scripts/e2e/passkey-staff';
+import { bindAppSession, createAdminSessionActor } from './admin-session-test-utils';
+import { createTestMember } from './member-session-helpers';
 import { withLocalDb } from './order-email-test-utils';
 import { withPermissionScenario } from './permission-settings-test-utils';
 
@@ -68,15 +68,6 @@ async function assignRole(db: PgClient, userId: string, role: 'admin' | 'support
     [userId, role, active],
   );
   if (assigned.rowCount !== 1) throw new Error(`役割 ${role} の行が手元の DB に無い`);
-}
-
-/** その session が totp で確かめ済みだという印（GoTrue は次の refresh で aal2 の JWT を出す） */
-async function addTotpAmrClaim(db: PgClient, sessionId: string): Promise<void> {
-  await db.query(
-    `insert into auth.mfa_amr_claims (id, session_id, created_at, updated_at, authentication_method)
-     values (gen_random_uuid(), $1::uuid, now(), now(), 'totp')`,
-    [sessionId],
-  );
 }
 
 /** 2要素の登録（verified の totp）を1つ足す。GoTrue の管理 API の一覧と削除が扱う行 */
@@ -140,37 +131,6 @@ function probe(request: APIRequestContext, route: string, accessToken: string): 
   return request.get(route, { headers: { Authorization: `Bearer ${accessToken}` }, failOnStatusCode: false, maxRedirects: 0 });
 }
 
-async function accessTokenCookie(page: Page): Promise<string> {
-  const origin = new URL(page.url()).origin;
-  const cookie = (await page.context().cookies(origin)).find((c) => c.name === 'sb-access-token');
-  if (!cookie?.value) throw new Error('sb-access-token の Cookie が無い（loginAsMember の後に呼ぶ）');
-  return cookie.value;
-}
-
-/**
- * 本物のログイン済みの会員（サポーター）を aal2 の JWT にする。役割をそろえ、その session に amr の行を足し、アプリの refresh を通す。
- * 戻り値は aal2 の access token（Cookie にも同じ値が入る）。
- */
-async function loginSupporterAsAal2(page: Page, db: PgClient, member: TestMember, forwardedFor: string): Promise<string> {
-  await loginAsMember(page, member, forwardedFor);
-  await assignRole(db, member.userId, 'supporter', true);
-  const sessionId = claimsOf(await accessTokenCookie(page)).session_id;
-  if (!sessionId) throw new Error('サポーターの JWT に session_id が無い');
-  await addTotpAmrClaim(db, sessionId);
-  const origin = new URL(page.url()).origin;
-  const refreshed = await page.request.post(new URL('/api/auth/refresh', origin).toString(), {
-    headers: { origin, 'x-real-ip': forwardedFor },
-    maxRedirects: 0,
-    failOnStatusCode: false,
-  });
-  if (!refreshed.ok()) throw new Error(`サポーターの session を更新できない: ${refreshed.status()}`);
-  const accessToken = await accessTokenCookie(page);
-  if (claimsOf(accessToken).aal !== 'aal2') {
-    throw new Error('サポーターの JWT が aal2 にならない（手元の GoTrue が amr の行から aal を出す前提が崩れた）');
-  }
-  return accessToken;
-}
-
 async function auditRows(
   db: PgClient,
   sql: string,
@@ -191,11 +151,6 @@ async function auditRows(
     params,
   );
   return result.rows;
-}
-
-async function newMemberPage(browser: Browser, baseURL: string | undefined): Promise<Page> {
-  const context = await browser.newContext({ baseURL });
-  return context.newPage();
 }
 
 test.describe('FR-ADMIN-MISC-003 強制失効と MFA のリセットの守り', () => {
@@ -315,12 +270,13 @@ test.describe('FR-ADMIN-MISC-003 強制失効と MFA のリセットの守り', 
     expect(await withLocalDb((db) => factorCount(db, target.userId))).toBe(1);
   });
 
-  test(`SEC-ADMIN-014-AC-02 リセットの後、対象の session が全部失効する`, async ({ page, request, baseURL }) => {
+  test(`SEC-ADMIN-014-AC-02 リセットの後、対象の session が全部失効する`, async ({ request, baseURL }) => {
     const origin = originOf(baseURL);
     const admin = await sharedAdmin();
     await withPermissionScenario(async (db) => {
-      const target = await createTestMember('misc003-014b');
-      const supporterJwt = await loginSupporterAsAal2(page, db, target, uniqueSourceIp());
+      // 対象は、管理の入口を通るサポーター（認めたパスキー2本。アプリの sessions に結び付いた session）。パスワード・TOTP の道は店員が入れない（SR-AUTH-014）
+      const target = await createAdminSessionActor(db, 'supporter', 'aal2');
+      const supporterJwt = target.accessToken;
       await addTotpFactor(db, target.userId);
       // リセット前の JWT は管理 API に通る（比べる基準）
       expect((await probe(request, SUPPORTER_PROBE_ROUTE, supporterJwt)).status()).toBe(200);
@@ -378,48 +334,48 @@ test.describe('FR-ADMIN-MISC-003 強制失効と MFA のリセットの守り', 
     expect(await successRows()).toBe(before);
   });
 
-  test(`SEC-ADMIN-016-AC-01 失効の後、自前と Auth の session が全部止まる`, async ({ page, browser, request, baseURL }) => {
+  test(`SEC-ADMIN-016-AC-01 失効の後、自前と Auth の session が全部止まる`, async ({ request, baseURL }) => {
     const origin = originOf(baseURL);
     const admin = await sharedAdmin();
-    const secondPage = await newMemberPage(browser, baseURL);
-    try {
-      await withPermissionScenario(async (db) => {
-        const target = await createTestMember('misc003-016');
-        // 別のブラウザでも同じサポーターでログインして、session を2つ作る（「全部」を確かめる）
-        await loginAsMember(secondPage, target, uniqueSourceIp());
-        const secondJwt = await accessTokenCookie(secondPage);
-        // 同じ利用者への確認コードの送信は GoTrue が最小の間隔（手元は auth.email.max_frequency = 1s）を空けないと断る。断られると 500 になるので、間隔を空けてから2回目のログインをする
-        await page.waitForTimeout(2_000);
-        const firstJwt = await loginSupporterAsAal2(page, db, target, uniqueSourceIp());
-
-        const sessionsOf = async () => {
-          const own = await db.query(
-            `select count(*)::int as total, count(*) filter (where revoked_at is null)::int as live
-               from public.sessions where user_id = $1::uuid`,
-            [target.userId],
-          );
-          const auth = await db.query('select count(*)::int as n from auth.sessions where user_id = $1::uuid', [target.userId]);
-          return { total: own.rows[0].total as number, live: own.rows[0].live as number, auth: auth.rows[0].n as number };
-        };
-        const beforeSessions = await sessionsOf();
-        expect(beforeSessions.live).toBeGreaterThanOrEqual(1);
-        expect(beforeSessions.auth).toBeGreaterThanOrEqual(1);
-        expect((await probe(request, SUPPORTER_PROBE_ROUTE, firstJwt)).status()).toBe(200);
-
-        const response = await revoke(request, origin, admin.accessToken, { user_id: target.userId });
-        expect(response.status()).toBe(200);
-
-        const afterSessions = await sessionsOf();
-        // sessions の行の revoked_at が全部埋まり（行は残る）、auth.sessions の行は0件
-        expect(afterSessions.total).toBeGreaterThanOrEqual(1);
-        expect(afterSessions.live).toBe(0);
-        expect(afterSessions.auth).toBe(0);
-        // 失効前の JWT での管理 API の要求は 401
-        expect((await probe(request, SUPPORTER_PROBE_ROUTE, firstJwt)).status()).toBe(401);
-        expect((await probe(request, SUPPORTER_PROBE_ROUTE, secondJwt)).status()).toBe(401);
+    await withPermissionScenario(async (db) => {
+      // 同じサポーターがパスキーで2回ログインして、結び付いた session を2つ作る（「全部」を確かめる）
+      const target = await createAdminSessionActor(db, 'supporter', 'aal2');
+      const second = await loginWithPasskey({ email: target.email, authenticator: target.authenticators[0] });
+      await bindAppSession(db, {
+        userId: target.userId,
+        accessToken: second.session.access_token,
+        refreshToken: second.session.refresh_token,
       });
-    } finally {
-      await secondPage.context().close();
-    }
+      const firstJwt = target.accessToken;
+      const secondJwt = second.session.access_token;
+      expect(claimsOf(secondJwt).session_id, '2つの JWT は別の session').not.toBe(claimsOf(firstJwt).session_id);
+
+      const sessionsOf = async () => {
+        const own = await db.query(
+          `select count(*)::int as total, count(*) filter (where revoked_at is null)::int as live
+             from public.sessions where user_id = $1::uuid`,
+          [target.userId],
+        );
+        const auth = await db.query('select count(*)::int as n from auth.sessions where user_id = $1::uuid', [target.userId]);
+        return { total: own.rows[0].total as number, live: own.rows[0].live as number, auth: auth.rows[0].n as number };
+      };
+      const beforeSessions = await sessionsOf();
+      expect(beforeSessions.live).toBeGreaterThanOrEqual(2);
+      expect(beforeSessions.auth).toBeGreaterThanOrEqual(2);
+      expect((await probe(request, SUPPORTER_PROBE_ROUTE, firstJwt)).status()).toBe(200);
+      expect((await probe(request, SUPPORTER_PROBE_ROUTE, secondJwt)).status()).toBe(200);
+
+      const response = await revoke(request, origin, admin.accessToken, { user_id: target.userId });
+      expect(response.status()).toBe(200);
+
+      const afterSessions = await sessionsOf();
+      // sessions の行の revoked_at が全部埋まり（行は残る）、auth.sessions の行は0件
+      expect(afterSessions.total).toBeGreaterThanOrEqual(2);
+      expect(afterSessions.live).toBe(0);
+      expect(afterSessions.auth).toBe(0);
+      // 失効前の JWT での管理 API の要求は 401
+      expect((await probe(request, SUPPORTER_PROBE_ROUTE, firstJwt)).status()).toBe(401);
+      expect((await probe(request, SUPPORTER_PROBE_ROUTE, secondJwt)).status()).toBe(401);
+    });
   });
 });

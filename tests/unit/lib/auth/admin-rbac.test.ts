@@ -7,6 +7,7 @@ jest.mock('next/server', () => ({
 import { authorizeAdminPermission, authorizeAdminPermissions, legacyPermissionMap } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { checkAuthSessionLiveness, verifyAccessToken } from '@/lib/auth/authenticate';
+import { staffEntryClaims } from '../../helpers/staff-claims';
 
 jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(),
@@ -27,14 +28,16 @@ describe('authorizeAdminPermission', () => {
     or: jest.fn(),
   };
 
-  // 認可根拠は DB の ACL と JWT の aal クレーム。app_metadata の MFA フラグは使わない。
-  const adminClaims = {
+  // 認可根拠は DB の ACL と、管理の入口の3条件（パスキーの amr・24時間以内・DB で数えた認めたパスキー2本以上。SR-AUTH-014）。
+  // JWT の aal と app_metadata の MFA フラグは使わない。
+  const adminClaims = staffEntryClaims({
     sub: 'user-1',
     session_id: 'session-1',
-    aal: 'aal2',
     email: 'user@example.com',
     app_metadata: { role: 'admin' },
-  };
+  });
+  const rpc = jest.fn();
+  const noPasskeyClaims = { ...adminClaims, amr: [{ method: 'otp', timestamp: Math.floor(Date.now() / 1000) }] };
 
   const grantPermission = (code: string) => {
     mockQuery.or.mockResolvedValue({
@@ -48,8 +51,11 @@ describe('authorizeAdminPermission', () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     jest.spyOn(console, 'error').mockImplementation(() => {});
 
+    rpc.mockReset();
+    rpc.mockResolvedValue({ data: 2, error: null });
     (createServiceRoleClient as jest.Mock).mockResolvedValue({
       from: jest.fn().mockReturnValue(mockQuery),
+      rpc,
     });
     (verifyAccessToken as jest.Mock).mockResolvedValue({ ok: true, claims: adminClaims });
     (checkAuthSessionLiveness as jest.Mock).mockResolvedValue('active');
@@ -180,10 +186,10 @@ describe('authorizeAdminPermission', () => {
     }
   });
 
-  it('denies with MFA required while the session is still aal1', async () => {
+  it('denies with MFA required when the token has no passkey amr (a password or code login)', async () => {
     (verifyAccessToken as jest.Mock).mockResolvedValue({
       ok: true,
-      claims: { ...adminClaims, aal: 'aal1' },
+      claims: noPasskeyClaims,
     });
     grantPermission('admin.users.manage');
 
@@ -194,6 +200,117 @@ describe('authorizeAdminPermission', () => {
       expect(result.response.status).toBe(403);
       expect((result.response as unknown as { body: { reason: string } }).body.reason).toBe('MFA required');
     }
+  });
+
+  describe('管理の入口の3条件（SR-AUTH-014）', () => {
+    const reasonOf = (result: Awaited<ReturnType<typeof authorizeAdminPermission>>) =>
+      (result as unknown as { response: { body: { reason?: string } } }).response.body.reason;
+
+    it('認めたパスキーを RPC passkey_approved_count で、その利用者の id を渡して数える（JWT の印 staff_passkeys_ok は使わない）', async () => {
+      (verifyAccessToken as jest.Mock).mockResolvedValue({ ok: true, claims: { ...adminClaims, staff_passkeys_ok: false } });
+      grantPermission('admin.users.manage');
+
+      const result = await authorizeAdminPermission('admin.users.manage', mockRequest);
+
+      expect(result.ok).toBe(true);
+      expect(rpc).toHaveBeenCalledWith('passkey_approved_count', { p_user_id: 'user-1' });
+    });
+
+    it.each([0, 1])('認めたパスキーが %i 本なら、JWT の印が真でも 403 MFA required で denial.reason は mfa', async (count) => {
+      rpc.mockResolvedValue({ data: count, error: null });
+      grantPermission('admin.users.manage');
+
+      const result = await authorizeAdminPermission('admin.users.manage', mockRequest);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.response.status).toBe(403);
+        expect(reasonOf(result)).toBe('MFA required');
+        expect(result.denial?.reason).toBe('mfa');
+      }
+    });
+
+    it.each([
+      ['null', null],
+      ['文字列', '2'],
+      ['小数', 2.5],
+      ['配列', [2]],
+      ['undefined', undefined],
+    ])('RPC が数でない値（%s）を返したら 0 本として扱い 403', async (_label, data) => {
+      rpc.mockResolvedValue({ data, error: null });
+      grantPermission('admin.users.manage');
+
+      const result = await authorizeAdminPermission('admin.users.manage', mockRequest);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.response.status).toBe(403);
+    });
+
+    it('RPC が誤りを返したら 503 と Retry-After 30（拒否のまま。401 にしない）', async () => {
+      rpc.mockResolvedValue({ data: null, error: { message: 'down' } });
+      grantPermission('admin.users.manage');
+      const json = jest.requireMock('next/server').NextResponse.json as jest.Mock;
+
+      const result = await authorizeAdminPermission('admin.users.manage', mockRequest);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.response.status).toBe(503);
+      expect(json).toHaveBeenLastCalledWith({ error: 'Service temporarily unavailable' }, { status: 503, headers: { 'Retry-After': '30' } });
+    });
+
+    it('権限が無い人は、本数を数えられなくても 403 permission のまま（権限の誤りが先）', async () => {
+      rpc.mockResolvedValue({ data: null, error: { message: 'down' } });
+      mockQuery.or.mockResolvedValue({ data: [], error: null });
+
+      const result = await authorizeAdminPermission('admin.users.manage', mockRequest);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.response.status).toBe(403);
+    });
+
+    it('RPC が投げても 503（閉じる側）', async () => {
+      rpc.mockRejectedValue(new Error('boom'));
+      grantPermission('admin.users.manage');
+
+      const result = await authorizeAdminPermission('admin.users.manage', mockRequest);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.response.status).toBe(503);
+    });
+
+    it('session が失効していれば、本数を数えられなくても先に 401（503・403 より前）', async () => {
+      (checkAuthSessionLiveness as jest.Mock).mockResolvedValue('revoked');
+      rpc.mockResolvedValue({ data: null, error: { message: 'down' } });
+      grantPermission('admin.users.manage');
+
+      const result = await authorizeAdminPermission('admin.users.manage', mockRequest);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.response.status).toBe(401);
+    });
+
+    it('24時間を過ぎた passkey・未来の passkey は 403 MFA required', async () => {
+      const now = Math.floor(Date.now() / 1000);
+      grantPermission('admin.users.manage');
+      for (const timestamp of [now - 86401, now + 60]) {
+        (verifyAccessToken as jest.Mock).mockResolvedValue({
+          ok: true,
+          claims: { ...adminClaims, amr: [{ method: 'passkey', timestamp }] },
+        });
+        const result = await authorizeAdminPermission('admin.users.manage', mockRequest);
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.response.status).toBe(403);
+      }
+    });
+
+    it('JWT の aal が aal2 でも、パスキーの amr が無ければ通さない（aal は見ない）', async () => {
+      (verifyAccessToken as jest.Mock).mockResolvedValue({ ok: true, claims: { ...noPasskeyClaims, aal: 'aal2' } });
+      grantPermission('admin.users.manage');
+
+      const result = await authorizeAdminPermission('admin.users.manage', mockRequest);
+
+      expect(result.ok).toBe(false);
+    });
   });
 
   it('does not leak internal error details in the 500 response', async () => {
@@ -320,7 +437,7 @@ describe('authorizeAdminPermission', () => {
     });
 
     it('全部持っていても MFA（aal2）でなければ、既存と同じ本文で 403。permission は先頭の必要コード', async () => {
-      (verifyAccessToken as jest.Mock).mockResolvedValue({ ok: true, claims: { ...adminClaims, aal: 'aal1' } });
+      (verifyAccessToken as jest.Mock).mockResolvedValue({ ok: true, claims: noPasskeyClaims });
       grantRoles(['admin.stock.manage', 'admin.stock.read']);
 
       const result = await authorizeAdminPermissions(REQUIRED, mockRequest);
@@ -331,7 +448,7 @@ describe('authorizeAdminPermission', () => {
     });
 
     it('足りないコードがあれば、MFA でなくても先に権限の 403 を返す（既存の単独版と同じ順）', async () => {
-      (verifyAccessToken as jest.Mock).mockResolvedValue({ ok: true, claims: { ...adminClaims, aal: 'aal1' } });
+      (verifyAccessToken as jest.Mock).mockResolvedValue({ ok: true, claims: noPasskeyClaims });
       grantRoles(['admin.stock.read']);
 
       const result = await authorizeAdminPermissions(REQUIRED, mockRequest);
@@ -436,7 +553,7 @@ describe('authorizeAdminPermission', () => {
     });
 
     it('aal1 の 403 は、reason=mfa と先頭の要るコードを持つ', async () => {
-      (verifyAccessToken as jest.Mock).mockResolvedValue({ ok: true, claims: { ...adminClaims, aal: 'aal1' } });
+      (verifyAccessToken as jest.Mock).mockResolvedValue({ ok: true, claims: noPasskeyClaims });
       grantCodes('admin.stockists.manage');
 
       const result = await authorizeAdminPermissions(['admin.stockists.manage'], mockRequest);
@@ -454,7 +571,7 @@ describe('authorizeAdminPermission', () => {
     it('メールの無い token は email=null、app_metadata の役割が無ければ role=user', async () => {
       (verifyAccessToken as jest.Mock).mockResolvedValue({
         ok: true,
-        claims: { sub: 'user-2', session_id: 's-2', aal: 'aal2' },
+        claims: { ...adminClaims, sub: 'user-2', session_id: 's-2', email: undefined, app_metadata: undefined },
       });
       mockQuery.or.mockResolvedValue({ data: [], error: null });
 

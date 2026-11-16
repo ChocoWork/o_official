@@ -1,4 +1,5 @@
 import { minimalPng } from '../../fixtures/images';
+import { aalFields, withApprovedCount } from '../../unit/helpers/staff-claims';
 
 // 画像の書き込み（管理の POST・PUT）と配り（管理の GET・公開の取り出し）を、窓口・admin-rbac・news-images を本物のまま通して確かめる。
 // 差し替えるのは外との境目（Supabase の client・token の検証・応答の型）だけ
@@ -119,8 +120,8 @@ function setup(options: { newsResult?: Result; sign?: (path: string) => Result }
   );
   createClient.mockResolvedValue(userClient);
   createPublicClient.mockResolvedValue(publicClient);
-  createServiceRoleClient.mockResolvedValue(serviceClient);
-  verifyAccessToken.mockResolvedValue({ ok: true, claims: { sub: 'admin-1', session_id: 'sess-1', aal: 'aal2' } });
+  createServiceRoleClient.mockResolvedValue(withApprovedCount(serviceClient));
+  verifyAccessToken.mockResolvedValue({ ok: true, claims: { sub: 'admin-1', session_id: 'sess-1', ...aalFields('aal2') } });
   checkAuthSessionLiveness.mockResolvedValue('active');
 }
 

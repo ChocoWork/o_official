@@ -4,6 +4,7 @@
 
 import { GET } from '@/app/api/auth/me/route';
 import { authenticateRequest } from '@/lib/auth/authenticate';
+import { staffEntryClaims } from '../../helpers/staff-claims';
 
 jest.mock('next/server', () => ({
   NextResponse: {
@@ -40,9 +41,9 @@ describe('GET /api/auth/me', () => {
     jest.resetAllMocks();
   });
 
-  test('DD-AUTH-026 確かめが通り、役割 admin・aal2 なら mfaVerified が true で全応答の見出しが付く', async () => {
+  test('DD-AUTH-026 確かめが通り、役割 admin で管理の入口の条件の印があれば mfaVerified が true で全応答の見出しが付く', async () => {
     mockedAuthenticateRequest.mockResolvedValue(
-      verifiedWith({ aal: 'aal2', app_metadata: { role: 'admin' } }),
+      verifiedWith({ ...staffEntryClaims(), sub: 'user-1', app_metadata: { role: 'admin' } }),
     );
 
     const req = request();
@@ -84,12 +85,18 @@ describe('GET /api/auth/me', () => {
     expect(body.user.role).toBe('user');
   });
 
+  // 表示のヒント。認めた本数は DB で数えず、JWT の印 staff_passkeys_ok が真なら足りる数・それ以外は 0（DD-AUTH-048）。
   test.each([
-    { aal: 'aal1', expected: false },
-    { aal: 'aal2', expected: true },
-    { aal: undefined, expected: false },
-  ])('DD-AUTH-026 aal が $aal のとき mfaVerified は $expected', async ({ aal, expected }) => {
-    mockedAuthenticateRequest.mockResolvedValue(verifiedWith({ aal }));
+    { label: '今の passkey と印が真', claims: staffEntryClaims(), expected: true },
+    { label: '印が偽（認めた鍵が足りない）', claims: staffEntryClaims({ staff_passkeys_ok: false }), expected: false },
+    { label: '印が無い', claims: staffEntryClaims({ staff_passkeys_ok: undefined }), expected: false },
+    { label: '印が文字列の "true"', claims: staffEntryClaims({ staff_passkeys_ok: 'true' }), expected: false },
+    { label: 'passkey の時刻が24時間より前', claims: staffEntryClaims({ amr: [{ method: 'passkey', timestamp: Math.floor(Date.now() / 1000) - 86401 }] }), expected: false },
+    { label: 'passkey が無い（otp だけ）', claims: staffEntryClaims({ amr: [{ method: 'otp', timestamp: Math.floor(Date.now() / 1000) }] }), expected: false },
+    { label: 'aal2 でも passkey が無い', claims: { sub: 'user-1', aal: 'aal2' }, expected: false },
+    { label: 'aal が aal1 でも今の passkey と印が真', claims: staffEntryClaims({ aal: 'aal1' }), expected: true },
+  ])('DD-AUTH-048 $label のとき mfaVerified は $expected', async ({ claims, expected }) => {
+    mockedAuthenticateRequest.mockResolvedValue(verifiedWith(claims));
 
     const body = await ((await GET(request())) as MeResponse).json();
 

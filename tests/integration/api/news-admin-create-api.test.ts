@@ -1,4 +1,5 @@
 import { minimalGif, minimalJpeg, minimalPng, minimalWebp, textAsImage } from '../../fixtures/images';
+import { aalFields, withApprovedCount } from '../../unit/helpers/staff-claims';
 
 // 窓口・認可（admin-rbac）・監査（audit）は本物を通し、外との境目（Supabase の client・token の検証・応答の型）だけを差し替える
 jest.mock('next/server', () => ({
@@ -132,8 +133,8 @@ function setup(options: { insertResult?: Result; uploadResult?: Result; codes?: 
     options.uploadResult,
   );
   createClient.mockResolvedValue(userClient);
-  createServiceRoleClient.mockResolvedValue(serviceClient);
-  verifyAccessToken.mockResolvedValue({ ok: true, claims: { sub: 'admin-1', session_id: 'sess-1', aal: 'aal2', app_metadata: { role: 'admin' } } });
+  createServiceRoleClient.mockResolvedValue(withApprovedCount(serviceClient));
+  verifyAccessToken.mockResolvedValue({ ok: true, claims: { sub: 'admin-1', session_id: 'sess-1', ...aalFields('aal2'), app_metadata: { role: 'admin' } } });
   checkAuthSessionLiveness.mockResolvedValue('active');
 }
 

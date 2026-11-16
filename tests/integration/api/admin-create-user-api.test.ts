@@ -1,3 +1,4 @@
+import { aalFields, withApprovedCount } from '../../unit/helpers/staff-claims';
 export {};
 
 // 本物の認可（admin-rbac）と本物の監査（audit）を通し、外側の境界（トークンの検証・セッションの生存確認・
@@ -42,7 +43,7 @@ let warnSpy: jest.SpyInstance;
 
 /** user_roles の ACL の照会と audit_logs の挿入を持つ service role の代役。 */
 function installServiceClient() {
-  createServiceRoleClient.mockResolvedValue({
+  createServiceRoleClient.mockResolvedValue(withApprovedCount({
     auth: { admin: { createUser } },
     from: (table: string) => {
       if (table === 'audit_logs') {
@@ -66,13 +67,13 @@ function installServiceClient() {
       }
       throw new Error(`unexpected table ${table}`);
     },
-  });
+  }));
 }
 
 function signIn(claims: Record<string, unknown> = {}) {
   verifyAccessToken.mockResolvedValue({
     ok: true,
-    claims: { sub: ACTOR_ID, email: 'admin@example.com', aal: 'aal2', session_id: 's1', app_metadata: { role: 'admin' }, ...claims },
+    claims: { sub: ACTOR_ID, email: 'admin@example.com', ...aalFields('aal2'), session_id: 's1', app_metadata: { role: 'admin' }, ...claims },
   });
 }
 
@@ -169,7 +170,7 @@ describe('POST /api/admin/create-user', () => {
     });
 
     test('API-ADMIN-001 権限があっても aal2 でなければ 403（MFA required）で、作らない', async () => {
-      signIn({ aal: 'aal1' });
+      signIn({ ...aalFields('aal1') });
 
       const res = await POST(makeRequest(validBody));
 
@@ -362,7 +363,7 @@ describe('POST /api/admin/create-user', () => {
     });
 
     test('API-ADMIN-001 監査の書き込みが失敗しても作成の結果は 201 のまま返る', async () => {
-      createServiceRoleClient.mockResolvedValue({
+      createServiceRoleClient.mockResolvedValue(withApprovedCount({
         auth: { admin: { createUser } },
         from: (table: string) =>
           table === 'audit_logs'
@@ -372,7 +373,7 @@ describe('POST /api/admin/create-user', () => {
                 eq() { return this; },
                 or: async () => ({ data: [{ roles: { role_permissions: [{ permissions: { code: 'admin.users.manage' } }] } }], error: null }),
               },
-      });
+      }));
 
       const res = await POST(makeRequest(validBody));
 

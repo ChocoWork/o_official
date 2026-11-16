@@ -3,6 +3,7 @@ jest.mock('server-only', () => ({}), { virtual: true });
 jest.mock('next/server', () => ({ NextResponse: { json: (body: unknown, init?: ResponseInit) => new Response(JSON.stringify(body), init) } }));
 jest.mock('@/lib/auth/authenticate', () => ({ verifyAccessToken: jest.fn(), checkAuthSessionLiveness: jest.fn() }));
 jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn() }));
+import { aalClaims } from '../../helpers/staff-claims';
 import { GET, PUT } from '@/app/api/admin/kpi/monthly-record/route';
 import { checkAuthSessionLiveness, verifyAccessToken } from '@/lib/auth/authenticate';
 import { createServiceRoleClient } from '@/lib/supabase/server';
@@ -12,7 +13,7 @@ import { MONTHLY_KPI_FORMULAS, SOURCE_METRIC_KEYS, kpiOverrideStorageKey, season
 // admin_set_kpi_monthly_records. It never touches the table directly.
 const ACTOR = '00000000-0000-4000-8000-000000000090';
 const READ = 'admin.orders.read';
-const claims = (aal: string, role = 'admin') => ({ sub: ACTOR, session_id: 'session-1', aal, email: 'owner@example.test', app_metadata: { role } });
+const claims = (aal: string, role = 'admin') => aalClaims(aal, { sub: ACTOR, session_id: 'session-1', email: 'owner@example.test', app_metadata: { role } });
 const grants = { current: [READ] as string[] };
 const fromCalls: string[] = [];
 const rpcImpl = jest.fn();
@@ -22,7 +23,7 @@ const service = {
     const chain = { select: () => chain, eq: () => chain, or: async () => ({ data: [{ roles: { role_permissions: grants.current.map((code) => ({ permissions: { code } })) } }], error: null }) };
     return chain;
   },
-  rpc: (name: string, args: Record<string, unknown>) => rpcImpl(name, args),
+  rpc: (name: string, args: Record<string, unknown>) => name === 'passkey_approved_count' ? Promise.resolve({ data: 2, error: null }) : rpcImpl(name, args),
 };
 const SEASON = '2026SS';
 // 6 months x every key the screen saves (VALID_STORAGE_KEYS).

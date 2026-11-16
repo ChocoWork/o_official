@@ -24,7 +24,7 @@ import { Client } from 'pg';
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
-import { createAdminSessionActor, elevateAdminSessionToAal2 } from './admin-session-test-utils';
+import { createAdminSessionActor } from './admin-session-test-utils';
 import { DUMMY_CAPTCHA_TOKEN } from './captcha-test-utils';
 
 test.use({ trace: 'off' });
@@ -95,16 +95,17 @@ function memberToken(): Promise<string> {
   return memberTokenPromise;
 }
 
-// 同じ利用者・同じ（アプリに結び付いた）session の aal1 と aal2 の JWT。M2 の has_permission は aal2 と生きた結び付きを求めるので、
-// 非公開の行が見える対照は aal2、見えない側は aal1
+// 結び付いた管理者の、認めたパスキー1本（古い名前の aal1）と2本（aal2）の JWT。has_permission は管理の入口の3条件と生きた結び付きを求めるので、
+// 非公開の行が見える対照は2本、見えない側は1本。認めた本数は利用者ごとに DB で数えるので、同じ人の1本・2本は並べられず、別の人にする
 type AdminTokens = { userId: string; aal1Token: string; aal2Token: string };
 let adminAal1Promise: Promise<AdminTokens> | null = null;
 function adminTokens(): Promise<AdminTokens> {
   adminAal1Promise ??= withDb(async (db) => {
     const aal1 = await createAdminSessionActor(db as unknown as PgClient, 'admin', 'aal1');
     createdUserIds.push(aal1.userId);
-    const aal2 = await elevateAdminSessionToAal2(db as unknown as PgClient, aal1);
-    return { userId: aal1.userId, aal1Token: aal1.accessToken, aal2Token: aal2.accessToken };
+    const aal2 = await createAdminSessionActor(db as unknown as PgClient, 'admin', 'aal2');
+    createdUserIds.push(aal2.userId);
+    return { userId: aal2.userId, aal1Token: aal1.accessToken, aal2Token: aal2.accessToken };
   });
   return adminAal1Promise;
 }
@@ -270,7 +271,7 @@ test.describe('FR-SEARCH-020 検索の DB の関数への直接の道', () => {
       expect(held.rows[0].n, '管理者が持つ閲覧の権限の数').toBe(3);
 
       // 対照: 結び付いた aal2 の管理者は、表を直接読むと非公開の行が見える（has_permission が通る。関数の絞りだけが守っていることの確かめ）。
-      // aal1 の JWT は M2 の has_permission が断るので、同じ行が見えない
+      // 認めたパスキー1本の JWT は has_permission が断るので、同じ行が見えない
       for (const [table, id] of [['items', fixture.items.private[0]], ['looks', fixture.looks.private[0]], ['news_articles', fixture.news.private[0]]] as const) {
         const control = await selectRows(request, table, id, admin.aal2Token);
         expect(control.status, `対照: 管理者の aal2 の JWT で ${table} を読む status`).toBe(200);
