@@ -67,6 +67,15 @@ describe('DD-AUTH-040 手元の Supabase の設定を本番の前提にそろえ
     expect(totp.verify_enabled).toBe('true');
   });
 
+  it('DD-AUTH-040 パスキーが有効で、WebAuthn の相手は localhost、出所は 3000 番の2つ。アクセストークンのフックはまだ有効にしない', () => {
+    expect(target['auth.passkey'].enabled).toBe('true');
+    const webauthn = target['auth.webauthn'];
+    expect(webauthn.rp_id).toBe('"localhost"');
+    expect(webauthn.rp_origins).toContain('"http://localhost:3000"');
+    expect(webauthn.rp_origins).toContain('"http://127.0.0.1:3000"');
+    expect(target['auth.hook.custom_access_token']?.enabled).not.toBe('true');
+  });
+
   it('DD-AUTH-040 パスワード変更の通知が有効で、本文のファイルが在り、パスワードを含まない', () => {
     const notice = target['auth.email.notification.password_changed'];
     expect(notice).toBeDefined();
