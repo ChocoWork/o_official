@@ -47,6 +47,8 @@ export function amrCases(now: number): AmrCase[] {
     c('未来の時刻は断る', [pk(now + 1)], false, 'passkey_expired'),
     c('古い passkey と新しい passkey は新しい方で見る', [pk(now - 100000), pk(now - 5)], true),
     c('新しい passkey と古い passkey でも新しい方で見る', [pk(now - 5), pk(now - 100000)], true),
+    c('有効な passkey と未来の passkey は未来の方が最新なので断る', [pk(now), pk(now + 60)], false, 'passkey_expired'),
+    c('未来の passkey と有効な passkey も同じく断る', [pk(now + 60), pk(now)], false, 'passkey_expired'),
     c('古い passkey だけは期限切れ', [pk(now - 100000)], false, 'passkey_expired'),
     c('otp が古くても passkey が新しければ通す', [{ method: 'otp', timestamp: now - 999999 }, pk(now)], true),
     c('amr が空の配列', [], false, 'no_passkey'),

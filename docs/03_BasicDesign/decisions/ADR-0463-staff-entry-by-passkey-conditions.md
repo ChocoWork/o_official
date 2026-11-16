@@ -32,7 +32,7 @@
 
 | 観点 | 以前の私たち | Shopify | 業界の定番 | 結論 |
 | --- | --- | --- | --- | --- |
-| 管理の入口の条件 | `aal2`（TOTP）かどうか | 確かめていない（Shopify の公式資料でスタッフの認証の内部を読んでいない） | 管理者には強い認証を求め、判定は都度サーバーで確かめる（OWASP ASVS V4.1.3。トークンの古い主張に頼らない考え方は V3.3.1 と同じ向き） | 3つの条件に置き換え、3つ目は都度 DB で数える |
+| 管理の入口の条件 | `aal2`（TOTP）かどうか | Shopify はスタッフのログインにパスキーと2段階認証を使える。店主が他のスタッフの2段階認証を有効にすることはできず、Plus の店だけが全員に安全なログイン方法（パスキーなど）を求められる（2026-11-17 に [2段階認証の説明](https://help.shopify.com/en/manual/your-account/account-security/two-step-authentication) で確認）。判定の中身（本数・時刻）は公開資料で確かめていない | パスキーは2つ目の要素を兼ねる。GitHub は「パスキーはパスワードと2FAの両方を満たす」（[About passkeys](https://docs.github.com/en/authentication/authenticating-with-a-passkey/about-passkeys)）、Google は2段階認証の2つ目にパスキーを使える（[ヘルプ](https://support.google.com/accounts/answer/13548313)）。NIST SP 800-63B-4 は同期できるパスキーを、書き出せる鍵として AAL3 未満（AAL2 以下）に置く（[3.2.13・3.1.6.1](https://pages.nist.gov/800-63-4/sp800-63b/authenticators/)。AAL2 に届くと明記した文は、取れた範囲では確認できず、読み取りは推定）。判定は都度サーバーで確かめる（OWASP ASVS V4.1.3。古い主張に頼らない向きは V3.3.1 と同じ） | 3つの条件に置き換え、3つ目は都度 DB で数える |
 | 本数の持ち方 | なし | - | 権限に関わる事実は、署名された古い主張でなく、元の表で確かめる | JWT の印はヒントに下げる |
 
 #### 決定

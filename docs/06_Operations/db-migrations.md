@@ -120,10 +120,10 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 
 | 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
 | --- | --- | --- | --- |
-| `20261117001500_passkey_staff_entry_conditions_fn.sql` | 5292 bytes / `d5d13cd072dc3b65dabf19825c7c36b1` | 本番未適用（手元の `db reset` で適用済み） | `private.staff_passkey_amr_ok(jsonb)`・`staff_passkey_count_ok(uuid)`・`staff_passkey_entry_ok(uuid, jsonb)` の3つの関数を足す |
+| `20261117001500_passkey_staff_entry_conditions_fn.sql` | 5517 bytes / `7cdf0ccb115a040ac26f838e728fa351` | 本番未適用（手元の `db reset` で適用済み） | `private.staff_passkey_amr_ok(jsonb)`・`staff_passkey_count_ok(uuid)`・`staff_passkey_entry_ok(uuid, jsonb)` の3つの関数を足す |
 
-- 変えるもの: 関数3本を足すだけ。`has_permission`・`admin-rbac` は変えない（Task 9 でつなぐ）ので、ログインも管理の入口も今のまま
-- 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `e830a51a5b94477382d9d45bb55dee72`（本番に当てた後、これと突き合わせる）
+- 変えるもの: 関数3本を足すだけ（例外は握って偽を返し、`RAISE WARNING` で SQLSTATE と文を残す）。`has_permission`・`admin-rbac` は変えない（Task 9 でつなぐ）ので、ログインも管理の入口も今のまま
+- 手元の `db reset` の後、`schema_migrations` の `md5(statements[1])` は `467486a932883ea4afb85f8c6d656183`（本番に当てた後、これと突き合わせる）
 - 前の確かめ: `private.passkey_staff_settings()`・`public.passkey_approved_count(uuid)` が在ること。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`
 - 末尾の確かめ: 3本が `SECURITY DEFINER`・`STABLE`・持ち主 `postgres`・`search_path` 空で、`PUBLIC`・`anon`・`authenticated`・`service_role` に `execute` が無い。外れたら `PASSKEY_MIGRATION_ASSERTION_FAILED`（`passkey_entry_function_acl`）
 - 権限の選び方: `service_role` にも渡さない（`private.app_session_is_live` と同じ）。`has_permission` は `SECURITY DEFINER` で持ち主が `postgres` なので、Task 9 で呼べる

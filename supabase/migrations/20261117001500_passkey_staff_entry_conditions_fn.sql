@@ -8,7 +8,8 @@
 -- private.staff_passkey_count_ok(p_user_id uuid) boolean  condition 3, counted in the DB on every call (never from the JWT hint
 --   staff_passkeys_ok): public.passkey_approved_count(user) >= min_approved_passkeys (same join incl. credential_id).
 -- private.staff_passkey_entry_ok(p_user_id uuid, claims jsonb) boolean   both; the cheap check first.
--- All: STABLE, SECURITY DEFINER, owner postgres, search_path empty, fail closed (any error -> false).
+-- All: STABLE, SECURITY DEFINER, owner postgres, search_path empty, fail closed (any error -> false, with a RAISE WARNING
+-- carrying SQLSTATE and SQLERRM; entry_ok has no handler of its own because both parts already catch).
 -- 86400 and 2 are read from private.passkey_staff_settings(); the TS constants come from defaultStaffPasskeySettings().
 --
 -- Grants: execute is revoked from PUBLIC, anon, authenticated AND service_role (same as private.app_session_is_live). has_permission is
@@ -54,6 +55,7 @@ BEGIN
   v_now := floor(extract(epoch FROM now()));
   RETURN v_now - v_ts >= 0 AND v_now - v_ts <= v_max;
 EXCEPTION WHEN OTHERS THEN
+  RAISE WARNING 'staff_passkey_amr_ok failed: % %', SQLSTATE, SQLERRM;
   RETURN false;
 END
 $$;
@@ -69,6 +71,7 @@ BEGIN
     public.passkey_approved_count(p_user_id) >= (private.passkey_staff_settings() ->> 'min_approved_passkeys')::integer,
     false);
 EXCEPTION WHEN OTHERS THEN
+  RAISE WARNING 'staff_passkey_count_ok failed: % %', SQLSTATE, SQLERRM;
   RETURN false;
 END
 $$;
@@ -78,8 +81,6 @@ RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
 AS $$
 BEGIN
   RETURN private.staff_passkey_amr_ok(claims) AND private.staff_passkey_count_ok(p_user_id);
-EXCEPTION WHEN OTHERS THEN
-  RETURN false;
 END
 $$;
 

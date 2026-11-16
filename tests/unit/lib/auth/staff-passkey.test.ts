@@ -42,6 +42,23 @@ describe('staff passkey entry conditions', () => {
     expect(result).toEqual(ok ? { ok: true } : { ok: false, reason: 'passkeys_insufficient' });
   });
 
+  it.each([[Infinity], [NaN], ['2'], [2.5], [-1], [undefined], [null]])(
+    'DD-AUTH-047 本数が %p のように整数でない・負なら閉じる側に倒す',
+    (count) => {
+      const claims = { amr: [{ method: 'passkey', timestamp: NOW }] };
+      expect(evaluateStaffEntry(claims, count as unknown as number, NOW)).toEqual({ ok: false, reason: 'passkeys_insufficient' });
+    },
+  );
+
+  it('DD-AUTH-047 今の秒が小数でも切り捨てて境界を比べる（86400秒は通し、86401秒は断る）', () => {
+    const at = (age: number) => [{ method: 'passkey', timestamp: NOW - age }];
+    expect(evaluateStaffEntry({ amr: at(86400) }, 2, NOW + 0.9)).toEqual({ ok: true });
+    expect(evaluateStaffEntry({ amr: at(86401) }, 2, NOW + 0.9)).toEqual({ ok: false, reason: 'passkey_expired' });
+    expect(evaluateStaffEntry({ amr: at(0) }, 2, NOW + 0.9)).toEqual({ ok: true });
+    expect(evaluateStaffEntry({ amr: [{ method: 'passkey', timestamp: NOW + 1 }] }, 2, NOW + 0.9))
+      .toEqual({ ok: false, reason: 'passkey_expired' });
+  });
+
   it('DD-AUTH-047 passkey が無ければ本数が多くても no_passkey、期限切れなら本数より先に passkey_expired', () => {
     expect(evaluateStaffEntry({ amr: [] }, 9, NOW)).toEqual({ ok: false, reason: 'no_passkey' });
     expect(evaluateStaffEntry({ amr: [{ method: 'passkey', timestamp: NOW - 86401 }] }, 0, NOW))

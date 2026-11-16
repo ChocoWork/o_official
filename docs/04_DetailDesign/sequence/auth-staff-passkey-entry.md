@@ -192,7 +192,9 @@ flowchart TD
 - 順番: 条件1（`passkey` が無ければ `no_passkey`）→ 条件2（外れたら `passkey_expired`。未来の時刻も外れ）→ 条件3（`passkeys_insufficient`）。SQL は `staff_passkey_amr_ok`（1・2）と `staff_passkey_count_ok`（3）を、`staff_passkey_entry_ok` が両方つなぐ
 - 時刻: `timestamp` は JSON の数で整数の物だけ。文字列・小数・null・欠落は `passkey` と数えない。`passkey` の要素が複数なら最新を使う。`now` は秒に切り捨てる（SQL は `floor(extract(epoch from now()))`。取引の中で変わらない）
 - 定数: TS の `STAFF_MAX_SESSION_SECONDS`・`STAFF_MIN_APPROVED_PASSKEYS` は `defaultStaffPasskeySettings()` から取る（3つ目の写しを作らない）。SQL は設定の行（`private.passkey_staff_settings()`）から読む。値を変える時は、初めの値の関数と設定の行の既定値を同じコミットで変える（単体テストが一致を確かめる）
-- 異常: SQL は例外を握って偽（閉じる側）を返す。claims が NULL でも例外を投げない
+- 異常: SQL は例外を握って偽（閉じる側）を返し、`RAISE WARNING` で SQLSTATE と文を残す。claims が NULL でも例外を投げない
+- TS の入力の締め: 今の秒は切り捨てる（SQL と同じ）。本数が整数でない・負・NaN・無限大・文字列なら `passkeys_insufficient`（閉じる側）
+- 既知の精度の差（受け入れる）: `timestamp` が `1800000000.0000000000000001` のように、JS の数で丸めると整数になる小数だと、SQL は小数として断り、TS は `JSON.parse` の丸めで整数と見て通す。作れるのは署名された JWT を偽造できる人だけで、GoTrue は整数の秒しか出さない。SQL のほうが厳しい側なので、そのまま受け入れる
 - 認可: 3つの関数は `public`・`anon`・`authenticated`・`service_role` に `execute` を渡さない
 - 文言: 403 の本文 `MFA required` と `denial.reason = 'mfa'` はこの段では変えない（意味だけパスキーの条件に変わる。名前の変更は段4。ADR-0463）
 - テスト観点: `amr` の欠落・空・配列でない・文字列の時刻・小数・未来・86400秒・86401秒・`oauth`/`otp` だけ、本数 0・1・2、印が真でも1本なら断る、認めた鍵を消した直後に偽、引き金が働かなくても実在しない鍵は数えない、設定の行の変更が効く、権限
