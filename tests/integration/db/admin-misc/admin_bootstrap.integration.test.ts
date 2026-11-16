@@ -92,11 +92,12 @@ describeLocalDb('integration: 最初の店長を作るコマンド', (db) => {
     if (!result.ok) return;
     createdIds.push(result.userId);
 
-    // 作ったパスワードでログインでき、違うパスワードでは入れない（createUser がパスワードを正しく渡していること）。
+    // パスキーへの切り替え後、店長はパスワードだけでは入れない。正しいパスワードは Auth を通り、フックが [staff-passkey-required] で断る
+    // （createUser がパスワードを正しく渡している証拠）。違うパスワードは別の誤りで断られる。
     const anon = createClient(anonUrl, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
     const ok = await anon.auth.signInWithPassword({ email, password: PASSWORD, options: { captchaToken: CAPTCHA_TOKEN } });
-    expect(ok.error?.message ?? null).toBeNull();
-    expect(ok.data.user?.id).toBe(result.userId);
+    expect(ok.error?.message ?? '').toContain('staff-passkey-required');
+    expect(ok.data.session).toBeNull();
     const bad = await anon.auth.signInWithPassword({ email, password: `${PASSWORD}-wrong`, options: { captchaToken: CAPTCHA_TOKEN } });
     expect(bad.error).not.toBeNull();
     expect(bad.data.user).toBeNull();
