@@ -1,6 +1,6 @@
 # 要件定義書
 
-> 2026-11-16 確認日（会計の自動で入れる実装 S27 の最終レビューの直し）: FREQ-643 の状態の行を「手元で実装済み・本番適用はこれから」に直し、AC-04 の「pay を超える分」を、エラーにせず異常の一覧に出る（D16・D17）に直した。
+> 2026-11-16 確認日（会計の自動で入れる実装 S27 の本番適用の記録: FREQ-643 の状態の行を「本番適用済み（2026-11-16）」に直した。前: 最終レビューの直し）: FREQ-643 の状態の行を「手元で実装済み・本番適用はこれから」に直し、AC-04 の「pay を超える分」を、エラーにせず異常の一覧に出る（D16・D17）に直した。
 > 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 3）: FREQ-581-AC-05 の「確定の日より後に返品を0円で終えた仕訳が先に入っている」場合は、取り消しの計上係が C と直し（`dispute_event:closefix:<dp>:<n>`）を自動で入れる（FREQ-643-AC-04）。証明は `accounting_p3_pending_auto_posting`。
 
 > 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 6）: FREQ-569-AC-01・AC-07、FREQ-581-AC-05 の行を、計上待ちの `dispute_lost`・`return_closed_after_lost` の専用の文（手で仕訳を入れる案内）が無くなり、`dispute_refund_overlap`・`dispute_return_refund_pending` の文が人の操作を書く文になったことに直した（画面の文字だけ。移行は無い）。
@@ -2063,7 +2063,7 @@
 
 ## 返品の0円の終わりとカード会社の確定の重なりを計上係が自動で入れる（FREQ-643）
 
-状態: 現行の要求（設計は [2026-11-15 の設計書](../superpowers/specs/2026-11-15-accounting-pending-manual-entry-design.md)、計画は [2026-11-15 の計画](../superpowers/plans/2026-11-15-accounting-pending-auto-posting.md)）。実装の状態: 手元の Supabase での実装は済み（移行 S27・計上係・計上待ちの一覧の文。DB 結合の試験で確認）。本番の適用はこれから（オーナーの許可が要る）。
+状態: 現行の要求（設計は [2026-11-15 の設計書](../superpowers/specs/2026-11-15-accounting-pending-manual-entry-design.md)、計画は [2026-11-15 の計画](../superpowers/plans/2026-11-15-accounting-pending-auto-posting.md)）。実装の状態: 手元の Supabase での実装は済み（移行 S27・計上係・計上待ちの一覧の文。DB 結合の試験で確認）。本番適用済み（2026-11-16。オーナーの許可で CLI の `db push --linked --include-all`、読むだけの確かめは期待と一致）。
 
 | 要求ID | 要求内容 | 要件ID | 要件内容 | 受け入れ条件ID | 受け入れ条件 |
 | --- | --- | --- | --- | --- | --- |

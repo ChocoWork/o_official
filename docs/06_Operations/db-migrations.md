@@ -1,6 +1,7 @@
 # DB マイグレーション運用
 
 > 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 1）: 新しい移行 `20261116000000_accounting_p3_pending_auto_posting.sql`（S27。手元の DB のみ・本番未適用。残りの Task が育てる途中の形）の骨組みを足した。前の確かめ（`acc_s27_precheck`。S24 の結ぶ関数で閉じた `dispute_lost`／`return_closed_after_lost` の行が1件でもあれば止まる。開いた行の件数は NOTICE で出す）、私用の関数2つ（`private.accounting_order_refunds_in_flight`・`private.accounting_order_return_payable`。誰にも EXECUTE を渡さない）、`private.accounting_refund_wait` の作り直し（置き換え1つ。入れない決定を済みと数える）まで。行は書かない。末尾の確かめ（Task 4）は6段そろい、大きさと MD5・作り直した関数・戻し方は末尾の「計画 3 の移行 S27」の節に書いた。本番の適用手順の最後の確認（開いた行の件数・適用の許可）は、本番に当てる時に追記する。
+> 2026-11-16 確認日（会計の自動で入れる実装 S27 の本番適用）: 移行 `20261116000000_accounting_p3_pending_auto_posting.sql`（S27）を、オーナーの許可で本番 `pjidrgofvaglnuuznnyj` へ CLI の `db push --linked --include-all` で当てた。当てた後の読み取りの確かめはすべて期待と一致した。末尾の S27 の節の状態の欄と「本番への適用の記録（2026-11-16）」に書いた。以下の確認日の「本番未適用」は当時の記録。
 > 2026-11-15 確認日（会計の計画3 Task 14）: 計画3の移行 S15〜S26 の12本を、オーナーの承認で本番 `pjidrgofvaglnuuznnyj` へ CLI の `db push --linked --include-all` で当てた。版はファイル名のまま。当てた後の読み取りの確かめはすべて期待と一致し、関数407個の本文の指紋も手元と同じ。末尾の計画3の節の状態の欄と「本番への適用の記録（2026-11-15）」に書いた。以下2つの確認日の「本番未適用」は当時の記録。
 > 2026-11-15 確認日（会計の計画3 Task 13）: 末尾に「会計の作り直し 計画 3 の移行 S15〜S26（手元の DB で確認済み・本番未適用）」の節を足した（目的・順・大きさと MD5・作り直した関数・末尾の検査と戻し方・直した既存の試験）。X4 など交換の印の節は変えていない。本番へ当てる作業と記録は計画3の Task 14。
 > 2026-11-15 確認日（会計の計画3 最終レビューの直し）: 新しい移行 `20261115100000_accounting_p3_final_fixes.sql`（S26。本番未適用）を足した。行も表も足さず、関数7本の本文だけ作り直す（返送不要の返品の返金・普通の返品の借りの結びの断り・返品の返金待ちの負の異常）。末尾の計画3の節に行と戻し方を足した。
@@ -1741,13 +1742,13 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 | 画面・route の単体 | `order-refund-route`・`order-return-money-routes`・`order-return-review-routes`・`order-status-shipped`・`shipment-slip-confirm-route`・`order-returns-routes`・`accounting-pending-events-route`・`labels`・`posting-runner`・`posting-store`・`pending-view`・`SwitchToggle`、`kpi-*` の3つ（`post_shipment_refund` を足した） | 新しい応答（`DISPUTE_HOLD`・`disputeHold`・`arrivedOn`）と文の一覧に合わせた |
 
 
-## 会計の作り直し 計画 3 の移行 S27（手元の DB で確認済み・本番未適用）
+## 会計の作り直し 計画 3 の移行 S27（手元の DB で確認済み・2026-11-16 本番適用済み）
 
-確認日: 2026-11-15（会計の自動で入れる実装 S27 Task 4）。FREQ-643。計画は [負けた取り消しと返品の0円の終わりの自動計上](../superpowers/plans/2026-11-15-accounting-pending-auto-posting.md)、設計は [設計](../superpowers/specs/2026-11-15-accounting-pending-manual-entry-design.md)。運用の見方は[会計の返品・返金の運用](accounting-p3-returns-refunds.md)の14・15節。
+確認日: 2026-11-16（会計の自動で入れる実装 S27 Task 8 Step 7。前: 2026-11-15 Task 4）。FREQ-643。計画は [負けた取り消しと返品の0円の終わりの自動計上](../superpowers/plans/2026-11-15-accounting-pending-auto-posting.md)、設計は [設計](../superpowers/specs/2026-11-15-accounting-pending-manual-entry-design.md)。運用の見方は[会計の返品・返金の運用](accounting-p3-returns-refunds.md)の14・15節。
 
 | 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
 | --- | --- | --- | --- |
-| S27 `20261116000000_accounting_p3_pending_auto_posting.sql` | 105,118 bytes / `065dc3a77ba6e00e09f21ee763734cbc` | 手元の DB のみ（本番未適用。当てるにはオーナーの許可が要る） | 計上待ちの `order_not_postable` のうち `dispute_lost`・`return_closed_after_lost` を、人の操作なしに計上係が自動で入れる（または `no_revenue` で閉じる）。新しい表・理由・権限・画面は作らない |
+| S27 `20261116000000_accounting_p3_pending_auto_posting.sql` | 105,118 bytes / `065dc3a77ba6e00e09f21ee763734cbc` | 本番適用済み（2026-11-16、CLI `db push --linked --include-all`、版はファイル名のまま） | 計上待ちの `order_not_postable` のうち `dispute_lost`・`return_closed_after_lost` を、人の操作なしに計上係が自動で入れる（または `no_revenue` で閉じる）。新しい表・理由・権限・画面は作らない |
 
 - 前の確かめ（`acc_s27_precheck`）: S24 の結ぶ関数で閉じた `dispute_lost`／`return_closed_after_lost` の行（`resolved_at`・`resolved_entry_id`・`resolved_by` がそろった行）が1件でもあれば `ACCOUNTING_MIGRATION_ASSERTION_FAILED / 55000` で止まる。開いた行の件数は `RAISE NOTICE` で出す。**当てる前に、本番の開いた行の件数を読むだけの問い合わせで確かめ、手順書（[運用](accounting-p3-returns-refunds.md)の16節）の記録欄に書く。**
 - 新しい関数（私用。`private`・SECURITY DEFINER・STABLE・`search_path` が空・所有者 `postgres`・誰にも EXECUTE を渡さない）: `private.accounting_order_return_payable(uuid,date)`・`private.accounting_order_refunds_in_flight(uuid,uuid)`。
@@ -1755,3 +1756,15 @@ S11 を戻す時は、先に S8 の出荷の関数と S9 の残高の照合の�
 - 末尾の検査の名前（`acc_s27_` の後）: `functions`・`function_attrs`・`body_unchanged`・`c_shape_unchanged`・`no_new_reason`・`existing_dml_allowlist`。新しい関数2つの本体の md5、作り直した3つの関数の元の字（`ACC_P3_REPLACE` の md5 で戻す）、足した塊の中身の needle（D12〜D17 の条件・上限を含む）、S22 の C の部分の md5（S22 :652-676）、2つの計上係の本体全体（足した塊・置き換えた所を含む。空白を除く）の md5、理由の CHECK が20個のままであること、を見る。改ざんの一覧と落ちる段は `accounting_p3_migration_asserts.integration.test.ts` の「S27改ざん」。
 - 戻し方: 行は書かないので、いつでも戻せる。**1つの取引の中で**、2つの計上係を S22 の定義へ `CREATE OR REPLACE` し（計上係が新しい関数2つを呼ぶので先に戻す）、`DROP FUNCTION private.accounting_order_refunds_in_flight(uuid,uuid), private.accounting_order_return_payable(uuid,date)`、`accounting_refund_wait` を S20 の定義へ戻す。S20 の待ちに戻す前に、入れない決定として `no_revenue` で閉じた行（`return_amount_decided`・`resolved_entry_id` が NULL）を数える。あれば、S20 の待ちに戻すとその返品の後の返金が `return_prior` で永久に待つので、S27 の待ちを残す。ただし、S27 の後に計上係が自動で入れた仕訳（返品の額の決定・直し）と、`no_revenue` で閉じた行は戻らない（取り消しの仕訳で打ち消す。前へ直す）。
 - 手元で確かめた結果（2026-11-15。`npx.cmd supabase db reset` の後）: `accounting_p3_migration_asserts`・`accounting_p3_pending_manual_close`・`accounting_p2_migration_asserts` の3本が全部通る。
+
+### 本番への適用の記録（2026-11-16）
+
+- 2026-11-16 にオーナーの許可を得て、CLI の `supabase db push --linked --include-all` で S27 の1本を当てた（先の `--dry-run` の対象は S27 だけだった）。接続先は本番 `pjidrgofvaglnuuznnyj`。版はファイル名のまま（`20261116000000`）で、付け直しは無い。push（git）はしていない。
+- 当てる直前に読み直した数（読むだけ）: 本番の最後の移行は `20261115100000`。`accounting_pending_events` は0件（開いた行0、`dispute_lost`・`return_closed_after_lost` は0）、`accounting_journal_entries` は15件、`order_refunds`・`order_returns`・`orders` は0件。ファイルは105,118 bytes・md5 `065dc3a77ba6e00e09f21ee763734cbc`・CR 0・ASCII 以外0。
+- 当てた後に読むだけで確かめた（本番には何も書いていない。手元の `db reset` 後と同じ）:
+  - `schema_migrations` に `20261116000000` `accounting_p3_pending_auto_posting`、文は16個、`md5(statements[1])` は `19aad9f2fe3ce0023298ab83f7e75775`、全文を改行でつないだ md5 は `29837f69aeb6f30b58abc946ae64b884`。
+  - 関数の本文の md5（`prosrc`）: `private.accounting_post_return_events(integer)` `753fefc0732fc4c65273990b1c0b7a6e`、`private.accounting_post_dispute_events(integer)` `d2e20b94969628cba17618f73be25d74`、`private.accounting_refund_wait(uuid,text)` `b25e3328040443c98213aa0ae29d3d86`、`private.accounting_order_refunds_in_flight(uuid,uuid)` `03af6453ed5b0d413b848cfd3e15810b`、`private.accounting_order_return_payable(uuid,date)` `8b584aa7739986471568b85431182d37`。5本とも ACL は `{postgres=X/postgres}` だけ（anon・authenticated・service_role には無い）。
+  - 理由の CHECK の値は20個のまま。`private.group_g_writer_allowlist()` は77本、署名を並べた md5 は `e44fc230396d2d5f85266b09f250a048`（手元と同じ）。
+  - 当てた後も `accounting_pending_events` は0件、`accounting_journal_entries` は15件。
+- 手元の検証（Task 8 Step 1・2）: DB 結合 7213 件通過（3件は計上待ちの硬い試験の SQL が残した汚れによる失敗で、`db reset` 後は78/78）、コミットする試験3回（各222件）、単体 18709 件通過、E2E 全件は 36 失敗・5330 通過・26 skip（基準は 88/5061/26。36件は `db reset` 後にすべて通る。FR-ADMIN-134 の失敗の原因はこの計画の `postSales` の試験の準備で、`d7494fb9` で直した）。この計画のコミットは `14c6c41d`〜`d7494fb9` と記録のコミット。
+- コードの配備はしていない。計上係の自動の仕訳は、計上の定期実行（10分おき。`supabase/pending/schedule_accounting_post.sql`）が登録されるまで、新しい出来事が来た時にだけ動く。
