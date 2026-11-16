@@ -25,6 +25,7 @@
 
 ## 前提
 
+- **このコマンドで作った店長が入れるのは、パスキーの切り替え（移行 E と Auth のフックの登録）より前だけ**。E とフックの後は、パスワード＋TOTP の店長は管理の権限を持てない（フックが店員のパスワード・メールのコードを拒否し、`has_permission` はパスキーを求める）。E とフックの後に最初の店長が要る時は、段1b の招待の流れが要る。段3は、最初の店長に認めたパスキーを2本つけてから E を当てる順で進める（[当て方の順と前提](./db-migrations.md)）
 - このコマンドは**本番用**。手元は段1a の新しい手順（`npm run dev:staff`。[Task 10](../superpowers/plans/2026-11-16-passkey-stage1a-foundation.md)。下の「手元の開発で店員として入る」）を使う。段1a の切り替え（Task 9）の後は、このコマンドで作った店長（パスワード＋TOTP）は、手元で `npm run db:reset` の後に動かない（フックが店員のパスワード・メールのコードを拒否する。SEC-AUTH-040）
 - ほかの環境: 新しい Supabase に、全部の移行（`supabase/migrations/`）を当てた後。`roles` の表に `admin` の行があること
 - 環境変数 `SUPABASE_URL`（無ければ `NEXT_PUBLIC_SUPABASE_URL`）と `SUPABASE_SERVICE_ROLE_KEY` が要る。コマンド自体は `.env` を読まない

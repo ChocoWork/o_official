@@ -226,24 +226,23 @@ flowchart LR
 
 ### 1-3 skip の一覧（パスキー段1a Task 9。店員のパスワード＋TOTP・メールのコードの道を通す試験）
 
-切り替えの後、手元では店員がアプリの画面（パスワード・メールのコード・TOTP）から入れない（GoTrue のフックが拒否する。SEC-AUTH-040）。skip にするのは、確かめている中身が**段4で消す機能**（TOTP の画面と窓口、パスワードのログイン、`create-user`、MFA のやり直し、最初の店長のコマンド）の試験だけ。店員を古い道で作っているだけで、確かめている中身が今も効く守りの試験は、`createAdminSessionActor`・`provisionStaff` に書き直して通す（FR-NEWS-SEC-005・FR-STOCKIST-014・016・FR-ADMIN-MISC-003・004・005・FR-LOGIN-031 の 010-AC-01・010-AC-03・FR-SEARCH-020 など）。形は `test.skip(true, '段4で消す機能: <理由>')`。どれも3つの幅（390・768・1280）のくり返しの中にあり、定義10件・実行30件が skip になる（Task 9 の最初のコミットでは14件・42件だったが、まだ効く守りの4件〔`FR-LOGIN-007-AC-02`・`FREQ-316-REQ-01-AC-01`・`FREQ-316-REQ-03-AC-01`・`FR-AUTH-006-AC-06`〕は書き直して通す方に戻した）。**戻す段: 段4**（1b でパスキーの画面ができても、パスワード・TOTP の画面は段4まで残るが、店員がそこから入れない状態は 1b の後も変わらない。段4で、試験ごと消すか、パスキーの画面の試験に作り直す）。
+切り替えの後、手元では店員がアプリの画面（パスワード・メールのコード・TOTP）から入れない（GoTrue のフックが拒否する。SEC-AUTH-040）。skip にするのは、確かめている中身が**段4で消す機能**（TOTP の画面と窓口、パスワードのログイン、`create-user`、MFA のやり直し、最初の店長のコマンド）の試験だけ。店員を古い道で作っているだけで、確かめている中身が今も効く守りの試験は、`createAdminSessionActor`・`provisionStaff` に書き直して通す（FR-NEWS-SEC-005・FR-STOCKIST-014・016・FR-ADMIN-MISC-003・004・005・FR-LOGIN-031 の 010-AC-01・010-AC-03・FR-SEARCH-020 など）。形は `test.skip(true, '段4で消す機能: <理由>')`。どれも3つの幅（390・768・1280）のくり返しの中にあり、定義9件・実行29件が skip になる（最終レビュー M-5 で SEC-AUTH-031-AC-02 を作り直し、1件・1実行減った）（Task 9 の最初のコミットでは14件・42件だったが、まだ効く守りの4件〔`FR-LOGIN-007-AC-02`・`FREQ-316-REQ-01-AC-01`・`FREQ-316-REQ-03-AC-01`・`FR-AUTH-006-AC-06`〕は書き直して通す方に戻した）。**戻す段: 段4**（1b でパスキーの画面ができても、パスワード・TOTP の画面は段4まで残るが、店員がそこから入れない状態は 1b の後も変わらない。段4で、試験ごと消すか、パスキーの画面の試験に作り直す）。
 
 | ファイル | `test` 名（先頭） | 理由（確かめている中身） | 戻す段 |
 | --- | --- | --- | --- |
 | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts` | `SEC-AUTH-009-AC-01` 同じ利用者の6回目の TOTP の確認が 429 | TOTP の確認の窓口の回数の制限 | 段4 |
 | 同上 | `SEC-AUTH-009-AC-02` TOTP の失敗が監査に残る | TOTP の確認の窓口の監査 | 段4 |
-| 同上 | `SEC-AUTH-010-AC-02` aal2 の管理者の JWT では今どおり他人の注文が読める | TOTP で aal2 に上げた店員。同じ中身の確かめは FR-LOGIN-031 の `SEC-AUTH-010-AC-03`（認めたパスキー2本）に移した | 段4 |
+| 同上 | `SEC-AUTH-010-AC-02` aal2 の管理者の JWT では今どおり他人の注文が読める | AC-03 が同じことを確かめる（FR-LOGIN-031 の `SEC-AUTH-010-AC-03`。認めたパスキー2本の店員が RLS で他人の注文を読める）。TOTP で aal2 に上げる入り方そのものは段4で消す | 段4（置き換え済み） |
 | 同上 | `SEC-AUTH-030-AC-01` TOTP の登録と確認の成功が監査に残る | TOTP の登録・確認の窓口の監査 | 段4 |
 | 同上 | `SEC-AUTH-031-AC-01` メール OTP を通っていない aal1 の session では初めての TOTP を登録できない | TOTP の最初の登録の窓口 | 段4 |
 | 同上 | `FREQ-316-REQ-02-AC-01` TOTP の確認の後の Cookie の access token が aal2 になり、aal1 のトークンでは管理の窓口が 403 になる | TOTP で aal2 になる流れ。管理の入口の判定は FR-LOGIN-039 に移した | 段4 |
-| `e2e/FR-LOGIN-038-login-return-to.spec.ts` | `FR-AUTH-005-AC-05` 管理者は確認コードの後に /auth/verified で 2 段目を通してから戻り先（/item）へ移る | 管理者が TOTP の2段目を通る流れ | 段4 |
-| 同上 | `FR-AUTH-005-AC-05` 戻り先の無い管理者は 2 段目の後に /admin へ移る | 同上 | 段4 |
-| `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts` | `SEC-AUTH-031-AC-02` TOTP の無い管理者が /auth/v1/otp と /auth/v1/verify を直接呼んで得た通行証で /api/auth/mfa/enroll-totp を叩くと… | TOTP の登録の窓口。店員のメールのコードはフックが拒否するので、前提の通行証を作れない | 段4 |
+| `e2e/FR-LOGIN-038-login-return-to.spec.ts` | `FR-AUTH-005-AC-05` 管理者は確認コードの後に /auth/verified で 2 段目を通してから戻り先（/item）へ移る | 店員がログインの後に戻り先へ移る動きは、段1b で `return-intent-service.ts` などの `aal` の判定を直す時に、パスキーのログインで作り直す。追跡の道具は skip した受け入れ条件も「試験あり」と数えるので、1b で見落とさない | **段1b**（作り直し） |
+| 同上 | `FR-AUTH-005-AC-05` 戻り先の無い管理者は 2 段目の後に /admin へ移る | 同上（段1b で作り直す） | **段1b**（作り直し） |
 | `e2e/FR-ADMIN-MISC-008-first-admin-bootstrap.spec.ts` | `FR-ADMIN-010-AC-01` コマンドで作った店長が、ログインの後に最初の TOTP の登録の画面へ進める | 最初の店長のコマンド `admin:bootstrap`（パスワード＋TOTP。本番用に残し、コードは変えない）。手元の手順は Task 10 | 段4（コマンドを残す間は、試験は本番の流れの確かめ） |
 
-書き直して通す方にした試験（skip にしない）: `FR-LOGIN-032` の `FR-LOGIN-007-AC-02`（認めたパスキー1本の店員は管理画面・窓口で断られ、2本は通る）・`FREQ-316-REQ-01-AC-01`・`FREQ-316-REQ-03-AC-01`（`createAdminSessionActor` と `placeAdminCookies` で Cookie だけの認証・iss/aud・ログアウトの失効を確かめる）、`FR-ACCOUNT-046` の `FR-AUTH-006-AC-06`（パスワード変更の start の門は段3まで生きている。**今の挙動の確認**: パスキーの店員は認めたパスキー2本でも JWT の aal が aal1 のままなので、start の門〔役割が管理者・サポーターで aal が aal2 でなければ 403〕で閉じる側に断られる。コードは変えていない。段4でパスワード変更の窓口ごと消す時に試験も消す）、`FR-NEWS-SEC-005`・`FR-STOCKIST-014`・`FR-STOCKIST-016`・`FR-ADMIN-MISC-003`（強制失効・MFA のリセットの守り。サポーターをパスキーの店員で作る）・`FR-ADMIN-MISC-004`・`005`・`FR-SEARCH-020`・`FR-LOGIN-031` の `SEC-AUTH-010-AC-01`・`010-AC-03`。作りは、同じ人の1本・2本の JWT を並べない（認めた本数は DB で数えるので、2本目を足すと先の JWT も通る）形に直した。`FR-ADMIN-MISC-002`（`create-user`）は、窓口の試験が管理の入口を通る店員で動くので skip にしない。
+書き直して通す方にした試験（skip にしない）: `FR-LOGIN-031` の `SEC-AUTH-031-AC-02`（`app_metadata.role` だけを admin にした利用者〔`user_roles` なし〕で作り直した。店員のメールのコードはフックが拒否するが、`enroll-totp` は役割を `app_metadata` で見るので、結び付きの守りには今も届く。最終レビュー M-5）、`FR-LOGIN-032` の `FR-LOGIN-007-AC-02`（認めたパスキー1本の店員は管理画面・窓口で断られ、2本は通る）・`FREQ-316-REQ-01-AC-01`・`FREQ-316-REQ-03-AC-01`（`createAdminSessionActor` と `placeAdminCookies` で Cookie だけの認証・iss/aud・ログアウトの失効を確かめる）、`FR-ACCOUNT-046` の `FR-AUTH-006-AC-06`（パスワード変更の start の門は段3まで生きている。**今の挙動の確認**: パスキーの店員は認めたパスキー2本でも JWT の aal が aal1 のままなので、start の門〔役割が管理者・サポーターで aal が aal2 でなければ 403〕で閉じる側に断られる。コードは変えていない。段4でパスワード変更の窓口ごと消す時に試験も消す）、`FR-NEWS-SEC-005`・`FR-STOCKIST-014`・`FR-STOCKIST-016`・`FR-ADMIN-MISC-003`（強制失効・MFA のリセットの守り。サポーターをパスキーの店員で作る）・`FR-ADMIN-MISC-004`・`005`・`FR-SEARCH-020`・`FR-LOGIN-031` の `SEC-AUTH-010-AC-01`・`010-AC-03`。作りは、同じ人の1本・2本の JWT を並べない（認めた本数は DB で数えるので、2本目を足すと先の JWT も通る）形に直した。`FR-ADMIN-MISC-002`（`create-user`）は、窓口の試験が管理の入口を通る店員で動くので skip にしない。
 
-**tooling の穴（別に直す）**: `docs/05_Quality/reports/test-gaps.md` は本文の中の `test.skip(true, …)` を数えられない（`test.skip(title, fn)` の形だけ見る）。このため、上の10件も、トレースの出力では ACを覆う試験として数えられたままになる。この一覧が正で、トレース側の直しは別の作業にする。
+**tooling の穴（別に直す）**: `docs/05_Quality/reports/test-gaps.md` は本文の中の `test.skip(true, …)` を数えられない（`test.skip(title, fn)` の形だけ見る）。このため、上の9件も、トレースの出力では ACを覆う試験として数えられたままになる。この一覧が正で、トレース側の直しは別の作業にする。
 
 DB 結合・単体: `grep -rlE "aal2" tests` は92ファイルに残るが、古い名前の `'aal2'`・`'aal1'` を `aalClaims`・`aalFields`・`jwtClaims(..., 'aal2')`・`createLiveAppSession(..., { aal })` の引数に使っているもの（いずれも今は passkey の amr＋認めたパスキーの本数に読み替える。認めた本数が足りない側は `'aal1'`）と、TOTP・ログインの画面側の判定（`mfa-*`・`post-login`・`return-intent`・`verified` 系。切り替えでは変わらず、段4で TOTP と一緒に消える）で、判定が `aal2` のままの試験は無い。
 
@@ -384,6 +383,8 @@ G と H の順番・範囲（G-1〜G-4・H-1）は1章、開店前に直す物�
 | 0 | 本番で試した送信待ちのメールを確かめて片付ける（取りやめはユーザーの承認の後） | ユーザーと Claude | D | まだ |
 | 1 | Vercel に公開し、環境変数を入れる（`CRON_SECRET`・`SHOP_ALERT_EMAIL`・`MAIL_FROM_ADDRESS`・`MAIL_PROVIDER=resend`・`RESEND_API_KEY`（Full access）・`RESEND_DELIVERY_WEBHOOK_SECRET`・`STRIPE_SECRET_KEY`・`NEXT_PUBLIC_SITE_URL`（build の前）・`ORDER_STATUS_SESSION_SECRET`・`JWT_SECRET`・お問い合わせの `CONTACT_INBOUND_DOMAIN`・`CONTACT_REPLY_SECRET`）。System Environment Variables を公開する設定を有効にする | ユーザー | B・D・E-5・お問い合わせ | まだ |
 | 1a-2 | supabase-js 2.119.0 は Node 22 以上が要る。最初のデプロイの前に、Vercel の Node を 22 以上にし、`package.json` に `engines`（`node >=22`）を足す | Claude（Vercel の設定はユーザーと） | パスキー 段1a Task 2 | まだ |
+| 1a-3 | パスキー段1a の本番への当て方（A→B→C→D→E の順）。**A を先に当ててからアプリをデプロイ**（`admin-rbac` が `passkey_approved_count` を呼び、A が無いと管理 API が 503）。フックの登録は B の後。E は最後で、段3で店員が認めた鍵を2本ずつ持ってから。段3まで `db push` は使わない（別の作業の移行も MCP で1本ずつ）。順・戻し方・確かめは [当て方の順と前提](../../../06_Operations/db-migrations.md) | 調整役（オーナーの許可で） | パスキー 段1a 最終レビュー I-1〜I-3 | まだ |
+| 1a-4 | 段3の前に決める・確かめる: 本番の `rp_id`・`rp_origins`（[supabase-auth-config.md](../../../06_Operations/supabase-auth-config.md) の行）、本番の `postgres` が `auth.webauthn_credentials` に `TRIGGER` と `SELECT` を持つこと、本番の GoTrue の版でフックの戻りとパスキーの API が通ること、最初の店長の道（`admin:bootstrap` は E とフックの前だけ。[first-admin-bootstrap.md](../../../06_Operations/first-admin-bootstrap.md)） | ユーザーと Claude | パスキー 段1a 最終レビュー I-3 | まだ |
 | 1b | Vercel の本番の `NEXT_PUBLIC_SITE_URL` を本番の住所にする。未設定だと住所が `*.vercel.app` に落ち、J-17 の見張り（localhost か https でない時に止める）を通ってメールが送られる | ユーザー | J-17（波1） | まだ |
 | 1c | Supabase の管理画面（Authentication の URL Configuration）の Site URL を本番の住所にする。Supabase が自分で送るメール（ログインの確認コードなど）の住所はこれで決まり、J-17 の見張りでは止まらない | ユーザー | J-17（波1） | まだ |
 | 1d | Vercel の本番に `APP_ALLOWED_ORIGINS`（許可するオリジンの一覧。www と apex など）を入れる。無いと本番のビルドが落ちる（SEC-ABOUT-007-AC-02。`NEXT_PUBLIC_SITE_URL` と同じく build の前） | ユーザー | 波6 | まだ |

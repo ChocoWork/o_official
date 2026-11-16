@@ -6059,7 +6059,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | THR-AUTH-039 |
+| 上位 | THR-AUTH-039、THR-AUTH-041 |
 | 根拠 | JWT の印 `staff_passkeys_ok` は、トークンを出した時の本数で、JWT の期限（最長1時間）の間は変わらない。認めた鍵が GoTrue の直叩きなどで消された後も印が真のままだと、管理の権限が残る。そこで、API は RPC `passkey_approved_count`、RLS は `has_permission` の中の `private.staff_passkey_count_ok` で、判定のたびに数える（鍵の実在と突き合わせる。SEC-AUTH-036・038）。印は表示などのヒントに残し、判定には使わない。オーナー決定 2026-11-16（設計 12-2 の8、ADR-0463） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_entry_conditions.integration.test.ts`）、単体テスト（DD-AUTH-047）、E2E（FR-AUTH-011-AC-01） |
@@ -6067,6 +6067,8 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 優先度 | MUST |
 
 守ること: (1) 印が真でも、DB で数えた認めたパスキーが2本未満なら断る。(2) 認めた鍵を `auth.webauthn_credentials` から消した直後に、本数が減って判定が偽になる。(3) 認めていない鍵（GoTrue の直叩きで足した鍵）は数に入らない。(4) 3つの関数は `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空・`STABLE` で、`public`・`anon`・`authenticated`・`service_role` から `execute` を外す。`has_permission`（`SECURITY DEFINER`・持ち主 `postgres`）が呼ぶので、新しい権限は渡さない。(5) 失敗は偽（閉じる側）に倒す。
+
+(5) 管理の認可（API）は、旗 `AUTH_REQUIRE_APP_SESSION` に関わらず、アプリに結び付いた生きた session を求める（RLS の `has_permission` と同じ。認めていない鍵で入った session を、旗を切った間も止める。THR-AUTH-041・ADR-0463）。
 
 残る危険として受け入れること: 判定ごとに DB を数えるので、1回の管理の要求で数える手間が増える。数えるのは認めの控え（店員1人に数本）だけで、索引のある表なので受け入れる。
 

@@ -11,7 +11,7 @@
 | 項目 | 内容 |
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の AUTH |
-| 対応する ID | FR-AUTH-007、FR-AUTH-008、SEC-AUTH-036、SEC-AUTH-037、THR-AUTH-036、THR-AUTH-037、DATA-AUTH-011、DATA-AUTH-012、DATA-AUTH-013、DD-AUTH-043、DD-AUTH-044 |
+| 対応する ID | FR-AUTH-007、FR-AUTH-008、SEC-AUTH-036、SEC-AUTH-037、THR-AUTH-036、THR-AUTH-037、DATA-AUTH-011、DATA-AUTH-012、DATA-AUTH-013、DATA-AUTH-015、DATA-AUTH-017、DD-AUTH-043、DD-AUTH-044、DD-AUTH-046、DD-AUTH-049 |
 | 対象のコード | 移行 `supabase/migrations/20261116215034_passkey_foundation_tables.sql`・`20261116230000_passkey_access_token_hook.sql`、`src/lib/auth/staff-passkey-defaults.ts`・`staff-passkey-reject.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-2・5-5・6-2・12 の18）、[計画](../../superpowers/plans/2026-11-16-passkey-stage1a-foundation.md)、[手元の試しの結果](../../superpowers/specs/2026-11-16-passkey-local-trial-results.md) |
 | 試験 | DB 結合 `tests/integration/db/auth_passkey_foundation.integration.test.ts`、単体 `tests/unit/lib/auth/staff-passkey-defaults.test.ts`、E2E `e2e/FR-LOGIN-041-passkey-foundation-grants.spec.ts`、DB 結合 `tests/integration/db/auth_passkey_access_token_hook.integration.test.ts`、単体 `tests/unit/lib/auth/staff-passkey-reject.test.ts`、E2E `e2e/FR-LOGIN-042-passkey-hook-function-grants.spec.ts` |
@@ -46,7 +46,8 @@
 - 数え方は `passkey_approved_count`。認めの行と鍵の行を `c.id = ap.passkey_id and c.user_id = ap.user_id` でつなぎ、その行だけを数える。引き金が動かなかった時（`TRUNCATE`・`DISABLE TRIGGER`・引き金の例外の囲み）でも、消えた鍵・他人の鍵を指す認めは数えない
 - 登録の窓は案 B。アプリが `auth.sessions` に在るセッションを確かめてから `passkey_window_open(user, session)` で開ける。同じ `session_id` の開いた窓は1つだけ（部分の一意の索引）で、2回目は既存の期限を返す
 - `public.passkey_*` は全部 `service_role` だけが `execute` できる
-- TS の `defaultStaffPasskeySettings()` の値と DB の設定の初めの値は同じにする。変える時は両方を同じコミットで変える（単体テストが一致を確かめる）
+- TS の `defaultStaffPasskeySettings()` の値と DB の設定の初めの値は同じにする。変える時は両方を同じコミットで変える（単体テストが移行の既定値との一致を、DB 結合テストが DB の設定の行との一致を確かめる）
+- DB の設定の行は、動いている間に変えるつまみではない（最終レビュー M-2）。API は TS の定数で判定し、フックと RLS だけが行を読むので、SQL で行だけを変えると3か所の判定が割れる。変える時は、コードと同時（同じコミット）
 
 #### 退けた案
 

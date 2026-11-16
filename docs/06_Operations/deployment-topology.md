@@ -56,7 +56,7 @@ flowchart LR
 
 | 項目 | 内容 |
 | --- | --- |
-| 前提 | 環境変数 `AUTH_REQUIRE_APP_SESSION` は、アプリのログインを通って自前の `sessions` に結び付いた session だけを受ける旗。既定で有効（`off`・`0`・`false` の時だけ無効）。本番には設定しない |
+| 前提 | 環境変数 `AUTH_REQUIRE_APP_SESSION` は、アプリのログインを通って自前の `sessions` に結び付いた session だけを受ける旗。既定で有効（`off`・`0`・`false` の時だけ無効）。本番には設定しない。**店員がいる間は旗を切らない**: 旗を切ると、旗の対象の一般の窓口では、認めていない鍵で入った session を止める決まりが効かなくなる（管理の認可 `admin-rbac` と RLS は旗に関係なく結び付きを求める。ADR-0463・THR-AUTH-041） |
 | E2E | E2E の固定の環境（`E2E_FIXED_ENV`）が `AUTH_REQUIRE_APP_SESSION=on` を入れる。混ぜる場所と見張りは `CLIENT_IP_HEADER` と同じ（`buildE2EOverrides` の中だけ。旗の専用の見張りは足さない）。詳しくは[シークレット管理方針](secrets.md)の `AUTH_REQUIRE_APP_SESSION` |
 | 配備の順 | 移行 M1（列と関数）→ アプリのコード → 全員が再ログイン → 移行 M2（DB の `has_permission` と会員の表の方針）。M2 を先に当てると、結び付いていない session の通行証は PostgREST で 0 行になる |
 | 状態 | 本番は未デプロイ。旗を外した配備の手順は未確認 |

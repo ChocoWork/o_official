@@ -616,6 +616,20 @@ flowchart LR
 | 状態 | 推定 |
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 9、Review Focus 1〜3） |
 
+### THR-AUTH-041 旗を切っている間に、認めていない鍵で入った session で管理 API を使い続けられる
+
+| 属性 | 値 |
+| --- | --- |
+| 守るもの | 管理の入口の3つ目の条件（認めたパスキーが2本以上）と、5-5（アプリで認めた鍵だけ）、管理の API |
+| 脅威 | 条件1の `amr` の `passkey` は、どの鍵で入ったかを区別せず、条件3は認めた鍵の本数を数えるだけ。認めていない鍵で入った session を止めているのは「アプリに結び付いた session だけ通す」決まりだが、API がこの決まりを旗 `AUTH_REQUIRE_APP_SESSION` に頼ると、旗が切れている間は止まらない（RLS の `has_permission` は旗に関係なく止める） |
+| 起こり方 | 障害の手当てで旗を切っている間に、店員の session が盗まれる。盗んだ人がその session で GoTrue に自分の鍵を直に登録し、その鍵で GoTrue に直にログインして、新しい `passkey` の `amr` を毎日作り直す。認めた鍵は本人の2本のまま数えられる |
+| 影響 | API は service role でデータを読むので RLS に止められず、24時間の上限を越えて、管理 API を使い続けられる |
+| 対策 | SEC-AUTH-039。`admin-rbac` は旗に関わらず結び付いた生きた session を求める（`checkAuthSessionLiveness(session_id, true)`。ADR-0463）。旗の手順書には「店員がいる間は旗を切らない」を足す |
+| ASVS | V3.3.1・V4.1.3（当てはめは推定） |
+| 根拠 | 段1a の最終レビュー I-4。DB の `has_permission` が常に `app_session_is_live` を求めるのと同じにそろえた。旗を切った時に効かなくなるのは、旗の対象の一般の窓口だけ |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/final-review.md`（I-4）、`docs/03_BasicDesign/decisions/ADR-0463-staff-entry-by-passkey-conditions.md` |
+
 ## 未確認事項
 
 - 本番の Supabase Auth の設定（OTP の期限・Confirm email・最小の長さ・漏洩の照合・captcha・TOTP・回数の制限・`secure_password_change`・現行パスワードの要求）。手元の `supabase/config.toml` は波 6 の切り替えで本番の前提にそろえたが、本番の実際の値は Management API で読むまで未確認（THR-AUTH-015・029）

@@ -73,7 +73,7 @@ flowchart TD
     B -- いいえ --> R[拒否 403]
     B -- はい --> C{user_roles で有効な admin か supporter か}
     C -- いいえ お客さん --> D{方法が password で 旗が真か}
-    D -- はい --> R
+    D -- はい --> RC[拒否 403 customer-password-disabled]
     D -- いいえ --> P0[入力をそのまま返す]
     C -- はい 店員 --> E{方法が passkey か token_refresh で amr の passkey が 24時間以内か}
     E -- はい --> P1[staff_passkeys_ok を足して返す]
@@ -83,7 +83,7 @@ flowchart TD
 ```
 
 - 入力と出力: 入力は GoTrue の `event`（`user_id`・`authentication_method`・`claims`）。出力は、通す時は `event`（`claims.staff_passkeys_ok` を足す場合がある）、店員の拒否は `{"error":{"http_code":403,"message":"[staff-passkey-required] ..."}}`、お客さんの `password` の拒否（旗が真の時）は別の印 `[customer-password-disabled]` の403
-- 24時間の比べ: `amr` が配列で、`method` が `passkey` の要素の `timestamp` が JSON の数で `^[0-9]+$`（文字列・小数・負・欠落・null は無効）。`今の秒（切り捨て）- timestamp` が `-60` 以上 `staff_max_session_seconds` 以下で通す（60秒までの時計のずれは許す。この60は SQL のフック・`staff_passkey_amr_ok` に数で、TS の `STAFF_CLOCK_SKEW_SECONDS` に定数で、計3か所にあり、共有の値の表 `amrCases`（+1・+60・+61）が3か所を同じ値に固定する）。ちょうど86400は通し、86401と61秒以上先の時刻は拒否
+- 24時間の比べ: `amr` が配列で、`method` が `passkey` の要素の `timestamp` が JSON の数で値が整数（`1794861306` も `1794861306.0` も有効。`1794861306.5`・文字列・負・欠落・null は無効。`staff_passkey_amr_ok`・TS と同じ判定）。`今の秒（切り捨て）- timestamp` が `-60` 以上 `staff_max_session_seconds` 以下で通す（60秒までの時計のずれは許す。この60は SQL のフック・`staff_passkey_amr_ok` に数で、TS の `STAFF_CLOCK_SKEW_SECONDS` に定数で、計3か所にあり、共有の値の表 `amrCases`（+1・+60・+61）が3か所を同じ値に固定する）。ちょうど86400は通し、86401と61秒以上先の時刻は拒否
 - `staff_passkeys_ok`: `public.passkey_approved_count(user)` が `min_approved_passkeys` 以上か。ヒントで、判定には使わない。数える関数が例外を出した時は、偽にして新しいパスキーの店員はそのまま通す（ヒントの失敗でログインを止めない）（管理の入口は API・RLS でその場で数える）
 - 窓: 案 B。窓の表は読むだけで書かない。窓で通すのは方法が `otp`・`token_refresh`・`passkey` の時だけ（招待の入口と、その更新）。`oauth`・`password`・未知の方法は窓があっても拒否
 - 異常: 関数全体を `EXCEPTION WHEN OTHERS` で囲む。お客さんと判った後の失敗は入力をそのまま返す。店員の失敗、`user_id` が無い・不正、店員かどうか調べられなかった失敗は拒否する（店員を素通しにしない）。設定の行が無い時は、パスキーで入る店員は拒否（24時間の上限が決まらない）、お客さんは素通し。窓で通す枝は設定を読まないので、開いた窓の店員は設定の行が無くても通る（窓の枝に設定の行を要るようにはしない。窓の枝は管理の入口を通れないので、簡単さを優先した）
@@ -159,6 +159,7 @@ sequenceDiagram
 ```
 
 - ソフトの認証器: ES256 の鍵の対を `node:crypto` で作る。登録は fmt `none` の `attestationObject`（CBOR は登録の応答の形だけを手で書く）。`authenticatorData` の位置 32 の flags は、登録が UV ありで `0x45`・なしで `0x41`、ログインが `0x05`・`0x01`。署名は `authenticatorData` と `clientDataJSON` の SHA-256 をつないだ物で、ログインごとに `signCount` が1増える。`userHandle` は登録の選択肢の `user.id`
+- DB の接続先の確かめ（M-8）: `provisionStaff`・`provisionPasskeyUser`・`addApprovedPasskey`・`createAdminSessionActor`・`bindAppSession`・`rebindRefreshToken` は、渡された DB の接続（pg の `Client`）の host が手元（`localhost`・`127.0.0.1`・`::1`）でなければ、Auth にも DB にも触る前に投げる（`assertLocalDbClient`。host が分からない接続も断る）
 - `provisionStaff`: 呼ぶごとに別の送り元（`x-forwarded-for`）で GoTrue を叩き、回数の制限の枠を共有しない。手元の住所でなければ投げる。失敗の文面は status・code だけで、JWT・鍵・token を出さない
 - `loginWithPasskey`: 始めの要求に `e2e/captcha-test-utils.ts` のダミーのトークンを `options.captchaToken` で渡す（手元の config は captcha 有効。秘密は Cloudflare の公開のテスト用）。返った利用者のメールが合わなければ投げる
 - 異常: 登録・認めの途中で落ちると、利用者は作られたままで役割は付かない（役割は最後）。`db reset` で消える
@@ -194,6 +195,7 @@ flowchart TD
 - 定数: TS の `STAFF_MAX_SESSION_SECONDS`・`STAFF_MIN_APPROVED_PASSKEYS` は `defaultStaffPasskeySettings()` から取る（3つ目の写しを作らない）。SQL は設定の行（`private.passkey_staff_settings()`）から読む。値を変える時は、初めの値の関数と設定の行の既定値を同じコミットで変える（単体テストが一致を確かめる）
 - 異常: SQL は例外を握って偽（閉じる側）を返し、`RAISE WARNING` で SQLSTATE と文を残す。claims が NULL でも例外を投げない
 - TS の入力の締め: 今の秒は切り捨てる（SQL と同じ）。本数が整数でない・負・NaN・無限大・文字列なら `passkeys_insufficient`（閉じる側）
+- 設定の行と定数（最終レビュー M-2）: API（`admin-rbac`）は TS の定数（`defaultStaffPasskeySettings()`）で判定し、フックと RLS は DB の設定の行を読む。DB の設定の行は、動いている間に変えるつまみではない（変えるのはコードと同時）。SQL だけで `staff_max_session_seconds` を縮めても API は変わらず、行が消えるとフックは店員を断り RLS は偽になるが API は定数で通す。DB 結合テスト（DATA-AUTH-016）が、DB の設定の行が `defaultStaffPasskeySettings()` と同じことを確かめる
 - 既知の精度の差（受け入れる）: `timestamp` が `1800000000.0000000000000001` のように、JS の数で丸めると整数になる小数だと、SQL は小数として断り、TS は `JSON.parse` の丸めで整数と見て通す。作れるのは署名された JWT を偽造できる人だけで、GoTrue は整数の秒しか出さない。SQL のほうが厳しい側なので、そのまま受け入れる
 - 認可: 3つの関数は `public`・`anon`・`authenticated`・`service_role` に `execute` を渡さない
 - つなぎ: Task 9 で API（`admin-rbac.ts`）と RLS（`has_permission`）につないだ（DD-AUTH-048）。TS は RPC が返した本数を `evaluateStaffEntry` に渡し、SQL は `has_permission` の中の位置で呼ぶ
@@ -250,7 +252,7 @@ flowchart TD
 | 上位 | DATA-AUTH-017 |
 | 根拠 | 段1a の切り替え（DD-AUTH-048）の後、手元の開発者が画面で /admin を確かめる手段が無くなる。DD-AUTH-046 の共有の道具で新しい店員を作ってログインし、アプリのログインと同じ形の `public.sessions` の行と Cookie を専用のブラウザに入れる。番号は、計画の予約（048）が Task 9 の切り替えで先に使われたため 049 にした |
 | 状態 | 推定 |
-| 確かめ方 | 単体テスト（`tests/unit/scripts/passkey-dev-staff.test.ts`）、結合テスト（DATA-AUTH-017）、E2E（FR-AUTH-014-AC-01〜03） |
+| 確かめ方 | 単体テスト（`tests/unit/scripts/passkey-dev-staff.test.ts`・`tests/unit/e2e/passkey-staff-local-guard.test.ts`・`tests/unit/e2e/admin-session-test-utils.test.ts`）、結合テスト（DATA-AUTH-017）、E2E（FR-AUTH-014-AC-01〜03。AC-03 は作った Cookie で /admin に入り、CSRF のヘッダーが無い書き込みは 403、ヘッダーがあれば 400） |
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-10-brief.md`、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 10） |
 
 ```mermaid
