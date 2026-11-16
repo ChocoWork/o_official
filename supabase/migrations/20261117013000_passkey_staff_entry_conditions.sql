@@ -16,11 +16,12 @@
 -- Cost note: a policy that calls has_permission without (select ...) wrapping runs it per row; the count (step 4) then runs once per row for a
 -- caller that already passed steps 2 and 3 (staff only). Customers stop at step 2 or 3.
 --
--- Replaced body md5 (select md5(pg_get_functiondef('public.has_permission(text)'::regprocedure)), local DB right before this migration):
---   61536a72ff10e073a731a903ed6acd10
+-- Replaced body md5 (select md5(prosrc) from pg_proc where oid = 'public.has_permission(text)'::regprocedure, local DB right before this migration).
+-- prosrc is only the text between the dollar quotes, so the value does not depend on the PG version (pg_get_functiondef does):
+--   3c4826933eca194a3486f430d361891c
 --
 -- BEFORE applying to production (read only; NOT applied to production until stage 1b and 3 are done):
---   select md5(pg_get_functiondef('public.has_permission(text)'::regprocedure));   -- expect the md5 above
+--   select md5(prosrc) from pg_proc where oid = 'public.has_permission(text)'::regprocedure;   -- expect the md5 above
 --   select to_regprocedure('private.staff_passkey_amr_ok(jsonb)'), to_regprocedure('private.staff_passkey_count_ok(uuid)');   -- expect not null (migration D)
 -- The migration itself stops (PASSKEY_MIGRATION_PRECHECK_FAILED) when the has_permission md5 differs from the value above, and when active
 -- staff exist but none of them has the required number of approved keys (never `db push` while these migrations are in supabase/migrations).
@@ -44,7 +45,7 @@ $passkey_entry_precheck$;
 -- 20261029120100). If someone changed it since, stop instead of silently overwriting that change.
 DO $passkey_entry_baseline$
 BEGIN
-  IF pg_catalog.md5(pg_catalog.pg_get_functiondef('public.has_permission(text)'::regprocedure)) <> '61536a72ff10e073a731a903ed6acd10' THEN
+  IF (SELECT pg_catalog.md5(p.prosrc) FROM pg_catalog.pg_proc p WHERE p.oid = 'public.has_permission(text)'::regprocedure) IS DISTINCT FROM '3c4826933eca194a3486f430d361891c' THEN
     RAISE EXCEPTION 'PASSKEY_MIGRATION_PRECHECK_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_entry_switch_baseline';
   END IF;
 END

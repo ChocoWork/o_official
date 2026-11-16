@@ -143,15 +143,15 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 
 | 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
 | --- | --- | --- | --- |
-| `20261117013000_passkey_staff_entry_conditions.sql` | 8799 bytes / `b5ec5a23db5b662619349910c6fa5541` | 本番未適用（手元の `db reset` で適用済み） | `public.has_permission(text)` の `aal2` の枝を、管理の入口の3つの条件に置き換える |
+| `20261117013000_passkey_staff_entry_conditions.sql` | 8992 bytes / `df5a8bbe1edf9f2aba180bc2642610ab` | 本番未適用（手元の `db reset` で適用済み） | `public.has_permission(text)` の `aal2` の枝を、管理の入口の3つの条件に置き換える |
 
 - 変えるもの: `has_permission` の本体だけ（`CREATE OR REPLACE`。持ち主・`SECURITY DEFINER`・`STABLE`・`SET search_path = ''`・権限は `20261029120100` のまま）。順は uid → `private.staff_passkey_amr_ok(claims)`（今までの `aal2` の位置）→ ACL → `private.staff_passkey_count_ok(uid)`（ACL が真になった後）→ `private.app_session_is_live`。claims の `aal` は見ない
-- 置き換える前の本体の md5（`select md5(pg_get_functiondef('public.has_permission(text)'::regprocedure))`）: `61536a72ff10e073a731a903ed6acd10`（本番に当てる前にこの値を読み、一致を確かめる）
+- 置き換える前の本体の md5（`select md5(prosrc) from pg_proc where oid = 'public.has_permission(text)'::regprocedure`。PG の版によらない比べ方）: `3c4826933eca194a3486f430d361891c`（本番に当てる前にこの値を読み、一致を確かめる）
 - 本番に MCP の `apply_migration` で当てた後の突き合わせ: `schema_migrations` の `statements` は1つ（ファイルの全文）になるので、`md5(statements[1])` はファイルの MD5 `b5ec5a23db5b662619349910c6fa5541` と同じになる（前の記録の、文が1つで md5 がファイルと同じ形と同じ）。同じでなければ当てる途中で字が変わっている（全角の空白など）ので止める
-- 手元の値（参考。本番の突き合わせには使わない）: 手元の `db reset` の後、CLI は文を分けて記録するので `md5(statements[1])` は `ca84b0436bf890cd2d481635f92472ec`（頭の注釈と `BEGIN` だけ）
+- 手元の値（参考。本番の突き合わせには使わない）: 手元の `db reset` の後、CLI は文を分けて記録するので `md5(statements[1])` は `6c86a05f981d92e5551cce4f025b50c1`（頭の注釈と `BEGIN` だけ）
 - 前の確かめ: 移行 D の関数2本と `private.app_session_is_live(uuid)` が在ること。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`
 - 前の確かめ（締め出しの防止。`DETAIL = passkey_entry_switch_no_ready_staff`）: 有効な店員（`user_roles` の有効な admin・supporter）が1人でもいて、認めた鍵が `min_approved_passkeys` 本以上の店員が1人もいなければ、`PASSKEY_MIGRATION_PRECHECK_FAILED` で止まる。当てると全員が管理の権限を失うため。手元の `db reset` は移行の後に seed を入れるので `user_roles` が空で、通る。試験: `tests/integration/db/auth_has_permission_passkey.integration.test.ts` が移行ファイルのこの DO ブロックを取り出して流す（店員0本・1本で止まり、2本が1人でもいれば通る）
-- 前の確かめ（土台の一致。`DETAIL = passkey_entry_switch_baseline`）: 置き換える前の `has_permission` の本体の md5 が `61536a72ff10e073a731a903ed6acd10` でなければ止まる。別の作業が段3までの間に本体を直していたら、黙って上書きしない。この値は、移行 D までを適用した手元の DB（`npx.cmd supabase db reset --version 20261117001500`）で `select md5(pg_get_functiondef('public.has_permission(text)'::regprocedure))` を読んで測った。本番の PG の版で `pg_get_functiondef` の字が変わって止まった場合は、本番の本体を読み、中身が同じことを確かめてから値を直す
+- 前の確かめ（土台の一致。`DETAIL = passkey_entry_switch_baseline`）: 置き換える前の `has_permission` の本体の `md5(prosrc)` が `3c4826933eca194a3486f430d361891c` でなければ止まる（`pg_get_functiondef` の md5 は頭の書き方が PG の版で変わりうるので使わない。`prosrc` は `$function$` の間の本文だけ）。別の作業が段3までの間に本体を直していたら、黙って上書きしない。この値は、移行 D までを適用した手元の DB（`npx.cmd supabase db reset --version 20261117001500`）で `select md5(prosrc) from pg_proc where oid = 'public.has_permission(text)'::regprocedure` を読んで測った（`20261029120100` の本体を取引の中で作り直して測っても同じ値）。本番の PG の版で `pg_get_functiondef` の字が変わって止まった場合でも、本番で上の `md5(prosrc)` を読み、手元の値と同じなら、違いは頭の書き方だけなので中身は同じと判断してよい（違う時は本体が変わっているので、E を当てずに中身を読む）。**E の期待値を直した時は、同じコミットで、この表の E の大きさと MD5 を直す**（MCP で当てた後の突き合わせ `md5(statements[1])` は、直したファイルの MD5 で行う）
 - **段3まで `supabase db push`（どの形でも）を流さない**: `supabase/migrations` にこの5本がある間、`db push --linked --include-all` を流すと5本が一度に本番へ当たる。別の作業の移行も、段3までは MCP の `apply_migration` で1本ずつ当てる。上の「前の確かめ」は、うっかり当たった時の最後の歯止めで、それに頼らない
 - 末尾の確かめ: 本体に `aal2` が無く、`staff_passkey_amr_ok` < `user_roles` < `staff_passkey_count_ok` < `app_session_is_live` の順で、持ち主・`SECURITY DEFINER`・`STABLE`・`search_path` 空・`authenticated` と `service_role` に `execute` が有り `anon` に無いこと。外れたら `PASSKEY_MIGRATION_ASSERTION_FAILED`
 - 戻し方（移行のヘッダーの ROLLBACK）: `20261029120100_sec_has_permission_aal2_member_rls.sql` の本体（`aal2` の枝）に `CREATE OR REPLACE` で戻す
@@ -179,7 +179,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 - 移行 C の引き金: 本番の `postgres` が `auth.webauthn_credentials` に `TRIGGER` の権限を持つこと（`select has_table_privilege('postgres','auth.webauthn_credentials','TRIGGER');`）。持たなければ C は当たらない。
 - 移行 A の関数が鍵を突き合わせる: 本番の `postgres` が `auth.webauthn_credentials` を `SELECT` できること（`select has_table_privilege('postgres','auth.webauthn_credentials','SELECT');`）。
 - 本番の GoTrue の版が、フックの戻り（event 全体を返す形）と、パスキーの API（supabase-js 2.119.0 固定）を通すこと。
-- 最初の店長: `npm run admin:bootstrap`（パスワード＋TOTP）で作った店長は、E とフックの後は入れない。[first-admin-bootstrap.md](./first-admin-bootstrap.md) を読む。
+- 最初の店長: `npm run admin:bootstrap`（パスワード＋TOTP）で作った店長が /admin に入れるのは、次の3つのどれも済んでいない間だけ。(1) この master のアプリのデプロイ（`admin-rbac` が旗も移行 E も関係なく、パスキーの `amr` と認めた鍵2本を求める）、(2) 移行 E、(3) フックの登録。どれか1つが済むと、管理 API は 403 `MFA required`・画面は「2要素認証が必要です」で止まる。そのあとの最初の店長には、段1b の招待の流れが要る。[first-admin-bootstrap.md](./first-admin-bootstrap.md) を読む。
 
 ### 戻し方の順（移行をまたぐ）
 

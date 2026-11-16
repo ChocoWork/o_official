@@ -441,8 +441,24 @@ describeLocalDb('integration: has_permission の管理の入口の3条件と結�
     test('DATA-AUTH-008 ⑭has_permission の本体が土台と違えば（移行 E の後の本体は違う）PASSKEY_MIGRATION_PRECHECK_FAILED で止まる。値を今の本体に合わせれば通る', async () => {
       const baseline = block('passkey_entry_baseline');
       expect(await run(baseline)).toBe('PASSKEY_MIGRATION_PRECHECK_FAILED');
-      const current = (await db().query("select md5(pg_get_functiondef('public.has_permission(text)'::regprocedure)) as m")).rows[0].m;
-      expect(await run(baseline.replace('61536a72ff10e073a731a903ed6acd10', current))).toBeNull();
+      const current = (await db().query("select md5(prosrc) as m from pg_proc where oid = 'public.has_permission(text)'::regprocedure")).rows[0].m;
+      expect(await run(baseline.replace('3c4826933eca194a3486f430d361891c', current))).toBeNull();
+    });
+
+    test('DATA-AUTH-008 ⑭本当の置き換える前の本体（20261029120100）に戻すと、土台の確かめがそのまま通る（値の書き損じを手元で気付ける）', async () => {
+      const old = readFileSync(
+        join(process.cwd(), 'supabase', 'migrations', '20261029120100_sec_has_permission_aal2_member_rls.sql'),
+        'utf8',
+      );
+      const body = /^CREATE OR REPLACE FUNCTION public\.has_permission[\s\S]*?\$function\$;/m.exec(old);
+      if (!body) throw new Error('20261029120100 に本体が無い');
+      await db().query('savepoint pre_e');
+      try {
+        await db().query(body[0]);
+        expect(await run(block('passkey_entry_baseline'))).toBeNull();
+      } finally {
+        await db().query('rollback to savepoint pre_e');
+      }
     });
   });
 });
