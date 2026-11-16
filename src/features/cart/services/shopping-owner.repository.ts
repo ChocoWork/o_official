@@ -28,8 +28,13 @@ export async function ensureOwnerRowId(
   table: ShoppingOwnerTable,
   owner: ShoppingOwnerRef,
 ): Promise<string> {
-  const { column, value } = ownerColumn(owner);
-  const { error } = await supabase.from(table).upsert(owner.kind === 'member' ? { user_id: owner.userId } : { guest_token_hash: owner.tokenHash }, { onConflict: column, ignoreDuplicates: true });
+  const { column } = ownerColumn(owner);
+  const { error } = await supabase
+    .from(table)
+    .upsert(owner.kind === 'member' ? { user_id: owner.userId } : { guest_token_hash: owner.tokenHash }, {
+      onConflict: column,
+      ignoreDuplicates: true,
+    });
   if (error) {
     throw error;
   }
