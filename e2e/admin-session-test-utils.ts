@@ -17,7 +17,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createClient, type Session } from '@supabase/supabase-js';
 import type { Page } from '@playwright/test';
-import { isLocalUrl } from '../scripts/e2e/environment';
+import { assertLocalDbClient, isLocalUrl } from '../scripts/e2e/environment';
 import { addApprovedPasskey, loginWithPasskey, provisionStaff } from '../scripts/e2e/passkey-staff';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { withDummyCaptcha } from './captcha-test-utils';
@@ -132,6 +132,7 @@ export async function bindAppSession(
   db: PgClient,
   input: { userId: string; accessToken: string; refreshToken: string },
 ): Promise<{ authSessionId: string }> {
+  assertLocalDbClient(db);
   localAuthEnv();
   let claims: JwtClaims;
   try {
@@ -155,6 +156,7 @@ export async function rebindRefreshToken(
   db: PgClient,
   input: { authSessionId: string; refreshToken: string },
 ): Promise<void> {
+  assertLocalDbClient(db);
   localAuthEnv();
   const updated = await db.query(
     `update public.sessions set refresh_token_hash = $1
@@ -205,6 +207,7 @@ export async function createAdminSessionActor(
   aal: AdminSessionAal,
   options: AdminSessionOptions = {},
 ): Promise<AdminSessionActor> {
+  assertLocalDbClient(db);
   const bindApp = options.bindApp ?? true;
   const env = localAuthEnv();
 
@@ -333,6 +336,8 @@ export function bearerHeaders(actor: AdminSessionActor): Record<string, string> 
  * 店員の JWT をブラウザの Cookie（sb-access-token・sb-refresh-token）に置き、アプリの /api/auth/refresh を1回通して CSRF の Cookie（sb-csrf-token）を得る。
  * アプリのログインを通らずに、Cookie だけで管理の窓口を呼ぶ試験の用意（アプリの sessions に結び付いた actor だけ。bindApp: false は refresh が 401 になる）。
  * refresh で Cookie の access・refresh token は替わる（session_id は同じ）ので、置いた時の actor.accessToken は Bearer の対照にそのまま使える。
+ * 一方、置いた actor.refreshToken はこの refresh で使い切られる（以後 actor.refreshToken で更新しても通らない。結び付けた行の
+ * refresh_token_hash も古いまま）。続けて更新が要る試験は、Cookie の新しい token を読むこと。
  * 以後の要求の回数の制限が他の試験と枠を共有しないよう、page に x-real-ip を付ける。
  */
 export async function placeAdminCookies(page: Page, actor: AdminSessionActor, sourceIp: string): Promise<{ origin: string; csrfToken: string }> {

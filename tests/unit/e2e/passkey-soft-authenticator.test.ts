@@ -4,7 +4,7 @@
  * 登録の attestationObject は試験の中の小さな CBOR の読み手で読み戻し、署名は登録した公開鍵（COSE）で検証する。
  */
 import { createHash, createPublicKey, createVerify } from 'node:crypto';
-import { createSoftAuthenticator, type PublicKeyCredentialCreationOptionsJSON, type PublicKeyCredentialRequestOptionsJSON } from '../../../e2e/passkey-soft-authenticator';
+import { cborHead, createSoftAuthenticator, type PublicKeyCredentialCreationOptionsJSON, type PublicKeyCredentialRequestOptionsJSON } from '../../../e2e/passkey-soft-authenticator';
 
 const CONFIG = { origin: 'http://localhost:3000', rpId: 'localhost' };
 
@@ -53,6 +53,28 @@ describe('DD-AUTH-046 passkey-soft-authenticator', () => {
     expect(authData.readUInt16BE(53)).toBe(auth.credentialId.length);
     expect(authData.subarray(55, 55 + auth.credentialId.length).equals(auth.credentialId)).toBe(true);
     expect(reg.id).toBe(auth.credentialId.toString('base64url'));
+  });
+
+  it('DD-AUTH-046 登録の公開鍵は COSE_Key（EC2・ES256・P-256）で、ラベル 1・3・-1・-2・-3 が RFC 8152 の整列順に並ぶ', () => {
+    const { auth, authData } = registered();
+    const cose = readCbor(authData, 55 + auth.credentialId.length);
+    expect(cose.next).toBe(authData.length);
+    const key = cose.value as Map<Cbor, Cbor>;
+    expect([...key.keys()]).toEqual([1, 3, -1, -2, -3]);
+    expect(key.get(1)).toBe(2); // kty: EC2
+    expect(key.get(3)).toBe(-7); // alg: ES256
+    expect(key.get(-1)).toBe(1); // crv: P-256
+    expect((key.get(-2) as Buffer).length).toBe(32); // x
+    expect((key.get(-3) as Buffer).length).toBe(32); // y
+  });
+
+  it('DD-AUTH-046 cborHead の長さの書き方: 23 まで1バイト、24〜255 は 0x18 + 1バイト、256〜65535 は 0x19 + 2バイト', () => {
+    expect(cborHead(2, 23)).toEqual(Buffer.from([0x57]));
+    expect(cborHead(2, 24)).toEqual(Buffer.from([0x58, 24]));
+    expect(cborHead(2, 255)).toEqual(Buffer.from([0x58, 255]));
+    expect(cborHead(2, 256)).toEqual(Buffer.from([0x59, 0x01, 0x00]));
+    expect(cborHead(3, 65535)).toEqual(Buffer.from([0x79, 0xff, 0xff]));
+    expect(readCbor(Buffer.concat([cborHead(2, 300), Buffer.alloc(300, 7)])).next).toBe(303);
   });
 
   it('DD-AUTH-046 userVerified が偽なら flags は 0x41（UV の 0x04 を落とす）', () => {

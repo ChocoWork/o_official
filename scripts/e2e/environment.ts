@@ -92,6 +92,19 @@ export function isLocalUrl(raw: string | undefined): boolean {
 }
 
 /**
+ * 試験の道具に渡された DB の接続（pg の Client）が手元のものかを確かめる。手元でない・host が分からない物は投げる（書く前に呼ぶ）。
+ * 道具は手元の Supabase の Auth 経由で利用者を作るが、DB への書き込み（役割・session の整理）は渡された接続に向かうため、
+ * 接続先を本番に向けても書き込まないようにする（M-8）。
+ */
+export function assertLocalDbClient(db: unknown): void {
+  const client = db as { host?: unknown; connectionParameters?: { host?: unknown } } | null | undefined;
+  const host = client?.host ?? client?.connectionParameters?.host;
+  if (typeof host !== 'string' || !LOCAL_HOSTNAMES.has(host)) {
+    throw new Error('手元の DB 以外には書かない（DB の接続先が手元ではない）');
+  }
+}
+
+/**
  * 17TRACK の接続先が、手元の作り物（http・loopback・4017番・/track/v2.4 だけ）かを見る。安全なら null、そうでなければ止める理由。
  * 省略（アプリは本物の https://api.17track.net へ向かう）・本番・手元でない住所・別の道・別の port・URL の中の認証情報を拒む。
  * 理由には URL の中身を出さない（認証情報が入りうるため）。

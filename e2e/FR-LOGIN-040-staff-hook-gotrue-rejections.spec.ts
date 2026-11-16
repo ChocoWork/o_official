@@ -110,6 +110,7 @@ for (const viewport of viewports) {
       expect(scenario.oldTokenUserStatus).toBe(200);
       expect(scenario.oldTokenAdminRows, '管理の表（非公開の記事）の行数').toBe(0);
       // 対照: 古い通行証をアプリの sessions に結び付けても0行（断る理由が amr だけ）。パスキーでログインした2本の店長は同じ行が読める
+      expect(scenario.oldTokenBoundSessionLive, '結び付けた session は DB で生きている（0行の理由が amr だけだと言える）').toBe(true);
       expect(scenario.oldTokenBoundAdminRows, 'アプリに結び付けた古い通行証の行数').toBe(0);
       expect(scenario.controlAdminRows, '対照（パスキーの店長）の行数').toBeGreaterThanOrEqual(1);
 

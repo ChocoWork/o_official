@@ -16,7 +16,7 @@
  * SEC-AUTH-005-AC-02・005-AC-03 の PostgREST の側・010-AC-01・010-AC-03 は、DB の移行 M2（波 5。has_permission に aal2 と結び付いた生きた session を求め、
  * profiles・orders・order_items に RESTRICTIVE の方針を足す）を当てた DB で通る（test.fail は外した。M2 を当てていない DB では赤）。
  * SEC-AUTH-005-AC-01・03・05、SEC-AUTH-030-AC-03、SEC-AUTH-031-AC-02 は波 5 でアプリの窓口が満たす（旗 AUTH_REQUIRE_APP_SESSION は E2E で固定の on）。
- * 段1a の切り替え（Task 9）の後、管理者の010-AC-01・010-AC-03 はパスキーのログイン（認めた1本・2本。古い名前の aal1・aal2）で作る。SEC-AUTH-031-AC-02 は段4で消す TOTP の窓口なので skip。
+ * 段1a の切り替え（Task 9）の後、管理者の010-AC-01・010-AC-03 はパスキーのログイン（認めた1本・2本。古い名前の aal1・aal2）で作る。SEC-AUTH-031-AC-02 は app_metadata.role だけを admin にした利用者（user_roles なし。店員のメールのコードはフックが拒否するため）で確かめる。
  * SEC-AUTH-028-AC-02 は満たす。AC ごとに describe を分け、赤を互いに混ぜない。
  * （012 は G-2 の移行 20261024153505 が anon・authenticated の EXECUTE を外すので、その移行を当てた DB では緑になる。
  *  011 は移行 sec_grants_hardening が認証の表の権限を外すので、その移行を当てた DB では緑になる）
@@ -133,7 +133,11 @@ async function requestToken(grantType: 'password' | 'refresh_token', body: Recor
 }
 
 /** 既知のパスワードで利用者を作るだけ（通行証は取らない）。admin なら役割 admin も付ける */
-async function createUnsignedActor(label: string, options: { admin?: boolean } = {}): Promise<Omit<Actor, 'accessToken' | 'refreshToken'>> {
+/**
+ * admin: 役割 admin を app_metadata と user_roles の両方に付ける（店員。メールのコードの通行証は GoTrue のフックが拒否する）。
+ * roleClaimOnly: app_metadata.role だけを admin にし、user_roles は付けない（フックはお客さん扱いで通す。enroll-totp は役割を app_metadata で見る）。
+ */
+async function createUnsignedActor(label: string, options: { admin?: boolean; roleClaimOnly?: boolean } = {}): Promise<Omit<Actor, 'accessToken' | 'refreshToken'>> {
   requireLocalEnv();
   const email = newEmail(label);
   const password = newPassword();
@@ -142,7 +146,7 @@ async function createUnsignedActor(label: string, options: { admin?: boolean } =
       email,
       password,
       email_confirm: true,
-      ...(options.admin ? { app_metadata: { role: 'admin' } } : {}),
+      ...(options.admin || options.roleClaimOnly ? { app_metadata: { role: 'admin' } } : {}),
     })
     .catch(() => {
       throw new Error('手元の利用者を作る要求に失敗した');
@@ -864,11 +868,11 @@ for (const viewport of viewports) {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
     test(`SEC-AUTH-031-AC-02 TOTP の無い管理者が /auth/v1/otp と /auth/v1/verify を直接呼んで得た通行証で /api/auth/mfa/enroll-totp を叩くと、401 になり、要素が作られず、mfa_enroll・denied・app_session_required の行が監査に 1 つ増える (${viewport.name})`, async ({ request, baseURL }) => {
-      test.skip(true, '段4で消す機能: TOTP の登録の窓口 /api/auth/mfa/enroll-totp（段4で TOTP ごと消す）。店員のメールのコードは GoTrue のフックが拒否するので、この前提の通行証を作れない');
       requireLocalApp(baseURL);
       const origin = new URL(baseURL ?? '').origin;
-      // 役割 admin を付けた利用者（afterAll で user_roles を無効にする）。TOTP は登録しない
-      const admin = await createUnsignedActor('otpadmin', { admin: true });
+      // app_metadata.role だけを admin にした利用者。user_roles は付けない（付けた店員のメールのコードは GoTrue のフックが拒否するので、
+      // 結び付きの守りを確かめる通行証を作れない。enroll-totp は役割を app_metadata で見るので、この利用者でも守りに届く）。TOTP は登録しない
+      const admin = await createUnsignedActor('otpadmin', { roleClaimOnly: true });
       const tokens = await requestOtpOnlyTokens(admin.email);
       const claims = claimsOf(tokens.accessToken);
       const authSessionId = claims.session_id ?? '';

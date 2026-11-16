@@ -145,6 +145,8 @@ export type WindowScenario = {
   oldTokenAdminRows: number;
   /** 同じ古いトークンをアプリの sessions に結び付けた後の行の数（断る理由が amr だけの時も0） */
   oldTokenBoundAdminRows: number;
+  /** 結び付けた後、その session を DB が「アプリに結び付いた生きた session」と見ているか（真でなければ、0行の理由が amr だけだと言えない） */
+  oldTokenBoundSessionLive: boolean;
   /** 対照: パスキーでログインした認めた2本の店長が同じ行を読めた数（1以上） */
   controlAdminRows: number;
   /** auth.sessions.not_after の値（記録のため） */
@@ -200,6 +202,7 @@ export async function runWindowScenario(db: PgClient): Promise<WindowScenario> {
     // 0行がパスキーの amr の門で断られた結果だと言えるよう、他の条件を揃える。
     // (1) 古い通行証（メールのコードの amr）をアプリの sessions に結び付ける（役割・認めた2本・session の生存は揃っている）。残る断りの理由は amr だけ
     await bindAppSession(db, { userId: provisioned.userId, accessToken: inside.accessToken, refreshToken: inside.refreshToken });
+    const live = await db.query('select private.app_session_is_live($1::uuid) as live', [sessionId]);
     const boundRest = await fetch(`${env.url}/rest/v1/news_articles?select=id&id=eq.${news.rows[0].id}`, {
       headers: { apikey: env.anonKey, authorization: `Bearer ${inside.accessToken}` },
       signal: AbortSignal.timeout(15_000),
@@ -223,6 +226,7 @@ export async function runWindowScenario(db: PgClient): Promise<WindowScenario> {
       oldTokenUserStatus: userResponse.status,
       oldTokenAdminRows: Array.isArray(rows) ? rows.length : -1,
       oldTokenBoundAdminRows: Array.isArray(boundRows) ? boundRows.length : -1,
+      oldTokenBoundSessionLive: live.rows[0].live === true,
       controlAdminRows: Array.isArray(controlRows) ? controlRows.length : -1,
       sessionNotAfter: remains.rows[0].not_after as string | null,
     };

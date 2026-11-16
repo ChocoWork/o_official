@@ -11,7 +11,7 @@
  *   この本物の流れを通す。無効のままなら登録の段で「TOTP が有効であること」の説明つきで落ちる（隠さない）。
  * - FR-LOGIN-007-AC-02・FREQ-316-REQ-01/03 は、まだ生きている守り（管理の入口・Cookie だけの認証・iss/aud・ログアウトの失効）を
  *   createAdminSessionActor（認めたパスキーの店員）と placeAdminCookies で確かめる。TOTP の材料は使わない。
- * - 残りの試験（SEC-AUTH-009・SEC-AUTH-010-AC-02・段4で消す TOTP の窓口）は、段4で消す機能なので test.skip。かつては、
+ * - 残りの試験（SEC-AUTH-009・段4で消す TOTP の窓口）は、段4で消す機能なので test.skip。SEC-AUTH-010-AC-02 も skip だが、理由は「FR-LOGIN-031 の SEC-AUTH-010-AC-03 が同じことを確かめる」。かつては、
  *   auth.mfa_factors に verified の行を足す・auth.mfa_amr_claims に totp の行を足して refresh する、で材料を作る
  *   （FR-ADMIN-MISC-003 と同じ）。aal2 の JWT の aal は GoTrue 自身が出す。
  * - 監査ログ（public.audit_logs）と DB の行は、手元の DB の接続で直に読む。
@@ -282,6 +282,11 @@ for (const viewport of viewports) {
         const twoKeys = await withLocalDb((db) => createAdminSessionActor(db, role, 'aal2'));
         await placeAdminCookies(page, twoKeys, uniqueSourceIp());
         expect((await probeWithCookie(page, role)).status(), `${role}（2本）では管理の窓口が 200`).toBe(200);
+        // 画面でも入口を通る: 止める見出しが出ず、管理画面の中身の列（admin-content-column）が出る
+        await page.goto('/admin');
+        await expect(page.getByTestId('admin-content-column'), `${role}（2本）の管理画面`).toBeVisible({ timeout: 15_000 });
+        await expect(page.getByRole('heading', { name: '2要素認証が必要です' })).toHaveCount(0);
+        await expect(page.getByRole('heading', { name: 'アクセス権限がありません' })).toHaveCount(0);
 
         await page.context().clearCookies();
       }
@@ -320,7 +325,7 @@ for (const viewport of viewports) {
     });
 
     test(`SEC-AUTH-010-AC-02 aal2 の管理者の JWT では今どおり他人の注文が読める (${viewport.name})`, async ({ page, request }) => {
-      test.skip(true, '段4で消す機能: 店員のパスワード＋確認コード＋TOTP のログインと TOTP の窓口（段4で消す）。手元では店員がアプリの画面から入れない（GoTrue のフックが拒否。SEC-AUTH-040）');
+      test.skip(true, 'AC-03 が同じことを確かめる: 認めたパスキー2本の店員が他人の注文を RLS で読める（FR-LOGIN-031 の SEC-AUTH-010-AC-03）。パスワード＋TOTP の入り方は段4で消す（手元では店員がアプリの画面から入れない。SEC-AUTH-040）');
       const { ip } = await loginPrivilegedAsAal1(page, 'login032-010b', 'admin');
       const aal2Token = await elevateCookieToAal2(page, ip);
       const admin = claimsOf(aal2Token);

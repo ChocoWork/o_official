@@ -44,6 +44,8 @@ function fakeJwt(claims: Record<string, unknown>): string {
 type Call = { sql: string; params: unknown[] };
 
 class FakeDb {
+  /** pg の Client が持つ接続先。手元の DB の住所（本番の住所の試験は host を替える） */
+  host = '127.0.0.1';
   calls: Call[] = [];
   updateRowCount = 1;
   async query(sql: string, params: unknown[] = []): Promise<{ rows: unknown[]; rowCount: number }> {
@@ -79,6 +81,23 @@ beforeEach(() => {
 afterEach(() => {
   process.env = { ...ORIGINAL_ENV };
   jest.restoreAllMocks();
+});
+
+describe('M-8 DB の接続先が手元でなければ、書く前に断る', () => {
+  it.each(['db.prodproject.supabase.co', 'aws-0-ap-northeast-1.pooler.supabase.com', undefined])(
+    'DD-AUTH-046 createAdminSessionActor・bindAppSession・rebindRefreshToken は host が %s なら何も書かず・用意もせず投げる',
+    async (host) => {
+      const db = new FakeDb();
+      (db as unknown as { host: unknown }).host = host;
+      const accessToken = fakeJwt({ sub: USER_ID, session_id: SESSION_ID, aal: 'aal1' });
+      await expect(createAdminSessionActor(db.asPg(), 'admin', 'aal2')).rejects.toThrow('手元の DB');
+      await expect(bindAppSession(db.asPg(), { userId: USER_ID, accessToken, refreshToken: 'r' })).rejects.toThrow('手元の DB');
+      await expect(rebindRefreshToken(db.asPg(), { authSessionId: SESSION_ID, refreshToken: 'r' })).rejects.toThrow('手元の DB');
+      expect(db.calls).toHaveLength(0);
+      expect(mockProvisionStaff).not.toHaveBeenCalled();
+      expect(mockCreateUser).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('DD-AUTH-039 bindAppSession', () => {

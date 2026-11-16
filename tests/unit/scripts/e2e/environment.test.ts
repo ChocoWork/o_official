@@ -14,6 +14,7 @@ import {
   computeServerFingerprint,
   decideServerReuse,
   findUnsafeE2ESettings,
+  assertLocalDbClient,
   isLocalUrl,
   parseSupabaseStatus,
   prepareE2EEnvironment,
@@ -74,6 +75,19 @@ describe('isLocalUrl', () => {
   it.each(['https://prodproject.supabase.co', 'not a url', undefined, ''])('%s は手元ではない', (url) => {
     expect(isLocalUrl(url)).toBe(false);
   });
+});
+
+describe('assertLocalDbClient', () => {
+  it.each(['localhost', '127.0.0.1', '::1'])('DD-AUTH-046 host %s の接続は通す', (host) => {
+    expect(() => assertLocalDbClient({ host })).not.toThrow();
+    expect(() => assertLocalDbClient({ connectionParameters: { host } })).not.toThrow();
+  });
+  it.each([{ host: 'db.prodproject.supabase.co' }, { host: '' }, { host: 1 }, {}, null, undefined, 'postgres://localhost'])(
+    'DD-AUTH-046 手元でない・分からない接続（%j）は投げる',
+    (db) => {
+      expect(() => assertLocalDbClient(db)).toThrow('手元の DB');
+    },
+  );
 });
 
 describe('parseSupabaseStatus', () => {

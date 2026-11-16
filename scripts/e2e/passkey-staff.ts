@@ -17,7 +17,7 @@ import { createClient, type Session, type SupabaseClient } from '@supabase/supab
 import { DUMMY_CAPTCHA_TOKEN } from '../../e2e/captcha-test-utils';
 import { createSoftAuthenticator, type SoftAuthenticator } from '../../e2e/passkey-soft-authenticator';
 import type { PgClient } from '../../tests/integration/db/helpers/local-db';
-import { isLocalUrl, readLocalSupabaseStatus } from './environment';
+import { assertLocalDbClient, isLocalUrl, readLocalSupabaseStatus } from './environment';
 
 /** 手元の supabase/config.toml の [auth.webauthn]（rp_id・rp_origins）と同じ */
 const RELYING_PARTY = { origin: 'http://localhost:3000', rpId: 'localhost' } as const;
@@ -64,6 +64,7 @@ export async function provisionPasskeyUser(
   db: PgClient,
   input: { approvedPasskeys: 0 | 1 | 2; email?: string; appRole?: 'admin' | 'supporter' | 'user' },
 ): Promise<ProvisionedUser> {
+  assertLocalDbClient(db);
   const env = localEnv();
   const email = input.email ?? `passkey-user-${randomUUID().slice(0, 8)}@example.com`;
 
@@ -116,6 +117,7 @@ export async function provisionStaff(
   db: PgClient,
   input: { role: 'admin' | 'supporter'; approvedPasskeys: 0 | 1 | 2; email?: string },
 ): Promise<ProvisionedUser> {
+  assertLocalDbClient(db);
   const email = input.email ?? `passkey-staff-${input.role}-${randomUUID().slice(0, 8)}@example.com`;
   const provisioned = await provisionPasskeyUser(db, { approvedPasskeys: input.approvedPasskeys, email, appRole: input.role });
   const assigned = await db.query(
@@ -135,6 +137,7 @@ export async function addApprovedPasskey(
   db: PgClient,
   input: { userId: string; accessToken: string; refreshToken: string },
 ): Promise<{ authenticator: SoftAuthenticator; session: Session }> {
+  assertLocalDbClient(db);
   const env = localEnv();
   const user = client(env, env.anonKey);
   const set = await user.auth.setSession({ access_token: input.accessToken, refresh_token: input.refreshToken });

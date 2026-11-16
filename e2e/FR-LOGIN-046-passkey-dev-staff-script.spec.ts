@@ -112,7 +112,8 @@ for (const viewport of viewports) {
           expect(without.status).toBe(403);
           expect(without.text).toContain('CSRF validation failed');
           const withHeader = await patch(true);
-          expect(withHeader.status).not.toBe(403);
+          // 空の本文なので、CSRF を通った後の入力の検査で 400（403 でないだけでは、別の誤りも通ってしまう）
+          expect(withHeader.status).toBe(400);
         },
       });
       expect(opened).toBe(true);
