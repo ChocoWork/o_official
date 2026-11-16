@@ -29,8 +29,8 @@ function b64u(buf: Buffer): string {
   return buf.toString('base64url');
 }
 
-/** CBOR の見出し（major type と長さ）。この道具が書く値は 65535 バイト以下。1・2バイトの長さの分かれ目を試験が確かめるので export する */
-export function cborHead(major: number, n: number): Buffer {
+/** CBOR の見出し（major type と長さ）。この道具が書く値は 65535 バイト以下 */
+function cborHead(major: number, n: number): Buffer {
   if (n < 24) return Buffer.from([(major << 5) | n]);
   if (n < 256) return Buffer.from([(major << 5) | 24, n]);
   return Buffer.from([(major << 5) | 25, n >> 8, n & 0xff]);
@@ -132,3 +132,6 @@ export function createSoftAuthenticator(config: { origin: string; rpId: string }
   };
   return state;
 }
+
+/** 1・2バイトの長さの分かれ目を単体試験が確かめるための出口（道具の外からは使わない） */
+export const softAuthenticatorInternals = { cborHead };

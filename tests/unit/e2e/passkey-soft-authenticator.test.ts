@@ -4,8 +4,9 @@
  * 登録の attestationObject は試験の中の小さな CBOR の読み手で読み戻し、署名は登録した公開鍵（COSE）で検証する。
  */
 import { createHash, createPublicKey, createVerify } from 'node:crypto';
-import { cborHead, createSoftAuthenticator, type PublicKeyCredentialCreationOptionsJSON, type PublicKeyCredentialRequestOptionsJSON } from '../../../e2e/passkey-soft-authenticator';
+import { createSoftAuthenticator, softAuthenticatorInternals, type PublicKeyCredentialCreationOptionsJSON, type PublicKeyCredentialRequestOptionsJSON } from '../../../e2e/passkey-soft-authenticator';
 
+const { cborHead } = softAuthenticatorInternals;
 const CONFIG = { origin: 'http://localhost:3000', rpId: 'localhost' };
 
 type Cbor = number | Buffer | string | Map<Cbor, Cbor>;
