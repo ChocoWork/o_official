@@ -221,6 +221,10 @@ export async function createAdminSessionActor(
     authenticators = staff.authenticators;
     const { session } = await loginWithPasskey({ email, authenticator: authenticators[0] });
     tokens = { access_token: session.access_token, refresh_token: session.refresh_token };
+    // 用意（provisionStaff）の magiclink の session が残る。実際のログインは1つの session だけなので、パスキーのログインの session 以外を消す
+    const loggedInSessionId = readClaims(tokens.access_token).session_id;
+    if (!loggedInSessionId) throw new Error('JWT に session_id が無い');
+    await db.query('delete from auth.sessions where user_id = $1::uuid and id <> $2::uuid', [userId, loggedInSessionId]);
   }
 
   const claims = readClaims(tokens.access_token);
