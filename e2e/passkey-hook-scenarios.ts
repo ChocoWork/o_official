@@ -10,6 +10,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import { loginWithPasskey, provisionPasskeyUser } from '../scripts/e2e/passkey-staff';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
+import { bindAppSession, createAdminSessionActor } from './admin-session-test-utils';
 import { withDummyCaptcha } from './captcha-test-utils';
 import { readLatestCode, readMailpitMessages } from './member-session-helpers';
 
@@ -142,6 +143,10 @@ export type WindowScenario = {
   oldTokenUserStatus: number;
   /** 同じトークンで /rest/v1 の管理の表（非公開の記事）を読んだ時の行の数 */
   oldTokenAdminRows: number;
+  /** 同じ古いトークンをアプリの sessions に結び付けた後の行の数（断る理由が amr だけの時も0） */
+  oldTokenBoundAdminRows: number;
+  /** 対照: パスキーでログインした認めた2本の店長が同じ行を読めた数（1以上） */
+  controlAdminRows: number;
   /** auth.sessions.not_after の値（記録のため） */
   sessionNotAfter: string | null;
 };
@@ -191,6 +196,22 @@ export async function runWindowScenario(db: PgClient): Promise<WindowScenario> {
       signal: AbortSignal.timeout(15_000),
     });
     const rows = (await rest.json().catch(() => [])) as unknown[];
+
+    // 0行がパスキーの amr の門で断られた結果だと言えるよう、他の条件を揃える。
+    // (1) 古い通行証（メールのコードの amr）をアプリの sessions に結び付ける（役割・認めた2本・session の生存は揃っている）。残る断りの理由は amr だけ
+    await bindAppSession(db, { userId: provisioned.userId, accessToken: inside.accessToken, refreshToken: inside.refreshToken });
+    const boundRest = await fetch(`${env.url}/rest/v1/news_articles?select=id&id=eq.${news.rows[0].id}`, {
+      headers: { apikey: env.anonKey, authorization: `Bearer ${inside.accessToken}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    const boundRows = (await boundRest.json().catch(() => [])) as unknown[];
+    // (2) 対照: パスキーでログインした認めた2本の店長（アプリの sessions に結び付き済み）は同じ行が読める
+    const control = await createAdminSessionActor(db, 'admin', 'aal2');
+    const controlRest = await fetch(`${env.url}/rest/v1/news_articles?select=id&id=eq.${news.rows[0].id}`, {
+      headers: { apikey: env.anonKey, authorization: `Bearer ${control.accessToken}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    const controlRows = (await controlRest.json().catch(() => [])) as unknown[];
     return {
       userId: provisioned.userId,
       email: provisioned.email,
@@ -201,6 +222,8 @@ export async function runWindowScenario(db: PgClient): Promise<WindowScenario> {
       sessionRowRemains: remains.rows[0].n === 1,
       oldTokenUserStatus: userResponse.status,
       oldTokenAdminRows: Array.isArray(rows) ? rows.length : -1,
+      oldTokenBoundAdminRows: Array.isArray(boundRows) ? boundRows.length : -1,
+      controlAdminRows: Array.isArray(controlRows) ? controlRows.length : -1,
       sessionNotAfter: remains.rows[0].not_after as string | null,
     };
   } finally {

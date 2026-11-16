@@ -16,6 +16,7 @@
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createClient, type Session } from '@supabase/supabase-js';
+import type { Page } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import { addApprovedPasskey, loginWithPasskey, provisionStaff } from '../scripts/e2e/passkey-staff';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
@@ -322,4 +323,33 @@ export async function toSupabaseSession(actor: AdminSessionActor): Promise<Sessi
 
 export function bearerHeaders(actor: AdminSessionActor): Record<string, string> {
   return { authorization: `Bearer ${actor.accessToken}` };
+}
+
+/**
+ * 店員の JWT をブラウザの Cookie（sb-access-token・sb-refresh-token）に置き、アプリの /api/auth/refresh を1回通して CSRF の Cookie（sb-csrf-token）を得る。
+ * アプリのログインを通らずに、Cookie だけで管理の窓口を呼ぶ試験の用意（アプリの sessions に結び付いた actor だけ。bindApp: false は refresh が 401 になる）。
+ * refresh で Cookie の access・refresh token は替わる（session_id は同じ）ので、置いた時の actor.accessToken は Bearer の対照にそのまま使える。
+ * 以後の要求の回数の制限が他の試験と枠を共有しないよう、page に x-real-ip を付ける。
+ */
+export async function placeAdminCookies(page: Page, actor: AdminSessionActor, sourceIp: string): Promise<{ origin: string; csrfToken: string }> {
+  localAuthEnv();
+  if (!actor.appBound) throw new Error('Cookie に置けるのはアプリの sessions に結び付いた店員だけ');
+  await page.setExtraHTTPHeaders({ 'x-real-ip': sourceIp });
+  await page.goto('/');
+  const origin = new URL(page.url()).origin;
+  if (!isLocalUrl(origin)) throw new Error('ブラウザへのログインは手元のアプリだけ');
+  await page.context().clearCookies();
+  await page.context().addCookies([
+    { name: 'sb-access-token', value: actor.accessToken, url: origin, httpOnly: true, sameSite: 'Lax' },
+    { name: 'sb-refresh-token', value: actor.refreshToken, url: origin, httpOnly: true, sameSite: 'Lax' },
+  ]);
+  const refreshed = await page.request.post(new URL('/api/auth/refresh', origin).toString(), {
+    headers: { origin, 'x-real-ip': sourceIp },
+    maxRedirects: 0,
+    failOnStatusCode: false,
+  });
+  if (!refreshed.ok()) throw new Error(`Cookie の session を更新できない: ${refreshed.status()}`);
+  const csrf = (await page.context().cookies(origin)).find((cookie) => cookie.name === 'sb-csrf-token')?.value;
+  if (!csrf) throw new Error('sb-csrf-token の Cookie が無い');
+  return { origin, csrfToken: csrf };
 }

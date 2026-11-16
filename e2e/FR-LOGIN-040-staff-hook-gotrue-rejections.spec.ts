@@ -109,6 +109,9 @@ for (const viewport of viewports) {
       // 拒否の後、前のアクセストークンは GoTrue 自身の /auth/v1/user ではまだ 200 だが、管理の表（has_permission）は passkey の amr が無いので0行
       expect(scenario.oldTokenUserStatus).toBe(200);
       expect(scenario.oldTokenAdminRows, '管理の表（非公開の記事）の行数').toBe(0);
+      // 対照: 古い通行証をアプリの sessions に結び付けても0行（断る理由が amr だけ）。パスキーでログインした2本の店長は同じ行が読める
+      expect(scenario.oldTokenBoundAdminRows, 'アプリに結び付けた古い通行証の行数').toBe(0);
+      expect(scenario.controlAdminRows, '対照（パスキーの店長）の行数').toBeGreaterThanOrEqual(1);
 
       // auth.sessions.not_after の値を記録する（設定の session の最長との食い違いを後で読むため）
       testInfo.annotations.push({ type: 'auth.sessions.not_after', description: String(scenario.sessionNotAfter) });

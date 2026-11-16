@@ -2188,7 +2188,7 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 9、Review Focus 1〜3） |
 | 優先度 | MUST |
 
-規則: (1) 認めたパスキー2本の店員がパスキーで入った JWT（`aal` は `aal1` のまま）は管理 API が通る。(2) 認めたパスキーが2本に満たない店員・役割の無い人は 403 `MFA required`。(3) RPC が誤りを返したら 503 と `Retry-After: 30`（liveness の `unavailable` と同じ扱い）。数でない値・`null` は0本として 403。(4) 認めた鍵を GoTrue で消した直後は、次の更新を待たず 403。(5) `/api/auth/me` の `mfaVerified` は表示のヒントで、認めた本数は JWT の印から取る（認めた鍵が消えた後、最長1時間は枠が見えるが、API は DB で数えて 403）。
+規則: (1) 認めたパスキー2本の店員がパスキーで入った JWT（`aal` は `aal1` のまま）は管理 API が通る。(2) 認めたパスキーが2本に満たない店員は 403 `MFA required`。役割の無い人は、ACL を先に確かめるので 403（権限なし。`MFA required` ではない）。(3) RPC が誤りを返したら 503 と `Retry-After: 30`（liveness の `unavailable` と同じ扱い）。数でない値・`null` は0本として 403。(4) 認めた鍵を GoTrue で消した直後は、次の更新を待たず 403。(5) `/api/auth/me` の `mfaVerified` は表示のヒントで、認めた本数は JWT の印から取る（認めた鍵が消えた後、最長1時間は枠が見えるが、API は DB で数えて 403）。
 
 ### FR-AUTH-013 GoTrue のフックを手元で有効にし、店員の拒否と更新・お客さんの道を試験で確かめる
 

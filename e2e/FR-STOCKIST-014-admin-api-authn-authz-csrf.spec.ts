@@ -194,8 +194,12 @@ async function createActor(scenario: Scenario, kind: ActorKind, aal: Aal): Promi
   const claims = decodeClaims(session.access_token);
   const authSessionId = claims.session_id;
   if (!authSessionId) throw new Error('access token に session_id が無い');
-  if (kind !== 'member' && claims.staff_passkeys_ok !== (aal === 'aal2')) {
-    throw new Error(`token の staff_passkeys_ok が ${aal} の頼みと合わない`);
+  if (kind === 'admin' || kind === 'supporter') {
+    // 独自の役割（readonly）には hook が staff_passkeys_ok を付けないので、店員の2つだけ JWT の印を見る
+    if (claims.staff_passkeys_ok !== (aal === 'aal2')) throw new Error(`token の staff_passkeys_ok が ${aal} の頼みと合わない`);
+  } else if (kind === 'readonly') {
+    const counted = await scenario.db.query('select public.passkey_approved_count($1::uuid) as n', [userId]);
+    if (Number(counted.rows[0]?.n) !== (aal === 'aal2' ? 2 : 1)) throw new Error(`DB で数えた認めたパスキーが ${aal} の頼みと合わない`);
   }
 
   // アプリの Cookie の session。refresh token と CSRF token は、それぞれの sha256 を行に持つ（requireCsrfOrDeny が突き合わせる）

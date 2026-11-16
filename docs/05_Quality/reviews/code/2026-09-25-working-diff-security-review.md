@@ -226,26 +226,24 @@ flowchart LR
 
 ### 1-3 skip の一覧（パスキー段1a Task 9。店員のパスワード＋TOTP・メールのコードの道を通す試験）
 
-切り替えの後、手元では店員がアプリの画面（パスワード・メールのコード・TOTP）から入れない（GoTrue のフックが拒否する。SEC-AUTH-040）。skip にするのは、確かめている中身が**段4で消す機能**（TOTP の画面と窓口、パスワードのログイン、`create-user`、MFA のやり直し、最初の店長のコマンド）の試験だけ。店員を古い道で作っているだけで、確かめている中身が今も効く守りの試験は、`createAdminSessionActor`・`provisionStaff` に書き直して通す（FR-NEWS-SEC-005・FR-STOCKIST-014・016・FR-ADMIN-MISC-003・004・005・FR-LOGIN-031 の 010-AC-01・010-AC-03・FR-SEARCH-020 など）。形は `test.skip(true, '段4で消す機能: <理由>')`。どれも3つの幅（390・768・1280）のくり返しの中にあり、定義14件・実行42件が skip になる。**戻す段: 段4**（1b でパスキーの画面ができても、パスワード・TOTP の画面は段4まで残るが、店員がそこから入れない状態は 1b の後も変わらない。段4で、試験ごと消すか、パスキーの画面の試験に作り直す）。
+切り替えの後、手元では店員がアプリの画面（パスワード・メールのコード・TOTP）から入れない（GoTrue のフックが拒否する。SEC-AUTH-040）。skip にするのは、確かめている中身が**段4で消す機能**（TOTP の画面と窓口、パスワードのログイン、`create-user`、MFA のやり直し、最初の店長のコマンド）の試験だけ。店員を古い道で作っているだけで、確かめている中身が今も効く守りの試験は、`createAdminSessionActor`・`provisionStaff` に書き直して通す（FR-NEWS-SEC-005・FR-STOCKIST-014・016・FR-ADMIN-MISC-003・004・005・FR-LOGIN-031 の 010-AC-01・010-AC-03・FR-SEARCH-020 など）。形は `test.skip(true, '段4で消す機能: <理由>')`。どれも3つの幅（390・768・1280）のくり返しの中にあり、定義10件・実行30件が skip になる（Task 9 の最初のコミットでは14件・42件だったが、まだ効く守りの4件〔`FR-LOGIN-007-AC-02`・`FREQ-316-REQ-01-AC-01`・`FREQ-316-REQ-03-AC-01`・`FR-AUTH-006-AC-06`〕は書き直して通す方に戻した）。**戻す段: 段4**（1b でパスキーの画面ができても、パスワード・TOTP の画面は段4まで残るが、店員がそこから入れない状態は 1b の後も変わらない。段4で、試験ごと消すか、パスキーの画面の試験に作り直す）。
 
 | ファイル | `test` 名（先頭） | 理由（確かめている中身） | 戻す段 |
 | --- | --- | --- | --- |
-| `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts` | `FR-LOGIN-007-AC-02` 管理者とサポーターは TOTP を通るまで管理画面へ進めない | 店員のパスワード＋メールのコード＋TOTP のログインの流れ | 段4 |
-| 同上 | `SEC-AUTH-009-AC-01` 同じ利用者の6回目の TOTP の確認が 429 | TOTP の確認の窓口の回数の制限 | 段4 |
+| `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts` | `SEC-AUTH-009-AC-01` 同じ利用者の6回目の TOTP の確認が 429 | TOTP の確認の窓口の回数の制限 | 段4 |
 | 同上 | `SEC-AUTH-009-AC-02` TOTP の失敗が監査に残る | TOTP の確認の窓口の監査 | 段4 |
 | 同上 | `SEC-AUTH-010-AC-02` aal2 の管理者の JWT では今どおり他人の注文が読める | TOTP で aal2 に上げた店員。同じ中身の確かめは FR-LOGIN-031 の `SEC-AUTH-010-AC-03`（認めたパスキー2本）に移した | 段4 |
 | 同上 | `SEC-AUTH-030-AC-01` TOTP の登録と確認の成功が監査に残る | TOTP の登録・確認の窓口の監査 | 段4 |
 | 同上 | `SEC-AUTH-031-AC-01` メール OTP を通っていない aal1 の session では初めての TOTP を登録できない | TOTP の最初の登録の窓口 | 段4 |
-| 同上 | `FREQ-316-REQ-01-AC-01` Cookie の access token だけで管理の窓口が通り、iss か aud の違うトークンは断られる | 店員の画面ログイン（パスワード＋TOTP）で得た token の流れ。署名の確かめ自体は単体で別に確かめている | 段4（1b のパスキーの画面で作り直す候補） |
 | 同上 | `FREQ-316-REQ-02-AC-01` TOTP の確認の後の Cookie の access token が aal2 になり、aal1 のトークンでは管理の窓口が 403 になる | TOTP で aal2 になる流れ。管理の入口の判定は FR-LOGIN-039 に移した | 段4 |
-| 同上 | `FREQ-316-REQ-03-AC-01` ログアウトの後、その前の access token で管理の窓口が 401 になる | 店員の画面ログイン（パスワード＋TOTP）の後のログアウト。強制失効の確かめは FR-ADMIN-MISC-003 の `SEC-ADMIN-016-AC-01`（パスキーの店員）で続ける | 段4（1b のパスキーの画面で作り直す候補） |
 | `e2e/FR-LOGIN-038-login-return-to.spec.ts` | `FR-AUTH-005-AC-05` 管理者は確認コードの後に /auth/verified で 2 段目を通してから戻り先（/item）へ移る | 管理者が TOTP の2段目を通る流れ | 段4 |
 | 同上 | `FR-AUTH-005-AC-05` 戻り先の無い管理者は 2 段目の後に /admin へ移る | 同上 | 段4 |
 | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts` | `SEC-AUTH-031-AC-02` TOTP の無い管理者が /auth/v1/otp と /auth/v1/verify を直接呼んで得た通行証で /api/auth/mfa/enroll-totp を叩くと… | TOTP の登録の窓口。店員のメールのコードはフックが拒否するので、前提の通行証を作れない | 段4 |
 | `e2e/FR-ADMIN-MISC-008-first-admin-bootstrap.spec.ts` | `FR-ADMIN-010-AC-01` コマンドで作った店長が、ログインの後に最初の TOTP の登録の画面へ進める | 最初の店長のコマンド `admin:bootstrap`（パスワード＋TOTP。本番用に残し、コードは変えない）。手元の手順は Task 10 | 段4（コマンドを残す間は、試験は本番の流れの確かめ） |
-| `e2e/FR-ACCOUNT-046-password-change.spec.ts` | `FR-AUTH-006-AC-06` aal1 の管理者は start が 403 で、コードのメールが届かず、監査に denied と aal2_required が残る | 店員のパスワード変更の窓口（パスワードの機能）。店員はメールのコードで入れず、aal1 の店員のログインを作れない。窓口自体（`password/change/start`・`confirm`）は触らない | 段4 |
 
-書き直して通す方にした試験（skip にしない）: `FR-NEWS-SEC-005`・`FR-STOCKIST-014`・`FR-STOCKIST-016`・`FR-ADMIN-MISC-003`（強制失効・MFA のリセットの守り。サポーターをパスキーの店員で作る）・`FR-ADMIN-MISC-004`・`005`・`FR-SEARCH-020`・`FR-LOGIN-031` の `SEC-AUTH-010-AC-01`・`010-AC-03`。作りは、同じ人の1本・2本の JWT を並べない（認めた本数は DB で数えるので、2本目を足すと先の JWT も通る）形に直した。`FR-ADMIN-MISC-002`（`create-user`）は、窓口の試験が管理の入口を通る店員で動くので skip にしない。
+書き直して通す方にした試験（skip にしない）: `FR-LOGIN-032` の `FR-LOGIN-007-AC-02`（認めたパスキー1本の店員は管理画面・窓口で断られ、2本は通る）・`FREQ-316-REQ-01-AC-01`・`FREQ-316-REQ-03-AC-01`（`createAdminSessionActor` と `placeAdminCookies` で Cookie だけの認証・iss/aud・ログアウトの失効を確かめる）、`FR-ACCOUNT-046` の `FR-AUTH-006-AC-06`（パスワード変更の start の門は段3まで生きている。**今の挙動の確認**: パスキーの店員は認めたパスキー2本でも JWT の aal が aal1 のままなので、start の門〔役割が管理者・サポーターで aal が aal2 でなければ 403〕で閉じる側に断られる。コードは変えていない。段4でパスワード変更の窓口ごと消す時に試験も消す）、`FR-NEWS-SEC-005`・`FR-STOCKIST-014`・`FR-STOCKIST-016`・`FR-ADMIN-MISC-003`（強制失効・MFA のリセットの守り。サポーターをパスキーの店員で作る）・`FR-ADMIN-MISC-004`・`005`・`FR-SEARCH-020`・`FR-LOGIN-031` の `SEC-AUTH-010-AC-01`・`010-AC-03`。作りは、同じ人の1本・2本の JWT を並べない（認めた本数は DB で数えるので、2本目を足すと先の JWT も通る）形に直した。`FR-ADMIN-MISC-002`（`create-user`）は、窓口の試験が管理の入口を通る店員で動くので skip にしない。
+
+**tooling の穴（別に直す）**: `docs/05_Quality/reports/test-gaps.md` は本文の中の `test.skip(true, …)` を数えられない（`test.skip(title, fn)` の形だけ見る）。このため、上の10件も、トレースの出力では ACを覆う試験として数えられたままになる。この一覧が正で、トレース側の直しは別の作業にする。
 
 DB 結合・単体: `grep -rlE "aal2" tests` は92ファイルに残るが、古い名前の `'aal2'`・`'aal1'` を `aalClaims`・`aalFields`・`jwtClaims(..., 'aal2')`・`createLiveAppSession(..., { aal })` の引数に使っているもの（いずれも今は passkey の amr＋認めたパスキーの本数に読み替える。認めた本数が足りない側は `'aal1'`）と、TOTP・ログインの画面側の判定（`mfa-*`・`post-login`・`return-intent`・`verified` 系。切り替えでは変わらず、段4で TOTP と一緒に消える）で、判定が `aal2` のままの試験は無い。
 

@@ -9,7 +9,9 @@
  * - TOTP の本物の登録・確認（enroll-totp → 認証アプリのコード → verify）は、手元の GoTrue の TOTP が有効なときだけ通る
  *   （supabase/config.toml の [auth.mfa.totp] enroll_enabled・verify_enabled）。SEC-AUTH-030-AC-01・FREQ-316-REQ-02-AC-01 は
  *   この本物の流れを通す。無効のままなら登録の段で「TOTP が有効であること」の説明つきで落ちる（隠さない）。
- * - TOTP が無効でも足りる試験（FR-LOGIN-007-AC-02・SEC-AUTH-009・SEC-AUTH-010-AC-02・FREQ-316-REQ-01/03）は、
+ * - FR-LOGIN-007-AC-02・FREQ-316-REQ-01/03 は、まだ生きている守り（管理の入口・Cookie だけの認証・iss/aud・ログアウトの失効）を
+ *   createAdminSessionActor（認めたパスキーの店員）と placeAdminCookies で確かめる。TOTP の材料は使わない。
+ * - 残りの試験（SEC-AUTH-009・SEC-AUTH-010-AC-02・段4で消す TOTP の窓口）は、段4で消す機能なので test.skip。かつては、
  *   auth.mfa_factors に verified の行を足す・auth.mfa_amr_claims に totp の行を足して refresh する、で材料を作る
  *   （FR-ADMIN-MISC-003 と同じ）。aal2 の JWT の aal は GoTrue 自身が出す。
  * - 監査ログ（public.audit_logs）と DB の行は、手元の DB の接続で直に読む。
@@ -22,7 +24,7 @@ import { createClient } from '@supabase/supabase-js';
 import { expect, test, type APIResponse, type Page } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
-import { setLoginTwoFactorCookie } from './auth-2fa-test-utils';
+import { createAdminSessionActor, placeAdminCookies } from './admin-session-test-utils';
 import { DUMMY_CAPTCHA_TOKEN } from './captcha-test-utils';
 import { createTestMember, loginAsMember, type TestMember } from './member-session-helpers';
 import { createPaidOrder, uniqueEmail, withLocalDb } from './order-email-test-utils';
@@ -241,46 +243,6 @@ function verifyTotp(page: Page, factorId: string, code: string, ip = uniqueSourc
   return postJson(page, VERIFY_ROUTE, ip, { factorId, code });
 }
 
-// ---- 手元のメール受け（画面の確認コードの入力に使う） ----
-
-function localMailUrl(): string {
-  const url = process.env.MAIL_LOCAL_URL;
-  if (!url || !isLocalUrl(url)) throw new Error('手元のメール受け（MAIL_LOCAL_URL）が無い');
-  return url;
-}
-
-async function mailIdsTo(email: string): Promise<string[]> {
-  const url = new URL('/api/v1/search', localMailUrl());
-  url.searchParams.set('query', `to:${email}`);
-  const response = await fetch(url, { signal: AbortSignal.timeout(5_000), redirect: 'manual' });
-  if (!response.ok) throw new Error(`手元のメール受けを検索できない: ${response.status}`);
-  const body = (await response.json()) as { messages?: Array<{ ID: string }> };
-  return (body.messages ?? []).map((message) => message.ID);
-}
-
-async function newOtpCode(email: string, previousIds: ReadonlySet<string>): Promise<string> {
-  let code = '';
-  await expect
-    .poll(
-      async () => {
-        const latest = (await mailIdsTo(email)).find((id) => !previousIds.has(id));
-        if (!latest) return '';
-        const response = await fetch(new URL(`/api/v1/message/${encodeURIComponent(latest)}`, localMailUrl()), {
-          signal: AbortSignal.timeout(5_000),
-          redirect: 'manual',
-        });
-        if (!response.ok) return '';
-        const content = (await response.json()) as { Text?: string; HTML?: string };
-        const text = `${content.Text ?? ''}\n${(content.HTML ?? '').replace(/<[^>]*>/g, ' ')}`.replace(/https?:\/\/\S+/g, ' ');
-        code = text.match(/\b(\d{8})\b/)?.[1] ?? '';
-        return code;
-      },
-      { message: '確認コードのメールが届く', timeout: 30_000, intervals: [500] },
-    )
-    .toMatch(/^\d{8}$/);
-  return code;
-}
-
 // ---- JWT の作り直し（iss・aud の確かめ用。手元の JWT_SECRET の HS256） ----
 
 const base64Json = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -301,50 +263,25 @@ for (const viewport of viewports) {
   test.describe(`FR-LOGIN-032 (${viewport.name})`, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
-    test(`FR-LOGIN-007-AC-02 管理者とサポーターは TOTP を通るまで管理画面へ進めない (${viewport.name})`, async ({ page }) => {
-      test.skip(true, '段4で消す機能: 店員のパスワード＋確認コード＋TOTP のログインと TOTP の窓口（段4で消す）。手元では店員がアプリの画面から入れない（GoTrue のフックが拒否。SEC-AUTH-040）');
+    test(`FR-LOGIN-007-AC-02 管理者とサポーターは入口の条件（認めたパスキー2本）を満たすまで管理画面へ進めない (${viewport.name})`, async ({ page }) => {
+      // 古い版は TOTP を通るまでの門を見ていた。今の門（SR-AUTH-014: パスキーのログイン＋認めたパスキー2本）が同じ守りを担うので、
+      // 認めたパスキー1本の店員（古い名前の aal1）が画面でも窓口でも断られ、2本の店員（aal2）は通る、で確かめる。
       requireLocalEnv();
       for (const role of ['admin', 'supporter'] as const) {
-        const ip = uniqueSourceIp();
-        const member = await createTestMember(`login032-007-${role}`);
-        await withLocalDb(async (db) => {
-          await assignRole(db, member.userId, role);
-          // 登録済みの人が「確認」を求められる状態。TOTP が無効の手元の GoTrue でも、要素の一覧は読める
-          await addVerifiedTotpFactor(db, member.userId);
-        });
-        await page.context().setExtraHTTPHeaders({ 'x-real-ip': ip });
+        const oneKey = await withLocalDb((db) => createAdminSessionActor(db, role, 'aal1'));
+        await placeAdminCookies(page, oneKey, uniqueSourceIp());
 
-        // 認証コード（メール）を、画面の入力欄に入れて通す
-        await page.goto('/login');
-        await setLoginTwoFactorCookie(page, member.email, member.userId);
-        const previousIds = new Set(await mailIdsTo(member.email));
-        const resend = await page.request.post(new URL('/api/auth/login/resend', page.url()).toString(), {
-          headers: { origin: new URL(page.url()).origin, 'x-real-ip': ip },
-          maxRedirects: 0,
-          failOnStatusCode: false,
-        });
-        expect(resend.status(), '確認コードのメールを送る').toBe(200);
-        const code = await newOtpCode(member.email, previousIds);
-        await page.goto('/login/verify');
-        for (let index = 0; index < 8; index += 1) {
-          await page.getByLabel(`認証コード ${index + 1} 桁目`).fill(code[index]);
-        }
-        await page.getByRole('button', { name: 'サインイン' }).click();
-
-        // 認証コードを通すと /auth/verified へ移り、TOTP の確認（登録済みなので入力）を求められる
-        await expect(page, `${role} は /auth/verified へ移る`).toHaveURL(/\/auth\/verified$/);
-        await expect(page.getByText('2要素認証コードを入力してください。')).toBeVisible({ timeout: 15_000 });
-        await expect(page.getByLabel('認証コード（6〜8桁）')).toBeVisible();
-        await expect(page.getByRole('button', { name: '2要素認証を完了' })).toBeVisible();
-        // TOTP を確かめていないので、管理画面（/admin）へ移されない
-        await expect(page).toHaveURL(/\/auth\/verified$/);
-
-        // TOTP を確かめるまで、管理画面の画面も管理の窓口も使えない
+        // 入口の条件を満たさないので、管理画面は「2要素認証が必要です」で止まり、管理の窓口も 403（MFA required）
         await page.goto('/admin');
-        await expect(page.getByRole('heading', { name: '2要素認証が必要です' })).toBeVisible({ timeout: 15_000 });
+        await expect(page.getByRole('heading', { name: '2要素認証が必要です' }), `${role}（1本）の管理画面`).toBeVisible({ timeout: 15_000 });
         const probe = await probeWithCookie(page, role);
-        expect(probe.status(), `${role} の aal1 では管理の窓口が 403`).toBe(403);
+        expect(probe.status(), `${role}（1本）では管理の窓口が 403`).toBe(403);
         expect(((await probe.json()) as { reason?: string }).reason).toBe('MFA required');
+
+        // 対照: 認めたパスキー2本の店員は同じ窓口が通る
+        const twoKeys = await withLocalDb((db) => createAdminSessionActor(db, role, 'aal2'));
+        await placeAdminCookies(page, twoKeys, uniqueSourceIp());
+        expect((await probeWithCookie(page, role)).status(), `${role}（2本）では管理の窓口が 200`).toBe(200);
 
         await page.context().clearCookies();
       }
@@ -464,11 +401,12 @@ for (const viewport of viewports) {
     });
 
     test(`FREQ-316-REQ-01-AC-01 Cookie の access token だけで管理の窓口が通り、iss か aud の違うトークンは断られる (${viewport.name})`, async ({ page, request }) => {
-      test.skip(true, '段4で消す機能: 店員のパスワード＋確認コード＋TOTP のログインと TOTP の窓口（段4で消す）。手元では店員がアプリの画面から入れない（GoTrue のフックが拒否。SEC-AUTH-040）');
       requireLocalEnv();
       if (!JWT_SECRET) throw new Error('JWT_SECRET が env に無い（署名し直した JWT の確かめに要る）');
-      const { ip } = await loginPrivilegedAsAal1(page, 'login032-316a', 'admin');
-      const aal2Token = await elevateCookieToAal2(page, ip);
+      // 認めたパスキー2本の店長（古い名前の aal2）の JWT を Cookie に置く。TOTP は使わない
+      const actor = await withLocalDb((db) => createAdminSessionActor(db, 'admin', 'aal2'));
+      const aal2Token = actor.accessToken;
+      await placeAdminCookies(page, actor, uniqueSourceIp());
 
       // Authorization の見出しが無く Cookie の access token だけを持つ管理者の要求が、管理の窓口を通る
       const viaCookie = await probeWithCookie(page, 'admin');
@@ -517,10 +455,10 @@ for (const viewport of viewports) {
     });
 
     test(`FREQ-316-REQ-03-AC-01 ログアウトの後、その前の access token で管理の窓口が 401 になる (${viewport.name})`, async ({ page, request }) => {
-      test.skip(true, '段4で消す機能: 店員のパスワード＋確認コード＋TOTP のログインと TOTP の窓口（段4で消す）。手元では店員がアプリの画面から入れない（GoTrue のフックが拒否。SEC-AUTH-040）');
-      const { ip } = await loginPrivilegedAsAal1(page, 'login032-316c', 'admin');
-      const aal2Token = await elevateCookieToAal2(page, ip);
-      const origin = new URL(page.url()).origin;
+      const actor = await withLocalDb((db) => createAdminSessionActor(db, 'admin', 'aal2'));
+      const aal2Token = actor.accessToken;
+      const ip = uniqueSourceIp();
+      const { origin, csrfToken } = await placeAdminCookies(page, actor, ip);
       const probeUrl = new URL(PROBE_ROUTE.admin, origin).toString();
       const probeBearer = async () =>
         (await request.get(probeUrl, { headers: { Authorization: `Bearer ${aal2Token}` }, failOnStatusCode: false, maxRedirects: 0 })).status();
@@ -528,17 +466,15 @@ for (const viewport of viewports) {
       // ログアウトの前は、期限内の access token で通る
       expect(await probeBearer()).toBe(200);
 
-      const csrf = (await page.context().cookies(origin)).find((cookie) => cookie.name === 'sb-csrf-token')?.value;
-      if (!csrf) throw new Error('sb-csrf-token の Cookie が無い');
       const logout = await page.request.post(new URL(LOGOUT_ROUTE, origin).toString(), {
-        headers: { origin, 'x-csrf-token': csrf, 'x-real-ip': ip },
+        headers: { origin, 'x-csrf-token': csrfToken, 'x-real-ip': ip },
         failOnStatusCode: false,
         maxRedirects: 0,
       });
       expect(logout.status()).toBe(200);
 
       // ログアウトの前の access token（期限内）で管理の窓口を呼ぶと 401
-      expect(claimsOf(aal2Token).aal).toBe('aal2');
+      expect(claimsOf(aal2Token).sub, '期限内の access token は同じ店長のもの').toBe(actor.userId);
       expect(await probeBearer()).toBe(401);
     });
   });

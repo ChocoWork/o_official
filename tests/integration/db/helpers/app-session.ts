@@ -8,7 +8,7 @@
  *
  * 管理の入口はパスキーの amr と DB で数えた認めたパスキー2本以上（SR-AUTH-014。`aal` は見ない）。古い名前の aal を読み替える:
  * 'aal2' → 認めたパスキー2本（`auth.webauthn_credentials` に行を直に入れ、`passkey_approve` で認める）、'aal1' → 認めたパスキー1本。
- * `jwtClaims` は、'aal2'（既定）が今の時刻の `passkey` の amr を持つ claims、'aal1' が `passkey` の無い（メールのコードの）amr の claims を返す。
+ * `jwtClaims` は、'aal2'（既定）が1時間前の `passkey` の amr を持つ claims、'aal1' が `passkey` の無い（メールのコードの）amr の claims を返す。
  * 認めた本数が足りない側（1本）を作りたい時は、`createLiveAppSession(..., { aal: 'aal1' })` に `jwtClaims(..., 'aal2')`（passkey の amr）を合わせる。
  */
 import { randomUUID } from 'node:crypto';
@@ -67,7 +67,7 @@ export async function createLiveAppSession(
 /**
  * PostgREST が入れる JWT の claims（role authenticated・aal・amr・session_id）。
  * `select set_config('request.jwt.claims', $1, true)` に JSON.stringify して渡す。
- * `aal` の引数は頼んだ側の名前（先頭の説明）。claims の aal は常に aal1（パスキーのログインと同じ）、amr は今の時刻の passkey（'aal1' は otp）。
+ * `aal` の引数は頼んだ側の名前（先頭の説明）。claims の aal は常に aal1（パスキーのログインと同じ）、amr は1時間前の passkey（'aal1' は otp）。
  */
 export function jwtClaims(
   userId: string,
@@ -78,8 +78,9 @@ export function jwtClaims(
     sub: userId,
     role: 'authenticated',
     aal: 'aal1',
-    // 取引の中の now() は取引の始めの時刻で固定なので、取引の後で作る claims の時刻が未来にならないよう、少し前（5秒）にする（本物の JWT も要求より前に出る）
-    amr: [{ method: aal === 'aal2' ? 'passkey' : 'otp', timestamp: Math.floor(Date.now() / 1000) - 5 }],
+    // 取引の中の now() は取引の始めの時刻で固定なので、取引が長引いても claims の時刻が未来にならないよう、1時間前にする（24時間の窓の内側。本物の JWT も要求より前に出る）。
+    // 1時間より長い取引は想定しない
+    amr: [{ method: aal === 'aal2' ? 'passkey' : 'otp', timestamp: Math.floor(Date.now() / 1000) - 3600 }],
     session_id: session.sessionId,
   };
 }

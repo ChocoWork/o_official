@@ -26,6 +26,7 @@ import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { expect, test, type APIRequestContext, type APIResponse, type Page } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
+import { createAdminSessionActor, placeAdminCookies } from './admin-session-test-utils';
 import { loginAsMember } from './member-session-helpers';
 import { withLocalDb } from './order-email-test-utils';
 
@@ -576,19 +577,21 @@ for (const viewport of apiOnlyViewports) {
       expect(confirm.status(), '未ログインの confirm').toBe(401);
     });
 
-    test(`FR-AUTH-006-AC-06 ${viewport.name}: aal1 の管理者は start が 403 で、コードのメールが届かず、監査に denied と aal2_required が残る`, async ({ page, baseURL }) => {
-      test.skip(true, '段4で消す機能: 店員のパスワード変更の窓口（パスワードの機能。段4で消す）。店員はメールのコードで入れず aal1 の店員のログインを作れない（SEC-AUTH-040）');
+    test(`FR-AUTH-006-AC-06 ${viewport.name}: 店員（パスキーのログイン）は start が 403 で、コードのメールが届かず、監査に denied と aal2_required が残る`, async ({ page, baseURL }) => {
+      // 古い版は aal1 の管理者を使っていた。店員は今パスキーでログインし JWT の aal は aal1 のままなので、認めたパスキー2本の店員でも
+      // start の門（役割が管理者・サポーターで aal が aal2 でなければ拒む。コードは変えていない）で断られる。段3まで生きている守り。
+      // 段4でパスワード変更の窓口ごと消す時に、この試験も消す。
       test.setTimeout(120_000);
       const origin = originOf(baseURL);
-      const admin = await createMember('api-admin-aal1', { admin: true });
       const sourceIp = uniqueSourceIp();
-      await loginAsMember(page, admin, sourceIp);
+      const actor = await withLocalDb((db) => createAdminSessionActor(db, 'admin', 'aal2'));
+      await placeAdminCookies(page, actor, sourceIp);
 
-      const previousIds = await mailIdsOf(admin.email);
-      const response = await postChange(page, origin, START_PATH, { current_password: admin.password }, sourceIp);
-      expect(response.status(), 'aal1 の管理者の start').toBe(403);
-      expect(await countNewMails(admin.email, previousIds, CODE_MAIL_SUBJECT), 'コードのメールの数').toBe(0);
-      const rows = await auditRowsOf(admin.userId);
+      const previousIds = await mailIdsOf(actor.email);
+      const response = await postChange(page, origin, START_PATH, { current_password: newPassword() }, sourceIp);
+      expect(response.status(), '店員（パスキー2本）の start').toBe(403);
+      expect(await countNewMails(actor.email, previousIds, CODE_MAIL_SUBJECT), 'コードのメールの数').toBe(0);
+      const rows = await auditRowsOf(actor.userId);
       expect(rows.filter((row) => row.action === 'password_change_start' && row.outcome === 'denied' && row.detail === 'aal2_required')).toHaveLength(1);
     });
 

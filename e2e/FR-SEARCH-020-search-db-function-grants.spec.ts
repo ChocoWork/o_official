@@ -97,7 +97,7 @@ function memberToken(): Promise<string> {
 
 // 結び付いた管理者の、認めたパスキー1本（古い名前の aal1）と2本（aal2）の JWT。has_permission は管理の入口の3条件と生きた結び付きを求めるので、
 // 非公開の行が見える対照は2本、見えない側は1本。認めた本数は利用者ごとに DB で数えるので、同じ人の1本・2本は並べられず、別の人にする
-type AdminTokens = { userId: string; aal1Token: string; aal2Token: string };
+type AdminTokens = { userId: string; aal1UserId: string; aal1Token: string; aal2Token: string };
 let adminAal1Promise: Promise<AdminTokens> | null = null;
 function adminTokens(): Promise<AdminTokens> {
   adminAal1Promise ??= withDb(async (db) => {
@@ -105,7 +105,7 @@ function adminTokens(): Promise<AdminTokens> {
     createdUserIds.push(aal1.userId);
     const aal2 = await createAdminSessionActor(db as unknown as PgClient, 'admin', 'aal2');
     createdUserIds.push(aal2.userId);
-    return { userId: aal2.userId, aal1Token: aal1.accessToken, aal2Token: aal2.accessToken };
+    return { userId: aal2.userId, aal1UserId: aal1.userId, aal1Token: aal1.accessToken, aal2Token: aal2.accessToken };
   });
   return adminAal1Promise;
 }
@@ -259,16 +259,19 @@ test.describe('FR-SEARCH-020 検索の DB の関数への直接の道', () => {
     ];
 
     await withFixture('002', { publishedItems: 1, privateItems: 1, publishedLooks: 1, privateLooks: 1, publishedNews: 1, privateNews: 1 }, async (fixture, db) => {
-      const held = await db.query<{ n: number }>(
-        `select count(distinct p.code)::int as n
-           from public.user_roles ur
-           join public.role_permissions rp on rp.role_id = ur.role_id
-           join public.permissions p on p.id = rp.permission_id
-          where ur.user_id = $1::uuid and ur.active = true and (ur.expires_at is null or ur.expires_at > now())
-            and p.code = any($2::text[])`,
-        [admin.userId, ['admin.items.read', 'admin.looks.read', 'admin.news.read']],
-      );
-      expect(held.rows[0].n, '管理者が持つ閲覧の権限の数').toBe(3);
+      // 1本の側も2本の側も、閲覧の3権限を持つ（1本の側が見えないのは本数のせいだけで、権限が無いからではないことの確かめ）
+      for (const [name, userId] of [['2本', admin.userId], ['1本', admin.aal1UserId]] as const) {
+        const held = await db.query<{ n: number }>(
+          `select count(distinct p.code)::int as n
+             from public.user_roles ur
+             join public.role_permissions rp on rp.role_id = ur.role_id
+             join public.permissions p on p.id = rp.permission_id
+            where ur.user_id = $1::uuid and ur.active = true and (ur.expires_at is null or ur.expires_at > now())
+              and p.code = any($2::text[])`,
+          [userId, ['admin.items.read', 'admin.looks.read', 'admin.news.read']],
+        );
+        expect(held.rows[0].n, `管理者（認めたパスキー${name}）が持つ閲覧の権限の数`).toBe(3);
+      }
 
       // 対照: 結び付いた aal2 の管理者は、表を直接読むと非公開の行が見える（has_permission が通る。関数の絞りだけが守っていることの確かめ）。
       // 認めたパスキー1本の JWT は has_permission が断るので、同じ行が見えない

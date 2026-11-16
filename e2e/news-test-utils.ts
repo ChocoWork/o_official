@@ -146,10 +146,6 @@ export async function createAdminWithPermissions(
   return { userId, email, password: '', authenticators: provisioned.authenticators };
 }
 
-function decodeClaims(accessToken: string): { aal?: string; session_id?: string; staff_passkeys_ok?: boolean } {
-  return JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64url').toString('utf8'));
-}
-
 /**
  * 本物の GoTrue にパスキーでログインして access token を得る（認めたパスキー1本。古い名前の aal1）。password は使わない（呼び手を変えないために残した引数）。
  * elevateWith に DB の接続を渡すと、同じ session で2本目のパスキーを登録して認め、refresh して認めたパスキー2本の token を得る（古い名前の aal2）。
@@ -171,7 +167,9 @@ export async function signInWithPassword(
     const added = await addApprovedPasskey(db, { userId, accessToken: session.access_token, refreshToken: session.refresh_token });
     authenticators.push(added.authenticator);
     session = added.session;
-    if (decodeClaims(session.access_token).staff_passkeys_ok !== true) throw new Error('2本目の後の token の staff_passkeys_ok が真ではない');
+    // 独自の役割（admin・supporter 以外）には hook が staff_passkeys_ok を付けないので、JWT の印ではなく DB で数えた認めた本数を見る
+    const counted = await db.query('select public.passkey_approved_count($1::uuid) as n', [userId]);
+    if (Number(counted.rows[0]?.n) !== 2) throw new Error('2本目の後に DB で数えた認めたパスキーが2本ではない');
   }
   // アプリの sessions に結び付ける（DD-AUTH-039）。アプリは結び付かない session の通行証を 401 にする。
   // 結び付けない通行証（攻撃側の対照）は bindApp: false。行を作る処理は admin-session-test-utils の bindAppSession に 1 つだけ置く
