@@ -16,6 +16,35 @@ function listSources(dir: string): string[] {
   });
 }
 
+/** import・再エクスポート・動的 import・require の行き先を集める。 */
+export function collectSpecifiers(code: string): string[] {
+  return [...code.matchAll(/(?:from|import|require)\s*\(?\s*['"]([^'"]+)['"]/g)].map((match) => match[1]);
+}
+
+/** サーバー専用の行き先か。別名（@/）・相対パス・拡張子つきも、最後の部分の名前で見分ける。 */
+export function isServerOnlySpecifier(specifier: string): boolean {
+  return /(^|\/)passkey-(gotrue|start-config)(\.[cm]?[jt]sx?)?$/.test(specifier) || specifier === 'server-only' || specifier.startsWith('node:');
+}
+
+describe('DD-AUTH-060 守りの検出が効く', () => {
+  test.each([
+    ["import x from '@/lib/auth/passkey-gotrue';"],
+    ["import x from '../../../lib/auth/passkey-gotrue';"],
+    ["import x from '@/lib/auth/passkey-gotrue.ts';"],
+    ["const x = require('@/lib/auth/passkey-start-config');"],
+    ["export * from '@/lib/auth/passkey-start-config';"],
+    ["await import('@/lib/auth/passkey-gotrue');"],
+    ["import 'server-only';"],
+    ["import fs from 'node:fs';"],
+  ])('DD-AUTH-060 %s を見つける', (code) => {
+    expect(collectSpecifiers(code).some(isServerOnlySpecifier)).toBe(true);
+  });
+
+  test('DD-AUTH-060 画面の部品どうしの import は見つけない', () => {
+    expect(collectSpecifiers("import x from '@/features/auth/passkey/browser-start';").some(isServerOnlySpecifier)).toBe(false);
+  });
+});
+
 describe('DD-AUTH-060 画面の部品はサーバー専用の部品を読まない', () => {
   const files = listSources(ROOT);
 
@@ -28,10 +57,7 @@ describe('DD-AUTH-060 画面の部品はサーバー専用の部品を読まな�
     (_name, file) => {
       // コメントに名前が出てもよいので、import の行き先だけを集める。
       const code = readFileSync(file, 'utf8');
-      const specifiers = [...code.matchAll(/(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g)].map((match) => match[1]);
-      for (const specifier of specifiers) {
-        expect(specifier).not.toMatch(/^@\/lib\/auth\/passkey-(gotrue|start-config)$|^server-only$|^node:/);
-      }
+      expect(collectSpecifiers(code).filter(isServerOnlySpecifier)).toEqual([]);
     },
   );
 });

@@ -46,9 +46,9 @@ export type RegisterResult =
 export type ManageFailureReason = 'unauthorized' | 'not_found' | 'rate_limited' | 'unavailable' | 'failed';
 export type ManageFailure = { ok: false; reason: ManageFailureReason };
 
-export type ListedPasskey = PasskeySummary & { last_used_at: string | null; approved?: boolean };
+export type ListedPasskey = PasskeySummary & { last_used_at: string | null };
 export type ListResult =
-  | { ok: true; passkeys: ListedPasskey[]; isStaff: boolean; approvedCount?: number }
+  | { ok: true; passkeys: ListedPasskey[] }
   | ManageFailure;
 export type RenameResult = { ok: true; passkey: { id: string; friendly_name: string } } | ManageFailure;
 export type DeleteResult = { ok: true } | ManageFailure;
@@ -60,6 +60,16 @@ async function readJson(response: Response): Promise<Record<string, unknown> | n
   } catch {
     return null;
   }
+}
+
+/** no-store の応答は、本文を読まないと Chrome が「通信中」のままにする（E2E の networkidle が来ない）。読まない道では捨てる。 */
+async function discard(response: Response): Promise<void> {
+  await response.arrayBuffer().catch(() => undefined);
+}
+
+async function manageFailureOf(response: Response): Promise<ManageFailure> {
+  await discard(response);
+  return manageFailure(response.status);
 }
 
 function manageFailure(status: number): ManageFailure {
@@ -231,7 +241,7 @@ async function listWith(fetchApi: typeof clientFetch): Promise<ListResult> {
   } catch {
     return { ok: false, reason: 'failed' };
   }
-  if (!response.ok) return manageFailure(response.status);
+  if (!response.ok) return manageFailureOf(response);
   const body = await readJson(response);
   if (!body || !Array.isArray(body.passkeys)) return { ok: false, reason: 'failed' };
   const passkeys: ListedPasskey[] = [];
@@ -243,15 +253,9 @@ async function listWith(fetchApi: typeof clientFetch): Promise<ListResult> {
       friendly_name: typeof item.friendly_name === 'string' ? item.friendly_name : null,
       created_at: item.created_at,
       last_used_at: typeof item.last_used_at === 'string' ? item.last_used_at : null,
-      ...(typeof item.approved === 'boolean' ? { approved: item.approved } : {}),
     });
   }
-  return {
-    ok: true,
-    passkeys,
-    isStaff: body.isStaff === true,
-    ...(typeof body.approvedCount === 'number' ? { approvedCount: body.approvedCount } : {}),
-  };
+  return { ok: true, passkeys };
 }
 
 /**
@@ -275,7 +279,7 @@ async function renameWith(fetchApi: typeof clientFetch, id: string, name: string
   } catch {
     return { ok: false, reason: 'failed' };
   }
-  if (!response.ok) return manageFailure(response.status);
+  if (!response.ok) return manageFailureOf(response);
   const body = await readJson(response);
   const passkey = body?.passkey as Record<string, unknown> | undefined;
   if (!passkey || typeof passkey.id !== 'string' || typeof passkey.friendly_name !== 'string') {
@@ -298,6 +302,7 @@ export async function deletePasskey(id: string): Promise<DeleteResult> {
   } catch {
     return { ok: false, reason: 'failed' };
   }
-  if (!response.ok) return manageFailure(response.status);
+  if (!response.ok) return manageFailureOf(response);
+  await discard(response);
   return { ok: true };
 }

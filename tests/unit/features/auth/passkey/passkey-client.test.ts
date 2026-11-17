@@ -227,12 +227,11 @@ describe('DD-AUTH-060 listPasskeys・renamePasskey・deletePasskey', () => {
     await expect(listPasskeys()).resolves.toEqual({
       ok: true,
       passkeys: [{ id: 'k1', friendly_name: 'iPhone', created_at: 'c', last_used_at: null }],
-      isStaff: false,
     });
     expect(clientFetchMock).toHaveBeenCalledWith('/api/auth/passkey', { method: 'GET' });
   });
 
-  test('DD-AUTH-060 一覧: 店員の approved・approvedCount を通す', async () => {
+  test('DD-AUTH-060 一覧: 店員の項目（isStaff・approved・approvedCount）は返さない', async () => {
     clientFetchMock.mockResolvedValue(
       json(200, {
         passkeys: [{ id: 'k1', friendly_name: null, created_at: 'c', last_used_at: 'l', approved: true }],
@@ -242,9 +241,7 @@ describe('DD-AUTH-060 listPasskeys・renamePasskey・deletePasskey', () => {
     );
     await expect(listPasskeys()).resolves.toEqual({
       ok: true,
-      passkeys: [{ id: 'k1', friendly_name: null, created_at: 'c', last_used_at: 'l', approved: true }],
-      isStaff: true,
-      approvedCount: 1,
+      passkeys: [{ id: 'k1', friendly_name: null, created_at: 'c', last_used_at: 'l' }],
     });
   });
 

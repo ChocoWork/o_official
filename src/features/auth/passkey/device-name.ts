@@ -4,7 +4,6 @@
  * @packageDocumentation
  */
 
-const MAX_LENGTH = 64;
 const FALLBACK = 'この端末';
 const KEYWORDS = ['iPhone', 'iPad', 'Android', 'Mac', 'Windows', 'Linux'] as const;
 
@@ -16,5 +15,5 @@ const KEYWORDS = ['iPhone', 'iPad', 'Android', 'Mac', 'Windows', 'Linux'] as con
  */
 export function deviceNameFromUserAgent(ua: string): string {
   const found = KEYWORDS.find((keyword) => ua.includes(keyword));
-  return [...(found ?? FALLBACK)].slice(0, MAX_LENGTH).join('');
+  return found ?? FALLBACK;
 }

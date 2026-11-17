@@ -19,8 +19,4 @@ describe('DD-AUTH-060 deviceNameFromUserAgent', () => {
     expect(deviceNameFromUserAgent('curl/8.0')).toBe('この端末');
     expect(deviceNameFromUserAgent('')).toBe('この端末');
   });
-
-  test('DD-AUTH-060 64字以内', () => {
-    expect([...deviceNameFromUserAgent('Windows')].length).toBeLessThanOrEqual(64);
-  });
 });
