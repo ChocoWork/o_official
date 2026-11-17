@@ -2,7 +2,7 @@
  * メールのコードを入力してログインを確定する部品（src/features/auth/passkey/components/EmailCodeEntry.tsx）。
  *
  * @packageDocumentation
- * @impl IMPL-AUTH-316
+ * @impl IMPL-AUTH-314
  * @design DD-AUTH-062
  * @remarks 旧 `VerifyOtpClient` の入力・カウントダウンの動きを写し、窓口を `/api/auth/email-code/*` に替えた（共有に直さない）。
  * 成功の行き先は確定の応答の `offerPasskey` だけで決める（別の呼び出しをしない。窓口が失敗側に倒れた時は静かに「勧めない」へ退く）。
@@ -24,7 +24,6 @@ import "@/components/AuthForm.css";
 const CODE_LENGTH = 8;
 const EMPTY_DIGITS = Array.from({ length: CODE_LENGTH }, () => "");
 const RESEND_COOLDOWN_SECONDS = 60;
-const AUTO_RETURN_MS = 3000;
 const BASE = "/api/auth/email-code";
 
 const MSG_INVALID = "確認コードが無効、または期限切れです。";
@@ -32,7 +31,7 @@ const MSG_LIMITED = "試行が集中しています。しばらくしてから�
 const MSG_EXPIRED = "時間がたちました。もう一度メールアドレスを入れてください。";
 const MSG_STAFF = "店員の方は、パスキーでログインしてください。";
 const MSG_VERIFY_FAILED = "確認できませんでした。時間をおいて、もう一度お試しください。";
-const MSG_RESEND_LIMITED = "送信回数の上限に達しました。時間をおいて、もう一度お試しください。";
+const MSG_RESEND_LIMITED = "しばらく再送できません。時間をおいて、もう一度お試しください。";
 const MSG_UNAVAILABLE = "ただいま処理できません。時間をおいて、もう一度お試しください。";
 const MSG_RESEND_FAILED = "確認コードを送れませんでした。時間をおいて、もう一度お試しください。";
 const MSG_RESENT = "確認コードを再送しました。";
@@ -59,9 +58,11 @@ export default function EmailCodeEntry({ email }: { email: string }) {
   const router = useRouter();
   const { refreshAuthState } = useLogin();
   const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const returnRef = useRef<HTMLButtonElement | null>(null);
   const [digits, setDigits] = useState<string[]>(EMPTY_DIGITS);
   const [loading, setLoading] = useState(false);
   const [closed, setClosed] = useState(false);
+  const [done, setDone] = useState(false);
   const [staffBlocked, setStaffBlocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -72,7 +73,7 @@ export default function EmailCodeEntry({ email }: { email: string }) {
 
   const code = digits.join("");
   const maskedEmail = maskEmail(email);
-  const inactive = loading || closed;
+  const inactive = loading || closed || done;
 
   const focusInput = useCallback((index: number) => {
     const input = inputRefs.current[index];
@@ -96,12 +97,10 @@ export default function EmailCodeEntry({ email }: { email: string }) {
     return () => clearInterval(interval);
   }, [resendAvailableAt]);
 
-  // 保留が閉じた後は、文を読む間を置いて /login へ戻す（店員の案内は自動で戻さない）。
+  // 閉じた時は、読み上げと操作の起点を「ログイン画面へ戻る」へ移す（自動では戻さない）。
   useEffect(() => {
-    if (!closed || staffBlocked) return;
-    const timer = setTimeout(() => router.replace("/login"), AUTO_RETURN_MS);
-    return () => clearTimeout(timer);
-  }, [closed, staffBlocked, router]);
+    if (closed) returnRef.current!.focus();
+  }, [closed]);
 
   const fillFrom = (index: number, text: string) => {
     const numbersOnly = text.replace(/\D/g, "");
@@ -185,6 +184,8 @@ export default function EmailCodeEntry({ email }: { email: string }) {
       const body = await readBody(response);
 
       if (response.ok) {
+        // 移動が終わるまで入力と送信を止めたままにする（二度目の確定は保留が無く 401 になる）。
+        setDone(true);
         await refreshAuthState();
         if (body?.offerPasskey === true && isPasskeySupported()) {
           router.replace("/login/passkey");
@@ -196,7 +197,10 @@ export default function EmailCodeEntry({ email }: { email: string }) {
       if (response.status === 401) {
         const expired = typeof body?.error === "string" && body.error.startsWith("セッションの有効期限");
         if (expired) closeWith(MSG_EXPIRED);
-        else setError(MSG_INVALID);
+        else {
+          setError(MSG_INVALID);
+          focusInput(0);
+        }
       } else if (response.status === 429) {
         closeWith(MSG_LIMITED);
       } else if (response.status === 403 && body?.error === "staff_passkey_required") {
@@ -206,6 +210,7 @@ export default function EmailCodeEntry({ email }: { email: string }) {
         setError(MSG_VERIFY_FAILED);
       }
     } catch {
+      setDone(false);
       setError(MSG_VERIFY_FAILED);
     } finally {
       setLoading(false);
@@ -335,9 +340,10 @@ export default function EmailCodeEntry({ email }: { email: string }) {
         <div className="mt-[30px] flex items-center justify-center gap-6">
           {closed ? (
             <button
+              ref={returnRef}
               type="button"
               onClick={() => router.replace("/login")}
-              className="lk-text-xs underline underline-offset-4 hover:text-[#474747] transition-colors"
+              className="min-h-11 px-2 inline-flex items-center lk-text-xs underline underline-offset-4 hover:text-[#474747] transition-colors"
             >
               ログイン画面へ戻る
             </button>
@@ -345,8 +351,8 @@ export default function EmailCodeEntry({ email }: { email: string }) {
             <button
               type="button"
               onClick={handleCancel}
-              disabled={loading}
-              className="lk-text-xs underline underline-offset-4 hover:text-[#474747] transition-colors"
+              disabled={loading || done}
+              className="min-h-11 px-2 inline-flex items-center lk-text-xs underline underline-offset-4 hover:text-[#474747] transition-colors"
             >
               メールアドレスを入れ直す
             </button>

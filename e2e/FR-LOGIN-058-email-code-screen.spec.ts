@@ -73,7 +73,7 @@ for (const viewport of viewports) {
       await expect(page.getByRole('button', { name: 'ログイン' })).toBeEnabled();
       await page.getByRole('button', { name: 'ログイン' }).click();
 
-      await expect(page).not.toHaveURL(/\/login/);
+      await expect(page).toHaveURL(`${ORIGIN}/`);
       const me = await page.request.get('/api/auth/me');
       expect(((await me.json()) as { authenticated?: boolean }).authenticated).toBe(true);
     });

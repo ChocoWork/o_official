@@ -26,8 +26,15 @@ export async function resolvePostLoginPath(
       cache: 'no-store',
       credentials: 'same-origin',
     });
-    if (response.status === 401) return '/login';
-    if (!response.ok) return MFA_PATH;
+    // no-store の応答は本文を読まないと Chrome が通信中のままにする（E2E の networkidle が来ない）。読まない道では捨てる。
+    if (response.status === 401) {
+      await response.arrayBuffer().catch(() => undefined);
+      return '/login';
+    }
+    if (!response.ok) {
+      await response.arrayBuffer().catch(() => undefined);
+      return MFA_PATH;
+    }
     const body = (await response.json().catch(() => null)) as PostLoginResponse | null;
     if (body === null || body.needsMfa === true) return MFA_PATH;
     return sanitizeReturnPath(body.redirectTo, '/', { origin });

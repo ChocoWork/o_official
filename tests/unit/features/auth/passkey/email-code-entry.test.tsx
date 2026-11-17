@@ -99,6 +99,57 @@ describe('EmailCodeEntry', () => {
     expect(mockResolve).not.toHaveBeenCalled();
   });
 
+  test('DD-AUTH-062 refreshAuthState は router.replace より先に走る', async () => {
+    jest.mocked(global.fetch).mockResolvedValue(json(200, { user: { id: 'u' }, offerPasskey: true }));
+    await submitCode();
+    expect(mockRefresh.mock.invocationCallOrder[0]).toBeLessThan(mockReplace.mock.invocationCallOrder[0]);
+  });
+
+  test('DD-AUTH-062 refreshAuthState は resolvePostLoginPath より先に走る', async () => {
+    mockSupported.mockReturnValue(false);
+    jest.mocked(global.fetch).mockResolvedValue(json(200, { user: { id: 'u' }, offerPasskey: true }));
+    await submitCode();
+    expect(mockRefresh.mock.invocationCallOrder[0]).toBeLessThan(mockResolve.mock.invocationCallOrder[0]);
+  });
+
+  test('DD-AUTH-062 成功の後は移動が終わるまで、入力と送信を止めたままにする', async () => {
+    jest.mocked(global.fetch).mockResolvedValue(json(200, { user: { id: 'u' }, offerPasskey: false }));
+    await submitCode();
+    expect(mockReplace).toHaveBeenCalledWith('/account');
+    expect(loginButton()).toBeDisabled();
+    await act(async () => {
+      fireEvent.submit(loginButton().closest('form') as HTMLFormElement);
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('DD-AUTH-062 3秒たっても自動では /login へ戻さない（保留切れ・429）', async () => {
+    jest.mocked(global.fetch).mockResolvedValue(json(429, { error: 'x' }));
+    await submitCode();
+    act(() => {
+      jest.advanceTimersByTime(10000);
+    });
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'ログイン画面へ戻る' })).toHaveFocus();
+  });
+
+  test('DD-AUTH-062 コードの誤りでは最初の欄へフォーカスを戻す', async () => {
+    jest.mocked(global.fetch).mockResolvedValue(json(401, { error: 'x' }));
+    await submitCode();
+    expect(inputs()[0]).toHaveFocus();
+  });
+
+  test('DD-AUTH-062 店員の案内では「ログイン画面へ戻る」へフォーカスする', async () => {
+    jest.mocked(global.fetch).mockResolvedValue(json(403, { error: 'staff_passkey_required' }));
+    await submitCode();
+    expect(screen.getByRole('button', { name: 'ログイン画面へ戻る' })).toHaveFocus();
+  });
+
+  test('DD-AUTH-062 二つの文字ボタンは高さ44px以上の指定を持つ', () => {
+    render(<EmailCodeEntry email={EMAIL} />);
+    expect(screen.getByRole('button', { name: 'メールアドレスを入れ直す' }).className).toContain('min-h-11');
+  });
+
   test('DD-AUTH-062 offerPasskey が偽なら post-login の行き先へ置き換える', async () => {
     jest.mocked(global.fetch).mockResolvedValue(json(200, { user: { id: 'u' }, offerPasskey: false }));
     await submitCode();
@@ -135,9 +186,7 @@ describe('EmailCodeEntry', () => {
     await submitCode();
     expect(screen.getByRole('alert')).toHaveTextContent('時間がたちました。もう一度メールアドレスを入れてください。');
     expect(loginButton()).toBeDisabled();
-    act(() => {
-      jest.advanceTimersByTime(3000);
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'ログイン画面へ戻る' }));
     expect(mockReplace).toHaveBeenCalledWith('/login');
   });
 
@@ -146,9 +195,7 @@ describe('EmailCodeEntry', () => {
     await submitCode();
     expect(screen.getByRole('alert')).toHaveTextContent('試行が集中しています。しばらくしてからやり直してください。');
     expect(loginButton()).toBeDisabled();
-    act(() => {
-      jest.advanceTimersByTime(3000);
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'ログイン画面へ戻る' }));
     expect(mockReplace).toHaveBeenCalledWith('/login');
   });
 
@@ -292,9 +339,7 @@ describe('EmailCodeEntry', () => {
       });
       await clickResend();
       expect(screen.getByRole('alert')).toHaveTextContent('時間がたちました。もう一度メールアドレスを入れてください。');
-      act(() => {
-        jest.advanceTimersByTime(3000);
-      });
+      fireEvent.click(screen.getByRole('button', { name: 'ログイン画面へ戻る' }));
       expect(mockReplace).toHaveBeenCalledWith('/login');
     });
 
@@ -304,7 +349,7 @@ describe('EmailCodeEntry', () => {
         jest.advanceTimersByTime(60000);
       });
       await clickResend();
-      expect(screen.getByRole('alert')).toHaveTextContent('送信回数の上限');
+      expect(screen.getByRole('alert')).toHaveTextContent('しばらく再送できません。');
       act(() => {
         jest.advanceTimersByTime(119000);
       });

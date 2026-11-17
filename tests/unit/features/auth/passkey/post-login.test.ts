@@ -33,4 +33,10 @@ describe('DD-AUTH-060 resolvePostLoginPath', () => {
     await expect(resolvePostLoginPath((async () => json(200, { redirectTo: 'https://evil.example/x' })) as never, origin)).resolves.toBe('/');
     await expect(resolvePostLoginPath((async () => json(200, {})) as never, origin)).resolves.toBe('/');
   });
+
+  test.each([401, 500, 503])('DD-AUTH-060 状態 %i の応答でも本文を読み切る（bodyUsed）', async (status) => {
+    const response = new Response('{"error":"x"}', { status });
+    await resolvePostLoginPath((async () => response) as never, origin);
+    expect(response.bodyUsed).toBe(true);
+  });
 });

@@ -2,7 +2,7 @@
  * メールのコードの入力画面のページ（src/app/login/code/page.tsx）。
  *
  * @packageDocumentation
- * @impl IMPL-AUTH-314
+ * @impl IMPL-AUTH-313
  * @design DD-AUTH-062
  * @remarks 判定をサーバーに置くのは、判定前に入力画面の HTML を送らないため（旧 `/login/verify` と同じ）。
  * 不在・改竄・期限切れをすべて同じ扱いで `/login` へ送り、アカウントの存在を示唆しない。
