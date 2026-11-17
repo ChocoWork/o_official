@@ -18,7 +18,6 @@ import { createClient } from '@supabase/supabase-js';
 import { expect, test, type APIResponse, type Page, type Response } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import { provisionStaff } from '../scripts/e2e/passkey-staff';
-import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { loginViaApp } from './passkey-app-api';
 import { readLatestCode, readMailpitMessages } from './member-session-helpers';
 import { withLocalDb } from './order-email-test-utils';
@@ -94,7 +93,7 @@ function localAdmin() {
 }
 
 /** 画面から入るので、パスワードを知っている会員を手元の Supabase にだけ作る。role を渡すと DB の役割もそろえる。 */
-async function createMember(label: string, role?: 'admin'): Promise<Member> {
+async function createMember(label: string): Promise<Member> {
   const email = `e2e-return-${label}-${Date.now().toString(36)}${randomBytes(3).toString('hex')}@example.com`;
   const password = `E2e-${randomBytes(12).toString('hex')}!`;
   const { data, error } = await localAdmin()
@@ -106,27 +105,7 @@ async function createMember(label: string, role?: 'admin'): Promise<Member> {
   if (error || !data.user) {
     throw new Error(`手元の会員を作れない（status: ${error?.status ?? '不明'}, code: ${error?.code ?? '不明'}）`);
   }
-  if (role) {
-    await withLocalDb((db) => assignRole(db, data.user.id, role));
-  }
   return { userId: data.user.id, email, password };
-}
-
-/** auth.users の役割（app_metadata）と public.user_roles の割り当てを同じ役割にそろえる（FR-LOGIN-032 と同じ）。 */
-async function assignRole(db: PgClient, userId: string, role: 'admin'): Promise<void> {
-  await db.query(
-    `update auth.users
-        set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || jsonb_build_object('role', $2::text)
-      where id = $1::uuid`,
-    [userId, role],
-  );
-  const assigned = await db.query(
-    `insert into public.user_roles (user_id, role_id, active, expires_at)
-     select $1::uuid, r.id, true, null from public.roles r where r.code = $2
-     on conflict (user_id, role_id) do update set active = true, expires_at = null`,
-    [userId, role],
-  );
-  if (assigned.rowCount !== 1) throw new Error(`役割 ${role} の行が手元の DB に無い`);
 }
 
 // ---- 画面からのログイン ----
@@ -347,6 +326,10 @@ for (const viewport of viewports) {
       await expect
         .poll(() => new URL(page.url()).pathname, { timeout: 25_000, message: '/admin 配下へ着く' })
         .toMatch(/^\/admin(\/|$)/);
+      // /admin はサーバーでは断らない。断られた店員は /admin に居たまま断りの見出しを見るので、入れた印（管理画面の本体）と断りの見出しが無いことを確かめる。
+      await expect(page.getByTestId('admin-content-column'), '管理画面の本体が見える').toBeVisible({ timeout: 25_000 });
+      await expect(page.getByRole('heading', { name: 'アクセス権限がありません' })).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: '2要素認証が必要です' })).toHaveCount(0);
     });
 
     for (const next of ['/login', '/api/auth/me', '/auth/verified'] as const) {
