@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> パスキー段2 Task 1 確認日: 2026-11-17。Route Handler を4ファイル・4メソッド足した（208ファイル・261メソッド、表は207行・260メソッド）。メールのコードのログイン・新規の `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel`。契約は [基本設計の認証](../areas/auth.md) の API-AUTH-029〜032。
+>
 > パスキー段1b Task 8 確認日: 2026-11-17。Route Handler を2ファイル・3メソッド足した（204ファイル・257メソッド、表は203行・256メソッド）。`GET /api/auth/passkey`（一覧）・`PATCH`・`DELETE /api/auth/passkey/{id}`（名前の変更・削除）。契約は [基本設計の認証](../areas/auth.md) の API-AUTH-026・API-AUTH-027・API-AUTH-028。
 >
 > パスキー段1b Task 7 確認日: 2026-11-17。Route Handler を2ファイル・2メソッド足した（202ファイル・254メソッド、表は201行・253メソッド）。`POST /api/auth/passkey/register/start`（登録の始め）・`POST /api/auth/passkey/register/finish`（登録の終わり）。契約は [基本設計の認証](../areas/auth.md) の API-AUTH-024・API-AUTH-025。
@@ -197,6 +199,10 @@
 | `/api/admin/permissions` | `GET` | [route.ts](../../../src/app/api/admin/permissions/route.ts) |
 | `/api/admin/role-permissions` | `POST` | [route.ts](../../../src/app/api/admin/role-permissions/route.ts) |
 | `/api/auth/confirm` | `GET` | [route.ts](../../../src/app/api/auth/confirm/route.ts) |
+| `/api/auth/email-code/cancel` | `POST` | [route.ts](../../../src/app/api/auth/email-code/cancel/route.ts) （段2: 認証前。保留の Cookie と戻り先の控えを消して 204。枠は無い。契約は [API-AUTH-032](../areas/auth.md)） |
+| `/api/auth/email-code/resend` | `POST` | [route.ts](../../../src/app/api/auth/email-code/resend/route.ts) （段2: 認証前。保留の Cookie 必須（無ければ 401）。回数制限は始めと共有の `auth:email-code:send` の IP 50回/600秒・宛先 5回/600秒。Cookie を元の iat・jti で付け直す。契約は [API-AUTH-031](../areas/auth.md)） |
+| `/api/auth/email-code/start` | `POST` | [route.ts](../../../src/app/api/auth/email-code/start/route.ts) （段2: 認証前。Turnstile 必須。登録の有無で応答を変えず常に 202。回数制限 `auth:email-code:send` の IP 50回/600秒・宛先 5回/600秒。契約は [API-AUTH-029](../areas/auth.md)） |
+| `/api/auth/email-code/verify` | `POST` | [route.ts](../../../src/app/api/auth/email-code/verify/route.ts) （段2: 認証前。保留の Cookie 必須。回数制限 `auth:email-code:verify` の IP 30回/600秒・保留の Cookie ごと 5回/600秒・宛先ごと 20回/600秒。店員は 403 `staff_passkey_required`。契約は [API-AUTH-030](../areas/auth.md)） |
 | `/api/auth/login/cancel` | `POST` | [route.ts](../../../src/app/api/auth/login/cancel/route.ts) |
 | `/api/auth/login/resend` | `POST` | [route.ts](../../../src/app/api/auth/login/resend/route.ts) |
 | `/api/auth/login` | `POST` | [route.ts](../../../src/app/api/auth/login/route.ts) |

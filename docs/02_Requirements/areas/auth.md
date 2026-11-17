@@ -322,6 +322,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: 店員の更新が、GoTrue のフックの拒否（HTTP 403 で文の頭が印 `[staff-passkey-required]`）になった時、アプリはそのセッションを終わらせ、Cookie を消して 401 を返す。印の無い失敗（一時の不調・期限切れなど）では終わらせない。
 
+### SR-AUTH-021 メールのコードで、お客さんがログインでき、初めてのアドレスなら新規にも登録できる
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | お客さんにパスワードを覚えさせず、メールに届いた8桁のコードだけで入れるようにする（設計 6-1）。登録済みかどうかで画面も応答も変えない（列挙の対策）。新規のアカウントも同じ流れで作る |
+| 状態 | 推定 |
+| 出どころ | ユーザーの発言 2026-11-17（`.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1。作り手の判断 3・4、調整役の判断 3）） |
+
+要求の文: お客さんは、メールアドレスを入れてメールに届いたコードを入れるだけでログインできる。初めてのアドレスなら、同じ流れで新規に登録される。登録済み・未登録・店員のアドレスのどれでも、始めの応答は同じ。店員がコードで入ろうとした時は、パスキーでログインするよう案内する。
+
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
 | 属性 | 値 |
@@ -5256,6 +5266,91 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 
 更新が通った後のアクセストークンで `/api/auth/me` が `authenticated: true` を返し、窓を閉じて更新が拒否された後は、同じトークンで `authenticated: false` を返すこと（GoTrue のセッションが消えるため。DB の障害ではなく失効として答える）。
 
+### FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel`
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-021 |
+| 根拠 | SR-AUTH-021 を、`src/app/api/auth/email-code/` の4つの窓口にする。判断は DD-AUTH-059、守りは SEC-AUTH-048・SEC-AUTH-049。保留の Cookie は旧の保留の Cookie と別の名前・別の署名の目的で、メールだけを持つ（`userId` を持たない） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/email-code-session.test.ts`、`tests/unit/api/auth/email-code-*-route.test.ts`）、結合テスト（`tests/integration/api/auth/email-code-*.test.ts`）、E2E（`e2e/FR-LOGIN-055-email-code-api.spec.ts`、FR-AUTH-023-AC-01〜06） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1。作り手の判断 3・4、調整役の判断 3） |
+| 優先度 | MUST |
+
+規則: (1) 始め: 回数の制限（IP 50回/10分）→ 本文の形（400）→ Turnstile（403）→ 宛先ごとの回数の制限（5回/10分）→ 登録の有無を調べずに、確認済み・パスワード無し・印 `email_code_signup_pending` つきでアカウントを作る（登録済みなら `email_exists` で断られるので握る。`email_address_invalid` は 400）→ コードを送る → 保留の Cookie と戻り先の控え。成功は常に 202。未登録・登録済み・店員で、本文・状態・Set-Cookie の名前と属性が同じ。(2) 確定: 宛先は保留の Cookie だけから取る。回数の制限は保留の Cookie ごと（5回/10分）と宛先ごと（20回/10分）。使い切ったら Cookie を消して 429。店員は 403 `staff_passkey_required`（セッションも Cookie も作らない）。成功で印を外し、`offerPasskey`（お客さんで、鍵が0本と確かめられた時だけ真）を返す。(3) 再送: 保留の Cookie 必須。始めと同じ枠（10分に始め＋再送で5通まで）。Cookie を元の発行時刻と乱数で付け直す。(4) 取りやめ: Cookie を消して 204。(5) 旧の会員登録（`signUp`）で作って確認していないアドレスには、コードでなく確認のメールが届く（段4まで）。画面の `/login/code` は、いつも「コードの無い確認のメールが届いた時は、そのメールのリンクを押してから、もう一度お試しください。」と案内する（アカウントの状態で出し分けない）。サーバーで確認済みにはしない（パスワードを先に付けた他人が、その人のアドレスで入れてしまうため）。
+
+### FR-AUTH-023-AC-01 未登録のアドレスで始め、メールのコードで確定するとログインでき、`/api/auth/me` が本人を返す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-023 |
+| 根拠 | SEC-AUTH-048、SEC-AUTH-049 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-055-email-code-api.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/api/auth/email-code-*-route.test.ts`）、結合テスト（`tests/integration/api/auth/email-code-*.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1。作り手の判断 3・4、調整役の判断 3） |
+
+未登録のアドレスで始めが 202 を返し、Mailpit に届いたコードで確定が 200 を返す。応答の `user` に本人の id・メール・`role: user` と、真偽の `offerPasskey` がある。同じ Cookie の文脈で `/api/auth/me` が `authenticated: true` と同じ id を返す。
+
+### FR-AUTH-023-AC-02 登録済みのアドレスで始めても、未登録と応答（状態・本文・Set-Cookie の名前と属性）が同じ
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-023 |
+| 根拠 | SEC-AUTH-048、SEC-AUTH-049 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-055-email-code-api.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/api/auth/email-code-*-route.test.ts`）、結合テスト（`tests/integration/api/auth/email-code-*.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1。作り手の判断 3・4、調整役の判断 3） |
+
+登録済みのアドレスの始めが、未登録のアドレスと同じ状態・同じ本文・同じ Set-Cookie の名前と属性になる。登録済みかどうかを応答から見分けられない。
+
+### FR-AUTH-023-AC-03 間違ったコードは 1〜5回目が 401、6回目が 429 で、Cookie が消えてその後は 401
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-023 |
+| 根拠 | SEC-AUTH-048、SEC-AUTH-049 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-055-email-code-api.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/api/auth/email-code-*-route.test.ts`）、結合テスト（`tests/integration/api/auth/email-code-*.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1。作り手の判断 3・4、調整役の判断 3） |
+
+同じ保留の Cookie で間違ったコードを送ると、1〜5回目は 401、6回目は 429 と `Retry-After` を返し、保留の Cookie を消す。その後は 401（`セッションの有効期限が切れました。`）になる。
+
+### FR-AUTH-023-AC-04 店員のアドレスで始めは同じ応答、確定は 403 staff_passkey_required でセッションの Cookie が付かない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-023 |
+| 根拠 | SEC-AUTH-048、SEC-AUTH-049 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-055-email-code-api.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/api/auth/email-code-*-route.test.ts`）、結合テスト（`tests/integration/api/auth/email-code-*.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1。作り手の判断 3・4、調整役の判断 3） |
+
+店員のアドレスの始めが未登録と同じ応答になる。コードを入れた確定は 403 `staff_passkey_required` で、保留の Cookie を消すだけで、セッションの Cookie は付かない。続く `/api/auth/me` は `authenticated: false`。
+
+### FR-AUTH-023-AC-05 旧い保留の Cookie（パスワードの道）を持っていても、新しい確定の窓口は 401
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-023 |
+| 根拠 | SEC-AUTH-048、SEC-AUTH-049 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-055-email-code-api.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/api/auth/email-code-*-route.test.ts`）、結合テスト（`tests/integration/api/auth/email-code-*.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1。作り手の判断 3・4、調整役の判断 3） |
+
+旧の保留の Cookie（`sb-login-2fa-session`）だけを持つ文脈で、新しい確定の窓口は 401 を返す（署名の目的が違うので読めない）。
+
+### FR-AUTH-023-AC-06 保留の Cookie が無い確定・再送は 401
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-023 |
+| 根拠 | SEC-AUTH-048、SEC-AUTH-049 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-055-email-code-api.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/api/auth/email-code-*-route.test.ts`）、結合テスト（`tests/integration/api/auth/email-code-*.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1。作り手の判断 3・4、調整役の判断 3） |
+
+保留の Cookie が無い確定と再送が 401 を返し、コードの送信も確かめもしない。
+
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 
 | 属性 | 値 |
@@ -6781,6 +6876,36 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 守ること: (1) 印つきの 403（`isStaffPasskeyRequiredError`）の時だけ、行の失効と `revoke_auth_session` でセッションを終わらせる。印の無い失敗では終わらせない（GoTrue の一時の不調で正当な利用者を追い出さない）。(2) 終わらせる処理が落ちても Cookie は消して 401（閉じる側）。落ちたことは監査の `staff_passkey_required_end_failed` に残す。(3) 監査・応答にトークン・鍵を載せない（固定の符号と行為者の ID だけ）。
 
 残る危険として受け入れること: 印の判定は文字列の頭の一致だけで、本番の GoTrue が同じ形（403・`msg` の頭が印）で返すかは本番では読んでいない（設計 8-2 の9で確かめる）。形が違えば、終わらせずに今までどおり Cookie を消して 401 になる（閉じる側のまま）。終わらせる処理が落ちた時は、GoTrue の `auth.sessions` の行が残りうるが、管理の入口は24時間の条件で止まる。
+
+### SEC-AUTH-048 メールのコードの始めは、登録の有無・店員かどうかを応答に出さず、確認済みのパスワード無しのアカウントを本人の確かめに使わない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-049 |
+| 根拠 | 始めの窓口が登録の有無を見分けられる応答を返すと、アドレスの列挙の道具になる（SEC-AUTH-016）。新規のアカウントは、作る時に確認済み（`email_confirmed_at`）になる。本人がメールを読めたかは作る時には確かめておらず、本人の確かめはコードの確定でだけ成り立つ。それまでのアカウントにはパスワードもパスキーも無いので、持ち主以外は使えない。判断は DD-AUTH-059・ADR-0469 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/email-code-start-route.test.ts`）、結合テスト（`tests/integration/api/auth/email-code-start.test.ts`）、E2E `e2e/FR-LOGIN-055-email-code-api.spec.ts`（FR-AUTH-023-AC-02・AC-04） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1。作り手の判断 3・4、調整役の判断 3）（作り手の判断） |
+| 優先度 | MUST |
+
+守ること: (1) 始めは、未登録・登録済み・登録済みで未確認・店員のどれでも、同じ状態・同じ本文・同じ Set-Cookie の名前と属性を返す。登録の有無を調べない（作ってみて `email_exists` を握る）。(2) `email_confirmed_at` を本人の確かめの印として読む所（注文の引き継ぎ `linkGuestOrdersByEmail` の門）は、確定・パスキー・確認の窓口の後でだけ呼ばれる。始めの窓口はそこを呼ばない。(3) 印 `email_code_signup_pending` を、作る時に付け、確定で外す。外す失敗はログインを止めず、監査の符号だけ残す。(4) 旧の会員登録で作って確認していないアドレスの始めは、サーバーで確認済みにしない（パスワードを先に付けた他人の道を作らないため）。コードの無い確認のメールが届くので、画面は常に「コードの無い確認のメールが届いた時は、そのメールのリンクを押してから、もう一度お試しください。」と案内する。
+
+残る危険として受け入れること: 新規と登録済みでは、GoTrue への呼び出しの数が違い、時間の差が出うる。応答の本文・状態・Cookie は同じで、時間の差の完全な消去はしない（回数の制限と Turnstile が前に立つ）。一度も入らなかったアカウントは、印つきで残る。後始末の定期処理は段2では作らず、開店前の項目にする（調整役の判断 I-8）。
+
+### SEC-AUTH-049 メールのコードの確定の総当たりは、保留の Cookie ごとと宛先ごとの2段の回数の制限で止め、使い切ったら保留を閉じる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-049 |
+| 根拠 | パスワードが要らなくなり、Turnstile を通せば誰でも他人のアドレスの保留の Cookie を取れる。確定の枠を宛先だけで数えると、他人が本人の枠を使い切れてしまう。8桁・5分のコードの総当たりを止めるため、保留の Cookie ごと（`email:jti`、5回/10分）に数え、加えて宛先ごとに緩い上限（20回/10分）を置く。判断は DD-AUTH-059・調整役の判断 3 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/email-code-verify-route.test.ts`）、結合テスト（`tests/integration/api/auth/email-code-verify.test.ts`）、E2E `e2e/FR-LOGIN-055-email-code-api.spec.ts`（FR-AUTH-023-AC-03・AC-06） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1。作り手の判断 3・4、調整役の判断 3）（調整役の判断 3） |
+| 優先度 | MUST |
+
+守ること: (1) 宛先は保留の Cookie だけから取る。本文の `email` を読まない。(2) 数えてから確かめる（枠の上限 5 を超えた6回目で 429）。使い切ったら保留の Cookie を消す。(3) 別の保留の Cookie（別の `jti`）の失敗は、本人の Cookie の枠を使わない。(4) 始めと再送は同じ名前の枠（`auth:email-code:send`）で数え、10分に始め＋再送で5通まで。(5) 再送は元の発行時刻と `jti` を引き継ぐ。絶対の上限（30分）で、再送を重ねても保留を無期限に延ばせない。
+
+残る危険として受け入れること: 宛先ごとの20回は、始めを4回呼べば他人が使い切れる（5回×4）。他人が始めを5回呼ぶと、本人のコードが上書きされ、始めの枠が使い切られて、本人はしばらくコードで入れない。パスキーと Google が残るので、このログインの止め方は受け入れる。
 
 ## 派生要件
 

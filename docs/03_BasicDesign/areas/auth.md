@@ -866,6 +866,10 @@ stateDiagram-v2
 | API-AUTH-026 | `GET /api/auth/passkey` | パスキーの管理の画面（段3。今は窓口だけ） |
 | API-AUTH-027 | `PATCH /api/auth/passkey/{id}` | パスキーの管理の画面（段3。今は窓口だけ） |
 | API-AUTH-028 | `DELETE /api/auth/passkey/{id}` | パスキーの管理の画面（段3。今は窓口だけ） |
+| API-AUTH-029 | `POST /api/auth/email-code/start` | ログインの画面（段2の Task 4。今は窓口だけ） |
+| API-AUTH-030 | `POST /api/auth/email-code/verify` | メールのコードの画面（段2の Task 4。今は窓口だけ） |
+| API-AUTH-031 | `POST /api/auth/email-code/resend` | メールのコードの画面（段2の Task 4。今は窓口だけ） |
+| API-AUTH-032 | `POST /api/auth/email-code/cancel` | メールのコードの画面（段2の Task 4。今は窓口だけ） |
 
 全部の窓口に共通: 状態を変える `POST` は共有の proxy の Origin の確かめを先に通る。`/api/auth` 配下の全部の応答（Origin 拒否の 403 を含む）に、共有の proxy が `Cache-Control: no-store` を付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037。2026-10-28）。`confirm`・`oauth/*`・`password-reset/link`・`session`・`me`・`login/resend`・`login/cancel`・`post-login` は窓口も自分で同じ値を付ける。
 
@@ -1452,6 +1456,80 @@ stateDiagram-v2
 
 
 残る危険: 同時に2つの削除が来ると、確かめの時点では2本以上でも、両方が通って2本を下回りうる（SEC-AUTH-046）。完全な排他は作らず、下回った店員は管理の入口で止まり、引き金の知らせが出る。
+
+### API-AUTH-029 POST /api/auth/email-code/start は登録の有無を調べずにコードを送り、常に同じ202と保留の Cookie を返す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-023、SEC-AUTH-048、SEC-AUTH-049、ADR-0469 |
+| 根拠 | メールのコードのログイン・新規の始め。確認済み・パスワード無しでアカウントを作り（登録済みなら断りを握る）、全員に同じくコードを送る。未登録・登録済み・店員で、状態・本文・Set-Cookie の名前と属性が同じ。ボット検査（Turnstile）はこの窓口だけ |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/auth/email-code-start.test.ts`）、単体テスト（`tests/unit/api/auth/email-code-start-route.test.ts`）、E2E（`e2e/FR-LOGIN-055-email-code-api.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1） |
+
+| 項目 | 中身 |
+| --- | --- |
+| 入力 | JSON `{ email, turnstileToken?, next? }`（`email` は今のログインと同じメールの規則） |
+| 順番 | IP の枠（50回/10分、`auth:email-code:send`、429）→ 本文の形（400）→ Turnstile（403 `Bot detection failed`）→ 宛先の枠（5回/10分、同じ名前、429）→ `createUser`（`email_exists` は握る。`email_address_invalid` は 400。ほかは 500）→ `signInWithOtp`（captcha の拒否は 500、GoTrue の 429 は 429＋`Retry-After`、5xx は 503）→ 保留の Cookie と戻り先の控え |
+| 成功 | 202 `{ step: 'code', message }`。Cookie `sb-email-code-session`（HttpOnly・SameSite=Strict・5分）。戻り先の番号は Cookie だけで、本文には出ない |
+| 失敗 | 400、403、429、500、503 |
+| 監査 | action `auth.email_code.start`。固定の符号（`code_sent`・`supabase_create_user_failed`・`supabase_captcha_rejected` など）と宛先（`actor_email`）だけ |
+
+旧の会員登録で作って確認していないアドレスには、コードでなく確認のメールが届く（段4まで）。応答は変えず、画面が常に案内する（DD-AUTH-059）。
+
+### API-AUTH-030 POST /api/auth/email-code/verify は保留の Cookie の宛先でコードを確かめ、通ればセッションを確定する
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-023、SEC-AUTH-048、SEC-AUTH-049、ADR-0469 |
+| 根拠 | メールのコードの確定。宛先は保留の Cookie だけから取る。総当たりの枠は保留の Cookie ごと＋宛先ごと。店員はフックが拒否するので 403 にする。成功で新規の印を外し、パスキーを勧めるかを返す |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/auth/email-code-verify.test.ts`）、単体テスト（`tests/unit/api/auth/email-code-verify-route.test.ts`）、E2E（`e2e/FR-LOGIN-055-email-code-api.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1） |
+
+| 項目 | 中身 |
+| --- | --- |
+| 入力 | JSON `{ code }`（8桁）。保留の Cookie |
+| 順番 | IP の枠（30回/10分、`auth:email-code:verify`）→ 本文（400）→ 保留の Cookie（401）→ Cookie ごとの枠（`email:jti`、5回/10分）→ 宛先ごとの枠（20回/10分）。どちらかを使い切ったら Cookie を消して 429 → `verifyOtp` |
+| 成功 | 200 `{ user: { id, email, role }, offerPasskey, message }`。セッションの Cookie が付き、保留の Cookie は消える。`offerPasskey` は role が user で鍵が0本と確かめられた時だけ真 |
+| 失敗 | 400、401（Cookie 無し・コード違い）、403 `staff_passkey_required`（Cookie は消す）、429、500 |
+| 監査 | action `auth.email_code.verify`。固定の符号と宛先・行為者の ID だけ。コード・トークンは残さない |
+
+### API-AUTH-031 POST /api/auth/email-code/resend は保留の Cookie の宛先へコードを送り直し、Cookie を付け直す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-023、SEC-AUTH-049、ADR-0469 |
+| 根拠 | メールのコードの再送。本文は見ない。始めと同じ名前の枠で数え、10分に始め＋再送で5通まで。Cookie は元の発行時刻と乱数を引き継ぐ |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/auth/email-code-resend.test.ts`）、単体テスト（`tests/unit/api/auth/email-code-resend-route.test.ts`）、E2E（`e2e/FR-LOGIN-055-email-code-api.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1） |
+
+| 項目 | 中身 |
+| --- | --- |
+| 入力 | 本文なし。保留の Cookie |
+| 順番 | 保留の Cookie（401）→ IP の枠（50回/10分、`auth:email-code:send`）→ 宛先の枠（5回/10分、同じ名前）→ `signInWithOtp` |
+| 成功 | 200 `{ ok: true }`。保留の Cookie を新しい期限で付け直す |
+| 失敗 | 401、429、500 |
+| 監査 | action `auth.email_code.resend`。固定の符号と宛先だけ |
+
+### API-AUTH-032 POST /api/auth/email-code/cancel は保留の Cookie と戻り先の控えを消して204を返す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-023、ADR-0469 |
+| 根拠 | メールのコードの画面からの離脱。副作用は Cookie の破棄だけ。Cookie が無くても 204（捨てた時だけ監査に残す）。CSRF は共有の proxy の Origin の確かめが覆う |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/auth/email-code-cancel.test.ts`）、単体テスト（`tests/unit/api/auth/email-code-cancel-route.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1） |
+
+| 項目 | 中身 |
+| --- | --- |
+| 入力 | 本文なし |
+| 順番 | Cookie を読む → 消す。回数の枠は無い |
+| 成功 | 204、`Cache-Control: no-store` |
+| 失敗 | 無し |
+| 監査 | action `auth.email_code.cancel`。実際に捨てた時だけ |
 
 ## データ
 

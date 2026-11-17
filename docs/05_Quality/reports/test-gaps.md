@@ -1,6 +1,6 @@
 # 試験の穴
 
-> 状態: 自動生成 | 生成日: 2026-11-17 | 対象: NEWS・HOME・LOOK・ABOUT・STOCKIST・SEARCH・PRIVACY・AUTH・ADMIN
+> 状態: 自動生成 | 生成日: 2026-11-18 | 対象: NEWS・HOME・LOOK・ABOUT・STOCKIST・SEARCH・PRIVACY・AUTH・ADMIN
 
 ## 概要
 
@@ -44,26 +44,26 @@
 | SEC-PRIVACY-004-AC-01 回数の上限を超えると DB を読まない | E2E | `docs/02_Requirements/areas/privacy.md:363` |
 | SEC-PRIVACY-006-AC-02 鍵が無くても設定がオンなら一文が表示される | E2E | `docs/02_Requirements/areas/privacy.md:425` |
 | SEC-PRIVACY-018-AC-01 運用の文書に迷惑メールの選別と見直しの手順が在る | E2E | `docs/02_Requirements/areas/privacy.md:787` |
-| FREQ-59-AC-01 /register に EMAIL・PASSWORD・PASSWORD（確認）が出る | E2E | `docs/02_Requirements/areas/auth.md:2457` |
-| FREQ-61-AC-02 新規登録タブで PASSWORD（確認）が出て URL が /register になる | E2E | `docs/02_Requirements/areas/auth.md:2509` |
-| FREQ-61-AC-03 /register で新規登録タブが選ばれ、ログインタブで URL が /login になる | E2E | `docs/02_Requirements/areas/auth.md:2522` |
-| FREQ-63-AC-03 「既にアカウントをお持ちの方はこちら」がタブ切替のボタンになる | E2E | `docs/02_Requirements/areas/auth.md:2587` |
-| FREQ-64-AC-01 カードの枠・EMAIL の欄・ログインボタンの角が丸い | E2E | `docs/02_Requirements/areas/auth.md:2600` |
-| FREQ-64-AC-03 カードの枠線が純黒でないグレー | E2E | `docs/02_Requirements/areas/auth.md:2626` |
-| FREQ-64-AC-04 ログインボタンの角が 4px〜12px の中ほどの丸み | E2E | `docs/02_Requirements/areas/auth.md:2639` |
-| FREQ-65-AC-05 タブに区切り線が無い | E2E | `docs/02_Requirements/areas/auth.md:2704` |
-| FREQ-70-AC-01 角丸のカードがあり、送信ボタンの角が 4px〜12px | E2E | `docs/02_Requirements/areas/auth.md:2860` |
-| FREQ-320-AC-01 DB の関数が失敗すると再設定は 500、登録は 503 で、監査が success にならない | E2E | `docs/02_Requirements/areas/auth.md:3494` |
-| FREQ-323-AC-02 HIBP が応答しなくても登録でき、監査に検査不能が残る | E2E | `docs/02_Requirements/areas/auth.md:3559` |
-| FREQ-330-REQ-02-AC-01 ログイン・会員登録・再設定のウィジェットの引き直しが useTurnstileWidget の1か所にある | E2E | `docs/02_Requirements/areas/auth.md:3807` |
-| FREQ-335-AC-03 1回送ると verifyOtp が type email で1回だけ呼ばれる | E2E | `docs/02_Requirements/areas/auth.md:4118` |
-| FREQ-515-AC-01 管理画面のユーザー一覧で選んだ役割で送られ、失敗したら元の役割に戻る | E2E | `docs/02_Requirements/areas/auth.md:4209` |
-| FREQ-515-AC-03 お知らせの作成・編集で選んだカテゴリーで保存される | E2E | `docs/02_Requirements/areas/auth.md:4235` |
-| SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | E2E | `docs/02_Requirements/areas/auth.md:5591` |
-| SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | E2E | `docs/02_Requirements/areas/auth.md:5772` |
-| SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:5864` |
-| SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:6036` |
-| SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:6152` |
+| FREQ-59-AC-01 /register に EMAIL・PASSWORD・PASSWORD（確認）が出る | E2E | `docs/02_Requirements/areas/auth.md:2467` |
+| FREQ-61-AC-02 新規登録タブで PASSWORD（確認）が出て URL が /register になる | E2E | `docs/02_Requirements/areas/auth.md:2519` |
+| FREQ-61-AC-03 /register で新規登録タブが選ばれ、ログインタブで URL が /login になる | E2E | `docs/02_Requirements/areas/auth.md:2532` |
+| FREQ-63-AC-03 「既にアカウントをお持ちの方はこちら」がタブ切替のボタンになる | E2E | `docs/02_Requirements/areas/auth.md:2597` |
+| FREQ-64-AC-01 カードの枠・EMAIL の欄・ログインボタンの角が丸い | E2E | `docs/02_Requirements/areas/auth.md:2610` |
+| FREQ-64-AC-03 カードの枠線が純黒でないグレー | E2E | `docs/02_Requirements/areas/auth.md:2636` |
+| FREQ-64-AC-04 ログインボタンの角が 4px〜12px の中ほどの丸み | E2E | `docs/02_Requirements/areas/auth.md:2649` |
+| FREQ-65-AC-05 タブに区切り線が無い | E2E | `docs/02_Requirements/areas/auth.md:2714` |
+| FREQ-70-AC-01 角丸のカードがあり、送信ボタンの角が 4px〜12px | E2E | `docs/02_Requirements/areas/auth.md:2870` |
+| FREQ-320-AC-01 DB の関数が失敗すると再設定は 500、登録は 503 で、監査が success にならない | E2E | `docs/02_Requirements/areas/auth.md:3504` |
+| FREQ-323-AC-02 HIBP が応答しなくても登録でき、監査に検査不能が残る | E2E | `docs/02_Requirements/areas/auth.md:3569` |
+| FREQ-330-REQ-02-AC-01 ログイン・会員登録・再設定のウィジェットの引き直しが useTurnstileWidget の1か所にある | E2E | `docs/02_Requirements/areas/auth.md:3817` |
+| FREQ-335-AC-03 1回送ると verifyOtp が type email で1回だけ呼ばれる | E2E | `docs/02_Requirements/areas/auth.md:4128` |
+| FREQ-515-AC-01 管理画面のユーザー一覧で選んだ役割で送られ、失敗したら元の役割に戻る | E2E | `docs/02_Requirements/areas/auth.md:4219` |
+| FREQ-515-AC-03 お知らせの作成・編集で選んだカテゴリーで保存される | E2E | `docs/02_Requirements/areas/auth.md:4245` |
+| SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | E2E | `docs/02_Requirements/areas/auth.md:5686` |
+| SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | E2E | `docs/02_Requirements/areas/auth.md:5867` |
+| SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:5959` |
+| SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:6131` |
+| SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:6247` |
 | FREQ-508-AC-03 流し直しても付与が重ならず、ほかの結び付きが残り、「監査ログの閲覧」の名前で登録される | E2E | `docs/02_Requirements/areas/admin.md:237` |
 | SEC-ADMIN-003-AC-02 管理の表の権限が anon・authenticated に無い | E2E | `docs/02_Requirements/areas/admin.md:465` |
 | SEC-ADMIN-010-AC-01 監査ログの行を書き換えると検知の確かめで分かる | E2E | `docs/02_Requirements/areas/admin.md:685` |
@@ -129,6 +129,7 @@
 
 手書きの節。分岐の網羅で届かない所を、1行に1件「- `場所:行` 理由。確認: 未」の形で書く。生成し直しても残る。
 
+- `src/app/api/auth/email-code/verify/route.ts:114` の `!data?.user` の `data` が `null` の側は通らない。直前の `!data?.session` が先に真になって戻るため（`data` が `null` の場合は `session` の判定で既に 401 になる）。確認: 未
 - `src/app/admin/news/NewsForm.tsx:253` の `NewsForm` の画像の欄の onClick の `fileInputRef.current?.click()` の `current` が `null` の側は通らない。file の入力は押される枠そのものの子で、枠が描かれている間は ref が必ず入っているため。確認: 未
 - `src/app/admin/news/NewsForm.tsx:257` の `NewsForm` の画像の欄の onKeyDown（Enter・Space）の `fileInputRef.current?.click()` の `current` が `null` の側は通らない。理由は onClick と同じ。確認: 未
 - `src/app/api/admin/news/[id]/route.ts:48` の `logNewsAudit` の引数 `resourceId` の既定値 `= null` は通らない。ファイルの中の呼び出し7か所が全部 `id` を渡すため。確認: 未

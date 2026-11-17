@@ -6,6 +6,7 @@ export const accessCookieName = 'sb-access-token';
 export const csrfCookieName = 'sb-csrf-token';
 export const passwordResetSessionCookieName = 'sb-password-reset-session';
 export const loginTwoFactorSessionCookieName = 'sb-login-2fa-session';
+export const emailCodeSessionCookieName = 'sb-email-code-session';
 export const sessionCookieName = 'session_id';
 export const returnIntentCookieName = 'sb-return-intent';
 export const csrfCookieMaxAgeSeconds = 7 * 24 * 60 * 60;
@@ -89,6 +90,18 @@ export function cookieOptionsForLoginTwoFactor(maxAgeSeconds: number) {
   };
 }
 
+/**
+ * メールのコードの保留の Cookie の属性（`cookieOptionsForLoginTwoFactor` と同じ）。
+ */
+export function cookieOptionsForEmailCode(maxAgeSeconds: number) {
+  return {
+    ...getBaseCookieOptions(),
+    maxAge: maxAgeSeconds,
+    httpOnly: true,
+    sameSite: 'strict' as const,
+  };
+}
+
 export function cookieOptionsForGuestShopping(maxAgeSeconds: number = guestShoppingCookieMaxAgeSeconds) {
   return {
     ...getBaseCookieOptions(),
@@ -118,6 +131,7 @@ const cookieHelper = {
   csrfCookieName,
   passwordResetSessionCookieName,
   loginTwoFactorSessionCookieName,
+  emailCodeSessionCookieName,
   sessionCookieName,
   cookieOptionsForRefresh,
   cookieOptionsForAccess,
@@ -125,6 +139,7 @@ const cookieHelper = {
   cookieOptionsForSession,
   cookieOptionsForPasswordReset,
   cookieOptionsForLoginTwoFactor,
+  cookieOptionsForEmailCode,
   generateSessionId,
   clearCookieOptions,
 };

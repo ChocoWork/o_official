@@ -728,6 +728,20 @@ flowchart LR
 | 状態 | 推定 |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 9） |
 
+### THR-AUTH-049 メールのコードのログイン・新規の窓口で、登録の有無を探られる・確定を総当たりされる・他人のアドレスで送信の枠を使い切られる
+
+| 属性 | 値 |
+| --- | --- |
+| 守るもの | 設計 6-1（メールのコードのログイン）・SEC-AUTH-016（列挙の対策） |
+| 脅威 | (1) 始めの応答の差（状態・本文・Cookie・時間）で、アドレスの登録の有無や店員かどうかが分かる。(2) Turnstile を通した誰かが、他人のアドレスの保留の Cookie を取り、8桁のコードを総当たりする。(3) 他人のアドレスで始めを繰り返し、本人の送信の枠を使い切る・本人のコードを上書きする。(4) 作っただけで一度も入らないアカウントが溜まる。(5) 旧の登録で未確認のアドレスに先にパスワードを付けた人が、サーバーの確認済みの扱いでログインできてしまう |
+| 起こり方 | 登録済みなら別の応答にする・確定の枠を宛先だけで数える・サーバーで未確認のアカウントを確認済みにする |
+| 影響 | アドレスの列挙、他人のアカウントの乗っ取り、本人のログインの妨害 |
+| 対策 | SEC-AUTH-048（応答を同じにする・確認済みのパスワード無しのアカウントを本人の確かめに使わない）、SEC-AUTH-049（保留の Cookie ごとと宛先ごとの枠・使い切ったら閉じる・始めと再送で同じ枠）、DD-AUTH-059。未確認の旧の登録はサーバーで確認済みにしない |
+| ASVS | V2.2.1・V2.5.2・V3.3.2（当てはめは推定） |
+| 根拠 | 段2 の Task 1。設計 6-1 |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1。作り手の判断 3・4、調整役の判断 3） |
+
 ## 未確認事項
 
 - 本番の Supabase Auth の設定（OTP の期限・Confirm email・最小の長さ・漏洩の照合・captcha・TOTP・回数の制限・`secure_password_change`・現行パスワードの要求）。手元の `supabase/config.toml` は波 6 の切り替えで本番の前提にそろえたが、本番の実際の値は Management API で読むまで未確認（THR-AUTH-015・029）

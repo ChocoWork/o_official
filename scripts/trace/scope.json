@@ -253,7 +253,9 @@
       "src/features/auth/schemas/passkey.ts",
       "scripts/dev/passkey-dev-staff.ts",
       "e2e/passkey-soft-authenticator.ts",
-      "e2e/passkey-app-api.ts"
+      "e2e/passkey-app-api.ts",
+      "src/features/auth/services/email-code-*.ts",
+      "src/features/auth/schemas/email-code.ts"
     ],
     "tests": [
       "tests/unit/components/{LoginModal,RegisterModal,AuthTabs,AuthResultScreen,VerifyOtpClient,Header}.test.tsx",
@@ -279,6 +281,7 @@
       "tests/unit/config/supabase-js-pin.test.ts",
       "tests/unit/scripts/passkey-dev-staff.test.ts",
       "tests/unit/e2e/passkey-*.test.ts",
+      "tests/unit/features/auth/email-code-*.test.ts",
       "tests/integration/api/auth/**/*.test.{ts,tsx}",
       "tests/integration/api/auth.test.ts",
       "tests/integration/auth-flow.test.ts",
