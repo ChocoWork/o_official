@@ -77,8 +77,32 @@ export const PasskeyRegisterFinishSchema = z.object({
   credential: credentialSchema(RegistrationResponseSchema),
 });
 
+/** UTF-8 のバイト数（`TextEncoder` を使わず、画面の試験環境でも同じ値になるよう数える）。 */
+function utf8Bytes(value: string): number {
+  let bytes = 0;
+  for (const char of value) {
+    const code = char.codePointAt(0)!;
+    bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+  }
+  return bytes;
+}
+
+/** GoTrue が受ける名前の上限（UTF-8 で120バイト。実測 2026-11-18: 120B は通り、126B は 400。121〜125B は測っていない）。 */
+export const PASSKEY_NAME_MAX_BYTES = 120;
+
 /**
- * 名前の変更。前後の空白を除いて1〜64字（コードポイントで数える）、制御文字・表示の向きを変える文字なし。
+ * 名前の長さの確かめ（画面と窓口で同じ決め）。1〜64字（コードポイント）かつ UTF-8 で120バイト以内。呼ぶ側が前後の空白を除いておく。
+ *
+ * @impl IMPL-AUTH-263
+ * @design DD-AUTH-051
+ */
+export function isPasskeyNameLengthOk(value: string): boolean {
+  const length = [...value].length;
+  return length >= 1 && length <= 64 && utf8Bytes(value) <= PASSKEY_NAME_MAX_BYTES;
+}
+
+/**
+ * 名前の変更。前後の空白を除いて1〜64字（コードポイントで数える）かつ UTF-8 で120バイト以内、制御文字・表示の向きを変える文字なし。
  *
  * @impl IMPL-AUTH-263
  * @design DD-AUTH-051
@@ -88,7 +112,7 @@ export const PasskeyRenameSchema = z.object({
     .string()
     .trim()
     .min(1)
-    .refine((value) => [...value].length <= 64)
+    .refine((value) => isPasskeyNameLengthOk(value))
     .refine((value) => !NAME_FORBIDDEN_CHARS.test(value)),
 });
 

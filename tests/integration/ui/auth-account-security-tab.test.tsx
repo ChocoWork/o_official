@@ -36,7 +36,7 @@ describe('アカウントの画面のタブ', () => {
     mockReplace.mockClear();
   });
 
-  test('DD-AUTH-065 お客さんには「ログイン方法」が4つの隣（最後）に出る（PC 用と mobile 用の2か所）', async () => {
+  test('SCR-AUTH-012 お客さんには「ログイン方法」が4つの隣（最後）に出る（PC 用と mobile 用の2か所）', async () => {
     render(<AccountPage />);
     await waitFor(() => expect(screen.getAllByText('ログイン方法')).toHaveLength(2));
     const labels = screen.getAllByText('ログイン方法').map((el) => el.parentElement?.textContent ?? '');
@@ -47,13 +47,13 @@ describe('アカウントの画面のタブ', () => {
     }
   });
 
-  test('DD-AUTH-065 tab=security で開くとパスキーの部品が出る', async () => {
+  test('SCR-AUTH-012 tab=security で開くとパスキーの部品が出る', async () => {
     mockTab = 'security';
     render(<AccountPage />);
     expect(await screen.findByTestId('account-passkeys')).toBeInTheDocument();
   });
 
-  test('DD-AUTH-065 店員（admin・supporter）には「ログイン方法」を出さず、tab=security はお客様情報へ戻す', async () => {
+  test('SCR-AUTH-012 店員（admin・supporter）には「ログイン方法」を出さず、tab=security はお客様情報へ戻す', async () => {
     for (const role of ['admin', 'supporter']) {
       mockRole = role;
       mockTab = 'security';
@@ -66,7 +66,7 @@ describe('アカウントの画面のタブ', () => {
     }
   });
 
-  test('DD-AUTH-065 お客様情報に「パスワードを変更」のリンクが無い', async () => {
+  test('SCR-AUTH-012 お客様情報に「パスワードを変更」のリンクが無い', async () => {
     render(<AccountPage />);
     await waitFor(() => expect(document.querySelector('.animate-pulse')).toBeNull());
     expect(screen.queryByText('パスワードを変更')).not.toBeInTheDocument();

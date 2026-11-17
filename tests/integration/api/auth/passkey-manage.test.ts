@@ -120,6 +120,13 @@ describe('API-AUTH-027 PATCH /api/auth/passkey/{id}', () => {
     expect(updatePasskey).not.toHaveBeenCalled();
   });
 
+  test('API-AUTH-027 日本語41字（123バイト）は 400 で GoTrue を呼ばず、40字（120バイト）は 200', async () => {
+    expect((await PATCH(req('PATCH', { friendly_name: 'あ'.repeat(41) }), ctx(KEY_A))).status).toBe(400);
+    expect(updatePasskey).not.toHaveBeenCalled();
+    expect((await PATCH(req('PATCH', { friendly_name: 'あ'.repeat(40) }), ctx(KEY_A))).status).toBe(200);
+    expect(updatePasskey).toHaveBeenCalledTimes(1);
+  });
+
   test('API-AUTH-027 CSRF で断られたら 403 で、GoTrue を呼ばない', async () => {
     (requireCsrfOrDeny as jest.Mock).mockResolvedValue(new Response('{}', { status: 403 }));
     expect((await PATCH(req('PATCH', { friendly_name: 'x' }), ctx(KEY_A))).status).toBe(403);

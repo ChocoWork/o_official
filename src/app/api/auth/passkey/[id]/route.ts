@@ -30,7 +30,7 @@ function mapGoTrueFailure(status: number): { status: number; body: { error: stri
 }
 
 /**
- * 名前の変更。本文は `{ friendly_name }`（1〜64字・前後の空白を除く・制御文字なし）。
+ * 名前の変更。本文は `{ friendly_name }`（1〜64字かつ UTF-8 で120バイト以内・前後の空白を除く・制御文字なし）。
  *
  * @impl IMPL-AUTH-290
  * @design DD-AUTH-057

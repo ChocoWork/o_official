@@ -25,12 +25,14 @@ import {
 } from "@/features/auth/passkey/passkey-client";
 import { isPasskeySupported, requestAttestation } from "@/features/auth/passkey/webauthn-browser";
 import { deviceNameFromUserAgent } from "@/features/auth/passkey/device-name";
+import { isPasskeyNameLengthOk } from "@/features/auth/schemas/passkey";
 import { buildLoginHref } from "@/features/auth/return-intent/use-login-href";
 
 const MSG_LOAD_FAILED = "パスキーの一覧を読み込めませんでした。";
 const MSG_ADDED = "パスキーを追加しました。";
 const MSG_RENAME_FAILED = "名前を変更できませんでした。もう一度お試しください。";
-const MSG_NAME_INVALID = "名前は1〜64字で入力してください。";
+const MSG_NAME_INVALID = "名前は1〜64字（日本語は40字まで）で入力してください。";
+const MSG_DELETED = "パスキーを削除しました。";
 const MSG_DELETE_FAILED = "削除できませんでした。もう一度お試しください。";
 const MSG_UNSUPPORTED_ADD = "この端末ではパスキーを追加できません。";
 const MSG_EMPTY = "パスキーはまだありません。作ると、メールのコードを待たずにログインできます。";
@@ -86,6 +88,9 @@ export default function AccountPasskeys() {
   const [addFailure, setAddFailure] = useState<RegisterFailureReason | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [refocusAdd, setRefocusAdd] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  // 名前の保存・キャンセルと削除の成功で、押したボタンごと消えるので、落ちたフォーカスの戻し先を覚える。
+  const [refocusTarget, setRefocusTarget] = useState<string | null>(null);
 
   useEffect(() => {
     setSupported(isPasskeySupported());
@@ -112,6 +117,16 @@ export default function AccountPasskeys() {
     if (document.activeElement === document.body) document.getElementById("account-passkey-add")!.focus();
     setRefocusAdd(false);
   }, [refocusAdd, adding]);
+
+  // 行の表示に戻った後（保存・キャンセル）と行が消えた後（削除）に、フォーカスが body に落ちたままなら戻す（ほかへ移していたら奪わない）。
+  useEffect(() => {
+    if (refocusTarget === null) return;
+    if (document.activeElement === document.body) {
+      const target = document.getElementById(refocusTarget)!;
+      target.focus();
+    }
+    setRefocusTarget(null);
+  }, [refocusTarget]);
 
   const handleAdd = async () => {
     setAdding(true);
@@ -145,15 +160,17 @@ export default function AccountPasskeys() {
   };
 
   const cancelEdit = () => {
+    const id = editingId!;
     setEditingId(null);
     setRenameError(null);
+    setRefocusTarget(`passkey-rename-${id}`);
   };
 
   const saveName = async (event: React.FormEvent) => {
     event.preventDefault();
     const id = editingId!;
     const name = draft.trim();
-    if (name.length === 0 || [...name].length > 64) {
+    if (!isPasskeyNameLengthOk(name)) {
       setRenameError(MSG_NAME_INVALID);
       return;
     }
@@ -166,6 +183,7 @@ export default function AccountPasskeys() {
         current.map((item) => (item.id === id ? { ...item, friendly_name: result.passkey.friendly_name } : item)),
       );
       setEditingId(null);
+      setRefocusTarget(`passkey-rename-${id}`);
     } else {
       setRenameError(MSG_RENAME_FAILED);
     }
@@ -176,18 +194,25 @@ export default function AccountPasskeys() {
     setDeleteTarget(null);
     setNotice(null);
     setDeleteError(null);
+    setDeletingId(target.id);
     const result = await deletePasskey(target.id);
+    setDeletingId(null);
     if (result.ok) {
       setPasskeys((current) => current.filter((item) => item.id !== target.id));
+      setNotice(MSG_DELETED);
+      setRefocusTarget("account-passkey-heading");
     } else {
       setDeleteError(MSG_DELETE_FAILED);
+      setRefocusTarget(`passkey-delete-${target.id}`);
     }
   };
 
   return (
     <div className="account-sections">
       <div className="account-card account-groups">
-        <h2 className="account-heading">パスキー</h2>
+        <h2 id="account-passkey-heading" tabIndex={-1} className="account-heading outline-none">
+          パスキー
+        </h2>
         <p className="text-[#474747]" style={{ fontSize: "var(--lk-size-md)" }}>
           パスキーを登録すると、この端末の顔認証・指紋・PIN でログインできます。
         </p>
@@ -267,6 +292,7 @@ export default function AccountPasskeys() {
                         type="button"
                         variant="outline"
                         size="md"
+                        id={`passkey-rename-${passkey.id}`}
                         aria-label={`${passkey.friendly_name ?? "名前なし"}の名前を変更`}
                         onClick={() => startEdit(passkey)}
                       >
@@ -276,6 +302,9 @@ export default function AccountPasskeys() {
                         type="button"
                         variant="outline"
                         size="md"
+                        id={`passkey-delete-${passkey.id}`}
+                        disabled={deletingId === passkey.id}
+                        aria-busy={deletingId === passkey.id}
                         aria-label={`${passkey.friendly_name ?? "名前なし"}を削除`}
                         onClick={() => {
                           setDeleteError(null);
@@ -301,6 +330,11 @@ export default function AccountPasskeys() {
 
         {status !== "loading" ? (
           <div className="flex flex-col items-start gap-3">
+            {addFailure === "unauthorized" ? (
+              <Button href="/login" variant="primary" size="md">
+                ログインへ
+              </Button>
+            ) : null}
             {addFailure === "reauth_required" ? (
               <Button href={REAUTH_HREF} variant="primary" size="md">
                 メールのコードでログイン

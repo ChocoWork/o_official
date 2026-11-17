@@ -123,7 +123,7 @@ describe('AccountPasskeys', () => {
     expect(mockRename).not.toHaveBeenCalled();
   });
 
-  test('DD-AUTH-065 名前の変更: 空・65字は送らず、64字は送る', async () => {
+  test('DD-AUTH-065 名前の変更: 空・日本語41字（123バイト）・ASCII 65字は送らず、日本語40字（120バイト）は送る', async () => {
     await renderWith();
     fireEvent.click(screen.getAllByRole('button', { name: /名前を変更/ })[0]);
     const input = screen.getByLabelText('名前');
@@ -131,18 +131,22 @@ describe('AccountPasskeys', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '保存' }));
     });
-    expect(screen.getByText('名前は1〜64字で入力してください。')).toHaveAttribute('role', 'alert');
-    fireEvent.change(input, { target: { value: 'あ'.repeat(65) } });
+    expect(screen.getByText('名前は1〜64字（日本語は40字まで）で入力してください。')).toHaveAttribute('role', 'alert');
+    fireEvent.change(input, { target: { value: 'あ'.repeat(41) } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    });
+    fireEvent.change(input, { target: { value: 'a'.repeat(65) } });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '保存' }));
     });
     expect(mockRename).not.toHaveBeenCalled();
-    mockRename.mockResolvedValue({ ok: true, passkey: { id: 'a', friendly_name: 'あ'.repeat(64) } });
-    fireEvent.change(input, { target: { value: 'あ'.repeat(64) } });
+    mockRename.mockResolvedValue({ ok: true, passkey: { id: 'a', friendly_name: 'あ'.repeat(40) } });
+    fireEvent.change(input, { target: { value: 'あ'.repeat(40) } });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '保存' }));
     });
-    expect(mockRename).toHaveBeenCalledWith('a', 'あ'.repeat(64));
+    expect(mockRename).toHaveBeenCalledWith('a', 'あ'.repeat(40));
   });
 
   test('DD-AUTH-065 名前の変更の失敗: 文を出し、入力欄は残る', async () => {
@@ -253,6 +257,75 @@ describe('AccountPasskeys', () => {
     });
     expect(screen.getByText('うまく作れませんでした。もう一度お試しください。')).toHaveAttribute('role', 'alert');
     expect(screen.getByRole('button', { name: 'パスキーを追加' })).toBeEnabled();
+  });
+
+  test('DD-AUTH-065 unauthorized: 「ログインへ」のボタン（/login）が出る', async () => {
+    await renderWith([]);
+    mockRegister.mockResolvedValue({ ok: false, reason: 'unauthorized' });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'パスキーを追加' }));
+    });
+    expect(screen.getByRole('link', { name: 'ログインへ' })).toHaveAttribute('href', '/login');
+  });
+
+  test('DD-AUTH-065 フォーカス: 名前の保存の後はその行の「名前を変更」へ、キャンセルの後も同じ', async () => {
+    await renderWith();
+    mockRename.mockResolvedValue({ ok: true, passkey: { id: 'a', friendly_name: 'New' } });
+    fireEvent.click(screen.getAllByRole('button', { name: /名前を変更/ })[0]);
+    fireEvent.change(screen.getByLabelText('名前'), { target: { value: 'New' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    });
+    expect(screen.getByRole('button', { name: 'Newの名前を変更' })).toHaveFocus();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Newの名前を変更' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }));
+    });
+    expect(screen.getByRole('button', { name: 'Newの名前を変更' })).toHaveFocus();
+  });
+
+  test('DD-AUTH-065 フォーカス: 削除の成功の後は見出しへ移り、「パスキーを削除しました。」を status で知らせる。ほかへ移していたら奪わない', async () => {
+    await renderWith();
+    mockDelete.mockResolvedValue({ ok: true });
+    fireEvent.click(screen.getAllByRole('button', { name: /削除/ })[0]);
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '削除する' }));
+    });
+    expect(screen.getByRole('heading', { name: 'パスキー' })).toHaveFocus();
+    expect(screen.getByRole('status')).toHaveTextContent('パスキーを削除しました。');
+
+    const other = document.createElement('button');
+    document.body.appendChild(other);
+    fireEvent.click(screen.getAllByRole('button', { name: /削除/ })[0]);
+    let resolve!: (value: unknown) => void;
+    mockDelete.mockReturnValue(new Promise((r) => (resolve = r)));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '削除する' }));
+    other.focus();
+    await act(async () => {
+      resolve({ ok: true });
+    });
+    expect(other).toHaveFocus();
+    other.remove();
+  });
+
+  test('DD-AUTH-065 削除の間はその行の「削除」が無効・aria-busy で、同じ鍵の削除を2回送れない。失敗の後は「削除」へフォーカスを戻す', async () => {
+    await renderWith();
+    let resolve!: (value: unknown) => void;
+    mockDelete.mockReturnValue(new Promise((r) => (resolve = r)));
+    const button = screen.getAllByRole('button', { name: /削除/ })[0];
+    fireEvent.click(button);
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '削除する' }));
+    expect(screen.getByRole('button', { name: 'Macを削除' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Macを削除' })).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Macを削除' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mockDelete).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolve({ ok: false, reason: 'failed' });
+    });
+    expect(screen.getByRole('button', { name: 'Macを削除' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Macを削除' })).toHaveFocus();
   });
 
   test('DD-AUTH-065 reauth_required: 文と、戻り先付きの「メールのコードでログイン」', async () => {

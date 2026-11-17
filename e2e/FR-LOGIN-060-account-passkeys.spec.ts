@@ -102,6 +102,10 @@ for (const viewport of viewports) {
       await page.getByRole('button', { name: '保存' }).click();
       await expect(rows(page).getByText('仕事の PC', { exact: true })).toBeVisible(NAVIGATION);
       await expect(page.getByLabel('名前', { exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: '仕事の PCの名前を変更' })).toBeFocused();
+      // 読み直しても名前が残っている（窓口が本当に変えた）
+      await page.reload();
+      await expect(rows(page).getByText('仕事の PC', { exact: true })).toBeVisible(NAVIGATION);
 
       // 2本目: 同じ認証器では excludeCredentials で already_registered になる。Chrome は内蔵の認証器を同時に1つしか持てないので、1つ目を外してから2つ目を足す
       await first.remove();
@@ -119,11 +123,21 @@ for (const viewport of viewports) {
       await expect(dialog.getByText(/最後のパスキーです/)).toHaveCount(0);
       await dialog.getByRole('button', { name: '削除する' }).click();
       await expect(rows(page)).toHaveCount(1, NAVIGATION);
+      await expect(page.getByRole('status').filter({ hasText: 'パスキーを削除しました。' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'パスキー' })).toBeFocused();
+      // 読み直しても、消した行は戻らない
+      await page.reload();
+      await expect(rows(page)).toHaveCount(1, NAVIGATION);
+      await expect(rows(page).getByText('仕事の PC', { exact: true })).toHaveCount(0);
 
       // 最後の1本: 追加の文が出る。消すと空へ戻る
       await page.getByRole('button', { name: /を削除$/ }).click();
       await expect(page.getByRole('dialog').getByText('最後のパスキーです。削除しても、メールのコードか Google でログインできます。')).toBeVisible();
       await page.getByRole('dialog').getByRole('button', { name: '削除する' }).click();
+      await expect(page.getByText(EMPTY_TEXT)).toBeVisible(NAVIGATION);
+      await expect(rows(page)).toHaveCount(0);
+      // 読み直しても空のまま
+      await page.reload();
       await expect(page.getByText(EMPTY_TEXT)).toBeVisible(NAVIGATION);
       await expect(rows(page)).toHaveCount(0);
     });
@@ -158,7 +172,13 @@ for (const viewport of viewports) {
       await openSecurityTab(page, 'layout');
       await page.getByRole('button', { name: 'パスキーを追加' }).click();
       await expect(rows(page)).toHaveCount(1, NAVIGATION);
-      // 長い名前でも折り返す（名前は GoTrue の側で約120バイトまで。日本語は40字ほどで、64字の決めとは別に 400 になる）
+      // 日本語41字（123バイト）は送らず、案内を出す
+      await page.getByRole('button', { name: /名前を変更/ }).click();
+      await page.getByLabel('名前', { exact: true }).fill('あ'.repeat(41));
+      await page.getByRole('button', { name: '保存' }).click();
+      await expect(page.getByText('名前は1〜64字（日本語は40字まで）で入力してください。')).toBeVisible();
+      await page.getByRole('button', { name: 'キャンセル' }).click();
+      // 長い名前でも折り返す（名前は UTF-8 で120バイトまで。日本語は40字まで）
       await page.getByRole('button', { name: /名前を変更/ }).click();
       await page.getByLabel('名前', { exact: true }).fill('とても長い名前のパスキー'.repeat(2));
       await page.getByRole('button', { name: '保存' }).click();

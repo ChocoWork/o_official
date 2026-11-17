@@ -534,6 +534,19 @@ graph TD
 - 成功: 全 session が失効しているので、ログインの状態を引き直してから `/login/password` へ移る（段4までパスワードで入る旧の画面。ADR-0469）。画面と文言の詳細は DD-AUTH-042
 - 応答の見せ方: 400 と 401 は窓口の文、403（管理者・サポーターの aal2 不足）・429 は固定の文、それ以外は一般の失敗の文。残りの回数は言わない
 
+### SCR-AUTH-012 /account の「ログイン方法」のタブはお客さんが自分のパスキーを見て、足し、名前を変え、消す画面にする
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-029 |
+| 根拠 | アカウントの画面（AUTH の範囲の外の `src/app/account/page.tsx`）に、お客さんだけのタブ「ログイン方法」（`?tab=security`）を足す。中身は `AccountPasskeys`（DD-AUTH-065）。店員には出さない（判断 8） |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/ui/auth-account-security-tab.test.tsx`）、E2E（`e2e/FR-LOGIN-060-account-passkeys.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-7-review.md`（M-3） |
+
+- 窓口: 一覧 API-AUTH-026、登録の始め・終わり API-AUTH-024・025、名前の変更 API-AUTH-027、削除 API-AUTH-028（どれも1b の窓口。新しい窓口は足さない）
+- 画面と文言の詳細は DD-AUTH-065、要件は FR-AUTH-029
+
 ## 画面遷移
 
 ### FLOW-AUTH-001 メールとパスワードのログインは /login から /login/verify を経て、役割で行き先を分ける
@@ -1423,7 +1436,7 @@ stateDiagram-v2
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-AUTH-021、SEC-AUTH-046、ADR-0467 |
-| 根拠 | パスキーの名前の変更。`id` は uuid の形だけを受け、名前は `PasskeyRenameSchema`（前後の空白を除いて1〜64字・制御文字なし）。他人の鍵・存在しない鍵は 404 にそろえる |
+| 根拠 | パスキーの名前の変更。`id` は uuid の形だけを受け、名前は `PasskeyRenameSchema`（前後の空白を除いて1〜64字かつ UTF-8 で120バイト以内・制御文字なし。日本語は40字まで。実測 2026-11-18: 120バイトは通り、126バイトは GoTrue が 400）。他人の鍵・存在しない鍵は 404 にそろえる |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト（`tests/integration/api/auth/passkey-manage.test.ts`）、単体テスト（`tests/unit/api/auth/passkey-manage-routes.test.ts`、`tests/unit/features/auth/schemas/passkey.test.ts`）、E2E（`e2e/FR-LOGIN-052-passkey-manage.spec.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8） |

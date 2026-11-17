@@ -124,9 +124,9 @@ describe('DD-AUTH-051 PasskeyRenameSchema', () => {
     for (const code of forbidden) {
       expect(PasskeyRenameSchema.safeParse({ friendly_name: `a${String.fromCharCode(code)}b` }).success).toBe(false);
     }
-    // 絵文字は UTF-16 で2単位。64個は通り、65個は断る。
-    expect(PasskeyRenameSchema.safeParse({ friendly_name: String.fromCodePoint(0x1f510).repeat(64) }).success).toBe(true);
-    expect(PasskeyRenameSchema.safeParse({ friendly_name: String.fromCodePoint(0x1f510).repeat(65) }).success).toBe(false);
+    // 絵文字は UTF-16 で2単位・UTF-8 で4バイト。字の数で数える（30個は120バイトで通り、31個は断る。字数の上限 64 より先に、バイトの上限に当たる）。
+    expect(PasskeyRenameSchema.safeParse({ friendly_name: String.fromCodePoint(0x1f510).repeat(30) }).success).toBe(true);
+    expect(PasskeyRenameSchema.safeParse({ friendly_name: String.fromCodePoint(0x1f510).repeat(31) }).success).toBe(false);
   });
 });
 
@@ -143,5 +143,23 @@ describe('DD-AUTH-060 authenticatorAttachment の null', () => {
     expect(dropped).toEqual({ ...credential, authenticatorAttachment: undefined, });
     expect(Object.keys(dropped)).toEqual(['id', 'rawId', 'type', 'response']);
     expect(dropNullFields({ authenticatorAttachment: 'platform', id: 'a' })).toEqual({ authenticatorAttachment: 'platform', id: 'a' });
+  });
+});
+
+describe('DD-AUTH-051 名前の長さ（1〜64字かつ UTF-8 で120バイト以内）', () => {
+  test('DD-AUTH-051 日本語40字（120バイト）は通り、41字（123バイト）は断る', () => {
+    expect(PasskeyRenameSchema.safeParse({ friendly_name: 'あ'.repeat(40) }).success).toBe(true);
+    expect(PasskeyRenameSchema.safeParse({ friendly_name: 'あ'.repeat(41) }).success).toBe(false);
+  });
+
+  test('DD-AUTH-051 ASCII 64字は通り、65字は断り、空は断る', () => {
+    expect(PasskeyRenameSchema.safeParse({ friendly_name: 'a'.repeat(64) }).success).toBe(true);
+    expect(PasskeyRenameSchema.safeParse({ friendly_name: 'a'.repeat(65) }).success).toBe(false);
+    expect(PasskeyRenameSchema.safeParse({ friendly_name: '' }).success).toBe(false);
+  });
+
+  test('DD-AUTH-051 サロゲートペア（4バイト）も数える: 30字（120バイト）は通り、31字は断る', () => {
+    expect(PasskeyRenameSchema.safeParse({ friendly_name: '😀'.repeat(30) }).success).toBe(true);
+    expect(PasskeyRenameSchema.safeParse({ friendly_name: '😀'.repeat(31) }).success).toBe(false);
   });
 });
