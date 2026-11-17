@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import LoginPage from '@/app/login/page';
+import LoginPage from '@/app/login/password/page';
 import { LoginProvider } from '@/contexts/LoginContext';
 import { POST as registerPost } from '@/app/api/auth/register/route';
 import { GET as confirmGet } from '@/app/api/auth/confirm/route';
@@ -317,7 +317,7 @@ describe('会員登録の画面遷移', () => {
       fireEvent.click(screen.getByRole('tab', { name: '会員登録' }));
 
       expect(screen.getByLabelText('Confirm Password')).toBeInTheDocument();
-      expect(window.location.pathname).toBe('/login');
+      expect(window.location.pathname).toBe('/login/password');
       expect(window.history.length).toBe(historyLength);
     });
   });
@@ -420,7 +420,7 @@ describe('会員登録の画面遷移', () => {
       expect(screen.getByRole('tab', { name: 'ログイン' })).toHaveAttribute('aria-selected', 'true');
       expect(screen.getByLabelText('Password')).toBeInTheDocument();
       expect(screen.queryByLabelText('Confirm Password')).not.toBeInTheDocument();
-      expect(window.location.pathname).toBe('/login');
+      expect(window.location.pathname).toBe('/login/password');
     });
 
     test('FLOW-AUTH-003 漏洩したパスワードは窓口の文を出し、フォームに留まる', async () => {

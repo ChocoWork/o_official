@@ -13,7 +13,7 @@ for (const viewport of [
         headers: { 'Retry-After': '120' },
         body: JSON.stringify({ error: 'private database detail' }),
       }));
-      await page.goto('/login');
+      await page.goto('/login/password');
       await setLoginTwoFactorCookie(page, 'user@example.invalid');
       await page.goto('/login/verify');
       await expect(page.getByLabel('認証コード 1 桁目')).toBeVisible();

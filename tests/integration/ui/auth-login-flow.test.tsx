@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import LoginPage from '@/app/login/page';
+import LoginPage from '@/app/login/password/page';
 import LoginVerifyPage from '@/app/login/verify/page';
 import { LoginProvider } from '@/contexts/LoginContext';
 
@@ -66,7 +66,7 @@ async function resolvePage(
   searchParams: Record<string, string> = {},
 ): Promise<{ node: React.ReactNode; route: string }> {
   try {
-    if (path === '/login') {
+    if (path === '/login/password') {
       return { node: await LoginPage({ searchParams: Promise.resolve(searchParams) }), route: path };
     }
     if (path === '/login/verify') {
@@ -108,7 +108,7 @@ async function mount(initial: { node: React.ReactNode; route: string }) {
 }
 
 async function openLoginPage(searchParams: Record<string, string> = {}) {
-  await mount(await resolvePage('/login', searchParams));
+  await mount(await resolvePage('/login/password', searchParams));
 }
 
 function currentRoute() {
@@ -185,10 +185,10 @@ describe('メールとパスワードのログインの画面遷移', () => {
     installFetch();
   });
 
-  describe('/login から /login/verify へ', () => {
+  describe('/login/password から /login/verify へ', () => {
     test('FLOW-AUTH-001 パスワードの確かめが通ると認証コードの画面へ置き換えて移る', async () => {
       await openLoginPage();
-      expect(currentRoute()).toBe('/login');
+      expect(currentRoute()).toBe('/login/password');
 
       submitCredentials();
 
@@ -205,7 +205,7 @@ describe('メールとパスワードのログインの画面遷移', () => {
       expect(mockState.replaceCalls.every((path) => path.startsWith('/'))).toBe(true);
     });
 
-    test('FLOW-AUTH-001 ログインが失敗したら /login に留まり、窓口の文を出す', async () => {
+    test('FLOW-AUTH-001 ログインが失敗したら /login/password に留まり、窓口の文を出す', async () => {
       mockState.login = { status: 401, body: { error: 'メールアドレスまたはパスワードが正しくありません' } };
       await openLoginPage();
 
@@ -214,12 +214,12 @@ describe('メールとパスワードのログインの画面遷移', () => {
       await waitFor(() =>
         expect(screen.getByRole('alert')).toHaveTextContent('メールアドレスまたはパスワードが正しくありません'),
       );
-      expect(currentRoute()).toBe('/login');
+      expect(currentRoute()).toBe('/login/password');
       expect(mockState.replaceCalls).toEqual([]);
       expect(mockState.pending).toBeNull();
     });
 
-    test('FLOW-AUTH-001 保留の間に /login を開くと、フォームを描かず続きへ送る', async () => {
+    test('FLOW-AUTH-001 保留の間に /login/password を開くと、フォームを描かず続きへ送る', async () => {
       mockState.pending = { email: VALID_EMAIL };
 
       await openLoginPage();
@@ -229,10 +229,10 @@ describe('メールとパスワードのログインの画面遷移', () => {
       expect(currentRoute()).toBe('/login/verify');
     });
 
-    test('FLOW-AUTH-001 保留が無いのに /login/verify を開くと /login へ戻す', async () => {
+    test('FLOW-AUTH-001 保留が無いのに /login/verify を開くと /login/password へ戻す', async () => {
       await mount(await resolvePage('/login/verify'));
 
-      expect(currentRoute()).toBe('/login');
+      expect(currentRoute()).toBe('/login/password');
       expect(screen.getByLabelText('Email')).toBeInTheDocument();
       expect(screen.queryByLabelText('認証コード 1 桁目')).not.toBeInTheDocument();
     });
@@ -250,13 +250,13 @@ describe('メールとパスワードのログインの画面遷移', () => {
   });
 
   describe('やり直し', () => {
-    test('FLOW-AUTH-001 やり直すと保留を捨ててから /login のフォームへ戻る', async () => {
+    test('FLOW-AUTH-001 やり直すと保留を捨ててから /login/password のフォームへ戻る', async () => {
       await goToVerifyScreen();
       expect(mockState.pending).not.toBeNull();
 
       fireEvent.click(screen.getByRole('button', { name: '別のアドレスでやり直す' }));
 
-      await waitFor(() => expect(currentRoute()).toBe('/login'));
+      await waitFor(() => expect(currentRoute()).toBe('/login/password'));
       expect(mockState.fetchCalls).toContainEqual({ url: '/api/auth/login/cancel', method: 'POST' });
       expect(mockState.pending).toBeNull();
       expect(screen.getByLabelText('Email')).toBeInTheDocument();
@@ -311,13 +311,13 @@ describe('メールとパスワードのログインの画面遷移', () => {
       expect(mockState.replaceCalls).not.toContain('/admin');
     });
 
-    test('FLOW-AUTH-001 post-login が 401 なら未ログインとして /login へ戻す', async () => {
+    test('FLOW-AUTH-001 post-login が 401 なら未ログインとして /login/password へ戻す', async () => {
       mockState.postLogin = { status: 401, body: { error: 'Unauthorized' } };
       await goToVerifyScreen();
 
       submitCode();
 
-      await waitFor(() => expect(currentRoute()).toBe('/login'));
+      await waitFor(() => expect(currentRoute()).toBe('/login/password'));
       expect(screen.getByLabelText('Email')).toBeInTheDocument();
     });
 

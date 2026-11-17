@@ -92,19 +92,19 @@ describe('/login/verify の画面', () => {
   });
 
   describe('サーバーの描画', () => {
-    test('SCR-AUTH-004 保留の Cookie が無ければ入力の画面を描かず /login へ送る', async () => {
-      await expect(LoginVerifyPage()).rejects.toThrow('NEXT_REDIRECT:/login');
+    test('SCR-AUTH-004 保留の Cookie が無ければ入力の画面を描かず /login/password へ送る', async () => {
+      await expect(LoginVerifyPage()).rejects.toThrow('NEXT_REDIRECT:/login/password');
 
       expect(mockVerifySession).toHaveBeenCalledWith(undefined);
-      expect(mockRedirect).toHaveBeenCalledWith('/login');
+      expect(mockRedirect).toHaveBeenCalledWith('/login/password');
       expect(screen.queryByLabelText('認証コード 1 桁目')).not.toBeInTheDocument();
     });
 
-    test('SCR-AUTH-004 偽り・期限切れの印は無い時と同じに /login へ送る', async () => {
+    test('SCR-AUTH-004 偽り・期限切れの印は無い時と同じに /login/password へ送る', async () => {
       mockCookieGet.mockReturnValue({ value: 'forged-or-expired' });
       mockVerifySession.mockReturnValue(null);
 
-      await expect(LoginVerifyPage()).rejects.toThrow('NEXT_REDIRECT:/login');
+      await expect(LoginVerifyPage()).rejects.toThrow('NEXT_REDIRECT:/login/password');
 
       expect(mockCookieGet).toHaveBeenCalledWith(loginTwoFactorSessionCookieName);
       expect(mockVerifySession).toHaveBeenCalledWith('forged-or-expired');
@@ -364,13 +364,13 @@ describe('/login/verify の画面', () => {
       expect(document.activeElement).toBe(otpInputs()[0]);
     });
 
-    test('SCR-AUTH-004 401 は /login へ置き換えて移る', async () => {
+    test('SCR-AUTH-004 401 は /login/password へ置き換えて移る', async () => {
       fetchMock.mockResolvedValue(jsonResponse(401));
       await renderScreen();
 
       fireEvent.click(await openResend());
 
-      await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/login'));
+      await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/login/password'));
     });
 
     test('SCR-AUTH-004 429 の Retry-After が秒なら、その秒を待ちに入れる', async () => {
@@ -444,25 +444,25 @@ describe('/login/verify の画面', () => {
   });
 
   describe('やり直し', () => {
-    test('SCR-AUTH-004 保留を捨てる窓口を呼んでから /login へ置き換える', async () => {
+    test('SCR-AUTH-004 保留を捨てる窓口を呼んでから /login/password へ置き換える', async () => {
       await renderScreen();
 
       fireEvent.click(screen.getByRole('button', { name: '別のアドレスでやり直す' }));
 
-      await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/login'));
+      await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/login/password'));
       const [url, init] = fetchMock.mock.calls[0] as [string, FetchInit];
       expect(url).toBe('/api/auth/login/cancel');
       expect(init.method).toBe('POST');
       expect(fetchMock.mock.invocationCallOrder[0]).toBeLessThan(mockReplace.mock.invocationCallOrder[0]);
     });
 
-    test('SCR-AUTH-004 窓口が落ちていても /login へ置き換える', async () => {
+    test('SCR-AUTH-004 窓口が落ちていても /login/password へ置き換える', async () => {
       fetchMock.mockRejectedValue(new Error('network'));
       await renderScreen();
 
       fireEvent.click(screen.getByRole('button', { name: '別のアドレスでやり直す' }));
 
-      await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/login'));
+      await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/login/password'));
     });
   });
 });

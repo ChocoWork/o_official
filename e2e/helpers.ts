@@ -30,7 +30,7 @@ export function generateTestUser(): TestUser {
  * ユーザー登録を実行
  */
 export async function registerUser(page: Page, user: TestUser) {
-  await page.goto('/login');
+  await page.goto('/login/password');
   
   // 登録タブに切り替え
   await page.click('button:has-text("新規登録")');
@@ -53,7 +53,7 @@ export async function registerUser(page: Page, user: TestUser) {
  * ログインを実行
  */
 export async function loginUser(page: Page, email: string, password: string) {
-  await page.goto('/login');
+  await page.goto('/login/password');
   
   // ログインタブに切り替え（デフォルトはログインタブ）
   await page.click('button:has-text("ログイン")');

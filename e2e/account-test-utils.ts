@@ -84,7 +84,7 @@ export async function mockOtpAuthentication(page: Page, email = 'user@example.co
 }
 
 export async function loginAndOpenAccount(page: Page, email = 'user@example.com') {
-  await page.goto('/login');
+  await page.goto('/login/password');
 
   await injectTurnstileToken(page);
 

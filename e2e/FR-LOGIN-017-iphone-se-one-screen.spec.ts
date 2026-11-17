@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
 test.describe('FR-LOGIN-017 iPhone SE one screen', () => {
   test('FREQ-71-AC-01 login form fits within the iPhone SE viewport without scrolling', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.goto('/login');
+    await page.goto('/login/password');
 
     const card = await page.locator('#auth-panel').locator('xpath=..').boundingBox();
     const footer = await page.locator('footer').boundingBox();
@@ -19,7 +19,7 @@ test.describe('FR-LOGIN-017 iPhone SE one screen', () => {
 
   test('FREQ-71-AC-03 register form also fits within the iPhone SE viewport without scrolling', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.goto('/login');
+    await page.goto('/login/password');
     await page.getByRole('tab', { name: '会員登録' }).click();
     await expect(page.getByLabel('Confirm Password')).toBeVisible();
 
@@ -34,7 +34,7 @@ test.describe('FR-LOGIN-017 iPhone SE one screen', () => {
   test('FREQ-71-AC-02 desktop keeps the original (non-reduced) vertical spacing', async ({ page }) => {
     // FREQ-71-AC-02: desktop ではモバイル用の縮小が適用されない（sm: 以上は従来値）
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto('/login');
+    await page.goto('/login/password');
 
     // フォーム下マージン（form ↔ OR）が sm:mb-8（32px）であること（mobile の mb-4=16px でないこと）
     const formMb = await page

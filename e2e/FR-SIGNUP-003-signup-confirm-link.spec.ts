@@ -234,7 +234,7 @@ async function submitSignupFromBrowser(page: Page, email: string, next?: string)
   await page.route('**/api/auth/register', (route) =>
     route.continue({ headers: { ...route.request().headers(), 'x-real-ip': sourceIp } }),
   );
-  await page.goto(next === undefined ? '/login' : `/login?next=${encodeURIComponent(next)}`);
+  await page.goto(next === undefined ? '/login/password' : `/login/password?next=${encodeURIComponent(next)}`);
   await page.getByRole('tab', { name: '会員登録' }).click();
   const panel = page.getByRole('tabpanel');
   await panel.getByLabel('Email').fill(email);

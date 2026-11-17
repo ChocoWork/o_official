@@ -26,7 +26,7 @@ for (const viewport of viewports) {
         });
       });
 
-      await page.goto('/login');
+      await page.goto('/login/password');
 
       await injectTurnstileToken(page);
 

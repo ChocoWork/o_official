@@ -20,7 +20,7 @@ for (const viewport of viewports) {
   test.describe(`FR-LOGIN-029 login form layout split ACs (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await page.goto('/login');
+      await page.goto('/login/password');
     });
 
     test('FREQ-58-AC-01 login page shows the EMAIL and PASSWORD fields', async ({ page }) => {

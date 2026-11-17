@@ -348,7 +348,7 @@ graph TD
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-LOGIN-005、FREQ-63-REQ-01、FREQ-90-REQ-01、FREQ-69-REQ-01、FREQ-71-REQ-01、FREQ-334-REQ-03、FR-AUTH-005、ADR-0410 |
+| 上位 | FR-LOGIN-005、FREQ-63-REQ-01、FREQ-90-REQ-01、FREQ-69-REQ-01、FREQ-71-REQ-01、FREQ-334-REQ-03、FR-AUTH-005、FR-AUTH-025、ADR-0410 |
 | 根拠 | ログインと会員登録を別のページにすると導線が分かれるので、`/login` の1つの画面のタブで切り替え、`/register` は置かない（FREQ-63-REQ-01、ADR-0410）。タブは下線の形にし、カードの枠と切替のリンクを消す（FREQ-90-REQ-01）。認証コードの入力の途中で戻ってきた人にもう一度パスワードを打たせると2通目のコードが飛ぶので、保留が有効なら `/login/verify` へ送る（FREQ-334-REQ-03） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -358,8 +358,8 @@ graph TD
 - `?next=` を受ける。文字列なら戻り先の確かめ（DD-AUTH-032）に通し、通った道筋だけをタブの部品の `returnTo` に渡す（外れたら捨てる。値を画面に出さない）。ログイン・会員登録・Google の送信で本文の `next` に載せる（FR-AUTH-005）
 - `?tab=register` で会員登録のタブから始め、`?email=` が文字列なら会員登録の欄に入れる（注文の完了からの案内、FREQ-266（範囲外））
 - タブ: `tablist` に「ログイン」「会員登録」。左右の矢印で切り替える。選んだタブは黒の太い下線、選ばないタブはグレーの文字と細い下線
-- タブを切り替えると URL を `/login` に置き換える（`?tab=`・`?email=` が消える）。`/register` へは変えない
-- 画面の高さ: main を画面の高さ以上にしてフォームを縦横の中央に置き、上下にヘッダーのずれの分の余白を取る（FREQ-69-REQ-01）。この main の指定は共有の `src/contexts/Providers.tsx` が `/login`・`/login/verify`・`/auth/password-reset` の3つに当てる。`sm` より狭い時だけ縦の余白と欄の高さを縮める（FREQ-71-REQ-01）
+- タブを切り替えると URL を置き換える（`?tab=`・`?email=` が消える）。段2 Task 3 から、置き換え先は `/login/password`（旧のパスワードの画面は `/login/password` へ退避した。DD-AUTH-061、ADR-0469。`/login` は Task 5 まで同じ中身で残る）。`/register` へは変えない
+- 画面の高さ: main を画面の高さ以上にしてフォームを縦横の中央に置き、上下にヘッダーのずれの分の余白を取る（FREQ-69-REQ-01）。この main の指定は共有の `src/contexts/Providers.tsx` が `/login`・`/login/verify`・`/login/password`・`/login/code`・`/login/passkey`・`/auth/password-reset` の6つに当てる（`/login/password`・`/login/code`・`/login/passkey` は段2 Task 3 で足した）。`sm` より狭い時だけ縦の余白と欄の高さを縮める（FREQ-71-REQ-01）
 - 中身はログインのフォーム（SCR-AUTH-002）か会員登録のフォーム（SCR-AUTH-003）
 - `/register` へ来た時の動きはアプリのページが無いことで決まる（404。FREQ-63-AC-01）
 

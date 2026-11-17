@@ -19,7 +19,7 @@ for (const viewport of viewports) {
   test.describe(`FR-LOGIN-011 auth minimal design (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await page.goto('/login');
+      await page.goto('/login/password');
     });
 
     test('email input and login button are not rounded (minimal design)', async ({ page }) => {

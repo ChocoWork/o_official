@@ -5,7 +5,7 @@
  * @impl IMPL-AUTH-141
  * @design DD-AUTH-010
  * @remarks ログインと会員登録を別ページにすると導線が分かれるため、タブで切り替える（ADR-0410）。
- * 切り替えても URL は `/login` のままにする（FREQ-63-REQ-01）ので、履歴を積まず置き換える。
+ * 切り替えても URL は `/login/password` のままにする（FREQ-63-REQ-01）ので、履歴を積まず置き換える。
  * 左右の矢印で隣のタブへ移れる tablist にして、キーボードだけでも操作できるようにする。
  * notice があれば role="status" で頁の上に出す。URL の query が replaceState で消えても、タブを替えても残す。
  */
@@ -18,8 +18,8 @@ import RegisterModal from "@/components/RegisterModal";
 export type AuthTab = "login" | "register";
 
 const TABS: Array<{ key: AuthTab; label: string; path: string }> = [
-  { key: "login", label: "ログイン", path: "/login" },
-  { key: "register", label: "会員登録", path: "/login" },
+  { key: "login", label: "ログイン", path: "/login/password" },
+  { key: "register", label: "会員登録", path: "/login/password" },
 ];
 
 interface AuthTabsProps {

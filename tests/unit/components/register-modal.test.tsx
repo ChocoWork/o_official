@@ -333,13 +333,13 @@ describe('RegisterModal', () => {
       expect(onSwitchToLogin).toHaveBeenCalledTimes(1);
     });
 
-    test('DD-AUTH-009 onSwitchToLogin が無ければ「ログインページへ」は /login へのリンク', async () => {
+    test('DD-AUTH-009 onSwitchToLogin が無ければ「ログインページへ」は /login/password へのリンク', async () => {
       render(<RegisterModal />);
       fillForm();
       submitForm();
       await screen.findByText(DEFAULT_SENT_MESSAGE);
 
-      expect(screen.getByRole('link', { name: 'ログインページへ' })).toHaveAttribute('href', '/login');
+      expect(screen.getByRole('link', { name: 'ログインページへ' })).toHaveAttribute('href', '/login/password');
       expect(screen.queryByRole('button', { name: 'ログインページへ' })).not.toBeInTheDocument();
     });
   });

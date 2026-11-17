@@ -1,11 +1,11 @@
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import LoginPage, { generateMetadata } from '@/app/login/page';
+import LoginPage, { generateMetadata } from '@/app/login/password/page';
 import { LoginProvider } from '@/contexts/LoginContext';
 import { createLoginTwoFactorSessionToken } from '@/features/auth/services/login-2fa-session';
 
-// 画面は /login の頁（サーバー）→ AuthTabs → ログイン／会員登録のフォーム → LoginProvider を本物のまま通す。
+// 画面は /login/password の頁（サーバー）→ AuthTabs → ログイン／会員登録のフォーム → LoginProvider を本物のまま通す。
 // 外との境目だけ偽物にする: Cookie の入れ物・転送・ルーター・Turnstile の Script・通信・Supabase の client。
 let mockCookieValue: string | undefined;
 
@@ -58,7 +58,7 @@ function validPendingToken() {
   return createLoginTwoFactorSessionToken({ userId: 'user-1', email: 'user@example.com' });
 }
 
-describe('SCR-AUTH-001 /login はログインと会員登録の2つのタブを持つ1つの認証の画面にする', () => {
+describe('SCR-AUTH-001 /login/password はログインと会員登録の2つのタブを持つ1つの認証の画面にする', () => {
   const originalSecret = process.env.LOGIN_2FA_SESSION_SECRET;
   let replaceStateSpy: jest.SpyInstance;
 
@@ -162,7 +162,7 @@ describe('SCR-AUTH-001 /login はログインと会員登録の2つのタブを�
     expect(screen.getByLabelText('Email')).toHaveValue('');
   });
 
-  it('SCR-AUTH-001 タブの押下で中身がログインと会員登録に入れ替わり、URL を /login に置き換える', async () => {
+  it('SCR-AUTH-001 タブの押下で中身がログインと会員登録に入れ替わり、URL を /login/password に置き換える', async () => {
     const user = userEvent.setup();
     window.history.pushState(null, '', '/login?tab=register&email=guest%40example.com');
     await renderLoginPage({ tab: 'register', email: 'guest@example.com' });
@@ -172,8 +172,8 @@ describe('SCR-AUTH-001 /login はログインと会員登録の2つのタブを�
 
     expect(screen.getByRole('tab', { name: 'ログイン' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByLabelText('Confirm Password')).toBeNull();
-    expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/login');
-    expect(window.location.pathname).toBe('/login');
+    expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/login/password');
+    expect(window.location.pathname).toBe('/login/password');
     expect(window.location.search).toBe('');
 
     await user.click(screen.getByRole('tab', { name: '会員登録' }));
@@ -264,6 +264,6 @@ describe('SCR-AUTH-001 /login はログインと会員登録の2つのタブを�
 
     expect(screen.getByRole('tab', { name: 'ログイン' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('button', { name: 'ログイン' })).toBeInTheDocument();
-    expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/login');
+    expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/login/password');
   });
 });

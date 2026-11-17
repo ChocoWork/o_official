@@ -19,7 +19,7 @@ for (const viewport of viewports) {
 
     test('FREQ-59-AC-02 login page provides a path to registration via tab', async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await page.goto('/login');
+      await page.goto('/login/password');
 
       // 会員登録はタブで /login 内に統合される
       await expect(page.getByRole('tab', { name: '会員登録' })).toBeVisible();

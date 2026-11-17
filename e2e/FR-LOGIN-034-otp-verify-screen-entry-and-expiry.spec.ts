@@ -100,7 +100,7 @@ async function waitForNewLoginCode(email: string, previousIds: ReadonlySet<strin
 
 /** パスワード検証の後の状態（2FA Cookie）を本物の会員で置き、再送の入口で本物の確認コードを送らせて読む。 */
 async function sendRealLoginCode(page: Page, member: TestMemberWithPassword, sourceIp: string): Promise<string> {
-  await page.goto('/login');
+  await page.goto('/login/password');
   const origin = new URL(page.url()).origin;
   await setLoginTwoFactorCookie(page, member.email, member.userId);
   const previousIds = new Set(await listMailIds(member.email));
@@ -146,7 +146,7 @@ for (const viewport of viewports) {
 
       // 戻り先が /login ではなく直前のページになることを見るため、先に別のページを挟む。
       await page.goto('/');
-      await page.goto('/login');
+      await page.goto('/login/password');
       await expect(page.getByLabel('EMAIL')).toBeVisible();
       await expect(page.getByLabel('PASSWORD')).toBeVisible();
 
@@ -169,11 +169,11 @@ for (const viewport of viewports) {
       page,
     }) => {
       // Cookie を置くにはオリジンが要るので、先に同一オリジンのページを開く。
-      await page.goto('/login');
+      await page.goto('/login/password');
       await expect(page.getByLabel('EMAIL')).toBeVisible();
 
       await setLoginTwoFactorCookie(page, MOCK_EMAIL);
-      await page.goto('/login');
+      await page.goto('/login/password');
 
       await expect(page).toHaveURL(/\/login\/verify$/);
       await expect(page.getByLabel(OTP_INPUT_FIRST)).toBeVisible();
@@ -186,7 +186,7 @@ for (const viewport of viewports) {
       await page.clock.install();
       await mockPasswordStep(page);
 
-      await page.goto('/login');
+      await page.goto('/login/password');
       await setLoginTwoFactorCookie(page, MOCK_EMAIL);
       await submitCredentials(page, MOCK_EMAIL, 'Password123456789!');
 
@@ -214,7 +214,7 @@ for (const viewport of viewports) {
       }
       const previousIds = new Set<string>();
 
-      await page.goto('/login');
+      await page.goto('/login/password');
       await submitCredentials(page, member.email, member.password);
 
       // 本物のパスワード検証の後、専用画面で 8 桁を求められる
@@ -232,7 +232,7 @@ for (const viewport of viewports) {
     });
 
     test(`FR-LOGIN-008-AC-01 確認の画面に「コードは5分間有効です」が表示される (${viewport.name})`, async ({ page }) => {
-      await page.goto('/login');
+      await page.goto('/login/password');
       await setLoginTwoFactorCookie(page, MOCK_EMAIL);
       await page.goto('/login/verify');
 
@@ -273,7 +273,7 @@ for (const viewport of viewports) {
 
       // /login/verify を開き直すと /login へ移り、入力欄は出ない
       await page.goto('/login/verify');
-      await expect(page).toHaveURL(/\/login$/);
+      await expect(page).toHaveURL(/\/login\/password$/);
       await expect(page.getByLabel(OTP_INPUT_FIRST)).toHaveCount(0);
     });
 

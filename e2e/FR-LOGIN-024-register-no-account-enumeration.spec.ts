@@ -68,7 +68,7 @@ for (const viewport of viewports) {
           route.continue({ headers: { ...route.request().headers(), 'x-real-ip': sourceIp } }),
         );
 
-        await page.goto('/login');
+        await page.goto('/login/password');
         await page.getByRole('tab', { name: '会員登録' }).click();
 
         const panel = page.getByRole('tabpanel');

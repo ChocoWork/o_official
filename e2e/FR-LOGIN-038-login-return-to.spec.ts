@@ -220,6 +220,8 @@ for (const viewport of viewports) {
       await expect(headerLogin).toHaveAttribute('href', '/login?next=%2Fstockist%3Ffrom%3De2e');
       await headerLogin.click();
       await expect(page).toHaveURL(/\/login\?next=/);
+      // 旧のパスワードの画面は /login/password。リンクが運んだ戻り先（next）はそのまま持ち越す。
+      await page.goto(page.url().replace('/login?', '/login/password?'));
 
       await signInOnLoginScreen(page, member);
 
@@ -236,6 +238,8 @@ for (const viewport of viewports) {
       await expect(gateLogin).toHaveAttribute('href', '/login?next=%2Faccount');
       await gateLogin.click();
       await expect(page).toHaveURL(/\/login\?next=/);
+      // 旧のパスワードの画面は /login/password。リンクが運んだ戻り先（next）はそのまま持ち越す。
+      await page.goto(page.url().replace('/login?', '/login/password?'));
 
       await signInOnLoginScreen(page, member);
 
@@ -246,7 +250,7 @@ for (const viewport of viewports) {
       const member = await createMember(`ac03-${viewport.name}`);
       await routeSourceIp(page, uniqueSourceIp());
 
-      await page.goto('/login');
+      await page.goto('/login/password');
       await signInOnLoginScreen(page, member);
 
       await expectLandedOn(page, '/');
@@ -265,7 +269,7 @@ for (const viewport of viewports) {
         await routeSourceIp(page, uniqueSourceIp());
         const watch = await watchOutsideTraffic(page, origin);
 
-        await page.goto(`/login?next=${next}`);
+        await page.goto(`/login/password?next=${next}`);
         await signInOnLoginScreen(page, member);
 
         await expectLandedOn(page, '/');
@@ -337,7 +341,7 @@ for (const viewport of viewports) {
         const member = await createMember(`ac06-${viewport.name}`);
         await routeSourceIp(page, uniqueSourceIp());
 
-        await page.goto(`/login?next=${encodeURIComponent(next)}`);
+        await page.goto(`/login/password?next=${encodeURIComponent(next)}`);
         await signInOnLoginScreen(page, member);
 
         await expectLandedOn(page, '/');
@@ -352,7 +356,7 @@ for (const viewport of viewports) {
       // 画面からの post-login を止める（後に登録した route が勝つ）。画面は失敗の既定で / へ倒れ、控えは使われずに残る。
       await page.route('**/api/auth/post-login', (route) => route.abort());
 
-      await page.goto('/login?next=%2Fstockist');
+      await page.goto('/login/password?next=%2Fstockist');
       await signInOnLoginScreen(page, member);
       await expectLandedOn(page, '/');
 
@@ -436,7 +440,7 @@ for (const viewport of viewports) {
         }
       });
 
-      await page.goto('/login?next=%2Fstockist');
+      await page.goto('/login/password?next=%2Fstockist');
       await signInOnLoginScreen(page, member);
       await expectLandedOn(page, '/stockist');
       await Promise.allSettled(headerReads);

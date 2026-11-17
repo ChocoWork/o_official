@@ -7,11 +7,11 @@ const viewports = [
   { name: 'desktop', width: 1280, height: 800 },
 ];
 
-const authRoutes = ['/login', '/auth/password-reset'] as const;
+const authRoutes = ['/login/password', '/auth/password-reset'] as const;
 
 for (const viewport of viewports) {
   for (const route of authRoutes) {
-    // 1 つの名前に付けられる ID は 1 つ。/login は FREQ-69-AC-03、/auth/password-reset は FREQ-70-AC-02 の観点なので、
+    // 1 つの名前に付けられる ID は 1 つ。/login/password は FREQ-69-AC-03、/auth/password-reset は FREQ-70-AC-02 の観点なので、
     // 試験の本体を共有し、名前は route ごとに ID を literal で書く
     const centersInDynamicViewport = async ({ page }: { page: Page }) => {
       // FREQ-94-AC-01: 固定ヘッダー下のmainではなく、100dvh全体の中央へ配置する
@@ -43,7 +43,7 @@ for (const viewport of viewports) {
       expect(metrics.footerTop).toBeGreaterThanOrEqual(viewport.height - 1);
       expect(metrics.hasHorizontalOverflow).toBe(false);
     };
-    if (route === '/login') {
+    if (route === '/login/password') {
       test(`FREQ-69-AC-03 ${route} is centered in the dynamic viewport (${viewport.name})`, centersInDynamicViewport);
     } else {
       test(`FREQ-70-AC-02 ${route} is centered in the dynamic viewport (${viewport.name})`, centersInDynamicViewport);
@@ -54,7 +54,7 @@ for (const viewport of viewports) {
 test('login remains viewport-centered after switching to registration', async ({ page }) => {
   // FREQ-94-AC-02: タブ切替で共通ルートコンテナの中心を動かさない
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/login');
+  await page.goto('/login/password');
   await page.getByRole('tab', { name: '会員登録' }).click();
 
   const centerDelta = await page.locator('#main-content > :first-child').evaluate((element) => {
@@ -67,7 +67,7 @@ test('login remains viewport-centered after switching to registration', async ({
 test('short viewport keeps the login form reachable without clipping', async ({ page }) => {
   // FREQ-94-AC-03: 高さ不足時はmainを伸ばし、固定ヘッダーの下から全内容へ到達できる
   await page.setViewportSize({ width: 375, height: 568 });
-  await page.goto('/login');
+  await page.goto('/login/password');
 
   const metrics = await page.evaluate(() => {
     const root = document.querySelector('#main-content > :first-child');

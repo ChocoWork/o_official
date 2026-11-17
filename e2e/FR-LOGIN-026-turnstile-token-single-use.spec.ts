@@ -62,7 +62,7 @@ for (const viewport of viewports) {
         });
       });
 
-      await page.goto('/login');
+      await page.goto('/login/password');
       // 2 回目の送信は成功して専用画面へ進む。モックは本物の 2FA Cookie を
       // 発行しないので、テスト側で置いておく。
       await setLoginTwoFactorCookie(page, 'user@example.com');
@@ -107,7 +107,7 @@ for (const viewport of viewports) {
         });
       });
 
-      await page.goto('/login');
+      await page.goto('/login/password');
       // ウィジェットのコールバックは 1 tick 遅れるので、仮想時計を少し進めて届かせる。
       await page.clock.runFor(1);
       await setLoginTwoFactorCookie(page, 'user@example.com');

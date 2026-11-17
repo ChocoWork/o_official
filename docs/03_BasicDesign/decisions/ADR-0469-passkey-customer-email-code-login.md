@@ -1,6 +1,6 @@
 # ADR-0469 お客さんのログインは、メールのコードを入口にし、新規は先に印つきで作ってから同じコードの流れに乗せる
 
-> 状態: 推定 | 確認日: 2026-11-17 | 対象: `src/app/api/auth/email-code/{start,verify,resend,cancel}/route.ts`、`src/features/auth/services/email-code-session.ts`。画面の作り・旧画面の退避は以降のタスクで足す
+> 状態: 推定 | 確認日: 2026-11-17 | 対象: `src/app/api/auth/email-code/{start,verify,resend,cancel}/route.ts`、`src/features/auth/services/email-code-session.ts`、`src/app/login/password/page.tsx`（旧画面の退避。Task 3）。新しい画面の作りは以降のタスクで足す
 
 ## 概要
 
@@ -11,8 +11,8 @@
 | 項目 | 内容 |
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の AUTH |
-| 対応する ID | SR-AUTH-021、FR-AUTH-023、SEC-AUTH-048、SEC-AUTH-049、THR-AUTH-049、DD-AUTH-059 |
-| 対象のコード | `src/app/api/auth/email-code/`、`src/features/auth/services/email-code-session.ts` |
+| 対応する ID | SR-AUTH-021、FR-AUTH-023、SEC-AUTH-048、SEC-AUTH-049、THR-AUTH-049、DD-AUTH-059、SR-AUTH-022、FR-AUTH-025、DD-AUTH-061 |
+| 対象のコード | `src/app/api/auth/email-code/`、`src/features/auth/services/email-code-session.ts`、`src/app/login/password/page.tsx`、`src/components/AuthTabs.tsx` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（6-1）、[段2の計画](../../superpowers/plans/2026-11-17-passkey-stage2-customers.md)、[お客さんのログインの詳細](../../04_DetailDesign/sequence/auth-passkey-customer-screens.md) |
 | 調べた時点 | 2026-11-17（手元の GoTrue で、作成→コードの送信→確定の組み合わせを実測した） |
 
@@ -56,3 +56,36 @@
 - 良くなること: お客さんがパスワード無しで入れる。応答から登録の有無が分からない
 - 悪くなること: 旧の未確認の登録は、確認のメールを押すまでコードで入れない（段4まで）。他人が始めを繰り返すと、本人はしばらくコードで入れない（パスキーと Google は残る）
 - 見直す条件: 段4（旧の登録を消す時）、本番の GoTrue の設定を読んだ時
+
+#### 旧画面の退避（Task 3。SR-AUTH-022・FR-AUTH-025・DD-AUTH-061）
+
+根拠: `/login` を新しい画面に作り替えると、旧のフォーム（Password 欄・会員登録のタブ）を操作する E2E が約40本と、手助け `loginAndOpenAccount` を使う16本が一斉に落ちる。旧の画面を別の住所に動かして、その試験の URL だけを付け替えれば、中身を変えずに緑を保てる。パスワードの店員・お客さんの入口も段4まで残る。判断を書いた日と出どころ: 2026-11-17、`.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-3-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 3。調整役の判断 2・I-2）。
+
+##### 決定
+
+- 旧の `/login` の頁を `src/app/login/password/page.tsx` に移す。検索に載せない（`robots: noindex, nofollow`）。どこからもリンクしない（旧の流れの中の戻り先を除く）
+- `src/app/login/page.tsx` は Task 3 では変えない。Task 3 の終わりは `/login` と `/login/password` が同じ中身。Task 5 で `/login` を新しい画面に作り替える（旧と新の切り替えを2つのコミットに分け、Task 3 を動かして付け替えるだけにするため）
+- 旧の流れの中の戻り先は `/login/password` に閉じる: `/login/verify` の保留の無い転送、`VerifyOtpClient` の再送・`post-login` の401と取りやめ、`RegisterModal` の「ログインページへ」のリンク
+- お客さんに見せる行き先は新しい `/login` のまま: `/api/auth/confirm` の `/login`・`/login?registered=1`、パスワードの再設定・変更の後の `/login`、`GuestRegisterPrompt` と注文の状態の案内の `/login?tab=register…`。新しい `/login` に着く試験の期待は Task 5 で直す
+- 共有の `src/contexts/Providers.tsx` の `isAuthPage` に `/login/password`・`/login/code`・`/login/passkey` を足す（範囲の外のファイル。変更は `14_login.md` と `screen-list.md` に書く）。足さないと真ん中寄せの枠にならない
+- 旧画面を操作する E2E は、URL を `/login` から `/login/password` に替える以外は期待を変えない。戻り先の確かめ（`FR-LOGIN-038`）は、リンクが `/login?next=…` へ送ることを確かめた後、旧のフォームを使う所で `/login/password?next=…` へ移る
+
+##### 退けた案
+
+| 案 | 退けた理由 |
+| --- | --- |
+| 旧の画面を段2で消す | 旧のパスワードの窓口・試験は段4まで使う（設計 9）。お客さんの `password` の拒否を有効にする前に消すと、店員が入れなくなる |
+| `/login` の中で新旧を出し分ける | 旧の試験が新しい画面の分岐に巻き込まれる。段4で旧だけ消すのも難しい |
+| 旧の流れの戻り先を新しい `/login` のままにする | 旧の流れが新しい画面に飛ばされ、旧のフォームを探して落ちる。段4で旧を丸ごと消せない |
+
+##### 結果
+
+- 良くなること: 旧の試験を中身を変えずに緑のまま保てる。段4で旧の画面と試験を一緒に消せる
+- 悪くなること: Task 5 までの間、`/login` と `/login/password` の中身が重なる
+
+##### 段4で消す一覧
+
+- 画面: `src/app/login/password/page.tsx`・`src/app/login/page.tsx` の旧の中身（Task 5 で作り替えた後は残らない）、`src/app/login/verify/`、`src/components/AuthTabs.tsx`・`LoginModal.tsx`・`RegisterModal.tsx`
+- 共有: `src/contexts/Providers.tsx` の `isAuthPage` の `/login/verify`・`/login/password`
+- 窓口: `/api/auth/login/*`・`/api/auth/otp/verify`・`/api/auth/register`、旧い保留の Cookie（`sb-login-2fa-session`）
+- 試験: `/login/password` を開いて旧のフォームを操作する E2E（`FR-LOGIN-001`・`003`・`006`・`008`・`009`・`011`〜`017`・`019`〜`029`・`034`・`036`・`038`・`056`、`FR-CHECKOUT-012`、`FR-PWRESET-001`・`009`、`FR-SIGNUP-001`・`003`、`FR-UI-008`、`login-otp-resend-errors`）と手助け `e2e/account-test-utils.ts` の `loginAndOpenAccount`、`e2e/helpers.ts` の `registerUser`・`loginUser`（今は使う試験が0本）

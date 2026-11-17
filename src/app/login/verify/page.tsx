@@ -26,7 +26,7 @@ export default async function LoginVerifyPage() {
   );
 
   if (!session) {
-    redirect("/login");
+    redirect("/login/password");
   }
 
   return <VerifyOtpClient email={session.email} />;

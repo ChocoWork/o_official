@@ -175,7 +175,7 @@ export default function VerifyOtpClient({ email }: { email: string }) {
       });
 
       if (response.status === 401) {
-        return "/login";
+        return "/login/password";
       }
       if (!response.ok) {
         return MFA_PATH;
@@ -236,7 +236,7 @@ export default function VerifyOtpClient({ email }: { email: string }) {
 
       if (!resp.ok) {
         if (resp.status === 401) {
-          router.replace("/login");
+          router.replace("/login/password");
           return;
         }
         if (resp.status === 429) {
@@ -277,7 +277,7 @@ export default function VerifyOtpClient({ email }: { email: string }) {
       method: "POST",
       credentials: "same-origin",
     }).catch(() => undefined);
-    router.replace("/login");
+    router.replace("/login/password");
   };
 
   return (

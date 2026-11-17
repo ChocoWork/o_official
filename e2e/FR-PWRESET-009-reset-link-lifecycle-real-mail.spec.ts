@@ -98,7 +98,7 @@ for (const viewport of viewports) {
     test('FREQ-70-AC-04 the heading uses the same font as the login tabs and is the largest text on the page', async ({ page }) => {
       await stubTurnstileScript(page);
 
-      await page.goto('/login');
+      await page.goto('/login/password');
       const loginTabFamily = await page
         .getByRole('tab', { name: 'ログイン' })
         .evaluate((el) => getComputedStyle(el).fontFamily);

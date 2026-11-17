@@ -168,7 +168,7 @@ for (const viewport of VIEWPORTS) {
           json: { message: '確認メールを送信しました。メールのリンクから登録を完了してください。' },
         }),
       );
-      await page.goto('/login');
+      await page.goto('/login/password');
       await page.getByRole('tab', { name: '会員登録' }).click();
 
       const panel = page.getByRole('tabpanel');

@@ -1,5 +1,7 @@
 # 画面一覧
 
+> パスキー段2 Task 3 確認日: 2026-11-17。旧のパスワードのログイン・会員登録の画面を `/login/password` へ退避する1ルートを追加し、`src/app/**/page.tsx` は52件になった（顧客向け18・認証・アカウント10・管理・開発補助24）。検索に載せず、どこからもリンクしない（旧の流れの中の戻り先を除く）。`/login` は Task 5 まで同じ中身。共有の `src/contexts/Providers.tsx` の真ん中寄せの枠に `/login/password`・`/login/code`・`/login/passkey` を足した。実測（390/768/1280px）は E2E（`FR-LOGIN-056`）が確かめる。
+
 > 会計の自動で入れる実装 S27 確認日: 2026-11-15。画面の変更なし（画面ルート・画面の部品の数は変えない）。計上待ちの一覧の `dispute_refund_overlap`・`dispute_return_refund_pending` の文と、`dispute_lost`・`return_closed_after_lost` の専用の文が無いことは FREQ-643-AC-14（前の Task で入れた）。
 
 > 会計の計画3 最終レビューの直し 確認日: 2026-11-15。画面ルートの数は変えない。消費税用の返金の一覧に「元の売上の期間」「返金の期間」の列を足した（表は幅の中で横にスクロールし、ページは横にはみ出さない）。前受金の確認の異常に「返品の返金待ちがマイナス」の文を足した。
@@ -57,11 +59,12 @@
 | `/terms` | 利用規約 | 規約本文を表示。ページ固有のルートリンクなし | [page.tsx](../../../src/app/terms/page.tsx) |
 | `/legal` | 法定表記 | お問い合わせへのリンク | [page.tsx](../../../src/app/legal/page.tsx) |
 
-## 認証・アカウント画面（9ルート）
+## 認証・アカウント画面（10ルート）
 
 | パス | 画面・役割 | 導線・同一画面内の状態 | 実装 |
 | --- | --- | --- | --- |
 | `/login` | ログイン・会員登録 | メール・パスワードとGoogleログイン。`tab=register`・`email` は登録フォーム初期値。有効な検証待ちCookieがある場合とメールログイン成功時はOTP確認へ。登録受付完了は同画面 | [page.tsx](../../../src/app/login/page.tsx) |
+| `/login/password` | 旧のログイン・会員登録（パスワード。段4まで残す） | `/login` と同じ中身。`tab=register`・`email`・`next`・`registered` を受ける。タブを替えても URL は `/login/password`。検索に載せない（`noindex`）。有効な検証待ちCookieがある場合は `/login/verify` へ | [password/page.tsx](../../../src/app/login/password/page.tsx) |
 | `/login/verify` | ログインメールOTP確認 | 8桁OTP、再送、エラーを表示。成功後の認証再確認で一般利用者はアカウント、admin/supporterは認証確認へ。再確認が未認証ならログイン、通信例外ならアカウントへ。検証セッションなし・再送401・やり直す操作もログインへ | [page.tsx](../../../src/app/login/verify/page.tsx) |
 | `/auth/verified` | 認証確認・特権ユーザーのTOTP | 一般利用者はアカウントへ自動遷移。admin/supporterはMFA確認済みなら直ちに管理へ、未確認ならTOTP登録・確認後に管理へ。未認証はログイン案内リンク | [page.tsx](../../../src/app/auth/verified/page.tsx) |
 | `/auth/password-reset` | パスワード再設定 | メール送信、リンクエラー、新パスワード入力、更新完了を同画面に表示。送信・更新完了からログインへ。errorクエリは案内後に除去 | [page.tsx](../../../src/app/auth/password-reset/page.tsx) |

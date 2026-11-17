@@ -13,7 +13,7 @@ for (const viewport of viewports) {
       page,
     }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await page.goto('/login');
+      await page.goto('/login/password');
 
       const vh = viewport.height;
       const main = await page.locator('#main-content').boundingBox();

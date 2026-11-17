@@ -12,7 +12,7 @@ const EMAIL = '14masa56@gmail.com';
 
 const openVerify = async (page: Page) => {
   // Cookie を置くにはオリジンが要るので、先に同一オリジンのページを開く。
-  await page.goto('/login');
+  await page.goto('/login/password');
   await setLoginTwoFactorCookie(page, EMAIL);
   await page.goto('/login/verify');
 };
@@ -29,7 +29,7 @@ for (const viewport of viewports) {
     test('FREQ-334-AC-01 AC-01: 2FA Cookie が無ければ /login へ送り返す', async ({ page }) => {
       await page.goto('/login/verify');
 
-      await expect(page).toHaveURL(/\/login$/);
+      await expect(page).toHaveURL(/\/login\/password$/);
       await expect(page.getByLabel('認証コード 1 桁目')).toHaveCount(0);
     });
 
@@ -58,11 +58,11 @@ for (const viewport of viewports) {
       await openVerify(page);
 
       await page.getByRole('button', { name: '別のアドレスでやり直す' }).click();
-      await expect(page).toHaveURL(/\/login$/);
+      await expect(page).toHaveURL(/\/login\/password$/);
 
       // Cookie が消えているので、開き直しても入力画面には入れない
       await page.goto('/login/verify');
-      await expect(page).toHaveURL(/\/login$/);
+      await expect(page).toHaveURL(/\/login\/password$/);
     });
   });
 }
@@ -70,7 +70,7 @@ for (const viewport of viewports) {
 // 再送はクールダウン明けにしか出ないので、仮想時計で単独検証する。
 test('FREQ-334-AC-05 AC-05: 再送はパスワードも宛先も送らない', async ({ page }) => {
   await page.clock.install();
-  await page.goto('/login');
+  await page.goto('/login/password');
   await setLoginTwoFactorCookie(page, EMAIL);
   await page.goto('/login/verify');
 

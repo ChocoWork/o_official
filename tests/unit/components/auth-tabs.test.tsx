@@ -114,7 +114,7 @@ describe('AuthTabs', () => {
     expect(register.className).not.toContain('border-b-2');
   });
 
-  it('DD-AUTH-010 タブを押すと切り替わり、URL を /login に置き換える', async () => {
+  it('DD-AUTH-010 タブを押すと切り替わり、URL を /login/password に置き換える', async () => {
     const user = userEvent.setup();
     render(<AuthTabs initialTab="login" />);
 
@@ -125,8 +125,8 @@ describe('AuthTabs', () => {
     expect(screen.getByRole('tab', { name: '会員登録' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: 'ログイン' })).toHaveAttribute('tabindex', '-1');
     expect(replaceStateSpy).toHaveBeenCalledTimes(1);
-    expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/login');
-    expect(window.location.pathname).toBe('/login');
+    expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/login/password');
+    expect(window.location.pathname).toBe('/login/password');
 
     await user.click(screen.getByRole('tab', { name: 'ログイン' }));
     expect(screen.getByTestId('login-modal')).toBeInTheDocument();
@@ -141,7 +141,7 @@ describe('AuthTabs', () => {
 
     await user.click(screen.getByRole('tab', { name: 'ログイン' }));
 
-    expect(window.location.pathname).toBe('/login');
+    expect(window.location.pathname).toBe('/login/password');
     expect(window.location.search).toBe('');
   });
 
@@ -163,7 +163,7 @@ describe('AuthTabs', () => {
 
     expect(screen.getByTestId('login-modal')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'ログイン' })).toHaveAttribute('aria-selected', 'true');
-    expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/login');
+    expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/login/password');
   });
 
   it('DD-AUTH-010 右の矢印でもう1つのタブへ切り替え、そのタブにフォーカスを移す', () => {

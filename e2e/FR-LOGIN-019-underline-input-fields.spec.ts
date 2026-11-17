@@ -14,7 +14,7 @@ for (const viewport of viewports) {
   test.describe(`FR-LOGIN-019 underline input fields (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await page.goto('/login');
+      await page.goto('/login/password');
     });
 
     test('FREQ-89-AC-01 AC-01: Email に mail アイコン / Password に lock アイコンが表示される', async ({ page }) => {

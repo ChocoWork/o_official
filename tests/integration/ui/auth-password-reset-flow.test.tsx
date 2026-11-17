@@ -1,7 +1,7 @@
 import React from 'react';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import LoginPage from '@/app/login/page';
+import LoginPage from '@/app/login/password/page';
 import PasswordResetPage from '@/app/auth/password-reset/page';
 import PasswordResetVerifyPage from '@/app/auth/password-reset/verify/page';
 import { LoginProvider } from '@/contexts/LoginContext';

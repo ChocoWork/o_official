@@ -30,19 +30,19 @@ describe('/login/verify page', () => {
     mockVerifySession.mockReturnValue(null);
   });
 
-  test('DD-AUTH-002 保留の Cookie が無ければ /login へ転送し、部品を描かない', async () => {
-    await expect(LoginVerifyPage()).rejects.toThrow('NEXT_REDIRECT:/login');
+  test('DD-AUTH-002 保留の Cookie が無ければ /login/password へ転送し、部品を描かない', async () => {
+    await expect(LoginVerifyPage()).rejects.toThrow('NEXT_REDIRECT:/login/password');
 
     expect(mockVerifySession).toHaveBeenCalledWith(undefined);
-    expect(mockRedirect).toHaveBeenCalledWith('/login');
+    expect(mockRedirect).toHaveBeenCalledWith('/login/password');
     expect(screen.queryByTestId('verify-otp-client')).not.toBeInTheDocument();
   });
 
-  test('DD-AUTH-002 保留の印が偽り・期限切れで無効なら /login へ転送する', async () => {
+  test('DD-AUTH-002 保留の印が偽り・期限切れで無効なら /login/password へ転送する', async () => {
     mockCookieGet.mockReturnValue({ value: 'forged-or-expired' });
     mockVerifySession.mockReturnValue(null);
 
-    await expect(LoginVerifyPage()).rejects.toThrow('NEXT_REDIRECT:/login');
+    await expect(LoginVerifyPage()).rejects.toThrow('NEXT_REDIRECT:/login/password');
 
     expect(mockCookieGet).toHaveBeenCalledWith(loginTwoFactorSessionCookieName);
     expect(mockVerifySession).toHaveBeenCalledWith('forged-or-expired');

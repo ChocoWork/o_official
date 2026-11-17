@@ -1,6 +1,6 @@
 import React from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
-import LoginPage, { generateMetadata } from '@/app/login/page';
+import type * as PasswordPageModule from '@/app/login/password/page';
 import { loginTwoFactorSessionCookieName } from '@/lib/cookie';
 
 const mockCookieGet = jest.fn();
@@ -43,6 +43,10 @@ jest.mock('@/components/AuthTabs', () => ({
   ),
 }));
 
+// Task 5 まで /login と /login/password は同じ中身なので、同じ試験を両方に当てる（Task 5 で /login の分は作り直す）。
+let LoginPage: typeof PasswordPageModule.default;
+let generateMetadata: typeof PasswordPageModule.generateMetadata;
+
 async function renderPage(searchParams?: Record<string, string | string[] | undefined>) {
   const element = await LoginPage({
     searchParams: searchParams === undefined ? undefined : Promise.resolve(searchParams),
@@ -51,7 +55,16 @@ async function renderPage(searchParams?: Record<string, string | string[] | unde
   return screen.getByTestId('auth-tabs');
 }
 
-describe('/login page', () => {
+describe.each([
+  ['/login', '@/app/login/page'],
+  ['/login/password', '@/app/login/password/page'],
+])('%s page', (_route, modulePath) => {
+  beforeAll(async () => {
+    const mod = (await import(modulePath)) as typeof PasswordPageModule;
+    LoginPage = mod.default;
+    generateMetadata = mod.generateMetadata;
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockCookieGet.mockReturnValue(undefined);
@@ -190,5 +203,14 @@ describe('/login page', () => {
       description,
       images: ['/mainphoto.png'],
     });
+  });
+});
+
+describe('/login/password page の検索の扱い', () => {
+  test('DD-AUTH-061 旧画面は検索に載せない（robots が noindex・nofollow）', async () => {
+    const { generateMetadata } = await import('@/app/login/password/page');
+    const metadata = await generateMetadata();
+
+    expect(metadata.robots).toEqual({ index: false, follow: false });
   });
 });

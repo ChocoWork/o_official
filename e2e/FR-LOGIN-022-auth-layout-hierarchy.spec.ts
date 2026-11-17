@@ -20,7 +20,7 @@ for (const viewport of viewports) {
   test.describe(`FR-LOGIN-022 auth layout hierarchy (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await page.goto('/login');
+      await page.goto('/login/password');
     });
 
     test('tabs repeat one font size and selection uses underline contrast', async ({ page }) => {

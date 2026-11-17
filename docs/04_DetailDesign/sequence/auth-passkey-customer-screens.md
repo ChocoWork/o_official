@@ -10,7 +10,7 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-021、FR-AUTH-023、SEC-AUTH-048、SEC-AUTH-049、THR-AUTH-049、API-AUTH-029、API-AUTH-030、API-AUTH-031、API-AUTH-032、DD-AUTH-059、ADR-0469、SEC-AUTH-050、DD-AUTH-060 |
+| 対応する ID | SR-AUTH-021、FR-AUTH-023、SEC-AUTH-048、SEC-AUTH-049、THR-AUTH-049、API-AUTH-029、API-AUTH-030、API-AUTH-031、API-AUTH-032、DD-AUTH-059、ADR-0469、SEC-AUTH-050、DD-AUTH-060、SR-AUTH-022、FR-AUTH-025、DD-AUTH-061 |
 | 対象のコード | `src/app/api/auth/email-code/start/route.ts`、`verify/route.ts`、`resend/route.ts`、`cancel/route.ts`、`src/features/auth/services/email-code-session.ts`、`src/features/auth/schemas/email-code.ts`、`src/lib/cookie.ts`（`emailCodeSessionCookieName`・`cookieOptionsForEmailCode`）、`src/features/auth/passkey/{webauthn-browser,passkey-client,device-name,post-login}.ts`、`src/features/auth/schemas/passkey.ts`（`dropNullFields`）、`src/lib/auth/passkey-gotrue.ts`（`server-only`） |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（6-1）、[段2の計画](../../superpowers/plans/2026-11-17-passkey-stage2-customers.md)、[パスキーの窓口](auth-passkey-server-endpoints.md) |
 | 調べた時点 | 2026-11-17（手元の GoTrue で、作成→コードの送信→確定の組み合わせを実測した。手元の DB・Mailpit で E2E を流した） |
@@ -90,3 +90,29 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 | `dropNullFields`（窓口側） | 応答の最上位の `null` の項目を落とす | GoTrue へ渡す前に、ログイン・登録の終わりの2本が使う |
 
 テスト観点: `parse*FromJSON` が在る環境と無い環境の両方で、既知の base64url が正しい `ArrayBuffer` になる、`toJSON()` が `authenticatorAttachment: null` を返しても戻りに `null` が残らない、4つの `DOMException` の名前の対応、`PublicKeyCredential` が無い環境で `unsupported`、ログに `challenge` が出ない、始め・終わりの状態ごとの `reason`、登録の 403・401・502・400・503 の対応、名前の変更の失敗で `ok: true`・`nameApplied: false`、`null` の応答が窓口で 400 にならず GoTrue へ `null` なしで渡る、`src/features/auth/passkey/**` が `passkey-gotrue`・`passkey-start-config` を読まない。
+
+
+### DD-AUTH-061 旧のログイン・会員登録の画面の `/login/password` への退避と、旧の流れの戻り先
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SCR-AUTH-001、FLOW-AUTH-001 |
+| 根拠 | `/login` を新しい画面に作り替える前に、パスワードの旧の画面を `/login/password` へ動かし、中身を変えずに旧の画面を操作する試験の URL だけを付け替える。旧の流れが新しい画面に飛ばされて旧のフォームを探して落ちるのを防ぎ、段4で旧を丸ごと消せるようにする（調整役の判断 2・I-2） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/app/login/login-page.test.tsx`、`tests/unit/contexts/providers-auth-page.test.tsx`、`tests/unit/components/auth-tabs.test.tsx`、`tests/unit/components/VerifyOtpClient.test.tsx`、`tests/unit/components/register-modal.test.tsx`、`tests/unit/app/login/login-verify-page.test.tsx`）、E2E（`e2e/FR-LOGIN-056-legacy-login-relocated.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-3-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 3。調整役の判断 2・I-2） |
+
+処理の順番と決め:
+
+| 単位 | 動き |
+| --- | --- |
+| `src/app/login/password/page.tsx` | 旧の `/login` の頁をそのまま移した。保留の旧い Cookie が有効なら `/login/verify` へ転送（問い合わせは読まない）→ `tab`・`email`・`next`（戻り先の確かめを通った道筋だけ）・`registered` を `AuthTabs` に渡す。metadata は題・説明・OG を旧と同じにし、`robots: { index: false, follow: false }` を足す |
+| `src/components/AuthTabs.tsx` | タブの `path` を `/login/password` にする。タブを替えても `history.replaceState` で `/login/password` に置き換える |
+| `src/contexts/Providers.tsx`（範囲の外） | `isAuthPage` に `/login/password`・`/login/code`・`/login/passkey` を足す。足さないと真ん中寄せの枠にならず `FR-LOGIN-016`・`017`・`023` が落ちる |
+| `src/app/login/verify/page.tsx` | 保留の Cookie が無い・偽り・期限切れの時の転送先を `/login/password` にする |
+| `src/app/login/verify/VerifyOtpClient.tsx` | 再送の401、取りやめ、`post-login` の401 で移る先を `/login/password` にする |
+| `src/components/RegisterModal.tsx` | 戻る手段が無い時の「ログインページへ」のリンクを `/login/password` にする |
+| `src/app/login/page.tsx` | この段では変えない（Task 5 で作り替える）。Task 3 の終わりでは `/login` と `/login/password` が同じ中身になる |
+| 変えない行き先 | `src/app/api/auth/confirm/route.ts` の `/login`・`/login?registered=1`、パスワードの再設定・変更の後の `/login`、`GuestRegisterPrompt` の `/login?tab=register&email=…`。お客さんに見せる行き先は新しい `/login` が受ける |
+
+テスト観点: `/login/password` が旧の頁の分岐（保留の転送・タブ・メール・戻り先・案内）を持つ、`robots` が noindex・nofollow、`isAuthPage` が `/login/password`・`/login/code`・`/login/passkey` で真になり、近い別の住所（`/login/other`・`/login/password/extra`）では偽、`AuthTabs` の `replaceState` が `/login/password`、旧の流れの3つの戻り先が `/login/password`。E2E は旧の画面を操作する試験の `goto('/login')` を `/login/password` に付け替え、期待は変えない（`/login?next=…` へ送られることを確かめる試験は新しい `/login` に着くので替えない）。

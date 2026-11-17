@@ -11,7 +11,7 @@ for (const viewport of viewports) {
   test.describe(`FR-LOGIN-020 tab underline & no switch links (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await page.goto('/login');
+      await page.goto('/login/password');
     });
 
     test('FREQ-90-AC-01 AC-01: タブが下線を持ち、タブ群を囲む角丸カード枠が無い', async ({ page }) => {

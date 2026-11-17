@@ -17,6 +17,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const isAuthPage =
     pathname === "/login" ||
     pathname === "/login/verify" ||
+    pathname === "/login/password" ||
+    pathname === "/login/code" ||
+    pathname === "/login/passkey" ||
     pathname === "/auth/password-reset";
 
   const pageMainClassName = isHome

@@ -49,7 +49,7 @@ for (const viewport of viewports) {
     });
 
     test('FREQ-328-AC-02 AC-02: /login で Turnstile・送信ボタン・Google ボタンの幅が一致する', async ({ page }) => {
-      await page.goto('/login');
+      await page.goto('/login/password');
       await waitForWidget(page);
 
       await expect
@@ -75,7 +75,7 @@ for (const viewport of viewports) {
     });
 
     test('FREQ-328-AC-03 AC-03: 横スクロールが発生しない', async ({ page }) => {
-      await page.goto('/login');
+      await page.goto('/login/password');
       await waitForWidget(page);
 
       await expect.poll(async () => (await widths(page)).overflow).toBe(0);

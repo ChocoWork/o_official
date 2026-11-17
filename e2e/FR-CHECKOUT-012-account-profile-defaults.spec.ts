@@ -66,7 +66,7 @@ test.describe('FR-CHECKOUT-012 account profile defaults', () => {
       });
     });
 
-    await page.goto('/login');
+    await page.goto('/login/password');
 
     await injectTurnstileToken(page);
     // /api/auth/login はモックなので本物の 2FA Cookie が発行されない。

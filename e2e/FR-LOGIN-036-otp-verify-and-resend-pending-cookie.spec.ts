@@ -409,7 +409,7 @@ test.describe('FR-LOGIN-036 otp verify and resend pending cookie (HTTP)', () => 
         await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'x' }) });
       });
 
-      await page.goto('/login');
+      await page.goto('/login/password');
       await setLoginTwoFactorCookie(page, 'user@example.com');
       await page.goto('/login/verify');
 

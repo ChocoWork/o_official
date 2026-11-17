@@ -332,7 +332,7 @@ describe('SCR-AUTH-003 会員登録のフォームはメール・パスワード
     expect(screen.queryByLabelText('Confirm Password')).toBeNull();
   });
 
-  it('SCR-AUTH-003 呼び手が戻る手段を渡さない時は /login へのリンクを置く', async () => {
+  it('SCR-AUTH-003 呼び手が戻る手段を渡さない時は /login/password へのリンクを置く', async () => {
     const user = userEvent.setup();
     await act(async () => {
       render(
@@ -344,7 +344,7 @@ describe('SCR-AUTH-003 会員登録のフォームはメール・パスワード
     await fillForm(user);
     await submit(user);
 
-    expect(await screen.findByRole('link', { name: 'ログインページへ' })).toHaveAttribute('href', '/login');
+    expect(await screen.findByRole('link', { name: 'ログインページへ' })).toHaveAttribute('href', '/login/password');
     expect(screen.queryByRole('button', { name: 'ログインページへ' })).toBeNull();
   });
 

@@ -18,7 +18,7 @@ for (const viewport of viewports) {
   test.describe(`FR-LOGIN-014 auth contrast hierarchy (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await page.goto('/login');
+      await page.goto('/login/password');
     });
 
     test('FREQ-67-AC-01 primary login button has the largest font among controls', async ({ page }) => {

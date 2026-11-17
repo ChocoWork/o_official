@@ -13,7 +13,7 @@ for (const viewport of viewports) {
       page,
     }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await page.goto('/login');
+      await page.goto('/login/password');
 
       const link = page.getByRole('link', { name: 'パスワードをお忘れの方はこちら' });
       const password = page.locator('#password');
@@ -51,7 +51,7 @@ for (const viewport of viewports) {
       page,
     }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await page.goto('/login');
+      await page.goto('/login/password');
       await page.getByRole('tab', { name: '会員登録' }).click();
 
       const supportRowBox = await page.locator('[data-auth-support-row]').boundingBox();

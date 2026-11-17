@@ -13,7 +13,7 @@ for (const viewport of viewports) {
     });
 
     test('FR-LOGIN-003-AC-01 navigates to the password reset page from the login page', async ({ page }) => {
-      await page.goto('/login');
+      await page.goto('/login/password');
       await page.getByRole('link', { name: 'パスワードをお忘れの方はこちら' }).click();
       await page.waitForURL('**/auth/password-reset');
       await expect(page.getByRole('heading', { name: /パスワード再設定/ })).toBeVisible();

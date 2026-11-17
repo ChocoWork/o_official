@@ -11,7 +11,7 @@ for (const viewport of viewports) {
   test.describe(`FR-LOGIN-012 auth tab and button states (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await page.goto('/login');
+      await page.goto('/login/password');
     });
 
     test('FREQ-65-AC-01 unselected tab uses a grayish (non-pure-black) background', async ({ page }) => {

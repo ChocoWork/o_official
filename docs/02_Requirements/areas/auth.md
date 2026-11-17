@@ -332,6 +332,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: お客さんは、メールアドレスを入れてメールに届いたコードを入れるだけでログインできる。初めてのアドレスなら、同じ流れで新規に登録される。登録済み・未登録・店員のアドレスのどれでも、始めの応答は同じ。店員がコードで入ろうとした時は、パスキーでログインするよう案内する。
 
+### SR-AUTH-022 旧のパスワードのログイン・会員登録の画面を `/login/password` へ退避し、新しいログインの画面と並べて段4まで残す
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | `/login` を新しい画面（メールのコード・パスキー・Google）に作り替えても、パスワードの店員・お客さんの入口と、旧の画面を操作する試験は段4まで動かし続ける必要がある。旧の画面を別の住所へ動かし、検索に載せず、旧の流れの中の行き先をそこで閉じれば、中身を変えずに緑を保てる（設計 9）。お客さんに見せる行き先は新しい `/login` のままにする |
+| 状態 | 推定 |
+| 出どころ | ユーザーの発言 2026-11-17（`.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-3-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 3。調整役の判断 2・I-2）） |
+
+要求の文: 今のパスワードのログイン・会員登録の画面を `/login/password` で開けるようにする。見た目と動きは今と同じにし、検索に載せない。旧の流れの中の戻り先（保留の無いコード入力、取りやめ、登録の完了の案内）は `/login/password` に閉じる。
+
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
 | 属性 | 値 |
@@ -5350,6 +5360,67 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1。作り手の判断 3・4、調整役の判断 3） |
 
 保留の Cookie が無い確定と再送が 401 を返し、コードの送信も確かめもしない。
+
+### FR-AUTH-025 旧のログイン・会員登録の画面 `/login/password`
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-022 |
+| 根拠 | SR-AUTH-022 を、`src/app/login/password/page.tsx` に旧の `/login` の中身を移すことにする。判断は DD-AUTH-061・ADR-0469。`src/app/login/page.tsx` は Task 5 まで旧と同じ中身のまま残す |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/app/login/login-page.test.tsx`、`tests/unit/contexts/providers-auth-page.test.tsx`、`tests/unit/components/auth-tabs.test.tsx`）、E2E（`e2e/FR-LOGIN-056-legacy-login-relocated.spec.ts`、FR-AUTH-025-AC-01〜04） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-3-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 3。調整役の判断 2・I-2） |
+| 優先度 | MUST |
+
+規則: (1) `/login/password` は旧の `/login` と同じ中身（保留の旧い Cookie があれば `/login/verify` へ送る。`tab`・`email`・`next`・`registered` の扱いも同じ）。違いは、題と説明は同じまま `robots` を `noindex, nofollow` にすること。(2) `AuthTabs` はタブを替えても URL を `/login/password` に置き換える。(3) 共有の `src/contexts/Providers.tsx` は、`/login/password`・`/login/code`・`/login/passkey` にも、`/login`・`/login/verify` と同じ真ん中寄せの枠を当てる。(4) 旧の流れの中の戻り先（`/login/verify` の保留の無い転送、`VerifyOtpClient` の401と取りやめ、`RegisterModal` のログインへのリンク）は `/login/password`。お客さんに見せる行き先（`/api/auth/confirm` の `/login`・`/login?registered=1`、パスワードの再設定・変更の後）は新しい `/login` のまま。(5) 旧の窓口・`/login/verify`・旧い保留の Cookie は変えない。
+
+### FR-AUTH-025-AC-01 `/login/password` は旧と同じ画面で、会員登録のタブを切り替えても住所は `/login/password` のまま
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-025 |
+| 根拠 | SR-AUTH-022 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-056-legacy-login-relocated.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-3-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 3。調整役の判断 2・I-2） |
+
+`/login/password` に Email と Password の欄があり、「ログイン」「会員登録」のタブでログインのタブが選ばれている。`tab=register` で会員登録のタブが選ばれた状態で開く。タブを替えても URL は `/login/password` のまま。
+
+### FR-AUTH-025-AC-02 検索に載せず、旧い保留の Cookie があれば `/login/verify` へ送る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-025 |
+| 根拠 | SR-AUTH-022 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-056-legacy-login-relocated.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-3-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 3。調整役の判断 2・I-2） |
+
+`/login/password` の `meta robots` が `noindex` を含み、題は「LOGIN | Le Fil des Heures」のまま。旧い保留の Cookie（`sb-login-2fa-session`）を持って開くと `/login/verify` へ移り、コードの入力欄が出る。
+
+### FR-AUTH-025-AC-03 `/login/password?next=…` の戻り先が、旧のログインの窓口の本文に渡る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-025 |
+| 根拠 | SR-AUTH-022 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-056-legacy-login-relocated.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-3-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 3。調整役の判断 2・I-2） |
+
+`/login/password?next=%2Faccount` でログインを押すと、`POST /api/auth/login` の本文の `next` が `/account` になる。
+
+### FR-AUTH-025-AC-04 旧の流れの中の戻り先は `/login/password` に閉じる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-025 |
+| 根拠 | SR-AUTH-022 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-056-legacy-login-relocated.spec.ts`。390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/components/VerifyOtpClient.test.tsx`、`tests/unit/components/register-modal.test.tsx`、`tests/unit/app/login/login-verify-page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-3-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 3。調整役の判断 2・I-2） |
+
+保留の Cookie が無い `/login/verify` は `/login/password` へ送られる。コード入力の画面で取りやめると `/login/password` のログインのタブへ戻る。登録の完了の画面の「ログインページへ」で、`/login/password` のログインのタブへ戻る。
 
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 

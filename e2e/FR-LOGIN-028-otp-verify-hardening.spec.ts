@@ -32,7 +32,7 @@ for (const viewport of viewports) {
       });
     });
 
-    await page.goto('/login');
+    await page.goto('/login/password');
     await setLoginTwoFactorCookie(page, 'user@example.com');
     await page.goto('/login/verify');
 
@@ -46,7 +46,7 @@ for (const viewport of viewports) {
 
     // Cookie が消えているので、開き直しても入力画面には入れない
     await page.goto('/login/verify');
-    await expect(page).toHaveURL(/\/login$/);
+    await expect(page).toHaveURL(/\/login\/password$/);
   });
 }
 

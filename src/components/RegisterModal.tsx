@@ -114,7 +114,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin, initialE
           </button>
         ) : (
           <Link
-            href="/login"
+            href="/login/password"
             className="lk-text-md underline underline-offset-4 hover:text-black transition-colors"
           >
             ログインページへ

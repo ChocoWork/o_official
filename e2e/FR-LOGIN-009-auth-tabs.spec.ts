@@ -14,7 +14,7 @@ for (const viewport of viewports) {
     });
 
     test('FREQ-61-AC-01 shows login tab selected on /login', async ({ page }) => {
-      await page.goto('/login');
+      await page.goto('/login/password');
 
       // FREQ-61-AC-01: ログイン・新規登録タブが表示され、ログインタブが選択状態
       const loginTab = page.getByRole('tab', { name: 'ログイン' });
@@ -28,17 +28,17 @@ for (const viewport of viewports) {
     });
 
     test('FREQ-63-AC-02 switches to register form when register tab is clicked', async ({ page }) => {
-      await page.goto('/login');
+      await page.goto('/login/password');
 
       // FREQ-63-AC-02: 新規登録タブを押すとPASSWORD（確認）が表示され、URLは /login のまま
       await page.getByRole('tab', { name: '会員登録' }).click();
       await expect(page.getByRole('tab', { name: '会員登録' })).toHaveAttribute('aria-selected', 'true');
       await expect(page.getByLabel('Confirm Password')).toBeVisible();
-      await expect(page).toHaveURL(/\/login$/);
+      await expect(page).toHaveURL(/\/login\/password$/);
     });
 
     test('FREQ-63-AC-02 can switch back to login from register tab', async ({ page }) => {
-      await page.goto('/login');
+      await page.goto('/login/password');
 
       await page.getByRole('tab', { name: '会員登録' }).click();
       await expect(page.getByRole('tab', { name: '会員登録' })).toHaveAttribute('aria-selected', 'true');
@@ -47,11 +47,11 @@ for (const viewport of viewports) {
       await page.getByRole('tab', { name: 'ログイン' }).click();
       await expect(page.getByRole('tab', { name: 'ログイン' })).toHaveAttribute('aria-selected', 'true');
       await expect(page.getByLabel('Password', { exact: true })).toBeVisible();
-      await expect(page).toHaveURL(/\/login$/);
+      await expect(page).toHaveURL(/\/login\/password$/);
     });
 
     test('FREQ-90-AC-02 タブ内の切替リンクは撤去され、切替はタブのみで行う', async ({ page }) => {
-      await page.goto('/login');
+      await page.goto('/login/password');
 
       // FREQ-90: タブ内の「会員登録はこちら」「既にアカウントをお持ちの方はこちら」導線は撤去
       await expect(
@@ -63,7 +63,7 @@ for (const viewport of viewports) {
         page.getByRole('button', { name: '既にアカウントをお持ちの方はこちら' }),
       ).toHaveCount(0);
       await expect(page.getByLabel('Confirm Password')).toBeVisible();
-      await expect(page).toHaveURL(/\/login$/);
+      await expect(page).toHaveURL(/\/login\/password$/);
     });
   });
 }

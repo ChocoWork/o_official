@@ -17,7 +17,7 @@ for (const viewport of viewports) {
   test.describe(`FR-LOGIN-015 auth button alignment (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await page.goto('/login');
+      await page.goto('/login/password');
     });
 
     test('FREQ-68-AC-01 google button and primary CTA share the same size on both tabs', async ({ page }) => {

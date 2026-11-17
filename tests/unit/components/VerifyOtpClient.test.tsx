@@ -61,7 +61,7 @@ describe('OTP verification and resend feedback', () => {
   });
   test('DD-AUTH-002 401 returns to login', async () => {
     await resend(401);
-    expect(mockReplace).toHaveBeenCalledWith('/login');
+    expect(mockReplace).toHaveBeenCalledWith('/login/password');
   });
   test.each(['120', 'Sat, 05 Sep 2026 02:03:00 GMT'])('DD-AUTH-002 429 honors Retry-After %s', async retryAfter => {
     await resend(429, retryAfter);
@@ -516,10 +516,10 @@ describe('OTP verification and resend feedback', () => {
       expect(mockReplace).toHaveBeenCalledWith('/');
     });
 
-    test('DD-AUTH-002 post-login が 401 なら /login へ置き換える', async () => {
+    test('DD-AUTH-002 post-login が 401 なら /login/password へ置き換える', async () => {
       await confirmWith(new Response('{"error":"Unauthorized"}', { status: 401 }));
 
-      expect(mockReplace).toHaveBeenCalledWith('/login');
+      expect(mockReplace).toHaveBeenCalledWith('/login/password');
     });
 
     test.each([503, 429, 500])('DD-AUTH-002 post-login が %i なら /auth/verified へ倒す（特権が 2 段目を飛ばさない）', async status => {
@@ -542,7 +542,7 @@ describe('OTP verification and resend feedback', () => {
   });
 
   describe('using another address', () => {
-    test('DD-AUTH-002 やり直しで取り消しの窓口を呼び /login へ置き換える', async () => {
+    test('DD-AUTH-002 やり直しで取り消しの窓口を呼び /login/password へ置き換える', async () => {
       jest.mocked(global.fetch).mockResolvedValue(new Response('{}', { status: 200 }));
       render(<VerifyOtpClient email={EMAIL} />);
 
@@ -551,16 +551,16 @@ describe('OTP verification and resend feedback', () => {
       expect(global.fetch).toHaveBeenCalledWith('/api/auth/login/cancel', {
         method: 'POST', credentials: 'same-origin',
       });
-      expect(mockReplace).toHaveBeenCalledWith('/login');
+      expect(mockReplace).toHaveBeenCalledWith('/login/password');
     });
 
-    test('DD-AUTH-002 取り消しの通信が失敗しても /login へ置き換える', async () => {
+    test('DD-AUTH-002 取り消しの通信が失敗しても /login/password へ置き換える', async () => {
       jest.mocked(global.fetch).mockRejectedValue(new Error('offline'));
       render(<VerifyOtpClient email={EMAIL} />);
 
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: '別のアドレスでやり直す' })); });
 
-      expect(mockReplace).toHaveBeenCalledWith('/login');
+      expect(mockReplace).toHaveBeenCalledWith('/login/password');
     });
   });
 });

@@ -115,7 +115,7 @@ for (const viewport of viewports) {
         button: await resetSubmit.boundingBox(),
       };
 
-      await page.goto('/login');
+      await page.goto('/login/password');
       const loginEmail = page.locator('#email');
       const loginSubmit = page.getByRole('button', { name: 'ログイン', exact: true });
       const loginMetrics = {

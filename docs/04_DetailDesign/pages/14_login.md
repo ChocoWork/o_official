@@ -1,6 +1,6 @@
 # 1.14 ログインと認証（AUTH）詳細設計
 
-> 状態: 推定 | 確認日: 2026-11-14 | 対象: ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の窓口 `/api/auth/*`、サイト共通のヘッダーとドロワー、認証の部品 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-11-17 | 対象: ログイン `/login`・`/login/password`・`/login/verify`、認証の画面 `/auth/*`、認証の窓口 `/api/auth/*`、サイト共通のヘッダーとドロワー、認証の部品 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -60,6 +60,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | ファイル | 単位（symbol） | DD |
 | --- | --- | --- |
 | `src/app/login/page.tsx` | `<file>` | DD-AUTH-001 |
+| `src/app/login/password/page.tsx` | `<file>` | DD-AUTH-061 |
 | `src/app/login/verify/page.tsx` | `<file>` | DD-AUTH-002 |
 | `src/app/login/verify/VerifyOtpClient.tsx` | `<file>` | DD-AUTH-002 |
 | `src/app/auth/password-reset/page.tsx` | `<file>` | DD-AUTH-003 |
@@ -136,6 +137,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 出どころ | 実装から推定（`src/app/login/page.tsx`） |
 | 旧番号 | IMPL-LOGIN-001、IMPL-LOGIN-004 |
 | 旧所在 | `docs/04_DetailDesign/pages/14_login.md`（基準コミットの版）の「機能要件対応表」の FR-LOGIN-001・FR-LOGIN-005 の行（「`LoginModal` の呼び出しのみ」は今の作りと違う） |
+
+**段2 Task 3（2026-11-17）の変更:** 旧の `/login` の中身は `src/app/login/password/page.tsx`（DD-AUTH-061。`robots: noindex, nofollow` を足した以外は同じ）へ移した。この頁（`src/app/login/page.tsx`）は Task 5 まで同じ中身のまま残り、Task 5 で新しい画面に作り替える。旧の流れの中の戻り先（`/login/verify` の保留の無い転送、`VerifyOtpClient` の401と取りやめ、`RegisterModal` のログインへのリンク）は `/login/password`。共有の `src/contexts/Providers.tsx`（範囲の外）の `isAuthPage` は `/login/password`・`/login/code`・`/login/passkey` も真にする（真ん中寄せの枠）。
 
 **対応要件 ID:** SCR-AUTH-001、FLOW-AUTH-001・003、STATE-AUTH-001、SEC-AUTH-007（その上は FR-LOGIN-005、FREQ-63-REQ-01、FREQ-334-REQ-03、ADR-0410、ADR-0413、FREQ-266-REQ-01（範囲外））
 

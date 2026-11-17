@@ -25,7 +25,7 @@ for (const viewport of viewports) {
         });
       });
 
-      await page.goto('/login');
+      await page.goto('/login/password');
 
       // FREQ-58-AC-01: EMAIL と PASSWORD の入力欄が表示される
       await expect(page.getByLabel('EMAIL')).toBeVisible();

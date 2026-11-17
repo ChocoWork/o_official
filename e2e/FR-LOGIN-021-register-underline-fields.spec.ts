@@ -11,7 +11,7 @@ for (const viewport of viewports) {
   test.describe(`FR-LOGIN-021 register underline fields (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await page.goto('/login');
+      await page.goto('/login/password');
       await page.getByRole('tab', { name: '会員登録' }).click();
       await expect(page.getByLabel('Confirm Password')).toBeVisible();
     });
