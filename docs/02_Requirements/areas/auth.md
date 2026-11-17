@@ -1,6 +1,6 @@
 # AUTH の要件
 
-> 状態: 推定 | 確認日: 2026-11-17 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-11-18 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -5421,6 +5421,79 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-3-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 3。調整役の判断 2・I-2） |
 
 保留の Cookie が無い `/login/verify` は `/login/password` へ送られる。コード入力の画面で取りやめると `/login/password` のログインのタブへ戻る。登録の完了の画面の「ログインページへ」で、`/login/password` のログインのタブへ戻る。
+
+### FR-AUTH-026 メールのコードの入力画面 `/login/code`
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-021 |
+| 根拠 | SR-AUTH-021 を、`src/app/login/code/page.tsx` と `src/features/auth/passkey/components/EmailCodeEntry.tsx` の画面にする。判断は DD-AUTH-062。窓口は FR-AUTH-023 の `email-code/{verify,resend,cancel}`。旧の `VerifyOtpClient` の動きを写し（共有に直さない）、成功の行き先は確定の応答の `offerPasskey` だけで決める |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/passkey/email-code-entry.test.tsx`、`tests/unit/app/login/code-page.test.tsx`）、E2E（`e2e/FR-LOGIN-058-email-code-screen.spec.ts`、FR-AUTH-026-AC-01〜05） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-4-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 4。作り手の判断 5） |
+| 優先度 | MUST |
+
+規則: (1) ページは保留の Cookie（`sb-email-code-session`）をサーバーで確かめ、無い・偽り・期限切れは同じく `/login` へ送り、確かめない人に入力画面の HTML を見せない。検索に載せない。(2) 見出しは「確認コードを入力してください」、説明は「{マスクしたメール} に8桁のコードをお送りしました。5分以内に入力してください。」。8つの1桁の欄（数字だけ・貼り付けで8桁を割り振る・Backspace で前へ・最初の欄が `autoComplete="one-time-code"`）。ラベルは各欄に「確認コード {n}桁目」。(3) 「ログイン」は8桁そろうまで押せない。「コードを再送する」は60秒の残り時間（`formatResendCountdown`）が0になるまで押せない。「メールアドレスを入れ直す」は取りやめの窓口を呼んで `/login` へ戻る。(4) 確定の応答: 401 のコードの誤りは「確認コードが無効、または期限切れです。」（入力を続けられる）、401 の保留の Cookie 切れは「時間がたちました。もう一度メールアドレスを入れてください。」と `/login` へ、429 は「試行が集中しています。しばらくしてからやり直してください。」と `/login` へ（保留は閉じる）、403 `staff_passkey_required` は「店員の方は、パスキーでログインしてください。」（再送・入力を止め、「ログイン画面へ戻る」だけ）。(5) 成功は先に `refreshAuthState()` で画面の状態を更新し、`offerPasskey` が真で `isPasskeySupported()` が真なら `/login/passkey` へ、それ以外は `resolvePostLoginPath()` の行き先へ `router.replace` する（戻るで入力画面へ戻れない）。(6) どの訪問者にも、アカウントの状態にかかわらず、いつも「コードの無い確認のメールが届いた時は、そのメールのリンクを押してから、もう一度お試しください。」を出す（FR-AUTH-023・DD-AUTH-059 の案内。段4まで、旧の会員登録で作った未確認のアドレスにはコードでなくリンクのメールが届くため）。(7) エラーは `LiveMessage`、送信中は `aria-busy` と `disabled`。画面を開いたら最初の欄にフォーカスする。(8) 窓口の応答の本文は、どの道でも読むか捨てる（no-store の読み残しで `networkidle` が来なくなるため）。
+
+### FR-AUTH-026-AC-01 鍵を持つ会員は、メールのコードを入れると、勧めを経ずにログインして戻り先へ着く
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-026 |
+| 根拠 | SR-AUTH-021 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-058-email-code-screen.spec.ts`。390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/features/auth/passkey/email-code-entry.test.tsx`、`tests/unit/app/login/code-page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-4-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 4。作り手の判断 5） |
+
+`/login/code` で保留のメールに届いた8桁を入れて「ログイン」を押すと、`offerPasskey` が偽（パスキーを持つ会員）ならログインして `/login` の外へ移り、`/api/auth/me` が本人を返す。8桁がそろうまで「ログイン」は押せない。`offerPasskey` が真の時に `/login/passkey` へ移ることは単体テストで確かめ、E2E は Task 6 が通す。
+
+### FR-AUTH-026-AC-02 間違ったコードは「確認コードが無効、または期限切れです。」を出し、入力を続けられる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-026 |
+| 根拠 | SR-AUTH-021 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-058-email-code-screen.spec.ts`。390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/features/auth/passkey/email-code-entry.test.tsx`、`tests/unit/app/login/code-page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-4-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 4。作り手の判断 5） |
+
+間違った8桁で「ログイン」を押すと、`/login/code` のまま、上の文が出て、入力欄は使える。
+
+### FR-AUTH-026-AC-03 いつも出す案内があり、再送は待ちの間押せず、残り時間が出る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-026 |
+| 根拠 | SR-AUTH-021 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-058-email-code-screen.spec.ts`。390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/features/auth/passkey/email-code-entry.test.tsx`、`tests/unit/app/login/code-page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-4-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 4。作り手の判断 5） |
+
+`/login/code` にいつも「コードの無い確認のメールが届いた時は、そのメールのリンクを押してから、もう一度お試しください。」が出る。「コードを再送する」は待ちの間押せず、「N分 NN秒後に再送可能」が出る。最初の欄にフォーカスがある。
+
+### FR-AUTH-026-AC-04 入れ直しで `/login` へ戻り、保留が捨てられる。保留の Cookie が無ければ `/login` へ送られ、入力欄を見せない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-026 |
+| 根拠 | SR-AUTH-021 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-058-email-code-screen.spec.ts`。390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/features/auth/passkey/email-code-entry.test.tsx`、`tests/unit/app/login/code-page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-4-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 4。作り手の判断 5） |
+
+「メールアドレスを入れ直す」で `/login` へ移り、その後 `/login/code` を開くと `/login` へ送られる。保留の Cookie が無いまま `/login/code` を開いても `/login` へ送られ、入力欄は出ない。
+
+### FR-AUTH-026-AC-05 390px でも入力欄が横にはみ出さない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-026 |
+| 根拠 | SR-AUTH-021 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-058-email-code-screen.spec.ts`。390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/features/auth/passkey/email-code-entry.test.tsx`、`tests/unit/app/login/code-page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-4-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 4。作り手の判断 5） |
+
+8つの入力欄がすべて画面の幅の中に収まり、ページが横にスクロールしない。
 
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 

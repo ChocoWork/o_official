@@ -1,6 +1,6 @@
 # お客さんのログイン（メールのコードの窓口と画面）
 
-> 状態: 推定 | 確認日: 2026-11-17 | 対象: `src/app/api/auth/email-code/{start,verify,resend,cancel}/route.ts`、`src/features/auth/services/email-code-session.ts`、`src/features/auth/schemas/email-code.ts`、`src/lib/cookie.ts`（範囲の外。メールのコードの保留の Cookie の名前と属性だけを足した）
+> 状態: 推定 | 確認日: 2026-11-18 | 対象: `src/app/api/auth/email-code/{start,verify,resend,cancel}/route.ts`、`src/features/auth/services/email-code-session.ts`、`src/features/auth/schemas/email-code.ts`、`src/lib/cookie.ts`（範囲の外。メールのコードの保留の Cookie の名前と属性だけを足した）
 
 ## 概要
 
@@ -10,7 +10,7 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-021、FR-AUTH-023、SEC-AUTH-048、SEC-AUTH-049、THR-AUTH-049、API-AUTH-029、API-AUTH-030、API-AUTH-031、API-AUTH-032、DD-AUTH-059、ADR-0469、SEC-AUTH-050、DD-AUTH-060、SR-AUTH-022、FR-AUTH-025、DD-AUTH-061 |
+| 対応する ID | SR-AUTH-021、FR-AUTH-023、SEC-AUTH-048、SEC-AUTH-049、THR-AUTH-049、API-AUTH-029、API-AUTH-030、API-AUTH-031、API-AUTH-032、DD-AUTH-059、ADR-0469、SEC-AUTH-050、DD-AUTH-060、SR-AUTH-022、FR-AUTH-025、DD-AUTH-061、FR-AUTH-026、DD-AUTH-062 |
 | 対象のコード | `src/app/api/auth/email-code/start/route.ts`、`verify/route.ts`、`resend/route.ts`、`cancel/route.ts`、`src/features/auth/services/email-code-session.ts`、`src/features/auth/schemas/email-code.ts`、`src/lib/cookie.ts`（`emailCodeSessionCookieName`・`cookieOptionsForEmailCode`）、`src/features/auth/passkey/{webauthn-browser,passkey-client,device-name,post-login}.ts`、`src/features/auth/schemas/passkey.ts`（`dropNullFields`）、`src/lib/auth/passkey-gotrue.ts`（`server-only`） |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（6-1）、[段2の計画](../../superpowers/plans/2026-11-17-passkey-stage2-customers.md)、[パスキーの窓口](auth-passkey-server-endpoints.md) |
 | 調べた時点 | 2026-11-17（手元の GoTrue で、作成→コードの送信→確定の組み合わせを実測した。手元の DB・Mailpit で E2E を流した） |
@@ -116,3 +116,32 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 | 変えない行き先 | `src/app/api/auth/confirm/route.ts` の `/login`・`/login?registered=1`、パスワードの再設定・変更の後の `/login`、`GuestRegisterPrompt` の `/login?tab=register&email=…`。お客さんに見せる行き先は新しい `/login` が受ける |
 
 テスト観点: `/login/password` が旧のページの分岐（保留の転送・タブ・メール・戻り先・案内）を持つ、`robots` が noindex・nofollow、`isAuthPage` が `/login/password`・`/login/code`・`/login/passkey` で真になり、近い別の住所（`/login/other`・`/login/password/extra`）では偽、`AuthTabs` の `replaceState` が `/login/password`、旧の流れの3つの戻り先が `/login/password`。E2E は旧の画面を操作する試験の `goto('/login')` を `/login/password` に付け替え、期待は変えない（`/login?next=…` へ送られることを確かめる試験は新しい `/login` に着くので替えない）。
+
+### DD-AUTH-062 メールのコードの入力画面 `/login/code` の処理の順番
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SCR-AUTH-004、FLOW-AUTH-001、API-AUTH-030、API-AUTH-031、API-AUTH-032 |
+| 根拠 | 旧の `/login/verify`（DD-AUTH-002）の動きを写し、窓口だけを `email-code/*` にする。旧の部品を共有に直さないのは、段4で旧を丸ごと消すため（作り手の判断 5）。成功の行き先は、確定の窓口の応答の `offerPasskey` だけで決める。一覧や検索の別の呼び出しをしないので、窓口が失敗側に倒れた時（`offerPasskey` が偽）は、静かに「勧めない」へ退く |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/passkey/email-code-entry.test.tsx`、`tests/unit/app/login/code-page.test.tsx`）、E2E（`e2e/FR-LOGIN-058-email-code-screen.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-4-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 4。作り手の判断 5） |
+
+処理の順番と決め:
+
+| 単位 | 動き |
+| --- | --- |
+| `src/app/login/code/page.tsx` | 保留の Cookie（`sb-email-code-session`）を `verifyEmailCodeSessionToken` で確かめる → 無い・偽り・期限切れは同じく `/login` へ転送（確かめない人に HTML を見せない）→ 有効なら保留のメールを部品へ渡す。`robots` は noindex・nofollow |
+| `EmailCodeEntry`（開いた時） | 最初の欄にフォーカス。再送の待ちを今から60秒で始め、1秒ごとに経過の時刻から残りを引き直す。説明は `maskEmail` で伏せたメールと「8桁・5分以内」。いつも「コードの無い確認のメールが届いた時は、そのメールのリンクを押してから、もう一度お試しください。」を出す（アカウントの状態で変えない。FR-AUTH-023・DD-AUTH-059 と同じ案内） |
+| 欄 | 数字だけ。打つと次の欄へ。貼り付けは、その欄から8桁まで割り振る。Backspace は空の欄なら前の欄を空にして戻る。矢印で移る |
+| 「ログイン」 | 8桁そろうまで `disabled`。送ると `POST /api/auth/email-code/verify { code }`（応答の本文は必ず読む） |
+| 確定の 200 | `refreshAuthState()` → `offerPasskey` が真 かつ `isPasskeySupported()` が真なら `router.replace('/login/passkey')`。それ以外は `resolvePostLoginPath()`（DD-AUTH-060）の行き先へ `router.replace`（戻るで入力画面へ戻れない） |
+| 確定の 401 | 本文の文が「セッションの有効期限」で始まれば保留の Cookie 切れ → 「時間がたちました。もう一度メールアドレスを入れてください。」を出し、入力を閉じて3秒後に `/login`（「ログイン画面へ戻る」でも戻れる）。それ以外はコードの誤り → 「確認コードが無効、または期限切れです。」（入力を続けられる） |
+| 確定の 429 | 窓口が保留の Cookie を閉じている → 「試行が集中しています。しばらくしてからやり直してください。」を出し、入力を閉じて3秒後に `/login` |
+| 確定の 403 `staff_passkey_required` | 「店員の方は、パスキーでログインしてください。」を出し、入力と再送を止め、「ログイン画面へ戻る」だけを置く（自動では戻さない） |
+| 確定のそれ以外・通信の失敗 | 「確認できませんでした。時間をおいて、もう一度お試しください。」 |
+| 「コードを再送する」 | 待ちが0になるまで `disabled`（残りは `formatResendCountdown`）。押すと `POST /api/auth/email-code/resend`（本文は捨てる）。200 は欄を空にし、待ちを60秒に戻し、「確認コードを再送しました。」を `status` で知らせ、最初の欄へ。401 は保留切れと同じ。429 は `Retry-After`（秒または日付。読めなければ60秒）を待ちにし、「送信回数の上限に達しました。時間をおいて、もう一度お試しください。」。503 は「ただいま処理できません。時間をおいて、もう一度お試しください。」。それ以外は「確認コードを送れませんでした。時間をおいて、もう一度お試しください。」 |
+| 「メールアドレスを入れ直す」 | `POST /api/auth/email-code/cancel`（本文は捨て、失敗は握る）→ `/login` へ置き換える。`/login` は Task 5 まで旧の画面 |
+| 共通 | エラーは `LiveMessage`（`alert`）、成功の知らせは `status`。送信中は `aria-busy` と `disabled`、二重に送らない |
+
+テスト観点: 8桁そろうまで「ログイン」が `disabled`、貼り付けの割り振りと数字以外の除去、Backspace、確定の応答ごとの文言と行き先（401 の2種・429・403・200 で `offerPasskey` が真・偽・未対応のブラウザ・本文が読めない）、閉じた後の3秒の転送と店員の案内が自動で戻らないこと、再送の待ち（`jest.useFakeTimers`）・成功・401・`Retry-After`・503・その他、取りやめが失敗でも `/login` へ戻り本文を捨てること、送信中の二重送信の防止。ページは Cookie 無し・偽りで `/login` へ転送、有効ならメールを渡す。E2E は `start` を `request` で呼んで Mailpit のコードを入れ、鍵を持つ会員が戻り先へ着くこと、間違ったコード、再送の待ち、取りやめ、Cookie 無し、390px の幅を確かめる（`offerPasskey` が真の着地は `/login/passkey` が出来る Task 6 の E2E）。
