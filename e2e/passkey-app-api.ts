@@ -76,3 +76,68 @@ export async function loginViaApp(
   );
   return finishLoginViaApp(request, { ip: input.ip, challengeId: started.challengeId, credential, next: input.next });
 }
+
+const REGISTER_START = '/api/auth/passkey/register/start';
+const REGISTER_FINISH = '/api/auth/passkey/register/finish';
+
+export type RegisterViaAppHeaders = {
+  /** `Bearer <access token>` など、要求ごとの見出し（Cookie は呼び手の `request` の文脈から付く） */
+  authorization?: string;
+  /** Cookie で呼ぶ時の `x-csrf-token`（`sb-csrf-token` の Cookie の値） */
+  csrfToken?: string;
+};
+export type RegisterStartResult = { status: number; body: unknown };
+export type RegisterFinishResult = { status: number; body: unknown };
+
+function registerHeaders(ip: string, extra: RegisterViaAppHeaders): Record<string, string> {
+  return {
+    ...headers(ip),
+    ...(extra.authorization ? { authorization: extra.authorization } : {}),
+    ...(extra.csrfToken ? { 'x-csrf-token': extra.csrfToken } : {}),
+  };
+}
+
+async function readJson(res: { json: () => Promise<unknown> }): Promise<unknown> {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 登録の始め。どの状態でも投げず、状態と本文を返す（断りを確かめる試験が使う）。
+ *
+ * @impl IMPL-AUTH-287
+ * @design DD-AUTH-056
+ */
+export async function startRegisterViaApp(
+  request: APIRequestContext,
+  input: { ip: string } & RegisterViaAppHeaders,
+): Promise<RegisterStartResult> {
+  const res = await request.post(REGISTER_START, {
+    headers: registerHeaders(input.ip, input),
+    failOnStatusCode: false,
+    maxRedirects: 0,
+  });
+  return { status: res.status(), body: await readJson(res) };
+}
+
+/**
+ * 登録の終わり。呼び手が決めた応答（認証器の応答・改ざんした応答）をそのまま送る。
+ *
+ * @impl IMPL-AUTH-288
+ * @design DD-AUTH-056
+ */
+export async function finishRegisterViaApp(
+  request: APIRequestContext,
+  input: { ip: string; challengeId: string; credential: Record<string, unknown> } & RegisterViaAppHeaders,
+): Promise<RegisterFinishResult> {
+  const res = await request.post(REGISTER_FINISH, {
+    headers: registerHeaders(input.ip, input),
+    data: { challenge_id: input.challengeId, credential: input.credential },
+    failOnStatusCode: false,
+    maxRedirects: 0,
+  });
+  return { status: res.status(), body: await readJson(res) };
+}

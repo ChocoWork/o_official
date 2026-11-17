@@ -686,6 +686,20 @@ flowchart LR
 | 状態 | 推定 |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・5-5） |
 
+### THR-AUTH-046 窓が閉じた後・認めた鍵が2本ある店員・結び付かないセッションで、パスキーの登録をすり抜けて鍵を認めさせる
+
+| 属性 | 値 |
+| --- | --- |
+| 守るもの | 5-5（認めたパスキー）・6-1・6-2（登録の窓）・10（窓の免除は最初の2本まで） |
+| 脅威 | (1) 始めの後に窓が閉じる・期限が来ても、終わりで再確認しないと鍵が足される。(2) メールのコードを読めた人が、窓の残りの30分で3本目を認めさせる。(3) 旗 `AUTH_REQUIRE_APP_SESSION` を切った間に、結び付かないセッションで鍵を認めさせる。(4) 別の人・別のセッションの窓を使い回す。(5) 認めが落ちて、GoTrue にだけ鍵が残る（本人は使える鍵を足したつもりになる）。(6) 5分より古いパスキーでの入り直しや、10分より古い・Google だけのお客さんの入り方で登録する |
+| 起こり方 | 始めだけで確かめる・窓の免除に本数の上限が無い・店員の確かめが旗に従う・認めの書き込みの失敗を無視する |
+| 影響 | 認めていない・不要な鍵が管理の入口の鍵として数えられる、または使えない鍵が残る |
+| 対策 | SEC-AUTH-045（始め・終わりの両方で条件をやり直す・窓の免除は2本未満の間だけ・店員は旗に関わらず結び付いた生きたセッション・認めが落ちたら鍵を消す）、DD-AUTH-056 |
+| ASVS | V3.3.1・V4.1.1・V2.2.1（当てはめは推定） |
+| 根拠 | 段1b の Task 7。設計 5-5・6-1・6-2・10 |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7） |
+
 ## 未確認事項
 
 - 本番の Supabase Auth の設定（OTP の期限・Confirm email・最小の長さ・漏洩の照合・captcha・TOTP・回数の制限・`secure_password_change`・現行パスワードの要求）。手元の `supabase/config.toml` は波 6 の切り替えで本番の前提にそろえたが、本番の実際の値は Management API で読むまで未確認（THR-AUTH-015・029）

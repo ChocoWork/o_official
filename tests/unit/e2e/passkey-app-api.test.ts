@@ -3,7 +3,13 @@
  * DD-AUTH-055 試験の道具 e2e/passkey-app-api.ts（窓口を HTTP で直に呼ぶ関数）の単体テスト。APIRequestContext は偽物で、送った要求と戻りの形だけを確かめる。
  */
 import type { APIRequestContext } from '@playwright/test';
-import { finishLoginViaApp, loginViaApp, startLoginViaApp } from '../../../e2e/passkey-app-api';
+import {
+  finishLoginViaApp,
+  finishRegisterViaApp,
+  loginViaApp,
+  startLoginViaApp,
+  startRegisterViaApp,
+} from '../../../e2e/passkey-app-api';
 import type { SoftAuthenticator } from '../../../e2e/passkey-soft-authenticator';
 
 type Sent = { path: string; options: { headers: Record<string, string>; data?: Record<string, unknown> } };
@@ -80,5 +86,46 @@ describe('DD-AUTH-055 finishLoginViaApp と loginViaApp', () => {
     const authenticate = jest.fn(() => ({ id: 'a' }));
     await loginViaApp(request, { authenticator: { authenticate } as unknown as SoftAuthenticator, ip: '10.0.0.3' });
     expect(authenticate).toHaveBeenCalledWith({ challenge: 'x' }, undefined);
+  });
+});
+
+describe('DD-AUTH-056 startRegisterViaApp と finishRegisterViaApp', () => {
+  test('DD-AUTH-056 始めに origin・x-real-ip・authorization・x-csrf-token を付け、投げずに状態と本文を返す', async () => {
+    const { request, sent } = fakeRequest([{ status: 403, json: async () => ({ error: 'registration_not_allowed' }) }]);
+    const result = await startRegisterViaApp(request, { ip: '10.0.0.4', authorization: 'Bearer t', csrfToken: 'csrf' });
+    expect(result).toEqual({ status: 403, body: { error: 'registration_not_allowed' } });
+    expect(sent[0].path).toBe('/api/auth/passkey/register/start');
+    expect(sent[0].options.headers).toEqual({
+      origin: 'http://localhost:3000',
+      'x-real-ip': '10.0.0.4',
+      authorization: 'Bearer t',
+      'x-csrf-token': 'csrf',
+    });
+  });
+
+  test('DD-AUTH-056 終わりに challenge_id と credential を送り、見出しが無ければ authorization・x-csrf-token を付けず、JSON でない応答の本文は null', async () => {
+    const { request, sent } = fakeRequest([
+      {
+        status: 502,
+        json: async () => {
+          throw new Error('not json');
+        },
+      },
+    ]);
+    const result = await finishRegisterViaApp(request, { ip: '10.0.0.5', challengeId: 'c1', credential: { id: 'a' } });
+    expect(result).toEqual({ status: 502, body: null });
+    expect(sent[0].path).toBe('/api/auth/passkey/register/finish');
+    expect(sent[0].options.data).toEqual({ challenge_id: 'c1', credential: { id: 'a' } });
+    expect(sent[0].options.headers).toEqual({ origin: 'http://localhost:3000', 'x-real-ip': '10.0.0.5' });
+  });
+  test('DD-AUTH-056 authorization だけ・x-csrf-token だけの時は、付けた方だけを見出しに入れる', async () => {
+    const { request, sent } = fakeRequest([
+      { status: 200, json: async () => ({}) },
+      { status: 200, json: async () => ({}) },
+    ]);
+    await startRegisterViaApp(request, { ip: '10.0.0.6', authorization: 'Bearer t' });
+    await startRegisterViaApp(request, { ip: '10.0.0.7', csrfToken: 'csrf' });
+    expect(sent[0].options.headers).toEqual({ origin: 'http://localhost:3000', 'x-real-ip': '10.0.0.6', authorization: 'Bearer t' });
+    expect(sent[1].options.headers).toEqual({ origin: 'http://localhost:3000', 'x-real-ip': '10.0.0.7', 'x-csrf-token': 'csrf' });
   });
 });

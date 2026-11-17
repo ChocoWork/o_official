@@ -260,6 +260,92 @@ export async function createAdminSessionActor(
   };
 }
 
+/** 既にいる利用者の新しい session を magiclink で作る（メールは送らない）。送り元は呼ぶごとに別にする */
+async function signInWithMagicLink(env: LocalAuthEnv, email: string): Promise<Session> {
+  const admin = createClient(env.url, env.serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { 'x-forwarded-for': uniqueSourceIp() } },
+  });
+  const link = await admin.auth.admin.generateLink({ type: 'magiclink', email });
+  const tokenHash = link.data?.properties?.hashed_token;
+  if (link.error || !tokenHash) throw new Error(`magiclink を作れない（status: ${link.error?.status ?? '不明'}）`);
+  const anon = createClient(env.url, env.anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: { headers: { 'x-forwarded-for': uniqueSourceIp() } },
+  });
+  const verified = await anon.auth.verifyOtp({ token_hash: tokenHash, type: 'magiclink' });
+  if (verified.error || !verified.data.session) {
+    throw new Error(`magiclink の検証に失敗した（status: ${verified.error?.status ?? '不明'}）`);
+  }
+  return verified.data.session;
+}
+
+/**
+ * 登録の窓の中にいる店員を作る（設計 6-2 手順3の案 B の順）。利用者を作る（役割なし）→ magiclink の session →
+ * アプリの sessions に結び付ける（bindAppSession）→ passkey_window_open → 最後に user_roles を有効にする。
+ * 認めたパスキーは0本。JWT は役割が付く前に出たもの（amr は otp 系）なので、管理 API は通らず、登録の窓口だけを試す材料になる。手元の DB だけ。
+ * `withOtherSession` なら、同じ利用者の窓の無い別の session（アプリに結び付いた）も作って `otherSession` で返す。
+ * 失敗の文面に token・session_id を出さない。作った物は消さない（db reset で消える）。
+ */
+export async function createWindowSessionActor(
+  db: PgClient,
+  input: { role: 'admin' | 'supporter'; withOtherSession?: boolean },
+): Promise<AdminSessionActor & { otherSession: { sessionId: string; accessToken: string } | null }> {
+  assertLocalDbClient(db);
+  const env = localAuthEnv();
+  const email = `e2e-window-${input.role}-${randomUUID().slice(0, 8)}@example.com`;
+  const admin = createClient(env.url, env.serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { 'x-forwarded-for': uniqueSourceIp() } },
+  });
+  const created = await admin.auth.admin
+    .createUser({ email, email_confirm: true, app_metadata: { role: input.role } })
+    .catch(() => {
+      throw new Error('窓の店員を作る要求に失敗した');
+    });
+  if (created.error || !created.data.user) {
+    throw new Error(`窓の店員を作れない（status: ${created.error?.status ?? '不明'}, code: ${created.error?.code ?? '不明'}）`);
+  }
+  const userId = created.data.user.id;
+
+  const session = await signInWithMagicLink(env, email);
+
+  const claims = readClaims(session.access_token);
+  if (!claims.session_id || claims.sub !== userId || !claims.exp) throw new Error('作った JWT の中身が合わない');
+  await bindAppSession(db, { userId, accessToken: session.access_token, refreshToken: session.refresh_token });
+  await db.query('select public.passkey_window_open($1::uuid, $2::uuid)', [userId, claims.session_id]);
+  // 役割を付ける前に、窓の無い同じ利用者の別の session も作る（店員の magiclink は役割が付くとフックに拒否される）。
+  let otherSession: { sessionId: string; accessToken: string } | null = null;
+  if (input.withOtherSession) {
+    const other = await signInWithMagicLink(env, email);
+    const otherClaims = readClaims(other.access_token);
+    if (!otherClaims.session_id || otherClaims.sub !== userId || otherClaims.session_id === claims.session_id) {
+      throw new Error('別の session ができていない');
+    }
+    await bindAppSession(db, { userId, accessToken: other.access_token, refreshToken: other.refresh_token });
+    otherSession = { sessionId: otherClaims.session_id, accessToken: other.access_token };
+  }
+  const assigned = await db.query(
+    `insert into public.user_roles (user_id, role_id, active, expires_at)
+     select $1::uuid, r.id, true, null from public.roles r where r.code = $2`,
+    [userId, input.role],
+  );
+  if (assigned.rowCount !== 1) throw new Error(`役割 ${input.role} の行が手元の DB に無い`);
+  return {
+    userId,
+    email,
+    role: input.role,
+    aal: 'aal1',
+    sessionId: claims.session_id,
+    accessToken: session.access_token,
+    refreshToken: session.refresh_token,
+    expiresAt: claims.exp,
+    appBound: true,
+    authenticators: [],
+    otherSession,
+  };
+}
+
 /**
  * 認めたパスキー1本の店員（'aal1'）の同じ session（session_id は変わらない）で、2本目を登録して認め、refresh して、
  * 認めたパスキー2本（'aal2'）の JWT を持つ利用者を返す（同じ人の1本・2本の JWT を並べたい時に使う）。

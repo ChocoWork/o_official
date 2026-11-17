@@ -861,6 +861,8 @@ stateDiagram-v2
 | API-AUTH-021 | `POST /api/auth/password/change/confirm` | パスワード変更の画面 `/account/password` |
 | API-AUTH-022 | `POST /api/auth/passkey/login/start` | ログインの画面（段2。今は窓口だけ） |
 | API-AUTH-023 | `POST /api/auth/passkey/login/finish` | ログインの画面（段2。今は窓口だけ） |
+| API-AUTH-024 | `POST /api/auth/passkey/register/start` | 登録の画面（段3。今は窓口だけ） |
+| API-AUTH-025 | `POST /api/auth/passkey/register/finish` | 登録の画面（段3。今は窓口だけ） |
 
 全部の窓口に共通: 状態を変える `POST` は共有の proxy の Origin の確かめを先に通る。`/api/auth` 配下の全部の応答（Origin 拒否の 403 を含む）に、共有の proxy が `Cache-Control: no-store` を付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037。2026-10-28）。`confirm`・`oauth/*`・`password-reset/link`・`session`・`me`・`login/resend`・`login/cancel`・`post-login` は窓口も自分で同じ値を付ける。
 
@@ -1350,6 +1352,44 @@ stateDiagram-v2
 | 監査 | action `auth.passkey.login.finish`。固定の符号と行為者の ID だけ（トークン・鍵・応答・`challenge_id`・メールを残さない） |
 
 認めていない鍵で入った店員は、GoTrue のセッションを `revoke_auth_session` で終わらせてから 403 で断り、Cookie も `public.sessions` の行も作らない。お客さんは認めの表を引かない。
+
+### API-AUTH-024 POST /api/auth/passkey/register/start は登録の条件を確かめてから、GoTrue のパスキーの登録の選択肢を `userVerification: required` にして返す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-020、SEC-AUTH-045、ADR-0467 |
+| 根拠 | パスキーの登録の始め。店員は登録の窓か5分以内のパスキーでの入り直し、お客さんは10分以内のパスキーかメールのコードで入った時だけ通し、外れたら GoTrue を呼ばない。順番と値は DD-AUTH-056 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/auth/passkey-register-start.test.ts`）、単体テスト（`tests/unit/api/auth/passkey-register-start-route.test.ts`、`tests/unit/lib/auth/passkey-recent-auth.test.ts`）、E2E（`e2e/FR-LOGIN-051-passkey-registration.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7） |
+
+| 項目 | 中身 |
+| --- | --- |
+| 入力 | 本文なし。ログイン済みの通行証（Cookie か Bearer）。Cookie で呼ぶ時は `x-csrf-token` が要る（Bearer だけなら Cookie が無いので CSRF は掛からない）。proxy の Origin の確かめは通る |
+| 順番 | IP ごとの回数（10分20回、429）→ 認証（401・503）→ CSRF（403）→ 本人ごとの回数（10分10回、429）→ 店員かの確かめ（503）→ 店員は結び付いた生きたセッション（401・503。旗に関わらず）→ 窓・認めた鍵の本数（503）→ 登録の条件の判定（403）→ GoTrue（502）→ 200 |
+| 200 | `{ challenge_id, options, expires_at, mode }`。`options.authenticatorSelection.userVerification` は `required`（GoTrue の応答に `authenticatorSelection` が無ければ作る）。`mode` は `window`・`reauth`・`customer` |
+| 失敗 | 401、403 `registration_not_allowed`（`reason`: `window_closed`・`reauth_required`）、429、502 `passkey_register_failed`、503、500 |
+| 監査 | action `auth.passkey.register.start`。固定の符号と行為者の ID だけ（トークン・`challenge_id`・メールを残さない） |
+
+### API-AUTH-025 POST /api/auth/passkey/register/finish は条件をやり直し、UV の印を確かめ、GoTrue の検証の後に店員の鍵を認め、認めが落ちたら鍵を消す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-020、SEC-AUTH-045、ADR-0467 |
+| 根拠 | パスキーの登録の終わり。始めと同じ確かめをやり直し（始めの後に窓が閉じた・期限が来た場合は GoTrue の検証を呼ばない）、登録の UV の印を確かめ、店員なら `passkey_approve` で認めた鍵にする。順番と値は DD-AUTH-056 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/auth/passkey-register-finish.test.ts`）、単体テスト（`tests/unit/api/auth/passkey-register-finish-route.test.ts`）、E2E（`e2e/FR-LOGIN-051-passkey-registration.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7） |
+
+| 項目 | 中身 |
+| --- | --- |
+| 入力 | `{ challenge_id（uuid）, credential（WebAuthn の登録の応答。id と rawId は同じ値）}`。ログイン済みの通行証と、Cookie で呼ぶ時の `x-csrf-token` |
+| 順番 | 始めと同じ確かめ（429・401・503・403）→ 本文の形（400）→ 登録の UV の印（400）→ GoTrue の検証（502）→ 店員は `passkey_approve`（失敗は鍵を消して 500）→ 200 |
+| 200 | `{ passkey: { id, friendly_name, created_at }, approvedCount? }`。`approvedCount` は店員だけ（認めた鍵の本数。読めなければ省く） |
+| 失敗 | 400 `invalid_request`（`id` と `rawId` の食い違いを含む）・`uv_required`、401、403 `registration_not_allowed`、429、500 `passkey_approve_failed`、502 `passkey_register_failed`、503 |
+| 監査 | action `auth.passkey.register.finish`。固定の符号（`passkey_approve_failed:compensation_failed` を含む）と行為者の ID だけ |
+
+窓は閉じず、セッションも終わらせない（段3）。お客さんは `passkey_approve` を呼ばない。
 
 ## データ
 

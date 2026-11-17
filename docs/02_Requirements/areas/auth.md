@@ -300,6 +300,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: 店員（管理者・サポーター）は、パスキーの入口の条件を満たす時だけ、ログインの後に `/admin` か `/admin` 向きの戻り先へ送られる。満たさない店員は今の 2 段目の画面（`/auth/verified`）へ送られ、戻り先の控えは使い切られない。お客さんは条件に関わらず 2 段目へ送られない。Google・メールのリンクの戻りの窓口は、店員が来ても必ず 2 段目の側に倒す。受け入れ条件は FR-AUTH-018-AC-01〜03、SEC-AUTH-043、DD-AUTH-054、ADR-0468。
 
+### SR-AUTH-019 パスキーの登録は、条件を満たす人だけがアプリの窓口で行える
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | 店員のパスキーは、管理の入口を開ける鍵そのもの。登録を GoTrue に直に出せるままだと、盗まれたセッションや旗を切った間の結び付かないセッションで鍵を足され、認めさせられる。そこで登録の始めと終わりをアプリの窓口が受け、条件を毎回やり直して確かめ、店員の鍵だけを「認めた鍵」にする（設計 5-5・6-1・6-2）。この要求には、登録（Task 7）に続き、一覧・名前・削除（Task 8）の要件を足す |
+| 状態 | 推定 |
+| 出どころ | ユーザーの発言 2026-11-17（`.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7）） |
+
+要求の文: 店員は、登録の窓が自分のセッションで開いていて認めた鍵が2本未満の間、または5分以内にパスキーで入り直した直後に、パスキーを登録できる。お客さんは、10分以内にパスキーかメールのコードで入った直後に登録できる。条件は始めでも終わりでも呼ばれるたびに確かめ、外れたら GoTrue の検証を呼ばない。店員の鍵は登録の直後に認めた鍵として数え、認められなければ作られた鍵を消す。受け入れ条件は FR-AUTH-020-AC-01〜09、SEC-AUTH-045、DD-AUTH-056。
+
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
 | 属性 | 値 |
@@ -2322,6 +2332,19 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 優先度 | MUST |
 
 規則: (1) IP ごとに10分30回（`auth:passkey:login:finish`）。(2) 本文の形が外れる、または応答の `id` と `rawId` が違えば 400 `invalid_request` で GoTrue を呼ばない。(3) `authenticatorData` の UV の印（`0x04`）が無い・短すぎる・壊れた base64url なら 400 `uv_required` で GoTrue を呼ばない。(4) GoTrue の失敗は、印つきの 403 が 403 `staff_passkey_required`、429 は 429、ほかは理由を分けず 401 `passkey_login_failed`。(5) 店員（DB で確かめる）は、`rawId` を `bytea` に直した値で認めた鍵かを確かめ、認めていなければ GoTrue のセッションを `revoke_auth_session` で終わらせてから 403 `passkey_not_approved`（Cookie も `public.sessions` の行も作らない）。確かめの DB が使えない時も、セッションを終わらせて 503。お客さんは認めの表を引かない。(6) 通れば `persistSessionAndCookies` でアプリのセッションを作り、`linkGuestOrdersByEmail` を呼び、`next` があれば戻り先の控えを付ける。(7) 200 の本文は `{ user: { id, email, role } }`。
+
+### FR-AUTH-020 登録の窓口 `POST /api/auth/passkey/register/start`・`finish` を足す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-019 |
+| 根拠 | SR-AUTH-019 のうち登録を、`src/app/api/auth/passkey/register/start/route.ts`・`finish/route.ts` にする。始めと終わりが同じ確かめ（`src/lib/auth/passkey-registration-guard.ts`）をやり直し、登録の条件の判定は純粋な `evaluateRegistrationAccess`（`src/lib/auth/passkey-recent-auth.ts`）が行う。判断は DD-AUTH-056・ADR-0467、守りは SEC-AUTH-045 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-recent-auth.test.ts`、`tests/unit/api/auth/passkey-register-start-route.test.ts`、`passkey-register-finish-route.test.ts`）、結合テスト（`tests/integration/api/auth/passkey-register-start.test.ts`、`passkey-register-finish.test.ts`）、E2E（`e2e/FR-LOGIN-051-passkey-registration.spec.ts`、FR-AUTH-020-AC-01〜09） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7） |
+| 優先度 | MUST |
+
+規則: (1) 順番は、IP ごとに10分20回（`auth:passkey:register:start`・`finish`）→ 認証 → CSRF → 本人ごとに10分10回 → 店員かの確かめ（DB が使えなければ 503）→ 店員なら結び付いた生きたセッション（旗に関わらず）→ 窓・認めた鍵の本数（読めなければ 503）→ 登録の条件の判定。外れたら 403 `registration_not_allowed`（理由は `window_closed` か `reauth_required`）で、GoTrue を呼ばない。(2) 店員は、5分以内のパスキーでの入り直し（`reauth`）、または窓が開いていて認めた鍵が2本未満（`window`）で通る。(3) お客さんは、10分以内のパスキーかメールのコード（`otp`）で通る（`customer`。Google の `oauth` は含めない）。(4) 始めの選択肢は `authenticatorSelection.userVerification` を `required` にして返す。(5) 終わりは `id` と `rawId` が違えば 400、登録の `attestationObject` の UV の印が無ければ 400 `uv_required`（どちらも GoTrue の検証を呼ばない）。(6) 店員は GoTrue の検証の後に `passkey_approve` で認める（`window` の道は `window`、入り直しは `reauth`）。落ちたら今作られた鍵を管理 API で消して 500 `passkey_approve_failed`。消すのも落ちたら監査に `passkey_approve_failed:compensation_failed`。(7) 200 の本文は `{ passkey: { id, friendly_name, created_at }, approvedCount? }`（`approvedCount` は店員だけ）。窓は閉じず、セッションも終わらせない（段3）。
 
 ## 受け入れ条件
 
@@ -4967,6 +4990,114 @@ IP の見出し `x-real-ip` つきで `POST /api/auth/passkey/login/start` を�
 
 `next=/admin` つきで入った認めた鍵2本の店員が `POST /api/auth/post-login` を呼ぶと `{ redirectTo: '/admin', needsMfa: false }`、1本の店員は `{ redirectTo: '/auth/verified', needsMfa: true }` であること。
 
+### FR-AUTH-020-AC-01 窓の中の店員は登録でき、認めた鍵が1本・2本と数えられ、3本目は窓が開いていても始めで403
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-020 |
+| 根拠 | 登録の窓の中で、最初の2本だけ登録して認められること（5-5・6-2、SEC-AUTH-045） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-051-passkey-registration.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（`passkey-register-start-route.test.ts`・`passkey-register-finish-route.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7） |
+
+窓を開けた店員が、Bearer の通行証で始め（`mode: window`・`userVerification: required`）→ 認証器の登録 → 終わりを呼ぶと 200 で `approvedCount` が1、2本目で2になること。3本目は窓がまだ開いていても、始めが 403 `registration_not_allowed`（`reauth_required`）で、GoTrue の鍵と認めの表がどちらも2本のままであること。
+
+### FR-AUTH-020-AC-02 始めの後に窓が閉じたら終わりは403で鍵ができず、別の人・別のセッションの窓では始めが403
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-020 |
+| 根拠 | 窓の再確認を終わりでもやり直すこと（6-2、SEC-AUTH-045） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-051-passkey-registration.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（`passkey-register-finish-route.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7） |
+
+始めが 200 の後に `passkey_window_close` で窓を閉じると、終わりは 403（`window_closed`）で、`auth.webauthn_credentials` も認めの表も増えないこと。窓を持たない別の通行証（窓を閉じた店員、窓を開けたセッションと別のセッション）の始めは 403 `window_closed` であること。
+
+### FR-AUTH-020-AC-03 窓を閉じた後の始めは403 window_closed で、鍵ができない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-020 |
+| 根拠 | 窓が閉じた店員に登録させないこと（6-2） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-051-passkey-registration.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（`passkey-register-start-route.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7） |
+
+窓を閉じた店員の始めが 403 で、本文が `{ "error": "registration_not_allowed", "reason": "window_closed" }`、GoTrue に鍵ができないこと。窓が閉じていて `passkey` の印も無い店員（メールのコードだけのセッション）は `window_closed`、窓が開いていても認めた鍵が2本以上の店員は `reauth_required`。
+
+### FR-AUTH-020-AC-04 認めた鍵が2本の店員は、5分以内にパスキーで入り直した直後なら窓が無くても3本目を登録できる（reauth）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-020 |
+| 根拠 | 窓の外で3本目・差し替えを足す道（設計 5-5） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-051-passkey-registration.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（`passkey-recent-auth.test.ts`。5分の境界・未来60秒・時刻の型） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7） |
+
+認めた鍵2本の店員が `loginViaApp` で入り直し、Cookie と `x-csrf-token` で始めると `mode: reauth` で 200、終わりで 200・`approvedCount` が3になること。パスキーの入り直しが5分より古い（301秒前）店員は窓が閉じていれば 403 になること（単体）。
+
+### FR-AUTH-020-AC-05 お客さんはメールのコードで入った直後に登録でき、認めの表に行が増えない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-020 |
+| 根拠 | お客さんの登録は10分以内のパスキーかメールのコード。認めの表は店員だけ（設計 5-5） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-051-passkey-registration.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（`passkey-recent-auth.test.ts`・`passkey-register-finish-route.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7） |
+
+お客さんがメールのコードで入った直後に始めが `mode: customer` で 200、終わりが 200（`approvedCount` なし）になり、GoTrue の鍵が1本増え、認めの表は0行のままであること。10分より古い・`oauth` だけの場合は 403 `reauth_required`（単体）。
+
+### FR-AUTH-020-AC-06 通行証が無ければ401、Cookie だけで CSRF の見出しが無ければ403で、鍵ができない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-020 |
+| 根拠 | ログインした人が使う窓口の共通の守り（CSRF、SEC-AUTH-045） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-051-passkey-registration.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（回数の制限・認証・CSRF・店員の確かめの順番、GoTrue の失敗は 502） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7） |
+
+通行証の無い始めは 401、Cookie で入った店員が `x-csrf-token` を付けない始めは 403 で、鍵が増えないこと。旗 `AUTH_REQUIRE_APP_SESSION` を切っても、店員の結び付かないセッションは始め・終わりとも 401 で GoTrue を呼ばないこと（単体）。
+
+### FR-AUTH-020-AC-07 id と rawId が違う終わりは400で、鍵ができない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-020 |
+| 根拠 | 署名を確かめる鍵と認める鍵が食い違わないようにすること（SEC-AUTH-044 と同じ） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-051-passkey-registration.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7） |
+
+別の認証器の `rawId` を付けた終わりが 400 で、GoTrue の鍵も認めの表も増えないこと。
+
+### FR-AUTH-020-AC-08 UV の無い認証器の登録は400 uv_required で、鍵ができない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-020 |
+| 根拠 | 使えない鍵（UV の無い鍵）を数に入れないこと（5-3） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-051-passkey-registration.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト、結合テスト（本物の形の `attestationObject`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7） |
+
+UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_required" }` で、GoTrue の検証を呼ばず、鍵が増えないこと。
+
+### FR-AUTH-020-AC-09 店員が窓口で登録した鍵は認めた鍵に数えられ、GoTrue に直に足した鍵は数えられない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-020 |
+| 根拠 | 認めの表に載るのは窓口を通った鍵だけ（設計 5-5） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-051-passkey-registration.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、結合テスト |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7） |
+
+窓口で登録した鍵で `passkey_approved_count` が1になり、同じ本人の通行証で GoTrue に直に足した鍵は GoTrue の鍵が2本でも認めた鍵は1本のままであること。
+
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 
 | 属性 | 値 |
@@ -6447,6 +6578,21 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 守ること: (1) 応答の `id` と `rawId` は完全に同じ値だけ受け、違えば GoTrue を呼ばず 400。認めた鍵の確かめは `rawId` を `bytea` に直した値で行う。(2) `authenticatorData` の UV の印が無い・37バイト未満・壊れた base64url は、GoTrue を呼ばず 400 `uv_required`。(3) 店員は、認めの表に無い鍵では入れない。断る時は GoTrue のセッションを `revoke_auth_session` で終わらせてから 403 にし、Cookie と `public.sessions` の行を作らない。(4) 店員の判定・認めの確かめの DB が使えない時は、セッションを終わらせて 503（閉じる側）。(5) お客さんは認めの表を使わない。(6) GoTrue の失敗は理由を分けず 401 `passkey_login_failed` の同じ本文にする（鍵の有無・登録の有無を分からなくする）。(7) 監査には固定の符号と行為者の ID だけを残し、トークン・鍵・認証器の応答・`challenge_id`・メールを残さない。
 
 残る危険として受け入れること: GoTrue が `rawId` でなく `id` で鍵を引く場合に備え、窓口は2つを必ず同じにする。セッションを終わらせる RPC が失敗した時は、断りは変えないが、GoTrue のセッションが期限まで残りうる（アプリの結び付けが無いので、API・RLS は通らない。5-3）。
+
+### SEC-AUTH-045 登録の窓口は条件を毎回やり直し、窓の免除は認めた鍵が2本未満の間だけ、旗に関わらず結び付いたセッションだけを通し、認めが落ちたら鍵を消す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-046 |
+| 根拠 | 店員のパスキーの登録は管理の入口を開ける鍵を足す操作。(1) 始めの後に窓が閉じる・期限が来ても、終わりで再確認しないと鍵が足される。(2) メールを読めた人が窓の残りで3本目を認めさせられる。(3) 旗を切った間に結び付かないセッションで鍵を認めさせられる。(4) 認めが落ちると、GoTrue にだけ鍵が残り、本人は使えない鍵を持ったつもりになる。判断は ADR-0467・DD-AUTH-056 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-recent-auth.test.ts`、`passkey-register-start-route.test.ts`、`passkey-register-finish-route.test.ts`）、結合テスト（`tests/integration/api/auth/passkey-register-start.test.ts`、`passkey-register-finish.test.ts`）、E2E `e2e/FR-LOGIN-051-passkey-registration.spec.ts`（FR-AUTH-020-AC-01〜04・09） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7）（Review Focus 3） |
+| 優先度 | MUST |
+
+守ること: (1) 登録の条件（窓・認めた鍵の本数・入り直しの時刻）は始めと終わりの両方で、呼ばれるたびにやり直し、外れたら GoTrue の検証を呼ばない。(2) 窓の免除は認めた鍵が `min_approved_passkeys`（2）未満の間だけ。整数でない本数は窓を認めない。2本以上の店員は5分以内のパスキーでの入り直し（`reauth`）が要る。(3) 店員は、旗 `AUTH_REQUIRE_APP_SESSION` に関わらず、`checkAuthSessionLiveness(session_id, true)` が生きている（アプリに結び付いた）セッションだけを通す（`admin-rbac` と同じ）。確かめが使えなければ 503（閉じる側）。(4) 店員の鍵は GoTrue の検証の後に `passkey_approve` で認める。落ちた時（古い行・窓の上限の競り負けを含む）は、管理 API で今作られた鍵を消して 500。消すのも落ちたら監査に `passkey_approve_failed:compensation_failed` を残し、鍵は認めの表に無いので数に入らない（引き金が店員と店長に知らせる）。(5) 監査には固定の符号と行為者の ID だけを残し、トークン・鍵・認証器の応答・`challenge_id`・メールを残さない。
+
+同時の2つの終わりの競りは、移行 F の `passkey_approve('window')` が利用者ごとの錠の中で数え直して塞ぐ（SEC-AUTH-041）。残る危険として受け入れること: 窓口の再確認と認めの間は別の取引なので、競り負けた方は GoTrue に鍵ができた後に `55000` で落ち、補償の削除で消える（鍵が一瞬だけ在る）。`reauth` の道は上限を掛けない（入り直した本人が足す物で、設計 5-5 のとおり）。
 
 ## 派生要件
 

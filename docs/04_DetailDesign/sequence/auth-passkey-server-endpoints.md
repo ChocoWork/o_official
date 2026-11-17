@@ -10,8 +10,8 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-016、SR-AUTH-017、SR-AUTH-018、FR-AUTH-015、FR-AUTH-016、FR-AUTH-017、FR-AUTH-018、FR-AUTH-019、DD-AUTH-052、DD-AUTH-053、DD-AUTH-054、DD-AUTH-055、DATA-AUTH-018、SEC-AUTH-041、THR-AUTH-042、SEC-AUTH-042、THR-AUTH-043、SEC-AUTH-043、THR-AUTH-044、SEC-AUTH-044、THR-AUTH-045、ADR-0467、ADR-0468 |
-| 対象のコード | 移行 `supabase/migrations/20261117123620_passkey_server_endpoint_fns.sql`、`src/lib/auth/passkey-approval-rpc.ts`、`src/app/api/auth/passkey/login/start/route.ts`、`src/app/api/auth/passkey/login/finish/route.ts`、`src/features/auth/passkey/browser-start.ts` |
+| 対応する ID | SR-AUTH-016、SR-AUTH-017、SR-AUTH-018、FR-AUTH-015、FR-AUTH-016、FR-AUTH-017、FR-AUTH-018、FR-AUTH-019、SR-AUTH-019、FR-AUTH-020、DD-AUTH-052、DD-AUTH-053、DD-AUTH-054、DD-AUTH-055、DD-AUTH-056、DATA-AUTH-018、SEC-AUTH-041、THR-AUTH-042、SEC-AUTH-042、THR-AUTH-043、SEC-AUTH-043、THR-AUTH-044、SEC-AUTH-044、THR-AUTH-045、SEC-AUTH-045、THR-AUTH-046、ADR-0467、ADR-0468 |
+| 対象のコード | 移行 `supabase/migrations/20261117123620_passkey_server_endpoint_fns.sql`、`src/lib/auth/passkey-approval-rpc.ts`、`src/app/api/auth/passkey/login/start/route.ts`、`src/app/api/auth/passkey/login/finish/route.ts`、`src/app/api/auth/passkey/register/start/route.ts`、`register/finish/route.ts`、`src/lib/auth/passkey-registration-guard.ts`、`passkey-recent-auth.ts`、`src/features/auth/passkey/browser-start.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-5）、[段1b の計画](../../superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md)、[店員のパスキーの入口](auth-staff-passkey-entry.md) |
 | 調べた時点 | 2026-11-17（手元の DB で結合試験を流した） |
 
@@ -245,6 +245,52 @@ sequenceDiagram
 - 保存: `persistSessionAndCookies`（`otp/verify` と同じ）が失敗したら 500。成功したら `linkGuestOrdersByEmail`（メールがある時）。`next` は `issueReturnIntent({ rawNext, purpose: 'login' })` で控え、不正なら clear でログインは成功する
 - 監査: action `auth.passkey.login.finish`。固定の符号（`invalid_request`・`uv_required`・`staff_passkey_required`・`gotrue_rate_limited`・`gotrue_failed`・`gotrue_bad_response`・`staff_check_unavailable`・`approval_check_unavailable`・`passkey_not_approved`・`session_persist_failed`・`passkey_login`・`unexpected_error`）と行為者の ID だけ。トークン・鍵・認証器の応答・`challenge_id`・メールを残さない
 - テスト観点: 本文の不正と `id`・`rawId` の食い違いで GoTrue 0回・UV の無い・短い・壊れた応答で GoTrue 0回・GoTrue の誤りの本文が理由で変わらない・印つきの 403・429・形の違う成功・お客さんは認めの表を引かない・店員で認めた鍵は200・認めていない鍵は403で終わらせ1回・保存0回・店員判定と認めの確かめの RPC の失敗は503・`next` の不正・監査にトークンとメールが残らない
+
+### DD-AUTH-056 登録の始め・終わり（`POST /api/auth/passkey/register/start`・`finish`）の順番と、認めの補償の削除
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | API-AUTH-024、API-AUTH-025、SEC-AUTH-045 |
+| 根拠 | 店員のパスキーの登録は管理の入口を開ける鍵を足す操作なので、始めと終わりで条件を毎回やり直し、店員の鍵は GoTrue の検証の後に認めの表へ書く。認めが落ちたら GoTrue に作られた鍵を消す（ADR-0467） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-recent-auth.test.ts`、`tests/unit/api/auth/passkey-register-start-route.test.ts`、`passkey-register-finish-route.test.ts`）、結合テスト（`tests/integration/api/auth/passkey-register-start.test.ts`、`passkey-register-finish.test.ts`）、E2E（`e2e/FR-LOGIN-051-passkey-registration.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7） |
+
+```mermaid
+sequenceDiagram
+    participant B as ブラウザ
+    participant R as /api/auth/passkey/register/(start|finish)
+    participant T as GoTrue
+    participant D as DB の関数
+    B->>R: POST（始めは本文なし、終わりは challenge_id と credential）
+    R->>R: 回数の制限（IP ごと20回/10分）→ 認証 → CSRF → 回数の制限（本人ごと10回/10分）
+    R->>D: passkey_is_staff(user.id)
+    opt 店員
+        R->>D: 結び付いた生きたセッション（旗に関わらず）、passkey_window_is_open、passkey_approved_count
+    end
+    R->>R: evaluateRegistrationAccess（window・reauth・customer か、403）
+    alt 終わり
+        R-->>B: 本文の形・id と rawId が違えば 400、UV の印が無ければ 400 uv_required
+        R->>T: registrationVerify（本人のアクセストークン）
+        opt 店員
+            R->>D: passkey_approve(user.id, passkey.id, window か reauth)
+            D-->>R: 落ちたら deletePasskey（管理 API）して 500
+        end
+        R-->>B: 200 { passkey, approvedCount? }
+    else 始め
+        R->>T: registrationOptions（本人のアクセストークン）
+        R-->>B: 200 { challenge_id, options（userVerification: required）, expires_at, mode }
+    end
+```
+
+- 追跡の単位: `passkey-recent-auth.ts` の `evaluateRegistrationAccess` が IMPL-AUTH-275、`register/start/route.ts` の `POST` が IMPL-AUTH-276、`register/finish/route.ts` の `POST` が IMPL-AUTH-277、`passkey-registration-guard.ts` の `guardPasskeyRegistration` が IMPL-AUTH-286、`registrationJson` が IMPL-AUTH-289。試験の道具は、`e2e/passkey-app-api.ts` の `startRegisterViaApp` が IMPL-AUTH-287、`finishRegisterViaApp` が IMPL-AUTH-288（`e2e/admin-session-test-utils.ts` の `createWindowSessionActor` は追跡の範囲外）
+- 登録の条件（`evaluateRegistrationAccess`）: 店員は、`amr` の `passkey` の最新の時刻が `-60 <= now - ts <= 300` なら `reauth`。そうでなく、窓が開いていて認めた鍵が整数で2本未満なら `window`。どちらでもなければ、`passkey` の印がある（古い）店員と、窓が開いていても認めた鍵が2本以上（数が整数でない時を含む）の店員は `reauth_required`、`passkey` が無く窓も閉じた店員は `window_closed`。お客さんは `passkey` か `otp` の最新が `-60 <= now - ts <= 600` なら `customer`、外れたら `reauth_required`（`oauth` は含めない）。`amr` が配列でない・時刻が整数でない要素は無いものとして扱う
+- 店員のセッション: `authenticateRequest` は旗が切れていると結び付きを求めないので、店員は `checkAuthSessionLiveness(session_id, true)` を別に呼び、`active` でなければ 401（確かめられなければ 503）。窓・本数の RPC が失敗したら 503
+- 認めの補償: `passkey_approve` が落ちたら（`23505` の古い行・`55000` の窓の上限の競り負け・そのほか）、サービスの鍵の管理 API `auth.admin.passkey.deletePasskey({ userId, passkeyId })` で今作られた鍵を消し、500 `passkey_approve_failed`。消すのも失敗したら監査に `passkey_approve_failed:compensation_failed`（鍵は認めの表に無いので数に入らない）。鍵の追加・削除は DB の引き金が outbox に積み、「足した」「消した」の2通の知らせが店員と店長に届く。補償ではアプリの Cookie の更新は行わない
+- 窓の競り: 窓口の再確認と認めの間は別の取引。同時の2つの終わりは、`passkey_approve('window')` が利用者ごとの錠の中で数え直して、2本を超える方を `55000` で落とす（SEC-AUTH-041）。競り負けた方は GoTrue に鍵ができた後に落ち、補償の削除で消える（鍵が一瞬だけ在る）
+- 窓は閉じず、セッションも終わらせない（段3）。窓の長さ30分が上限
+- 監査: action `auth.passkey.register.start`・`finish`。固定の符号（`staff_check_unavailable`・`session_check_unavailable`・`app_session_required`・`window_check_unavailable`・`registration_not_allowed:window_closed`・`registration_not_allowed:reauth_required`・`invalid_request`・`uv_required`・`gotrue_failed`・`gotrue_bad_response`・`passkey_approve_failed`・`passkey_approve_failed:compensation_failed`・`register_start:<mode>`・`register_finish:<mode>`・`unexpected_error`）と行為者の ID だけ。トークン・鍵・認証器の応答・`challenge_id`・メールを残さない
+- テスト観点: 店員×窓×認めた鍵の本数（0・1・2・NaN・小数）×入り直しの時刻（新しい・300秒・301秒・未来61秒・欠け・文字列・小数）・お客さん×`passkey`・`otp`・`oauth`×599・601秒・順番どおりの断り（IP の回数→認証→CSRF→本人の回数→店員の確かめ）・旗を切った状態でも結び付かない店員は 401 で GoTrue 0回・終わりで窓が閉じていたら GoTrue の検証0回・窓の中でも認めた鍵が2本なら始め・終わりとも 403・`id` と `rawId` の食い違いと UV の無い応答は検証0回・`approve` が落ちたら補償の削除が1回で 500（`window_full` も同じ）・補償も落ちたら監査の符号・お客さんは `passkey_approve` を呼ばない・GoTrue の応答に `authenticatorSelection` が無くても `required` が入る
 
 ## 未確認事項
 

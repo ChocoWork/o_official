@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> パスキー段1b Task 7 確認日: 2026-11-17。Route Handler を2ファイル・2メソッド足した（202ファイル・254メソッド、表は201行・253メソッド）。`POST /api/auth/passkey/register/start`（登録の始め）・`POST /api/auth/passkey/register/finish`（登録の終わり）。契約は [基本設計の認証](../areas/auth.md) の API-AUTH-024・API-AUTH-025。
+>
 > パスキー段1b Task 6 確認日: 2026-11-17。Route Handler を1ファイル・1メソッド足した（200ファイル・252メソッド、表は199行・251メソッド）。`POST /api/auth/passkey/login/finish`（ログインの終わり）。契約は [基本設計の認証](../areas/auth.md) の API-AUTH-023。
 >
 > パスキー段1b Task 3 確認日: 2026-11-17。Route Handler を1ファイル・1メソッド足した（199ファイル・251メソッド、表は198行・250メソッド）。`POST /api/auth/passkey/login/start`（ログインの始め (a)）。契約は [基本設計の認証](../areas/auth.md) の API-AUTH-022。
@@ -212,6 +214,8 @@
 | `/api/auth/password/change/confirm` | `POST` | [route.ts](../../../src/app/api/auth/password/change/confirm/route.ts) （波 6: 会員認証＋CSRF、admin・supporter は aal2 必須。確認コードと新しいパスワードで変更し、全 session を失効する。回数制限 `auth:password_change_confirm` の IP 20回/600秒・本人ごと 5回/600秒、監査 `password_change_confirm`。API-AUTH-021） |
 | `/api/auth/passkey/login/start` | `POST` | [route.ts](../../../src/app/api/auth/passkey/login/start/route.ts) （段1b: 認証前。設定が browser なら 409、IP が取れなければ 503、回数制限 `auth:passkey:login:start` の IP 20回/300秒、鍵は `sb_secret_` だけ。GoTrue のパスキーの選択肢を取り `userVerification` を `required` にして返す。契約は [API-AUTH-022](../areas/auth.md)） |
 | `/api/auth/passkey/login/finish` | `POST` | [route.ts](../../../src/app/api/auth/passkey/login/finish/route.ts) （段1b: 認証前。回数制限 `auth:passkey:login:finish` の IP 30回/600秒、`id` と `rawId` が違う・UV の印が無ければ GoTrue を呼ばず 400、店員は認めた鍵だけ（認めていない鍵はセッションを終わらせて 403）。Cookie とアプリのセッションを作る。契約は [API-AUTH-023](../areas/auth.md)） |
+| `/api/auth/passkey/register/start` | `POST` | [route.ts](../../../src/app/api/auth/passkey/register/start/route.ts) （段1b: 認証後（CSRF あり）。回数制限 `auth:passkey:register:start` の IP 20回/600秒・本人 10回/600秒。店員は旗に関わらず結び付いた生きたセッション、窓か5分以内のパスキーでの入り直し、お客さんは10分以内のパスキーかメールのコード。外れたら GoTrue を呼ばず 403。契約は [API-AUTH-024](../areas/auth.md)） |
+| `/api/auth/passkey/register/finish` | `POST` | [route.ts](../../../src/app/api/auth/passkey/register/finish/route.ts) （段1b: 認証後（CSRF あり）。始めと同じ確かめをやり直し、`id` と `rawId` が違う・UV の印が無ければ GoTrue の検証を呼ばず 400。店員は `passkey_approve` で認め、落ちたら鍵を消して 500。契約は [API-AUTH-025](../areas/auth.md)） |
 | `/api/auth/password/change/start` | `POST` | [route.ts](../../../src/app/api/auth/password/change/start/route.ts) （波 6: 会員認証＋CSRF、admin・supporter は aal2 必須。現行パスワードを確かめ、メールに8桁の確認コードを送る。回数制限 `auth:password_change_start` の IP 20回/600秒・本人ごと 5回/600秒、監査 `password_change_start`。API-AUTH-020） |
 | `/api/auth/refresh` | `POST` | [route.ts](../../../src/app/api/auth/refresh/route.ts) |
 | `/api/auth/register` | `POST` | [route.ts](../../../src/app/api/auth/register/route.ts) |
