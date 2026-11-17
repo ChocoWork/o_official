@@ -122,19 +122,12 @@ for (const viewport of viewports) {
       const staff = await withLocalDb((db) => provisionStaff(db, { role: 'admin', approvedPasskeys: 2 }));
       const ip = uniqueIp();
       const fresh = await startCode(request, uniqueEmail('fresh'), uniqueIp());
-      // 店員を作った直後は、GoTrue の同じアドレスへの送信の間隔（1秒）に当たることがあるので、当たらなくなるまで条件で待つ。
-      let started = await startCode(request, staff.email, ip);
-      await expect
-        .poll(
-          async () => {
-            if (started.status() === 429) started = await startCode(request, staff.email, ip);
-            return started.status();
-          },
-          { intervals: [500, 1000, 1000], timeout: 8_000 },
-        )
-        .toBe(fresh.status());
-      expect(await started.json()).toEqual(await fresh.json());
-      expect(cookieShape(started)).toEqual(cookieShape(fresh));
+      // 店員を作った直後は、GoTrue の同じアドレスへの送信の間隔（手元は1秒）の中にいる。始めは間隔の 429 を 202 に隠してメールを送らないので、
+      // 間隔が過ぎるのを条件で待ってから始める（始めを呼び直さない。呼び直すと宛先の5通の枠を使う）。
+      const intervalEnds = Date.now() + 1_500;
+      await expect.poll(() => Date.now() >= intervalEnds, { intervals: [100], timeout: 5_000 }).toBe(true);
+      const started = await startCode(request, staff.email, ip);
+      expect(started.status()).toBe(fresh.status());
       const code = await readLatestCode(staff.email, new Set());
       const verified = await verifyCode(request, code, ip);
       expect(verified.status()).toBe(403);

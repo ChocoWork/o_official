@@ -7,6 +7,7 @@
  * @remarks 登録の有無を調べない。先に `admin.createUser`（確認済み・パスワード無し・印 `email_code_signup_pending`）を呼び、
  * 登録済みなら `email_exists` で断られるので握りつぶし、全員に同じく `signInWithOtp({ shouldCreateUser: false })` を呼ぶ。
  * 成功は常に 202 と同じ本文・同じ Set-Cookie（未登録・登録済み・店員で見分けがつかない。SEC-AUTH-048）。
+ * GoTrue の宛先ごとの送信の間隔の 429 は 202 に隠す（登録済みの見分けになるため）。監査 `email_code_send_throttled` とログで残す。
  * 順番: IP の枠 → 本文の形 → Turnstile → メール単位の枠（Turnstile の後に数える。先に数えると他人の枠を使い切らせて締め出せる）→ createUser → signInWithOtp。
  * 枠の名前は再送と共有（`auth:email-code:send`）。分けると10分に10通送れてしまう。
  * 旧の会員登録で作った未確認のアドレスには、コードでなく確認メールが届く（段4まで。画面の常時の案内と台帳に書く）。サーバーで確認済みにはしない。
@@ -34,7 +35,6 @@ function json(body: unknown, init: { status: number; headers?: Record<string, st
 
 const AUDIT_ACTION = 'auth.email_code.start';
 const SEND_ENDPOINT = 'auth:email-code:send';
-const UPSTREAM_RATE_LIMIT_RETRY_AFTER_SECONDS = 60;
 const UPSTREAM_UNAVAILABLE_RETRY_AFTER_SECONDS = 30;
 
 function classifyUpstream(
@@ -102,12 +102,13 @@ export async function POST(request: Request) {
       return json({ error: 'Internal server error' }, { status: 500 });
     }
     const upstream = classifyUpstream(otpError);
-    if (upstream === 'rate_limited') {
-      await logAudit({ action: AUDIT_ACTION, actor_email: email, outcome: 'error', detail: 'supabase_rate_limited' });
-      return json(
-        { error: '送信が集中しています。しばらくしてから再度お試しください。' },
-        { status: 429, headers: { 'Retry-After': String(UPSTREAM_RATE_LIMIT_RETRY_AFTER_SECONDS) } },
-      );
+    // GoTrue の宛先ごとの送信の間隔（429）は、直前に認証のメールを受けた既存のアドレスだけで起きる。
+    // 429 のまま返すと未登録と見分けがつくので、成功と同じ応答にする（SEC-AUTH-048）。メールが届かない時は画面の再送（60秒後）で戻れる。
+    // プロジェクト全体の送信の上限でも同じ 429 になるので、監査の符号とログで気付けるようにする。
+    const throttled = upstream === 'rate_limited';
+    if (throttled) {
+      await logAudit({ action: AUDIT_ACTION, actor_email: email, outcome: 'error', detail: 'email_code_send_throttled' });
+      console.error('email-code start: GoTrue rate limited the code mail (email_code_send_throttled)');
     }
     if (upstream === 'unavailable') {
       await logAudit({ action: AUDIT_ACTION, actor_email: email, outcome: 'error', detail: 'supabase_unavailable' });
@@ -116,7 +117,7 @@ export async function POST(request: Request) {
         { status: 503, headers: { 'Retry-After': String(UPSTREAM_UNAVAILABLE_RETRY_AFTER_SECONDS) } },
       );
     }
-    if (otpError) {
+    if (otpError && !throttled) {
       await logAudit({ action: AUDIT_ACTION, actor_email: email, outcome: 'error', detail: 'otp_send_failed' });
       return json({ error: '確認コードの送信に失敗しました。時間をおいて再度お試しください。' }, { status: 500 });
     }

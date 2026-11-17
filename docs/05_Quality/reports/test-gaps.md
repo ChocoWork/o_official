@@ -129,7 +129,6 @@
 
 手書きの節。分岐の網羅で届かない所を、1行に1件「- `場所:行` 理由。確認: 未」の形で書く。生成し直しても残る。
 
-- `src/app/api/auth/email-code/verify/route.ts:114` の `!data?.user` の `data` が `null` の側は通らない。直前の `!data?.session` が先に真になって戻るため（`data` が `null` の場合は `session` の判定で既に 401 になる）。確認: 未
 - `src/app/admin/news/NewsForm.tsx:253` の `NewsForm` の画像の欄の onClick の `fileInputRef.current?.click()` の `current` が `null` の側は通らない。file の入力は押される枠そのものの子で、枠が描かれている間は ref が必ず入っているため。確認: 未
 - `src/app/admin/news/NewsForm.tsx:257` の `NewsForm` の画像の欄の onKeyDown（Enter・Space）の `fileInputRef.current?.click()` の `current` が `null` の側は通らない。理由は onClick と同じ。確認: 未
 - `src/app/api/admin/news/[id]/route.ts:48` の `logNewsAudit` の引数 `resourceId` の既定値 `= null` は通らない。ファイルの中の呼び出し7か所が全部 `id` を渡すため。確認: 未

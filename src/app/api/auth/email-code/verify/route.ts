@@ -111,7 +111,7 @@ export async function POST(request: Request) {
       return denied;
     }
 
-    if (verifyError || !data?.session || !data?.user) {
+    if (verifyError || !data?.session || !data.user) {
       await logAudit({ action: AUDIT_ACTION, actor_email: pending.email, outcome: 'failure', detail: 'invalid_or_expired_otp' });
       return json({ error: '認証コードが無効、または期限切れです。' }, { status: 401 });
     }

@@ -52,15 +52,17 @@ sequenceDiagram
 
 | 窓口 | 順番 | 失敗 |
 | --- | --- | --- |
-| 始め | IP の枠（50回/10分、`auth:email-code:send`）→ 本文の形（400）→ Turnstile（403 `Bot detection failed`）→ 宛先の枠（5回/10分、同じ名前）→ `createUser`（`email_exists` は握る、`email_address_invalid` は 400、それ以外は 500・監査 `supabase_create_user_failed`）→ `signInWithOtp`（captcha の拒否は 500、GoTrue の 429 は 429＋`Retry-After`、5xx は 503）→ 保留の Cookie と戻り先の控え | 上の表のとおり。成功は常に 202 |
-| 確定 | IP の枠（30回/10分、`auth:email-code:verify`）→ 本文（400）→ 保留の Cookie（401）→ Cookie ごとの枠（`email:jti`、5回/10分）→ 宛先ごとの枠（20回/10分）→ `verifyOtp`（宛先は Cookie 由来）。使い切ったら Cookie を消して 429 | 店員の印つきの拒否は 403 `staff_passkey_required`（Cookie は消し、セッションを作らない）。コード違いは 401 |
-| 再送 | 保留の Cookie（401）→ IP の枠（50回/10分）→ 宛先の枠（5回/10分、始めと同じ名前）→ `signInWithOtp` → Cookie を元の発行時刻と `jti` で付け直す（200） | 送信の失敗は 500 |
+| 始め | IP の枠（50回/10分、`auth:email-code:send`）→ 本文の形（400）→ Turnstile（403 `Bot detection failed`）→ 宛先の枠（5回/10分、同じ名前）→ `createUser`（`email_exists` は握る、`email_address_invalid` は 400、それ以外は 500・監査 `supabase_create_user_failed`）→ `signInWithOtp`（captcha の拒否は 500、GoTrue の 429 は成功と同じ 202 に隠して監査 `email_code_send_throttled`・ログ、5xx は 503）→ 保留の Cookie と戻り先の控え | 上の表のとおり。成功は常に 202 |
+| 確定 | IP の枠（30回/10分、`auth:email-code:verify`）→ 本文（400）→ 保留の Cookie（401）→ Cookie ごとの枠（`email:jti`、5回/10分）→ 宛先ごとの枠（20回/10分）→ `verifyOtp`（宛先は Cookie 由来）。使い切ったら Cookie を消して 429（消すのはブラウザの Cookie だけ。署名した値は期限まで使えるが、宛先ごとの枠が上を押さえる） | 店員の印つきの拒否は 403 `staff_passkey_required`（Cookie は消し、セッションを作らない）。コード違いは 401 |
+| 再送 | 保留の Cookie（401）→ IP の枠（50回/10分）→ 宛先の枠（5回/10分、始めと同じ名前）→ `signInWithOtp` → Cookie を元の発行時刻と `jti` で付け直す（200） | GoTrue の 429 は 429＋`Retry-After`、5xx・通信の失敗は 503、ほかの送信の失敗は 500。宛先は本人のものと決まっているので隠さない |
 | 取りやめ | 保留の Cookie と戻り先の控えを消して 204。Cookie があった時だけ監査に残す | 無し |
 
 成功した確定: セッションを保存（ゲストのカート・お気に入りの引き継ぎつき）→ 印 `email_code_signup_pending` を外す（失敗は監査の符号だけで続行）→ 注文の引き継ぎ（`linkGuestOrdersByEmail`）→ 200 `{ user: { id, email, role }, offerPasskey, message }`。`offerPasskey` は、`role` が `user` で、鍵の一覧が成功して0本の時だけ真（一覧の失敗・店員は偽。閉じる側）。
 
 保留の Cookie（`sb-email-code-session`）: メールと乱数 `jti` と発行時刻を HMAC で署名する。`userId` を持たない（登録済みかどうかを Cookie から読ませない）。属性は旧の保留の Cookie と同じ（HttpOnly・SameSite=Strict・5分）。再送では発行時刻と `jti` を引き継ぎ、絶対の上限（30分）で打ち切る。署名の目的（`purpose`）が旧と違うので、旧い Cookie の値を新しい窓口に渡しても、その逆も読めない。
 
-旧の会員登録（`signUp`）で作って確認していないアドレス: 始めは同じ 202 を返す（応答を変えない）。GoTrue は確認のメール（リンク型）を送るのでコードは届かない。`/login/code` の画面は、アカウントの状態にかかわらず、いつも「コードの無い確認のメールが届いた時は、そのメールのリンクを押してから、もう一度お試しください。」と案内する。サーバーで確認済みにはしない（パスワードを先に付けた他人が、そのアドレスでログインできてしまうため）。旧の登録は段4まで残る。
+旧の会員登録（`signUp`）で作って確認していないアドレス: 始めは同じ 202 を返す（応答を変えない）。GoTrue は確認のメール（リンク型）を送るのでコードは届かない。`/login/code` の画面は、アカウントの状態にかかわらず、いつも「コードの無い確認のメールが届いた時は、そのメールのリンクを押してから、もう一度お試しください。」と案内する。サーバーで確認済みにはしない（パスワードを先に付けた他人が、そのアドレスでログインできてしまうため）。旧の登録は段4まで残る。本人がリンクを押した後は、先にパスワードを付けた他人の旧の登録が確認済みになる危険が、段2の前と同じく残る。
 
-テスト観点: 始めの応答が未登録・登録済み（`email_exists`）・登録済みで未確認・店員で同じ（本文・状態・Cookie の名前と属性）、`email_address_invalid` が 400、Turnstile の失敗で作成・送信・宛先の枠が0回、始めと再送が同じ枠で合計5通まで、別の保留の Cookie の失敗が本人の枠を使わない、枠を使い切ると Cookie を消して 429、店員は 403 で Cookie を残さない、成功で印が外れる（外す失敗でもログインできる）、`offerPasskey` の4通り、旧い保留の Cookie が新しい窓口で 401。
+GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前に認証のメールを受けた既存のアドレスだけで起きるので、429 のまま返すと未登録と見分けがつく。代わりにプロジェクト全体の送信の上限でも「送った」と見えるが、監査とログに残り、画面の再送（60秒後）で戻れる。
+
+テスト観点: GoTrue の 429 が成功と同じ応答になる、始めと再送が本物の鍵の作りで合計5通を共有する、始めの応答が未登録・登録済み（`email_exists`）・登録済みで未確認・店員で同じ（本文・状態・Cookie の名前と属性）、`email_address_invalid` が 400、Turnstile の失敗で作成・送信・宛先の枠が0回、始めと再送が同じ枠で合計5通まで、別の保留の Cookie の失敗が本人の枠を使わない、枠を使い切ると Cookie を消して 429、店員は 403 で Cookie を残さない、成功で印が外れる（外す失敗でもログインできる）、`offerPasskey` の4通り、旧い保留の Cookie が新しい窓口で 401。

@@ -29,6 +29,8 @@ function json(body: unknown, init: { status: number; headers?: Record<string, st
 
 const AUDIT_ACTION = 'auth.email_code.resend';
 const SEND_ENDPOINT = 'auth:email-code:send';
+const UPSTREAM_RATE_LIMIT_RETRY_AFTER_SECONDS = 60;
+const UPSTREAM_UNAVAILABLE_RETRY_AFTER_SECONDS = 30;
 const FAILED_MESSAGE = '確認コードの送信に失敗しました。時間をおいて再度お試しください。';
 
 export async function POST(request: Request) {
@@ -49,6 +51,21 @@ export async function POST(request: Request) {
     if (isCaptchaRejection(error)) {
       await logAudit({ action: AUDIT_ACTION, actor_email: pending.email, outcome: 'error', detail: 'supabase_captcha_rejected' });
       return json({ error: FAILED_MESSAGE }, { status: 500 });
+    }
+    // 宛先は保留の Cookie で本人のものと決まっているので、始めと違い上流の制限を隠さず、画面が待ち直せるようにする。
+    if (error?.status === 429) {
+      await logAudit({ action: AUDIT_ACTION, actor_email: pending.email, outcome: 'error', detail: 'supabase_rate_limited' });
+      return json(
+        { error: '送信が集中しています。しばらくしてから再度お試しください。' },
+        { status: 429, headers: { 'Retry-After': String(UPSTREAM_RATE_LIMIT_RETRY_AFTER_SECONDS) } },
+      );
+    }
+    if (error && (error.name === 'AuthRetryableFetchError' || (typeof error.status === 'number' && (error.status === 0 || error.status >= 500)))) {
+      await logAudit({ action: AUDIT_ACTION, actor_email: pending.email, outcome: 'error', detail: 'supabase_unavailable' });
+      return json(
+        { error: 'ただいま処理できません。時間をおいて再度お試しください。' },
+        { status: 503, headers: { 'Retry-After': String(UPSTREAM_UNAVAILABLE_RETRY_AFTER_SECONDS) } },
+      );
     }
     if (error) {
       await logAudit({ action: AUDIT_ACTION, actor_email: pending.email, outcome: 'error', detail: 'otp_resend_failed' });

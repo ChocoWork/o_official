@@ -81,10 +81,24 @@ describe('DD-AUTH-059 POST /api/auth/email-code/resend', () => {
     expect(signInWithOtp).not.toHaveBeenCalled();
   });
 
+  test('DD-AUTH-059 GoTrue の 429 は 429 と Retry-After、5xx・通信の失敗は 503（Cookie は付け直さない）', async () => {
+    signInWithOtp.mockResolvedValueOnce({ error: { status: 429, message: 'limit' } });
+    const limited = await POST(req(cookieFor(now(), 'j')));
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get('Retry-After')).toBe('60');
+    signInWithOtp.mockResolvedValueOnce({ error: { status: 502, message: 'x' } });
+    const down = await POST(req(cookieFor(now(), 'j')));
+    expect(down.status).toBe(503);
+    expect(down.headers.get('Retry-After')).toBe('30');
+    signInWithOtp.mockResolvedValueOnce({ error: { name: 'AuthRetryableFetchError', message: 'fetch failed' } });
+    expect((await POST(req(cookieFor(now(), 'j')))).status).toBe(503);
+    expect(limited.headers.get('set-cookie')).toBeNull();
+  });
+
   test('DD-AUTH-059 送信の失敗（captcha の拒否を含む）は 500 で、Cookie を付け直さない', async () => {
     signInWithOtp.mockResolvedValueOnce({ error: { code: 'captcha_failed', status: 400, message: 'captcha' } });
     const a = await POST(req(cookieFor(now(), 'j')));
-    signInWithOtp.mockResolvedValueOnce({ error: { status: 500, message: 'x' } });
+    signInWithOtp.mockResolvedValueOnce({ error: { status: 400, message: 'x' } });
     const b = await POST(req(cookieFor(now(), 'j')));
     expect([a.status, b.status]).toEqual([500, 500]);
     expect(a.headers.get('set-cookie')).toBeNull();

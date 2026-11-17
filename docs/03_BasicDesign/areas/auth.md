@@ -1470,9 +1470,9 @@ stateDiagram-v2
 | 項目 | 中身 |
 | --- | --- |
 | 入力 | JSON `{ email, turnstileToken?, next? }`（`email` は今のログインと同じメールの規則） |
-| 順番 | IP の枠（50回/10分、`auth:email-code:send`、429）→ 本文の形（400）→ Turnstile（403 `Bot detection failed`）→ 宛先の枠（5回/10分、同じ名前、429）→ `createUser`（`email_exists` は握る。`email_address_invalid` は 400。ほかは 500）→ `signInWithOtp`（captcha の拒否は 500、GoTrue の 429 は 429＋`Retry-After`、5xx は 503）→ 保留の Cookie と戻り先の控え |
+| 順番 | IP の枠（50回/10分、`auth:email-code:send`、429。回数の表の障害は 503）→ 本文の形（400）→ Turnstile（403 `Bot detection failed`）→ 宛先の枠（5回/10分、同じ名前、429）→ `createUser`（`email_exists` は握る。`email_address_invalid` は 400。ほかは 500）→ `signInWithOtp`（captcha の拒否は 500、GoTrue の 429 は成功と同じ 202 に隠し監査 `email_code_send_throttled`、5xx は 503）→ 保留の Cookie と戻り先の控え |
 | 成功 | 202 `{ step: 'code', message }`。Cookie `sb-email-code-session`（HttpOnly・SameSite=Strict・5分）。戻り先の番号は Cookie だけで、本文には出ない |
-| 失敗 | 400、403、429、500、503 |
+| 失敗 | 400、403、429（自分の枠だけ。GoTrue の 429 は返さない）、500、503 |
 | 監査 | action `auth.email_code.start`。固定の符号（`code_sent`・`supabase_create_user_failed`・`supabase_captcha_rejected` など）と宛先（`actor_email`）だけ |
 
 旧の会員登録で作って確認していないアドレスには、コードでなく確認のメールが届く（段4まで）。応答は変えず、画面が常に案内する（DD-AUTH-059）。
@@ -1492,7 +1492,7 @@ stateDiagram-v2
 | 入力 | JSON `{ code }`（8桁）。保留の Cookie |
 | 順番 | IP の枠（30回/10分、`auth:email-code:verify`）→ 本文（400）→ 保留の Cookie（401）→ Cookie ごとの枠（`email:jti`、5回/10分）→ 宛先ごとの枠（20回/10分）。どちらかを使い切ったら Cookie を消して 429 → `verifyOtp` |
 | 成功 | 200 `{ user: { id, email, role }, offerPasskey, message }`。セッションの Cookie が付き、保留の Cookie は消える。`offerPasskey` は role が user で鍵が0本と確かめられた時だけ真 |
-| 失敗 | 400、401（Cookie 無し・コード違い）、403 `staff_passkey_required`（Cookie は消す）、429、500 |
+| 失敗 | 400、401（Cookie 無し・コード違い）、403 `staff_passkey_required`（Cookie は消す）、429、500、503（回数の表の障害。閉じる側） |
 | 監査 | action `auth.email_code.verify`。固定の符号と宛先・行為者の ID だけ。コード・トークンは残さない |
 
 ### API-AUTH-031 POST /api/auth/email-code/resend は保留の Cookie の宛先へコードを送り直し、Cookie を付け直す
@@ -1508,9 +1508,9 @@ stateDiagram-v2
 | 項目 | 中身 |
 | --- | --- |
 | 入力 | 本文なし。保留の Cookie |
-| 順番 | 保留の Cookie（401）→ IP の枠（50回/10分、`auth:email-code:send`）→ 宛先の枠（5回/10分、同じ名前）→ `signInWithOtp` |
+| 順番 | 保留の Cookie（401）→ IP の枠（50回/10分、`auth:email-code:send`）→ 宛先の枠（5回/10分、同じ名前）→ `signInWithOtp`（GoTrue の 429 は 429＋`Retry-After`、5xx は 503） |
 | 成功 | 200 `{ ok: true }`。保留の Cookie を新しい期限で付け直す |
-| 失敗 | 401、429、500 |
+| 失敗 | 401、429（自分の枠、または GoTrue の 429）、500、503（GoTrue の 5xx・通信の失敗、回数の表の障害） |
 | 監査 | action `auth.email_code.resend`。固定の符号と宛先だけ |
 
 ### API-AUTH-032 POST /api/auth/email-code/cancel は保留の Cookie と戻り先の控えを消して204を返す

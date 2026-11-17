@@ -124,11 +124,21 @@ describe('DD-AUTH-059 POST /api/auth/email-code/start', () => {
     expect(res.headers.get('set-cookie')).toBeNull();
   });
 
-  test('DD-AUTH-059 GoTrue の 429 は 429 と Retry-After、5xx は 503', async () => {
-    signInWithOtp.mockResolvedValueOnce({ error: { status: 429, message: 'limit' } });
+  test('DD-AUTH-059 GoTrue の 429 は成功と同じ 202・本文・Set-Cookie で隠し、監査 email_code_send_throttled とログを1回だけ残す', async () => {
+    const ok = await POST(req());
+    const okShape = { status: ok.status, body: await ok.json(), cookie: cookieOf(ok).attrs, name: cookieOf(ok).name };
+    const logSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    signInWithOtp.mockResolvedValueOnce({ error: { status: 429, message: 'over_email_send_rate_limit' } });
     const limited = await POST(req());
-    expect(limited.status).toBe(429);
-    expect(limited.headers.get('Retry-After')).toBe('60');
+    expect({ status: limited.status, body: await limited.json(), cookie: cookieOf(limited).attrs, name: cookieOf(limited).name }).toEqual(okShape);
+    expect(verifyEmailCodeSessionToken(cookieOf(limited).value)).toMatchObject({ email: 'new@example.com' });
+    expect(limited.headers.get('Retry-After')).toBeNull();
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ detail: 'email_code_send_throttled' }));
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    logSpy.mockRestore();
+  });
+
+  test('DD-AUTH-059 GoTrue の 5xx は 503 と Retry-After', async () => {
     signInWithOtp.mockResolvedValueOnce({ error: { status: 502, message: 'bad gateway' } });
     const down = await POST(req());
     expect(down.status).toBe(503);
