@@ -10,7 +10,7 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-021、FR-AUTH-023、SEC-AUTH-048、SEC-AUTH-049、THR-AUTH-049、API-AUTH-029、API-AUTH-030、API-AUTH-031、API-AUTH-032、DD-AUTH-059、ADR-0469、SEC-AUTH-050、DD-AUTH-060、SR-AUTH-022、FR-AUTH-025、DD-AUTH-061、FR-AUTH-026、DD-AUTH-062、FR-AUTH-027、DD-AUTH-063 |
+| 対応する ID | SR-AUTH-021、FR-AUTH-023、SEC-AUTH-048、SEC-AUTH-049、THR-AUTH-049、API-AUTH-029、API-AUTH-030、API-AUTH-031、API-AUTH-032、DD-AUTH-059、ADR-0469、SEC-AUTH-050、DD-AUTH-060、SR-AUTH-022、FR-AUTH-025、DD-AUTH-061、FR-AUTH-026、DD-AUTH-062、FR-AUTH-027、DD-AUTH-063、SR-AUTH-023、FR-AUTH-028、DD-AUTH-064 |
 | 対象のコード | `src/app/api/auth/email-code/start/route.ts`、`verify/route.ts`、`resend/route.ts`、`cancel/route.ts`、`src/features/auth/services/email-code-session.ts`、`src/features/auth/schemas/email-code.ts`、`src/lib/cookie.ts`（`emailCodeSessionCookieName`・`cookieOptionsForEmailCode`）、`src/features/auth/passkey/{webauthn-browser,passkey-client,device-name,post-login}.ts`、`src/features/auth/schemas/passkey.ts`（`dropNullFields`）、`src/lib/auth/passkey-gotrue.ts`（`server-only`） |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（6-1）、[段2の計画](../../superpowers/plans/2026-11-17-passkey-stage2-customers.md)、[パスキーの窓口](auth-passkey-server-endpoints.md) |
 | 調べた時点 | 2026-11-17（手元の GoTrue で、作成→コードの送信→確定の組み合わせを実測した。手元の DB・Mailpit で E2E を流した） |
@@ -170,3 +170,27 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 | 共通 | 状態の変化は `LiveMessage`。送信中は `aria-busy` と `disabled`。応答の本文は読むか捨てる |
 
 テスト観点: 3つの入口と OR の並び、未対応のブラウザでボタンが出ず一文が出る、パスキー押下から各 `reason` の文言と `Retry-After`、成功で post-login の行き先へ移り勧めの画面へ行かない、`mode: 'browser'` でトークンが無ければ GoTrue を呼ばない・あれば呼んで引き直す・`server` では呼ばない、メール欄の各応答の文言と二重送信の防止、`?next`・`?email`・`?registered=1`、保留の Cookie（新・旧）の転送と両方有効な時の順番。E2E は、3つの入口と Tab の順、パスキー押下で始めの窓口が1回、中止の文、`next` が終わりの窓口の本文に渡ること、未対応の一文、メールを送って `/login/code` へ移り Mailpit にコードが届くこと、Google のボタン、390px で横にはみ出さず、旧の画面が今のまま。
+
+### DD-AUTH-064 パスキーを作る勧めの画面 `/login/passkey` の処理の順番
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SCR-AUTH-001、FLOW-AUTH-001、API-AUTH-024、API-AUTH-025 |
+| 根拠 | メールのコードで入った直後が、パスキーを案内する一番自然な機会になる。勧めは post-login の前に出し（戻り先を使い切らない）、作れない端末・店員・鍵を持つ人には出さない（鍵を持つ人は確定の窓口が `offerPasskey` を偽にする）。成功の後は自動で進まず、「続ける」へフォーカスを移して読む時間を奪わない（WCAG 2.2.1。`/login/code` の自動の戻しを外したのと同じ）。1b の持ち越し T2 M12（本物の `toJSON()` の `null`）は、仮想の認証器の往復の E2E で確かめる |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/passkey/passkey-offer.test.tsx`、`tests/unit/app/login/passkey-page.test.tsx`）、E2E（`e2e/FR-LOGIN-059-passkey-offer-real-browser.spec.ts`、`e2e/FR-LOGIN-058-email-code-screen.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-6-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 6。判断 12、調整役の判断: 成功の後に自動で進まない） |
+
+処理の順番と決め:
+
+| 単位 | 動き |
+| --- | --- |
+| `src/app/login/passkey/page.tsx` | 部品を描くだけ。`robots` は noindex・nofollow。ログインの判定は、ブラウザの状態を使うので描いた後に部品が行う |
+| `PasskeyOffer`（開いた時） | `useLogin()` が決まるまで何も描かない。ログインしていなければ `router.replace('/login')`。`role` が `user` でなければ `resolvePostLoginPath()` の行き先へ `router.replace`。`isUserVerifyingPlatformAuthenticatorAvailable()` が偽・例外・`PublicKeyCredential` が無いなら同じく行き先へ。真なら勧めを描き、見出し（`tabIndex=-1`）へフォーカスする。判定は1回だけ |
+| 「パスキーを作る」 | `registerPasskey`（DD-AUTH-060。始め → ブラウザで鍵を作る → 終わり → 端末の名前）。作る間は `disabled`・`aria-busy`・「作成しています…」で、「あとで」も止める。二重に押しても1回（ref で止める） |
+| 成功 | 「パスキーを作りました。」を `status` で知らせる（名前が付かなければ「名前は、アカウントのログイン方法から変えられます。」を続ける）。ボタンは「続ける」だけにし、フォーカスを移す。自動では進まない |
+| 失敗 | `cancelled`: 「パスキーの作成を中止しました。」（作る・あとで が残る）。`already_registered`・`unsupported`: 文と「続ける」だけ。`retry`・`failed`: 「うまく作れませんでした。もう一度お試しください。」と「もう一度」（始めから）。`reauth_required`・`unauthorized`: 「もう一度ログインしてください。」と「ログインへ」（`/login`）。`rate_limited`: 「試行が集中しています。しばらくしてからやり直してください。」。`unavailable`: 「ただいまパスキーを作れません。時間をおいてお試しください。」。失敗の後、無効になったボタンからフォーカスが落ちた時だけ主のボタンへ戻す |
+| 「あとで」・「続ける」 | `resolvePostLoginPath()`（DD-AUTH-060）を1回だけ呼んで `router.replace`（二重に押しても1回）。戻り先は、この呼び出しで初めて使い切る |
+| 共通 | 状態の変化は `LiveMessage`。`challenge_id`・応答・トークンは画面にもログにも出さない（`registerPasskey` の中だけ） |
+
+テスト観点: 文言と2つのボタンと見出しへの初期フォーカス、判定が終わるまで空、未ログインで `/login`、店員・使えない端末（偽・例外・未対応）で行き先へ、「あとで」の二重押しが1回、作る間の無効・`aria-busy`・二重押し、成功で自動で進まず「続ける」にフォーカス（`jest.useFakeTimers` で10秒進めても動かない）、名前が付かない時の足し文、各 `reason` の文言と先へ進む手段、失敗後のフォーカスを奪わないこと。E2E は仮想の認証器（CDP）で、新規の作成と鍵1つ、ログアウトからのパスキーのログイン（本物の `toJSON()` の `null`）、鍵を持つ人に勧めを出さないこと、本人確認ができない認証器で `register/finish` が0回、「あとで」で戻り先、未対応のブラウザで飛ばす、未ログインで `/login`・横にはみ出さないことを確かめる。

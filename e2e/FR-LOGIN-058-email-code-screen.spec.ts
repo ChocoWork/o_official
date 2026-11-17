@@ -4,13 +4,14 @@
  *
  * 手元のアプリ（本番ビルド）・手元の Supabase・手元の Mailpit で流す。始めの窓口を `page.request` で呼び（保留の Cookie がブラウザに入る）、
  * Mailpit のコードを読み、画面に入れる。要求ごとに別の x-real-ip と origin を付ける（回数の枠を使い切らないため・proxy の Origin の確かめ）。
- * 勧め（offerPasskey が真）の側は /login/passkey が Task 6 で出来るまで単体で確かめる。ここでは、鍵を1本持つお客さん（勧めが偽）で戻り先へ着くことを確かめる。
+ * 勧め（offerPasskey が真）の側は、仮想の認証器を足して /login/passkey に着くことを確かめる（画面の中身と往復は FR-LOGIN-059）。鍵を1本持つお客さん（勧めが偽）は戻り先へ着く。
  */
 import { randomBytes, randomInt } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
 import { readLatestCode } from './member-session-helpers';
 import { withLocalDb } from './order-email-test-utils';
 import { provisionPasskeyUser } from '../scripts/e2e/passkey-staff';
+import { addVirtualAuthenticator } from './passkey-virtual-authenticator';
 
 // 保留の Cookie とコードが通信記録に残るので、記録は取らない。
 test.use({ trace: 'off' });
@@ -76,6 +77,25 @@ for (const viewport of viewports) {
       await expect(page).toHaveURL(`${ORIGIN}/`);
       const me = await page.request.get('/api/auth/me');
       expect(((await me.json()) as { authenticated?: boolean }).authenticated).toBe(true);
+    });
+
+    test(`FR-AUTH-026-AC-01 ${viewport.name}: 鍵を持たない新規のお客さんは、コードを入れると勧めの画面へ着く`, async ({ page, browserName }) => {
+      test.skip(browserName !== 'chromium', '仮想の認証器は Chromium だけ');
+      const authenticator = await addVirtualAuthenticator(page);
+      try {
+        const email = uniqueEmail('offer');
+        await startPending(page, email);
+        const code = await readLatestCode(email, new Set());
+
+        await page.goto('/login/code');
+        await enterCode(page, code);
+        await page.getByRole('button', { name: 'ログイン' }).click();
+
+        await expect(page).toHaveURL(`${ORIGIN}/login/passkey`, { timeout: 15_000 });
+        await expect(page.getByRole('heading', { name: 'パスキーを作りませんか' })).toBeVisible();
+      } finally {
+        await authenticator.remove();
+      }
     });
 
     test(`FR-AUTH-026-AC-02 ${viewport.name}: 間違ったコードは文言を出し、入力を続けられる`, async ({ page }) => {

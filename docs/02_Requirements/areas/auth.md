@@ -342,6 +342,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: 今のパスワードのログイン・会員登録の画面を `/login/password` で開けるようにする。見た目と動きは今と同じにし、検索に載せない。旧の流れの中の戻り先（保留の無いコード入力、取りやめ、登録の完了の案内）は `/login/password` に閉じる。
 
+### SR-AUTH-023 メールのコードで入った後に、パスキーを作る勧めを出し、本物のブラウザで作る・入るの往復ができる
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | お客さんは、メールのコードを毎回待たずに、端末の顔認証・指紋・PIN で入れる方が楽で安全。コードで入った直後が、パスキーを案内する一番自然な機会になる（設計 6-1）。出さない設定は作らず、毎回のコードのログインのたびに勧める（鍵をすでに持つ人には出さない）。作れない端末・店員には勧めない |
+| 状態 | 推定 |
+| 出どころ | ユーザーの発言 2026-11-17（`.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-6-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 6。判断 12、調整役の判断: 成功の後に自動で進まない）） |
+
+要求の文: お客さんがメールのコードでログインした直後、パスキーをまだ持たず、顔認証・指紋・PIN の使える端末なら、「パスキーを作りませんか」の画面を出す。作ると、次回から「パスキーでログイン」で入れる。「あとで」で飛ばせる。ブラウザが本物の応答を作る環境で、作る・入るが通る。
+
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
 | 属性 | 値 |
@@ -5445,7 +5455,7 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 | 確かめ方 | E2E（`e2e/FR-LOGIN-058-email-code-screen.spec.ts`。390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/features/auth/passkey/email-code-entry.test.tsx`、`tests/unit/app/login/code-page.test.tsx`） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-4-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 4。作り手の判断 5） |
 
-`/login/code` で保留のメールに届いた8桁を入れて「ログイン」を押すと、`offerPasskey` が偽（パスキーを持つ会員）ならログインして `/login` の外へ移り、`/api/auth/me` が本人を返す。8桁がそろうまで「ログイン」は押せない。`offerPasskey` が真の時に `/login/passkey` へ移ることは単体テストで確かめ、E2E は Task 6 が通す。
+`/login/code` で保留のメールに届いた8桁を入れて「ログイン」を押すと、`offerPasskey` が偽（パスキーを持つ会員）ならログインして `/login` の外へ移り、`/api/auth/me` が本人を返す。8桁がそろうまで「ログイン」は押せない。`offerPasskey` が真の時に `/login/passkey` へ移ることは、単体テストと、仮想の認証器を足した E2E（同じ `FR-LOGIN-058` の2つ目）で確かめる。
 
 ### FR-AUTH-026-AC-02 間違ったコードは「確認コードが無効、または期限切れです。」を出し、入力を続けられる
 
@@ -5579,6 +5589,103 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-5-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 5。作り手の判断 5・6、判断 12・13） |
 
 390px で横にスクロールせず、メールのボタンが画面の高さに収まる。`/login?tab=register&email=…&registered=1` では、`tab` は読まれずタブは出ず、メール欄に値が入り、「会員登録が完了しました。ログインしてください。」が出る。`/login/password` は旧のタブの画面のまま。
+
+### FR-AUTH-028 パスキーを作る勧めの画面 `/login/passkey`
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-023 |
+| 根拠 | SR-AUTH-023 を、`src/app/login/passkey/page.tsx` と `src/features/auth/passkey/components/PasskeyOffer.tsx` の画面にする。判断は DD-AUTH-064。窓口は API-AUTH-024・025（登録の始め・終わり）。成功の後は自動で進まない（読む時間を奪わない。WCAG 2.2.1。`/login/code` の自動の戻しを外したのと同じ） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/passkey/passkey-offer.test.tsx`、`tests/unit/app/login/passkey-page.test.tsx`）、E2E（`e2e/FR-LOGIN-059-passkey-offer-real-browser.spec.ts`、FR-AUTH-028-AC-01〜07） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-6-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 6。判断 12、調整役の判断: 成功の後に自動で進まない） |
+| 優先度 | MUST |
+
+規則: (1) ページは検索に載せない。ログインの状態が決まるまで何も描かず、ログインしていなければ `/login` へ送る。店員（`role` が `user` でない）と、顔認証・指紋・PIN の使えない端末（`PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()` が偽・例外・未対応）には、勧めを出さずに `resolvePostLoginPath()` の行き先へ送る。(2) 見出し「パスキーを作りませんか」（最初のフォーカス）、説明「次回からは、この端末の顔認証・指紋・PIN でログインできます。メールでコードを待つ必要はありません。」、小さく「あとからでも、アカウントの「ログイン方法」で作れます。」。ボタンは「パスキーを作る」（主）・「あとで」（副）。(3) 作る間は「作成しています…」で、ボタンは `disabled`・`aria-busy`。二重に押しても1回だけ作る。(4) 成功は「パスキーを作りました。」を `status` で知らせ、「続ける」へフォーカスを移す。自動では進まない。名前が付かなかった時は「名前は、アカウントのログイン方法から変えられます。」を足す。(5) 失敗の文: 中止「パスキーの作成を中止しました。」、すでに登録「この端末のパスキーは、すでにアカウントに登録されています。」（「続ける」だけ）、`retry`・`failed`「うまく作れませんでした。もう一度お試しください。」（「もう一度」で始めから）、未対応「この端末ではパスキーを作れません。」（「続ける」だけ）、再ログインが要る・認可なし「もう一度ログインしてください。」（「ログインへ」で `/login`）、回数の上限「試行が集中しています。しばらくしてからやり直してください。」、停止「ただいまパスキーを作れません。時間をおいてお試しください。」。(6) 「あとで」・「続ける」は `resolvePostLoginPath()` を1回だけ呼んで `router.replace` する（戻り先はこの時に初めて使い切る）。勧めの画面は post-login の前に出す。(7) 失敗の後、無効になったボタンからフォーカスが落ちた時だけ主のボタンへ戻す（ほかへ移していたら奪わない）。
+
+### FR-AUTH-028-AC-01 新規のお客さんがコードで入ると勧めが出て、作ると鍵が1つ入り、自動では進まず、「続ける」で行き先へ着く
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-028 |
+| 根拠 | SR-AUTH-023 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-059-passkey-offer-real-browser.spec.ts`。390・768・1280 の3幅でくり返す。仮想の認証器）、単体テスト（`tests/unit/features/auth/passkey/passkey-offer.test.tsx`、`tests/unit/app/login/passkey-page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-6-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 6。判断 12、調整役の判断: 成功の後に自動で進まない） |
+
+新しいアドレスで `/login/code` の確定をすると `/login/passkey` に着き、見出しにフォーカスがある。「パスキーを作る」を押すと仮想の認証器に鍵が1つ入り、「パスキーを作りました。」が出て「続ける」にフォーカスが移る。2秒待っても画面は変わらない。「続ける」で `/` へ着き、`/api/auth/me` が本人を返す。本物の `toJSON()` の `authenticatorAttachment: null` が、作る窓口の手前で落とされている（1b の持ち越し T2 M12）。
+
+### FR-AUTH-028-AC-02 ログアウトして「パスキーでログイン」を押すと、本物のブラウザの応答でログインできる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-028 |
+| 根拠 | SR-AUTH-023 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-059-passkey-offer-real-browser.spec.ts`。390・768・1280 の3幅でくり返す。仮想の認証器）、単体テスト（`tests/unit/features/auth/passkey/passkey-offer.test.tsx`、`tests/unit/app/login/passkey-page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-6-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 6。判断 12、調整役の判断: 成功の後に自動で進まない） |
+
+鍵を作ったお客さんの Cookie を消して `/login` で「パスキーでログイン」を押すと、`/` へ着き、`/api/auth/me` が本人を返す（ログインの終わりの窓口が、本物の応答を 400 にしない）。
+
+### FR-AUTH-028-AC-03 鍵を持つお客さんがもう一度コードで入ると、勧めの画面が出ない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-028 |
+| 根拠 | SR-AUTH-023 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-059-passkey-offer-real-browser.spec.ts`。390・768・1280 の3幅でくり返す。仮想の認証器）、単体テスト（`tests/unit/features/auth/passkey/passkey-offer.test.tsx`、`tests/unit/app/login/passkey-page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-6-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 6。判断 12、調整役の判断: 成功の後に自動で進まない） |
+
+パスキーを1本持つお客さんがもう一度メールのコードで入ると、`/login/passkey` を経ずに `/` へ着く。鍵は1本のまま。
+
+### FR-AUTH-028-AC-04 本人確認ができない認証器では作成が中止され、終わりの窓口が呼ばれず、先へ進める
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-028 |
+| 根拠 | SR-AUTH-023 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-059-passkey-offer-real-browser.spec.ts`。390・768・1280 の3幅でくり返す。仮想の認証器）、単体テスト（`tests/unit/features/auth/passkey/passkey-offer.test.tsx`、`tests/unit/app/login/passkey-page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-6-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 6。判断 12、調整役の判断: 成功の後に自動で進まない） |
+
+仮想の認証器が本人確認をできない（`isUserVerified: false`）時、「パスキーを作る」を押すと「パスキーの作成を中止しました。」が出る。ブラウザが応答を作らないので `register/finish` への要求は0回、鍵は0本。「パスキーを作る」と「あとで」が使え、「あとで」で `/` へ着く。
+
+### FR-AUTH-028-AC-05 「あとで」で、使い切られていない戻り先へ着く
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-028 |
+| 根拠 | SR-AUTH-023 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-059-passkey-offer-real-browser.spec.ts`。390・768・1280 の3幅でくり返す。仮想の認証器）、単体テスト（`tests/unit/features/auth/passkey/passkey-offer.test.tsx`、`tests/unit/app/login/passkey-page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-6-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 6。判断 12、調整役の判断: 成功の後に自動で進まない） |
+
+`next=/stockist` を付けてコードで入り、勧めの画面で「あとで」を押すと `/stockist` へ着く。鍵は作られない。
+
+### FR-AUTH-028-AC-06 パスキーに未対応のブラウザでは勧めを飛ばし、行き先へ着く
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-028 |
+| 根拠 | SR-AUTH-023 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-059-passkey-offer-real-browser.spec.ts`。390・768・1280 の3幅でくり返す。仮想の認証器）、単体テスト（`tests/unit/features/auth/passkey/passkey-offer.test.tsx`、`tests/unit/app/login/passkey-page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-6-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 6。判断 12、調整役の判断: 成功の後に自動で進まない） |
+
+`PublicKeyCredential` が無いブラウザでコードで入ると、`/login/passkey` を経ずに `/` へ着く。
+
+### FR-AUTH-028-AC-07 ログインしていない人は `/login` へ送られ、勧めの画面は横にはみ出さない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-028 |
+| 根拠 | SR-AUTH-023 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-059-passkey-offer-real-browser.spec.ts`。390・768・1280 の3幅でくり返す。仮想の認証器）、単体テスト（`tests/unit/features/auth/passkey/passkey-offer.test.tsx`、`tests/unit/app/login/passkey-page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-6-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 6。判断 12、調整役の判断: 成功の後に自動で進まない） |
+
+ログインしていない人が `/login/passkey` を開くと `/login` へ送られ、勧めの見出しが出ない。勧めの画面（390・768・1280px）は横にスクロールせず、2つのボタンが画面の幅の中に収まる。
 
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 

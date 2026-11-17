@@ -1,6 +1,6 @@
 # 1.14 ログインと認証（AUTH）詳細設計
 
-> 状態: 推定 | 確認日: 2026-11-18 | 対象: ログイン `/login`・`/login/password`・`/login/code`・`/login/verify`、認証の画面 `/auth/*`、認証の窓口 `/api/auth/*`、サイト共通のヘッダーとドロワー、認証の部品 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-11-18 | 対象: ログイン `/login`・`/login/password`・`/login/code`・`/login/passkey`・`/login/verify`、認証の画面 `/auth/*`、認証の窓口 `/api/auth/*`、サイト共通のヘッダーとドロワー、認証の部品 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -65,6 +65,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | `src/app/login/password/page.tsx` | `<file>` | DD-AUTH-061 |
 | `src/app/login/code/page.tsx` | `<file>` | DD-AUTH-062 |
 | `src/features/auth/passkey/components/EmailCodeEntry.tsx` | `<file>` | DD-AUTH-062 |
+| `src/app/login/passkey/page.tsx` | `<file>` | DD-AUTH-064 |
+| `src/features/auth/passkey/components/PasskeyOffer.tsx` | `<file>` | DD-AUTH-064 |
 | `src/app/login/verify/page.tsx` | `<file>` | DD-AUTH-002 |
 | `src/app/login/verify/VerifyOtpClient.tsx` | `<file>` | DD-AUTH-002 |
 | `src/app/auth/password-reset/page.tsx` | `<file>` | DD-AUTH-003 |
