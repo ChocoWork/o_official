@@ -197,6 +197,6 @@ Vercel の Production の環境変数に、ビルドの前に入れること。*
 
 | 名前 | 置き場 | 意味 |
 | --- | --- | --- |
-| `SUPABASE_SECRET_KEY` | Vercel の環境変数（サーバーだけ）。手元は `supabase status -o json` の `SECRET_KEY` | `sb_secret_` で始まる鍵。始め (a) が GoTrue を呼ぶ時に使い、`Sb-Forwarded-For` はこの鍵でだけ受け付けられる。古い `service_role` の JWT は使わない（添え書きが効かない） |
+| `SUPABASE_SECRET_KEY` | Vercel の環境変数（サーバーだけ）。手元は `supabase status -o json` の `SECRET_KEY` | `sb_secret_` で始まる鍵。始め (a) が GoTrue を呼ぶ時に使い、`Sb-Forwarded-For` はこの鍵でだけ受け付けられる。古い `service_role` の JWT は使わない（添え書きが効かない）。未設定なら `SUPABASE_SERVICE_ROLE_KEY` を見て、それも `sb_secret_` で始まらなければ、始め (a) だけを断る |
 | `NEXT_PUBLIC_PASSKEY_START_MODE` | Vercel の環境変数 | `server`（既定。(a)）または `browser`（(b)）。`NEXT_PUBLIC_` なのでブラウザには**ビルドの時**に入る。変えたら再ビルド（再デプロイ）が要る |
 | `PASSKEY_START_DEV_IP` | 手元の `.env.development.local` だけ | 手元の開発で始めの窓口に IP を渡す。手元の Supabase の住所の時だけ効く。Vercel・本番の Supabase の住所で値があると、ビルドの見張りと起動の見張りが止まる。E2E は `CLIENT_IP_HEADER` を使うので要らない |
