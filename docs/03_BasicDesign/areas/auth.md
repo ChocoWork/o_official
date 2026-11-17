@@ -860,6 +860,7 @@ stateDiagram-v2
 | API-AUTH-020 | `POST /api/auth/password/change/start` | パスワード変更の画面 `/account/password`（波 6 の Task 6 が作る） |
 | API-AUTH-021 | `POST /api/auth/password/change/confirm` | パスワード変更の画面 `/account/password` |
 | API-AUTH-022 | `POST /api/auth/passkey/login/start` | ログインの画面（段2。今は窓口だけ） |
+| API-AUTH-023 | `POST /api/auth/passkey/login/finish` | ログインの画面（段2。今は窓口だけ） |
 
 全部の窓口に共通: 状態を変える `POST` は共有の proxy の Origin の確かめを先に通る。`/api/auth` 配下の全部の応答（Origin 拒否の 403 を含む）に、共有の proxy が `Cache-Control: no-store` を付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037。2026-10-28）。`confirm`・`oauth/*`・`password-reset/link`・`session`・`me`・`login/resend`・`login/cancel`・`post-login` は窓口も自分で同じ値を付ける。
 
@@ -1329,6 +1330,26 @@ stateDiagram-v2
 | 監査 | action `auth.passkey.login.start`。固定の符号だけ（鍵・IP・`challenge_id` を残さない） |
 
 始め (b)（窓口ではなくブラウザの部品。段2のログインの画面が呼ぶ。FR-AUTH-017・DD-AUTH-053）: `src/features/auth/passkey/browser-start.ts` の `createPasskeyAuthenticationStarter` が、設定 `NEXT_PUBLIC_PASSKEY_START_MODE`（`server`｜`browser`）に従い、(a) の窓口か、ブラウザの Supabase の client の `auth.passkey.startAuthentication`（`captchaToken` つき）を呼ぶ。(b) は見えない形の Turnstile のトークンが無ければ GoTrue を呼ばず、応答の `userVerification` はブラウザの側で `required` に書き換える。CSP は変えない（`connect-src` に自分の Supabase の origin 1つと `https://challenges.cloudflare.com` が既に入っている。E2E と単体テストで固定する）。
+
+### API-AUTH-023 POST /api/auth/passkey/login/finish は UV の印を GoTrue の前に確かめ、店員は認めた鍵だけで入れ、アプリのセッションを作る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-019、SEC-AUTH-044、ADR-0467 |
+| 根拠 | パスキーのログインの終わり。ブラウザは GoTrue の終わりを直に呼ばず、この窓口が UV の印と `id`・`rawId` の一致を GoTrue の前に確かめ、GoTrue の検証の後に、店員なら届いた鍵が認めた鍵かを確かめてから、アプリのセッションを作る。順番と値は DD-AUTH-055 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/auth/passkey-login-finish.test.ts`）、単体テスト（`tests/unit/api/auth/passkey-login-finish-route.test.ts`）、E2E（`e2e/FR-LOGIN-050-passkey-login-finish.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・5-5）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 6） |
+
+| 項目 | 中身 |
+| --- | --- |
+| 入力 | `{ challenge_id（uuid）, credential（WebAuthn の認証の応答。id と rawId は同じ値）, next?（戻り先）}`。認証前なので CSRF の確かめは無い（`otp/verify` と同じ。proxy の Origin の確かめは通る） |
+| 順番 | IP ごとの回数（10分30回、429）→ 本文の形（400）→ UV の門（400）→ GoTrue（403・429・401）→ 店員の確かめ（403・503）→ セッションの保存（500）→ 200 |
+| 200 | `{ user: { id, email, role } }`（`role` は `admin`・`supporter`・`user`）。アクセス・リフレッシュ・CSRF・セッションの Cookie と、`next` が正しければ戻り先の控えの Cookie |
+| 失敗 | 400 `invalid_request`（`id` と `rawId` の食い違いを含む）・`uv_required`、401 `passkey_login_failed`（理由を分けない）、403 `staff_passkey_required`・`passkey_not_approved`、429、503 `passkey_login_unavailable`、500 |
+| 監査 | action `auth.passkey.login.finish`。固定の符号と行為者の ID だけ（トークン・鍵・応答・`challenge_id`・メールを残さない） |
+
+認めていない鍵で入った店員は、GoTrue のセッションを `revoke_auth_session` で終わらせてから 403 で断り、Cookie も `public.sessions` の行も作らない。お客さんは認めの表を引かない。
 
 ## データ
 

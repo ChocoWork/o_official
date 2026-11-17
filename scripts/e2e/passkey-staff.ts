@@ -15,7 +15,11 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { DUMMY_CAPTCHA_TOKEN } from '../../e2e/captcha-test-utils';
-import { createSoftAuthenticator, type SoftAuthenticator } from '../../e2e/passkey-soft-authenticator';
+import {
+  createSoftAuthenticator,
+  type PublicKeyCredentialRequestOptionsJSON,
+  type SoftAuthenticator,
+} from '../../e2e/passkey-soft-authenticator';
 import type { PgClient } from '../../tests/integration/db/helpers/local-db';
 import { assertLocalDbClient, isLocalUrl, readLocalSupabaseStatus } from './environment';
 
@@ -161,4 +165,53 @@ export async function loginWithPasskey(input: { email: string; authenticator: So
   if (done.error || !done.data?.session) fail('パスキーログインの終わり', done.error);
   if (done.data.user?.email?.toLowerCase() !== input.email.toLowerCase()) throw new Error('パスキーでログインした利用者がメールと合わない');
   return { session: done.data.session };
+}
+
+/**
+ * 認めずに鍵を足す。既にいる店員（認めた鍵を持つ）が、パスキーでログインした本人のセッションで、GoTrue に直に新しい鍵を登録する。
+ * `passkey_approve` は呼ばない（アプリの窓口を通さず直に足した鍵の再現。ログインの終わりが断るかを試すための道具）。
+ * 返す authenticator は、認められていない鍵のもの。
+ *
+ * @impl IMPL-AUTH-281
+ * @design DD-AUTH-055
+ */
+export async function addUnapprovedPasskey(input: {
+  email: string;
+  authenticator: SoftAuthenticator;
+}): Promise<{ authenticator: SoftAuthenticator; passkeyId: string }> {
+  const env = localEnv();
+  const { session } = await loginWithPasskey({ email: input.email, authenticator: input.authenticator });
+  const user = client(env, env.anonKey);
+  const set = await user.auth.setSession({ access_token: session.access_token, refresh_token: session.refresh_token });
+  if (set.error || !set.data.session) fail('session の読み込み', set.error);
+  const authenticator = createSoftAuthenticator(RELYING_PARTY);
+  const start = await user.auth.passkey.startRegistration();
+  if (start.error || !start.data) fail('パスキー登録の始め', start.error);
+  const done = await user.auth.passkey.verifyRegistration({
+    challengeId: start.data.challenge_id,
+    credential: authenticator.register(start.data.options),
+  });
+  if (done.error || !done.data) fail('パスキー登録の終わり', done.error);
+  return { authenticator, passkeyId: done.data.id };
+}
+
+/**
+ * 始め (b) の呼び手の再現。ブラウザの代わりに匿名の supabase-js のクライアントで GoTrue の始めを直に呼び（見えない Turnstile のダミーのトークン）、
+ * 選択肢の `userVerification` を `required` に書き換えて返す（アプリの部品 `browser-start` と同じ書き換え）。
+ *
+ * @impl IMPL-AUTH-283
+ * @design DD-AUTH-055
+ */
+export async function startAuthenticationAsBrowser(): Promise<{
+  challengeId: string;
+  options: PublicKeyCredentialRequestOptionsJSON;
+}> {
+  const env = localEnv();
+  const c = client(env, env.anonKey);
+  const start = await c.auth.passkey.startAuthentication({ options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
+  if (start.error || !start.data) fail('パスキーログインの始め（ブラウザの道）', start.error);
+  return {
+    challengeId: start.data.challenge_id,
+    options: { ...start.data.options, userVerification: 'required' } as PublicKeyCredentialRequestOptionsJSON,
+  };
 }

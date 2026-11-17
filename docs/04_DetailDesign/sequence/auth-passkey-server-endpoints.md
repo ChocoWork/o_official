@@ -10,8 +10,8 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-016、SR-AUTH-017、SR-AUTH-018、FR-AUTH-015、FR-AUTH-016、FR-AUTH-017、FR-AUTH-018、DD-AUTH-052、DD-AUTH-053、DD-AUTH-054、DATA-AUTH-018、SEC-AUTH-041、THR-AUTH-042、SEC-AUTH-042、THR-AUTH-043、SEC-AUTH-043、THR-AUTH-044、ADR-0467、ADR-0468 |
-| 対象のコード | 移行 `supabase/migrations/20261117123620_passkey_server_endpoint_fns.sql`、`src/lib/auth/passkey-approval-rpc.ts`、`src/app/api/auth/passkey/login/start/route.ts`、`src/features/auth/passkey/browser-start.ts` |
+| 対応する ID | SR-AUTH-016、SR-AUTH-017、SR-AUTH-018、FR-AUTH-015、FR-AUTH-016、FR-AUTH-017、FR-AUTH-018、FR-AUTH-019、DD-AUTH-052、DD-AUTH-053、DD-AUTH-054、DD-AUTH-055、DATA-AUTH-018、SEC-AUTH-041、THR-AUTH-042、SEC-AUTH-042、THR-AUTH-043、SEC-AUTH-043、THR-AUTH-044、SEC-AUTH-044、THR-AUTH-045、ADR-0467、ADR-0468 |
+| 対象のコード | 移行 `supabase/migrations/20261117123620_passkey_server_endpoint_fns.sql`、`src/lib/auth/passkey-approval-rpc.ts`、`src/app/api/auth/passkey/login/start/route.ts`、`src/app/api/auth/passkey/login/finish/route.ts`、`src/features/auth/passkey/browser-start.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-5）、[段1b の計画](../../superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md)、[店員のパスキーの入口](auth-staff-passkey-entry.md) |
 | 調べた時点 | 2026-11-17（手元の DB で結合試験を流した） |
 
@@ -205,6 +205,46 @@ sequenceDiagram
 - `oauth/callback`・`confirm`: `staffEntryOk: false` を渡す。Google・メールのリンクでは店員は入れない（フックが拒否する）ので、来ても 2 段目の側に倒す。`oauth/callback` は、GoTrue の交換が `isStaffPasskeyRequiredError` の誤りで失敗した時、監査の `detail` を `staff_passkey_required` にし誤りの文を残さない（応答は 502 のまま。店員への文言は段3）
 - 本番には段3まで出さない: 認めた鍵が1本の店員が着く先は今のページ（`/auth/verified`）で、「もう1本登録してください」の画面は段3が作る
 - テスト観点: 店員（admin・supporter）× `staffEntryOk` の真偽の行き先・お客さんは真偽どちらでも `needsMfa: false`・`validateReturnPath('/admin')` が店員で真の時だけ通る・`post-login` が `amr` の欠け・空・文字列の時刻・未来・24時間超・`staff_passkeys_ok` の偽や文字列 `"true"` で偽・パスキーで入った2本の店員は `/admin`・`oauth/callback` の印つき 403 の監査の符号と 502・印の無い 403 は今まで通り
+
+### DD-AUTH-055 ログインの終わり（`POST /api/auth/passkey/login/finish`）の順番
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | API-AUTH-023、SEC-AUTH-044 |
+| 根拠 | ブラウザは GoTrue の終わりを直に呼ばず、アプリの窓口が UV の印を GoTrue の前に確かめ、GoTrue の検証の後に店員の認めた鍵を確かめ、アプリのセッションを作る。認めていない鍵のセッションは残さない（ADR-0467） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/passkey-login-finish-route.test.ts`）、結合テスト（`tests/integration/api/auth/passkey-login-finish.test.ts`）、E2E（`e2e/FR-LOGIN-050-passkey-login-finish.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・5-5） |
+
+```mermaid
+sequenceDiagram
+    participant B as ブラウザ
+    participant R as /api/auth/passkey/login/finish
+    participant T as GoTrue
+    participant D as DB の関数
+    B->>R: POST challenge_id, credential, next
+    R->>R: 回数の制限（IP ごと30回/10分）
+    R-->>B: 本文の形・id と rawId が違えば 400 invalid_request
+    R-->>B: UV の印が無ければ 400 uv_required（GoTrue 0回）
+    R->>T: verifyAuthentication（匿名の鍵）
+    T-->>R: session と user、または誤り
+    R-->>B: 誤りは 403 staff_passkey_required・429・401 passkey_login_failed
+    R->>D: passkey_is_staff(user.id)
+    opt 店員
+        R->>D: passkey_credential_is_approved(user.id, rawId)
+        D-->>R: 偽なら revoke_auth_session して 403 passkey_not_approved
+    end
+    R->>R: persistSessionAndCookies、linkGuestOrdersByEmail、戻り先の控え
+    R-->>B: 200 { user } と Cookie
+```
+
+- 追跡の単位: `route.ts` の `POST` は IMPL-AUTH-274。試験の道具は、`scripts/e2e/passkey-staff.ts` の `addUnapprovedPasskey` が IMPL-AUTH-281、`startAuthenticationAsBrowser` が IMPL-AUTH-283、`e2e/passkey-app-api.ts` の `startLoginViaApp` が IMPL-AUTH-282、`finishLoginViaApp` が IMPL-AUTH-284、`loginViaApp` が IMPL-AUTH-285
+- 順番の理由: UV の門は GoTrue の前（印の無い応答は GoTrue のセッションを作らせない）。店員の確かめは GoTrue の後（`user.id` が GoTrue の応答でしか分からない）。確かめの鍵は `rawId` を `bytea` に直した値（GoTrue が署名を確かめる鍵と同じ。`id` と `rawId` は zod で一致を求める）
+- 失敗の本文: GoTrue の失敗は、印つきの 403 と 429 を除き 401 `passkey_login_failed` の同じ本文。GoTrue の文・本文を返さない。UV の欠けだけ別の符号 `uv_required`（ブラウザが `required` を無視した異常で、利用者の誤りの調べにならない）
+- 認めていない鍵の店員: `readAuthSessionId`（アクセストークンの `session_id`）で `revoke_auth_session` を1回呼んでから 403。判定の DB が落ちた時も、セッションを終わらせて 503。終わらせる RPC が失敗しても断りは変えない
+- 保存: `persistSessionAndCookies`（`otp/verify` と同じ）が失敗したら 500。成功したら `linkGuestOrdersByEmail`（メールがある時）。`next` は `issueReturnIntent({ rawNext, purpose: 'login' })` で控え、不正なら clear でログインは成功する
+- 監査: action `auth.passkey.login.finish`。固定の符号（`invalid_request`・`uv_required`・`staff_passkey_required`・`gotrue_rate_limited`・`gotrue_failed`・`gotrue_bad_response`・`staff_check_unavailable`・`approval_check_unavailable`・`passkey_not_approved`・`session_persist_failed`・`passkey_login`・`unexpected_error`）と行為者の ID だけ。トークン・鍵・認証器の応答・`challenge_id`・メールを残さない
+- テスト観点: 本文の不正と `id`・`rawId` の食い違いで GoTrue 0回・UV の無い・短い・壊れた応答で GoTrue 0回・GoTrue の誤りの本文が理由で変わらない・印つきの 403・429・形の違う成功・お客さんは認めの表を引かない・店員で認めた鍵は200・認めていない鍵は403で終わらせ1回・保存0回・店員判定と認めの確かめの RPC の失敗は503・`next` の不正・監査にトークンとメールが残らない
 
 ## 未確認事項
 

@@ -288,7 +288,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 状態 | 推定 |
 | 出どころ | ユーザーの発言 2026-11-17（`.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-3-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 3）） |
 
-要求の文: お客さんと店員は、パスキーでログインする時、始めの要求をアプリの窓口に出し、選択肢と `challenge_id` を受け取れる。窓口は、お客さんの IP を GoTrue に添えて呼び、IP が取れない時は呼ばずに断る。選択肢は `userVerification` が `required` で返る。同じ IP からの始めは5分に20回までで、超えたら断る。受け入れ条件は FR-AUTH-016-AC-01〜03、SEC-AUTH-042、DD-AUTH-052。始め (b)（ブラウザから GoTrue を直に呼ぶ部品と、(a)・(b) の切り替え）は FR-AUTH-017（Task 4。AC-01・02、DD-AUTH-053）。
+要求の文: お客さんと店員は、パスキーでログインする時、始めの要求をアプリの窓口に出し、選択肢と `challenge_id` を受け取れる。窓口は、お客さんの IP を GoTrue に添えて呼び、IP が取れない時は呼ばずに断る。選択肢は `userVerification` が `required` で返る。同じ IP からの始めは5分に20回までで、超えたら断る。受け入れ条件は FR-AUTH-016-AC-01〜03、SEC-AUTH-042、DD-AUTH-052。終わりも同じアプリの窓口が受け、UV の確かめと、店員の認めた鍵の確かめを通ってから、アプリのセッションを作る（FR-AUTH-019-AC-01〜08、SEC-AUTH-044、DD-AUTH-055）。始め (b)（ブラウザから GoTrue を直に呼ぶ部品と、(a)・(b) の切り替え）は FR-AUTH-017（Task 4。AC-01・02、DD-AUTH-053）。
 
 ### SR-AUTH-018 店員の行き先・戻り先は、パスキーの入口の条件で決める
 
@@ -2309,6 +2309,19 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 優先度 | MUST |
 
 規則: (1) 店員で `staffEntryOk` が真でなければ、`{ path: '/auth/verified', needsMfa: true, action: keep }`。控えは使い切らない。(2) 店員で真なら、控えが `/admin` 向きでも通り、無ければ `/admin`。(3) お客さんは `staffEntryOk` がどちらでも `needsMfa: false` で、`/admin` 向きの戻り先は断る。(4) `validateReturnPath('/admin', { viewer })` は、店員で `staffEntryOk` が真の時だけ通す。`viewer` を渡さない入口の動きは変えない。(5) `post-login` の `staffEntryOk` は JWT のヒントで、`amr` が欠ける・空・時刻が文字列・未来・24時間超・`staff_passkeys_ok` が偽や文字列 `"true"` なら偽。権限の判定ではない（管理の窓口と RLS が DB で数える）。(6) `oauth/callback` が GoTrue の交換で「店員はパスキーでだけ入れる」の印つきの 403 を受けた時は、監査の `detail` を `staff_passkey_required` にし、誤りの文は残さない。応答は 502 のまま。(7) `needsMfa`・`/auth/verified`・拒否の理由 `admin_requires_privileged_aal2` の名前は 1b では変えない（段4で直す）。
+
+### FR-AUTH-019 ログインの終わりの窓口 `POST /api/auth/passkey/login/finish` を足す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-017 |
+| 根拠 | SR-AUTH-017 のうち終わりを、`src/app/api/auth/passkey/login/finish/route.ts` にする。ブラウザは GoTrue の終わりを直に呼ばず、アプリの窓口が UV の印を GoTrue の前に確かめ、GoTrue の検証の後に、店員なら届いた鍵が認めた鍵かを確かめ、アプリのセッション（Cookie と `public.sessions` の行）を作る。判断は DD-AUTH-055・ADR-0467、守りは SEC-AUTH-044 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/passkey-login-finish-route.test.ts`）、結合テスト（`tests/integration/api/auth/passkey-login-finish.test.ts`）、E2E（`e2e/FR-LOGIN-050-passkey-login-finish.spec.ts`、FR-AUTH-019-AC-01〜08） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・5-5）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 6） |
+| 優先度 | MUST |
+
+規則: (1) IP ごとに10分30回（`auth:passkey:login:finish`）。(2) 本文の形が外れる、または応答の `id` と `rawId` が違えば 400 `invalid_request` で GoTrue を呼ばない。(3) `authenticatorData` の UV の印（`0x04`）が無い・短すぎる・壊れた base64url なら 400 `uv_required` で GoTrue を呼ばない。(4) GoTrue の失敗は、印つきの 403 が 403 `staff_passkey_required`、429 は 429、ほかは理由を分けず 401 `passkey_login_failed`。(5) 店員（DB で確かめる）は、`rawId` を `bytea` に直した値で認めた鍵かを確かめ、認めていなければ GoTrue のセッションを `revoke_auth_session` で終わらせてから 403 `passkey_not_approved`（Cookie も `public.sessions` の行も作らない）。確かめの DB が使えない時も、セッションを終わらせて 503。お客さんは認めの表を引かない。(6) 通れば `persistSessionAndCookies` でアプリのセッションを作り、`linkGuestOrdersByEmail` を呼び、`next` があれば戻り先の控えを付ける。(7) 200 の本文は `{ user: { id, email, role } }`。
 
 ## 受け入れ条件
 
@@ -4858,6 +4871,102 @@ IP の見出し `x-real-ip` つきで `POST /api/auth/passkey/login/start` を�
 
 お客さんで `post-login` を呼ぶと `{ redirectTo: '/', needsMfa: false }`、パスキーで入った認めた鍵が2本の店員は `{ redirectTo: '/admin', needsMfa: false }`、`/admin/orders` の控えがあればそこへ着いて控えが使い切られること。
 
+### FR-AUTH-019-AC-01 認めた鍵が2本の店員は 200 で入り、Cookie が付き、管理 API が 200
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-019 |
+| 根拠 | 認めた鍵で入った店員が、アプリのセッションに結び付いて管理の窓口を使えること（5-1・5-3） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-050-passkey-login-finish.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（同上） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・5-5）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 6） |
+
+認めた鍵2本の店員が `loginViaApp` で入ると、HTTP 200・本文の `user.role` が `admin`・`sb-access-token` と `sb-refresh-token` の Cookie が付き、`/api/auth/me` が `authenticated: true`・`mfaVerified: true`、`/api/admin/users` が 200 であること。
+
+### FR-AUTH-019-AC-02 認めた鍵が1本の店員は 200 で入るが、mfaVerified が false で管理 API は 403
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-019 |
+| 根拠 | 認めた鍵が1本の店員は、入口の条件（認めた2本）を満たすまで管理の窓口を使えないこと（5-2） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-050-passkey-login-finish.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・5-5）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 6） |
+
+認めた鍵1本の店員が入ると HTTP 200 で、`/api/auth/me` の `mfaVerified` が `false`、`/api/admin/users` が 403 であること。
+
+### FR-AUTH-019-AC-03 認めていない鍵で入った店員は 403 で、Cookie が付かず、GoTrue のセッションが残らない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-019 |
+| 根拠 | GoTrue を直に叩いて足された鍵は、認めの表に無い。その鍵でアプリのセッションを作らず、不要な生きたセッションも残さない（5-5、SEC-AUTH-044） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-050-passkey-login-finish.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（`revoke_auth_session` が1回・保存0回） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・5-5）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 6） |
+
+認めた鍵2本の店員の本人のセッションで GoTrue に直に3本目を足し（認めない）、その鍵でアプリの終わりを呼ぶと、HTTP 403 で本文が `{ "error": "passkey_not_approved" }`、Cookie が付かず、`auth.sessions` の行が増えず、`public.sessions` の行が無いこと。
+
+### FR-AUTH-019-AC-04 認めた鍵の id に、直に足した鍵の rawId・署名を付けると 400 で、セッションが増えない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-019 |
+| 根拠 | `id` と `rawId` が食い違うと、認めた鍵の突き合わせと GoTrue の署名の確かめが別の鍵を見る。違う応答は GoTrue を呼ぶ前に断る（SEC-AUTH-044） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-050-passkey-login-finish.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（GoTrue 0回） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・5-5）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 6） |
+
+認めた鍵 K1 の `id` に、直に足した鍵 K2 の `rawId`・署名を付けて終わりに送ると、HTTP 400 で本文が `{ "error": "invalid_request" }`、Cookie が付かず、`auth.sessions` の行が増えないこと。
+
+### FR-AUTH-019-AC-05 お客さん（認めの表に無い）は 200 で入り、Cookie が付く
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-019 |
+| 根拠 | お客さんには認めの表を使わない（5-5）。認めの行が無くても入れること |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-050-passkey-login-finish.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（お客さんは `isCredentialApproved` を呼ばない） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・5-5）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 6） |
+
+認めの行を消したお客さんがパスキーで入ると、HTTP 200・本文の `user.role` が `user`・`sb-access-token` の Cookie が付くこと。
+
+### FR-AUTH-019-AC-06 UV の無い認証器の応答は 400 で、GoTrue のセッションが増えない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-019 |
+| 根拠 | UV の印が無い鍵の応答は、GoTrue を呼ぶ前に断る。守りの本体はこの門（5-3、SEC-AUTH-044） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-050-passkey-login-finish.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（UV 無し・36バイト・壊れた base64url で GoTrue 0回） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・5-5）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 6） |
+
+`userVerified: false` の認証器で終わりを呼ぶと、HTTP 400 で本文が `{ "error": "uv_required" }`、Cookie が付かず、`auth.sessions` の行が増えないこと。
+
+### FR-AUTH-019-AC-07 始めを別の呼び手（ブラウザの道 (b)）で行っても、アプリの終わりが 200 で通る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-019 |
+| 根拠 | 始めと終わりは別の呼び手でも通ること。(b) はブラウザが GoTrue を直に呼び、終わりだけをアプリの窓口が受ける（5-1） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-050-passkey-login-finish.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・5-5）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 6） |
+
+匿名の supabase-js のクライアントで `startAuthentication`（ダミーの captcha のトークン）を呼び、`userVerification` を `required` に書き換えて認証器で署名し、アプリの終わりに送ると、HTTP 200 で `sb-access-token` の Cookie が付くこと。
+
+### FR-AUTH-019-AC-08 next=/admin つきで入った、認めた鍵2本の店員は /admin に着き、1本の店員は /auth/verified に着く
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-019 |
+| 根拠 | `next` を終わりの窓口で受けても、行き先は入口の条件で決まること（5-2・6-2、SEC-AUTH-043） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-050-passkey-login-finish.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（`issueReturnIntent`・`applyReturnIntentCookie` の呼び出し） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・5-5）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 6） |
+
+`next=/admin` つきで入った認めた鍵2本の店員が `POST /api/auth/post-login` を呼ぶと `{ redirectTo: '/admin', needsMfa: false }`、1本の店員は `{ redirectTo: '/auth/verified', needsMfa: true }` であること。
+
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 
 | 属性 | 値 |
@@ -6299,7 +6408,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 上位 | THR-AUTH-043 |
 | 根拠 | ログインの始め (a) は、アプリのサーバーが GoTrue を呼び、お客さんの IP を `Sb-Forwarded-For` に添えて、GoTrue の回数の制限をお客さんごとに掛ける。鍵が `sb_secret_` でない（古い `service_role` の JWT）と添え書きが効かず、全員が1つのサーバーの IP として数えられる。手元の開発用の IP `PASSKEY_START_DEV_IP` が本番に残ると、全員が同じ IP になり制限が壊れる。応答の `id` と `rawId` が食い違うと、認めた鍵の突き合わせと GoTrue の署名の確かめが別の鍵を見る（SEC-AUTH-044）。判断は ADR-0467・DD-AUTH-051 |
 | 状態 | 推定 |
-| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-start-config.test.ts`、`passkey-gotrue.test.ts`、`tests/unit/lib/build-env-guard.test.ts`、`tests/unit/features/auth/schemas/passkey.test.ts`）。始め (a) の窓口は `tests/unit/api/auth/passkey-login-start-route.test.ts` と E2E `e2e/FR-LOGIN-048-passkey-login-start.spec.ts`（FR-AUTH-016-AC-01〜03）。終わりの窓口の試験は Task 6 で足す |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-start-config.test.ts`、`passkey-gotrue.test.ts`、`tests/unit/lib/build-env-guard.test.ts`、`tests/unit/features/auth/schemas/passkey.test.ts`）。始め (a) の窓口は `tests/unit/api/auth/passkey-login-start-route.test.ts` と E2E `e2e/FR-LOGIN-048-passkey-login-start.spec.ts`（FR-AUTH-016-AC-01〜03）。終わりの窓口は SEC-AUTH-044 の試験（`passkey-login-finish-route.test.ts`・E2E `FR-LOGIN-050`） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-2-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・4-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 2） |
 | 優先度 | MUST |
 
@@ -6323,6 +6432,21 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 守ること: (1) 店員の `staffEntryOk` は、トークンの `claims` だけから出し（本文・見出しは読まない）、`evaluateStaffEntry` が `amr` のパスキー・24時間以内・認めた2本（JWT の印 `staff_passkeys_ok` が真の時だけ）を満たす時だけ真にする。(2) 型の合わない値（文字列の時刻・文字列 `"true"`・欠けた `amr`）は偽（閉じる側）。(3) `validateReturnPath` の出口は `staffEntryOk` が真の店員にだけ `/admin` を通し、お客さん・偽は断る。(4) `oauth/callback`・`confirm` は常に `staffEntryOk: false` を渡し、店員が来ても 2 段目の側に倒す。(5) 店員が条件を満たさない時は、控えを使い切らず `/auth/verified` へ送る。
 
 残る危険として受け入れること: `staff_passkeys_ok` は最長1時間（次の更新まで）古くなりうるヒントで、認めた鍵が消えた直後の1時間は `/admin` の画面へ着く。その間も管理の窓口と RLS は DB で数えて止めるので、データは見えない（`/api/auth/me` の `mfaVerified` と同じ扱い。SEC-AUTH-039）。
+
+### SEC-AUTH-044 ログインの終わりは、UV の印の無い応答・`id` と `rawId` が違う応答を GoTrue の前に断り、店員は認めた鍵だけで入れ、認めていない鍵のセッションは残さない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-045 |
+| 根拠 | ログインの終わりをブラウザが GoTrue に直に出すと、UV の確かめ・認めた鍵の確かめを通らずに入れる。`id` と `rawId` が違う応答は、GoTrue が `rawId` で鍵を引くのが有力なため、アプリが `id` で引くと、署名を確かめた鍵と認めを調べた鍵が別になりうる。認めていない鍵で入った店員の GoTrue のセッションを残すと、Cookie は無くても GoTrue を直に叩ける人にトークンが渡る。判断は ADR-0467・DD-AUTH-055 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/passkey-login-finish-route.test.ts`、`tests/unit/features/auth/schemas/passkey.test.ts`、`tests/unit/lib/auth/passkey-uv.test.ts`）、結合テスト（`tests/integration/api/auth/passkey-login-finish.test.ts`）、E2E `e2e/FR-LOGIN-050-passkey-login-finish.spec.ts`（FR-AUTH-019-AC-03・04・06） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・5-5）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 6）（Review Focus 2） |
+| 優先度 | MUST |
+
+守ること: (1) 応答の `id` と `rawId` は完全に同じ値だけ受け、違えば GoTrue を呼ばず 400。認めた鍵の確かめは `rawId` を `bytea` に直した値で行う。(2) `authenticatorData` の UV の印が無い・37バイト未満・壊れた base64url は、GoTrue を呼ばず 400 `uv_required`。(3) 店員は、認めの表に無い鍵では入れない。断る時は GoTrue のセッションを `revoke_auth_session` で終わらせてから 403 にし、Cookie と `public.sessions` の行を作らない。(4) 店員の判定・認めの確かめの DB が使えない時は、セッションを終わらせて 503（閉じる側）。(5) お客さんは認めの表を使わない。(6) GoTrue の失敗は理由を分けず 401 `passkey_login_failed` の同じ本文にする（鍵の有無・登録の有無を分からなくする）。(7) 監査には固定の符号と行為者の ID だけを残し、トークン・鍵・認証器の応答・`challenge_id`・メールを残さない。
+
+残る危険として受け入れること: GoTrue が `rawId` でなく `id` で鍵を引く場合に備え、窓口は2つを必ず同じにする。セッションを終わらせる RPC が失敗した時は、断りは変えないが、GoTrue のセッションが期限まで残りうる（アプリの結び付けが無いので、API・RLS は通らない。5-3）。
 
 ## 派生要件
 

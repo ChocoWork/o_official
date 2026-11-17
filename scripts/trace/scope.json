@@ -252,7 +252,8 @@
       "src/features/auth/passkey/**/*.ts",
       "src/features/auth/schemas/passkey.ts",
       "scripts/dev/passkey-dev-staff.ts",
-      "e2e/passkey-soft-authenticator.ts"
+      "e2e/passkey-soft-authenticator.ts",
+      "e2e/passkey-app-api.ts"
     ],
     "tests": [
       "tests/unit/components/{LoginModal,RegisterModal,AuthTabs,AuthResultScreen,VerifyOtpClient,Header}.test.tsx",

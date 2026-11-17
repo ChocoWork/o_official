@@ -672,6 +672,20 @@ flowchart LR
 | 状態 | 推定 |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・6-2） |
 
+### THR-AUTH-045 UV の無い応答・`id` と `rawId` の食い違い・認めていない鍵で、店員がログインの終わりをすり抜ける
+
+| 属性 | 値 |
+| --- | --- |
+| 守るもの | 5-3（UV の門）・5-5（認めたパスキー）・6-2（管理の入口は認めた鍵2本） |
+| 脅威 | (1) UV の印の無い応答（PIN・生体を求めない鍵）で入る。(2) 認めた鍵の `id` に、直に足した（認めていない）鍵の `rawId`・署名を付けて、認めの確かめを避ける。(3) GoTrue を直に叩いて足した鍵で、店員がアプリのセッションを作る。(4) 拒否した後も、GoTrue のセッションが生きてトークンが渡る。(5) 失敗の本文の違いで、鍵の有無・登録の有無を調べられる |
+| 起こり方 | ブラウザが `userVerification: required` を無視する・応答を改ざんする・GoTrue を直に叩いて鍵を足す・アプリが `id` で引き GoTrue が `rawId` で引く食い違い |
+| 影響 | 認めていない鍵で管理の入口に近づく。不要な生きたセッションが残る。鍵の有無が漏れる |
+| 対策 | SEC-AUTH-044（UV の門・`id` と `rawId` の一致・`rawId` で認めを引く・認めていない鍵のセッションを終わらせる・理由を分けない本文）、DD-AUTH-055 |
+| ASVS | V2.8.1・V4.1.1・V3.3.1（当てはめは推定） |
+| 根拠 | 段1b の Task 6。設計 5-1・5-3・5-5 |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・5-5） |
+
 ## 未確認事項
 
 - 本番の Supabase Auth の設定（OTP の期限・Confirm email・最小の長さ・漏洩の照合・captcha・TOTP・回数の制限・`secure_password_change`・現行パスワードの要求）。手元の `supabase/config.toml` は波 6 の切り替えで本番の前提にそろえたが、本番の実際の値は Management API で読むまで未確認（THR-AUTH-015・029）

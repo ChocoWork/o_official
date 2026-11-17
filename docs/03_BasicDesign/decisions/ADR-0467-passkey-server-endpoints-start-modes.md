@@ -11,7 +11,7 @@
 | 項目 | 内容 |
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の AUTH |
-| 対応する ID | SEC-AUTH-042、THR-AUTH-043、SEC-AUTH-044、DD-AUTH-051、DD-AUTH-052、FR-AUTH-016 |
+| 対応する ID | SEC-AUTH-042、THR-AUTH-043、SEC-AUTH-044、DD-AUTH-051、DD-AUTH-052、DD-AUTH-055、FR-AUTH-016、FR-AUTH-019 |
 | 対象のコード | `src/lib/auth/passkey-start-mode.ts`、`passkey-start-config.ts`、`passkey-uv.ts`、`passkey-gotrue.ts`、`src/features/auth/schemas/passkey.ts`、`src/lib/build-env-guard.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（4-2・5-1・5-3）、[段1b の計画](../../superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md)、[ADR-0464](ADR-0464-access-token-hook-single-gate.md) |
 | 試験 | 単体 `tests/unit/lib/auth/passkey-*.test.ts`、`tests/unit/features/auth/schemas/passkey.test.ts`、`tests/unit/lib/build-env-guard.test.ts` |
@@ -48,6 +48,7 @@
 - 1つの設定を両方が読む理由: ブラウザの部品とサーバーの窓口が同じ `NEXT_PUBLIC_PASSKEY_START_MODE` を読めば、画面が (a) を呼ぶのに窓口が (b) を前提にする、といった食い違いが起きない。窓口は (b) の時に 409 で断る。ただしブラウザの束では `process.env.NEXT_PUBLIC_X` とそのまま書いた形だけが埋め込まれ、既定の引数 `process.env` は空になる。そこでブラウザの部品は `process.env.NEXT_PUBLIC_PASSKEY_START_MODE` を直に書いて値だけ `resolvePasskeyStartMode` に渡す
 - CSP は変えない: `connect-src` には自分の Supabase の origin 1つと Turnstile が既に入っており、(b) に要る許可はそろっている。ワイルドカードは入れず、試験（単体とページの中からの `fetch`）で固定する
 - (b) に切り替える時は、本番の GoTrue で captcha を有効にする（今は captcha の段階 B の待ち）
+- ログインの終わり（Task 6、DD-AUTH-055）: `POST /api/auth/passkey/login/finish` は、回数の制限 → 本文の形（`id` と `rawId` の一致）→ UV の門 → GoTrue → 店員の確かめ → アプリのセッション、の順。UV の門は GoTrue の前、店員の確かめは GoTrue の後（`user.id` が GoTrue の応答でしか分からないため）。認めた鍵は `rawId` を `bytea` に直した値で引く（GoTrue が署名を確かめる鍵と同じにするため）。認めていない鍵で入った店員は、GoTrue のセッションを `revoke_auth_session` で終わらせてから 403 にする。理由: 終わらせないと、Cookie は無くても GoTrue を直に叩ける人にトークンが渡り、不要な生きたセッションが残る（アプリの結び付けで API・RLS は通らないが、残さない）。失敗の本文は `passkey_login_failed` の1つ（鍵の有無の調べに使わせない）。`next` と、お客さんの注文・カートの引き継ぎは、今のログインの終わり（`otp/verify`）と同じく終わりの窓口で行う
 
 #### 退けた案
 
