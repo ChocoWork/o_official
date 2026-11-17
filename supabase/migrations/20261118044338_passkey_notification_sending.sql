@@ -15,7 +15,10 @@
 --                                                             First puts expired leases back to 'retry_wait' ('dead' when
 --                                                             attempts >= 9), waiting the same backoff as fail. _lease_seconds must be 30..900 (else 22023).
 --   public.complete_passkey_notification(_id, _lease_token)    'sent' only when the token matches; else false
---   public.fail_passkey_notification(_id, _lease_token, _error_code, _retry_after_seconds)
+--   public.fail_passkey_notification(_id, _lease_token, _error_code, _retry_after_seconds, _count_attempt DEFAULT true)
+--                                                             _count_attempt false (sender config failure: quota, key,
+--                                                             sender domain): attempts - 1, retry_wait, due now, never dead
+--                                                             (same as fail_order_email 'config')
 --                                                             'dead' at attempts >= 9, else 'retry_wait' with
 --                                                             next_attempt_at = now() + max(least(_retry_after_seconds, 86400),
 --                                                             60 * 2^(attempts-1) seconds, capped at 128 minutes). No jitter.
@@ -25,7 +28,7 @@
 --
 -- ROLLBACK (one transaction, only while nothing uses them):
 --   DROP FUNCTION public.passkey_notification_recipients(uuid), public.skip_passkey_notification(uuid, uuid, text),
---     public.fail_passkey_notification(uuid, uuid, text, integer), public.complete_passkey_notification(uuid, uuid),
+--     public.fail_passkey_notification(uuid, uuid, text, integer, boolean), public.complete_passkey_notification(uuid, uuid),
 --     public.claim_passkey_notification(integer);
 --   DROP INDEX private.passkey_notification_outbox_lease_idx;
 --   ALTER TABLE private.passkey_notification_outbox DROP CONSTRAINT passkey_notification_outbox_lease_check,
@@ -134,7 +137,7 @@ END
 $$;
 
 CREATE OR REPLACE FUNCTION public.fail_passkey_notification(
-  _id uuid, _lease_token uuid, _error_code text, _retry_after_seconds integer
+  _id uuid, _lease_token uuid, _error_code text, _retry_after_seconds integer, _count_attempt boolean DEFAULT true
 )
 RETURNS boolean
 LANGUAGE plpgsql
@@ -144,6 +147,13 @@ AS $$
 BEGIN
   IF _error_code IS NULL OR _error_code !~ '^[a-z0-9_]{1,64}$' THEN
     RAISE EXCEPTION 'fail_passkey_notification: invalid error code' USING ERRCODE = '22023';
+  END IF;
+  IF _count_attempt IS FALSE THEN
+    UPDATE private.passkey_notification_outbox o
+       SET status = 'retry_wait', attempts = GREATEST(o.attempts - 1, 0), next_attempt_at = pg_catalog.now(),
+           last_error_code = _error_code, lease_token = NULL, lease_expires_at = NULL
+     WHERE o.id = _id AND o.status = 'sending' AND o.lease_token = _lease_token;
+    RETURN FOUND;
   END IF;
   UPDATE private.passkey_notification_outbox o
      SET status = CASE WHEN o.attempts >= 9 THEN 'dead' ELSE 'retry_wait' END,
@@ -217,18 +227,18 @@ $$;
 
 REVOKE ALL ON FUNCTION public.claim_passkey_notification(integer),
   public.complete_passkey_notification(uuid, uuid),
-  public.fail_passkey_notification(uuid, uuid, text, integer),
+  public.fail_passkey_notification(uuid, uuid, text, integer, boolean),
   public.skip_passkey_notification(uuid, uuid, text),
   public.passkey_notification_recipients(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.claim_passkey_notification(integer),
   public.complete_passkey_notification(uuid, uuid),
-  public.fail_passkey_notification(uuid, uuid, text, integer),
+  public.fail_passkey_notification(uuid, uuid, text, integer, boolean),
   public.skip_passkey_notification(uuid, uuid, text),
   public.passkey_notification_recipients(uuid) TO service_role;
 
 ALTER FUNCTION public.claim_passkey_notification(integer) OWNER TO postgres;
 ALTER FUNCTION public.complete_passkey_notification(uuid, uuid) OWNER TO postgres;
-ALTER FUNCTION public.fail_passkey_notification(uuid, uuid, text, integer) OWNER TO postgres;
+ALTER FUNCTION public.fail_passkey_notification(uuid, uuid, text, integer, boolean) OWNER TO postgres;
 ALTER FUNCTION public.skip_passkey_notification(uuid, uuid, text) OWNER TO postgres;
 ALTER FUNCTION public.passkey_notification_recipients(uuid) OWNER TO postgres;
 
@@ -239,7 +249,7 @@ DECLARE
 BEGIN
   FOREACH f IN ARRAY ARRAY[
     'public.claim_passkey_notification(integer)', 'public.complete_passkey_notification(uuid,uuid)',
-    'public.fail_passkey_notification(uuid,uuid,text,integer)', 'public.skip_passkey_notification(uuid,uuid,text)',
+    'public.fail_passkey_notification(uuid,uuid,text,integer,boolean)', 'public.skip_passkey_notification(uuid,uuid,text)',
     'public.passkey_notification_recipients(uuid)'] LOOP
     IF has_function_privilege('anon', f, 'EXECUTE') OR has_function_privilege('authenticated', f, 'EXECUTE')
        OR NOT has_function_privilege('service_role', f, 'EXECUTE')

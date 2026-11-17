@@ -24,6 +24,7 @@ import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { createAdminSessionActor, toSupabaseSession } from './admin-session-test-utils';
 import { assertLocalE2eDb, seedE2eRestock } from './group-g1-test-utils';
 import { withLocalDb } from './order-email-test-utils';
+import { skipPasskeyNotificationsOfUser } from '../scripts/e2e/passkey-staff';
 
 export { withLocalDb };
 
@@ -212,6 +213,8 @@ export async function deleteHomeAdminUsers(): Promise<void> {
   const admin = createClient(env.url, env.serviceKey, clientOptions);
   for (const userId of createdUserIds.splice(0)) {
     await admin.auth.admin.deleteUser(userId).catch(() => undefined);
+    // 消した鍵の知らせの行（店長あて）を、定期処理に送らせない
+    await skipPasskeyNotificationsOfUser(userId);
   }
 }
 

@@ -8,7 +8,7 @@ import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-
 const FUNCTIONS = [
   'public.claim_passkey_notification(integer)',
   'public.complete_passkey_notification(uuid,uuid)',
-  'public.fail_passkey_notification(uuid,uuid,text,integer)',
+  'public.fail_passkey_notification(uuid,uuid,text,integer,boolean)',
   'public.skip_passkey_notification(uuid,uuid,text)',
   'public.passkey_notification_recipients(uuid)',
 ];
@@ -203,6 +203,23 @@ describeLocalDb('passkey notification sending functions', (db) => {
     expect(dead).toMatchObject({ status: 'dead', last_error_code: 'smtp_error', lease_token: null });
     expect(dead.finished_at).not.toBeNull();
     expect(await claim()).toEqual([]);
+  });
+
+  test('DATA-AUTH-019 fail with _count_attempt false gives the attempt back, is due now, and never makes the row dead', async () => {
+    const id = await row({ status: 'retry_wait', attempts: 8 });
+    const [c9] = await claim();
+    expect(c9.attempts).toBe(9);
+    const r = await db().query('select public.fail_passkey_notification($1,$2,$3,$4,false) as ok', [id, c9.lease_token, 'quota_daily', 300]);
+    expect(r.rows[0].ok).toBe(true);
+    const after = await get(id);
+    expect(after).toMatchObject({ status: 'retry_wait', attempts: 8, last_error_code: 'quota_daily', lease_token: null, lease_expires_at: null, finished_at: null });
+    expect(Number((await db().query(`select extract(epoch from next_attempt_at - now()) as s from private.passkey_notification_outbox where id = $1`, [id])).rows[0].s)).toBe(0);
+    // 印が合わなければ何も変えない。すぐ取り直せて、回数は同じ9回目のまま
+    const [again] = await claim();
+    expect(again.attempts).toBe(9);
+    const wrong = await db().query('select public.fail_passkey_notification($1,$2,$3,$4,false) as ok', [id, randomUUID(), 'quota_daily', 0]);
+    expect(wrong.rows[0].ok).toBe(false);
+    expect((await get(id)).status).toBe('sending');
   });
 
   test('DATA-AUTH-019 fail caps a huge retry-after at 86400 seconds and treats a negative one as zero', async () => {

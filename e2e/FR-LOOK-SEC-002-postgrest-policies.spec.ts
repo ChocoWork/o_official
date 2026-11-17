@@ -25,6 +25,7 @@ import { createAdminSessionActor, type AdminSessionActor } from './admin-session
 import { withDummyCaptcha } from './captcha-test-utils';
 import { createTestMember } from './member-session-helpers';
 import { withLocalDb } from './order-email-test-utils';
+import { skipPasskeyNotificationsOfUser } from '../scripts/e2e/passkey-staff';
 
 test.use({ trace: 'off' });
 
@@ -164,6 +165,8 @@ test.afterAll(async () => {
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, clientOptions);
   for (const userId of createdUserIds.splice(0)) {
     await admin.auth.admin.deleteUser(userId).catch(() => undefined);
+    // 消した鍵の知らせの行（店長あて）を、定期処理に送らせない
+    await skipPasskeyNotificationsOfUser(userId);
   }
 });
 

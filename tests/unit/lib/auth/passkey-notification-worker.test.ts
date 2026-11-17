@@ -36,6 +36,8 @@ function makeDeps(rows: ClaimedPasskeyNotification[], recipients: Array<{ email:
     fail: jest.fn(async () => ({ ok: true, value: true })),
     skip: jest.fn(async () => ({ ok: true, value: true })),
     send: jest.fn(async () => ({ ok: true, providerMessageId: null })),
+    sendPaused: jest.fn(async () => false),
+    pauseSending: jest.fn(async () => undefined),
     disabledReason: jest.fn(() => null),
     checkConfig: jest.fn(() => null),
     contactUrl: jest.fn(() => 'https://example.com/contact'),
@@ -115,6 +117,14 @@ describe('runPasskeyNotificationWorker', () => {
     noUrl.contactUrl.mockReturnValue(null);
     expect((await run(noUrl)).stopped).toBe('config');
     expect(noUrl.claim).not.toHaveBeenCalled();
+  });
+
+  it('DD-AUTH-067 注文のメールの送信が一時停止の間は、claim を呼ばず config で止まる', async () => {
+    const deps = makeDeps([row()], [{ email: 'a@example.com', audience: 'subject_customer' }]);
+    deps.sendPaused.mockResolvedValue(true);
+    expect(await run(deps)).toEqual({ claimed: 0, sent: 0, retried: 0, dead: 0, skipped: 0, stopped: 'config' });
+    expect(deps.claim).not.toHaveBeenCalled();
+    expect(deps.send).not.toHaveBeenCalled();
   });
 
   it('DD-AUTH-067 停止の決め（disabled）の時は claim を呼ばない', async () => {
@@ -229,7 +239,10 @@ describe('runPasskeyNotificationWorker', () => {
     const result = await run(deps);
     expect(result.stopped).toBe('config');
     expect(deps.claim).toHaveBeenCalledTimes(1);
-    expect(deps.fail).toHaveBeenCalledWith('r1', 'tok-1', 'config_api_key', 300);
+    // 設定の失敗はこの行の失敗として数えず（countAttempt が偽）、注文のメールと同じ送信の一時停止を書く
+    expect(deps.fail).toHaveBeenCalledWith('r1', 'tok-1', 'config_api_key', 300, false);
+    expect(deps.pauseSending).toHaveBeenCalledWith('config_api_key');
+    expect(deps.fail).toHaveBeenCalledTimes(1);
   });
 
   it('DD-AUTH-067 宛先の取得に失敗した行は fail し、例外は握って次の行へ進む', async () => {
@@ -265,7 +278,7 @@ describe('runPasskeyNotificationWorker', () => {
     const deps = makeDeps([row()], [{ email: 'a@example.com', audience: 'subject_customer' }]);
     deps.send.mockResolvedValue({ ok: false, failure: { category: 'config', code: 'quota_daily', retryAfterSeconds: 600 } });
     await run(deps);
-    expect(deps.fail).toHaveBeenCalledWith('row-1', 'tok-1', 'quota_daily', 600);
+    expect(deps.fail).toHaveBeenCalledWith('row-1', 'tok-1', 'quota_daily', 600, false);
   });
 
   it('DD-AUTH-067 一時的な失敗の後に予算を越えたら、最初の失敗の符号で fail する', async () => {
@@ -309,5 +322,39 @@ describe('runPasskeyNotificationWorker', () => {
     check.mockReturnValueOnce({ ok: false, code: 'config_site_url' });
     const stopped = await runPasskeyNotificationWorker({ deps: real });
     expect(stopped.stopped).toBe('config');
+  });
+  it('DD-AUTH-067 本物の一時停止の確かめ: 次に試す時刻が先なら claim せず、過ぎていれば進み、読めなければ進む', async () => {
+    const { createServiceRoleClient } = jest.requireMock('@/lib/supabase/server') as { createServiceRoleClient: jest.Mock };
+    const { sendPaused: _omit, ...rest } = makeDeps([], []);
+    const real = rest as unknown as Partial<PasskeyNotificationWorkerDeps>;
+    const state = (nextProbeAt: string) => ({
+      rpc: jest.fn(async () => ({ data: [{ paused: true, reason: 'quota_daily', paused_at: '2026-11-18T00:00:00Z', next_probe_at: nextProbeAt }], error: null })),
+    });
+
+    createServiceRoleClient.mockResolvedValueOnce(state(new Date(Date.now() + 600_000).toISOString()));
+    expect((await runPasskeyNotificationWorker({ deps: real })).stopped).toBe('config');
+    expect(rest.claim).not.toHaveBeenCalled();
+
+    createServiceRoleClient.mockResolvedValueOnce(state(new Date(Date.now() - 1000).toISOString()));
+    expect((await runPasskeyNotificationWorker({ deps: real })).stopped).toBe('idle');
+
+    createServiceRoleClient.mockRejectedValueOnce(new Error('db down'));
+    expect((await runPasskeyNotificationWorker({ deps: real })).stopped).toBe('idle');
+  });
+
+  it('DD-AUTH-067 本物の一時停止の書き込み: 設定の失敗で pause_order_email_sending を呼び、書けなくても投げない', async () => {
+    const { createServiceRoleClient } = jest.requireMock('@/lib/supabase/server') as { createServiceRoleClient: jest.Mock };
+    const { pauseSending: _omit, ...rest } = makeDeps([row()], [{ email: 'a@example.com', audience: 'subject_customer' }]);
+    rest.send.mockResolvedValue({ ok: false, failure: { category: 'config', code: 'quota_daily', retryAfterSeconds: null } });
+    const rpc = jest.fn(async () => ({ data: true, error: null }));
+    createServiceRoleClient.mockResolvedValueOnce({ rpc });
+    expect((await runPasskeyNotificationWorker({ deps: rest as unknown as Partial<PasskeyNotificationWorkerDeps> })).stopped).toBe('config');
+    expect(rpc).toHaveBeenCalledWith('pause_order_email_sending', { _reason: 'quota_daily' });
+
+    const again = makeDeps([row()], [{ email: 'a@example.com', audience: 'subject_customer' }]);
+    const { pauseSending: _omit2, ...rest2 } = again;
+    again.send.mockResolvedValue({ ok: false, failure: { category: 'config', code: 'quota_daily', retryAfterSeconds: null } });
+    createServiceRoleClient.mockRejectedValueOnce(new Error('db down'));
+    expect((await runPasskeyNotificationWorker({ deps: rest2 as unknown as Partial<PasskeyNotificationWorkerDeps> })).stopped).toBe('config');
   });
 });

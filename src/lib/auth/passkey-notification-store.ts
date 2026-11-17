@@ -120,7 +120,7 @@ export function completePasskeyNotification(id: string, leaseToken: string): Pro
 }
 
 /**
- * 送れなかった行を再試行に回す（9回目なら `dead`）。`errorCode` は小文字・数字・`_` の1〜64字（本文・宛先を入れない）。
+ * 送れなかった行を再試行に回す（9回目なら `dead`）。`countAttempt` が偽なら回数を数えず（`attempts` を戻し）、すぐ取り出せる状態に戻す（送り手の設定の失敗）。`errorCode` は小文字・数字・`_` の1〜64字（本文・宛先を入れない）。
  *
  * @impl IMPL-AUTH-332
  * @design DD-AUTH-066
@@ -130,10 +130,15 @@ export function failPasskeyNotification(
   leaseToken: string,
   errorCode: string,
   retryAfterSeconds: number,
+  countAttempt = true,
 ): Promise<RpcResult<boolean>> {
   return callChecked(
     'fail_passkey_notification',
-    { _id: id, _lease_token: leaseToken, _error_code: errorCode, _retry_after_seconds: retryAfterSeconds },
+    {
+      _id: id, _lease_token: leaseToken, _error_code: errorCode, _retry_after_seconds: retryAfterSeconds,
+      // 送り手の設定の失敗（上限・鍵・送り元）は、この行の失敗として数えない（偽の時だけ渡す）
+      ...(countAttempt ? {} : { _count_attempt: false }),
+    },
     isBoolean,
   );
 }

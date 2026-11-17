@@ -29,6 +29,7 @@ import { isLocalUrl } from '../scripts/e2e/environment';
 import { createAdminSessionActor, placeAdminCookies } from './admin-session-test-utils';
 import { loginAsMember } from './member-session-helpers';
 import { withLocalDb } from './order-email-test-utils';
+import { skipPasskeyNotificationsOfUser } from '../scripts/e2e/passkey-staff';
 
 // 確認コード・Cookie・JWT が通信記録に残らないよう、記録は取らない。
 test.use({ trace: 'off', locale: 'ja-JP' });
@@ -162,6 +163,8 @@ test.afterEach(async () => {
   const admin = localAuthAdmin();
   for (const id of ids) {
     await admin.auth.admin.deleteUser(id).catch(() => undefined);
+    // 消した鍵の知らせの行（店長あて）を、定期処理に送らせない
+    await skipPasskeyNotificationsOfUser(id);
   }
 });
 

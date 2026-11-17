@@ -23,6 +23,7 @@ import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { bearerHeaders, createAdminSessionActor, type AdminSessionActor } from './admin-session-test-utils';
 import { withPermissionScenario } from './permission-settings-test-utils';
+import { skipPasskeyNotificationsOfUser } from '../scripts/e2e/passkey-staff';
 
 // 管理者の JWT を通信記録に残さないため、ファイルの先頭で無効にする。
 test.use({ trace: 'off' });
@@ -190,6 +191,8 @@ test.afterAll(async () => {
   for (const userId of createdUserIds.splice(0)) {
     // 監査の行が残っていて消せなくても db reset で消える
     await admin.auth.admin.deleteUser(userId).catch(() => undefined);
+    // 消した鍵の知らせの行（店長あて）を、定期処理に送らせない
+    await skipPasskeyNotificationsOfUser(userId);
   }
 });
 

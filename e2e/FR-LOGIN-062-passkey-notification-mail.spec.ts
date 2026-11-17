@@ -4,7 +4,7 @@
  *
  * 知らせの送り箱（private.passkey_notification_outbox）は全体で1つなので、毎分の定期処理（POST /api/cron/process-stripe-webhooks。
  * `e2e/order-email-test-utils.ts` と同じ CRON_SECRET の呼び方）が他の試験の行まで取る。だから serial の `isolated-global` で流し、
- * 先に手元の DB だけで、未送信の行を `skipped` にし、この試験が作る店員以外の E2E の店長の役割を一時的に外す（終わりに戻す）。
+ * 先に手元の DB だけで、未送信の行を `skipped` にし、この試験が作る店員以外の E2E の店長の役割を一時的に外す（終わりの afterEach で戻す）。
  * メールは手元の Mailpit だけ（MAIL_PROVIDER=local。E2E の見張りが外へのメールを拒む）。手元の送り手は重複防止の鍵を使わないので、
  * 「2通目が出ない」は、行が `sent` のままで取り直されないことで確かめる（鍵そのものは単体テスト）。
  * お客さんのパスキーは Chromium の仮想の認証器（FR-LOGIN-060 と同じ）、店員の鍵は GoTrue へ直に足す（アプリの窓口を通さない道。keepNotifications）。
@@ -100,6 +100,9 @@ async function outboxStatus(userId: string, kind: string): Promise<string[]> {
 for (const viewport of viewports) {
   test.describe(`FR-LOGIN-062 passkey notification mail (${viewport.name})`, () => {
     let authenticators: VirtualAuthenticator[] = [];
+    // 外した店長・この試験の店員の役割は、afterEach で戻す（試験の時間切れでも流れる）
+    let deactivated: string[] = [];
+    let mine: string[] = [];
 
     test.beforeEach(async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
@@ -108,6 +111,15 @@ for (const viewport of viewports) {
     test.afterEach(async () => {
       for (const authenticator of authenticators) await authenticator.remove();
       authenticators = [];
+      const restore = deactivated;
+      const own = mine;
+      deactivated = [];
+      mine = [];
+      if (restore.length === 0 && own.length === 0) return;
+      await withLocalDb(async (db) => {
+        if (restore.length > 0) await db.query('update public.user_roles set active = true where user_id = any($1::uuid[])', [restore]);
+        if (own.length > 0) await db.query('update public.user_roles set active = false where user_id = any($1::uuid[])', [own]);
+      });
     });
 
     test(`FR-AUTH-031-AC-01 ${viewport.name}: お客さんが追加すると本人だけに1通届き、名前を変えて削除すると削除の1通が届く。再実行しても2通目は出ない`, async ({ page, browserName }) => {
@@ -165,9 +177,8 @@ for (const viewport of viewports) {
       const staff = await withLocalDb((db) => provisionStaff(db, { role: 'admin', approvedPasskeys: 2 }));
       const otherAdmin = await withLocalDb((db) => provisionStaff(db, { role: 'admin', approvedPasskeys: 2 }));
       const supporter = await withLocalDb((db) => provisionStaff(db, { role: 'supporter', approvedPasskeys: 1 }));
-      const mine = [staff.userId, otherAdmin.userId, supporter.userId];
-      const deactivated: string[] = [];
-      try {
+      mine = [staff.userId, otherAdmin.userId, supporter.userId];
+      {
         // この試験が作った店長以外の E2E の店長を外す（isolated-global なので、ほかの試験は動いていない。終わりに戻す）
         await withLocalDb(async (db) => {
           const result = await db.query(
@@ -213,13 +224,6 @@ for (const viewport of viewports) {
         await runWorkerOnce(request);
         expect(await mailCount(request, staff.email, ADDED_SUBJECT)).toBe(1);
         expect(await mailCount(request, otherAdmin.email, ADMIN_ADDED_SUBJECT)).toBe(1);
-      } finally {
-        await withLocalDb(async (db) => {
-          if (deactivated.length > 0) {
-            await db.query('update public.user_roles set active = true where user_id = any($1::uuid[])', [deactivated]);
-          }
-          await db.query('update public.user_roles set active = false where user_id = any($1::uuid[])', [mine]);
-        });
       }
     });
 

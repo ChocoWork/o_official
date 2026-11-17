@@ -26,6 +26,7 @@ import {
   stockistTag as tag,
   withStockists,
 } from './stockist-test-utils';
+import { skipPasskeyNotificationsOfUser } from '../scripts/e2e/passkey-staff';
 
 test.use({ trace: 'off' });
 
@@ -61,6 +62,8 @@ test.afterAll(async () => {
   const admin = createClient(env().url, env().serviceKey, clientOptions);
   for (const userId of createdUserIds.splice(0)) {
     await admin.auth.admin.deleteUser(userId).catch(() => undefined);
+    // 消した鍵の知らせの行（店長あて）を、定期処理に送らせない
+    await skipPasskeyNotificationsOfUser(userId);
   }
 });
 

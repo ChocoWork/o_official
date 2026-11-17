@@ -30,6 +30,7 @@ import { createAdminSessionActor, type AdminSessionActor, type AdminSessionRole,
 import { withOrderAdminScenario } from './order-admin-test-utils';
 import { withGroupG1Material } from './group-g1-test-utils';
 import { withPermissionScenario, readRolePermissionState, saveRolePermissionsInDb } from './permission-settings-test-utils';
+import { skipPasskeyNotificationsOfUser } from '../scripts/e2e/passkey-staff';
 
 const ORIGIN = 'http://localhost:3000';
 export const GUEST_REFUSAL = 'このコードは使えません。会員の方はログインしてからお試しください。';
@@ -519,6 +520,8 @@ export class DiscountScenario {
     for (const id of ids) await this.db.query('update public.carts set user_id=null,guest_token_hash=$2 where user_id=$1', [id, hash(randomUUID())]);
     for (const id of ids) {
       const removed = await admin.auth.admin.deleteUser(id);
+      // 消した鍵の知らせの行（店長あて）を、定期処理に送らせない
+      await skipPasskeyNotificationsOfUser(id);
       if (removed.error) throw new Error('H own user cleanup refused');
     }
     const after = await this.db.query(`select md5(coalesce(jsonb_agg(jsonb_build_array(id,discount_id,order_id,state,amount,name_snapshot,code_snapshot) order by id)::text,'')) digest

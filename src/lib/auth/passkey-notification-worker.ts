@@ -10,7 +10,14 @@ import {
 } from '@/lib/auth/passkey-notification-store';
 import { composePasskeyNotification } from '@/lib/auth/passkey-notification-compose';
 import type { RpcResult } from '@/lib/auth/passkey-approval-rpc';
+import { createServiceRoleClient } from '@/lib/supabase/server';
 import { checkSiteUrlForEmail } from '@/lib/site-url-guard';
+import {
+  getOrderEmailSendState,
+  pauseOrderEmailSending,
+  type OrderEmailStore,
+} from '@/lib/orders/email/order-email-store';
+import type { OrderEmailPauseReason } from '@/lib/orders/email/order-email-types';
 import { orderEmailWorkerDisabledReason } from '@/lib/orders/email/order-email-worker';
 import {
   checkOrderEmailSendConfig,
@@ -34,9 +41,13 @@ export type PasskeyNotificationWorkerDeps = {
   claim: (leaseSeconds: number) => Promise<RpcResult<ClaimedPasskeyNotification | null>>;
   recipients: (id: string) => Promise<RpcResult<PasskeyNotificationRecipient[]>>;
   complete: (id: string, leaseToken: string) => Promise<RpcResult<boolean>>;
-  fail: (id: string, leaseToken: string, errorCode: string, retryAfterSeconds: number) => Promise<RpcResult<boolean>>;
+  fail: (id: string, leaseToken: string, errorCode: string, retryAfterSeconds: number, countAttempt?: boolean) => Promise<RpcResult<boolean>>;
   skip: (id: string, leaseToken: string, reason: string) => Promise<RpcResult<boolean>>;
   send: (message: OrderEmailMessage) => Promise<OrderEmailSendOutcome>;
+  /** 注文のメールの送信の一時停止（上限・鍵・送り元の失敗で止めた）の間で、次に試す時刻が先なら true。読めなければ false */
+  sendPaused: () => Promise<boolean>;
+  /** 設定の失敗の時、注文のメールと同じ送信の一時停止を書く。書けなくても投げない */
+  pauseSending: (reason: string) => Promise<void>;
   disabledReason: () => string | null;
   checkConfig: () => string | null;
   /** メールに入れるお問い合わせの住所。サイトの住所が使えなければ null */
@@ -60,6 +71,23 @@ const realDeps: PasskeyNotificationWorkerDeps = {
   fail: failPasskeyNotification,
   skip: skipPasskeyNotification,
   send: (message) => sendOrderEmailMessage(message),
+  sendPaused: async () => {
+    try {
+      const store = (await createServiceRoleClient()) as unknown as OrderEmailStore;
+      const state = await getOrderEmailSendState(store);
+      return state.paused && state.nextProbeAt !== null && state.nextProbeAt.getTime() > Date.now();
+    } catch {
+      return false;
+    }
+  },
+  pauseSending: async (reason) => {
+    try {
+      const store = (await createServiceRoleClient()) as unknown as OrderEmailStore;
+      await pauseOrderEmailSending(store, reason as OrderEmailPauseReason);
+    } catch {
+      console.error('[passkey-notification-worker] failed to pause sending');
+    }
+  },
   disabledReason: () => orderEmailWorkerDisabledReason(),
   checkConfig: () => checkOrderEmailSendConfig(),
   contactUrl: () => {
@@ -135,7 +163,9 @@ async function deliverRow(
     if (outcome.ok) continue;
     const { category, code, retryAfterSeconds } = outcome.failure;
     if (category === 'config') {
-      await failRow(code, retryAfterSeconds ?? 300);
+      // 注文のメールと同じ: この行の失敗として数えず（attempts を戻す）、送信全体を止める
+      await deps.pauseSending(code);
+      await deps.fail(claim.id, claim.leaseToken, safeCode(code), retryAfterSeconds ?? 300, false);
       return 'config';
     }
     if (category === 'permanent') continue;
@@ -171,6 +201,11 @@ export async function runPasskeyNotificationWorker(
   const contactUrl = deps.contactUrl();
   if (deps.checkConfig() !== null || contactUrl === null) {
     console.warn('[passkey-notification-worker] send config is not ready');
+    return { ...result, stopped: 'config' };
+  }
+
+  if (await deps.sendPaused()) {
+    console.warn('[passkey-notification-worker] order email sending is paused');
     return { ...result, stopped: 'config' };
   }
 

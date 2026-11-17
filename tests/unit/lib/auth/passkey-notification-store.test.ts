@@ -94,6 +94,15 @@ describe('passkey-notification-store', () => {
     });
   });
 
+  it('DD-AUTH-066 failPasskeyNotification は countAttempt が偽の時だけ _count_attempt: false を渡す', async () => {
+    rpc.mockResolvedValue({ data: true, error: null });
+
+    await failPasskeyNotification(ID, TOKEN, 'quota_daily', 300, false);
+    expect(rpc).toHaveBeenCalledWith('fail_passkey_notification', {
+      _id: ID, _lease_token: TOKEN, _error_code: 'quota_daily', _retry_after_seconds: 300, _count_attempt: false,
+    });
+  });
+
   it('DD-AUTH-066 skipPasskeyNotification は skip_passkey_notification を正しい引数で呼ぶ', async () => {
     rpc.mockResolvedValue({ data: true, error: null });
 
