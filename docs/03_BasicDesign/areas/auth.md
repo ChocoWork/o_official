@@ -1724,7 +1724,7 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-AUTH-015、SEC-AUTH-041 |
+| 上位 | FR-AUTH-015、SEC-AUTH-041、ADR-0467 |
 | 根拠 | 窓口ごとに店員の定義や認めの突き合わせを書くと食い違う。DATA-AUTH-011・012 の表を、4つの関数と薄い部品（`src/lib/auth/passkey-approval-rpc.ts`）の1か所から読み書きする。判断は DD-AUTH-050 |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_server_fns.integration.test.ts`）、E2E（FR-AUTH-015-AC-01）、単体テスト（DD-AUTH-050） |

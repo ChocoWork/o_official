@@ -17,6 +17,15 @@ function originOf(value: string | undefined): string | null {
   }
 }
 
+function isLocalSupabaseUrl(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(value).hostname);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * `APP_ALLOWED_ORIGINS` の各項目が origin の形（`https://host[:port]`。末尾の / もパスも無い）か確かめる。
  * `redirect.ts` の `parseAllowedOrigins` は読めない項目を黙って捨てるので、書き間違いで許可から落ちても実行時には気付けない。
@@ -55,6 +64,8 @@ function assertAllowedOriginsShape(raw: string): void {
  * 許可オリジンは、本番では各項目が `new URL()` で読め、`https:` で、`origin` と一致する（末尾の / もパスも無い）形でなければ
  * ビルドで止める（空の項目も止める）。書き間違いの項目が黙って許可から落ち、その側の状態を変える API が 403 になるのを防ぐ。
  * 失敗の文には変数名だけを書き、URL の値を載せない。
+ * パスキーのログインの始め (a) の手元の開発用の IP `PASSKEY_START_DEV_IP`（SEC-AUTH-042）は、値が空でなく、かつ Supabase の URL が手元（`localhost`・`127.0.0.1`・`[::1]`）でない・未設定、
+ * または `VERCEL`・`VERCEL_ENV` が設定されている（本番・プレビュー）なら止める。`next.config.ts` が `next build` と `next start` の両方で呼ぶので、本番では起動も止まる。失敗の文には変数名だけを書く。
  */
 export function assertBuildEnv(env: Readonly<Record<string, string | undefined>>): void {
   if (env.VERCEL_ENV === 'production') {
@@ -70,5 +81,9 @@ export function assertBuildEnv(env: Readonly<Record<string, string | undefined>>
   const serverOrigin = originOf(env.SUPABASE_URL);
   if (publicOrigin && serverOrigin && publicOrigin !== serverOrigin) {
     throw new Error('NEXT_PUBLIC_SUPABASE_URL と SUPABASE_URL が別の origin を指しています。同じプロジェクトの URL に揃えてください。');
+  }
+
+  if (env.PASSKEY_START_DEV_IP?.trim() && (!isLocalSupabaseUrl(env.NEXT_PUBLIC_SUPABASE_URL) || env.VERCEL?.trim() || env.VERCEL_ENV?.trim())) {
+    throw new Error('PASSKEY_START_DEV_IP は手元の開発でだけ設定できます。本番・プレビュー・手元でない Supabase では削除してください。');
   }
 }

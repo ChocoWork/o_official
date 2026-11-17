@@ -187,4 +187,33 @@ describe("assertBuildEnv", () => {
       ).not.toThrow();
     });
   });
+
+  describe("PASSKEY_START_DEV_IP の見張り（SEC-AUTH-042）", () => {
+    const LOCAL = { NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321", PASSKEY_START_DEV_IP: "203.0.113.7" };
+
+    it("DD-ABOUT-002 手元の Supabase の住所で値だけあれば通る", () => {
+      expect(() => assertBuildEnv({ ...LOCAL })).not.toThrow();
+      expect(() => assertBuildEnv({ ...LOCAL, NEXT_PUBLIC_SUPABASE_URL: "http://localhost:54321" })).not.toThrow();
+    });
+
+    it("DD-ABOUT-002 値が無い・空白だけなら、本番でも通る", () => {
+      expect(() => assertBuildEnv({ ...PRODUCTION })).not.toThrow();
+      expect(() => assertBuildEnv({ ...PRODUCTION, PASSKEY_START_DEV_IP: "  " })).not.toThrow();
+    });
+
+    it.each([
+      ["本番の Supabase の住所", { ...LOCAL, NEXT_PUBLIC_SUPABASE_URL: "https://abcd1234.supabase.co" }],
+      ["Supabase の住所が未設定", { PASSKEY_START_DEV_IP: "203.0.113.7" }],
+      ["VERCEL_ENV=production", { ...PRODUCTION, PASSKEY_START_DEV_IP: "203.0.113.7" }],
+      ["手元の住所でも VERCEL_ENV=preview", { ...LOCAL, VERCEL_ENV: "preview" }],
+      ["手元の住所でも VERCEL=1", { ...LOCAL, VERCEL: "1" }],
+    ] as const)("DD-ABOUT-002 %s なら変数名だけの文で落とす", (_label, env) => {
+      expect(() => assertBuildEnv({ ...env })).toThrow(/PASSKEY_START_DEV_IP/);
+      try {
+        assertBuildEnv({ ...env });
+      } catch (error) {
+        expect((error as Error).message).not.toContain("203.0.113.7");
+      }
+    });
+  });
 });

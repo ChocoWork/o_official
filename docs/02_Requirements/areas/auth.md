@@ -6137,6 +6137,21 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 
 残る危険として受け入れること: 古い行が残った鍵は、直すまで認められない（店員は別の鍵で入る）。`reauth`・`script` の道は上限を掛けない（登録の窓の免除は最初の2本までという決まりを、窓の道だけに掛ける）。
 
+### SEC-AUTH-042 始めの窓口は、入力を信じず、鍵は `sb_secret_` だけで呼び、IP はお客さんの本物だけを GoTrue に添える
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-043 |
+| 根拠 | ログインの始め (a) は、アプリのサーバーが GoTrue を呼び、お客さんの IP を `Sb-Forwarded-For` に添えて、GoTrue の回数の制限をお客さんごとに掛ける。鍵が `sb_secret_` でない（古い `service_role` の JWT）と添え書きが効かず、全員が1つのサーバーの IP として数えられる。手元の開発用の IP `PASSKEY_START_DEV_IP` が本番に残ると、全員が同じ IP になり制限が壊れる。応答の `id` と `rawId` が食い違うと、認めた鍵の突き合わせと GoTrue の署名の確かめが別の鍵を見る（SEC-AUTH-044）。判断は ADR-0467・DD-AUTH-051 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-start-config.test.ts`、`passkey-gotrue.test.ts`、`tests/unit/lib/build-env-guard.test.ts`、`tests/unit/features/auth/schemas/passkey.test.ts`）。窓口の試験は Task 3・6 で足す |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-2-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・4-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 2） |
+| 優先度 | MUST |
+
+守ること: (1) 始め (a) の鍵は `SUPABASE_SECRET_KEY` を先に、無ければ `SUPABASE_SERVICE_ROLE_KEY` を見て、`sb_secret_` で始まる値だけを使う。どちらも満たさなければ GoTrue を呼ばない。先の変数が不正な時、後ろの変数には倒さない。鍵の値はログ・例外・戻りの失敗に載せない。(2) GoTrue へは `apikey` と `Sb-Forwarded-For` だけを付け、`Authorization` は付けず、本文は `{}`（利用者の入力を渡さない）。(3) `PASSKEY_START_DEV_IP` は、手元の Supabase の住所（`localhost`・`127.0.0.1`・`[::1]`）で、`VERCEL` が `1` でなく `VERCEL_ENV` が空の時だけ使い、それ以外は `null`。値が空でないのに本番・プレビュー・手元でない Supabase なら、`next build` と `next start` が変数名だけの文で止まる。(4) 応答の `id` と `rawId` は、どちらも base64url の形で、完全に同じ値だけ受ける。(5) 呼び出しは10秒で打ち切り、誤りの文に鍵・トークンを載せない。
+
+残る危険として受け入れること: 本番の鍵の形（`sb_secret_` か JWT か）は読んでいない。JWT の形なら、`SUPABASE_SECRET_KEY` を足すまで始め (a) は動かない（閉じる側）。
+
 ## 派生要件
 
 要件が求めていないのに今のコードがしている動き。根拠はコードがそうしている理由で、記録が無い物は推定。

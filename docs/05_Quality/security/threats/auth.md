@@ -644,6 +644,20 @@ flowchart LR
 | 状態 | 推定 |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5） |
 
+### THR-AUTH-043 始めの窓口が、IP の添え書き無し・古い鍵・本番に残った開発用の IP で GoTrue を呼ぶ
+
+| 属性 | 値 |
+| --- | --- |
+| 守るもの | 5-1（始め (a)）の GoTrue の回数の制限をお客さんごとに掛けること、4-2（本番の環境の見張り） |
+| 脅威 | (1) 添え書き無し・`sb_secret_` でない鍵で呼ぶと、全員が1つの IP として数えられ、1人の失敗が全員の制限になる、または制限が効かない。(2) 開発用の IP が本番に残ると、全員が同じ IP になる。(3) 利用者の入力が GoTrue への本文・ヘッダーに混ざる。(4) 鍵・トークンが誤りの文やログに残る |
+| 起こり方 | 本番の鍵が JWT の形のまま、環境変数の設定ミス、開発の設定のコピー、GoTrue の誤りの本文に鍵が含まれる |
+| 影響 | ログインの始めが全員で止まる、または回数の制限が効かず総当たりの足場になる。鍵が漏れる |
+| 対策 | SEC-AUTH-042（鍵の形の確かめ・添え書きの付け方・開発用の IP の三重の条件・環境の見張り・打ち切り・誤りの文の掃除）、DD-AUTH-051 |
+| ASVS | V2.2.1・V7.1.1（当てはめは推定） |
+| 根拠 | 段1b の Task 2。設計 5-1・4-2 |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-2-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・4-2） |
+
 ## 未確認事項
 
 - 本番の Supabase Auth の設定（OTP の期限・Confirm email・最小の長さ・漏洩の照合・captcha・TOTP・回数の制限・`secure_password_change`・現行パスワードの要求）。手元の `supabase/config.toml` は波 6 の切り替えで本番の前提にそろえたが、本番の実際の値は Management API で読むまで未確認（THR-AUTH-015・029）
