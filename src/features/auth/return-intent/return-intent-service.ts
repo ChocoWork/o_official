@@ -139,19 +139,20 @@ export async function issueReturnIntent(input: {
  *
  * @impl IMPL-AUTH-216
  * @design DD-AUTH-034
- * @remarks 管理者・サポーターは aal2 になるまで使い切らず、2 段目の後の戻り先を残す。
- * 使い切った値は DB の制約を信用せず、役割と aal2 を含めて出口の確かめをもう一度通す。
+ * @remarks 管理者・サポーターは、パスキーの入口の条件（`staffEntryOk`。amr のパスキー・24時間以内・認めた2本）を満たすまで使い切らず、戻り先を残す。
+ * 使い切った値は DB の制約を信用せず、役割と入口の条件を含めて出口の確かめをもう一度通す。
+ * 拒否の理由の名前 `admin_requires_privileged_aal2` と `needsMfa`・`/auth/verified` は段4で直す（1b では変えない。ADR-0468）。
  */
 export async function resolveReturnDestination(input: {
   cookieHeader: string | null;
   purpose: ReturnIntentPurpose;
-  viewer: { id: string; role: 'admin' | 'supporter' | 'user'; aal: string | null };
+  viewer: { id: string; role: 'admin' | 'supporter' | 'user'; staffEntryOk: boolean };
   origin?: string;
 }): Promise<ResolvedDestination> {
   const privileged = isPrivilegedRole(input.viewer.role);
   const defaultPath = privileged ? '/admin' : '/';
 
-  if (privileged && input.viewer.aal !== 'aal2') {
+  if (privileged && input.viewer.staffEntryOk !== true) {
     return { path: MFA_PATH, needsMfa: true, action: { kind: 'keep' } };
   }
 
@@ -183,22 +184,22 @@ export async function resolveReturnDestination(input: {
 }
 
 /**
- * 使い切った戻り先の値を、出口の確かめ（役割と aal2 を含む）にもう一度通す。
+ * 使い切った戻り先の値を、出口の確かめ（役割と店員の入口の条件を含む）にもう一度通す。
  *
  * @impl IMPL-AUTH-221
  * @design DD-AUTH-034
  * @remarks DB の制約を信用せず、使い切った値を必ず確かめ直す。外れた時は既定の行き先に倒して控えの Cookie を消す。
- * 管理者・サポーターが aal2 でない場合の判断（2 段目へ送る）はここで持たず、呼び出し側が先に決める。
+ * 管理者・サポーターが入口の条件を満たさない場合の判断（2 段目へ送る）はここで持たず、呼び出し側が先に決める。
  * 外れた理由の符号だけを監査に残し、道筋は残さない。
  */
 export async function resolveStoredDestination(input: {
   stored: string;
-  viewer: { role: 'admin' | 'supporter' | 'user'; aal: string | null };
+  viewer: { role: 'admin' | 'supporter' | 'user'; staffEntryOk: boolean };
   origin?: string;
 }): Promise<ResolvedDestination> {
   const checked = validateReturnPath(input.stored, {
     origin: input.origin,
-    viewer: { role: input.viewer.role, aal: input.viewer.aal },
+    viewer: { role: input.viewer.role, staffEntryOk: input.viewer.staffEntryOk },
   });
   if (!checked.ok) {
     await auditSafely('rejected', checked.reason);

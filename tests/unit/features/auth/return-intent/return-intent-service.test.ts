@@ -23,11 +23,12 @@ const TOKEN = 'A'.repeat(43);
 const COOKIE = `sb-return-intent=${TOKEN}`;
 const originalNodeEnv = process.env.NODE_ENV;
 
-const user = { id: 'user-1', role: 'user' as const, aal: 'aal1' };
-const adminAal1 = { id: 'admin-1', role: 'admin' as const, aal: 'aal1' };
-const adminAal2 = { id: 'admin-1', role: 'admin' as const, aal: 'aal2' };
+const user = { id: 'user-1', role: 'user' as const, staffEntryOk: false };
+const userEntryOk = { id: 'user-1', role: 'user' as const, staffEntryOk: true };
+const adminAal1 = { id: 'admin-1', role: 'admin' as const, staffEntryOk: false };
+const adminAal2 = { id: 'admin-1', role: 'admin' as const, staffEntryOk: true };
 
-type TestViewer = { id: string; role: 'admin' | 'supporter' | 'user'; aal: string | null };
+type TestViewer = { id: string; role: 'admin' | 'supporter' | 'user'; staffEntryOk: boolean };
 function resolve(viewer: TestViewer, cookieHeader: string | null = COOKIE, purpose: 'login' | 'signup' = 'login') {
   return resolveReturnDestination({ cookieHeader, purpose, viewer, origin: ORIGIN });
 }
@@ -138,19 +139,10 @@ describe('DD-AUTH-034 resolveReturnDestination', () => {
     expect(store.consumeReturnIntent).not.toHaveBeenCalled();
   });
 
-  it('DD-AUTH-034 保存が null（期限切れ・使用済み・失敗）なら既定の / と clear', async () => {
-    store.consumeReturnIntent.mockResolvedValue(null);
+  it.each(['admin', 'supporter'] as const)('DD-AUTH-054 %s は入口の条件を満たさないと、保存が /admin でも使い切らず /auth/verified へ送る', async (role) => {
+    store.consumeReturnIntent.mockResolvedValue('/admin');
 
-    await expect(resolve(user)).resolves.toEqual({ path: '/', needsMfa: false, action: { kind: 'clear' } });
-  });
-
-  it('DD-AUTH-034 管理者が aal1 なら /auth/verified・needsMfa・keep で、使い切りを呼ばない', async () => {
-    await expect(resolve(adminAal1)).resolves.toEqual({
-      path: '/auth/verified',
-      needsMfa: true,
-      action: { kind: 'keep' },
-    });
-    await expect(resolve({ ...adminAal1, role: 'supporter' as const, aal: null })).resolves.toEqual({
+    await expect(resolve({ id: 'staff-1', role, staffEntryOk: false })).resolves.toEqual({
       path: '/auth/verified',
       needsMfa: true,
       action: { kind: 'keep' },
@@ -158,7 +150,44 @@ describe('DD-AUTH-034 resolveReturnDestination', () => {
     expect(store.consumeReturnIntent).not.toHaveBeenCalled();
   });
 
-  it('DD-AUTH-034 管理者が aal2 なら保存の戻り先へ、無ければ /admin へ', async () => {
+  it.each(['admin', 'supporter'] as const)('DD-AUTH-054 %s は入口の条件を満たせば保存が /admin でも /admin へ着く', async (role) => {
+    store.consumeReturnIntent.mockResolvedValue('/admin');
+
+    await expect(resolve({ id: 'staff-1', role, staffEntryOk: true })).resolves.toEqual({
+      path: '/admin',
+      needsMfa: false,
+      action: { kind: 'clear' },
+    });
+  });
+
+  it('DD-AUTH-054 お客さんは staffEntryOk がどちらでも needsMfa にならない', async () => {
+    store.consumeReturnIntent.mockResolvedValue(null);
+
+    await expect(resolve(user)).resolves.toEqual({ path: '/', needsMfa: false, action: { kind: 'clear' } });
+    await expect(resolve(userEntryOk)).resolves.toEqual({ path: '/', needsMfa: false, action: { kind: 'clear' } });
+  });
+
+  it('DD-AUTH-034 保存が null（期限切れ・使用済み・失敗）なら既定の / と clear', async () => {
+    store.consumeReturnIntent.mockResolvedValue(null);
+
+    await expect(resolve(user)).resolves.toEqual({ path: '/', needsMfa: false, action: { kind: 'clear' } });
+  });
+
+  it('DD-AUTH-034 店員が入口の条件を満たさないなら /auth/verified・needsMfa・keep で、使い切りを呼ばない', async () => {
+    await expect(resolve(adminAal1)).resolves.toEqual({
+      path: '/auth/verified',
+      needsMfa: true,
+      action: { kind: 'keep' },
+    });
+    await expect(resolve({ ...adminAal1, role: 'supporter' as const })).resolves.toEqual({
+      path: '/auth/verified',
+      needsMfa: true,
+      action: { kind: 'keep' },
+    });
+    expect(store.consumeReturnIntent).not.toHaveBeenCalled();
+  });
+
+  it('DD-AUTH-034 店員が入口の条件を満たすなら保存の戻り先へ、無ければ /admin へ', async () => {
     store.consumeReturnIntent.mockResolvedValueOnce('/item/3');
     await expect(resolve(adminAal2)).resolves.toEqual({ path: '/item/3', needsMfa: false, action: { kind: 'clear' } });
 
@@ -168,7 +197,7 @@ describe('DD-AUTH-034 resolveReturnDestination', () => {
     await expect(resolve(adminAal2, null)).resolves.toEqual({ path: '/admin', needsMfa: false, action: { kind: 'keep' } });
   });
 
-  it('DD-AUTH-034 管理者が aal2 で保存が /admin なら /admin', async () => {
+  it('DD-AUTH-034 店員が入口の条件を満たし保存が /admin なら /admin', async () => {
     store.consumeReturnIntent.mockResolvedValue('/admin');
 
     await expect(resolve(adminAal2)).resolves.toEqual({ path: '/admin', needsMfa: false, action: { kind: 'clear' } });
@@ -306,11 +335,11 @@ describe('DD-AUTH-034 consumeSignupBinding', () => {
 });
 
 describe('DD-AUTH-034 resolveStoredDestination', () => {
-  const resolveStored = (stored: string, viewer: { role: 'admin' | 'supporter' | 'user'; aal: string | null }) =>
+  const resolveStored = (stored: string, viewer: { role: 'admin' | 'supporter' | 'user'; staffEntryOk: boolean }) =>
     resolveStoredDestination({ stored, viewer, origin: ORIGIN });
 
   it('DD-AUTH-034 一般の /account はそのまま、Cookie を消す', async () => {
-    await expect(resolveStored('/account', { role: 'user', aal: 'aal1' })).resolves.toEqual({
+    await expect(resolveStored('/account', { role: 'user', staffEntryOk: false })).resolves.toEqual({
       path: '/account',
       needsMfa: false,
       action: { kind: 'clear' },
@@ -318,12 +347,12 @@ describe('DD-AUTH-034 resolveStoredDestination', () => {
   });
 
   it('DD-AUTH-034 一般の /admin・//evil.example は外れて / へ倒し、理由の符号だけを監査に残す', async () => {
-    await expect(resolveStored('/admin', { role: 'user', aal: 'aal1' })).resolves.toEqual({
+    await expect(resolveStored('/admin', { role: 'user', staffEntryOk: false })).resolves.toEqual({
       path: '/',
       needsMfa: false,
       action: { kind: 'clear' },
     });
-    await expect(resolveStored('//evil.example', { role: 'user', aal: 'aal1' })).resolves.toEqual({
+    await expect(resolveStored('//evil.example', { role: 'user', staffEntryOk: false })).resolves.toEqual({
       path: '/',
       needsMfa: false,
       action: { kind: 'clear' },
@@ -332,8 +361,8 @@ describe('DD-AUTH-034 resolveStoredDestination', () => {
     expect(JSON.stringify(audit.default.mock.calls)).not.toContain('evil');
   });
 
-  it('DD-AUTH-034 管理者 aal2 の /admin は /admin のまま', async () => {
-    await expect(resolveStored('/admin', { role: 'admin', aal: 'aal2' })).resolves.toEqual({
+  it('DD-AUTH-034 店員が入口の条件を満たす /admin は /admin のまま', async () => {
+    await expect(resolveStored('/admin', { role: 'admin', staffEntryOk: true })).resolves.toEqual({
       path: '/admin',
       needsMfa: false,
       action: { kind: 'clear' },

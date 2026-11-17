@@ -24,8 +24,8 @@ export type ReturnPathRejectReason =
 
 export type ReturnViewer = {
   role: 'admin' | 'supporter' | 'user';
-  /** 'aal2' のときだけ管理者・サポーターに /admin を許す */
-  aal: string | null;
+  /** 真のときだけ管理者・サポーターに /admin を許す（パスキーの入口の条件を満たすという呼び手のヒント。権限の判定ではない） */
+  staffEntryOk: boolean;
 };
 
 export type ValidateReturnPathOptions = {
@@ -70,7 +70,7 @@ const fail = (reason: ReturnPathRejectReason): ValidateReturnPathResult => ({ ok
  *
  * @impl IMPL-AUTH-212
  * @design DD-AUTH-032
- * @remarks `/admin` を出口で通す条件（役割と aal2）の役割の側を、入口・出口・窓口で同じ判定にそろえる。
+ * @remarks `/admin` を出口で通す条件（役割と店員の入口の条件）の役割の側を、入口・出口・窓口で同じ判定にそろえる。
  */
 export function isPrivilegedRole(role: unknown): role is 'admin' | 'supporter' {
   return role === 'admin' || role === 'supporter';
@@ -145,8 +145,8 @@ export function validateReturnPath(raw: unknown, options: ValidateReturnPathOpti
   }
 
   if (matchesPrefix(pathname, '/admin') && options.viewer) {
-    const { role, aal } = options.viewer;
-    if (!isPrivilegedRole(role) || aal !== 'aal2') return fail('admin_requires_privileged_aal2');
+    const { role, staffEntryOk } = options.viewer;
+    if (!isPrivilegedRole(role) || staffEntryOk !== true) return fail('admin_requires_privileged_aal2');
   }
 
   return { ok: true, path: out };

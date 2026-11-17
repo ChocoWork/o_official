@@ -162,10 +162,10 @@ export async function GET(request: Request) {
 
     const role = data.user.app_metadata?.role;
     const viewerRole = role === 'admin' || role === 'supporter' ? role : 'user';
-    // 管理者・サポーターは aal2 になるまで戻り先へ送らない。使い切った戻り先は捨てて 2 段目へ送る。
+    // 管理者・サポーターは入口の条件（パスキー）を満たすまで戻り先へ送らない（メールのリンクでは店員は入れないので、ここへ来ても 2 段目の側）。使い切った戻り先は捨てて 2 段目へ送る。
     const destination =
       viewerRole === 'user'
-        ? await resolveStoredDestination({ stored: binding.storedPath, viewer: { role: viewerRole, aal: 'aal1' }, origin })
+        ? await resolveStoredDestination({ stored: binding.storedPath, viewer: { role: viewerRole, staffEntryOk: false }, origin })
         : { path: MFA_REDIRECT_PATH, action: { kind: 'clear' } as const };
     res.headers.set('location', new URL(destination.path, origin).toString());
     applyReturnIntentCookie(res, destination.action);

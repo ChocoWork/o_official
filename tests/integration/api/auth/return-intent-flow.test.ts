@@ -95,8 +95,8 @@ class FakeIntentTable {
 
 const cookieHeaderOf = (action: ReturnIntentCookieAction) => (action.kind === 'set' ? `sb-return-intent=${action.token}` : '');
 
-const user = (id = 'user-1') => ({ id, role: 'user' as const, aal: 'aal1' });
-const admin = (aal: string) => ({ id: 'admin-1', role: 'admin' as const, aal });
+const user = (id = 'user-1') => ({ id, role: 'user' as const, staffEntryOk: false });
+const admin = (staffEntryOk: boolean) => ({ id: 'admin-1', role: 'admin' as const, staffEntryOk });
 
 describe('ARC-AUTH-010 戻り先は入口で控え、出口で使い切り、出口でも確かめ直す', () => {
   let table: FakeIntentTable;
@@ -157,22 +157,22 @@ describe('ARC-AUTH-010 戻り先は入口で控え、出口で使い切り、出
     expect(table.consumedCount).toBe(0);
   });
 
-  test('ARC-AUTH-010 管理者は確認コードの後（aal1）に使い切らず 2 段目へ送り、aal2 になってから戻り先を受け取る', async () => {
+  test('ARC-AUTH-010 店員は入口の条件を満たすまで使い切らず 2 段目へ送り、満たしてから戻り先を受け取る', async () => {
     const entry = await issueReturnIntent({ rawNext: '/item', purpose: 'login' });
     const cookieHeader = cookieHeaderOf(entry.action);
 
-    const aal1 = await resolveReturnDestination({ cookieHeader, purpose: 'login', viewer: admin('aal1') });
-    expect(aal1).toEqual({ path: '/auth/verified', needsMfa: true, action: { kind: 'keep' } });
+    const unmet = await resolveReturnDestination({ cookieHeader, purpose: 'login', viewer: admin(false) });
+    expect(unmet).toEqual({ path: '/auth/verified', needsMfa: true, action: { kind: 'keep' } });
     expect(table.consumedCount).toBe(0);
 
-    const aal2 = await resolveReturnDestination({ cookieHeader, purpose: 'login', viewer: admin('aal2') });
-    expect(aal2).toEqual({ path: '/item', needsMfa: false, action: { kind: 'clear' } });
+    const met = await resolveReturnDestination({ cookieHeader, purpose: 'login', viewer: admin(true) });
+    expect(met).toEqual({ path: '/item', needsMfa: false, action: { kind: 'clear' } });
     expect(table.consumedCount).toBe(1);
   });
 
   test('ARC-AUTH-010 出口 A（POST /api/auth/post-login）は 1 回目に戻り先を返し、2 回目は既定の / を返す', async () => {
     const entry = await issueReturnIntent({ rawNext: '/stockist?from=e2e', purpose: 'login' });
-    mockAuthenticateRequest.mockResolvedValue({ ok: true, claims: { sub: 'user-1', aal: 'aal1', app_metadata: { role: 'user' } } });
+    mockAuthenticateRequest.mockResolvedValue({ ok: true, claims: { sub: 'user-1', app_metadata: { role: 'user' } } });
     const route = await import('@/app/api/auth/post-login/route');
     const request = () =>
       new Request('http://localhost:3000/api/auth/post-login', { method: 'POST', headers: { cookie: cookieHeaderOf(entry.action) } });
@@ -236,12 +236,12 @@ describe('STATE-AUTH-006 戻り先の控えは、作られ、1 回使い切ら�
     expect(signup.action).toEqual(expect.objectContaining({ kind: 'set', maxAgeSeconds: SIGNUP_TTL_SECONDS }));
   });
 
-  test('STATE-AUTH-006 管理者・サポーターが aal1 の間は作られたまま残り、使い切られない', async () => {
+  test('STATE-AUTH-006 管理者・サポーターが入口の条件を満たさない間は作られたまま残り、使い切られない', async () => {
     const entry = await issueReturnIntent({ rawNext: '/item', purpose: 'login' });
     const cookieHeader = cookieHeaderOf(entry.action);
 
-    await resolveReturnDestination({ cookieHeader, purpose: 'login', viewer: admin('aal1') });
-    await resolveReturnDestination({ cookieHeader, purpose: 'login', viewer: { ...admin('aal1'), role: 'supporter' } });
+    await resolveReturnDestination({ cookieHeader, purpose: 'login', viewer: admin(false) });
+    await resolveReturnDestination({ cookieHeader, purpose: 'login', viewer: { ...admin(false), role: 'supporter' } });
 
     expect(table.consumedCount).toBe(0);
   });

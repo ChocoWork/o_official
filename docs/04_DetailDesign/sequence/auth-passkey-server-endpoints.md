@@ -10,7 +10,7 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-016、SR-AUTH-017、FR-AUTH-015、FR-AUTH-016、FR-AUTH-017、DD-AUTH-052、DD-AUTH-053、DATA-AUTH-018、SEC-AUTH-041、THR-AUTH-042、SEC-AUTH-042、THR-AUTH-043、ADR-0467 |
+| 対応する ID | SR-AUTH-016、SR-AUTH-017、SR-AUTH-018、FR-AUTH-015、FR-AUTH-016、FR-AUTH-017、FR-AUTH-018、DD-AUTH-052、DD-AUTH-053、DD-AUTH-054、DATA-AUTH-018、SEC-AUTH-041、THR-AUTH-042、SEC-AUTH-042、THR-AUTH-043、SEC-AUTH-043、THR-AUTH-044、ADR-0467、ADR-0468 |
 | 対象のコード | 移行 `supabase/migrations/20261117123620_passkey_server_endpoint_fns.sql`、`src/lib/auth/passkey-approval-rpc.ts`、`src/app/api/auth/passkey/login/start/route.ts`、`src/features/auth/passkey/browser-start.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-5）、[段1b の計画](../../superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md)、[店員のパスキーの入口](auth-staff-passkey-entry.md) |
 | 調べた時点 | 2026-11-17（手元の DB で結合試験を流した） |
@@ -169,6 +169,42 @@ sequenceDiagram
 - CSP は変えない: `connect-src` に自分の Supabase の origin 1つと Turnstile が入っており、`*.supabase.co` は無い。E2E は `/login` のページの中から手元の GoTrue へ `fetch` し、`securitypolicyviolation` が出ないことを確かめる
 - (b) に切り替える時の本番の確認: 本番の GoTrue で captcha を有効にする。(a) で `sb_secret_` が captcha を免除されなかった時は、(a) の始めにも Turnstile のトークンが要る（別の計画）
 - テスト観点: server で `fetchApp` が1回・429 の秒・503/409/502・ネットワークの誤り・壊れた本文・形の違う 200／browser で captchaToken 無しは GoTrue 0回・有りで1回・`preferred` が `required` に変わる・429・captcha の誤り・形の違う成功・投げられた誤り／設定の読み／import とソースの形
+
+### DD-AUTH-054 ログインの後の行き先・戻り先を、パスキーの入口の条件で決める
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-043 |
+| 根拠 | 管理の入口の条件が `aal2` からパスキーの3つの条件に替わった（DD-AUTH-047）ので、行き先・戻り先の判定も同じ条件にそろえる。判定はヒント（JWT）だけで行い、DB を数えない（`/api/auth/me` の `mfaVerified` と同じ。権限は管理の窓口と RLS が DB で数えて止める。ADR-0468） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/return-intent/return-intent-service.test.ts`・`return-path.test.ts`、`tests/unit/api/auth/post-login-route.test.ts`・`oauth-callback-route.test.ts`・`confirm-route.test.ts`）、結合テスト（`tests/integration/api/auth/return-intent-flow.test.ts`・`post-login.test.ts`・`oauth-callback.test.ts`）、E2E（`e2e/FR-LOGIN-054-passkey-post-login-destination.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・6-2） |
+
+```mermaid
+sequenceDiagram
+    participant B as ブラウザ
+    participant P as post-login
+    participant E as evaluateStaffEntry
+    participant R as resolveReturnDestination
+    B->>P: POST（Bearer か Cookie、控えの Cookie）
+    P->>E: claims, approvedCountHint(claims), now
+    E-->>P: ok の真偽
+    P->>R: viewer = { id, role, staffEntryOk }
+    alt 店員で staffEntryOk が偽
+        R-->>P: /auth/verified・needsMfa: true・控えは残す
+    else 店員で真、またはお客さん
+        R->>R: 控えを使い切り、出口の確かめを通す
+        R-->>P: 戻り先、無ければ /admin か /
+    end
+    P-->>B: redirectTo と needsMfa
+```
+
+- 追跡の単位: 新しい関数 `staffEntryOkFromClaims`（`src/features/auth/return-intent/staff-entry-hint.ts`）が IMPL-AUTH-273。`post-login` が呼び、トークンの claims から `staffEntryOk` を出す（1か所にして試験で固定する）。変えた `resolveReturnDestination`（IMPL-AUTH-216）・`resolveStoredDestination`（IMPL-AUTH-221）・`validateReturnPath`（IMPL-AUTH-206）は、元の `@design` のまま `@remarks` を `aal2` からパスキーの入口の条件に直した
+- 呼び手の形: `ReturnViewer = { role; staffEntryOk: boolean }`（`aal` をやめた）。拒否の理由の名前 `admin_requires_privileged_aal2`、`needsMfa`、行き先 `/auth/verified` は 1b では変えない（意味だけパスキーの条件。段4で直す）
+- `post-login`: `staffEntryOk = evaluateStaffEntry(claims, approvedCountHint(claims), Date.now() / 1000).ok`。`claims` はトークンからだけ読む。お客さんには使わない（`needsMfa` は店員だけ）
+- `oauth/callback`・`confirm`: `staffEntryOk: false` を渡す。Google・メールのリンクでは店員は入れない（フックが拒否する）ので、来ても 2 段目の側に倒す。`oauth/callback` は、GoTrue の交換が `isStaffPasskeyRequiredError` の誤りで失敗した時、監査の `detail` を `staff_passkey_required` にし誤りの文を残さない（応答は 502 のまま。店員への文言は段3）
+- 本番には段3まで出さない: 認めた鍵が1本の店員が着く先は今のページ（`/auth/verified`）で、「もう1本登録してください」の画面は段3が作る
+- テスト観点: 店員（admin・supporter）× `staffEntryOk` の真偽の行き先・お客さんは真偽どちらでも `needsMfa: false`・`validateReturnPath('/admin')` が店員で真の時だけ通る・`post-login` が `amr` の欠け・空・文字列の時刻・未来・24時間超・`staff_passkeys_ok` の偽や文字列 `"true"` で偽・パスキーで入った2本の店員は `/admin`・`oauth/callback` の印つき 403 の監査の符号と 502・印の無い 403 は今まで通り
 
 ## 未確認事項
 

@@ -51,9 +51,12 @@ jest.mock('@/lib/auth/authenticate', () => ({
 const INTENT_TOKEN = 'C'.repeat(43);
 const INTENT_COOKIE = `sb-return-intent=${INTENT_TOKEN}`;
 
-const viewer = (role: string, aal: string) => ({
+// 店員の入口の条件（amr のパスキー・24時間以内・認めた2本の印）を満たす claims か、満たさない claims（aal2 だけ）を作る。
+const viewer = (role: string, entryOk: boolean) => ({
   ok: true,
-  claims: { sub: 'user-1', aal, app_metadata: { role } },
+  claims: entryOk
+    ? { sub: 'user-1', aal: 'aal1', app_metadata: { role }, amr: [{ method: 'passkey', timestamp: Math.floor(Date.now() / 1000) - 60 }], staff_passkeys_ok: true }
+    : { sub: 'user-1', aal: 'aal2', app_metadata: { role } },
 });
 
 describe('API-AUTH-019 POST /api/auth/post-login', () => {
@@ -90,7 +93,7 @@ describe('API-AUTH-019 POST /api/auth/post-login', () => {
     mockEnforceRateLimit.mockResolvedValue(undefined);
     mockLogAudit.mockResolvedValue(undefined);
     mockRpc.mockResolvedValue({ data: null, error: null });
-    mockAuthenticateRequest.mockResolvedValue(viewer('user', 'aal1'));
+    mockAuthenticateRequest.mockResolvedValue(viewer('user', false));
   });
 
   afterAll(() => {
@@ -174,8 +177,8 @@ describe('API-AUTH-019 POST /api/auth/post-login', () => {
     },
   );
 
-  test('API-AUTH-019 特権・aal2 で保存が /admin/orders ならそのまま返す', async () => {
-    mockAuthenticateRequest.mockResolvedValue(viewer('admin', 'aal2'));
+  test('API-AUTH-019 特権で入口の条件を満たし保存が /admin/orders ならそのまま返す', async () => {
+    mockAuthenticateRequest.mockResolvedValue(viewer('admin', true));
     fakeConsume('/admin/orders');
 
     const res = await callPost(postLoginRequest({ cookie: INTENT_COOKIE }));
@@ -184,16 +187,16 @@ describe('API-AUTH-019 POST /api/auth/post-login', () => {
     expect(mockRpc).toHaveBeenCalledWith('consume_auth_return_intent', expect.objectContaining({ _user_id: 'user-1' }));
   });
 
-  test.each(['admin', 'supporter'])('API-AUTH-019 %s・aal2 で控えが無ければ既定の /admin を返す', async (role) => {
-    mockAuthenticateRequest.mockResolvedValue(viewer(role, 'aal2'));
+  test.each(['admin', 'supporter'])('API-AUTH-019 %s・入口の条件を満たし控えが無ければ既定の /admin を返す', async (role) => {
+    mockAuthenticateRequest.mockResolvedValue(viewer(role, true));
 
     const res = await callPost(postLoginRequest());
 
     expect(await res.json()).toEqual({ redirectTo: '/admin', needsMfa: false });
   });
 
-  test.each(['admin', 'supporter'])('API-AUTH-019 %s・aal1 は表に触らず /auth/verified と needsMfa:true を返し、控えの Cookie を残す', async (role) => {
-    mockAuthenticateRequest.mockResolvedValue(viewer(role, 'aal1'));
+  test.each(['admin', 'supporter'])('API-AUTH-019 %s・入口の条件を満たさない（aal2 だけでも）と表に触らず /auth/verified と needsMfa:true を返し、控えの Cookie を残す', async (role) => {
+    mockAuthenticateRequest.mockResolvedValue(viewer(role, false));
     fakeConsume('/admin/orders');
 
     const res = await callPost(postLoginRequest({ cookie: INTENT_COOKIE }));

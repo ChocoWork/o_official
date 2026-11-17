@@ -658,6 +658,20 @@ flowchart LR
 | 状態 | 推定 |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-2-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・4-2） |
 
+### THR-AUTH-044 条件を満たさない店員が、行き先・戻り先の判定をすり抜けて `/admin` に着く
+
+| 属性 | 値 |
+| --- | --- |
+| 守るもの | 5-2・6-2（管理の入口はパスキー・24時間・認めた2本） |
+| 脅威 | (1) 行き先の判定が古い `aal2` のままだと、パスキーで入った店員は `aal` が `aal1` のままなので、いつも 2 段目に送られて入れない。または逆に、TOTP の `aal2` だけで `/admin` へ送られる。(2) 戻り先に `/admin` を入れた控えで、条件を飛ばして `/admin` へ着く。(3) 型の合わない JWT の値（文字列の時刻・文字列 `"true"`）を「満たす」と読み違える。(4) Google・メールのリンクの戻りが店員を `/admin` へ送る |
+| 起こり方 | 判定の置き換え漏れ、呼び手が `viewer` の形を誤る、JWT の型の確かめ漏れ |
+| 影響 | 条件を満たさない店員が管理の画面の骨組みへ着く（データは管理の窓口と RLS が DB で数えて止める）。条件を満たす店員が入れない |
+| 対策 | SEC-AUTH-043（`claims` だけから `evaluateStaffEntry` で出す・型の合わない値は偽・出口の確かめは `staffEntryOk` が真の店員だけ・`oauth/callback`・`confirm` は常に偽）、DD-AUTH-054 |
+| ASVS | V4.1.1・V3.3.1（当てはめは推定） |
+| 根拠 | 段1b の Task 5。設計 5-2・6-2 |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・6-2） |
+
 ## 未確認事項
 
 - 本番の Supabase Auth の設定（OTP の期限・Confirm email・最小の長さ・漏洩の照合・captcha・TOTP・回数の制限・`secure_password_change`・現行パスワードの要求）。手元の `supabase/config.toml` は波 6 の切り替えで本番の前提にそろえたが、本番の実際の値は Management API で読むまで未確認（THR-AUTH-015・029）

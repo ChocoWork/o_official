@@ -343,7 +343,7 @@ describe('GET /api/auth/confirm', () => {
       });
     });
 
-    it('DD-AUTH-019 控えは cookie の見出しと利用者のメール・id で使い切り、使い切った戻り先を出口の確かめ（aal1）に通す', async () => {
+    it('DD-AUTH-019 控えは cookie の見出しと利用者のメール・id で使い切り、使い切った戻り先を出口の確かめ（店員の入口の条件は偽）に通す', async () => {
       mockConsumeSignupBinding.mockResolvedValue({ bound: true, storedPath: '/account' });
 
       await GET(request('?token_hash=h&type=signup', { cookie: 'sb-return-intent=x' }));
@@ -356,7 +356,7 @@ describe('GET /api/auth/confirm', () => {
       });
       expect(mockResolveStoredDestination).toHaveBeenCalledWith({
         stored: '/account',
-        viewer: { role: 'user', aal: 'aal1' },
+        viewer: { role: 'user', staffEntryOk: false },
         origin: 'http://localhost:3000',
       });
     });
@@ -391,7 +391,7 @@ describe('GET /api/auth/confirm', () => {
       await GET(request('?token_hash=h'));
 
       expect(mockResolveStoredDestination).toHaveBeenCalledWith(
-        expect.objectContaining({ viewer: { role: 'user', aal: 'aal1' } }),
+        expect.objectContaining({ viewer: { role: 'user', staffEntryOk: false } }),
       );
     });
 

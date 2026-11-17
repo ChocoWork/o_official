@@ -6,7 +6,7 @@
  * @design DD-AUTH-021
  * @remarks 交換の相手になる PKCE の検証の値は、開始の窓口が Cookie に溜めているので要求から読み直す。
  * 戻り先は URL から読まず、保存の成功の後に Cookie の控えを使い切って 303 の行き先を差し替える（保存の失敗で戻り先だけが焼けるのを防ぐ）。
- * 管理の役割は交換直後が aal1 なので、必ず TOTP の画面へ送り、控えは使い切らない。
+ * 管理の役割は Google のログインでは入れない（フックが拒否する）ので、来ても必ず 2 段目の画面へ送り、控えは使い切らない（`staffEntryOk: false`）。
  * 保存に失敗しても交換は済んでライブラリが Cookie を溜めているため、それを付けた応答を返して利用者を行き止まりにせず、失敗は監査に残す。
  */
 import { NextResponse } from 'next/server';
@@ -20,6 +20,7 @@ import {
 } from '@/features/auth/return-intent/return-intent-service';
 import { logAudit } from '@/lib/audit';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
+import { isStaffPasskeyRequiredError } from '@/lib/auth/staff-passkey-reject';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -113,12 +114,14 @@ export async function GET(request: Request) {
     const exchangeResult = await supabase.auth.exchangeCodeForSession(code);
     if (exchangeResult.error || !exchangeResult.data.session || !exchangeResult.data.user) {
       console.error('token exchange failed:', exchangeResult.error);
+      // フックの「店員はパスキーでだけ入れる」拒否は、固定の符号だけを監査に残す（店員への文言は段3）。
+      const staffRejected = isStaffPasskeyRequiredError(exchangeResult.error);
       await logAudit({
         action: 'auth.oauth.callback',
         outcome: 'failure',
-        detail: 'token_exchange_failed',
+        detail: staffRejected ? 'staff_passkey_required' : 'token_exchange_failed',
         metadata: {
-          error: exchangeResult.error?.message ?? null,
+          error: staffRejected ? null : exchangeResult.error?.message ?? null,
         },
       });
       return NextResponse.json({ error: 'OAuth exchange failed' }, { status: 502 });
@@ -175,11 +178,11 @@ export async function GET(request: Request) {
       return res;
     }
 
-    // 交換直後は Google のログインなので aal1。特権は必ず 2 段目の画面へ送り、控えはそこでの完了まで使い切らない。
+    // Google のログインでは店員は入れない（フックが拒否する）。来ても特権は必ず 2 段目の画面へ送り、控えは使い切らない。
     const resolved = await resolveReturnDestination({
       cookieHeader: request.headers.get('cookie'),
       purpose: 'login',
-      viewer: { id: user.id, role, aal: 'aal1' },
+      viewer: { id: user.id, role, staffEntryOk: false },
     });
     res.headers.set('location', new URL(resolved.path, origin).toString());
     applyReturnIntentCookie(res, resolved.action);

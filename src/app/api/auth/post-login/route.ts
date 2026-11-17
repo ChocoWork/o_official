@@ -5,10 +5,12 @@
  * @impl IMPL-AUTH-209
  * @design DD-AUTH-035
  * @remarks 確認コードの確定と 2 段目の完了は端末が移動するので、サーバーが 303 を返せない。この窓口が戻り先を使い切って行き先を返す。
- * 役割と aal はトークンの claims からだけ読み、本文や見出しは信用しない。管理者・サポーターは aal2 になるまで使い切らない。
+ * 役割とパスキーの入口の条件（amr・24時間・認めた2本の印）はトークンの claims からだけ読み、本文や見出しは信用しない。管理者・サポーターは条件を満たすまで使い切らない。
+ * 条件は `/api/auth/me` の `mfaVerified` と同じ「ヒント」の判定で、行き先を決めるだけ。権限は admin-rbac・RLS が DB で数えて止める。
  */
 import { NextResponse } from 'next/server';
 import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
+import { staffEntryOkFromClaims } from '@/features/auth/return-intent/staff-entry-hint';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import {
   applyReturnIntentCookie,
@@ -36,7 +38,7 @@ export async function POST(request: Request) {
       viewer: {
         id: claims.sub,
         role: toRole(claims.app_metadata?.role),
-        aal: typeof claims.aal === 'string' ? claims.aal : null,
+        staffEntryOk: staffEntryOkFromClaims(claims),
       },
     });
 

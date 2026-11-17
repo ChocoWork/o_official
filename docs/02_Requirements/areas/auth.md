@@ -290,6 +290,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: お客さんと店員は、パスキーでログインする時、始めの要求をアプリの窓口に出し、選択肢と `challenge_id` を受け取れる。窓口は、お客さんの IP を GoTrue に添えて呼び、IP が取れない時は呼ばずに断る。選択肢は `userVerification` が `required` で返る。同じ IP からの始めは5分に20回までで、超えたら断る。受け入れ条件は FR-AUTH-016-AC-01〜03、SEC-AUTH-042、DD-AUTH-052。始め (b)（ブラウザから GoTrue を直に呼ぶ部品と、(a)・(b) の切り替え）は FR-AUTH-017（Task 4。AC-01・02、DD-AUTH-053）。
 
+### SR-AUTH-018 店員の行き先・戻り先は、パスキーの入口の条件で決める
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | 管理の入口は、パスキーでログインした・24時間以内・認めた鍵が2本以上の3つの条件に置き換わった（SR-AUTH-014）。ログインの後の行き先と戻り先の判定が古い `aal2` のままだと、条件を満たさない店員を `/admin` へ送る、または条件を満たす店員を 2 段目へ送り続ける。行き先の判定を同じ条件にそろえる（設計 5-2・6-2） |
+| 状態 | 推定 |
+| 出どころ | ユーザーの発言 2026-11-17（`.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 5）） |
+
+要求の文: 店員（管理者・サポーター）は、パスキーの入口の条件を満たす時だけ、ログインの後に `/admin` か `/admin` 向きの戻り先へ送られる。満たさない店員は今の 2 段目の画面（`/auth/verified`）へ送られ、戻り先の控えは使い切られない。お客さんは条件に関わらず 2 段目へ送られない。Google・メールのリンクの戻りの窓口は、店員が来ても必ず 2 段目の側に倒す。受け入れ条件は FR-AUTH-018-AC-01〜03、SEC-AUTH-043、DD-AUTH-054、ADR-0468。
+
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
 | 属性 | 値 |
@@ -2286,6 +2296,19 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 優先度 | MUST |
 
 規則: (1) `server` なら `POST /api/auth/passkey/login/start`（same-origin）を1回呼び、429 は `rate_limited`（`Retry-After` の秒つき）、503・409・502 は `unavailable`、ほかの失敗は `failed`。(2) `browser` は `captchaToken` が無ければ GoTrue を呼ばず `captcha_required`。有れば `startAuthentication` を `captchaToken` つきで1回呼び、応答の `userVerification` を `required` に書き換えて返す。GoTrue の 429 は `rate_limited`、captcha の誤りは `captcha_required`、ほかは `failed`。(3) 成功の応答の使う項目の形を確かめ、違えば `failed`。(4) 設定は `process.env.NEXT_PUBLIC_PASSKEY_START_MODE` をそのままの形で読み（ブラウザの束に埋め込まれる）、未設定は `server`。(5) 部品が読む import は `passkey-start-mode.ts` だけ。(6) CSP の `connect-src` は変えない。
+
+### FR-AUTH-018 店員の行き先・戻り先の判定を、`aal2` からパスキーの入口の条件に置き換える
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-018 |
+| 根拠 | SR-AUTH-018 を、`resolveReturnDestination`・`resolveStoredDestination`・`validateReturnPath` の呼び手の形 `ReturnViewer = { role; staffEntryOk }` にする。`post-login` は `/api/auth/me` の `mfaVerified` と同じヒント（`evaluateStaffEntry(claims, approvedCountHint(claims), now)`）で `staffEntryOk` を出し、`oauth/callback`・`confirm` は常に `false` を渡す。判断は DD-AUTH-054・ADR-0468、守りは SEC-AUTH-043 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/return-intent/`、`tests/unit/api/auth/post-login-route.test.ts`・`oauth-callback-route.test.ts`・`confirm-route.test.ts`）、結合テスト（`tests/integration/api/auth/return-intent-flow.test.ts`・`post-login.test.ts`）、E2E（`e2e/FR-LOGIN-054-passkey-post-login-destination.spec.ts`、FR-AUTH-018-AC-01〜03） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 5） |
+| 優先度 | MUST |
+
+規則: (1) 店員で `staffEntryOk` が真でなければ、`{ path: '/auth/verified', needsMfa: true, action: keep }`。控えは使い切らない。(2) 店員で真なら、控えが `/admin` 向きでも通り、無ければ `/admin`。(3) お客さんは `staffEntryOk` がどちらでも `needsMfa: false` で、`/admin` 向きの戻り先は断る。(4) `validateReturnPath('/admin', { viewer })` は、店員で `staffEntryOk` が真の時だけ通す。`viewer` を渡さない入口の動きは変えない。(5) `post-login` の `staffEntryOk` は JWT のヒントで、`amr` が欠ける・空・時刻が文字列・未来・24時間超・`staff_passkeys_ok` が偽や文字列 `"true"` なら偽。権限の判定ではない（管理の窓口と RLS が DB で数える）。(6) `oauth/callback` が GoTrue の交換で「店員はパスキーでだけ入れる」の印つきの 403 を受けた時は、監査の `detail` を `staff_passkey_required` にし、誤りの文は残さない。応答は 502 のまま。(7) `needsMfa`・`/auth/verified`・拒否の理由 `admin_requires_privileged_aal2` の名前は 1b では変えない（段4で直す）。
 
 ## 受け入れ条件
 
@@ -4799,6 +4822,42 @@ IP の見出し `x-real-ip` つきで `POST /api/auth/passkey/login/start` を�
 
 `page.goto('/login')` で開いたページの中から、手元の GoTrue の `/auth/v1/passkeys/authentication/options` へ匿名の鍵とダミーの captcha のトークンで `fetch` すると、`securitypolicyviolation` が出ず、`TypeError` にならず HTTP の状態が返ること（200 でなくてよい）。
 
+### FR-AUTH-018-AC-01 認めた鍵が1本の店員は needsMfa:true・/auth/verified に着き、戻り先の控えは使い切られない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-018 |
+| 根拠 | 入口の条件（認めた鍵が2本以上）を満たさない店員は、まだ管理の画面を使えない。控えを残すのは、条件を満たした後の戻り先を失わないため |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-054-passkey-post-login-destination.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/api/auth/post-login-route.test.ts`・`oauth-callback-route.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 5） |
+
+認めた鍵が1本のパスキーの店員（admin・supporter）が `POST /api/auth/post-login` を呼ぶと、`{ redirectTo: '/auth/verified', needsMfa: true }` が返り、戻り先の控えの行が使い切られないこと。`oauth/callback` の交換が印つきの 403 で失敗した時は、監査の `detail` が `staff_passkey_required` で、応答は 502 のままであること。
+
+### FR-AUTH-018-AC-02 認めた鍵が1本の店員に next=/admin の控えを付けても /admin に着かない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-018 |
+| 根拠 | 戻り先に `/admin` を入れて条件を飛ばす経路を塞ぐ（SEC-AUTH-043） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-054-passkey-post-login-destination.spec.ts`、3幅）、単体テスト（`tests/unit/features/auth/return-intent/return-intent-service.test.ts`・`return-path.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 5） |
+
+認めた鍵が1本の店員に `/admin` の控えを付けて `post-login` を呼んでも、`redirectTo` は `/auth/verified` で `/admin` で始まらず、控えは使い切られないこと。`amr` が欠ける・24時間を超える・`staff_passkeys_ok` が偽や文字列の店員も `/admin` に着かないこと（単体テスト）。
+
+### FR-AUTH-018-AC-03 お客さんは needsMfa:false で、認めた鍵が2本の店員は戻り先が無ければ /admin に着く
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-018 |
+| 根拠 | お客さんを店員の条件で 2 段目に送らず、条件を満たす店員は管理の画面へ入れること |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-054-passkey-post-login-destination.spec.ts`、3幅）、単体テスト・結合テスト |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 5） |
+
+お客さんで `post-login` を呼ぶと `{ redirectTo: '/', needsMfa: false }`、パスキーで入った認めた鍵が2本の店員は `{ redirectTo: '/admin', needsMfa: false }`、`/admin/orders` の控えがあればそこへ着いて控えが使い切られること。
+
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 
 | 属性 | 値 |
@@ -6249,6 +6308,21 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 窓口 `POST /api/auth/passkey/login/start`（Task 3）で足したこと: (6) IP は `getClientIp` の値だけで、無い時だけ `PASSKEY_START_DEV_IP`。`x-forwarded-for` は読まない。取れなければ GoTrue を呼ばず、回数の枠にも入れず 503。(7) 設定が `browser` の時は 409 で、鍵の確かめを通らない古い画面が (a) を呼び続けるのを見えにくくしない。(8) 鍵が引けない・形が違うのは窓口だけの 503 で、アプリ全体は止めない。(9) GoTrue の 200 の応答の `challenge_id`・`options.challenge`・`expires_at` の形を確かめ、違えば 502 で閉じる。監査は固定の符号だけで、鍵・IP・`challenge_id` を残さない。
 
 残る危険として受け入れること: 本番の鍵の形（`sb_secret_` か JWT か）は読んでいない。JWT の形なら、`SUPABASE_SECRET_KEY` を足すまで始め (a) は動かない（閉じる側）。
+
+### SEC-AUTH-043 行き先の判定は、パスキーの入口の条件を満たさない店員を `/admin` に着かせない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-044 |
+| 根拠 | ログインの後の行き先・戻り先の判定は画面の出し分けで、権限の判定ではない（権限は管理の窓口と RLS が DB で数える）。それでも、条件を満たさない店員を `/admin` に着かせると、管理の画面の骨組みを見せ、戻り先の控えを使い切らせてしまう。判断は ADR-0468・DD-AUTH-054 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/post-login-route.test.ts`・`tests/unit/features/auth/return-intent/`）、E2E `e2e/FR-LOGIN-054-passkey-post-login-destination.spec.ts`（FR-AUTH-018-AC-01〜03） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 5）（Review Focus 5） |
+| 優先度 | MUST |
+
+守ること: (1) 店員の `staffEntryOk` は、トークンの `claims` だけから出し（本文・見出しは読まない）、`evaluateStaffEntry` が `amr` のパスキー・24時間以内・認めた2本（JWT の印 `staff_passkeys_ok` が真の時だけ）を満たす時だけ真にする。(2) 型の合わない値（文字列の時刻・文字列 `"true"`・欠けた `amr`）は偽（閉じる側）。(3) `validateReturnPath` の出口は `staffEntryOk` が真の店員にだけ `/admin` を通し、お客さん・偽は断る。(4) `oauth/callback`・`confirm` は常に `staffEntryOk: false` を渡し、店員が来ても 2 段目の側に倒す。(5) 店員が条件を満たさない時は、控えを使い切らず `/auth/verified` へ送る。
+
+残る危険として受け入れること: `staff_passkeys_ok` は最長1時間（次の更新まで）古くなりうるヒントで、認めた鍵が消えた直後の1時間は `/admin` の画面へ着く。その間も管理の窓口と RLS は DB で数えて止めるので、データは見えない（`/api/auth/me` の `mfaVerified` と同じ扱い。SEC-AUTH-039）。
 
 ## 派生要件
 

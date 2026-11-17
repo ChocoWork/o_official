@@ -353,7 +353,7 @@ describe('API-AUTH-008 GET /api/auth/oauth/callback', () => {
       expect(intentCookieCalls(res)).toEqual([expect.objectContaining({ value: '', maxAge: 0 })]);
     });
 
-    test.each(['admin', 'supporter'])('API-AUTH-008 %s は aal1 なので /auth/verified（TOTP の画面）へ通し、控えは使い切らない', async (role) => {
+    test.each(['admin', 'supporter'])('API-AUTH-008 %s は入口の条件を満たさない側なので /auth/verified へ通し、控えは使い切らない', async (role) => {
       exchangeCodeForSessionMock.mockResolvedValueOnce(exchanged({ app_metadata: { role } }));
       fakeConsume('/admin/orders');
 

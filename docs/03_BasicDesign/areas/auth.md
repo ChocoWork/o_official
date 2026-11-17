@@ -298,7 +298,7 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-AUTH-005、SEC-AUTH-026、SEC-AUTH-032、SEC-AUTH-007、ADR-0412、ADR-0413 |
+| 上位 | FR-AUTH-005、SEC-AUTH-026、SEC-AUTH-032、SEC-AUTH-007、ADR-0412、ADR-0413、ADR-0468 |
 | 根拠 | ログインの後の行き先を URL の値で決めると、外の住所へ送る罠にも、確認のメールや Referer を通した改ざんにも使われる（SEC-AUTH-026）。行き先は入口で確かめてサーバーに控え、端末には番号だけを HttpOnly の Cookie で持たせ、出口で 1 回だけ使う（FR-AUTH-005、SEC-AUTH-032、ADR-0412）。管理者・サポーターは 2 段目を通すまで使い切らず、出口でも役割と aal2 を見て確かめ直す（FR-AUTH-005-AC-05） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -321,7 +321,7 @@ flowchart LR
 - 部品: 確かめ（DD-AUTH-032）、保存（DD-AUTH-033）、開始と解決（DD-AUTH-034）、出口の窓口（DD-AUTH-035）、入口のリンクの URL（DD-AUTH-036）。確かめは入口と出口の両方で同じ関数を通す
 - 入口: ログインを始める POST の成功の後だけで作る。`login` は確認コードを送れた後、`oauth/start` は Google の URL を作れた後、`register` は Turnstile と漏洩の確かめの後で既存会員の照会の前（3 つの 202 の形を同じにするため。ARC-AUTH-006）。`login`・`oauth/start` は、入口の `next` が無い・確かめに外れた時は何も作らず、残っている古い Cookie を消す。`register` だけは戻り先が無い・外れた時も既定の `/` で必ず控え、登録したメールに結ぶ（`bindTo`。番号とメールを一緒にハッシュする。SEC-AUTH-007、ADR-0413）
 - 出口 A（端末が移る所）: 確認コードの確定と TOTP の確定の後に `POST /api/auth/post-login`（API-AUTH-019）が使い切って行き先を返す。出口 B（サーバーが 303 で移す所）: Google の戻り（API-AUTH-008）と確認のメールのリンク（API-AUTH-006）がその場で使い切る。確認のリンクだけは session を作る前に使い切り、当たった時だけ session を作る（SEC-AUTH-007）
-- 使う時の条件: 用途（`purpose`）が合う（ログイン系の出口は `login`、確認のリンクは `signup`）、期限内、未使用。確認のリンクは、確認した利用者のメールが、控えを作った時の登録のメールと同じであること（番号 + メールのハッシュが行に当たること）。管理者・サポーターは aal2 になるまで使い切らない。使い切った後に出口の確かめを、役割と aal を渡してもう一度かける（`/admin` は管理者・サポーターの aal2 だけ）
+- 使う時の条件: 用途（`purpose`）が合う（ログイン系の出口は `login`、確認のリンクは `signup`）、期限内、未使用。確認のリンクは、確認した利用者のメールが、控えを作った時の登録のメールと同じであること（番号 + メールのハッシュが行に当たること）。管理者・サポーターは入口の条件（パスキー・24時間・認めた2本。FR-AUTH-018）を満たすまで使い切らない。使い切った後に出口の確かめを、役割と `staffEntryOk` を渡してもう一度かける（`/admin` は条件を満たす管理者・サポーターだけ。以前は aal2）
 - 失敗: DB の誤り・期限切れ・使用済み・別のブラウザ（Cookie が無い）・確かめの外れは、行き先をホーム `/`（管理者・サポーターは `/admin`。2 段目の前は `/auth/verified`）にする。ログインそのものは止めない。確認のリンクだけは、当たらない時（Cookie が無い・別のメールの印を含む）に session を作らず `/login?registered=1` へ送り、Cookie は消さない。監査には理由の符号だけを残し、道筋・番号・メールは残さない
 - 掃除: 期限が切れた行を毎日消す（DATA-AUTH-005）。ログアウトで Cookie を消す（API-AUTH-015）
 
@@ -1253,12 +1253,12 @@ stateDiagram-v2
 | 項目 | 中身 |
 | --- | --- |
 | 入力 | 本文なし。認証の Cookie と `sb-return-intent` の Cookie |
-| 順番 | IP の制限（`auth:post-login`、10 分に 60 回）→ 認証の確かめ（`/api/auth/me` と同じ部品）→ 役割と aal を claims から取る → 戻り先の解決（用途は `login`） |
+| 順番 | IP の制限（`auth:post-login`、10 分に 60 回）→ 認証の確かめ（`/api/auth/me` と同じ部品）→ 役割と店員の入口の条件（`staffEntryOk`。`amr` のパスキー・24時間・認めた2本の印を claims から `evaluateStaffEntry` で判定。DD-AUTH-054）を claims から取る → 戻り先の解決（用途は `login`） |
 | 200 | `{ redirectTo, needsMfa }`。`no-store`・`no-referrer`。使い切った時は戻り先の Cookie を消す |
 | 失敗 | 401（未ログイン）、503（認証を確かめられない。`Retry-After` つき）、429（制限） |
 | 監査 | 出口の確かめで戻り先が外れた時だけ `auth.return_intent` の rejected（理由の符号だけ。道筋・番号・メールは残さない） |
 
-- 戻り先の解決: 管理者・サポーターで aal2 でない間は、使い切らずに `redirectTo: '/auth/verified'`・`needsMfa: true` を返す。それ以外は Cookie の番号で使い切り、使い切れた戻り先を役割と aal を渡して確かめ直す。外れた・番号が無い・使えない時は、一般は `/`、管理者・サポーター（aal2）は `/admin`
+- 戻り先の解決: 管理者・サポーターで `staffEntryOk` が偽の間（入口の条件を満たさない間。以前は aal2 でない間）は、使い切らずに `redirectTo: '/auth/verified'`・`needsMfa: true` を返す。それ以外は Cookie の番号で使い切り、使い切れた戻り先を役割と `staffEntryOk` を渡して確かめ直す。外れた・番号が無い・使えない時は、一般は `/`、管理者・サポーター（入口の条件を満たす）は `/admin`。`oauth/callback`・`confirm` は常に `staffEntryOk: false` を渡す（FR-AUTH-018、ADR-0468。名前 `needsMfa`・`/auth/verified` は段4まで変えない）
 - 続けて 2 回呼ぶと 2 回目は使えず、行き先は `/` になる（FR-AUTH-005-AC-07）
 - 呼ぶ所は確認コードの画面（SCR-AUTH-004）と `/auth/verified`（SCR-AUTH-007）。端末側でも返った道筋を戻り先の確かめに通してから移る
 

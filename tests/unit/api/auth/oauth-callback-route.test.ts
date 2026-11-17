@@ -173,7 +173,7 @@ describe('Google のログインの戻りの窓口', () => {
       });
     });
 
-    it.each(['admin', 'supporter'])('DD-AUTH-021 役割が %s なら aal1 で解決し、/auth/verified へ送る（控えは使い切らない）', async (role) => {
+    it.each(['admin', 'supporter'])('DD-AUTH-021 役割が %s なら入口の条件を満たさない側（staffEntryOk 偽）で解決し、/auth/verified へ送る（控えは使い切らない）', async (role) => {
       exchangeCodeForSessionMock.mockResolvedValueOnce(
         exchangeSuccess({ id: 'staff-1', email: 'staff@example.com', app_metadata: { role } })
       );
@@ -184,7 +184,7 @@ describe('Google のログインの戻りの窓口', () => {
       expect(resolveReturnDestinationMock).toHaveBeenCalledWith({
         cookieHeader: 'sb-return-intent=x',
         purpose: 'login',
-        viewer: { id: 'staff-1', role, aal: 'aal1' },
+        viewer: { id: 'staff-1', role, staffEntryOk: false },
       });
       expect(applyReturnIntentCookieMock).toHaveBeenCalledWith(expect.anything(), { kind: 'keep' });
     });
@@ -210,7 +210,7 @@ describe('Google のログインの戻りの窓口', () => {
       expect(resolveReturnDestinationMock).toHaveBeenCalledWith({
         cookieHeader: 'sb-return-intent=x',
         purpose: 'login',
-        viewer: { id: 'user-123', role: 'user', aal: 'aal1' },
+        viewer: { id: 'user-123', role: 'user', staffEntryOk: false },
       });
     });
 
@@ -243,7 +243,7 @@ describe('Google のログインの戻りの窓口', () => {
 
       expect(res.headers.get('location')).toBe('http://localhost:3000/');
       expect(resolveReturnDestinationMock).toHaveBeenCalledWith(
-        expect.objectContaining({ viewer: { id: 'user-9', role: 'user', aal: 'aal1' } }),
+        expect.objectContaining({ viewer: { id: 'user-9', role: 'user', staffEntryOk: false } }),
       );
     });
 
@@ -372,6 +372,37 @@ describe('Google のログインの戻りの窓口', () => {
         metadata: { error: 'invalid_grant' },
       });
       expect(persistSessionAndCookiesMock).not.toHaveBeenCalled();
+    });
+
+    it('DD-AUTH-054 フックの印つき 403 は監査の detail を staff_passkey_required にし、誤りの文は残さず、応答は 502 のまま', async () => {
+      exchangeCodeForSessionMock.mockResolvedValueOnce({
+        data: { session: null, user: null },
+        error: { status: 403, message: '[staff-passkey-required] staff must sign in with a passkey' },
+      });
+
+      const res = await callGet(callbackRequest('?code=staff'));
+
+      expect(res.status).toBe(502);
+      expect((await res.json()).error).toBe('OAuth exchange failed');
+      expect(logAuditMock).toHaveBeenCalledWith({
+        action: 'auth.oauth.callback',
+        outcome: 'failure',
+        detail: 'staff_passkey_required',
+        metadata: { error: null },
+      });
+    });
+
+    it('DD-AUTH-054 印の無い 403 は今までどおり token_exchange_failed', async () => {
+      exchangeCodeForSessionMock.mockResolvedValueOnce({
+        data: { session: null, user: null },
+        error: { status: 403, message: 'forbidden' },
+      });
+
+      await callGet(callbackRequest('?code=bad'));
+
+      expect(logAuditMock).toHaveBeenCalledWith(
+        expect.objectContaining({ detail: 'token_exchange_failed', metadata: { error: 'forbidden' } }),
+      );
     });
 
     it('DD-AUTH-021 誤りの文が無ければ監査の error は null', async () => {

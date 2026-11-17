@@ -153,10 +153,10 @@ describe('DD-AUTH-032 validateReturnPath: /admin', () => {
   });
 
   const denied: ReturnViewer[] = [
-    { role: 'user', aal: 'aal1' },
-    { role: 'user', aal: 'aal2' },
-    { role: 'admin', aal: 'aal1' },
-    { role: 'supporter', aal: null },
+    { role: 'user', staffEntryOk: false },
+    { role: 'user', staffEntryOk: true },
+    { role: 'admin', staffEntryOk: false },
+    { role: 'supporter', staffEntryOk: false },
   ];
   it.each(denied)('DD-AUTH-032 出口は %j に /admin を断る', (viewer) => {
     expect(validateReturnPath('/admin', { ...opts, viewer })).toEqual({
@@ -166,8 +166,8 @@ describe('DD-AUTH-032 validateReturnPath: /admin', () => {
   });
 
   const allowed: ReturnViewer[] = [
-    { role: 'admin', aal: 'aal2' },
-    { role: 'supporter', aal: 'aal2' },
+    { role: 'admin', staffEntryOk: true },
+    { role: 'supporter', staffEntryOk: true },
   ];
   it.each(allowed)('DD-AUTH-032 出口は %j に /admin を通す', (viewer) => {
     expect(validateReturnPath('/admin', { ...opts, viewer })).toEqual({ ok: true, path: '/admin' });
@@ -175,14 +175,14 @@ describe('DD-AUTH-032 validateReturnPath: /admin', () => {
 
   it('DD-AUTH-032 /item/../admin は解釈した /admin として扱う（入口は通り、出口で一般の会員は断る）', () => {
     expect(validateReturnPath('/item/../admin', opts)).toEqual({ ok: true, path: '/admin' });
-    expect(validateReturnPath('/item/../admin', { ...opts, viewer: { role: 'user', aal: 'aal2' } })).toEqual({
+    expect(validateReturnPath('/item/../admin', { ...opts, viewer: { role: 'user', staffEntryOk: true } })).toEqual({
       ok: false,
       reason: 'admin_requires_privileged_aal2',
     });
   });
 
   it('DD-AUTH-032 viewer は /admin 以外の頁には影響しない', () => {
-    expect(validateReturnPath('/account', { ...opts, viewer: { role: 'user', aal: 'aal1' } })).toEqual({
+    expect(validateReturnPath('/account', { ...opts, viewer: { role: 'user', staffEntryOk: false } })).toEqual({
       ok: true,
       path: '/account',
     });

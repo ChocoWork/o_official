@@ -1,6 +1,6 @@
 /**
  * DD-AUTH-035 ログインの後の行き先の窓口（src/app/api/auth/post-login/route.ts）の単体テスト。
- * 回数の制限・認証・戻り先の解決（return-intent-service）は差し替え、窓口の分岐と、役割と aal の出どころ、応答の形を確かめる。
+ * 回数の制限・認証・戻り先の解決（return-intent-service）は差し替え、窓口の分岐と、役割と入口の条件の出どころ、応答の形を確かめる。
  */
 
 jest.mock('next/server', () => {
@@ -55,7 +55,7 @@ function request(headers: Record<string, string> = {}) {
 
 const verifiedWith = (claims: Record<string, unknown> = {}) => ({
   ok: true,
-  claims: { sub: 'user-1', aal: 'aal1', app_metadata: { role: 'user' }, ...claims },
+  claims: { sub: 'user-1', app_metadata: { role: 'user' }, ...claims },
 });
 
 describe('POST /api/auth/post-login', () => {
@@ -132,7 +132,7 @@ describe('POST /api/auth/post-login', () => {
     expect(mockResolveReturnDestination).toHaveBeenCalledWith({
       cookieHeader: 'sb-return-intent=x; other=1',
       purpose: 'login',
-      viewer: { id: 'user-1', role: 'user', aal: 'aal1' },
+      viewer: { id: 'user-1', role: 'user', staffEntryOk: false },
     });
     expect(mockApplyReturnIntentCookie).toHaveBeenCalledWith(res, action);
   });
@@ -144,13 +144,42 @@ describe('POST /api/auth/post-login', () => {
     expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
   });
 
-  test('DD-AUTH-035 役割と aal はトークンの claims から読み、要求の見出し（x-role など）は無視する', async () => {
-    mockAuthenticateRequest.mockResolvedValue(verifiedWith({ aal: 'aal2', app_metadata: { role: 'supporter' } }));
+  const nowSec = () => Math.floor(Date.now() / 1000);
+  const staffClaims = (over: Record<string, unknown> = {}) => ({
+    app_metadata: { role: 'supporter' },
+    amr: [{ method: 'passkey', timestamp: nowSec() - 60 }],
+    staff_passkeys_ok: true,
+    ...over,
+  });
 
-    await POST(request({ 'x-role': 'admin', 'x-aal': 'aal1' }));
+  test('DD-AUTH-054 役割と入口の条件はトークンの claims から読み、要求の見出し（x-role など）は無視する', async () => {
+    mockAuthenticateRequest.mockResolvedValue(verifiedWith(staffClaims()));
+
+    await POST(request({ 'x-role': 'user', 'x-aal': 'aal1', 'x-staff-entry-ok': 'false' }));
 
     expect(mockResolveReturnDestination).toHaveBeenCalledWith(
-      expect.objectContaining({ viewer: { id: 'user-1', role: 'supporter', aal: 'aal2' } }),
+      expect.objectContaining({ viewer: { id: 'user-1', role: 'supporter', staffEntryOk: true } }),
+    );
+  });
+
+  test.each([
+    ['amr が欠ける', { amr: undefined }],
+    ['amr が空', { amr: [] }],
+    ['パスキーの時刻が文字列', { amr: [{ method: 'passkey', timestamp: String(nowSec() - 60) }] }],
+    ['パスキーの時刻が未来', { amr: [{ method: 'passkey', timestamp: nowSec() + 3600 }] }],
+    ['パスキーの時刻が24時間超', { amr: [{ method: 'passkey', timestamp: nowSec() - 25 * 3600 }] }],
+    ['パスキーでない amr', { amr: [{ method: 'password', timestamp: nowSec() - 60 }] }],
+    ['staff_passkeys_ok が偽', { staff_passkeys_ok: false }],
+    ['staff_passkeys_ok が文字列 "true"', { staff_passkeys_ok: 'true' }],
+    ['staff_passkeys_ok が無い', { staff_passkeys_ok: undefined }],
+    ['aal2 だけ（旧 TOTP）', { amr: undefined, aal: 'aal2' }],
+  ])('DD-AUTH-054 店員で %s なら staffEntryOk は偽（/admin に着かせない）', async (_label, over) => {
+    mockAuthenticateRequest.mockResolvedValue(verifiedWith(staffClaims(over)));
+
+    await POST(request());
+
+    expect(mockResolveReturnDestination).toHaveBeenCalledWith(
+      expect.objectContaining({ viewer: expect.objectContaining({ staffEntryOk: false }) }),
     );
   });
 
@@ -169,17 +198,17 @@ describe('POST /api/auth/post-login', () => {
     );
   });
 
-  test('DD-AUTH-035 aal が claims に無ければ null で解決に渡す', async () => {
+  test('DD-AUTH-035 入口の条件の claims が無い会員は staffEntryOk を偽で解決に渡す', async () => {
     mockAuthenticateRequest.mockResolvedValue({ ok: true, claims: { sub: 'user-1' } });
 
     await POST(request());
 
     expect(mockResolveReturnDestination).toHaveBeenCalledWith(
-      expect.objectContaining({ viewer: { id: 'user-1', role: 'user', aal: null } }),
+      expect.objectContaining({ viewer: { id: 'user-1', role: 'user', staffEntryOk: false } }),
     );
   });
 
-  test('DD-AUTH-035 特権・aal1 なら needsMfa:true と /auth/verified を返し、控えの Cookie には触らない（keep）', async () => {
+  test('DD-AUTH-035 特権で入口の条件を満たさないなら needsMfa:true と /auth/verified を返し、控えの Cookie には触らない（keep）', async () => {
     mockAuthenticateRequest.mockResolvedValue(verifiedWith({ app_metadata: { role: 'admin' } }));
     mockResolveReturnDestination.mockResolvedValue({
       path: '/auth/verified',
