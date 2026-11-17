@@ -195,7 +195,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 状態 | 推定 |
 | 出どころ | ユーザーの発言 2026-10-25（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`） |
 
-要求の文: 会員だけの頁（`/account`・注文の履歴など）をログインせずに開いた人は、ログインの後にその頁へ戻る。ヘッダーのログインから入った人は、ログインを始めた頁へ戻る。戻り先が無い・確かめに通らない時はホーム `/` へ送る。管理者・サポーターは先に 2 段目（TOTP）を通し、その後で戻り先へ送る。
+要求の文: 会員だけの頁（`/account`・注文の履歴など）をログインせずに開いた人は、ログインの後にその頁へ戻る。ヘッダーのログインから入った人は、ログインを始めた頁へ戻る。戻り先が無い・確かめに通らない時はホーム `/` へ送る。管理者・サポーターは、入口の条件（パスキーで入った・24時間以内・認めた鍵が2本以上）を満たすまで戻り先へは送らず、満たした後で戻り先へ送る（段1b より前は TOTP の2段目を通すことだった。TOTP の流れは段4まで残る）。
 
 ### SR-AUTH-009 ログイン中の会員が自分でパスワードを変えられる
 
@@ -2172,7 +2172,7 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 出どころ | ユーザーの発言 2026-10-25（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`） |
 | 優先度 | MUST |
 
-戻ってよい頁は、公開の `/`・`/item`・`/look`・`/news`・`/stockist`・`/about`・`/search`・`/privacy`・`/contact`、会員の `/account`・`/wishlist`・`/cart`・`/checkout`（それぞれ `/x` と `/x/…`。`/` は完全一致）と、2 段目を済ませた管理者・サポーターだけの `/admin`。戻り先が `/login`・`/register`・`/auth/*`・`/api/*` の時と、確かめに通らない時は `/` へ送る。戻り先はログインを始める POST の時だけサーバーに控え、ログインが確定する所で 1 回だけ使う。管理者・サポーターは 2 段目の後で使い、戻り先が無ければ今までどおり `/admin` へ送る。
+戻ってよい頁は、公開の `/`・`/item`・`/look`・`/news`・`/stockist`・`/about`・`/search`・`/privacy`・`/contact`、会員の `/account`・`/wishlist`・`/cart`・`/checkout`（それぞれ `/x` と `/x/…`。`/` は完全一致）と、入口の条件を満たした管理者・サポーターだけの `/admin`。戻り先が `/login`・`/register`・`/auth/*`・`/api/*` の時と、確かめに通らない時は `/` へ送る。戻り先はログインを始める POST の時だけサーバーに控え、ログインが確定する所で 1 回だけ使う。管理者・サポーターは入口の条件を満たした後で使い、戻り先が無ければ今までどおり `/admin` へ送る。
 
 ### FR-AUTH-006 `/account/password` の 2 段の画面と、パスワード変更の 2 つの窓口
 
@@ -4502,7 +4502,7 @@ SNSアイコンのリンク要素が flex かつ items-center justify-center で
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-AUTH-005 |
-| 根拠 | FR-AUTH-005 の「2 段目の後で戻り先へ送る」と「戻り先が無ければ `/admin`」を確かめる |
+| 根拠 | FR-AUTH-005 の「入口の条件を満たした後で戻り先へ送る」と「戻り先が無ければ `/admin`」を確かめる（段1b より前は「2 段目の後」。判定は ADR-0468） |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの発言 2026-10-25（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`） |
@@ -5586,7 +5586,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | 出どころ | `docs/superpowers/specs/2026-09-04-login-otp-dedicated-screen-design.md` |
 | 優先度 | MUST |
 
-Google でログインした管理者・サポーターは、TOTP を済ませる（aal2）まで管理の窓口に入れない。会員の Google ログインにメール OTP を求めない場合は、その判断を要件に書く。管理の部分は今のコードが満たす（`src/lib/auth/admin-rbac.ts`、`src/app/auth/verified/page.tsx`）。会員の部分は決めていない（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」に載せる）。
+Google でログインした管理者・サポーターは、入口の条件（パスキーで入った・24時間以内・認めた鍵2本。段1a の移行 E と `admin-rbac` で `aal2` から置き換えた）を満たすまで管理の窓口に入れない（Google の戻りは `amr` にパスキーが無いので入れない。以前は TOTP を済ませる `aal2` が条件。TOTP の流れは段4まで残る）。会員の Google ログインにメール OTP を求めない場合は、その判断を要件に書く。管理の部分は今のコードが満たす（`src/lib/auth/admin-rbac.ts`、`src/app/auth/verified/page.tsx`）。会員の部分は決めていない（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」に載せる）。
 
 #### SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403
 
@@ -5686,7 +5686,7 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 | 確かめ方 | DB 結合テスト（`tests/integration/db/auth_has_permission_passkey.integration.test.ts`。手元の使い捨て DB で M2 を当てた後に controller が流す）、移行の文面の単体テスト（`tests/unit/migrations/sec-has-permission-aal2.test.ts`）。E2E は `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`（アプリのログインと同じ形で結び付けた admin の aal1 の JWT では他人の注文が読めず、同じ session を aal2 に上げた JWT では読める。止めているのが aal だけであることを示す）。ほかの領域の DB の直接の道の E2E（`FR-ADMIN-MISC-005`・`FR-HOME-024`・`FR-LOOK-SEC-002`・`FR-NEWS-SEC-002`・`FR-STOCKIST-016`）も、M2 を当てた DB で `test.fail` 無しで通る |
 | 出どころ | `docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md`（Task 6、P14・P15）、`.superpowers/sdd/2026-10-25-security-gap-fixes/wave5-decisions.md`（Q2 案 B） |
 
-`public.has_permission(permission_code)` は、`auth.uid()` があり、JWT の `aal` が `aal2` で、その利用者に ACL の権限があり、さらに JWT の `session_id` が「`auth.sessions` に生きている行があり、自前の `sessions` に同じ `auth_session_id` と利用者の失効していない行がある」時だけ真を返す。`aal1`・`aal` が無い・`session_id` が無い・uuid の形でない・結び付いていない・失効した・`auth.sessions` に行が無い、のどれでも偽を返し、例外は出さない。ACL の無い利用者は常に偽。あわせて、会員の本人の行を返す表（`profiles`・`orders`・`order_items`）は、`authenticated` が結び付いた生きた session を持たなければ 0 行になる（書き込みも 0 行）。anon がゲストの注文を `app.session_id` で読む道は変えない。
+`public.has_permission(permission_code)` は（段1a の移行 E で `aal2` の確かめは店員のパスキーの条件に置き換わった。以下は置き換え前の記録）、`auth.uid()` があり、JWT の `aal` が `aal2` で、その利用者に ACL の権限があり、さらに JWT の `session_id` が「`auth.sessions` に生きている行があり、自前の `sessions` に同じ `auth_session_id` と利用者の失効していない行がある」時だけ真を返す。`aal1`・`aal` が無い・`session_id` が無い・uuid の形でない・結び付いていない・失効した・`auth.sessions` に行が無い、のどれでも偽を返し、例外は出さない。ACL の無い利用者は常に偽。あわせて、会員の本人の行を返す表（`profiles`・`orders`・`order_items`）は、`authenticated` が結び付いた生きた session を持たなければ 0 行になる（書き込みも 0 行）。anon がゲストの注文を `app.session_id` で読む道は変えない。
 
 ### SEC-AUTH-011 認証の表は anon・authenticated に表の権限を付けない
 

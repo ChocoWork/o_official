@@ -299,7 +299,7 @@ stateDiagram-v2
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-AUTH-005、SEC-AUTH-026、SEC-AUTH-032、SEC-AUTH-007、ADR-0412、ADR-0413、ADR-0468 |
-| 根拠 | ログインの後の行き先を URL の値で決めると、外の住所へ送る罠にも、確認のメールや Referer を通した改ざんにも使われる（SEC-AUTH-026）。行き先は入口で確かめてサーバーに控え、端末には番号だけを HttpOnly の Cookie で持たせ、出口で 1 回だけ使う（FR-AUTH-005、SEC-AUTH-032、ADR-0412）。管理者・サポーターは 2 段目を通すまで使い切らず、出口でも役割と aal2 を見て確かめ直す（FR-AUTH-005-AC-05） |
+| 根拠 | ログインの後の行き先を URL の値で決めると、外の住所へ送る罠にも、確認のメールや Referer を通した改ざんにも使われる（SEC-AUTH-026）。行き先は入口で確かめてサーバーに控え、端末には番号だけを HttpOnly の Cookie で持たせ、出口で 1 回だけ使う（FR-AUTH-005、SEC-AUTH-032、ADR-0412）。管理者・サポーターは入口の条件（`staffEntryOk`。`amr` のパスキー・24時間以内・認めた鍵2本の JWT のヒント。ADR-0468）を満たすまで使い切らず、出口でも役割と `staffEntryOk` を見て確かめ直す（FR-AUTH-005-AC-05）。段1b より前は `aal2`（TOTP）で見ていた。TOTP の流れは段4まで残る |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`（設計。波 1-A で実装した） |
@@ -814,7 +814,7 @@ stateDiagram-v2
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-AUTH-005、SEC-AUTH-032、ADR-0412 |
-| 根拠 | 戻り先を 1 回しか使えない短命の控えにして、盗まれた番号や使い終えた番号の使い回しを防ぐ（SEC-AUTH-032）。管理者・サポーターは 2 段目の後で使うので、aal1 の間は作られたまま残す（FR-AUTH-005-AC-05）。期限は login が 15 分、signup が 1 時間。signup の控えは登録したメールに結び、確認のリンクが session を作る前に使い切る（SEC-AUTH-007、ADR-0413） |
+| 根拠 | 戻り先を 1 回しか使えない短命の控えにして、盗まれた番号や使い終えた番号の使い回しを防ぐ（SEC-AUTH-032）。管理者・サポーターは入口の条件を満たした後で使うので、満たさない間（`staffEntryOk` が偽。以前は aal1 の間）は作られたまま残す（FR-AUTH-005-AC-05、ADR-0468）。期限は login が 15 分、signup が 1 時間。signup の控えは登録したメールに結び、確認のリンクが session を作る前に使い切る（SEC-AUTH-007、ADR-0413） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`（設計。波 1-A で実装した） |
@@ -822,7 +822,7 @@ stateDiagram-v2
 ```mermaid
 stateDiagram-v2
   [*] --> 作られた: login・oauth/start の POST・register で確かめに通る
-  作られた --> 作られた: 管理者・サポーターが aal1 の間は使い切らない
+  作られた --> 作られた: 管理者・サポーターが入口の条件を満たさない間（staffEntryOk が偽）は使い切らない
   作られた --> 使い切られた: 期限内で用途が合う最初の 1 回
   作られた --> 期限切れ: login は 15 分、signup は 1 時間
   使い切られた --> [*]: 期限の 1 日後に毎日の掃除で消す
@@ -1140,7 +1140,7 @@ stateDiagram-v2
 | 503 | 失効を確かめられない時 `{ authenticated: false, reason: 'unavailable' }`、`Retry-After: 30` |
 | 見出し | 全部の応答に `no-store`・`no-referrer` |
 
-- `mfaVerified` は JWT の `aal` が `aal2` か（管理の認可と同じ根拠）
+- `mfaVerified` は、店員の入口の条件（`evaluateStaffEntry`。`amr` のパスキー・24時間以内・JWT のヒントの認めた鍵2本）を満たすか（管理の認可と同じ条件。ADR-0463・ADR-0468）。以前は JWT の `aal` が `aal2` か。名前 `mfaVerified` は段4まで変えない。パスワード＋TOTP の流れは段4まで残る
 - 回数の制限が無い
 
 ### API-AUTH-014 POST /api/auth/refresh は refresh の Cookie を Supabase で新しいトークンに替え、使えない Cookie は消す
@@ -1251,7 +1251,7 @@ stateDiagram-v2
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-AUTH-005、SEC-AUTH-026、SEC-AUTH-032、ADR-0412 |
-| 根拠 | 確認コードの確定と TOTP の確定は端末が次の頁へ移すので、行き先をサーバーが決めて返す窓口が要る（FR-AUTH-005）。管理者・サポーターは aal2 になるまで使い切らず、役割と aal は呼び出した人のトークンの claims から読み、本文や見出しは見ない（SEC-AUTH-026）。使い切りは DB の 1 回の更新で行い、2 回目は使えない（SEC-AUTH-032） |
+| 根拠 | 確認コードの確定と TOTP の確定は端末が次の頁へ移すので、行き先をサーバーが決めて返す窓口が要る（FR-AUTH-005）。管理者・サポーターは入口の条件（`staffEntryOk`。以前は aal2）を満たすまで使い切らず、役割と `amr`・認めた鍵のヒントは呼び出した人のトークンの claims から読み、本文や見出しは見ない（SEC-AUTH-026）。使い切りは DB の 1 回の更新で行い、2 回目は使えない（SEC-AUTH-032） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`（設計。波 1-A で実装した） |
@@ -1646,7 +1646,7 @@ stateDiagram-v2
 
 | 部品 | 中身 |
 | --- | --- |
-| `public.has_permission(text)` の新しい本体 | 順に、(1) `auth.uid()` が空なら偽、(2) JWT の `aal` が `aal2` でなければ偽（`aal` が無いと `aal1` 扱い）、(3) ACL の `EXISTS`（G-0 の本体と同じ。`user_roles`・`roles`・`role_permissions`・`permissions`）が偽なら偽、(4) ACL が真の時だけ `private.app_session_is_live(session_id)`。`session_id` は uuid の形を正規表現で確かめてからキャストし、形が悪い・無い場合は偽で例外を出さない。安い検査を先に置くので、会員（aal1）と anon は ACL の表を引く前に返る |
+| `public.has_permission(text)` の新しい本体 | （段1a の移行 E で、(2) の `aal2` の確かめは `staff_passkey_amr_ok` と、ACL の後の `staff_passkey_count_ok` に置き換わった。後ろの「つないだ」を参照。ここは置き換え前の記録）順に、(1) `auth.uid()` が空なら偽、(2) JWT の `aal` が `aal2` でなければ偽（`aal` が無いと `aal1` 扱い）、(3) ACL の `EXISTS`（G-0 の本体と同じ。`user_roles`・`roles`・`role_permissions`・`permissions`）が偽なら偽、(4) ACL が真の時だけ `private.app_session_is_live(session_id)`。`session_id` は uuid の形を正規表現で確かめてからキャストし、形が悪い・無い場合は偽で例外を出さない。安い検査を先に置くので、会員（aal1）と anon は ACL の表を引く前に返る |
 | 設定と権限 | `LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''`。`CREATE OR REPLACE` なので所有者と EXECUTE（`authenticated`・`service_role`・`postgres`。`anon` なし）は保たれ、移行は GRANT・REVOKE を書かない |
 | 会員の本人の行の方針 | `profiles`・`orders`・`order_items` の各表に `"require app bound live session"` を 1 本ずつ。`AS RESTRICTIVE FOR ALL TO authenticated USING ((SELECT private.is_app_bound_live_session())) WITH CHECK (同じ式)`。既存の許可の方針と AND で効き、結び付いた生きた session の無い `authenticated` は本人の行も 0 行（書き込みも 0 行）。`anon` には付けない（ゲストの注文は `app.session_id` で読む道のまま） |
 | 公開の読みの方針 | `status = 'published' OR has_permission(...)` の形の方針は RESTRICTIVE にしない。`has_permission` が偽になるだけなので、一般の会員（aal1）は公開の行を今までどおり読む |

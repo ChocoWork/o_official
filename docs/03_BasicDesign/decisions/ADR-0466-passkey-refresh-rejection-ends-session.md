@@ -1,6 +1,6 @@
 # ADR-0466 フックが更新を拒否した店員のセッションは、アプリが終わらせる
 
-> 状態: 推定 | 確認日: 2026-11-17 | 対象: `src/app/api/auth/refresh/route.ts` | 基準コミット: 77b0a489
+> 状態: 推定 | 確認日: 2026-11-17 | 対象: `src/app/api/auth/refresh/route.ts`、`src/lib/auth/staff-passkey-session-end.ts` | 基準コミット: 77b0a489
 
 ## 概要
 
@@ -12,7 +12,7 @@ GoTrue のフックが店員の更新を拒否した（403 で文の頭が印 `[
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の AUTH |
 | 対応する ID | SR-AUTH-020、FR-AUTH-022、SEC-AUTH-047、THR-AUTH-048、DD-AUTH-058、API-AUTH-014、ADR-0463 |
-| 対象のコード | `src/app/api/auth/refresh/route.ts`、`src/lib/auth/staff-passkey-reject.ts`（1a） |
+| 対象のコード | `src/app/api/auth/refresh/route.ts`、`src/lib/auth/staff-passkey-session-end.ts`（セッションを終わらせる共通の部品。ログインの終わりと更新が使う）、`src/lib/auth/staff-passkey-reject.ts`（1a） |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-2）、[段1b の計画](../../superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md)、[ADR-0463](ADR-0463-staff-entry-by-passkey-conditions.md) |
 | 試験 | 単体 `tests/unit/api/auth/refresh-route.test.ts`、E2E `e2e/FR-LOGIN-053-passkey-refresh-rejection.spec.ts` |
 | 調べた時点 | 2026-11-17（手元の GoTrue v2.196.0 と本番ビルドの E2E で確かめた） |

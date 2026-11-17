@@ -182,7 +182,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 - **段3まで `supabase db push`（どの形でも）を流さない**: 上の移行 E の節の決まりに、この F も含める。当てるのは調整役だけ（オーナーの許可で）
 - 古い行の運用: 窓口が `passkey_approve` の `23505`（`stale approval`）で失敗したら、正しい鍵なら SQL で `private.approved_passkeys` の古い行を消して認め直す（SEC-AUTH-041）
 - 手元で確かめた結果（2026-11-17、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_server_fns.integration.test.ts` 22件通過、`tests/integration/db/auth_*` 16ファイルの DB 結合が通過（直し1の後）。単体 `passkey-approval-rpc.test.ts` 35件通過。E2E `FR-LOGIN-047`（3幅）通過
-- 段1b 全体の確かめ（2026-11-17 Task 12、`npx.cmd supabase db reset` の後）: 手元の DB の結合試験（`--runInBand`）は7265件通過・3件失敗。失敗は既知の順番の汚れ（unit-binding-refunds・group_g3_cancel）だけで、reset の後に単独で流すと78件通過。`auth_passkey_*` と `has_permission` を使う DB 結合は全部通過。E2E の全件（本番ビルド・3つの幅）は5467件通過・37件失敗・47件スキップ。新しい赤2件は単独で通過。**移行 F は本番未適用のまま**（段3まで `db push` を流さない一覧にある。`db-migrations.yml` に push の引き金は無い）
+- 段1b 全体の確かめ（2026-11-17 Task 12、`npx.cmd supabase db reset` の後）: 手元の DB の結合試験（`--runInBand`）は7265件通過・3件失敗。失敗は既知の順番の汚れ（unit-binding-refunds・group_g3_cancel）だけで、reset の後に単独で流すと78件通過。`auth_passkey_*`（7ファイル）と `auth_has_permission_passkey` は全部通過。`has_permission` を使うほかの DB 結合は、全件の中で落ちた既知の順番の汚れ `group_g3_cancel` を除き通過（それも単独で通過）。E2E の全件（本番ビルド・3つの幅）は5467件通過・37件失敗（35件は 1a の比べる元から既知の赤）・47件スキップ。新しい赤2件は単独で通過し、環境由来と切り分けた。FR-ACCOUNT-007-logout は 2026-10 から全件で約20回、30秒のタイムアウトになっていて、比べる元の 1a でも 25 秒かかっていた。FR-LOOK-SEC-004 の SEC-LOOK-015 tablet は、試験自身の後始末の DDL がデッドロックしたもので、1a の Task 9 の全件でも同じ形で落ちた（同じ実行で mobile・desktop は通過）。1b はどちらにも触れていない。**移行 F は本番未適用のまま**（段3まで `db push` を流さない一覧にある。`db-migrations.yml` に push の引き金は無い）
 
 ## パスキー段1a の本番への当て方の順と前提（段1b の移行 F を含む）
 
