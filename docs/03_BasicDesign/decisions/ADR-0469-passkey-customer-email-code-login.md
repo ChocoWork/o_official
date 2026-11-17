@@ -11,8 +11,8 @@
 | 項目 | 内容 |
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の AUTH |
-| 対応する ID | SR-AUTH-021、FR-AUTH-023、SEC-AUTH-048、SEC-AUTH-049、THR-AUTH-049、DD-AUTH-059、SR-AUTH-022、FR-AUTH-025、DD-AUTH-061 |
-| 対象のコード | `src/app/api/auth/email-code/`、`src/features/auth/services/email-code-session.ts`、`src/app/login/password/page.tsx`、`src/components/AuthTabs.tsx` |
+| 対応する ID | SR-AUTH-021、FR-AUTH-023、SEC-AUTH-048、SEC-AUTH-049、THR-AUTH-049、DD-AUTH-059、SR-AUTH-022、FR-AUTH-025、DD-AUTH-061、FR-AUTH-027、DD-AUTH-063 |
+| 対象のコード | `src/app/api/auth/email-code/`、`src/features/auth/services/email-code-session.ts`、`src/app/login/password/page.tsx`、`src/components/AuthTabs.tsx`、`src/app/login/page.tsx`、`src/features/auth/passkey/components/LoginChoices.tsx`・`EmailCodeStartForm.tsx` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（6-1）、[段2の計画](../../superpowers/plans/2026-11-17-passkey-stage2-customers.md)、[お客さんのログインの詳細](../../04_DetailDesign/sequence/auth-passkey-customer-screens.md) |
 | 調べた時点 | 2026-11-17（手元の GoTrue で、作成→コードの送信→確定の組み合わせを実測した） |
 
@@ -64,9 +64,9 @@
 ##### 決定
 
 - 旧の `/login` のページを `src/app/login/password/page.tsx` に移す。検索に載せない（`robots: noindex, nofollow`）。どこからもリンクしない（旧の流れの中の戻り先を除く）
-- `src/app/login/page.tsx` は Task 3 では変えない。Task 3 の終わりは `/login` と `/login/password` が同じ中身。Task 5 で `/login` を新しい画面に作り替える（旧と新の切り替えを2つのコミットに分け、Task 3 を動かして付け替えるだけにするため）
+- `src/app/login/page.tsx` は Task 3 では変えず、Task 5 で新しい画面に作り替えた（下の「新しい `/login`（Task 5）」）。Task 3 の終わりは `/login` と `/login/password` が同じ中身だった（旧と新の切り替えを2つのコミットに分け、Task 3 を動かして付け替えるだけにするため）
 - 旧の流れの中の戻り先は `/login/password` に閉じる: `/login/verify` の保留の無い転送、`VerifyOtpClient` の再送・`post-login` の401と取りやめ、`RegisterModal` の「ログインページへ」のリンク
-- お客さんに見せる行き先は新しい `/login` のまま: `/api/auth/confirm` の `/login`・`/login?registered=1`、パスワードの再設定・変更の後の `/login`、`GuestRegisterPrompt` と注文の状態の案内の `/login?tab=register…`。新しい `/login` に着く試験の期待は Task 5 で直す
+- お客さんに見せる行き先は新しい `/login` のまま: `/api/auth/confirm` の `/login`・`/login?registered=1`、「登録済み」のメールのリンク、`/auth/verified` の「ログインページへ」、`GuestRegisterPrompt` と注文の状態の案内の `/login?tab=register…`。ただし Task 5 の調整役の判断で、パスワードの再設定・変更の完了の後だけは `/login/password` に付け替えた（下の「新しい `/login`（Task 5）」）
 - 共有の `src/contexts/Providers.tsx` の `isAuthPage` に `/login/password`・`/login/code`・`/login/passkey` を足す（範囲の外のファイル。変更は `14_login.md` と `screen-list.md` に書く）。足さないと真ん中寄せの枠にならない
 - 旧画面を操作する E2E は、URL を `/login` から `/login/password` に替える以外は期待を変えない。戻り先の確かめ（`FR-LOGIN-038`）は、リンクが `/login?next=…` へ送ることを確かめた後、旧のフォームを使う所で `/login/password?next=…` へ移る
 
@@ -81,14 +81,43 @@
 ##### 結果
 
 - 良くなること: 旧の試験を中身を変えずに緑のまま保てる。段4で旧の画面と試験を一緒に消せる
-- 悪くなること: Task 5 までの間、`/login` と `/login/password` の中身が重なる
+- 悪くなること: Task 3 の終わりから Task 5 までの間、`/login` と `/login/password` の中身が重なっていた
 
 ##### 段4で消す一覧
 
-- 画面: `src/app/login/password/page.tsx`・`src/app/login/page.tsx` の旧の中身（Task 5 で作り替えた後は残らない）、`src/app/login/verify/`、`src/components/AuthTabs.tsx`・`LoginModal.tsx`・`RegisterModal.tsx`
+- 画面: `src/app/login/password/page.tsx`（旧の中身は Task 5 で `src/app/login/page.tsx` から消えたので、ここだけ）、`src/app/login/verify/`、`src/components/AuthTabs.tsx`・`LoginModal.tsx`・`RegisterModal.tsx`
 - 共有: `src/contexts/Providers.tsx` の `isAuthPage` の `/login/verify`・`/login/password`
 - 窓口: `/api/auth/login/*`・`/api/auth/otp/verify`・`/api/auth/register`、旧い保留の Cookie（`sb-login-2fa-session`）
 - 試験: `/login/password` を開いて旧のフォームを操作する E2E（`FR-LOGIN-001`・`003`・`006`・`008`・`009`・`011`〜`017`・`019`〜`029`・`034`・`036`・`038`・`056`、`FR-CHECKOUT-012`、`FR-PWRESET-001`・`009`、`FR-SIGNUP-001`・`003`、`FR-UI-008`、`login-otp-resend-errors`）と手助け `e2e/account-test-utils.ts` の `loginAndOpenAccount`、`e2e/helpers.ts` の `registerUser`・`loginUser`（今は使う試験が0本）
 - 旧の画面にだけ当てる jest の試験: `tests/unit/app/login/login-page.test.tsx` の `/login/password` の分、`login-verify-page`、`VerifyOtpClient`、`auth-tabs`、`register-modal`、`tests/integration/ui/auth-login-flow`・`auth-login-tabs-screen`・`auth-login-verify-screen`・`auth-register-flow`・`auth-register-form-screen`、`tests/unit/contexts/providers-auth-page.test.tsx` の旧の道（`/login/verify`・`/login/password`）の分
 - 消す窓口の性質を確かめる E2E: `FR-LOGIN-030`・`031`・`035`、`FR-SIGNUP-002`（`/api/auth/login/*`・`/api/auth/register` を直に叩く。窓口と一緒に消す）
 - 注: `loginAndOpenAccount` を使う16本の `FR-ACCOUNT-*` は消さない。手助けを新しい入口（`loginAsMember`）へ移して残す
+
+#### 新しい `/login`（Task 5。FR-AUTH-027・DD-AUTH-063）
+
+根拠: 旧の画面を `/login/password` に退避した（Task 3）ので、`/login` をパスキー・Google・メールのコードの3つの入口に作り替える。判断を書いた日と出どころ: 2026-11-18、`.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-5-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 5。調整役の判断）。
+
+##### 決定
+
+- `/login` はパスキー・Google・メールのコードの順に並べる。メール欄の下の同意の1行（利用規約・プライバシーポリシーへのリンク付き、チェック欄なし）は、オーナーが案 (A) を選んだので入れる（2026-11-18）
+- 見出しは視覚的に隠した「ログイン」にする。今の画面がタブだけで見出しを持たないため、スクリーンリーダーのためにだけ足す（作り手の判断 6）
+- 保留の Cookie は新（`/login/code`）を先に、旧（`/login/verify`）を次に確かめる。問い合わせは `next`・`email`・`registered` だけ。`tab` は読まず、`tab=register` が付いていても同じ画面（注文の完了の案内・注文の状態の案内の `/login?tab=register&email=…` はそのままで、メール欄に値が入る。文言「会員登録へ進む」「会員登録して申し込む」は、メールのコードで同じ画面から作れるので変えない）
+- 確認のメールのリンクを別のブラウザで開いた人（`/login?registered=1`）の案内は、新しい画面でも出す
+- パスワードの再設定の完了（`/auth/password-reset` の「ログインへ」2か所、`verify/VerifyClient.tsx`）と、パスワードの変更の完了（`PasswordChangeForm.tsx` の `router.replace`）は `/login/password` へ移す。新しい `/login` からは旧の画面へリンクしない（どこからもリンクしない決め）ので、パスワードで入る人（店員を含む）は、段4まではこれらの行き先が入り方になる。`/auth/verified` の「ログインページへ」と「登録済み」のメールのリンク（`/api/auth/register` が送る `/login`）は `/login` のまま
+- `FR-LOGIN-038` の AC-01・02 は、`/login?next=…` に着いた後、旧のフォームを使う所で `/login/password?next=…` へ移る今の形のままにする。新しい画面の `next` の確かめは `FR-LOGIN-057`（終わりの窓口の本文に渡ること）で持つ
+- パスキーのログイン成功では、勧めの画面（`/login/passkey`）を出さない（すでに持っている）。メールのコードの成功だけが、確定の応答の `offerPasskey` で勧める（DD-AUTH-062）
+- ボット検証の枠は1つで、パスキー（始めの方式が `browser` の時だけ）とメールで共有する。送るたびに引き直す（ADR-0411）
+
+##### 退けた案
+
+| 案 | 退けた理由 |
+| --- | --- |
+| 旧のタブの画面へのリンクを新しい `/login` に置く | どこからもリンクしない決め（段4で旧を丸ごと消す）に反する |
+| パスワードの再設定・変更の完了を `/login` のままにする | パスワードの利用者（店員を含む）が、パスワードで入れる画面に着けなくなる（段4まで） |
+| 見出しを見える形で足す | 3つの入口だけで足りる画面に、題を足すと一画面に収まらない。brand の静けさにも合わない |
+
+##### 結果
+
+- 良くなること: お客さんが鍵・Google・メールのコードのどれでも、1つの画面から入れる。旧の試験は `/login/password` で緑のまま
+- 悪くなること: 段4まで、パスワードで入る人は `/login/password` を直接開くか、パスワードの再設定・変更の完了から入る（店員は設定の説明から案内する）
+- 見直す条件: 段4（旧の画面と窓口を消す時）、「会員登録へ進む」の文言を新しい画面に合わせて変えるか（開店前の項目）

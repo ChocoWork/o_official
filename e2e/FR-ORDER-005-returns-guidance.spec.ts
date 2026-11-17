@@ -64,7 +64,8 @@ for (const viewport of orderStatusViewports) {
       await page.getByRole('link', { name: '会員登録して申し込む', exact: true }).click();
       // クリック直後は画面遷移の途中。到着するまで待ってから行き先を確かめる。
       await expect.poll(() => page.evaluate(() => location.pathname === '/login' && location.search === '?tab=register')).toBe(true);
-      await expect(page.getByRole('tab', { name: /会員登録/ })).toHaveAttribute('aria-selected', 'true');
+      // 新しい /login は tab を読まず、同じ画面でメールのコードからアカウントを作れる。
+      await expect(page.getByRole('button', { name: 'メールでコードを受け取る' })).toBeVisible();
       await openOrderStatusPage(page, lastToken);
       await page.getByRole('link', { name: 'お問い合わせから申し込む', exact: true }).click();
       await expect(page.getByLabel('ORDER NO. / 注文番号（任意）')).toHaveValue(`ORD-${orderId.slice(0, 8).toUpperCase()}`);

@@ -392,7 +392,7 @@ for (const viewport of viewports) {
       await page.getByLabel('新しいパスワード', { exact: true }).fill(replacement);
       await page.getByLabel('新しいパスワード（確認）', { exact: true }).fill(replacement);
       await page.getByRole('button', { name: 'パスワードを変更する' }).click();
-      await expect(page).toHaveURL(/\/login/, { timeout: 30_000 });
+      await expect(page).toHaveURL(/\/login\/password/, { timeout: 30_000 });
 
       expect((await postLogin(request, origin, member.email, member.password)).status(), '古いパスワードのログイン').toBe(401);
       expect((await postLogin(request, origin, member.email, replacement)).status(), '新しいパスワードのログイン').toBe(200);

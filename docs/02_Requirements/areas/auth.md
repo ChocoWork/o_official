@@ -5366,13 +5366,13 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SR-AUTH-022 |
-| 根拠 | SR-AUTH-022 を、`src/app/login/password/page.tsx` に旧の `/login` の中身を移すことにする。判断は DD-AUTH-061・ADR-0469。`src/app/login/page.tsx` は Task 5 まで旧と同じ中身のまま残す |
+| 根拠 | SR-AUTH-022 を、`src/app/login/password/page.tsx` に旧の `/login` の中身を移すことにする。判断は DD-AUTH-061・ADR-0469。`src/app/login/page.tsx` は Task 5 で新しい画面に作り替えた（FR-AUTH-027） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト（`tests/unit/app/login/login-page.test.tsx`、`tests/unit/contexts/providers-auth-page.test.tsx`、`tests/unit/components/auth-tabs.test.tsx`）、E2E（`e2e/FR-LOGIN-056-legacy-login-relocated.spec.ts`、FR-AUTH-025-AC-01〜04） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-3-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 3。調整役の判断 2・I-2） |
 | 優先度 | MUST |
 
-規則: (1) `/login/password` は旧の `/login` と同じ中身（保留の旧い Cookie があれば `/login/verify` へ送る。`tab`・`email`・`next`・`registered` の扱いも同じ）。違いは、題と説明は同じまま `robots` を `noindex, nofollow` にすること。(2) `AuthTabs` はタブを替えても URL を `/login/password` に置き換える。(3) 共有の `src/contexts/Providers.tsx` は、`/login/password`・`/login/code`・`/login/passkey` にも、`/login`・`/login/verify` と同じ真ん中寄せの枠を当てる。(4) 旧の流れの中の戻り先（`/login/verify` の保留の無い転送、`VerifyOtpClient` の401と取りやめ、`RegisterModal` のログインへのリンク）は `/login/password`。お客さんに見せる行き先（`/api/auth/confirm` の `/login`・`/login?registered=1`、パスワードの再設定・変更の後）は新しい `/login` のまま。(5) 旧の窓口・`/login/verify`・旧い保留の Cookie は変えない。
+規則: (1) `/login/password` は旧の `/login` と同じ中身（保留の旧い Cookie があれば `/login/verify` へ送る。`tab`・`email`・`next`・`registered` の扱いも同じ）。違いは、題と説明は同じまま `robots` を `noindex, nofollow` にすること。(2) `AuthTabs` はタブを替えても URL を `/login/password` に置き換える。(3) 共有の `src/contexts/Providers.tsx` は、`/login/password`・`/login/code`・`/login/passkey` にも、`/login`・`/login/verify` と同じ真ん中寄せの枠を当てる。(4) 旧の流れの中の戻り先（`/login/verify` の保留の無い転送、`VerifyOtpClient` の401と取りやめ、`RegisterModal` のログインへのリンク）は `/login/password`。お客さんに見せる行き先のうち、`/api/auth/confirm` の `/login`・`/login?registered=1`、「登録済み」のメールのリンク、`/auth/verified` の「ログインページへ」は新しい `/login` のまま。パスワードの再設定・変更の完了の後は、段4までパスワードの旧い流れで入るので `/login/password`（FR-AUTH-027 の前の旧い画面。Task 5 の調整役の判断）。(5) 旧の窓口・`/login/verify`・旧い保留の Cookie は変えない。
 
 ### FR-AUTH-025-AC-01 `/login/password` は旧と同じ画面で、会員登録のタブを切り替えても住所は `/login/password` のまま
 
@@ -5494,6 +5494,91 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-4-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 4。作り手の判断 5） |
 
 8つの入力欄がすべて画面の幅の中に収まり、ページが横にスクロールしない。
+
+### FR-AUTH-027 新しいログイン画面 `/login`（パスキー・Google・メールのコード）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-021 |
+| 根拠 | SR-AUTH-021 を、`src/app/login/page.tsx`・`src/features/auth/passkey/components/LoginChoices.tsx`・`EmailCodeStartForm.tsx` の画面にする。判断は DD-AUTH-063・ADR-0469。旧のタブの画面は `/login/password`（FR-AUTH-025）に残す。パスキーでログインした人には、パスキーを作る勧めの画面を出さない（すでに持っているため） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/passkey/login-choices.test.tsx`、`tests/unit/features/auth/passkey/email-code-start-form.test.tsx`、`tests/unit/app/login/page.test.tsx`）、E2E（`e2e/FR-LOGIN-057-login-screen.spec.ts`、FR-AUTH-027-AC-01〜06） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-5-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 5。作り手の判断 5・6、判断 12・13） |
+| 優先度 | MUST |
+
+規則: (1) ページは新旧どちらかの保留の Cookie をサーバーで確かめ、新（`sb-email-code-session`）が有効なら `/login/code`、旧（`sb-login-2fa-session`）が有効なら `/login/verify` へ送る（両方有効なら新を先にする）。問い合わせは `next`（戻り先の確かめを通った道筋だけ）・`email`（メール欄の初めの値）・`registered=1`（確認のリンクを別のブラウザで開いた人への固定の案内）だけを受け、`tab` は読まない。(2) 題は「LOGIN | Le Fil des Heures」、説明は「Le Fil des Heures のログインページです。パスキー、Google アカウント、メールで受け取るコードでサインインできます。」。(3) 画面は上から、「パスキーでログイン」（主のボタン。下に「この端末の顔認証・指紋・PIN で入れます。」）、OR、「Googleでサインイン」（今のボタンのまま）、OR、メール欄・ボット検証（`NEXT_PUBLIC_TURNSTILE_SITE_KEY` がある時）・「メールでコードを受け取る」。メール欄の下に「はじめての方も、同じ方法でアカウントを作れます。」と、同意の1行（利用規約・プライバシーポリシーへのリンク付き。チェック欄は置かない）。見出しは視覚的に隠した「ログイン」。(4) パスキーに未対応のブラウザには、描画の後の判定でボタンを出さず「この端末ではパスキーを使えません。メールのコードか Google でログインできます。」を出す。(5) パスキー: 押すと待ち（`disabled`・`aria-busy`・「確認しています…」）。中止は状態の知らせ（赤にしない）、そのほかの失敗は理由ごとの文（見つからない・本人確認が要る・店員の鍵・回数の集中・使えない）。成功は `refreshAuthState()` → `resolvePostLoginPath()` の行き先へ `router.replace`。(6) 始めの方式が `browser` の時だけ、ボット検証のトークンを渡して GoTrue を直に呼ぶ。トークンが無ければ呼ばない。`server` の時は窓口を呼ぶ。(7) メール欄: 空・形の誤りは送らずに止める。202 なら `/login/code` へ置き換える。400 は本文の文、403 `Bot detection failed` は「ボット検証を完了してください」、429 は「試行が集中しています。しばらくしてからやり直してください。」、それ以外と通信の失敗は「確認コードを送れませんでした。時間をおいてやり直してください。」。送信のたびにボット検証を引き直す。(8) 窓口の応答の本文は、どの道でも読むか捨てる（no-store の読み残しで `networkidle` が来なくなるため）。
+
+### FR-AUTH-027-AC-01 3つの入口が並び、aria-label とタブ移動の順が正しい
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-027 |
+| 根拠 | SR-AUTH-021 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-057-login-screen.spec.ts`。390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/features/auth/passkey/login-choices.test.tsx`、`tests/unit/features/auth/passkey/email-code-start-form.test.tsx`、`tests/unit/app/login/page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-5-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 5。作り手の判断 5・6、判断 12・13） |
+
+`/login` を開くと、パスキーのボタン・OR・Google のボタン・OR・メール欄とボタンが上から順に見える。視覚的に隠した見出し「ログイン」がある。パスキーのボタンから Tab で Google のボタン、メール欄の順に移る。同意の1行のリンクは `/terms`・`/privacy` に向く。
+
+### FR-AUTH-027-AC-02 パスキーを押すと始めの窓口が1回呼ばれ、中止なら中止の文が出る。`next` は終わりの窓口の本文に渡る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-027 |
+| 根拠 | SR-AUTH-021 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-057-login-screen.spec.ts`。390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/features/auth/passkey/login-choices.test.tsx`、`tests/unit/features/auth/passkey/email-code-start-form.test.tsx`、`tests/unit/app/login/page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-5-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 5。作り手の判断 5・6、判断 12・13） |
+
+パスキーのボタンを押すと `POST /api/auth/passkey/login/start` が1回呼ばれる。鍵の選択を中止（`NotAllowedError`）すると「パスキーでのログインを中止しました。」が出て、ボタンはまた押せる。`/login?next=…` で開いて押すと、戻り先が終わりの窓口（`POST /api/auth/passkey/login/finish`）の本文の `next` に渡る（始めの窓口は本文を持たない）。パスキーの本物の往復は FR-LOGIN-059。
+
+### FR-AUTH-027-AC-03 パスキーに未対応のブラウザでは、ボタンを出さず一文を出す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-027 |
+| 根拠 | SR-AUTH-021 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-057-login-screen.spec.ts`。390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/features/auth/passkey/login-choices.test.tsx`、`tests/unit/features/auth/passkey/email-code-start-form.test.tsx`、`tests/unit/app/login/page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-5-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 5。作り手の判断 5・6、判断 12・13） |
+
+`PublicKeyCredential` が無いブラウザでは「パスキーでログイン」を出さず、「この端末ではパスキーを使えません。メールのコードか Google でログインできます。」を出す。Google のボタンとメール欄は使える。
+
+### FR-AUTH-027-AC-04 メールを入れて送ると `/login/code` へ移り、コードのメールが届く。形の誤りは送らない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-027 |
+| 根拠 | SR-AUTH-021 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-057-login-screen.spec.ts`。390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/features/auth/passkey/login-choices.test.tsx`、`tests/unit/features/auth/passkey/email-code-start-form.test.tsx`、`tests/unit/app/login/page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-5-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 5。作り手の判断 5・6、判断 12・13） |
+
+メール欄に入れて「メールでコードを受け取る」を押すと `/login/code` へ移り（置き換え）、手元のメール受け（Mailpit）にコードのメールが届く。形の誤りは窓口を呼ばずに文を出し、`/login` のままになる。
+
+### FR-AUTH-027-AC-05 Google のボタンは今と同じ
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-027 |
+| 根拠 | SR-AUTH-021 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-057-login-screen.spec.ts`。390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/features/auth/passkey/login-choices.test.tsx`、`tests/unit/features/auth/passkey/email-code-start-form.test.tsx`、`tests/unit/app/login/page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-5-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 5。作り手の判断 5・6、判断 12・13） |
+
+「Googleでサインイン」を押すと `POST /api/auth/oauth/start` が呼ばれ、`prompt=select_account` 付きの authorize へ移る（`FR-LOGIN-002` と同じ）。
+
+### FR-AUTH-027-AC-06 390px でも横にはみ出さない。`email` は初めの値、`registered=1` は案内、旧の画面は今のまま
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-027 |
+| 根拠 | SR-AUTH-021 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-057-login-screen.spec.ts`。390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/features/auth/passkey/login-choices.test.tsx`、`tests/unit/features/auth/passkey/email-code-start-form.test.tsx`、`tests/unit/app/login/page.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-5-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 5。作り手の判断 5・6、判断 12・13） |
+
+390px で横にスクロールせず、メールのボタンが画面の高さに収まる。`/login?tab=register&email=…&registered=1` では、`tab` は読まれずタブは出ず、メール欄に値が入り、「会員登録が完了しました。ログインしてください。」が出る。`/login/password` は旧のタブの画面のまま。
 
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 

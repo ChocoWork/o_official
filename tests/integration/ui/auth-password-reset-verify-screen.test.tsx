@@ -158,7 +158,7 @@ describe('SCR-AUTH-006 /auth/password-reset/verify はメールのリンクの�
         await screen.findByText('リンクの確認に失敗しました。時間をおいて再度お試しください。'),
       ).toHaveAttribute('role', 'alert');
       expect(screen.getByRole('button', { name: 'もう一度試す' })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'ログインへ' })).toHaveAttribute('href', '/login');
+      expect(screen.getByRole('link', { name: 'ログインへ' })).toHaveAttribute('href', '/login/password');
       expect(screen.queryByText('確認中...')).toBeNull();
       expect(routerReplaceMock).not.toHaveBeenCalled();
     });

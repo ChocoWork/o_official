@@ -43,7 +43,7 @@ jest.mock('@/components/AuthTabs', () => ({
   ),
 }));
 
-// Task 5 まで /login と /login/password は同じ中身なので、同じ試験を両方に当てる（Task 5 で /login の分は作り直す）。
+// 旧の画面（/login/password）の試験。新しい /login は page.test.tsx。
 let LoginPage: typeof PasswordPageModule.default;
 let generateMetadata: typeof PasswordPageModule.generateMetadata;
 
@@ -56,7 +56,6 @@ async function renderPage(searchParams?: Record<string, string | string[] | unde
 }
 
 describe.each([
-  ['/login', '@/app/login/page'],
   ['/login/password', '@/app/login/password/page'],
 ])('%s page', (_route, modulePath) => {
   beforeAll(async () => {
@@ -71,7 +70,7 @@ describe.each([
     mockVerifySession.mockReturnValue(null);
   });
 
-  test('DD-AUTH-001 保留の印が有効なら /login/verify へ転送し、問い合わせを読まず AuthTabs を描かない', async () => {
+  test('DD-AUTH-061 保留の印が有効なら /login/verify へ転送し、問い合わせを読まず AuthTabs を描かない', async () => {
     mockCookieGet.mockReturnValue({ value: 'pending-token' });
     mockVerifySession.mockReturnValue({ email: 'one@example.invalid' });
     const onRead = jest.fn();
@@ -86,7 +85,7 @@ describe.each([
     expect(screen.queryByTestId('auth-tabs')).not.toBeInTheDocument();
   });
 
-  test('DD-AUTH-001 保留の Cookie が無ければ確かめに undefined を渡して頁を描く', async () => {
+  test('DD-AUTH-061 保留の Cookie が無ければ確かめに undefined を渡して頁を描く', async () => {
     const tabs = await renderPage({});
 
     expect(mockVerifySession).toHaveBeenCalledWith(undefined);
@@ -94,7 +93,7 @@ describe.each([
     expect(tabs).toBeInTheDocument();
   });
 
-  test('DD-AUTH-001 保留の印が偽り・期限切れで無効なら頁を描き、転送しない', async () => {
+  test('DD-AUTH-061 保留の印が偽り・期限切れで無効なら頁を描き、転送しない', async () => {
     mockCookieGet.mockReturnValue({ value: 'forged-or-expired' });
     mockVerifySession.mockReturnValue(null);
 
@@ -105,46 +104,46 @@ describe.each([
     expect(tabs).toHaveAttribute('data-tab', 'login');
   });
 
-  test('DD-AUTH-001 保留が無効で ?tab=register&email=a@example.com なら会員登録のタブとメールを渡す', async () => {
+  test('DD-AUTH-061 保留が無効で ?tab=register&email=a@example.com なら会員登録のタブとメールを渡す', async () => {
     const tabs = await renderPage({ tab: 'register', email: 'a@example.com' });
 
     expect(tabs).toHaveAttribute('data-tab', 'register');
     expect(tabs).toHaveAttribute('data-email', 'a@example.com');
   });
 
-  test('DD-AUTH-001 問い合わせが無ければログインのタブと空のメールを渡す', async () => {
+  test('DD-AUTH-061 問い合わせが無ければログインのタブと空のメールを渡す', async () => {
     const tabs = await renderPage(undefined);
 
     expect(tabs).toHaveAttribute('data-tab', 'login');
     expect(tabs).toHaveAttribute('data-email', '');
   });
 
-  test('DD-AUTH-001 tab も email も無い空の問い合わせでもログインのタブと空のメールを渡す', async () => {
+  test('DD-AUTH-061 tab も email も無い空の問い合わせでもログインのタブと空のメールを渡す', async () => {
     const tabs = await renderPage({});
 
     expect(tabs).toHaveAttribute('data-tab', 'login');
     expect(tabs).toHaveAttribute('data-email', '');
   });
 
-  test('DD-AUTH-001 email が配列なら空にする', async () => {
+  test('DD-AUTH-061 email が配列なら空にする', async () => {
     const tabs = await renderPage({ email: ['a@example.com', 'b@example.com'] });
 
     expect(tabs).toHaveAttribute('data-email', '');
   });
 
-  test('DD-AUTH-001 tab がほかの値ならログインのタブにする', async () => {
+  test('DD-AUTH-061 tab がほかの値ならログインのタブにする', async () => {
     const tabs = await renderPage({ tab: 'other' });
 
     expect(tabs).toHaveAttribute('data-tab', 'login');
   });
 
-  test('DD-AUTH-001 tab が配列ならログインのタブにする', async () => {
+  test('DD-AUTH-061 tab が配列ならログインのタブにする', async () => {
     const tabs = await renderPage({ tab: ['register', 'register'] });
 
     expect(tabs).toHaveAttribute('data-tab', 'login');
   });
 
-  test('DD-AUTH-001 ?next が確かめを通れば、通った道筋だけを returnTo として AuthTabs に渡す', async () => {
+  test('DD-AUTH-061 ?next が確かめを通れば、通った道筋だけを returnTo として AuthTabs に渡す', async () => {
     const tabs = await renderPage({ next: '/item/3?color=red#frag' });
 
     expect(tabs).toHaveAttribute('data-return-to', '/item/3?color=red');
@@ -156,19 +155,19 @@ describe.each([
     ['/auth/verified', '/auth/verified'],
     ['タブを含む値', '/%09/evil.example'],
     ['許可リスト外', '/unknown'],
-  ])('DD-AUTH-001 ?next が %s なら returnTo を渡さない', async (_label, next) => {
+  ])('DD-AUTH-061 ?next が %s なら returnTo を渡さない', async (_label, next) => {
     const tabs = await renderPage({ next });
 
     expect(tabs).toHaveAttribute('data-has-return-to', 'false');
   });
 
-  test('DD-AUTH-001 ?next が配列・未指定なら returnTo を渡さない', async () => {
+  test('DD-AUTH-061 ?next が配列・未指定なら returnTo を渡さない', async () => {
     expect(await renderPage({ next: ['/item/3', '/item/4'] })).toHaveAttribute('data-has-return-to', 'false');
     cleanup();
     expect(await renderPage({})).toHaveAttribute('data-has-return-to', 'false');
   });
 
-  test('DD-AUTH-001 ?registered=1 なら固定の案内の文を notice として AuthTabs に渡す', async () => {
+  test('DD-AUTH-061 ?registered=1 なら固定の案内の文を notice として AuthTabs に渡す', async () => {
     const tabs = await renderPage({ registered: '1' });
 
     expect(tabs).toHaveAttribute('data-notice', '会員登録が完了しました。ログインしてください。');
@@ -179,19 +178,19 @@ describe.each([
     ['空', { registered: '' }],
     ['配列', { registered: ['1', '1'] }],
     ['未指定', {}],
-  ])('DD-AUTH-001 registered が %s なら notice を渡さない', async (_label, params) => {
+  ])('DD-AUTH-061 registered が %s なら notice を渡さない', async (_label, params) => {
     const tabs = await renderPage(params);
 
     expect(tabs).toHaveAttribute('data-has-notice', 'false');
   });
 
-  test('DD-AUTH-001 registered の値そのものは画面に出さず、案内の文は固定', async () => {
+  test('DD-AUTH-061 registered の値そのものは画面に出さず、案内の文は固定', async () => {
     const tabs = await renderPage({ registered: '1', email: 'x@example.com' });
 
     expect(tabs.getAttribute('data-notice')).not.toContain('x@example.com');
   });
 
-  test('DD-AUTH-001 metadata が title・description・OG を返す', async () => {
+  test('DD-AUTH-061 metadata が title・description・OG を返す', async () => {
     const metadata = await generateMetadata();
     const description =
       'Le Fil des Heures のログインページです。メールアドレスとパスワード、または Google アカウントでサインインできます。';

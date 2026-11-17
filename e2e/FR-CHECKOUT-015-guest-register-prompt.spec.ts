@@ -93,14 +93,14 @@ for (const viewport of viewports) {
       await expect(page.getByRole('region', { name: '会員登録のご案内' })).toHaveCount(0);
     });
 
-    test('カードから /login の会員登録タブへメールを引き継いで遷移する', async ({ page }) => {
+    test('カードから新しい /login へメールを引き継いで遷移する（tab は読まれず、メール欄に値が入る）', async ({ page }) => {
       // FREQ-266-AC-03
       await mockAuth(page, false);
       await gotoCompletedCheckout(page);
 
       await page.getByRole('link', { name: '会員登録へ進む' }).click();
       await expect(page).toHaveURL(/\/login\?tab=register&email=hanako%40example\.com/);
-      await expect(page.getByRole('tab', { name: '会員登録' })).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByRole('button', { name: 'メールでコードを受け取る' })).toBeVisible();
       await expect(page.getByLabel('Email')).toHaveValue('hanako@example.com');
     });
 

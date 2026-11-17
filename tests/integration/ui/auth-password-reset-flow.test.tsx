@@ -131,7 +131,7 @@ async function navigate(url: string): Promise<void> {
     return;
   }
 
-  if (pathname === '/login') {
+  if (pathname === '/login/password') {
     const element = await LoginPage({ searchParams: Promise.resolve({}) });
     await act(async () => {
       render(<LoginProvider>{element}</LoginProvider>);
@@ -194,8 +194,8 @@ describe('FLOW-AUTH-004 パスワードの再設定はログインの画面か�
   it('FLOW-AUTH-004 ログインの画面の再設定のリンクから申請し、メールのリンク・確認・新しいパスワード・結果を経て、ログインへ戻る', async () => {
     const user = userEvent.setup();
 
-    // 1. /login の再設定のリンク
-    await navigate('/login');
+    // 1. /login/password の再設定のリンク
+    await navigate('/login/password');
     const resetLink = screen.getByRole('link', { name: 'パスワードをお忘れの方はこちら' });
     expect(resetLink).toHaveAttribute('href', '/auth/password-reset');
 
@@ -217,9 +217,9 @@ describe('FLOW-AUTH-004 パスワードの再設定はログインの画面か�
     await screen.findByRole('heading', { level: 1, name: 'パスワードを更新しました' });
     expect(server.confirmedPasswords).toEqual([NEW_PASSWORD]);
 
-    // 5. 「ログインへ」で /login に戻る
+    // 5. 「ログインへ」で /login/password に戻る
     const toLogin = screen.getByRole('link', { name: 'ログインへ' });
-    expect(toLogin).toHaveAttribute('href', '/login');
+    expect(toLogin).toHaveAttribute('href', '/login/password');
     await navigate(toLogin.getAttribute('href') as string);
     expect(screen.getByRole('tab', { name: 'ログイン' })).toHaveAttribute('aria-selected', 'true');
   });

@@ -344,19 +344,20 @@ graph TD
 
 矢印は画面の中のリンク・移動。細かい条件は画面遷移（FLOW-AUTH-001〜005）に書く。ヘッダーとドロワーは全部のページに出る。
 
-### SCR-AUTH-001 /login はログインと会員登録の2つのタブを持つ1つの認証の画面にする
+### SCR-AUTH-001 /login はパスキー・Google・メールのコードの3つの入口を持つ画面にし、旧のタブの画面は /login/password に残す
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-LOGIN-005、FREQ-63-REQ-01、FREQ-90-REQ-01、FREQ-69-REQ-01、FREQ-71-REQ-01、FREQ-334-REQ-03、FR-AUTH-005、FR-AUTH-025、ADR-0410 |
+| 上位 | FR-LOGIN-005、FREQ-63-REQ-01、FREQ-90-REQ-01、FREQ-69-REQ-01、FREQ-71-REQ-01、FREQ-334-REQ-03、FR-AUTH-005、FR-AUTH-025、FR-AUTH-027、ADR-0410 |
 | 根拠 | ログインと会員登録を別のページにすると導線が分かれるので、`/login` の1つの画面のタブで切り替え、`/register` は置かない（FREQ-63-REQ-01、ADR-0410）。タブは下線の形にし、カードの枠と切替のリンクを消す（FREQ-90-REQ-01）。認証コードの入力の途中で戻ってきた人にもう一度パスワードを打たせると2通目のコードが飛ぶので、保留が有効なら `/login/verify` へ送る（FREQ-334-REQ-03） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/login/page.tsx`、`src/components/AuthTabs.tsx`） |
 
-- サーバーの描画: 題「LOGIN | Le Fil des Heures」・説明・OG の画像を返す（FR-LOGIN-005）。保留の Cookie が有効なら `/login/verify` へ送る
+- 段2 Task 5（2026-11-18）から、`/login` は新しい画面（FR-AUTH-027、DD-AUTH-063、ADR-0469）。上から「パスキーでログイン」・OR・「Googleでサインイン」・OR・メール欄と「メールでコードを受け取る」を並べる。下の「タブ」「会員登録のフォーム」の箇条書きは、旧のタブの画面 `/login/password`（FR-AUTH-025、DD-AUTH-061）の今の動きの説明として残す（段4で消す）
+- サーバーの描画: 題「LOGIN | Le Fil des Heures」・説明・OG の画像を返す（FR-LOGIN-005。説明は新しい `/login` が「パスキー、Google アカウント、メールで受け取るコードでサインインできます。」）。新しい保留の Cookie が有効なら `/login/code`、旧い保留の Cookie が有効なら `/login/verify` へ送る
 - `?next=` を受ける。文字列なら戻り先の確かめ（DD-AUTH-032）に通し、通った道筋だけをタブの部品の `returnTo` に渡す（外れたら捨てる。値を画面に出さない）。ログイン・会員登録・Google の送信で本文の `next` に載せる（FR-AUTH-005）
-- `?tab=register` で会員登録のタブから始め、`?email=` が文字列なら会員登録の欄に入れる（注文の完了からの案内、FREQ-266（範囲外））
+- `?tab=register` で会員登録のタブから始め、`?email=` が文字列なら会員登録の欄に入れる（注文の完了からの案内、FREQ-266（範囲外））。新しい `/login` は `tab` を読まず、`email` をメール欄の初めの値にするだけ
 - タブ: `tablist` に「ログイン」「会員登録」。左右の矢印で切り替える。選んだタブは黒の太い下線、選ばないタブはグレーの文字と細い下線
 - タブを切り替えると URL を置き換える（`?tab=`・`?email=` が消える）。段2 Task 3 から、置き換え先は `/login/password`（旧のパスワードの画面は `/login/password` へ退避した。DD-AUTH-061、ADR-0469。`/login` は Task 5 まで同じ中身で残る）。`/register` へは変えない
 - 画面の高さ: main を画面の高さ以上にしてフォームを縦横の中央に置き、上下にヘッダーのずれの分の余白を取る（FREQ-69-REQ-01）。この main の指定は共有の `src/contexts/Providers.tsx` が `/login`・`/login/verify`・`/login/password`・`/login/code`・`/login/passkey`・`/auth/password-reset` の6つに当てる（`/login/password`・`/login/code`・`/login/passkey` は段2 Task 3 で足した）。`sm` より狭い時だけ縦の余白と欄の高さを縮める（FREQ-71-REQ-01）

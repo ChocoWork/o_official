@@ -8,7 +8,7 @@
  * 新パスワードの長さと確認欄の一致は送る前に画面で確かめ、コードを送ってから弱いパスワードで弾かれる往復を減らす。
  * Google だけで登録した会員はパスワードを持たず start が必ず 401 になるので、段 1 に再設定への案内を誰にでも固定で出す
  * （会員がパスワードを持つかを明かさない）。応答は成否によらず本文を読み切る（読まない呼び手が networkidle を止める）。
- * 成功したら全 session が失効しているので、ログインの状態を引き直してから /login へ移る。
+ * 成功したら全 session が失効しているので、ログインの状態を引き直してから /login/password へ移る。
  * 401 の `Unauthorized`（途中で access token が切れた）は、印を 1 回だけ更新して同じ本文で 1 回送り直す。更新できない時だけ /login へ移す。
  */
 'use client';
@@ -183,9 +183,9 @@ export function PasswordChangeForm() {
       try {
         await refreshAuthState();
       } catch {
-        // 状態の引き直しに失敗しても、/login へ移れば入口の確かめが改めて走る。
+        // 状態の引き直しに失敗しても、/login/password へ移れば入口の確かめが改めて走る。
       }
-      router.replace('/login');
+      router.replace('/login/password');
     } finally {
       setLoading(false);
     }

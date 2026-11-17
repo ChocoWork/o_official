@@ -18,7 +18,7 @@ for (const viewport of viewports) {
       await expect(page).toHaveTitle('LOGIN | Le Fil des Heures');
       await expect(page.locator('meta[name="description"]')).toHaveAttribute(
         'content',
-        'Le Fil des Heures のログインページです。メールアドレスとパスワード、または Google アカウントでサインインできます。'
+        'Le Fil des Heures のログインページです。パスキー、Google アカウント、メールで受け取るコードでサインインできます。'
       );
     });
   });

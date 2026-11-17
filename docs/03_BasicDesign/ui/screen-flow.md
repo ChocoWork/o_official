@@ -75,7 +75,7 @@ flowchart LR
 
     subgraph AuthAccount["認証・アカウント (9ルート)"]
         direction TB
-        Login["/login"]
+        Login["/login（パスキー・Google・メールのコード）"]
         LoginVerify["/login/verify メール OTP"]
         AuthVerified["/auth/verified"]
         PasswordReset["/auth/password-reset"]
@@ -501,7 +501,7 @@ flowchart TD
 flowchart TD
   A["/account（お客様情報）"] -->|パスワードを変更| P["/account/password"]
   P -->|1 現行パスワード → コードをメールに送る| P
-  P -->|2 コードと新しいパスワード → 変更成功（全 session 失効）| L["/login"]
+  P -->|2 コードと新しいパスワード → 変更成功（全 session 失効）| LP["/login/password（旧の画面。段4まで）"]
   P -->|未ログイン| L
   P -.->|Google だけの会員の案内: リンク| R["/auth/password-reset"]
 ```

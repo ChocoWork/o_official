@@ -1,42 +1,38 @@
 /**
- * ログイン・会員登録の頁（src/app/login/page.tsx）。
+ * ログインの画面（src/app/login/page.tsx）。パスキー・Google・メールのコードの3つの入口を並べる。
  *
  * @packageDocumentation
- * @impl IMPL-AUTH-101
+ * @impl IMPL-AUTH-324
  * @design DD-AUTH-001
- * @remarks 認証コードの入力の途中で戻ってきた人に資格情報のフォームを見せると、
- * もう一度ログインを押して2通目のコードを送り、アカウント単位の枠を無駄に使う。
- * そのため保留の Cookie が有効なら描く前にサーバーで転送する。
- * 初めのタブとメールを問い合わせで受けるのは、ゲストの注文の完了画面などが会員登録への案内にその二つを付けて来るため。
- * `next`（ログインの後の戻り先）は確かめを通った道筋だけを AuthTabs に渡し、外れた値は画面に出さず捨てる。
- * 控えるのは入口の POST で、ここは値を運ぶだけ（ARC-AUTH-010）。
- * `registered=1`（登録を始めたブラウザ以外で確認のリンクを開いた時の行き先。SEC-AUTH-007）なら、固定の案内の文を AuthTabs に渡す。
- * 「このアカウントでログインしますか」の確かめの画面は出さない。
+ * @remarks 新旧どちらかの保留の Cookie が有効なら、描く前にサーバーで続きへ転送する
+ * （新→`/login/code`、旧→`/login/verify`）。入力の途中で戻ってきた人にもう一度フォームを見せると、2通目のコードを送って枠を無駄に使う。
+ * 問い合わせは `next`（確かめを通った道筋だけ。外れた値は捨てる）・`email`（メール欄の初めの値。`tab` は読まない）・
+ * `registered=1`（確認のリンクを別のブラウザで開いた人への固定の案内。SEC-AUTH-007）だけを受ける。
+ * パスワードの旧い画面は `/login/password` に残してある（段4まで。ADR-0469）。
  */
 import type { Metadata } from 'next';
 import React from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import AuthTabs from "@/components/AuthTabs";
-import { loginTwoFactorSessionCookieName } from "@/lib/cookie";
+import { emailCodeSessionCookieName, loginTwoFactorSessionCookieName } from "@/lib/cookie";
+import { verifyEmailCodeSessionToken } from "@/features/auth/services/email-code-session";
 import { verifyLoginTwoFactorSessionToken } from "@/features/auth/services/login-2fa-session";
 import { validateReturnPath } from "@/features/auth/return-intent/return-path";
+import LoginChoices from "@/features/auth/passkey/components/LoginChoices";
 
-/**
- * 登録を始めたブラウザ以外で確認のリンクを開いた人へ案内する文（案。画面をユーザーに見せて確かめる）。
- * 確認のメールのリンクは session を作らずここへ送る（SEC-AUTH-007）。
- */
+/** 確認のメールのリンクは session を作らずここへ送る（SEC-AUTH-007）。 */
 const REGISTERED_NOTICE = '会員登録が完了しました。ログインしてください。';
+
+const DESCRIPTION =
+  'Le Fil des Heures のログインページです。パスキー、Google アカウント、メールで受け取るコードでサインインできます。';
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
     title: 'LOGIN | Le Fil des Heures',
-    description:
-      'Le Fil des Heures のログインページです。メールアドレスとパスワード、または Google アカウントでサインインできます。',
+    description: DESCRIPTION,
     openGraph: {
       title: 'LOGIN | Le Fil des Heures',
-      description:
-        'Le Fil des Heures のログインページです。メールアドレスとパスワード、または Google アカウントでサインインできます。',
+      description: DESCRIPTION,
       images: ['/mainphoto.png'],
     },
   };
@@ -47,30 +43,21 @@ export default async function LoginPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  // 検証待ちのまま戻ってきた場合は続きへ送る。ここで資格情報フォームを見せると、
-  // もう一度ログインを押して 2 通目の OTP を発射でき、アカウント単位の
-  // レート制限（5 回 / 600 秒）を無駄に消費する。
   const cookieStore = await cookies();
-  if (
-    verifyLoginTwoFactorSessionToken(
-      cookieStore.get(loginTwoFactorSessionCookieName)?.value,
-    )
-  ) {
+  if (verifyEmailCodeSessionToken(cookieStore.get(emailCodeSessionCookieName)?.value)) {
+    redirect("/login/code");
+  }
+  if (verifyLoginTwoFactorSessionToken(cookieStore.get(loginTwoFactorSessionCookieName)?.value)) {
     redirect("/login/verify");
   }
 
   const params = await searchParams;
-  const tabParam = params?.tab;
-  const initialTab = tabParam === 'register' ? 'register' : 'login';
   const emailParam = params?.email;
   const initialEmail = typeof emailParam === 'string' ? emailParam : '';
-
-  const nextParam = params?.next;
-  const returnTo = validateReturnPath(nextParam);
+  const returnTo = validateReturnPath(params?.next);
 
   return (
-    <AuthTabs
-      initialTab={initialTab}
+    <LoginChoices
       initialEmail={initialEmail}
       returnTo={returnTo.ok ? returnTo.path : undefined}
       notice={params?.registered === '1' ? REGISTERED_NOTICE : undefined}

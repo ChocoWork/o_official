@@ -10,7 +10,7 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-021、FR-AUTH-023、SEC-AUTH-048、SEC-AUTH-049、THR-AUTH-049、API-AUTH-029、API-AUTH-030、API-AUTH-031、API-AUTH-032、DD-AUTH-059、ADR-0469、SEC-AUTH-050、DD-AUTH-060、SR-AUTH-022、FR-AUTH-025、DD-AUTH-061、FR-AUTH-026、DD-AUTH-062 |
+| 対応する ID | SR-AUTH-021、FR-AUTH-023、SEC-AUTH-048、SEC-AUTH-049、THR-AUTH-049、API-AUTH-029、API-AUTH-030、API-AUTH-031、API-AUTH-032、DD-AUTH-059、ADR-0469、SEC-AUTH-050、DD-AUTH-060、SR-AUTH-022、FR-AUTH-025、DD-AUTH-061、FR-AUTH-026、DD-AUTH-062、FR-AUTH-027、DD-AUTH-063 |
 | 対象のコード | `src/app/api/auth/email-code/start/route.ts`、`verify/route.ts`、`resend/route.ts`、`cancel/route.ts`、`src/features/auth/services/email-code-session.ts`、`src/features/auth/schemas/email-code.ts`、`src/lib/cookie.ts`（`emailCodeSessionCookieName`・`cookieOptionsForEmailCode`）、`src/features/auth/passkey/{webauthn-browser,passkey-client,device-name,post-login}.ts`、`src/features/auth/schemas/passkey.ts`（`dropNullFields`）、`src/lib/auth/passkey-gotrue.ts`（`server-only`） |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（6-1）、[段2の計画](../../superpowers/plans/2026-11-17-passkey-stage2-customers.md)、[パスキーの窓口](auth-passkey-server-endpoints.md) |
 | 調べた時点 | 2026-11-17（手元の GoTrue で、作成→コードの送信→確定の組み合わせを実測した。手元の DB・Mailpit で E2E を流した） |
@@ -112,8 +112,9 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 | `src/app/login/verify/page.tsx` | 保留の Cookie が無い・偽り・期限切れの時の転送先を `/login/password` にする |
 | `src/app/login/verify/VerifyOtpClient.tsx` | 再送の401、取りやめ、`post-login` の401 で移る先を `/login/password` にする |
 | `src/components/RegisterModal.tsx` | 戻る手段が無い時の「ログインページへ」のリンクを `/login/password` にする |
-| `src/app/login/page.tsx` | この段では変えない（Task 5 で作り替える）。Task 3 の終わりでは `/login` と `/login/password` が同じ中身になる |
-| 変えない行き先 | `src/app/api/auth/confirm/route.ts` の `/login`・`/login?registered=1`、パスワードの再設定・変更の後の `/login`、`GuestRegisterPrompt` の `/login?tab=register&email=…`。お客さんに見せる行き先は新しい `/login` が受ける |
+| `src/app/login/page.tsx` | Task 3 では変えず、Task 5 で新しい画面に作り替えた（DD-AUTH-063）。Task 3 の終わりは `/login` と `/login/password` が同じ中身だった |
+| 変えない行き先 | `src/app/api/auth/confirm/route.ts` の `/login`・`/login?registered=1`、「登録済み」のメールのリンク、`/auth/verified` の「ログインページへ」、`GuestRegisterPrompt` の `/login?tab=register&email=…`。お客さんに見せる行き先は新しい `/login` が受ける（`tab` は読まず、`email` はメール欄の初めの値。Task 5） |
+| Task 5 で付け替えた行き先 | パスワードの再設定の完了（`src/app/auth/password-reset/page.tsx` の「ログインへ」2か所）・リンクの確かめの完了（`verify/VerifyClient.tsx`）・パスワードの変更の完了（`src/app/account/password/PasswordChangeForm.tsx` の `router.replace`）は `/login/password`。段4までパスワードの旧い流れで入るため（新しい `/login` からは旧の画面へリンクしないので、これらが段4までの入り方になる） |
 
 テスト観点: `/login/password` が旧のページの分岐（保留の転送・タブ・メール・戻り先・案内）を持つ、`robots` が noindex・nofollow、`isAuthPage` が `/login/password`・`/login/code`・`/login/passkey` で真になり、近い別の住所（`/login/other`・`/login/password/extra`）では偽、`AuthTabs` の `replaceState` が `/login/password`、旧の流れの3つの戻り先が `/login/password`。E2E は旧の画面を操作する試験の `goto('/login')` を `/login/password` に付け替え、期待は変えない（`/login?next=…` へ送られることを確かめる試験は新しい `/login` に着くので替えない）。
 
@@ -141,7 +142,31 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 | 確定の 403 `staff_passkey_required` | 「店員の方は、パスキーでログインしてください。」を出し、入力と再送を止め、「ログイン画面へ戻る」だけを置く（自動では戻さない） |
 | 確定のそれ以外・通信の失敗 | 「確認できませんでした。時間をおいて、もう一度お試しください。」 |
 | 「コードを再送する」 | 待ちが0になるまで `disabled`（残りは `formatResendCountdown`）。押すと `POST /api/auth/email-code/resend`（本文は捨てる）。200 は欄を空にし、待ちを60秒に戻し、「確認コードを再送しました。」を `status` で知らせ、最初の欄へ。401 は保留切れと同じ。429 は `Retry-After`（秒または日付。読めなければ60秒）を待ちにし、「しばらく再送できません。時間をおいて、もう一度お試しください。」。503 は「ただいま処理できません。時間をおいて、もう一度お試しください。」。それ以外は「確認コードを送れませんでした。時間をおいて、もう一度お試しください。」 |
-| 「メールアドレスを入れ直す」 | `POST /api/auth/email-code/cancel`（本文は捨て、失敗は握る）→ `/login` へ置き換える。文字ボタンは高さ44px以上。`/login` は Task 5 まで旧の画面 |
+| 「メールアドレスを入れ直す」 | `POST /api/auth/email-code/cancel`（本文は捨て、失敗は握る）→ `/login` へ置き換える。文字ボタンは高さ44px以上。`/login` は新しい画面（DD-AUTH-063） |
 | 共通 | エラーは `LiveMessage`（`alert`）、成功の知らせは `status`。送信中は `aria-busy` と `disabled`、二重に送らない |
 
 テスト観点: 8桁そろうまで「ログイン」が `disabled`、貼り付けの割り振りと数字以外の除去、Backspace、確定の応答ごとの文言と行き先（401 の2種・429・403・200 で `offerPasskey` が真・偽・未対応のブラウザ・本文が読めない）、閉じた後に自動では戻らず、フォーカスが「ログイン画面へ戻る」へ移ること、成功の後に二重に送れないこと、`refreshAuthState` が移動より先に走ること、再送の待ち（`jest.useFakeTimers`）・成功・401・`Retry-After`・503・その他、取りやめが失敗でも `/login` へ戻り本文を捨てること、送信中の二重送信の防止。ページは Cookie 無し・偽りで `/login` へ転送、有効ならメールを渡す。E2E は `start` を `request` で呼んで Mailpit のコードを入れ、鍵を持つ会員が戻り先へ着くこと、間違ったコード、再送の待ち、取りやめ、Cookie 無し、390px の幅を確かめる（`offerPasskey` が真の着地は `/login/passkey` が出来る Task 6 の E2E）。
+
+### DD-AUTH-063 新しいログイン画面 `/login` の処理の順番
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SCR-AUTH-001、FLOW-AUTH-001、API-AUTH-029、API-AUTH-030、SEC-AUTH-048 |
+| 根拠 | 旧のタブの画面（メール・パスワード）を `/login/password` に退避した（DD-AUTH-061）うえで、`/login` をパスキー・Google・メールのコードの3つの入口に作り替える。パスキーを持つ人は鍵1つで入り、持たない人と初めての人はメールのコードで入る。見出しは今の画面に無いので足さず、スクリーンリーダーのためにだけ視覚的に隠した「ログイン」を置く（作り手の判断 6）。ボット検証の枠は1つで、パスキー（始めの方式が `browser` の時）とメールで共有する。始めの方式 `server` は窓口がボット検証をしないので渡さない（判断 13）。応答の読み残しで通信が閉じない問題を避けるため、どの道でも本文を読むか捨てる |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/passkey/login-choices.test.tsx`、`tests/unit/features/auth/passkey/email-code-start-form.test.tsx`、`tests/unit/app/login/page.test.tsx`）、E2E（`e2e/FR-LOGIN-057-login-screen.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-5-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 5。作り手の判断 5・6、判断 12・13） |
+
+処理の順番と決め:
+
+| 単位 | 動き |
+| --- | --- |
+| `src/app/login/page.tsx`（頁の動きの詳細は `14_login.md` の DD-AUTH-001。この表は流れだけ） | 新しい保留の Cookie（`sb-email-code-session`）を `verifyEmailCodeSessionToken` で確かめ、有効なら `/login/code` へ転送 → 旧い保留の Cookie（`sb-login-2fa-session`）が有効なら `/login/verify` へ転送（問い合わせは読まない）→ `next`（`validateReturnPath` を通った道筋だけ）・`email`（文字列ならメール欄の初めの値。`tab` は読まない）・`registered=1`（固定の案内の文）を `LoginChoices` へ渡す。題と説明は新しい文（FR-AUTH-027） |
+| `LoginChoices`（開いた時） | サーバーの描画と同じく「対応」の前提で描き、描画の後（`useEffect`）に `isPasskeySupported()` を見て、未対応ならボタンを外して一文を出す。ボット検証のスクリプトとウィジェットを、サイトキーがある時だけ置く |
+| 「パスキーでログイン」 | 押すと `disabled`・`aria-busy`・「確認しています…」。`resolveBrowserStartMode()` が `browser` なら `createPasskeyAuthenticationStarter({ mode: 'browser', supabase })` とボット検証のトークンを使い（トークンが無ければ GoTrue を呼ばずに「使えない」の文）、`server` なら窓口 (a) を呼ぶ。続けて `loginWithPasskey`（DD-AUTH-060。鍵の選択 → 終わりの窓口。`next` は終わりの窓口の本文に渡す）。`browser` の時は送った後でボット検証を引き直す |
+| パスキーの結果 | 成功は `refreshAuthState()` → `resolvePostLoginPath()`（DD-AUTH-060）の行き先へ `router.replace`（移動が終わるまでボタンは止めたまま。勧めの画面は出さない）。`cancelled`: 状態の知らせ「パスキーでのログインを中止しました。」（`role="status"`・赤にしない）。`not_found`・`uv_required`・`staff_blocked`・`rate_limited`（`Retry-After` があれば「約 N 分後」を足す）・そのほか（`unavailable`・`captcha_required`・`failed`）は理由ごとの文を `role="alert"` で出す |
+| 「Googleでサインイン」 | 今のボタンのまま（`loginWithGoogle({ next })`） |
+| `EmailCodeStartForm`（送る） | `EmailCodeStartRequestSchema` で形を確かめる（誤りは送らず文を出す）→ サイトキーがあってトークンが無ければ「ボット検証を完了してください」→ `POST /api/auth/email-code/start { email, turnstileToken, next }`（本文は必ず読む）。202 は `/login/code` へ `router.replace`（移動が終わるまで止めたまま）、400 は本文の文、403 `Bot detection failed` は「ボット検証を完了してください」、429 は「試行が集中しています。しばらくしてからやり直してください。」、それ以外と通信の失敗は「確認コードを送れませんでした。時間をおいてやり直してください。」。どの道でもボット検証を引き直す |
+| 共通 | 状態の変化は `LiveMessage`。送信中は `aria-busy` と `disabled`。応答の本文は読むか捨てる |
+
+テスト観点: 3つの入口と OR の並び、未対応のブラウザでボタンが出ず一文が出る、パスキー押下から各 `reason` の文言と `Retry-After`、成功で post-login の行き先へ移り勧めの画面へ行かない、`mode: 'browser'` でトークンが無ければ GoTrue を呼ばない・あれば呼んで引き直す・`server` では呼ばない、メール欄の各応答の文言と二重送信の防止、`?next`・`?email`・`?registered=1`、保留の Cookie（新・旧）の転送と両方有効な時の順番。E2E は、3つの入口と Tab の順、パスキー押下で始めの窓口が1回、中止の文、`next` が終わりの窓口の本文に渡ること、未対応の一文、メールを送って `/login/code` へ移り Mailpit にコードが届くこと、Google のボタン、390px で横にはみ出さず、旧の画面が今のまま。

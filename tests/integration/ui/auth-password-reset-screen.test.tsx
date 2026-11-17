@@ -342,7 +342,7 @@ describe('SCR-AUTH-005 /auth/password-reset は申請・新しいパスワード
       expect(within(note).getByText('迷惑メールフォルダをご確認ください')).toBeInTheDocument();
       expect(within(note).getByText('再送信すると前回のリンクは無効です')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: '別のアドレスで送信' })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'ログインへ' })).toHaveAttribute('href', '/login');
+      expect(screen.getByRole('link', { name: 'ログインへ' })).toHaveAttribute('href', '/login/password');
     });
 
     it('SCR-AUTH-005 変えた後は南京錠の図と「ログインへ」のボタンを主の操作として出し、フォームと頁の見出しを畳む', async () => {
@@ -358,7 +358,7 @@ describe('SCR-AUTH-005 /auth/password-reset は申請・新しいパスワード
       expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
       expect(screen.getByTestId('auth-result-icon-password')).toBeInTheDocument();
       expect(screen.getByText('新しいパスワードでログインしてください。')).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'ログインへ' })).toHaveAttribute('href', '/login');
+      expect(screen.getByRole('link', { name: 'ログインへ' })).toHaveAttribute('href', '/login/password');
       expect(screen.queryByLabelText('New Password (16+ characters)')).toBeNull();
       expect(screen.queryByRole('button', { name: 'パスワードを更新' })).toBeNull();
       expect(title).toHaveFocus();

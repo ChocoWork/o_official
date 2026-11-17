@@ -1,6 +1,6 @@
 # 画面一覧
 
-> パスキー段2 Task 3 確認日: 2026-11-17。旧のパスワードのログイン・会員登録の画面を `/login/password` へ退避する1ルートを追加し、`src/app/**/page.tsx` は52件になった（顧客向け18・認証・アカウント10・管理・開発補助24）。検索に載せず、どこからもリンクしない（旧の流れの中の戻り先を除く）。`/login` は Task 5 まで同じ中身。共有の `src/contexts/Providers.tsx` の真ん中寄せの枠に `/login/password`・`/login/code`・`/login/passkey` を足した。実測（390/768/1280px）は E2E（`FR-LOGIN-056`）が確かめる。
+> パスキー段2 Task 3 確認日: 2026-11-17。旧のパスワードのログイン・会員登録の画面を `/login/password` へ退避する1ルートを追加し、`src/app/**/page.tsx` は52件になった（顧客向け18・認証・アカウント10・管理・開発補助24）。検索に載せず、どこからもリンクしない（旧の流れの中の戻り先を除く）。`/login` は Task 5（2026-11-18）で新しい画面（パスキー・Google・メールのコード）に作り替えた。パスワードの再設定・変更の完了の行き先は `/login/password`。共有の `src/contexts/Providers.tsx` の真ん中寄せの枠に `/login/password`・`/login/code`・`/login/passkey` を足した。実測（390/768/1280px）は E2E（`FR-LOGIN-056`）が確かめる。
 
 > 会計の自動で入れる実装 S27 確認日: 2026-11-15。画面の変更なし（画面ルート・画面の部品の数は変えない）。計上待ちの一覧の `dispute_refund_overlap`・`dispute_return_refund_pending` の文と、`dispute_lost`・`return_closed_after_lost` の専用の文が無いことは FREQ-643-AC-14（前の Task で入れた）。
 
@@ -63,8 +63,8 @@
 
 | パス | 画面・役割 | 導線・同一画面内の状態 | 実装 |
 | --- | --- | --- | --- |
-| `/login` | ログイン・会員登録 | メール・パスワードとGoogleログイン。`tab=register`・`email` は登録フォーム初期値。有効な検証待ちCookieがある場合とメールログイン成功時はOTP確認へ。登録受付完了は同画面 | [page.tsx](../../../src/app/login/page.tsx) |
-| `/login/password` | 旧のログイン・会員登録（パスワード。段4まで残す） | `/login` と同じ中身。`tab=register`・`email`・`next`・`registered` を受ける。タブを替えても URL は `/login/password`。検索に載せない（`noindex`）。有効な検証待ちCookieがある場合は `/login/verify` へ | [password/page.tsx](../../../src/app/login/password/page.tsx) |
+| `/login` | ログイン（パスキー・Google・メールのコード） | 「パスキーでログイン」・「Googleでサインイン」・メール欄と「メールでコードを受け取る」の3つの入口。`next`（戻り先）・`email`（メール欄の初期値。`tab` は読まない）・`registered=1`（登録完了の案内）を受ける。有効な保留のCookieがある場合は新（メールのコード）なら `/login/code`、旧（パスワード）なら `/login/verify` へ。メールの送信成功で `/login/code`、パスキーの成功で戻り先へ。パスキー未対応の端末ではボタンを出さず一文を出す | [page.tsx](../../../src/app/login/page.tsx) |
+| `/login/password` | 旧のログイン・会員登録（パスワード。段4まで残す） | 旧の `/login` の中身（Task 5 で `/login` は新しい画面に作り替えた）。パスワードの再設定・変更の完了の行き先。`tab=register`・`email`・`next`・`registered` を受ける。タブを替えても URL は `/login/password`。検索に載せない（`noindex`）。有効な検証待ちCookieがある場合は `/login/verify` へ | [password/page.tsx](../../../src/app/login/password/page.tsx) |
 | `/login/verify` | ログインメールOTP確認 | 8桁OTP、再送、エラーを表示。成功後の認証再確認で一般利用者はアカウント、admin/supporterは認証確認へ。再確認が未認証ならログイン、通信例外ならアカウントへ。検証セッションなし・再送401・やり直す操作もログインへ | [page.tsx](../../../src/app/login/verify/page.tsx) |
 | `/auth/verified` | 認証確認・特権ユーザーのTOTP | 一般利用者はアカウントへ自動遷移。admin/supporterはMFA確認済みなら直ちに管理へ、未確認ならTOTP登録・確認後に管理へ。未認証はログイン案内リンク | [page.tsx](../../../src/app/auth/verified/page.tsx) |
 | `/auth/password-reset` | パスワード再設定 | メール送信、リンクエラー、新パスワード入力、更新完了を同画面に表示。送信・更新完了からログインへ。errorクエリは案内後に除去 | [page.tsx](../../../src/app/auth/password-reset/page.tsx) |
@@ -139,7 +139,8 @@
 | `/look` | `season` | 同じ一覧ルートのシーズン選択 |
 | `/stockist` | `pref`：カンマ区切りの都道府県 | 地方・都道府県の選択を同じルートに反映 |
 | `/search` | `q`、`tab=all/item/look/news` | 検索・結果種別の切替でクエリをreplace。追加表示・入力候補は同画面内の状態 |
-| `/login` | `tab=register`、`email` | 初期タブと登録メール初期値。タブ操作後のURLは両方 `/login`。フォーム送信結果は同画面 |
+| `/login` | `next`、`email`、`registered=1` | 戻り先、メール欄の初期値、登録完了の案内。`tab` は読まない（付いていても同じ画面） |
+| `/login/password` | `tab=register`、`email`、`next`、`registered=1` | 初期タブと登録メール初期値。タブ操作後のURLは両方 `/login/password`。フォーム送信結果は同画面 |
 | `/auth/password-reset` | `error=link_invalid/link_expired` | 案内を表示後にクエリを除去。メール入力・新パスワード入力・送信／更新完了も同じルート |
 | `/auth/password-reset/verify` | `token` | 自動確認の入力。確認結果に応じて再設定画面へ移動 |
 | `/account` | `tab=profile/shipping/orders/inquiries` | 無指定・未知値はprofile。`address` はshippingへ正規化。タブ切替でreplaceし、他のクエリを保持 |

@@ -86,6 +86,8 @@ async function startAsServer(fetchApp: typeof fetch): Promise<PasskeyStartResult
   } catch {
     return { ok: false, reason: 'failed' };
   }
+  // no-store の応答は本文を読まないと Chrome が通信中のままにする（E2E の networkidle が来ない）。成功以外は本文を捨てる。
+  if (!response.ok) await response.arrayBuffer().catch(() => undefined);
   if (response.status === 429) {
     const retryAfterSeconds = parseRetryAfter(response.headers.get('Retry-After'));
     return retryAfterSeconds === undefined

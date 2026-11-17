@@ -4,7 +4,7 @@
 /**
  * パスワード変更の画面 /account/password（SCR-AUTH-011、FLOW-AUTH-005。詳細設計は DD-AUTH-042）。
  *
- * 段階 1（現行パスワード）→ 段階 2（コードと新パスワード）→ 成功で /login、を本物の画面のまま辿る。
+ * 段階 1（現行パスワード）→ 段階 2（コードと新パスワード）→ 成功で /login/password、を本物の画面のまま辿る。
  * 差し替えるのは、Next のルーター、ログインの状態、通信（clientFetch）だけ。
  * 通信の応答は本文を読む側の `json()` が呼ばれたかを数え、本文を読み切る約束（no-store の応答を読まない呼び手が
  * networkidle を止める。波 3 の学び）を確かめる。
@@ -184,7 +184,7 @@ describe('SCR-AUTH-011 パスワード変更の画面', () => {
     await fillStage2(user);
     await user.click(screen.getByRole('button', { name: 'パスワードを変更する' }));
 
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/login'));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/login/password'));
     expect(mockRefreshSessionOnce).toHaveBeenCalledTimes(1);
     const confirms = callsTo('/api/auth/password/change/confirm');
     expect(confirms).toHaveLength(2);
@@ -280,7 +280,7 @@ describe('SCR-AUTH-011 パスワード変更の画面', () => {
     expect(callsTo('/api/auth/password/change/confirm')).toHaveLength(0);
   });
 
-  it('FLOW-AUTH-005 confirm が 200 なら成功の文を出し、ログイン状態を引き直して /login へ移る。送るのはコードと新しいパスワードだけ', async () => {
+  it('FLOW-AUTH-005 confirm が 200 なら成功の文を出し、ログイン状態を引き直して /login/password へ移る。送るのはコードと新しいパスワードだけ', async () => {
     const user = userEvent.setup();
     await reachStage2(user);
     queue(reply(200, { ok: true }));
@@ -292,7 +292,7 @@ describe('SCR-AUTH-011 パスワード変更の画面', () => {
       await screen.findByText('パスワードを変更しました。全ての端末からログアウトしました。新しいパスワードでログインしてください。'),
     ).toBeInTheDocument();
     expect(bodyOf(callsTo('/api/auth/password/change/confirm')[0])).toEqual({ code: CODE, new_password: NEW_PASSWORD });
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/login'));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/login/password'));
     expect(mockRefreshAuthState).toHaveBeenCalled();
   });
 
@@ -377,7 +377,7 @@ describe('SCR-AUTH-011 パスワード変更の画面', () => {
     await user.clear(screen.getByLabelText('確認コード'));
     await user.type(screen.getByLabelText('確認コード'), CODE);
     await user.click(screen.getByRole('button', { name: 'パスワードを変更する' }));
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/login'));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/login/password'));
 
     expect(jsonSpies).toHaveLength(3);
     for (const spy of jsonSpies) expect(spy).toHaveBeenCalledTimes(1);

@@ -87,7 +87,7 @@ export default function VerifyClient({ token }: Props) {
               もう一度試す
             </Button>
             <Link
-              href="/login"
+              href="/login/password"
               className="mt-6 inline-block lk-text-xs underline underline-offset-4 hover:text-[#474747] transition-colors"
             >
               ログインへ

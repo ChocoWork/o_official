@@ -1,6 +1,7 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import LoginPage from '@/app/login/password/page';
+import NewLoginPage from '@/app/login/page';
 import { LoginProvider } from '@/contexts/LoginContext';
 import { POST as registerPost } from '@/app/api/auth/register/route';
 import { GET as confirmGet } from '@/app/api/auth/confirm/route';
@@ -109,6 +110,9 @@ jest.mock('next/link', () => {
 jest.mock('@/features/auth/services/login-2fa-session', () => ({
   verifyLoginTwoFactorSessionToken: () => null,
 }));
+jest.mock('@/features/auth/services/email-code-session', () => ({
+  verifyEmailCodeSessionToken: () => null,
+}));
 jest.mock('@/lib/supabase/client', () => ({ supabase: { auth: { signOut: jest.fn() } } }));
 jest.mock('@/lib/browser-location', () => ({ navigateBrowser: jest.fn() }));
 jest.mock('@/features/auth/middleware/rateLimit', () => ({
@@ -178,6 +182,14 @@ const USER = {
 // 最初の me の取得が描画の後に返るので、act の中で待ち切ってから返す。
 async function openLoginPage(searchParams: Record<string, string> = {}) {
   const page = await LoginPage({ searchParams: Promise.resolve(searchParams) });
+  await act(async () => {
+    render(<LoginProvider>{page}</LoginProvider>);
+  });
+}
+
+// お客さんが確認のリンクの後に着く新しい /login（案内の確かめ用）。
+async function openNewLoginPage(searchParams: Record<string, string> = {}) {
+  const page = await NewLoginPage({ searchParams: Promise.resolve(searchParams) });
   await act(async () => {
     render(<LoginProvider>{page}</LoginProvider>);
   });
@@ -524,12 +536,10 @@ describe('会員登録の画面遷移', () => {
         expect.objectContaining({ action: 'auth.confirm', outcome: 'success', detail: 'confirmed_without_session' }),
       );
 
-      // 行き先の画面は、案内を role="status" で出す（タブを替えても残る）
+      // 行き先の新しい /login は、案内を role="status" で出す
       cleanup();
-      await openLoginPage({ registered: '1' });
-      expect(screen.getByRole('status')).toHaveTextContent('会員登録が完了しました。ログインしてください。');
-      fireEvent.click(screen.getByRole('tab', { name: '会員登録' }));
-      expect(screen.getByRole('status')).toHaveTextContent('会員登録が完了しました。ログインしてください。');
+      await openNewLoginPage({ registered: '1' });
+      expect(screen.getByText('会員登録が完了しました。ログインしてください。')).toHaveAttribute('role', 'status');
     });
 
     test('FLOW-AUTH-003 ログインした時にゲストで買った注文を会員へ引き継ぐ', async () => {

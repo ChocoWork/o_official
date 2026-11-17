@@ -60,6 +60,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | ファイル | 単位（symbol） | DD |
 | --- | --- | --- |
 | `src/app/login/page.tsx` | `<file>` | DD-AUTH-001 |
+| `src/features/auth/passkey/components/LoginChoices.tsx` | `<file>` | DD-AUTH-063 |
+| `src/features/auth/passkey/components/EmailCodeStartForm.tsx` | `<file>` | DD-AUTH-063 |
 | `src/app/login/password/page.tsx` | `<file>` | DD-AUTH-061 |
 | `src/app/login/code/page.tsx` | `<file>` | DD-AUTH-062 |
 | `src/features/auth/passkey/components/EmailCodeEntry.tsx` | `<file>` | DD-AUTH-062 |
@@ -128,67 +130,64 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 画面（`src/app/login/**`・`src/app/auth/**`）と部品（`src/components/*`・`src/hooks/*`・`src/lib/format-countdown.ts`）の項目。`.tsx` はファイル全体が1つの単位なので、中の関数・定数はその単位の項目に含める。画面の単体テストでは、共有の `LoginContext`・`next/navigation`・`fetch`・Turnstile を差し替える。
 
-### DD-AUTH-001 /login の頁（保留の確かめ・タブの初めの値・metadata）
+### DD-AUTH-001 /login の頁（保留の確かめ・初めの値・metadata）
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SCR-AUTH-001、FLOW-AUTH-001、FLOW-AUTH-003、STATE-AUTH-001、SEC-AUTH-007 |
-| 根拠 | 認証コードの入力の途中で戻ってきた人に資格情報のフォームを見せると、もう一度ログインを押して2通目のコードを送り、アカウント単位の枠（5回／600秒）を無駄に使う。保留の Cookie が有効なら描く前に `/login/verify` へ送る（SCR-AUTH-001、FLOW-AUTH-001、STATE-AUTH-001、`src/app/login/page.tsx`）。注文の完了からの案内（`?tab=register&email=`）を受けて会員登録のタブから始める（FREQ-266（範囲外））。題・説明・OG の画像をサーバーで返す（FR-LOGIN-005）。確認のメールのリンクを登録を始めたブラウザ以外で開いた人は `/login?registered=1` へ送られるので、固定の案内の文を渡して登録が終わったことを知らせる（SEC-AUTH-007、ADR-0413） |
+| 上位 | SCR-AUTH-001、FLOW-AUTH-001、STATE-AUTH-001、SEC-AUTH-007 |
+| 根拠 | 入力の途中で戻ってきた人にもう一度フォームを見せると、もう一度送って2通目のコードを出し、枠を無駄に使う。新しい保留の Cookie（メールのコード）が有効なら描く前に `/login/code`、旧い保留の Cookie（パスワード）が有効なら `/login/verify` へ送る（SCR-AUTH-001、STATE-AUTH-001）。注文の完了からの案内（`?tab=register&email=`）は、`tab` を読まず `email` だけをメール欄の初めの値にする（FREQ-266（範囲外））。題・説明・OG の画像をサーバーで返す（FR-LOGIN-005。説明は新しい文）。確認のメールのリンクを登録を始めたブラウザ以外で開いた人は `/login?registered=1` へ送られるので、固定の案内の文を渡して登録が終わったことを知らせる（SEC-AUTH-007、ADR-0413）。2026-11-18（段2 Task 5）に、旧のタブの画面の中身を `/login/password`（DD-AUTH-061）へ移し、この項目を新しい `/login` の頁に書き直した |
 | 状態 | 推定 |
-| 確かめ方 | 単体テスト |
-| 出どころ | 実装から推定（`src/app/login/page.tsx`） |
+| 確かめ方 | 単体テスト（`tests/unit/app/login/page.test.tsx`）、E2E（`e2e/FR-LOGIN-057-login-screen.spec.ts`） |
+| 出どころ | `src/app/login/page.tsx`、`.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-5-brief.md` |
 | 旧番号 | IMPL-LOGIN-001、IMPL-LOGIN-004 |
 | 旧所在 | `docs/04_DetailDesign/pages/14_login.md`（基準コミットの版）の「機能要件対応表」の FR-LOGIN-001・FR-LOGIN-005 の行（「`LoginModal` の呼び出しのみ」は今の作りと違う） |
 
-**段2 Task 3（2026-11-17）の変更:** 旧の `/login` の中身は `src/app/login/password/page.tsx`（DD-AUTH-061。`robots: noindex, nofollow` を足した以外は同じ）へ移した。このページ（`src/app/login/page.tsx`）は Task 5 まで同じ中身のまま残り、Task 5 で新しい画面に作り替える。旧の流れの中の戻り先（`/login/verify` の保留の無い転送、`VerifyOtpClient` の401と取りやめ、`RegisterModal` のログインへのリンク）は `/login/password`。共有の `src/contexts/Providers.tsx`（範囲の外）の `isAuthPage` は `/login/password`・`/login/code`・`/login/passkey` も真にする（真ん中寄せの枠）。
-
-**対応要件 ID:** SCR-AUTH-001、FLOW-AUTH-001・003、STATE-AUTH-001、SEC-AUTH-007（その上は FR-LOGIN-005、FREQ-63-REQ-01、FREQ-334-REQ-03、ADR-0410、ADR-0413、FREQ-266-REQ-01（範囲外））
+**対応要件 ID:** SCR-AUTH-001、FLOW-AUTH-001、STATE-AUTH-001、SEC-AUTH-007（その上は FR-AUTH-027、FR-LOGIN-005、FREQ-334-REQ-03、ADR-0410、ADR-0413、FREQ-266-REQ-01（範囲外））
 
 **入出力:**
 
 | 向き | 中身 |
 | --- | --- |
-| 入力 | `GET /login`。Cookie `sb-login-2fa-session`、問い合わせの `tab`・`email`・`next`（ログインの後の戻り先）・`registered` |
-| 出力（頁） | 部品 `AuthTabs`（DD-AUTH-010）に初めのタブ（`register` か `login`）と初めのメール（文字列か空）、戻り先の確かめ（DD-AUTH-032）を通った道筋だけを `returnTo` として渡す。外れた値は画面に出さず捨てる。`registered` が文字列の `1` の時だけ、固定の案内の文「会員登録が完了しました。ログインしてください。」（案。ユーザーに画面を見せて確かめる）を `notice` として渡す。値そのものは画面に出さない |
-| 出力（転送） | 保留が有効なら `/login/verify` へのサーバーの転送 |
-| 出力（metadata） | title「LOGIN \| Le Fil des Heures」、description は固定の文、og:title・og:description は同じ字、og:image は `/mainphoto.png`（`src/app/login/page.tsx`） |
+| 入力 | `GET /login`。Cookie `sb-email-code-session`・`sb-login-2fa-session`、問い合わせの `email`・`next`（ログインの後の戻り先）・`registered`（`tab` は読まない） |
+| 出力（頁） | 部品 `LoginChoices`（DD-AUTH-063）に初めのメール（文字列か空）、戻り先の確かめ（DD-AUTH-032）を通った道筋だけを `returnTo` として渡す。外れた値は画面に出さず捨てる。`registered` が文字列の `1` の時だけ、固定の案内の文「会員登録が完了しました。ログインしてください。」を `notice` として渡す。値そのものは画面に出さない |
+| 出力（転送） | 新しい保留が有効なら `/login/code`、旧い保留が有効なら `/login/verify` へのサーバーの転送 |
+| 出力（metadata） | title「LOGIN | Le Fil des Heures」、description「Le Fil des Heures のログインページです。パスキー、Google アカウント、メールで受け取るコードでサインインできます。」、og:title・og:description は同じ字、og:image は `/mainphoto.png`（`src/app/login/page.tsx`） |
 
 **正常フロー:**
 
 1. metadata の関数は分岐を持たず、固定の値を返す（`src/app/login/page.tsx`）
-2. 頁の関数は Cookie を読み、共有の `verifyLoginTwoFactorSessionToken` で保留を確かめる
-3. 保留が無効なら問い合わせを待って読み、タブとメールの初めの値を決める
-4. `AuthTabs` を描く
+2. 頁の関数は Cookie を読み、共有の `verifyEmailCodeSessionToken` と `verifyLoginTwoFactorSessionToken` で保留を確かめる
+3. どちらも無効なら問い合わせを待って読み、メールの初めの値と戻り先を決める
+4. `LoginChoices` を描く
 
 **分岐と異常フロー:**
 
 | 条件 | 動き |
 | --- | --- |
-| 保留の印が有効 | `/login/verify` へ転送。問い合わせを読まない（`src/app/login/page.tsx`） |
+| 新しい保留の印が有効 | `/login/code` へ転送。問い合わせを読まない。旧い保留も有効でも、こちらを先にする |
+| 旧い保留の印が有効（新しい保留は無い） | `/login/verify` へ転送 |
 | 保留の印が無い・偽り・期限切れ | 頁を描く |
-| 問い合わせが無い | タブは `login`、メールは空 |
-| `tab` が `register` | 会員登録のタブから |
-| `tab` がほか・配列 | ログインのタブから |
-| `email` が文字列 | その値 |
+| `email` が文字列 | その値をメール欄の初めの値に渡す |
 | `email` が配列・無い | 空 |
+| `tab` | 読まない（`register` が付いていても同じ画面） |
 | `next` が確かめ（DD-AUTH-032）を通った | その道筋を `returnTo` に渡す |
 | `next` が外れた・配列だった・無い | `returnTo` を渡さない |
 | `registered` が `1` | 案内の文を `notice` に渡す |
 | `registered` が `1` 以外（`0`・空・配列）・無い | `notice` を渡さない |
 
-**状態・永続化:** 状態を持たず、書かない。保留の印の確かめは共有部品（署名・用途・期限・iat から 30 分、STATE-AUTH-001）。
+**状態・永続化:** 状態を持たず、書かない。保留の印の確かめは共有部品（署名・用途・期限、STATE-AUTH-001）。
 
 **認証認可:** ログインを求めない。保留の Cookie は HttpOnly でサーバーだけが読む。`/register` の頁は無い（404。FREQ-63-AC-01）。
 
-**テスト観点:**（単体テストは無い。E2E `e2e/FR-LOGIN-005`・`027` が一部を見る）
+**テスト観点:**（単体 `tests/unit/app/login/page.test.tsx`）
 
 | # | 観点 |
 | --- | --- |
-| 1 | 保留が有効なら `/login/verify` へ転送し、`AuthTabs` を描かない |
-| 2 | 保留が無効で `?tab=register&email=a@example.com` なら会員登録のタブとメール |
-| 3 | 問い合わせが無ければログインのタブと空 |
-| 4 | `email` が配列なら空、`tab` がほかの値ならログイン |
-| 5 | metadata の関数が title・description・OG を返す |
+| 1 | 新しい保留が有効なら `/login/code` へ転送し、問い合わせを読まない。旧い保留が有効なら `/login/verify`。両方有効なら `/login/code` |
+| 2 | Cookie が無い・偽りなら転送せず `LoginChoices` を描く |
+| 3 | `?tab=register&email=a@example.com` でもメールだけを渡す。`email` が配列・無いなら空 |
+| 4 | `?next` が確かめを通れば通った道筋だけを `returnTo` に渡し、外れ・配列・無いなら渡さない |
+| 5 | metadata の関数が title・新しい description・OG を返す |
 | 6 | `registered=1` で案内の文を `notice` として渡す。`0`・空・配列・未指定では渡さない。メールなどほかの値を案内に混ぜない |
 
 ### DD-AUTH-002 /login/verify の頁と認証コードの入力の部品
@@ -725,7 +724,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SCR-AUTH-001、SEC-AUTH-007 |
-| 根拠 | ログインと会員登録を別のページにすると導線が分かれるので、`/login` の1つの画面のタブで切り替え、`/register` は置かない（SCR-AUTH-001、ADR-0410）。切り替えても URL は `/login/password` のままにする（段2 Task 3 で `/login` から変更。DD-AUTH-061）（FREQ-63-REQ-01）。左右の矢印で隣のタブへ移れる tablist にする。確認のリンクを別のブラウザで開いた人への案内（`notice`）を、URL の query が `replaceState` で消えても、タブを替えても残す（SEC-AUTH-007） |
+| 根拠 | ログインと会員登録を別のページにすると導線が分かれるので、1つの画面のタブで切り替え、`/register` は置かない（SCR-AUTH-001、ADR-0410）。このタブは旧のパスワードの画面 `/login/password`（段2 Task 3 で `/login` から移した。DD-AUTH-061。新しい `/login` はタブを持たない。DD-AUTH-063）の部品として段4まで残る。切り替えても URL は `/login/password` のままにする（FREQ-63-REQ-01）。左右の矢印で隣のタブへ移れる tablist にする。確認のリンクを別のブラウザで開いた人への案内（`notice`）を、URL の query が `replaceState` で消えても、タブを替えても残す（SEC-AUTH-007） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/components/AuthTabs.tsx`） |
@@ -737,7 +736,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 向き | 中身 |
 | --- | --- |
 | 入力 | 部品の `initialTab`（`login`・`register`）・`initialEmail`（任意）・`returnTo`（任意。サーバーが確かめた戻り先）・`notice`（任意。案内の文）。タブの押下・左右の矢印 |
-| 出力 | `notice` があれば tablist の上に `role="status"` の 1 行（初回の描画の値を state に固定し、タブを替えても・props が変わっても消さない）。tablist の2つのタブ（「ログイン」「会員登録」）と tabpanel。中身は `LoginModal`（DD-AUTH-008、いつも開いた形）か `RegisterModal`（DD-AUTH-009）で、どちらにも `returnTo` を渡し、タブを替えても保つ。切り替えで `history.replaceState` で URL を `/login` に置き換える |
+| 出力 | `notice` があれば tablist の上に `role="status"` の 1 行（初回の描画の値を state に固定し、タブを替えても・props が変わっても消さない）。tablist の2つのタブ（「ログイン」「会員登録」）と tabpanel。中身は `LoginModal`（DD-AUTH-008、いつも開いた形）か `RegisterModal`（DD-AUTH-009）で、どちらにも `returnTo` を渡し、タブを替えても保つ。切り替えで `history.replaceState` で URL を `/login/password` に置き換える |
 
 **正常フロー:**
 
