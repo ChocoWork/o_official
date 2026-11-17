@@ -233,7 +233,7 @@ flowchart LR
     LoginPassword --> PasswordReset
     PasswordReset -->|メールのtoken| PasswordResetVerify
     PasswordResetVerify -->|自動: 確認結果| PasswordReset
-    PasswordResetVerify -->|通信失敗: リンク| Login
+    PasswordResetVerify -->|通信失敗: リンク| LoginPassword
     PasswordResetVerify -. 通信再試行 .-> PasswordResetVerify
     PasswordReset -. 入力 / メール / 更新 .-> PasswordReset
     PasswordReset -->|完了: ログイン| LoginPassword

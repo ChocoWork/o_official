@@ -358,7 +358,7 @@ Security notifications が見当たらない時は、右上の自分のアイコ
 | 2. `sb_secret_` が captcha を免除するか | (a) は `sb_secret_` で呼ぶ | 免除されなければ別の計画（上の節） |
 | 8. 古い `service_role` の鍵が captcha を免除するか | (a) は古い鍵で呼ばない | 本番で確かめるだけ（アプリは使わない） |
 | 9. フックの拒否の応答の形 | 更新の拒否を印 `[staff-passkey-required]` で見分け、セッションを終わらせる（`refresh`） | フックの登録後に、拒否の応答（403・`unknown`・フックの文）が手元と同じか確かめる |
-| 10. 今の `createUser` → `signInWithOtp` の組み合わせ（段2） | 始めの窓口は確認済みで作ってからコードを送る（手元は Confirm email オンで動く） | 本番の Confirm email オンのまま、未登録のアドレスにコードが届き、確定でログインできること。上の「お客さんのメールのコードのログイン（段2）」 |
+| 10. 今の `createUser` → `signInWithOtp` の組み合わせ（段2） | 始めの窓口は確認済みで作ってからコードを送る（手元は Confirm email オンで動く） | 本番の Confirm email オンのまま、未登録のアドレスにコードが届き、確定でログインできること。下の「お客さんのメールのコードのログイン（段2）」 |
 | 11. メールのコードの型（`magic_link`）の雛形（段2） | 雛形の本文に `{{ .Token }}`・8桁・5分に頼る | 本番の `magic_link` の雛形に `{{ .Token }}` が在り、`otp_length` が8・`otp_expiry` が300であること |
 | 12. 始めの `(b)` の切り替えの実機の確認と、`/otp` の IP の枠（段2） | `NEXT_PUBLIC_PASSKEY_START_MODE`。サインイン・サインアップの IP ごとの枠（5分30回）が、お客さんの新規と予備の主な道になる | `(b)` の切り替えを実機で確かめる。`/otp` にも `Sb-Forwarded-For` を添えられるか、`createServiceRoleAuthClient` を `sb_secret_` に替える要否を確かめる |
 
@@ -371,6 +371,27 @@ Security notifications が見当たらない時は、右上の自分のアイコ
 - **手元の確認（2026-11-18）**: 手元の `supabase/config.toml` は `enable_confirmations = true`、`otp_length = 8`、`otp_expiry = 300`。この設定のまま、`createUser` → `signInWithOtp` の組み合わせで、未登録のアドレスにコードのメールが届き、確定でログインできる（E2E `FR-LOGIN-055`: FR-AUTH-023-AC-01）。登録済みのアドレスでも、応答は同じ（AC-02）
 - **本番で試す物（段3の確認の一覧に足した）**: (1) 今の `createUser` → `signInWithOtp` の組み合わせが、本番の Confirm email オンのまま動くこと、(2) 本番の `magic_link` の雛形に `{{ .Token }}` が在り、8桁・5分であること、(3) 始めの `(b)`（`NEXT_PUBLIC_PASSKEY_START_MODE`）の切り替えの実機の確認、(4) 次の IP の枠。台帳の「パスキー段2から先への持ち越し」に書いた
 - **サインイン・サインアップの IP ごとの枠（5分30回）は、段2から、お客さんの新規と予備の主な道になる**: 上の「手で変える項目」の「サインイン・サインアップの IP ごとの枠」にあるとおり、アプリの全員が Vercel の出口の少数の IP から GoTrue を呼ぶので、この枠は店の全員で分け合う。今、お客さんの新規と予備の主な道は `signInWithOtp`（`/otp`）になるので、`/otp` にも `Sb-Forwarded-For` を添えられるか、および `createServiceRoleAuthClient`（今は `SUPABASE_SERVICE_ROLE_KEY` を使う）を `sb_secret_` に替える要否は、本番で確かめる（段3）
+
+## 一度も入らなかったメールのコードのアカウントの後始末（開店前。選ぶ SQL）
+
+確認日: 2026-11-18（段2 Task 11 の直し）。**消す処理そのものは開店前の作業で、段2では作っていない。下の SQL は選ぶだけ（読むだけ）の候補。** 本番へ流す前に、手元の DB で流して、行数と中身を確かめる。
+
+始めの窓口は、コードを送る前に、印つきでアカウントを作る（`app_metadata.email_code_signup_pending = true`。`src/app/api/auth/email-code/start/route.ts`）。確定でコードが通った時だけ印が外れる（`verify/route.ts`。外す失敗は続行する）。このため、コードを入れなかったアドレスのアカウントが残る。印の付いた人が後で Google で入ると、印が付いたまま残るので、`last_sign_in_at IS NULL` が無いと本当のお客さんを選んでしまう。
+
+```sql
+select u.id, u.email, u.created_at
+  from auth.users u
+ where (u.raw_app_meta_data ->> 'email_code_signup_pending') = 'true'
+   and u.created_at < now() - interval '24 hours'
+   and u.last_sign_in_at is null
+   and not exists (select 1 from public.orders o where o.user_id = u.id)
+   and not exists (select 1 from public.orders o where lower(o.shipping_email) = lower(u.email))
+   and not exists (select 1 from public.user_roles r where r.user_id = u.id)
+ order by u.created_at;
+```
+
+- 条件: 印が真、作って24時間を過ぎ、一度もログインしていない、`public.orders.user_id` の注文が無い、同じアドレスのゲストの注文（`shipping_email`）が無い、`public.user_roles` に行が無い（店員でない）
+- 消す時は、選んだ行を目で確かめてから、管理 API（`auth.admin.deleteUser`）で1人ずつ消す。SQL で `auth.users` を直に消さない。消した後に、同じアドレスの始めが来れば、作り直される
 
 ## 確かめ
 

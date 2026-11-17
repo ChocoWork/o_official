@@ -93,7 +93,7 @@
 - 旧の画面にだけ当てる jest の試験: `tests/unit/app/login/login-page.test.tsx` の `/login/password` の分、`login-verify-page`、`VerifyOtpClient`、`auth-tabs`、`register-modal`、`tests/integration/ui/auth-login-flow`・`auth-login-tabs-screen`・`auth-login-verify-screen`・`auth-register-flow`・`auth-register-form-screen`、`tests/unit/contexts/providers-auth-page.test.tsx` の旧の道（`/login/verify`・`/login/password`）の分
 - 消す窓口の性質を確かめる E2E: `FR-LOGIN-030`・`031`・`035`、`FR-SIGNUP-002`（`/api/auth/login/*`・`/api/auth/register` を直に叩く。窓口と一緒に消す）
 - 注: `loginAndOpenAccount` を使う16本の `FR-ACCOUNT-*` は消さない。手助けを新しい入口（`loginAsMember`）へ移して残す
-- 試験の手助け（Task 10 で、会員のログインの手助け `loginAsMember` を新しいメールのコードの窓口へ付け替えた。旧の道は `loginAsMemberLegacy` に残した）: `e2e/member-session-helpers.ts` の `loginAsMemberLegacy` と、それを呼ぶ5本（`FR-LOGIN-032`・`FR-LOGIN-033`・`FR-PWRESET-010`・`FR-ACCOUNT-046`・`FR-ADMIN-MISC-008`）、旧の窓口を直に叩く `FR-LOGIN-030`・`031`。`e2e/auth-2fa-test-utils.ts` の `setLoginTwoFactorCookie` と、`createTestMember` の `password` 付きの作り方も外す
+- 試験の手助け（Task 10 で、会員のログインの手助け `loginAsMember` を新しいメールのコードの窓口へ付け替えた。旧の道は `loginAsMemberLegacy` に残した）: `e2e/member-session-helpers.ts` の `loginAsMemberLegacy` と、それを呼ぶ7本（`FR-LOGIN-030`・`031`・`032`・`033`、`FR-PWRESET-010`、`FR-ACCOUNT-046`、`FR-ADMIN-MISC-008`）。`e2e/auth-2fa-test-utils.ts` の `setLoginTwoFactorCookie` と、`createTestMember` の `password` 付きの作り方も外す
 
 #### 新しい `/login`（Task 5。FR-AUTH-027・DD-AUTH-063）
 
