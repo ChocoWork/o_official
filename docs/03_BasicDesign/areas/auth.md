@@ -1988,8 +1988,8 @@ stateDiagram-v2
 - `private.passkey_notification_outbox` に列を足す: `lease_token uuid`・`lease_expires_at timestamptz`・`last_error_code text`（`^[a-z0-9_]{1,64}$`）・`sent_at timestamptz`・`finished_at timestamptz`。`CHECK ((status = 'sending') = (lease_token IS NOT NULL AND lease_expires_at IS NOT NULL))`。既存の行は `pending` のまま。担当の期限の索引（`status = 'sending'` の行だけ）を足す
 - 状態の動き: `pending`・`retry_wait`（時刻が来たもの）→ `sending`（取り出し。`attempts + 1`）→ `sent`（済み）／`retry_wait`（失敗・期限切れ）／`dead`（`attempts` が9以上の失敗・期限切れ）／`skipped`（宛先なし）
 - `public.claim_passkey_notification(integer)`・`complete_passkey_notification(uuid, uuid)`・`fail_passkey_notification(uuid, uuid, text, integer)`・`skip_passkey_notification(uuid, uuid, text)`・`passkey_notification_recipients(uuid)`。どれも `SECURITY DEFINER`・`SET search_path = ''`・持ち主 `postgres`・`service_role` だけが `execute`（`public`・`anon`・`authenticated` からは外す）
-- 再試行の間隔: `2^(attempts-1)` 分（1・2・4…。128分で頭打ち）と指定の秒数の大きい方。揺らぎは付けない（宛先が少なく、同時の取り合いが無いため。注文のメールの `order_email_retry_delay` は前後2割の揺らぎを足す）
-- 宛先: 本人（`notify_subject` が真でメールがある。お客さんは `subject_customer`、店員は `subject_staff`）を先に、`subject_is_staff` が真の行だけ有効で期限内の `admin` を `admin` で返す（サポーターは含めない）。同じアドレスは先の方を残し、空は返さない
+- 再試行の間隔: `2^(attempts-1)` 分（1・2・4…。128分で頭打ち）と指定の秒数（負は0、1日で頭打ち）の大きい方。期限切れの担当を戻す時も、同じ間隔の先を次の時刻にする（すぐ取り直すと、送り手が落ち続けた時に9回を数分で使い切り `dead` になるため）。揺らぎは付けない（宛先が少なく、同時の取り合いが無いため。注文のメールの `order_email_retry_delay` は前後2割の揺らぎを足す）
+- 宛先: 本人（`notify_subject` が真でメールがある。お客さんは `subject_customer`、店員は `subject_staff`）を先に、`subject_is_staff` が真の行だけ有効で期限内の `admin` を `admin` で返す（サポーターは含めない）。Auth で消された・止められた店長（`auth.users.deleted_at` あり、または `banned_until` が未来）は含めない。同じアドレスは先の方を残し、空は返さない
 - 部品 `src/lib/auth/passkey-notification-store.ts`: 戻りは `{ ok: true; value } | { ok: false }`。呼び方は DD-AUTH-066
 - 段2で作らないもの: `dead` の行を店へ知らせる点検（段3の店長への知らせと同じ道で作る）
 

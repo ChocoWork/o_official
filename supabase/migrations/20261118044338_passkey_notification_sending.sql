@@ -13,11 +13,11 @@
 --   public.claim_passkey_notification(_lease_seconds integer)   returns the oldest due row (seq order), FOR UPDATE SKIP
 --                                                             LOCKED, as 'sending' with attempts + 1 and a new lease_token.
 --                                                             First puts expired leases back to 'retry_wait' ('dead' when
---                                                             attempts >= 9). _lease_seconds must be 30..900 (else 22023).
+--                                                             attempts >= 9), waiting the same backoff as fail. _lease_seconds must be 30..900 (else 22023).
 --   public.complete_passkey_notification(_id, _lease_token)    'sent' only when the token matches; else false
 --   public.fail_passkey_notification(_id, _lease_token, _error_code, _retry_after_seconds)
 --                                                             'dead' at attempts >= 9, else 'retry_wait' with
---                                                             next_attempt_at = now() + max(_retry_after_seconds,
+--                                                             next_attempt_at = now() + max(least(_retry_after_seconds, 86400),
 --                                                             60 * 2^(attempts-1) seconds, capped at 128 minutes). No jitter.
 --   public.skip_passkey_notification(_id, _lease_token, _reason)  'skipped' (row has no recipient)
 --   public.passkey_notification_recipients(_id)                (email, audience): subject_customer / subject_staff first,
@@ -86,7 +86,8 @@ BEGIN
          lease_token = NULL,
          lease_expires_at = NULL,
          last_error_code = 'lease_expired',
-         next_attempt_at = pg_catalog.now(),
+         next_attempt_at = pg_catalog.now()
+           + pg_catalog.make_interval(secs => 60 * (2 ^ LEAST(GREATEST(o.attempts - 1, 0), 7))),
          finished_at = CASE WHEN o.attempts >= 9 THEN pg_catalog.now() END
    WHERE o.status = 'sending' AND o.lease_expires_at <= pg_catalog.now();
 
@@ -148,7 +149,7 @@ BEGIN
      SET status = CASE WHEN o.attempts >= 9 THEN 'dead' ELSE 'retry_wait' END,
          next_attempt_at = CASE WHEN o.attempts >= 9 THEN o.next_attempt_at ELSE
            pg_catalog.now() + pg_catalog.make_interval(secs => GREATEST(
-             COALESCE(_retry_after_seconds, 0)::double precision,
+             LEAST(GREATEST(COALESCE(_retry_after_seconds, 0), 0), 86400)::double precision,
              60 * (2 ^ LEAST(GREATEST(o.attempts - 1, 0), 7))
            )) END,
          finished_at = CASE WHEN o.attempts >= 9 THEN pg_catalog.now() END,
@@ -203,6 +204,8 @@ AS $$
      WHERE r.code = 'admin' AND ur.active
        AND (ur.expires_at IS NULL OR ur.expires_at > pg_catalog.now())
        AND btrim(COALESCE(u.email, '')) <> ''
+       AND u.deleted_at IS NULL
+       AND (u.banned_until IS NULL OR u.banned_until <= pg_catalog.now())
   ),
   ranked AS (
     SELECT e.addr, e.aud, e.ord,

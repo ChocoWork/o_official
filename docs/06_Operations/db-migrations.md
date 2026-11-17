@@ -191,18 +191,18 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 
 | 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
 | --- | --- | --- | --- |
-| `20261118044338_passkey_notification_sending.sql` | 12920 bytes / `d61c41501105339576ae18b50c863027` | 本番未適用（手元の `db reset` で適用済み） | `private.passkey_notification_outbox` に担当・結果の列（`lease_token`・`lease_expires_at`・`last_error_code`・`sent_at`・`finished_at`）と2つの `CHECK`・担当の期限の索引を足し、`public.claim_passkey_notification(integer)`・`complete_passkey_notification(uuid, uuid)`・`fail_passkey_notification(uuid, uuid, text, integer)`・`skip_passkey_notification(uuid, uuid, text)`・`passkey_notification_recipients(uuid)` を足す |
+| `20261118044338_passkey_notification_sending.sql` | 13197 bytes / `018dbd39ff19ac80276f81b50f838f5b` | 本番未適用（手元の `db reset` で適用済み） | `private.passkey_notification_outbox` に担当・結果の列（`lease_token`・`lease_expires_at`・`last_error_code`・`sent_at`・`finished_at`）と2つの `CHECK`・担当の期限の索引を足し、`public.claim_passkey_notification(integer)`・`complete_passkey_notification(uuid, uuid)`・`fail_passkey_notification(uuid, uuid, text, integer)`・`skip_passkey_notification(uuid, uuid, text)`・`passkey_notification_recipients(uuid)` を足す |
 
 - 変えるもの: 知らせの表に5列・2つの `CHECK`（`(status = 'sending') = (lease_token IS NOT NULL AND lease_expires_at IS NOT NULL)`、`last_error_code` は `^[a-z0-9_]{1,64}$`）・索引1つ。既存の行は `pending` のまま。関数5本はどれも `SECURITY DEFINER`・`search_path` 空・持ち主 `postgres`・`service_role` だけが `execute`。誰も呼ばないので、今の動きは何も変わらない（呼ぶのは段2の Task 9 の worker）
 - ファイルの確かめ（2026-11-18）: LF・BOM なし・ASCII だけ（非 ASCII の行は0、CR は0、先頭は `-- `）。MD5 は `md5sum` で測った
-- 本番に MCP の `apply_migration` で当てた後の突き合わせ: `schema_migrations` の `statements` は1つ（ファイルの全文）になるので、`md5(statements[1])` はファイルの MD5 `d61c41501105339576ae18b50c863027` と同じになる。同じでなければ当てる途中で字が変わっている（この移行は ASCII だけなので起きないはず）ので止める
+- 本番に MCP の `apply_migration` で当てた後の突き合わせ: `schema_migrations` の `statements` は1つ（ファイルの全文）になるので、`md5(statements[1])` はファイルの MD5 `018dbd39ff19ac80276f81b50f838f5b` と同じになる。同じでなければ当てる途中で字が変わっている（この移行は ASCII だけなので起きないはず）ので止める
 - 手元の値（参考。本番の突き合わせには使わない）: 手元の `db reset` の後、CLI は文を分けて記録するので `md5(statements[1])` は `edfa56e68b76f4584335dee37561960a`（頭の注釈と `BEGIN` だけ）
 - 前の確かめ: `private.passkey_notification_outbox`・`public.user_roles`・`public.roles`・`auth.users` が在ること。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（`passkey_g_precheck`）
 - 末尾の確かめ: 5本が `anon`・`authenticated`・`public` から外れ `service_role` だけが `execute` を持つこと、`SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空であること、5列と2つの `CHECK` が在ること、表に `anon`・`authenticated` の権限が無いこと。外れたら `PASSKEY_MIGRATION_ASSERTION_FAILED`（`passkey_g_function_acl`・`passkey_g_function_attrs`・`passkey_g_outbox`）
 - 戻し方（移行のヘッダーの ROLLBACK）: 1つの取引で、5つの関数を `DROP` → 索引を `DROP` → 2つの `CHECK` と5列を `DROP COLUMN`。送る側（Task 9 の worker）が使う前に限る。使い始めた後に戻すと、担当中・結果の列の値が消える
 - 当てる順: A の後（表が A にある）。Task 9 の worker のアプリをデプロイするより先に、1本ずつ MCP で当てる
 - **段3まで `supabase db push`（どの形でも）を流さない**: 上の移行 E の節の決まりに、この G も含める（これでパスキーの移行は7本）。当てるのは調整役だけ（オーナーの許可で）
-- 手元で確かめた結果（2026-11-18、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_notification_sending.integration.test.ts` 17件通過。単体 `passkey-notification-store.test.ts` 18件通過。E2E `FR-LOGIN-061`（3幅）通過
+- 手元で確かめた結果（2026-11-18、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_notification_sending.integration.test.ts` 21件通過（2つの接続の同時の取り出しを含む）。単体 `passkey-notification-store.test.ts` 18件通過。E2E `FR-LOGIN-061`（3幅）通過
 - 持ち越し: `dead` の行（9回失敗・担当切れで止めた行）を店へ知らせる点検は、段2では作らない。段3の店長への知らせと同じ道で作る（`dead` の行は表に残る）
 
 ## パスキー段1a の本番への当て方の順と前提（段1b の移行 F を含む）

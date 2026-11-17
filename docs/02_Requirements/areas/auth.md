@@ -5791,7 +5791,7 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-8-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 8。作り手の判断: 再試行は注文のメールと同じ考えで揺らぎなし、`dead` の点検は段3） |
 | 優先度 | MUST |
 
-規則: (1) `claim_passkey_notification(_lease_seconds)` は、先に期限切れの担当（`sending` で `lease_expires_at` が今以前）を `retry_wait`（`attempts` が9以上なら `dead`）に戻し、次に `pending`・`retry_wait` で時刻が来た行の最古（`seq` の順）を1行、`FOR UPDATE SKIP LOCKED` で取って `sending`・`attempts + 1`・新しい担当の印（`lease_token`）・期限を付けて返す。担当の秒数は30〜900で、外れたら `22023`。(2) `complete_passkey_notification` は担当の印が合う時だけ `sent` にして `true`、合わなければ `false` で行を変えない。(3) `fail_passkey_notification` は印が合う時だけ、`attempts` が9以上なら `dead`、そうでなければ `retry_wait` にして、次の時刻を「今 + 大きい方（指定の秒数、`2^(attempts-1)` 分。128分で頭打ち）」にする。揺らぎは付けない。エラーの符号は小文字・数字・`_` の1〜64字で、外れたら `22023`。(4) `skip_passkey_notification` は印が合う時だけ `skipped`。(5) `passkey_notification_recipients` は、`notify_subject` が真でメールがある本人（お客さんなら `subject_customer`、店員なら `subject_staff`）を先に、`subject_is_staff` が真の時だけ有効で期限内の `admin`（サポーターは含めない）のメールを `admin` で返す。同じアドレス（大文字小文字を区別しない）は1つにして先の方を残し、メールが空の行は返さない。(6) どの関数も `SECURITY DEFINER`・`search_path` 空・持ち主 `postgres`・`service_role` だけが実行できる。
+規則: (1) `claim_passkey_notification(_lease_seconds)` は、先に期限切れの担当（`sending` で `lease_expires_at` が今以前）を `retry_wait`（`attempts` が9以上なら `dead`）に戻し、戻した行の次の時刻は、`fail` と同じ間隔（`2^(attempts-1)` 分）の先にする（送り手が落ち続けても9回を数分で使い切らない）。次に `pending`・`retry_wait` で時刻が来た行の最古（`seq` の順）を1行、`FOR UPDATE SKIP LOCKED` で取って `sending`・`attempts + 1`・新しい担当の印（`lease_token`）・期限を付けて返す。担当の秒数は30〜900で、外れたら `22023`。(2) `complete_passkey_notification` は担当の印が合う時だけ `sent` にして `true`、合わなければ `false` で行を変えない。(3) `fail_passkey_notification` は印が合う時だけ、`attempts` が9以上なら `dead`、そうでなければ `retry_wait` にして、次の時刻を「今 + 大きい方（指定の秒数〔負は0、1日で頭打ち〕、`2^(attempts-1)` 分。128分で頭打ち）」にする。揺らぎは付けない。エラーの符号は小文字・数字・`_` の1〜64字で、外れたら `22023`。(4) `skip_passkey_notification` は印が合う時だけ `skipped`。(5) `passkey_notification_recipients` は、`notify_subject` が真でメールがある本人（お客さんなら `subject_customer`、店員なら `subject_staff`）を先に、`subject_is_staff` が真の時だけ有効で期限内の `admin`（サポーターは含めない）のメールを `admin` で返す。Auth で消された（`auth.users.deleted_at`）・止められた（`banned_until` が未来）店長は含めない（店員の動きを外した人へ漏らさない）。同じアドレス（大文字小文字を区別しない）は1つにして先の方を残し、メールが空の行は返さない。(6) どの関数も `SECURITY DEFINER`・`search_path` 空・持ち主 `postgres`・`service_role` だけが実行できる。
 
 ### FR-AUTH-030-AC-01 anon・authenticated は知らせの5つの関数を呼べず、service_role だけが呼べる
 
@@ -5803,7 +5803,7 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 | 確かめ方 | E2E（`e2e/FR-LOGIN-061-passkey-notification-function-grants.spec.ts`。390・768・1280 の3幅でくり返す） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-8-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 8。作り手の判断: 再試行は注文のメールと同じ考えで揺らぎなし、`dead` の点検は段3） |
 
-anon の鍵と本物のログイン済みのお客さんの鍵では、5つの関数が PostgREST で 401 か 403・コード `42501` になる。service_role の鍵では呼べて、合わない行・印は `false`、宛先は空、範囲外の担当の秒数は `22023` になる。
+anon の鍵と本物のログイン済みのお客さんの鍵では、5つの関数が PostgREST で 401 か 403・コード `42501` になる。service_role の鍵では呼べて、合わない行・印は `false`、宛先は空、範囲外の担当の秒数は `22023` になる。`claim` は手元の表の行を担当にしてしまうので、成功の戻りは確かめず、範囲外の秒数の `22023` で「呼べた」ことを示す。
 
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 

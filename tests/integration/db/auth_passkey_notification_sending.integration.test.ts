@@ -1,6 +1,6 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
-import { describeLocalDb } from './helpers/local-db';
+import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
 
 // Passkey stage 2 Task 8 (migration G): the DB functions a worker uses to claim and finish passkey notification rows.
 // DB suite: needs the local Supabase (DATABASE_URL). Every case runs in a transaction that is rolled back.
@@ -107,13 +107,23 @@ describeLocalDb('passkey notification sending functions', (db) => {
     expect(got[0]).toMatchObject({ id, attempts: 3 });
   });
 
-  test('DATA-AUTH-019 an expired lease goes back to retry_wait and can be taken again; at 9 attempts it is dead', async () => {
+  test('DATA-AUTH-019 an expired lease goes back to retry_wait with the fail backoff, is taken again once due; at 9 attempts it is dead', async () => {
     const id = await row();
     const [first] = await claim();
     await db().query(`update private.passkey_notification_outbox set lease_expires_at = now() where id = $1`, [id]);
+    expect(await claim()).toEqual([]);
+    const reaped = await get(id);
+    expect(reaped).toMatchObject({ status: 'retry_wait', attempts: 1, lease_token: null, lease_expires_at: null, last_error_code: 'lease_expired' });
+    const wait = async () =>
+      Number((await db().query(`select extract(epoch from next_attempt_at - now()) as s from private.passkey_notification_outbox where id = $1`, [id])).rows[0].s);
+    expect(await wait()).toBe(60);
+    await db().query(`update private.passkey_notification_outbox set next_attempt_at = now() where id = $1`, [id]);
     const [again] = await claim();
     expect(again).toMatchObject({ id, attempts: 2 });
     expect(again.lease_token).not.toBe(first.lease_token);
+    await db().query(`update private.passkey_notification_outbox set lease_expires_at = now() where id = $1`, [id]);
+    await claim();
+    expect(await wait()).toBe(120);
 
     const spent = await row({ status: 'sending', attempts: 9 });
     await db().query(`update private.passkey_notification_outbox set lease_expires_at = now() where id = $1`, [spent]);
@@ -195,6 +205,19 @@ describeLocalDb('passkey notification sending functions', (db) => {
     expect(await claim()).toEqual([]);
   });
 
+  test('DATA-AUTH-019 fail caps a huge retry-after at 86400 seconds and treats a negative one as zero', async () => {
+    const id = await row();
+    const [c1] = await claim();
+    await db().query('select public.fail_passkey_notification($1,$2,$3,$4)', [id, c1.lease_token, 'smtp_error', 100000000]);
+    const wait = async () =>
+      Number((await db().query(`select extract(epoch from next_attempt_at - now()) as s from private.passkey_notification_outbox where id = $1`, [id])).rows[0].s);
+    expect(await wait()).toBe(86400);
+    await db().query(`update private.passkey_notification_outbox set next_attempt_at = now() where id = $1`, [id]);
+    const [c2] = await claim();
+    await db().query('select public.fail_passkey_notification($1,$2,$3,$4)', [id, c2.lease_token, 'smtp_error', -500]);
+    expect(await wait()).toBe(120);
+  });
+
   test('DATA-AUTH-019 fail and skip refuse an error code that is not lower snake case with 22023', async () => {
     const id = await row();
     const [c] = await claim();
@@ -262,6 +285,24 @@ describeLocalDb('passkey notification sending functions', (db) => {
     ]);
   });
 
+  test('DATA-AUTH-019 recipients leave out an admin whose account is deleted or banned, and keep one whose ban has ended', async () => {
+    const live = await user('live@example.com');
+    const deleted = await user('deleted@example.com');
+    const banned = await user('banned@example.com');
+    const ended = await user('ended@example.com');
+    for (const u of [live, deleted, banned, ended]) await role(u, 'admin');
+    await db().query(`update auth.users set deleted_at = now() where id = $1`, [deleted]);
+    await db().query(`update auth.users set banned_until = now() + interval '1 day' where id = $1`, [banned]);
+    await db().query(`update auth.users set banned_until = now() - interval '1 day' where id = $1`, [ended]);
+    const id = await row({ subject_is_staff: true, subject_email: 'staff@example.com' });
+    const r = await db().query('select * from public.passkey_notification_recipients($1)', [id]);
+    expect(r.rows).toEqual([
+      { email: 'staff@example.com', audience: 'subject_staff' },
+      { email: 'ended@example.com', audience: 'admin' },
+      { email: 'live@example.com', audience: 'admin' },
+    ]);
+  });
+
   test('DATA-AUTH-019 recipients: notify_subject false leaves out the subject, an empty address is never returned', async () => {
     const a1 = await user('boss@example.com');
     const blank = await user('');
@@ -314,4 +355,61 @@ describeLocalDb('passkey notification sending functions', (db) => {
     const rec = await db().query('select * from public.passkey_notification_recipients($1)', [first[0].id]);
     expect(rec.rows).toEqual([{ email: 'owner@example.com', audience: 'subject_customer' }]);
   });
+});
+
+// Two real connections. Rows are committed (the first suite rolls back), so this block empties the outbox itself.
+describeLocalDb('passkey notification claim from two connections', () => {
+  let a: PgClient;
+  let b: PgClient;
+  const open = async (): Promise<string[]> => {
+    const ids: string[] = [];
+    for (let i = 0; i < 2; i += 1) {
+      ids.push((await a.query(
+        `insert into private.passkey_notification_outbox (user_id, kind, subject_is_staff, notify_subject, subject_email)
+         values (gen_random_uuid(), 'passkey_added', false, true, 'c@example.com') returning id::text as id`)).rows[0].id);
+    }
+    return ids;
+  };
+  beforeEach(async () => {
+    a = await connectLocalDb();
+    b = await connectLocalDb();
+    await a.query('delete from private.passkey_notification_outbox');
+  });
+  afterEach(async () => {
+    await a.query('rollback').catch(() => undefined);
+    await b.query('rollback').catch(() => undefined);
+    await a.query('delete from private.passkey_notification_outbox');
+    await a.end();
+    await b.end();
+  });
+
+  test('DATA-AUTH-019 a claim held open by one connection does not block or repeat in the other (SKIP LOCKED)', async () => {
+    const [first, second] = await open();
+    await a.query('begin');
+    const got = (await a.query('select * from public.claim_passkey_notification(60)')).rows;
+    expect(got[0].id).toBe(first);
+    // Without FOR UPDATE SKIP LOCKED the second claim waits for the first transaction (or takes the same row).
+    const outcome = await Promise.race([
+      b.query('select * from public.claim_passkey_notification(60)').then((r) => r.rows),
+      new Promise<'blocked'>((resolve) => setTimeout(() => resolve('blocked'), 4000)),
+    ]);
+    await a.query('commit');
+    expect(outcome).not.toBe('blocked');
+    expect((outcome as Array<{ id: string }>).map((r) => r.id)).toEqual([second]);
+    expect((await a.query('select count(*)::int as n from private.passkey_notification_outbox where status = $1', ['sending'])).rows[0].n).toBe(2);
+  }, 20000);
+
+  test('DATA-AUTH-019 claims run at the same time never return the same row', async () => {
+    for (let round = 0; round < 10; round += 1) {
+      await a.query('delete from private.passkey_notification_outbox');
+      await open();
+      const [x, y] = await Promise.all([
+        a.query('select * from public.claim_passkey_notification(60)'),
+        b.query('select * from public.claim_passkey_notification(60)'),
+      ]);
+      const ids = [...x.rows, ...y.rows].map((r) => r.id);
+      expect(ids).toHaveLength(2);
+      expect(new Set(ids).size).toBe(2);
+    }
+  }, 30000);
 });
