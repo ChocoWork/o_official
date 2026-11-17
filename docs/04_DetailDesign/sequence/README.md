@@ -29,6 +29,7 @@
 | [パスワード再設定](auth-password-reset.md) | 再設定メール、リンク確認、パスワード更新 |
 | [セッション・API認可](auth-session.md) | 初期認証状態の照会、refresh、logout、管理APIでの認証・ACL・AAL2確認 |
 | [店員のパスキーの入口](auth-staff-passkey-entry.md) | 店員のパスキーの設定、登録の窓の開閉、認めたパスキーの控えと数え方 |
+| [パスキーのアプリの窓口](auth-passkey-server-endpoints.md) | 窓口が DB の関数を呼ぶ薄い部品、`passkey_approve` の古い行と窓の同時の競り |
 | [購入・決済照合](checkout-payment.md) | 「確認へ進む」で下書き・Checkout Sessionを作成し、最終確認画面の「注文する」で受付・在庫確保・支払い・completeを実行。resumeで入り直し、失効時も共通照合器で注文・在庫を合わせる |
 | [Stripe Webhook](stripe-webhooks.md) | 署名検証とenqueue、claimと処理・完了・再試行 |
 | [注文管理](order-administration.md) | 未入金取消、出荷、返金、要対応の解決 |

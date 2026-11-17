@@ -248,6 +248,7 @@
       "src/features/auth/schemas/password-change.ts",
       "src/app/account/password/**/*.{ts,tsx}",
       "src/lib/auth/staff-passkey*.ts",
+      "src/lib/auth/passkey-*.ts",
       "scripts/dev/passkey-dev-staff.ts",
       "e2e/passkey-soft-authenticator.ts"
     ],
@@ -267,6 +268,7 @@
       "tests/unit/app/account/password/**/*.test.{ts,tsx}",
       "tests/unit/migrations/auth-return-intents*.test.ts",
       "tests/unit/lib/auth/staff-passkey*.test.ts",
+      "tests/unit/lib/auth/passkey-*.test.ts",
       "tests/unit/ci/db-migrations-workflow.test.ts",
       "tests/unit/config/supabase-js-pin.test.ts",
       "tests/unit/scripts/passkey-dev-staff.test.ts",

@@ -630,6 +630,20 @@ flowchart LR
 | 状態 | 推定 |
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/final-review.md`（I-4）、`docs/03_BasicDesign/decisions/ADR-0463-staff-entry-by-passkey-conditions.md` |
 
+### THR-AUTH-042 古い認めの行が黙って効かない、登録の窓の中の認めが同時に呼ばれて上限を超える
+
+| 属性 | 値 |
+| --- | --- |
+| 守るもの | 5-5（アプリで認めた鍵だけ。窓の免除は最初の2本まで）、認めの表 `private.approved_passkeys` |
+| 脅威 | (1) 同じ `passkey_id` の認めの行が別の `credential_id` で残ると、1a の `passkey_approve` は黙って何もせず、窓口は認めたつもりで先へ進むが、鍵は数えに入らない（突き合わせで外れる）。(2) 登録の窓の中で、2つの接続が同時に「今は1本」と数えて別々の新しい鍵を認めると、上限（2本）を超えた鍵が認められる |
+| 起こり方 | (1) 引き金を迂回して鍵の `credential_id` を書き換えた異常の時だけ当たる（窓口は新しい `passkey_id` だけを認めるため）。(2) 窓の中の店員が同時に2つの登録を終わらせる、または窓が開いたまま要求を重ねる |
+| 影響 | (1) 認めたはずの鍵で入れない・原因が見えない。(2) 窓の免除の「最初の2本まで」が破れ、窓の中で3本目以降を認められる |
+| 対策 | SEC-AUTH-041（古い行は `23505` で失敗させる・窓の認めは利用者ごとの取引の錠の中で数え直し、上限以上なら `55000`）、DD-AUTH-050 |
+| ASVS | V4.2.1・V11.1.4（当てはめは推定） |
+| 根拠 | 段1b の Task 1。数えてから足すまでの間を錠で1つにし、失敗を窓口の 500 と監査で見えるようにした |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5） |
+
 ## 未確認事項
 
 - 本番の Supabase Auth の設定（OTP の期限・Confirm email・最小の長さ・漏洩の照合・captcha・TOTP・回数の制限・`secure_password_change`・現行パスワードの要求）。手元の `supabase/config.toml` は波 6 の切り替えで本番の前提にそろえたが、本番の実際の値は Management API で読むまで未確認（THR-AUTH-015・029）

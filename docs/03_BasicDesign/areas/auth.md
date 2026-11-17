@@ -1720,6 +1720,24 @@ stateDiagram-v2
 
 設定できない物: 「現行パスワードを要求」（`security_update_password_require_current_password`）は Supabase CLI の `config.toml` に鍵が無い（CLI の実行ファイルに対応する環境変数が無いことを確かめた）。本番は Management API で設定する（SEC-AUTH-015-AC-05）。
 
+### DATA-AUTH-018 窓口が使う4つの DB の関数は、`service_role` だけが呼べ、認めの表の数え方を1か所にそろえる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-015、SEC-AUTH-041 |
+| 根拠 | 窓口ごとに店員の定義や認めの突き合わせを書くと食い違う。DATA-AUTH-011・012 の表を、4つの関数と薄い部品（`src/lib/auth/passkey-approval-rpc.ts`）の1か所から読み書きする。判断は DD-AUTH-050 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_server_fns.integration.test.ts`）、E2E（FR-AUTH-015-AC-01）、単体テスト（DD-AUTH-050） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-1-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 1） |
+
+- 移行 F（`supabase/migrations/20261117123620_passkey_server_endpoint_fns.sql`）。新しい表・列は無い。どの関数も `SECURITY DEFINER`・`SET search_path = ''`・持ち主 `postgres`・`service_role` だけが `execute`（`public`・`anon`・`authenticated` からは外す）
+- `public.passkey_is_staff(uuid) boolean`（`STABLE`）: `public.user_roles` の有効（`active`）で期限内の行の役割の `code` が `admin` か `supporter` なら真。GoTrue のフック `passkey_access_token_hook` と同じ定義（3つ目の写し。試験でフックと食い違わないことを確かめる）。`null`・引けない・例外は偽
+- `public.passkey_credential_is_approved(uuid, bytea) boolean`（`STABLE`）: 引数は応答の `rawId` を base64url から直した生の鍵の ID（PostgREST へは `\x…` の16進の文字列）。`private.approved_passkeys` と `auth.webauthn_credentials` を `id`・`user_id`・`credential_id` でつなぎ、`ap.credential_id` が引数と同じ行があれば真（`passkey_approved_count` と同じ突き合わせ）。`null`・長さ0・他人・別の ID・書き換わった認めは偽
+- `public.passkey_approved_ids(uuid) uuid[]`（`STABLE`）: `passkey_approved_count` と同じ数え方の `passkey_id` の一覧（認めた順）。無ければ空の配列
+- `public.passkey_approve(uuid, uuid, text)`（`CREATE OR REPLACE`。署名・権限は移行 A と同じ）: 他人の鍵は `42501`、同じ `credential_id` が別の `passkey_id` で認められていれば `23505`（移行 A のまま）に加え、(1) 同じ `passkey_id` が別の `credential_id` で残っていれば `23505`（文は `passkey_approve: stale approval for this passkey`）、(2) `p_via = 'window'` の時だけ、関数の頭で `pg_advisory_xact_lock(hashtextextended(p_user_id::text, 0))` を取り、錠の中で `passkey_approved_count` を数え直して `min_approved_passkeys` 以上なら `55000`（文は `passkey_approve: window limit reached`）。すでに認めた同じ鍵の繰り返しは行を足さないので上限の確かめを飛ばす
+- 移行 A の本体に戻す時の目印: A の `passkey_approve` の `md5(prosrc)` は `e0b5dc02ecfcb5533cd91a00edc55fe4`
+- 部品 `passkey-approval-rpc.ts`: 戻りは `{ ok: true; value } | { ok: false }`。`approve` の失敗は `reason` が `stale`・`window_full`・`other`。呼び方は DD-AUTH-050
+
 ## 未確認事項
 
 - 本番の Supabase Auth の設定（Email OTP Expiration 300 秒・8 桁・Confirm email・TOTP の有効・最小の長さ・漏洩の照合・captcha・Redirect URLs に古い `/auth/callback` の許可が残っていないか）。手元の `supabase/config.toml` は波 6 の切り替え（2026-11-01。手元だけ）まで OTP 3600 秒・Confirm email 無効・TOTP 無効・最小 6 文字だった。切り替えで本番の前提（OTP 300 秒・Confirm email 有効・TOTP 有効・最小 16・captcha・`secure_password_change`・変更通知）にそろえた。本番の実際の値はまだ読んでいない（SEC-AUTH-029）

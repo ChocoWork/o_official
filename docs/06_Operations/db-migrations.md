@@ -1,5 +1,6 @@
 # DB マイグレーション運用
 
+> 2026-11-17 確認日（パスキー段1b Task 1）: 新しい移行 `20261117123620_passkey_server_endpoint_fns.sql`（窓口が使う DB の関数3本と `passkey_approve` の作り直し。手元の DB のみ・本番未適用）を足した。下の「パスキー段1b 移行 F」の節に書き、「段3まで `db push` しない」の一覧に足した。
 > 2026-11-17 確認日（パスキー段1a Task 11: 全体の確かめ）: 段1a の Task 1〜11 は済み。master に43コミット積んだまま（o_official/master より先）で push 前、本番には何も当てていない。`db reset` の後: lint エラー0（警告118）・typecheck OK・単体試験22944件通過。DB 結合（`--runInBand`、手元の DB）は7242件通過・4件失敗。1件は ARC-ADMIN-006（最初の店長のコマンドの試験。パスワードのログインを期待していたので cf0551ae・a2a96cb3 で直し、3/3通過）。残り3件（unit-binding-refunds 1・group_g3_cancel 2）は既存の試験の順番による汚れで、`tests/integration/db/order_state_transition_hardening.integration.test.ts` が `supabase/pending/harden_order_state_transitions.sql`（`private.enforce_order_payment_invariants`）を入れたまま残すため。`db reset` の後は単独で通る。1a の外で別に直す。E2E（本番ビルド・3つの幅の全件）は5354件通過・36件失敗・53件スキップ（1a の前は5332／34／26）。`db reset` の後の `--last-failed` は181件通過・0件失敗で、失敗は全件実行のデータの汚れ。validate-trace は違反98件・新しい違反0、test:trace-coverage は OK、validate-docs は OK。本番への道は止めたまま: `db-migrations.yml` に push の引き金は無く、その試験は3/3通過。パスキーの移行5本は段3の前に `db push` で当てない。push と本番への適用はオーナーの許可が要る。結果の詳細は[作業と指摘の台帳](../05_Quality/reviews/code/2026-09-25-working-diff-security-review.md)。
 > 2026-11-17 確認日（パスキー段1a の最終レビューの直し）: パスキーの移行5本の大きさ・MD5・突き合わせの値を直した（本番へ MCP で当てた後の突き合わせは「ファイルの MD5」。手元の CLI の値は参考）。移行 E に締め出しの防止と土台の一致の前の確かめを足した。「パスキー段1a の本番への当て方の順と前提」の節を足した。
 > 2026-11-17 確認日（パスキー段1a Task 9 の調べ）: 手元だけの移行 `20261116230000_passkey_access_token_hook.sql`・`20261117001500_passkey_staff_entry_conditions_fn.sql` を、管理の入口の時刻に60秒までの時計のずれを許すよう直した（本番未適用・手元で `db reset` 済み。サイズと md5 は下の各行）。
@@ -153,13 +154,32 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 - 前の確かめ: 移行 D の関数2本と `private.app_session_is_live(uuid)` が在ること。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`
 - 前の確かめ（締め出しの防止。`DETAIL = passkey_entry_switch_no_ready_staff`）: 有効な店員（`user_roles` の有効な admin・supporter）が1人でもいて、認めた鍵が `min_approved_passkeys` 本以上の店員が1人もいなければ、`PASSKEY_MIGRATION_PRECHECK_FAILED` で止まる。当てると全員が管理の権限を失うため。手元の `db reset` は移行の後に seed を入れるので `user_roles` が空で、通る。試験: `tests/integration/db/auth_has_permission_passkey.integration.test.ts` が移行ファイルのこの DO ブロックを取り出して流す（店員0本・1本で止まり、2本が1人でもいれば通る）
 - 前の確かめ（土台の一致。`DETAIL = passkey_entry_switch_baseline`）: 置き換える前の `has_permission` の本体の `md5(prosrc)` が `3c4826933eca194a3486f430d361891c` でなければ止まる（`pg_get_functiondef` の md5 は頭の書き方が PG の版で変わりうるので使わない。`prosrc` は `$function$` の間の本文だけ）。別の作業が段3までの間に本体を直していたら、黙って上書きしない。この値は、移行 D までを適用した手元の DB（`npx.cmd supabase db reset --version 20261117001500`）で `select md5(prosrc) from pg_proc where oid = 'public.has_permission(text)'::regprocedure` を読んで測った（`20261029120100` の本体を取引の中で作り直して測っても同じ値）。本番の PG の版で `pg_get_functiondef` の字が変わって止まった場合でも、本番で上の `md5(prosrc)` を読み、手元の値と同じなら、違いは頭の書き方だけなので中身は同じと判断してよい（違う時は本体が変わっているので、E を当てずに中身を読む）。**E の期待値を直した時は、同じコミットで、この表の E の大きさと MD5 を直す**（MCP で当てた後の突き合わせ `md5(statements[1])` は、直したファイルの MD5 で行う）
-- **段3まで `supabase db push`（どの形でも）を流さない**: `supabase/migrations` にこの5本がある間、`db push --linked --include-all` を流すと5本が一度に本番へ当たる。別の作業の移行も、段3までは MCP の `apply_migration` で1本ずつ当てる。上の「前の確かめ」は、うっかり当たった時の最後の歯止めで、それに頼らない
+- **段3まで `supabase db push`（どの形でも）を流さない**: `supabase/migrations` にこの5本（と段1b の移行 F）がある間、`db push --linked --include-all` を流すと一度に本番へ当たる。別の作業の移行も、段3までは MCP の `apply_migration` で1本ずつ当てる。上の「前の確かめ」は、うっかり当たった時の最後の歯止めで、それに頼らない
 - 末尾の確かめ: 本体に `aal2` が無く、`staff_passkey_amr_ok` < `user_roles` < `staff_passkey_count_ok` < `app_session_is_live` の順で、持ち主・`SECURITY DEFINER`・`STABLE`・`search_path` 空・`authenticated` と `service_role` に `execute` が有り `anon` に無いこと。外れたら `PASSKEY_MIGRATION_ASSERTION_FAILED`
 - 戻し方（移行のヘッダーの ROLLBACK）: `20261029120100_sec_has_permission_aal2_member_rls.sql` の本体（`aal2` の枝）に `CREATE OR REPLACE` で戻す
 - 費用: `has_permission` を `( SELECT ... )` で包まずに呼ぶ決まりが21の表に77件ある（行ごとに呼ばれうる）。条件3の数えは、パスキーの amr と ACL を通った人（店員）だけが払う。お客さん・anon は条件1・2か ACL で止まる
 - 手元で必要な操作: 同じコミットで `supabase/config.toml` の `[auth.hook.custom_access_token]` を有効にしたので、取り込みに `supabase stop`・`start` が要る（その後 `db reset`）。フックを外す時は `enabled` を戻して同じく `stop`・`start`
 - **本番へ当てない**: 段1b と段3が済むまで当てない。当てると、パスキーを有効にするまでだれも管理の権限を持てない（`amr` に `passkey` を持つ店員がいない）。理由と当て方は移行 A と同じ
 - 手元で確かめた結果（2026-11-17、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_has_permission_passkey.integration.test.ts` ほか `auth_passkey_*` の DB 結合が通過、`has_permission` を使う DB 結合（RLS・付与・権限の57ファイル）も通過。単体は全件通過
+
+## パスキー段1b 移行 F: 窓口が使う DB の関数と `passkey_approve` の作り直し（手元で確認済み・本番未適用）
+
+確認日: 2026-11-17（パスキー段1b Task 1）。SR-AUTH-016・FR-AUTH-015・SEC-AUTH-041・DATA-AUTH-018・DD-AUTH-050・THR-AUTH-042。設計は [パスキー設計](../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-5）、計画は [段1b の計画](../superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md)。
+
+| 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
+| --- | --- | --- | --- |
+| `20261117123620_passkey_server_endpoint_fns.sql` | 9788 bytes / `44feb8b6447e41463dda19f23d5063ab` | 本番未適用（手元の `db reset` で適用済み） | `public.passkey_is_staff(uuid)`・`passkey_credential_is_approved(uuid, bytea)`・`passkey_approved_ids(uuid)` を足し、`public.passkey_approve(uuid, uuid, text)` に古い行の失敗と窓の上限・錠を足す |
+
+- 変えるもの: 新しい関数3本（`SECURITY DEFINER`・`search_path` 空・持ち主 `postgres`・`service_role` だけが `execute`）。`passkey_approve` は `CREATE OR REPLACE`（署名・権限は A と同じ）で、(1) 同じ `passkey_id` が別の `credential_id` で残っていれば `23505`、(2) `via = 'window'` の時だけ利用者ごとの取引の錠を取り、数え直して上限（`min_approved_passkeys`）以上なら `55000`。ほかの規則は変えない。表・列は変えない
+- 本番に MCP の `apply_migration` で当てた後の突き合わせ: `schema_migrations` の `statements` は1つ（ファイルの全文）になるので、`md5(statements[1])` はファイルの MD5 `44feb8b6447e41463dda19f23d5063ab` と同じになる。同じでなければ当てる途中で字が変わっている（全角の空白など。この移行は ASCII だけ）ので止める
+- 手元の値（参考。本番の突き合わせには使わない）: 手元の `db reset` の後、CLI は文を分けて記録するので `md5(statements[1])` は `2421a7a1070b6ba47a6bf67f770d7ed6`（頭の注釈と `BEGIN` だけ）
+- 前の確かめ: `passkey_approve`・`passkey_approved_count`・`private.passkey_staff_settings()`・`private.approved_passkeys`・`auth.webauthn_credentials`・`public.user_roles`・`public.roles` が在ること。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（`passkey_f_precheck`）
+- 末尾の確かめ: 4本が `anon`・`authenticated`・`public` から外れ `service_role` だけが `execute` を持つこと、`SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空であること、`passkey_approve` の本体に2つの新しい文があること。外れたら `PASSKEY_MIGRATION_ASSERTION_FAILED`（`passkey_f_function_acl`・`passkey_f_function_attrs`・`passkey_f_approve_body`）
+- 戻し方（移行のヘッダーの ROLLBACK）: 3つの新しい関数を `DROP`。`passkey_approve` は移行 A の本体に `CREATE OR REPLACE` で戻す（A の本体の `md5(prosrc)` は `e0b5dc02ecfcb5533cd91a00edc55fe4`、876文字。F を当てる前の手元で測った）。段1b の窓口が使う前に限る
+- 当てる順: A の後。窓口のアプリをデプロイするより先に当てる（窓口が3つの新しい関数を呼ぶ）。1a の移行 A〜E と同じく MCP で1本ずつ
+- **段3まで `supabase db push`（どの形でも）を流さない**: 上の移行 E の節の決まりに、この F も含める。当てるのは調整役だけ（オーナーの許可で）
+- 古い行の運用: 窓口が `passkey_approve` の `23505`（`stale approval`）で失敗したら、正しい鍵なら SQL で `private.approved_passkeys` の古い行を消して認め直す（SEC-AUTH-041）
+- 手元で確かめた結果（2026-11-17、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_server_fns.integration.test.ts` 20件通過、`tests/integration/db/auth_*` 16ファイルの DB 結合が468件通過。単体 `passkey-approval-rpc.test.ts` 35件通過。E2E `FR-LOGIN-047`（3幅）通過
 
 ## パスキー段1a の本番への当て方の順と前提
 

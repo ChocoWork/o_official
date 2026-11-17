@@ -270,6 +270,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: 手元の開発者は、コマンド `npm run dev:staff -- --open` で新しい店員（店長またはサポーター）を作り、その店員として専用のブラウザで /admin を開ける。入れるのは手元の Supabase の時だけで、Cookie・token・JWT・鍵はファイルにも画面の出力にも出ない。パスキーのログインは24時間で切れるので、毎日と `db reset` の後に流し直す。
 
+### SR-AUTH-016 パスキーの窓口が使う DB の関数を足し、認めの古い行を黙って通さない
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | 段1b のアプリの窓口（ログインの終わり・登録の始めと終わり・一覧・削除）は、店員か・届いた鍵が認めた鍵か・認めた鍵の一覧・鍵を認める、を DB で確かめる。窓口ごとに SQL を書くと、店員の定義や突き合わせの形が食い違うので、DB の関数と薄い部品（`src/lib/auth/passkey-approval-rpc.ts`）に1か所でそろえる。あわせて、1a の `passkey_approve` に2つの穴があった。(1) 同じ鍵の行が別の `credential_id` で残っていると、黙って何もせず、鍵が数えに入らない。(2) 登録の窓の中で認めるのを2つの接続が同時に行うと、認めた鍵が上限（2本）を超えうる |
+| 状態 | 推定 |
+| 出どころ | ユーザーの発言 2026-11-17（`.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 1）） |
+
+要求の文: 窓口は、(1) 店員か、(2) 届いた鍵が認めた鍵か、(3) 認めた鍵の一覧、(4) 本数、(5) 窓の開閉、(6) 鍵を認める、を、1か所の部品から DB の関数で呼べる。DB の誤り・例外は「閉じる側」（呼び手が 503 などに倒す）に伝わる。古い認めの行が当たったら、鍵は黙って通らず、窓口が失敗として気づける。登録の窓の中の認めは、同時に呼ばれても、認めた鍵が上限（`min_approved_passkeys`、今は2）を超えない。受け入れ条件は FR-AUTH-015-AC-01（権限）、SEC-AUTH-041、DATA-AUTH-018、DD-AUTH-050。
+
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
 | 属性 | 値 |
@@ -2227,6 +2237,19 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 受け入れの内容: 本番の住所（`https://x.supabase.co`）や手元でない DB の住所を渡すと、DB への接続・店員の用意・ログイン・ブラウザの起動がどれも0回で投げること（`--role owner` も何もせずに投げる）。作る `public.sessions` の行の `csrf_token_hash` が、ブラウザに入れる `sb-csrf-token`（httpOnly でない）の値の SHA-256 と一致すること。標準出力に JWT・Cookie・token・CSRF の値が含まれず、`.gitignore` に `/.tmp-dev-staff/` があること。
 
 接続情報（Supabase の住所・鍵・DB の住所）は、環境変数や `.env*` でなく、手元の `supabase status -o json` だけから読む。引数は `--email`（既定は `dev-staff-<乱数>@example.com`。既にいる店員は再利用しないので新しいメールを使う）・`--role admin|supporter`（既定 admin）・`--open`。ブラウザのプロファイルは `.tmp-dev-staff/profile/`（git が無視する）。パスキーのログインの session 以外の `auth.sessions` は消す。
+
+### FR-AUTH-015 窓口が使う4つの DB の関数と薄い部品を足し、`passkey_approve` の古い行と窓の同時の競りを塞ぐ
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-016 |
+| 根拠 | SR-AUTH-016 を、移行 F（`public.passkey_is_staff`・`passkey_credential_is_approved`・`passkey_approved_ids`・`passkey_approve` の作り直し）と、`src/lib/auth/passkey-approval-rpc.ts` にする。どの関数も `SECURITY DEFINER`・`search_path` 空・持ち主 `postgres`・`service_role` だけが実行できる。判断は DD-AUTH-050、データは DATA-AUTH-018 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_server_fns.integration.test.ts`）、単体テスト（`tests/unit/lib/auth/passkey-approval-rpc.test.ts`）、E2E（`e2e/FR-LOGIN-047-passkey-server-function-grants.spec.ts`、FR-AUTH-015-AC-01） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 1） |
+| 優先度 | MUST |
+
+規則: (1) `passkey_is_staff` は、フックと同じ店員の定義（`public.user_roles` の有効で期限内の行の役割が admin か supporter）で真になり、引けない・`null` は偽で例外を投げない。(2) `passkey_credential_is_approved` は、認めた鍵の生の ID（`bytea`）だけが真。認めていない鍵・他人・別の ID・書き換わった認め・`null`・長さ0は偽。(3) `passkey_approved_ids` は、`passkey_approved_count` と同じ数え方の `passkey_id` の一覧。(4) `passkey_approve` は、同じ `passkey_id` の行が別の `credential_id` で残っていれば `23505`（文は `passkey_approve: stale approval for this passkey`）で失敗し、同じ `credential_id` なら何もしない。(5) `passkey_approve` は `window` の時だけ、利用者ごとの錠を取って数え直し、すでに上限以上なら `55000`（文は `passkey_approve: window limit reached`）で失敗する。`reauth`・`script` は錠も上限も無い。(6) 薄い部品は、base64url でない・空の鍵を DB に渡さず偽を返し、DB の誤り・例外・想定外の型の戻りを `{ ok: false }` にする。
 
 ## 受け入れ条件
 
@@ -4668,6 +4691,18 @@ anon の鍵と service_role の鍵のそれぞれで `staff_passkey_amr_ok`・`s
 
 スクリプトが作った Cookie を試験のブラウザに入れて `/admin` を開くと、200 で `/admin` に留まること。`PATCH /api/admin/users`（本文 `{}`）は、`x-csrf-token` が無ければ 403 で本文に `CSRF validation failed` を含み、`sb-csrf-token` の値を `x-csrf-token` に付ければ 403 にならないこと。
 
+### FR-AUTH-015-AC-01 anon・authenticated の鍵ではパスキーの窓口の4つの関数を PostgREST から呼べず、service_role の鍵だけが呼べる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-015 |
+| 根拠 | 関数は `public` にあるので PostgREST から呼べる形になる。権限を渡す相手を間違えると、だれでも店員かどうか・認めた鍵かどうかを探れ、鍵を認められてしまう。権限を `service_role` だけにしたことを、本物の PostgREST を通して確かめる。`SECURITY DEFINER`・持ち主・`search_path` は DB 結合テストで示す |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-047-passkey-server-function-grants.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-1-brief.md` |
+
+anon の鍵と、ログイン済みのお客さん（authenticated）の鍵で4つの関数を呼ぶと、どれも HTTP 401 か 403・コード `42501` で断られ、戻りの値は `null` であること。service_role の鍵では `passkey_is_staff` が偽、`passkey_credential_is_approved` が偽、`passkey_approved_ids` が空の一覧で返り、`passkey_approve` は存在しない鍵に `passkey_not_owned` を返すこと（権限の誤りではない）。
+
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 
 | 属性 | 値 |
@@ -6086,6 +6121,21 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 守ること: (1) 管理の入口は `aal` を見ない。`aal2` でも `amr` に `passkey` が無ければ断る（API・RLS の両方）。(2) JWT の印 `staff_passkeys_ok` が真でも、DB で数えた認めたパスキーが2本未満なら断る。(3) 24時間を過ぎた・61秒以上先の `passkey` の時刻は断る（60秒までのずれは通す）。(4) RPC が数えられない時は 503（閉じる側）、数でない値は0本。(5) 店員のメールのコード・パスワードは GoTrue のフックが拒否する。(6) 試験の道具は、本番に試験専用の入口を作らない（手元の Supabase だけで動く）。
 
 残る危険として受け入れること: 手元で店員がアプリの画面から入れない間（段1b まで）、画面を使う E2E のうち店員のパスワード＋TOTP のログインを通す物は、段4で消す機能として skip にした（台帳の「skip の一覧」）。最初の店長のコマンド `admin:bootstrap`（パスワード＋TOTP）は本番用に残し、手元では使わない（`docs/06_Operations/first-admin-bootstrap.md`）。
+
+### SEC-AUTH-041 認めの古い行は黙って通さず、登録の窓の中の認めは同時に呼ばれても上限を超えない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-042 |
+| 根拠 | 1a の `passkey_approve` は、同じ `passkey_id` の行が別の `credential_id` で残っていると `ON CONFLICT DO NOTHING` で黙って終わり、呼び手は認めたつもりでも鍵が数えに入らない。窓口が新しい `passkey_id` だけを認めるので、これが当たるのは、引き金を迂回して鍵の `credential_id` を書き換えた異常の時だけで、その時は黙って通すより、窓口が 500 と監査で気づける方が安全。また、窓の中の認めを2つの接続が同時に行うと、数えてから足すまでの間に両方が通り、上限（2本）を超えうる。利用者ごとの取引の錠の中で数え直して塞ぐ（設計 5-5） |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_server_fns.integration.test.ts`。古い行・上限・2つの接続の競りを20組・権限と属性）、単体テスト（`tests/unit/lib/auth/passkey-approval-rpc.test.ts`。`23505` が `stale`・`55000` が `window_full`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 1） |
+| 優先度 | MUST |
+
+守ること: (1) 同じ `passkey_id` で `credential_id` が違う行があれば、`passkey_approve` は `23505` で失敗し、行は変えない。同じ `credential_id` なら今までどおり何もしない。(2) `window` の認めは、錠の中で数えて、すでに `min_approved_passkeys` 本以上なら `55000` で失敗し、行を足さない。すでに認めた同じ鍵の繰り返しは行を足さないので止めない。(3) 認めた鍵が1本の同じ利用者の別々の新しい鍵を2つの接続が同時に `window` で認めると、認めた鍵はちょうど2本（片方が `55000`）。(4) 古い行の直し方は運用の手順: 正しい鍵なら SQL で古い行を消してから認め直す。(5) 4つの関数は `anon`・`authenticated` が呼べない。
+
+残る危険として受け入れること: 古い行が残った鍵は、直すまで認められない（店員は別の鍵で入る）。`reauth`・`script` の道は上限を掛けない（登録の窓の免除は最初の2本までという決まりを、窓の道だけに掛ける）。
 
 ## 派生要件
 
