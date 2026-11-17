@@ -128,6 +128,8 @@ for (const viewport of viewports) {
       await expect.poll(() => Date.now() >= intervalEnds, { intervals: [100], timeout: 5_000 }).toBe(true);
       const started = await startCode(request, staff.email, ip);
       expect(started.status()).toBe(fresh.status());
+      expect(await started.json()).toEqual(await fresh.json());
+      expect(cookieShape(started)).toEqual(cookieShape(fresh));
       const code = await readLatestCode(staff.email, new Set());
       const verified = await verifyCode(request, code, ip);
       expect(verified.status()).toBe(403);

@@ -128,12 +128,14 @@ describe('DD-AUTH-059 POST /api/auth/email-code/start', () => {
     const ok = await POST(req());
     const okShape = { status: ok.status, body: await ok.json(), cookie: cookieOf(ok).attrs, name: cookieOf(ok).name };
     const logSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    audit.mockClear();
     signInWithOtp.mockResolvedValueOnce({ error: { status: 429, message: 'over_email_send_rate_limit' } });
     const limited = await POST(req());
     expect({ status: limited.status, body: await limited.json(), cookie: cookieOf(limited).attrs, name: cookieOf(limited).name }).toEqual(okShape);
     expect(verifyEmailCodeSessionToken(cookieOf(limited).value)).toMatchObject({ email: 'new@example.com' });
     expect(limited.headers.get('Retry-After')).toBeNull();
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ detail: 'email_code_send_throttled' }));
+    expect(audit).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'code_sent' }));
     expect(logSpy).toHaveBeenCalledTimes(1);
     logSpy.mockRestore();
   });

@@ -5,6 +5,7 @@
  * @impl IMPL-AUTH-300
  * @design DD-AUTH-059
  * @remarks 本文は見ない。宛先は保留の Cookie だけから取る（本文の email を信じると、他人の宛先へ当社ドメインからメールを送らせる導線になる）。
+ * GoTrue の 429 は成功と同じ応答に隠す（保留の Cookie は誰でも任意のアドレス宛てに持てるため。監査 `email_code_send_throttled`）。
  * 枠は始めと同じ名前（`auth:email-code:send`）。10分に始め＋再送で5通まで。
  * 成功は Cookie を新しい期限で付け直す（元の iat・jti を引き継ぐ。渡さないと絶対上限の起点と確定の枠が新しくなる）。
  */
@@ -29,7 +30,6 @@ function json(body: unknown, init: { status: number; headers?: Record<string, st
 
 const AUDIT_ACTION = 'auth.email_code.resend';
 const SEND_ENDPOINT = 'auth:email-code:send';
-const UPSTREAM_RATE_LIMIT_RETRY_AFTER_SECONDS = 60;
 const UPSTREAM_UNAVAILABLE_RETRY_AFTER_SECONDS = 30;
 const FAILED_MESSAGE = '確認コードの送信に失敗しました。時間をおいて再度お試しください。';
 
@@ -52,13 +52,13 @@ export async function POST(request: Request) {
       await logAudit({ action: AUDIT_ACTION, actor_email: pending.email, outcome: 'error', detail: 'supabase_captcha_rejected' });
       return json({ error: FAILED_MESSAGE }, { status: 500 });
     }
-    // 宛先は保留の Cookie で本人のものと決まっているので、始めと違い上流の制限を隠さず、画面が待ち直せるようにする。
-    if (error?.status === 429) {
-      await logAudit({ action: AUDIT_ACTION, actor_email: pending.email, outcome: 'error', detail: 'supabase_rate_limited' });
-      return json(
-        { error: '送信が集中しています。しばらくしてから再度お試しください。' },
-        { status: 429, headers: { 'Retry-After': String(UPSTREAM_RATE_LIMIT_RETRY_AFTER_SECONDS) } },
-      );
+    // 保留の Cookie は、Turnstile を通せば誰でも任意のアドレス宛てに持てる。GoTrue の宛先ごとの送信の間隔の 429 を返すと、
+    // 直前に認証のメールを受けた既存のアドレスだと見分けられるので、始めと同じく成功と同じ応答にして隠す（SEC-AUTH-048）。
+    // 早すぎる再送は「送った」と見えてメールが届かない。画面の60秒の待ちが GoTrue の間隔（本番60秒）に合う。全体の上限の時も同じ。
+    const throttled = error?.status === 429;
+    if (throttled) {
+      await logAudit({ action: AUDIT_ACTION, actor_email: pending.email, outcome: 'error', detail: 'email_code_send_throttled' });
+      console.error('email-code resend: GoTrue rate limited the code mail (email_code_send_throttled)');
     }
     if (error && (error.name === 'AuthRetryableFetchError' || (typeof error.status === 'number' && (error.status === 0 || error.status >= 500)))) {
       await logAudit({ action: AUDIT_ACTION, actor_email: pending.email, outcome: 'error', detail: 'supabase_unavailable' });
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
         { status: 503, headers: { 'Retry-After': String(UPSTREAM_UNAVAILABLE_RETRY_AFTER_SECONDS) } },
       );
     }
-    if (error) {
+    if (error && !throttled) {
       await logAudit({ action: AUDIT_ACTION, actor_email: pending.email, outcome: 'error', detail: 'otp_resend_failed' });
       return json({ error: FAILED_MESSAGE }, { status: 500 });
     }
@@ -80,7 +80,9 @@ export async function POST(request: Request) {
       ...cookieOptionsForEmailCode(emailCodeSessionMaxAgeSeconds),
     });
 
-    await logAudit({ action: AUDIT_ACTION, actor_email: pending.email, outcome: 'otp_resent' });
+    if (!throttled) {
+      await logAudit({ action: AUDIT_ACTION, actor_email: pending.email, outcome: 'otp_resent' });
+    }
     return res;
   } catch (err) {
     console.error('Email code resend handler error:', err);

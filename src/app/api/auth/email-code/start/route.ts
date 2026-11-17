@@ -136,7 +136,9 @@ export async function POST(request: Request) {
     const { action } = await issueReturnIntent({ rawNext: parsed.data.next, purpose: 'login' });
     applyReturnIntentCookie(res, action);
 
-    await logAudit({ action: AUDIT_ACTION, actor_email: email, outcome: 'code_sent' });
+    if (!throttled) {
+      await logAudit({ action: AUDIT_ACTION, actor_email: email, outcome: 'code_sent' });
+    }
     return res;
   } catch (err) {
     console.error('Email code start handler error:', err);

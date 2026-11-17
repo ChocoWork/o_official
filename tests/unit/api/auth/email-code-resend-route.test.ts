@@ -13,9 +13,11 @@ jest.mock('@/lib/audit', () => ({ logAudit: jest.fn().mockResolvedValue(undefine
 import { POST } from '@/app/api/auth/email-code/resend/route';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { createServiceRoleAuthClient } from '@/lib/auth/service-role-auth-client';
+import { logAudit } from '@/lib/audit';
 import { createEmailCodeSessionToken, verifyEmailCodeSessionToken } from '@/features/auth/services/email-code-session';
 
 const rateLimit = enforceRateLimit as jest.Mock;
+const audit = logAudit as jest.Mock;
 const authClient = createServiceRoleAuthClient as jest.Mock;
 const ORIGINAL_ENV = { ...process.env };
 const EMAIL = 'new@example.com';
@@ -81,18 +83,35 @@ describe('DD-AUTH-059 POST /api/auth/email-code/resend', () => {
     expect(signInWithOtp).not.toHaveBeenCalled();
   });
 
-  test('DD-AUTH-059 GoTrue の 429 は 429 と Retry-After、5xx・通信の失敗は 503（Cookie は付け直さない）', async () => {
-    signInWithOtp.mockResolvedValueOnce({ error: { status: 429, message: 'limit' } });
-    const limited = await POST(req(cookieFor(now(), 'j')));
-    expect(limited.status).toBe(429);
-    expect(limited.headers.get('Retry-After')).toBe('60');
+  test('DD-AUTH-059 GoTrue の 429 は成功と同じ 200・本文・Cookie の付け直しで隠し、監査 email_code_send_throttled とログ1回。otp_resent は書かない', async () => {
+    const iat = now() - 60;
+    const ok = await POST(req(cookieFor(iat, 'jti-m')));
+    const okCookie = decodeURIComponent((ok.headers.get('set-cookie') ?? '').split(';')[0].split('=')[1]);
+    const okBody = await ok.json();
+    const logSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    audit.mockClear();
+    signInWithOtp.mockResolvedValueOnce({ error: { status: 429, message: 'over_email_send_rate_limit' } });
+    const masked = await POST(req(cookieFor(iat, 'jti-m')));
+    expect(masked.status).toBe(ok.status);
+    expect(await masked.json()).toEqual(okBody);
+    expect(masked.headers.get('Retry-After')).toBeNull();
+    const maskedCookie = decodeURIComponent((masked.headers.get('set-cookie') ?? '').split(';')[0].split('=')[1]);
+    expect(verifyEmailCodeSessionToken(maskedCookie)).toMatchObject({ email: EMAIL, jti: 'jti-m', iat });
+    expect(verifyEmailCodeSessionToken(okCookie)).toMatchObject({ jti: 'jti-m' });
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ detail: 'email_code_send_throttled' }));
+    expect(audit).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'otp_resent' }));
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    logSpy.mockRestore();
+  });
+
+  test('DD-AUTH-059 GoTrue の 5xx・通信の失敗は 503 と Retry-After（Cookie は付け直さない）', async () => {
     signInWithOtp.mockResolvedValueOnce({ error: { status: 502, message: 'x' } });
     const down = await POST(req(cookieFor(now(), 'j')));
     expect(down.status).toBe(503);
     expect(down.headers.get('Retry-After')).toBe('30');
+    expect(down.headers.get('set-cookie')).toBeNull();
     signInWithOtp.mockResolvedValueOnce({ error: { name: 'AuthRetryableFetchError', message: 'fetch failed' } });
     expect((await POST(req(cookieFor(now(), 'j')))).status).toBe(503);
-    expect(limited.headers.get('set-cookie')).toBeNull();
   });
 
   test('DD-AUTH-059 送信の失敗（captcha の拒否を含む）は 500 で、Cookie を付け直さない', async () => {

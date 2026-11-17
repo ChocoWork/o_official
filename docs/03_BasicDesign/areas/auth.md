@@ -1508,9 +1508,9 @@ stateDiagram-v2
 | 項目 | 中身 |
 | --- | --- |
 | 入力 | 本文なし。保留の Cookie |
-| 順番 | 保留の Cookie（401）→ IP の枠（50回/10分、`auth:email-code:send`）→ 宛先の枠（5回/10分、同じ名前）→ `signInWithOtp`（GoTrue の 429 は 429＋`Retry-After`、5xx は 503） |
+| 順番 | 保留の Cookie（401）→ IP の枠（50回/10分、`auth:email-code:send`）→ 宛先の枠（5回/10分、同じ名前）→ `signInWithOtp`（GoTrue の 429 は成功と同じ 200 に隠し監査 `email_code_send_throttled`、5xx は 503） |
 | 成功 | 200 `{ ok: true }`。保留の Cookie を新しい期限で付け直す |
-| 失敗 | 401、429（自分の枠、または GoTrue の 429）、500、503（GoTrue の 5xx・通信の失敗、回数の表の障害） |
+| 失敗 | 401、429（自分の枠だけ。GoTrue の 429 は返さない）、500、503（GoTrue の 5xx・通信の失敗、回数の表の障害） |
 | 監査 | action `auth.email_code.resend`。固定の符号と宛先だけ |
 
 ### API-AUTH-032 POST /api/auth/email-code/cancel は保留の Cookie と戻り先の控えを消して204を返す
