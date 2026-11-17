@@ -151,7 +151,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 入力 | `GET /login`。Cookie `sb-email-code-session`・`sb-login-2fa-session`、問い合わせの `email`・`next`（ログインの後の戻り先）・`registered`（`tab` は読まない） |
 | 出力（頁） | 部品 `LoginChoices`（DD-AUTH-063）に初めのメール（文字列か空）、戻り先の確かめ（DD-AUTH-032）を通った道筋だけを `returnTo` として渡す。外れた値は画面に出さず捨てる。`registered` が文字列の `1` の時だけ、固定の案内の文「会員登録が完了しました。ログインしてください。」を `notice` として渡す。値そのものは画面に出さない |
 | 出力（転送） | 新しい保留が有効なら `/login/code`、旧い保留が有効なら `/login/verify` へのサーバーの転送 |
-| 出力（metadata） | title「LOGIN | Le Fil des Heures」、description「Le Fil des Heures のログインページです。パスキー、Google アカウント、メールで受け取るコードでサインインできます。」、og:title・og:description は同じ字、og:image は `/mainphoto.png`（`src/app/login/page.tsx`） |
+| 出力（metadata） | title「LOGIN \| Le Fil des Heures」、description「Le Fil des Heures のログインページです。パスキー、Google アカウント、メールで受け取るコードでサインインできます。」、og:title・og:description は同じ字、og:image は `/mainphoto.png`（`src/app/login/page.tsx`） |
 
 **正常フロー:**
 

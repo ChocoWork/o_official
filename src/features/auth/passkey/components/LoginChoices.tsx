@@ -76,6 +76,7 @@ export default function LoginChoices({ returnTo, initialEmail, notice }: Props) 
   // サーバーの描画と同じ値で始め、描画後に未対応なら外す。
   const [supported, setSupported] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [refocus, setRefocus] = useState(false);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
   const [cancelled, setCancelled] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState("");
@@ -89,6 +90,14 @@ export default function LoginChoices({ returnTo, initialEmail, notice }: Props) 
   useEffect(() => {
     setSupported(isPasskeySupported());
   }, []);
+
+  // 無効になったボタンからフォーカスが落ちるので、失敗の後、ボタンが戻ってからフォーカスが失われていれば戻す（ほかへ移していたら奪わない）。
+  useEffect(() => {
+    if (!refocus || busy) return;
+    // 効果は部品が置かれている間だけ走るので、要素は必ずある。
+    if (document.activeElement === document.body) document.getElementById("passkey-login")!.focus();
+    setRefocus(false);
+  }, [refocus, busy]);
 
   const handlePasskey = async () => {
     setBusy(true);
@@ -121,8 +130,7 @@ export default function LoginChoices({ returnTo, initialEmail, notice }: Props) 
       setPasskeyError(MSG_UNAVAILABLE);
     }
     setBusy(false);
-    // 無効になったボタンからフォーカスが落ちるので、失敗の後はボタンへ戻す。
-    setTimeout(() => document.getElementById("passkey-login")?.focus(), 0);
+    setRefocus(true);
   };
 
   return (

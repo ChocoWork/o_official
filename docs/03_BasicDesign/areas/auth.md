@@ -670,8 +670,8 @@ flowchart TD
   P1 -.->|パスワードを持たない会員の案内| R["/auth/password-reset"]
   P2 -->|コードを送り直す| P1
   P2 -->|confirm が 401 400| P2
-  P2 -->|confirm が 200 全 session 失効| L["/login"]
-  P1 -->|未ログイン| L
+  P2 -->|confirm が 200 全 session 失効| LP["/login/password（旧の画面。段4まで）"]
+  P1 -->|未ログイン| L["/login"]
 ```
 
 - 2 つの画面の中身は SCR-AUTH-011。窓口は API-AUTH-020（`start`）・API-AUTH-021（`confirm`）

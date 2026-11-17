@@ -119,28 +119,34 @@ describe('EmailCodeStartForm', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('確認コードを送れませんでした。時間をおいてやり直してください。');
   });
 
-  test('DD-AUTH-063 失敗の後はフォーカスをメール欄へ戻す', async () => {
-    jest.useFakeTimers();
+  test('DD-AUTH-063 失敗の後、フォーカスが失われていればメール欄へ戻す', async () => {
     (global.fetch as jest.Mock).mockResolvedValue(json(500, {}));
     setup();
     await submit();
-    await act(async () => {
-      jest.runAllTimers();
-    });
     expect(screen.getByRole('textbox', { name: 'Email' })).toHaveFocus();
-    jest.useRealTimers();
   });
 
-  test('DD-AUTH-063 フォーカスを戻す前に画面が消えても落ちない', async () => {
-    jest.useFakeTimers();
-    (global.fetch as jest.Mock).mockResolvedValue(json(500, {}));
-    const { unmount } = setup();
+  test('DD-AUTH-063 失敗の後、別の所にフォーカスがあれば奪わない', async () => {
+    let release: (r: Response) => void = () => undefined;
+    (global.fetch as jest.Mock).mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve;
+        }),
+    );
+    render(
+      <>
+        <button type="button">other</button>
+        <EmailCodeStartForm siteKey="" turnstileToken="" turnstileRef={() => undefined} resetTurnstile={mockReset} />
+      </>,
+    );
     await submit();
-    unmount();
+    const other = screen.getByRole('button', { name: 'other' });
+    other.focus();
     await act(async () => {
-      jest.runAllTimers();
+      release(json(500, {}));
     });
-    jest.useRealTimers();
+    expect(other).toHaveFocus();
   });
 
   test('DD-AUTH-063 429 は集中の文', async () => {

@@ -11,7 +11,7 @@
  */
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { EmailCodeStartRequestSchema } from "@/features/auth/schemas/email-code";
@@ -56,7 +56,16 @@ export default function EmailCodeStartForm({
   const router = useRouter();
   const [email, setEmail] = useState(initialEmail);
   const [loading, setLoading] = useState(false);
+  const [refocus, setRefocus] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 無効になった欄からフォーカスが落ちるので、失敗の後、欄が戻ってからフォーカスが失われていれば戻す（ほかへ移していたら奪わない）。
+  useEffect(() => {
+    if (!refocus || loading) return;
+    // 効果は部品が置かれている間だけ走るので、要素は必ずある。
+    if (document.activeElement === document.body) document.getElementById("email")!.focus();
+    setRefocus(false);
+  }, [refocus, loading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,8 +124,7 @@ export default function EmailCodeStartForm({
       // 移る時は入力を止めたままにする（二重に送らない）。
       if (!moved) {
         setLoading(false);
-        // 無効になった欄からフォーカスが落ちるので、失敗の後は欄へ戻す。
-        setTimeout(() => document.getElementById("email")?.focus(), 0);
+        setRefocus(true);
       }
       resetTurnstile();
     }

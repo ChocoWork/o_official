@@ -151,28 +151,30 @@ describe('LoginChoices', () => {
     expect(passkeyButton()).toBeEnabled();
   });
 
-  test('DD-AUTH-063 失敗の後はフォーカスをパスキーのボタンへ戻す', async () => {
-    jest.useFakeTimers();
+  test('DD-AUTH-063 失敗の後、フォーカスが失われていればパスキーのボタンへ戻す', async () => {
     mockServerLogin(json(401, { error: 'passkey_login_failed' }));
     render(<LoginChoices />);
     await clickPasskey();
-    await act(async () => {
-      jest.runAllTimers();
-    });
     expect(passkeyButton()).toHaveFocus();
-    jest.useRealTimers();
   });
 
-  test('DD-AUTH-063 フォーカスを戻す前に画面が消えても落ちない', async () => {
-    jest.useFakeTimers();
-    mockServerLogin(json(401, { error: 'passkey_login_failed' }));
-    const { unmount } = render(<LoginChoices />);
+  test('DD-AUTH-063 失敗の後、別の所にフォーカスがあれば奪わない', async () => {
+    let release: (r: Response) => void = () => undefined;
+    (global.fetch as jest.Mock).mockImplementation((url: string) =>
+      url === '/api/auth/passkey/login/start'
+        ? Promise.resolve(json(200, START))
+        : new Promise<Response>((resolve) => {
+            release = resolve;
+          }),
+    );
+    render(<LoginChoices />);
     await clickPasskey();
-    unmount();
+    const email = screen.getByRole('textbox', { name: 'Email' });
+    email.focus();
     await act(async () => {
-      jest.runAllTimers();
+      release(json(401, { error: 'passkey_login_failed' }));
     });
-    jest.useRealTimers();
+    expect(email).toHaveFocus();
   });
 
   test('DD-AUTH-063 中止は赤でなく status の文', async () => {
