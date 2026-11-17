@@ -2,7 +2,7 @@
  * FR-LOGIN-030 ログインの後のセッションの Cookie と、認証の窓口の応答（本文・キャッシュ・送り先）
  * 対応: FREQ-320-AC-02 / SEC-AUTH-005-AC-04 / SEC-AUTH-021-AC-01 / SEC-AUTH-022-AC-01 / SEC-AUTH-022-AC-02 / SEC-AUTH-024-AC-01 / SEC-AUTH-026-AC-01
  *
- * 会員は createTestMember で作り、loginAsMember（確認コードの本物のログイン）で本物の Cookie を受け取る。
+ * 会員は createTestMember で作り、loginAsMemberLegacy（確認コードの本物のログイン）で本物の Cookie を受け取る。
  * 窓口は Playwright の request（HTTP）で叩き、/auth/callback（消えた画面）だけ画面として開く。
  * - SEC-AUTH-022-AC-01（本文）は波 1 で、SEC-AUTH-022-AC-02（/api/auth 配下の Cache-Control: no-store）は波 3 の ADR-0415 で満たすようになった（どちらも通るのが想定。以前の test.fail は外した）。
  * - SEC-AUTH-005-AC-04（波 5）は、本物のログインで結び付いた session が、会員の窓口・更新・ログアウトの前後で期待どおりに通る／断られることを確かめる。
@@ -15,7 +15,7 @@ import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { expect, test, type APIResponse, type BrowserContext, type Page } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
-import { createTestMember, loginAsMember, type TestMember } from './member-session-helpers';
+import { createTestMember, loginAsMemberLegacy, type TestMember } from './member-session-helpers';
 
 test.use({ trace: 'off' });
 test.describe.configure({ timeout: 180_000 });
@@ -53,8 +53,8 @@ async function cookieMap(page: Page, origin: string): Promise<Map<string, Cookie
 }
 
 /**
- * 会員を作って本物のログインをする。otp/verify の応答は loginAsMember の中で捨てられるので、
- * page.request.post を一時的に包んで応答を取っておく（loginAsMember 本体は変えない）。
+ * 会員を作って本物のログインをする。otp/verify の応答は loginAsMemberLegacy の中で捨てられるので、
+ * page.request.post を一時的に包んで応答を取っておく（loginAsMemberLegacy 本体は変えない）。
  */
 async function loginCapturingOtpVerify(
   page: Page,
@@ -72,7 +72,7 @@ async function loginCapturingOtpVerify(
     return response;
   }) as typeof api.post;
   try {
-    await loginAsMember(page, target, ip);
+    await loginAsMemberLegacy(page, target, ip);
   } finally {
     api.post = originalPost;
   }

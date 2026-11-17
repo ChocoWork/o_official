@@ -5,7 +5,7 @@
  *
  * 前提（手元の Supabase だけで流す。本番の鍵は env に無い）:
  * - 管理者・サポーター: createTestMember で作り、役割（auth.users の app_metadata と public.user_roles）を DB でそろえてから
- *   loginAsMember（メールの確認コードの本物のログイン）で aal1 の Cookie を得る。
+ *   loginAsMemberLegacy（メールの確認コードの本物のログイン）で aal1 の Cookie を得る。
  * - TOTP の本物の登録・確認（enroll-totp → 認証アプリのコード → verify）は、手元の GoTrue の TOTP が有効なときだけ通る
  *   （supabase/config.toml の [auth.mfa.totp] enroll_enabled・verify_enabled）。SEC-AUTH-030-AC-01・FREQ-316-REQ-02-AC-01 は
  *   この本物の流れを通す。無効のままなら登録の段で「TOTP が有効であること」の説明つきで落ちる（隠さない）。
@@ -26,7 +26,7 @@ import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { createAdminSessionActor, placeAdminCookies } from './admin-session-test-utils';
 import { DUMMY_CAPTCHA_TOKEN } from './captcha-test-utils';
-import { createTestMember, loginAsMember, type TestMember } from './member-session-helpers';
+import { createTestMember, loginAsMemberLegacy, type TestMember } from './member-session-helpers';
 import { createPaidOrder, uniqueEmail, withLocalDb } from './order-email-test-utils';
 import { viewports } from './order-fulfillment-test-utils';
 
@@ -139,7 +139,7 @@ async function auditRowsOf(userId: string, actionPattern: string): Promise<Audit
 async function accessTokenCookie(page: Page): Promise<string> {
   const origin = new URL(page.url()).origin;
   const cookie = (await page.context().cookies(origin)).find((c) => c.name === 'sb-access-token');
-  if (!cookie?.value) throw new Error('sb-access-token の Cookie が無い（loginAsMember の後に呼ぶ）');
+  if (!cookie?.value) throw new Error('sb-access-token の Cookie が無い（loginAsMemberLegacy の後に呼ぶ）');
   return cookie.value;
 }
 
@@ -153,7 +153,7 @@ async function loginPrivilegedAsAal1(
   const ip = uniqueSourceIp();
   const member = await createTestMember(label);
   await withLocalDb((db) => assignRole(db, member.userId, role));
-  await loginAsMember(page, member, ip);
+  await loginAsMemberLegacy(page, member, ip);
   expect(claimsOf(await accessTokenCookie(page)).aal, 'ログインしただけの JWT は aal1').toBe('aal1');
   return { member, ip };
 }

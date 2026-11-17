@@ -38,7 +38,7 @@ import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { createAdminSessionActor, elevateAdminSessionToAal2 } from './admin-session-test-utils';
 import { withDummyCaptcha } from './captcha-test-utils';
-import { createTestMember, loginAsMember, readLatestCode, readMailpitMessages } from './member-session-helpers';
+import { createTestMember, loginAsMemberLegacy, readLatestCode, readMailpitMessages } from './member-session-helpers';
 
 test.use({ trace: 'off' });
 
@@ -921,7 +921,7 @@ for (const viewport of viewports) {
       // JWT はアプリの窓口（メールの確認コード）を通して得る。GoTrue のパスワード grant で直に得た JWT は
       // SEC-AUTH-005-AC-01 が拒否する対象なので、この試験の前提にしない。
       const member = await createTestMember('metarole');
-      await loginAsMember(page, member, source);
+      await loginAsMemberLegacy(page, member, source);
       const cookieValue = async (name: string) =>
         (await page.context().cookies(origin)).find((cookie) => cookie.name === name)?.value;
       const accessToken = await cookieValue('sb-access-token');

@@ -7,7 +7,7 @@
  *
  * 道具立て
  * - 会員は auth.admin.createUser で既知のパスワードつきで作り（email_confirm）、アプリのログイン（再送の窓口 → メールの8桁のコード → /api/auth/otp/verify）
- *   で入る（member-session-helpers の loginAsMember）。パスワード変更の窓口・画面はこのログインで得た Cookie と CSRF の印で叩く。
+ *   で入る（member-session-helpers の loginAsMemberLegacy）。パスワード変更の窓口・画面はこのログインで得た Cookie と CSRF の印で叩く。
  * - メールは手元の Mailpit を Node から読む（コード入りの応答をブラウザの通信記録に載せないため。trace も切る）。
  *   コードのメールは件名「パスワード変更の確認コード」、変更の通知は件名「パスワードを変更しました」で拾う。
  *   GoTrue 側の変更通知（件名「パスワードの変更を受け付けました」）は別の件名なので数えない。
@@ -27,7 +27,7 @@ import { createClient } from '@supabase/supabase-js';
 import { expect, test, type APIRequestContext, type APIResponse, type Page } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import { createAdminSessionActor, placeAdminCookies } from './admin-session-test-utils';
-import { loginAsMember } from './member-session-helpers';
+import { loginAsMemberLegacy } from './member-session-helpers';
 import { withLocalDb } from './order-email-test-utils';
 import { skipPasskeyNotificationsOfUser } from '../scripts/e2e/passkey-staff';
 
@@ -354,7 +354,7 @@ for (const viewport of viewports) {
     test(`FR-AUTH-006-AC-01 ${viewport.name}: アカウントの画面に「パスワードを変更」のリンクが無く、/account/password を直に開くと現行パスワードの欄と送るボタンだけが出る`, async ({ page }) => {
       test.setTimeout(120_000);
       const member = await createMember('screen');
-      await loginAsMember(page, member, uniqueSourceIp());
+      await loginAsMemberLegacy(page, member, uniqueSourceIp());
 
       // 入口（リンク）はアカウントの画面から外れた（パスキー段2）。画面が読み終わってから、リンクが無いことを確かめる。
       await page.goto('/account?tab=profile');
@@ -382,7 +382,7 @@ for (const viewport of viewports) {
       const origin = originOf(baseURL);
       const member = await createMember('screen-change');
       const sourceIp = uniqueSourceIp();
-      await loginAsMember(page, member, sourceIp);
+      await loginAsMemberLegacy(page, member, sourceIp);
       // ブラウザの要求も試験ごとの送り元で数える（付けないと「送り元なし」の1つの枠を全試験で使い切る）
       await page.route('**/api/**', (route) => route.continue({ headers: { ...route.request().headers(), 'x-real-ip': sourceIp } }));
 
@@ -407,7 +407,7 @@ for (const viewport of viewports) {
     test(`FR-AUTH-006-AC-07 ${viewport.name}: パスワードを持たない会員にも、段階1に再設定への固定の案内が出てリンクが再設定の申請に着く`, async ({ page }) => {
       test.setTimeout(120_000);
       const member = await createGoogleOnlyMember('google-screen');
-      await loginAsMember(page, member, uniqueSourceIp());
+      await loginAsMemberLegacy(page, member, uniqueSourceIp());
 
       await page.goto('/account/password');
       await expect(
@@ -431,7 +431,7 @@ for (const viewport of apiOnlyViewports) {
       const origin = originOf(baseURL);
       const member = await createMember('api-change');
       const sourceIp = uniqueSourceIp();
-      await loginAsMember(page, member, sourceIp);
+      await loginAsMemberLegacy(page, member, sourceIp);
 
       const code = await startAndReadCode(page, origin, member, sourceIp);
       const replacement = newPassword();
@@ -448,7 +448,7 @@ for (const viewport of apiOnlyViewports) {
       const origin = originOf(baseURL);
       const member = await createMember('api-wrong-current');
       const sourceIp = uniqueSourceIp();
-      await loginAsMember(page, member, sourceIp);
+      await loginAsMemberLegacy(page, member, sourceIp);
 
       const previousIds = await mailIdsOf(member.email);
       const wrong = `Wrong-${randomBytes(10).toString('hex')}-Pw!`;
@@ -467,7 +467,7 @@ for (const viewport of apiOnlyViewports) {
       const origin = originOf(baseURL);
       const member = await createMember('api-wrong-code');
       const sourceIp = uniqueSourceIp();
-      await loginAsMember(page, member, sourceIp);
+      await loginAsMemberLegacy(page, member, sourceIp);
       const code = await startAndReadCode(page, origin, member, sourceIp);
       const hashBefore = await passwordHashOf(member.userId);
 
@@ -482,7 +482,7 @@ for (const viewport of apiOnlyViewports) {
       const origin = originOf(baseURL);
       const member = await createMember('api-locked');
       const sourceIp = uniqueSourceIp();
-      await loginAsMember(page, member, sourceIp);
+      await loginAsMemberLegacy(page, member, sourceIp);
       await ensureRoomInRateLimitWindow();
       const code = await startAndReadCode(page, origin, member, sourceIp);
       const hashBefore = await passwordHashOf(member.userId);
@@ -505,7 +505,7 @@ for (const viewport of apiOnlyViewports) {
       const origin = originOf(baseURL);
       const member = await createMember('api-resend');
       const sourceIp = uniqueSourceIp();
-      await loginAsMember(page, member, sourceIp);
+      await loginAsMemberLegacy(page, member, sourceIp);
       const firstCode = await startAndReadCode(page, origin, member, sourceIp);
       const secondCode = await startAndReadCode(page, origin, member, sourceIp);
       expect(secondCode, '送り直したコードは前と違う（準備）').not.toBe(firstCode);
@@ -522,7 +522,7 @@ for (const viewport of apiOnlyViewports) {
       const member = await createMember('api-other-session');
       const ipA = uniqueSourceIp();
       const ipB = uniqueSourceIp();
-      await loginAsMember(page, member, ipA);
+      await loginAsMemberLegacy(page, member, ipA);
       const codeOfA = await startAndReadCode(page, origin, member, ipA);
 
       // 2つ目の session は、別の端末として2回目のログインで作る。
@@ -531,7 +531,7 @@ for (const viewport of apiOnlyViewports) {
       const otherContext = await browser.newContext({ baseURL: origin, viewport: { width: viewport.width, height: viewport.height } });
       try {
         const pageB = await otherContext.newPage();
-        await loginAsMember(pageB, member, ipB);
+        await loginAsMemberLegacy(pageB, member, ipB);
         const stolen = await postChange(pageB, origin, CONFIRM_PATH, { code: codeOfA, new_password: newPassword() }, ipB);
         expect(stolen.status(), '別の session から使ったコードの status').toBe(401);
         expect(await jsonOf(stolen), '本文は誤りのコードと同じ文').toEqual({ error: CODE_UNUSABLE_MESSAGE });
@@ -548,7 +548,7 @@ for (const viewport of apiOnlyViewports) {
       const origin = originOf(baseURL);
       const member = await createMember('api-weak');
       const sourceIp = uniqueSourceIp();
-      await loginAsMember(page, member, sourceIp);
+      await loginAsMemberLegacy(page, member, sourceIp);
       const code = await startAndReadCode(page, origin, member, sourceIp);
       const hashBefore = await passwordHashOf(member.userId);
 
@@ -615,8 +615,8 @@ for (const viewport of apiOnlyViewports) {
         const holderPage = await contextB.newPage();
         const googleIp = uniqueSourceIp();
         const holderIp = uniqueSourceIp();
-        await loginAsMember(googlePage, google, googleIp);
-        await loginAsMember(holderPage, holder, holderIp);
+        await loginAsMemberLegacy(googlePage, google, googleIp);
+        await loginAsMemberLegacy(holderPage, holder, holderIp);
 
         const previousIds = await mailIdsOf(google.email);
         const googleReply = await postChange(googlePage, origin, START_PATH, { current_password: wrong }, googleIp);
@@ -636,7 +636,7 @@ for (const viewport of apiOnlyViewports) {
       const origin = originOf(baseURL);
       const member = await createMember('sec-revoke');
       const sourceIp = uniqueSourceIp();
-      await loginAsMember(page, member, sourceIp);
+      await loginAsMemberLegacy(page, member, sourceIp);
       const oldAccess = await cookieValue(page, origin, 'sb-access-token');
       const oldRefresh = await cookieValue(page, origin, 'sb-refresh-token');
       expect(sessionIdOf(oldAccess), 'ログインで得た session_id（準備）').toBeTruthy();
@@ -679,7 +679,7 @@ for (const viewport of apiOnlyViewports) {
       const origin = originOf(baseURL);
       const member = await createMember('sec-notice');
       const sourceIp = uniqueSourceIp();
-      await loginAsMember(page, member, sourceIp);
+      await loginAsMemberLegacy(page, member, sourceIp);
       const code = await startAndReadCode(page, origin, member, sourceIp);
       const replacement = newPassword();
       const beforeConfirm = await mailIdsOf(member.email);
@@ -704,7 +704,7 @@ for (const viewport of apiOnlyViewports) {
       const origin = originOf(baseURL);
       const member = await createMember('sec-limit');
       const sourceIp = uniqueSourceIp();
-      await loginAsMember(page, member, sourceIp);
+      await loginAsMemberLegacy(page, member, sourceIp);
       await ensureRoomInRateLimitWindow();
 
       // 本文の形の誤り（400）でも本人ごとの枠は数える。GoTrue へ現行パスワードの確かめを撃たずに回数だけを使う
@@ -726,7 +726,7 @@ for (const viewport of apiOnlyViewports) {
       const origin = originOf(baseURL);
       const member = await createMember('sec-audit');
       const sourceIp = uniqueSourceIp();
-      await loginAsMember(page, member, sourceIp);
+      await loginAsMemberLegacy(page, member, sourceIp);
       const accessToken = await cookieValue(page, origin, 'sb-access-token');
       const refreshToken = await cookieValue(page, origin, 'sb-refresh-token');
       const authSessionId = sessionIdOf(accessToken);

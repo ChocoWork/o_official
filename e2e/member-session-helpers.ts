@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import type { Page } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
-import { setLoginTwoFactorCookie } from './auth-2fa-test-utils';
+import { setEmailCodeSessionCookie, setLoginTwoFactorCookie } from './auth-2fa-test-utils';
 
 export type TestMember = { userId: string; email: string };
 
@@ -102,13 +102,34 @@ export async function readLatestCode(email: string, previousMessageIds: Readonly
   throw new Error('確認コードのメールが届かない');
 }
 
+async function expectMemberSession(page: Page, origin: string, member: TestMember): Promise<void> {
+  const cookies = await page.context().cookies(origin);
+  if (!['sb-access-token', 'sb-refresh-token', 'sb-csrf-token', 'session_id']
+    .every((name) => cookies.some((cookie) => cookie.name === name && cookie.value))) {
+    throw new Error('ログイン・CSRF の Cookie が揃っていない');
+  }
+  const me = await page.request.get(new URL('/api/auth/me', origin).toString(), { maxRedirects: 0 }).catch(() => {
+    throw new Error('ログインした会員を確かめる要求に失敗した');
+  });
+  if (!me.ok()) {
+    throw new Error(`ログインした会員を確かめられない: ${me.status()}`);
+  }
+  const body = (await me.json().catch(() => {
+    throw new Error('ログインした会員の応答を読めない');
+  })) as { authenticated?: boolean; user?: { id?: string } };
+  if (body.authenticated !== true || body.user?.id !== member.userId) {
+    throw new Error('会員としてログインできていない');
+  }
+}
+
 /**
- * 同じブラウザで注文する際の認証と CSRF を、アプリの実際の発行処理で揃える。
+ * 旧の窓口（パスワード＋コードの道: /api/auth/login/resend・/api/auth/otp/verify）で会員のログインを揃える。
+ * 旧の窓口の性質を確かめる試験だけが使う。それ以外は loginAsMember（メールのコードの窓口）を使う。
  * forwardedFor を渡すと、回数の制限を数える送り元（x-real-ip）として確認コードの送信・検証の要求に付ける。
  * 試験ごとに別の値を渡せば、見出しの無い要求が集まる「送り元なし」の枠を全部の E2E で使い切らない。
  * 手元の E2E サーバーだけで効く（固定の環境の CLIENT_IP_HEADER=x-real-ip で x-real-ip を信頼する。x-forwarded-for は読まれない）。
  */
-export async function loginAsMember(page: Page, member: TestMember, forwardedFor?: string): Promise<void> {
+export async function loginAsMemberLegacy(page: Page, member: TestMember, forwardedFor?: string): Promise<void> {
   if (!isLocalUrl(process.env.NEXT_PUBLIC_SUPABASE_URL) || process.env.MAIL_PROVIDER !== 'local') {
     throw new Error('会員のログインは手元の Supabase とメール送信だけで使える');
   }
@@ -146,21 +167,51 @@ export async function loginAsMember(page: Page, member: TestMember, forwardedFor
   if (!verify.ok()) {
     throw new Error(`確認コードが通らない: ${verify.status()}`);
   }
-  const cookies = await page.context().cookies(origin);
-  if (!['sb-access-token', 'sb-refresh-token', 'sb-csrf-token', 'session_id']
-    .every((name) => cookies.some((cookie) => cookie.name === name && cookie.value))) {
-    throw new Error('ログイン・CSRF の Cookie が揃っていない');
+  await expectMemberSession(page, origin, member);
+}
+
+/**
+ * 同じブラウザで注文する際の認証と CSRF を、メールのコードの窓口（/api/auth/email-code/*）の実際の発行処理で揃える。
+ * 始めの窓口（Turnstile）は通さず、署名した保留の Cookie を置いて再送（コードを送る）→ 確定の順に進む。確定の応答の offerPasskey は読まない。
+ * forwardedFor を渡すと、回数の制限を数える送り元（x-real-ip）として再送・確定の要求に付ける。
+ * 試験ごとに別の値を渡せば、見出しの無い要求が集まる「送り元なし」の枠を全部の E2E で使い切らない。
+ * 手元の E2E サーバーだけで効く（固定の環境の CLIENT_IP_HEADER=x-real-ip で x-real-ip を信頼する。x-forwarded-for は読まれない）。
+ */
+export async function loginAsMember(page: Page, member: TestMember, forwardedFor?: string): Promise<void> {
+  if (!isLocalUrl(process.env.NEXT_PUBLIC_SUPABASE_URL) || process.env.MAIL_PROVIDER !== 'local') {
+    throw new Error('会員のログインは手元の Supabase とメール送信だけで使える');
   }
-  const me = await page.request.get(new URL('/api/auth/me', origin).toString(), { maxRedirects: 0 }).catch(() => {
-    throw new Error('ログインした会員を確かめる要求に失敗した');
+  localMailUrl();
+  if (page.url() === 'about:blank') {
+    await page.goto('/');
+  }
+  const origin = new URL(page.url()).origin;
+  if (!isLocalUrl(origin)) {
+    throw new Error('会員のログイン先は手元のアプリに限る');
+  }
+  await setEmailCodeSessionCookie(page, member.email);
+  // アプリと Mailpit の時計がずれても、再送前からあるメールを選ばないため。
+  const previousMessageIds = new Set((await readMailpitMessages(member.email)).map((message) => message.ID));
+  const sourceHeaders: Record<string, string> = forwardedFor === undefined ? {} : { 'x-real-ip': forwardedFor };
+  const resend = await page.request.post(new URL('/api/auth/email-code/resend', origin).toString(), {
+    headers: { origin, ...sourceHeaders },
+    maxRedirects: 0,
+  }).catch(() => {
+    throw new Error('確認コードを送る要求に失敗した');
   });
-  if (!me.ok()) {
-    throw new Error(`ログインした会員を確かめられない: ${me.status()}`);
+  if (!resend.ok()) {
+    throw new Error(`確認コードを送れない: ${resend.status()}`);
   }
-  const body = (await me.json().catch(() => {
-    throw new Error('ログインした会員の応答を読めない');
-  })) as { authenticated?: boolean; user?: { id?: string } };
-  if (body.authenticated !== true || body.user?.id !== member.userId) {
-    throw new Error('会員としてログインできていない');
+  const code = await readLatestCode(member.email, previousMessageIds);
+  const verify = await page.request.post(new URL('/api/auth/email-code/verify', origin).toString(), {
+    headers: { origin, ...sourceHeaders },
+    data: { code },
+    maxRedirects: 0,
+  }).catch(() => {
+    throw new Error('確認コードを検証する要求に失敗した');
+  });
+  if (!verify.ok()) {
+    throw new Error(`確認コードが通らない: ${verify.status()}`);
   }
+  await expectMemberSession(page, origin, member);
 }

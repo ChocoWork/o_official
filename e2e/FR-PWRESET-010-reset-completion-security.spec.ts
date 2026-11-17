@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { test, expect, type Browser, type BrowserContext } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
-import { createTestMember, loginAsMember, type TestMember } from './member-session-helpers';
+import { createTestMember, loginAsMemberLegacy, type TestMember } from './member-session-helpers';
 
 // 再設定の完了まわりの受け入れ基準を、実際に届くメールのリンクから作った再設定 Cookie で確かめる。
 //   FREQ-319-AC-05  再設定の後、更新前に取得したアクセストークンが管理 API で 401 になる
@@ -130,7 +130,7 @@ for (const viewport of viewports) {
         try {
           // 更新前に取得したアクセストークン
           const page = await before.newPage();
-          await loginAsMember(page, member, source);
+          await loginAsMemberLegacy(page, member, source);
           const accessToken = (await before.cookies(APP_ORIGIN)).find((entry) => entry.name === 'sb-access-token')?.value;
           expect(accessToken, '更新前のアクセストークンが無い').toBeTruthy();
           const bearer = { authorization: `Bearer ${accessToken}`, 'x-real-ip': source };
@@ -191,7 +191,7 @@ for (const viewport of viewports) {
         try {
           // 端末 A: ログインしたまま
           const pageA = await deviceA.newPage();
-          await loginAsMember(pageA, member, sourceA);
+          await loginAsMemberLegacy(pageA, member, sourceA);
 
           // 再設定の前は、端末 A の Cookie で更新できる。これで、後の 401 が再設定による失効だと言える。
           const beforeReset = await deviceA.request.post('/api/auth/refresh', {
