@@ -359,7 +359,7 @@ graph TD
 - `?next=` を受ける。文字列なら戻り先の確かめ（DD-AUTH-032）に通し、通った道筋だけをタブの部品の `returnTo` に渡す（外れたら捨てる。値を画面に出さない）。ログイン・会員登録・Google の送信で本文の `next` に載せる（FR-AUTH-005）
 - `?tab=register` で会員登録のタブから始め、`?email=` が文字列なら会員登録の欄に入れる（注文の完了からの案内、FREQ-266（範囲外））。新しい `/login` は `tab` を読まず、`email` をメール欄の初めの値にするだけ
 - タブ: `tablist` に「ログイン」「会員登録」。左右の矢印で切り替える。選んだタブは黒の太い下線、選ばないタブはグレーの文字と細い下線
-- タブを切り替えると URL を置き換える（`?tab=`・`?email=` が消える）。段2 Task 3 から、置き換え先は `/login/password`（旧のパスワードの画面は `/login/password` へ退避した。DD-AUTH-061、ADR-0469。`/login` は Task 5 まで同じ中身で残る）。`/register` へは変えない
+- タブを切り替えると URL を置き換える（`?tab=`・`?email=` が消える）。段2 Task 3 から、置き換え先は `/login/password`（旧のパスワードの画面は `/login/password` へ退避した。DD-AUTH-061、ADR-0469。`/login` は Task 5 で新しい画面に作り替えた）。`/register` へは変えない
 - 画面の高さ: main を画面の高さ以上にしてフォームを縦横の中央に置き、上下にヘッダーのずれの分の余白を取る（FREQ-69-REQ-01）。この main の指定は共有の `src/contexts/Providers.tsx` が `/login`・`/login/verify`・`/login/password`・`/login/code`・`/login/passkey`・`/auth/password-reset` の6つに当てる（`/login/password`・`/login/code`・`/login/passkey` は段2 Task 3 で足した）。`sm` より狭い時だけ縦の余白と欄の高さを縮める（FREQ-71-REQ-01）
 - 中身はログインのフォーム（SCR-AUTH-002）か会員登録のフォーム（SCR-AUTH-003）
 - `/register` へ来た時の動きはアプリのページが無いことで決まる（404。FREQ-63-AC-01）
@@ -531,7 +531,7 @@ graph TD
 - 入口: アカウント `/account` のお客様情報のタブにある「パスワードを変更」のリンク。未ログインで開くとログインの案内だけを出し、戻り先に `/account/password` を載せた `/login` へ送る
 - 1 段目: 現行のパスワードの欄と「確認コードをメールに送る」。`POST /api/auth/password/change/start`（API-AUTH-020）。Google でログインしていてパスワードを設定していない場合の案内と `/auth/password-reset`（SCR-AUTH-005）へのリンクを段 1 にだけ固定で出す（会員がパスワードを持つかを明かさない）
 - 2 段目: 8 桁の確認コード（有効期限 10 分）、新しいパスワード（16 文字以上、72 バイト以内）、その確認。長さ・一致・コードの形は送る前に画面で確かめる。`POST /api/auth/password/change/confirm`（API-AUTH-021）。「コードを送り直す」は 1 段目へ戻る（現行パスワードを入れ直した時だけ `start` を呼ぶ）
-- 成功: 全 session が失効しているので、ログインの状態を引き直してから `/login` へ移る。画面と文言の詳細は DD-AUTH-042
+- 成功: 全 session が失効しているので、ログインの状態を引き直してから `/login/password` へ移る（段4までパスワードで入る旧の画面。ADR-0469）。画面と文言の詳細は DD-AUTH-042
 - 応答の見せ方: 400 と 401 は窓口の文、403（管理者・サポーターの aal2 不足）・429 は固定の文、それ以外は一般の失敗の文。残りの回数は言わない
 
 ## 画面遷移
@@ -636,7 +636,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  L["/login の再設定のリンク"] --> P1["/auth/password-reset 申請"]
+  L["/login/password の再設定のリンク"] --> P1["/auth/password-reset 申請"]
   P1 -->|request が 200| P2["送った結果の画面"]
   P2 -.->|メールのリンク| G["GET /api/auth/password-reset/link"]
   G -->|token あり 303| V["/auth/password-reset/verify"]
@@ -644,7 +644,7 @@ flowchart TD
   V -->|link の POST が 200| P3["/auth/password-reset 新しいパスワード"]
   V -->|link の POST が断る| X["/auth/password-reset?error=link_expired"]
   P3 -->|confirm が 200| P4["変えた結果の画面"]
-  P4 -->|ログインへ| L2["/login"]
+  P4 -->|ログインへ| L2["/login/password（段4まで）"]
   E --> P1
   X --> P1
 ```

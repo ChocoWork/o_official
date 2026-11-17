@@ -151,6 +151,30 @@ describe('LoginChoices', () => {
     expect(passkeyButton()).toBeEnabled();
   });
 
+  test('DD-AUTH-063 失敗の後はフォーカスをパスキーのボタンへ戻す', async () => {
+    jest.useFakeTimers();
+    mockServerLogin(json(401, { error: 'passkey_login_failed' }));
+    render(<LoginChoices />);
+    await clickPasskey();
+    await act(async () => {
+      jest.runAllTimers();
+    });
+    expect(passkeyButton()).toHaveFocus();
+    jest.useRealTimers();
+  });
+
+  test('DD-AUTH-063 フォーカスを戻す前に画面が消えても落ちない', async () => {
+    jest.useFakeTimers();
+    mockServerLogin(json(401, { error: 'passkey_login_failed' }));
+    const { unmount } = render(<LoginChoices />);
+    await clickPasskey();
+    unmount();
+    await act(async () => {
+      jest.runAllTimers();
+    });
+    jest.useRealTimers();
+  });
+
   test('DD-AUTH-063 中止は赤でなく status の文', async () => {
     mockAssert.mockResolvedValue({ ok: false, reason: 'cancelled' });
     mockServerLogin(json(200, {}));

@@ -161,7 +161,7 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 
 | 単位 | 動き |
 | --- | --- |
-| `src/app/login/page.tsx`（頁の動きの詳細は `14_login.md` の DD-AUTH-001。この表は流れだけ） | 新しい保留の Cookie（`sb-email-code-session`）を `verifyEmailCodeSessionToken` で確かめ、有効なら `/login/code` へ転送 → 旧い保留の Cookie（`sb-login-2fa-session`）が有効なら `/login/verify` へ転送（問い合わせは読まない）→ `next`（`validateReturnPath` を通った道筋だけ）・`email`（文字列ならメール欄の初めの値。`tab` は読まない）・`registered=1`（固定の案内の文）を `LoginChoices` へ渡す。題と説明は新しい文（FR-AUTH-027） |
+| `src/app/login/page.tsx`（ページの動きの詳細は `14_login.md` の DD-AUTH-001。この表は流れだけ） | 新しい保留の Cookie（`sb-email-code-session`）を `verifyEmailCodeSessionToken` で確かめ、有効なら `/login/code` へ転送 → 旧い保留の Cookie（`sb-login-2fa-session`）が有効なら `/login/verify` へ転送（問い合わせは読まない）→ `next`（`validateReturnPath` を通った道筋だけ）・`email`（文字列ならメール欄の初めの値。`tab` は読まない）・`registered=1`（固定の案内の文）を `LoginChoices` へ渡す。題と説明は新しい文（FR-AUTH-027） |
 | `LoginChoices`（開いた時） | サーバーの描画と同じく「対応」の前提で描き、描画の後（`useEffect`）に `isPasskeySupported()` を見て、未対応ならボタンを外して一文を出す。ボット検証のスクリプトとウィジェットを、サイトキーがある時だけ置く |
 | 「パスキーでログイン」 | 押すと `disabled`・`aria-busy`・「確認しています…」。`resolveBrowserStartMode()` が `browser` なら `createPasskeyAuthenticationStarter({ mode: 'browser', supabase })` とボット検証のトークンを使い（トークンが無ければ GoTrue を呼ばずに「使えない」の文）、`server` なら窓口 (a) を呼ぶ。続けて `loginWithPasskey`（DD-AUTH-060。鍵の選択 → 終わりの窓口。`next` は終わりの窓口の本文に渡す）。`browser` の時は送った後でボット検証を引き直す |
 | パスキーの結果 | 成功は `refreshAuthState()` → `resolvePostLoginPath()`（DD-AUTH-060）の行き先へ `router.replace`（移動が終わるまでボタンは止めたまま。勧めの画面は出さない）。`cancelled`: 状態の知らせ「パスキーでのログインを中止しました。」（`role="status"`・赤にしない）。`not_found`・`uv_required`・`staff_blocked`・`rate_limited`（`Retry-After` があれば「約 N 分後」を足す）・そのほか（`unavailable`・`captcha_required`・`failed`）は理由ごとの文を `role="alert"` で出す |

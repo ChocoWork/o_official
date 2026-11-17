@@ -36,6 +36,13 @@ describe('createPasskeyAuthenticationStarter: server', () => {
     expect(result).toEqual({ ok: true, start: required });
   });
 
+  it.each([[429], [503], [500]])('DD-AUTH-053 %i の応答でも本文を読み切る（no-store の読み残しを作らない）', async (status) => {
+    const response = json(status, {});
+    const spy = jest.spyOn(response, 'arrayBuffer');
+    await run(response);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
   it('DD-AUTH-053 429 は rate_limited で Retry-After を秒で返す', async () => {
     const { result } = await run(json(429, {}, { 'Retry-After': '300' }));
     expect(result).toEqual({ ok: false, reason: 'rate_limited', retryAfterSeconds: 300 });

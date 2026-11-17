@@ -64,6 +64,7 @@
 | パス | 画面・役割 | 導線・同一画面内の状態 | 実装 |
 | --- | --- | --- | --- |
 | `/login` | ログイン（パスキー・Google・メールのコード） | 「パスキーでログイン」・「Googleでサインイン」・メール欄と「メールでコードを受け取る」の3つの入口。`next`（戻り先）・`email`（メール欄の初期値。`tab` は読まない）・`registered=1`（登録完了の案内）を受ける。有効な保留のCookieがある場合は新（メールのコード）なら `/login/code`、旧（パスワード）なら `/login/verify` へ。メールの送信成功で `/login/code`、パスキーの成功で戻り先へ。パスキー未対応の端末ではボタンを出さず一文を出す | [page.tsx](../../../src/app/login/page.tsx) |
+| `/login/code` | メールのコードの入力 | 保留のCookie（メールのコード）が有効な時だけ8桁のコード入力・再送・入れ直しを出す。無い・偽り・期限切れは `/login` へ。成功後は行き先へ（パスキーを勧める時は `/login/passkey`）。検索に載せない | [code/page.tsx](../../../src/app/login/code/page.tsx) |
 | `/login/password` | 旧のログイン・会員登録（パスワード。段4まで残す） | 旧の `/login` の中身（Task 5 で `/login` は新しい画面に作り替えた）。パスワードの再設定・変更の完了の行き先。`tab=register`・`email`・`next`・`registered` を受ける。タブを替えても URL は `/login/password`。検索に載せない（`noindex`）。有効な検証待ちCookieがある場合は `/login/verify` へ | [password/page.tsx](../../../src/app/login/password/page.tsx) |
 | `/login/verify` | ログインメールOTP確認 | 8桁OTP、再送、エラーを表示。成功後の認証再確認で一般利用者はアカウント、admin/supporterは認証確認へ。再確認が未認証ならログイン、通信例外ならアカウントへ。検証セッションなし・再送401・やり直す操作もログインへ | [page.tsx](../../../src/app/login/verify/page.tsx) |
 | `/auth/verified` | 認証確認・特権ユーザーのTOTP | 一般利用者はアカウントへ自動遷移。admin/supporterはMFA確認済みなら直ちに管理へ、未確認ならTOTP登録・確認後に管理へ。未認証はログイン案内リンク | [page.tsx](../../../src/app/auth/verified/page.tsx) |

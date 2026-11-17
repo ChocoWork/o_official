@@ -113,7 +113,11 @@ export default function EmailCodeStartForm({
       setError(MSG_FAILED);
     } finally {
       // 移る時は入力を止めたままにする（二重に送らない）。
-      if (!moved) setLoading(false);
+      if (!moved) {
+        setLoading(false);
+        // 無効になった欄からフォーカスが落ちるので、失敗の後は欄へ戻す。
+        setTimeout(() => document.getElementById("email")?.focus(), 0);
+      }
       resetTurnstile();
     }
   };

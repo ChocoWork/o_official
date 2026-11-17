@@ -121,6 +121,8 @@ export default function LoginChoices({ returnTo, initialEmail, notice }: Props) 
       setPasskeyError(MSG_UNAVAILABLE);
     }
     setBusy(false);
+    // 無効になったボタンからフォーカスが落ちるので、失敗の後はボタンへ戻す。
+    setTimeout(() => document.getElementById("passkey-login")?.focus(), 0);
   };
 
   return (
@@ -146,6 +148,7 @@ export default function LoginChoices({ returnTo, initialEmail, notice }: Props) 
             type="button"
             size="md"
             className="auth-action w-full"
+            id="passkey-login"
             disabled={busy}
             aria-busy={busy}
             onClick={handlePasskey}

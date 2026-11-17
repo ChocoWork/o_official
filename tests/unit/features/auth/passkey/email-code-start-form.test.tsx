@@ -119,6 +119,30 @@ describe('EmailCodeStartForm', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('確認コードを送れませんでした。時間をおいてやり直してください。');
   });
 
+  test('DD-AUTH-063 失敗の後はフォーカスをメール欄へ戻す', async () => {
+    jest.useFakeTimers();
+    (global.fetch as jest.Mock).mockResolvedValue(json(500, {}));
+    setup();
+    await submit();
+    await act(async () => {
+      jest.runAllTimers();
+    });
+    expect(screen.getByRole('textbox', { name: 'Email' })).toHaveFocus();
+    jest.useRealTimers();
+  });
+
+  test('DD-AUTH-063 フォーカスを戻す前に画面が消えても落ちない', async () => {
+    jest.useFakeTimers();
+    (global.fetch as jest.Mock).mockResolvedValue(json(500, {}));
+    const { unmount } = setup();
+    await submit();
+    unmount();
+    await act(async () => {
+      jest.runAllTimers();
+    });
+    jest.useRealTimers();
+  });
+
   test('DD-AUTH-063 429 は集中の文', async () => {
     (global.fetch as jest.Mock).mockResolvedValue(json(429, { error: 'Too many requests' }));
     setup();

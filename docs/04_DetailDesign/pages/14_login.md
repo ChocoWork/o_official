@@ -135,7 +135,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SCR-AUTH-001、FLOW-AUTH-001、STATE-AUTH-001、SEC-AUTH-007 |
-| 根拠 | 入力の途中で戻ってきた人にもう一度フォームを見せると、もう一度送って2通目のコードを出し、枠を無駄に使う。新しい保留の Cookie（メールのコード）が有効なら描く前に `/login/code`、旧い保留の Cookie（パスワード）が有効なら `/login/verify` へ送る（SCR-AUTH-001、STATE-AUTH-001）。注文の完了からの案内（`?tab=register&email=`）は、`tab` を読まず `email` だけをメール欄の初めの値にする（FREQ-266（範囲外））。題・説明・OG の画像をサーバーで返す（FR-LOGIN-005。説明は新しい文）。確認のメールのリンクを登録を始めたブラウザ以外で開いた人は `/login?registered=1` へ送られるので、固定の案内の文を渡して登録が終わったことを知らせる（SEC-AUTH-007、ADR-0413）。2026-11-18（段2 Task 5）に、旧のタブの画面の中身を `/login/password`（DD-AUTH-061）へ移し、この項目を新しい `/login` の頁に書き直した |
+| 根拠 | 入力の途中で戻ってきた人にもう一度フォームを見せると、もう一度送って2通目のコードを出し、枠を無駄に使う。新しい保留の Cookie（メールのコード）が有効なら描く前に `/login/code`、旧い保留の Cookie（パスワード）が有効なら `/login/verify` へ送る（SCR-AUTH-001、STATE-AUTH-001）。注文の完了からの案内（`?tab=register&email=`）は、`tab` を読まず `email` だけをメール欄の初めの値にする（FREQ-266（範囲外））。題・説明・OG の画像をサーバーで返す（FR-LOGIN-005。説明は新しい文）。確認のメールのリンクを登録を始めたブラウザ以外で開いた人は `/login?registered=1` へ送られるので、固定の案内の文を渡して登録が終わったことを知らせる（SEC-AUTH-007、ADR-0413）。2026-11-18（段2 Task 5）に、旧のタブの画面の中身を `/login/password`（DD-AUTH-061）へ移し、この項目を新しい `/login` のページに書き直した |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト（`tests/unit/app/login/page.test.tsx`）、E2E（`e2e/FR-LOGIN-057-login-screen.spec.ts`） |
 | 出どころ | `src/app/login/page.tsx`、`.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-5-brief.md` |
@@ -2781,7 +2781,7 @@ DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permi
 | 入力（ログインの状態） | `useLogin()` の `isLoggedIn`・`isAuthResolved`・`refreshAuthState`。今いる頁を戻り先に載せた `/login` の URL は `useLoginHref()` |
 | 出力（段 1「現行のパスワード」） | 現行パスワードの欄（`type=password`・`autocomplete=current-password`）、固定の案内「Google でログインしていてパスワードを設定していない場合は、先にパスワードの再設定からパスワードを設定してください。」と `/auth/password-reset` へのリンク、「確認コードをメールに送る」。`POST /api/auth/password/change/start`（`clientFetch`、本文 `{ current_password }`） |
 | 出力（段 2「確認コードと新しいパスワード」） | 確認コード（`inputMode=numeric`・`autocomplete=one-time-code`・8 文字まで）、新しいパスワード、新しいパスワード（確認）（どちらも `autocomplete=new-password`）、「パスワードを変更する」、「コードを送り直す」。`POST /api/auth/password/change/confirm`（本文 `{ code, new_password }`。確認の欄の値は送らない） |
-| 出力（成功） | 「パスワードを変更しました。全ての端末からログアウトしました。新しいパスワードでログインしてください。」を `LiveMessage`（status）で出し、`refreshAuthState` で状態を引き直してから `router.replace('/login')` |
+| 出力（成功） | 「パスワードを変更しました。全ての端末からログアウトしました。新しいパスワードでログインしてください。」を `LiveMessage`（status）で出し、`refreshAuthState` で状態を引き直してから `router.replace('/login/password')`（段2 Task 5 で `/login` から変更。段4までパスワードで入る旧の画面へ送る。ADR-0469） |
 | 出力（未ログイン） | 画面の代わりに「パスワードの変更には、ログインが必要です。」と、`/login?next=%2Faccount%2Fpassword` へのボタン |
 | 出力（アカウントの頁） | `src/app/account/page.tsx` のお客様情報のタブに、読み込みが終わった後、「パスワードを変更」のリンク（`/account/password`）を 1 つ出す |
 
@@ -2790,7 +2790,7 @@ DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permi
 1. `isAuthResolved` が真になるまで「読み込み中...」を出す
 2. 段 1 で現行パスワードを入力して送る。`start` が 200 なら現行パスワードの欄の値を捨て、段 2 へ進む
 3. 段 2 でコード（8 桁の数字）・新パスワード（16 文字以上、72 バイト以内。全角は 1 文字 3 バイト）・確認を入力して送る。送る前に 3 つを画面で確かめる（72 バイトを超えると「パスワードは72バイト以内にしてください（全角の文字は1文字で3バイトです）」）
-4. `confirm` が 200 なら入力欄の値を全部捨て、成功の文を出し、ログインの状態を引き直してから `/login` へ移る（全 session が失効しているため）
+4. `confirm` が 200 なら入力欄の値を全部捨て、成功の文を出し、ログインの状態を引き直してから `/login/password` へ移る（全 session が失効しているため。段4までパスワードの旧い流れで入るので、新しい `/login` でなく旧の画面）
 
 **分岐と異常フロー:**
 
@@ -2822,7 +2822,7 @@ DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permi
 | 2 | `start` が 200 で段 2 に変わり、現行パスワードの欄が消える。`start` へ送るのは `{ current_password }` だけ |
 | 3 | `start` が 401（現行パスワードの誤り）で窓口の文を出して段 1 に留まり、`/login` へは送らない。401（`Unauthorized`）は印を 1 回更新して同じ本文で 1 回だけ送り直し、更新できない時だけ `/login?next=%2Faccount%2Fpassword` へ送る（観点 13） |
 | 4 | 新パスワードが 15 文字、確認が違う、コードが 8 桁でない、のどれも送らずに画面で断る（`confirm` を呼ばない） |
-| 5 | `confirm` が 200 で成功の文、`refreshAuthState` の呼び出し、`/login` への移動。送るのは `{ code, new_password }` だけ |
+| 5 | `confirm` が 200 で成功の文、`refreshAuthState` の呼び出し、`/login/password` への移動。送るのは `{ code, new_password }` だけ |
 | 6 | `confirm` が 401 で窓口の文（残りの回数を含まない）、400 で窓口の文、429・403・5xx・通信の失敗でそれぞれ固定の文 |
 | 7 | どの応答も `json()` を 1 回呼ぶ（本文を読み切る） |
 | 8 | 欄の属性: `type=password`、`autocomplete` が `current-password`／`new-password`／コードが `one-time-code`、コードが `inputmode=numeric` |

@@ -495,14 +495,14 @@ flowchart TD
 
 ## パスワード変更からの導線（波 6 / FR-AUTH-006）
 
-確認日: 2026-11-01。入口は `/account` のお客様情報のタブにある「パスワードを変更」のリンク。段の切り替え（現行パスワード → コードと新しいパスワード）は同じルートの状態で、URLは変わらない。成功すると全端末の session が失効し、ログインの状態を引き直して `/login` へ移る。設計の正本は `docs/03_BasicDesign/areas/auth.md` の SCR-AUTH-011・FLOW-AUTH-005。
+確認日: 2026-11-18（成功の行き先を `/login/password` に変更。それ以前は 2026-11-01）。入口は `/account` のお客様情報のタブにある「パスワードを変更」のリンク。段の切り替え（現行パスワード → コードと新しいパスワード）は同じルートの状態で、URLは変わらない。成功すると全端末の session が失効し、ログインの状態を引き直して `/login/password`（旧のパスワードの画面。段4まで）へ移る。設計の正本は `docs/03_BasicDesign/areas/auth.md` の SCR-AUTH-011・FLOW-AUTH-005。
 
 ```mermaid
 flowchart TD
   A["/account（お客様情報）"] -->|パスワードを変更| P["/account/password"]
   P -->|1 現行パスワード → コードをメールに送る| P
   P -->|2 コードと新しいパスワード → 変更成功（全 session 失効）| LP["/login/password（旧の画面。段4まで）"]
-  P -->|未ログイン| L
+  P -->|未ログイン| L["/login"]
   P -.->|Google だけの会員の案内: リンク| R["/auth/password-reset"]
 ```
 
