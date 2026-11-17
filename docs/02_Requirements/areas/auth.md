@@ -4881,7 +4881,7 @@ IP の見出し `x-real-ip` つきで `POST /api/auth/passkey/login/start` を�
 | 確かめ方 | E2E（`e2e/FR-LOGIN-050-passkey-login-finish.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（同上） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・5-5）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 6） |
 
-認めた鍵2本の店員が `loginViaApp` で入ると、HTTP 200・本文の `user.role` が `admin`・`sb-access-token` と `sb-refresh-token` の Cookie が付き、`/api/auth/me` が `authenticated: true`・`mfaVerified: true`、`/api/admin/users` が 200 であること。
+認めた鍵2本の店員が `loginViaApp` で入ると、HTTP 200・本文の `user.role` が `admin`・`sb-access-token` と `sb-refresh-token` の Cookie が付き、`/api/auth/me` が `authenticated: true`・`user.mfaVerified: true`、`/api/admin/users` が 200 であること。
 
 ### FR-AUTH-019-AC-02 認めた鍵が1本の店員は 200 で入るが、mfaVerified が false で管理 API は 403
 
@@ -4893,7 +4893,7 @@ IP の見出し `x-real-ip` つきで `POST /api/auth/passkey/login/start` を�
 | 確かめ方 | E2E（`e2e/FR-LOGIN-050-passkey-login-finish.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・5-5）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 6） |
 
-認めた鍵1本の店員が入ると HTTP 200 で、`/api/auth/me` の `mfaVerified` が `false`、`/api/admin/users` が 403 であること。
+認めた鍵1本の店員が入ると HTTP 200 で、`/api/auth/me` の `user.mfaVerified` が `false`、`/api/admin/users` が 403 であること。
 
 ### FR-AUTH-019-AC-03 認めていない鍵で入った店員は 403 で、Cookie が付かず、GoTrue のセッションが残らない
 

@@ -77,7 +77,7 @@ for (const viewport of viewports) {
 
         const me = await api(request, 'get', '/api/auth/me');
         expect(me.status()).toBe(200);
-        expect(await me.json()).toMatchObject({ authenticated: true, mfaVerified: true });
+        expect(await me.json()).toMatchObject({ authenticated: true, user: { mfaVerified: true } });
 
         const users = await api(request, 'get', '/api/admin/users');
         expect(users.status()).toBe(200);
@@ -92,7 +92,7 @@ for (const viewport of viewports) {
 
         const me = await api(request, 'get', '/api/auth/me');
         expect(me.status()).toBe(200);
-        expect(await me.json()).toMatchObject({ authenticated: true, mfaVerified: false });
+        expect(await me.json()).toMatchObject({ authenticated: true, user: { mfaVerified: false } });
 
         const users = await api(request, 'get', '/api/admin/users');
         expect(users.status()).toBe(403);
