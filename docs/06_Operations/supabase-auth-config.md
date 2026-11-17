@@ -385,7 +385,7 @@ select u.id, u.email, u.created_at
    and u.created_at < now() - interval '24 hours'
    and u.last_sign_in_at is null
    and not exists (select 1 from public.orders o where o.user_id = u.id)
-   and not exists (select 1 from public.orders o where lower(o.shipping_email) = lower(u.email))
+   and not exists (select 1 from public.orders o where lower(btrim(o.shipping_email)) = lower(btrim(u.email)))
    and not exists (select 1 from public.user_roles r where r.user_id = u.id)
  order by u.created_at;
 ```

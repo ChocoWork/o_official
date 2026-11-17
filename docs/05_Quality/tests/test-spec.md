@@ -69,7 +69,7 @@
 ### 単体・結合・DB 結合の主なファイル
 
 - メールのコードの窓口: `tests/unit/api/auth/email-code-*-route.test.ts`、`tests/unit/features/auth/email-code-session.test.ts`、`tests/integration/api/auth/email-code-*.test.ts`
-- 画面の部品: `tests/unit/features/auth/passkey/`（`login-choices`・`email-code-start-form`・`email-code-entry`・`passkey-offer`・`account-passkeys` ほか）、`tests/unit/app/login/`、`tests/integration/ui/auth-account-security-tab.test.tsx`、`tests/integration/ui/auth-account-security-tab.test.tsx`
+- 画面の部品: `tests/unit/features/auth/passkey/`（`login-choices`・`email-code-start-form`・`email-code-entry`・`passkey-offer`・`account-passkeys` ほか）、`tests/unit/app/login/`、`tests/integration/ui/auth-account-security-tab.test.tsx`
 - 知らせ: `tests/integration/db/auth_passkey_notification_sending.integration.test.ts`（移行 G の5つの関数。2つの接続の同時の取り出しを含む）、`tests/integration/db/auth_passkey_notification_worker.integration.test.ts`、`tests/unit/lib/auth/passkey-notification-*.test.ts`
 - Task 11 で足した単体: `account-passkeys.test.tsx` の「削除の失敗の応答より先にその行が名前の入力へ替わっていても、戻す先が無いだけで落ちない」（フォーカスを戻す先の行が消えていても落ちない）
 
