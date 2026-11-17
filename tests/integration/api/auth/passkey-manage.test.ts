@@ -28,6 +28,8 @@ const IP = '203.0.113.50';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const KEY_A = '33333333-3333-4333-8333-333333333333';
 const KEY_B = '44444444-4444-4444-8444-444444444444';
+// 16進の英字を含む（大文字にすると別の文字列になる）。認めた鍵の一覧は小文字で返る。
+const HEX_KEY = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 
 let rpc: jest.Mock;
 let isStaff: boolean;
@@ -135,7 +137,9 @@ describe('API-AUTH-028 DELETE /api/auth/passkey/{id}', () => {
   });
 
   test('API-AUTH-028 大文字の id でも、店員が認めた鍵2本のうち1本は 409 で、GoTrue を呼ばない', async () => {
-    const res = await DELETE(req('DELETE'), ctx(KEY_A.toUpperCase()));
+    approvedIds = [HEX_KEY, KEY_B];
+    approvedCount = 2;
+    const res = await DELETE(req('DELETE'), ctx(HEX_KEY.toUpperCase()));
     expect(res.status).toBe(409);
     expect(deletePasskey).not.toHaveBeenCalled();
   });

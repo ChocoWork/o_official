@@ -41,6 +41,8 @@ const USER_ID = '22222222-2222-4222-8222-222222222222';
 const KEY_A = '33333333-3333-4333-8333-333333333333';
 const KEY_B = '44444444-4444-4444-8444-444444444444';
 const KEY_C = '55555555-5555-4555-8555-555555555555';
+// 16進の英字を含む（大文字にすると別の文字列になる）。認めた鍵の一覧は小文字で返る。
+const HEX_KEY = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 
 function req(method: string, body?: unknown, headers: Record<string, string> = { authorization: 'Bearer tok-abc' }) {
   return new Request('http://localhost/api/auth/passkey', {
@@ -176,10 +178,11 @@ describe('DD-AUTH-057 PATCH /api/auth/passkey/{id}（名前の変更）', () => 
   });
 
   test('DD-AUTH-057 大文字の id は小文字にして GoTrue へ渡す（PATCH・DELETE）', async () => {
-    await PATCH(req('PATCH', { friendly_name: 'x' }), ctx(KEY_A.toUpperCase()));
-    expect(updateMock).toHaveBeenCalledWith('tok-abc', { passkeyId: KEY_A, friendlyName: 'x' });
-    await DELETE(req('DELETE'), ctx(KEY_A.toUpperCase()));
-    expect(deleteMock).toHaveBeenCalledWith('tok-abc', KEY_A);
+    expect(HEX_KEY.toUpperCase()).not.toBe(HEX_KEY);
+    await PATCH(req('PATCH', { friendly_name: 'x' }), ctx(HEX_KEY.toUpperCase()));
+    expect(updateMock).toHaveBeenCalledWith('tok-abc', { passkeyId: HEX_KEY, friendlyName: 'x' });
+    await DELETE(req('DELETE'), ctx(HEX_KEY.toUpperCase()));
+    expect(deleteMock).toHaveBeenCalledWith('tok-abc', HEX_KEY);
   });
 
   test('DD-AUTH-057 断りの順番: 回数の制限 → 認証 → CSRF。どれも GoTrue を呼ばない', async () => {
@@ -280,7 +283,9 @@ describe('DD-AUTH-057 DELETE /api/auth/passkey/{id}（削除）', () => {
 
   test('DD-AUTH-057 店員: 大文字の id でも小文字にそろえて認めた鍵と突き合わせ、2本なら 409 で GoTrue を呼ばない', async () => {
     staffMock.mockResolvedValue({ ok: true, value: true });
-    const res = await DELETE(req('DELETE'), ctx(KEY_A.toUpperCase()));
+    idsMock.mockResolvedValue({ ok: true, value: [HEX_KEY, KEY_B] });
+    countMock.mockResolvedValue({ ok: true, value: 2 });
+    const res = await DELETE(req('DELETE'), ctx(HEX_KEY.toUpperCase()));
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: 'staff_min_passkeys' });
     expect(deleteMock).not.toHaveBeenCalled();
