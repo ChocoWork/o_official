@@ -14,7 +14,7 @@ AUTH の領域の構成・画面・画面遷移・状態遷移・API・データ
 | 画面遷移 | 5 | `FLOW-AUTH-001`〜`005` | メールとパスワードのログイン、Google のログイン、会員登録、パスワードの再設定、ログイン中のパスワード変更（`005`。波 6） |
 | 状態遷移 | 6 | `STATE-AUTH-001`〜`006` | ログインの保留、再設定の印、`/auth/verified` の画面、再設定のページ、ヘッダーの出し隠し、戻り先の控え |
 | API | 21 | `API-AUTH-001`〜`021` | `/api/auth/*` の 21 本の窓口（`020`・`021` はパスワード変更の開始と確定。波 6） |
-| データ | 10 | `DATA-AUTH-001`〜`010` | `sessions` の表、`password_reset_tokens` の表、認証の DB の関数、認証の Cookie、戻り先の控えの表と関数、公開スキーマの権限の一覧、アプリの session への結び付け（`auth_session_id` と生存の判定の関数）、`has_permission` の aal2 と結び付き・会員の本人の行の方針、パスワード変更の確認コードの表（`password_change_challenges`）、その発行と使い切りの関数 2 本 |
+| データ | 10 | `DATA-AUTH-001`〜`010` | `sessions` の表、`password_reset_tokens` の表、認証の DB の関数、認証の Cookie、戻り先の控えの表と関数、公開スキーマの権限の一覧、アプリの session への結び付け（`auth_session_id` と生存の判定の関数）、`has_permission` の店員の入口の条件（以前は aal2）と結び付き・会員の本人の行の方針、パスワード変更の確認コードの表（`password_change_challenges`）、その発行と使い切りの関数 2 本 |
 
 - 結論: 画面は利用者の端末で動く部品で、共有の `LoginContext` かページ自身が `/api/auth/*` を呼ぶ。窓口は Supabase Auth を呼び、結果のトークンを HttpOnly の Cookie に入れ、自前の `sessions` の表に控えを残す。ログインの2段目・再設定・会員登録の守り（保留の署名 Cookie・ボットの確かめ・回数の制限・列挙の対策・16 文字と漏洩の照合）は全部アプリの窓口の中にある
 - 波 5（2026-10-29）で、SEC-AUTH-005・010・031 は「アプリのログインを通って作られた session だけを受ける」形に決め、アプリの窓口は満たす（ADR-0417・0419、旗 `AUTH_REQUIRE_APP_SESSION` が有効な間）。DB（PostgREST）の側は移行 M2 を当てた DB で満たす（ADR-0418、DATA-AUTH-008。M2 は 2026-10-29 に本番適用済み）。この 3 つは DATA-AUTH-007・008（031 は API-AUTH-017 も）が上位につなぎ、下の「満たさない」の一覧からは外した。アプリの窓口の動きは API-AUTH-014・017 と ARC-AUTH-009 に書いた
@@ -46,7 +46,7 @@ AUTH の領域の構成・画面・画面遷移・状態遷移・API・データ
 | アカウントの照会 | `src/features/auth/services/auth-admin-user.ts` の `findAuthUserIdByEmail` | 会員登録・再設定でメールからアカウントを引く |
 | Cookie の名前と属性 | `src/lib/cookie.ts` | 認証の Cookie の名前・HttpOnly・SameSite・Secure |
 | 認証の確かめ | `src/lib/auth/authenticate.ts`・`request-token.ts` | `me`・`mfa/*`・`logout` が access token を確かめる |
-| 管理の認可 | `src/lib/auth/admin-rbac.ts` | 管理の窓口が DB の ACL と aal2 で判定する（AUTH は aal2 を出す側） |
+| 管理の認可 | `src/lib/auth/admin-rbac.ts` | 管理の窓口が DB の ACL と店員の入口の条件（パスキー・認めた鍵の本数。`aal` は見ない）で判定する（段1b より前は aal2 で判定した） |
 | Origin の確かめ・no-store | `src/proxy.ts` | `/api` の書き換えの要求を許可の一覧の Origin だけで通す（FREQ-327）。`/api/auth` 配下の応答（Origin 拒否の 403 も）に `Cache-Control: no-store` を付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037） |
 | CSRF の印 | `src/lib/csrfMiddleware.ts`・`csrf.ts` | `logout` が二重送信の印を確かめる |
 | 送り先の検証・住所 | `src/lib/redirect.ts` の `getRequestOrigin`、`src/lib/site-url-guard.ts` | メールのリンクの住所。ログインの後の送り先の確かめは `src/features/auth/return-intent/return-path.ts`（DD-AUTH-032）に置き換え、共有関数 `sanitizeRedirectPath` は消す |
@@ -124,12 +124,12 @@ sequenceDiagram
 - 保留の取り消し（API-AUTH-004）・再送（API-AUTH-003）・上限での破棄の動きは STATE-AUTH-001
 - Google のログインはこの2段を通らない（FLOW-AUTH-002）。会員の Google ログインに2段目を求めるかは決めていない（SEC-AUTH-008 の会員の部分）
 
-### ARC-AUTH-003 管理者とサポーターは TOTP を通って aal2 のトークンに替えてから管理画面に入る
+### ARC-AUTH-003 管理者とサポーターが管理画面に入る条件は、段1b からパスキー（以前は TOTP を通って aal2 のトークンに替えること。TOTP の流れは段4まで残る）
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-LOGIN-007、SEC-AUTH-008、SEC-AUTH-028、DRV-AUTH-009、ADR-0409 |
-| 根拠 | 管理画面は全会員の注文と個人情報を扱うので、パスワードとメールが盗まれても入られないよう、端末の認証アプリの確認を足す（FR-LOGIN-007）。管理の窓口は aal2 の JWT を求めるので、Google でログインした管理者も TOTP を通るまで入れない（SEC-AUTH-008 の管理の部分）。TOTP の窓口は自分のアカウントに要素を付けるかの判断だけに役割を使うので、DB の ACL を引かず JWT のクレームから読む（ADR-0409） |
+| 根拠 | 管理画面は全会員の注文と個人情報を扱うので、パスワードとメールが盗まれても入られないよう、端末の認証アプリの確認を足す（FR-LOGIN-007）。段1b より前は、管理の窓口が aal2 の JWT を求めたので、Google でログインした管理者も TOTP を通るまで入れなかった（SEC-AUTH-008 の管理の部分）。今の管理の窓口は `aal` を見ず、店員の入口の条件（`amr` のパスキー・24時間以内・認めた鍵2本。ADR-0463・0468）を求めるので、TOTP を通っても入れない。TOTP の窓口（API-AUTH-016〜018）は段4まで残る。TOTP の窓口は自分のアカウントに要素を付けるかの判断だけに役割を使うので、DB の ACL を引かず JWT のクレームから読む（ADR-0409） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/auth/verified/page.tsx`、`src/app/api/auth/mfa/*/route.ts`、`src/lib/auth/admin-rbac.ts`） |
@@ -137,7 +137,7 @@ sequenceDiagram
 - 流れ: ログインの後に `/auth/verified`（SCR-AUTH-007）が `/api/auth/me` を見て、admin・supporter で aal2 でなければ `/api/auth/mfa/status` で要素の有無を引く。無ければ自動で登録（API-AUTH-017）してQRと秘密を出し、あれば確認（API-AUTH-018）へ進む
 - 確認が通ると Supabase が aal2 のトークン対を返し、窓口が Cookie と `sessions` の表を差し替える（`persistNewSession`）。画面は `post-login`（API-AUTH-019）が返した行き先へ移る（戻り先が無ければ `/admin`）
 - 一般の会員は TOTP の窓口で 403。`/auth/verified` からは `post-login`（API-AUTH-019）が返した行き先へ送る（戻り先が無ければ `/`。管理者・サポーターは `/admin`）
-- 管理の窓口が aal2 を確かめるのは共有の `admin-rbac`。DB の側の RLS は、波 5 の移行 M2 を当てると aal2 と結び付いた生きた session を見る（DATA-AUTH-008。SEC-AUTH-010。M2 は 2026-10-29 に本番適用済み）
+- 管理の窓口が店員の入口の条件を確かめるのは共有の `admin-rbac`（`aal` は見ない。段1b より前は aal2 を確かめていた）。DB の側の RLS の `has_permission` は、波 5 の移行 M2 で aal2 と結び付いた生きた session を見るようにし（DATA-AUTH-008。SEC-AUTH-010。M2 は 2026-10-29 に本番適用済み）、段1a の移行 E で `aal2` の確かめを店員の入口の条件（パスキー・認めた鍵の本数）に置き換えた（本番未適用）
 - TOTP の確認は IP 単位に加えて利用者単位（5 回／600 秒）の回数の制限があり、成否を監査に残す（SEC-AUTH-009。API-AUTH-018。2026-10-26）。初めての登録は通行証の `amr` に 2 段目を通った方法がある時だけ受ける（SEC-AUTH-031。API-AUTH-017。メールの数字は `otp` で記録されることを 2026-10-29 に実測した）
 - 手元の Supabase の TOTP の登録と確認は、波 6 の切り替え（2026-11-01。手元だけ）で有効にした（`supabase/config.toml` の `[auth.mfa.totp]`）。切り替えまでは無効で、この流れは手元で動かせなかった
 
@@ -261,7 +261,7 @@ graph LR
 | 属性 | 値 |
 | --- | --- |
 | 上位 | DRV-AUTH-007、DRV-AUTH-008、FREQ-320-REQ-02、FREQ-316-REQ-04、FREQ-324-REQ-03（範囲外）、ADR-0406、ADR-0407、ADR-0408、ADR-0417、ADR-0419 |
-| 根拠 | 画面の出し分けと認可の答えがずれないよう、`me` は認可と同じ根拠（失効の確かめ・aal2）で答え、確かめられない時は未ログインにせず 503 にする（DRV-AUTH-007、FREQ-324（範囲外）、ADR-0408）。access token は短命なので refresh の Cookie で替え、門番は Supabase のトークンの交換にする（DRV-AUTH-008、ADR-0406）。更新を呼ぶのは共有の `client-fetch` が 401 を受けた時だけで、回数の制限に当たらないよう待ち時間を置く（FREQ-316-REQ-04）。ログアウトは盗まれた refresh token を残さないようサーバーのセッションを切り、常に 200 で Cookie を消す（ADR-0407）。access の Cookie の寿命は refresh と同じ7日にし、期限の前に Cookie だけ消えて未ログインに見えるのを防ぐ（FREQ-320-REQ-02） |
+| 根拠 | 画面の出し分けと認可の答えがずれないよう、`me` は認可と同じ根拠（失効の確かめ・店員の入口の条件。段1b より前は aal2）で答え、確かめられない時は未ログインにせず 503 にする（DRV-AUTH-007、FREQ-324（範囲外）、ADR-0408）。access token は短命なので refresh の Cookie で替え、門番は Supabase のトークンの交換にする（DRV-AUTH-008、ADR-0406）。更新を呼ぶのは共有の `client-fetch` が 401 を受けた時だけで、回数の制限に当たらないよう待ち時間を置く（FREQ-316-REQ-04）。ログアウトは盗まれた refresh token を残さないようサーバーのセッションを切り、常に 200 で Cookie を消す（ADR-0407）。access の Cookie の寿命は refresh と同じ7日にし、期限の前に Cookie だけ消えて未ログインに見えるのを防ぐ（FREQ-320-REQ-02） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/me/route.ts`、`refresh/route.ts`、`logout/route.ts`、`src/features/auth/services/session.ts`） |
@@ -454,7 +454,7 @@ graph TD
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-LOGIN-007、FREQ-73-REQ-01、DRV-AUTH-009、FREQ-515-REQ-01、FR-AUTH-005、SEC-AUTH-008、SEC-AUTH-028 |
-| 根拠 | 一般の会員を管理者用の確認に通さず、管理者とサポーターは TOTP の確認を必ず通す（FR-LOGIN-007、DRV-AUTH-009）。Google でログインした管理者もここを通るので aal2 になるまで管理画面に入れない（SEC-AUTH-008 の管理の部分）。振り分けは `/api/auth/me` の役割で行い、画面の判定は表示だけ（SEC-AUTH-028）。見た目はブランドの世界観に合わせる（FREQ-73-REQ-01）。認証要素が2つ以上ある時は、選択欄で選んだ要素で確かめる（FREQ-515-REQ-01） |
+| 根拠 | 一般の会員を管理者用の確認に通さず、管理者とサポーターは TOTP の確認を必ず通す（FR-LOGIN-007、DRV-AUTH-009）。Google でログインした管理者もここを通る。段1b より前は aal2 になるまで管理画面に入れなかったが、今の画面は `/api/auth/me` の `mfaVerified`（店員の入口の条件。パスキー・認めた鍵2本）で分けるので、TOTP を通っても入口の条件を満たさなければ管理画面に入れない（SEC-AUTH-008 の管理の部分。TOTP の画面と窓口は段4まで残る）。振り分けは `/api/auth/me` の役割で行い、画面の判定は表示だけ（SEC-AUTH-028）。見た目はブランドの世界観に合わせる（FREQ-73-REQ-01）。認証要素が2つ以上ある時は、選択欄で選んだ要素で確かめる（FREQ-515-REQ-01） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/auth/verified/page.tsx`） |
@@ -462,8 +462,8 @@ graph TD
 - 見せ方の移り変わりは STATE-AUTH-003
 - 見た目: Didot の見出し・糸のヘアライン・モノクロ・中央寄せ。未ログインには `/login` へのリンクを出す（FREQ-73-REQ-01）
 - 一般の会員: 「確認完了。移動します…」を出し、0.8 秒後に `POST /api/auth/post-login`（API-AUTH-019）が返した行き先（戻り先か `/`）へ置き換える。リンクは `/`（トップへ）を置く。通信の失敗は `/`
-- 管理者・サポーターで aal2 済み: `post-login` を呼び、返った行き先（戻り先か `/admin`）へ置き換える。通信の失敗は `/admin`
-- 管理者・サポーターで aal2 でない: 要素が無ければ自動で登録（API-AUTH-017）し、QR（data URI の画像）と秘密の文字を出す。要素が2つ以上なら選ぶ欄（共有の `SingleSelect`）を出す。6〜8桁のコードで確認（API-AUTH-018）し、通ったら `post-login` を呼んで返った行き先（戻り先か `/admin`）へ。`post-login` が `needsMfa` を返したら移らず、TOTP の入力を出す
+- 管理者・サポーターで店員の入口の条件を満たす（`mfaVerified` が真。以前は aal2 済み）: `post-login` を呼び、返った行き先（戻り先か `/admin`）へ置き換える。通信の失敗は `/admin`
+- 管理者・サポーターで店員の入口の条件を満たさない（`mfaVerified` が偽。以前は aal2 でない）: 要素が無ければ自動で登録（API-AUTH-017）し、QR（data URI の画像）と秘密の文字を出す。要素が2つ以上なら選ぶ欄（共有の `SingleSelect`）を出す。6〜8桁のコードで確認（API-AUTH-018）し、通ったら `post-login` を呼んで返った行き先（戻り先か `/admin`）へ。`post-login` が `needsMfa` を返したら移らず、TOTP の入力を出す
 - 確認の画面の読み上げは同じ `status` の中身だけを入れ替える（FREQ-377（範囲外））
 
 ### SCR-AUTH-008 廃止: /auth/callback は古い Google の戻りの画面だったが、画面ごと削除した
@@ -556,7 +556,7 @@ flowchart TD
   M -->|admin・supporter で aal1| C["/auth/verified"]
   M -->|ほか| D["戻り先、無ければ /"]
   M -->|post-login の失敗| C
-  C -->|aal2 済み・TOTP が通った後に post-login| E["戻り先、無ければ /admin"]
+  C -->|入口の条件を満たす・post-login が戻り先を返す| E["戻り先、無ければ /admin"]
   C -->|一般の会員は post-login| D
   A2["保留の間に /login を開く"] --> B
 ```
@@ -593,7 +593,7 @@ sequenceDiagram
 
 - `next` は入口で戻り先の確かめ（DD-AUTH-032）に通し、通った時だけ控える（API-AUTH-007）。戻りの URL（`/api/auth/oauth/callback`）に `next` も番号も載せない
 - 始めるのを `fetch` の POST にするのは、CSP の `form-action 'self'` がフォームの送信に続くリダイレクトの行き先にも当たり、フォームの POST から Supabase・Google への 303 が止められるため。同じ origin の `fetch` の応答の Set-Cookie は端末に入り、本文の `url` に番号は載らない
-- 戻りでセッションの保存に成功した後に、戻り先を `login` の用途で使い切る（API-AUTH-008）。管理者・サポーターは使い切らずに `/auth/verified` へ送り、TOTP の後に `post-login` が戻り先を使い切る。戻り先が無い・確かめに外れた時は一般は `/`
+- 戻りでセッションの保存に成功した後に、戻り先を `login` の用途で使い切る（API-AUTH-008）。管理者・サポーターは使い切らずに `/auth/verified` へ送る。`oauth/callback` は常に `staffEntryOk: false` を渡し、Google の店員の JWT には `amr` にパスキーが無いので、TOTP を通った後も `post-login` は戻り先を使い切らない（段1b より前は、TOTP の後に `post-login` が戻り先を使い切った。ADR-0468）。戻り先が無い・確かめに外れた時は一般は `/`
 - メールの確認コードの2段目を通らない。会員の Google ログインに2段目を求めるかは決めていない（SEC-AUTH-008 の会員の部分。FR-LOGIN-007 の「全員がパスワードとメール OTP」と食い違う）
 - ゲスト注文の紐付けを呼ばない（メールの経路は呼ぶ）
 - 失敗は画面へ戻さず、窓口の JSON（400・500・502）がそのまま出る
@@ -737,7 +737,7 @@ stateDiagram-v2
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-LOGIN-007、DRV-AUTH-009、FREQ-73-REQ-01 |
-| 根拠 | 役割と aal2 の済みで見せる物が変わるので、`/api/auth/me` の答えで1回だけ分け、TOTP の見せ方の中で要素の有無により登録と確認を出し分ける（FR-LOGIN-007、DRV-AUTH-009）。未ログインにはログインへの導線を出す（FREQ-73-REQ-01） |
+| 根拠 | 役割と店員の入口の条件の済み（`mfaVerified`。段1b より前は aal2 の済み）で見せる物が変わるので、`/api/auth/me` の答えで1回だけ分け、TOTP の見せ方の中で要素の有無により登録と確認を出し分ける（FR-LOGIN-007、DRV-AUTH-009）。未ログインにはログインへの導線を出す（FREQ-73-REQ-01） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/auth/verified/page.tsx`） |
@@ -747,8 +747,8 @@ stateDiagram-v2
   [*] --> loading
   loading --> unauthenticated: me が未ログイン・200 以外
   loading --> non_privileged: role が user
-  loading --> 管理画面へ: admin・supporter で aal2 済み
-  loading --> mfa_challenge: admin・supporter で aal2 でない
+  loading --> 管理画面へ: admin・supporter で入口の条件を満たす（mfaVerified が真）
+  loading --> mfa_challenge: admin・supporter で入口の条件を満たさない（mfaVerified が偽）
   loading --> mfa_challenge: me の通信の失敗（誤りの文）
   mfa_challenge --> mfa_challenge: 要素が無ければ自動で登録しQRを出す
   mfa_challenge --> 管理画面へ: mfa/verify が 200
@@ -1036,7 +1036,7 @@ stateDiagram-v2
 | --- | --- |
 | 入力 | 問い合わせの `code` と PKCE の Cookie、`sb-return-intent` の Cookie。`next` は読まない |
 | 順番 | IP の制限 → 形 → 環境変数 → code の交換 → 応答の形の確かめ → セッションの保存 → 戻り先の使い切り（用途は `login`。管理者・サポーターは使い切らない） |
-| 303 | 一般は戻り先か `/`、admin・supporter は `/auth/verified`（TOTP の後に `post-login` が戻り先を使い切る）。`no-store`・`no-referrer`。認証の Cookie とライブラリの Cookie。使い切った時は戻り先の Cookie を消す |
+| 303 | 一般は戻り先か `/`、admin・supporter は `/auth/verified`（戻り先は使い切らない。Google の店員は `amr` にパスキーが無く、TOTP の後も入口の条件を満たさないので `post-login` も使い切らない。段1b より前は TOTP の後に使い切った）。`no-store`・`no-referrer`。認証の Cookie とライブラリの Cookie。使い切った時は戻り先の Cookie を消す |
 | 失敗 | 400（code が無い）、429（制限）、500（環境変数・例外）、502（交換・形の失敗）。保存の失敗は監査に残して 303 を返し、その時は戻り先を使い切らない |
 | 監査 | `auth.oauth.callback` の failure・error・success |
 
@@ -1123,7 +1123,7 @@ stateDiagram-v2
 - 全部のセッションの失効は自前の `sessions` の `revoked_at` と DB の関数 `revoke_auth_sessions_for_user`。失敗は記録だけで監査に残さず成功で返す（SEC-AUTH-020 の失敗の監査は満たさない）
 - 印を勝ち取った後にパスワードの更新が失敗すると、印は戻らない（推定）
 
-### API-AUTH-013 GET /api/auth/me は認可と同じ根拠でログインの有無・役割・aal2 を返し、確かめられない時は 503 にする
+### API-AUTH-013 GET /api/auth/me は認可と同じ根拠でログインの有無・役割・店員の入口の条件の済み（`mfaVerified`。以前は aal2）を返し、確かめられない時は 503 にする
 
 | 属性 | 値 |
 | --- | --- |
@@ -1361,7 +1361,7 @@ stateDiagram-v2
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-AUTH-020、SEC-AUTH-045、ADR-0467 |
-| 根拠 | パスキーの登録の始め。店員は登録の窓か5分以内のパスキーでの入り直し、お客さんは10分以内のパスキーかメールのコードで入った時だけ通し、外れたら GoTrue を呼ばない。順番と値は DD-AUTH-056 |
+| 根拠 | パスキーの登録の始め。店員は登録の窓か5分以内のパスキーでの入り直し（入り直しは認めた鍵が1本以上ある店員だけ。0本の店員は窓だけ。設計 6-2）、お客さんは10分以内のパスキーかメールのコードで入った時だけ通し、外れたら GoTrue を呼ばない。順番と値は DD-AUTH-056 |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト（`tests/integration/api/auth/passkey-register-start.test.ts`）、単体テスト（`tests/unit/api/auth/passkey-register-start-route.test.ts`、`tests/unit/lib/auth/passkey-recent-auth.test.ts`）、E2E（`e2e/FR-LOGIN-051-passkey-registration.spec.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7） |
@@ -1634,7 +1634,7 @@ stateDiagram-v2
 - 書く・読む: 列を書くのはアプリのログインの確定（`persistSessionAndCookies`）と更新・昇格（`persistNewSession`）で、旗に関係なく常に書く（ADR-0419）。読むのは窓口（`checkAuthSessionLiveness` が旗の有効な間 `is_app_session_active` を呼ぶ。DD-AUTH-039）と M2 の DB の部品。この移行だけでは何も読まない
 - 戻す: 移行のヘッダーの ROLLBACK（M2 を先に戻してから）
 
-### DATA-AUTH-008 has_permission は aal2 と結び付いた生きた session を求め、会員の本人の行の表は RESTRICTIVE の方針で守る
+### DATA-AUTH-008 has_permission は店員の入口の条件（段1a の移行 E より前は aal2）と結び付いた生きた session を求め、会員の本人の行の表は RESTRICTIVE の方針で守る
 
 | 属性 | 値 |
 | --- | --- |

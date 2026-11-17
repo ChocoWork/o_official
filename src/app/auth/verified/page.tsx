@@ -4,7 +4,7 @@
  * @packageDocumentation
  * @impl IMPL-AUTH-121
  * @design DD-AUTH-005
- * @remarks 一般の会員を管理者用の確認に通さず、管理者とサポーターは aal2 になるまで管理画面へ送らない
+ * @remarks 一般の会員を管理者用の確認に通さず、管理者とサポーターは店員の入口の条件（`mfaVerified`。以前は aal2）を満たすまで管理画面へ送らない
  * （SEC-AUTH-008）。振り分けは認証の窓口が返す役割で決め、画面側の判定は表示だけ（SEC-AUTH-028）。
  * 確認が通ったら全体のログインの状態を同期し直してから移る。省くと管理画面が古い確認済みの印を読み、
  * 「2要素認証が必要です」を誤って出す。移る先はサーバーが戻り先を使い切って決める（URL の値は読まない）。
@@ -138,7 +138,7 @@ export default function VerifiedPage() {
   }, []);
 
   // ログインの後の行き先はサーバーが戻り先を使い切って決める。引けない時は fallback（特権 /admin、一般 /）へ移る。
-  // 特権が aal1 のままの時（me と post-login の食い違い）は移らず、呼び出し側が 2 段目を出す。
+  // 特権が店員の入口の条件を満たさないままの時（me と post-login の食い違い。以前は aal1 のまま）は移らず、呼び出し側が 2 段目を出す。
   const goAfterLogin = React.useCallback(async (fallback: string): Promise<'moved' | 'needs-mfa'> => {
     let target = fallback;
     try {

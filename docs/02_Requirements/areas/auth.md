@@ -129,7 +129,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 パスワードを忘れた会員が、ログインの画面から再設定のページへ移り、メールで受け取ったリンクから新しいパスワードを決められること。
 
-### SR-AUTH-003 管理者とサポーターは認証アプリの確認も通ってから管理画面に入る
+### SR-AUTH-003 管理者とサポーターは認証アプリの確認も通ってから管理画面に入る（段1b より前の要求。今の入口の条件は SR-AUTH-014 に置き換わった）
 
 | 属性 | 値 |
 | --- | --- |
@@ -137,7 +137,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 状態 | 推定 |
 | 出どころ | `docs/02_Requirements/stakeholder-requirements.md` の FREQ-20〜23 と「2. 目標」、`docs/02_Requirements/requirements.md`（FR-LOGIN-007） |
 
-サイト管理者（Admin）と発送管理者（Supporter）が、パスワードとメールの確認コードに加えて認証アプリ（TOTP）の確認を通ってから管理画面に入ること。
+サイト管理者（Admin）と発送管理者（Supporter）が、パスワードとメールの確認コードに加えて認証アプリ（TOTP）の確認を通ってから管理画面に入ること（段1b より前の要求。今の管理の入口は、パスキーで入った・24時間以内・認めた鍵2本の条件に置き換わった。SR-AUTH-014。TOTP の窓口と画面は段4まで残る）。
 
 ### SR-AUTH-004 ドロワーにサイトの題を出さない
 
@@ -1171,7 +1171,7 @@ Header のカートアイコンのバッジを `<StatusBadge variant="count" cou
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-316 の行） |
 
-MFA の判定を app_metadata のフラグではなく JWT の aal クレーム（aal2）で行い、mfa.verify が返す昇格済みセッションを Cookie に書き戻すこと
+MFA の判定を app_metadata のフラグではなく JWT の aal クレーム（aal2）で行い、mfa.verify が返す昇格済みセッションを Cookie に書き戻すこと（段1b より前の判定。今の管理の窓口は `aal` を見ず、店員の入口の条件（パスキー・24時間・認めた鍵2本。SR-AUTH-014）で判定する。TOTP の確認と Cookie への書き戻しは段4まで残る）
 
 ### FREQ-316-REQ-03 ログアウトと管理者の強制の失効で Supabase のセッションも切り、管理の窓口は毎回セッションの生存を確かめる
 
@@ -2356,7 +2356,7 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7） |
 | 優先度 | MUST |
 
-規則: (1) 順番は、IP ごとに10分20回（`auth:passkey:register:start`・`finish`）→ 認証 → CSRF → 本人ごとに10分10回 → 店員かの確かめ（DB が使えなければ 503）→ 店員なら結び付いた生きたセッション（旗に関わらず）→ 窓・認めた鍵の本数（読めなければ 503）→ 登録の条件の判定。外れたら 403 `registration_not_allowed`（理由は `window_closed` か `reauth_required`）で、GoTrue を呼ばない。(2) 店員は、5分以内のパスキーでの入り直し（`reauth`）、または窓が開いていて認めた鍵が2本未満（`window`）で通る。(3) お客さんは、10分以内のパスキーかメールのコード（`otp`）で通る（`customer`。Google の `oauth` は含めない）。(4) 始めの選択肢は `authenticatorSelection.userVerification` を `required` にして返す。(5) 終わりは `id` と `rawId` が違えば 400、登録の `attestationObject` の UV の印が無ければ 400 `uv_required`（どちらも GoTrue の検証を呼ばない）。(6) 店員は GoTrue の検証の後に `passkey_approve` で認める（`window` の道は `window`、入り直しは `reauth`）。落ちたら今作られた鍵を管理 API で消して 500 `passkey_approve_failed`。消すのも落ちたら監査に `passkey_approve_failed:compensation_failed`。(7) 200 の本文は `{ passkey: { id, friendly_name, created_at }, approvedCount? }`（`approvedCount` は店員だけ）。窓は閉じず、セッションも終わらせない（段3）。
+規則: (1) 順番は、IP ごとに10分20回（`auth:passkey:register:start`・`finish`）→ 認証 → CSRF → 本人ごとに10分10回 → 店員かの確かめ（DB が使えなければ 503）→ 店員なら結び付いた生きたセッション（旗に関わらず）→ 窓・認めた鍵の本数（読めなければ 503）→ 登録の条件の判定。外れたら 403 `registration_not_allowed`（理由は `window_closed` か `reauth_required`）で、GoTrue を呼ばない。(2) 店員は、5分以内のパスキーでの入り直し（`reauth`。ただし認めた鍵が1本以上ある店員だけ。0本の店員は窓だけ。設計 6-2）、または窓が開いていて認めた鍵が2本未満（`window`）で通る。(3) お客さんは、10分以内のパスキーかメールのコード（`otp`）で通る（`customer`。Google の `oauth` は含めない）。(4) 始めの選択肢は `authenticatorSelection.userVerification` を `required` にして返す。(5) 終わりは `id` と `rawId` が違えば 400、登録の `attestationObject` の UV の印が無ければ 400 `uv_required`（どちらも GoTrue の検証を呼ばない）。(6) 店員は GoTrue の検証の後に `passkey_approve` で認める（`window` の道は `window`、入り直しは `reauth`）。落ちたら今作られた鍵を管理 API で消して 500 `passkey_approve_failed`。消すのも落ちたら監査に `passkey_approve_failed:compensation_failed`。(7) 200 の本文は `{ passkey: { id, friendly_name, created_at }, approvedCount? }`（`approvedCount` は店員だけ）。窓は閉じず、セッションも終わらせない（段3）。
 
 ### FR-AUTH-021 パスキーの一覧・名前の変更・削除の窓口 `GET /api/auth/passkey`・`PATCH`・`DELETE /api/auth/passkey/{id}` を足す
 
@@ -5575,12 +5575,12 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 
 ブラウザ A で利用者 X の登録を送った後、同じブラウザ A で別の利用者 Y（別のメール）の `type=signup` の印を開くと、303 で `/login`（`registered=1`）へ送られ、session の Cookie が書かれず、Y のメールは確認済みになり、X の登録の控えの Cookie（`sb-return-intent`）は消えずに残ること。
 
-### SEC-AUTH-008 Google でのログインは、管理者・サポーターに TOTP を求め、会員の2段目の扱いを明示する
+### SEC-AUTH-008 Google でのログインは、管理者・サポーターに店員の入口の条件（以前は TOTP）を求め、会員の2段目の扱いを明示する
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-008 |
-| 根拠 | Google の経路はメール OTP を通らない。管理は aal2 で守り、会員は Google 側の認証を2段目の代わりにするかを要件として決めて残す。FR-LOGIN-007 の「全員がパスワードとメール OTP」と食い違う（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」に載せる） |
+| 根拠 | Google の経路はメール OTP を通らない。管理は店員の入口の条件（段1b より前は aal2）で守り、会員は Google 側の認証を2段目の代わりにするかを要件として決めて残す。FR-LOGIN-007 の「全員がパスワードとメール OTP」と食い違う（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」に載せる） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト・E2E |
 | 出どころ | `docs/superpowers/specs/2026-09-04-login-otp-dedicated-screen-design.md` |
@@ -5639,18 +5639,18 @@ Google の戻りの直後（aal1）に管理の窓口を叩くと 403 になり�
 
 誤ったコードを送った後に、`audit_logs` に利用者の ID と失敗の行が1つ増えること。
 
-### SEC-AUTH-010 管理の権限で触る表は、DB の側でも aal2 の JWT だけを受ける
+### SEC-AUTH-010 管理の権限で触る表は、DB の側でも店員の入口の条件を満たす JWT だけを受ける（段1a の移行 E より前は aal2 の JWT）
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-010 |
-| 根拠 | TOTP の守りがアプリの窓口だけにあると、管理者のパスワードの漏れだけで PostgREST から管理の表に届く。aal2 を出す窓口は AUTH の `/api/auth/mfa/verify`。FREQ-540（範囲外）の「DB の ACL・session・aal2 で管理操作を守る」を DB に当てはめた。NEWS の SEC-NEWS-002 と同じ根 |
+| 根拠 | TOTP の守りがアプリの窓口だけにあると、管理者のパスワードの漏れだけで PostgREST から管理の表に届く。段1b より前は、aal2 を出す窓口が AUTH の `/api/auth/mfa/verify` だった（今の条件は店員の入口の条件で、`aal` は見ない）。FREQ-540（範囲外）の「DB の ACL・session・aal2 で管理操作を守る」を DB に当てはめた。NEWS の SEC-NEWS-002 と同じ根 |
 | 状態 | 推定 |
 | 確かめ方 | E2E・結合テスト |
 | 出どころ | OWASP ASVS 4.0.3 V4.3.1。実装から推定（2026-10-24 の DB の移行の読み直し） |
 | 優先度 | MUST |
 
-`has_permission` を使う RLS の方針（または `has_permission` 自体）は、JWT の `aal` が `aal2` でなければ権限なしとして扱う。波 5 で、さらに「アプリの session に結び付いた生きた session」も求める形に決めた（AC-03、ADR-0418）。本体は `has_permission` の 1 本で、これを使う約 100 の方針は書き換えずに従う。移行 M2 `sec_has_permission_aal2_member_rls`（2026-10-29 に書いた。controller が当てるまで未適用）を当てた DB で満たす（AC-01・AC-03 の E2E の `test.fail` は 2026-10-29 に外した）。
+`has_permission` を使う RLS の方針（または `has_permission` 自体）は、店員の入口の条件（`amr` のパスキー・24時間以内・DB で数えた認めた鍵2本）を満たさなければ権限なしとして扱う。`aal` は見ない（段1a の移行 E で、元の「JWT の `aal` が `aal2` でなければ権限なし」から置き換えた。本番未適用）。波 5 で、さらに「アプリの session に結び付いた生きた session」も求める形に決めた（AC-03、ADR-0418）。本体は `has_permission` の 1 本で、これを使う約 100 の方針は書き換えずに従う。移行 M2 `sec_has_permission_aal2_member_rls`（2026-10-29 に書いた。controller が当てるまで未適用）を当てた DB で満たす（AC-01・AC-03 の E2E の `test.fail` は 2026-10-29 に外した）。
 
 #### SEC-AUTH-010-AC-01 aal1 の管理者の JWT で、他人の注文が読めない
 
@@ -5664,7 +5664,7 @@ Google の戻りの直後（aal1）に管理の窓口を叩くと 403 になり�
 
 aal1 の JWT の select の結果に、その管理者以外の注文の行が含まれないこと。
 
-#### SEC-AUTH-010-AC-02 aal2 の管理者の JWT では今どおり読める
+#### SEC-AUTH-010-AC-02 入口の条件を満たす管理者の JWT では今どおり読める（段1a の移行 E より前は aal2 の JWT）
 
 | 属性 | 値 |
 | --- | --- |
@@ -5674,19 +5674,19 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
-同じ管理者の aal2 の JWT の select の結果に、他人の注文の行が含まれること。
+同じ管理者が入口の条件を満たす JWT（認めた鍵2本。以前は aal2 の JWT）で select した結果に、他人の注文の行が含まれること。
 
-#### SEC-AUTH-010-AC-03 has_permission は aal2 で、結び付いた生きた session の時だけ真になる
+#### SEC-AUTH-010-AC-03 has_permission は店員の入口の条件（認めた鍵2本）を満たし、結び付いた生きた session の時だけ真になる
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-AUTH-010 |
-| 根拠 | `aal2` の検査だけでは、アプリを通らずに作った任意の session（パスワードだけ・メール OTP だけ・anon キーで作った物）の通行証に `aal` を持たせる道が残り、本物の管理者でなくても session が生きている限り通る。DB でも「アプリが作った生きた session」を求めれば、API の窓口（ADR-0417）と同じ基準になる。公開の読みの方針（`status = 'published' OR has_permission(...)`）は RESTRICTIVE にせず、`has_permission` が偽になるだけにして、一般の会員が公開の行を読むのを止めない（ADR-0418） |
+| 根拠 | （波 5 の記録。今の条件は店員の入口の条件）`aal2` の検査だけでは、アプリを通らずに作った任意の session（パスワードだけ・メール OTP だけ・anon キーで作った物）の通行証に `aal` を持たせる道が残り、本物の管理者でなくても session が生きている限り通る。DB でも「アプリが作った生きた session」を求めれば、API の窓口（ADR-0417）と同じ基準になる。公開の読みの方針（`status = 'published' OR has_permission(...)`）は RESTRICTIVE にせず、`has_permission` が偽になるだけにして、一般の会員が公開の行を読むのを止めない（ADR-0418） |
 | 状態 | 推定 |
-| 確かめ方 | DB 結合テスト（`tests/integration/db/auth_has_permission_passkey.integration.test.ts`。手元の使い捨て DB で M2 を当てた後に controller が流す）、移行の文面の単体テスト（`tests/unit/migrations/sec-has-permission-aal2.test.ts`）。E2E は `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`（アプリのログインと同じ形で結び付けた admin の aal1 の JWT では他人の注文が読めず、同じ session を aal2 に上げた JWT では読める。止めているのが aal だけであることを示す）。ほかの領域の DB の直接の道の E2E（`FR-ADMIN-MISC-005`・`FR-HOME-024`・`FR-LOOK-SEC-002`・`FR-NEWS-SEC-002`・`FR-STOCKIST-016`）も、M2 を当てた DB で `test.fail` 無しで通る |
+| 確かめ方 | DB 結合テスト（`tests/integration/db/auth_has_permission_passkey.integration.test.ts`。手元の使い捨て DB で M2 を当てた後に controller が流す）、移行の文面の単体テスト（`tests/unit/migrations/sec-has-permission-aal2.test.ts`）。E2E は `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`（アプリのログインと同じ形で結び付けた admin の aal1 の JWT では他人の注文が読めず、同じ session で2本目の鍵を認めた JWT（試験の名前に残る「aal2」は認めた本数の違いを指す。JWT の `aal` はどちらも aal1）では読める。止めているのが認めた本数だけであることを示す）。ほかの領域の DB の直接の道の E2E（`FR-ADMIN-MISC-005`・`FR-HOME-024`・`FR-LOOK-SEC-002`・`FR-NEWS-SEC-002`・`FR-STOCKIST-016`）も、M2 を当てた DB で `test.fail` 無しで通る |
 | 出どころ | `docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md`（Task 6、P14・P15）、`.superpowers/sdd/2026-10-25-security-gap-fixes/wave5-decisions.md`（Q2 案 B） |
 
-`public.has_permission(permission_code)` は（段1a の移行 E で `aal2` の確かめは店員のパスキーの条件に置き換わった。以下は置き換え前の記録）、`auth.uid()` があり、JWT の `aal` が `aal2` で、その利用者に ACL の権限があり、さらに JWT の `session_id` が「`auth.sessions` に生きている行があり、自前の `sessions` に同じ `auth_session_id` と利用者の失効していない行がある」時だけ真を返す。`aal1`・`aal` が無い・`session_id` が無い・uuid の形でない・結び付いていない・失効した・`auth.sessions` に行が無い、のどれでも偽を返し、例外は出さない。ACL の無い利用者は常に偽。あわせて、会員の本人の行を返す表（`profiles`・`orders`・`order_items`）は、`authenticated` が結び付いた生きた session を持たなければ 0 行になる（書き込みも 0 行）。anon がゲストの注文を `app.session_id` で読む道は変えない。
+`public.has_permission(permission_code)` は、`auth.uid()` があり、JWT の `amr` にパスキーの印があって24時間以内（60秒までの先の時刻のずれは通す）で、その利用者に ACL の権限があり、DB で数えた認めた鍵が2本以上で、さらに JWT の `session_id` が「`auth.sessions` に生きている行があり、自前の `sessions` に同じ `auth_session_id` と利用者の失効していない行がある」時だけ真を返す。`aal` は見ない（`aal2` でも `amr` にパスキーが無ければ偽）。`amr` にパスキーが無い・認めた鍵が2本未満・`session_id` が無い・uuid の形でない・結び付いていない・失効した・`auth.sessions` に行が無い、のどれでも偽を返し、例外は出さない。ACL の無い利用者は常に偽。段1a の移行 E より前（M2 の本体）は、条件が「JWT の `aal` が `aal2`」だった。あわせて、会員の本人の行を返す表（`profiles`・`orders`・`order_items`）は、`authenticated` が結び付いた生きた session を持たなければ 0 行になる（書き込みも 0 行）。anon がゲストの注文を `app.session_id` で読む道は変えない。
 
 ### SEC-AUTH-011 認証の表は anon・authenticated に表の権限を付けない
 
@@ -6296,7 +6296,7 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | 出どころ | OWASP ASVS 4.0.3 V4.1.1 |
 | 優先度 | MUST |
 
-画面の出し分けは `/api/auth/me` の役割で行い、役割は JWT の `app_metadata` からだけ読む。管理の窓口は画面の判定に頼らず、DB の ACL と aal2 で判定する。今のコードは満たす（`src/app/api/auth/me/route.ts`、`src/lib/auth/admin-rbac.ts`）。
+画面の出し分けは `/api/auth/me` の役割で行い、役割は JWT の `app_metadata` からだけ読む。管理の窓口は画面の判定に頼らず、DB の ACL と店員の入口の条件（パスキー・24時間・認めた鍵2本。`aal` は見ない）で判定する。段1b より前は aal2 で判定した。今のコードは満たす（`src/app/api/auth/me/route.ts`、`src/lib/auth/admin-rbac.ts`）。
 
 #### SEC-AUTH-028-AC-01 一般の会員のヘッダーに MANAGE・LOADING が出ない
 
@@ -6748,7 +6748,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7）（Review Focus 3） |
 | 優先度 | MUST |
 
-守ること: (1) 登録の条件（窓・認めた鍵の本数・入り直しの時刻）は始めと終わりの両方で、呼ばれるたびにやり直し、外れたら GoTrue の検証を呼ばない。(2) 窓の免除は認めた鍵が `min_approved_passkeys`（2）未満の間だけ。整数でない本数は窓を認めない。2本以上の店員は5分以内のパスキーでの入り直し（`reauth`）が要る。(3) 店員は、旗 `AUTH_REQUIRE_APP_SESSION` に関わらず、`checkAuthSessionLiveness(session_id, true)` が生きている（アプリに結び付いた）セッションだけを通す（`admin-rbac` と同じ）。確かめが使えなければ 503（閉じる側）。(4) 店員の鍵は GoTrue の検証の後に `passkey_approve` で認める。落ちた時（古い行・窓の上限の競り負けを含む）は、管理 API で今作られた鍵を消して 500。消すのも落ちたら監査に `passkey_approve_failed:compensation_failed` を残し、鍵は認めの表に無いので数に入らない（引き金が店員と店長に知らせる）。(5) 監査には固定の符号と行為者の ID だけを残し、トークン・鍵・認証器の応答・`challenge_id`・メールを残さない。
+守ること: (1) 登録の条件（窓・認めた鍵の本数・入り直しの時刻）は始めと終わりの両方で、呼ばれるたびにやり直し、外れたら GoTrue の検証を呼ばない。(2) 窓の免除は認めた鍵が `min_approved_passkeys`（2）未満の間だけ。整数でない本数は窓を認めない。2本以上の店員は5分以内のパスキーでの入り直し（`reauth`）が要る。入り直しで鍵を足せるのは、認めた鍵が1本以上ある店員だけ（0本の店員は窓だけ。認めていない鍵でパスキーの印を得た店員が窓なしで鍵を足す道を閉じる。設計 6-2）。(3) 店員は、旗 `AUTH_REQUIRE_APP_SESSION` に関わらず、`checkAuthSessionLiveness(session_id, true)` が生きている（アプリに結び付いた）セッションだけを通す（`admin-rbac` と同じ）。確かめが使えなければ 503（閉じる側）。(4) 店員の鍵は GoTrue の検証の後に `passkey_approve` で認める。落ちた時（古い行・窓の上限の競り負けを含む）は、管理 API で今作られた鍵を消して 500。消すのも落ちたら監査に `passkey_approve_failed:compensation_failed` を残し、鍵は認めの表に無いので数に入らない（引き金が店員と店長に知らせる）。(5) 監査には固定の符号と行為者の ID だけを残し、トークン・鍵・認証器の応答・`challenge_id`・メールを残さない。
 
 同時の2つの終わりの競りは、移行 F の `passkey_approve('window')` が利用者ごとの錠の中で数え直して塞ぐ（SEC-AUTH-041）。残る危険として受け入れること: 窓口の再確認と認めの間は別の取引なので、競り負けた方は GoTrue に鍵ができた後に `55000` で落ち、補償の削除で消える（鍵が一瞬だけ在る）。`reauth` の道は上限を掛けない（入り直した本人が足す物で、設計 5-5 のとおり）。
 
@@ -6850,11 +6850,11 @@ NEWS（ニュースの分類）・ITEM（ALL・TOPS・BOTTOMS・OUTERWEAR・ACCE
 
 | 属性 | 値 |
 | --- | --- |
-| 根拠 | 画面（ヘッダー・`/auth/verified`・`/login/verify`）がログインの有無・役割・TOTP の済みを知って、表示と行き先を決めるため。認可と同じ根拠（失効の確かめ・aal2）で答えないと、画面は管理の入口を出すのに API は断る食い違いが起きる（`src/app/api/auth/me/route.ts` のコメント） |
+| 根拠 | 画面（ヘッダー・`/auth/verified`・`/login/verify`）がログインの有無・役割・TOTP の済みを知って、表示と行き先を決めるため。認可と同じ根拠（失効の確かめ・店員の入口の条件。段1b より前は aal2）で答えないと、画面は管理の入口を出すのに API は断る食い違いが起きる（`src/app/api/auth/me/route.ts` のコメント） |
 | 状態 | 推定 |
 | 出どころ | 実装から推定（`src/app/api/auth/me/route.ts`） |
 
-認証を確かめ、ログインしていれば id・役割・aal2 かどうかを、していなければ未認証を返す。メールの住所は返さない（2026-10-26。SEC-HOME-016・SEC-PRIVACY-016）。失効を確かめられない時は 503（FREQ-324、範囲外）。応答は保存させない（no-store）。
+認証を確かめ、ログインしていれば id・役割・店員の入口の条件を満たすか（`mfaVerified`。段1b より前は aal2 かどうか）を、していなければ未認証を返す。メールの住所は返さない（2026-10-26。SEC-HOME-016・SEC-PRIVACY-016）。失効を確かめられない時は 503（FREQ-324、範囲外）。応答は保存させない（no-store）。
 
 ### DRV-AUTH-008 refresh の Cookie でログインのトークンを更新し、使えない Cookie は消す
 
@@ -6874,7 +6874,7 @@ refresh の Cookie が無い時と、自前の表の行に明示の失効の印�
 | 状態 | 推定 |
 | 出どころ | 実装から推定（`src/app/login/verify/VerifyOtpClient.tsx`、`src/app/api/auth/oauth/callback/route.ts`、`src/app/auth/verified/page.tsx`） |
 
-メールの経路は OTP の後に `/api/auth/me` を見て、未認証なら `/login`、admin・supporter なら `/auth/verified`、ほかは `/account` へ移る（me の通信が失敗した時も `/account`）。Google の経路は戻りの先が既定のままなら、一般は `/account`、admin・supporter は既定の先へ移る。`/auth/verified` は一般の会員を `/account` へ、aal2 の済んだ管理者を管理画面へ送る。
+メールの経路は OTP の後に `/api/auth/me` を見て、未認証なら `/login`、admin・supporter なら `/auth/verified`、ほかは `/account` へ移る（me の通信が失敗した時も `/account`）。Google の経路は戻りの先が既定のままなら、一般は `/account`、admin・supporter は既定の先へ移る。`/auth/verified` は一般の会員を `/account` へ、店員の入口の条件（`mfaVerified`。段1b より前は aal2）を満たす管理者を管理画面へ送る。
 
 ## 未確認事項
 

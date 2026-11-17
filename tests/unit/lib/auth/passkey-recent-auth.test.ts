@@ -36,7 +36,7 @@ describe('DD-AUTH-056 evaluateRegistrationAccess（店員）', () => {
   });
 
   test('DD-AUTH-056 301秒前は reauth にならず、窓が閉じていれば reauth_required', () => {
-    expect(staff({ claims: passkeyAt(NOW - 301) })).toEqual({ ok: false, reason: 'reauth_required' });
+    expect(staff({ claims: passkeyAt(NOW - 301), approvedCount: 1 })).toEqual({ ok: false, reason: 'reauth_required' });
   });
 
   test('DD-AUTH-056 古い入り直しでも、窓が開いていて2本未満なら window', () => {
