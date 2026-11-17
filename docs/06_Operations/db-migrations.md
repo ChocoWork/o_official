@@ -1,5 +1,6 @@
 # DB マイグレーション運用
 
+> 2026-11-17 確認日（パスキー段1b Task 12）: 段1b の全体の確かめの結果を移行 F の節に書いた。本番には何も当てていない（移行 F は本番未適用のまま）。
 > 2026-11-17 確認日（パスキー段1b Task 1）: 新しい移行 `20261117123620_passkey_server_endpoint_fns.sql`（窓口が使う DB の関数3本と `passkey_approve` の作り直し。手元の DB のみ・本番未適用）を足した。下の「パスキー段1b 移行 F」の節に書き、「段3まで `db push` しない」の一覧に足した。
 > 2026-11-17 確認日（パスキー段1b Task 11: 運用の文書）: 当てる順に移行 F を足し、戻し方の最初に F を置いた。
 > 2026-11-17 確認日（パスキー段1a Task 11: 全体の確かめ）: 段1a の Task 1〜11 は済み。master に43コミット積んだまま（o_official/master より先）で push 前、本番には何も当てていない。`db reset` の後: lint エラー0（警告118）・typecheck OK・単体試験22944件通過。DB 結合（`--runInBand`、手元の DB）は7242件通過・4件失敗。1件は ARC-ADMIN-006（最初の店長のコマンドの試験。パスワードのログインを期待していたので cf0551ae・a2a96cb3 で直し、3/3通過）。残り3件（unit-binding-refunds 1・group_g3_cancel 2）は既存の試験の順番による汚れで、`tests/integration/db/order_state_transition_hardening.integration.test.ts` が `supabase/pending/harden_order_state_transitions.sql`（`private.enforce_order_payment_invariants`）を入れたまま残すため。`db reset` の後は単独で通る。1a の外で別に直す。E2E（本番ビルド・3つの幅の全件）は5354件通過・36件失敗・53件スキップ（1a の前は5332／34／26）。`db reset` の後の `--last-failed` は181件通過・0件失敗で、失敗は全件実行のデータの汚れ。validate-trace は違反98件・新しい違反0、test:trace-coverage は OK、validate-docs は OK。本番への道は止めたまま: `db-migrations.yml` に push の引き金は無く、その試験は3/3通過。パスキーの移行5本は段3の前に `db push` で当てない。push と本番への適用はオーナーの許可が要る。結果の詳細は[作業と指摘の台帳](../05_Quality/reviews/code/2026-09-25-working-diff-security-review.md)。
@@ -181,6 +182,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 - **段3まで `supabase db push`（どの形でも）を流さない**: 上の移行 E の節の決まりに、この F も含める。当てるのは調整役だけ（オーナーの許可で）
 - 古い行の運用: 窓口が `passkey_approve` の `23505`（`stale approval`）で失敗したら、正しい鍵なら SQL で `private.approved_passkeys` の古い行を消して認め直す（SEC-AUTH-041）
 - 手元で確かめた結果（2026-11-17、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_server_fns.integration.test.ts` 22件通過、`tests/integration/db/auth_*` 16ファイルの DB 結合が通過（直し1の後）。単体 `passkey-approval-rpc.test.ts` 35件通過。E2E `FR-LOGIN-047`（3幅）通過
+- 段1b 全体の確かめ（2026-11-17 Task 12、`npx.cmd supabase db reset` の後）: 手元の DB の結合試験（`--runInBand`）は7265件通過・3件失敗。失敗は既知の順番の汚れ（unit-binding-refunds・group_g3_cancel）だけで、reset の後に単独で流すと78件通過。`auth_passkey_*` と `has_permission` を使う DB 結合は全部通過。E2E の全件（本番ビルド・3つの幅）は5467件通過・37件失敗・47件スキップ。新しい赤2件は単独で通過。**移行 F は本番未適用のまま**（段3まで `db push` を流さない一覧にある。`db-migrations.yml` に push の引き金は無い）
 
 ## パスキー段1a の本番への当て方の順と前提（段1b の移行 F を含む）
 
