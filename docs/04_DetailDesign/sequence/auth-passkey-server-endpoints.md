@@ -10,8 +10,8 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-016、FR-AUTH-015、DATA-AUTH-018、SEC-AUTH-041、THR-AUTH-042、SEC-AUTH-042、THR-AUTH-043、ADR-0467 |
-| 対象のコード | 移行 `supabase/migrations/20261117123620_passkey_server_endpoint_fns.sql`、`src/lib/auth/passkey-approval-rpc.ts` |
+| 対応する ID | SR-AUTH-016、SR-AUTH-017、FR-AUTH-015、FR-AUTH-016、DD-AUTH-052、DATA-AUTH-018、SEC-AUTH-041、THR-AUTH-042、SEC-AUTH-042、THR-AUTH-043、ADR-0467 |
+| 対象のコード | 移行 `supabase/migrations/20261117123620_passkey_server_endpoint_fns.sql`、`src/lib/auth/passkey-approval-rpc.ts`、`src/app/api/auth/passkey/login/start/route.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-5）、[段1b の計画](../../superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md)、[店員のパスキーの入口](auth-staff-passkey-entry.md) |
 | 調べた時点 | 2026-11-17（手元の DB で結合試験を流した） |
 
@@ -93,6 +93,44 @@ sequenceDiagram
 - 入力の形（zod）: `id`・`rawId` は `^[A-Za-z0-9_-]+$` で完全に同じ値だけ（違えば `invalid_request`。SEC-AUTH-044）。ログインの終わり・登録の終わりは `response` の中身が別の形。名前は前後の空白を除いて1〜64字・制御文字なし
 - 環境の見張り: `assertBuildEnv` が、`PASSKEY_START_DEV_IP` が空でなく、手元の Supabase の住所でない・未設定、または `VERCEL`・`VERCEL_ENV` が設定されていれば投げる（文は変数名だけ）。`next.config.ts` が `next build` と `next start` の両方で呼ぶので、本番では起動が止まる
 - テスト観点: 設定の読み分け・鍵の形・開発用の IP の全条件・UV の有無と短さと壊れた入力・CBOR の切れ・余り・深さ・偽りの長さ・GoTrue に送ったヘッダー一覧と路と本文・打ち切り・誤りの文に鍵が入らない・`id` と `rawId` の食い違い・見張りが投げる／通る組
+
+### DD-AUTH-052 ログインの始め (a)（`POST /api/auth/passkey/login/start`）の順番
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-042 |
+| 根拠 | 始めは GoTrue の回数の制限をお客さんごとに掛けるため、お客さんの IP を添えて GoTrue を呼ぶ。IP が取れない・鍵が `sb_secret_` でない・設定が (b) の要求は、添え書き無しで・古い鍵で GoTrue を呼ばず、順番に断る（ADR-0467） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/passkey-login-start-route.test.ts`）、E2E（`e2e/FR-LOGIN-048-passkey-login-start.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-3-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 3） |
+
+```mermaid
+sequenceDiagram
+    participant B as ブラウザ
+    participant R as /api/auth/passkey/login/start
+    participant L as enforceRateLimit
+    participant T as GoTrue
+    B->>R: POST（本文なし）
+    R-->>B: 設定が browser なら 409
+    R->>R: IP = getClientIp、無ければ手元の開発用の IP
+    R-->>B: IP が無ければ 503（GoTrue も回数の枠も使わない）
+    R->>L: auth:passkey:login:start・20回・300秒
+    L-->>B: 超えたら 429
+    R->>R: resolveStartSecretKey()
+    R-->>B: 鍵が無い・形が違えば 503 passkey_start_unavailable
+    R->>T: POST /passkeys/authentication/options（apikey と Sb-Forwarded-For）
+    T-->>R: 選択肢、または誤り
+    R-->>B: 200（userVerification を required に書き換え）、429、502
+```
+
+- 追跡の単位: `route.ts` の `POST` は IMPL-AUTH-271
+- 回数の枠の IP: 共有の `enforceRateLimit` は IP を引数で受けず、中で `getClientIp` を呼ぶ（共有の関数は変えない）。本番と E2E では枠の IP と `Sb-Forwarded-For` の IP は同じ値。手元の開発用の IP の時だけ枠の IP が `null`（手元の共有の枠）になる。手元だけなので共有の枠でよい
+- 回数の値: IP ごとに5分20回。GoTrue の制限が IP ごとに5分30回なので、その手前で止める。IP が取れない時は枠に入れず 503（`null` は「送り元が分からない全員が1つの枠」になり、1人で全員の始めを止められるため）
+- GoTrue の応答: `challenge_id`（空でない文字列）・`options`（`challenge` が空でない文字列のオブジェクト）・`expires_at`（数）を確かめ、違えば 502 で閉じてから `userVerification` を `required` に書き換える。本文は GoTrue の項目名のまま `{ challenge_id, options, expires_at }`
+- GoTrue の 429: 本文 `{ error: 'Too many requests' }`・429・`Retry-After` は 300。部品 `passkey-gotrue.ts` は応答の見出しを返さないので、GoTrue の値は使わず回数の枠の窓の長さと同じ300にそろえる
+- 監査: action `auth.passkey.login.start`・outcome `failure`・detail は固定の符号（`client_ip_unavailable`・`secret_key_missing`・`secret_key_bad_shape`・`gotrue_rate_limited`・`gotrue_failed`・`gotrue_bad_response`・`unexpected_error`）だけ。成功は監査に残さない（始めは認証の前で行為者がいない）
+- 手元の確かめの限り: 手元の GoTrue は `Sb-Forwarded-For` を数えない（手元の設定に添え書きを有効にする項目が無い）。手元では「ヘッダーを付けて送り、GoTrue が断らず 200 を返す」ことと、単体の試験が送ったヘッダーの値を確かめることまで。IP ごとに数えるか・本番で添え書きが効くかは本番の確認（設計 8-2 の1）に回す
+- テスト観点: 設定 `browser` で409・IP 無しで503・`x-forwarded-for` だけで503・鍵の形が不正・鍵無しで503・回数の上限で429で GoTrue 0回・成功で GoTrue への要求が1回（`apikey` が鍵・`Sb-Forwarded-For` が IP・`Authorization` 無し）・`preferred` が `required` に変わる・偽の `x-forwarded-for` が使われない・開発用の IP は見出しが無い時だけ・GoTrue の429・500・ネットワークの誤り・形の違う200・監査に鍵と IP が残らない
 
 ## 未確認事項
 

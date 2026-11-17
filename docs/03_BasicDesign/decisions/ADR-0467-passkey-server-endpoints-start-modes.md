@@ -1,6 +1,6 @@
 # ADR-0467 パスキーのサーバーの窓口は、始めの2つの道を設定で切り替え、UV の門を窓口に置き、GoTrue は `fetch` で直に呼ぶ
 
-> 状態: 推定 | 確認日: 2026-11-17 | 対象: `src/lib/auth/passkey-start-mode.ts`、`passkey-start-config.ts`、`passkey-uv.ts`、`passkey-gotrue.ts`、`src/features/auth/schemas/passkey.ts`、`src/lib/build-env-guard.ts` | 基準コミット: 4f3c67b4
+> 状態: 推定 | 確認日: 2026-11-17 | 対象: `src/lib/auth/passkey-start-mode.ts`、`passkey-start-config.ts`、`passkey-uv.ts`、`passkey-gotrue.ts`、`src/features/auth/schemas/passkey.ts`、`src/lib/build-env-guard.ts`、`src/app/api/auth/passkey/login/start/route.ts`、`scripts/e2e/environment.ts` | 基準コミット: 4f3c67b4
 
 ## 概要
 
@@ -11,7 +11,7 @@
 | 項目 | 内容 |
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の AUTH |
-| 対応する ID | SEC-AUTH-042、THR-AUTH-043、SEC-AUTH-044、DD-AUTH-051 |
+| 対応する ID | SEC-AUTH-042、THR-AUTH-043、SEC-AUTH-044、DD-AUTH-051、DD-AUTH-052、FR-AUTH-016 |
 | 対象のコード | `src/lib/auth/passkey-start-mode.ts`、`passkey-start-config.ts`、`passkey-uv.ts`、`passkey-gotrue.ts`、`src/features/auth/schemas/passkey.ts`、`src/lib/build-env-guard.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（4-2・5-1・5-3）、[段1b の計画](../../superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md)、[ADR-0464](ADR-0464-access-token-hook-single-gate.md) |
 | 試験 | 単体 `tests/unit/lib/auth/passkey-*.test.ts`、`tests/unit/features/auth/schemas/passkey.test.ts`、`tests/unit/lib/build-env-guard.test.ts` |
@@ -42,6 +42,8 @@
 - 手元の開発用の IP `PASSKEY_START_DEV_IP` は、手元の Supabase の住所のときだけ使い、本番・プレビューに残れば `next build`・`next start` を止める
 - GoTrue は supabase-js でなく `fetch` で直に呼ぶ。supabase-js のパスキーの関数は更新トークンつきの session をメモリに持たないと動かず、窓口は要求の Cookie のアクセストークンだけを持つため。路・本文の形は `@supabase/auth-js` の実装（2.119.0）から写し、誤りの本文の形を supabase-js とそろえるため `X-Supabase-Api-Version: 2024-01-01` を付ける
 - 登録の終わりで UV の印を読むため、自前の小さな CBOR の読み取りを足す（外のライブラリを足さない）。これは安全の門でなく、PIN の無い鍵を2本登録して「数だけ2本で入れない」状態になるのを避ける使い勝手の守り
+- 始め (a) の窓口（Task 3、DD-AUTH-052）: 順番は 設定が `browser` なら 409 → IP が取れなければ 503 → IP ごとに5分20回 → 鍵の確かめ（失敗は窓口だけの 503。アプリ全体は止めない）→ GoTrue。IP は `getClientIp` だけで、無い時だけ手元の開発用の IP。IP が取れない時は枠に入れず 503 にする（`enforceRateLimit` は IP が `null` だと「送り元が分からない全員が1つの枠」になり、1人で全員の始めを止められるため）。回数は GoTrue の制限（5分30回）の手前の20回で、正当なやり直し（認証器のキャンセルなど）は数回で達しにくい。設定が `browser` の時の (a) は 409 にする（2つの道が同時に動くと、本番で添え書きが効かず (b) に切り替えた後も古い画面が (a) を呼び続け、`sb_secret_` の確かめを通らない状態が見えにくくなるため）。共有の `enforceRateLimit` は変えない。手元の開発用の IP の時だけ枠の IP が `null`（手元の共有の枠）になる
+- E2E は手元の `supabase status` の `SECRET_KEY`（`sb_secret_`）を `SUPABASE_SECRET_KEY` として E2E のアプリに常に渡し（無ければ空）、`PASSKEY_START_DEV_IP` は空にする。`.env.local` の本番の鍵や開発用の IP が E2E に届かないため。手元の GoTrue は `Sb-Forwarded-For` を数えないので、手元で確かめるのは「ヘッダーを付けて 200」まで。IP ごとに数えるか・本番で効くかは本番の確認（設計 8-2 の1）
 
 #### 退けた案
 

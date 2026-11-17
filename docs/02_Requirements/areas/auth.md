@@ -280,6 +280,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: 窓口は、(1) 店員か、(2) 届いた鍵が認めた鍵か、(3) 認めた鍵の一覧、(4) 本数、(5) 窓の開閉、(6) 鍵を認める、を、1か所の部品から DB の関数で呼べる。DB の誤り・例外は「閉じる側」（呼び手が 503 などに倒す）に伝わる。古い認めの行が当たったら、鍵は黙って通らず、窓口が失敗として気づける。登録の窓の中の認めは、同時に呼ばれても、認めた鍵が上限（`min_approved_passkeys`、今は2）を超えない。受け入れ条件は FR-AUTH-015-AC-01（権限）、SEC-AUTH-041、DATA-AUTH-018、DD-AUTH-050。
 
+### SR-AUTH-017 パスキーのログインは、始めと終わりをアプリの窓口が受ける
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | パスキーのログインの終わりをブラウザが GoTrue に直に出すと、UV の確かめ・認めた鍵の確かめ・アプリのセッションの結び付けを通らずに入れる。始めも、GoTrue の回数の制限をお客さんごとに掛けるには IP が要る。そこで始めと終わりをアプリの窓口が受ける（設計 5-1）。この要求には、始め（Task 3）に続き、終わり（Task 4・6）の要件を足す |
+| 状態 | 推定 |
+| 出どころ | ユーザーの発言 2026-11-17（`.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-3-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 3）） |
+
+要求の文: お客さんと店員は、パスキーでログインする時、始めの要求をアプリの窓口に出し、選択肢と `challenge_id` を受け取れる。窓口は、お客さんの IP を GoTrue に添えて呼び、IP が取れない時は呼ばずに断る。選択肢は `userVerification` が `required` で返る。同じ IP からの始めは5分に20回までで、超えたら断る。受け入れ条件は FR-AUTH-016-AC-01〜03、SEC-AUTH-042、DD-AUTH-052。
+
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
 | 属性 | 値 |
@@ -2250,6 +2260,19 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 優先度 | MUST |
 
 規則: (1) `passkey_is_staff` は、フックと同じ店員の定義（`public.user_roles` の有効で期限内の行の役割が admin か supporter）で真になり、存在しない利用者・`null` は偽で、DB の誤りは偽にせず投げる（部品が `{ ok: false }` にする）。(2) `passkey_credential_is_approved` は、認めた鍵の生の ID（`bytea`）だけが真。認めていない鍵・他人・別の ID・書き換わった認め・`null`・長さ0は偽。(3) `passkey_approved_ids` は、`passkey_approved_count` と同じ数え方の `passkey_id` の一覧。(4) `passkey_approve` は、同じ `passkey_id` の行が別の `credential_id` で残っていれば `23505`（文は `passkey_approve: stale approval for this passkey`）で失敗し、同じ `credential_id` なら何もしない。(5) `passkey_approve` は `window` の時だけ、利用者ごとの錠を取って数え直し、すでに上限以上、または設定が引けず上限が NULL なら `55000`（文は `passkey_approve: window limit reached`）で失敗する。`reauth`・`script` は錠も上限も無い。(6) 薄い部品は、base64url でない・空の鍵を DB に渡さず偽を返し、DB の誤り・例外・想定外の型の戻りを `{ ok: false }` にする。
+
+### FR-AUTH-016 ログインの始めの窓口 `POST /api/auth/passkey/login/start` を足す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-017 |
+| 根拠 | SR-AUTH-017 のうち始め (a) を、`src/app/api/auth/passkey/login/start/route.ts` にする。アプリのサーバーが `sb_secret_` の鍵で GoTrue の `/passkeys/authentication/options` を呼び、取れた IP を `Sb-Forwarded-For` に添える。判断は DD-AUTH-052・ADR-0467、守りは SEC-AUTH-042 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/passkey-login-start-route.test.ts`）、E2E（`e2e/FR-LOGIN-048-passkey-login-start.spec.ts`、FR-AUTH-016-AC-01〜03） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-3-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 3） |
+| 優先度 | MUST |
+
+規則: (1) 設定 `NEXT_PUBLIC_PASSKEY_START_MODE` が `browser` なら 409 `passkey_start_mode_browser`（GoTrue も回数の表も呼ばない）。(2) IP は `getClientIp` の値で、無い時だけ手元の開発用の IP。どちらも無ければ 503 `client_ip_unavailable`（GoTrue も回数の枠も使わず、監査に `client_ip_unavailable`）。`x-forwarded-for` は読まない。(3) IP ごとに5分20回（`auth:passkey:login:start`）。超えたら 429。(4) 鍵が引けない・形が違う時は 503 `passkey_start_unavailable`（監査に `secret_key_missing`・`secret_key_bad_shape`）。アプリ全体は止めない。(5) GoTrue へは `apikey` に鍵、`Sb-Forwarded-For` に IP だけを付け、`Authorization` は付けない。(6) 成功は 200 で `{ challenge_id, options, expires_at }`。`options.userVerification` は `required` に書き換える。GoTrue の応答の使う項目の形が違えば 502 で閉じる。(7) GoTrue の 429 は `{ error: 'Too many requests' }`・429・`Retry-After`。それ以外の失敗は 502 `passkey_start_failed`（GoTrue の本文を返さない）。
 
 ## 受け入れ条件
 
@@ -4703,6 +4726,42 @@ anon の鍵と service_role の鍵のそれぞれで `staff_passkey_amr_ok`・`s
 
 anon の鍵と、ログイン済みのお客さん（authenticated）の鍵で4つの関数を呼ぶと、どれも HTTP 401 か 403・コード `42501` で断られ、戻りの値は `null` であること。service_role の鍵では `passkey_is_staff` が偽、`passkey_credential_is_approved` が偽、`passkey_approved_ids` が空の一覧で返り、`passkey_approve` は存在しない鍵に `passkey_not_owned` を返すこと（権限の誤りではない）。
 
+### FR-AUTH-016-AC-01 IP の見出しつきで呼ぶと 200 で、`userVerification` が `required` の選択肢と `challenge_id` が返る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-016 |
+| 根拠 | 始め (a) がサーバーから GoTrue を呼べて、選択肢が使える形で返ることを、本物の手元の GoTrue で確かめる。手元の GoTrue は `Sb-Forwarded-For` を数えないので、ここでは「ヘッダーを付けて送り、GoTrue が断らない」ことまで。IP ごとに数えるか・本番で添え書きが効くかは本番の確認に回す（設計 8-2） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-048-passkey-login-start.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/api/auth/passkey-login-start-route.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-3-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 3） |
+
+IP の見出し `x-real-ip` つきで `POST /api/auth/passkey/login/start` を呼ぶと、HTTP 200 で、本文の `challenge_id` が空でない文字列、`options.userVerification` が `required`、`options.challenge` が文字列、`expires_at` が数であり、`Cache-Control` に `no-store` を含むこと。
+
+### FR-AUTH-016-AC-02 IP の見出しが無い要求は 503 で断られる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-016 |
+| 根拠 | IP が取れない要求を GoTrue に添え書き無しで通すと、全員が1つのサーバーの IP として数えられ、1人で全員の始めを止められる。取れない時は呼ばずに断る |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-048-passkey-login-start.spec.ts`、3幅）、単体テスト（同上） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-3-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 3） |
+
+`x-real-ip` を空にして呼ぶと、HTTP 503 で本文が `{ "error": "client_ip_unavailable" }` であり、選択肢は返らないこと。
+
+### FR-AUTH-016-AC-03 同じ IP の21回目は 429 で断られる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-016 |
+| 根拠 | GoTrue の制限が IP ごとに5分30回なので、その手前の20回で止める。正当な利用者のやり直しは数回で、20回に達しにくい |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-048-passkey-login-start.spec.ts`、3幅）、単体テスト（同上） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-3-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 3） |
+
+同じ IP で20回呼ぶとどれも 200 で、21回目は HTTP 429 で本文が `{ "error": "Too many requests" }`、`Retry-After` が付くこと。
+
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 
 | 属性 | 値 |
@@ -6144,11 +6203,13 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 上位 | THR-AUTH-043 |
 | 根拠 | ログインの始め (a) は、アプリのサーバーが GoTrue を呼び、お客さんの IP を `Sb-Forwarded-For` に添えて、GoTrue の回数の制限をお客さんごとに掛ける。鍵が `sb_secret_` でない（古い `service_role` の JWT）と添え書きが効かず、全員が1つのサーバーの IP として数えられる。手元の開発用の IP `PASSKEY_START_DEV_IP` が本番に残ると、全員が同じ IP になり制限が壊れる。応答の `id` と `rawId` が食い違うと、認めた鍵の突き合わせと GoTrue の署名の確かめが別の鍵を見る（SEC-AUTH-044）。判断は ADR-0467・DD-AUTH-051 |
 | 状態 | 推定 |
-| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-start-config.test.ts`、`passkey-gotrue.test.ts`、`tests/unit/lib/build-env-guard.test.ts`、`tests/unit/features/auth/schemas/passkey.test.ts`）。窓口の試験は Task 3・6 で足す |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-start-config.test.ts`、`passkey-gotrue.test.ts`、`tests/unit/lib/build-env-guard.test.ts`、`tests/unit/features/auth/schemas/passkey.test.ts`）。始め (a) の窓口は `tests/unit/api/auth/passkey-login-start-route.test.ts` と E2E `e2e/FR-LOGIN-048-passkey-login-start.spec.ts`（FR-AUTH-016-AC-01〜03）。終わりの窓口の試験は Task 6 で足す |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-2-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・4-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 2） |
 | 優先度 | MUST |
 
 守ること: (1) 始め (a) の鍵は `SUPABASE_SECRET_KEY` を先に、無ければ `SUPABASE_SERVICE_ROLE_KEY` を見て、`sb_secret_` で始まる値だけを使う。どちらも満たさなければ GoTrue を呼ばない。先の変数が不正な時、後ろの変数には倒さない。鍵の値はログ・例外・戻りの失敗に載せない。(2) GoTrue へは `apikey` と `Sb-Forwarded-For` だけを付け、`Authorization` は付けず、本文は `{}`（利用者の入力を渡さない）。(3) `PASSKEY_START_DEV_IP` は、手元の Supabase の住所（`localhost`・`127.0.0.1`・`[::1]`）で、`VERCEL` が `1` でなく `VERCEL_ENV` が空の時だけ使い、それ以外は `null`。値が空でないのに本番・プレビュー・手元でない Supabase なら、`next build` と `next start` が変数名だけの文で止まる。(4) 応答の `id` と `rawId` は、どちらも base64url の形で、完全に同じ値だけ受ける。(5) 呼び出しは10秒で打ち切り、誤りの文に鍵・トークンを載せない。
+
+窓口 `POST /api/auth/passkey/login/start`（Task 3）で足したこと: (6) IP は `getClientIp` の値だけで、無い時だけ `PASSKEY_START_DEV_IP`。`x-forwarded-for` は読まない。取れなければ GoTrue を呼ばず、回数の枠にも入れず 503。(7) 設定が `browser` の時は 409 で、鍵の確かめを通らない古い画面が (a) を呼び続けるのを見えにくくしない。(8) 鍵が引けない・形が違うのは窓口だけの 503 で、アプリ全体は止めない。(9) GoTrue の 200 の応答の `challenge_id`・`options.challenge`・`expires_at` の形を確かめ、違えば 502 で閉じる。監査は固定の符号だけで、鍵・IP・`challenge_id` を残さない。
 
 残る危険として受け入れること: 本番の鍵の形（`sb_secret_` か JWT か）は読んでいない。JWT の形なら、`SUPABASE_SECRET_KEY` を足すまで始め (a) は動かない（閉じる側）。
 

@@ -19,6 +19,8 @@ export type LocalSupabaseStatus = {
   apiUrl: string;
   anonKey: string;
   serviceRoleKey: string;
+  /** 手元の `sb_secret_` の鍵（パスキーのログインの始め (a) が使う）。無ければ空。 */
+  secretKey?: string;
   jwtSecret: string;
   mailpitUrl: string;
 };
@@ -150,6 +152,7 @@ export function parseSupabaseStatus(json: string): LocalSupabaseStatus {
     apiUrl: pick('API_URL'),
     anonKey: pick('ANON_KEY'),
     serviceRoleKey: pick('SERVICE_ROLE_KEY'),
+    secretKey: typeof raw.SECRET_KEY === 'string' ? raw.SECRET_KEY : '',
     jwtSecret: pick('JWT_SECRET'),
     mailpitUrl: pick('MAILPIT_URL'),
   };
@@ -162,6 +165,10 @@ export function buildE2EOverrides(status: LocalSupabaseStatus): Record<string, s
     SUPABASE_URL: status.apiUrl,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: status.anonKey,
     SUPABASE_SERVICE_ROLE_KEY: status.serviceRoleKey,
+    // `.env.local` に本番の sb_secret_ が入っていても E2E のアプリに届かないよう、常に上書きする（無ければ空）。
+    SUPABASE_SECRET_KEY: status.secretKey ?? '',
+    // `.env.local` に残っていても「IP 見出し無しは 503」が崩れないよう空にする。
+    PASSKEY_START_DEV_IP: '',
     JWT_SECRET: status.jwtSecret,
     MAIL_LOCAL_URL: status.mailpitUrl,
     ...E2E_FIXED_ENV,
@@ -210,7 +217,7 @@ export function computeServerFingerprint(
   fakeBuild: string = computeFake17TrackBuild(),
 ): string {
   const material = JSON.stringify({
-    v: 3,
+    v: 4,
     mode,
     supabaseUrl: env.NEXT_PUBLIC_SUPABASE_URL ?? '',
     mailProvider: env.MAIL_PROVIDER ?? '',

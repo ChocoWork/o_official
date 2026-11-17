@@ -28,6 +28,7 @@ const status: LocalSupabaseStatus = {
   apiUrl: 'http://127.0.0.1:54321',
   anonKey: 'local-anon-key',
   serviceRoleKey: 'local-service-role-key',
+  secretKey: 'sb_secret_local_test_key',
   jwtSecret: 'local-jwt-secret-0123456789abcdef0123456789',
   mailpitUrl: 'http://127.0.0.1:54324',
 };
@@ -96,6 +97,7 @@ describe('parseSupabaseStatus', () => {
       API_URL: status.apiUrl,
       ANON_KEY: status.anonKey,
       SERVICE_ROLE_KEY: status.serviceRoleKey,
+      SECRET_KEY: status.secretKey,
       JWT_SECRET: status.jwtSecret,
       MAILPIT_URL: status.mailpitUrl,
       DB_URL: 'postgresql://postgres:postgres@127.0.0.1:54322/postgres',
@@ -122,10 +124,32 @@ describe('readLocalSupabaseStatus', () => {
         API_URL: status.apiUrl,
         ANON_KEY: status.anonKey,
         SERVICE_ROLE_KEY: status.serviceRoleKey,
+        SECRET_KEY: status.secretKey,
         JWT_SECRET: status.jwtSecret,
         MAILPIT_URL: status.mailpitUrl,
       });
     expect(readLocalSupabaseStatus(run)).toEqual(status);
+  });
+});
+
+describe('buildE2EOverrides の sb_secret_ と開発の IP', () => {
+  it('手元の sb_secret_ を SUPABASE_SECRET_KEY として渡し、PASSKEY_START_DEV_IP は空にする', () => {
+    const overrides = buildE2EOverrides(status);
+    expect(overrides.SUPABASE_SECRET_KEY).toBe(status.secretKey);
+    expect(overrides.PASSKEY_START_DEV_IP).toBe('');
+  });
+
+  it('手元に sb_secret_ が無い時も、SUPABASE_SECRET_KEY を空で上書きする（.env.local の本番の鍵を通さない）', () => {
+    const { secretKey: _omitted, ...withoutSecret } = status;
+    expect(buildE2EOverrides(withoutSecret).SUPABASE_SECRET_KEY).toBe('');
+  });
+
+  it('状態に SECRET_KEY が無ければ secretKey は空になる', () => {
+    const json = JSON.stringify({
+      API_URL: status.apiUrl, ANON_KEY: status.anonKey, SERVICE_ROLE_KEY: status.serviceRoleKey,
+      JWT_SECRET: status.jwtSecret, MAILPIT_URL: status.mailpitUrl,
+    });
+    expect(parseSupabaseStatus(json).secretKey).toBe('');
   });
 });
 

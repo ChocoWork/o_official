@@ -1309,6 +1309,8 @@ stateDiagram-v2
 - 通知のメールの件名は「パスワードを変更しました」（再設定の確定と同じ文面）。GoTrue 側の変更通知を有効にする時は、件名を「パスワードの変更を受け付けました」にして見分ける（ruling 9。管理 API の変更で GoTrue の通知は送られないので、アプリの通知だけが届く。Task 0 の結果）
 - 全 session の失効は 2 段（自前の `sessions` の `revoked_at` と、`revoke_auth_sessions_for_user`）。成功すると、この端末の古い access token も refresh token も使えなくなり、新しいパスワードで入り直す
 
+段1b の窓口（API の ID は段1b の終わりでまとめて付ける）: `POST /api/auth/passkey/login/start`（ログインの始め (a)）。サーバーが `sb_secret_` の鍵で GoTrue を呼び、取れた IP を `Sb-Forwarded-For` に添える。順番は 設定の確かめ（409）→ IP の確かめ（503）→ IP ごとの回数（5分20回、429）→ 鍵の確かめ（503）→ GoTrue（200・429・502）。200 の本文は `{ challenge_id, options, expires_at }` で `options.userVerification` は `required`。判断は DD-AUTH-052・ADR-0467、受け入れ条件は FR-AUTH-016-AC-01〜03。
+
 ## データ
 
 ### DATA-AUTH-001 sessions の表は refresh token のハッシュを控える監査用の表で、明示の失効の印だけを門に使う
