@@ -8,9 +8,7 @@
  *
  * 手元の Supabase とメール受け（Mailpit）だけで流す。会員は画面から入れるようにパスワード付きで作る。
  * - 画面の幅は 3 つ（390・768・1280）すべてで流す。幅の例外は使わない。
- * - 管理者・サポーターの 2 段目（TOTP）は、手元の GoTrue の TOTP が無効でも流れるよう FR-LOGIN-032 と同じ材料で作る
- *   （auth.mfa_factors に verified の行・auth.mfa_amr_claims に totp の行を足し、refresh で aal2 にする）。
- *   本物の enroll-totp → verify の流れは FR-LOGIN-032 が受け持つ。ここで確かめるのは「aal2 になった後に戻り先が使い切られる」こと。
+ * - 店員（FR-AUTH-005-AC-05）は、パスキーのログインの終わりの窓口（loginViaApp。next を控えて Cookie に付ける）と POST /api/auth/post-login で確かめる。
  * - Google の本物の画面は開かない。開始の窓口の応答（200 と url と Cookie）だけを確かめる。
  * - page.request.post で状態を変える窓口を叩く所には Origin を付ける（proxy の Origin 検査に通すため。付け忘れは 403）。
  * Cookie・確認コードが通信記録に残らないよう trace は切る。失敗の報告にも番号の値を出さない（真偽だけで比べる）。
@@ -19,7 +17,9 @@ import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { expect, test, type APIResponse, type Page, type Response } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
+import { provisionStaff } from '../scripts/e2e/passkey-staff';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
+import { loginViaApp } from './passkey-app-api';
 import { readLatestCode, readMailpitMessages } from './member-session-helpers';
 import { withLocalDb } from './order-email-test-utils';
 import { injectTurnstileToken } from './turnstile-test-utils';
@@ -34,7 +34,6 @@ const viewports = [
 ] as const;
 
 const RETURN_INTENT_COOKIE = 'sb-return-intent';
-const ACCESS_COOKIE = 'sb-access-token';
 const CSRF_COOKIE = 'sb-csrf-token';
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const LOGIN_INTENT_MAX_AGE_SECONDS = 900;
@@ -128,15 +127,6 @@ async function assignRole(db: PgClient, userId: string, role: 'admin'): Promise<
     [userId, role],
   );
   if (assigned.rowCount !== 1) throw new Error(`役割 ${role} の行が手元の DB に無い`);
-}
-
-/** 2要素の登録（verified の totp）を1つ足す。登録済みの管理者の状態を作る（FR-LOGIN-032 と同じ）。 */
-async function addVerifiedTotpFactor(db: PgClient, userId: string): Promise<void> {
-  await db.query(
-    `insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at, secret)
-     values (gen_random_uuid(), $1::uuid, $2, 'totp', 'verified', now(), now(), 'JBSWY3DPEHPK3PXP')`,
-    [userId, `e2e-${randomBytes(4).toString('hex')}`],
-  );
 }
 
 // ---- 画面からのログイン ----
@@ -236,40 +226,6 @@ async function mailIdsOf(email: string): Promise<Set<string>> {
   return new Set((await readMailpitMessages(email)).map((message) => message.ID));
 }
 
-// ---- 管理者の 2 段目（aal2）の材料 ----
-
-type Claims = { session_id?: string; aal?: string };
-
-function claimsOf(jwt: string): Claims {
-  return JSON.parse(Buffer.from(jwt.split('.')[1] ?? '', 'base64url').toString('utf8')) as Claims;
-}
-
-async function accessTokenOf(page: Page): Promise<string> {
-  const origin = new URL(page.url()).origin;
-  const cookie = (await page.context().cookies(origin)).find((c) => c.name === ACCESS_COOKIE);
-  if (!cookie?.value) throw new Error(`${ACCESS_COOKIE} の Cookie が無い`);
-  return cookie.value;
-}
-
-/** ログイン済みの session に totp の印を足し、アプリの refresh を通して aal2 の Cookie にする（FR-LOGIN-032 と同じ）。 */
-async function elevateCookieToAal2(page: Page, ip: string): Promise<void> {
-  const sessionId = claimsOf(await accessTokenOf(page)).session_id;
-  if (!sessionId) throw new Error('JWT に session_id が無い');
-  await withLocalDb((db) =>
-    db.query(
-      `insert into auth.mfa_amr_claims (id, session_id, created_at, updated_at, authentication_method)
-       values (gen_random_uuid(), $1::uuid, now(), now(), 'totp')`,
-      [sessionId],
-    ),
-  );
-  const origin = new URL(page.url()).origin;
-  const refreshed = await postJson(page, origin, '/api/auth/refresh', ip);
-  if (!refreshed.ok()) throw new Error(`session を更新できない: ${refreshed.status()}`);
-  if (claimsOf(await accessTokenOf(page)).aal !== 'aal2') {
-    throw new Error('JWT が aal2 にならない（手元の GoTrue が amr の行から aal を出す前提が崩れた）');
-  }
-}
-
 // ======================================================================================
 
 for (const viewport of viewports) {
@@ -353,44 +309,43 @@ for (const viewport of viewports) {
       expectClearedReturnIntent(response.headersArray(), 'next=//evil.example');
     });
 
-    test(`FR-AUTH-005-AC-05 管理者は確認コードの後に /auth/verified で 2 段目を通してから戻り先（/item）へ移る (${viewport.name})`, async ({ page }) => {
-      test.skip(true, '段1b で作り直す: 店員がログインの後に戻り先（/item・/admin）へ移る流れは、段1b の return-intent-service.ts などの aal の判定を直す時に、パスキーのログインで作り直す。手元では店員がアプリの画面から入れない（SEC-AUTH-040）');
+    test(`FR-AUTH-005-AC-05 店員は、パスキーで入った後に戻り先（/item）へ移る (${viewport.name})`, async ({ page }) => {
       const ip = uniqueSourceIp();
-      const member = await createMember(`ac05-next-${viewport.name}`, 'admin');
-      await withLocalDb((db) => addVerifiedTotpFactor(db, member.userId));
-      await routeSourceIp(page, ip);
+      const staff = await withLocalDb((db) => provisionStaff(db, { role: 'admin', approvedPasskeys: 2 }));
 
-      await page.goto('/login?next=%2Fitem');
-      await signInOnLoginScreen(page, member);
+      // 終わりの窓口が next を控えて Cookie に付ける（画面は使わない）。
+      const login = await loginViaApp(page.request, { authenticator: staff.authenticators[0], ip, next: '/item' });
+      expect(login.status, 'パスキーのログインが通る').toBe(200);
+      expect(login.cookies.some((cookie) => cookie.name === RETURN_INTENT_COOKIE), '戻り先の控えの Cookie が付く').toBe(true);
 
-      // 確認コードを通しても aal1 のうちは戻り先へ移らず、2 段目（TOTP の入力）に止まる。戻り先は使い切られない。
-      await expect(page).toHaveURL(/\/auth\/verified$/);
-      await expect(page.getByLabel('認証コード（6〜8桁）')).toBeVisible({ timeout: 15_000 });
-      await expect(page).toHaveURL(/\/auth\/verified$/);
+      const postLogin = await page.request.post('/api/auth/post-login', {
+        headers: { origin: 'http://localhost:3000', 'x-real-ip': uniqueSourceIp() },
+        failOnStatusCode: false,
+      });
+      expect(postLogin.status()).toBe(200);
+      expect(await postLogin.json()).toEqual({ redirectTo: '/item', needsMfa: false });
 
-      // TOTP を通した状態（aal2）にして 2 段目の頁を開き直すと、戻り先が使い切られてそこへ移る。
-      await elevateCookieToAal2(page, ip);
-      await page.goto('/auth/verified');
+      await page.goto('/item');
       await expectLandedOn(page, '/item');
     });
 
-    test(`FR-AUTH-005-AC-05 戻り先の無い管理者は 2 段目の後に /admin へ移る (${viewport.name})`, async ({ page }) => {
-      test.skip(true, '段1b で作り直す: 店員がログインの後に戻り先（/item・/admin）へ移る流れは、段1b の return-intent-service.ts などの aal の判定を直す時に、パスキーのログインで作り直す。手元では店員がアプリの画面から入れない（SEC-AUTH-040）');
+    test(`FR-AUTH-005-AC-05 戻り先の無い店員は /admin へ移る (${viewport.name})`, async ({ page }) => {
       const ip = uniqueSourceIp();
-      const member = await createMember(`ac05-none-${viewport.name}`, 'admin');
-      await withLocalDb((db) => addVerifiedTotpFactor(db, member.userId));
-      await routeSourceIp(page, ip);
+      const staff = await withLocalDb((db) => provisionStaff(db, { role: 'admin', approvedPasskeys: 2 }));
 
-      await page.goto('/login');
-      await signInOnLoginScreen(page, member);
+      const login = await loginViaApp(page.request, { authenticator: staff.authenticators[0], ip });
+      expect(login.status, 'パスキーのログインが通る').toBe(200);
 
-      await expect(page).toHaveURL(/\/auth\/verified$/);
-      await expect(page.getByLabel('認証コード（6〜8桁）')).toBeVisible({ timeout: 15_000 });
+      const postLogin = await page.request.post('/api/auth/post-login', {
+        headers: { origin: 'http://localhost:3000', 'x-real-ip': uniqueSourceIp() },
+        failOnStatusCode: false,
+      });
+      expect(postLogin.status()).toBe(200);
+      expect(await postLogin.json()).toEqual({ redirectTo: '/admin', needsMfa: false });
 
-      await elevateCookieToAal2(page, ip);
-      await page.goto('/auth/verified');
+      await page.goto('/admin');
       await expect
-        .poll(() => new URL(page.url()).pathname, { timeout: 25_000, message: '2 段目の後に /admin 配下へ着く' })
+        .poll(() => new URL(page.url()).pathname, { timeout: 25_000, message: '/admin 配下へ着く' })
         .toMatch(/^\/admin(\/|$)/);
     });
 

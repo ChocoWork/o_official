@@ -600,13 +600,13 @@
 | SR-AUTH-005 ドロワーの SNS のアイコンを枠の中央に置く | FR-AUTH-002 SNS のアイコンを枠の縦横の中央にそろえる | FR-AUTH-002-AC-01 SNS のリンクが flex で縦横の中央寄せになっている | `e2e/FR-HEADER-002-drawer-sns-icon-centering.spec.ts:16` |
 | SR-AUTH-006 ドロワーの SNS のアイコンを白と黒だけで出す | FR-AUTH-003 アイコンのグレーの画素を消し、通常は純黒・ホバーは純白で描く | FR-AUTH-003-AC-01 通常は brightness(0)、ホバーは brightness(0) invert(1) が効く | `e2e/FR-HEADER-003-drawer-sns-icon-bw-filter.spec.ts:16`<br>`e2e/FR-HEADER-003-drawer-sns-icon-bw-filter.spec.ts:41` |
 | SR-AUTH-007 ドロワーのアコーディオンを開いた時に子と次の親の間を空ける | FR-AUTH-004 アコーディオンの中身の下に十分な余白を置く | FR-AUTH-004-AC-01 子の末尾から次の親の上の線まで 20px 以上ある | `e2e/FR-HEADER-004-drawer-accordion-child-spacing.spec.ts:17` |
-| SR-AUTH-008 ログインの後に、会員だけの頁またはログインを始めた頁へ戻れる | FR-AUTH-005 ログインの後の行き先は、サーバーに控えた内部の頁だけにする | FR-AUTH-005-AC-01 ヘッダーのログインから入ると、開いていた頁へ戻る | `e2e/FR-LOGIN-038-login-return-to.spec.ts:279` |
-| SR-AUTH-008 ログインの後に、会員だけの頁またはログインを始めた頁へ戻れる | FR-AUTH-005 ログインの後の行き先は、サーバーに控えた内部の頁だけにする | FR-AUTH-005-AC-02 未ログインで `/account` を開いてログインすると `/account` へ戻る | `e2e/FR-LOGIN-038-login-return-to.spec.ts:295` |
-| SR-AUTH-008 ログインの後に、会員だけの頁またはログインを始めた頁へ戻れる | FR-AUTH-005 ログインの後の行き先は、サーバーに控えた内部の頁だけにする | FR-AUTH-005-AC-03 戻り先が無いログインは `/` に着く | `e2e/FR-LOGIN-038-login-return-to.spec.ts:310` |
-| SR-AUTH-008 ログインの後に、会員だけの頁またはログインを始めた頁へ戻れる | FR-AUTH-005 ログインの後の行き先は、サーバーに控えた内部の頁だけにする | FR-AUTH-005-AC-04 外の住所・不正な値の戻り先は `/` に着く | `e2e/FR-LOGIN-038-login-return-to.spec.ts:324`<br>`e2e/FR-LOGIN-038-login-return-to.spec.ts:342` |
-| SR-AUTH-008 ログインの後に、会員だけの頁またはログインを始めた頁へ戻れる | FR-AUTH-005 ログインの後の行き先は、サーバーに控えた内部の頁だけにする | FR-AUTH-005-AC-05 管理者・サポーターは先に 2 段目を通してから戻り先へ着く | `e2e/FR-LOGIN-038-login-return-to.spec.ts:356`<br>`e2e/FR-LOGIN-038-login-return-to.spec.ts:377` |
-| SR-AUTH-008 ログインの後に、会員だけの頁またはログインを始めた頁へ戻れる | FR-AUTH-005 ログインの後の行き先は、サーバーに控えた内部の頁だけにする | FR-AUTH-005-AC-06 `/login`・`/api/*` などへの戻り先は `/` に着く | `e2e/FR-LOGIN-038-login-return-to.spec.ts:398` |
-| SR-AUTH-008 ログインの後に、会員だけの頁またはログインを始めた頁へ戻れる | FR-AUTH-005 ログインの後の行き先は、サーバーに控えた内部の頁だけにする | FR-AUTH-005-AC-07 使った戻り先は 2 回目に使えない | `e2e/FR-LOGIN-038-login-return-to.spec.ts:409` |
+| SR-AUTH-008 ログインの後に、会員だけの頁またはログインを始めた頁へ戻れる | FR-AUTH-005 ログインの後の行き先は、サーバーに控えた内部の頁だけにする | FR-AUTH-005-AC-01 ヘッダーのログインから入ると、開いていた頁へ戻る | `e2e/FR-LOGIN-038-login-return-to.spec.ts:235` |
+| SR-AUTH-008 ログインの後に、会員だけの頁またはログインを始めた頁へ戻れる | FR-AUTH-005 ログインの後の行き先は、サーバーに控えた内部の頁だけにする | FR-AUTH-005-AC-02 未ログインで `/account` を開いてログインすると `/account` へ戻る | `e2e/FR-LOGIN-038-login-return-to.spec.ts:251` |
+| SR-AUTH-008 ログインの後に、会員だけの頁またはログインを始めた頁へ戻れる | FR-AUTH-005 ログインの後の行き先は、サーバーに控えた内部の頁だけにする | FR-AUTH-005-AC-03 戻り先が無いログインは `/` に着く | `e2e/FR-LOGIN-038-login-return-to.spec.ts:266` |
+| SR-AUTH-008 ログインの後に、会員だけの頁またはログインを始めた頁へ戻れる | FR-AUTH-005 ログインの後の行き先は、サーバーに控えた内部の頁だけにする | FR-AUTH-005-AC-04 外の住所・不正な値の戻り先は `/` に着く | `e2e/FR-LOGIN-038-login-return-to.spec.ts:280`<br>`e2e/FR-LOGIN-038-login-return-to.spec.ts:298` |
+| SR-AUTH-008 ログインの後に、会員だけの頁またはログインを始めた頁へ戻れる | FR-AUTH-005 ログインの後の行き先は、サーバーに控えた内部の頁だけにする | FR-AUTH-005-AC-05 店員は、パスキーで入った後に条件を満たせば戻り先へ着く | `e2e/FR-LOGIN-038-login-return-to.spec.ts:312`<br>`e2e/FR-LOGIN-038-login-return-to.spec.ts:332` |
+| SR-AUTH-008 ログインの後に、会員だけの頁またはログインを始めた頁へ戻れる | FR-AUTH-005 ログインの後の行き先は、サーバーに控えた内部の頁だけにする | FR-AUTH-005-AC-06 `/login`・`/api/*` などへの戻り先は `/` に着く | `e2e/FR-LOGIN-038-login-return-to.spec.ts:353` |
+| SR-AUTH-008 ログインの後に、会員だけの頁またはログインを始めた頁へ戻れる | FR-AUTH-005 ログインの後の行き先は、サーバーに控えた内部の頁だけにする | FR-AUTH-005-AC-07 使った戻り先は 2 回目に使えない | `e2e/FR-LOGIN-038-login-return-to.spec.ts:364` |
 | SR-AUTH-009 ログイン中の会員が自分でパスワードを変えられる | FR-AUTH-006 `/account/password` の 2 段の画面と、パスワード変更の 2 つの窓口 | FR-AUTH-006-AC-01 会員ページのリンクから `/account/password` に着き、現行パスワードの欄と送るボタンだけが出る | `e2e/FR-ACCOUNT-046-password-change.spec.ts:351` |
 | SR-AUTH-009 ログイン中の会員が自分でパスワードを変えられる | FR-AUTH-006 `/account/password` の 2 段の画面と、パスワード変更の 2 つの窓口 | FR-AUTH-006-AC-02 正しい手順でパスワードが変わり、古いパスワードは通らず新しいパスワードで入り直せる | `e2e/FR-ACCOUNT-046-password-change.spec.ts:374`<br>`e2e/FR-ACCOUNT-046-password-change.spec.ts:423` |
 | SR-AUTH-009 ログイン中の会員が自分でパスワードを変えられる | FR-AUTH-006 `/account/password` の 2 段の画面と、パスワード変更の 2 つの窓口 | FR-AUTH-006-AC-03 現行パスワードが違うと断られ、コードのメールが届かない | `e2e/FR-ACCOUNT-046-password-change.spec.ts:440` |
@@ -873,8 +873,8 @@
 | THR-AUTH-024 認証の Cookie の属性が弱い | SEC-AUTH-024 認証の Cookie は HttpOnly・Secure・SameSite を付ける | SEC-AUTH-024-AC-01 ログインの後の Cookie の属性が決まりどおり | `e2e/FR-LOGIN-030-session-cookies-and-responses.spec.ts:322` |
 | THR-AUTH-025 状態を変える認証の窓口への CSRF | SEC-AUTH-025 状態を変える認証の窓口は、許可したオリジンからの送信だけを受ける | SEC-AUTH-025-AC-01 別のオリジンからの再設定の完了が 403 | `e2e/FR-LOGIN-037-proxy-origin-csrf.spec.ts:105` |
 | THR-AUTH-026 ログインの後の送り先を使った open redirect | SEC-AUTH-026 ログインの後の送り先は、内部の道だけにする | SEC-AUTH-026-AC-01 `/auth/callback?next=//evil.example` を開いても外へ出ない（画面が無い） | `e2e/FR-LOGIN-030-session-cookies-and-responses.spec.ts:373` |
-| THR-AUTH-026 ログインの後の送り先を使った open redirect | SEC-AUTH-026 ログインの後の送り先は、内部の道だけにする | SEC-AUTH-026-AC-02 確認のリンクの `redirect_to` で外へ出ない | `e2e/FR-LOGIN-038-login-return-to.spec.ts:433` |
-| THR-AUTH-026 ログインの後の送り先を使った open redirect | SEC-AUTH-026 ログインの後の送り先は、内部の道だけにする | SEC-AUTH-026-AC-03 ログインの窓口へ外の `next` を送っても `/` に着く | `e2e/FR-LOGIN-038-login-return-to.spec.ts:451` |
+| THR-AUTH-026 ログインの後の送り先を使った open redirect | SEC-AUTH-026 ログインの後の送り先は、内部の道だけにする | SEC-AUTH-026-AC-02 確認のリンクの `redirect_to` で外へ出ない | `e2e/FR-LOGIN-038-login-return-to.spec.ts:388` |
+| THR-AUTH-026 ログインの後の送り先を使った open redirect | SEC-AUTH-026 ログインの後の送り先は、内部の道だけにする | SEC-AUTH-026-AC-03 ログインの窓口へ外の `next` を送っても `/` に着く | `e2e/FR-LOGIN-038-login-return-to.spec.ts:406` |
 | THR-AUTH-027 1つの鍵で複数の署名を兼ねる | SEC-AUTH-027 署名した Cookie は用途ごとに別の鍵で署名する | SEC-AUTH-027-AC-01 再設定の Cookie を保留の2段目の Cookie に入れても通らない | `e2e/FR-PWRESET-010-reset-completion-security.spec.ts:221` |
 | THR-AUTH-028 画面の表示だけで管理の入口を出し分ける | SEC-AUTH-028 管理の入口の出し分けは表示だけとし、役割は利用者が書き換えられない所から読む | SEC-AUTH-028-AC-01 一般の会員のヘッダーに MANAGE・LOADING が出ない | `e2e/FR-LOGIN-033-verify-screen-and-admin-refresh-mocks.spec.ts:173` |
 | THR-AUTH-028 画面の表示だけで管理の入口を出し分ける | SEC-AUTH-028 管理の入口の出し分けは表示だけとし、役割は利用者が書き換えられない所から読む | SEC-AUTH-028-AC-02 `user_metadata` に admin を書いた会員は管理の窓口が 403 | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:916` |
@@ -885,8 +885,8 @@
 | THR-AUTH-030 認証の出来事が監査に残らない | SEC-AUTH-030 認証の出来事は成功も失敗も監査に残す | SEC-AUTH-030-AC-03 結び付けの拒否が固定の符号だけで監査に残る | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:837` |
 | THR-AUTH-031 管理者・サポーターの初めての TOTP の登録を先に取られる | SEC-AUTH-031 管理者・サポーターの初めての TOTP の登録は、本人の確かめを済ませた経路に限る | SEC-AUTH-031-AC-01 メール OTP を通っていない aal1 の session では初めての TOTP を登録できない | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts:365` |
 | THR-AUTH-031 管理者・サポーターの初めての TOTP の登録を先に取られる | SEC-AUTH-031 管理者・サポーターの初めての TOTP の登録は、本人の確かめを済ませた経路に限る | SEC-AUTH-031-AC-02 メール OTP だけ（アプリを通らない）で取った通行証では、初めての TOTP の登録が 401 で断られ、断りが監査に残る | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:870` |
-| THR-AUTH-032 戻り先の控えの番号の盗み・使い回し・総当たり | SEC-AUTH-032 戻り先の控えは、番号だけを HttpOnly の Cookie に持ち、表には番号のハッシュだけを持つ | SEC-AUTH-032-AC-01 Cookie の属性が決まりどおりで、番号が URL・本文・Location に出ない | `e2e/FR-LOGIN-038-login-return-to.spec.ts:470`<br>`e2e/FR-LOGIN-038-login-return-to.spec.ts:523` |
-| THR-AUTH-032 戻り先の控えの番号の盗み・使い回し・総当たり | SEC-AUTH-032 戻り先の控えは、番号だけを HttpOnly の Cookie に持ち、表には番号のハッシュだけを持つ | SEC-AUTH-032-AC-02 ログアウトで Cookie が消える | `e2e/FR-LOGIN-038-login-return-to.spec.ts:546` |
+| THR-AUTH-032 戻り先の控えの番号の盗み・使い回し・総当たり | SEC-AUTH-032 戻り先の控えは、番号だけを HttpOnly の Cookie に持ち、表には番号のハッシュだけを持つ | SEC-AUTH-032-AC-01 Cookie の属性が決まりどおりで、番号が URL・本文・Location に出ない | `e2e/FR-LOGIN-038-login-return-to.spec.ts:425`<br>`e2e/FR-LOGIN-038-login-return-to.spec.ts:478` |
+| THR-AUTH-032 戻り先の控えの番号の盗み・使い回し・総当たり | SEC-AUTH-032 戻り先の控えは、番号だけを HttpOnly の Cookie に持ち、表には番号のハッシュだけを持つ | SEC-AUTH-032-AC-02 ログアウトで Cookie が消える | `e2e/FR-LOGIN-038-login-return-to.spec.ts:501` |
 | THR-AUTH-033 新しい表・関数に広い権限が自動で付き、権限の一覧が見張られていない | SEC-AUTH-033 公開スキーマの表・列・関数・連番の権限は移行が明示し、一覧を DB 試験で守る | （なし） | （なし） |
 | THR-AUTH-034 乗っ取った session でパスワードを変えられ、本人が締め出される | SEC-AUTH-034 パスワード変更は現行パスワードとメールのコードを求め、全 session を失効し、通知し、回数を制限し、監査する | SEC-AUTH-034-AC-01 変更の後、この端末を含む全 session が失効する | `e2e/FR-ACCOUNT-046-password-change.spec.ts:628` |
 | THR-AUTH-034 乗っ取った session でパスワードを変えられ、本人が締め出される | SEC-AUTH-034 パスワード変更は現行パスワードとメールのコードを求め、全 session を失効し、通知し、回数を制限し、監査する | SEC-AUTH-034-AC-02 変更の通知のメールがちょうど 1 通届き、パスワードもコードも含まない | `e2e/FR-ACCOUNT-046-password-change.spec.ts:671` |

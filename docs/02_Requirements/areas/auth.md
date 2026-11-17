@@ -4497,7 +4497,7 @@ SNSアイコンのリンク要素が flex かつ items-center justify-center で
 
 `next=//evil.example`・`/%09/evil.example` を付けたログインは `/` に着き、店のサイトの外へ出ないこと。
 
-### FR-AUTH-005-AC-05 管理者・サポーターは先に 2 段目を通してから戻り先へ着く
+### FR-AUTH-005-AC-05 店員は、パスキーで入った後に条件を満たせば戻り先へ着く
 
 | 属性 | 値 |
 | --- | --- |
@@ -4507,7 +4507,7 @@ SNSアイコンのリンク要素が flex かつ items-center justify-center で
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの発言 2026-10-25（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`） |
 
-管理者・サポーターが戻り先を持ってログインすると、確認コードの後に `/auth/verified` で TOTP を通し、その後で戻り先に着くこと。戻り先が無ければ `/admin` に着くこと。TOTP を通すまでは戻り先に着かないこと。
+パスキーで入った後、条件（`amr` のパスキー・24時間・認めた鍵2本）を満たす店員は、戻り先があれば戻り先へ、無ければ `/admin` へ着くこと。満たさない店員は `/auth/verified` へ着き、戻り先は使い切られないこと。
 
 ### FR-AUTH-005-AC-06 `/login`・`/api/*` などへの戻り先は `/` に着く
 
