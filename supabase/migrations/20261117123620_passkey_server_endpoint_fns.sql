@@ -4,7 +4,9 @@
 -- New functions (SECURITY DEFINER, search_path empty, owner postgres, execute for service_role only):
 --   public.passkey_is_staff(user) boolean                    STABLE. Same staff definition as the access token hook
 --                                                            (an active, unexpired public.user_roles row whose role code
---                                                            is admin or supporter). null / unknown user / any error: false.
+--                                                            is admin or supporter). null / unknown user: false. A DB error is
+--                                                            NOT answered as false (fail closed: it propagates; the TS wrapper
+--                                                            turns it into { ok: false }).
 --   public.passkey_credential_is_approved(user, cred) bool   STABLE. cred is the RAW credential id (the caller turns the
 --                                                            response rawId from base64url into bytes; PostgREST passes
 --                                                            it as a \x hex string). Same join as passkey_approved_count
@@ -18,7 +20,7 @@
 --        it and the key was never counted). It raises 23505 'passkey_approve: stale approval for this passkey'. The same
 --        credential_id is still a quiet no-op. Fix by an operator: delete the stale row in SQL (SEC-AUTH-041).
 --     2. via = 'window' takes a per-user transaction lock first, recounts passkey_approved_count under the lock and, when
---        it is already min_approved_passkeys or more, raises 55000 'passkey_approve: window limit reached' (no row is
+--        it is already min_approved_passkeys or more (or the setting is missing: NULL), raises 55000 'passkey_approve: window limit reached' (no row is
 --        added). This closes the race of two window approvals at once. A repeat for an already approved key adds no row,
 --        so it is not blocked. reauth and script take no lock and have no limit.
 --     Unchanged: another user's key raises 42501; the same credential_id under another passkey_id raises 23505.
@@ -71,8 +73,6 @@ BEGIN
          AND r.code IN ('admin', 'supporter')
     )
   ), false);
-EXCEPTION WHEN OTHERS THEN
-  RETURN false;
 END
 $$;
 
@@ -132,7 +132,7 @@ BEGIN
   IF p_via = 'window'
      AND NOT EXISTS (SELECT 1 FROM private.approved_passkeys a WHERE a.passkey_id = p_passkey_id) THEN
     v_min := (private.passkey_staff_settings() ->> 'min_approved_passkeys')::integer;
-    IF public.passkey_approved_count(p_user_id) >= v_min THEN
+    IF v_min IS NULL OR public.passkey_approved_count(p_user_id) >= v_min THEN
       RAISE EXCEPTION 'passkey_approve: window limit reached' USING ERRCODE = '55000';
     END IF;
   END IF;

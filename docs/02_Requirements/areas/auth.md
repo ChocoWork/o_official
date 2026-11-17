@@ -2249,7 +2249,7 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 1） |
 | 優先度 | MUST |
 
-規則: (1) `passkey_is_staff` は、フックと同じ店員の定義（`public.user_roles` の有効で期限内の行の役割が admin か supporter）で真になり、引けない・`null` は偽で例外を投げない。(2) `passkey_credential_is_approved` は、認めた鍵の生の ID（`bytea`）だけが真。認めていない鍵・他人・別の ID・書き換わった認め・`null`・長さ0は偽。(3) `passkey_approved_ids` は、`passkey_approved_count` と同じ数え方の `passkey_id` の一覧。(4) `passkey_approve` は、同じ `passkey_id` の行が別の `credential_id` で残っていれば `23505`（文は `passkey_approve: stale approval for this passkey`）で失敗し、同じ `credential_id` なら何もしない。(5) `passkey_approve` は `window` の時だけ、利用者ごとの錠を取って数え直し、すでに上限以上なら `55000`（文は `passkey_approve: window limit reached`）で失敗する。`reauth`・`script` は錠も上限も無い。(6) 薄い部品は、base64url でない・空の鍵を DB に渡さず偽を返し、DB の誤り・例外・想定外の型の戻りを `{ ok: false }` にする。
+規則: (1) `passkey_is_staff` は、フックと同じ店員の定義（`public.user_roles` の有効で期限内の行の役割が admin か supporter）で真になり、存在しない利用者・`null` は偽で、DB の誤りは偽にせず投げる（部品が `{ ok: false }` にする）。(2) `passkey_credential_is_approved` は、認めた鍵の生の ID（`bytea`）だけが真。認めていない鍵・他人・別の ID・書き換わった認め・`null`・長さ0は偽。(3) `passkey_approved_ids` は、`passkey_approved_count` と同じ数え方の `passkey_id` の一覧。(4) `passkey_approve` は、同じ `passkey_id` の行が別の `credential_id` で残っていれば `23505`（文は `passkey_approve: stale approval for this passkey`）で失敗し、同じ `credential_id` なら何もしない。(5) `passkey_approve` は `window` の時だけ、利用者ごとの錠を取って数え直し、すでに上限以上、または設定が引けず上限が NULL なら `55000`（文は `passkey_approve: window limit reached`）で失敗する。`reauth`・`script` は錠も上限も無い。(6) 薄い部品は、base64url でない・空の鍵を DB に渡さず偽を返し、DB の誤り・例外・想定外の型の戻りを `{ ok: false }` にする。
 
 ## 受け入れ条件
 

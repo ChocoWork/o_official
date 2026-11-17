@@ -44,9 +44,12 @@ const isStringArray = (data: unknown): data is string[] =>
 /**
  * 店員（admin・supporter の有効で期限内の役割がある利用者）かを DB で確かめる。
  *
- * @remarks 店員の定義は GoTrue のフック `passkey_access_token_hook` と同じ（DB の関数 `passkey_is_staff`）。
+ * @remarks 店員の定義は GoTrue のフック `passkey_access_token_hook` と同じ（DB の関数 `passkey_is_staff`）。DB の誤りは偽にせず、`{ ok: false }`（閉じる側）で返す。
+ *
+ * @impl IMPL-AUTH-266
+ * @design DD-AUTH-050
  */
-function isStaff(userId: string): Promise<RpcResult<boolean>> {
+export function isStaff(userId: string): Promise<RpcResult<boolean>> {
   return callChecked('passkey_is_staff', { p_user_id: userId }, isBoolean);
 }
 
@@ -68,22 +71,31 @@ export async function isCredentialApproved(userId: string, rawIdBase64Url: strin
 
 /**
  * 認めた鍵の `passkey_id` の一覧。
+ *
+ * @impl IMPL-AUTH-267
+ * @design DD-AUTH-050
  */
-function approvedIds(userId: string): Promise<RpcResult<string[]>> {
+export function approvedIds(userId: string): Promise<RpcResult<string[]>> {
   return callChecked('passkey_approved_ids', { p_user_id: userId }, isStringArray);
 }
 
 /**
  * 認めた鍵の本数（鍵が実在し、`credential_id` が合う分だけ）。
+ *
+ * @impl IMPL-AUTH-268
+ * @design DD-AUTH-050
  */
-function approvedCount(userId: string): Promise<RpcResult<number>> {
+export function approvedCount(userId: string): Promise<RpcResult<number>> {
   return callChecked('passkey_approved_count', { p_user_id: userId }, isCount);
 }
 
 /**
  * その利用者・そのセッションの登録の窓が今も開いているか。
+ *
+ * @impl IMPL-AUTH-269
+ * @design DD-AUTH-050
  */
-function windowIsOpen(userId: string, sessionId: string): Promise<RpcResult<boolean>> {
+export function windowIsOpen(userId: string, sessionId: string): Promise<RpcResult<boolean>> {
   return callChecked('passkey_window_is_open', { p_user_id: userId, p_session_id: sessionId }, isBoolean);
 }
 
@@ -91,8 +103,11 @@ function windowIsOpen(userId: string, sessionId: string): Promise<RpcResult<bool
  * 鍵を認める（`passkey_approve`）。
  *
  * @remarks `23505`（古い行。SEC-AUTH-041）は `stale`、`55000`（窓で認められる上限）は `window_full`、そのほかは `other`。
+ *
+ * @impl IMPL-AUTH-270
+ * @design DD-AUTH-050
  */
-async function approve(userId: string, passkeyId: string, via: ApproveVia): Promise<ApproveResult> {
+export async function approve(userId: string, passkeyId: string, via: ApproveVia): Promise<ApproveResult> {
   const outcome = await callRpc('passkey_approve', { p_user_id: userId, p_passkey_id: passkeyId, p_via: via });
   if (!outcome) return { ok: false, reason: 'other' };
   if (!outcome.error) return { ok: true };
@@ -101,10 +116,3 @@ async function approve(userId: string, passkeyId: string, via: ApproveVia): Prom
   if (outcome.error.code === '55000') return { ok: false, reason: 'window_full' };
   return { ok: false, reason: 'other' };
 }
-
-/**
- * 窓口が使う DB の関数の呼び方は、この部品のここから出す（Task 6・7・8 は RPC を直に呼ばない）。
- * 追跡の単位（`@impl IMPL-AUTH-249`・`@design DD-AUTH-050`）は、中心の `isCredentialApproved` に付け、ほかの5つは同じ部品の一部として
- * 一覧でまとめて出す。
- */
-export { isStaff, approvedIds, approvedCount, windowIsOpen, approve };

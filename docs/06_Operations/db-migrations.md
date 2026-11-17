@@ -168,18 +168,18 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 
 | 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
 | --- | --- | --- | --- |
-| `20261117123620_passkey_server_endpoint_fns.sql` | 9788 bytes / `44feb8b6447e41463dda19f23d5063ab` | 本番未適用（手元の `db reset` で適用済み） | `public.passkey_is_staff(uuid)`・`passkey_credential_is_approved(uuid, bytea)`・`passkey_approved_ids(uuid)` を足し、`public.passkey_approve(uuid, uuid, text)` に古い行の失敗と窓の上限・錠を足す |
+| `20261117123620_passkey_server_endpoint_fns.sql` | 10018 bytes / `70dd811b694db75cb664f79fd5df836e` | 本番未適用（手元の `db reset` で適用済み） | `public.passkey_is_staff(uuid)`・`passkey_credential_is_approved(uuid, bytea)`・`passkey_approved_ids(uuid)` を足し、`public.passkey_approve(uuid, uuid, text)` に古い行の失敗と窓の上限・錠を足す |
 
-- 変えるもの: 新しい関数3本（`SECURITY DEFINER`・`search_path` 空・持ち主 `postgres`・`service_role` だけが `execute`）。`passkey_approve` は `CREATE OR REPLACE`（署名・権限は A と同じ）で、(1) 同じ `passkey_id` が別の `credential_id` で残っていれば `23505`、(2) `via = 'window'` の時だけ利用者ごとの取引の錠を取り、数え直して上限（`min_approved_passkeys`）以上なら `55000`。ほかの規則は変えない。表・列は変えない
-- 本番に MCP の `apply_migration` で当てた後の突き合わせ: `schema_migrations` の `statements` は1つ（ファイルの全文）になるので、`md5(statements[1])` はファイルの MD5 `44feb8b6447e41463dda19f23d5063ab` と同じになる。同じでなければ当てる途中で字が変わっている（全角の空白など。この移行は ASCII だけ）ので止める
-- 手元の値（参考。本番の突き合わせには使わない）: 手元の `db reset` の後、CLI は文を分けて記録するので `md5(statements[1])` は `2421a7a1070b6ba47a6bf67f770d7ed6`（頭の注釈と `BEGIN` だけ）
+- 変えるもの: 新しい関数3本（`SECURITY DEFINER`・`search_path` 空・持ち主 `postgres`・`service_role` だけが `execute`）。`passkey_approve` は `CREATE OR REPLACE`（署名・権限は A と同じ）で、(1) 同じ `passkey_id` が別の `credential_id` で残っていれば `23505`、(2) `via = 'window'` の時だけ利用者ごとの取引の錠を取り、数え直して上限（`min_approved_passkeys`）以上、または設定が引けず上限が NULL なら `55000`（閉じる側）。`passkey_is_staff` は DB の誤りを偽にせず、そのまま投げる（部品が `{ ok: false }` にする）。ほかの規則は変えない。表・列は変えない
+- 本番に MCP の `apply_migration` で当てた後の突き合わせ: `schema_migrations` の `statements` は1つ（ファイルの全文）になるので、`md5(statements[1])` はファイルの MD5 `70dd811b694db75cb664f79fd5df836e` と同じになる。同じでなければ当てる途中で字が変わっている（全角の空白など。この移行は ASCII だけ）ので止める
+- 手元の値（参考。本番の突き合わせには使わない）: 手元の `db reset` の後、CLI は文を分けて記録するので `md5(statements[1])` は `8ee084ab37a70a860ea423e12da143d2`（頭の注釈と `BEGIN` だけ）
 - 前の確かめ: `passkey_approve`・`passkey_approved_count`・`private.passkey_staff_settings()`・`private.approved_passkeys`・`auth.webauthn_credentials`・`public.user_roles`・`public.roles` が在ること。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（`passkey_f_precheck`）
 - 末尾の確かめ: 4本が `anon`・`authenticated`・`public` から外れ `service_role` だけが `execute` を持つこと、`SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空であること、`passkey_approve` の本体に2つの新しい文があること。外れたら `PASSKEY_MIGRATION_ASSERTION_FAILED`（`passkey_f_function_acl`・`passkey_f_function_attrs`・`passkey_f_approve_body`）
 - 戻し方（移行のヘッダーの ROLLBACK）: 3つの新しい関数を `DROP`。`passkey_approve` は移行 A の本体に `CREATE OR REPLACE` で戻す（A の本体の `md5(prosrc)` は `e0b5dc02ecfcb5533cd91a00edc55fe4`、876文字。F を当てる前の手元で測った）。段1b の窓口が使う前に限る
 - 当てる順: A の後。窓口のアプリをデプロイするより先に当てる（窓口が3つの新しい関数を呼ぶ）。1a の移行 A〜E と同じく MCP で1本ずつ
 - **段3まで `supabase db push`（どの形でも）を流さない**: 上の移行 E の節の決まりに、この F も含める。当てるのは調整役だけ（オーナーの許可で）
 - 古い行の運用: 窓口が `passkey_approve` の `23505`（`stale approval`）で失敗したら、正しい鍵なら SQL で `private.approved_passkeys` の古い行を消して認め直す（SEC-AUTH-041）
-- 手元で確かめた結果（2026-11-17、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_server_fns.integration.test.ts` 20件通過、`tests/integration/db/auth_*` 16ファイルの DB 結合が468件通過。単体 `passkey-approval-rpc.test.ts` 35件通過。E2E `FR-LOGIN-047`（3幅）通過
+- 手元で確かめた結果（2026-11-17、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_server_fns.integration.test.ts` 22件通過、`tests/integration/db/auth_*` 16ファイルの DB 結合が通過（直し1の後）。単体 `passkey-approval-rpc.test.ts` 35件通過。E2E `FR-LOGIN-047`（3幅）通過
 
 ## パスキー段1a の本番への当て方の順と前提
 

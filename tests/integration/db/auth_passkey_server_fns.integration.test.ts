@@ -102,6 +102,17 @@ describeLocalDb('passkey server endpoint functions', () => {
       expect((await db().query('select public.passkey_is_staff(null) as r')).rows[0].r).toBe(false);
     });
 
+    test('DATA-AUTH-018 a DB error inside passkey_is_staff is not answered as false (fail closed)', async () => {
+      const u = await user('admin');
+      await db().query('savepoint e');
+      try {
+        await db().query('alter table public.user_roles rename to user_roles_renamed_by_test');
+        await expect(db().query('select public.passkey_is_staff($1) as r', [u])).rejects.toMatchObject({ code: '42P01' });
+      } finally {
+        await db().query('rollback to savepoint e');
+      }
+    });
+
     test('DATA-AUTH-018 the answer always matches the access token hook staff decision', async () => {
       for (const [, role, opts] of cases) {
         const u = await user(role, opts);
@@ -220,6 +231,18 @@ describeLocalDb('passkey server endpoint functions', () => {
       // already approved key: no new row, so the limit does not turn an idempotent repeat into an error
       await expect(approve(u, k1.id, 'window')).resolves.toBeTruthy();
     });
+  });
+
+  test('DATA-AUTH-018 window approval is refused (55000) when the settings give no minimum (fail closed)', async () => {
+    const u = await user('admin');
+    const k = await key(u);
+    await db().query(
+      `create or replace function private.passkey_staff_settings() returns jsonb language sql stable as $$ select '{}'::jsonb $$`,
+    );
+    await db().query('savepoint m');
+    await expect(approve(u, k.id, 'window')).rejects.toMatchObject({ code: '55000', message: FULL_MSG });
+    await db().query('rollback to savepoint m');
+    expect((await db().query('select count(*)::int as n from private.approved_passkeys where passkey_id = $1', [k.id])).rows[0].n).toBe(0);
   });
 
   test('DATA-AUTH-018 two connections approving different new keys by window at once end with exactly two approved keys', async () => {

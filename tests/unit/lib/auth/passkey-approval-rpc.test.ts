@@ -67,6 +67,7 @@ describe('passkey-approval-rpc', () => {
     rpc.mockResolvedValue({ data: [PASSKEY_ID], error: null });
 
     await expect(approvedIds(USER_ID)).resolves.toEqual({ ok: true, value: [PASSKEY_ID] });
+    expect(rpc).toHaveBeenCalledTimes(1);
     expect(rpc).toHaveBeenCalledWith('passkey_approved_ids', { p_user_id: USER_ID });
   });
 
@@ -74,6 +75,7 @@ describe('passkey-approval-rpc', () => {
     rpc.mockResolvedValue({ data: 2, error: null });
 
     await expect(approvedCount(USER_ID)).resolves.toEqual({ ok: true, value: 2 });
+    expect(rpc).toHaveBeenCalledTimes(1);
     expect(rpc).toHaveBeenCalledWith('passkey_approved_count', { p_user_id: USER_ID });
   });
 
@@ -81,11 +83,13 @@ describe('passkey-approval-rpc', () => {
     rpc.mockResolvedValue({ data: false, error: null });
 
     await expect(windowIsOpen(USER_ID, SESSION_ID)).resolves.toEqual({ ok: true, value: false });
+    expect(rpc).toHaveBeenCalledTimes(1);
     expect(rpc).toHaveBeenCalledWith('passkey_window_is_open', { p_user_id: USER_ID, p_session_id: SESSION_ID });
   });
 
   it('DD-AUTH-050 approve は passkey_approve を呼び、成功なら ok を返す', async () => {
     await expect(approve(USER_ID, PASSKEY_ID, 'window')).resolves.toEqual({ ok: true });
+    expect(rpc).toHaveBeenCalledTimes(1);
     expect(rpc).toHaveBeenCalledWith('passkey_approve', { p_user_id: USER_ID, p_passkey_id: PASSKEY_ID, p_via: 'window' });
   });
 
