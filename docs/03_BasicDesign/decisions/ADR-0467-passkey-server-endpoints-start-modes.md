@@ -44,6 +44,10 @@
 - 登録の終わりで UV の印を読むため、自前の小さな CBOR の読み取りを足す（外のライブラリを足さない）。これは安全の門でなく、PIN の無い鍵を2本登録して「数だけ2本で入れない」状態になるのを避ける使い勝手の守り
 - 始め (a) の窓口（Task 3、DD-AUTH-052）: 順番は 設定が `browser` なら 409 → IP が取れなければ 503 → IP ごとに5分20回 → 鍵の確かめ（失敗は窓口だけの 503。アプリ全体は止めない）→ GoTrue。IP は `getClientIp` だけで、無い時だけ手元の開発用の IP。IP が取れない時は枠に入れず 503 にする（`enforceRateLimit` は IP が `null` だと「送り元が分からない全員が1つの枠」になり、1人で全員の始めを止められるため）。回数は GoTrue の制限（5分30回）の手前の20回で、正当なやり直し（認証器のキャンセルなど）は数回で達しにくい。設定が `browser` の時の (a) は 409 にする（2つの道が同時に動くと、本番で添え書きが効かず (b) に切り替えた後も古い画面が (a) を呼び続け、`sb_secret_` の確かめを通らない状態が見えにくくなるため）。共有の `enforceRateLimit` は変えない。手元の開発用の IP の時だけ枠の IP が `null`（手元の共有の枠）になる
 - E2E は手元の `supabase status` の `SECRET_KEY`（`sb_secret_`）を `SUPABASE_SECRET_KEY` として E2E のアプリに常に渡し（無ければ空）、`PASSKEY_START_DEV_IP` は空にする。`.env.local` の本番の鍵や開発用の IP が E2E に届かないため。手元の GoTrue は `Sb-Forwarded-For` を数えないので、手元で確かめるのは「ヘッダーを付けて 200」まで。IP ごとに数えるか・本番で効くかは本番の確認（設計 8-2 の1）
+- 始め (b)（Task 4、DD-AUTH-053）: 画面を持たない関数 `createPasskeyAuthenticationStarter`（`src/features/auth/passkey/browser-start.ts`）として1b で作り、ブラウザの WebAuthn の呼び出しと画面は段2に回す（画面を1b で作ると見た目・Turnstile のウィジェット・エラーの文言が段2と二重になるため）。(b) は見えない形の Turnstile のトークンを `captchaToken` で GoTrue に渡し、無ければ GoTrue を呼ばない。`userVerification` は (b) ではブラウザの側で `required` に書き換える（設計 5-3）
+- 1つの設定を両方が読む理由: ブラウザの部品とサーバーの窓口が同じ `NEXT_PUBLIC_PASSKEY_START_MODE` を読めば、画面が (a) を呼ぶのに窓口が (b) を前提にする、といった食い違いが起きない。窓口は (b) の時に 409 で断る。ただしブラウザの束では `process.env.NEXT_PUBLIC_X` とそのまま書いた形だけが埋め込まれ、既定の引数 `process.env` は空になる。そこでブラウザの部品は `process.env.NEXT_PUBLIC_PASSKEY_START_MODE` を直に書いて値だけ `resolvePasskeyStartMode` に渡す
+- CSP は変えない: `connect-src` には自分の Supabase の origin 1つと Turnstile が既に入っており、(b) に要る許可はそろっている。ワイルドカードは入れず、試験（単体とページの中からの `fetch`）で固定する
+- (b) に切り替える時は、本番の GoTrue で captcha を有効にする（今は captcha の段階 B の待ち）
 
 #### 退けた案
 

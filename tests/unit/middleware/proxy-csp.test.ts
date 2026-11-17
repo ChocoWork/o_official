@@ -100,6 +100,16 @@ describe('proxy の CSP', () => {
     expect(csp.get('img-src')).not.toContain('https://*.supabase.co');
   });
 
+  it('DD-AUTH-053 /login の connect-src は自分の Supabase の origin 1つと Turnstile を許し、*.supabase.co を許さない（パスキーの始め (b) が要る許可）', async () => {
+    const csp = await cspFor('/login', { publicUrl: 'http://127.0.0.1:54321' });
+    const connect = csp.get('connect-src') ?? [];
+
+    expect(connect).toContain('http://127.0.0.1:54321');
+    expect(connect).toContain('https://challenges.cloudflare.com');
+    expect(connect.filter((v) => v.includes('supabase'))).toEqual([]);
+    expect([...csp.values()].flat().join(' ')).not.toContain('*.supabase.co');
+  });
+
   it('DD-HOME-004 NEXT_PUBLIC_SUPABASE_URL が無く SUPABASE_URL だけの時は、その origin を使う', async () => {
     const csp = await cspFor('/admin', { serverUrl: 'https://server.supabase.co/rest/v1' });
 

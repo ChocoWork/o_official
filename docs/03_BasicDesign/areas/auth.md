@@ -1328,6 +1328,8 @@ stateDiagram-v2
 | 失敗 | 409 `passkey_start_mode_browser`、503 `client_ip_unavailable`・`passkey_start_unavailable`、429 `Too many requests`（`Retry-After`）、502 `passkey_start_failed` |
 | 監査 | action `auth.passkey.login.start`。固定の符号だけ（鍵・IP・`challenge_id` を残さない） |
 
+始め (b)（窓口ではなくブラウザの部品。段2のログインの画面が呼ぶ。FR-AUTH-017・DD-AUTH-053）: `src/features/auth/passkey/browser-start.ts` の `createPasskeyAuthenticationStarter` が、設定 `NEXT_PUBLIC_PASSKEY_START_MODE`（`server`｜`browser`）に従い、(a) の窓口か、ブラウザの Supabase の client の `auth.passkey.startAuthentication`（`captchaToken` つき）を呼ぶ。(b) は見えない形の Turnstile のトークンが無ければ GoTrue を呼ばず、応答の `userVerification` はブラウザの側で `required` に書き換える。CSP は変えない（`connect-src` に自分の Supabase の origin 1つと `https://challenges.cloudflare.com` が既に入っている。E2E と単体テストで固定する）。
+
 ## データ
 
 ### DATA-AUTH-001 sessions の表は refresh token のハッシュを控える監査用の表で、明示の失効の印だけを門に使う

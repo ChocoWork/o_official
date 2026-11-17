@@ -10,8 +10,8 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-016、SR-AUTH-017、FR-AUTH-015、FR-AUTH-016、DD-AUTH-052、DATA-AUTH-018、SEC-AUTH-041、THR-AUTH-042、SEC-AUTH-042、THR-AUTH-043、ADR-0467 |
-| 対象のコード | 移行 `supabase/migrations/20261117123620_passkey_server_endpoint_fns.sql`、`src/lib/auth/passkey-approval-rpc.ts`、`src/app/api/auth/passkey/login/start/route.ts` |
+| 対応する ID | SR-AUTH-016、SR-AUTH-017、FR-AUTH-015、FR-AUTH-016、FR-AUTH-017、DD-AUTH-052、DD-AUTH-053、DATA-AUTH-018、SEC-AUTH-041、THR-AUTH-042、SEC-AUTH-042、THR-AUTH-043、ADR-0467 |
+| 対象のコード | 移行 `supabase/migrations/20261117123620_passkey_server_endpoint_fns.sql`、`src/lib/auth/passkey-approval-rpc.ts`、`src/app/api/auth/passkey/login/start/route.ts`、`src/features/auth/passkey/browser-start.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-5）、[段1b の計画](../../superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md)、[店員のパスキーの入口](auth-staff-passkey-entry.md) |
 | 調べた時点 | 2026-11-17（手元の DB で結合試験を流した） |
 
@@ -131,6 +131,44 @@ sequenceDiagram
 - 監査: action `auth.passkey.login.start`・outcome `failure`・detail は固定の符号（`client_ip_unavailable`・`secret_key_missing`・`secret_key_bad_shape`・`gotrue_rate_limited`・`gotrue_failed`・`gotrue_bad_response`・`unexpected_error`）だけ。成功は監査に残さない（始めは認証の前で行為者がいない）
 - 手元の確かめの限り: 手元の GoTrue は `Sb-Forwarded-For` を数えない（手元の設定に添え書きを有効にする項目が無い）。手元では「ヘッダーを付けて送り、GoTrue が断らず 200 を返す」ことと、単体の試験が送ったヘッダーの値を確かめることまで。IP ごとに数えるか・本番で添え書きが効くかは本番の確認（設計 8-2 の1）に回す
 - テスト観点: 設定 `browser` で409・IP 無しで503・`x-forwarded-for` だけで503・鍵の形が不正・鍵無しで503・回数の上限で429で GoTrue 0回・成功で GoTrue への要求が1回（`apikey` が鍵・`Sb-Forwarded-For` が IP・`Authorization` 無し）・`preferred` が `required` に変わる・偽の `x-forwarded-for` が使われない・開発用の IP は見出しが無い時だけ・GoTrue の429・500・ネットワークの誤り・形の違う200・監査に鍵と IP が残らない
+
+### DD-AUTH-053 ログインの始め (b)（ブラウザから GoTrue を直に）の部品と (a)・(b) の切り替え
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-042 |
+| 根拠 | 本番の `sb_secret_` が添え書きを免除するか分からないので、(a) と (b) をどちらも作り、設定で切り替える（設計 5-1・12-2 の5、ADR-0467）。画面を持たない関数にして、ブラウザの WebAuthn と画面は段2に回す |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/passkey/browser-start.test.ts`、`tests/unit/middleware/proxy-csp.test.ts`）、E2E（`e2e/FR-LOGIN-049-passkey-start-mode-csp.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-4-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・12-2） |
+
+```mermaid
+sequenceDiagram
+    participant U as 画面（段2）
+    participant S as createPasskeyAuthenticationStarter
+    participant A as /api/auth/passkey/login/start
+    participant G as GoTrue
+    U->>S: start({ captchaToken })
+    alt mode = server
+        S->>A: POST（same-origin）
+        A-->>S: 200（required 済み）・429・503・409・502
+    else mode = browser
+        S-->>U: captchaToken が無ければ captcha_required（GoTrue を呼ばない）
+        S->>G: startAuthentication（captchaToken つき）
+        G-->>S: 選択肢、または誤り
+        S->>S: userVerification を required に書き換え
+    end
+    S-->>U: ok と start、または reason
+```
+
+- 追跡の単位: `browser-start.ts` の `createPasskeyAuthenticationStarter` は IMPL-AUTH-272、`resolveBrowserStartMode` は IMPL-AUTH-280
+- 戻り: `{ ok: true, start }` か `{ ok: false, reason, retryAfterSeconds? }`。`reason` は `rate_limited`・`unavailable`・`captcha_required`・`failed`。server の 429 は `Retry-After` を秒で `retryAfterSeconds` に、503・409・502 は `unavailable`、ほかの失敗とネットワークの誤りは `failed`。browser の GoTrue の 429 は `rate_limited`、captcha の誤り（`code` か `message` に captcha）は `captcha_required`、ほかは `failed`
+- 成功の応答の使う項目（`challenge_id`・`options.challenge`・`expires_at`）の形を確かめ、違えば `failed`（閉じる）。`userVerification` は両方の道で `required` を返す
+- 設定の読み方: ブラウザの束で Next.js が埋め込むのは `process.env.NEXT_PUBLIC_X` とそのまま書いた形だけ。`resolvePasskeyStartMode` の既定の引数 `process.env` は埋め込まれず空になり、ブラウザがいつも `server` になる（Task 3 のレビューの指摘）。そこで `resolveBrowserStartMode` が `process.env.NEXT_PUBLIC_PASSKEY_START_MODE` を直に書いて値だけ渡す。`passkey-start-mode.ts` は import を持たないまま。試験は、ソースにその形が有り、`process.env` 全体の参照が無いことを固定する
+- import の制限: `browser-start.ts` が読むのは `passkey-start-mode.ts` だけ（`node:`・`server-only`・`passkey-start-config`・`passkey-gotrue` を読まない。ファイルの文字列で試験する）
+- CSP は変えない: `connect-src` に自分の Supabase の origin 1つと Turnstile が入っており、`*.supabase.co` は無い。E2E は `/login` のページの中から手元の GoTrue へ `fetch` し、`securitypolicyviolation` が出ないことを確かめる
+- (b) に切り替える時の本番の確認: 本番の GoTrue で captcha を有効にする。(a) で `sb_secret_` が captcha を免除されなかった時は、(a) の始めにも Turnstile のトークンが要る（別の計画）
+- テスト観点: server で `fetchApp` が1回・429 の秒・503/409/502・ネットワークの誤り・壊れた本文・形の違う 200／browser で captchaToken 無しは GoTrue 0回・有りで1回・`preferred` が `required` に変わる・429・captcha の誤り・形の違う成功・投げられた誤り／設定の読み／import とソースの形
 
 ## 未確認事項
 
