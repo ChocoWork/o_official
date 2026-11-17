@@ -863,6 +863,9 @@ stateDiagram-v2
 | API-AUTH-023 | `POST /api/auth/passkey/login/finish` | ログインの画面（段2。今は窓口だけ） |
 | API-AUTH-024 | `POST /api/auth/passkey/register/start` | 登録の画面（段3。今は窓口だけ） |
 | API-AUTH-025 | `POST /api/auth/passkey/register/finish` | 登録の画面（段3。今は窓口だけ） |
+| API-AUTH-026 | `GET /api/auth/passkey` | パスキーの管理の画面（段3。今は窓口だけ） |
+| API-AUTH-027 | `PATCH /api/auth/passkey/{id}` | パスキーの管理の画面（段3。今は窓口だけ） |
+| API-AUTH-028 | `DELETE /api/auth/passkey/{id}` | パスキーの管理の画面（段3。今は窓口だけ） |
 
 全部の窓口に共通: 状態を変える `POST` は共有の proxy の Origin の確かめを先に通る。`/api/auth` 配下の全部の応答（Origin 拒否の 403 を含む）に、共有の proxy が `Cache-Control: no-store` を付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037。2026-10-28）。`confirm`・`oauth/*`・`password-reset/link`・`session`・`me`・`login/resend`・`login/cancel`・`post-login` は窓口も自分で同じ値を付ける。
 
@@ -1390,6 +1393,65 @@ stateDiagram-v2
 | 監査 | action `auth.passkey.register.finish`。固定の符号（`passkey_approve_failed:compensation_failed` を含む）と行為者の ID だけ |
 
 窓は閉じず、セッションも終わらせない（段3）。お客さんは `passkey_approve` を呼ばない。
+
+### API-AUTH-026 GET /api/auth/passkey は本人の鍵を許可リスト方式で返し、店員だけに認めた鍵かどうかと本数を付ける
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-021、SEC-AUTH-046、ADR-0467 |
+| 根拠 | パスキーの一覧。GoTrue の `GET /passkeys` を本人のアクセストークンで呼び、項目を許可リスト方式で写す。順番と値は DD-AUTH-057 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/auth/passkey-manage.test.ts`）、単体テスト（`tests/unit/api/auth/passkey-manage-routes.test.ts`）、E2E（`e2e/FR-LOGIN-052-passkey-manage.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8） |
+
+| 項目 | 中身 |
+| --- | --- |
+| 入力 | 本文なし。ログイン済みの通行証（Cookie か Bearer）。GET なので CSRF は掛からない |
+| 順番 | IP ごとの回数（10分60回、`auth:passkey:list`、429）→ 認証（401・503）→ 店員かの確かめ（503）→ GoTrue（401・502）→ 店員だけ認めた鍵の一覧と本数（503）→ 200 |
+| 200 | `{ passkeys: [{ id, friendly_name, created_at, last_used_at, approved? }], isStaff, approvedCount? }`。`friendly_name`・`last_used_at` が無い時は `null`。`approved`・`approvedCount` は店員だけ |
+| 失敗 | 401、429、502 `passkey_list_failed`、503 `passkey_manage_unavailable`、500 |
+| 監査 | action `auth.passkey.list`。固定の符号と行為者の ID だけ |
+
+
+### API-AUTH-027 PATCH /api/auth/passkey/{id} は本人の鍵の名前を変える
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-021、SEC-AUTH-046、ADR-0467 |
+| 根拠 | パスキーの名前の変更。`id` は uuid の形だけを受け、名前は `PasskeyRenameSchema`（前後の空白を除いて1〜64字・制御文字なし）。他人の鍵・存在しない鍵は 404 にそろえる |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/auth/passkey-manage.test.ts`）、単体テスト（`tests/unit/api/auth/passkey-manage-routes.test.ts`、`tests/unit/features/auth/schemas/passkey.test.ts`）、E2E（`e2e/FR-LOGIN-052-passkey-manage.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8） |
+
+| 項目 | 中身 |
+| --- | --- |
+| 入力 | `{ friendly_name }`。ログイン済みの通行証と、Cookie で呼ぶ時の `x-csrf-token` |
+| 順番 | IP ごとの回数（10分60回、`auth:passkey:rename`、429）→ 認証（401・503）→ CSRF（403）→ `id` の形（400）→ 本文の形（400）→ GoTrue（404・400・401・502）→ 200 |
+| 200 | `{ passkey: { id, friendly_name } }` |
+| 失敗 | 400 `invalid_request`、401、403、404 `not_found`、429、502 `passkey_manage_failed`、500 |
+| 監査 | action `auth.passkey.rename`。固定の符号と行為者の ID だけ |
+
+
+### API-AUTH-028 DELETE /api/auth/passkey/{id} は本人の鍵を消し、店員は認めた鍵を2本未満にする削除を止める
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-021、SEC-AUTH-046、ADR-0467 |
+| 根拠 | パスキーの削除。店員は、消す鍵が認めた鍵で認めた本数から1を引くと2未満になる時、GoTrue を呼ばずに 409。お客さんは最後の1本も消せる。他人の鍵・存在しない鍵は 404 にそろえる。鍵が消えると 1a の引き金が認めの行を消し、知らせの予定を積む |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/auth/passkey-manage.test.ts`）、単体テスト（`tests/unit/api/auth/passkey-manage-routes.test.ts`）、E2E（`e2e/FR-LOGIN-052-passkey-manage.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8） |
+
+| 項目 | 中身 |
+| --- | --- |
+| 入力 | 本文なし。ログイン済みの通行証と、Cookie で呼ぶ時の `x-csrf-token` |
+| 順番 | IP ごとの回数（10分60回、`auth:passkey:delete`、429）→ 認証（401・503）→ CSRF（403）→ `id` の形（400）→ 店員かの確かめ（503）→ 店員は認めた鍵の確かめ（503）と下限の止め（409）→ GoTrue（404・401・502）→ 200 |
+| 200 | `{ ok: true }` |
+| 失敗 | 400 `invalid_request`、401、403、404 `not_found`、409 `staff_min_passkeys`、429、502 `passkey_manage_failed`、503 `passkey_manage_unavailable`、500 |
+| 監査 | action `auth.passkey.delete`。固定の符号（`staff_min_passkeys` を含む）と行為者の ID だけ |
+
+
+残る危険: 同時に2つの削除が来ると、確かめの時点では2本以上でも、両方が通って2本を下回りうる（SEC-AUTH-046）。完全な排他は作らず、下回った店員は管理の入口で止まり、引き金の知らせが出る。
 
 ## データ
 

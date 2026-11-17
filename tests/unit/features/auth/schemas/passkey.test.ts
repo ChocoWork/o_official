@@ -117,4 +117,14 @@ describe('DD-AUTH-051 PasskeyRenameSchema', () => {
     expect(PasskeyRenameSchema.safeParse({ friendly_name: 'a\nb' }).success).toBe(false);
     expect(PasskeyRenameSchema.safeParse({ friendly_name: 1 }).success).toBe(false);
   });
+
+  test('DD-AUTH-057 C1 の制御文字・表示の向きを変える文字は断り、長さはコードポイントで数える', () => {
+    const forbidden = [0x85, 0x9f, 0x061c, 0x200e, 0x200f, 0x202a, 0x202e, 0x2066, 0x2069];
+    for (const code of forbidden) {
+      expect(PasskeyRenameSchema.safeParse({ friendly_name: `a${String.fromCharCode(code)}b` }).success).toBe(false);
+    }
+    // 絵文字は UTF-16 で2単位。64個は通り、65個は断る。
+    expect(PasskeyRenameSchema.safeParse({ friendly_name: String.fromCodePoint(0x1f510).repeat(64) }).success).toBe(true);
+    expect(PasskeyRenameSchema.safeParse({ friendly_name: String.fromCodePoint(0x1f510).repeat(65) }).success).toBe(false);
+  });
 });

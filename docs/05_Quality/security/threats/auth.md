@@ -700,6 +700,20 @@ flowchart LR
 | 状態 | 推定 |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-7-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-5・6-1・6-2・10）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 7） |
 
+### THR-AUTH-047 窓口を使って店員の認めた鍵を2本未満に減らす・他人の鍵の有無を探る・一覧から鍵の値が漏れる
+
+| 属性 | 値 |
+| --- | --- |
+| 守るもの | 5-4（パスキーの管理）・5-5（認めたパスキー）・6-2（削除で2本を切る時は止める） |
+| 脅威 | (1) 盗まれたセッションや誤操作で、店員の認めた鍵を1本以下に減らす。(2) 他人の鍵の `id` を送り、404 と他の応答の差で鍵の有無を探る。(3) GoTrue の一覧の応答に公開鍵・`credential_id` が入り、窓口がそのまま返す。(4) 同時の2つの削除で下限をすり抜ける |
+| 起こり方 | 削除の止めが画面だけにある・GoTrue の誤りを分けて返す・一覧の応答をそのまま写す・確かめと削除が別の取引 |
+| 影響 | 管理の入口が閉じる（店員が入れない）、他人の鍵の有無が分かる、鍵の値が出る |
+| 対策 | SEC-AUTH-046（サーバーの止め・404 のそろえ・許可リスト方式）、DD-AUTH-057。同時の削除は受け入れる（下回った店員は入口で止まり、引き金の知らせが出る） |
+| ASVS | V4.1.1・V4.2.1・V7.4.1（当てはめは推定） |
+| 根拠 | 段1b の Task 8。設計 5-4・5-5・6-2 |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8） |
+
 ## 未確認事項
 
 - 本番の Supabase Auth の設定（OTP の期限・Confirm email・最小の長さ・漏洩の照合・captcha・TOTP・回数の制限・`secure_password_change`・現行パスワードの要求）。手元の `supabase/config.toml` は波 6 の切り替えで本番の前提にそろえたが、本番の実際の値は Management API で読むまで未確認（THR-AUTH-015・029）

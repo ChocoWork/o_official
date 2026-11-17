@@ -310,6 +310,8 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: 店員は、登録の窓が自分のセッションで開いていて認めた鍵が2本未満の間、または5分以内にパスキーで入り直した直後に、パスキーを登録できる。お客さんは、10分以内にパスキーかメールのコードで入った直後に登録できる。条件は始めでも終わりでも呼ばれるたびに確かめ、外れたら GoTrue の検証を呼ばない。店員の鍵は登録の直後に認めた鍵として数え、認められなければ作られた鍵を消す。受け入れ条件は FR-AUTH-020-AC-01〜09、SEC-AUTH-045、DD-AUTH-056。
 
+管理の要求の文（Task 8）: ログインした本人は、自分のパスキーの一覧を見て、名前を変え、鍵を消せる。店員は、消した後に認めた鍵が2本未満になる削除を、アプリの窓口が止める。一覧は GoTrue が返す項目のうち許可した項目だけを写し、店員だけに認めた鍵かどうかと認めた本数を付ける。他人の鍵と存在しない鍵は区別しない。受け入れ条件は FR-AUTH-021-AC-01〜06、SEC-AUTH-046、DD-AUTH-057。
+
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
 | 属性 | 値 |
@@ -2345,6 +2347,19 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 優先度 | MUST |
 
 規則: (1) 順番は、IP ごとに10分20回（`auth:passkey:register:start`・`finish`）→ 認証 → CSRF → 本人ごとに10分10回 → 店員かの確かめ（DB が使えなければ 503）→ 店員なら結び付いた生きたセッション（旗に関わらず）→ 窓・認めた鍵の本数（読めなければ 503）→ 登録の条件の判定。外れたら 403 `registration_not_allowed`（理由は `window_closed` か `reauth_required`）で、GoTrue を呼ばない。(2) 店員は、5分以内のパスキーでの入り直し（`reauth`）、または窓が開いていて認めた鍵が2本未満（`window`）で通る。(3) お客さんは、10分以内のパスキーかメールのコード（`otp`）で通る（`customer`。Google の `oauth` は含めない）。(4) 始めの選択肢は `authenticatorSelection.userVerification` を `required` にして返す。(5) 終わりは `id` と `rawId` が違えば 400、登録の `attestationObject` の UV の印が無ければ 400 `uv_required`（どちらも GoTrue の検証を呼ばない）。(6) 店員は GoTrue の検証の後に `passkey_approve` で認める（`window` の道は `window`、入り直しは `reauth`）。落ちたら今作られた鍵を管理 API で消して 500 `passkey_approve_failed`。消すのも落ちたら監査に `passkey_approve_failed:compensation_failed`。(7) 200 の本文は `{ passkey: { id, friendly_name, created_at }, approvedCount? }`（`approvedCount` は店員だけ）。窓は閉じず、セッションも終わらせない（段3）。
+
+### FR-AUTH-021 パスキーの一覧・名前の変更・削除の窓口 `GET /api/auth/passkey`・`PATCH`・`DELETE /api/auth/passkey/{id}` を足す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-019 |
+| 根拠 | SR-AUTH-019 のうち一覧・名前・削除を、`src/app/api/auth/passkey/route.ts`・`[id]/route.ts` にする。GoTrue の `/passkeys` を本人のアクセストークンで呼ぶ。共通の確かめは `src/lib/auth/passkey-manage-guard.ts`。設計は「削除の止めは画面で」とするが、画面（段3）が無い1bの窓口が2本未満へ減らす抜け道になるので、サーバーでも止める（作り手の判断）。判断は DD-AUTH-057・ADR-0467、守りは SEC-AUTH-046 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/passkey-manage-routes.test.ts`、`tests/unit/features/auth/schemas/passkey.test.ts`）、結合テスト（`tests/integration/api/auth/passkey-manage.test.ts`）、E2E（`e2e/FR-LOGIN-052-passkey-manage.spec.ts`、FR-AUTH-021-AC-01〜06） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8） |
+| 優先度 | MUST |
+
+規則: (1) 順番は、IP ごとに10分60回（`auth:passkey:list`・`rename`・`delete`）→ 認証（401・503）→ CSRF（`PATCH`・`DELETE` だけ。403）→ `id` が uuid でなければ 400（GoTrue を呼ばない）→（`PATCH`）本文の形 400 →（店員の `DELETE`）認めた鍵の確かめ → GoTrue。(2) 一覧は 200 `{ passkeys: [{ id, friendly_name, created_at, last_used_at, approved? }], isStaff, approvedCount? }`。項目は許可リスト方式で写し、GoTrue が公開鍵・`credential_id` を返しても出さない。`approved`・`approvedCount` は店員だけ。店員の判定・認めの確かめが読めなければ 503、GoTrue の失敗・形の違う応答は 502。(3) 名前は 200 `{ passkey: { id, friendly_name } }`。`friendly_name` は前後の空白を除いて1〜64字（コードポイントで数える）、C0・C1 の制御文字と表示の向きを変える文字は不可。(4) 削除は 200 `{ ok: true }`。店員は、消す鍵が認めた鍵で、認めた本数から1を引くと `min_approved_passkeys`（2）未満になる時、409 `staff_min_passkeys`（GoTrue を呼ばない）。認めていない鍵なら2本のままでも消せる。お客さんは最後の1本も消せる。(5) 他人の鍵・存在しない鍵は GoTrue の 404 を 404 `not_found` にそろえる（区別しない）。(6) 鍵が消えると 1a の引き金が認めの行を消し、知らせの予定を積む（アプリは何もしない）。
 
 ## 受け入れ条件
 
@@ -5098,6 +5113,78 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 
 窓口で登録した鍵で `passkey_approved_count` が1になり、同じ本人の通行証で GoTrue に直に足した鍵は GoTrue の鍵が2本でも認めた鍵は1本のままであること。
 
+### FR-AUTH-021-AC-01 店員の一覧は3件で approved が真・approvedCount が3、公開鍵などを含まず、名前の変更が一覧に反映される
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-021 |
+| 根拠 | 一覧は許可リスト方式で、店員だけに認めた鍵の情報を付けること（設計 6-2） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-052-passkey-manage.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト、結合テスト |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8） |
+
+認めた鍵2本の店員が入り直して3本目を足すと、`GET /api/auth/passkey` が 200 で3件、すべて `approved: true`、`approvedCount: 3`、各項目の項目名が `id`・`friendly_name`・`created_at`・`last_used_at`・`approved` だけであること。`PATCH` で名前を変えると 200 で、次の一覧に新しい名前が出ること。
+
+### FR-AUTH-021-AC-02 店員は認めた鍵を3本から2本に減らせるが、2本から1本へは409で鍵が残る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-021 |
+| 根拠 | 削除で2本を切る時はサーバーでも止めること（設計 6-2、作り手の判断） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-052-passkey-manage.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト、結合テスト |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8） |
+
+認めた鍵3本の店員が1本消すと 200 で、GoTrue の鍵・認めの行とも2本になる（認めの行は1a の引き金が消す）。続けてもう1本消そうとすると 409 `{ "error": "staff_min_passkeys" }` で、GoTrue の鍵・認めの行とも2本のままであること。
+
+### FR-AUTH-021-AC-03 お客さんの一覧に approved・approvedCount が無く、最後の1本も消せる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-021 |
+| 根拠 | 認めの表は店員だけ。お客さんは本数の下限が無いこと（設計 5-5） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-052-passkey-manage.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト、結合テスト |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8） |
+
+お客さんの一覧が `isStaff: false` で、`approvedCount` も各項目の `approved` も無いこと。1本だけの鍵を消すと 200 で、GoTrue の鍵が0本になり、認めの表には何も無いこと。
+
+### FR-AUTH-021-AC-04 別のお客さんの鍵の id は、名前の変更も削除も404で、存在しない id と同じ応答で、鍵も名前も変わらない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-021 |
+| 根拠 | 他人の鍵と存在しない鍵を区別しないこと（有無を探らせない。SEC-AUTH-046） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-052-passkey-manage.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8） |
+
+お客さん A が B の鍵の `id` に `DELETE`・`PATCH` を送ると 404 `{ "error": "not_found" }`。存在しない uuid への `DELETE` と同じ状態・本文であること。B の鍵は残り、名前は変わらないこと。
+
+### FR-AUTH-021-AC-05 直に GoTrue に足した鍵（認めていない）は一覧の approved が偽で、認めた本数に数えず、消せる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-021 |
+| 根拠 | 認めの表に載るのは窓口を通った鍵だけ。数えない鍵は止めの対象でないこと（設計 5-5） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-052-passkey-manage.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8） |
+
+認めた鍵2本の店員に、GoTrue へ直に鍵を足すと、一覧は3件で、その鍵だけ `approved: false`、`approvedCount` は2のまま。その鍵の `DELETE` は 200 で、認めた鍵は2本のまま残ること。
+
+### FR-AUTH-021-AC-06 id が uuid でない・名前が決まりを外れる・通行証が無い・Cookie だけで CSRF が無い、は断られ、鍵が残る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-021 |
+| 根拠 | 入口の順番どおりに断り、GoTrue を呼ばないこと（SEC-AUTH-046） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-052-passkey-manage.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（断りの順番・名前の境界） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8） |
+
+`id` が uuid でない `PATCH`・`DELETE` は 400。空・空白だけ・65字・改行を含む名前は 400。通行証が無ければ 401。Cookie で入った店員が `x-csrf-token` を付けない `DELETE` は 403で、鍵が減らないこと。
+
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 
 | 属性 | 値 |
@@ -6593,6 +6680,21 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 守ること: (1) 登録の条件（窓・認めた鍵の本数・入り直しの時刻）は始めと終わりの両方で、呼ばれるたびにやり直し、外れたら GoTrue の検証を呼ばない。(2) 窓の免除は認めた鍵が `min_approved_passkeys`（2）未満の間だけ。整数でない本数は窓を認めない。2本以上の店員は5分以内のパスキーでの入り直し（`reauth`）が要る。(3) 店員は、旗 `AUTH_REQUIRE_APP_SESSION` に関わらず、`checkAuthSessionLiveness(session_id, true)` が生きている（アプリに結び付いた）セッションだけを通す（`admin-rbac` と同じ）。確かめが使えなければ 503（閉じる側）。(4) 店員の鍵は GoTrue の検証の後に `passkey_approve` で認める。落ちた時（古い行・窓の上限の競り負けを含む）は、管理 API で今作られた鍵を消して 500。消すのも落ちたら監査に `passkey_approve_failed:compensation_failed` を残し、鍵は認めの表に無いので数に入らない（引き金が店員と店長に知らせる）。(5) 監査には固定の符号と行為者の ID だけを残し、トークン・鍵・認証器の応答・`challenge_id`・メールを残さない。
 
 同時の2つの終わりの競りは、移行 F の `passkey_approve('window')` が利用者ごとの錠の中で数え直して塞ぐ（SEC-AUTH-041）。残る危険として受け入れること: 窓口の再確認と認めの間は別の取引なので、競り負けた方は GoTrue に鍵ができた後に `55000` で落ち、補償の削除で消える（鍵が一瞬だけ在る）。`reauth` の道は上限を掛けない（入り直した本人が足す物で、設計 5-5 のとおり）。
+
+### SEC-AUTH-046 パスキーの削除は店員の認めた鍵を2本未満に減らさず、他人の鍵と存在しない鍵を区別せず、一覧は許可した項目だけを返す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-047 |
+| 根拠 | (1) 画面（段3）が無い1bの窓口が、店員の認めた鍵を1本以下に減らす抜け道になる。(2) 他人の鍵の `id` を試して、鍵の有無を探られる。(3) GoTrue の一覧の応答に公開鍵・`credential_id` が入っても、窓口が漏らす。(4) 同時に2つの削除が来る。判断は ADR-0467・DD-AUTH-057 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/passkey-manage-routes.test.ts`）、結合テスト（`tests/integration/api/auth/passkey-manage.test.ts`）、E2E `e2e/FR-LOGIN-052-passkey-manage.spec.ts`（FR-AUTH-021-AC-01〜06） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8）（作り手の判断 1〜3） |
+| 優先度 | MUST |
+
+守ること: (1) 店員の `DELETE` は、消す鍵が認めた鍵で `passkey_approved_count - 1 < 2` の時、GoTrue を呼ばずに 409 `staff_min_passkeys`。認めた鍵の確かめが読めなければ 503（閉じる側）。認めていない鍵は止めない。お客さんは認めの表を引かず、最後の1本も消せる。(2) 他人の鍵・存在しない鍵は、GoTrue の 404 を 404 `{ "error": "not_found" }` にそろえ、本文でも区別しない。本人の通行証だけで GoTrue を呼ぶ（管理 API は使わない）ので、他人の鍵は GoTrue が断る。(3) 一覧は `id`・`friendly_name`・`created_at`・`last_used_at`（と店員の `approved`）だけを写す（許可リスト方式）。形の違う応答は 502。(4) `id` は uuid の形でなければ 400（GoTrue を呼ばない）。名前は1〜64字・C0/C1 の制御文字と表示の向きを変える文字なし。(5) 順番は、回数の制限（IP）→ 認証 → CSRF → 入力 → 認めの確かめ → GoTrue。監査（`auth.passkey.list`・`rename`・`delete`）は固定の符号と行為者の ID だけを残す。
+
+残る危険として受け入れること: 同時に2つの削除が来ると、確かめの時点では2本以上でも、両方が通って2本を下回りうる。設計の「画面で止める」を越える足しなので、完全な排他は作らない。窓口を使わず GoTrue を直に叩く道も、この止めでは塞がらない。下回った店員は管理の入口で止まり（認めた鍵が2本未満）、1a の引き金の知らせが店員と店長に届く。
 
 ## 派生要件
 

@@ -10,8 +10,8 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-016、SR-AUTH-017、SR-AUTH-018、FR-AUTH-015、FR-AUTH-016、FR-AUTH-017、FR-AUTH-018、FR-AUTH-019、SR-AUTH-019、FR-AUTH-020、DD-AUTH-052、DD-AUTH-053、DD-AUTH-054、DD-AUTH-055、DD-AUTH-056、DATA-AUTH-018、SEC-AUTH-041、THR-AUTH-042、SEC-AUTH-042、THR-AUTH-043、SEC-AUTH-043、THR-AUTH-044、SEC-AUTH-044、THR-AUTH-045、SEC-AUTH-045、THR-AUTH-046、ADR-0467、ADR-0468 |
-| 対象のコード | 移行 `supabase/migrations/20261117123620_passkey_server_endpoint_fns.sql`、`src/lib/auth/passkey-approval-rpc.ts`、`src/app/api/auth/passkey/login/start/route.ts`、`src/app/api/auth/passkey/login/finish/route.ts`、`src/app/api/auth/passkey/register/start/route.ts`、`register/finish/route.ts`、`src/lib/auth/passkey-registration-guard.ts`、`passkey-recent-auth.ts`、`src/features/auth/passkey/browser-start.ts` |
+| 対応する ID | SR-AUTH-016、SR-AUTH-017、SR-AUTH-018、FR-AUTH-015、FR-AUTH-016、FR-AUTH-017、FR-AUTH-018、FR-AUTH-019、SR-AUTH-019、FR-AUTH-020、FR-AUTH-021、DD-AUTH-052、DD-AUTH-053、DD-AUTH-054、DD-AUTH-055、DD-AUTH-056、DD-AUTH-057、DATA-AUTH-018、SEC-AUTH-041、THR-AUTH-042、SEC-AUTH-042、THR-AUTH-043、SEC-AUTH-043、THR-AUTH-044、SEC-AUTH-044、THR-AUTH-045、SEC-AUTH-045、THR-AUTH-046、SEC-AUTH-046、THR-AUTH-047、ADR-0467、ADR-0468 |
+| 対象のコード | 移行 `supabase/migrations/20261117123620_passkey_server_endpoint_fns.sql`、`src/lib/auth/passkey-approval-rpc.ts`、`src/app/api/auth/passkey/login/start/route.ts`、`src/app/api/auth/passkey/login/finish/route.ts`、`src/app/api/auth/passkey/register/start/route.ts`、`register/finish/route.ts`、`src/app/api/auth/passkey/route.ts`、`src/app/api/auth/passkey/[id]/route.ts`、`src/lib/auth/passkey-registration-guard.ts`、`passkey-recent-auth.ts`、`passkey-manage-guard.ts`、`src/features/auth/passkey/browser-start.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-5）、[段1b の計画](../../superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md)、[店員のパスキーの入口](auth-staff-passkey-entry.md) |
 | 調べた時点 | 2026-11-17（手元の DB で結合試験を流した） |
 
@@ -291,6 +291,48 @@ sequenceDiagram
 - 窓は閉じず、セッションも終わらせない（段3）。窓の長さ30分が上限
 - 監査: action `auth.passkey.register.start`・`finish`。固定の符号（`staff_check_unavailable`・`session_check_unavailable`・`app_session_required`・`window_check_unavailable`・`registration_not_allowed:window_closed`・`registration_not_allowed:reauth_required`・`invalid_request`・`uv_required`・`gotrue_failed`・`gotrue_bad_response`・`passkey_approve_failed`・`passkey_approve_failed:compensation_failed`・`register_start:<mode>`・`register_finish:<mode>`・`unexpected_error`）と行為者の ID だけ。トークン・鍵・認証器の応答・`challenge_id`・メールを残さない
 - テスト観点: 店員×窓×認めた鍵の本数（0・1・2・NaN・小数）×入り直しの時刻（新しい・300秒・301秒・未来61秒・欠け・文字列・小数）・お客さん×`passkey`・`otp`・`oauth`×599・601秒・順番どおりの断り（IP の回数→認証→CSRF→本人の回数→店員の確かめ）・旗を切った状態でも結び付かない店員は 401 で GoTrue 0回・終わりで窓が閉じていたら GoTrue の検証0回・窓の中でも認めた鍵が2本なら始め・終わりとも 403・`id` と `rawId` の食い違いと UV の無い応答は検証0回・`approve` が落ちたら補償の削除が1回で 500（`window_full` も同じ）・補償も落ちたら監査の符号・お客さんは `passkey_approve` を呼ばない・GoTrue の応答に `authenticatorSelection` が無くても `required` が入る
+
+### DD-AUTH-057 一覧・名前の変更・削除（`GET /api/auth/passkey`、`PATCH`・`DELETE /api/auth/passkey/{id}`）の順番と、店員の削除の止め
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | API-AUTH-026、API-AUTH-027、API-AUTH-028、SEC-AUTH-046 |
+| 根拠 | ログインした本人の鍵を GoTrue の `/passkeys` で一覧・改名・削除する。店員は、認めた鍵を2本未満にする削除をサーバーでも止める（ADR-0467） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/passkey-manage-routes.test.ts`、`tests/unit/features/auth/schemas/passkey.test.ts`）、結合テスト（`tests/integration/api/auth/passkey-manage.test.ts`）、E2E（`e2e/FR-LOGIN-052-passkey-manage.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8） |
+
+```mermaid
+sequenceDiagram
+    participant B as ブラウザ
+    participant R as /api/auth/passkey（一覧）・/api/auth/passkey/[id]（名前・削除）
+    participant D as DB の関数
+    participant T as GoTrue
+    B->>R: GET／PATCH／DELETE
+    R->>R: 回数の制限（IP ごと60回/10分）→ 認証 →（PATCH・DELETE）CSRF
+    R->>R: （PATCH・DELETE）id が uuid でなければ 400
+    R->>D: passkey_is_staff(user.id)
+    opt 店員の DELETE
+        R->>D: passkey_approved_ids、passkey_approved_count
+        D-->>R: 消す鍵が認めた鍵で、本数 - 1 が2未満なら 409（GoTrue を呼ばない）
+    end
+    R->>T: GET／PATCH／DELETE /passkeys（本人のアクセストークン）
+    opt 店員の GET
+        R->>D: passkey_approved_ids、passkey_approved_count
+    end
+    R-->>B: 200（一覧・名前・{ ok: true }）、GoTrue の 404 は 404 not_found
+```
+
+- 追跡の単位: `src/app/api/auth/passkey/route.ts` の `GET` が IMPL-AUTH-278、`[id]/route.ts` の `PATCH` が IMPL-AUTH-290、`DELETE` が IMPL-AUTH-291、`passkey-manage-guard.ts` の `guardPasskeyManage` が IMPL-AUTH-292、`manageJson` が IMPL-AUTH-293、`manageDeny` が IMPL-AUTH-294
+- 順番: 回数の制限（IP ごと60回/10分。枠は `auth:passkey:list`・`rename`・`delete` に分ける。一覧の読みで削除の枠を使い切らないため）→ 認証（401・503）→ CSRF（`PATCH`・`DELETE` だけ。403）→ `id` の形（400）→（`PATCH`）本文の形（400）→ 店員かの確かめ（DB が使えなければ 503）→（店員の `DELETE`）認めた鍵の一覧と本数（読めなければ 503）と下限の止め（409）→ GoTrue。この窓口は店員のセッションの結び付き（`checkAuthSessionLiveness`）を別に確かめない（旗に従う `authenticateRequest` のまま。登録の窓口とは違い、鍵を足さず減らすだけで、下限の止めもあるため）
+- 一覧の写し: GoTrue の応答は配列で、各項目は `id`（文字列）と `created_at`（文字列）が必須。形が違えば 502。`id`・`friendly_name`・`created_at`・`last_used_at` だけを写し、無い名前・時刻は `null`。店員は `approved`（認めた鍵の `passkey_id` の一覧に含まれるか）と、本数 `approvedCount` を付ける
+- 名前: `PasskeyRenameSchema`（前後の空白を除いて1〜64字。長さはコードポイント。C0・C1 の制御文字と表示の向きを変える文字は不可）。GoTrue の成功の本文は `id`・`friendly_name` が文字列でなければ 502
+- GoTrue の失敗の直し: 404 は 404 `not_found`（他人の鍵と存在しない鍵を区別しない）、401 は 401、400・422 は 400 `invalid_request`、ほかは 502
+- 削除の止め: 店員で、消す鍵 `id` が `passkey_approved_ids` に含まれ、`passkey_approved_count - 1 < 2` なら 409 `staff_min_passkeys`。認めていない鍵は止めない。お客さんは認めの表を引かない
+- 認めの行: 鍵が消えると 1a の引き金（`auth.webauthn_credentials` の削除）が `private.approved_passkeys` の行を消し、知らせの予定を積む。アプリは何もしない
+- 残る隙: 確かめと GoTrue の削除は別の取引。同時に2つの削除が来ると、両方が通って2本を下回りうる。完全な排他は作らず受け入れる（SEC-AUTH-046）
+- 監査: action `auth.passkey.list`・`rename`・`delete`。固定の符号（`staff_check_unavailable`・`approval_check_unavailable`・`invalid_request`・`staff_min_passkeys`・`not_found`・`gotrue_unauthorized`・`gotrue_rejected`・`gotrue_failed`・`gotrue_bad_response`・`list`・`rename`・`delete`・`unexpected_error`）と行為者の ID だけ。トークン・鍵・名前・メールを残さない
+- テスト観点: 順番どおりの断り（IP の回数→認証→CSRF）・一覧が GoTrue の応答の公開鍵・`credential_id` を出さない・お客さんに `approved`・`approvedCount` が無い・`id` が uuid でなければ GoTrue 0回・名前の境界（空・空白だけ・64字・65字・制御文字・C1・表示の向きを変える文字・絵文字）・店員の削除（認めた2本で認めた鍵は409・3本なら200・認めていない鍵は2本のままでも200・DB が読めなければ503）・お客さんは最後の1本を消せる・他人の鍵（GoTrue の 404）は存在しない鍵と同じ 404・GoTrue の失敗は 502・監査にトークンが残らない
 
 ## 未確認事項
 

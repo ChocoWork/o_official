@@ -6,7 +6,8 @@
 import { z } from 'zod';
 
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
-const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+/** 名前に使えない文字: C0・C1 の制御文字と、表示の向きを変える文字（双方向の制御）。 */
+const NAME_FORBIDDEN_CHARS = /[\p{Cc}\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
 
 const base64url = (max: number) => z.string().min(1).max(max).regex(BASE64URL);
 
@@ -76,7 +77,7 @@ export const PasskeyRegisterFinishSchema = z.object({
 });
 
 /**
- * 名前の変更。前後の空白を除いて1〜64字、制御文字なし。
+ * 名前の変更。前後の空白を除いて1〜64字（コードポイントで数える）、制御文字・表示の向きを変える文字なし。
  *
  * @impl IMPL-AUTH-263
  * @design DD-AUTH-051
@@ -86,6 +87,6 @@ export const PasskeyRenameSchema = z.object({
     .string()
     .trim()
     .min(1)
-    .max(64)
-    .refine((value) => !CONTROL_CHARS.test(value)),
+    .refine((value) => [...value].length <= 64)
+    .refine((value) => !NAME_FORBIDDEN_CHARS.test(value)),
 });
