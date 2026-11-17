@@ -138,7 +138,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 旧番号 | IMPL-LOGIN-001、IMPL-LOGIN-004 |
 | 旧所在 | `docs/04_DetailDesign/pages/14_login.md`（基準コミットの版）の「機能要件対応表」の FR-LOGIN-001・FR-LOGIN-005 の行（「`LoginModal` の呼び出しのみ」は今の作りと違う） |
 
-**段2 Task 3（2026-11-17）の変更:** 旧の `/login` の中身は `src/app/login/password/page.tsx`（DD-AUTH-061。`robots: noindex, nofollow` を足した以外は同じ）へ移した。この頁（`src/app/login/page.tsx`）は Task 5 まで同じ中身のまま残り、Task 5 で新しい画面に作り替える。旧の流れの中の戻り先（`/login/verify` の保留の無い転送、`VerifyOtpClient` の401と取りやめ、`RegisterModal` のログインへのリンク）は `/login/password`。共有の `src/contexts/Providers.tsx`（範囲の外）の `isAuthPage` は `/login/password`・`/login/code`・`/login/passkey` も真にする（真ん中寄せの枠）。
+**段2 Task 3（2026-11-17）の変更:** 旧の `/login` の中身は `src/app/login/password/page.tsx`（DD-AUTH-061。`robots: noindex, nofollow` を足した以外は同じ）へ移した。このページ（`src/app/login/page.tsx`）は Task 5 まで同じ中身のまま残り、Task 5 で新しい画面に作り替える。旧の流れの中の戻り先（`/login/verify` の保留の無い転送、`VerifyOtpClient` の401と取りやめ、`RegisterModal` のログインへのリンク）は `/login/password`。共有の `src/contexts/Providers.tsx`（範囲の外）の `isAuthPage` は `/login/password`・`/login/code`・`/login/passkey` も真にする（真ん中寄せの枠）。
 
 **対応要件 ID:** SCR-AUTH-001、FLOW-AUTH-001・003、STATE-AUTH-001、SEC-AUTH-007（その上は FR-LOGIN-005、FREQ-63-REQ-01、FREQ-334-REQ-03、ADR-0410、ADR-0413、FREQ-266-REQ-01（範囲外））
 
@@ -194,7 +194,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SCR-AUTH-004、FLOW-AUTH-001、STATE-AUTH-001 |
-| 根拠 | 保留の判定をサーバーに置き、判定の前に入力の画面の HTML を送らない。保留が無い・偽り・期限切れを全部同じに `/login` へ送り、アカウントの有無を示さない（SCR-AUTH-004、`src/app/login/verify/page.tsx`）。入力の状態を Cookie だけに寄せ、再読み込みで資格情報のフォームへ戻って2通目のコードを送る道を閉じる（STATE-AUTH-001、`VerifyOtpClient.tsx`）。再送はパスワードも宛先も送らず、やり直しはサーバーに保留を捨てさせる（FREQ-334-REQ-05・06）。確定の後は役割で行き先を分ける（FLOW-AUTH-001） |
+| 根拠 | 保留の判定をサーバーに置き、判定の前に入力の画面の HTML を送らない。保留が無い・偽り・期限切れを全部同じに `/login/password` へ送り、アカウントの有無を示さない（SCR-AUTH-004、`src/app/login/verify/page.tsx`）。入力の状態を Cookie だけに寄せ、再読み込みで資格情報のフォームへ戻って2通目のコードを送る道を閉じる（STATE-AUTH-001、`VerifyOtpClient.tsx`）。再送はパスワードも宛先も送らず、やり直しはサーバーに保留を捨てさせる（FREQ-334-REQ-05・06）。確定の後は役割で行き先を分ける（FLOW-AUTH-001） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/login/verify/page.tsx`、`src/app/login/verify/VerifyOtpClient.tsx`）、`docs/superpowers/specs/2026-09-04-login-otp-dedicated-screen-design.md` |
@@ -208,7 +208,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 向き | 中身 |
 | --- | --- |
 | 入力（頁） | `GET /login/verify`。Cookie `sb-login-2fa-session` |
-| 出力（頁） | 保留が有効なら部品へ保留のメールを渡す。無効なら `/login` へ転送。metadata は `robots: noindex, nofollow`（`src/app/login/verify/page.tsx`） |
+| 出力（頁） | 保留が有効なら部品へ保留のメールを渡す。無効なら `/login/password` へ転送（段2 Task 3 で `/login` から変更。DD-AUTH-061）。metadata は `robots: noindex, nofollow`（`src/app/login/verify/page.tsx`） |
 | 入力（部品） | 保留のメール、8つの欄の入力、ボタンの操作 |
 | 出力（部品） | 共有の `LoginContext` の `verifyOtp`（`POST /api/auth/otp/verify`、DD-AUTH-015）、`GET /api/auth/me`（DD-AUTH-026）、`POST /api/auth/login/resend`（DD-AUTH-016）、`POST /api/auth/login/cancel`（DD-AUTH-017）、`router.replace` での移動 |
 
@@ -220,13 +220,13 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 4. 欄は数字だけを受け、打つと次の欄へ、複数の数字は順に入れる
 5. 8桁が揃うと送れる。送ると `verifyOtp` を呼び、成功なら `/api/auth/me` で行き先を決めて置き換える
 6. 待ちが明けると「再送信」を出し、押すと再送の窓口を呼ぶ。成功なら欄を空にし、待ちを 60 秒に戻し、成功の文を出し、1つ目の欄へ移る
-7. 「別のアドレスでやり直す」は取り消しの窓口を呼び（失敗は無視）、`/login` へ置き換える
+7. 「別のアドレスでやり直す」は取り消しの窓口を呼び（失敗は無視）、`/login/password` へ置き換える
 
 **分岐と異常フロー:**
 
 | 条件 | 動き |
 | --- | --- |
-| 頁で保留が無い・無効 | `/login` へ転送（`src/app/login/verify/page.tsx`） |
+| 頁で保留が無い・無効 | `/login/password` へ転送（`src/app/login/verify/page.tsx`） |
 | 伏せたメールが空 | 宛先の文を出さない（`VerifyOtpClient.tsx`） |
 | 入力に数字が無い | その欄を空にし、移らない |
 | 入力の数字が欄の残りより多い | 8つ目で止める |
@@ -243,11 +243,11 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 送った時に8桁でない | 「認証コードは8桁で入力してください」 |
 | `verifyOtp` が失敗 | 窓口の文、無ければ「認証コードの確認に失敗しました」 |
 | `verifyOtp` が投げる | 「認証コードの確認に失敗しました」 |
-| me が 200 以外・本文が JSON でない・`authenticated` が真でない | `/login` |
+| me が 200 以外・本文が JSON でない・`authenticated` が真でない | `/login/password`（今のコードは `post-login` が 401 の時にこの行き先を返す。前からの説明のずれ） |
 | me で役割が admin・supporter | `/auth/verified` |
 | me で役割がほか | `/account` |
 | me の通信が投げる | `/account` |
-| 再送が 401 | `/login` へ置き換える |
+| 再送が 401 | `/login/password` へ置き換える |
 | 再送が 429 で `Retry-After` が数字 | その秒数を待ちにする |
 | 再送が 429 で `Retry-After` が日付 | 今との差を待ちにする |
 | 再送が 429 で `Retry-After` が無い・壊れ・過去 | 60 秒を待ちにする |
@@ -265,16 +265,16 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | # | 観点 | 今の単体テスト |
 | --- | --- | --- |
-| 1 | 頁で保留が無効なら `/login`、有効なら部品にメール | 無い |
+| 1 | 頁で保留が無効なら `/login/password`、有効なら部品にメール | 無い |
 | 2 | 再送の成功で欄を空にし成功の文 | 在る |
-| 3 | 再送の 401 で `/login` | 在る |
+| 3 | 再送の 401 で `/login/password` | 在る |
 | 4 | 再送の 429 で `Retry-After` の秒・日付・無し・不正・負 | 在る |
 | 5 | 再送の 503・ほかの失敗・通信の例外 | 在る |
 | 6 | 確定の成功で役割ごとの行き先（admin・user・未ログイン・me の例外） | 一部 |
 | 7 | 8桁でない送信、`verifyOtp` の失敗（文の有り・無し）・例外 | 無い |
 | 8 | 欄の入力（数字なし・複数・最後で止まる）、Backspace の3つ、矢印の端、貼り付け | 無い |
 | 9 | 残りが 0 で「再送信」が出る、伏せたメールが空 | 無い |
-| 10 | やり直しで取り消しを呼び、失敗しても `/login` | 無い |
+| 10 | やり直しで取り消しを呼び、失敗しても `/login/password` | 無い |
 
 ### DD-AUTH-003 /auth/password-reset の頁（申請・新しいパスワード・結果）
 
@@ -694,7 +694,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | `register` が投げる | 「登録に失敗しました」 |
 | 案内の文がある | フォームでなく案内の画面 |
 | `onSwitchToLogin` がある | 「ログインページへ」はボタンで、押すとログインのタブへ |
-| `onSwitchToLogin` が無い | `/login` へのリンク（呼び手の `AuthTabs` は必ず渡すので使われない） |
+| `onSwitchToLogin` が無い | `/login/password` へのリンク（段2 Task 3 で変更。DD-AUTH-061。呼び手の `AuthTabs` は必ず渡すので使われない） |
 | 完了の文の要素が無い | フォーカスを移さない |
 | 鍵が無い | Turnstile を描かない |
 | 表示切替（2つの欄） | 欄の種類・読み上げの名前・アイコンを切り替える |
@@ -723,7 +723,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SCR-AUTH-001、SEC-AUTH-007 |
-| 根拠 | ログインと会員登録を別のページにすると導線が分かれるので、`/login` の1つの画面のタブで切り替え、`/register` は置かない（SCR-AUTH-001、ADR-0410）。切り替えても URL は `/login` のままにする（FREQ-63-REQ-01）。左右の矢印で隣のタブへ移れる tablist にする。確認のリンクを別のブラウザで開いた人への案内（`notice`）を、URL の query が `replaceState` で消えても、タブを替えても残す（SEC-AUTH-007） |
+| 根拠 | ログインと会員登録を別のページにすると導線が分かれるので、`/login` の1つの画面のタブで切り替え、`/register` は置かない（SCR-AUTH-001、ADR-0410）。切り替えても URL は `/login/password` のままにする（段2 Task 3 で `/login` から変更。DD-AUTH-061）（FREQ-63-REQ-01）。左右の矢印で隣のタブへ移れる tablist にする。確認のリンクを別のブラウザで開いた人への案内（`notice`）を、URL の query が `replaceState` で消えても、タブを替えても残す（SEC-AUTH-007） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/components/AuthTabs.tsx`） |
@@ -748,7 +748,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 条件 | 動き |
 | --- | --- |
 | 押したタブが今のタブ | 何もしない（`src/components/AuthTabs.tsx`） |
-| タブの道がある（今は両方 `/login` で常に真） | URL を道に置き換える。`?tab=`・`?email=` は消える |
+| タブの道がある（今は両方 `/login/password` で常に真） | URL を道に置き換える。`?tab=`・`?email=` は消える |
 | 左右の矢印以外のキー | 何もしない |
 | 左右の矢印 | もう1つのタブへ切り替え、そのタブにフォーカス |
 | 選んだタブ | 黒い太い下線・黒い文字・Tab で止まる。ほかは細い下線・グレーの文字・Tab で止まらない |
@@ -766,7 +766,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | # | 観点 |
 | --- | --- |
 | 1 | 初めのタブが `login`・`register` で中身が変わる |
-| 2 | 会員登録のタブを押すと URL が `/login` になり中身が変わる、同じタブの押下では変わらない |
+| 2 | 会員登録のタブを押すと URL が `/login/password` になり中身が変わる、同じタブの押下では変わらない |
 | 3 | 左右の矢印で切り替わりフォーカスが移る、ほかのキーでは変わらない |
 | 4 | 選んだタブの aria-selected と tabIndex |
 | 5 | 会員登録の中の「ログインページへ」でログインのタブへ戻る |

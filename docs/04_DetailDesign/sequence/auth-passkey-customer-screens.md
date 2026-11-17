@@ -106,7 +106,7 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 
 | 単位 | 動き |
 | --- | --- |
-| `src/app/login/password/page.tsx` | 旧の `/login` の頁をそのまま移した。保留の旧い Cookie が有効なら `/login/verify` へ転送（問い合わせは読まない）→ `tab`・`email`・`next`（戻り先の確かめを通った道筋だけ）・`registered` を `AuthTabs` に渡す。metadata は題・説明・OG を旧と同じにし、`robots: { index: false, follow: false }` を足す |
+| `src/app/login/password/page.tsx` | 旧の `/login` のページをそのまま移した。保留の旧い Cookie が有効なら `/login/verify` へ転送（問い合わせは読まない）→ `tab`・`email`・`next`（戻り先の確かめを通った道筋だけ）・`registered` を `AuthTabs` に渡す。metadata は題・説明・OG を旧と同じにし、`robots: { index: false, follow: false }` を足す |
 | `src/components/AuthTabs.tsx` | タブの `path` を `/login/password` にする。タブを替えても `history.replaceState` で `/login/password` に置き換える |
 | `src/contexts/Providers.tsx`（範囲の外） | `isAuthPage` に `/login/password`・`/login/code`・`/login/passkey` を足す。足さないと真ん中寄せの枠にならず `FR-LOGIN-016`・`017`・`023` が落ちる |
 | `src/app/login/verify/page.tsx` | 保留の Cookie が無い・偽り・期限切れの時の転送先を `/login/password` にする |
@@ -115,4 +115,4 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 | `src/app/login/page.tsx` | この段では変えない（Task 5 で作り替える）。Task 3 の終わりでは `/login` と `/login/password` が同じ中身になる |
 | 変えない行き先 | `src/app/api/auth/confirm/route.ts` の `/login`・`/login?registered=1`、パスワードの再設定・変更の後の `/login`、`GuestRegisterPrompt` の `/login?tab=register&email=…`。お客さんに見せる行き先は新しい `/login` が受ける |
 
-テスト観点: `/login/password` が旧の頁の分岐（保留の転送・タブ・メール・戻り先・案内）を持つ、`robots` が noindex・nofollow、`isAuthPage` が `/login/password`・`/login/code`・`/login/passkey` で真になり、近い別の住所（`/login/other`・`/login/password/extra`）では偽、`AuthTabs` の `replaceState` が `/login/password`、旧の流れの3つの戻り先が `/login/password`。E2E は旧の画面を操作する試験の `goto('/login')` を `/login/password` に付け替え、期待は変えない（`/login?next=…` へ送られることを確かめる試験は新しい `/login` に着くので替えない）。
+テスト観点: `/login/password` が旧のページの分岐（保留の転送・タブ・メール・戻り先・案内）を持つ、`robots` が noindex・nofollow、`isAuthPage` が `/login/password`・`/login/code`・`/login/passkey` で真になり、近い別の住所（`/login/other`・`/login/password/extra`）では偽、`AuthTabs` の `replaceState` が `/login/password`、旧の流れの3つの戻り先が `/login/password`。E2E は旧の画面を操作する試験の `goto('/login')` を `/login/password` に付け替え、期待は変えない（`/login?next=…` へ送られることを確かめる試験は新しい `/login` に着くので替えない）。

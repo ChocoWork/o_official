@@ -165,7 +165,7 @@ for (const viewport of viewports) {
       await expect(page.getByLabel('PASSWORD')).toHaveCount(0);
     });
 
-    test(`FREQ-334-AC-03 有効な 2FA Cookie を持って /login を開くと /login/verify へ遷移する (${viewport.name})`, async ({
+    test(`FREQ-334-AC-03 有効な 2FA Cookie を持って /login/password を開くと /login/verify へ遷移する (${viewport.name})`, async ({
       page,
     }) => {
       // Cookie を置くにはオリジンが要るので、先に同一オリジンのページを開く。
@@ -239,7 +239,7 @@ for (const viewport of viewports) {
       await expect(page.getByText(EXPIRY_NOTICE)).toBeVisible();
     });
 
-    test(`FR-LOGIN-008-AC-02 5 分を過ぎた後は正しいコードを送ってもログインできず、/login/verify を開き直すと /login へ移る (${viewport.name})`, async ({
+    test(`FR-LOGIN-008-AC-02 5 分を過ぎた後は正しいコードを送ってもログインできず、/login/verify を開き直すと /login/password へ移る (${viewport.name})`, async ({
       page,
     }) => {
       const member = await createMemberWithPassword(`ac02-${viewport.name}`);
@@ -271,7 +271,7 @@ for (const viewport of viewports) {
         expect(cookies.some((cookie) => cookie.name === name && cookie.value !== '')).toBe(false);
       }
 
-      // /login/verify を開き直すと /login へ移り、入力欄は出ない
+      // /login/verify を開き直すと /login/password へ移り、入力欄は出ない
       await page.goto('/login/verify');
       await expect(page).toHaveURL(/\/login\/password$/);
       await expect(page.getByLabel(OTP_INPUT_FIRST)).toHaveCount(0);

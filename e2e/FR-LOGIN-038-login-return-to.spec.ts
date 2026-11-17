@@ -246,7 +246,7 @@ for (const viewport of viewports) {
       await expectLandedOn(page, '/account');
     });
 
-    test(`FR-AUTH-005-AC-03 /login を直接開いてログインすると / へ着く (${viewport.name})`, async ({ page }) => {
+    test(`FR-AUTH-005-AC-03 /login/password を直接開いてログインすると / へ着く (${viewport.name})`, async ({ page }) => {
       const member = await createMember(`ac03-${viewport.name}`);
       await routeSourceIp(page, uniqueSourceIp());
 

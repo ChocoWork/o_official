@@ -26,7 +26,7 @@ for (const viewport of viewports) {
       });
     });
 
-    test('FREQ-334-AC-01 AC-01: 2FA Cookie が無ければ /login へ送り返す', async ({ page }) => {
+    test('FREQ-334-AC-01 AC-01: 2FA Cookie が無ければ /login/password へ送り返す', async ({ page }) => {
       await page.goto('/login/verify');
 
       await expect(page).toHaveURL(/\/login\/password$/);

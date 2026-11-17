@@ -63,7 +63,7 @@
 
 ##### 決定
 
-- 旧の `/login` の頁を `src/app/login/password/page.tsx` に移す。検索に載せない（`robots: noindex, nofollow`）。どこからもリンクしない（旧の流れの中の戻り先を除く）
+- 旧の `/login` のページを `src/app/login/password/page.tsx` に移す。検索に載せない（`robots: noindex, nofollow`）。どこからもリンクしない（旧の流れの中の戻り先を除く）
 - `src/app/login/page.tsx` は Task 3 では変えない。Task 3 の終わりは `/login` と `/login/password` が同じ中身。Task 5 で `/login` を新しい画面に作り替える（旧と新の切り替えを2つのコミットに分け、Task 3 を動かして付け替えるだけにするため）
 - 旧の流れの中の戻り先は `/login/password` に閉じる: `/login/verify` の保留の無い転送、`VerifyOtpClient` の再送・`post-login` の401と取りやめ、`RegisterModal` の「ログインページへ」のリンク
 - お客さんに見せる行き先は新しい `/login` のまま: `/api/auth/confirm` の `/login`・`/login?registered=1`、パスワードの再設定・変更の後の `/login`、`GuestRegisterPrompt` と注文の状態の案内の `/login?tab=register…`。新しい `/login` に着く試験の期待は Task 5 で直す
@@ -89,3 +89,6 @@
 - 共有: `src/contexts/Providers.tsx` の `isAuthPage` の `/login/verify`・`/login/password`
 - 窓口: `/api/auth/login/*`・`/api/auth/otp/verify`・`/api/auth/register`、旧い保留の Cookie（`sb-login-2fa-session`）
 - 試験: `/login/password` を開いて旧のフォームを操作する E2E（`FR-LOGIN-001`・`003`・`006`・`008`・`009`・`011`〜`017`・`019`〜`029`・`034`・`036`・`038`・`056`、`FR-CHECKOUT-012`、`FR-PWRESET-001`・`009`、`FR-SIGNUP-001`・`003`、`FR-UI-008`、`login-otp-resend-errors`）と手助け `e2e/account-test-utils.ts` の `loginAndOpenAccount`、`e2e/helpers.ts` の `registerUser`・`loginUser`（今は使う試験が0本）
+- 旧の画面にだけ当てる jest の試験: `tests/unit/app/login/login-page.test.tsx` の `/login/password` の分、`login-verify-page`、`VerifyOtpClient`、`auth-tabs`、`register-modal`、`tests/integration/ui/auth-login-flow`・`auth-login-tabs-screen`・`auth-login-verify-screen`・`auth-register-flow`・`auth-register-form-screen`、`tests/unit/contexts/providers-auth-page.test.tsx` の旧の道（`/login/verify`・`/login/password`）の分
+- 消す窓口の性質を確かめる E2E: `FR-LOGIN-030`・`031`・`035`、`FR-SIGNUP-002`（`/api/auth/login/*`・`/api/auth/register` を直に叩く。窓口と一緒に消す）
+- 注: `loginAndOpenAccount` を使う16本の `FR-ACCOUNT-*` は消さない。手助けを新しい入口（`loginAsMember`）へ移して残す
