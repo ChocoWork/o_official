@@ -15,7 +15,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import type { PermissionCode } from '@/lib/auth/admin-rbac';
-import { addApprovedPasskey, loginWithPasskey, provisionPasskeyUser } from '../scripts/e2e/passkey-staff';
+import { addApprovedPasskey, loginWithPasskey, provisionPasskeyUser, skipPasskeyNotificationsOfUser } from '../scripts/e2e/passkey-staff';
 import { bindAppSession } from './admin-session-test-utils';
 import type { SoftAuthenticator } from './passkey-soft-authenticator';
 import { withLocalDb } from './order-email-test-utils';
@@ -118,6 +118,8 @@ export async function createAdminWithPermissions(
   cleanups.push(async () => {
     // public.user_roles は利用者の削除で連鎖して消える
     const removed = await admin.auth.admin.deleteUser(userId);
+    // 利用者の削除で鍵が消える時の引き金が積む知らせの行（店長あて）を、定期処理に送らせない
+    await skipPasskeyNotificationsOfUser(userId);
     if (removed.error) throw new Error(`手元の利用者を消せない（status: ${removed.error.status ?? '不明'}）`);
   });
 

@@ -325,6 +325,31 @@ flowchart LR
 - 失敗: DB の誤り・期限切れ・使用済み・別のブラウザ（Cookie が無い）・確かめの外れは、行き先をホーム `/`（管理者・サポーターは `/admin`。2 段目の前は `/auth/verified`）にする。ログインそのものは止めない。確認のリンクだけは、当たらない時（Cookie が無い・別のメールの印を含む）に session を作らず `/login?registered=1` へ送り、Cookie は消さない。監査には理由の符号だけを残し、道筋・番号・メールは残さない
 - 掃除: 期限が切れた行を毎日消す（DATA-AUTH-005）。ログアウトで Cookie を消す（API-AUTH-015）
 
+### ARC-AUTH-011 パスキーの知らせは、注文のメールの送り手と毎分の定期処理に1段足して、宛先ごとに送る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-031、SEC-AUTH-051、ADR-0470 |
+| 根拠 | 送り手・設定の確かめ・停止の決めは注文のメールの物を使い、専用の定期処理を作らず `process-stripe-webhooks` の1段にする。宛先ごとに文面を作り、宛先ごとの重複防止の鍵で送る。判断は ADR-0470 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_notification_worker.integration.test.ts`。本物の DB の関数で行を送り切る）、単体テスト、E2E（`e2e/FR-LOGIN-062-passkey-notification-mail.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-9-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 9） |
+
+```mermaid
+flowchart LR
+  CRON["毎分 process-stripe-webhooks<br/>Stripe → 注文のメール → 配送の追跡"] --> W["パスキーの知らせの worker<br/>予算 3秒・20行"]
+  W --> DB[("private.passkey_notification_outbox<br/>DD-AUTH-066 の DB の関数")]
+  W --> C["文面（9通り・テキストだけ）"]
+  W --> S["注文のメールの送り手<br/>宛先ごとの重複防止の鍵"]
+  S --> M["本人・店長のメール"]
+  W --> CHK["点検・配達の見回り"]
+```
+
+矢印は呼び出しの向き。受け取り口（`webhook/stripe`）の `after()` は知らせの worker を呼ばない。
+
+- 部品: 文面（DD-AUTH-067。IMPL-AUTH-335・336）、worker（IMPL-AUTH-337・338）。取り出し・結果の記録は DD-AUTH-066
+- 動かさない環境・設定の確かめは注文のメールと同じ。本番で動き出すのは段3で移行 G を当てた後
+
 ## 画面
 
 ```mermaid
@@ -1991,6 +2016,8 @@ stateDiagram-v2
 - 再試行の間隔: `2^(attempts-1)` 分（1・2・4…。128分で頭打ち）と指定の秒数（負は0、1日で頭打ち）の大きい方。期限切れの担当を戻す時も、同じ間隔の先を次の時刻にする（すぐ取り直すと、送り手が落ち続けた時に9回を数分で使い切り `dead` になるため）。揺らぎは付けない（宛先が少なく、同時の取り合いが無いため。注文のメールの `order_email_retry_delay` は前後2割の揺らぎを足す）
 - 宛先: 本人（`notify_subject` が真でメールがある。お客さんは `subject_customer`、店員は `subject_staff`）を先に、`subject_is_staff` が真の行だけ有効で期限内の `admin` を `admin` で返す（サポーターは含めない）。Auth で消された・止められた店長（`auth.users.deleted_at` あり、または `banned_until` が未来）は含めない。同じアドレスは先の方を残し、空は返さない
 - 部品 `src/lib/auth/passkey-notification-store.ts`: 戻りは `{ ok: true; value } | { ok: false }`。呼び方は DD-AUTH-066
+- 送る側（Task 9。FR-AUTH-031・DD-AUTH-067・ADR-0470）: 文面は `src/lib/auth/passkey-notification-compose.ts`（9通り。テキストだけ）、行を取り出して送るのは `src/lib/auth/passkey-notification-worker.ts`（予算3秒・20行）。注文のメールの送り手・設定の確かめ・停止の決め・サイトの住所の確かめを共用する。毎分の定期処理 `process-stripe-webhooks` の、配送の追跡の後・点検の前の1段として呼ぶ（受け取り口の `after()` は呼ばない）。宛先ごとの重複防止の鍵は `passkey-notification/<行の id>/<アドレスの SHA-256 の先頭16文字>`
+- 文面の宛先: お客さん（`subject_customer`）は追加・削除・内容の変更を、お問い合わせの住所つきで。店員本人（`subject_staff`）は同じ件名で、末尾が「すぐに店長へお知らせください。」。店長（`admin`）は件名が「店員のパスキーが…」で、本文に本人のアドレスを入れる。サポーターには送らない
 - 段2で作らないもの: `dead` の行を店へ知らせる点検（段3の店長への知らせと同じ道で作る）
 
 ## 未確認事項

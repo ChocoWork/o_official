@@ -41,6 +41,11 @@ jest.mock('@/lib/orders/email/order-email-delivery', () => ({
   runOrderEmailDeliveryCheckIfDue: (...args: unknown[]) => mockRunOrderEmailDeliveryCheckIfDue(...args),
 }));
 
+const mockPasskeyNotifications = jest.fn();
+jest.mock('@/lib/auth/passkey-notification-worker', () => ({
+  runPasskeyNotificationWorker: (...args: unknown[]) => mockPasskeyNotifications(...args),
+}));
+
 import { runWebhookWorker, WORKER_TIME_BUDGET_MS } from '@/lib/stripe/webhook-worker';
 import type { OpsAlertMail } from '@/lib/ops/ops-alert-mail';
 import { ORDER_EMAIL_WORKER_BUDGET_MS } from '@/lib/orders/email/order-email-worker';
@@ -260,5 +265,42 @@ describe('毎分の配送の枠', () => {
     expect(mockRunOrderEmailOpsChecks).toHaveBeenCalled(); expect(mockRunOrderEmailDeliveryCheckIfDue).toHaveBeenCalled();
     expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockStore, 'delivery_tracking', false, 'delivery_tracking_error');
     expect(JSON.stringify(log.mock.calls)).not.toMatch(/raw本文|signature|number/);
+  });
+  test('DD-AUTH-067 パスキーの知らせは、追跡の後・点検の前に、残りから決めた3秒以内の予算で呼ぶ', async () => {
+    const PASSKEY = { claimed: 1, sent: 1, retried: 0, dead: 0, skipped: 0, stopped: 'idle' };
+    mockPasskeyNotifications.mockResolvedValue(PASSKEY);
+    const result = await runWebhookWorker({ requestUrl: 'http://localhost/x', passkeyNotifications: true });
+    expect(mockPasskeyNotifications).toHaveBeenCalledWith({ budgetMs: 3000 });
+    expect(result.passkeyNotifications).toEqual(PASSKEY);
+    expect(mockTracking.mock.invocationCallOrder[0]).toBeLessThan(mockPasskeyNotifications.mock.invocationCallOrder[0]);
+    expect(mockPasskeyNotifications.mock.invocationCallOrder[0]).toBeLessThan(mockRunOpsChecks.mock.invocationCallOrder[0]);
+  });
+  test('DD-AUTH-067 passkeyNotifications が偽（after() の道）では知らせの worker を呼ばない', async () => {
+    const result = await runWebhookWorker({ requestUrl: 'http://localhost/x' });
+    expect(mockPasskeyNotifications).not.toHaveBeenCalled();
+    expect(result.passkeyNotifications).toBeUndefined();
+  });
+  test('DD-AUTH-067 35秒と10秒を使い切った時は知らせの worker を呼ばない', async () => {
+    mockRunOrderEmailWorker.mockImplementation(async () => { jest.setSystemTime(45000); return EMAILS; });
+    const result = await runWebhookWorker({ requestUrl: 'http://localhost/x', passkeyNotifications: true });
+    expect(mockPasskeyNotifications).not.toHaveBeenCalled();
+    expect(result.passkeyNotifications).toBeNull();
+  });
+  test.each([[44000, 1000], [43500, 1500], [45000, 0]])('DD-AUTH-067 経過%sms なら知らせの予算は%sms（1秒未満は呼ばない）', async (elapsed, budget) => {
+    mockRunOrderEmailWorker.mockImplementation(async () => { jest.setSystemTime(elapsed); return EMAILS; });
+    mockTracking.mockImplementation(async () => TRACKING);
+    await runWebhookWorker({ requestUrl: 'http://localhost/x', passkeyNotifications: true });
+    if (budget) expect(mockPasskeyNotifications).toHaveBeenCalledWith({ budgetMs: budget });
+    else expect(mockPasskeyNotifications).not.toHaveBeenCalled();
+  });
+  test('DD-AUTH-067 知らせの worker が投げても、点検・見回りは動き、結果に null を返す。ログは例外名だけ', async () => {
+    mockPasskeyNotifications.mockRejectedValue(new Error('a@example.com 本文'));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const result = await runWebhookWorker({ requestUrl: 'http://localhost/x', passkeyNotifications: true });
+    expect(result.passkeyNotifications).toBeNull();
+    expect(mockRunOpsChecks).toHaveBeenCalled();
+    expect(mockRunOrderEmailOpsChecks).toHaveBeenCalled();
+    expect(mockRunOrderEmailDeliveryCheckIfDue).toHaveBeenCalled();
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(/a@example|本文/);
   });
 });

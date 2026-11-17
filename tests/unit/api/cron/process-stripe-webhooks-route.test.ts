@@ -53,7 +53,10 @@ describe('POST /api/cron/process-stripe-webhooks', () => {
     const response = await POST(request());
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ processed: 2, failed: 1, stoppedBy: 'empty' });
-    expect(mockRunWebhookWorker).toHaveBeenCalledWith({ requestUrl: 'http://localhost/api/cron/process-stripe-webhooks' });
+    expect(mockRunWebhookWorker).toHaveBeenCalledWith({
+      requestUrl: 'http://localhost/api/cron/process-stripe-webhooks',
+      passkeyNotifications: true,
+    });
   });
 
   it('取り出しの DB 障害は成功扱いにしない（502）', async () => {

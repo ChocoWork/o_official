@@ -225,6 +225,7 @@
       "docs/03_BasicDesign/areas/auth.md",
       "docs/03_BasicDesign/decisions/ADR-04[0-4]*.md",
       "docs/03_BasicDesign/decisions/ADR-046[3-9]*.md",
+      "docs/03_BasicDesign/decisions/ADR-0470*.md",
       "docs/04_DetailDesign/pages/14_login.md",
       "docs/04_DetailDesign/sequence/auth-*.md"
     ],

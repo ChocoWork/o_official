@@ -14,6 +14,7 @@
  */
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
+import { Client } from 'pg';
 import { DUMMY_CAPTCHA_TOKEN } from '../../e2e/captcha-test-utils';
 import {
   createSoftAuthenticator,
@@ -55,6 +56,35 @@ function client(env: LocalEnv, key: string): SupabaseClient {
 
 function fail(step: string, error: { status?: number; code?: string } | null | undefined): never {
   throw new Error(`${step}に失敗した（status: ${error?.status ?? '不明'}, code: ${error?.code ?? '不明'}）`);
+}
+
+/**
+ * その利用者の、まだ送っていないパスキーの知らせの行（pending・retry_wait）を `skipped` にする。試験の道具が鍵を足す・消すたびに積む行を、
+ * 毎分の定期処理が店長全員へ送らないようにする（FR-LOGIN-062 だけが本物の送りを確かめる。addUnapprovedPasskey の keepNotifications で残せる）。
+ */
+export async function skipPasskeyNotificationsOf(db: PgClient, userId: string): Promise<void> {
+  assertLocalDbClient(db);
+  await db.query(
+    `update private.passkey_notification_outbox
+        set status = 'skipped', finished_at = now(), last_error_code = 'e2e_skipped'
+      where user_id = $1::uuid and status in ('pending', 'retry_wait')`,
+    [userId],
+  );
+}
+
+/** db を持たない道具のための、手元の DB への短い接続（skipPasskeyNotificationsOf だけに使う） */
+export async function skipPasskeyNotificationsOfUser(userId: string): Promise<void> {
+  const url = process.env.E2E_LOCAL_DB_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
+  if (!isLocalUrl(url)) throw new Error('手元の DB 以外には書かない');
+  const client = new Client({ connectionString: url });
+  await client.connect().catch(() => {
+    throw new Error('手元の試験DBへ接続できない');
+  });
+  try {
+    await skipPasskeyNotificationsOf(client as unknown as PgClient, userId);
+  } finally {
+    await client.end().catch(() => undefined);
+  }
 }
 
 type ProvisionedUser = { userId: string; email: string; authenticators: SoftAuthenticator[] };
@@ -110,6 +140,8 @@ async function registerAndApprove(db: PgClient, user: SupabaseClient, userId: st
   });
   if (done.error || !done.data) fail('パスキー登録の終わり', done.error);
   await db.query('select public.passkey_approve($1::uuid, $2::uuid, $3)', [userId, done.data.id, 'script']);
+  // 用意の途中で積まれた知らせの行は、定期処理に送らせない（役割を付ける前の登録なので、お客さんの知らせとして積まれる）
+  await skipPasskeyNotificationsOf(db, userId);
   return authenticator;
 }
 
@@ -178,6 +210,7 @@ export async function loginWithPasskey(input: { email: string; authenticator: So
 export async function addUnapprovedPasskey(input: {
   email: string;
   authenticator: SoftAuthenticator;
+  keepNotifications?: boolean;
 }): Promise<{ authenticator: SoftAuthenticator; passkeyId: string }> {
   const env = localEnv();
   const { session } = await loginWithPasskey({ email: input.email, authenticator: input.authenticator });
@@ -192,6 +225,7 @@ export async function addUnapprovedPasskey(input: {
     credential: authenticator.register(start.data.options),
   });
   if (done.error || !done.data) fail('パスキー登録の終わり', done.error);
+  if (!input.keepNotifications && session.user?.id) await skipPasskeyNotificationsOfUser(session.user.id);
   return { authenticator, passkeyId: done.data.id };
 }
 

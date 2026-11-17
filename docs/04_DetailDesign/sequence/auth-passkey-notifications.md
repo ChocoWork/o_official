@@ -1,17 +1,17 @@
-# パスキーの知らせを取り出して送るための DB の関数
+# パスキーの知らせを取り出して送るための DB の関数と、送る worker
 
-> 状態: 推定 | 確認日: 2026-11-18 | 対象: `supabase/migrations/20261118044338_passkey_notification_sending.sql`、`src/lib/auth/passkey-notification-store.ts` | 親: [シーケンス設計の方針](README.md)
+> 状態: 推定 | 確認日: 2026-11-18 | 対象: `supabase/migrations/20261118044338_passkey_notification_sending.sql`、`src/lib/auth/passkey-notification-store.ts`、`passkey-notification-compose.ts`、`passkey-notification-worker.ts`、`src/lib/stripe/webhook-worker.ts` | 親: [シーケンス設計の方針](README.md)
 
 ## 概要
 
-段1a の引き金が `private.passkey_notification_outbox` に積んだ行（パスキーの足し・引き・鍵の差し替え）を、送る側（次のタスクの worker）が1行ずつ取り出して送り、結果を残すための DB の関数と、それを呼ぶ薄い部品。メールの文・定期処理への組み込みは、この文書の範囲の外（次のタスクで足す）。
+段1a の引き金が `private.passkey_notification_outbox` に積んだ行（パスキーの足し・引き・鍵の差し替え）を、送る側（次のタスクの worker）が1行ずつ取り出して送り、結果を残すための DB の関数と、それを呼ぶ薄い部品。メールの文・送る worker・定期処理への組み込みは DD-AUTH-067（下）。
 
 ## 範囲と根拠
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-025、FR-AUTH-030、DATA-AUTH-019、SEC-AUTH-051、THR-AUTH-050、DD-AUTH-066 |
-| 対象のコード | 移行 `supabase/migrations/20261118044338_passkey_notification_sending.sql`、`src/lib/auth/passkey-notification-store.ts` |
+| 対応する ID | SR-AUTH-025、FR-AUTH-030、FR-AUTH-031、DATA-AUTH-019、SEC-AUTH-051、THR-AUTH-050、DD-AUTH-066、DD-AUTH-067、ADR-0470 |
+| 対象のコード | 移行 `supabase/migrations/20261118044338_passkey_notification_sending.sql`、`src/lib/auth/passkey-notification-store.ts`、`passkey-notification-compose.ts`、`passkey-notification-worker.ts`、`src/lib/stripe/webhook-worker.ts`、`src/app/api/cron/process-stripe-webhooks/route.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（6-3）、[段2の計画](../../superpowers/plans/2026-11-17-passkey-stage2-customers.md)、[パスキーのアプリの窓口](auth-passkey-server-endpoints.md) |
 | 調べた時点 | 2026-11-18（手元の DB で結合試験を流した） |
 
@@ -59,7 +59,52 @@ sequenceDiagram
 - 部品: サービスの鍵のクライアント（`createServiceRoleClient`）から呼ぶ。引数の名前は関数と同じ `_id`・`_lease_token`・`_lease_seconds`・`_error_code`・`_retry_after_seconds`・`_reason`（`passkey-approval-rpc.ts` の `p_` とは違う）。誤りのログは関数の名前とコードだけ
 - テスト観点: 最古だけ・未来の行・済み・`dead` を返さない、担当中の行を返さない、期限切れで戻り（間隔の先まで取れない）9回目で `dead`、秒数の範囲、2つの接続から同時に取っても同じ行を返さず待たされない（`FOR UPDATE SKIP LOCKED` を外すと落ちる）、指定の秒数の頭打ち、印が合う時だけ変わる、間隔（1分・2分・指定の秒数・128分の頭打ち・9回目の `dead`）、符号の形、宛先（お客さん・店員・本人が店長・本人を含めない・空を返さない・サポーター・期限切れ・無効・消された・止められた店長を含めない）、5つの関数の権限、引き金が積んだ行を取れること、部品の戻りの形の確かめと誤りの扱い
 
+### DD-AUTH-067 知らせの文面を作り、行を取り出して宛先ごとに送り、毎分の定期処理につなぐ順番
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | ARC-AUTH-011、DATA-AUTH-019、SEC-AUTH-051 |
+| 根拠 | 行の取り出し・結果の記録（DD-AUTH-066）の上に、宛先ごとの文面・送り・失敗の分け方・予算を載せる。注文のメールの送り手と停止の決めを共用し、定期処理は既存の毎分の入口に1段足す（ADR-0470）。宛先の1つの恒久の失敗で行が9回回って `dead` にならないよう、恒久の失敗の宛先だけ飛ばす |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-notification-compose.test.ts`・`passkey-notification-worker.test.ts`・`tests/unit/lib/stripe/webhook-worker.test.ts`）、結合テスト（`tests/integration/db/auth_passkey_notification_worker.integration.test.ts`）、E2E（`e2e/FR-LOGIN-062-passkey-notification-mail.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-9-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 9） |
+
+```mermaid
+sequenceDiagram
+    participant C as process-stripe-webhooks（毎分）
+    participant W as passkey-notification-worker
+    participant D as DB の関数
+    participant M as 注文のメールの送り手
+    C->>C: Stripe → 注文のメール → 配送の追跡の後、残りが1秒以上なら
+    C->>W: runPasskeyNotificationWorker（予算 min(3秒, 60秒−経過−15秒)）
+    W->>W: 停止の決め・送り手の設定・サイトの住所を確かめる（だめなら claim しない）
+    loop 予算内・20行まで
+        W->>D: claim（担当の秒数300）
+        W->>D: recipients（本人、次に店長）
+        loop 宛先ごと（予算を見る）
+            W->>W: 宛先の種類で文面を作る（compose）
+            W->>M: send（重複防止の鍵つき）
+        end
+        alt 全部成功
+            W->>D: complete
+        else 一時的な失敗あり
+            W->>D: fail（最初の符号・最大の待ち秒数）
+        else 宛先なし
+            W->>D: skip
+        end
+    end
+```
+
+- 追跡の単位: `passkey-notification-compose.ts` の `sanitizePasskeyNameForMail` が IMPL-AUTH-335、`composePasskeyNotification` が IMPL-AUTH-336、`passkey-notification-worker.ts` の `passkeyNotificationIdempotencyKey` が IMPL-AUTH-337、`runPasskeyNotificationWorker` が IMPL-AUTH-338
+- 文面: テキストだけ。本人のアドレスは店長の文面だけ。お問い合わせの住所はお客さんの文面だけ。名前は改行を空白に替え、制御文字・表示の向きを変える文字を除き、64字で切る。日時は `Asia/Tokyo`。注文のメールの宛名・署名は付けない（文頭の一文で店の名前を出す。確定案はオーナーの確かめ待ち）
+- 失敗の分け方: 送り手の失敗は `transient`（残りの宛先も試し、最後に `fail`）・`permanent`（その宛先だけ飛ばす）・`config`（その行を `fail`〔待ち秒数は指定がなければ300〕にして、その場で止める）。`fail` は9回目で DB が `dead` にする。worker は `claim` した行の `attempts` が9以上なら `dead` に数える
+- 予算: 既定は3秒・20行。呼び手が残り時間から決めた値を渡す。宛先を送る前にも予算を見る。越えたら、その行を `fail`（符号 `budget_exceeded`）にして止める。次の回で送る宛先は、Resend では同じ鍵なので2通目にならない（手元の送り手は鍵を使わないので、E2E では重なりうる）
+- 定期処理: `runWebhookWorker({ requestUrl, passkeyNotifications: true })` の時だけ、配送の追跡の後・点検の前に呼ぶ。`webhook/stripe` の `after()` は呼ばない。投げても点検は続ける。注文のメールの worker と追跡の worker の挙動・予算は変えない
+- 動かさない環境: 注文のメールと同じ `orderEmailWorkerDisabledReason`（Vercel の preview など、DB が手元でない開発）
+- テスト観点: 9通りの文面を文字列で固定、本人のアドレスの出方、日本時間、名前の整え、設定が無ければ `claim` 0回、鍵が行・宛先ごとに固定で再試行でも同じ、恒久の失敗の宛先だけ飛ばす、一時的な失敗で残りも試す（符号は最初・待ちは最大）、9回目で `dead`、予算・20行・宛先を送る間の予算、`claim` の失敗、ログにアドレス・本文・名前が無い、定期処理が投げても点検が動く・35秒＋10秒を使い切ったら呼ばない・`after()` の道では呼ばない
+
 ## 未確認事項
 
 - 本番の DB に移行 G を当てる手順と順番は [DB 移行の運用](../../06_Operations/db-migrations.md)。段3まで当てない
-- 送る側（メールの文・定期処理への組み込み・重複を防ぐ鍵）は次のタスク（Task 9）で作り、この文書に足す
+- 本番で毎分の定期処理が知らせを送り始めるのは、段3で移行 G を当て、この master をデプロイした後。それまで本番には何も出ない
+- 注文のメールの宛名（「お客様」）と署名（店の名前）を、知らせの文面に付けるか（確定案は付けない。オーナーの確かめ待ち）

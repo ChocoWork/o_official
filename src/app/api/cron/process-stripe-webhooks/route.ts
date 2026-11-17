@@ -10,7 +10,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const result = await runWebhookWorker({ requestUrl: request.url });
+  const result = await runWebhookWorker({ requestUrl: request.url, passkeyNotifications: true });
   return NextResponse.json(
     { processed: result.processed, failed: result.failed, stoppedBy: result.stoppedBy },
     { status: result.stoppedBy === 'claim_error' ? 502 : 200 },

@@ -5805,6 +5805,55 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 
 anon の鍵と本物のログイン済みのお客さんの鍵では、5つの関数が PostgREST で 401 か 403・コード `42501` になる。service_role の鍵では呼べて、合わない行・印は `false`、宛先は空、範囲外の担当の秒数は `22023` になる。`claim` は手元の表の行を担当にしてしまうので、成功の戻りは確かめず、範囲外の秒数の `22023` で「呼べた」ことを示す。
 
+### FR-AUTH-031 パスキーの足し・消し・差し替えの知らせのメールを、お客さん・店員・店長の文面で作って送る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-025 |
+| 根拠 | SR-AUTH-025 を、文面を作る `src/lib/auth/passkey-notification-compose.ts` と、行を取り出して送る `src/lib/auth/passkey-notification-worker.ts`、毎分の定期処理 `process-stripe-webhooks`（`src/lib/stripe/webhook-worker.ts`）の1段にする。取り出し・結果の記録は FR-AUTH-030（DD-AUTH-066）、処理の順番は DD-AUTH-067、判断は ADR-0470、守りは SEC-AUTH-051 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-notification-compose.test.ts`・`passkey-notification-worker.test.ts`・`tests/unit/lib/stripe/webhook-worker.test.ts`）、E2E（`e2e/FR-LOGIN-062-passkey-notification-mail.spec.ts`。FR-AUTH-031-AC-01〜03。`isolated-global` の直列） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-9-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 9。作り手の判断: 別の定期処理を作らず `process-stripe-webhooks` に1段足す。ADR-0470） |
+| 優先度 | MUST |
+
+規則: (1) 件名・本文は、宛先の種類（お客さん `subject_customer`・店員本人 `subject_staff`・店長 `admin`）と、出来事の種類（追加・削除・内容の変更）の9通りで固定する。本文はテキストだけ。日時は日本時間で `YYYY年M月D日 H:mm（日本時間）`。名前が無ければ「名前なし」。(2) 本人のメールのアドレスは、店長の文面にだけ入れる。お客さん・本人の文面には入れない。お問い合わせの住所（`/contact`）は、お客さんの文面にだけ入れる。(3) 鍵の名前は、店員が GoTrue を直に叩けば自由に書けるので、メールに入れる前に、改行を空白に替え、制御文字・表示の向きを変える文字を除き、64字で切る。(4) 宛先は DB の関数 `passkey_notification_recipients` が決める（本人が先、有効な店長が後。サポーターには送らない）。宛先ごとに文面を作り、注文のメールと同じ送り手（`sendOrderEmailMessage`）で送る。宛先ごとの重複防止の鍵は `passkey-notification/<行の id>/<宛先のアドレスの SHA-256 の先頭16文字>`。(5) 全宛先に送れたら行を済み、宛先が0なら飛ばし、一時的な失敗が1つでもあれば残りの宛先も試してから失敗（待ち秒数は最大の物、符号は最初の失敗）にする。恒久の失敗（宛先の誤りなど）の宛先だけ飛ばし、一時的な失敗が無ければ済みにする。送り手の設定の失敗はその場で止める。(6) 1回の起動の予算は3秒・20行。1行の宛先を送る間も予算を見て、越えたら残りを送らずにその行を失敗にして次の回へ回す。(7) 毎分の定期処理の入口だけが、配送の追跡の後・点検の前に1段として呼ぶ（残りが1秒未満なら呼ばない。受け取り口の `after()` は呼ばない）。投げても点検は続ける。(8) 注文のメールと同じ停止の決め（preview など）と設定の確かめに従い、ログに宛先・本文・鍵の名前を出さない。
+
+### FR-AUTH-031-AC-01 お客さんが追加・削除すると、本人にだけ1通ずつ届き、再実行しても2通目は出ない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-031 |
+| 根拠 | SR-AUTH-025 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-062-passkey-notification-mail.spec.ts`。390・768・1280 の3幅。仮想の認証器。`isolated-global`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-9-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 9。作り手の判断: 別の定期処理を作らず `process-stripe-webhooks` に1段足す。ADR-0470） |
+
+お客さんがパスキーを追加して定期処理を呼ぶと、そのアドレスに件名「パスキーが追加されました」が1通だけ届き、本文に名前・日時（日本時間）・お問い合わせの住所があり、宛先はそのアドレスだけになる。名前を変えて削除すると、件名「パスキーが削除されました」が1通届き、本文に変えた後の名前がある。定期処理をもう一度呼んでも、どちらも2通目は出ない（行が済みのまま取り直されない）。
+
+### FR-AUTH-031-AC-02 店員が鍵を足すと、本人に店員の文面、ほかの店長に本人のアドレス入りの店長の文面が届き、サポーターには届かない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-031 |
+| 根拠 | SR-AUTH-025 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-062-passkey-notification-mail.spec.ts`。390・768・1280 の3幅。`isolated-global`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-9-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 9。作り手の判断: 別の定期処理を作らず `process-stripe-webhooks` に1段足す。ADR-0470） |
+
+店員（店長）がアプリの窓口を通さず GoTrue に鍵を足すと、本人に「ご自身で行われた操作でない場合は、すぐに店長へお知らせください。」で終わる文面（本人のアドレスとお問い合わせの住所は入らない）、ほかの店長に件名「店員のパスキーが追加されました」で本人のアドレスを含む文面が1通ずつ届く。サポーターには届かない。もう一度定期処理を呼んでも2通目は出ない。
+
+### FR-AUTH-031-AC-03 知らせのメールは手元の Mailpit だけへ送られる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-031 |
+| 根拠 | SR-AUTH-025 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-062-passkey-notification-mail.spec.ts`。E2E の見張り `scripts/e2e/environment.ts` が外へのメールを拒む） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-9-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 9。作り手の判断: 別の定期処理を作らず `process-stripe-webhooks` に1段足す。ADR-0470） |
+
+E2E のアプリのメール送信は `MAIL_PROVIDER=local` で、送り先は手元の Mailpit だけ（外のメールの設定では E2E が始まらない）。
+
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 
 | 属性 | 値 |
@@ -7387,9 +7436,9 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-8-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 8。作り手の判断: 再試行は注文のメールと同じ考えで揺らぎなし、`dead` の点検は段3） |
 | 優先度 | MUST |
 
-守ること: (1) 5つの関数は `public`・`anon`・`authenticated` から `execute` を外し、`service_role` だけに渡す。移行の末尾の確かめが、権限と `SECURITY DEFINER`・持ち主・`search_path` を確かめる。(2) 宛先は `passkey_notification_recipients(_id)` が行から決める。呼び手は宛先を渡せない。(3) 完了・失敗・飛ばしは、`status = 'sending'` かつ担当の印が合う時だけ行を変える。合わなければ `false` で何も変えない。(4) エラーの符号・飛ばした理由は、小文字・数字・`_` の1〜64字に限る（表の `CHECK` も同じ）。部品は誤りのログに関数の名前とコードだけを残し、宛先・本文・印を残さない。(5) 担当は期限つきで、切れた行は次の取り出しで戻る。9回目の失敗・期限切れで `dead` にして、再試行の無限の繰り返しを止める。
+守ること: (1) 5つの関数は `public`・`anon`・`authenticated` から `execute` を外し、`service_role` だけに渡す。移行の末尾の確かめが、権限と `SECURITY DEFINER`・持ち主・`search_path` を確かめる。(2) 宛先は `passkey_notification_recipients(_id)` が行から決める。呼び手は宛先を渡せない。(3) 完了・失敗・飛ばしは、`status = 'sending'` かつ担当の印が合う時だけ行を変える。合わなければ `false` で何も変えない。(4) エラーの符号・飛ばした理由は、小文字・数字・`_` の1〜64字に限る（表の `CHECK` も同じ）。部品は誤りのログに関数の名前とコードだけを残し、宛先・本文・印を残さない。(5) 担当は期限つきで、切れた行は次の取り出しで戻る。9回目の失敗・期限切れで `dead` にして、再試行の無限の繰り返しを止める。 (6)（Task 9）メールの文面に入る鍵の名前は、改行・制御文字・表示の向きを変える文字を除き、64字で切る（店員が GoTrue を直に叩いて書ける文なので、店長あてのメールの行を増やさせない）。本人のメールのアドレスは店長の文面にだけ入れ、お客さん・本人の文面には入れない。(7)（Task 9）送る側のログと誤りの符号に、宛先・本文・鍵の名前を出さない。宛先の1つの恒久の失敗（壊れたアドレス）で行が9回回って `dead` にならないよう、その宛先だけ飛ばす。
 
-残る危険として受け入れること: 送った後に、済みにする前に落ちると、担当が切れて再び取られ、同じ知らせが二重に届きうる（少なくとも1回の送り）。重複を防ぐ鍵はメールを送る側（Task 9）で作る。`dead` の行を店へ知らせる点検は段2では作らず、段3の店長への知らせと同じ道で作る。`dead` の行は表に残る。
+残る危険として受け入れること: 送った後に、済みにする前に落ちると、担当が切れて再び取られ、同じ知らせが二重に届きうる（少なくとも1回の送り）。重複を防ぐ鍵はメールを送る側（Task 9）が、宛先ごとに行の id とアドレスの SHA-256 から作る（Resend は同じ鍵の送り直しを24時間は2通目にしない。手元の送り手は鍵を使わない）。`dead` の行を店へ知らせる点検は段2では作らず、段3の店長への知らせと同じ道で作る。`dead` の行は表に残る。
 
 ## 派生要件
 
