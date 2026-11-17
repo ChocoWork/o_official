@@ -3,6 +3,8 @@
  * DD-AUTH-051 GoTrue のパスキーの REST を呼ぶ薄い層（src/lib/auth/passkey-gotrue.ts）の単体テスト。
  * グローバルの fetch を差し替え、送ったヘッダー・本文・路を確かめる。
  */
+jest.mock('server-only', () => ({}), { virtual: true });
+
 import {
   deletePasskey,
   listPasskeys,

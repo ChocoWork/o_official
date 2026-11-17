@@ -358,3 +358,13 @@ describe('DD-AUTH-055 GoTrue の応答の形と欠けた項目', () => {
     expect(JSON.stringify(await res.json())).not.toContain('secret detail');
   });
 });
+
+describe('DD-AUTH-060 null の項目を GoTrue へ渡さない', () => {
+  test('DD-AUTH-060 authenticatorAttachment: null の応答は 400 にならず、GoTrue へは null を落として渡す', async () => {
+    const res = await POST(req(goodBody({ credential: credential({ authenticatorAttachment: null }) })));
+    expect(res.status).toBe(200);
+    const passed = verify.mock.calls[0][0].credential as Record<string, unknown>;
+    expect('authenticatorAttachment' in passed).toBe(false);
+    expect(passed.rawId).toBe('AAECAw');
+  });
+});

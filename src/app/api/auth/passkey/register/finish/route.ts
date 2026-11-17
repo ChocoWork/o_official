@@ -12,7 +12,7 @@
  */
 import { logAudit } from '@/lib/audit';
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import { PasskeyRegisterFinishSchema } from '@/features/auth/schemas/passkey';
+import { PasskeyRegisterFinishSchema, dropNullFields } from '@/features/auth/schemas/passkey';
 import { readAttestationUserVerified } from '@/lib/auth/passkey-uv';
 import { registrationVerify } from '@/lib/auth/passkey-gotrue';
 import { approve, approvedCount } from '@/lib/auth/passkey-approval-rpc';
@@ -69,7 +69,7 @@ export async function POST(request: Request): Promise<Response> {
       return await deny('uv_required', { error: 'uv_required' }, 400);
     }
 
-    const verified = await registrationVerify(guard.accessToken, { challengeId, credential: credential as never });
+    const verified = await registrationVerify(guard.accessToken, { challengeId, credential: dropNullFields(credential) as never });
     if (!verified.ok) {
       return await deny('gotrue_failed', { error: 'passkey_register_failed' }, 502);
     }

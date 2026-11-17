@@ -33,7 +33,8 @@ function credentialSchema<R extends z.ZodType>(response: R) {
       id: base64url(1024),
       rawId: base64url(1024),
       type: z.literal('public-key'),
-      authenticatorAttachment: z.string().max(32).optional(),
+      // 実ブラウザの `toJSON()` は、無い時に `null` を返すことがある。受けて、GoTrue へ渡す前に `dropNullFields` で落とす（DD-AUTH-060）。
+      authenticatorAttachment: z.string().max(32).nullish(),
       clientExtensionResults: z.record(z.string(), z.unknown()).optional(),
       response,
     })
@@ -90,3 +91,15 @@ export const PasskeyRenameSchema = z.object({
     .refine((value) => [...value].length <= 64)
     .refine((value) => !NAME_FORBIDDEN_CHARS.test(value)),
 });
+
+/**
+ * `null` の項目を落とす（浅い。応答の最上位だけ）。GoTrue は `authenticatorAttachment: null` を受けないので、渡す前に使う。
+ *
+ * @impl IMPL-AUTH-311
+ * @design DD-AUTH-060
+ */
+export function dropNullFields<T extends Record<string, unknown>>(credential: T): { [K in keyof T]: Exclude<T[K], null> } {
+  return Object.fromEntries(Object.entries(credential).filter(([, value]) => value !== null)) as {
+    [K in keyof T]: Exclude<T[K], null>;
+  };
+}

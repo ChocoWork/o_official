@@ -13,7 +13,7 @@ import { NextResponse } from 'next/server';
 import { createPublicClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
-import { PasskeyLoginFinishSchema } from '@/features/auth/schemas/passkey';
+import { PasskeyLoginFinishSchema, dropNullFields } from '@/features/auth/schemas/passkey';
 import { readAuthenticatorDataFlags } from '@/lib/auth/passkey-uv';
 import { isCredentialApproved, isStaff } from '@/lib/auth/passkey-approval-rpc';
 import { isStaffPasskeyRequiredError } from '@/lib/auth/staff-passkey-reject';
@@ -102,7 +102,7 @@ export async function POST(request: Request): Promise<Response> {
     const supabase = await createPublicClient();
     const { data, error } = await supabase.auth.passkey.verifyAuthentication({
       challengeId,
-      credential: credential as never,
+      credential: dropNullFields(credential) as never,
     });
 
     if (error) {

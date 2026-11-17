@@ -3,6 +3,7 @@
  * DD-AUTH-051 パスキーの窓口の入力の形（src/features/auth/schemas/passkey.ts）の単体テスト。
  */
 import {
+  dropNullFields,
   PasskeyCredentialSchema,
   PasskeyLoginFinishSchema,
   PasskeyRegisterFinishSchema,
@@ -126,5 +127,21 @@ describe('DD-AUTH-051 PasskeyRenameSchema', () => {
     // 絵文字は UTF-16 で2単位。64個は通り、65個は断る。
     expect(PasskeyRenameSchema.safeParse({ friendly_name: String.fromCodePoint(0x1f510).repeat(64) }).success).toBe(true);
     expect(PasskeyRenameSchema.safeParse({ friendly_name: String.fromCodePoint(0x1f510).repeat(65) }).success).toBe(false);
+  });
+});
+
+describe('DD-AUTH-060 authenticatorAttachment の null', () => {
+  test('DD-AUTH-060 authenticatorAttachment: null を受ける（実ブラウザの toJSON）', () => {
+    expect(PasskeyLoginFinishSchema.safeParse({ challenge_id: UUID, credential: loginCredential({ authenticatorAttachment: null }) }).success).toBe(true);
+    expect(PasskeyRegisterFinishSchema.safeParse({ challenge_id: UUID, credential: registerCredential({ authenticatorAttachment: null }) }).success).toBe(true);
+  });
+
+  test('DD-AUTH-060 dropNullFields は null の項目だけを落とす', () => {
+    const credential = loginCredential({ authenticatorAttachment: null });
+    const dropped = dropNullFields(credential);
+    expect('authenticatorAttachment' in dropped).toBe(false);
+    expect(dropped).toEqual({ ...credential, authenticatorAttachment: undefined, });
+    expect(Object.keys(dropped)).toEqual(['id', 'rawId', 'type', 'response']);
+    expect(dropNullFields({ authenticatorAttachment: 'platform', id: 'a' })).toEqual({ authenticatorAttachment: 'platform', id: 'a' });
   });
 });

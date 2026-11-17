@@ -6907,6 +6907,21 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 
 残る危険として受け入れること: 宛先ごとの20回は、始めを4回呼べば他人が使い切れる（5回×4）。他人が始めを5回呼ぶと、本人のコードが上書きされ、始めの枠が使い切られて、本人はしばらくコードで入れない。パスキーと Google が残るので、このログインの止め方は受け入れる。公開の anon キーで GoTrue の `/auth/v1/verify` を直に呼べば、アプリの枠を通らずにコードを試せる。これは前からの未確認事項（[脅威の文書の未確認事項](../../05_Quality/security/threats/auth.md)）で、パスワードが無くなった分、この道がコードの段の唯一の守りになる。GoTrue の IP ごとの確かめの回数だけが残る。
 
+### SEC-AUTH-050 ブラウザの WebAuthn の応答は、窓口の形に合わせて `null` の項目を落とし、鍵の中身をログに出さず、サーバー専用の部品を画面の束に入れない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-045 |
+| 根拠 | 実ブラウザの `toJSON()` は、無い項目を `null` で返すことがある（`authenticatorAttachment`）。窓口が `null` を断ると、正しいログインが 400 になる。GoTrue も `null` を受けない。応答に `challenge` や署名が含まれるので、画面の部品がログに出すと、他の人に読まれうる。`passkey-gotrue` は `server-only` なので、画面の部品が読むとビルドが落ちるうえ、サーバー専用の処理が画面の束に入る。判断は DD-AUTH-060 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/passkey/webauthn-browser.test.ts`、`passkey-client.test.ts`、`no-server-imports.test.ts`、`tests/unit/features/auth/schemas/passkey.test.ts`、`tests/unit/api/auth/passkey-login-finish-route.test.ts`、`passkey-register-finish-route.test.ts`）。E2E は Task 2 では持たない（画面の E2E は Task 5 以降） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-2-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 2。1b の持ち越し T2 M12・T2 M3・T7 M3） |
+| 優先度 | MUST |
+
+守ること: (1) 部品は `authenticatorAttachment` が `null` なら項目を落として返す（`toJSON()` が在る環境も、自前で組む環境も）。窓口の形（`schemas/passkey.ts`）は `null` を受け、GoTrue へ渡す前に `dropNullFields` で落とす。(2) `challenge`・応答・`challenge_id`・トークンを、部品は一切ログに出さない（`console` を呼ばない）。(3) `src/features/auth/passkey/**` は `@/lib/auth/passkey-gotrue`・`@/lib/auth/passkey-start-config`・`server-only`・`node:` を import しない（文字列を読む試験で確かめる）。`passkey-gotrue` の先頭に `import 'server-only'` を付ける。(4) 登録の終わりの GoTrue の失敗（502）と窓口の形の失敗（400）は、画面では区別せず「やり直す」（`retry`）にそろえる。
+
+残る危険として受け入れること: `dropNullFields` は応答の最上位だけを見る。`response` の中の `null` は窓口の形が断る（入口で 400）。
+
 ## 派生要件
 
 要件が求めていないのに今のコードがしている動き。根拠はコードがそうしている理由で、記録が無い物は推定。

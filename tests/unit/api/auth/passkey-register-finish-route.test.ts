@@ -253,3 +253,12 @@ describe('DD-AUTH-056 POST /api/auth/passkey/register/finish', () => {
     expect(serialized).not.toContain(CHALLENGE_ID);
   });
 });
+
+describe('DD-AUTH-060 null の項目を GoTrue へ渡さない', () => {
+  test('DD-AUTH-060 authenticatorAttachment: null の応答は 400 にならず、GoTrue へは null を落として渡す', async () => {
+    const res = await POST(req({ challenge_id: CHALLENGE_ID, credential: credential({ authenticatorAttachment: null }) }));
+    expect(res.status).toBe(200);
+    const passed = verifyMock.mock.calls[0][1].credential as Record<string, unknown>;
+    expect('authenticatorAttachment' in passed).toBe(false);
+  });
+});
