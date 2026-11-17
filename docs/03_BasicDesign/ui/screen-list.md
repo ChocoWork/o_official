@@ -1,6 +1,6 @@
 # 画面一覧
 
-> パスキー段2 Task 3 確認日: 2026-11-17。旧のパスワードのログイン・会員登録の画面を `/login/password` へ退避する1ルートを追加し、`src/app/**/page.tsx` は54件になった（顧客向け18・認証・アカウント12・管理・開発補助24。Task 4 の `/login/code`・Task 6 の `/login/passkey` を数えた）。検索に載せず、どこからもリンクしない（旧の流れの中の戻り先を除く）。`/login` は Task 5（2026-11-18）で新しい画面（パスキー・Google・メールのコード）に作り替えた。パスワードの再設定・変更の完了の行き先は `/login/password`。共有の `src/contexts/Providers.tsx` の真ん中寄せの枠に `/login/password`・`/login/code`・`/login/passkey` を足した。実測（390/768/1280px）は E2E（`FR-LOGIN-056`）が確かめる。
+> パスキー段2 Task 6 確認日: 2026-11-18。旧のパスワードのログイン・会員登録の画面を `/login/password` へ退避する1ルートを追加し、`src/app/**/page.tsx` は54件になった（顧客向け18・認証・アカウント12・管理・開発補助24。Task 4 の `/login/code`・Task 6 の `/login/passkey` を数えた）。検索に載せず、どこからもリンクしない（旧の流れの中の戻り先を除く）。`/login` は Task 5（2026-11-18）で新しい画面（パスキー・Google・メールのコード）に作り替えた。パスワードの再設定・変更の完了の行き先は `/login/password`。共有の `src/contexts/Providers.tsx` の真ん中寄せの枠に `/login/password`・`/login/code`・`/login/passkey` を足した。実測（390/768/1280px）は E2E（`FR-LOGIN-056`）が確かめる。
 
 > 会計の自動で入れる実装 S27 確認日: 2026-11-15。画面の変更なし（画面ルート・画面の部品の数は変えない）。計上待ちの一覧の `dispute_refund_overlap`・`dispute_return_refund_pending` の文と、`dispute_lost`・`return_closed_after_lost` の専用の文が無いことは FREQ-643-AC-14（前の Task で入れた）。
 

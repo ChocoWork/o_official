@@ -176,7 +176,7 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SCR-AUTH-001、FLOW-AUTH-001、API-AUTH-024、API-AUTH-025 |
-| 根拠 | メールのコードで入った直後が、パスキーを案内する一番自然な機会になる。勧めは post-login の前に出し（戻り先を使い切らない）、作れない端末・店員・鍵を持つ人には出さない（鍵を持つ人は確定の窓口が `offerPasskey` を偽にする）。成功の後は自動で進まず、「続ける」へフォーカスを移して読む時間を奪わない（WCAG 2.2.1。`/login/code` の自動の戻しを外したのと同じ）。1b の持ち越し T2 M12（本物の `toJSON()` の `null`）は、仮想の認証器の往復の E2E で確かめる |
+| 根拠 | メールのコードで入った直後が、パスキーを案内する一番自然な機会になる。勧めは post-login の前に出し（戻り先を使い切らない）、作れない端末・店員・鍵を持つ人には出さない（鍵を持つ人は確定の窓口が `offerPasskey` を偽にする）。成功の後は自動で進まず、「続ける」へフォーカスを移して読む時間を奪わない（WCAG 2.2.1。`/login/code` の自動の戻しを外したのと同じ）。1b の持ち越し T2 M12 は、仮想の認証器の往復の E2E で、本物のブラウザの応答の形が作る・ログインの両方の窓口を通ることまで確かめる（仮想の認証器は `platform` を返し `null` は出ない。`null` を落とす分岐は Task 2 の単体。`null` を送る実機は開店前に確かめる）。ボタンの大きさは、リポジトリの `Button`（md）に従う |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト（`tests/unit/features/auth/passkey/passkey-offer.test.tsx`、`tests/unit/app/login/passkey-page.test.tsx`）、E2E（`e2e/FR-LOGIN-059-passkey-offer-real-browser.spec.ts`、`e2e/FR-LOGIN-058-email-code-screen.spec.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-6-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 6。判断 12、調整役の判断: 成功の後に自動で進まない） |
@@ -187,7 +187,7 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 | --- | --- |
 | `src/app/login/passkey/page.tsx` | 部品を描くだけ。`robots` は noindex・nofollow。ログインの判定は、ブラウザの状態を使うので描いた後に部品が行う |
 | `PasskeyOffer`（開いた時） | `useLogin()` が決まるまで何も描かない。ログインしていなければ `router.replace('/login')`。`role` が `user` でなければ `resolvePostLoginPath()` の行き先へ `router.replace`。`isUserVerifyingPlatformAuthenticatorAvailable()` が偽・例外・`PublicKeyCredential` が無いなら同じく行き先へ。真なら勧めを描き、見出し（`tabIndex=-1`）へフォーカスする。判定は1回だけ |
-| 「パスキーを作る」 | `registerPasskey`（DD-AUTH-060。始め → ブラウザで鍵を作る → 終わり → 端末の名前）。作る間は `disabled`・`aria-busy`・「作成しています…」で、「あとで」も止める。二重に押しても1回（ref で止める） |
+| 「パスキーを作る」 | `registerPasskey`（DD-AUTH-060。始め → ブラウザで鍵を作る → 終わり → 端末の名前）。作る間は `disabled`・`aria-busy`・「作成しています…」で、「あとで」も止める。作る間はボタンを無効にするので、二重に押せない |
 | 成功 | 「パスキーを作りました。」を `status` で知らせる（名前が付かなければ「名前は、アカウントのログイン方法から変えられます。」を続ける）。ボタンは「続ける」だけにし、フォーカスを移す。自動では進まない |
 | 失敗 | `cancelled`: 「パスキーの作成を中止しました。」（作る・あとで が残る）。`already_registered`・`unsupported`: 文と「続ける」だけ。`retry`・`failed`: 「うまく作れませんでした。もう一度お試しください。」と「もう一度」（始めから）。`reauth_required`・`unauthorized`: 「もう一度ログインしてください。」と「ログインへ」（`/login`）。`rate_limited`: 「試行が集中しています。しばらくしてからやり直してください。」。`unavailable`: 「ただいまパスキーを作れません。時間をおいてお試しください。」。失敗の後、無効になったボタンからフォーカスが落ちた時だけ主のボタンへ戻す |
 | 「あとで」・「続ける」 | `resolvePostLoginPath()`（DD-AUTH-060）を1回だけ呼んで `router.replace`（二重に押しても1回）。戻り先は、この呼び出しで初めて使い切る |

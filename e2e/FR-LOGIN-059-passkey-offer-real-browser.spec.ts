@@ -62,6 +62,14 @@ async function registerThroughOffer(page: Page, email: string): Promise<void> {
   await expect(page).toHaveURL(`${ORIGIN}/`, NAVIGATION);
 }
 
+/** 本物のログアウトの窓口（CSRF の Cookie を付ける）。 */
+async function logout(page: Page): Promise<void> {
+  const csrf = (await page.context().cookies(ORIGIN)).find((cookie) => cookie.name === 'sb-csrf-token')?.value;
+  expect(csrf).toBeTruthy();
+  const response = await page.request.post('/api/auth/logout', { headers: { origin: ORIGIN, 'x-csrf-token': csrf! } });
+  expect(response.ok()).toBe(true);
+}
+
 async function isSignedIn(page: Page): Promise<boolean> {
   const me = await page.request.get('/api/auth/me');
   return ((await me.json()) as { authenticated?: boolean }).authenticated === true;
@@ -108,21 +116,21 @@ for (const viewport of viewports) {
       await page.waitForTimeout(2000);
       await expect(page).toHaveURL(`${ORIGIN}/login/passkey`, NAVIGATION);
       expect(await authenticator.credentials()).toHaveLength(1);
-      // 本物の toJSON() の null（authenticatorAttachment）が、窓口の手前で落とされている（T2 M12）。
-      expect(finishBodies).toHaveLength(1);
-      const credential = finishBodies[0].credential as Record<string, unknown>;
-      expect(credential.authenticatorAttachment).not.toBeNull();
+      // 本物のブラウザの応答の形が、作る窓口を通る。仮想の認証器（internal）は結びつきを 'platform' で返し、`null` は出ない。
+      // `null` を落とす分岐そのものは Task 2 の単体で確かめる（T2 M12。`null` を送る端末・ブラウザは開店前に実機で確かめる）。
+      expect(finishBodies.length).toBe(1);
+      expect((finishBodies[0].credential as Record<string, unknown>).authenticatorAttachment).toBe('platform');
 
       await page.getByRole('button', { name: '続ける' }).click();
       await expect(page).toHaveURL(`${ORIGIN}/`, NAVIGATION);
       expect(await isSignedIn(page)).toBe(true);
     });
 
-    test(`FR-AUTH-028-AC-02 ${viewport.name}: ログアウトして「パスキーでログイン」を押すと、本物のブラウザの応答でログインできる`, async ({ page, context }) => {
+    test(`FR-AUTH-028-AC-02 ${viewport.name}: ログアウトして「パスキーでログイン」を押すと、本物のブラウザの応答でログインできる`, async ({ page }) => {
       authenticator = await addVirtualAuthenticator(page);
       await registerThroughOffer(page, uniqueEmail('login'));
 
-      await context.clearCookies();
+      await logout(page);
       expect(await isSignedIn(page)).toBe(false);
       await page.goto('/login');
       await page.getByRole('button', { name: 'パスキーでログイン' }).click();
@@ -131,12 +139,12 @@ for (const viewport of viewports) {
       expect(await isSignedIn(page)).toBe(true);
     });
 
-    test(`FR-AUTH-028-AC-03 ${viewport.name}: 鍵を持つお客さんがもう一度コードで入ると、勧めを出さずに行き先へ着く`, async ({ page, context }) => {
+    test(`FR-AUTH-028-AC-03 ${viewport.name}: 鍵を持つお客さんがもう一度コードで入ると、勧めを出さずに行き先へ着く`, async ({ page }) => {
       authenticator = await addVirtualAuthenticator(page);
       const email = uniqueEmail('again');
       await registerThroughOffer(page, email);
 
-      await context.clearCookies();
+      await logout(page);
       // 手元の GoTrue は同じアドレスへの送信に1秒の間隔を置く。
       await page.waitForTimeout(1500);
       await signInByCode(page, email);
@@ -202,8 +210,8 @@ for (const viewport of viewports) {
         expect(box).not.toBeNull();
         expect(box!.x).toBeGreaterThanOrEqual(0);
         expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
-        // 今の Button（size md）の高さ。
-        expect(box!.height).toBeGreaterThanOrEqual(40);
+        // 大きさは、リポジトリの Button（size md）にそのまま従う（ログインの画面どうしをそろえる）。
+        await expect(page.getByRole('button', { name })).toHaveAttribute('data-ui-button-size', 'md');
       }
     });
   });

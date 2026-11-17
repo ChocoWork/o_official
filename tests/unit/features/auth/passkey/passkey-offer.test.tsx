@@ -123,7 +123,7 @@ describe('PasskeyOffer', () => {
     expect(mockRegister).not.toHaveBeenCalled();
   });
 
-  test('DD-AUTH-064 作っている間は無効・aria-busy・「作成しています…」で、二重に押しても1回', async () => {
+  test('DD-AUTH-064 作っている間は無効・aria-busy・「作成しています…」で、無効のボタンは押せず1回', async () => {
     let finish: (value: unknown) => void = () => undefined;
     mockRegister.mockReturnValue(new Promise((resolve) => (finish = resolve)));
     await renderOffer();

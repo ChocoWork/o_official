@@ -5613,7 +5613,7 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 | 確かめ方 | E2E（`e2e/FR-LOGIN-059-passkey-offer-real-browser.spec.ts`。390・768・1280 の3幅でくり返す。仮想の認証器）、単体テスト（`tests/unit/features/auth/passkey/passkey-offer.test.tsx`、`tests/unit/app/login/passkey-page.test.tsx`） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-6-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 6。判断 12、調整役の判断: 成功の後に自動で進まない） |
 
-新しいアドレスで `/login/code` の確定をすると `/login/passkey` に着き、見出しにフォーカスがある。「パスキーを作る」を押すと仮想の認証器に鍵が1つ入り、「パスキーを作りました。」が出て「続ける」にフォーカスが移る。2秒待っても画面は変わらない。「続ける」で `/` へ着き、`/api/auth/me` が本人を返す。本物の `toJSON()` の `authenticatorAttachment: null` が、作る窓口の手前で落とされている（1b の持ち越し T2 M12）。
+新しいアドレスで `/login/code` の確定をすると `/login/passkey` に着き、見出しにフォーカスがある。「パスキーを作る」を押すと仮想の認証器に鍵が1つ入り、「パスキーを作りました。」が出て「続ける」にフォーカスが移る。2秒待っても画面は変わらない。「続ける」で `/` へ着き、`/api/auth/me` が本人を返す。本物のブラウザ（仮想の認証器。結びつきは `platform`）の応答の形が、作る窓口を 400 にせず通る。`null` を落とす分岐そのものは Task 2 の単体で確かめる（1b の持ち越し T2 M12）。
 
 ### FR-AUTH-028-AC-02 ログアウトして「パスキーでログイン」を押すと、本物のブラウザの応答でログインできる
 
@@ -5625,7 +5625,7 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 | 確かめ方 | E2E（`e2e/FR-LOGIN-059-passkey-offer-real-browser.spec.ts`。390・768・1280 の3幅でくり返す。仮想の認証器）、単体テスト（`tests/unit/features/auth/passkey/passkey-offer.test.tsx`、`tests/unit/app/login/passkey-page.test.tsx`） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-6-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 6。判断 12、調整役の判断: 成功の後に自動で進まない） |
 
-鍵を作ったお客さんの Cookie を消して `/login` で「パスキーでログイン」を押すと、`/` へ着き、`/api/auth/me` が本人を返す（ログインの終わりの窓口が、本物の応答を 400 にしない）。
+鍵を作ったお客さんがログアウト（`POST /api/auth/logout`）して `/login` で「パスキーでログイン」を押すと、`/` へ着き、`/api/auth/me` が本人を返す（ログインの終わりの窓口が、本物の応答を 400 にしない）。
 
 ### FR-AUTH-028-AC-03 鍵を持つお客さんがもう一度コードで入ると、勧めの画面が出ない
 
@@ -7354,6 +7354,7 @@ refresh の Cookie が無い時と、自前の表の行に明示の失効の印�
 
 ## 未確認事項
 
+- 本物の端末・ブラウザが `authenticatorAttachment: null` を送る場合（仮想の認証器では出ない）の確かめ。作る窓口・ログインの終わりの窓口が 400 にしないかを、開店前に実機で確かめる（FR-AUTH-028-AC-01・02、SEC-AUTH-050）
 - `/register` を求める FR-LOGIN-004・FREQ-59 と、URL を `/register` へ同期する FREQ-61-AC-02・03 を廃止にするか（FREQ-63 が反転したと書くが、元の行に印が無い）
 - 後の行が置き換えたと書く FREQ-64（角丸）・FREQ-65-AC-05（塗りだけのタブ）・FREQ-63-AC-03（タブの中の切替のボタン）・FREQ-67-AC-02 の比べる元・FREQ-70-REQ-01・AC-01（角丸のカード）を廃止にするか
 - タブの名前が要件では「新規登録」、画面と E2E では「会員登録」。どちらに合わせるか
