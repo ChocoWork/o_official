@@ -97,7 +97,8 @@ sequenceDiagram
 
 - 追跡の単位: `passkey-notification-compose.ts` の `sanitizePasskeyNameForMail` が IMPL-AUTH-335、`composePasskeyNotification` が IMPL-AUTH-336、`passkey-notification-worker.ts` の `passkeyNotificationIdempotencyKey` が IMPL-AUTH-337、`runPasskeyNotificationWorker` が IMPL-AUTH-338
 - 文面: テキストだけ。本人のアドレスは店長の文面だけ。お問い合わせの住所はお客さんの文面だけ。名前は改行を空白に替え、制御文字・表示の向きを変える文字を除き、64字で切る。日時は `Asia/Tokyo`。宛名・署名は付けない（文頭の一文で店の名前を出す。理由: アカウントの守りの知らせ〔パスワードの変更の知らせ〕と同じ形。確定案はオーナーの確かめ待ち）
-- 失敗の分け方: 送り手の失敗は `transient`（残りの宛先も試し、最後に `fail`）・`permanent`（その宛先だけ飛ばす）・`config`（注文のメールと同じ: 送信の一時停止を書き、その行を `fail`〔`_count_attempt` を偽にして回数を数えず、すぐ取り出せる状態に戻す。待ち秒数は指定がなければ300〕、その回は `config` で止める）。次の回からは claim の前に注文のメールの送信の一時停止を見て、次に試す時刻まで何も取らない。`config` 以外の `fail` は9回目で DB が `dead` にする。worker は `claim` した行の `attempts` が9以上なら `dead` に数える
+- 失敗の分け方: 送り手の失敗は `transient`（残りの宛先も試し、最後に `fail`）・`permanent`（その宛先だけ飛ばす）・`config`（注文のメールと同じ: その行を `fail`〔`_count_attempt` を偽にして回数を数えず、次の時刻は今＋待ち秒数〔指定がなければ300〕。DB が同じ取引で注文のメールと共有の送信の一時停止を書く〕にして、その回は `config` で止める）。`config` 以外の `fail` は9回目で DB が `dead` にする
+- 一時停止の間（ADR-0470）: 次に試す時刻は見ない（注文のメールの取り出しが毎分先へ進めるため）。`paused` の間は1回に1行だけ取り出して試し、間は失敗した行の次の時刻が決める。送れて `complete` が通れば DB が共有の一時停止を解く。読めなければ通常どおり動く
 - 予算: 既定は3秒・20行。呼び手が残り時間から決めた値を渡す。宛先を送る前にも予算を見る。越えたら、その行を `fail`（符号 `budget_exceeded`）にして止める。次の回で送る宛先は、Resend では同じ鍵なので2通目にならない（手元の送り手は鍵を使わないので、E2E では重なりうる）
 - 定期処理: `runWebhookWorker({ requestUrl, passkeyNotifications: true })` の時だけ、配送の追跡の後・点検の前に呼ぶ。`webhook/stripe` の `after()` は呼ばない。投げても点検は続ける。注文のメールの worker と追跡の worker の挙動・予算は変えない
 - 予算を見るのは送る前だけなので、送り1回の打ち切り（最大8秒）の分だけ越えうる。知らせの worker の心拍と `dead` の点検は段3

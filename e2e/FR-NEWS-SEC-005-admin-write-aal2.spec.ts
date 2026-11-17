@@ -192,7 +192,7 @@ test.afterAll(async () => {
     // 監査の行が残っていて消せなくても db reset で消える
     await admin.auth.admin.deleteUser(userId).catch(() => undefined);
     // 消した鍵の知らせの行（店長あて）を、定期処理に送らせない
-    await skipPasskeyNotificationsOfUser(userId);
+    await skipPasskeyNotificationsOfUser(userId).catch(() => console.warn('知らせの行を取り下げられなかった（試験の結果は変えない）'));
   }
 });
 

@@ -521,7 +521,7 @@ export class DiscountScenario {
     for (const id of ids) {
       const removed = await admin.auth.admin.deleteUser(id);
       // 消した鍵の知らせの行（店長あて）を、定期処理に送らせない
-      await skipPasskeyNotificationsOfUser(id);
+      await skipPasskeyNotificationsOfUser(id).catch(() => console.warn('知らせの行を取り下げられなかった（試験の結果は変えない）'));
       if (removed.error) throw new Error('H own user cleanup refused');
     }
     const after = await this.db.query(`select md5(coalesce(jsonb_agg(jsonb_build_array(id,discount_id,order_id,state,amount,name_snapshot,code_snapshot) order by id)::text,'')) digest

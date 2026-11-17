@@ -164,7 +164,7 @@ test.afterEach(async () => {
   for (const id of ids) {
     await admin.auth.admin.deleteUser(id).catch(() => undefined);
     // 消した鍵の知らせの行（店長あて）を、定期処理に送らせない
-    await skipPasskeyNotificationsOfUser(id);
+    await skipPasskeyNotificationsOfUser(id).catch(() => console.warn('知らせの行を取り下げられなかった（試験の結果は変えない）'));
   }
 });
 

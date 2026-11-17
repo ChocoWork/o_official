@@ -17,8 +17,11 @@
 --   public.complete_passkey_notification(_id, _lease_token)    'sent' only when the token matches; else false
 --   public.fail_passkey_notification(_id, _lease_token, _error_code, _retry_after_seconds, _count_attempt DEFAULT true)
 --                                                             _count_attempt false (sender config failure: quota, key,
---                                                             sender domain): attempts - 1, retry_wait, due now, never dead
---                                                             (same as fail_order_email 'config')
+--                                                             sender domain): attempts - 1, retry_wait, due in
+--                                                             _retry_after_seconds (0..86400), never dead, and
+--                                                             private.set_order_email_pause in the same transaction
+--                                                             (same as fail_order_email 'config').
+--                                                             complete_passkey_notification also clears that shared pause.
 --                                                             'dead' at attempts >= 9, else 'retry_wait' with
 --                                                             next_attempt_at = now() + max(least(_retry_after_seconds, 86400),
 --                                                             60 * 2^(attempts-1) seconds, capped at 128 minutes). No jitter.
@@ -38,12 +41,14 @@
 --
 -- BEFORE applying to production (read only): this migration is NOT applied to production until stage 3.
 --   select to_regclass('private.passkey_notification_outbox');   -- expect not null (migration A)
+--   select to_regclass('private.order_email_send_pause');        -- expect not null (order mail; the shared send pause)
 
 BEGIN;
 
 DO $$
 BEGIN
   IF to_regclass('private.passkey_notification_outbox') IS NULL
+     OR to_regclass('private.order_email_send_pause') IS NULL
      OR to_regclass('public.user_roles') IS NULL
      OR to_regclass('public.roles') IS NULL
      OR to_regclass('auth.users') IS NULL THEN
@@ -132,7 +137,14 @@ BEGIN
      SET status = 'sent', sent_at = pg_catalog.now(), finished_at = pg_catalog.now(),
          lease_token = NULL, lease_expires_at = NULL, last_error_code = NULL
    WHERE o.id = _id AND o.status = 'sending' AND o.lease_token = _lease_token;
-  RETURN FOUND;
+  IF FOUND THEN
+    -- like complete_order_email: a finished send clears the shared send pause (the passkey worker probes while it is paused)
+    UPDATE private.order_email_send_pause p
+       SET paused = false, reason = NULL, paused_at = NULL, next_probe_at = NULL, updated_at = pg_catalog.now()
+     WHERE p.id AND p.paused;
+    RETURN true;
+  END IF;
+  RETURN false;
 END
 $$;
 
@@ -150,10 +162,16 @@ BEGIN
   END IF;
   IF _count_attempt IS FALSE THEN
     UPDATE private.passkey_notification_outbox o
-       SET status = 'retry_wait', attempts = GREATEST(o.attempts - 1, 0), next_attempt_at = pg_catalog.now(),
+       SET status = 'retry_wait', attempts = GREATEST(o.attempts - 1, 0),
+           next_attempt_at = pg_catalog.now() + pg_catalog.make_interval(secs => LEAST(GREATEST(COALESCE(_retry_after_seconds, 0), 0), 86400)),
            last_error_code = _error_code, lease_token = NULL, lease_expires_at = NULL
      WHERE o.id = _id AND o.status = 'sending' AND o.lease_token = _lease_token;
-    RETURN FOUND;
+    IF FOUND THEN
+      -- same transaction as order mail's fail 'config': the shared send pause (same sender) is written with the row
+      PERFORM private.set_order_email_pause(_error_code);
+      RETURN true;
+    END IF;
+    RETURN false;
   END IF;
   UPDATE private.passkey_notification_outbox o
      SET status = CASE WHEN o.attempts >= 9 THEN 'dead' ELSE 'retry_wait' END,

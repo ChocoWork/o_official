@@ -12,12 +12,7 @@ import { composePasskeyNotification } from '@/lib/auth/passkey-notification-comp
 import type { RpcResult } from '@/lib/auth/passkey-approval-rpc';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { checkSiteUrlForEmail } from '@/lib/site-url-guard';
-import {
-  getOrderEmailSendState,
-  pauseOrderEmailSending,
-  type OrderEmailStore,
-} from '@/lib/orders/email/order-email-store';
-import type { OrderEmailPauseReason } from '@/lib/orders/email/order-email-types';
+import { getOrderEmailSendState, type OrderEmailStore } from '@/lib/orders/email/order-email-store';
 import { orderEmailWorkerDisabledReason } from '@/lib/orders/email/order-email-worker';
 import {
   checkOrderEmailSendConfig,
@@ -44,10 +39,11 @@ export type PasskeyNotificationWorkerDeps = {
   fail: (id: string, leaseToken: string, errorCode: string, retryAfterSeconds: number, countAttempt?: boolean) => Promise<RpcResult<boolean>>;
   skip: (id: string, leaseToken: string, reason: string) => Promise<RpcResult<boolean>>;
   send: (message: OrderEmailMessage) => Promise<OrderEmailSendOutcome>;
-  /** 注文のメールの送信の一時停止（上限・鍵・送り元の失敗で止めた）の間で、次に試す時刻が先なら true。読めなければ false */
+  /**
+   * 注文のメールの送信の一時停止（上限・鍵・送り元の失敗で止めた。共有）の間なら true。読めなければ false。
+   * 注文のメールの取り出しが毎分、次に試す時刻を先へ進めるので、時刻は見ない。止まっている間は、この worker が自分で1行だけ試す。
+   */
   sendPaused: () => Promise<boolean>;
-  /** 設定の失敗の時、注文のメールと同じ送信の一時停止を書く。書けなくても投げない */
-  pauseSending: (reason: string) => Promise<void>;
   disabledReason: () => string | null;
   checkConfig: () => string | null;
   /** メールに入れるお問い合わせの住所。サイトの住所が使えなければ null */
@@ -75,17 +71,9 @@ const realDeps: PasskeyNotificationWorkerDeps = {
     try {
       const store = (await createServiceRoleClient()) as unknown as OrderEmailStore;
       const state = await getOrderEmailSendState(store);
-      return state.paused && state.nextProbeAt !== null && state.nextProbeAt.getTime() > Date.now();
+      return state.paused;
     } catch {
       return false;
-    }
-  },
-  pauseSending: async (reason) => {
-    try {
-      const store = (await createServiceRoleClient()) as unknown as OrderEmailStore;
-      await pauseOrderEmailSending(store, reason as OrderEmailPauseReason);
-    } catch {
-      console.error('[passkey-notification-worker] failed to pause sending');
     }
   },
   disabledReason: () => orderEmailWorkerDisabledReason(),
@@ -163,8 +151,7 @@ async function deliverRow(
     if (outcome.ok) continue;
     const { category, code, retryAfterSeconds } = outcome.failure;
     if (category === 'config') {
-      // 注文のメールと同じ: この行の失敗として数えず（attempts を戻す）、送信全体を止める
-      await deps.pauseSending(code);
+      // 注文のメールと同じ: この行の失敗として数えず（attempts を戻す）。共有の送信の一時停止は、DB の関数が同じ取引で書く
       await deps.fail(claim.id, claim.leaseToken, safeCode(code), retryAfterSeconds ?? 300, false);
       return 'config';
     }
@@ -204,13 +191,11 @@ export async function runPasskeyNotificationWorker(
     return { ...result, stopped: 'config' };
   }
 
-  if (await deps.sendPaused()) {
-    console.warn('[passkey-notification-worker] order email sending is paused');
-    return { ...result, stopped: 'config' };
-  }
+  // 共有の一時停止の間は、注文のメールの試しの時刻に関わらず、1回に1行だけ試す（間は、失敗した行の次の時刻が決める）。送れれば DB が一時停止を解く
+  const rowLimit = (await deps.sendPaused()) ? Math.min(maxRows, 1) : maxRows;
 
   const deadline = deps.now() + budgetMs;
-  while (result.claimed < maxRows && deps.now() < deadline) {
+  while (result.claimed < rowLimit && deps.now() < deadline) {
     const claimed = await deps.claim(PASSKEY_NOTIFICATION_LEASE_SECONDS).catch(() => ({ ok: false as const }));
     if (!claimed.ok) return { ...result, stopped: 'claim_error' };
     if (claimed.value === null) return { ...result, stopped: 'idle' };

@@ -31,7 +31,7 @@
 
 | 観点 | 以前の私たち | Shopify | 業界の定番 | 結論 |
 | --- | --- | --- | --- | --- |
-| 認証の変更の知らせ | 注文のメールだけ。パスキーの知らせは行を積むだけで送っていない | 出典なし（社内の比較）。公式のパスキーの説明（https://help.shopify.com/en/manual/your-account/account-security/passkeys）を2026-11-18 に読んだが、追加・削除のメールの有無は書かれていなかった | OWASP Authentication Cheat Sheet（https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html。2026-11-18 に読んだ）の「Secure Federated Account Linking」に「Notify the user when an identity is added, or when an identity is removed without terminating the application account」とある。パスキーの追加・削除そのものを名指しした一文は読み取れなかったので、同じ考えを当てはめた社内の判断 | 本人へ送り、店員の鍵は店長にも送る |
+| 認証の変更の知らせ | 注文のメールだけ。パスキーの知らせは行を積むだけで送っていない | 出典なし（社内の比較）。公式のアカウントの守りの総まとめのページ（https://help.shopify.com/en/manual/your-account/account-security/passkeys。パスキーは例の1つとして出るだけで、パスキーの記事は別のページ）を2026-11-18 に開いたが、追加・削除のメールの有無は書かれていなかった | OWASP Authentication Cheat Sheet（https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html。2026-11-18 に読んだ）の「Secure Federated Account Linking」に「Notify the user when an identity is added, or when an identity is removed without terminating the application account」とある。パスキーの追加・削除そのものを名指しした一文は読み取れなかったので、同じ考えを当てはめた社内の判断 | 本人へ送り、店員の鍵は店長にも送る |
 
 #### 決定
 
@@ -40,7 +40,9 @@
 - 宛先ごとに文面を作って送る。重複防止の鍵は `passkey-notification/<行の id>/<アドレスの SHA-256 の先頭16文字>`。再試行しても同じ宛先には同じ鍵になる
 - 恒久の失敗（宛先の誤りなど）はその宛先だけ飛ばし、一時的な失敗が無ければ行を済みにする。一時的な失敗があれば残りの宛先も試してから `fail` する
 - 1行の宛先を送る間も予算を見て、越えたら残りを送らず `fail` で次へ回す
-- 送り手の設定の失敗（Resend の1日・1か月の上限、送り元のドメイン、鍵）は、注文のメールと同じ形で扱う: その行の失敗として数えず（`fail_passkey_notification` の `_count_attempt` を偽にして `attempts` を戻す）、注文のメールと同じ送信の一時停止（`pause_order_email_sending`）を書き、その回は `config` で止める。次の回から、worker は claim の前に一時停止を見て、次に試す時刻まで何も取らない。数えると、上限が数時間続く間に行が約4〜5時間で黙って `dead` になる（`dead` の点検は段3まで無い）
+- 送り手の設定の失敗（Resend の1日・1か月の上限、送り元のドメイン、鍵）は、注文のメールと同じ形で扱う: その行の失敗として数えず、すぐ取り出せる形に戻す。`fail_passkey_notification` の `_count_attempt` を偽にすると、DB が同じ取引の中で、`attempts` を戻し、次の時刻を「今＋待ち秒数（worker は300秒）」にし、注文のメールと同じ送信の一時停止（`private.set_order_email_pause`）を書く（worker は別に一時停止を書かない）。その回は `config` で止める。数えると、上限が数時間続く間に行が約4〜5時間で黙って `dead` になる（`dead` の点検は段3まで無い）
+- 一時停止の間は、知らせの worker が自分で試す: 注文のメールの取り出し（`claim_order_email`）は、毎分、共有の一時停止の「次に試す時刻」を15分先へ進める（`webhook-worker` は注文のメールを先に動かす）ので、知らせの worker が時刻を見ると、いつも先で、一度も試せない。そこで知らせの worker は時刻を見ず、一時停止（`paused`）の間は **1回に1行だけ** 取り出して試す。試す間隔は、失敗した行の次の時刻（今＋待ち秒数）が決める。送れて `complete_passkey_notification` が通れば、DB が同じ取引で共有の一時停止を解く（`complete_order_email` と同じ）。このため、注文のメールが無い間も、上限が戻れば知らせが出る
+- 同じ送り手・同じ上限なので、知らせの設定の失敗は注文のメールの送信も止める。止まった時、店への知らせ（`ops-alert-mail`）は注文のメールの文面のまま「注文のメールの送信を止めています」と出る。パスキーの知らせも止まっていることは文面に出ない（文面を変えるかは段3の `dead` の点検と同じ回に、オーナーが決める）。逆に、注文のメールの失敗で一時停止になると、知らせの worker は1回1行の試しに切り替わる。止まっている間に知らせの試しが成功すれば、注文のメールの一時停止も解ける（同じ送り手が使えると分かったため）
 - 本番の毎分の定期処理は、段3で移行 G を当て、この master をデプロイした後に動く。それまで本番には何も出ない
 
 #### 退けた案

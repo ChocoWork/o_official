@@ -189,7 +189,7 @@ async function createActor(scenario: Scenario, kind: ActorKind, aal: Aal): Promi
     // public.sessions と public.user_roles は利用者の削除で連鎖して消える
     const removed = await admin.auth.admin.deleteUser(userId);
     // 消した鍵の知らせの行（店長あて）を、定期処理に送らせない
-    await skipPasskeyNotificationsOfUser(userId);
+    await skipPasskeyNotificationsOfUser(userId).catch(() => console.warn('知らせの行を取り下げられなかった（試験の結果は変えない）'));
     if (removed.error) throw new Error(`手元の利用者を消せない（status: ${removed.error.status ?? '不明'}）`);
   });
 

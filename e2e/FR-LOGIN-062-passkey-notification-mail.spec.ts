@@ -178,53 +178,51 @@ for (const viewport of viewports) {
       const otherAdmin = await withLocalDb((db) => provisionStaff(db, { role: 'admin', approvedPasskeys: 2 }));
       const supporter = await withLocalDb((db) => provisionStaff(db, { role: 'supporter', approvedPasskeys: 1 }));
       mine = [staff.userId, otherAdmin.userId, supporter.userId];
-      {
-        // この試験が作った店長以外の E2E の店長を外す（isolated-global なので、ほかの試験は動いていない。終わりに戻す）
-        await withLocalDb(async (db) => {
-          const result = await db.query(
-            `update public.user_roles ur set active = false
-               from public.roles r, auth.users u
-              where r.id = ur.role_id and r.code = 'admin' and ur.active and u.id = ur.user_id
-                and u.email like '%@example.com' and ur.user_id <> all($1::uuid[])
-          returning ur.user_id`,
-            [mine],
-          );
-          for (const row of result.rows as Array<{ user_id: string }>) deactivated.push(row.user_id);
-        });
-
-        await addUnapprovedPasskey({ email: staff.email, authenticator: staff.authenticators[0], keepNotifications: true });
-        await runWorkerUntil(
-          request,
-          async () => (await mailCount(request, staff.email, ADDED_SUBJECT)) >= 1 && (await mailCount(request, otherAdmin.email, ADMIN_ADDED_SUBJECT)) >= 1,
-          '店員の追加の知らせが届かない',
+      // この試験が作った店長以外の E2E の店長を外す（isolated-global なので、ほかの試験は動いていない。終わりに戻す）
+      await withLocalDb(async (db) => {
+        const result = await db.query(
+          `update public.user_roles ur set active = false
+             from public.roles r, auth.users u
+            where r.id = ur.role_id and r.code = 'admin' and ur.active and u.id = ur.user_id
+              and u.email like '%@example.com' and ur.user_id <> all($1::uuid[])
+        returning ur.user_id`,
+          [mine],
         );
+        for (const row of result.rows as Array<{ user_id: string }>) deactivated.push(row.user_id);
+      });
 
-        const own = await mailBodies(request, staff.email, ADDED_SUBJECT);
-        expect(own).toHaveLength(1);
-        expect(own[0].Text).toContain('ご自身で行われた操作でない場合は、すぐに店長へお知らせください。');
-        expect(own[0].Text).not.toContain('/contact');
-        expect(own[0].Text).not.toContain(staff.email);
-        expect(own[0].Text).toMatch(DATE_LINE);
+      await addUnapprovedPasskey({ email: staff.email, authenticator: staff.authenticators[0], keepNotifications: true });
+      await runWorkerUntil(
+        request,
+        async () => (await mailCount(request, staff.email, ADDED_SUBJECT)) >= 1 && (await mailCount(request, otherAdmin.email, ADMIN_ADDED_SUBJECT)) >= 1,
+        '店員の追加の知らせが届かない',
+      );
 
-        const toAdmin = await mailBodies(request, otherAdmin.email, ADMIN_ADDED_SUBJECT);
-        expect(toAdmin).toHaveLength(1);
-        expect(toAdmin[0].Text).toContain(`${staff.email} のパスキーが追加されました。`);
-        expect(toAdmin[0].Text).toContain('本人の操作か確認してください。心当たりがない場合は、そのアカウントのログインを止めてください。');
-        expect(toAdmin[0].Text).toMatch(DATE_LINE);
-        const adminMessage = (await mailsTo(request, otherAdmin.email)).find((message) => message.Subject === ADMIN_ADDED_SUBJECT);
-        expect(await recipientsOf(request, adminMessage!.ID)).toEqual([otherAdmin.email.toLowerCase()]);
+      const own = await mailBodies(request, staff.email, ADDED_SUBJECT);
+      expect(own).toHaveLength(1);
+      expect(own[0].Text).toContain('ご自身で行われた操作でない場合は、すぐに店長へお知らせください。');
+      expect(own[0].Text).not.toContain('/contact');
+      expect(own[0].Text).not.toContain(staff.email);
+      expect(own[0].Text).toMatch(DATE_LINE);
 
-        // 本人には店長の文面が、店長には店員の文面が出ない。サポーターには何も届かない
-        expect(await mailCount(request, staff.email, ADMIN_ADDED_SUBJECT)).toBe(0);
-        expect(await mailCount(request, otherAdmin.email, ADDED_SUBJECT)).toBe(0);
-        expect((await mailsTo(request, supporter.email)).filter((message) => message.Subject.includes('パスキー'))).toHaveLength(0);
-        expect(await outboxStatus(staff.userId, 'passkey_added')).toEqual(['sent']);
+      const toAdmin = await mailBodies(request, otherAdmin.email, ADMIN_ADDED_SUBJECT);
+      expect(toAdmin).toHaveLength(1);
+      expect(toAdmin[0].Text).toContain(`${staff.email} のパスキーが追加されました。`);
+      expect(toAdmin[0].Text).toContain('本人の操作か確認してください。心当たりがない場合は、そのアカウントのログインを止めてください。');
+      expect(toAdmin[0].Text).toMatch(DATE_LINE);
+      const adminMessage = (await mailsTo(request, otherAdmin.email)).find((message) => message.Subject === ADMIN_ADDED_SUBJECT);
+      expect(await recipientsOf(request, adminMessage!.ID)).toEqual([otherAdmin.email.toLowerCase()]);
 
-        // 再実行しても2通目は出ない
-        await runWorkerOnce(request);
-        expect(await mailCount(request, staff.email, ADDED_SUBJECT)).toBe(1);
-        expect(await mailCount(request, otherAdmin.email, ADMIN_ADDED_SUBJECT)).toBe(1);
-      }
+      // 本人には店長の文面が、店長には店員の文面が出ない。サポーターには何も届かない
+      expect(await mailCount(request, staff.email, ADMIN_ADDED_SUBJECT)).toBe(0);
+      expect(await mailCount(request, otherAdmin.email, ADDED_SUBJECT)).toBe(0);
+      expect((await mailsTo(request, supporter.email)).filter((message) => message.Subject.includes('パスキー'))).toHaveLength(0);
+      expect(await outboxStatus(staff.userId, 'passkey_added')).toEqual(['sent']);
+
+      // 再実行しても2通目は出ない
+      await runWorkerOnce(request);
+      expect(await mailCount(request, staff.email, ADDED_SUBJECT)).toBe(1);
+      expect(await mailCount(request, otherAdmin.email, ADMIN_ADDED_SUBJECT)).toBe(1);
     });
 
     test(`FR-AUTH-031-AC-03 ${viewport.name}: メールは手元の Mailpit だけへ送られる（外へ出る設定ではない）`, async () => {

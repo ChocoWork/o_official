@@ -76,7 +76,7 @@ export async function loginAsStaffAal2(page: Page, role: StaffRole, label: strin
 export async function removeStaff(member: TestMember): Promise<void> {
   await localAuthAdmin().auth.admin.deleteUser(member.userId).catch(() => undefined);
   // 消した鍵の知らせの行（店長あて）を、定期処理に送らせない
-  await skipPasskeyNotificationsOfUser(member.userId);
+  await skipPasskeyNotificationsOfUser(member.userId).catch(() => console.warn('知らせの行を取り下げられなかった（試験の結果は変えない）'));
 }
 
 /** 試験用の取扱店の行（type は DB の NOT NULL の列なので入れる）。名前は E2E-STK- で始める */
