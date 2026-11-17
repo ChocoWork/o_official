@@ -1,0 +1,317 @@
+/** @jest-environment node */
+import { randomUUID } from 'node:crypto';
+import { describeLocalDb } from './helpers/local-db';
+
+// Passkey stage 2 Task 8 (migration G): the DB functions a worker uses to claim and finish passkey notification rows.
+// DB suite: needs the local Supabase (DATABASE_URL). Every case runs in a transaction that is rolled back.
+// Inside one transaction now() does not move, so "later" is made by writing next_attempt_at / lease_expires_at directly.
+const FUNCTIONS = [
+  'public.claim_passkey_notification(integer)',
+  'public.complete_passkey_notification(uuid,uuid)',
+  'public.fail_passkey_notification(uuid,uuid,text,integer)',
+  'public.skip_passkey_notification(uuid,uuid,text)',
+  'public.passkey_notification_recipients(uuid)',
+];
+
+describeLocalDb('passkey notification sending functions', (db) => {
+  beforeEach(async () => {
+    await db().query('begin');
+    // Rows and admins left by other suites would change "the oldest due row" and "every admin".
+    await db().query('delete from private.passkey_notification_outbox');
+    await db().query(
+      `update public.user_roles set active = false where role_id in (select id from public.roles where code in ('admin', 'supporter'))`,
+    );
+  });
+  afterEach(async () => { await db().query('rollback'); });
+
+  async function user(email?: string | null): Promise<string> {
+    const r = await db().query(
+      `insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
+       values (gen_random_uuid(), $1, '{}'::jsonb, now(), now()) returning id::text as id`,
+      [email === undefined ? `passkey-notify-${randomUUID()}@example.com` : email],
+    );
+    return r.rows[0].id;
+  }
+  async function role(userId: string, code: 'admin' | 'supporter', opts: { active?: boolean; expires?: string | null } = {}): Promise<void> {
+    await db().query(
+      `insert into public.user_roles (user_id, role_id, active, expires_at)
+       select $1, r.id, $2, $3 from public.roles r where r.code = $4`,
+      [userId, opts.active ?? true, opts.expires ?? null, code],
+    );
+  }
+  async function row(over: Record<string, unknown> = {}): Promise<string> {
+    const v = {
+      user_id: randomUUID(), kind: 'passkey_added', subject_is_staff: false, notify_subject: true,
+      subject_email: 'subject@example.com', status: 'pending', attempts: 0, next_attempt_at: null as string | null, ...over,
+    };
+    const r = await db().query(
+      `insert into private.passkey_notification_outbox
+         (user_id, kind, subject_is_staff, notify_subject, subject_email, status, attempts, next_attempt_at,
+          lease_token, lease_expires_at)
+       values ($1,$2,$3,$4,$5,$6,$7, coalesce($8::timestamptz, now()),
+               case when $6 = 'sending' then gen_random_uuid() end,
+               case when $6 = 'sending' then now() + interval '5 minutes' end)
+       returning id::text as id`,
+      [v.user_id, v.kind, v.subject_is_staff, v.notify_subject, v.subject_email, v.status, v.attempts, v.next_attempt_at],
+    );
+    return r.rows[0].id;
+  }
+  const get = async (id: string) =>
+    (await db().query('select * from private.passkey_notification_outbox where id = $1', [id])).rows[0];
+  const claim = async (secs = 60) =>
+    (await db().query('select * from public.claim_passkey_notification($1)', [secs])).rows;
+  async function expectCode(sql: string, params: unknown[], code: string): Promise<void> {
+    await db().query('savepoint e');
+    await expect(db().query(sql, params)).rejects.toMatchObject({ code });
+    await db().query('rollback to savepoint e');
+  }
+  async function asRole<T>(roleName: string, run: () => Promise<T>): Promise<T> {
+    await db().query('savepoint r');
+    try {
+      await db().query(`set local role ${roleName}`);
+      return await run();
+    } finally {
+      await db().query('rollback to savepoint r');
+    }
+  }
+
+  test('DATA-AUTH-019 claim returns the oldest due row only, as sending with attempts + 1 and a lease', async () => {
+    const future = await row({ next_attempt_at: new Date(Date.now() + 3_600_000).toISOString() });
+    await row({ status: 'sent' });
+    await row({ status: 'dead' });
+    const first = await row();
+    const second = await row();
+    const got = await claim(120);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({ id: first, attempts: 1, kind: 'passkey_added', subject_email: 'subject@example.com' });
+    expect(got[0].lease_token).toEqual(expect.any(String));
+    const after = await get(first);
+    expect(after.status).toBe('sending');
+    expect(after.lease_token).toBe(got[0].lease_token);
+    const secs = (await db().query(`select extract(epoch from lease_expires_at - now())::int as s from private.passkey_notification_outbox where id = $1`, [first])).rows[0].s;
+    expect(secs).toBe(120);
+    expect((await get(second)).status).toBe('pending');
+    expect((await get(future)).status).toBe('pending');
+  });
+
+  test('DATA-AUTH-019 claim does not return a row that is being held, and returns nothing when nothing is due', async () => {
+    const id = await row();
+    expect(await claim()).toHaveLength(1);
+    expect(await claim()).toEqual([]);
+    expect((await get(id)).attempts).toBe(1);
+  });
+
+  test('DATA-AUTH-019 claim also takes retry_wait rows once they are due', async () => {
+    const id = await row({ status: 'retry_wait', attempts: 2 });
+    const got = await claim();
+    expect(got[0]).toMatchObject({ id, attempts: 3 });
+  });
+
+  test('DATA-AUTH-019 an expired lease goes back to retry_wait and can be taken again; at 9 attempts it is dead', async () => {
+    const id = await row();
+    const [first] = await claim();
+    await db().query(`update private.passkey_notification_outbox set lease_expires_at = now() where id = $1`, [id]);
+    const [again] = await claim();
+    expect(again).toMatchObject({ id, attempts: 2 });
+    expect(again.lease_token).not.toBe(first.lease_token);
+
+    const spent = await row({ status: 'sending', attempts: 9 });
+    await db().query(`update private.passkey_notification_outbox set lease_expires_at = now() where id = $1`, [spent]);
+    expect(await claim()).toEqual([]);
+    const dead = await get(spent);
+    expect(dead).toMatchObject({ status: 'dead', lease_token: null, lease_expires_at: null, last_error_code: 'lease_expired' });
+    expect(dead.finished_at).not.toBeNull();
+  });
+
+  test('DATA-AUTH-019 claim refuses a lease outside 30..900 seconds with 22023', async () => {
+    await row();
+    for (const secs of [0, 29, 901, -1]) {
+      await expectCode('select * from public.claim_passkey_notification($1)', [secs], '22023');
+    }
+    await expectCode('select * from public.claim_passkey_notification(null)', [], '22023');
+    expect(await claim(30)).toHaveLength(1);
+    await row();
+    expect(await claim(900)).toHaveLength(1);
+  });
+
+  test('DATA-AUTH-019 complete marks sent only with the matching lease token', async () => {
+    const id = await row();
+    const [c] = await claim();
+    const wrong = await db().query('select public.complete_passkey_notification($1,$2) as ok', [id, randomUUID()]);
+    expect(wrong.rows[0].ok).toBe(false);
+    expect(await get(id)).toMatchObject({ status: 'sending', lease_token: c.lease_token });
+    const ok = await db().query('select public.complete_passkey_notification($1,$2) as ok', [id, c.lease_token]);
+    expect(ok.rows[0].ok).toBe(true);
+    const done = await get(id);
+    expect(done).toMatchObject({ status: 'sent', lease_token: null, lease_expires_at: null });
+    expect(done.sent_at).not.toBeNull();
+    expect(done.finished_at).not.toBeNull();
+    const twice = await db().query('select public.complete_passkey_notification($1,$2) as ok', [id, c.lease_token]);
+    expect(twice.rows[0].ok).toBe(false);
+  });
+
+  test('DATA-AUTH-019 fail waits 2^(attempts-1) minutes at least, or the longer retry-after, and writes the error code', async () => {
+    const id = await row();
+    const [c1] = await claim();
+    const wrong = await db().query('select public.fail_passkey_notification($1,$2,$3,$4) as ok', [id, randomUUID(), 'smtp_error', 0]);
+    expect(wrong.rows[0].ok).toBe(false);
+    expect((await get(id)).status).toBe('sending');
+
+    const ok = await db().query('select public.fail_passkey_notification($1,$2,$3,$4) as ok', [id, c1.lease_token, 'smtp_error', 0]);
+    expect(ok.rows[0].ok).toBe(true);
+    const wait = async () =>
+      Number((await db().query(`select extract(epoch from next_attempt_at - now()) as s from private.passkey_notification_outbox where id = $1`, [id])).rows[0].s);
+    expect(await get(id)).toMatchObject({ status: 'retry_wait', last_error_code: 'smtp_error', lease_token: null, lease_expires_at: null });
+    expect(await wait()).toBe(60);
+
+    await db().query(`update private.passkey_notification_outbox set next_attempt_at = now() where id = $1`, [id]);
+    const [c2] = await claim();
+    await db().query('select public.fail_passkey_notification($1,$2,$3,$4)', [id, c2.lease_token, 'smtp_error', 0]);
+    expect(await wait()).toBe(120);
+
+    await db().query(`update private.passkey_notification_outbox set next_attempt_at = now() where id = $1`, [id]);
+    const [c3] = await claim();
+    await db().query('select public.fail_passkey_notification($1,$2,$3,$4)', [id, c3.lease_token, 'rate_limited', 3600]);
+    expect(await wait()).toBe(3600);
+    expect((await get(id)).last_error_code).toBe('rate_limited');
+  });
+
+  test('DATA-AUTH-019 fail caps the backoff at 128 minutes and makes the 9th failure dead', async () => {
+    const id = await row({ status: 'retry_wait', attempts: 7 });
+    const [c8] = await claim();
+    expect(c8.attempts).toBe(8);
+    await db().query('select public.fail_passkey_notification($1,$2,$3,$4)', [id, c8.lease_token, 'smtp_error', null]);
+    expect(Number((await db().query(`select extract(epoch from next_attempt_at - now()) as s from private.passkey_notification_outbox where id = $1`, [id])).rows[0].s)).toBe(7680);
+    expect((await get(id)).status).toBe('retry_wait');
+
+    await db().query(`update private.passkey_notification_outbox set next_attempt_at = now() where id = $1`, [id]);
+    const [c9] = await claim();
+    expect(c9.attempts).toBe(9);
+    const r = await db().query('select public.fail_passkey_notification($1,$2,$3,$4) as ok', [id, c9.lease_token, 'smtp_error', 0]);
+    expect(r.rows[0].ok).toBe(true);
+    const dead = await get(id);
+    expect(dead).toMatchObject({ status: 'dead', last_error_code: 'smtp_error', lease_token: null });
+    expect(dead.finished_at).not.toBeNull();
+    expect(await claim()).toEqual([]);
+  });
+
+  test('DATA-AUTH-019 fail and skip refuse an error code that is not lower snake case with 22023', async () => {
+    const id = await row();
+    const [c] = await claim();
+    await expectCode('select public.fail_passkey_notification($1,$2,$3,$4)', [id, c.lease_token, 'Bad Code', 0], '22023');
+    await expectCode('select public.fail_passkey_notification($1,$2,$3,$4)', [id, c.lease_token, null, 0], '22023');
+    await expectCode('select public.skip_passkey_notification($1,$2,$3)', [id, c.lease_token, 'a'.repeat(65)], '22023');
+    expect((await get(id)).status).toBe('sending');
+  });
+
+  test('DATA-AUTH-019 skip marks skipped only with the matching lease token', async () => {
+    const id = await row({ notify_subject: false, subject_email: null });
+    const [c] = await claim();
+    expect((await db().query('select public.skip_passkey_notification($1,$2,$3) as ok', [id, randomUUID(), 'no_recipient'])).rows[0].ok).toBe(false);
+    expect((await db().query('select public.skip_passkey_notification($1,$2,$3) as ok', [id, c.lease_token, 'no_recipient'])).rows[0].ok).toBe(true);
+    const s = await get(id);
+    expect(s).toMatchObject({ status: 'skipped', last_error_code: 'no_recipient', lease_token: null, lease_expires_at: null });
+    expect(s.finished_at).not.toBeNull();
+  });
+
+  test('DATA-AUTH-019 the lease CHECK ties lease_token and lease_expires_at to status sending', async () => {
+    const id = await row();
+    await expectCode(`update private.passkey_notification_outbox set status = 'sending' where id = $1`, [id], '23514');
+    await expectCode(`update private.passkey_notification_outbox set lease_token = gen_random_uuid(), lease_expires_at = now() where id = $1`, [id], '23514');
+    await expectCode(`update private.passkey_notification_outbox set last_error_code = 'Bad' where id = $1`, [id], '23514');
+  });
+
+  test('DATA-AUTH-019 recipients of a customer row: the subject only, as subject_customer', async () => {
+    const admin = await user();
+    await role(admin, 'admin');
+    const id = await row({ subject_is_staff: false, subject_email: 'cust@example.com' });
+    const r = await db().query('select * from public.passkey_notification_recipients($1)', [id]);
+    expect(r.rows).toEqual([{ email: 'cust@example.com', audience: 'subject_customer' }]);
+  });
+
+  test('DATA-AUTH-019 recipients of a staff row: the subject as subject_staff, then every active unexpired admin', async () => {
+    const a1 = await user('a1@example.com');
+    const a2 = await user('a2@example.com');
+    const gone = await user('expired@example.com');
+    const off = await user('inactive@example.com');
+    const sup = await user('supporter@example.com');
+    await role(a1, 'admin');
+    await role(a2, 'admin', { expires: '2999-01-01T00:00:00Z' });
+    await role(gone, 'admin', { expires: '2000-01-01T00:00:00Z' });
+    await role(off, 'admin', { active: false });
+    await role(sup, 'supporter');
+    const id = await row({ subject_is_staff: true, subject_email: 'staff@example.com' });
+    const r = await db().query('select * from public.passkey_notification_recipients($1)', [id]);
+    expect(r.rows).toEqual([
+      { email: 'staff@example.com', audience: 'subject_staff' },
+      { email: 'a1@example.com', audience: 'admin' },
+      { email: 'a2@example.com', audience: 'admin' },
+    ]);
+  });
+
+  test('DATA-AUTH-019 recipients: a subject who is also an admin appears once, as subject_staff (case-insensitive)', async () => {
+    const a1 = await user('Boss@Example.com');
+    const a2 = await user('other@example.com');
+    await role(a1, 'admin');
+    await role(a2, 'admin');
+    const id = await row({ subject_is_staff: true, subject_email: 'boss@example.com' });
+    const r = await db().query('select * from public.passkey_notification_recipients($1)', [id]);
+    expect(r.rows).toEqual([
+      { email: 'boss@example.com', audience: 'subject_staff' },
+      { email: 'other@example.com', audience: 'admin' },
+    ]);
+  });
+
+  test('DATA-AUTH-019 recipients: notify_subject false leaves out the subject, an empty address is never returned', async () => {
+    const a1 = await user('boss@example.com');
+    const blank = await user('');
+    await role(a1, 'admin');
+    await role(blank, 'admin');
+    const none = await user(null);
+    await role(none, 'admin');
+    const id = await row({ subject_is_staff: true, notify_subject: false, subject_email: null });
+    expect((await db().query('select * from public.passkey_notification_recipients($1)', [id])).rows)
+      .toEqual([{ email: 'boss@example.com', audience: 'admin' }]);
+    const blankRow = await row({ subject_is_staff: false, subject_email: '   ' });
+    expect((await db().query('select * from public.passkey_notification_recipients($1)', [blankRow])).rows).toEqual([]);
+    expect((await db().query('select * from public.passkey_notification_recipients($1)', [randomUUID()])).rows).toEqual([]);
+  });
+
+  test('DATA-AUTH-019 the five functions: anon and authenticated cannot execute, service_role can, with the safe attributes', async () => {
+    for (const f of FUNCTIONS) {
+      const r = await db().query(
+        `select has_function_privilege('anon', $1, 'EXECUTE') as a,
+                has_function_privilege('authenticated', $1, 'EXECUTE') as u,
+                has_function_privilege('service_role', $1, 'EXECUTE') as s,
+                (select p.prosecdef and p.proowner = 'postgres'::regrole and p.proconfig @> array['search_path=""']
+                   from pg_proc p where p.oid = $1::regprocedure) as attrs,
+                exists (select 1 from pg_proc p, lateral aclexplode(p.proacl) x where p.oid = $1::regprocedure and x.grantee = 0) as pub`,
+        [f],
+      );
+      expect(r.rows[0]).toEqual({ a: false, u: false, s: true, attrs: true, pub: false });
+    }
+    for (const roleName of ['anon', 'authenticated']) {
+      await expect(asRole(roleName, () => db().query('select * from public.claim_passkey_notification(60)'))).rejects.toMatchObject({ code: '42501' });
+      await expect(asRole(roleName, () => db().query('select * from public.passkey_notification_recipients($1)', [randomUUID()]))).rejects.toMatchObject({ code: '42501' });
+    }
+    await asRole('service_role', async () => {
+      expect((await db().query('select * from public.claim_passkey_notification(60)')).rows).toEqual([]);
+    });
+  });
+
+  test('DATA-AUTH-019 rows queued by the stage 1a triggers (INSERT and DELETE of a key) can be claimed', async () => {
+    const u = await user('owner@example.com');
+    const credential = async () =>
+      (await db().query(
+        `insert into auth.webauthn_credentials (user_id, credential_id, public_key, friendly_name)
+         values ($1, gen_random_bytes(32), gen_random_bytes(32), 'Phone') returning id::text as id`, [u])).rows[0].id;
+    const k = await credential();
+    await db().query('delete from auth.webauthn_credentials where id = $1', [k]);
+    const first = await claim();
+    expect(first[0]).toMatchObject({ user_id: u, kind: 'passkey_added', passkey_id: k, friendly_name: 'Phone', subject_email: 'owner@example.com', notify_subject: true, subject_is_staff: false });
+    const second = await claim();
+    expect(second[0]).toMatchObject({ user_id: u, kind: 'passkey_removed', passkey_id: k });
+    const rec = await db().query('select * from public.passkey_notification_recipients($1)', [first[0].id]);
+    expect(rec.rows).toEqual([{ email: 'owner@example.com', audience: 'subject_customer' }]);
+  });
+});

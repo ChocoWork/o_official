@@ -362,6 +362,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: お客さんがアカウントの新しいタブ「ログイン方法」で、自分のパスキーの一覧を見て、「パスキーを追加」で足し、名前を変え、削除できる。アカウントの画面から「パスワードを変更」のリンクを外す。
 
+### SR-AUTH-025 パスキーの足し引きの知らせを、積んだ行から取り出して送り、結果を残せる
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | パスキーが足された・消された時に本人へ知らせ、店員の鍵なら店長にも知らせるのが、乗っ取りに気づく手がかりになる（設計 6-3）。1a の引き金が行を積むところまでは済んでいる。送る側が、行を二重に取らず、送れなかった行を時間をおいて再び試し、いつまでも送れない行を止め、結果を残せるようにする。送る処理そのもの（メールの文・定期処理への組み込み）は次のタスクで作る |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-8-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 8。作り手の判断: 再試行は注文のメールと同じ考えで揺らぎなし、`dead` の点検は段3） |
+
+要求の文: 1a の引き金が `private.passkey_notification_outbox` に積んだ行を、送る側が1行ずつ取り出し、送れたら済みに、送れなければ間をおいて再び試し、9回目の失敗で止め、宛先の無い行は飛ばせる。宛先（本人と、店員の鍵なら有効な店長）は DB が決める。
+
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
 | 属性 | 値 |
@@ -5770,6 +5780,31 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 
 お客様情報のタブから「ログイン方法」を押すと、URL が `/account?tab=security` に替わり、見出し「パスキー」が出る（PC は左の一覧、mobile・tablet は上のタブ）。
 
+### FR-AUTH-030 知らせの行を取り出し・済み・失敗・飛ばしにし、宛先を決める DB の関数（移行 G）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-025 |
+| 根拠 | SR-AUTH-025 を、移行 G（`supabase/migrations/20261118044338_passkey_notification_sending.sql`）の5つの関数と、薄い部品 `src/lib/auth/passkey-notification-store.ts` にする。表は DATA-AUTH-019、処理の順番は DD-AUTH-066、守りは SEC-AUTH-051 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_notification_sending.integration.test.ts`）、単体テスト（`tests/unit/lib/auth/passkey-notification-store.test.ts`）、E2E（`e2e/FR-LOGIN-061-passkey-notification-function-grants.spec.ts`、FR-AUTH-030-AC-01） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-8-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 8。作り手の判断: 再試行は注文のメールと同じ考えで揺らぎなし、`dead` の点検は段3） |
+| 優先度 | MUST |
+
+規則: (1) `claim_passkey_notification(_lease_seconds)` は、先に期限切れの担当（`sending` で `lease_expires_at` が今以前）を `retry_wait`（`attempts` が9以上なら `dead`）に戻し、次に `pending`・`retry_wait` で時刻が来た行の最古（`seq` の順）を1行、`FOR UPDATE SKIP LOCKED` で取って `sending`・`attempts + 1`・新しい担当の印（`lease_token`）・期限を付けて返す。担当の秒数は30〜900で、外れたら `22023`。(2) `complete_passkey_notification` は担当の印が合う時だけ `sent` にして `true`、合わなければ `false` で行を変えない。(3) `fail_passkey_notification` は印が合う時だけ、`attempts` が9以上なら `dead`、そうでなければ `retry_wait` にして、次の時刻を「今 + 大きい方（指定の秒数、`2^(attempts-1)` 分。128分で頭打ち）」にする。揺らぎは付けない。エラーの符号は小文字・数字・`_` の1〜64字で、外れたら `22023`。(4) `skip_passkey_notification` は印が合う時だけ `skipped`。(5) `passkey_notification_recipients` は、`notify_subject` が真でメールがある本人（お客さんなら `subject_customer`、店員なら `subject_staff`）を先に、`subject_is_staff` が真の時だけ有効で期限内の `admin`（サポーターは含めない）のメールを `admin` で返す。同じアドレス（大文字小文字を区別しない）は1つにして先の方を残し、メールが空の行は返さない。(6) どの関数も `SECURITY DEFINER`・`search_path` 空・持ち主 `postgres`・`service_role` だけが実行できる。
+
+### FR-AUTH-030-AC-01 anon・authenticated は知らせの5つの関数を呼べず、service_role だけが呼べる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-030 |
+| 根拠 | SR-AUTH-025 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-061-passkey-notification-function-grants.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-8-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 8。作り手の判断: 再試行は注文のメールと同じ考えで揺らぎなし、`dead` の点検は段3） |
+
+anon の鍵と本物のログイン済みのお客さんの鍵では、5つの関数が PostgREST で 401 か 403・コード `42501` になる。service_role の鍵では呼べて、合わない行・印は `false`、宛先は空、範囲外の担当の秒数は `22023` になる。
+
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 
 | 属性 | 値 |
@@ -7340,6 +7375,21 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 守ること: (1) 部品は `authenticatorAttachment` が `null` なら項目を落として返す（`toJSON()` が在る環境も、自前で組む環境も）。窓口の形（`schemas/passkey.ts`）は `null` を受け、GoTrue へ渡す前に `dropNullFields` で落とす。(2) `challenge`・応答・`challenge_id`・トークンを、部品は一切ログに出さない（`console` を呼ばない）。(3) `src/features/auth/passkey/**` は `@/lib/auth/passkey-gotrue`・`@/lib/auth/passkey-start-config`・`server-only`・`node:` を import しない（文字列を読む試験で確かめる）。`passkey-gotrue` の先頭に `import 'server-only'` を付ける。(4) 登録の終わりの GoTrue の失敗（502）と窓口の形の失敗（400）は、画面では区別せず「やり直す」（`retry`）にそろえる。
 
 残る危険として受け入れること: `dropNullFields` は応答の最上位だけを見る。`response` の中の `null` は窓口の形が断る（入口で 400）。
+
+### SEC-AUTH-051 知らせの関数は service_role だけが呼べ、宛先は DB が決め、担当の印で二重の送りと横取りを防ぎ、エラーの符号に中身を入れない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-050 |
+| 根拠 | 行には本人のメールと鍵の名前が入る。(1) 関数を `anon`・`authenticated` が呼べると、他人のメールを読み、行を済みにして知らせを握りつぶせる。(2) 宛先を呼び手が決めると、店長のメール一覧が呼び手に渡る。(3) 担当の印が無いと、期限切れの後に戻った行を別の担当が取った時、遅れて来た前の担当が結果を上書きする。(4) エラーの符号に本文・宛先が入ると、行に残る。判断は DD-AUTH-066 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_notification_sending.integration.test.ts`）、単体テスト（`tests/unit/lib/auth/passkey-notification-store.test.ts`）、E2E `e2e/FR-LOGIN-061-passkey-notification-function-grants.spec.ts`（FR-AUTH-030-AC-01） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-8-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 8。作り手の判断: 再試行は注文のメールと同じ考えで揺らぎなし、`dead` の点検は段3） |
+| 優先度 | MUST |
+
+守ること: (1) 5つの関数は `public`・`anon`・`authenticated` から `execute` を外し、`service_role` だけに渡す。移行の末尾の確かめが、権限と `SECURITY DEFINER`・持ち主・`search_path` を確かめる。(2) 宛先は `passkey_notification_recipients(_id)` が行から決める。呼び手は宛先を渡せない。(3) 完了・失敗・飛ばしは、`status = 'sending'` かつ担当の印が合う時だけ行を変える。合わなければ `false` で何も変えない。(4) エラーの符号・飛ばした理由は、小文字・数字・`_` の1〜64字に限る（表の `CHECK` も同じ）。部品は誤りのログに関数の名前とコードだけを残し、宛先・本文・印を残さない。(5) 担当は期限つきで、切れた行は次の取り出しで戻る。9回目の失敗・期限切れで `dead` にして、再試行の無限の繰り返しを止める。
+
+残る危険として受け入れること: 送った後に、済みにする前に落ちると、担当が切れて再び取られ、同じ知らせが二重に届きうる（少なくとも1回の送り）。重複を防ぐ鍵はメールを送る側（Task 9）で作る。`dead` の行を店へ知らせる点検は段2では作らず、段3の店長への知らせと同じ道で作る。`dead` の行は表に残る。
 
 ## 派生要件
 

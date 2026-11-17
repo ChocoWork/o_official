@@ -30,6 +30,7 @@
 | [セッション・API認可](auth-session.md) | 初期認証状態の照会、refresh、logout、管理APIでの認証・ACL・AAL2確認 |
 | [店員のパスキーの入口](auth-staff-passkey-entry.md) | 店員のパスキーの設定、登録の窓の開閉、認めたパスキーの控えと数え方 |
 | [パスキーのアプリの窓口](auth-passkey-server-endpoints.md) | 窓口が DB の関数を呼ぶ薄い部品、`passkey_approve` の古い行と窓の同時の競り |
+| [パスキーの知らせを取り出して送るための DB の関数](auth-passkey-notifications.md) | 知らせの行の取り出し・担当の印・再試行・宛先を決める DB の関数と薄い部品 |
 | [購入・決済照合](checkout-payment.md) | 「確認へ進む」で下書き・Checkout Sessionを作成し、最終確認画面の「注文する」で受付・在庫確保・支払い・completeを実行。resumeで入り直し、失効時も共通照合器で注文・在庫を合わせる |
 | [Stripe Webhook](stripe-webhooks.md) | 署名検証とenqueue、claimと処理・完了・再試行 |
 | [注文管理](order-administration.md) | 未入金取消、出荷、返金、要対応の解決 |

@@ -1974,6 +1974,25 @@ stateDiagram-v2
 - 移行 A の本体に戻す時の目印: A の `passkey_approve` の `md5(prosrc)` は `e0b5dc02ecfcb5533cd91a00edc55fe4`
 - 部品 `passkey-approval-rpc.ts`: 戻りは `{ ok: true; value } | { ok: false }`。`approve` の失敗は `reason` が `stale`・`window_full`・`other`。呼び方は DD-AUTH-050
 
+### DATA-AUTH-019 知らせの行に担当・結果の列を足し、取り出し・済み・失敗・飛ばし・宛先の5つの DB の関数は `service_role` だけが呼べる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-030、SEC-AUTH-051 |
+| 根拠 | 1a の引き金が積む行（DATA-AUTH-014）を、送る側が二重に取らず、失敗を数えて止められるようにする。注文のメールの送り箱（`private.order_email_outbox`）と同じ考えの担当（lease）と再試行にして、宛先は DB が決める。判断は DD-AUTH-066 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_notification_sending.integration.test.ts`）、E2E（FR-AUTH-030-AC-01）、単体テスト（DD-AUTH-066） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-8-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 8。作り手の判断: 再試行は注文のメールと同じ考えで揺らぎなし、`dead` の点検は段3） |
+
+- 移行 G（`supabase/migrations/20261118044338_passkey_notification_sending.sql`）。新しい表は無い
+- `private.passkey_notification_outbox` に列を足す: `lease_token uuid`・`lease_expires_at timestamptz`・`last_error_code text`（`^[a-z0-9_]{1,64}$`）・`sent_at timestamptz`・`finished_at timestamptz`。`CHECK ((status = 'sending') = (lease_token IS NOT NULL AND lease_expires_at IS NOT NULL))`。既存の行は `pending` のまま。担当の期限の索引（`status = 'sending'` の行だけ）を足す
+- 状態の動き: `pending`・`retry_wait`（時刻が来たもの）→ `sending`（取り出し。`attempts + 1`）→ `sent`（済み）／`retry_wait`（失敗・期限切れ）／`dead`（`attempts` が9以上の失敗・期限切れ）／`skipped`（宛先なし）
+- `public.claim_passkey_notification(integer)`・`complete_passkey_notification(uuid, uuid)`・`fail_passkey_notification(uuid, uuid, text, integer)`・`skip_passkey_notification(uuid, uuid, text)`・`passkey_notification_recipients(uuid)`。どれも `SECURITY DEFINER`・`SET search_path = ''`・持ち主 `postgres`・`service_role` だけが `execute`（`public`・`anon`・`authenticated` からは外す）
+- 再試行の間隔: `2^(attempts-1)` 分（1・2・4…。128分で頭打ち）と指定の秒数の大きい方。揺らぎは付けない（宛先が少なく、同時の取り合いが無いため。注文のメールの `order_email_retry_delay` は前後2割の揺らぎを足す）
+- 宛先: 本人（`notify_subject` が真でメールがある。お客さんは `subject_customer`、店員は `subject_staff`）を先に、`subject_is_staff` が真の行だけ有効で期限内の `admin` を `admin` で返す（サポーターは含めない）。同じアドレスは先の方を残し、空は返さない
+- 部品 `src/lib/auth/passkey-notification-store.ts`: 戻りは `{ ok: true; value } | { ok: false }`。呼び方は DD-AUTH-066
+- 段2で作らないもの: `dead` の行を店へ知らせる点検（段3の店長への知らせと同じ道で作る）
+
 ## 未確認事項
 
 - 本番の Supabase Auth の設定（Email OTP Expiration 300 秒・8 桁・Confirm email・TOTP の有効・最小の長さ・漏洩の照合・captcha・Redirect URLs に古い `/auth/callback` の許可が残っていないか）。手元の `supabase/config.toml` は波 6 の切り替え（2026-11-01。手元だけ）まで OTP 3600 秒・Confirm email 無効・TOTP 無効・最小 6 文字だった。切り替えで本番の前提（OTP 300 秒・Confirm email 有効・TOTP 有効・最小 16・captcha・`secure_password_change`・変更通知）にそろえた。本番の実際の値はまだ読んでいない（SEC-AUTH-029）

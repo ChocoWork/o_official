@@ -1,5 +1,6 @@
 # DB マイグレーション運用
 
+> 2026-11-18 確認日（パスキー段2 Task 8）: 新しい移行 `20261118044338_passkey_notification_sending.sql`（移行 G。知らせの行に担当・結果の列を足し、取り出し・済み・失敗・飛ばし・宛先の5つの DB の関数を足す。手元の DB のみ・本番未適用）を足した。下の「パスキー段2 移行 G」の節に書き、「段3まで `db push` しない」の一覧に足して7本にした。
 > 2026-11-17 確認日（パスキー段1b Task 12）: 段1b の全体の確かめの結果を移行 F の節に書いた。本番には何も当てていない（移行 F は本番未適用のまま）。
 > 2026-11-17 確認日（パスキー段1b Task 1）: 新しい移行 `20261117123620_passkey_server_endpoint_fns.sql`（窓口が使う DB の関数3本と `passkey_approve` の作り直し。手元の DB のみ・本番未適用）を足した。下の「パスキー段1b 移行 F」の節に書き、「段3まで `db push` しない」の一覧に足した。
 > 2026-11-17 確認日（パスキー段1b Task 11: 運用の文書）: 当てる順に移行 F を足し、戻し方の最初に F を置いた。
@@ -156,7 +157,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 - 前の確かめ: 移行 D の関数2本と `private.app_session_is_live(uuid)` が在ること。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`
 - 前の確かめ（締め出しの防止。`DETAIL = passkey_entry_switch_no_ready_staff`）: 有効な店員（`user_roles` の有効な admin・supporter）が1人でもいて、認めた鍵が `min_approved_passkeys` 本以上の店員が1人もいなければ、`PASSKEY_MIGRATION_PRECHECK_FAILED` で止まる。当てると全員が管理の権限を失うため。手元の `db reset` は移行の後に seed を入れるので `user_roles` が空で、通る。試験: `tests/integration/db/auth_has_permission_passkey.integration.test.ts` が移行ファイルのこの DO ブロックを取り出して流す（店員0本・1本で止まり、2本が1人でもいれば通る）
 - 前の確かめ（土台の一致。`DETAIL = passkey_entry_switch_baseline`）: 置き換える前の `has_permission` の本体の `md5(prosrc)` が `3c4826933eca194a3486f430d361891c` でなければ止まる（`pg_get_functiondef` の md5 は頭の書き方が PG の版で変わりうるので使わない。`prosrc` は `$function$` の間の本文だけ）。別の作業が段3までの間に本体を直していたら、黙って上書きしない。この値は、移行 D までを適用した手元の DB（`npx.cmd supabase db reset --version 20261117001500`）で `select md5(prosrc) from pg_proc where oid = 'public.has_permission(text)'::regprocedure` を読んで測った（`20261029120100` の本体を取引の中で作り直して測っても同じ値）。本番の PG の版で `pg_get_functiondef` の字が変わって止まった場合でも、本番で上の `md5(prosrc)` を読み、手元の値と同じなら、違いは頭の書き方だけなので中身は同じと判断してよい（違う時は本体が変わっているので、E を当てずに中身を読む）。**E の期待値を直した時は、同じコミットで、この表の E の大きさと MD5 を直す**（MCP で当てた後の突き合わせ `md5(statements[1])` は、直したファイルの MD5 で行う）
-- **段3まで `supabase db push`（どの形でも）を流さない**: `supabase/migrations` にこの5本（と段1b の移行 F）がある間、`db push --linked --include-all` を流すと一度に本番へ当たる。別の作業の移行も、段3までは MCP の `apply_migration` で1本ずつ当てる。上の「前の確かめ」は、うっかり当たった時の最後の歯止めで、それに頼らない
+- **段3まで `supabase db push`（どの形でも）を流さない**: `supabase/migrations` にこの5本（と段1b の移行 F、段2 の移行 G）がある間、`db push --linked --include-all` を流すと一度に本番へ当たる。別の作業の移行も、段3までは MCP の `apply_migration` で1本ずつ当てる。上の「前の確かめ」は、うっかり当たった時の最後の歯止めで、それに頼らない
 - 末尾の確かめ: 本体に `aal2` が無く、`staff_passkey_amr_ok` < `user_roles` < `staff_passkey_count_ok` < `app_session_is_live` の順で、持ち主・`SECURITY DEFINER`・`STABLE`・`search_path` 空・`authenticated` と `service_role` に `execute` が有り `anon` に無いこと。外れたら `PASSKEY_MIGRATION_ASSERTION_FAILED`
 - 戻し方（移行のヘッダーの ROLLBACK）: `20261029120100_sec_has_permission_aal2_member_rls.sql` の本体（`aal2` の枝）に `CREATE OR REPLACE` で戻す
 - 費用: `has_permission` を `( SELECT ... )` で包まずに呼ぶ決まりが21の表に77件ある（行ごとに呼ばれうる）。条件3の数えは、パスキーの amr と ACL を通った人（店員）だけが払う。お客さん・anon は条件1・2か ACL で止まる
@@ -184,6 +185,26 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 - 手元で確かめた結果（2026-11-17、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_server_fns.integration.test.ts` 22件通過、`tests/integration/db/auth_*` 16ファイルの DB 結合が通過（直し1の後）。単体 `passkey-approval-rpc.test.ts` 35件通過。E2E `FR-LOGIN-047`（3幅）通過
 - 段1b 全体の確かめ（2026-11-17 Task 12、`npx.cmd supabase db reset` の後）: 手元の DB の結合試験（`--runInBand`）は7265件通過・3件失敗。失敗は既知の順番の汚れ（unit-binding-refunds・group_g3_cancel）だけで、reset の後に単独で流すと78件通過。`auth_passkey_*`（7ファイル）と `auth_has_permission_passkey` は全部通過。`has_permission` を使うほかの DB 結合は、全件の中で落ちた既知の順番の汚れ `group_g3_cancel` を除き通過（それも単独で通過）。E2E の全件（本番ビルド・3つの幅）は5467件通過・37件失敗（35件は 1a の比べる元から既知の赤）・47件スキップ。新しい赤2件は単独で通過し、環境由来と切り分けた。FR-ACCOUNT-007-logout は 2026-10 から全件で約20回、30秒のタイムアウトになっていて、比べる元の 1a でも 25 秒かかっていた。FR-LOOK-SEC-004 の SEC-LOOK-015 tablet は、試験自身の後始末の DDL がデッドロックしたもので、1a の Task 9 の全件でも同じ形で落ちた（同じ実行で mobile・desktop は通過）。1b はどちらにも触れていない。**移行 F は本番未適用のまま**（段3まで `db push` を流さない一覧にある。`db-migrations.yml` に push の引き金は無い）
 
+## パスキー段2 移行 G: 知らせの行を取り出して送るための DB の関数（手元で確認済み・本番未適用）
+
+確認日: 2026-11-18（パスキー段2 Task 8）。SR-AUTH-025・FR-AUTH-030・SEC-AUTH-051・DATA-AUTH-019・DD-AUTH-066・THR-AUTH-050。設計は [パスキー設計](../superpowers/specs/2026-11-07-passkey-auth-design.md)（6-3）、計画は [段2の計画](../superpowers/plans/2026-11-17-passkey-stage2-customers.md)。
+
+| 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
+| --- | --- | --- | --- |
+| `20261118044338_passkey_notification_sending.sql` | 12920 bytes / `d61c41501105339576ae18b50c863027` | 本番未適用（手元の `db reset` で適用済み） | `private.passkey_notification_outbox` に担当・結果の列（`lease_token`・`lease_expires_at`・`last_error_code`・`sent_at`・`finished_at`）と2つの `CHECK`・担当の期限の索引を足し、`public.claim_passkey_notification(integer)`・`complete_passkey_notification(uuid, uuid)`・`fail_passkey_notification(uuid, uuid, text, integer)`・`skip_passkey_notification(uuid, uuid, text)`・`passkey_notification_recipients(uuid)` を足す |
+
+- 変えるもの: 知らせの表に5列・2つの `CHECK`（`(status = 'sending') = (lease_token IS NOT NULL AND lease_expires_at IS NOT NULL)`、`last_error_code` は `^[a-z0-9_]{1,64}$`）・索引1つ。既存の行は `pending` のまま。関数5本はどれも `SECURITY DEFINER`・`search_path` 空・持ち主 `postgres`・`service_role` だけが `execute`。誰も呼ばないので、今の動きは何も変わらない（呼ぶのは段2の Task 9 の worker）
+- ファイルの確かめ（2026-11-18）: LF・BOM なし・ASCII だけ（非 ASCII の行は0、CR は0、先頭は `-- `）。MD5 は `md5sum` で測った
+- 本番に MCP の `apply_migration` で当てた後の突き合わせ: `schema_migrations` の `statements` は1つ（ファイルの全文）になるので、`md5(statements[1])` はファイルの MD5 `d61c41501105339576ae18b50c863027` と同じになる。同じでなければ当てる途中で字が変わっている（この移行は ASCII だけなので起きないはず）ので止める
+- 手元の値（参考。本番の突き合わせには使わない）: 手元の `db reset` の後、CLI は文を分けて記録するので `md5(statements[1])` は `edfa56e68b76f4584335dee37561960a`（頭の注釈と `BEGIN` だけ）
+- 前の確かめ: `private.passkey_notification_outbox`・`public.user_roles`・`public.roles`・`auth.users` が在ること。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（`passkey_g_precheck`）
+- 末尾の確かめ: 5本が `anon`・`authenticated`・`public` から外れ `service_role` だけが `execute` を持つこと、`SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空であること、5列と2つの `CHECK` が在ること、表に `anon`・`authenticated` の権限が無いこと。外れたら `PASSKEY_MIGRATION_ASSERTION_FAILED`（`passkey_g_function_acl`・`passkey_g_function_attrs`・`passkey_g_outbox`）
+- 戻し方（移行のヘッダーの ROLLBACK）: 1つの取引で、5つの関数を `DROP` → 索引を `DROP` → 2つの `CHECK` と5列を `DROP COLUMN`。送る側（Task 9 の worker）が使う前に限る。使い始めた後に戻すと、担当中・結果の列の値が消える
+- 当てる順: A の後（表が A にある）。Task 9 の worker のアプリをデプロイするより先に、1本ずつ MCP で当てる
+- **段3まで `supabase db push`（どの形でも）を流さない**: 上の移行 E の節の決まりに、この G も含める（これでパスキーの移行は7本）。当てるのは調整役だけ（オーナーの許可で）
+- 手元で確かめた結果（2026-11-18、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_notification_sending.integration.test.ts` 17件通過。単体 `passkey-notification-store.test.ts` 18件通過。E2E `FR-LOGIN-061`（3幅）通過
+- 持ち越し: `dead` の行（9回失敗・担当切れで止めた行）を店へ知らせる点検は、段2では作らない。段3の店長への知らせと同じ道で作る（`dead` の行は表に残る）
+
 ## パスキー段1a の本番への当て方の順と前提（段1b の移行 F を含む）
 
 確認日: 2026-11-17（段1a の最終レビューの直し I-1・I-2・I-3・M-6。段1b Task 11 で移行 F を足した）。設計は [パスキー設計](../superpowers/specs/2026-11-07-passkey-auth-design.md)。段1a は本番に何も当てていない。段3（またはオーナーの許可を得た時）に、調整役だけが次の順で当てる。
@@ -191,7 +212,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 ### 順
 
 1. 移行 A（設定・認めたパスキー・窓・知らせの表と関数）を、**この master のアプリをデプロイするより先に**当てる。`src/lib/auth/admin-rbac.ts` が RPC `passkey_approved_count`（A の関数）を呼ぶので、A が無い本番に先にデプロイすると、権限のある店員の管理 API はすべて 503 になる。
-2. 移行 B（フックの関数）、C（引き金）、D（3条件の関数）、**F（段1b。窓口が使う関数と `passkey_approve` の作り直し）**を、1本ずつ MCP の `apply_migration` で当てる。F は `passkey_approve` を置き換えるので A の後、かつ**窓口のアプリをデプロイするより先**（B・C・D・E とは、移行の依存としては前後どちらでもよい。ただし段3で店員が鍵を認める時に F の関数と `passkey_approve` の作り直しを使い、E の前の確かめが認めた鍵2本の店員を求めるので、実際には E より前に当てる）。F の確かめ・戻し方は上の「移行 F」の節。当てるたびに、上の各節の「突き合わせ」（`md5(statements[1])` がファイルの MD5 と同じ）を確かめる。
+2. 移行 B（フックの関数）、C（引き金）、D（3条件の関数）、**F（段1b。窓口が使う関数と `passkey_approve` の作り直し）**、**G（段2。知らせの行を取り出して送る関数。A の後、知らせを送る worker のデプロイより先）**を、1本ずつ MCP の `apply_migration` で当てる。F は `passkey_approve` を置き換えるので A の後、かつ**窓口のアプリをデプロイするより先**（B・C・D・E とは、移行の依存としては前後どちらでもよい。ただし段3で店員が鍵を認める時に F の関数と `passkey_approve` の作り直しを使い、E の前の確かめが認めた鍵2本の店員を求めるので、実際には E より前に当てる）。F の確かめ・戻し方は上の「移行 F」の節。当てるたびに、上の各節の「突き合わせ」（`md5(statements[1])` がファイルの MD5 と同じ）を確かめる。
 3. 本番の Auth の設定（パスキー有効・`rp_id`・`rp_origins`。「本番の設定」の節）を、ダッシュボードで行う。
 4. Auth のフック（`public.passkey_access_token_hook`）を、**B を当てた後で**ダッシュボードに登録する。B より先に登録すると、GoTrue がトークンを出すたびに失敗し、お客さんを含めただれもログインできない。
 5. アプリをデプロイする（A と F が当たっていること。段1b の窓口が F の関数を呼ぶ）。
@@ -659,7 +680,7 @@ master への push で実際に適用される（段3の後に引き金を戻し
 
 **注: 2026-11-16 からパスキーの段3まで、push の引き金は止めている（「CI の引き金を止めた記録」の節）。本番へは調整役が MCP の `apply_migration` で1本ずつ当てる。**
 
-**注: 段3まで `supabase db push --linked`（`--include-all` を含むどの形でも）は流さない。`supabase/migrations` にパスキーの6本（段1a の5本と段1b の F。`passkey` を含む名前）がある間は、流すと6本が一度に本番へ当たり、本番の店員がだれも管理の権限を持てなくなる。別の作業（会計など）の移行も、段3までは MCP の `apply_migration` で1本ずつ当てる。順と前提は「パスキー段1a の本番への当て方の順と前提」の節。**
+**注: 段3まで `supabase db push --linked`（`--include-all` を含むどの形でも）は流さない。`supabase/migrations` にパスキーの7本（段1a の5本と段1b の F、段2 の G。`passkey` を含む名前）がある間は、流すと7本が一度に本番へ当たり、本番の店員がだれも管理の権限を持てなくなる。別の作業（会計など）の移行も、段3までは MCP の `apply_migration` で1本ずつ当てる。順と前提は「パスキー段1a の本番への当て方の順と前提」の節。**
 
 ### 本番に当てる前の試行（取り消し前提）
 

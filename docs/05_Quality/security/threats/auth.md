@@ -742,6 +742,20 @@ flowchart LR
 | 状態 | 推定 |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1。作り手の判断 3・4、調整役の判断 3） |
 
+### THR-AUTH-050 知らせの行の関数を横から呼ばれて他人のメールを読まれる・知らせを握りつぶされる・二重に送られる・永久に再試行される
+
+| 属性 | 値 |
+| --- | --- |
+| 守るもの | 設計 6-3（パスキーの足し引きの知らせ）・知らせの行（本人のメール・鍵の名前・店長のメールの一覧） |
+| 脅威 | (1) `anon`・`authenticated` が関数を呼び、他人のメールと鍵の名前を読む・行を済みにして知らせを消す。(2) 呼び手が宛先を指定して、店長のメールの一覧を得る。(3) 期限が切れて別の担当に渡った行に、遅れて来た前の担当が結果を書く。(4) 送れない行が、いつまでも取り出され続ける。(5) エラーの符号に宛先・本文を入れて表に残す |
+| 起こり方 | 関数の実行権限が広い・宛先を引数にする・担当の印を見ない・再試行に上限が無い・符号を自由な文にする |
+| 影響 | 他人のメールの漏れ、乗っ取りの手がかりの消失、二重の知らせ、送り手の詰まり |
+| 対策 | SEC-AUTH-051（`service_role` だけ・宛先は DB が決める・担当の印・符号の形の制限・9回で `dead`）、DATA-AUTH-019、DD-AUTH-066 |
+| ASVS | V8.3.4・V1.4.4（当てはめは推定） |
+| 根拠 | 段2の Task 8。設計 6-3 |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-8-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 8。作り手の判断: 再試行は注文のメールと同じ考えで揺らぎなし、`dead` の点検は段3） |
+
 ## 未確認事項
 
 - 本番の Supabase Auth の設定（OTP の期限・Confirm email・最小の長さ・漏洩の照合・captcha・TOTP・回数の制限・`secure_password_change`・現行パスワードの要求）。手元の `supabase/config.toml` は波 6 の切り替えで本番の前提にそろえたが、本番の実際の値は Management API で読むまで未確認（THR-AUTH-015・029）
