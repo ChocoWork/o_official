@@ -4,7 +4,8 @@
  * @packageDocumentation
  * @impl IMPL-AUTH-201
  * @design DD-AUTH-027
- * @remarks access token は寿命が短いので、Supabase の token 交換で新しい対へ替える。旗 AUTH_REQUIRE_APP_SESSION が有効な間は、アプリのログインで結び付いた行（auth_session_id を持つ行）の続きにだけ更新を許す。結び付いていない session の refresh token を、更新で結び付いた session に洗わせないため。旗が無効な間は従来どおり Supabase の token 交換が門番で、自前の sessions 表は補助に留める。それぞれの理由は、その行のコメントに書いた。
+ * @remarks フックが店員の更新を拒否した時（403 で文の頭が印）だけ、アプリがそのセッション（public.sessions の行と GoTrue の session）を終わらせて 401 を返す（ADR-0466。処理は endRejectedStaffSession、IMPL-AUTH-279）。終わらせる処理が失敗しても Cookie は消して 401（閉じる側）。印の無い失敗は従来どおり Cookie を消すだけで、行は終わらせない。
+ * access token は寿命が短いので、Supabase の token 交換で新しい対へ替える。旗 AUTH_REQUIRE_APP_SESSION が有効な間は、アプリのログインで結び付いた行（auth_session_id を持つ行）の続きにだけ更新を許す。結び付いていない session の refresh token を、更新で結び付いた session に洗わせないため。旗が無効な間は従来どおり Supabase の token 交換が門番で、自前の sessions 表は補助に留める。それぞれの理由は、その行のコメントに書いた。
  */
 
 import { NextResponse } from 'next/server';
@@ -12,6 +13,8 @@ import { cookies } from 'next/headers';
 import { logAudit } from '@/lib/audit';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { isAppSessionRequired } from '@/lib/auth/app-session';
+import { isStaffPasskeyRequiredError } from '@/lib/auth/staff-passkey-reject';
+import { endRejectedStaffSession } from '@/lib/auth/staff-passkey-session-end';
 
 async function clearAuthCookies(response: NextResponse) {
   const {
@@ -24,6 +27,21 @@ async function clearAuthCookies(response: NextResponse) {
   response.cookies.set({ name: refreshCookieName, value: '', ...clearCookieOptions() });
   response.cookies.set({ name: accessCookieName, value: '', ...clearCookieOptions() });
   response.cookies.set({ name: csrfCookieName, value: '', ...clearCookieOptions() });
+}
+
+/** GoTrue の誤りの本文（text）から、フックの拒否と同じ形（status・message）を作る。読めなければ message なし */
+function toGoTrueError(status: number, text: string): { status: number; message?: string } {
+  try {
+    const body: unknown = JSON.parse(text);
+    if (body && typeof body === 'object') {
+      const { msg, message } = body as { msg?: unknown; message?: unknown };
+      const picked = typeof msg === 'string' ? msg : message;
+      if (typeof picked === 'string') return { status, message: picked };
+    }
+  } catch {
+    // 本文が JSON でなければ印は無い
+  }
+  return { status };
 }
 
 export async function POST(request: Request) {
@@ -118,6 +136,25 @@ export async function POST(request: Request) {
     if (!tokenRes.ok) {
       const failedText = await tokenRes.text();
       console.error('Token refresh failed:', failedText);
+
+      // フックの「店員はパスキーでだけ入れる」拒否だけは、セッションそのものを終わらせる（ADR-0466）。
+      // 印の無い失敗（一時の不調・期限切れなど）で終わらせると、正当な利用者を追い出す。
+      if (isStaffPasskeyRequiredError(toGoTrueError(tokenRes.status, failedText))) {
+        const ended = await endRejectedStaffSession(session);
+        await logAudit({
+          action: 'refresh',
+          actor_id: session?.user_id,
+          outcome: ended ? 'failure' : 'error',
+          detail: ended ? 'staff_passkey_required_session_ended' : 'staff_passkey_required_end_failed',
+          metadata: { status: tokenRes.status },
+        });
+        const rejected = NextResponse.json(
+          { error: 'Staff passkey required', code: 'staff_passkey_required' },
+          { status: 401 },
+        );
+        await clearAuthCookies(rejected);
+        return rejected;
+      }
       await logAudit({
         action: 'refresh',
         actor_id: session?.user_id,

@@ -714,6 +714,20 @@ flowchart LR
 | 状態 | 推定 |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8） |
 
+### THR-AUTH-048 拒否された店員の更新の後に、セッションが生きたまま残る
+
+| 属性 | 値 |
+| --- | --- |
+| 守るもの | 5-2（更新の拒否）・5-5（認めたパスキー） |
+| 脅威 | 登録の窓が閉じた・認めた鍵が2本未満になった・パスキーでの入り直しが24時間を過ぎた店員の更新がフックに拒否された後、アプリが Cookie だけを消すと、`auth.sessions` と `public.sessions` の行が残り、前のアクセストークンが最長1時間、`/api/auth/me` やお客さんの機能で使われ続ける |
+| 起こり方 | 拒否と一時の不調を区別せず Cookie を消すだけにする・終わらせる処理の失敗を無視して Cookie を残す |
+| 影響 | 期限の切れた店員のセッションが残り、画面の表示（`mfaVerified: false`）と「ログイン状態」が食い違う。セッションの数を数える段3の土台が崩れる |
+| 対策 | SEC-AUTH-047（印つきの403だけ終わらせる・終わらせる処理が落ちても Cookie を消して 401）、DD-AUTH-058。管理の入口は24時間の条件で別に止まる（1a） |
+| ASVS | V3.3.1・V3.3.2（当てはめは推定） |
+| 根拠 | 段1b の Task 9。設計 5-2 |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 9） |
+
 ## 未確認事項
 
 - 本番の Supabase Auth の設定（OTP の期限・Confirm email・最小の長さ・漏洩の照合・captcha・TOTP・回数の制限・`secure_password_change`・現行パスワードの要求）。手元の `supabase/config.toml` は波 6 の切り替えで本番の前提にそろえたが、本番の実際の値は Management API で読むまで未確認（THR-AUTH-015・029）

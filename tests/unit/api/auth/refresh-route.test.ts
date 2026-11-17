@@ -45,6 +45,17 @@ jest.mock('@/features/auth/services/session', () => ({
   persistNewSession: jest.fn(),
 }));
 
+const mockedRpc = jest.fn();
+const mockedUpdateEq = jest.fn();
+const mockedUpdate = jest.fn();
+const mockedFrom = jest.fn();
+jest.mock('@/lib/supabase/server', () => ({
+  createServiceRoleClient: async () => ({
+    from: (...args: unknown[]) => mockedFrom(...args),
+    rpc: (...args: unknown[]) => mockedRpc(...args),
+  }),
+}));
+
 const mockedCookies = cookies as unknown as jest.Mock;
 const mockedLogAudit = logAudit as jest.Mock;
 const mockedEnforceRateLimit = enforceRateLimit as jest.Mock;
@@ -550,4 +561,186 @@ describe('POST /api/auth/refresh 結び付けの強制（DD-AUTH-039）', () => 
       expect(mockedPersistNewSession.mock.calls[0][1].trustedAuthSessionId).toBeNull();
     },
   );
+});
+
+describe('POST /api/auth/refresh フックの拒否（ADR-0466）', () => {
+  const originalEnv = { ...process.env };
+  const originalFetch = global.fetch;
+  const MARKER_MESSAGE = '[staff-passkey-required] 店員はパスキーでだけ入れます';
+
+  const rejection = (status: number, body: Record<string, unknown>) => ({
+    ok: false,
+    status,
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  });
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    process.env = { ...originalEnv };
+    delete process.env.AUTH_REQUIRE_APP_SESSION;
+    process.env.SUPABASE_URL = 'https://supabase.test';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-key';
+    mockedCookies.mockResolvedValue({ get: jest.fn().mockReturnValue({ value: 'old-refresh' }) });
+    mockedEnforceRateLimit.mockResolvedValue(undefined);
+    mockedFindSession.mockResolvedValue(sessionRow());
+    mockedLogAudit.mockResolvedValue(undefined);
+    mockedUpdateEq.mockResolvedValue({ error: null });
+    mockedUpdate.mockReturnValue({ eq: mockedUpdateEq });
+    mockedFrom.mockReturnValue({ update: mockedUpdate });
+    mockedRpc.mockResolvedValue({ error: null });
+    global.fetch = mockedFetch as unknown as typeof fetch;
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    global.fetch = originalFetch;
+    jest.restoreAllMocks();
+  });
+
+  test('DD-AUTH-058 印つきの403は、行を失効し GoTrue の session を消し、Cookie を消して 401 と code を返し、監査に残す', async () => {
+    mockedFetch.mockResolvedValue(rejection(403, { code: 403, error_code: 'unknown', msg: MARKER_MESSAGE }));
+
+    const res = await call();
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'Staff passkey required', code: 'staff_passkey_required' });
+    expectAuthCookiesCleared(res);
+    expect(mockedFrom).toHaveBeenCalledWith('sessions');
+    expect(mockedUpdate).toHaveBeenCalledWith({ revoked_at: expect.any(String) });
+    expect(mockedUpdateEq).toHaveBeenCalledWith('id', 'session-row-1');
+    expect(mockedRpc).toHaveBeenCalledWith('revoke_auth_session', { p_session_id: AUTH_SESSION_ID });
+    expect(mockedPersistNewSession).not.toHaveBeenCalled();
+    expect(mockedLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'refresh',
+        actor_id: 'user-from-row',
+        outcome: 'failure',
+        detail: 'staff_passkey_required_session_ended',
+      }),
+    );
+  });
+
+  test('DD-AUTH-058 本文の項目名が message でも印を見分ける', async () => {
+    mockedFetch.mockResolvedValue(rejection(403, { message: MARKER_MESSAGE }));
+
+    const res = await call();
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toMatchObject({ code: 'staff_passkey_required' });
+    expect(mockedRpc).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    ['印の無い403', 403, { msg: 'MFA required' }],
+    ['印が頭に無い403', 403, { msg: `x ${MARKER_MESSAGE}` }],
+    ['印つきでも403でない400', 400, { msg: MARKER_MESSAGE }],
+    ['401', 401, { msg: 'invalid_grant' }],
+    ['500', 500, { msg: 'boom' }],
+    ['JSON でない本文の403', 403, null],
+  ])(
+    'DD-AUTH-058 %s では、行の失効も RPC も呼ばず、今までどおり Cookie を消して 401 Failed to refresh token',
+    async (_name, status, body) => {
+      mockedFetch.mockResolvedValue(
+        body === null
+          ? { ok: false, status, json: async () => ({}), text: async () => 'not json' }
+          : rejection(status, body),
+      );
+
+      const res = await call();
+
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({ error: 'Failed to refresh token' });
+      expectAuthCookiesCleared(res);
+      expect(mockedFrom).not.toHaveBeenCalled();
+      expect(mockedRpc).not.toHaveBeenCalled();
+      expect(mockedLogAudit).toHaveBeenCalledWith(expect.objectContaining({ detail: 'supabase_refresh_failed' }));
+    },
+  );
+
+  test('DD-AUTH-058 ネットワークの誤り（fetch の例外）では、行の失効も RPC も呼ばない', async () => {
+    mockedFetch.mockRejectedValue(new Error('network down'));
+
+    const res = await call();
+
+    expect(res.status).toBe(500);
+    expect(mockedFrom).not.toHaveBeenCalled();
+    expect(mockedRpc).not.toHaveBeenCalled();
+  });
+
+  test('DD-AUTH-058 行の失効が落ちても RPC を呼び、Cookie を消して 401、監査は end_failed', async () => {
+    mockedFetch.mockResolvedValue(rejection(403, { msg: MARKER_MESSAGE }));
+    mockedUpdateEq.mockResolvedValue({ error: { message: 'db down' } });
+
+    const res = await call();
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toMatchObject({ code: 'staff_passkey_required' });
+    expectAuthCookiesCleared(res);
+    expect(mockedRpc).toHaveBeenCalledTimes(1);
+    expect(mockedLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'error', detail: 'staff_passkey_required_end_failed' }),
+    );
+  });
+
+  test('DD-AUTH-058 RPC が落ちても Cookie を消して 401、監査は end_failed', async () => {
+    mockedFetch.mockResolvedValue(rejection(403, { msg: MARKER_MESSAGE }));
+    mockedRpc.mockResolvedValue({ error: { message: 'rpc down' } });
+
+    const res = await call();
+
+    expect(res.status).toBe(401);
+    expectAuthCookiesCleared(res);
+    expect(mockedUpdateEq).toHaveBeenCalledTimes(1);
+    expect(mockedLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'error', detail: 'staff_passkey_required_end_failed' }),
+    );
+  });
+
+  test('DD-AUTH-058 サービス用クライアントが投げても Cookie を消して 401、監査は end_failed', async () => {
+    mockedFetch.mockResolvedValue(rejection(403, { msg: MARKER_MESSAGE }));
+    mockedFrom.mockImplementation(() => {
+      throw new Error('client broke');
+    });
+
+    const res = await call();
+
+    expect(res.status).toBe(401);
+    expectAuthCookiesCleared(res);
+    expect(mockedLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'error', detail: 'staff_passkey_required_end_failed' }),
+    );
+  });
+
+  test('DD-AUTH-058 auth_session_id の無い行は RPC を呼ばず、行だけ失効して終わった扱いにする', async () => {
+    mockedFetch.mockResolvedValue(rejection(403, { msg: MARKER_MESSAGE }));
+    mockedFindSession.mockResolvedValue(sessionRow({ auth_session_id: null }));
+    process.env.AUTH_REQUIRE_APP_SESSION = 'off';
+
+    const res = await call();
+
+    expect(res.status).toBe(401);
+    expect(mockedRpc).not.toHaveBeenCalled();
+    expect(mockedUpdateEq).toHaveBeenCalledWith('id', 'session-row-1');
+    expect(mockedLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'failure', detail: 'staff_passkey_required_session_ended' }),
+    );
+  });
+
+  test('DD-AUTH-058 行が無い（旗が無効）時は終わらせる対象が分からないので end_failed、Cookie は消して 401', async () => {
+    mockedFetch.mockResolvedValue(rejection(403, { msg: MARKER_MESSAGE }));
+    mockedFindSession.mockResolvedValue(null);
+    process.env.AUTH_REQUIRE_APP_SESSION = 'off';
+
+    const res = await call();
+
+    expect(res.status).toBe(401);
+    expectAuthCookiesCleared(res);
+    expect(mockedFrom).not.toHaveBeenCalled();
+    expect(mockedLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'error', detail: 'staff_passkey_required_end_failed' }),
+    );
+  });
 });

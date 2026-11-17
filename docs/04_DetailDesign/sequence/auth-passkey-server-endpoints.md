@@ -10,7 +10,7 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-016、SR-AUTH-017、SR-AUTH-018、FR-AUTH-015、FR-AUTH-016、FR-AUTH-017、FR-AUTH-018、FR-AUTH-019、SR-AUTH-019、FR-AUTH-020、FR-AUTH-021、DD-AUTH-052、DD-AUTH-053、DD-AUTH-054、DD-AUTH-055、DD-AUTH-056、DD-AUTH-057、DATA-AUTH-018、SEC-AUTH-041、THR-AUTH-042、SEC-AUTH-042、THR-AUTH-043、SEC-AUTH-043、THR-AUTH-044、SEC-AUTH-044、THR-AUTH-045、SEC-AUTH-045、THR-AUTH-046、SEC-AUTH-046、THR-AUTH-047、ADR-0467、ADR-0468 |
+| 対応する ID | SR-AUTH-016、SR-AUTH-017、SR-AUTH-018、FR-AUTH-015、FR-AUTH-016、FR-AUTH-017、FR-AUTH-018、FR-AUTH-019、SR-AUTH-019、FR-AUTH-020、FR-AUTH-021、SR-AUTH-020、FR-AUTH-022、DD-AUTH-058、DD-AUTH-052、DD-AUTH-053、DD-AUTH-054、DD-AUTH-055、DD-AUTH-056、DD-AUTH-057、DATA-AUTH-018、SEC-AUTH-041、THR-AUTH-042、SEC-AUTH-042、THR-AUTH-043、SEC-AUTH-043、THR-AUTH-044、SEC-AUTH-044、THR-AUTH-045、SEC-AUTH-045、THR-AUTH-046、SEC-AUTH-046、THR-AUTH-047、SEC-AUTH-047、THR-AUTH-048、ADR-0466、ADR-0467、ADR-0468 |
 | 対象のコード | 移行 `supabase/migrations/20261117123620_passkey_server_endpoint_fns.sql`、`src/lib/auth/passkey-approval-rpc.ts`、`src/app/api/auth/passkey/login/start/route.ts`、`src/app/api/auth/passkey/login/finish/route.ts`、`src/app/api/auth/passkey/register/start/route.ts`、`register/finish/route.ts`、`src/app/api/auth/passkey/route.ts`、`src/app/api/auth/passkey/[id]/route.ts`、`src/lib/auth/passkey-registration-guard.ts`、`passkey-recent-auth.ts`、`passkey-manage-guard.ts`、`src/features/auth/passkey/browser-start.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-5）、[段1b の計画](../../superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md)、[店員のパスキーの入口](auth-staff-passkey-entry.md) |
 | 調べた時点 | 2026-11-17（手元の DB で結合試験を流した） |
@@ -334,8 +334,41 @@ sequenceDiagram
 - 監査: action `auth.passkey.list`・`rename`・`delete`。固定の符号（`staff_check_unavailable`・`approval_check_unavailable`・`invalid_request`・`staff_min_passkeys`・`not_found`・`gotrue_unauthorized`・`gotrue_rejected`・`gotrue_failed`・`gotrue_bad_response`・`list`・`rename`・`delete`・`unexpected_error`）と行為者の ID だけ。トークン・鍵・名前・メールを残さない
 - テスト観点: 順番どおりの断り（IP の回数→認証→CSRF）・一覧が GoTrue の応答の公開鍵・`credential_id` を出さない・お客さんに `approved`・`approvedCount` が無い・`id` が uuid でなければ GoTrue 0回・名前の境界（空・空白だけ・64字・65字・制御文字・C1・表示の向きを変える文字・絵文字）・店員の削除（認めた2本で認めた鍵は409・3本なら200・認めていない鍵は2本のままでも200・DB が読めなければ503）・お客さんは最後の1本を消せる・他人の鍵（GoTrue の 404）は存在しない鍵と同じ 404・GoTrue の失敗は 502・監査にトークンが残らない
 
+### DD-AUTH-058 更新の拒否（`POST /api/auth/refresh`）で、印つきの403だけセッションを終わらせる順番
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | API-AUTH-014、SEC-AUTH-047 |
+| 根拠 | フックの拒否の後に Cookie だけを消すと、セッションが生きたまま残る。印つきの拒否だけ、行の失効と GoTrue のセッションの削除で終わらせる（ADR-0466） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/refresh-route.test.ts`）、E2E（`e2e/FR-LOGIN-053-passkey-refresh-rejection.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 9） |
+
+```mermaid
+sequenceDiagram
+    participant B as ブラウザ
+    participant R as /api/auth/refresh
+    participant T as GoTrue
+    participant D as DB
+    B->>R: POST（更新の Cookie）
+    R->>T: /token?grant_type=refresh_token
+    T-->>R: 403・msg が [staff-passkey-required] で始まる
+    R->>D: public.sessions の行を revoked_at = now()
+    R->>D: rpc revoke_auth_session(auth_session_id)
+    R-->>B: 401 staff_passkey_required・Cookie を消す
+```
+
+- 追跡の単位: `src/lib/auth/staff-passkey-session-end.ts` の `endRejectedStaffSession` が IMPL-AUTH-279（窓口 `src/app/api/auth/refresh/route.ts` は IMPL-AUTH-201 のまま。判定 `toGoTrueError` は窓口の内部）
+- 判定: 状態が 403 で、本文の `msg`（無ければ `message`）が `isStaffPasskeyRequiredError`（1a）を満たす時だけ。本文が JSON でなければ印は無い扱い
+- 終わらせる順番: 前の行（`session.id`）を `revoked_at` にする（`persistNewSession` は呼ばず、新しい行は作らない）→ その行の `auth_session_id` があれば `revoke_auth_session`。片方が落ちても両方を試す。行が無い（旗が無効で引きが空）時は対象が分からないので失敗として扱う
+- 応答: どの場合も3つの認証 Cookie を消して 401 `{ error: 'Staff passkey required', code: 'staff_passkey_required' }`。終わらせる処理が落ちても同じ（閉じる側）。画面は `/login` に送る（文言は段3）
+- 監査: action `refresh`。終わらせた時は `outcome: failure`・`detail: staff_passkey_required_session_ended`、落ちた時は `outcome: error`・`detail: staff_passkey_required_end_failed`。`metadata` は status だけ
+- 変えない物: 印の無い403・401・5xx・ネットワークの誤りの動き（Cookie を消して 401 `Failed to refresh token`。行は終わらせない）、旗 `AUTH_REQUIRE_APP_SESSION`、お客さんの更新
+- テスト観点: 印つきの403で行・RPC・Cookie・監査 /（`message` の項目名でも）/ 印の無い403・印が頭に無い403・403でない失敗・401・500・JSON でない本文・ネットワークの誤りで行も RPC も呼ばれない / 行の失効・RPC・サービス用クライアントの失敗で Cookie を消して 401 / `auth_session_id` の無い行は RPC を呼ばない / 行が無い時は `end_failed` / E2E で窓の中は200・窓を閉じた後は401と行・`auth.sessions` の消去と、前のトークンの `/api/auth/me` が false
+
 ## 未確認事項
 
 - 窓の同時の競りの試験は2つの接続を20組くり返す。錠を外した関数（錠の行を `pg_sleep(0.05)` に替えたもの）に差し替えて流すと、1組目で落ちることを手元で確かめた（2026-11-17。確かめた後は `db reset` で戻した）。CI では毎回は確かめない
 - 本番の `auth.webauthn_credentials` に同じ列があるかは、移行 A と同じく本番へ当てる前に読んで確かめる
 - 本番の `SUPABASE_SERVICE_ROLE_KEY` が `sb_secret_` か JWT の形かは読んでいない（設計 8-2）。JWT の形なら、本番に `SUPABASE_SECRET_KEY` を足すまで始め (a) は閉じる側に倒れる
+- 印の判定（403・`msg` の頭が印）が、本番の GoTrue でも同じ形かは本番では読んでいない（設計 8-2 の9。手元の GoTrue v2.196.0 では E2E で確かめた）

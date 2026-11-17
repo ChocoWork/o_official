@@ -1147,7 +1147,7 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | DRV-AUTH-008、SEC-AUTH-022、SEC-AUTH-030、ADR-0406 |
+| 上位 | DRV-AUTH-008、SEC-AUTH-022、SEC-AUTH-030、SEC-AUTH-047、FR-AUTH-022、ADR-0406、ADR-0466 |
 | 根拠 | access token の寿命が短いので、ログインしたままの利用者を切らずに新しいトークンへ替える（DRV-AUTH-008）。門番は Supabase のトークンの交換にし、自前の表は明示の失効の印がある時だけ断る。行が無いだけで断ると取りこぼしで正しい利用者を締め出す（ADR-0406）。交換に失敗した Cookie を残すと更新の失敗が続くので消す。成否を監査に残す（SEC-AUTH-030） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -1158,8 +1158,8 @@ stateDiagram-v2
 | 入力 | refresh の Cookie（`sb-refresh-token`） |
 | 順番 | IP の制限 → Cookie → 自前の行を引く（旗が有効な間は引きの失敗を「行が無い」と取り違えない。旗が無効なら無くても続ける）→ 旗が有効なら、行が無い・`auth_session_id` が空なら断る → 失効の印なら断る → Supabase Auth のトークンの交換（service role の鍵）→ Cookie と行の差し替え（新しい行は前の行の `auth_session_id` を引き継ぐ） |
 | 200 | `{ ok: true }` と新しい認証の Cookie（トークンは本文に載せない）。行の保存に失敗しても監査に残して配る |
-| 失敗 | 401（Cookie が無い・結び付いていない行（`Session not bound`）・失効の印・交換の失敗。結び付いていない行・失効の印・交換の失敗は認証の Cookie を消す）、429（制限）、503（旗が有効で行の引きが失敗。`Session lookup failed`。Cookie は消さず、Supabase を呼ばない）、500（環境変数・例外） |
-| 監査 | `refresh` の failure・error・success。結び付けの拒否の符号は `unbound_session`・`session_lookup_failed`（SEC-AUTH-005-AC-05、SEC-AUTH-030-AC-03） |
+| 失敗 | 401（Cookie が無い・結び付いていない行（`Session not bound`）・失効の印・交換の失敗・フックの拒否（`code: staff_passkey_required`）。結び付いていない行・失効の印・交換の失敗・フックの拒否は認証の Cookie を消す。フックの拒否（403 で文の頭が印）だけは、前の行を失効し GoTrue のセッションを `revoke_auth_session` で消してから返す。DD-AUTH-058・ADR-0466）、429（制限）、503（旗が有効で行の引きが失敗。`Session lookup failed`。Cookie は消さず、Supabase を呼ばない）、500（環境変数・例外） |
+| 監査 | `refresh` の failure・error・success。結び付けの拒否の符号は `unbound_session`・`session_lookup_failed`、フックの拒否の符号は `staff_passkey_required_session_ended`・`staff_passkey_required_end_failed`（SEC-AUTH-005-AC-05、SEC-AUTH-030-AC-03） |
 
 - 応答の本文に access token と Supabase の利用者の記録を入れない（SEC-AUTH-022 の本文の部分。2026-10-26）。`no-store` は共有の proxy が付ける（2026-10-28、ADR-0415）
 

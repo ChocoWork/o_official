@@ -312,6 +312,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 管理の要求の文（Task 8）: ログインした本人は、自分のパスキーの一覧を見て、名前を変え、鍵を消せる。店員は、消した後に認めた鍵が2本未満になる削除を、アプリの窓口が止める。一覧は GoTrue が返す項目のうち許可した項目だけを写し、店員だけに認めた鍵かどうかと認めた本数を付ける。他人の鍵と存在しない鍵は区別しない。受け入れ条件は FR-AUTH-021-AC-01〜06、SEC-AUTH-046、DD-AUTH-057。
 
+### SR-AUTH-020 フックが更新を拒否した店員のセッションは、アプリが終わらせる
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | 店員の更新が「パスキーでだけ入れる」拒否（GoTrue の 403）になった後、Cookie を消すだけでは GoTrue の `auth.sessions` の行と `public.sessions` の行が生きたまま残り、前のアクセストークン（最長1時間）が `/api/auth/me` やお客さんの機能で使い続けられる。期限が切れた店員のセッションそのものを終わらせる方が、残りのセッションを数えない・無操作1時間（段3）の土台になる。設計 5-2 が「段1で決める」とした点を、終わらせると決めた（ADR-0466） |
+| 状態 | 推定 |
+| 出どころ | ユーザーの発言 2026-11-17（`.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 9）） |
+
+要求の文: 店員の更新が、GoTrue のフックの拒否（HTTP 403 で文の頭が印 `[staff-passkey-required]`）になった時、アプリはそのセッションを終わらせ、Cookie を消して 401 を返す。印の無い失敗（一時の不調・期限切れなど）では終わらせない。
+
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
 | 属性 | 値 |
@@ -2360,6 +2370,19 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 優先度 | MUST |
 
 規則: (1) 順番は、IP ごとに10分60回（`auth:passkey:list`・`rename`・`delete`）→ 認証（401・503）→ CSRF（`PATCH`・`DELETE` だけ。403）→ `id` が uuid でなければ 400（GoTrue を呼ばない）→（`PATCH`）本文の形 400 →（店員の `DELETE`）認めた鍵の確かめ → GoTrue。(2) 一覧は 200 `{ passkeys: [{ id, friendly_name, created_at, last_used_at, approved? }], isStaff, approvedCount? }`。項目は許可リスト方式で写し、GoTrue が公開鍵・`credential_id` を返しても出さない。`approved`・`approvedCount` は店員だけ。店員の判定・認めの確かめが読めなければ 503、GoTrue の失敗・形の違う応答は 502。(3) 名前は 200 `{ passkey: { id, friendly_name } }`。`friendly_name` は前後の空白を除いて1〜64字（コードポイントで数える）、C0・C1 の制御文字と表示の向きを変える文字は不可。(4) 削除は 200 `{ ok: true }`。店員は、消す鍵が認めた鍵で、認めた本数から1を引くと `min_approved_passkeys`（2）未満になる時、409 `staff_min_passkeys`（GoTrue を呼ばない）。認めていない鍵なら2本のままでも消せる。お客さんは最後の1本も消せる。(5) 他人の鍵・存在しない鍵は GoTrue の 404 を 404 `not_found` にそろえる（区別しない）。(6) 鍵が消えると 1a の引き金が認めの行を消し、知らせの予定を積む（アプリは何もしない）。
+
+### FR-AUTH-022 更新の窓口 `POST /api/auth/refresh` が、印つきの拒否だけセッションを終わらせる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-020 |
+| 根拠 | SR-AUTH-020 を、`src/app/api/auth/refresh/route.ts` の `!tokenRes.ok` の枝にする。判定は `isStaffPasskeyRequiredError`（1a。文字列の頭の一致だけ）。判断は DD-AUTH-058・ADR-0466、守りは SEC-AUTH-047 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/refresh-route.test.ts`。終わらせる処理が落ちた時の閉じる動きなど、E2E で作れない分岐を含む）、E2E（`e2e/FR-LOGIN-053-passkey-refresh-rejection.spec.ts`、FR-AUTH-022-AC-01〜04） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 9） |
+| 優先度 | MUST |
+
+規則: (1) GoTrue の `/token?grant_type=refresh_token` が、status 403 で本文の `msg`（無ければ `message`）が印で始まる時だけ、(a) 前の `public.sessions` の行（`session.id`）を `revoked_at = now()` にする（新しい行は作らない）、(b) その行の `auth_session_id` があれば RPC `revoke_auth_session` で GoTrue のセッションを消す、(c) Cookie（アクセス・更新・CSRF）を消して 401 `{ error: 'Staff passkey required', code: 'staff_passkey_required' }` を返す、(d) 監査に `outcome: 'failure'`・`detail: 'staff_passkey_required_session_ended'` を残す。(2) (a)(b) の片方が落ちても両方を試し、どちらかが落ちたら監査は `outcome: 'error'`・`detail: 'staff_passkey_required_end_failed'`。どちらが落ちても Cookie は消して 401（閉じる側）。(3) 印の無い 403・401・5xx・ネットワークの誤りは今のまま（Cookie を消して 401 `Failed to refresh token`。行は終わらせない）。旗 `AUTH_REQUIRE_APP_SESSION` の挙動とお客さんの更新は変えない。
 
 ## 受け入れ条件
 
@@ -5185,6 +5208,54 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 
 `id` が uuid でない `PATCH`・`DELETE` は 400。空・空白だけ・65字・改行を含む名前は 400。通行証が無ければ 401。Cookie で入った店員が `x-csrf-token` を付けない `DELETE` は 403で、鍵が減らないこと。
 
+### FR-AUTH-022-AC-01 印つきの403で、行が失効し、GoTrue のセッションが消え、Cookie が消えて 401 staff_passkey_required になる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-022 |
+| 根拠 | SEC-AUTH-047 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/refresh-route.test.ts`）、E2E（`e2e/FR-LOGIN-053-passkey-refresh-rejection.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 9） |
+
+登録の窓を閉じた後の店員の更新は 401・`code: staff_passkey_required` で、3つの認証 Cookie が消え、`public.sessions` の行が `revoked_at` つきになり、`auth.sessions` の行が無くなること。監査に `staff_passkey_required_session_ended` が残ること。
+
+### FR-AUTH-022-AC-02 印の無い失敗では、行の失効も GoTrue のセッションの削除もしない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-022 |
+| 根拠 | SEC-AUTH-047 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-053-passkey-refresh-rejection.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/api/auth/refresh-route.test.ts`。印が頭に無い403・403でない失敗・JSON でない本文・ネットワークの誤りを含む） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 9） |
+
+印の無い失敗（GoTrue のセッションが無い更新など）では、`public.sessions` の行を失効せず、`revoke_auth_session` も呼ばず、今までどおり Cookie を消して 401 `Failed to refresh token`（ネットワークの誤りは 500）になること。
+
+### FR-AUTH-022-AC-03 窓が開いている間の店員の更新と、窓の無いお客さんの更新は 200 で通る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-022 |
+| 根拠 | SEC-AUTH-047 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-053-passkey-refresh-rejection.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 9） |
+
+登録の窓が開いている間の店員の更新と、お客さんの更新が 200 `{ ok: true }` で、新しい Cookie が付くこと。
+
+### FR-AUTH-022-AC-04 拒否の前は前のアクセストークンで /api/auth/me が authenticated:true で、拒否の後は false になる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-022 |
+| 根拠 | SEC-AUTH-047 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-053-passkey-refresh-rejection.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 9） |
+
+更新が通った後のアクセストークンで `/api/auth/me` が `authenticated: true` を返し、窓を閉じて更新が拒否された後は、同じトークンで `authenticated: false` を返すこと（GoTrue のセッションが消えるため。DB の障害ではなく失効として答える）。
+
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 
 | 属性 | 値 |
@@ -6695,6 +6766,21 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 守ること: (1) 店員の `DELETE` は、消す鍵が認めた鍵で `passkey_approved_count - 1 < 2` の時、GoTrue を呼ばずに 409 `staff_min_passkeys`。認めた鍵の確かめが読めなければ 503（閉じる側）。認めていない鍵は止めない。お客さんは認めの表を引かず、最後の1本も消せる。(2) 他人の鍵・存在しない鍵は、GoTrue の 404 を 404 `{ "error": "not_found" }` にそろえ、本文でも区別しない。本人の通行証だけで GoTrue を呼ぶ（管理 API は使わない）ので、他人の鍵は GoTrue が断る。(3) 一覧は `id`・`friendly_name`・`created_at`・`last_used_at`（と店員の `approved`）だけを写す（許可リスト方式）。形の違う応答は 502。(4) `id` は uuid の形でなければ 400（GoTrue を呼ばない）。形が合えば小文字にそろえ、下限の確かめと GoTrue にはその値だけを使う（大文字の `id` で下限をすり抜けさせない）。名前は1〜64字・C0/C1 の制御文字と表示の向きを変える文字なし。(5) 順番は、回数の制限（IP）→ 認証 → CSRF → 入力 → 認めの確かめ → GoTrue。監査（`auth.passkey.list`・`rename`・`delete`）は固定の符号と行為者の ID だけを残す。
 
 残る危険として受け入れること: 同時に2つの削除が来ると、確かめの時点では2本以上でも、両方が通って2本を下回りうる。設計の「画面で止める」を越える足しなので、完全な排他は作らない。窓口を使わず GoTrue を直に叩く道も、この止めでは塞がらない。下回った店員は管理の入口で止まり（認めた鍵が2本未満）、1a の引き金の知らせが店員と店長に届く。
+
+### SEC-AUTH-047 フックに拒否された店員のセッションは、Cookie を消すだけで残さず、アプリが終わらせる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-048 |
+| 根拠 | 更新の拒否の後に Cookie だけを消すと、`auth.sessions` と `public.sessions` の行が残り、前のアクセストークン（最長1時間）が `/api/auth/me` やお客さんの機能で使われ続ける。管理の入口は24時間の条件で止まる（1a）が、セッションそのものを終わらせる方が、残りのセッションを数えない・無操作1時間（段3）の土台になる。判断は ADR-0466・DD-AUTH-058 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/refresh-route.test.ts`）、E2E `e2e/FR-LOGIN-053-passkey-refresh-rejection.spec.ts`（FR-AUTH-022-AC-01〜04） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 9）（作り手の判断） |
+| 優先度 | MUST |
+
+守ること: (1) 印つきの 403（`isStaffPasskeyRequiredError`）の時だけ、行の失効と `revoke_auth_session` でセッションを終わらせる。印の無い失敗では終わらせない（GoTrue の一時の不調で正当な利用者を追い出さない）。(2) 終わらせる処理が落ちても Cookie は消して 401（閉じる側）。落ちたことは監査の `staff_passkey_required_end_failed` に残す。(3) 監査・応答にトークン・鍵を載せない（固定の符号と行為者の ID だけ）。
+
+残る危険として受け入れること: 印の判定は文字列の頭の一致だけで、本番の GoTrue が同じ形（403・`msg` の頭が印）で返すかは本番では読んでいない（設計 8-2 の9で確かめる）。形が違えば、終わらせずに今までどおり Cookie を消して 401 になる（閉じる側のまま）。終わらせる処理が落ちた時は、GoTrue の `auth.sessions` の行が残りうるが、管理の入口は24時間の条件で止まる。
 
 ## 派生要件
 
