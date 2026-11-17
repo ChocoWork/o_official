@@ -137,10 +137,11 @@ describe('buildE2EOverrides の sb_secret_ と開発の IP', () => {
     const overrides = buildE2EOverrides(status);
     expect(overrides.SUPABASE_SECRET_KEY).toBe(status.secretKey);
     expect(overrides.PASSKEY_START_DEV_IP).toBe('');
+    expect(overrides.NEXT_PUBLIC_PASSKEY_START_MODE).toBe('server');
   });
 
   it('手元に sb_secret_ が無い時も、SUPABASE_SECRET_KEY を空で上書きする（.env.local の本番の鍵を通さない）', () => {
-    const { secretKey: _omitted, ...withoutSecret } = status;
+    const withoutSecret: LocalSupabaseStatus = { ...status, secretKey: undefined };
     expect(buildE2EOverrides(withoutSecret).SUPABASE_SECRET_KEY).toBe('');
   });
 

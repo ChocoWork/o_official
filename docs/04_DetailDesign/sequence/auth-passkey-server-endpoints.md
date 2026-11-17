@@ -98,7 +98,7 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SEC-AUTH-042 |
+| 上位 | API-AUTH-022、SEC-AUTH-042 |
 | 根拠 | 始めは GoTrue の回数の制限をお客さんごとに掛けるため、お客さんの IP を添えて GoTrue を呼ぶ。IP が取れない・鍵が `sb_secret_` でない・設定が (b) の要求は、添え書き無しで・古い鍵で GoTrue を呼ばず、順番に断る（ADR-0467） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト（`tests/unit/api/auth/passkey-login-start-route.test.ts`）、E2E（`e2e/FR-LOGIN-048-passkey-login-start.spec.ts`） |

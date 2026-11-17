@@ -859,6 +859,7 @@ stateDiagram-v2
 | API-AUTH-019 | `POST /api/auth/post-login` | `/login/verify`・`/auth/verified` |
 | API-AUTH-020 | `POST /api/auth/password/change/start` | パスワード変更の画面 `/account/password`（波 6 の Task 6 が作る） |
 | API-AUTH-021 | `POST /api/auth/password/change/confirm` | パスワード変更の画面 `/account/password` |
+| API-AUTH-022 | `POST /api/auth/passkey/login/start` | ログインの画面（段2。今は窓口だけ） |
 
 全部の窓口に共通: 状態を変える `POST` は共有の proxy の Origin の確かめを先に通る。`/api/auth` 配下の全部の応答（Origin 拒否の 403 を含む）に、共有の proxy が `Cache-Control: no-store` を付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037。2026-10-28）。`confirm`・`oauth/*`・`password-reset/link`・`session`・`me`・`login/resend`・`login/cancel`・`post-login` は窓口も自分で同じ値を付ける。
 
@@ -1309,7 +1310,23 @@ stateDiagram-v2
 - 通知のメールの件名は「パスワードを変更しました」（再設定の確定と同じ文面）。GoTrue 側の変更通知を有効にする時は、件名を「パスワードの変更を受け付けました」にして見分ける（ruling 9。管理 API の変更で GoTrue の通知は送られないので、アプリの通知だけが届く。Task 0 の結果）
 - 全 session の失効は 2 段（自前の `sessions` の `revoked_at` と、`revoke_auth_sessions_for_user`）。成功すると、この端末の古い access token も refresh token も使えなくなり、新しいパスワードで入り直す
 
-段1b の窓口（API の ID は段1b の終わりでまとめて付ける）: `POST /api/auth/passkey/login/start`（ログインの始め (a)）。サーバーが `sb_secret_` の鍵で GoTrue を呼び、取れた IP を `Sb-Forwarded-For` に添える。順番は 設定の確かめ（409）→ IP の確かめ（503）→ IP ごとの回数（5分20回、429）→ 鍵の確かめ（503）→ GoTrue（200・429・502）。200 の本文は `{ challenge_id, options, expires_at }` で `options.userVerification` は `required`。判断は DD-AUTH-052・ADR-0467、受け入れ条件は FR-AUTH-016-AC-01〜03。
+### API-AUTH-022 POST /api/auth/passkey/login/start はお客さんの IP を添えて GoTrue のパスキーの選択肢を取り、`userVerification` を `required` にして返す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-016、SEC-AUTH-042、ADR-0467 |
+| 根拠 | パスキーのログインの始め (a)。サーバーが `sb_secret_` の鍵で GoTrue を呼び、取れた IP を `Sb-Forwarded-For` に添えて、GoTrue の回数の制限をお客さんごとに掛ける。順番と値は DD-AUTH-052 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/auth/passkey-login-start.test.ts`）、単体テスト（`tests/unit/api/auth/passkey-login-start-route.test.ts`）、E2E（`e2e/FR-LOGIN-048-passkey-login-start.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-3-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 3） |
+
+| 項目 | 中身 |
+| --- | --- |
+| 入力 | 本文なし。IP の見出し（`x-vercel-forwarded-for`、`CLIENT_IP_HEADER` が有る環境では `x-real-ip`） |
+| 順番 | 設定の確かめ（409）→ IP の確かめ（503）→ IP ごとの回数（5分20回、429）→ 鍵の確かめ（503）→ GoTrue（200・429・502） |
+| 200 | `{ challenge_id, options, expires_at }`（GoTrue の項目名のまま）。`options.userVerification` は `required` |
+| 失敗 | 409 `passkey_start_mode_browser`、503 `client_ip_unavailable`・`passkey_start_unavailable`、429 `Too many requests`（`Retry-After`）、502 `passkey_start_failed` |
+| 監査 | action `auth.passkey.login.start`。固定の符号だけ（鍵・IP・`challenge_id` を残さない） |
 
 ## データ
 

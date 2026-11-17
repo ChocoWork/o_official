@@ -169,6 +169,8 @@ export function buildE2EOverrides(status: LocalSupabaseStatus): Record<string, s
     SUPABASE_SECRET_KEY: status.secretKey ?? '',
     // `.env.local` に残っていても「IP 見出し無しは 503」が崩れないよう空にする。
     PASSKEY_START_DEV_IP: '',
+    // `.env.local` に browser が残っていても E2E の始め (a) が 409 にならないよう、server に固定する。
+    NEXT_PUBLIC_PASSKEY_START_MODE: 'server',
     JWT_SECRET: status.jwtSecret,
     MAIL_LOCAL_URL: status.mailpitUrl,
     ...E2E_FIXED_ENV,
@@ -217,7 +219,7 @@ export function computeServerFingerprint(
   fakeBuild: string = computeFake17TrackBuild(),
 ): string {
   const material = JSON.stringify({
-    v: 4,
+    v: 5,
     mode,
     supabaseUrl: env.NEXT_PUBLIC_SUPABASE_URL ?? '',
     mailProvider: env.MAIL_PROVIDER ?? '',

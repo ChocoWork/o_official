@@ -153,6 +153,15 @@ describe('DD-AUTH-052 パスキーのログインの始め (a) の成功と GoTr
     expect(sent[0].init.headers['Sb-Forwarded-For']).toBe('192.0.2.55');
   });
 
+  test('DD-AUTH-052 VERCEL=1 では PASSKEY_START_DEV_IP があっても使わず、IP が無ければ 503（GoTrue 0回）', async () => {
+    process.env.VERCEL = '1';
+    process.env.PASSKEY_START_DEV_IP = '192.0.2.55';
+    const res = await POST(req({ 'x-forwarded-for': '198.51.100.9' }));
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: 'client_ip_unavailable' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   test('DD-AUTH-052 見出しの IP があれば開発の IP より勝つ', async () => {
     process.env.PASSKEY_START_DEV_IP = '192.0.2.55';
     await POST(req());
