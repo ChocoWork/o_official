@@ -528,7 +528,7 @@ graph TD
 | 確かめ方 | 結合テスト |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`、計画 `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md` の Task 6、`src/app/account/password/`（波 6 の Task 6） |
 
-- 入口: アカウント `/account` のお客様情報のタブにある「パスワードを変更」のリンク。未ログインで開くとログインの案内だけを出し、戻り先に `/account/password` を載せた `/login` へ送る
+- 入口: 直に `/account/password` を開く（段2〔2026-11-18〕でアカウントの画面のリンクは外した。画面と窓口は段4まで残す）。未ログインで開くとログインの案内だけを出し、戻り先に `/account/password` を載せた `/login` へ送る
 - 1 段目: 現行のパスワードの欄と「確認コードをメールに送る」。`POST /api/auth/password/change/start`（API-AUTH-020）。Google でログインしていてパスワードを設定していない場合の案内と `/auth/password-reset`（SCR-AUTH-005）へのリンクを段 1 にだけ固定で出す（会員がパスワードを持つかを明かさない）
 - 2 段目: 8 桁の確認コード（有効期限 10 分）、新しいパスワード（16 文字以上、72 バイト以内）、その確認。長さ・一致・コードの形は送る前に画面で確かめる。`POST /api/auth/password/change/confirm`（API-AUTH-021）。「コードを送り直す」は 1 段目へ戻る（現行パスワードを入れ直した時だけ `start` を呼ぶ）
 - 成功: 全 session が失効しているので、ログインの状態を引き直してから `/login/password` へ移る（段4までパスワードで入る旧の画面。ADR-0469）。画面と文言の詳細は DD-AUTH-042
@@ -864,9 +864,9 @@ stateDiagram-v2
 | API-AUTH-023 | `POST /api/auth/passkey/login/finish` | ログインの画面（段2。今は窓口だけ） |
 | API-AUTH-024 | `POST /api/auth/passkey/register/start` | 登録の画面（段3。今は窓口だけ） |
 | API-AUTH-025 | `POST /api/auth/passkey/register/finish` | 登録の画面（段3。今は窓口だけ） |
-| API-AUTH-026 | `GET /api/auth/passkey` | パスキーの管理の画面（段3。今は窓口だけ） |
-| API-AUTH-027 | `PATCH /api/auth/passkey/{id}` | パスキーの管理の画面（段3。今は窓口だけ） |
-| API-AUTH-028 | `DELETE /api/auth/passkey/{id}` | パスキーの管理の画面（段3。今は窓口だけ） |
+| API-AUTH-026 | `GET /api/auth/passkey` | アカウントの「ログイン方法」のタブ（段2 Task 7。DD-AUTH-065）。店員の管理の画面は段3 |
+| API-AUTH-027 | `PATCH /api/auth/passkey/{id}` | アカウントの「ログイン方法」のタブ（段2 Task 7。DD-AUTH-065）。店員の管理の画面は段3 |
+| API-AUTH-028 | `DELETE /api/auth/passkey/{id}` | アカウントの「ログイン方法」のタブ（段2 Task 7。DD-AUTH-065）。店員の管理の画面は段3 |
 | API-AUTH-029 | `POST /api/auth/email-code/start` | ログインの画面（段2の Task 4。今は窓口だけ） |
 | API-AUTH-030 | `POST /api/auth/email-code/verify` | メールのコードの画面（段2の Task 4。今は窓口だけ） |
 | API-AUTH-031 | `POST /api/auth/email-code/resend` | メールのコードの画面（段2の Task 4。今は窓口だけ） |

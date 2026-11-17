@@ -348,16 +348,19 @@ for (const viewport of viewports) {
   test.describe(`FR-ACCOUNT-046 password change screen (${viewport.name})`, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
-    test(`FR-AUTH-006-AC-01 ${viewport.name}: プロフィールのリンクから /account/password に着き、現行パスワードの欄と送るボタンだけが出る`, async ({ page }) => {
+    test(`FR-AUTH-006-AC-01 ${viewport.name}: アカウントの画面に「パスワードを変更」のリンクが無く、/account/password を直に開くと現行パスワードの欄と送るボタンだけが出る`, async ({ page }) => {
       test.setTimeout(120_000);
       const member = await createMember('screen');
       await loginAsMember(page, member, uniqueSourceIp());
 
+      // 入口（リンク）はアカウントの画面から外れた（パスキー段2）。画面が読み終わってから、リンクが無いことを確かめる。
       await page.goto('/account?tab=profile');
-      const link = page.getByRole('link', { name: 'パスワードを変更' });
-      await expect(link, 'プロフィールのパスワード変更のリンク').toBeVisible({ timeout: 30_000 });
-      await link.click();
+      await expect(page.getByRole('heading', { level: 1, name: 'ACCOUNT' })).toBeVisible({ timeout: 30_000 });
+      await expect(page.locator('.animate-pulse')).toHaveCount(0, { timeout: 30_000 });
+      await expect(page.getByRole('link', { name: 'パスワードを変更' })).toHaveCount(0);
+      await expect(page.locator('a[href="/account/password"]')).toHaveCount(0);
 
+      await page.goto('/account/password');
       await expect(page).toHaveURL(/\/account\/password$/);
       await expect(page.getByRole('heading', { level: 1, name: 'パスワードの変更' })).toBeVisible();
       await expect(page.getByLabel('現行のパスワード', { exact: true })).toBeVisible();

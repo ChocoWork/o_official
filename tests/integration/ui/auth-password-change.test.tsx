@@ -447,13 +447,14 @@ describe('SCR-AUTH-011 パスワード変更の画面', () => {
     expect(callsTo('/api/auth/password/change/start')).toHaveLength(1);
   });
 
-  it('SCR-AUTH-011 アカウントのお客様情報の欄に「パスワードを変更」のリンクがあり、/account/password へ向かう', async () => {
+  it('SCR-AUTH-011 アカウントのお客様情報の欄に「パスワードを変更」のリンクが無い（段2で外した。画面は /account/password を直に開いて使う）', async () => {
     mockClientFetch.mockImplementation(async () => respond(reply(200, {})));
     render(<AccountPage />);
 
-    const link = await screen.findByRole('link', { name: 'パスワードを変更' });
+    await waitFor(() => expect(document.querySelector('.animate-pulse')).toBeNull());
 
-    expect(link).toHaveAttribute('href', '/account/password');
+    expect(screen.queryByRole('link', { name: 'パスワードを変更' })).toBeNull();
+    expect(document.querySelector('a[href="/account/password"]')).toBeNull();
   });
 
   it('SCR-AUTH-011 未ログインなら画面の代わりにログインの案内を出す（next つき）', () => {

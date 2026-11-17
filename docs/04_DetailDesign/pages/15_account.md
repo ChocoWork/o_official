@@ -233,3 +233,10 @@ E2E は FR-ACCOUNT-035-return-request.spec.ts・036-return-request-photos.spec.t
 - 初期不良（破損・不良）・誤送（注文と違う品）のご希望は、設定の `exchange_only` により既存の部品のまま「交換」だけが出る（コードの分岐は足さない。`resolutionOptionsOf` の試験で固定）。
 - 割引の扱いの文は /legal・/terms・商品ページ・最終確認と同じ。文は `src/lib/orders/returns/discount-return-note.ts` の `DISCOUNT_RETURN_NOTE` 1つを4か所が読む（「お手元に残る商品の割引後の価格を差し引いて返金いたします」から始まる。設計 6-1 の案のまま、言い回しはオーナーが後で直す）。
 - 単体: tests/unit/features/account/returns/ の ReturnRequestConfirm・customer-return-client・return-request-model。幅（390・768・1280px）の E2E は FR-ACCOUNT-048（Task 10）。
+
+## ログイン方法のタブ（パスキー段2 Task 7 / FR-AUTH-029・DD-AUTH-065）
+
+確認日: 2026-11-18。`/account` にお客さんだけのタブ「ログイン方法」（`?tab=security`）を足した（お客様情報・配送情報・購入履歴・お問い合わせの隣、最後）。中身は `src/features/auth/passkey/components/AccountPasskeys.tsx`（パスキーの一覧・追加・名前の変更・削除）で、仕様の正本は `docs/02_Requirements/areas/auth.md` の `FR-AUTH-029`、処理の順番は `docs/04_DetailDesign/sequence/auth-passkey-customer-screens.md` の `DD-AUTH-065`。このページ（`src/app/account/page.tsx`）の変更は2点だけ。
+
+- タブの追加: `AccountTab` に `security`。`useLogin().userRole === 'user'` の時だけ、PC 用の縦のタブと mobile・tablet 用の上のタブの両方に出す。店員（`admin`・`supporter`）が `tab=security` で開いたら `profile` に直して URL も替える。
+- 「パスワードを変更」のリンクの削除: お客様情報のタブの末尾にあったリンクを外す。`/account/password` の画面と窓口は変えず、段4まで残す（`FR-AUTH-006-AC-01` は「リンクが無く、直に開くと使える」に書き直した）。

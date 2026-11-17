@@ -12,6 +12,7 @@ import { TextField } from "@/components/ui/TextField/TextField";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import AccountInquiries from "@/components/AccountInquiries";
+import AccountPasskeys from "@/features/auth/passkey/components/AccountPasskeys";
 import { formatOrderStatus } from "@/lib/orders/order-status";
 import { PREFECTURES } from "@/lib/constants/prefectures";
 import { clientFetch } from "@/lib/client-fetch";
@@ -23,7 +24,7 @@ import {
 } from "@/features/checkout/utils/postal-code.util";
 import "./account.css";
 
-type AccountTab = "profile" | "shipping" | "orders" | "inquiries";
+type AccountTab = "profile" | "shipping" | "orders" | "inquiries" | "security";
 
 type ProfileAddress = {
   postalCode: string;
@@ -111,7 +112,11 @@ function normalizeAccountTab(tabParam: string | null): AccountTab {
     return "shipping";
   }
 
-  if (tabParam === "orders" || tabParam === "inquiries") {
+  if (
+    tabParam === "orders" ||
+    tabParam === "inquiries" ||
+    tabParam === "security"
+  ) {
     return tabParam;
   }
 
@@ -156,12 +161,26 @@ function defaultAddressFields(list: ShippingAddress[]): ProfileAddress {
 }
 
 function AccountPageContent() {
-  const { isLoggedIn, isAuthResolved, logout } = useLogin();
+  const { isLoggedIn, isAuthResolved, logout, userRole } = useLogin();
   const loginHref = useLoginHref();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const activeTabFromQuery = normalizeAccountTab(searchParams.get("tab"));
+  const requestedTab = normalizeAccountTab(searchParams.get("tab"));
+  // 「ログイン方法」はお客さんだけ。店員が ?tab=security で開いたらお客様情報にする。
+  const activeTabFromQuery =
+    requestedTab === "security" && userRole !== "user"
+      ? "profile"
+      : requestedTab;
+  const accountTabItems = [
+    { key: "profile", label: "お客様情報" },
+    { key: "shipping", label: "配送情報" },
+    { key: "orders", label: "購入履歴" },
+    { key: "inquiries", label: "お問い合わせ" },
+    ...(userRole === "user"
+      ? [{ key: "security", label: "ログイン方法" }]
+      : []),
+  ];
 
   const [activeTab, setActiveTab] =
     React.useState<AccountTab>(activeTabFromQuery);
@@ -728,12 +747,7 @@ function AccountPageContent() {
         {/* sidebar: tablet and above */}
         <div className="hidden md:block">
           <TabSegmentControl
-            items={[
-              { key: "profile", label: "お客様情報" },
-              { key: "shipping", label: "配送情報" },
-              { key: "orders", label: "購入履歴" },
-              { key: "inquiries", label: "お問い合わせ" },
-            ]}
+            items={accountTabItems}
             activeKey={activeTab}
             onChange={handleTabChange}
             orientation="vertical"
@@ -767,12 +781,7 @@ function AccountPageContent() {
           {/* mobile/tablet: tabs-standard tab bar */}
           <div className="account-mobile-tabs md:hidden">
             <TabSegmentControl
-              items={[
-                { key: "profile", label: "お客様情報" },
-                { key: "shipping", label: "配送情報" },
-                { key: "orders", label: "購入履歴" },
-                { key: "inquiries", label: "お問い合わせ" },
-              ]}
+              items={accountTabItems}
               activeKey={activeTab}
               onChange={handleTabChange}
               variant="tabs-standard"
@@ -915,19 +924,6 @@ function AccountPageContent() {
                     ) : null}
                   </div>
                 </form>
-              ) : null}
-
-              {!isLoadingProfile ? (
-                <div className="account-actions">
-                  <Button
-                    href="/account/password"
-                    variant="subtle"
-                    size="sm"
-                    className="font-acumin"
-                  >
-                    パスワードを変更
-                  </Button>
-                </div>
               ) : null}
             </div>
           ) : null}
@@ -1225,6 +1221,8 @@ function AccountPageContent() {
           ) : null}
 
           {activeTab === "inquiries" ? <AccountInquiries /> : null}
+
+          {activeTab === "security" ? <AccountPasskeys /> : null}
 
           {/* mobile/tablet: logout below content */}
           <div className="account-sidebar-logout md:hidden">

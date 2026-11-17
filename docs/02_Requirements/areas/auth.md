@@ -352,6 +352,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: お客さんがメールのコードでログインした直後、パスキーをまだ持たず、顔認証・指紋・PIN の使える端末なら、「パスキーを作りませんか」の画面を出す。作ると、次回から「パスキーでログイン」で入れる。「あとで」で飛ばせる。ブラウザが本物の応答を作る環境で、作る・入るが通る。
 
+### SR-AUTH-024 アカウントの「ログイン方法」で、お客さんが自分のパスキーを見て、足し、名前を変え、消せる
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | パスキーを作ったお客さんが、どの端末の鍵があるかを見て、増やし、要らない鍵を消せないと、端末をなくした時や手放した時に困る。パスワードを見せない設計（設計 6-1）なので、アカウントの「パスワードを変更」のリンクは外し、同じ場所に「ログイン方法」を置く。店員のパスキーは別の管理画面で扱うので、このタブには出さない（判断 8） |
+| 状態 | 推定 |
+| 出どころ | ユーザーの発言 2026-11-18（新しいタブ「ログイン方法」にする決め。`.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-7-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 7。判断 1・8、オーナーの決め: 新しいタブ「ログイン方法」）) |
+
+要求の文: お客さんがアカウントの新しいタブ「ログイン方法」で、自分のパスキーの一覧を見て、「パスキーを追加」で足し、名前を変え、削除できる。アカウントの画面から「パスワードを変更」のリンクを外す。
+
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
 | 属性 | 値 |
@@ -2215,7 +2225,7 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 出どころ | ユーザーの発言 2026-11-01（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`）、`docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 5〜7） |
 | 優先度 | MUST |
 
-画面 `/account/password` は、会員ページの「お客様情報」のリンクから入る。1 段目は現行のパスワードを入れて「確認コードをメールに送る」。2 段目は 8 桁の確認コード（有効期限 10 分）と新しいパスワード（16〜128 文字）とその確認を入れて「パスワードを変更する」。成功したらログインの画面へ移る。窓口は `POST /api/auth/password/change/start`（会員の認証と CSRF の印が要る。管理者・サポーターは aal2。現行パスワードを確かめ、8 桁のコードをメールで送り、コードは今の session に結ぶ）と `POST /api/auth/password/change/confirm`（コードを間違えると 5 回で使えなくなる。書式と漏洩の照合を通ってからコードを使い切り、パスワードを更新し、全 session を失効し、認証の Cookie を消し、通知のメールを送る）。どちらも本人ごとに 10 分 5 回、送り元の IP ごとに 10 分 20 回に制限し、結果を監査に残す。Google だけで登録した会員はパスワードを持たないので、1 段目に再設定への案内を誰にでも固定の文で出す。
+画面 `/account/password` は、直に開いて使う（段2でアカウントの画面の「パスワードを変更」のリンクは外した。画面と窓口は段4まで残す）。1 段目は現行のパスワードを入れて「確認コードをメールに送る」。2 段目は 8 桁の確認コード（有効期限 10 分）と新しいパスワード（16〜128 文字）とその確認を入れて「パスワードを変更する」。成功したらログインの画面へ移る。窓口は `POST /api/auth/password/change/start`（会員の認証と CSRF の印が要る。管理者・サポーターは aal2。現行パスワードを確かめ、8 桁のコードをメールで送り、コードは今の session に結ぶ）と `POST /api/auth/password/change/confirm`（コードを間違えると 5 回で使えなくなる。書式と漏洩の照合を通ってからコードを使い切り、パスワードを更新し、全 session を失効し、認証の Cookie を消し、通知のメールを送る）。どちらも本人ごとに 10 分 5 回、送り元の IP ごとに 10 分 20 回に制限し、結果を監査に残す。Google だけで登録した会員はパスワードを持たないので、1 段目に再設定への案内を誰にでも固定の文で出す。
 
 ### FR-AUTH-007 店員のパスキーの設定の表・登録の窓の表・認めたパスキーの表・知らせの表と、窓・認めたパスキーの関数
 
@@ -4563,7 +4573,7 @@ SNSアイコンのリンク要素が flex かつ items-center justify-center で
 
 `POST /api/auth/post-login` を続けて 2 回呼ぶと、2 回目は `/` を返すこと。
 
-### FR-AUTH-006-AC-01 会員ページのリンクから `/account/password` に着き、現行パスワードの欄と送るボタンだけが出る
+### FR-AUTH-006-AC-01 アカウントの画面に「パスワードを変更」のリンクが無く、`/account/password` を直に開くと現行パスワードの欄と送るボタンだけが出る
 
 | 属性 | 値 |
 | --- | --- |
@@ -4573,7 +4583,7 @@ SNSアイコンのリンク要素が flex かつ items-center justify-center で
 | 確かめ方 | E2E（mobile 390px・tablet 768px・desktop 1280px） |
 | 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 6・7） |
 
-ログインした会員が `/account?tab=profile` の「パスワードを変更」のリンクを押すと `/account/password` に着き、見出し「パスワードの変更」、現行のパスワードの欄、「確認コードをメールに送る」のボタンが表示されること。確認コードの欄・新しいパスワードの欄・「パスワードを変更する」のボタンは表示されないこと。どの幅でも横にはみ出さないこと。
+ログインした会員が `/account?tab=profile` を開くと、読み込みが終わった後も「パスワードを変更」のリンク（`/account/password` へのリンク）は出ない（段2で外した。判断 1）。`/account/password` を直に開くと、見出し「パスワードの変更」、現行のパスワードの欄、「確認コードをメールに送る」のボタンが表示されること。確認コードの欄・新しいパスワードの欄・「パスワードを変更する」のボタンは表示されないこと。どの幅でも横にはみ出さないこと。
 
 ### FR-AUTH-006-AC-02 正しい手順でパスワードが変わり、古いパスワードは通らず新しいパスワードで入り直せる
 
@@ -5686,6 +5696,79 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-6-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 6。判断 12、調整役の判断: 成功の後に自動で進まない） |
 
 ログインしていない人が `/login/passkey` を開くと `/login` へ送られ、勧めの見出しが出ない。勧めの画面（390・768・1280px）は横にスクロールせず、2つのボタンが画面の幅の中に収まる。
+
+### FR-AUTH-029 アカウントの「ログイン方法」タブ（パスキーの一覧・追加・名前・削除）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-024 |
+| 根拠 | SR-AUTH-024 を、`src/app/account/page.tsx` のタブと `src/features/auth/passkey/components/AccountPasskeys.tsx` の画面にする。判断は DD-AUTH-065。窓口は API-AUTH-026（一覧）・024・025（登録の始め・終わり）・027（名前の変更）・028（削除）（DD-AUTH-057・DD-AUTH-060 の部品 `passkey-client.ts` を使う）。削除の確認と最後の1本の文は、設計 2-2・6-1（最後の1本も消せる） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/passkey/account-passkeys.test.tsx`、`tests/unit/app/account/account-security-tab.test.tsx`）、E2E（`e2e/FR-LOGIN-060-account-passkeys.spec.ts`、FR-AUTH-029-AC-01〜05） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-7-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 7。判断 1・8、オーナーの決め: 新しいタブ「ログイン方法」） |
+| 優先度 | MUST |
+
+規則: (1) タブ「ログイン方法」（`?tab=security`）は、お客様情報・配送情報・購入履歴・お問い合わせの隣（最後）に出す。お客さん（`userRole === 'user'`）だけで、店員（`admin`・`supporter`）には出さず、`tab=security` で開いてもお客様情報へ戻す。(2) 見出し「パスキー」、説明「パスキーを登録すると、この端末の顔認証・指紋・PIN でログインできます。」。一覧（`<ul>`）の各行に、名前（なければ「名前なし」）、「{YYYY年M月D日} に作成」、使った日があれば「最後に使った日: {YYYY年M月D日}」（日付は日本時間）、「名前を変更」・「削除」。(3) 名前の変更は、その場で入力欄に切り替え（前後の空白を除いて1〜64字）、「保存」・「キャンセル」。失敗は「名前を変更できませんでした。もう一度お試しください。」。(4) 削除は確認の画面（見出し「このパスキーを削除しますか」、本文「削除すると、このパスキーではログインできなくなります。」）。最後の1本の時だけ「最後のパスキーです。削除しても、メールのコードか Google でログインできます。」を足す。失敗は「削除できませんでした。もう一度お試しください。」。(5) 「パスキーを追加」で登録する。成功は一覧を引き直して「パスキーを追加しました。」を `status` で知らせる。失敗の文は `/login/passkey` の勧め（DD-AUTH-064）と同じ。ただし `reauth_required` は「安全のため、メールのコードでもう一度ログインしてから追加してください。」と、`/login?next=%2Faccount%3Ftab%3Dsecurity` へ送る「メールのコードでログイン」のリンクを出す。(6) 一覧が空の時は「パスキーはまだありません。作ると、メールのコードを待たずにログインできます。」と「パスキーを追加」。読み込みはスケルトン（`animate-pulse`）、失敗は「パスキーの一覧を読み込めませんでした。」と「再読み込み」。(7) パスキーに対応していないブラウザでは、一覧と名前・削除は出し、「パスキーを追加」は無効にして「この端末ではパスキーを追加できません。」を出す。(8) 知らせは自動では消さない（WCAG 2.2.1）。追加の間は `disabled`・`aria-busy` で、二重に押しても1回。失敗の後、無効になったボタンからフォーカスが落ちた時だけ「パスキーを追加」へ戻す（ほかへ移していたら奪わない）。(9) アカウントの画面から「パスワードを変更」のリンクを外す（`/account/password` の画面と窓口は段4まで残す。`FR-AUTH-006-AC-01`）。
+
+### FR-AUTH-029-AC-01 空の文から、追加・名前の変更・2本目・削除（確認の文）・最後の1本の削除（追加の文）・空への戻りまで通る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-029 |
+| 根拠 | SR-AUTH-024 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-060-account-passkeys.spec.ts`。390・768・1280 の3幅でくり返す。仮想の認証器）、単体テスト（`tests/unit/features/auth/passkey/account-passkeys.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-7-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 7。判断 1・8、オーナーの決め: 新しいタブ「ログイン方法」） |
+
+コードで入った直後のお客さんが `/account?tab=security` を開くと、空の文と「パスキーを追加」が出る。追加すると「パスキーを追加しました。」が出て一覧に1本入り、仮想の認証器に鍵が1つ入る。名前を変えると一覧の名前が替わる。同じ認証器では追加できないので、認証器を替えて2本目を追加すると一覧が2本になる。1本削除する確認には「最後のパスキーです」の文が出ず、削除すると1本に減る。最後の1本の確認には「最後のパスキーです。削除しても、メールのコードか Google でログインできます。」が出て、削除すると空の文に戻る。
+
+### FR-AUTH-029-AC-02 登録のための入り直しが要る時は、再ログインの文と「メールのコードでログイン」が出る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-029 |
+| 根拠 | SR-AUTH-024 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-060-account-passkeys.spec.ts`。390・768・1280 の3幅でくり返す。仮想の認証器）、単体テスト（`tests/unit/features/auth/passkey/account-passkeys.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-7-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 7。判断 1・8、オーナーの決め: 新しいタブ「ログイン方法」） |
+
+登録の始めの窓口が `registration_not_allowed`（`reauth_required`）を返す時（Google 経由の会員や、コードのログインから10分より古い会員に近い状況。E2E は窓口の応答を差し替える）、「パスキーを追加」を押すと「安全のため、メールのコードでもう一度ログインしてから追加してください。」と、`/login?next=%2Faccount%3Ftab%3Dsecurity` へ送る「メールのコードでログイン」が出る。一覧は増えない。
+
+### FR-AUTH-029-AC-03 一覧の行が折り返して読め、ボタンは今の Button（md）のまま、横にはみ出さない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-029 |
+| 根拠 | SR-AUTH-024 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-060-account-passkeys.spec.ts`。390・768・1280 の3幅でくり返す。仮想の認証器）、単体テスト（`tests/unit/features/auth/passkey/account-passkeys.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-7-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 7。判断 1・8、オーナーの決め: 新しいタブ「ログイン方法」） |
+
+長い名前のパスキーがあっても、一覧の行が画面の幅の中で折り返し、横にスクロールしない。「名前を変更」・「削除」・「パスキーを追加」は今の `Button` の `size=md`（`data-ui-button-size="md"`）のままで、幅の外へ出ない。
+
+### FR-AUTH-029-AC-04 「ログイン方法」が4つのタブの隣に出て、お客様情報に「パスワードを変更」のリンクが無く、`/account/password` は直に開くと使える
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-029 |
+| 根拠 | SR-AUTH-024 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-060-account-passkeys.spec.ts`。390・768・1280 の3幅でくり返す。仮想の認証器）、単体テスト（`tests/unit/app/account/account-security-tab.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-7-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 7。判断 1・8、オーナーの決め: 新しいタブ「ログイン方法」） |
+
+お客さんのアカウントのタブは「お客様情報」「配送情報」「購入履歴」「お問い合わせ」「ログイン方法」の順に並ぶ。`/account?tab=profile` の読み込みが終わった後に、「パスワードを変更」のリンクも `/account/password` へのリンクも無い。`/account/password` を直に開くと、見出し「パスワードの変更」が出て使える。店員（`admin`・`supporter`）には「ログイン方法」のタブが出ず、`tab=security` で開いてもお客様情報になる（単体テスト）。
+
+### FR-AUTH-029-AC-05 「ログイン方法」のタブを押すと `tab=security` になり、パスキーの見出しが出る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-029 |
+| 根拠 | SR-AUTH-024 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-060-account-passkeys.spec.ts`。390・768・1280 の3幅でくり返す。仮想の認証器） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-7-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 7。判断 1・8、オーナーの決め: 新しいタブ「ログイン方法」） |
+
+お客様情報のタブから「ログイン方法」を押すと、URL が `/account?tab=security` に替わり、見出し「パスキー」が出る（PC は左の一覧、mobile・tablet は上のタブ）。
 
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
 

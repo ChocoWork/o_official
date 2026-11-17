@@ -10,7 +10,7 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-021、FR-AUTH-023、SEC-AUTH-048、SEC-AUTH-049、THR-AUTH-049、API-AUTH-029、API-AUTH-030、API-AUTH-031、API-AUTH-032、DD-AUTH-059、ADR-0469、SEC-AUTH-050、DD-AUTH-060、SR-AUTH-022、FR-AUTH-025、DD-AUTH-061、FR-AUTH-026、DD-AUTH-062、FR-AUTH-027、DD-AUTH-063、SR-AUTH-023、FR-AUTH-028、DD-AUTH-064 |
+| 対応する ID | SR-AUTH-021、FR-AUTH-023、SEC-AUTH-048、SEC-AUTH-049、THR-AUTH-049、API-AUTH-029、API-AUTH-030、API-AUTH-031、API-AUTH-032、DD-AUTH-059、ADR-0469、SEC-AUTH-050、DD-AUTH-060、SR-AUTH-022、FR-AUTH-025、DD-AUTH-061、FR-AUTH-026、DD-AUTH-062、FR-AUTH-027、DD-AUTH-063、SR-AUTH-023、FR-AUTH-028、DD-AUTH-064、SR-AUTH-024、FR-AUTH-029、DD-AUTH-065 |
 | 対象のコード | `src/app/api/auth/email-code/start/route.ts`、`verify/route.ts`、`resend/route.ts`、`cancel/route.ts`、`src/features/auth/services/email-code-session.ts`、`src/features/auth/schemas/email-code.ts`、`src/lib/cookie.ts`（`emailCodeSessionCookieName`・`cookieOptionsForEmailCode`）、`src/features/auth/passkey/{webauthn-browser,passkey-client,device-name,post-login}.ts`、`src/features/auth/schemas/passkey.ts`（`dropNullFields`）、`src/lib/auth/passkey-gotrue.ts`（`server-only`） |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（6-1）、[段2の計画](../../superpowers/plans/2026-11-17-passkey-stage2-customers.md)、[パスキーの窓口](auth-passkey-server-endpoints.md) |
 | 調べた時点 | 2026-11-17（手元の GoTrue で、作成→コードの送信→確定の組み合わせを実測した。手元の DB・Mailpit で E2E を流した） |
@@ -194,3 +194,31 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 | 共通 | 状態の変化は `LiveMessage`。`challenge_id`・応答・トークンは画面にもログにも出さない（`registerPasskey` の中だけ） |
 
 テスト観点: 文言と2つのボタンと見出しへの初期フォーカス、判定が終わるまで空、未ログインで `/login`、店員・使えない端末（偽・例外・未対応）で行き先へ、「あとで」の二重押しが1回、作る間の無効・`aria-busy`・二重押し、成功で自動で進まず「続ける」にフォーカス（`jest.useFakeTimers` で10秒進めても動かない）、名前が付かない時の足し文、各 `reason` の文言と先へ進む手段、失敗後のフォーカスを奪わないこと。E2E は仮想の認証器（CDP）で、新規の作成と鍵1つ、ログアウトからのパスキーのログイン（本物の `toJSON()` の `null`）、鍵を持つ人に勧めを出さないこと、本人確認ができない認証器で `register/finish` が0回、「あとで」で戻り先、未対応のブラウザで飛ばす、未ログインで `/login`・横にはみ出さないことを確かめる。
+
+### DD-AUTH-065 アカウントの「ログイン方法」タブ（パスキーの一覧・追加・名前・削除）の処理の順番
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SCR-AUTH-001、API-AUTH-024、API-AUTH-025、API-AUTH-026、API-AUTH-027、API-AUTH-028 |
+| 根拠 | パスキーを作ったお客さんが、鍵を見て、足し、名前を変え、消せるようにする。窓口は1b で作った物（一覧・登録の始めと終わり・名前の変更・削除）をそのまま使い、新しい窓口は足さない。最後の1本も消せる（設計 2-2・6-1）ので、確認の本文に「最後のパスキーです。…」を足す。知らせは自動で消さない（WCAG 2.2.1。`/login/passkey` と同じ）。アカウントの画面の変更は、タブの追加とリンクの削除の2点だけにとどめる |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/passkey/account-passkeys.test.tsx`、`tests/unit/app/account/account-security-tab.test.tsx`）、E2E（`e2e/FR-LOGIN-060-account-passkeys.spec.ts`、`e2e/FR-ACCOUNT-046-password-change.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-7-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 7。判断 1・8、オーナーの決め: 新しいタブ「ログイン方法」） |
+
+処理の順番と決め:
+
+| 単位 | 動き |
+| --- | --- |
+| `src/app/account/page.tsx`（タブ） | `AccountTab` に `security` を足す。`useLogin().userRole === 'user'` の時だけ、PC 用の縦のタブと mobile・tablet 用の上のタブの両方（同じ項目の並び）の最後に「ログイン方法」を出す。`tab=security` を `normalizeAccountTab` が受ける。店員が `tab=security` で開いたら `profile` に直して URL も替える。お客様情報の「パスワードを変更」のリンクは外す（画面 `/account/password` と窓口は変えない） |
+| `AccountPasskeys`（開いた時） | `listPasskeys()` を1回呼ぶ。待つ間はスケルトン（`animate-pulse`）。成功なら一覧か空の文。失敗なら「パスキーの一覧を読み込めませんでした。」と「再読み込み」。401 もこの文（未ログインの門はアカウントの画面が先に受ける）。`isPasskeySupported()` は描いた後に1回確かめる |
+| 一覧の行 | 名前（なければ「名前なし」）、「{YYYY年M月D日} に作成」、使った日があれば「最後に使った日: …」。日付は `Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo' })` の部品から「年・月・日」を組む。ボタンのアクセシブルな名前は、同じ画面に複数あっても区別できるよう「{名前}の名前を変更」「{名前}を削除」（見える文字を含める） |
+| 名前の変更 | その行を入力欄（ラベル「名前」）に切り替える。前後の空白を除き、空・65字以上（コードポイント）は送らず「名前は1〜64字で入力してください。」。送る間は「保存」を `disabled`・`aria-busy`。成功は一覧のその行だけを書き換える。失敗は「名前を変更できませんでした。もう一度お試しください。」で、入力欄は残す |
+| 削除 | 既存の `ConfirmDialog`。本文は「削除すると、このパスキーではログインできなくなります。」。一覧が1本だけの時は「最後のパスキーです。削除しても、メールのコードか Google でログインできます。」を続ける。成功はその行を一覧から外す（最後なら空の文）。失敗は「削除できませんでした。もう一度お試しください。」 |
+| 追加 | `registerPasskey`（DD-AUTH-060。始め → ブラウザで鍵を作る → 終わり → 端末の名前）。追加の間は「パスキーを追加」が `disabled`・`aria-busy` になるので二重に押せない。成功は `listPasskeys()` を引き直し（一覧の間はボタンが消えるので、フォーカスが落ちたら戻す）、「パスキーを追加しました。」を `status` で知らせる（自動では消さない）。失敗の文は DD-AUTH-064 と同じ。`reauth_required` は専用の文と、`buildLoginHref('/account?tab=security')`（`/login?next=%2Faccount%3Ftab%3Dsecurity`）への「メールのコードでログイン」のリンクを出す。画面にいる間の `window.location` は使わず、戻り先は固定で組む（タブを押して入った時に前の URL の検索条件を載せない） |
+| 空・未対応 | 空は「パスキーはまだありません。作ると、メールのコードを待たずにログインできます。」と「パスキーを追加」。未対応のブラウザでは、一覧と名前・削除は出し、追加を無効にして「この端末ではパスキーを追加できません。」 |
+| フォーカス | 追加の失敗の後、無効になったボタンからフォーカスが落ちて `document.body` にある時だけ「パスキーを追加」へ戻す（ほかへ移していたら奪わない）。確認の画面は `ConfirmDialog` が閉じた時に元の要素へ戻す |
+| 共通 | 状態の変化は `LiveMessage`。`challenge_id`・応答・トークンは画面にもログにも出さない（`registerPasskey` の中だけ）。窓口の応答の本文は `passkey-client.ts` が読み切るか捨てる |
+
+テスト観点: 見出し・説明・スケルトン、一覧の名前・作成日（日本時間で日付をまたぐ）・最後に使った日・「名前なし」、空・読み込みの失敗と再読み込み・未対応のブラウザ、名前の変更の成功・キャンセル・空と65字は送らず64字は送る・失敗、削除の確認の文（2本以上と最後の1本で違う）・キャンセル・失敗・成功で行が減る、追加の成功（一覧を引き直す・知らせが30秒進めても消えない）・各 `reason` の文・`reauth_required` のリンクの `href`・追加中の無効と二重押し・フォーカスを戻す／奪わない、アカウントの画面のタブの並びと店員の非表示と「パスワードを変更」が無いこと。E2E は仮想の認証器（CDP）で、空 → 追加 → 名前の変更 → 認証器を替えて2本目 → 削除 → 最後の削除 → 空、窓口の応答を差し替えた再ログインの文とリンク、長い名前の折り返し・幅の外へ出ないこと・ボタンが `size=md`、タブの並びと `/account/password` を直に開けること、タブを押して `tab=security` になること。
+
+覚え書き（実測 2026-11-18）: パスキーの名前は、窓口の決め（1〜64字）より先に GoTrue の側が日本語で40字ほど（約120バイト）を超えると 400 にする（応答は窓口の `invalid_request` になり、画面は「名前を変更できませんでした。」）。E2E は日本語24字で確かめている。窓口と画面の上限を GoTrue に合わせるかは、段2の外（1b の決め）の持ち越し。

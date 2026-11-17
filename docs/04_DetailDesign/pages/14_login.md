@@ -67,6 +67,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | `src/features/auth/passkey/components/EmailCodeEntry.tsx` | `<file>` | DD-AUTH-062 |
 | `src/app/login/passkey/page.tsx` | `<file>` | DD-AUTH-064 |
 | `src/features/auth/passkey/components/PasskeyOffer.tsx` | `<file>` | DD-AUTH-064 |
+| `src/features/auth/passkey/components/AccountPasskeys.tsx` | `<file>` | DD-AUTH-065 |
 | `src/app/login/verify/page.tsx` | `<file>` | DD-AUTH-002 |
 | `src/app/login/verify/VerifyOtpClient.tsx` | `<file>` | DD-AUTH-002 |
 | `src/app/auth/password-reset/page.tsx` | `<file>` | DD-AUTH-003 |
@@ -2785,7 +2786,7 @@ DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permi
 | 出力（段 2「確認コードと新しいパスワード」） | 確認コード（`inputMode=numeric`・`autocomplete=one-time-code`・8 文字まで）、新しいパスワード、新しいパスワード（確認）（どちらも `autocomplete=new-password`）、「パスワードを変更する」、「コードを送り直す」。`POST /api/auth/password/change/confirm`（本文 `{ code, new_password }`。確認の欄の値は送らない） |
 | 出力（成功） | 「パスワードを変更しました。全ての端末からログアウトしました。新しいパスワードでログインしてください。」を `LiveMessage`（status）で出し、`refreshAuthState` で状態を引き直してから `router.replace('/login/password')`（段2 Task 5 で `/login` から変更。段4までパスワードで入る旧の画面へ送る。ADR-0469） |
 | 出力（未ログイン） | 画面の代わりに「パスワードの変更には、ログインが必要です。」と、`/login?next=%2Faccount%2Fpassword` へのボタン |
-| 出力（アカウントの頁） | `src/app/account/page.tsx` のお客様情報のタブに、読み込みが終わった後、「パスワードを変更」のリンク（`/account/password`）を 1 つ出す |
+| 出力（アカウントのページ） | 段2（2026-11-18）でアカウントの画面から「パスワードを変更」のリンクを外した（`FR-AUTH-006-AC-01`）。この画面は `/account/password` を直に開いて使う。アカウントの新しいタブ「ログイン方法」は DD-AUTH-065 |
 
 **正常フロー:**
 

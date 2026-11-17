@@ -1,5 +1,7 @@
 # 画面一覧
 
+> パスキー段2 Task 7 確認日: 2026-11-18。画面ルートの数は変えない（54件）。`/account` にお客さんだけのタブ「ログイン方法」（`tab=security`）を足し、お客様情報の「パスワードを変更」のリンクを外した（`/account/password` の画面と窓口は段4まで残す）。幅（390/768/1280px）は E2E（`FR-LOGIN-060`）が確かめる。
+
 > パスキー段2 Task 6 確認日: 2026-11-18。旧のパスワードのログイン・会員登録の画面を `/login/password` へ退避する1ルートを追加し、`src/app/**/page.tsx` は54件になった（顧客向け18・認証・アカウント12・管理・開発補助24。Task 4 の `/login/code`・Task 6 の `/login/passkey` を数えた）。検索に載せず、どこからもリンクしない（旧の流れの中の戻り先を除く）。`/login` は Task 5（2026-11-18）で新しい画面（パスキー・Google・メールのコード）に作り替えた。パスワードの再設定・変更の完了の行き先は `/login/password`。共有の `src/contexts/Providers.tsx` の真ん中寄せの枠に `/login/password`・`/login/code`・`/login/passkey` を足した。実測（390/768/1280px）は E2E（`FR-LOGIN-056`）が確かめる。
 
 > 会計の自動で入れる実装 S27 確認日: 2026-11-15。画面の変更なし（画面ルート・画面の部品の数は変えない）。計上待ちの一覧の `dispute_refund_overlap`・`dispute_return_refund_pending` の文と、`dispute_lost`・`return_closed_after_lost` の専用の文が無いことは FREQ-643-AC-14（前の Task で入れた）。
@@ -71,8 +73,8 @@
 | `/auth/verified` | 認証確認・特権ユーザーのTOTP | 一般利用者はアカウントへ自動遷移。admin/supporterはMFA確認済みなら直ちに管理へ、未確認ならTOTP登録・確認後に管理へ。未認証はログイン案内リンク | [page.tsx](../../../src/app/auth/verified/page.tsx) |
 | `/auth/password-reset` | パスワード再設定 | メール送信、リンクエラー、新パスワード入力、更新完了を同画面に表示。送信・更新完了からログインへ。errorクエリは案内後に除去 | [page.tsx](../../../src/app/auth/password-reset/page.tsx) |
 | `/auth/password-reset/verify` | 再設定リンク確認 | `token` をPOSTで確認し再設定画面へ。token不在・確認失敗もエラー付き再設定URLへ。通信例外では同画面の再試行とログイン案内 | [page.tsx](../../../src/app/auth/password-reset/verify/page.tsx) |
-| `/account` | アカウント情報 | プロフィール・配送先・注文・問い合わせの4タブ。注文詳細へ移動。未ログインは案内リンク、ログアウト成功はホームへ。各編集・返信は同画面 | [page.tsx](../../../src/app/account/page.tsx) |
-| `/account/password` | パスワード変更（波 6 / SEC-AUTH-034） | `/account` のお客様情報のタブのリンクから開く2段（1 現行パスワード → 確認コードをメールに送る、2 8桁のコードと新しいパスワード〔16文字以上・UTF-8で72バイト以内〕）。成功すると全端末の session が失効するので、ログインの状態を引き直して `/login` へ。段1に Google だけの会員向けの案内と `/auth/password-reset` へのリンクを固定で出す。未ログインは案内だけを出し、戻り先つきの `/login` へ。`robots: noindex` | [page.tsx](../../../src/app/account/password/page.tsx)、[フォーム](../../../src/app/account/password/PasswordChangeForm.tsx) |
+| `/account` | アカウント情報 | プロフィール・配送先・注文・問い合わせの4タブと、お客さんだけの「ログイン方法」タブ（`tab=security`。パスキーの一覧・追加・名前の変更・削除。DD-AUTH-065。`/account/password` へのリンクは段2で外した）。注文詳細へ移動。未ログインは案内リンク、ログアウト成功はホームへ。各編集・返信は同画面 | [page.tsx](../../../src/app/account/page.tsx) |
+| `/account/password` | パスワード変更（波 6 / SEC-AUTH-034） | 直に開く2段（段2でアカウントの画面のリンクは外した。1 現行パスワード → 確認コードをメールに送る、2 8桁のコードと新しいパスワード〔16文字以上・UTF-8で72バイト以内〕）。成功すると全端末の session が失効するので、ログインの状態を引き直して `/login` へ。段1に Google だけの会員向けの案内と `/auth/password-reset` へのリンクを固定で出す。未ログインは案内だけを出し、戻り先つきの `/login` へ。`robots: noindex` | [page.tsx](../../../src/app/account/password/page.tsx)、[フォーム](../../../src/app/account/password/PasswordChangeForm.tsx) |
 | `/account/orders/[id]` | 注文詳細 | 自分の注文を取得し、`/account?tab=orders` に戻る。お問い合わせ、条件付き外部配送追跡へ。再度購入はカート追加後も同画面。商品行の予約注文分岐は下の補足を参照。未ログインは案内リンク | [[id]/page.tsx](../../../src/app/account/orders/%5Bid%5D/page.tsx) |
 | `/account/orders/[id]/return` | 返品・交換のお申し込み | 注文詳細の「返品・交換を申し込む」から開く3段（商品を選ぶ・内容を確かめる・お申し込みの受付）。受付の状態が closed・ended・none の注文は文と「注文の画面に戻る」だけ。未ログインは案内リンク。受け付けた段から注文詳細へ戻れる | [return/page.tsx](../../../src/app/account/orders/%5Bid%5D/return/page.tsx) |
 
@@ -145,7 +147,7 @@
 | `/login/password` | `tab=register`、`email`、`next`、`registered=1` | 初期タブと登録メール初期値。タブ操作後のURLは両方 `/login/password`。フォーム送信結果は同画面 |
 | `/auth/password-reset` | `error=link_invalid/link_expired` | 案内を表示後にクエリを除去。メール入力・新パスワード入力・送信／更新完了も同じルート |
 | `/auth/password-reset/verify` | `token` | 自動確認の入力。確認結果に応じて再設定画面へ移動 |
-| `/account` | `tab=profile/shipping/orders/inquiries` | 無指定・未知値はprofile。`address` はshippingへ正規化。タブ切替でreplaceし、他のクエリを保持 |
+| `/account` | `tab=profile/shipping/orders/inquiries/security` | 無指定・未知値はprofile。`security`（ログイン方法）はお客さんだけで、店員はprofileへ。`address` はshippingへ正規化。タブ切替でreplaceし、他のクエリを保持 |
 | `/checkout` | `session_id`、入力・最終確認・完了・エラー | 開き直し・外部認証からの復帰はresumeを照会。支払い済みならcomplete、開いていれば最終確認、ほかは入力へ進む。最終確認・完了後も`session_id`をURLに残す（FREQ-421・D9）。最終確認画面の埋め込み決済、完了表示、エラー境界も同じルート |
 | `/admin/orders` | クエリなし。絞り込みの値・頁は URL に載せない | 画面の state と、このタブの sessionStorage（キー `admin-order-list-state`。適用した条件と頁だけ。読み書きは try/catch で包み、使えなくても動く）に持ち、詳細から戻って開き直すと復元する（個人情報を URL にしない） |
 | `/admin` | `tab`、`meta`、`meta_reason`、各タブの一覧・編集・確認状態 | tabは許可された初期タブを選ぶ。サイドナビ操作はURLを書き換えない。Meta callbackは結果をクエリに付与して同じadminルートへ戻す |
