@@ -16,7 +16,8 @@ import { guardPasskeyManage, manageDeny, manageJson } from '@/lib/auth/passkey-m
 import { PasskeyRenameSchema } from '@/features/auth/schemas/passkey';
 
 const MIN_APPROVED_PASSKEYS = 2;
-const IdSchema = z.uuid();
+/** uuid の形を確かめ、小文字にそろえる（認めた鍵の一覧は小文字。大文字の `id` で下限の確かめをすり抜けさせない）。以降はこの値だけを使う。 */
+const IdSchema = z.uuid().transform((value) => value.toLowerCase());
 
 type RouteContext = { params: Promise<{ id: string }> };
 

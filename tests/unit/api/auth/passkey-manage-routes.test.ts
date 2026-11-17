@@ -175,6 +175,13 @@ describe('DD-AUTH-057 PATCH /api/auth/passkey/{id}（名前の変更）', () => 
     expect(csrf).toHaveBeenCalledTimes(1);
   });
 
+  test('DD-AUTH-057 大文字の id は小文字にして GoTrue へ渡す（PATCH・DELETE）', async () => {
+    await PATCH(req('PATCH', { friendly_name: 'x' }), ctx(KEY_A.toUpperCase()));
+    expect(updateMock).toHaveBeenCalledWith('tok-abc', { passkeyId: KEY_A, friendlyName: 'x' });
+    await DELETE(req('DELETE'), ctx(KEY_A.toUpperCase()));
+    expect(deleteMock).toHaveBeenCalledWith('tok-abc', KEY_A);
+  });
+
   test('DD-AUTH-057 断りの順番: 回数の制限 → 認証 → CSRF。どれも GoTrue を呼ばない', async () => {
     rateLimit.mockResolvedValueOnce(new Response('{}', { status: 429 }));
     expect((await PATCH(req('PATCH', { friendly_name: 'x' }), ctx(KEY_A))).status).toBe(429);
@@ -266,6 +273,14 @@ describe('DD-AUTH-057 DELETE /api/auth/passkey/{id}（削除）', () => {
   test('DD-AUTH-057 店員: 認めた鍵が2本で認めた鍵を消すと 409 staff_min_passkeys で GoTrue を呼ばない', async () => {
     staffMock.mockResolvedValue({ ok: true, value: true });
     const res = await DELETE(req('DELETE'), ctx(KEY_A));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'staff_min_passkeys' });
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  test('DD-AUTH-057 店員: 大文字の id でも小文字にそろえて認めた鍵と突き合わせ、2本なら 409 で GoTrue を呼ばない', async () => {
+    staffMock.mockResolvedValue({ ok: true, value: true });
+    const res = await DELETE(req('DELETE'), ctx(KEY_A.toUpperCase()));
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: 'staff_min_passkeys' });
     expect(deleteMock).not.toHaveBeenCalled();

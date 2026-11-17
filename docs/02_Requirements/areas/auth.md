@@ -6692,7 +6692,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8）（作り手の判断 1〜3） |
 | 優先度 | MUST |
 
-守ること: (1) 店員の `DELETE` は、消す鍵が認めた鍵で `passkey_approved_count - 1 < 2` の時、GoTrue を呼ばずに 409 `staff_min_passkeys`。認めた鍵の確かめが読めなければ 503（閉じる側）。認めていない鍵は止めない。お客さんは認めの表を引かず、最後の1本も消せる。(2) 他人の鍵・存在しない鍵は、GoTrue の 404 を 404 `{ "error": "not_found" }` にそろえ、本文でも区別しない。本人の通行証だけで GoTrue を呼ぶ（管理 API は使わない）ので、他人の鍵は GoTrue が断る。(3) 一覧は `id`・`friendly_name`・`created_at`・`last_used_at`（と店員の `approved`）だけを写す（許可リスト方式）。形の違う応答は 502。(4) `id` は uuid の形でなければ 400（GoTrue を呼ばない）。名前は1〜64字・C0/C1 の制御文字と表示の向きを変える文字なし。(5) 順番は、回数の制限（IP）→ 認証 → CSRF → 入力 → 認めの確かめ → GoTrue。監査（`auth.passkey.list`・`rename`・`delete`）は固定の符号と行為者の ID だけを残す。
+守ること: (1) 店員の `DELETE` は、消す鍵が認めた鍵で `passkey_approved_count - 1 < 2` の時、GoTrue を呼ばずに 409 `staff_min_passkeys`。認めた鍵の確かめが読めなければ 503（閉じる側）。認めていない鍵は止めない。お客さんは認めの表を引かず、最後の1本も消せる。(2) 他人の鍵・存在しない鍵は、GoTrue の 404 を 404 `{ "error": "not_found" }` にそろえ、本文でも区別しない。本人の通行証だけで GoTrue を呼ぶ（管理 API は使わない）ので、他人の鍵は GoTrue が断る。(3) 一覧は `id`・`friendly_name`・`created_at`・`last_used_at`（と店員の `approved`）だけを写す（許可リスト方式）。形の違う応答は 502。(4) `id` は uuid の形でなければ 400（GoTrue を呼ばない）。形が合えば小文字にそろえ、下限の確かめと GoTrue にはその値だけを使う（大文字の `id` で下限をすり抜けさせない）。名前は1〜64字・C0/C1 の制御文字と表示の向きを変える文字なし。(5) 順番は、回数の制限（IP）→ 認証 → CSRF → 入力 → 認めの確かめ → GoTrue。監査（`auth.passkey.list`・`rename`・`delete`）は固定の符号と行為者の ID だけを残す。
 
 残る危険として受け入れること: 同時に2つの削除が来ると、確かめの時点では2本以上でも、両方が通って2本を下回りうる。設計の「画面で止める」を越える足しなので、完全な排他は作らない。窓口を使わず GoTrue を直に叩く道も、この止めでは塞がらない。下回った店員は管理の入口で止まり（認めた鍵が2本未満）、1a の引き金の知らせが店員と店長に届く。
 

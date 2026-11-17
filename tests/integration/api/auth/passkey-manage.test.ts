@@ -134,6 +134,12 @@ describe('API-AUTH-028 DELETE /api/auth/passkey/{id}', () => {
     expect(rpc).toHaveBeenCalledWith('passkey_approved_count', { p_user_id: USER_ID });
   });
 
+  test('API-AUTH-028 大文字の id でも、店員が認めた鍵2本のうち1本は 409 で、GoTrue を呼ばない', async () => {
+    const res = await DELETE(req('DELETE'), ctx(KEY_A.toUpperCase()));
+    expect(res.status).toBe(409);
+    expect(deletePasskey).not.toHaveBeenCalled();
+  });
+
   test('API-AUTH-028 店員が認めた鍵3本のうち1本を消すと 200', async () => {
     approvedIds = [KEY_A, KEY_B, '55555555-5555-4555-8555-555555555555'];
     approvedCount = 3;
