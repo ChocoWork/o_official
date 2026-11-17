@@ -26,7 +26,13 @@ describe('DD-AUTH-056 evaluateRegistrationAccess（店員）', () => {
 
   test('DD-AUTH-056 5分以内のパスキーの入り直しは reauth（窓が閉じていても・鍵が2本以上でも）', () => {
     expect(staff({ claims: passkeyAt(NOW - 10), approvedCount: 5 })).toEqual({ ok: true, mode: 'reauth' });
-    expect(staff({ claims: passkeyAt(NOW - 300), windowOpen: true, approvedCount: 0 })).toEqual({ ok: true, mode: 'reauth' });
+    expect(staff({ claims: passkeyAt(NOW - 300), windowOpen: true, approvedCount: 1 })).toEqual({ ok: true, mode: 'reauth' });
+  });
+
+  test('DD-AUTH-056 認めた鍵が0本の店員は、5分以内のパスキーの入り直しでも reauth にならない（窓だけ）', () => {
+    expect(staff({ claims: passkeyAt(NOW - 10), approvedCount: 0 })).toEqual({ ok: false, reason: 'reauth_required' });
+    expect(staff({ claims: passkeyAt(NOW - 10), approvedCount: 0, windowOpen: true })).toEqual({ ok: true, mode: 'window' });
+    expect(staff({ claims: passkeyAt(NOW - 10), approvedCount: Number.NaN })).toEqual({ ok: false, reason: 'reauth_required' });
   });
 
   test('DD-AUTH-056 301秒前は reauth にならず、窓が閉じていれば reauth_required', () => {
@@ -38,8 +44,8 @@ describe('DD-AUTH-056 evaluateRegistrationAccess（店員）', () => {
   });
 
   test('DD-AUTH-056 未来60秒までは時計のずれで通り、61秒先は断る', () => {
-    expect(staff({ claims: passkeyAt(NOW + 60) })).toEqual({ ok: true, mode: 'reauth' });
-    expect(staff({ claims: passkeyAt(NOW + 61) })).toEqual({ ok: false, reason: 'reauth_required' });
+    expect(staff({ claims: passkeyAt(NOW + 60), approvedCount: 1 })).toEqual({ ok: true, mode: 'reauth' });
+    expect(staff({ claims: passkeyAt(NOW + 61), approvedCount: 1 })).toEqual({ ok: false, reason: 'reauth_required' });
   });
 
   test('DD-AUTH-056 時刻が欠ける・文字列・小数・amr が配列でない要素は無いものとして扱う', () => {
@@ -52,7 +58,7 @@ describe('DD-AUTH-056 evaluateRegistrationAccess（店員）', () => {
 
   test('DD-AUTH-056 最新の passkey の時刻で見る（古い印と新しい印が並ぶ）', () => {
     const claims = { amr: [{ method: 'passkey', timestamp: NOW - 5000 }, { method: 'passkey', timestamp: NOW - 20 }] };
-    expect(staff({ claims })).toEqual({ ok: true, mode: 'reauth' });
+    expect(staff({ claims, approvedCount: 1 })).toEqual({ ok: true, mode: 'reauth' });
   });
 });
 

@@ -36,7 +36,7 @@ function isRecent(latest: number | null, nowSeconds: number, maxAgeSeconds: numb
  *
  * @impl IMPL-AUTH-275
  * @design DD-AUTH-056
- * @remarks 店員: 5分以内のパスキーでの入り直しなら `reauth`（本数の上限を掛けない）。そうでなく、登録の窓が開いていて、
+ * @remarks 店員: 認めた鍵が1本以上あり、5分以内のパスキーでの入り直しなら `reauth`（本数の上限を掛けない。0本・数が不明の店員は窓だけ）。そうでなく、登録の窓が開いていて、
  * かつ認めた鍵が `STAFF_MIN_APPROVED_PASSKEYS`（2）未満の間だけ `window`（窓の免除は最初の2本まで）。`approvedCount` が整数でない値は、窓を認めない（閉じる側）。
  * どちらでもない時: パスキーの入り直しが古い店員、窓が開いていても認めた鍵が2本以上（または数が不明）の店員は `reauth_required`、
  * パスキーの印が無く窓も閉じている店員（メールのコードだけのセッションなど）は `window_closed`。
@@ -61,7 +61,9 @@ export function evaluateRegistrationAccess(input: {
   }
 
   const latestPasskey = latestAmrTimestamp(amr, ['passkey']);
-  if (isRecent(latestPasskey, nowSeconds, STAFF_REAUTH_SECONDS)) return { ok: true, mode: 'reauth' };
+  // 入り直しで鍵を足せるのは、認めた鍵を既に1本以上持つ店員だけ（0本・不明は窓だけ。設計 6-2）。
+  const hasApprovedKey = Number.isInteger(approvedCount) && approvedCount >= 1;
+  if (hasApprovedKey && isRecent(latestPasskey, nowSeconds, STAFF_REAUTH_SECONDS)) return { ok: true, mode: 'reauth' };
 
   const hasRoom = Number.isInteger(approvedCount) && approvedCount < STAFF_MIN_APPROVED_PASSKEYS;
   if (windowOpen === true && hasRoom) return { ok: true, mode: 'window' };
