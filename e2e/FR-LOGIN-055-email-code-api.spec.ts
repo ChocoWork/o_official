@@ -31,6 +31,19 @@ function uniqueIp(): string {
   return `198.18.${randomInt(0, 256)}.${randomInt(1, 255)}`;
 }
 
+/**
+ * 回数の制限の枠は、UTC の epoch を 10 分（600 秒）で切った固定の窓で数える（enforceRateLimit の bucket）。
+ * 数える途中で窓の境を越えると、回数が2つの窓に分かれて 6 回目が 429 にならない。
+ * 窓の残りが 10 秒より短い時は、次の窓が始まるまで待ってから数え始める。
+ */
+async function waitForFreshRateWindow(): Promise<void> {
+  const windowMs = 600_000;
+  const remaining = windowMs - (Date.now() % windowMs);
+  if (remaining < 10_000) {
+    await new Promise((resolve) => setTimeout(resolve, remaining + 500));
+  }
+}
+
 function uniqueEmail(label: string): string {
   return `e2e-code-${label}-${Date.now().toString(36)}${randomBytes(3).toString('hex')}@example.com`;
 }
@@ -100,6 +113,7 @@ for (const viewport of viewports) {
     });
 
     test(`FR-AUTH-023-AC-03 ${viewport.name}: 間違ったコードは 1〜5回目が 401、6回目が 429 で、Cookie が消えてその後は 401`, async ({ request }) => {
+      await waitForFreshRateWindow();
       const email = uniqueEmail('brute');
       const ip = uniqueIp();
       expect((await startCode(request, email, ip)).status()).toBe(202);

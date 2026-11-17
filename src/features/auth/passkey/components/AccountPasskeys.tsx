@@ -122,8 +122,8 @@ export default function AccountPasskeys() {
   useEffect(() => {
     if (refocusTarget === null) return;
     if (document.activeElement === document.body) {
-      const target = document.getElementById(refocusTarget)!;
-      target.focus();
+      // 重なった操作で対象の行が消えていても落とさない。
+      document.getElementById(refocusTarget)?.focus();
     }
     setRefocusTarget(null);
   }, [refocusTarget]);

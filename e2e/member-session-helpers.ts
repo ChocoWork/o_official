@@ -1,8 +1,11 @@
 /**
- * FR-CHECKOUT-046 ではアプリが発行するログイン・CSRF の Cookie が必要になる。
- * Turnstile を伴うパスワード検証の前段だけを既存の助けで作り、確認コードの検証は実際のルートを通す。
+ * 会員のログインの手助け。
+ * loginAsMember: メールのコードの窓口（/api/auth/email-code/resend → verify。始めの窓口の Turnstile は通さない）で、
+ *   署名した保留の Cookie を置いて、本物の発行処理でログインと CSRF の Cookie を揃える。注文などの試験が使う。
+ * loginAsMemberLegacy: 旧の窓口（/api/auth/login/resend → /api/auth/otp/verify）の道。旧の窓口の性質を確かめる試験だけが使う。段4で消す。
+ * どちらも、確認コードのメールは手元の Mailpit から Node で読む。
  * この助けを呼ぶ spec は、ファイルの最上位（test.describe の外）に `test.use({ trace: 'off' })` が必須。
- * 確認コード・ログインの Cookie・2FA の Cookie がブラウザの文脈の通信に載り、通信記録に残るため。
+ * 確認コード・ログインの Cookie・保留の Cookie がブラウザの文脈の通信に載り、通信記録に残るため。
  * trace は worker 単位の設定なので、test.describe の中に書くと読み込みで落ちる。
  */
 import { randomBytes } from 'node:crypto';
@@ -99,7 +102,7 @@ export async function readLatestCode(email: string, previousMessageIds: Readonly
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  throw new Error('確認コードのメールが届かない');
+  throw new Error('確認コードのメールが届かない（再送の窓口は GoTrue の送信の間隔の 429 を 200 に隠すので、「届かない」は送信の回数の制限の可能性がある）');
 }
 
 async function expectMemberSession(page: Page, origin: string, member: TestMember): Promise<void> {

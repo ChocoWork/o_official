@@ -1,6 +1,8 @@
 # テスト仕様
 
-> 2026-11-18 確認日（パスキー段2 Task 10）: E2E の手助け `loginAsMember`（`e2e/member-session-helpers.ts`）を、パスワード＋コードの旧の窓口から、メールのコードの窓口（`/api/auth/email-code/resend`・`verify`と署名した保留の Cookie `setEmailCodeSessionCookie`）に付け替えた。旧の中身は `loginAsMemberLegacy` に残し、旧の窓口の性質を確かめる試験 `FR-LOGIN-030`・`031`・`032`・`033`・`FR-PWRESET-010`・`FR-ACCOUNT-046`と、店長（店員）を入れる `FR-ADMIN-MISC-008`（新しい窓口は店員を403で拒む）が使う。`FR-PRIVACY-006`・`FR-LOGIN-037` は会員のセッションを作るだけなので新しい側へ付け替えた。試験の道具の変更で要件・設計・実装の ID は起こさない。代表の E2E（3幅）は付け替えの前後で緑。
+> 2026-11-18 確認日（パスキー段2 Task 11）: 下に「パスキー段2のテスト」の節を足した（E2E `FR-LOGIN-055`〜`062` と、単体・結合・DB 結合の主なファイル）。`FR-LOGIN-055` の AC-03 が回数の制限の窓の境で落ちるのを直した（窓の残りが10秒より短ければ次の窓まで待つ）。
+
+> 2026-11-18 確認日（パスキー段2 Task 10）: E2E の手助け `loginAsMember`（`e2e/member-session-helpers.ts`）を、パスワード＋コードの旧の窓口から、メールのコードの窓口（`/api/auth/email-code/resend`・`verify`と署名した保留の Cookie `setEmailCodeSessionCookie`）に付け替えた。旧の中身は `loginAsMemberLegacy` に残し、旧の窓口の性質を確かめる試験 `FR-LOGIN-030`・`031`・`032`・`033`・`FR-PWRESET-010`・`FR-ACCOUNT-046`と、店長（店員）を入れる `FR-ADMIN-MISC-008`（新しい窓口は店員を403で拒む）が使う。`FR-PRIVACY-006`・`FR-LOGIN-037` は会員のセッションを作るだけなので新しい側へ付け替えた。試験の道具の変更で要件・設計・実装の ID は起こさない。代表の E2E（3幅）は、付け替えの前は `FR-LOGIN-055` の tablet の AC-03 が1件落ちた（回数の制限の窓の境をまたいだため。下の「パスキー段2」の節の直し）ほかは緑で、付け替えの後は全部緑。
 
 > 2026-11-15 確認日（会計の自動で入れる実装 S27 Task 7）: E2E `FR-ADMIN-169-pending-auto-posting.spec.ts` を3幅で足した（FREQ-643-AC-13）。画面の行の数は計上待ちの route の1ページ目と同じ瞬間に比べ（FR-ADMIN-132 の形）、足しの回数は止まっている返品の行の数から決める。場面は DB で先に確かめた（返金の途中は `dispute_refund_overlap` で待ち、返金の成功の後は「もう一度計上する」2回で借 2130 5,000／貸 4020 5,000）。
 
@@ -46,6 +48,35 @@
 > 2026-11-07。push の前の単体テストの流し方と NEWS の試験を直した。[tests/integration/ui/news-admin-edit-screen.test.tsx](../../../tests/integration/ui/news-admin-edit-screen.test.tsx) の成功の2件は、画面の移動（`/admin?tab=NEWS`）まで確かめてから終わる。前は成功時の0.5秒のタイマーが残り、次の試験の `mockPush` に入って揺れる形だった（待ちを足した診断で再現、直した後は同じ条件で通過、最終版は16/16通過。元の全件並列での再現はしていない）。FREQ-546-AC-04（`discount-search.test.ts`）の200msの条件は変えず、pre-push では全件の後に1本だけで流す（`--runInBand`、16/16通過）。
 >
 > 2026-11-06。FREQ-641の後回しの小さな直し4つの試験を追加・更新。E2Eは2026-11-07に調整役が実測（返品の13ファイル、下のFREQ-641節）。DBの試験は今回流していない。
+
+## パスキー段2のテスト（お客さんのメールのコード・パスキー・知らせ。2026-11-18）
+
+要件は `docs/02_Requirements/areas/auth.md`（`SR-AUTH-021`〜`025`、`FR-AUTH-023`・`025`〜`031`。`FR-AUTH-024`・`032`・`033` は欠番）。試験の名前の先頭は要件の ID（`FR-AUTH-0xx-AC-nn`）か設計の ID（`DD-AUTH-0xx`）。E2E は本番ビルド・手元の Supabase・手元の Mailpit で、390・768・1280 の3幅。
+
+### E2E
+
+| ファイル | 受け入れ条件 | 確かめること |
+| --- | --- | --- |
+| [FR-LOGIN-055](../../../e2e/FR-LOGIN-055-email-code-api.spec.ts) | FR-AUTH-023-AC-01〜06 | 画面を開かない HTTP の試験。未登録で始めて確定するとログインできる・登録済みと未登録で応答が同じ・間違ったコードは5回まで401で6回目が429・店員は確定が403・旧い保留の Cookie と無い Cookie は401。AC-03 は回数の制限の窓（UTC を10分で切る固定の窓）の境をまたぐと6回目が429にならないので、数え始める前に窓の残りが10秒より短ければ次の窓まで待つ |
+| [FR-LOGIN-056](../../../e2e/FR-LOGIN-056-legacy-login-relocated.spec.ts) | FR-AUTH-025-AC-01〜04 | 旧の画面 `/login/password` が旧と同じ・検索に載らない・戻り先が閉じる |
+| [FR-LOGIN-057](../../../e2e/FR-LOGIN-057-login-screen.spec.ts) | FR-AUTH-027-AC-01〜06 | 新しい `/login` の3つの入口・パスキーの始め・未対応のブラウザ・メールのコード・Google・390px |
+| [FR-LOGIN-058](../../../e2e/FR-LOGIN-058-email-code-screen.spec.ts) | FR-AUTH-026-AC-01〜05 | `/login/code` の確定・誤り・案内と再送の待ち・入れ直し・390px |
+| [FR-LOGIN-059](../../../e2e/FR-LOGIN-059-passkey-offer-real-browser.spec.ts) | FR-AUTH-028-AC-01〜07 | パスキーを作る勧め `/login/passkey`。ブラウザの仮想の認証器で、作る・ログアウトして入る・鍵を持つ人には出さない・本人確認ができない認証器・「あとで」・未対応のブラウザ・ログインしていない人 |
+| [FR-LOGIN-060](../../../e2e/FR-LOGIN-060-account-passkeys.spec.ts) | FR-AUTH-029-AC-01〜05 | アカウントの「ログイン方法」。空・追加・名前の変更・削除・最後の1本・入り直しの案内・タブ |
+| [FR-LOGIN-061](../../../e2e/FR-LOGIN-061-passkey-notification-function-grants.spec.ts) | FR-AUTH-030-AC-01 | 知らせの5つの DB の関数を、anon・authenticated の鍵では呼べず、service_role の鍵だけが呼べる |
+| [FR-LOGIN-062](../../../e2e/FR-LOGIN-062-passkey-notification-mail.spec.ts) | FR-AUTH-031-AC-01〜03 | パスキーの足し・消しの知らせのメールが、お客さん・店員・店長の文面で手元の Mailpit だけへ届く |
+
+### 単体・結合・DB 結合の主なファイル
+
+- メールのコードの窓口: `tests/unit/api/auth/email-code-*-route.test.ts`、`tests/unit/features/auth/email-code-session.test.ts`、`tests/integration/api/auth/email-code-*.test.ts`
+- 画面の部品: `tests/unit/features/auth/passkey/`（`login-choices`・`email-code-start-form`・`email-code-entry`・`passkey-offer`・`account-passkeys` ほか）、`tests/unit/app/login/`、`tests/unit/app/account/account-security-tab.test.tsx`、`tests/integration/ui/auth-account-security-tab.test.tsx`
+- 知らせ: `tests/integration/db/auth_passkey_notification_sending.integration.test.ts`（移行 G の5つの関数。2つの接続の同時の取り出しを含む）、`tests/integration/db/auth_passkey_notification_worker.integration.test.ts`、`tests/unit/lib/auth/passkey-notification-*.test.ts`
+- Task 11 で足した単体: `account-passkeys.test.tsx` の「削除の失敗の応答より先にその行が名前の入力へ替わっていても、戻す先が無いだけで落ちない」（フォーカスを戻す先の行が消えていても落ちない）
+
+### 試験の道具
+
+- `e2e/member-session-helpers.ts`: `loginAsMember` はメールのコードの窓口（署名した保留の Cookie → 再送 → 確定）、`loginAsMemberLegacy` は旧の窓口の道（段4で消す。ADR-0469 の「段4で消す一覧」）。コードのメールが届かない時の誤りの文に、再送の窓口が GoTrue の送信の間隔の 429 を 200 に隠すことを書いた
+- `e2e/passkey-virtual-authenticator.ts`: ブラウザの仮想の認証器（FR-LOGIN-059・060 が使う）
 
 ## グループH Task 11 本番buildと手元SupabaseのE2E（2026-10-30）
 

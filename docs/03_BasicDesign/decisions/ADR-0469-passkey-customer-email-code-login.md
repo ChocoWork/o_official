@@ -56,6 +56,7 @@
 - 良くなること: お客さんがパスワード無しで入れる。応答から登録の有無が分からない
 - 悪くなること: 旧の未確認の登録は、確認のメールを押すまでコードで入れない（段4まで）。他人が始めを繰り返すと、本人はしばらくコードで入れない（パスキーと Google は残る）
 - 見直す条件: 段4（旧の登録を消す時）、本番の GoTrue の設定を読んだ時
+- 運用と本番に出さない決め（段2 Task 11。2026-11-18。要件ではない）: (1) この master を、アプリとして本番にデプロイしない（段3が済むまで。パスワード＋認証アプリの店長が管理画面に入れなくなる）。段2は本番の DB に何も当てていない。(2) 新しい流れは、本番の Supabase の `magic_link` の雛形の `{{ .Token }}`・8桁・5分に頼る（[supabase-auth-config.md](../../06_Operations/supabase-auth-config.md)）。(3) 段3・開店前・段4へ持ち越す物は、[作業と指摘の台帳](../../05_Quality/reviews/code/2026-09-25-working-diff-security-review.md)の「4-2 パスキー段2から先への持ち越し」に書いた
 
 #### 旧画面の退避（Task 3。SR-AUTH-022・FR-AUTH-025・DD-AUTH-061）
 
@@ -92,6 +93,7 @@
 - 旧の画面にだけ当てる jest の試験: `tests/unit/app/login/login-page.test.tsx` の `/login/password` の分、`login-verify-page`、`VerifyOtpClient`、`auth-tabs`、`register-modal`、`tests/integration/ui/auth-login-flow`・`auth-login-tabs-screen`・`auth-login-verify-screen`・`auth-register-flow`・`auth-register-form-screen`、`tests/unit/contexts/providers-auth-page.test.tsx` の旧の道（`/login/verify`・`/login/password`）の分
 - 消す窓口の性質を確かめる E2E: `FR-LOGIN-030`・`031`・`035`、`FR-SIGNUP-002`（`/api/auth/login/*`・`/api/auth/register` を直に叩く。窓口と一緒に消す）
 - 注: `loginAndOpenAccount` を使う16本の `FR-ACCOUNT-*` は消さない。手助けを新しい入口（`loginAsMember`）へ移して残す
+- 試験の手助け（Task 10 で、会員のログインの手助け `loginAsMember` を新しいメールのコードの窓口へ付け替えた。旧の道は `loginAsMemberLegacy` に残した）: `e2e/member-session-helpers.ts` の `loginAsMemberLegacy` と、それを呼ぶ5本（`FR-LOGIN-032`・`FR-LOGIN-033`・`FR-PWRESET-010`・`FR-ACCOUNT-046`・`FR-ADMIN-MISC-008`）、旧の窓口を直に叩く `FR-LOGIN-030`・`031`。`e2e/auth-2fa-test-utils.ts` の `setLoginTwoFactorCookie` と、`createTestMember` の `password` 付きの作り方も外す
 
 #### 新しい `/login`（Task 5。FR-AUTH-027・DD-AUTH-063）
 

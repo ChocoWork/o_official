@@ -1,5 +1,7 @@
 # 画面遷移図
 
+> パスキー段2 Task 11 確認日: 2026-11-18。画面ルートは新しいログインの3つ（`/login/code`・`/login/passkey`・`/login/password`）を認証・アカウントの図に足した。旧のログイン・会員登録の流れ（OTP の確認・登録・パスワードの再設定の完了）は `/login/password` に移った（段4まで）。`/account` の「ログイン方法」は同じルート内のタブ（`tab=security`）。
+>
 > 会計の計画3（返品・返金）Task 13 確認日: 2026-11-15。画面ルートの数は変えない（51ルート）。返品の受け取り・届いた日の直し・取り消しの区分・手で結ぶ道・振込の記録・やり直しの結び・消費税用の返金の導線を、「会計の返品・返金からの導線（FREQ-575〜584）」の節に足した。
 >
 > 交換の印 オーナー修正 X1 確認日: 2026-11-12。FREQ-642-AC-32・33 の表示と導線を反映。
@@ -73,10 +75,13 @@ flowchart LR
         Checkout["/checkout"]
     end
 
-    subgraph AuthAccount["認証・アカウント (9ルート)"]
+    subgraph AuthAccount["認証・アカウント (12ルート)"]
         direction TB
         Login["/login（パスキー・Google・メールのコード）"]
-        LoginVerify["/login/verify メール OTP"]
+        LoginCode["/login/code メールのコードの入力"]
+        LoginPasskey["/login/passkey パスキーを作る勧め"]
+        LoginPassword["/login/password 旧のログイン・会員登録（段4まで）"]
+        LoginVerify["/login/verify メール OTP（旧）"]
         AuthVerified["/auth/verified"]
         PasswordReset["/auth/password-reset"]
         PasswordResetVerify["/auth/password-reset/verify"]
@@ -199,13 +204,20 @@ flowchart LR
     Checkout -->|完了: 買い物へ| ItemList
     Checkout -->|ゲスト会員登録| Login
 
-    Login -->|自動: ログイン / 検証待ち| LoginVerify
+    Login -->|メールを送る| LoginCode
+    LoginCode -->|成功: 鍵が無い・対応ブラウザ| LoginPasskey
+    LoginCode -->|成功: 鍵がある・未対応| Account
+    LoginCode -->|入れ直し / 保留なし| Login
+    LoginPasskey -->|作る→続ける / あとで| Account
+    LoginPasskey -->|ログインしていない| Login
+    Login -->|パスキーでログイン: 成功| Account
+    LoginPassword -->|自動: ログイン / 検証待ち| LoginVerify
     LoginVerify -->|自動: user / 通信例外| Account
     LoginVerify -->|自動: admin / supporter| AuthVerified
-    LoginVerify -->|検証切れ / 再確認失敗 / やり直し| Login
-    Login -. 登録タブ / 完了 .-> Login
-    Login -->|登録POST| RegisterApi
-    RegisterApi -. 受付結果表示 .-> Login
+    LoginVerify -->|検証切れ / 再確認失敗 / やり直し| LoginPassword
+    LoginPassword -. 登録タブ / 完了 .-> LoginPassword
+    LoginPassword -->|登録POST| RegisterApi
+    RegisterApi -. 受付結果表示 .-> LoginPassword
     RegisterApi --> ConfirmationEmail
     ConfirmationEmail -->|メールの確認リンク| ConfirmApi
     ConfirmApi -->|自動: 登録の戻り先| AuthVerified
@@ -218,14 +230,14 @@ flowchart LR
     AuthVerified -->|自動: MFA完了| Admin
     AuthVerified -. TOTP / 未認証 .-> AuthVerified
     AuthVerified -->|未認証: リンク| Login
-    Login --> PasswordReset
+    LoginPassword --> PasswordReset
     PasswordReset -->|メールのtoken| PasswordResetVerify
     PasswordResetVerify -->|自動: 確認結果| PasswordReset
     PasswordResetVerify -->|通信失敗: リンク| Login
     PasswordResetVerify -. 通信再試行 .-> PasswordResetVerify
     PasswordReset -. 入力 / メール / 更新 .-> PasswordReset
-    PasswordReset -->|完了: ログイン| Login
-    Account -. 4タブ切替 .-> Account
+    PasswordReset -->|完了: ログイン| LoginPassword
+    Account -. 4タブ切替・「ログイン方法」（tab=security。パスキーの一覧・追加・名前・削除） .-> Account
     Account --> OrderDetail
     Account -->|未ログイン: リンク| Login
     Account -->|自動: ログアウト| Home

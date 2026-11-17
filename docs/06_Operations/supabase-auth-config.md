@@ -1,6 +1,6 @@
 # 本番の Supabase Auth の設定（captcha・パスワード変更・OTP・MFA）
 
-> 状態: 目標の値と手順（本番への適用は未実施。2026-11-01 に MCP で試して不可。2026-11-06 にオーナーがダッシュボードで変えると決め、「ダッシュボードで変える手順（オーナー向け）」を書いた。確認メールの必須だけは本番がすでに目標の値） | 確認日: 2026-11-06 | 対象: 本番の Supabase プロジェクト `pjidrgofvaglnuuznnyj` の Auth と PostgREST の設定、手元の `supabase/config.toml` との対応 | 設計判断: [ADR-0420](../03_BasicDesign/decisions/ADR-0420-auth-supabase-captcha-with-service-role-auth-calls.md)（captcha）、[ADR-0421](../03_BasicDesign/decisions/ADR-0421-auth-password-change-by-app-window-with-emailed-code.md)（パスワード変更）
+> 状態: 目標の値と手順（本番への適用は未実施。2026-11-01 に MCP で試して不可。2026-11-06 にオーナーがダッシュボードで変えると決め、「ダッシュボードで変える手順（オーナー向け）」を書いた。確認メールの必須だけは本番がすでに目標の値） | 確認日: 2026-11-18 | 対象: 本番の Supabase プロジェクト `pjidrgofvaglnuuznnyj` の Auth と PostgREST の設定、手元の `supabase/config.toml` との対応 | 設計判断: [ADR-0420](../03_BasicDesign/decisions/ADR-0420-auth-supabase-captcha-with-service-role-auth-calls.md)（captcha）、[ADR-0421](../03_BasicDesign/decisions/ADR-0421-auth-password-change-by-app-window-with-emailed-code.md)（パスワード変更）
 
 ## 概要
 
@@ -358,6 +358,19 @@ Security notifications が見当たらない時は、右上の自分のアイコ
 | 2. `sb_secret_` が captcha を免除するか | (a) は `sb_secret_` で呼ぶ | 免除されなければ別の計画（上の節） |
 | 8. 古い `service_role` の鍵が captcha を免除するか | (a) は古い鍵で呼ばない | 本番で確かめるだけ（アプリは使わない） |
 | 9. フックの拒否の応答の形 | 更新の拒否を印 `[staff-passkey-required]` で見分け、セッションを終わらせる（`refresh`） | フックの登録後に、拒否の応答（403・`unknown`・フックの文）が手元と同じか確かめる |
+| 10. 今の `createUser` → `signInWithOtp` の組み合わせ（段2） | 始めの窓口は確認済みで作ってからコードを送る（手元は Confirm email オンで動く） | 本番の Confirm email オンのまま、未登録のアドレスにコードが届き、確定でログインできること。上の「お客さんのメールのコードのログイン（段2）」 |
+| 11. メールのコードの型（`magic_link`）の雛形（段2） | 雛形の本文に `{{ .Token }}`・8桁・5分に頼る | 本番の `magic_link` の雛形に `{{ .Token }}` が在り、`otp_length` が8・`otp_expiry` が300であること |
+| 12. 始めの `(b)` の切り替えの実機の確認と、`/otp` の IP の枠（段2） | `NEXT_PUBLIC_PASSKEY_START_MODE`。サインイン・サインアップの IP ごとの枠（5分30回）が、お客さんの新規と予備の主な道になる | `(b)` の切り替えを実機で確かめる。`/otp` にも `Sb-Forwarded-For` を添えられるか、`createServiceRoleAuthClient` を `sb_secret_` に替える要否を確かめる |
+
+## お客さんのメールのコードのログイン（段2）
+
+確認日: 2026-11-18（パスキー段2 Task 11）。設計は [ADR-0469](../03_BasicDesign/decisions/ADR-0469-passkey-customer-email-code-login.md)。コードは `src/app/api/auth/email-code/start/route.ts`・`resend/route.ts`。
+
+- **頼っている設定**: 始めの窓口は、`admin.createUser`（確認済み・パスワード無し・印 `email_code_signup_pending`）を呼んだ後、全員に同じく `signInWithOtp({ shouldCreateUser: false })` を呼ぶ。コードを送るメールは、上の表の「ログインの確認コードの雛形」（`mailer_templates_magic_link_content`）をそのまま使う。**この雛形の本文に `{{ .Token }}` が在り、コードが8桁・有効期限が5分（`otp_length`・`otp_expiry`）であること**が、新しい流れの前提になる。雛形から `{{ .Token }}` が消える、または桁数・期限が変わると、お客さんはコードを受け取れない・入れられない。変える時は、画面の文（8桁・5分）とあわせて直す
+- **「Confirm email はオンのまま」で動く理由**: `createUser` は `email_confirm: true` で作るので、新しい利用者は最初から確認済み。確認メール（`confirmation` の雛形）は送られず、`signInWithOtp` は `magic_link` の雛形でコードのメールを1通だけ送る。このため、確認メールの必須（Confirm email）をオンのままにしておいてよい（触らない）
+- **手元の確認（2026-11-18）**: 手元の `supabase/config.toml` は `enable_confirmations = true`、`otp_length = 8`、`otp_expiry = 300`。この設定のまま、`createUser` → `signInWithOtp` の組み合わせで、未登録のアドレスにコードのメールが届き、確定でログインできる（E2E `FR-LOGIN-055`: FR-AUTH-023-AC-01）。登録済みのアドレスでも、応答は同じ（AC-02）
+- **本番で試す物（段3の確認の一覧に足した）**: (1) 今の `createUser` → `signInWithOtp` の組み合わせが、本番の Confirm email オンのまま動くこと、(2) 本番の `magic_link` の雛形に `{{ .Token }}` が在り、8桁・5分であること、(3) 始めの `(b)`（`NEXT_PUBLIC_PASSKEY_START_MODE`）の切り替えの実機の確認、(4) 次の IP の枠。台帳の「パスキー段2から先への持ち越し」に書いた
+- **サインイン・サインアップの IP ごとの枠（5分30回）は、段2から、お客さんの新規と予備の主な道になる**: 上の「手で変える項目」の「サインイン・サインアップの IP ごとの枠」にあるとおり、アプリの全員が Vercel の出口の少数の IP から GoTrue を呼ぶので、この枠は店の全員で分け合う。今、お客さんの新規と予備の主な道は `signInWithOtp`（`/otp`）になるので、`/otp` にも `Sb-Forwarded-For` を添えられるか、および `createServiceRoleAuthClient`（今は `SUPABASE_SERVICE_ROLE_KEY` を使う）を `sb_secret_` に替える要否は、本番で確かめる（段3）
 
 ## 確かめ
 

@@ -14,23 +14,27 @@
 --                                                             LOCKED, as 'sending' with attempts + 1 and a new lease_token.
 --                                                             First puts expired leases back to 'retry_wait' ('dead' when
 --                                                             attempts >= 9), waiting the same backoff as fail. _lease_seconds must be 30..900 (else 22023).
---   public.complete_passkey_notification(_id, _lease_token)    'sent' only when the token matches; else false
+--                                                             While the shared order mail send pause is on, only a due
+--                                                             retry_wait row whose last_error_code is a sender config code
+--                                                             (quota_*, config_*) is claimed; none due -> nothing; no such
+--                                                             row (retry_wait or sending) -> 1 normal row (the first probe).
+--   public.complete_passkey_notification(_id, _lease_token)    'sent' only when the token matches; else false.
+--                                                             Also clears the shared send pause.
 --   public.fail_passkey_notification(_id, _lease_token, _error_code, _retry_after_seconds, _count_attempt DEFAULT true)
+--                                                             _count_attempt true: 'dead' at attempts >= 9, else 'retry_wait' with
+--                                                             next_attempt_at = now() + max(least(_retry_after_seconds, 86400),
+--                                                             60 * 2^(attempts-1) seconds, capped at 128 minutes). No jitter.
 --                                                             _count_attempt false (sender config failure: quota, key,
 --                                                             sender domain): attempts - 1, retry_wait, due in
 --                                                             max(900, _retry_after_seconds) s (capped at 86400) and not before the
 --                                                             pause's next probe time, never dead, and
 --                                                             private.set_order_email_pause in the same transaction
 --                                                             (same as fail_order_email 'config').
---                                                             complete_passkey_notification also clears that shared pause.
---   claim_passkey_notification, while that pause is on: only a due retry_wait row whose last_error_code is a sender config
---                                                             code (quota_*, config_*); none due -> nothing; no such row -> 1 normal row.
---                                                             'dead' at attempts >= 9, else 'retry_wait' with
---                                                             next_attempt_at = now() + max(least(_retry_after_seconds, 86400),
---                                                             60 * 2^(attempts-1) seconds, capped at 128 minutes). No jitter.
 --   public.skip_passkey_notification(_id, _lease_token, _reason)  'skipped' (row has no recipient)
 --   public.passkey_notification_recipients(_id)                (email, audience): subject_customer / subject_staff first,
 --                                                             then every active, unexpired admin when subject_is_staff.
+--                                                             Admins with auth.users.deleted_at set or banned_until in the
+--                                                             future are excluded.
 --
 -- ROLLBACK (one transaction, only while nothing uses them):
 --   DROP FUNCTION public.passkey_notification_recipients(uuid), public.skip_passkey_notification(uuid, uuid, text),
@@ -104,9 +108,11 @@ BEGIN
    WHERE o.status = 'sending' AND o.lease_expires_at <= pg_catalog.now();
 
   -- While the shared order mail send pause is on, this worker is its own prober (order mail's claim moves the pause's probe
-  -- time every minute). A row whose last failure was a sender config failure (last_error_code is one of the config codes,
-  -- which only a no-count fail writes) is the probe: only that row may be claimed, and only when it is due. With no such
+  -- time only when a probe is due, then 15 minutes ahead; it does not move it every minute). A row whose last failure
+  -- was a sender config failure (last_error_code is one of the config codes, which only a no-count fail writes) is the probe: only that row may be claimed, and only when it is due. With no such
   -- row yet, one normal row is claimed (the first probe). A probe row that is being held (sending) also blocks the others.
+  -- The config code list below (both places in this function) is the same list as private.set_order_email_pause's allowed
+  -- reasons and the order_email_send_pause reason CHECK: when one changes, change all of them together.
   SELECT p.paused INTO v_paused FROM private.order_email_send_pause p WHERE p.id;
   IF COALESCE(v_paused, false) AND EXISTS (
        SELECT 1 FROM private.passkey_notification_outbox o

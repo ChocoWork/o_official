@@ -309,6 +309,26 @@ describe('AccountPasskeys', () => {
     other.remove();
   });
 
+  test('DD-AUTH-065 フォーカス: 削除の失敗の応答より先にその行が名前の入力へ替わっていても、戻す先が無いだけで落ちない', async () => {
+    await renderWith();
+    let resolveDelete!: (value: unknown) => void;
+    mockDelete.mockReturnValue(new Promise((r) => (resolveDelete = r)));
+    fireEvent.click(screen.getAllByRole('button', { name: /を削除/ })[0]);
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '削除する' }));
+
+    // 削除の応答を待つ間に、同じ行を名前の変更へ替える。「削除」のボタンは行から無くなる。
+    fireEvent.click(screen.getAllByRole('button', { name: /名前を変更/ })[0]);
+    expect(document.getElementById('passkey-delete-a')).toBeNull();
+    (document.activeElement as HTMLElement).blur();
+    expect(document.activeElement).toBe(document.body);
+
+    await act(async () => {
+      resolveDelete({ ok: false });
+    });
+    expect(document.activeElement).toBe(document.body);
+    expect(screen.getByText(/削除できませんでした/)).toBeInTheDocument();
+  });
+
   test('DD-AUTH-065 削除の間はその行の「削除」が無効・aria-busy で、同じ鍵の削除を2回送れない。失敗の後は「削除」へフォーカスを戻す', async () => {
     await renderWith();
     let resolve!: (value: unknown) => void;
