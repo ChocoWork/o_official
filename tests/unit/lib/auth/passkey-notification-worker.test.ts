@@ -134,7 +134,7 @@ describe('runPasskeyNotificationWorker', () => {
     const result = await run(deps);
     expect(result.stopped).toBe('config');
     expect(deps.claim).toHaveBeenCalledTimes(1);
-    expect(deps.fail).toHaveBeenCalledWith('r1', 'tok-1', 'quota_daily', 300, false);
+    expect(deps.fail).toHaveBeenCalledWith('r1', 'tok-1', 'quota_daily', 900, false);
   });
 
   it('DD-AUTH-067 停止の決め（disabled）の時は claim を呼ばない', async () => {
@@ -142,6 +142,18 @@ describe('runPasskeyNotificationWorker', () => {
     deps.disabledReason.mockReturnValue('non_production_deployment');
     expect(await run(deps)).toEqual({ claimed: 0, sent: 0, retried: 0, dead: 0, skipped: 0, stopped: 'disabled' });
     expect(deps.claim).not.toHaveBeenCalled();
+  });
+
+  it('DD-AUTH-067 1通も送れず全部が恒久の失敗なら、complete でなく skip（all_recipients_permanent）にする', async () => {
+    const deps = makeDeps(
+      [row({ subjectIsStaff: true })],
+      [{ email: 'a@example.com', audience: 'subject_staff' }, { email: 'b@example.com', audience: 'admin' }],
+    );
+    deps.send.mockResolvedValue(PERMANENT);
+    const result = await run(deps);
+    expect(deps.skip).toHaveBeenCalledWith('row-1', 'tok-1', 'all_recipients_permanent');
+    expect(deps.complete).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ sent: 0, skipped: 1 });
   });
 
   it('DD-AUTH-067 恒久の失敗の宛先だけ飛ばし、一時的な失敗が無ければ complete する', async () => {
@@ -250,7 +262,7 @@ describe('runPasskeyNotificationWorker', () => {
     expect(result.stopped).toBe('config');
     expect(deps.claim).toHaveBeenCalledTimes(1);
     // 設定の失敗はこの行の失敗として数えない（countAttempt が偽。共有の一時停止は DB の関数が同じ取引で書く）
-    expect(deps.fail).toHaveBeenCalledWith('r1', 'tok-1', 'config_api_key', 300, false);
+    expect(deps.fail).toHaveBeenCalledWith('r1', 'tok-1', 'config_api_key', 900, false);
     expect(deps.fail).toHaveBeenCalledTimes(1);
   });
 

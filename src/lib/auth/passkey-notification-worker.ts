@@ -124,6 +124,7 @@ async function deliverRow(
     return 'skipped';
   }
 
+  let delivered = 0;
   let firstTransientCode: string | null = null;
   let maxRetryAfter = 0;
   for (const recipient of listed.value) {
@@ -148,11 +149,14 @@ async function deliverRow(
       return failRow('compose_error', 0);
     }
     const outcome = await deps.send(message);
-    if (outcome.ok) continue;
+    if (outcome.ok) {
+      delivered += 1;
+      continue;
+    }
     const { category, code, retryAfterSeconds } = outcome.failure;
     if (category === 'config') {
       // 注文のメールと同じ: この行の失敗として数えず（attempts を戻す）。共有の送信の一時停止は、DB の関数が同じ取引で書く
-      await deps.fail(claim.id, claim.leaseToken, safeCode(code), retryAfterSeconds ?? 300, false);
+      await deps.fail(claim.id, claim.leaseToken, safeCode(code), retryAfterSeconds ?? 900, false);
       return 'config';
     }
     if (category === 'permanent') continue;
@@ -161,6 +165,11 @@ async function deliverRow(
   }
 
   if (firstTransientCode !== null) return failRow(firstTransientCode, maxRetryAfter);
+  if (delivered === 0) {
+    // 1通も送れず、全部が恒久の失敗: 送れたことにしない（complete は共有の送信の一時停止を解くため）
+    await deps.skip(claim.id, claim.leaseToken, 'all_recipients_permanent');
+    return 'skipped';
+  }
   const completed = await deps.complete(claim.id, claim.leaseToken);
   if (!completed.ok || !completed.value) console.warn('[passkey-notification-worker] lease lost or complete failed', claim.id);
   return 'sent';

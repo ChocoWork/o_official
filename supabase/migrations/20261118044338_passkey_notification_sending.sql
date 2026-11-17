@@ -18,10 +18,13 @@
 --   public.fail_passkey_notification(_id, _lease_token, _error_code, _retry_after_seconds, _count_attempt DEFAULT true)
 --                                                             _count_attempt false (sender config failure: quota, key,
 --                                                             sender domain): attempts - 1, retry_wait, due in
---                                                             _retry_after_seconds (0..86400), never dead, and
+--                                                             max(900, _retry_after_seconds) s (capped at 86400) and not before the
+--                                                             pause's next probe time, never dead, and
 --                                                             private.set_order_email_pause in the same transaction
 --                                                             (same as fail_order_email 'config').
 --                                                             complete_passkey_notification also clears that shared pause.
+--   claim_passkey_notification, while that pause is on: only a due retry_wait row whose last_error_code is a sender config
+--                                                             code (quota_*, config_*); none due -> nothing; no such row -> 1 normal row.
 --                                                             'dead' at attempts >= 9, else 'retry_wait' with
 --                                                             next_attempt_at = now() + max(least(_retry_after_seconds, 86400),
 --                                                             60 * 2^(attempts-1) seconds, capped at 128 minutes). No jitter.
@@ -84,6 +87,7 @@ AS $$
 #variable_conflict use_column
 DECLARE
   v_id uuid;
+  v_paused boolean;
 BEGIN
   IF _lease_seconds IS NULL OR _lease_seconds < 30 OR _lease_seconds > 900 THEN
     RAISE EXCEPTION 'claim_passkey_notification: lease seconds out of range' USING ERRCODE = '22023';
@@ -99,12 +103,30 @@ BEGIN
          finished_at = CASE WHEN o.attempts >= 9 THEN pg_catalog.now() END
    WHERE o.status = 'sending' AND o.lease_expires_at <= pg_catalog.now();
 
-  SELECT o.id INTO v_id
-    FROM private.passkey_notification_outbox o
-   WHERE o.status IN ('pending', 'retry_wait') AND o.next_attempt_at <= pg_catalog.now()
-   ORDER BY o.seq
-   LIMIT 1
-   FOR UPDATE SKIP LOCKED;
+  -- While the shared order mail send pause is on, this worker is its own prober (order mail's claim moves the pause's probe
+  -- time every minute). A row whose last failure was a sender config failure (last_error_code is one of the config codes,
+  -- which only a no-count fail writes) is the probe: only that row may be claimed, and only when it is due. With no such
+  -- row yet, one normal row is claimed (the first probe). A probe row that is being held (sending) also blocks the others.
+  SELECT p.paused INTO v_paused FROM private.order_email_send_pause p WHERE p.id;
+  IF COALESCE(v_paused, false) AND EXISTS (
+       SELECT 1 FROM private.passkey_notification_outbox o
+        WHERE o.status IN ('retry_wait', 'sending')
+          AND o.last_error_code IN ('config_api_key', 'config_sender_domain', 'config_provider', 'config_site_url', 'quota_daily', 'quota_monthly')) THEN
+    SELECT o.id INTO v_id
+      FROM private.passkey_notification_outbox o
+     WHERE o.status = 'retry_wait' AND o.next_attempt_at <= pg_catalog.now()
+       AND o.last_error_code IN ('config_api_key', 'config_sender_domain', 'config_provider', 'config_site_url', 'quota_daily', 'quota_monthly')
+     ORDER BY o.seq
+     LIMIT 1
+     FOR UPDATE SKIP LOCKED;
+  ELSE
+    SELECT o.id INTO v_id
+      FROM private.passkey_notification_outbox o
+     WHERE o.status IN ('pending', 'retry_wait') AND o.next_attempt_at <= pg_catalog.now()
+     ORDER BY o.seq
+     LIMIT 1
+     FOR UPDATE SKIP LOCKED;
+  END IF;
   IF v_id IS NULL THEN
     RETURN;
   END IF;
@@ -163,12 +185,17 @@ BEGIN
   IF _count_attempt IS FALSE THEN
     UPDATE private.passkey_notification_outbox o
        SET status = 'retry_wait', attempts = GREATEST(o.attempts - 1, 0),
-           next_attempt_at = pg_catalog.now() + pg_catalog.make_interval(secs => LEAST(GREATEST(COALESCE(_retry_after_seconds, 0), 0), 86400)),
+           next_attempt_at = pg_catalog.now() + pg_catalog.make_interval(secs => LEAST(GREATEST(COALESCE(_retry_after_seconds, 0), 900), 86400)),
            last_error_code = _error_code, lease_token = NULL, lease_expires_at = NULL
      WHERE o.id = _id AND o.status = 'sending' AND o.lease_token = _lease_token;
     IF FOUND THEN
       -- same transaction as order mail's fail 'config': the shared send pause (same sender) is written with the row
       PERFORM private.set_order_email_pause(_error_code);
+      -- probe cadence like order mail: not before the pause's own next probe time (quota_daily: UTC midnight); at least 900 s
+      UPDATE private.passkey_notification_outbox o
+         SET next_attempt_at = GREATEST(o.next_attempt_at,
+               COALESCE((SELECT p.next_probe_at FROM private.order_email_send_pause p WHERE p.id), o.next_attempt_at))
+       WHERE o.id = _id;
       RETURN true;
     END IF;
     RETURN false;

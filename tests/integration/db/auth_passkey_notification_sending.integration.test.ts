@@ -207,8 +207,15 @@ describeLocalDb('passkey notification sending functions', (db) => {
 
   const pauseState = async () =>
     (await db().query('select paused, reason, next_probe_at from private.order_email_send_pause where id')).rows[0];
+  // The local pause row may be left paused by other suites / E2E; start from a known state (rolled back with the test).
+  const clearPause = async () => {
+    await db().query(`update private.order_email_send_pause set paused = false, reason = null, paused_at = null, next_probe_at = null where id`);
+  };
+  const failNoCount = async (id: string, token: string, code = 'quota_monthly') =>
+    db().query('select public.fail_passkey_notification($1,$2,$3,$4,false) as ok', [id, token, code, 0]);
 
   test('DATA-AUTH-019 fail with _count_attempt false gives the attempt back, is due after the retry seconds, never dead, and pauses order mail in the same transaction', async () => {
+    await clearPause();
     const id = await row({ status: 'retry_wait', attempts: 8 });
     const [c9] = await claim();
     expect(c9.attempts).toBe(9);
@@ -217,7 +224,9 @@ describeLocalDb('passkey notification sending functions', (db) => {
     expect(r.rows[0].ok).toBe(true);
     const after = await get(id);
     expect(after).toMatchObject({ status: 'retry_wait', attempts: 8, last_error_code: 'quota_daily', lease_token: null, lease_expires_at: null, finished_at: null });
-    expect(Number((await db().query(`select extract(epoch from next_attempt_at - now()) as s from private.passkey_notification_outbox where id = $1`, [id])).rows[0].s)).toBe(300);
+    expect(Number((await db().query(`select extract(epoch from next_attempt_at - now()) as s from private.passkey_notification_outbox where id = $1`, [id])).rows[0].s)).toBeGreaterThanOrEqual(900 - 1);
+    // quota_daily waits for the pause's own next probe time (UTC midnight) like order mail
+    expect((await db().query(`select o.next_attempt_at >= p.next_probe_at as ok from private.passkey_notification_outbox o, private.order_email_send_pause p where o.id = $1 and p.id`, [id])).rows[0].ok).toBe(true);
     expect(await pauseState()).toMatchObject({ paused: true, reason: 'quota_daily' });
     // not due yet: nothing to claim until the row's own backoff has passed
     expect(await claim()).toEqual([]);
@@ -228,6 +237,43 @@ describeLocalDb('passkey notification sending functions', (db) => {
     const wrong = await db().query('select public.fail_passkey_notification($1,$2,$3,$4,false) as ok', [id, randomUUID(), 'quota_daily', 0]);
     expect(wrong.rows[0].ok).toBe(false);
     expect((await get(id)).status).toBe('sending');
+  });
+
+  test('DATA-AUTH-019 claim while the shared pause is on: a config-failed row not yet due blocks every other row; once due only it is claimed', async () => {
+    await clearPause();
+    const probe = await row();
+    const [c1] = await claim();
+    await failNoCount(probe, c1.lease_token);
+    const other1 = await row();
+    const other2 = await row();
+    expect((await pauseState()).paused).toBe(true);
+    expect(await claim()).toEqual([]);
+    await db().query(`update private.passkey_notification_outbox set next_attempt_at = now() where id = $1`, [probe]);
+    const got = await claim();
+    expect(got).toHaveLength(1);
+    expect(got[0].id).toBe(probe);
+    expect([other1, other2]).not.toContain(got[0].id);
+    // the probe row is held now (sending): the others still wait
+    expect(await claim()).toEqual([]);
+  });
+
+  test('DATA-AUTH-019 claim while the shared pause is on and no row has failed on config: only one normal row (the first probe)', async () => {
+    await clearPause();
+    await db().query(`select private.set_order_email_pause('config_api_key')`);
+    const a = await row();
+    await row();
+    const first = await claim();
+    expect(first).toHaveLength(1);
+    expect(first[0].id).toBe(a);
+  });
+
+  test('DATA-AUTH-019 claim when the pause is off ignores the config-failed marker and claims normally', async () => {
+    await clearPause();
+    const id = await row({ status: 'retry_wait' });
+    await db().query(`update private.passkey_notification_outbox set last_error_code = 'quota_daily', next_attempt_at = now() + interval '1 hour' where id = $1`, [id]);
+    const other = await row();
+    const got = await claim();
+    expect(got.map((x: { id: string }) => x.id)).toEqual([other]);
   });
 
   test('DATA-AUTH-019 fail with _count_attempt false and a code the shared pause does not know raises 22023 and leaves the row untouched', async () => {
