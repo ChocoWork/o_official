@@ -188,3 +188,15 @@ Vercel の Production の環境変数に、ビルドの前に入れること。*
 以前は `POST /api/auth/register` が `x-admin-token`（又は `Authorization: Bearer`）を `ADMIN_API_KEY` と照合し、一致すると管理の作成の枝（確認なしで会員を作る）に切り替えていた。波 1-B（2026-10-26）でこの枝を削除した（SEC-AUTH-017）。今は `src` のどこにも `ADMIN_API_KEY` を読む所が無く、`/api/auth/register` はいつも公開の会員登録として扱う。E2E の固定の環境（`scripts/e2e/environment.ts` の `E2E_FIXED_ENV`）からも外した。
 
 運用の作業: 本番（Vercel）の環境変数に `ADMIN_API_KEY` があれば削除する。残っていても動きは変わらないが、読まれない鍵を置き続けない。管理者が会員を作るときは、管理画面の `POST /api/admin/create-user`（権限 `admin.users.manage`）を使う。
+
+## SUPABASE_SECRET_KEY・NEXT_PUBLIC_PASSKEY_START_MODE・PASSKEY_START_DEV_IP（パスキーのログインの始め。段1b）
+
+> 確認日: 2026-11-17 | 対象: `src/lib/auth/passkey-start-config.ts`・`passkey-start-mode.ts`、`src/lib/build-env-guard.ts` | 設計: [パスキー設計](../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-1）| 手順: [本番の Supabase Auth の設定](supabase-auth-config.md)
+
+名前だけをここに書く。値は文書・チャット・コミットに書かない。
+
+| 名前 | 置き場 | 意味 |
+| --- | --- | --- |
+| `SUPABASE_SECRET_KEY` | Vercel の環境変数（サーバーだけ）。手元は `supabase status -o json` の `SECRET_KEY` | `sb_secret_` で始まる鍵。始め (a) が GoTrue を呼ぶ時に使い、`Sb-Forwarded-For` はこの鍵でだけ受け付けられる。古い `service_role` の JWT は使わない（添え書きが効かない） |
+| `NEXT_PUBLIC_PASSKEY_START_MODE` | Vercel の環境変数 | `server`（既定。(a)）または `browser`（(b)）。`NEXT_PUBLIC_` なのでブラウザには**ビルドの時**に入る。変えたら再ビルド（再デプロイ）が要る |
+| `PASSKEY_START_DEV_IP` | 手元の `.env.development.local` だけ | 手元の開発で始めの窓口に IP を渡す。手元の Supabase の住所の時だけ効く。Vercel・本番の Supabase の住所で値があると、ビルドの見張りと起動の見張りが止まる。E2E は `CLIENT_IP_HEADER` を使うので要らない |

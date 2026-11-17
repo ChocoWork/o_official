@@ -188,7 +188,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 ### 順
 
 1. 移行 A（設定・認めたパスキー・窓・知らせの表と関数）を、**この master のアプリをデプロイするより先に**当てる。`src/lib/auth/admin-rbac.ts` が RPC `passkey_approved_count`（A の関数）を呼ぶので、A が無い本番に先にデプロイすると、権限のある店員の管理 API はすべて 503 になる。
-2. 移行 B（フックの関数）、C（引き金）、D（3条件の関数）を、1本ずつ MCP の `apply_migration` で当てる。当てるたびに、上の各節の「突き合わせ」（`md5(statements[1])` がファイルの MD5 と同じ）を確かめる。
+2. 移行 B（フックの関数）、C（引き金）、D（3条件の関数）、**F（段1b。窓口が使う関数と `passkey_approve` の作り直し）**を、1本ずつ MCP の `apply_migration` で当てる。F は `passkey_approve` を置き換えるので A の後、かつ**窓口のアプリをデプロイするより先**（B・C・D・E とは前後どちらでもよい）。F の確かめ・戻し方は上の「移行 F」の節。当てるたびに、上の各節の「突き合わせ」（`md5(statements[1])` がファイルの MD5 と同じ）を確かめる。
 3. 本番の Auth の設定（パスキー有効・`rp_id`・`rp_origins`。「本番の設定」の節）を、ダッシュボードで行う。
 4. Auth のフック（`public.passkey_access_token_hook`）を、**B を当てた後で**ダッシュボードに登録する。B より先に登録すると、GoTrue がトークンを出すたびに失敗し、お客さんを含めただれもログインできない。
 5. アプリをデプロイする（A が当たっていること）。
@@ -200,12 +200,14 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 - 移行 C の引き金: 本番の `postgres` が `auth.webauthn_credentials` に `TRIGGER` の権限を持つこと（`select has_table_privilege('postgres','auth.webauthn_credentials','TRIGGER');`）。持たなければ C は当たらない。
 - 移行 A の関数が鍵を突き合わせる: 本番の `postgres` が `auth.webauthn_credentials` を `SELECT` できること（`select has_table_privilege('postgres','auth.webauthn_credentials','SELECT');`）。
 - 本番の GoTrue の版が、フックの戻り（event 全体を返す形）と、パスキーの API（supabase-js 2.119.0 固定）を通すこと。
-- 最初の店長: `npm run admin:bootstrap`（パスワード＋TOTP）で作った店長が /admin に入れるのは、次の3つのどれも済んでいない間だけ。(1) この master のアプリのデプロイ（`admin-rbac` が旗も移行 E も関係なく、パスキーの `amr` と認めた鍵2本を求める）、(2) 移行 E、(3) フックの登録。どれか1つが済むと、管理 API は 403 `MFA required`・画面は「2要素認証が必要です」で止まる。そのあとの最初の店長には、段1b の招待の流れが要る。[first-admin-bootstrap.md](./first-admin-bootstrap.md) を読む。
+- 段1b の環境変数（名前だけ。[secrets.md](./secrets.md)）: `SUPABASE_SECRET_KEY`・`NEXT_PUBLIC_PASSKEY_START_MODE`・`PASSKEY_START_DEV_IP`。始めの `Sb-Forwarded-For` の有効化と確かめは [supabase-auth-config.md](./supabase-auth-config.md) の「パスキーのログインの始めと `Sb-Forwarded-For`」。
+- 最初の店長: `npm run admin:bootstrap`（パスワード＋TOTP）で作った店長が /admin に入れるのは、次の3つのどれも済んでいない間だけ。(1) この master のアプリのデプロイ（`admin-rbac` が旗も移行 E も関係なく、パスキーの `amr` と認めた鍵2本を求める）、(2) 移行 E、(3) フックの登録。どれか1つが済むと、管理 API は 403 `MFA required`・画面は「2要素認証が必要です」で止まる。そのあとの最初の店長には、段3の招待の流れが要る。[first-admin-bootstrap.md](./first-admin-bootstrap.md) を読む。
 
 ### 戻し方の順（移行をまたぐ）
 
 1. 先に、ダッシュボードで Auth のフックの登録を外す（外さずに B を戻すと、フックの関数が無いので全員のログインが止まる）。
-2. 次に、逆順で E → D → C → B → A の順に戻す。各移行の戻し方は、上の各節とファイルのヘッダーの `ROLLBACK`。
+2. 次に、逆順で F → E → D → C → B → A の順に戻す（F が最初）。各移行の戻し方は、上の各節とファイルのヘッダーの `ROLLBACK`。
+   - F: 3つの新しい関数を `DROP` し、`passkey_approve` を A の本体に戻す（アプリの窓口を戻すか止めた後。窓口が関数を呼ぶので、先に F を戻すと窓口が失敗する）。
    - E: `20261029120100_sec_has_permission_aal2_member_rls.sql` の本体に戻す（A〜D の関数を使わなくなる）。
    - D: 関数3本を落とす（E を戻した後）。
    - C: 先に関数を空（`RETURN NULL` だけ）にし、引き金の削除は `supabase_auth_admin` の手順（サポートに依頼）。

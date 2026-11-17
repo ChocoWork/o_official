@@ -310,6 +310,53 @@ Security notifications が見当たらない時は、右上の自分のアイコ
 
 確認する点: 手元の `supabase/.env` を CLI が読むかは未検証なので、`npm run db:start` の前にシェルにも同じ変数を設定する。起動後に auth のコンテナの `GOTRUE_SECURITY_CAPTCHA_SECRET` が公開のテスト用の値になっていること。
 
+## パスキーのログインの始めと `Sb-Forwarded-For`（段1b）
+
+> 確認日: 2026-11-17 | 設計: [パスキー設計](../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-1 の (a)・8-2）| 環境変数の名前: [secrets.md](./secrets.md)
+
+### 前提
+
+- 始め (a): アプリのサーバーが `sb_secret_` の鍵で GoTrue の `/passkeys/authentication/options` を呼び、お客さんの IP を `Sb-Forwarded-For` に添える。GoTrue の始めの制限は IP ごとに5分30回で、上げる設定は無い（確定）。
+- `Sb-Forwarded-For` は `sb_secret_` の鍵でだけ受け付けられ、**プロジェクトの設定で有効にする必要がある**。古い `service_role` の JWT では添え書きが効かない。
+- 手元の GoTrue は `sb_secret_` と `Sb-Forwarded-For` の呼び出しを 200 で通した（段1b Task 3）。IP ごとの回数は手元では数えられないので、本番の確かめに回す。
+
+### 有効にする手順
+
+**本番の独自のドメインが決まり、本番でパスキーを有効にした後に行う**（設計 12-2 の6。仮の住所では有効にしない）。
+
+1. ダッシュボード、または Management API の `GET /v1/projects/{ref}/config/auth` の応答で、`Sb-Forwarded-For` に当たる項目の鍵名を確かめる。**鍵名は未確認。推測で書かない**。見つからなければ、Supabase のサポートか文書で確かめる。
+2. その項目を有効にする。
+3. Vercel の環境変数 `SUPABASE_SECRET_KEY` に `sb_secret_` の鍵を入れる（古い `service_role` の JWT では添え書きが効かない）。
+4. 再デプロイする。
+5. 確かめる。**アプリを通さず GoTrue を直に叩く**（アプリの20回の制限が先に 429 を返すため）。
+   - `apikey` に `sb_secret_`、`Sb-Forwarded-For` に IP A を付けて、始めを31回呼ぶ。最後が 429 になる。
+   - 続けて `Sb-Forwarded-For` を IP B にして1回呼ぶ。200 になれば、IP ごとに数えている。
+   - IP B も 429 なら、添え書きが効いていない。下の (b) に切り替える。
+   - 叩く時は、鍵を手元の履歴に残さない。鍵は環境変数のファイルから読み（`.env*` の中身を画面に出さず、シェルの変数に入れて使う）、コマンドの行に値を直に書かない。
+
+### 効かなかった時（(b) への切り替え）
+
+- `NEXT_PUBLIC_PASSKEY_START_MODE=browser` に変えて再ビルド・再デプロイする。ブラウザに入る値なので、再ビルドが要る。
+- (b) の前提: 本番の GoTrue で captcha を有効にする（上の「段階 B」）。(b) では始めの回数の制限は GoTrue の IP ごと5分30回だけで、アプリ側の制限（20回）は効かない。
+- (b) の時、(a) の窓口は 409 で断る。
+
+### `sb_secret_` が captcha を免除しない時（設計 8-2 の2）
+
+(a) にも Turnstile のトークンが要る。**段1b の窓口は対応しない**（別の計画）。免除されるかの確かめを先に行う。
+
+### 手元の開発
+
+`npm run dev` は IP の見出しを信じない（`getClientIp` が `null`）ので、始めの窓口が 503 になる。`PASSKEY_START_DEV_IP=<適当な IP>` を `.env.development.local` に置く。`next dev` だけが読む場所で、`.env.local` に置くと本番ビルドの E2E（`next start`）にも入るので、置き場所を分けて事故を防ぐ。手元の Supabase の住所の時だけ効き、本番・Vercel では値があるとビルドと起動が止まる。E2E は `CLIENT_IP_HEADER` で足りるので要らない。
+
+### 本番の確認の一覧（設計 8-2）との対応
+
+| 8-2 の項目 | 段1b が作った道 | 本番での確かめ |
+| --- | --- | --- |
+| 1. 始めの制限と `Sb-Forwarded-For` の IP ごとの数え方 | 始め (a)（`login/start`）と (b)（`browser-start.ts`）、`NEXT_PUBLIC_PASSKEY_START_MODE` で切り替え | 上の「有効にする手順」の5。効かなければ (b) |
+| 2. `sb_secret_` が captcha を免除するか | (a) は `sb_secret_` で呼ぶ | 免除されなければ別の計画（上の節） |
+| 8. 古い `service_role` の鍵が captcha を免除するか | (a) は古い鍵で呼ばない | 本番で確かめるだけ（アプリは使わない） |
+| 9. フックの拒否の応答の形 | 更新の拒否を印 `[staff-passkey-required]` で見分け、セッションを終わらせる（`refresh`） | フックの登録後に、拒否の応答（403・`unknown`・フックの文）が手元と同じか確かめる |
+
 ## 確かめ
 
 確かめの実行手順（読み・送り・読み戻し・戻しの作業用スクリプト）は未追跡の作業ディレクトリに置く。この文書には手順と期待値だけを書く。
@@ -357,3 +404,4 @@ Security notifications が見当たらない時は、右上の自分のアイコ
 - `GET` の応答の鍵名（確認メールの雛形の鍵など）。実際の応答で最終確認する。
 - 本番の Turnstile のウィジェットの有無。
 - ダッシュボードの画面の名前（上の表は作業の時に確かめて直す）。
+- `Sb-Forwarded-For` を有効にする項目の鍵名（上の「パスキーのログインの始めと `Sb-Forwarded-For`」の手順 1。未確認）と、本番で IP ごとに数えるか。
