@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> パスキー段1b Task 3 確認日: 2026-11-17。Route Handler を1ファイル・1メソッド足した（199ファイル・251メソッド、表は198行・250メソッド）。`POST /api/auth/passkey/login/start`（ログインの始め (a)）。契約は [基本設計の認証](../areas/auth.md) の API-AUTH-022。
+>
 > 会計の計画3 Task 13 確認日: 2026-11-15。Route Handler の数は変えない（198ファイル・250メソッド、表は197行・249メソッド）。既存の窓口が DB の判断待ちの止めを 409 `DISPUTE_HOLD`（`orderIds`）で返すようになり（返金・返金の確かめ直し・支払い済みのキャンセル・返品の返金・受け取り・発送票の確定）、返金の材料・返品の画面・返品を作る材料の応答に `disputeHold` が付く。契約は [API仕様](api-spec.md)の各行。
 >
 > 会計の計画3 Task 11c 確認日: 2026-11-14。Route Handler を1ファイル・1メソッド足した（198ファイル・250メソッド、表は197行・249メソッド）: `/api/admin/accounting/refund-settlements/candidates`。契約は [API仕様](api-spec.md) の「管理:会計・法定保存」。
@@ -206,6 +208,7 @@
 | `/api/auth/password-reset/request` | `POST` | [route.ts](../../../src/app/api/auth/password-reset/request/route.ts) |
 | `/api/auth/password-reset/session` | `GET` | [route.ts](../../../src/app/api/auth/password-reset/session/route.ts) |
 | `/api/auth/password/change/confirm` | `POST` | [route.ts](../../../src/app/api/auth/password/change/confirm/route.ts) （波 6: 会員認証＋CSRF、admin・supporter は aal2 必須。確認コードと新しいパスワードで変更し、全 session を失効する。回数制限 `auth:password_change_confirm` の IP 20回/600秒・本人ごと 5回/600秒、監査 `password_change_confirm`。API-AUTH-021） |
+| `/api/auth/passkey/login/start` | `POST` | [route.ts](../../../src/app/api/auth/passkey/login/start/route.ts) （段1b: 認証前。設定が browser なら 409、IP が取れなければ 503、回数制限 `auth:passkey:login:start` の IP 20回/300秒、鍵は `sb_secret_` だけ。GoTrue のパスキーの選択肢を取り `userVerification` を `required` にして返す。契約は [API-AUTH-022](../areas/auth.md)） |
 | `/api/auth/password/change/start` | `POST` | [route.ts](../../../src/app/api/auth/password/change/start/route.ts) （波 6: 会員認証＋CSRF、admin・supporter は aal2 必須。現行パスワードを確かめ、メールに8桁の確認コードを送る。回数制限 `auth:password_change_start` の IP 20回/600秒・本人ごと 5回/600秒、監査 `password_change_start`。API-AUTH-020） |
 | `/api/auth/refresh` | `POST` | [route.ts](../../../src/app/api/auth/refresh/route.ts) |
 | `/api/auth/register` | `POST` | [route.ts](../../../src/app/api/auth/register/route.ts) |
