@@ -77,7 +77,7 @@ export async function POST(request: Request): Promise<Response> {
     if (!passkey) return await deny('gotrue_bad_response', { error: 'passkey_register_failed' }, 502);
 
     let count: number | undefined;
-    if (guard.isStaff) {
+    if (guard.isStaff || guard.mode === 'window') {
       const approved = await approve(actorId, passkey.id, guard.mode === 'window' ? 'window' : 'reauth');
       if (!approved.ok) {
         const removed = await deleteCreatedPasskey(actorId, passkey.id);

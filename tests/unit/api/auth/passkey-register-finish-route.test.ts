@@ -18,6 +18,7 @@ jest.mock('@/lib/auth/authenticate', () => ({
 }));
 jest.mock('@/lib/auth/passkey-approval-rpc', () => ({
   isStaff: jest.fn(),
+  hasOpenInvite: jest.fn(),
   windowIsOpen: jest.fn(),
   approvedCount: jest.fn(),
   approve: jest.fn(),
@@ -30,7 +31,7 @@ import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { requireCsrfOrDeny } from '@/lib/csrfMiddleware';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { authenticateRequest, checkAuthSessionLiveness } from '@/lib/auth/authenticate';
-import { approve, approvedCount, isStaff, windowIsOpen } from '@/lib/auth/passkey-approval-rpc';
+import { approve, approvedCount, hasOpenInvite, isStaff, windowIsOpen } from '@/lib/auth/passkey-approval-rpc';
 import { registrationVerify } from '@/lib/auth/passkey-gotrue';
 import { readAttestationUserVerified } from '@/lib/auth/passkey-uv';
 import { logAudit } from '@/lib/audit';
@@ -84,6 +85,7 @@ beforeEach(() => {
   csrf.mockResolvedValue(undefined);
   liveness.mockResolvedValue('active');
   staffMock.mockResolvedValue({ ok: true, value: true });
+  (hasOpenInvite as jest.Mock).mockResolvedValue({ ok: true, value: false });
   windowMock.mockResolvedValue({ ok: true, value: true });
   countMock.mockResolvedValue({ ok: true, value: 1 });
   approveMock.mockResolvedValue({ ok: true });

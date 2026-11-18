@@ -784,6 +784,20 @@ flowchart LR
 | 状態 | 推定 |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-2-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 2） |
 
+### THR-AUTH-053 招待の窓の外・窓の上限を越えて、役割の無い人が鍵を足す
+
+| 属性 | 値 |
+| --- | --- |
+| 守るもの | 設計 6-2（鍵は窓の中の最初の2本だけ免除）・店員の鍵と役割 |
+| 脅威 | (1) 窓が閉じた後も、招待の人がお客さんの「10分以内の otp」で登録の窓口を通り、窓の外で鍵を足す。(2) 窓の中で3本目以降を免除で認める。(3) 結び付かない・古いセッションの Cookie で招待の窓を使う |
+| 起こり方 | 役割が無い人を無条件にお客さんとして扱う・窓口が窓と招待の行を呼ぶたびに確かめない |
+| 影響 | 窓の外で攻撃者の鍵が店員の鍵に混ざり、役割の有効化の確かめを通る |
+| 対策 | SEC-AUTH-057（窓口は呼ばれるたびに招待・窓・生きたセッション・本数を確かめる・窓が閉じたら `window_closed`・2本以上は `reauth_required`）、DD-AUTH-079 |
+| ASVS | V2.5.4・V3.3.2（当てはめは推定） |
+| 根拠 | 段3a の Task 6b（レビュー C-1） |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6b-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6b） |
+
 ### THR-AUTH-054 無操作の時刻を悪用して、席を離れた店員の権限を延ばす・時刻の行の失敗や偽の行で無操作の上限を外す
 
 | 属性 | 値 |

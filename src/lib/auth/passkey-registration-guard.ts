@@ -5,7 +5,7 @@ import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { requireCsrfOrDeny } from '@/lib/csrfMiddleware';
 import { authenticateRequest, authFailureResponse, checkAuthSessionLiveness } from '@/lib/auth/authenticate';
 import { extractAuthToken } from '@/lib/auth/request-token';
-import { approvedCount, isStaff, windowIsOpen } from '@/lib/auth/passkey-approval-rpc';
+import { approvedCount, hasOpenInvite, isStaff, windowIsOpen } from '@/lib/auth/passkey-approval-rpc';
 import { evaluateRegistrationAccess, type RegistrationMode } from '@/lib/auth/passkey-recent-auth';
 
 export type RegistrationGuardResult =
@@ -67,9 +67,17 @@ export async function guardPasskeyRegistration(
   const staff = await isStaff(userId);
   if (!staff.ok) return deny('staff_check_unavailable', { error: 'passkey_register_unavailable' }, 503, userId);
 
+  // 役割が無くても、有効な招待があれば窓の道（案 B）。店員と同じく結び付いた生きたセッションを求める。
+  let invitePending = false;
+  if (!staff.value) {
+    const invite = await hasOpenInvite(userId);
+    if (!invite.ok) return deny('invite_check_unavailable', { error: 'passkey_register_unavailable' }, 503, userId);
+    invitePending = invite.value;
+  }
+
   let windowOpen = false;
   let count = 0;
-  if (staff.value) {
+  if (staff.value || invitePending) {
     // 旗に関わらず、アプリに結び付いた生きたセッションだけ（admin-rbac と同じ。SEC-AUTH-045）。
     const liveness = await checkAuthSessionLiveness(claims.session_id, true);
     if (liveness === 'unavailable') return deny('session_check_unavailable', { error: 'Service temporarily unavailable' }, 503, userId);
@@ -85,6 +93,8 @@ export async function guardPasskeyRegistration(
     claims: claims as { amr?: unknown },
     isStaff: staff.value,
     windowOpen,
+    inviteWindowOpen: !staff.value && windowOpen,
+    inviteOpen: invitePending,
     approvedCount: count,
     nowSeconds: Date.now() / 1000,
   });

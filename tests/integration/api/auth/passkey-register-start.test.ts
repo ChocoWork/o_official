@@ -57,6 +57,7 @@ beforeEach(() => {
   approved = 0;
   rpc = jest.fn(async (name: string) => {
     if (name === 'passkey_is_staff') return { data: isStaff, error: null };
+    if (name === 'staff_invite_open') return { data: false, error: null };
     if (name === 'passkey_window_is_open') return { data: windowOpen, error: null };
     if (name === 'passkey_approved_count') return { data: approved, error: null };
     return { data: null, error: null };

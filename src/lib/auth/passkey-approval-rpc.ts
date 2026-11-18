@@ -100,6 +100,18 @@ export function windowIsOpen(userId: string, sessionId: string): Promise<RpcResu
 }
 
 /**
+ * その利用者に、取り消し・有効化されておらず期限内の店員の招待があるか（`staff_invite_open`）。
+ *
+ * @remarks 役割の無い招待の人を、お客さんの道に落とさないための確かめ。DB の誤りは `{ ok: false }`（閉じる側）。
+ *
+ * @impl IMPL-AUTH-371
+ * @design DD-AUTH-079
+ */
+export function hasOpenInvite(userId: string): Promise<RpcResult<boolean>> {
+  return callChecked('staff_invite_open', { p_user_id: userId }, isBoolean);
+}
+
+/**
  * `passkey_approve` の失敗を理由に直す。`23505` は `stale`、`55000` は `window_full`、`42501` で `PASSKEY_REAUTH_NOT_ALLOWED`
  * （認めた鍵が0本の店員の `reauth`）は `reauth_not_allowed`、そのほかは `other`。
  *

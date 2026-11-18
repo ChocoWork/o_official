@@ -5587,6 +5587,43 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 
 `private.staff_invite_issue_manual` が返した43字の合言葉で `POST /api/auth/staff/invite/start` が 200 になり、`passkey_window_is_open` が真になる（SQL とアプリのハッシュの入力が同じ）。Origin が違う要求は 403 で何も使い切られない。使い切った後の同じ合言葉は 400。消費した後に GoTrue や結びが失敗したら、作ったセッションを終わらせて 500、結び付けはしない。
 
+### FR-AUTH-042 登録の窓口は、役割が無くても有効な招待の窓の中の人を window として扱う
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-026 |
+| 根拠 | 案 B の招待の人は、鍵が2本そろうまで役割が無い。窓口が「お客さん」と見なすと鍵を認めず、最後の有効化が必ず `KEYS_SHORT` で落ちる。処理は DD-AUTH-079、守りは SEC-AUTH-057 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-recent-auth.test.ts`、`tests/unit/lib/auth/passkey-registration-guard.test.ts`、`tests/unit/api/auth/passkey-register-invite-window.test.ts`）、E2E（`e2e/FR-LOGIN-065-staff-register-window.spec.ts`、FR-AUTH-042-AC-01・02） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6b-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6b） |
+| 優先度 | MUST |
+
+規則: (1) 店員でなくても、有効な招待があり（`staff_invite_open`）、その `session_id` に結んだ窓が開いていれば `window`。鍵は `passkey_approve(…, 'window')` で認める。(2) 結び付いた生きたセッション（`checkAuthSessionLiveness(session_id, true)`）を店員と同じく求める。(3) 窓が閉じた・別のセッションなら、お客さんの「10分以内」の道に落とさず `window_closed`。(4) 認めた鍵が2本以上なら `reauth_required`（窓の免除は最初の2本まで）。(5) 招待の無いお客さんは今のまま。
+
+### FR-AUTH-042-AC-01 役割が無くても、招待の窓の中の人は登録の始めが 200 で mode は window
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-042 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-065-staff-register-window.spec.ts`。390・768・1280 の3幅） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6b-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6b） |
+
+招待の POST で作ったセッションの Cookie で `POST /api/auth/passkey/register/start` を呼ぶと、200 で `mode` は `window`。
+
+### FR-AUTH-042-AC-02 窓が閉じた人は、お客さんの道に落ちず 403 window_closed
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-042 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-065-staff-register-window.spec.ts`。3幅） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6b-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6b） |
+
+窓を閉じた後の `POST /api/auth/passkey/register/start` は 403 で、本文は `{ error: 'registration_not_allowed', reason: 'window_closed' }`。
+
 ### FR-AUTH-044 店員の無操作が1時間を過ぎたら、DB の `has_permission` が偽になる（移行 D・E）
 
 | 属性 | 値 |
@@ -7820,6 +7857,19 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 守ること: (1) リンクの元は `checkSiteUrlForEmail()`（サイトの設定の住所。本番は https のみ）だけで、要求の Host・Origin・Referer・x-forwarded-* を使わない。(2) メールの送り手・サイトの住所が使えない時は、鍵を消す発行の前に 503 で断る。送りの失敗は 502 で、行は残し、同じ人への再発行が古い行を取り消す。(3) 今の有効な店員への `invite`・`promote` は DB が `STAFF_ALREADY_STAFF` で断り、鍵は消えない。やり直しは確認の語・理由・自分自身と最後の店長の拒否を通る。(4) 合言葉はメールのリンクの `#` にだけ置き、ログ（RPC の名前とコードだけ）・監査・応答・理由の符号に出さない。監査には理由の長さだけを残す。(5) 応答はお客さんのアカウントが在ったかを返さない。(6) 降格と取り消しの後は、その人のログインを全部終わらせる。降格は `staff_demote`（招待も取り消す）だけを使う。(7) 権限・CSRF・回数の枠を通る前は、何も読まない・作らない。
 
 残る危険として受け入れること: 招待のメールを受け取った人が、リンクを第三者に転送すれば、その人が窓を開ける（リンクは1回きり・24時間・取り消せる）。
+
+### SEC-AUTH-057 招待の窓の人も、窓口は呼ばれるたびに招待・窓・生きたセッション・鍵の本数を確かめ直し、お客さんの道に落とさない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-053 |
+| 根拠 | 招待の窓の人はアクセストークンが窓より長く残る。窓が閉じた後にお客さんの「10分以内の otp」の道に落とすと、窓の外で鍵を足せる。鍵の本数の上限を外すと、3本目以降も窓の免除で認められる |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-recent-auth.test.ts`、`tests/unit/api/auth/passkey-register-invite-window.test.ts`）、E2E（`e2e/FR-LOGIN-065-staff-register-window.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6b-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6b） |
+| 優先度 | MUST |
+
+守ること: (1) 招待の確かめ・窓・本数のどれかが読めなければ 503（閉じる側）。(2) 窓が閉じても有効な招待があれば `window_closed`（お客さんの道に落とさない）。(3) 窓の中でも認めた鍵が2本以上なら `reauth_required`。(4) 結び付いた生きたセッションでなければ 401。(5) 招待の無いお客さんの道は変えない。
 
 ## 派生要件
 

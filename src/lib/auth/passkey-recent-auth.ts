@@ -40,6 +40,7 @@ function isRecent(latest: number | null, nowSeconds: number, maxAgeSeconds: numb
  * かつ認めた鍵が `STAFF_MIN_APPROVED_PASSKEYS`（2）未満の間だけ `window`（窓の免除は最初の2本まで）。`approvedCount` が整数でない値は、窓を認めない（閉じる側）。
  * どちらでもない時: パスキーの入り直しが古い店員、窓が開いていても認めた鍵が2本以上（または数が不明）の店員は `reauth_required`、
  * パスキーの印が無く窓も閉じている店員（メールのコードだけのセッションなど）は `window_closed`。
+ * 招待の窓の人（役割が無く、`inviteWindowOpen`）: 認めた鍵が2本未満なら `window`、2本以上なら `reauth_required`。窓が閉じて招待の行だけ有効（`inviteOpen`）なら `window_closed`（お客さんの道に落とさない）。
  * お客さん: 10分以内のパスキーかメールのコード（`otp`）なら `customer`。外れたら `reauth_required`。Google（`oauth`）は含めない。
  * 今の秒は切り捨てる。未来の時刻は60秒までの時計のずれとして通す。
  */
@@ -49,9 +50,20 @@ export function evaluateRegistrationAccess(input: {
   windowOpen: boolean;
   approvedCount: number;
   nowSeconds: number;
+  /** 役割が無くても、その `session_id` に結んだ招待の窓が開いているか（段3a Task 6b）。 */
+  inviteWindowOpen?: boolean;
+  /** その人に有効な招待の行があるか。窓が閉じた招待の人をお客さんの道に落とさないために使う。 */
+  inviteOpen?: boolean;
 }): RegistrationAccess {
-  const { claims, isStaff, windowOpen, approvedCount, nowSeconds } = input;
+  const { claims, isStaff, windowOpen, approvedCount, nowSeconds, inviteWindowOpen, inviteOpen } = input;
   const amr = claims?.amr;
+
+  if (!isStaff && (inviteWindowOpen === true || inviteOpen === true)) {
+    // 招待の窓の人はお客さんの「10分以内」の道を使わない。窓が開いていて2本未満の間だけ window。
+    if (inviteWindowOpen !== true) return { ok: false, reason: 'window_closed' };
+    const room = Number.isInteger(approvedCount) && approvedCount < STAFF_MIN_APPROVED_PASSKEYS;
+    return room ? { ok: true, mode: 'window' } : { ok: false, reason: 'reauth_required' };
+  }
 
   if (!isStaff) {
     const latest = latestAmrTimestamp(amr, ['passkey', 'otp']);

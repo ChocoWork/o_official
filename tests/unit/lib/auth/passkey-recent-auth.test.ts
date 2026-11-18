@@ -2,6 +2,17 @@ import { evaluateRegistrationAccess } from '@/lib/auth/passkey-recent-auth';
 
 const NOW = 1_800_000_000;
 const passkeyAt = (ts: unknown) => ({ amr: [{ method: 'passkey', timestamp: ts }] });
+const invitee = (over: Partial<Parameters<typeof evaluateRegistrationAccess>[0]> = {}) =>
+  evaluateRegistrationAccess({
+    claims: { amr: [{ method: 'otp', timestamp: NOW - 1800 }] },
+    isStaff: false,
+    windowOpen: true,
+    inviteWindowOpen: true,
+    inviteOpen: true,
+    approvedCount: 0,
+    nowSeconds: NOW,
+    ...over,
+  });
 const staff = (over: Partial<Parameters<typeof evaluateRegistrationAccess>[0]> = {}) =>
   evaluateRegistrationAccess({ claims: null, isStaff: true, windowOpen: false, approvedCount: 0, nowSeconds: NOW, ...over });
 const customer = (claims: { amr?: unknown } | null) =>
@@ -85,5 +96,26 @@ describe('DD-AUTH-056 evaluateRegistrationAccess（お客さん）', () => {
         nowSeconds: NOW,
       }),
     ).toEqual({ ok: true, mode: 'customer' });
+  });
+});
+
+describe('DD-AUTH-079 evaluateRegistrationAccess（招待の窓の人。役割が無い案 B）', () => {
+  test.each([0, 1])('DD-AUTH-079 役割が無く窓が開いていて鍵が %i 本なら window（otp が30分前でも通る）', (count) => {
+    expect(invitee({ approvedCount: count })).toEqual({ ok: true, mode: 'window' });
+  });
+
+  test.each([2, 3, Number.NaN])('DD-AUTH-079 窓の中でも認めた鍵が %p なら reauth_required', (count) => {
+    expect(invitee({ approvedCount: count })).toEqual({ ok: false, reason: 'reauth_required' });
+  });
+
+  test('DD-AUTH-079 窓が閉じても招待の行が有効なら、お客さんの道に落ちず window_closed（otp が新しくても）', () => {
+    expect(
+      invitee({ inviteWindowOpen: false, windowOpen: false, claims: { amr: [{ method: 'otp', timestamp: NOW - 5 }] } }),
+    ).toEqual({ ok: false, reason: 'window_closed' });
+  });
+
+  test('DD-AUTH-079 招待が無い人は今までのお客さんの道のまま', () => {
+    expect(customer({ amr: [{ method: 'otp', timestamp: NOW - 5 }] })).toEqual({ ok: true, mode: 'customer' });
+    expect(customer({ amr: [{ method: 'otp', timestamp: NOW - 1800 }] })).toEqual({ ok: false, reason: 'reauth_required' });
   });
 });

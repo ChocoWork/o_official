@@ -15,14 +15,14 @@ jest.mock('@/lib/auth/authenticate', () => ({
       ? new Response(JSON.stringify({ error: 'Service temporarily unavailable' }), { status: 503 })
       : new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 }),
 }));
-jest.mock('@/lib/auth/passkey-approval-rpc', () => ({ isStaff: jest.fn(), windowIsOpen: jest.fn(), approvedCount: jest.fn() }));
+jest.mock('@/lib/auth/passkey-approval-rpc', () => ({ isStaff: jest.fn(), hasOpenInvite: jest.fn(), windowIsOpen: jest.fn(), approvedCount: jest.fn() }));
 jest.mock('@/lib/auth/passkey-gotrue', () => ({ registrationOptions: jest.fn() }));
 
 import { POST } from '@/app/api/auth/passkey/register/start/route';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { requireCsrfOrDeny } from '@/lib/csrfMiddleware';
 import { authenticateRequest, checkAuthSessionLiveness } from '@/lib/auth/authenticate';
-import { approvedCount, isStaff, windowIsOpen } from '@/lib/auth/passkey-approval-rpc';
+import { approvedCount, hasOpenInvite, isStaff, windowIsOpen } from '@/lib/auth/passkey-approval-rpc';
 import { registrationOptions } from '@/lib/auth/passkey-gotrue';
 import { logAudit } from '@/lib/audit';
 
@@ -57,6 +57,7 @@ beforeEach(() => {
   csrf.mockResolvedValue(undefined);
   liveness.mockResolvedValue('active');
   staffMock.mockResolvedValue({ ok: true, value: true });
+  (hasOpenInvite as jest.Mock).mockResolvedValue({ ok: true, value: false });
   windowMock.mockResolvedValue({ ok: true, value: true });
   countMock.mockResolvedValue({ ok: true, value: 0 });
   setClaims();

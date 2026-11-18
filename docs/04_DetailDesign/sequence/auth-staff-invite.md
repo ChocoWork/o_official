@@ -10,7 +10,7 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-026、FR-AUTH-034、FR-AUTH-035、FR-AUTH-037、DATA-AUTH-020、ARC-AUTH-012、SEC-AUTH-053、SEC-AUTH-054、THR-AUTH-052、DD-AUTH-070、DD-AUTH-071、DD-AUTH-072、DD-AUTH-073、DD-AUTH-075、DD-AUTH-076、DD-AUTH-077、DD-AUTH-078、FR-AUTH-041、SCR-AUTH-013、API-AUTH-037、FR-AUTH-038、FR-AUTH-039、FR-AUTH-040、API-AUTH-033、API-AUTH-034、API-AUTH-035、API-AUTH-036、SEC-AUTH-056、THR-AUTH-055、ADR-0471 |
+| 対応する ID | SR-AUTH-026、FR-AUTH-034、FR-AUTH-035、FR-AUTH-037、DATA-AUTH-020、ARC-AUTH-012、SEC-AUTH-053、SEC-AUTH-054、THR-AUTH-052、DD-AUTH-070、DD-AUTH-071、DD-AUTH-072、DD-AUTH-073、DD-AUTH-075、DD-AUTH-076、DD-AUTH-077、DD-AUTH-078、FR-AUTH-041、SCR-AUTH-013、API-AUTH-037、FR-AUTH-038、FR-AUTH-039、FR-AUTH-040、API-AUTH-033、API-AUTH-034、API-AUTH-035、API-AUTH-036、SEC-AUTH-056、THR-AUTH-055、FR-AUTH-042、SEC-AUTH-057、THR-AUTH-053、DD-AUTH-079、ADR-0471 |
 | 対象のコード | 移行 `supabase/migrations/20261118130000_passkey_staff_invites.sql`、`src/lib/auth/staff-passkey-invite-errors.ts`、`src/features/auth/staff/invite-token.ts`・`invite-mail.ts`・`staff-invite-store.ts`・`staff-invite-send.ts`・`staff-invite-http.ts`、`src/app/api/admin/staff/**/route.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-4・6-2・8-1）、[段3の計画](../../superpowers/plans/2026-11-18-passkey-stage3-staff.md) |
 | 調べた時点 | 2026-11-18（手元の DB で結合試験を流した） |
@@ -253,3 +253,17 @@ sequenceDiagram
 - 窓口（IMPL-AUTH-369）: 回数（IP 20回/10分 → ハッシュごと 5回/10分）、`consumeStaffInvite`（IMPL-AUTH-397）、`createInviteSession`（IMPL-AUTH-370）、`bindStaffInviteWindow`（IMPL-AUTH-398）、`persistSessionAndCookies`。Origin は共有の proxy
 - `endAuthSession`（IMPL-AUTH-366）は `revoke_auth_session` で GoTrue のセッションを終わらせる。パスキーのログインの終わりから外へ出し、Task 7 も使う
 - 回数の枠のハッシュごとの数え方は、既存の `enforceRateLimit` の `subject`（IP との組）。IP を替えても 256 ビットの合言葉は当たらない
+
+### DD-AUTH-079 登録の窓口は、役割の無い招待の窓の人を window として扱う
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-057 |
+| 根拠 | 案 B の招待の人は役割が無く、窓口が「お客さん」と見なすと鍵を認めず、最後の有効化が `KEYS_SHORT` で落ちる。窓が開いていれば招待の行は有効（発行・取り消し・有効化・降格のどれも窓を閉じる）が、窓口は `staff_invite_open` も見て、窓が閉じた人をお客さんの道に落とさない |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-recent-auth.test.ts`、`tests/unit/lib/auth/passkey-registration-guard.test.ts`、`tests/unit/api/auth/passkey-register-invite-window.test.ts`）、E2E（`e2e/FR-LOGIN-065-staff-register-window.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6b-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6b） |
+
+- 店員でない人は `hasOpenInvite`（IMPL-AUTH-371。`staff_invite_open`）を呼ぶ。偽なら今までのお客さんの道（窓・本数・生存は引かない）。真なら `checkAuthSessionLiveness(session_id, true)` → `windowIsOpen`・`approvedCount` を店員と同じ順で確かめる
+- `evaluateRegistrationAccess` は `inviteWindowOpen`（窓が開いている）・`inviteOpen`（招待が有効）を受け取る。窓が開いて2本未満なら `window`、2本以上なら `reauth_required`、窓が閉じて招待だけ有効なら `window_closed`
+- `register/finish` は `guard.isStaff` が偽でも `guard.mode === 'window'` なら `passkey_approve(…, 'window')` を呼ぶ
