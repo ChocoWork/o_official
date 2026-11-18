@@ -36,6 +36,7 @@ let rpc: jest.Mock;
 let isStaff: boolean;
 let approvedIds: string[];
 let approvedCount: number;
+let floorError: { code: string; message: string } | null;
 
 function req(method: string, body?: unknown) {
   return new Request('http://localhost/api/auth/passkey', {
@@ -60,11 +61,13 @@ beforeEach(() => {
   isStaff = true;
   approvedIds = [KEY_A, KEY_B];
   approvedCount = 2;
+  floorError = null;
   rpc = jest.fn(async (name: string) => {
     if (name === 'passkey_is_staff') return { data: isStaff, error: null };
     if (name === 'passkey_approved_ids') return { data: approvedIds, error: null };
     if (name === 'passkey_approved_count') return { data: approvedCount, error: null };
     if (name === 'staff_idle_check') return { data: true, error: null };
+    if (name === 'passkey_delete_with_floor') return { data: null, error: floorError };
     return { data: null, error: null };
   });
   (createServiceRoleClient as jest.Mock).mockResolvedValue({ rpc });
@@ -137,29 +140,26 @@ describe('API-AUTH-027 PATCH /api/auth/passkey/{id}', () => {
 });
 
 describe('API-AUTH-028 DELETE /api/auth/passkey/{id}', () => {
-  test('API-AUTH-028 店員が認めた鍵2本のうち1本を消すと 409 で、GoTrue を呼ばない', async () => {
+  test('API-AUTH-028 店員が認めた鍵2本のうち1本を消すと、DB の下限が 409 staff_min_keys になり、GoTrue を呼ばない', async () => {
+    floorError = { code: 'P0001', message: 'STAFF_MIN_KEYS' };
     const res = await DELETE(req('DELETE'), ctx(KEY_A));
     expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: 'staff_min_passkeys' });
+    expect(await res.json()).toEqual({ error: 'staff_min_keys' });
     expect(deletePasskey).not.toHaveBeenCalled();
-    expect(rpc).toHaveBeenCalledWith('passkey_approved_count', { p_user_id: USER_ID });
+    expect(rpc).toHaveBeenCalledWith('passkey_delete_with_floor', { p_user_id: USER_ID, p_passkey_id: KEY_A });
   });
 
-  test('API-AUTH-028 大文字の id でも、店員が認めた鍵2本のうち1本は 409 で、GoTrue を呼ばない', async () => {
-    approvedIds = [HEX_KEY, KEY_B];
-    approvedCount = 2;
-    const res = await DELETE(req('DELETE'), ctx(HEX_KEY.toUpperCase()));
-    expect(res.status).toBe(409);
+  test('API-AUTH-028 大文字の id は小文字にそろえて DB の関数へ渡す', async () => {
+    await DELETE(req('DELETE'), ctx(HEX_KEY.toUpperCase()));
+    expect(rpc).toHaveBeenCalledWith('passkey_delete_with_floor', { p_user_id: USER_ID, p_passkey_id: HEX_KEY });
     expect(deletePasskey).not.toHaveBeenCalled();
   });
 
-  test('API-AUTH-028 店員が認めた鍵3本のうち1本を消すと 200', async () => {
-    approvedIds = [KEY_A, KEY_B, '55555555-5555-4555-8555-555555555555'];
-    approvedCount = 3;
+  test('API-AUTH-028 店員が認めた鍵3本のうち1本を消すと 200。GoTrue の削除は呼ばず DB の関数だけ', async () => {
     const res = await DELETE(req('DELETE'), ctx(KEY_A));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
-    expect(deletePasskey).toHaveBeenCalledWith('tok', KEY_A);
+    expect(deletePasskey).not.toHaveBeenCalled();
   });
 
   test('API-AUTH-028 お客さんは最後の1本も消せる。GoTrue の 404 は 404 not_found', async () => {

@@ -330,10 +330,10 @@ sequenceDiagram
 - 一覧の写し: GoTrue の応答は配列で、各項目は `id`（文字列）と `created_at`（文字列）が必須。形が違えば 502。`id`・`friendly_name`・`created_at`・`last_used_at` だけを写し、無い名前・時刻は `null`。店員は `approved`（認めた鍵の `passkey_id` の一覧に含まれるか）と、本数 `approvedCount` を付ける
 - 名前: `PasskeyRenameSchema`（前後の空白を除いて1〜64字かつ UTF-8 で120バイト以内（日本語は40字まで。実測 2026-11-18: 120バイトは通り、126バイトは GoTrue が 400。121〜125バイトは測っていない。Task 7 の直しで足した）。長さはコードポイント。C0・C1 の制御文字と表示の向きを変える文字は不可）。GoTrue の成功の本文は `id`・`friendly_name` が文字列でなければ 502
 - GoTrue の失敗の直し: 404 は 404 `not_found`（他人の鍵と存在しない鍵を区別しない）、401 は 401、400・422 は 400 `invalid_request`、ほかは 502
-- 削除の止め: 店員で、消す鍵 `id` が `passkey_approved_ids` に含まれ、`passkey_approved_count - 1 < 2` なら 409 `staff_min_passkeys`。認めていない鍵は止めない。お客さんは認めの表を引かない
+- 削除の止め: 店員で、消す鍵 `id` が `passkey_approved_ids` に含まれ、`passkey_approved_count - 1 < 2` なら 409 `staff_min_keys`。認めていない鍵は止めない。お客さんは認めの表を引かない
 - 認めの行: 鍵が消えると 1a の引き金（`auth.webauthn_credentials` の削除）が `private.approved_passkeys` の行を消し、知らせの予定を積む。アプリは何もしない
 - 残る隙: 確かめと GoTrue の削除は別の取引。同時に2つの削除が来ると、両方が通って2本を下回りうる。完全な排他は作らず受け入れる（SEC-AUTH-046）
-- 監査: action `auth.passkey.list`・`rename`・`delete`。固定の符号（`staff_check_unavailable`・`approval_check_unavailable`・`invalid_request`・`staff_min_passkeys`・`not_found`・`gotrue_unauthorized`・`gotrue_rejected`・`gotrue_failed`・`gotrue_bad_response`・`list`・`rename`・`delete`・`unexpected_error`）と行為者の ID だけ。トークン・鍵・名前・メールを残さない
+- 監査: action `auth.passkey.list`・`rename`・`delete`。固定の符号（`staff_check_unavailable`・`approval_check_unavailable`・`invalid_request`・`staff_min_keys`・`not_found`・`gotrue_unauthorized`・`gotrue_rejected`・`gotrue_failed`・`gotrue_bad_response`・`list`・`rename`・`delete`・`unexpected_error`）と行為者の ID だけ。トークン・鍵・名前・メールを残さない
 - テスト観点: 順番どおりの断り（IP の回数→認証→CSRF）・一覧が GoTrue の応答の公開鍵・`credential_id` を出さない・お客さんに `approved`・`approvedCount` が無い・`id` が uuid でなければ GoTrue 0回・名前の境界（空・空白だけ・64字・65字・制御文字・C1・表示の向きを変える文字・絵文字）・店員の削除（認めた2本で認めた鍵は409・3本なら200・認めていない鍵は2本のままでも200・DB が読めなければ503）・お客さんは最後の1本を消せる・他人の鍵（GoTrue の 404）は存在しない鍵と同じ 404・GoTrue の失敗は 502・監査にトークンが残らない
 
 ### DD-AUTH-058 更新の拒否（`POST /api/auth/refresh`）で、印つきの403だけセッションを終わらせる順番

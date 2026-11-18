@@ -2,6 +2,8 @@
 
 > 2026-11-18 確認日（パスキー段3a Task 3 のレビューの直し）: 移行 D の無操作の基準を `auth.sessions.created_at` だけにし（`refreshed_at` は見ない）、`staff_idle_check` は時刻の書き込みが失敗したら例外を投げるようにした（内側に `private.staff_session_touch_core` を足した）。D の大きさ・MD5 を測り直した（14967 bytes）。
 > 2026-11-18 確認日（パスキー段3a Task 3）: 本番未適用の移行 D・E を同じファイルのまま直した。D に店員の無操作1時間の表 `private.staff_session_activity` と関数4本（`private.staff_idle_ok`・`public.staff_session_touch`・`staff_idle_check`・`staff_idle_peek`）を足し、E の `has_permission` に4つ目の条件（`private.staff_idle_ok`）と前の確かめ（`passkey_entry_idle_fn`）を足した。大きさ・MD5 を測り直した（D 14967 bytes、E 10066 bytes）。下の「移行 D」「移行 E」の節（SR-AUTH-028、SEC-AUTH-055、ADR-0472）。
+> 2026-11-19 確認日（パスキー段3a Task 9）: 本番未適用の移行 H の `passkey_delete_with_floor` を同じファイルで直した。**止めるのは、消す鍵が認めた鍵で、残りの認めた本数が下限未満になる時だけ**（認めていない鍵は、認めた鍵が下限未満でも消せる）。大きさ・MD5 を測り直した（39171 bytes）。DB の結合試験に1件足した（`tests/integration/db/auth_passkey_staff_roles.integration.test.ts`）。
+>
 > 2026-11-18 確認日（パスキー段3a Task 2b）: 本番未適用の移行 H の後半を同じファイルに足した。`private.admin_set_user_role` の作り直し（`admin`・`supporter` へは今の店員だけ。`STAFF_INVITE_REQUIRED`）、`public.staff_demote`、ダッシュボード専用の `private.staff_invite_issue_manual`、`public.passkey_delete_with_floor`。大きさ・MD5 を測り直した（39086 bytes）。下の「移行 H」の節（SEC-AUTH-054）。
 > 2026-11-18 確認日（パスキー段2 最終レビュー I-2: 移行 G の `claim` が鍵の今の名前を返し、足した行を30秒待つ。大きさと MD5 を測り直した: 19439 bytes）。前の確認日（パスキー段2 Task 11: 運用の文書）: 移行 G のヘッダーと本文の注釈だけを直した（一時停止の間の取り出しの説明・宛先から外す店長・設定の失敗の行の一覧が `set_order_email_pause` と同じ一覧であること。SQL は変えていない）。大きさと MD5 を測り直した（18046 bytes）。「段3まで `db push` しない」の一覧が7本であること、この master を本番にデプロイしない旨を G の節に書いた。
 > 2026-11-18 確認日（パスキー段2 Task 8）: 新しい移行 `20261118044338_passkey_notification_sending.sql`（移行 G。知らせの行に担当・結果の列を足し、取り出し・済み・失敗・飛ばし・宛先の5つの DB の関数を足す。手元の DB のみ・本番未適用）を足した。下の「パスキー段2 移行 G」の節に書き、「段3まで `db push` しない」の一覧に足して7本にした。
@@ -225,7 +227,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 
 | 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
 | --- | --- | --- | --- |
-| `20261118130000_passkey_staff_invites.sql` | 39086 bytes / `c5071733f7d302e4f3fecc38cace2567` | 本番未適用（手元の `db reset` で適用済み） | 表 `private.staff_invites` と、`private.staff_invite_issue_core`（だれにも `execute` を渡さない）・`public.staff_invite_issue`・`staff_invite_consume`・`staff_invite_bind_window`・`staff_role_activate`・`staff_invite_cancel`・`staff_invite_open`（`service_role` だけ）を足す。後半: `private.admin_set_user_role` の本体を置き換え、`public.staff_demote`・`public.passkey_delete_with_floor`（`service_role` だけ）と `private.staff_invite_issue_manual`（`postgres` だけ）を足す |
+| `20261118130000_passkey_staff_invites.sql` | 39171 bytes / `d8b50501e889e7d6248e0aec519bc112` | 本番未適用（手元の `db reset` で適用済み） | 表 `private.staff_invites` と、`private.staff_invite_issue_core`（だれにも `execute` を渡さない）・`public.staff_invite_issue`・`staff_invite_consume`・`staff_invite_bind_window`・`staff_role_activate`・`staff_invite_cancel`・`staff_invite_open`（`service_role` だけ）を足す。後半: `private.admin_set_user_role` の本体を置き換え、`public.staff_demote`・`public.passkey_delete_with_floor`（`service_role` だけ）と `private.staff_invite_issue_manual`（`postgres` だけ）を足す |
 
 - ファイルの確かめ（2026-11-18、後半を足した後）: LF・BOM なし・ASCII だけ（非 ASCII の行は0、CR は0）。MD5 は `md5sum` で測った
 - 変えるもの: 表1つ・private の関数2本・public の関数8本を足し、`private.admin_set_user_role` の本体を1点だけ変えて置き換える（`admin`・`supporter` へは今の有効な店員だけ。外れは `STAFF_INVITE_REQUIRED`・`42501`。署名・権限・持ち主は同じ）。足した関数は誰も呼ばない（呼ぶのは段3a の Task 4 以降）。`admin_set_user_role` を呼ぶ今の窓口は、お客さんを店員にする変更が断られるようになる（Task 5 で招待の道に落とす）。移行 C の引き金の関数は同じ段で直した（移行 C の節）

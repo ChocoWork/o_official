@@ -15,6 +15,7 @@ jest.mock('@/lib/auth/authenticate', () => ({
       : new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 }),
 }));
 jest.mock('@/lib/auth/passkey-approval-rpc', () => ({ isStaff: jest.fn(), approvedIds: jest.fn(), approvedCount: jest.fn() }));
+jest.mock('@/lib/auth/staff-passkey-delete', () => ({ deleteStaffPasskey: jest.fn() }));
 jest.mock('@/lib/auth/staff-passkey-idle-rpc', () => ({ staffIdleCheck: jest.fn(), staffIdlePeek: jest.fn() }));
 jest.mock('@/lib/auth/passkey-auth-session-end', () => ({ endAuthSessionById: jest.fn().mockResolvedValue(true) }));
 jest.mock('@/lib/auth/passkey-gotrue', () => ({ listPasskeys: jest.fn(), updatePasskey: jest.fn(), deletePasskey: jest.fn() }));
@@ -26,6 +27,7 @@ import { requireCsrfOrDeny } from '@/lib/csrfMiddleware';
 import { authenticateRequest } from '@/lib/auth/authenticate';
 import { approvedCount, approvedIds, isStaff } from '@/lib/auth/passkey-approval-rpc';
 import { deletePasskey, listPasskeys, updatePasskey } from '@/lib/auth/passkey-gotrue';
+import { deleteStaffPasskey } from '@/lib/auth/staff-passkey-delete';
 import { logAudit } from '@/lib/audit';
 import { staffIdleCheck } from '@/lib/auth/staff-passkey-idle-rpc';
 
@@ -38,6 +40,7 @@ const countMock = approvedCount as jest.Mock;
 const listMock = listPasskeys as jest.Mock;
 const updateMock = updatePasskey as jest.Mock;
 const deleteMock = deletePasskey as jest.Mock;
+const staffDeleteMock = deleteStaffPasskey as jest.Mock;
 const audit = logAudit as jest.Mock;
 
 const USER_ID = '22222222-2222-4222-8222-222222222222';
@@ -63,6 +66,7 @@ beforeEach(() => {
   authenticate.mockResolvedValue({ ok: true, claims: { sub: USER_ID, session_id: 'session-1' } });
   (staffIdleCheck as jest.Mock).mockResolvedValue({ ok: true, value: true });
   staffMock.mockResolvedValue({ ok: true, value: false });
+  staffDeleteMock.mockResolvedValue({ ok: true });
   idsMock.mockResolvedValue({ ok: true, value: [KEY_A, KEY_B] });
   countMock.mockResolvedValue({ ok: true, value: 2 });
   listMock.mockResolvedValue({
@@ -280,47 +284,54 @@ describe('DD-AUTH-057 DELETE /api/auth/passkey/{id}（削除）', () => {
     expect(idsMock).not.toHaveBeenCalled();
   });
 
-  test('DD-AUTH-057 店員: 認めた鍵が2本で認めた鍵を消すと 409 staff_min_passkeys で GoTrue を呼ばない', async () => {
+  test('DD-AUTH-082 店員の削除は GoTrue を呼ばず、DB の関数（下限つき）だけを呼ぶ。ユーザーは検証済みのセッションの人', async () => {
     staffMock.mockResolvedValue({ ok: true, value: true });
     const res = await DELETE(req('DELETE'), ctx(KEY_A));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(staffDeleteMock).toHaveBeenCalledWith(USER_ID, KEY_A);
+    expect(deleteMock).not.toHaveBeenCalled();
+    expect(idsMock).not.toHaveBeenCalled();
+    expect(countMock).not.toHaveBeenCalled();
+  });
+
+  test('DD-AUTH-082 店員: 下限を割る削除（DB が min_keys）は 409 staff_min_keys で、GoTrue を呼ばない', async () => {
+    staffMock.mockResolvedValue({ ok: true, value: true });
+    staffDeleteMock.mockResolvedValue({ ok: false, reason: 'min_keys' });
+    const res = await DELETE(req('DELETE'), ctx(KEY_A));
     expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: 'staff_min_passkeys' });
+    expect(await res.json()).toEqual({ error: 'staff_min_keys' });
     expect(deleteMock).not.toHaveBeenCalled();
   });
 
-  test('DD-AUTH-057 店員: 大文字の id でも小文字にそろえて認めた鍵と突き合わせ、2本なら 409 で GoTrue を呼ばない', async () => {
+  test('DD-AUTH-082 店員: 大文字の id は小文字にそろえて DB の関数へ渡す', async () => {
     staffMock.mockResolvedValue({ ok: true, value: true });
-    idsMock.mockResolvedValue({ ok: true, value: [HEX_KEY, KEY_B] });
-    countMock.mockResolvedValue({ ok: true, value: 2 });
-    const res = await DELETE(req('DELETE'), ctx(HEX_KEY.toUpperCase()));
-    expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: 'staff_min_passkeys' });
+    await DELETE(req('DELETE'), ctx(HEX_KEY.toUpperCase()));
+    expect(staffDeleteMock).toHaveBeenCalledWith(USER_ID, HEX_KEY);
+  });
+
+  test('DD-AUTH-082 店員: 鍵が無い・他人の鍵（DB が not_found）は、お客さんの道と同じ 404 not_found', async () => {
+    staffMock.mockResolvedValue({ ok: true, value: true });
+    staffDeleteMock.mockResolvedValue({ ok: false, reason: 'not_found' });
+    const res = await DELETE(req('DELETE'), ctx(KEY_B));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'not_found' });
+  });
+
+  test('DD-AUTH-082 店員: DB の関数が読めなければ 503 で閉じる（GoTrue へ落とさない）', async () => {
+    staffMock.mockResolvedValue({ ok: true, value: true });
+    staffDeleteMock.mockResolvedValue({ ok: false, reason: 'failed' });
+    expect((await DELETE(req('DELETE'), ctx(KEY_A))).status).toBe(503);
     expect(deleteMock).not.toHaveBeenCalled();
   });
 
-  test('DD-AUTH-057 店員: 認めた鍵が3本なら消せる（200）', async () => {
-    staffMock.mockResolvedValue({ ok: true, value: true });
-    idsMock.mockResolvedValue({ ok: true, value: [KEY_A, KEY_B, KEY_C] });
-    countMock.mockResolvedValue({ ok: true, value: 3 });
-    expect((await DELETE(req('DELETE'), ctx(KEY_A))).status).toBe(200);
-    expect(deleteMock).toHaveBeenCalledTimes(1);
-  });
-
-  test('DD-AUTH-057 店員: 認めていない鍵は、認めた鍵が2本のままでも消せる', async () => {
-    staffMock.mockResolvedValue({ ok: true, value: true });
-    expect((await DELETE(req('DELETE'), ctx(KEY_C))).status).toBe(200);
-    expect(deleteMock).toHaveBeenCalledWith('tok-abc', KEY_C);
-  });
-
-  test('DD-AUTH-057 店員の判定・認めの確かめが読めなければ 503 で GoTrue を呼ばない', async () => {
+  test('DD-AUTH-057 店員の判定が読めなければ 503 で GoTrue も DB の関数も呼ばない', async () => {
     staffMock.mockResolvedValue({ ok: false });
     expect((await DELETE(req('DELETE'), ctx(KEY_A))).status).toBe(503);
     staffMock.mockResolvedValueOnce({ ok: true, value: false }).mockResolvedValueOnce({ ok: false });
     expect((await DELETE(req('DELETE'), ctx(KEY_A))).status).toBe(503);
-    staffMock.mockResolvedValue({ ok: true, value: true });
-    countMock.mockResolvedValue({ ok: false });
-    expect((await DELETE(req('DELETE'), ctx(KEY_A))).status).toBe(503);
     expect(deleteMock).not.toHaveBeenCalled();
+    expect(staffDeleteMock).not.toHaveBeenCalled();
   });
 
   test('DD-AUTH-057 他人の鍵（GoTrue の 404）は存在しない鍵と同じ 404 と本文', async () => {

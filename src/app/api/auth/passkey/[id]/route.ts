@@ -5,17 +5,18 @@
  * @impl IMPL-AUTH-290
  * @design DD-AUTH-057
  * @remarks 順番: 回数の制限（IP ごと 60回／600秒）→ 認証 → CSRF → `id` が uuid でなければ 400（GoTrue を呼ばない）→（PATCH）本文の形 400 →
- * （DELETE の店員）認めた鍵を2本未満にする削除は 409 `staff_min_passkeys`（GoTrue を呼ばない。DB が読めなければ 503）→ GoTrue。
+ * （DELETE の店員）GoTrue を呼ばず、DB の関数 `passkey_delete_with_floor`（下限は DB の中。`staff-passkey-delete`）だけで消す。認めた鍵を下限未満にする削除は 409 `staff_min_keys`、DB が読めなければ 503
+ * （DELETE のお客さん）GoTrue。
  * 他人の鍵・存在しない鍵は GoTrue の 404 を 404 `not_found` にそろえる（区別しない）。鍵が消えると 1a の引き金が認めの行を消す（アプリは何もしない）。
  */
 import { z } from 'zod';
 import { logAudit } from '@/lib/audit';
 import { deletePasskey, updatePasskey } from '@/lib/auth/passkey-gotrue';
-import { approvedCount, approvedIds, isStaff } from '@/lib/auth/passkey-approval-rpc';
+import { isStaff } from '@/lib/auth/passkey-approval-rpc';
+import { deleteStaffPasskey } from '@/lib/auth/staff-passkey-delete';
 import { guardPasskeyManage, manageDeny, manageJson } from '@/lib/auth/passkey-manage-guard';
 import { PasskeyRenameSchema } from '@/features/auth/schemas/passkey';
 
-const MIN_APPROVED_PASSKEYS = 2;
 /** uuid の形を確かめ、小文字にそろえる（認めた鍵の一覧は小文字。大文字の `id` で下限の確かめをすり抜けさせない）。以降はこの値だけを使う。 */
 const IdSchema = z.uuid().transform((value) => value.toLowerCase());
 
@@ -75,7 +76,7 @@ export async function PATCH(request: Request, context: RouteContext): Promise<Re
 }
 
 /**
- * 削除。店員は認めた鍵を2本未満にする削除を 409 で止める。お客さんは最後の1本も消せる。
+ * 削除。店員は DB の関数（下限つき）で消し、認めた鍵を下限未満にする削除は 409 `staff_min_keys` で止める。お客さんは最後の1本も消せる。
  *
  * @impl IMPL-AUTH-291
  * @design DD-AUTH-057
@@ -95,14 +96,15 @@ export async function DELETE(request: Request, context: RouteContext): Promise<R
       return await manageDeny(auditAction, 'staff_check_unavailable', userId, { error: 'passkey_manage_unavailable' }, 503);
     }
     if (staff.value) {
-      const [ids, count] = await Promise.all([approvedIds(userId), approvedCount(userId)]);
-      if (!ids.ok || !count.ok) {
-        return await manageDeny(auditAction, 'approval_check_unavailable', userId, { error: 'passkey_manage_unavailable' }, 503);
+      // 店員の削除は DB の関数だけを通す（数えと削除が同じ取引。GoTrue の削除へは落とさない）。ユーザーは検証済みのセッションの人。
+      const deleted = await deleteStaffPasskey(userId, id.data);
+      if (deleted.ok) {
+        await logAudit({ action: auditAction, outcome: 'success', detail: 'delete', actor_id: userId });
+        return manageJson({ ok: true }, 200);
       }
-      // 認めた鍵を消して2本を切る時だけ止める（認めていない鍵は数に入っていないので消せる）。
-      if (ids.value.includes(id.data) && count.value - 1 < MIN_APPROVED_PASSKEYS) {
-        return await manageDeny(auditAction, 'staff_min_passkeys', userId, { error: 'staff_min_passkeys' }, 409);
-      }
+      if (deleted.reason === 'min_keys') return await manageDeny(auditAction, 'staff_min_keys', userId, { error: 'staff_min_keys' }, 409);
+      if (deleted.reason === 'not_found') return await manageDeny(auditAction, 'not_found', userId, { error: 'not_found' }, 404);
+      return await manageDeny(auditAction, 'staff_delete_unavailable', userId, { error: 'passkey_manage_unavailable' }, 503);
     }
 
     const result = await deletePasskey(accessToken, id.data);

@@ -59,7 +59,8 @@
 --   private.staff_invite_issue_manual(email, role default 'admin', ttl default 3600) returns text: dashboard SQL only. Only
 --     postgres can execute it. Returns the raw 43-character token; the table keeps its UTF-8 SHA-256. One audit row.
 --   public.passkey_delete_with_floor(user, passkey) returns void: takes the per-user key; a current staff member whose approved
---     keys after the delete would be fewer than min_approved_passkeys gets STAFF_MIN_KEYS (P0001). service_role only.
+--     keys after the delete would be fewer than min_approved_passkeys gets STAFF_MIN_KEYS (P0001) ONLY when the key being
+--     deleted is itself an approved key (an unapproved key can always be deleted). service_role only.
 --
 -- ROLLBACK (one transaction, only while nothing uses them):
 --   DROP FUNCTION public.passkey_delete_with_floor(uuid, uuid), private.staff_invite_issue_manual(text, text, integer),
@@ -566,7 +567,7 @@ BEGIN
       JOIN auth.webauthn_credentials k
         ON k.id = ap.passkey_id AND k.user_id = ap.user_id AND k.credential_id = ap.credential_id
      WHERE ap.user_id = p_user_id;
-    IF v_min IS NULL OR v_approved - (CASE WHEN v_this_approved THEN 1 ELSE 0 END) < v_min THEN
+    IF v_this_approved AND (v_min IS NULL OR v_approved - 1 < v_min) THEN
       RAISE EXCEPTION USING MESSAGE = 'STAFF_MIN_KEYS', ERRCODE = 'P0001';
     END IF;
   END IF;

@@ -8,6 +8,8 @@
  * （SEC-AUTH-008）。振り分けは認証の窓口が返す役割で決め、画面側の判定は表示だけ（SEC-AUTH-028）。
  * 確認が通ったら全体のログインの状態を同期し直してから移る。省くと管理画面が古い確認済みの印を読み、
  * 「2要素認証が必要です」を誤って出す。移る先はサーバーが戻り先を使い切って決める（URL の値は読まない）。
+ * 店員の入口の条件に足りない管理者・サポーターのうち、認めた鍵がちょうど1本の人（窓口 `GET /api/auth/passkey` の `approvedCount`）は、TOTP の2段目へ落とさず
+ * `/admin/passkeys?more=1` へ置き換える（DD-AUTH-082。行き先は `/auth/verified` へ送り返さない）。TOTP の流れ自体は段4まで残す。
  */
 "use client";
 
@@ -19,6 +21,7 @@ import { Button } from '@/components/ui/Button/Button';
 import { LiveMessage } from '@/components/ui/LiveMessage/LiveMessage';
 import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
 import { sanitizeReturnPath } from '@/features/auth/return-intent/return-path';
+import { loadStaffPasskeys } from '@/features/auth/staff/staff-passkey-status';
 
 function Spinner() {
   return (
@@ -74,6 +77,9 @@ type VerifyMfaResponse = {
     verified?: boolean;
   };
 };
+
+/** 認めた鍵が1本の店員を、もう1本を足す画面へ送る先（`/admin/passkeys` はここへ送り返さない。DD-AUTH-082）。 */
+const STAFF_ONE_MORE_KEY_PATH = '/admin/passkeys?more=1';
 
 const isUserRole = (role: unknown): role is UserRole => role === 'admin' || role === 'supporter' || role === 'user';
 
@@ -161,6 +167,17 @@ export default function VerifiedPage() {
     return 'moved';
   }, [router]);
 
+  // 認めた鍵が1本の店員（TOTP を持たない・窓の外）は、TOTP の2段目へ落とさず、もう1本を足す画面へ送る。
+  // 本数は窓口（DB の `passkey_approved_count`）の答えで数える（JWT の印は真偽しかない）。読めなければ今までどおり。
+  const redirectIfOneKeyStaff = React.useCallback(async (): Promise<boolean> => {
+    const status = await loadStaffPasskeys();
+    if (status.ok && status.isStaff && status.approvedCount === 1) {
+      router.replace(STAFF_ONE_MORE_KEY_PATH);
+      return true;
+    }
+    return false;
+  }, [router]);
+
   useEffect(() => {
     let cancelled = false;
     let nonPrivilegedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -193,14 +210,14 @@ export default function VerifiedPage() {
               setMessage('認証が完了しました。管理画面へ移動します…');
               const moved = await goAfterLogin('/admin');
               if (moved === 'needs-mfa' && !cancelled) {
-                await loadMfaStatus();
+                if (!(await redirectIfOneKeyStaff())) await loadMfaStatus();
               }
             }
             return;
           }
 
           if (!cancelled) {
-            await loadMfaStatus();
+            if (!(await redirectIfOneKeyStaff())) await loadMfaStatus();
           }
           return;
         }
@@ -227,7 +244,7 @@ export default function VerifiedPage() {
         clearTimeout(nonPrivilegedTimer);
       }
     };
-  }, [loadMfaStatus, goAfterLogin]);
+  }, [loadMfaStatus, goAfterLogin, redirectIfOneKeyStaff]);
 
   const handleEnrollTotp = async (isAutomatic = false) => {
     setErrorMessage(null);

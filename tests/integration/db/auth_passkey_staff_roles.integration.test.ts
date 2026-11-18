@@ -330,6 +330,15 @@ describeLocalDb('passkey staff roles (migration H second half)', () => {
       expect(await approvalCount(staff.id)).toBe(2);
     });
 
+    test('DATA-AUTH-020 a staff member below the minimum can delete an unapproved key but not the only approved key', async () => {
+      const staff = await staffWithKeys(2, 1);
+      await deleteKey(staff.id, staff.keys[1]);
+      expect(await keyCount(staff.id)).toBe(1);
+      expect(await approvalCount(staff.id)).toBe(1);
+      expect(await fails(() => deleteKey(staff.id, staff.keys[0]))).toMatchObject({ code: 'P0001', message: 'STAFF_MIN_KEYS' });
+      expect(await keyCount(staff.id)).toBe(1);
+    });
+
     test('DATA-AUTH-020 a customer can delete even the last key; a key of another user is PASSKEY_NOT_FOUND', async () => {
       const customer = await user();
       const k = await key(customer);

@@ -172,7 +172,7 @@ for (const viewport of viewports) {
         const remaining = (await list(request, auth)).body.passkeys;
         const blocked = await call(request, 'delete', `/api/auth/passkey/${remaining[0].id}`, auth);
         expect(blocked.status).toBe(409);
-        expect(blocked.body).toEqual({ error: 'staff_min_passkeys' });
+        expect(blocked.body).toEqual({ error: 'staff_min_keys' });
         expect(await goTrueKeys(db, staff.userId)).toBe(2);
         expect(await approvedKeys(db, staff.userId)).toBe(2);
       });

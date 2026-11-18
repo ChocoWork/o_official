@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { TabType } from "@/components/AdminTabs";
 
 interface AdminSideNavProps {
@@ -73,6 +74,16 @@ export default function AdminSideNav({
           </button>
         );
       })}
+      {tabs.length > 0 ? (
+        // 店員のパスキーの管理（/admin/passkeys）への入口。タブではなく別のページなので、リンクにする。
+        <Link
+          href="/admin/passkeys"
+          className="flex shrink-0 items-center gap-3 border-l-[3px] border-transparent px-3 py-2.5 text-left font-acumin lk-text-3xs tracking-widest text-[#474747] transition-colors hover:bg-[#efefef] hover:text-black lg:w-full"
+        >
+          <i className="ri-fingerprint-line lk-text-xl leading-none" aria-hidden="true" />
+          <span>パスキー</span>
+        </Link>
+      ) : null}
     </nav>
   );
 }

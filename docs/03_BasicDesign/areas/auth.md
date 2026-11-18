@@ -599,6 +599,20 @@ graph TD
 - 鍵の登録は段2の `registerPasskey`（`register/start`・`finish`）をそのまま使う。窓口が窓の外と答えた（`window_closed`・401）時は、ボタンを消して文だけにする。2本を超えると答えた（`reauth_required`）時は、画面で数えず完了へ進む
 - 画面と処理の詳細は DD-AUTH-080
 
+### SCR-AUTH-015 /admin/passkeys は店員が自分の鍵を管理する画面で、?more=1 で認めた鍵が1本の店員に「もう1本」を足させる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-045、FR-AUTH-046 |
+| 根拠 | ページはサーバーで入口の条件（店員の役割・パスキーのログインから24時間・無操作1時間。**認めた鍵の本数は求めない**）を確かめ、外れたら `/login`（`reason` つき）へ送る。`/auth/verified` へは送り返さない（そこが1本の店員をここへ送るので、戻すと回り続ける）。確かめが読めない時は送らず文だけを出す。画面の入口は、管理画面のサイドナビの項目「パスキー」（`AdminSideNav` のタブではないリンク。設計には書かれていない作り手の判断） |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/ui/auth-staff-passkey-manage-screen.test.tsx`）、単体テスト（`tests/unit/app/staff/passkeys-page.test.tsx`、`tests/unit/features/auth/staff/staff-passkey-manager.test.tsx`、`staff-one-more-key.test.tsx`、`admin-sidenav-passkey-link.test.tsx`）、E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-9-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 9） |
+
+- 管理の画面: 見出し「パスキー」と、一覧（名前・作成日・最後に使った日）。行ごとに「名前を変更」「削除」。認めた鍵を消すと下限（2本）を割る時は、削除ボタンを無効にして「認めた鍵が2本のため、削除できません。先にもう1本追加してください。」。認められていない鍵には「この鍵ではログインできません。心当たりがなければ削除してください。」。末尾に「パスキーを追加」。削除は確認のダイアログを挟む
+- 「もう1本」の画面（`?more=1` かつ認めた鍵が2本未満）: 見出し「あと1本、登録してください」、ボタン「2本目を登録」。登録が通ったらログインの印を更新して `/admin` へ移る。更新できなければ「登録できました。もう一度パスキーでログインしてください。」と「ログインへ」
+- 画面の遷移: 認めた鍵が1本の店員は、`/auth/verified`（`/api/auth/passkey` の `approvedCount` が1）から `/admin/passkeys?more=1` へ置き換える。TOTP の流れ自体は段4まで残す。処理の詳細は DD-AUTH-082
+
 ## 画面遷移
 
 ### FLOW-AUTH-001 メールとパスワードのログインは /login から /login/verify を経て、役割で行き先を分ける
@@ -1523,8 +1537,8 @@ stateDiagram-v2
 | 入力 | 本文なし。ログイン済みの通行証と、Cookie で呼ぶ時の `x-csrf-token` |
 | 順番 | IP ごとの回数（10分60回、`auth:passkey:delete`、429）→ 認証（401・503）→ CSRF（403）→ `id` の形（400）→ 店員かの確かめ（503）→ 店員は認めた鍵の確かめ（503）と下限の止め（409）→ GoTrue（404・401・502）→ 200 |
 | 200 | `{ ok: true }` |
-| 失敗 | 400 `invalid_request`、401、403、404 `not_found`、409 `staff_min_passkeys`、429、502 `passkey_manage_failed`、503 `passkey_manage_unavailable`、500 |
-| 監査 | action `auth.passkey.delete`。固定の符号（`staff_min_passkeys` を含む）と行為者の ID だけ |
+| 失敗 | 400 `invalid_request`、401、403、404 `not_found`、409 `staff_min_keys`、429、502 `passkey_manage_failed`、503 `passkey_manage_unavailable`、500 |
+| 監査 | action `auth.passkey.delete`。固定の符号（`staff_min_keys` を含む）と行為者の ID だけ |
 
 
 残る危険: 同時に2つの削除が来ると、確かめの時点では2本以上でも、両方が通って2本を下回りうる（SEC-AUTH-046）。完全な排他は作らず、下回った店員は管理の入口で止まり、引き金の知らせが出る。

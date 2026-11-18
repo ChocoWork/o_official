@@ -382,6 +382,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: 店長が店員を招待できる。招待は1人に1つ。出した時に、その人の鍵・認めた鍵・認証アプリ・役割が外れる。招待のリンクを使った人は、窓の中で2本の鍵を足し、そろった時だけ役割が有効になる。店長は出した招待を取り消せる。
 
+### SR-AUTH-027 店員は自分のパスキーを見て・名前を変え・足し・消せるが、認めた鍵が下限を割る削除はできない。1本だけの店員は、もう1本足してから管理に入る
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | 店員の入口はパスキー2本以上（設計 5）。鍵を2本未満にできると、管理に入れない店員を自分で作ってしまう。一方、疑わしい鍵（GoTrue を直に叩いて足された鍵など。認められていないのでログインには使えない）は、認めた鍵が下限未満でも外せなければ、乗っ取りの手がかりを消せない。認めた鍵が1本だけの店員は、管理の入口の条件に足りないので、入れずに詰まらないよう「もう1本」を足す画面へ送る |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-9-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 9） |
+
+要求の文: 店員が `/admin/passkeys` で自分の鍵の一覧を見て、名前を変え、鍵を足し、消せる。認めた鍵を消して、認めた本数が `min_approved_passkeys`（2）未満になる削除は、画面でも窓口でも DB でも止める。認めていない鍵は、本数に関わらず消せる。認めた鍵が1本だけの店員がログインの確認の画面に来たら、「もう1本」の画面へ送り、2本そろったら管理画面に入れる。
+
 ### SR-AUTH-028 店員は、無操作が1時間を過ぎるか、ログインから24時間を過ぎたら、管理の権限を失う
 
 | 属性 | 値 |
@@ -2439,7 +2449,7 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8） |
 | 優先度 | MUST |
 
-規則: (1) 順番は、IP ごとに10分60回（`auth:passkey:list`・`rename`・`delete`）→ 認証（401・503）→ CSRF（`PATCH`・`DELETE` だけ。403）→ `id` が uuid でなければ 400（GoTrue を呼ばない）→（`PATCH`）本文の形 400 →（店員の `DELETE`）認めた鍵の確かめ → GoTrue。(2) 一覧は 200 `{ passkeys: [{ id, friendly_name, created_at, last_used_at, approved? }], isStaff, approvedCount? }`。項目は許可リスト方式で写し、GoTrue が公開鍵・`credential_id` を返しても出さない。`approved`・`approvedCount` は店員だけ。店員の判定・認めの確かめが読めなければ 503、GoTrue の失敗・形の違う応答は 502。(3) 名前は 200 `{ passkey: { id, friendly_name } }`。`friendly_name` は前後の空白を除いて1〜64字（コードポイントで数える）かつ UTF-8 で120バイト以内（日本語は40字まで。実測 2026-11-18: 120バイトは通り、126バイトは GoTrue が 400。121〜125バイトは測っていない。窓口は GoTrue を呼ぶ前に 400 `invalid_request`）、C0・C1 の制御文字と表示の向きを変える文字は不可。(4) 削除は 200 `{ ok: true }`。店員は、消す鍵が認めた鍵で、認めた本数から1を引くと `min_approved_passkeys`（2）未満になる時、409 `staff_min_passkeys`（GoTrue を呼ばない）。認めていない鍵なら2本のままでも消せる。お客さんは最後の1本も消せる。(5) 他人の鍵・存在しない鍵は GoTrue の 404 を 404 `not_found` にそろえる（区別しない）。(6) 鍵が消えると 1a の引き金が認めの行を消し、知らせの予定を積む（アプリは何もしない）。
+規則: (1) 順番は、IP ごとに10分60回（`auth:passkey:list`・`rename`・`delete`）→ 認証（401・503）→ CSRF（`PATCH`・`DELETE` だけ。403）→ `id` が uuid でなければ 400（GoTrue を呼ばない）→（`PATCH`）本文の形 400 →（店員の `DELETE`）認めた鍵の確かめ → GoTrue。(2) 一覧は 200 `{ passkeys: [{ id, friendly_name, created_at, last_used_at, approved? }], isStaff, approvedCount? }`。項目は許可リスト方式で写し、GoTrue が公開鍵・`credential_id` を返しても出さない。`approved`・`approvedCount` は店員だけ。店員の判定・認めの確かめが読めなければ 503、GoTrue の失敗・形の違う応答は 502。(3) 名前は 200 `{ passkey: { id, friendly_name } }`。`friendly_name` は前後の空白を除いて1〜64字（コードポイントで数える）かつ UTF-8 で120バイト以内（日本語は40字まで。実測 2026-11-18: 120バイトは通り、126バイトは GoTrue が 400。121〜125バイトは測っていない。窓口は GoTrue を呼ぶ前に 400 `invalid_request`）、C0・C1 の制御文字と表示の向きを変える文字は不可。(4) 削除は 200 `{ ok: true }`。店員は GoTrue ではなく DB の関数 `passkey_delete_with_floor`（段3a Task 9。DD-AUTH-082）だけで消し、消す鍵が認めた鍵で、認めた本数から1を引くと `min_approved_passkeys`（2）未満になる時、409 `staff_min_keys`（鍵は消さない）。認めていない鍵なら2本のままでも消せる。お客さんは最後の1本も消せる。(5) 他人の鍵・存在しない鍵は GoTrue の 404 を 404 `not_found` にそろえる（区別しない）。(6) 鍵が消えると 1a の引き金が認めの行を消し、知らせの予定を積む（アプリは何もしない）。
 
 ### FR-AUTH-022 更新の窓口 `POST /api/auth/refresh` が、印つきの拒否だけセッションを終わらせる
 
@@ -5228,7 +5238,7 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 | 確かめ方 | E2E（`e2e/FR-LOGIN-052-passkey-manage.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト、結合テスト |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8） |
 
-認めた鍵3本の店員が1本消すと 200 で、GoTrue の鍵・認めの行とも2本になる（認めの行は1a の引き金が消す）。続けてもう1本消そうとすると 409 `{ "error": "staff_min_passkeys" }` で、GoTrue の鍵・認めの行とも2本のままであること。
+認めた鍵3本の店員が1本消すと 200 で、GoTrue の鍵・認めの行とも2本になる（認めの行は1a の引き金が消す）。続けてもう1本消そうとすると 409 `{ "error": "staff_min_keys" }` で、GoTrue の鍵・認めの行とも2本のままであること。
 
 ### FR-AUTH-021-AC-03 お客さんの一覧に approved・approvedCount が無く、最後の1本も消せる
 
@@ -5817,6 +5827,128 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-8-review.md`（I-1）、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 8） |
 
 `/admin` を開いたまま最後の操作の時刻が61分前になった店員が、画面の管理の操作（タブ USER）をすると、API の 401 `session_idle` を受けた画面が更新を試さずに `/login?reason=idle` へ送り、「しばらく操作がなかったため、ログアウトしました。」が表示される。GoTrue のセッションは終わっている。
+
+### FR-AUTH-045 店員のパスキー管理の画面 /admin/passkeys で、鍵の一覧・名前の変更・追加・削除ができ、認めた鍵の削除は下限を割らない範囲に限る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-027 |
+| 根拠 | SR-AUTH-027 を、サーバーの入口の確かめ（店員の役割・パスキーのログインから24時間・無操作1時間。**認めた鍵の本数は求めない**）と、窓口 `GET /api/auth/passkey`・`PATCH`・`DELETE` を使う画面にする。削除は DB の関数 `passkey_delete_with_floor` だけを通し（数えと削除が同じ取引。GoTrue の削除へは落とさない）、画面も同じ数え方で止める。画面は SCR-AUTH-015、処理は DD-AUTH-082、守りは SEC-AUTH-055。入口は管理画面のサイドナビの項目「パスキー」（設計には書かれていない作り手の判断） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/staff/staff-passkey-manager.test.tsx`、`admin-sidenav-passkey-link.test.tsx`、`tests/unit/lib/auth/staff-passkey-page-guard.test.ts`、`staff-passkey-delete.test.ts`、`tests/unit/api/auth/passkey-delete-staff-floor.test.ts`、`passkey-manage-routes.test.ts`、`tests/unit/app/staff/passkeys-page.test.tsx`）、結合テスト（`tests/integration/db/auth_passkey_staff_roles.integration.test.ts`、`tests/integration/api/auth/passkey-manage.test.ts`）、E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`、FR-AUTH-045-AC-01〜05） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-9-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 9） |
+| 優先度 | MUST |
+
+規則: (1) ページの入口は、①有効な店員の役割 ②`amr` のパスキーが24時間以内 ③無操作1時間以内（時刻を進めない確かめ）。外れたら `/login`（`reason` つき）へ送り、確かめが読めない時は送らず「しばらくしてからお試しください。」を出す。認めた鍵が1本でも通る。(2) 認めた鍵を消すと認めた本数が2本未満になる削除は、画面ではボタンを無効にして理由を出し、窓口は 409 `staff_min_keys`（DB の `STAFF_MIN_KEYS`）で鍵を消さない。認めていない鍵は常に消せる。(3) 店員の削除は、検証済みのセッションの利用者を DB の `passkey_delete_with_floor` に渡す（リクエストの値を使わない）。鍵が無い・他人の鍵（`PASSKEY_NOT_FOUND`）はお客さんの道と同じ 404 `not_found`。DB が読めなければ 503。(4) 追加は5分以内のパスキーでの入り直しが要る。窓口の `reauth_required` を「もう一度パスキーでログインしてから追加してください。」と「パスキーでログインし直す」に読み替える。
+
+### FR-AUTH-045-AC-01 一覧に、鍵の名前・作成日・最後に使った日が出る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-045 |
+| 根拠 | SR-AUTH-027 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-9-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 9） |
+
+認めた鍵が2本の店員が `/admin/passkeys` を開くと、鍵が2行並び、各行に名前（無ければ「名前なし」）と「〇年〇月〇日 に作成」が出る。パスキーでログインした鍵には「最後に使った日: 〇年〇月〇日」が出る。
+
+### FR-AUTH-045-AC-02 鍵の名前を変えられる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-045 |
+| 根拠 | SR-AUTH-027 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-9-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 9） |
+
+「名前を変更」で入力欄を開き、新しい名前を保存すると、一覧の名前が変わり、開き直しても残る。
+
+### FR-AUTH-045-AC-03 認めた鍵が2本の店員は、削除ボタンが無効で、窓口も 409 staff_min_keys で、鍵が残る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-045 |
+| 根拠 | SR-AUTH-027 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-9-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 9） |
+
+認めた鍵が2本の店員の画面は、すべての削除ボタンを無効にし「認めた鍵が2本のため、削除できません。先にもう1本追加してください。」を出す。窓口へ直に `DELETE` しても 409 `{ "error": "staff_min_keys" }` で、GoTrue の鍵・認めた鍵とも2本のまま。
+
+### FR-AUTH-045-AC-04 入り直した直後に3本目を追加すると、1本消せて、認めた鍵は2本に戻る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-045 |
+| 根拠 | SR-AUTH-027 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-9-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 9） |
+
+パスキーでログインした直後の店員が「パスキーを追加」で3本目を足すと、一覧が3行になり（認めた鍵3本）、1本を確認のうえ削除でき、2本に戻る。2本に戻ると、再びすべての削除が止まる。
+
+### FR-AUTH-045-AC-05 5分を過ぎた追加は、「もう一度パスキーでログインしてから追加してください。」と「パスキーでログインし直す」になる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-045 |
+| 根拠 | SR-AUTH-027 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-9-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 9） |
+
+登録の窓口が `reauth_required`（403 `registration_not_allowed`）を返すと、画面は文と、`/login?next=/admin/passkeys` へのリンク「パスキーでログインし直す」を出す。窓口の答えは通信を差し替えて作る（6分前のログインの印を作るのは難しいため。窓口自体の確かめは FR-AUTH-020 の E2E が持つ）。
+
+### FR-AUTH-046 認めた鍵が1本の店員は、ログインの確認の画面から「もう1本」の画面へ送られ、2本そろうと管理画面に入れる。直に足した鍵は数えない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-027 |
+| 根拠 | SR-AUTH-027 を、`/auth/verified` が窓口 `GET /api/auth/passkey` の `approvedCount`（DB の `passkey_approved_count`）で1本の店員を見分けて `/admin/passkeys?more=1` へ送ることと、「もう1本」の画面にする。JWT の印 `staff_passkeys_ok` は真偽しかないので使わない。TOTP の流れ自体は段4まで残す（1本でない店員は今までどおり）。`/admin/passkeys` は `/auth/verified` へ送り返さない（回り続けない）。画面は SCR-AUTH-015、処理は DD-AUTH-082、守りは SEC-AUTH-055 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/app/auth/verified-page.test.tsx`、`tests/unit/features/auth/staff/staff-one-more-key.test.tsx`、`tests/unit/lib/auth/staff-passkey-page-guard.test.ts`、`tests/unit/app/staff/passkeys-page.test.tsx`）、E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`、FR-AUTH-046-AC-01〜03） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-9-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 9） |
+| 優先度 | MUST |
+
+規則: (1) 入口の条件に足りない管理者・サポーターで、窓口の `isStaff` が真かつ `approvedCount` がちょうど1なら、`/admin/passkeys?more=1` へ置き換える（post-login が `needsMfa` を返した場合も同じ）。0本・2本・窓口が読めない時は、今までどおり TOTP の2段目を出す。(2) 「もう1本」の画面は、ページが認めた鍵2本未満かつ `?more=1` の時だけ出す。登録が通ったらログインの印を更新し（認めた鍵の本数の印を作り直す）、`/admin` へ移る。更新できなければ移らず、入り直しをすすめる。(3) 窓口を直に叩いて足した鍵（認められていない鍵）は、認めた本数に数えず、その鍵では店員として入れない（403）。画面には出し、「この鍵ではログインできません。心当たりがなければ削除してください。」を添えて、消せる。
+
+### FR-AUTH-046-AC-01 認めた鍵が1本の店員が /auth/verified に来ると、「もう1本」の画面に着き、/auth/verified へは戻らない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-046 |
+| 根拠 | SR-AUTH-027 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`。390・768・1280 の3幅でくり返す）。単体テスト（`tests/unit/app/auth/verified-page.test.tsx`、`tests/unit/lib/auth/staff-passkey-page-guard.test.ts`）でも確かめる |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-9-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 9） |
+
+認めた鍵が1本の店員がパスキーでログインして `/auth/verified` を開くと、`/admin/passkeys?more=1` に着いて見出し「あと1本、登録してください」が出る。着いた後に1.5秒待っても URL は変わらず、`/auth/verified` への要求は最初の1回だけ（無限の遷移にならない）。
+
+### FR-AUTH-046-AC-02 「もう1本」の画面で2本目を追加すると /admin に入れる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-046 |
+| 根拠 | SR-AUTH-027 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-9-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 9） |
+
+「2本目を登録」で鍵を足すと、認めた鍵が2本になり、ログインの印が更新され、`/admin` に移ってサイドナビ（項目「パスキー」を含む）が出る。
+
+### FR-AUTH-046-AC-03 GoTrue を直に叩いて足した鍵は、認めた鍵に数えられず、その鍵では店員として入れず、画面から削除できる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-046 |
+| 根拠 | SR-AUTH-027 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-9-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 9） |
+
+認めた鍵2本の店員が GoTrue に直に鍵を足すと、鍵は3本・認めた鍵は2本のまま。その鍵でログインすると 403 で入れない。画面は3行を出し、認められていない鍵に「この鍵ではログインできません。心当たりがなければ削除してください。」を添える。有効な削除ボタンはその1つだけで、削除すると鍵は2本（認めた鍵2本）に戻る。
 
 ### FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel`
 
@@ -7885,7 +8017,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・5-5・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 8）（作り手の判断 1〜3） |
 | 優先度 | MUST |
 
-守ること: (1) 店員の `DELETE` は、消す鍵が認めた鍵で `passkey_approved_count - 1 < 2` の時、GoTrue を呼ばずに 409 `staff_min_passkeys`。認めた鍵の確かめが読めなければ 503（閉じる側）。認めていない鍵は止めない。お客さんは認めの表を引かず、最後の1本も消せる。(2) 他人の鍵・存在しない鍵は、GoTrue の 404 を 404 `{ "error": "not_found" }` にそろえ、本文でも区別しない。本人の通行証だけで GoTrue を呼ぶ（管理 API は使わない）ので、他人の鍵は GoTrue が断る。(3) 一覧は `id`・`friendly_name`・`created_at`・`last_used_at`（と店員の `approved`）だけを写す（許可リスト方式）。形の違う応答は 502。(4) `id` は uuid の形でなければ 400（GoTrue を呼ばない）。形が合えば小文字にそろえ、下限の確かめと GoTrue にはその値だけを使う（大文字の `id` で下限をすり抜けさせない）。名前は1〜64字かつ UTF-8 で120バイト以内（日本語は40字まで）・C0/C1 の制御文字と表示の向きを変える文字なし。(5) 順番は、回数の制限（IP）→ 認証 → CSRF → 入力 → 認めの確かめ → GoTrue。監査（`auth.passkey.list`・`rename`・`delete`）は固定の符号と行為者の ID だけを残す。
+守ること: (1) 店員の `DELETE` は、消す鍵が認めた鍵で `passkey_approved_count - 1 < 2` の時、GoTrue を呼ばずに 409 `staff_min_keys`。認めた鍵の確かめが読めなければ 503（閉じる側）。認めていない鍵は止めない。お客さんは認めの表を引かず、最後の1本も消せる。(2) 他人の鍵・存在しない鍵は、GoTrue の 404 を 404 `{ "error": "not_found" }` にそろえ、本文でも区別しない。本人の通行証だけで GoTrue を呼ぶ（管理 API は使わない）ので、他人の鍵は GoTrue が断る。(3) 一覧は `id`・`friendly_name`・`created_at`・`last_used_at`（と店員の `approved`）だけを写す（許可リスト方式）。形の違う応答は 502。(4) `id` は uuid の形でなければ 400（GoTrue を呼ばない）。形が合えば小文字にそろえ、下限の確かめと GoTrue にはその値だけを使う（大文字の `id` で下限をすり抜けさせない）。名前は1〜64字かつ UTF-8 で120バイト以内（日本語は40字まで）・C0/C1 の制御文字と表示の向きを変える文字なし。(5) 順番は、回数の制限（IP）→ 認証 → CSRF → 入力 → 認めの確かめ → GoTrue。監査（`auth.passkey.list`・`rename`・`delete`）は固定の符号と行為者の ID だけを残す。
 
 残る危険として受け入れること: 同時に2つの削除が来ると、確かめの時点では2本以上でも、両方が通って2本を下回りうる。設計の「画面で止める」を越える足しなので、完全な排他は作らない。窓口を使わず GoTrue を直に叩く道も、この止めでは塞がらない。下回った店員は管理の入口で止まり（認めた鍵が2本未満）、1a の引き金の知らせが店員と店長に届く。
 
@@ -8020,7 +8152,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-3-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 3） |
 | 優先度 | MUST |
 
-守ること: (1) 4つ目の条件は `has_permission`（DB）に置き、窓口・ページは同じ `private.staff_idle_ok` を `staff_idle_check`・`staff_idle_peek` で呼ぶ。(2) 行が無い時は `auth.sessions.created_at` だけに落とす（`refreshed_at` は見ない）。`staff_idle_check` は時刻の書き込みが失敗したら例外を投げ、真を返さない（窓口・ページは 503。間引きは失敗ではない）。`auth.sessions` にも無い・`NULL`・例外は偽（失敗は閉じる。`RAISE WARNING` に SQLSTATE と文）。(3) `staff_idle_peek` は書かない。`staff_session_touch` は間引きの秒（既定60）より前なら書かず、行の `user_id` が違えば上書きしない。(4) 表は RLS 有効で `anon`・`authenticated`・`service_role` に権限を渡さず、`service_role` が呼べるのは `public` の3関数だけ。`private.staff_idle_ok` はだれにも渡さない。(5) 移行 E は、D の `private.staff_idle_ok` が無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（`passkey_entry_idle_fn`）で止まる。
+守ること: (1) 4つ目の条件は `has_permission`（DB）に置き、窓口・ページは同じ `private.staff_idle_ok` を `staff_idle_check`・`staff_idle_peek` で呼ぶ。(2) 行が無い時は `auth.sessions.created_at` だけに落とす（`refreshed_at` は見ない）。`staff_idle_check` は時刻の書き込みが失敗したら例外を投げ、真を返さない（窓口・ページは 503。間引きは失敗ではない）。`auth.sessions` にも無い・`NULL`・例外は偽（失敗は閉じる。`RAISE WARNING` に SQLSTATE と文）。(3) `staff_idle_peek` は書かない。`staff_session_touch` は間引きの秒（既定60）より前なら書かず、行の `user_id` が違えば上書きしない。(4) 表は RLS 有効で `anon`・`authenticated`・`service_role` に権限を渡さず、`service_role` が呼べるのは `public` の3関数だけ。`private.staff_idle_ok` はだれにも渡さない。(5) 移行 E は、D の `private.staff_idle_ok` が無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（`passkey_entry_idle_fn`）で止まる。 (6) 店員のパスキー管理（段3a Task 9。DD-AUTH-082）: ページの入口は時刻を進めない `peek` で無操作を確かめ（開き直すだけでは延びない）、確かめの失敗は `/login` へ送らず「しばらくしてからお試しください。」にする。店員の鍵の削除は DB の `passkey_delete_with_floor` だけを通し、利用者は検証済みのセッションの人（リクエストの値ではない）。
 
 残る危険として受け入れること: 行が無いセッション（E2E・手元の開発・最初の `staff_idle_check` の前）は、作られてから1時間は通る。書き込みの失敗が続くと店員が入れない（503。閉じる側）。ログインの終わりで行を書く配線は Task 8。書いた時にその人の2日より前の行を消すので、2日以上前の行は残らない（ログインから24時間の上限が先に切れる）。時計は DB の `now()` だけを使い、アプリの時計は見ない。
 

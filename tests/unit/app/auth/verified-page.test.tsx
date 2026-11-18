@@ -965,3 +965,61 @@ describe('/auth/verified の頁: 認証コードの確認', () => {
     });
   });
 });
+
+describe('/auth/verified の頁: 認めた鍵が1本の店員は「もう1本」の画面へ送る（DD-AUTH-082）', () => {
+  const staffKeys = (approvedCount: number, isStaff = true) => () =>
+    jsonResponse({ isStaff, approvedCount, passkeys: [{ id: 'k1', friendly_name: 'Mac', created_at: '2026-11-01T00:00:00Z', approved: true }] });
+
+  it('DD-AUTH-082 入口の条件に足りない店員で、認めた鍵が1本なら /admin/passkeys?more=1 へ置き換え、TOTP の状態は聞かない', async () => {
+    routeFetch({
+      '/api/auth/me': adminUnverified,
+      '/api/auth/passkey': staffKeys(1),
+      '/api/auth/mfa/status': twoFactorStatus,
+    });
+    render(<VerifiedPage />);
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/admin/passkeys?more=1'));
+    expect(callsTo('/api/auth/mfa/status')).toHaveLength(0);
+    expect(callsTo('/api/auth/mfa/enroll-totp')).toHaveLength(0);
+  });
+
+  it('DD-AUTH-082 無限の遷移にならない: 送った先から /auth/verified へ戻す呼びを、この頁は1回しか出さない', async () => {
+    routeFetch({ '/api/auth/me': adminUnverified, '/api/auth/passkey': staffKeys(1) });
+    render(<VerifiedPage />);
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledTimes(1));
+    expect(mockReplace).toHaveBeenCalledWith('/admin/passkeys?more=1');
+    expect(callsTo('/api/auth/post-login')).toHaveLength(0);
+  });
+
+  it('DD-AUTH-082 post-login が needsMfa を返す店員でも、認めた鍵が1本なら /admin/passkeys?more=1 へ送る（画面の2段目へ落とさない）', async () => {
+    routeFetch({
+      '/api/auth/me': () => jsonResponse({ authenticated: true, user: { role: 'admin', mfaVerified: true } }),
+      '/api/auth/post-login': postLoginTo('/auth/verified', true),
+      '/api/auth/passkey': staffKeys(1),
+      '/api/auth/mfa/status': twoFactorStatus,
+    });
+    render(<VerifiedPage />);
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/admin/passkeys?more=1'));
+    expect(callsTo('/api/auth/mfa/status')).toHaveLength(0);
+  });
+
+  it.each([
+    ['認めた鍵が0本', staffKeys(0)],
+    ['認めた鍵が2本', staffKeys(2)],
+    ['店員でない', staffKeys(1, false)],
+    ['窓口が 503', () => jsonResponse({ error: 'x' }, false, 503)],
+    ['本文が JSON でない', () => brokenJsonResponse()],
+  ])('DD-AUTH-082 「%s」なら今までどおり TOTP の2段目を出す（もう1本の画面へは送らない）', async (_label, build) => {
+    routeFetch({
+      '/api/auth/me': adminUnverified,
+      '/api/auth/passkey': build,
+      '/api/auth/mfa/status': twoFactorStatus,
+    });
+    render(<VerifiedPage />);
+
+    expect(await screen.findByRole('combobox', { name: '認証要素' })).toBeInTheDocument();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+});
