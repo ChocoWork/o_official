@@ -1,5 +1,6 @@
 # DB マイグレーション運用
 
+> 2026-11-19 確認日（パスキー段3a Task 12）: 段3a の全体の確かめ。パスキーの移行8本（A〜H）の大きさと MD5 を、ファイルから測り直して各節の表と突き合わせた（全部一致。LF・BOM なし・ASCII だけ。A 14060 / `090acfa1b224334eb5a10e6365e5c022`、B 8454 / `39fc2e72e8fe8f5bc4a8a6df3f7533d2`、C 8049 / `fd522cc9974488668fc89e70fb371dce`、D 14967 / `4b849664cf0f4d813db77535ed8823bc`、E 10066 / `eb9920be73c7ab60835aa9fd9f8a50c4`、F 10962 / `baa7db1cb68fa055584eb1319878bf3e`、G 19439 / `ba1eb9eb9983014fc9b5efa2209bc5a4`、H 39171 / `d8b50501e889e7d6248e0aec519bc112`）。「段3まで db push しない」の一覧に H を足した（8本）。本番には何も当てていない。
 > 2026-11-18 確認日（パスキー段3a Task 3 のレビューの直し）: 移行 D の無操作の基準を `auth.sessions.created_at` だけにし（`refreshed_at` は見ない）、`staff_idle_check` は時刻の書き込みが失敗したら例外を投げるようにした（内側に `private.staff_session_touch_core` を足した）。D の大きさ・MD5 を測り直した（14967 bytes）。
 > 2026-11-18 確認日（パスキー段3a Task 3）: 本番未適用の移行 D・E を同じファイルのまま直した。D に店員の無操作1時間の表 `private.staff_session_activity` と関数4本（`private.staff_idle_ok`・`public.staff_session_touch`・`staff_idle_check`・`staff_idle_peek`）を足し、E の `has_permission` に4つ目の条件（`private.staff_idle_ok`）と前の確かめ（`passkey_entry_idle_fn`）を足した。大きさ・MD5 を測り直した（D 14967 bytes、E 10066 bytes）。下の「移行 D」「移行 E」の節（SR-AUTH-028、SEC-AUTH-055、ADR-0472）。
 > 2026-11-19 確認日（パスキー段3a Task 9）: 本番未適用の移行 H の `passkey_delete_with_floor` を同じファイルで直した。**止めるのは、消す鍵が認めた鍵で、残りの認めた本数が下限未満になる時だけ**（認めていない鍵は、認めた鍵が下限未満でも消せる）。大きさ・MD5 を測り直した（39171 bytes）。DB の結合試験に1件足した（`tests/integration/db/auth_passkey_staff_roles.integration.test.ts`）。
@@ -171,7 +172,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 - 前の確かめ: 移行 D の関数2本と `private.app_session_is_live(uuid)` が在ること。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（`passkey_entry_switch_precheck`）。続けて `private.staff_idle_ok(uuid)`（D の無操作の関数）が無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（`DETAIL = passkey_entry_idle_fn`）。D を先に当てる（D は E より前に当たる版）
 - 前の確かめ（締め出しの防止。`DETAIL = passkey_entry_switch_no_ready_staff`）: 有効な店員（`user_roles` の有効な admin・supporter）が1人でもいて、認めた鍵が `min_approved_passkeys` 本以上の店員が1人もいなければ、`PASSKEY_MIGRATION_PRECHECK_FAILED` で止まる。当てると全員が管理の権限を失うため。手元の `db reset` は移行の後に seed を入れるので `user_roles` が空で、通る。試験: `tests/integration/db/auth_has_permission_passkey.integration.test.ts` が移行ファイルのこの DO ブロックを取り出して流す（店員0本・1本で止まり、2本が1人でもいれば通る）
 - 前の確かめ（土台の一致。`DETAIL = passkey_entry_switch_baseline`）: 置き換える前の `has_permission` の本体の `md5(prosrc)` が `3c4826933eca194a3486f430d361891c` でなければ止まる（`pg_get_functiondef` の md5 は頭の書き方が PG の版で変わりうるので使わない。`prosrc` は `$function$` の間の本文だけ）。別の作業が段3までの間に本体を直していたら、黙って上書きしない。この値は、移行 D までを適用した手元の DB（`npx.cmd supabase db reset --version 20261117001500`）で `select md5(prosrc) from pg_proc where oid = 'public.has_permission(text)'::regprocedure` を読んで測った（`20261029120100` の本体を取引の中で作り直して測っても同じ値）。本番の PG の版で `pg_get_functiondef` の字が変わって止まった場合でも、本番で上の `md5(prosrc)` を読み、手元の値と同じなら、違いは頭の書き方だけなので中身は同じと判断してよい（違う時は本体が変わっているので、E を当てずに中身を読む）。**E の期待値を直した時は、同じコミットで、この表の E の大きさと MD5 を直す**（MCP で当てた後の突き合わせ `md5(statements[1])` は、直したファイルの MD5 で行う）
-- **段3まで `supabase db push`（どの形でも）を流さない**: `supabase/migrations` にこの5本（と段1b の移行 F、段2 の移行 G）がある間、`db push --linked --include-all` を流すと一度に本番へ当たる。別の作業の移行も、段3までは MCP の `apply_migration` で1本ずつ当てる。上の「前の確かめ」は、うっかり当たった時の最後の歯止めで、それに頼らない
+- **段3まで `supabase db push`（どの形でも）を流さない**: `supabase/migrations` にこの5本（と段1b の移行 F、段2 の移行 G、段3a の移行 H）がある間、`db push --linked --include-all` を流すと一度に本番へ当たる。別の作業の移行も、段3までは MCP の `apply_migration` で1本ずつ当てる。上の「前の確かめ」は、うっかり当たった時の最後の歯止めで、それに頼らない
 - 末尾の確かめ: 本体に `aal2` が無く、`staff_idle_ok` が在り、`staff_passkey_amr_ok` < `user_roles` < `staff_passkey_count_ok` < `staff_idle_ok` < `app_session_is_live` の順で、持ち主・`SECURITY DEFINER`・`STABLE`・`search_path` 空・`authenticated` と `service_role` に `execute` が有り `anon` に無いこと。外れたら `PASSKEY_MIGRATION_ASSERTION_FAILED`
 - 戻し方（移行のヘッダーの ROLLBACK）: `20261029120100_sec_has_permission_aal2_member_rls.sql` の本体（`aal2` の枝）に `CREATE OR REPLACE` で戻す（D の無操作の表・関数を落とす前に）
 - 費用: `has_permission` を `( SELECT ... )` で包まずに呼ぶ決まりが21の表に77件ある（行ごとに呼ばれうる）。条件3の数えと条件4（無操作）の確かめは、パスキーの amr と ACL を通った人（店員）だけが払う。お客さん・anon は条件1・2か ACL で止まる。条件4は主キーで1行を読むだけ（行が無い時は `auth.sessions` の主キー）なので、お客さん・anon の実行計画は変わらず、店員の呼びに主キーの読みが1回足りる（`EXPLAIN` の件数が増えるのは店員だけ）
@@ -717,7 +718,7 @@ master への push で実際に適用される（段3の後に引き金を戻し
 
 **注: 2026-11-16 からパスキーの段3まで、push の引き金は止めている（「CI の引き金を止めた記録」の節）。本番へは調整役が MCP の `apply_migration` で1本ずつ当てる。**
 
-**注: 段3まで `supabase db push --linked`（`--include-all` を含むどの形でも）は流さない。`supabase/migrations` にパスキーの7本（段1a の5本と段1b の F、段2 の G。`passkey` を含む名前）がある間は、流すと7本が一度に本番へ当たり、本番の店員がだれも管理の権限を持てなくなる。別の作業（会計など）の移行も、段3までは MCP の `apply_migration` で1本ずつ当てる。順と前提は「パスキー段1a の本番への当て方の順と前提」の節。**
+**注: 段3まで `supabase db push --linked`（`--include-all` を含むどの形でも）は流さない。`supabase/migrations` にパスキーの8本（段1a の5本と段1b の F、段2 の G、段3a の H。`passkey` を含む名前）がある間は、流すと8本が一度に本番へ当たり、本番の店員がだれも管理の権限を持てなくなる。別の作業（会計など）の移行も、段3までは MCP の `apply_migration` で1本ずつ当てる。順と前提は「パスキー段1a の本番への当て方の順と前提」の節。**
 
 ### 本番に当てる前の試行（取り消し前提）
 

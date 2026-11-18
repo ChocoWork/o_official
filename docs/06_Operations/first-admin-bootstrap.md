@@ -1,6 +1,6 @@
 # 最初の店長を作る手順
 
-> 状態: 現行 | 確認日: 2026-11-18 | 対象: 新しい環境（検証用・作り直した本番）の最初の店長、手元の開発で店員として入る手順（`npm run dev:staff`）。手元の `db reset` の後は、段1a の切り替え（Task 9）からこのコマンドの店長が動かない（下の前提）。コマンド `npm run admin:bootstrap`
+> 状態: 現行 | 確認日: 2026-11-19 | 対象: 新しい環境（検証用・作り直した本番）の最初の店長、手元の開発で店員として入る手順（`npm run dev:staff`）。手元の `db reset` の後は、段1a の切り替え（Task 9）からこのコマンドの店長が動かない（下の前提）。コマンド `npm run admin:bootstrap`
 
 ## 概要
 
@@ -99,6 +99,8 @@ npm run dev:staff -- --open [--role admin|supporter] [--email <新しいメー�
 ## 作った後
 
 次の手順は、前提の3つ（master のデプロイ・移行 E・フックの登録）のどれも済んでいない間だけ使える。作った店長は、そのメールとパスワードでログインする。最初のログインで、メール OTP の後に TOTP の登録の画面（QR コード）が出るので、TOTP を登録する（SEC-AUTH-031）。登録するまで管理画面は使えない。
+
+段3a（2026-11-19）で、店長が店員を招待する窓口（`POST /api/admin/staff/invites`）と、招待を受ける画面（`/staff/invite`・`/staff/register`）が master に入った。本番に最初の店長を作る手順（最後の手段の SQL `private.staff_invite_issue_manual` と、アカウントが無い時の作り方）は段3b で書く。それまで、この master を本番に出さない。
 
 3つのどれかが済んだ後は、パスワードのログインが `[staff-passkey-required]` で断られる。最初の店長は段3の招待の流れ（パスキー）で入る。手元で /admin を確かめる時は `npm run dev:staff`（上の「手元の開発で店員として入る」）を使う。
 

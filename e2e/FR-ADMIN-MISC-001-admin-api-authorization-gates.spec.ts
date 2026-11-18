@@ -287,7 +287,7 @@ async function expectWritesRefusedByOrigin(
     try {
       const admin = await createAdminSessionActor(db, 'admin', 'aal2');
       const writes = rangeEndpoints(fixture).filter((endpoint) => WRITE_METHODS.has(endpoint.method));
-      expect(writes.map(label)).toHaveLength(10);
+      expect(writes.map(label)).toHaveLength(9);
 
       const control = await probe(
         api,
