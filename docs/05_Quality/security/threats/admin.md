@@ -21,7 +21,7 @@ ADMIN（管理のそのほか）の領域で考える脅威を、1つずつ `THR
 
 ## 範囲と根拠
 
-- 範囲: `scripts/trace/scope.json` の ADMIN の src（`src/app/api/admin/create-user/**`・`revoke-user-sessions/**`・`audit-logs/**`・`users/mfa/**`・`contact/**`・`item-color-presets/**`、`src/app/admin/create-user/**`、`src/lib/contact/**`、`src/lib/auditCleanup.ts`）
+- 範囲: `scripts/trace/scope.json` の ADMIN の src（`revoke-user-sessions/**`・`audit-logs/**`・`users/mfa/**`・`contact/**`・`item-color-presets/**`、`src/lib/contact/**`、`src/lib/auditCleanup.ts`）
 - 範囲の外だが脅威の入口になるので見た物: `src/lib/auth/admin-rbac.ts`（管理の認可）、`src/lib/audit.ts`（監査の記録と伏せ字）、`src/proxy.ts`（Origin の照合）、`src/features/auth/middleware/rateLimit.ts`（回数の制限）、`src/lib/mail/adapters/*`（メールの送り方）、`supabase/migrations/20260901102912_remote_schema.sql`（表・RLS・表の権限・RPC）、`supabase/migrations/20261023175712_group_g0_permissions.sql`（`has_permission`）
 - 出どころのレビュー: `docs/05_Quality/reviews/security/security_review_admin.md`・`security_review_contact.md`、`docs/05_Quality/reviews/code/2026-04-18-admin-security-review.md`・`2026-04-18-auth-security-review.md`・`2026-04-18-contact-review.md`。どのレビューも当時の記録なので、今の状態は 2026-10-24 にコードを読み直して決めた
 - 全体のセキュリティ要件は `docs/02_Requirements/requirements.md` の 5.4 節（NFR-SEC-001〜012・AC-SEC-001）。ADMIN に当てはまる物は、各項目の根拠に書いた
@@ -68,11 +68,11 @@ flowchart LR
 | --- | --- |
 | 守るもの | 利用者のアカウント（作成・失効・MFA）、問い合わせの個人情報、監査ログ、色見本 |
 | 脅威 | 未ログインの人・一般会員・権限の足りない管理者が、範囲の管理 API を直接呼ぶ |
-| 起こり方 | `/api/admin/create-user`・`revoke-user-sessions`・`audit-logs`・`users/mfa/reset`・`contact/**`・`item-color-presets/**` を JWT 無し・一般会員の JWT・別の権限の JWT で呼ぶ。過去は `x-admin-token` の共有の秘密1本で通った |
+| 起こり方 | `revoke-user-sessions`・`audit-logs`・`users/mfa/reset`・`contact/**`・`item-color-presets/**` を JWT 無し・一般会員の JWT・別の権限の JWT で呼ぶ。過去は `x-admin-token` の共有の秘密1本で通った |
 | 影響 | アカウントの乗っ取りや締め出し、問い合わせの個人情報の漏れ、監査ログの漏れ |
 | 対策 | SEC-ADMIN-001 |
 | ASVS | V4.1.1、V4.3.1 |
-| 根拠 | 全部のルートが最初に `authorizeAdminPermission` を通る（例 `src/app/api/admin/create-user/route.ts:18`、`revoke-user-sessions/route.ts:14`、`audit-logs/route.ts:18`、`users/mfa/reset/route.ts:41`、`contact/route.ts:16`、`item-color-presets/route.ts:13`）。認可は JWT の検証・session の生存・DB の ACL・`aal2` を全部見る（`src/lib/auth/admin-rbac.ts:184-250`）。`admin.users.manage` は店長に固定した権限（`src/lib/auth/role-permission-catalog.ts:4`、`docs/superpowers/specs/2026-10-23-group-g-design.md:560`）、`admin.audit.read` は店長だけに付ける（`supabase/migrations/20261023061453_audit_read_permission.sql:6-12`）。全体の NFR-SEC-005（権限管理）・NFR-SEC-008（RBAC）に当てはめた |
+| 根拠 | 全部のルートが最初に `authorizeAdminPermission` を通る（例 `revoke-user-sessions/route.ts:14`、`audit-logs/route.ts:18`、`users/mfa/reset/route.ts:41`、`contact/route.ts:16`、`item-color-presets/route.ts:13`）。認可は JWT の検証・session の生存・DB の ACL・`aal2` を全部見る（`src/lib/auth/admin-rbac.ts:184-250`）。`admin.users.manage` は店長に固定した権限（`src/lib/auth/role-permission-catalog.ts:4`、`docs/superpowers/specs/2026-10-23-group-g-design.md:560`）、`admin.audit.read` は店長だけに付ける（`supabase/migrations/20261023061453_audit_read_permission.sql:6-12`）。全体の NFR-SEC-005（権限管理）・NFR-SEC-008（RBAC）に当てはめた |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/code/2026-04-18-admin-security-review.md:29-34,43-48`、`docs/05_Quality/reviews/security/security_review_admin.md:12-17` |
 
@@ -227,8 +227,10 @@ flowchart LR
 | 対策 | SEC-ADMIN-012 |
 | ASVS | V2.1.1、V2.1.7 |
 | 根拠 | 会員登録とパスワードの再設定は 16 文字と漏洩の照合を持つ（FREQ-323（範囲外）、`docs/02_Requirements/requirements.md:1507`）。FREQ-323 の対象に管理者の作成が入るかは書いていなかったが、ユーザーが 2026-10-26 に「入れる」と承認し、16 文字 + 漏洩の照合を当てた（TM-ADMIN-05）。全体の NFR-SEC-008（強力なパスワードポリシー）に当てはめた |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | 実装から推定 |
+
+廃止（2026-11-18）: 利用者の作成の画面と窓口（`create-user`）を消した。店員は招待（API-AUTH-033）だけで増やす。番号は使い回さない。
 
 ### THR-ADMIN-013 ユーザー作成の入力の確かめが緩い
 

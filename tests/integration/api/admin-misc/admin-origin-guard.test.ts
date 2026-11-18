@@ -52,13 +52,6 @@ const WRITE_ROUTES: Array<{
   params?: { id: string };
 }> = [
   {
-    label: '利用者の作成',
-    method: 'POST',
-    path: '/api/admin/create-user',
-    load: () => require('@/app/api/admin/create-user/route'),
-    body: { email: 'new@example.com', password: 'password-1234-ok' },
-  },
-  {
     label: '強制失効',
     method: 'POST',
     path: '/api/admin/revoke-user-sessions',
@@ -131,7 +124,6 @@ const WRITE_ROUTES: Array<{
  * 残りの窓口は後のタスクで足すので、ここに道を足す。
  */
 const ADMIN_RATE_LIMITED_PATHS = new Set([
-  '/api/admin/create-user',
   '/api/admin/revoke-user-sessions',
   '/api/admin/users/mfa/reset',
   '/api/admin/item-color-presets',
@@ -238,7 +230,7 @@ describe('ARC-ADMIN-002 書き込みの窓口の Origin の照合', () => {
     it('ARC-ADMIN-002 Origin が無ければ Referer の origin で照合し、許可のオリジンなら通す', async () => {
       const proxy = await loadProxy();
 
-      const res = proxy(makeRequest('/api/admin/create-user', 'POST', { referer: `${ALLOWED}/admin/create-user?x=1` }));
+      const res = proxy(makeRequest('/api/admin/revoke-user-sessions', 'POST', { referer: `${ALLOWED}/admin/users?x=1` }));
 
       expect(res.status).toBe(200);
     });
@@ -246,7 +238,7 @@ describe('ARC-ADMIN-002 書き込みの窓口の Origin の照合', () => {
     it('ARC-ADMIN-002 Origin が無く Referer が別のオリジンなら 403 を返す', async () => {
       const proxy = await loadProxy();
 
-      const res = proxy(makeRequest('/api/admin/create-user', 'POST', { referer: `${EVIL}/page` }));
+      const res = proxy(makeRequest('/api/admin/revoke-user-sessions', 'POST', { referer: `${EVIL}/page` }));
 
       expect(res.status).toBe(403);
     });
@@ -254,7 +246,7 @@ describe('ARC-ADMIN-002 書き込みの窓口の Origin の照合', () => {
     it('ARC-ADMIN-002 Origin が無く Referer が URL として読めなければ 403 を返す', async () => {
       const proxy = await loadProxy();
 
-      const res = proxy(makeRequest('/api/admin/create-user', 'POST', { referer: 'not a url' }));
+      const res = proxy(makeRequest('/api/admin/revoke-user-sessions', 'POST', { referer: 'not a url' }));
 
       expect(res.status).toBe(403);
     });
@@ -304,7 +296,7 @@ describe('ARC-ADMIN-002 書き込みの窓口の Origin の照合', () => {
     it('ARC-ADMIN-002 /api の外の POST は照合にかけない', async () => {
       const proxy = await loadProxy();
 
-      const res = proxy(makeRequest('/admin/create-user', 'POST', { origin: EVIL }));
+      const res = proxy(makeRequest('/admin/users', 'POST', { origin: EVIL }));
 
       expect(res.status).toBe(200);
     });
@@ -336,7 +328,7 @@ describe('ARC-ADMIN-002 書き込みの窓口の Origin の照合', () => {
     it('ARC-ADMIN-002 要求の Host から比べる元を作り、同じオリジンなら通す', async () => {
       const proxy = await loadProxy();
 
-      const res = proxy(makeRequest('/api/admin/create-user', 'POST', { origin: ALLOWED, host: 'shop.example.com' }));
+      const res = proxy(makeRequest('/api/admin/revoke-user-sessions', 'POST', { origin: ALLOWED, host: 'shop.example.com' }));
 
       expect(res.status).toBe(200);
     });
@@ -345,7 +337,7 @@ describe('ARC-ADMIN-002 書き込みの窓口の Origin の照合', () => {
       const proxy = await loadProxy();
 
       const res = proxy(
-        makeRequest('/api/admin/create-user', 'POST', {
+        makeRequest('/api/admin/revoke-user-sessions', 'POST', {
           origin: 'https://forwarded.example',
           'x-forwarded-host': 'forwarded.example',
           'x-forwarded-proto': 'https',
@@ -358,7 +350,7 @@ describe('ARC-ADMIN-002 書き込みの窓口の Origin の照合', () => {
     it('ARC-ADMIN-002 要求の Host と違うオリジンなら 403 を返す', async () => {
       const proxy = await loadProxy();
 
-      const res = proxy(makeRequest('/api/admin/create-user', 'POST', { origin: EVIL, host: 'shop.example.com' }));
+      const res = proxy(makeRequest('/api/admin/revoke-user-sessions', 'POST', { origin: EVIL, host: 'shop.example.com' }));
 
       expect(res.status).toBe(403);
     });
@@ -366,7 +358,7 @@ describe('ARC-ADMIN-002 書き込みの窓口の Origin の照合', () => {
     it('ARC-ADMIN-002 Origin も Referer も無ければ設定が無くても 403 を返す', async () => {
       const proxy = await loadProxy();
 
-      const res = proxy(makeRequest('/api/admin/create-user', 'POST', { host: 'shop.example.com' }));
+      const res = proxy(makeRequest('/api/admin/revoke-user-sessions', 'POST', { host: 'shop.example.com' }));
 
       expect(res.status).toBe(403);
     });
@@ -374,7 +366,7 @@ describe('ARC-ADMIN-002 書き込みの窓口の Origin の照合', () => {
     it('ARC-ADMIN-002 警告はプロセスにつき 1 度だけ出す', async () => {
       const proxy = await loadProxy();
 
-      proxy(makeRequest('/api/admin/create-user', 'POST', { origin: ALLOWED, host: 'shop.example.com' }));
+      proxy(makeRequest('/api/admin/revoke-user-sessions', 'POST', { origin: ALLOWED, host: 'shop.example.com' }));
       proxy(makeRequest('/api/admin/revoke-user-sessions', 'POST', { origin: EVIL, host: 'shop.example.com' }));
       proxy(makeRequest('/api/admin/contact/c1', 'PATCH', { origin: ALLOWED, host: 'shop.example.com' }));
 
@@ -385,7 +377,7 @@ describe('ARC-ADMIN-002 書き込みの窓口の Origin の照合', () => {
     it('ARC-ADMIN-002 比べる元が URL として読めなければ 403 を返す', async () => {
       const proxy = await loadProxy();
 
-      const res = proxy(makeRequest('/api/admin/create-user', 'POST', { origin: 'null', host: 'shop.example.com' }));
+      const res = proxy(makeRequest('/api/admin/revoke-user-sessions', 'POST', { origin: 'null', host: 'shop.example.com' }));
 
       expect(res.status).toBe(403);
     });

@@ -47,15 +47,15 @@
 ### 3. Admin create-user UI is now broken by CSRF enforcement
 
 - Files:
-  - [src/app/api/admin/create-user/route.ts](../../../../src/app/api/admin/create-user/route.ts#L16)
-  - [src/app/admin/create-user/page.tsx](../../../../src/app/admin/create-user/page.tsx#L28)
+  - src/app/api/admin/create-user/route.ts
+  - src/app/admin/create-user/page.tsx
 - Issue:
   - API 側は requireCsrfOrDeny() を必須化していますが、呼び出し元 UI は素の fetch で x-csrf-token を送っていません。
   - 認証済み管理者が画面からユーザー作成すると 403 になります。
 - Why this matters:
   - セキュリティ修正が管理者運用を直接停止させています。管理系機能は復旧時のオペレーションにも使うため、ここが塞がる影響は大きいです。
 - Suggested fix:
-  - [src/app/admin/create-user/page.tsx](../../../../src/app/admin/create-user/page.tsx#L28) を clientFetch ベースへ統一するか、既存 logout と同様に CSRF Cookie から x-csrf-token を明示付与する。
+  - src/app/admin/create-user/page.tsx を clientFetch ベースへ統一するか、既存 logout と同様に CSRF Cookie から x-csrf-token を明示付与する。
 
 ## Recommended Changes
 

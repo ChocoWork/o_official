@@ -187,7 +187,7 @@ Vercel の Production の環境変数に、ビルドの前に入れること。*
 
 以前は `POST /api/auth/register` が `x-admin-token`（又は `Authorization: Bearer`）を `ADMIN_API_KEY` と照合し、一致すると管理の作成の枝（確認なしで会員を作る）に切り替えていた。波 1-B（2026-10-26）でこの枝を削除した（SEC-AUTH-017）。今は `src` のどこにも `ADMIN_API_KEY` を読む所が無く、`/api/auth/register` はいつも公開の会員登録として扱う。E2E の固定の環境（`scripts/e2e/environment.ts` の `E2E_FIXED_ENV`）からも外した。
 
-運用の作業: 本番（Vercel）の環境変数に `ADMIN_API_KEY` があれば削除する。残っていても動きは変わらないが、読まれない鍵を置き続けない。管理者が会員を作るときは、管理画面の `POST /api/admin/create-user`（権限 `admin.users.manage`）を使う。
+運用の作業: 本番（Vercel）の環境変数に `ADMIN_API_KEY` があれば削除する。残っていても動きは変わらないが、読まれない鍵を置き続けない。店員を増やすときは、`POST /api/admin/staff/invites`（権限 `admin.users.manage`。招待のメールから本人がパスキーを登録する）を使う。管理者が会員を直に作る窓口（`/api/admin/create-user`）は 2026-11-18 に消した。
 
 ## SUPABASE_SECRET_KEY・NEXT_PUBLIC_PASSKEY_START_MODE・PASSKEY_START_DEV_IP（パスキーのログインの始め。段1b）
 

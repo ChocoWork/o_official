@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> パスキー段3a Task 5 確認日: 2026-11-18。Route Handler を4ファイル・4メソッド足し、1ファイル・1メソッドを消した（211ファイル・264メソッド、表は210行・263メソッド）。足したのは店長の招待の窓口 `POST /api/admin/staff/invites`・`[id]/redo`・`[id]/demote`・`[id]/invite/cancel`。消したのは `POST /api/admin/create-user`（利用者の作成。店員は招待で増やす）。契約は [基本設計の認証](../areas/auth.md) の API-AUTH-033〜036。`PATCH /api/admin/users` は、お客さんなどを店員にする時に直に役割を付けず招待を出し、`user` への降格は招待も取り消す。`GET /api/admin/users` の各行に `approvedPasskeys`・`invitePending` を足した。
+>
 > パスキー段2 Task 1 確認日: 2026-11-17。Route Handler を4ファイル・4メソッド足した（208ファイル・261メソッド、表は207行・260メソッド）。メールのコードのログイン・新規の `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel`。契約は [基本設計の認証](../areas/auth.md) の API-AUTH-029〜032。
 >
 > パスキー段1b Task 8 確認日: 2026-11-17。Route Handler を2ファイル・3メソッド足した（204ファイル・257メソッド、表は203行・256メソッド）。`GET /api/auth/passkey`（一覧）・`PATCH`・`DELETE /api/auth/passkey/{id}`（名前の変更・削除）。契約は [基本設計の認証](../areas/auth.md) の API-AUTH-026・API-AUTH-027・API-AUTH-028。
@@ -115,7 +117,6 @@
 | `/api/admin/contact` | `GET` | [route.ts](../../../src/app/api/admin/contact/route.ts) |
 | `/api/admin/contact/templates/[id]` | `DELETE`, `PUT` | [route.ts](../../../src/app/api/admin/contact/templates/%5Bid%5D/route.ts) |
 | `/api/admin/contact/templates` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/contact/templates/route.ts) |
-| `/api/admin/create-user` | `POST` | [route.ts](../../../src/app/api/admin/create-user/route.ts) |
 | `/api/admin/discounts` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/discounts/route.ts) （H Task 4: GET は `admin.discounts.read`（回数制限なし）、POST は `admin.discounts.manage`。FREQ-543/547） |
 | `/api/admin/discounts/[id]` | `GET`, `PATCH` | [route.ts](../../../src/app/api/admin/discounts/%5Bid%5D/route.ts) （H Task 4: GET は read、PATCH は manage） |
 | `/api/admin/discounts/[id]/assign` | `POST` | [route.ts](../../../src/app/api/admin/discounts/%5Bid%5D/assign/route.ts) （H Task 4: manage） |
@@ -191,6 +192,10 @@
 | `/api/admin/shipment-slips/[id]/tracking` | `POST` | [route.ts](../../../src/app/api/admin/shipment-slips/%5Bid%5D/tracking/route.ts) （G-3 Task 7: 上と同じ4権限。確定済みの票の伝票番号の入力・訂正。運送会社と番号は両方必須。`expectedVersion` が必須。CSRF・回数制限 `admin.shipment_slips.tracking` の60回/600秒・監査 `admin.shipment_slips.tracking.update`。成功は200） |
 | `/api/admin/shipment-slips/[id]/delivered` | `POST` | [route.ts](../../../src/app/api/admin/shipment-slips/%5Bid%5D/delivered/route.ts) （G-3 Task 7: 上と同じ4権限。確定済みの票の手動の配達済み。`expectedVersion` と `deliveredOn` が必須。CSRF・回数制限 `admin.shipment_slips.delivered` の60回/600秒・監査 `admin.shipment_slips.delivered`。成功は200） |
 | `/api/admin/settings/shop` | `GET`, `PUT` | [route.ts](../../../src/app/api/admin/settings/shop/route.ts) |
+| `/api/admin/staff/invites` | `POST` | [route.ts](../../../src/app/api/admin/staff/invites/route.ts) （パスキー段3a Task 5: 店員の招待。`admin.users.manage`。API-AUTH-033） |
+| `/api/admin/staff/[id]/redo` | `POST` | [route.ts](../../../src/app/api/admin/staff/%5Bid%5D/redo/route.ts) （パスキー段3a Task 5: パスキーを全部消してやり直す。API-AUTH-034） |
+| `/api/admin/staff/[id]/demote` | `POST` | [route.ts](../../../src/app/api/admin/staff/%5Bid%5D/demote/route.ts) （パスキー段3a Task 5: お客さんに戻す。API-AUTH-035） |
+| `/api/admin/staff/[id]/invite/cancel` | `POST` | [route.ts](../../../src/app/api/admin/staff/%5Bid%5D/invite/cancel/route.ts) （パスキー段3a Task 5: 招待の取り消し。API-AUTH-036） |
 | `/api/admin/stockists/access` | `GET` | [route.ts](../../../src/app/api/admin/stockists/access/route.ts) （波 4 / 2026-10-28: 取扱店の作成の頁が入口で権限を確かめる。RBAC `admin.stockists.manage`・aal2。送り元の枠 → 認可 → 操作者の枠（読み）の順。成功は本文なしの 204。全応答 `no-store`。拒否は `auditAuthzDenial`。API-STOCKIST-007、[ADR-0269](../decisions/ADR-0269-stockist-create-page-access-gate.md)） |
 | `/api/admin/stockists/[id]` | `DELETE`, `GET`, `PATCH`, `PUT` | [route.ts](../../../src/app/api/admin/stockists/%5Bid%5D/route.ts) |
 | `/api/admin/stockists` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/stockists/route.ts) |

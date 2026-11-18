@@ -70,7 +70,7 @@ test.each([
   ['ROLE_PERMISSION_ARGUMENT_INVALID', '22023'], ['ROLE_PERMISSION_FORBIDDEN', '42501'],
   ['ROLE_PERMISSION_FIXED', '42501'], ['ROLE_PERMISSION_VERSION_CONFLICT', 'P0001'],
   ['ROLE_PERMISSION_REQUEST_KEY_CONFLICT', 'P0001'], ['LAST_ADMIN_REQUIRED', 'P0001'],
-  ['SELF_ROLE_CHANGE_FORBIDDEN', '42501'], ['USER_NOT_FOUND', 'P0002'],
+  ['SELF_ROLE_CHANGE_FORBIDDEN', '42501'], ['USER_NOT_FOUND', 'P0002'], ['STAFF_INVITE_REQUIRED', '42501'],
 ])('全文とSQLSTATEが一致した%sだけを業務拒否へ変換', async (message, code) => {
   rpc.mockResolvedValue({ data: null, error: { message, code, details: 'PRIVATE', hint: 'PRIVATE' } });
   await expect(setRolePermissions(client, 'actor', change)).rejects.toMatchObject({ code: message });
@@ -78,6 +78,7 @@ test.each([
 
 test.each([
   { message: 'ROLE_PERMISSION_FIXED', code: 'P0001' },
+  { message: 'STAFF_INVITE_REQUIRED', code: 'P0001' },
   { message: 'OTHER', code: '42501' },
   { message: 'prefix ROLE_PERMISSION_FIXED', code: '42501' },
   { message: 'ROLE_PERMISSION_FIXED suffix', code: '42501' },

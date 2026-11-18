@@ -10,9 +10,9 @@ ADMIN の領域の構成・画面・状態遷移・API・データを、追跡�
 | 種類 | 数 | ID | 中身 |
 | --- | --- | --- | --- |
 | 構成 | 6 | `ARC-ADMIN-001`〜`006` | 認可と service role、Origin の照合、監査ログの書き方と読み方、返信の宛先の印、監査ログの掃除の部品、最初の店長を作るコマンドの分け方 |
-| 画面 | 1 | `SCR-ADMIN-001` | 利用者の作成 `/admin/create-user` |
+| 画面 | 1 | `SCR-ADMIN-001` | 利用者の作成 `/admin/create-user`（2026-11-18 に廃止） |
 | 状態遷移 | 1 | `STATE-ADMIN-001` | 問い合わせの状態 |
-| API | 15 | `API-ADMIN-001`〜`015` | 利用者の作成・強制失効・監査ログ・2要素のリセット・問い合わせの9つ・色見本の3つ |
+| API | 15 | `API-ADMIN-001`〜`015` | 利用者の作成（`API-ADMIN-001` は 2026-11-18 に廃止）・強制失効・監査ログ・2要素のリセット・問い合わせの9つ・色見本の3つ |
 | データ | 6 | `DATA-ADMIN-001`〜`006` | 問い合わせの表、管理の表の RLS と付与、監査ログの表、session を消す関数、色見本の表、権限の印 |
 
 - 結論: 範囲の窓口は全部、頭で共有の認可（JWT・session の生存・DB の ACL の権限・aal2）を通し、通った後にだけ service role の client で表と Auth の管理の機能を使う。表の側は、色見本のほかは anon・authenticated の直接の読み書きを方針で断る
@@ -28,7 +28,7 @@ ADMIN の領域の構成・画面・状態遷移・API・データを、追跡�
 | 範囲 | `scripts/trace/scope.json` の ADMIN |
 | 上位の文書 | [ADMIN の要件](../../02_Requirements/areas/admin.md)（要件・`SEC-ADMIN-`・`DRV-ADMIN-`）、`docs/03_BasicDesign/decisions/ADR-0450`〜`ADR-0459` |
 | 範囲外の上位 | FREQ-316-REQ-01・03、FREQ-327-REQ-01（持ち主は AUTH）、FREQ-540-REQ-01（持ち主なし。割当の作業が書き換え中）、FREQ-24-REQ-01、FR-CONTACT-011〜013、FREQ-402-REQ-02、NFR-SEC-005（持ち主なし）。FREQ-316・327 は AUTH が定義し、FREQ-540 は誰も定義していない（`（範囲外）` で指すだけ） |
-| 対象のコード | `src/app/api/admin/create-user/`、`src/app/api/admin/revoke-user-sessions/`、`src/app/api/admin/audit-logs/`、`src/app/api/admin/users/mfa/reset/`、`src/app/api/admin/contact/`（5 ファイル）、`src/app/api/admin/item-color-presets/`（2 ファイル）、`src/app/admin/create-user/page.tsx`、`src/lib/contact/reply-address.ts`、`src/lib/auditCleanup.ts`、`scripts/admin/`（3 ファイル。ARC-ADMIN-006）（17 ファイル） |
+| 対象のコード | `src/app/api/admin/revoke-user-sessions/`、`src/app/api/admin/audit-logs/`、`src/app/api/admin/users/mfa/reset/`、`src/app/api/admin/contact/`（5 ファイル）、`src/app/api/admin/item-color-presets/`（2 ファイル）、`src/lib/contact/reply-address.ts`、`src/lib/auditCleanup.ts`、`scripts/admin/`（3 ファイル。ARC-ADMIN-006）（14 ファイル。利用者の作成の画面と窓口の3ファイルは 2026-11-18 に消した） |
 | 対象の DB | `supabase/migrations/20260901102912_remote_schema.sql`（表・RLS・付与・関数）、`supabase/migrations/20261023061453_audit_read_permission.sql`、`supabase/migrations/20261023175712_group_g0_permissions.sql`（権限の印と初めの割り当て） |
 | 関連文書 | `docs/03_BasicDesign/api/api-spec.md`、`docs/03_BasicDesign/ui/screen-list.md`、`docs/03_BasicDesign/architecture/hybrid-rbac.md` |
 | 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない。割当の作業が問い合わせの表の `order_id` を書き換える移行を作業中） |
@@ -51,7 +51,7 @@ ADMIN の領域の構成・画面・状態遷移・API・データを、追跡�
 
 | 範囲の単位 | 呼ぶ所 |
 | --- | --- |
-| 利用者の作成の窓口 | 作成の画面（SCR-ADMIN-001）だけ。画面には入口のリンクが無い（TM-ADMIN-20） |
+| 利用者の作成の窓口 | 2026-11-18 に消した。店員は招待（API-AUTH-033）だけで増やす |
 | 強制失効・2要素のリセット・監査ログの窓口 | 画面からは無い（HTTP では呼べる。TM-ADMIN-21） |
 | 問い合わせの5つの窓口 | 範囲外の `src/components/ContactSection.tsx` だけ。この部品は 2026-10-28（波 4）から管理の頁 `src/app/admin/page.tsx` の CONTACT のタブが開く（TM-ADMIN-01 は解消） |
 | 色見本の窓口 | 範囲外の商品の編集 `src/app/admin/item/ItemForm.tsx` |
@@ -107,8 +107,7 @@ sequenceDiagram
 - 認可: 共有の部品が token を確かめ（無ければ 401）、session の生存と DB の ACL を並べて引き（生存を確かめられなければ 503、session が無ければ 401）、権限が無ければ 403、`aal` が `aal2` でなければ 403 と理由 `MFA required` を返す。窓口は応答をそのまま返す
 - 権限の印: 作成・強制失効・2要素のリセットは `admin.users.manage`、監査ログは `admin.audit.read`、問い合わせの読みは `admin.contact.read`・書きは `admin.contact.manage`、色見本の読みは `admin.items.read`・書きは `admin.items.manage`（DATA-ADMIN-006）
 - DB: 認可の後に `createServiceRoleClient()` を作る。RLS を通らないので、守りは窓口の認可1つになる
-- 例外: どの窓口も外側の try/catch で 500 `Internal server error` を返す。作成・強制失効・2要素のリセット・色見本の保存は壊れた JSON を 400 にする（SEC-ADMIN-013）。問い合わせの窓口は、書き込み（状態の変更・返信・テンプレートの作成と更新と削除）の頭で認可の直後に回数を数え、id が UUID でなければ DB に渡さず 404 にする。扱いは各項目を参照
-- 画面のページ（`/admin/create-user`）にサーバーの守りは無く、誰でも開ける。守りは窓口だけ（`docs/03_BasicDesign/ui/screen-list.md`）
+- 例外: どの窓口も外側の try/catch で 500 `Internal server error` を返す。強制失効・2要素のリセット・色見本の保存は壊れた JSON を 400 にする（SEC-ADMIN-013）。問い合わせの窓口は、書き込み（状態の変更・返信・テンプレートの作成と更新と削除）の頭で認可の直後に回数を数え、id が UUID でなければ DB に渡さず 404 にする。扱いは各項目を参照
 
 ### ARC-ADMIN-002 書き込みの窓口は共有の proxy の Origin の照合で守り、窓口では CSRF の印を見ない
 
@@ -210,7 +209,7 @@ sequenceDiagram
 | --- | --- |
 | 上位 | DRV-ADMIN-001、FREQ-402-REQ-02（範囲外） |
 | 根拠 | 公開の会員登録を通さずに、店長がその場でアカウントを用意するための画面（DRV-ADMIN-001）。サイドナビの無いページなので、ナビの下地の背景を出さず内容を隠さない（FREQ-402-REQ-02） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/admin/create-user/page.tsx`、`src/app/admin/layout.tsx`）、`docs/03_BasicDesign/ui/screen-list.md` |
 
@@ -221,6 +220,8 @@ sequenceDiagram
 - 入口: 管理画面の左のナビにも、どの画面にもリンクが無い。URL を直に打てば開く（画面遷移の項目を置かない理由）
 - 守り: ページそのものはログイン・役割・2要素を見ず、誰でも開ける。作れるかは窓口の認可で決まる（ARC-ADMIN-001）
 - 背景: 管理の殻は背景のパネルを `/admin` だけに出すので、この画面には出ない
+
+廃止（2026-11-18）: 利用者の作成の画面と窓口（`create-user`）を消した。店員は招待（API-AUTH-033）だけで増やす。番号は使い回さない。
 
 ## 状態遷移
 
@@ -262,7 +263,7 @@ stateDiagram-v2
 | --- | --- |
 | 上位 | DRV-ADMIN-001、SEC-ADMIN-001、ADR-0450、ADR-0451 |
 | 根拠 | 店長がメールとパスワードでアカウントを用意する窓口（DRV-ADMIN-001）。アカウントを作れる窓口は乗っ取りの入口になるので、店長に固定した `admin.users.manage` と aal2 を求め（SEC-ADMIN-001、ADR-0450）、Auth の管理の機能は service role で呼ぶ（ADR-0451） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/admin/create-user/route.ts`）、`docs/03_BasicDesign/api/api-spec.md` |
 
@@ -278,6 +279,8 @@ stateDiagram-v2
 
 - 今のコードが届かない SEC: なし（SEC-ADMIN-022 は 2026-10-28 の波 4 に満たし、全部の結果の監査に行為者のメール・IP・ブラウザの名乗りを入れる）。SEC-ADMIN-006・008・012・013 は 2026-10-26 に満たした。パスワードの扱いの決めは TM-ADMIN-05（ユーザーが 16 文字 + 漏洩の照合を当てると承認）
 - `api-spec.md` は「確認済みの Auth の利用者を作る」と書き、コードも 2026-11-01 から確認済みの印（`email_confirm: true`）を渡す（TM-ADMIN-09 は解消。最終レビュー指摘 1）
+
+廃止（2026-11-18）: 利用者の作成の画面と窓口（`create-user`）を消した。店員は招待（API-AUTH-033）だけで増やす。番号は使い回さない。
 
 ### API-ADMIN-002 `POST /api/admin/revoke-user-sessions` セッションの強制失効
 
@@ -700,7 +703,7 @@ sequenceDiagram
 
 | 権限 | DB の名前 | 求める窓口 | 店長 | サポーター |
 | --- | --- | --- | --- | --- |
-| `admin.users.manage` | 利用者の管理 | API-ADMIN-001・002・004 | あり（固定。外せない） | なし（付けられない） |
+| `admin.users.manage` | 利用者の管理 | API-ADMIN-002・004（`API-ADMIN-001` は廃止）、API-AUTH-033〜036 | あり（固定。外せない） | なし（付けられない） |
 | `admin.audit.read` | 監査ログの閲覧 | API-ADMIN-003 | あり | なし |
 | `admin.contact.read` | 問い合わせの閲覧 | API-ADMIN-005・006・009 | あり | あり |
 | `admin.contact.manage` | 問い合わせの管理 | API-ADMIN-007・008・010〜012 | あり | あり |

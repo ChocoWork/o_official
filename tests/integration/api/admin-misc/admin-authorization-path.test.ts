@@ -56,14 +56,6 @@ type RouteCase = {
 
 const ROUTES: RouteCase[] = [
   {
-    label: '利用者の作成',
-    load: () => require('@/app/api/admin/create-user/route'),
-    method: 'POST',
-    url: 'http://localhost/api/admin/create-user',
-    permission: 'admin.users.manage',
-    body: { email: 'new@example.com', password: 'password-1234-ok' },
-  },
-  {
     label: '強制失効',
     load: () => require('@/app/api/admin/revoke-user-sessions/route'),
     method: 'POST',
@@ -331,7 +323,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
         actorEmail: 'owner@example.com',
       });
       createServiceRoleClient.mockResolvedValue(withApprovedCount(stubServiceClient()));
-      const route = ROUTES[1];
+      const route = ROUTES[0];
       const request = new Request(route.url, { method: route.method, headers: JSON_HEADERS, body: '{broken' });
 
       const res = await route.load()[route.method](request);
@@ -341,8 +333,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
     });
 
     it.each([
-      ['利用者の作成', ROUTES[0]],
-      ['色見本の保存', ROUTES[13]],
+      ['色見本の保存', ROUTES[12]],
     ] as const)(
       'ARC-ADMIN-001 %s は本文の JSON が壊れていると 500 でなく 400 Invalid request になる',
       async (_label, route) => {
@@ -551,7 +542,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
       const res = await result;
 
       expect(res.status).toBe(401);
-      expect(client.auth.admin.createUser).not.toHaveBeenCalled();
+      expect(client.auth.admin.getUserById).not.toHaveBeenCalled();
     });
 
     it('ARC-ADMIN-001 窓口は権限の無い店員の要求を 403 で止め、Auth の管理の機能を呼ばない', async () => {
@@ -565,7 +556,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
       const res = await result;
 
       expect(res.status).toBe(403);
-      expect(client.auth.admin.createUser).not.toHaveBeenCalled();
+      expect(client.auth.admin.getUserById).not.toHaveBeenCalled();
     });
 
     it('ARC-ADMIN-001 窓口は aal1 の店長の要求を 403 MFA required で止める', async () => {
@@ -575,33 +566,12 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
       const client = aclClient(aclRows('admin.users.manage'));
       createServiceRoleClient.mockResolvedValue(withApprovedCount(client));
 
-      const { result } = invoke(ROUTES[1]);
+      const { result } = invoke(ROUTES[0]);
       const res = await result;
 
       expect(res.status).toBe(403);
       expect((await res.json()).reason).toBe('MFA required');
       expect(client.rpc).not.toHaveBeenCalled();
-    });
-
-    it('ARC-ADMIN-001 窓口は通った店長の要求で service role の管理の機能を呼ぶ', async () => {
-      useActualAuthorize();
-      verifyAccessToken.mockResolvedValue({ ok: true, claims: claims() });
-      checkAuthSessionLiveness.mockResolvedValue('active');
-      const client = aclClient(aclRows('admin.users.manage'));
-      client.auth.admin.createUser.mockResolvedValue({
-        data: { user: { id: TARGET_ID, email: 'new@example.com' } },
-        error: null,
-      } as never);
-      createServiceRoleClient.mockResolvedValue(withApprovedCount(client));
-
-      const { result } = invoke(ROUTES[0]);
-      const res = await result;
-
-      expect(res.status).toBe(201);
-      expect(await res.json()).toEqual({ id: TARGET_ID, email: 'new@example.com' });
-      expect(client.auth.admin.createUser).toHaveBeenCalledWith(
-        expect.objectContaining({ email: 'new@example.com' }),
-      );
     });
 
     it('ARC-ADMIN-001 窓口の権限は固定で、色見本の読みだけの店員は保存を 403 で止められる', async () => {
@@ -611,8 +581,8 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
       const client = aclClient(aclRows('admin.items.read'));
       createServiceRoleClient.mockResolvedValue(withApprovedCount(client));
 
-      const read = await invoke(ROUTES[12]).result;
-      const write = await invoke(ROUTES[13]).result;
+      const read = await invoke(ROUTES[11]).result;
+      const write = await invoke(ROUTES[12]).result;
 
       expect(write.status).toBe(403);
       expect((await write.json()).permission).toBe('admin.items.manage');

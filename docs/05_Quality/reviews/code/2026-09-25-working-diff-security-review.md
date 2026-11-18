@@ -454,7 +454,7 @@ G と H の順番・範囲（G-1〜G-4・H-1）は1章、開店前に直す物�
 | Google の拒否の画面 | 店員が Google で入ろうとした時の画面 |
 | 1b の M-1（昇格・入り直し） | 1b の最終レビューの指摘 |
 | 1b の最終レビューの M-2 | ログインの終わりで `endAuthSession` の失敗を監査に残す（`src/app/api/auth/passkey/login/finish/route.ts`）。任意の指摘で、段2の狙いと関係が無いので段2では取らない |
-| 役割を上げる時の鍵の消去とセッションの終了 | 役割を上げる時は、鍵を消し、全セッションを終わらせる。DB の `passkey_approve('reauth')` は鍵を数えず、入り直しの承認も確かめない。**移行 F を本番に当てる前に**、F の `advisory lock` の鍵に名前空間を足す。**2026-11-18 段3a Task 1 で F を直した**: 錠の鍵を `hashtextextended('passkey_approve:' \|\| uuid, 0)` にし、3つの枝とも最初に取る・`reauth` は認めた鍵が1本以上の時だけ通す（SEC-AUTH-052）。役割を上げる時の鍵の消去とセッションの終了は Task 2・5 |
+| 役割を上げる時の鍵の消去とセッションの終了 | 役割を上げる時は、鍵を消し、全セッションを終わらせる。DB の `passkey_approve('reauth')` は鍵を数えず、入り直しの承認も確かめない。**移行 F を本番に当てる前に**、F の `advisory lock` の鍵に名前空間を足す。**2026-11-18 段3a Task 1 で F を直した**: 錠の鍵を `hashtextextended('passkey_approve:' \|\| uuid, 0)` にし、3つの枝とも最初に取る・`reauth` は認めた鍵が1本以上の時だけ通す（SEC-AUTH-052）。役割を上げる時の鍵の消去とセッションの終了は Task 2・5。**2026-11-18 段3a Task 5 で窓口を足した**: `PATCH /api/admin/users` は `STAFF_INVITE_REQUIRED` を招待の道（`promote`）に落とし、発行の後に全ログインを終わらせてメールを送る。招待・やり直し・降格・取り消しの窓口（API-AUTH-033〜036）も同じ |
 | 本番で確かめること（設計 8-2）に足す物 | 今の `createUser` → `signInWithOtp` の組み合わせ、メールのコードの型（`magic_link` の `{{ .Token }}`・8桁・5分）、始めの `(b)` の切り替えの実機の確認。[supabase-auth-config.md](../../../06_Operations/supabase-auth-config.md) の「本番の確認の一覧」の10〜12 |
 | 8-2 の1行（IP の枠） | 段2からは、サインイン・サインアップの IP ごとの枠（5分30回。supabase-auth-config.md の「店の全員で分け合う」）が、お客さんの新規と予備の主な道になる。`/otp` にも `Sb-Forwarded-For` を添えられるか、`createServiceRoleAuthClient`（今は `SUPABASE_SERVICE_ROLE_KEY` を使う）を `sb_secret_` に替える要否を確かめる |
 

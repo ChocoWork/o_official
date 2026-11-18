@@ -14,6 +14,7 @@ const refusalSqlstates: Readonly<Record<string, string>> = {
   ROLE_PERMISSION_REQUEST_KEY_CONFLICT: 'P0001',
   LAST_ADMIN_REQUIRED: 'P0001',
   SELF_ROLE_CHANGE_FORBIDDEN: '42501',
+  STAFF_INVITE_REQUIRED: '42501',
   USER_NOT_FOUND: 'P0002',
 };
 const managedCodes = new Set<string>(ROLE_PERMISSION_CATALOG.map((permission) => permission.code));

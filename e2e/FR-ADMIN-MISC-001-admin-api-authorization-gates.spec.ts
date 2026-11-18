@@ -46,7 +46,6 @@ function label(endpoint: Endpoint): string {
 /** 範囲の管理 API の全部の（メソッド, 道）。本文は通れば本当に書き換わる正しい形 */
 function rangeEndpoints(f: Fixture): Endpoint[] {
   return [
-    { method: 'POST', path: '/api/admin/create-user', data: { email: f.createEmail, password: `E2e-${f.tag}-0123456789`, display_name: f.tag } },
     { method: 'POST', path: '/api/admin/revoke-user-sessions', data: { user_id: f.victim.userId } },
     {
       method: 'POST',
@@ -234,9 +233,8 @@ test('SEC-ADMIN-001-AC-03 サポーターは店長だけの窓口を使えない
       const fixture = await seedFixture(db);
       try {
         const supporter = await createAdminSessionActor(db, 'supporter', 'aal2');
-        const [createUser, revokeSessions, resetMfa] = rangeEndpoints(fixture);
+        const [revokeSessions, resetMfa] = rangeEndpoints(fixture);
         const adminOnly: Array<{ endpoint: Endpoint; permission: string }> = [
-          { endpoint: createUser, permission: 'admin.users.manage' },
           { endpoint: revokeSessions, permission: 'admin.users.manage' },
           { endpoint: resetMfa, permission: 'admin.users.manage' },
           { endpoint: { method: 'GET', path: '/api/admin/audit-logs' }, permission: 'admin.audit.read' },

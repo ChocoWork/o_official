@@ -9,8 +9,8 @@
 
 | ID | 題 | 単位 |
 | --- | --- | --- |
-| `DD-ADMIN-001` | 利用者の作成の画面 | `src/app/admin/create-user/page.tsx` |
-| `DD-ADMIN-002` | 利用者の作成の窓口 | `src/app/api/admin/create-user/route.ts` |
+| `DD-ADMIN-001` | 利用者の作成の画面（廃止） | （2026-11-18 に消した） |
+| `DD-ADMIN-002` | 利用者の作成の窓口（廃止） | （2026-11-18 に消した） |
 | `DD-ADMIN-003` | セッションの強制失効の窓口 | `src/app/api/admin/revoke-user-sessions/route.ts` |
 | `DD-ADMIN-004` | 監査ログの読み出しの窓口 | `src/app/api/admin/audit-logs/route.ts` |
 | `DD-ADMIN-005` | 特権の利用者の2要素のリセットの窓口 | `src/app/api/admin/users/mfa/reset/route.ts` |
@@ -62,8 +62,6 @@
 
 | ファイル | 単位（symbol） | DD |
 | --- | --- | --- |
-| `src/app/admin/create-user/page.tsx` | `<file>` | DD-ADMIN-001 |
-| `src/app/api/admin/create-user/route.ts` | `<file>` | DD-ADMIN-002 |
 | `src/app/api/admin/revoke-user-sessions/route.ts` | `<file>` | DD-ADMIN-003 |
 | `src/app/api/admin/audit-logs/route.ts` | `<file>` | DD-ADMIN-004 |
 | `src/app/api/admin/users/mfa/reset/route.ts` | `<file>` | DD-ADMIN-005 |
@@ -88,7 +86,7 @@
 
 ## 管理の窓口に共通の動き
 
-`DD-ADMIN-002`〜`012` の全部の方法が、最初に `authorizeAdminPermission(<権限>, request)` を呼び、`ok` でなければその応答をそのまま返す（強制失効だけは返す前に、上限つきで監査を書く。DD-ADMIN-003）。認可の部品は `src/lib/auth/admin-rbac.ts` の `authorizeAdminPermission` で、応答は次のとおり。
+`DD-ADMIN-003`〜`012` の全部の方法が、最初に `authorizeAdminPermission(<権限>, request)` を呼び、`ok` でなければその応答をそのまま返す（強制失効だけは返す前に、上限つきで監査を書く。DD-ADMIN-003）。認可の部品は `src/lib/auth/admin-rbac.ts` の `authorizeAdminPermission` で、応答は次のとおり。
 
 | 条件 | 応答 |
 | --- | --- |
@@ -114,7 +112,7 @@
 | --- | --- |
 | 上位 | SCR-ADMIN-001、ARC-ADMIN-002 |
 | 根拠 | 店長がその場でアカウントを用意する画面（SCR-ADMIN-001）。会員登録と同じ 16 文字の決まりを送る前に見せて、短い入力を早く直せるようにする（窓口も同じ 16〜128 字〔UTF-8 で 72 バイト以内〕と漏洩の照合を当てる）。画面は守りを持たず、作れるかは窓口の認可で決まる。送る時は CSRF の印を付けず、proxy の Origin の照合に任せる（ARC-ADMIN-002） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/admin/create-user/page.tsx`）、`docs/03_BasicDesign/ui/screen-list.md` |
 
@@ -158,13 +156,15 @@
 - 201 でなく `error` がある時はその文、`error` が無い時と本文が読めない時は「作成に失敗しました」が出る
 - `fetch` が例外を投げた時は「ネットワークエラーが発生しました」が出て、ボタンがまた押せる
 
+廃止（2026-11-18）: 利用者の作成の画面と窓口（`create-user`）を消した。店員は招待（API-AUTH-033）だけで増やす。番号は使い回さない。
+
 ### DD-ADMIN-002 利用者の作成の窓口
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | API-ADMIN-001、ARC-ADMIN-001、ARC-ADMIN-003、DATA-ADMIN-006、SEC-ADMIN-001 |
 | 根拠 | Auth の利用者を作る機能は service role でしか呼べないので、店長に固定した `admin.users.manage` と aal2 を確かめてから呼ぶ（API-ADMIN-001、ARC-ADMIN-001、DATA-ADMIN-006、SEC-ADMIN-001）。作れた・重なった・失敗したを監査に分けて残し、誰がいつ誰を作ったかをたどれるようにする（ARC-ADMIN-003）。管理者が作る利用者にも会員と同じ 16〜128 字と漏洩の照合を当て、弱いパスワードの口を残さない。大量作成を抑えるため管理者単位で数える。監査には外のサービスの誤りの文（メールを含みうる）を入れず、固定の符号だけを残す |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/admin/create-user/route.ts`）、`docs/03_BasicDesign/api/api-spec.md` |
 
@@ -219,11 +219,13 @@
 - `createServiceRoleClient` が例外を投げた時は 500 `Internal server error`
 - 形の誤り・漏洩・照合が使えない・重なり・誤り・成功の全部の結果の監査の行に、操作した人のメールと `x-real-ip` の値の IP とブラウザの名乗りが入る。`x-real-ip` が無ければ IP は `null`。偽の `x-forwarded-for` の値は入らない（SEC-ADMIN-022-AC-03、SEC-ADMIN-009）
 
+廃止（2026-11-18）: 利用者の作成の画面と窓口（`create-user`）を消した。店員は招待（API-AUTH-033）だけで増やす。番号は使い回さない。
+
 ### DD-ADMIN-003 セッションの強制失効の窓口
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | API-ADMIN-002、ARC-ADMIN-001、ARC-ADMIN-003、DATA-ADMIN-004、SEC-ADMIN-001 |
+| 上位 | API-ADMIN-002、ARC-ADMIN-001、ARC-ADMIN-002、ARC-ADMIN-003、DATA-ADMIN-004、DATA-ADMIN-006、SEC-ADMIN-001、SEC-ADMIN-013 |
 | 根拠 | 自前の表だけを直しても Auth の session と出した token が生き残るので、共有の部品 `revokeAllSessionsForUser` で、自前の `sessions` の行には失効の時刻を入れ（行は消さない）、service role だけが呼べる関数で Auth の session も消す（API-ADMIN-002、DATA-ADMIN-004）。人の session を切る操作は悪用もできるので、権限の無い試みも IP とブラウザの情報付きで監査に残すが、無限に増えないよう全体で 10 分に 20 行までにする（ARC-ADMIN-003、ADR-0460）。自分自身を失効して操作できなくなる誤りと、存在しない相手への成功の記録を防ぐ。認可は共有の部品に任せる（ARC-ADMIN-001、SEC-ADMIN-001） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
@@ -742,7 +744,7 @@ DELETE:
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | API-ADMIN-013、API-ADMIN-014、ARC-ADMIN-001、DATA-ADMIN-005 |
+| 上位 | API-ADMIN-013、API-ADMIN-014、ARC-ADMIN-001、DATA-ADMIN-005、SEC-ADMIN-013 |
 | 根拠 | 商品の編集で前に使った色を選び直せるよう、新しい順に全部を返す（API-ADMIN-013）。同じ名前と色の値の組は何度保存しても1行にし、既にあればそれを返して、画面が重なりの誤りを扱わずに済むようにする（API-ADMIN-014、DATA-ADMIN-005）。読み書きは商品の権限で認可した後に service role で行う（ARC-ADMIN-001） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |

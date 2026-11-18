@@ -6,8 +6,12 @@ jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn() }
 jest.mock('@/lib/audit', () => ({ logAudit: jest.fn() }));
 jest.mock('@/lib/csrfMiddleware', () => ({ requireCsrfOrDeny: jest.fn() }));
 jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
+jest.mock('@/lib/auth/revoke-user-sessions', () => ({ revokeAllSessionsForUser: jest.fn() }));
+jest.mock('@/features/auth/staff/staff-invite-send', () => ({ issueAndSendStaffInvite: jest.fn() }));
 
-import { PATCH } from '@/app/api/admin/users/route';
+import { GET, PATCH } from '@/app/api/admin/users/route';
+import { revokeAllSessionsForUser } from '@/lib/auth/revoke-user-sessions';
+import { issueAndSendStaffInvite } from '@/features/auth/staff/staff-invite-send';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
@@ -25,6 +29,8 @@ beforeEach(() => {
   (createServiceRoleClient as jest.Mock).mockResolvedValue({ rpc, from, auth: { admin: { getUserById, updateUserById } } });
   rpc.mockResolvedValue({ data: { previousRole: 'user', role: 'supporter' }, error: null });
   (logAudit as jest.Mock).mockResolvedValue(undefined);
+  (revokeAllSessionsForUser as jest.Mock).mockResolvedValue({ authSessionsDeleted: 0 });
+  (issueAndSendStaffInvite as jest.Mock).mockResolvedValue({ ok: true });
 });
 afterEach(() => jest.restoreAllMocks());
 
@@ -69,12 +75,69 @@ test.each(['csrf', 'ip', 'actor'] as const)('%s拒否の本文・statusを保ち
 test.each([
   ['SELF_ROLE_CHANGE_FORBIDDEN', '42501', 403, 'failure', '自分自身の役割は変更できません。'],
   ['LAST_ADMIN_REQUIRED', 'P0001', 409, 'conflict', '店長を1人以上残してください。'],
-] as const)('自己変更%sはDBの優先順位で拒否し、ACL/metadata更新なし', async (code, sqlstate, status, outcome, error) => {
+] as const)('降格の拒否%sはstaff_demoteの拒否として既存の本文で返し、ログイン終了なし', async (code, sqlstate, status, outcome, error) => {
   rpc.mockResolvedValue({ data: null, error: { message: code, code: sqlstate } });
   const response = await PATCH(request({ userId: ACTOR, role: 'user' }));
   expect(response.status).toBe(status); expect(await response.json()).toEqual({ error, code });
-  expect(rpc).toHaveBeenCalledTimes(1); expect(updateUserById).not.toHaveBeenCalled(); expect(from).not.toHaveBeenCalled();
-  expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'admin.users.role.update', resource_id: ACTOR, outcome, detail: 'User role change refused', metadata: { requested_role: 'user', result_code: code } }));
+  expect(rpc).toHaveBeenCalledTimes(1);
+  expect(rpc).toHaveBeenCalledWith('staff_demote', { p_actor_id: ACTOR, p_user_id: ACTOR });
+  expect(revokeAllSessionsForUser).not.toHaveBeenCalled();
+  expect(updateUserById).not.toHaveBeenCalled(); expect(from).not.toHaveBeenCalled();
+  expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'admin.staff.demote', resource_id: ACTOR, outcome, metadata: { requested_role: 'user', result_code: code === 'LAST_ADMIN_REQUIRED' ? 'last_admin' : 'self' } }));
+});
+
+test('userへの降格はadmin_set_user_roleでなくstaff_demoteで行い、その後にログインを全部終わらせる', async () => {
+  rpc.mockResolvedValue({ data: null, error: null });
+  const response = await PATCH(request({ userId: TARGET, role: 'user' }));
+  expect(response.status).toBe(200); expect(await response.json()).toEqual({ success: true });
+  expect(rpc).toHaveBeenCalledTimes(1);
+  expect(rpc).toHaveBeenCalledWith('staff_demote', { p_actor_id: ACTOR, p_user_id: TARGET });
+  expect(rpc).not.toHaveBeenCalledWith('admin_set_user_role', expect.anything());
+  expect(revokeAllSessionsForUser).toHaveBeenCalledWith(TARGET);
+  expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'admin.staff.demote', resource_id: TARGET, outcome: 'success' }));
+});
+
+test('降格でログインの終了に失敗したら500', async () => {
+  rpc.mockResolvedValue({ data: null, error: null });
+  (revokeAllSessionsForUser as jest.Mock).mockRejectedValue(new Error('x'));
+  const response = await PATCH(request({ userId: TARGET, role: 'user' }));
+  expect(response.status).toBe(500);
+});
+
+test('お客さんなどを店員にする要求はSTAFF_INVITE_REQUIREDを受けて直には変えず、promoteの招待を出して{ success, invited }を返す', async () => {
+  rpc.mockResolvedValue({ data: null, error: { message: 'STAFF_INVITE_REQUIRED', code: '42501' } });
+  getUserById.mockResolvedValue({ data: { user: { id: TARGET, email: 'customer@example.com' } }, error: null });
+  const response = await PATCH(request({ userId: TARGET, role: 'admin' }));
+  expect(response.status).toBe(200); expect(await response.json()).toEqual({ success: true, invited: true });
+  expect(issueAndSendStaffInvite).toHaveBeenCalledWith(expect.anything(), {
+    userId: TARGET, email: 'customer@example.com', role: 'admin', kind: 'promote', issuedBy: ACTOR, reason: null, hadPasskeys: true,
+  });
+  expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'admin.staff.promote', resource_id: TARGET, outcome: 'success' }));
+  expect(JSON.stringify(jest.mocked(logAudit).mock.calls)).not.toContain('customer@example.com');
+});
+
+test('promoteの招待が断られたら、その理由の応答で返す', async () => {
+  rpc.mockResolvedValue({ data: null, error: { message: 'STAFF_INVITE_REQUIRED', code: '42501' } });
+  getUserById.mockResolvedValue({ data: { user: { id: TARGET, email: 'customer@example.com' } }, error: null });
+  (issueAndSendStaffInvite as jest.Mock).mockResolvedValue({ ok: false, reason: 'mail_failed' });
+  const response = await PATCH(request({ userId: TARGET, role: 'supporter' }));
+  expect(response.status).toBe(502);
+  expect((await response.json()).error).toBe('メールを送れませんでした。もう一度、招待を出してください。');
+});
+
+test('promoteで対象のアカウントのメールを読めなければ404で、招待を出さない', async () => {
+  rpc.mockResolvedValue({ data: null, error: { message: 'STAFF_INVITE_REQUIRED', code: '42501' } });
+  getUserById.mockResolvedValue({ data: { user: null }, error: { message: 'x' } });
+  const response = await PATCH(request({ userId: TARGET, role: 'admin' }));
+  expect(response.status).toBe(404);
+  expect(issueAndSendStaffInvite).not.toHaveBeenCalled();
+});
+
+test('異なるSQLSTATEのSTAFF_INVITE_REQUIREDは招待に落とさず内部失敗にする', async () => {
+  rpc.mockResolvedValue({ data: null, error: { message: 'STAFF_INVITE_REQUIRED', code: 'P0001' } });
+  const response = await PATCH(request({ userId: TARGET, role: 'admin' }));
+  expect(response.status).toBe(500);
+  expect(issueAndSendStaffInvite).not.toHaveBeenCalled();
 });
 
 test('対象なしは既存404本文を保つ', async () => {
@@ -108,4 +171,50 @@ test('既存本文の余分なactor指定を認可actorとして使わない', a
   const response = await PATCH(request({ userId: TARGET, role: 'supporter', actorId: TARGET }));
   expect(response.status).toBe(200);
   expect(rpc).toHaveBeenCalledWith('admin_set_user_role', { _actor_id: ACTOR, _user_id: TARGET, _role_code: 'supporter' });
+});
+
+describe('GET /api/admin/users の足した列', () => {
+  const STAFF = '20000000-0000-4000-8000-000000000001';
+  const CUSTOMER = '20000000-0000-4000-8000-000000000002';
+  const INVITED = '20000000-0000-4000-8000-000000000003';
+  const listUsers = jest.fn();
+
+  function table(rows: unknown[]) {
+    const chain: Record<string, unknown> = {};
+    for (const name of ['select', 'in', 'eq', 'or', 'order']) chain[name] = () => chain;
+    (chain as { then: unknown }).then = (resolve: (value: unknown) => unknown) => resolve({ data: rows, error: null });
+    return chain;
+  }
+
+  beforeEach(() => {
+    listUsers.mockResolvedValue({
+      data: { users: [STAFF, CUSTOMER, INVITED].map((id) => ({ id, email: `${id.slice(-1)}@example.com`, user_metadata: {}, app_metadata: {}, last_sign_in_at: null })) },
+      error: null,
+    });
+    (createServiceRoleClient as jest.Mock).mockResolvedValue({ rpc, from, auth: { admin: { listUsers } } });
+    from.mockImplementation((name: string) => table(name === 'user_roles' ? [{ user_id: STAFF, roles: { code: 'admin' } }] : []));
+    rpc.mockImplementation(async (name: string, args: { p_user_id: string }) => {
+      if (name === 'passkey_approved_count') return { data: args.p_user_id === STAFF ? 2 : 0, error: null };
+      if (name === 'staff_invite_open') return { data: args.p_user_id === INVITED, error: null };
+      return { data: null, error: null };
+    });
+  });
+
+  test('店員には認めた鍵の本数を、店員でない人には開いた招待の有無を付ける', async () => {
+    const response = await GET(new Request('https://example.test/api/admin/users'));
+    const { data } = await response.json();
+    const byId = Object.fromEntries(data.map((row: { id: string }) => [row.id, row]));
+    expect(response.status).toBe(200);
+    expect(byId[STAFF]).toMatchObject({ approvedPasskeys: 2, invitePending: false });
+    expect(byId[CUSTOMER]).toMatchObject({ approvedPasskeys: 0, invitePending: false });
+    expect(byId[INVITED]).toMatchObject({ approvedPasskeys: 0, invitePending: true });
+    expect(rpc).not.toHaveBeenCalledWith('passkey_approved_count', { p_user_id: CUSTOMER });
+    expect(rpc).not.toHaveBeenCalledWith('staff_invite_open', { p_user_id: STAFF });
+  });
+
+  test('本数を数える呼びが失敗した店員は0本として返す（閉じる側）', async () => {
+    rpc.mockImplementation(async (name: string) => (name === 'passkey_approved_count' ? { data: null, error: { code: 'XX000' } } : { data: false, error: null }));
+    const { data } = await (await GET(new Request('https://example.test/api/admin/users'))).json();
+    expect(data.find((row: { id: string }) => row.id === STAFF).approvedPasskeys).toBe(0);
+  });
 });

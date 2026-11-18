@@ -11,7 +11,7 @@
 
 | ファイル名 | よくない点 | 修正提案 | ステータス | 優先度 |
 |---|---|---|---|---|
-| [src/app/api/admin/create-user/route.ts](../../../../src/app/api/admin/create-user/route.ts) | Service Role の auth.admin.createUser を使う管理用 API に認証・認可チェックがない | [src/lib/auth/admin-rbac.ts](../../../../src/lib/auth/admin-rbac.ts) の権限チェックを必須化し、少なくとも admin.users.manage を要求して actor を監査記録する | Closed | High |
+| src/app/api/admin/create-user/route.ts | Service Role の auth.admin.createUser を使う管理用 API に認証・認可チェックがない | [src/lib/auth/admin-rbac.ts](../../../../src/lib/auth/admin-rbac.ts) の権限チェックを必須化し、少なくとも admin.users.manage を要求して actor を監査記録する | Closed | High |
 | [src/app/api/admin/audit-logs/route.ts](../../../../src/app/api/admin/audit-logs/route.ts) | x-admin-token と ADMIN_API_KEY の一致だけで通しており、ユーザー単位の認証認可と RBAC をバイパスしている | 共有トークン方式を廃止し、通常の管理セッションに紐づく権限検証へ統一する | Closed | High |
 | [src/app/api/admin/revoke-user-sessions/route.ts](../../../../src/app/api/admin/revoke-user-sessions/route.ts) | 共有秘密 1 本で実行でき、actor 特定と権限監査がない | 管理セッション + RBAC + 監査ログを必須化する | Closed | High |
 | [src/app/api/admin/orders/[id]/refund/route.ts](../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts) | 返金 API が admin.orders.manage だけで通り supporter でも実行できる | 返金専用権限を分離するか、権限確認後に admin ロールを必須化する | Closed | High |
@@ -37,8 +37,8 @@
 
 | ファイル名 | よくない点 | 修正提案 | ステータス | 調査結果 | 優先度 |
 |---|---|---|---|---|---|
-| [src/app/api/admin/create-user/route.ts](../../../../src/app/api/admin/create-user/route.ts), [src/app/api/admin/users/route.ts](../../../../src/app/api/admin/users/route.ts), [src/app/api/admin/orders/[id]/refund/route.ts](../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts), [src/app/api/admin/orders/[id]/status/route.ts](../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) | 変更系 API の CSRF 適用が不統一 | 変更系 admin API 全体に共通 CSRF 検証を適用する | Open | stockists 系のみ適用済みを確認 | Medium |
-| [src/app/api/admin/create-user/route.ts](../../../../src/app/api/admin/create-user/route.ts), [src/app/api/admin/orders/[id]/refund/route.ts](../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts) | 重要操作のレート制限が未統一 | actor+IP の二軸制限を管理操作に標準適用する | Open | looks/stockists は適用済み、他に差分あり | Medium |
+| src/app/api/admin/create-user/route.ts, [src/app/api/admin/users/route.ts](../../../../src/app/api/admin/users/route.ts), [src/app/api/admin/orders/[id]/refund/route.ts](../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts), [src/app/api/admin/orders/[id]/status/route.ts](../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) | 変更系 API の CSRF 適用が不統一 | 変更系 admin API 全体に共通 CSRF 検証を適用する | Open | stockists 系のみ適用済みを確認 | Medium |
+| src/app/api/admin/create-user/route.ts, [src/app/api/admin/orders/[id]/refund/route.ts](../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts) | 重要操作のレート制限が未統一 | actor+IP の二軸制限を管理操作に標準適用する | Open | looks/stockists は適用済み、他に差分あり | Medium |
 | [src/app/api/admin/items/route.ts](../../../../src/app/api/admin/items/route.ts), [src/app/api/admin/items/[id]/route.ts](../../src/app/api/admin/items/%5Bid%5D/route.ts) | 商品系変更の監査ログ粒度が不足 | users/news と同等に成功/失敗監査を追加する | Open | 商品系で監査不足を確認 | Medium |
 | [src/lib/auth/admin-rbac.ts](../../../../src/lib/auth/admin-rbac.ts), [src/app/api/admin/kpi/targets/route.ts](../../../../src/app/api/admin/kpi/targets/route.ts) | 500 応答で内部詳細を返し過ぎる | クライアント向けは固定文言、詳細は内部ログへ分離する | Open | details 返却あり | Low |
 | [src/app/api/admin/kpi/migration-status/route.ts](../../../../src/app/api/admin/kpi/migration-status/route.ts) | 診断情報 API が本番露出しやすい | 本番無効化または super-admin 限定へ制限する | Open | テーブル存在/エラー詳細返却を確認 | Low |

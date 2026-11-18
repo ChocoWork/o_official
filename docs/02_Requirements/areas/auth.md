@@ -5403,6 +5403,117 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、6つの�
 
 anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_demote`・`passkey_delete_with_floor`・`admin_set_user_role` が PostgREST で 401 か 403・コード `42501` になる。service_role の鍵では、知らない操作者の降格・役割の変更は `ROLE_PERMISSION_FORBIDDEN`、知らない鍵の削除は `PASSKEY_NOT_FOUND` になる。`staff_invite_issue_manual` は PostgREST の口に無く（`PGRST202`）、呼べない。
 
+### FR-AUTH-038 店長が店員を招待する窓口 `POST /api/admin/staff/invites`
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-026 |
+| 根拠 | SR-AUTH-026 を、店長が出すメールの招待の窓口にする。アカウントが無ければパスワード無しで作り、お客さんとして在れば同じアカウントを使い、応答は同じにする（あるかどうかを返さない）。今の有効な店員は確認の語と理由が要るやり直しの守りを迂回させないために 409 で断る。守りは SEC-AUTH-056、処理は DD-AUTH-076、契約は API-AUTH-033 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/admin-staff-invites-api.test.ts`）、単体テスト（`tests/unit/api/admin/staff/invites-route.test.ts`、`tests/unit/features/auth/staff/staff-invite-send.test.ts`、`staff-invite-http.test.ts`）、E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`、FR-AUTH-038-AC-01〜02） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
+| 優先度 | MUST |
+
+規則: (1) 本文は `{ email, role: 'admin' | 'supporter' }`。権限 `admin.users.manage`・CSRF（proxy の Origin の照合）・IP と店長ごとの回数の枠を通った要求だけが進む。(2) アカウントが無ければ `auth.admin.createUser({ email, email_confirm: true })`（パスワード無し）。在れば同じアカウントを使う。(3) その人が今の有効な店員なら 409 `already_staff`（「すでに店員です。やり直しは、一覧の「パスキーを全部消してやり直す」から行ってください」）で、何も消さない。(4) 発行・古いログインの終了・メールの順で行う。応答は `{ success: true }` だけ。(5) メールのリンクの元はサイトの設定の住所で、要求の Host・Origin は使わない。期限は発行の24時間後を `YYYY年M月D日 H:mm（日本時間）` で書く。(6) メールを送れなければ 502「メールを送れませんでした。もう一度、招待を出してください」で、行は残す。メールの送り手・サイトの住所の設定が足りない時は、鍵を消す発行の前に 503 で断る。
+
+### FR-AUTH-038-AC-01 新しいアドレスの招待で、アカウントが作られ、メールが1通届き、リンクの合言葉の SHA-256 が表に入る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-038 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
+
+店長の JWT で新しいアドレスに招待を出すと、200 `{ success: true }`（`no-store`）が返る。Mailpit にメールが1通だけ届き、リンクは `/staff/invite#<合言葉43字>`、本文に「リンクの有効期限は … （日本時間） までです。」が入る。期限は表の `expires_at` と2分以内で合う。`private.staff_invites` に種類 `invite`・指定の役割・発行者が店長の行が1つあり、`token_hash` はリンクの合言葉の UTF-8 の SHA-256 と一致する（`\x` 形の bytea が PostgREST を通ったことの確かめ）。役割はまだ付かない。
+
+### FR-AUTH-038-AC-02 パスキーとログインを持つお客さんへの招待は鍵・ログインを消してメールの冒頭で知らせ、今の店員は 409 で何も消えず、店長でない人・Origin の無い要求は断られる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-038 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
+
+パスキー1本とログインを持つお客さんのアドレスで招待すると、応答は新しいアドレスと同じ。メールは「これまでのパスキーはすべて削除されました。」で始まり、その人の鍵・認めた鍵が0本、アプリに結び付かない `auth.sessions` の行を含むログインが0になる。今の有効な店員のアドレスは 409 `already_staff` で、鍵2本・認めた鍵2本・ログイン・役割が残り、招待の行は作られない。サポーターの JWT・お客さんの JWT は 403、Origin の無い要求は 403 で、メールは送られない。
+
+### FR-AUTH-039 店長が店員のパスキーをやり直させる窓口 `POST /api/admin/staff/[id]/redo` と、お客さんを店員にする `PATCH /api/admin/users`
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-026 |
+| 根拠 | SR-AUTH-026 を、店員のやり直しと、お客さん・期限切れの人を店員にする昇格の窓口にする。やり直しは取り返しがつかないので、確認の語と理由を求める（`users/mfa/reset` と同じ守り。ADR-0457・0461）。昇格は役割を直に書く道（`admin_set_user_role`）を使わず、DB が `STAFF_INVITE_REQUIRED` で断った人を招待の道に落とす（1j）。守りは SEC-AUTH-056、処理は DD-AUTH-076、契約は API-AUTH-034 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/admin-staff-redo-api.test.ts`）、単体テスト（`tests/unit/api/admin/staff/redo-route.test.ts`、`tests/unit/api/admin/users-route.test.ts`）、E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`、FR-AUTH-039-AC-01〜02） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
+| 優先度 | MUST |
+
+規則: (1) やり直しの本文は `{ confirm: 'やり直し', reason: 10〜500字 }`。確認の語・理由の長さが外れれば 400。(2) 自分自身は 403、最後の店長は 409、店員でない人（役割が無い・期限切れ）は DB の発行を呼ばずに 409 `not_staff`。(3) 今の役割を発行の前に読み、その役割で `redo` の招待を出し、古いログインを終わらせ、メールを送る。メールの冒頭に削除の知らせが入る。監査には理由の長さだけを残す。(4) `PATCH /api/admin/users` は、役割が `admin`・`supporter` で DB が `STAFF_INVITE_REQUIRED` を返した時、直には変えず `promote` の招待を出し、応答は `{ success: true, invited: true }`。店員どうしの入れ替えは今のまま。(5) `GET /api/admin/users` の各行に認めたパスキーの本数 `approvedPasskeys`（店員だけ）と開いている招待 `invitePending`（店員でない人だけ）を足す。
+
+### FR-AUTH-039-AC-01 やり直しは確認の語と理由を求め、自分自身を断り、成功すると鍵が0本・役割が無く・メールが1通になる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-039 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
+
+確認の語が違う・理由が9字のやり直しは 400、自分自身は 403 で、鍵は消えない。サポーターに成功すると、鍵・認めた鍵が0本、その人の有効な役割が無く、ログインが0、種類 `redo`・役割 `supporter` の開いた招待が1つ、メールが1通で、メールは削除の知らせで始まる。2回目のやり直し（招待中）と、役割の無いお客さんは 409 `not_staff`。
+
+### FR-AUTH-039-AC-02 お客さんを店員にする要求は直に役割を付けず招待を出し、期限を日本時間で書き、店員どうしの入れ替えは今のまま通る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-039 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
+
+パスキーを持つお客さんを `PATCH /api/admin/users` で `admin` にすると、200 `{ success: true, invited: true }`。役割は付かず、鍵は消え、種類 `promote` の招待が1つ、メールが1通（削除の知らせで始まり「店長として」・期限の日本時間を含む）。サポーターを `admin` にする要求は招待を出さず `{ success: true }` で、鍵は残る。
+
+### FR-AUTH-040 店長が店員をお客さんに戻す窓口と、出した招待を取り消す窓口
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-026 |
+| 根拠 | SR-AUTH-026 を、降格と招待の取り消しの窓口にする。降格は `admin_set_user_role` の `user` への変更ではなく、開いている招待も取り消す `staff_demote` で行い、その後にログインを全部終わらせる。招待の取り消しは同じ合言葉を使えなくし、招待のセッションも終わらせる。守りは SEC-AUTH-056、処理は DD-AUTH-077、契約は API-AUTH-035・036 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/admin-staff-demote-api.test.ts`、`admin-staff-invite-cancel-api.test.ts`）、単体テスト（`tests/unit/api/admin/staff/demote-route.test.ts`、`invite-cancel-route.test.ts`）、E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`、FR-AUTH-040-AC-01〜02） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
+| 優先度 | MUST |
+
+規則: (1) `POST /api/admin/staff/[id]/demote` と `PATCH /api/admin/users`（`role: 'user'`）は `staff_demote` を呼び、成功した後にその人のログインを全部終わらせる。最後の店長は 409、自分自身は 403、店長でない操作者は 403。(2) `POST /api/admin/staff/[id]/invite/cancel` は `staff_invite_cancel` を呼び、成功した後にその人のログインを終わらせる。操作者が今の店長でなければ 403。(3) どれも権限・CSRF・回数の枠を通った要求だけが進み、監査 `admin.staff.demote`・`admin.staff.invite_cancel` に対象の id だけを残す。
+
+### FR-AUTH-040-AC-01 降格は役割を外してログインを終わらせ（鍵は残す）、`user` への変更で開いている招待も取り消す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-040 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
+
+サポーターを降格すると、有効な役割が無くなり、ログインが0、鍵は2本のまま、認めた鍵の行は0になる。自分自身の降格は 403。招待を出したばかりの人を `PATCH /api/admin/users` で `user` にすると、その招待の `cancelled_at` が入る。
+
+### FR-AUTH-040-AC-02 招待の取り消しで、同じ合言葉が使えなくなり、招待のログインも終わり、店長でない人は取り消せない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-040 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
+
+招待を出した人の招待を取り消すと、200 で、行の `cancelled_at` が入り、メールの合言葉の SHA-256 で `staff_invite_consume` を呼んでも行が返らず、その人のログインが0になる。サポーターの JWT での取り消しは 403。
+
 ### FR-AUTH-044 店員の無操作が1時間を過ぎたら、DB の `has_permission` が偽になる（移行 D・E）
 
 | 属性 | 値 |
@@ -7621,6 +7732,21 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 守ること: (1) 4つ目の条件は `has_permission`（DB）に置き、窓口・ページは同じ `private.staff_idle_ok` を `staff_idle_check`・`staff_idle_peek` で呼ぶ。(2) 行が無い時は `auth.sessions.created_at` だけに落とす（`refreshed_at` は見ない）。`staff_idle_check` は時刻の書き込みが失敗したら例外を投げ、真を返さない（窓口・ページは 503。間引きは失敗ではない）。`auth.sessions` にも無い・`NULL`・例外は偽（失敗は閉じる。`RAISE WARNING` に SQLSTATE と文）。(3) `staff_idle_peek` は書かない。`staff_session_touch` は間引きの秒（既定60）より前なら書かず、行の `user_id` が違えば上書きしない。(4) 表は RLS 有効で `anon`・`authenticated`・`service_role` に権限を渡さず、`service_role` が呼べるのは `public` の3関数だけ。`private.staff_idle_ok` はだれにも渡さない。(5) 移行 E は、D の `private.staff_idle_ok` が無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（`passkey_entry_idle_fn`）で止まる。
 
 残る危険として受け入れること: 行が無いセッション（E2E・手元の開発・最初の `staff_idle_check` の前）は、作られてから1時間は通る。書き込みの失敗が続くと店員が入れない（503。閉じる側）。ログインの終わりで行を書く配線は Task 7 以降。書いた時にその人の2日より前の行を消すので、2日以上前の行は残らない（ログインから24時間の上限が先に切れる）。時計は DB の `now()` だけを使い、アプリの時計は見ない。
+
+### SEC-AUTH-056 招待の窓口は、リンクの元を設定の住所に固定し、今の店員を迂回させず、メールが送れない時は鍵を消さず、合言葉をどこにも残さない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-055 |
+| 根拠 | 招待のリンクの元を要求の Host・Origin から作ると、偽の Host で合言葉を攻撃者の住所へ送らせられる。招待で今の店員の鍵を消せると、確認の語と理由が要るやり直しの守りを迂回できる。メールが送れないまま鍵を消すと、店員が入れなくなる。合言葉をログ・監査・応答に残すと、メールを読まない人にも渡る。降格が招待を取り消さないと、降格後も合言葉が使える |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/admin-staff-invites-api.test.ts`。偽の Host・Origin・Referer・x-forwarded-host でリンクが変わらない・本番で使えない住所は発行の前に 503）、単体テスト（`tests/unit/features/auth/staff/staff-invite-send.test.ts`、`tests/unit/api/admin/staff/*.test.ts`）、E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
+| 優先度 | MUST |
+
+守ること: (1) リンクの元は `checkSiteUrlForEmail()`（サイトの設定の住所。本番は https のみ）だけで、要求の Host・Origin・Referer・x-forwarded-* を使わない。(2) メールの送り手・サイトの住所が使えない時は、鍵を消す発行の前に 503 で断る。送りの失敗は 502 で、行は残し、同じ人への再発行が古い行を取り消す。(3) 今の有効な店員への `invite`・`promote` は DB が `STAFF_ALREADY_STAFF` で断り、鍵は消えない。やり直しは確認の語・理由・自分自身と最後の店長の拒否を通る。(4) 合言葉はメールのリンクの `#` にだけ置き、ログ（RPC の名前とコードだけ）・監査・応答・理由の符号に出さない。監査には理由の長さだけを残す。(5) 応答はお客さんのアカウントが在ったかを返さない。(6) 降格と取り消しの後は、その人のログインを全部終わらせる。降格は `staff_demote`（招待も取り消す）だけを使う。(7) 権限・CSRF・回数の枠を通る前は、何も読まない・作らない。
+
+残る危険として受け入れること: 招待のメールを受け取った人が、リンクを第三者に転送すれば、その人が窓を開ける（リンクは1回きり・24時間・取り消せる）。
 
 ## 派生要件
 

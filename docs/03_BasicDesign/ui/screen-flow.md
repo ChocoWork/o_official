@@ -1,5 +1,7 @@
 # 画面遷移図
 
+> パスキー段3a Task 5 確認日: 2026-11-18。画面 `/admin/create-user` と、その図の節点・遷移を消した。店員の招待・やり直しの画面は段3a の後のタスクで足す。
+>
 > パスキー段2 Task 11 確認日: 2026-11-18。画面ルートは新しいログインの3つ（`/login/code`・`/login/passkey`・`/login/password`）を認証・アカウントの図に足した。旧のログイン・会員登録の流れ（OTP の確認・登録・パスワードの再設定の完了）は `/login/password` に移った（段4まで）。`/account` の「ログイン方法」は同じルート内のタブ（`tab=security`）。
 >
 > 会計の計画3（返品・返金）Task 13 確認日: 2026-11-15。画面ルートの数は変えない（51ルート）。返品の受け取り・届いた日の直し・取り消しの区分・手で結ぶ道・振込の記録・やり直しの結び・消費税用の返金の導線を、「会計の返品・返金からの導線（FREQ-575〜584）」の節に足した。
@@ -93,7 +95,6 @@ flowchart LR
     subgraph Management["管理・開発補助 (16ルート)"]
         direction TB
         Admin["/admin"]
-        AdminCreateUser["/admin/create-user 専用入口未確認"]
         AdminInventory["/admin/inventory"]
         AdminPurchaseOrders["/admin/purchase-orders"]
         AdminPurchaseOrderDetail["/admin/purchase-orders/[id]"]
@@ -281,7 +282,6 @@ flowchart LR
     AdminLookEdit -->|保存 / キャンセル: LOOK| Admin
     AdminStockistCreate -->|保存: STOCKIST| Admin
     AdminStockistEdit -->|保存: STOCKIST| Admin
-    AdminCreateUser -. 作成結果 .-> AdminCreateUser
     Admin -->|KPI: Meta接続| MetaConnect
     MetaConnect --> MetaOAuth
     MetaOAuth --> MetaCallback
@@ -302,7 +302,6 @@ flowchart LR
 | 購入完了・注文詳細 | 完了表示の注文履歴リンクは `/account`。注文詳細の戻るリンクは `/account?tab=orders`。ゲスト登録カードは `/login?tab=register&email=...` でメール初期値を渡す。再度購入はカート追加後も注文詳細に留まる |
 | 注文商品の予約注文分岐 | [OrderItemRow](../../../src/features/account/components/OrderItemRow.tsx)には `itemId` があり `stockStatus=sold_out` の場合に `/contact?subject=予約注文：{商品名}` へ進む分岐がある。現行の注文詳細APIは `stockStatus` を返さないため、注文詳細での通常導線としては確認できない。contactはこのクエリから件名を初期入力しない |
 | 管理タブ・フォーム | admin は12タブ（INVENTORY は ORDER の次、PACKING は INVENTORY の次、CONTACT は PACKING の次、SETTINGS は最後）、supporter は ORDER・INVENTORY・PACKING・CONTACT。CONTACT タブは管理のお問い合わせ（`ContactSection`）を同じ `/admin` の中で開くだけで、ルートは移らない（波4・2026-10-28）。LOOK タブの「新規作成」は役でなく一覧の `meta.canManage`（`admin.looks.manage` の権限）が true の時だけ出て、押すと `/admin/look/create` へ移る。ORDER タブは役割で出し分けず、「注文一覧表」（`/admin/orders`。G-4 Task 7 で作った）へのリンクだけを置く。PACKING タブは役割で出し分けず、「荷作り表」（`/admin/packing`。G-3 Task 3 で作った）へのリンクを置く。荷作り表の「管理画面に戻る」は `/admin?tab=PACKING`、注文IDの押下は注文の詳細 `/admin/orders/[id]` へ移る（G-4 Task 8。以前の履歴のダイアログは撤去した）、「発送」で下書きを作ると `/admin/shipment-slips/[id]` へ移り（G-3 Task 4。移動先の頁が「下書きを保存しました。」を1回出す）、下の発送票の「開く」も同じ頁へ移る。発送票の頁（下書き）の「この行を外す」「追加」は同じルート内の状態（選択を丸ごと入れ替えて読み直す）、「下書きを破棄」は同じルート内の確かめのダイアログで、成功すると同じ頁が「破棄済み」の表示に変わる。「荷作り表に戻る」は `/admin/packing`。INVENTORY タブは役割で出し分けず、「在庫一覧表」（`/admin/inventory`）と「発注一覧表」（`/admin/purchase-orders`。G-2 Task 5 で作った）へのリンクを置く。在庫一覧表の「管理画面に戻る」は `/admin`。在庫一覧表の「発注」→「発注書確認」→「発注確定」は同じルート内の状態で、確定に成功すると `/admin/purchase-orders/[id]?created=1` へ移り、その頁（G-2 Task 5）が目印を見て作成の通知を出す。発注一覧表は発注書番号から発注書の頁へ、「在庫一覧表」「管理画面に戻る」へ移り、発注書の頁は「発注一覧表に戻る」で一覧へ戻る。発注書の頁の操作（G-2 Task 6）は同じルート内のダイアログで、「数量確定」「数量を訂正」「発注を取り消す」「残りを打ち切る」「発注先・メモを訂正」を開き、成功すると閉じて通知を出し、同じ頁を読み直す（ルートは移らない）。受け取り（G-2 Task 7）も同じ頁のダイアログで、未納のある行がある時の「全部受け取る」「一部を受け取る」と、受け取りの履歴の「この受け取りを取り消す」「数量を訂正」を開く。取消・訂正は、外す割当があると同じダイアログの中で確認の段（「割り当て済みの品を○点外し、受注生産中に戻します。」）に移り、確認の後に送り直す（ルートは移らない）。取引書類（G-2 Task 8）も同じ頁の節で、「書類を追加」「差し替える」「情報を訂正」「無効にする」「続きから保存」はダイアログ、「表示」「印刷」は60秒の署名つきリンクを新しいタブで、「ダウンロード」は保存として開き、保存・訂正・無効化の成功で通知を出して同じ頁を読み直す（ルートは移らない）。置き場のファイルが種類の検査に通らず断られた時は、続きから保存を繰り返させず、同じダイアログでファイルを選び直させて新しい予約で保存する。発注一覧表の「取引書類を検索」は `/admin/purchase-orders/documents` へ移り、結果の発注書番号から発注書の頁へ、結果の各行の「原本を見る」で原本を新しいタブで開き（ルートは移らない）、「発注一覧表に戻る」で一覧へ戻る（条件・頁送り・「印刷」は同じルート内の状態）。`/admin?tab=...` は初期タブを指定するが、サイドナビ操作は表示状態だけを変更する。ITEM・LOOK・NEWS は保存成功・キャンセルで戻り、STOCKIST は保存成功時に戻る。STOCKIST の作成の頁（`/admin/stockist/create`）は開いた時に `GET /api/admin/stockists/access` を呼び（波4・2026-10-28）、通るまで「読み込み中...」、204でフォーム、401・403・それ以外は固定の1行を出してフォームは出さない（ルートは移らない） |
-| `/admin/create-user` | 専用の入口リンクは未確認。作成成功後も同画面に留まる。共通ナビゲーションは利用できる |
 | Meta接続 | KPIの接続操作から外部OAuthへ進む。callbackは既定のAPIパスを環境設定で変更できる。通常の戻り先は `/admin?meta=connected` または `?meta=error&meta_reason=...` で、`tab` は付与しない |
 
 ## その他の外部リンク
@@ -326,7 +325,7 @@ flowchart LR
 | 購入 | [カート](../../../src/app/cart/page.tsx)、[注文概要](../../../src/app/cart/_components/OrderSummary.tsx)、[チェックアウト](../../../src/app/checkout/page.tsx)、[最終確認画面](../../../src/app/checkout/_components/FinalConfirmationStep.tsx)、[place-order](../../../src/app/api/checkout/place-order/route.ts)、[resume](../../../src/app/api/checkout/resume/route.ts)、[ゲスト登録案内](../../../src/features/checkout/components/GuestRegisterPrompt.tsx)、[エラー境界](../../../src/app/checkout/error.tsx) |
 | 認証・再設定 | [LoginContext](../../../src/contexts/LoginContext.tsx)、[ログイン](../../../src/app/login/page.tsx)、[OTP確認](../../../src/app/login/verify/VerifyOtpClient.tsx)、[OAuth callback API](../../../src/app/api/auth/oauth/callback/route.ts)、[認証確認](../../../src/app/auth/verified/page.tsx)、[登録メール確認API](../../../src/app/api/auth/confirm/route.ts)、[再設定メールAPI](../../../src/app/api/auth/password-reset/request/route.ts)、[再設定リンク確認](../../../src/app/auth/password-reset/verify/VerifyClient.tsx) |
 | アカウント | [アカウント](../../../src/app/account/page.tsx)、[注文詳細](../../../src/app/account/orders/%5Bid%5D/page.tsx)、[返品・交換の申し込み](../../../src/app/account/orders/%5Bid%5D/return/page.tsx)、[再度購入](../../../src/features/account/hooks/useReorder.ts) |
-| 管理・開発補助 | [管理ページ](../../../src/app/admin/page.tsx)、[ITEMフォーム](../../../src/app/admin/item/ItemForm.tsx)、[LOOKフォーム](../../../src/app/admin/look/LookForm.tsx)、[NEWSフォーム](../../../src/app/admin/news/NewsForm.tsx)、[STOCKISTフォーム](../../../src/app/admin/stockist/StockistForm.tsx)、[ユーザー作成](../../../src/app/admin/create-user/page.tsx)、[UI](../../../src/app/ui/page.tsx)、[LOADING](../../../src/app/loading/page.tsx) |
+| 管理・開発補助 | [管理ページ](../../../src/app/admin/page.tsx)、[ITEMフォーム](../../../src/app/admin/item/ItemForm.tsx)、[LOOKフォーム](../../../src/app/admin/look/LookForm.tsx)、[NEWSフォーム](../../../src/app/admin/news/NewsForm.tsx)、[STOCKISTフォーム](../../../src/app/admin/stockist/StockistForm.tsx)、[UI](../../../src/app/ui/page.tsx)、[LOADING](../../../src/app/loading/page.tsx) |
 | Meta | [接続UI](../../../src/components/MetaKpiConnection.tsx)、[接続API](../../../src/app/api/admin/kpi/meta/connect/route.ts)、[callback API](../../../src/app/api/admin/kpi/meta/callback/route.ts) |
 
 今回のレビューはルート定義、描画されるコンポーネントの導線、関連APIの戻り先をソースで確認したもの。40ルートは図・画面一覧に各1件ずつ対応する（E-5 の1ルートは末尾の追加図）。実環境の公開範囲、リンク先に実データが存在すること、全画面の実行時表示や外部サービス側の画面は実行検証していない。認証処理の詳細は[シーケンス図](../../04_DetailDesign/sequence/auth-login-mfa.md)、購入の状態は[注文・決済状態図](../../04_DetailDesign/states/order-payment.md)を参照する。

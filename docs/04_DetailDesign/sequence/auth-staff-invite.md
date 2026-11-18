@@ -10,8 +10,8 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-026、FR-AUTH-034、FR-AUTH-035、FR-AUTH-037、DATA-AUTH-020、ARC-AUTH-012、SEC-AUTH-053、SEC-AUTH-054、THR-AUTH-052、DD-AUTH-070、DD-AUTH-071、DD-AUTH-072、DD-AUTH-073、DD-AUTH-075、ADR-0471 |
-| 対象のコード | 移行 `supabase/migrations/20261118130000_passkey_staff_invites.sql`、`src/lib/auth/staff-passkey-invite-errors.ts`、`src/features/auth/staff/invite-token.ts`・`invite-mail.ts`・`staff-invite-store.ts` |
+| 対応する ID | SR-AUTH-026、FR-AUTH-034、FR-AUTH-035、FR-AUTH-037、DATA-AUTH-020、ARC-AUTH-012、SEC-AUTH-053、SEC-AUTH-054、THR-AUTH-052、DD-AUTH-070、DD-AUTH-071、DD-AUTH-072、DD-AUTH-073、DD-AUTH-075、DD-AUTH-076、DD-AUTH-077、FR-AUTH-038、FR-AUTH-039、FR-AUTH-040、API-AUTH-033、API-AUTH-034、API-AUTH-035、API-AUTH-036、SEC-AUTH-056、THR-AUTH-055、ADR-0471 |
+| 対象のコード | 移行 `supabase/migrations/20261118130000_passkey_staff_invites.sql`、`src/lib/auth/staff-passkey-invite-errors.ts`、`src/features/auth/staff/invite-token.ts`・`invite-mail.ts`・`staff-invite-store.ts`・`staff-invite-send.ts`・`staff-invite-http.ts`、`src/app/api/admin/staff/**/route.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-4・6-2・8-1）、[段3の計画](../../superpowers/plans/2026-11-18-passkey-stage3-staff.md) |
 | 調べた時点 | 2026-11-18（手元の DB で結合試験を流した） |
 
@@ -156,3 +156,67 @@ sequenceDiagram
 - メール: `composeInviteMail`（IMPL-AUTH-356）は件名「店員のアカウントの登録のご案内」、役割・リンク・期限・「ご自身で心当たりがない場合は、何もしないでください。」を入れる。`redo`・`promote`、およびパスキーを持っていた人への `invite`（`passkeysDeleted`）は、冒頭に「これまでのパスキーはすべて削除されました。」を入れる。HTML は差し込む文字を escape する
 - DB を呼ぶ部品 `staff-invite-store.ts`（サーバーだけ）: `issueStaffInvite`（IMPL-AUTH-357）・`consumeStaffInvite`（IMPL-AUTH-397）・`bindStaffInviteWindow`（IMPL-AUTH-398）・`activateStaffRole`（IMPL-AUTH-399）・`cancelStaffInvite`（IMPL-AUTH-400）・`demoteStaff`（IMPL-AUTH-401）・`hasOpenStaffInvite`（IMPL-AUTH-402）。戻りは `{ ok: true; value } | { ok: false; reason }`。理由は DD-AUTH-070〜073 の写し（`staff-passkey-invite-errors.ts`）を使い、知らない文・例外・形の違う戻りは `failed`（消費は `invalid`、`hasOpenStaffInvite` は偽）。ログには RPC の名前とコードだけを出し、例外の本文・合言葉・引数は出さない。`last_resort` の型は作らない（アプリから呼べない）
 - IMPL の番号: 計画の予約 353〜357 の5つに収まらないので、`consumeStaffInvite` 以降の6つは予約の外の 397〜402 を使った
+
+### DD-AUTH-076 招待の発行・古いログインの終了・メールの送りの共通の流れと、店長の窓口の入口の確かめ
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-056、API-AUTH-033、API-AUTH-034 |
+| 根拠 | 招待・上げる・やり直しは、発行 → 古いログインの終了 → メールの順が同じなので、共通の流れ（`issueAndSendStaffInvite`）に1つにする。リンクの元をその流れの中でサイトの設定の住所に固定すれば、窓口ごとの書き忘れで偽の Host が通らない。鍵を消す発行の前にメールの設定を確かめれば、送れないまま鍵を消さない。入口の確かめ（権限 → CSRF → 回数）と監査も1つにして、窓口の順番がそろう |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/staff/staff-invite-send.test.ts`・`staff-invite-http.test.ts`、`tests/unit/api/admin/staff/invites-route.test.ts`・`redo-route.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
+
+```mermaid
+sequenceDiagram
+    participant R as 窓口（invites・redo・PATCH users）
+    participant G as guardStaffAdminRequest
+    participant F as issueAndSendStaffInvite
+    participant D as staff_invite_issue
+    participant M as 注文のメールの送り手
+    R->>G: 権限 → CSRF → IP と店長ごとの枠
+    G-->>R: 操作者
+    R->>F: 利用者・メール・役割・種類・発行者・理由
+    F->>F: サイトの住所とメールの設定を確かめる（だめなら config）
+    F->>D: ハッシュだけ（合言葉は作って手元に持つ）
+    D-->>F: 招待の id
+    F->>F: 古いログインを全部終わらせる
+    F->>M: メール（リンクは設定の住所の /staff/invite#合言葉）
+    M-->>F: 送れた・送れない
+    F-->>R: ok か理由
+```
+
+- 流れ（IMPL-AUTH-358）: 設定が使えなければ `config`、発行の失敗は DB の理由（`already_staff`・`last_admin`・`self`・`forbidden`・`not_found`・`failed`）、ログインの終了の失敗は `revoke_failed`、メールの失敗は `mail_failed`。期限は発行の時刻の24時間後を `YYYY年M月D日 H:mm（日本時間）` にする。`redo`・`promote`、および鍵を持っていた人への `invite` は、メールの冒頭で削除を知らせる。冪等の鍵は `staff-invite/<招待の id>`
+- 応答（IMPL-AUTH-359）: 理由を状態と短い文にする（`already_staff` 409・`not_staff` 409・`mail_failed` 502・`config` 503・`revoke_failed` 500 ほか）。`no-store`
+- 入口（IMPL-AUTH-360）: `authorizeAdminPermission('admin.users.manage')` → `requireCsrfOrDeny` → IP の枠 → 店長ごとの枠。どの拒否も `no-store`
+- 監査（IMPL-AUTH-361）: `admin.staff.*` を1行書く。書けなくても操作は止めない。詳細は固定の文と理由の長さだけ
+- 招待の窓口（IMPL-AUTH-362）: 本文を確かめ、アカウントを引き（無ければパスワード無しで作る）、既存の鍵の有無を管理 API で読んで流れに渡す。応答は `{ success: true }` だけ
+- やり直しの窓口（IMPL-AUTH-363）: 確認の語・理由・自分自身を確かめ、今の役割を発行の前に読む。役割が無ければ `not_staff`（DB の発行を呼ばない）
+- `PATCH /api/admin/users`（AUTH の範囲外なので `@impl` は無い）: `STAFF_INVITE_REQUIRED` を受けたら同じ流れ（種類 `promote`）に落とす
+
+### DD-AUTH-077 降格と招待の取り消しの窓口
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-056、API-AUTH-035、API-AUTH-036 |
+| 根拠 | 降格を `admin_set_user_role` の `user` への変更で行うと、開いている招待が残って降格後に合言葉で窓が開く。招待も取り消す `staff_demote` だけを使い、その後にログインを全部終わらせれば、降格した人のログインが残らない。招待の取り消しも同じく、取り消しの後に招待のセッションを終わらせる |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/admin/staff/demote-route.test.ts`・`invite-cancel-route.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
+
+```mermaid
+sequenceDiagram
+    participant R as 窓口（demote・invite/cancel・PATCH users の user）
+    participant S as staff_demote / staff_invite_cancel
+    participant X as revokeAllSessionsForUser
+    R->>R: 入口の確かめ（DD-AUTH-076）と id の形
+    R->>S: 操作者・対象
+    S-->>R: ok か理由（last_admin・self・forbidden・not_found・failed）
+    R->>X: 対象のログインを全部終わらせる
+    X-->>R: 終わった・失敗（失敗は 500。再実行で終わる）
+```
+
+- 降格の窓口（IMPL-AUTH-364）: `demoteStaff`（IMPL-AUTH-401）→ ログインの終了。理由の写しは `staffInviteReasonResponse`（403・404・409・500）
+- 取り消しの窓口（IMPL-AUTH-365）: `cancelStaffInvite`（IMPL-AUTH-400）→ ログインの終了
+- `PATCH /api/admin/users` の `user`: 同じ `demoteStaff` で行い、応答の本文と符号は従来（`LAST_ADMIN_REQUIRED` 409・`SELF_ROLE_CHANGE_FORBIDDEN` 403）のまま。`GET /api/admin/users` の `approvedPasskeys`（`passkey_approved_count`。店員だけ）と `invitePending`（`hasOpenStaffInvite`。店員でない人だけ。20件ずつ並行に呼ぶ）は、数えられなければ 0・偽（閉じる側）。どちらも AUTH の範囲外なので `@impl` は無く、単体テストは `tests/unit/api/admin/users-route.test.ts`
+

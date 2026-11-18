@@ -319,20 +319,16 @@
       "docs/04_DetailDesign/pages/16-2_admin_misc.md"
     ],
     "src": [
-      "src/app/api/admin/create-user/**/*.ts",
       "src/app/api/admin/revoke-user-sessions/**/*.ts",
       "src/app/api/admin/audit-logs/**/*.ts",
       "src/app/api/admin/users/mfa/**/*.ts",
       "src/app/api/admin/contact/**/*.ts",
       "src/app/api/admin/item-color-presets/**/*.ts",
-      "src/app/admin/create-user/**/*.{ts,tsx}",
       "src/lib/contact/**/*.ts",
       "src/lib/auditCleanup.ts",
       "scripts/admin/**/*.ts"
     ],
     "tests": [
-      "tests/unit/**/*create-user*.test.{ts,tsx}",
-      "tests/unit/**/*CreateUser*.test.{ts,tsx}",
       "tests/unit/**/*revoke-user-sessions*.test.{ts,tsx}",
       "tests/unit/**/*audit-logs*.test.{ts,tsx}",
       "tests/unit/**/*auditCleanup*.test.{ts,tsx}",
@@ -344,7 +340,6 @@
       "tests/unit/**/*reply-address*.test.{ts,tsx}",
       "tests/unit/**/admin-misc/**/*.test.{ts,tsx}",
       "tests/unit/scripts/admin/**/*.test.{ts,tsx}",
-      "tests/integration/**/*create-user*.test.{ts,tsx}",
       "tests/integration/**/*revoke-user-sessions*.test.{ts,tsx}",
       "tests/integration/**/*audit-logs*.test.{ts,tsx}",
       "tests/integration/**/*admin-contact*.test.{ts,tsx}",

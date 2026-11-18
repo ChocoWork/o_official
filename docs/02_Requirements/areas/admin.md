@@ -12,7 +12,7 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 | 要求 | 3 | 既存の `FREQ-25`・`FREQ-508`、新しい `SR-ADMIN-001`（新しい環境で最初の店長を作れる。2026-11-14） |
 | 要件 | 4 | 既存の `FREQ-25-REQ-01`・`FREQ-508-REQ-01`・`FR-ADMIN-009`、新しい `FR-ADMIN-010`（最初の店長を作るコマンド） |
 | 受け入れ条件 | 11 | 既存の `FREQ-25-AC-01`・`FREQ-508-AC-01`〜`03`、新しい `FR-ADMIN-009-AC-01`〜`06`・`FR-ADMIN-010-AC-01` |
-| 派生要件 | 8 | `DRV-ADMIN-001`〜`008` |
+| 派生要件 | 8 | `DRV-ADMIN-001`〜`008`（`DRV-ADMIN-001` は 2026-11-18 に廃止） |
 | セキュリティ要件 | 23 | `SEC-ADMIN-001`〜`023`（受け入れ条件 41 件の `SEC-ADMIN-NNN-AC-NN` を含む。全部「推定」） |
 
 - 状態: 全部「推定」（2026-11-14 に足した `SR-ADMIN-001`・`FR-ADMIN-010` はオーナーが決めたので「現行」）。元の行に理由が書かれていない物は根拠の「なぜ」を書き手が補い、コードと合わない行・新しく起こした項目・実装から読み取った項目も、ユーザーの確認を受けていない。ユーザーが確認したら「現行」にする。どちらが正しいかは決めず、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節（`TM-ADMIN-NN`）に載せた。今のコードがセキュリティ要件を満たさない所は、その `SEC-ADMIN-NNN` の項目に1回だけ書く
@@ -25,7 +25,7 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 | 範囲 | `scripts/trace/scope.json` の ADMIN |
 | 写した元 | `docs/02_Requirements/requirements.md` の「要求と要件のトレーサビリティ」の表の FREQ-25（1つ目の行）、「1.16 管理画面（ADMIN）」節の FR-ADMIN-009、「要求トレーサビリティ追記」の表の FREQ-508。元の行は消していない |
 | 持ち主の決め方 | ADMIN が持つのは FREQ-25 とその子だけで、FREQ-508・FR-ADMIN-009 は ADMIN だけが触れる行。複数の領域が触れる行は、領域どうしで割り当てた持ち主が定義し、ほかは `（範囲外）` で指す |
-| 対象のコード | `src/app/api/admin/create-user/`、`src/app/api/admin/revoke-user-sessions/`、`src/app/api/admin/audit-logs/`、`src/app/api/admin/users/mfa/`、`src/app/api/admin/contact/`、`src/app/api/admin/item-color-presets/`、`src/app/admin/create-user/`、`src/lib/contact/reply-address.ts`、`src/lib/auditCleanup.ts`、`scripts/admin/`（3 ファイル。最初の店長を作るコマンド）（17 ファイル） |
+| 対象のコード | `src/app/api/admin/revoke-user-sessions/`、`src/app/api/admin/audit-logs/`、`src/app/api/admin/users/mfa/`、`src/app/api/admin/contact/`、`src/app/api/admin/item-color-presets/`、`src/lib/contact/reply-address.ts`、`src/lib/auditCleanup.ts`、`scripts/admin/`（3 ファイル。最初の店長を作るコマンド）（14 ファイル。利用者の作成の画面と窓口の3ファイルは 2026-11-18 に消した） |
 | 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない。割当の作業が `src/app/admin/page.tsx` などを書き換え中で、コードの動きはずれうる） |
 
 ### 写した行と写さなかった行
@@ -67,7 +67,6 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 | E2E のファイル | テスト名の先頭に付けた受け入れ条件 |
 | --- | --- |
 | FR-ADMIN-MISC-001-admin-api-authorization-gates | SEC-ADMIN-001-AC-01、SEC-ADMIN-001-AC-02、SEC-ADMIN-001-AC-03、SEC-ADMIN-005-AC-01、SEC-ADMIN-005-AC-02 |
-| FR-ADMIN-MISC-002-create-user-screen-and-api | SEC-ADMIN-001-AC-04、SEC-ADMIN-008-AC-02、SEC-ADMIN-012-AC-01、SEC-ADMIN-013-AC-01、SEC-ADMIN-013-AC-02、SEC-ADMIN-022-AC-03 |
 | FR-ADMIN-MISC-003-session-revocation-and-mfa-reset | SEC-ADMIN-007-AC-01、SEC-ADMIN-008-AC-01、SEC-ADMIN-009-AC-01、SEC-ADMIN-014-AC-01、SEC-ADMIN-014-AC-02、SEC-ADMIN-015-AC-01、SEC-ADMIN-015-AC-02、SEC-ADMIN-016-AC-01 |
 | FR-ADMIN-MISC-004-audit-log-read | FREQ-508-AC-01、FREQ-508-AC-02、SEC-ADMIN-011-AC-01、SEC-ADMIN-023-AC-01、SEC-ADMIN-023-AC-02 |
 | FR-ADMIN-MISC-005-item-color-presets-and-direct-db-access | SEC-ADMIN-002-AC-01、SEC-ADMIN-002-AC-02、SEC-ADMIN-003-AC-01、SEC-ADMIN-004-AC-01、SEC-ADMIN-022-AC-01 |
@@ -75,7 +74,7 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 | FR-ADMIN-MISC-007-contact-reply-mail-and-threading | FREQ-25-AC-01、SEC-ADMIN-006-AC-01、SEC-ADMIN-006-AC-02、SEC-ADMIN-017-AC-01、SEC-ADMIN-018-AC-01、SEC-ADMIN-022-AC-02 |
 | FR-ADMIN-MISC-008-first-admin-bootstrap | FR-ADMIN-010-AC-01 |
 
-E2E が無い受け入れ条件（`missing-child` と同じ）: `FREQ-508-AC-03`、`SEC-ADMIN-003-AC-02`、`SEC-ADMIN-010-AC-01`・`AC-02`、`SEC-ADMIN-012-AC-02`、`SEC-ADMIN-017-AC-02`、`SEC-ADMIN-021-AC-02`。`FREQ-508-AC-03` は DB 結合 `tests/integration/db/audit_read_permission.integration.test.ts` が確かめる。
+E2E が無い受け入れ条件（`missing-child` と同じ）: `FREQ-508-AC-03`、`SEC-ADMIN-003-AC-02`、`SEC-ADMIN-010-AC-01`・`AC-02`、`SEC-ADMIN-017-AC-02`、`SEC-ADMIN-021-AC-02`。`FREQ-508-AC-03` は DB 結合 `tests/integration/db/audit_read_permission.integration.test.ts` が確かめる。
 
 - `e2e/FR-ADMIN-009-kpi-icon-tooltip.spec.ts` はファイル名が要件 FR-ADMIN-009 と同じ番号だが、KPI の試験で問い合わせの管理を試さない。範囲の型にも入らない（TM-ADMIN-17）
 
@@ -107,7 +106,7 @@ E2E が無い受け入れ条件（`missing-child` と同じ）: `FREQ-508-AC-03`
 
 | 属性 | 値 |
 | --- | --- |
-| 根拠 | 新しい環境（手元の `db reset` の後・検証用・作り直した本番）には店長が1人もおらず、店長だけが使える利用者の作成（DRV-ADMIN-001）に入る道が無い。環境を作る人が最初の1人を作れないと、管理画面を使い始められない |
+| 根拠 | 新しい環境（手元の `db reset` の後・検証用・作り直した本番）には店長が1人もおらず、店長だけが使える招待の窓口（API-AUTH-033）に入る道が無い。環境を作る人が最初の1人を作れないと、管理画面を使い始められない |
 | 状態 | 現行 |
 | 出どころ | ユーザーの発言（オーナー 2026-11-14。使う場面は新しい環境を作る時だけ、やり方は手元で流すコマンド）、`docs/superpowers/specs/2026-11-14-admin-bootstrap-design.md` |
 
@@ -344,13 +343,13 @@ FR-ADMIN-009 の文から起こした。今のコードで満たすかを「状�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-ADMIN-001、THR-ADMIN-023、THR-ADMIN-024 |
-| 根拠 | アカウントの作成・失効・2要素の削除・問い合わせの個人情報は、権限を持ち2要素を済ませた人だけが触れるようにするため。共有の秘密1本で通った過去の形（2026-04-18 のレビューの High）に戻さない。画面（`/admin/create-user`）は誰でも開けるので、守りは API に置く。全体の NFR-SEC-005（範囲外。権限管理）と NFR-SEC-008（範囲外。RBAC）を ADMIN に当てはめた |
+| 根拠 | アカウントの作成・失効・2要素の削除・問い合わせの個人情報は、権限を持ち2要素を済ませた人だけが触れるようにするため。共有の秘密1本で通った過去の形（2026-04-18 のレビューの High）に戻さない。管理の画面は誰でも開けるので、守りは API に置く（利用者の作成の画面は 2026-11-18 に消した）。全体の NFR-SEC-005（範囲外。権限管理）と NFR-SEC-008（範囲外。RBAC）を ADMIN に当てはめた |
 | 状態 | 推定 |
 | 確かめ方 | E2E・結合テスト |
 | 出どころ | OWASP ASVS 4.0.3 V4.1.1、V4.3.1。`docs/05_Quality/reviews/code/2026-04-18-admin-security-review.md` |
 | 優先度 | MUST |
 
-範囲の管理 API（`/api/admin/create-user`・`revoke-user-sessions`・`audit-logs`・`users/mfa/reset`・`contact/**`・`item-color-presets/**`）は、JWT の検証・session の生存・DB の ACL の権限・`aal2` を全部満たす要求だけを通す。今のコードは満たす（`src/lib/auth/admin-rbac.ts`、各 route.ts の最初の行の認可）。範囲で試すテストは強制失効と監査ログの結合テストだけ（食い違いは trace-matrix.md の「食い違い」節の TM-ADMIN-42）。
+範囲の管理 API（`revoke-user-sessions`・`audit-logs`・`users/mfa/reset`・`contact/**`・`item-color-presets/**`）は、JWT の検証・session の生存・DB の ACL の権限・`aal2` を全部満たす要求だけを通す。今のコードは満たす（`src/lib/auth/admin-rbac.ts`、各 route.ts の最初の行の認可）。範囲で試すテストは強制失効と監査ログの結合テストだけ（食い違いは trace-matrix.md の「食い違い」節の TM-ADMIN-42）。
 
 #### SEC-ADMIN-001-AC-01 JWT の無い要求を 401 で断る
 
@@ -386,7 +385,7 @@ FR-ADMIN-009 の文から起こした。今のコードで満たすかを「状�
 | 確かめ方 | E2E（サポーターの `aal2` の JWT） |
 | 出どころ | 実装から推定 |
 
-サポーターの `aal2` の JWT で `/api/admin/create-user`・`revoke-user-sessions`・`users/mfa/reset`・`audit-logs` と、色見本の `/api/admin/item-color-presets`（GET・POST）・`/api/admin/item-color-presets/[id]`（DELETE）を要求すると 403 が返り、利用者・session・2要素の登録・色見本の行が変わらないこと。
+サポーターの `aal2` の JWT で `revoke-user-sessions`・`users/mfa/reset`・`audit-logs` と、色見本の `/api/admin/item-color-presets`（GET・POST）・`/api/admin/item-color-presets/[id]`（DELETE）を要求すると 403 が返り、利用者・session・2要素の登録・色見本の行が変わらないこと。
 
 #### SEC-ADMIN-001-AC-04 ユーザー作成の画面を開けても、権限が無ければ作れない
 
@@ -394,11 +393,13 @@ FR-ADMIN-009 の文から起こした。今のコードで満たすかを「状�
 | --- | --- |
 | 上位 | SEC-ADMIN-001 |
 | 根拠 | 画面に守りが無い形（THR-ADMIN-023）でも、操作は API で断られることを利用者の見える所で確かめるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（mobile 390・tablet 768・desktop 1280） |
 | 出どころ | 実装から推定 |
 
 未ログインで `/admin/create-user` を開き、16 文字以上のパスワードで送ると、作成に成功した旨が表示されないこと。手元の Supabase にその利用者が作られないこと。
+
+廃止（2026-11-18）: 利用者の作成の画面と窓口（`create-user`）を消した。店員は招待（API-AUTH-033）だけで増やす。番号は使い回さない。
 
 ### SEC-ADMIN-002 DB の直接の読み書きも aal2 と有効な session を求める
 
@@ -638,11 +639,13 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | --- | --- |
 | 上位 | SEC-ADMIN-008 |
 | 根拠 | 外のサービスの誤りの文に、メールの住所などが入りうるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
 登録済みのメールで `/api/admin/create-user` を送り 409 が返った後、その `admin_create_user` の行の `detail` が決まった短い文で、Supabase の誤りの文を含まないこと。
+
+廃止（2026-11-18）: 利用者の作成の画面と窓口（`create-user`）を消した。店員は招待（API-AUTH-033）だけで増やす。番号は使い回さない。
 
 ### SEC-ADMIN-009 監査ログの IP は、信頼できる中継が付けた値から取る
 
@@ -737,7 +740,7 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | --- | --- |
 | 上位 | THR-ADMIN-012 |
 | 根拠 | 画面の 16 文字の確かめは API を直接呼べば迂回できる。会員登録と再設定（FREQ-323（範囲外））と同じ線を、管理者の作成にもサーバーで引く。全体の NFR-SEC-008（範囲外。強力なパスワードポリシー）を当てはめた |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | OWASP ASVS 4.0.3 V2.1.1、V2.1.7 |
 | 優先度 | MUST |
@@ -748,17 +751,21 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 - 照合の外の API が使えない時は作成を通す（fail-open。会員登録と同じ）。使えなかった事実は監査の `pwned_check_unavailable:<符号>` に残す
 - 長さを先に確かめ、短い入力は照合の外の API を呼ばずに 400 にする。パスワードそのものは監査に残さない
 
+廃止（2026-11-18）: 利用者の作成の画面と窓口（`create-user`）を消した。店員は招待（API-AUTH-033）だけで増やす。番号は使い回さない。
+
 #### SEC-ADMIN-012-AC-01 15 文字のパスワードでの作成を断る
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-ADMIN-012 |
 | 根拠 | 画面を通さない道で、長さの線が効くことを確かめるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
 店長の `aal2` の JWT で、15 文字のパスワードで `/api/admin/create-user` を送ると 400 が返り、その利用者が作られないこと。
+
+廃止（2026-11-18）: 利用者の作成の画面と窓口（`create-user`）を消した。店員は招待（API-AUTH-033）だけで増やす。番号は使い回さない。
 
 #### SEC-ADMIN-012-AC-02 漏れたパスワードでの作成を断る
 
@@ -766,13 +773,15 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | --- | --- |
 | 上位 | SEC-ADMIN-012 |
 | 根拠 | 漏洩の照合が管理者の作成にも効くことを確かめるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト・結合テスト（E2E は無い。照合の外の呼び出しを差し替える試験が要る） |
 | 出どころ | 実装から推定 |
 
 漏れた一覧にある 16 文字以上のパスワードで `/api/admin/create-user` を送ると 400 が返り、その利用者が作られないこと。
 
-### SEC-ADMIN-013 ユーザー作成・強制失効・色見本の入力を型と長さで確かめ、壊れた本文を 400 で断る
+廃止（2026-11-18）: 利用者の作成の画面と窓口（`create-user`）を消した。店員は招待（API-AUTH-033）だけで増やす。番号は使い回さない。
+
+### SEC-ADMIN-013 強制失効・色見本の入力を型と長さで確かめ、壊れた本文を 400 で断る
 
 | 属性 | 値 |
 | --- | --- |
@@ -783,7 +792,7 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | 出どころ | OWASP ASVS 4.0.3 V5.1.4 |
 | 優先度 | SHOULD |
 
-表示名は長さの上限を持ち、強制失効の `user_id` は UUID の形を求め、本文の JSON が壊れていれば 400 を返す。
+強制失効の `user_id` は UUID の形を求め、本文の JSON が壊れていれば 400 を返す（利用者の作成の窓口を消した 2026-11-18 から、表示名の上限の項は無い）。確かめは `tests/unit/api/admin/` の強制失効・色見本の単体テストが持つ。
 
 - 強制失効の分（`user_id` は UUID の形。壊れた JSON は 400）は 2026-10-26 に満たした
 - ユーザー作成は 2026-10-26 に満たした。表示名は前後の空白を除いて 100 字まで（101 字は 400）、壊れた JSON は 400 と監査の `failure`（以前は 500。TM-ADMIN-54）
@@ -795,11 +804,13 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | --- | --- |
 | 上位 | SEC-ADMIN-013 |
 | 根拠 | 長さの上限が効くことを確かめるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
 決めた上限より1字長い表示名で `/api/admin/create-user` を送ると 400 が返り、利用者が作られないこと。
+
+廃止（2026-11-18）: 利用者の作成の画面と窓口（`create-user`）を消した。店員は招待（API-AUTH-033）だけで増やす。番号は使い回さない。
 
 #### SEC-ADMIN-013-AC-02 壊れた JSON と UUID でない id を 400 で断る
 
@@ -807,11 +818,13 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | --- | --- |
 | 上位 | SEC-ADMIN-013 |
 | 根拠 | 入力の誤りを故障（500）と分けて返すことを確かめるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
 壊れた JSON の本文で `/api/admin/create-user`・`revoke-user-sessions`・`item-color-presets` の POST を送ると 400 が返ること。`user_id` が UUID の形でない強制失効の要求に 400 が返り、session が変わらないこと。
+
+廃止（2026-11-18）: 利用者の作成の画面と窓口（`create-user`）を消した。店員は招待（API-AUTH-033）だけで増やす。番号は使い回さない。
 
 ### SEC-ADMIN-014 MFA のリセットは DB の ACL で対象の役割を決め、消した後に対象の session を失効させる
 
@@ -1117,11 +1130,13 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | --- | --- |
 | 上位 | SEC-ADMIN-022 |
 | 根拠 | 一番強い操作（利用者を作る・session を切る・2要素を外す）の記録の粒度がほかの API と揃ったことを確かめるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E・結合（`admin-audit-write.test.ts` の全部の結果） |
 | 出どころ | 実装から推定 |
 
 店長が利用者を作った後（形の誤りの 400 と成功の 201）の `admin_create_user` の行の `actor_email` が店長のメールで、`ip` が要求に付けた `x-real-ip` の値、`user_agent` が付けた名乗りで、偽の `x-forwarded-for` の値を含まないこと。強制失効と2要素のリセットも全部の結果の行で同じであること（強制失効の E2E は SEC-ADMIN-009-AC-01、結合 `tests/integration/api/admin-misc/admin-audit-write.test.ts` が全部の結果を見る）。
+
+廃止（2026-11-18）: 利用者の作成の画面と窓口（`create-user`）を消した。店員は招待（API-AUTH-033）だけで増やす。番号は使い回さない。
 
 ### SEC-ADMIN-023 個人情報と監査ログの読み出しを、行為者付きで監査ログに残す
 
@@ -1173,13 +1188,15 @@ AC-01 と同じ 2 つの読み出しを、`x-real-ip`・偽の `x-forwarded-for`
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | 公開の会員登録（確認のメール・Turnstile・漏洩したパスワードの照合）を通さずに、店長がその場でアカウントを用意する道。どの要求にも無く、理由の記録も無い（試しの利用者やスタッフのアカウントを用意するためと推定）。FREQ-402-REQ-02（範囲外）が画面の背景に触れるだけ |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | 実装から推定（`src/app/api/admin/create-user/route.ts`、`src/app/admin/create-user/page.tsx`、2026-04-29 の 77def926 から）。`docs/03_BasicDesign/api/api-spec.md` |
 
 - 窓口 `POST /api/admin/create-user`: 固定の権限 `admin.users.manage`（店長だけ）で守る。認可の直後に、管理者の id ごと 20 回 / 10 分で数える（SEC-ADMIN-006）。メールの形、16〜128 字（UTF-8 で 72 バイト以内）のパスワード（漏洩の照合つき。SEC-ADMIN-012）、表示名（任意。前後の空白を除いて 100 字まで。SEC-ADMIN-013）を受け、Supabase Auth の管理の機能で利用者を作る。メールは確認済み（`email_confirm: true`）で作る（店長がメールを請け合う。Confirm email が有効でも、その会員がログインできるように。2026-11-01）。役割は付けない
 - 応答: 作れたら 201（id とメール）、形が違う・本文の JSON が壊れている・漏洩したパスワードは 400、メールが既にあれば 409、回数の超過は 429、ほかの失敗は 500
 - 監査: 作った人・結果・固定の符号を残す（`email_already_registered`・`create_user_failed`・`pwned_password`・`pwned_check_unavailable:<符号>`）。Supabase の誤りの文・パスワードは残さない（SEC-ADMIN-008）
 - 画面 `/admin/create-user`: 名前・メール・パスワードの入力と「作成」のボタン。送る前に、利用者の端末でパスワードが 16 文字以上かを確かめる（窓口も同じ 16〜128 字〔UTF-8 で 72 バイト以内。画面は 72 バイトを送る前に見ない〕と漏洩の照合を当てる）。管理画面の左のナビにも、どの画面にも入口のリンクが無い。画面そのものは誰でも開け、守りは窓口だけ
+
+廃止（2026-11-18）: 利用者の作成の画面と窓口（`create-user`）を消した。店員は招待（API-AUTH-033）だけで増やす。番号は使い回さない。
 
 ### DRV-ADMIN-002 店長が店長・サポーターの2要素の登録を全部消す
 

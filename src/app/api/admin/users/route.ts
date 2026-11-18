@@ -7,6 +7,10 @@ import { requireCsrfOrDeny } from '@/lib/csrfMiddleware';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { getClientIp } from '@/lib/request-ip';
 import { RolePermissionStoreError, setUserRole } from '@/lib/auth/role-permission-store';
+import { revokeAllSessionsForUser } from '@/lib/auth/revoke-user-sessions';
+import { issueAndSendStaffInvite } from '@/features/auth/staff/staff-invite-send';
+import { auditStaffAction, staffInviteReasonResponse } from '@/features/auth/staff/staff-invite-http';
+import { demoteStaff, hasOpenStaffInvite } from '@/features/auth/staff/staff-invite-store';
 
 const roleSchema = z.enum(['admin', 'supporter', 'user']);
 
@@ -147,6 +151,23 @@ export async function GET(request: Request) {
       }
     }
 
+    // 認めたパスキーの本数（店員だけ）と、開いている招待（店員でない人だけ）。店員の判定は上の役割と同じ。
+    const approvedPasskeyMap = new Map<string, number>();
+    const invitePendingSet = new Set<string>();
+    const staffIds = authUsers.filter((user) => ['admin', 'supporter'].includes(aclRoleMap.get(user.id) ?? '')).map((user) => user.id);
+    const nonStaffIds = authUsers.map((user) => user.id).filter((id) => !staffIds.includes(id));
+    for (let index = 0; index < staffIds.length; index += 20) {
+      await Promise.all(staffIds.slice(index, index + 20).map(async (id) => {
+        const { data: count, error: countError } = await supabase.rpc('passkey_approved_count', { p_user_id: id });
+        approvedPasskeyMap.set(id, !countError && typeof count === 'number' && Number.isInteger(count) ? count : 0);
+      }));
+    }
+    for (let index = 0; index < nonStaffIds.length; index += 20) {
+      await Promise.all(nonStaffIds.slice(index, index + 20).map(async (id) => {
+        if (await hasOpenStaffInvite(supabase, id)) invitePendingSet.add(id);
+      }));
+    }
+
     const data = authUsers.map((user) => {
       const metadataName =
         typeof user.user_metadata?.display_name === 'string' ? user.user_metadata.display_name : '';
@@ -162,6 +183,8 @@ export async function GET(request: Request) {
         roleValue: roleSchema.safeParse(roleRaw).success ? roleRaw : 'user',
         lastLogin: toJstDateTime(user.last_sign_in_at ?? null),
         status: user.last_sign_in_at ? 'アクティブ' : '非アクティブ',
+        approvedPasskeys: approvedPasskeyMap.get(user.id) ?? 0,
+        invitePending: invitePendingSet.has(user.id),
       };
     });
 
@@ -212,8 +235,67 @@ export async function PATCH(request: Request): Promise<Response> {
     targetUserId = userId;
     try {
       const client = await createServiceRoleClient();
+      const actor = { actorId: authz.userId, actorEmail: authz.actorEmail ?? null };
+      if (role === 'user') {
+        // 降格は招待も取り消す staff_demote で行う（admin_set_user_role の user への変更は使わない）。
+        const demoted = await demoteStaff(client, authz.userId, userId);
+        if (!demoted.ok) {
+          const refused: Record<string, { status: number; error: string; code?: string }> = {
+            last_admin: { status: 409, error: '店長を1人以上残してください。', code: 'LAST_ADMIN_REQUIRED' },
+            self: { status: 403, error: '自分自身の役割は変更できません。', code: 'SELF_ROLE_CHANGE_FORBIDDEN' },
+            forbidden: { status: 403, error: 'Forbidden' },
+            not_found: { status: 404, error: 'User not found' },
+          };
+          const mapped = refused[demoted.reason];
+          await auditStaffAction(request, actor, {
+            action: 'admin.staff.demote', resourceId: userId, outcome: demoted.reason === 'last_admin' ? 'conflict' : 'failure',
+            detail: 'Staff demote refused', metadata: { requested_role: role, result_code: demoted.reason },
+          });
+          if (!mapped) return noStore(NextResponse.json({ error: 'Internal server error' }, { status: 500 }));
+          return noStore(NextResponse.json(mapped.code ? { error: mapped.error, code: mapped.code } : { error: mapped.error }, { status: mapped.status }));
+        }
+        try {
+          await revokeAllSessionsForUser(userId);
+        } catch {
+          console.error('[admin.permissions] operation failed');
+          await auditStaffAction(request, actor, { action: 'admin.staff.demote', resourceId: userId, outcome: 'error', detail: 'session_revocation_failed' });
+          return noStore(staffInviteReasonResponse('revoke_failed'));
+        }
+        await auditStaffAction(request, actor, {
+          action: 'admin.staff.demote', resourceId: userId, outcome: 'success', detail: 'Staff demoted',
+          metadata: { requested_role: role, assigned_by: authz.userId },
+        });
+        return noStore(NextResponse.json({ success: true }, { status: 200 }));
+      }
       // DB が最後の店長・自己変更を判定し、ACL と metadata を同時に保存する。
-      const result = await setUserRole(client, authz.userId, userId, role);
+      // 今の店員でない人（お客さん・期限切れ・無効だった人）は DB が STAFF_INVITE_REQUIRED で断り、招待の道に落とす。
+      let result: Awaited<ReturnType<typeof setUserRole>>;
+      try {
+        result = await setUserRole(client, authz.userId, userId, role);
+      } catch (error) {
+        if (!(error instanceof RolePermissionStoreError) || error.code !== 'STAFF_INVITE_REQUIRED') throw error;
+        const { data: target, error: targetError } = await client.auth.admin.getUserById(userId);
+        const email = target?.user?.email;
+        if (targetError || !email) {
+          await auditStaffAction(request, actor, { action: 'admin.staff.promote', resourceId: userId, outcome: 'failure', detail: 'Target user not found' });
+          return noStore(staffInviteReasonResponse('not_found'));
+        }
+        const invited = await issueAndSendStaffInvite(client, {
+          userId, email, role, kind: 'promote', issuedBy: authz.userId, reason: null, hadPasskeys: true,
+        });
+        if (!invited.ok) {
+          await auditStaffAction(request, actor, {
+            action: 'admin.staff.promote', resourceId: userId, outcome: invited.reason === 'last_admin' ? 'conflict' : 'failure',
+            detail: 'Staff promote invite refused', metadata: { requested_role: role, result_code: invited.reason },
+          });
+          return noStore(staffInviteReasonResponse(invited.reason));
+        }
+        await auditStaffAction(request, actor, {
+          action: 'admin.staff.promote', resourceId: userId, outcome: 'success', detail: 'Staff promote invite sent',
+          metadata: { requested_role: role, assigned_by: authz.userId },
+        });
+        return noStore(NextResponse.json({ success: true, invited: true }, { status: 200 }));
+      }
       await audit('success', 'User role updated', {
         previous_role: result.previousRole, requested_role: role, assigned_by: authz.userId,
       });

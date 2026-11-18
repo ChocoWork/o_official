@@ -909,6 +909,10 @@ stateDiagram-v2
 | API-AUTH-030 | `POST /api/auth/email-code/verify` | メールのコードの画面（段2の Task 4。今は窓口だけ） |
 | API-AUTH-031 | `POST /api/auth/email-code/resend` | メールのコードの画面（段2の Task 4。今は窓口だけ） |
 | API-AUTH-032 | `POST /api/auth/email-code/cancel` | メールのコードの画面（段2の Task 4。今は窓口だけ） |
+| API-AUTH-033 | `POST /api/admin/staff/invites` | 管理画面の店員の招待（段3a の Task 5。今は窓口だけ） |
+| API-AUTH-034 | `POST /api/admin/staff/[id]/redo` | 管理画面のパスキーのやり直し（同上） |
+| API-AUTH-035 | `POST /api/admin/staff/[id]/demote` | 管理画面の降格（同上） |
+| API-AUTH-036 | `POST /api/admin/staff/[id]/invite/cancel` | 管理画面の招待の取り消し（同上） |
 
 全部の窓口に共通: 状態を変える `POST` は共有の proxy の Origin の確かめを先に通る。`/api/auth` 配下の全部の応答（Origin 拒否の 403 を含む）に、共有の proxy が `Cache-Control: no-store` を付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037。2026-10-28）。`confirm`・`oauth/*`・`password-reset/link`・`session`・`me`・`login/resend`・`login/cancel`・`post-login` は窓口も自分で同じ値を付ける。
 
@@ -1569,6 +1573,78 @@ stateDiagram-v2
 | 成功 | 204、`Cache-Control: no-store` |
 | 失敗 | 無し |
 | 監査 | action `auth.email_code.cancel`。実際に捨てた時だけ |
+
+### API-AUTH-033 POST /api/admin/staff/invites は店長の招待を発行し、古いログインを終わらせて、招待のメールを送る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-038、SEC-AUTH-056、ADR-0471 |
+| 根拠 | 店員を増やす唯一の窓口。アカウントが無ければ作り、在れば同じアカウントを使い、応答を同じにする。今の店員は 409 で、やり直しの守りを迂回させない。発行はメールが送れる設定の時だけ行う |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/admin-staff-invites-api.test.ts`）、単体テスト（`tests/unit/api/admin/staff/invites-route.test.ts`）、E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
+
+| 項目 | 中身 |
+| --- | --- |
+| 入力 | JSON `{ email, role: 'admin' | 'supporter' }` |
+| 順番 | 権限 `admin.users.manage`（401・403）→ CSRF → IP の枠と店長ごとの枠（`admin:staff:invite`、20回/10分。429）→ 本文（400）→ アカウントを引く（引けなければ 500）→ 無ければ `createUser`（パスワード無し・確認済み）→ 在れば既存の鍵の有無を管理 API で読む（読めなければ「持っていた」側）→ メールの設定の確かめ（503）→ `staff_invite_issue`（種類 `invite`）→ ログインの終了 → メール |
+| 成功 | 200 `{ success: true }`（`Cache-Control: no-store`）。アカウントが在ったかは返さない |
+| 失敗 | 400、401・403、409 `already_staff`、429、500、502 `mail_failed`（行は残す）、503 `config` |
+| 監査 | action `admin.staff.invite`。対象の id と役割だけ。メール・合言葉は残さない |
+
+### API-AUTH-034 POST /api/admin/staff/[id]/redo は確認の語と理由を求めて、店員のパスキーを全部消してやり直しの招待を出す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-039、SEC-AUTH-056、ADR-0471 |
+| 根拠 | 取り返しがつかないので、`users/mfa/reset` と同じ守り（確認の語と理由 10〜500字。ADR-0457・0461）を求める。今の役割を発行の前に読み、店員でない人は DB の発行を呼ばずに断る |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/admin-staff-redo-api.test.ts`）、単体テスト（`tests/unit/api/admin/staff/redo-route.test.ts`）、E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
+
+| 項目 | 中身 |
+| --- | --- |
+| 入力 | 道の `id`（UUID）。JSON `{ confirm: 'やり直し', reason }` |
+| 順番 | 権限 → CSRF → 枠（`admin:staff:redo`、10回/10分）→ id と本文（400）→ 自分自身（403）→ 対象のアカウント（404）→ 今の役割（無ければ 409 `not_staff`）→ `staff_invite_issue`（種類 `redo`）→ ログインの終了 → メール |
+| 成功 | 200 `{ success: true }` |
+| 失敗 | 400、401・403、404、409（`last_admin`・`not_staff`）、429、500、502、503 |
+| 監査 | action `admin.staff.redo`。対象の id と理由の長さだけ |
+
+### API-AUTH-035 POST /api/admin/staff/[id]/demote は店員をお客さんに戻し、招待も取り消して、ログインを終わらせる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-040、SEC-AUTH-056、ADR-0471 |
+| 根拠 | `staff_demote`（錠の後に操作者を確かめ、役割・認めた鍵・開いている招待・窓を外す）だけを使い、`admin_set_user_role` の `user` への変更は使わない。降格の後にログインを終わらせる |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/admin-staff-demote-api.test.ts`）、単体テスト（`tests/unit/api/admin/staff/demote-route.test.ts`）、E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
+
+| 項目 | 中身 |
+| --- | --- |
+| 入力 | 道の `id`（UUID）。本文なし |
+| 順番 | 権限 → CSRF → 枠（`admin:staff:demote`、20回/10分）→ id（400）→ `staff_demote` → ログインの終了 |
+| 成功 | 200 `{ success: true }` |
+| 失敗 | 400、401・403（自分自身・店長でない操作者）、404、409 `last_admin`、429、500 |
+| 監査 | action `admin.staff.demote`。対象の id だけ |
+
+### API-AUTH-036 POST /api/admin/staff/[id]/invite/cancel は出した招待を取り消し、招待のログインを終わらせる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-040、SEC-AUTH-056、ADR-0471 |
+| 根拠 | 取り消すと同じ合言葉は使えなくなり、窓も閉じる。招待のセッションが残らないよう、その人のログインも終わらせる |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/admin-staff-invite-cancel-api.test.ts`）、単体テスト（`tests/unit/api/admin/staff/invite-cancel-route.test.ts`）、E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
+
+| 項目 | 中身 |
+| --- | --- |
+| 入力 | 道の `id`（UUID）。本文なし |
+| 順番 | 権限 → CSRF → 枠（`admin:staff:invite-cancel`、20回/10分）→ id（400）→ `staff_invite_cancel`（操作者が今の店長か DB が確かめる）→ ログインの終了 |
+| 成功 | 200 `{ success: true }` |
+| 失敗 | 400、401・403、429、500 |
+| 監査 | action `admin.staff.invite_cancel`。対象の id だけ |
 
 ## データ
 

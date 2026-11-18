@@ -45,14 +45,12 @@ const ACTOR_EMAIL = 'owner@example.com';
 const TARGET_ID = '22222222-2222-4222-8222-222222222222';
 const IP_HEADER = '203.0.113.7';
 const UA = 'Mozilla/5.0 (audit-test)';
-const STRONG_PASSWORD = 'password-1234-ok';
 const MFA_REASON = 'lost the device twice';
 const reasonAudit = {
   reason_length: MFA_REASON.length,
   reason_sha256: createHash('sha256').update(MFA_REASON).digest('hex'),
 };
 
-const createUserRoute = () => require('@/app/api/admin/create-user/route');
 const revokeRoute = () => require('@/app/api/admin/revoke-user-sessions/route');
 const mfaResetRoute = () => require('@/app/api/admin/users/mfa/reset/route');
 const contactRoute = () => require('@/app/api/admin/contact/route');
@@ -199,114 +197,6 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
   afterEach(() => {
     errorSpy.mockRestore();
     warnSpy.mockRestore();
-  });
-
-  describe('利用者の作成', () => {
-    it('ARC-ADMIN-003 SEC-ADMIN-022-AC-03 形の誤りは failure で、操作した人の id とメール・IP（x-real-ip）・ブラウザを入れる', async () => {
-      setService(serviceWith({}));
-
-      const res = await createUserRoute().POST(req('POST', 'http://localhost/api/admin/create-user', { email: 'bad' }));
-
-      expect(res.status).toBe(400);
-      expect(logAudit).toHaveBeenCalledTimes(1);
-      expect(auditArg()).toEqual({
-        action: 'admin_create_user',
-        actor_id: ACTOR_ID,
-        actor_email: ACTOR_EMAIL,
-        resource: 'users',
-        outcome: 'failure',
-        detail: 'Invalid request body',
-        ip: IP_HEADER,
-        user_agent: UA,
-      });
-    });
-
-    it.each(['User already registered', 'duplicate key value'])(
-      'ARC-ADMIN-003 重なり（%s）は conflict で、detail は固定の符号にし、誤りの文を残さない',
-      async (message) => {
-        setService(
-          serviceWith({}, { createUser: jest.fn().mockResolvedValue({ data: null, error: { message } }) }),
-        );
-
-        const res = await createUserRoute().POST(
-          req('POST', 'http://localhost/api/admin/create-user', { email: 'a@example.com', password: STRONG_PASSWORD }),
-        );
-
-        expect(res.status).toBe(409);
-        expect(auditArg()).toMatchObject({
-          outcome: 'conflict',
-          detail: 'email_already_registered',
-          actor_email: ACTOR_EMAIL,
-          ip: IP_HEADER,
-          user_agent: UA,
-        });
-        expect(JSON.stringify(logAudit.mock.calls)).not.toContain(message);
-      },
-    );
-
-    it('ARC-ADMIN-003 重なり以外の誤りは error で、detail は固定の符号にし、誤りの文を残さない', async () => {
-      setService(
-        serviceWith({}, { createUser: jest.fn().mockResolvedValue({ data: null, error: { message: 'smtp down' } }) }),
-      );
-
-      const res = await createUserRoute().POST(
-        req('POST', 'http://localhost/api/admin/create-user', { email: 'a@example.com', password: STRONG_PASSWORD }),
-      );
-
-      expect(res.status).toBe(500);
-      expect(auditArg()).toMatchObject({ outcome: 'error', detail: 'create_user_failed' });
-      expect(JSON.stringify(logAudit.mock.calls)).not.toContain('smtp down');
-      expect(logAudit).toHaveBeenCalledTimes(1);
-    });
-
-    it('ARC-ADMIN-003 成功は success で、作った利用者の id を resource_id に入れる', async () => {
-      setService(
-        serviceWith(
-          {},
-          { createUser: jest.fn().mockResolvedValue({ data: { user: { id: TARGET_ID, email: 'a@example.com' } }, error: null }) },
-        ),
-      );
-
-      const res = await createUserRoute().POST(
-        req('POST', 'http://localhost/api/admin/create-user', { email: 'a@example.com', password: STRONG_PASSWORD }),
-      );
-
-      expect(res.status).toBe(201);
-      expect(auditArg()).toEqual({
-        action: 'admin_create_user',
-        actor_id: ACTOR_ID,
-        actor_email: ACTOR_EMAIL,
-        resource: 'users',
-        resource_id: TARGET_ID,
-        outcome: 'success',
-        ip: IP_HEADER,
-        user_agent: UA,
-      });
-    });
-
-    it('ARC-ADMIN-003 漏洩済みのパスワードは failure で、detail に pwned_password を残し、パスワードを残さない', async () => {
-      checkPwnedPassword.mockResolvedValue({ status: 'pwned', count: 3 });
-      const createUser = jest.fn();
-      setService(serviceWith({}, { createUser }));
-
-      const res = await createUserRoute().POST(
-        req('POST', 'http://localhost/api/admin/create-user', { email: 'a@example.com', password: STRONG_PASSWORD }),
-      );
-
-      expect(res.status).toBe(400);
-      expect(createUser).not.toHaveBeenCalled();
-      expect(logAudit).toHaveBeenCalledTimes(1);
-      expect(auditArg()).toMatchObject({ outcome: 'failure', detail: 'pwned_password', actor_email: ACTOR_EMAIL });
-      expect(JSON.stringify(logAudit.mock.calls)).not.toContain(STRONG_PASSWORD);
-    });
-
-    it('ARC-ADMIN-003 認可に失敗したときは何も書かない', async () => {
-      denyAdmin();
-
-      await createUserRoute().POST(req('POST', 'http://localhost/api/admin/create-user', {}));
-
-      expect(logAudit).not.toHaveBeenCalled();
-    });
   });
 
   describe('強制失効', () => {
