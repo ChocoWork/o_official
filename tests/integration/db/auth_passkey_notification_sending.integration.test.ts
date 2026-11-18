@@ -439,12 +439,40 @@ describeLocalDb('passkey notification sending functions', (db) => {
          values ($1, gen_random_bytes(32), gen_random_bytes(32), 'Phone') returning id::text as id`, [u])).rows[0].id;
     const k = await credential();
     await db().query('delete from auth.webauthn_credentials where id = $1', [k]);
+    // an added-key row is held back for 30 seconds after it was queued; the delete row is not
+    await db().query(`update private.passkey_notification_outbox set occurred_at = now() - interval '31 seconds' where kind = 'passkey_added'`);
     const first = await claim();
     expect(first[0]).toMatchObject({ user_id: u, kind: 'passkey_added', passkey_id: k, friendly_name: 'Phone', subject_email: 'owner@example.com', notify_subject: true, subject_is_staff: false });
     const second = await claim();
     expect(second[0]).toMatchObject({ user_id: u, kind: 'passkey_removed', passkey_id: k });
     const rec = await db().query('select * from public.passkey_notification_recipients($1)', [first[0].id]);
     expect(rec.rows).toEqual([{ email: 'owner@example.com', audience: 'subject_customer' }]);
+  });
+
+  test("DATA-AUTH-019 claim returns the credential's current name, not the name recorded at insert", async () => {
+    const u = await user('owner@example.com');
+    const k = (await db().query(
+      `insert into auth.webauthn_credentials (user_id, credential_id, public_key, friendly_name)
+       values ($1, gen_random_bytes(32), gen_random_bytes(32), 'Passkey') returning id::text as id`, [u])).rows[0].id;
+    await db().query(`update auth.webauthn_credentials set friendly_name = 'Windows' where id = $1`, [k]);
+    await db().query(`update private.passkey_notification_outbox set occurred_at = now() - interval '31 seconds' where kind = 'passkey_added'`);
+    const added = await claim();
+    expect(added[0]).toMatchObject({ kind: 'passkey_added', passkey_id: k, friendly_name: 'Windows' });
+    expect((await get(added[0].id)).friendly_name).toBe('Windows');
+    // a removed key has no credential row any more: the name recorded at delete time is returned
+    await db().query('delete from auth.webauthn_credentials where id = $1', [k]);
+    const removed = await claim();
+    expect(removed[0]).toMatchObject({ kind: 'passkey_removed', passkey_id: k, friendly_name: 'Windows' });
+  });
+
+  test('DATA-AUTH-019 an added-key row is not claimed for 30 seconds after it was queued', async () => {
+    const u = await user('owner@example.com');
+    await db().query(
+      `insert into auth.webauthn_credentials (user_id, credential_id, public_key, friendly_name)
+       values ($1, gen_random_bytes(32), gen_random_bytes(32), 'Passkey')`, [u]);
+    expect(await claim()).toEqual([]);
+    await db().query(`update private.passkey_notification_outbox set occurred_at = now() - interval '31 seconds' where kind = 'passkey_added'`);
+    expect(await claim()).toHaveLength(1);
   });
 });
 

@@ -22,7 +22,7 @@
 | 属性 | 値 |
 | --- | --- |
 | 上位 | DATA-AUTH-019、SEC-AUTH-051 |
-| 根拠 | 送る側が複数でも、1行を二重に取らず、落ちた担当の行を取り戻し、送れない行を止められるようにする。注文のメールの送り箱と同じ「担当の印（lease）・失敗の回数・間隔を広げる再試行」の考えにして、宛先と状態の変更はすべて DB の関数の中で決める。呼び手（薄い部品）は誤り・例外・想定外の戻りを `{ ok: false }` にして、呼び手が何もせず次の回へ進める |
+| 根拠 | 送る側が複数でも、1行を二重に取らず、落ちた担当の行を取り戻し、送れない行を止められるようにする。注文のメールの送り箱と同じ「担当の印（lease）・失敗の回数・間隔を広げる再試行」の考えにして、宛先と状態の変更はすべて DB の関数の中で決める。呼び手（薄い部品）は誤り・例外・想定外の戻りを `{ ok: false }` にして、呼び手が何もせず次の回へ進める。取り出す時に、鍵の今の名前（`auth.webauthn_credentials`。消した鍵は消した時に写した名前）を行の `friendly_name` に入れて返す。GoTrue は鍵を「Passkey」で足し、画面が後から名前を付けるため。足した行（`passkey_id` あり）は足してから30秒は取り出さず、名前の変更が先に入るのを待つ |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-notification-store.test.ts`）、結合テスト（`tests/integration/db/auth_passkey_notification_sending.integration.test.ts`）、E2E（`e2e/FR-LOGIN-061-passkey-notification-function-grants.spec.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-8-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 8。作り手の判断: 再試行は注文のメールと同じ考えで揺らぎなし、`dead` の点検は段3） |
@@ -64,7 +64,7 @@ sequenceDiagram
 | 属性 | 値 |
 | --- | --- |
 | 上位 | ARC-AUTH-011、DATA-AUTH-019、SEC-AUTH-051 |
-| 根拠 | 行の取り出し・結果の記録（DD-AUTH-066）の上に、宛先ごとの文面・送り・失敗の分け方・予算を載せる。注文のメールの送り手と停止の決めを共用し、定期処理は既存の毎分の入口に1段足す（ADR-0470）。宛先の1つの恒久の失敗で行が9回回って `dead` にならないよう、恒久の失敗の宛先だけ飛ばす |
+| 根拠 | 行の取り出し・結果の記録（DD-AUTH-066）の上に、宛先ごとの文面・送り・失敗の分け方・予算を載せる。注文のメールの送り手と停止の決めを共用し、定期処理は既存の毎分の入口に1段足す（ADR-0470）。宛先の1つの恒久の失敗で行が9回回って `dead` にならないよう、恒久の失敗の宛先だけ飛ばす。知らせの名前は送る時の名前（取り出す時に読んだ鍵の今の名前）で、足した直後の30秒は取り出されない（DD-AUTH-066） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-notification-compose.test.ts`・`passkey-notification-worker.test.ts`・`tests/unit/lib/stripe/webhook-worker.test.ts`）、結合テスト（`tests/integration/db/auth_passkey_notification_worker.integration.test.ts`）、E2E（`e2e/FR-LOGIN-062-passkey-notification-mail.spec.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-9-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 9） |

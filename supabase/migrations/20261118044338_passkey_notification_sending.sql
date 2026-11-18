@@ -18,6 +18,12 @@
 --                                                             retry_wait row whose last_error_code is a sender config code
 --                                                             (quota_*, config_*) is claimed; none due -> nothing; no such
 --                                                             row (retry_wait or sending) -> 1 normal row (the first probe).
+--                                                             The name is read at claim time: friendly_name is set to the
+--                                                             credential's current name in auth.webauthn_credentials (a removed
+--                                                             key keeps the name recorded at delete time), because GoTrue
+--                                                             inserts the key as 'Passkey' and the screen renames it afterwards.
+--                                                             A passkey_added row that has a passkey_id is not claimed for 30 seconds
+--                                                             after occurred_at, so the rename lands first.
 --   public.complete_passkey_notification(_id, _lease_token)    'sent' only when the token matches; else false.
 --                                                             Also clears the shared send pause.
 --   public.fail_passkey_notification(_id, _lease_token, _error_code, _retry_after_seconds, _count_attempt DEFAULT true)
@@ -49,6 +55,7 @@
 -- BEFORE applying to production (read only): this migration is NOT applied to production until stage 3.
 --   select to_regclass('private.passkey_notification_outbox');   -- expect not null (migration A)
 --   select to_regclass('private.order_email_send_pause');        -- expect not null (order mail; the shared send pause)
+--   select to_regclass('auth.webauthn_credentials');             -- expect not null (claim reads the current key name)
 
 BEGIN;
 
@@ -58,7 +65,8 @@ BEGIN
      OR to_regclass('private.order_email_send_pause') IS NULL
      OR to_regclass('public.user_roles') IS NULL
      OR to_regclass('public.roles') IS NULL
-     OR to_regclass('auth.users') IS NULL THEN
+     OR to_regclass('auth.users') IS NULL
+     OR to_regclass('auth.webauthn_credentials') IS NULL THEN
     RAISE EXCEPTION 'PASSKEY_MIGRATION_PRECHECK_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_g_precheck';
   END IF;
 END
@@ -122,6 +130,7 @@ BEGIN
       FROM private.passkey_notification_outbox o
      WHERE o.status = 'retry_wait' AND o.next_attempt_at <= pg_catalog.now()
        AND o.last_error_code IN ('config_api_key', 'config_sender_domain', 'config_provider', 'config_site_url', 'quota_daily', 'quota_monthly')
+       AND NOT (o.kind = 'passkey_added' AND o.passkey_id IS NOT NULL AND o.occurred_at > pg_catalog.now() - interval '30 seconds')
      ORDER BY o.seq
      LIMIT 1
      FOR UPDATE SKIP LOCKED;
@@ -129,6 +138,7 @@ BEGIN
     SELECT o.id INTO v_id
       FROM private.passkey_notification_outbox o
      WHERE o.status IN ('pending', 'retry_wait') AND o.next_attempt_at <= pg_catalog.now()
+       AND NOT (o.kind = 'passkey_added' AND o.passkey_id IS NOT NULL AND o.occurred_at > pg_catalog.now() - interval '30 seconds')
      ORDER BY o.seq
      LIMIT 1
      FOR UPDATE SKIP LOCKED;
@@ -142,6 +152,8 @@ BEGIN
     UPDATE private.passkey_notification_outbox o
        SET status = 'sending',
            attempts = o.attempts + 1,
+           friendly_name = COALESCE((SELECT w.friendly_name FROM auth.webauthn_credentials w
+                                      WHERE w.id = o.passkey_id AND w.user_id = o.user_id), o.friendly_name),
            lease_token = gen_random_uuid(),
            lease_expires_at = pg_catalog.now() + pg_catalog.make_interval(secs => _lease_seconds)
      WHERE o.id = v_id

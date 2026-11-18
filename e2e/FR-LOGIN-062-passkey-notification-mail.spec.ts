@@ -12,6 +12,7 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
+import { deviceNameFromUserAgent } from '../src/features/auth/passkey/device-name';
 import { addUnapprovedPasskey, provisionStaff } from '../scripts/e2e/passkey-staff';
 import { readLatestCode, readMailpitMessages } from './member-session-helpers';
 import { mailBodies, mailsTo, runWorkerOnce, runWorkerUntil, withLocalDb } from './order-email-test-utils';
@@ -138,7 +139,10 @@ for (const viewport of viewports) {
       await runWorkerUntil(page.request, async () => (await mailCount(page.request, email, ADDED_SUBJECT)) >= 1, '追加の知らせが届かない');
       const added = await mailBodies(page.request, email, ADDED_SUBJECT);
       expect(added).toHaveLength(1);
-      expect(added[0].Text).toMatch(/名前: .+/);
+      // 鍵は GoTrue が「Passkey」で足し、画面が後から端末の名前に直す。知らせには送る時の名前（端末の名前）が載る
+      const expectedName = deviceNameFromUserAgent(await page.evaluate(() => navigator.userAgent));
+      expect(added[0].Text).toContain(`名前: ${expectedName}`);
+      expect(added[0].Text).not.toContain('名前: Passkey');
       expect(added[0].Text).toMatch(DATE_LINE);
       expect(added[0].Text).toContain('ご登録のアカウントに、パスキーが追加されました。');
       expect(added[0].Text).toContain('/contact');
