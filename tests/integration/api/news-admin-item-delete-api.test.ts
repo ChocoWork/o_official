@@ -289,8 +289,16 @@ describe('DELETE /api/admin/news/[id]（記事の削除）', () => {
     setup();
     // 認可の中身（client の作成回数）に頼らず、認可が ACL を読み終えた後の作成だけを失敗させる
     createServiceRoleClient.mockReset();
+    let idleChecked = false;
     createServiceRoleClient.mockImplementation(async () => {
-      if (serviceClient.ops.some((o) => o.table === 'user_roles')) throw new Error('no key');
+      // ACL を読み終えた後の最初の作成は、認可の無操作の確かめ（staff_idle_check）。その次からを失敗させる
+      if (serviceClient.ops.some((o) => o.table === 'user_roles')) {
+        if (!idleChecked) {
+          idleChecked = true;
+          return withApprovedCount(serviceClient);
+        }
+        throw new Error('no key');
+      }
       return withApprovedCount(serviceClient);
     });
 

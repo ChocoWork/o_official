@@ -23,7 +23,7 @@ const service = {
     const chain = { select: () => chain, eq: () => chain, or: async () => ({ data: [{ roles: { role_permissions: grants.current.map((code) => ({ permissions: { code } })) } }], error: null }) };
     return chain;
   },
-  rpc: (name: string, args: Record<string, unknown>) => name === 'passkey_approved_count' ? Promise.resolve({ data: 2, error: null }) : rpcImpl(name, args),
+  rpc: (name: string, args: Record<string, unknown>) => name === 'passkey_approved_count' ? Promise.resolve({ data: 2, error: null }) : name === 'staff_idle_check' ? Promise.resolve({ data: true, error: null }) : rpcImpl(name, args),
 };
 const SEASON = '2026SS';
 // 6 months x every key the screen saves (VALID_STORAGE_KEYS).

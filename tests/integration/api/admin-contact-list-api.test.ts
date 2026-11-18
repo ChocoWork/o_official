@@ -401,6 +401,7 @@ describe('API-ADMIN-005 GET /api/admin/contact', () => {
   it('API-ADMIN-005 認可の後に表のための client を作れず例外が出たら 500 Internal server error にする', async () => {
     setup();
     createServiceRoleClient.mockImplementationOnce(async () => withApprovedCount(serviceClient)); // 認可の ACL の照会
+    createServiceRoleClient.mockImplementationOnce(async () => withApprovedCount(serviceClient)); // 無操作の確かめ（staff_idle_check）
     createServiceRoleClient.mockImplementationOnce(async () => {
       throw new Error('boom');
     });

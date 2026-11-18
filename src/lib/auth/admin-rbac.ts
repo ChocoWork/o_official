@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { checkAuthSessionLiveness, verifyAccessToken } from '@/lib/auth/authenticate';
 import { evaluateStaffEntry } from '@/lib/auth/staff-passkey';
+import { checkStaffIdle, staffIdleDeps } from '@/lib/auth/staff-passkey-idle';
+import { endAuthSessionById } from '@/lib/auth/passkey-auth-session-end';
 
 export type AppRole = 'admin' | 'supporter' | 'user';
 export type PermissionCode =
@@ -341,6 +343,28 @@ export async function authorizeAdminPermissions(required: readonly PermissionCod
           { status: 403 }
         ),
         denial: { userId, email: claims.email ?? null, role: tokenRole, permission: firstRequired, reason: 'mfa' },
+      };
+    }
+
+    // 店員の無操作1時間（SR-AUTH-028）。通れば最後の操作の時刻が進む（管理の画面の API は全部ここを通るので、使っている間は無操作にならない）。
+    // 超えたら 401 でセッションを終わらせ（24時間まで残る更新の道を閉じる）、確かめの失敗は 503（ログアウトも 401 もしない）。
+    const idle = await checkStaffIdle(staffIdleDeps, claims.session_id as string, userId);
+    if (idle === 'error') {
+      return {
+        ok: false,
+        response: NextResponse.json(
+          { error: 'Service temporarily unavailable' },
+          { status: 503, headers: { 'Retry-After': '30' } },
+        ),
+      };
+    }
+    if (idle === 'idle') {
+      console.warn(`[RBAC] Staff session idle for ${userId}`);
+      await endAuthSessionById(claims.session_id as string);
+      return {
+        ok: false,
+        response: NextResponse.json({ error: 'session_idle' }, { status: 401 }),
+        denial: { userId, email: claims.email ?? null, role: tokenRole, permission: firstRequired, reason: 'session' },
       };
     }
 

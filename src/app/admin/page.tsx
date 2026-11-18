@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { type TabType } from '@/components/AdminTabs';
 import AdminSideNav from '@/components/AdminSideNav';
 import { useLogin } from '@/contexts/LoginContext';
+import { navigateBrowser } from '@/lib/browser-location';
 import { clientFetch } from '@/lib/client-fetch';
 import KpiSection, { type AdminKpiData } from '@/components/KpiSection';
 import AccountingSection from '@/components/AccountingSection';
@@ -34,7 +35,7 @@ const allAdminTabs: TabType[] = ['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'S
 const supporterTabs: TabType[] = ['ORDER', 'INVENTORY', 'PACKING', 'CONTACT', 'DISCOUNT'];
 
 function AdminPageContent() {
-  const { isLoggedIn, isAuthResolved, userRole, isMfaVerified } = useLogin();
+  const { isLoggedIn, isAuthResolved, userRole, isMfaVerified, authReason } = useLogin();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabType>('KPI');
   const [kpiData, setKpiData] = useState<AdminKpiData | null>(null);
@@ -54,6 +55,13 @@ function AdminPageContent() {
   }, [userRole]);
 
   const canAccessAdmin = visibleTabs.length > 0;
+
+  // 店員の無操作が1時間を過ぎていたら、ログインへ送る（SR-AUTH-028）。API は 401 session_idle で、この画面はここで送る
+  useEffect(() => {
+    if (isAuthResolved && !isLoggedIn && authReason === 'idle') {
+      navigateBrowser('/login?reason=idle');
+    }
+  }, [isAuthResolved, isLoggedIn, authReason]);
 
   const fetchKpi = useCallback(async () => {
     try {

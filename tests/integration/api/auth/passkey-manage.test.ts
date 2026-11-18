@@ -26,6 +26,7 @@ const counter = incrementCounter as jest.Mock;
 const ORIGINAL_ENV = { ...process.env };
 const IP = '203.0.113.50';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
+const SESSION_ID = '44444444-4444-4444-8444-444444444444';
 const KEY_A = '33333333-3333-4333-8333-333333333333';
 const KEY_B = '44444444-4444-4444-8444-444444444444';
 // 16進の英字を含む（大文字にすると別の文字列になる）。認めた鍵の一覧は小文字で返る。
@@ -49,7 +50,7 @@ beforeEach(() => {
   process.env = { ...ORIGINAL_ENV, CLIENT_IP_HEADER: 'x-real-ip' };
   counter.mockReset().mockResolvedValue(1);
   (requireCsrfOrDeny as jest.Mock).mockReset().mockResolvedValue(undefined);
-  (authenticateRequest as jest.Mock).mockReset().mockResolvedValue({ ok: true, claims: { sub: USER_ID } });
+  (authenticateRequest as jest.Mock).mockReset().mockResolvedValue({ ok: true, claims: { sub: USER_ID, session_id: SESSION_ID } });
   (listPasskeys as jest.Mock).mockReset().mockResolvedValue({
     ok: true,
     data: [{ id: KEY_A, friendly_name: 'Mac', created_at: '2026-11-01T00:00:00Z', public_key: 'SECRET' }],
@@ -63,6 +64,7 @@ beforeEach(() => {
     if (name === 'passkey_is_staff') return { data: isStaff, error: null };
     if (name === 'passkey_approved_ids') return { data: approvedIds, error: null };
     if (name === 'passkey_approved_count') return { data: approvedCount, error: null };
+    if (name === 'staff_idle_check') return { data: true, error: null };
     return { data: null, error: null };
   });
   (createServiceRoleClient as jest.Mock).mockResolvedValue({ rpc });

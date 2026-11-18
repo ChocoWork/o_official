@@ -51,7 +51,7 @@ const service = {
     const chain = { select: () => chain, eq: () => chain, or: async () => ({ data: [{ roles: { role_permissions: grants.current.map((code) => ({ permissions: { code } })) } }], error: null }) };
     return chain;
   },
-  rpc: (name: string, args: Record<string, unknown>) => { if (name === 'passkey_approved_count') return Promise.resolve({ data: 2, error: null }); seq.push(`rpc:${name}`); return rpcImpl(name, args); },
+  rpc: (name: string, args: Record<string, unknown>) => { if (name === 'passkey_approved_count') return Promise.resolve({ data: 2, error: null }); if (name === 'staff_idle_check') return Promise.resolve({ data: true, error: null }); seq.push(`rpc:${name}`); return rpcImpl(name, args); },
 };
 const defaultRpc = (name: string): { data: unknown; error: null } => {
   switch (name) {

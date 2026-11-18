@@ -5738,13 +5738,73 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SR-AUTH-028 |
-| 根拠 | SR-AUTH-028 を、移行 D の表 `private.staff_session_activity` と関数 `private.staff_idle_ok`・`public.staff_session_touch`・`staff_idle_check`・`staff_idle_peek`、移行 E の `has_permission` の4つ目の条件にする。構造は ARC-AUTH-013、守りは SEC-AUTH-055、処理は DD-AUTH-074、判断は ADR-0472。窓口・ページの入口がこの関数を呼ぶ配線は Task 8・9 |
+| 根拠 | SR-AUTH-028 を、移行 D の表 `private.staff_session_activity` と関数 `private.staff_idle_ok`・`public.staff_session_touch`・`staff_idle_check`・`staff_idle_peek`、移行 E の `has_permission` の4つ目の条件にする。構造は ARC-AUTH-013、守りは SEC-AUTH-055、処理は DD-AUTH-074、判断は ADR-0472。管理 API・`/api/auth/me`・店員のパスキーの窓口（一覧・名前・削除）・ログインの終わりがこの関数を呼ぶ配線は Task 8（DD-AUTH-081・DD-AUTH-082）。招待の窓口・ページの入口は Task 9 |
 | 状態 | 推定 |
-| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_idle.integration.test.ts`、`tests/integration/db/auth_has_permission_passkey.integration.test.ts`） |
-| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-3-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 3） |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_idle.integration.test.ts`、`tests/integration/db/auth_has_permission_passkey.integration.test.ts`）、E2E（FR-AUTH-044-AC-01〜05。`e2e/FR-LOGIN-067-staff-idle-timeout.spec.ts`）、単体テスト（DD-AUTH-081・DD-AUTH-082） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-3-brief.md`、`task-8-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 3・8） |
 | 優先度 | MUST |
 
 規則: (1) 活動の行がある時は `last_seen_at` が現在から1時間（`staff_idle_seconds`）より新しい時だけ通す。(2) 活動の行が無い時は `auth.sessions.created_at` だけで同じ比べをする（`refreshed_at` は見ない。ログインの終わりを通らないセッションも、作られてから1時間は通り、最初の `staff_idle_check` が行を書く）。`auth.sessions` にも無い・`created_at` が `NULL` なら偽。(3) `has_permission` は ACL・認めた鍵の本数を通った店員にだけ、この確かめを払わせる（お客さん・anon は手前で止まる）。形の悪い `session_id` は例外にせず偽。(4) 時刻を進める道は `staff_session_touch`（60秒の間引き）と `staff_idle_check` だけ。`staff_idle_peek` は時刻を進めない。
+
+### FR-AUTH-044-AC-01 無操作が61分の店員が /admin を開くと /login?reason=idle へ送られ、ログアウトの文が出る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-044 |
+| 根拠 | SR-AUTH-028 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-067-staff-idle-timeout.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-8-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 8） |
+
+最後の操作の時刻が61分前の店員（管理の入口の条件は満たす）が `/admin` を開くと、`/api/auth/me` が時刻を進めずに `reason: idle` を返し、画面が `/login?reason=idle` へ送る。ログインの画面に「しばらく操作がなかったため、ログアウトしました。もう一度ログインしてください。」が表示される。開き直しただけでは時刻は進まない。
+
+### FR-AUTH-044-AC-02 無操作が59分の店員は /admin に入れ、その画面の操作で最後の操作の時刻が更新される
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-044 |
+| 根拠 | SR-AUTH-028 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-067-staff-idle-timeout.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-8-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 8） |
+
+最後の操作の時刻が59分前の店員が `/admin` を開くと、ログインへ送られずに画面が出る。画面が呼ぶ管理 API が通り、最後の操作の時刻が今に近くなる（使っている間は無操作にならない）。
+
+### FR-AUTH-044-AC-03 管理 API は、無操作が61分なら 401 session_idle でセッションを終わらせ、59分なら通って時刻を進める
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-044 |
+| 根拠 | SR-AUTH-028 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-067-staff-idle-timeout.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-8-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 8） |
+
+`GET /api/admin/users` は、59分前の店員には 200 を返して時刻を進め、61分前の店員には 401 `{ error: 'session_idle' }` を返して GoTrue のセッション（`auth.sessions`）を終わらせる。終わらせた後の同じトークンは、もう通らない（401）。
+
+### FR-AUTH-044-AC-04 login/finish を通らず最後の操作の行が無い店員のセッションも、作られてから1時間の中は管理 API を通る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-044 |
+| 根拠 | SR-AUTH-028 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-067-staff-idle-timeout.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-8-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 8） |
+
+最後の操作の行が無い店員のセッション（E2E・手元の開発で `login/finish` を通らずに作ったもの）は、作られてから1時間の中は `GET /api/admin/users` が 200 で、通った後に行が作られる。
+
+### FR-AUTH-044-AC-05 店員のパスキーの窓口（一覧）は無操作が61分なら 401 で終わらせ、お客さんは通る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-044 |
+| 根拠 | SR-AUTH-028 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-067-staff-idle-timeout.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-8-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 8） |
+
+`GET /api/auth/passkey` は、59分前の店員には 200、61分前の店員には 401 `{ error: 'session_idle' }` でセッションを終わらせる。店員でないお客さんには無操作の確かめを当てず、200 を返す。
 
 ### FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel`
 
@@ -7950,7 +8010,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 
 守ること: (1) 4つ目の条件は `has_permission`（DB）に置き、窓口・ページは同じ `private.staff_idle_ok` を `staff_idle_check`・`staff_idle_peek` で呼ぶ。(2) 行が無い時は `auth.sessions.created_at` だけに落とす（`refreshed_at` は見ない）。`staff_idle_check` は時刻の書き込みが失敗したら例外を投げ、真を返さない（窓口・ページは 503。間引きは失敗ではない）。`auth.sessions` にも無い・`NULL`・例外は偽（失敗は閉じる。`RAISE WARNING` に SQLSTATE と文）。(3) `staff_idle_peek` は書かない。`staff_session_touch` は間引きの秒（既定60）より前なら書かず、行の `user_id` が違えば上書きしない。(4) 表は RLS 有効で `anon`・`authenticated`・`service_role` に権限を渡さず、`service_role` が呼べるのは `public` の3関数だけ。`private.staff_idle_ok` はだれにも渡さない。(5) 移行 E は、D の `private.staff_idle_ok` が無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（`passkey_entry_idle_fn`）で止まる。
 
-残る危険として受け入れること: 行が無いセッション（E2E・手元の開発・最初の `staff_idle_check` の前）は、作られてから1時間は通る。書き込みの失敗が続くと店員が入れない（503。閉じる側）。ログインの終わりで行を書く配線は Task 7 以降。書いた時にその人の2日より前の行を消すので、2日以上前の行は残らない（ログインから24時間の上限が先に切れる）。時計は DB の `now()` だけを使い、アプリの時計は見ない。
+残る危険として受け入れること: 行が無いセッション（E2E・手元の開発・最初の `staff_idle_check` の前）は、作られてから1時間は通る。書き込みの失敗が続くと店員が入れない（503。閉じる側）。ログインの終わりで行を書く配線は Task 8。書いた時にその人の2日より前の行を消すので、2日以上前の行は残らない（ログインから24時間の上限が先に切れる）。時計は DB の `now()` だけを使い、アプリの時計は見ない。
 
 ### SEC-AUTH-056 招待の窓口は、リンクの元を設定の住所に固定し、今の店員を迂回させず、メールが送れない時は鍵を消さず、合言葉をどこにも残さない
 

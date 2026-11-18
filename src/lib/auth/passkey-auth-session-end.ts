@@ -12,6 +12,17 @@ import { readAuthSessionId } from '@/lib/auth/app-session';
 export async function endAuthSession(accessToken: string): Promise<boolean> {
   const sessionId = readAuthSessionId(accessToken);
   if (!sessionId) return false;
+  return endAuthSessionById(sessionId);
+}
+
+/**
+ * session_id が分かっている時に、GoTrue のセッションを終わらせる（`revoke_auth_session`）。失敗しても例外にせず、結果だけ返す。
+ *
+ * @impl IMPL-AUTH-381
+ * @design DD-AUTH-081
+ * @remarks `authenticateRequest`・`verifyAccessToken` が確かめ済みの JWT の `session_id` だけを渡す。店員の無操作・24時間の超過で、更新の道を閉じるために使う。
+ */
+export async function endAuthSessionById(sessionId: string): Promise<boolean> {
   try {
     const service = await createServiceRoleClient();
     const { error } = await service.rpc('revoke_auth_session', { p_session_id: sessionId });

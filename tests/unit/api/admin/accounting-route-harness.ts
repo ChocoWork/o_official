@@ -73,6 +73,7 @@ export function createHarness(mocks: Mocks) {
 		},
 		rpc: (name: string, args: Record<string, unknown>) => {
 			if (name === 'passkey_approved_count') return Promise.resolve({ data: approvedCount.current, error: null });
+			if (name === 'staff_idle_check') return Promise.resolve({ data: true, error: null });
 			seq.push(`rpc:${name}`);
 			return rpcImpl(name, args);
 		},

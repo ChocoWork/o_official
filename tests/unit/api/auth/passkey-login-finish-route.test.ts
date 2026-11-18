@@ -11,6 +11,7 @@ jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(),
 }));
 jest.mock('@/lib/auth/passkey-approval-rpc', () => ({ isStaff: jest.fn(), isCredentialApproved: jest.fn() }));
+jest.mock('@/lib/auth/staff-passkey-idle-rpc', () => ({ staffSessionTouch: jest.fn().mockResolvedValue({ ok: true, value: true }) }));
 jest.mock('@/features/auth/services/register', () => ({ persistSessionAndCookies: jest.fn() }));
 jest.mock('@/features/cart/services/guest-shopping-token', () => ({ readGuestShoppingTokens: jest.fn(() => ({})) }));
 jest.mock('@/lib/orders/link-guest-orders', () => ({ linkGuestOrdersByEmail: jest.fn().mockResolvedValue(undefined) }));
@@ -23,6 +24,7 @@ import { POST } from '@/app/api/auth/passkey/login/finish/route';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { createPublicClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { isCredentialApproved, isStaff } from '@/lib/auth/passkey-approval-rpc';
+import { staffSessionTouch } from '@/lib/auth/staff-passkey-idle-rpc';
 import { persistSessionAndCookies } from '@/features/auth/services/register';
 import { linkGuestOrdersByEmail } from '@/lib/orders/link-guest-orders';
 import { applyReturnIntentCookie, issueReturnIntent } from '@/features/auth/return-intent/return-intent-service';
@@ -213,6 +215,28 @@ describe('DD-AUTH-055 店員の確かめ（SEC-AUTH-044）', () => {
     expect(approvedMock).toHaveBeenCalledWith(USER_ID, 'AAECAw');
     expect(persist).toHaveBeenCalledTimes(1);
     expect(rpc).not.toHaveBeenCalled();
+  });
+
+  test('DD-AUTH-081 店員のログインの成功で、無操作の時刻を1回書く（セッションと利用者）。お客さんには書かない', async () => {
+    gotrueOk('admin');
+    staffMock.mockResolvedValue({ ok: true, value: true });
+    expect((await POST(req(goodBody()))).status).toBe(200);
+    expect(staffSessionTouch).toHaveBeenCalledTimes(1);
+    expect(staffSessionTouch).toHaveBeenCalledWith(SESSION_ID, USER_ID);
+
+    (staffSessionTouch as jest.Mock).mockClear();
+    staffMock.mockResolvedValue({ ok: true, value: false });
+    expect((await POST(req(goodBody()))).status).toBe(200);
+    expect(staffSessionTouch).not.toHaveBeenCalled();
+  });
+
+  test('DD-AUTH-081 時刻の書き込みが失敗しても、店員のログインは断らない', async () => {
+    gotrueOk('admin');
+    staffMock.mockResolvedValue({ ok: true, value: true });
+    (staffSessionTouch as jest.Mock).mockResolvedValueOnce({ ok: false });
+    const res = await POST(req(goodBody()));
+    expect(res.status).toBe(200);
+    expect(persist).toHaveBeenCalledTimes(1);
   });
 
   test('DD-AUTH-055 店員で認めていない鍵は 403 passkey_not_approved・セッションを1回終わらせ・保存0回・Cookie なし', async () => {

@@ -17,6 +17,8 @@ interface LoginContextType {
   userRole: UserRole;
   isMfaVerified: boolean;
   isAuthResolved: boolean;
+  /** `/api/auth/me` が未認証の理由を返した時の値（店員の無操作1時間は 'idle'）。それ以外は null */
+  authReason: string | null;
   refreshAuthState: () => Promise<void>;
   login: (email: string, password: string, turnstileToken?: string, options?: { next?: string }) => Promise<{ success: boolean; error?: string; message?: string }>;
   register: (email: string, password: string, turnstileToken?: string, options?: { next?: string }) => Promise<{ success: boolean; error?: string; message?: string }>;
@@ -31,6 +33,7 @@ type OtpVerifySuccessBody = {
 
 type AuthStateResponseBody = {
   authenticated?: boolean;
+  reason?: unknown;
   user?: {
     role?: unknown;
     mfaVerified?: boolean;
@@ -51,8 +54,9 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   const [userRole, setUserRole] = useState<UserRole>('user');
   const [isMfaVerified, setIsMfaVerified] = useState(false);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
+  const [authReason, setAuthReason] = useState<string | null>(null);
 
-  const applyAuthState = React.useCallback((authenticated: boolean, role?: unknown, mfaVerified?: boolean) => {
+  const applyAuthState = React.useCallback((authenticated: boolean, role?: unknown, mfaVerified?: boolean, reason?: unknown) => {
     // セッションが生きていると確認できたら更新の抑制を解く。
     // 401 でクールダウンに入った直後に再ログインしても待たされる、という状態を避ける。
     if (authenticated) {
@@ -64,6 +68,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
     setUserRole(resolvedRole);
     setIsAdmin(authenticated && resolvedRole === 'admin');
     setIsMfaVerified(authenticated && mfaVerified === true);
+    setAuthReason(!authenticated && reason === 'idle' ? 'idle' : null);
     setIsAuthResolved(true);
   }, []);
 
@@ -85,7 +90,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
       const body: unknown = await response.json().catch(() => null);
       const authState = typeof body === 'object' && body ? (body as AuthStateResponseBody) : null;
       const authenticated = response.ok && authState?.authenticated === true;
-      applyAuthState(authenticated, authState?.user?.role, authState?.user?.mfaVerified);
+      applyAuthState(authenticated, authState?.user?.role, authState?.user?.mfaVerified, authState?.reason);
     } catch (error) {
       console.error('Failed to sync auth state', error);
       applyAuthState(false);
@@ -287,6 +292,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
         userRole,
         isMfaVerified,
         isAuthResolved,
+        authReason,
         refreshAuthState: syncAuthState,
         login,
         register,

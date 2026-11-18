@@ -215,6 +215,7 @@ describe('API-ADMIN-013 GET /api/admin/item-color-presets', () => {
   it('API-ADMIN-013 認可の後に表のための client を作れず例外が出たら 500 Internal server error にする', async () => {
     setup();
     createServiceRoleClient.mockImplementationOnce(async () => withApprovedCount(serviceClient)); // 認可の ACL の照会
+    createServiceRoleClient.mockImplementationOnce(async () => withApprovedCount(serviceClient)); // 無操作の確かめ（staff_idle_check）
     createServiceRoleClient.mockImplementationOnce(async () => {
       throw new Error('no key');
     });

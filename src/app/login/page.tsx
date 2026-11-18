@@ -22,6 +22,7 @@ import LoginChoices from "@/features/auth/passkey/components/LoginChoices";
 
 /** 確認のメールのリンクは session を作らずここへ送る（SEC-AUTH-007）。 */
 const REGISTERED_NOTICE = '会員登録が完了しました。ログインしてください。';
+const IDLE_NOTICE = 'しばらく操作がなかったため、ログアウトしました。もう一度ログインしてください。';
 
 const DESCRIPTION =
   'Le Fil des Heures のログインページです。パスキー、Google アカウント、メールで受け取るコードでサインインできます。';
@@ -60,7 +61,7 @@ export default async function LoginPage({
     <LoginChoices
       initialEmail={initialEmail}
       returnTo={returnTo.ok ? returnTo.path : undefined}
-      notice={params?.registered === '1' ? REGISTERED_NOTICE : undefined}
+      notice={params?.registered === '1' ? REGISTERED_NOTICE : params?.reason === 'idle' ? IDLE_NOTICE : undefined}
     />
   );
 }

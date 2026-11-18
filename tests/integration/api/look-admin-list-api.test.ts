@@ -360,6 +360,7 @@ describe('GET /api/admin/looks（管理の LOOK の一覧）', () => {
   it('API-LOOK-001 認可の後の client の用意で例外が出たら 500 Internal server error を返す', async () => {
     setup();
     createServiceRoleClient.mockImplementationOnce(async () => withApprovedCount(serviceClient)); // 認可（read）の ACL の照会（権限の集合もここから取る。認可は 1 回だけ）
+    createServiceRoleClient.mockImplementationOnce(async () => withApprovedCount(serviceClient)); // 無操作の確かめ（staff_idle_check）
     createServiceRoleClient.mockImplementationOnce(async () => {
       throw new Error('boom');
     });

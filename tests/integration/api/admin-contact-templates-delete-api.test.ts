@@ -299,6 +299,7 @@ describe('DELETE /api/admin/contact/templates/[id]（管理の返信テンプレ
   it('API-ADMIN-012 認可の後の client の用意で例外が出たら 500 Internal server error を返す', async () => {
     setup();
     createServiceRoleClient.mockImplementationOnce(async () => withApprovedCount(serviceClient)); // 認可の ACL の照会
+    createServiceRoleClient.mockImplementationOnce(async () => withApprovedCount(serviceClient)); // 無操作の確かめ（staff_idle_check）
     createServiceRoleClient.mockImplementationOnce(async () => {
       throw new Error('boom');
     });

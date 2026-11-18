@@ -52,7 +52,7 @@ describe('authorizeAdminPermission', () => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
 
     rpc.mockReset();
-    rpc.mockResolvedValue({ data: 2, error: null });
+    rpc.mockImplementation(async (name: string) => ({ data: name === 'staff_idle_check' ? true : 2, error: null }));
     (createServiceRoleClient as jest.Mock).mockResolvedValue({
       from: jest.fn().mockReturnValue(mockQuery),
       rpc,
@@ -200,6 +200,51 @@ describe('authorizeAdminPermission', () => {
       expect(result.response.status).toBe(403);
       expect((result.response as unknown as { body: { reason: string } }).body.reason).toBe('MFA required');
     }
+  });
+
+  describe('店員の無操作1時間（SR-AUTH-028・DD-AUTH-081）', () => {
+    const statusOf = (result: Awaited<ReturnType<typeof authorizeAdminPermission>>) =>
+      (result as unknown as { response: { status: number } }).response.status;
+
+    it('DD-AUTH-081 通った後に、時刻を進める確かめ（staff_idle_check）をセッションと利用者で呼ぶ', async () => {
+      grantPermission('admin.users.manage');
+      const result = await authorizeAdminPermission('admin.users.manage', mockRequest);
+      expect(result.ok).toBe(true);
+      expect(rpc).toHaveBeenCalledWith('staff_idle_check', { p_session_id: 'session-1', p_user_id: 'user-1' });
+    });
+
+    it('DD-AUTH-081 無操作を過ぎたら 401 session_idle で、そのセッションを終わらせる（revoke_auth_session）', async () => {
+      grantPermission('admin.users.manage');
+      rpc.mockImplementation(async (name: string) => ({ data: name === 'staff_idle_check' ? false : 2, error: null }));
+      const json = jest.requireMock('next/server').NextResponse.json as jest.Mock;
+
+      const result = await authorizeAdminPermission('admin.users.manage', mockRequest);
+
+      expect(result.ok).toBe(false);
+      expect(statusOf(result)).toBe(401);
+      expect(json).toHaveBeenLastCalledWith({ error: 'session_idle' }, { status: 401 });
+      expect(rpc).toHaveBeenCalledWith('revoke_auth_session', { p_session_id: 'session-1' });
+    });
+
+    it('DD-AUTH-081 確かめの失敗は 503 で、セッションを終わらせない（永久の拒否にしない）', async () => {
+      grantPermission('admin.users.manage');
+      rpc.mockImplementation(async (name: string) =>
+        name === 'staff_idle_check' ? { data: null, error: { code: 'XX000' } } : { data: 2, error: null },
+      );
+
+      const result = await authorizeAdminPermission('admin.users.manage', mockRequest);
+
+      expect(result.ok).toBe(false);
+      expect(statusOf(result)).toBe(503);
+      expect(rpc).not.toHaveBeenCalledWith('revoke_auth_session', expect.anything());
+    });
+
+    it('DD-AUTH-081 権限が無い人（お客さん）には無操作の確かめを呼ばない', async () => {
+      mockQuery.or.mockResolvedValue({ data: [], error: null });
+      const result = await authorizeAdminPermission('admin.users.manage', mockRequest);
+      expect(statusOf(result)).toBe(403);
+      expect(rpc).not.toHaveBeenCalledWith('staff_idle_check', expect.anything());
+    });
   });
 
   describe('管理の入口の3条件（SR-AUTH-014）', () => {

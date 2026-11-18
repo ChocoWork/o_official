@@ -11,6 +11,7 @@
 import { NextResponse } from 'next/server';
 import { authenticateRequest } from '@/lib/auth/authenticate';
 import { approvedCountHint, evaluateStaffEntry } from '@/lib/auth/staff-passkey';
+import { checkStaffIdle, staffIdleDeps } from '@/lib/auth/staff-passkey-idle';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -49,6 +50,14 @@ export async function GET(request: Request) {
 
     const { claims } = verified;
     const role = isUserRole(claims.app_metadata?.role) ? claims.app_metadata.role : 'user';
+
+    // 店員の無操作1時間（SR-AUTH-028）。時刻を進めない確かめ（peek）なので、画面を開き直すだけでは無操作が延びない。
+    // 失敗は今の形（200・unavailable）で返す（画面の useLogin が読める形を変えない）。
+    if (role !== 'user') {
+      const idle = claims.session_id ? await checkStaffIdle(staffIdleDeps, claims.session_id, claims.sub, 'peek') : 'error';
+      if (idle === 'idle') return buildResponse({ authenticated: false, reason: 'idle' });
+      if (idle === 'error') return buildResponse({ authenticated: false, reason: 'unavailable' });
+    }
 
     // 管理の入口の条件（パスキー・24時間以内・認めた2本以上）を、画面に出す「ヒント」として判定する（SR-AUTH-014）。
     // 認めた本数は DB で数えず JWT の印 staff_passkeys_ok から取る（真なら足りる数、偽なら0）ので、認めた鍵が消えた後は

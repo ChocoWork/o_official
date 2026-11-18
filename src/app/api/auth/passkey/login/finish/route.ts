@@ -18,6 +18,8 @@ import { readAuthenticatorDataFlags } from '@/lib/auth/passkey-uv';
 import { isCredentialApproved, isStaff } from '@/lib/auth/passkey-approval-rpc';
 import { isStaffPasskeyRequiredError } from '@/lib/auth/staff-passkey-reject';
 import { endAuthSession } from '@/lib/auth/passkey-auth-session-end';
+import { staffSessionTouch } from '@/lib/auth/staff-passkey-idle-rpc';
+import { readAuthSessionId } from '@/lib/auth/app-session';
 import { persistSessionAndCookies } from '@/features/auth/services/register';
 import { readGuestShoppingTokens } from '@/features/cart/services/guest-shopping-token';
 import { linkGuestOrdersByEmail } from '@/lib/orders/link-guest-orders';
@@ -146,6 +148,12 @@ export async function POST(request: Request): Promise<Response> {
         actor_id: user.id,
       });
       return json({ error: 'ログイン処理に失敗しました。' }, 500);
+    }
+
+    // 店員のログインの成功で、無操作の時刻を1回書く。書き込みの失敗はログインを断らない（行が無くても、作られてから1時間は通り、次の窓口の確かめが書く）。
+    if (staff.value) {
+      const sessionId = readAuthSessionId(session.access_token);
+      if (sessionId) await staffSessionTouch(sessionId, user.id);
     }
 
     if (user.email) {

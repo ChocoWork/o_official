@@ -2222,7 +2222,7 @@ flowchart LR
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-AUTH-044、SEC-AUTH-055、ADR-0472 |
-| 根拠 | 無操作の判定を窓口ごとに書くと、RLS を直に叩く道が抜ける。判定を DB の1つの関数にし、`has_permission`（RLS）は直に、窓口・ページは `staff_idle_check`（確かめと時刻の更新を1回の呼びで）・`staff_idle_peek`（見るだけ）で呼ぶ |
+| 根拠 | 無操作の判定を窓口ごとに書くと、RLS を直に叩く道が抜ける。判定を DB の1つの関数にし、`has_permission`（RLS）は直に、窓口・ページ（Task 8 で管理 API・店員のパスキーの窓口・`/api/auth/me`・ログインの終わりに配線。DD-AUTH-081・DD-AUTH-082）は `staff_idle_check`（確かめと時刻の更新を1回の呼びで）・`staff_idle_peek`（見るだけ）で呼ぶ |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_idle.integration.test.ts`、`tests/integration/db/auth_has_permission_passkey.integration.test.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-3-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 3） |
@@ -2230,7 +2230,7 @@ flowchart LR
 ```mermaid
 flowchart LR
   H["has_permission<br/>(RLS・移行 E)"] --> O["private.staff_idle_ok<br/>門は1つ"]
-  C["staff_idle_check<br/>(窓口・ページ。Task 8・9)"] --> O
+  C["staff_idle_check<br/>(管理 API・店員のパスキーの窓口。Task 8)"] --> O
   P["staff_idle_peek<br/>(/api/auth/me)"] --> O
   C --> T["staff_session_touch<br/>60秒の間引き"]
   O --> A["private.staff_session_activity"]

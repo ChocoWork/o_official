@@ -15,6 +15,8 @@ jest.mock('@/lib/auth/authenticate', () => ({
       : new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 }),
 }));
 jest.mock('@/lib/auth/passkey-approval-rpc', () => ({ isStaff: jest.fn(), approvedIds: jest.fn(), approvedCount: jest.fn() }));
+jest.mock('@/lib/auth/staff-passkey-idle-rpc', () => ({ staffIdleCheck: jest.fn(), staffIdlePeek: jest.fn() }));
+jest.mock('@/lib/auth/passkey-auth-session-end', () => ({ endAuthSessionById: jest.fn().mockResolvedValue(true) }));
 jest.mock('@/lib/auth/passkey-gotrue', () => ({ listPasskeys: jest.fn(), updatePasskey: jest.fn(), deletePasskey: jest.fn() }));
 
 import { GET } from '@/app/api/auth/passkey/route';
@@ -25,6 +27,7 @@ import { authenticateRequest } from '@/lib/auth/authenticate';
 import { approvedCount, approvedIds, isStaff } from '@/lib/auth/passkey-approval-rpc';
 import { deletePasskey, listPasskeys, updatePasskey } from '@/lib/auth/passkey-gotrue';
 import { logAudit } from '@/lib/audit';
+import { staffIdleCheck } from '@/lib/auth/staff-passkey-idle-rpc';
 
 const rateLimit = enforceRateLimit as jest.Mock;
 const csrf = requireCsrfOrDeny as jest.Mock;
@@ -57,7 +60,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   rateLimit.mockResolvedValue(null);
   csrf.mockResolvedValue(undefined);
-  authenticate.mockResolvedValue({ ok: true, claims: { sub: USER_ID } });
+  authenticate.mockResolvedValue({ ok: true, claims: { sub: USER_ID, session_id: 'session-1' } });
+  (staffIdleCheck as jest.Mock).mockResolvedValue({ ok: true, value: true });
   staffMock.mockResolvedValue({ ok: true, value: false });
   idsMock.mockResolvedValue({ ok: true, value: [KEY_A, KEY_B] });
   countMock.mockResolvedValue({ ok: true, value: 2 });
@@ -135,6 +139,9 @@ describe('DD-AUTH-057 GET /api/auth/passkey（一覧）', () => {
 
   test('DD-AUTH-057 店員の判定・認めの確かめが読めなければ 503（閉じる側）', async () => {
     staffMock.mockResolvedValue({ ok: false });
+    expect((await GET(req('GET'))).status).toBe(503);
+    // 入口の確かめは通り、窓口の2回目の判定だけが読めない時も 503
+    staffMock.mockResolvedValueOnce({ ok: true, value: false }).mockResolvedValueOnce({ ok: false });
     expect((await GET(req('GET'))).status).toBe(503);
     staffMock.mockResolvedValue({ ok: true, value: true });
     idsMock.mockResolvedValue({ ok: false });
@@ -270,7 +277,7 @@ describe('DD-AUTH-057 DELETE /api/auth/passkey/{id}（削除）', () => {
     const res = await DELETE(req('DELETE'), ctx('1234'));
     expect(res.status).toBe(400);
     expect(deleteMock).not.toHaveBeenCalled();
-    expect(staffMock).not.toHaveBeenCalled();
+    expect(idsMock).not.toHaveBeenCalled();
   });
 
   test('DD-AUTH-057 店員: 認めた鍵が2本で認めた鍵を消すと 409 staff_min_passkeys で GoTrue を呼ばない', async () => {
@@ -307,6 +314,8 @@ describe('DD-AUTH-057 DELETE /api/auth/passkey/{id}（削除）', () => {
 
   test('DD-AUTH-057 店員の判定・認めの確かめが読めなければ 503 で GoTrue を呼ばない', async () => {
     staffMock.mockResolvedValue({ ok: false });
+    expect((await DELETE(req('DELETE'), ctx(KEY_A))).status).toBe(503);
+    staffMock.mockResolvedValueOnce({ ok: true, value: false }).mockResolvedValueOnce({ ok: false });
     expect((await DELETE(req('DELETE'), ctx(KEY_A))).status).toBe(503);
     staffMock.mockResolvedValue({ ok: true, value: true });
     countMock.mockResolvedValue({ ok: false });

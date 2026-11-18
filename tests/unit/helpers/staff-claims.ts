@@ -44,19 +44,25 @@ export function withApprovedCount<T extends object>(service: T, count: number | 
     rpc: (name: string, ...rest: unknown[]) =>
       name === 'passkey_approved_count'
         ? Promise.resolve({ data: count, error: null })
-        : original
+        : name === 'staff_idle_check'
+          ? Promise.resolve({ data: true, error: null })
+          : original
           ? original.call(service, name, ...rest)
           : Promise.resolve({ data: null, error: null }),
   }) as T;
 }
 
-/** `passkey_approved_count` の RPC の戻りを差す（ほかの RPC は空で返す）。 */
+/** `passkey_approved_count` の RPC の戻りを差す（無操作の確かめ `staff_idle_check` は真。ほかの RPC は空で返す）。 */
 export function mockApprovedCount(
   rpcMock: { mockImplementation: (fn: (...args: any[]) => unknown) => unknown },
   count: number,
 ): void {
   rpcMock.mockImplementation(async (name: string) =>
-    name === 'passkey_approved_count' ? { data: count, error: null } : { data: null, error: null });
+    name === 'passkey_approved_count'
+      ? { data: count, error: null }
+      : name === 'staff_idle_check'
+        ? { data: true, error: null }
+        : { data: null, error: null });
 }
 
 /** JSON の文字をそのまま出す数（`1.0` など。JSON.stringify が整数に直さない）。DB 結合の試験だけが使う。 */

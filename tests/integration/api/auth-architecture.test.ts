@@ -39,6 +39,7 @@ jest.mock('@/lib/auth/service-role-auth-client', () => ({
 
 jest.mock('@/lib/audit', () => ({ logAudit: jest.fn().mockResolvedValue(undefined) }));
 
+jest.mock('@/lib/auth/staff-passkey-idle-rpc', () => ({ staffIdlePeek: jest.fn().mockResolvedValue({ ok: true, value: true }) }));
 jest.mock('@/lib/auth/authenticate', () => ({
   authenticateRequest: jest.fn(),
   authFailureResponse: jest.fn(),
@@ -228,7 +229,7 @@ describe('認証の全体の作り（ARC-AUTH-001）', () => {
     };
 
     test.each([['admin'], ['supporter'], ['user']])('ARC-AUTH-001 app_metadata.role が %s ならそのまま返す', async (role) => {
-      authenticateRequest.mockResolvedValue({ ok: true, claims: { sub: 'u1', email: 'u@example.com', aal: 'aal1', app_metadata: { role } } });
+      authenticateRequest.mockResolvedValue({ ok: true, claims: { sub: 'u1', session_id: 'session-1', email: 'u@example.com', aal: 'aal1', app_metadata: { role } } });
       const body = await (await callMe()).json();
       expect(body.authenticated).toBe(true);
       expect(body.user.role).toBe(role);
@@ -239,7 +240,7 @@ describe('認証の全体の作り（ARC-AUTH-001）', () => {
       ['役割が知らない値', { role: 'owner' }],
       ['app_metadata 自体が無い', undefined],
     ])('ARC-AUTH-001 %s時は user にする', async (_label, appMetadata) => {
-      authenticateRequest.mockResolvedValue({ ok: true, claims: { sub: 'u1', email: 'u@example.com', aal: 'aal1', app_metadata: appMetadata } });
+      authenticateRequest.mockResolvedValue({ ok: true, claims: { sub: 'u1', session_id: 'session-1', email: 'u@example.com', aal: 'aal1', app_metadata: appMetadata } });
       const body = await (await callMe()).json();
       expect(body.user.role).toBe('user');
       expect(body.user.mfaVerified).toBe(false);

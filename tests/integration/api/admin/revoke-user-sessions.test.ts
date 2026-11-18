@@ -387,10 +387,10 @@ describe('POST /api/admin/revoke-user-sessions', () => {
       installServiceClient();
       const base = await createServiceRoleClient();
       let n = 0;
-      // 1 回目は認可の ACL の照会、2 回目が窓口自身の分
+      // 1 回目は認可の ACL の照会、2 回目は無操作の確かめ、3 回目が窓口自身の分
       createServiceRoleClient.mockImplementation(async () => {
         n += 1;
-        if (n === 2) throw new Error('no client');
+        if (n === 3) throw new Error('no client');
         return withApprovedCount(base);
       });
 

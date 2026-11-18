@@ -4,6 +4,7 @@
 
 import { GET } from '@/app/api/auth/me/route';
 import { authenticateRequest } from '@/lib/auth/authenticate';
+import { staffIdlePeek } from '@/lib/auth/staff-passkey-idle-rpc';
 import { staffEntryClaims } from '../../helpers/staff-claims';
 
 jest.mock('next/server', () => ({
@@ -20,13 +21,20 @@ jest.mock('@/lib/auth/authenticate', () => ({
   authenticateRequest: jest.fn(),
 }));
 
+jest.mock('@/lib/auth/staff-passkey-idle-rpc', () => ({
+  staffIdleCheck: jest.fn(),
+  staffIdlePeek: jest.fn(),
+  staffSessionTouch: jest.fn(),
+}));
+
 const mockedAuthenticateRequest = authenticateRequest as jest.Mock;
+const mockedPeek = staffIdlePeek as jest.Mock;
 
 const request = () => new Request('http://localhost:3000/api/auth/me');
 
 const verifiedWith = (claims: Record<string, unknown>) => ({
   ok: true,
-  claims: { sub: 'user-1', email: 'user@example.com', aal: 'aal1', app_metadata: { role: 'user' }, ...claims },
+  claims: { sub: 'user-1', session_id: 'session-1', email: 'user@example.com', aal: 'aal1', app_metadata: { role: 'user' }, ...claims },
 });
 
 type MeResponse = Awaited<ReturnType<typeof GET>> & { headers: Map<string, string> };
@@ -39,6 +47,51 @@ const expectCommonHeaders = (res: MeResponse) => {
 describe('GET /api/auth/me', () => {
   beforeEach(() => {
     jest.resetAllMocks();
+    mockedPeek.mockResolvedValue({ ok: true, value: true });
+  });
+
+  describe('店員の無操作1時間（DD-AUTH-081）', () => {
+    const staffClaims = () => verifiedWith({ ...staffEntryClaims(), app_metadata: { role: 'admin' } });
+
+    test('DD-AUTH-081 店員が無操作を過ぎていたら、時刻を進めない確かめ（peek）で authenticated:false・reason:idle を 200 で返す', async () => {
+      mockedAuthenticateRequest.mockResolvedValue(staffClaims());
+      mockedPeek.mockResolvedValue({ ok: true, value: false });
+
+      const res = (await GET(request())) as MeResponse;
+
+      expect(mockedPeek).toHaveBeenCalledWith('22222222-2222-4222-8222-222222222222');
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ authenticated: false, reason: 'idle' });
+      expectCommonHeaders(res);
+    });
+
+    test('DD-AUTH-081 確かめの失敗は今の形（200・reason:unavailable）で返す（503 にしない）', async () => {
+      mockedAuthenticateRequest.mockResolvedValue(staffClaims());
+      mockedPeek.mockResolvedValue({ ok: false });
+
+      const res = (await GET(request())) as MeResponse;
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ authenticated: false, reason: 'unavailable' });
+    });
+
+    test('DD-AUTH-081 店員の通行証に session_id が無ければ確かめられないので unavailable（peek を呼ばない）', async () => {
+      mockedAuthenticateRequest.mockResolvedValue({ ok: true, claims: { ...staffEntryClaims(), session_id: undefined, app_metadata: { role: 'admin' } } });
+
+      const res = (await GET(request())) as MeResponse;
+
+      expect(await res.json()).toEqual({ authenticated: false, reason: 'unavailable' });
+      expect(mockedPeek).not.toHaveBeenCalled();
+    });
+
+    test('DD-AUTH-081 お客さんには無操作の確かめを呼ばない', async () => {
+      mockedAuthenticateRequest.mockResolvedValue(verifiedWith({ app_metadata: { role: 'user' } }));
+
+      const res = (await GET(request())) as MeResponse;
+
+      expect(mockedPeek).not.toHaveBeenCalled();
+      expect((await res.json()).authenticated).toBe(true);
+    });
   });
 
   test('DD-AUTH-026 確かめが通り、役割 admin で管理の入口の条件の印があれば mfaVerified が true で全応答の見出しが付く', async () => {

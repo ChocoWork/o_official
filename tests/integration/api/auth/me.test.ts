@@ -1,6 +1,7 @@
 import { aalFields } from '../../../unit/helpers/staff-claims';
 export {};
 
+jest.mock('@/lib/auth/staff-passkey-idle-rpc', () => ({ staffIdlePeek: jest.fn().mockResolvedValue({ ok: true, value: true }) }));
 jest.mock('@/lib/auth/authenticate', () => ({
   authenticateRequest: jest.fn(),
 }));
@@ -42,6 +43,7 @@ describe('GET /api/auth/me', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    require('@/lib/auth/staff-passkey-idle-rpc').staffIdlePeek.mockResolvedValue({ ok: true, value: true });
     consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
   });
 
@@ -54,6 +56,7 @@ describe('GET /api/auth/me', () => {
       ok: true,
       claims: {
         sub: 'user-1',
+        session_id: 'session-1',
         email: 'user@example.com',
         ...aalFields('aal2'),
         staff_passkeys_ok: true,
@@ -91,6 +94,7 @@ describe('GET /api/auth/me', () => {
       ok: true,
       claims: {
         sub: 'user-1',
+        session_id: 'session-1',
         email: 'user@example.com',
         ...aalFields('aal1'),
         aal: 'aal2',
@@ -109,7 +113,8 @@ describe('GET /api/auth/me', () => {
     async (role) => {
       authenticateRequest.mockResolvedValue({
         ok: true,
-        claims: { sub: 'user-1', email: 'a@example.com', aal: 'aal1', app_metadata: { role } },
+        claims: { sub: 'user-1',
+        session_id: 'session-1', email: 'a@example.com', aal: 'aal1', app_metadata: { role } },
       });
 
       const body = await (await callMe()).json();
@@ -126,7 +131,8 @@ describe('GET /api/auth/me', () => {
   ])('API-AUTH-013 %s の役割は user にする', async (_label, appMetadata) => {
     authenticateRequest.mockResolvedValue({
       ok: true,
-      claims: { sub: 'user-1', email: 'a@example.com', aal: 'aal2', app_metadata: appMetadata },
+      claims: { sub: 'user-1',
+        session_id: 'session-1', email: 'a@example.com', aal: 'aal2', app_metadata: appMetadata },
     });
 
     const body = await (await callMe()).json();
@@ -139,6 +145,7 @@ describe('GET /api/auth/me', () => {
       ok: true,
       claims: {
         sub: 'user-1',
+        session_id: 'session-1',
         email: 'a@example.com',
         aal: 'aal1',
         user_metadata: { role: 'admin' },
@@ -153,8 +160,10 @@ describe('GET /api/auth/me', () => {
 
   test('API-AUTH-013 email が JWT にあっても、無くても、応答の user に email のキーを持たない', async () => {
     for (const claims of [
-      { sub: 'user-1', email: 'user@example.com', aal: 'aal1', app_metadata: { role: 'user' } },
-      { sub: 'user-1', aal: 'aal1', app_metadata: { role: 'user' } },
+      { sub: 'user-1',
+        session_id: 'session-1', email: 'user@example.com', aal: 'aal1', app_metadata: { role: 'user' } },
+      { sub: 'user-1',
+        session_id: 'session-1', aal: 'aal1', app_metadata: { role: 'user' } },
     ]) {
       authenticateRequest.mockResolvedValue({ ok: true, claims });
 

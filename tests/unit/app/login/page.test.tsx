@@ -145,6 +145,11 @@ describe('/login page', () => {
     expect(await renderPage({})).toHaveAttribute('data-has-return-to', 'false');
   });
 
+  test('DD-AUTH-001 ?reason=idle なら、店員の無操作でログアウトした旨の固定の文を notice として渡す', async () => {
+    const choices = await renderPage({ reason: 'idle' });
+    expect(choices).toHaveAttribute('data-notice', 'しばらく操作がなかったため、ログアウトしました。もう一度ログインしてください。');
+  });
+
   test('DD-AUTH-001 ?registered=1 なら固定の案内の文を notice として渡す', async () => {
     const choices = await renderPage({ registered: '1' });
 

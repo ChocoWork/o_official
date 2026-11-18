@@ -129,6 +129,7 @@ function setService(service: { from: (table: string) => unknown } & Record<strin
 /** 認可の権限の照会までは通し、その後の client の用意で投げる。 */
 function failServiceAfterAuthorization(error: Error) {
   createServiceRoleClient.mockResolvedValueOnce(withApprovedCount({ from: () => aclChain() }));
+  createServiceRoleClient.mockResolvedValueOnce(withApprovedCount({ from: () => aclChain() })); // 無操作の確かめ（staff_idle_check）
   createServiceRoleClient.mockRejectedValue(error);
 }
 
@@ -452,7 +453,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         detail: 'Self-reset is not allowed',
         metadata: reasonAudit,
       });
-      expect(createServiceRoleClient).toHaveBeenCalledTimes(1); // 認可の権限の照会だけ
+      expect(createServiceRoleClient).toHaveBeenCalledTimes(2); // 認可の権限の照会と無操作の確かめだけ
     });
 
     it.each([
