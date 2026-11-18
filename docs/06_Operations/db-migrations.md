@@ -1,5 +1,6 @@
 # DB マイグレーション運用
 
+> 2026-11-18 確認日（パスキー段3a Task 2b）: 本番未適用の移行 H の後半を同じファイルに足した。`private.admin_set_user_role` の作り直し（`admin`・`supporter` へは今の店員だけ。`STAFF_INVITE_REQUIRED`）、`public.staff_demote`、ダッシュボード専用の `private.staff_invite_issue_manual`、`public.passkey_delete_with_floor`。大きさ・MD5 を測り直した（39086 bytes）。下の「移行 H」の節（SEC-AUTH-054）。
 > 2026-11-18 確認日（パスキー段2 最終レビュー I-2: 移行 G の `claim` が鍵の今の名前を返し、足した行を30秒待つ。大きさと MD5 を測り直した: 19439 bytes）。前の確認日（パスキー段2 Task 11: 運用の文書）: 移行 G のヘッダーと本文の注釈だけを直した（一時停止の間の取り出しの説明・宛先から外す店長・設定の失敗の行の一覧が `set_order_email_pause` と同じ一覧であること。SQL は変えていない）。大きさと MD5 を測り直した（18046 bytes）。「段3まで `db push` しない」の一覧が7本であること、この master を本番にデプロイしない旨を G の節に書いた。
 > 2026-11-18 確認日（パスキー段2 Task 8）: 新しい移行 `20261118044338_passkey_notification_sending.sql`（移行 G。知らせの行に担当・結果の列を足し、取り出し・済み・失敗・飛ばし・宛先の5つの DB の関数を足す。手元の DB のみ・本番未適用）を足した。下の「パスキー段2 移行 G」の節に書き、「段3まで `db push` しない」の一覧に足して7本にした。
 > 2026-11-18 確認日（パスキー段3a Task 1）: 本番未適用の移行 F を同じファイルのまま直した。`passkey_approve` の錠の鍵を `hashtextextended('passkey_approve:' || uuid, 0)` にして3つの枝とも最初に取り、`reauth` は認めた鍵が1本以上の時だけ通す（`PASSKEY_REAUTH_NOT_ALLOWED`・`42501`）。大きさ・MD5 を測り直した（SEC-AUTH-052）。
@@ -209,24 +210,26 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 - 手元で確かめた結果（2026-11-18、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_notification_sending.integration.test.ts` 21件通過（2つの接続の同時の取り出しを含む）。単体 `passkey-notification-store.test.ts` 18件通過。E2E `FR-LOGIN-061`（3幅）通過
 - 持ち越し: `dead` の行（9回失敗・担当切れで止めた行）を店へ知らせる点検は、段2では作らない。段3の店長への知らせと同じ道で作る（`dead` の行は表に残る）
 
-## パスキー段3 移行 H: 店員の招待の表と、発行・消費・結び・有効化・取り消し・開いているかの関数（前半。手元で確認済み・本番未適用）
+## パスキー段3 移行 H: 店員の招待の表と関数（前半）と、役割の変更・降格・最後の手段・削除の下限（後半）（手元で確認済み・本番未適用）
 
-確認日: 2026-11-18（パスキー段3a Task 2）。SR-AUTH-026・FR-AUTH-034・FR-AUTH-035・DATA-AUTH-020・SEC-AUTH-053・THR-AUTH-052・DD-AUTH-070〜072・ADR-0471。設計は [パスキー設計](../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-4・6-2・8-1）、計画は [段3の計画](../superpowers/plans/2026-11-18-passkey-stage3-staff.md)。後半（`admin_set_user_role` の作り直し・降格・最後の手段・削除の下限）は Task 2b が同じファイルに足す（足したら大きさと MD5 を測り直す）。
+確認日: 2026-11-18（パスキー段3a Task 2・Task 2b）。SR-AUTH-026・FR-AUTH-034・FR-AUTH-035・FR-AUTH-037・DATA-AUTH-020・SEC-AUTH-053・SEC-AUTH-054・THR-AUTH-052・DD-AUTH-070〜073・ADR-0471。設計は [パスキー設計](../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-4・6-2・8-1）、計画は [段3の計画](../superpowers/plans/2026-11-18-passkey-stage3-staff.md)。後半（`admin_set_user_role` の作り直し・降格・最後の手段・削除の下限）は Task 2b が同じファイルに足した（大きさと MD5 は測り直した）。
 
 | 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
 | --- | --- | --- | --- |
-| `20261118130000_passkey_staff_invites.sql` | 23623 bytes / `cda2829b238c0466251311869cda9c13` | 本番未適用（手元の `db reset` で適用済み） | 表 `private.staff_invites` と、`private.staff_invite_issue_core`（だれにも `execute` を渡さない）・`public.staff_invite_issue`・`staff_invite_consume`・`staff_invite_bind_window`・`staff_role_activate`・`staff_invite_cancel`・`staff_invite_open`（`service_role` だけ）を足す |
+| `20261118130000_passkey_staff_invites.sql` | 39086 bytes / `c5071733f7d302e4f3fecc38cace2567` | 本番未適用（手元の `db reset` で適用済み） | 表 `private.staff_invites` と、`private.staff_invite_issue_core`（だれにも `execute` を渡さない）・`public.staff_invite_issue`・`staff_invite_consume`・`staff_invite_bind_window`・`staff_role_activate`・`staff_invite_cancel`・`staff_invite_open`（`service_role` だけ）を足す。後半: `private.admin_set_user_role` の本体を置き換え、`public.staff_demote`・`public.passkey_delete_with_floor`（`service_role` だけ）と `private.staff_invite_issue_manual`（`postgres` だけ）を足す |
 
-- ファイルの確かめ（2026-11-18）: LF・BOM なし・ASCII だけ（非 ASCII の行は0、CR は0）。MD5 は `md5sum` で測った
-- 変えるもの: 表1つ・private の関数1本・public の関数6本を足すだけ。誰も呼ばないので今の動きは変わらない（呼ぶのは段3a の Task 4 以降）。移行 C の引き金の関数は同じ段で直した（移行 C の節）
-- 本番に MCP の `apply_migration` で当てた後の突き合わせ: `schema_migrations` の `statements` は1つ（ファイルの全文）になるので、`md5(statements[1])` はファイルの MD5 と同じになる。同じでなければ当てる途中で字が変わっているので止める（この移行は ASCII だけ）。後半を足したら、この値も測り直す
-- 手元の値（参考。本番の突き合わせには使わない）: 手元の `db reset` の後、CLI は文を分けて記録するので `md5(statements[1])` は `80db112715a7a61fd93cf0c9c94b5686`（頭の注釈と `BEGIN` だけ）
-- 前の確かめ: 表・関数（`passkey_window_open`・`passkey_window_is_open`・`passkey_is_staff`）が在ること、本番の `postgres` が `auth.mfa_factors`・`auth.webauthn_credentials` に `DELETE`、`auth.users` に `UPDATE`、`auth.sessions` に `SELECT` を持つこと（`has_table_privilege`）。外れたら `PASSKEY_MIGRATION_PRECHECK_FAILED`（`passkey_h_precheck`）。同じ確かめを段3b の手順書の「前提」にも書く
-- 末尾の確かめ: 表に `anon`・`authenticated`・`service_role` の権限が無く RLS 有効で持ち主 `postgres`、6本の public 関数が `anon`・`authenticated`・`PUBLIC` から外れ `service_role` だけが `execute` を持つこと、core はだれにも `execute` が無いこと、7本とも `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空であること。外れたら `PASSKEY_MIGRATION_ASSERTION_FAILED`（`passkey_h_table_acl`・`passkey_h_function_acl`・`passkey_h_function_attrs`）
-- 戻し方（移行のヘッダーの ROLLBACK）: 1つの取引で、public の6本 → core → 表の順に `DROP`。窓口が使う前に限る
+- ファイルの確かめ（2026-11-18、後半を足した後）: LF・BOM なし・ASCII だけ（非 ASCII の行は0、CR は0）。MD5 は `md5sum` で測った
+- 変えるもの: 表1つ・private の関数2本・public の関数8本を足し、`private.admin_set_user_role` の本体を1点だけ変えて置き換える（`admin`・`supporter` へは今の有効な店員だけ。外れは `STAFF_INVITE_REQUIRED`・`42501`。署名・権限・持ち主は同じ）。足した関数は誰も呼ばない（呼ぶのは段3a の Task 4 以降）。`admin_set_user_role` を呼ぶ今の窓口は、お客さんを店員にする変更が断られるようになる（Task 5 で招待の道に落とす）。移行 C の引き金の関数は同じ段で直した（移行 C の節）
+- 本番に MCP の `apply_migration` で当てた後の突き合わせ: `schema_migrations` の `statements` は1つ（ファイルの全文）になるので、`md5(statements[1])` はファイルの MD5 と同じになる。同じでなければ当てる途中で字が変わっているので止める（この移行は ASCII だけ）。後半を足したので測り直した
+- 手元の値（参考。本番の突き合わせには使わない）: 手元の `db reset` の後、CLI は文を分けて記録するので `md5(statements[1])` は `e80d851745e704c805fa6c37cc710e04`（頭の注釈と `BEGIN` だけ。文は37個）
+- 前の確かめ: 表・関数（`passkey_window_open`・`passkey_window_is_open`・`passkey_is_staff`・`private.admin_set_user_role`）・`public.audit_logs`・`extensions.gen_random_bytes`・`extensions.digest` が在ること、置き換える前の `private.admin_set_user_role(uuid,uuid,text)` の `md5(prosrc)` が `0cb9f532f16aa5c56c6b425694f7209b`（`20261023175712` の本体）であること（外れは `passkey_h_admin_set_user_role_body`）、本番の `postgres` が `auth.mfa_factors`・`auth.webauthn_credentials` に `DELETE`、`auth.users` に `UPDATE`、`auth.sessions` に `SELECT` を持つこと（`has_table_privilege`）。外れたら `PASSKEY_MIGRATION_PRECHECK_FAILED`（`passkey_h_precheck`）。同じ確かめを段3b の手順書の「前提」にも書く
+- 末尾の確かめ: 表に `anon`・`authenticated`・`service_role` の権限が無く RLS 有効で持ち主 `postgres`、6本の public 関数が `anon`・`authenticated`・`PUBLIC` から外れ `service_role` だけが `execute` を持つこと、core はだれにも `execute` が無いこと、後半の `staff_demote`・`passkey_delete_with_floor` が `service_role` だけ（`passkey_h2_function_acl`）、`staff_invite_issue_manual` が `postgres` だけ（`passkey_h2_manual_acl`）、`admin_set_user_role` の2本が `service_role` だけのまま（`passkey_h2_set_role_acl`）、11本とも `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空であること。外れたら `PASSKEY_MIGRATION_ASSERTION_FAILED`（`passkey_h_table_acl`・`passkey_h_function_acl`・`passkey_h_function_attrs`）
+- 戻し方（移行のヘッダーの ROLLBACK）: 1つの取引で、後半の3本（`passkey_delete_with_floor`・`staff_invite_issue_manual`・`staff_demote`）を `DROP` → `admin_set_user_role` の本体を `20261023175712` の文で `CREATE OR REPLACE` → public の6本 → core → 表の順に `DROP`。窓口が使う前に限る
 - 当てる順: A・F の後（窓・店員の判定の関数を呼ぶ）。窓口のアプリをデプロイするより先に、1本ずつ MCP で当てる
 - **段3まで `supabase db push`（どの形でも）を流さない**: 上の移行 E の節の決まりに、この H も含める（これでパスキーの移行は8本）。当てるのは調整役だけ（オーナーの許可で）
-- 手元で確かめた結果（2026-11-18、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_staff_invites.integration.test.ts` 24件通過（同時の発行と有効化・同時の `reauth` の承認と発行を含む）、`auth_passkey_credential_events.integration.test.ts` 通過。単体 `staff-passkey-invite-errors.test.ts`・`staff-passkey-credential-trigger.test.ts` 通過
+- 後半を本番に当てる時の注意: ダッシュボードの SQL エディタは `postgres` として動くので、`select private.staff_invite_issue_manual('<メール>')` が通る（最後の手段。結果の画面に生の合言葉が出る。期限は既定1時間）。MCP の `execute_sql` で試さない（本番に招待が1行できる）
+- 手元で確かめた結果（2026-11-18、`npx.cmd supabase db reset` の後、後半）: `tests/integration/db/auth_passkey_staff_roles.integration.test.ts` 18件通過（1j の拒否・降格・最後の手段の権限と監査・同時のやり直し・同時の削除を含む）、`role_permissions.integration.test.ts`・`role_permissions_concurrency.integration.test.ts` 通過（前者は1件、お客さんを店員にする代わりに店員どうしの変更に直した）。単体 `staff-passkey-invite-errors.test.ts` 10件通過
+- 手元で確かめた結果（2026-11-18、`npx.cmd supabase db reset` の後、前半）: `tests/integration/db/auth_passkey_staff_invites.integration.test.ts` 24件通過（同時の発行と有効化・同時の `reauth` の承認と発行を含む）、`auth_passkey_credential_events.integration.test.ts` 通過。単体 `staff-passkey-invite-errors.test.ts`・`staff-passkey-credential-trigger.test.ts` 通過
 
 ## パスキー段1a の本番への当て方の順と前提（段1b の移行 F を含む）
 

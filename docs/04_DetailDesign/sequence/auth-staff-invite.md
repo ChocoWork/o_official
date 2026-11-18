@@ -1,16 +1,16 @@
-# 店員の招待・結び・有効化・取り消しの DB の関数
+# 店員の招待・結び・有効化・取り消し・降格・最後の手段・削除の下限の DB の関数
 
 > 状態: 推定 | 確認日: 2026-11-18 | 対象: `supabase/migrations/20261118130000_passkey_staff_invites.sql`、`src/lib/auth/staff-passkey-invite-errors.ts`
 
 ## 概要
 
-店長が出す店員の招待（表 `private.staff_invites`）を、発行・消費・結び・有効化・取り消し・開いているかの確かめにする DB の関数と、その例外の文を呼び手の理由にする薄い部品。呼ぶ窓口は Task 4 以降。
+店長が出す店員の招待（表 `private.staff_invites`）を、発行・消費・結び・有効化・取り消し・開いているかの確かめにする DB の関数と、その例外の文を呼び手の理由にする薄い部品。後半（移行 H の後半）は、役割の変更を招待に寄せる作り直し・降格・ダッシュボード専用の最後の手段・鍵の削除の下限。呼ぶ窓口は Task 4 以降。
 
 ## 範囲と根拠
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-026、FR-AUTH-034、FR-AUTH-035、DATA-AUTH-020、ARC-AUTH-012、SEC-AUTH-053、THR-AUTH-052、DD-AUTH-070、DD-AUTH-071、DD-AUTH-072、ADR-0471 |
+| 対応する ID | SR-AUTH-026、FR-AUTH-034、FR-AUTH-035、FR-AUTH-037、DATA-AUTH-020、ARC-AUTH-012、SEC-AUTH-053、SEC-AUTH-054、THR-AUTH-052、DD-AUTH-070、DD-AUTH-071、DD-AUTH-072、DD-AUTH-073、ADR-0471 |
 | 対象のコード | 移行 `supabase/migrations/20261118130000_passkey_staff_invites.sql`、`src/lib/auth/staff-passkey-invite-errors.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-4・6-2・8-1）、[段3の計画](../../superpowers/plans/2026-11-18-passkey-stage3-staff.md) |
 | 調べた時点 | 2026-11-18（手元の DB で結合試験を流した） |
@@ -91,3 +91,35 @@ sequenceDiagram
 ```
 
 - 理由の写し: `staffInviteCancelFailureReason`（IMPL-AUTH-342）が `ROLE_PERMISSION_FORBIDDEN` だけ `forbidden`、それ以外は `failed`
+
+### DD-AUTH-073 役割の変更の拒否・降格・最後の手段・鍵の削除の下限
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-054 |
+| 根拠 | 役割を直に書く道を DB が断れば、窓口が増えても店員になるのは招待だけになる。降格は発行と同じ順で錠を取り、操作者を錠の後に確かめる。最後の手段はダッシュボードの SQL からだけ呼べるようにし、アプリの鍵では呼べない。鍵の数えと削除を同じ利用者の錠の中に置けば、同時の削除でも下限を割らない |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_roles.integration.test.ts`、`tests/integration/db/role_permissions.integration.test.ts`）、単体テスト（`tests/unit/lib/auth/staff-passkey-invite-errors.test.ts`。理由の写しと錠の順の文字列） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-2b-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 2b） |
+
+```mermaid
+sequenceDiagram
+    participant W as 窓口
+    participant R as admin_set_user_role
+    participant M as staff_demote
+    participant F as passkey_delete_with_floor
+    W->>R: 操作者・利用者・役割
+    R->>R: 錠 190519 → 操作者・引数・利用者・最後の店長・自分
+    R->>R: admin か supporter で今の店員でなければ STAFF_INVITE_REQUIRED
+    R-->>W: 役割を変えて { previousRole, role } を返す
+    W->>M: 操作者・利用者
+    M->>M: 錠 190519 → 利用者の錠 → 操作者が今も有効な店長か
+    M->>M: 最後の店長・自分は断る
+    M->>M: 役割を user にし、認めた鍵の行を消し、招待を取り消し、窓を閉じる（鍵は残す）
+    W->>F: 利用者・鍵
+    F->>F: 利用者の錠 → 今の店員なら、消した後の認めた鍵が下限未満なら STAFF_MIN_KEYS
+    F-->>W: 鍵と認めた行を消す
+```
+
+- 最後の手段（`private.staff_invite_issue_manual`）: ダッシュボードの SQL 専用。`postgres` だけが `execute` を持ち、アドレスで利用者を引き（無ければ `STAFF_MANUAL_USER_NOT_FOUND`）、`staff_invite_issue_core` を種類 `last_resort`・最後の店長の保護なしで呼び、生の合言葉（43字）を返す。表には UTF-8 の SHA-256 だけ。期限は既定1時間。監査（`audit_logs`、`staff.last_resort.issue`）に1行、詳細は対象の id だけ。TS には `last_resort` の型を作らない
+- 理由の写し: `staffDemoteFailureReason`（IMPL-AUTH-347）が `LAST_ADMIN_REQUIRED`・`SELF_ROLE_CHANGE_FORBIDDEN`・`ROLE_PERMISSION_FORBIDDEN`・`USER_NOT_FOUND` を理由にする。`staffRoleChangeNeedsInvite`（IMPL-AUTH-348）は `STAFF_INVITE_REQUIRED` だけ真にして窓口を招待の道に落とす。`passkeyDeleteFloorFailureReason`（IMPL-AUTH-349）が `STAFF_MIN_KEYS`・`PASSKEY_NOT_FOUND` を理由にする。知らない文はどれも `failed`

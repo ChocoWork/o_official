@@ -2030,7 +2030,7 @@ stateDiagram-v2
 | 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_invites.integration.test.ts`）、E2E（FR-AUTH-034-AC-01）、単体テスト（DD-AUTH-070） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-2-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 2） |
 
-- 移行 H（`supabase/migrations/20261118130000_passkey_staff_invites.sql`）。後半（`admin_set_user_role` の作り直し・降格・最後の手段・削除の下限）は Task 2b が同じファイルに足す
+- 移行 H（`supabase/migrations/20261118130000_passkey_staff_invites.sql`）。後半（Task 2b）は同じファイルにあり、`private.admin_set_user_role` の作り直し（`admin`・`supporter` へは今の店員だけ。外れは `STAFF_INVITE_REQUIRED`・`42501`）、`public.staff_demote(actor, user)`・`public.passkey_delete_with_floor(user, passkey)`（どちらも `service_role` だけ）、`private.staff_invite_issue_manual(email, role, ttl)`（`postgres` だけ。ダッシュボードの SQL 専用）を足す（FR-AUTH-037・SEC-AUTH-054・DD-AUTH-073）
 - 表: `id`・`user_id`（`auth.users` への外部キー・cascade）・`role_code`（`admin`/`supporter`）・`kind`（`invite`/`redo`/`promote`/`last_resort`）・`token_hash`（unique。合言葉の文字列の UTF-8 の SHA-256）・`issued_by`・`reason`・`expires_at`・`consumed_at`・`session_id`・`bound_at`・`activated_at`・`cancelled_at`・`created_at`。取り消されず有効化されていない行は、1人に付き1つ（部分の一意索引）
 - 状態の動き: 発行 → 消費（`consumed_at`。窓は開けない）→ 結び（`session_id`・`bound_at`。窓を開く）→ 有効化（`activated_at`。役割が有効になり窓が閉じる）。取り消し・やり直しは `cancelled_at`
 - 関数（`SECURITY DEFINER`・`search_path` 空・持ち主 `postgres`）: `private.staff_invite_issue_core`（だれにも `execute` を渡さない）、`public.staff_invite_issue`・`staff_invite_consume`・`staff_invite_bind_window`・`staff_role_activate`・`staff_invite_cancel`・`staff_invite_open`（`service_role` だけ）

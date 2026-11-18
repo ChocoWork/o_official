@@ -5368,6 +5368,31 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、6つの�
 
 知らない合言葉の消費は空、開いている招待の確かめは `false`、知らない招待の結びは `STAFF_INVITE_INVALID`、知らないセッションの有効化は `STAFF_ACTIVATE_INVITE_INVALID`、店長でない操作者の取り消しは `ROLE_PERMISSION_FORBIDDEN` になる。
 
+### FR-AUTH-037 役割の変更を招待に寄せ、降格と店長の最後の手段と鍵の削除の下限を DB の関数にする（移行 H の後半）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-026 |
+| 根拠 | SR-AUTH-026 を、移行 H の後半（`private.admin_set_user_role` の作り直し・`public.staff_demote`・`private.staff_invite_issue_manual`・`public.passkey_delete_with_floor`）にする。守りは SEC-AUTH-054、処理は DD-AUTH-073、呼び手の理由の写しは IMPL-AUTH-347〜349 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_roles.integration.test.ts`、`tests/integration/db/role_permissions.integration.test.ts`）、単体テスト（`tests/unit/lib/auth/staff-passkey-invite-errors.test.ts`）、E2E（`e2e/FR-LOGIN-076-staff-role-function-grants.spec.ts`、FR-AUTH-037-AC-01） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-2b-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 2b） |
+| 優先度 | MUST |
+
+規則: (1) `admin_set_user_role` は、役割が `admin`・`supporter` で、その人が今の有効な店員（有効で期限内の `admin`・`supporter` の行）でない時、`STAFF_INVITE_REQUIRED`（`42501`）で断る。お客さん・期限切れ・無効だった役割を戻す道は招待の発行に落ちる。店員どうしの入れ替えと `user` への変更は今のまま通る。(2) `staff_demote` は全体の錠 `190519` → その人の錠の順に取り、錠の後で操作者が今も有効な店長で `admin.users.manage` を持つか確かめる。最後の店長・自分自身は断る。役割を `user` にし、認めた鍵の行を消し、鍵は残し、開いている招待を取り消し、窓を閉じる。(3) `private.staff_invite_issue_manual` はダッシュボードの SQL 専用で、`postgres` だけが実行でき、既定1時間の合言葉を返し、監査に発行の1行（対象の id だけ）を残す。最後の1人の店長にも通る。(4) `passkey_delete_with_floor` はその人の錠を取り、今の店員なら、消した後の認めた鍵が `min_approved_passkeys` 未満になる削除を `STAFF_MIN_KEYS` で断る。お客さんは最後の1本も消せる。
+
+### FR-AUTH-037-AC-01 anon・authenticated は降格・鍵の削除・役割の変更の関数を呼べず、service_role では知らない操作者・鍵が決まった文になり、最後の手段は PostgREST に無い
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-037 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-076-staff-role-function-grants.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-2b-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 2b） |
+
+anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_demote`・`passkey_delete_with_floor`・`admin_set_user_role` が PostgREST で 401 か 403・コード `42501` になる。service_role の鍵では、知らない操作者の降格・役割の変更は `ROLE_PERMISSION_FORBIDDEN`、知らない鍵の削除は `PASSKEY_NOT_FOUND` になる。`staff_invite_issue_manual` は PostgREST の口に無く（`PGRST202`）、呼べない。
+
 ### FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel`
 
 | 属性 | 値 |
@@ -7543,6 +7568,21 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 守ること: (1) 発行・結び・有効化・取り消しは、全体の錠 `pg_advisory_xact_lock(190519, 0)` を先に、その人の錠 `hashtextextended('passkey_approve:' || 利用者, 0)` を後に取る（`admin_set_user_role` は190519だけ、`passkey_approve` は利用者の錠だけを取るので、この順なら行き止まりにならない）。(2) 発行者・操作者が今も有効な店長で `admin.users.manage` を持つかは、錠を取った後に確かめる。(3) 発行の外す物（鍵・認めた鍵・認証アプリの全要素・役割・古い招待・窓）と新しい招待は1つの取引。(4) `last_resort` はアプリの鍵では通らない（移行 H の後半の `private.staff_invite_issue_manual` だけが使い、`postgres` だけが実行できる）。(5) 表は合言葉の文字列のUTF-8の SHA-256 だけを持つ。(6) 有効化の門は DB の関数の中の1つだけ。
 
 残る危険として受け入れること: 錠の中でも、GoTrue が鍵を足す挿入そのものは錠を取らない。窓の中の足しは、有効化の門が全部の鍵を見るので、窓の外の鍵が残れば役割が有効にならない。
+
+### SEC-AUTH-054 役割の変更は招待に寄せ、降格は錠の後に操作者を確かめ、最後の手段は postgres だけに渡し、鍵の削除の下限は利用者の錠の中で数える
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-052 |
+| 根拠 | 役割を直に書く道が残ると、鍵が足りない人が店員になる（1j）。降格が錠の前に操作者を確かめると、降格直後の店長が降格を通す。最後の手段がアプリの鍵で呼べると、最後の1人の店長の保護が外れる。鍵の数えと削除が別の取引だと、3本から同時に2本消されて下限を割る |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_roles.integration.test.ts`。1j の拒否・降格の中身と順・同時のやり直し・最後の手段の権限と監査・同時の削除）、単体テスト（`tests/unit/lib/auth/staff-passkey-invite-errors.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-2b-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 2b） |
+| 優先度 | MUST |
+
+守ること: (1) `admin_set_user_role` は置き換える前の本体の `md5(prosrc)` を移行の前の確かめで見る（`0cb9f532f16aa5c56c6b425694f7209b`）。変えるのは `STAFF_INVITE_REQUIRED` の1点だけで、署名・権限・持ち主は同じ。(2) `staff_demote` は全体の錠 → 利用者の錠の順で、操作者は錠の後に確かめる。(3) `private.staff_invite_issue_manual` は `postgres` だけが `execute` を持ち、`service_role`・`authenticated`・`anon`・`PUBLIC` には渡さない。表には合言葉の UTF-8 の SHA-256 だけを持ち、監査に合言葉・メールを残さない。(4) `passkey_delete_with_floor` は `passkey_approve` と同じ利用者の錠を取り、数えと削除を同じ錠の中で行う。
+
+残る危険として受け入れること: ダッシュボードの結果の画面に生の合言葉が出る（期限を既定1時間にして縮める）。`admin:bootstrap` は `user_roles` を直に書くので、`STAFF_INVITE_REQUIRED` は効かない（段4まで残る）。
 
 ## 派生要件
 

@@ -19,6 +19,10 @@ export type StaffInviteActivateReason =
 
 export type StaffInviteCancelReason = 'forbidden' | 'failed';
 
+export type StaffDemoteReason = 'last_admin' | 'self' | 'forbidden' | 'not_found' | 'failed';
+
+export type PasskeyDeleteFloorReason = 'min_keys' | 'not_found' | 'failed';
+
 const ISSUE_REASONS: Readonly<Record<string, StaffInviteIssueReason>> = {
   STAFF_INVITE_KIND_FORBIDDEN: 'kind_forbidden',
   STAFF_ALREADY_STAFF: 'already_staff',
@@ -35,6 +39,18 @@ const ACTIVATE_REASONS: Readonly<Record<string, StaffInviteActivateReason>> = {
   STAFF_ACTIVATE_NO_WINDOW: 'no_window',
   STAFF_ACTIVATE_KEYS_SHORT: 'keys_short',
   STAFF_ACTIVATE_KEYS_NOT_WINDOW: 'keys_not_window',
+};
+
+const DEMOTE_REASONS: Readonly<Record<string, StaffDemoteReason>> = {
+  LAST_ADMIN_REQUIRED: 'last_admin',
+  SELF_ROLE_CHANGE_FORBIDDEN: 'self',
+  ROLE_PERMISSION_FORBIDDEN: 'forbidden',
+  USER_NOT_FOUND: 'not_found',
+};
+
+const DELETE_FLOOR_REASONS: Readonly<Record<string, PasskeyDeleteFloorReason>> = {
+  STAFF_MIN_KEYS: 'min_keys',
+  PASSKEY_NOT_FOUND: 'not_found',
 };
 
 function lookup<T extends string>(table: Readonly<Record<string, T>>, message: string | null | undefined): T | undefined {
@@ -70,4 +86,35 @@ export function staffInviteActivateFailureReason(message: string | null | undefi
  */
 export function staffInviteCancelFailureReason(message: string | null | undefined): StaffInviteCancelReason {
   return message === 'ROLE_PERMISSION_FORBIDDEN' ? 'forbidden' : 'failed';
+}
+
+/**
+ * 降格（`staff_demote`）の失敗の文を理由にする。知らない文は `failed`。
+ *
+ * @impl IMPL-AUTH-347
+ * @design DD-AUTH-073
+ */
+export function staffDemoteFailureReason(message: string | null | undefined): StaffDemoteReason {
+  return lookup(DEMOTE_REASONS, message) ?? 'failed';
+}
+
+/**
+ * 役割の変更（`admin_set_user_role`）が、今の店員でない人を店員にしようとして断られたか（`STAFF_INVITE_REQUIRED`）。
+ * 真なら窓口は直に変えず、招待の道に落とす。
+ *
+ * @impl IMPL-AUTH-348
+ * @design DD-AUTH-073
+ */
+export function staffRoleChangeNeedsInvite(message: string | null | undefined): boolean {
+  return message === 'STAFF_INVITE_REQUIRED';
+}
+
+/**
+ * 鍵の削除（`passkey_delete_with_floor`）の失敗の文を理由にする。下限を割る削除は `min_keys`。知らない文は `failed`。
+ *
+ * @impl IMPL-AUTH-349
+ * @design DD-AUTH-073
+ */
+export function passkeyDeleteFloorFailureReason(message: string | null | undefined): PasskeyDeleteFloorReason {
+  return lookup(DELETE_FLOOR_REASONS, message) ?? 'failed';
 }

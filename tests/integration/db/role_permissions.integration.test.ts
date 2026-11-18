@@ -442,22 +442,23 @@ describeLocalDb('integration: G0 role permissions', (db) => {
   });
 
   test('updates user role and metadata atomically', async () => {
-    expect(await changeUser(admin, user, 'supporter')).toEqual({ previousRole: 'user', role: 'supporter' });
-    const saved = await userState(user);
-    expect(saved.metadata).toEqual({ role: 'supporter', g0_keep: 'unchanged' });
+    // A customer can no longer be made staff here (STAFF_INVITE_REQUIRED, SEC-AUTH-054); the move is staff to staff.
+    expect(await changeUser(admin, supporter, 'admin')).toEqual({ previousRole: 'supporter', role: 'admin' });
+    const saved = await userState(supporter);
+    expect(saved.metadata).toEqual({ role: 'admin', g0_keep: 'unchanged' });
     const acl = (await db().query(`select r.code,ur.active,ur.expires_at,ur.assigned_by,ur.assigned_at is not null as timed
-      from public.user_roles ur join public.roles r on r.id=ur.role_id where user_id=$1 order by r.code`, [user])).rows;
+      from public.user_roles ur join public.roles r on r.id=ur.role_id where user_id=$1 order by r.code`, [supporter])).rows;
     expect(acl).toEqual([
-      { code: 'supporter', active: true, expires_at: null, assigned_by: admin, timed: true },
-      { code: 'user', active: false, expires_at: null, assigned_by: null, timed: true },
+      { code: 'admin', active: true, expires_at: null, assigned_by: admin, timed: true },
+      { code: 'supporter', active: false, expires_at: null, assigned_by: null, timed: true },
     ]);
     for (const table of ['auth.users', 'public.user_roles']) {
       await db().query('savepoint failure_fixture');
       await db().query(`create or replace function pg_temp.g0_fail_role() returns trigger language plpgsql as $$
         begin raise exception using message='G0_TEST_ROLE_FAILURE',errcode='P0001'; end $$;
         create trigger g0_test_fail before update on ${table} for each row execute function pg_temp.g0_fail_role()`);
-      await rejected(() => changeUser(admin, user, 'admin'), 'G0_TEST_ROLE_FAILURE', 'P0001');
-      expect(await userState(user)).toEqual(saved);
+      await rejected(() => changeUser(admin, supporter, 'supporter'), 'G0_TEST_ROLE_FAILURE', 'P0001');
+      expect(await userState(supporter)).toEqual(saved);
       await db().query('rollback to savepoint failure_fixture');
     }
   });

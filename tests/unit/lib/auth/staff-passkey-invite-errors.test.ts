@@ -1,9 +1,12 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import {
+  passkeyDeleteFloorFailureReason,
+  staffDemoteFailureReason,
   staffInviteActivateFailureReason,
   staffInviteCancelFailureReason,
   staffInviteIssueFailureReason,
+  staffRoleChangeNeedsInvite,
 } from '@/lib/auth/staff-passkey-invite-errors';
 
 const dir = path.join(process.cwd(), 'supabase/migrations');
@@ -66,5 +69,49 @@ describe('staff invite DB failure reasons', () => {
       expect(body.indexOf(g)).toBeGreaterThan(-1);
       expect(body.indexOf(u)).toBeGreaterThan(body.indexOf(g));
     }
+  });
+});
+
+const END_OF_BODY = ['', '$$;'].join(String.fromCharCode(10));
+
+describe('staff role change, demote and delete floor failure reasons', () => {
+  it('DD-AUTH-073 降格の失敗の文を理由にし、知らない文は failed にする', () => {
+    expect(staffDemoteFailureReason('LAST_ADMIN_REQUIRED')).toBe('last_admin');
+    expect(staffDemoteFailureReason('SELF_ROLE_CHANGE_FORBIDDEN')).toBe('self');
+    expect(staffDemoteFailureReason('ROLE_PERMISSION_FORBIDDEN')).toBe('forbidden');
+    expect(staffDemoteFailureReason('USER_NOT_FOUND')).toBe('not_found');
+    expect(staffDemoteFailureReason('STAFF_ALREADY_STAFF')).toBe('failed');
+    expect(staffDemoteFailureReason('toString')).toBe('failed');
+    expect(staffDemoteFailureReason(null)).toBe('failed');
+  });
+
+  it('DD-AUTH-073 役割の変更が STAFF_INVITE_REQUIRED で断られた時だけ招待の道に落とす', () => {
+    expect(staffRoleChangeNeedsInvite('STAFF_INVITE_REQUIRED')).toBe(true);
+    expect(staffRoleChangeNeedsInvite('LAST_ADMIN_REQUIRED')).toBe(false);
+    expect(staffRoleChangeNeedsInvite(undefined)).toBe(false);
+  });
+
+  it('DD-AUTH-073 鍵の削除の下限の失敗の文を理由にする', () => {
+    expect(passkeyDeleteFloorFailureReason('STAFF_MIN_KEYS')).toBe('min_keys');
+    expect(passkeyDeleteFloorFailureReason('PASSKEY_NOT_FOUND')).toBe('not_found');
+    expect(passkeyDeleteFloorFailureReason('x')).toBe('failed');
+    expect(passkeyDeleteFloorFailureReason(null)).toBe('failed');
+  });
+
+  it('DD-AUTH-073 理由の文はすべて移行 H の本体にある', () => {
+    for (const m of ['STAFF_INVITE_REQUIRED', 'STAFF_MIN_KEYS', 'PASSKEY_NOT_FOUND', 'STAFF_MANUAL_USER_NOT_FOUND']) {
+      expect(sql).toContain(`MESSAGE = '${m}'`);
+    }
+  });
+
+  it('DD-AUTH-073 降格・削除の下限も錠を取る（降格は全体 → 利用者の順、削除は利用者の鍵）', () => {
+    const g = 'pg_advisory_xact_lock(190519, 0);';
+    const u = "pg_advisory_xact_lock(hashtextextended('passkey_approve:'";
+    const demoteStart = sql.indexOf('CREATE OR REPLACE FUNCTION public.staff_demote(');
+    const demote = sql.slice(demoteStart, sql.indexOf(END_OF_BODY, demoteStart));
+    expect(demote.indexOf(u)).toBeGreaterThan(demote.indexOf(g));
+    expect(demote.indexOf("'admin.users.manage'")).toBeGreaterThan(demote.indexOf(u));
+    const floorStart = sql.indexOf('CREATE OR REPLACE FUNCTION public.passkey_delete_with_floor(');
+    expect(sql.slice(floorStart, sql.indexOf(END_OF_BODY, floorStart))).toContain(u);
   });
 });
