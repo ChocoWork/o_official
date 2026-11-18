@@ -10,14 +10,14 @@
  * 店員が認めていない鍵で入った時は、GoTrue のセッションを `revoke_auth_session` で終わらせてから断る。判定の DB が使えない時も同じく終わらせて 503 で閉じる。
  */
 import { NextResponse } from 'next/server';
-import { createPublicClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { createPublicClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { PasskeyLoginFinishSchema, dropNullFields } from '@/features/auth/schemas/passkey';
 import { readAuthenticatorDataFlags } from '@/lib/auth/passkey-uv';
 import { isCredentialApproved, isStaff } from '@/lib/auth/passkey-approval-rpc';
 import { isStaffPasskeyRequiredError } from '@/lib/auth/staff-passkey-reject';
-import { readAuthSessionId } from '@/lib/auth/app-session';
+import { endAuthSession } from '@/lib/auth/passkey-auth-session-end';
 import { persistSessionAndCookies } from '@/features/auth/services/register';
 import { readGuestShoppingTokens } from '@/features/cart/services/guest-shopping-token';
 import { linkGuestOrdersByEmail } from '@/lib/orders/link-guest-orders';
@@ -40,19 +40,6 @@ async function deny(detail: string, body: unknown, status: number, actorId?: str
     ...(actorId ? { actor_id: actorId } : {}),
   });
   return json(body, status);
-}
-
-/** GoTrue のセッションを終わらせる。失敗しても例外にせず、結果だけ返す（呼び手は断る側に倒す）。 */
-async function endAuthSession(accessToken: string): Promise<boolean> {
-  const sessionId = readAuthSessionId(accessToken);
-  if (!sessionId) return false;
-  try {
-    const service = await createServiceRoleClient();
-    const { error } = await service.rpc('revoke_auth_session', { p_session_id: sessionId });
-    return !error;
-  } catch {
-    return false;
-  }
 }
 
 type GoTrueSession = { access_token: string; refresh_token: string };

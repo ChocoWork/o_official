@@ -36,6 +36,8 @@ describe('Providers の認証の画面の枠（isAuthPage）', () => {
     '/login/code',
     '/login/passkey',
     '/auth/password-reset',
+    '/staff/invite',
+    '/staff/register',
   ])('DD-AUTH-061 %s は真ん中寄せの枠になる', (pathname) => {
     expect(mainClassFor(pathname)).toContain('min-h-dvh');
   });

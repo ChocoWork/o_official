@@ -20,7 +20,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
     pathname === "/login/password" ||
     pathname === "/login/code" ||
     pathname === "/login/passkey" ||
-    pathname === "/auth/password-reset";
+    pathname === "/auth/password-reset" ||
+    pathname === "/staff/invite" ||
+    pathname === "/staff/register";
 
   const pageMainClassName = isHome
     ? "flex-1 flex flex-col"

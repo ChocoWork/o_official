@@ -5526,6 +5526,67 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 
 招待を出した人の招待を取り消すと、200 で、行の `cancelled_at` が入り、メールの合言葉の SHA-256 で `staff_invite_consume` を呼んでも行が返らず、その人のログインが0になる。サポーターの JWT での取り消しは 403。
 
+### FR-AUTH-041 店員は招待のメールのリンクを開き、ボタンを押した時だけ、役割の無いセッションで登録の窓に入る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-026 |
+| 根拠 | SR-AUTH-026 を、招待のリンクの受け口にする。合言葉は URL の `#` に置いてサーバーに届かせず、メールの先読みで使い切られない。窓の開け方は案 B（お客さんの扱いのままセッションを作り、`session_id` に窓を結ぶ）。画面は SCR-AUTH-013、契約は API-AUTH-037、処理は DD-AUTH-078、守りは SEC-AUTH-053 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/app/staff/invite-page.test.tsx`、`tests/unit/api/auth/staff-invite-start.test.ts`）、E2E（`e2e/FR-LOGIN-064-staff-invite-link.spec.ts`、FR-AUTH-041-AC-01〜04） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6） |
+| 優先度 | MUST |
+
+規則: (1) 画面は `#` の合言葉を読んで URL から消し、開いただけでは何も送らない。(2) `POST /api/auth/staff/invite/start` は、無い・期限切れ・使用済み・取り消しを同じ 400 にし、通れば合言葉を使い切って役割の無いセッションを作り、その `session_id` に窓を結ぶ。(3) 消費した後に失敗したら、作ったセッションを終わらせ、招待は使用済みのまま 500 にする。(4) Origin は共有の proxy が確かめ、回数は IP ごと 20回/10分・合言葉のハッシュごと 5回/10分。
+
+### FR-AUTH-041-AC-01 メールのリンクを GET しても、合言葉は使い切られず、Cookie も付かない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-041 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-064-staff-invite-link.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6） |
+
+メールのリンクを `fetch` で GET しても、招待の `consumed_at` は入らず、応答にログインの Cookie は付かない。
+
+### FR-AUTH-041-AC-02 ボタンで `/staff/register` へ移り、窓が開き、役割はお客さんのまま。同じリンクは使えない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-041 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/app/staff/invite-page.test.tsx`）、E2E（`e2e/FR-LOGIN-064-staff-invite-link.spec.ts`。3幅） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6） |
+
+リンクを開くと見出し「店員のパスキーを登録します」が出て、URL の `#` は消える。「登録を始める」を押すと URL が `/staff/register` になり、`/api/auth/me` は `role: 'user'`、招待に `consumed_at`・`bound_at`・`session_id` が入る。同じ URL をもう一度開いて押すと「このリンクは使えません」が出る。
+
+### FR-AUTH-041-AC-03 取り消し・期限切れ・知らない合言葉は、同じ文で断られる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-041 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/staff-invite-start.test.ts`）、E2E（`e2e/FR-LOGIN-064-staff-invite-link.spec.ts`。3幅） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6） |
+
+取り消された招待・期限が過ぎた招待・知らない合言葉は、どれも画面に「このリンクは使えません」が出て、窓は開かない。API は同じ本文 `{ error: 'invite_invalid' }` の 400。
+
+### FR-AUTH-041-AC-04 DB の最後の手段の合言葉で POST が通って窓が開き、Origin が違うと 403、GoTrue の失敗では窓が開いたまま残らない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-041 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/staff-invite-start.test.ts`）、E2E（`e2e/FR-LOGIN-064-staff-invite-link.spec.ts`。3幅） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6） |
+
+`private.staff_invite_issue_manual` が返した43字の合言葉で `POST /api/auth/staff/invite/start` が 200 になり、`passkey_window_is_open` が真になる（SQL とアプリのハッシュの入力が同じ）。Origin が違う要求は 403 で何も使い切られない。使い切った後の同じ合言葉は 400。消費した後に GoTrue や結びが失敗したら、作ったセッションを終わらせて 500、結び付けはしない。
+
 ### FR-AUTH-044 店員の無操作が1時間を過ぎたら、DB の `has_permission` が偽になる（移行 D・E）
 
 | 属性 | 値 |

@@ -10,7 +10,7 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-026、FR-AUTH-034、FR-AUTH-035、FR-AUTH-037、DATA-AUTH-020、ARC-AUTH-012、SEC-AUTH-053、SEC-AUTH-054、THR-AUTH-052、DD-AUTH-070、DD-AUTH-071、DD-AUTH-072、DD-AUTH-073、DD-AUTH-075、DD-AUTH-076、DD-AUTH-077、FR-AUTH-038、FR-AUTH-039、FR-AUTH-040、API-AUTH-033、API-AUTH-034、API-AUTH-035、API-AUTH-036、SEC-AUTH-056、THR-AUTH-055、ADR-0471 |
+| 対応する ID | SR-AUTH-026、FR-AUTH-034、FR-AUTH-035、FR-AUTH-037、DATA-AUTH-020、ARC-AUTH-012、SEC-AUTH-053、SEC-AUTH-054、THR-AUTH-052、DD-AUTH-070、DD-AUTH-071、DD-AUTH-072、DD-AUTH-073、DD-AUTH-075、DD-AUTH-076、DD-AUTH-077、DD-AUTH-078、FR-AUTH-041、SCR-AUTH-013、API-AUTH-037、FR-AUTH-038、FR-AUTH-039、FR-AUTH-040、API-AUTH-033、API-AUTH-034、API-AUTH-035、API-AUTH-036、SEC-AUTH-056、THR-AUTH-055、ADR-0471 |
 | 対象のコード | 移行 `supabase/migrations/20261118130000_passkey_staff_invites.sql`、`src/lib/auth/staff-passkey-invite-errors.ts`、`src/features/auth/staff/invite-token.ts`・`invite-mail.ts`・`staff-invite-store.ts`・`staff-invite-send.ts`・`staff-invite-http.ts`、`src/app/api/admin/staff/**/route.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-4・6-2・8-1）、[段3の計画](../../superpowers/plans/2026-11-18-passkey-stage3-staff.md) |
 | 調べた時点 | 2026-11-18（手元の DB で結合試験を流した） |
@@ -220,3 +220,36 @@ sequenceDiagram
 - 取り消しの窓口（IMPL-AUTH-365）: `cancelStaffInvite`（IMPL-AUTH-400）→ ログインの終了
 - `PATCH /api/admin/users` の `user`: 同じ `demoteStaff` で行い、応答の本文と符号は従来（`LAST_ADMIN_REQUIRED` 409・`SELF_ROLE_CHANGE_FORBIDDEN` 403）のまま。`GET /api/admin/users` の `approvedPasskeys`（`passkey_approved_count`。店員だけ）と `invitePending`（`hasOpenStaffInvite`。店員でない人だけ。20件ずつ並行に呼ぶ）は、数えられなければ 0・偽（閉じる側）。どちらも AUTH の範囲外なので `@impl` は無く、単体テストは `tests/unit/api/admin/users-route.test.ts`
 
+
+### DD-AUTH-078 招待のリンクの受け口は、役割の無いセッションを作ってから窓に結ぶ
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-053、API-AUTH-037、SCR-AUTH-013 |
+| 根拠 | 案 B。先に窓を開けてフックに結ばせる形は作らず、お客さんの扱いのままセッションを作ってから、分かった `session_id` に窓を結ぶ。合言葉は `#` にあるので、画面を開いただけでは何も送らず、先読みで使い切られない。消費した後の失敗は招待を使用済みのままにして、同じ合言葉の繰り返しで窓が開いたまま残る道を作らない |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/app/staff/invite-page.test.tsx`、`tests/unit/api/auth/staff-invite-start.test.ts`）、E2E（`e2e/FR-LOGIN-064-staff-invite-link.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6） |
+
+```mermaid
+sequenceDiagram
+    participant B as 画面（/staff/invite）
+    participant R as POST /api/auth/staff/invite/start
+    participant D as DB（staff_invite_consume・bind_window）
+    participant G as GoTrue
+    B->>B: # の合言葉を読み、replaceState で消す
+    B->>R: ボタンを押した時だけ { token }
+    R->>D: 消費（ハッシュだけ渡す）
+    D-->>R: 0行なら 400 invite_invalid
+    R->>G: getUserById → generateLink(magiclink) → verifyOtp
+    G-->>R: セッション（役割なし）
+    R->>D: bind_window(招待, session_id)
+    R->>R: persistSessionAndCookies
+    R-->>B: 200 redirectTo /staff/register
+    Note over R,G: 消費の後の失敗は endAuthSession で終わらせ、招待は使用済みのまま 500
+```
+
+- 画面（IMPL-AUTH-367・368）: `src/app/staff/invite/page.tsx`（検索に載せない）、`StaffInviteScreen`（`#` を読んで消す。素の `fetch` で1回だけ POST。400 は使えない文、500 と通信の失敗は「招待をもう一度出してもらってください」でボタンを消す、429 は待つ文でボタンは残す）
+- 窓口（IMPL-AUTH-369）: 回数（IP 20回/10分 → ハッシュごと 5回/10分）、`consumeStaffInvite`（IMPL-AUTH-397）、`createInviteSession`（IMPL-AUTH-370）、`bindStaffInviteWindow`（IMPL-AUTH-398）、`persistSessionAndCookies`。Origin は共有の proxy
+- `endAuthSession`（IMPL-AUTH-366）は `revoke_auth_session` で GoTrue のセッションを終わらせる。パスキーのログインの終わりから外へ出し、Task 7 も使う
+- 回数の枠のハッシュごとの数え方は、既存の `enforceRateLimit` の `subject`（IP との組）。IP を替えても 256 ビットの合言葉は当たらない

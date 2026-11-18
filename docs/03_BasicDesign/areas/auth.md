@@ -572,6 +572,19 @@ graph TD
 - 窓口: 一覧 API-AUTH-026、登録の始め・終わり API-AUTH-024・025、名前の変更 API-AUTH-027、削除 API-AUTH-028（どれも1b の窓口。新しい窓口は足さない）
 - 画面と文言の詳細は DD-AUTH-065、要件は FR-AUTH-029
 
+### SCR-AUTH-013 /staff/invite は招待のメールのリンクを開き、ボタンを押した時だけ登録の窓を開く画面にする
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-041 |
+| 根拠 | 合言葉は URL の `#` に置き、画面が読んですぐ `history.replaceState` で消す（`#` はサーバーに届かず、メールの先読みの GET は何も使い切らない）。ボタンを押した時だけ API-AUTH-037 を呼ぶ。招待のセッションは案 B（役割が無いお客さんの扱いのまま作り、窓に結ぶ）で、役割の有効化は2本の鍵がそろった後 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/app/staff/invite-page.test.tsx`）、E2E（`e2e/FR-LOGIN-064-staff-invite-link.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6） |
+
+- 見出し「店員のパスキーを登録します」、説明、ボタン「登録を始める」だけ。認証の画面の枠（`isAuthPage`）に `/staff/invite`・`/staff/register` を足す
+- 失敗の文: 形の違う・無いリンクは「リンクが正しくありません」、400 は「このリンクは使えません」、500 は「店長に、招待をもう一度出してもらってください」。画面と処理の詳細は DD-AUTH-078。登録の画面 `/staff/register` は Task 7
+
 ## 画面遷移
 
 ### FLOW-AUTH-001 メールとパスワードのログインは /login から /login/verify を経て、役割で行き先を分ける
@@ -913,6 +926,7 @@ stateDiagram-v2
 | API-AUTH-034 | `POST /api/admin/staff/[id]/redo` | 管理画面のパスキーのやり直し（同上） |
 | API-AUTH-035 | `POST /api/admin/staff/[id]/demote` | 管理画面の降格（同上） |
 | API-AUTH-036 | `POST /api/admin/staff/[id]/invite/cancel` | 管理画面の招待の取り消し（同上） |
+| API-AUTH-037 | `POST /api/auth/staff/invite/start` | 招待のリンクの画面 `/staff/invite`（段3a の Task 6。SCR-AUTH-013） |
 
 全部の窓口に共通: 状態を変える `POST` は共有の proxy の Origin の確かめを先に通る。`/api/auth` 配下の全部の応答（Origin 拒否の 403 を含む）に、共有の proxy が `Cache-Control: no-store` を付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037。2026-10-28）。`confirm`・`oauth/*`・`password-reset/link`・`session`・`me`・`login/resend`・`login/cancel`・`post-login` は窓口も自分で同じ値を付ける。
 
@@ -1645,6 +1659,24 @@ stateDiagram-v2
 | 成功 | 200 `{ success: true }` |
 | 失敗 | 400、401・403、429、500 |
 | 監査 | action `admin.staff.invite_cancel`。対象の id だけ |
+
+### API-AUTH-037 POST /api/auth/staff/invite/start は招待の合言葉を使い切り、役割の無いセッションを作って窓に結ぶ
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-041、SEC-AUTH-053、ADR-0471 |
+| 根拠 | 案 B。先に窓を開けてフックに結ばせる形（案 A）は作らない。お客さんの扱いのまま GoTrue のセッションを作り、その `session_id` に窓を結ぶ。消費した後の失敗は招待を使用済みのまま 500 にし、同じ合言葉の繰り返しで窓が開いたまま残る道を作らない |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/api/auth/staff-invite-start.test.ts`）、E2E（`e2e/FR-LOGIN-064-staff-invite-link.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6） |
+
+| 項目 | 中身 |
+| --- | --- |
+| 入力 | JSON `{ token }`（43字の base64url）。認証は無い（合言葉が資格） |
+| 順番 | Origin（共有の proxy。違えば 403）→ 枠（IP ごと 20回/10分）→ 本文の形（400 `invite_invalid`）→ 枠（合言葉のハッシュごと 5回/10分）→ `staff_invite_consume`（0行は 400 `invite_invalid`）→ `getUserById` → `generateLink`（magiclink）→ `verifyOtp` → `staff_invite_bind_window`（`session_id`）→ アプリの結び付け（`persistSessionAndCookies`） |
+| 成功 | 200 `{ redirectTo: '/staff/register' }` と Cookie。応答は no-store |
+| 失敗 | 400 `invite_invalid`（無い・期限切れ・使用済み・取り消しは同じ応答）、403、429、500 `invite_start_failed`（作ったセッションは `endAuthSession` で終わらせ、招待は使用済みのまま） |
+| 監査 | action `auth.staff.invite.start`。合言葉・リンクは残さない |
 
 ## データ
 

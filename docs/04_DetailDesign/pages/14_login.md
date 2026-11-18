@@ -68,6 +68,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | `src/app/login/passkey/page.tsx` | `<file>` | DD-AUTH-064 |
 | `src/features/auth/passkey/components/PasskeyOffer.tsx` | `<file>` | DD-AUTH-064 |
 | `src/features/auth/passkey/components/AccountPasskeys.tsx` | `<file>` | DD-AUTH-065 |
+| `src/app/staff/invite/page.tsx` | `<file>` | DD-AUTH-078 |
+| `src/features/auth/staff/components/StaffInviteScreen.tsx` | `<file>` | DD-AUTH-078 |
 | `src/app/login/verify/page.tsx` | `<file>` | DD-AUTH-002 |
 | `src/app/login/verify/VerifyOtpClient.tsx` | `<file>` | DD-AUTH-002 |
 | `src/app/auth/password-reset/page.tsx` | `<file>` | DD-AUTH-003 |

@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> パスキー段3a Task 6 確認日: 2026-11-18。Route Handler を1ファイル・1メソッド足した（212ファイル・265メソッド、表は211行・264メソッド）。`POST /api/auth/staff/invite/start`（招待のリンクの受け口）。契約は [基本設計の認証](../areas/auth.md) の API-AUTH-037。
+>
 > パスキー段3a Task 5 確認日: 2026-11-18。Route Handler を4ファイル・4メソッド足し、1ファイル・1メソッドを消した（211ファイル・264メソッド、表は210行・263メソッド）。足したのは店長の招待の窓口 `POST /api/admin/staff/invites`・`[id]/redo`・`[id]/demote`・`[id]/invite/cancel`。消したのは `POST /api/admin/create-user`（利用者の作成。店員は招待で増やす）。契約は [基本設計の認証](../areas/auth.md) の API-AUTH-033〜036。`PATCH /api/admin/users` は、お客さんなどを店員にする時に直に役割を付けず招待を出し、`user` への降格は招待も取り消す。`GET /api/admin/users` の各行に `approvedPasskeys`・`invitePending` を足した。
 >
 > パスキー段2 Task 1 確認日: 2026-11-17。Route Handler を4ファイル・4メソッド足した（208ファイル・261メソッド、表は207行・260メソッド）。メールのコードのログイン・新規の `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel`。契約は [基本設計の認証](../areas/auth.md) の API-AUTH-029〜032。
@@ -234,6 +236,7 @@
 | `/api/auth/password/change/start` | `POST` | [route.ts](../../../src/app/api/auth/password/change/start/route.ts) （波 6: 会員認証＋CSRF、admin・supporter は aal2 必須。現行パスワードを確かめ、メールに8桁の確認コードを送る。回数制限 `auth:password_change_start` の IP 20回/600秒・本人ごと 5回/600秒、監査 `password_change_start`。API-AUTH-020） |
 | `/api/auth/refresh` | `POST` | [route.ts](../../../src/app/api/auth/refresh/route.ts) |
 | `/api/auth/register` | `POST` | [route.ts](../../../src/app/api/auth/register/route.ts) |
+| `/api/auth/staff/invite/start` | `POST` | [route.ts](../../../src/app/api/auth/staff/invite/start/route.ts) （パスキー段3a Task 6: 認証前。招待の合言葉（`#` の断片から画面が送る）を使い切り、役割の無いセッションを作って窓に結ぶ。IP 20回/600秒・合言葉のハッシュごと 5回/600秒。契約は [API-AUTH-037](../areas/auth.md)） |
 | `/api/cart/add` | `POST` | [route.ts](../../../src/app/api/cart/add/route.ts) |
 | `/api/cart/change` | `POST` | [route.ts](../../../src/app/api/cart/change/route.ts) |
 | `/api/cart` | `GET` | [route.ts](../../../src/app/api/cart/route.ts) （`view=count`は`{item_count}`だけ。同じ持ち主確認・no-store、割引評価なし。指定なしは従来の全体応答） |
