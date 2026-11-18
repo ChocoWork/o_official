@@ -1,6 +1,6 @@
 /**
  * FR-ADMIN-MISC-003 強制失効と MFA のリセットの守り（監査ログの水増し・平文・IP、役割の決め方、session の失効）
- * 対応: SEC-ADMIN-007-AC-01 / SEC-ADMIN-008-AC-01 / SEC-ADMIN-009-AC-01 / SEC-ADMIN-014-AC-01 / SEC-ADMIN-014-AC-02 /
+ * 対応: SEC-ADMIN-013-AC-02 / SEC-ADMIN-007-AC-01 / SEC-ADMIN-008-AC-01 / SEC-ADMIN-009-AC-01 / SEC-ADMIN-014-AC-01 / SEC-ADMIN-014-AC-02 /
  *       SEC-ADMIN-015-AC-01 / SEC-ADMIN-015-AC-02 / SEC-ADMIN-016-AC-01
  *
  * 本物の窓口（POST /api/admin/revoke-user-sessions・POST /api/admin/users/mfa/reset）を、本物の JWT で HTTP から叩く。
@@ -377,5 +377,32 @@ test.describe('FR-ADMIN-MISC-003 強制失効と MFA のリセットの守り', 
       expect((await probe(request, SUPPORTER_PROBE_ROUTE, firstJwt)).status()).toBe(401);
       expect((await probe(request, SUPPORTER_PROBE_ROUTE, secondJwt)).status()).toBe(401);
     });
+  });
+
+  test(`SEC-ADMIN-013-AC-02 壊れた JSON は revoke-user-sessions・item-color-presets の POST で 400`, async ({ request, baseURL }) => {
+    const origin = originOf(baseURL);
+    const admin = await sharedAdmin();
+    const brokenJson = '{"user_id": "broken", ';
+    for (const path of [REVOKE_ROUTE, '/api/admin/item-color-presets']) {
+      const response = await request.post(path, { headers: bearerHeaders(admin.accessToken, origin), data: brokenJson });
+      expect(response.status(), `${path} ${await response.text()}`).toBe(400);
+    }
+  });
+
+  test(`SEC-ADMIN-013-AC-02 UUID でない user_id の強制失効は 400 で session が変わらない`, async ({ request, baseURL }) => {
+    const origin = originOf(baseURL);
+    const admin = await sharedAdmin();
+    const count = (userId: string) =>
+      withLocalDb(async (db) => (await db.query('select count(*)::int as n from auth.sessions where user_id = $1::uuid', [userId])).rows[0].n as number);
+    const victim = await withLocalDb((db) => createAdminSessionActor(db, 'supporter', 'aal2'));
+    const victimBefore = await count(victim.userId);
+    const adminBefore = await count(admin.userId);
+    expect(victimBefore, '前提: 対象に session がある').toBeGreaterThan(0);
+
+    const response = await revoke(request, origin, admin.accessToken, { user_id: 'not-a-uuid' });
+
+    expect(response.status(), await response.text()).toBe(400);
+    expect(await count(victim.userId)).toBe(victimBefore);
+    expect(await count(admin.userId)).toBe(adminBefore);
   });
 });

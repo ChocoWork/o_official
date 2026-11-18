@@ -5410,7 +5410,7 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 | 上位 | SR-AUTH-026 |
 | 根拠 | SR-AUTH-026 を、店長が出すメールの招待の窓口にする。アカウントが無ければパスワード無しで作り、お客さんとして在れば同じアカウントを使い、応答は同じにする（あるかどうかを返さない）。今の有効な店員は確認の語と理由が要るやり直しの守りを迂回させないために 409 で断る。守りは SEC-AUTH-056、処理は DD-AUTH-076、契約は API-AUTH-033 |
 | 状態 | 推定 |
-| 確かめ方 | 結合テスト（`tests/integration/api/admin-staff-invites-api.test.ts`）、単体テスト（`tests/unit/api/admin/staff/invites-route.test.ts`、`tests/unit/features/auth/staff/staff-invite-send.test.ts`、`staff-invite-http.test.ts`）、E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`、FR-AUTH-038-AC-01〜02） |
+| 確かめ方 | 結合テスト（`tests/integration/api/admin-staff-invites-api.test.ts`）、単体テスト（`tests/unit/api/admin/staff/invites-route.test.ts`、`tests/unit/features/auth/staff/staff-invite-send.test.ts`、`staff-invite-http.test.ts`）、E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`、FR-AUTH-038-AC-01〜03） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
 | 優先度 | MUST |
 
@@ -5439,6 +5439,18 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
 
 パスキー1本とログインを持つお客さんのアドレスで招待すると、応答は新しいアドレスと同じ。メールは「これまでのパスキーはすべて削除されました。」で始まり、その人の鍵・認めた鍵が0本、アプリに結び付かない `auth.sessions` の行を含むログインが0になる。今の有効な店員のアドレスは 409 `already_staff` で、鍵2本・認めた鍵2本・ログイン・役割が残り、招待の行は作られない。サポーターの JWT・お客さんの JWT は 403、Origin の無い要求は 403 で、メールは送られない。
+
+### FR-AUTH-038-AC-03 旧の利用者の作成の画面と窓口は 404 で、アカウントが作られない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-038 |
+| 根拠 | SR-AUTH-026。店員を増やす道を招待だけにするため、旧の `/admin/create-user` と `POST /api/admin/create-user` を消したことを確かめる |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
+
+店長の JWT で `POST /api/admin/create-user` を送ると 404 が返り、`/admin/create-user` を開いても 404 で、その宛先のアカウントは作られない。
 
 ### FR-AUTH-039 店長が店員のパスキーをやり直させる窓口 `POST /api/admin/staff/[id]/redo` と、お客さんを店員にする `PATCH /api/admin/users`
 

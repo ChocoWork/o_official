@@ -67,7 +67,7 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 | E2E のファイル | テスト名の先頭に付けた受け入れ条件 |
 | --- | --- |
 | FR-ADMIN-MISC-001-admin-api-authorization-gates | SEC-ADMIN-001-AC-01、SEC-ADMIN-001-AC-02、SEC-ADMIN-001-AC-03、SEC-ADMIN-005-AC-01、SEC-ADMIN-005-AC-02 |
-| FR-ADMIN-MISC-003-session-revocation-and-mfa-reset | SEC-ADMIN-007-AC-01、SEC-ADMIN-008-AC-01、SEC-ADMIN-009-AC-01、SEC-ADMIN-014-AC-01、SEC-ADMIN-014-AC-02、SEC-ADMIN-015-AC-01、SEC-ADMIN-015-AC-02、SEC-ADMIN-016-AC-01 |
+| FR-ADMIN-MISC-003-session-revocation-and-mfa-reset | SEC-ADMIN-007-AC-01、SEC-ADMIN-013-AC-02、SEC-ADMIN-008-AC-01、SEC-ADMIN-009-AC-01、SEC-ADMIN-014-AC-01、SEC-ADMIN-014-AC-02、SEC-ADMIN-015-AC-01、SEC-ADMIN-015-AC-02、SEC-ADMIN-016-AC-01 |
 | FR-ADMIN-MISC-004-audit-log-read | FREQ-508-AC-01、FREQ-508-AC-02、SEC-ADMIN-011-AC-01、SEC-ADMIN-023-AC-01、SEC-ADMIN-023-AC-02 |
 | FR-ADMIN-MISC-005-item-color-presets-and-direct-db-access | SEC-ADMIN-002-AC-01、SEC-ADMIN-002-AC-02、SEC-ADMIN-003-AC-01、SEC-ADMIN-004-AC-01、SEC-ADMIN-022-AC-01 |
 | FR-ADMIN-MISC-006-contact-management | FR-ADMIN-009-AC-01、FR-ADMIN-009-AC-05、FR-ADMIN-009-AC-02、FR-ADMIN-009-AC-03、FR-ADMIN-009-AC-04、FR-ADMIN-009-AC-06、SEC-ADMIN-019-AC-01、SEC-ADMIN-020-AC-01、SEC-ADMIN-021-AC-01 |
@@ -818,13 +818,11 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | --- | --- |
 | 上位 | SEC-ADMIN-013 |
 | 根拠 | 入力の誤りを故障（500）と分けて返すことを確かめるため |
-| 状態 | 廃止 |
-| 確かめ方 | E2E |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-ADMIN-MISC-003-session-revocation-and-mfa-reset.spec.ts`） |
 | 出どころ | 実装から推定 |
 
-壊れた JSON の本文で `/api/admin/create-user`・`revoke-user-sessions`・`item-color-presets` の POST を送ると 400 が返ること。`user_id` が UUID の形でない強制失効の要求に 400 が返り、session が変わらないこと。
-
-廃止（2026-11-18）: 利用者の作成の画面と窓口（`create-user`）を消した。店員は招待（API-AUTH-033）だけで増やす。番号は使い回さない。
+壊れた JSON の本文で `revoke-user-sessions`・`item-color-presets` の POST を送ると 400 が返ること。`user_id` が UUID の形でない強制失効の要求に 400 が返り、session が変わらないこと（利用者の作成の窓口は 2026-11-18 に消したので、対象から外した）。
 
 ### SEC-ADMIN-014 MFA のリセットは DB の ACL で対象の役割を決め、消した後に対象の session を失効させる
 

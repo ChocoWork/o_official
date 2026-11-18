@@ -1,6 +1,6 @@
 /**
  * FR-LOGIN-063 店長の窓口: 招待・上げる・やり直し・下げる・招待の取り消し（API の試験）
- * 対応: FR-AUTH-038-AC-01〜02 / FR-AUTH-039-AC-01〜02 / FR-AUTH-040-AC-01〜02（設計: API-AUTH-033〜036、DD-AUTH-076・077。ADR-0471）
+ * 対応: FR-AUTH-038-AC-01〜03 / FR-AUTH-039-AC-01〜02 / FR-AUTH-040-AC-01〜02（設計: API-AUTH-033〜036、DD-AUTH-076・077。ADR-0471）
  *
  * 手元の Supabase とアプリ（本番ビルド）に、共有の道具 createAdminSessionActor（provisionStaff → パスキーのログイン → アプリの sessions に結び付ける）
  * で作った店長の JWT で、HTTP から叩く（画面は開かない。3つの幅でくり返す）。メールは手元の Mailpit（MAIL_PROVIDER=local）で、待ちは expect.poll。
@@ -169,6 +169,24 @@ for (const viewport of viewports) {
       });
       expect(noOrigin.status()).toBe(403);
       expect(await mailBodies(request, email, INVITE_SUBJECT)).toHaveLength(0);
+    });
+
+    test(`FR-AUTH-038-AC-03 ${viewport.name}: 旧の利用者の作成の画面と窓口は 404 で、アカウントが作られない`, async ({ request, baseURL, page }) => {
+      test.setTimeout(120_000);
+      const origin = new URL(baseURL as string).origin;
+      const admin = await withLocalDb((db) => createAdminSessionActor(db, 'admin', 'aal2'));
+      const email = uniqueEmail('old-create');
+
+      const api = await request.post('/api/admin/create-user', {
+        headers: headersOf(admin, origin),
+        data: { email, password: `E2e-Old-${randomInt(1e9)}-0123456789`, display_name: 'old' },
+        failOnStatusCode: false,
+      });
+      expect(api.status()).toBe(404);
+      const screen = await page.goto('/admin/create-user');
+      expect(screen?.status()).toBe(404);
+      const created = await withLocalDb(async (db) => Number((await db.query('select count(*)::int as n from auth.users where lower(email) = lower($1)', [email])).rows[0].n));
+      expect(created).toBe(0);
     });
 
     test(`FR-AUTH-039-AC-01 ${viewport.name}: やり直しは確認の語と理由を求め、自分自身は断り、成功すると鍵が0本・役割が無い・メールが1通・古い招待が取り消しになる`, async ({ request, baseURL }) => {
