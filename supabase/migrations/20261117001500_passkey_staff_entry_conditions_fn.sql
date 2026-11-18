@@ -12,13 +12,16 @@
 --
 -- Stage 3a / Task 3 (SR-AUTH-028, FR-AUTH-044, DD-AUTH-074, DATA-AUTH-021, ADR-0472, SEC-AUTH-055): staff idle 1 hour (condition 4).
 -- private.staff_session_activity(session_id uuid pk, user_id uuid, last_seen_at timestamptz)   RLS on, no anon / authenticated privilege.
---   The idle clock is an app table, not auth.sessions.refreshed_at (GoTrue moves that only on a token refresh, not on a page use).
+--   The idle clock is an app table, not auth.sessions.refreshed_at (GoTrue moves that on every background token refresh, even for an idle tab).
 -- public.staff_session_touch(p_session_id, p_user_id, p_min_interval_seconds default 60) boolean   service_role. Insert when no row;
 --   update when the row is at least the interval old (true); otherwise false. A write also deletes that user's rows older than 2 days.
 -- private.staff_idle_ok(p_session_id uuid) boolean   STABLE, SECURITY DEFINER. Row present: last_seen_at > now() - staff_idle_seconds.
---   No row: the same compare on coalesce(auth.sessions.refreshed_at AT TIME ZONE 'UTC', created_at) (a session that never went through the
---   login finish, such as E2E, local dev and DB-integration JWTs, or one whose write failed, passes for one hour). Not in auth.sessions: false.
+--   No row: the same compare on auth.sessions.created_at ONLY (never refreshed_at, which a background refresh keeps moving). A session that never
+--   went through the login finish (E2E, local dev, DB-integration JWTs) or whose first write has not happened passes for one hour after it was
+--   created; the first idle_check writes the row. Not in auth.sessions, or created_at NULL: false.
 -- public.staff_idle_check(p_session_id, p_user_id) boolean   service_role. staff_idle_ok, then (when true) the same throttled touch. One call.
+--   If the touch write FAILS the error is raised (never true): the app gate maps it to 503 (temporary, fails closed). A throttled touch is not a failure.
+--   private.staff_session_touch_core (no execute for anyone) does the upsert without an error handler; staff_session_touch wraps it and returns false on error.
 -- public.staff_idle_peek(p_session_id) boolean   service_role. staff_idle_ok only; never moves the clock (/api/auth/me).
 -- Idle seconds (3600) are read from private.passkey_staff_settings(). All fail closed (any error -> false, with a RAISE WARNING).
 -- All: STABLE, SECURITY DEFINER, owner postgres, search_path empty, fail closed (any error -> false, with a RAISE WARNING
@@ -31,7 +34,7 @@
 --
 -- ROLLBACK (after rolling back E, because E's has_permission calls the functions):
 --   DROP FUNCTION public.staff_idle_peek(uuid), public.staff_idle_check(uuid, uuid), public.staff_session_touch(uuid, uuid, integer),
---     private.staff_idle_ok(uuid), private.staff_passkey_entry_ok(uuid, jsonb), private.staff_passkey_count_ok(uuid),
+--     private.staff_idle_ok(uuid), private.staff_session_touch_core(uuid, uuid, integer), private.staff_passkey_entry_ok(uuid, jsonb), private.staff_passkey_count_ok(uuid),
 --     private.staff_passkey_amr_ok(jsonb);
 --   DROP TABLE private.staff_session_activity;
 -- NOT applied to production until stage 1b and 3 are done.
@@ -131,8 +134,8 @@ BEGIN
   END IF;
   SELECT a.last_seen_at INTO v_seen FROM private.staff_session_activity a WHERE a.session_id = p_session_id;
   IF NOT FOUND THEN
-    -- no activity row: the auth.sessions time (refreshed_at is timestamp without time zone, UTC; created_at is timestamptz)
-    SELECT coalesce(s.refreshed_at AT TIME ZONE 'UTC', s.created_at) INTO v_seen FROM auth.sessions s WHERE s.id = p_session_id;
+    -- no activity row: auth.sessions.created_at only (refreshed_at moves on every background token refresh, so it would never expire)
+    SELECT s.created_at INTO v_seen FROM auth.sessions s WHERE s.id = p_session_id;
     IF NOT FOUND THEN
       RETURN false;
     END IF;
@@ -144,7 +147,7 @@ EXCEPTION WHEN OTHERS THEN
 END
 $$;
 
-CREATE OR REPLACE FUNCTION public.staff_session_touch(p_session_id uuid, p_user_id uuid, p_min_interval_seconds integer DEFAULT 60)
+CREATE OR REPLACE FUNCTION private.staff_session_touch_core(p_session_id uuid, p_user_id uuid, p_min_interval_seconds integer)
 RETURNS boolean LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
 AS $$
 DECLARE
@@ -165,6 +168,14 @@ BEGIN
   DELETE FROM private.staff_session_activity d
    WHERE d.user_id = p_user_id AND d.session_id <> p_session_id AND d.last_seen_at < now() - interval '2 days';
   RETURN true;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION public.staff_session_touch(p_session_id uuid, p_user_id uuid, p_min_interval_seconds integer DEFAULT 60)
+RETURNS boolean LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  RETURN private.staff_session_touch_core(p_session_id, p_user_id, p_min_interval_seconds);
 EXCEPTION WHEN OTHERS THEN
   RAISE WARNING 'staff_session_touch failed: % %', SQLSTATE, SQLERRM;
   RETURN false;
@@ -175,14 +186,12 @@ CREATE OR REPLACE FUNCTION public.staff_idle_check(p_session_id uuid, p_user_id 
 RETURNS boolean LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
 AS $$
 BEGIN
-  IF NOT private.staff_idle_ok(p_session_id) THEN
+  IF p_user_id IS NULL OR NOT private.staff_idle_ok(p_session_id) THEN
     RETURN false;
   END IF;
-  PERFORM public.staff_session_touch(p_session_id, p_user_id);
+  -- a failed write is NOT swallowed: it raises, so the caller never treats the check as passed (a throttled write returns false and is fine)
+  PERFORM private.staff_session_touch_core(p_session_id, p_user_id, 60);
   RETURN true;
-EXCEPTION WHEN OTHERS THEN
-  RAISE WARNING 'staff_idle_check failed: % %', SQLSTATE, SQLERRM;
-  RETURN false;
 END
 $$;
 
@@ -196,11 +205,12 @@ ALTER FUNCTION private.staff_passkey_amr_ok(jsonb) OWNER TO postgres;
 ALTER FUNCTION private.staff_passkey_count_ok(uuid) OWNER TO postgres;
 ALTER FUNCTION private.staff_passkey_entry_ok(uuid, jsonb) OWNER TO postgres;
 ALTER FUNCTION private.staff_idle_ok(uuid) OWNER TO postgres;
+ALTER FUNCTION private.staff_session_touch_core(uuid, uuid, integer) OWNER TO postgres;
 ALTER FUNCTION public.staff_session_touch(uuid, uuid, integer) OWNER TO postgres;
 ALTER FUNCTION public.staff_idle_check(uuid, uuid) OWNER TO postgres;
 ALTER FUNCTION public.staff_idle_peek(uuid) OWNER TO postgres;
 REVOKE ALL ON FUNCTION private.staff_passkey_amr_ok(jsonb), private.staff_passkey_count_ok(uuid),
-  private.staff_passkey_entry_ok(uuid, jsonb), private.staff_idle_ok(uuid) FROM PUBLIC, anon, authenticated, service_role;
+  private.staff_passkey_entry_ok(uuid, jsonb), private.staff_idle_ok(uuid), private.staff_session_touch_core(uuid, uuid, integer) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.staff_session_touch(uuid, uuid, integer), public.staff_idle_check(uuid, uuid),
   public.staff_idle_peek(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.staff_session_touch(uuid, uuid, integer), public.staff_idle_check(uuid, uuid),
@@ -243,6 +253,17 @@ BEGIN
       RAISE EXCEPTION 'PASSKEY_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_idle_function_acl';
     END IF;
   END LOOP;
+  IF NOT EXISTS (
+       SELECT 1 FROM pg_proc p
+        WHERE p.oid = 'private.staff_session_touch_core(uuid,uuid,integer)'::regprocedure AND p.prosecdef
+          AND p.proowner = 'postgres'::regrole AND p.proconfig @> ARRAY['search_path=""'])
+     OR has_function_privilege('anon', 'private.staff_session_touch_core(uuid,uuid,integer)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'private.staff_session_touch_core(uuid,uuid,integer)', 'EXECUTE')
+     OR has_function_privilege('service_role', 'private.staff_session_touch_core(uuid,uuid,integer)', 'EXECUTE')
+     OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) a
+                 WHERE p.oid = 'private.staff_session_touch_core(uuid,uuid,integer)'::regprocedure AND a.grantee = 0) THEN
+    RAISE EXCEPTION 'PASSKEY_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_idle_function_acl';
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.oid = 'private.staff_session_activity'::regclass AND c.relrowsecurity)
      OR has_table_privilege('anon', 'private.staff_session_activity', 'SELECT,INSERT,UPDATE,DELETE')
      OR has_table_privilege('authenticated', 'private.staff_session_activity', 'SELECT,INSERT,UPDATE,DELETE') THEN

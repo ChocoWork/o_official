@@ -234,19 +234,19 @@ describeLocalDb('integration: has_permission の管理の入口の3条件と結�
   });
 
   // SR-AUTH-028 / DATA-AUTH-021 / SEC-AUTH-055: 4つ目の条件（店員の無操作1時間。移行 E が private.staff_idle_ok を呼ぶ）
-  test('DATA-AUTH-021 ⑮活動の行が無い時は auth.sessions の時刻で見る（59分前は true・61分前は false）', async () => {
+  test('DATA-AUTH-021 ⑮活動の行が無い時は auth.sessions の created_at で見る（59分前は true・61分前は false。直近の refreshed_at では延びない）', async () => {
     const admin = await insertUser('admin');
     const session = await createLiveAppSession(db(), admin);
     const claims = jwtClaims(admin, session);
-    const setRefreshed = (minutes: number) =>
+    const setCreated = (minutes: number) =>
       db().query(
-        "update auth.sessions set refreshed_at = (now() - make_interval(mins => $2)) at time zone 'UTC' where id = $1",
+        "update auth.sessions set created_at = now() - make_interval(mins => $2), refreshed_at = now() at time zone 'UTC' where id = $1",
         [session.sessionId, minutes],
       );
 
-    await setRefreshed(59);
+    await setCreated(59);
     expect(await allowed(claims)).toBe(true);
-    await setRefreshed(61);
+    await setCreated(61);
     expect(await allowed(claims)).toBe(false);
   });
 

@@ -68,16 +68,13 @@ describeLocalDb('passkey staff idle functions (migration D)', () => {
     return r.rows.length ? Number(r.rows[0].s) : null;
   };
 
-  test('DATA-AUTH-021 活動の行が無い時は auth.sessions の refreshed_at で見る（59分前は真・61分前は偽）', async () => {
-    const u = await user();
-    expect(await idleOk(await authSession(u, { refreshedMinutesAgo: 59 }))).toBe(true);
-    expect(await idleOk(await authSession(u, { refreshedMinutesAgo: 61 }))).toBe(false);
-  });
-
-  test('DATA-AUTH-021 行も refreshed_at も無い時は created_at で見る（59分前は真・61分前は偽）', async () => {
+  test('DATA-AUTH-021 活動の行が無い時は auth.sessions の created_at だけで見る（59分前は真・61分前は偽。refreshed_at は見ない）', async () => {
     const u = await user();
     expect(await idleOk(await authSession(u, { refreshedMinutesAgo: null, createdMinutesAgo: 59 }))).toBe(true);
     expect(await idleOk(await authSession(u, { refreshedMinutesAgo: null, createdMinutesAgo: 61 }))).toBe(false);
+    // 作られて2時間たち、直近に更新（バックグラウンドのトークン更新）された session は、更新が新しくても偽
+    expect(await idleOk(await authSession(u, { refreshedMinutesAgo: 1, createdMinutesAgo: 120 }))).toBe(false);
+    expect(await idleOk(await authSession(u, { refreshedMinutesAgo: 59, createdMinutesAgo: 61 }))).toBe(false);
   });
 
   test('DATA-AUTH-021 活動の行がある時は last_seen_at が決める（59分前は真・61分前は偽。auth.sessions は見ない）', async () => {
@@ -180,6 +177,23 @@ describeLocalDb('passkey staff idle functions (migration D)', () => {
     const ghost = randomUUID();
     expect((await db().query('select public.staff_idle_check($1, $2) as ok', [ghost, u])).rows[0].ok).toBe(false);
     expect(await seenSecondsAgo(ghost)).toBeNull();
+  });
+
+  test('DATA-AUTH-021 staff_idle_check は、時刻の書き込みが失敗したら真を返さず例外を投げる（呼び手が 503 の閉じる側に倒す）', async () => {
+    const u = await user();
+    const s = await authSession(u, { refreshedMinutesAgo: null, createdMinutesAgo: 5 });
+    await db().query('alter table private.staff_session_activity add constraint staff_idle_test_fail check (user_id is null) not valid');
+    await db().query('savepoint idle_fail');
+    let code = '';
+    try {
+      await db().query('select public.staff_idle_check($1, $2) as ok', [s, u]);
+    } catch (caught) {
+      code = (caught as { code?: string }).code ?? 'unknown';
+    }
+    await db().query('rollback to savepoint idle_fail');
+    expect(code).toBe('23514');
+    // 見るだけの呼びは書かないので、同じ状態でも通る
+    expect((await db().query('select public.staff_idle_peek($1) as ok', [s])).rows[0].ok).toBe(true);
   });
 
   test('DATA-AUTH-021 staff_idle_peek は何度呼んでも時刻を進めず、行も作らない', async () => {

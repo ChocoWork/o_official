@@ -2063,15 +2063,15 @@ flowchart LR
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-AUTH-044、SEC-AUTH-055 |
-| 根拠 | 無操作の時刻を `auth.sessions.refreshed_at` で測ると、トークンの更新が無い限り動かず、画面を使っていても1時間で切れる（または更新で延びすぎる）。アプリが持つ表なら、使った時だけ・間引いて進められる。判断は ADR-0472 |
+| 根拠 | 無操作の時刻を `auth.sessions.refreshed_at` で測ると、開いたままの端末のバックグラウンドの更新で動き続け、席を離れても切れない。アプリが持つ表なら、使った時だけ・間引いて進められる。判断は ADR-0472 |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_idle.integration.test.ts`）、単体テスト（DD-AUTH-074） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-3-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 3） |
 
 - 表（移行 D。`supabase/migrations/20261117001500_passkey_staff_entry_conditions_fn.sql`）: `session_id uuid primary key`・`user_id uuid not null`・`last_seen_at timestamptz not null default now()`。索引 `(user_id, last_seen_at)`。RLS 有効、`anon`・`authenticated`・`service_role` に権限なし
-- `private.staff_idle_ok(uuid)`（`STABLE`・`SECURITY DEFINER`・だれにも `execute` を渡さない）: 行があれば `last_seen_at > now() - staff_idle_seconds`（既定3600）。行が無ければ `auth.sessions` の `coalesce(refreshed_at AT TIME ZONE 'UTC', created_at)` で同じ比べ。`auth.sessions` にも無ければ偽
+- `private.staff_idle_ok(uuid)`（`STABLE`・`SECURITY DEFINER`・だれにも `execute` を渡さない）: 行があれば `last_seen_at > now() - staff_idle_seconds`（既定3600）。行が無ければ `auth.sessions.created_at` だけで同じ比べ（`refreshed_at` は見ない）。`auth.sessions` にも無い・`created_at` が `NULL` なら偽
 - `public.staff_session_touch(session, user, 間引きの秒 = 60)`: 行が無ければ作る、あって間引きの秒以上たっていれば更新して真、そうでなければ偽。別の利用者の行は上書きしない。書いた時にその人の2日より前の行を消す
-- `public.staff_idle_check(session, user)`: `staff_idle_ok` が真なら同じ間引きで時刻を進めて真。偽なら書かない
+- `public.staff_idle_check(session, user)`: `staff_idle_ok` が真なら同じ間引きで時刻を進めて真（内側は `private.staff_session_touch_core`。だれにも `execute` を渡さない）。書き込みが失敗したら例外を投げ、真を返さない（窓口・ページは 503）。間引きで書かないのは失敗ではない。偽なら書かない
 - `public.staff_idle_peek(session)`: `staff_idle_ok` だけ。時刻を進めない（`/api/auth/me` 用）
 - 3つの `public` 関数は `service_role` だけが実行できる。移行 E の `has_permission` が `private.staff_idle_ok` を4つ目の条件（認めた鍵の本数の次、`app_session_is_live` の前）で呼ぶ
 - 費用: `has_permission` を `( SELECT ... )` で包まずに呼ぶ決まりが77件あるが、4つ目の条件は ACL と認めた鍵の本数を通った店員だけが払う（お客さん・anon は手前で止まる）。1回は主キーの1行の読みで、`EXPLAIN` の実行計画の件数は増やさない

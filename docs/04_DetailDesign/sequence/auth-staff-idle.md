@@ -22,7 +22,7 @@
 | 属性 | 値 |
 | --- | --- |
 | 上位 | DATA-AUTH-021、ARC-AUTH-013、SEC-AUTH-055 |
-| 根拠 | 確かめは `private.staff_idle_ok` の1つ。更新は確かめが通った時だけ・60秒の間引きで1回の呼びにまとめる。見るだけの呼びは書かない。行が無い時は `auth.sessions` の時刻に落とし、失敗は閉じる |
+| 根拠 | 確かめは `private.staff_idle_ok` の1つ。更新は確かめが通った時だけ・60秒の間引きで1回の呼びにまとめる。見るだけの呼びは書かない。行が無い時は `auth.sessions.created_at` に落とす（`refreshed_at` は見ない）。時刻の書き込みが失敗したら `staff_idle_check` は例外を投げ、真を返さない（失敗は閉じる） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト（`tests/unit/lib/auth/staff-passkey-idle-rpc.test.ts`。呼ぶ関数と引数、誤りは閉じる側）、結合テスト（`tests/integration/db/auth_passkey_staff_idle.integration.test.ts`、`tests/integration/db/auth_has_permission_passkey.integration.test.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-3-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 3） |
@@ -35,11 +35,11 @@ sequenceDiagram
     participant T as staff_session_touch
     C->>K: セッション・利用者
     K->>O: セッション
-    O->>O: 行があれば last_seen_at、無ければ auth.sessions の時刻 が1時間より新しいか
+    O->>O: 行があれば last_seen_at、無ければ auth.sessions.created_at が1時間より新しいか
     O-->>K: 真か偽
-    K->>T: 真の時だけ（60秒の間引き）
-    T->>T: 行が無ければ作る・古ければ更新・別の利用者の行は触らない・2日より前のその人の行を消す
-    K-->>C: 真か偽
+    K->>T: 真の時だけ（60秒の間引き。内側の private.staff_session_touch_core）
+    T->>T: 行が無ければ作る・古ければ更新・別の利用者の行は触らない・2日より前のその人の行を消す。書き込みの失敗は例外
+    K-->>C: 真か偽（書き込みが失敗したら例外。呼び手は 503）
     C->>O: has_permission は staff_idle_ok を直に呼ぶ（書かない）
 ```
 

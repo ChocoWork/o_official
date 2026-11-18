@@ -386,7 +386,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 | 属性 | 値 |
 | --- | --- |
-| 根拠 | 席を離れた店員の端末から、他人が管理の操作をする危険を減らす（設計 5-2 の条件）。ログインから24時間の上限は条件2として既にある。無操作の時刻は GoTrue が持つ値（`auth.sessions.refreshed_at`。トークンの更新でしか動かない）では測れないので、アプリが持つ表で測る（ADR-0472） |
+| 根拠 | 席を離れた店員の端末から、他人が管理の操作をする危険を減らす（設計 5-2 の条件）。ログインから24時間の上限は条件2として既にある。無操作の時刻は GoTrue が持つ値（`auth.sessions.refreshed_at`。バックグラウンドのトークンの更新で動き続ける）では測れないので、アプリが持つ表で測る（ADR-0472） |
 | 状態 | 推定 |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-3-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 3） |
 
@@ -5414,7 +5414,7 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-3-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 3） |
 | 優先度 | MUST |
 
-規則: (1) 活動の行がある時は `last_seen_at` が現在から1時間（`staff_idle_seconds`）より新しい時だけ通す。(2) 活動の行が無い時は `auth.sessions` の `coalesce(refreshed_at AT TIME ZONE 'UTC', created_at)` で同じ比べをする（ログインの終わりを通らないセッションと、書き込みが失敗した後でも、新しいセッションは1時間通る）。`auth.sessions` にも無ければ偽。(3) `has_permission` は ACL・認めた鍵の本数を通った店員にだけ、この確かめを払わせる（お客さん・anon は手前で止まる）。形の悪い `session_id` は例外にせず偽。(4) 時刻を進める道は `staff_session_touch`（60秒の間引き）と `staff_idle_check` だけ。`staff_idle_peek` は時刻を進めない。
+規則: (1) 活動の行がある時は `last_seen_at` が現在から1時間（`staff_idle_seconds`）より新しい時だけ通す。(2) 活動の行が無い時は `auth.sessions.created_at` だけで同じ比べをする（`refreshed_at` は見ない。ログインの終わりを通らないセッションも、作られてから1時間は通り、最初の `staff_idle_check` が行を書く）。`auth.sessions` にも無い・`created_at` が `NULL` なら偽。(3) `has_permission` は ACL・認めた鍵の本数を通った店員にだけ、この確かめを払わせる（お客さん・anon は手前で止まる）。形の悪い `session_id` は例外にせず偽。(4) 時刻を進める道は `staff_session_touch`（60秒の間引き）と `staff_idle_check` だけ。`staff_idle_peek` は時刻を進めない。
 
 ### FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel`
 
@@ -7607,20 +7607,20 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 
 残る危険として受け入れること: ダッシュボードの結果の画面に生の合言葉が出る（期限を既定1時間にして縮める）。`admin:bootstrap` は `user_roles` を直に書くので、`STAFF_INVITE_REQUIRED` は効かない（段4まで残る）。
 
-### SEC-AUTH-055 無操作の時刻は DB の表と関数で見て、書き込みの失敗で永久に断らず、見るだけの呼びで延ばさず、他人の行を上書きしない
+### SEC-AUTH-055 無操作の時刻は DB の表と関数で見て、書き込みの失敗で通さず、見るだけの呼びで延ばさず、他人の行を上書きしない
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-054 |
-| 根拠 | 無操作の確かめが窓口だけにあると、DB の RLS を直に叩く道（`has_permission` を使う約100の方針）が無操作を見ない。時刻の行の書き込みが失敗した時に永久に拒否すると、店員が入れなくなる。画面を開き直すだけで無操作が延びると、上限の意味が無い |
+| 根拠 | 無操作の確かめが窓口だけにあると、DB の RLS を直に叩く道（`has_permission` を使う約100の方針）が無操作を見ない。時刻の行の書き込みの失敗で確かめを通すと、無操作の上限が外れる。画面を開き直すだけで無操作が延びると、上限の意味が無い |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_idle.integration.test.ts`。値の境・間引き・見るだけの呼び・他人の行・古い行の掃除・権限・移行 E の前の確かめ、`tests/integration/db/auth_has_permission_passkey.integration.test.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-3-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 3） |
 | 優先度 | MUST |
 
-守ること: (1) 4つ目の条件は `has_permission`（DB）に置き、窓口・ページは同じ `private.staff_idle_ok` を `staff_idle_check`・`staff_idle_peek` で呼ぶ。(2) 行が無い時は `auth.sessions` の時刻に落とし、書き込みの失敗が永久の拒否にならない。`auth.sessions` にも無い・`NULL`・例外は偽（失敗は閉じる。`RAISE WARNING` に SQLSTATE と文）。(3) `staff_idle_peek` は書かない。`staff_session_touch` は間引きの秒（既定60）より前なら書かず、行の `user_id` が違えば上書きしない。(4) 表は RLS 有効で `anon`・`authenticated`・`service_role` に権限を渡さず、`service_role` が呼べるのは `public` の3関数だけ。`private.staff_idle_ok` はだれにも渡さない。(5) 移行 E は、D の `private.staff_idle_ok` が無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（`passkey_entry_idle_fn`）で止まる。
+守ること: (1) 4つ目の条件は `has_permission`（DB）に置き、窓口・ページは同じ `private.staff_idle_ok` を `staff_idle_check`・`staff_idle_peek` で呼ぶ。(2) 行が無い時は `auth.sessions.created_at` だけに落とす（`refreshed_at` は見ない）。`staff_idle_check` は時刻の書き込みが失敗したら例外を投げ、真を返さない（窓口・ページは 503。間引きは失敗ではない）。`auth.sessions` にも無い・`NULL`・例外は偽（失敗は閉じる。`RAISE WARNING` に SQLSTATE と文）。(3) `staff_idle_peek` は書かない。`staff_session_touch` は間引きの秒（既定60）より前なら書かず、行の `user_id` が違えば上書きしない。(4) 表は RLS 有効で `anon`・`authenticated`・`service_role` に権限を渡さず、`service_role` が呼べるのは `public` の3関数だけ。`private.staff_idle_ok` はだれにも渡さない。(5) 移行 E は、D の `private.staff_idle_ok` が無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（`passkey_entry_idle_fn`）で止まる。
 
-残る危険として受け入れること: 行が無いセッション（E2E・手元の開発・書き込みが失敗した後）は、`auth.sessions` の時刻から1時間は通る。ログインの終わりで行を書く配線は Task 7 以降。書いた時にその人の2日より前の行を消すので、2日以上前の行は残らない（ログインから24時間の上限が先に切れる）。時計は DB の `now()` だけを使い、アプリの時計は見ない。
+残る危険として受け入れること: 行が無いセッション（E2E・手元の開発・最初の `staff_idle_check` の前）は、作られてから1時間は通る。書き込みの失敗が続くと店員が入れない（503。閉じる側）。ログインの終わりで行を書く配線は Task 7 以降。書いた時にその人の2日より前の行を消すので、2日以上前の行は残らない（ログインから24時間の上限が先に切れる）。時計は DB の `now()` だけを使い、アプリの時計は見ない。
 
 ## 派生要件
 

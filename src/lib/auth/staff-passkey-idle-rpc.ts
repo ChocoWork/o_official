@@ -21,6 +21,8 @@ async function callIdleRpc(name: string, args: Record<string, unknown>): Promise
 /**
  * 店員の無操作が1時間以内かを確かめ、通れば時刻を進める（DB の `staff_idle_check`。確かめと書き込みを1回の呼びで）。
  *
+ * @remarks 時刻の書き込みが失敗すると DB は例外を投げる（真を返さない）。その時は `{ ok: false }` になり、呼び手（窓口・ページ）は 503 の閉じる側に倒す。
+ *
  * @impl IMPL-AUTH-350
  * @design DD-AUTH-074
  */
