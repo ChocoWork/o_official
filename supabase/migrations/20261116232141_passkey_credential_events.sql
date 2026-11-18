@@ -11,7 +11,8 @@
 --   statement; (2) only the outbox insert is inside BEGIN ... EXCEPTION WHEN OTHERS THEN RAISE WARNING, so a failing
 --   outbox never blocks deleting a key or a user, and never rolls back the approval delete.
 --   subject_is_staff = active staff (admin / supporter in user_roles, same rule as the access token hook) OR the key
---   was approved. notify_subject = the auth.users row still exists. A customer deleted by cascade queues nothing.
+--   was approved OR the user has an open, unexpired registration window
+--   (a staff invite window: the managers are told, stage 3a Task 2). notify_subject = the auth.users row still exists. A customer deleted by cascade queues nothing.
 --   subject_email is copied from auth.users.email when notify_subject is true.
 --
 -- NOT covered (SEC-AUTH-038): TRUNCATE, DISABLE TRIGGER, session_replication_role = replica, a failing outbox write
@@ -35,6 +36,7 @@ BEGIN
   IF to_regclass('auth.webauthn_credentials') IS NULL
      OR to_regclass('private.approved_passkeys') IS NULL
      OR to_regclass('private.passkey_notification_outbox') IS NULL
+     OR to_regclass('private.passkey_registration_windows') IS NULL
      OR to_regclass('public.user_roles') IS NULL THEN
     RAISE EXCEPTION 'PASSKEY_MIGRATION_PRECHECK_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_trigger_precheck';
   END IF;
@@ -80,6 +82,14 @@ BEGIN
          AND r.code IN ('admin', 'supporter')
     ) INTO v_is_staff;
     v_is_staff := COALESCE(v_is_staff, false) OR v_was_approved;
+    -- A user with an open registration window is queued as staff: a key added inside a staff invite window is added
+    -- before the role is active, but the design (5-4) tells the managers about it too (stage 3a Task 2).
+    IF NOT v_is_staff THEN
+      SELECT EXISTS (
+        SELECT 1 FROM private.passkey_registration_windows w
+         WHERE w.user_id = v_user AND w.closed_at IS NULL AND w.expires_at > now()
+      ) INTO v_is_staff;
+    END IF;
 
     SELECT true, u.email INTO v_exists, v_email FROM auth.users u WHERE u.id = v_user;
     v_exists := COALESCE(v_exists, false);

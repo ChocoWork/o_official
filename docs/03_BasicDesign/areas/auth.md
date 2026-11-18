@@ -2020,6 +2020,44 @@ stateDiagram-v2
 - 文面の宛先: お客さん（`subject_customer`）は追加・削除・内容の変更を、お問い合わせの住所つきで。店員本人（`subject_staff`）は同じ件名で、末尾が「すぐに店長へお知らせください。」。店長（`admin`）は件名が「店員のパスキーが…」で、本文に本人のアドレスを入れる。サポーターには送らない
 - 段2で作らないもの: `dead` の行を店へ知らせる点検（段3の店長への知らせと同じ道で作る）
 
+### DATA-AUTH-020 招待の表 `private.staff_invites` は合言葉のハッシュと結びの印だけを持ち、6つの DB の関数は `service_role` だけが呼べる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-034、SEC-AUTH-053 |
+| 根拠 | 店員の招待は、合言葉・結んだセッション・有効化を1人1行で持てば、古い招待の取り消しと新しい招待の発行を1つの取引にできる。合言葉の平文は持たない。表は RLS 有効・権限なしで、操作は definer の関数だけ。判断は ADR-0471 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_invites.integration.test.ts`）、E2E（FR-AUTH-034-AC-01）、単体テスト（DD-AUTH-070） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-2-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 2） |
+
+- 移行 H（`supabase/migrations/20261118130000_passkey_staff_invites.sql`）。後半（`admin_set_user_role` の作り直し・降格・最後の手段・削除の下限）は Task 2b が同じファイルに足す
+- 表: `id`・`user_id`（`auth.users` への外部キー・cascade）・`role_code`（`admin`/`supporter`）・`kind`（`invite`/`redo`/`promote`/`last_resort`）・`token_hash`（unique。合言葉の文字列の UTF-8 の SHA-256）・`issued_by`・`reason`・`expires_at`・`consumed_at`・`session_id`・`bound_at`・`activated_at`・`cancelled_at`・`created_at`。取り消されず有効化されていない行は、1人に付き1つ（部分の一意索引）
+- 状態の動き: 発行 → 消費（`consumed_at`。窓は開けない）→ 結び（`session_id`・`bound_at`。窓を開く）→ 有効化（`activated_at`。役割が有効になり窓が閉じる）。取り消し・やり直しは `cancelled_at`
+- 関数（`SECURITY DEFINER`・`search_path` 空・持ち主 `postgres`）: `private.staff_invite_issue_core`（だれにも `execute` を渡さない）、`public.staff_invite_issue`・`staff_invite_consume`・`staff_invite_bind_window`・`staff_role_activate`・`staff_invite_cancel`・`staff_invite_open`（`service_role` だけ）
+- 例外の文: `STAFF_INVITE_KIND_FORBIDDEN`・`STAFF_ALREADY_STAFF`・`STAFF_INVITE_INVALID`・`STAFF_INVITE_ALREADY_BOUND`・`STAFF_ACTIVATE_INVITE_INVALID`・`STAFF_ACTIVATE_NO_WINDOW`・`STAFF_ACTIVATE_KEYS_SHORT`・`STAFF_ACTIVATE_KEYS_NOT_WINDOW`、既存の `ROLE_PERMISSION_FORBIDDEN`・`LAST_ADMIN_REQUIRED`・`SELF_ROLE_CHANGE_FORBIDDEN`・`USER_NOT_FOUND`。引数の誤りは `22023`（`STAFF_INVITE_ARGUMENT_INVALID`）。呼び手は `src/lib/auth/staff-passkey-invite-errors.ts` で理由にする（DD-AUTH-070〜072）
+- 移行 C の直し: `private.passkey_credentials_notify()` が、開いた期限内の窓がある人を `subject_is_staff = true` で積む（`notify_subject` は今のまま）
+
+### ARC-AUTH-012 店員の招待は、発行 → 消費 → 結び → 有効化の4段にし、役割は2本の鍵がそろった時にだけ有効にする
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-035、SEC-AUTH-053、ADR-0471 |
+| 根拠 | 窓の開け方は案 B（役割が無いお客さんの扱いでセッションを作り、分かった `session_id` に結んで窓を開け、2本そろったら役割を有効にする）。先に窓を開けてフックに結ばせる形（案 A）は作らない。有効化の門は DB の関数の中の1つだけにして、窓口が門を飛ばせないようにする |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_invites.integration.test.ts` の ARC-AUTH-012） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-2-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 2） |
+
+```mermaid
+flowchart LR
+  I["発行 staff_invite_issue<br/>外す物を1つの取引で外す"] --> C["消費 staff_invite_consume<br/>窓は開けない"]
+  C --> B["結び staff_invite_bind_window<br/>session_id に窓を開く"]
+  B --> K["窓の中で2本の鍵を足して認める"]
+  K --> A["有効化 staff_role_activate<br/>門は1つ"]
+  I -.取り消し・やり直し.-> X["staff_invite_cancel"]
+```
+
+矢印は順番。点線はどの段からでも取り消せることを示す。
+
 ## 未確認事項
 
 - 本番の Supabase Auth の設定（Email OTP Expiration 300 秒・8 桁・Confirm email・TOTP の有効・最小の長さ・漏洩の照合・captcha・Redirect URLs に古い `/auth/callback` の許可が残っていないか）。手元の `supabase/config.toml` は波 6 の切り替え（2026-11-01。手元だけ）まで OTP 3600 秒・Confirm email 無効・TOTP 無効・最小 6 文字だった。切り替えで本番の前提（OTP 300 秒・Confirm email 有効・TOTP 有効・最小 16・captcha・`secure_password_change`・変更通知）にそろえた。本番の実際の値はまだ読んでいない（SEC-AUTH-029）

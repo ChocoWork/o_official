@@ -17,9 +17,9 @@
 | STOCKIST | 0250〜0299 | [stockist](../areas/stockist.md) |
 | SEARCH | 0300〜0349 | [search](../areas/search.md) |
 | PRIVACY | 0350〜0399 | [privacy](../areas/privacy.md) |
-| AUTH | 0400〜0449、0463〜0470（パスキー） | [auth](../areas/auth.md) |
+| AUTH | 0400〜0449、0463〜0471（パスキー） | [auth](../areas/auth.md) |
 | ADMIN | 0450〜0462 | [admin](../areas/admin.md) |
 
 新しい領域を範囲に足すときは、空いている帯を `scope.json` の `docs` の型に合わせて決め、この表に足す。
 
-パスキーの段1a で ADMIN の帯を `ADR-045*`・`ADR-046[0-2]*` に狭めた（`scripts/trace/scope.json`）。ADR-0470 は段2 Task 9 で AUTH の範囲に足した。ADR-0471 以後はどの範囲にも入らないので、足す時に `scope.json` に範囲を足す。
+パスキーの段1a で ADMIN の帯を `ADR-045*`・`ADR-046[0-2]*` に狭めた（`scripts/trace/scope.json`）。ADR-0470 は段2 Task 9 で AUTH の範囲に足した。ADR-0471〜0479 は段3a Task 2 で AUTH の範囲に足した（`ADR-047[1-9]*.md`）。ADR-0480 以後はどの範囲にも入らないので、足す時に `scripts/trace/scope.json` に範囲を足す。

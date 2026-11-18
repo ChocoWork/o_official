@@ -224,4 +224,25 @@ describeLocalDb('passkey credential trigger and notification outbox', () => {
     expect(removed).toEqual([expect.objectContaining({ subject_is_staff: true, notify_subject: true })]);
     expect(await approvalRows(k)).toBe(0);
   });
+
+  test('DATA-AUTH-014 a key added while the user has an open registration window is queued as staff; closed or expired windows are not', async () => {
+    const win = async (u: string, sql: string) => {
+      const sid = randomUUID();
+      await db().query('insert into auth.sessions (id, user_id, created_at) values ($1, $2, now())', [sid, u]);
+      await db().query('select public.passkey_window_open($1,$2)', [u, sid]);
+      if (sql) await db().query(sql, [sid]);
+    };
+    const open = await user();
+    await win(open, '');
+    await key(open);
+    expect((await outbox(open)).map((r) => [r.kind, r.subject_is_staff, r.notify_subject])).toEqual([['passkey_added', true, true]]);
+    const closed = await user();
+    await win(closed, 'update private.passkey_registration_windows set closed_at = now() where session_id = $1');
+    await key(closed);
+    expect((await outbox(closed)).map((r) => r.subject_is_staff)).toEqual([false]);
+    const expired = await user();
+    await win(expired, "update private.passkey_registration_windows set expires_at = now() - interval '1 second' where session_id = $1");
+    await key(expired);
+    expect((await outbox(expired)).map((r) => r.subject_is_staff)).toEqual([false]);
+  });
 });

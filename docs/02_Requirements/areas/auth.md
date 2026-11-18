@@ -372,6 +372,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: 1a の引き金が `private.passkey_notification_outbox` に積んだ行を、送る側が1行ずつ取り出し、送れたら済みに、送れなければ間をおいて再び試し、9回目の失敗で止め、宛先の無い行は飛ばせる。宛先（本人と、店員の鍵なら有効な店長）は DB が決める。
 
+### SR-AUTH-026 店長が店員を招き、店員が招待の窓の中で2本の鍵を足してから、役割が有効になる
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | 店員の入口はパスキーだけにする（設計 5・6）。役割を先に付けてから鍵を足させると、鍵が足りない店員が管理に入れてしまう。招待を出した時に古い鍵・認証アプリ・役割を全部外し、招待の窓の中で足した2本の鍵がそろってから役割を有効にすれば、乗っ取られた古い鍵や、窓の外で足された鍵で店員にならない |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-2-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 2） |
+
+要求の文: 店長が店員を招待できる。招待は1人に1つ。出した時に、その人の鍵・認めた鍵・認証アプリ・役割が外れる。招待のリンクを使った人は、窓の中で2本の鍵を足し、そろった時だけ役割が有効になる。店長は出した招待を取り消せる。
+
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
 | 属性 | 値 |
@@ -5306,7 +5316,57 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 
 更新が通った後のアクセストークンで `/api/auth/me` が `authenticated: true` を返し、窓を閉じて更新が拒否された後は、同じトークンで `authenticated: false` を返すこと（GoTrue のセッションが消えるため。DB の障害ではなく失効として答える）。
 
-> 番号 `FR-AUTH-024`・`FR-AUTH-032`・`FR-AUTH-033` は、段2の計画で予約したが使わなかった欠番。別の要件に使い回さない。
+> 番号 `FR-AUTH-024`・`FR-AUTH-032`・`FR-AUTH-033` は、段2の計画で予約したが使わなかった欠番。別の要件に使い回さない。`FR-AUTH-036` も、段3a の Task 2 で予約したが使わなかった欠番（窓の中の足しの知らせは FR-AUTH-035 に入れた）。
+
+### FR-AUTH-034 招待の表と、発行・消費・取り消し・開いているかの確かめの DB の関数（移行 H の前半）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-026 |
+| 根拠 | SR-AUTH-026 を、移行 H（`supabase/migrations/20261118130000_passkey_staff_invites.sql`）の表 `private.staff_invites` と、`staff_invite_issue`・`staff_invite_consume`・`staff_invite_cancel`・`staff_invite_open` にする。表は DATA-AUTH-020、処理は DD-AUTH-070・072、守りは SEC-AUTH-053 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_invites.integration.test.ts`）、単体テスト（`tests/unit/lib/auth/staff-passkey-invite-errors.test.ts`）、E2E（`e2e/FR-LOGIN-075-staff-invite-function-grants.spec.ts`、FR-AUTH-034-AC-01） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-2-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 2） |
+| 優先度 | MUST |
+
+規則: (1) 発行は1つの取引で、全体の錠 `190519` → その人の錠の順に取り、錠の後で発行者が今も有効な店長か（`admin.users.manage`）を確かめる。(2) 古い開いた招待を閉じ、窓を閉じ、鍵・認めた鍵・認証アプリ（種類を問わず）・役割を外し、`raw_app_meta_data.role` を `user` にする。消した鍵の「削除」の知らせは `skipped`（`staff_invite_issue`）にする。(3) 最後の1人の店長・自分自身は発行できない。(4) `staff_invite_issue` は `invite`・`redo`・`promote` だけ通し、`last_resort` は `STAFF_INVITE_KIND_FORBIDDEN`。今の店員に `redo` 以外は `STAFF_ALREADY_STAFF`。(5) 消費は未使用・未取り消し・期限内の行を1回だけ返し、窓は開けない。(6) 取り消しは操作者が今も有効な店長でなければ `ROLE_PERMISSION_FORBIDDEN`。鍵・役割は変えない。(7) 6つの関数は `service_role` だけが呼べる。
+
+### FR-AUTH-034-AC-01 anon・authenticated は招待の6つの関数を呼べず、service_role でも最後の手段の発行は通らない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-034 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-075-staff-invite-function-grants.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-2-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 2） |
+
+anon の鍵と本物のログイン済みのお客さんの鍵では、6つの関数が PostgREST で 401 か 403・コード `42501` になる。service_role の鍵で `p_kind = 'last_resort'` を渡すと `STAFF_INVITE_KIND_FORBIDDEN` になる。
+
+### FR-AUTH-035 招待の窓への結びと、2本そろった時の役割の有効化（移行 H の前半）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-026 |
+| 根拠 | SR-AUTH-026 を、`staff_invite_bind_window`・`staff_role_activate` と、移行 C の引き金の直し（窓が開いている人の足しを店員の知らせとして積む）にする。結びと有効化の順は ARC-AUTH-012、処理は DD-AUTH-071、守りは SEC-AUTH-053 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_invites.integration.test.ts`・`auth_passkey_credential_events.integration.test.ts`）、単体テスト（`tests/unit/lib/auth/staff-passkey-invite-errors.test.ts`）、E2E（`e2e/FR-LOGIN-075-staff-invite-function-grants.spec.ts`、FR-AUTH-035-AC-01） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-2-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 2） |
+| 優先度 | MUST |
+
+規則: (1) 結びは、消費済み・未結び・未取り消し・期限内の行にセッションを結び、そのセッションの窓を開く。2度目は `STAFF_INVITE_ALREADY_BOUND`。(2) 有効化は DB が `(user_id, session_id)` で行を引く。門は1つ: 窓が今も開いている（`STAFF_ACTIVATE_NO_WINDOW`）、かつその人の鍵が全部、窓で認めた鍵で `approved_at >= bound_at`（外れは `STAFF_ACTIVATE_KEYS_NOT_WINDOW`）、本数が `min_approved_passkeys` 以上（足りなければ `STAFF_ACTIVATE_KEYS_SHORT`）。満たせば役割を有効にし、招待に `activated_at` を入れ、窓を閉じる。(3) 取る錠の順は発行と同じ。(4) 窓が開いている人の鍵の足しは、役割がまだ無くても `subject_is_staff = true` で積む（店長にも知らせる。設計 5-4）。
+
+### FR-AUTH-035-AC-01 service_role の鍵では、知らない合言葉・招待・セッションは空・false・決まった文の例外になる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-035 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-075-staff-invite-function-grants.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-2-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 2） |
+
+知らない合言葉の消費は空、開いている招待の確かめは `false`、知らない招待の結びは `STAFF_INVITE_INVALID`、知らないセッションの有効化は `STAFF_ACTIVATE_INVITE_INVALID`、店長でない操作者の取り消しは `ROLE_PERMISSION_FORBIDDEN` になる。
 
 ### FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel`
 
@@ -7468,6 +7528,21 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 守ること: (1) 錠は `pg_advisory_xact_lock(hashtextextended('passkey_approve:' || p_user_id::text, 0))` で、`window`・`reauth`・`script` のどの枝でも最初に取る。(2) `via = 'reauth'` は `passkey_approved_count(p_user_id) >= 1` の時だけ通し、外れたら `ERRCODE = '42501'` の `PASSKEY_REAUTH_NOT_ALLOWED`。0本の店員が足せるのは `window` の道だけ。(3) 入り直しが5分以内かの確かめは窓口（`passkey-recent-auth.ts`）に残す。`private.passkey_staff_settings()` は使わない。
 
 残る危険として受け入れること: 鍵の発行（GoTrue の挿入）側は同じ錠を取らない。発行との競りは Task 2 の試験で確かめる。`admin_set_user_role` の `(190519, 0)` は2つの整数の別の鍵の空間なので混ざらない。
+
+### SEC-AUTH-053 招待の発行は全体の錠と利用者の錠の順で取り、発行者を錠の後に確かめ、外す物を1つの取引で外し、合言葉はハッシュだけを持つ
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-052 |
+| 根拠 | 発行・有効化・取り消しが違う順で錠を取ると行き止まりになり、錠の前に発行者を確かめると、降格された店長の要求が通る。途中で止まって「鍵は消えたが招待が無い」を作らず、窓の外・前の招待の窓で足した鍵では役割が有効にならないようにする。最後の手段の種類をアプリの鍵で選べると、最後の1人の店長の保護が外れる |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_invites.integration.test.ts`。権限・錠の順・同時の発行と有効化・同時の `reauth` の承認と発行・途中で失敗しても変わらない・最後の手段の拒否）、単体テスト（`tests/unit/lib/auth/staff-passkey-invite-errors.test.ts`）、E2E `e2e/FR-LOGIN-075-*.spec.ts` |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-2-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 2） |
+| 優先度 | MUST |
+
+守ること: (1) 発行・結び・有効化・取り消しは、全体の錠 `pg_advisory_xact_lock(190519, 0)` を先に、その人の錠 `hashtextextended('passkey_approve:' || 利用者, 0)` を後に取る（`admin_set_user_role` は190519だけ、`passkey_approve` は利用者の錠だけを取るので、この順なら行き止まりにならない）。(2) 発行者・操作者が今も有効な店長で `admin.users.manage` を持つかは、錠を取った後に確かめる。(3) 発行の外す物（鍵・認めた鍵・認証アプリの全要素・役割・古い招待・窓）と新しい招待は1つの取引。(4) `last_resort` はアプリの鍵では通らない（移行 H の後半の `private.staff_invite_issue_manual` だけが使い、`postgres` だけが実行できる）。(5) 表は合言葉の文字列のUTF-8の SHA-256 だけを持つ。(6) 有効化の門は DB の関数の中の1つだけ。
+
+残る危険として受け入れること: 錠の中でも、GoTrue が鍵を足す挿入そのものは錠を取らない。窓の中の足しは、有効化の門が全部の鍵を見るので、窓の外の鍵が残れば役割が有効にならない。
 
 ## 派生要件
 
