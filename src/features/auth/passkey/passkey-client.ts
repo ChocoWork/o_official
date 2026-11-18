@@ -33,6 +33,7 @@ export type RegisterFailureReason =
   | 'already_registered'
   | 'unsupported'
   | 'reauth_required'
+  | 'window_closed'
   | 'unauthorized'
   | 'rate_limited'
   | 'retry'
@@ -159,7 +160,8 @@ export async function loginWithPasskey(deps: {
 
 function registerFailure(status: number, body: Record<string, unknown> | null): RegisterFailureReason {
   if (status === 403 && body?.error === 'registration_not_allowed') {
-    return body.reason === 'reauth_required' ? 'reauth_required' : 'failed';
+    if (body.reason === 'reauth_required') return 'reauth_required';
+    return body.reason === 'window_closed' ? 'window_closed' : 'failed';
   }
   if (status === 401) return 'unauthorized';
   if (status === 429) return 'rate_limited';

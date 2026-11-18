@@ -10,8 +10,8 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-026、FR-AUTH-034、FR-AUTH-035、FR-AUTH-037、DATA-AUTH-020、ARC-AUTH-012、SEC-AUTH-053、SEC-AUTH-054、THR-AUTH-052、DD-AUTH-070、DD-AUTH-071、DD-AUTH-072、DD-AUTH-073、DD-AUTH-075、DD-AUTH-076、DD-AUTH-077、DD-AUTH-078、FR-AUTH-041、SCR-AUTH-013、API-AUTH-037、FR-AUTH-038、FR-AUTH-039、FR-AUTH-040、API-AUTH-033、API-AUTH-034、API-AUTH-035、API-AUTH-036、SEC-AUTH-056、THR-AUTH-055、FR-AUTH-042、SEC-AUTH-057、THR-AUTH-053、DD-AUTH-079、ADR-0471 |
-| 対象のコード | 移行 `supabase/migrations/20261118130000_passkey_staff_invites.sql`、`src/lib/auth/staff-passkey-invite-errors.ts`、`src/features/auth/staff/invite-token.ts`・`invite-mail.ts`・`staff-invite-store.ts`・`staff-invite-send.ts`・`staff-invite-http.ts`、`src/app/api/admin/staff/**/route.ts` |
+| 対応する ID | SR-AUTH-026、FR-AUTH-034、FR-AUTH-035、FR-AUTH-037、DATA-AUTH-020、ARC-AUTH-012、SEC-AUTH-053、SEC-AUTH-054、THR-AUTH-052、DD-AUTH-070、DD-AUTH-071、DD-AUTH-072、DD-AUTH-073、DD-AUTH-075、DD-AUTH-076、DD-AUTH-077、DD-AUTH-078、FR-AUTH-041、SCR-AUTH-013、API-AUTH-037、FR-AUTH-038、FR-AUTH-039、FR-AUTH-040、API-AUTH-033、API-AUTH-034、API-AUTH-035、API-AUTH-036、SEC-AUTH-056、THR-AUTH-055、FR-AUTH-042、SEC-AUTH-057、THR-AUTH-053、DD-AUTH-079、FR-AUTH-043、SCR-AUTH-014、API-AUTH-038、DD-AUTH-080、ADR-0471 |
+| 対象のコード | 移行 `supabase/migrations/20261118130000_passkey_staff_invites.sql`、`src/lib/auth/staff-passkey-invite-errors.ts`、`src/features/auth/staff/invite-token.ts`・`invite-mail.ts`・`staff-invite-store.ts`・`staff-invite-send.ts`・`staff-invite-http.ts`、`src/app/api/admin/staff/**/route.ts`、`src/app/staff/register/page.tsx`、`src/features/auth/staff/components/StaffRegisterScreen.tsx`・`staff-register-client.ts`・`staff-register-access.ts`、`src/app/api/auth/staff/register/complete/route.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-4・6-2・8-1）、[段3の計画](../../superpowers/plans/2026-11-18-passkey-stage3-staff.md) |
 | 調べた時点 | 2026-11-18（手元の DB で結合試験を流した） |
 
@@ -267,3 +267,37 @@ sequenceDiagram
 - 店員でない人は `hasOpenInvite`（IMPL-AUTH-371。`staff_invite_open`。期限を含む）と、このセッションの `windowIsOpen` を並べて呼ぶ（どちらかが読めなければ 503）。両方偽なら今までのお客さんの道（本数・生存は引かない）。どちらかが真なら（招待の期限が過ぎても窓は最長30分開くので、窓が開いていれば招待は有効と見なす） `checkAuthSessionLiveness(session_id, true)` → `windowIsOpen`・`approvedCount` を店員と同じ順で確かめる
 - `evaluateRegistrationAccess` は `inviteWindowOpen`（窓が開いている）・`inviteOpen`（招待が有効）を受け取る。窓が開いて2本未満なら `window`、2本以上なら `reauth_required`、窓が閉じて招待だけ有効なら `window_closed`
 - `register/finish` は `guard.isStaff` が偽でも `guard.mode === 'window'` なら `passkey_approve(…, 'window')` を呼ぶ
+
+### DD-AUTH-080 2本の登録は、窓口の返事で窓の内外を決め、そろったら役割を有効にして全ログインを終わらせる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-053、API-AUTH-038、SCR-AUTH-014 |
+| 根拠 | 窓の内か外かを画面で数えると、サーバーの判断とずれる（再読み込み・別の端末）。窓口の返事（`window_closed`・`reauth_required`）に従い、本数はページを開く時にサーバーが渡す。有効になった後に招待のセッション（otp の magiclink）を残さず、店員の入口をパスキーのログインだけにする |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/staff/staff-register-screen.test.tsx`、`staff-register-client.test.ts`、`staff-register-access.test.ts`、`tests/unit/app/staff/register-page.test.tsx`、`tests/unit/api/auth/staff-register-complete.test.ts`）、E2E（`e2e/FR-LOGIN-066-staff-register-two-keys.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-7-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 7） |
+
+```mermaid
+sequenceDiagram
+    participant P as ページ（サーバー）
+    participant B as 画面（/staff/register）
+    participant R as 登録の窓口（register/start・finish）
+    participant C as POST /api/auth/staff/register/complete
+    participant D as DB（staff_role_activate）
+    P->>P: 署名・生きたセッション・窓が開いているか。違えば /login
+    P-->>B: 認めた鍵の本数（最大2）
+    B->>R: 1本目（window で認める）
+    B->>R: 2本目（別の端末か、セキュリティキー）
+    B->>C: 2本そろったら自動で呼ぶ
+    C->>D: 窓・鍵がすべて window・本数
+    D-->>C: 役割を有効にする
+    C->>C: endAuthSession・revokeAllSessionsForUser・Cookie を消す
+    C-->>B: 200 redirectTo /login
+```
+
+- ページ（IMPL-AUTH-374）: `readStaffRegisterAccess`（IMPL-AUTH-378。署名済みトークン → `checkAuthSessionLiveness(session_id, true)` → `passkey_window_is_open`・`passkey_approved_count`。読めない・閉じているは `{ ok: false }` で `/login`）。検索に載せない
+- 画面（IMPL-AUTH-375）: 1本目 → おすすめの文 → 2本目の2段。窓口が `window_closed`・401 と答えたら時間切れの文だけ、`reauth_required` は完了へ進む。1本だけで「登録を完了する」を押すと窓口が 409 `keys_short` を返し、文は「あと1本、登録してください。」。完了後は文と「ログインへ」（自動では進まない）
+- 呼び（IMPL-AUTH-377）: `completeStaffRegistration`（本文なしの POST。409 `keys_short`・`keys_not_window`、403・401 は `window_closed`、429、503、そのほかは `failed`）
+- 窓口（IMPL-AUTH-376）: 枠（IP・本人）→ 認証 → CSRF → 生きたセッション → `activateStaffRole`（IMPL-AUTH-399）→ `endAuthSession`（IMPL-AUTH-366）＋`revokeAllSessionsForUser` → Cookie を消す。ログインの終了だけが落ちた時は、役割が有効なので 200 にして監査に error を残す
+- 招待の登録の中の鍵は、招待の窓の中のセッション（役割が無い）で `register/start`・`finish` を呼び、`passkey_approve(…, 'window')` で認められる（DD-AUTH-079）。招待は認証アプリの要素を消すので、aal2 は要らない

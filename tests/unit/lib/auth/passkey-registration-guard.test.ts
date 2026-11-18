@@ -83,6 +83,16 @@ describe('DD-AUTH-079 guardPasskeyRegistration（招待の窓）', () => {
     expect(windowIsOpen).toHaveBeenCalledWith(USER_ID, SESSION_ID);
   });
 
+  test('DD-AUTH-079 session_id が無いトークンの非店員は、窓を引かず（招待が無ければ）お客さんの道へ', async () => {
+    m(hasOpenInvite).mockResolvedValue({ ok: true, value: false });
+    m(authenticateRequest).mockResolvedValue({
+      ok: true,
+      claims: { sub: USER_ID, amr: [{ method: 'otp', timestamp: Math.floor(Date.now() / 1000) - 5 }] },
+    });
+    expect(await run()).toMatchObject({ ok: true, mode: 'customer' });
+    expect(windowIsOpen).not.toHaveBeenCalled();
+  });
+
   test('DD-AUTH-079 非店員の窓の確かめが読めなければ 503', async () => {
     m(windowIsOpen).mockResolvedValue({ ok: false });
     const result = await run();

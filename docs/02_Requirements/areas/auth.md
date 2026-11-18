@@ -5624,6 +5624,115 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 
 窓を閉じた後の `POST /api/auth/passkey/register/start` は 403 で、本文は `{ error: 'registration_not_allowed', reason: 'window_closed' }`。
 
+### FR-AUTH-043 店員は招待の窓の中で鍵を2本登録し、そろった時だけ役割が有効になり、全ログインが終わって /login へ送られる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-026 |
+| 根拠 | SR-AUTH-026 を、2本の登録の画面 `/staff/register` と終わりの窓口 `POST /api/auth/staff/register/complete` にする。窓の内か外かは窓口の返事で決め（画面で数えない）、役割の有効化は DB の `staff_role_activate`（鍵がすべて窓の中で認めた鍵・本数が下限以上）が決める。有効になったら招待のセッションを残さず、パスキーのログインだけを入口にする。画面は SCR-AUTH-014、契約は API-AUTH-038、処理は DD-AUTH-080、守りは SEC-AUTH-053 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/staff/staff-register-screen.test.tsx`、`staff-register-client.test.ts`、`staff-register-access.test.ts`、`tests/unit/app/staff/register-page.test.tsx`、`tests/unit/api/auth/staff-register-complete.test.ts`）、結合テスト（`tests/integration/ui/auth-staff-register-screen.test.tsx`、`tests/integration/api/auth-staff-register-complete.test.ts`）、E2E（`e2e/FR-LOGIN-066-staff-register-two-keys.spec.ts`、FR-AUTH-043-AC-01〜08） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-7-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 7） |
+| 優先度 | MUST |
+
+規則: (1) ページはサーバーで、このセッションに結んだ窓が開いた生きたセッションかを確かめ、違えば `/login` へ送る。(2) 画面は「1本目」「2本目」の2段で、2本目の前に別の端末かセキュリティキーをすすめる。2本そろうと自動で完了の窓口を呼び、成功したら完了の文と「ログインへ」を出す。(3) 窓口は本文なしの POST。結び付いた生きたセッションと CSRF を確かめ、`staff_role_activate` を呼ぶ。1本だけは 409 `keys_short`、窓の外の鍵が残るのは 409 `keys_not_window`、窓が閉じた・招待が無効は 403 `window_closed`、そのほかは 500。(4) 成功したら、そのセッションと本人の全ログインを終わらせ、認証の Cookie を消し、`{ redirectTo: '/login' }`。応答に鍵の ID を載せない。(5) 認証アプリ（TOTP）を持っていた店長も、招待で要素が消えるので、aal2 なしで2本を登録できる。
+
+### FR-AUTH-043-AC-01 1本だけで「登録を完了する」を押すと、窓口は 409 keys_short を返し、画面は「あと1本、登録してください。」を出す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-043 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-066-staff-register-two-keys.spec.ts`。390・768・1280 の3幅でくり返す）。単体テスト（DD-AUTH-080。`tests/unit/features/auth/staff/staff-register-screen.test.tsx`、`tests/unit/api/auth/staff-register-complete.test.ts`）でも確かめる |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-7-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 7） |
+
+画面は1本目の後に「登録を完了する」を出し、1本だけで押すと窓口が 409 `keys_short` を返して役割・ログインは変わらない。画面は「あと1本、登録してください。」を出し、2本目のボタンを残す。窓の外で登録した鍵が残る時は 409 `keys_not_window` で、「店長に、もう一度招待を出してもらってください。」を出す。
+
+### FR-AUTH-043-AC-02 窓が閉じたセッションは、ページが /login へ送り、完了の窓口が 403 window_closed を返す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-043 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/app/staff/register-page.test.tsx`、`tests/unit/features/auth/staff/staff-register-access.test.ts`、`tests/unit/api/auth/staff-register-complete.test.ts`）、E2E（`e2e/FR-LOGIN-066-staff-register-two-keys.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-7-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 7） |
+
+窓が閉じた・別のセッション・失効したセッションで `/staff/register` を開くと `/login` へ送られる。窓を閉じた後の `POST /api/auth/staff/register/complete` は 403 `{ error: 'window_closed' }` で、役割は有効にならない。鍵の登録が窓の外と答えた時、画面は「時間が過ぎました。店長に、もう一度招待を出してもらってください。」だけを出してボタンを消す。
+
+### FR-AUTH-043-AC-03 成功した完了の窓口は、全ログインを終わらせ、認証の Cookie を消し、/login へ送る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-043 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-066-staff-register-two-keys.spec.ts`。390・768・1280 の3幅でくり返す）。単体テスト（DD-AUTH-080。`tests/unit/api/auth/staff-register-complete.test.ts`）でも確かめる |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-7-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 7） |
+
+役割を有効にした後、`endAuthSession` と `revokeAllSessionsForUser` を呼び、`sb-access-token`・`sb-refresh-token`・`sb-csrf-token`・`session_id` の Cookie を消し、`{ redirectTo: '/login' }` を no-store で返す。完了のそれまでのアクセストークンは、その後の窓口で 401 になる。ログインの終了だけが落ちた時は、役割は有効なので 200 で Cookie を消し、監査に `session_revocation_failed` の error を残す。
+
+### FR-AUTH-043-AC-04 招待 → 押す → 1本目 → 2本目 → 完了で、役割が有効になり、鍵2本が window で認められ、招待が使用済みになり、/login へ送られる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-043 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-066-staff-register-two-keys.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-7-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 7） |
+
+仮想の認証器を2つ使い、2本を登録して完了すると、`user_roles` に有効な `admin` が付き、`private.approved_passkeys` の2本の `approved_via` がどちらも `window`、`private.staff_invites.activated_at` が入り、`/api/auth/me` は未ログイン。「ログインへ」で `/login` に着く。
+
+### FR-AUTH-043-AC-05 登録した認証器で /login からパスキーでログインでき、/admin に入れる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-043 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-066-staff-register-two-keys.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-7-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 7） |
+
+完了の後、2本目の認証器で `/login` の「パスキーでログイン」を押すと `/admin` に着き、`/api/auth/me` は `role: admin`、`GET /api/admin/users` は 200。
+
+### FR-AUTH-043-AC-06 認証アプリ（TOTP）を持つ店長をやり直しても、2本の登録が通り、役割が有効になる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-043 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-066-staff-register-two-keys.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-7-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 7） |
+
+検証済みの TOTP の要素を持つ利用者に招待を出すと要素が0件になり、aal2 を持たない招待のセッションで2本の鍵を登録して完了でき、役割が有効になる。
+
+### FR-AUTH-043-AC-07 招待のセッションのトークンで /api/admin/* を叩くと 403
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-043 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-066-staff-register-two-keys.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-7-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 7） |
+
+招待のリンクを開いた後（役割が無い間）のセッションで `GET /api/admin/users` と `POST /api/admin/staff/invites` を呼ぶと、どちらも 403。
+
+### FR-AUTH-043-AC-08 招待の窓の中で足した鍵の知らせは subject_is_staff = true で積まれる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-043 |
+| 根拠 | SR-AUTH-026 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-066-staff-register-two-keys.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-7-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 7） |
+
+招待の窓の中で1本目を登録すると、`private.passkey_notification_outbox` に `passkey_added` の行が積まれ、`subject_is_staff` が真になる（役割が付く前でも、窓の中の鍵は店員の鍵として知らせる）。
+
 ### FR-AUTH-044 店員の無操作が1時間を過ぎたら、DB の `has_permission` が偽になる（移行 D・E）
 
 | 属性 | 値 |

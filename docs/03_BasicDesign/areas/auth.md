@@ -585,6 +585,20 @@ graph TD
 - 見出し「店員のパスキーを登録します」、説明、ボタン「登録を始める」だけ。認証の画面の枠（`isAuthPage`）に `/staff/invite`・`/staff/register` を足す
 - 失敗の文: 形の違う・無いリンクは「リンクが正しくありません」、400 は「このリンクは使えません」、500 は「店長に、招待をもう一度出してもらってください」。画面と処理の詳細は DD-AUTH-078。登録の画面 `/staff/register` は Task 7
 
+### SCR-AUTH-014 /staff/register は、招待の窓の中で鍵を2本登録し、そろったら役割を有効にして /login へ送る画面にする
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-043 |
+| 根拠 | ページはサーバーで、このセッションに結んだ窓が開いた生きたセッションかを確かめ、違えば `/login` へ送る（窓が閉じた後の URL の直打ちで画面を出さない）。画面は「1本目」「2本目」の2段で、窓の内か外かは窓口の返事で決める。2本そろったら API-AUTH-038 を自動で呼び、成功したら完了の文と「ログインへ」を出す（自動では進まない） |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/ui/auth-staff-register-screen.test.tsx`）、単体テスト（`tests/unit/features/auth/staff/staff-register-screen.test.tsx`、`tests/unit/app/staff/register-page.test.tsx`）、E2E（`e2e/FR-LOGIN-066-staff-register-two-keys.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-7-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 7） |
+
+- 見出し「パスキーを2本登録してください」。ボタン「1本目を登録」「2本目を登録」「登録を完了する」「ログインへ」。2本目の前に「別の端末か、セキュリティキーでの登録をおすすめします。」。1本だけで完了は「あと1本、登録してください。」、完了は「登録が終わりました。パスキーでログインしてください。」、窓が切れたは「時間が過ぎました。店長に、もう一度招待を出してもらってください。」
+- 鍵の登録は段2の `registerPasskey`（`register/start`・`finish`）をそのまま使う。窓口が窓の外と答えた（`window_closed`・401）時は、ボタンを消して文だけにする。2本を超えると答えた（`reauth_required`）時は、画面で数えず完了へ進む
+- 画面と処理の詳細は DD-AUTH-080
+
 ## 画面遷移
 
 ### FLOW-AUTH-001 メールとパスワードのログインは /login から /login/verify を経て、役割で行き先を分ける
@@ -927,6 +941,7 @@ stateDiagram-v2
 | API-AUTH-035 | `POST /api/admin/staff/[id]/demote` | 管理画面の降格（同上） |
 | API-AUTH-036 | `POST /api/admin/staff/[id]/invite/cancel` | 管理画面の招待の取り消し（同上） |
 | API-AUTH-037 | `POST /api/auth/staff/invite/start` | 招待のリンクの画面 `/staff/invite`（段3a の Task 6。SCR-AUTH-013） |
+| API-AUTH-038 | `POST /api/auth/staff/register/complete` | 2本の登録の画面 `/staff/register`（段3a の Task 7。SCR-AUTH-014） |
 
 全部の窓口に共通: 状態を変える `POST` は共有の proxy の Origin の確かめを先に通る。`/api/auth` 配下の全部の応答（Origin 拒否の 403 を含む）に、共有の proxy が `Cache-Control: no-store` を付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037。2026-10-28）。`confirm`・`oauth/*`・`password-reset/link`・`session`・`me`・`login/resend`・`login/cancel`・`post-login` は窓口も自分で同じ値を付ける。
 
@@ -1677,6 +1692,24 @@ stateDiagram-v2
 | 成功 | 200 `{ redirectTo: '/staff/register' }` と Cookie。応答は no-store |
 | 失敗 | 400 `invite_invalid`（無い・期限切れ・使用済み・取り消しは同じ応答）、403、429、500 `invite_start_failed`（作ったセッションは `endAuthSession` で終わらせ、招待は使用済みのまま） |
 | 監査 | action `auth.staff.invite.start`。合言葉・リンクは残さない |
+
+### API-AUTH-038 POST /api/auth/staff/register/complete は、2本そろった店員の役割を有効にし、全ログインを終わらせて /login へ送る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-043、SEC-AUTH-053、ADR-0471 |
+| 根拠 | 役割の有効化は DB の `staff_role_activate`（鍵がすべて窓の中で認めた鍵・本数が下限以上・窓が開いている）に任せる。有効になった後に招待のセッションを残すと、パスキーのログインを通らずに店員の状態が続くので、全ログインを終わらせて Cookie を消す |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/auth-staff-register-complete.test.ts`）、単体テスト（`tests/unit/api/auth/staff-register-complete.test.ts`）、E2E（`e2e/FR-LOGIN-066-staff-register-two-keys.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-7-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 7） |
+
+| 項目 | 中身 |
+| --- | --- |
+| 入力 | 本文なし。認証は Cookie のセッション（アプリに結び付いた生きたセッション）と CSRF |
+| 順番 | 枠（IP ごと 20回/10分）→ 認証 → CSRF → 枠（本人ごと 10回/10分）→ `checkAuthSessionLiveness(session_id, true)` → `staff_role_activate` → `endAuthSession` と `revokeAllSessionsForUser` → Cookie を消す |
+| 成功 | 200 `{ redirectTo: '/login' }`、認証の Cookie を消す。応答は no-store。鍵の ID は載せない |
+| 失敗 | 401・503（認証・生存の確認）、403（CSRF・`window_closed`）、409 `keys_short`・`keys_not_window`、429、500 `register_complete_failed` |
+| 監査 | action `auth.staff.register.complete`。鍵・`session_id` は残さない |
 
 ## データ
 

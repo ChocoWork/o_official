@@ -169,6 +169,7 @@ describe('DD-AUTH-060 registerPasskey', () => {
 
   test.each([
     [403, { error: 'registration_not_allowed', reason: 'reauth_required' }, 'reauth_required'],
+    [403, { error: 'registration_not_allowed', reason: 'window_closed' }, 'window_closed'],
     [403, { error: 'registration_not_allowed', reason: 'other' }, 'failed'],
     [401, { error: 'Unauthorized' }, 'unauthorized'],
     [429, {}, 'rate_limited'],
@@ -185,6 +186,7 @@ describe('DD-AUTH-060 registerPasskey', () => {
 
   test.each([
     [403, { error: 'registration_not_allowed', reason: 'reauth_required' }, 'reauth_required'],
+    [403, { error: 'registration_not_allowed', reason: 'window_closed' }, 'window_closed'],
     [401, {}, 'unauthorized'],
     [502, { error: 'passkey_register_failed' }, 'retry'],
     [400, { error: 'uv_required' }, 'retry'],
