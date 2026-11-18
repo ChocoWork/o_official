@@ -2457,7 +2457,7 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-4・8-2）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 6、Review Focus 4・5） |
 | 優先度 | MUST |
 
-規則: 足し（INSERT）は `passkey_added`、消し（DELETE）は `passkey_removed` を積み、同じ `passkey_id` の認めの行を消す。更新（UPDATE）は `credential_id` か `public_key` が変わった時だけ `passkey_key_replaced` を積み、認めの行を消す（名前・回数・最後に使った時刻だけの更新では何もしない）。`subject_is_staff` は、積む時点で有効な店員（`user_roles` の admin・supporter）か、その鍵の認めの行を今回消したか。`notify_subject` は `auth.users` の行がまだ在るか（ユーザー削除の連鎖の途中は偽）。真の時は `subject_email` に本人のメールを写す。お客さんがユーザーごと削除された時は積まない。認めの行の削除は例外の囲みの外、outbox への書き込みだけを囲みの中に入れ、書き込みが落ちても鍵・ユーザーの削除は止めない。
+規則: 足し（INSERT）は `passkey_added`、消し（DELETE）は `passkey_removed` を積み、同じ `passkey_id` の認めの行を消す。更新（UPDATE）は `credential_id` か `public_key` が変わった時だけ `passkey_key_replaced` を積み、認めの行を消す（名前・回数・最後に使った時刻だけの更新では何もしない）。`subject_is_staff` は、積む時点で有効な店員（`user_roles` の admin・supporter）か、その鍵の認めの行を今回消したか、または開いた期限内の登録の窓（`private.passkey_registration_windows`）がある人か（招待の窓の中の足しは役割がまだ無いが、店長にも知らせる。設計 5-4）。`notify_subject` は `auth.users` の行がまだ在るか（ユーザー削除の連鎖の途中は偽）。真の時は `subject_email` に本人のメールを写す。お客さんがユーザーごと削除された時は積まない。認めの行の削除は例外の囲みの外、outbox への書き込みだけを囲みの中に入れ、書き込みが落ちても鍵・ユーザーの削除は止めない。
 
 
 ### 要求の表から写した受け入れ条件

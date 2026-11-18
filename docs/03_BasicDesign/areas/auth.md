@@ -1895,7 +1895,7 @@ stateDiagram-v2
 | --- | --- |
 | 引き金 `passkey_credentials_notify` | `auth.webauthn_credentials` への `AFTER INSERT OR UPDATE OR DELETE ... FOR EACH ROW` |
 | 関数 `private.passkey_credentials_notify()` | `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空。`execute` はだれにも渡さない |
-| 書く表 | `private.passkey_notification_outbox`（積む）、`private.approved_passkeys`（消す）。読む表は `public.user_roles`・`public.roles`・`auth.users` |
+| 書く表 | `private.passkey_notification_outbox`（積む）、`private.approved_passkeys`（消す）。読む表は `public.user_roles`・`public.roles`・`auth.users`・`private.passkey_registration_windows`（開いた期限内の窓がある人は店員として積む。段3a Task 2） |
 
 - 戻す: 移行のヘッダーの ROLLBACK。`postgres` は表の持ち主でなく引き金を落とせないので、関数を空の関数（`RETURN NULL`）に置き換え、引き金を落とすのは `supabase_auth_admin` の手順にする。本番で作れるか・GoTrue の更新で消えないかは未確認（設計 8-2 の3）
 

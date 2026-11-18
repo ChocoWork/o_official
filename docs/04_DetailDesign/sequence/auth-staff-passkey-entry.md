@@ -113,7 +113,7 @@ flowchart TD
     K2 --> D[認めの行を DELETE し 次の文で FOUND を v_was_approved に控える]
     K3 --> D
     K1 --> S
-    D --> S[店員か を決める user_roles の有効な admin か supporter か 認めの行を消したか]
+    D --> S[店員か を決める user_roles の有効な admin か supporter か 認めの行を消したか 開いた期限内の登録の窓があるか]
     S --> E[auth.users の行が在るか を notify_subject にし メールを写す]
     E --> Q{店員か 行が在るか のどちらかが真か}
     Q -- いいえ お客さんの削除の連鎖 --> Z
@@ -123,7 +123,7 @@ flowchart TD
 - アプリの側: `isPasskeyOutboxKind(value)`（IMPL-AUTH-242）は、outbox の `kind` が3つの種類（`passkey_added`・`passkey_removed`・`passkey_key_replaced`）のどれかの時だけ真。送る側（段2・3）が未知の種類を送らないため
 - 入力と出力: 行の変更。戻り値は無し（`AFTER`）。更新は `credential_id`・`public_key` が変わった時だけ
 - 順番: ① 認めの行を `DELETE FROM private.approved_passkeys WHERE passkey_id = OLD.id`（`RETURNING` は付けない）で消し、その次の文で `v_was_approved := FOUND`（間に別の文を挟まない）。② その後、店員の判断・`auth.users` の確認・outbox への書き込みを `BEGIN ... EXCEPTION WHEN OTHERS THEN RAISE WARNING ... END` の中で行う
-- 店員: `user_roles` で有効（`active`・期限切れでない）な admin・supporter（フックと同じ規則）、または今回認めの行を消した
+- 店員: `user_roles` で有効（`active`・期限切れでない）な admin・supporter（フックと同じ規則）、または今回認めの行を消した、または開いた期限内の登録の窓（`private.passkey_registration_windows`。`closed_at` が空で `expires_at` が未来）がある（招待の窓の中の足し。段3a Task 2）
 - 異常: outbox への書き込みが落ちても、鍵とユーザーの削除は成功し、認めの行の削除は取り消されない。`RAISE WARNING` だけ残る
 - 連鎖: ユーザーごと店員を削除する時、`user_roles` が先に消えても、認めた鍵なら店員と分かる。認めた鍵が無い店員で `user_roles` が先に消えた時は店長への知らせが出ない（SEC-AUTH-038 で受け入れる）
 - 戻し方: `postgres` は引き金を落とせない。関数を `RETURN NULL` だけの空の関数に置き換えて止め、引き金の削除は `supabase_auth_admin` の手順にする（本番へ当てる前の確認の一覧に入れる。設計 8-2 の3）
