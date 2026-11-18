@@ -7454,6 +7454,21 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 
 残る危険として受け入れること: 送った後に、済みにする前に落ちると、担当が切れて再び取られ、同じ知らせが二重に届きうる（少なくとも1回の送り）。重複を防ぐ鍵はメールを送る側（Task 9）が、宛先ごとに行の id とアドレスの SHA-256 から作る（Resend は同じ鍵の送り直しを24時間は2通目にしない。手元の送り手は鍵を使わない）。`dead` の行を店へ知らせる点検は段2では作らず、段3の店長への知らせと同じ道で作る。`dead` の行は表に残る。
 
+### SEC-AUTH-052 `passkey_approve` は3つの枝とも名前空間付きの錠を最初に取り、入り直しの承認は認めた鍵が1本以上の店員にだけ通す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-051 |
+| 根拠 | 段1b の移行 F の `passkey_approve` は `window` の枝だけが錠を取り、錠の鍵が `hashtextextended(uuid::text, 0)` だった。鍵の削除と `reauth`・`script` の承認の競りで、消えた鍵の承認の行が残りうる（`approved_passkeys` に外部キーが無い）。また `reauth` は鍵を数えず、認めた鍵が0本の店員が入り直しの印だけで最初の鍵を足せた。本番未適用の F を同じファイルのまま直す |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_server_fns.integration.test.ts` の SEC-AUTH-052。0本の `reauth` は `42501`・1本なら通る・`window` と `script` は0本でも通る・本体が `hashtextextended('passkey_approve:'` を持つ・3つの枝とも別の接続が同じ鍵の錠を持つ間は待ち、鍵の削除の後に行が残らない）、E2E `e2e/FR-LOGIN-051-*.spec.ts`（店員の登録） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-1-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 1）、台帳の行 1l の持ち越し |
+| 優先度 | MUST |
+
+守ること: (1) 錠は `pg_advisory_xact_lock(hashtextextended('passkey_approve:' || p_user_id::text, 0))` で、`window`・`reauth`・`script` のどの枝でも最初に取る。(2) `via = 'reauth'` は `passkey_approved_count(p_user_id) >= 1` の時だけ通し、外れたら `ERRCODE = '42501'` の `PASSKEY_REAUTH_NOT_ALLOWED`。0本の店員が足せるのは `window` の道だけ。(3) 入り直しが5分以内かの確かめは窓口（`passkey-recent-auth.ts`）に残す。`private.passkey_staff_settings()` は使わない。
+
+残る危険として受け入れること: 鍵の発行（GoTrue の挿入）側は同じ錠を取らない。発行との競りは Task 2 の試験で確かめる。`admin_set_user_role` の `(190519, 0)` は2つの整数の別の鍵の空間なので混ざらない。
+
 ## 派生要件
 
 要件が求めていないのに今のコードがしている動き。根拠はコードがそうしている理由で、記録が無い物は推定。

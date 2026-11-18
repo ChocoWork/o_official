@@ -8,6 +8,7 @@ import {
   approve,
   approvedCount,
   approvedIds,
+  approveFailureReason,
   isCredentialApproved,
   isStaff,
   windowIsOpen,
@@ -102,6 +103,22 @@ describe('passkey-approval-rpc', () => {
     rpc.mockResolvedValue({ data: null, error: { code, message: 'x' } });
 
     await expect(approve(USER_ID, PASSKEY_ID, 'window')).resolves.toEqual({ ok: false, reason });
+  });
+
+  it.each([
+    ['42501', 'PASSKEY_REAUTH_NOT_ALLOWED', 'reauth_not_allowed'],
+    ['42501', 'passkey_not_owned', 'other'],
+    ['23505', 'PASSKEY_REAUTH_NOT_ALLOWED', 'stale'],
+    ['55000', undefined, 'window_full'],
+    [undefined, undefined, 'other'],
+  ])('DD-AUTH-069 approveFailureReason(%s, %s) は %s', (code, message, reason) => {
+    expect(approveFailureReason(code, message)).toBe(reason);
+  });
+
+  it('DD-AUTH-069 approve は認めた鍵が0本の店員の reauth の断りを reauth_not_allowed で返す', async () => {
+    rpc.mockResolvedValue({ data: null, error: { code: '42501', message: 'PASSKEY_REAUTH_NOT_ALLOWED' } });
+
+    await expect(approve(USER_ID, PASSKEY_ID, 'reauth')).resolves.toEqual({ ok: false, reason: 'reauth_not_allowed' });
   });
 
   it('DD-AUTH-050 approve は例外でも reason other で返す', async () => {

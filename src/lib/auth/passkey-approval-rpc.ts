@@ -5,12 +5,12 @@ export type RpcResult<T> = { ok: true; value: T } | { ok: false };
 
 export type ApproveVia = 'window' | 'reauth' | 'script';
 
-/** `window` の上限超え（55000）は `window_full`、古い行（23505）は `stale`、それ以外は `other`。 */
-export type ApproveResult = { ok: true } | { ok: false; reason: 'stale' | 'window_full' | 'other' };
+/** `window` の上限超え（55000）は `window_full`、古い行（23505）は `stale`、認めた鍵が0本の `reauth` の断り（42501）は `reauth_not_allowed`、それ以外は `other`。 */
+export type ApproveResult = { ok: true } | { ok: false; reason: 'stale' | 'window_full' | 'reauth_not_allowed' | 'other' };
 
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 
-type RpcOutcome = { data: unknown; error: { code?: string } | null };
+type RpcOutcome = { data: unknown; error: { code?: string; message?: string } | null };
 
 async function callRpc(name: string, args: Record<string, unknown>): Promise<RpcOutcome | null> {
   try {
@@ -100,6 +100,20 @@ export function windowIsOpen(userId: string, sessionId: string): Promise<RpcResu
 }
 
 /**
+ * `passkey_approve` の失敗を理由に直す。`23505` は `stale`、`55000` は `window_full`、`42501` で `PASSKEY_REAUTH_NOT_ALLOWED`
+ * （認めた鍵が0本の店員の `reauth`）は `reauth_not_allowed`、そのほかは `other`。
+ *
+ * @impl IMPL-AUTH-339
+ * @design DD-AUTH-069
+ */
+export function approveFailureReason(code?: string, message?: string): Extract<ApproveResult, { ok: false }>['reason'] {
+  if (code === '23505') return 'stale';
+  if (code === '55000') return 'window_full';
+  if (code === '42501' && message === 'PASSKEY_REAUTH_NOT_ALLOWED') return 'reauth_not_allowed';
+  return 'other';
+}
+
+/**
  * 鍵を認める（`passkey_approve`）。
  *
  * @remarks `23505`（古い行。SEC-AUTH-041）は `stale`、`55000`（窓で認められる上限）は `window_full`、そのほかは `other`。
@@ -112,7 +126,5 @@ export async function approve(userId: string, passkeyId: string, via: ApproveVia
   if (!outcome) return { ok: false, reason: 'other' };
   if (!outcome.error) return { ok: true };
   console.error('passkey-approval-rpc: approve failed', { code: outcome.error.code });
-  if (outcome.error.code === '23505') return { ok: false, reason: 'stale' };
-  if (outcome.error.code === '55000') return { ok: false, reason: 'window_full' };
-  return { ok: false, reason: 'other' };
+  return { ok: false, reason: approveFailureReason(outcome.error.code, outcome.error.message) };
 }

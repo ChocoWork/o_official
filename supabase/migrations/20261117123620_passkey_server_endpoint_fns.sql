@@ -22,7 +22,11 @@
 --     2. via = 'window' takes a per-user transaction lock first, recounts passkey_approved_count under the lock and, when
 --        it is already min_approved_passkeys or more (or the setting is missing: NULL), raises 55000 'passkey_approve: window limit reached' (no row is
 --        added). This closes the race of two window approvals at once. A repeat for an already approved key adds no row,
---        so it is not blocked. reauth and script take no lock and have no limit.
+--        so it is not blocked. reauth and script have no limit.
+--     3. Every branch (window, reauth, script) takes the same per-user lock first, with the namespaced key
+--        hashtextextended('passkey_approve:' || user, 0) (not the bare uuid text), so the DELETE of a credential and an
+--        approval cannot interleave. via = 'reauth' raises 42501 'PASSKEY_REAUTH_NOT_ALLOWED' when the user has no
+--        approved key yet (SEC-AUTH-052).
 --     Unchanged: another user's key raises 42501; the same credential_id under another passkey_id raises 23505.
 --
 -- This migration changes no existing behaviour for anything that calls passkey_approve with a fresh key (the 1a triggers,
@@ -111,10 +115,10 @@ DECLARE
   v_cred bytea;
   v_min integer;
 BEGIN
-  -- Window approvals are serialised per user, and the count below is read under this lock (SEC-AUTH-041).
-  IF p_via = 'window' THEN
-    PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::text, 0));
-  END IF;
+  -- Every approval (window, reauth, script) is serialised per user under one namespaced lock, and the counts below are
+  -- read under it (SEC-AUTH-041, SEC-AUTH-052). The 'passkey_approve:' prefix keeps this key apart from any other feature
+  -- that locks on hashtextextended(uuid::text, 0).
+  PERFORM pg_advisory_xact_lock(hashtextextended('passkey_approve:' || p_user_id::text, 0));
   SELECT c.user_id, c.credential_id INTO v_owner, v_cred
     FROM auth.webauthn_credentials c WHERE c.id = p_passkey_id;
   IF NOT FOUND OR v_owner IS DISTINCT FROM p_user_id THEN
@@ -128,6 +132,11 @@ BEGIN
   -- A row for this passkey with another credential_id is stale: say so instead of passing silently.
   IF EXISTS (SELECT 1 FROM private.approved_passkeys a WHERE a.passkey_id = p_passkey_id AND a.credential_id <> v_cred) THEN
     RAISE EXCEPTION 'passkey_approve: stale approval for this passkey' USING ERRCODE = '23505';
+  END IF;
+  -- reauth only adds a key for a user who already has an approved one. The first keys of a staff member come in only by
+  -- window or script. The caller (passkey-recent-auth.ts) checks the 5 minute passkey re-authentication (SEC-AUTH-052).
+  IF p_via = 'reauth' AND public.passkey_approved_count(p_user_id) < 1 THEN
+    RAISE EXCEPTION 'PASSKEY_REAUTH_NOT_ALLOWED' USING ERRCODE = '42501';
   END IF;
   IF p_via = 'window'
      AND NOT EXISTS (SELECT 1 FROM private.approved_passkeys a WHERE a.passkey_id = p_passkey_id) THEN

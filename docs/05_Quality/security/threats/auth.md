@@ -756,6 +756,20 @@ flowchart LR
 | 状態 | 推定 |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-8-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 8。作り手の判断: 再試行は注文のメールと同じ考えで揺らぎなし、`dead` の点検は段3） |
 
+### THR-AUTH-051 鍵の承認の競りと、入り直しの承認の悪用で、消えた鍵や認めていない店員の鍵が数えに入る
+
+| 属性 | 値 |
+| --- | --- |
+| 守るもの | 設計 5-5（認めた鍵の数え方）・認めた鍵の表 `private.approved_passkeys`（外部キーが無い） |
+| 脅威 | (1) 鍵の削除と `passkey_approve('reauth')`・`('script')` が同時に走ると、消えた鍵の承認の行が残る（`window` だけが錠を取っていた）。(2) 錠の鍵が `hashtextextended(uuid::text, 0)` のままだと、ほかの機能が同じ鍵で錠を取った時に無関係な処理が待たされる・混ざる。(3) 認めた鍵が0本の店員でも、入り直しの印だけで `reauth` の承認が通り、窓を通らずに最初の鍵を足せる |
+| 起こり方 | 錠を `window` の枝だけで取る・錠の鍵に名前空間が無い・`reauth` の枝が鍵の本数を確かめない |
+| 影響 | 消えた鍵が数えに入って2本の条件が偽りで満たされる、窓の外で最初の鍵が足される |
+| 対策 | SEC-AUTH-052（3つの枝がすべて同じ名前空間付きの錠を最初に取る・`reauth` は認めた鍵が1本以上の時だけ・外れたら `42501` `PASSKEY_REAUTH_NOT_ALLOWED`）、DD-AUTH-069。残る危険: 入り直しが5分以内かの確かめは窓口（`passkey-recent-auth.ts`）にあり、DB の関数は本数だけ確かめる。鍵の発行側の錠との競りは Task 2 の試験で確かめる |
+| ASVS | V3.3.1・V4.1.1（当てはめは推定） |
+| 根拠 | 段3a の Task 1。段1b の最終レビューからの持ち越し（台帳の行 1l） |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-1-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 1） |
+
 ## 未確認事項
 
 - パスキーの知らせの worker が止まった時に、店が気づく印（heartbeat）と、`dead` の行の点検（THR-AUTH-050）。段3で作る（台帳の「4-2 パスキー段2から先への持ち越し」）

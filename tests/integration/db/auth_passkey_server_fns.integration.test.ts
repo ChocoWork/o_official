@@ -277,6 +277,72 @@ describeLocalDb('passkey server endpoint functions', () => {
     }
   }, 60000);
 
+  describe('SEC-AUTH-052 passkey_approve lock namespace and reauth', () => {
+    const REAUTH_MSG = 'PASSKEY_REAUTH_NOT_ALLOWED';
+
+    test('DATA-AUTH-018 SEC-AUTH-052 reauth is refused (42501) for a user with no approved key, and no row is added', async () => {
+      const u = await user('admin');
+      const k = await key(u);
+      await expect(approve(u, k.id, 'reauth')).rejects.toMatchObject({ code: '42501', message: REAUTH_MSG });
+    });
+
+    test('DATA-AUTH-018 SEC-AUTH-052 reauth passes for a user who already has one approved key', async () => {
+      const u = await user('admin');
+      const k1 = await key(u);
+      const k2 = await key(u);
+      await approve(u, k1.id, 'script');
+      await approve(u, k2.id, 'reauth');
+      expect((await db().query('select approved_via from private.approved_passkeys where passkey_id = $1', [k2.id])).rows[0].approved_via).toBe('reauth');
+    });
+
+    test('DATA-AUTH-018 SEC-AUTH-052 window and script still pass with zero approved keys', async () => {
+      const u = await user('admin');
+      const k1 = await key(u);
+      const k2 = await key(u);
+      await approve(u, k1.id, 'window');
+      await approve(u, k2.id, 'script');
+      expect((await db().query('select public.passkey_approved_count($1) as n', [u])).rows[0].n).toBe(2);
+    });
+
+    test('DATA-AUTH-018 SEC-AUTH-052 the body uses the namespaced advisory lock key', async () => {
+      const r = await db().query(`select prosrc from pg_proc where oid = 'public.passkey_approve(uuid,uuid,text)'::regprocedure`);
+      expect(r.rows[0].prosrc).toContain("hashtextextended('passkey_approve:'");
+      expect(r.rows[0].prosrc).not.toMatch(/hashtextextended\(p_user_id::text/);
+    });
+
+    test.each(['window', 'reauth', 'script'])('DATA-AUTH-018 SEC-AUTH-052 via %s waits for the namespaced lock held by another connection and leaves no row for a deleted key', async (via) => {
+      const a = await connect();
+      const b = await connect();
+      const setup = await connect();
+      let u = '';
+      try {
+        u = await user('admin', {}, setup);
+        await key(u, setup).then((k) => approve(u, k.id, 'script', setup)); // reauth needs one approved key
+        const target = await key(u, setup);
+        await b.query('begin');
+        await b.query(`select pg_advisory_xact_lock(hashtextextended('passkey_approve:' || $1::text, 0))`, [u]);
+        const pending = approve(u, target.id, via, a).then(() => 'ok', (e: { code?: string }) => e.code ?? 'err');
+        await new Promise((r) => setTimeout(r, 400));
+        await b.query('delete from auth.webauthn_credentials where id = $1', [target.id]);
+        await b.query('commit');
+        expect(await pending).toBe('42501');
+        expect((await setup.query('select count(*)::int as n from private.approved_passkeys where passkey_id = $1', [target.id])).rows[0].n).toBe(0);
+      } finally {
+        await b.query('rollback').catch(() => undefined);
+        if (u) {
+          await setup.query('delete from auth.webauthn_credentials where user_id = $1', [u]);
+          await setup.query('delete from private.approved_passkeys where user_id = $1', [u]);
+          await setup.query('delete from private.passkey_notification_outbox where user_id = $1', [u]);
+          await setup.query('delete from public.user_roles where user_id = $1', [u]);
+          await setup.query('delete from auth.users where id = $1', [u]);
+        }
+        await a.end();
+        await b.end();
+        await setup.end();
+      }
+    }, 30000);
+  });
+
   describe('SEC-AUTH-041 grants and attributes', () => {
     test('DATA-AUTH-018 anon and authenticated cannot call the four functions; service_role can', async () => {
       for (const f of FNS) {

@@ -10,7 +10,7 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-016、SR-AUTH-017、SR-AUTH-018、FR-AUTH-015、FR-AUTH-016、FR-AUTH-017、FR-AUTH-018、FR-AUTH-019、SR-AUTH-019、FR-AUTH-020、FR-AUTH-021、SR-AUTH-020、FR-AUTH-022、DD-AUTH-058、DD-AUTH-052、DD-AUTH-053、DD-AUTH-054、DD-AUTH-055、DD-AUTH-056、DD-AUTH-057、DATA-AUTH-018、SEC-AUTH-041、THR-AUTH-042、SEC-AUTH-042、THR-AUTH-043、SEC-AUTH-043、THR-AUTH-044、SEC-AUTH-044、THR-AUTH-045、SEC-AUTH-045、THR-AUTH-046、SEC-AUTH-046、THR-AUTH-047、SEC-AUTH-047、THR-AUTH-048、ADR-0466、ADR-0467、ADR-0468 |
+| 対応する ID | SR-AUTH-016、SR-AUTH-017、SR-AUTH-018、FR-AUTH-015、FR-AUTH-016、FR-AUTH-017、FR-AUTH-018、FR-AUTH-019、SR-AUTH-019、FR-AUTH-020、FR-AUTH-021、SR-AUTH-020、FR-AUTH-022、DD-AUTH-058、DD-AUTH-069、DD-AUTH-052、DD-AUTH-053、DD-AUTH-054、DD-AUTH-055、DD-AUTH-056、DD-AUTH-057、DATA-AUTH-018、SEC-AUTH-041、THR-AUTH-042、SEC-AUTH-042、THR-AUTH-043、SEC-AUTH-043、THR-AUTH-044、SEC-AUTH-044、THR-AUTH-045、SEC-AUTH-045、THR-AUTH-046、SEC-AUTH-046、THR-AUTH-047、SEC-AUTH-047、THR-AUTH-048、ADR-0466、ADR-0467、ADR-0468 |
 | 対象のコード | 移行 `supabase/migrations/20261117123620_passkey_server_endpoint_fns.sql`、`src/lib/auth/passkey-approval-rpc.ts`、`src/app/api/auth/passkey/login/start/route.ts`、`src/app/api/auth/passkey/login/finish/route.ts`、`src/app/api/auth/passkey/register/start/route.ts`、`register/finish/route.ts`、`src/app/api/auth/passkey/route.ts`、`src/app/api/auth/passkey/[id]/route.ts`、`src/lib/auth/passkey-registration-guard.ts`、`passkey-recent-auth.ts`、`passkey-manage-guard.ts`、`src/features/auth/passkey/browser-start.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-5）、[段1b の計画](../../superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md)、[店員のパスキーの入口](auth-staff-passkey-entry.md) |
 | 調べた時点 | 2026-11-17（手元の DB で結合試験を流した） |
@@ -365,6 +365,28 @@ sequenceDiagram
 - 監査: action `refresh`。終わらせた時は `outcome: failure`・`detail: staff_passkey_required_session_ended`、落ちた時は `outcome: error`・`detail: staff_passkey_required_end_failed`。`metadata` は status だけ
 - 変えない物: 印の無い403・401・5xx・ネットワークの誤りの動き（Cookie を消して 401 `Failed to refresh token`。行は終わらせない）、旗 `AUTH_REQUIRE_APP_SESSION`、お客さんの更新
 - テスト観点: 印つきの403で行・RPC・Cookie・監査 /（`message` の項目名でも）/ 印の無い403・印が頭に無い403・403でない失敗・401・500・JSON でない本文・ネットワークの誤りで行も RPC も呼ばれない / 行の失効・RPC・サービス用クライアントの失敗で Cookie を消して 401 / `auth_session_id` の無い行は RPC を呼ばない / 行が無い時は `end_failed` / E2E で窓の中は200・窓を閉じた後は401と行・`auth.sessions` の消去と、前のトークンの `/api/auth/me` が false
+
+### DD-AUTH-069 `passkey_approve` の錠の鍵の名前空間と、入り直しの承認の本数の確かめ
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-052 |
+| 根拠 | 3つの枝が同じ錠を最初に取れば、鍵の削除との競りで承認の行が残らない。名前空間の接頭辞は、ほかの機能が `hashtextextended(uuid::text, 0)` で錠を取る時に混ざらないため。`reauth` の本数の確かめは、窓を通らない最初の鍵を防ぐため |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-approval-rpc.test.ts`。`approveFailureReason` と `approve` が `reauth_not_allowed` を返す）、結合テスト（`tests/integration/db/auth_passkey_server_fns.integration.test.ts` の SEC-AUTH-052） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-1-brief.md` |
+
+```mermaid
+sequenceDiagram
+    participant H as 窓口
+    participant D as passkey_approve
+    H->>D: 承認（window・reauth・script）
+    D->>D: 錠 hashtextextended('passkey_approve:' || 利用者, 0)
+    D->>D: 鍵の持ち主・別の鍵での承認・古い行を確かめる
+    D->>D: reauth は認めた鍵が1本以上でなければ 42501 PASSKEY_REAUTH_NOT_ALLOWED
+    D->>D: window は上限（2本）を数え直す
+    D-->>H: 行を足して終わる
+```
 
 ## 未確認事項
 
