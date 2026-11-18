@@ -120,7 +120,7 @@ export function completePasskeyNotification(id: string, leaseToken: string): Pro
 }
 
 /**
- * 送れなかった行を再試行に回す（9回目なら `dead`）。`countAttempt` が偽なら回数を数えず（`attempts` を戻し）、すぐ取り出せる状態に戻す（送り手の設定の失敗）。`errorCode` は小文字・数字・`_` の1〜64字（本文・宛先を入れない）。
+ * 送れなかった行を再試行に回す（9回目なら `dead`）。`countAttempt` が偽なら回数を数えず（`attempts` を戻し）、次に取り出せる時刻を「今＋900秒以上かつ共有の一時停止の次に試す時刻より後」にして戻す（送り手の設定の失敗）。`errorCode` は小文字・数字・`_` の1〜64字（本文・宛先を入れない）。
  *
  * @impl IMPL-AUTH-332
  * @design DD-AUTH-066

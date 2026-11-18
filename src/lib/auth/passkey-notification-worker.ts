@@ -41,7 +41,7 @@ export type PasskeyNotificationWorkerDeps = {
   send: (message: OrderEmailMessage) => Promise<OrderEmailSendOutcome>;
   /**
    * 注文のメールの送信の一時停止（上限・鍵・送り元の失敗で止めた。共有）の間なら true。読めなければ false。
-   * 注文のメールの取り出しが毎分、次に試す時刻を先へ進めるので、時刻は見ない。止まっている間は、この worker が自分で1行だけ試す。
+   * 注文のメールの取り出しは、試す時刻が来た時にだけ次に試す時刻を先へ進める（毎分ではない）ので、この worker は時刻を見ない。止まっている間は、この worker が自分で1行だけ試す。
    */
   sendPaused: () => Promise<boolean>;
   disabledReason: () => string | null;

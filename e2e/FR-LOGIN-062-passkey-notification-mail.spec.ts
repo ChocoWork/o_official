@@ -101,8 +101,9 @@ async function outboxStatus(userId: string, kind: string): Promise<string[]> {
 for (const viewport of viewports) {
   test.describe(`FR-LOGIN-062 passkey notification mail (${viewport.name})`, () => {
     let authenticators: VirtualAuthenticator[] = [];
-    // 外した店長・この試験の店員の役割は、afterEach で戻す（試験の時間切れでも流れる）
-    let deactivated: string[] = [];
+    // 外した店長・この試験の店員の役割は、afterEach で戻す（試験の時間切れでも流れる。外した行は (user_id, role_id) で控え、その行だけ戻す。
+    // 試験のプロセスが殺されると戻らないので、その時は `npm run db:reset` で戻す）
+    let deactivated: Array<{ userId: string; roleId: number }> = [];
     let mine: string[] = [];
 
     test.beforeEach(async ({ page }) => {
@@ -118,7 +119,12 @@ for (const viewport of viewports) {
       mine = [];
       if (restore.length === 0 && own.length === 0) return;
       await withLocalDb(async (db) => {
-        if (restore.length > 0) await db.query('update public.user_roles set active = true where user_id = any($1::uuid[])', [restore]);
+        if (restore.length > 0) {
+          await db.query(
+            'update public.user_roles set active = true where (user_id, role_id) in (select * from unnest($1::uuid[], $2::bigint[]))',
+            [restore.map((row) => row.userId), restore.map((row) => row.roleId)],
+          );
+        }
         if (own.length > 0) await db.query('update public.user_roles set active = false where user_id = any($1::uuid[])', [own]);
       });
     });
@@ -189,10 +195,10 @@ for (const viewport of viewports) {
              from public.roles r, auth.users u
             where r.id = ur.role_id and r.code = 'admin' and ur.active and u.id = ur.user_id
               and u.email like '%@example.com' and ur.user_id <> all($1::uuid[])
-        returning ur.user_id`,
+        returning ur.user_id, ur.role_id`,
           [mine],
         );
-        for (const row of result.rows as Array<{ user_id: string }>) deactivated.push(row.user_id);
+        for (const row of result.rows as Array<{ user_id: string; role_id: number }>) deactivated.push({ userId: row.user_id, roleId: Number(row.role_id) });
       });
 
       await addUnapprovedPasskey({ email: staff.email, authenticator: staff.authenticators[0], keepNotifications: true });
