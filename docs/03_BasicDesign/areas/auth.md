@@ -2249,19 +2249,19 @@ flowchart LR
 - 3つの `public` 関数は `service_role` だけが実行できる。移行 E の `has_permission` が `private.staff_idle_ok` を4つ目の条件（認めた鍵の本数の次、`app_session_is_live` の前）で呼ぶ
 - 費用: `has_permission` を `( SELECT ... )` で包まずに呼ぶ決まりが77件あるが、4つ目の条件は ACL と認めた鍵の本数を通った店員だけが払う（お客さん・anon は手前で止まる）。1回は主キーの1行の読みで、`EXPLAIN` の実行計画の件数は増やさない
 
-### ARC-AUTH-013 店員の無操作は、DB の関数 `private.staff_idle_ok` を1つの門にし、`has_permission`・窓口・ページが同じ門を通る
+### ARC-AUTH-013 店員の無操作は、DB の判定（`private.staff_idle_ok_strict`）を1つの門にし、`has_permission`・窓口・ページが同じ判定を通る
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-AUTH-044、SEC-AUTH-055、ADR-0472 |
-| 根拠 | 無操作の判定を窓口ごとに書くと、RLS を直に叩く道が抜ける。判定を DB の1つの関数にし、`has_permission`（RLS）は直に、窓口・ページ（Task 8 で管理 API・店員のパスキーの窓口・`/api/auth/me`・ログインの終わりに配線。DD-AUTH-081）は `staff_idle_check`（確かめと時刻の更新を1回の呼びで）・`staff_idle_peek`（見るだけ）で呼ぶ |
+| 根拠 | 無操作の判定を窓口ごとに書くと、RLS を直に叩く道が抜ける。判定を DB の1つの関数にし、`has_permission`（RLS）は誤りを偽にする包み `private.staff_idle_ok` で、窓口・ページ（Task 8 で管理 API・店員のパスキーの窓口・`/api/auth/me`・ログインの終わりに配線。DD-AUTH-081）は `staff_idle_check`（確かめと時刻の更新を1回の呼びで）・`staff_idle_peek`（見るだけ）で、誤りを例外にする `staff_idle_ok_strict` を呼ぶ（アプリは 503。ログアウトさせない） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_idle.integration.test.ts`、`tests/integration/db/auth_has_permission_passkey.integration.test.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-3-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 3） |
 
 ```mermaid
 flowchart LR
-  H["has_permission<br/>(RLS・移行 E)"] --> O["private.staff_idle_ok<br/>門は1つ"]
+  H["has_permission<br/>(RLS・移行 E)"] --> W["private.staff_idle_ok<br/>誤りを偽にする包み"] --> O["private.staff_idle_ok_strict<br/>判定は1つ"]
   C["staff_idle_check<br/>(管理 API・店員のパスキーの窓口。Task 8)"] --> O
   P["staff_idle_peek<br/>(/api/auth/me)"] --> O
   C --> T["staff_session_touch<br/>60秒の間引き"]

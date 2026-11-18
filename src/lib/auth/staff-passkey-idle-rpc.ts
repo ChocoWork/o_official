@@ -1,6 +1,6 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
-/** 呼び出しの結果。誤り・例外・真偽でない値は `{ ok: false }` で、呼び手が `/login` や 401 の閉じる側に倒す。 */
+/** 呼び出しの結果。誤り・例外・真偽でない値は `{ ok: false }` で、呼び手は 503 / unavailable にする（ログアウトさせない）。 */
 export type StaffIdleResult = { ok: true; value: boolean } | { ok: false };
 
 async function callIdleRpc(name: string, args: Record<string, unknown>): Promise<StaffIdleResult> {
