@@ -65,11 +65,11 @@ describe('/staff/invite 画面', () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
-  test('DD-AUTH-078 500 は「店長に、招待をもう一度出してもらってください」で、同じ合言葉を繰り返せない', async () => {
+  test('DD-AUTH-078 500 は「店長に、もう一度招待を出してもらってください」で、同じ合言葉を繰り返せない', async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 500, body: { cancel: jest.fn() } });
     open(`#${TOKEN}`);
     fireEvent.click(await screen.findByRole('button', { name: '登録を始める' }));
-    expect(await screen.findByText(/店長に、招待をもう一度出してもらってください/)).toBeInTheDocument();
+    expect(await screen.findByText(/店長に、もう一度招待を出してもらってください/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '登録を始める' })).toBeNull();
   });
 
@@ -77,7 +77,7 @@ describe('/staff/invite 画面', () => {
     fetchMock.mockRejectedValue(new Error('net'));
     open(`#${TOKEN}`);
     fireEvent.click(await screen.findByRole('button', { name: '登録を始める' }));
-    expect(await screen.findByText(/店長に、招待をもう一度出してもらってください/)).toBeInTheDocument();
+    expect(await screen.findByText(/店長に、もう一度招待を出してもらってください/)).toBeInTheDocument();
   });
 
   test('DD-AUTH-078 429 は少し待つ文で、ボタンは残る', async () => {
@@ -86,6 +86,27 @@ describe('/staff/invite 画面', () => {
     fireEvent.click(await screen.findByRole('button', { name: '登録を始める' }));
     expect(await screen.findByText(/しばらくしてから/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '登録を始める' })).toBeEnabled();
+  });
+
+  test('DD-AUTH-078 503（回数の見張りが使えない時）も 429 と同じ待つ文で、ボタンは残る', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 503, body: { cancel: jest.fn() } });
+    open(`#${TOKEN}`);
+    fireEvent.click(await screen.findByRole('button', { name: '登録を始める' }));
+    expect(await screen.findByText(/しばらくしてから/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '登録を始める' })).toBeEnabled();
+  });
+
+  test('DD-AUTH-078 説明に、登録は30分以内で、そのあいだ管理画面は使えないと出す', async () => {
+    open(`#${TOKEN}`);
+    expect(await screen.findByText('登録は30分以内に終えてください。このあいだ、管理画面は使えません。')).toBeInTheDocument();
+    expect(screen.getByText('別の端末か、セキュリティキーでの登録をおすすめします。')).toBeInTheDocument();
+  });
+
+  test.each(['//evil.example', '/\\evil.example'])('DD-AUTH-078 redirectTo が %s のように別のホストを指す形なら使わない', async (to) => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ redirectTo: to }) });
+    open(`#${TOKEN}`);
+    fireEvent.click(await screen.findByRole('button', { name: '登録を始める' }));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/staff/register'));
   });
 
   test('DD-AUTH-078 429 で応答に body が無くても、待つ文を出す', async () => {

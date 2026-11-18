@@ -96,7 +96,7 @@ for (const viewport of viewports) {
       await page.goto('/admin/passkeys');
       await expect(page.locator('main ul > li')).toHaveCount(2, NAVIGATION);
       for (const button of await page.getByRole('button', { name: /を削除$/ }).all()) await expect(button).toBeDisabled();
-      await expect(page.getByText('認めた鍵が2本のため、削除できません。先にもう1本追加してください。').first()).toBeVisible();
+      await expect(page.getByText('パスキーは2本以上必要です。先に別のパスキーを登録してください。').first()).toBeVisible();
 
       const list = (await (await page.request.get('/api/auth/passkey', { headers: { 'x-real-ip': uniqueIp() } })).json()) as {
         passkeys: Array<{ id: string }>;
@@ -132,7 +132,7 @@ for (const viewport of viewports) {
       for (const button of await page.getByRole('button', { name: /を削除$/ }).all()) await expect(button).toBeDisabled();
     });
 
-    test(`FR-AUTH-045-AC-05 ${viewport.name}: 5分を過ぎたら、追加は「もう一度パスキーでログインしてから追加してください。」と「パスキーでログインし直す」になる`, async ({ page }) => {
+    test(`FR-AUTH-045-AC-05 ${viewport.name}: 5分を過ぎたら、追加は「安全のため、もう一度パスキーでログインしてから追加してください。」と「パスキーでログインし直す」になる`, async ({ page }) => {
       test.setTimeout(180_000);
       const staff = await staffLoggedIn(page, 2);
       cleanup.push(staff.userId);
@@ -144,7 +144,7 @@ for (const viewport of viewports) {
       await page.goto('/admin/passkeys');
       await expect(page.locator('main ul > li')).toHaveCount(2, NAVIGATION);
       await page.getByRole('button', { name: 'パスキーを追加' }).click();
-      await expect(page.getByText('もう一度パスキーでログインしてから追加してください。')).toBeVisible(NAVIGATION);
+      await expect(page.getByText('安全のため、もう一度パスキーでログインしてから追加してください。')).toBeVisible(NAVIGATION);
       await expect(page.getByRole('link', { name: 'パスキーでログインし直す' })).toHaveAttribute('href', '/login?next=%2Fadmin%2Fpasskeys');
     });
 

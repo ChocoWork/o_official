@@ -30,6 +30,13 @@ describe('DD-AUTH-080 /staff/register のページ（サーバー）', () => {
     expect(mockRedirect).toHaveBeenCalledWith('/login');
   });
 
+  test('DD-AUTH-080 DB が読めない時は /login へ送らず、「しばらくしてからお試しください。」を出す', async () => {
+    mockAccess.mockResolvedValue({ ok: false, unavailable: true });
+    const element = (await StaffRegisterPage()) as React.ReactElement;
+    expect(mockRedirect).not.toHaveBeenCalled();
+    expect(JSON.stringify(element)).toContain('しばらくしてからお試しください。');
+  });
+
   test('DD-AUTH-080 窓が開いていれば、認めた鍵の本数を画面に渡す', async () => {
     mockAccess.mockResolvedValue({ ok: true, registered: 1 });
     const element = (await StaffRegisterPage()) as React.ReactElement<{ initialRegistered: number }>;

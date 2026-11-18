@@ -70,7 +70,7 @@ describe('DD-AUTH-082 StaffPasskeyManager', () => {
     await renderWith([key('a', 'Mac'), key('b', 'iPhone')]);
     for (const item of screen.getAllByRole('listitem')) {
       expect(within(item).getByRole('button', { name: /を削除/ })).toBeDisabled();
-      expect(within(item).getByText(/認めた鍵が2本のため、削除できません/)).toBeInTheDocument();
+      expect(within(item).getByText(/パスキーは2本以上必要です。先に別のパスキーを登録してください。/)).toBeInTheDocument();
     }
     expect(mockDelete).not.toHaveBeenCalled();
   });
@@ -110,6 +110,20 @@ describe('DD-AUTH-082 StaffPasskeyManager', () => {
     await waitFor(() => expect(mockLoad).toHaveBeenCalledTimes(2));
   });
 
+  test.each([
+    ['rate_limited', 'ただいま処理できません。しばらくしてからお試しください。'],
+    ['unavailable', 'ただいま処理できません。しばらくしてからお試しください。'],
+    ['not_found', 'このパスキーは見つかりません。一覧を読み込み直しました。'],
+    ['unauthorized', 'ログインの有効期限が切れました。もう一度ログインしてください。'],
+  ])('DD-AUTH-082 削除の失敗 %s は、下限の文ではなく状態に合った文を出す', async (reason, text) => {
+    await renderWith([key('a', 'Mac'), key('b', 'iPhone'), key('c', 'Key')]);
+    mockDelete.mockResolvedValue({ ok: false, reason });
+    fireEvent.click(screen.getByRole('button', { name: 'Macを削除' }));
+    fireEvent.click(screen.getByRole('button', { name: '削除する' }));
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    expect(screen.queryByText('削除できませんでした。認めた鍵は2本以上が必要です。')).toBeNull();
+  });
+
   test('DD-AUTH-082 名前を変えられる', async () => {
     await renderWith([key('a', 'Mac'), key('b', 'iPhone')]);
     fireEvent.click(screen.getByRole('button', { name: 'Macの名前を変更' }));
@@ -129,11 +143,11 @@ describe('DD-AUTH-082 StaffPasskeyManager', () => {
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(3));
   });
 
-  test('DD-AUTH-082 追加が reauth_required なら、「もう一度パスキーでログインしてから追加してください。」とログインし直すリンクを出す', async () => {
+  test('DD-AUTH-082 追加が reauth_required なら、「安全のため、もう一度パスキーでログインしてから追加してください。」とログインし直すリンクを出す', async () => {
     await renderWith([key('a', 'Mac'), key('b', 'iPhone')]);
     mockRegister.mockResolvedValue({ ok: false, reason: 'reauth_required' });
     fireEvent.click(screen.getByRole('button', { name: 'パスキーを追加' }));
-    expect(await screen.findByText('もう一度パスキーでログインしてから追加してください。')).toBeInTheDocument();
+    expect(await screen.findByText('安全のため、もう一度パスキーでログインしてから追加してください。')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'パスキーでログインし直す' })).toHaveAttribute('href', '/login?next=%2Fadmin%2Fpasskeys');
   });
 

@@ -15,26 +15,31 @@
 --   The idle clock is an app table, not auth.sessions.refreshed_at (GoTrue moves that on every background token refresh, even for an idle tab).
 -- public.staff_session_touch(p_session_id, p_user_id, p_min_interval_seconds default 60) boolean   service_role. Insert when no row;
 --   update when the row is at least the interval old (true); otherwise false. A write also deletes that user's rows older than 2 days.
--- private.staff_idle_ok(p_session_id uuid) boolean   STABLE, SECURITY DEFINER. Row present: last_seen_at > now() - staff_idle_seconds.
+-- private.staff_idle_ok_strict(p_session_id uuid) boolean   STABLE, SECURITY DEFINER. NO error handler: a DB error is raised (the caller maps it
+--   to 503, never to "idle"). private.staff_idle_ok(p_session_id) wraps it and catches every error -> false (fail closed with a RAISE WARNING);
+--   only has_permission (migration E) and RLS use that catching form. The two public idle functions below use the strict form.
+-- Rule of the strict function (and of the catching one when nothing fails). Row present: last_seen_at > now() - staff_idle_seconds.
 --   No row: the same compare on auth.sessions.created_at ONLY (never refreshed_at, which a background refresh keeps moving). A session that never
 --   went through the login finish (E2E, local dev, DB-integration JWTs) or whose first write has not happened passes for one hour after it was
 --   created; the first idle_check writes the row. Not in auth.sessions, or created_at NULL: false.
--- public.staff_idle_check(p_session_id, p_user_id) boolean   service_role. staff_idle_ok, then (when true) the same throttled touch. One call.
+-- public.staff_idle_check(p_session_id, p_user_id) boolean   service_role. staff_idle_ok_strict, then (when true) the same throttled touch. One call.
 --   If the touch write FAILS the error is raised (never true): the app gate maps it to 503 (temporary, fails closed). A throttled touch is not a failure.
 --   private.staff_session_touch_core (no execute for anyone) does the upsert without an error handler; staff_session_touch wraps it and returns false on error.
--- public.staff_idle_peek(p_session_id) boolean   service_role. staff_idle_ok only; never moves the clock (/api/auth/me).
--- Idle seconds (3600) are read from private.passkey_staff_settings(). All fail closed (any error -> false, with a RAISE WARNING).
--- All: STABLE, SECURITY DEFINER, owner postgres, search_path empty, fail closed (any error -> false, with a RAISE WARNING
--- carrying SQLSTATE and SQLERRM; entry_ok has no handler of its own because both parts already catch).
+-- public.staff_idle_peek(p_session_id) boolean   service_role. staff_idle_ok_strict only; never moves the clock (/api/auth/me).
+-- Idle seconds (3600) are read from private.passkey_staff_settings().
+-- Fail closed: the three entry functions and private.staff_idle_ok catch any error and return false (with a RAISE WARNING carrying
+-- SQLSTATE and SQLERRM; entry_ok has no handler of its own because both parts already catch). public.staff_idle_check and
+-- public.staff_idle_peek do NOT catch: a DB error is raised, so the app answers 503 (temporary) instead of logging the staff member out.
+-- staff_session_touch returns false on error (a failed touch only skips a write). All: SECURITY DEFINER, owner postgres, search_path empty.
 -- 86400 and 2 are read from private.passkey_staff_settings(); the TS constants come from defaultStaffPasskeySettings().
 --
--- Grants: execute on the private functions (the three entry functions and private.staff_idle_ok) is revoked from PUBLIC, anon,
+-- Grants: execute on the private functions (the three entry functions, private.staff_idle_ok and private.staff_idle_ok_strict) is revoked from PUBLIC, anon,
 -- authenticated AND service_role (same as private.app_session_is_live). has_permission is SECURITY DEFINER owned by postgres, so
 -- migration E can call these from it; nobody else needs them. The three public idle functions are granted to service_role only.
 --
 -- ROLLBACK (after rolling back E, because E's has_permission calls the functions):
 --   DROP FUNCTION public.staff_idle_peek(uuid), public.staff_idle_check(uuid, uuid), public.staff_session_touch(uuid, uuid, integer),
---     private.staff_idle_ok(uuid), private.staff_session_touch_core(uuid, uuid, integer), private.staff_passkey_entry_ok(uuid, jsonb), private.staff_passkey_count_ok(uuid),
+--     private.staff_idle_ok(uuid), private.staff_idle_ok_strict(uuid), private.staff_session_touch_core(uuid, uuid, integer), private.staff_passkey_entry_ok(uuid, jsonb), private.staff_passkey_count_ok(uuid),
 --     private.staff_passkey_amr_ok(jsonb);
 --   DROP TABLE private.staff_session_activity;
 -- NOT applied to production until stage 1b and 3 are done.
@@ -118,7 +123,7 @@ CREATE INDEX IF NOT EXISTS staff_session_activity_user_seen_idx ON private.staff
 ALTER TABLE private.staff_session_activity ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE private.staff_session_activity FROM PUBLIC, anon, authenticated, service_role;
 
-CREATE OR REPLACE FUNCTION private.staff_idle_ok(p_session_id uuid)
+CREATE OR REPLACE FUNCTION private.staff_idle_ok_strict(p_session_id uuid)
 RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
 AS $$
 DECLARE
@@ -141,6 +146,14 @@ BEGIN
     END IF;
   END IF;
   RETURN COALESCE(v_seen > now() - pg_catalog.make_interval(secs => v_idle), false);
+END
+$$;
+
+CREATE OR REPLACE FUNCTION private.staff_idle_ok(p_session_id uuid)
+RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  RETURN private.staff_idle_ok_strict(p_session_id);
 EXCEPTION WHEN OTHERS THEN
   RAISE WARNING 'staff_idle_ok failed: % %', SQLSTATE, SQLERRM;
   RETURN false;
@@ -186,7 +199,7 @@ CREATE OR REPLACE FUNCTION public.staff_idle_check(p_session_id uuid, p_user_id 
 RETURNS boolean LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
 AS $$
 BEGIN
-  IF p_user_id IS NULL OR NOT private.staff_idle_ok(p_session_id) THEN
+  IF p_user_id IS NULL OR NOT private.staff_idle_ok_strict(p_session_id) THEN
     RETURN false;
   END IF;
   -- a failed write is NOT swallowed: it raises, so the caller never treats the check as passed (a throttled write returns false and is fine)
@@ -198,19 +211,21 @@ $$;
 CREATE OR REPLACE FUNCTION public.staff_idle_peek(p_session_id uuid)
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
 AS $$
-  SELECT private.staff_idle_ok(p_session_id);
+  SELECT private.staff_idle_ok_strict(p_session_id);
 $$;
 
 ALTER FUNCTION private.staff_passkey_amr_ok(jsonb) OWNER TO postgres;
 ALTER FUNCTION private.staff_passkey_count_ok(uuid) OWNER TO postgres;
 ALTER FUNCTION private.staff_passkey_entry_ok(uuid, jsonb) OWNER TO postgres;
 ALTER FUNCTION private.staff_idle_ok(uuid) OWNER TO postgres;
+ALTER FUNCTION private.staff_idle_ok_strict(uuid) OWNER TO postgres;
 ALTER FUNCTION private.staff_session_touch_core(uuid, uuid, integer) OWNER TO postgres;
 ALTER FUNCTION public.staff_session_touch(uuid, uuid, integer) OWNER TO postgres;
 ALTER FUNCTION public.staff_idle_check(uuid, uuid) OWNER TO postgres;
 ALTER FUNCTION public.staff_idle_peek(uuid) OWNER TO postgres;
 REVOKE ALL ON FUNCTION private.staff_passkey_amr_ok(jsonb), private.staff_passkey_count_ok(uuid),
-  private.staff_passkey_entry_ok(uuid, jsonb), private.staff_idle_ok(uuid), private.staff_session_touch_core(uuid, uuid, integer) FROM PUBLIC, anon, authenticated, service_role;
+  private.staff_passkey_entry_ok(uuid, jsonb), private.staff_idle_ok(uuid), private.staff_idle_ok_strict(uuid),
+  private.staff_session_touch_core(uuid, uuid, integer) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.staff_session_touch(uuid, uuid, integer), public.staff_idle_check(uuid, uuid),
   public.staff_idle_peek(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.staff_session_touch(uuid, uuid, integer), public.staff_idle_check(uuid, uuid),
@@ -222,7 +237,7 @@ DECLARE
   f text;
 BEGIN
   FOREACH f IN ARRAY ARRAY['private.staff_passkey_amr_ok(jsonb)', 'private.staff_passkey_count_ok(uuid)',
-    'private.staff_passkey_entry_ok(uuid,jsonb)', 'private.staff_idle_ok(uuid)'] LOOP
+    'private.staff_passkey_entry_ok(uuid,jsonb)', 'private.staff_idle_ok(uuid)', 'private.staff_idle_ok_strict(uuid)'] LOOP
     IF NOT EXISTS (
          SELECT 1 FROM pg_proc p
           WHERE p.oid = f::regprocedure AND p.prosecdef AND p.provolatile = 's' AND p.proowner = 'postgres'::regrole

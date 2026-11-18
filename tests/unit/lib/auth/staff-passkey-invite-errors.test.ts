@@ -17,6 +17,7 @@ describe('staff invite DB failure reasons', () => {
   it('DD-AUTH-070 発行の失敗の文を理由にし、知らない文・null・undefined は failed にする', () => {
     expect(staffInviteIssueFailureReason('STAFF_INVITE_KIND_FORBIDDEN')).toBe('kind_forbidden');
     expect(staffInviteIssueFailureReason('STAFF_ALREADY_STAFF')).toBe('already_staff');
+    expect(staffInviteIssueFailureReason('STAFF_NOT_STAFF')).toBe('not_staff');
     expect(staffInviteIssueFailureReason('LAST_ADMIN_REQUIRED')).toBe('last_admin');
     expect(staffInviteIssueFailureReason('SELF_ROLE_CHANGE_FORBIDDEN')).toBe('self');
     expect(staffInviteIssueFailureReason('ROLE_PERMISSION_FORBIDDEN')).toBe('forbidden');

@@ -3,6 +3,7 @@
 export type StaffInviteIssueReason =
   | 'kind_forbidden'
   | 'already_staff'
+  | 'not_staff'
   | 'last_admin'
   | 'self'
   | 'forbidden'
@@ -26,6 +27,7 @@ export type PasskeyDeleteFloorReason = 'min_keys' | 'not_found' | 'failed';
 const ISSUE_REASONS: Readonly<Record<string, StaffInviteIssueReason>> = {
   STAFF_INVITE_KIND_FORBIDDEN: 'kind_forbidden',
   STAFF_ALREADY_STAFF: 'already_staff',
+  STAFF_NOT_STAFF: 'not_staff',
   LAST_ADMIN_REQUIRED: 'last_admin',
   SELF_ROLE_CHANGE_FORBIDDEN: 'self',
   ROLE_PERMISSION_FORBIDDEN: 'forbidden',

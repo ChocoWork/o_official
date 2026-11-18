@@ -8,7 +8,7 @@
  * 認めた鍵を消すと認めた本数が2本未満になるなら、ボタンを無効にして理由を出す。認めていない鍵は常に消せる（疑わしい鍵を外せる）。
  * 最後に決めるのは DB（`passkey_delete_with_floor`）で、窓口が断ったら（409 など）失敗の文を出して一覧を引き直す。
  * 追加は段2の `registerPasskey`。店員の追加は5分以内のパスキーでの入り直しが要るので、`reauth_required` を
- * 「もう一度パスキーでログインしてから追加してください。」と「パスキーでログインし直す」に読み替える。
+ * 「安全のため、もう一度パスキーでログインしてから追加してください。」と「パスキーでログインし直す」に読み替える。
  * 成功・失敗の知らせは自動では消さない（WCAG 2.2.1）。`challenge_id`・`credential`・トークンは画面にもログにも出さない。
  */
 "use client";
@@ -36,9 +36,12 @@ const MSG_RENAME_FAILED = "名前を変更できませんでした。もう一�
 const MSG_NAME_INVALID = "名前は1〜64字（日本語は40字まで）で入力してください。";
 const MSG_DELETED = "パスキーを削除しました。";
 const MSG_DELETE_FAILED = "削除できませんでした。認めた鍵は2本以上が必要です。";
+const MSG_DELETE_BUSY = "ただいま処理できません。しばらくしてからお試しください。";
+const MSG_DELETE_NOT_FOUND = "このパスキーは見つかりません。一覧を読み込み直しました。";
+const MSG_DELETE_UNAUTHORIZED = "ログインの有効期限が切れました。もう一度ログインしてください。";
 const MSG_UNSUPPORTED_ADD = "この端末ではパスキーを追加できません。";
-const MSG_REAUTH = "もう一度パスキーでログインしてから追加してください。";
-const MSG_FLOOR = "認めた鍵が2本のため、削除できません。先にもう1本追加してください。";
+const MSG_REAUTH = "安全のため、もう一度パスキーでログインしてから追加してください。";
+const MSG_FLOOR = "パスキーは2本以上必要です。先に別のパスキーを登録してください。";
 const MSG_NOT_APPROVED = "この鍵ではログインできません。心当たりがなければ削除してください。";
 
 function addFailureMessage(reason: RegisterFailureReason): string {
@@ -188,7 +191,15 @@ export default function StaffPasskeyManager() {
       setNotice(MSG_DELETED);
       setRefocusTarget("staff-passkey-heading");
     } else {
-      setDeleteError(MSG_DELETE_FAILED);
+      setDeleteError(
+        result.reason === "rate_limited" || result.reason === "unavailable"
+          ? MSG_DELETE_BUSY
+          : result.reason === "not_found"
+            ? MSG_DELETE_NOT_FOUND
+            : result.reason === "unauthorized"
+              ? MSG_DELETE_UNAUTHORIZED
+              : MSG_DELETE_FAILED,
+      );
       setRefocusTarget(`staff-passkey-delete-${target.id}`);
     }
     // 成否にかかわらず数え直す（断られた時は、本数が画面と食い違っている）。

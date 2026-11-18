@@ -59,11 +59,11 @@ describe('DD-AUTH-082 StaffOneMoreKey', () => {
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
-  test('DD-AUTH-082 reauth_required は「もう一度パスキーでログインしてから追加してください。」と「パスキーでログインし直す」', async () => {
+  test('DD-AUTH-082 reauth_required は「安全のため、もう一度パスキーでログインしてから追加してください。」と「パスキーでログインし直す」', async () => {
     mockRegister.mockResolvedValue({ ok: false, reason: 'reauth_required' });
     render(<StaffOneMoreKey />);
     fireEvent.click(screen.getByRole('button', { name: '2本目を登録' }));
-    expect(await screen.findByText('もう一度パスキーでログインしてから追加してください。')).toBeInTheDocument();
+    expect(await screen.findByText('安全のため、もう一度パスキーでログインしてから追加してください。')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'パスキーでログインし直す' })).toHaveAttribute('href', '/login?next=%2Fadmin%2Fpasskeys');
     expect(mockReplace).not.toHaveBeenCalled();
   });

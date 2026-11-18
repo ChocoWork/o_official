@@ -5,7 +5,7 @@
  * @impl IMPL-AUTH-386
  * @design DD-AUTH-082
  * @remarks `/admin/passkeys?more=1` が、認めた鍵が1本の店員に出す。鍵の登録は段2の `registerPasskey` を使い、
- * 窓口の `reauth_required`（店員の追加は5分以内のパスキーでの入り直しが要る）を「もう一度パスキーでログインしてから追加してください。」と
+ * 窓口の `reauth_required`（店員の追加は5分以内のパスキーでの入り直しが要る）を「安全のため、もう一度パスキーでログインしてから追加してください。」と
  * 「パスキーでログインし直す」に読み替える。登録できたらログインの印（認めた鍵の本数の印を含む）を更新してから `/admin` へ移る。
  * 更新できなければ移らず、入り直しをすすめる（古い印のまま入れないため）。`challenge_id`・`credential`・トークンは画面にもログにも出さない。
  */
@@ -25,7 +25,7 @@ import "@/components/AuthForm.css";
 
 const REAUTH_HREF = buildLoginHref("/admin/passkeys", "http://localhost");
 const MSG_UNSUPPORTED = "この端末ではパスキーを登録できません。別の端末か、セキュリティキーでお試しください。";
-const MSG_REAUTH = "もう一度パスキーでログインしてから追加してください。";
+const MSG_REAUTH = "安全のため、もう一度パスキーでログインしてから追加してください。";
 const MSG_ADDED_RELOGIN = "登録できました。もう一度パスキーでログインしてください。";
 
 function failureMessage(reason: RegisterFailureReason): string {

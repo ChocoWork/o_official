@@ -37,12 +37,21 @@ describe('DD-AUTH-080 登録の画面の入口の確かめ（readStaffRegisterAc
     ['sub が無い', () => verify.mockResolvedValue({ ok: true, claims: { session_id: SESSION_ID } })],
     ['session_id が無い', () => verify.mockResolvedValue({ ok: true, claims: { sub: USER_ID } })],
     ['セッションが失効', () => liveness.mockResolvedValue('revoked')],
-    ['セッションが確認できない', () => liveness.mockResolvedValue('unavailable')],
     ['窓が閉じている', () => opened.mockResolvedValue({ ok: true, value: false })],
-    ['窓が読めない', () => opened.mockResolvedValue({ ok: false })],
-    ['本数が読めない', () => counted.mockResolvedValue({ ok: false })],
   ])('DD-AUTH-080 %s時は ok: false（閉じる側）', async (_label, arrange) => {
     arrange();
     await expect(readStaffRegisterAccess()).resolves.toEqual({ ok: false });
+  });
+});
+
+describe('DD-AUTH-080 登録の画面の入口: DB が読めない時は閉じず、使えないと知らせる', () => {
+  test.each([
+    ['トークンの確認が使えない', () => verify.mockResolvedValue({ ok: false, reason: 'unavailable' })],
+    ['セッションが確認できない', () => liveness.mockResolvedValue('unavailable')],
+    ['窓が読めない', () => opened.mockResolvedValue({ ok: false })],
+    ['本数が読めない', () => counted.mockResolvedValue({ ok: false })],
+  ])('DD-AUTH-080 %s時は { ok: false, unavailable: true }（/login へ送らない）', async (_label, arrange) => {
+    arrange();
+    await expect(readStaffRegisterAccess()).resolves.toEqual({ ok: false, unavailable: true });
   });
 });

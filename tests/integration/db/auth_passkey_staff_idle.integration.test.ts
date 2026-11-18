@@ -196,6 +196,26 @@ describeLocalDb('passkey staff idle functions (migration D)', () => {
     expect((await db().query('select public.staff_idle_peek($1) as ok', [s])).rows[0].ok).toBe(true);
   });
 
+  test('DATA-AUTH-021 DB の誤りは、staff_idle_peek・staff_idle_check では例外になり（呼び手が 503）、has_permission 用の staff_idle_ok では偽になる', async () => {
+    const u = await user();
+    const s = await authSession(u, { refreshedMinutesAgo: null, createdMinutesAgo: 5 });
+    await db().query(
+      `create or replace function private.passkey_staff_settings() returns jsonb language plpgsql as $$ begin raise exception 'idle_boom'; end $$`,
+    );
+    for (const sql of ['select public.staff_idle_peek($1) as ok', 'select public.staff_idle_check($1, $2) as ok']) {
+      await db().query('savepoint idle_err');
+      let message = '';
+      try {
+        await db().query(sql, sql.includes('$2') ? [s, u] : [s]);
+      } catch (caught) {
+        message = (caught as { message?: string }).message ?? 'unknown';
+      }
+      await db().query('rollback to savepoint idle_err');
+      expect(message).toBe('idle_boom');
+    }
+    expect((await db().query('select private.staff_idle_ok($1) as ok', [s])).rows[0].ok).toBe(false);
+  });
+
   test('DATA-AUTH-021 staff_idle_peek は何度呼んでも時刻を進めず、行も作らない', async () => {
     const u = await user();
     const s = await authSession(u, { refreshedMinutesAgo: 5 });
@@ -234,6 +254,13 @@ describeLocalDb('passkey staff idle functions (migration D)', () => {
               (select prosecdef and provolatile = 's' from pg_proc where oid = 'private.staff_idle_ok(uuid)'::regprocedure) as stable_definer`,
     );
     expect(p.rows[0]).toEqual({ service_role: false, authenticated: false, anon: false, stable_definer: true });
+    const strict = await db().query(
+      `select has_function_privilege('service_role', 'private.staff_idle_ok_strict(uuid)', 'EXECUTE') as service_role,
+              has_function_privilege('authenticated', 'private.staff_idle_ok_strict(uuid)', 'EXECUTE') as authenticated,
+              has_function_privilege('anon', 'private.staff_idle_ok_strict(uuid)', 'EXECUTE') as anon,
+              (select prosecdef and provolatile = 's' from pg_proc where oid = 'private.staff_idle_ok_strict(uuid)'::regprocedure) as stable_definer`,
+    );
+    expect(strict.rows[0]).toEqual({ service_role: false, authenticated: false, anon: false, stable_definer: true });
     const t = await db().query(
       `select relrowsecurity,
               has_table_privilege('anon', 'private.staff_session_activity', 'SELECT') as anon_select,

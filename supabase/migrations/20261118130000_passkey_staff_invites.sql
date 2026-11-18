@@ -33,7 +33,8 @@
 --       9. insert the new invite row and return its id.
 --   public.staff_invite_issue(user, role, kind, issued_by, reason, token_hash, ttl_seconds default 86400) returns uuid
 --     kind must be invite | redo | promote (anything else, last_resort included, raises STAFF_INVITE_KIND_FORBIDDEN, so the
---     app key cannot reach the last resort). A current staff member needs kind redo (STAFF_ALREADY_STAFF otherwise).
+--     app key cannot reach the last resort). A current staff member needs kind redo (STAFF_ALREADY_STAFF otherwise); kind redo for a person who is not
+--     current staff raises STAFF_NOT_STAFF (checked under the locks, so a concurrent demote is not overturned).
 --   public.staff_invite_consume(token_hash) returns (invite_id, user_id, role_code): marks an unused, uncancelled, unexpired
 --     row consumed and returns it; otherwise no row. It does NOT open a window.
 --   public.staff_invite_bind_window(invite_id, session_id): plan B step 2. For a consumed, unbound, live invite, stores the
@@ -243,6 +244,10 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtextextended('passkey_approve:' || p_user_id::text, 0));
   IF p_kind <> 'redo' AND public.passkey_is_staff(p_user_id) THEN
     RAISE EXCEPTION USING MESSAGE = 'STAFF_ALREADY_STAFF', ERRCODE = 'P0001';
+  END IF;
+  -- redo is for a CURRENT staff member. Checked here, under the locks, so a demote that committed while this call waited is not overturned.
+  IF p_kind = 'redo' AND NOT public.passkey_is_staff(p_user_id) THEN
+    RAISE EXCEPTION USING MESSAGE = 'STAFF_NOT_STAFF', ERRCODE = 'P0001';
   END IF;
   RETURN private.staff_invite_issue_core(p_user_id, p_role_code, p_kind, p_issued_by, p_reason, p_token_hash, p_ttl_seconds, false);
 END

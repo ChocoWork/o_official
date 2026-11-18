@@ -42,7 +42,7 @@ sequenceDiagram
     C-->>W: 新しい招待の id
 ```
 
-- 理由の写し: `staffInviteIssueFailureReason`（IMPL-AUTH-340）が `STAFF_INVITE_KIND_FORBIDDEN`・`STAFF_ALREADY_STAFF`・`LAST_ADMIN_REQUIRED`・`SELF_ROLE_CHANGE_FORBIDDEN`・`ROLE_PERMISSION_FORBIDDEN`・`USER_NOT_FOUND` を理由にし、知らない文は `failed`
+- 理由の写し: `staffInviteIssueFailureReason`（IMPL-AUTH-340）が `STAFF_INVITE_KIND_FORBIDDEN`・`STAFF_ALREADY_STAFF`・`STAFF_NOT_STAFF`（`not_staff`）・`LAST_ADMIN_REQUIRED`・`SELF_ROLE_CHANGE_FORBIDDEN`・`ROLE_PERMISSION_FORBIDDEN`・`USER_NOT_FOUND` を理由にし、知らない文は `failed`
 
 ### DD-AUTH-071 消費・結び・有効化の順番と、有効化の門
 
@@ -249,10 +249,10 @@ sequenceDiagram
     Note over R,G: 消費の後の失敗は endAuthSession で終わらせ、招待は使用済みのまま 500
 ```
 
-- 画面（IMPL-AUTH-367・368）: `src/app/staff/invite/page.tsx`（検索に載せない）、`StaffInviteScreen`（`#` を読んで消す。素の `fetch` で1回だけ POST。400 は使えない文、500 と通信の失敗は「招待をもう一度出してもらってください」でボタンを消す、429 は待つ文でボタンは残す）
+- 画面（IMPL-AUTH-367・368）: `src/app/staff/invite/page.tsx`（検索に載せない）、`StaffInviteScreen`（`#` を読んで消す。素の `fetch` で1回だけ POST。400 は使えない文、500 と通信の失敗は「店長に、もう一度招待を出してもらってください。」でボタンを消す、429 と 503 は待つ文でボタンは残す。`redirectTo` は `/` で始まり `//` と `/\` で始まらない時だけ使う）
 - 窓口（IMPL-AUTH-369）: 回数（IP 20回/10分 → ハッシュごと 5回/10分）、`consumeStaffInvite`（IMPL-AUTH-397）、`createInviteSession`（IMPL-AUTH-370）、`bindStaffInviteWindow`（IMPL-AUTH-398）、`persistSessionAndCookies`。Origin は共有の proxy
 - `endAuthSession`（IMPL-AUTH-366）は `revoke_auth_session` で GoTrue のセッションを終わらせる。パスキーのログインの終わりから外へ出し、Task 7 も使う
-- 回数の枠のハッシュごとの数え方は、既存の `enforceRateLimit` の `subject`（IP との組）。IP を替えても 256 ビットの合言葉は当たらない
+- 回数の枠のハッシュごとの数え方は、既存の `enforceRateLimit` の `subject`。`subject` を渡した枠は IP を NULL にして数えるので（`20260913132105_fix_rate_limit_counters_subject_counting.sql`）、**IP を問わずハッシュごとに全体で5回/10分**（IP との組ではない）。IP を替えても枠は共有され、256 ビットの合言葉は当たらない。副作用として、合言葉を知る誰かが10分に5回送ると、本物の招待の人も一時的に 429 になる（画面は待つ文でボタンを残す）
 
 ### DD-AUTH-079 登録の窓口は、役割の無い招待の窓の人を window として扱う
 
@@ -296,7 +296,7 @@ sequenceDiagram
     C-->>B: 200 redirectTo /login
 ```
 
-- ページ（IMPL-AUTH-374）: `readStaffRegisterAccess`（IMPL-AUTH-378。署名済みトークン → `checkAuthSessionLiveness(session_id, true)` → `passkey_window_is_open`・`passkey_approved_count`。読めない・閉じているは `{ ok: false }` で `/login`）。検索に載せない
+- ページ（IMPL-AUTH-374）: `readStaffRegisterAccess`（IMPL-AUTH-378。署名済みトークン → `checkAuthSessionLiveness(session_id, true)` → `passkey_window_is_open`・`passkey_approved_count`。閉じている・結びが無いは `{ ok: false }` で `/login`、DB が読めない時は `{ ok: false, unavailable: true }` で `/login` へ送らず「しばらくしてからお試しください。」を出す）。検索に載せない
 - 画面（IMPL-AUTH-375）: 1本目 → おすすめの文 → 2本目の2段。窓口が `window_closed`・401 と答えたら時間切れの文だけ、`reauth_required` は完了へ進む。1本だけで「登録を完了する」を押すと窓口が 409 `keys_short` を返し、文は「あと1本、登録してください。」。完了後は文と「ログインへ」（自動では進まない）
 - 呼び（IMPL-AUTH-377）: `completeStaffRegistration`（本文なしの POST。409 `keys_short`・`keys_not_window`、403・401 は `window_closed`、429、503、そのほかは `failed`）
 - 窓口（IMPL-AUTH-376）: 枠（IP・本人）→ 認証 → CSRF → 生きたセッション → `activateStaffRole`（IMPL-AUTH-399）→ `endAuthSession`（IMPL-AUTH-366）＋`revokeAllSessionsForUser` → Cookie を消す。ログインの終了だけが落ちた時は、役割が有効なので 200 にして監査に error を残す（招待のセッションの終了も失敗していたら `session_revocation_failed_invite_alive`）

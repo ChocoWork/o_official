@@ -103,7 +103,7 @@ describe('SCR-AUTH-015 「もう1本」の画面', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '2本目を登録' }));
     });
-    expect(await screen.findByText('もう一度パスキーでログインしてから追加してください。')).toBeInTheDocument();
+    expect(await screen.findByText('安全のため、もう一度パスキーでログインしてから追加してください。')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'パスキーでログインし直す' })).toHaveAttribute('href', '/login?next=%2Fadmin%2Fpasskeys');
     expect(replace).not.toHaveBeenCalled();
   });

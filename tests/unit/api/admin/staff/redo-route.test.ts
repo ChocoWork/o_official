@@ -123,6 +123,15 @@ describe('POST /api/admin/staff/[id]/redo', () => {
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'conflict' }));
   });
 
+  it('DD-AUTH-076 読んだ後に降格が先に通り、DB が店員でないと断った時も 409 not_staff', async () => {
+    (issueAndSendStaffInvite as jest.Mock).mockResolvedValue({ ok: false, reason: 'not_staff' });
+
+    const response = await POST(request(), context());
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe('not_staff');
+  });
+
   it.each([
     ['役割が無い（お客さん）', { data: [], error: null }],
     ['役割の行が admin でも supporter でもない', { data: [{ roles: { code: 'user' } }], error: null }],

@@ -584,7 +584,7 @@ graph TD
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6） |
 
 - 見出し「店員のパスキーを登録します」、説明、ボタン「登録を始める」だけ。認証の画面の枠（`isAuthPage`）に `/staff/invite`・`/staff/register` を足す
-- 失敗の文: 形の違う・無いリンクは「リンクが正しくありません」、400 は「このリンクは使えません」、500 は「店長に、招待をもう一度出してもらってください」。画面と処理の詳細は DD-AUTH-078。登録の画面 `/staff/register` は Task 7
+- 失敗の文: 形の違う・無いリンクは「リンクが正しくありません」、400 は「このリンクは使えません」、500 は「店長に、もう一度招待を出してもらってください」。画面と処理の詳細は DD-AUTH-078。登録の画面 `/staff/register` は Task 7
 
 ### SCR-AUTH-014 /staff/register は、招待の窓の中で鍵を2本登録し、そろったら役割を有効にして /login へ送る画面にする
 
@@ -610,7 +610,7 @@ graph TD
 | 確かめ方 | 結合テスト（`tests/integration/ui/auth-staff-passkey-manage-screen.test.tsx`）、単体テスト（`tests/unit/app/staff/passkeys-page.test.tsx`、`tests/unit/features/auth/staff/staff-passkey-manager.test.tsx`、`staff-one-more-key.test.tsx`、`admin-sidenav-passkey-link.test.tsx`）、E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-9-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 9） |
 
-- 管理の画面: 見出し「パスキー」と、一覧（名前・作成日・最後に使った日）。行ごとに「名前を変更」「削除」。認めた鍵を消すと下限（2本）を割る時は、削除ボタンを無効にして「認めた鍵が2本のため、削除できません。先にもう1本追加してください。」。認められていない鍵には「この鍵ではログインできません。心当たりがなければ削除してください。」。末尾に「パスキーを追加」。削除は確認のダイアログを挟む
+- 管理の画面: 見出し「パスキー」と、一覧（名前・作成日・最後に使った日）。行ごとに「名前を変更」「削除」。認めた鍵を消すと下限（2本）を割る時は、削除ボタンを無効にして「パスキーは2本以上必要です。先に別のパスキーを登録してください。」。認められていない鍵には「この鍵ではログインできません。心当たりがなければ削除してください。」。末尾に「パスキーを追加」。削除は確認のダイアログを挟む
 - 「もう1本」の画面（`?more=1` かつ認めた鍵が2本未満）: 見出し「あと1本、登録してください」、ボタン「2本目を登録」。登録が通ったらログインの印を更新して `/admin` へ移る。更新できなければ「登録できました。もう一度パスキーでログインしてください。」と「ログインへ」
 - 画面の遷移: 認めた鍵が1本の店員は、`/auth/verified`（`/api/auth/passkey` の `approvedCount` が1）から `/admin/passkeys?more=1` へ置き換える。TOTP の流れ自体は段4まで残す。処理の詳細は DD-AUTH-082
 
@@ -2207,7 +2207,7 @@ stateDiagram-v2
 - 表: `id`・`user_id`（`auth.users` への外部キー・cascade）・`role_code`（`admin`/`supporter`）・`kind`（`invite`/`redo`/`promote`/`last_resort`）・`token_hash`（unique。合言葉の文字列の UTF-8 の SHA-256）・`issued_by`・`reason`・`expires_at`・`consumed_at`・`session_id`・`bound_at`・`activated_at`・`cancelled_at`・`created_at`。取り消されず有効化されていない行は、1人に付き1つ（部分の一意索引）
 - 状態の動き: 発行 → 消費（`consumed_at`。窓は開けない）→ 結び（`session_id`・`bound_at`。窓を開く）→ 有効化（`activated_at`。役割が有効になり窓が閉じる）。取り消し・やり直しは `cancelled_at`
 - 関数（`SECURITY DEFINER`・`search_path` 空・持ち主 `postgres`）: `private.staff_invite_issue_core`（だれにも `execute` を渡さない）、`public.staff_invite_issue`・`staff_invite_consume`・`staff_invite_bind_window`・`staff_role_activate`・`staff_invite_cancel`・`staff_invite_open`（`service_role` だけ）
-- 例外の文: `STAFF_INVITE_KIND_FORBIDDEN`・`STAFF_ALREADY_STAFF`・`STAFF_INVITE_INVALID`・`STAFF_INVITE_ALREADY_BOUND`・`STAFF_ACTIVATE_INVITE_INVALID`・`STAFF_ACTIVATE_NO_WINDOW`・`STAFF_ACTIVATE_KEYS_SHORT`・`STAFF_ACTIVATE_KEYS_NOT_WINDOW`、既存の `ROLE_PERMISSION_FORBIDDEN`・`LAST_ADMIN_REQUIRED`・`SELF_ROLE_CHANGE_FORBIDDEN`・`USER_NOT_FOUND`。引数の誤りは `22023`（`STAFF_INVITE_ARGUMENT_INVALID`）。呼び手は `src/lib/auth/staff-passkey-invite-errors.ts` で理由にする（DD-AUTH-070〜072）
+- 例外の文: `STAFF_INVITE_KIND_FORBIDDEN`・`STAFF_ALREADY_STAFF`・`STAFF_NOT_STAFF`（kind `redo` を、今の店員でない人へ出した時。錠の中で確かめるので、先に通った降格をやり直しが覆さない）・`STAFF_INVITE_INVALID`・`STAFF_INVITE_ALREADY_BOUND`・`STAFF_ACTIVATE_INVITE_INVALID`・`STAFF_ACTIVATE_NO_WINDOW`・`STAFF_ACTIVATE_KEYS_SHORT`・`STAFF_ACTIVATE_KEYS_NOT_WINDOW`、既存の `ROLE_PERMISSION_FORBIDDEN`・`LAST_ADMIN_REQUIRED`・`SELF_ROLE_CHANGE_FORBIDDEN`・`USER_NOT_FOUND`。引数の誤りは `22023`（`STAFF_INVITE_ARGUMENT_INVALID`）。呼び手は `src/lib/auth/staff-passkey-invite-errors.ts` で理由にする（DD-AUTH-070〜072）
 - 移行 C の直し: `private.passkey_credentials_notify()` が、開いた期限内の窓がある人を `subject_is_staff = true` で積む（`notify_subject` は今のまま）
 
 ### ARC-AUTH-012 店員の招待は、発行 → 消費 → 結び → 有効化の4段にし、役割は2本の鍵がそろった時にだけ有効にする
@@ -2242,10 +2242,10 @@ flowchart LR
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-3-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 3） |
 
 - 表（移行 D。`supabase/migrations/20261117001500_passkey_staff_entry_conditions_fn.sql`）: `session_id uuid primary key`・`user_id uuid not null`・`last_seen_at timestamptz not null default now()`。索引 `(user_id, last_seen_at)`。RLS 有効、`anon`・`authenticated`・`service_role` に権限なし
-- `private.staff_idle_ok(uuid)`（`STABLE`・`SECURITY DEFINER`・だれにも `execute` を渡さない）: 行があれば `last_seen_at > now() - staff_idle_seconds`（既定3600）。行が無ければ `auth.sessions.created_at` だけで同じ比べ（`refreshed_at` は見ない）。`auth.sessions` にも無い・`created_at` が `NULL` なら偽
+- `private.staff_idle_ok_strict(uuid)` と `private.staff_idle_ok(uuid)`（ともに `STABLE`・`SECURITY DEFINER`・だれにも `execute` を渡さない）。`strict` は誤りを握らず例外を投げ、`staff_idle_ok` はそれを包んで、どんな誤りも偽にする（`has_permission`・RLS が使う、閉じる側）。判定は同じで、行があれば `last_seen_at > now() - staff_idle_seconds`（既定3600）。行が無ければ `auth.sessions.created_at` だけで同じ比べ（`refreshed_at` は見ない）。`auth.sessions` にも無い・`created_at` が `NULL` なら偽
 - `public.staff_session_touch(session, user, 間引きの秒 = 60)`: 行が無ければ作る、あって間引きの秒以上たっていれば更新して真、そうでなければ偽。別の利用者の行は上書きしない。書いた時にその人の2日より前の行を消す
-- `public.staff_idle_check(session, user)`: `staff_idle_ok` が真なら同じ間引きで時刻を進めて真（内側は `private.staff_session_touch_core`。だれにも `execute` を渡さない）。書き込みが失敗したら例外を投げ、真を返さない（窓口・ページは 503）。間引きで書かないのは失敗ではない。偽なら書かない
-- `public.staff_idle_peek(session)`: `staff_idle_ok` だけ。時刻を進めない（`/api/auth/me` 用）
+- `public.staff_idle_check(session, user)`: `staff_idle_ok_strict` が真なら同じ間引きで時刻を進めて真（内側は `private.staff_session_touch_core`。だれにも `execute` を渡さない）。書き込みが失敗したら例外を投げ、真を返さない（窓口・ページは 503）。間引きで書かないのは失敗ではない。偽なら書かない
+- `public.staff_idle_peek(session)`: `staff_idle_ok_strict` だけ。時刻を進めない（`/api/auth/me` 用）。DB の誤りは例外になり、窓口・ページは「無操作」ではなく 503 にする（ログアウトさせない）
 - 3つの `public` 関数は `service_role` だけが実行できる。移行 E の `has_permission` が `private.staff_idle_ok` を4つ目の条件（認めた鍵の本数の次、`app_session_is_live` の前）で呼ぶ
 - 費用: `has_permission` を `( SELECT ... )` で包まずに呼ぶ決まりが77件あるが、4つ目の条件は ACL と認めた鍵の本数を通った店員だけが払う（お客さん・anon は手前で止まる）。1回は主キーの1行の読みで、`EXPLAIN` の実行計画の件数は増やさない
 

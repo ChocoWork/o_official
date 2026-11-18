@@ -150,7 +150,8 @@ describeLocalDb('passkey staff invites (migration H first half)', () => {
       await db().query('select public.passkey_window_open($1,$2)', [target, sessionId]);
       const first: string = (await issue(target, 'admin', 'redo', actor, 'first-token')).rows[0].id;
       expect(await openInvites(target)).toBe(1);
-      const second: string = (await issue(target, 'admin', 'redo', actor, 'second-token')).rows[0].id;
+      // the first redo removed the role, so the person is no longer staff: the second issue is a plain invite
+      const second: string = (await issue(target, 'admin', 'invite', actor, 'second-token')).rows[0].id;
       expect(second).not.toBe(first);
       expect(await keyCount(target)).toBe(0);
       expect(await approvalCount(target)).toBe(0);
@@ -162,7 +163,7 @@ describeLocalDb('passkey staff invites (migration H first half)', () => {
       expect((await db().query('select cancelled_at from private.staff_invites where id = $1', [first])).rows[0].cancelled_at).not.toBeNull();
       expect(await count('select count(*)::int as n from private.passkey_registration_windows where user_id = $1 and closed_at is null', [target])).toBe(0);
       const row = (await db().query('select role_code, kind, issued_by::text as issued_by, token_hash, consumed_at from private.staff_invites where id = $1', [second])).rows[0];
-      expect(row).toMatchObject({ role_code: 'admin', kind: 'redo', issued_by: actor, consumed_at: null });
+      expect(row).toMatchObject({ role_code: 'admin', kind: 'invite', issued_by: actor, consumed_at: null });
       expect(row.token_hash.equals(hashOf('second-token'))).toBe(true);
     });
 
@@ -220,7 +221,7 @@ describeLocalDb('passkey staff invites (migration H first half)', () => {
       const customer = await user();
       const forbidden = await fails(async () => issue(await user(), 'admin', 'invite', customer, 'tok-forbidden'));
       expect(forbidden).toMatchObject({ code: '42501', message: 'ROLE_PERMISSION_FORBIDDEN' });
-      const nobody = await fails(() => issue(supporter, 'admin', 'redo', null, 'tok-null'));
+      const nobody = await fails(async () => issue(await user('supporter'), 'admin', 'redo', null, 'tok-null'));
       expect(nobody).toMatchObject({ message: 'ROLE_PERMISSION_FORBIDDEN' });
     });
 
@@ -245,6 +246,18 @@ describeLocalDb('passkey staff invites (migration H first half)', () => {
       expect(await fails(() => issue(staff, 'admin', 'promote', actor, 'tok-b'))).toMatchObject({ message: 'STAFF_ALREADY_STAFF' });
       await issue(staff, 'admin', 'redo', actor, 'tok-c');
       expect(await openInvites(staff)).toBe(1);
+    });
+
+    test('DATA-AUTH-020 redo for a person who is not staff (for example just demoted) raises STAFF_NOT_STAFF and deletes no key', async () => {
+      const actor = await user('admin');
+      const demoted = await user();
+      await key(demoted);
+      await key(demoted);
+      await factor(demoted, 'totp');
+      expect(await fails(() => issue(demoted, 'admin', 'redo', actor, 'tok-not-staff'))).toMatchObject({ code: 'P0001', message: 'STAFF_NOT_STAFF' });
+      expect(await keyCount(demoted)).toBe(2);
+      expect(await count('select count(*)::int as n from auth.mfa_factors where user_id = $1', [demoted])).toBe(1);
+      expect(await openInvites(demoted)).toBe(0);
     });
 
     test('DATA-AUTH-020 bad arguments are refused with 22023 before any change', async () => {
@@ -536,20 +549,51 @@ describeLocalDb('passkey staff invites (migration H first half)', () => {
         const keys = (await setup.query('select count(*)::int as n from auth.webauthn_credentials where user_id = $1', [target])).rows[0].n;
         const open = (await setup.query(
           'select count(*)::int as n from private.staff_invites where user_id = $1 and cancelled_at is null and activated_at is null', [target])).rows[0].n;
-        if (activated === 'ok') {
+        expect(activated).toBe('ok');
+        if (issued === 'ok') {
           // activate went first: the user was activated, then redo wiped everything and left one new invite.
-          expect(issued).toBe('ok');
+          expect(roles).toEqual([]);
+          expect(keys).toBe(0);
+          expect(open).toBe(1);
         } else {
-          // redo went first: the old invite is cancelled, so activate found nothing.
-          expect(activated).toBe('STAFF_ACTIVATE_INVITE_INVALID');
+          // redo went first: the user was not staff yet, so redo was refused and activate went through untouched.
+          expect(issued).toBe('STAFF_NOT_STAFF');
+          expect(roles).toEqual([{ code: 'supporter' }]);
+          expect(keys).toBe(2);
+          expect(open).toBe(0);
         }
-        expect(roles).toEqual([]);
-        expect(keys).toBe(0);
-        expect(open).toBe(1);
       } finally {
         await holder.query('rollback').catch(() => undefined);
         await cleanup(setup, made);
         for (const c of [setup, a, b, holder]) await c.end();
+      }
+    });
+
+    test('DATA-AUTH-020 a demote that commits while a redo waits for the lock is not overturned by the redo', async () => {
+      const setup = await connect();
+      const a = await connect();
+      const holder = await connect();
+      const made: string[] = [];
+      try {
+        const actor = await user('admin', setup);
+        const target = await user('supporter', setup);
+        made.push(actor, target);
+        await key(target, setup);
+        await key(target, setup);
+        await holder.query('begin');
+        await holder.query('select pg_advisory_xact_lock(190519, 0)');
+        await holder.query(`select pg_advisory_xact_lock(hashtextextended('passkey_approve:' || $1::text, 0))`, [target]);
+        const issuing = settle(issue(target, 'supporter', 'redo', actor, 'tok-demote-race', undefined, a));
+        await new Promise((r) => setTimeout(r, 300));
+        await holder.query(`update public.user_roles set active = false where user_id = $1`, [target]);
+        await holder.query('commit');
+        expect(await issuing).toBe('STAFF_NOT_STAFF');
+        expect((await setup.query('select count(*)::int as n from auth.webauthn_credentials where user_id = $1', [target])).rows[0].n).toBe(2);
+        expect((await setup.query('select count(*)::int as n from private.staff_invites where user_id = $1', [target])).rows[0].n).toBe(0);
+      } finally {
+        await holder.query('rollback').catch(() => undefined);
+        await cleanup(setup, made);
+        for (const c of [setup, a, holder]) await c.end();
       }
     });
 

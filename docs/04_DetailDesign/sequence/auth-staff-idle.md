@@ -43,7 +43,7 @@ sequenceDiagram
     C->>O: has_permission は staff_idle_ok を直に呼ぶ（書かない）
 ```
 
-- `staff_idle_peek` は `staff_idle_ok` だけを呼ぶ。`/api/auth/me` が使い、画面を開き直すだけでは無操作が延びない
+- `staff_idle_peek` と `staff_idle_check` は、誤りを握らない `private.staff_idle_ok_strict` を呼ぶ（DB の誤りは例外になり、アプリは 503）。誤りを偽にする `staff_idle_ok` は `has_permission`・RLS だけが使う。`staff_idle_peek` は見るだけ。`/api/auth/me` が使い、画面を開き直すだけでは無操作が延びない
 - 移行 E の `has_permission` の順: uid → amr（条件1・2）→ ACL → 認めた鍵の本数 → **無操作（`staff_idle_ok`）** → `app_session_is_live`。`session_id` は形を確かめた後に `uuid` にし、悪ければ `NULL` で偽（例外にしない）
 - 移行 E の前の確かめ: `private.staff_idle_ok(uuid)` が無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（`passkey_entry_idle_fn`）で止まる
 - 呼び手の薄い部品 `src/lib/auth/staff-passkey-idle-rpc.ts`: `staffIdleCheck`（IMPL-AUTH-350。`staff_idle_check`）・`staffIdlePeek`（IMPL-AUTH-351。`staff_idle_peek`）・`staffSessionTouch`（IMPL-AUTH-352。`staff_session_touch`）。`createServiceRoleClient` で RPC を1回呼び、真偽だけを返す。DB の誤り・例外・真偽でない値は `{ ok: false }`（閉じる側。呼び手が `/login` か 401 に倒す）。窓口・ページへの配線は Task 8・9

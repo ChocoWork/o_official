@@ -18,8 +18,8 @@ import "@/components/AuthForm.css";
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const MSG_BROKEN = "リンクが正しくありません。メールのリンクを、そのまま開いてください。";
-const MSG_UNUSABLE = "このリンクは使えません。店長に、招待をもう一度出してもらってください。";
-const MSG_FAILED = "登録を始められませんでした。店長に、招待をもう一度出してもらってください。";
+const MSG_UNUSABLE = "このリンクは使えません。店長に、もう一度招待を出してもらってください。";
+const MSG_FAILED = "登録を始められませんでした。店長に、もう一度招待を出してもらってください。";
 const MSG_LIMITED = "試行が集中しています。しばらくしてからお試しください。";
 
 type Failure = "unusable" | "failed" | "limited";
@@ -61,11 +61,11 @@ export default function StaffInviteScreen() {
       if (response.ok) {
         const body: unknown = await response.json();
         const to = (body as { redirectTo?: unknown } | null)?.redirectTo;
-        router.replace(typeof to === "string" && to.startsWith("/") ? to : "/staff/register");
+        router.replace(typeof to === "string" && to.startsWith("/") && !to.startsWith("//") && !to.startsWith("/\\") ? to : "/staff/register");
         return;
       }
       await response.body?.cancel();
-      setFailure(response.status === 400 ? "unusable" : response.status === 429 ? "limited" : "failed");
+      setFailure(response.status === 400 ? "unusable" : response.status === 429 || response.status === 503 ? "limited" : "failed");
     } catch {
       setFailure("failed");
     }
@@ -91,10 +91,13 @@ export default function StaffInviteScreen() {
         店員のパスキーを登録します
       </h1>
       <p className="mt-5 lk-text-sm leading-relaxed">
-        次の画面で、この端末の顔認証・指紋・PIN でログインできる「パスキー」を2つ登録します。
+        次の画面で、この端末の顔認証・指紋・PIN でログインできる「パスキー」を2本登録します。
       </p>
       <p className="mt-2 lk-text-xs leading-relaxed text-[#474747]">
-        2つ目は、別の端末か、別の方法（パスワード管理アプリなど）で登録してください。
+        別の端末か、セキュリティキーでの登録をおすすめします。
+      </p>
+      <p className="mt-2 lk-text-sm leading-relaxed">
+        登録は30分以内に終えてください。このあいだ、管理画面は使えません。
       </p>
 
       <LiveMessage className="mt-4 lk-text-sm text-red-600">{message}</LiveMessage>
