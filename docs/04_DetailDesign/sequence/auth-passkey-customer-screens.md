@@ -157,6 +157,8 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 | 確かめ方 | 単体テスト（`tests/unit/features/auth/passkey/login-choices.test.tsx`、`tests/unit/features/auth/passkey/email-code-start-form.test.tsx`、`tests/unit/app/login/page.test.tsx`）、E2E（`e2e/FR-LOGIN-057-login-screen.spec.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-5-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 5。作り手の判断 5・6、判断 12・13） |
 
+2026-11-18（最終レビュー M-4）: `LoginChoices` は `@/lib/supabase/client` を静的に読む。計画の作り手の判断13（`mode === 'browser'` の時だけ動的に読む）と違うが、`src/contexts/LoginContext.tsx` が全ページで同じ物を既に読んで初期化しているので、束も初期化も変わらず、動きは同じ。
+
 処理の順番と決め:
 
 | 単位 | 動き |
