@@ -47,11 +47,17 @@
 .account-mobile-tabs {
   margin-bottom: var(--gap-section);
 }
+/* customers have 5 tabs, which do not fit on one line at 390px: wrap instead of clipping labels */
+.account-mobile-tabs [data-ui-tab-segment][data-ui-tab-variant="tabs-standard"] {
+  flex-wrap: wrap;
+  row-gap: var(--tab-pad-y);
+}
 
 /* mobile tab bar: match Header's PC nav-menu hover/active underline behavior
    (always-black label, underline slides in on hover, stays on active) */
 .account-mobile-tabs [data-ui-tab-segment][data-ui-tab-variant="tabs-standard"] [data-ui-tab-item] {
   color: #111111;
+  flex-shrink: 0; /* Button is overflow: hidden, so a flex child shrinks below its label and clips it */
 }
 .account-mobile-tabs [data-ui-tab-segment][data-ui-tab-variant="tabs-standard"] [data-ui-tab-item]::after {
   content: "";

@@ -1,6 +1,6 @@
 /**
  * FR-LOGIN-060 アカウントの「ログイン方法」タブ: パスキーの一覧・追加・名前の変更・削除
- * 対応: FR-AUTH-029-AC-01〜05（設計: DD-AUTH-065）
+ * 対応: FR-AUTH-029-AC-01〜06（設計: DD-AUTH-065）
  *
  * Chromium の仮想の認証器（CDP。e2e/passkey-virtual-authenticator.ts）で、`navigator.credentials` を本物のまま動かす。
  * 会員は新しいアドレスのメールのコードで作る（登録は、10分以内のコードのログインを求める）。
@@ -224,6 +224,31 @@ for (const viewport of viewports) {
       await scope.getByText('ログイン方法', { exact: true }).click();
       await expect(page).toHaveURL(/\/account\?tab=security/, NAVIGATION);
       await expect(page.getByRole('heading', { name: 'パスキー' })).toBeVisible();
+    });
+
+    test(`FR-AUTH-029-AC-06 ${viewport.name}: 5つのタブの字が欠けず、重ならず、全部が画面の中に見える`, async ({ page }) => {
+      test.setTimeout(120_000);
+      await signInByCode(page, uniqueEmail('tabfit'));
+      await page.goto('/account?tab=profile');
+      await expect(page.getByRole('heading', { level: 1, name: 'ACCOUNT' })).toBeVisible(NAVIGATION);
+      await expect(page.locator('.animate-pulse')).toHaveCount(0, NAVIGATION);
+      const tabs = page.locator(viewport.width >= 768 ? 'div.hidden.md\\:block' : '.account-mobile-tabs').locator('[data-ui-tab-item]');
+      await expect(tabs).toHaveCount(5);
+      const boxes: Array<{ x: number; y: number; width: number; height: number }> = [];
+      for (const tab of await tabs.all()) {
+        await expect(tab).toBeInViewport({ ratio: 1 });
+        // Button は overflow: hidden。字が箱より広いと scrollWidth が clientWidth を越える（字が欠けている）
+        expect(await tab.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+        boxes.push((await tab.boundingBox())!);
+      }
+      for (let i = 0; i < boxes.length; i += 1) {
+        for (let j = i + 1; j < boxes.length; j += 1) {
+          const a = boxes[i];
+          const b = boxes[j];
+          const overlaps = a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
+          expect(overlaps).toBe(false);
+        }
+      }
     });
   });
 }

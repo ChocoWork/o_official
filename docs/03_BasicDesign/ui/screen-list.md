@@ -3,6 +3,8 @@
 > パスキー段2 Task 11 確認日: 2026-11-18。画面ルートの数は変えない（54件）。`/login`・`/login/code`・`/login/passkey`・`/login/password` と、`/account` の「ログイン方法」のタブ（`tab=security`）の行を、Task 3〜7 の実装と合わせて確かめた。
 >
 > パスキー段2 Task 7 確認日: 2026-11-18。画面ルートの数は変えない（54件）。`/account` にお客さんだけのタブ「ログイン方法」（`tab=security`）を足し、お客様情報の「パスワードを変更」のリンクを外した（`/account/password` の画面と窓口は段4まで残す）。幅（390/768/1280px）は E2E（`FR-LOGIN-060`）が確かめる。
+>
+> パスキー段2 最終レビュー I-3 確認日: 2026-11-18。`/account` のモバイルのタブの列（5つ）は390px で折り返して2段にする（FR-AUTH-029-AC-06）。画面ルートの数は変えない。
 
 > パスキー段2 Task 6 確認日: 2026-11-18。旧のパスワードのログイン・会員登録の画面を `/login/password` へ退避する1ルートを追加し、`src/app/**/page.tsx` は54件になった（顧客向け18・認証・アカウント12・管理・開発補助24。Task 4 の `/login/code`・Task 6 の `/login/passkey` を数えた）。検索に載せず、どこからもリンクしない（旧の流れの中の戻り先を除く）。`/login` は Task 5（2026-11-18）で新しい画面（パスキー・Google・メールのコード）に作り替えた。パスワードの再設定・変更の完了の行き先は `/login/password`。共有の `src/contexts/Providers.tsx` の真ん中寄せの枠に `/login/password`・`/login/code`・`/login/passkey` を足した。実測（390/768/1280px）は E2E（`FR-LOGIN-056`）が確かめる。
 

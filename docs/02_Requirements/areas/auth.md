@@ -5782,6 +5782,18 @@ UV の印の無い認証器の登録は、終わりが 400 `{ "error": "uv_requi
 
 お客様情報のタブから「ログイン方法」を押すと、URL が `/account?tab=security` に替わり、見出し「パスキー」が出る（PC は左の一覧、mobile・tablet は上のタブ）。
 
+### FR-AUTH-029-AC-06 どの幅でも、アカウントの5つのタブの字が欠けず、重ならず、全部が画面の中に見える
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-029 |
+| 根拠 | SR-AUTH-024。タブが4つから5つになり、390px の1行に入らなくなって、ボタンの `overflow: hidden` で字の両端が欠けた（最終レビュー I-3） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-060-account-passkeys.spec.ts`。390・768・1280 の3幅でくり返す。仮想の認証器） |
+| 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/final-review.md`（I-3） |
+
+どの幅でも、アカウントの5つのタブは、全部が画面の中に完全に見え、字が欠けず（`scrollWidth` が `clientWidth` を越えない）、どの2つの箱も重ならない。390px は幅が足りない分を折り返して2段にする（`src/app/account/account.css` の `.account-mobile-tabs` だけ。共通のタブの部品と店員のタブは変えない）。
+
 ### FR-AUTH-030 知らせの行を取り出し・済み・失敗・飛ばしにし、宛先を決める DB の関数（移行 G）
 
 | 属性 | 値 |

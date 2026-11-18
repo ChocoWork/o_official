@@ -238,5 +238,7 @@ E2E は FR-ACCOUNT-035-return-request.spec.ts・036-return-request-photos.spec.t
 
 確認日: 2026-11-18。`/account` にお客さんだけのタブ「ログイン方法」（`?tab=security`）を足した（お客様情報・配送情報・購入履歴・お問い合わせの隣、最後）。中身は `src/features/auth/passkey/components/AccountPasskeys.tsx`（パスキーの一覧・追加・名前の変更・削除）で、仕様の正本は `docs/02_Requirements/areas/auth.md` の `FR-AUTH-029`、処理の順番は `docs/04_DetailDesign/sequence/auth-passkey-customer-screens.md` の `DD-AUTH-065`。このページ（`src/app/account/page.tsx`）の変更は2点だけ。
 
+2026-11-18（最終レビュー I-3）: 390px で5つのタブが1行に入らず字が欠けたので、`src/app/account/account.css` の `.account-mobile-tabs` だけ、タブの列を折り返し（`flex-wrap: wrap`・`row-gap: var(--tab-pad-y)`）、各タブを縮めない（`flex-shrink: 0`）。共通のタブの部品と店員のタブは変えない。受け入れ条件は FR-AUTH-029-AC-06。
+
 - タブの追加: `AccountTab` に `security`。`useLogin().userRole === 'user'` の時だけ、PC 用の縦のタブと mobile・tablet 用の上のタブの両方に出す。店員（`admin`・`supporter`）が `tab=security` で開いたら `profile` に直して URL も替える。
 - 「パスワードを変更」のリンクの削除: お客様情報のタブの末尾にあったリンクを外す。`/account/password` の画面と窓口は変えず、段4まで残す（`FR-AUTH-006-AC-01` は「リンクが無く、直に開くと使える」に書き直した）。

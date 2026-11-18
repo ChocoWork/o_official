@@ -62,7 +62,7 @@
 | [FR-LOGIN-057](../../../e2e/FR-LOGIN-057-login-screen.spec.ts) | FR-AUTH-027-AC-01〜06 | 新しい `/login` の3つの入口・パスキーの始め・未対応のブラウザ・メールのコード・Google・390px |
 | [FR-LOGIN-058](../../../e2e/FR-LOGIN-058-email-code-screen.spec.ts) | FR-AUTH-026-AC-01〜05 | `/login/code` の確定・誤り・案内と再送の待ち・入れ直し・390px |
 | [FR-LOGIN-059](../../../e2e/FR-LOGIN-059-passkey-offer-real-browser.spec.ts) | FR-AUTH-028-AC-01〜07 | パスキーを作る勧め `/login/passkey`。ブラウザの仮想の認証器で、作る・ログアウトして入る・鍵を持つ人には出さない・本人確認ができない認証器・「あとで」・未対応のブラウザ・ログインしていない人 |
-| [FR-LOGIN-060](../../../e2e/FR-LOGIN-060-account-passkeys.spec.ts) | FR-AUTH-029-AC-01〜05 | アカウントの「ログイン方法」。空・追加・名前の変更・削除・最後の1本・入り直しの案内・タブ |
+| [FR-LOGIN-060](../../../e2e/FR-LOGIN-060-account-passkeys.spec.ts) | FR-AUTH-029-AC-01〜06 | アカウントの「ログイン方法」。空・追加・名前の変更・削除・最後の1本・入り直しの案内・タブ（5つのタブが欠けず重ならない） |
 | [FR-LOGIN-061](../../../e2e/FR-LOGIN-061-passkey-notification-function-grants.spec.ts) | FR-AUTH-030-AC-01 | 知らせの5つの DB の関数を、anon・authenticated の鍵では呼べず、service_role の鍵だけが呼べる |
 | [FR-LOGIN-062](../../../e2e/FR-LOGIN-062-passkey-notification-mail.spec.ts) | FR-AUTH-031-AC-01〜03 | パスキーの足し・消しの知らせのメールが、お客さん・店員・店長の文面で手元の Mailpit だけへ届く |
 
