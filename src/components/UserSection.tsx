@@ -5,6 +5,15 @@ import { clientFetch } from "@/lib/client-fetch";
 import { DataTable } from "@/components/ui/DataTable/DataTable";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import { StatusBadge } from "@/components/ui/StatusBadge/StatusBadge";
+import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import InviteStaffDialog from "@/features/auth/staff/components/InviteStaffDialog";
+import StaffRoleActions from "@/features/auth/staff/components/StaffRoleActions";
+import {
+  STAFF_MSG_ALREADY_STAFF,
+  STAFF_MSG_MAIL_FAILED,
+  STAFF_MSG_UNAVAILABLE,
+} from "@/features/auth/staff/staff-user-actions";
 
 type UserRoleValue = "admin" | "supporter" | "user";
 type UserRoleLabel = "Admin" | "Support" | "User";
@@ -18,6 +27,8 @@ type UserItem = {
   roleValue: UserRoleValue;
   lastLogin: string;
   status: UserStatus;
+  approvedPasskeys?: number;
+  invitePending?: boolean;
 };
 
 const roleLabelMap: Record<UserRoleValue, UserRoleLabel> = {
@@ -48,10 +59,36 @@ export default function UserSection() {
   const [isLoading, setIsLoading] = React.useState(true);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [savingUserId, setSavingUserId] = React.useState<string | null>(null);
+  const [notice, setNotice] = React.useState<string | null>(null);
+  const [selfId, setSelfId] = React.useState<string | null>(null);
+  const [promotion, setPromotion] = React.useState<{
+    user: UserItem;
+    role: UserRoleValue;
+  } | null>(null);
 
-  const fetchUsers = React.useCallback(async () => {
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await clientFetch("/api/auth/me", { cache: "no-store" });
+        const body: unknown = response.ok ? await response.json() : null;
+        const id =
+          typeof body === "object" && body !== null && "user" in body
+            ? (body as { user?: { id?: unknown } }).user?.id
+            : undefined;
+        if (!cancelled && typeof id === "string") setSelfId(id);
+      } catch {
+        // 自分の行を見分けられなくても、窓口が自分への操作を断る
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const fetchUsers = React.useCallback(async (silent = false) => {
     try {
-      setIsLoading(true);
+      if (!silent) setIsLoading(true);
       setErrorMessage(null);
 
       const response = await clientFetch("/api/admin/users", {
@@ -99,20 +136,33 @@ export default function UserSection() {
     });
   }, [users]);
 
-  const handleRoleChange = async (userId: string, nextRole: UserRoleValue) => {
-    const previousUsers = users;
+  const lastAdminId = React.useMemo(() => {
+    const admins = users.filter((user) => user.roleValue === "admin");
+    return admins.length === 1 ? admins[0].id : null;
+  }, [users]);
 
-    setUsers((currentUsers) =>
-      currentUsers.map((user) =>
-        user.id === userId
-          ? {
-              ...user,
-              roleValue: nextRole,
-              role: roleLabelMap[nextRole],
-            }
-          : user,
-      ),
-    );
+  const handleRoleChange = async (
+    userId: string,
+    nextRole: UserRoleValue,
+    invite = false,
+  ) => {
+    const previousUsers = users;
+    setNotice(null);
+
+    // お客さんを店員にする時は、役割をすぐには変えない（招待のメールを送るだけ）
+    if (!invite) {
+      setUsers((currentUsers) =>
+        currentUsers.map((user) =>
+          user.id === userId
+            ? {
+                ...user,
+                roleValue: nextRole,
+                role: roleLabelMap[nextRole],
+              }
+            : user,
+        ),
+      );
+    }
 
     setSavingUserId(userId);
 
@@ -127,6 +177,19 @@ export default function UserSection() {
 
       if (!response.ok) {
         const body: unknown = await response.json().catch(() => null);
+        const code =
+          typeof body === "object" && body !== null && "code" in body
+            ? body.code
+            : undefined;
+        if (response.status === 502 || code === "mail_failed") {
+          throw new Error(STAFF_MSG_MAIL_FAILED);
+        }
+        if (code === "already_staff") {
+          throw new Error(STAFF_MSG_ALREADY_STAFF);
+        }
+        if (response.status === 503) {
+          throw new Error(STAFF_MSG_UNAVAILABLE);
+        }
         if (typeof body === "object" && body !== null && "code" in body) {
           if (body.code === "LAST_ADMIN_REQUIRED") {
             throw new Error("店長を1人以上残してください。");
@@ -146,6 +209,10 @@ export default function UserSection() {
 
         throw new Error("権限の更新に失敗しました。");
       }
+      if (invite) {
+        setNotice("招待のメールを送りました。");
+        await fetchUsers(true);
+      }
     } catch (error) {
       console.error("Failed to update role:", error);
       setUsers(previousUsers);
@@ -155,6 +222,12 @@ export default function UserSection() {
     } finally {
       setSavingUserId(null);
     }
+  };
+
+  const handleStaffDone = (message: string) => {
+    setErrorMessage(null);
+    setNotice(message);
+    void fetchUsers(true);
   };
 
   if (isLoading) {
@@ -169,9 +242,22 @@ export default function UserSection() {
 
   return (
     <section>
-      {errorMessage && (
-        <p className="mb-4 lk-text-sm text-red-700 font-acumin">{errorMessage}</p>
-      )}
+      <div className="mb-4 flex justify-end">
+        <InviteStaffDialog
+          onInvited={(email) =>
+            handleStaffDone(`${email} へ、招待のメールを送りました。`)
+          }
+        />
+      </div>
+      <LiveMessage className="mb-4 lk-text-sm text-red-700 font-acumin">
+        {errorMessage}
+      </LiveMessage>
+      <LiveMessage
+        politeness="status"
+        className="mb-4 lk-text-sm text-[#474747] font-acumin"
+      >
+        {notice}
+      </LiveMessage>
 
       <DataTable
         rows={sortedUsers}
@@ -198,16 +284,38 @@ export default function UserSection() {
                 variant="dropdown"
                 className={`w-35 tracking-widest font-acumin ${roleSelectClassMap[user.roleValue]}`}
                 value={user.roleValue}
-                onValueChange={(value) =>
-                  handleRoleChange(user.id, value as UserRoleValue)
+                onValueChange={(value) => {
+                  if (user.roleValue === "user" && value !== "user") {
+                    // 店員にする: 招待のメールを送ると確認してから送る
+                    setPromotion({ user, role: value as UserRoleValue });
+                    return;
+                  }
+                  void handleRoleChange(user.id, value as UserRoleValue);
+                }}
+                disabled={
+                  savingUserId === user.id ||
+                  user.id === selfId ||
+                  user.id === lastAdminId
                 }
-                disabled={savingUserId === user.id}
                 options={[
                   { value: "admin", label: "Admin" },
                   { value: "supporter", label: "Support" },
                   { value: "user", label: "User" },
                 ]}
                 size="sm"
+              />
+            ),
+          },
+          {
+            key: "staff",
+            header: "店員の操作",
+            render: (user) => (
+              <StaffRoleActions
+                user={user}
+                isSelf={user.id === selfId}
+                isLastAdmin={user.id === lastAdminId}
+                onDone={handleStaffDone}
+                onError={setErrorMessage}
               />
             ),
           },
@@ -229,6 +337,23 @@ export default function UserSection() {
           },
         ]}
         size="md"
+      />
+
+      <ConfirmDialog
+        open={promotion !== null}
+        title="店員にする"
+        description={
+          promotion
+            ? `${promotion.user.email} へ、招待のメールを送ります。相手がパスキーを登録するまで、役割は変わりません。`
+            : undefined
+        }
+        confirmLabel="店員にする"
+        onCancel={() => setPromotion(null)}
+        onConfirm={() => {
+          const target = promotion;
+          setPromotion(null);
+          if (target) void handleRoleChange(target.user.id, target.role, true);
+        }}
       />
     </section>
   );

@@ -42,6 +42,9 @@ async function chooseRole(label: string) {
   await user.click(combobox);
   const listbox = await screen.findByRole('listbox');
   await user.click(within(listbox).getByRole('option', { name: label }));
+  // お客さんを店員にする操作は、招待のメールを送ると確認してから送る（DD-AUTH-084）
+  const dialog = await screen.findByRole('dialog', { name: '店員にする' });
+  await user.click(within(dialog).getByRole('button', { name: '店員にする' }));
   return combobox;
 }
 
@@ -75,7 +78,9 @@ describe('UserSection の役割の選択欄（FREQ-515）', () => {
     const patchCall = mockClientFetch.mock.calls.find(([, init]) => init?.method === 'PATCH');
     expect(JSON.parse(String(patchCall?.[1]?.body))).toEqual({ userId: 'user-1', role: 'supporter' });
     await waitFor(() => expect(combobox).not.toBeDisabled());
-    expect(combobox).toHaveTextContent('Support');
+    // 役割はすぐには変わらない（招待のメールを送るだけ。DD-AUTH-084）
+    expect(combobox).toHaveTextContent('User');
+    expect(await screen.findByText('招待のメールを送りました。')).toBeInTheDocument();
   });
 
   it('送信に失敗したら、元の役割に戻して誤りを出す', async () => {

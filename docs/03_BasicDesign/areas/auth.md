@@ -614,6 +614,22 @@ graph TD
 - 「もう1本」の画面（`?more=1` かつ認めた鍵が2本未満）: 見出し「あと1本、登録してください」、ボタン「2本目を登録」。登録が通ったらログインの印を更新して `/admin` へ移る。更新できなければ「登録できました。もう一度パスキーでログインしてください。」と「ログインへ」
 - 画面の遷移: 認めた鍵が1本の店員は、`/auth/verified`（`/api/auth/passkey` の `approvedCount` が1）から `/admin/passkeys?more=1` へ置き換える。TOTP の流れ自体は段4まで残す。処理の詳細は DD-AUTH-082
 
+### SCR-AUTH-016 /admin の「ユーザー」タブは、店長が店員を招待・やり直し・お客さんに戻す・招待の取り消し・店員にするを行う画面
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-040、SEC-AUTH-056 |
+| 根拠 | 窓口（API-AUTH-033〜036）を店長が使う入口。既存の一覧（`UserSection`）に部品を差し込み、`UserSection` 自体には AUTH の IMPL を付けない。文は付録の案のとおりで、専門語を出さない |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/ui/auth-admin-users-staff-screen.test.tsx`）、単体テスト（`tests/unit/features/auth/staff/user-section-staff.test.tsx`、`staff-user-actions.test.ts`、`tests/unit/components/UserSection.test.tsx`）、E2E（`e2e/FR-LOGIN-070-admin-users-staff-screen.spec.ts`、`e2e/FR-ADMIN-108-select-fields.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-11-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 11） |
+
+- 一覧の上に「店員を招待」（メール・役割〔サポーター・店長〕のダイアログ。「招待を送る」）。一覧は `GET /api/admin/users` の各行の `approvedPasskeys`（認めた鍵の本数）と `invitePending`（開いた招待）を読む
+- 店員の行（新しい列「店員の操作」）: 「認めた鍵 N本」、「パスキーを全部消してやり直す」（確認の語「やり直し」と10字以上の理由のダイアログ）、「お客さんに戻す」（確認を挟む）。自分の行は「自分自身は変更できません。」、最後の店長の行は「店長を1人以上残してください。」を出して押せない
+- 招待中の行（役割が無く開いた招待がある人）: 「招待中」と「招待を取り消す」
+- お客さんの行の役割の選択は、Admin・Support を選ぶと「店員にする」の確認（「招待のメールを送ります」）を出し、確認してから `PATCH /api/admin/users`。成功しても役割はすぐには変わらず、一覧を読み直して「招待中」を出す
+- 失敗は `LiveMessage`。メールの送り失敗（502）は「メールを送れませんでした。もう一度、招待を出してください。」、すでに店員は「すでに店員です。やり直しは、一覧の「パスキーを全部消してやり直す」から行ってください。」、503 は「ただいま処理できません。しばらくしてからお試しください。」（ログアウトにしない）。処理の詳細は DD-AUTH-084
+
 ## 画面遷移
 
 ### FLOW-AUTH-001 メールとパスワードのログインは /login から /login/verify を経て、役割で行き先を分ける

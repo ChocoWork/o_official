@@ -84,9 +84,14 @@ for (const viewport of viewports) {
 
       await roleSelect.click();
       await page.getByRole('listbox').getByRole('option', { name: 'Support', exact: true }).click();
+      // お客さんを店員にする操作は、招待のメールを送ると確認してから送る（DD-AUTH-084）。役割はすぐには変わらない
+      const confirm = page.getByRole('dialog', { name: '店員にする' });
+      await expect(confirm).toContainText('招待のメールを送ります');
+      expect(patches).toEqual([]);
+      await confirm.getByRole('button', { name: '店員にする' }).click();
 
       await expect.poll(() => patches).toEqual([{ userId: 'user-1', role: 'supporter' }]);
-      await expect(roleSelect).toHaveText('Support');
+      await expect(roleSelect).toHaveText('User');
       await expect(roleSelect).toBeEnabled();
     });
 

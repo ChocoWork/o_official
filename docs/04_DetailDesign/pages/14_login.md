@@ -72,6 +72,10 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | `src/features/auth/staff/components/StaffInviteScreen.tsx` | `<file>` | DD-AUTH-078 |
 | `src/app/staff/register/page.tsx` | `<file>` | DD-AUTH-080 |
 | `src/features/auth/staff/components/StaffRegisterScreen.tsx` | `<file>` | DD-AUTH-080 |
+| `src/features/auth/staff/components/InviteStaffDialog.tsx` | `<file>` | DD-AUTH-084 |
+| `src/features/auth/staff/components/RedoStaffDialog.tsx` | `<file>` | DD-AUTH-084 |
+| `src/features/auth/staff/components/StaffRoleActions.tsx` | `<file>` | DD-AUTH-084 |
+| `src/features/auth/staff/staff-user-actions.ts` | `<file>` | DD-AUTH-084 |
 | `src/app/login/verify/page.tsx` | `<file>` | DD-AUTH-002 |
 | `src/app/login/verify/VerifyOtpClient.tsx` | `<file>` | DD-AUTH-002 |
 | `src/app/auth/password-reset/page.tsx` | `<file>` | DD-AUTH-003 |

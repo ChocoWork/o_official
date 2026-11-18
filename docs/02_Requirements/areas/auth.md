@@ -5506,7 +5506,7 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 | 上位 | SR-AUTH-026 |
 | 根拠 | SR-AUTH-026 を、降格と招待の取り消しの窓口にする。降格は `admin_set_user_role` の `user` への変更ではなく、開いている招待も取り消す `staff_demote` で行い、その後にログインを全部終わらせる。招待の取り消しは同じ合言葉を使えなくし、招待のセッションも終わらせる。守りは SEC-AUTH-056、処理は DD-AUTH-077、契約は API-AUTH-035・036 |
 | 状態 | 推定 |
-| 確かめ方 | 結合テスト（`tests/integration/api/admin-staff-demote-api.test.ts`、`admin-staff-invite-cancel-api.test.ts`）、単体テスト（`tests/unit/api/admin/staff/demote-route.test.ts`、`invite-cancel-route.test.ts`）、E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`、FR-AUTH-040-AC-01〜02） |
+| 確かめ方 | 結合テスト（`tests/integration/api/admin-staff-demote-api.test.ts`、`admin-staff-invite-cancel-api.test.ts`）、単体テスト（`tests/unit/api/admin/staff/demote-route.test.ts`、`invite-cancel-route.test.ts`）、E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`、FR-AUTH-040-AC-01〜02。画面の操作は FR-AUTH-040-AC-03、`e2e/FR-LOGIN-070-admin-users-staff-screen.spec.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
 | 優先度 | MUST |
 
@@ -5535,6 +5535,18 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
 
 招待を出した人の招待を取り消すと、200 で、行の `cancelled_at` が入り、メールの合言葉の SHA-256 で `staff_invite_consume` を呼んでも行が返らず、その人のログインが0になる。サポーターの JWT での取り消しは 403。
+
+### FR-AUTH-040-AC-03 管理画面「ユーザー」から、店長が店員を招待・やり直し・お客さんに戻す・招待の取り消し・店員にするを行える
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-040 |
+| 根拠 | SR-AUTH-026。窓口（API-AUTH-033〜036）を店長が画面から使えるようにする。画面は SCR-AUTH-016、処理は DD-AUTH-084 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/staff/user-section-staff.test.tsx`、`staff-user-actions.test.ts`、`tests/unit/components/UserSection.test.tsx`）、結合テスト（`tests/integration/ui/auth-admin-users-staff-screen.test.tsx`）、E2E（`e2e/FR-LOGIN-070-admin-users-staff-screen.spec.ts`、`e2e/FR-ADMIN-108-select-fields.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-11-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 11） |
+
+「店員を招待」でメールと役割を送るとメールが1通届き、その行に「招待中」が出て、「招待を取り消す」で同じリンクが使えなくなる。店員の行には認めた鍵の本数（0・1・2）が出て、「パスキーを全部消してやり直す」は確認の語「やり直し」と10字以上の理由が揃うまで送れず、送ると鍵が0本になり、その行は役割が外れて「招待中」に替わる。お客さんの行の役割の選択は「招待のメールを送ります」と確認してから `PATCH /api/admin/users` を呼び、役割はすぐには変わらない。自分の行と最後の店長の行は押せない。メールの送りの失敗（502）は「メールを送れませんでした。もう一度、招待を出してください。」、503 はログアウトにせず「しばらくしてからお試しください。」を出す。
 
 ### FR-AUTH-041 店員は招待のメールのリンクを開き、ボタンを押した時だけ、役割の無いセッションで登録の窓に入る
 
