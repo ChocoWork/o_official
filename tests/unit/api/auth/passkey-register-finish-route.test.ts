@@ -122,6 +122,7 @@ describe('DD-AUTH-056 POST /api/auth/passkey/register/finish', () => {
 
   test('DD-AUTH-056 お客さんは認めを呼ばず、approvedCount を返さない', async () => {
     staffMock.mockResolvedValue({ ok: true, value: false });
+    windowMock.mockResolvedValue({ ok: true, value: false });
     setClaims({ amr: [{ method: 'otp', timestamp: nowSec() - 5 }] });
     const res = await POST(req());
     expect(res.status).toBe(200);

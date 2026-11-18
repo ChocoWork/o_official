@@ -130,17 +130,18 @@ describe('DD-AUTH-056 POST /api/auth/passkey/register/start', () => {
 
   test('DD-AUTH-056 お客さんは窓・本数を引かず、10分以内のメールのコードで 200（mode は customer）', async () => {
     staffMock.mockResolvedValue({ ok: true, value: false });
+    windowMock.mockResolvedValue({ ok: true, value: false });
     setClaims({ amr: [{ method: 'otp', timestamp: nowSec() - 100 }] });
     const res = await POST(req());
     expect(res.status).toBe(200);
     expect((await res.json()).mode).toBe('customer');
-    expect(windowMock).not.toHaveBeenCalled();
     expect(countMock).not.toHaveBeenCalled();
     expect(liveness).not.toHaveBeenCalled();
   });
 
   test('DD-AUTH-056 お客さんが10分より古い・oauth だけなら 403 reauth_required', async () => {
     staffMock.mockResolvedValue({ ok: true, value: false });
+    windowMock.mockResolvedValue({ ok: true, value: false });
     setClaims({ amr: [{ method: 'oauth', timestamp: nowSec() }] });
     const res = await POST(req());
     expect(res.status).toBe(403);

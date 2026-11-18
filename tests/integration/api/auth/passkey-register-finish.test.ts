@@ -115,6 +115,7 @@ describe('API-AUTH-025 POST /api/auth/passkey/register/finish', () => {
 
   test('API-AUTH-025 お客さんは passkey_approve を呼ばず 200', async () => {
     isStaff = false;
+    windowOpen = false;
     const res = await POST(req());
     expect(res.status).toBe(200);
     expect(rpc).not.toHaveBeenCalledWith('passkey_approve', expect.anything());

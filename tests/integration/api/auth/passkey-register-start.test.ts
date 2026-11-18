@@ -98,10 +98,10 @@ describe('API-AUTH-024 POST /api/auth/passkey/register/start', () => {
 
   test('API-AUTH-024 お客さんは窓・本数を引かず、10分以内のメールのコードで 200 の customer', async () => {
     isStaff = false;
+    windowOpen = false;
     const res = await POST(req());
     expect(res.status).toBe(200);
     expect((await res.json()).mode).toBe('customer');
-    expect(rpc).not.toHaveBeenCalledWith('passkey_window_is_open', expect.anything());
   });
 
   test('API-AUTH-024 回数の表が上限（21回目）を超えたら 429 で、認証を呼ばない', async () => {

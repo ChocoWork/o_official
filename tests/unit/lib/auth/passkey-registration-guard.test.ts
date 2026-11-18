@@ -54,7 +54,40 @@ describe('DD-AUTH-079 guardPasskeyRegistration（招待の窓）', () => {
     m(windowIsOpen).mockResolvedValue({ ok: true, value: false });
     const result = await run();
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(403);
+    if (!result.ok) {
+      expect(result.response.status).toBe(403);
+      expect(await result.response.json()).toEqual({ error: 'registration_not_allowed', reason: 'window_closed' });
+    }
+  });
+
+  test('DD-AUTH-079 招待が期限切れで無くても、このセッションの窓が開いていれば window（otp が5秒前）', async () => {
+    m(hasOpenInvite).mockResolvedValue({ ok: true, value: false });
+    m(authenticateRequest).mockResolvedValue({
+      ok: true,
+      claims: { sub: USER_ID, session_id: SESSION_ID, amr: [{ method: 'otp', timestamp: Math.floor(Date.now() / 1000) - 5 }] },
+    });
+    expect(await run()).toMatchObject({ ok: true, isStaff: false, mode: 'window' });
+    expect(windowIsOpen).toHaveBeenCalledWith(USER_ID, SESSION_ID);
+    expect(checkAuthSessionLiveness).toHaveBeenCalledWith(SESSION_ID, true);
+  });
+
+  test('DD-AUTH-079 招待が無く、窓が別のセッションに結んであれば（このセッションでは閉）window にならない', async () => {
+    m(hasOpenInvite).mockResolvedValue({ ok: true, value: false });
+    m(windowIsOpen).mockResolvedValue({ ok: true, value: false });
+    m(authenticateRequest).mockResolvedValue({
+      ok: true,
+      claims: { sub: USER_ID, session_id: SESSION_ID, amr: [{ method: 'otp', timestamp: Math.floor(Date.now() / 1000) - 5 }] },
+    });
+    const result = await run();
+    expect(result).toMatchObject({ ok: true, mode: 'customer' });
+    expect(windowIsOpen).toHaveBeenCalledWith(USER_ID, SESSION_ID);
+  });
+
+  test('DD-AUTH-079 非店員の窓の確かめが読めなければ 503', async () => {
+    m(windowIsOpen).mockResolvedValue({ ok: false });
+    const result = await run();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(503);
   });
 
   test('DD-AUTH-079 窓・本数が読めなければ 503', async () => {

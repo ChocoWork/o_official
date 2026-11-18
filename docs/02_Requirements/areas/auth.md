@@ -5598,7 +5598,7 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6b-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6b） |
 | 優先度 | MUST |
 
-規則: (1) 店員でなくても、有効な招待があり（`staff_invite_open`）、その `session_id` に結んだ窓が開いていれば `window`。鍵は `passkey_approve(…, 'window')` で認める。(2) 結び付いた生きたセッション（`checkAuthSessionLiveness(session_id, true)`）を店員と同じく求める。(3) 窓が閉じた・別のセッションなら、お客さんの「10分以内」の道に落とさず `window_closed`。(4) 認めた鍵が2本以上なら `reauth_required`（窓の免除は最初の2本まで）。(5) 招待の無いお客さんは今のまま。
+規則: (1) 店員でなくても、その `session_id` に結んだ窓が開いていれば `window`（窓が開いていれば招待は有効と見なす。招待の期限が過ぎても窓は最長30分開いている）。窓が閉じていても有効な招待（`staff_invite_open`）があれば `window_closed`。鍵は `passkey_approve(…, 'window')` で認める。(2) 結び付いた生きたセッション（`checkAuthSessionLiveness(session_id, true)`）を店員と同じく求める。(3) 窓が閉じた・別のセッションなら、お客さんの「10分以内」の道に落とさず `window_closed`。(4) 認めた鍵が2本以上なら `reauth_required`（窓の免除は最初の2本まで）。(5) 招待の無いお客さんは今のまま。
 
 ### FR-AUTH-042-AC-01 役割が無くても、招待の窓の中の人は登録の始めが 200 で mode は window
 
@@ -7869,7 +7869,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6b-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6b） |
 | 優先度 | MUST |
 
-守ること: (1) 招待の確かめ・窓・本数のどれかが読めなければ 503（閉じる側）。(2) 窓が閉じても有効な招待があれば `window_closed`（お客さんの道に落とさない）。(3) 窓の中でも認めた鍵が2本以上なら `reauth_required`。(4) 結び付いた生きたセッションでなければ 401。(5) 招待の無いお客さんの道は変えない。
+守ること: (1) 招待の確かめ・窓（非店員も）・本数のどれかが読めなければ 503（閉じる側）。(2) 招待の確かめ（`staff_invite_open`。期限を含む）と、このセッションの窓のどちらかが真なら招待の道に入る（期限が過ぎても窓が開いていれば `window`）。窓が閉じても有効な招待があれば `window_closed`（お客さんの道に落とさない）。(3) 窓の中でも認めた鍵が2本以上なら `reauth_required`。(4) 結び付いた生きたセッションでなければ 401。(5) 招待の無いお客さんの道は変えない。
 
 ## 派生要件
 

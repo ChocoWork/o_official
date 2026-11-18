@@ -123,6 +123,7 @@ describe('DD-AUTH-079 招待の窓の人の登録（役割が無い案 B）', ()
 
   test('DD-AUTH-079 窓の中でも認めた鍵が2本なら 403 reauth_required（3本目は認めない）', async () => {
     m(approvedCount).mockResolvedValue({ ok: true, value: 2 });
+    setAmrAgo(5); // 旧コード（お客さんの道）なら 200 になる新しさ
     const res = await start(startReq());
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: 'registration_not_allowed', reason: 'reauth_required' });
@@ -143,10 +144,11 @@ describe('DD-AUTH-079 招待の窓の人の登録（役割が無い案 B）', ()
 
   test('DD-AUTH-079 招待が無いお客さんは窓・本数・生存を引かず、今までどおり customer', async () => {
     m(hasOpenInvite).mockResolvedValue({ ok: true, value: false });
+    m(windowIsOpen).mockResolvedValue({ ok: true, value: false });
     setAmrAgo(5);
     const res = await start(startReq());
     expect((await res.json()).mode).toBe('customer');
-    expect(windowIsOpen).not.toHaveBeenCalled();
+    expect(approvedCount).not.toHaveBeenCalled();
     expect(checkAuthSessionLiveness).not.toHaveBeenCalled();
     await finish(finishReq());
     expect(approve).not.toHaveBeenCalled();

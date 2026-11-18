@@ -264,6 +264,6 @@ sequenceDiagram
 | 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-recent-auth.test.ts`、`tests/unit/lib/auth/passkey-registration-guard.test.ts`、`tests/unit/api/auth/passkey-register-invite-window.test.ts`）、E2E（`e2e/FR-LOGIN-065-staff-register-window.spec.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6b-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6b） |
 
-- 店員でない人は `hasOpenInvite`（IMPL-AUTH-371。`staff_invite_open`）を呼ぶ。偽なら今までのお客さんの道（窓・本数・生存は引かない）。真なら `checkAuthSessionLiveness(session_id, true)` → `windowIsOpen`・`approvedCount` を店員と同じ順で確かめる
+- 店員でない人は `hasOpenInvite`（IMPL-AUTH-371。`staff_invite_open`。期限を含む）と、このセッションの `windowIsOpen` を並べて呼ぶ（どちらかが読めなければ 503）。両方偽なら今までのお客さんの道（本数・生存は引かない）。どちらかが真なら（招待の期限が過ぎても窓は最長30分開くので、窓が開いていれば招待は有効と見なす） `checkAuthSessionLiveness(session_id, true)` → `windowIsOpen`・`approvedCount` を店員と同じ順で確かめる
 - `evaluateRegistrationAccess` は `inviteWindowOpen`（窓が開いている）・`inviteOpen`（招待が有効）を受け取る。窓が開いて2本未満なら `window`、2本以上なら `reauth_required`、窓が閉じて招待だけ有効なら `window_closed`
 - `register/finish` は `guard.isStaff` が偽でも `guard.mode === 'window'` なら `passkey_approve(…, 'window')` を呼ぶ

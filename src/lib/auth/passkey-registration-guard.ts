@@ -67,12 +67,18 @@ export async function guardPasskeyRegistration(
   const staff = await isStaff(userId);
   if (!staff.ok) return deny('staff_check_unavailable', { error: 'passkey_register_unavailable' }, 503, userId);
 
-  // 役割が無くても、有効な招待があれば窓の道（案 B）。店員と同じく結び付いた生きたセッションを求める。
+  // 役割が無くても、有効な招待がある、またはこのセッションに結んだ窓が開いていれば窓の道（案 B）。
+  // 招待の期限が過ぎても窓は最長30分開いていて有効化できるので、窓が開いていれば招待は有効と見なす（窓を先に見る）。
   let invitePending = false;
+  let invitedWindowOpen = false;
   if (!staff.value) {
-    const invite = await hasOpenInvite(userId);
-    if (!invite.ok) return deny('invite_check_unavailable', { error: 'passkey_register_unavailable' }, 503, userId);
-    invitePending = invite.value;
+    const [invite, opened] = await Promise.all([
+      hasOpenInvite(userId),
+      claims.session_id ? windowIsOpen(userId, claims.session_id) : Promise.resolve({ ok: true, value: false } as const),
+    ]);
+    if (!invite.ok || !opened.ok) return deny('invite_check_unavailable', { error: 'passkey_register_unavailable' }, 503, userId);
+    invitedWindowOpen = opened.value;
+    invitePending = invite.value || invitedWindowOpen;
   }
 
   let windowOpen = false;

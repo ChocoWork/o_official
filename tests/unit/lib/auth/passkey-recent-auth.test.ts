@@ -104,8 +104,8 @@ describe('DD-AUTH-079 evaluateRegistrationAccess（招待の窓の人。役割�
     expect(invitee({ approvedCount: count })).toEqual({ ok: true, mode: 'window' });
   });
 
-  test.each([2, 3, Number.NaN])('DD-AUTH-079 窓の中でも認めた鍵が %p なら reauth_required', (count) => {
-    expect(invitee({ approvedCount: count })).toEqual({ ok: false, reason: 'reauth_required' });
+  test.each([2, 3, Number.NaN])('DD-AUTH-079 窓の中でも認めた鍵が %p なら reauth_required（otp が5秒前でもお客さんの道に落ちない）', (count) => {
+    expect(invitee({ approvedCount: count, claims: { amr: [{ method: 'otp', timestamp: NOW - 5 }] } })).toEqual({ ok: false, reason: 'reauth_required' });
   });
 
   test('DD-AUTH-079 窓が閉じても招待の行が有効なら、お客さんの道に落ちず window_closed（otp が新しくても）', () => {
