@@ -8,9 +8,10 @@
  * 1本目と2本目は別の認証器（同じ認証器だと、登録の除外の一覧で2本目が断られる）。ログインは2本目の認証器で行う。
  */
 import { expect, test, type Page } from '@playwright/test';
-import { skipPasskeyNotificationsOf, provisionPasskeyUser } from '../scripts/e2e/passkey-staff';
-import { seedVerifiedMfaFactor } from './admin-session-test-utils';
-import { withLocalDb } from './order-email-test-utils';
+import { randomInt } from 'node:crypto';
+import { skipPasskeyNotificationsOf, provisionPasskeyUser, provisionStaff } from '../scripts/e2e/passkey-staff';
+import { bearerHeaders, createAdminSessionActor, seedVerifiedMfaFactor } from './admin-session-test-utils';
+import { mailBodies, withLocalDb } from './order-email-test-utils';
 import { addVirtualAuthenticator, type VirtualAuthenticator } from './passkey-virtual-authenticator';
 
 test.use({ trace: 'off' });
@@ -168,6 +169,13 @@ for (const viewport of viewports) {
         failOnStatusCode: false,
       });
       expect(stale.status()).toBe(401);
+      // 役割が有効になった後でも、招待のセッションのトークンでは管理の窓口に入れない
+      const staleAdmin = await page.request.get('/api/admin/users', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        failOnStatusCode: false,
+      });
+      expect(staleAdmin.status()).not.toBe(200);
+      expect([401, 403]).toContain(staleAdmin.status());
       await withLocalDb((db) => skipPasskeyNotificationsOf(db, invited.userId));
     });
 
@@ -191,19 +199,66 @@ for (const viewport of viewports) {
       expect(admin.status()).toBe(200);
     });
 
-    test(`FR-AUTH-043-AC-06 ${viewport.name}: 認証アプリ（TOTP）を持つ店長をやり直しても、2本の登録が通り、役割が有効になる`, async ({ page }) => {
+    test(`FR-AUTH-043-AC-06 ${viewport.name}: 認証アプリ（TOTP）を持つ店長を店長がやり直すと、古い鍵・認めた行・要素が消え、2本の登録が通って役割が有効になる`, async ({ page, request }) => {
       test.setTimeout(180_000);
-      const invited = await issueInvite({ totp: true });
-      // 招待を出すと、移行 H の関数が認証アプリの要素を全部消す（aal2 を持てなくても、鍵は登録できる）
-      const factors = await withLocalDb(async (db) =>
-        Number((await db.query('select count(*)::int as n from auth.mfa_factors where user_id = $1::uuid', [invited.userId])).rows[0].n),
+      const owner = await withLocalDb((db) => createAdminSessionActor(db, 'admin', 'aal2'));
+      const target = await withLocalDb(async (db) => {
+        const staff = await provisionStaff(db, { role: 'admin', approvedPasskeys: 2 });
+        await seedVerifiedMfaFactor(db, staff.userId);
+        return staff;
+      });
+      const count = (table: string) =>
+        withLocalDb(async (db) => {
+          const sql: Record<string, string> = {
+            keys: 'select count(*)::int as n from auth.webauthn_credentials where user_id = $1::uuid',
+            approved: 'select count(*)::int as n from private.approved_passkeys where user_id = $1::uuid',
+            factors: 'select count(*)::int as n from auth.mfa_factors where user_id = $1::uuid',
+            inactiveRoles: 'select count(*)::int as n from public.user_roles where user_id = $1::uuid and active = false',
+          };
+          return Number((await db.query(sql[table], [target.userId])).rows[0].n);
+        });
+      // 出発点: 有効な店長で、鍵2本・認めた行2本・認証アプリ1つ
+      expect(await roleOf(target.userId)).toEqual(['admin']);
+      expect(await count('keys')).toBe(2);
+      expect(await count('approved')).toBe(2);
+      expect(await count('factors')).toBe(1);
+
+      const redo = await request.post(`/api/admin/staff/${target.userId}/redo`, {
+        headers: { ...bearerHeaders(owner), origin: ORIGIN, 'x-real-ip': `198.19.${randomInt(0, 256)}.${randomInt(1, 255)}` },
+        data: { confirm: 'やり直し', reason: '認証アプリの端末を失くしたため、やり直します' },
+        failOnStatusCode: false,
+      });
+      expect(redo.status()).toBe(200);
+      // 登録の直前: 古い鍵・認めた行・要素は無く、役割の行は残るが有効ではない
+      expect(await count('keys')).toBe(0);
+      expect(await count('approved')).toBe(0);
+      expect(await count('factors')).toBe(0);
+      expect(await roleOf(target.userId)).toEqual([]);
+      expect(await count('inactiveRoles')).toBe(1);
+
+      let token = '';
+      await expect
+        .poll(
+          async () => {
+            const bodies = await mailBodies(request, target.email, '店員のアカウントの登録のご案内');
+            token = /\/staff\/invite#([A-Za-z0-9_-]{43})/.exec(bodies[0]?.Text ?? '')?.[1] ?? '';
+            return token !== '';
+          },
+          { timeout: 15_000, message: 'やり直しのメールのリンクが届く' },
+        )
+        .toBe(true);
+
+      authenticators.push(await registerTwoKeys(page, { userId: target.userId, email: target.email, token }));
+
+      expect(await roleOf(target.userId)).toEqual(['admin']);
+      expect(await count('keys')).toBe(2);
+      const approved = await withLocalDb(async (db) =>
+        (await db.query('select approved_via from private.approved_passkeys where user_id = $1::uuid', [target.userId])).rows.map(
+          (row: { approved_via: string }) => row.approved_via,
+        ),
       );
-      expect(factors).toBe(0);
-
-      authenticators.push(await registerTwoKeys(page, invited));
-
-      expect(await roleOf(invited.userId)).toEqual(['admin']);
-      await withLocalDb((db) => skipPasskeyNotificationsOf(db, invited.userId));
+      expect(approved).toEqual(['window', 'window']);
+      await withLocalDb((db) => skipPasskeyNotificationsOf(db, target.userId));
     });
 
     test(`FR-AUTH-043-AC-07 ${viewport.name}: 招待のセッションのトークンで /api/admin/* を叩くと 403`, async ({ page }) => {
@@ -256,6 +311,17 @@ for (const viewport of viewports) {
           [invited.userId],
         ),
       );
+
+      const start = await page.request.post('/api/auth/passkey/register/start', {
+        headers: { origin: ORIGIN, 'x-csrf-token': csrf! },
+        failOnStatusCode: false,
+      });
+      expect(start.status()).toBe(403);
+      expect(await start.json()).toEqual({ error: 'registration_not_allowed', reason: 'window_closed' });
+      const keys = await withLocalDb(async (db) =>
+        Number((await db.query('select count(*)::int as n from auth.webauthn_credentials where user_id = $1::uuid', [invited.userId])).rows[0].n),
+      );
+      expect(keys).toBe(0);
 
       const complete = await page.request.post('/api/auth/staff/register/complete', {
         headers: { origin: ORIGIN, 'x-csrf-token': csrf! },

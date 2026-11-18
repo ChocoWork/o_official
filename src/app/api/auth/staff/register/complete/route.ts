@@ -106,7 +106,7 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     // 役割は有効になった。この招待のセッションと本人の全ログインを終わらせる（パスキーのログインだけが入口）。
-    await endAuthSession(accessToken);
+    const inviteEnded = await endAuthSession(accessToken);
     let ended = false;
     try {
       await revokeAllSessionsForUser(userId);
@@ -117,7 +117,12 @@ export async function POST(request: Request): Promise<Response> {
     await logAudit(
       ended
         ? { action: AUDIT_ACTION, outcome: 'success', detail: 'role_activated', actor_id: userId }
-        : { action: AUDIT_ACTION, outcome: 'error', detail: 'session_revocation_failed', actor_id: userId },
+        : {
+            action: AUDIT_ACTION,
+            outcome: 'error',
+            detail: inviteEnded ? 'session_revocation_failed' : 'session_revocation_failed_invite_alive',
+            actor_id: userId,
+          },
     );
 
     const response = json({ redirectTo: '/login' }, 200);

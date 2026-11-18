@@ -6,7 +6,7 @@ import { readAuthSessionId } from '@/lib/auth/app-session';
  *
  * @impl IMPL-AUTH-366
  * @design DD-AUTH-078
- * @remarks `accessToken` は、自分が今 GoTrue から受け取ったものだけを渡す（リクエスト由来の値は渡さない）。session_id が読めなければ false。
+ * @remarks `accessToken` は、自分が今 GoTrue から受け取ったもの、またはこのリクエストで `authenticateRequest` が署名と生存を確かめ済みのものだけを渡す（確かめていないリクエスト由来の値は渡さない）。session_id が読めなければ false。
  * パスキーのログインの終わりと、招待のリンクの受け口が使う。
  */
 export async function endAuthSession(accessToken: string): Promise<boolean> {

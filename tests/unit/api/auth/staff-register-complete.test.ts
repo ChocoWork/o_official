@@ -126,6 +126,14 @@ describe('DD-AUTH-080 2本の登録の終わりの窓口', () => {
     expect(audit.mock.calls.some(([entry]) => entry.outcome === 'error' && entry.detail === 'session_revocation_failed')).toBe(true);
   });
 
+  test('DD-AUTH-080 招待のセッションの終了も失敗していたら、監査に invite_alive を残す', async () => {
+    revokeAll.mockRejectedValue(new Error('x'));
+    endSession.mockResolvedValue(false);
+    const res = await POST(req());
+    expect(res.status).toBe(200);
+    expect(audit.mock.calls.some(([entry]) => entry.outcome === 'error' && entry.detail === 'session_revocation_failed_invite_alive')).toBe(true);
+  });
+
   test('DD-AUTH-080 未認証は 401、確認できない時は 503 で、DB を呼ばない', async () => {
     authenticate.mockResolvedValueOnce({ ok: false, reason: 'missing' });
     expect((await POST(req())).status).toBe(401);

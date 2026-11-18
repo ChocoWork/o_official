@@ -299,5 +299,5 @@ sequenceDiagram
 - ページ（IMPL-AUTH-374）: `readStaffRegisterAccess`（IMPL-AUTH-378。署名済みトークン → `checkAuthSessionLiveness(session_id, true)` → `passkey_window_is_open`・`passkey_approved_count`。読めない・閉じているは `{ ok: false }` で `/login`）。検索に載せない
 - 画面（IMPL-AUTH-375）: 1本目 → おすすめの文 → 2本目の2段。窓口が `window_closed`・401 と答えたら時間切れの文だけ、`reauth_required` は完了へ進む。1本だけで「登録を完了する」を押すと窓口が 409 `keys_short` を返し、文は「あと1本、登録してください。」。完了後は文と「ログインへ」（自動では進まない）
 - 呼び（IMPL-AUTH-377）: `completeStaffRegistration`（本文なしの POST。409 `keys_short`・`keys_not_window`、403・401 は `window_closed`、429、503、そのほかは `failed`）
-- 窓口（IMPL-AUTH-376）: 枠（IP・本人）→ 認証 → CSRF → 生きたセッション → `activateStaffRole`（IMPL-AUTH-399）→ `endAuthSession`（IMPL-AUTH-366）＋`revokeAllSessionsForUser` → Cookie を消す。ログインの終了だけが落ちた時は、役割が有効なので 200 にして監査に error を残す
+- 窓口（IMPL-AUTH-376）: 枠（IP・本人）→ 認証 → CSRF → 生きたセッション → `activateStaffRole`（IMPL-AUTH-399）→ `endAuthSession`（IMPL-AUTH-366）＋`revokeAllSessionsForUser` → Cookie を消す。ログインの終了だけが落ちた時は、役割が有効なので 200 にして監査に error を残す（招待のセッションの終了も失敗していたら `session_revocation_failed_invite_alive`）
 - 招待の登録の中の鍵は、招待の窓の中のセッション（役割が無い）で `register/start`・`finish` を呼び、`passkey_approve(…, 'window')` で認められる（DD-AUTH-079）。招待は認証アプリの要素を消すので、aal2 は要らない

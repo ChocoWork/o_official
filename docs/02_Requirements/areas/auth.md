@@ -5659,7 +5659,7 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 | 確かめ方 | 単体テスト（`tests/unit/app/staff/register-page.test.tsx`、`tests/unit/features/auth/staff/staff-register-access.test.ts`、`tests/unit/api/auth/staff-register-complete.test.ts`）、E2E（`e2e/FR-LOGIN-066-staff-register-two-keys.spec.ts`。390・768・1280 の3幅でくり返す） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-7-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 7） |
 
-窓が閉じた・別のセッション・失効したセッションで `/staff/register` を開くと `/login` へ送られる。窓を閉じた後の `POST /api/auth/staff/register/complete` は 403 `{ error: 'window_closed' }` で、役割は有効にならない。鍵の登録が窓の外と答えた時、画面は「時間が過ぎました。店長に、もう一度招待を出してもらってください。」だけを出してボタンを消す。
+窓が閉じた・別のセッション・失効したセッションで `/staff/register` を開くと `/login` へ送られる。窓を閉じた後の `POST /api/auth/passkey/register/start` は 403 `registration_not_allowed`（`window_closed`）で、鍵は増えない。`POST /api/auth/staff/register/complete` も 403 `{ error: 'window_closed' }` で、役割は有効にならない。鍵の登録が窓の外と答えた時、画面は「時間が過ぎました。店長に、もう一度招待を出してもらってください。」だけを出してボタンを消す。
 
 ### FR-AUTH-043-AC-03 成功した完了の窓口は、全ログインを終わらせ、認証の Cookie を消し、/login へ送る
 
@@ -5671,7 +5671,7 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 | 確かめ方 | E2E（`e2e/FR-LOGIN-066-staff-register-two-keys.spec.ts`。390・768・1280 の3幅でくり返す）。単体テスト（DD-AUTH-080。`tests/unit/api/auth/staff-register-complete.test.ts`）でも確かめる |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-7-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 7） |
 
-役割を有効にした後、`endAuthSession` と `revokeAllSessionsForUser` を呼び、`sb-access-token`・`sb-refresh-token`・`sb-csrf-token`・`session_id` の Cookie を消し、`{ redirectTo: '/login' }` を no-store で返す。完了のそれまでのアクセストークンは、その後の窓口で 401 になる。ログインの終了だけが落ちた時は、役割は有効なので 200 で Cookie を消し、監査に `session_revocation_failed` の error を残す。
+役割を有効にした後、`endAuthSession` と `revokeAllSessionsForUser` を呼び、`sb-access-token`・`sb-refresh-token`・`sb-csrf-token`・`session_id` の Cookie を消し、`{ redirectTo: '/login' }` を no-store で返す。完了のそれまでのアクセストークンは、その後の `GET /api/auth/passkey` で 401、`GET /api/admin/users` で 200 にならない。ログインの終了だけが落ちた時は、役割は有効なので 200 で Cookie を消し、監査に `session_revocation_failed`（招待のセッションの終了も失敗していたら `session_revocation_failed_invite_alive`）の error を残す。
 
 ### FR-AUTH-043-AC-04 招待 → 押す → 1本目 → 2本目 → 完了で、役割が有効になり、鍵2本が window で認められ、招待が使用済みになり、/login へ送られる
 
@@ -5697,7 +5697,7 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 
 完了の後、2本目の認証器で `/login` の「パスキーでログイン」を押すと `/admin` に着き、`/api/auth/me` は `role: admin`、`GET /api/admin/users` は 200。
 
-### FR-AUTH-043-AC-06 認証アプリ（TOTP）を持つ店長をやり直しても、2本の登録が通り、役割が有効になる
+### FR-AUTH-043-AC-06 認証アプリ（TOTP）を持つ店長を店長がやり直すと、古い鍵・認めた行・要素が消え、2本の登録が通って役割が有効になる
 
 | 属性 | 値 |
 | --- | --- |
@@ -5707,7 +5707,7 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 | 確かめ方 | E2E（`e2e/FR-LOGIN-066-staff-register-two-keys.spec.ts`。390・768・1280 の3幅でくり返す） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-7-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 7） |
 
-検証済みの TOTP の要素を持つ利用者に招待を出すと要素が0件になり、aal2 を持たない招待のセッションで2本の鍵を登録して完了でき、役割が有効になる。
+有効な店長（鍵2本・認めた行2本・検証済みの TOTP の要素1つ）に別の店長が `POST /api/admin/staff/{id}/redo` を出すと、登録の直前には鍵・認めた行・要素が0件で、役割の行は残るが有効ではない。やり直しのメールのリンクから、aal2 を持たない招待のセッションで2本の鍵を登録して完了でき、役割が有効に戻り、2本とも `approved_via = window` になる。
 
 ### FR-AUTH-043-AC-07 招待のセッションのトークンで /api/admin/* を叩くと 403
 
