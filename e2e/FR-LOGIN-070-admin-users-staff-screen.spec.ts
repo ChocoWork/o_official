@@ -178,6 +178,10 @@ for (const viewport of viewports) {
       await expect(self.getByText('自分自身は変更できません。')).toBeVisible();
 
       const row = rowOf(page, target.email);
+      // 選択欄からは、確認なしで降格できない（User を選べない）
+      await row.getByRole('combobox').click();
+      await expect(page.getByRole('listbox').getByRole('option')).toHaveText(['Admin', 'Support']);
+      await page.keyboard.press('Escape');
       await row.getByRole('button', { name: 'お客さんに戻す' }).click();
       await page.getByRole('dialog', { name: 'お客さんに戻す' }).getByRole('button', { name: 'お客さんに戻す' }).click();
       await expect(page.getByText(`${target.email} をお客さんに戻しました。`)).toBeVisible(NAVIGATION);

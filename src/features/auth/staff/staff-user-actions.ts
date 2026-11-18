@@ -18,7 +18,7 @@ const MSG_FAILED = '処理を完了できませんでした。もう一度お試
 function staffInviteFailureMessage(status: number, code: unknown): string | null {
   if (status === 502 || code === 'mail_failed') return STAFF_MSG_MAIL_FAILED;
   if (code === 'already_staff') return STAFF_MSG_ALREADY_STAFF;
-  if (status === 503) return STAFF_MSG_UNAVAILABLE;
+  if (status === 503 || status === 429) return STAFF_MSG_UNAVAILABLE;
   return null;
 }
 

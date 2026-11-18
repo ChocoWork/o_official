@@ -99,6 +99,32 @@ describe('DD-AUTH-084 店員の行の操作', () => {
   });
 });
 
+describe('DD-AUTH-084 店員の行の役割の選択', () => {
+  it('DD-AUTH-084 店員の行の選択欄に User は無く、確認なしで降格する道が無い', async () => {
+    const user = userEvent.setup();
+    render(<UserSection />);
+    const support = await rowOf('support@example.com');
+    await user.click(within(support).getByRole('combobox'));
+    const options = within(await screen.findByRole('listbox')).getAllByRole('option').map((option) => option.textContent);
+    expect(options).toEqual(['Admin', 'Support']);
+    expect(calls('PATCH')).toHaveLength(0);
+  });
+
+  it('DD-AUTH-084 店員どうしの切り替えが 429 で断られたら、元の役割に戻して「しばらくしてから」を出す', async () => {
+    respond = (_url, init) => (init?.method === 'PATCH' ? { status: 429, body: {} } : null);
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const user = userEvent.setup();
+    render(<UserSection />);
+    const support = await rowOf('support@example.com');
+    const select = within(support).getByRole('combobox');
+    await user.click(select);
+    await user.click(within(await screen.findByRole('listbox')).getByRole('option', { name: 'Admin' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('しばらくしてからお試しください。');
+    expect(select).toHaveTextContent('Support');
+    consoleError.mockRestore();
+  });
+});
+
 describe('DD-AUTH-084 やり直しのダイアログ', () => {
   async function openRedo() {
     const user = userEvent.setup();

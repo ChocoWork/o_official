@@ -187,7 +187,7 @@ export default function UserSection() {
         if (code === "already_staff") {
           throw new Error(STAFF_MSG_ALREADY_STAFF);
         }
-        if (response.status === 503) {
+        if (response.status === 503 || response.status === 429) {
           throw new Error(STAFF_MSG_UNAVAILABLE);
         }
         if (typeof body === "object" && body !== null && "code" in body) {
@@ -297,10 +297,13 @@ export default function UserSection() {
                   user.id === selfId ||
                   user.id === lastAdminId
                 }
+                // 店員の行から選択欄で User にすると確認なしで降格してしまうので、選ばせない（「お客さんに戻す」の確認つきボタンだけにする）
                 options={[
                   { value: "admin", label: "Admin" },
                   { value: "supporter", label: "Support" },
-                  { value: "user", label: "User" },
+                  ...(user.roleValue === "user"
+                    ? [{ value: "user", label: "User" }]
+                    : []),
                 ]}
                 size="sm"
               />
