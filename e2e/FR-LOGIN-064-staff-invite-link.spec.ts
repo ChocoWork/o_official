@@ -101,8 +101,17 @@ for (const viewport of viewports) {
         await expect.poll(() => new URL(page.url()).hash).toBe('');
         expect(page.url()).not.toContain(invite.token);
 
+        const mailsBefore = (await mailBodies(request, invite.email)).length;
+        expect(mailsBefore).toBe(1);
         await page.getByRole('button', { name: '登録を始める' }).click();
         await expect(page).toHaveURL(/\/staff\/register$/);
+        // generateLink（magiclink）はメールを送らない。POST の後も、招待の人に届いたメールは増えない
+        await expect
+          .poll(async () => (await mailBodies(request, invite.email)).length, { timeout: 3_000, intervals: [500] })
+          .toBe(mailsBefore);
+        // poll は一致した時点で終わるので、短く待った後にもう一度数える
+        await page.waitForTimeout(1_500);
+        expect((await mailBodies(request, invite.email)).length).toBe(mailsBefore);
 
         const me = await page.request.get('/api/auth/me');
         expect(me.status()).toBe(200);

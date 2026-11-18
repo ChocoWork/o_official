@@ -32,7 +32,12 @@ export default function StaffInviteScreen() {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
 
+  const readRef = useRef(false);
+
   useEffect(() => {
+    // StrictMode は効果を2回走らせる。2回目は # が空なので、読むのは1回だけにする。
+    if (readRef.current) return;
+    readRef.current = true;
     const token = window.location.hash.replace(/^#/, "");
     if (token) {
       window.history.replaceState(null, "", window.location.pathname + window.location.search);

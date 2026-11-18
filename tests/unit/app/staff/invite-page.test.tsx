@@ -102,6 +102,17 @@ describe('/staff/invite 画面', () => {
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/staff/register'));
   });
 
+  test('DD-AUTH-078 StrictMode（効果が2回走る）でも、正しいリンクにボタンが出て「正しくありません」は出ない', async () => {
+    window.history.replaceState(null, '', `/staff/invite#${TOKEN}`);
+    render(
+      <React.StrictMode>
+        <StaffInvitePage />
+      </React.StrictMode>,
+    );
+    expect(await screen.findByRole('button', { name: '登録を始める' })).toBeInTheDocument();
+    expect(screen.queryByText(/リンクが正しくありません/)).toBeNull();
+  });
+
   test('DD-AUTH-078 redirectTo が / で始まらなければ使わない', async () => {
     fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ redirectTo: 'https://evil.example' }) });
     open(`#${TOKEN}`);
