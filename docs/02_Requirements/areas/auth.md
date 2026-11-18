@@ -5738,9 +5738,9 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SR-AUTH-028 |
-| 根拠 | SR-AUTH-028 を、移行 D の表 `private.staff_session_activity` と関数 `private.staff_idle_ok`・`public.staff_session_touch`・`staff_idle_check`・`staff_idle_peek`、移行 E の `has_permission` の4つ目の条件にする。構造は ARC-AUTH-013、守りは SEC-AUTH-055、処理は DD-AUTH-074、判断は ADR-0472。管理 API・`/api/auth/me`・店員のパスキーの窓口（一覧・名前・削除）・ログインの終わりがこの関数を呼ぶ配線は Task 8（DD-AUTH-081・DD-AUTH-082）。招待の窓口・ページの入口は Task 9 |
+| 根拠 | SR-AUTH-028 を、移行 D の表 `private.staff_session_activity` と関数 `private.staff_idle_ok`・`public.staff_session_touch`・`staff_idle_check`・`staff_idle_peek`、移行 E の `has_permission` の4つ目の条件にする。構造は ARC-AUTH-013、守りは SEC-AUTH-055、処理は DD-AUTH-074、判断は ADR-0472。管理 API・`/api/auth/me`・店員のパスキーの窓口（一覧・名前・削除）・ログインの終わりがこの関数を呼ぶ配線は Task 8（DD-AUTH-081）。招待の窓口・ページの入口は Task 9 |
 | 状態 | 推定 |
-| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_idle.integration.test.ts`、`tests/integration/db/auth_has_permission_passkey.integration.test.ts`）、E2E（FR-AUTH-044-AC-01〜05。`e2e/FR-LOGIN-067-staff-idle-timeout.spec.ts`）、単体テスト（DD-AUTH-081・DD-AUTH-082） |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_idle.integration.test.ts`、`tests/integration/db/auth_has_permission_passkey.integration.test.ts`）、E2E（FR-AUTH-044-AC-01〜06。`e2e/FR-LOGIN-067-staff-idle-timeout.spec.ts`）、単体テスト（DD-AUTH-081） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-3-brief.md`、`task-8-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 3・8） |
 | 優先度 | MUST |
 
@@ -5805,6 +5805,18 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-8-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 8） |
 
 `GET /api/auth/passkey` は、59分前の店員には 200、61分前の店員には 401 `{ error: 'session_idle' }` でセッションを終わらせる。店員でないお客さんには無操作の確かめを当てず、200 を返す。
+
+### FR-AUTH-044-AC-06 管理画面を開いたまま無操作が61分になり、管理の操作をすると /login?reason=idle へ送られ、ログアウトの文が出る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-044 |
+| 根拠 | SR-AUTH-028 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-067-staff-idle-timeout.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-8-review.md`（I-1）、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 8） |
+
+`/admin` を開いたまま最後の操作の時刻が61分前になった店員が、画面の管理の操作（タブ USER）をすると、API の 401 `session_idle` を受けた画面が更新を試さずに `/login?reason=idle` へ送り、「しばらく操作がなかったため、ログアウトしました。」が表示される。GoTrue のセッションは終わっている。
 
 ### FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel`
 

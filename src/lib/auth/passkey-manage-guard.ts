@@ -32,7 +32,7 @@ const UNAVAILABLE_BODY = { error: 'passkey_manage_unavailable', message: 'しば
  * 店員の無操作1時間と、パスキーのログインから24時間を確かめる。通せば null、断る時は応答（401 `session_idle`・503）を返す。
  *
  * @impl IMPL-AUTH-382
- * @design DD-AUTH-082
+ * @design DD-AUTH-081
  * @remarks 24時間は、パスキーのログインの印がある時だけ見る（招待の窓の中のセッションにはその印が無い）。超えた・無操作を過ぎた時は GoTrue のセッションを終わらせる。確かめの失敗は 503（終わらせない）。
  */
 export async function denyIdleStaff(claims: { session_id?: string; amr?: unknown }, userId: string): Promise<Response | null> {

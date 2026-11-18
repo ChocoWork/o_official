@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, ReactNode } from "react";
 import { supabase } from '@/lib/supabase/client';
 import { navigateBrowser } from '@/lib/browser-location';
-import { clientFetch, resetRefreshCooldown, SESSION_EXPIRED_EVENT } from '@/lib/client-fetch';
+import { clientFetch, resetRefreshCooldown, SESSION_EXPIRED_EVENT, SESSION_IDLE_EVENT } from '@/lib/client-fetch';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -278,9 +278,16 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
       applyAuthState(false);
     };
 
+    // 店員の無操作1時間。理由 idle を付けて落とし、管理画面が /login?reason=idle へ送る（DD-AUTH-081）。
+    const handleSessionIdle = () => {
+      applyAuthState(false, undefined, undefined, 'idle');
+    };
+
     window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    window.addEventListener(SESSION_IDLE_EVENT, handleSessionIdle);
     return () => {
       window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+      window.removeEventListener(SESSION_IDLE_EVENT, handleSessionIdle);
     };
   }, [applyAuthState]);
 

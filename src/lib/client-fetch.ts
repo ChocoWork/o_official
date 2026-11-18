@@ -31,6 +31,8 @@ const REFRESH_ERROR_COOLDOWN_MS = 5_000;
 const REFRESH_COOLDOWN_CAP_MS = 5 * 60_000;
 
 export const SESSION_EXPIRED_EVENT = 'auth:session-expired';
+/** 店員の無操作1時間で API が 401 `session_idle` を返した時の通知（画面が /login?reason=idle へ送る。DD-AUTH-081） */
+export const SESSION_IDLE_EVENT = 'auth:session-idle';
 
 /**
  * セッション更新の抑制を解除する。ログイン成功時に呼ぶこと。
@@ -211,6 +213,18 @@ export async function clientFetch(
   };
 
   const response = await fetchWithNetworkRetry(endpoint, requestOptions, method);
+
+  // 店員の無操作1時間: API は 401 session_idle でセッションを終わらせている。更新は無駄なので試さず、画面に知らせる（DD-AUTH-081）。
+  if (response.status === 401 && typeof window !== 'undefined') {
+    const idle = await Promise.resolve()
+      .then(() => response.clone().json())
+      .then((body: unknown) => (body as { error?: unknown } | null)?.error === 'session_idle')
+      .catch(() => false);
+    if (idle) {
+      window.dispatchEvent(new CustomEvent(SESSION_IDLE_EVENT));
+      return response;
+    }
+  }
 
   // Access tokens can expire between the page-level auth check and subsequent
   // API reads. Refresh once and replay only idempotent requests. Concurrent

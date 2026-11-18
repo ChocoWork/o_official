@@ -1,5 +1,5 @@
 /**
- * DD-AUTH-082 店員の一覧・名前・削除の入口が、無操作1時間と24時間を通す（src/lib/auth/passkey-manage-guard.ts）。
+ * DD-AUTH-081 店員の一覧・名前・削除の入口が、無操作1時間と24時間を通す（src/lib/auth/passkey-manage-guard.ts）。
  */
 jest.mock('next/server', () => {
   class FakeResponse {
@@ -53,20 +53,20 @@ describe('guardPasskeyManage の店員の無操作の確かめ', () => {
   });
   afterEach(() => jest.restoreAllMocks());
 
-  it('DD-AUTH-082 お客さんは無操作の確かめを通らずに通る', async () => {
+  it('DD-AUTH-081 お客さんは無操作の確かめを通らずに通る', async () => {
     (isStaff as jest.Mock).mockResolvedValue({ ok: true, value: false });
     const result = await guardPasskeyManage(request, { endpoint: 'x', csrf: false });
     expect(result.ok).toBe(true);
     expect(staffIdleCheck).not.toHaveBeenCalled();
   });
 
-  it('DD-AUTH-082 店員で1時間以内なら通り、時刻を進める確かめ（staff_idle_check）を呼ぶ', async () => {
+  it('DD-AUTH-081 店員で1時間以内なら通り、時刻を進める確かめ（staff_idle_check）を呼ぶ', async () => {
     const result = await guardPasskeyManage(request, { endpoint: 'x', csrf: false });
     expect(result.ok).toBe(true);
     expect(staffIdleCheck).toHaveBeenCalledWith('session-1', 'user-1');
   });
 
-  it('DD-AUTH-082 店員が無操作を過ぎたら 401 session_idle で、そのセッションを終わらせる', async () => {
+  it('DD-AUTH-081 店員が無操作を過ぎたら 401 session_idle で、そのセッションを終わらせる', async () => {
     (staffIdleCheck as jest.Mock).mockResolvedValue({ ok: true, value: false });
     const result = await guardPasskeyManage(request, { endpoint: 'x', csrf: false });
     expect(result.ok).toBe(false);
@@ -77,7 +77,7 @@ describe('guardPasskeyManage の店員の無操作の確かめ', () => {
     expect(endAuthSessionById).toHaveBeenCalledWith('session-1');
   });
 
-  it('DD-AUTH-082 店員でパスキーのログインから24時間を過ぎていたら 401（終わらせる）', async () => {
+  it('DD-AUTH-081 店員でパスキーのログインから24時間を過ぎていたら 401（終わらせる）', async () => {
     (authenticateRequest as jest.Mock).mockResolvedValue({ ok: true, claims: claimsAt(nowSeconds() - 25 * 3600) });
     const result = await guardPasskeyManage(request, { endpoint: 'x', csrf: false });
     expect(result.ok).toBe(false);
@@ -85,13 +85,13 @@ describe('guardPasskeyManage の店員の無操作の確かめ', () => {
     expect(endAuthSessionById).toHaveBeenCalledWith('session-1');
   });
 
-  it('DD-AUTH-082 パスキーの印が無い店員（招待の窓の中のセッション）は24時間の確かめの対象にしない', async () => {
+  it('DD-AUTH-081 パスキーの印が無い店員（招待の窓の中のセッション）は24時間の確かめの対象にしない', async () => {
     (authenticateRequest as jest.Mock).mockResolvedValue({ ok: true, claims: claimsAt(null) });
     const result = await guardPasskeyManage(request, { endpoint: 'x', csrf: false });
     expect(result.ok).toBe(true);
   });
 
-  it('DD-AUTH-082 店員の通行証に session_id が無ければ 401（無操作を確かめられないので通さない）', async () => {
+  it('DD-AUTH-081 店員の通行証に session_id が無ければ 401（無操作を確かめられないので通さない）', async () => {
     (authenticateRequest as jest.Mock).mockResolvedValue({ ok: true, claims: { sub: 'user-1', amr: [] } });
     const result = await guardPasskeyManage(request, { endpoint: 'x', csrf: false });
     expect(result.ok).toBe(false);
@@ -99,7 +99,7 @@ describe('guardPasskeyManage の店員の無操作の確かめ', () => {
     expect(staffIdleCheck).not.toHaveBeenCalled();
   });
 
-  it('DD-AUTH-082 確かめの失敗（RPC・店員かの判定）は 503 で、終わらせない', async () => {
+  it('DD-AUTH-081 確かめの失敗（RPC・店員かの判定）は 503 で、終わらせない', async () => {
     (staffIdleCheck as jest.Mock).mockResolvedValue({ ok: false });
     const failed = await guardPasskeyManage(request, { endpoint: 'x', csrf: false });
     expect(failed.ok).toBe(false);

@@ -4,6 +4,7 @@
 
 import { GET } from '@/app/api/auth/me/route';
 import { authenticateRequest } from '@/lib/auth/authenticate';
+import { endAuthSessionById } from '@/lib/auth/passkey-auth-session-end';
 import { staffIdlePeek } from '@/lib/auth/staff-passkey-idle-rpc';
 import { staffEntryClaims } from '../../helpers/staff-claims';
 
@@ -21,6 +22,7 @@ jest.mock('@/lib/auth/authenticate', () => ({
   authenticateRequest: jest.fn(),
 }));
 
+jest.mock('@/lib/auth/passkey-auth-session-end', () => ({ endAuthSessionById: jest.fn().mockResolvedValue(true) }));
 jest.mock('@/lib/auth/staff-passkey-idle-rpc', () => ({
   staffIdleCheck: jest.fn(),
   staffIdlePeek: jest.fn(),
@@ -62,17 +64,20 @@ describe('GET /api/auth/me', () => {
       expect(mockedPeek).toHaveBeenCalledWith('22222222-2222-4222-8222-222222222222');
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ authenticated: false, reason: 'idle' });
+      expect(endAuthSessionById).toHaveBeenCalledWith('22222222-2222-4222-8222-222222222222');
       expectCommonHeaders(res);
     });
 
-    test('DD-AUTH-081 確かめの失敗は今の形（200・reason:unavailable）で返す（503 にしない）', async () => {
+    test('DD-AUTH-081 確かめの失敗は、今の unavailable と同じ形（503・Retry-After 30・reason:unavailable）で返し、セッションは終わらせない', async () => {
       mockedAuthenticateRequest.mockResolvedValue(staffClaims());
       mockedPeek.mockResolvedValue({ ok: false });
 
       const res = (await GET(request())) as MeResponse;
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(503);
+      expect(res.headers.get('Retry-After')).toBe('30');
       expect(await res.json()).toEqual({ authenticated: false, reason: 'unavailable' });
+      expect(endAuthSessionById).not.toHaveBeenCalled();
     });
 
     test('DD-AUTH-081 店員の通行証に session_id が無ければ確かめられないので unavailable（peek を呼ばない）', async () => {
@@ -80,6 +85,7 @@ describe('GET /api/auth/me', () => {
 
       const res = (await GET(request())) as MeResponse;
 
+      expect(res.status).toBe(503);
       expect(await res.json()).toEqual({ authenticated: false, reason: 'unavailable' });
       expect(mockedPeek).not.toHaveBeenCalled();
     });

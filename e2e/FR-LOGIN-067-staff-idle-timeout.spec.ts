@@ -1,6 +1,6 @@
 /**
  * FR-LOGIN-067 店員の無操作1時間（管理の画面・管理 API・店員のパスキーの窓口）
- * 対応: FR-AUTH-044-AC-01〜05（設計: DD-AUTH-081・DD-AUTH-082、SEC-AUTH-055）
+ * 対応: FR-AUTH-044-AC-01〜06（設計: DD-AUTH-081・DD-AUTH-081、SEC-AUTH-055）
  *
  * 手元のアプリ（本番ビルド）・手元の Supabase で通しで確かめる。店員は e2e/admin-session-test-utils.ts の createAdminSessionActor
  * （login/finish を通らない。最後の操作の行が無いセッション）で作り、無操作の時刻は DB の `private.staff_session_activity` を直に書いて作る。
@@ -132,6 +132,22 @@ for (const viewport of viewports) {
       const customer = await withLocalDb((db) => createAdminSessionActor(db, 'user', 'aal1'));
       const customerRes = await request.get('/api/auth/passkey', { headers: { ...bearerHeaders(customer), 'x-real-ip': uniqueIp() } });
       expect(customerRes.status()).toBe(200);
+    });
+
+    test(`FR-AUTH-044-AC-06 ${viewport.name}: /admin を開いたままで無操作が61分になり、管理の操作をすると /login?reason=idle へ送られ、ログアウトの文が出る`, async ({ page }) => {
+      test.setTimeout(120_000);
+      const actor = await withLocalDb((db) => createAdminSessionActor(db, 'admin', 'aal2'));
+      await placeAdminCookies(page, actor, uniqueIp());
+      await page.goto('/admin');
+      await expect(page.getByRole('navigation', { name: '管理メニュー' })).toBeVisible({ timeout: 30_000 });
+
+      await setLastSeen(actor, 61);
+      // 画面の裏の読み込み（要対応の件数）が先に 401 を受けて送ることがあり、その時はクリックの前に画面が替わる。どちらでも同じ終わりになる
+      await page.getByRole('navigation', { name: '管理メニュー' }).getByRole('button', { name: 'USER' }).click({ timeout: 5_000 }).catch(() => undefined);
+
+      await expect(page).toHaveURL(/\/login\?reason=idle$/, { timeout: 30_000 });
+      await expect(page.getByText(IDLE_MESSAGE)).toBeVisible();
+      expect(await sessionExists(actor)).toBe(false);
     });
   });
 }

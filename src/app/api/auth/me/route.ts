@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server';
 import { authenticateRequest } from '@/lib/auth/authenticate';
 import { approvedCountHint, evaluateStaffEntry } from '@/lib/auth/staff-passkey';
 import { checkStaffIdle, staffIdleDeps } from '@/lib/auth/staff-passkey-idle';
+import { endAuthSessionById } from '@/lib/auth/passkey-auth-session-end';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -28,6 +29,10 @@ const buildResponse = (body: unknown, init?: ResponseInit) => {
   return response;
 };
 
+// 「判定できなかった」の応答。画面は 503 を見ると今の状態を保つ（一時障害でログアウトに落とさない）。
+const unavailableResponse = () =>
+  buildResponse({ authenticated: false, reason: 'unavailable' }, { status: 503, headers: { 'Retry-After': '30' } });
+
 export async function GET(request: Request) {
   try {
     // 失効済みセッションで authenticated:true を返すと、UI は管理メニューを描くのに
@@ -39,10 +44,7 @@ export async function GET(request: Request) {
       // 後者で authenticated:false を返すと、DB の一時障害だけで全利用者の画面が
       // ログアウト状態に落ちる。503 にしてクライアント側に前の状態を維持させる。
       if (verified.reason === 'unavailable') {
-        return buildResponse(
-          { authenticated: false, reason: 'unavailable' },
-          { status: 503, headers: { 'Retry-After': '30' } },
-        );
+        return unavailableResponse();
       }
 
       return buildResponse({ authenticated: false });
@@ -52,11 +54,15 @@ export async function GET(request: Request) {
     const role = isUserRole(claims.app_metadata?.role) ? claims.app_metadata.role : 'user';
 
     // 店員の無操作1時間（SR-AUTH-028）。時刻を進めない確かめ（peek）なので、画面を開き直すだけでは無操作が延びない。
-    // 失敗は今の形（200・unavailable）で返す（画面の useLogin が読める形を変えない）。
+    // 失敗は今の unavailable と同じ形（503・Retry-After 30）で返す（画面は今の状態を保つ）。idle は更新の道も閉じる。
     if (role !== 'user') {
       const idle = claims.session_id ? await checkStaffIdle(staffIdleDeps, claims.session_id, claims.sub, 'peek') : 'error';
-      if (idle === 'idle') return buildResponse({ authenticated: false, reason: 'idle' });
-      if (idle === 'error') return buildResponse({ authenticated: false, reason: 'unavailable' });
+      if (idle === 'error') return unavailableResponse();
+      if (idle === 'idle') {
+        // 画面を /login へ送るだけでなく、更新の道も閉じる（admin-rbac の idle と同じ）
+        await endAuthSessionById(claims.session_id as string);
+        return buildResponse({ authenticated: false, reason: 'idle' });
+      }
     }
 
     // 管理の入口の条件（パスキー・24時間以内・認めた2本以上）を、画面に出す「ヒント」として判定する（SR-AUTH-014）。

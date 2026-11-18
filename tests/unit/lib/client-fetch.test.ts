@@ -1,4 +1,4 @@
-import { clientFetch } from '@/lib/client-fetch';
+import { clientFetch, SESSION_IDLE_EVENT } from '@/lib/client-fetch';
 
 describe('clientFetch', () => {
   const originalFetch = global.fetch;
@@ -396,5 +396,19 @@ describe('clientFetch', () => {
 
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
+  });
+
+  test('DD-AUTH-081 401 session_idle は更新を試さず、無操作の通知を出して、その応答をそのまま返す', async () => {
+    const response = new Response(JSON.stringify({ error: 'session_idle' }), { status: 401 });
+    (global.fetch as jest.Mock).mockResolvedValue(response);
+    const listener = jest.fn();
+    window.addEventListener(SESSION_IDLE_EVENT, listener);
+
+    const result = await clientFetch('/api/admin/kpi', { method: 'GET' });
+    window.removeEventListener(SESSION_IDLE_EVENT, listener);
+
+    expect(result).toBe(response);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });

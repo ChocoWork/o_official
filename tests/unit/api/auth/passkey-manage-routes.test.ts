@@ -273,7 +273,7 @@ describe('DD-AUTH-057 DELETE /api/auth/passkey/{id}（削除）', () => {
     expect(deleteMock).not.toHaveBeenCalled();
   });
 
-  test('DD-AUTH-057 id が uuid でなければ 400 で GoTrue も DB も呼ばない', async () => {
+  test('DD-AUTH-057 id が uuid でなければ 400 で GoTrue も認めた鍵の DB も呼ばない', async () => {
     const res = await DELETE(req('DELETE'), ctx('1234'));
     expect(res.status).toBe(400);
     expect(deleteMock).not.toHaveBeenCalled();
