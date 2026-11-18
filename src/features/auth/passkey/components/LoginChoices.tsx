@@ -68,9 +68,11 @@ type Props = {
   initialEmail?: string;
   /** 確認のメールのリンクを別のブラウザで開いた人への固定の案内 */
   notice?: string;
+  /** 店員が Google・メールのコードで入ろうとした時の固定の文（呼び手が決めた文だけを渡す） */
+  errorMessage?: string;
 };
 
-export default function LoginChoices({ returnTo, initialEmail, notice }: Props) {
+export default function LoginChoices({ returnTo, initialEmail, notice, errorMessage }: Props) {
   const router = useRouter();
   const { loginWithGoogle, refreshAuthState } = useLogin();
   // サーバーの描画と同じ値で始め、描画後に未対応なら外す。
@@ -147,6 +149,12 @@ export default function LoginChoices({ returnTo, initialEmail, notice }: Props) 
       {notice ? (
         <p role="status" className="pb-[13px] lk-text-md text-[#474747]">
           {notice}
+        </p>
+      ) : null}
+
+      {errorMessage ? (
+        <p role="alert" className="pb-[13px] lk-text-md text-red-600">
+          {errorMessage}
         </p>
       ) : null}
 

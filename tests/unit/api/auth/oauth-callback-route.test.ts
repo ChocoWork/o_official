@@ -374,7 +374,7 @@ describe('Google のログインの戻りの窓口', () => {
       expect(persistSessionAndCookiesMock).not.toHaveBeenCalled();
     });
 
-    it('DD-AUTH-054 フックの印つき 403 は監査の detail を staff_passkey_required にし、誤りの文は残さず、応答は 502 のまま', async () => {
+    it('DD-AUTH-054 フックの印つき 403 は監査の detail を staff_passkey_required にし、誤りの文は残さず、応答は /login へ戻す 303', async () => {
       exchangeCodeForSessionMock.mockResolvedValueOnce({
         data: { session: null, user: null },
         error: { status: 403, message: '[staff-passkey-required] staff must sign in with a passkey' },
@@ -382,8 +382,8 @@ describe('Google のログインの戻りの窓口', () => {
 
       const res = await callGet(callbackRequest('?code=staff'));
 
-      expect(res.status).toBe(502);
-      expect((await res.json()).error).toBe('OAuth exchange failed');
+      expect(res.status).toBe(303);
+      expect(res.headers.get('location')).toBe('http://localhost:3000/login?error=staff_passkey_required');
       expect(logAuditMock).toHaveBeenCalledWith({
         action: 'auth.oauth.callback',
         outcome: 'failure',

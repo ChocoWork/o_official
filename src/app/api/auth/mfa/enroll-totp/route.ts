@@ -5,6 +5,7 @@
  * @impl IMPL-AUTH-204
  * @design DD-AUTH-030
  * @remarks 検証済みの要素が既にある時は、再取得を許すと乗っ取られた通常セッションで要素を差し替えられるため断る（再設定は aal2 のセッションが要る）。QR は画面がそのまま画像の src に入れるため、SVG の文字列は data URI に直して返す。
+ * 店員（`passkey_is_staff`）には 410 `totp_retired` を返す（認証・アプリの結び付き・役割の確かめの後。窓口そのものの削除は段4）。
  * 初めての登録は、通行証の amr に 2 段目（メール OTP など）を通った方法がある時だけ許す。パスワードだけで得た通行証で、攻撃者が自分の認証アプリを先に結び付けるのを防ぐため。登録の結果は監査に残し、秘密の値とトークンは残さない。
  * amr だけでは、Supabase Auth へ OTP だけを直に送って得た通行証（amr に otp が付く）を断れない。そのため認証の確かめ（authenticateRequest）が、アプリのログインを通った session だけを通す（自前の sessions に結び付いた行が要る。ADR-0417）。結び付いていない通行証は 401 で、行為者が分かれば app_session_required の断りを監査に残す。amr の確かめは二重の守りとして残す。
  */
@@ -14,6 +15,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
 import { hasSecondFactorAmr } from '@/lib/auth/amr';
+import { isStaff } from '@/lib/auth/passkey-approval-rpc';
 import { logAudit } from '@/lib/audit';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 
@@ -82,6 +84,17 @@ export async function POST(request: Request) {
     const role = isUserRole(user.app_metadata?.role) ? user.app_metadata.role : 'user';
     if (role !== 'admin' && role !== 'supporter') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    // 店員はパスキーでだけ入る。パスキーで入った店員が TOTP を登録すると、以後のパスキーの追加・削除が aal2 で止まるため断る。
+    // 店員の決め方はフックと同じ DB の関数。判定の DB が使えない時は登録せず閉じる（DD-AUTH-083）。
+    const staff = await isStaff(user.id);
+    if (!staff.ok) {
+      return NextResponse.json({ error: 'Service unavailable' }, { status: 503 });
+    }
+    if (staff.value) {
+      await logAudit({ action: 'mfa_enroll', actor_id: user.id, outcome: 'denied', detail: 'totp_retired' });
+      return NextResponse.json({ error: 'totp_retired' }, { status: 410 });
     }
 
     // 初めての TOTP は、メール OTP などの 2 段目を通った通行証にだけ登録させる。

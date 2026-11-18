@@ -8,6 +8,7 @@
  * @remarks 順番: 回数の制限 → 本文の形（`id` と `rawId` の一致を含む）→ UV の門（ここまで GoTrue を呼ばない）→ GoTrue の検証 → 店員の確かめ → セッションの保存。
  * GoTrue の失敗は理由を分けず `passkey_login_failed`（鍵の有無の調べに使わせない）。ただし店員の印つきの拒否（403）と回数の制限（429）は別にする。
  * 店員が認めていない鍵で入った時は、GoTrue のセッションを `revoke_auth_session` で終わらせてから断る。判定の DB が使えない時も同じく終わらせて 503 で閉じる。
+ * 終わらせるのに失敗した時は、応答を変えず `auth.passkey.login.end_session_failed` を固定の符号だけで監査に残す（1b M-2）。
  */
 import { NextResponse } from 'next/server';
 import { createPublicClient } from '@/lib/supabase/server';
@@ -42,6 +43,20 @@ async function deny(detail: string, body: unknown, status: number, actorId?: str
     ...(actorId ? { actor_id: actorId } : {}),
   });
   return json(body, status);
+}
+
+/**
+ * 断る前に GoTrue のセッションを終わらせる。失敗しても応答は変えず、固定の符号だけを監査に残す（1b M-2）。
+ * 符号は断りの理由の名前だけで、トークン・session_id は残さない。
+ */
+async function endSessionOrAudit(accessToken: string, reason: string, actorId?: string): Promise<void> {
+  if (await endAuthSession(accessToken)) return;
+  await logAudit({
+    action: 'auth.passkey.login.end_session_failed',
+    outcome: 'error',
+    detail: `revoke_failed:${reason}`,
+    ...(actorId ? { actor_id: actorId } : {}),
+  });
 }
 
 type GoTrueSession = { access_token: string; refresh_token: string };
@@ -107,25 +122,25 @@ export async function POST(request: Request): Promise<Response> {
     const session: unknown = data?.session;
     const user: unknown = data?.user;
     if (!isSession(session) || !isUser(user)) {
-      // 形が違う応答。セッションが作られていたら終わらせる。
-      if (isSession(session)) await endAuthSession(session.access_token);
+      // 形が違う応答。セッションが作られていたら終わらせる（セッションが読めて利用者が読めない時だけここへ来るので、利用者は分からない）。
+      if (isSession(session)) await endSessionOrAudit(session.access_token, 'gotrue_bad_response');
       return await deny('gotrue_bad_response', { error: 'passkey_login_failed' }, 401);
     }
 
     // 店員は、アプリの窓口で認めた鍵だけで入れる。`rawId`（GoTrue が鍵を引く値と同じ）で引く（SEC-AUTH-044）。
     const staff = await isStaff(user.id);
     if (!staff.ok) {
-      await endAuthSession(session.access_token);
+      await endSessionOrAudit(session.access_token, 'staff_check_unavailable', user.id);
       return await deny('staff_check_unavailable', { error: 'passkey_login_unavailable' }, 503, user.id);
     }
     if (staff.value) {
       const approved = await isCredentialApproved(user.id, credential.rawId);
       if (!approved.ok) {
-        await endAuthSession(session.access_token);
+        await endSessionOrAudit(session.access_token, 'approval_check_unavailable', user.id);
         return await deny('approval_check_unavailable', { error: 'passkey_login_unavailable' }, 503, user.id);
       }
       if (!approved.value) {
-        await endAuthSession(session.access_token);
+        await endSessionOrAudit(session.access_token, 'passkey_not_approved', user.id);
         return await deny('passkey_not_approved', { error: 'passkey_not_approved' }, 403, user.id);
       }
     }

@@ -21,6 +21,10 @@ jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(),
 }));
 
+jest.mock('@/lib/auth/passkey-approval-rpc', () => ({
+  isStaff: jest.fn().mockResolvedValue({ ok: true, value: false }),
+}));
+
 jest.mock('@/lib/audit', () => ({
   logAudit: jest.fn().mockResolvedValue(undefined),
 }));

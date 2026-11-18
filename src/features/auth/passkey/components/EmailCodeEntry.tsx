@@ -19,6 +19,7 @@ import { formatResendCountdown } from "@/lib/format-countdown";
 import { maskEmail } from "@/lib/mask-email";
 import { isPasskeySupported } from "@/features/auth/passkey/webauthn-browser";
 import { resolvePostLoginPath } from "@/features/auth/passkey/post-login";
+import { staffPasskeyRequiredMessage } from "@/features/auth/passkey/staff-passkey-message";
 import "@/components/AuthForm.css";
 
 const CODE_LENGTH = 8;
@@ -29,7 +30,6 @@ const BASE = "/api/auth/email-code";
 const MSG_INVALID = "確認コードが無効、または期限切れです。";
 const MSG_LIMITED = "試行が集中しています。しばらくしてからやり直してください。";
 const MSG_EXPIRED = "時間がたちました。もう一度メールアドレスを入れてください。";
-const MSG_STAFF = "店員の方は、パスキーでログインしてください。";
 const MSG_VERIFY_FAILED = "確認できませんでした。時間をおいて、もう一度お試しください。";
 const MSG_RESEND_LIMITED = "しばらく再送できません。時間をおいて、もう一度お試しください。";
 const MSG_UNAVAILABLE = "ただいま処理できません。時間をおいて、もう一度お試しください。";
@@ -205,7 +205,7 @@ export default function EmailCodeEntry({ email }: { email: string }) {
         closeWith(MSG_LIMITED);
       } else if (response.status === 403 && body?.error === "staff_passkey_required") {
         setStaffBlocked(true);
-        closeWith(MSG_STAFF);
+        closeWith(staffPasskeyRequiredMessage());
       } else {
         setError(MSG_VERIFY_FAILED);
       }

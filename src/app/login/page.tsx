@@ -7,6 +7,7 @@
  * @remarks 新旧どちらかの保留の Cookie が有効なら、描く前にサーバーで続きへ転送する
  * （新→`/login/code`、旧→`/login/verify`）。入力の途中で戻ってきた人にもう一度フォームを見せると、2通目のコードを送って枠を無駄に使う。
  * 問い合わせは `next`（確かめを通った道筋だけ。外れた値は捨てる）・`email`（メール欄の初めの値。`tab` は読まない）・
+ * `error=staff_passkey_required`（Google で店員がフックに断られた戻り先）だけを固定の文にして出し、ほかの `error` の値は出さない（DD-AUTH-083）。
  * `registered=1`（確認のリンクを別のブラウザで開いた人への固定の案内。SEC-AUTH-007）だけを受ける。
  * パスワードの旧い画面は `/login/password` に残してある（段4まで。ADR-0469）。
  */
@@ -19,6 +20,7 @@ import { verifyEmailCodeSessionToken } from "@/features/auth/services/email-code
 import { verifyLoginTwoFactorSessionToken } from "@/features/auth/services/login-2fa-session";
 import { validateReturnPath } from "@/features/auth/return-intent/return-path";
 import LoginChoices from "@/features/auth/passkey/components/LoginChoices";
+import { staffPasskeyRequiredMessage } from "@/features/auth/passkey/staff-passkey-message";
 
 /** 確認のメールのリンクは session を作らずここへ送る（SEC-AUTH-007）。 */
 const REGISTERED_NOTICE = '会員登録が完了しました。ログインしてください。';
@@ -61,6 +63,7 @@ export default async function LoginPage({
     <LoginChoices
       initialEmail={initialEmail}
       returnTo={returnTo.ok ? returnTo.path : undefined}
+      errorMessage={params?.error === 'staff_passkey_required' ? staffPasskeyRequiredMessage() : undefined}
       notice={params?.registered === '1' ? REGISTERED_NOTICE : params?.reason === 'idle' ? IDLE_NOTICE : undefined}
     />
   );

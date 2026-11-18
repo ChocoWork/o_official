@@ -1,6 +1,6 @@
 # AUTH の構造設計
 
-> 状態: 推定 | 確認日: 2026-11-17 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の窓口 `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-11-19 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の窓口 `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -138,6 +138,7 @@ sequenceDiagram
 - 確認が通ると Supabase が aal2 のトークン対を返し、窓口が Cookie と `sessions` の表を差し替える（`persistNewSession`）。画面は `post-login`（API-AUTH-019）が返した行き先へ移る（戻り先が無ければ `/admin`）
 - 一般の会員は TOTP の窓口で 403。`/auth/verified` からは `post-login`（API-AUTH-019）が返した行き先へ送る（戻り先が無ければ `/`。管理者・サポーターは `/admin`）
 - 管理の窓口が店員の入口の条件を確かめるのは共有の `admin-rbac`（`aal` は見ない。段1b より前は aal2 を確かめていた）。DB の側の RLS の `has_permission` は、波 5 の移行 M2 で aal2 と結び付いた生きた session を見るようにし（DATA-AUTH-008。SEC-AUTH-010。M2 は 2026-10-29 に本番適用済み）、段1a の移行 E で `aal2` の確かめを店員の入口の条件（パスキー・認めた鍵の本数）に置き換えた（本番未適用）
+- TOTP の登録（API-AUTH-017 の `POST /api/auth/mfa/enroll-totp`）は、段3a Task 10 から、認証・アプリの結び付き・役割の確かめの後に、店員（`passkey_is_staff`）へ 410 `totp_retired` を返す。判定の DB が使えない時は 503。401・お客さんの 403 は変えない（DD-AUTH-083。窓口の削除は段4）
 - TOTP の確認は IP 単位に加えて利用者単位（5 回／600 秒）の回数の制限があり、成否を監査に残す（SEC-AUTH-009。API-AUTH-018。2026-10-26）。初めての登録は通行証の `amr` に 2 段目を通った方法がある時だけ受ける（SEC-AUTH-031。API-AUTH-017。メールの数字は `otp` で記録されることを 2026-10-29 に実測した）
 - 手元の Supabase の TOTP の登録と確認は、波 6 の切り替え（2026-11-01。手元だけ）で有効にした（`supabase/config.toml` の `[auth.mfa.totp]`）。切り替えまでは無効で、この流れは手元で動かせなかった
 
@@ -673,6 +674,7 @@ sequenceDiagram
 
 - `next` は入口で戻り先の確かめ（DD-AUTH-032）に通し、通った時だけ控える（API-AUTH-007）。戻りの URL（`/api/auth/oauth/callback`）に `next` も番号も載せない
 - 始めるのを `fetch` の POST にするのは、CSP の `form-action 'self'` がフォームの送信に続くリダイレクトの行き先にも当たり、フォームの POST から Supabase・Google への 303 が止められるため。同じ origin の `fetch` の応答の Set-Cookie は端末に入り、本文の `url` に番号は載らない
+- 店員がフックに断られた戻り（交換の失敗、または戻りの URL の `error_description` が印で始まる）は、`/login?error=staff_passkey_required` へ 303 で戻す（Cookie なし。段3a Task 10 / DD-AUTH-083）。`/login` はこの値だけを固定の文「店員の方は、パスキーでログインしてください。」にして出す
 - 戻りでセッションの保存に成功した後に、戻り先を `login` の用途で使い切る（API-AUTH-008）。管理者・サポーターは使い切らずに `/auth/verified` へ送る。`oauth/callback` は常に `staffEntryOk: false` を渡し、Google の店員の JWT には `amr` にパスキーが無いので、TOTP を通った後も `post-login` は戻り先を使い切らない（段1b より前は、TOTP の後に `post-login` が戻り先を使い切った。ADR-0468）。戻り先が無い・確かめに外れた時は一般は `/`
 - メールの確認コードの2段目を通らない。会員の Google ログインに2段目を求めるかは決めていない（SEC-AUTH-008 の会員の部分。FR-LOGIN-007 の「全員がパスワードとメール OTP」と食い違う）
 - ゲスト注文の紐付けを呼ばない（メールの経路は呼ぶ）

@@ -32,10 +32,15 @@ jest.mock('@/lib/audit', () => ({
   logAudit: jest.fn(),
 }));
 
+jest.mock('@/lib/auth/passkey-approval-rpc', () => ({
+  isStaff: jest.fn(),
+}));
+
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { createClient } from '@/lib/supabase/server';
 import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
 import { logAudit } from '@/lib/audit';
+import { isStaff } from '@/lib/auth/passkey-approval-rpc';
 import { POST } from '@/app/api/auth/mfa/enroll-totp/route';
 
 const mockRateLimit = enforceRateLimit as jest.Mock;
@@ -101,6 +106,7 @@ describe('POST /api/auth/mfa/enroll-totp', () => {
     unenroll.mockResolvedValue({ data: {}, error: null });
     enrollOk();
     mockLogAudit.mockResolvedValue(undefined);
+    (isStaff as jest.Mock).mockResolvedValue({ ok: true, value: false });
   });
 
   afterEach(() => {

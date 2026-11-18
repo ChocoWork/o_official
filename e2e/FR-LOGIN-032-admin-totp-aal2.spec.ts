@@ -227,7 +227,11 @@ function postJson(page: Page, route: string, ip: string, data: unknown): Promise
   });
 }
 
-/** 本物の TOTP の登録（enroll-totp）。手元の GoTrue の TOTP が無効だとここで落ちる */
+/**
+ * 本物の TOTP の登録（enroll-totp）。手元の GoTrue の TOTP が無効だとここで落ちる。
+ * 役割 admin・supporter の店員（`user_roles` が有効）は、段3a から窓口が 410 `totp_retired` で断る（DD-AUTH-083。FR-LOGIN-069 が確かめる）。
+ * この部品を使う場面は、段4で消す機能なので skip のまま。
+ */
 async function enrollTotp(page: Page): Promise<{ factorId: string; secret: string }> {
   const response = await postJson(page, ENROLL_ROUTE, uniqueSourceIp(), {});
   expect(
@@ -398,7 +402,8 @@ for (const viewport of viewports) {
       });
 
       // 断られ、要素が作られない
-      expect([401, 403], `登録が断られる（実際: ${response.status()}）`).toContain(response.status());
+      // 店員（user_roles が有効）は、段3a から窓口が 410 totp_retired で断る（DD-AUTH-083）。
+      expect([401, 403, 410], `登録が断られる（実際: ${response.status()}）`).toContain(response.status());
       expect(await factorCountOf(userId), '要素が作られない').toBe(0);
       // 断りが監査に残る（成功ではない行が、この利用者で1つ以上）
       const denied = (await auditRowsOf(userId, 'enroll')).filter((row) => row.outcome !== 'success');

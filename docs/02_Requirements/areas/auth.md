@@ -1,6 +1,6 @@
 # AUTH の要件
 
-> 状態: 推定 | 確認日: 2026-11-18 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-11-19 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -5901,18 +5901,19 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 
 登録の窓口が `reauth_required`（403 `registration_not_allowed`）を返すと、画面は文と、`/login?next=/admin/passkeys` へのリンク「パスキーでログインし直す」を出す。窓口の答えは通信を差し替えて作る（6分前のログインの印を作るのは難しいため。窓口自体の確かめは FR-AUTH-020 の E2E が持つ）。
 
-### FR-AUTH-046 認めた鍵が1本の店員は、ログインの確認の画面から「もう1本」の画面へ送られ、2本そろうと管理画面に入れる。直に足した鍵は数えない
+### FR-AUTH-046 認めた鍵が1本の店員は、ログインの確認の画面から「もう1本」の画面へ送られ、2本そろうと管理画面に入れる。直に足した鍵は数えない。店員が Google・メールのコード・古いパスワードで入ろうとするとパスキーを案内し、TOTP の登録は断る
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SR-AUTH-027 |
 | 根拠 | SR-AUTH-027 を、`/auth/verified` が窓口 `GET /api/auth/passkey` の `approvedCount`（DB の `passkey_approved_count`）で1本の店員を見分けて `/admin/passkeys?more=1` へ送ることと、「もう1本」の画面にする。JWT の印 `staff_passkeys_ok` は真偽しかないので使わない。TOTP の流れ自体は段4まで残す（1本でない店員は今までどおり）。`/admin/passkeys` は `/auth/verified` へ送り返さない（回り続けない）。画面は SCR-AUTH-015、処理は DD-AUTH-082、守りは SEC-AUTH-055 |
 | 状態 | 推定 |
-| 確かめ方 | 単体テスト（`tests/unit/app/auth/verified-page.test.tsx`、`tests/unit/features/auth/staff/staff-one-more-key.test.tsx`、`tests/unit/lib/auth/staff-passkey-page-guard.test.ts`、`tests/unit/app/staff/passkeys-page.test.tsx`）、E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`、FR-AUTH-046-AC-01〜03） |
+| 確かめ方 | 単体テスト（`tests/unit/app/auth/verified-page.test.tsx`、`tests/unit/features/auth/staff/staff-one-more-key.test.tsx`、`tests/unit/lib/auth/staff-passkey-page-guard.test.ts`、`tests/unit/app/staff/passkeys-page.test.tsx`、`tests/unit/api/auth/oauth-callback-staff.test.ts`、`tests/unit/features/auth/passkey/login-screen-staff-error.test.tsx`、`tests/unit/api/auth/mfa-enroll-totp-retired.test.ts`、`tests/unit/api/auth/passkey-login-finish-end-session-audit.test.ts`）、E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`、FR-AUTH-046-AC-01〜03。`e2e/FR-LOGIN-069-staff-other-paths-rejected.spec.ts`、FR-AUTH-046-AC-04〜06） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-9-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 9） |
 | 優先度 | MUST |
 
 規則: (1) 入口の条件に足りない管理者・サポーターで、窓口の `isStaff` が真かつ `approvedCount` がちょうど1なら、`/admin/passkeys?more=1` へ置き換える（post-login が `needsMfa` を返した場合も同じ）。0本・2本・窓口が読めない時は、今までどおり TOTP の2段目を出す。(2) 「もう1本」の画面は、ページが認めた鍵2本未満かつ `?more=1` の時だけ出す。登録が通ったらログインの印を更新し（認めた鍵の本数の印を作り直す）、`/admin` へ移る。更新できなければ移らず、入り直しをすすめる。(3) 窓口を直に叩いて足した鍵（認められていない鍵）は、認めた本数に数えず、その鍵では店員として入れない（403）。画面には出し、「この鍵ではログインできません。心当たりがなければ削除してください。」を添えて、消せる。
+(4) 店員が Google・メールのコード・古いパスワードで入ろうとしても、フックが断りセッションは作られない。画面は固定の1文「店員の方は、パスキーでログインしてください。」を出す（メールのコードは確定の画面、Google は戻り先 `/login?error=staff_passkey_required`）。メールのコードの始めの窓口は変えない（登録済みかを漏らさない）。(5) TOTP の登録の窓口 `POST /api/auth/mfa/enroll-totp` は、認証・アプリの結び付きの確かめの後に、店員（`passkey_is_staff`）へ 410 `totp_retired` を返す（パスキーで入った店員が TOTP を登録すると、以後のパスキーの追加・削除が aal2 で止まるため。窓口そのものの削除は段4）。認証に通らない時の 401 は変えない。(6) パスキーのログインの終わりで、断る前の GoTrue のセッションの終了に失敗したら、応答は変えず `auth.passkey.login.end_session_failed` を固定の符号だけで監査に残す（1b の M-2）。
 
 ### FR-AUTH-046-AC-01 認めた鍵が1本の店員が /auth/verified に来ると、「もう1本」の画面に着き、/auth/verified へは戻らない
 
@@ -5949,6 +5950,42 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-9-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 9） |
 
 認めた鍵2本の店員が GoTrue に直に鍵を足すと、鍵は3本・認めた鍵は2本のまま。その鍵でログインすると 403 で入れない。画面は3行を出し、認められていない鍵に「この鍵ではログインできません。心当たりがなければ削除してください。」を添える。有効な削除ボタンはその1つだけで、削除すると鍵は2本（認めた鍵2本）に戻る。
+
+### FR-AUTH-046-AC-04 店員が Google・メールのコード・古いパスワードで入ろうとすると、パスキーを案内する文が出て、セッションが作られない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-046 |
+| 根拠 | SR-AUTH-027 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-069-staff-other-paths-rejected.spec.ts`。390・768・1280 の3幅でくり返す）。単体テスト（`tests/unit/api/auth/oauth-callback-staff.test.ts`、`tests/unit/features/auth/passkey/login-screen-staff-error.test.tsx`）でも確かめる |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-10-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 10） |
+
+店員がメールのコードで確定すると、確定の画面に「店員の方は、パスキーでログインしてください。」が出て、`/api/auth/me` は未ログインのまま。Google でフックに断られた戻り（交換の失敗、または戻りの URL の `error_description` が印で始まる）は `/login?error=staff_passkey_required` へ戻り、同じ文が出て、セッションの Cookie は作られない。`/login` は `error` のうちこの値だけを固定の文にし、ほかの値（`access_denied` など）は出さない。古いパスワードの `/api/auth/login` は 401 で、確認コードの段（`step`）へ進まない。
+
+### FR-AUTH-046-AC-05 パスキーで入った店員の TOTP の登録は 410 totp_retired で、要素が作られない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-046 |
+| 根拠 | SR-AUTH-027 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-069-staff-other-paths-rejected.spec.ts`。390・768・1280 の3幅でくり返す）。単体テスト（`tests/unit/api/auth/mfa-enroll-totp-retired.test.ts`）でも確かめる |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-10-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 10） |
+
+認めた鍵2本の店員がパスキーでログインして `POST /api/auth/mfa/enroll-totp` を呼ぶと 410 `{"error":"totp_retired"}` を返し、`auth.mfa_factors` に行が作られない。断りは `mfa_enroll`・`denied`・`totp_retired` で監査に残る。店員の判定の DB が使えない時は 503 で閉じる。店員でない管理の役割・お客さんの断りは今までどおり。
+
+### FR-AUTH-046-AC-06 認証のない TOTP の登録は 401 のまま（店員かどうかを漏らさない）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-046 |
+| 根拠 | SR-AUTH-027 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-069-staff-other-paths-rejected.spec.ts`。390・768・1280 の3幅でくり返す）。単体テスト（`tests/unit/api/auth/mfa-enroll-totp-retired.test.ts`）でも確かめる |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-10-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 10） |
+
+認証に通らない `POST /api/auth/mfa/enroll-totp` は 401 で、店員の判定を呼ばない（`FR-LOGIN-031` の 401 を変えない）。410 は認証・アプリの結び付き・役割の確かめの後にだけ返す。
 
 ### FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel`
 

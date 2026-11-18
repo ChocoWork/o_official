@@ -1,5 +1,7 @@
 # 画面一覧
 
+> パスキー段3a Task 10 確認日: 2026-11-19。`/login` に `?error=staff_passkey_required`（店員が Google で断られた戻り）の固定の文を足した。画面ルートの数は変えない
+>
 > パスキー段3a Task 9 確認日: 2026-11-19。画面ルート `/admin/passkeys`（店員のパスキー管理と、`?more=1` の「もう1本」の画面。基本設計の認証 SCR-AUTH-015）を足した。`src/app/**/page.tsx` は56件（実測。`/staff/invite`・`/staff/register` は段3a Task 6・7 で足した画面で、この一覧にはまだ行が無い）。入口は管理画面のサイドナビの項目「パスキー」（タブではないリンク。設計に無い作り手の判断）。ページ側のガードは `/login`（`reason` つき）へ送り、`/auth/verified` へは戻さない。
 >
 > パスキー段3a Task 5 確認日: 2026-11-18。画面ルート `/admin/create-user`（ユーザー作成フォーム）を消した（54件から53件）。店員は招待の窓口 `POST /api/admin/staff/invites`（基本設計の認証 API-AUTH-033）で増やす。画面の入口は段3a の後のタスク（Task 7 以降）で足す。
@@ -73,7 +75,7 @@
 
 | パス | 画面・役割 | 導線・同一画面内の状態 | 実装 |
 | --- | --- | --- | --- |
-| `/login` | ログイン（パスキー・Google・メールのコード） | 「パスキーでログイン」・「Googleでサインイン」・メール欄と「メールでコードを受け取る」の3つの入口。`next`（戻り先）・`email`（メール欄の初期値。`tab` は読まない）・`registered=1`（登録完了の案内）を受ける。有効な保留のCookieがある場合は新（メールのコード）なら `/login/code`、旧（パスワード）なら `/login/verify` へ。メールの送信成功で `/login/code`、パスキーの成功で戻り先へ。パスキー未対応の端末ではボタンを出さず一文を出す | [page.tsx](../../../src/app/login/page.tsx) |
+| `/login` | ログイン（パスキー・Google・メールのコード） | 「パスキーでログイン」・「Googleでサインイン」・メール欄と「メールでコードを受け取る」の3つの入口。`next`（戻り先）・`email`（メール欄の初期値。`tab` は読まない）・`registered=1`（登録完了の案内）を受ける。有効な保留のCookieがある場合は新（メールのコード）なら `/login/code`、旧（パスワード）なら `/login/verify` へ。メールの送信成功で `/login/code`、パスキーの成功で戻り先へ。パスキー未対応の端末ではボタンを出さず一文を出す | [page.tsx](../../../src/app/login/page.tsx) 店員が Google で断られた戻りは `/login?error=staff_passkey_required` で、「店員の方は、パスキーでログインしてください。」を出す（ほかの `error` の値は出さない。段3a Task 10 / DD-AUTH-083） |
 | `/login/code` | メールのコードの入力 | 保留のCookie（メールのコード）が有効な時だけ8桁のコード入力・再送・入れ直しを出す。無い・偽り・期限切れは `/login` へ。成功後は行き先へ（パスキーを勧める時は `/login/passkey`）。検索に載せない | [code/page.tsx](../../../src/app/login/code/page.tsx) |
 | `/login/passkey` | パスキーを作る勧め | メールのコードでログインした直後に「パスキーを作りませんか」を出す（「パスキーを作る」・「あとで」）。ログインしていなければ `/login` へ。店員と、顔認証・指紋・PIN の使えない端末には出さず行き先へ送る。成功しても自動では進まず「続ける」を出す。検索に載せない | [passkey/page.tsx](../../../src/app/login/passkey/page.tsx) |
 | `/login/password` | 旧のログイン・会員登録（パスワード。段4まで残す） | 旧の `/login` の中身（Task 5 で `/login` は新しい画面に作り替えた）。パスワードの再設定・変更の完了の行き先。`tab=register`・`email`・`next`・`registered` を受ける。タブを替えても URL は `/login/password`。検索に載せない（`noindex`）。有効な検証待ちCookieがある場合は `/login/verify` へ | [password/page.tsx](../../../src/app/login/password/page.tsx) |

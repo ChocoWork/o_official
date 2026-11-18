@@ -59,11 +59,11 @@
 | FREQ-335-AC-03 1回送ると verifyOtp が type email で1回だけ呼ばれる | E2E | `docs/02_Requirements/areas/auth.md:4198` |
 | FREQ-515-AC-01 管理画面のユーザー一覧で選んだ役割で送られ、失敗したら元の役割に戻る | E2E | `docs/02_Requirements/areas/auth.md:4289` |
 | FREQ-515-AC-03 お知らせの作成・編集で選んだカテゴリーで保存される | E2E | `docs/02_Requirements/areas/auth.md:4315` |
-| SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | E2E | `docs/02_Requirements/areas/auth.md:6845` |
-| SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | E2E | `docs/02_Requirements/areas/auth.md:7026` |
-| SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:7118` |
-| SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:7290` |
-| SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:7406` |
+| SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | E2E | `docs/02_Requirements/areas/auth.md:6882` |
+| SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | E2E | `docs/02_Requirements/areas/auth.md:7063` |
+| SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:7155` |
+| SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:7327` |
+| SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:7443` |
 | FREQ-508-AC-03 流し直しても付与が重ならず、ほかの結び付きが残り、「監査ログの閲覧」の名前で登録される | E2E | `docs/02_Requirements/areas/admin.md:236` |
 | SEC-ADMIN-003-AC-02 管理の表の権限が anon・authenticated に無い | E2E | `docs/02_Requirements/areas/admin.md:466` |
 | SEC-ADMIN-010-AC-01 監査ログの行を書き換えると検知の確かめで分かる | E2E | `docs/02_Requirements/areas/admin.md:688` |
@@ -177,7 +177,7 @@
 - `src/lib/look/server.ts:423` `hydrateLooks` の `signedImageUrlsMap.get(row.id) ?? []` の右側は通らない。全ての LOOK の行を `signedImageUrlsMap` に先に入れてから `map` するため。確認: 未
 - `src/app/api/admin/revoke-user-sessions/route.ts:94` `POST` の `audit` の引数 `extra` の既定値 `= {}` は通らない。呼び出し5か所が全部 `{ resource_id: ... }` を渡し、この関数はファイルの中だけで使うため。確認: 未
 - `src/app/api/admin/users/mfa/reset/route.ts:92` `POST` の `audit` の `metadata ? { metadata } : {}` の偽の側は通らない。呼び出し9か所が全部 `metadata` を渡し、この関数はファイルの中だけで使うため。確認: 未
-- `src/app/api/auth/mfa/enroll-totp/route.ts:139` `POST` の未確認の要素を外した後の監査の `unenrollResult?.error` の `unenrollResult` が `null` の側は通らない。supabase-js の `mfa.unenroll` は `{ data, error }` の形を必ず返し、`null` を返さないため（型を満たすための `?.`）。確認: 未
+- `src/app/api/auth/mfa/enroll-totp/route.ts:152` `POST` の未確認の要素を外した後の監査の `unenrollResult?.error` の `unenrollResult` が `null` の側は通らない。supabase-js の `mfa.unenroll` は `{ data, error }` の形を必ず返し、`null` を返さないため（型を満たすための `?.`）。確認: 未
 - `scripts/admin/bootstrap-core.ts:58` `bootstrapFirstAdmin` の `passwordParsed.error.issues[0]?.message ?? 'パスワードが正しくありません'` の右側は通らない。`passwordSchema` が失敗した時は必ず issue が1つ以上あるため。確認: 未
 - `scripts/admin/bootstrap.ts:111` `readHiddenFromStdin` の改行の字の分岐は通らない。標準入力を raw モードで読む関数は端末（TTY）が要り、単体テストでは動かさず、`readHidden` を差し替えて確かめるため。確認: 未
 - `scripts/admin/bootstrap.ts:117` `readHiddenFromStdin` の Ctrl+C の分岐は通らない。理由は改行の分岐と同じ。確認: 未
