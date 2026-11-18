@@ -20,7 +20,7 @@ export const staffIdleDeps: StaffIdleDeps = { check: staffIdleCheck, peek: staff
  *
  * @impl IMPL-AUTH-379
  * @design DD-AUTH-081
- * @remarks RPC が失敗したら `error`。呼び手は 503 の閉じる側に倒し、ログアウトも 401 もしない（`/api/auth/me` だけは 200・`unavailable`）。
+ * @remarks RPC が失敗したら `error`。呼び手は 503 の閉じる側に倒し、ログアウトも 401 もしない（`/api/auth/me` も 503・`unavailable`）。
  */
 export async function checkStaffIdle(
   deps: StaffIdleDeps,

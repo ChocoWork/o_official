@@ -55,6 +55,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   const [isMfaVerified, setIsMfaVerified] = useState(false);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [authReason, setAuthReason] = useState<string | null>(null);
+  const authReasonRef = React.useRef<string | null>(null);
 
   const applyAuthState = React.useCallback((authenticated: boolean, role?: unknown, mfaVerified?: boolean, reason?: unknown) => {
     // セッションが生きていると確認できたら更新の抑制を解く。
@@ -68,7 +69,9 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
     setUserRole(resolvedRole);
     setIsAdmin(authenticated && resolvedRole === 'admin');
     setIsMfaVerified(authenticated && mfaVerified === true);
-    setAuthReason(!authenticated && reason === 'idle' ? 'idle' : null);
+    const nextReason = !authenticated && reason === 'idle' ? 'idle' : null;
+    authReasonRef.current = nextReason;
+    setAuthReason(nextReason);
     setIsAuthResolved(true);
   }, []);
 
@@ -275,7 +278,8 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   // 画面遷移はせず認証状態だけ落とし、各画面の未認証表示に委ねる。
   React.useEffect(() => {
     const handleSessionExpired = () => {
-      applyAuthState(false);
+      // 先に無操作の理由が付いていたら残す（redirect の前に後続の失効で消さない）
+      applyAuthState(false, undefined, undefined, authReasonRef.current);
     };
 
     // 店員の無操作1時間。理由 idle を付けて落とし、管理画面が /login?reason=idle へ送る（DD-AUTH-081）。

@@ -81,6 +81,17 @@ function parseRetryAfterMs(response: Response): number | null {
 
 // セッションが切れたことを画面側へ伝える。ここで画面遷移まで行うと
 // client-fetch がルーティングの責務を持つことになるため、通知だけに留める。
+/** 応答が 401 `session_idle`（店員の無操作1時間）なら無操作の通知を出して真を返す。応答の本文は複製で読む。 */
+async function notifyIfSessionIdle(response: Response): Promise<boolean> {
+  if (response.status !== 401 || typeof window === 'undefined') return false;
+  const idle = await Promise.resolve()
+    .then(() => response.clone().json())
+    .then((body: unknown) => (body as { error?: unknown } | null)?.error === 'session_idle')
+    .catch(() => false);
+  if (idle) window.dispatchEvent(new CustomEvent(SESSION_IDLE_EVENT));
+  return idle;
+}
+
 function notifySessionExpired(): void {
   if (typeof window === 'undefined') {
     return;
@@ -215,15 +226,8 @@ export async function clientFetch(
   const response = await fetchWithNetworkRetry(endpoint, requestOptions, method);
 
   // 店員の無操作1時間: API は 401 session_idle でセッションを終わらせている。更新は無駄なので試さず、画面に知らせる（DD-AUTH-081）。
-  if (response.status === 401 && typeof window !== 'undefined') {
-    const idle = await Promise.resolve()
-      .then(() => response.clone().json())
-      .then((body: unknown) => (body as { error?: unknown } | null)?.error === 'session_idle')
-      .catch(() => false);
-    if (idle) {
-      window.dispatchEvent(new CustomEvent(SESSION_IDLE_EVENT));
-      return response;
-    }
+  if (await notifyIfSessionIdle(response)) {
+    return response;
   }
 
   // Access tokens can expire between the page-level auth check and subsequent
@@ -235,7 +239,10 @@ export async function clientFetch(
     isRetryableRequest(method) &&
     await refreshSession()
   ) {
-    return fetchWithNetworkRetry(endpoint, requestOptions, method);
+    // 期限切れの通行証で更新が通った後の再送が、無操作で 401 session_idle になることもある（開いたままの画面の普通の経路）
+    const replayed = await fetchWithNetworkRetry(endpoint, requestOptions, method);
+    await notifyIfSessionIdle(replayed);
+    return replayed;
   }
 
   return response;

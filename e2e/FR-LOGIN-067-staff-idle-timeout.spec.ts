@@ -1,6 +1,6 @@
 /**
  * FR-LOGIN-067 店員の無操作1時間（管理の画面・管理 API・店員のパスキーの窓口）
- * 対応: FR-AUTH-044-AC-01〜06（設計: DD-AUTH-081・DD-AUTH-081、SEC-AUTH-055）
+ * 対応: FR-AUTH-044-AC-01〜06（設計: DD-AUTH-081、SEC-AUTH-055）
  *
  * 手元のアプリ（本番ビルド）・手元の Supabase で通しで確かめる。店員は e2e/admin-session-test-utils.ts の createAdminSessionActor
  * （login/finish を通らない。最後の操作の行が無いセッション）で作り、無操作の時刻は DB の `private.staff_session_activity` を直に書いて作る。
@@ -141,9 +141,28 @@ for (const viewport of viewports) {
       await page.goto('/admin');
       await expect(page.getByRole('navigation', { name: '管理メニュー' })).toBeVisible({ timeout: 30_000 });
 
+      await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
       await setLastSeen(actor, 61);
-      // 画面の裏の読み込み（要対応の件数）が先に 401 を受けて送ることがあり、その時はクリックの前に画面が替わる。どちらでも同じ終わりになる
-      await page.getByRole('navigation', { name: '管理メニュー' }).getByRole('button', { name: 'USER' }).click({ timeout: 5_000 }).catch(() => undefined);
+      // 画面の最初の読み込み（KPI・要対応の件数）が先に 401 を受けて送ることがあり、その時はクリックの前に画面が替わる。どちらでも同じ終わりになる
+      await page.getByRole('navigation', { name: '管理メニュー' }).getByRole('button', { name: 'USER' }).click({ timeout: 20_000 }).catch(() => undefined);
+
+      await expect(page).toHaveURL(/\/login\?reason=idle$/, { timeout: 30_000 });
+      await expect(page.getByText(IDLE_MESSAGE)).toBeVisible();
+      expect(await sessionExists(actor)).toBe(false);
+    });
+
+    test(`FR-AUTH-044-AC-06 ${viewport.name} (アクセストークンの Cookie が無い・更新を通る経路): 開いたままの画面で、通行証が無く更新が通った後の再送が無操作で 401 になっても /login?reason=idle へ送られ、ログアウトの文が出る`, async ({ page }) => {
+      test.setTimeout(120_000);
+      const actor = await withLocalDb((db) => createAdminSessionActor(db, 'admin', 'aal2'));
+      await placeAdminCookies(page, actor, uniqueIp());
+      await page.goto('/admin');
+      await expect(page.getByRole('navigation', { name: '管理メニュー' })).toBeVisible({ timeout: 30_000 });
+
+      // 更新の Cookie だけを残す。API は 401（期限切れと同じ）→ 更新は通る → 再送が無操作で 401 session_idle になる
+      await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
+      await page.context().clearCookies({ name: 'sb-access-token' });
+      await setLastSeen(actor, 61);
+      await page.getByRole('navigation', { name: '管理メニュー' }).getByRole('button', { name: 'USER' }).click({ timeout: 20_000 }).catch(() => undefined);
 
       await expect(page).toHaveURL(/\/login\?reason=idle$/, { timeout: 30_000 });
       await expect(page.getByText(IDLE_MESSAGE)).toBeVisible();

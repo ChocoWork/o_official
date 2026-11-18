@@ -411,4 +411,21 @@ describe('clientFetch', () => {
     expect(listener).toHaveBeenCalledTimes(1);
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
+
+  test('DD-AUTH-081 401（期限切れ）→ 更新が通る → 再送が 401 session_idle なら、無操作の通知を1回出して再送の応答を返す', async () => {
+    const replay = new Response(JSON.stringify({ error: 'session_idle' }), { status: 401 });
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 }))
+      .mockResolvedValueOnce({ ok: true, status: 200 })
+      .mockResolvedValueOnce(replay);
+    const listener = jest.fn();
+    window.addEventListener(SESSION_IDLE_EVENT, listener);
+
+    const result = await clientFetch('/api/admin/kpi', { method: 'GET' });
+    window.removeEventListener(SESSION_IDLE_EVENT, listener);
+
+    expect(result).toBe(replay);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
 });
