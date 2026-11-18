@@ -1,5 +1,6 @@
 # DB マイグレーション運用
 
+> 2026-11-18 確認日（パスキー段3a Task 3）: 本番未適用の移行 D・E を同じファイルのまま直した。D に店員の無操作1時間の表 `private.staff_session_activity` と関数4本（`private.staff_idle_ok`・`public.staff_session_touch`・`staff_idle_check`・`staff_idle_peek`）を足し、E の `has_permission` に4つ目の条件（`private.staff_idle_ok`）と前の確かめ（`passkey_entry_idle_fn`）を足した。大きさ・MD5 を測り直した（D 13052 bytes、E 10066 bytes）。下の「移行 D」「移行 E」の節（SR-AUTH-028、SEC-AUTH-055、ADR-0472）。
 > 2026-11-18 確認日（パスキー段3a Task 2b）: 本番未適用の移行 H の後半を同じファイルに足した。`private.admin_set_user_role` の作り直し（`admin`・`supporter` へは今の店員だけ。`STAFF_INVITE_REQUIRED`）、`public.staff_demote`、ダッシュボード専用の `private.staff_invite_issue_manual`、`public.passkey_delete_with_floor`。大きさ・MD5 を測り直した（39086 bytes）。下の「移行 H」の節（SEC-AUTH-054）。
 > 2026-11-18 確認日（パスキー段2 最終レビュー I-2: 移行 G の `claim` が鍵の今の名前を返し、足した行を30秒待つ。大きさと MD5 を測り直した: 19439 bytes）。前の確認日（パスキー段2 Task 11: 運用の文書）: 移行 G のヘッダーと本文の注釈だけを直した（一時停止の間の取り出しの説明・宛先から外す店長・設定の失敗の行の一覧が `set_order_email_pause` と同じ一覧であること。SQL は変えていない）。大きさと MD5 を測り直した（18046 bytes）。「段3まで `db push` しない」の一覧が7本であること、この master を本番にデプロイしない旨を G の節に書いた。
 > 2026-11-18 確認日（パスキー段2 Task 8）: 新しい移行 `20261118044338_passkey_notification_sending.sql`（移行 G。知らせの行に担当・結果の列を足し、取り出し・済み・失敗・飛ばし・宛先の5つの DB の関数を足す。手元の DB のみ・本番未適用）を足した。下の「パスキー段2 移行 G」の節に書き、「段3まで `db push` しない」の一覧に足して7本にした。
@@ -134,17 +135,23 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 
 | 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
 | --- | --- | --- | --- |
-| `20261117001500_passkey_staff_entry_conditions_fn.sql` | 5794 bytes / `656499f637036f2b2fad290d10c9f032` | 本番未適用（手元の `db reset` で適用済み） | `private.staff_passkey_amr_ok(jsonb)`・`staff_passkey_count_ok(uuid)`・`staff_passkey_entry_ok(uuid, jsonb)` の3つの関数を足す |
+| `20261117001500_passkey_staff_entry_conditions_fn.sql` | 13052 bytes / `903eb7f095583bbe8cd3ef4aaedb4490` | 本番未適用（手元の `db reset` で適用済み） | `private.staff_passkey_amr_ok(jsonb)`・`staff_passkey_count_ok(uuid)`・`staff_passkey_entry_ok(uuid, jsonb)` の3つの関数と、店員の無操作の表 `private.staff_session_activity`・関数4本（`private.staff_idle_ok`・`public.staff_session_touch`・`staff_idle_check`・`staff_idle_peek`）を足す |
 
-- 変えるもの: 関数3本を足すだけ（例外は握って偽を返し、`RAISE WARNING` で SQLSTATE と文を残す）。`has_permission`・`admin-rbac` は変えない（Task 9 でつなぐ）ので、ログインも管理の入口も今のまま
-- 本番に MCP の `apply_migration` で当てた後の突き合わせ: `schema_migrations` の `statements` は1つ（ファイルの全文）になるので、`md5(statements[1])` はファイルの MD5 `656499f637036f2b2fad290d10c9f032` と同じになる（前の記録の、文が1つで md5 がファイルと同じ形と同じ）。同じでなければ当てる途中で字が変わっている（全角の空白など）ので止める
-- 手元の値（参考。本番の突き合わせには使わない）: 手元の `db reset` の後、CLI は文を分けて記録するので `md5(statements[1])` は `420c1527983d577aee2cf0c77a382188`（頭の注釈と `BEGIN` だけ）
+- 変えるもの: 管理の入口の関数3本（例外は握って偽を返し、`RAISE WARNING` で SQLSTATE と文を残す）と、店員の無操作1時間の表と関数4本（2026-11-18 の直しの節）を足すだけ。`has_permission`・`admin-rbac` は D では変えない（E・Task 9 でつなぐ）ので、ログインも管理の入口も今のまま
+- 本番に MCP の `apply_migration` で当てた後の突き合わせ: `schema_migrations` の `statements` は1つ（ファイルの全文）になるので、`md5(statements[1])` はファイルの MD5 `903eb7f095583bbe8cd3ef4aaedb4490` と同じになる（前の記録の、文が1つで md5 がファイルと同じ形と同じ）。同じでなければ当てる途中で字が変わっている（全角の空白など）ので止める
+- 手元の値（参考。本番の突き合わせには使わない）: 手元の `db reset` の後、CLI は文を分けて記録するので `md5(statements[1])` は `88102595aabe3d29476e9ade8b6d8b51`（頭の注釈と `BEGIN` だけ）
 - 前の確かめ: `private.passkey_staff_settings()`・`public.passkey_approved_count(uuid)` が在ること。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`
-- 末尾の確かめ: 3本が `SECURITY DEFINER`・`STABLE`・持ち主 `postgres`・`search_path` 空で、`PUBLIC`・`anon`・`authenticated`・`service_role` に `execute` が無い。外れたら `PASSKEY_MIGRATION_ASSERTION_FAILED`（`passkey_entry_function_acl`）
-- 権限の選び方: `service_role` にも渡さない（`private.app_session_is_live` と同じ）。`has_permission` は `SECURITY DEFINER` で持ち主が `postgres` なので、Task 9 で呼べる
-- 戻し方（移行のヘッダーの ROLLBACK）: `DROP FUNCTION` を3本。Task 9 が使う前に限る
+- 末尾の確かめ: 4本（3本と `private.staff_idle_ok`）が `SECURITY DEFINER`・`STABLE`・持ち主 `postgres`・`search_path` 空で、`PUBLIC`・`anon`・`authenticated`・`service_role` に `execute` が無い。外れたら `PASSKEY_MIGRATION_ASSERTION_FAILED`（`passkey_entry_function_acl`）。`public` の3関数（`staff_session_touch`・`staff_idle_check`・`staff_idle_peek`）は `SECURITY DEFINER`・持ち主 `postgres`・`search_path` 空で、`service_role` だけに `execute` が有る（`passkey_idle_function_acl`）。表は RLS 有効で `anon`・`authenticated` に権限が無い（`passkey_idle_table_acl`）
+- 権限の選び方: 管理の入口の3本と `private.staff_idle_ok` は `service_role` にも渡さない（`private.app_session_is_live` と同じ）。`has_permission` は `SECURITY DEFINER` で持ち主が `postgres` なので、E で呼べる。無操作の `public` 3関数だけ `service_role` に渡す（窓口・ページが呼ぶ）
+- 戻し方（移行のヘッダーの ROLLBACK）: E を戻した後に、`DROP FUNCTION` を `public.staff_idle_peek(uuid)`・`staff_idle_check(uuid, uuid)`・`staff_session_touch(uuid, uuid, integer)`・`private.staff_idle_ok(uuid)` と管理の入口の3本、`DROP TABLE private.staff_session_activity`
 - **本番へ当てない**: 段1b と段3が済むまで当てない（理由と当て方は移行 A と同じ）
 - 手元で確かめた結果（2026-11-17、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_staff_entry_conditions.integration.test.ts` 通過、ほかの `auth_passkey_*` の DB 結合も通過のまま（5つで77件）。単体 `staff-passkey.test.ts` 通過
+- 2026-11-18（段3a Task 3）の直し（本番未適用なので同じファイルを直した。SR-AUTH-028・FR-AUTH-044・DATA-AUTH-021・ADR-0472・SEC-AUTH-055・DD-AUTH-074）: 店員の無操作1時間の表 `private.staff_session_activity(session_id pk, user_id, last_seen_at)`（RLS 有効・`anon`・`authenticated`・`service_role` に権限なし）と関数4本を足した。大きさは 5794 → 13052 bytes。ASCII だけ・LF・BOM なしは変わらない。
+  - `private.staff_idle_ok(uuid)`（`STABLE`・`SECURITY DEFINER`・だれにも `execute` を渡さない）: 行があれば `last_seen_at > now() - staff_idle_seconds`（3600）。**行が無ければ** `auth.sessions` の `coalesce(refreshed_at AT TIME ZONE 'UTC', created_at)` で同じ比べ（`refreshed_at` は時刻帯なし、`created_at` は時刻帯つき）。`auth.sessions` にも無い・`NULL`・例外は偽。ログインの終わりを通らないセッション（E2E・手元の開発・DB 結合の JWT）と、書き込みの失敗した後でも、新しいセッションは1時間通る
+  - `public.staff_session_touch(session, user, 間引きの秒 = 60)`（`service_role`）: 行が無ければ作り、間引きの秒以上たっていれば更新して真、そうでなければ偽。別の利用者の行は上書きしない。書いた時にその人の2日より前の行を消す
+  - `public.staff_idle_check(session, user)`（`service_role`）: `staff_idle_ok` が真なら同じ間引きで時刻を進めて真。`public.staff_idle_peek(session)`（`service_role`）: `staff_idle_ok` だけ（時刻を進めない。`/api/auth/me` 用）
+  - 戻し方は上の「戻し方」のとおり（E を戻した後に関数と表を落とす）。本番へ当てない決まりは同じ
+  - 手元で確かめた結果（2026-11-18、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_passkey_staff_idle.integration.test.ts`（12件）と `auth_has_permission_passkey.integration.test.ts` が通過
 
 ## パスキー段1a 移行 E: `has_permission` を管理の入口の3つの条件に切り替える（手元で確認済み・本番未適用）
 
@@ -152,22 +159,23 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 
 | 移行 | 大きさ / ファイルの MD5 | 状態 | 目的 |
 | --- | --- | --- | --- |
-| `20261117013000_passkey_staff_entry_conditions.sql` | 8992 bytes / `df5a8bbe1edf9f2aba180bc2642610ab` | 本番未適用（手元の `db reset` で適用済み） | `public.has_permission(text)` の `aal2` の枝を、管理の入口の3つの条件に置き換える |
+| `20261117013000_passkey_staff_entry_conditions.sql` | 10066 bytes / `eb9920be73c7ab60835aa9fd9f8a50c4` | 本番未適用（手元の `db reset` で適用済み） | `public.has_permission(text)` の `aal2` の枝を、管理の入口の3つの条件と無操作1時間の4つ目の条件に置き換える |
 
-- 変えるもの: `has_permission` の本体だけ（`CREATE OR REPLACE`。持ち主・`SECURITY DEFINER`・`STABLE`・`SET search_path = ''`・権限は `20261029120100` のまま）。順は uid → `private.staff_passkey_amr_ok(claims)`（今までの `aal2` の位置）→ ACL → `private.staff_passkey_count_ok(uid)`（ACL が真になった後）→ `private.app_session_is_live`。claims の `aal` は見ない
+- 変えるもの: `has_permission` の本体だけ（`CREATE OR REPLACE`。持ち主・`SECURITY DEFINER`・`STABLE`・`SET search_path = ''`・権限は `20261029120100` のまま）。順は uid → `private.staff_passkey_amr_ok(claims)`（今までの `aal2` の位置）→ ACL → `private.staff_passkey_count_ok(uid)`（ACL が真になった後）→ **`private.staff_idle_ok(session_id)`（無操作1時間。4つ目の条件。2026-11-18 に足した。`session_id` は形を確かめて `uuid` にし、悪ければ `NULL` で偽）** → `private.app_session_is_live`。claims の `aal` は見ない
 - 置き換える前の本体の md5（`select md5(prosrc) from pg_proc where oid = 'public.has_permission(text)'::regprocedure`。PG の版によらない比べ方）: `3c4826933eca194a3486f430d361891c`（本番に当てる前にこの値を読み、一致を確かめる）
-- 本番に MCP の `apply_migration` で当てた後の突き合わせ: `schema_migrations` の `statements` は1つ（ファイルの全文）になるので、`md5(statements[1])` はファイルの MD5 `b5ec5a23db5b662619349910c6fa5541` と同じになる（前の記録の、文が1つで md5 がファイルと同じ形と同じ）。同じでなければ当てる途中で字が変わっている（全角の空白など）ので止める
-- 手元の値（参考。本番の突き合わせには使わない）: 手元の `db reset` の後、CLI は文を分けて記録するので `md5(statements[1])` は `6c86a05f981d92e5551cce4f025b50c1`（頭の注釈と `BEGIN` だけ）
-- 前の確かめ: 移行 D の関数2本と `private.app_session_is_live(uuid)` が在ること。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`
+- 本番に MCP の `apply_migration` で当てた後の突き合わせ: `schema_migrations` の `statements` は1つ（ファイルの全文）になるので、`md5(statements[1])` はファイルの MD5 `eb9920be73c7ab60835aa9fd9f8a50c4` と同じになる（前の記録の、文が1つで md5 がファイルと同じ形と同じ）。同じでなければ当てる途中で字が変わっている（全角の空白など）ので止める
+- 手元の値（参考。本番の突き合わせには使わない）: 手元の `db reset` の後、CLI は文を分けて記録するので `md5(statements[1])` は `421ba09cf2d071177263a89029358b95`（頭の注釈と `BEGIN` だけ）
+- 前の確かめ: 移行 D の関数2本と `private.app_session_is_live(uuid)` が在ること。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（`passkey_entry_switch_precheck`）。続けて `private.staff_idle_ok(uuid)`（D の無操作の関数）が無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（`DETAIL = passkey_entry_idle_fn`）。D を先に当てる（D は E より前に当たる版）
 - 前の確かめ（締め出しの防止。`DETAIL = passkey_entry_switch_no_ready_staff`）: 有効な店員（`user_roles` の有効な admin・supporter）が1人でもいて、認めた鍵が `min_approved_passkeys` 本以上の店員が1人もいなければ、`PASSKEY_MIGRATION_PRECHECK_FAILED` で止まる。当てると全員が管理の権限を失うため。手元の `db reset` は移行の後に seed を入れるので `user_roles` が空で、通る。試験: `tests/integration/db/auth_has_permission_passkey.integration.test.ts` が移行ファイルのこの DO ブロックを取り出して流す（店員0本・1本で止まり、2本が1人でもいれば通る）
 - 前の確かめ（土台の一致。`DETAIL = passkey_entry_switch_baseline`）: 置き換える前の `has_permission` の本体の `md5(prosrc)` が `3c4826933eca194a3486f430d361891c` でなければ止まる（`pg_get_functiondef` の md5 は頭の書き方が PG の版で変わりうるので使わない。`prosrc` は `$function$` の間の本文だけ）。別の作業が段3までの間に本体を直していたら、黙って上書きしない。この値は、移行 D までを適用した手元の DB（`npx.cmd supabase db reset --version 20261117001500`）で `select md5(prosrc) from pg_proc where oid = 'public.has_permission(text)'::regprocedure` を読んで測った（`20261029120100` の本体を取引の中で作り直して測っても同じ値）。本番の PG の版で `pg_get_functiondef` の字が変わって止まった場合でも、本番で上の `md5(prosrc)` を読み、手元の値と同じなら、違いは頭の書き方だけなので中身は同じと判断してよい（違う時は本体が変わっているので、E を当てずに中身を読む）。**E の期待値を直した時は、同じコミットで、この表の E の大きさと MD5 を直す**（MCP で当てた後の突き合わせ `md5(statements[1])` は、直したファイルの MD5 で行う）
 - **段3まで `supabase db push`（どの形でも）を流さない**: `supabase/migrations` にこの5本（と段1b の移行 F、段2 の移行 G）がある間、`db push --linked --include-all` を流すと一度に本番へ当たる。別の作業の移行も、段3までは MCP の `apply_migration` で1本ずつ当てる。上の「前の確かめ」は、うっかり当たった時の最後の歯止めで、それに頼らない
-- 末尾の確かめ: 本体に `aal2` が無く、`staff_passkey_amr_ok` < `user_roles` < `staff_passkey_count_ok` < `app_session_is_live` の順で、持ち主・`SECURITY DEFINER`・`STABLE`・`search_path` 空・`authenticated` と `service_role` に `execute` が有り `anon` に無いこと。外れたら `PASSKEY_MIGRATION_ASSERTION_FAILED`
-- 戻し方（移行のヘッダーの ROLLBACK）: `20261029120100_sec_has_permission_aal2_member_rls.sql` の本体（`aal2` の枝）に `CREATE OR REPLACE` で戻す
-- 費用: `has_permission` を `( SELECT ... )` で包まずに呼ぶ決まりが21の表に77件ある（行ごとに呼ばれうる）。条件3の数えは、パスキーの amr と ACL を通った人（店員）だけが払う。お客さん・anon は条件1・2か ACL で止まる
+- 末尾の確かめ: 本体に `aal2` が無く、`staff_idle_ok` が在り、`staff_passkey_amr_ok` < `user_roles` < `staff_passkey_count_ok` < `staff_idle_ok` < `app_session_is_live` の順で、持ち主・`SECURITY DEFINER`・`STABLE`・`search_path` 空・`authenticated` と `service_role` に `execute` が有り `anon` に無いこと。外れたら `PASSKEY_MIGRATION_ASSERTION_FAILED`
+- 戻し方（移行のヘッダーの ROLLBACK）: `20261029120100_sec_has_permission_aal2_member_rls.sql` の本体（`aal2` の枝）に `CREATE OR REPLACE` で戻す（D の無操作の表・関数を落とす前に）
+- 費用: `has_permission` を `( SELECT ... )` で包まずに呼ぶ決まりが21の表に77件ある（行ごとに呼ばれうる）。条件3の数えと条件4（無操作）の確かめは、パスキーの amr と ACL を通った人（店員）だけが払う。お客さん・anon は条件1・2か ACL で止まる。条件4は主キーで1行を読むだけ（行が無い時は `auth.sessions` の主キー）なので、お客さん・anon の実行計画は変わらず、店員の呼びに主キーの読みが1回足りる（`EXPLAIN` の件数が増えるのは店員だけ）
 - 手元で必要な操作: 同じコミットで `supabase/config.toml` の `[auth.hook.custom_access_token]` を有効にしたので、取り込みに `supabase stop`・`start` が要る（その後 `db reset`）。フックを外す時は `enabled` を戻して同じく `stop`・`start`
 - **本番へ当てない**: 段1b と段3が済むまで当てない。当てると、パスキーを有効にするまでだれも管理の権限を持てない（`amr` に `passkey` を持つ店員がいない）。理由と当て方は移行 A と同じ
 - 手元で確かめた結果（2026-11-17、`npx.cmd supabase db reset` の後）: `tests/integration/db/auth_has_permission_passkey.integration.test.ts` ほか `auth_passkey_*` の DB 結合が通過、`has_permission` を使う DB 結合（RLS・付与・権限の57ファイル）も通過。単体は全件通過
+- 2026-11-18（段3a Task 3）の直し（本番未適用なので同じファイルを直した。置き換える前の `md5(prosrc)` の確かめは変えない）: 4つ目の条件（無操作1時間）と前の確かめ `passkey_entry_idle_fn` を足した。大きさは 8992 → 10066 bytes。活動の行が無いセッション（E2E・手元の開発・DB 結合の JWT）は `auth.sessions` の時刻から1時間通るので、行を書かずに作る既存の管理者の DB 結合・E2E の手助け（`createAdminSessionActor`・`passkey-dev-staff`）は変わらず通る
 
 ## パスキー段1b 移行 F: 窓口が使う DB の関数と `passkey_approve` の作り直し（手元で確認済み・本番未適用）
 
@@ -259,7 +267,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 2. 次に、逆順で F → E → D → C → B → A の順に戻す（F が最初）。各移行の戻し方は、上の各節とファイルのヘッダーの `ROLLBACK`。
    - F: 3つの新しい関数を `DROP` し、`passkey_approve` を A の本体に戻す（アプリの窓口を戻すか止めた後。窓口が関数を呼ぶので、先に F を戻すと窓口が失敗する）。
    - E: `20261029120100_sec_has_permission_aal2_member_rls.sql` の本体に戻す（A〜D の関数を使わなくなる）。
-   - D: 関数3本を落とす（E を戻した後）。
+   - D: 無操作の関数 `public.staff_idle_peek`・`staff_idle_check`・`staff_session_touch`・`private.staff_idle_ok` と管理の入口の関数3本を落とし、表 `private.staff_session_activity` を落とす（E を戻した後。E の `has_permission` が呼ぶので、E より先に落とすと管理の権限が全部偽になる）。
    - C: 先に関数を空（`RETURN NULL` だけ）にし、引き金の削除は `supabase_auth_admin` の手順（サポートに依頼）。
    - B: `DROP FUNCTION public.passkey_access_token_hook(jsonb);`（登録を外した後）。
    - A: 表と関数を落とす。**C の引き金が生きている間は A を戻さない**（引き金が `approved_passkeys` を消そうとして、鍵の削除と鍵を持つ利用者の削除がすべて失敗する）。

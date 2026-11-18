@@ -2058,6 +2058,44 @@ flowchart LR
 
 矢印は順番。点線はどの段からでも取り消せることを示す。
 
+### DATA-AUTH-021 無操作の表 `private.staff_session_activity` は店員のセッションごとに最後の操作の時刻を持ち、関数4本で読み書きする
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-044、SEC-AUTH-055 |
+| 根拠 | 無操作の時刻を `auth.sessions.refreshed_at` で測ると、トークンの更新が無い限り動かず、画面を使っていても1時間で切れる（または更新で延びすぎる）。アプリが持つ表なら、使った時だけ・間引いて進められる。判断は ADR-0472 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_idle.integration.test.ts`）、単体テスト（DD-AUTH-074） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-3-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 3） |
+
+- 表（移行 D。`supabase/migrations/20261117001500_passkey_staff_entry_conditions_fn.sql`）: `session_id uuid primary key`・`user_id uuid not null`・`last_seen_at timestamptz not null default now()`。索引 `(user_id, last_seen_at)`。RLS 有効、`anon`・`authenticated`・`service_role` に権限なし
+- `private.staff_idle_ok(uuid)`（`STABLE`・`SECURITY DEFINER`・だれにも `execute` を渡さない）: 行があれば `last_seen_at > now() - staff_idle_seconds`（既定3600）。行が無ければ `auth.sessions` の `coalesce(refreshed_at AT TIME ZONE 'UTC', created_at)` で同じ比べ。`auth.sessions` にも無ければ偽
+- `public.staff_session_touch(session, user, 間引きの秒 = 60)`: 行が無ければ作る、あって間引きの秒以上たっていれば更新して真、そうでなければ偽。別の利用者の行は上書きしない。書いた時にその人の2日より前の行を消す
+- `public.staff_idle_check(session, user)`: `staff_idle_ok` が真なら同じ間引きで時刻を進めて真。偽なら書かない
+- `public.staff_idle_peek(session)`: `staff_idle_ok` だけ。時刻を進めない（`/api/auth/me` 用）
+- 3つの `public` 関数は `service_role` だけが実行できる。移行 E の `has_permission` が `private.staff_idle_ok` を4つ目の条件（認めた鍵の本数の次、`app_session_is_live` の前）で呼ぶ
+- 費用: `has_permission` を `( SELECT ... )` で包まずに呼ぶ決まりが77件あるが、4つ目の条件は ACL と認めた鍵の本数を通った店員だけが払う（お客さん・anon は手前で止まる）。1回は主キーの1行の読みで、`EXPLAIN` の実行計画の件数は増やさない
+
+### ARC-AUTH-013 店員の無操作は、DB の関数 `private.staff_idle_ok` を1つの門にし、`has_permission`・窓口・ページが同じ門を通る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-044、SEC-AUTH-055、ADR-0472 |
+| 根拠 | 無操作の判定を窓口ごとに書くと、RLS を直に叩く道が抜ける。判定を DB の1つの関数にし、`has_permission`（RLS）は直に、窓口・ページは `staff_idle_check`（確かめと時刻の更新を1回の呼びで）・`staff_idle_peek`（見るだけ）で呼ぶ |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_idle.integration.test.ts`、`tests/integration/db/auth_has_permission_passkey.integration.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-3-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 3） |
+
+```mermaid
+flowchart LR
+  H["has_permission<br/>(RLS・移行 E)"] --> O["private.staff_idle_ok<br/>門は1つ"]
+  C["staff_idle_check<br/>(窓口・ページ。Task 8・9)"] --> O
+  P["staff_idle_peek<br/>(/api/auth/me)"] --> O
+  C --> T["staff_session_touch<br/>60秒の間引き"]
+  O --> A["private.staff_session_activity"]
+  O -.行が無い時.-> S["auth.sessions"]
+```
+
 ## 未確認事項
 
 - 本番の Supabase Auth の設定（Email OTP Expiration 300 秒・8 桁・Confirm email・TOTP の有効・最小の長さ・漏洩の照合・captcha・Redirect URLs に古い `/auth/callback` の許可が残っていないか）。手元の `supabase/config.toml` は波 6 の切り替え（2026-11-01。手元だけ）まで OTP 3600 秒・Confirm email 無効・TOTP 無効・最小 6 文字だった。切り替えで本番の前提（OTP 300 秒・Confirm email 有効・TOTP 有効・最小 16・captcha・`secure_password_change`・変更通知）にそろえた。本番の実際の値はまだ読んでいない（SEC-AUTH-029）

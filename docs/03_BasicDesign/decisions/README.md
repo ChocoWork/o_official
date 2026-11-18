@@ -17,7 +17,7 @@
 | STOCKIST | 0250〜0299 | [stockist](../areas/stockist.md) |
 | SEARCH | 0300〜0349 | [search](../areas/search.md) |
 | PRIVACY | 0350〜0399 | [privacy](../areas/privacy.md) |
-| AUTH | 0400〜0449、0463〜0471（パスキー） | [auth](../areas/auth.md) |
+| AUTH | 0400〜0449、0463〜0472（パスキー） | [auth](../areas/auth.md) |
 | ADMIN | 0450〜0462 | [admin](../areas/admin.md) |
 
 新しい領域を範囲に足すときは、空いている帯を `scope.json` の `docs` の型に合わせて決め、この表に足す。

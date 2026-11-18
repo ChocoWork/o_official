@@ -10,7 +10,10 @@
 --   4. private.staff_passkey_count_ok(uid)   (condition 3)            -> false. Counted in the DB on every call (never from the JWT hint
 --                                                                        staff_passkeys_ok). Only reached when the ACL is true, because has_permission is
 --                                                                        called per row by about 100 RLS policies and customers must not reach approved_passkeys.
---   5. private.app_session_is_live(claims.session_id), cast only after a regex shape check (unchanged).
+--   5. private.staff_idle_ok(session_id)   (condition 4, stage 3a / SR-AUTH-028)  -> false. Staff idle for more than one hour. Reached only by staff
+--                                                                        that passed 2-4 (same cost rule as the count). A malformed session_id becomes NULL
+--                                                                        after the regex shape check, so idle_ok returns false (never an exception).
+--   6. private.app_session_is_live(claims.session_id), cast only after a regex shape check (unchanged).
 -- Owner, SECURITY DEFINER, STABLE, SET search_path = '' and the EXECUTE grants (authenticated, service_role, postgres; anon revoked) are kept by
 -- CREATE OR REPLACE. The JWT aal is NOT looked at any more (a passkey login stays aal1).
 -- Cost note: a policy that calls has_permission without (select ...) wrapping runs it per row; the count (step 4) then runs once per row for a
@@ -22,13 +25,14 @@
 --
 -- BEFORE applying to production (read only; NOT applied to production until stage 1b and 3 are done):
 --   select md5(prosrc) from pg_proc where oid = 'public.has_permission(text)'::regprocedure;   -- expect the md5 above
---   select to_regprocedure('private.staff_passkey_amr_ok(jsonb)'), to_regprocedure('private.staff_passkey_count_ok(uuid)');   -- expect not null (migration D)
+--   select to_regprocedure('private.staff_passkey_amr_ok(jsonb)'), to_regprocedure('private.staff_passkey_count_ok(uuid)'),
+--          to_regprocedure('private.staff_idle_ok(uuid)');   -- expect not null (migration D)
 -- The migration itself stops (PASSKEY_MIGRATION_PRECHECK_FAILED) when the has_permission md5 differs from the value above, and when active
 -- staff exist but none of them has the required number of approved keys (never `db push` while these migrations are in supabase/migrations).
 -- Applying this before the passkey entry is usable means nobody holds an admin permission (every staff JWT lacks the passkey amr).
 --
--- ROLLBACK: CREATE OR REPLACE FUNCTION public.has_permission with the body of 20261029120100_sec_has_permission_aal2_member_rls.sql
---   (the aal2 branch: IF COALESCE(claims ->> 'aal', 'aal1') <> 'aal2' THEN RETURN false; END IF; before the ACL, no count check).
+-- ROLLBACK (before rolling back D, whose idle table and functions this body calls): CREATE OR REPLACE FUNCTION public.has_permission with the body of 20261029120100_sec_has_permission_aal2_member_rls.sql
+--   (the aal2 branch: IF COALESCE(claims ->> 'aal', 'aal1') <> 'aal2' THEN RETURN false; END IF; before the ACL, no count or idle check).
 BEGIN;
 
 DO $passkey_entry_precheck$
@@ -37,6 +41,9 @@ BEGIN
      OR pg_catalog.to_regprocedure('private.staff_passkey_count_ok(uuid)') IS NULL
      OR pg_catalog.to_regprocedure('private.app_session_is_live(uuid)') IS NULL THEN
     RAISE EXCEPTION 'PASSKEY_MIGRATION_PRECHECK_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_entry_switch_precheck';
+  END IF;
+  IF pg_catalog.to_regprocedure('private.staff_idle_ok(uuid)') IS NULL THEN
+    RAISE EXCEPTION 'PASSKEY_MIGRATION_PRECHECK_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_entry_idle_fn';
   END IF;
 END
 $passkey_entry_precheck$;
@@ -92,6 +99,7 @@ DECLARE
   uid uuid;
   acl_allowed boolean;
   claims jsonb;
+  v_session uuid;
 BEGIN
   uid := auth.uid();
   IF uid IS NULL THEN
@@ -123,12 +131,16 @@ BEGIN
     RETURN false;
   END IF;
 
-  RETURN private.app_session_is_live(
-    CASE
-      WHEN claims ->> 'session_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-        THEN (claims ->> 'session_id')::uuid
-    END
-  );
+  v_session := CASE
+    WHEN claims ->> 'session_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      THEN (claims ->> 'session_id')::uuid
+  END;
+
+  IF NOT private.staff_idle_ok(v_session) THEN
+    RETURN false;
+  END IF;
+
+  RETURN private.app_session_is_live(v_session);
 END;
 $function$;
 
@@ -141,14 +153,16 @@ BEGIN
   IF v_definition LIKE '%aal2%'
      OR v_definition NOT LIKE '%staff_passkey_amr_ok%'
      OR v_definition NOT LIKE '%staff_passkey_count_ok%'
+     OR v_definition NOT LIKE '%staff_idle_ok%'
      OR v_definition NOT LIKE '%app_session_is_live%'
      OR v_definition NOT LIKE '%user_roles%' THEN
     RAISE EXCEPTION 'PASSKEY_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_entry_switch_body';
   END IF;
-  -- order: amr check < ACL < count check < session check
+  -- order: amr check < ACL < count check < idle check < session check
   IF pg_catalog.strpos(v_definition, 'staff_passkey_amr_ok') > pg_catalog.strpos(v_definition, 'user_roles')
      OR pg_catalog.strpos(v_definition, 'staff_passkey_count_ok') < pg_catalog.strpos(v_definition, 'user_roles')
-     OR pg_catalog.strpos(v_definition, 'app_session_is_live') < pg_catalog.strpos(v_definition, 'staff_passkey_count_ok') THEN
+     OR pg_catalog.strpos(v_definition, 'staff_idle_ok') < pg_catalog.strpos(v_definition, 'staff_passkey_count_ok')
+     OR pg_catalog.strpos(v_definition, 'app_session_is_live') < pg_catalog.strpos(v_definition, 'staff_idle_ok') THEN
     RAISE EXCEPTION 'PASSKEY_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_entry_switch_order';
   END IF;
   IF NOT EXISTS (

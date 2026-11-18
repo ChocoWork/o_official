@@ -233,6 +233,56 @@ describeLocalDb('integration: has_permission の管理の入口の3条件と結�
     expect(await allowed(jwtClaims(member, session, 'aal2'))).toBe(false);
   });
 
+  // SR-AUTH-028 / DATA-AUTH-021 / SEC-AUTH-055: 4つ目の条件（店員の無操作1時間。移行 E が private.staff_idle_ok を呼ぶ）
+  test('DATA-AUTH-021 ⑮活動の行が無い時は auth.sessions の時刻で見る（59分前は true・61分前は false）', async () => {
+    const admin = await insertUser('admin');
+    const session = await createLiveAppSession(db(), admin);
+    const claims = jwtClaims(admin, session);
+    const setRefreshed = (minutes: number) =>
+      db().query(
+        "update auth.sessions set refreshed_at = (now() - make_interval(mins => $2)) at time zone 'UTC' where id = $1",
+        [session.sessionId, minutes],
+      );
+
+    await setRefreshed(59);
+    expect(await allowed(claims)).toBe(true);
+    await setRefreshed(61);
+    expect(await allowed(claims)).toBe(false);
+  });
+
+  test('ARC-AUTH-013 活動の行がある時は行の last_seen_at が決める（auth.sessions が古くても59分前は true、61分前は false）', async () => {
+    const admin = await insertUser('admin');
+    const session = await createLiveAppSession(db(), admin);
+    const claims = jwtClaims(admin, session);
+    await db().query("update auth.sessions set refreshed_at = (now() - interval '3 hours') at time zone 'UTC' where id = $1", [session.sessionId]);
+    await db().query("insert into private.staff_session_activity (session_id, user_id, last_seen_at) values ($1, $2, now() - interval '59 minutes')", [
+      session.sessionId,
+      admin,
+    ]);
+    expect(await allowed(claims)).toBe(true);
+
+    await db().query("update private.staff_session_activity set last_seen_at = now() - interval '61 minutes' where session_id = $1", [session.sessionId]);
+    expect(await allowed(claims)).toBe(false);
+  });
+
+  test('DATA-AUTH-021 ⑮活動の行が古ければ、auth.sessions が新しくても false（行が優先）', async () => {
+    const admin = await insertUser('admin');
+    const session = await createLiveAppSession(db(), admin);
+    await db().query("insert into private.staff_session_activity (session_id, user_id, last_seen_at) values ($1, $2, now() - interval '2 hours')", [
+      session.sessionId,
+      admin,
+    ]);
+    expect(await allowed(jwtClaims(admin, session))).toBe(false);
+  });
+
+  test('DATA-AUTH-021 ⑮お客さん（役割なし）と anon の結果は無操作の条件で変わらない（false のまま）', async () => {
+    const member = await insertUser(null);
+    const session = await createLiveAppSession(db(), member);
+    expect(await allowed(jwtClaims(member, session))).toBe(false);
+    const outcome = await attempt('anon', null, `select public.has_permission('${ADMIN_PERMISSION}') as value`);
+    expect('code' in outcome ? false : outcome.rows[0].value).toBe(false);
+  });
+
   test('DATA-AUTH-008 ⑩EXECUTE は authenticated と service_role に有り、anon に無い', async () => {
     const result = await db().query(
       `select has_function_privilege('authenticated', 'public.has_permission(text)', 'EXECUTE') as authenticated,
