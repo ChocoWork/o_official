@@ -113,6 +113,30 @@ for (const viewport of viewports) {
       expect(consumed).toHaveLength(0);
     });
 
+    test(`FR-AUTH-051-AC-02 ${viewport.name}: すでに取り消されている招待の「招待を取り消す」では、取り消しの知らせを出さず、一覧だけ読み直して「招待中」が消える`, async ({ page }) => {
+      test.setTimeout(120_000);
+      cleanup.push(await adminLoggedIn(page));
+      const email = uniqueEmail('screen-cancel-twice');
+      await openUsers(page);
+
+      await page.getByRole('button', { name: '店員を招待' }).click();
+      const dialog = page.getByRole('dialog', { name: '店員を招待' });
+      await dialog.getByLabel(/メールアドレス/).fill(email);
+      await dialog.getByLabel('役割').selectOption('supporter');
+      await dialog.getByRole('button', { name: '招待を送る' }).click();
+      await expect(page.getByText(`${email} へ、招待のメールを送りました。`)).toBeVisible(NAVIGATION);
+      const row = rowOf(page, email);
+      await expect(row.getByText('招待中')).toBeVisible(NAVIGATION);
+
+      // 画面を開いたまま、別の道（降格など）で先に取り消された状態にする
+      const userId = await userIdOf(email);
+      await withLocalDb((db) => db.query('update private.staff_invites set cancelled_at = now() where user_id = $1::uuid and cancelled_at is null', [userId]));
+
+      await row.getByRole('button', { name: '招待を取り消す' }).click();
+      await expect(rowOf(page, email).getByText('招待中')).toHaveCount(0, NAVIGATION);
+      await expect(page.getByText(`${email} への招待を取り消しました。`)).toHaveCount(0);
+    });
+
     test(`FR-AUTH-040-AC-03 ${viewport.name}: やり直しで認めた鍵が2本から0本になり、その行は役割が外れて「招待中」になり、やり直しのメールが1通届く`, async ({ page }) => {
       test.setTimeout(120_000);
       cleanup.push(await adminLoggedIn(page));

@@ -1,6 +1,6 @@
 # AUTH の要件
 
-> 状態: 推定 | 確認日: 2026-11-19 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-11-20 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -6073,6 +6073,18 @@ B が A に `POST /api/admin/staff/[id]/redo` を出すと 200 になり、A が
 
 DB の `staff_invite_cancel` は、開いた招待があれば `true`、2回目・有効化済み・招待の無い人では `false` を返す。窓口は `false` で 200 `{ success: true, cancelled: false }` を返し、`revokeAllSessionsForUser` を呼ばない。
 
+### FR-AUTH-051-AC-02 取り消す物が無い時は、画面に「…への招待を取り消しました。」が出ず、一覧だけ読み直される
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-051 |
+| 根拠 | DD-AUTH-091 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-070-admin-users-staff-screen.spec.ts`。390・768・1280 の3幅でくり返す）。単体テスト（`tests/unit/features/auth/staff/user-section-staff.test.tsx`、`staff-user-actions.test.ts`）でも確かめる（DD-AUTH-091） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-13-review.md`（m-3） |
+
+招待中の行の「招待を取り消す」の応答が `cancelled: false` の時、知らせは出さず、一覧だけを読み直す。`cancelled: true` の時は今までどおり知らせを出す。
+
 ### FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel`
 
 | 属性 | 値 |
@@ -8318,7 +8330,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-13-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 13） |
 | 優先度 | MUST |
 
-守ること: (1) 取り消しは `private.staff_cancel_invites_issued_by` の1つに書き、だれにも `execute` を渡さない（持ち主 `postgres`・`SECURITY DEFINER`・`search_path` 空）。(2) 呼ぶのは `staff_demote`・`admin_set_user_role`（今の `admin` が `admin` 以外になる時）・`staff_invite_issue_core`（対象が今の `admin` の時）で、どれも錠を持った後。新しい錠は取らない。(3) 対象が今の店長かは、`user_roles` を外す前に読む。(4) 有効化済み・ほかの店長・`last_resort` の招待は変えない。
+守ること: (1) 取り消しは `private.staff_cancel_invites_issued_by` の1つに書き、だれにも `execute` を渡さない（持ち主 `postgres`・`SECURITY DEFINER`・`search_path` 空）。(2) 呼ぶのは `staff_demote`（条件なしで、役割を外した後）・`admin_set_user_role`（今の `admin` が `admin` 以外になる時）・`staff_invite_issue_core`（対象が今の `admin` の時）で、どれも錠 `190519` を持った後（`admin_set_user_role` は `190519` だけ。ほかの書き手も `190519` を先に取るので直列になる）。新しい錠は取らない。(3) `admin_set_user_role` と core は、対象が今の店長かを `user_roles` を外す前に読む。(4) 有効化済み・ほかの店長・`last_resort` の招待は変えない。
 
 ## 派生要件
 

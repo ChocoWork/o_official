@@ -14,8 +14,10 @@
 -- Functions (SECURITY DEFINER, search_path empty, owner postgres):
 --   private.staff_cancel_invites_issued_by(user)  NO execute for anyone. The one place that cancels every unused invite a person
 --     ISSUED (issued_by = user, not cancelled, not activated) and closes the registration windows of those invitees. The caller
---     holds 190519 and the user key first. Called from staff_demote, admin_set_user_role (admin -> supporter / user) and the
---     issue core (when the target is a current admin: redo, last resort). Invites by other managers, last_resort invites
+--     holds 190519 first (staff_demote and the issue core also hold the per-user key; admin_set_user_role holds ONLY 190519, which
+--     is enough because every writer of the invitees' rows takes 190519 first). Called from staff_demote (always, after it
+--     switches user_roles off), admin_set_user_role (admin -> supporter / user, only when the target is a current admin, read
+--     before user_roles is switched off) and the issue core (when the target is a current admin: redo, last resort). Invites by other managers, last_resort invites
 --     (issued_by NULL) and activated invites are untouched. No per-invite audit; the invitee's logins are not ended (DD-AUTH-085).
 --   private.staff_invite_issue_core(...)  NO execute for anyone. Only the two doors below call it (Task 2: staff_invite_issue;
 --     Task 2b: private.staff_invite_issue_manual). One transaction, in this order:
@@ -165,7 +167,8 @@ REVOKE ALL ON TABLE private.staff_invites FROM PUBLIC, anon, authenticated, serv
 ALTER TABLE private.staff_invites OWNER TO postgres;
 
 -- Cancel every unused invite that p_user_id issued and close the open windows of the invitees. The caller already holds
--- 190519 and the per-user key (190519 first), so this runs serialised with issue, activate, cancel and demote. Invites by
+-- 190519 (staff_demote and the issue core also hold the per-user key; admin_set_user_role holds only 190519), so this runs
+-- serialised with issue, activate, cancel and demote, because each of them takes 190519 first. Invites by
 -- other issuers, last_resort invites (issued_by NULL) and activated invites are not touched. No audit row, no session change.
 CREATE OR REPLACE FUNCTION private.staff_cancel_invites_issued_by(p_user_id uuid)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''

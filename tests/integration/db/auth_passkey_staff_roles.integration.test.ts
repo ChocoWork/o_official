@@ -630,22 +630,36 @@ describeLocalDb('passkey staff roles (migration H second half)', () => {
 
           await holder.query('begin');
           await holder.query('select pg_advisory_xact_lock(190519, 0)');
+          const pidOf = async (c: PgClient): Promise<number> => (await c.query('select pg_backend_pid() as pid')).rows[0].pid;
+          const [pidA, pidB] = [await pidOf(a), await pidOf(b)];
+          // Wait until the backend is really queued on the advisory lock, so the queue order is the order we chose (no sleeps).
+          const waitingOnLock = async (pid: number, label: string): Promise<void> => {
+            const deadline = Date.now() + 5000;
+            for (;;) {
+              const r = await setup.query(
+                `select exists (select 1 from pg_locks where pid = $1 and locktype = 'advisory' and not granted) as w`, [pid]);
+              if (r.rows[0].w) return;
+              if (Date.now() > deadline) throw new Error(`race setup: ${label} (pid ${pid}) never queued on the advisory lock within 5 s`);
+              await new Promise((r2) => setTimeout(r2, 20));
+            }
+          };
           const run = {
             demoting: () => settle(demote(other, manager, a)),
-            activating: () => settle(b.query("select public.staff_role_activate($1,$2)", [invitee, sessionId])),
+            activating: () => settle(b.query('select public.staff_role_activate($1,$2)', [invitee, sessionId])),
           };
           let demoting: Promise<string>;
           let activating: Promise<string>;
           if (demoteFirst) {
             demoting = run.demoting();
-            await new Promise((r) => setTimeout(r, 200));
+            await waitingOnLock(pidA, 'demote');
             activating = run.activating();
+            await waitingOnLock(pidB, 'activate');
           } else {
             activating = run.activating();
-            await new Promise((r) => setTimeout(r, 200));
+            await waitingOnLock(pidB, 'activate');
             demoting = run.demoting();
+            await waitingOnLock(pidA, 'demote');
           }
-          await new Promise((r) => setTimeout(r, 300));
           await holder.query('commit');
           const [demoted, activated] = await Promise.all([demoting, activating]);
           for (const o of [demoted, activated]) expect(o).not.toMatch(/deadlock/i);

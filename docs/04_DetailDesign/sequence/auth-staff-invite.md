@@ -1,6 +1,6 @@
 # 店員の招待・結び・有効化・取り消し・降格・最後の手段・削除の下限の DB の関数
 
-> 状態: 推定 | 確認日: 2026-11-18 | 対象: `supabase/migrations/20261118130000_passkey_staff_invites.sql`、`src/lib/auth/staff-passkey-invite-errors.ts`、`src/features/auth/staff/invite-token.ts`、`invite-mail.ts`、`staff-invite-store.ts`
+> 状態: 推定 | 確認日: 2026-11-20 | 対象: `supabase/migrations/20261118130000_passkey_staff_invites.sql`、`src/lib/auth/staff-passkey-invite-errors.ts`、`src/features/auth/staff/invite-token.ts`、`invite-mail.ts`、`staff-invite-store.ts`
 
 ## 概要
 
@@ -13,7 +13,7 @@
 | 対応する ID | SR-AUTH-026、FR-AUTH-050、FR-AUTH-051、SEC-AUTH-059、THR-AUTH-056、DD-AUTH-085、DD-AUTH-091、FR-AUTH-034、FR-AUTH-035、FR-AUTH-037、DATA-AUTH-020、ARC-AUTH-012、SEC-AUTH-053、SEC-AUTH-054、THR-AUTH-052、DD-AUTH-070、DD-AUTH-071、DD-AUTH-072、DD-AUTH-073、DD-AUTH-075、DD-AUTH-076、DD-AUTH-077、DD-AUTH-078、FR-AUTH-041、SCR-AUTH-013、API-AUTH-037、FR-AUTH-038、FR-AUTH-039、FR-AUTH-040、API-AUTH-033、API-AUTH-034、API-AUTH-035、API-AUTH-036、SEC-AUTH-056、THR-AUTH-055、FR-AUTH-042、SEC-AUTH-057、THR-AUTH-053、DD-AUTH-079、FR-AUTH-043、SCR-AUTH-014、API-AUTH-038、DD-AUTH-080、ADR-0471 |
 | 対象のコード | 移行 `supabase/migrations/20261118130000_passkey_staff_invites.sql`、`src/lib/auth/staff-passkey-invite-errors.ts`、`src/features/auth/staff/invite-token.ts`・`invite-mail.ts`・`staff-invite-store.ts`・`staff-invite-send.ts`・`staff-invite-http.ts`、`src/app/api/admin/staff/**/route.ts`、`src/app/staff/register/page.tsx`、`src/features/auth/staff/components/StaffRegisterScreen.tsx`・`staff-register-client.ts`・`staff-register-access.ts`、`src/app/api/auth/staff/register/complete/route.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-4・6-2・8-1）、[段3の計画](../../superpowers/plans/2026-11-18-passkey-stage3-staff.md) |
-| 調べた時点 | 2026-11-18（手元の DB で結合試験を流した） |
+| 調べた時点 | 2026-11-20（手元の DB で結合試験を流した） |
 
 ## 処理の詳細
 
@@ -129,7 +129,7 @@ sequenceDiagram
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-AUTH-059 |
-| 根拠 | 取り消しの中身を私用の関数 `private.staff_cancel_invites_issued_by` に1回だけ書き、降格・役割の変更・やり直しの3か所から呼ぶ。呼ぶのは錠 190519 と利用者の錠を持った後で、`user_roles` を外す前に「今、有効で期限内の `admin` か」を読む。新しい錠を取らないので、有効化・取り消し・降格・発行は今までの順（190519 → 利用者の錠）で直列になる |
+| 根拠 | 取り消しの中身を私用の関数 `private.staff_cancel_invites_issued_by` に1回だけ書き、降格・役割の変更・やり直しの3か所から呼ぶ。呼ぶのは錠 190519 を持った後（降格と core は利用者の錠も持つが、`admin_set_user_role` は 190519 だけ）。役割の変更と core は、`user_roles` を外す前に「今、有効で期限内の `admin` か」を読む。降格は条件なしで、役割を外した後に取り消す（降格した人は出した招待を残さない）。新しい錠を取らず、有効化・取り消し・降格・発行はどれも 190519 を先に取るので直列になる |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_roles.integration.test.ts`、`auth_passkey_staff_invites.integration.test.ts`）、E2E（`e2e/FR-LOGIN-073-staff-demote-cancels-issued-invites.spec.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-13-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 13） |
@@ -184,7 +184,7 @@ sequenceDiagram
 
 - 合言葉: `createInviteToken`（IMPL-AUTH-353）は43字の base64url と、その文字列の UTF-8 の SHA-256（生の32バイトにはかけない）を返す。`hashInviteToken`（IMPL-AUTH-354）は届いた合言葉から同じ値を求める。`buildInviteUrl`（IMPL-AUTH-355）は `/staff/invite#<合言葉>` を作り、`?token=` は作らない
 - メール: `composeInviteMail`（IMPL-AUTH-356）は件名「店員のアカウントの登録のご案内」、役割・リンク・期限・「ご自身で心当たりがない場合は、何もしないでください。」を入れる。`redo`・`promote`、およびパスキーを持っていた人への `invite`（`passkeysDeleted`）は、冒頭に「これまでのパスキーはすべて削除されました。」を入れる。HTML は差し込む文字を escape する
-- DB を呼ぶ部品 `staff-invite-store.ts`（サーバーだけ）: `issueStaffInvite`（IMPL-AUTH-357）・`consumeStaffInvite`（IMPL-AUTH-397）・`bindStaffInviteWindow`（IMPL-AUTH-398）・`activateStaffRole`（IMPL-AUTH-399）・`cancelStaffInvite`（IMPL-AUTH-400）・`demoteStaff`（IMPL-AUTH-401）・`hasOpenStaffInvite`（IMPL-AUTH-402）。戻りは `{ ok: true; value } | { ok: false; reason }`。理由は DD-AUTH-070〜073 の写し（`staff-passkey-invite-errors.ts`）を使い、知らない文・例外・形の違う戻りは `failed`（消費は `invalid`、`hasOpenStaffInvite` は偽）。ログには RPC の名前とコードだけを出し、例外の本文・合言葉・引数は出さない。`last_resort` の型は作らない（アプリから呼べない）
+- DB を呼ぶ部品 `staff-invite-store.ts`（サーバーだけ）: `issueStaffInvite`（IMPL-AUTH-357）・`consumeStaffInvite`（IMPL-AUTH-397）・`bindStaffInviteWindow`（IMPL-AUTH-398）・`activateStaffRole`（IMPL-AUTH-399）・`cancelStaffInvite`（IMPL-AUTH-400。設計は段3b Task 13 から DD-AUTH-091）・`demoteStaff`（IMPL-AUTH-401。設計は同じく DD-AUTH-085）・`hasOpenStaffInvite`（IMPL-AUTH-402）。戻りは `{ ok: true; value } | { ok: false; reason }`。理由は DD-AUTH-070〜073 の写し（`staff-passkey-invite-errors.ts`）を使い、知らない文・例外・形の違う戻りは `failed`（消費は `invalid`、`hasOpenStaffInvite` は偽）。ログには RPC の名前とコードだけを出し、例外の本文・合言葉・引数は出さない。`last_resort` の型は作らない（アプリから呼べない）
 - IMPL の番号: 計画の予約 353〜357 の5つに収まらないので、`consumeStaffInvite` 以降の6つは予約の外の 397〜402 を使った
 
 ### DD-AUTH-076 招待の発行・古いログインの終了・メールの送りの共通の流れと、店長の窓口の入口の確かめ
