@@ -6065,7 +6065,7 @@ B が A に `POST /api/admin/staff/[id]/redo` を出すと 200 になり、A が
 | 上位 | SR-AUTH-026 |
 | 根拠 | 降格などで先に取り消されていた招待に「取り消す」を押すと、何も取り消していないのに「取り消しました」と出て、その人のログインを終わらせてしまう。DB の `staff_invite_cancel` が取り消したかを返し、窓口と画面が従う。処理は DD-AUTH-091、窓口は API-AUTH-036 |
 | 状態 | 推定 |
-| 確かめ方 | E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`、FR-AUTH-051-AC-01。390・768・1280 の3幅でくり返す）。結合テスト（`tests/integration/db/auth_passkey_staff_invites.integration.test.ts`）、単体テスト（`tests/unit/api/admin/staff/invite-cancel-route.test.ts`、`tests/unit/features/auth/staff/staff-invite-store.test.ts`、`staff-user-actions.test.ts`、`user-section-staff.test.tsx`）でも確かめる |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`、FR-AUTH-051-AC-01。`e2e/FR-LOGIN-070-admin-users-staff-screen.spec.ts`、FR-AUTH-051-AC-02。390・768・1280 の3幅でくり返す）。結合テスト（`tests/integration/db/auth_passkey_staff_invites.integration.test.ts`）、単体テスト（`tests/unit/api/admin/staff/invite-cancel-route.test.ts`、`tests/unit/features/auth/staff/staff-invite-store.test.ts`、`staff-user-actions.test.ts`、`user-section-staff.test.tsx`）でも確かめる |
 | 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-13-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 13） |
 | 優先度 | MUST |
 
@@ -6094,6 +6094,31 @@ DB の `staff_invite_cancel` は、開いた招待があれば `true`、2回目�
 | 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-13-review.md`（m-3） |
 
 招待中の行の「招待を取り消す」の応答が `cancelled: false` の時、知らせは出さず、一覧だけを読み直す。`cancelled: true` の時は今までどおり知らせを出す。
+
+### FR-AUTH-052 店長の画面と店員のパスキーの画面の持ち越しの直し（やり直しのメールの失敗・削除の失敗の文・確認・フォーカス）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-026 |
+| 根拠 | 段3a の最終レビュー（T11 M-2・M-3・M-5・M-6・M-7）と再レビュー（F-3・F-4）の持ち越し。やり直しのメールだけが送れなかった時に、発行は済んでいるのに画面が古いまま・店員の削除の失敗が全部「下限」の文になる・招待の取り消しが確認なし・失敗の後に前の成功の知らせが残る、を直す。画面は SCR-AUTH-016、処理は DD-AUTH-090（店員のパスキーの画面は DD-AUTH-082） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-072-admin-users-staff-recovery.spec.ts`、FR-AUTH-052-AC-01。390・768・1280 の3幅でくり返す）。単体テスト（`tests/unit/features/auth/staff/user-section-staff.test.tsx`・`staff-user-actions.test.ts`・`staff-passkey-manager.test.tsx`、`tests/unit/features/auth/passkey/passkey-client-min-keys.test.ts`）、結合テスト（`tests/integration/ui/auth-admin-users-staff-screen.test.tsx`・`auth-staff-passkey-manage-screen.test.tsx`）でも確かめる。(2) の削除の失敗の文は単体テスト（`passkey-client-min-keys.test.ts`、`staff-passkey-manager.test.tsx`、DD-AUTH-090）と回帰の E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`）で確かめる |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-18-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 18） |
+| 優先度 | SHOULD |
+
+規則: (1) やり直しの窓口が 502 `mail_failed` を返した時、画面はダイアログを閉じて一覧を読み直し、ページの通知に「メールを送れませんでした。もう一度、招待を出してください。」（既存の文）を出す（発行は済んでいるので、その行は「招待中」になる）。(2) 店員のパスキーの削除の失敗は、409 の本文が `staff_min_keys` の時だけ「削除できませんでした。認めた鍵は2本以上が必要です。」、それ以外（500・投げた fetch・本文が違う 409）は「削除できませんでした。もう一度お試しください。」を出す。お客さんの削除は今までどおり、どの失敗も1つの文。(3) 「招待しました」の通知は、応答の `invited: true` に従う。(4) 上げる時の確認の文に、上げる先の役割（店長・サポーター）の名前を入れる。(5) やり直し・降格の後、フォーカスを一覧の見出しへ戻す。(6) エラーを出す時は、前の成功の通知を消す。(7) 「招待を取り消す」は「この招待を取り消します。よろしいですか。」の確認を挟む。
+
+### FR-AUTH-052-AC-01 やり直しのメールが送れなかった時は、ダイアログが閉じ、行が「招待中」になり、通知に既存の文が出る。招待の取り消しは確認の後に行が戻る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-052 |
+| 根拠 | DD-AUTH-090、SCR-AUTH-016 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-072-admin-users-staff-recovery.spec.ts`。390・768・1280 の3幅でくり返す）。単体テスト（`user-section-staff.test.tsx`、`staff-user-actions.test.ts`）でも確かめる（DD-AUTH-090） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-18-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 18） |
+
+店長がやり直しを送り、本物の窓口が通ったうえで応答だけが 502 `mail_failed` に替わると、ダイアログが閉じ、一覧が読み直されて、その行は「招待中」と役割の欄になり、通知に「メールを送れませんでした。もう一度、招待を出してください。」が出る。その行の「招待を取り消す」は確認「この招待を取り消します。よろしいですか。」を出し、確認すると取り消しの知らせが出て、行の「招待中」が消える。
 
 ### FR-AUTH-047 店長への知らせの3種類（やり直し・招待・降格）を、操作と同じ取引で送り箱に積み、宛先は本人を除く有効な店長全員にする
 

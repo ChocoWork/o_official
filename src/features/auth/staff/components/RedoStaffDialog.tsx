@@ -3,7 +3,7 @@
  *
  * @packageDocumentation
  * @impl IMPL-AUTH-394
- * @design DD-AUTH-084
+ * @design DD-AUTH-090
  * @remarks 送るのは `POST /api/admin/staff/[id]/redo`。語が違う・理由が10字未満（前後の空白を除く）・501字以上のあいだは送れない。送信中は `disabled`・`aria-busy`。失敗は `LiveMessage`。
  */
 "use client";
@@ -23,9 +23,11 @@ type RedoStaffDialogProps = {
   onClose: () => void;
   /** 送れた時。親が一覧を読み直し、知らせを出す。 */
   onDone: (email: string) => void;
+  /** 発行は済み、メールだけが送れなかった時。親がダイアログを閉じ、一覧を読み直して文を出す。 */
+  onMailFailed: (message: string) => void;
 };
 
-export default function RedoStaffDialog({ user, onClose, onDone }: RedoStaffDialogProps) {
+export default function RedoStaffDialog({ user, onClose, onDone, onMailFailed }: RedoStaffDialogProps) {
   const [confirm, setConfirm] = React.useState("");
   const [reason, setReason] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -46,6 +48,10 @@ export default function RedoStaffDialog({ user, onClose, onDone }: RedoStaffDial
     const result = await postStaffAction(`/api/admin/staff/${user.id}/redo`, { confirm, reason: reason.trim() });
     setBusy(false);
     if (!result.ok) {
+      if (result.mailFailed) {
+        onMailFailed(result.message);
+        return;
+      }
       setError(result.message);
       return;
     }

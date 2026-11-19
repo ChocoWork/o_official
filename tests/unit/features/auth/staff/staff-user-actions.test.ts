@@ -40,8 +40,16 @@ describe('DD-AUTH-084 postStaffAction', () => {
     expect(mockFetch.mock.calls[0][1]?.body).toBe('{}');
   });
 
+  test('DD-AUTH-090 502 mail_failed は、呼び手が一覧を読み直せるよう mailFailed を付けて返す', async () => {
+    answer(502, { code: 'mail_failed' });
+    await expect(postStaffAction('/api/admin/staff/x/redo')).resolves.toEqual({
+      ok: false,
+      message: 'メールを送れませんでした。もう一度、招待を出してください。',
+      mailFailed: true,
+    });
+  });
+
   test.each<[number, unknown, string]>([
-    [502, { code: 'mail_failed' }, 'メールを送れませんでした。もう一度、招待を出してください。'],
     [409, { code: 'already_staff' }, 'すでに店員です。やり直しは、一覧の「パスキーを全部消してやり直す」から行ってください。'],
     [503, { code: 'config' }, 'ただいま処理できません。しばらくしてからお試しください。'],
     [503, null, 'ただいま処理できません。しばらくしてからお試しください。'],

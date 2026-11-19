@@ -35,7 +35,8 @@ const MSG_ADDED = "パスキーを追加しました。";
 const MSG_RENAME_FAILED = "名前を変更できませんでした。もう一度お試しください。";
 const MSG_NAME_INVALID = "名前は1〜64字（日本語は40字まで）で入力してください。";
 const MSG_DELETED = "パスキーを削除しました。";
-const MSG_DELETE_FAILED = "削除できませんでした。認めた鍵は2本以上が必要です。";
+const MSG_DELETE_MIN_KEYS = "削除できませんでした。認めた鍵は2本以上が必要です。";
+const MSG_DELETE_FAILED = "削除できませんでした。もう一度お試しください。";
 const MSG_DELETE_BUSY = "ただいま処理できません。しばらくしてからお試しください。";
 const MSG_DELETE_NOT_FOUND = "このパスキーは見つかりません。一覧を読み込み直しました。";
 const MSG_DELETE_UNAUTHORIZED = "ログインの有効期限が切れました。もう一度ログインしてください。";
@@ -198,7 +199,9 @@ export default function StaffPasskeyManager() {
             ? MSG_DELETE_NOT_FOUND
             : result.reason === "unauthorized"
               ? MSG_DELETE_UNAUTHORIZED
-              : MSG_DELETE_FAILED,
+              : result.reason === "min_keys"
+                ? MSG_DELETE_MIN_KEYS
+                : MSG_DELETE_FAILED,
       );
       setRefocusTarget(`staff-passkey-delete-${target.id}`);
     }

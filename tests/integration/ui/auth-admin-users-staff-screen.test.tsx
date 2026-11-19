@@ -71,6 +71,7 @@ describe('SCR-AUTH-016 管理画面のユーザーの店員の操作', () => {
     expect(await screen.findByText('new@example.com へ、招待のメールを送りました。')).toBeInTheDocument();
     const invited = (await screen.findByText('new@example.com', { selector: 'p' })).closest('tr') as HTMLElement;
     await user.click(await within(invited).findByRole('button', { name: '招待を取り消す' }));
+    await user.click(within(await screen.findByRole('dialog', { name: '招待を取り消す' })).getByRole('button', { name: '取り消す' }));
     expect(await screen.findByText('new@example.com への招待を取り消しました。')).toBeInTheDocument();
     await waitFor(() => expect(within((screen.getByText('new@example.com', { selector: 'p' })).closest('tr') as HTMLElement).queryByText('招待中')).not.toBeInTheDocument());
     expect(posted).toEqual(['/api/admin/staff/invites', `/api/admin/staff/${NEW_USER}/invite/cancel`]);

@@ -101,13 +101,22 @@ describe('DD-AUTH-082 StaffPasskeyManager', () => {
     expect(screen.getByRole('button', { name: 'Macを削除' })).toBeDisabled();
   });
 
-  test('DD-AUTH-082 窓口が削除を断ったら（409 など）、失敗の文を出し、一覧を引き直す', async () => {
+  test('DD-AUTH-090 窓口が下限で断ったら（409 staff_min_keys）、今の下限の文を出し、一覧を引き直す', async () => {
     await renderWith([key('a', 'Mac'), key('b', 'iPhone'), key('c', 'Key')]);
-    mockDelete.mockResolvedValue({ ok: false, reason: 'failed' });
+    mockDelete.mockResolvedValue({ ok: false, reason: 'min_keys' });
     fireEvent.click(screen.getByRole('button', { name: 'Macを削除' }));
     fireEvent.click(screen.getByRole('button', { name: '削除する' }));
     expect(await screen.findByText('削除できませんでした。認めた鍵は2本以上が必要です。')).toBeInTheDocument();
     await waitFor(() => expect(mockLoad).toHaveBeenCalledTimes(2));
+  });
+
+  test('DD-AUTH-090 削除が 500 などで失敗（failed）したら、下限の文ではなく「もう一度お試しください」の文を出す', async () => {
+    await renderWith([key('a', 'Mac'), key('b', 'iPhone'), key('c', 'Key')]);
+    mockDelete.mockResolvedValue({ ok: false, reason: 'failed' });
+    fireEvent.click(screen.getByRole('button', { name: 'Macを削除' }));
+    fireEvent.click(screen.getByRole('button', { name: '削除する' }));
+    expect(await screen.findByText('削除できませんでした。もう一度お試しください。')).toBeInTheDocument();
+    expect(screen.queryByText('削除できませんでした。認めた鍵は2本以上が必要です。')).toBeNull();
   });
 
   test.each([

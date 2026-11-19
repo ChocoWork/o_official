@@ -60,6 +60,7 @@ export default function UserSection() {
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [savingUserId, setSavingUserId] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
+  const [refocusHeading, setRefocusHeading] = React.useState(false);
   const [selfId, setSelfId] = React.useState<string | null>(null);
   const [promotion, setPromotion] = React.useState<{
     user: UserItem;
@@ -209,13 +210,19 @@ export default function UserSection() {
 
         throw new Error("権限の更新に失敗しました。");
       }
-      if (invite) {
-        setNotice("招待のメールを送りました。");
-        await fetchUsers(true);
-      }
+      // 「招待しました」は、サーバーが招待を出したと答えた時だけ出す（クライアントの旗には従わない）。
+      const body: unknown = await response.json().catch(() => null);
+      const invited =
+        typeof body === "object" &&
+        body !== null &&
+        "invited" in body &&
+        body.invited === true;
+      if (invited) setNotice("招待のメールを送りました。");
+      if (invite || invited) await fetchUsers(true);
     } catch (error) {
       console.error("Failed to update role:", error);
       setUsers(previousUsers);
+      setNotice(null);
       setErrorMessage(
         error instanceof Error ? error.message : "権限の更新に失敗しました。",
       );
@@ -227,8 +234,22 @@ export default function UserSection() {
   const handleStaffDone = (message: string | null) => {
     setErrorMessage(null);
     setNotice(message);
-    void fetchUsers(true);
+    void fetchUsers(true).then(() => setRefocusHeading(true));
   };
+
+  // 失敗した時は、前の成功の通知を残さない。`reload` は発行は済んでいて一覧が変わっている時。
+  const handleStaffError = (message: string, options?: { reload?: boolean }) => {
+    setNotice(null);
+    if (options?.reload) void fetchUsers(true).then(() => setRefocusHeading(true));
+    setErrorMessage(message);
+  };
+
+  // 操作したボタンやダイアログは一覧の読み直しで消えるので、フォーカスを一覧の見出しへ戻す（body に落とさない）。
+  React.useEffect(() => {
+    if (!refocusHeading) return;
+    document.getElementById("staff-users-heading")?.focus();
+    setRefocusHeading(false);
+  }, [refocusHeading]);
 
   if (isLoading) {
     return (
@@ -242,6 +263,13 @@ export default function UserSection() {
 
   return (
     <section>
+      <h2
+        id="staff-users-heading"
+        tabIndex={-1}
+        className="sr-only outline-none"
+      >
+        ユーザー一覧
+      </h2>
       <div className="mb-4 flex justify-end">
         <InviteStaffDialog
           onInvited={(email) =>
@@ -318,7 +346,7 @@ export default function UserSection() {
                 isSelf={user.id === selfId}
                 isLastAdmin={user.id === lastAdminId}
                 onDone={handleStaffDone}
-                onError={setErrorMessage}
+                onError={handleStaffError}
               />
             ),
           },
@@ -347,7 +375,7 @@ export default function UserSection() {
         title="店員にする"
         description={
           promotion
-            ? `${promotion.user.email} へ、招待のメールを送ります。相手がパスキーを登録するまで、役割は変わりません。`
+            ? `${promotion.user.email} へ、${promotion.role === "admin" ? "店長" : "サポーター"}の招待のメールを送ります。相手がパスキーを登録するまで、役割は変わりません。`
             : undefined
         }
         confirmLabel="店員にする"

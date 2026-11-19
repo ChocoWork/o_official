@@ -3,7 +3,7 @@
  *
  * @packageDocumentation
  * @impl IMPL-AUTH-395
- * @design DD-AUTH-084
+ * @design DD-AUTH-090
  * @remarks 店員の行: 認めた鍵の本数、「パスキーを全部消してやり直す」、「お客さんに戻す」（確認を挟む）。自分の行と最後の店長の行は押せず、理由を文で出す。
  * 役割が無く開いた招待がある人の行: 「招待中」と「招待を取り消す」。それ以外のお客さんの行は何も出さない（役割の選択は親が持つ）。
  */
@@ -29,12 +29,14 @@ type StaffRoleActionsProps = {
   isLastAdmin: boolean;
   /** 送った操作が済んだ時。親が一覧を読み直し、知らせを出す（`null` は知らせなしで読み直すだけ）。 */
   onDone: (message: string | null) => void;
-  onError: (message: string) => void;
+  /** 失敗した時。`reload` は、発行は済んでいて一覧が変わっている時（親が一覧を読み直す）。 */
+  onError: (message: string, options?: { reload?: boolean }) => void;
 };
 
 export default function StaffRoleActions({ user, isSelf, isLastAdmin, onDone, onError }: StaffRoleActionsProps) {
   const [redoOpen, setRedoOpen] = React.useState(false);
   const [demoteOpen, setDemoteOpen] = React.useState(false);
+  const [cancelOpen, setCancelOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
 
   const run = async (url: string, doneMessage: string) => {
@@ -58,10 +60,21 @@ export default function StaffRoleActions({ user, isSelf, isLastAdmin, onDone, on
           className="font-acumin"
           disabled={busy}
           aria-busy={busy}
-          onClick={() => void run(`/api/admin/staff/${user.id}/invite/cancel`, `${user.email} への招待を取り消しました。`)}
+          onClick={() => setCancelOpen(true)}
         >
           招待を取り消す
         </Button>
+        <ConfirmDialog
+          open={cancelOpen}
+          title="招待を取り消す"
+          description="この招待を取り消します。よろしいですか。"
+          confirmLabel="取り消す"
+          onCancel={() => setCancelOpen(false)}
+          onConfirm={() => {
+            setCancelOpen(false);
+            void run(`/api/admin/staff/${user.id}/invite/cancel`, `${user.email} への招待を取り消しました。`);
+          }}
+        />
       </div>
     );
   }
@@ -108,6 +121,10 @@ export default function StaffRoleActions({ user, isSelf, isLastAdmin, onDone, on
           onDone={(email) => {
             setRedoOpen(false);
             onDone(`${email} へ、やり直しの招待のメールを送りました。`);
+          }}
+          onMailFailed={(message) => {
+            setRedoOpen(false);
+            onError(message, { reload: true });
           }}
         />
       ) : null}

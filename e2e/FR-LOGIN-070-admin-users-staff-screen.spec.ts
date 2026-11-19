@@ -1,6 +1,6 @@
 /**
  * FR-LOGIN-070 管理画面「ユーザー」の店員の操作（招待・やり直し・店員にする・招待の取り消し）
- * 対応: FR-AUTH-040-AC-03（設計: SCR-AUTH-016、DD-AUTH-084、SEC-AUTH-056）
+ * 対応: FR-AUTH-040-AC-03、FR-AUTH-051-AC-02（設計: SCR-AUTH-016、DD-AUTH-084、SEC-AUTH-056）
  *
  * 手元のアプリ（本番ビルド）・手元の Supabase・手元の Mailpit で、店長が画面から操作する。店長は provisionStaff（ソフトの認証器）で用意し、
  * パスキーでログインして Cookie を得る（page.request と画面は同じ Cookie）。メールの待ちは expect.poll。鍵の中身・トークンは文面に出さない。
@@ -60,6 +60,13 @@ async function inviteMailText(page: Page, email: string): Promise<string> {
   return text;
 }
 
+/** 招待の取り消しの確認（Task 18）で「取り消す」を押す。 */
+async function confirmCancel(page: Page): Promise<void> {
+  const dialog = page.getByRole('dialog', { name: '招待を取り消す' });
+  await expect(dialog).toContainText('この招待を取り消します。よろしいですか。');
+  await dialog.getByRole('button', { name: '取り消す' }).click();
+}
+
 async function countOf(sql: string, userId: string): Promise<number> {
   return withLocalDb(async (db) => Number((await db.query(sql, [userId])).rows[0].n));
 }
@@ -106,6 +113,7 @@ for (const viewport of viewports) {
       const row = rowOf(page, email);
       await expect(row.getByText('招待中')).toBeVisible(NAVIGATION);
       await row.getByRole('button', { name: '招待を取り消す' }).click();
+      await confirmCancel(page);
       await expect(page.getByText(`${email} への招待を取り消しました。`)).toBeVisible(NAVIGATION);
       await expect(rowOf(page, email).getByText('招待中')).toHaveCount(0);
 
@@ -133,6 +141,7 @@ for (const viewport of viewports) {
       await withLocalDb((db) => db.query('update private.staff_invites set cancelled_at = now() where user_id = $1::uuid and cancelled_at is null', [userId]));
 
       await row.getByRole('button', { name: '招待を取り消す' }).click();
+      await confirmCancel(page);
       await expect(rowOf(page, email).getByText('招待中')).toHaveCount(0, NAVIGATION);
       await expect(page.getByText(`${email} への招待を取り消しました。`)).toHaveCount(0);
     });

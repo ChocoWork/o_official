@@ -64,7 +64,7 @@ describe('UserSection の役割の選択欄（FREQ-515）', () => {
 
   it('役割を選ぶと、選んだ役割で PATCH を送る', async () => {
     // FREQ-515-AC-01
-    mockUsersThenPatch({ ok: true, status: 200 });
+    mockUsersThenPatch({ ok: true, status: 200 }, { success: true, invited: true });
     render(<UserSection />);
 
     const combobox = await chooseRole('Support');

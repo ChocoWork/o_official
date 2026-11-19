@@ -60,6 +60,12 @@ async function rowOf(email: string) {
   return cell.closest('tr') as HTMLElement;
 }
 
+async function confirmCancel(user: ReturnType<typeof userEvent.setup>) {
+  const dialog = await screen.findByRole('dialog', { name: '招待を取り消す' });
+  expect(dialog).toHaveTextContent('この招待を取り消します。よろしいですか。');
+  await user.click(within(dialog).getByRole('button', { name: '取り消す' }));
+}
+
 describe('DD-AUTH-084 店員の行の操作', () => {
   it('DD-AUTH-084 店員の行に認めた鍵の本数と、やり直し・お客さんに戻すが出る', async () => {
     render(<UserSection />);
@@ -181,14 +187,14 @@ describe('DD-AUTH-084 やり直しのダイアログ', () => {
     expect(JSON.parse(String(post[1]?.body))).toEqual({ confirm: 'やり直し', reason: '鍵を紛失したため、再登録が要る' });
   });
 
-  it('DD-AUTH-084 失敗は LiveMessage に出し、ダイアログは開いたまま（メールの送り失敗は 502 の文）', async () => {
-    respond = (_url, init) => (init?.method === 'POST' ? { status: 502, body: { code: 'mail_failed' } } : null);
+  it('DD-AUTH-084 失敗は LiveMessage に出し、ダイアログは開いたまま（メールの送り失敗以外。503 は「しばらくしてから」の文）', async () => {
+    respond = (_url, init) => (init?.method === 'POST' ? { status: 503, body: { code: 'config' } } : null);
     const { user, dialog, send } = await openRedo();
     await user.type(within(dialog).getByLabelText(/確認のため/), 'やり直し');
     await user.type(within(dialog).getByLabelText(/理由/), '鍵を紛失したため、再登録が要る');
     await user.click(send);
     const alert = await within(dialog).findByRole('alert');
-    expect(alert).toHaveTextContent('メールを送れませんでした。もう一度、招待を出してください。');
+    expect(alert).toHaveTextContent('しばらくしてからお試しください。');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });
@@ -236,6 +242,8 @@ describe('DD-AUTH-084 招待・取り消し・店員にする', () => {
     expect(within(invited).getByText('招待中')).toBeInTheDocument();
     expect(within(await rowOf('customer@example.com')).queryByText('招待中')).not.toBeInTheDocument();
     await user.click(within(invited).getByRole('button', { name: '招待を取り消す' }));
+    expect(calls('POST')).toHaveLength(0);
+    await confirmCancel(user);
     await waitFor(() => expect(calls('POST')).toHaveLength(1));
     expect(calls('POST')[0][0]).toBe(`/api/admin/staff/${INVITED}/invite/cancel`);
   });
@@ -245,6 +253,7 @@ describe('DD-AUTH-084 招待・取り消し・店員にする', () => {
     const user = userEvent.setup();
     const first = render(<UserSection />);
     await user.click(within(await rowOf('invited@example.com')).getByRole('button', { name: '招待を取り消す' }));
+    await confirmCancel(user);
     expect(await screen.findByText('invited@example.com への招待を取り消しました。')).toBeInTheDocument();
     first.unmount();
 
@@ -252,6 +261,7 @@ describe('DD-AUTH-084 招待・取り消し・店員にする', () => {
     respond = (url, init) => (init?.method === 'POST' && url.endsWith('/invite/cancel') ? { status: 200, body: { success: true, cancelled: false } } : null);
     render(<UserSection />);
     await user.click(within(await rowOf('invited@example.com')).getByRole('button', { name: '招待を取り消す' }));
+    await confirmCancel(user);
     await waitFor(() => expect(calls('POST')).toHaveLength(1));
     const listReads = () => mockFetch.mock.calls.filter(([url]) => String(url) === '/api/admin/users').length;
     await waitFor(() => expect(listReads()).toBe(2));
@@ -300,5 +310,123 @@ describe('DD-AUTH-084 招待・取り消し・店員にする', () => {
     expect(await screen.findByText('メールを送れませんでした。もう一度、招待を出してください。')).toBeInTheDocument();
     expect(within(customer).getByRole('combobox')).toHaveTextContent('User');
     consoleError.mockRestore();
+  });
+});
+
+describe('DD-AUTH-090 店長の画面の持ち越しの直し', () => {
+  async function sendRedo(user: ReturnType<typeof userEvent.setup>) {
+    const support = await rowOf('support@example.com');
+    await user.click(within(support).getByRole('button', { name: 'パスキーを全部消してやり直す' }));
+    const dialog = await screen.findByRole('dialog', { name: 'パスキーを全部消してやり直す' });
+    await user.type(within(dialog).getByLabelText(/確認のため/), 'やり直し');
+    await user.type(within(dialog).getByLabelText(/理由/), '鍵を紛失したため、再登録が要る');
+    await user.click(within(dialog).getByRole('button', { name: 'やり直しを送る' }));
+  }
+  const listReads = () => mockFetch.mock.calls.filter(([url, init]) => String(url) === '/api/admin/users' && !init?.method).length;
+
+  it('DD-AUTH-090 F-3 やり直しのメールが送れなかった時は、ダイアログを閉じて一覧を読み直し、ページの通知に既存の文を出す', async () => {
+    respond = (_url, init) => (init?.method === 'POST' ? { status: 502, body: { code: 'mail_failed' } } : null);
+    const user = userEvent.setup();
+    render(<UserSection />);
+    await sendRedo(user);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(await screen.findByRole('alert')).toHaveTextContent('メールを送れませんでした。もう一度、招待を出してください。');
+    await waitFor(() => expect(listReads()).toBe(2));
+  });
+
+  it('DD-AUTH-090 T11 M-2 「招待のメールを送りました。」はサーバーの応答の invited: true に従う', async () => {
+    const pick = async (user: ReturnType<typeof userEvent.setup>) => {
+      const customer = await rowOf('customer@example.com');
+      await user.click(within(customer).getByRole('combobox'));
+      await user.click(within(await screen.findByRole('listbox')).getByRole('option', { name: 'Support' }));
+      const dialog = await screen.findByRole('dialog', { name: '店員にする' });
+      await user.click(within(dialog).getByRole('button', { name: '店員にする' }));
+    };
+    const user = userEvent.setup();
+    respond = (_url, init) => (init?.method === 'PATCH' ? { status: 200, body: { success: true } } : null);
+    const first = render(<UserSection />);
+    await pick(user);
+    await waitFor(() => expect(calls('PATCH')).toHaveLength(1));
+    await waitFor(() => expect(listReads()).toBe(2));
+    expect(screen.queryByText('招待のメールを送りました。')).not.toBeInTheDocument();
+    first.unmount();
+
+    jest.clearAllMocks();
+    respond = (_url, init) => (init?.method === 'PATCH' ? { status: 200, body: { success: true, invited: true } } : null);
+    render(<UserSection />);
+    await pick(user);
+    expect(await screen.findByText('招待のメールを送りました。')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['Admin', '店長'],
+    ['Support', 'サポーター'],
+  ])('DD-AUTH-090 T11 M-3 上げる時の確認の文に、上げる先の役割（%s）の名前 %s を入れる', async (option, roleName) => {
+    const user = userEvent.setup();
+    render(<UserSection />);
+    const customer = await rowOf('customer@example.com');
+    await user.click(within(customer).getByRole('combobox'));
+    await user.click(within(await screen.findByRole('listbox')).getByRole('option', { name: option }));
+    const dialog = await screen.findByRole('dialog', { name: '店員にする' });
+    expect(dialog).toHaveTextContent(`customer@example.com へ、${roleName}の招待のメールを送ります。相手がパスキーを登録するまで、役割は変わりません。`);
+  });
+
+  it('DD-AUTH-090 T11 M-5 やり直しが成功した後、フォーカスが一覧の見出しに戻る', async () => {
+    const user = userEvent.setup();
+    render(<UserSection />);
+    await sendRedo(user);
+    await screen.findByText('support@example.com へ、やり直しの招待のメールを送りました。');
+    const heading = screen.getByRole('heading', { name: 'ユーザー一覧' });
+    expect(heading).toHaveAttribute('tabindex', '-1');
+    await waitFor(() => expect(heading).toHaveFocus());
+  });
+
+  it('DD-AUTH-090 T11 M-5 お客さんに戻すが成功した後、フォーカスが body に落ちず一覧の見出しに戻る', async () => {
+    const user = userEvent.setup();
+    render(<UserSection />);
+    const support = await rowOf('support@example.com');
+    await user.click(within(support).getByRole('button', { name: 'お客さんに戻す' }));
+    const dialog = await screen.findByRole('dialog', { name: 'お客さんに戻す' });
+    await user.click(within(dialog).getByRole('button', { name: 'お客さんに戻す' }));
+    await screen.findByText('support@example.com をお客さんに戻しました。');
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'ユーザー一覧' })).toHaveFocus());
+  });
+
+  it('DD-AUTH-090 T11 M-6 認めた鍵が0本の店員の行は「認めた鍵 0本」を出す', async () => {
+    users = [
+      row(ADMIN_ME, 'me@example.com', 'admin', { approvedPasskeys: 2 }),
+      row(ADMIN_2, 'admin2@example.com', 'admin', { approvedPasskeys: 2 }),
+      row(SUPPORTER, 'support@example.com', 'supporter', { approvedPasskeys: 0 }),
+    ];
+    render(<UserSection />);
+    expect(within(await rowOf('support@example.com')).getByText('認めた鍵 0本')).toBeInTheDocument();
+  });
+
+  it('DD-AUTH-090 T11 M-7 エラーが出た時は、前の成功の通知を消す', async () => {
+    const user = userEvent.setup();
+    render(<UserSection />);
+    const invited = await rowOf('invited@example.com');
+    respond = (url, init) => (init?.method === 'POST' && url.endsWith('/invite/cancel') ? { status: 200, body: { success: true, cancelled: true } } : null);
+    await user.click(within(invited).getByRole('button', { name: '招待を取り消す' }));
+    await confirmCancel(user);
+    expect(await screen.findByText('invited@example.com への招待を取り消しました。')).toBeInTheDocument();
+
+    respond = (_url, init) => (init?.method === 'POST' ? { status: 503, body: {} } : null);
+    const support = await rowOf('support@example.com');
+    await user.click(within(support).getByRole('button', { name: 'お客さんに戻す' }));
+    const dialog = await screen.findByRole('dialog', { name: 'お客さんに戻す' });
+    await user.click(within(dialog).getByRole('button', { name: 'お客さんに戻す' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('しばらくしてからお試しください。');
+    expect(screen.queryByText('invited@example.com への招待を取り消しました。')).not.toBeInTheDocument();
+  });
+
+  it('DD-AUTH-090 T11 M-7 招待の取り消しは確認が出て、「キャンセル」なら何も送らない', async () => {
+    const user = userEvent.setup();
+    render(<UserSection />);
+    await user.click(within(await rowOf('invited@example.com')).getByRole('button', { name: '招待を取り消す' }));
+    const dialog = await screen.findByRole('dialog', { name: '招待を取り消す' });
+    await user.click(within(dialog).getByRole('button', { name: 'キャンセル' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(calls('POST')).toHaveLength(0);
   });
 });

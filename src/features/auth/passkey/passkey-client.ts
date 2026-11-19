@@ -44,7 +44,7 @@ export type RegisterResult =
   | { ok: true; passkey: PasskeySummary; nameApplied: boolean }
   | { ok: false; reason: RegisterFailureReason };
 
-export type ManageFailureReason = 'unauthorized' | 'not_found' | 'rate_limited' | 'unavailable' | 'failed';
+export type ManageFailureReason = 'unauthorized' | 'not_found' | 'rate_limited' | 'unavailable' | 'min_keys' | 'failed';
 export type ManageFailure = { ok: false; reason: ManageFailureReason };
 
 export type ListedPasskey = PasskeySummary & { last_used_at: string | null };
@@ -68,8 +68,19 @@ async function discard(response: Response): Promise<void> {
   await response.arrayBuffer().catch(() => undefined);
 }
 
+/** 失敗の応答の本文は、必ず読み切ってから使う（読み切らないと networkidle が来ない）。409 の `staff_min_keys` だけを `'min_keys'` に見分ける。 */
 async function manageFailureOf(response: Response): Promise<ManageFailure> {
-  await discard(response);
+  const text = await response.text().catch(() => '');
+  if (response.status === 409) {
+    try {
+      const body: unknown = JSON.parse(text);
+      if (body && typeof body === 'object' && (body as Record<string, unknown>).error === 'staff_min_keys') {
+        return { ok: false, reason: 'min_keys' };
+      }
+    } catch {
+      // 本文が JSON でない 409 は、ほかの 409 と同じ failed
+    }
+  }
   return manageFailure(response.status);
 }
 
