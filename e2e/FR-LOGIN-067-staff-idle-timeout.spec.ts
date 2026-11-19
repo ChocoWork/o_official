@@ -6,7 +6,7 @@
  * （login/finish を通らない。最後の操作の行が無いセッション）で作り、無操作の時刻は DB の `private.staff_session_activity` を直に書いて作る。
  * 認証のトークン・鍵は、失敗の文面に出さない。
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Request } from '@playwright/test';
 import { bearerHeaders, createAdminSessionActor, placeAdminCookies, type AdminSessionActor } from './admin-session-test-utils';
 import { withLocalDb } from './order-email-test-utils';
 
@@ -21,25 +21,44 @@ const viewports = [
 const IDLE_MESSAGE = 'しばらく操作がなかったため、ログアウトしました。';
 
 /**
- * /admin の最初の読み込みが呼ぶ API。KPI と要対応の件数の後に、KPI が返ってから meta・targets・monthly-record が続く。
- * 後ろの3本が最後の操作の時刻を書くので、待たずに時刻を戻すと戻した値を上書きされる。5本の応答が返るまで待つ（networkidle は失敗を飲み込むので使わない）。
+ * 最後の操作の時刻を書く API（管理 API・店員のパスキーの窓口）の呼び出しを追う。
+ * /admin の読み込みは KPI の後に続けて API を呼ぶので、呼び出しの一覧は決め打ちにせず、「飛んでいる呼び出しが無く、しばらく静か」を待つ。
+ * 応答は 'response' で数える（サーバーは答える前に時刻を書く。本文を読まない no-store の応答は requestfinished が来ない）。
  */
-const ADMIN_FIRST_LOAD_PATHS = [
-  '/api/admin/kpi',
-  '/api/admin/order-attention',
-  '/api/admin/kpi/meta',
-  '/api/admin/kpi/targets',
-  '/api/admin/kpi/monthly-record',
-] as const;
+function trackActivityCalls(page: Page) {
+  const isActivityApi = (url: string) => {
+    const path = new URL(url).pathname;
+    return path.startsWith('/api/admin/') || path.startsWith('/api/auth/passkey');
+  };
+  const open = new Set<Request>();
+  const startedPaths: string[] = [];
+  let lastChange = Date.now();
+  const close = (request: Request) => {
+    if (open.delete(request)) lastChange = Date.now();
+  };
+  page.on('request', (request) => {
+    if (!isActivityApi(request.url())) return;
+    open.add(request);
+    startedPaths.push(new URL(request.url()).pathname);
+    lastChange = Date.now();
+  });
+  page.on('response', (response) => close(response.request()));
+  page.on('requestfailed', close);
+  return {
+    isQuiet: () => open.size === 0 && startedPaths.length > 0 && Date.now() - lastChange >= 1_000,
+    startedCount: () => startedPaths.length,
+    startedSince: (mark: number) => startedPaths.slice(mark),
+  };
+}
 
-function waitForAdminFirstLoads(page: Page): Promise<unknown> {
-  const loads = Promise.all(
-    ADMIN_FIRST_LOAD_PATHS.map((path) =>
-      page.waitForResponse((response) => new URL(response.url()).pathname === path, { timeout: 30_000 }),
-    ),
-  );
-  loads.catch(() => undefined); // goto の最中に落ちても未処理の拒否にしない。待つ側の await では落ちる
-  return loads;
+/** 画面が静まるまで待ってから最後の操作の時刻を戻す。戻している間に管理 API が呼ばれたら、上書きの競りとして名指しで落とす。 */
+async function backdateWhenQuiet(page: Page, calls: ReturnType<typeof trackActivityCalls>, actor: AdminSessionActor, minutes: number): Promise<void> {
+  await expect
+    .poll(() => calls.isQuiet(), { timeout: 30_000, message: '/admin の管理 API の読み込みが静まる（飛んでいる呼び出しが無く、1秒静か）' })
+    .toBe(true);
+  const mark = calls.startedCount();
+  await setLastSeen(actor, minutes);
+  expect(calls.startedSince(mark), '時刻を戻している間に管理 API が呼ばれた（最後の操作の時刻を上書きされる競り）').toEqual([]);
 }
 
 function uniqueIp(): string {
@@ -160,12 +179,11 @@ for (const viewport of viewports) {
       test.setTimeout(120_000);
       const actor = await withLocalDb((db) => createAdminSessionActor(db, 'admin', 'aal2'));
       await placeAdminCookies(page, actor, uniqueIp());
-      const firstLoads = waitForAdminFirstLoads(page);
+      const calls = trackActivityCalls(page);
       await page.goto('/admin');
       await expect(page.getByRole('navigation', { name: '管理メニュー' })).toBeVisible({ timeout: 30_000 });
 
-      await firstLoads;
-      await setLastSeen(actor, 61);
+      await backdateWhenQuiet(page, calls, actor, 61);
       // 画面の最初の読み込み（KPI・要対応の件数）が先に 401 を受けて送ることがあり、その時はクリックの前に画面が替わる。どちらでも同じ終わりになる
       await page.getByRole('navigation', { name: '管理メニュー' }).getByRole('button', { name: 'USER' }).click({ timeout: 20_000 }).catch(() => undefined);
 
@@ -178,14 +196,13 @@ for (const viewport of viewports) {
       test.setTimeout(120_000);
       const actor = await withLocalDb((db) => createAdminSessionActor(db, 'admin', 'aal2'));
       await placeAdminCookies(page, actor, uniqueIp());
-      const firstLoads = waitForAdminFirstLoads(page);
+      const calls = trackActivityCalls(page);
       await page.goto('/admin');
       await expect(page.getByRole('navigation', { name: '管理メニュー' })).toBeVisible({ timeout: 30_000 });
 
       // 更新の Cookie だけを残す。API は 401（期限切れと同じ）→ 更新は通る → 再送が無操作で 401 session_idle になる
-      await firstLoads;
       await page.context().clearCookies({ name: 'sb-access-token' });
-      await setLastSeen(actor, 61);
+      await backdateWhenQuiet(page, calls, actor, 61);
       await page.getByRole('navigation', { name: '管理メニュー' }).getByRole('button', { name: 'USER' }).click({ timeout: 20_000 }).catch(() => undefined);
 
       await expect(page).toHaveURL(/\/login\?reason=idle$/, { timeout: 30_000 });

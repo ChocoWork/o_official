@@ -492,7 +492,7 @@ G と H の順番・範囲（G-1〜G-4・H-1）は1章、開店前に直す物�
 | 再レビュー N-1（`staff-passkey-idle-rpc.ts` の型の注釈） | 済み（段3b Task 19。呼び手は 503 か「しばらくしてから」を返す、に直した） |
 | 再レビュー N-2（`StaffInviteScreen` の `redirectTo` の確かめ） | 済み（段3b Task 19。`new URL(to, location.origin).origin` で比べる。`/	/evil` も断る） |
 | 段3a の最終レビューの持ち越しの試験（T1 M-1・M-2・M-3、T2 M-1、T2b M-4、T5 M-6、T6 M-4、T6b M-3・m-2、T7 M-2・N-1、T8 N-7、T9 M-6、T10 M-5、T12 M-6。段3b Task 13 n-3、Task 19 N-1） | 済み（段3b Task 20。試験だけを足す・直す。製品のコードは触っていない。足した試験は、守る動きを壊して赤くなることを1回ずつ確かめてから戻した）。ただし T10 M-5〔410 `totp_retired`〕は skip された試験の中にあり、壊して赤くした確かめの対象外。その動きは FR-LOGIN-069 の FR-AUTH-046-AC-05 と単体の `mfa-enroll-totp-retired.test.ts` が守る） |
-| E2E の待ちの掃除（T8 N-6・Task 15 m-2・Task 17 N2-1・Task 20 m-1・m-2・競りの試験の時間切れ） | 済み（段3b Task 21。`waitForMail` を足し、FR-LOGIN-067 の `networkidle` を名指しの応答待ち5本に替えた。製品のコードは触っていない。`networkidle` を外すだけでは AC-06 が36回中11回落ちた〔meta・targets・monthly-record が KPI の後に続き、最後の操作の時刻を戻した値を上書きする〕ので、その3本も待つ） |
+| E2E の待ちの掃除（T8 N-6・Task 15 m-2・Task 17 N2-1・Task 20 m-1・m-2・競りの試験の時間切れ） | 済み（段3b Task 21。`waitForMail` を足し、FR-LOGIN-067 の `networkidle` を名指しの応答待ち5本に替えた。製品のコードは触っていない。kpi と order-attention だけを名指しで待つ形では AC-06 が36回中11回落ちた〔meta・targets・monthly-record が KPI の後に続き、最後の操作の時刻を戻した値を上書きする〕ので、呼び出しの一覧を決め打ちにせず、管理 API の飛んでいる呼び出しが無く1秒静かになるまで待ち、時刻を戻す間に呼び出しが起きたら名指しで落とす形にした） |
 | 8-2 の1行（`/otp` の IP の枠・`Sb-Forwarded-For`・`createServiceRoleAuthClient` を `sb_secret_` に替える要否） | 段3b Task 16 |
 | 一度も入らなかったアカウントの後始末 | 判断10（開店前） |
 | 1本だけの店員が `/auth/verified` で回る | 済み（Task 9） |
