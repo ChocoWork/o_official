@@ -61,9 +61,9 @@ for (const viewport of viewports) {
         for (const [name, args] of CALLS) {
           for (const client of [anon, authenticated]) {
             const { data, error, status } = await client.rpc(name, args);
-            expect(data).toBeNull();
-            expect([401, 403]).toContain(status);
-            const detail = `${name} status=${status} code=${error?.code} message=${error?.message}`;
+            const detail = `${client === anon ? 'anon' : 'authenticated'} ${name} status=${status} code=${error?.code} message=${error?.message}`;
+            expect(data, detail).toBeNull();
+            expect([401, 403], detail).toContain(status);
             expect(error?.code, detail).toBe('42501');
           }
         }

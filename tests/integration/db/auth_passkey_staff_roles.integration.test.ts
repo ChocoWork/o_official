@@ -535,6 +535,8 @@ describeLocalDb('passkey staff roles (migration H second half)', () => {
     });
   });
 
+  // 待ちの手助け（5秒）が自分の文面で落ちるように、Jest 既定の5000ms より長くする
+  const RACE_TEST_TIMEOUT_MS = 20_000;
   describe('DATA-AUTH-020 races (committed, cleaned up)', () => {
     async function cleanup(c: PgClient, ids: string[]): Promise<void> {
       for (const u of ids) {
@@ -577,7 +579,7 @@ describeLocalDb('passkey staff roles (migration H second half)', () => {
         await cleanup(setup, made);
         for (const c of [setup, a, b, holder]) await c.end();
       }
-    });
+    }, RACE_TEST_TIMEOUT_MS);
 
     test('DATA-AUTH-020 two connections deleting different keys of a staff member with three approved keys: one is refused and two keys stay', async () => {
       for (let round = 0; round < 3; round += 1) {
@@ -612,7 +614,7 @@ describeLocalDb('passkey staff roles (migration H second half)', () => {
           for (const c of [setup, a, b, holder]) await c.end();
         }
       }
-    });
+    }, RACE_TEST_TIMEOUT_MS);
 
     test('DATA-AUTH-020 a demote and the activation of an invite that manager issued, at the same moment: one finishes first and the result is consistent', async () => {
       for (const demoteFirst of [true, false]) {
@@ -689,6 +691,6 @@ describeLocalDb('passkey staff roles (migration H second half)', () => {
           for (const c of [setup, a, b, holder]) await c.end();
         }
       }
-    });
+    }, RACE_TEST_TIMEOUT_MS);
   });
 });

@@ -13,7 +13,7 @@ import { randomInt } from 'node:crypto';
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import { provisionStaff } from '../scripts/e2e/passkey-staff';
 import { bearerHeaders, createAdminSessionActor, type AdminSessionActor } from './admin-session-test-utils';
-import { mailBodies, mailsTo, runWorkerUntil, uniqueEmail, withLocalDb } from './order-email-test-utils';
+import { mailBodies, mailsTo, runWorkerUntil, uniqueEmail, waitForMail, withLocalDb } from './order-email-test-utils';
 
 test.use({ trace: 'off' });
 
@@ -50,11 +50,17 @@ async function mailCount(request: APIRequestContext, email: string, subject: str
 }
 
 /** 手元の DB に、店長（actor・other）と、その役割を持つ対象の店員を用意する。ほかの E2E の店長は外す（afterEach で戻す） */
-async function prepareManagers(deactivated: Array<{ userId: string; roleId: number }>): Promise<{ actor: AdminSessionActor; other: AdminSessionActor }> {
+async function prepareManagers(
+  deactivated: Array<{ userId: string; roleId: number }>,
+  mine: string[],
+): Promise<{ actor: AdminSessionActor; other: AdminSessionActor }> {
   await clearPendingNotifications();
   return withLocalDb(async (db) => {
+    // 作った直後に控える（途中で落ちても afterEach が店長の役割を外せる）
     const actor = await createAdminSessionActor(db, 'admin', 'aal2');
+    mine.push(actor.userId);
     const other = await createAdminSessionActor(db, 'admin', 'aal2');
+    mine.push(other.userId);
     const result = await db.query(
       `update public.user_roles ur set active = false
          from public.roles r, auth.users u
@@ -97,9 +103,9 @@ for (const viewport of viewports) {
     test(`FR-AUTH-047-AC-01 ${viewport.name}: 店長 A が店員 X をやり直すと、ほかの店長 B に操作した店長つきの知らせが届き、X には届かない`, async ({ request, baseURL }) => {
       test.setTimeout(180_000);
       const origin = new URL(baseURL as string).origin;
-      const { actor, other } = await prepareManagers(deactivated);
+      const { actor, other } = await prepareManagers(deactivated, mine);
       const target = await withLocalDb((db) => provisionStaff(db, { role: 'supporter', approvedPasskeys: 2 }));
-      mine = [actor.userId, other.userId, target.userId];
+      mine.push(target.userId);
 
       const response = await request.post(`/api/admin/staff/${target.userId}/redo`, {
         headers: headersOf(actor, origin),
@@ -119,16 +125,13 @@ for (const viewport of viewports) {
       expect(bodies[0].Text).not.toContain('名前:');
       // B に届いた後で、対象の本人には店長への知らせが無いことを確かめる（本人には招待のメールが別の件名で届く）
       for (const subject of MANAGER_SUBJECTS) expect(await mailCount(request, target.email, subject)).toBe(0);
-      await expect
-        .poll(async () => mailCount(request, target.email, INVITE_MAIL_SUBJECT), { timeout: 15_000, message: 'X にはやり直しの招待のメールが届く' })
-        .toBeGreaterThanOrEqual(1);
+      await waitForMail(request, target.email, INVITE_MAIL_SUBJECT);
     });
 
     test(`FR-AUTH-047-AC-02 ${viewport.name}: 店長 A が新しいアドレスの X を招待すると、ほかの店長 B に招待の知らせが届き、X には招待のメールだけが届く`, async ({ request, baseURL }) => {
       test.setTimeout(180_000);
       const origin = new URL(baseURL as string).origin;
-      const { actor, other } = await prepareManagers(deactivated);
-      mine = [actor.userId, other.userId];
+      const { actor, other } = await prepareManagers(deactivated, mine);
       const inviteeEmail = uniqueEmail('manager-notice-invite');
 
       const response = await request.post('/api/admin/staff/invites', {
@@ -147,17 +150,15 @@ for (const viewport of viewports) {
       expect(bodies[0].Text).toContain(`操作した店長: ${actor.email}`);
       expect(bodies[0].Text).toContain(CLOSING);
       for (const subject of MANAGER_SUBJECTS) expect(await mailCount(request, inviteeEmail, subject)).toBe(0);
-      await expect
-        .poll(async () => mailCount(request, inviteeEmail, INVITE_MAIL_SUBJECT), { timeout: 15_000, message: 'X には招待のメールが届く' })
-        .toBeGreaterThanOrEqual(1);
+      await waitForMail(request, inviteeEmail, INVITE_MAIL_SUBJECT);
     });
 
     test(`FR-AUTH-047-AC-03 ${viewport.name}: 店長 A が店員 X をお客さんに戻すと、ほかの店長 B に降格の知らせが届き、X には届かない`, async ({ request, baseURL }) => {
       test.setTimeout(180_000);
       const origin = new URL(baseURL as string).origin;
-      const { actor, other } = await prepareManagers(deactivated);
+      const { actor, other } = await prepareManagers(deactivated, mine);
       const target = await withLocalDb((db) => provisionStaff(db, { role: 'supporter', approvedPasskeys: 2 }));
-      mine = [actor.userId, other.userId, target.userId];
+      mine.push(target.userId);
 
       const response = await request.post(`/api/admin/staff/${target.userId}/demote`, { headers: headersOf(actor, origin), failOnStatusCode: false });
       expect(response.status()).toBe(200);

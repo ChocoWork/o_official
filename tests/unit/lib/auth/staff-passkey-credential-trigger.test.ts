@@ -53,11 +53,17 @@ describe('passkey credential trigger migration text', () => {
   it('DD-AUTH-045 開いている登録の窓の人も店員として積む（窓の枝は認めた鍵の判定の後、例外の囲みの中）', () => {
     const inBlock = body.slice(exceptionBlockStart, body.indexOf('RETURN NULL;\nEND'));
     const windowBranch = inBlock.indexOf('FROM private.passkey_registration_windows w');
-    expect(windowBranch).toBeGreaterThan(inBlock.indexOf('OR v_was_approved;'));
+    const approvedJudgement = inBlock.indexOf('OR v_was_approved;');
+    expect(approvedJudgement).toBeGreaterThan(-1);
+    expect(windowBranch).toBeGreaterThan(-1);
+    expect(windowBranch).toBeGreaterThan(approvedJudgement);
     expect(inBlock).toContain('w.user_id = v_user AND w.closed_at IS NULL AND w.expires_at > now()');
-    expect(inBlock.indexOf('IF NOT v_is_staff THEN')).toBeGreaterThan(-1);
-    expect(inBlock.indexOf('IF NOT v_is_staff THEN')).toBeLessThan(windowBranch);
-    expect(windowBranch).toBeLessThan(inBlock.indexOf('INSERT INTO private.passkey_notification_outbox'));
+    const notStaffGuard = inBlock.indexOf('IF NOT v_is_staff THEN');
+    const outboxInsert = inBlock.indexOf('INSERT INTO private.passkey_notification_outbox');
+    expect(notStaffGuard).toBeGreaterThan(-1);
+    expect(outboxInsert).toBeGreaterThan(-1);
+    expect(notStaffGuard).toBeLessThan(windowBranch);
+    expect(windowBranch).toBeLessThan(outboxInsert);
   });
 
   it('DD-AUTH-045 引き金は insert・update・delete の行ごとで、関数の execute は誰にも渡さない', () => {

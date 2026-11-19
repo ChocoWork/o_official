@@ -11,7 +11,7 @@ import { createHash, randomInt } from 'node:crypto';
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import { provisionPasskeyUser, provisionStaff } from '../scripts/e2e/passkey-staff';
 import { bearerHeaders, createAdminSessionActor, type AdminSessionActor } from './admin-session-test-utils';
-import { mailBodies, uniqueEmail, withLocalDb } from './order-email-test-utils';
+import { mailBodies, uniqueEmail, waitForMail, withLocalDb } from './order-email-test-utils';
 
 test.use({ trace: 'off' });
 
@@ -35,18 +35,9 @@ function headersOf(actor: AdminSessionActor, origin: string): Record<string, str
 }
 
 async function inviteMail(request: APIRequestContext, email: string): Promise<string> {
-  let text = '';
-  await expect
-    .poll(
-      async () => {
-        const bodies = await mailBodies(request, email, INVITE_SUBJECT);
-        text = bodies[0]?.Text ?? '';
-        return bodies.length;
-      },
-      { timeout: 15_000, message: '招待のメールが1通届く' },
-    )
-    .toBe(1);
-  return text;
+  const bodies = await waitForMail(request, email, INVITE_SUBJECT);
+  expect(bodies).toHaveLength(1);
+  return bodies[0].Text;
 }
 
 function tokenOf(text: string): string {

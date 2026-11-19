@@ -128,6 +128,25 @@ export async function mailBodies(request: APIRequestContext, email: string, subj
 }
 
 /**
+ * その宛先に、件名に含む文字のメールが届くまで待ち、本文つきで返す（`expect.poll`・15秒）。
+ * worker を通らないメール（招待のメールなど、API が直に送る物）の待ち専用。
+ * 知らせのメールは worker を叩かないと届かないので、`runWorkerUntil` で待つ。
+ */
+export async function waitForMail(request: APIRequestContext, email: string, subjectIncludes: string): Promise<MailBody[]> {
+  let bodies: MailBody[] = [];
+  await expect
+    .poll(
+      async () => {
+        bodies = await mailBodies(request, email, subjectIncludes);
+        return bodies.length;
+      },
+      { timeout: 15_000, message: `「${subjectIncludes}」のメールが届く` },
+    )
+    .toBeGreaterThan(0);
+  return bodies;
+}
+
+/**
  * 条件が満たされるまで、worker の定期処理の入口を叩き直す。
  * worker は10秒の予算で止まり、別の起動が取った行は飛ばすので、1回叩いただけでは送り切った証拠にならない。
  */

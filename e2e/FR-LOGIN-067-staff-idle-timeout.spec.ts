@@ -6,7 +6,7 @@
  * （login/finish を通らない。最後の操作の行が無いセッション）で作り、無操作の時刻は DB の `private.staff_session_activity` を直に書いて作る。
  * 認証のトークン・鍵は、失敗の文面に出さない。
  */
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { bearerHeaders, createAdminSessionActor, placeAdminCookies, type AdminSessionActor } from './admin-session-test-utils';
 import { withLocalDb } from './order-email-test-utils';
 
@@ -19,6 +19,28 @@ const viewports = [
 ] as const;
 
 const IDLE_MESSAGE = 'しばらく操作がなかったため、ログアウトしました。';
+
+/**
+ * /admin の最初の読み込みが呼ぶ API。KPI と要対応の件数の後に、KPI が返ってから meta・targets・monthly-record が続く。
+ * 後ろの3本が最後の操作の時刻を書くので、待たずに時刻を戻すと戻した値を上書きされる。5本の応答が返るまで待つ（networkidle は失敗を飲み込むので使わない）。
+ */
+const ADMIN_FIRST_LOAD_PATHS = [
+  '/api/admin/kpi',
+  '/api/admin/order-attention',
+  '/api/admin/kpi/meta',
+  '/api/admin/kpi/targets',
+  '/api/admin/kpi/monthly-record',
+] as const;
+
+function waitForAdminFirstLoads(page: Page): Promise<unknown> {
+  const loads = Promise.all(
+    ADMIN_FIRST_LOAD_PATHS.map((path) =>
+      page.waitForResponse((response) => new URL(response.url()).pathname === path, { timeout: 30_000 }),
+    ),
+  );
+  loads.catch(() => undefined); // goto の最中に落ちても未処理の拒否にしない。待つ側の await では落ちる
+  return loads;
+}
 
 function uniqueIp(): string {
   const octet = () => 1 + Math.floor(Math.random() * 253);
@@ -138,10 +160,11 @@ for (const viewport of viewports) {
       test.setTimeout(120_000);
       const actor = await withLocalDb((db) => createAdminSessionActor(db, 'admin', 'aal2'));
       await placeAdminCookies(page, actor, uniqueIp());
+      const firstLoads = waitForAdminFirstLoads(page);
       await page.goto('/admin');
       await expect(page.getByRole('navigation', { name: '管理メニュー' })).toBeVisible({ timeout: 30_000 });
 
-      await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
+      await firstLoads;
       await setLastSeen(actor, 61);
       // 画面の最初の読み込み（KPI・要対応の件数）が先に 401 を受けて送ることがあり、その時はクリックの前に画面が替わる。どちらでも同じ終わりになる
       await page.getByRole('navigation', { name: '管理メニュー' }).getByRole('button', { name: 'USER' }).click({ timeout: 20_000 }).catch(() => undefined);
@@ -155,11 +178,12 @@ for (const viewport of viewports) {
       test.setTimeout(120_000);
       const actor = await withLocalDb((db) => createAdminSessionActor(db, 'admin', 'aal2'));
       await placeAdminCookies(page, actor, uniqueIp());
+      const firstLoads = waitForAdminFirstLoads(page);
       await page.goto('/admin');
       await expect(page.getByRole('navigation', { name: '管理メニュー' })).toBeVisible({ timeout: 30_000 });
 
       // 更新の Cookie だけを残す。API は 401（期限切れと同じ）→ 更新は通る → 再送が無操作で 401 session_idle になる
-      await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
+      await firstLoads;
       await page.context().clearCookies({ name: 'sb-access-token' });
       await setLastSeen(actor, 61);
       await page.getByRole('navigation', { name: '管理メニュー' }).getByRole('button', { name: 'USER' }).click({ timeout: 20_000 }).catch(() => undefined);
