@@ -30,7 +30,7 @@
           to_regnamespace('extensions') is not null                              as extensions_schema;
    ```
    C の前の確かめが `TRIGGER`、A の関数が `SELECT`、H の前の確かめが `DELETE`・`UPDATE`・`SELECT` を見る。
-5. **店長にする人のアカウントが本番にある**。無ければ、ダッシュボードの Authentication で、パスワード無し・メール確認済みで作る（**調整役がオーナーの許可を得てから**。最初の店長の手順は節2の5と Task 24 の手順書）。
+5. **店長にする人のアカウントが本番にある**。無ければ、ダッシュボードの Authentication で、パスワード無し・メール確認済みで作る（**調整役がオーナーの許可を得てから**。最初の店長の手順は節2の5と [最初の店長と店長本人の最後の手段の手順書](./passkey-staff-recovery.md)）。
 6. `Sb-Forwarded-For` の運用が決まっている（[supabase-auth-config.md](./supabase-auth-config.md) の「パスキーのログインの始めと `Sb-Forwarded-For`」）。
 7. 本番の `ops_job_heartbeats_job_check` を、ほかの移行が変えていないか見られる（I の行の前の確かめ）。
 8. **普段の開発（`npm run dev`）が手元の Supabase を向いている**（設計 4-3。2026-11-08 に切り替え済みだが、`.env.development.local` がずれていないか、オーナーに確認日を聞いて確かめる）。本番の DB に当てると、本番を向いた開発の画面では店長が管理画面に入れなくなる。
@@ -49,7 +49,7 @@
    - 前提は Vault の `cron_secret`・`app_base_url`（名前の存在だけを確かめ、値は見ない）。
    - 戻し方 (1)「定期処理とアプリを止める」と対になる。
    - **調整役がオーナーの許可を得てから**。
-5. 最初の店長（Task 24 の手順書）が、パスキーを2本登録して役割が有効になる。これで「認めた鍵が2本の店員」が出来る。
+5. 最初の店長（[手順書](./passkey-staff-recovery.md)。関数 `private.staff_invite_issue_manual` で招待を出す）が、パスキーを2本登録して役割が有効になる。これで「認めた鍵が2本の店員」が出来る。
 6. **E は最後に当てる**（調整役がオーナーの許可を得てから）。E の前の確かめが止まるのは、**有効な店員がいるのに、認めた鍵が足りる店員が1人もいない時だけ**。有効な店員が1人もいない時は止まらずに通る（誰も権限を持たない状態で当たる）。だから、最初の店長が有効な `admin` で認めた鍵2本以上であることを、E の前に次の読むだけの SQL で必ず確かめる（1行以上返り、`approved` が `required` 以上。`required` は設定の最小の本数で、E の確かめと同じ式で読む）。
    ```sql
    select ur.user_id, public.passkey_approved_count(ur.user_id) as approved,
@@ -175,7 +175,7 @@ select to_regprocedure('private.staff_passkey_amr_ok(jsonb)'), to_regprocedure('
 (1) 毎分の定期処理（`process-stripe-webhooks`）を止める（**調整役がオーナーの許可を得てから**。`select cron.unschedule('process-stripe-webhooks');` は本番を変える SQL）。**再開しない**。本番は今この定期処理が無いので、止めたままが当てる前の状態。続けて、**アプリを、パスキー前のコミットに戻してデプロイする**（**調整役がオーナーの許可を得てから**）。
    - **戻し先は `c336e0b5`**（最初のパスキーのコミット `fd0bafd1` の1つ前。`git log` で `fd0bafd1` の親が `c336e0b5` であることを確かめた。アプリのコードはパスキー前）。**本番には、この master より前のデプロイが無い**（最初のデプロイが節2の3）ので、Vercel の Instant Rollback は使えない。「そのコミットを production にデプロイする」ことが戻しになる。その時点の他の移行・環境変数と合うかを、デプロイの前に確かめる。
    - **最初の本番のデプロイが実際に起きたら、調整役が、その時点の本当の「前のデプロイ」（あれば）をここと台帳に記録し直す**。それまでは、この戻し先は変わりうる。
-   - **master を載せたままにしない**: `admin-rbac` は E に関係なくパスキーの `amr` と認めた鍵2本を求めるので、(3b) のパスワード＋TOTP で入れない。さらに (8)・(11) の後は、master の管理の入口が呼ぶ関数（`staff_idle_check`〔D〕・`passkey_approved_count`〔A〕）が無くなり、管理の API は全員 503 になる。(7) の後は `passkey_approve`（F）が元の本体に戻り、登録の道（鍵の登録の仕上げ）が失敗する（管理の API の 503 ではなく、登録の失敗）。
+   - **master を載せたままにしない**: `admin-rbac` は E に関係なくパスキーの `amr` と認めた鍵2本を求めるので、(3b) のパスワード＋TOTP で入れない。さらに (8)・(11) の後は、master の管理の入口が呼ぶ関数（`staff_idle_check`〔D〕・`passkey_approved_count`〔A〕）が無くなり、管理の API は全員 503 になる。(7) の後は F が足した関数（`passkey_is_staff`・`passkey_credential_is_approved`・`passkey_approved_ids`）が無くなり、master の登録・ログインの道（登録の入口の確かめ・パスキーのログインの仕上げ・TOTP の登録）が失敗する（管理の API の 503 ではなく、登録・ログインの失敗）。
    - アプリを戻す時、outbox に新しい種類の行が残っていたら `skipped` にする。
    - **お客さんへの影響**: パスキー前のアプリは、パスワード＋メールのコードの入り方だけ。段2のメールのコードで登録した（パスワードの無い）お客さんは、パスワードの再設定をするまで入れない。戻しが開店後なら、オーナーがこの影響を決めて、お客さんに知らせる。
 → (2) ダッシュボードのフックの登録を外す（**調整役がオーナーの許可を得てから**。外さずに B を戻すと、全員のログインが止まる）。
@@ -190,8 +190,8 @@ select to_regprocedure('private.staff_passkey_amr_ok(jsonb)'), to_regprocedure('
        on ur.user_id = u.id and ur.role_id = (select id from public.roles where code = 'admin')
     where u.id = '<店長の id>';
    ```
-   - **`active` が真・`app_role` が `admin`（有効化が済んでいた）**: 古いアプリの入り方がそのまま使える。ダッシュボードで店長のパスワードを設定する（設定できるかをここで確かめる。できなければ**パスワードの再設定のメールを使う**。むしろメールを先に使ってもよい）→ 店長がパスワード＋メールのコードで入り、最初のログインで TOTP を登録し直す（[first-admin-bootstrap.md](./first-admin-bootstrap.md) の最初のログインの TOTP の登録と同じ）→ `/admin` に入れることを確かめる。
-   - **`active` が偽または空（`null` = `admin` の役割の行が無い）・`app_role` が `user` など（最初の店長の有効化が済む前に戻した。節2の5の登録が失敗した時など）**: 最後の手段の招待の取引（H の `staff_invite_issue_core`）が、その人の全部の役割の行を `active = false` にし（行が無い新しいアカウントには、行は作られない）、`app_metadata.role` を `user` にしている（さらに TOTP の要素と鍵を消し、招待と窓を開いている）。有効化（`staff_role_activate`）だけがそれを戻す。このままだと古いアプリは、役割を `app_metadata` から読むので TOTP の登録が 403 になり、`has_permission` も偽で、入れない。次の2つのどちらか（**調整役がオーナーの許可を得てから**）。
+   - **`active` が真・`expires_at` が空か未来・`app_role` が `admin`（有効化が済んでいた）**: 古いアプリの入り方がそのまま使える。ダッシュボードで店長のパスワードを設定する（設定できるかをここで確かめる。できなければ**パスワードの再設定のメールを使う**。むしろメールを先に使ってもよい）→ 店長がパスワード＋メールのコードで入り、最初のログインで TOTP を登録し直す（[first-admin-bootstrap.md](./first-admin-bootstrap.md) の最初のログインの TOTP の登録と同じ）→ `/admin` に入れることを確かめる。
+   - **上の1つ目に当てはまらないもの**（`active` が偽または空〔`null` = `admin` の役割の行が無い〕・`active` が真でも `expires_at` が過去・`app_role` が `user` など。最初の店長の有効化が済む前に戻した、節2の5の登録が失敗した、など）**: 最後の手段の招待の取引（H の `staff_invite_issue_core`）が、その人の全部の役割の行を `active = false` にし（行が無い新しいアカウントには、行は作られない）、`app_metadata.role` を `user` にしている（さらに TOTP の要素と鍵を消し、招待と窓を開いている）。有効化（`staff_role_activate`）だけがそれを戻す。このままだと古いアプリは、役割を `app_metadata` から読むので TOTP の登録が 403 になり、`has_permission` も偽で、入れない。次の2つのどちらか（**調整役がオーナーの許可を得てから**）。
      1. **取引の逆を流す**（1つの取引。招待と窓も閉じる）。
         ```sql
         begin;
@@ -207,7 +207,7 @@ select to_regprocedure('private.staff_passkey_amr_ok(jsonb)'), to_regprocedure('
          where id = '<店長の id>';
         commit;
         ```
-        これは有効化（H の `staff_role_activate`）が最後に付ける状態と同じ（`active = true`・`expires_at` なし・`app_metadata.role = 'admin'`）。役割の行は、有効化と同じ「無ければ入れ、あれば有効にする」で入れる（衝突の対象 `(user_id, role_id)` は `user_roles` の主キー）。流した後に上の読むだけの SQL をもう一度流し、`active` 真・`admin` を確かめてから、前の枝のパスワードと TOTP の手順へ進む。
+        これは有効化（H の `staff_role_activate`）が最後に付ける状態と同じ（`active = true`・`expires_at` なし・`app_metadata.role = 'admin'`）。役割の行は、有効化と同じ「無ければ入れ、あれば有効にする」で入れる（衝突の対象 `(user_id, role_id)` は `user_roles` の主キー）。`active` が真で `expires_at` が過去の行も、この SQL が `expires_at` を空にして直す。流した後に上の読むだけの SQL をもう一度流し、`active` 真・`admin` を確かめてから、前の枝のパスワードと TOTP の手順へ進む。
      2. **別のメールで `admin:bootstrap` を使う**（有効な店長が1人もいない時だけ動く。`countActiveAdmins = 0`）。**同じメールでは作れない**（その人の Auth の利用者がすでにあり、`email_taken` で失敗する）。別のアドレスの新しい店長を作り、パスワードを設定して TOTP を登録する。
    - まとめると、場合は3つ。(i) `admin` の役割の行がある（有効なら1つ目の枝、無効なら2つ目の枝）。(ii) 利用者はいるが役割の行が無い（新しく作った最初の店長。2つ目の枝の SQL が行を入れる）。(iii) **利用者がそもそもいない**（作る前に戻した）: `admin:bootstrap` にそのメールを渡して作るか、先に節1の5でアカウントを作る。有効な店長がすでにいる時は `admin:bootstrap` は断る（`admin_exists`）。
    - **H が消した店員の TOTP の要素は、戻しでは戻らない**。ほかの店員も、パスワードの設定と TOTP の登録し直しが要る。

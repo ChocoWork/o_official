@@ -1,0 +1,140 @@
+# 最初の店長と店長本人の最後の手段の手順書
+
+> 状態: 現行 | 確認日: 2026-11-20 | 対象: 本番の最初の店長を作る手順、店長がパスキーを全部なくした時の最後の手段（段3b・Task 24）。本番には未適用。当てる順は [パスキーの移行を本番に当てる手順書](./passkey-production-apply-runbook.md)
+
+## 先に決めておくこと
+
+**パスキーを2本以上、別々の端末に持つ。** 1台を失くしても、もう1台で入れる。店長が持つパスキーは、設定の最小の本数（`min_approved_passkeys`。今は2本）を下回れない。この手順書の「最後の手段」は、2本とも使えなくなった時だけの道で、店の管理から本人を一度外す重い操作になる。
+
+## 概要
+
+| 項目 | 内容 |
+| --- | --- |
+| 使う関数 | `private.staff_invite_issue_manual(email, role, ttl)`。ダッシュボードの SQL エディタ（`postgres`）だけが呼べる。アプリの鍵（service role）では呼べない |
+| 戻る値 | 43字の合言葉（生のまま）。表には SHA-256 だけが残る |
+| 期限 | 既定は1時間（`3600` 秒）。合言葉が画面の結果に出るので短くしてある |
+| 監査 | `staff.last_resort.issue` が1行残る（対象の id だけ。合言葉・メールは残らない） |
+| 店長への知らせ | 出ない。最後の手段は知らせを積まない |
+| 本番の最初の店長に `admin:bootstrap` を使うか | 使わない。経緯は [first-admin-bootstrap.md](./first-admin-bootstrap.md) |
+
+## 1. 最初の店長（本番）
+
+### 前提
+
+- 調整役がオーナーの許可を得て進める。本番に何かを当てる前に、毎回オーナーに確かめる
+- 移行 A〜H（と I）が当たり、アプリがデプロイされ、Auth のフックが登録されていること。**移行 E は、この手順で店長を作った後に当てる**（E の前に、認めた鍵が2本の店員が要る。[当てる順の節2の5・6](./passkey-production-apply-runbook.md)）
+- 本番の独自のドメインが決まっていること。合言葉の URL に使う
+- 手元の画面の共有を止めている（結果に生の合言葉が出る）
+
+### 手順
+
+1. **店長にする人のアカウントを確かめる。** ダッシュボードの SQL エディタで、同じアドレスのアカウントが**ちょうど1つ**であることを確かめる（大文字小文字は区別しない）。
+
+   ```sql
+   select count(*) from auth.users where lower(email) = lower('<メール>');
+   ```
+
+   - 1: 次へ進む
+   - 0: アカウントが無い。ダッシュボードの Authentication の Users で、Add user から作る。メールを入れ、メール確認済み（Auto Confirm User）にする。パスワードは使わない（入れる欄が必須の画面なら、長い乱数の文字列を入れ、どこにも控えない）。作った後に、上の SQL をもう一度流して1を確かめる
+   - 2以上: 発行しない。関数が先頭の1件を選ぶため、別人のアカウントに合言葉が付くおそれがある。重複を整理してから進める
+2. **関数を呼ぶ。** 同じ SQL エディタで流す。
+
+   ```sql
+   select private.staff_invite_issue_manual('<メール>', 'admin', 3600);
+   ```
+
+   - 43字の合言葉が1行で戻る。ほかの人に見せない。チャットや文書に貼らない
+   - 「STAFF_MANUAL_USER_NOT_FOUND」で止まったら、メールの綴りか、アカウントが無いことを疑う（手順1に戻る）
+3. **URL を作る。** `https://<本番のドメイン>/staff/invite#<合言葉>`（`#` の後ろに合言葉をそのまま付ける）。**自分に送る**（自分宛てのメールなど。ほかの人が読める場所に置かない）。この結果の画面を閉じるか、共有しない
+4. **開く。** 店長になる本人が、自分の端末のブラウザで URL を開く。画面の案内に従い、1本目のパスキーを登録し、続けて**別の端末**で2本目を登録する。2本そろい、画面に完了が出たら、ログイン画面に戻る
+   - 期限（既定1時間）が切れた・開く前に画面を閉じた・登録の途中で止まった時は、手順2からやり直す。同じ関数をもう一度呼ぶと、前の未使用の招待は取り消され、新しい合言葉に置き換わる
+5. **役割が有効になったことを確かめる。** 手順1の `<id>` は、`select id from auth.users where lower(email) = lower('<メール>');` で読む。
+
+   ```sql
+   select ur.active, ur.expires_at, u.raw_app_meta_data ->> 'role' as app_role
+     from auth.users u
+     left join public.user_roles ur
+       on ur.user_id = u.id and ur.role_id = (select id from public.roles where code = 'admin')
+    where u.id = '<id>';
+   select public.passkey_is_staff('<id>');
+   select count(*) from private.approved_passkeys where user_id = '<id>';
+   select count(*) from auth.mfa_factors where user_id = '<id>';
+   ```
+
+   - 1つ目: `active` が真、`expires_at` が空、`app_role` が `admin`
+   - `passkey_is_staff` が真
+   - `approved_passkeys` が**2行**
+   - `auth.mfa_factors` が**0行**（発行の取引が TOTP の要素を消している。0でなければ、パスワードと TOTP の道が残っている。調整役に報告する）
+6. **E の前の確かめへ進む。** [当てる順の節2の6](./passkey-production-apply-runbook.md) の読むだけの SQL を流し、`approved` が `required` 以上であることを見てから E を当てる。当てた後、最初の店長が `/admin` に入れることを確かめる
+
+### 流した後に残る物
+
+- `private.staff_invites` に `kind = 'last_resort'` の行が1つ（有効化が済めば `activated_at` が入る）
+- 監査に `staff.last_resort.issue` が1行（手順2の1回につき1行。やり直せば増える）
+- 合言葉は表のどこにも残らない。画面の結果と自分に送った URL だけ。使い終わったら送ったメッセージを消す
+
+## 2. 店長本人の最後の手段
+
+### 使ってよい時
+
+**ほかに有効な店長がいなくて、店長が自分のパスキーを全部なくした時だけ。**
+
+ほかの店長がいる時は、この手順を使わない。その店長が店長の画面から、なくした本人に「やり直し」の招待を出す（知らせも出る）。
+
+使ってよいかは、次の SQL でほかの有効な店長が0人であることで確かめる。
+
+```sql
+select count(*)
+  from public.user_roles ur join public.roles r on r.id = ur.role_id
+ where r.code = 'admin' and ur.active and (ur.expires_at is null or ur.expires_at > now())
+   and ur.user_id <> '<なくした本人の id>';
+```
+
+0以外なら、この手順は使わず、その店長に「やり直し」を頼む。
+
+### 手順
+
+1. 本人のアカウントが1つだけであることを、上の最初の店長の手順1で確かめる（0や2以上はそこに従う）
+2. 同じ関数を呼ぶ（合言葉は店長本人に渡る前提。ダッシュボードを操作する人が、本人であるか、本人に安全な経路で送る）
+
+   ```sql
+   select private.staff_invite_issue_manual('<メール>', 'admin', 3600);
+   ```
+
+3. 合言葉から URL を作り、本人が開き、2本のパスキーを別々の端末に登録する（最初の店長の手順3・4と同じ）
+4. **監査の確かめ**: `staff.last_resort.issue` が、その人の分として1行できたこと
+
+   ```sql
+   select action, outcome, resource_id, created_at
+     from public.audit_logs
+    where action = 'staff.last_resort.issue' and resource_id = '<なくした本人の id>'
+    order by created_at desc limit 5;
+   ```
+
+   呼んだ回数だけ行がある。直近の1行が、今の操作のもの
+5. 最初の店長の手順5と同じ SQL で、役割が有効・`approved_passkeys` が2行・`auth.mfa_factors` が0行であることを確かめる
+
+### 起きること（先に伝える）
+
+- 発行の取引は、その人の古いパスキー・認めた鍵・TOTP の要素を消し、役割を一度無効にする。登録が済むまで、その人は管理画面に入れない（ほかに店長がいないので、管理画面は誰も使えない）
+- 合言葉が使われる（または期限が切れる）まで、その人の役割は無効のまま。1時間以内に開けない時は、もう一度流して置き換える
+
+## 3. 止まった時
+
+| 見えるもの | 意味 | 次の手 |
+| --- | --- | --- |
+| 「STAFF_MANUAL_USER_NOT_FOUND」 | そのメールのアカウントが無い | 綴りを見直す。無ければ、最初の店長の手順1の作り方で作る |
+| 招待のページで「無効」「期限切れ」と出る | 合言葉の期限（1時間）切れ、または新しい発行で置き換わった | 関数をもう一度呼び、新しい合言葉で URL を作り直す |
+| 2本目の登録が断られる | 1本目と同じ端末・同じ認証器を使っている | 別の端末で登録する |
+| 手順5で `approved_passkeys` が2行にならない | 登録が途中で止まった。役割はまだ無効 | 関数をもう一度呼び、最初から登録し直す |
+| 手順5で `auth.mfa_factors` が0行でない | 想定外 | 何も当てず、調整役に報告する |
+| ダッシュボードの結果の画面を人に見せた | 生の合言葉が見えた | 関数をもう一度呼んで置き換える（前の合言葉は取り消される） |
+
+## 4. 戻す時との関係
+
+当てた移行を戻す時（段3b の戻し方）に店長が入れなくなったら、[手順書の戻し方の (3b)](./passkey-production-apply-runbook.md) を使う。そこでは、`admin:bootstrap` を戻しの時だけの最後の手段（利用者がそもそもいない時、または別のメールで作る時）として使う。この手順書の関数は、戻した後の店長の復旧には使わない。
+
+## 未確認事項
+
+- 本番で流した記録は無い（本番は未適用）。最初に流す時に、結果の画面の見え方と、Authentication の Add user の入力欄（パスワードが必須か）をこの文書に書き足す
+- 手元の流れは、E2E の `e2e/FR-LOGIN-065`・`066`（招待を出す → URL を開く → 2本登録 → 役割が有効）で確かめた
