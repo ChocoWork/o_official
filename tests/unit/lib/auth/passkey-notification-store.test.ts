@@ -1,5 +1,5 @@
 /**
- * DD-AUTH-066 パスキーの知らせを取り出して送るための DB の関数を呼ぶ薄い部品（src/lib/auth/passkey-notification-store.ts）の単体テスト。
+ * DD-AUTH-066・DD-AUTH-086・DD-AUTH-087 パスキーの知らせを取り出して送るための DB の関数を呼ぶ薄い部品（src/lib/auth/passkey-notification-store.ts）の単体テスト。
  */
 
 jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn() }));
@@ -8,6 +8,7 @@ import {
   claimPasskeyNotification,
   completePasskeyNotification,
   failPasskeyNotification,
+  isUnknownKindClaim,
   passkeyNotificationRecipients,
   skipPasskeyNotification,
 } from '@/lib/auth/passkey-notification-store';
@@ -39,7 +40,7 @@ describe('passkey-notification-store', () => {
     errorSpy.mockRestore();
   });
 
-  it('DD-AUTH-066 claimPasskeyNotification は claim_passkey_notification を担当の秒数つきで1回呼び、行を写す', async () => {
+  it('DD-AUTH-086 claimPasskeyNotification は claim_passkey_notification を担当の秒数つきで1回呼び、行を写す', async () => {
     rpc.mockResolvedValue({ data: [claimedRow], error: null });
 
     await expect(claimPasskeyNotification(120)).resolves.toEqual({
@@ -54,13 +55,34 @@ describe('passkey-notification-store', () => {
     expect(rpc).toHaveBeenCalledWith('claim_passkey_notification', { _lease_seconds: 120 });
   });
 
+  it.each(['staff_redo_issued', 'staff_invited', 'staff_demoted'])(
+    'DD-AUTH-087 claimPasskeyNotification は店長への知らせの種類 %s を通す',
+    async (kind) => {
+      rpc.mockResolvedValue({ data: [{ ...claimedRow, kind, actor_email: 'boss@example.com' }], error: null });
+
+      await expect(claimPasskeyNotification(60)).resolves.toMatchObject({ ok: true, value: { kind, actorEmail: 'boss@example.com' } });
+    },
+  );
+
+  it('DD-AUTH-087 claimPasskeyNotification は知らない種類の行を、id と担当の印だけの kind: null で返す（取り出しを失敗にしない）', async () => {
+    rpc.mockResolvedValue({ data: [{ id: ID, kind: 'future_kind', lease_token: TOKEN }], error: null });
+
+    await expect(claimPasskeyNotification(60)).resolves.toEqual({ ok: true, value: { id: ID, leaseToken: TOKEN, kind: null } });
+  });
+
+  it('DD-AUTH-087 知らない種類でも id か lease_token が無ければ { ok: false }', async () => {
+    rpc.mockResolvedValue({ data: [{ id: ID, kind: 'future_kind' }], error: null });
+
+    await expect(claimPasskeyNotification(60)).resolves.toEqual({ ok: false });
+  });
+
   it('DD-AUTH-086 claimPasskeyNotification は操作した店長のアドレス actor_email を actorEmail に写す', async () => {
     rpc.mockResolvedValue({ data: [{ ...claimedRow, actor_email: 'boss@example.com' }], error: null });
 
     await expect(claimPasskeyNotification(60)).resolves.toMatchObject({ ok: true, value: { actorEmail: 'boss@example.com' } });
   });
 
-  it('DD-AUTH-066 claimPasskeyNotification は bigint の seq が文字列で来ても数に直し、取り出す行が無ければ null', async () => {
+  it('DD-AUTH-086 claimPasskeyNotification は bigint の seq が文字列で来ても数に直し、取り出す行が無ければ null', async () => {
     rpc.mockResolvedValueOnce({ data: [{ ...claimedRow, seq: '9' }], error: null });
     await expect(claimPasskeyNotification(60)).resolves.toMatchObject({ ok: true, value: { seq: 9 } });
 
@@ -71,12 +93,11 @@ describe('passkey-notification-store', () => {
   it.each([
     ['配列でない', { id: ID }],
     ['行が2つ', [claimedRow, claimedRow]],
-    ['kind が知らない値', [{ ...claimedRow, kind: 'other' }]],
     ['lease_token が無い', [{ ...claimedRow, lease_token: undefined }]],
     ['actor_email が文字列でも null でもない', [{ ...claimedRow, actor_email: 5 }]],
     ['subject_is_staff が真偽でない', [{ ...claimedRow, subject_is_staff: 'yes' }]],
     ['行が object でない', ['x']],
-  ])('DD-AUTH-066 claimPasskeyNotification は戻りが想定外（%s）なら { ok: false }', async (_label, data) => {
+  ])('DD-AUTH-086 claimPasskeyNotification は戻りが想定外（%s）なら { ok: false }', async (_label, data) => {
     rpc.mockResolvedValue({ data, error: null });
 
     await expect(claimPasskeyNotification(60)).resolves.toEqual({ ok: false });
@@ -169,5 +190,13 @@ describe('passkey-notification-store', () => {
     rpc.mockRejectedValueOnce(new Error('network'));
     await expect(passkeyNotificationRecipients(ID)).resolves.toEqual({ ok: false });
     expect(errorSpy).toHaveBeenCalledWith('passkey-notification-store: rpc call failed', { name: 'passkey_notification_recipients' });
+  });
+
+  it('DD-AUTH-087 isUnknownKindClaim は kind が null の行だけ真', () => {
+    expect(isUnknownKindClaim({ id: ID, leaseToken: TOKEN, kind: null })).toBe(true);
+    expect(isUnknownKindClaim({
+      id: ID, seq: 7, userId: USER_ID, kind: 'staff_invited', passkeyId: null, friendlyName: null, subjectIsStaff: false,
+      notifySubject: false, subjectEmail: null, actorEmail: null, occurredAt: '2026-11-18T00:00:00+00:00', attempts: 1, leaseToken: TOKEN,
+    })).toBe(false);
   });
 });

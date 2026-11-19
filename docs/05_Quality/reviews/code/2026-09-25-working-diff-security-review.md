@@ -479,7 +479,7 @@ G と H の順番・範囲（G-1〜G-4・H-1）は1章、開店前に直す物�
 | 1b の M-2（`endAuthSession` の失敗の監査） | 済み（Task 10） |
 | 4-2「役割を切り替える時の監査・知らせの副作用の確認」 | 済み（Task 2 と Task 7 の画面からの確かめ） |
 | 6-2・8-1「TOTP の要素を消す」 | 済み（Task 2・7・10。店員の TOTP の登録は410で断る） |
-| 店長への「やり直しを出した」の知らせ | 段3b（Task 13） |
+| 店長への「やり直しを出した」「招待を出した」「降格した」の知らせ | 積み込みは済み（段3b Task 14）。メールを送る側は済み（段3b Task 15。FR-AUTH-047・FR-LOGIN-071。2026-11-20） |
 | `dead` の点検・worker の心拍 | 段3b（Task 14） |
 | E2E の `mailsTo`・`mailBodies` を `expect.poll` に | 新しい試験は Task 5 から `expect.poll`。既存の手助けの直しは段3b（Task 15） |
 | 8-2 の1行（`/otp` の IP の枠・`Sb-Forwarded-For`・`createServiceRoleAuthClient` を `sb_secret_` に替える要否） | 段3b Task 16 |

@@ -6,6 +6,8 @@ import {
   passkeyNotificationRecipients,
   skipPasskeyNotification,
   type ClaimedPasskeyNotification,
+  isUnknownKindClaim,
+  type UnknownKindClaim,
   type PasskeyNotificationRecipient,
 } from '@/lib/auth/passkey-notification-store';
 import { composePasskeyNotification } from '@/lib/auth/passkey-notification-compose';
@@ -33,7 +35,7 @@ const MAX_ATTEMPTS = 9;
 const ERROR_CODE_PATTERN = /^[a-z0-9_]{1,64}$/;
 
 export type PasskeyNotificationWorkerDeps = {
-  claim: (leaseSeconds: number) => Promise<RpcResult<ClaimedPasskeyNotification | null>>;
+  claim: (leaseSeconds: number) => Promise<RpcResult<ClaimedPasskeyNotification | UnknownKindClaim | null>>;
   recipients: (id: string) => Promise<RpcResult<PasskeyNotificationRecipient[]>>;
   complete: (id: string, leaseToken: string) => Promise<RpcResult<boolean>>;
   fail: (id: string, leaseToken: string, errorCode: string, retryAfterSeconds: number, countAttempt?: boolean) => Promise<RpcResult<boolean>>;
@@ -137,6 +139,7 @@ async function deliverRow(
         friendlyName: claim.friendlyName,
         occurredAt: new Date(claim.occurredAt),
         subjectEmail: claim.subjectEmail,
+        actorEmail: claim.actorEmail,
         contactUrl,
       });
       message = {
@@ -209,6 +212,13 @@ export async function runPasskeyNotificationWorker(
     if (!claimed.ok) return { ...result, stopped: 'claim_error' };
     if (claimed.value === null) return { ...result, stopped: 'idle' };
     result.claimed += 1;
+
+    if (isUnknownKindClaim(claimed.value)) {
+      // アプリの知らない種類（DB だけ新しい版）: 取り出しを失敗にせず、行を飛ばして列を進める
+      await deps.skip(claimed.value.id, claimed.value.leaseToken, 'unknown_kind').catch(() => undefined);
+      result.skipped += 1;
+      continue;
+    }
 
     let outcome: RowOutcome;
     try {

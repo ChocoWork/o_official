@@ -4,14 +4,14 @@
 
 ## 概要
 
-店長が店員を招待した・やり直した・降格した時の、ほかの店長への知らせの積み方と宛先を決める。DB の側は Task 14。送る処理と文面は Task 15 以降。
+店長が店員を招待した・やり直した・降格した時の、ほかの店長への知らせの積み方と宛先を決める。DB の側は Task 14。送る処理と文面は DD-AUTH-087（Task 15）。
 
 ## 範囲と根拠
 
 | 項目 | 内容 |
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の AUTH |
-| 対応する ID | SR-AUTH-029、FR-AUTH-047、DATA-AUTH-022、ARC-AUTH-012、SEC-AUTH-058、THR-AUTH-057、DD-AUTH-086 |
+| 対応する ID | SR-AUTH-029、FR-AUTH-047、DATA-AUTH-022、ARC-AUTH-012、SEC-AUTH-058、THR-AUTH-057、DD-AUTH-086、DD-AUTH-087 |
 | 対象のコード | `supabase/migrations/20261116215034_passkey_foundation_tables.sql`、`supabase/migrations/20261118044338_passkey_notification_sending.sql`、`supabase/migrations/20261118130000_passkey_staff_invites.sql` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)、[段3b の計画](../../superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md)、[知らせの積み込みの詳細](../../04_DetailDesign/sequence/auth-staff-manager-notices.md) |
 | 調べた時点 | 2026-11-20（手元の Supabase で結合試験を流した） |
@@ -43,6 +43,6 @@
 #### 結果
 
 - 良くなること: 店長が増減・降格を見落とさない。失敗した操作の知らせが残らない。積み込みが1か所
-- 悪くなること: 操作の取引が知らせの行の1つ分だけ長くなる。店長が1人だけだと、操作した本人以外に宛先がいない（送る側が宛先なしを `skipped` にする）
-- 残る危険: 本人への知らせは別の経路（役割を外された本人には、既存の鍵の知らせ）。送る処理が止まると知らせは溜まる（点検は Task 16・17）
+- 悪くなること: 操作の取引が知らせの行の1つ分だけ長くなる。店長が1人だけの時は、宛先は操作した本人だけになる（操作した店長も宛先に含むので、宛先なしにはならない。送る側が宛先なしを `skipped` にするのは、宛先が本人しかいない行と、有効な店長が1人もいない行）
+- 残る危険: 知らせは対象の本人には出さない（本人を宛先から除く。降格された人には何も届かない。鍵は残り、ログインが終わるだけ。やり直し・招待の本人には、店員の招待のメールが別に届く）。店長と店員の間（`admin` と `supporter`）の役割の変更（`admin_set_user_role`。PATCH）は、設計どおり知らせを積まない（今の店員の役割の付け替えで、招待・やり直し・降格のどれでもないため。店長の増減を知らせたい時は別に決める）。送る処理が止まると知らせは溜まる（点検は Task 16・17）
 - 見直す条件: 店長が多くなり、全員への1通ずつが重くなった時

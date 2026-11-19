@@ -365,4 +365,47 @@ describe('runPasskeyNotificationWorker', () => {
       expect(result.claimed).toBe(expected);
     }
   });
+
+  it('DD-AUTH-087 知らない種類の行は、送らず skip(unknown_kind) して次の行へ進む', async () => {
+    const deps = makeDeps([], [{ email: 'a@example.com', audience: 'subject_customer' }]);
+    const queue: unknown[] = [{ id: 'r1', leaseToken: 'tok-x', kind: null }, row({ id: 'r2' })];
+    deps.claim.mockImplementation(async () => ({ ok: true, value: queue.shift() ?? null }));
+    const result = await run(deps);
+    expect(deps.skip).toHaveBeenNthCalledWith(1, 'r1', 'tok-x', 'unknown_kind');
+    expect(deps.recipients).toHaveBeenCalledTimes(1);
+    expect(deps.recipients).toHaveBeenCalledWith('r2');
+    expect(result).toEqual({ claimed: 2, sent: 1, retried: 0, dead: 0, skipped: 1, stopped: 'idle' });
+  });
+
+  it('DD-AUTH-087 知らない種類の skip が例外でも worker は止まらない', async () => {
+    const deps = makeDeps([], []);
+    deps.claim.mockResolvedValueOnce({ ok: true, value: { id: 'r1', leaseToken: 't', kind: null } }).mockResolvedValue({ ok: true, value: null });
+    deps.skip.mockRejectedValue(new Error('db down'));
+    await expect(run(deps)).resolves.toMatchObject({ claimed: 1, skipped: 1, stopped: 'idle' });
+  });
+
+  it('DD-AUTH-087 店長への知らせの行は actorEmail を文面へ渡し、admin の宛先ごとに1通ずつ送る', async () => {
+    const deps = makeDeps(
+      [row({ kind: 'staff_redo_issued', subjectEmail: 'staff@example.com', actorEmail: 'boss@example.com', subjectIsStaff: true, notifySubject: false })],
+      [{ email: 'b@example.com', audience: 'admin' }, { email: 'c@example.com', audience: 'admin' }],
+    );
+    const result = await run(deps);
+    expect(result.sent).toBe(1);
+    expect(deps.send).toHaveBeenCalledTimes(2);
+    const message = deps.send.mock.calls[0][0];
+    expect(message.subject).toBe('店員のパスキーのやり直しが出されました');
+    expect(message.text).toContain('操作した店長: boss@example.com');
+    expect(message.subject).not.toContain('@');
+  });
+
+  it('DD-AUTH-087 店長への知らせの宛先に admin 以外が混じると compose_error で行を失敗にし、何も送らない', async () => {
+    const deps = makeDeps(
+      [row({ kind: 'staff_invited', actorEmail: 'boss@example.com' })],
+      [{ email: 'x@example.com', audience: 'subject_staff' }],
+    );
+    const result = await run(deps);
+    expect(deps.send).not.toHaveBeenCalled();
+    expect(deps.fail).toHaveBeenCalledWith('row-1', 'tok-1', 'compose_error', 0);
+    expect(result.retried).toBe(1);
+  });
 });

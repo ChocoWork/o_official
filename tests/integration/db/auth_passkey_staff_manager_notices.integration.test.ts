@@ -171,6 +171,19 @@ describeLocalDb('passkey staff manager notices (migrations A, G, H)', () => {
     expect(await notices()).toHaveLength(0);
   });
 
+  // 正の対照: 上の試験は「何も積まれない」だけを見るので、積む処理が壊れていても通ってしまう。
+  // 同じ準備から断りの原因だけを除いた操作は、必ず1行積むことを確かめる（これが通る限り、上の「0行」に意味がある）
+  test('DATA-AUTH-022 positive control: the same setups without the refusal do queue a manager notice', async () => {
+    const actor = await user(mail('actor'), 'admin');
+    const lone = await user(mail('lone'), 'admin');
+    await issue(lone, 'admin', 'redo', actor); // 上の LAST_ADMIN_REQUIRED と SELF_ROLE_CHANGE_FORBIDDEN の redo から、断りの原因だけを除く
+    expect((await notices(lone)).map((row: { kind: string }) => row.kind)).toEqual(['staff_redo_issued']);
+    const target = await user(mail('target'), 'admin');
+    await demote(actor, target); // 上の降格の断り（本人・店長でない操作者）から、断りの原因だけを除く
+    expect((await notices(target)).map((row: { kind: string }) => row.kind)).toEqual(['staff_demoted']);
+    expect(await notices()).toHaveLength(2);
+  });
+
   test('DATA-AUTH-022 the kind CHECK allows the three new kinds and actor_email is nullable text', async () => {
     const target = await user(mail('t'));
     for (const kind of NEW_KINDS) {

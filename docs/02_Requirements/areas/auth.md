@@ -6102,11 +6102,47 @@ DB の `staff_invite_cancel` は、開いた招待があれば `true`、2回目�
 | 上位 | SR-AUTH-029 |
 | 根拠 | 送り箱 `private.passkey_notification_outbox` の `kind` に `staff_redo_issued`・`staff_invited`・`staff_demoted` を足し、操作した店長のアドレス `actor_email` を持たせる。積む処理は私用の関数 `private.passkey_enqueue_staff_notice` の1つに書き、`staff_invite_issue_core` と `staff_demote` が錠の後の同じ取引で呼ぶ。取引が失敗すれば行も残らない。宛先は `passkey_notification_recipients` が、本人（`user_id`）を除く、有効・期限内・削除と停止の無い店長全員（同じアドレスは1通）にする。守りは SEC-AUTH-058、処理は DD-AUTH-086、種類と宛先の判断は ADR-0473、列は DATA-AUTH-022 |
 | 状態 | 推定 |
-| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_manager_notices.integration.test.ts`）、単体テスト（`tests/unit/lib/auth/passkey-notification-store.test.ts`）。受け入れ条件（AC）と E2E は、送る側（worker・文面）ができる Task 15 で足す |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_manager_notices.integration.test.ts`、`auth_passkey_notification_worker.integration.test.ts`）、単体テスト（`tests/unit/lib/auth/passkey-notification-store.test.ts`・`passkey-notification-compose.test.ts`・`passkey-notification-worker.test.ts`）、E2E（`e2e/FR-LOGIN-071-staff-manager-notice-mail.spec.ts`、FR-AUTH-047-AC-01〜03） |
 | 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-14-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 14） |
 | 優先度 | MUST |
 
-規則: (1) `redo` は `staff_redo_issued`（`subject_is_staff` 真）、`invite`・`promote` は `staff_invited`（偽）、降格は `staff_demoted`（真）を1行積む。`notify_subject` は常に偽、`passkey_id`・`friendly_name` は NULL。(2) `last_resort`（`staff_invite_issue_manual`）は積まない。(3) `subject_email` は対象、`actor_email` は操作した店長のアドレスを `auth.users` から読む。(4) 宛先に操作した店長は含み、対象の本人は含まない。(5) 古い3種類（鍵の足し・消し・置き換え）の宛先の規則は変えない。
+規則: (1) `redo` は `staff_redo_issued`（`subject_is_staff` 真）、`invite`・`promote` は `staff_invited`（偽）、降格は `staff_demoted`（真）を1行積む。`notify_subject` は常に偽、`passkey_id`・`friendly_name` は NULL。(2) `last_resort`（`staff_invite_issue_manual`）は積まない。(3) `subject_email` は対象、`actor_email` は操作した店長のアドレスを `auth.users` から読む。(4) 宛先に操作した店長は含み、対象の本人は含まない。(5) 古い3種類（鍵の足し・消し・置き換え）の宛先の規則は変えない。(6) 送る側（DD-AUTH-087）: 件名は「店員のパスキーのやり直しが出されました」（やり直し）・「店員の招待が出されました」（招待）・「店員がお客さんに戻されました」（降格）。本文は対象のアドレス・日時（日本時間）・操作した店長のアドレス（`actor_email` が無ければこの行は出さない）・「心当たりがない場合は、店長の権限を確認してください。」。アドレスは本文にだけ入れ、件名と監査には入れない。宛先は `admin` だけ（ほかの宛先なら文面を作る処理が例外を投げ、worker が `compose_error` にする）。アプリの知らない種類の行は、取り出しを失敗にせず、担当の印だけ読んで `skip`（`unknown_kind`）する。(7) 店長と店員の間（`admin` と `supporter`）の役割の変更は知らせを積まない（ADR-0473）。
+
+### FR-AUTH-047-AC-01 店長 A が店員 X をやり直すと、ほかの店長 B にやり直しの知らせが届き、X には届かない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-047 |
+| 根拠 | DD-AUTH-086、DD-AUTH-087、ADR-0473 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-071-staff-manager-notice-mail.spec.ts`。390・768・1280 の3幅でくり返す）。単体テスト（`tests/unit/lib/auth/passkey-notification-compose.test.ts`・`passkey-notification-worker.test.ts`・`passkey-notification-store.test.ts`）と結合テスト（`tests/integration/db/auth_passkey_notification_worker.integration.test.ts`）でも確かめる（DD-AUTH-087） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-15-brief.md` |
+
+A が店員 X に `POST /api/admin/staff/{id}/redo` を送り、定期処理（worker）が動くと、B のメールに件名「店員のパスキーのやり直しが出されました」が1通以上届く（手元の送り手は重複防止の鍵を見ないので、予算越えの再試行で2通になりうる）。本文に `X のアドレス のパスキーのやり直しが出されました。`・日時の行・`操作した店長: A のアドレス`・最後の1文があり、`名前:` の行は無い。B に届いた後で、X には店長への知らせの3つの件名のどれも届いていない（X には招待のメールが別の件名で届く）。
+
+### FR-AUTH-047-AC-02 店長 A が新しいアドレスの X を招待すると、ほかの店長 B に招待の知らせが届き、X には招待のメールだけが届く
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-047 |
+| 根拠 | DD-AUTH-086、DD-AUTH-087、ADR-0473 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-071-staff-manager-notice-mail.spec.ts`。390・768・1280 の3幅でくり返す）。単体テスト（`tests/unit/lib/auth/passkey-notification-compose.test.ts`・`passkey-notification-worker.test.ts`・`passkey-notification-store.test.ts`）と結合テスト（`tests/integration/db/auth_passkey_notification_worker.integration.test.ts`）でも確かめる（DD-AUTH-087） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-15-brief.md` |
+
+A が `POST /api/admin/staff/invites` で新しいアドレス X を招待し、worker が動くと、B のメールに件名「店員の招待が出されました」が1通以上届く。本文に `X のアドレス への店員の招待が出されました。`・日時の行・`操作した店長: A のアドレス`・最後の1文がある。B に届いた後で、X には店長への知らせの3つの件名のどれも届かず、招待のメールだけが届く。
+
+### FR-AUTH-047-AC-03 店長 A が店員 X をお客さんに戻すと、ほかの店長 B に降格の知らせが届き、X には届かない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-047 |
+| 根拠 | DD-AUTH-086、DD-AUTH-087、ADR-0473 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-071-staff-manager-notice-mail.spec.ts`。390・768・1280 の3幅でくり返す）。単体テスト（`tests/unit/lib/auth/passkey-notification-compose.test.ts`・`passkey-notification-worker.test.ts`・`passkey-notification-store.test.ts`）と結合テスト（`tests/integration/db/auth_passkey_notification_worker.integration.test.ts`）でも確かめる（DD-AUTH-087） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-15-brief.md` |
+
+A が `POST /api/admin/staff/{id}/demote` で店員 X を降格し、worker が動くと、B のメールに件名「店員がお客さんに戻されました」が1通以上届く。本文に `X のアドレス が、店員からお客さんに戻されました。`・日時の行・`操作した店長: A のアドレス`・最後の1文がある。B に届いた後で、X には店長への知らせの3つの件名のどれも届かない。
 
 ### FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel`
 

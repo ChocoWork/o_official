@@ -3,7 +3,9 @@
  * 宛先の種類（お客さん・店員本人・店長）ごとに文面を分ける。本人のメールのアドレスは、店長あての文面にだけ入れる。
  */
 
-export type PasskeyNotificationKind = 'passkey_added' | 'passkey_removed' | 'passkey_key_replaced';
+import type { PasskeyNotificationKind } from '@/lib/auth/passkey-notification-store';
+
+export type { PasskeyNotificationKind };
 export type PasskeyNotificationComposeAudience = 'subject_customer' | 'subject_staff' | 'admin';
 
 export type PasskeyNotificationComposeInput = {
@@ -12,6 +14,8 @@ export type PasskeyNotificationComposeInput = {
   friendlyName: string | null;
   occurredAt: Date;
   subjectEmail: string | null;
+  /** 店長への知らせ（やり直し・招待・降格）で、操作した店長のアドレス。ほかの知らせでは null */
+  actorEmail: string | null;
   contactUrl: string;
 };
 
@@ -54,45 +58,91 @@ function formatJst(date: Date): string {
   return `${parts.year}年${Number(parts.month)}月${Number(parts.day)}日 ${Number(parts.hour)}:${parts.minute}（日本時間）`;
 }
 
-const CUSTOMER_SUBJECTS: Record<PasskeyNotificationKind, string> = {
+type KeyNoticeKind = 'passkey_added' | 'passkey_removed' | 'passkey_key_replaced';
+type StaffNoticeKind = 'staff_redo_issued' | 'staff_invited' | 'staff_demoted';
+
+const STAFF_NOTICE_SUBJECTS: Record<StaffNoticeKind, string> = {
+  staff_redo_issued: '店員のパスキーのやり直しが出されました',
+  staff_invited: '店員の招待が出されました',
+  staff_demoted: '店員がお客さんに戻されました',
+};
+
+/** 対象のアドレスが無い時（`subjectEmail` が null）の書き出しも持つ */
+const STAFF_NOTICE_LEADS: Record<StaffNoticeKind, (target: string | null) => string> = {
+  staff_redo_issued: (target) => (target ? `${target} のパスキーのやり直しが出されました。` : '店員のパスキーのやり直しが出されました。'),
+  staff_invited: (target) => (target ? `${target} への店員の招待が出されました。` : '店員の招待が出されました。'),
+  staff_demoted: (target) => (target ? `${target} が、店員からお客さんに戻されました。` : '店員が、お客さんに戻されました。'),
+};
+
+const STAFF_NOTICE_CLOSING = '心当たりがない場合は、店長の権限を確認してください。';
+
+const CUSTOMER_SUBJECTS: Record<KeyNoticeKind, string> = {
   passkey_added: 'パスキーが追加されました',
   passkey_removed: 'パスキーが削除されました',
   passkey_key_replaced: 'パスキーの内容が変更されました',
 };
 
-const ADMIN_SUBJECTS: Record<PasskeyNotificationKind, string> = {
+const ADMIN_SUBJECTS: Record<KeyNoticeKind, string> = {
   passkey_added: '店員のパスキーが追加されました',
   passkey_removed: '店員のパスキーが削除されました',
   passkey_key_replaced: '店員のパスキーの内容が変更されました',
 };
 
-const SUBJECT_LEADS: Record<PasskeyNotificationKind, string> = {
+const SUBJECT_LEADS: Record<KeyNoticeKind, string> = {
   passkey_added: 'ご登録のアカウントに、パスキーが追加されました。',
   passkey_removed: 'ご登録のアカウントから、パスキーが削除されました。',
   passkey_key_replaced: 'ご登録のアカウントのパスキーの内容が、通常の操作では行われない方法で変更されました。',
 };
 
-const CUSTOMER_SELF_LINES: Record<PasskeyNotificationKind, string> = {
+const CUSTOMER_SELF_LINES: Record<KeyNoticeKind, string> = {
   passkey_added: 'ご自身で追加された場合は、このメールへのご対応は必要ありません。',
   passkey_removed: 'ご自身で削除された場合は、このメールへのご対応は必要ありません。',
   passkey_key_replaced: 'ご自身で変更された場合は、このメールへのご対応は必要ありません。',
 };
 
-const ADMIN_LEADS: Record<PasskeyNotificationKind, string> = {
+const ADMIN_LEADS: Record<KeyNoticeKind, string> = {
   passkey_added: 'のパスキーが追加されました。',
   passkey_removed: 'のパスキーが削除されました。',
   passkey_key_replaced: 'のパスキーの内容が変更されました。',
 };
 
 /**
+ * 店長への知らせ（やり直し・招待・降格）の種類か。これらは `admin` の宛先だけに文面を作る。
+ *
+ * @impl IMPL-AUTH-408
+ * @design DD-AUTH-087
+ */
+export function isStaffNoticeKind(kind: PasskeyNotificationKind): kind is StaffNoticeKind {
+  return kind === 'staff_redo_issued' || kind === 'staff_invited' || kind === 'staff_demoted';
+}
+
+/**
  * 知らせのメールの件名と本文を作る。日時は日本時間。`subjectEmail` は `admin` の文面にだけ入れる。
+ * 店長への知らせ（やり直し・招待・降格）は `admin` の宛先だけ（ほかは例外）。`名前:` の行は出さず、`操作した店長:`（`actorEmail`）を出す。
  *
  * @impl IMPL-AUTH-336
  * @design DD-AUTH-067
  */
 export function composePasskeyNotification(input: PasskeyNotificationComposeInput): { subject: string; text: string } {
-  const name = sanitizePasskeyNameForMail(input.friendlyName);
   const when = formatJst(input.occurredAt);
+
+  if (isStaffNoticeKind(input.kind)) {
+    if (input.audience !== 'admin') throw new Error('staff notice kinds are for admin recipients only');
+    // 操作した店長のアドレスは本文にだけ入れる（件名・監査には入れない）
+    return {
+      subject: STAFF_NOTICE_SUBJECTS[input.kind],
+      text: [
+        STAFF_NOTICE_LEADS[input.kind](input.subjectEmail),
+        '',
+        `日時: ${when}`,
+        ...(input.actorEmail ? [`操作した店長: ${input.actorEmail}`] : []),
+        '',
+        STAFF_NOTICE_CLOSING,
+      ].join('\n'),
+    };
+  }
+
+  const name = sanitizePasskeyNameForMail(input.friendlyName);
   const details = [`名前: ${name}`, `日時: ${when}`];
 
   if (input.audience === 'admin') {

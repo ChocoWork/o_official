@@ -2256,7 +2256,7 @@ flowchart LR
 | 上位 | FR-AUTH-047、SEC-AUTH-058、ADR-0473 |
 | 根拠 | 店長への知らせは「だれが操作したか」を本文に出すので、行に操作した店長のアドレスを持たせる。種類は鍵の足し引きの知らせと同じ送り箱に足し、取り出し・結果・再試行の仕組み（DATA-AUTH-019）をそのまま使う。判断は ADR-0473 |
 | 状態 | 推定 |
-| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_manager_notices.integration.test.ts`） |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_manager_notices.integration.test.ts`、`auth_passkey_notification_worker.integration.test.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-14-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 14） |
 
 - 列（移行 A）: `actor_email text`（NULL 可）を足す。`kind` の `CHECK` は `passkey_added`・`passkey_removed`・`passkey_key_replaced` に `staff_redo_issued`・`staff_invited`・`staff_demoted` を足した6つ

@@ -4,7 +4,7 @@
 
 ## 概要
 
-店長が店員を招待した・やり直した・降格した時に、送り箱へ知らせの行を積む私用の関数と、その宛先を決める DB の関数。送る処理（worker・文面）は Task 15 以降。
+店長が店員を招待した・やり直した・降格した時に、送り箱へ知らせの行を積む私用の関数と、その宛先を決める DB の関数。送る処理（worker・文面）は DD-AUTH-087（[知らせの worker](auth-passkey-notifications.md)）。
 
 ## 範囲と根拠
 
@@ -47,4 +47,4 @@ sequenceDiagram
 - `subject_is_staff` は `staff_invited` だけ偽。`notify_subject` は常に偽。`passkey_id`・`friendly_name` は NULL
 - `staff_invite_issue_core` は招待の行を入れた後に呼ぶ。後の失敗（`LAST_ADMIN_REQUIRED`・`SELF_ROLE_CHANGE_FORBIDDEN` ほか）は呼ぶ前に起きる。`staff_demote` は最後に呼ぶ
 - 既存の `passkey_removed` の行は、やり直しで消した鍵の分が `skipped`（`last_error_code` が `staff_invite_issue`）になる。この挙動は変えない
-- `claim_passkey_notification` の戻りの末尾に `actor_email` を足し、アプリの `claimPasskeyNotification` が `actorEmail`（文字列か null。ほかなら取り出しを失敗にする）に写す。送る処理（種類の追加・文面）は Task 15。宛先の関数は新しい3種類で `notify_subject` を無視し、本人（行の `user_id`）を除く
+- `claim_passkey_notification` の戻りの末尾に `actor_email` を足し、アプリの `claimPasskeyNotification` が `actorEmail`（文字列か null。ほかなら取り出しを失敗にする）に写す。送る処理（種類の追加・文面・知らない種類の行の `skip`）は DD-AUTH-087。宛先の関数は新しい3種類で `notify_subject` を無視し、本人（行の `user_id`）を除く

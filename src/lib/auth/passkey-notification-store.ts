@@ -1,12 +1,17 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import type { RpcResult } from '@/lib/auth/passkey-approval-rpc';
 
+/** 知らせの種類。前の3つは鍵の足し・消し・置き換え、後ろの3つは店長への知らせ（店員のやり直し・招待・降格）。 */
+export type PasskeyNotificationKind =
+  | 'passkey_added' | 'passkey_removed' | 'passkey_key_replaced'
+  | 'staff_redo_issued' | 'staff_invited' | 'staff_demoted';
+
 /** 取り出した知らせの1行。`leaseToken` は、完了・失敗・飛ばしの時に担当の印として戻す。 */
 export type ClaimedPasskeyNotification = {
   id: string;
   seq: number;
   userId: string;
-  kind: 'passkey_added' | 'passkey_removed' | 'passkey_key_replaced';
+  kind: PasskeyNotificationKind;
   passkeyId: string | null;
   friendlyName: string | null;
   subjectIsStaff: boolean;
@@ -19,13 +24,19 @@ export type ClaimedPasskeyNotification = {
   leaseToken: string;
 };
 
+/**
+ * アプリの知らない種類の行（DB だけ新しい版の時）。`id` と `leaseToken` だけ読み、worker が `skip`（`unknown_kind`）する。
+ * 取り出しを失敗にすると、担当の期限まで列が止まり、9回で `dead` になるため。
+ */
+export type UnknownKindClaim = { id: string; leaseToken: string; kind: null };
+
 export type PasskeyNotificationAudience = 'subject_customer' | 'subject_staff' | 'admin';
 
 export type PasskeyNotificationRecipient = { email: string; audience: PasskeyNotificationAudience };
 
 type RpcOutcome = { data: unknown; error: { code?: string } | null };
 
-const KINDS = ['passkey_added', 'passkey_removed', 'passkey_key_replaced'];
+const KINDS = ['passkey_added', 'passkey_removed', 'passkey_key_replaced', 'staff_redo_issued', 'staff_invited', 'staff_demoted'];
 const AUDIENCES = ['subject_customer', 'subject_staff', 'admin'];
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -53,15 +64,20 @@ async function callChecked<T>(
   return value === undefined ? { ok: false } : { ok: true, value };
 }
 
-function parseClaimed(data: unknown): ClaimedPasskeyNotification | null | undefined {
+function parseClaimed(data: unknown): ClaimedPasskeyNotification | UnknownKindClaim | null | undefined {
   if (!Array.isArray(data)) return undefined;
   if (data.length === 0) return null;
   const row = data[0];
   if (data.length !== 1 || !isRecord(row)) return undefined;
+  if (typeof row.kind === 'string' && !KINDS.includes(row.kind)) {
+    return typeof row.id === 'string' && typeof row.lease_token === 'string'
+      ? { id: row.id, leaseToken: row.lease_token, kind: null }
+      : undefined;
+  }
   const seq = typeof row.seq === 'string' ? Number(row.seq) : row.seq;
   if (
     typeof row.id !== 'string' || typeof seq !== 'number' || !Number.isSafeInteger(seq)
-    || typeof row.user_id !== 'string' || typeof row.kind !== 'string' || !KINDS.includes(row.kind)
+    || typeof row.user_id !== 'string' || typeof row.kind !== 'string'
     || !isNullableString(row.passkey_id) || !isNullableString(row.friendly_name)
     || typeof row.subject_is_staff !== 'boolean' || typeof row.notify_subject !== 'boolean'
     || !isNullableString(row.subject_email) || typeof row.occurred_at !== 'string'
@@ -74,7 +90,7 @@ function parseClaimed(data: unknown): ClaimedPasskeyNotification | null | undefi
     id: row.id,
     seq,
     userId: row.user_id,
-    kind: row.kind as ClaimedPasskeyNotification['kind'],
+    kind: row.kind as PasskeyNotificationKind,
     passkeyId: row.passkey_id,
     friendlyName: row.friendly_name,
     subjectIsStaff: row.subject_is_staff,
@@ -102,6 +118,16 @@ function parseRecipients(data: unknown): PasskeyNotificationRecipient[] | undefi
 const isBoolean = (data: unknown): boolean | undefined => (typeof data === 'boolean' ? data : undefined);
 
 /**
+ * アプリの知らない種類の行（`kind` が `null`）か。worker はこの行を送らず `skip`（`unknown_kind`）する。
+ *
+ * @impl IMPL-AUTH-409
+ * @design DD-AUTH-087
+ */
+export function isUnknownKindClaim(claim: ClaimedPasskeyNotification | UnknownKindClaim): claim is UnknownKindClaim {
+  return claim.kind === null;
+}
+
+/**
  * 送る順（`seq`）で一番古い、時刻が来た知らせを1行取り出して担当（`sending`）にする。無ければ `null`。
  *
  * @remarks 期限切れの担当は DB の関数が先に戻す。DB の誤り・形の違う戻りは `{ ok: false }`（呼び手は何もせず次の回へ）。
@@ -109,7 +135,7 @@ const isBoolean = (data: unknown): boolean | undefined => (typeof data === 'bool
  * @impl IMPL-AUTH-330
  * @design DD-AUTH-086
  */
-export function claimPasskeyNotification(leaseSeconds: number): Promise<RpcResult<ClaimedPasskeyNotification | null>> {
+export function claimPasskeyNotification(leaseSeconds: number): Promise<RpcResult<ClaimedPasskeyNotification | UnknownKindClaim | null>> {
   return callChecked('claim_passkey_notification', { _lease_seconds: leaseSeconds }, parseClaimed);
 }
 

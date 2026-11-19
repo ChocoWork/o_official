@@ -145,4 +145,65 @@ describeLocalDb('passkey notification worker with the real DB functions', (db) =
     expect((await rowOf(sentId)).status).toBe('sent');
     expect((await rowOf(orphan.rows[0].id)).status).toBe('skipped');
   });
+
+  test.each([
+    ['staff_redo_issued', '店員のパスキーのやり直しが出されました', true, 'のパスキーのやり直しが出されました。'],
+    ['staff_invited', '店員の招待が出されました', false, 'への店員の招待が出されました。'],
+    ['staff_demoted', '店員がお客さんに戻されました', true, 'が、店員からお客さんに戻されました。'],
+  ])(
+    'DATA-AUTH-022 a %s row is sent only to the active admins other than the target (the actor included), with the actor in the body, and ends as sent',
+    async (kind, subject, subjectIsStaff, leadTail) => {
+      const tag = randomUUID().slice(0, 8);
+      const targetEmail = `target-${tag}@example.com`;
+      const actorEmail = `actor-${tag}@example.com`;
+      const otherEmail = `other-${tag}@example.com`;
+      const supporterEmail = `supporter-${tag}@example.com`;
+      const targetId = await user(targetEmail);
+      // 対象が今も店長でも宛先に入らない（行の user_id は除かれる）。サポーターには出ない
+      await role(targetId, 'admin');
+      await role(await user(actorEmail), 'admin');
+      await role(await user(otherEmail), 'admin');
+      await role(await user(supporterEmail), 'supporter');
+      const inserted = await db().query(
+        `insert into private.passkey_notification_outbox (user_id, kind, subject_is_staff, notify_subject, subject_email, actor_email)
+         values ($1, $2, $3, false, $4, $5) returning id::text as id`,
+        [targetId, kind, subjectIsStaff, targetEmail, actorEmail],
+      );
+      const id = inserted.rows[0].id as string;
+
+      const send = jest.fn(async (_message: unknown) => ({ ok: true, providerMessageId: null }));
+      const result = await runPasskeyNotificationWorker({ deps: deps(send) });
+
+      expect(result).toMatchObject({ claimed: 1, sent: 1, retried: 0, skipped: 0, stopped: 'idle' });
+      const messages = send.mock.calls.map((call) => call[0] as { to: string; subject: string; text: string; idempotencyKey: string });
+      expect(messages.map((message) => message.to).sort()).toEqual([actorEmail, otherEmail].sort());
+      for (const message of messages) {
+        expect(message.subject).toBe(subject);
+        expect(message.subject).not.toContain('@');
+        expect(message.text).toContain(`${targetEmail} ${leadTail}`);
+        expect(message.text).toContain(`操作した店長: ${actorEmail}`);
+        expect(message.idempotencyKey.startsWith(`passkey-notification/${id}/`)).toBe(true);
+      }
+      expect((await rowOf(id)).status).toBe('sent');
+    },
+  );
+
+  test('DATA-AUTH-022 a staff-notice row whose only admin is the target has no recipient and is skipped', async () => {
+    const tag = randomUUID().slice(0, 8);
+    const targetEmail = `target-${tag}@example.com`;
+    const targetId = await user(targetEmail);
+    await role(targetId, 'admin');
+    const inserted = await db().query(
+      `insert into private.passkey_notification_outbox (user_id, kind, subject_is_staff, notify_subject, subject_email, actor_email)
+       values ($1, 'staff_demoted', true, false, $2, 'actor@example.com') returning id::text as id`,
+      [targetId, targetEmail],
+    );
+
+    const send = jest.fn(async (_message: unknown) => ({ ok: true, providerMessageId: null }));
+    const result = await runPasskeyNotificationWorker({ deps: deps(send) });
+
+    expect(send).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ claimed: 1, sent: 0, skipped: 1 });
+    expect((await rowOf(inserted.rows[0].id)).status).toBe('skipped');
+  });
 });

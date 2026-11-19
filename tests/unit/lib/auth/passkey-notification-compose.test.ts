@@ -1,12 +1,12 @@
 /**
  * DD-AUTH-067 パスキーの知らせのメールの文面（src/lib/auth/passkey-notification-compose.ts）の単体テスト。
  */
-import { composePasskeyNotification, sanitizePasskeyNameForMail } from '@/lib/auth/passkey-notification-compose';
+import { composePasskeyNotification, isStaffNoticeKind, sanitizePasskeyNameForMail } from '@/lib/auth/passkey-notification-compose';
 
 const AT = new Date('2026-11-17T15:05:00Z'); // 日本時間 2026年11月18日 0:05
 const WHEN = '2026年11月18日 0:05（日本時間）';
 const URL = 'https://example.com/contact';
-const base = { friendlyName: 'iPhone', occurredAt: AT, subjectEmail: 'staff@example.com', contactUrl: URL } as const;
+const base = { friendlyName: 'iPhone', occurredAt: AT, subjectEmail: 'staff@example.com', actorEmail: null, contactUrl: URL } as const;
 
 const customerBody = (lead: string, selfLine: string) => [
   'Le Fil des Heures をご利用いただき、ありがとうございます。',
@@ -132,5 +132,50 @@ describe('composePasskeyNotification', () => {
   it('DD-AUTH-067 店長の文面で本人のアドレスが無い（アカウントが消えた後）時は「店員の」で始める', () => {
     const { text } = composePasskeyNotification({ ...base, subjectEmail: null, kind: 'passkey_removed', audience: 'admin' });
     expect(text.split('\n')[0]).toBe('店員のパスキーが削除されました。');
+  });
+
+  describe('店長への知らせ（やり直し・招待・降格）', () => {
+    const staffBase = { ...base, actorEmail: 'boss@example.com', friendlyName: null, audience: 'admin' } as const;
+    const cases = [
+      ['staff_redo_issued', '店員のパスキーのやり直しが出されました', 'staff@example.com のパスキーのやり直しが出されました。', '店員のパスキーのやり直しが出されました。'],
+      ['staff_invited', '店員の招待が出されました', 'staff@example.com への店員の招待が出されました。', '店員の招待が出されました。'],
+      ['staff_demoted', '店員がお客さんに戻されました', 'staff@example.com が、店員からお客さんに戻されました。', '店員が、お客さんに戻されました。'],
+    ] as const;
+
+    it.each(cases)('DD-AUTH-087 %s の件名・本文は付録のとおり（日時と操作した店長を出し、名前の行は出さない）', (kind, subject, lead) => {
+      expect(composePasskeyNotification({ ...staffBase, kind })).toEqual({
+        subject,
+        text: [lead, '', `日時: ${WHEN}`, '操作した店長: boss@example.com', '', '心当たりがない場合は、店長の権限を確認してください。'].join('\n'),
+      });
+    });
+
+    it.each(cases)('DD-AUTH-087 %s は actorEmail が null でも作れ、操作した店長の行を出さない', (kind, _subject, _lead, noTarget) => {
+      const { text } = composePasskeyNotification({ ...staffBase, kind, actorEmail: null, subjectEmail: null });
+      expect(text).not.toContain('操作した店長');
+      expect(text.split('\n')[0]).toBe(noTarget);
+      expect(text).toContain(`日時: ${WHEN}`);
+    });
+
+    it.each(cases)('DD-AUTH-087 %s の件名に対象・操作した店長のアドレスを入れない', (kind) => {
+      const { subject } = composePasskeyNotification({ ...staffBase, kind });
+      expect(subject).not.toContain('@');
+    });
+
+    it.each(cases)('DD-AUTH-087 %s は admin 以外の宛先なら例外', (kind) => {
+      expect(() => composePasskeyNotification({ ...staffBase, kind, audience: 'subject_customer' })).toThrow();
+      expect(() => composePasskeyNotification({ ...staffBase, kind, audience: 'subject_staff' })).toThrow();
+    });
+
+    it('DD-AUTH-087 絵文字・感嘆符を使わない', () => {
+      for (const [kind] of cases) {
+        const { subject, text } = composePasskeyNotification({ ...staffBase, kind });
+        expect(`${subject}${text}`).not.toMatch(/[!！\p{Extended_Pictographic}]/u);
+      }
+    });
+  });
+
+  it('DD-AUTH-087 isStaffNoticeKind は店長への知らせの3種類だけ真', () => {
+    for (const kind of ['staff_redo_issued', 'staff_invited', 'staff_demoted'] as const) expect(isStaffNoticeKind(kind)).toBe(true);
+    for (const kind of ['passkey_added', 'passkey_removed', 'passkey_key_replaced'] as const) expect(isStaffNoticeKind(kind)).toBe(false);
   });
 });
