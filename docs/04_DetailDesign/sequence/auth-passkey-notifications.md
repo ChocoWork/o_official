@@ -10,7 +10,7 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-025、FR-AUTH-030、FR-AUTH-031、FR-AUTH-047、DATA-AUTH-019、SEC-AUTH-051、SEC-AUTH-058、THR-AUTH-050、THR-AUTH-057、DD-AUTH-066、DD-AUTH-067、DD-AUTH-087、ADR-0470、ADR-0473 |
+| 対応する ID | SR-AUTH-025、FR-AUTH-030、FR-AUTH-031、FR-AUTH-047、FR-AUTH-048、DATA-AUTH-019、SEC-AUTH-051、SEC-AUTH-058、THR-AUTH-050、THR-AUTH-057、DD-AUTH-066、DD-AUTH-067、DD-AUTH-087、DD-AUTH-088、ADR-0470、ADR-0473 |
 | 対象のコード | 移行 `supabase/migrations/20261118044338_passkey_notification_sending.sql`、`src/lib/auth/passkey-notification-store.ts`、`passkey-notification-compose.ts`、`passkey-notification-worker.ts`、`src/lib/stripe/webhook-worker.ts`、`src/app/api/cron/process-stripe-webhooks/route.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（6-3）、[段2の計画](../../superpowers/plans/2026-11-17-passkey-stage2-customers.md)、[パスキーのアプリの窓口](auth-passkey-server-endpoints.md) |
 | 調べた時点 | 2026-11-18（手元の DB で結合試験を流した） |
@@ -99,7 +99,7 @@ sequenceDiagram
 - 文面: テキストだけ。本人のアドレスは店長の文面だけ。お問い合わせの住所はお客さんの文面だけ。名前は改行を空白に替え、制御文字・表示の向きを変える文字を除き、64字で切る。日時は `Asia/Tokyo`。宛名・署名は付けない（文頭の一文で店の名前を出す。理由: アカウントの守りの知らせ〔パスワードの変更の知らせ〕と同じ形。確定案はオーナーの確かめ待ち）
 - 失敗の分け方: 送り手の失敗は `transient`（残りの宛先も試し、最後に `fail`）・`permanent`（その宛先だけ飛ばす）・`config`（注文のメールと同じ: その行を `fail`〔`_count_attempt` を偽にして回数を数えず、次の時刻は今＋900秒以上かつ共有の一時停止の次に試す時刻より後。DB が同じ取引で注文のメールと共有の送信の一時停止を書く〕にして、その回は `config` で止める）。`config` 以外の `fail` は9回目で DB が `dead` にする
 - 一時停止の間（ADR-0470）: worker は次に試す時刻を見ず（注文のメールの取り出しが、時刻が来た回に先へ進めてしまうため。毎分ではない）、`paused` の間は1回に1行だけ取り出す。間隔は DB が決める: 止まっている間の取り出し（`claim_passkey_notification`）: 設定の失敗の符号（`quota_*`・`config_*`）を `last_error_code` に持つ行が `retry_wait` か取り出し中（`sending`）にあれば、`retry_wait` で時刻が来たその行だけを返す（来ていなければ、取り出し中の行しか無い間も、何も返さない。ほかの行が時刻でも返さない）。そういう行がまだ無ければ、通常の行を1つだけ返す（最初の試し）。数えない失敗の次の時刻は「今＋大きい方（900秒、指定の秒数）と、共有の一時停止の次に試す時刻（1日の上限なら UTC 0時）」。これで、止まっている間の試しは約15分に1回（注文のメールと同じ間隔。1日の上限ならUTC 0時まで）。止まっていなければ通常どおり。送れて `complete` が通れば DB が共有の一時停止を解く。読めなければ通常どおり動く。1通も送れず全宛先が恒久の失敗の行は、`complete` でなく `skip`（`all_recipients_permanent`）
-- 予算: 既定は3秒・20行。呼び手が残り時間から決めた値を渡す。宛先を送る前にも予算を見る。越えたら、その行を `fail`（符号 `budget_exceeded`）にして止める。次の回で送る宛先は、Resend では同じ鍵なので2通目にならない（手元の送り手は鍵を使わないので、E2E では重なりうる）
+- 予算: 新しい行を取る上限は既定3秒・20行。呼び手が残り時間から決めた値を渡す。取った行の宛先の送りは DD-AUTH-088 の行ごとの期限まで。越えたら、その行を `fail`（符号 `budget_exceeded`）にして止める。次の回で送る宛先は、Resend では同じ鍵なので2通目にならない（手元の送り手は鍵を使わないので、E2E では重なりうる）
 - 定期処理: `runWebhookWorker({ requestUrl, passkeyNotifications: true })` の時だけ、配送の追跡の後・点検の前に呼ぶ。`webhook/stripe` の `after()` は呼ばない。投げても点検は続ける。注文のメールの worker と追跡の worker の挙動・予算は変えない
 - 予算を見るのは送る前だけなので、送り1回の打ち切り（最大8秒）の分だけ越えうる。知らせの worker の心拍と `dead` の点検は段3
 - 動かさない環境: 注文のメールと同じ `orderEmailWorkerDisabledReason`（Vercel の preview など、DB が手元でない開発）
@@ -136,11 +136,28 @@ sequenceDiagram
 
 - 追跡の単位: `passkey-notification-compose.ts` の `isStaffNoticeKind` が IMPL-AUTH-408、`passkey-notification-store.ts` の `isUnknownKindClaim` が IMPL-AUTH-409（どちらも設計は DD-AUTH-087）。既存の `claimPasskeyNotification`（IMPL-AUTH-330。設計は DD-AUTH-086）・`composePasskeyNotification`（IMPL-AUTH-336）・`runPasskeyNotificationWorker`（IMPL-AUTH-338。設計は DD-AUTH-067）は `@design` を変えず、この節の振る舞い（新しい種類・`unknown_kind` の `skip`）も持つ。IMPL-AUTH-410・411 は使わない
 - 種類: `PasskeyNotificationKind` は `passkey_added`・`passkey_removed`・`passkey_key_replaced` に `staff_redo_issued`・`staff_invited`・`staff_demoted` を足した6つ。`ClaimedPasskeyNotification` の `actorEmail` は DD-AUTH-086 が写した値
-- 知らない種類: `parseClaimed` は、`kind` が文字列で6つのどれでもなく、`id` と `lease_token` が文字列なら `{ id, leaseToken, kind: null }`（型 `UnknownKindClaim`）を返す。どちらかが無ければ従来どおり `{ ok: false }`。worker は `kind` が `null` の行を数えて（`claimed`・`skipped`）、`skip(id, leaseToken, 'unknown_kind')` し、宛先も文面も触らない。`skip` が例外を投げても握る（行は担当の期限の後で取り直される）
+- 知らない種類: `parseClaimed` は、`kind` が文字列で6つのどれでもなく、`id` と `lease_token` が文字列なら `{ id, leaseToken, kind: null }`（型 `UnknownKindClaim`）を返す。どちらかが無ければ従来どおり `{ ok: false }`。worker は `kind` が `null` の行を数えて（`claimed`・`skipped`）、`skip(id, leaseToken, 'unknown_kind')` し、宛先も文面も触らない。`skip` が失敗の戻り・例外を返しても握り、`skipped` に数えず、行 ID と理由（`unknown_kind`）だけを警告に出す（行は担当の期限の後で取り直される）
 - 文面（`composePasskeyNotification`。`actorEmail: string | null` を入力に足した）: 店長への知らせの3種類は `admin` の宛先だけ。ほかの宛先は例外を投げ、worker が `compose_error` で行を `fail` にする。件名は「店員のパスキーのやり直しが出されました」・「店員の招待が出されました」・「店員がお客さんに戻されました」。本文は1行目（対象のアドレスがあれば `{対象} のパスキーのやり直しが出されました。`・`{対象} への店員の招待が出されました。`・`{対象} が、店員からお客さんに戻されました。`。対象のアドレスが無い時は「店員の…」で始める）、空行、`日時: …（日本時間）`、`操作した店長: {actorEmail}`（`actorEmail` が `null` なら出さない）、空行、「心当たりがない場合は、店長の権限を確認してください。」。`名前:` の行は出さない。本人のアドレス・操作した店長のアドレスは本文にだけ入れる
 - 送り方: 宛先は DD-AUTH-086 の `passkey_notification_recipients`（本人を除く有効な店長全員。操作した店長は含む）。宛先ごとに1通、重複防止の鍵（行 ID と宛先のハッシュ）は古い3種類と同じ。恒久・一時・設定の失敗の分け方、予算、9回目の `dead` も同じ（DD-AUTH-067）
 - 手元の送り手は重複防止の鍵を見ないので、予算越えの再試行で同じ店長に2通届きうる。E2E は「1通以上」で確かめる
 - テスト観点: 3種類を `parseClaimed` が通す・知らない種類を `kind: null` で返す・id か担当の印が無ければ失敗、3種類の件名・本文の全文・`actorEmail` が `null` の時・対象が無い時・`admin` 以外の宛先の例外・件名にアドレスが入らない・絵文字と感嘆符が無い、worker が `unknown_kind` で `skip` して次の行へ進む・`skip` の例外でも止まらない・`actorEmail` を文面へ渡す・`admin` 以外が混じると何も送らず `compose_error`、DB 結合で宛先（本人を除く・操作した店長を含む・サポーターを含まない）と宛先なしの `skipped`
+
+### DD-AUTH-088 宛先が多い行の取りこぼしを、行ごとの期限で防ぐ
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-058 |
+| 根拠 | 実行全体の予算（3秒）を宛先ごとに見ると、宛先が6人以上の行で後ろの宛先が送られない。新しい行を取る判定にだけ実行全体の予算を使い、取った行は行ごとの期限（行を取った時刻＋`rowBudgetMs`。既定20秒）で宛先を送る。遅く取った行が毎分の入口（60秒）の余裕を食わないよう、呼び手が絶対の上限 `hardDeadlineMs` を渡し、行の期限はその小さい方にする |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-notification-worker.test.ts`・`tests/unit/lib/stripe/webhook-worker.test.ts`）、E2E（`e2e/FR-LOGIN-062`） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-16-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 16） |
+
+- 追跡の単位: `PASSKEY_NOTIFICATION_ROW_BUDGET_MS` が IMPL-AUTH-412（設計は DD-AUTH-088）。`runPasskeyNotificationWorker`（IMPL-AUTH-338）は `@design` を変えず、この節の振る舞いも持つ
+- 入力: `options.rowBudgetMs`（既定20秒）、`options.hardDeadlineMs`（絶対の時刻。既定は無し）。`webhook-worker.ts` は `startedAt + 45_000` を渡す（60秒の入口に15秒の余裕）
+- 期限: 行を取った直後の時刻を `rowStartedAt` として、`min(rowStartedAt + rowBudgetMs, hardDeadlineMs)` を `deliverRow` に渡す。実行全体の `budgetMs`（3秒）は次の行を取る前の判定だけに使う
+- 影響: 1行の延長の分、同じ定期処理の中の点検（`runOpsChecks`）が最大約20秒遅れうる。担当の期限（300秒）より十分小さい
+- 重複防止: 鍵は行 ID と宛先のハッシュで変わらないので、期限で止まった行の再試行でも Resend は同じ宛先に2通目を出さない
+- テスト観点: 宛先6人・1通1秒の行が1回で全員に送られ次の行を取らない、1通10秒で宛先3人の行は2通目の後に `budget_exceeded`、鍵が再試行で同じ、遅く取った行が `hardDeadlineMs` で止まる、`rowBudgetMs` の効き、`webhook-worker` が `startedAt + 45_000` を渡す
 
 ## 未確認事項
 

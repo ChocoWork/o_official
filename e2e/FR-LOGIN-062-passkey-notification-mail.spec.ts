@@ -1,6 +1,6 @@
 /**
  * FR-LOGIN-062 パスキーの足し・消しの知らせのメール: お客さん本人・店員本人・ほかの店長に、それぞれの文面で届く
- * 対応: FR-AUTH-031-AC-01〜03（設計: DD-AUTH-067。ADR-0470）
+ * 対応: FR-AUTH-031-AC-01〜03・FR-AUTH-048-AC-01（設計: DD-AUTH-067・DD-AUTH-088。ADR-0470）
  *
  * 知らせの送り箱（private.passkey_notification_outbox）は全体で1つなので、毎分の定期処理（POST /api/cron/process-stripe-webhooks。
  * `e2e/order-email-test-utils.ts` と同じ CRON_SECRET の呼び方）が他の試験の行まで取る。だから serial の `isolated-global` で流し、
@@ -233,6 +233,38 @@ for (const viewport of viewports) {
       await runWorkerOnce(request);
       expect(await mailCount(request, staff.email, ADDED_SUBJECT)).toBe(1);
       expect(await mailCount(request, otherAdmin.email, ADMIN_ADDED_SUBJECT)).toBe(1);
+    });
+
+    test(`FR-AUTH-048-AC-01 ${viewport.name}: 宛先の店長が6人いても、1回の定期処理で全員に知らせが届く（行ごとの期限）`, async ({ request }) => {
+      test.setTimeout(240_000);
+      await clearPendingNotifications();
+      const staff = await withLocalDb((db) => provisionStaff(db, { role: 'admin', approvedPasskeys: 2 }));
+      const admins: Awaited<ReturnType<typeof provisionStaff>>[] = [];
+      for (let i = 0; i < 6; i += 1) admins.push(await withLocalDb((db) => provisionStaff(db, { role: 'admin', approvedPasskeys: 2 })));
+      mine = [staff.userId, ...admins.map((admin) => admin.userId)];
+      await withLocalDb(async (db) => {
+        const result = await db.query(
+          `update public.user_roles ur set active = false
+             from public.roles r, auth.users u
+            where r.id = ur.role_id and r.code = 'admin' and ur.active and u.id = ur.user_id
+              and u.email like '%@example.com' and ur.user_id <> all($1::uuid[])
+        returning ur.user_id, ur.role_id`,
+          [mine],
+        );
+        for (const row of result.rows as Array<{ user_id: string; role_id: number }>) deactivated.push({ userId: row.user_id, roleId: Number(row.role_id) });
+      });
+
+      await addUnapprovedPasskey({ email: staff.email, authenticator: staff.authenticators[0], keepNotifications: true });
+      await runWorkerUntil(
+        request,
+        async () => {
+          for (const admin of admins) if ((await mailCount(request, admin.email, ADMIN_ADDED_SUBJECT)) < 1) return false;
+          return true;
+        },
+        '6人の店長全員に知らせが届かない',
+      );
+      for (const admin of admins) expect(await mailCount(request, admin.email, ADMIN_ADDED_SUBJECT)).toBeGreaterThanOrEqual(1);
+      expect(await outboxStatus(staff.userId, 'passkey_added')).toEqual(['sent']);
     });
 
     test(`FR-AUTH-031-AC-03 ${viewport.name}: メールは手元の Mailpit だけへ送られる（外へ出る設定ではない）`, async () => {

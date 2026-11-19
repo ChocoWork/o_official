@@ -6144,6 +6144,31 @@ A が `POST /api/admin/staff/invites` で新しいアドレス X を招待し、
 
 A が `POST /api/admin/staff/{id}/demote` で店員 X を降格し、worker が動くと、B のメールに件名「店員がお客さんに戻されました」が1通以上届く。本文に `X のアドレス が、店員からお客さんに戻されました。`・日時の行・`操作した店長: A のアドレス`・最後の1文がある。B に届いた後で、X には店長への知らせの3つの件名のどれも届かない。
 
+### FR-AUTH-048 宛先が多い知らせの行を、worker の予算で取りこぼさず、1行ごとの期限で全員に送る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-029 |
+| 根拠 | 知らせの worker の予算（3秒）を宛先ごとに見ていたため、宛先が6人以上の行（店長への知らせ）は後ろの宛先が送られず、再試行も後ろから漏れうる。新しい行を取る上限は3秒のままにし、取った行は行ごとの期限（既定20秒。`PASSKEY_NOTIFICATION_ROW_BUDGET_MS`）まで宛先を送る。絶対の上限（`hardDeadlineMs`）は呼び手（毎分の定期処理）が開始から45秒で渡し、60秒の入口に15秒の余裕を残す。守りは SEC-AUTH-058、処理は DD-AUTH-088 |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-notification-worker.test.ts`・`tests/unit/lib/stripe/webhook-worker.test.ts`）、E2E（`e2e/FR-LOGIN-062`、既存の知らせの流れが変わらないこと） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-16-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 16） |
+| 優先度 | MUST |
+
+規則: (1) 3秒の予算を越えても、取った行の宛先は行の期限まで全員に送り、送れたら `complete` する。(2) 3秒を過ぎたら次の行は取らない（`stopped: 'budget'`）。(3) 行の期限は「行を取った時刻＋20秒」と絶対の上限の小さい方。越えたら残りを送らず `fail`（`budget_exceeded`）にする。(4) 再試行の重複防止の鍵は1回目と同じ。(5) 知らない種類の行を `skip` できなかった時（失敗の戻り・例外）は `skipped` に数えず、行 ID と理由だけを警告に出す。
+
+### FR-AUTH-048-AC-01 宛先が6人以上の知らせの行が、3秒の予算を越えても全員に送られ、予算を越える時は次の行を取らずに行が終わる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-048 |
+| 根拠 | DD-AUTH-088、SEC-AUTH-058 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-062-passkey-notification-mail.spec.ts` の宛先の店長が6人の試験。1回の定期処理で全員に届くこと。390・768・1280 の3幅）。宛先6人・予算越えの細かい動きは単体テスト（`tests/unit/lib/auth/passkey-notification-worker.test.ts`・`tests/unit/lib/stripe/webhook-worker.test.ts`。DD-AUTH-088） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-16-brief.md` |
+
+宛先6人・1通1秒の行は、予算3秒でも `send` が6回呼ばれて `complete` され、次の行は取らない（`claimed` は1、`stopped` は `budget`）。1通10秒で宛先3人の行は、行の期限（20秒）で止まり `fail`（`budget_exceeded`）になり、後ろの宛先へは送らない。再試行の重複防止の鍵は1回目と同じ。絶対の上限（`hardDeadlineMs`）が行の期限より手前なら、そこで止まる。毎分の定期処理は開始から45秒の上限を渡す。
+
 ### FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel`
 
 | 属性 | 値 |

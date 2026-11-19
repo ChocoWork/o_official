@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto';
 import { checkSiteUrlForEmail } from '@/lib/site-url-guard';
 import {
   passkeyNotificationIdempotencyKey,
+  passkeyNotificationRowDeadline,
   runPasskeyNotificationWorker,
   type PasskeyNotificationWorkerDeps,
 } from '@/lib/auth/passkey-notification-worker';
@@ -44,7 +45,7 @@ function makeDeps(rows: ClaimedPasskeyNotification[], recipients: Array<{ email:
   };
 }
 
-const run = (deps: Mocks, options: { budgetMs?: number; maxRows?: number } = {}) =>
+const run = (deps: Mocks, options: { budgetMs?: number; rowBudgetMs?: number; hardDeadlineMs?: number; maxRows?: number } = {}) =>
   runPasskeyNotificationWorker({ ...options, deps: deps as unknown as Partial<PasskeyNotificationWorkerDeps> });
 
 const TRANSIENT = { ok: false, failure: { category: 'transient', code: 'rate_limited', retryAfterSeconds: 120 } };
@@ -217,7 +218,7 @@ describe('runPasskeyNotificationWorker', () => {
       t = 5000;
       return { ok: true, providerMessageId: null };
     });
-    const result = await run(deps, { budgetMs: 3000 });
+    const result = await run(deps, { budgetMs: 3000, rowBudgetMs: 3000 });
     expect(deps.send).toHaveBeenCalledTimes(1);
     expect(deps.fail).toHaveBeenCalledWith('row-1', 'tok-1', 'budget_exceeded', 0);
     expect(deps.complete).not.toHaveBeenCalled();
@@ -313,7 +314,7 @@ describe('runPasskeyNotificationWorker', () => {
       t = 5000;
       return TRANSIENT;
     });
-    await run(deps, { budgetMs: 3000 });
+    await run(deps, { budgetMs: 3000, rowBudgetMs: 3000 });
     expect(deps.send).toHaveBeenCalledTimes(1);
     expect(deps.fail).toHaveBeenCalledWith('row-1', 'tok-1', 'rate_limited', 120);
   });
@@ -381,7 +382,92 @@ describe('runPasskeyNotificationWorker', () => {
     const deps = makeDeps([], []);
     deps.claim.mockResolvedValueOnce({ ok: true, value: { id: 'r1', leaseToken: 't', kind: null } }).mockResolvedValue({ ok: true, value: null });
     deps.skip.mockRejectedValue(new Error('db down'));
-    await expect(run(deps)).resolves.toMatchObject({ claimed: 1, skipped: 1, stopped: 'idle' });
+    await expect(run(deps)).resolves.toMatchObject({ claimed: 1, skipped: 0, stopped: 'idle' });
+    expect(warn).toHaveBeenCalledWith('[passkey-notification-worker] skip failed', { id: 'r1', reason: 'unknown_kind' });
+  });
+
+  it('DD-AUTH-087 知らない種類の skip が ok:false でも skipped に数えず、id と理由だけを警告に出す', async () => {
+    const deps = makeDeps([], []);
+    deps.claim.mockResolvedValueOnce({ ok: true, value: { id: 'r1', leaseToken: 't', kind: null } }).mockResolvedValue({ ok: true, value: null });
+    deps.skip.mockResolvedValue({ ok: false });
+    await expect(run(deps)).resolves.toMatchObject({ claimed: 1, skipped: 0 });
+    expect(warn).toHaveBeenCalledWith('[passkey-notification-worker] skip failed', { id: 'r1', reason: 'unknown_kind' });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('"t"');
+  });
+
+  it('DD-AUTH-087 知らない種類の skip が成功した時は警告を出さず skipped に数える', async () => {
+    const deps = makeDeps([], []);
+    deps.claim.mockResolvedValueOnce({ ok: true, value: { id: 'r1', leaseToken: 't', kind: null } }).mockResolvedValue({ ok: true, value: null });
+    await expect(run(deps)).resolves.toMatchObject({ claimed: 1, skipped: 1 });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  describe('1行ごとの期限', () => {
+    const six = Array.from({ length: 6 }, (_, i) => ({ email: `r${i}@example.com`, audience: 'admin' as const }));
+    const clock = (deps: Mocks, perSendMs: number) => {
+      let t = 0;
+      deps.now.mockImplementation(() => t);
+      deps.send.mockImplementation(async () => {
+        t += perSendMs;
+        return { ok: true, providerMessageId: null };
+      });
+    };
+
+    it('DD-AUTH-088 宛先6人・1通1秒の行は、3秒の予算を越えても全員に送って sent。次の行は取らない', async () => {
+      const deps = makeDeps([row({ id: 'r1' }), row({ id: 'r2' })], six);
+      clock(deps, 1000);
+      const result = await run(deps, { budgetMs: 3000 });
+      expect(deps.send).toHaveBeenCalledTimes(6);
+      expect(deps.complete).toHaveBeenCalledWith('r1', 'tok-1');
+      expect(deps.claim).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ claimed: 1, sent: 1, stopped: 'budget' });
+    });
+
+    it('DD-AUTH-088 1通10秒で宛先3人（20秒を越える）の行は budget_exceeded で retried、後ろの宛先へは送らない', async () => {
+      const deps = makeDeps([row()], six.slice(0, 3));
+      clock(deps, 10_000);
+      const result = await run(deps, { budgetMs: 3000 });
+      expect(deps.send).toHaveBeenCalledTimes(2);
+      expect(deps.fail).toHaveBeenCalledWith('row-1', 'tok-1', 'budget_exceeded', 0);
+      expect(deps.complete).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ retried: 1, sent: 0 });
+    });
+
+    it('DD-AUTH-088 再試行でも宛先ごとの冪等の鍵は1回目と同じ', async () => {
+      const first = makeDeps([row()], six.slice(0, 3));
+      clock(first, 10_000);
+      await run(first, { budgetMs: 3000 });
+      const second = makeDeps([row({ attempts: 2 })], six.slice(0, 3));
+      await run(second, { budgetMs: 3000 });
+      const keysFirst = first.send.mock.calls.map(([m]) => m.idempotencyKey);
+      const keysSecond = second.send.mock.calls.map(([m]) => m.idempotencyKey);
+      expect(keysSecond.slice(0, keysFirst.length)).toEqual(keysFirst);
+      expect(keysFirst[0]).toBe(passkeyNotificationIdempotencyKey('row-1', 'r0@example.com'));
+    });
+
+    it('DD-AUTH-088 遅く取った行は、行の期限より手前の hardDeadlineMs で止まり retried（budget_exceeded）', async () => {
+      const deps = makeDeps([row()], six);
+      clock(deps, 1000);
+      // 取った時刻 0、行の期限 20000、絶対の期限 2500 → 3通目の後で止まる
+      const result = await run(deps, { budgetMs: 3000, hardDeadlineMs: 2500 });
+      expect(deps.send).toHaveBeenCalledTimes(3);
+      expect(deps.fail).toHaveBeenCalledWith('row-1', 'tok-1', 'budget_exceeded', 0);
+      expect(result).toMatchObject({ retried: 1 });
+    });
+
+    it('DD-AUTH-088 行の期限は、取った時刻＋行の予算と絶対の上限の小さい方', () => {
+      expect(passkeyNotificationRowDeadline(1000, 20_000, 45_000)).toBe(21_000);
+      expect(passkeyNotificationRowDeadline(40_000, 20_000, 45_000)).toBe(45_000);
+      expect(passkeyNotificationRowDeadline(0, 20_000, Number.POSITIVE_INFINITY)).toBe(20_000);
+    });
+
+    it('DD-AUTH-088 rowBudgetMs を小さくすると、その分で行が止まる', async () => {
+      const deps = makeDeps([row()], six);
+      clock(deps, 1000);
+      const result = await run(deps, { budgetMs: 3000, rowBudgetMs: 2000 });
+      expect(deps.send).toHaveBeenCalledTimes(2);
+      expect(result).toMatchObject({ retried: 1 });
+    });
   });
 
   it('DD-AUTH-087 店長への知らせの行は actorEmail を文面へ渡し、admin の宛先ごとに1通ずつ送る', async () => {

@@ -29,6 +29,10 @@ import {
  */
 export const PASSKEY_NOTIFICATION_BUDGET_MS = 3_000;
 export const PASSKEY_NOTIFICATION_MAX_ROWS = 20;
+/**
+ * 取った行の宛先を送り切るための、1行ごとの期限（新しい行を取る上限の `budgetMs` とは別。絶対の上限 `hardDeadlineMs` は越えない）。
+ */
+export const PASSKEY_NOTIFICATION_ROW_BUDGET_MS = 20_000;
 export const PASSKEY_NOTIFICATION_LEASE_SECONDS = 300;
 /** DB が `dead` にする試行の回数（`fail_passkey_notification` と同じ） */
 const MAX_ATTEMPTS = 9;
@@ -96,6 +100,16 @@ const realDeps: PasskeyNotificationWorkerDeps = {
 export function passkeyNotificationIdempotencyKey(id: string, email: string): string {
   const digest = createHash('sha256').update(email.trim().toLowerCase()).digest('hex').slice(0, 16);
   return `passkey-notification/${id}/${digest}`;
+}
+
+/**
+ * 取った行の宛先を送れる最後の時刻。行を取った時刻＋行の予算と、絶対の上限の小さい方。
+ *
+ * @impl IMPL-AUTH-412
+ * @design DD-AUTH-088
+ */
+export function passkeyNotificationRowDeadline(rowStartedAt: number, rowBudgetMs: number, hardDeadlineMs: number): number {
+  return Math.min(rowStartedAt + rowBudgetMs, hardDeadlineMs);
 }
 
 function safeCode(code: string): string {
@@ -185,10 +199,12 @@ async function deliverRow(
  * @design DD-AUTH-067
  */
 export async function runPasskeyNotificationWorker(
-  options: { budgetMs?: number; maxRows?: number; deps?: Partial<PasskeyNotificationWorkerDeps> } = {},
+  options: { budgetMs?: number; rowBudgetMs?: number; hardDeadlineMs?: number; maxRows?: number; deps?: Partial<PasskeyNotificationWorkerDeps> } = {},
 ): Promise<PasskeyNotificationWorkerResult> {
   const deps: PasskeyNotificationWorkerDeps = { ...realDeps, ...options.deps };
   const budgetMs = options.budgetMs ?? PASSKEY_NOTIFICATION_BUDGET_MS;
+  const rowBudgetMs = options.rowBudgetMs ?? PASSKEY_NOTIFICATION_ROW_BUDGET_MS;
+  const hardDeadlineMs = options.hardDeadlineMs ?? Number.POSITIVE_INFINITY;
   const maxRows = options.maxRows ?? PASSKEY_NOTIFICATION_MAX_ROWS;
   const result: PasskeyNotificationWorkerResult = { claimed: 0, sent: 0, retried: 0, dead: 0, skipped: 0, stopped: 'budget' };
 
@@ -215,14 +231,18 @@ export async function runPasskeyNotificationWorker(
 
     if (isUnknownKindClaim(claimed.value)) {
       // アプリの知らない種類（DB だけ新しい版）: 取り出しを失敗にせず、行を飛ばして列を進める
-      await deps.skip(claimed.value.id, claimed.value.leaseToken, 'unknown_kind').catch(() => undefined);
-      result.skipped += 1;
+      const skipped = await deps.skip(claimed.value.id, claimed.value.leaseToken, 'unknown_kind').catch(() => ({ ok: false as const }));
+      if (skipped.ok) result.skipped += 1;
+      // 飛ばせなくても、担当の期限が切れた後に取り直される
+      else console.warn('[passkey-notification-worker] skip failed', { id: claimed.value.id, reason: 'unknown_kind' });
       continue;
     }
 
     let outcome: RowOutcome;
     try {
-      outcome = await deliverRow(deps, claimed.value, contactUrl, deadline);
+      // 行ごとの期限: 取った時刻から rowBudgetMs。ただし絶対の上限（hardDeadlineMs）は越えない
+      const rowDeadline = passkeyNotificationRowDeadline(deps.now(), rowBudgetMs, hardDeadlineMs);
+      outcome = await deliverRow(deps, claimed.value, contactUrl, rowDeadline);
     } catch {
       // 記録できなくても、担当の期限が切れた後に取り直される
       console.error('[passkey-notification-worker] row failed unexpectedly', claimed.value.id);

@@ -106,7 +106,7 @@ export async function runWebhookWorker(options: { requestUrl: string; budgetMs?:
     const passkeyBudget = Math.min(3_000, 60_000 - (Date.now() - startedAt) - 15_000);
     if (passkeyBudget >= 1_000) {
       try {
-        passkeyNotifications = await runPasskeyNotificationWorker({ budgetMs: passkeyBudget });
+        passkeyNotifications = await runPasskeyNotificationWorker({ budgetMs: passkeyBudget, hardDeadlineMs: startedAt + 45_000 });
       } catch (error) {
         console.error('[stripe-webhook-worker] Passkey notification worker failed', error instanceof Error ? error.name : 'UnknownError');
       }
