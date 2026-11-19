@@ -6164,7 +6164,7 @@ A が `POST /api/admin/staff/{id}/demote` で店員 X を降格し、worker が�
 | 上位 | FR-AUTH-048 |
 | 根拠 | DD-AUTH-088、SEC-AUTH-058 |
 | 状態 | 推定 |
-| 確かめ方 | E2E（`e2e/FR-LOGIN-062-passkey-notification-mail.spec.ts` の宛先の店長が6人の試験。1回の定期処理で全員に届くこと。390・768・1280 の3幅）。宛先6人・予算越えの細かい動きは単体テスト（`tests/unit/lib/auth/passkey-notification-worker.test.ts`・`tests/unit/lib/stripe/webhook-worker.test.ts`。DD-AUTH-088） |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-062-passkey-notification-mail.spec.ts` の宛先の店長が6人の試験。全員に届くことの煙の確かめ。時間の証明ではない。390・768・1280 の3幅）。時間（行ごとの期限・絶対の上限）の証明は単体テスト（DD-AUTH-088）が持つ。宛先6人・予算越えの細かい動きは単体テスト（`tests/unit/lib/auth/passkey-notification-worker.test.ts`・`tests/unit/lib/stripe/webhook-worker.test.ts`。DD-AUTH-088） |
 | 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-16-brief.md` |
 
 宛先6人・1通1秒の行は、予算3秒でも `send` が6回呼ばれて `complete` され、次の行は取らない（`claimed` は1、`stopped` は `budget`）。1通10秒で宛先3人の行は、行の期限（20秒）で止まり `fail`（`budget_exceeded`）になり、後ろの宛先へは送らない。再試行の重複防止の鍵は1回目と同じ。絶対の上限（`hardDeadlineMs`）が行の期限より手前なら、そこで止まる。毎分の定期処理は開始から45秒の上限を渡す。

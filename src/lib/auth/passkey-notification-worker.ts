@@ -222,7 +222,8 @@ export async function runPasskeyNotificationWorker(
   // 共有の一時停止の間は、注文のメールの試しの時刻に関わらず、1回に1行だけ試す（間は、失敗した行の次の時刻が決める）。送れれば DB が一時停止を解く
   const rowLimit = (await deps.sendPaused()) ? Math.min(maxRows, 1) : maxRows;
 
-  const deadline = deps.now() + budgetMs;
+  // 絶対の上限を過ぎる行は取らない（取っても送れず、試行の回数だけ減る）
+  const deadline = Math.min(deps.now() + budgetMs, hardDeadlineMs);
   while (result.claimed < rowLimit && deps.now() < deadline) {
     const claimed = await deps.claim(PASSKEY_NOTIFICATION_LEASE_SECONDS).catch(() => ({ ok: false as const }));
     if (!claimed.ok) return { ...result, stopped: 'claim_error' };
@@ -232,9 +233,14 @@ export async function runPasskeyNotificationWorker(
     if (isUnknownKindClaim(claimed.value)) {
       // アプリの知らない種類（DB だけ新しい版）: 取り出しを失敗にせず、行を飛ばして列を進める
       const skipped = await deps.skip(claimed.value.id, claimed.value.leaseToken, 'unknown_kind').catch(() => ({ ok: false as const }));
-      if (skipped.ok) result.skipped += 1;
-      // 飛ばせなくても、担当の期限が切れた後に取り直される
-      else console.warn('[passkey-notification-worker] skip failed', { id: claimed.value.id, reason: 'unknown_kind' });
+      if (skipped.ok && skipped.value === true) {
+        result.skipped += 1;
+        // 版のずれの跡を残す（行は終わりの状態になり、ほかに印が無い）
+        console.warn('[passkey-notification-worker] unknown kind skipped', { id: claimed.value.id, reason: 'unknown_kind' });
+      } else {
+        // 飛ばせない（失敗・担当を失った）時も、担当の期限が切れた後に取り直される
+        console.warn('[passkey-notification-worker] skip failed', { id: claimed.value.id, reason: 'unknown_kind' });
+      }
       continue;
     }
 

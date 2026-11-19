@@ -395,11 +395,22 @@ describe('runPasskeyNotificationWorker', () => {
     expect(JSON.stringify(warn.mock.calls)).not.toContain('"t"');
   });
 
-  it('DD-AUTH-087 知らない種類の skip が成功した時は警告を出さず skipped に数える', async () => {
+  it('DD-AUTH-087 知らない種類の skip が成功した時は skipped に数え、id と理由だけを警告に出す（アドレス・種類の値は出さない）', async () => {
+    const deps = makeDeps([], []);
+    deps.claim.mockResolvedValueOnce({ ok: true, value: { id: 'r1', leaseToken: 'tok-secret', kind: null, subjectEmail: 'leak@example.com' } }).mockResolvedValue({ ok: true, value: null });
+    await expect(run(deps)).resolves.toMatchObject({ claimed: 1, skipped: 1 });
+    expect(warn).toHaveBeenCalledWith('[passkey-notification-worker] unknown kind skipped', { id: 'r1', reason: 'unknown_kind' });
+    const logged = JSON.stringify(warn.mock.calls);
+    expect(logged).not.toContain('leak@example.com');
+    expect(logged).not.toContain('tok-secret');
+  });
+
+  it('DD-AUTH-087 知らない種類の skip が担当を失った（ok:true・値が偽）時は skipped に数えず、skip failed を警告に出す', async () => {
     const deps = makeDeps([], []);
     deps.claim.mockResolvedValueOnce({ ok: true, value: { id: 'r1', leaseToken: 't', kind: null } }).mockResolvedValue({ ok: true, value: null });
-    await expect(run(deps)).resolves.toMatchObject({ claimed: 1, skipped: 1 });
-    expect(warn).not.toHaveBeenCalled();
+    deps.skip.mockResolvedValue({ ok: true, value: false });
+    await expect(run(deps)).resolves.toMatchObject({ claimed: 1, skipped: 0 });
+    expect(warn).toHaveBeenCalledWith('[passkey-notification-worker] skip failed', { id: 'r1', reason: 'unknown_kind' });
   });
 
   describe('1行ごとの期限', () => {
@@ -445,14 +456,39 @@ describe('runPasskeyNotificationWorker', () => {
       expect(keysFirst[0]).toBe(passkeyNotificationIdempotencyKey('row-1', 'r0@example.com'));
     });
 
-    it('DD-AUTH-088 遅く取った行は、行の期限より手前の hardDeadlineMs で止まり retried（budget_exceeded）', async () => {
-      const deps = makeDeps([row()], six);
+    // 行 A は2人（1秒ずつ）で t=2000 に終わり、行 B を t=2000 に取る（実行全体の3秒の窓の中）
+    const twoRows = (hardDeadlineMs: number | undefined, rowBudgetMs: number | undefined) => {
+      const deps = makeDeps([row({ id: 'rA' }), row({ id: 'rB' })], []);
+      deps.recipients.mockImplementation(async (id: string) => ({ ok: true, value: id === 'rA' ? six.slice(0, 2) : six }));
       clock(deps, 1000);
-      // 取った時刻 0、行の期限 20000、絶対の期限 2500 → 3通目の後で止まる
-      const result = await run(deps, { budgetMs: 3000, hardDeadlineMs: 2500 });
-      expect(deps.send).toHaveBeenCalledTimes(3);
-      expect(deps.fail).toHaveBeenCalledWith('row-1', 'tok-1', 'budget_exceeded', 0);
-      expect(result).toMatchObject({ retried: 1 });
+      return { deps, go: () => run(deps, { budgetMs: 3000, hardDeadlineMs, rowBudgetMs }) };
+    };
+    const sentTo = (deps: Mocks, id: string) => deps.send.mock.calls.filter(([m]) => m.idempotencyKey.startsWith(`passkey-notification/${id}/`)).length;
+
+    it('DD-AUTH-088 遅く取った行は、行の期限より手前の hardDeadlineMs で止まり retried（budget_exceeded）', async () => {
+      const { deps, go } = twoRows(4500, undefined);
+      const result = await go();
+      // B は t=2000 に取り、2000・3000・4000 に送り、5000 で止まる（1つの3秒の期限なら1通、上限を無視すれば6通）
+      expect(sentTo(deps, 'rA')).toBe(2);
+      expect(sentTo(deps, 'rB')).toBe(3);
+      expect(deps.fail).toHaveBeenCalledWith('rB', 'tok-1', 'budget_exceeded', 0);
+      expect(deps.complete).toHaveBeenCalledWith('rA', 'tok-1');
+      expect(result).toMatchObject({ claimed: 2, sent: 1, retried: 1 });
+    });
+
+    it('DD-AUTH-088 行の期限は、実行の開始でなく、行を取った時刻から数える', async () => {
+      const { deps, go } = twoRows(undefined, 3000);
+      await go();
+      // B は t=2000 に取り、期限は 5000。2000・3000・4000 に送る（開始から数えると 3000 で1通止まり）
+      expect(sentTo(deps, 'rB')).toBe(3);
+      expect(deps.fail).toHaveBeenCalledWith('rB', 'tok-1', 'budget_exceeded', 0);
+    });
+
+    it('DD-AUTH-088 絶対の上限を過ぎていたら、新しい行を取らない', async () => {
+      const deps = makeDeps([row()], six);
+      const result = await run(deps, { budgetMs: 3000, hardDeadlineMs: 0 });
+      expect(deps.claim).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ claimed: 0, stopped: 'budget' });
     });
 
     it('DD-AUTH-088 行の期限は、取った時刻＋行の予算と絶対の上限の小さい方', () => {

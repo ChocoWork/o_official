@@ -235,13 +235,17 @@ for (const viewport of viewports) {
       expect(await mailCount(request, otherAdmin.email, ADMIN_ADDED_SUBJECT)).toBe(1);
     });
 
-    test(`FR-AUTH-048-AC-01 ${viewport.name}: 宛先の店長が6人いても、1回の定期処理で全員に知らせが届く（行ごとの期限）`, async ({ request }) => {
+    test(`FR-AUTH-048-AC-01 ${viewport.name}: 宛先の店長が6人いても、全員に知らせが届く（煙の確かめ）`, async ({ request }) => {
       test.setTimeout(240_000);
       await clearPendingNotifications();
       const staff = await withLocalDb((db) => provisionStaff(db, { role: 'admin', approvedPasskeys: 2 }));
       const admins: Awaited<ReturnType<typeof provisionStaff>>[] = [];
-      for (let i = 0; i < 6; i += 1) admins.push(await withLocalDb((db) => provisionStaff(db, { role: 'admin', approvedPasskeys: 2 })));
-      mine = [staff.userId, ...admins.map((admin) => admin.userId)];
+      mine.push(staff.userId);
+      for (let i = 0; i < 6; i += 1) {
+        const admin = await withLocalDb((db) => provisionStaff(db, { role: 'admin', approvedPasskeys: 2 }));
+        admins.push(admin);
+        mine.push(admin.userId);
+      }
       await withLocalDb(async (db) => {
         const result = await db.query(
           `update public.user_roles ur set active = false
