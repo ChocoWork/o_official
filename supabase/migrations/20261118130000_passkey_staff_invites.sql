@@ -2,7 +2,7 @@
 -- cancel / open functions (SR-AUTH-026, FR-AUTH-034, FR-AUTH-035, DATA-AUTH-020, SEC-AUTH-053, DD-AUTH-070, ADR-0471).
 -- The second half (Task 2b, same file while unapplied) is at the end: admin_set_user_role rebuilt, staff_demote, the dashboard
 -- last resort and passkey_delete_with_floor (SEC-AUTH-054, FR-AUTH-037, DD-AUTH-073).
--- It ADDS one table, two private functions and eight public functions, and REPLACES one body (private.admin_set_user_role).
+-- It ADDS one table, three private functions and eight public functions, and REPLACES one body (private.admin_set_user_role).
 -- Nothing calls the new ones yet (stage 3a Task 4+).
 --
 -- Table private.staff_invites (RLS on, no policy, no privilege for anon / authenticated / service_role, owner postgres):
@@ -12,6 +12,11 @@
 --   At most ONE row per user that is neither cancelled nor activated (partial unique index).
 --
 -- Functions (SECURITY DEFINER, search_path empty, owner postgres):
+--   private.staff_cancel_invites_issued_by(user)  NO execute for anyone. The one place that cancels every unused invite a person
+--     ISSUED (issued_by = user, not cancelled, not activated) and closes the registration windows of those invitees. The caller
+--     holds 190519 and the user key first. Called from staff_demote, admin_set_user_role (admin -> supporter / user) and the
+--     issue core (when the target is a current admin: redo, last resort). Invites by other managers, last_resort invites
+--     (issued_by NULL) and activated invites are untouched. No per-invite audit; the invitee's logins are not ended (DD-AUTH-085).
 --   private.staff_invite_issue_core(...)  NO execute for anyone. Only the two doors below call it (Task 2: staff_invite_issue;
 --     Task 2b: private.staff_invite_issue_manual). One transaction, in this order:
 --       1. lock 190519 (global, the same key admin_set_user_role takes), THEN the per-user key
@@ -23,7 +28,8 @@
 --          (ROLE_PERMISSION_FORBIDDEN; skipped only for the last resort); the user must exist (USER_NOT_FOUND, P0002);
 --       3. the target is the only active admin -> LAST_ADMIN_REQUIRED (skipped for the last resort); issuer = target ->
 --          SELF_ROLE_CHANGE_FORBIDDEN;
---       4. cancel the user's old open invite, close the user's open windows;
+--       4. if the target is a current admin, cancel the invites the target issued (staff_cancel_invites_issued_by); then cancel
+--          the user's old open invite, close the user's open windows;
 --       5. delete the user's auth.webauthn_credentials (the C trigger removes the approvals and queues one
 --          passkey_removed notice per key) and every leftover approved_passkeys row;
 --       6. delete EVERY auth.mfa_factors row of the user (totp, phone, webauthn: GoTrue asks for aal2 when any factor is left);
@@ -45,18 +51,22 @@
 --     STAFF_ACTIVATE_KEYS_SHORT; any key that is not approved, or approved by reauth / script / before bound_at:
 --     STAFF_ACTIVATE_KEYS_NOT_WINDOW). Then it turns the role on (assigned_by = issued_by), stamps activated_at and closes
 --     the window. No row / activated / cancelled: STAFF_ACTIVATE_INVITE_INVALID.
---   public.staff_invite_cancel(actor, user): the actor must still be an active admin with admin.users.manage (checked after
---     the locks); cancels the open invite and closes the windows; keys and roles stay.
+--   public.staff_invite_cancel(actor, user) returns boolean: the actor must still be an active admin with admin.users.manage
+--     (checked after the locks); cancels the open invite and closes the windows; keys and roles stay. true when an open
+--     invite was cancelled, false when there was nothing to cancel.
 --   public.staff_invite_open(user) returns boolean: an uncancelled, unactivated, unexpired invite row exists.
 --   public.* : execute for service_role only.
 --
 -- Second half (Task 2b):
---   private.admin_set_user_role(actor, user, role): the body of 20261023175712 with ONE change. For role admin | supporter, a
---     person who is not a current staff member (passkey_is_staff false) raises STAFF_INVITE_REQUIRED (42501). The precheck
---     below stops the migration unless the body being replaced still has md5(prosrc) 0cb9f532f16aa5c56c6b425694f7209b.
+--   private.admin_set_user_role(actor, user, role): the body of 20261023175712 with TWO changes. (1) For role admin | supporter,
+--     a person who is not a current staff member (passkey_is_staff false) raises STAFF_INVITE_REQUIRED (42501). (2) When the
+--     person is a current admin and the new role is not admin, the invites that person issued are cancelled in the same
+--     transaction (private.staff_cancel_invites_issued_by). The precheck below stops the migration unless the body being
+--     replaced still has md5(prosrc) 0cb9f532f16aa5c56c6b425694f7209b.
 --   public.staff_demote(actor, user) returns void: 190519 then the per-user key, THEN the actor check (ROLE_PERMISSION_FORBIDDEN).
 --     Last admin / self refused (LAST_ADMIN_REQUIRED, SELF_ROLE_CHANGE_FORBIDDEN, USER_NOT_FOUND). Role -> user, the approved
---     rows go, the keys stay, the open invite is cancelled and the windows are closed. service_role only.
+--     rows go, the keys stay, the open invite is cancelled and the windows are closed, and the invites the person issued are
+--     cancelled (private.staff_cancel_invites_issued_by). service_role only.
 --   private.staff_invite_issue_manual(email, role default 'admin', ttl default 3600) returns text: dashboard SQL only. Only
 --     postgres can execute it. Returns the raw 43-character token; the table keeps its UTF-8 SHA-256. One audit row.
 --   public.passkey_delete_with_floor(user, passkey) returns void: takes the per-user key; a current staff member whose approved
@@ -70,10 +80,14 @@
 --   DROP FUNCTION public.staff_invite_open(uuid), public.staff_invite_cancel(uuid, uuid), public.staff_role_activate(uuid, uuid),
 --     public.staff_invite_bind_window(uuid, uuid), public.staff_invite_consume(bytea),
 --     public.staff_invite_issue(uuid, text, text, uuid, text, bytea, integer),
---     private.staff_invite_issue_core(uuid, text, text, uuid, text, bytea, integer, boolean);
+--     private.staff_invite_issue_core(uuid, text, text, uuid, text, bytea, integer, boolean),
+--     private.staff_cancel_invites_issued_by(uuid);
 --   DROP TABLE private.staff_invites;
 --
 -- BEFORE applying to production (read only): this migration is NOT applied to production until stage 3b.
+-- H comes AFTER G (20261118044338): it needs the outbox columns G added.
+--   select count(*) from information_schema.columns where table_schema='private' and table_name='passkey_notification_outbox'
+--     and column_name in ('lease_token','last_error_code','finished_at');        -- expect 3
 --   select has_table_privilege('postgres','auth.mfa_factors','DELETE');          -- expect true
 --   select has_table_privilege('postgres','auth.webauthn_credentials','DELETE'); -- expect true
 --   select has_table_privilege('postgres','auth.users','UPDATE');                -- expect true
@@ -111,6 +125,12 @@ BEGIN
        <> '0cb9f532f16aa5c56c6b425694f7209b' THEN
     RAISE EXCEPTION 'PASSKEY_MIGRATION_PRECHECK_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_h_admin_set_user_role_body';
   END IF;
+  -- G (20261118044338) added these outbox columns; H writes them (step 8 of the issue core). Missing -> G was not applied first.
+  IF (SELECT count(*) FROM information_schema.columns c
+       WHERE c.table_schema = 'private' AND c.table_name = 'passkey_notification_outbox'
+         AND c.column_name IN ('lease_token', 'last_error_code', 'finished_at')) <> 3 THEN
+    RAISE EXCEPTION 'PASSKEY_MIGRATION_PRECHECK_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_h_g_columns';
+  END IF;
   IF NOT has_table_privilege('postgres', 'auth.mfa_factors', 'DELETE')
      OR NOT has_table_privilege('postgres', 'auth.webauthn_credentials', 'DELETE')
      OR NOT has_table_privilege('postgres', 'auth.users', 'UPDATE')
@@ -143,6 +163,23 @@ CREATE INDEX staff_invites_user_session_idx ON private.staff_invites (user_id, s
 ALTER TABLE private.staff_invites ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE private.staff_invites FROM PUBLIC, anon, authenticated, service_role;
 ALTER TABLE private.staff_invites OWNER TO postgres;
+
+-- Cancel every unused invite that p_user_id issued and close the open windows of the invitees. The caller already holds
+-- 190519 and the per-user key (190519 first), so this runs serialised with issue, activate, cancel and demote. Invites by
+-- other issuers, last_resort invites (issued_by NULL) and activated invites are not touched. No audit row, no session change.
+CREATE OR REPLACE FUNCTION private.staff_cancel_invites_issued_by(p_user_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  WITH cancelled AS (
+    UPDATE private.staff_invites i SET cancelled_at = now()
+     WHERE i.issued_by = p_user_id AND i.cancelled_at IS NULL AND i.activated_at IS NULL
+    RETURNING i.user_id
+  )
+  UPDATE private.passkey_registration_windows w SET closed_at = now()
+   WHERE w.closed_at IS NULL AND w.user_id IN (SELECT c.user_id FROM cancelled c);
+END
+$$;
 
 CREATE OR REPLACE FUNCTION private.staff_invite_issue_core(
   p_user_id uuid, p_role_code text, p_kind text, p_issued_by uuid, p_reason text,
@@ -194,6 +231,16 @@ BEGIN
   END IF;
   IF p_issued_by IS NOT DISTINCT FROM p_user_id THEN
     RAISE EXCEPTION USING MESSAGE = 'SELF_ROLE_CHANGE_FORBIDDEN', ERRCODE = '42501';
+  END IF;
+
+  -- A current admin who is being redone (or given a last resort) stops being an admin below (step 7): the invites that
+  -- person issued go with the role. Read BEFORE user_roles is switched off.
+  IF EXISTS (
+    SELECT 1 FROM public.user_roles ur JOIN public.roles r ON r.id = ur.role_id
+     WHERE ur.user_id = p_user_id AND r.code = 'admin' AND ur.active = true
+       AND (ur.expires_at IS NULL OR ur.expires_at > now())
+  ) THEN
+    PERFORM private.staff_cancel_invites_issued_by(p_user_id);
   END IF;
 
   UPDATE private.staff_invites i SET cancelled_at = now()
@@ -345,8 +392,10 @@ END
 $$;
 
 CREATE OR REPLACE FUNCTION public.staff_invite_cancel(p_actor_id uuid, p_user_id uuid)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
 AS $$
+DECLARE
+  v_cancelled boolean;
 BEGIN
   IF p_user_id IS NULL THEN
     RAISE EXCEPTION USING MESSAGE = 'STAFF_INVITE_ARGUMENT_INVALID', ERRCODE = '22023';
@@ -365,10 +414,12 @@ BEGIN
   END IF;
   UPDATE private.staff_invites i SET cancelled_at = now()
    WHERE i.user_id = p_user_id AND i.cancelled_at IS NULL AND i.activated_at IS NULL;
-  IF FOUND THEN
+  v_cancelled := FOUND;
+  IF v_cancelled THEN
     UPDATE private.passkey_registration_windows w SET closed_at = now()
      WHERE w.user_id = p_user_id AND w.closed_at IS NULL;
   END IF;
+  RETURN v_cancelled;
 END
 $$;
 
@@ -381,6 +432,7 @@ AS $$
   );
 $$;
 
+ALTER FUNCTION private.staff_cancel_invites_issued_by(uuid) OWNER TO postgres;
 ALTER FUNCTION private.staff_invite_issue_core(uuid, text, text, uuid, text, bytea, integer, boolean) OWNER TO postgres;
 ALTER FUNCTION public.staff_invite_issue(uuid, text, text, uuid, text, bytea, integer) OWNER TO postgres;
 ALTER FUNCTION public.staff_invite_consume(bytea) OWNER TO postgres;
@@ -389,7 +441,8 @@ ALTER FUNCTION public.staff_role_activate(uuid, uuid) OWNER TO postgres;
 ALTER FUNCTION public.staff_invite_cancel(uuid, uuid) OWNER TO postgres;
 ALTER FUNCTION public.staff_invite_open(uuid) OWNER TO postgres;
 
-REVOKE ALL ON FUNCTION private.staff_invite_issue_core(uuid, text, text, uuid, text, bytea, integer, boolean),
+REVOKE ALL ON FUNCTION private.staff_cancel_invites_issued_by(uuid),
+  private.staff_invite_issue_core(uuid, text, text, uuid, text, bytea, integer, boolean),
   public.staff_invite_issue(uuid, text, text, uuid, text, bytea, integer),
   public.staff_invite_consume(bytea), public.staff_invite_bind_window(uuid, uuid),
   public.staff_role_activate(uuid, uuid), public.staff_invite_cancel(uuid, uuid),
@@ -403,10 +456,11 @@ GRANT EXECUTE ON FUNCTION public.staff_invite_issue(uuid, text, text, uuid, text
 -- Second half (Task 2b): admin_set_user_role rebuilt, staff_demote, the dashboard-only last resort, the delete floor.
 -- ---------------------------------------------------------------------------------------------------------------------
 
--- Same body as 20261023175712 (private.admin_set_user_role). The ONLY change: when the new role is admin or supporter and the
+-- Same body as 20261023175712 (private.admin_set_user_role). Change 1: when the new role is admin or supporter and the
 -- person is not a current staff member (active, unexpired admin / supporter row), raise STAFF_INVITE_REQUIRED (42501). A
 -- customer, or someone whose staff row is inactive or expired, now has to go through an invite. Moves between staff roles and
--- the move to 'user' behave as before. The signature, the owner and the ACL are unchanged (CREATE OR REPLACE keeps them).
+-- the move to 'user' behave as before. Change 2: a current admin who becomes supporter or user has the invites they issued
+-- cancelled in the same transaction (190519 is already held, so it is serialised with issue / activate / cancel). The signature, the owner and the ACL are unchanged (CREATE OR REPLACE keeps them).
 CREATE OR REPLACE FUNCTION private.admin_set_user_role(_actor_id uuid, _user_id uuid, _role_code text) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
 AS $$
@@ -452,6 +506,14 @@ BEGIN
   END IF;
   IF _role_code IN ('admin', 'supporter') AND NOT public.passkey_is_staff(_user_id) THEN
     RAISE EXCEPTION USING MESSAGE = 'STAFF_INVITE_REQUIRED', ERRCODE = '42501';
+  END IF;
+  -- A current admin who leaves admin takes the invites they issued with them. Read BEFORE user_roles is switched off.
+  IF _role_code <> 'admin' AND EXISTS (
+    SELECT 1 FROM public.user_roles ur JOIN public.roles r ON r.id = ur.role_id
+    WHERE ur.user_id = _user_id AND r.code = 'admin' AND ur.active = true
+      AND (ur.expires_at IS NULL OR ur.expires_at > now())
+  ) THEN
+    PERFORM private.staff_cancel_invites_issued_by(_user_id);
   END IF;
   UPDATE public.user_roles SET active = false WHERE user_id = _user_id;
   INSERT INTO public.user_roles (user_id, role_id, active, expires_at, assigned_by, assigned_at)
@@ -518,6 +580,8 @@ BEGIN
    WHERE i.user_id = p_user_id AND i.cancelled_at IS NULL AND i.activated_at IS NULL;
   UPDATE private.passkey_registration_windows w SET closed_at = now()
    WHERE w.user_id = p_user_id AND w.closed_at IS NULL;
+  -- The invites this person issued go with the role (same transaction, same locks).
+  PERFORM private.staff_cancel_invites_issued_by(p_user_id);
 END
 $$;
 
@@ -610,13 +674,15 @@ BEGIN
       RAISE EXCEPTION 'PASSKEY_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_h_function_acl';
     END IF;
   END LOOP;
-  f := 'private.staff_invite_issue_core(uuid,text,text,uuid,text,bytea,integer,boolean)';
-  IF has_function_privilege('anon', f, 'EXECUTE') OR has_function_privilege('authenticated', f, 'EXECUTE')
-     OR has_function_privilege('service_role', f, 'EXECUTE')
-     OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) a
-                 WHERE p.oid = f::regprocedure AND a.grantee = 0) THEN
-    RAISE EXCEPTION 'PASSKEY_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_h_function_acl';
-  END IF;
+  FOREACH f IN ARRAY ARRAY['private.staff_cancel_invites_issued_by(uuid)',
+    'private.staff_invite_issue_core(uuid,text,text,uuid,text,bytea,integer,boolean)'] LOOP
+    IF has_function_privilege('anon', f, 'EXECUTE') OR has_function_privilege('authenticated', f, 'EXECUTE')
+       OR has_function_privilege('service_role', f, 'EXECUTE')
+       OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) a
+                   WHERE p.oid = f::regprocedure AND a.grantee = 0) THEN
+      RAISE EXCEPTION 'PASSKEY_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_h_function_acl';
+    END IF;
+  END LOOP;
   -- Second half: staff_demote and passkey_delete_with_floor are service_role only; the manual door is postgres only.
   FOREACH f IN ARRAY ARRAY['public.staff_demote(uuid,uuid)', 'public.passkey_delete_with_floor(uuid,uuid)'] LOOP
     IF has_function_privilege('anon', f, 'EXECUTE') OR has_function_privilege('authenticated', f, 'EXECUTE')
@@ -642,7 +708,8 @@ BEGIN
       RAISE EXCEPTION 'PASSKEY_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_h2_set_role_acl';
     END IF;
   END LOOP;
-  FOREACH f IN ARRAY ARRAY['private.staff_invite_issue_core(uuid,text,text,uuid,text,bytea,integer,boolean)',
+  FOREACH f IN ARRAY ARRAY['private.staff_cancel_invites_issued_by(uuid)',
+    'private.staff_invite_issue_core(uuid,text,text,uuid,text,bytea,integer,boolean)',
     'public.staff_invite_issue(uuid,text,text,uuid,text,bytea,integer)', 'public.staff_invite_consume(bytea)',
     'public.staff_invite_bind_window(uuid,uuid)', 'public.staff_role_activate(uuid,uuid)',
     'public.staff_invite_cancel(uuid,uuid)', 'public.staff_invite_open(uuid)',

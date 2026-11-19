@@ -82,7 +82,7 @@ export async function guardStaffAdminRequest(
 export async function auditStaffAction(
   request: Request,
   actor: { actorId: string; actorEmail: string | null },
-  event: { action: string; resourceId: string | null; outcome: 'success' | 'failure' | 'error' | 'conflict'; detail: string; metadata?: Record<string, unknown> },
+  event: { action: string; resourceId: string | null; outcome: 'success' | 'failure' | 'error' | 'conflict' | 'noop'; detail: string; metadata?: Record<string, unknown> },
 ): Promise<void> {
   try {
     await logAudit({

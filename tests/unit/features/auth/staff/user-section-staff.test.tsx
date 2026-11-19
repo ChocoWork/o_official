@@ -240,6 +240,25 @@ describe('DD-AUTH-084 招待・取り消し・店員にする', () => {
     expect(calls('POST')[0][0]).toBe(`/api/admin/staff/${INVITED}/invite/cancel`);
   });
 
+  it('DD-AUTH-091 取り消しが cancelled: true なら通知を出し、false なら通知なしで一覧を読み直す', async () => {
+    respond = (url, init) => (init?.method === 'POST' && url.endsWith('/invite/cancel') ? { status: 200, body: { success: true, cancelled: true } } : null);
+    const user = userEvent.setup();
+    const first = render(<UserSection />);
+    await user.click(within(await rowOf('invited@example.com')).getByRole('button', { name: '招待を取り消す' }));
+    expect(await screen.findByText('invited@example.com への招待を取り消しました。')).toBeInTheDocument();
+    first.unmount();
+
+    jest.clearAllMocks();
+    respond = (url, init) => (init?.method === 'POST' && url.endsWith('/invite/cancel') ? { status: 200, body: { success: true, cancelled: false } } : null);
+    render(<UserSection />);
+    await user.click(within(await rowOf('invited@example.com')).getByRole('button', { name: '招待を取り消す' }));
+    await waitFor(() => expect(calls('POST')).toHaveLength(1));
+    const listReads = () => mockFetch.mock.calls.filter(([url]) => String(url) === '/api/admin/users').length;
+    await waitFor(() => expect(listReads()).toBe(2));
+    expect(screen.queryByText('invited@example.com への招待を取り消しました。')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toHaveTextContent('取り消し');
+  });
+
   it('DD-AUTH-084 「店員を招待」でメールと役割を送り、503 はログアウトにせず「しばらくしてから」の文を出す', async () => {
     respond = (url, init) => (init?.method === 'POST' && url === '/api/admin/staff/invites' ? { status: 503, body: { code: 'config' } } : null);
     const user = userEvent.setup();

@@ -224,7 +224,7 @@ export default function UserSection() {
     }
   };
 
-  const handleStaffDone = (message: string) => {
+  const handleStaffDone = (message: string | null) => {
     setErrorMessage(null);
     setNotice(message);
     void fetchUsers(true);

@@ -1,5 +1,7 @@
 /** @jest-environment node */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describeLocalDb, LOCAL_DATABASE_URL, type PgClient } from './helpers/local-db';
 
 // Passkey stage 3a Task 2 (migration H, first half): the staff invite table and the issue / consume / bind / activate /
@@ -416,6 +418,20 @@ describeLocalDb('passkey staff invites (migration H first half)', () => {
       expect(await activeRoles(a.target)).toEqual([]);
     });
 
+    test('DATA-AUTH-020 cancel returns true when an open invite was cancelled and false when there was nothing to cancel', async () => {
+      const a = await boundInvite();
+      const call = async () => (await db().query('select public.staff_invite_cancel($1,$2) as r', [a.actor, a.target])).rows[0].r;
+      expect(await call()).toBe(true);
+      expect(await call()).toBe(false);
+      expect(await db().query('select public.staff_invite_cancel($1,$2) as r', [a.actor, await user()]).then((r) => r.rows[0].r)).toBe(false);
+      const done = await boundInvite('supporter');
+      await approve(done.target, await key(done.target), 'window');
+      await approve(done.target, await key(done.target), 'window');
+      await activate(done.target, done.sessionId);
+      expect((await db().query('select public.staff_invite_cancel($1,$2) as r', [done.actor, done.target])).rows[0].r).toBe(false);
+      expect(await activeRoles(done.target)).toEqual(['supporter']);
+    });
+
     test('DATA-AUTH-020 cancel is refused when the actor is not a current admin (customer, supporter, inactive admin)', async () => {
       const a = await boundInvite();
       const customer = await user();
@@ -452,6 +468,37 @@ describeLocalDb('passkey staff invites (migration H first half)', () => {
         [target, hashOf('tok-uniq-2')],
       ));
       expect(dup).toMatchObject({ code: '23505' });
+    });
+  });
+
+  describe('DATA-AUTH-020 the precheck for the outbox columns that migration G added', () => {
+    const migration = readFileSync(join(process.cwd(), 'supabase', 'migrations', '20261118130000_passkey_staff_invites.sql'), 'utf8');
+    const precheck = (/DO \$\$[\s\S]*?\$\$;/.exec(migration) as RegExpExecArray)[0];
+    const MD5 = '0cb9f532f16aa5c56c6b425694f7209b';
+    const run = async (sql: string): Promise<{ message?: string; detail?: string } | null> => {
+      await db().query('savepoint guard');
+      try {
+        await db().query(sql);
+        return null;
+      } catch (caught) {
+        return caught as { message?: string; detail?: string };
+      } finally {
+        await db().query('rollback to savepoint guard');
+      }
+    };
+    // After H is applied the body being replaced is H's own, so the md5 literal is swapped for the current md5 (as the E precheck test does).
+    const current = async (): Promise<string> =>
+      (await db().query(`select md5(prosrc) as m from pg_proc where oid = 'private.admin_set_user_role(uuid,uuid,text)'::regprocedure`)).rows[0].m;
+
+    test('DATA-AUTH-020 with the md5 value matched to the current body, the precheck passes', async () => {
+      expect(precheck).toContain(MD5);
+      expect(await run(precheck.replace(MD5, await current()))).toBeNull();
+    });
+
+    test.each(['lease_token', 'last_error_code', 'finished_at'])('DATA-AUTH-020 without the outbox column %s, the precheck stops with passkey_h_g_columns', async (column) => {
+      await db().query(`alter table private.passkey_notification_outbox rename column ${column} to ${column}_x`);
+      const e = await run(precheck.replace(MD5, await current()));
+      expect(e).toMatchObject({ message: 'PASSKEY_MIGRATION_PRECHECK_FAILED', detail: 'passkey_h_g_columns' });
     });
   });
 

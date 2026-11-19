@@ -27,8 +27,8 @@ type StaffRoleActionsProps = {
   user: StaffRowUser;
   isSelf: boolean;
   isLastAdmin: boolean;
-  /** 送った操作が済んだ時。親が一覧を読み直し、知らせを出す。 */
-  onDone: (message: string) => void;
+  /** 送った操作が済んだ時。親が一覧を読み直し、知らせを出す（`null` は知らせなしで読み直すだけ）。 */
+  onDone: (message: string | null) => void;
   onError: (message: string) => void;
 };
 
@@ -42,7 +42,8 @@ export default function StaffRoleActions({ user, isSelf, isLastAdmin, onDone, on
     setBusy(true);
     const result = await postStaffAction(url);
     setBusy(false);
-    if (result.ok) onDone(doneMessage);
+    // 取り消す物が無かった時（すでに取り消し済み）は、嘘の「取り消しました」を出さず、一覧だけ読み直す。
+    if (result.ok) onDone(result.cancelled === false ? null : doneMessage);
     else onError(result.message);
   };
 

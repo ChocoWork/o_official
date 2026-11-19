@@ -10,7 +10,7 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-026、FR-AUTH-034、FR-AUTH-035、FR-AUTH-037、DATA-AUTH-020、ARC-AUTH-012、SEC-AUTH-053、SEC-AUTH-054、THR-AUTH-052、DD-AUTH-070、DD-AUTH-071、DD-AUTH-072、DD-AUTH-073、DD-AUTH-075、DD-AUTH-076、DD-AUTH-077、DD-AUTH-078、FR-AUTH-041、SCR-AUTH-013、API-AUTH-037、FR-AUTH-038、FR-AUTH-039、FR-AUTH-040、API-AUTH-033、API-AUTH-034、API-AUTH-035、API-AUTH-036、SEC-AUTH-056、THR-AUTH-055、FR-AUTH-042、SEC-AUTH-057、THR-AUTH-053、DD-AUTH-079、FR-AUTH-043、SCR-AUTH-014、API-AUTH-038、DD-AUTH-080、ADR-0471 |
+| 対応する ID | SR-AUTH-026、FR-AUTH-050、FR-AUTH-051、SEC-AUTH-059、THR-AUTH-056、DD-AUTH-085、DD-AUTH-091、FR-AUTH-034、FR-AUTH-035、FR-AUTH-037、DATA-AUTH-020、ARC-AUTH-012、SEC-AUTH-053、SEC-AUTH-054、THR-AUTH-052、DD-AUTH-070、DD-AUTH-071、DD-AUTH-072、DD-AUTH-073、DD-AUTH-075、DD-AUTH-076、DD-AUTH-077、DD-AUTH-078、FR-AUTH-041、SCR-AUTH-013、API-AUTH-037、FR-AUTH-038、FR-AUTH-039、FR-AUTH-040、API-AUTH-033、API-AUTH-034、API-AUTH-035、API-AUTH-036、SEC-AUTH-056、THR-AUTH-055、FR-AUTH-042、SEC-AUTH-057、THR-AUTH-053、DD-AUTH-079、FR-AUTH-043、SCR-AUTH-014、API-AUTH-038、DD-AUTH-080、ADR-0471 |
 | 対象のコード | 移行 `supabase/migrations/20261118130000_passkey_staff_invites.sql`、`src/lib/auth/staff-passkey-invite-errors.ts`、`src/features/auth/staff/invite-token.ts`・`invite-mail.ts`・`staff-invite-store.ts`・`staff-invite-send.ts`・`staff-invite-http.ts`、`src/app/api/admin/staff/**/route.ts`、`src/app/staff/register/page.tsx`、`src/features/auth/staff/components/StaffRegisterScreen.tsx`・`staff-register-client.ts`・`staff-register-access.ts`、`src/app/api/auth/staff/register/complete/route.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-4・6-2・8-1）、[段3の計画](../../superpowers/plans/2026-11-18-passkey-stage3-staff.md) |
 | 調べた時点 | 2026-11-18（手元の DB で結合試験を流した） |
@@ -110,12 +110,12 @@ sequenceDiagram
     participant F as passkey_delete_with_floor
     W->>R: 操作者・利用者・役割
     R->>R: 錠 190519 → 操作者・引数・利用者・最後の店長・自分
-    R->>R: admin か supporter で今の店員でなければ STAFF_INVITE_REQUIRED
+    R->>R: admin か supporter で今の店員でなければ STAFF_INVITE_REQUIRED。今の admin が admin 以外になる時は出した招待も取り消す（DD-AUTH-085）
     R-->>W: 役割を変えて { previousRole, role } を返す
     W->>M: 操作者・利用者
     M->>M: 錠 190519 → 利用者の錠 → 操作者が今も有効な店長か
     M->>M: 最後の店長・自分は断る
-    M->>M: 役割を user にし、認めた鍵の行を消し、招待を取り消し、窓を閉じる（鍵は残す）
+    M->>M: 役割を user にし、認めた鍵の行を消し、招待を取り消し、窓を閉じ、出した招待も取り消す（DD-AUTH-085。鍵は残す）
     W->>F: 利用者・鍵
     F->>F: 利用者の錠 → 今の店員なら、消した後の認めた鍵が下限未満なら STAFF_MIN_KEYS
     F-->>W: 鍵と認めた行を消す
@@ -123,6 +123,36 @@ sequenceDiagram
 
 - 最後の手段（`private.staff_invite_issue_manual`）: ダッシュボードの SQL 専用。`postgres` だけが `execute` を持ち、アドレスで利用者を引き（無ければ `STAFF_MANUAL_USER_NOT_FOUND`）、`staff_invite_issue_core` を種類 `last_resort`・最後の店長の保護なしで呼び、生の合言葉（43字）を返す。表には UTF-8 の SHA-256 だけ。期限は既定1時間。監査（`audit_logs`、`staff.last_resort.issue`）に1行、詳細は対象の id だけ。TS には `last_resort` の型を作らない
 - 理由の写し: `staffDemoteFailureReason`（IMPL-AUTH-347）が `LAST_ADMIN_REQUIRED`・`SELF_ROLE_CHANGE_FORBIDDEN`・`ROLE_PERMISSION_FORBIDDEN`・`USER_NOT_FOUND` を理由にする。`staffRoleChangeNeedsInvite`（IMPL-AUTH-348）は `STAFF_INVITE_REQUIRED` だけ真にして窓口を招待の道に落とす。`passkeyDeleteFloorFailureReason`（IMPL-AUTH-349）が `STAFF_MIN_KEYS`・`PASSKEY_NOT_FOUND` を理由にする。知らない文はどれも `failed`
+
+### DD-AUTH-085 店長が店長でなくなる3つの道は、その店長が出した招待を同じ取引で取り消す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-059 |
+| 根拠 | 取り消しの中身を私用の関数 `private.staff_cancel_invites_issued_by` に1回だけ書き、降格・役割の変更・やり直しの3か所から呼ぶ。呼ぶのは錠 190519 と利用者の錠を持った後で、`user_roles` を外す前に「今、有効で期限内の `admin` か」を読む。新しい錠を取らないので、有効化・取り消し・降格・発行は今までの順（190519 → 利用者の錠）で直列になる |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_roles.integration.test.ts`、`auth_passkey_staff_invites.integration.test.ts`）、E2E（`e2e/FR-LOGIN-073-staff-demote-cancels-issued-invites.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-13-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 13） |
+
+```mermaid
+sequenceDiagram
+    participant D as staff_demote
+    participant R as admin_set_user_role
+    participant I as staff_invite_issue_core
+    participant C as staff_cancel_invites_issued_by
+    D->>D: 錠 190519 → 利用者の錠 → 役割を user にし、鍵の承認と自分の招待を片付ける
+    D->>C: 利用者が出した招待
+    R->>R: 錠 190519 → 今の有効な admin が admin 以外になるか読む
+    R->>C: 利用者が出した招待（役割を外す前）
+    I->>I: 錠 190519 → 利用者の錠 → 対象が今の有効な admin か読む（redo・last_resort）
+    I->>C: 利用者が出した招待（新しい招待の行を入れる前）
+    C->>C: issued_by が利用者・未有効化・未取り消しを取り消し、招待の持ち主の開いた窓を閉じる
+```
+
+- 取り消す物: `issued_by = p_user_id` で `cancelled_at IS NULL AND activated_at IS NULL` の招待（使用済みも含む。`invite`・`promote`・`redo` を分けない）。有効化済み・ほかの店長・`last_resort`（`issued_by` が空）は変えない
+- 呼ばない時: 店長からほかの店長・サポーターから店長・お客さんへの発行（`invite`・`promote`）。`staff_demote` が `LAST_ADMIN_REQUIRED` などで失敗した時は取引ごと戻るので何も取り消されない
+- 招待ごとの監査は書かず、招待の持ち主のログインも終わらせない（まだ店員でなく窓が閉じる。取り消す側の `cancelled: false` の道は DD-AUTH-091）
+- `admin_set_user_role` の置き換え前の `md5(prosrc)` の確かめ（`0cb9f532…`）は変えない。同じ段でこの道を足したので、移行 H の ROLLBACK と末尾の ACL の確かめにこの関数を足した
 
 ### DD-AUTH-075 招待の合言葉・メール・DB を呼ぶ薄い部品
 
@@ -216,10 +246,38 @@ sequenceDiagram
     X-->>R: 終わった・失敗（失敗は 500。再実行で終わる）
 ```
 
-- 降格の窓口（IMPL-AUTH-364）: `demoteStaff`（IMPL-AUTH-401）→ ログインの終了。理由の写しは `staffInviteReasonResponse`（403・404・409・500）
-- 取り消しの窓口（IMPL-AUTH-365）: `cancelStaffInvite`（IMPL-AUTH-400）→ ログインの終了
+- 降格の窓口（IMPL-AUTH-364）: `demoteStaff`（IMPL-AUTH-401）→ ログインの終了。降格した店長が出した招待も同じ取引で取り消される（DD-AUTH-085）。理由の写しは `staffInviteReasonResponse`（403・404・409・500）
+- 取り消しの窓口（IMPL-AUTH-365）: `cancelStaffInvite`（IMPL-AUTH-400）→ 取り消した時だけ（`cancelled: true`）ログインの終了。取り消す物が無い時は 200 `cancelled: false` でログインを終わらせない（DD-AUTH-091）
 - `PATCH /api/admin/users` の `user`: 同じ `demoteStaff` で行い、応答の本文と符号は従来（`LAST_ADMIN_REQUIRED` 409・`SELF_ROLE_CHANGE_FORBIDDEN` 403）のまま。`GET /api/admin/users` の `approvedPasskeys`（`passkey_approved_count`。店員だけ）と `invitePending`（`hasOpenStaffInvite`。店員でない人だけ。20件ずつ並行に呼ぶ）は、数えられなければ 0・偽（閉じる側）。どちらも AUTH の範囲外なので `@impl` は無く、単体テストは `tests/unit/api/admin/users-route.test.ts`
 
+
+### DD-AUTH-091 招待の取り消しは取り消したかを返し、取り消す物が無ければログインを終わらせない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-059 |
+| 根拠 | 降格などで先に取り消された招待に「取り消す」を押すと、何も取り消していないのにログインを終わらせて「取り消しました」と出ていた。`staff_invite_cancel` が `boolean` を返し、窓口は `false` の時に何も終わらせず、画面は知らせなしで一覧を読み直す。権限は今までどおり錠の後に確かめる |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_invites.integration.test.ts`）、単体テスト（`tests/unit/api/admin/staff/invite-cancel-route.test.ts`、`staff-invite-store.test.ts`、`staff-user-actions.test.ts`、`user-section-staff.test.tsx`） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-13-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 13） |
+
+```mermaid
+sequenceDiagram
+    participant U as 画面（招待中の行）
+    participant R as 取り消しの窓口
+    participant S as staff_invite_cancel
+    U->>R: POST invite/cancel
+    R->>S: 操作者・対象
+    S-->>R: true（取り消した）か false（取り消す物が無い）
+    R-->>U: false: 200 success と cancelled false（監査 noop・ログインは残す）
+    R->>R: true: 対象のログインを全部終わらせる（監査 success）
+    R-->>U: true: 200 success と cancelled true
+    U->>U: false: 知らせなしで一覧を読み直す。true: 知らせを出して読み直す
+```
+
+- DB: `cancelled_at` を埋める行が1つでもあれば `true`（窓も閉じる）。無ければ `false`（窓は触らない）
+- ストア（`cancelStaffInvite`）は `{ cancelled: boolean }` を返し、`true` 以外（戻りが空・偽）は `false` にする。窓口の監査の `outcome` に `noop` を足した
+- 画面: `postStaffAction` が成功の本文の `cancelled`（真偽の時だけ）を返し、`StaffRoleActions` が `false` の時に `onDone(null)` を呼ぶ。`UserSection` の読み直しの道は、知らせが `null` なら知らせを出さずに一覧だけ読み直す
 
 ### DD-AUTH-078 招待のリンクの受け口は、役割の無いセッションを作ってから窓に結ぶ
 

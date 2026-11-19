@@ -304,7 +304,7 @@ for (const viewport of viewports) {
       const cancelled = await request.post(`/api/admin/staff/${userId}/invite/cancel`, { headers: headersOf(admin, origin), failOnStatusCode: false });
 
       expect(cancelled.status()).toBe(200);
-      expect(await cancelled.json()).toEqual({ success: true });
+      expect(await cancelled.json()).toEqual({ success: true, cancelled: true });
       const rows = await inviteRows(userId);
       expect(rows[0].cancelled_at).not.toBeNull();
       const consumed = await withLocalDb(async (db) =>
@@ -317,6 +317,29 @@ for (const viewport of viewports) {
       const supporter = await withLocalDb((db) => createAdminSessionActor(db, 'supporter', 'aal2'));
       const denied = await request.post(`/api/admin/staff/${userId}/invite/cancel`, { headers: headersOf(supporter, origin), failOnStatusCode: false });
       expect(denied.status()).toBe(403);
+    });
+
+    test(`FR-AUTH-051-AC-01 ${viewport.name}: 取り消す招待が無い時は、200 の cancelled: false を返し、その人のログインを終わらせない`, async ({ request, baseURL }) => {
+      test.setTimeout(120_000);
+      const origin = new URL(baseURL as string).origin;
+      const admin = await withLocalDb((db) => createAdminSessionActor(db, 'admin', 'aal2'));
+      const email = uniqueEmail('cancel-twice');
+      expect((await request.post('/api/admin/staff/invites', { headers: headersOf(admin, origin), data: { email, role: 'supporter' } })).status()).toBe(200);
+      await inviteMail(request, email);
+      const userId = await userIdOf(email);
+      await addRawSession(userId);
+
+      const first = await request.post(`/api/admin/staff/${userId}/invite/cancel`, { headers: headersOf(admin, origin), failOnStatusCode: false });
+      expect(first.status()).toBe(200);
+      expect(await first.json()).toEqual({ success: true, cancelled: true });
+      expect(await sessionCount(userId)).toBe(0);
+
+      // もう取り消してある時は、ログインを終わらせない
+      await addRawSession(userId);
+      const second = await request.post(`/api/admin/staff/${userId}/invite/cancel`, { headers: headersOf(admin, origin), failOnStatusCode: false });
+      expect(second.status()).toBe(200);
+      expect(await second.json()).toEqual({ success: true, cancelled: false });
+      expect(await sessionCount(userId)).toBe(1);
     });
   });
 }

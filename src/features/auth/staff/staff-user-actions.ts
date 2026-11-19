@@ -22,7 +22,8 @@ function staffInviteFailureMessage(status: number, code: unknown): string | null
   return null;
 }
 
-export type StaffActionResult = { ok: true } | { ok: false; message: string };
+/** `cancelled` は招待の取り消しの窓口だけが返す（取り消す物が無かった時は `false`）。 */
+export type StaffActionResult = { ok: true; cancelled?: boolean } | { ok: false; message: string };
 
 function failureMessage(status: number, code: unknown): string {
   const decided = staffInviteFailureMessage(status, code);
@@ -50,8 +51,11 @@ export async function postStaffAction(url: string, body?: Record<string, unknown
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body ?? {}),
     });
-    if (response.ok) return { ok: true };
     const parsed: unknown = await response.json().catch(() => null);
+    if (response.ok) {
+      const cancelled = typeof parsed === 'object' && parsed !== null ? (parsed as { cancelled?: unknown }).cancelled : undefined;
+      return typeof cancelled === 'boolean' ? { ok: true, cancelled } : { ok: true };
+    }
     const code = typeof parsed === 'object' && parsed !== null && 'code' in parsed ? (parsed as { code?: unknown }).code : undefined;
     return { ok: false, message: failureMessage(response.status, code) };
   } catch {

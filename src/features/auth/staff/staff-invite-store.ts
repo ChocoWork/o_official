@@ -151,26 +151,26 @@ export async function activateStaffRole(
 }
 
 /**
- * 開いている招待を取り消す（操作者が今も有効な店長かは DB が確かめる）。
+ * 開いている招待を取り消す（操作者が今も有効な店長かは DB が確かめる）。取り消す物が無ければ `cancelled: false`。
  *
  * @impl IMPL-AUTH-400
- * @design DD-AUTH-075
+ * @design DD-AUTH-091
  */
 export async function cancelStaffInvite(
   deps: StaffInviteDeps,
   actorId: string,
   userId: string,
-): Promise<StaffInviteResult<void, StaffInviteCancelReason>> {
+): Promise<StaffInviteResult<{ cancelled: boolean }, StaffInviteCancelReason>> {
   const called = await call(deps, 'staff_invite_cancel', { p_actor_id: actorId, p_user_id: userId });
-  if (called.kind === 'ok') return { ok: true, value: undefined };
+  if (called.kind === 'ok') return { ok: true, value: { cancelled: called.data === true } };
   return { ok: false, reason: called.kind === 'error' ? staffInviteCancelFailureReason(called.message) : 'failed' };
 }
 
 /**
- * 店員をお客さんに戻す（降格）。最後の店長・自分自身・店長でない操作者は DB が断る。
+ * 店員をお客さんに戻す（降格）。最後の店長・自分自身・店長でない操作者は DB が断る。降格した店長が出した招待も DB が同じ取引で取り消す。
  *
  * @impl IMPL-AUTH-401
- * @design DD-AUTH-075
+ * @design DD-AUTH-085
  */
 export async function demoteStaff(
   deps: StaffInviteDeps,

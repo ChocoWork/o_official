@@ -37,7 +37,7 @@ describe('POST /api/admin/staff/[id]/invite/cancel', () => {
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     (authorizeAdminPermission as jest.Mock).mockResolvedValue({ ok: true, userId: ACTOR, actorEmail: 'owner@example.com' });
     (createServiceRoleClient as jest.Mock).mockResolvedValue(service);
-    (cancelStaffInvite as jest.Mock).mockResolvedValue({ ok: true, value: undefined });
+    (cancelStaffInvite as jest.Mock).mockResolvedValue({ ok: true, value: { cancelled: true } });
     (revokeAllSessionsForUser as jest.Mock).mockResolvedValue({ authSessionsDeleted: 0 });
     (logAudit as jest.Mock).mockResolvedValue(undefined);
   });
@@ -48,11 +48,22 @@ describe('POST /api/admin/staff/[id]/invite/cancel', () => {
     const response = await POST(request(), context());
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ success: true });
+    expect(await response.json()).toEqual({ success: true, cancelled: true });
     expect(cancelStaffInvite).toHaveBeenCalledWith(service, ACTOR, TARGET);
     expect(revokeAllSessionsForUser).toHaveBeenCalledWith(TARGET);
     expect((cancelStaffInvite as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan((revokeAllSessionsForUser as jest.Mock).mock.invocationCallOrder[0]);
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'admin.staff.invite_cancel', resource_id: TARGET, outcome: 'success' }));
+  });
+
+  it('DD-AUTH-091 取り消す物が無い時は、ログインを終わらせず 200 の cancelled: false で、監査は noop', async () => {
+    (cancelStaffInvite as jest.Mock).mockResolvedValue({ ok: true, value: { cancelled: false } });
+
+    const response = await POST(request(), context());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true, cancelled: false });
+    expect(revokeAllSessionsForUser).not.toHaveBeenCalled();
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'admin.staff.invite_cancel', resource_id: TARGET, outcome: 'noop' }));
   });
 
   it.each([

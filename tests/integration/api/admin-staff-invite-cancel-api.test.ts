@@ -35,7 +35,7 @@ describe('API-AUTH-036 招待の取り消し', () => {
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     (authorizeAdminPermission as jest.Mock).mockResolvedValue({ ok: true, userId: ACTOR, actorEmail: 'owner@example.com' });
     (createServiceRoleClient as jest.Mock).mockResolvedValue(service);
-    rpc.mockResolvedValue({ data: null, error: null });
+    rpc.mockResolvedValue({ data: true, error: null });
     (revokeAllSessionsForUser as jest.Mock).mockResolvedValue({ authSessionsDeleted: 0 });
     (logAudit as jest.Mock).mockResolvedValue(undefined);
   });
@@ -49,6 +49,16 @@ describe('API-AUTH-036 招待の取り消し', () => {
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(rpc).toHaveBeenCalledWith('staff_invite_cancel', { p_actor_id: ACTOR, p_user_id: TARGET });
     expect(revokeAllSessionsForUser).toHaveBeenCalledWith(TARGET);
+  });
+
+  it('API-AUTH-036 取り消す招待が無ければ（DB が false）、200 の cancelled: false で、ログインは終わらせない', async () => {
+    rpc.mockResolvedValue({ data: false, error: null });
+
+    const response = await post();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true, cancelled: false });
+    expect(revokeAllSessionsForUser).not.toHaveBeenCalled();
   });
 
   it('API-AUTH-036 操作者が今の店長でなければ DB が断り 403、ログインは終わらせない', async () => {

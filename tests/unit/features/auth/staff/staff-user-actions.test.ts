@@ -20,6 +20,20 @@ describe('DD-AUTH-084 postStaffAction', () => {
     expect(mockFetch).toHaveBeenCalledWith('/api/admin/staff/x/redo', expect.objectContaining({ method: 'POST', body: '{"confirm":"やり直し"}' }));
   });
 
+  test('DD-AUTH-091 成功の本文の cancelled を返す', async () => {
+    answer(200, { success: true, cancelled: false });
+    await expect(postStaffAction('/api/admin/staff/x/invite/cancel')).resolves.toEqual({ ok: true, cancelled: false });
+    answer(200, { success: true, cancelled: true });
+    await expect(postStaffAction('/api/admin/staff/x/invite/cancel')).resolves.toEqual({ ok: true, cancelled: true });
+  });
+
+  test('DD-AUTH-091 成功でも本文が JSON でなければ、cancelled の無い ok を返す', async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => { throw new Error('not json'); } } as unknown as Response);
+    await expect(postStaffAction('/api/admin/staff/x/demote')).resolves.toEqual({ ok: true });
+    answer(200, { success: true, cancelled: 'yes' });
+    await expect(postStaffAction('/api/admin/staff/x/demote')).resolves.toEqual({ ok: true });
+  });
+
   test('DD-AUTH-084 本文が無い呼びは空の JSON を送る', async () => {
     answer(200, {});
     await postStaffAction('/api/admin/staff/x/demote');

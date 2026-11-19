@@ -5,6 +5,7 @@
  * @impl IMPL-AUTH-365
  * @design DD-AUTH-077
  * @remarks 取り消すと同じ合言葉は使えなくなり、開いていた窓も閉じる。招待のセッションが残らないよう、その人のログインも全部終わらせる。
+ * 取り消す物が無かった時（先に降格などで取り消し済み）は、ログインを終わらせず、監査は noop、応答は `cancelled: false`。
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -45,6 +46,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       });
       return staffInviteReasonResponse(cancelled.reason);
     }
+    if (!cancelled.value.cancelled) {
+      await auditStaffAction(request, guard, { action: 'admin.staff.invite_cancel', resourceId: userId, outcome: 'noop', detail: 'No open staff invite' });
+      return withNoStore(NextResponse.json({ success: true, cancelled: false }, { status: 200 }));
+    }
     try {
       await revokeAllSessionsForUser(userId);
     } catch {
@@ -53,7 +58,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return staffInviteReasonResponse('revoke_failed');
     }
     await auditStaffAction(request, guard, { action: 'admin.staff.invite_cancel', resourceId: userId, outcome: 'success', detail: 'Staff invite cancelled' });
-    return withNoStore(NextResponse.json({ success: true }, { status: 200 }));
+    return withNoStore(NextResponse.json({ success: true, cancelled: true }, { status: 200 }));
   } catch {
     console.error('[admin.staff] invite cancel failed');
     return staffInviteReasonResponse('failed');

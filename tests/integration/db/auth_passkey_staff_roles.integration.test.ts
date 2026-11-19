@@ -372,6 +372,163 @@ describeLocalDb('passkey staff roles (migration H second half)', () => {
     });
   });
 
+  describe('DATA-AUTH-020 a manager who stops being an admin takes the invites they issued with them', () => {
+    const issueTo = async (target: string, issuer: string | null, kind = 'invite', role = 'supporter') => {
+      const token = `cascade-${randomUUID()}`;
+      const id: string = (await issue(target, role, kind, issuer, token)).rows[0].id;
+      return { id, token };
+    };
+    /** A customer whose invite (issued by `issuer`) was consumed and bound: the registration window is open. */
+    async function bound(issuer: string) {
+      const target = await user();
+      const { id, token } = await issueTo(target, issuer);
+      await db().query('select * from public.staff_invite_consume($1)', [hashOf(token)]);
+      const sessionId = await session(target);
+      await db().query('select public.staff_invite_bind_window($1,$2)', [id, sessionId]);
+      return { target, id, token, sessionId };
+    }
+    const inviteState = async (id: string) =>
+      (await db().query('select cancelled_at is not null as cancelled, activated_at is not null as activated from private.staff_invites where id = $1', [id])).rows[0] as {
+        cancelled: boolean; activated: boolean;
+      };
+    const openWindows = (u: string) => count('select count(*)::int as n from private.passkey_registration_windows where user_id = $1 and closed_at is null', [u]);
+
+    test('DATA-AUTH-020 demote cancels the unused invite and the consumed invite the manager issued, and closes their windows', async () => {
+      const other = await user('admin');
+      const a = await user('admin');
+      const unused = await user();
+      const unusedInvite = await issueTo(unused, a);
+      const used = await bound(a);
+      expect(await openWindows(used.target)).toBe(1);
+      await demote(other, a);
+      expect((await inviteState(unusedInvite.id)).cancelled).toBe(true);
+      expect((await inviteState(used.id)).cancelled).toBe(true);
+      expect(await openInvites(unused)).toBe(0);
+      expect(await openWindows(used.target)).toBe(0);
+    });
+
+    test('DATA-AUTH-020 demote leaves an activated staff member, another manager\'s invite and a last_resort invite alone, and cancels a redo the manager issued', async () => {
+      const other = await user('admin');
+      const a = await user('admin');
+      const activated = await bound(a);
+      await approve(activated.target, await key(activated.target), 'window');
+      await approve(activated.target, await key(activated.target), 'window');
+      await db().query('select public.staff_role_activate($1,$2)', [activated.target, activated.sessionId]);
+      const byOther = await user();
+      const otherInvite = await issueTo(byOther, other);
+      const lastResortTarget = await user();
+      await db().query('select private.staff_invite_issue_manual($1)', [emails.get(lastResortTarget)]);
+      const redoTarget = (await staffWithKeys(2, 2)).id;
+      const redo = await issueTo(redoTarget, a, 'redo');
+
+      await demote(other, a);
+
+      expect(await activeRoles(activated.target)).toEqual(['supporter']);
+      expect(await inviteState(activated.id)).toEqual({ cancelled: false, activated: true });
+      expect((await inviteState(otherInvite.id)).cancelled).toBe(false);
+      expect(await openInvites(lastResortTarget)).toBe(1);
+      expect((await inviteState(redo.id)).cancelled).toBe(true);
+    });
+
+    test('DATA-AUTH-020 a demote that fails (last admin) cancels nothing', async () => {
+      const a = await user('admin');
+      await soleAdmin(a);
+      const target = await user();
+      const invite = await issueTo(target, a);
+      expect(await fails(() => demote(a, a))).toMatchObject({ code: 'P0001', message: 'LAST_ADMIN_REQUIRED' });
+      expect((await inviteState(invite.id)).cancelled).toBe(false);
+    });
+
+    test('DATA-AUTH-020 admin to supporter, and admin to user, cancel the invites the manager issued (same transaction)', async () => {
+      for (const role of ['supporter', 'user']) {
+        const other = await user('admin');
+        const a = await user('admin');
+        const used = await bound(a);
+        const unused = await user();
+        const invite = await issueTo(unused, a);
+        await setRole(other, a, role);
+        expect((await inviteState(used.id)).cancelled).toBe(true);
+        expect((await inviteState(invite.id)).cancelled).toBe(true);
+        expect(await openWindows(used.target)).toBe(0);
+        expect(await activeRoles(a)).toEqual([role]);
+      }
+    });
+
+    test('DATA-AUTH-020 supporter to admin and admin to admin cancel nothing', async () => {
+      const other = await user('admin');
+      const a = await user('admin');
+      const invite = await issueTo(await user(), a);
+      await setRole(other, a, 'admin');
+      expect((await inviteState(invite.id)).cancelled).toBe(false);
+      const supporter = await user('supporter');
+      const stray = await user();
+      const strayId: string = (await db().query(
+        `insert into private.staff_invites (user_id, role_code, kind, token_hash, issued_by, expires_at)
+         values ($1, 'supporter', 'invite', $2, $3, now() + interval '1 day') returning id::text as id`,
+        [stray, hashOf(`stray-${randomUUID()}`), supporter])).rows[0].id;
+      await setRole(other, supporter, 'admin');
+      expect((await inviteState(strayId)).cancelled).toBe(false);
+    });
+
+    test('DATA-AUTH-020 a redo for a current manager cancels the invites that manager issued and closes their windows', async () => {
+      const other = await user('admin');
+      const a = await user('admin');
+      const used = await bound(a);
+      const invite = await issueTo(await user(), a);
+      await issueTo(a, other, 'redo', 'admin');
+      expect((await inviteState(used.id)).cancelled).toBe(true);
+      expect((await inviteState(invite.id)).cancelled).toBe(true);
+      expect(await openWindows(used.target)).toBe(0);
+      expect(await openInvites(a)).toBe(1);
+    });
+
+    test('DATA-AUTH-020 issuing to a customer (invite, promote) cancels nothing, even when the customer once issued an invite', async () => {
+      const other = await user('admin');
+      const customer = await user();
+      const stray = await user();
+      const strayId: string = (await db().query(
+        `insert into private.staff_invites (user_id, role_code, kind, token_hash, issued_by, expires_at)
+         values ($1, 'supporter', 'invite', $2, $3, now() + interval '1 day') returning id::text as id`,
+        [stray, hashOf(`stray-${randomUUID()}`), customer])).rows[0].id;
+      await issueTo(customer, other, 'invite');
+      expect((await inviteState(strayId)).cancelled).toBe(false);
+      await issueTo(customer, other, 'promote');
+      expect((await inviteState(strayId)).cancelled).toBe(false);
+    });
+
+    test('DATA-AUTH-020 the last resort for a current manager cancels the invites that manager issued; for a supporter or a customer it cancels nothing', async () => {
+      const a = await user('admin');
+      const byA = await issueTo(await user(), a);
+      await db().query('select private.staff_invite_issue_manual($1)', [emails.get(a)]);
+      expect((await inviteState(byA.id)).cancelled).toBe(true);
+      expect((await db().query('select kind from private.staff_invites where user_id = $1 and cancelled_at is null', [a])).rows[0].kind).toBe('last_resort');
+
+      for (const roleCode of ['supporter', undefined]) {
+        const person = await user(roleCode);
+        const stray = await user();
+        const strayId: string = (await db().query(
+          `insert into private.staff_invites (user_id, role_code, kind, token_hash, issued_by, expires_at)
+           values ($1, 'supporter', 'invite', $2, $3, now() + interval '1 day') returning id::text as id`,
+          [stray, hashOf(`stray-${randomUUID()}`), person])).rows[0].id;
+        await db().query('select private.staff_invite_issue_manual($1)', [emails.get(person)]);
+        expect((await inviteState(strayId)).cancelled).toBe(false);
+      }
+    });
+
+    test('DATA-AUTH-020 the cascade function has no execute for anyone and is called under the global lock first', async () => {
+      const f = 'private.staff_cancel_invites_issued_by(uuid)';
+      const r = (await db().query(
+        `select has_function_privilege('anon', $1, 'EXECUTE') as anon, has_function_privilege('authenticated', $1, 'EXECUTE') as auth,
+                has_function_privilege('service_role', $1, 'EXECUTE') as svc,
+                exists (select 1 from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where p.oid = $1::regprocedure and a.grantee = 0) as pub,
+                (select proowner = 'postgres'::regrole and prosecdef and proconfig @> array['search_path=""'] from pg_proc where oid = $1::regprocedure) as attrs`,
+        [f])).rows[0];
+      expect(r).toEqual({ anon: false, auth: false, svc: false, pub: false, attrs: true });
+      const src = (await db().query(`select prosrc from pg_proc where oid = $1::regprocedure`, [DEMOTE_FN])).rows[0].prosrc as string;
+      expect(src.indexOf('staff_cancel_invites_issued_by')).toBeGreaterThan(src.indexOf('pg_advisory_xact_lock(190519, 0)'));
+    });
+  });
+
   describe('DATA-AUTH-020 races (committed, cleaned up)', () => {
     async function cleanup(c: PgClient, ids: string[]): Promise<void> {
       for (const u of ids) {
@@ -443,6 +600,69 @@ describeLocalDb('passkey staff roles (migration H second half)', () => {
           expect(outcomes.find((o) => o !== 'ok')).toBe('STAFF_MIN_KEYS');
           expect(await keyCount(staff, setup)).toBe(2);
           expect((await setup.query('select count(*)::int as n from private.approved_passkeys where user_id = $1', [staff])).rows[0].n).toBe(2);
+        } finally {
+          await holder.query('rollback').catch(() => undefined);
+          await cleanup(setup, made);
+          for (const c of [setup, a, b, holder]) await c.end();
+        }
+      }
+    });
+
+    test('DATA-AUTH-020 a demote and the activation of an invite that manager issued, at the same moment: one finishes first and the result is consistent', async () => {
+      for (const demoteFirst of [true, false]) {
+        const setup = await connect();
+        const a = await connect();
+        const b = await connect();
+        const holder = await connect();
+        const made: string[] = [];
+        try {
+          const other = await user('admin', setup);
+          const manager = await user('admin', setup);
+          const invitee = await user(undefined, setup);
+          made.push(other, manager, invitee);
+          const token = `tok-cascade-race-${randomUUID()}`;
+          const inviteId: string = (await issue(invitee, 'supporter', 'invite', manager, token, setup)).rows[0].id;
+          await setup.query('select * from public.staff_invite_consume($1)', [hashOf(token)]);
+          const sessionId = await session(invitee, setup);
+          await setup.query('select public.staff_invite_bind_window($1,$2)', [inviteId, sessionId]);
+          await approve(invitee, await key(invitee, setup), 'window', setup);
+          await approve(invitee, await key(invitee, setup), 'window', setup);
+
+          await holder.query('begin');
+          await holder.query('select pg_advisory_xact_lock(190519, 0)');
+          const run = {
+            demoting: () => settle(demote(other, manager, a)),
+            activating: () => settle(b.query("select public.staff_role_activate($1,$2)", [invitee, sessionId])),
+          };
+          let demoting: Promise<string>;
+          let activating: Promise<string>;
+          if (demoteFirst) {
+            demoting = run.demoting();
+            await new Promise((r) => setTimeout(r, 200));
+            activating = run.activating();
+          } else {
+            activating = run.activating();
+            await new Promise((r) => setTimeout(r, 200));
+            demoting = run.demoting();
+          }
+          await new Promise((r) => setTimeout(r, 300));
+          await holder.query('commit');
+          const [demoted, activated] = await Promise.all([demoting, activating]);
+          for (const o of [demoted, activated]) expect(o).not.toMatch(/deadlock/i);
+          expect(demoted).toBe('ok');
+          const roles = (await setup.query(
+            `select r.code from public.user_roles ur join public.roles r on r.id = ur.role_id where ur.user_id = $1 and ur.active`, [invitee])).rows;
+          const invite = (await setup.query('select cancelled_at is not null as c, activated_at is not null as a from private.staff_invites where id = $1', [inviteId])).rows[0];
+          // The lock queue is first come, first served: whoever asked first finishes first.
+          expect(activated).toBe(demoteFirst ? 'STAFF_ACTIVATE_INVITE_INVALID' : 'ok');
+          if (activated === 'ok') {
+            expect(roles).toEqual([{ code: 'supporter' }]);
+            expect(invite).toEqual({ c: false, a: true });
+          } else {
+            expect(activated).toBe('STAFF_ACTIVATE_INVITE_INVALID');
+            expect(roles).toEqual([]);
+            expect(invite).toEqual({ c: true, a: false });
+          }
         } finally {
           await holder.query('rollback').catch(() => undefined);
           await cleanup(setup, made);

@@ -1676,7 +1676,7 @@ stateDiagram-v2
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-AUTH-040、SEC-AUTH-056、ADR-0471 |
-| 根拠 | `staff_demote`（錠の後に操作者を確かめ、役割・認めた鍵・開いている招待・窓を外す）だけを使い、`admin_set_user_role` の `user` への変更は使わない。降格の後にログインを終わらせる |
+| 根拠 | `staff_demote`（錠の後に操作者を確かめ、役割・認めた鍵・開いている招待・窓を外し、その店長が出した招待も取り消す。FR-AUTH-050・DD-AUTH-085）だけを使い、`admin_set_user_role` の `user` への変更は使わない。降格の後にログインを終わらせる |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト（`tests/integration/api/admin-staff-demote-api.test.ts`）、単体テスト（`tests/unit/api/admin/staff/demote-route.test.ts`）、E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
@@ -1694,7 +1694,7 @@ stateDiagram-v2
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-AUTH-040、SEC-AUTH-056、ADR-0471 |
-| 根拠 | 取り消すと同じ合言葉は使えなくなり、窓も閉じる。招待のセッションが残らないよう、その人のログインも終わらせる |
+| 根拠 | 取り消すと同じ合言葉は使えなくなり、窓も閉じる。招待のセッションが残らないよう、その人のログインも終わらせる。取り消す物が無かった時（先に降格などで取り消し済み）は、ログインを終わらせず `cancelled: false` を返す（FR-AUTH-051・DD-AUTH-091） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト（`tests/integration/api/admin-staff-invite-cancel-api.test.ts`）、単体テスト（`tests/unit/api/admin/staff/invite-cancel-route.test.ts`）、E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
@@ -1703,9 +1703,9 @@ stateDiagram-v2
 | --- | --- |
 | 入力 | 道の `id`（UUID）。本文なし |
 | 順番 | 権限 → CSRF → 枠（`admin:staff:invite-cancel`、20回/10分）→ id（400）→ `staff_invite_cancel`（操作者が今の店長か DB が確かめる）→ ログインの終了 |
-| 成功 | 200 `{ success: true }` |
+| 成功 | 200 `{ success: true, cancelled: true }`（取り消した）。取り消す物が無い時は 200 `{ success: true, cancelled: false }`（ログインは終わらせない） |
 | 失敗 | 400、401・403、429、500 |
-| 監査 | action `admin.staff.invite_cancel`。対象の id だけ |
+| 監査 | action `admin.staff.invite_cancel`。対象の id だけ。取り消す物が無い時は outcome `noop` |
 
 ### API-AUTH-037 POST /api/auth/staff/invite/start は招待の合言葉を使い切り、役割の無いセッションを作って窓に結ぶ
 

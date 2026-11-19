@@ -171,13 +171,20 @@ describe('staff-invite-store', () => {
   });
 
   describe('cancelStaffInvite', () => {
-    it('DD-AUTH-075 staff_invite_cancel を操作者と利用者で呼ぶ', async () => {
-      rpc.mockResolvedValue(ok(null));
-      await expect(cancelStaffInvite(deps, ACTOR_ID, USER_ID)).resolves.toEqual({ ok: true, value: undefined });
+    it('DD-AUTH-091 staff_invite_cancel を操作者と利用者で呼び、取り消したかを返す', async () => {
+      rpc.mockResolvedValue(ok(true));
+      await expect(cancelStaffInvite(deps, ACTOR_ID, USER_ID)).resolves.toEqual({ ok: true, value: { cancelled: true } });
       expect(rpc).toHaveBeenCalledWith('staff_invite_cancel', { p_actor_id: ACTOR_ID, p_user_id: USER_ID });
     });
 
-    it('DD-AUTH-075 店長でない操作者は forbidden、それ以外は failed', async () => {
+    it('DD-AUTH-091 取り消す物が無ければ cancelled は false', async () => {
+      rpc.mockResolvedValue(ok(false));
+      await expect(cancelStaffInvite(deps, ACTOR_ID, USER_ID)).resolves.toEqual({ ok: true, value: { cancelled: false } });
+      rpc.mockResolvedValue(ok(null));
+      await expect(cancelStaffInvite(deps, ACTOR_ID, USER_ID)).resolves.toEqual({ ok: true, value: { cancelled: false } });
+    });
+
+    it('DD-AUTH-091 店長でない操作者は forbidden、それ以外は failed', async () => {
       rpc.mockResolvedValue(fail('ROLE_PERMISSION_FORBIDDEN', '42501'));
       await expect(cancelStaffInvite(deps, ACTOR_ID, USER_ID)).resolves.toEqual({ ok: false, reason: 'forbidden' });
       rpc.mockResolvedValue(fail(SECRET_MESSAGE));
@@ -188,13 +195,13 @@ describe('staff-invite-store', () => {
   });
 
   describe('demoteStaff', () => {
-    it('DD-AUTH-075 staff_demote を操作者と利用者で呼ぶ', async () => {
+    it('DD-AUTH-085 staff_demote を操作者と利用者で呼ぶ', async () => {
       rpc.mockResolvedValue(ok(null));
       await expect(demoteStaff(deps, ACTOR_ID, USER_ID)).resolves.toEqual({ ok: true, value: undefined });
       expect(rpc).toHaveBeenCalledWith('staff_demote', { p_actor_id: ACTOR_ID, p_user_id: USER_ID });
     });
 
-    it('DD-AUTH-075 例外の文を理由に写す', async () => {
+    it('DD-AUTH-085 例外の文を理由に写す', async () => {
       const cases: Array<[string, string]> = [
         ['LAST_ADMIN_REQUIRED', 'last_admin'],
         ['SELF_ROLE_CHANGE_FORBIDDEN', 'self'],

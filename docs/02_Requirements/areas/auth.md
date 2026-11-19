@@ -5999,6 +5999,80 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 
 認証に通らない `POST /api/auth/mfa/enroll-totp` は 401 で、店員の判定を呼ばない（`FR-LOGIN-031` の 401 を変えない）。410 は認証・アプリの結び付き・役割の確かめの後にだけ返す。
 
+### FR-AUTH-050 店長が店長でなくなる時（降格・サポーターやお客さんへの変更・やり直し）は、その店長が出した招待も同じ取引で取り消される
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-026 |
+| 根拠 | 店長が出した招待のリンクが残ると、店長でなくなった後も、その人が選んだ相手が店員になれる（THR-AUTH-056）。役割を外す取引と同じ取引で取り消せば、外れた店長の招待は1つも使えず、同時に走る有効化とも錠で直列になる。守りは SEC-AUTH-059、処理は DD-AUTH-085 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-073-staff-demote-cancels-issued-invites.spec.ts`、FR-AUTH-050-AC-01〜03）。結合テスト（`tests/integration/db/auth_passkey_staff_roles.integration.test.ts`。取り消し8件と、降格と有効化の同時の競り1件）でも確かめる（DD-AUTH-085） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-13-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 13） |
+| 優先度 | MUST |
+
+規則: (1) 今の有効な店長（`admin`）が、降格（`staff_demote`）・`admin` からサポーターまたはお客さんへの変更（`admin_set_user_role`）・店長へのやり直し（kind `redo`）・店長への最後の手段（`last_resort`）で店長でなくなる時、その人が出した（`issued_by`）招待のうち、有効化も取り消しもされていない物を全部取り消し、その招待の持ち主の開いた窓を閉じる。使用済み（`consumed_at` あり）の招待も含む。(2) 有効化済みの店員・ほかの店長が出した招待・`last_resort`（`issued_by` が空）の招待は変えない。招待の種類（`invite`・`promote`・`redo`）では分けない。(3) 降格が `LAST_ADMIN_REQUIRED` などで失敗した時は何も取り消さない。(4) 店長からほかの店長・サポーターから店長・お客さんへの発行は何も取り消さない。(5) 招待ごとの監査は書かず、招待の持ち主のログインも終わらせない（まだ店員でなく、窓が閉じれば登録できない）。
+
+### FR-AUTH-050-AC-01 店長 A が出した招待のリンクは、別の店長 B が A を降格すると使えず、B が出した招待は使える
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-050 |
+| 根拠 | THR-AUTH-056、SEC-AUTH-059 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-073-staff-demote-cancels-issued-invites.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-13-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 13） |
+
+A が出した招待のメールのリンクの合言葉で `POST /api/auth/staff/invite/start` を呼ぶと、B が A を降格した後は 400 `invite_invalid` で断られ、招待の行は取り消し済みになる。B が出した招待の行は取り消されず、その合言葉は 200 で通る。
+
+### FR-AUTH-050-AC-02 店長 A を `PATCH /api/admin/users` でサポーターに変えても、A が出した招待のリンクは使えない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-050 |
+| 根拠 | THR-AUTH-056、SEC-AUTH-059 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-073-staff-demote-cancels-issued-invites.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-13-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 13） |
+
+B が A を `role: supporter` に変えると 200 になり、A が出した招待の行は取り消し済みで、そのリンクの合言葉は 400 `invite_invalid` で断られる。
+
+### FR-AUTH-050-AC-03 店長 A にやり直しを出しても、A が出した招待のリンクは使えない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-050 |
+| 根拠 | THR-AUTH-056、SEC-AUTH-059 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-073-staff-demote-cancels-issued-invites.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-13-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 13） |
+
+B が A に `POST /api/admin/staff/[id]/redo` を出すと 200 になり、A が出した招待の行は取り消し済みで、そのリンクの合言葉は 400 `invite_invalid` で断られる。
+
+### FR-AUTH-051 招待の取り消しが取り消す物を見つけなかった時は、成功の `cancelled: false` を返し、ログインを終わらせず、画面は「取り消しました」を出さずに一覧だけ読み直す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-026 |
+| 根拠 | 降格などで先に取り消されていた招待に「取り消す」を押すと、何も取り消していないのに「取り消しました」と出て、その人のログインを終わらせてしまう。DB の `staff_invite_cancel` が取り消したかを返し、窓口と画面が従う。処理は DD-AUTH-091、窓口は API-AUTH-036 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`、FR-AUTH-051-AC-01。390・768・1280 の3幅でくり返す）。結合テスト（`tests/integration/db/auth_passkey_staff_invites.integration.test.ts`）、単体テスト（`tests/unit/api/admin/staff/invite-cancel-route.test.ts`、`tests/unit/features/auth/staff/staff-invite-store.test.ts`、`staff-user-actions.test.ts`、`user-section-staff.test.tsx`）でも確かめる |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-13-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 13） |
+| 優先度 | MUST |
+
+規則: `public.staff_invite_cancel` は開いた招待を取り消したら `true`、取り消す物が無ければ `false` を返す（権限の確かめは今までどおり錠の後）。窓口は `true` の時だけ招待の持ち主のログインを終わらせて監査 `success` を書き、`false` の時はログインを終わらせず監査は `noop`、応答は 200 `{ success: true, cancelled: false }`。画面は、`cancelled: false` の時に「…への招待を取り消しました。」を出さず、一覧だけ読み直す（`true` の時は今までどおり知らせを出す）。
+
+### FR-AUTH-051-AC-01 取り消す招待が無い時、窓口は 200 `{ success: true, cancelled: false }` を返し、ログインを終わらせない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-051 |
+| 根拠 | API-AUTH-036、DD-AUTH-091 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`。390・768・1280 の3幅でくり返す）。結合テスト・単体テストでも確かめる（DD-AUTH-091） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-13-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 13） |
+
+DB の `staff_invite_cancel` は、開いた招待があれば `true`、2回目・有効化済み・招待の無い人では `false` を返す。窓口は `false` で 200 `{ success: true, cancelled: false }` を返し、`revokeAllSessionsForUser` を呼ばない。
+
 ### FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel`
 
 | 属性 | 値 |
@@ -8232,6 +8306,19 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 優先度 | MUST |
 
 守ること: (1) 招待の確かめ・窓（非店員も）・本数のどれかが読めなければ 503（閉じる側）。(2) 招待の確かめ（`staff_invite_open`。期限を含む）と、このセッションの窓のどちらかが真なら招待の道に入る（期限が過ぎても窓が開いていれば `window`）。窓が閉じても有効な招待があれば `window_closed`（お客さんの道に落とさない）。(3) 窓の中でも認めた鍵が2本以上なら `reauth_required`。(4) 結び付いた生きたセッションでなければ 401。(5) 招待の無いお客さんの道は変えない。
+
+### SEC-AUTH-059 店長が店長でなくなる取引は、その店長が出した未使用の招待を同じ取引で取り消す。有効化は同じ錠と直列になる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-056 |
+| 根拠 | 店長でなくなった人の招待が残ると、その人が選んだ相手が店員になれる。役割を外す取引の中で、錠（190519 → 利用者の錠）を持ったまま取り消せば、取り消しと有効化が競っても、先に錠を取った方が先に終わる。取り消しの中身は1つの私用の関数に書き、3つの道が同じ物を呼ぶ |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_roles.integration.test.ts`）、E2E（`e2e/FR-LOGIN-073-staff-demote-cancels-issued-invites.spec.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-13-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 13） |
+| 優先度 | MUST |
+
+守ること: (1) 取り消しは `private.staff_cancel_invites_issued_by` の1つに書き、だれにも `execute` を渡さない（持ち主 `postgres`・`SECURITY DEFINER`・`search_path` 空）。(2) 呼ぶのは `staff_demote`・`admin_set_user_role`（今の `admin` が `admin` 以外になる時）・`staff_invite_issue_core`（対象が今の `admin` の時）で、どれも錠を持った後。新しい錠は取らない。(3) 対象が今の店長かは、`user_roles` を外す前に読む。(4) 有効化済み・ほかの店長・`last_resort` の招待は変えない。
 
 ## 派生要件
 
