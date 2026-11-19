@@ -483,6 +483,14 @@ G と H の順番・範囲（G-1〜G-4・H-1）は1章、開店前に直す物�
 | `dead` の点検・worker の心拍 | 段3b（Task 14） |
 | E2E の `mailsTo`・`mailBodies` を `expect.poll` に | 新しい試験は Task 5 から `expect.poll`。既存の手助けの直しは段3b（Task 15） |
 | 段3a の最終レビューの T11 M-2・M-3・M-5・M-6・M-7 と再レビューの F-3・F-4（店長の画面・店員のパスキーの画面） | 済み（段3b Task 18。FR-AUTH-052・DD-AUTH-090・FR-LOGIN-072。2026-11-20） |
+| T5 M-1（招待の窓口がメールの設定を確かめる前にアカウントを作る） | 済み（段3b Task 19。`isStaffInviteMailReady` を `createUser` より前に。壊れていれば 503・監査 `mail_config_invalid`。76aaf1d9。2026-11-20） |
+| T6 M-6（`invite/start` の失敗したセッションの終了が監査に残らない） | 済み（段3b Task 19。`endAuthSession` が偽の時に監査 `session_revoke_failed`。76aaf1d9） |
+| T10 M-4（Google の戻りの URL で見分けた拒否が本物と区別できない） | 済み（段3b Task 19。URL で見分けた拒否は `staff_passkey_required_url`。76aaf1d9） |
+| T3 M-1（`staff_session_touch` が別の利用者の `session_id` に行を書ける） | 済み（段3b Task 19。移行 D の core が、`auth.sessions` の持ち主と違う利用者では書かず偽。76aaf1d9） |
+| T1 M-5（移行 F の最後の確かめが `passkey_approve` の錠・再認証の断りを見ない） | 済み（段3b Task 19。錠の式 `hashtextextended('passkey_approve:' || p_user_id::text, 0)` と `PASSKEY_REAUTH_NOT_ALLOWED` を確かめる。錠の式は直しの1巡で、エラー文では満たされない形にした） |
+| T1 M-4（GoTrue を直に叩く削除は `passkey_approve` の錠を取らない） | 済み（段3b Task 19。移行 F のヘッダーと `db-migrations.md` に残る危険として書いた。手順書への転記は Task 23） |
+| 再レビュー N-1（`staff-passkey-idle-rpc.ts` の型の注釈） | 済み（段3b Task 19。呼び手は 503 か「しばらくしてから」を返す、に直した） |
+| 再レビュー N-2（`StaffInviteScreen` の `redirectTo` の確かめ） | 済み（段3b Task 19。`new URL(to, location.origin).origin` で比べる。`/	/evil` も断る） |
 | 8-2 の1行（`/otp` の IP の枠・`Sb-Forwarded-For`・`createServiceRoleAuthClient` を `sb_secret_` に替える要否） | 段3b Task 16 |
 | 一度も入らなかったアカウントの後始末 | 判断10（開店前） |
 | 1本だけの店員が `/auth/verified` で回る | 済み（Task 9） |

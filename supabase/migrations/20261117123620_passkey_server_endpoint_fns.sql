@@ -24,8 +24,9 @@
 --        added). This closes the race of two window approvals at once. A repeat for an already approved key adds no row,
 --        so it is not blocked. reauth and script have no limit.
 --     3. Every branch (window, reauth, script) takes the same per-user lock first, with the namespaced key
---        hashtextextended('passkey_approve:' || user, 0) (not the bare uuid text), so the DELETE of a credential and an
---        approval cannot interleave. via = 'reauth' raises 42501 'PASSKEY_REAUTH_NOT_ALLOWED' when the user has no
+--        hashtextextended('passkey_approve:' || user, 0) (not the bare uuid text), so a credential DELETE made through the
+--        app's endpoint and an approval cannot interleave (a delete made straight against GoTrue does not take this lock:
+--        see KNOWN REMAINING RISK below). via = 'reauth' raises 42501 'PASSKEY_REAUTH_NOT_ALLOWED' when the user has no
 --        approved key yet (SEC-AUTH-052).
 --     Unchanged: another user's key raises 42501; the same credential_id under another passkey_id raises 23505.
 --
@@ -187,7 +188,7 @@ BEGIN
   END LOOP;
   IF position('stale approval' IN (SELECT prosrc FROM pg_proc WHERE oid = 'public.passkey_approve(uuid,uuid,text)'::regprocedure)) = 0
      OR position('window limit reached' IN (SELECT prosrc FROM pg_proc WHERE oid = 'public.passkey_approve(uuid,uuid,text)'::regprocedure)) = 0
-     OR position('passkey_approve:' IN (SELECT prosrc FROM pg_proc WHERE oid = 'public.passkey_approve(uuid,uuid,text)'::regprocedure)) = 0
+     OR position('hashtextextended(''passkey_approve:'' || p_user_id::text, 0)' IN (SELECT prosrc FROM pg_proc WHERE oid = 'public.passkey_approve(uuid,uuid,text)'::regprocedure)) = 0
      OR position('PASSKEY_REAUTH_NOT_ALLOWED' IN (SELECT prosrc FROM pg_proc WHERE oid = 'public.passkey_approve(uuid,uuid,text)'::regprocedure)) = 0 THEN
     RAISE EXCEPTION 'PASSKEY_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_f_approve_body';
   END IF;

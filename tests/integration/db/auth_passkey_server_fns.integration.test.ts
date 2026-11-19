@@ -1,4 +1,6 @@
 /** @jest-environment node */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { describeLocalDb, LOCAL_DATABASE_URL, type PgClient } from './helpers/local-db';
 
@@ -308,6 +310,20 @@ describeLocalDb('passkey server endpoint functions', () => {
       const r = await db().query(`select prosrc from pg_proc where oid = 'public.passkey_approve(uuid,uuid,text)'::regprocedure`);
       expect(r.rows[0].prosrc).toContain("hashtextextended('passkey_approve:'");
       expect(r.rows[0].prosrc).not.toMatch(/hashtextextended\(p_user_id::text/);
+    });
+
+    test('DATA-AUTH-018 SEC-AUTH-052 the final assert of migration F tells the namespaced lock key from a bare one (the error strings alone do not satisfy it)', async () => {
+      const file = readFileSync(join(process.cwd(), 'supabase/migrations/20261117123620_passkey_server_endpoint_fns.sql'), 'utf8');
+      const literal = file.match(/position\('(hashtextextended\(''passkey_approve:''[^']*(?:''[^']*)*)' IN/);
+      expect(literal).not.toBeNull();
+      const needle = (literal as RegExpMatchArray)[1].replace(/''/g, "'");
+      const body = (await db().query(`select prosrc from pg_proc where oid = 'public.passkey_approve(uuid,uuid,text)'::regprocedure`)).rows[0].prosrc as string;
+      const has = async (text: string): Promise<boolean> => (await db().query('select position($1 in $2) > 0 as ok', [needle, text])).rows[0].ok;
+      expect(await has(body)).toBe(true);
+      const bare = body.replace("hashtextextended('passkey_approve:' || p_user_id::text, 0)", 'hashtextextended(p_user_id::text, 0)');
+      expect(bare).not.toBe(body);
+      expect(bare).toContain("'passkey_approve: stale approval"); // the message strings still carry the namespace text
+      expect(await has(bare)).toBe(false);
     });
 
     test.each(['window', 'reauth', 'script'])('DATA-AUTH-018 SEC-AUTH-052 via %s waits for the namespaced lock held by another connection and leaves no row for a deleted key', async (via) => {

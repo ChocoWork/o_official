@@ -2244,7 +2244,7 @@ flowchart LR
 
 - 表（移行 D。`supabase/migrations/20261117001500_passkey_staff_entry_conditions_fn.sql`）: `session_id uuid primary key`・`user_id uuid not null`・`last_seen_at timestamptz not null default now()`。索引 `(user_id, last_seen_at)`。RLS 有効、`anon`・`authenticated`・`service_role` に権限なし
 - `private.staff_idle_ok_strict(uuid)` と `private.staff_idle_ok(uuid)`（ともに `STABLE`・`SECURITY DEFINER`・だれにも `execute` を渡さない）。`strict` は誤りを握らず例外を投げ、`staff_idle_ok` はそれを包んで、どんな誤りも偽にする（`has_permission`・RLS が使う、閉じる側）。判定は同じで、行があれば `last_seen_at > now() - staff_idle_seconds`（既定3600）。行が無ければ `auth.sessions.created_at` だけで同じ比べ（`refreshed_at` は見ない）。`auth.sessions` にも無い・`created_at` が `NULL` なら偽
-- `public.staff_session_touch(session, user, 間引きの秒 = 60)`: 行が無ければ作る、あって間引きの秒以上たっていれば更新して真、そうでなければ偽。別の利用者の行は上書きしない。書いた時にその人の2日より前の行を消す
+- `public.staff_session_touch(session, user, 間引きの秒 = 60)`: 行が無ければ作る、あって間引きの秒以上たっていれば更新して真、そうでなければ偽。別の利用者の行は上書きしない。`auth.sessions` にその `session_id` の行があり、その `user_id` が引数の利用者と違う時は、何も書かず偽を返す（行が無い時は今までどおり。段3b Task 19）。書いた時にその人の2日より前の行を消す
 - `public.staff_idle_check(session, user)`: `staff_idle_ok_strict` が真なら同じ間引きで時刻を進めて真（内側は `private.staff_session_touch_core`。だれにも `execute` を渡さない）。書き込みが失敗したら例外を投げ、真を返さない（窓口・ページは 503）。間引きで書かないのは失敗ではない。偽なら書かない
 - `public.staff_idle_peek(session)`: `staff_idle_ok_strict` だけ。時刻を進めない（`/api/auth/me` 用）。DB の誤りは例外になり、窓口・ページは「無操作」ではなく 503 にする（ログアウトさせない）
 - 3つの `public` 関数は `service_role` だけが実行できる。移行 E の `has_permission` が `private.staff_idle_ok` を4つ目の条件（認めた鍵の本数の次、`app_session_is_live` の前）で呼ぶ

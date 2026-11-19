@@ -130,6 +130,15 @@ describe('DD-AUTH-078 招待の受け口', () => {
     expect(JSON.stringify(audit.mock.calls)).not.toContain(TOKEN);
   });
 
+  test('DD-AUTH-078 作ったセッションを終わらせるのに成功した時は、session_revoke_failed を監査に残さない', async () => {
+    persist.mockResolvedValue({ ok: false });
+    endSession.mockResolvedValueOnce(true);
+    const res = await POST(req({ token: TOKEN }));
+    expect(res.status).toBe(500);
+    expect(endSession).toHaveBeenCalledWith(ACCESS);
+    expect(audit).not.toHaveBeenCalledWith(expect.objectContaining({ detail: 'session_revoke_failed' }));
+  });
+
   test('DD-AUTH-078 アプリの結び付けの失敗は、セッションを終わらせて500', async () => {
     persist.mockResolvedValue({ ok: false });
     const res = await POST(req({ token: TOKEN }));
