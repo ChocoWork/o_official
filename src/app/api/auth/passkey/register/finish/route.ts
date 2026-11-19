@@ -8,7 +8,8 @@
  * @remarks 順番: `guardPasskeyRegistration`（始めと同じ。窓が閉じていたら GoTrue を呼ばない）→ 本文の形（`id` と `rawId` の一致を含む）→
  * 登録の `attestationObject` の UV の印（無ければ 400 `uv_required`）→ GoTrue の検証 → 店員は `passkey_approve`（窓は `window`、入り直しは `reauth`）。
  * 認めが落ちたら（古い行・窓の上限の競り負けを含む）、管理 API で今作られた鍵を消して 500 `passkey_approve_failed`。消すのも失敗したら
- * 監査に `passkey_approve_failed:compensation_failed`。お客さんは認めの表を使わない。窓は閉じない・セッションは終わらせない（段3）。
+ * 監査に `passkey_approve_failed:compensation_failed`。招待の窓の人（役割が無い）も、店員と同じく `window` で認める（DD-AUTH-079）。招待の確かめが読めなければ 503。
+ * 招待の無いお客さんは認めの表を使わない。窓は閉じない・セッションは終わらせない（段3）。
  */
 import { logAudit } from '@/lib/audit';
 import { createServiceRoleClient } from '@/lib/supabase/server';

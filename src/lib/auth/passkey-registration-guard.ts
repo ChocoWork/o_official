@@ -32,6 +32,8 @@ export function registrationJson(body: unknown, status: number): NextResponse {
  * @design DD-AUTH-056
  * @remarks 外れたら `{ ok: false, response }`（GoTrue はまだ呼ばれていない）。監査には固定の符号と行為者の ID だけを残し、トークン・`challenge_id` は残さない。
  * 店員の判定の DB が使えない時・窓・本数が読めない時は 503（閉じる側）。
+ * 招待の道（DD-AUTH-079）: 役割が無い人も、有効な招待があるか、このセッションに結んだ窓が開いていれば窓の道に入る（窓を先に見る）。
+ * 招待の確かめ・窓が読めなければ 503（閉じる側）。
  */
 export async function guardPasskeyRegistration(
   request: Request,

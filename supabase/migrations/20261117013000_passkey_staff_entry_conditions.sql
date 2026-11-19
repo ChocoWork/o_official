@@ -2,7 +2,7 @@
 -- (SR-AUTH-014, DD-AUTH-047, ADR-0463, SEC-AUTH-039 / SEC-AUTH-040). This is the SWITCH: together with enabling the Custom Access Token hook
 -- (supabase/config.toml) and src/lib/auth/admin-rbac.ts, nobody but a passkey-entered staff member passes has_permission any more.
 --
--- Body = 20261029120100_sec_has_permission_aal2_member_rls.sql, with only the aal2 branch replaced. Order inside the function:
+-- Body = 20261029120100_sec_has_permission_aal2_member_rls.sql, with the aal2 branch replaced by conditions 1-3 and the idle condition (4, step 5) added. Order inside the function:
 --   1. auth.uid() empty                                               -> false (unchanged)
 --   2. private.staff_passkey_amr_ok(claims)  (conditions 1 and 2)     -> false. Cheap: claims and settings only. Same position as the old aal2 check,
 --                                                                        so customers and anon never reach the ACL tables or approved_passkeys.

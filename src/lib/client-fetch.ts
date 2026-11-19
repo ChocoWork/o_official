@@ -79,8 +79,6 @@ function parseRetryAfterMs(response: Response): number | null {
   return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
 }
 
-// セッションが切れたことを画面側へ伝える。ここで画面遷移まで行うと
-// client-fetch がルーティングの責務を持つことになるため、通知だけに留める。
 /** 応答が 401 `session_idle`（店員の無操作1時間）なら無操作の通知を出して真を返す。応答の本文は複製で読む。 */
 async function notifyIfSessionIdle(response: Response): Promise<boolean> {
   if (response.status !== 401 || typeof window === 'undefined') return false;
@@ -92,6 +90,8 @@ async function notifyIfSessionIdle(response: Response): Promise<boolean> {
   return idle;
 }
 
+// セッションが切れたことを画面側へ伝える。ここで画面遷移まで行うと
+// client-fetch がルーティングの責務を持つことになるため、通知だけに留める。
 function notifySessionExpired(): void {
   if (typeof window === 'undefined') {
     return;

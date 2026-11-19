@@ -21,14 +21,14 @@ const viewports = [
 const IDLE_MESSAGE = 'しばらく操作がなかったため、ログアウトしました。';
 
 /**
- * 最後の操作の時刻を書く API（管理 API・店員のパスキーの窓口）の呼び出しを追う。
+ * 最後の操作の時刻を書く API（管理 API・店員のパスキーの窓口）と、通行証の更新（`/api/auth/refresh`。更新の途中で静かと見なさないため）の呼び出しを追う。
  * /admin の読み込みは KPI の後に続けて API を呼ぶので、呼び出しの一覧は決め打ちにせず、「飛んでいる呼び出しが無く、しばらく静か」を待つ。
  * 応答は 'response' で数える（サーバーは答える前に時刻を書く。本文を読まない no-store の応答は requestfinished が来ない）。
  */
 function trackActivityCalls(page: Page) {
   const isActivityApi = (url: string) => {
     const path = new URL(url).pathname;
-    return path.startsWith('/api/admin/') || path.startsWith('/api/auth/passkey');
+    return path.startsWith('/api/admin/') || path.startsWith('/api/auth/passkey') || path === '/api/auth/refresh';
   };
   const open = new Set<Request>();
   const startedPaths: string[] = [];
@@ -44,8 +44,13 @@ function trackActivityCalls(page: Page) {
   });
   page.on('response', (response) => close(response.request()));
   page.on('requestfailed', close);
+  const isQuiet = () => open.size === 0 && startedPaths.length > 0 && Date.now() - lastChange >= 1_000;
   return {
-    isQuiet: () => open.size === 0 && startedPaths.length > 0 && Date.now() - lastChange >= 1_000,
+    /** 時間切れの時に、止まっている呼び出しの道が分かるよう、今の状態を文で返す。 */
+    describeState: () =>
+      isQuiet()
+        ? '静か'
+        : `静かではない（飛んでいる呼び出し: [${[...open].map((request) => new URL(request.url()).pathname).join(', ')}]、始まった呼び出し: ${startedPaths.length}件、最後の変化から ${Date.now() - lastChange}ms）`,
     startedCount: () => startedPaths.length,
     startedSince: (mark: number) => startedPaths.slice(mark),
   };
@@ -54,8 +59,8 @@ function trackActivityCalls(page: Page) {
 /** 画面が静まるまで待ってから最後の操作の時刻を戻す。戻している間に管理 API が呼ばれたら、上書きの競りとして名指しで落とす。 */
 async function backdateWhenQuiet(page: Page, calls: ReturnType<typeof trackActivityCalls>, actor: AdminSessionActor, minutes: number): Promise<void> {
   await expect
-    .poll(() => calls.isQuiet(), { timeout: 30_000, message: '/admin の管理 API の読み込みが静まる（飛んでいる呼び出しが無く、1秒静か）' })
-    .toBe(true);
+    .poll(() => calls.describeState(), { timeout: 30_000, message: '/admin の管理 API の読み込みが静まる（飛んでいる呼び出しが無く、1秒静か）' })
+    .toBe('静か');
   const mark = calls.startedCount();
   await setLastSeen(actor, minutes);
   expect(calls.startedSince(mark), '時刻を戻している間に管理 API が呼ばれた（最後の操作の時刻を上書きされる競り）').toEqual([]);

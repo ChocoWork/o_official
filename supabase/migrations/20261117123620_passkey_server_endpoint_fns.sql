@@ -24,9 +24,12 @@
 --        added). This closes the race of two window approvals at once. A repeat for an already approved key adds no row,
 --        so it is not blocked. reauth and script have no limit.
 --     3. Every branch (window, reauth, script) takes the same per-user lock first, with the namespaced key
---        hashtextextended('passkey_approve:' || user, 0) (not the bare uuid text), so a credential DELETE made through the
---        app's endpoint and an approval cannot interleave (a delete made straight against GoTrue does not take this lock:
---        see KNOWN REMAINING RISK below). via = 'reauth' raises 42501 'PASSKEY_REAUTH_NOT_ALLOWED' when the user has no
+--        hashtextextended('passkey_approve:' || user, 0) (not the bare uuid text). An approval is serialized only with a deleter that
+--        takes the same lock: public.passkey_delete_with_floor (the staff delete path) and private.staff_invite_issue_core
+--        (migration H; the other H functions that take it are staff_demote, staff_role_activate and the invite cancel / bind).
+--        NOT serialized (they reach GoTrue without the lock): the customer branch of passkey/[id]/route.ts, the cleanup delete in
+--        register/finish/route.ts, and any delete made straight against GoTrue (see KNOWN REMAINING RISK below).
+--        via = 'reauth' raises 42501 'PASSKEY_REAUTH_NOT_ALLOWED' when the user has no
 --        approved key yet (SEC-AUTH-052).
 --     Unchanged: another user's key raises 42501; the same credential_id under another passkey_id raises 23505.
 --

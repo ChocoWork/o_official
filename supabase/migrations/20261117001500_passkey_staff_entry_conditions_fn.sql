@@ -32,6 +32,8 @@
 -- SQLSTATE and SQLERRM; entry_ok has no handler of its own because both parts already catch). public.staff_idle_check and
 -- public.staff_idle_peek do NOT catch: a DB error is raised, so the app answers 503 (temporary) instead of logging the staff member out.
 -- staff_session_touch returns false on error (a failed touch only skips a write). All: SECURITY DEFINER, owner postgres, search_path empty.
+-- Volatility: the entry functions, private.staff_idle_ok, private.staff_idle_ok_strict and public.staff_idle_peek are STABLE; private.staff_session_touch_core,
+-- public.staff_session_touch and public.staff_idle_check write, so they are VOLATILE.
 -- 86400 and 2 are read from private.passkey_staff_settings(); the TS constants come from defaultStaffPasskeySettings().
 --
 -- Grants: execute on the private functions (the three entry functions, private.staff_idle_ok and private.staff_idle_ok_strict) is revoked from PUBLIC, anon,

@@ -11,7 +11,7 @@
 | 項目 | 内容 |
 | --- | --- |
 | 対応する ID | SR-AUTH-026、FR-AUTH-050、FR-AUTH-051、SEC-AUTH-059、THR-AUTH-056、DD-AUTH-085、DD-AUTH-091、FR-AUTH-034、FR-AUTH-035、FR-AUTH-037、DATA-AUTH-020、ARC-AUTH-012、SEC-AUTH-053、SEC-AUTH-054、THR-AUTH-052、DD-AUTH-070、DD-AUTH-071、DD-AUTH-072、DD-AUTH-073、DD-AUTH-075、DD-AUTH-076、DD-AUTH-077、DD-AUTH-078、FR-AUTH-041、SCR-AUTH-013、API-AUTH-037、FR-AUTH-038、FR-AUTH-039、FR-AUTH-040、API-AUTH-033、API-AUTH-034、API-AUTH-035、API-AUTH-036、SEC-AUTH-056、THR-AUTH-055、FR-AUTH-042、SEC-AUTH-057、THR-AUTH-053、DD-AUTH-079、FR-AUTH-043、SCR-AUTH-014、API-AUTH-038、DD-AUTH-080、ADR-0471 |
-| 対象のコード | 移行 `supabase/migrations/20261118130000_passkey_staff_invites.sql`、`src/lib/auth/staff-passkey-invite-errors.ts`、`src/features/auth/staff/invite-token.ts`・`invite-mail.ts`・`staff-invite-store.ts`・`staff-invite-send.ts`・`staff-invite-http.ts`、`src/app/api/admin/staff/**/route.ts`、`src/app/staff/register/page.tsx`、`src/features/auth/staff/components/StaffRegisterScreen.tsx`・`staff-register-client.ts`・`staff-register-access.ts`、`src/app/api/auth/staff/register/complete/route.ts` |
+| 対象のコード | 移行 `supabase/migrations/20261118130000_passkey_staff_invites.sql`、`src/lib/auth/staff-passkey-invite-errors.ts`、`src/features/auth/staff/invite-token.ts`・`invite-mail.ts`・`staff-invite-store.ts`・`staff-invite-send.ts`・`staff-invite-http.ts`、`src/app/api/admin/staff/**/route.ts`、`src/app/staff/register/page.tsx`、`src/features/auth/staff/components/StaffRegisterScreen.tsx`・`staff-register-client.ts`・`staff-register-access.ts`、`src/app/api/auth/staff/register/complete/route.ts`、`src/app/api/auth/staff/invite/start/route.ts`、`src/features/auth/staff/staff-invite-session.ts`、`src/lib/auth/passkey-auth-session-end.ts`、`src/app/staff/invite/page.tsx`、`src/features/auth/staff/components/StaffInviteScreen.tsx` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（5-4・6-2・8-1）、[段3の計画](../../superpowers/plans/2026-11-18-passkey-stage3-staff.md) |
 | 調べた時点 | 2026-11-20（手元の DB で結合試験を流した） |
 
@@ -329,6 +329,7 @@ sequenceDiagram
 - 店員でない人は `hasOpenInvite`（IMPL-AUTH-371。`staff_invite_open`。期限を含む）と、このセッションの `windowIsOpen` を並べて呼ぶ（どちらかが読めなければ 503）。両方偽なら今までのお客さんの道（本数・生存は引かない）。どちらかが真なら（招待の期限が過ぎても窓は最長30分開くので、窓が開いていれば招待は有効と見なす） `checkAuthSessionLiveness(session_id, true)` → `windowIsOpen`・`approvedCount` を店員と同じ順で確かめる
 - `evaluateRegistrationAccess` は `inviteWindowOpen`（窓が開いている）・`inviteOpen`（招待が有効）を受け取る。窓が開いて2本未満なら `window`、2本以上なら `reauth_required`、窓が閉じて招待だけ有効なら `window_closed`
 - `register/finish` は `guard.isStaff` が偽でも `guard.mode === 'window'` なら `passkey_approve(…, 'window')` を呼ぶ
+- 追跡（`@design` は1単位に1つの決まりなので、次の単位は `@design DD-AUTH-056` のまま、この DD の道を実装している）: `guardPasskeyRegistration`（IMPL-AUTH-286）、`evaluateRegistrationAccess`（IMPL-AUTH-275）、`register/start` の `POST`（IMPL-AUTH-276）、`register/finish` の `POST`（IMPL-AUTH-277）。この DD から単位へは `npm run trace` では辿れず、ここの一覧で辿る
 
 ### DD-AUTH-080 2本の登録は、窓口の返事で窓の内外を決め、そろったら役割を有効にして全ログインを終わらせる
 

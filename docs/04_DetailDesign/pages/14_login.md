@@ -444,6 +444,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/auth/verified/page.tsx`）、`docs/04_DetailDesign/sequence/auth-login-mfa.md` の「追加認証画面の入口と出口」 |
 
+**段3a の変更（DD-AUTH-082）:** 店員の入口の条件に足りない管理者・サポーターのうち、認めた鍵がちょうど1本の人は、TOTP の2段目へ落とさず `/admin/passkeys?more=1` へ置き換える（行き先は `/auth/verified` へ送り返さない）。TOTP の流れ自体は段4まで残す。`@design` は1単位に1つの決まりなので、このページの単位は `@design DD-AUTH-005` のまま、この動きは DD-AUTH-082（`docs/04_DetailDesign/sequence/auth-staff-passkey-manage.md`）が持つ（IMPL-AUTH-121）。
+
 **対応要件 ID:** SCR-AUTH-007、STATE-AUTH-003、FLOW-AUTH-001・003、ARC-AUTH-010、SEC-AUTH-008・026・028（その上は FR-AUTH-005、FR-LOGIN-007、FREQ-73-REQ-01、DRV-AUTH-009、FREQ-515-REQ-01（FREQ-515-AC-02）、FREQ-377（範囲外））
 
 **入出力:**

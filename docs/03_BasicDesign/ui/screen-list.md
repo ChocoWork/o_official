@@ -1,5 +1,7 @@
 # 画面一覧
 
+> パスキー段3b Task 22 確認日: 2026-11-20。`/staff/invite`・`/staff/register` の行を、認証・アカウント画面の表に足した（10ルートから12ルート。段3a の Task 9 の注にあった「行が無い」の2ルート）。
+>
 > パスキー段3a Task 11 確認日: 2026-11-19。画面ルートの数は変えない。`/admin` の「ユーザー」タブ（`UserSection`）に、店長の店員の操作を足した（「店員を招待」、店員の行の認めた鍵の本数・「パスキーを全部消してやり直す」・「お客さんに戻す」、招待中の行の「招待を取り消す」、お客さんの行の役割の選択は「店員にする」の確認の後に PATCH）。基本設計の認証 SCR-AUTH-016、詳細設計 DD-AUTH-084。
 >
 > パスキー段3a Task 10 確認日: 2026-11-19。`/login` に `?error=staff_passkey_required`（店員が Google で断られた戻り）の固定の文を足した。画面ルートの数は変えない
@@ -73,7 +75,7 @@
 | `/terms` | 利用規約 | 規約本文を表示。ページ固有のルートリンクなし | [page.tsx](../../../src/app/terms/page.tsx) |
 | `/legal` | 法定表記 | お問い合わせへのリンク | [page.tsx](../../../src/app/legal/page.tsx) |
 
-## 認証・アカウント画面（10ルート）
+## 認証・アカウント画面（12ルート）
 
 | パス | 画面・役割 | 導線・同一画面内の状態 | 実装 |
 | --- | --- | --- | --- |
@@ -88,6 +90,8 @@
 | `/account` | アカウント情報 | プロフィール・配送先・注文・問い合わせの4タブと、お客さんだけの「ログイン方法」タブ（`tab=security`。パスキーの一覧・追加・名前の変更・削除。DD-AUTH-065。`/account/password` へのリンクは段2で外した）。注文詳細へ移動。未ログインは案内リンク、ログアウト成功はホームへ。各編集・返信は同画面 | [page.tsx](../../../src/app/account/page.tsx) |
 | `/account/password` | パスワード変更（波 6 / SEC-AUTH-034） | 直に開く2段（段2でアカウントの画面のリンクは外した。1 現行パスワード → 確認コードをメールに送る、2 8桁のコードと新しいパスワード〔16文字以上・UTF-8で72バイト以内〕）。成功すると全端末の session が失効するので、ログインの状態を引き直して `/login` へ。段1に Google だけの会員向けの案内と `/auth/password-reset` へのリンクを固定で出す。未ログインは案内だけを出し、戻り先つきの `/login` へ。`robots: noindex` | [page.tsx](../../../src/app/account/password/page.tsx)、[フォーム](../../../src/app/account/password/PasswordChangeForm.tsx) |
 | `/account/orders/[id]` | 注文詳細 | 自分の注文を取得し、`/account?tab=orders` に戻る。お問い合わせ、条件付き外部配送追跡へ。再度購入はカート追加後も同画面。商品行の予約注文分岐は下の補足を参照。未ログインは案内リンク | [[id]/page.tsx](../../../src/app/account/orders/%5Bid%5D/page.tsx) |
+| `/staff/invite` | 店員の招待のリンク（段3a Task 6 / DD-AUTH-078） | メールのリンク（`#` に合言葉）から開く。画面を開いただけでは何も送らず、ボタンを押した時だけ受け口 `POST /api/auth/staff/invite/start` を呼び、成功したら `/staff/register` へ移る。使えないリンク・失敗・試行の集中は固定の文を出す。検索に載せない | [page.tsx](../../../src/app/staff/invite/page.tsx)、[StaffInviteScreen](../../../src/features/auth/staff/components/StaffInviteScreen.tsx) |
+| `/staff/register` | 店員の2本の登録（段3a Task 7 / DD-AUTH-080） | `/staff/invite` から移動。このセッションに結んだ登録の窓が開いていなければサーバーで `/login` へ送り、DB が読めない時は送らず「しばらくしてからお試しください。」を出す。「1本目」「2本目」の2段で鍵を登録し、2本そろったら完了の窓口を呼んで完了の文と「ログインへ」を出す。検索に載せない | [page.tsx](../../../src/app/staff/register/page.tsx)、[StaffRegisterScreen](../../../src/features/auth/staff/components/StaffRegisterScreen.tsx) |
 | `/account/orders/[id]/return` | 返品・交換のお申し込み | 注文詳細の「返品・交換を申し込む」から開く3段（商品を選ぶ・内容を確かめる・お申し込みの受付）。受付の状態が closed・ended・none の注文は文と「注文の画面に戻る」だけ。未ログインは案内リンク。受け付けた段から注文詳細へ戻れる | [return/page.tsx](../../../src/app/account/orders/%5Bid%5D/return/page.tsx) |
 
 [注文商品の共通表示](../../../src/features/account/components/OrderItemRow.tsx)には、`itemId` があり `stockStatus=sold_out` の商品から `/contact?subject=予約注文：{商品名}` へ進む分岐がある。ただし現行の注文詳細APIは `stockStatus` を返さないため、注文詳細での表示条件は成立しない。contactはこのクエリから件名を初期入力しない。

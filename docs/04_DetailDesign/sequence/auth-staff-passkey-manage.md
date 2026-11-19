@@ -53,4 +53,4 @@ sequenceDiagram
 - 削除の部品 `deleteStaffPasskey`（IMPL-AUTH-387）: `passkey_delete_with_floor(p_user_id, p_passkey_id)` を1回呼ぶ。`STAFF_MIN_KEYS` → `min_keys`、`PASSKEY_NOT_FOUND` → `not_found`、それ以外・例外 → `failed`（呼び手が 503）
 - DB の関数（移行 H。本番未適用のため同じファイルで直した）: 利用者ごとの錠 → 鍵の存在（`FOR UPDATE`）→ 店員なら、**消す鍵が認めた鍵で、残りの認めた本数が `min_approved_passkeys` 未満になる時だけ** `STAFF_MIN_KEYS`（P0001）。認めていない鍵は、認めた鍵が下限未満でも消せる（疑わしい鍵を外せる）。お客さんは何本でも消せる
 - 窓口 `DELETE`: 店員は GoTrue の削除を呼ばず、DB の関数だけ。お客さんは今までどおり GoTrue。409 の符号は `staff_min_keys`（旧 `staff_min_passkeys` を改めた）
-- 既知の残り: 店員が自分の通行証で GoTrue の `DELETE /user/passkeys/{id}` を直に叩く道は、アプリの窓口を通らないので下限を守れない（GoTrue 側の削除を止める仕組みは未整備）。この場合でも、鍵が2本未満になれば管理 API・RLS は認めた鍵の本数で断る（入口の条件）。段3b か段4で、削除を止める引き金を検討する
+- 既知の残り: 店員が自分の通行証で GoTrue の `DELETE /auth/v1/passkeys/{id}`（`passkey-gotrue.ts` の `deletePasskey`）を直に叩く道は、アプリの窓口を通らないので下限を守れない（GoTrue 側の削除を止める仕組みは作らない）。この場合でも、鍵が2本未満になれば管理 API・RLS は認めた鍵の本数で断る（入口の条件）ので、起きるのは自分が入れなくなる（可用性）だけで、権限は増えず、店長のやり直し（redo）で戻せる。オーナーが 2026-11-19 にこの残りを受け入れると決めた（削除を止める引き金は作らない。移行 J は無い）。手順書の「残る危険」に載せる

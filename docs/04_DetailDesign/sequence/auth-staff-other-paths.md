@@ -52,4 +52,5 @@ sequenceDiagram
 - 古いパスワード（`/api/auth/login`）: GoTrue のフックが断り、窓口は 401 で確認コードの段へ進まない（変えない。店員かどうかの案内は出さない）
 - TOTP の登録: 認証（`authenticateRequest`）→ 役割が admin・supporter → `isStaff`（`passkey_is_staff`）→ 真なら `mfa_enroll`・`denied`・`totp_retired` を監査に残して 410。`isStaff` が失敗したら 503（登録しない）。要素の一覧・登録は呼ばない。認証に通らない 401・お客さんの 403・店員でない管理の役割は今までどおり
 - セッション終了の監査: ログインの終わりの4か所（形の違う応答・店員の判定の DB の失敗・認めた鍵の判定の DB の失敗・認めていない鍵）で `endAuthSession` が偽を返した時に、`auth.passkey.login.end_session_failed`・`error`・`detail: revoke_failed:<断りの理由の符号>`・`actor_id`（分かる時）を残す。トークン・`session_id`・メールは残さない。断りの応答（403・503・401）は変えない。成功時のログイン（店員の無操作の時刻を1回書く。書けなくても断らない。DD-AUTH-081）は変えない
+- 追跡（`@design` は1単位に1つの決まりなので、次の単位は元の DD のまま、この DD の動きも持つ）: `GET /api/auth/oauth/callback`（IMPL-AUTH-166）、`POST /api/auth/mfa/enroll-totp`（IMPL-AUTH-204）、`POST /api/auth/passkey/login/finish`（IMPL-AUTH-274）、`/login` のページ（IMPL-AUTH-324）、`LoginChoices`（IMPL-AUTH-325）。この DD から単位へは `npm run trace` では辿れず、ここの一覧で辿る
 - テスト観点: 印つきの403（交換・戻りの URL）、印の無い誤りの不変、`error` の値の絞り込み、410 と 503 と 401・403 の順番、監査の中身にトークン・`session_id`・メールが無いこと

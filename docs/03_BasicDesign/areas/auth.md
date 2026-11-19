@@ -2029,7 +2029,7 @@ stateDiagram-v2
 | 関数 | 引数 | 返り値 | 動き |
 | --- | --- | --- | --- |
 | `private.passkey_staff_settings` | なし | `jsonb` | 設定の1行を `id` を除いて返す。`STABLE`。`public`・`anon`・`authenticated` に `execute` を渡さない（`has_permission` とフックが所有者の権限で呼ぶ） |
-| `public.passkey_approve` | 利用者・鍵の id・`window`/`reauth`/`script` | なし | 鍵が無い、または持ち主が渡した利用者でなければ例外（`42501`）。同じ `credential_id` が別の `passkey_id` で既に認められていれば例外（`23505`。行は消さない）。そうでなければ `credential_id` を写して認めの行を入れる。同じ鍵の2回目は何もしない |
+| `public.passkey_approve` | 利用者・鍵の id・`window`/`reauth`/`script` | なし | 鍵が無い、または持ち主が渡した利用者でなければ例外（`42501`）。同じ `credential_id` が別の `passkey_id` で既に認められていれば例外（`23505`。行は消さない）。そうでなければ `credential_id` を写して認めの行を入れる。同じ鍵の2回目は何もしない。`reauth` は認めた鍵が0本なら `42501`（`PASSKEY_REAUTH_NOT_ALLOWED`）で断る |
 | `public.passkey_window_open` | 利用者・セッションの id | `timestamptz` | `auth.sessions` でそのセッションがその利用者の物でなければ例外（`42501`）。期限切れの開いた行は閉じる。開いた行が無ければ作り（`window_minutes` 後が期限）、あれば作らず既存の期限を返す |
 | `public.passkey_window_close` | セッションの id | なし | そのセッションの開いた窓を閉じる |
 | `public.passkey_window_is_open` | 利用者・セッションの id | `boolean` | 利用者とセッションの両方が合い、閉じておらず、期限内なら真 |
@@ -2248,7 +2248,7 @@ flowchart LR
 - `public.staff_idle_check(session, user)`: `staff_idle_ok_strict` が真なら同じ間引きで時刻を進めて真（内側は `private.staff_session_touch_core`。だれにも `execute` を渡さない）。書き込みが失敗したら例外を投げ、真を返さない（窓口・ページは 503）。間引きで書かないのは失敗ではない。偽なら書かない
 - `public.staff_idle_peek(session)`: `staff_idle_ok_strict` だけ。時刻を進めない（`/api/auth/me` 用）。DB の誤りは例外になり、窓口・ページは「無操作」ではなく 503 にする（ログアウトさせない）
 - 3つの `public` 関数は `service_role` だけが実行できる。移行 E の `has_permission` が `private.staff_idle_ok` を4つ目の条件（認めた鍵の本数の次、`app_session_is_live` の前）で呼ぶ
-- 費用: `has_permission` を `( SELECT ... )` で包まずに呼ぶ決まりが77件あるが、4つ目の条件は ACL と認めた鍵の本数を通った店員だけが払う（お客さん・anon は手前で止まる）。1回は主キーの1行の読みで、`EXPLAIN` の実行計画の件数は増やさない
+- 費用: `has_permission` を `( SELECT ... )` で包まずに呼ぶ決まりが77件あるが、4つ目の条件は ACL と認めた鍵の本数を通った店員だけが払う（お客さん・anon は手前で止まる）。1回の費用は、設定の読み1回と `staff_session_activity` の主キーの1行の読み1回（行が無い時は `auth.sessions` の主キーの読みがもう1回）。数えて書いた物で、`EXPLAIN` では測っていない（plpgsql の関数の中は `EXPLAIN` に出ない）
 
 ### DATA-AUTH-022 送り箱は店長への知らせの3種類を持ち、操作した店長のアドレス `actor_email` を持つ
 

@@ -62,7 +62,7 @@ sequenceDiagram
 - `authorizeAdminPermissions`（呼ぶだけ。`@impl` は足さない）: 権限・認めた鍵・入口の条件を通った後に `touch`。`idle` は 401 `{ error: 'session_idle' }` で `endAuthSessionById`（IMPL-AUTH-381。`revoke_auth_session`。24時間まで残る更新の道を閉じる）。`error` は 503・`Retry-After: 30` で、ログアウトも 401 もしない（書き込みの失敗・DB の一時の不調が永久の拒否にならない）。お客さんは権限の確かめで止まるので、ここに来ない
 - `GET /api/auth/me`: 役割が admin・supporter の時だけ `peek`。`idle` は GoTrue のセッションを終わらせて（`endAuthSessionById`）`{ authenticated: false, reason: 'idle' }`（200）、`error` は今の unavailable と同じ形 `{ authenticated: false, reason: 'unavailable' }`（503・`Retry-After: 30`。画面は 503 で今の状態を保つので、一時の不調でログアウトに落ちない）
 - `POST /api/auth/passkey/login/finish`: 店員のログインの成功で `staffSessionTouch` を1回呼ぶ。書き込みの失敗はログインを断らない（行が無くても作られてから1時間は通り、次の窓口の確かめが書く）
-- 開いたままの管理画面: API が 401 `session_idle` を返すと、`clientFetch` は更新を試さず `auth:session-idle` を出し、`LoginContext` が `authReason = 'idle'` にする。管理画面 `/admin` は `authReason` が `idle` なら `/login?reason=idle` へ送る。ログインの画面は「しばらく操作がなかったため、ログアウトしました。もう一度ログインしてください。」を出す
+- 開いたままの管理画面: API が 401 `session_idle` を返すと、`clientFetch` は更新を試さず `auth:session-idle` を出し、`LoginContext` が `authReason = 'idle'` にする。期限切れの通行証で更新が通った後の再送が 401 `session_idle` でも同じ通知を出す（開いたままの画面の普通の経路）。後続の失効の通知（`auth:session-expired`）は、先に付いた理由 `idle` を消さない。管理画面 `/admin` は `authReason` が `idle` なら `/login?reason=idle` へ送る。ログインの画面は「しばらく操作がなかったため、ログアウトしました。もう一度ログインしてください。」を出す
 
 **店員の一覧・名前・削除の入口（`/api/auth/passkey/*`。IMPL-AUTH-382 `denyIdleStaff`）**。同じ確かめを通す。お客さんには当てない。確かめの失敗は、すべての呼び元で閉じる側（503「しばらくしてからお試しください。」）にそろえ、`/login` へは送らない（回る道になる）。
 
