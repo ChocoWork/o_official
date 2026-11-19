@@ -296,12 +296,12 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 
 ### 戻し方の順（移行をまたぐ）
 
-全部の箇所でこの1つの順（正本は [本番に当てる手順書](./passkey-production-apply-runbook.md) の節4）: **(1) 毎分の定期処理（`process-stripe-webhooks`）を止め（再開しない）、アプリのデプロイを戻す → (2) ダッシュボードのフックの登録を外す → (3) E → (4) I → (5) H → (6) G → (7) F → (8) D → (9) C → (10) B → (11) A**。H は G の列を使うので G より先に落とす。各移行の戻し方は、上の各節とファイルのヘッダーの `ROLLBACK`。
+全部の箇所でこの1つの順（正本は [本番に当てる手順書](./passkey-production-apply-runbook.md) の節4）: **(1) 毎分の定期処理（`process-stripe-webhooks`）を止め（再開しない）、アプリのデプロイを戻す → (2) ダッシュボードのフックの登録を外す → (2b) TOTP を止めていたら有効に戻す → (2c) Passkeys を無効に戻すか決める → (3) E → (3b) 店長がまた入る道を作る → (4) I → (5) H → (6) G → (7) F → (8) D → (9) C → (10) B → (11) A**。H は G の列を使うので G より先に落とす。各移行の戻し方は、上の各節とファイルのヘッダーの `ROLLBACK`。
 
 1. 先に、定期処理を止めてアプリのデプロイを戻す。アプリを戻す時、outbox に新しい種類の行が残っていたら `skipped` にする。
-2. 次に、ダッシュボードで Auth のフックの登録を外す（外さずに B を戻すと、フックの関数が無いので全員のログインが止まる）。
-3. 次に、逆順で E → I → H → G → F → D → C → B → A の順に戻す。
-   - E: `20261029120100_sec_has_permission_aal2_member_rls.sql` の本体に戻す（A〜D の関数を使わなくなる）。
+2. 次に、ダッシュボードで Auth のフックの登録を外す（外さずに B を戻すと、フックの関数が無いので全員のログインが止まる）。TOTP を止めていたら有効に戻し（(3) の後の `has_permission` は `aal2` を求める）、Passkeys を無効に戻すか決める。
+3. 次に、E を戻す。**店長がまた入る道を作る**: E を戻した後の店長は、パスワードも TOTP も無い（最初の店長はパスワード無しで作り、H の招待の取引が招待された人の TOTP の要素を消している。**どの `ROLLBACK` も、消した TOTP の要素を戻さない**）。`admin:bootstrap` は有効な店長がすでにいると断る（`admin_exists`）ので、役割の行が残っていればダッシュボードでパスワードを設定（または再設定のメール）し、店長がパスワードで入って TOTP を登録し直す（[最初の店長を作る手順](./first-admin-bootstrap.md)）。役割の行ごと無い時だけ `admin:bootstrap`。
+4. 次に、逆順で I → H → G → F → D → C → B → A の順に戻す。
    - I: **先に** `delete from public.ops_job_heartbeats where job = 'passkey_notification_worker';`（先に消さないと CHECK を戻せない）。CHECK は I の前に控えた定義に戻す（(b) で当てて I が CHECK を変えていない時は触らない）。関数2本・索引・列 `dead_notified_at` を `DROP`。
    - H: 後半の3本・`admin_set_user_role` の本体・public の関数・private の関数・表を落とす（ヘッダーの ROLLBACK）。G の列を使うので G より先。
    - G: 関数・索引・列を落とす（ヘッダーの ROLLBACK）。
@@ -309,8 +309,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
    - D: 無操作の関数 `public.staff_idle_peek`・`staff_idle_check`・`staff_session_touch`・`private.staff_idle_ok`・`private.staff_idle_ok_strict`・`private.staff_session_touch_core` と管理の入口の関数3本を落とし、表 `private.staff_session_activity` を落とす（E を戻した後。E の `has_permission` が呼ぶので、E より先に落とすと管理の権限が全部偽になる）。
    - C: 先に関数を空（`RETURN NULL` だけ）にし、引き金の削除は `supabase_auth_admin` の手順（サポートに依頼）。
    - B: `DROP FUNCTION public.passkey_access_token_hook(jsonb);`（登録を外した後）。
-   - A: 表と関数を落とす。**C の引き金が生きている間は A を戻さない**（引き金が `approved_passkeys` を消そうとして、鍵の削除と鍵を持つ利用者の削除がすべて失敗する）。
-
+   - A: 表と関数を落とす。**C の関数を空にする前は、C の引き金が生きている間は A を戻さない**（引き金が `approved_passkeys` を消そうとして、鍵の削除と鍵を持つ利用者の削除がすべて失敗する）。
 
 ## CI の引き金を止めた記録（2026-11-16）
 
