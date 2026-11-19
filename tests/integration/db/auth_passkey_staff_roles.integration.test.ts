@@ -116,6 +116,10 @@ describeLocalDb('passkey staff roles (migration H second half)', () => {
     )).rows.map((x) => x.code);
   const appRole = async (u: string): Promise<string | null> =>
     (await db().query(`select raw_app_meta_data ->> 'role' as r from auth.users where id = $1`, [u])).rows[0].r;
+  /** Pending passkey_removed notices queued for one deleted key (the trigger of migration C queues them). */
+  const removedNotices = (u: string, passkeyId: string) => count(
+    `select count(*)::int as n from private.passkey_notification_outbox where user_id = $1 and passkey_id = $2 and kind = 'passkey_removed' and status = 'pending'`,
+    [u, passkeyId]);
   /** A staff member with `n` keys, of which the first `approved` are approved. */
   async function staffWithKeys(n: number, approved: number, role = 'supporter'): Promise<{ id: string; keys: string[] }> {
     const id = await user(role);
@@ -319,6 +323,7 @@ describeLocalDb('passkey staff roles (migration H second half)', () => {
       const three = await staffWithKeys(3, 3, 'admin');
       await deleteKey(three.id, three.keys[0]);
       expect(await keyCount(three.id)).toBe(2);
+      expect(await removedNotices(three.id, three.keys[0])).toBe(1);
       expect(await approvalCount(three.id)).toBe(2);
       expect(await fails(() => deleteKey(three.id, three.keys[1]))).toMatchObject({ message: 'STAFF_MIN_KEYS' });
     });
@@ -347,6 +352,7 @@ describeLocalDb('passkey staff roles (migration H second half)', () => {
       expect(await fails(() => deleteKey(customer, ko))).toMatchObject({ code: 'P0002', message: 'PASSKEY_NOT_FOUND' });
       await deleteKey(customer, k);
       expect(await keyCount(customer)).toBe(0);
+      expect(await removedNotices(customer, k)).toBe(1);
       expect(await keyCount(other)).toBe(1);
     });
 
@@ -637,7 +643,7 @@ describeLocalDb('passkey staff roles (migration H second half)', () => {
             const deadline = Date.now() + 5000;
             for (;;) {
               const r = await setup.query(
-                `select exists (select 1 from pg_locks where pid = $1 and locktype = 'advisory' and not granted) as w`, [pid]);
+                `select exists (select 1 from pg_locks where pid = $1 and locktype = 'advisory' and not granted and classid = 190519 and objid = 0 and objsubid = 2) as w`, [pid]);
               if (r.rows[0].w) return;
               if (Date.now() > deadline) throw new Error(`race setup: ${label} (pid ${pid}) never queued on the advisory lock within 5 s`);
               await new Promise((r2) => setTimeout(r2, 20));

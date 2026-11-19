@@ -1,5 +1,5 @@
 /**
- * 管理 API の認可の門（ADMIN 領域。ユーザー作成・強制失効・MFA のリセット・監査ログ・問い合わせ・色見本）。
+ * 管理 API の認可の門（ADMIN 領域。強制失効・MFA のリセット・監査ログ・問い合わせ・色見本）。
  * SEC-ADMIN-001-AC-01〜03（JWT の無い要求・aal1・サポーター）と SEC-ADMIN-005-AC-01〜02（Origin の検査）を確かめる。
  *
  * 全部 HTTP の層で、画面は開かない。本番ビルドの窓口へ Playwright の request で直に要求するので、viewport は関係しない
@@ -29,7 +29,6 @@ type Endpoint = { method: Method; path: string; data?: unknown };
 
 type Fixture = {
   tag: string;
-  createEmail: string;
   victim: AdminSessionActor;
   inquiryId: string;
   templateId: string;
@@ -93,7 +92,6 @@ async function seedFixture(db: PgClient): Promise<Fixture> {
   );
   return {
     tag,
-    createEmail: `${tag}-created@example.com`,
     victim,
     inquiryId: inquiry.rows[0].id,
     templateId: template.rows[0].id,
@@ -112,12 +110,11 @@ async function cleanupFixture(db: PgClient, f: Fixture): Promise<void> {
 async function snapshot(db: PgClient, f: Fixture): Promise<unknown> {
   const counts = await db.query(
     `select
-       (select count(*)::int from auth.users where email = $1) as created_users,
-       (select count(*)::int from auth.users where id = $2::uuid) as victim_users,
-       (select count(*)::int from auth.sessions where user_id = $2::uuid) as victim_auth_sessions,
-       (select count(*)::int from public.sessions where user_id = $2::uuid and revoked_at is null) as victim_live_app_sessions,
-       (select count(*)::int from auth.mfa_factors where user_id = $2::uuid) as victim_mfa_factors`,
-    [f.createEmail, f.victim.userId],
+       (select count(*)::int from auth.users where id = $1::uuid) as victim_users,
+       (select count(*)::int from auth.sessions where user_id = $1::uuid) as victim_auth_sessions,
+       (select count(*)::int from public.sessions where user_id = $1::uuid and revoked_at is null) as victim_live_app_sessions,
+       (select count(*)::int from auth.mfa_factors where user_id = $1::uuid) as victim_mfa_factors`,
+    [f.victim.userId],
   );
   const presets = await db.query(
     `select id::text as id, name, hex from public.item_color_presets where starts_with(name, $1) order by id`,

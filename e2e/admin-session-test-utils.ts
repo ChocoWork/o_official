@@ -347,6 +347,22 @@ export async function createWindowSessionActor(
 }
 
 /**
+ * 既にいる利用者（役割が無い・窓の中の人でもよい）の、窓を開けたものとは別の session を magiclink で作り、アプリに結び付ける（bindAppSession）。
+ * 招待の窓の中の人が、別の入り方（メールのコードなど）で持った session の通行証を真似る。手元の DB だけ。失敗の文面に token・session_id を出さない。
+ */
+export async function createOtherSessionForUser(
+  db: PgClient,
+  input: { userId: string; email: string },
+): Promise<{ sessionId: string; accessToken: string }> {
+  assertLocalDbClient(db);
+  const session = await signInWithMagicLink(localAuthEnv(), input.email);
+  const claims = readClaims(session.access_token);
+  if (!claims.session_id || claims.sub !== input.userId) throw new Error('別の session ができていない');
+  await bindAppSession(db, { userId: input.userId, accessToken: session.access_token, refreshToken: session.refresh_token });
+  return { sessionId: claims.session_id, accessToken: session.access_token };
+}
+
+/**
  * 認めたパスキー1本の店員（'aal1'）の同じ session（session_id は変わらない）で、2本目を登録して認め、refresh して、
  * 認めたパスキー2本（'aal2'）の JWT を持つ利用者を返す（同じ人の1本・2本の JWT を並べたい時に使う）。
  * 認めた本数は DB でその場で数えるので、先に出した JWT も、この呼び出しの後は2本として扱われる。

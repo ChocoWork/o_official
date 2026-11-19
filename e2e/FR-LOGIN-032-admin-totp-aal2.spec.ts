@@ -403,7 +403,7 @@ for (const viewport of viewports) {
 
       // 断られ、要素が作られない
       // 店員（user_roles が有効）は、段3a から窓口が 410 totp_retired で断る（DD-AUTH-083）。
-      expect([401, 403, 410], `登録が断られる（実際: ${response.status()}）`).toContain(response.status());
+      expect(response.status(), '店員の登録は 410 totp_retired で断られる').toBe(410);
       expect(await factorCountOf(userId), '要素が作られない').toBe(0);
       // 断りが監査に残る（成功ではない行が、この利用者で1つ以上）
       const denied = (await auditRowsOf(userId, 'enroll')).filter((row) => row.outcome !== 'success');

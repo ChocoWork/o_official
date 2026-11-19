@@ -285,7 +285,10 @@ describeLocalDb('passkey server endpoint functions', () => {
     test('DATA-AUTH-018 SEC-AUTH-052 reauth is refused (42501) for a user with no approved key, and no row is added', async () => {
       const u = await user('admin');
       const k = await key(u);
+      await db().query('savepoint ra');
       await expect(approve(u, k.id, 'reauth')).rejects.toMatchObject({ code: '42501', message: REAUTH_MSG });
+      await db().query('rollback to savepoint ra');
+      expect((await db().query('select count(*)::int as n from private.approved_passkeys where user_id = $1', [u])).rows[0].n).toBe(0);
     });
 
     test('DATA-AUTH-018 SEC-AUTH-052 reauth passes for a user who already has one approved key', async () => {
@@ -304,6 +307,14 @@ describeLocalDb('passkey server endpoint functions', () => {
       await approve(u, k1.id, 'window');
       await approve(u, k2.id, 'script');
       expect((await db().query('select public.passkey_approved_count($1) as n', [u])).rows[0].n).toBe(2);
+    });
+
+    test('DATA-AUTH-018 SEC-AUTH-052 script is the first approval for a user with zero approved keys and passes', async () => {
+      const u = await user('admin');
+      const k = await key(u);
+      expect((await db().query('select public.passkey_approved_count($1) as n', [u])).rows[0].n).toBe(0);
+      await approve(u, k.id, 'script');
+      expect((await db().query('select approved_via from private.approved_passkeys where passkey_id = $1', [k.id])).rows[0].approved_via).toBe('script');
     });
 
     test('DATA-AUTH-018 SEC-AUTH-052 the body uses the namespaced advisory lock key', async () => {
@@ -326,6 +337,26 @@ describeLocalDb('passkey server endpoint functions', () => {
       expect(await has(bare)).toBe(false);
     });
 
+    test('DATA-AUTH-018 SEC-AUTH-052 the final assert block of migration F passes on the real body and raises passkey_f_approve_body once the lock key is bare', async () => {
+      const file = readFileSync(join(process.cwd(), 'supabase/migrations/20261117123620_passkey_server_endpoint_fns.sql'), 'utf8').replace(/\r\n/g, '\n');
+      const block = file.match(/-- PASSKEY_F_FINAL_ASSERT\n(DO \$\$[\s\S]*?\n\$\$;)\n-- PASSKEY_F_FINAL_ASSERT_END/);
+      expect(block).not.toBeNull();
+      const assertBlock = (block as RegExpMatchArray)[1];
+      await expect(db().query(assertBlock)).resolves.toBeTruthy();
+      const def = (await db().query(`select pg_get_functiondef('public.passkey_approve(uuid,uuid,text)'::regprocedure) as d`)).rows[0].d as string;
+      const namespaced = "hashtextextended('passkey_approve:' || p_user_id::text, 0)";
+      expect(def).toContain(namespaced);
+      await db().query('savepoint bare');
+      await db().query(def.replace(namespaced, 'hashtextextended(p_user_id::text, 0)'));
+      await expect(db().query(assertBlock)).rejects.toMatchObject({
+        code: '55000',
+        message: 'PASSKEY_MIGRATION_ASSERTION_FAILED',
+        detail: 'passkey_f_approve_body',
+      });
+      await db().query('rollback to savepoint bare');
+      await expect(db().query(assertBlock)).resolves.toBeTruthy();
+    });
+
     test.each(['window', 'reauth', 'script'])('DATA-AUTH-018 SEC-AUTH-052 via %s waits for the namespaced lock held by another connection and leaves no row for a deleted key', async (via) => {
       const a = await connect();
       const b = await connect();
@@ -337,8 +368,21 @@ describeLocalDb('passkey server endpoint functions', () => {
         const target = await key(u, setup);
         await b.query('begin');
         await b.query(`select pg_advisory_xact_lock(hashtextextended('passkey_approve:' || $1::text, 0))`, [u]);
+        const aPid: number = (await a.query('select pg_backend_pid() as pid')).rows[0].pid;
+        let settled = false;
         const pending = approve(u, target.id, via, a).then(() => 'ok', (e: { code?: string }) => e.code ?? 'err');
-        await new Promise((r) => setTimeout(r, 400));
+        void pending.then(() => { settled = true; });
+        // the approver must be seen waiting on an advisory lock while b still holds it, before b deletes and commits
+        let waiting = false;
+        for (let i = 0; i < 100 && !waiting; i += 1) {
+          waiting = (await setup.query(
+            `select count(*)::int as n from pg_stat_activity where pid = $1 and wait_event_type = 'Lock' and wait_event = 'advisory'`,
+            [aPid],
+          )).rows[0].n === 1;
+          if (!waiting) await new Promise((r) => setTimeout(r, 20));
+        }
+        expect(waiting).toBe(true);
+        expect(settled).toBe(false);
         await b.query('delete from auth.webauthn_credentials where id = $1', [target.id]);
         await b.query('commit');
         expect(await pending).toBe('42501');

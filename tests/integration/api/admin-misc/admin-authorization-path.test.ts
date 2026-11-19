@@ -24,15 +24,9 @@ jest.mock('@/lib/auth/admin-rbac', () => {
 // 回数の制限と、認可失敗の監査の上限の数え方は DB に触るので差し替える（呼ばれ方は窓口ごとの単体・結合試験で確かめる）。
 jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
 jest.mock('@/features/auth/ratelimit', () => ({ incrementCounter: jest.fn() }));
-// 漏洩したパスワードの照合は外部の API を呼ぶので差し替える（利用者の作成だけが使う）
-jest.mock('@/lib/pwned-password', () => ({
-  checkPwnedPassword: jest.fn(),
-  PWNED_PASSWORD_MESSAGE: 'pwned-message',
-}));
 
 const { createServiceRoleClient } = require('@/lib/supabase/server');
 const { verifyAccessToken, checkAuthSessionLiveness } = require('@/lib/auth/authenticate');
-const { checkPwnedPassword } = require('@/lib/pwned-password');
 const rbac = require('@/lib/auth/admin-rbac');
 const authorize: jest.Mock = rbac.authorizeAdminPermission;
 const actualRbac = jest.requireActual('@/lib/auth/admin-rbac');
@@ -244,7 +238,6 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    checkPwnedPassword.mockResolvedValue({ status: 'ok' });
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   });

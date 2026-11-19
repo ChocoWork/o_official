@@ -983,12 +983,21 @@ describe('/auth/verified の頁: 認めた鍵が1本の店員は「もう1本」
     expect(callsTo('/api/auth/mfa/enroll-totp')).toHaveLength(0);
   });
 
-  it('DD-AUTH-082 無限の遷移にならない: 送った先から /auth/verified へ戻す呼びを、この頁は1回しか出さない', async () => {
+  it('DD-AUTH-082 無限の遷移にならない: 1回置き換えた後、再描画と待ちを挟んでも2回目の遷移も窓口の読み直しも起きない', async () => {
     routeFetch({ '/api/auth/me': adminUnverified, '/api/auth/passkey': staffKeys(1) });
-    render(<VerifiedPage />);
+    const view = render(<VerifiedPage />);
 
     await waitFor(() => expect(mockReplace).toHaveBeenCalledTimes(1));
     expect(mockReplace).toHaveBeenCalledWith('/admin/passkeys?more=1');
+    const passkeyCalls = callsTo('/api/auth/passkey').length;
+
+    view.rerender(<VerifiedPage />);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(callsTo('/api/auth/passkey')).toHaveLength(passkeyCalls);
     expect(callsTo('/api/auth/post-login')).toHaveLength(0);
   });
 

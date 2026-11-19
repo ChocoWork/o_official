@@ -101,7 +101,12 @@ describe('API-AUTH-024 POST /api/auth/passkey/register/start', () => {
     windowOpen = false;
     const res = await POST(req());
     expect(res.status).toBe(200);
-    expect((await res.json()).mode).toBe('customer');
+    const body = await res.json();
+    expect(body.mode).toBe('customer');
+    expect(body.mode).not.toBe('window');
+    // 窓が無い人は window では認められず、窓の道（生きたセッションの確かめ・認めた鍵の数）にも入らない
+    expect(rpc).not.toHaveBeenCalledWith('passkey_approved_count', expect.anything());
+    expect(checkAuthSessionLiveness).not.toHaveBeenCalled();
   });
 
   test('API-AUTH-024 回数の表が上限（21回目）を超えたら 429 で、認証を呼ばない', async () => {

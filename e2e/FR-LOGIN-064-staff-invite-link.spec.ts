@@ -24,6 +24,14 @@ const viewports = [
   { name: 'desktop', width: 1280, height: 800 },
 ] as const;
 
+function sessionIdOf(accessToken: string): string {
+  const payload = accessToken.split('.')[1];
+  if (!payload) throw new Error('JWT の形が正しくない');
+  const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { session_id?: string };
+  if (!claims.session_id) throw new Error('JWT に session_id が無い');
+  return claims.session_id;
+}
+
 const uniqueIp = (): string => `198.19.${randomInt(0, 256)}.${randomInt(1, 255)}`;
 
 async function issueMailedInvite(request: APIRequestContext, origin: string): Promise<{ token: string; userId: string; email: string }> {
@@ -123,6 +131,10 @@ for (const viewport of viewports) {
         expect(row.consumed_at).not.toBeNull();
         expect(row.bound_at).not.toBeNull();
         expect(row.session_id).not.toBeNull();
+        // 窓が結ばれた session_id は、このブラウザの通行証の session_id と同じ（DB の行の値だけを見ない）
+        const browserAccess = (await context.cookies()).find((cookie) => cookie.name === 'sb-access-token')?.value;
+        expect(browserAccess).toBeTruthy();
+        expect(sessionIdOf(browserAccess as string)).toBe(row.session_id);
 
         // 同じ URL をもう一度開いて押すと使えない
         const second = await context.newPage();

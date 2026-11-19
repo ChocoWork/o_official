@@ -15,18 +15,12 @@ jest.mock('@/lib/mail', () => ({ __esModule: true, default: jest.fn() }));
 jest.mock('@/lib/auth/admin-rbac', () => ({ authorizeAdminPermission: jest.fn() }));
 jest.mock('@/lib/csrfMiddleware', () => ({ requireCsrfOrDeny: jest.fn() }));
 jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
-// 漏洩したパスワードの照合は外部の API を呼ぶので差し替える（利用者の作成だけが使う）
-jest.mock('@/lib/pwned-password', () => ({
-  checkPwnedPassword: jest.fn(),
-  PWNED_PASSWORD_MESSAGE: 'pwned-message',
-}));
 
 // 前の describe が jest.resetModules() を呼ぶので、モックは使う直前に取り直す（let に入れる）
 let createServiceRoleClient: jest.Mock;
 let authorizeAdminPermission: jest.Mock;
 let requireCsrfOrDeny: jest.Mock;
 let enforceRateLimit: jest.Mock;
-let checkPwnedPassword: jest.Mock;
 
 const ALLOWED = 'https://shop.example.com';
 const EVIL = 'https://evil.example';
@@ -394,9 +388,7 @@ describe('ARC-ADMIN-002 窓口は CSRF の印と回数を見ない', () => {
     authorizeAdminPermission = require('@/lib/auth/admin-rbac').authorizeAdminPermission;
     requireCsrfOrDeny = require('@/lib/csrfMiddleware').requireCsrfOrDeny;
     enforceRateLimit = require('@/features/auth/middleware/rateLimit').enforceRateLimit;
-    checkPwnedPassword = require('@/lib/pwned-password').checkPwnedPassword;
     jest.resetAllMocks();
-    checkPwnedPassword.mockResolvedValue({ status: 'ok' });
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     authorizeAdminPermission.mockResolvedValue({

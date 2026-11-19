@@ -9,6 +9,7 @@ import { randomInt } from 'node:crypto';
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import { provisionPasskeyUser } from '../scripts/e2e/passkey-staff';
 import { startRegisterViaApp } from './passkey-app-api';
+import { createOtherSessionForUser } from './admin-session-test-utils';
 import { withLocalDb } from './order-email-test-utils';
 
 test.use({ trace: 'off' });
@@ -24,11 +25,11 @@ const viewports = [
 const uniqueIp = (): string => `198.19.${randomInt(0, 256)}.${randomInt(1, 255)}`;
 
 /** DB の窓口で合言葉を作り、POST で招待のセッションと窓を作る。Cookie は `request` に入る。 */
-async function enterInviteWindow(request: APIRequestContext): Promise<{ userId: string; sessionId: string; csrfToken: string }> {
+async function enterInviteWindow(request: APIRequestContext): Promise<{ userId: string; email: string; sessionId: string; csrfToken: string }> {
   const issued = await withLocalDb(async (db) => {
     const user = await provisionPasskeyUser(db, { approvedPasskeys: 0 });
     const result = await db.query('select private.staff_invite_issue_manual($1, $2, $3) as token', [user.email, 'admin', 3600]);
-    return { token: result.rows[0].token as string, userId: user.userId };
+    return { token: result.rows[0].token as string, userId: user.userId, email: user.email };
   });
   const started = await request.post('/api/auth/staff/invite/start', {
     headers: { origin: ORIGIN, 'x-real-ip': uniqueIp() },
@@ -43,7 +44,7 @@ async function enterInviteWindow(request: APIRequestContext): Promise<{ userId: 
       (await db.query('select session_id::text as id from private.staff_invites where user_id = $1::uuid order by created_at desc limit 1', [issued.userId]))
         .rows[0].id as string,
   );
-  return { userId: issued.userId, sessionId, csrfToken: csrfToken as string };
+  return { userId: issued.userId, email: issued.email, sessionId, csrfToken: csrfToken as string };
 }
 
 for (const viewport of viewports) {
@@ -65,6 +66,23 @@ for (const viewport of viewports) {
       const start = await startRegisterViaApp(request, { ip: uniqueIp(), csrfToken });
       expect(start.status).toBe(403);
       expect(start.body).toEqual({ error: 'registration_not_allowed', reason: 'window_closed' });
+    });
+
+    test(`FR-AUTH-042-AC-02 ${viewport.name}: 同じ人の別の session の通行証では、招待の窓が開いていても 403 window_closed（窓を開けた session だけが通る）`, async ({ request, playwright, baseURL }) => {
+      test.setTimeout(120_000);
+      const { csrfToken, userId, email } = await enterInviteWindow(request);
+      const other = await withLocalDb((db) => createOtherSessionForUser(db, { userId, email }));
+      const bare = await playwright.request.newContext({ baseURL: baseURL as string });
+      try {
+        const crossed = await startRegisterViaApp(bare, { ip: uniqueIp(), authorization: `Bearer ${other.accessToken}` });
+        expect(crossed.status).toBe(403);
+        expect(crossed.body).toEqual({ error: 'registration_not_allowed', reason: 'window_closed' });
+      } finally {
+        await bare.dispose();
+      }
+      const own = await startRegisterViaApp(request, { ip: uniqueIp(), csrfToken });
+      expect(own.status).toBe(200);
+      expect((own.body as { mode: string }).mode).toBe('window');
     });
   });
 }

@@ -24,11 +24,6 @@ jest.mock('@/lib/auth/authenticate', () => ({
 // 回数の制限と、認可失敗の監査の上限の数え方は DB に触るので差し替える（呼ばれ方は窓口ごとの単体・結合試験で確かめる）
 jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
 jest.mock('@/features/auth/ratelimit', () => ({ incrementCounter: jest.fn() }));
-// 漏洩したパスワードの照合は外部の API を呼ぶので差し替える（利用者の作成だけが使う）
-jest.mock('@/lib/pwned-password', () => ({
-  checkPwnedPassword: jest.fn(),
-  PWNED_PASSWORD_MESSAGE: 'pwned-message',
-}));
 
 const { createServiceRoleClient } = require('@/lib/supabase/server');
 const { logAudit } = require('@/lib/audit');
@@ -37,7 +32,6 @@ const sendMail: jest.Mock = require('@/lib/mail').default;
 const { verifyAccessToken, checkAuthSessionLiveness } = require('@/lib/auth/authenticate');
 const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 const { incrementCounter } = require('@/features/auth/ratelimit');
-const { checkPwnedPassword } = require('@/lib/pwned-password');
 const { createHash } = require('node:crypto');
 
 const ACTOR_ID = '11111111-1111-4111-8111-111111111111';
@@ -190,7 +184,6 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
     targetRoleCodes = ['admin'];
     enforceRateLimit.mockResolvedValue(undefined);
     incrementCounter.mockResolvedValue(1);
-    checkPwnedPassword.mockResolvedValue({ status: 'ok' });
     allowAdmin();
     setService(serviceWith({}));
   });

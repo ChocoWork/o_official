@@ -1,6 +1,6 @@
 /**
  * FR-LOGIN-066 店員の2本の登録の画面 /staff/register と、役割の有効化（招待 → 押す → 1本目 → 2本目 → 完了 → /login）
- * 対応: FR-AUTH-043-AC-02・04〜08（設計: SCR-AUTH-014、API-AUTH-038、DD-AUTH-080）
+ * 対応: FR-AUTH-043-AC-01〜08（設計: SCR-AUTH-014、API-AUTH-038、DD-AUTH-080）
  *
  * 手元の Supabase とアプリ（本番ビルド）で、Chromium の仮想の認証器（CDP）を2つ使って通しで確かめる。
  * 招待は DB の窓口 `private.staff_invite_issue_manual`（postgres 専用）で出し、合言葉の URL を画面で開く。
@@ -28,11 +28,10 @@ const viewports = [
 
 type Invited = { userId: string; email: string; token: string };
 
-/** お客さんの扱いの利用者を作り、DB の窓口で店長の招待を出す。`totp` なら、出す前に検証済みの2要素を持たせる。 */
-async function issueInvite(options: { totp?: boolean } = {}): Promise<Invited> {
+/** お客さんの扱いの利用者を作り、DB の窓口で店長の招待を出す。 */
+async function issueInvite(): Promise<Invited> {
   return withLocalDb(async (db) => {
     const user = await provisionPasskeyUser(db, { approvedPasskeys: 0 });
-    if (options.totp) await seedVerifiedMfaFactor(db, user.userId);
     const result = await db.query('select private.staff_invite_issue_manual($1, $2, $3) as token', [user.email, 'admin', 3600]);
     return { userId: user.userId, email: user.email, token: result.rows[0].token as string };
   });
@@ -293,8 +292,8 @@ for (const viewport of viewports) {
           )
         ).rows as Array<{ kind: string; subject_is_staff: boolean }>,
       );
-      expect(rows.length).toBeGreaterThanOrEqual(1);
-      expect(rows.every((row) => row.kind === 'passkey_added' && row.subject_is_staff === true)).toBe(true);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toEqual({ kind: 'passkey_added', subject_is_staff: true });
       await withLocalDb((db) => skipPasskeyNotificationsOf(db, invited.userId));
     });
 
