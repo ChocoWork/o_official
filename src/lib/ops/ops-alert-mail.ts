@@ -351,6 +351,16 @@ export function orderEmailDeliveryProblemMail(emails: DeliveryProblemEmail[], to
 /** 死んだ知らせ1行の写し。アドレス・本文は持たない（種類・失敗コード・時刻だけ） */
 export type DeadPasskeyNotificationSummary = { kind: string; lastErrorCode: string | null; finishedAt: Date | null };
 
+/** 知らせの種類の名前（送り箱の kind）。知らない種類は「不明」にして、生の記号を載せない */
+const PASSKEY_NOTIFICATION_KIND_LABELS: Record<string, string> = {
+  passkey_added: 'パスキーの追加',
+  passkey_removed: 'パスキーの削除',
+  passkey_key_replaced: 'パスキーの置き換え',
+  staff_redo_issued: '店員のやり直し',
+  staff_invited: '店員の招待',
+  staff_demoted: '店員の降格',
+};
+
 /** パスキーの知らせのうち、再試行の上限を越えて届かなかった行（宛先のアドレス・本文は書かない） */
 export function passkeyNotificationDeadMail(rows: DeadPasskeyNotificationSummary[], total: number): OpsAlertMail {
   const rest = total - rows.length;
@@ -359,7 +369,7 @@ export function passkeyNotificationDeadMail(rows: DeadPasskeyNotificationSummary
     subject: 'パスキーの知らせが届きませんでした',
     lines: [
       `${total}件の知らせが、再試行の上限を越えて届きませんでした。種類・失敗の理由・時刻は次のとおりです。`,
-      ...rows.map((row) => `${row.kind}／${row.lastErrorCode ?? '不明'}／${row.finishedAt ? formatJst(row.finishedAt) : '不明'}`),
+      ...rows.map((row) => `${PASSKEY_NOTIFICATION_KIND_LABELS[row.kind] ?? '不明'}／${row.lastErrorCode ?? '不明'}／${row.finishedAt ? formatJst(row.finishedAt) : '不明'}`),
       ...(rest > 0 ? [`（ほかに ${rest} 件。次の知らせで送ります）`] : []),
     ],
   };

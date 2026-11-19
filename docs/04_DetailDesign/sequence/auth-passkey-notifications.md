@@ -176,7 +176,7 @@ sequenceDiagram
 - 死んだ知らせ: `list_unnotified_dead_passkey_notifications(50)` → 1件以上なら `sendOnce(passkey_notification_dead)` → 送れたら `mark_passkey_notification_dead_notified`（失敗したら次の点検で再送。at-least-once）
 - 停止: `readHeartbeats` の `passkey_notification_worker.lastSucceededAt` が30分以上前なら `sendOnce(job_stale_passkey_notification_worker)`。一度も成功が無ければ対象にしない
 - 失敗の分け方: 2つの点検は独立で、一方が投げても他方を続け、`failedChecks` に `dead`・`stale` を入れる。ログは例外名だけ
-- メール（付録）: 件名「パスキーの知らせが届きませんでした」・本文「{件数}件の知らせが、再試行の上限を越えて届きませんでした。種類・失敗の理由・時刻は次のとおりです。」＋行ごとに「種類／失敗コード／時刻」。件名「パスキーの知らせの送りが止まっています」・本文「最後に成功したのは {時刻} です。送りの設定とログを確認してください。」。件数・種類・失敗コード・時刻（JST）だけで、アドレスと本文を入れない。既存の `staleJobMail` は使わず、`STALE_JOBS`・`runOpsChecks` には足さない
+- メール（付録）: 件名「パスキーの知らせが届きませんでした」・本文「{件数}件の知らせが、再試行の上限を越えて届きませんでした。種類・失敗の理由・時刻は次のとおりです。」＋行ごとに「種類／失敗コード／時刻」（種類は日本語の名前: パスキーの追加・パスキーの削除・パスキーの置き換え・店員のやり直し・店員の招待・店員の降格。知らない種類は「不明」。失敗コードは記号のまま）。件名「パスキーの知らせの送りが止まっています」・本文「最後に成功したのは {時刻} です。送りの設定とログを確認してください。」。件数・種類・失敗コード・時刻（JST）だけで、アドレスと本文を入れない。既存の `staleJobMail` は使わず、`STALE_JOBS`・`runOpsChecks` には足さない
 - DB（移行 I）: 列 `dead_notified_at`・部分索引・関数2本（DATA-AUTH-022）。`ops_job_heartbeats_job_check` に job を足す
 
 ## 未確認事項

@@ -1,5 +1,5 @@
 /**
- * FR-LOGIN-072 パスキーの知らせの点検の DB の関数（死んだ知らせの一覧・印付け）は、
+ * FR-LOGIN-074 パスキーの知らせの点検の DB の関数（死んだ知らせの一覧・印付け）は、
  * anon・authenticated の鍵では PostgREST から呼べず、service_role の鍵だけが呼べる
  * 対応: FR-AUTH-049-AC-01
  *
@@ -44,7 +44,7 @@ for (const viewport of viewports) {
     test(`FR-AUTH-049-AC-01 anon・authenticated の鍵では点検の2つの関数を呼べず、service_role だけが呼べる (${viewport.name})`, async () => {
       requireLocalEnv();
       const service = createClient(SUPABASE_URL, SERVICE_KEY, clientOptions);
-      const email = `fr-login-072-${randomUUID()}@example.com`;
+      const email = `fr-login-074-${randomUUID()}@example.com`;
       const password = `Pw-${randomUUID()}-aA1!`;
       const created = await service.auth.admin.createUser({ email, password, email_confirm: true });
       expect(created.error).toBeNull();

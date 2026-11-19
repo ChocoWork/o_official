@@ -71,7 +71,7 @@ describe('passkey notification ops checks (DD-AUTH-089)', () => {
     expect(mail.kind).toBe('passkey_notification_dead');
     expect(mail.subject).toBe('パスキーの知らせが届きませんでした');
     expect(mail.lines[0]).toBe('2件の知らせが、再試行の上限を越えて届きませんでした。種類・失敗の理由・時刻は次のとおりです。');
-    expect(mail.lines[1]).toMatch(/^staff_demoted／resend_rejected／/);
+    expect(mail.lines[1]).toMatch(/^店員の降格／resend_rejected／/);
     expect(calls.find((c) => c.name === 'list_unnotified_dead_passkey_notifications')?.params)
       .toEqual({ _limit: PASSKEY_NOTIFICATION_OPS_LIMITS.digestLimit });
     expect(calls.find((c) => c.name === 'mark_passkey_notification_dead_notified')?.params).toEqual({ _ids: ['id-1', 'id-2'] });
@@ -168,7 +168,7 @@ describe('passkey notification ops checks (DD-AUTH-089)', () => {
     state.dead = [{ ...deadRow(1, 1), last_error_code: null, finished_at: null }];
     state.markData = null;
     const { result } = await run(state);
-    expect(send.mock.calls[0][0].lines[1]).toBe('staff_demoted／不明／不明');
+    expect(send.mock.calls[0][0].lines[1]).toBe('店員の降格／不明／不明');
     expect(result.deadNotified).toBe(0);
   });
 

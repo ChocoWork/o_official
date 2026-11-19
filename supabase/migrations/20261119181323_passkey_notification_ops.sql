@@ -58,7 +58,7 @@ BEGIN
     RAISE EXCEPTION 'PASSKEY_MIGRATION_PRECHECK_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_i_job_check_drift';
   END IF;
 
-  SELECT array_agg(m[1] ORDER BY m[1]) INTO v_names FROM regexp_matches(v_def, '''([a-z_]+)''::text', 'g') AS m;
+  SELECT array_agg(m[1] ORDER BY m[1]) INTO v_names FROM regexp_matches(v_def, '''([^'']+)''::text', 'g') AS m;
 
   IF v_names @> ARRAY['passkey_notification_worker'] THEN
     RAISE NOTICE 'passkey_i_job_check_already_present: ops_job_heartbeats_job_check already holds passkey_notification_worker; it is left as it is';

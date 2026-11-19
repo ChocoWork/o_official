@@ -101,7 +101,7 @@ describeLocalDb('passkey notification ops (migration I)', (db) => {
     );
     const jobsOf = async (): Promise<string[]> => (await db().query(
       `select array_agg(m[1] order by m[1]) as jobs from pg_constraint c,
-         lateral regexp_matches(pg_get_constraintdef(c.oid), '''([a-z_]+)''::text', 'g') as m
+         lateral regexp_matches(pg_get_constraintdef(c.oid), '''([^'']+)''::text', 'g') as m
         where c.conname = 'ops_job_heartbeats_job_check'`,
     )).rows[0].jobs;
 
@@ -126,7 +126,16 @@ describeLocalDb('passkey notification ops (migration I)', (db) => {
 
     test('ARC-AUTH-014 case (b): a set that already holds passkey_notification_worker passes with a NOTICE and the rebuild leaves it alone', async () => {
       expect(await jobsOf()).toContain('passkey_notification_worker');
-      expect(await run(precheck)).toBeNull();
+      const emitter = db() as unknown as { on(event: 'notice', fn: (n: { message?: string }) => void): void; off(event: 'notice', fn: (n: { message?: string }) => void): void };
+      const notices: string[] = [];
+      const listener = (n: { message?: string }) => { notices.push(n.message ?? ''); };
+      emitter.on('notice', listener);
+      try {
+        expect(await run(precheck)).toBeNull();
+      } finally {
+        emitter.off('notice', listener);
+      }
+      expect(notices.join(' ')).toContain('passkey_i_job_check_already_present');
       const before = (await db().query(`select pg_get_constraintdef(oid) as d from pg_constraint where conname = 'ops_job_heartbeats_job_check'`)).rows[0].d;
       await db().query(rebuild);
       const after = (await db().query(`select pg_get_constraintdef(oid) as d from pg_constraint where conname = 'ops_job_heartbeats_job_check'`)).rows[0].d;
@@ -136,6 +145,8 @@ describeLocalDb('passkey notification ops (migration I)', (db) => {
     test.each([
       ['an extra job', [...KNOWN_8, 'other_job']],
       ['a missing job', KNOWN_8.slice(1)],
+      ['an extra job with a digit', [...KNOWN_8, 'accounting_post_v2']],
+      ['an extra job with a capital letter', [...KNOWN_8, 'Other_Job']],
     ])('ARC-AUTH-014 drift (%s) stops with passkey_i_job_check_drift', async (_label, jobs) => {
       await setCheck(jobs);
       expect(await run(precheck)).toMatchObject({ message: 'PASSKEY_MIGRATION_PRECHECK_FAILED', detail: 'passkey_i_job_check_drift' });

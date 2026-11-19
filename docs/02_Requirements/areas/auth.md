@@ -6176,7 +6176,7 @@ A が `POST /api/admin/staff/{id}/demote` で店員 X を降格し、worker が�
 | 上位 | SR-AUTH-029 |
 | 根拠 | 知らせの行が再試行の上限を越えて `dead` になっても、今は店のだれにも伝わらない。worker が止まっても同じ。注文のメールと同じ考えで、(1) `dead` で店にまだ知らせていない行を、1時間に1回・まとめて1通（種類・失敗の理由・時刻だけ。アドレス・本文は入れない）で知らせ、送れた時だけ印（`dead_notified_at`）を付ける。(2) worker の心拍（`passkey_notification_worker`）の最後の成功が30分以上前なら1通知らせる。一度も成功していなければ対象にしない。守りは SEC-AUTH-058、処理は DD-AUTH-089、構成は ARC-AUTH-014・ADR-0474 |
 | 状態 | 推定 |
-| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-notification-ops.test.ts`・`tests/unit/lib/ops/ops-alert-mail.test.ts`・`tests/unit/lib/stripe/webhook-worker.test.ts`）、結合テスト（`tests/integration/db/auth_passkey_notification_ops.integration.test.ts`）、E2E（`e2e/FR-LOGIN-072-passkey-notification-ops-function-grants.spec.ts`、FR-AUTH-049-AC-01。関数の権限だけ。点検は画面が無いので、動きの確かめは単体・結合が持つ） |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-notification-ops.test.ts`・`tests/unit/lib/ops/ops-alert-mail.test.ts`・`tests/unit/lib/stripe/webhook-worker.test.ts`）、結合テスト（`tests/integration/db/auth_passkey_notification_ops.integration.test.ts`）、E2E（`e2e/FR-LOGIN-074-passkey-notification-ops-function-grants.spec.ts`、FR-AUTH-049-AC-01。関数の権限。`e2e/FR-LOGIN-077-passkey-dead-notification-alert.spec.ts`、FR-AUTH-049-AC-02。dead の知らせが店に1通届くこと） |
 | 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-17-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 17） |
 | 優先度 | MUST |
 
@@ -6189,10 +6189,22 @@ A が `POST /api/admin/staff/{id}/demote` で店員 X を降格し、worker が�
 | 上位 | FR-AUTH-049 |
 | 根拠 | DD-AUTH-089、SEC-AUTH-058 |
 | 状態 | 推定 |
-| 確かめ方 | E2E（`e2e/FR-LOGIN-072-passkey-notification-ops-function-grants.spec.ts`。PostgREST を直接叩く HTTP の試験で、390・768・1280 の3幅でくり返す）。心拍・点検の呼び出し・メールの文面・印付けの動きは単体テスト（DD-AUTH-089）と結合テスト（ARC-AUTH-014・DATA-AUTH-022）が持つ。画面が無いので、店への知らせが実際に届くことは E2E では確かめない |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-074-passkey-notification-ops-function-grants.spec.ts`。PostgREST を直接叩く HTTP の試験で、390・768・1280 の3幅でくり返す）。心拍・点検の呼び出し・メールの文面・印付けの動きは単体テスト（DD-AUTH-089）と結合テスト（ARC-AUTH-014・DATA-AUTH-022）が持つ。画面が無いので、店への知らせが実際に届くことは E2E では確かめない |
 | 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-17-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 17） |
 
 `list_unnotified_dead_passkey_notifications`・`mark_passkey_notification_dead_notified` を anon と本物のログイン済みのお客さん（authenticated）の鍵で呼ぶと、401 か 403・コード 42501 で断られ、データは返らない。service_role の鍵では呼べて、0件の一覧は空、空の印付けは0を返す。
+
+### FR-AUTH-049-AC-02 dead の知らせの行が1つあると、店の知らせの宛先に1通だけ届き、アドレスは入らず、続けて点検が動いても2通目は出ない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-049 |
+| 根拠 | DD-AUTH-089、SEC-AUTH-058 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-077-passkey-dead-notification-alert.spec.ts`。`isolated-global`。毎分の定期処理を叩き直して手元の Mailpit で待つ。390・768・1280 の3幅）。動きの細部は単体テスト（DD-AUTH-089）と結合テスト（ARC-AUTH-014・DATA-AUTH-022） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-17-review.md`（I-2） |
+
+`dead` で店にまだ知らせていない行を1つ作って毎分の定期処理を動かすと、件名「パスキーの知らせが届きませんでした」のメールが `SHOP_ALERT_EMAIL` に1通届く。本文に「1件の知らせが、再試行の上限を越えて届きませんでした。種類・失敗の理由・時刻は次のとおりです。」と「店員の招待／resend_rejected／時刻」の行があり、`@` と行のアドレスは入らない。続けて定期処理を動かしても2通目は出ず、行に `dead_notified_at` が付く。
 
 ### FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel`
 
