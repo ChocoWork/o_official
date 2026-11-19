@@ -244,10 +244,13 @@ export default function UserSection() {
     setErrorMessage(message);
   };
 
-  // 操作したボタンやダイアログは一覧の読み直しで消えるので、フォーカスを一覧の見出しへ戻す（body に落とさない）。
+  // 操作したボタンやダイアログは一覧の読み直しで消えるので、フォーカスが body（か無し）に落ちたままなら一覧の見出しへ戻す（ほかへ移していたら奪わない）。
   React.useEffect(() => {
     if (!refocusHeading) return;
-    document.getElementById("staff-users-heading")?.focus();
+    const active = document.activeElement;
+    if (active === null || active === document.body) {
+      document.getElementById("staff-users-heading")?.focus();
+    }
     setRefocusHeading(false);
   }, [refocusHeading]);
 

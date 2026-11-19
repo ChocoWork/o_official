@@ -6102,7 +6102,7 @@ DB の `staff_invite_cancel` は、開いた招待があれば `true`、2回目�
 | 上位 | SR-AUTH-026 |
 | 根拠 | 段3a の最終レビュー（T11 M-2・M-3・M-5・M-6・M-7）と再レビュー（F-3・F-4）の持ち越し。やり直しのメールだけが送れなかった時に、発行は済んでいるのに画面が古いまま・店員の削除の失敗が全部「下限」の文になる・招待の取り消しが確認なし・失敗の後に前の成功の知らせが残る、を直す。画面は SCR-AUTH-016、処理は DD-AUTH-090（店員のパスキーの画面は DD-AUTH-082） |
 | 状態 | 推定 |
-| 確かめ方 | E2E（`e2e/FR-LOGIN-072-admin-users-staff-recovery.spec.ts`、FR-AUTH-052-AC-01。390・768・1280 の3幅でくり返す）。単体テスト（`tests/unit/features/auth/staff/user-section-staff.test.tsx`・`staff-user-actions.test.ts`・`staff-passkey-manager.test.tsx`、`tests/unit/features/auth/passkey/passkey-client-min-keys.test.ts`）、結合テスト（`tests/integration/ui/auth-admin-users-staff-screen.test.tsx`・`auth-staff-passkey-manage-screen.test.tsx`）でも確かめる。(2) の削除の失敗の文は単体テスト（`passkey-client-min-keys.test.ts`、`staff-passkey-manager.test.tsx`、DD-AUTH-090）と回帰の E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`）で確かめる |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-072-admin-users-staff-recovery.spec.ts`、FR-AUTH-052-AC-01・02。390・768・1280 の3幅でくり返す）。単体テスト（`tests/unit/features/auth/staff/user-section-staff.test.tsx`・`staff-user-actions.test.ts`・`staff-passkey-manager.test.tsx`、`tests/unit/features/auth/passkey/passkey-client-min-keys.test.ts`）、結合テスト（`tests/integration/ui/auth-admin-users-staff-screen.test.tsx`・`auth-staff-passkey-manage-screen.test.tsx`）でも確かめる。(2) の削除の失敗の文は FR-AUTH-052-AC-02 の E2E と、単体テスト（`passkey-client-min-keys.test.ts`、`staff-passkey-manager.test.tsx`、DD-AUTH-090）で確かめる |
 | 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-18-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 18） |
 | 優先度 | SHOULD |
 
@@ -6119,6 +6119,18 @@ DB の `staff_invite_cancel` は、開いた招待があれば `true`、2回目�
 | 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-18-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 18） |
 
 店長がやり直しを送り、本物の窓口が通ったうえで応答だけが 502 `mail_failed` に替わると、ダイアログが閉じ、一覧が読み直されて、その行は「招待中」と役割の欄になり、通知に「メールを送れませんでした。もう一度、招待を出してください。」が出る。その行の「招待を取り消す」は確認「この招待を取り消します。よろしいですか。」を出し、確認すると取り消しの知らせが出て、行の「招待中」が消える。
+
+### FR-AUTH-052-AC-02 店員のパスキーの削除が下限以外の理由で失敗した時は、「もう一度お試しください」の文を出し、下限の文は出さない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-052 |
+| 根拠 | DD-AUTH-090、DD-AUTH-082 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-072-admin-users-staff-recovery.spec.ts`。390・768・1280 の3幅でくり返す）。単体テスト（`tests/unit/features/auth/passkey/passkey-client-min-keys.test.ts`、`tests/unit/features/auth/staff/staff-passkey-manager.test.tsx`）でも確かめる（DD-AUTH-090） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-18-review.md`（m-2）、`.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-18-brief.md` |
+
+認めていない鍵の削除の窓口が 500 を返すと、管理の画面は「削除できませんでした。もう一度お試しください。」を出し、「削除できませんでした。認めた鍵は2本以上が必要です。」は出さない。鍵は一覧に残る。409 の本文が `staff_min_keys` の時だけ、下限の文を出す。
 
 ### FR-AUTH-047 店長への知らせの3種類（やり直し・招待・降格）を、操作と同じ取引で送り箱に積み、宛先は本人を除く有効な店長全員にする
 

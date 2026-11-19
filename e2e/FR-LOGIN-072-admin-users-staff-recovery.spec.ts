@@ -1,6 +1,6 @@
 /**
  * FR-LOGIN-072 管理画面「ユーザー」の店員のやり直しのメールの失敗と、招待の取り消しの確認
- * 対応: FR-AUTH-052-AC-01（設計: SCR-AUTH-016、DD-AUTH-090）
+ * 対応: FR-AUTH-052-AC-01・02（設計: SCR-AUTH-016、DD-AUTH-090）。AC-02 は店員のパスキーの画面で、削除が下限以外の理由（500）で失敗した時の文
  *
  * 手元のアプリ（本番ビルド）・手元の Supabase・手元の Mailpit で、店長が画面から操作する。店長・店員は provisionStaff（ソフトの認証器）で用意し、
  * パスキーでログインして Cookie を得る（page.request と画面は同じ Cookie）。やり直しの窓口は `page.route` の中の `route.fetch()` で本物を動かす
@@ -8,7 +8,7 @@
  * やり直しは店長への知らせを積むので、afterEach で `skipPasskeyNotificationsOf` を流す（FR-LOGIN-070 と同じ）。
  */
 import { expect, test, type Page } from '@playwright/test';
-import { provisionStaff, skipPasskeyNotificationsOf } from '../scripts/e2e/passkey-staff';
+import { addUnapprovedPasskey, provisionStaff, skipPasskeyNotificationsOf } from '../scripts/e2e/passkey-staff';
 import { withLocalDb } from './order-email-test-utils';
 import { loginViaApp } from './passkey-app-api';
 
@@ -93,6 +93,37 @@ for (const viewport of viewports) {
       await confirm.getByRole('button', { name: '取り消す' }).click();
       await expect(page.getByText(`${target.email} への招待を取り消しました。`)).toBeVisible(NAVIGATION);
       await expect(rowOf(page, target.email).getByText('招待中')).toHaveCount(0);
+    });
+
+    test(`FR-AUTH-052-AC-02 ${viewport.name}: 鍵の削除が下限以外の理由（500）で失敗した時は、「もう一度お試しください」の文を出し、下限の文は出さない。鍵は残る`, async ({ page }) => {
+      test.setTimeout(120_000);
+      const staff = await withLocalDb((db) => provisionStaff(db, { role: 'admin', approvedPasskeys: 2 }));
+      cleanup.push(staff.userId);
+      const login = await loginViaApp(page.request, { authenticator: staff.authenticators[0], ip: uniqueIp() });
+      expect(login.status).toBe(200);
+      // 認めていない鍵なら、認めた鍵が2本でも消せる（削除ボタンが有効になる）
+      await addUnapprovedPasskey({ email: staff.email, authenticator: staff.authenticators[0] });
+
+      // 削除の窓口だけ、本物には届けず 500 にする（一覧などは本物のまま）
+      await page.route('**/api/auth/passkey/*', async (route) => {
+        if (route.request().method() !== 'DELETE') return route.fallback();
+        return route.fulfill({
+          status: 500,
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+          body: JSON.stringify({ error: 'passkey_manage_failed' }),
+        });
+      });
+
+      await page.goto('/admin/passkeys');
+      await expect(page.locator('main ul > li')).toHaveCount(3, NAVIGATION);
+      const enabled = page.getByRole('button', { name: /を削除$/ }).and(page.locator(':enabled'));
+      await expect(enabled).toHaveCount(1);
+      await enabled.click();
+      await page.getByRole('button', { name: '削除する' }).click();
+
+      await expect(page.getByText('削除できませんでした。もう一度お試しください。')).toBeVisible(NAVIGATION);
+      await expect(page.getByText('削除できませんでした。認めた鍵は2本以上が必要です。')).toHaveCount(0);
+      await expect(page.locator('main ul > li')).toHaveCount(3);
     });
   });
 }

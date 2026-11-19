@@ -371,7 +371,14 @@ describe('DD-AUTH-090 店長の画面の持ち越しの直し', () => {
     expect(dialog).toHaveTextContent(`customer@example.com へ、${roleName}の招待のメールを送ります。相手がパスキーを登録するまで、役割は変わりません。`);
   });
 
-  it('DD-AUTH-090 T11 M-5 やり直しが成功した後、フォーカスが一覧の見出しに戻る', async () => {
+  it('DD-AUTH-090 T11 M-5 やり直しが成功した後、押したボタンの行が消えると、フォーカスが一覧の見出しに戻る', async () => {
+    respond = (_url, init) => {
+      if (init?.method === 'POST') {
+        users = users.map((item) => (item.id === SUPPORTER ? { ...item, roleValue: 'user', role: 'user', approvedPasskeys: 0, invitePending: true } : item));
+        return { status: 200, body: { success: true } };
+      }
+      return null;
+    };
     const user = userEvent.setup();
     render(<UserSection />);
     await sendRedo(user);
@@ -381,7 +388,14 @@ describe('DD-AUTH-090 店長の画面の持ち越しの直し', () => {
     await waitFor(() => expect(heading).toHaveFocus());
   });
 
-  it('DD-AUTH-090 T11 M-5 お客さんに戻すが成功した後、フォーカスが body に落ちず一覧の見出しに戻る', async () => {
+  it('DD-AUTH-090 T11 M-5 お客さんに戻すが成功した後、押したボタンが消えると、フォーカスが body に落ちず一覧の見出しに戻る', async () => {
+    respond = (_url, init) => {
+      if (init?.method === 'POST') {
+        users = users.map((item) => (item.id === SUPPORTER ? { ...item, roleValue: 'user', role: 'user', approvedPasskeys: 0, invitePending: false } : item));
+        return { status: 200, body: { success: true } };
+      }
+      return null;
+    };
     const user = userEvent.setup();
     render(<UserSection />);
     const support = await rowOf('support@example.com');
@@ -390,6 +404,21 @@ describe('DD-AUTH-090 店長の画面の持ち越しの直し', () => {
     await user.click(within(dialog).getByRole('button', { name: 'お客さんに戻す' }));
     await screen.findByText('support@example.com をお客さんに戻しました。');
     await waitFor(() => expect(screen.getByRole('heading', { name: 'ユーザー一覧' })).toHaveFocus());
+  });
+
+  it('DD-AUTH-090 T11 M-5 フォーカスがまだ生きた要素にある時は、見出しへ奪わない（招待の後は「店員を招待」のまま）', async () => {
+    const user = userEvent.setup();
+    render(<UserSection />);
+    const invite = await screen.findByRole('button', { name: '店員を招待' });
+    await user.click(invite);
+    const dialog = await screen.findByRole('dialog', { name: '店員を招待' });
+    await user.type(within(dialog).getByLabelText(/メールアドレス/), 'new@example.com');
+    await user.click(within(dialog).getByRole('button', { name: '招待を送る' }));
+    await screen.findByText('new@example.com へ、招待のメールを送りました。');
+    await waitFor(() => expect(listReads()).toBe(2));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: 'ユーザー一覧' })).not.toHaveFocus();
+    expect(document.body).not.toHaveFocus();
   });
 
   it('DD-AUTH-090 T11 M-6 認めた鍵が0本の店員の行は「認めた鍵 0本」を出す', async () => {
