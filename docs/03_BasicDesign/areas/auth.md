@@ -2214,7 +2214,7 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-AUTH-035、SEC-AUTH-053、ADR-0471 |
+| 上位 | FR-AUTH-035、SEC-AUTH-053、ADR-0471、ADR-0473 |
 | 根拠 | 窓の開け方は案 B（役割が無いお客さんの扱いでセッションを作り、分かった `session_id` に結んで窓を開け、2本そろったら役割を有効にする）。先に窓を開けてフックに結ばせる形（案 A）は作らない。有効化の門は DB の関数の中の1つだけにして、窓口が門を飛ばせないようにする |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_invites.integration.test.ts` の ARC-AUTH-012） |
@@ -2248,6 +2248,22 @@ flowchart LR
 - `public.staff_idle_peek(session)`: `staff_idle_ok_strict` だけ。時刻を進めない（`/api/auth/me` 用）。DB の誤りは例外になり、窓口・ページは「無操作」ではなく 503 にする（ログアウトさせない）
 - 3つの `public` 関数は `service_role` だけが実行できる。移行 E の `has_permission` が `private.staff_idle_ok` を4つ目の条件（認めた鍵の本数の次、`app_session_is_live` の前）で呼ぶ
 - 費用: `has_permission` を `( SELECT ... )` で包まずに呼ぶ決まりが77件あるが、4つ目の条件は ACL と認めた鍵の本数を通った店員だけが払う（お客さん・anon は手前で止まる）。1回は主キーの1行の読みで、`EXPLAIN` の実行計画の件数は増やさない
+
+### DATA-AUTH-022 送り箱は店長への知らせの3種類を持ち、操作した店長のアドレス `actor_email` を持つ
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-047、SEC-AUTH-058、ADR-0473 |
+| 根拠 | 店長への知らせは「だれが操作したか」を本文に出すので、行に操作した店長のアドレスを持たせる。種類は鍵の足し引きの知らせと同じ送り箱に足し、取り出し・結果・再試行の仕組み（DATA-AUTH-019）をそのまま使う。判断は ADR-0473 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_manager_notices.integration.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-14-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 14） |
+
+- 列（移行 A）: `actor_email text`（NULL 可）を足す。`kind` の `CHECK` は `passkey_added`・`passkey_removed`・`passkey_key_replaced` に `staff_redo_issued`・`staff_invited`・`staff_demoted` を足した6つ
+- 新しい3種類の行の値: `user_id` は知らせの本人、`subject_email` は本人のアドレス、`actor_email` は操作した店長のアドレス、`passkey_id`・`friendly_name` は NULL、`subject_is_staff` は `staff_redo_issued`・`staff_demoted` が真・`staff_invited` が偽、`notify_subject` は偽
+- 取り出し（移行 G）: `claim_passkey_notification` の戻りの末尾に `actor_email text` を足す。アプリの `claimPasskeyNotification`（`src/lib/auth/passkey-notification-store.ts`）は `actor_email` を `actorEmail`（文字列か null）に写す
+- 宛先（移行 G）: `passkey_notification_recipients` は、新しい3種類の行では `notify_subject` を偽として扱い、`user_id` の店長を除く、有効・期限内・削除と停止の無い `admin` 全員を返す（`audience` は `admin`。アドレスの小文字の重複は1通）。古い3種類の規則と戻りの列は変えない
+- 積み込み（移行 H）: 私用の関数 `private.passkey_enqueue_staff_notice(p_kind, p_user_id, p_actor_id)`
 
 ### ARC-AUTH-013 店員の無操作は、DB の判定（`private.staff_idle_ok_strict`）を1つの門にし、`has_permission`・窓口・ページが同じ判定を通る
 

@@ -11,7 +11,9 @@
 --                                           owner was staff. Only the Task 6 trigger deletes rows.
 --   private.passkey_registration_windows    plan B: the app opens a window for (user_id, session_id) after it knows the
 --                                           session id. At most one open window per session_id (partial unique index).
---   private.passkey_notification_outbox     rows queued by the Task 6 triggers; sending is stage 2 / 3.
+--   private.passkey_notification_outbox     rows queued by the Task 6 triggers; sending is stage 2 / 3. kind also allows the
+--                                           three manager notices of stage 3b (staff_redo_issued, staff_invited, staff_demoted,
+--                                           queued by migration H); actor_email is the manager who did it (NULL for the key notices).
 --
 -- Measured on the local GoTrue (2026-11-16, \d auth.webauthn_credentials):
 --   id uuid pk default gen_random_uuid(); user_id uuid not null (fk auth.users on delete cascade);
@@ -90,12 +92,14 @@ CREATE TABLE private.passkey_notification_outbox (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   seq bigint GENERATED ALWAYS AS IDENTITY,
   user_id uuid NOT NULL,
-  kind text NOT NULL CHECK (kind IN ('passkey_added', 'passkey_removed', 'passkey_key_replaced')),
+  kind text NOT NULL CHECK (kind IN ('passkey_added', 'passkey_removed', 'passkey_key_replaced',
+    'staff_redo_issued', 'staff_invited', 'staff_demoted')),
   passkey_id uuid,
   friendly_name text,
   subject_is_staff boolean NOT NULL,
   notify_subject boolean NOT NULL,
   subject_email text,
+  actor_email text,
   occurred_at timestamptz NOT NULL DEFAULT now(),
   status text NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending', 'sending', 'retry_wait', 'sent', 'skipped', 'dead')),

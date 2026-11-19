@@ -33,6 +33,7 @@
 | [パスキーの知らせを取り出して送るための DB の関数](auth-passkey-notifications.md) | 知らせの行の取り出し・担当の印・再試行・宛先を決める DB の関数と薄い部品 |
 | [お客さんのログイン（メールのコードの窓口と画面）](auth-passkey-customer-screens.md) | メールのコードの4つの窓口、保留の Cookie、ログイン・新規登録の画面 |
 | [店員の無操作1時間の DB の関数](auth-staff-idle.md) | 無操作の表と関数4本、`has_permission` の4つ目の条件、管理 API・ログインの終わりの配線 |
+| [店長への知らせの積み込み](auth-staff-manager-notices.md) | やり直し・招待・降格の知らせを操作と同じ取引で送り箱に積む私用の関数と、その宛先 |
 | [店員の招待・結び・有効化・取り消し・降格](auth-staff-invite.md) | 招待の表と DB の関数、例外の文、最後の手段、削除の下限 |
 | [店員のパスキー管理・「もう1本」の画面](auth-staff-passkey-manage.md) | `/admin/passkeys`、削除の下限（`passkey_delete_with_floor`）、認めた鍵が1本の店員の道 |
 | [店員が別の道で入ろうとした時の画面](auth-staff-other-paths.md) | Google・メールのコードの拒否の文、店員の TOTP の登録を410で断る、1b の M-2 |

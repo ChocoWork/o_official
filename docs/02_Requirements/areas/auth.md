@@ -831,6 +831,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: 管理画面とログインの確認の選択欄で選んだ値が反映されること（波1 X-1・X-2）
 
+### SR-AUTH-029 店長が店員を招いた・やり直した・降格した時は、ほかの店長全員に知らせる
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | 店員を増やす・鍵を消してやり直す・降格する操作は、1人の店長の操作で店の入口が変わる。ほかの店長が気づけないと、乗っ取られた店長の操作や誤った操作が残る。操作した取引の中で知らせの行を積めば、操作が成り立った時だけ知らせが残り、本人以外の有効な店長全員に届く |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-14-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 14） |
+
+要求の文: 店長が店員を招待した・店員のパスキーをやり直した・店員を降格した時は、その操作の取引で知らせの行を1つ積み、本人（操作を受けた人）を除く有効な店長全員に1通ずつ送る。ダッシュボードの最後の手段（`last_resort`）は知らせない。送る処理は Task 15 以降で作る。
+
 ## 要件
 
 ### 要求の表から写した要件
@@ -6085,6 +6095,19 @@ DB の `staff_invite_cancel` は、開いた招待があれば `true`、2回目�
 
 招待中の行の「招待を取り消す」の応答が `cancelled: false` の時、知らせは出さず、一覧だけを読み直す。`cancelled: true` の時は今までどおり知らせを出す。
 
+### FR-AUTH-047 店長への知らせの3種類（やり直し・招待・降格）を、操作と同じ取引で送り箱に積み、宛先は本人を除く有効な店長全員にする
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-029 |
+| 根拠 | 送り箱 `private.passkey_notification_outbox` の `kind` に `staff_redo_issued`・`staff_invited`・`staff_demoted` を足し、操作した店長のアドレス `actor_email` を持たせる。積む処理は私用の関数 `private.passkey_enqueue_staff_notice` の1つに書き、`staff_invite_issue_core` と `staff_demote` が錠の後の同じ取引で呼ぶ。取引が失敗すれば行も残らない。宛先は `passkey_notification_recipients` が、本人（`user_id`）を除く、有効・期限内・削除と停止の無い店長全員（同じアドレスは1通）にする。守りは SEC-AUTH-058、処理は DD-AUTH-086、種類と宛先の判断は ADR-0473、列は DATA-AUTH-022 |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_manager_notices.integration.test.ts`）、単体テスト（`tests/unit/lib/auth/passkey-notification-store.test.ts`）。受け入れ条件（AC）と E2E は、送る側（worker・文面）ができる Task 15 で足す |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-14-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 14） |
+| 優先度 | MUST |
+
+規則: (1) `redo` は `staff_redo_issued`（`subject_is_staff` 真）、`invite`・`promote` は `staff_invited`（偽）、降格は `staff_demoted`（真）を1行積む。`notify_subject` は常に偽、`passkey_id`・`friendly_name` は NULL。(2) `last_resort`（`staff_invite_issue_manual`）は積まない。(3) `subject_email` は対象、`actor_email` は操作した店長のアドレスを `auth.users` から読む。(4) 宛先に操作した店長は含み、対象の本人は含まない。(5) 古い3種類（鍵の足し・消し・置き換え）の宛先の規則は変えない。
+
 ### FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel`
 
 | 属性 | 値 |
@@ -8331,6 +8354,19 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 優先度 | MUST |
 
 守ること: (1) 取り消しは `private.staff_cancel_invites_issued_by` の1つに書き、だれにも `execute` を渡さない（持ち主 `postgres`・`SECURITY DEFINER`・`search_path` 空）。(2) 呼ぶのは `staff_demote`（条件なしで、役割を外した後）・`admin_set_user_role`（今の `admin` が `admin` 以外になる時）・`staff_invite_issue_core`（対象が今の `admin` の時）で、どれも錠 `190519` を持った後（`admin_set_user_role` は `190519` だけ。ほかの書き手も `190519` を先に取るので直列になる）。新しい錠は取らない。(3) `admin_set_user_role` と core は、対象が今の店長かを `user_roles` を外す前に読む。(4) 有効化済み・ほかの店長・`last_resort` の招待は変えない。
+
+### SEC-AUTH-058 店長への知らせは、操作と同じ取引で積み、本人・止まった人・消えた人には出さない。最後の手段には積まない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-057 |
+| 根拠 | 知らせの行が操作の取引の外にあると、失敗した操作の知らせだけが残る、または成功した操作の知らせが欠ける。宛先を送る時に決めれば、停止・削除・期限切れの店長に出ず、操作を受けた本人にも出ない（本人は役割を外されている最中で、自分への知らせは別の経路）。積む処理を私用の関数1つにして、だれにも `execute` を渡さなければ、窓口から偽の知らせを積めない |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_manager_notices.integration.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-14-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 14） |
+| 優先度 | MUST |
+
+守ること: (1) 積むのは `private.passkey_enqueue_staff_notice` の1つ（持ち主 `postgres`・`SECURITY DEFINER`・`search_path` 空・`anon`・`authenticated`・`service_role`・`PUBLIC` に `execute` なし。3種類以外の `kind` は 22023）。(2) 呼ぶのは `staff_invite_issue_core`（`redo`・`invite`・`promote`）と `staff_demote` で、錠 190519 と利用者の錠を持った後の同じ取引。(3) `last_resort` は積まない。(4) 宛先は `passkey_notification_recipients` が送る時に決め、本人（`user_id`）・`deleted_at` のある人・`banned_until` が先の人・期限切れまたは無効の役割・アドレスが空の人を除き、アドレスの小文字の重複は1通にする。
 
 ## 派生要件
 

@@ -41,6 +41,12 @@
 --                                                             then every active, unexpired admin when subject_is_staff.
 --                                                             Admins with auth.users.deleted_at set or banned_until in the
 --                                                             future are excluded.
+--                                                             Stage 3b manager notices (staff_redo_issued, staff_invited,
+--                                                             staff_demoted): notify_subject is treated as false and the
+--                                                             admin list is used whatever subject_is_staff says, EXCEPT the
+--                                                             admin whose user_id is the row's user_id (the person the notice
+--                                                             is about). The manager who did it IS a recipient.
+--   claim_passkey_notification also returns actor_email as its LAST column (stage 3b; the column is added in migration A).
 --
 -- ROLLBACK (one transaction, only while nothing uses them):
 --   DROP FUNCTION public.passkey_notification_recipients(uuid), public.skip_passkey_notification(uuid, uuid, text),
@@ -55,6 +61,8 @@
 -- BEFORE applying to production (read only): this migration is NOT applied to production until stage 3.
 --   select to_regclass('private.passkey_notification_outbox');   -- expect not null (migration A)
 --   select to_regclass('private.order_email_send_pause');        -- expect not null (order mail; the shared send pause)
+--   select count(*) from information_schema.columns where table_schema='private' and table_name='passkey_notification_outbox'
+--     and column_name = 'actor_email';                           -- expect 1 (migration A, stage 3b: claim returns it)
 --   select to_regclass('auth.webauthn_credentials');             -- expect not null (claim reads the current key name)
 
 BEGIN;
@@ -66,7 +74,9 @@ BEGIN
      OR to_regclass('public.user_roles') IS NULL
      OR to_regclass('public.roles') IS NULL
      OR to_regclass('auth.users') IS NULL
-     OR to_regclass('auth.webauthn_credentials') IS NULL THEN
+     OR to_regclass('auth.webauthn_credentials') IS NULL
+     OR NOT EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_schema = 'private' AND table_name = 'passkey_notification_outbox' AND column_name = 'actor_email') THEN
     RAISE EXCEPTION 'PASSKEY_MIGRATION_PRECHECK_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_g_precheck';
   END IF;
 END
@@ -90,7 +100,7 @@ CREATE OR REPLACE FUNCTION public.claim_passkey_notification(_lease_seconds inte
 RETURNS TABLE (
   id uuid, seq bigint, user_id uuid, kind text, passkey_id uuid, friendly_name text,
   subject_is_staff boolean, notify_subject boolean, subject_email text, occurred_at timestamptz,
-  attempts integer, lease_token uuid
+  attempts integer, lease_token uuid, actor_email text
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -158,10 +168,10 @@ BEGIN
            lease_expires_at = pg_catalog.now() + pg_catalog.make_interval(secs => _lease_seconds)
      WHERE o.id = v_id
     RETURNING o.id, o.seq, o.user_id, o.kind, o.passkey_id, o.friendly_name, o.subject_is_staff,
-              o.notify_subject, o.subject_email, o.occurred_at, o.attempts, o.lease_token
+              o.notify_subject, o.subject_email, o.occurred_at, o.attempts, o.lease_token, o.actor_email
   )
   SELECT u.id, u.seq, u.user_id, u.kind, u.passkey_id, u.friendly_name, u.subject_is_staff,
-         u.notify_subject, u.subject_email, u.occurred_at, u.attempts, u.lease_token
+         u.notify_subject, u.subject_email, u.occurred_at, u.attempts, u.lease_token, u.actor_email
     FROM u;
 END
 $$;
@@ -259,7 +269,8 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
   WITH o AS (
-    SELECT n.subject_email, n.subject_is_staff, n.notify_subject
+    SELECT n.user_id, n.subject_email, n.subject_is_staff, n.notify_subject,
+           n.kind IN ('staff_redo_issued', 'staff_invited', 'staff_demoted') AS manager_notice
       FROM private.passkey_notification_outbox n WHERE n.id = _id
   ),
   everyone AS (
@@ -267,14 +278,15 @@ AS $$
            CASE WHEN o.subject_is_staff THEN 'subject_staff' ELSE 'subject_customer' END AS aud,
            0 AS ord
       FROM o
-     WHERE o.notify_subject AND btrim(COALESCE(o.subject_email, '')) <> ''
+     WHERE o.notify_subject AND NOT o.manager_notice AND btrim(COALESCE(o.subject_email, '')) <> ''
     UNION ALL
     SELECT btrim(u.email), 'admin', 1
       FROM o
-      JOIN public.user_roles ur ON o.subject_is_staff
+      JOIN public.user_roles ur ON (o.subject_is_staff OR o.manager_notice)
       JOIN public.roles r ON r.id = ur.role_id
       JOIN auth.users u ON u.id = ur.user_id
      WHERE r.code = 'admin' AND ur.active
+       AND (NOT o.manager_notice OR ur.user_id <> o.user_id)
        AND (ur.expires_at IS NULL OR ur.expires_at > pg_catalog.now())
        AND btrim(COALESCE(u.email, '')) <> ''
        AND u.deleted_at IS NULL
@@ -330,7 +342,11 @@ BEGIN
   END LOOP;
   IF (SELECT count(*) FROM information_schema.columns
        WHERE table_schema = 'private' AND table_name = 'passkey_notification_outbox'
-         AND column_name IN ('lease_token', 'lease_expires_at', 'last_error_code', 'sent_at', 'finished_at')) <> 5
+         AND column_name IN ('lease_token', 'lease_expires_at', 'last_error_code', 'sent_at', 'finished_at', 'actor_email')) <> 6
+     OR NOT EXISTS (SELECT 1 FROM pg_constraint c
+                     WHERE c.conrelid = 'private.passkey_notification_outbox'::regclass AND c.contype = 'c'
+                       AND pg_get_constraintdef(c.oid) LIKE '%staff_redo_issued%' AND pg_get_constraintdef(c.oid) LIKE '%staff_invited%'
+                       AND pg_get_constraintdef(c.oid) LIKE '%staff_demoted%')
      OR (SELECT count(*) FROM pg_constraint
           WHERE conrelid = 'private.passkey_notification_outbox'::regclass
             AND conname IN ('passkey_notification_outbox_lease_check', 'passkey_notification_outbox_last_error_code_check')) <> 2

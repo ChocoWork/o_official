@@ -19,6 +19,12 @@
 --     switches user_roles off), admin_set_user_role (admin -> supporter / user, only when the target is a current admin, read
 --     before user_roles is switched off) and the issue core (when the target is a current admin: redo, last resort). Invites by other managers, last_resort invites
 --     (issued_by NULL) and activated invites are untouched. No per-invite audit; the invitee's logins are not ended (DD-AUTH-085).
+--   private.passkey_enqueue_staff_notice(kind, user, actor)  NO execute for anyone (stage 3b Task 14). The ONE place that queues the
+--     manager notices: one outbox row of kind staff_redo_issued | staff_invited | staff_demoted (anything else raises 22023) with
+--     user_id = the person the notice is about, subject_email = that person's address and actor_email = the acting manager's address,
+--     both read from auth.users; passkey_id and friendly_name NULL; subject_is_staff true for redo and demoted, false for invited;
+--     notify_subject false. The caller holds 190519 and the per-user key and calls it inside the same transaction, so a failed
+--     transaction leaves no row. The recipients (every active admin except the person) are decided at send time by G.
 --   private.staff_invite_issue_core(...)  NO execute for anyone. Only the two doors below call it (Task 2: staff_invite_issue;
 --     Task 2b: private.staff_invite_issue_manual). One transaction, in this order:
 --       1. lock 190519 (global, the same key admin_set_user_role takes), THEN the per-user key
@@ -38,7 +44,8 @@
 --       7. user_roles.active = false for all rows, raw_app_meta_data.role = 'user';
 --       8. mark the passkey_removed notices queued in step 5 as skipped (last_error_code staff_invite_issue): the owner is told
 --          once by the stage 3b mail instead of once per key;
---       9. insert the new invite row and return its id.
+--       9. insert the new invite row; for kind redo queue staff_redo_issued, for invite / promote staff_invited (private.
+--          passkey_enqueue_staff_notice; the last resort queues nothing); return its id.
 --   public.staff_invite_issue(user, role, kind, issued_by, reason, token_hash, ttl_seconds default 86400) returns uuid
 --     kind must be invite | redo | promote (anything else, last_resort included, raises STAFF_INVITE_KIND_FORBIDDEN, so the
 --     app key cannot reach the last resort). A current staff member needs kind redo (STAFF_ALREADY_STAFF otherwise); kind redo for a person who is not
@@ -68,7 +75,8 @@
 --   public.staff_demote(actor, user) returns void: 190519 then the per-user key, THEN the actor check (ROLE_PERMISSION_FORBIDDEN).
 --     Last admin / self refused (LAST_ADMIN_REQUIRED, SELF_ROLE_CHANGE_FORBIDDEN, USER_NOT_FOUND). Role -> user, the approved
 --     rows go, the keys stay, the open invite is cancelled and the windows are closed, and the invites the person issued are
---     cancelled (private.staff_cancel_invites_issued_by). service_role only.
+--     cancelled (private.staff_cancel_invites_issued_by). Last, queues staff_demoted (private.passkey_enqueue_staff_notice;
+--     the target's and the actor's addresses are read from auth.users). service_role only.
 --   private.staff_invite_issue_manual(email, role default 'admin', ttl default 3600) returns text: dashboard SQL only. Only
 --     postgres can execute it. Returns the raw 43-character token; the table keeps its UTF-8 SHA-256. One audit row.
 --   public.passkey_delete_with_floor(user, passkey) returns void: takes the per-user key; a current staff member whose approved
@@ -83,7 +91,7 @@
 --     public.staff_invite_bind_window(uuid, uuid), public.staff_invite_consume(bytea),
 --     public.staff_invite_issue(uuid, text, text, uuid, text, bytea, integer),
 --     private.staff_invite_issue_core(uuid, text, text, uuid, text, bytea, integer, boolean),
---     private.staff_cancel_invites_issued_by(uuid);
+--     private.staff_cancel_invites_issued_by(uuid), private.passkey_enqueue_staff_notice(text, uuid, uuid);
 --   DROP TABLE private.staff_invites;
 --
 -- BEFORE applying to production (read only): this migration is NOT applied to production until stage 3b.
@@ -184,6 +192,23 @@ BEGIN
 END
 $$;
 
+-- The one place the manager notices are queued (see the header). Called under 190519 + the per-user key, in the caller's
+-- transaction. Addresses come from auth.users, not from the role rows, so a person whose role was just switched off still resolves.
+CREATE OR REPLACE FUNCTION private.passkey_enqueue_staff_notice(p_kind text, p_user_id uuid, p_actor_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  IF p_kind IS NULL OR p_kind NOT IN ('staff_redo_issued', 'staff_invited', 'staff_demoted') OR p_user_id IS NULL THEN
+    RAISE EXCEPTION USING MESSAGE = 'STAFF_NOTICE_ARGUMENT_INVALID', ERRCODE = '22023';
+  END IF;
+  INSERT INTO private.passkey_notification_outbox
+    (user_id, kind, passkey_id, friendly_name, subject_is_staff, notify_subject, subject_email, actor_email)
+  SELECT u.id, p_kind, NULL, NULL, p_kind <> 'staff_invited', false, u.email, a.email
+    FROM auth.users u LEFT JOIN auth.users a ON a.id = p_actor_id
+   WHERE u.id = p_user_id;
+END
+$$;
+
 CREATE OR REPLACE FUNCTION private.staff_invite_issue_core(
   p_user_id uuid, p_role_code text, p_kind text, p_issued_by uuid, p_reason text,
   p_token_hash bytea, p_ttl_seconds integer, p_allow_last_admin boolean
@@ -272,6 +297,12 @@ BEGIN
   INSERT INTO private.staff_invites (user_id, role_code, kind, token_hash, issued_by, reason, expires_at)
   VALUES (p_user_id, p_role_code, p_kind, p_token_hash, p_issued_by, p_reason, now() + make_interval(secs => p_ttl_seconds))
   RETURNING id INTO v_id;
+  -- Tell the other managers (same transaction: a failure above leaves no notice). The last resort has no issuer and queues nothing.
+  IF p_kind = 'redo' THEN
+    PERFORM private.passkey_enqueue_staff_notice('staff_redo_issued', p_user_id, p_issued_by);
+  ELSIF p_kind IN ('invite', 'promote') THEN
+    PERFORM private.passkey_enqueue_staff_notice('staff_invited', p_user_id, p_issued_by);
+  END IF;
   RETURN v_id;
 END
 $$;
@@ -436,6 +467,7 @@ AS $$
 $$;
 
 ALTER FUNCTION private.staff_cancel_invites_issued_by(uuid) OWNER TO postgres;
+ALTER FUNCTION private.passkey_enqueue_staff_notice(text, uuid, uuid) OWNER TO postgres;
 ALTER FUNCTION private.staff_invite_issue_core(uuid, text, text, uuid, text, bytea, integer, boolean) OWNER TO postgres;
 ALTER FUNCTION public.staff_invite_issue(uuid, text, text, uuid, text, bytea, integer) OWNER TO postgres;
 ALTER FUNCTION public.staff_invite_consume(bytea) OWNER TO postgres;
@@ -444,7 +476,7 @@ ALTER FUNCTION public.staff_role_activate(uuid, uuid) OWNER TO postgres;
 ALTER FUNCTION public.staff_invite_cancel(uuid, uuid) OWNER TO postgres;
 ALTER FUNCTION public.staff_invite_open(uuid) OWNER TO postgres;
 
-REVOKE ALL ON FUNCTION private.staff_cancel_invites_issued_by(uuid),
+REVOKE ALL ON FUNCTION private.staff_cancel_invites_issued_by(uuid), private.passkey_enqueue_staff_notice(text, uuid, uuid),
   private.staff_invite_issue_core(uuid, text, text, uuid, text, bytea, integer, boolean),
   public.staff_invite_issue(uuid, text, text, uuid, text, bytea, integer),
   public.staff_invite_consume(bytea), public.staff_invite_bind_window(uuid, uuid),
@@ -585,6 +617,8 @@ BEGIN
    WHERE w.user_id = p_user_id AND w.closed_at IS NULL;
   -- The invites this person issued go with the role (same transaction, same locks).
   PERFORM private.staff_cancel_invites_issued_by(p_user_id);
+  -- Tell the other managers (same transaction, after the role is off).
+  PERFORM private.passkey_enqueue_staff_notice('staff_demoted', p_user_id, p_actor_id);
 END
 $$;
 
@@ -677,7 +711,7 @@ BEGIN
       RAISE EXCEPTION 'PASSKEY_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_h_function_acl';
     END IF;
   END LOOP;
-  FOREACH f IN ARRAY ARRAY['private.staff_cancel_invites_issued_by(uuid)',
+  FOREACH f IN ARRAY ARRAY['private.staff_cancel_invites_issued_by(uuid)', 'private.passkey_enqueue_staff_notice(text,uuid,uuid)',
     'private.staff_invite_issue_core(uuid,text,text,uuid,text,bytea,integer,boolean)'] LOOP
     IF has_function_privilege('anon', f, 'EXECUTE') OR has_function_privilege('authenticated', f, 'EXECUTE')
        OR has_function_privilege('service_role', f, 'EXECUTE')
@@ -711,7 +745,7 @@ BEGIN
       RAISE EXCEPTION 'PASSKEY_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_h2_set_role_acl';
     END IF;
   END LOOP;
-  FOREACH f IN ARRAY ARRAY['private.staff_cancel_invites_issued_by(uuid)',
+  FOREACH f IN ARRAY ARRAY['private.staff_cancel_invites_issued_by(uuid)', 'private.passkey_enqueue_staff_notice(text,uuid,uuid)',
     'private.staff_invite_issue_core(uuid,text,text,uuid,text,bytea,integer,boolean)',
     'public.staff_invite_issue(uuid,text,text,uuid,text,bytea,integer)', 'public.staff_invite_consume(bytea)',
     'public.staff_invite_bind_window(uuid,uuid)', 'public.staff_role_activate(uuid,uuid)',

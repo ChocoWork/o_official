@@ -12,6 +12,8 @@ export type ClaimedPasskeyNotification = {
   subjectIsStaff: boolean;
   notifySubject: boolean;
   subjectEmail: string | null;
+  /** 店長への知らせ（やり直し・招待・降格）で、操作した店長のアドレス。ほかの知らせでは null。 */
+  actorEmail: string | null;
   occurredAt: string;
   attempts: number;
   leaseToken: string;
@@ -63,6 +65,7 @@ function parseClaimed(data: unknown): ClaimedPasskeyNotification | null | undefi
     || !isNullableString(row.passkey_id) || !isNullableString(row.friendly_name)
     || typeof row.subject_is_staff !== 'boolean' || typeof row.notify_subject !== 'boolean'
     || !isNullableString(row.subject_email) || typeof row.occurred_at !== 'string'
+    || !isNullableString(row.actor_email)
     || typeof row.attempts !== 'number' || typeof row.lease_token !== 'string'
   ) {
     return undefined;
@@ -77,6 +80,7 @@ function parseClaimed(data: unknown): ClaimedPasskeyNotification | null | undefi
     subjectIsStaff: row.subject_is_staff,
     notifySubject: row.notify_subject,
     subjectEmail: row.subject_email,
+    actorEmail: row.actor_email,
     occurredAt: row.occurred_at,
     attempts: row.attempts,
     leaseToken: row.lease_token,
@@ -103,7 +107,7 @@ const isBoolean = (data: unknown): boolean | undefined => (typeof data === 'bool
  * @remarks 期限切れの担当は DB の関数が先に戻す。DB の誤り・形の違う戻りは `{ ok: false }`（呼び手は何もせず次の回へ）。
  *
  * @impl IMPL-AUTH-330
- * @design DD-AUTH-066
+ * @design DD-AUTH-086
  */
 export function claimPasskeyNotification(leaseSeconds: number): Promise<RpcResult<ClaimedPasskeyNotification | null>> {
   return callChecked('claim_passkey_notification', { _lease_seconds: leaseSeconds }, parseClaimed);

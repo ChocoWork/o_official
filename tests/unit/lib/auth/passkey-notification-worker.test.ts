@@ -20,7 +20,7 @@ const sha = (email: string) => createHash('sha256').update(email).digest('hex').
 function row(overrides: Partial<ClaimedPasskeyNotification> = {}): ClaimedPasskeyNotification {
   return {
     id: 'row-1', seq: 1, userId: 'u1', kind: 'passkey_added', passkeyId: null, friendlyName: 'iPhone',
-    subjectIsStaff: false, notifySubject: true, subjectEmail: 'a@example.com',
+    subjectIsStaff: false, notifySubject: true, subjectEmail: 'a@example.com', actorEmail: null,
     occurredAt: '2026-11-17T15:05:00Z', attempts: 1, leaseToken: 'tok-1', ...overrides,
   };
 }

@@ -23,7 +23,7 @@ const rpc = jest.fn();
 const claimedRow = {
   id: ID, seq: 7, user_id: USER_ID, kind: 'passkey_added', passkey_id: null, friendly_name: 'iPhone',
   subject_is_staff: false, notify_subject: true, subject_email: 'a@example.com',
-  occurred_at: '2026-11-18T00:00:00+00:00', attempts: 1, lease_token: TOKEN,
+  actor_email: null, occurred_at: '2026-11-18T00:00:00+00:00', attempts: 1, lease_token: TOKEN,
 };
 
 describe('passkey-notification-store', () => {
@@ -46,12 +46,18 @@ describe('passkey-notification-store', () => {
       ok: true,
       value: {
         id: ID, seq: 7, userId: USER_ID, kind: 'passkey_added', passkeyId: null, friendlyName: 'iPhone',
-        subjectIsStaff: false, notifySubject: true, subjectEmail: 'a@example.com',
+        subjectIsStaff: false, notifySubject: true, subjectEmail: 'a@example.com', actorEmail: null,
         occurredAt: '2026-11-18T00:00:00+00:00', attempts: 1, leaseToken: TOKEN,
       },
     });
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(rpc).toHaveBeenCalledWith('claim_passkey_notification', { _lease_seconds: 120 });
+  });
+
+  it('DD-AUTH-086 claimPasskeyNotification は操作した店長のアドレス actor_email を actorEmail に写す', async () => {
+    rpc.mockResolvedValue({ data: [{ ...claimedRow, actor_email: 'boss@example.com' }], error: null });
+
+    await expect(claimPasskeyNotification(60)).resolves.toMatchObject({ ok: true, value: { actorEmail: 'boss@example.com' } });
   });
 
   it('DD-AUTH-066 claimPasskeyNotification は bigint の seq が文字列で来ても数に直し、取り出す行が無ければ null', async () => {
@@ -67,6 +73,7 @@ describe('passkey-notification-store', () => {
     ['行が2つ', [claimedRow, claimedRow]],
     ['kind が知らない値', [{ ...claimedRow, kind: 'other' }]],
     ['lease_token が無い', [{ ...claimedRow, lease_token: undefined }]],
+    ['actor_email が文字列でも null でもない', [{ ...claimedRow, actor_email: 5 }]],
     ['subject_is_staff が真偽でない', [{ ...claimedRow, subject_is_staff: 'yes' }]],
     ['行が object でない', ['x']],
   ])('DD-AUTH-066 claimPasskeyNotification は戻りが想定外（%s）なら { ok: false }', async (_label, data) => {
