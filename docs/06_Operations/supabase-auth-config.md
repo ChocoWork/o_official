@@ -1,6 +1,6 @@
 # 本番の Supabase Auth の設定（captcha・パスワード変更・OTP・MFA）
 
-> 状態: 目標の値と手順（本番への適用は未実施。2026-11-01 に MCP で試して不可。2026-11-06 にオーナーがダッシュボードで変えると決め、「ダッシュボードで変える手順（オーナー向け）」を書いた。確認メールの必須だけは本番がすでに目標の値） | 確認日: 2026-11-18 | 対象: 本番の Supabase プロジェクト `pjidrgofvaglnuuznnyj` の Auth と PostgREST の設定、手元の `supabase/config.toml` との対応 | 設計判断: [ADR-0420](../03_BasicDesign/decisions/ADR-0420-auth-supabase-captcha-with-service-role-auth-calls.md)（captcha）、[ADR-0421](../03_BasicDesign/decisions/ADR-0421-auth-password-change-by-app-window-with-emailed-code.md)（パスワード変更）
+> 状態: 目標の値と手順（本番への適用は未実施。2026-11-01 に MCP で試して不可。2026-11-06 にオーナーがダッシュボードで変えると決め、「ダッシュボードで変える手順（オーナー向け）」を書いた。確認メールの必須だけは本番がすでに目標の値） | 確認日: 2026-11-20 | 対象: 本番の Supabase プロジェクト `pjidrgofvaglnuuznnyj` の Auth と PostgREST の設定、手元の `supabase/config.toml` との対応 | 設計判断: [ADR-0420](../03_BasicDesign/decisions/ADR-0420-auth-supabase-captcha-with-service-role-auth-calls.md)（captcha）、[ADR-0421](../03_BasicDesign/decisions/ADR-0421-auth-password-change-by-app-window-with-emailed-code.md)（パスワード変更）
 
 ## 概要
 
@@ -361,6 +361,8 @@ Security notifications が見当たらない時は、右上の自分のアイコ
 | 10. 今の `createUser` → `signInWithOtp` の組み合わせ（段2） | 始めの窓口は確認済みで作ってからコードを送る（手元は Confirm email オンで動く） | 本番の Confirm email オンのまま、未登録のアドレスにコードが届き、確定でログインできること。下の「お客さんのメールのコードのログイン（段2）」 |
 | 11. メールのコードの型（`magic_link`）の雛形（段2） | 雛形の本文に `{{ .Token }}`・8桁・5分に頼る | 本番の `magic_link` の雛形に `{{ .Token }}` が在り、`otp_length` が8・`otp_expiry` が300であること |
 | 12. 始めの `(b)` の切り替えの実機の確認と、`/otp` の IP の枠（段2） | `NEXT_PUBLIC_PASSKEY_START_MODE`。サインイン・サインアップの IP ごとの枠（5分30回）が、お客さんの新規と予備の主な道になる | `(b)` の切り替えを実機で確かめる。`/otp` にも `Sb-Forwarded-For` を添えられるか、`createServiceRoleAuthClient` を `sb_secret_` に替える要否を確かめる |
+
+段3b（2026-11-20）: パスキーの移行は A〜I の9本になった（H が店員の招待の表と関数、I が死んだ知らせの点検と worker の心拍）。**当てる順・1本ごとの前の確かめ・戻し方の順・上の表の確認の本番での手順は [パスキーの移行を本番に当てる手順書](./passkey-production-apply-runbook.md)**（節6が設計 8-2 の1〜12と段3b が足した確認）。ダッシュボードの設定（Passkeys・RP・フック）は B を当てた後、E は最後。
 
 ## お客さんのメールのコードのログイン（段2）
 

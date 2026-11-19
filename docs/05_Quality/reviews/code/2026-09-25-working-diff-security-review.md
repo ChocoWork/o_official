@@ -455,7 +455,7 @@ G と H の順番・範囲（G-1〜G-4・H-1）は1章、開店前に直す物�
 | 1b の M-1（昇格・入り直し） | 1b の最終レビューの指摘 |
 | 1b の最終レビューの M-2 | ログインの終わりで `endAuthSession` の失敗を監査に残す（`src/app/api/auth/passkey/login/finish/route.ts`）。任意の指摘で、段2の狙いと関係が無いので段2では取らない |
 | 役割を上げる時の鍵の消去とセッションの終了 | 役割を上げる時は、鍵を消し、全セッションを終わらせる。DB の `passkey_approve('reauth')` は鍵を数えず、入り直しの承認も確かめない。**移行 F を本番に当てる前に**、F の `advisory lock` の鍵に名前空間を足す。**2026-11-18 段3a Task 1 で F を直した**: 錠の鍵を `hashtextextended('passkey_approve:' \|\| uuid, 0)` にし、3つの枝とも最初に取る・`reauth` は認めた鍵が1本以上の時だけ通す（SEC-AUTH-052）。役割を上げる時の鍵の消去とセッションの終了は Task 2・5。**2026-11-18 段3a Task 5 で窓口を足した**: `PATCH /api/admin/users` は `STAFF_INVITE_REQUIRED` を招待の道（`promote`）に落とし、発行の後に全ログインを終わらせてメールを送る。招待・やり直し・降格・取り消しの窓口（API-AUTH-033〜036）も同じ |
-| 本番で確かめること（設計 8-2）に足す物 | 今の `createUser` → `signInWithOtp` の組み合わせ、メールのコードの型（`magic_link` の `{{ .Token }}`・8桁・5分）、始めの `(b)` の切り替えの実機の確認。[supabase-auth-config.md](../../../06_Operations/supabase-auth-config.md) の「本番の確認の一覧」の10〜12 |
+| 本番で確かめること（設計 8-2）に足す物（手順書の節6に入れた。段3b Task 23） | 今の `createUser` → `signInWithOtp` の組み合わせ、メールのコードの型（`magic_link` の `{{ .Token }}`・8桁・5分）、始めの `(b)` の切り替えの実機の確認。[supabase-auth-config.md](../../../06_Operations/supabase-auth-config.md) の「本番の確認の一覧」の10〜12 |
 | 8-2 の1行（IP の枠） | 段2からは、サインイン・サインアップの IP ごとの枠（5分30回。supabase-auth-config.md の「店の全員で分け合う」）が、お客さんの新規と予備の主な道になる。`/otp` にも `Sb-Forwarded-For` を添えられるか、`createServiceRoleAuthClient`（今は `SUPABASE_SERVICE_ROLE_KEY` を使う）を `sb_secret_` に替える要否を確かめる |
 
 **段3a の持ち越しの着地（段3a Task 12 で書いた。2026-11-19）**
@@ -464,9 +464,9 @@ G と H の順番・範囲（G-1〜G-4・H-1）は1章、開店前に直す物�
 
 | 持ち越し | 着地 |
 | --- | --- |
-| 1a-3 本番への当て方（A→…→E の順） | 段3b（手順書。H が増えて8本） |
-| 1a-4 本番の `rp_id`・`postgres` の権限・GoTrue の版・最初の店長の道 | 段3b（手順書と、最後の手段の SQL の `private.staff_invite_issue_manual`＝Task 2b） |
-| 1i 移行 F の当て方・`Sb-Forwarded-For`・環境変数 | 段3b（手順書） |
+| 1a-3 本番への当て方（A→…→E の順） | 済み（段3b Task 23。[手順書](../../../06_Operations/passkey-production-apply-runbook.md)。9本（A〜I。J は無い）を A → B → C → D → F → G → H → I → E の順で当て、H は G の列に依存する。戻し方の順は1つ、E → I → H → G → F → D → C → B → A） |
+| 1a-4 本番の `rp_id`・`postgres` の権限・GoTrue の版・最初の店長の道 | 手順書の節1（前提）は済み（段3b Task 23）。最初の店長の道は Task 24（最後の手段の SQL の `private.staff_invite_issue_manual`＝Task 2b） |
+| 1i 移行 F の当て方・`Sb-Forwarded-For`・環境変数 | 済み（段3b Task 23。手順書の節3・5・6） |
 | 1j 期限切れ・無効だった役割を戻す時にも「上げる」と同じ | 済み（Task 2b: `admin_set_user_role` が `STAFF_INVITE_REQUIRED`、Task 5） |
 | 1k 失効がアプリに結び付いていない GoTrue のセッションも消す試験 | 済み（Task 5） |
 | 1l 段2の持ち越し（`dead` の点検・pg_cron と G の本番登録・心拍） | 段3b |
@@ -488,13 +488,13 @@ G と H の順番・範囲（G-1〜G-4・H-1）は1章、開店前に直す物�
 | T10 M-4（Google の戻りの URL で見分けた拒否が本物と区別できない） | 済み（段3b Task 19。URL で見分けた拒否は `staff_passkey_required_url`。76aaf1d9） |
 | T3 M-1（`staff_session_touch` が別の利用者の `session_id` に行を書ける） | 済み（段3b Task 19。移行 D の core が、`auth.sessions` の持ち主と違う利用者では書かず偽。76aaf1d9） |
 | T1 M-5（移行 F の最後の確かめが `passkey_approve` の錠・再認証の断りを見ない） | 済み（段3b Task 19。錠の式 `hashtextextended('passkey_approve:' || p_user_id::text, 0)` と `PASSKEY_REAUTH_NOT_ALLOWED` を確かめる。錠の式は直しの1巡で、エラー文では満たされない形にした） |
-| T1 M-4（GoTrue を直に叩く削除は `passkey_approve` の錠を取らない） | 済み（段3b Task 19。移行 F のヘッダーと `db-migrations.md` に残る危険として書いた。手順書への転記は Task 23） |
+| T1 M-4（GoTrue を直に叩く削除は `passkey_approve` の錠を取らない） | 済み（段3b Task 19。移行 F のヘッダーと `db-migrations.md` に残る危険として書いた。手順書への転記は Task 23 で済み。手順書の節7） |
 | 再レビュー N-1（`staff-passkey-idle-rpc.ts` の型の注釈） | 済み（段3b Task 19。呼び手は 503 か「しばらくしてから」を返す、に直した） |
 | 再レビュー N-2（`StaffInviteScreen` の `redirectTo` の確かめ） | 済み（段3b Task 19。`new URL(to, location.origin).origin` で比べる。`/	/evil` も断る） |
 | 段3a の最終レビューの持ち越しの試験（T1 M-1・M-2・M-3、T2 M-1、T2b M-4、T5 M-6、T6 M-4、T6b M-3・m-2、T7 M-2・N-1、T8 N-7、T9 M-6、T10 M-5、T12 M-6。段3b Task 13 n-3、Task 19 N-1） | 済み（段3b Task 20。試験だけを足す・直す。製品のコードは触っていない。足した試験は、守る動きを壊して赤くなることを1回ずつ確かめてから戻した）。ただし T10 M-5〔410 `totp_retired`〕は skip された試験の中にあり、壊して赤くした確かめの対象外。その動きは FR-LOGIN-069 の FR-AUTH-046-AC-05 と単体の `mfa-enroll-totp-retired.test.ts` が守る） |
 | E2E の待ちの掃除（T8 N-6・Task 15 m-2・Task 17 N2-1・Task 20 m-1・m-2・競りの試験の時間切れ） | 済み（段3b Task 21。`waitForMail` を足し、FR-LOGIN-067 の `networkidle` を、管理 API の呼び出しを追う待ち（飛んでいる呼び出しが無く1秒静かになるまで）に替えた。製品のコードは触っていない。kpi と order-attention だけを名指しで待つ形では AC-06 が36回中11回落ちた〔meta・targets・monthly-record が KPI の後に続き、最後の操作の時刻を戻した値を上書きする〕ので、呼び出しの一覧を決め打ちにせず、管理 API の飛んでいる呼び出しが無く1秒静かになるまで待ち、時刻を戻す間に呼び出しが起きたら名指しで落とす形にした） |
 | 段3a の最終レビューの文書・追跡の持ち越し（T1 M-6・T2 M-4・M-5・T2b M-3・T3 M-3・T6 M-7・T6b M-1・T7 N-2・T8 N-4・N-5・T9 M-1・M-2・M-3・M-7・M-8・T10 M-1・T12 M-5。段3b Task 18 n-2・n-3、Task 19 N-2・N-3、Task 21 N-1・N-2・N-3） | 済み（段3b Task 22。文書と注釈だけ。製品の動きは変えていない。移行 D・E・F はヘッダーの注釈だけを同じファイルで直し、大きさと MD5 を測り直した。FR-LOGIN-067 は更新 `/api/auth/refresh` も追い、時間切れで止まっている道を文で出す形にして、3幅・3回続けて通過）。T6b M-1・T9 M-3・T10 M-1 の「`@design` を足す」は、`validate-trace` が1単位に `@design` を1つしか認めないので足せず（足すと違反が10件増える）、docblock の説明と、DD 側の「追跡」の一覧（DD-AUTH-079・083・005）で結んだ。T9 M-1 の「GoTrue の直の削除を止める引き金」は、オーナーが 2026-11-19 に受け入れた（移行 J は作らない） |
-| 8-2 の1行（`/otp` の IP の枠・`Sb-Forwarded-For`・`createServiceRoleAuthClient` を `sb_secret_` に替える要否） | 段3b Task 16 |
+| 8-2 の1行（`/otp` の IP の枠・`Sb-Forwarded-For`・`createServiceRoleAuthClient` を `sb_secret_` に替える要否） | 段3b Task 16 で記録し、手順書の節6の12に入れた（Task 23。本番で確かめる） |
 | 一度も入らなかったアカウントの後始末 | 判断10（開店前） |
 | 1本だけの店員が `/auth/verified` で回る | 済み（Task 9） |
 | TOTP の窓口・画面の削除 | 段4（判断6。ただし店員の登録は Task 10 で410） |

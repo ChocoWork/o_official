@@ -1,13 +1,13 @@
 /**
- * パスキーの名前の変更・削除（src/app/api/auth/passkey/[id]/route.ts）。ログインした本人の鍵だけを GoTrue に頼む。
+ * パスキーの名前の変更・削除（src/app/api/auth/passkey/[id]/route.ts）。ログインした本人の鍵だけを扱う（お客さんの削除と全員の名前の変更は GoTrue、店員の削除は DB の関数）。
  *
  * @packageDocumentation
  * @impl IMPL-AUTH-290
  * @design DD-AUTH-057
  * @remarks 順番: 回数の制限（IP ごと 60回／600秒）→ 認証 → CSRF → `id` が uuid でなければ 400（GoTrue を呼ばない）→（PATCH）本文の形 400 →
  * （DELETE の店員）GoTrue を呼ばず、DB の関数 `passkey_delete_with_floor`（下限は DB の中。`staff-passkey-delete`）だけで消す。認めた鍵を下限未満にする削除は 409 `staff_min_keys`、DB が読めなければ 503
- * （DELETE のお客さん）GoTrue。
- * 他人の鍵・存在しない鍵は GoTrue の 404 を 404 `not_found` にそろえる（区別しない）。鍵が消えると 1a の引き金が認めの行を消す（アプリは何もしない）。
+ * （DELETE のお客さん・全員の PATCH）GoTrue。店員かの確かめ（`isStaff`）は DELETE だけ。
+ * GoTrue へ回す道（お客さんの DELETE・全員の PATCH）は、他人の鍵・存在しない鍵を GoTrue の 404 から 404 `not_found` にそろえる（区別しない）。店員の DELETE の 404 `not_found` は DB の関数の `PASSKEY_NOT_FOUND`。鍵が消えると 1a の引き金が認めの行を消す（アプリは何もしない）。
  */
 import { z } from 'zod';
 import { logAudit } from '@/lib/audit';

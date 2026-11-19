@@ -1,0 +1,245 @@
+# パスキーの移行を本番に当てる手順書
+
+> 状態: 手順（本番には何も当てていない。当てるのは調整役だけで、オーナーの許可を得た時だけ） | 確認日: 2026-11-20 | 対象: `supabase/migrations/` のパスキーの移行 A〜I の9本、ダッシュボードの設定、アプリのデプロイ、定期処理 | 設計: [パスキー設計](../superpowers/specs/2026-11-07-passkey-auth-design.md)（8-1・8-2）、計画: [段3b の計画](../superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md)（Task 23）
+
+## 概要
+
+この手順書は、パスキーの移行9本（A〜I。J は無い。2026-11-19 にオーナーが、GoTrue を直に叩く鍵の削除の穴を認めた＝22b は行わない）を本番へ当てる順・確かめ・戻し方を1か所にまとめる。各移行の中身と手元の確認は [db-migrations.md](./db-migrations.md) の各節が正本で、ここはそれを順に流すための手順にする。
+
+- 当てるのは調整役だけで、**オーナーの許可を得た時だけ**。本番へ向けて流す SQL・操作には「調整役がオーナーの許可を得てから」と書く。書いていない SQL は読むだけの `select`。
+- 移行は Supabase の MCP の `apply_migration` で1本ずつ当てる。`supabase db push`（どの形でも）と `workflow_dispatch` は流さない。
+- 本番の独自のドメインが決まるまで、1本も当てない（オーナー決定 2026-11-16・2026-11-19）。
+- この master を、手順の途中でアプリとして本番にデプロイしない。デプロイは節2の決まった位置で行う（店員のパスワード＋TOTP の入り方は、この master のアプリと移行・フックで止まる）。
+
+## 1. 前提（全部そろうまで1本も当てない）
+
+次の7つが全部そろっていること。1つでも欠けたら止めて報告する。
+
+1. 本番の独自のドメイン・`rp_id`・`rp_origins` が決まっている（後から変えると全員のパスキーが使えなくなる）。
+2. 本番の GoTrue が v2.196.0 である（違えば、設計の試し T1〜T7 の前提を見直す）。
+3. Passkeys が、今のプランでダッシュボードから有効にできる。
+4. `postgres` の権限が足りる。本番で次を読み、全部 `true` であること（読むだけ）。
+   ```sql
+   select has_table_privilege('postgres','auth.webauthn_credentials','TRIGGER') as webauthn_trigger,
+          has_table_privilege('postgres','auth.webauthn_credentials','SELECT')  as webauthn_select,
+          has_table_privilege('postgres','auth.webauthn_credentials','DELETE')  as webauthn_delete,
+          has_table_privilege('postgres','auth.mfa_factors','DELETE')           as mfa_delete,
+          has_table_privilege('postgres','auth.users','UPDATE')                 as users_update,
+          has_table_privilege('postgres','auth.sessions','SELECT')              as sessions_select,
+          to_regclass('auth.webauthn_credentials') is not null                   as webauthn_table,
+          to_regnamespace('extensions') is not null                              as extensions_schema;
+   ```
+   C の前の確かめが `TRIGGER`、A の関数が `SELECT`、H の前の確かめが `DELETE`・`UPDATE`・`SELECT` を見る。
+5. **店長にする人のアカウントが本番にある**。無ければ、ダッシュボードの Authentication で、パスワード無し・メール確認済みで作る（最初の店長の手順は節2の最後と Task 24 の手順書）。
+6. `Sb-Forwarded-For` の運用が決まっている（[supabase-auth-config.md](./supabase-auth-config.md) の「パスキーのログインの始めと `Sb-Forwarded-For`」）。
+7. 本番の `ops_job_heartbeats_job_check` を、ほかの移行が変えていないか見られる（I の行の前の確かめ）。
+
+## 2. 当てる順
+
+1. A → B → C → D → F → G → H → **I** を、**1本ずつ**当てる（節3の表）。1本当てるたびに、節3の突き合わせを済ませてから次へ進む。
+   - **H は G の列に依存する**。**G の前に H を当てない**（H の前の確かめが G の3列 `lease_token`・`last_error_code`・`finished_at` を見て、無ければ `passkey_h_g_columns` で止まる）。H は F の関数 `passkey_is_staff` も使うので、F の後。
+   - I は A と G の後。
+   - C は本番の `postgres` が `TRIGGER` を持つこと（節1の4）が前提。
+2. ダッシュボードで、Passkeys の有効化と RP（`rp_id`・`rp_origins`）を設定する。次に、**B を当てた後で** Custom Access Token フック（`public.passkey_access_token_hook`）を登録する（B より先に登録すると、全員のログインが止まる）。手順は [supabase-auth-config.md](./supabase-auth-config.md)。
+3. アプリをデプロイする。**D はデプロイの前**に当てておく（アプリの `admin-rbac` が `staff_idle_check` を呼ぶ。A も同じ）。
+4. `supabase/pending/schedule_stripe_webhook_worker.sql` を、新しい版の移行として当てる（`supabase/pending/README.md` の手順。**アプリのデプロイの後**。登録した時点から入口が毎分呼ばれる。死んだ知らせの点検と worker の心拍は、この毎分の入口の終わりで動くので、I はこの前に当てておく）。
+   - **これは Stripe の webhook の worker も本番で動かし始める**。開店の準備の行3の保留の定期処理4本と一緒に、オーナーと決める。
+   - 前提は Vault の `cron_secret`・`app_base_url`（名前の存在だけを確かめ、値は見ない）。
+   - 戻し方 (1)「定期処理とアプリを止める」と対になる。
+   - **調整役がオーナーの許可を得てから**。
+5. 最初の店長（Task 24 の手順書）が、パスキーを2本登録して役割が有効になる。これで「認めた鍵が2本の店員」が出来る。
+6. **E は最後に当てる**（調整役がオーナーの許可を得てから）。E の前の確かめは、認めた鍵が足りる店員が1人もいなければ止める。**E は権限を奪う側**（`has_permission` を切り替え、全員の管理の権限をパスキーの入り方だけに絞る）なので、他の物と一緒に「害の無い物」に入れない。当てたら、最初の店長が `/admin` に入れることを確かめる。
+7. TOTP を止める（ダッシュボード）。
+
+## 3. 1本ごとの手順の表
+
+当て方（A〜I 共通。**調整役がオーナーの許可を得てから**）。
+
+1. 「前の確かめ」の SQL（読むだけ）を流し、期待どおりであること。
+2. MCP の `apply_migration` を、`name` をファイル名から版を除いた部分（例 `passkey_foundation_tables`）にして呼ぶ。内容はファイルの全文。
+3. 当てた後に、次を読む（読むだけ）。
+   ```sql
+   select version, name, md5(statements[1]) from supabase_migrations.schema_migrations where name = '<name>';
+   ```
+4. **突き合わせ**: `md5(statements[1])` を**ファイルの MD5**（下の表）と比べる。
+   - MCP の `apply_migration` で当てると、本番はファイル全体を1つの文として記録する。だから `statements[1]` の MD5 はファイルの MD5 と同じになる。
+   - **手元の `db reset` の値とは比べない**。手元は CLI が文を分けて記録するので `md5(statements[1])` が別の値になる（各節の「手元の値（参考）」）。
+   - 違えば、当てる途中で字が変わっている（全角の空白など）。止めて報告する。
+5. ファイルの名前を、当てた版に付け替える（[db-migrations.md](./db-migrations.md) の「MCP の apply_migration で当てた場合」と同じ）。付け替えると手元の順は当てた順（A→…→I→E）になる。**間に作った移行が passkey の物に依存していないか**を、付け替えの後の `db reset` で確かめる。
+6. 前の確かめで途中で止まったら、止めて、すでに当てた物は戻さない（単独で権限を奪わない物から先に当てる順にしてあるため）。
+
+大きさと MD5 は、2026-11-20 に `wc -c`・`md5sum` で測った値（LF・BOM なし・ASCII だけ）。`db-migrations.md` の各節の値と全部一致した。
+
+| 順 | ファイル | 大きさ | MD5 | 単独で権限を奪うか | `name` |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `20261116215034_passkey_foundation_tables.sql`（A） | 14424 | `dc73b6e294108890433058b56d2c70dc` | 奪わない（表と関数を足すだけ） | `passkey_foundation_tables` |
+| 2 | `20261116230000_passkey_access_token_hook.sql`（B） | 8454 | `39fc2e72e8fe8f5bc4a8a6df3f7533d2` | 奪わない（登録するまで効かない） | `passkey_access_token_hook` |
+| 3 | `20261116232141_passkey_credential_events.sql`（C） | 8049 | `fd522cc9974488668fc89e70fb371dce` | 奪わない（鍵の足し・消しで知らせと認めを動かす） | `passkey_credential_events` |
+| 4 | `20261117001500_passkey_staff_entry_conditions_fn.sql`（D） | 16750 | `b50ea103050e223af93d8ffe1339e0ec` | 奪わない（関数と表を足すだけ。E が呼ぶ） | `passkey_staff_entry_conditions_fn` |
+| 5 | `20261117123620_passkey_server_endpoint_fns.sql`（F） | 12085 | `b8b22d4844ac4c51d7744737e650c43c` | 奪わない（関数を足し `passkey_approve` を直す） | `passkey_server_endpoint_fns` |
+| 6 | `20261118044338_passkey_notification_sending.sql`（G） | 21265 | `505f615cfbc19562a72799a0b2da3f03` | 奪わない | `passkey_notification_sending` |
+| 7 | `20261118130000_passkey_staff_invites.sql`（H） | 47537 | `c871a2bf2f2878590ec271f2cecb9b47` | 奪わない（`admin_set_user_role` が、店員にする変更を今の有効な店員だけに絞る） | `passkey_staff_invites` |
+| 8 | `20261119181323_passkey_notification_ops.sql`（I） | 9655 | `33a8d3641f63b311de45c0c0f0c56c6d` | 奪わない | `passkey_notification_ops` |
+| 最後 | `20261117013000_passkey_staff_entry_conditions.sql`（E） | 10120 | `24839a6932a684ee47d491cc532806f0` | **奪う**（`has_permission` を切り替える） | `passkey_staff_entry_conditions` |
+
+ファイルの一覧は `ls supabase/migrations | grep passkey` と同じ9本。版の昇順は A, B, C, D, E, F, G, H, I で、**E は版では D の次だが、当てるのは最後**（表の最後の欄）。
+
+### 前の確かめ（読むだけ。期待どおりでなければ当てない）
+
+**A**
+```sql
+select to_regclass('private.passkey_staff_config');   -- 期待: null
+select to_regclass('auth.webauthn_credentials');       -- 期待: null でない
+```
+
+**B**
+```sql
+select to_regprocedure('public.passkey_approved_count(uuid)');   -- 期待: null でない（A）
+```
+
+**C**（移行自身も、表が足りない・`TRIGGER` の権限が無い時に `passkey_trigger_precheck`・`passkey_trigger_privilege` で止まる）
+```sql
+select to_regclass('private.approved_passkeys'), to_regclass('private.passkey_notification_outbox'),
+       to_regclass('private.passkey_registration_windows'), to_regclass('public.user_roles');   -- 期待: 全部 null でない
+select has_table_privilege('postgres','auth.webauthn_credentials','TRIGGER');                    -- 期待: true
+```
+
+**D**（移行自身が、A の関数が無ければ `passkey_entry_precheck` で止まる）
+```sql
+select to_regprocedure('private.passkey_staff_settings()'), to_regprocedure('public.passkey_approved_count(uuid)');   -- 期待: 全部 null でない
+```
+
+**F**
+```sql
+select to_regprocedure('public.passkey_approve(uuid,uuid,text)');   -- 期待: null でない（A）
+select to_regprocedure('public.passkey_is_staff(uuid)');            -- 期待: null
+```
+
+**G**
+```sql
+select to_regclass('private.passkey_notification_outbox');   -- 期待: null でない（A）
+select to_regclass('private.order_email_send_pause');        -- 期待: null でない（注文のメールの共有の止め印）
+select count(*) from information_schema.columns where table_schema='private' and table_name='passkey_notification_outbox'
+  and column_name = 'actor_email';                           -- 期待: 1（A）
+select to_regclass('auth.webauthn_credentials');             -- 期待: null でない
+```
+
+**H**（**G の後**。G の3列が無ければ `passkey_h_g_columns` で止まる。`admin_set_user_role` の本体は `md5(prosrc)` で釘付け）
+```sql
+select count(*) from information_schema.columns where table_schema='private' and table_name='passkey_notification_outbox'
+  and column_name in ('lease_token','last_error_code','finished_at');   -- 期待: 3（G）
+select has_table_privilege('postgres','auth.mfa_factors','DELETE');          -- 期待: true
+select has_table_privilege('postgres','auth.webauthn_credentials','DELETE'); -- 期待: true
+select has_table_privilege('postgres','auth.users','UPDATE');                -- 期待: true
+select has_table_privilege('postgres','auth.sessions','SELECT');             -- 期待: true
+select to_regclass('private.staff_invites');                                 -- 期待: null
+select md5(prosrc) from pg_proc where oid = 'private.admin_set_user_role(uuid,uuid,text)'::regprocedure;
+                                                                             -- 期待: 0cb9f532f16aa5c56c6b425694f7209b
+select to_regnamespace('extensions') is not null;                            -- 期待: true
+select to_regprocedure('public.passkey_is_staff(uuid)');                     -- 期待: null でない（F）
+```
+
+**I**（送り箱の5列・job の一覧を、移行自身が確かめる。**当てる前に、今の job の CHECK を必ず控える**）
+```sql
+select pg_get_constraintdef(oid) from pg_constraint where conname = 'ops_job_heartbeats_job_check';   -- 控える（戻し方 (4) が、この定義に戻す）
+select to_regclass('private.passkey_notification_outbox');   -- 期待: null でない（A）
+select count(*) from information_schema.columns where table_schema='private' and table_name='passkey_notification_outbox'
+  and column_name in ('status', 'finished_at', 'last_error_code', 'attempts', 'kind');   -- 期待: 5（A・G）
+```
+- 控えた定義の job の集合で、I の前の確かめが次のどちらかに分かれる。(a) 既知の8つ（`accounting_post` まで）ちょうど: CHECK を9つに作り直す。(b) すでに `passkey_notification_worker` を含む: NOTICE（`passkey_i_job_check_already_present`）を出して CHECK は触らない。**(b) で当てた時は、戻しでも CHECK を触らない**。
+- 上のどちらでもない時は `passkey_i_job_check_drift`（`PASSKEY_MIGRATION_PRECHECK_FAILED`）で止まる。**止まったら、本番の今の job の一覧を読み**（控えた定義）、**I の一覧に足してから、大きさと MD5 を測り直す（調整役）**。測り直した値で、この表と [db-migrations.md](./db-migrations.md) を直してから当てる。
+- 後で `ops_job_heartbeats_job_check` を変える移行は、`passkey_notification_worker` を一覧に残す。
+
+**E**（最後）
+```sql
+select md5(prosrc) from pg_proc where oid = 'public.has_permission(text)'::regprocedure;   -- 期待: 3c4826933eca194a3486f430d361891c
+select to_regprocedure('private.staff_passkey_amr_ok(jsonb)'), to_regprocedure('private.staff_passkey_count_ok(uuid)'),
+       to_regprocedure('private.staff_idle_ok(uuid)');   -- 期待: 全部 null でない（D）
+```
+- 移行自身が、有効な店員がいるのに認めた鍵が足りる店員が1人もいない時は止まる（`passkey_entry_switch_no_ready_staff`）。止まったら E は当てない。最初の店長の登録（節2の5）を先に済ませる。
+
+## 4. 戻し方の順（全部の箇所でこの1つ）
+
+(1) 毎分の定期処理（`process-stripe-webhooks`）を止める。**再開しない**。本番は今この定期処理が無いので、止めたままが当てる前の状態。続けて、アプリのデプロイを戻す。アプリを戻す時、outbox に新しい種類の行が残っていたら `skipped` にする。
+→ (2) ダッシュボードのフックの登録を外す（外さずに B を戻すと、全員のログインが止まる）。
+→ (3) **E**（`has_permission` を `20261029120100_sec_has_permission_aal2_member_rls.sql` の本体に戻す。D の関数を使わなくなる）。
+→ (4) **I**（**先に** `delete from public.ops_job_heartbeats where job = 'passkey_notification_worker';` で心拍の行を消す。次に CHECK を、I の前に控えた定義に戻す。(b) で当てて CHECK を変えていない時は触らない。最後に関数2本・索引・列 `dead_notified_at` を `DROP`）。
+→ (5) **H**（H は G の列を使うので、G より先に落とす）。
+→ (6) **G**。
+→ (7) **F**（3つの新しい関数を `DROP`。`passkey_approve` を A の本体に戻す。A の本体は `md5(prosrc)` が `e0b5dc02ecfcb5533cd91a00edc55fe4`・876文字）。
+→ (8) **D**（E を戻した後。E の `has_permission` が呼ぶので、E より先に落とすと管理の権限が全部偽になる）。
+→ (9) **C**（先に関数を空の `RETURN NULL` だけにする。引き金の削除は `supabase_auth_admin` の手順で、**サポートに依頼**）。
+→ (10) **B**（`DROP FUNCTION public.passkey_access_token_hook(jsonb);`。登録を外した後）。
+→ (11) **A**（**C の引き金が生きている間は A を戻さない**。引き金が `approved_passkeys` を消そうとして、鍵の削除がすべて失敗する）。
+
+各移行の戻しは、ファイルのヘッダーの `ROLLBACK`（正本）。**戻しの SQL を本番に流すのは、調整役がオーナーの許可を得てから**。
+
+## 5. 環境変数・Vault（名前だけ。値は文書に書かない）
+
+- Vercel: `SUPABASE_SECRET_KEY`（`sb_secret_` の鍵）、`NEXT_PUBLIC_PASSKEY_START_MODE`（始めの切り替え。(b) にする時は再ビルドが要る）、`CRON_SECRET`、`SHOP_ALERT_EMAIL`（死んだ知らせ・worker の停止の知らせの宛先）、`RESEND_API_KEY`・`MAIL_FROM_ADDRESS`（知らせのメール）、`SUPABASE_SERVICE_ROLE_KEY`・`NEXT_PUBLIC_SUPABASE_URL`・`NEXT_PUBLIC_SUPABASE_ANON_KEY`。
+- 本番に置かない: `PASSKEY_START_DEV_IP`（手元の `next dev` だけ。本番とVercel では値があるとビルドと起動が止まる）。
+- Vault: `cron_secret`・`app_base_url`（毎分の定期処理が読む。名前の存在だけを確かめる）。
+- 名前と使い道の正本: [secrets.md](./secrets.md)。
+
+## 6. 設計 8-2 の確認の表
+
+当てた後（ダッシュボードの設定と、アプリのデプロイの後）に、調整役とオーナーで確かめる。外れたら、「外れた時」の列のとおりに直し、記録する。1〜9は[設計 8-2](../superpowers/specs/2026-11-07-passkey-auth-design.md)、10〜12は段2が足した（[supabase-auth-config.md](./supabase-auth-config.md) の「本番の確認の一覧」）。
+
+| 項 | いつ・どの画面 | 期待する結果 | 外れた時 |
+| --- | --- | --- | --- |
+| 1 | 本番でパスキーを有効にした後。GoTrue を直に（アプリを通さず）叩く | 始めの回数の制限が IP ごとに効く（IP A で31回目が 429、IP B は 200）。手順は supabase-auth-config.md の「有効にする手順」の5 | 添え書きが効かなければ (b)（`NEXT_PUBLIC_PASSKEY_START_MODE=browser`）に切り替える。31回目も 200 なら記録してオーナーに諮る |
+| 2 | 同上。`sb_secret_` で呼ぶ | `sb_secret_` が captcha を免除される | 免除されなければ別の計画（(a) の始めにも Turnstile のトークンが要る） |
+| 3 | 当てた後。GoTrue の更新（再デプロイ・設定の変更）の後 | 引き金 `passkey_credentials_notify` が消えていない | 消えていたら C を作り直す（引き金の作成は `supabase_auth_admin`。サポートに依頼） |
+| 4 | 開店前 | PIN の無い物理キーで、ログインの印（UV）と、一覧を渡さないログインが動く | 物理キーの人が入れなければ、案内を書く（守りは UV の印で保たれる） |
+| 5 | 本番でパスキーを有効にした後。**本物の Google で店員を入れてみる** | アプリが `/login?error=staff_passkey_required` に戻す（本物の Google ログインの `amr` と、フックの拒否の形） | `oauth/callback` の拒否の見分けを直す（`src/app/api/auth/oauth/callback/route.ts`）。**3a の Task 10 では本物の形を確かめられなかった**（実装タスクにはしない） |
+| 6 | 本番のダッシュボード | Passkeys を有効にできる（今のプラン） | 有効にできなければ、プランか別の道をオーナーに諮る（前提1・3） |
+| 7 | 節1 | 本番の GoTrue が v2.196.0 | 違えば、試し T1〜T7 の前提を見直す |
+| 8 | 本番。GoTrue を直に叩く | 古い形の `service_role` の鍵が captcha を免除されるか（確かめるだけ。アプリは使わない） | 記録する |
+| 9 | フックの登録後。**本物の拒否を起こす**（パスワードで入ろうとする店員など） | 拒否の応答（403・`unknown`・フックの文）が手元と同じ。アプリが文で「店員はパスキーで」と見分ける | `src/app/api/auth/oauth/callback/route.ts` と更新の窓口（`refresh`）の見分けを直す。**3a の Task 10 では本物の形を確かめられなかった** |
+| 10 | 本番の Confirm email オンのまま | 未登録のアドレスにコードが届き、確定でログインできる（`createUser` → `signInWithOtp`） | 本番の設定（Confirm email・雛形）を直す |
+| 11 | 本番の Auth の設定 | `magic_link` の雛形に `{{ .Token }}` が在り、`otp_length` が8・`otp_expiry` が300 | 設定を直す |
+| 12 | 本番。`(b)` の切り替えの実機と、`/otp` の IP の枠 | `(b)` に切り替えて動く。`/otp` にも `Sb-Forwarded-For` を添えられるか、`createServiceRoleAuthClient`（今は `SUPABASE_SERVICE_ROLE_KEY`）を `sb_secret_` に替える要否が決まる（台帳の「8-2 の1行」） | 替える時は別の計画 |
+
+段3b が足した確認（本番のアプリをデプロイし、定期処理を動かした後）。
+
+| 確認 | いつ・どの画面 | 期待する結果 | 外れた時 |
+| --- | --- | --- | --- |
+| 店長への知らせが、実在の宛先に届く（Task 14・15） | 最初の店長の後、2人目の店長を招待する・店長を降格する時。管理画面の店員の操作 | 知らせは「本人を除く、有効で、停止・削除されていない店長全員」に届く。**オーナーが実在のメールで受け取れること**（本番の店長のアドレスに実際に届くか）を確かめる。最後の手段（`last_resort`）では出ない | 宛先を直す。本人に届く・止まった人に届く時は、宛先の規則（`passkey_notification_recipients`）を調べる |
+| 死んだ知らせの点検（Task 17） | 毎分の定期処理が動いた後 | `dead` の行があれば、1時間に1回・まとめて1通が `SHOP_ALERT_EMAIL` に届き、同じ行が2度届かない。メールにアドレス・本文が無い | 届かなければ `SHOP_ALERT_EMAIL`・Resend の設定と、`list_unnotified_dead_passkey_notifications` を調べる |
+| worker の停止の点検（Task 17） | 定期処理を30分止めた時（試す時だけ。調整役がオーナーの許可を得てから） | worker が30分成功しないと1通が届く。心拍の行 `passkey_notification_worker` が1分ごとに更新される | 心拍の行（`select job, last_succeeded_at, last_failed_at from public.ops_job_heartbeats where job = 'passkey_notification_worker';` 読むだけ）と定期処理の動きを調べる |
+
+## 7. 残る危険の一覧
+
+当てても残る危険。段3b の最終の確かめで、オーナーが受け入れた。
+
+- **GoTrue を直に叩いた鍵の削除は、認めの処理と直列にならない**。今、鍵ごとの錠（`hashtextextended('passkey_approve:' || user, 0)`）を取るのは、`passkey_approve`・`passkey_delete_with_floor`（店員の削除の道）・`staff_invite_issue_core`（`public.staff_invite_issue` を通る）など DB の関数だけ。GoTrue の管理 API や、`auth.webauthn_credentials` への直の `DELETE` は錠を取らないので、認めの処理の途中に割り込める。結果は2本の下限を越えること（店員自身のログインを失うだけ。店長のやり直しで戻る。引き金が知らせを積むので気づける）。22b は行わない（オーナーの答え1＝A）ので、この行は残る。出どころは移行 F のヘッダーの KNOWN REMAINING RISK。
+- 引き金で拾えない道（`TRUNCATE` ほか）。
+- 複製された鍵の検知はしない。
+- 降格した店長が出した招待は、降格で取り消される（Task 13。窓も閉じる）。
+- 最初の店長を `admin:bootstrap` で作ると、H の `STAFF_INVITE_REQUIRED` が効かない（段4まで）。
+- この master を本番に出すと、パスワード＋TOTP の店長は入れない（節2の順で、最初の店長を作ってから E を当てる）。
+
+## 8. アプリの外で店長を消す・止めた時
+
+Supabase のダッシュボードで店長の利用者を消す・止める前に、**アプリで降格する**。降格は、その店長が出した未使用の招待を同じ取引で取り消し、登録の窓を閉じる。
+
+やむを得ず消した時は、その店長が出した招待を手で取り消す。**ダッシュボードの SQL エディタで流す。流す前にオーナーの許可を得る（調整役がオーナーの許可を得てから）**。`'<消した店長の id>'` はその人の利用者の id に置き換える。
+
+```sql
+update private.staff_invites set cancelled_at = now()
+ where issued_by = '<消した店長の id>' and cancelled_at is null and activated_at is null;
+
+update private.passkey_registration_windows set closed_at = now()
+ where user_id in (select user_id from private.staff_invites where issued_by = '<消した店長の id>')
+   and closed_at is null;
+```
+
+## 9. 開店前の残り
+
+- 設計 8-1 のとおり、本番の試し用の4人はパスワードが使えなくなる。店員がいれば、招待かやり直しで入り直す。
+- 一度も入らなかったメールのコードのアカウントの後始末（判断10）。
+- 物理キー（PIN 無し）の確認（節6の4）。
+- 本物の Google の確認（節6の5・9）。
+- 節6の8-2 の残り（特に1・2・12）。
+- 店長への知らせの宛先の確認（節6の段3b の確認）。実在のメールに届くことをオーナーが確かめる。
+- 毎分の定期処理（Stripe の webhook の worker）を本番で動かし始める判断（節2の4）。開店の準備の行3の保留の定期処理4本と一緒に決める。
