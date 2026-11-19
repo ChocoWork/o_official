@@ -24,6 +24,16 @@ const MSG_LIMITED = "試行が集中しています。しばらくしてから�
 
 type Failure = "unusable" | "failed" | "limited";
 
+/** サーバーが返した行き先が、同じオリジンの道（`/` で始まる）かを URL の解釈で確かめる（`"/	/evil"` のように文字列では見抜けない形も断る）。 */
+function isSameOriginPath(to: unknown): to is string {
+  if (typeof to !== "string" || !to.startsWith("/")) return false;
+  try {
+    return new URL(to, window.location.origin).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 export default function StaffInviteScreen() {
   const router = useRouter();
   const tokenRef = useRef<string | null>(null);
@@ -61,7 +71,7 @@ export default function StaffInviteScreen() {
       if (response.ok) {
         const body: unknown = await response.json();
         const to = (body as { redirectTo?: unknown } | null)?.redirectTo;
-        router.replace(typeof to === "string" && to.startsWith("/") && !to.startsWith("//") && !to.startsWith("/\\") ? to : "/staff/register");
+        router.replace(isSameOriginPath(to) ? to : "/staff/register");
         return;
       }
       await response.body?.cancel();

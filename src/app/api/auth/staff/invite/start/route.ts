@@ -73,7 +73,9 @@ export async function POST(request: Request): Promise<Response> {
 
     // ここから先の失敗は、招待を使用済みのまま 500 にする。
     const failed = async (detail: string, accessToken?: string): Promise<NextResponse> => {
-      if (accessToken) await endAuthSession(accessToken);
+      if (accessToken && !(await endAuthSession(accessToken))) {
+        await logAudit({ action: AUDIT_ACTION, outcome: 'failure', detail: 'session_revoke_failed', actor_id: userId });
+      }
       return await deny(detail, { error: 'invite_start_failed' }, 500, userId);
     };
 

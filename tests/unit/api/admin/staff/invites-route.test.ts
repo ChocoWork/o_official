@@ -12,11 +12,11 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jes
 jest.mock('@/lib/audit', () => ({ logAudit: jest.fn() }));
 jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn() }));
 jest.mock('@/features/auth/services/auth-admin-user', () => ({ findAuthUserIdByEmail: jest.fn() }));
-jest.mock('@/features/auth/staff/staff-invite-send', () => ({ issueAndSendStaffInvite: jest.fn() }));
+jest.mock('@/features/auth/staff/staff-invite-send', () => ({ issueAndSendStaffInvite: jest.fn(), isStaffInviteMailReady: jest.fn() }));
 
 import { POST } from '@/app/api/admin/staff/invites/route';
 import { findAuthUserIdByEmail } from '@/features/auth/services/auth-admin-user';
-import { issueAndSendStaffInvite } from '@/features/auth/staff/staff-invite-send';
+import { isStaffInviteMailReady, issueAndSendStaffInvite } from '@/features/auth/staff/staff-invite-send';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
@@ -47,6 +47,7 @@ describe('POST /api/admin/staff/invites', () => {
     createUser.mockResolvedValue({ data: { user: { id: TARGET } }, error: null });
     listPasskeys.mockResolvedValue({ data: [], error: null });
     (issueAndSendStaffInvite as jest.Mock).mockResolvedValue({ ok: true });
+    (isStaffInviteMailReady as jest.Mock).mockReturnValue(true);
     (logAudit as jest.Mock).mockResolvedValue(undefined);
   });
 
@@ -66,6 +67,17 @@ describe('POST /api/admin/staff/invites', () => {
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({
       action: 'admin.staff.invite', resource_id: TARGET, outcome: 'success', actor_id: ACTOR,
     }));
+  });
+
+  it('DD-AUTH-076 メールの設定が壊れていたら、アカウントを作らず 503 で断り、監査に残す', async () => {
+    (isStaffInviteMailReady as jest.Mock).mockReturnValue(false);
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(503);
+    expect(createUser).not.toHaveBeenCalled();
+    expect(issueAndSendStaffInvite).not.toHaveBeenCalled();
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'admin.staff.invite', outcome: 'failure', detail: 'mail_config_invalid' }));
   });
 
   it('DD-AUTH-076 お客さんのアカウントが在っても同じ応答で、作らず、既存の鍵の有無をメールに渡す', async () => {

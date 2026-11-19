@@ -90,7 +90,16 @@ describe('DD-AUTH-083 Google の戻りで店員が断られた時', () => {
     expect(exchangeCodeForSessionMock).not.toHaveBeenCalled();
     expect(persistSessionAndCookiesMock).not.toHaveBeenCalled();
     expect(cookieSetMock).not.toHaveBeenCalled();
-    expect(logAuditMock).toHaveBeenCalledWith(expect.objectContaining({ detail: 'staff_passkey_required' }));
+    expect(logAuditMock).toHaveBeenCalledWith(expect.objectContaining({ detail: 'staff_passkey_required_url' }));
+  });
+
+  it('DD-AUTH-083 戻りの URL で見分けた拒否と、交換の失敗で見分けた拒否は、監査の detail が違う', async () => {
+    await callGet(`?error=access_denied&error_description=${encodeURIComponent(MARKER_MESSAGE)}`);
+    exchangeCodeForSessionMock.mockResolvedValue({ data: { session: null, user: null }, error: { status: 403, message: MARKER_MESSAGE } });
+    await callGet('?code=staff');
+
+    const details = logAuditMock.mock.calls.map((call) => (call[0] as { detail: string }).detail);
+    expect(details).toEqual(['staff_passkey_required_url', 'staff_passkey_required']);
   });
 
   it('DD-AUTH-083 印の無い誤りは今までどおり（code が無ければ 400、交換の失敗は 502）', async () => {

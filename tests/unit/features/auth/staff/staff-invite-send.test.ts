@@ -11,7 +11,7 @@ jest.mock('@/lib/orders/email/order-email-sender', () => ({
 jest.mock('@/lib/site-url-guard', () => ({ checkSiteUrlForEmail: jest.fn() }));
 
 import { createHash } from 'node:crypto';
-import { issueAndSendStaffInvite } from '@/features/auth/staff/staff-invite-send';
+import { isStaffInviteMailReady, issueAndSendStaffInvite } from '@/features/auth/staff/staff-invite-send';
 import { revokeAllSessionsForUser } from '@/lib/auth/revoke-user-sessions';
 import { checkOrderEmailSendConfig, sendOrderEmailMessage } from '@/lib/orders/email/order-email-sender';
 import { checkSiteUrlForEmail } from '@/lib/site-url-guard';
@@ -152,5 +152,20 @@ describe('issueAndSendStaffInvite', () => {
     const token = /#([A-Za-z0-9_-]{43})/.exec(send.mock.calls[0][0].text)![1];
     expect(logged).not.toContain(token);
     expect(logged).not.toContain('new-staff@example.com');
+  });
+});
+
+describe('isStaffInviteMailReady', () => {
+  it('DD-AUTH-076 サイトの住所とメールの設定が両方整っている時だけ真を返す', () => {
+    (checkSiteUrlForEmail as jest.Mock).mockReturnValue({ ok: true, origin: ORIGIN });
+    (checkOrderEmailSendConfig as jest.Mock).mockReturnValue(null);
+    expect(isStaffInviteMailReady()).toBe(true);
+
+    (checkOrderEmailSendConfig as jest.Mock).mockReturnValue('config_missing');
+    expect(isStaffInviteMailReady()).toBe(false);
+
+    (checkOrderEmailSendConfig as jest.Mock).mockReturnValue(null);
+    (checkSiteUrlForEmail as jest.Mock).mockReturnValue({ ok: false, code: 'config_site_url' });
+    expect(isStaffInviteMailReady()).toBe(false);
   });
 });

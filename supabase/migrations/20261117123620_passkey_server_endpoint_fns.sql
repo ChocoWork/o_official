@@ -29,6 +29,10 @@
 --        approved key yet (SEC-AUTH-052).
 --     Unchanged: another user's key raises 42501; the same credential_id under another passkey_id raises 23505.
 --
+-- KNOWN REMAINING RISK: a delete that goes straight to GoTrue (auth.webauthn_credentials removed through the GoTrue admin
+-- API or a direct SQL DELETE) does NOT take this function's per-user lock, so it can still interleave with an approval.
+-- The production runbook lists it as an operator caution.
+--
 -- This migration changes no existing behaviour for anything that calls passkey_approve with a fresh key (the 1a triggers,
 -- the dev staff script). It is NOT applied to production until stage 3. Never db push it.
 --
@@ -182,7 +186,9 @@ BEGIN
     END IF;
   END LOOP;
   IF position('stale approval' IN (SELECT prosrc FROM pg_proc WHERE oid = 'public.passkey_approve(uuid,uuid,text)'::regprocedure)) = 0
-     OR position('window limit reached' IN (SELECT prosrc FROM pg_proc WHERE oid = 'public.passkey_approve(uuid,uuid,text)'::regprocedure)) = 0 THEN
+     OR position('window limit reached' IN (SELECT prosrc FROM pg_proc WHERE oid = 'public.passkey_approve(uuid,uuid,text)'::regprocedure)) = 0
+     OR position('passkey_approve:' IN (SELECT prosrc FROM pg_proc WHERE oid = 'public.passkey_approve(uuid,uuid,text)'::regprocedure)) = 0
+     OR position('PASSKEY_REAUTH_NOT_ALLOWED' IN (SELECT prosrc FROM pg_proc WHERE oid = 'public.passkey_approve(uuid,uuid,text)'::regprocedure)) = 0 THEN
     RAISE EXCEPTION 'PASSKEY_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_f_approve_body';
   END IF;
 END

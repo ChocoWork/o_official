@@ -9,7 +9,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { findAuthUserIdByEmail } from '@/features/auth/services/auth-admin-user';
-import { issueAndSendStaffInvite } from '@/features/auth/staff/staff-invite-send';
+import { isStaffInviteMailReady, issueAndSendStaffInvite } from '@/features/auth/staff/staff-invite-send';
 import {
   auditStaffAction,
   guardStaffAdminRequest,
@@ -46,6 +46,12 @@ export async function POST(request: Request): Promise<Response> {
       return withNoStore(NextResponse.json({ error: 'Invalid request' }, { status: 400 }));
     }
     const { email, role } = parsed.data;
+
+    // 送れない設定のままアカウントだけを作らないよう、createUser より前に確かめる。
+    if (!isStaffInviteMailReady()) {
+      await audit('failure', 'mail_config_invalid', null);
+      return staffInviteReasonResponse('config');
+    }
 
     const service = await createServiceRoleClient();
     let userId: string;

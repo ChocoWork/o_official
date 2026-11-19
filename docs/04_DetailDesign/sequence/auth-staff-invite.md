@@ -197,6 +197,8 @@ sequenceDiagram
 | 確かめ方 | 単体テスト（`tests/unit/features/auth/staff/staff-invite-send.test.ts`・`staff-invite-http.test.ts`、`tests/unit/api/admin/staff/invites-route.test.ts`・`redo-route.test.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-5-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 5） |
 
+補足（2026-11-20 段3b Task 19）: 窓口は、メールの設定（サイトの住所・送り手。`isStaffInviteMailReady`）を `createUser` より前に確かめ、壊れていれば 503 でアカウントを作らず、監査に `mail_config_invalid` を残す。
+
 ```mermaid
 sequenceDiagram
     participant R as 窓口（invites・redo・PATCH users）
@@ -288,6 +290,8 @@ sequenceDiagram
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト（`tests/unit/app/staff/invite-page.test.tsx`、`tests/unit/api/auth/staff-invite-start.test.ts`）、E2E（`e2e/FR-LOGIN-064-staff-invite-link.spec.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-6-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 6） |
+
+補足（2026-11-20 段3b Task 19）: 失敗の後に作ったセッションを終わらせるのに失敗した時は、監査に `session_revoke_failed` を足す（合言葉は残さない）。画面の `redirectTo` は `new URL(to, location.origin).origin === location.origin` の時だけ使う（`/	/evil`・`//evil.com`・`https://evil.com` は既定の `/staff/register`）。
 
 ```mermaid
 sequenceDiagram

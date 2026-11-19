@@ -132,6 +132,25 @@ describeLocalDb('passkey staff idle functions (migration D)', () => {
     expect((await db().query('select public.staff_session_touch($1, null) as ok', [s])).rows[0].ok).toBe(false);
   });
 
+  test('DATA-AUTH-021 staff_session_touch は auth.sessions の持ち主と違う利用者では書かず偽（持ち主なら真・auth.sessions に行が無ければ今までどおり書く）', async () => {
+    const owner = await user();
+    const other = await user();
+    const touch = async (s: string, u: string): Promise<boolean> =>
+      (await db().query('select public.staff_session_touch($1, $2) as ok', [s, u])).rows[0].ok;
+
+    const mine = await authSession(owner, { refreshedMinutesAgo: 1 });
+    expect(await touch(mine, owner)).toBe(true);
+    expect(await seenSecondsAgo(mine)).not.toBeNull();
+
+    const theirs = await authSession(owner, { refreshedMinutesAgo: 1 });
+    expect(await touch(theirs, other)).toBe(false);
+    expect(await seenSecondsAgo(theirs)).toBeNull();
+
+    const orphan = randomUUID();
+    expect(await touch(orphan, other)).toBe(true);
+    expect(await seenSecondsAgo(orphan)).not.toBeNull();
+  });
+
   test('DATA-AUTH-021 書いた時に、その人の2日より前の行だけを消す（他の人の古い行・新しい行は残す）', async () => {
     const u = await user();
     const v = await user();

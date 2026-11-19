@@ -52,6 +52,17 @@ const realDeps: StaffInviteSendDeps = {
   now: () => new Date(),
 };
 
+/**
+ * メールを送れる設定（サイトの住所・送り手）が整っているかを返す。窓口がアカウントを作る前に使う。
+ *
+ * @impl IMPL-AUTH-425
+ * @design DD-AUTH-076
+ * @remarks 理由・設定値は返さない（真偽だけ）。`issueAndSendStaffInvite` の発行前の確かめと同じ条件。
+ */
+export function isStaffInviteMailReady(): boolean {
+  return realDeps.siteOrigin().ok && realDeps.mailConfigError() === null;
+}
+
 const ROLE_LABELS = { admin: '店長', supporter: 'サポーター' } as const;
 
 const JST_PARTS = new Intl.DateTimeFormat('en-US', {

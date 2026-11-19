@@ -15,6 +15,7 @@
 --   The idle clock is an app table, not auth.sessions.refreshed_at (GoTrue moves that on every background token refresh, even for an idle tab).
 -- public.staff_session_touch(p_session_id, p_user_id, p_min_interval_seconds default 60) boolean   service_role. Insert when no row;
 --   update when the row is at least the interval old (true); otherwise false. A write also deletes that user's rows older than 2 days.
+--   When auth.sessions has a row for the session id and its user_id is not p_user_id, nothing is written and false is returned (no auth.sessions row: written as before).
 -- private.staff_idle_ok_strict(p_session_id uuid) boolean   STABLE, SECURITY DEFINER. NO error handler: a DB error is raised (the caller maps it
 --   to 503, never to "idle"). private.staff_idle_ok(p_session_id) wraps it and catches every error -> false (fail closed with a RAISE WARNING);
 --   only has_permission (migration E) and RLS use that catching form. The two public idle functions below use the strict form.
@@ -167,6 +168,10 @@ DECLARE
   v_written boolean;
 BEGIN
   IF p_session_id IS NULL OR p_user_id IS NULL THEN
+    RETURN false;
+  END IF;
+  -- the session row belongs to another user: write nothing (no row for the session id: write as before)
+  IF EXISTS (SELECT 1 FROM auth.sessions s WHERE s.id = p_session_id AND s.user_id <> p_user_id) THEN
     RETURN false;
   END IF;
   INSERT INTO private.staff_session_activity AS a (session_id, user_id, last_seen_at)

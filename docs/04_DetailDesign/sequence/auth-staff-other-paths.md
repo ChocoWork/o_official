@@ -47,6 +47,7 @@ sequenceDiagram
 ```
 
 - 戻りの窓口: 交換が失敗し `isStaffPasskeyRequiredError` が真、または戻りの URL の `error_description` が印で始まる時は、監査（`detail: staff_passkey_required`・誤りの文は残さない）を残して `/login?error=staff_passkey_required` へ 303（`Cache-Control: no-store`）。保存・Cookie・戻り先の控えの使い切りはしない。印の無い誤りは今までどおり（`code` が無ければ 400、交換の失敗は 502）
+- 監査の見分け（2026-11-20 段3b Task 19）: 戻りの URL の `error_description` で見分けた拒否は `detail: staff_passkey_required_url`（URL は偽装できるので、本物と区別する）、交換の失敗で見分けた拒否は `detail: staff_passkey_required`。どちらも `/login` へは同じ行き先
 - `/login`: `error` が文字列で `staff_passkey_required` の時だけ固定の文を `LoginChoices` の `errorMessage`（`role="alert"`）へ渡す。ほかの値・配列は出さない。メールのコードの確定の画面（`EmailCodeEntry`）は、確定の 403 `staff_passkey_required` で同じ文を出す（既存）
 - 古いパスワード（`/api/auth/login`）: GoTrue のフックが断り、窓口は 401 で確認コードの段へ進まない（変えない。店員かどうかの案内は出さない）
 - TOTP の登録: 認証（`authenticateRequest`）→ 役割が admin・supporter → `isStaff`（`passkey_is_staff`）→ 真なら `mfa_enroll`・`denied`・`totp_retired` を監査に残して 410。`isStaff` が失敗したら 503（登録しない）。要素の一覧・登録は呼ばない。認証に通らない 401・お客さんの 403・店員でない管理の役割は今までどおり

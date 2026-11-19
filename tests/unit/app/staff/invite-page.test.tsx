@@ -102,11 +102,18 @@ describe('/staff/invite 画面', () => {
     expect(screen.getByText('別の端末か、セキュリティキーでの登録をおすすめします。')).toBeInTheDocument();
   });
 
-  test.each(['//evil.example', '/\\evil.example'])('DD-AUTH-078 redirectTo が %s のように別のホストを指す形なら使わない', async (to) => {
+  test.each(['//evil.example', '/\\evil.example', '/\t/evil', '//evil.com', 'https://evil.com'])('DD-AUTH-078 redirectTo が %s のように別のホストを指す形なら使わない', async (to) => {
     fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ redirectTo: to }) });
     open(`#${TOKEN}`);
     fireEvent.click(await screen.findByRole('button', { name: '登録を始める' }));
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/staff/register'));
+  });
+
+  test('DD-AUTH-078 同じオリジンの道は、そのまま使う', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ redirectTo: '/staff/register?x=1' }) });
+    open(`#${TOKEN}`);
+    fireEvent.click(await screen.findByRole('button', { name: '登録を始める' }));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/staff/register?x=1'));
   });
 
   test('DD-AUTH-078 429 で応答に body が無くても、待つ文を出す', async () => {

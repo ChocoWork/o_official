@@ -88,7 +88,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     // GoTrue はフックの拒否を、戻りの URL の error_description に付けて返すことがある（code は付かない）。
     if (isStaffPasskeyRequiredError({ status: 403, message: url.searchParams.get('error_description') ?? undefined })) {
-      await logAudit({ action: 'auth.oauth.callback', outcome: 'failure', detail: 'staff_passkey_required', metadata: { error: null } });
+      await logAudit({ action: 'auth.oauth.callback', outcome: 'failure', detail: 'staff_passkey_required_url', metadata: { error: null } });
       return staffRejectedRedirect(origin);
     }
     const parsed = CallbackQuerySchema.safeParse({
