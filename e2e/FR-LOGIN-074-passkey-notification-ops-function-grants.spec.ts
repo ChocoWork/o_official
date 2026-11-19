@@ -63,7 +63,8 @@ for (const viewport of viewports) {
             const { data, error, status } = await client.rpc(name, args);
             expect(data).toBeNull();
             expect([401, 403]).toContain(status);
-            expect(error?.code).toBe('42501');
+            const detail = `${name} status=${status} code=${error?.code} message=${error?.message}`;
+            expect(error?.code, detail).toBe('42501');
           }
         }
         const list = await service.rpc('list_unnotified_dead_passkey_notifications', { _limit: 0 });

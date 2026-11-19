@@ -95,10 +95,14 @@ describeLocalDb('passkey notification ops (migration I)', (db) => {
         await db().query('rollback to savepoint guard');
       }
     };
-    const setCheck = (jobs: string[]) => db().query(
+    // 毎分の定期処理が書いた心拍の行が残っていると CHECK を付け直せない（23514）ので、この取引の中だけで空にする（afterEach で rollback）
+    const setCheck = async (jobs: string[]) => {
+      await db().query('delete from public.ops_job_heartbeats');
+      return db().query(
       `alter table public.ops_job_heartbeats drop constraint ops_job_heartbeats_job_check,
          add constraint ops_job_heartbeats_job_check check (job in (${jobs.map((j) => `'${j}'`).join(', ')}))`,
-    );
+      );
+    };
     const jobsOf = async (): Promise<string[]> => (await db().query(
       `select array_agg(m[1] order by m[1]) as jobs from pg_constraint c,
          lateral regexp_matches(pg_get_constraintdef(c.oid), '''([^'']+)''::text', 'g') as m

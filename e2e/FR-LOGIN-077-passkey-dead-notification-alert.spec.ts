@@ -9,7 +9,7 @@
  * メールは手元の Mailpit だけ（宛先は E2E の SHOP_ALERT_EMAIL）。終わりに、この試験の行と冷却の行を消す。
  */
 import { expect, test } from '@playwright/test';
-import { mailBodies, mailsTo, runWorkerOnce, runWorkerUntil, withLocalDb } from './order-email-test-utils';
+import { mailsTo, runWorkerOnce, runWorkerUntil, withLocalDb } from './order-email-test-utils';
 
 test.use({ trace: 'off' });
 
@@ -78,14 +78,19 @@ for (const viewport of viewports) {
       test.setTimeout(180_000);
       await resetState();
       const shop = shopAlertEmail();
-      const countAlerts = async () => (await mailsTo(request, shop)).filter((message) => message.Subject === SUBJECT).length;
-      const before = await countAlerts();
+      // 一覧は50件までなので、件数でなく、見えている届いたメールの ID の集合で比べる（新しいメールは一覧の先頭に出る）
+      const alertIds = async () => new Set((await mailsTo(request, shop)).filter((message) => message.Subject === SUBJECT).map((message) => message.ID));
+      const known = await alertIds();
+      const newIds = async () => [...(await alertIds())].filter((id) => !known.has(id));
 
       seeded = await seedDeadRow();
-      await runWorkerUntil(request, async () => (await countAlerts()) === before + 1, 'dead の知らせが店に届くこと');
+      await runWorkerUntil(request, async () => (await newIds()).length >= 1, 'dead の知らせが店に届くこと');
+      const arrived = await newIds();
+      expect(arrived).toHaveLength(1);
 
-      const bodies = await mailBodies(request, shop, SUBJECT);
-      const latest = bodies[bodies.length - 1];
+      const response = await request.get(new URL(`/api/v1/message/${encodeURIComponent(arrived[0])}`, process.env.MAIL_LOCAL_URL).toString(), { timeout: 5_000 });
+      expect(response.ok()).toBe(true);
+      const latest = { Text: ((await response.json()) as { Text: string }).Text.replace(/\r/g, '') };
       expect(latest.Text).toContain('1件の知らせが、再試行の上限を越えて届きませんでした。種類・失敗の理由・時刻は次のとおりです。');
       expect(latest.Text).toContain('店員の招待／resend_rejected／');
       expect(latest.Text).not.toContain('@');
@@ -93,7 +98,7 @@ for (const viewport of viewports) {
 
       // 続けて点検が動いても、印が付いているので2通目は出ない（冷却の1時間も効く）。動かした後の件数で確かめる
       for (let run = 0; run < 3; run += 1) await runWorkerOnce(request);
-      await expect.poll(countAlerts, { timeout: 10_000 }).toBe(before + 1);
+      expect(await newIds()).toEqual(arrived);
 
       const marked = await withLocalDb(async (db) => (await db.query(
         'select dead_notified_at is not null as marked from private.passkey_notification_outbox where id = $1::uuid', [seeded],

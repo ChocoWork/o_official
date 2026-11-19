@@ -533,6 +533,20 @@ describe('DD-AUTH-089 パスキーの知らせの店への知らせの文面', (
     expect(`${mail.subject}${mail.lines.join('')}`).not.toContain('@');
   });
 
+  it.each([
+    ['passkey_added', 'パスキーの追加'],
+    ['passkey_removed', 'パスキーの削除'],
+    ['passkey_key_replaced', 'パスキーの置き換え'],
+    ['staff_redo_issued', '店員のやり直し'],
+    ['staff_invited', '店員の招待'],
+    ['staff_demoted', '店員の降格'],
+    ['unknown_kind_x', '不明'],
+  ])('DD-AUTH-089 死んだ知らせの種類 %s は「%s」と書き、生の記号を載せない', (kind, label) => {
+    const mail = passkeyNotificationDeadMail([{ kind, lastErrorCode: 'resend_rejected', finishedAt: null }], 1);
+    expect(mail.lines[1]).toBe(`${label}／resend_rejected／不明`);
+    if (kind === 'unknown_kind_x') expect(mail.lines.join('')).not.toContain(kind);
+  });
+
   it('DD-AUTH-089 止まりの知らせは付録の件名と本文で、staleJobMail の形（【要確認】・手順書の行）ではない', () => {
     const mail = passkeyNotificationStaleMail(new Date('2026-11-20T01:00:00Z'));
     expect(mail.kind).toBe('passkey_notification_stale');

@@ -6189,7 +6189,7 @@ A が `POST /api/admin/staff/{id}/demote` で店員 X を降格し、worker が�
 | 上位 | FR-AUTH-049 |
 | 根拠 | DD-AUTH-089、SEC-AUTH-058 |
 | 状態 | 推定 |
-| 確かめ方 | E2E（`e2e/FR-LOGIN-074-passkey-notification-ops-function-grants.spec.ts`。PostgREST を直接叩く HTTP の試験で、390・768・1280 の3幅でくり返す）。心拍・点検の呼び出し・メールの文面・印付けの動きは単体テスト（DD-AUTH-089）と結合テスト（ARC-AUTH-014・DATA-AUTH-022）が持つ。画面が無いので、店への知らせが実際に届くことは E2E では確かめない |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-074-passkey-notification-ops-function-grants.spec.ts`。PostgREST を直接叩く HTTP の試験で、390・768・1280 の3幅でくり返す）。心拍・点検の呼び出し・メールの文面・印付けの動きは単体テスト（DD-AUTH-089）と結合テスト（ARC-AUTH-014・DATA-AUTH-022）が持つ。店への知らせが実際に届くことは AC-02（FR-LOGIN-077）が確かめる |
 | 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-17-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 17） |
 
 `list_unnotified_dead_passkey_notifications`・`mark_passkey_notification_dead_notified` を anon と本物のログイン済みのお客さん（authenticated）の鍵で呼ぶと、401 か 403・コード 42501 で断られ、データは返らない。service_role の鍵では呼べて、0件の一覧は空、空の印付けは0を返す。

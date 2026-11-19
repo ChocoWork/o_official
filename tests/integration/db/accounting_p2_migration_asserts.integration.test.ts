@@ -126,7 +126,8 @@ describeLocalDb('S6 final assert: controller only', (db) => {
       // 計画2の時点の書き手の一覧（H7）の中で流す（後の計画が一覧の署名を入れ替えても、その時点の一覧で比べる。計画3 Task 4）
       await db().query(replaceAllowlistSql(H7_ALLOWLIST));
       if (baseline === 'pin') await pinAccountingS6Baseline(db());
-      if (change) await db().query(change);
+      // 毎分の定期処理が書く心拍の行（passkey_notification_worker など）が残っていても、job の CHECK の改ざんが 23514 で落ちないよう、この savepoint の中だけで心拍を空にする
+      if (change) { await db().query('delete from public.ops_job_heartbeats'); await db().query(change); }
       await db().query(currentAssertion);
     } catch (error) {
       const e = error as AssertFailure;
