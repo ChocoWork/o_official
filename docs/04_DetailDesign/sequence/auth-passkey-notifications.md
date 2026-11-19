@@ -1,6 +1,6 @@
 # パスキーの知らせを取り出して送るための DB の関数と、送る worker
 
-> 状態: 推定 | 確認日: 2026-11-20 | 対象: `supabase/migrations/20261118044338_passkey_notification_sending.sql`、`src/lib/auth/passkey-notification-store.ts`、`passkey-notification-compose.ts`、`passkey-notification-worker.ts`、`src/lib/stripe/webhook-worker.ts` | 親: [シーケンス設計の方針](README.md)
+> 状態: 推定 | 確認日: 2026-11-20 | 対象: `supabase/migrations/20261118044338_passkey_notification_sending.sql`、`src/lib/auth/passkey-notification-store.ts`、`passkey-notification-compose.ts`、`passkey-notification-worker.ts`、`src/lib/stripe/webhook-worker.ts`、`src/lib/auth/passkey-notification-ops.ts` | 親: [シーケンス設計の方針](README.md)
 
 ## 概要
 
@@ -10,7 +10,7 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応する ID | SR-AUTH-025、FR-AUTH-030、FR-AUTH-031、FR-AUTH-047、FR-AUTH-048、DATA-AUTH-019、SEC-AUTH-051、SEC-AUTH-058、THR-AUTH-050、THR-AUTH-057、DD-AUTH-066、DD-AUTH-067、DD-AUTH-087、DD-AUTH-088、ADR-0470、ADR-0473 |
+| 対応する ID | SR-AUTH-025、FR-AUTH-030、FR-AUTH-031、FR-AUTH-047、FR-AUTH-048、FR-AUTH-049、DATA-AUTH-019、SEC-AUTH-051、SEC-AUTH-058、THR-AUTH-050、THR-AUTH-057、DD-AUTH-066、DD-AUTH-067、DD-AUTH-087、DD-AUTH-088、DD-AUTH-089、ADR-0470、ADR-0473、ADR-0474 |
 | 対象のコード | 移行 `supabase/migrations/20261118044338_passkey_notification_sending.sql`、`src/lib/auth/passkey-notification-store.ts`、`passkey-notification-compose.ts`、`passkey-notification-worker.ts`、`src/lib/stripe/webhook-worker.ts`、`src/app/api/cron/process-stripe-webhooks/route.ts` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（6-3）、[段2の計画](../../superpowers/plans/2026-11-17-passkey-stage2-customers.md)、[パスキーのアプリの窓口](auth-passkey-server-endpoints.md) |
 | 調べた時点 | 2026-11-18（手元の DB で結合試験を流した） |
@@ -159,6 +159,25 @@ sequenceDiagram
 - 影響: 1行の延長の分、同じ定期処理の中の点検（`runOpsChecks`）が最大約20秒遅れうる。担当の期限（300秒）より十分小さい
 - 重複防止: 鍵は行 ID と宛先のハッシュで変わらないので、期限で止まった行の再試行でも Resend は同じ宛先に2通目を出さない
 - テスト観点: 宛先6人・1通1秒の行が1回で全員に送られ次の行を取らない、1通10秒で宛先3人の行は2通目の後に `budget_exceeded`、鍵が再試行で同じ、遅く取った行が `hardDeadlineMs` で止まる、`rowBudgetMs` の効き、`webhook-worker` が `startedAt + 45_000` を渡す
+
+### DD-AUTH-089 死んだ知らせと worker の停止を、毎分の worker の後の点検で店に知らせる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-058、ARC-AUTH-014 |
+| 根拠 | 知らせの行が `dead` になる・worker が止まる、のどちらも今は店に伝わらない（THR-AUTH-057 の残る危険）。注文のメールの点検（`order-email-ops.ts`）と同じ形で、`dead` はまとめて1通・送れた時だけ印、停止は心拍の最後の成功から30分で1通にする |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/passkey-notification-ops.test.ts`・`tests/unit/lib/ops/ops-alert-mail.test.ts`・`tests/unit/lib/stripe/webhook-worker.test.ts`）、結合テスト（`tests/integration/db/auth_passkey_notification_ops.integration.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-17-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 17） |
+
+- 追跡の単位: `passkey-notification-ops.ts` の `runPasskeyNotificationOpsChecks` が IMPL-AUTH-413（設計は DD-AUTH-089）。メールの作り手 `passkeyNotificationDeadMail`・`passkeyNotificationStaleMail`（`src/lib/ops/ops-alert-mail.ts`）と `webhook-worker.ts` の心拍・呼び出しは AUTH の追跡の範囲の外なので ID を持たず、この節に書く
+- 心拍（`webhook-worker.ts`）: `options.passkeyNotifications` が真の時だけ。worker の `stopped` が `idle`・`budget` なら成功、`claim_error` は失敗（`db_unavailable`）、例外は失敗（`worker_error`）、`disabled`・`config` は書かない。残りが1秒未満で worker を呼ばなかった時は成功（`error_code` は null）。心拍の書き込みの例外は握る
+- 点検の順: 注文のメールの点検の次、配達の見回りの前。例外は握り、結果の `passkeyChecks` を `null` にして見回りへ進む
+- 死んだ知らせ: `list_unnotified_dead_passkey_notifications(50)` → 1件以上なら `sendOnce(passkey_notification_dead)` → 送れたら `mark_passkey_notification_dead_notified`（失敗したら次の点検で再送。at-least-once）
+- 停止: `readHeartbeats` の `passkey_notification_worker.lastSucceededAt` が30分以上前なら `sendOnce(job_stale_passkey_notification_worker)`。一度も成功が無ければ対象にしない
+- 失敗の分け方: 2つの点検は独立で、一方が投げても他方を続け、`failedChecks` に `dead`・`stale` を入れる。ログは例外名だけ
+- メール（付録）: 件名「パスキーの知らせが届きませんでした」・本文「{件数}件の知らせが、再試行の上限を越えて届きませんでした。種類・失敗の理由・時刻は次のとおりです。」＋行ごとに「種類／失敗コード／時刻」。件名「パスキーの知らせの送りが止まっています」・本文「最後に成功したのは {時刻} です。送りの設定とログを確認してください。」。件数・種類・失敗コード・時刻（JST）だけで、アドレスと本文を入れない。既存の `staleJobMail` は使わず、`STALE_JOBS`・`runOpsChecks` には足さない
+- DB（移行 I）: 列 `dead_notified_at`・部分索引・関数2本（DATA-AUTH-022）。`ops_job_heartbeats_job_check` に job を足す
 
 ## 未確認事項
 

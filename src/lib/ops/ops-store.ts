@@ -13,13 +13,15 @@ export type OpsRpcName =
   | 'get_stripe_webhook_backlog'
   | 'list_unnotified_dead_stripe_webhook_events'
   | 'mark_stripe_webhook_dead_notified'
+  | 'list_unnotified_dead_passkey_notifications'
+  | 'mark_passkey_notification_dead_notified'
   | 'mark_order_recovered_from_payment';
 
 export type OpsStore = {
   rpc(name: OpsRpcName, params?: Record<string, unknown>): Promise<{ data: unknown; error: QueryError }>;
 };
 
-export type OpsJob = 'webhook_worker' | 'order_sweep' | 'stripe_reconcile' | 'order_email_worker' | 'order_email_delivery_check' | 'return_photo_purge' | 'delivery_tracking' | 'accounting_post';
+export type OpsJob = 'webhook_worker' | 'order_sweep' | 'stripe_reconcile' | 'order_email_worker' | 'order_email_delivery_check' | 'return_photo_purge' | 'delivery_tracking' | 'accounting_post' | 'passkey_notification_worker';
 
 export type OpsAlertKey =
   | 'site_url_invalid'
@@ -41,7 +43,9 @@ export type OpsAlertKey =
   | 'delivery_tracking_read_failed'
   | 'delivery_tracking_unknown_status'
   | 'job_stale_delivery_tracking'
-  | 'job_stale_accounting_post';
+  | 'job_stale_accounting_post'
+  | 'passkey_notification_dead'
+  | 'job_stale_passkey_notification_worker';
 
 export type Heartbeat = { lastSucceededAt: Date | null; lastFailedAt: Date | null; lastErrorCode: string | null };
 

@@ -11,6 +11,8 @@ import {
   orderEmailDeadDigestMail,
   orderEmailDeliveryProblemMail,
   orderEmailPausedMail,
+  passkeyNotificationDeadMail,
+  passkeyNotificationStaleMail,
   reconcileFindingsMail,
   recoveredOrdersMail,
   sendOpsAlertMail,
@@ -513,5 +515,30 @@ describe('sendOpsAlertMail', () => {
       detail: 'mail_send_failed',
       metadata: { kind: 'webhook_signature_invalid' },
     });
+  });
+});
+
+describe('DD-AUTH-089 パスキーの知らせの店への知らせの文面', () => {
+  it('DD-AUTH-089 死んだ知らせは付録の件名と本文で、行ごとに種類／失敗コード／時刻（JST）。ほかに N 件を足す', () => {
+    const mail = passkeyNotificationDeadMail([
+      { kind: 'staff_invited', lastErrorCode: 'resend_rejected', finishedAt: new Date('2026-11-20T01:00:00Z') },
+      { kind: 'passkey_added', lastErrorCode: null, finishedAt: null },
+    ], 3);
+    expect(mail.kind).toBe('passkey_notification_dead');
+    expect(mail.subject).toBe('パスキーの知らせが届きませんでした');
+    expect(mail.lines[0]).toBe('3件の知らせが、再試行の上限を越えて届きませんでした。種類・失敗の理由・時刻は次のとおりです。');
+    expect(mail.lines[1]).toMatch(/^staff_invited／resend_rejected／.*2026.*11.*20.*10:00$/);
+    expect(mail.lines[2]).toBe('passkey_added／不明／不明');
+    expect(mail.lines[3]).toBe('（ほかに 1 件。次の知らせで送ります）');
+    expect(`${mail.subject}${mail.lines.join('')}`).not.toContain('@');
+  });
+
+  it('DD-AUTH-089 止まりの知らせは付録の件名と本文で、staleJobMail の形（【要確認】・手順書の行）ではない', () => {
+    const mail = passkeyNotificationStaleMail(new Date('2026-11-20T01:00:00Z'));
+    expect(mail.kind).toBe('passkey_notification_stale');
+    expect(mail.subject).toBe('パスキーの知らせの送りが止まっています');
+    expect(mail.lines).toHaveLength(1);
+    expect(mail.lines[0]).toMatch(/^最後に成功したのは .*10:00 です。送りの設定とログを確認してください。$/);
+    expect(mail.subject).not.toContain('【要確認】');
   });
 });

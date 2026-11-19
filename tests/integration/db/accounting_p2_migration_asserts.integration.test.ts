@@ -35,7 +35,12 @@ const REASON_CHECK_TEXT = /'CHECK \(\(reason = ANY \(ARRAY\[[^\]]*\]\)\)\)'/;
 const s15Files = fs.readdirSync(path.join(process.cwd(), 'supabase/migrations')).filter((name) => name.endsWith('_accounting_p3_return_refund_tables.sql'));
 const s15Sql = s15Files.length === 1 ? fs.readFileSync(path.join(process.cwd(), 'supabase/migrations', s15Files[0]), 'utf8') : '';
 const s15ReasonCheck = REASON_CHECK_TEXT.exec(s15Sql)?.[0] ?? '';
-const currentAssertion = s15ReasonCheck ? assertion.replace(REASON_CHECK_TEXT, () => s15ReasonCheck) : assertion;
+// Passkey stage 3b (migration I) widened the job CHECK with passkey_notification_worker. The S6 assert pins the eight jobs, so the
+// replay on today's database swaps that definition text for the one after I (the two tamper cases below still fail against it).
+const HEARTBEAT_CHECK_TEXT = /'CHECK \(\(job = ANY \(ARRAY\[[^\]]*\]\)\)\)'/;
+const POST_I_HEARTBEAT_CHECK = "'CHECK ((job = ANY (ARRAY[''webhook_worker''::text, ''order_sweep''::text, ''stripe_reconcile''::text, ''order_email_worker''::text, ''order_email_delivery_check''::text, ''return_photo_purge''::text, ''delivery_tracking''::text, ''accounting_post''::text, ''passkey_notification_worker''::text])))'";
+const currentAssertion = (s15ReasonCheck ? assertion.replace(REASON_CHECK_TEXT, () => s15ReasonCheck) : assertion)
+  .replace(HEARTBEAT_CHECK_TEXT, () => POST_I_HEARTBEAT_CHECK);
 
 describe('S6 source contract (no DB)', () => {
   test('FREQ-569-AC-01: S6はASCII・BOMなしLF・単一取引で、末尾assert→NOTIFY→COMMITで閉じ固定DETAILだけを持つ', () => {
@@ -136,7 +141,7 @@ describeLocalDb('S6 final assert: controller only', (db) => {
     // The replay differs from the S6 text in the reason CHECK only (S15 added two reasons).
     expect(s15ReasonCheck).toContain("''refund_cancel_undecided''::text");
     expect(currentAssertion).not.toBe(assertion);
-    expect(currentAssertion.replace(REASON_CHECK_TEXT, '')).toBe(assertion.replace(REASON_CHECK_TEXT, ''));
+    expect(currentAssertion.replace(REASON_CHECK_TEXT, '').replace(HEARTBEAT_CHECK_TEXT, '')).toBe(assertion.replace(REASON_CHECK_TEXT, '').replace(HEARTBEAT_CHECK_TEXT, ''));
     expect(await attempt()).toBeNull();
     expect(await attempt('set local search_path = pg_catalog')).toBeNull();
     expect(await attempt('set local search_path = public, private, extensions, pg_catalog')).toBeNull();

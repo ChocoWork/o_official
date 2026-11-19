@@ -39,7 +39,9 @@ export type OpsAlertKind =
   | 'delivery_tracking_key_missing'
   | 'delivery_tracking_signature_invalid'
   | 'delivery_tracking_read_failed'
-  | 'delivery_tracking_unknown_status';
+  | 'delivery_tracking_unknown_status'
+  | 'passkey_notification_dead'
+  | 'passkey_notification_stale';
 
 export type OpsAlertMail = { kind: OpsAlertKind; subject: string; lines: string[] };
 
@@ -343,6 +345,32 @@ export function orderEmailDeliveryProblemMail(emails: DeliveryProblemEmail[], to
       '',
       `宛先の誤りや受け取りの拒否のことがあります。${ORDER_EMAIL_RUNBOOK}の「届かなかった」に沿って、お客様への連絡を考えてください。`,
     ],
+  };
+}
+
+/** 死んだ知らせ1行の写し。アドレス・本文は持たない（種類・失敗コード・時刻だけ） */
+export type DeadPasskeyNotificationSummary = { kind: string; lastErrorCode: string | null; finishedAt: Date | null };
+
+/** パスキーの知らせのうち、再試行の上限を越えて届かなかった行（宛先のアドレス・本文は書かない） */
+export function passkeyNotificationDeadMail(rows: DeadPasskeyNotificationSummary[], total: number): OpsAlertMail {
+  const rest = total - rows.length;
+  return {
+    kind: 'passkey_notification_dead',
+    subject: 'パスキーの知らせが届きませんでした',
+    lines: [
+      `${total}件の知らせが、再試行の上限を越えて届きませんでした。種類・失敗の理由・時刻は次のとおりです。`,
+      ...rows.map((row) => `${row.kind}／${row.lastErrorCode ?? '不明'}／${row.finishedAt ? formatJst(row.finishedAt) : '不明'}`),
+      ...(rest > 0 ? [`（ほかに ${rest} 件。次の知らせで送ります）`] : []),
+    ],
+  };
+}
+
+/** パスキーの知らせの worker が30分成功していない時の知らせ。既存の staleJobMail は使わない */
+export function passkeyNotificationStaleMail(lastSucceededAt: Date): OpsAlertMail {
+  return {
+    kind: 'passkey_notification_stale',
+    subject: 'パスキーの知らせの送りが止まっています',
+    lines: [`最後に成功したのは ${formatJst(lastSucceededAt)} です。送りの設定とログを確認してください。`],
   };
 }
 

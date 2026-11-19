@@ -13,6 +13,7 @@ import {
   type OrderEmailWorkerResult,
 } from '@/lib/orders/email/order-email-worker';
 import { runPasskeyNotificationWorker, type PasskeyNotificationWorkerResult } from '@/lib/auth/passkey-notification-worker';
+import { runPasskeyNotificationOpsChecks, type PasskeyNotificationOpsResult } from '@/lib/auth/passkey-notification-ops';
 import { runOrderEmailDeliveryCheckIfDue } from '@/lib/orders/email/order-email-delivery';
 import { runOrderEmailOpsChecks, type OrderEmailOpsResult } from '@/lib/orders/email/order-email-ops';
 import type { OrderEmailStore } from '@/lib/orders/email/order-email-store';
@@ -40,6 +41,8 @@ export type WorkerRunResult = DrainResult & {
   deliveryTracking?: DeliveryWorkerResult | null;
   /** パスキーの知らせの worker。passkeyNotifications が真で、呼ばなかった時（残りが1秒未満）と、投げた時は null。偽の時は項目を付けない */
   passkeyNotifications?: PasskeyNotificationWorkerResult | null;
+  /** パスキーの知らせの点検（死んだ知らせ・worker の停止）。passkeyNotifications が偽の時は項目を付けない。点検が投げた時は null */
+  passkeyChecks?: PasskeyNotificationOpsResult | null;
 };
 
 /**
@@ -101,20 +104,42 @@ export async function runWebhookWorker(options: { requestUrl: string; budgetMs?:
   }
 
   // パスキーの知らせは、追跡の後・点検の前。毎分の定期処理だけが呼ぶ（after() の道は偽）。残りが1秒未満なら呼ばない。投げても点検は続ける
+  // 心拍は worker の結果で書く（idle・budget は成功、claim_error・投げた時は失敗、disabled・config は書かない）。予算で呼ばなかった時は成功（配送の追跡と同じ）。
   let passkeyNotifications: PasskeyNotificationWorkerResult | null = null;
   if (options.passkeyNotifications) {
     const passkeyBudget = Math.min(3_000, 60_000 - (Date.now() - startedAt) - 15_000);
+    let heartbeat: { succeeded: boolean; errorCode: string | null } | null = null;
     if (passkeyBudget >= 1_000) {
       try {
         passkeyNotifications = await runPasskeyNotificationWorker({ budgetMs: passkeyBudget, hardDeadlineMs: startedAt + 45_000 });
+        if (passkeyNotifications.stopped === 'idle' || passkeyNotifications.stopped === 'budget') heartbeat = { succeeded: true, errorCode: null };
+        else if (passkeyNotifications.stopped === 'claim_error') heartbeat = { succeeded: false, errorCode: 'db_unavailable' };
       } catch (error) {
         console.error('[stripe-webhook-worker] Passkey notification worker failed', error instanceof Error ? error.name : 'UnknownError');
+        heartbeat = { succeeded: false, errorCode: 'worker_error' };
+      }
+    } else {
+      heartbeat = { succeeded: true, errorCode: null };
+    }
+    if (heartbeat) {
+      try { await recordHeartbeat(store, 'passkey_notification_worker', heartbeat.succeeded, heartbeat.errorCode); }
+      catch (heartbeatError) {
+        console.error('[stripe-webhook-worker] Failed to record passkey heartbeat', heartbeatError instanceof Error ? heartbeatError.name : 'UnknownError');
       }
     }
   }
 
   const checks = await runOpsChecks({ store, send: sendOpsAlertMail, now: () => new Date() });
   const emailChecks = await runOrderEmailOpsChecks({ store, send: sendOpsAlertMail, now: () => new Date() });
+  // パスキーの知らせの点検。投げても、見回りと結果は続ける
+  let passkeyChecks: PasskeyNotificationOpsResult | null = null;
+  if (options.passkeyNotifications) {
+    try {
+      passkeyChecks = await runPasskeyNotificationOpsChecks({ store, send: sendOpsAlertMail, now: () => new Date() });
+    } catch (error) {
+      console.error('[stripe-webhook-worker] Passkey notification ops checks failed', error instanceof Error ? error.name : 'UnknownError');
+    }
+  }
 
   // 配達の状態の見回りは最後。Resend の返事が遅くても、店への知らせの点検は先に済んでいる。
   // 見回りで見つけた不達は、次の分の点検で知らせる。1時間に1回だけ動く（前回の時刻は見回りの中で見る）。投げても、結果は返す
@@ -124,5 +149,5 @@ export async function runWebhookWorker(options: { requestUrl: string; budgetMs?:
     console.error('[stripe-webhook-worker] Delivery check failed', error instanceof Error ? error.name : 'UnknownError');
   }
 
-  return { ...drain, checks, emails, emailChecks, deliveryTracking, ...(options.passkeyNotifications ? { passkeyNotifications } : {}) };
+  return { ...drain, checks, emails, emailChecks, deliveryTracking, ...(options.passkeyNotifications ? { passkeyNotifications, passkeyChecks } : {}) };
 }

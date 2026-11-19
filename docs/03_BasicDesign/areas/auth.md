@@ -2264,6 +2264,30 @@ flowchart LR
 - 取り出し（移行 G）: `claim_passkey_notification` の戻りの末尾に `actor_email text` を足す。アプリの `claimPasskeyNotification`（`src/lib/auth/passkey-notification-store.ts`）は `actor_email` を `actorEmail`（文字列か null）に写す
 - 宛先（移行 G）: `passkey_notification_recipients` は、新しい3種類の行では `notify_subject` を偽として扱い、`user_id` の店長を除く、有効・期限内・削除と停止の無い `admin` 全員を返す（`audience` は `admin`。アドレスの小文字の重複は1通）。古い3種類の規則と戻りの列は変えない
 - 積み込み（移行 H）: 私用の関数 `private.passkey_enqueue_staff_notice(p_kind, p_user_id, p_actor_id)`
+- 点検（移行 I。FR-AUTH-049）: 列 `dead_notified_at timestamptz`（NULL 可。NULL は店にまだ知らせていない）と部分索引 `passkey_notification_outbox_dead_unnotified_idx`（`status = 'dead' AND dead_notified_at IS NULL`）を足し、`public.list_unnotified_dead_passkey_notifications(_limit)`（種類・試行・失敗コード・時刻・全件数だけ。アドレス・本文は返さない）と `public.mark_passkey_notification_dead_notified(_ids)`（`dead` の行だけ。2度目は0）を `service_role` だけに渡す。`ops_job_heartbeats_job_check` の job に `passkey_notification_worker` を足す
+
+### ARC-AUTH-014 パスキーの知らせの点検は、毎分の worker の後に、既存の店への知らせ（`sendOnce`・`sendOpsAlertMail`）の仕組みで動かす
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-049、SEC-AUTH-058、ADR-0474 |
+| 根拠 | 点検を注文のメールと同じ仕組み（心拍・冷却つきの `sendOnce`・店の知らせの宛先）に載せると、新しい表も宛先も要らない。worker の結果は心拍（`passkey_notification_worker`）に残し、次の点検が読む。点検は worker とは別に、投げても worker を止めない |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト（`tests/unit/lib/stripe/webhook-worker.test.ts`・`tests/unit/lib/auth/passkey-notification-ops.test.ts`）、結合テスト（`tests/integration/db/auth_passkey_notification_ops.integration.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-17-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 17） |
+
+```mermaid
+flowchart LR
+  W["毎分の worker<br/>runWebhookWorker"] --> P["パスキーの知らせの worker"]
+  P --> H["心拍 passkey_notification_worker"]
+  W --> C["runPasskeyNotificationOpsChecks"]
+  H --> C
+  O["送り箱の dead 行"] --> C
+  C --> M["sendOnce → 店の知らせの宛先"]
+  M --> K["送れたら dead_notified_at を付ける"]
+```
+
+矢印はデータの向き。点検は心拍と `dead` の行を読み、店へ送れた時だけ印を付ける。
 
 ### ARC-AUTH-013 店員の無操作は、DB の判定（`private.staff_idle_ok_strict`）を1つの門にし、`has_permission`・窓口・ページが同じ判定を通る
 
