@@ -45,7 +45,7 @@
 
 - **段3b は本番の DB・設定・ダッシュボードに何も当てない**。Supabase の MCP（`apply_migration`・`execute_sql` ほか）はサブエージェントから使わない。`supabase db push`（どの形でも）と `workflow_dispatch` は流さない。`.env*` は読まない・表示しない。`graphify update` は流さない（コミットのフックが後で流す）。graphify を使う時は、起動が止められていれば `.venv/Scripts/python.exe -m graphify query "<質問>"`。
 - パスキーの移行（今8本。段3b で移行 I を足して9本）は、**本番の独自のドメインが決まるまで当てない**（オーナー決定 2026-11-19）。当てるのは調整役だけで、オーナーの許可を得た時に、1本ずつ MCP の `apply_migration`。当てた後は `md5(statements[1])` をファイルの MD5 と突き合わせ、名前を当てた版に合わせる（Task 23 の手順書）。
-- 未適用の A・D・F・G・H は、**同じファイルを直す**（大きさと MD5 を `md5sum`・`wc -c` で測り直し、`docs/06_Operations/db-migrations.md` を同じコミットで直す）。新しい移行は I だけ。移行の版は作る時の時刻で付け、最新（`20261118130000`）より後にする。
+- 未適用の A・D・E・F・G・H は、**同じファイルを直す**（大きさと MD5 を `md5sum`・`wc -c` で測り直し、`docs/06_Operations/db-migrations.md` を同じコミットで直す。E は Task 22 が直す）。新しい移行は I だけ。**22b は行わない（オーナーの答え1＝A）。移行 J は無い。パスキーの移行は A〜I の9本**。移行の版は作る時の時刻で付け、最新（`20261118130000`）より後にする。
 - master への push は調整役がオーナーの許可を得て行う（実行者は push しない）。
 
 **リポジトリ・E2E**
@@ -71,14 +71,14 @@
 **文面（店員・店長に見える物）**
 
 - 丁寧語で短く、断定せず、煽らない。「頁」は使わず「ページ」。絵文字・感嘆符を使わない。専門語（WebAuthn・UV・認証器）を画面とメールに出さない。「パスキー」は一度「顔認証・指紋・PIN で入る方法」と言い換える。ブランドは `docs/01_Planning/brand.md`。
-- **3a で作り手が決めた文面（下の「オーナーに聞くこと」の5）は、オーナーが答えるまで変えない**。直す必要がある時は実行者が止まって調整役に聞く。
+- **3a で作り手が決めた文面（下の「オーナーに聞くこと」の5）は、オーナーが 2026-11-19 にこのままと決めた。変えない**。直す必要がある時は実行者が止まって調整役に聞く。
 - 監査・ログ・メールに、合言葉・リンクの全文・鍵・宛先のアドレスの列を残さない。
 
 ## Review Focus
 
 先頭ほど起きやすい。
 
-1. **降格した店長の招待が残らないか**: 降格と同じ取引で、その店長が出した未使用の招待が取り消され、窓が閉じ、有効化済みの店員・他の店長の招待・やり直しの招待は変わらないか。店長からサポーターへの変更・店長へのやり直しでも同じか。同時に「降格」と「招待の有効化」が競っても、有効化が先に取れたら店員は残り、後なら失敗するか（Task 13）
+1. **降格した店長の招待が残らないか**: 降格と同じ取引で、その店長が出した未使用の招待が取り消され、窓が閉じ、有効化済みの店員・他の店長が出した招待・`last_resort` の招待は変わらないか（店長が出した `redo` の招待は取り消される。種類で分けない）。店長からサポーターへの変更・店長へのやり直し・今の店長への `last_resort` でも同じか。同時に「降格」と「招待の有効化」が競っても、有効化が先に取れたら店員は残り、後なら失敗するか（Task 13）
 2. **店長への知らせが、本人・止まった人・消えた人に出ないか**: 宛先が有効な店長だけ（本人を除く・削除済み・停止中を除く・同じアドレスは1通）か。取引が失敗した時に知らせの行だけが残らないか。最後の手段（`last_resort`）に知らせを積まないか（Task 14・15）
 3. **宛先が多い行が、予算を越えても取りこぼされないか**: 宛先6人以上の行が1回の実行で全員に送られ、予算を越える時は次の行を取らずに行が終わるか。再試行で同じ宛先に2通出ないか（Task 16）
 4. **止まりに気づけるか**: `dead` の行が1時間に1回・まとめて1通で店に届き、同じ行が2度届かないか。worker が30分成功しない時に1通出るか。点検の失敗が worker 自体を止めないか。メールにアドレス・本文を入れないか（Task 17）
@@ -107,24 +107,25 @@
 
 **Files:**
 - Modify: `supabase/migrations/20261118130000_passkey_staff_invites.sql`（H。未適用。大きさと MD5 を測り直す）
-- Modify: `src/features/auth/staff/staff-invite-store.ts`（`cancelStaffInvite`）、`src/app/api/admin/staff/[id]/invite/cancel/route.ts`
+- Modify: `src/features/auth/staff/staff-invite-store.ts`（`cancelStaffInvite`）、`src/app/api/admin/staff/[id]/invite/cancel/route.ts`、`src/features/auth/staff/staff-invite-http.ts`（`auditStaffAction` の `outcome` の型に `'noop'` を足す）、`staff-user-actions.ts`（`postStaffAction` が成功の本文の `cancelled` を返す）、`src/features/auth/staff/components/StaffRoleActions.tsx`（`cancelled: false` なら通知なしで一覧を読み直す）、`src/components/UserSection.tsx`（通知なしの読み直しの道を通すだけ。`@impl` は足さない）
 - Create: `e2e/FR-LOGIN-073-staff-demote-cancels-issued-invites.spec.ts`
-- Test: `tests/integration/db/auth_passkey_staff_roles.integration.test.ts`（降格・役割の変更）、`auth_passkey_staff_invites.integration.test.ts`（取り消し・前の確かめ）、`tests/unit/api/admin/staff/`（取り消しの窓口）
+- Test: `tests/integration/db/auth_passkey_staff_roles.integration.test.ts`（降格・役割の変更）、`auth_passkey_staff_invites.integration.test.ts`（取り消し・前の確かめ）、`tests/unit/api/admin/staff/`（取り消しの窓口。`invite-cancel-route.test.ts`）、`staff-invite-store.test.ts`・`staff-user-actions.test.ts`・`user-section-staff.test.tsx`（それぞれ既存の置き場にある物を足す）
 - 文書（同じコミット）: `db-migrations.md` の H の節（大きさ・MD5・前の確かめ・降格の説明・手元の `md5(statements[1])`）、`FR-AUTH-050`・`FR-AUTH-051`（親 `SR-AUTH-026`）、`THR-AUTH-056`→`SEC-AUTH-059`→`DD-AUTH-085`（降格）・`DD-AUTH-091`（取り消し）、既存の `API-AUTH-035`（降格が出した招待も取り消すことを足す）・`API-AUTH-036`（取り消しの応答 `{ success: true, cancelled }`）、`IMPL-AUTH-403`〜`405`
 
 **Interfaces:**
 - Consumes: 既存の `public.staff_demote(p_actor_id uuid, p_user_id uuid) returns void`、`private.admin_set_user_role(_actor_id uuid, _user_id uuid, _role_code text) returns jsonb`、`private.staff_invite_issue_core(...)`（`kind = 'redo'` を含む）、`public.staff_invite_cancel(p_actor_id uuid, p_user_id uuid)`、表 `private.staff_invites`（`issued_by`・`cancelled_at`・`activated_at`・`consumed_at`）、`private.passkey_registration_windows`（`closed_at`）。
 - Produces:
-  - **カスケード（共通の中身）**: `staff_demote` の本体の最後と、`private.admin_set_user_role` の本体で「対象が今、有効で期限内の `admin` の役割を持ち（`user_roles` を `active = false` にする前に読む）、新しい役割が `admin` でない」時（店長からサポーターへ）と、`staff_invite_issue_core` が店長の役割を止める時（`redo`。新しい招待の行を入れる前）に、`issued_by = p_user_id` で `cancelled_at IS NULL AND activated_at IS NULL` の招待をすべて `cancelled_at = now()` にし、その招待の持ち主（`user_id`）の `closed_at IS NULL` の窓を閉じる。新しい錠は取らない（`190519` を先に持っているので、`staff_role_activate`・`staff_invite_cancel` などと直列になる）。署名・戻りは変えない。**`admin_set_user_role` の置き換え前の `md5(prosrc)` の確かめ（`0cb9f532…`）は変えない**。店長→店長・サポーター→店長・お客さんの発行（持ち主が店長でない）は何も取り消さない。カスケードは招待ごとの監査を書かず、招待の持ち主のログインも終わらせない（DD-AUTH-085 に書く）。
+  - **カスケードの中身は、H に私用の関数を1つ足してそこに1回だけ書く**: `private.staff_cancel_invites_issued_by(p_user_id uuid)`（持ち主 `postgres`、`SECURITY DEFINER`・`search_path` 空、誰にも EXECUTE を渡さない）。`issued_by = p_user_id` で `cancelled_at IS NULL AND activated_at IS NULL` の招待をすべて `cancelled_at = now()` にし、その招待の持ち主（`user_id`）の `closed_at IS NULL` の窓を閉じる。呼ぶ側は錠を持った後に呼ぶ。H の末尾の確かめの ACL の一覧と、ヘッダーの `ROLLBACK`（関数を落とす）にこの関数を足す。Task 14 が2つ目の私用の関数 `private.passkey_enqueue_staff_notice` を足すので、一覧は両方を持つ形に直す（後から足す側が一覧に追記する）。
+  - **カスケードを呼ぶ3か所**: `staff_demote` の本体の最後、`private.admin_set_user_role`（店長からサポーターへ。新しい役割が `admin` でない時）、`staff_invite_issue_core`。条件は「対象が今、有効で期限内の `admin` の役割を持つ」で、**`user_roles` を `active = false` にする前（core は手順7の前）に読む**。core は種類に依らず、この条件を満たす時に呼ぶ: `redo` と、今の店長への `last_resort`（`private.staff_invite_issue_manual` は core 経由）。`invite`・`promote` は対象が店員でないので何もしない。core では新しい招待の行を入れる前に呼ぶ。新しい錠は取らない（`190519` を先に持っているので、`staff_role_activate`・`staff_invite_cancel` などと直列になる）。署名・戻りは変えない。**`admin_set_user_role` の置き換え前の `md5(prosrc)` の確かめ（`0cb9f532…`）は変えない**。店長→店長・サポーター→店長・お客さんの発行（持ち主が店長でない）は何も取り消さない。カスケードは招待ごとの監査を書かず、招待の持ち主のログインも終わらせない（DD-AUTH-085 に書く）。
   - `public.staff_invite_cancel(p_actor_id uuid, p_user_id uuid) returns boolean`（今は `void`）。**開いた招待を取り消したら `true`、取り消す物が無ければ `false`**。署名の引数・権限は変えない。
   - `cancelStaffInvite(deps, actorId, userId): Promise<StaffInviteResult<{ cancelled: boolean }, StaffInviteCancelReason>>`。
-  - 取り消しの窓口と `StaffRoleActions`: `cancelled: false` の時は、ログインを終わらせず、監査は `outcome: 'noop'`、応答は `200 { success: true, cancelled: false }`（画面は通知なしで一覧を読み直す）。`true` の時だけ今までどおり `revokeAllSessionsForUser` を呼ぶ。
+  - 取り消しの窓口と `StaffRoleActions`: `cancelled: false` の時は、ログインを終わらせず、監査は `outcome: 'noop'`（`staff-invite-http.ts` の型に足す）、応答は `200 { success: true, cancelled: false }`。画面側は、`postStaffAction`（`staff-user-actions.ts`）が成功の本文を読んで `cancelled` を返し、`StaffRoleActions` が `cancelled: false` の時は「…への招待を取り消しました。」を出さず、通知なしで一覧を読み直す（`UserSection.tsx` の読み直しの道を通す）。`true` の時だけ今までどおり `revokeAllSessionsForUser` を呼び、通知を出す。Task 18 の M-7（取り消しの確認）はこの上に作る。
   - H の最初の確かめ（`DO` ブロック）に、`information_schema.columns` で `private.passkey_notification_outbox` の G が足した `lease_token`・`last_error_code`・`finished_at` の3列（`status` は A の列なので数えない）が在ることを足す。外れたら `PASSKEY_MIGRATION_PRECHECK_FAILED`、`DETAIL = 'passkey_h_g_columns'`。H のヘッダーの「BEFORE applying」に、`select count(*) from information_schema.columns where table_schema='private' and table_name='passkey_notification_outbox' and column_name in ('lease_token','last_error_code','finished_at'); -- expect 3` と「H は G（`20261118044338`）の後」と書く。
 
-- [ ] **Step 1: 失敗する試験を書く（DB 結合）** — (1) 店長 A が出した未使用の招待（`invite`）の持ち主 X の招待が、A の降格で `cancelled_at` を持ち、X の窓が閉じる。(2) A が出した、すでに使った（`consumed_at` あり・窓が開いている）招待も取り消され、窓が閉じる。(3) A が出した、有効化済み（`activated_at` あり）の店員 Y は役割も招待も変わらない。(4) 別の店長 B が出した招待は変わらない。(5) A が出した `redo` の相手 Z の招待も、A の降格で取り消される（種類で分けない）。 (6) `last_resort`（`issued_by` が NULL）は変わらない。(7) 降格が `LAST_ADMIN_REQUIRED` で失敗した時、何も取り消されない。(8) 降格と、A が出した招待の `staff_role_activate` を2つの接続で同時に流すと、一方が先に終わる: 有効化が先なら Y は店員のまま・後なら `STAFF_ACTIVATE_INVITE_INVALID`。(9) G の列の前の確かめ（列の名前を変えた取引で H の最初の `DO` ブロックを流すと `PASSKEY_MIGRATION_PRECHECK_FAILED` / `passkey_h_g_columns`。終わりに `ROLLBACK`）。(10) `staff_invite_cancel` は、開いた招待があれば `true`、無ければ `false`。(11) 店長 A を `admin_set_user_role` でサポーターに変えると、A が出した未使用の招待が取り消され、窓が閉じる。(12) サポーター→店長・店長→店長では何も取り消されない。(13) A に `redo` を出すと、A が出した未使用の招待が取り消され、窓が閉じる（A は登録し直すまで店長でない）。(14) お客さんへの `invite`・`promote` の発行では、何も取り消されない。
-- [ ] **Step 2: 失敗する窓口の単体試験を書く** — `cancelled: false` の時、`revokeAllSessionsForUser` が呼ばれず、200 `{ success: true, cancelled: false }`、監査が `noop`。`true` の時は今までどおり。
-- [ ] **Step 3: 失敗を確かめる** — `npx.cmd supabase db reset` の後、`npx.cmd jest --runInBand tests/integration/db/auth_passkey_staff_roles.integration.test.ts tests/integration/db/auth_passkey_staff_invites.integration.test.ts`（(1)(2)(5)(8)(9)(10)(11)(13) が FAIL）と単体（FAIL）。
-- [ ] **Step 4: 実装する** — H の `staff_demote`・`admin_set_user_role`（ヘッダーの「ONE change」の要約に2つ目の変更を足す）・`staff_invite_issue_core`・`staff_invite_cancel`・最初の確かめ・ヘッダー（要約・`ROLLBACK`・`BEFORE applying`）を直す。`api-spec.md` の `PATCH /api/admin/users` の行（店長をサポーターに変えると、その人が出した招待も取り消す）と `auth-staff-invite.md` も直す。ストアと窓口を直す。`@impl`・`@design` を付ける。`db reset` で適用できること。
+- [ ] **Step 1: 失敗する試験を書く（DB 結合）** — (1) 店長 A が出した未使用の招待（`invite`）の持ち主 X の招待が、A の降格で `cancelled_at` を持ち、X の窓が閉じる。(2) A が出した、すでに使った（`consumed_at` あり・窓が開いている）招待も取り消され、窓が閉じる。(3) A が出した、有効化済み（`activated_at` あり）の店員 Y は役割も招待も変わらない。(4) 別の店長 B が出した招待は変わらない。(5) A が出した `redo` の相手 Z の招待も、A の降格で取り消される（種類で分けない）。 (6) `last_resort`（`issued_by` が NULL）は変わらない。(7) 降格が `LAST_ADMIN_REQUIRED` で失敗した時、何も取り消されない。(8) 降格と、A が出した招待の `staff_role_activate` を2つの接続で同時に流すと、一方が先に終わる: 有効化が先なら Y は店員のまま・後なら `STAFF_ACTIVATE_INVITE_INVALID`。(9) G の列の前の確かめ。H の適用後の DB では `admin_set_user_role` の本体が H の物なので、取り出した最初の `DO` ブロックをそのまま流すと、G の列の確かめの前に `passkey_h_admin_set_user_role_body`（md5 の確かめ）で止まる。試験は `auth_has_permission_passkey` の⑭と同じ手で、取り出した `DO` ブロックの md5 の値（`0cb9f532…`）を今の本体の md5 に置き換えてから流す。(9a) 置き換えただけ（列はそのまま）なら通る。(9b) 列の名前を変えた取引で流すと `PASSKEY_MIGRATION_PRECHECK_FAILED` / `passkey_h_g_columns` で止まる。終わりに `ROLLBACK`。新しい確かめは md5 の確かめの前に置いても後でもよい（どちらでも試験が通る書き方にする）。(10) `staff_invite_cancel` は、開いた招待があれば `true`、無ければ `false`。(11) 店長 A を `admin_set_user_role` でサポーターに変えると、A が出した未使用の招待が取り消され、窓が閉じる。(12) サポーター→店長・店長→店長では何も取り消されない。(13) A に `redo` を出すと、A が出した未使用の招待が取り消され、窓が閉じる（A は登録し直すまで店長でない）。(14) お客さんへの `invite`・`promote` の発行では、何も取り消されない。(15) 今の店長 A に `private.staff_invite_issue_manual`（`last_resort`）を出すと、A が出した未使用の招待が取り消され、窓が閉じる（A も登録し直すまで店長でない）。店員・お客さんへの `last_resort` では何も取り消されない。
+- [ ] **Step 2: 失敗する窓口・画面の単体試験を書く** — 窓口（`invite-cancel-route.test.ts`）: `cancelled: false` の時、`revokeAllSessionsForUser` が呼ばれず、200 `{ success: true, cancelled: false }`、監査が `noop`。`true` の時は今までどおり。ストア（`staff-invite-store.test.ts`）: `cancelStaffInvite` が `{ cancelled }` を返す。`staff-user-actions.test.ts`: 成功の本文の `cancelled` を返す。`user-section-staff.test.tsx`: `cancelled: false` の時、「…への招待を取り消しました。」が出ず、一覧が読み直される。`true` の時は通知が出る。
+- [ ] **Step 3: 失敗を確かめる** — `npx.cmd supabase db reset` の後、`npx.cmd jest --runInBand tests/integration/db/auth_passkey_staff_roles.integration.test.ts tests/integration/db/auth_passkey_staff_invites.integration.test.ts`（(1)(2)(5)(8)(9b)(10)(11)(13)(15) が FAIL）と単体（FAIL）。
+- [ ] **Step 4: 実装する** — H に私用の関数 `private.staff_cancel_invites_issued_by` を足し（末尾の確かめの ACL の一覧・`ROLLBACK` にも）、`staff_demote`・`admin_set_user_role`（ヘッダーの「ONE change」の要約に2つ目の変更を足す）・`staff_invite_issue_core`（手順7の前に、対象が今の店長かを読む）・`staff_invite_cancel`・最初の確かめ・ヘッダー（要約・`ROLLBACK`・`BEFORE applying`）を直す。`api-spec.md` の `PATCH /api/admin/users` の行（店長をサポーターに変えると、その人が出した招待も取り消す）と `auth-staff-invite.md` も直す。ストア・窓口・`staff-invite-http.ts`・`staff-user-actions.ts`・`StaffRoleActions.tsx`・`UserSection.tsx` を直す。`@impl`・`@design` を付ける。`db reset` で適用できること。
 - [ ] **Step 5: 通ることを確かめる** — 上の試験が PASS。`FR-LOGIN-063`（店長の窓口）・`FR-LOGIN-070`（ユーザーの画面）を3幅 PASS。新しい E2E `FR-LOGIN-073`（3幅。FR-AUTH-050 の AC）: 店長 A が招待を出し、店長 B が A を降格すると、招待のリンクの POST が既存の「このリンクは使えません…」で断られる。**2つ目の場面**: B が A を `PATCH /api/admin/users` でサポーターに変えても同じ。**3つ目**: B が A にやり直しを出しても同じ。`wc -c`・`md5sum` で H を測り直し、`db-migrations.md` へ。`validate-trace`・`test:trace-coverage`・`validate-docs`。
 - [ ] **Step 6: コミット** — `fix(auth): 店長でなくなる時（降格・サポーターへの変更・やり直し）に出した招待を同じ取引で取り消し、移行 H に G の列の前の確かめを足す`
 
@@ -141,11 +142,12 @@
   - `kind` に `'staff_redo_issued'`・`'staff_invited'`・`'staff_demoted'` を許す。列 `actor_email text`（NULL 可）を足す。
   - `claim_passkey_notification` の `RETURNS TABLE` の最後に `actor_email text` を足す（`subject_email` の次ではなく**末尾**）。
   - `passkey_notification_recipients(_id)`: 新しい3種類の行は、**本人（`user_id`）を除く、有効・期限内・削除と停止の無い `admin` 全員**（アドレスの小文字の重複は1通）。`notify_subject` は常に偽として扱い、本人は入れない。古い3種類の規則は今のまま。戻りの列は変えない。
-  - 積み込み（同じ取引の中）: `staff_invite_issue_core` が、`p_kind = 'redo'` なら `staff_redo_issued`、`'invite'`・`'promote'` なら `staff_invited` を1行入れる。**`last_resort` は積まない**。`staff_demote` が `staff_demoted` を1行入れる。値は `user_id = 対象`、`subject_email = 対象のアドレス`、`actor_email = 操作した店長のアドレス`、`passkey_id`・`friendly_name` は NULL、`subject_is_staff` は redo・demoted が `true`・invited が `false`、`notify_subject = false`。取引が失敗すれば行も残らない。
+  - **積み込みの中身は、H に私用の関数を1つ足してそこに1回だけ書く**: `private.passkey_enqueue_staff_notice(p_kind text, p_user_id uuid, p_actor_id uuid)`（持ち主 `postgres`、`SECURITY DEFINER`・`search_path` 空、誰にも EXECUTE を渡さない。`p_kind` は新しい3種だけ）。下の行の値（`subject_email`・`actor_email`・`subject_is_staff`・`notify_subject = false` ほか）を、この関数が `p_user_id`・`p_actor_id` から作る。呼ぶ側は錠を持った後に、同じ取引の中で呼ぶ。H の末尾の確かめの ACL の一覧（Task 13 が作った一覧に追記する）と `ROLLBACK`（関数を落とす）に足す。
+  - 積み込み（同じ取引の中。呼ぶ場所）: `staff_invite_issue_core` が、`p_kind = 'redo'` なら `staff_redo_issued`、`'invite'`・`'promote'` なら `staff_invited` を1行入れる。**`last_resort` は積まない**。`staff_demote` が `staff_demoted` を1行入れる。値は `user_id = 対象`、`subject_email = 対象のアドレス`、`actor_email = 操作した店長のアドレス`、`passkey_id`・`friendly_name` は NULL、`subject_is_staff` は redo・demoted が `true`・invited が `false`、`notify_subject = false`。取引が失敗すれば行も残らない。（`core` と `staff_demote` は、同じ文を書かず上の関数を呼ぶ。）
 
-- [ ] **Step 1: 失敗する試験を書く** — (1) `redo` で `staff_redo_issued` が1行できる（`actor_email` が発行した店長のアドレス・`subject_email` が対象）。`invite`・`promote` は `staff_invited`、降格は `staff_demoted`。(2) `staff_invite_issue_manual`（`last_resort`）は行を積まない。(3) 発行が `LAST_ADMIN_REQUIRED`・`SELF_ROLE_CHANGE_FORBIDDEN` で失敗した時、新しい種類の行が残らない。(4) `passkey_notification_recipients` は、本人を除く有効な店長を返す。停止中（`banned_until` が将来）・削除済み・期限切れの役割・メールが空・同じアドレスの大文字違いの2人目は返さない。(5) `claim` の戻りに `actor_email` がある。(6) 古い種類の宛先の規則が変わらない（既存の試験が緑）。(7) 発行が消した鍵の `passkey_removed` が `skipped` になる既存の挙動（`staff_invite_issue`）が変わらない。
+- [ ] **Step 1: 失敗する試験を書く** — (0) 私用の関数 `private.passkey_enqueue_staff_notice` が `anon`・`authenticated`・`service_role` から EXECUTE できない（ACL）。(1) `redo` で `staff_redo_issued` が1行できる（`actor_email` が発行した店長のアドレス・`subject_email` が対象）。`invite`・`promote` は `staff_invited`、降格は `staff_demoted`。(2) `staff_invite_issue_manual`（`last_resort`）は行を積まない。(3) 発行が `LAST_ADMIN_REQUIRED`・`SELF_ROLE_CHANGE_FORBIDDEN` で失敗した時、新しい種類の行が残らない。(4) `passkey_notification_recipients` は、本人を除く有効な店長を返す。停止中（`banned_until` が将来）・削除済み・期限切れの役割・メールが空・同じアドレスの大文字違いの2人目は返さない。(5) `claim` の戻りに `actor_email` がある。(6) 古い種類の宛先の規則が変わらない（既存の試験が緑）。(7) 発行が消した鍵の `passkey_removed` が `skipped` になる既存の挙動（`staff_invite_issue`）が変わらない。
 - [ ] **Step 2: 失敗を確かめる** — `db reset` の後、上の DB 結合 → FAIL。
-- [ ] **Step 3: 実装する** — A・G・H を直す（各ファイルのヘッダーの要約・`ROLLBACK`・末尾の確かめに足す）。G の `PASSKEY_G_FINAL_ASSERT` に `actor_email` の列と新しい種類の CHECK を足す。`db reset` で適用できること。
+- [ ] **Step 3: 実装する** — A・G・H を直す（各ファイルのヘッダーの要約・`ROLLBACK`・末尾の確かめに足す。H には私用の関数 `private.passkey_enqueue_staff_notice` を足し、`core` と `staff_demote` はそれを呼ぶ）。G の `PASSKEY_G_FINAL_ASSERT` に `actor_email` の列と新しい種類の CHECK を足す。`db reset` で適用できること。
 - [ ] **Step 4: 通ることを確かめる** — 上の試験と `auth_passkey_*` の DB 結合が全部 PASS。A・G・H を測り直して `db-migrations.md` へ（A・G・H の節）。`validate-trace` ほか。
 - [ ] **Step 5: コミット** — `feat(auth): 店長への知らせ（やり直し・招待・降格）の種類と宛先と積み込みを移行 A・G・H に足す（手元だけ）`
 
@@ -153,6 +155,7 @@
 
 **Files:**
 - Modify: `src/lib/auth/passkey-notification-store.ts`（`KINDS`・`ClaimedPasskeyNotification.kind`・`actorEmail`・`parseClaimed`）、`passkey-notification-compose.ts`、`passkey-notification-worker.ts`（`actorEmail` を文面へ渡す）
+- Modify: `playwright.config.ts`（`FR-LOGIN-071` を `testIgnore` と isolated-global の `testMatch` の両方に入れる。コメントにも1行。今は 062 だけ）
 - Create: `e2e/FR-LOGIN-071-staff-manager-notice-mail.spec.ts`
 - Test: `tests/unit/lib/auth/passkey-notification-{store,compose,worker}.test.ts`（足す）、`tests/integration/db/auth_passkey_notification_worker.integration.test.ts`
 - 文書: `FR-AUTH-047` の AC、`DD-AUTH-087`（親 `SEC-AUTH-058`）、`docs/04_DetailDesign/sequence/auth-passkey-notifications.md`、`IMPL-AUTH-408`〜`411`
@@ -164,7 +167,7 @@
   - `composePasskeyNotification(input)` の `input` に `actorEmail: string | null` を足す。新しい3種類は **`admin` の宛先だけ**（他の宛先なら例外 → worker が `compose_error`）。文面は付録のとおり。`名前:` の行は出さず、`日時:`（日本時間）と `操作した店長:`（`actorEmail`）を出す。アドレスは本文にだけ入れ、件名と監査には入れない。
   - 冪等の鍵・再試行・`dead` は段2の規則のまま。
 
-- [ ] **Step 1: 失敗する試験を書く** — 単体: (a) 新しい3種類を `parseClaimed` が通す。**知らない種類は、`id` と `leaseToken` だけ読み、worker が行を `skip`（`unknown_kind`）する**（アプリと DB の版がずれても、行が担当の期限まで列を止めない）。(b) 3種類の件名・本文が付録と同じで、`admin` 以外の宛先は例外。(c) `actorEmail` が `null` の時も文面が作れる（`操作した店長:` の行を出さない）。(d) 件名に対象のアドレスが入らない。E2E `FR-LOGIN-071`（3幅。`FR-LOGIN-063` と同じ API の形）: 店長2人（A・B）を `provisionStaff` で作り、A が店員 X へ `redo` を出すと、**B に件名「店員のパスキーのやり直しが出されました」のメールが1通届き、X には届かない（X への招待のメールは別の件名で届く）**。`staff_invited`（招待）の場面も1つ足す。降格の E2E は、B に「店員がお客さんに戻されました」が届く。待ちは `expect.poll`。
+- [ ] **Step 1: 失敗する試験を書く** — 単体: (a) 新しい3種類を `parseClaimed` が通す。**知らない種類は、`id` と `leaseToken` だけ読み、worker が行を `skip`（`unknown_kind`）する**（アプリと DB の版がずれても、行が担当の期限まで列を止めない）。(b) 3種類の件名・本文が付録と同じで、`admin` 以外の宛先は例外。(c) `actorEmail` が `null` の時も文面が作れる（`操作した店長:` の行を出さない）。(d) 件名に対象のアドレスが入らない。E2E `FR-LOGIN-071`（3幅。`FR-LOGIN-063` と同じ API の形）: 店長2人（A・B）を `provisionStaff` で作り、A が店員 X へ `redo` を出すと、**B に件名「店員のパスキーのやり直しが出されました」のメールが届き（1通以上。下の隔離の注を見る）、X には届かない（X への招待のメールは別の件名で届く）**。`staff_invited`（招待）の場面も1つ足す。降格の E2E は、B に「店員がお客さんに戻されました」が届く。**隔離と起こし方**: 新しい知らせは DB の全店長へ出る（手元の DB には E2E が作った店長が積み上がる）ので、071 は 062 と同じ準備と後始末をする（送り箱を空にする `clearPendingNotifications`・他の `@example.com` の店長を一時的に外して最後に戻す）。知らせは worker を叩かないと送られないので、待ちは 062 と同じ `runWorkerUntil(…, () => B に件名のメールが1通以上)` にする（`expect.poll` だけでは届かない）。X に知らせが届かないことは、B に届いた後に確かめる。手元のメールの送り手は重複防止の鍵を見ないので、予算越えの再試行で同じ店長に2通届きうる。「1通」は「B に件名のメールが1通以上届き、X には届かない」と書き、揺れを避ける。
 - [ ] **Step 2: 失敗を確かめる** — `npx.cmd jest tests/unit/lib/auth/passkey-notification-*.test.ts` → FAIL。E2E は実装の後に流す。
 - [ ] **Step 3: 実装する** — 上の型と文面。worker は、行の `kind` が新しい種類の時、宛先ごとの `audience` が `admin` であることを確かめて渡す（`composePasskeyNotification` の例外を `compose_error` に任せる）。
 - [ ] **Step 4: 通ることを確かめる** — 単体と DB 結合 PASS。3000番を止め、`npx.cmd playwright test e2e/FR-LOGIN-071 e2e/FR-LOGIN-062` を3幅 PASS（062 は既存の知らせの回帰）。`validate-trace` ほか。
@@ -181,8 +184,8 @@
 - Consumes: 既存の `runPasskeyNotificationWorker(options: { budgetMs?: number; maxRows?: number; deps?: Partial<PasskeyNotificationWorkerDeps> })`。
 - Produces: `options.rowBudgetMs?: number`（既定は `PASSKEY_NOTIFICATION_ROW_BUDGET_MS = 20_000`）を足す。**新しい行を取る時刻の上限は今までの `budgetMs`（3秒）のまま**、取った行の宛先の送りは `min(行を取った時刻 + rowBudgetMs, hardDeadlineMs)` までを許す。`options.hardDeadlineMs?: number`（絶対の時刻）を足し、`webhook-worker.ts` は `startedAt + 45_000` を渡す（60秒の入口に15秒の余裕を残す。相対の上限だと遅く取った行が余裕を食う）。1行の延長の分、点検（`runOpsChecks`）が最大約20秒遅れることがある。担当の期限（`PASSKEY_NOTIFICATION_LEASE_SECONDS = 300`）より小さい。
 
-- [ ] **Step 1: 失敗する試験を書く（偽の時計）** — (1) 宛先6人・1通が1000msかかる行（予算3000ms）が、1回の実行で `sent`、`send` が6回、`claimed` が1。(2) その実行で、3秒を過ぎた後に次の行は取らない（`stopped: 'budget'`、`claimed` が1）。(3) 1通が10秒かかり宛先が3人（20秒を越える）の行は `retried`（`budget_exceeded`）で、後ろの宛先へは送らない。(4) 再試行の時の冪等の鍵が、1回目と同じ（`passkeyNotificationIdempotencyKey` が変わらない）。(5) `webhook-worker` が `hardDeadlineMs = startedAt + 45_000` を渡し、遅く取った行は `hardDeadlineMs` で止まる（`budget_exceeded`）。
-- [ ] **Step 2: 失敗を確かめる** — `npx.cmd jest tests/unit/lib/auth/passkey-notification-worker.test.ts tests/unit/lib/stripe/webhook-worker.test.ts` → (1)(5) が FAIL。
+- [ ] **Step 1: 失敗する試験を書く（偽の時計）** — (1) 宛先6人・1通が1000msかかる行（予算3000ms）が、1回の実行で `sent`、`send` が6回、`claimed` が1。(2) その実行で、3秒を過ぎた後に次の行は取らない（`stopped: 'budget'`、`claimed` が1）。(3) 1通が10秒かかり宛先が3人（20秒を越える）の行は `retried`（`budget_exceeded`）で、後ろの宛先へは送らない。(4) 再試行の時の冪等の鍵が、1回目と同じ（`passkeyNotificationIdempotencyKey` が変わらない）。(5) 2つに分ける。(5a) `webhook-worker.test.ts`: `webhook-worker` が `hardDeadlineMs = startedAt + 45_000` を渡す（この単体は知らせの worker を差し替えるので、確かめられるのは渡す値まで）。(5b) `passkey-notification-worker.test.ts`: 遅く取った行（`hardDeadlineMs` が行の期限より手前）が `hardDeadlineMs` で止まり、`retried`（`budget_exceeded`）になる。
+- [ ] **Step 2: 失敗を確かめる** — `npx.cmd jest tests/unit/lib/auth/passkey-notification-worker.test.ts tests/unit/lib/stripe/webhook-worker.test.ts` → (1)(5a)(5b) が FAIL。
 - [ ] **Step 3: 実装する** — `deliverRow` の `deadline` を、行ごとの期限（`min(rowStartedAt + rowBudgetMs, hardDeadlineMs)`）に替える。実行全体の `deadline` は、行を取る前の判定だけに使う。定数 `PASSKEY_NOTIFICATION_ROW_BUDGET_MS` を公開する。
 - [ ] **Step 4: 通ることを確かめる** — 単体 PASS・`FR-LOGIN-062` を3幅 PASS。`validate-trace` ほか。
 - [ ] **Step 5: コミット** — `fix(auth): 宛先が多い知らせの行が、worker の予算で後ろの宛先を取りこぼさないようにする`
@@ -191,40 +194,42 @@
 
 **Files:**
 - Create: `supabase/migrations/<時刻>_passkey_notification_ops.sql`（I）、`src/lib/auth/passkey-notification-ops.ts`
-- Modify: `src/lib/ops/ops-store.ts`（`OpsJob`・`OpsAlertKey`・`OpsRpcName`）、`src/lib/ops/ops-alert-mail.ts`（`staleJobMail` の名前の対応・死んだ知らせのメール）、`src/lib/stripe/webhook-worker.ts`
-- Test: `tests/integration/db/auth_passkey_notification_ops.integration.test.ts`、`tests/unit/lib/auth/passkey-notification-ops.test.ts`、`tests/unit/lib/ops/ops-alert-mail.test.ts`、`tests/unit/lib/stripe/webhook-worker.test.ts`
+- Modify: `src/lib/ops/ops-store.ts`（`OpsJob`・`OpsAlertKey`・`OpsRpcName`）、`src/lib/ops/ops-alert-mail.ts`（付録の文を出す作り手を2つ足す。下の Interfaces）、`src/lib/stripe/webhook-worker.ts`
+- Test: `tests/integration/db/accounting_p2_migration_asserts.integration.test.ts`（既存。S6 の末尾の確かめの再生が、I の後に `acc_s6_heartbeat_check` で落ちるので直す。下の Step 1）、`tests/integration/db/auth_passkey_notification_ops.integration.test.ts`、`tests/unit/lib/auth/passkey-notification-ops.test.ts`、`tests/unit/lib/ops/ops-alert-mail.test.ts`、`tests/unit/lib/stripe/webhook-worker.test.ts`
 - 文書: `db-migrations.md`（I の節と、「9本」への直し）、`ADR-0474`（子 `ARC-AUTH-014`）、`ARC-AUTH-014`・`DD-AUTH-089`（親 `SEC-AUTH-058`）、`db-migrations.md` の I の節に「この後 `ops_job_heartbeats_job_check` を変える移行は `passkey_notification_worker` を残す」と書く、`FR-AUTH-049`、`DATA-AUTH-022` に列 `dead_notified_at` を足す、`IMPL-AUTH-413`〜`420`
 
 **Interfaces:**
-- Consumes: 既存の `OpsCheckDeps`・`sendOnce`（`ops-checks.ts`）、`staleJobMail`、`recordHeartbeat`・`readHeartbeats`（`ops-store.ts`）、注文のメールの点検（`src/lib/orders/email/order-email-ops.ts` の形に合わせる）、`public.get_ops_heartbeats`・`record_ops_heartbeat`。
+- Consumes: 既存の `OpsCheckDeps`・`sendOnce`（`ops-checks.ts`）、`OpsAlertMail`（`kind`・`subject`・`lines`）・`sendOpsAlertMail`、`recordHeartbeat`・`readHeartbeats`（`ops-store.ts`）、注文のメールの点検（`src/lib/orders/email/order-email-ops.ts` の形に合わせる）、`public.get_ops_heartbeats`・`record_ops_heartbeat`。
 - Produces:
   - 移行 I（`BEGIN`/`COMMIT`・前の確かめ・末尾の確かめ・ヘッダーに `ROLLBACK`。`SECURITY DEFINER`・`search_path` 空・持ち主 `postgres`・`service_role` だけ）:
     1. 前の確かめ: `public.ops_job_heartbeats`・`private.passkey_notification_outbox`（`status`・`finished_at`・`last_error_code`）が在ること、`ops_job_heartbeats_job_check` の job の**集合**（定義の文字列ではなく、`regexp_matches` で取り出した名前を並べ替えた配列）が、(a) 既知の8つ（`accounting_post` まで）で `passkey_notification_worker` を含まない、または (b) すでに `passkey_notification_worker` を含む、のどちらかであること。(b) は CHECK を触らず NOTICE（3. と 4. は続ける）。それ以外（本番が別の job を足した等）は `PASSKEY_MIGRATION_PRECHECK_FAILED`、`DETAIL = 'passkey_i_job_check_drift'`。
     2. (a) の時だけ、`ops_job_heartbeats_job_check` を、既存の8つに `'passkey_notification_worker'` を足した形で作り直す。
-    - **ROLLBACK（ヘッダーに書く。1つの取引）**: 先に `DELETE FROM public.ops_job_heartbeats WHERE job = 'passkey_notification_worker';`（消さずに戻すと失敗する）→ CHECK を、**I の前にあった job の一覧（I が足した `passkey_notification_worker` を除いた今の一覧）に戻す**（固定の8つにしない）→ 関数2本・索引・列 `dead_notified_at` を落とす。
+    - **I の前の CHECK の控え**: I のヘッダーの BEFORE applying と、手順書（Task 23）の I の行に、当てる前に今の CHECK を読んで控える SQL を書く: `select pg_get_constraintdef(oid) from pg_constraint where conname = 'ops_job_heartbeats_job_check';`。
+    - **ROLLBACK（ヘッダーに書く。1つの取引）**: 先に `DELETE FROM public.ops_job_heartbeats WHERE job = 'passkey_notification_worker';`（消さずに戻すと失敗する）→ CHECK を、**上で控えた I の前の定義に戻す**（固定の8つにしない。(b) で当てた時は I が CHECK を変えていないので CHECK を触らない）→ 関数2本・索引・列 `dead_notified_at` を落とす。
     - 試験: 前の確かめの (a)・(b)（(b) で止まらない）・ずれ（別の job が入っている。ここだけ止まる）の3つ。
     3. 列 `dead_notified_at timestamptz`（NULL 可）と、部分索引（`status = 'dead' AND dead_notified_at IS NULL`）。
     4. `public.list_unnotified_dead_passkey_notifications(_limit integer) returns table (id uuid, kind text, attempts integer, last_error_code text, finished_at timestamptz, total bigint)`（`finished_at` の古い順。`total` は点検待ちの全件）。`public.mark_passkey_notification_dead_notified(_ids uuid[]) returns integer`（`status = 'dead'` の行だけ。2度目は0）。アドレス・本文の列を返さない。
-  - アプリ: `OpsJob` に `'passkey_notification_worker'`。`OpsAlertKey` に `'passkey_notification_dead'`・`'job_stale_passkey_notification_worker'`。`runPasskeyNotificationOpsChecks(deps: OpsCheckDeps): Promise<{ deadNotified: number; staleAlerted: boolean; failedChecks: Array<'dead' | 'stale'> }>`: (1) `dead` を50件まで読み、`sendOnce(deps, 'passkey_notification_dead', mail)` が送れたら `mark…` を呼ぶ（印付けの失敗は次の点検で再送。at-least-once）。(2) `readHeartbeats` の `passkey_notification_worker.lastSucceededAt` が**30分**以上前なら `sendOnce(deps, 'job_stale_passkey_notification_worker', staleJobMail(...))`。一度も成功していなければ対象にしない。一方が失敗しても他方を続ける。
-  - `webhook-worker.ts`: `options.passkeyNotifications` の時だけ、worker の結果で心拍を書く。`stopped` が `'idle'`・`'budget'` なら成功、`'claim_error'` か例外なら失敗（`db_unavailable`・`worker_error`）、`'disabled'`・`'config'` は書かない。`runOrderEmailOpsChecks` の次に `runPasskeyNotificationOpsChecks` を呼び、結果に `passkeyChecks` を足す。心拍・点検の例外は握って、worker を止めない。
+  - アプリ: `OpsJob` に `'passkey_notification_worker'`。`OpsAlertKey` に `'passkey_notification_dead'`・`'job_stale_passkey_notification_worker'`。`runPasskeyNotificationOpsChecks(deps: OpsCheckDeps): Promise<{ deadNotified: number; staleAlerted: boolean; failedChecks: Array<'dead' | 'stale'> }>`: (1) `dead` を50件まで読み、`sendOnce(deps, 'passkey_notification_dead', mail)` が送れたら `mark…` を呼ぶ（印付けの失敗は次の点検で再送。at-least-once）。(2) `readHeartbeats` の `passkey_notification_worker.lastSucceededAt` が**30分**以上前なら `sendOnce(deps, 'job_stale_passkey_notification_worker', mail)`。一度も成功していなければ対象にしない。一方が失敗しても他方を続ける。
+  - **ops のメールの作り手（`ops-alert-mail.ts`）**: 文は付録（オーナーが答え5で承認済み）を正とする。作り手を2つ足す（死んだ知らせ・止まり）。止まりの件名は「パスキーの知らせの送りが止まっています」、本文は「最後に成功したのは {時刻} です。送りの設定とログを確認してください。」で、付録の文をそのまま出す。**既存の `staleJobMail`（件名「【要確認】定期処理が止まっています（…）」・閾値・手順書の行）は使わない**。`OpsAlertMail` の形（`kind`・`subject`・`lines`）と `sendOpsAlertMail` の宛先は既存のまま使う。`OpsAlertKind` に新しい2種類を足す。`STALE_JOBS` には足さない（`runOpsChecks` の一覧にも入れない）。
+  - `webhook-worker.ts`: `options.passkeyNotifications` の時だけ、worker の結果で心拍を書く。`stopped` が `'idle'`・`'budget'` なら成功、`'claim_error'` か例外なら失敗（`db_unavailable`・`worker_error`）、`'disabled'`・`'config'` は書かない。**残りが1秒未満で worker を呼ばなかった時（予算で飛ばした時）は成功を書く**（配送の追跡と同じ。`error_code` は null）。`runOrderEmailOpsChecks` の次に `runPasskeyNotificationOpsChecks` を呼び、結果に `passkeyChecks` を足す。心拍・点検の例外は握って、worker を止めない。
   - メール（付録）: 宛先は既存の店の知らせの宛先（`sendOpsAlertMail`）。件数・種類・失敗コード・時刻だけで、アドレスと本文を入れない。
 
-- [ ] **Step 1: 失敗する試験を書く** — DB 結合: 新しい job の心拍が書ける（CHECK を通る）。`list` は `dead` で `dead_notified_at IS NULL` の行だけを古い順に返し、`total` が全件。`mark` は2度目に0を返す。`pending` の行は `mark` で変わらない。権限は `service_role` だけ（`anon`・`authenticated` は不可）。前の確かめの偽の試験（CHECK の定義が違えば止まる）。単体: (a) `dead` が0件なら送らない・1件以上でまとめて1通・送れたら `mark`。(b) 送れなかった時は `mark` を呼ばない。(c) `mark` が失敗しても例外を出さず `failedChecks` に `'dead'`。(d) 心拍が30分以内なら送らない・31分前なら1通・一度も成功が無ければ送らない。(e) 同じ点検が1時間に2回通っても1通（`sendOnce` の冷却）。(f) メールの本文にアドレスの形（`@`）が入らない。(g) `webhook-worker`: `stopped: 'idle'` で成功の心拍・`'claim_error'` で失敗・`'config'` で書かない・心拍の書き込みが例外でも worker が結果を返す・`passkeyNotifications` が偽の時は心拍も点検も無い。
+- [ ] **Step 1: 失敗する試験を書く** — DB 結合: 新しい job の心拍が書ける（CHECK を通る）。`list` は `dead` で `dead_notified_at IS NULL` の行だけを古い順に返し、`total` が全件。`mark` は2度目に0を返す。`pending` の行は `mark` で変わらない。権限は `service_role` だけ（`anon`・`authenticated` は不可）。前の確かめの偽の試験（CHECK の定義が違えば止まる）。**既存の会計の試験の直し**: `accounting_p2_migration_asserts.integration.test.ts` は S6 の末尾の確かめを今の DB で再生し（`expect(await attempt()).toBeNull()`）、その中の `acc_s6_heartbeat_check` が job の CHECK を8つの定義の文字列で固定している（移行 `20261108150000` の1336〜1339行）。I が9つにすると再生が落ちる。理由の CHECK と同じ手（`REASON_CHECK_TEXT` を S15 の文に替える形）で、再生の時だけ job の CHECK の文を I の後の文に替える。改ざんの2件（7つ・`other_job` 入り）は残す。単体: (a) `dead` が0件なら送らない・1件以上でまとめて1通・送れたら `mark`。(b) 送れなかった時は `mark` を呼ばない。(c) `mark` が失敗しても例外を出さず `failedChecks` に `'dead'`。(d) 心拍が30分以内なら送らない・31分前なら1通・一度も成功が無ければ送らない。(e) `claimAlert` に渡す鍵が `passkey_notification_dead`・`job_stale_passkey_notification_worker` で、冷却が3600秒であること（単体は store を差し替えるので、冷却そのものはモックが作る物になり確かめられない。本物の冷却は既存の `ops_alerting` の DB 結合が持つ）。(f) メールの本文にアドレスの形（`@`）が入らない。件名・本文が付録と同じ（既存の `staleJobMail` の形ではない）。(g) `webhook-worker`: `stopped: 'idle'` で成功の心拍・`'claim_error'` で失敗・`'config'` で書かない・**worker を呼ばなかった時（残り1秒未満）は成功の心拍**・心拍の書き込みが例外でも worker が結果を返す・`passkeyNotifications` が偽の時は心拍も点検も無い。
 - [ ] **Step 2: 失敗を確かめる** — `db reset` の後、DB 結合と単体 → FAIL。
 - [ ] **Step 3: 実装する** — I と上のアプリ。I の前の確かめ・末尾の確かめを他の移行と同じ形（`DETAIL` が項目名）で書く。
-- [ ] **Step 4: 通ることを確かめる** — 上の試験 PASS。`webhook-worker` を呼ぶ既存の単体・`tests/unit/api/cron/process-stripe-webhooks-route.test.ts` が緑。I の大きさと MD5 を測り、`db-migrations.md` へ。`validate-trace` ほか。
+- [ ] **Step 4: 通ることを確かめる** — 上の試験 PASS。`webhook-worker` を呼ぶ既存の単体・`tests/unit/api/cron/process-stripe-webhooks-route.test.ts` が緑。`db reset` の後、会計の DB 結合（`accounting_p2_migration_asserts`）も緑。I の大きさと MD5 を測り、`db-migrations.md` へ。`validate-trace` ほか。
 - [ ] **Step 5: コミット** — `feat(auth): 死んだ知らせの点検と知らせの worker の心拍を足す（移行 I。手元だけ）`
 
 ### Task 18: 店長・店員の画面の直し（持ち越し: F-3・F-4・Task 11 の UX）
 
 **Files:**
-- Modify: `src/features/auth/staff/components/RedoStaffDialog.tsx`・`StaffRoleActions.tsx`・`InviteStaffDialog.tsx`、`src/components/UserSection.tsx`（差し込むだけ。`@impl` を足さない）、`src/features/auth/staff/components/StaffPasskeyManager.tsx`、`src/lib/auth/passkey-client.ts`
+- Modify: `src/features/auth/staff/components/RedoStaffDialog.tsx`・`StaffRoleActions.tsx`・`InviteStaffDialog.tsx`、`src/components/UserSection.tsx`（差し込むだけ。`@impl` を足さない）、`src/features/auth/staff/components/StaffPasskeyManager.tsx`、`src/features/auth/passkey/passkey-client.ts`（`ManageFailure` に `'min_keys'`。`manageFailureOf` は今、本文を捨てている。409 の `staff_min_keys` を見分けるため、本文を**必ず読み切ってから**捨てる形に直す。`no-store` の応答を読み切る前例（`networkidle`）に合わせる）
 - Create: `e2e/FR-LOGIN-072-admin-users-staff-recovery.spec.ts`
-- Test: 既存の単体（`tests/unit/features/auth/staff/`・`auth-staff-passkey-manage-screen.test.tsx`・`passkey-client` の試験）を足す
+- Test: 既存の単体（`tests/unit/features/auth/staff/`・`auth-staff-passkey-manage-screen.test.tsx`・`tests/unit/features/auth/passkey/passkey-client*.test.ts`）を足す。**確かめる対象に足す**: `src/features/auth/passkey/components/AccountPasskeys.tsx`（お客さん。`ManageFailure` の型を共有する。お客さんの 409 は今までどおり `'failed'` のまま）
 - 文書: `FR-AUTH-052`（親 `SR-AUTH-026`）、`DD-AUTH-090`（親 `SCR-AUTH-016`）、`SCR-AUTH-016` の直し、`auth-staff-users-screen.md`・`auth-staff-passkey-manage.md`、`IMPL-AUTH-421`〜`424`
 
 **Interfaces:**
-- Consumes: 既存の `passkey-client.ts` の `manageFailure`（409・500・投げた fetch が `'failed'`）。
+- Consumes: 既存の `src/features/auth/passkey/passkey-client.ts` の `manageFailure`（409・500・投げた fetch が `'failed'`）。新しい `'min_keys'` は、店員の窓口の `staff_min_keys`（409）の時だけ。
 - Produces: 閉じる行は次の表で、**行ごとに1つの試験**を足す（「閉じる行」を終わりに列挙する）。
 
 | 行 | 直し |
@@ -237,7 +242,7 @@
 | T11 M-6 | 一覧が「0本」を表示する試験を足す（表示の試験だけ） |
 | T11 M-7 | エラーが出た時に、前の成功の通知を消す。「招待を取り消す」に確認を足す（付録の文） |
 
-- [ ] **Step 1: 失敗する試験を書く** — 上の表の各行を1つずつ。F-4 は、500 の削除で下限の文が出ず付録の文が出る・409 `staff_min_keys` で下限の文が出る。F-3 は、`mail_failed` でダイアログが閉じ、一覧が読み直され、通知が出る。E2E `FR-LOGIN-072`（3幅）: 店長が店員にやり直しを出し、`page.route` の中で `await route.fetch()` で本物の窓口に送り（発行は本当に起き、メールは Mailpit に届く）、応答だけを `route.fulfill` で `mail_failed` の形（`src/features/auth/staff/staff-invite-http.ts` の本物の本文の形を写す。状態は502）に替える。そして、ダイアログが閉じ・行が「招待中」になり・役割の欄が見え・通知に既存の文が出ることを確かめる。取り消しに確認が出て、取り消すと行が戻る。
+- [ ] **Step 1: 失敗する試験を書く** — 上の表の各行を1つずつ。F-4 は、500 の削除で下限の文が出ず付録の文が出る・409 `staff_min_keys` で下限の文が出る・`passkey-client` の単体で、409 の本文を読んで `'min_keys'`、本文が違う 409 は `'failed'`、本文は必ず読み切られる。`AccountPasskeys.tsx` は 409 でも `'failed'` の挙動が変わらない（既存の試験が緑）。F-3 は、`mail_failed` でダイアログが閉じ、一覧が読み直され、通知が出る。E2E `FR-LOGIN-072`（3幅）: 店長が店員にやり直しを出し、`page.route` の中で `await route.fetch()` で本物の窓口に送り（発行は本当に起き、メールは Mailpit に届く）、応答だけを `route.fulfill` で `mail_failed` の形（`src/features/auth/staff/staff-invite-http.ts` の本物の本文の形を写す。状態は502）に替える。そして、ダイアログが閉じ・行が「招待中」になり・役割の欄が見え・通知に既存の文が出ることを確かめる。取り消しに確認が出て、取り消すと行が戻る。
 - [ ] **Step 2: 失敗を確かめる** — 単体 → FAIL。
 - [ ] **Step 3: 実装する** — 上の表のとおり。
 - [ ] **Step 4: 通ることを確かめる** — 単体 PASS。`FR-LOGIN-068`・`FR-LOGIN-070`・`FR-ADMIN-108`・`FR-LOGIN-072` を3幅 PASS。`validate-trace` ほか。**閉じる行**: 3a の最終レビューの T11 M-2・M-3・M-5・M-6・M-7、再レビューの F-3・F-4。
@@ -300,21 +305,21 @@
 ### Task 21: E2E のメールの待ちを `expect.poll` に直す
 
 **Files:**
-- Modify: `e2e/order-email-test-utils.ts`（`mailsTo`・`mailBodies`）、`e2e/FR-LOGIN-067-staff-idle-timeout.spec.ts`（T8 N-6）、`e2e/FR-LOGIN-062-passkey-notification-mail.spec.ts`
+- Modify: `e2e/order-email-test-utils.ts`（`mailsTo`・`mailBodies` は変えず、`waitForMail` を足す）、`e2e/FR-LOGIN-067-staff-idle-timeout.spec.ts`（T8 N-6）、`e2e/FR-LOGIN-062-passkey-notification-mail.spec.ts`、`e2e/FR-LOGIN-063-*.spec.ts`・`e2e/FR-LOGIN-071-staff-manager-notice-mail.spec.ts`（Step 2 で直す。063 の実際の名前は `ls e2e` で確かめる）
 - Test: 同じ E2E
 
 **Interfaces:**
 - Consumes: 既存の `mailsTo(request, email)`・`mailBodies(request, email, subjectIncludes = '')`。
-- Produces: 呼ぶ側が書いている手書きの待ち（`waitForTimeout`・ループ）を、`expect.poll(() => ..., { timeout: 15_000 }).toBeGreaterThan(0)` の形の共通の手助け `waitForMail(request, email, subjectIncludes): Promise<MailBody[]>` に集める。`FR-LOGIN-067` の `networkidle` の待ちは、待つ応答（`kpi`・`order-attention`）を名指しする待ち（`page.waitForResponse`）に替える。
+- Produces: 呼ぶ側が書いている手書きの待ち（`waitForTimeout`・ループ）を、`expect.poll(() => ..., { timeout: 15_000 }).toBeGreaterThan(0)` の形の共通の手助け `waitForMail(request, email, subjectIncludes): Promise<MailBody[]>` に集める。**`waitForMail` は、worker を通らないメール（招待のメールなど）の待ちにだけ使う**。知らせのメール（062・071）の待ちは `runWorkerUntil`（`expect.poll` 済み。worker を叩かないと届かない）のままで、置き換えない。062 には `waitForTimeout`・手書きのループが無い。`FR-LOGIN-067` の `networkidle` の待ちは、待つ応答（`kpi`・`order-attention`）を名指しする待ち（`page.waitForResponse`）に替える。
 
-- [ ] **Step 1: 失敗の再現を確かめる** — 3a の全体の確かめの JSON（`e2e-task12-full.json`）で、`FR-LOGIN-062` の揺れ3件・`FR-LOGIN-067` の揺れを控える。
-- [ ] **Step 2: 実装する** — 手助けを足し、`FR-LOGIN-062`・`063`・`067`・`071` の手書きの待ちを置き換える。
+- [ ] **Step 1: 失敗の再現を確かめる** — 3a の全体の確かめの JSON（`e2e-task12-full.json`）で、`FR-LOGIN-062` の揺れ3件・`FR-LOGIN-067` の揺れが**実際にどの行・どの待ちで起きたか**を JSON から特定して控える（特定してから直す）。
+- [ ] **Step 2: 実装する** — 手助けを足し、`FR-LOGIN-063`・`067`・`071` で worker を通らないメールの手書きの待ちがあれば置き換える（`062`・`071` の `runWorkerUntil` は置き換えない）。`067` の `networkidle` は名指しの待ちに替える。
 - [ ] **Step 3: 流す** — 3000番を止め、`npx.cmd playwright test e2e/FR-LOGIN-062 e2e/FR-LOGIN-063 e2e/FR-LOGIN-067 e2e/FR-LOGIN-071` を**3回続けて**3幅 PASS（`retries` は上げない）。
 - [ ] **Step 4: コミット** — `test(auth): E2E のメールの待ちを expect.poll にそろえ、無操作の試験の待ちを名指しにする`
 
 ### Task 22: 文書・追跡の文の掃き出し
 
-**Files:** 下の表の文書とコードの注釈（コードの動きは変えない）。
+**Files:** 下の表の文書とコードの注釈（コードの動きは変えない）。T3 M-3 は移行 D・E のファイルと `docs/06_Operations/db-migrations.md` も直す。
 **Interfaces（閉じる行と直す文。行ごと）:**
 
 | 行 | 直す文 |
@@ -322,7 +327,7 @@
 | T1 M-6 | 「reauth は0本を断る」を、2つの文書（`auth-passkey-server-endpoints.md` と `auth.md` の該当の AC）に |
 | T2 M-4 | `db-migrations.md` の先頭の確認日の行を、段3a・3b の確認日に |
 | T2 M-5・T2b M-3 | 3a の計画の番号の予約の行に `FR-LOGIN-075`・`076` を足す（実測の使用済み） |
-| T3 M-3 | D・E のヘッダー・文書の古い行（3a の最終の直しに合わせる） |
+| T3 M-3 | D・E のヘッダー・文書の古い行（3a の最終の直しに合わせる）。D・E は未適用の同じファイルを直す物（Global Constraints の一覧に E も入っている）。**ヘッダーを変えると MD5 が変わるので、D（Task 19 が先に測り直した値）・E を `wc -c`・`md5sum` で測り直し、`db-migrations.md` の D・E の節と先頭の確認日を同じコミットで直す**（手順書の表は Task 23 が測り直す） |
 | T6 M-7 | `auth-staff-invite.md` の先頭のヘッダー |
 | T6b M-1 | 登録の窓口の docblock と `@design DD-AUTH-079` に、招待の道を書く |
 | T7 N-2 | `endAuthSession` の呼び手の一覧を直す |
@@ -337,6 +342,7 @@
 | T12 M-5 | README の「段3a の6本」・`SR-AUTH-026`〜`028` の「推定」の理由の文 |
 
 - [ ] **Step 1: 各行を直す** — 上の表。文書とコードの食い違いは推測で決めず、どちらが正しいか実測（コード・試験）で確かめてから直す。決められない時は止まって調整役へ。
+- [ ] **Step 1b: D・E を測り直す** — T3 M-3 で D・E のファイルを変えたら、`wc -c`・`md5sum` で測り直し、`docs/06_Operations/db-migrations.md` の D・E の節の大きさ・MD5 と先頭の確認日を同じコミットで直す。
 - [ ] **Step 2: 追跡** — `validate-trace`（97 を越えない）・`test:trace-coverage`・`validate-docs`・`trace:report`。
 - [ ] **Step 3: コミット** — `docs(auth): 段3a の最終レビューの文書・追跡の持ち越しを直す`
 
@@ -363,18 +369,18 @@
 
 **Interfaces（手順書が持つ節。全部を書く）:**
 1. **前提（全部そろうまで1本も当てない）**: 本番の独自のドメイン・`rp_id`・`rp_origins` が決まっていること、本番の GoTrue が v2.196.0、Passkeys が無料のプランで有効にできること、`postgres` が `auth.webauthn_credentials` に `TRIGGER`・`SELECT`・`DELETE`、`auth.mfa_factors` に `DELETE`、`auth.users` に `UPDATE`、`auth.sessions` に `SELECT` を持つこと（読むだけの SQL を節に書く）、**店長にする人のアカウントが本番にあること**（無ければダッシュボードの Authentication で、パスワード無し・メール確認済みで作る）、`Sb-Forwarded-For` の運用（`supabase-auth-config.md`）。
-2. **当てる順**: A → B → C → D → F → G → H → **I** を1本ずつ（H は G の列に依存するので、**G の前に H を当てない**。H の前の確かめが G の3列を見る）。→ ダッシュボード（Passkeys・RP・フックの登録は B の後）→ `supabase/pending/schedule_stripe_webhook_worker.sql` を新しい版の移行として当てる（**これは Stripe の webhook の worker も本番で動かし始める。開店の準備の行 3 の保留の定期処理4本と一緒に決める**。Vault の `cron_secret`・`app_base_url`）→（**D はデプロイの前**: アプリの `admin-rbac` が `staff_idle_check` を呼ぶため）アプリのデプロイ → 最初の店長（Task 24）が2本登録して役割が有効になる → **E は最後**（E の前の確かめは、認めた鍵が足りる店員を求める）→ TOTP を止める（ダッシュボード）。**E は権限を奪う側**なので、他の物と一緒に「害の無い物」に入れない。
-3. **1本ごとの手順の表**（ファイル名・大きさ・MD5・単独で権限を奪わないか・前の確かめの SQL・当て方）: `apply_migration` の `name` は、ファイル名から版を除いた部分（例 `passkey_foundation_tables`）。当てた後に `select version, name, md5(statements[1]) from supabase_migrations.schema_migrations where name = '<name>'` で版と MD5 を読み、ファイルの MD5 と突き合わせ、ファイルの名前を当てた版に付け替える（`db-migrations.md` の各節と同じ）。付け替えると手元の順は当てた順（A→…→I→E）になるので、間に作った移行が passkey の物に依存していないかを、付け替えの後の `db reset` で確かめる。**I の前の確かめが `passkey_i_job_check_drift` で止まったら、本番の今の job の一覧を読み、I の一覧に足してから MD5 を測り直す（調整役）**。前の確かめで途中で止まったら、止めて、すでに当てた物は戻さない（単独で権限を奪わない物だけを先に当てる順にしてあるため）。表の値は Task 25 で実測と突き合わせる。**当てるのは調整役がオーナーの許可を得た時だけ**。
-4. **戻し方の順（全部の箇所でこの1つ）**: (1) 毎分の定期処理（`process-stripe-webhooks`）を止め（再開しない。本番は今この定期処理が無いので、止めたままが当てる前の状態）、アプリのデプロイを戻す → (2) ダッシュボードのフックの登録を外す → (3) E → (4) I（先に `ops_job_heartbeats` の `passkey_notification_worker` の行を消す）→ (5) H → (6) G → (7) F → (8) D → (9) C（引き金の削除はサポートに依頼）→ (10) B → (11) A。H は G の列を使うので G より先に落とす。各移行の戻しはファイルのヘッダーの `ROLLBACK`。アプリを戻す時、outbox に新しい種類の行が残っていたら `skipped` にする。
+2. **当てる順**: A → B → C → D → F → G → H → **I** を1本ずつ（H は G の列に依存するので、**G の前に H を当てない**。H の前の確かめが G の3列を見る）。→ ダッシュボード（Passkeys・RP・フックの登録は B の後）→（**D はデプロイの前**: アプリの `admin-rbac` が `staff_idle_check` を呼ぶため）アプリのデプロイ → `supabase/pending/schedule_stripe_webhook_worker.sql` を新しい版の移行として当てる（**アプリのデプロイの後**。登録した時点から入口が毎分呼ばれる。戻し方 (1) の「定期処理とアプリを止める」と対になる。**これは Stripe の webhook の worker も本番で動かし始める。開店の準備の行 3 の保留の定期処理4本と一緒に決める**。Vault の `cron_secret`・`app_base_url`）→ 最初の店長（Task 24）が2本登録して役割が有効になる → **E は最後**（E の前の確かめは、認めた鍵が足りる店員を求める）→ TOTP を止める（ダッシュボード）。**E は権限を奪う側**なので、他の物と一緒に「害の無い物」に入れない。
+3. **1本ごとの手順の表**（ファイル名・大きさ・MD5・単独で権限を奪わないか・前の確かめの SQL・当て方）: `apply_migration` の `name` は、ファイル名から版を除いた部分（例 `passkey_foundation_tables`）。当てた後に `select version, name, md5(statements[1]) from supabase_migrations.schema_migrations where name = '<name>'` で版と MD5 を読み、ファイルの MD5 と突き合わせ、ファイルの名前を当てた版に付け替える（`db-migrations.md` の各節と同じ）。付け替えると手元の順は当てた順（A→…→I→E）になるので、間に作った移行が passkey の物に依存していないかを、付け替えの後の `db reset` で確かめる。**I の行には、当てる前に今の job の CHECK を控える SQL（`select pg_get_constraintdef(oid) from pg_constraint where conname = 'ops_job_heartbeats_job_check';`）を書く（戻し方 (4) が、控えた定義に戻すため。(b) ですでに `passkey_notification_worker` を含んでいて I が CHECK を変えなかった時は、戻しでも CHECK を触らない）**。**I の前の確かめが `passkey_i_job_check_drift` で止まったら、本番の今の job の一覧を読み、I の一覧に足してから MD5 を測り直す（調整役）**。前の確かめで途中で止まったら、止めて、すでに当てた物は戻さない（単独で権限を奪わない物だけを先に当てる順にしてあるため）。表の値は Task 25 で実測と突き合わせる。**当てるのは調整役がオーナーの許可を得た時だけ**。
+4. **戻し方の順（全部の箇所でこの1つ）**: (1) 毎分の定期処理（`process-stripe-webhooks`）を止め（再開しない。本番は今この定期処理が無いので、止めたままが当てる前の状態）、アプリのデプロイを戻す → (2) ダッシュボードのフックの登録を外す → (3) E → (4) I（先に `ops_job_heartbeats` の `passkey_notification_worker` の行を消す。CHECK は I の前に控えた定義に戻す）→ (5) H → (6) G → (7) F → (8) D → (9) C（引き金の削除はサポートに依頼）→ (10) B → (11) A。H は G の列を使うので G より先に落とす。各移行の戻しはファイルのヘッダーの `ROLLBACK`。アプリを戻す時、outbox に新しい種類の行が残っていたら `skipped` にする。
 5. **環境変数・Vault**（名前だけ）。
 6. **設計 8-2 の確認の表**（1〜9 と段2が足した10〜12。各行に「いつ・どの画面・期待する結果・外れた時」）。**項目5（本物の Google ログインの拒否の形）と項目9（フックの拒否の応答の形）は、3a の Task 10 で本物の形を確かめられなかった**ので、本番の独自のドメインでパスキーを有効にした後に、本物の Google で店員を入れてみて、アプリが `/login?error=staff_passkey_required` に戻すことを確かめる（外れた時の直し先: `oauth/callback` の拒否の見分け。`src/app/api/auth/oauth/callback/route.ts`）。**本物の Google の確認が要るので、実装タスクにはしない**。台帳の「8-2 の1行」（`/otp` の IP の枠・`createServiceRoleAuthClient` を `sb_secret_` に替える要否）もここに。
-7. **残る危険の一覧**: GoTrue を直に叩いた鍵の削除は2本の下限を越えられる（店員自身のログインを失うだけ。店長のやり直しで戻る。5-4 の知らせが出る。オーナーが Task 22b を選んだ時はこの行を消す）／引き金で拾えない道（`TRUNCATE` ほか）／複製された鍵の検知／降格した店長が出した招待は降格で取り消される（Task 13）／最初の店長を `admin:bootstrap` で作ると H の `STAFF_INVITE_REQUIRED` が効かない（段4まで）。
+7. **残る危険の一覧**: GoTrue を直に叩いた鍵の削除は2本の下限を越えられる（店員自身のログインを失うだけ。店長のやり直しで戻る。5-4 の知らせが出る。22b は行わない（オーナーの答え1＝A）ので、この行は残る）／引き金で拾えない道（`TRUNCATE` ほか）／複製された鍵の検知／降格した店長が出した招待は降格で取り消される（Task 13）／最初の店長を `admin:bootstrap` で作ると H の `STAFF_INVITE_REQUIRED` が効かない（段4まで）。
 8. **（残る危険に足す）アプリの外で店長を消す・止めた時**: Supabase のダッシュボードで店長の利用者を消す・止める前に、アプリで降格する。やむを得ず消した時は、その店長が出した招待を手で取り消す: `update private.staff_invites set cancelled_at = now() where issued_by = '<消した店長の id>' and cancelled_at is null and activated_at is null;` と、`update private.passkey_registration_windows set closed_at = now() where user_id in (select user_id from private.staff_invites where issued_by = '<id>') and closed_at is null;`（ダッシュボードの SQL エディタ。流す前にオーナーの許可）。
-8. **開店前の残り**: 設計 8-1 のとおり、本番の試し用の4人はパスワードが使えなくなる（店員がいれば招待かやり直しで入り直す）。一度も入らなかったメールのコードのアカウントの後始末、物理キー（PIN 無し）の確認、本物の Google の確認、上の8-2。
+9. **開店前の残り**: 設計 8-1 のとおり、本番の試し用の4人はパスワードが使えなくなる（店員がいれば招待かやり直しで入り直す）。一度も入らなかったメールのコードのアカウントの後始末、物理キー（PIN 無し）の確認、本物の Google の確認、上の8-2。
 
-- [ ] **Step 1: 実測する** — A〜I（と、あれば J）の `wc -c`・`md5sum` を測り、`db-migrations.md` の各節の値と一致することを確かめる（一致しなければ、先にその節を直す）。
+- [ ] **Step 1: 実測する** — A〜I（J は無い）の `wc -c`・`md5sum` を測り、`db-migrations.md` の各節の値と一致することを確かめる（一致しなければ、先にその節を直す）。
 - [ ] **Step 2: 書く** — 上の節の順。各 SQL は読むだけの物（`select`）で、本番へ向けて流す物には「調整役がオーナーの許可を得てから」と明記する。
-- [ ] **Step 3: `db-migrations.md` を直す** — 「当てる順」の文に、H が G に依存することと I を足す。「戻し方の順」を上の1つの順（cron・アプリ → フック → E → I → H → G → F → D → C → B → A）に書き直す（今の「F → E → D …」の並びも直す）。「パスキーの8本」の文を、見つけた全部（`grep -n "8本"`）9本（Task 22b をした時は10本）に。
+- [ ] **Step 3: `db-migrations.md` を直す** — 「当てる順」の文に、H が G に依存することと I を足す。「戻し方の順」を上の1つの順（cron・アプリ → フック → E → I → H → G → F → D → C → B → A）に書き直す（今の「F → E → D …」の並びも直す）。「パスキーの8本」の文を、見つけた全部（`grep -n "8本"`）9本に（22b は行わないので10本にはならない）。
 - [ ] **Step 4: 確かめる** — 手順書の表のファイル名の一覧が `ls supabase/migrations | grep passkey` と同じ本数・同じ順（版の昇順を保つが、E は最後の欄に分けて書く）であること。`validate-docs`。
 - [ ] **Step 5: コミット** — `docs(auth): パスキーの移行を本番に当てる手順書を書く（何も当てない）`
 
@@ -400,9 +406,9 @@
 - Modify: `scripts/trace/baseline.json`（オーナーが質問6に「下げる」と答えた時だけ。調整役が流す）、台帳 4-2（3b 行を「済み」に）、`docs/06_Operations/db-migrations.md`（9本の大きさ・MD5 の最終）、`docs/02_Requirements/areas/auth.md` の `SR-AUTH-029` の状態
 - Test: なし（確かめだけ）
 
-- [ ] **Step 1（調整役。実行者は行わない）: 全件を確かめる** — 3000番を止め、`npx.cmd supabase db reset`。`npm.cmd run lint`・`typecheck`・`npm.cmd test`（比べる元は3a の終わり: 1083 suites・24152 passed）、DB 結合（`--runInBand`。順番の汚れの既知（`unit-binding-refunds`・`group_g3_cancel`）は単独で通ること）、E2E 全件（本番ビルド・3幅。比べる元は `e2e-task12-full.json` の 5745 passed / 37 failed / 47 skipped。3a の最終の直しの後の push 前の実行（5747 passed / 47 skipped）の控えがあればそちらを優先）。新しい赤が無いこと。赤は「単独 → 他の幅 → goto かアサーションか」で切り分ける。
+- [ ] **Step 1（調整役。実行者は行わない）: 全件を確かめる** — 3000番を止め、`npx.cmd supabase db reset`。`npm.cmd run lint`・`typecheck`・`npm.cmd test`（比べる元は3a の終わり: 1083 suites・24152 passed）、DB 結合（`--runInBand`。順番の汚れの既知（`unit-binding-refunds`・`group_g3_cancel`）は単独で通ること）、E2E 全件（本番ビルド・3幅。比べる元は `e2e-task12-full.json` の 5745 passed / 37 failed / 47 skipped。3a の最終の直しの後の push 前の実行（5747 passed / 47 skipped）の控えがあればそちらを優先）。新しい赤が無いこと。赤は「単独 → 他の幅 → goto かアサーションか」で切り分ける。**知らせの広がりと worker の時間を見る**: 並べて流す段では、どの試験のやり直し・招待・降格も、積み上がった全店長への行を作り、毎分の入口（`/api/cron/process-stripe-webhooks`。注文のメールの E2E も叩く）は Task 16 の後は1回で最大約45秒まで延びうる。比べる元（`e2e-task12-full.json`）より、入口を叩く試験（注文のメール・062・071）の時間と赤が増えていないかを見る。増えたら、E2E の後始末（例: 071・062 の後に E2E の店長を外す）を調整役が決める。
 - [ ] **Step 2: 追跡と文書** — `validate-trace`（その時の実測。baseline より小さい時だけ、オーナーの許可で `npm.cmd run validate-trace -- --update-baseline` を調整役が流し、実測の値への差分だけがコミットに入ること）・`test:trace-coverage`・`validate-docs`・`trace:report`。
-- [ ] **Step 3: 突き合わせる** — パスキーの移行（A〜I。Task 22b をしたら J）の大きさ・MD5 が、`db-migrations.md` と手順書の表と同じ（`md5sum` で測る）。`grep -rn "8本" docs/06_Operations docs/superpowers/plans/2026-11-19-*.md` に古い本数が残っていない。
+- [ ] **Step 3: 突き合わせる** — パスキーの移行（A〜I の9本。J は無い）の大きさ・MD5 が、`db-migrations.md` と手順書の表と同じ（`md5sum` で測る）。`grep -rn "8本" docs/06_Operations docs/superpowers/plans/2026-11-19-*.md` に古い本数が残っていない。
 - [ ] **Step 4: 台帳と一覧** — 下の「持ち越しの着地」を台帳の 4-2 へ写し、オーナーに渡す開店前の残り（後始末・物理キー・本物の Google・8-2・保留の定期処理4本の判断）を台帳に1表で書く。
 - [ ] **Step 5: コミット** — `docs(auth): パスキー段3全体の確かめと開店前の残りを書く`
 
