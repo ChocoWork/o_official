@@ -839,7 +839,9 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 状態 | 推定 |
 | 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-14-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 14） |
 
-要求の文: 店長が店員を招待した・店員のパスキーをやり直した・店員を降格した時は、その操作の取引で知らせの行を1つ積み、本人（操作を受けた人）を除く有効な店長全員に1通ずつ送る。ダッシュボードの最後の手段（`last_resort`）は知らせない。送る処理は Task 15 以降で作る。
+要求の文: 店長が店員を招待した・店員のパスキーをやり直した・店員を降格した時は、その操作の取引で知らせの行を1つ積み、本人（操作を受けた人）を除く有効な店長全員に1通ずつ送る。ダッシュボードの最後の手段（`last_resort`）は知らせない。
+
+実装の状況（2026-11-20）: 積み込みは段3b Task 14、送る側は Task 15、`dead` の点検と worker の心拍は Task 17（移行 I）、宛先が多い時の取りこぼしは Task 16 で、手元では実装済み。本番には何も当てていない（移行の当ては[手順書](../../06_Operations/passkey-production-apply-runbook.md)）。状態の欄は、新しく起こした項目の決まりどおり「推定」のまま。
 
 ## 要件
 
@@ -8220,7 +8222,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 
 守ること: (1) 管理の入口は `aal` を見ない。`aal2` でも `amr` に `passkey` が無ければ断る（API・RLS の両方）。(2) JWT の印 `staff_passkeys_ok` が真でも、DB で数えた認めたパスキーが2本未満なら断る。(3) 24時間を過ぎた・61秒以上先の `passkey` の時刻は断る（60秒までのずれは通す）。(4) RPC が数えられない時は 503（閉じる側）、数でない値は0本。(5) 店員のメールのコード・パスワードは GoTrue のフックが拒否する。(6) 試験の道具は、本番に試験専用の入口を作らない（手元の Supabase だけで動く）。
 
-残る危険として受け入れること: 手元で店員がアプリの画面から入れない間（段1b まで）、画面を使う E2E のうち店員のパスワード＋TOTP のログインを通す物は、段4で消す機能として skip にした（台帳の「skip の一覧」）。最初の店長のコマンド `admin:bootstrap`（パスワード＋TOTP）は本番用に残し、手元では使わない（`docs/06_Operations/first-admin-bootstrap.md`）。
+残る危険として受け入れること: 手元で店員がアプリの画面から入れない間（段1b まで）、画面を使う E2E のうち店員のパスワード＋TOTP のログインを通す物は、段4で消す機能として skip にした（台帳の「skip の一覧」）。~~最初の店長のコマンド `admin:bootstrap`（パスワード＋TOTP）は本番用に残し、手元では使わない（`docs/06_Operations/first-admin-bootstrap.md`）。~~（2026-11-20 に置き換え: 2026-11-18 にオーナーが、本番の最初の店長は `private.staff_invite_issue_manual` から作ると決めた。手順は `docs/06_Operations/passkey-staff-recovery.md`。`admin:bootstrap` は本番の進む道では使わず、手順書（`docs/06_Operations/passkey-production-apply-runbook.md`）の戻し方の (3b) の予備だけに残る。）
 
 ### SEC-AUTH-041 認めの古い行は黙って通さず、登録の窓の中の認めは同時に呼ばれても上限を超えない
 
