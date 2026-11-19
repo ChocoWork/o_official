@@ -1,6 +1,6 @@
 # 最初の店長を作る手順
 
-> 状態: 現行 | 確認日: 2026-11-20 | 対象: 新しい環境（検証用・作り直した本番）の最初の店長、手元の開発で店員として入る手順（`npm run dev:staff`）。手元の `db reset` の後は、段1a の切り替え（Task 9）からこのコマンドの店長が動かない（下の前提）。コマンド `npm run admin:bootstrap`
+> 状態: 現行 | 確認日: 2026-11-20 | 対象: 新しい環境（検証用）の最初の店長（本番の最初の店長は [passkey-staff-recovery.md](./passkey-staff-recovery.md)）、手元の開発で店員として入る手順（`npm run dev:staff`）。手元の `db reset` の後は、段1a の切り替え（Task 9）からこのコマンドの店長が動かない（下の前提）。コマンド `npm run admin:bootstrap`
 
 ## 本番の最初の店長には使わない
 

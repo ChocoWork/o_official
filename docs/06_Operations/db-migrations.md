@@ -292,7 +292,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 - 移行 A の関数が鍵を突き合わせる: 本番の `postgres` が `auth.webauthn_credentials` を `SELECT` できること（`select has_table_privilege('postgres','auth.webauthn_credentials','SELECT');`）。
 - 本番の GoTrue の版が、フックの戻り（event 全体を返す形）と、パスキーの API（supabase-js 2.119.0 固定）を通すこと。
 - 段1b の環境変数（名前だけ。[secrets.md](./secrets.md)）: `SUPABASE_SECRET_KEY`・`NEXT_PUBLIC_PASSKEY_START_MODE`・`PASSKEY_START_DEV_IP`。始めの `Sb-Forwarded-For` の有効化と確かめは [supabase-auth-config.md](./supabase-auth-config.md) の「パスキーのログインの始めと `Sb-Forwarded-For`」。
-- 最初の店長: `npm run admin:bootstrap`（パスワード＋TOTP）で作った店長が /admin に入れるのは、次の3つのどれも済んでいない間だけ。(1) この master のアプリのデプロイ（`admin-rbac` が旗も移行 E も関係なく、パスキーの `amr` と認めた鍵2本を求める）、(2) 移行 E、(3) フックの登録。どれか1つが済むと、管理 API は 403 `MFA required`・画面は「2要素認証が必要です」で止まる。そのあとの最初の店長には、段3の招待の流れが要る。[first-admin-bootstrap.md](./first-admin-bootstrap.md) を読む。
+- 最初の店長: `npm run admin:bootstrap`（パスワード＋TOTP）で作った店長が /admin に入れるのは、次の3つのどれも済んでいない間だけ。(1) この master のアプリのデプロイ（`admin-rbac` が旗も移行 E も関係なく、パスキーの `amr` と認めた鍵2本を求める）、(2) 移行 E、(3) フックの登録。どれか1つが済むと、管理 API は 403 `MFA required`・画面は「2要素認証が必要です」で止まる。そのあとの最初の店長には、段3の招待の流れが要る。[最初の店長と店長本人の最後の手段の手順書](./passkey-staff-recovery.md) を読む（`admin:bootstrap` の [first-admin-bootstrap.md](./first-admin-bootstrap.md) は本番の最初の店長には使わない）。
 
 ### 戻し方の順（移行をまたぐ）
 
