@@ -258,7 +258,7 @@ sequenceDiagram
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-AUTH-059 |
-| 根拠 | 降格などで先に取り消された招待に「取り消す」を押すと、何も取り消していないのにログインを終わらせて「取り消しました」と出ていた。`staff_invite_cancel` が `boolean` を返し、窓口は `false` の時に何も終わらせず、画面は知らせなしで一覧を読み直す。権限は今までどおり錠の後に確かめる |
+| 根拠 | 降格などで先に取り消された招待に「取り消す」を押すと、何も取り消していないのにログインを終わらせて「取り消しました」と出ていた。`staff_invite_cancel` が `boolean` を返し、窓口は `false` の時に何も終わらせず、画面は知らせなしで一覧を読み直す。戻りが真偽でない時（`null`・`void` など）は取り消したか分からないので `failed` とし、取り消さなかった扱いにしない。権限は今までどおり錠の後に確かめる |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_invites.integration.test.ts`）、単体テスト（`tests/unit/api/admin/staff/invite-cancel-route.test.ts`、`staff-invite-store.test.ts`、`staff-user-actions.test.ts`、`user-section-staff.test.tsx`） |
 | 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-13-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 13） |

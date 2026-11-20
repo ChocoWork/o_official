@@ -256,7 +256,7 @@ select to_regprocedure('private.staff_passkey_amr_ok(jsonb)'), to_regprocedure('
 | 死んだ知らせの点検（Task 17） | 毎分の定期処理が動いた後 | `dead` の行があれば、1時間に1回・まとめて1通が `SHOP_ALERT_EMAIL` に届き、同じ行が2度届かない。メールにアドレス・本文が無い | 届かなければ `SHOP_ALERT_EMAIL`・Resend の設定と、`list_unnotified_dead_passkey_notifications` を調べる |
 | worker の心拍（Task 17） | 毎分の定期処理が動いた後 | 心拍の行 `passkey_notification_worker` が1分ごとに更新される（読むだけ: `select job, last_succeeded_at, last_failed_at from public.ops_job_heartbeats where job = 'passkey_notification_worker';` を数分おいて2回流し、`last_succeeded_at` が進む） | 動かなければ、まず `delivery_tracking` など**ほかの job の心拍が進むか**を見る。ほかも止まっていれば定期処理（Vault の名前・アプリのデプロイ）と `CRON_SECRET` の一致。**ほかは進むのにこの行だけ進まない（行が無い）なら、worker 自身が `disabled` か `config` で止まっている**（心拍は書かれない）。`disabled` の原因は、Vercel の `VERCEL_ENV` が `production` でないこと（preview・development の公開）など。`config` の原因は、`MAIL_PROVIDER`・`MAIL_FROM_ADDRESS`・`RESEND_API_KEY`（`MAIL_PROVIDER` が `resend` の時）、連絡先の URL を作る `NEXT_PUBLIC_SITE_URL`。これらの設定と、ログの `[passkey-notification-worker]`（`skipped`・`send config is not ready`）を調べる。最初の成功の前は行が無いのが普通 |
 
-30分の停止の知らせは**本番では試さない**。この点検は、毎分の入口の中で worker の後に動く。定期処理を止めると点検も止まり、再開すれば worker が先に心拍を更新するので、知らせは出ない（止めても確かめにならない）。しかも定期処理は Stripe の webhook の worker も動かすので、止めると本番の決済の処理が止まる。30分の知らせは、入口が動き続けて worker だけが30分成功しない時（最初の成功の後。失敗し続ける時と、`disabled`・`config` で止まり続ける時を含む）に出る。この動きは Task 17 の単体試験と DB 結合試験が確かめている。
+30分の停止の知らせは**本番では試さない**。この点検は、毎分の入口の中で worker の後に動く。定期処理を止めると点検も止まり、再開すれば worker が先に心拍を更新するので、知らせは出ない（止めても確かめにならない）。しかも定期処理は Stripe の webhook の worker も動かすので、止めると本番の決済の処理が止まる。30分の知らせは、入口が動き続けて worker だけが30分成功しない時（最初の成功の後。取り出しの失敗（DB が読めない）・worker の例外・`disabled`・`config` で30分成功しない時）に出る。送りの失敗が続く行は心拍を止めず、9回目で `dead` になって死んだ知らせの点検が知らせる（約4時間）。この動きは Task 17 の単体試験と DB 結合試験が確かめている。
 
 ## 7. 残る危険の一覧
 

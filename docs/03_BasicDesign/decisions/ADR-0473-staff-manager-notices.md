@@ -38,6 +38,7 @@
 - 種類は `staff_redo_issued`・`staff_invited`・`staff_demoted`。送り箱 `private.passkey_notification_outbox` の `kind` の `CHECK` に足し、列 `actor_email` を足す（DATA-AUTH-022）
 - 積む処理は私用の関数 `private.passkey_enqueue_staff_notice` の1つ。`staff_invite_issue_core`（`redo`・`invite`・`promote`）と `staff_demote` が、錠の後の同じ取引で呼ぶ。`last_resort` は積まない
 - 宛先は `passkey_notification_recipients` が送る時に決める。本人（行の `user_id`）を除く、有効・期限内・削除と停止の無い `admin` 全員。操作した店長は含む。`notify_subject` は新しい3種類では無視する
+- 店長と店員の間（`admin`↔`supporter`）の役割の変更（`admin_set_user_role`）は知らせを積まない（計画の判断8・オーナーの答え4）
 - 変えるのは本番未適用の移行 A・G・H を同じファイルのまま直す形（新しい移行は作らない）
 
 #### 結果

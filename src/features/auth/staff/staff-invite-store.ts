@@ -151,7 +151,7 @@ export async function activateStaffRole(
 }
 
 /**
- * 開いている招待を取り消す（操作者が今も有効な店長かは DB が確かめる）。取り消す物が無ければ `cancelled: false`。
+ * 開いている招待を取り消す（操作者が今も有効な店長かは DB が確かめる）。取り消す物が無ければ `cancelled: false`。戻りが真偽でなければ `failed`（取り消したか分からないので閉じる側）。
  *
  * @impl IMPL-AUTH-400
  * @design DD-AUTH-091
@@ -162,7 +162,10 @@ export async function cancelStaffInvite(
   userId: string,
 ): Promise<StaffInviteResult<{ cancelled: boolean }, StaffInviteCancelReason>> {
   const called = await call(deps, 'staff_invite_cancel', { p_actor_id: actorId, p_user_id: userId });
-  if (called.kind === 'ok') return { ok: true, value: { cancelled: called.data === true } };
+  if (called.kind === 'ok') {
+    if (typeof called.data !== 'boolean') return { ok: false, reason: 'failed' };
+    return { ok: true, value: { cancelled: called.data } };
+  }
   return { ok: false, reason: called.kind === 'error' ? staffInviteCancelFailureReason(called.message) : 'failed' };
 }
 

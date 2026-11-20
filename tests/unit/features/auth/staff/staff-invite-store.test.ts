@@ -180,8 +180,13 @@ describe('staff-invite-store', () => {
     it('DD-AUTH-091 取り消す物が無ければ cancelled は false', async () => {
       rpc.mockResolvedValue(ok(false));
       await expect(cancelStaffInvite(deps, ACTOR_ID, USER_ID)).resolves.toEqual({ ok: true, value: { cancelled: false } });
-      rpc.mockResolvedValue(ok(null));
-      await expect(cancelStaffInvite(deps, ACTOR_ID, USER_ID)).resolves.toEqual({ ok: true, value: { cancelled: false } });
+    });
+
+    it('DD-AUTH-091 戻りが真偽でなければ failed（取り消したか分からないので閉じる側）', async () => {
+      for (const outcome of [ok(null), ok(undefined), ok('true'), ok(1)]) {
+        rpc.mockResolvedValue(outcome);
+        await expect(cancelStaffInvite(deps, ACTOR_ID, USER_ID)).resolves.toEqual({ ok: false, reason: 'failed' });
+      }
     });
 
     it('DD-AUTH-091 店長でない操作者は forbidden、それ以外は failed', async () => {
