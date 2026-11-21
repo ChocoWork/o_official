@@ -44,7 +44,7 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 
 **同じタスクで直す決まり**: ある AC を廃止にするタスクは、その AC の名前をテスト名に持つ spec を、同じコミットで直す。ある窓口を消すタスクは、その窓口を叩く spec を、同じコミットで直す。
 
-**緑を保つ決め**: Task 28〜31 のどのコミットでも、その時点で残っている spec は緑にする。上の別名がその手段で、「既知の赤」を作らない。付け替えた後、5本が使う場面（会員でログインして画面を開く）が、メールのコード経由でも成り立つかを、実行者が Task 28 の Step 4 で5本を流して確かめる（成り立たない呼びは、その spec を自分のタスクを待たず Task 28 で消し、AC の廃止も同じコミットに移す）。
+**緑を保つ決め**: Task 28〜31 のどのコミットでも、その時点で残っている spec は緑にする。上の別名がその手段で、「既知の赤」を作らない。付け替えた後、5本が使う場面（会員でログインして画面を開く）が、メールのコード経由でも成り立つかを、実行者が Task 28 の Step 4 で5本を流して確かめる（成り立たない呼びは、その spec を自分のタスクを待たず Task 28 で消し、AC の廃止も同じコミットに移す）。**成り立たない見込みが高い2本の決め**: (1) `FR-ADMIN-MISC-008` は最初の店長（店員）でログインするが、メールのコードは店員を `staff_passkey_required` で断る。**問2が A でも B でも通る道**: Task 28 で、008 の skip でない定義のログインの部分を `createAdminSessionActor`（パスキー）に付け替える（別名の `loginAsMember` は使わない）。そのうえで、A なら Task 31 で消し、B なら Task 31 で DB の確かめ（利用者・役割・TOTP の要素が無いこと）に書き直す。Task 28 では消さない。(2) `FR-ACCOUNT-046` は同じ会員で20回近くログインするので、メールのコードのメール単位の回数の枠に当たるおそれがある。まず、定義ごとに別の会員（`createTestMember` の別のラベル）にして流す。それでも当たるなら、Task 28 で spec ごと消し、`FR-AUTH-006`・`SEC-AUTH-034` の AC の廃止も Task 28 に移し、報告に書く（Task 29 の消す物から外す）。
 
 
 ## 答えの関所（オーナーの答えを、どのタスクの前に揃えるか）
@@ -57,7 +57,7 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 | Task 31 | 問2（`admin:bootstrap`）・問6（`package.json`） | おすすめの A（問2）・B（問6）で進めてよい |
 | Task 32 | 問4（K を当てる時期。K の置き場も決まる） | おすすめの B（K は `supabase/pending-passkey-stage4/` に置く）で進めてよい |
 
-**組み合わせの禁止**: 問1が A（確認のリンクの窓口を消す）で D（直の登録を止める）を採らない時に、問5を「ログイン画面からメールのコードでお入りください」と案内する文にしない。確認前の人に届くのは確認のメールで、コードを頼むたびに同じメールが届き、入れなくなる（行き止まり）。調整役は、答えを受けた時にこの組み合わせを確かめる。
+**組み合わせの決め**: 問1が A（確認のリンクの入口を消す）なら、問5は A（確認メールにも8桁の数字を入れる）にする。問5を「ログイン画面からメールのコードでお入りください」と案内するだけの文にしない（確認がまだの人に届くのは確認のメールで、数字が無いと、頼むたびに同じメールが届き、入れなくなる＝行き止まり）。問1が B（リンクを残す）の時だけ、問5は B（今のまま）を選べる。調整役は、答えを受けた時にこの組み合わせを確かめる。**問1の「メールでの新規登録の入口を閉じる」案（旧 D）は、全員のメールのコードのログインも止める見込みが高いので採らない**（Task 26 (d) で記録だけ取る）。
 
 
 ## 作り手の判断（違えばオーナーが直す。末尾の「オーナーに聞くこと」に重要な物を再掲）
@@ -176,7 +176,7 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 | `/login/password`（`src/app/login/password/page.tsx`） | 消す | ADR-0469。リンク元は旧の流れの中だけ | 28 |
 | `/login/verify`（`page.tsx`・`VerifyOtpClient.tsx`） | 消す | 旧の2段目 | 28 |
 | `/api/auth/login`・`login/resend`・`login/cancel`・`/api/auth/otp/verify`・`/api/auth/register` | 消す | パスワードのログイン・登録の窓口。`/login/page.tsx` と `LoginContext` が呼ぶ分は縮める | 28 |
-| `/api/auth/confirm`（会員登録の確認メールのリンク） | 消す（オーナーの答え1が A・C・D の時。B なら残す） | パスワード登録が無くなると、確認のメールの送り元が無い。本番に確認前のパスワード登録が残っていれば、手順書で読んで消す（Task 35） | 28 |
+| `/api/auth/confirm`（会員登録の確認メールのリンク） | 消す（オーナーの答え1が A の時。B なら残す） | パスワード登録が無くなると、確認のメールの送り元が無い。本番に確認前のパスワード登録が残っていれば、手順書で読んで消す（Task 35） | 28 |
 | `AuthTabs`・`LoginModal`・`RegisterModal`・`AuthResultScreen`（と `AuthResultScreen.css`） | 消す | `AuthResultScreen` の呼び手は消す `password-reset/page.tsx` だけ。`Header.tsx` の `LoginModal` は `loginOpen` を立てる所が無いことを確かめて外す | 28・29 |
 | `src/contexts/Providers.tsx` の `isAuthPage` の `/login/verify`・`/login/password` | 縮める | `/login/code`・`/login/passkey` は残す | 28 |
 | `/auth/password-reset`（`page.tsx`・`verify/page.tsx`・`verify/VerifyClient.tsx`）、`/api/auth/password-reset/{request,link,confirm,session}` | 消す | 設計 7。パスワードが無い | 29 |
@@ -244,7 +244,7 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 | `FR-LOGIN-024-register-no-account-enumeration` | `/api/auth/register` の列挙 | 消す（メールのコードの列挙の確かめは FR-LOGIN-055 が持つ） | 28 |
 | `FR-LOGIN-027-otp-dedicated-screen`・`028-otp-verify-hardening`・`034-otp-verify-screen-entry-and-expiry`・`036-otp-verify-and-resend-pending-cookie`・`login-otp-resend-errors` | 旧の `/login/verify`・`otp/verify`・`login/resend` | 消す | 28 |
 | `FR-LOGIN-030-session-cookies-and-responses`（7） | `login`・`otp/verify`・`mfa/*` と、`logout`・`me`・`refresh`・`/auth/callback` の Cookie・応答 | 書き直す: `login`・`otp/verify`・`mfa/*` の試験を消し、`logout`・`me`・`refresh`・`callback` は `loginAsMember`（メールのコード）で通す | 28・30 |
-| `FR-LOGIN-031-supabase-direct-bypass`（19） | GoTrue を直に叩く道と窓口。`SEC-AUTH-015-AC-01〜05`・`SEC-AUTH-035-AC-01/02`（`/api/auth/login`・`register`）・`SEC-AUTH-031-AC-02`（`mfa/enroll-totp`）・`SEC-AUTH-011-AC-01`（`password_reset_tokens`） | **タスクで分けて直す**: 28 で `login`・`register` を叩く試験（`SEC-AUTH-035`）と `loginAsMemberLegacy` の呼びを消す。29 で再設定・変更の窓口を叩く分を消す（`SEC-AUTH-015` は GoTrue の直叩きの規則なので**廃止にせず残す**。作り手の判断9）。30 で `mfa/enroll-totp` の `SEC-AUTH-031-AC-02` を消す。32 で `grant_type=password` の「お客さんは通る」を「拒否される（`[customer-password-disabled]`）」に反転し、`SEC-AUTH-011-AC-01`（K で消す表）を書き直す。パスワード付きの会員は spec の中で作る。**答え1が D なら、32 で `/auth/v1/signup`（直のメールの登録）が拒否される期待にも反転する** | 28・29・30・32 |
+| `FR-LOGIN-031-supabase-direct-bypass`（19） | GoTrue を直に叩く道と窓口。`SEC-AUTH-015-AC-01〜05`・`SEC-AUTH-035-AC-01/02`（`/api/auth/login`・`register`）・`SEC-AUTH-031-AC-02`（`mfa/enroll-totp`）・`SEC-AUTH-011-AC-01`（`password_reset_tokens`） | **タスクで分けて直す**: 28 で `login`・`register` を叩く試験（`SEC-AUTH-035`）と `loginAsMemberLegacy` の呼びを消す。29 で再設定・変更の窓口を叩く分を消す（`SEC-AUTH-015` は GoTrue の直叩きの規則なので**廃止にせず残す**。作り手の判断9）。30 で `mfa/enroll-totp` の `SEC-AUTH-031-AC-02` を消す。32 で `grant_type=password` の「お客さんは通る」を「拒否される（`[customer-password-disabled]`）」に反転し、`SEC-AUTH-011-AC-01`（K で消す表）を書き直す。パスワード付きの会員は spec の中で作る。| 28・29・30・32 |
 | `FR-LOGIN-032-admin-totp-aal2`（15。skip 6） | skip 6件は TOTP の確認・登録の窓口。通る3件（`FR-LOGIN-007-AC-02`・`FREQ-316-REQ-01-AC-01`・`REQ-03-AC-01`）は店員の入口の Cookie の確かめ | 書き直す: skip の6定義と、TOTP を呼ぶ試験を消す。残す試験は `FR-LOGIN-032-staff-entry-cookie-checks.spec.ts` に名前を変える（`git mv`）。ID は変えない | 30 |
 | `FR-LOGIN-033-verify-screen-and-admin-refresh-mocks`（4） | `/auth/verified` の選択・管理の更新の抑制・一般の会員 | 書き直す: 画面の分を消し、更新の抑制（`/api/auth/refresh`）の分は `refresh` が残るので残す。無ければ消す | 30 |
 | `FR-LOGIN-035-login-throttling-and-turnstile`（5） | `login` の回数の制限・Turnstile・`refresh` の送り元の数 | 書き直す: `login` の分を消し、`refresh` の分は残す | 28 |
@@ -302,7 +302,7 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
   - AC-02 同じアカウントに、鍵を足せる勧めの画面（`offerPasskey`）が出る（残す流れ）。
   - AC-03 店員（`provisionStaff` で作った店長）は、メールのコードで入ろうとすると断られ、固定の文「店員の方は、パスキーでログインしてください。」が出る（旗を真にしても変わらない。FR-LOGIN-069 と重ならない最小の1本）。
 
-- [ ] **Step 1: 事実を測る（手元の GoTrue）** — 次の3つを実際に流して、結果を `baseline.md` と、後で ADR-0475 の「背景」に書く（推測で書かない）。(a) パスワード付き・確認済みのアカウントに `email-code/start` → 8桁のコードのメールが届き、`verify` で入れる。(b) パスワード付き・**確認前**（`email_confirm: false`）のアカウントに `email-code/start` → 届くのはコードか確認のリンクか（ADR-0469 は「確認のメール」と書く。実測する）。(c) 確認前のアカウントが、確認のリンクを開かずに入れる道があるか。**(d) `supabase/config.toml` の `[auth.email] enable_signup = false`（手元だけ。測り終わったら元に戻す）にして、次が通るか: 登録済みの人への `signInWithOtp({ shouldCreateUser: false })`・`auth.admin.createUser`（アプリの登録の道）・Google の新規ログインの始め。直の `/auth/v1/signup` は拒否されるか**（答え1の D の前提。推測で決めない）。
+- [ ] **Step 1: 事実を測る（手元の GoTrue）** — 次の (a)〜(e) を実際に流して、結果を `baseline.md` と、後で ADR-0475 の「背景」に書く（推測で書かない）。(a) パスワード付き・確認済みのアカウントに `email-code/start` → 8桁のコードのメールが届き、`verify` で入れる。(b) パスワード付き・**確認前**（`email_confirm: false`）のアカウントに `email-code/start` → 届くのはコードか確認のリンクか（ADR-0469 は「確認のメール」と書く。実測する）。(c) 確認前のアカウントが、確認のリンクを開かずに入れる道があるか。**(d) 記録だけ取る（採るためではない）**: `supabase/config.toml` の `[auth.email] enable_signup = false` に変え、**`npx.cmd supabase stop` → `start` で設定を効かせて**（変えた後と、元に戻した後の両方で。`db reset` では効かない）、次が通るかを記録する: 登録済みの人への `signInWithOtp({ shouldCreateUser: false })`・`auth.admin.createUser`・店員の招待の道（`generateLink` の magiclink → `verifyOtp`）・Task 27 の手助け・Google の新規ログインの始め・直の `/auth/v1/signup`。記録を取った後、**元に戻して `stop` → `start` を済ませ**、(a) を流し直して元の状態に戻ったことを確かめる。見込みは、メールでのログインそのものが止まる（`email_provider_disabled`）。**どれか1つでも落ちたら、この案は採らない（旧の問1 の D）。全部通っても、オーナーへ聞き直すまで採らない**。**(e)** 確認メールの雛形（`supabase/templates/confirmation.html`）に `{{ .Token }}` を入れた手元（`stop` → `start` で効かせる。測り終わったら元に戻して `stop` → `start`）で、確認前のアカウントが `email-code/start` → 届いた8桁の数字を `email-code/verify`（`type: 'email'`）に入れて入れ、確認済みになるか（答え1・5 の A の前提）。**落ちたら、Task 28 を渡す前に調整役が答え1・5 を聞き直す**。
 - [ ] **Step 2: 基準を取る** — 3000番を止め、残す流れの spec を3幅で流し、件数と結果を `baseline.md` に控える: `FR-LOGIN-002`・`044`・`048`・`050`・`055`・`057`・`058`・`060`・`064`・`065`・`066`・`068`・`069`・`070`・`072`。赤があれば「段4と無関係の既存の赤」として別に控え、段4の比較から外す。
 - [ ] **Step 3: 基準の試験を書く**（RED は無い。実装を変えず、今の master で通る確かめを足すだけのため） — 078 を AC-01〜03 で書く。AC-01〜02 は今の master で通る（基準）。AC-03 は、フックの旗を真にした状態でも通ることを確かめる（旗を切り替える手助けを `e2e/passkey-hook-scenarios.ts` に1つ足し、`db` の `UPDATE private.passkey_staff_config` で切り替え、**始めに今の値を読み、`try/finally` でその値に戻す**（Task 26 の時点は偽。J の後に流れても真のまま戻る）。078 は `isolated-global` なので、ほかの spec と同時に流れない。Task 32 が同じ手助けを使う）。
 - [ ] **Step 4: 通ることを確かめる** — 078 を3幅 PASS。`trace:report`・`validate-trace`・`test:trace-coverage`・`validate-docs`。
@@ -333,7 +333,7 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 - Modify: `src/contexts/LoginContext.tsx`（`login`・`verifyOtp`・`register`・旧の再送・取りやめを消し、`loginWithGoogle`・`refreshAuthState`・`logout`・状態を残す）、`src/app/login/page.tsx`（旧の保留の Cookie の分岐〔`/login/verify` への転送〕と `login-2fa-session` の読みを消す）、`src/components/Header.tsx`（`LoginModal` の差し込みと `loginOpen` の状態を消す。ログインのリンクは `/login` へ）、`src/contexts/Providers.tsx`（`isAuthPage` から2つを外す）、`src/features/auth/services/register.ts`（旧の道だけが使う関数を消し、残る呼び手が使う関数だけにする）、`src/features/auth/services/email-code-session.ts`・`src/lib/orders/status/status-session.ts`（`login-2fa-session` から借りている物を自分の側へ移す）、`src/features/auth/return-intent/*`（`signup` の用途の関数を消す）、`src/lib/cookie.ts`（旧の保留の Cookie の名前は Task 33）
 - Create: `e2e/FR-LOGIN-080-removed-auth-entries-gone.spec.ts`（この時点の分。Task 29・30 が足す）、`e2e/FR-LOGIN-079-login-screens-layout.spec.ts`（オーナーの答え3が A の時）
 - Modify（試験の手助け・spec）: `e2e/account-test-utils.ts`（`loginAndOpenAccount` を `loginAsMember` へ付け替え。`/login/password`・`/login/verify` を呼ぶ道を消す）、「E2E の対応」表の Task 28 の「書き直す」の spec（`loginAsMemberLegacy`・`setLoginTwoFactorCookie` の**呼び**を外す）。**手助けの定義（`member-session-helpers.ts`・`auth-2fa-test-utils.ts`・`helpers.ts`）は消さない。Task 33 が消す**（冒頭の表）。ただし `loginAsMemberLegacy` は、**中身を `loginAsMember` に付け替える**（名前・引数は残す。5本が緑を保つため）
-- Modify（確認メールの雛形・画面の文。オーナーの答え5）: `supabase/templates/confirmation.html`（リンクの先が `/api/auth/confirm`・本文が「最初に登録したときのパスワードをお使いください…」）、`supabase/config.toml` の `[auth.email.template.confirmation]` の注釈、`src/features/auth/passkey/components/EmailCodeEntry.tsx:282` の「コードの無い確認のメールが届いた時は、そのメールのリンクを押してから…」の1文。直し方は答え5（**答えが揃ってから Task 28 を渡す**。「答えの関所」）。答え1が D か A かで、雛形が実際に届く人の数が変わるので、答え1・5 を一緒に見る
+- Modify（確認メールの雛形・画面の文。オーナーの答え5）: `supabase/templates/confirmation.html`（リンクの先が `/api/auth/confirm`・本文が「最初に登録したときのパスワードをお使いください…」）、`supabase/config.toml` の `[auth.email.template.confirmation]` の注釈、`src/features/auth/passkey/components/EmailCodeEntry.tsx:282` の「コードの無い確認のメールが届いた時は、そのメールのリンクを押してから…」の1文。直し方は答え5（**答えが揃ってから Task 28 を渡す**。「答えの関所」）。答え5が A なら、雛形に8桁の数字（`{{ .Token }}`）を入れ、リンクの先は無くす（答え1が A の時）。画面の1文は、「確認のメールにも同じ8桁の数字があります」の趣旨の文に直す（文はオーナーが決める）。Task 26 の (e) の実測が前提
 - 文書: `FR-AUTH-053`（親 `SR-AUTH-030`）、`THR-AUTH-059`→`SEC-AUTH-061`→`SEC-AUTH-061-AC-01`（`FR-LOGIN-080` が名乗る）を作る、**`SEC-AUTH-035-AC-01` を「captcha が有効でも、アプリのメールのコードの始めと再送が通る」に書き直し、`FR-LOGIN-055` の該当の試験に名乗らせる**（`SEC-AUTH-035` は `DD-AUTH-040`・`ADR-0420`＝captcha を免除される auth だけの client を残すので廃止にしない。`-AC-02` は実行者が `npm run trace -- SEC-AUTH-035-AC-02` で中身を読み、メールのコードの窓口に当てはまれば 055 に名乗らせ、当てはまらなければ廃止にする。どちらも、`FR-LOGIN-031` の2件を消す同じコミットで）、`ADR-0469`（「段4で消す一覧」を「消した」に直し、状態は今の「推定」のまま）、`ADR-0400`・`0401`・`0402`・`0404`・`0410`・`0413`（状態を「廃止」にし、置き換え先に ADR-0475 または ADR-0469 を書く）、`IMPL-AUTH-102・103・124・125・141・142・145・146・161・162・163・164・323` ほか消した単位の IMPL・DD・API・SCR を「廃止」（構造設計は手順6）、`DD-AUTH-061`（旧画面の退避）を廃止、`docs/04_DetailDesign/sequence/auth-registration.md`・`auth-login-mfa.md`（廃止の印）、`14_login.md`・`screen-list.md`・`screen-flow.md`・`api-spec.md`・`route-inventory.md`
 
 **Interfaces:**
@@ -342,7 +342,7 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
   - 消した窓口は404、消した画面も404。**どこからもリンクが無い**（`Header`・ログインの画面・メール・戻り先・`sitemap`）。
   - `LoginContext` の公開する型から `login`・`verifyOtp`・`register`・`resendOtp` などを外す。`useLogin()` を使う残りの呼び手（`EmailCodeEntry`・`LoginChoices`・`PasskeyOffer`・`StaffOneMoreKey`・`Header`・`checkout` ほか）が使う物は変えない。
   - `/login` の画面は、旧の保留の Cookie があっても何も特別にしない（`/login/verify` へ送らない）。古い Cookie は無視する（名前を知らない Cookie になる）。
-  - **確認のメールのリンク（`/api/auth/confirm`）は、オーナーの答え1が A・C・D なら消す**。消すなら、`/login?registered=1` の案内（旧の登録の確認を別のブラウザで開いた人向け）も画面から消す。B なら窓口と案内を残し、Task 33 で再検討と書く。
+  - **確認のメールのリンク（`/api/auth/confirm`）は、オーナーの答え1が A なら消す**。消すなら、`/login?registered=1` の案内（旧の登録の確認を別のブラウザで開いた人向け）も画面から消す。B なら窓口と案内を残し、Task 33 で再検討と書く。
 
 - [ ] **Step 0: 消す物の一覧を作る** — 「消す物の一覧」の窓口・画面・サービスの各行について `graphify query` と `grep -rn` を取り、呼び手を報告に貼る。呼び手が消す物以外に残るなら、消さず縮める。
 - [ ] **Step 1: 失敗する試験を書く（消した後の形）** — `FR-LOGIN-080`（3幅）: `GET /login/password`・`/login/verify` が404。`POST /api/auth/login`・`login/resend`・`login/cancel`・`otp/verify`・`register` が404（または405。実測して書く）。`/login` に「パスワード」欄・「会員登録」タブ・`/login/password` へのリンクが無い。ヘッダーのログインのリンクが `/login` へ向く。`FR-LOGIN-078`（Task 26）と `FR-LOGIN-057`・`055`・`058` が通る。jest: `LoginContext` が `login`・`register` を持たない、`login/page` が旧の Cookie で転送しない。
@@ -434,7 +434,7 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 ### Task 33: 残りの掃き出し（部品の縮小・設定・参照の0件の確かめ）
 
 **Files:**
-- Modify: `src/lib/cookie.ts`（旧の保留・再設定の Cookie の名前を消す）、`src/lib/auth/service-role-auth-client.ts`（`signInWithPassword`・`signUp` を型と実体から外す）、`tests/unit/lib/auth/service-role-auth-client.test.ts`・`tests/unit/lib/supabase-client-isolation.test.ts`、`src/lib/auth-no-store-policy.ts`・`src/proxy.ts`（道筋の一覧から消した窓口を外す。`tests/unit/middleware/proxy-no-store.test.ts`）、`src/lib/audit.ts`（注釈だけ）、`supabase/config.toml`（残す設定の理由を1行ずつ）、`src/features/auth/design.md`、`supabase/config.toml`（**答え1が D の時**: `[auth.email] enable_signup = false`。Task 26 の (d) の実測で通った場合だけ。`FR-LOGIN-031` の `/auth/v1/signup` の期待の反転は Task 32）、**古い試験の手助けの定義を消す**: `e2e/member-session-helpers.ts` の `loginAsMemberLegacy`・`setLoginTwoFactorCookie`・`createTestMember` の `password`、`e2e/auth-2fa-test-utils.ts`（ファイルごと）、`e2e/helpers.ts` の `registerUser`・`loginUser`（呼び手が0であることを grep で確かめてから）。`scripts/trace/scope.json` に残る、消した型の行（Task 28〜30 で外し切れなかった分）
+- Modify: `src/lib/cookie.ts`（旧の保留・再設定の Cookie の名前を消す）、`src/lib/auth/service-role-auth-client.ts`（`signInWithPassword`・`signUp` を型と実体から外す）、`tests/unit/lib/auth/service-role-auth-client.test.ts`・`tests/unit/lib/supabase-client-isolation.test.ts`、`src/lib/auth-no-store-policy.ts`・`src/proxy.ts`（道筋の一覧から消した窓口を外す。`tests/unit/middleware/proxy-no-store.test.ts`）、`src/lib/audit.ts`（注釈だけ）、`supabase/config.toml`（残す設定の理由を1行ずつ）、`src/features/auth/design.md`、**古い試験の手助けの定義を消す**: `e2e/member-session-helpers.ts` の `loginAsMemberLegacy`・`setLoginTwoFactorCookie`・`createTestMember` の `password`、`e2e/auth-2fa-test-utils.ts`（ファイルごと）、`e2e/helpers.ts` の `registerUser`・`loginUser`（呼び手が0であることを grep で確かめてから）。`scripts/trace/scope.json` に残る、消した型の行（Task 28〜30 で外し切れなかった分）
 - 文書: 関連する `IMPL`・`DD` の「関連」
 
 - [ ] **Step 1: 失敗する試験を書く** — jest: `createServiceRoleAuthClient` が持つ関数が `signInWithOtp`・`resend` だけ（`signInWithPassword`・`signUp` が無い）。`auth-no-store-policy` の一覧に消した窓口が無い。
@@ -461,10 +461,10 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 
 直す内容（手順書。**本番には何も流さない。当てるのは調整役だけでオーナーの許可を得てから**）:
 
-1. **概要・節1**: 「A〜I の9本」を「A〜K の11本」に。節1に「10. 本番の `auth.users` の状態を読む（読むだけ）: お客さんの数・確認前のパスワード登録の数・店員の TOTP の要素の数」を足し、読む SQL を載せる。確認前のパスワード登録が1件でもあれば、**消すか確認を済ませるかをオーナーが決める**（オーナーの答え1が A または D の時の運用。本番の4人は、役割の印が店長の試し用で、お客さんではない。パスワードだけのお客さんと確認前の登録は、記録の上では0人。読んで数える）。
+1. **概要・節1**: 「A〜I の9本」を「A〜K の11本」に。節1に「10. 本番の `auth.users` の状態を読む（読むだけ）: お客さんの数・確認前のパスワード登録の数・店員の TOTP の要素の数」を足し、読む SQL を載せる。確認前のパスワード登録が1件でもあれば、**消すか確認を済ませるかをオーナーが決める**（オーナーの答え1が A の時の運用（確認メールに数字を入れる前提）。本番の4人は、役割の印が店長の試し用で、お客さんではない。パスワードだけのお客さんと確認前の登録は、記録の上では0人。読んで数える）。
 2. **節2の当てる順**: 4の後（定期処理の登録）と5〜7（最初の店長・E・TOTP を止める）の後に、**8. J**（アプリのデプロイと、お客さんがメールのコードで入れることの確認の後。**調整役がオーナーの許可を得てから**）→ **9. K**（J の後。消した窓口を呼ぶ物が無いことの確認の後）を足す。節2の7（TOTP を止める）は、ダッシュボードの Multi-Factor の TOTP の Enroll・Verify を止める手順（段4のコードは TOTP を使わない）に昇格させ、店員の TOTP の要素の残りの扱い（H の取引・やり直しで消える。残りを読む SQL）を書く。
 2b. **本番のダッシュボードの確認メールの雛形**を、オーナーの答え5に従って直す手順（雛形のリンクが `/api/auth/confirm` を指し、本文がパスワードを案内している。`supabase-auth-config.md` の確認の雛形の節。**変えるのはオーナー**。2026-11-06 の決定）。
-2c. **答え1が D の時**: 本番のダッシュボードで、メールでの新規登録を許す設定を切る手順（`supabase-auth-config.md` に書く。**変えるのはオーナー**）。切った後に、(i) 登録済みの人のメールのコードのログイン、(ii) アプリの新規のメールのコード（管理者の資格で作る道）、(iii) Google の新規ログイン、の3つが通ることを確かめる手順も書く（手元の Task 26 の (d) と同じ確かめを、本番でも当てる前に1回）。
+2c. **答え5が A の時**: 本番のダッシュボードの確認メールの雛形に `{{ .Token }}`（8桁。有効期限・桁数はメールのコードと同じ）を入れる手順と、確認前のアカウントで数字を入れて入れることの確かめ（調整役がオーナーの許可を得てから。手元の Task 26 (e) と同じ確かめを、本番に当てる前に1回）。
 2d. **本番の権限と手元の権限が同じか**を、当てる前に比べる読むだけの SQL を1行足す（K の戻しの正本は手元の最終の姿なので、本番の `relacl`・`proacl` が手元と同じことを確かめる）。
 3. **節3の表**: J・K の行（前の確かめ・突き合わせ・戻し）。
 4. **節4の戻し方**: 次の**新しい先頭**を足す。(0) **K を戻す**（K の `ROLLBACK` の文。K を当てる前の最終の姿＝締め直した権限を含む。戻した後に `relacl`・`proacl` を読んで確かめる）。(0b) **J を戻す**（`UPDATE private.passkey_staff_config SET reject_customer_password = false WHERE id;`。**古いアプリに戻す前にこれを済ませる**。済ませずに古いアプリへ戻すと、お客さんがパスワードで入れない）。その後に今の (1)〜(11)。(1) の「戻し先 `c336e0b5`」は、段4の後は**古いアプリがパスワードの窓口と窓口の表（K で消した表）を必要とする**ので、K を先に戻すことを書く。**お客さんへの影響**の文に、「段4の後にメールのコードで登録した（パスワードの無い）お客さんは、パスワードの再設定をするまで入れない」を足す（段2の文を段4にも当てはめる）。(3b) の2つ目の枝（`admin:bootstrap`）は、オーナーの答え2が A なら削り、「別のアドレスの店長が要るなら、ダッシュボードで作ってから1つ目の枝の SQL で有効にする」に替える。**「1つ目の枝の SQL」は、節4の (3b) の「上の1つ目に当てはまらないもの」の 1（取引の逆）の SQL を指す**（1つ目の枝そのものには SQL が無い）。**J を先に戻す理由**: (1) で古いアプリを出してから (2) でフックの登録を外すまでの間も、旗が効いたままだとお客さんが入れない。(2) でフックの登録を外せば旗は効かなくなるので、順番の理由はこの間を守るため。
@@ -518,12 +518,11 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 
 重要な順。問2・4・6 は、各問いの「おすすめ」で進めてよい。**問1・3・5 は、答えが揃うまで Task 28 を始めない**（「答えの関所」）。答えが違えば、該当のタスクだけを直す。
 
-1. **メールの確認がまだのお客さんと、外から作られる登録**（Task 26・28・33・35）。
-   - 事実（やさしい言葉で）: 新しい仕組みでは、お客さんはパスワードを使わず、メールに届く8桁の数字（コード）で入る。古い仕組みで作った登録のうち、メールの確認がまだの人には、数字ではなく「確認のメール」が届き、そのリンクを押すまで入れない。パスワードの登録をやめると、そのリンクの先も無くなる。さらに、店の画面の外側（Supabase が持っている入口）から、他人がお客さんのアドレスで「確認がまだの登録」を作れてしまう。作られると、本当の持ち主は数字で入れなくなる。本番にいる4人は、店長の印が付いた試し用で、お客さんではない。パスワードだけのお客さんは、記録の上では0人（当てる前に数える）。
-   - A: 確認のリンクの入口を消す。今いる「確認がまだ」の登録は、当てる前に数えて片付ける。外からの登録の入口は、そのまま残る（他人が作る可能性が残る）。
-   - B: 確認のリンクの入口を、確認がまだの人がいなくなるまで残す。
-   - D（おすすめ）: A に加え、外から直に作れる「メールでの新規登録」の入口を閉じる。店の画面からの新規登録は、今までどおり使える（店が自分で作るため）。先に手元で、閉じても店の画面とGoogleでの登録が動くかを試す。お客さんには見える影響が無い。
-   - （メールに数字も入れて、確認がまだの人も数字で入れるようにする案は、問5の A にある）
+1. **メールの確認がまだのお客さんの扱い**（Task 26・28・35）。
+   - 事実（やさしい言葉で）: 新しい仕組みでは、お客さんはパスワードを使わず、メールに届く8桁の数字（コード）で入る。古い仕組みで作った登録のうち、メールの確認がまだの人には、数字ではなく「確認のメール」が届き、そのリンクを押すまで入れない。パスワードの登録をやめると、そのリンクの先も無くなる。本番にいる4人は、店長の印が付いた試し用で、お客さんではない。パスワードだけのお客さんは、記録の上では0人（当てる前に数える）。
+   - A（おすすめ）: 確認のリンクの入口を消し、確認メールにも8桁の数字を入れる（問5の A と対）。確認がまだの人も、数字で入れる。他人が先に作った「確認がまだ」の登録でも、本当の持ち主は数字で入れる。先に手元で、数字で入れることを試す。
+   - B: 確認のリンクの入口を、確認がまだの人がいなくなるまで残す（メールは今のまま）。
+   - 見送った案: 店の画面の外から作れる「メールでの新規登録」の入口を閉じる案。調べると、その設定は「メールでのログインそのもの」のスイッチで、閉じると**全員のメールのコードのログインも止まってしまう**ため、採らない。
 2. **`admin:bootstrap`（最初の店長を、パスワードと認証アプリで作る古い道具）**（Task 31・35）。新しい仕組みでは、これで作った店長は入れない。古い仕組みへ戻す時は、昔の版にこの道具が残っているので使える。
    - A（おすすめ）: 消す。戻す時の最後の手段は、ダッシュボードで店長のアカウントを作り、手順書の手順で役割を有効にする形。
    - B: 戻す時専用として残す（古い道具のコードが残り続ける）。
@@ -534,10 +533,9 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
    - A: ほかの作業と一緒に、お客さんが数字で入れると確かめた後に消す。
    - B（おすすめ）: 古い仕組みへ戻す必要が無くなるまで（開店して一定の期間が過ぎるまで）消さずに置く。消す作業は「待ち」の置き場に入れ、他の作業に混ざって当たらないようにする。
    - C: 消さない（入れ物はずっと残る）。
-5. **確認メールと、数字入力の画面の1文**（Task 28・35。お客さんに見える文が変わる。「新しい文は作らない」の例外）。今の確認メールは、押す先が消える入口で、本文が「最初に登録したときのパスワードをお使いください」と案内する。数字入力の画面にも「確認のメールが届いたら、そのリンクを押してから…」という1文がある。本番の雛形を変えるのはオーナー。
-   - A: メールを、数字入りの形にする（問1で確認がまだの人を残す時の案）。
-   - B: メールを「このメールは使えません。ログイン画面からメールの数字でお入りください」のような短い文にし、画面の1文も同じ案内にする。**問1が D でない時は使わない**（確認がまだの人が、同じメールを何度も受け取って入れなくなるため）。
-   - C（おすすめ。問1が D の時）: 画面の1文だけ消す。メールは直さない（問1が D なら、確認がまだの人はほぼ生まれず、メールは届かない）。
+5. **確認メールと、数字入力の画面の1文**（Task 28・35。お客さんに見える文が変わる。「新しい文は作らない」の例外。**文そのものも、この時に決める**）。今の確認メールは、押す先が消える入口で、本文が「最初に登録したときのパスワードをお使いください」と案内する。数字入力の画面にも「確認のメールが届いたら、そのリンクを押してから…」という1文がある。本番の雛形を変えるのはオーナー。
+   - A（おすすめ）: メールに、ログインの数字と同じ8桁を入れる。パスワードの案内は消す。画面の1文も「確認のメールにも同じ8桁の数字があります」の趣旨に直す。問1の A と対。
+   - B: メールも画面も、今のままにする（問1が B でリンクを残す時だけ選べる）。
 6. **`package.json`（開発の設定ファイル）に残っているオーナーの書き換え**（Task 31）。オーナーが手元で書き換えた1行（開発用の画面の起動のしかた）が、消したい1行のすぐ隣にある。
    - A: 先にオーナーがその書き換えを保存（コミット）するか戻すかを決め、その後に1行を消す。
    - B（おすすめ）: オーナーの書き換えには触らず、こちらの1行の削除だけを保存する（安全な手順がある。オーナーの手は要らない）。
