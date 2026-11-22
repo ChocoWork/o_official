@@ -65,10 +65,10 @@
 | SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:7857` |
 | FREQ-508-AC-03 流し直しても付与が重ならず、ほかの結び付きが残り、「監査ログの閲覧」の名前で登録される | E2E | `docs/02_Requirements/areas/admin.md:236` |
 | SEC-ADMIN-003-AC-02 管理の表の権限が anon・authenticated に無い | E2E | `docs/02_Requirements/areas/admin.md:466` |
-| SEC-ADMIN-010-AC-01 監査ログの行を書き換えると検知の確かめで分かる | E2E | `docs/02_Requirements/areas/admin.md:692` |
-| SEC-ADMIN-010-AC-02 保持の期間を過ぎた行は写しを残してから消える | E2E | `docs/02_Requirements/areas/admin.md:704` |
-| SEC-ADMIN-017-AC-02 秘密が未設定なら Reply-To の無いメールを送る | E2E | `docs/02_Requirements/areas/admin.md:964` |
-| SEC-ADMIN-021-AC-02 メールを送らなかった返信は mailSent を false で返す | E2E | `docs/02_Requirements/areas/admin.md:1081` |
+| SEC-ADMIN-010-AC-01 監査ログの行を書き換えると検知の確かめで分かる | E2E | `docs/02_Requirements/areas/admin.md:694` |
+| SEC-ADMIN-010-AC-02 保持の期間を過ぎた行は写しを残してから消える | E2E | `docs/02_Requirements/areas/admin.md:706` |
+| SEC-ADMIN-017-AC-02 秘密が未設定なら Reply-To の無いメールを送る | E2E | `docs/02_Requirements/areas/admin.md:966` |
+| SEC-ADMIN-021-AC-02 メールを送らなかった返信は mailSent を false で返す | E2E | `docs/02_Requirements/areas/admin.md:1083` |
 
 ## 名前に ID の無い試験
 

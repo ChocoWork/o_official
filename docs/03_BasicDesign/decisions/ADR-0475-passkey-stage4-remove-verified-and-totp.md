@@ -13,7 +13,7 @@
 | 項目 | 内容 |
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の AUTH・ADMIN |
-| 対応する ID | SEC-AUTH-061、FR-AUTH-053、SR-AUTH-030、FR-AUTH-018、DD-AUTH-060 |
+| 対応する ID | SEC-AUTH-061、ARC-AUTH-015、FR-AUTH-053、SR-AUTH-030、FR-AUTH-018、DD-AUTH-060 |
 | 対象のコード | `src/features/auth/passkey/post-login.ts`、`src/features/auth/return-intent/return-intent-service.ts`、`src/app/api/auth/post-login/route.ts`、`src/app/api/auth/oauth/callback/route.ts`、`supabase/config.toml` |
 | 関連文書 | [設計](../../superpowers/specs/2026-11-07-passkey-auth-design.md)（2-1・2-2・6-2・7）、[段4の計画](../../superpowers/plans/2026-11-20-passkey-stage4-cleanup.md)（Task 30）、[ADR-0463](ADR-0463-staff-entry-by-passkey-conditions.md)、[ADR-0468](ADR-0468-passkey-post-login-destination.md) |
 | 要件の文書 | `docs/02_Requirements/areas/auth.md` |
@@ -56,7 +56,7 @@ NIST の見立て、Shopify の説明、OWASP の資料は設計の 2-1・2-2 �
 
   窓口とサーバーの判定は、入口の条件を満たさない店員に `redirectTo: '/login?error=staff_passkey_required'`・`needsMfa: true` を返す。ブラウザ側の `resolvePostLoginPath` が `needsMfa` の時だけ鍵の数（`GET /api/auth/passkey` の `approvedCount`）を読み、ちょうど1本なら `/admin/passkeys?more=1` へ送る（JWT の印 `staff_passkeys_ok` は真偽しかないので、窓口は数を知らない）。数が読めない時は `/login?error=staff_passkey_required`
 - **名前は変えない**（設計 7）: `/api/auth/me` の `mfaVerified`、`/api/auth/post-login` の `needsMfa`、`LoginContext` の `isMfaVerified`、拒否の理由 `admin_requires_privileged_aal2`。意味は「店員の入口の条件（パスキー・24時間以内・認めた2本）を満たすか」。約80本の E2E がこの形を偽装しているので、応答の形を保つ。ADR-0463・ADR-0468 にあった「段4でまとめて直す」は「変えない」に改める
-- `src/lib/auth/amr.ts` の 2 段目の方法の一覧から `totp` を外す
+- `src/lib/auth/amr.ts`（2 段目の方法の一覧。呼び手は `enroll-totp` だけだった）と、その試験 `amr.test.ts` を消す
 
 #### 退けた案
 
@@ -73,9 +73,7 @@ NIST の見立て、Shopify の説明、OWASP の資料は設計の 2-1・2-2 �
 - 悪くなること: 認めた鍵が1本の店員の行き先が、窓口でなくブラウザ側の読み（`resolvePostLoginPath`）で決まる。窓口を直接呼ぶ呼び出し手は `/login?error=staff_passkey_required` を受ける
 - 見直す条件: 店員の認めた鍵の数を JWT の印で持てるようになった時（窓口が数を返せるようになる）
 
-#### 測った事実（段4 Task 26。2026-11-22。手元の GoTrue。`.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/baseline.md`）
+#### 測った事実
 
-- (a) パスワードを持つ確認済みのアカウントに `/auth/v1/otp` を送ると、件名「ログインの確認コード」で8桁のコードが届き、リンクは付かない。`/auth/v1/verify`（`type=email`）が 200 でトークンを返す
-- (b) 確認前のアカウントに送ると、件名「メールアドレスの確認」で確認のリンクだけが届き、8桁のコードは付かない（ADR-0469 の「確認のメール」を実測で確かめた）
-- (c) 確認前のアカウントは、リンクを開かないと、パスワードの grant が 400 `email_not_confirmed`、`verify` が 403 `otp_expired` になり、入れる道が無い。リンクの `token_hash`（`type=signup`）だけが 200
-- (e) 確認のメールの雛形に `{{ .Token }}` を足すと、確認前のアカウントにもリンクと8桁のコードの両方が届き、コードで `verify` が 200 を返して確認済みになる。パスワードの grant は 400 のまま
+- この Task で測った（2026-11-22）: `supabase/config.toml` の `[auth.mfa.totp]` を `false` にして `supabase stop` → `start` すると、手元の認証のコンテナで `GOTRUE_MFA_TOTP_ENROLL_ENABLED=false`・`GOTRUE_MFA_TOTP_VERIFY_ENABLED=false` になる
+- Task 26 の測った事実（パスワードで作ったアカウントがメールのコードで入れるか、確認前のアカウントの確認メール）は、ADR-0469 の前提で、この決めとは別。出どころは `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/baseline.md`

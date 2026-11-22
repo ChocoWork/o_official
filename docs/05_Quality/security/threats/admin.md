@@ -164,14 +164,14 @@ flowchart LR
 
 | 属性 | 値 |
 | --- | --- |
-| 守るもの | 対象の利用者のメールの住所、リセットの理由の文、内部の誤りの中身 |
+| 守るもの | 店員のやり直しの理由の文、問い合わせの返信の中身、内部の誤りの中身 |
 | 脅威 | 監査ログを読める人（店長・DB の運用者）や、監査ログが漏れた時の第三者が、記録の中の個人情報を読む |
-| 起こり方 | MFA のリセットは `metadata` に理由の文（`reason`）と対象のメール（`target_email`）、Auth の誤りの文を書く（`src/app/api/admin/users/mfa/reset/route.ts:104-106,126-129,148-151,199-204`）。ユーザー作成は Supabase の誤りの文を `detail` に書く（`src/app/api/admin/create-user/route.ts:60,71`）。強制失効は例外の文を `detail` に書く（`revoke-user-sessions/route.ts:94`）。伏せ字は鍵の名前が `password`・`token`・`secret`・`card`・`number` などの物と、`detail` の JWT・長い文字列・`password=` だけ（`src/lib/audit.ts:22-39`）。`reason`・`email`・`target_email` は伏せない。さらに `logAudit` は、環境変数 `ALERT_AUDIT_URL` が設定されていると、伏せ字にした後の記録を丸ごと外の Webhook に送る（`src/lib/audit.ts:72-82`）。送る中身は操作した人のメール・IP・ブラウザの情報と、MFA のリセットの理由の文と対象のメールを含む。2026-10-26 に、MFA のリセットの全部の分岐から `reason`・`target_email`・`error_message`・`delete_errors[].message` を外し、理由は長さ（`reason_length`）と SHA-256（`reason_sha256`）だけを残すようにした（ADR-0461）。強制失効の例外の `detail` も固定の `revoke_failed` にした。これで外の Webhook に送る中身からも MFA のリセットの理由とメールは消える。同日、ユーザー作成の `detail` も固定の `email_already_registered`・`create_user_failed` にし、Supabase の誤りの文（メールの住所を含みうる）は監査と Webhook に送らず `console.error` に回した。上の行番号は基準コミット時点の記述 |
+| 起こり方 | 強制失効は例外の文を `detail` に書く恐れがある（今は固定の `revoke_failed`）。やり直し・問い合わせの返信も、理由の文や誤りの文をそのまま書けば残る。伏せ字は鍵の名前が `password`・`token` などの時と、JWT・長い文字列の形に当たる時だけ働く。（2026-11-22 パスキー段4 Task 30）MFA のリセットとユーザー作成の窓口は消えた。残る窓口で守る。 |
 | 影響 | 理由の文に書いた個人の事情やメールの住所が、保存の期限なしに残る。`ALERT_AUDIT_URL` を設定すると、同じ個人情報が DB の外の送り先にも写り、その送り先の守りと保存の期間に頼ることになる |
 | 対策 | SEC-ADMIN-008 |
 | ASVS | V7.1.2 |
 | 根拠 | 批評で伏せ字の範囲を確かめた結果。全体の NFR-SEC-010（個人情報のマスキング）に当てはめた |
-| 状態 | 廃止 |
+| 状態 | 推定 |
 | 出どころ | 実装から推定 |
 
 廃止（パスキー段4 Task 30、2026-11-22）: 監査ログの平文の個人情報は、MFA のリセットの窓口（消した）とユーザー作成（消した）の記録の話だった。残る窓口の監査は SEC-ADMIN-022 が守る。

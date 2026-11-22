@@ -2553,17 +2553,17 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 7 | 429・503 が `Cache-Control: private, no-store` と `Retry-After` を持つ。`NextResponse` が投げる環境の `Response` の枝も同じ |
 | 8 | 取扱店・強制失効・2 要素のリセットの監査の `ip` と、Turnstile に渡す IP が `x-real-ip` の値で、`x-forwarded-for` だけなら `null` |
 
-### DD-AUTH-039 アプリの session への結び付け（旗と session_id の読み取り、ログイン・更新・昇格の書く側）
+### DD-AUTH-039 アプリの session への結び付け（旗と session_id の読み取り、ログイン・更新の書く側）
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | ARC-AUTH-009、DATA-AUTH-001、DATA-AUTH-007、DATA-AUTH-008、SEC-AUTH-005、SEC-AUTH-010、SEC-AUTH-030、SEC-AUTH-031、DATA-AUTH-006 |
-| 根拠 | 公開の anon キーで password や OTP の通行証が取れ、`amr` ではアプリのログインを通ったかを区別できない。アプリが作った session だけを受けるため、ログインの最後に GoTrue の `session_id` を自前の `sessions.auth_session_id` に残し、更新と TOTP の昇格は結び付いた行の続きにだけ引き継ぐ（ADR-0417）。旗は既定で有効（ADR-0419） |
+| 根拠 | 公開の anon キーで password や OTP の通行証が取れ、`amr` ではアプリのログインを通ったかを区別できない。アプリが作った session だけを受けるため、ログインの最後に GoTrue の `session_id` を自前の `sessions.auth_session_id` に残し、更新は結び付いた行の続きにだけ引き継ぐ（ADR-0417）。旗は既定で有効（ADR-0419） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト・結合テスト・E2E（下の「E2E」の節） |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave5-decisions.md`、`docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md` の Task 2・3（P9・P10・P11・P12・P18） |
 
-**対応要件 ID:** SEC-AUTH-005（AC-01・03・05 のアプリの窓口の側を満たす。AC-02 の DB の側は移行 M2。E2E は Task 5・8）、SEC-AUTH-031（AC-02）、SEC-AUTH-030（AC-03）、SEC-AUTH-010（AC-01・03。AC-03 の DB の側は移行 M2）、DATA-AUTH-001・007（`auth_session_id` 列と `is_app_session_active`。移行 M1）（その上は ADR-0417、ADR-0419）
+**対応要件 ID:** SEC-AUTH-005（AC-01・03・05 のアプリの窓口の側を満たす。AC-02 の DB の側は移行 M2。E2E は Task 5・8）、SEC-AUTH-030（AC-03）、SEC-AUTH-010（AC-01・03。AC-03 の DB の側は移行 M2）、DATA-AUTH-001・007（`auth_session_id` 列と `is_app_session_active`。移行 M1）（その上は ADR-0417、ADR-0419）
 
 **入出力:**
 
@@ -2576,7 +2576,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 1. ログインの最後（`otp/verify`・`oauth/callback`・`confirm`・`register`）の共有の `persistSessionAndCookies` が、GoTrue から直に受けた access token の `session_id` を読み、自前の `sessions` の行の `auth_session_id` に入れる
 2. 更新（`refresh`）は、前の行が結び付いている時だけ GoTrue を呼び、共有の `persistNewSession` に前の行の `auth_session_id` を `trustedAuthSessionId` として渡す。新しい行は新しい token の `session_id`（無ければ `trustedAuthSessionId`）を持つ
-3. TOTP の昇格（`mfa/verify`）は、`authenticateRequest` を通った検証済みの `claims.session_id` を `trustedAuthSessionId` として渡して引き継ぐ
+3. （段4の Task 30 で、TOTP の昇格 `mfa/verify` の呼び手を消した）
 4. `trustedAuthSessionId` が無い `persistNewSession` は `auth_session_id` を NULL で入れる（結び付けない）。新しい token の `session_id` を前の行の確認なしに保存する道はどこにも無い
 
 **分岐と異常フロー:**
@@ -2587,15 +2587,15 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 未設定・空・その他 | 真（既定で有効） |
 | `persistSessionAndCookies` で旗が有効なのに access token に使える `session_id` が無い | 行を作らず Cookie も渡さず `{ ok: false, error: 'auth_session_id_missing' }`。監査は `auth.session.persist`・error。呼び手のログインは失敗する |
 | 同上で旗が無効 | `auth_session_id` は NULL で行を作り、ログインは通る |
-| `refresh` で旗が有効、行の引きが失敗（`findSessionByRefreshHash(..., { throwOnError: true })` が `SessionLookupError` を投げる） | 503 `Session lookup failed`。Supabase を呼ばず、Cookie を残し、行も差し替えない。監査は `session_lookup_failed`（DD-AUTH-027 の枝）。`mfa/verify` は GoTrue の検証の後に引くので、投げず従来どおり `null`（発行済みの昇格トークンを失わないため） |
+| `refresh` で旗が有効、行の引きが失敗（`findSessionByRefreshHash(..., { throwOnError: true })` が `SessionLookupError` を投げる） | 503 `Session lookup failed`。Supabase を呼ばず、Cookie を残し、行も差し替えない。監査は `session_lookup_failed`（DD-AUTH-027 の枝）。（旧 `mfa/verify` は GoTrue の検証の後に引くので、投げず従来どおり `null`（発行済みの昇格トークンを失わないため） |
 | `readAuthSessionId` に null・空・ドット無し・壊れた base64・JSON でない・配列・`session_id` が無い／文字列でない／uuid でない | null |
 | `refresh` で旗が有効、前の行が無い／`auth_session_id` が空 | 401（DD-AUTH-027 の枝） |
 
-**状態・永続化:** `public.sessions.auth_session_id`（移行 M1。手元と本番に当て済み）。更新と昇格は新しい行を先に入れて旧行を後で失効するので、同じ `auth_session_id` の生きた行が一時的に 2 本並ぶ（索引は一意でない）。
+**状態・永続化:** `public.sessions.auth_session_id`（移行 M1。手元と本番に当て済み）。更新は新しい行を先に入れて旧行を後で失効するので、同じ `auth_session_id` の生きた行が一時的に 2 本並ぶ（索引は一意でない）。
 
-**前提の実測（2026-10-29、波 5 の Task 0、手元の Supabase）:** password grant の後、更新 2 回、`mfa_amr_claims` に `totp` の行を足した後の更新の 4 本は、JWT の `session_id` が同じで、`auth.sessions` の行も 1 つのまま。足した後の更新で JWT の `aal` は `aal2`、`amr` は `[password, totp]`（`auth.sessions.aal` の列は `aal1` のまま。JWT は `mfa_amr_claims` から作られる）。アプリを通らない OTP だけの `verify` は別の新しい `session_id` を作り、その更新も同じ id を保つ。アプリを通らない通行証は `public.sessions` に行が無い。方法の名前はメールの数字が `otp`（`magiclink` ではない）で、更新で `token_refresh` は足されない。この不変がこの設計の前提（更新・昇格が前の行の続きに引き継がれる）。本物の `mfa.verify` は手元が TOTP 無効で流せないので、配備前の preview で 1 回確かめる。
+**前提の実測（2026-10-29、波 5 の Task 0、手元の Supabase。履歴。TOTP の昇格は段4で消した）:** password grant の後、更新 2 回、`mfa_amr_claims` に `totp` の行を足した後の更新の 4 本は、JWT の `session_id` が同じで、`auth.sessions` の行も 1 つのまま。足した後の更新で JWT の `aal` は `aal2`、`amr` は `[password, totp]`（`auth.sessions.aal` の列は `aal1` のまま。JWT は `mfa_amr_claims` から作られる）。アプリを通らない OTP だけの `verify` は別の新しい `session_id` を作り、その更新も同じ id を保つ。アプリを通らない通行証は `public.sessions` に行が無い。方法の名前はメールの数字が `otp`（`magiclink` ではない）で、更新で `token_refresh` は足されない。この不変がこの設計の前提（更新・昇格が前の行の続きに引き継がれる）。本物の `mfa.verify` は手元が TOTP 無効で流せないので、配備前の preview で 1 回確かめる。
 
-**E2E（書いた。controller が流す）:** `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`（`SEC-AUTH-005-AC-01`・`-02`・`-03`・`-05`、`SEC-AUTH-010-AC-01`・`-03`、`SEC-AUTH-030-AC-03`、`SEC-AUTH-031-AC-02`）、`e2e/FR-LOGIN-030-session-cookies-and-responses.spec.ts`（`SEC-AUTH-005-AC-04`）。E2E の通行証は補助 `bindAppSession`（`e2e/admin-session-test-utils.ts`）で結び付ける。攻撃側の通行証は結び付けない。
+**E2E（書いた。controller が流す）:** `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`（`SEC-AUTH-005-AC-01`・`-02`・`-03`・`-05`、`SEC-AUTH-010-AC-01`・`-03`、`SEC-AUTH-030-AC-03`）、`e2e/FR-LOGIN-030-session-cookies-and-responses.spec.ts`（`SEC-AUTH-005-AC-04`）。E2E の通行証は補助 `bindAppSession`（`e2e/admin-session-test-utils.ts`）で結び付ける。攻撃側の通行証は結び付けない。
 
 **認証認可:** 監査とログに、トークン・Cookie の値・`session_id` の値を残さない。残すのは固定の符号（`auth_session_id_missing`・`unbound_session`・`session_lookup_failed`・`app_session_required`）だけ。`readAuthSessionId` は署名を見ないので、GoTrue の応答にだけ使い、要求から来た token には使わない。
 
@@ -2604,7 +2604,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 1. 共有の `checkAuthSessionLiveness`（`src/lib/auth/authenticate.ts`）が、中で呼ぶ RPC を旗で替える。旗が有効（既定）なら `is_app_session_active`、無効（`off`・`0`・`false`）なら従来の `is_auth_session_active`。関数の名前・引数・戻り値は変えない（窓口と管理の認可が同じ形で呼び、多数の試験が差し替えているため）
 2. `is_app_session_active(p_session_id)` は、`auth.sessions` に生きた行があり（`not_after` が空か未来）、かつ自前の `sessions` に `auth_session_id` が一致して `user_id` が同じ、失効していない行がある時だけ真（移行 M1。`expires_at` は見ない）。アプリを通らずに取った password や OTP だけの通行証は GoTrue 側では生きていても、自前の行が無いので偽になる
 3. `authenticateRequest` は、`active` なら claims を返し、`revoked`（結び付いていない・失効・`session_id` が無い）なら `{ ok: false, reason: 'revoked', claims }` を返す。`claims` は署名検証済みの値で、断った窓口が行為者を監査に残すために使う。`unavailable` には付けない。`admin-rbac` は `checkAuthSessionLiveness` を呼ぶだけなので触らず、結び付いていない session は ACL を持っていても 401（`denial.reason: 'session'`）になる
-4. `enroll-totp` は `revoked` で claims が付いている時だけ、`mfa_enroll`・`denied`・`app_session_required` を監査に 1 行残してから 401 を返す（DD-AUTH-030）。`hasSecondFactorAmr` の確かめは二重の守りとして残す
+4. （段4の Task 30 で、`enroll-totp` の呼び手を消した。`revoked` に付く claims は、断った窓口が行為者を監査に残すための値として `authenticateRequest` に残る）
 
 | 条件 | 動き |
 | --- | --- |
@@ -2614,7 +2614,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | RPC が誤りを返す・例外 | `unavailable`（claims なし）。503＋`Retry-After`。「結び付いていない」と取り違えない（自前の行の引きの失敗も RPC の誤りに含まれる） |
 | JWT に `session_id` が無い | RPC を呼ばず `revoked`＋claims |
 
-**読む側の認証認可:** 監査に残すのは固定の符号 `app_session_required` だけ。`session_id`・トークンは残さない。旗は DB に置かない（DB 側の `has_permission` の検査は移行 M2 が担う）。本物の `mfa.verify` の前後で GoTrue の `session_id` が変わらないことは本番の前の確認として残る。
+**読む側の認証認可:** 監査に残すのは固定の符号 `app_session_required` だけ。`session_id`・トークンは残さない。旗は DB に置かない（DB 側の `has_permission` の検査は移行 M2 が担う）。
 
 **DB の側（`has_permission` と会員の本人の行の方針。移行 M2、2026-10-29、波 5 の Task 6。未適用）:**
 
@@ -2625,7 +2625,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permission-aal2.test.ts`。検査の順、G-0 の ACL の `EXISTS` が一字も違わないこと、ROLLBACK の全文、方針 3 本の形）、DB 結合（`tests/integration/db/auth_has_permission_aal2.integration.test.ts`。aal1・`aal` 無し・`session_id` 無し・形が悪い・結び付いていない・失効後・`auth.sessions` 削除後は偽、aal2＋結び付き＋生存で真、ACL の無い人は常に偽、公開の読みは aal1 の会員で止まらない、会員の本人の行は結び付いた時だけ見える）。
 
-**テスト観点:**（単体 `tests/unit/lib/auth/app-session.test.ts`・`authenticate.test.ts`・`admin-rbac.test.ts`・`tests/unit/features/auth/services/session.test.ts`・`tests/unit/services/register.test.ts`・`tests/unit/api/auth/refresh-route.test.ts`・`mfa-verify-route.test.ts`・`mfa-enroll-totp-route.test.ts`。結合 `tests/integration/api/auth/refresh.test.ts`・`session-lifecycle.test.ts`。名前の先頭は `DD-AUTH-039` か `SEC-AUTH-005-AC-05`）
+**テスト観点:**（単体 `tests/unit/lib/auth/app-session.test.ts`・`authenticate.test.ts`・`admin-rbac.test.ts`・`tests/unit/features/auth/services/session.test.ts`・`tests/unit/services/register.test.ts`・`tests/unit/api/auth/refresh-route.test.ts`。結合 `tests/integration/api/auth/refresh.test.ts`・`session-lifecycle.test.ts`。名前の先頭は `DD-AUTH-039` か `SEC-AUTH-005-AC-05`）
 
 | # | 観点 |
 | --- | --- |
@@ -2634,10 +2634,8 @@ DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permi
 | 3 | `persistNewSession`: `trustedAuthSessionId` が無い・null なら `auth_session_id` は null（token に `session_id` があっても）。有れば新しい token の `session_id`、無ければ `trustedAuthSessionId`。insert が先・revoke が後は変わらない。`findSessionByRefreshHash` が `auth_session_id` を引いて返す |
 | 4 | `persistSessionAndCookies`: `session_id` を `auth_session_id` に入れる。旗が有効で `session_id` が無ければ insert せず `ok: false`、旗が無効なら null で入れる |
 | 5 | `refresh`: 旗が有効で 3 通りの未結び付きは Supabase を呼ばず 401（`SEC-AUTH-005-AC-05`）。結び付いた行は更新して `trustedAuthSessionId` を渡す。失効済みは `session_revoked` のまま。旗が無効なら従来どおり。旗が有効で行の引きが失敗（`SessionLookupError`）なら 503・Cookie を残す・Supabase を呼ばない・差し替えない・`session_lookup_failed`。`findSessionByRefreshHash` は既定で DB のエラーを `null` で返し、`throwOnError` で投げる（行が無いのは `null`） |
-| 6 | `mfa/verify`: 検証済みの `claims.session_id` を `trustedAuthSessionId` に渡す（前の行の値は使わない。保存する値は新しい token の `session_id`、読めなければ渡した値） |
 | 7 | 読む側（`authenticate.test.ts`）: 旗が未設定で `is_app_session_active`（`p_session_id` を渡す）、`off`・`OFF`・`0`・`false` で `is_auth_session_active`。偽は `revoked`＋検証済みの claims、RPC の誤り・例外は `unavailable`（claims なし）、`session_id` 無しは RPC を呼ばず `revoked`。`missing`・`invalid` に claims は付かない |
 | 8 | 管理の認可（`admin-rbac.test.ts`）: 結び付いていない session（liveness が `revoked`）は ACL を持っていても 401。`session_id` を渡して確かめる |
-| 9 | `enroll-totp`（`mfa-enroll-totp-route.test.ts`。DD-AUTH-030 観点 17）: `revoked`＋claims は 401 で `app_session_required` を 1 行だけ。claims 無し・他の失敗理由では書かない（`SEC-AUTH-031-AC-02`、`SEC-AUTH-030-AC-03`） |
 
 ### DD-AUTH-040 captcha を免除される auth だけの client と、captcha の拒否の見分け
 

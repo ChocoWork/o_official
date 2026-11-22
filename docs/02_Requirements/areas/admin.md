@@ -610,16 +610,18 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | --- | --- |
 | 上位 | THR-ADMIN-008 |
 | 根拠 | 監査ログは長く残り、店長と DB の運用者が読む。対象のメールや理由の文は id や伏せ字で足り、内部の誤りの文はアプリの記録に分ける。全体の NFR-SEC-010（範囲外。個人情報のマスキング）を当てはめた |
-| 状態 | 廃止 |
-| 確かめ方 | E2E |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/api/admin-misc/admin-audit-write.test.ts`。ARC-ADMIN-003） |
 | 出どころ | OWASP ASVS 4.0.3 V7.1.2 |
 | 優先度 | MUST |
 
 範囲の API が監査ログに書く `metadata` と `detail` には、メールの住所・理由の文・Supabase と DB の誤りの文を平文で入れない。
 
-- MFA のリセットは 2026-10-26 に満たした。全部の分岐の `metadata` から `reason`・`target_email`・`error_message`・`delete_errors[].message` を外し、理由は長さ（`reason_length`）と SHA-256 の 16 進（`reason_sha256`）だけを残す。誤りの文はアプリの記録（`console.error`）に回し、監査には固定の文を残す（ADR-0461）
-- 強制失効の例外の `detail` は固定の `revoke_failed`（2026-10-26）。誤りの文は残さない
-- ユーザー作成は 2026-10-26 に満たした。重なりは固定の `email_already_registered`、ほかの誤りは固定の `create_user_failed` を `detail` に残し、Supabase の誤りの文（メールの住所を含みうる）は `console.error` に回す（以前は誤りの文のまま残した。TM-ADMIN-49）。漏洩の照合の結果は固定の `pwned_password`、照合が使えない時は `pwned_check_unavailable:<符号>`
+- 強制失効の例外の `detail` は固定の `revoke_failed`。誤りの文は残さない
+- 店員のやり直し（`POST /api/admin/staff/[id]/redo`）は理由の文を残さず、長さ（`reason_length`）だけを残す
+- 問い合わせの返信は固定の符号（`reply_saved_mail_failed` など）だけを残す
+
+（2026-11-22 パスキー段4 Task 30）MFA のリセットとユーザー作成の窓口は消えた。残る窓口で守る。以前の MFA のリセット（理由の長さとハッシュ）とユーザー作成（固定の `create_user_failed` など）の項目は、AC-01・AC-02 とともに廃止した。
 
 #### SEC-ADMIN-008-AC-01 MFA のリセットの記録に対象のメールと理由の文が平文で出ない
 

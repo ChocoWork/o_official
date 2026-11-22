@@ -128,7 +128,7 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | NFR-SEC-005（範囲外）、FREQ-508-REQ-01、DRV-ADMIN-005、DRV-ADMIN-007、ADR-0452、ADR-0453、ADR-0462 |
+| 上位 | NFR-SEC-005（範囲外）、FREQ-508-REQ-01、SEC-ADMIN-008、DRV-ADMIN-005、DRV-ADMIN-007、ADR-0452、ADR-0453、ADR-0462 |
 | 根拠 | 誰がいつ何をしたかを後でたどれるよう、管理の操作の結果を `audit_logs` に残す（NFR-SEC-005）。監査ログには操作した人のメール・IP・ブラウザの情報が入るので、読むのは `admin.audit.read` を持つ店長だけにし（FREQ-508-REQ-01、ADR-0453）、読める人にも要らない列は返さない（DRV-ADMIN-005、ADR-0452）。人の session を切る操作は乗っ取りの準備にも使えるので、権限の無い試みも残す（DRV-ADMIN-007） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |

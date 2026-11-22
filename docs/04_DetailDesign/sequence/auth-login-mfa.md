@@ -33,36 +33,34 @@
 sequenceDiagram
   actor User as 利用者
   participant UI as ブラウザ
-  participant Login as login API
+  participant Start as email-code/start API
   participant Store as 戻り先の控え
-  participant OTP as OTP API
+  participant Verify as email-code/verify API
   participant Post as post-login API
-  participant Totp as verified 画面と mfa API
-  User->>UI: 検索条件つきの頁でヘッダーのログインを押す
-  UI->>Login: POST /api/auth/login（next つき）
-  Login->>Login: パスワード確認とOTP送信
-  Login->>Login: next を戻り先の確かめに通す
-  Login->>Store: 番号の sha256 と道筋を控える（用途 login、15 分）
-  Login-->>UI: 200 と保留Cookieと sb-return-intent
-  UI->>OTP: POST /api/auth/otp/verify
-  OTP-->>UI: 200 と認証Cookie
+  User->>UI: 検索条件つきのページでヘッダーのログインを押す
+  UI->>Start: POST /api/auth/email-code/start（next つき）
+  Start->>Start: next を戻り先の確かめに通す
+  Start->>Store: 番号の sha256 と道筋を控える（用途 login、15 分）
+  Start-->>UI: 202 と保留Cookieと sb-return-intent
+  UI->>Verify: POST /api/auth/email-code/verify
+  Verify-->>UI: 200 と認証Cookie
   UI->>Post: POST /api/auth/post-login
-  alt 一般の会員
+  alt お客さん
     Post->>Store: 1 回で使い切る
     Post-->>UI: 戻り先か / と Cookie 削除
-  else 管理者・サポーターで aal1
-    Post-->>UI: /auth/verified と needsMfa（使い切らない）
-    UI->>Totp: TOTP を確認して aal2 になる
-    Totp-->>UI: 200
-    UI->>Post: POST /api/auth/post-login
+  else 店員で入口の条件を満たす
     Post->>Store: 1 回で使い切る
     Post-->>UI: 戻り先か /admin と Cookie 削除
+  else 店員で入口の条件に足りない
+    Post-->>UI: /login?error=staff_passkey_required と needsMfa（使い切らない）
+    UI->>UI: resolvePostLoginPath が GET /api/auth/passkey の approvedCount を読み、1本なら /admin/passkeys?more=1
   end
+  Note over UI: 通信の失敗・2xx でない応答・読めない本文は /login
 ```
 
-- 控えを作るのはパスワードの確認とOTPの送信が成功した後だけ。誤りやボット判定では作らない
+- 控えを作るのはメールのコードの始めが成功した後だけ。誤りやボット判定では作らない
 - 番号は `sb-return-intent`（HttpOnly）の Cookie だけを通り、URL・本文には出ない
-- 使い切った戻り先は、役割と aal2 を渡してもう一度確かめる。外れた・使えない時は `/`（管理者・サポーターは `/admin`）
+- 使い切った戻り先は、役割と店員の入口の条件を渡してもう一度確かめる。外れた・使えない時は `/`（管理者・サポーターは `/admin`）
 - 取消（cancel）とログアウトで Cookie を消す
 
 ## 関連テスト
@@ -71,9 +69,8 @@ sequenceDiagram
 
 | 観点 | テスト |
 | --- | --- |
-| login・OTPと宛先・回数制限 | login、OTP |
-| 再送・取消・署名期限 | resend、cancel、保留Cookie |
-| 画面ガード・再送表示 | OTP専用画面、OTP保護、再送エラー |
+| 行き先の窓口 | `tests/integration/api/auth/post-login.test.ts`（ARC-AUTH-015・API-AUTH-019） |
+| 戻り先の使い切り | `tests/integration/api/auth/return-intent-flow.test.ts` |
 
 ## 未確認事項
 

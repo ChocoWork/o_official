@@ -1260,7 +1260,7 @@ Header のカートアイコンのバッジを `<StatusBadge variant="count" cou
 
 管理APIの認可（admin-rbac）は Authorization ヘッダーだけでなく Cookie の access token も受け付ける単一ヘルパ verifyAccessToken を通し、JWT の署名・exp に加えて iss と aud を検証すること
 
-### FREQ-316-REQ-02 店員の2要素の判定を JWT で行う（段1b から入口の条件。TOTP の確認で上がったセッションの書き戻しは段4で消した）
+### FREQ-316-REQ-02 店員の2要素の判定を、セッション単位（JWT の amr・時刻と、DB で数えた認めた鍵の本数）で行う（段1b から入口の条件。TOTP の確認で上がったセッションの書き戻しは段4で消した）
 
 | 属性 | 値 |
 | --- | --- |

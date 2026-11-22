@@ -177,6 +177,23 @@ describe('API-AUTH-019 POST /api/auth/post-login', () => {
     },
   );
 
+  test('ARC-AUTH-015 お客さんは控えた戻り先へ送られる', async () => {
+    mockAuthenticateRequest.mockResolvedValue(viewer('user', false));
+    fakeConsume('/item/3');
+
+    const res = await callPost(postLoginRequest({ cookie: INTENT_COOKIE }));
+
+    expect(await res.json()).toEqual({ redirectTo: '/item/3', needsMfa: false });
+  });
+
+  test.each(['admin', 'supporter'])('ARC-AUTH-015 %s・入口の条件を満たす店員は、戻り先が無ければ /admin へ送られる', async (role) => {
+    mockAuthenticateRequest.mockResolvedValue(viewer(role, true));
+
+    const res = await callPost(postLoginRequest());
+
+    expect(await res.json()).toEqual({ redirectTo: '/admin', needsMfa: false });
+  });
+
   test('API-AUTH-019 特権で入口の条件を満たし保存が /admin/orders ならそのまま返す', async () => {
     mockAuthenticateRequest.mockResolvedValue(viewer('admin', true));
     fakeConsume('/admin/orders');

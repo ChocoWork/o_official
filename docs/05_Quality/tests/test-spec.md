@@ -903,7 +903,6 @@ DB 結合の「DB なしの形」の試験は `supabase/migrations/` の 6 本�
 
 | ファイル | 先頭の ID | 確かめること |
 | --- | --- | --- |
-| [amr.test.ts](../../../tests/unit/lib/auth/amr.test.ts) | `DD-AUTH-030` | `hasSecondFactorAmr`（通行証の `amr` に 2 段目の方法があるか）。password だけでは偽（SEC-AUTH-031 の局所版） |
 | [revoke-user-sessions.test.ts](../../../tests/unit/lib/auth/revoke-user-sessions.test.ts) | `DD-ADMIN-003` | `revokeAllSessionsForUser`。アプリの `sessions` の失効の誤りと RPC `revoke_auth_sessions_for_user` の誤りをそれぞれ投げる（SEC-ADMIN-007・014） |
 | [stockist-schemas.test.ts](../../../tests/unit/features/stockist/stockist-schemas.test.ts) | `DD-STOCKIST-034` | `stockistWriteSchema` の許可の字・拒否の字、`toInvalidStockistResponse` が `fields` だけを返し `details`・入力の値を含まないこと（SEC-STOCKIST-011・014）。電話の末尾の改行は `trim()` が先に取り除くので通り、途中の改行は拒む |
 
