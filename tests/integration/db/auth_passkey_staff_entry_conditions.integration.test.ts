@@ -127,7 +127,8 @@ describeLocalDb('passkey staff entry condition functions', () => {
       staff_idle_seconds: d.staffIdleSeconds,
       window_minutes: d.windowMinutes,
       min_approved_passkeys: d.minApprovedPasskeys,
-      reject_customer_password: d.rejectCustomerPassword,
+      // defaultStaffPasskeySettings.rejectCustomerPassword is the column default (false); the real row is true after migration J
+      reject_customer_password: true,
     });
   });
 

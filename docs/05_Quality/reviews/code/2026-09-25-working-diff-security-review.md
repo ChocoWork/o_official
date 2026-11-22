@@ -567,6 +567,8 @@ G と H の順番・範囲（G-1〜G-4・H-1）は1章、開店前に直す物�
 
 **段4 Task 29 済み（2026-11-22）**: お客さんのパスワードの再設定・変更を消した（画面 `/auth/password-reset`・`/auth/password-reset/verify`・`/account/password`、窓口 `/api/auth/password-reset/*`・`/api/auth/password/change/*`、部品、試験 `FR-PWRESET-001〜010`・`FR-ACCOUNT-046`、結合・単体の該当）。404の確かめは `FR-LOGIN-080`（FR-AUTH-053-AC-02）、`/account` にリンクが無い確かめは `FR-LOGIN-060`。廃止にした追跡の項目は SR-AUTH-009・FR-AUTH-006・SEC-AUTH-014・016・018・020・027・034・THR-AUTH-014・016・018・020・027・034・ADR-0403・0405・0421 と、その AC・構造設計・DD。`passwordSchema`・`src/lib/pwned-password.ts` は `admin:bootstrap`（Task 31 が消す）が呼ぶので残した。表 `password_reset_tokens`・`password_change_challenges` と関数は移行 K（Task 32）で消す。
 
+**段4 Task 32 済み（2026-11-22。手元だけ。本番には当てない）**: 移行 J（`20261122070400_passkey_reject_customer_password.sql`。お客さんの password をフックが `[customer-password-disabled]` で拒否する旗を真にする。ADR-0476・FR-AUTH-055・THR-AUTH-058・SEC-AUTH-060）と K（`20261122070500_drop_password_auth_objects.sql`。`password_reset_tokens`・`password_change_challenges` の2表と3つの関数を `CASCADE` なしで消す。戻しは K の前の手元の最終の姿）を足した。確かめは `FR-LOGIN-081`（3幅。`isolated-global`）と DB 結合 `auth_passkey_stage4_migrations`。大きさと MD5 は `docs/06_Operations/db-migrations.md` の「パスキー段4 移行 J・K」。**J・K は本番のドメインが決まるまで本番に当てない**（オーナー決定）。
+
 **オーナーに伝える物（要件ではない）**
 
 - 注文のメールの送信の一時停止の間、店への警告は「注文のメールの送信を止めています」と出る。原因がパスキーの知らせのメールの時も同じ文になる

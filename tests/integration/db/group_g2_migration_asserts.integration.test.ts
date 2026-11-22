@@ -41,7 +41,9 @@ function sectionOf(sql: string, begin: string, end: string): string {
   if (from < 0 || to < 0) throw new Error(`missing ${begin}`);
   return sql.slice(from + begin.length, to);
 }
-const FOUNDATION_ASSERT = sectionOf(FOUNDATION_SQL, '-- G2A_FINAL_ASSERT_BEGIN', '-- G2A_FINAL_ASSERT_END');
+// 今の DB は移行 K（パスキー段4）の後なので、G-2 の確かめの一覧から K で消した cleanup_password_reset_tokens の1行を外して流す（移行のファイルは変えない）
+const FOUNDATION_ASSERT = sectionOf(FOUNDATION_SQL, '-- G2A_FINAL_ASSERT_BEGIN', '-- G2A_FINAL_ASSERT_END')
+  .replace(/ +\('public\.cleanup_password_reset_tokens\(integer\)'\),\r?\n/, '');
 const WRITERS_ASSERT = sectionOf(WRITERS_SQL, '-- G2B_FINAL_ASSERT_BEGIN', '-- G2B_FINAL_ASSERT_END');
 
 /** 注釈の行を除いた文 */
@@ -77,9 +79,8 @@ const WRITER_NAMES = [
   'admin_reserve_purchase_order_attachment', 'admin_attach_purchase_order_document', 'admin_revise_purchase_order_document',
 ];
 
-/** Task 1 の公開関数 11 本（最後の確かめ $g2a_final_public_function_acl$ の一覧と同じ） */
+/** Task 1 の公開関数 11 本から、移行 K が消した cleanup_password_reset_tokens を除いた10本（今の DB で流す $g2a_final_public_function_acl$ の一覧） */
 const TASK1_FUNCTIONS = [
-  'public.cleanup_password_reset_tokens(integer)',
   'public.clear_admin_expense_cost_allocations(bigint)',
   'public.create_profile_for_new_auth_user()',
   'public.find_auth_user_id_by_email(text)',
@@ -313,7 +314,7 @@ describeLocalDb('integration: G-2 の移行の末尾の確かめを流す（両�
     test('FREQ-540-AC-08: Task 1 の公開関数に PUBLIC の EXECUTE を付け直す、service_role の EXECUTE を外す、関数を落とすと public_function_acl で止まる', async () => {
       expect(await runAfter('grant execute on function public.is_auth_session_active(uuid) to public', FOUNDATION_ASSERT)).toEqual(failed('public_function_acl'));
       expect(await runAfter('revoke execute on function public.is_auth_session_active(uuid) from service_role', FOUNDATION_ASSERT)).toEqual(failed('public_function_acl'));
-      expect(await runAfter('drop function public.cleanup_password_reset_tokens(integer)', FOUNDATION_ASSERT)).toEqual(failed('public_function_acl'));
+      expect(await runAfter('drop function public.find_auth_user_id_by_email(text)', FOUNDATION_ASSERT)).toEqual(failed('public_function_acl'));
     });
 
     test.each([

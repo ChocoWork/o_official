@@ -1903,11 +1903,11 @@ stateDiagram-v2
 | --- | --- | --- | --- |
 | 公開の読み | `looks`・`look_items`・`news_articles`・`stockists` | SELECT のみ | SELECT のみ |
 | 管理の読み | `item_color_presets`・`item_cost_history` | なし | SELECT のみ |
-| 閉じた表 | `sessions`・`password_reset_tokens`・`password_change_challenges`（M3 を当てた後。DATA-AUTH-009）・`rate_limit_counters`・`audit_logs`・`audit_logs_backups` | なし | なし |
+| 閉じた表 | `sessions`・`rate_limit_counters`・`audit_logs`・`audit_logs_backups`（`password_reset_tokens`・`password_change_challenges` は移行 K〔20261122070500〕で表ごと消した） | なし | なし |
 | 自分の行 | `profiles` | なし | SELECT・INSERT・UPDATE・DELETE（TRUNCATE・REFERENCES・TRIGGER・MAINTAIN は無し） |
 | 列単位 | `items` | 公開の21列の SELECT のみ（表単位は無し。原価 `pattern_cost`・`mass_production_cost` は無し） | 同左 |
 | 関数 | `search_items`・`search_looks`・`search_news` | EXECUTE 可 | EXECUTE 可 |
-| 関数 | `search_public_items`・`search_public_looks`・`search_public_news`・`admin_update_look`・`issue_password_change_challenge`・`consume_password_change_challenge`（後ろ 2 本は M3 を当てた後。DATA-AUTH-010） | 不可 | 不可 |
+| 関数 | `search_public_items`・`search_public_looks`・`search_public_news`・`admin_update_look`（`issue_password_change_challenge`・`consume_password_change_challenge` は移行 K で関数ごと消した） | 不可 | 不可 |
 | 連番 | `stockists_id_seq`・`rate_limit_counters_id_seq` | なし | なし（service_role は USAGE・SELECT） |
 | 置き場 | `look-images`・`news-images` | `storage.buckets.public = false` | - |
 
@@ -2058,11 +2058,11 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-AUTH-008、SEC-AUTH-037、ADR-0464 |
+| 上位 | FR-AUTH-008、SEC-AUTH-037、ADR-0464、ADR-0476 |
 | 根拠 | トークンを出す時（ログイン時と更新時）に毎回走る判断を DB の1か所に置き、店員の締め付けを GoTrue の直叩きの道まで効かせる（設計 5-2）。判断は DD-AUTH-044 |
 | 状態 | 推定 |
-| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_access_token_hook.integration.test.ts`）、E2E（FR-AUTH-008-AC-01）、移行の末尾の確かめ（`PASSKEY_MIGRATION_ASSERTION_FAILED`） |
-| 出どころ | 移行 `supabase/migrations/20261116230000_passkey_access_token_hook.sql`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2） |
+| 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_access_token_hook.integration.test.ts`、`tests/integration/db/auth_passkey_stage4_migrations.integration.test.ts`）、E2E（FR-AUTH-008-AC-01、FR-AUTH-055-AC-01・02、SEC-AUTH-060-AC-01・02）、移行の末尾の確かめ（`PASSKEY_MIGRATION_ASSERTION_FAILED`） |
+| 出どころ | 移行 `supabase/migrations/20261116230000_passkey_access_token_hook.sql`、`supabase/migrations/20261122070400_passkey_reject_customer_password.sql`（旗を真にする移行 J）、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2） |
 
 | 関数 | 引数 | 返り値 | 動き |
 | --- | --- | --- | --- |
@@ -2070,6 +2070,7 @@ stateDiagram-v2
 
 - 設定と権限: `LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''`・所有者 `postgres`。`execute` は `supabase_auth_admin` だけ。`public`・`anon`・`authenticated`・`service_role` から外す。表の `select` は渡さない（関数が持ち主の権限で読む）。有効にするのは `config.toml` の `[auth.hook.custom_access_token]`（Task 9）
 - 読む表: `public.user_roles`・`public.roles`・`private.passkey_staff_config`（`private.passkey_staff_settings()` 経由）・`private.passkey_registration_windows`。数えるのは `public.passkey_approved_count`。書く表は無い
+- お客さんの `password`: 旗 `private.passkey_staff_config.reject_customer_password` が真の時だけ、`{"error":{"http_code":403,"message":"[customer-password-disabled] ..."}}` で拒否する（店員の印とは別）。旗の**列の既定値は偽**で、移行 J（段4 の Task 32。`20261122070400_passkey_reject_customer_password.sql`）が実際の行を真にする。`src/lib/auth/staff-passkey-defaults.ts` の `rejectCustomerPassword` は列の既定値（偽）を表す（ADR-0476）。戻しは `UPDATE private.passkey_staff_config SET reject_customer_password = false WHERE id;` の1行
 - 戻す: 移行のヘッダーの ROLLBACK（関数を1本落とす）
 
 ### DATA-AUTH-014 auth.webauthn_credentials の引き金は、足し・消し・鍵の差し替えを outbox に積み、認めの控えを外す

@@ -293,9 +293,13 @@ describeLocalDb('passkey access token hook function', () => {
       expect(await hook(input)).toEqual(input);
     });
 
-    test('DATA-AUTH-013 a customer password login passes while the flag is false and is rejected when the flag is true', async () => {
+    test('DATA-AUTH-013 a customer password login is rejected after migration J (flag true) and passes when the flag is set to false', async () => {
       const u = await user();
       const input = ev(u, 'password', { aal: 'aal1', amr: [{ method: 'password', timestamp: 1 }] });
+      // migration J turns the flag on in the real row; the column DEFAULT stays false
+      expect((await db().query('select reject_customer_password as flag from private.passkey_staff_config')).rows[0].flag).toBe(true);
+      isCustomerReject(await hook(input));
+      await db().query('update private.passkey_staff_config set reject_customer_password = false');
       expect(await hook(input)).toEqual(input);
       await db().query('update private.passkey_staff_config set reject_customer_password = true');
       isCustomerReject(await hook(input));

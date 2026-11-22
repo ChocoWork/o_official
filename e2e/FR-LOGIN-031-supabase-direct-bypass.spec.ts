@@ -525,13 +525,13 @@ for (const viewport of viewports) {
 
 // ---- SEC-AUTH-011 ----
 
-const AUTH_TABLES = ['sessions', 'password_reset_tokens', 'rate_limit_counters', 'audit_logs', 'audit_logs_backups'] as const;
+const AUTH_TABLES = ['sessions', 'rate_limit_counters', 'audit_logs', 'audit_logs_backups'] as const;
 
 for (const viewport of viewports) {
   test.describe(`SEC-AUTH-011-AC-01 anon・会員の JWT で認証の表を読むと権限の誤りになる (${viewport.name})`, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
-    test(`SEC-AUTH-011-AC-01 anon の鍵と会員の JWT で sessions・password_reset_tokens・rate_limit_counters・audit_logs・audit_logs_backups を select すると、0件ではなく権限の誤り（401 か 403）になる (${viewport.name})`, async ({ request }) => {
+    test(`SEC-AUTH-011-AC-01 anon の鍵と会員の JWT で sessions・rate_limit_counters・audit_logs・audit_logs_backups を select すると、0件ではなく権限の誤り（401 か 403）になる (${viewport.name})`, async ({ request }) => {
       const member = await sharedMember();
       const credentials = [
         { name: 'anon の鍵', token: ANON_KEY },
@@ -562,15 +562,13 @@ const AUTH_RPCS: ReadonlyArray<{ name: string; args: Record<string, unknown> }> 
   // 2つの形（3引数・4引数）とも呼ぶ。通ってしまっても数を1動かすだけの、使われない送り元と窓口
   { name: 'increment_rate_limit_counter', args: { _ip: '203.0.113.31', _endpoint: 'e2e-auth031-rpc', _bucket: '2026-01-01T00:00:00Z' } },
   { name: 'increment_rate_limit_counter', args: { _ip: '203.0.113.31', _endpoint: 'e2e-auth031-rpc', _bucket: '2026-01-01T00:00:00Z', _increment: 1 } },
-  // 通ってしまっても、100 年より古い再設定の印しか消さない
-  { name: 'cleanup_password_reset_tokens', args: { p_retain_days: 36500 } },
 ];
 
 for (const viewport of viewports) {
   test.describe(`SEC-AUTH-012-AC-01 anon・会員の JWT で認証の関数を呼ぶと権限の誤りになる (${viewport.name})`, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
-    test(`SEC-AUTH-012-AC-01 anon の鍵と会員の JWT で認証の6つの関数を rpc で呼ぶと、どれも権限の誤り（401 か 403）になる (${viewport.name})`, async ({ request }) => {
+    test(`SEC-AUTH-012-AC-01 anon の鍵と会員の JWT で認証の5つの関数を rpc で呼ぶと、どれも権限の誤り（401 か 403）になる (${viewport.name})`, async ({ request }) => {
       const member = await sharedMember();
       const credentials = [
         { name: 'anon の鍵', token: ANON_KEY },

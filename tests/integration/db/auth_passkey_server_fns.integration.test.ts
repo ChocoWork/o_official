@@ -75,11 +75,12 @@ describeLocalDb('passkey server endpoint functions', () => {
     await db().query('savepoint h');
     try {
       await db().query('set local role supabase_auth_admin');
-      // 'password' for a customer returns the event itself (reject_customer_password is false); for staff it is rejected.
+      // 'password' for staff is rejected with the staff marker whatever the flag is. A customer password is rejected with the customer marker
+      // after migration J (flag true), so only the staff marker counts as the staff decision here.
       const r = await db().query('select public.passkey_access_token_hook($1::jsonb) as r', [
         JSON.stringify({ user_id: userId, authentication_method: 'password', claims: {} }),
       ]);
-      return r.rows[0].r?.error?.http_code === 403;
+      return r.rows[0].r?.error?.http_code === 403 && String(r.rows[0].r.error.message).startsWith('[staff-passkey-required]');
     } finally {
       await db().query('rollback to savepoint h');
     }

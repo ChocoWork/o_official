@@ -24,6 +24,13 @@ const FUNCTIONS = [
   'public.revoke_auth_sessions_for_user(uuid)',
 ];
 
+/**
+ * 移行 K（パスキー段4。20261122070500）が `cleanup_password_reset_tokens` を消したので、今の DB に在るのは10本。
+ * G-2 の移行のファイルの形（REVOKE の1文）は11本のまま確かめ、今の DB の確かめは FUNCTIONS から K で消した1本を除く。
+ */
+const DROPPED_BY_K = 'public.cleanup_password_reset_tokens(integer)';
+const LIVE_FUNCTIONS = FUNCTIONS.filter((sig) => sig !== DROPPED_BY_K);
+
 const MIGRATION_DIRECTORY = path.join(process.cwd(), 'supabase/migrations');
 const FOUNDATION_FILE = fs.readdirSync(MIGRATION_DIRECTORY).filter((name) => name.endsWith('_group_g2_purchasing_foundation.sql'));
 const FOUNDATION_SQL = fs.readFileSync(path.join(MIGRATION_DIRECTORY, FOUNDATION_FILE[0]), 'utf8');
@@ -38,7 +45,8 @@ function finalAssertBlock(tag: string): string {
   const start = section.indexOf(`DO ${tag}`);
   const end = section.indexOf(`${tag};`, start + tag.length + 3);
   if (start < 0 || end < 0) throw new Error(`missing ${tag}`);
-  return section.slice(start, end + tag.length + 1);
+  // 今の DB は K の後なので、G-2 の確かめの一覧から K で消した1行を外して流す（移行のファイルそのものは変えない）
+  return section.slice(start, end + tag.length + 1).replace(/ +\('public\.cleanup_password_reset_tokens\(integer\)'\),\r?\n/, '');
 }
 
 describe('G-2 foundation migration の形（DB なし）', () => {
@@ -73,7 +81,7 @@ describeLocalDb('G-2 Task 1: public function EXECUTE for anon / authenticated', 
   const oidOf = async (signature: string) =>
     (await db().query('select p.oid::int as oid from pg_proc p where p.oid = to_regprocedure($1)', [signature])).rows[0]?.oid as number | undefined;
 
-  test.each(FUNCTIONS)('FREQ-540-AC-09: reset 直後の DB で、%s は anon / authenticated が EXECUTE できず、proacl にも PUBLIC が無い', async (signature) => {
+  test.each(LIVE_FUNCTIONS)('FREQ-540-AC-09: reset 直後の DB で、%s は anon / authenticated が EXECUTE できず、proacl にも PUBLIC が無い', async (signature) => {
     const row = (await db().query(`select p.oid is not null as present,
         has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
         has_function_privilege('authenticated', p.oid, 'EXECUTE') as authenticated,
@@ -89,10 +97,10 @@ describeLocalDb('G-2 Task 1: public function EXECUTE for anon / authenticated', 
       where p.pronamespace = 'public'::regnamespace and p.proname = 'increment_rate_limit_counter' order by 1`)).rows;
 
     expect(overloads).toHaveLength(2);
-    expect(new Set(await Promise.all(FUNCTIONS.filter((sig) => sig.includes('increment_rate_limit_counter')).map(oidOf))).size).toBe(2);
+    expect(new Set(await Promise.all(LIVE_FUNCTIONS.filter((sig) => sig.includes('increment_rate_limit_counter')).map(oidOf))).size).toBe(2);
   });
 
-  test.each(FUNCTIONS)('FREQ-540-AC-09: %s は service_role と postgres が EXECUTE を保つ', async (signature) => {
+  test.each(LIVE_FUNCTIONS)('FREQ-540-AC-09: %s は service_role と postgres が EXECUTE を保つ', async (signature) => {
     const row = (await db().query(`select has_function_privilege('service_role', $1::regprocedure, 'EXECUTE') as service_role,
         has_function_privilege('postgres', $1::regprocedure, 'EXECUTE') as postgres`, [signature])).rows[0];
 
@@ -184,7 +192,7 @@ describeLocalDb('G-2 Task 1: public function EXECUTE for anon / authenticated', 
     test.each([
       ['anon に EXECUTE を付ける', 'grant execute on function public.revoke_auth_session(uuid) to anon'],
       ['authenticated に EXECUTE を付ける', 'grant execute on function public.increment_rate_limit_counter(inet,text,timestamptz) to authenticated'],
-      ['PUBLIC に EXECUTE を付ける', 'grant execute on function public.cleanup_password_reset_tokens(integer) to public'],
+      ['PUBLIC に EXECUTE を付ける', 'grant execute on function public.is_auth_session_active(uuid) to public'],
       ['service_role の EXECUTE を外す', 'revoke execute on function public.find_auth_user_id_by_email(text) from service_role'],
     ])('FREQ-540-AC-09: %s と止まる', async (_name, sql) => {
       await db().query(sql);
@@ -192,7 +200,7 @@ describeLocalDb('G-2 Task 1: public function EXECUTE for anon / authenticated', 
     });
 
     test('FREQ-540-AC-09: 関数が無ければ止まる', async () => {
-      await db().query('drop function public.cleanup_password_reset_tokens(integer)');
+      await db().query('drop function public.is_auth_session_active(uuid)');
       expect(await runAssertion()).toEqual(FAILED);
     });
 

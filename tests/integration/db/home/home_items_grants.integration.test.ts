@@ -7,7 +7,7 @@ import { createLiveAppSession, jwtClaims } from '../helpers/app-session';
 import { describeLocalDb } from '../helpers/local-db';
 
 /**
- * items の列単位の SELECT、item_cost_history の管理者の読みの方針、認証の 5 表・連番・profiles の権限（DATA-HOME-001）。
+ * items の列単位の SELECT、item_cost_history の管理者の読みの方針、認証の 4 表・連番・profiles の権限（DATA-HOME-001）。
  * 移行 sec_grants_hardening（Task 4）の形は DB なしで読み、権限の効き方は手元の使い捨て DB でだけ流す。
  * DB の試験は 1 つを 1 つの取引にして最後に巻き戻すので、足した利用者・行は残らない。
  */
@@ -39,7 +39,7 @@ const PUBLIC_ITEM_COLUMNS = [
 const COST_COLUMNS = ['pattern_cost', 'mass_production_cost'];
 const WRITE_PRIVILEGES = ['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN'];
 const ALL_PRIVILEGES = ['SELECT', ...WRITE_PRIVILEGES];
-const AUTH_TABLES = ['sessions', 'password_reset_tokens', 'rate_limit_counters', 'audit_logs', 'audit_logs_backups'];
+const AUTH_TABLES = ['sessions', 'rate_limit_counters', 'audit_logs', 'audit_logs_backups'];
 const SERVICE_TABLES = ['items', 'item_cost_history', 'profiles', ...AUTH_TABLES];
 
 describe('integration: items の列権限の移行の形（DB なし）', () => {
@@ -380,7 +380,7 @@ describeLocalDb('integration: items の列権限・原価の履歴・認証の�
     });
   });
 
-  describe('認証の 5 表と連番', () => {
+  describe('認証の 4 表と連番', () => {
     test.each(AUTH_TABLES.flatMap((table) => ['anon', 'authenticated'].map((role) => [role, table])))(
       'DATA-HOME-001 %s には %s の権限が 1 つも無い',
       async (role, table) => {
@@ -397,7 +397,7 @@ describeLocalDb('integration: items の列権限・原価の履歴・認証の�
       },
     );
 
-    test('DATA-HOME-001 service_role は認証の 5 表を読める', async () => {
+    test('DATA-HOME-001 service_role は認証の 4 表を読める', async () => {
       for (const table of AUTH_TABLES) {
         expect(await errorCode('service_role', null, `select count(*)::int as count from public.${table}`)).toBeUndefined();
       }

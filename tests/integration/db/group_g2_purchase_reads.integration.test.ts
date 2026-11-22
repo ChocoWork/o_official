@@ -81,7 +81,8 @@ function finalAssertBlock(tag: string): string {
   const start = section.indexOf(`DO ${tag}`);
   const end = section.indexOf(`${tag};`, start + tag.length + 3);
   if (start < 0 || end < 0) throw new Error(`missing ${tag}`);
-  return section.slice(start, end + tag.length + 1);
+  // 今の DB は移行 K（パスキー段4）の後なので、G-2 の確かめの一覧から K で消した cleanup_password_reset_tokens の1行を外して流す
+  return section.slice(start, end + tag.length + 1).replace(/ +\('public\.cleanup_password_reset_tokens\(integer\)'\),\r?\n/, '');
 }
 
 describe('G-2 foundation migration の発注書の読取の節（DB なし）', () => {

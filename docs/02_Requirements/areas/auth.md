@@ -845,7 +845,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: お客さんのログインはメールのコード・Google・パスキーだけにし、パスワードと認証アプリのログインの窓口・画面・設定は消す。パスワードで作ったアカウントも、メールのコードで今までどおり入れる。
 
-実装の状況（2026-11-22）: 段4の Task 26 で、残す流れ（`FR-AUTH-054`）の基準の試験を足した。消す側の要件（窓口・画面が無いこと、フックがお客さんの password を拒むこと）は、後のタスクで同じ要求の下に足す。
+実装の状況（2026-11-22）: 段4の Task 26 で、残す流れ（`FR-AUTH-054`）の基準の試験を足した。消す側の要件のうち、窓口・画面が無いこと（`FR-AUTH-053`）は Task 28〜30 で、フックがお客さんの password を拒むこと（`FR-AUTH-055`）は Task 32 で足した。
 
 ## 要件
 実装の状況（2026-11-22）: 段4の Task 28 で、お客さんのパスワードのログイン・会員登録・確認リンクの窓口と画面を消した（FR-AUTH-053）。確認前のアカウントの確認メールは、リンクをやめて8桁のコードを入れさせる形に替えた（FR-AUTH-054-AC-04）。
@@ -4893,12 +4893,12 @@ anon の鍵と service_role の鍵のそれぞれで `staff_passkey_amr_ok`・`s
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-AUTH-013 |
-| 根拠 | フックを有効にしても、お客さんのログインと更新を壊さないことの確かめ（旗 `reject_customer_password` は偽） |
+| 根拠 | フックを有効にしても、お客さんのログインと更新を壊さないことの確かめ。旗 `reject_customer_password` は、移行 J（段4 の Task 32）の後は真なので、パスワードだけは `[customer-password-disabled]` で断られる（FR-AUTH-055） |
 | 状態 | 推定 |
 | 確かめ方 | E2E（`e2e/FR-LOGIN-040-staff-hook-gotrue-rejections.spec.ts`。GoTrue に直に当てる HTTP の試験で、3つの幅で流す） |
 | 出どころ | `.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-9-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 9、Review Focus 1〜3） |
 
-お客さんがパスワード・メールのコード・パスキーのそれぞれで入れて（パスキーのトークンに店員の印は付かない）、本物の更新（`token_refresh`）も HTTP 200 で通ること。
+お客さんがメールのコード・パスキーのそれぞれで入れて（パスキーのトークンに店員の印は付かない）、本物の更新（`token_refresh`）も HTTP 200 で通ること。パスワードは移行 J の後は HTTP 403 で断られ、message が `[customer-password-disabled]` で始まり、トークンが無いこと（旗が偽だった段1〜3 の間は、パスワードも HTTP 200 で通った）。
 
 ### FR-AUTH-013-AC-04 窓を閉じた後の店員の更新は拒否され、前のアクセストークンは管理の表を読めない
 
@@ -6282,6 +6282,43 @@ DB の `staff_invite_cancel` は、開いた招待があれば `true`、2回目�
 
 `createUser({ email, password, email_confirm: false })` で作った確認前のアカウントに、メールのコードの始めの窓口（`/login/code` の入口）を呼ぶと、「メールアドレスの確認」の件名のメールが届く。本文に8桁のコードがあり、リンクとパスワードの案内の文は無い。そのコードを確定の窓口（`POST /api/auth/email-code/verify`）に渡すと 200 で、`/account` が開き、`/api/auth/me` が本人を返し、`email_confirmed_at` が入って確認済みになる。
 
+### FR-AUTH-055 お客さんの password でのログインは、GoTrue を直に叩いても拒否される。メールのコード・Google・パスキー・更新は通る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-030 |
+| 根拠 | アプリの窓口を消しても、利用者の行にパスワードが残る限り、公開の anon の鍵で `/auth/v1/token?grant_type=password` を叩けば入れてしまう。フック `public.passkey_access_token_hook` は、お客さんの `password` を拒否する分岐を最初から持つ（旗 `reject_customer_password` が真の時）。移行 J（`20261122070400_passkey_reject_customer_password.sql`）が旗を真にする。守りは SEC-AUTH-060、判断は ADR-0476、データは DATA-AUTH-013 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-081-customer-password-rejected.spec.ts`、FR-AUTH-055-AC-01・02。390・768・1280 の3幅でくり返す。旗の前提が真なので `isolated-global`）、DB 結合テスト（`tests/integration/db/auth_passkey_stage4_migrations.integration.test.ts`、DATA-AUTH-013） |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-32-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 32） |
+| 優先度 | MUST |
+
+規則: (1) 移行 J の後、`private.passkey_staff_config.reject_customer_password` の行は真で、列の既定値は偽のまま。(2) お客さん（有効な admin・supporter の役割が無い利用者）が `authentication_method = 'password'` で入ろうとすると、フックが 403 を返し、message は `[customer-password-disabled]` で始まる（店員の印 `[staff-passkey-required]` ではない）。トークンも session も作られない。(3) お客さんの `otp`・`magiclink`・`oauth`・`passkey`・`token_refresh` はフックが `event` をそのまま返す。(4) 店員の `password` は旗に関係なく店員の印で拒否される。(5) 旗は `UPDATE private.passkey_staff_config SET reject_customer_password = false WHERE id;` の1行で偽に戻せる。
+
+### FR-AUTH-055-AC-01 お客さんが正しいパスワードで GoTrue を直に叩くと、`[customer-password-disabled]` の 403 で拒否される
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-055 |
+| 根拠 | SR-AUTH-030。フックの分岐が GoTrue の応答として届くことを、本物の GoTrue で固定する |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-081-customer-password-rejected.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-32-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 32） |
+
+パスワード付きで作ったお客さんが、正しいパスワードで `POST /auth/v1/token?grant_type=password` を叩くと、HTTP 403 で、message が `[customer-password-disabled]` で始まり、店員の印ではなく、`access_token`・`refresh_token` が無いこと。
+
+### FR-AUTH-055-AC-02 同じお客さんでも、メールのコードでは入れて、更新も通る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-055 |
+| 根拠 | SR-AUTH-030。パスワードだけを止め、残す入り方（FR-AUTH-054）を壊さないことの確かめ |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-081-customer-password-rejected.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-32-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 32） |
+
+パスワード付きで作ったお客さんが、メールのコード（`/auth/v1/otp` → `/auth/v1/verify`）で HTTP 200 で入れて、そのトークンの `sub` が本人で、更新（`grant_type=refresh_token`）も HTTP 200 で通ること。
+
 ### FR-AUTH-047 店長への知らせの3種類（やり直し・招待・降格）を、操作と同じ取引で送り箱に積み、宛先は本人を除く有効な店長全員にする
 
 | 属性 | 値 |
@@ -7404,7 +7441,7 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 | 出どころ | OWASP ASVS 4.0.3 V4.1.3 |
 | 優先度 | SHOULD |
 
-`sessions`・`password_reset_tokens`・`rate_limit_counters`・`audit_logs`・`audit_logs_backups` と連番 `rate_limit_counters_id_seq` は anon・authenticated から全部の権限を外す（RLS の全拒否の方針は二重の守りとして残す。書くのも読むのも service role か SECURITY DEFINER の関数）。`profiles` は authenticated に SELECT・INSERT・UPDATE・DELETE だけを残し（`/api/profile` が利用者の JWT で書くため）、anon からは外す。2026-10-26 に移行 `sec_grants_hardening` で満たした（この移行を当てた DB でだけ満たす。ADR-0414、DATA-AUTH-001〜003）。
+`sessions`・`rate_limit_counters`・`audit_logs`・`audit_logs_backups` と連番 `rate_limit_counters_id_seq` は anon・authenticated から全部の権限を外す（`password_reset_tokens` も同じ形だったが、移行 K〔段4 の Task 32〕で表ごと消した）（RLS の全拒否の方針は二重の守りとして残す。書くのも読むのも service role か SECURITY DEFINER の関数）。`profiles` は authenticated に SELECT・INSERT・UPDATE・DELETE だけを残し（`/api/profile` が利用者の JWT で書くため）、anon からは外す。2026-10-26 に移行 `sec_grants_hardening` で満たした（この移行を当てた DB でだけ満たす。ADR-0414、DATA-AUTH-001〜003）。
 
 #### SEC-AUTH-011-AC-01 anon・会員の JWT で認証の表を読むと権限の誤りになる
 
@@ -7416,7 +7453,7 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 | 確かめ方 | E2E（anon の鍵と会員の JWT で PostgREST の各表を select する） |
 | 出どころ | 実装から推定 |
 
-`sessions`・`password_reset_tokens`・`rate_limit_counters`・`audit_logs`・`audit_logs_backups` の select が、0件ではなく権限の誤り（401 か 403）になること。
+`sessions`・`rate_limit_counters`・`audit_logs`・`audit_logs_backups` の select が、0件ではなく権限の誤り（401 か 403）になること（`password_reset_tokens` は移行 K で消えたので数えない）。
 
 ### SEC-AUTH-012 認証の関数は service role だけが呼べる
 
@@ -7429,7 +7466,7 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 | 出どころ | OWASP ASVS 4.0.3 V4.1.3。実装から推定 |
 | 優先度 | MUST |
 
-`find_auth_user_id_by_email`・`revoke_auth_session`・`revoke_auth_sessions_for_user`・`is_auth_session_active`・`increment_rate_limit_counter`・`cleanup_password_reset_tokens` は PUBLIC・anon・authenticated に EXECUTE を許さない。今のコードは満たさない。移行（`supabase/migrations/20260901102912_remote_schema.sql`）は `REVOKE ALL … FROM PUBLIC` と postgres・service_role への GRANT しか書かず、Supabase の既定の権限が anon・authenticated に直接付けた EXECUTE を外していない。手元の DB は移行から作ってあり、6つとも（`increment_rate_limit_counter` は2つの形とも）postgres・anon・authenticated・service_role に EXECUTE が付き、どれも SECURITY DEFINER だった（2026-10-24 に `pg_proc.proacl` で確かめた）。後の移行は `has_permission` だけを anon から外している（`20260921011535_harden_security_definer_search_path.sql`）。本番の DB が同じ状態かは確かめていない。
+`find_auth_user_id_by_email`・`revoke_auth_session`・`revoke_auth_sessions_for_user`・`is_auth_session_active`・`increment_rate_limit_counter`（と、消す前の `cleanup_password_reset_tokens`。移行 K〔段4 の Task 32〕で関数ごと消した）は PUBLIC・anon・authenticated に EXECUTE を許さない。今のコードは満たさない。移行（`supabase/migrations/20260901102912_remote_schema.sql`）は `REVOKE ALL … FROM PUBLIC` と postgres・service_role への GRANT しか書かず、Supabase の既定の権限が anon・authenticated に直接付けた EXECUTE を外していない。手元の DB は移行から作ってあり、6つとも（`increment_rate_limit_counter` は2つの形とも）postgres・anon・authenticated・service_role に EXECUTE が付き、どれも SECURITY DEFINER だった（2026-10-24 に `pg_proc.proacl` で確かめた）。後の移行は `has_permission` だけを anon から外している（`20260921011535_harden_security_definer_search_path.sql`）。本番の DB が同じ状態かは確かめていない。
 
 #### SEC-AUTH-012-AC-01 anon・会員の JWT で認証の関数を呼ぶと権限の誤りになる
 
@@ -7441,7 +7478,7 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 | 確かめ方 | E2E（anon の鍵と会員の JWT で各関数を `rpc` で呼ぶ） |
 | 出どころ | 実装から推定 |
 
-6つの関数の呼び出しが、どれも権限の誤りになること。
+5つの関数（移行 K の後。K の前は `cleanup_password_reset_tokens` を足した6つ）の呼び出しが、どれも権限の誤りになること。
 
 ### SEC-AUTH-013 回数の制限は偽れない送り元で数え、Supabase 側の枠を全員で潰されないようにする
 
@@ -8678,6 +8715,43 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/email-code/
 | 優先度 | MUST |
 
 守ること: (1) 積むのは `private.passkey_enqueue_staff_notice` の1つ（持ち主 `postgres`・`SECURITY DEFINER`・`search_path` 空・`anon`・`authenticated`・`service_role`・`PUBLIC` に `execute` なし。3種類以外の `kind` は 22023）。(2) 呼ぶのは `staff_invite_issue_core`（`redo`・`invite`・`promote`）と `staff_demote` で、錠 190519 と利用者の錠を持った後の同じ取引。(3) `last_resort` は積まない。(4) 宛先は `passkey_notification_recipients` が送る時に決め、本人（`user_id`）・`deleted_at` のある人・`banned_until` が先の人・期限切れまたは無効の役割・アドレスが空の人を除き、アドレスの小文字の重複は1通にする。(5) 点検（FR-AUTH-049）のメールは件数・種類・失敗コード・時刻だけで、アドレスも本文も入れない。点検の2本の DB の関数（移行 I）は `service_role` だけが実行でき、アドレス・本文の列を返さない。
+
+### SEC-AUTH-060 お客さんの password のトークンは、GoTrue のフックが `[customer-password-disabled]` で拒否し、ほかの入り方は通す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-058 |
+| 根拠 | アプリの窓口を消しても、公開の anon の鍵で GoTrue を直に叩く道は、トークンを出す1か所（フック）で止めなければ残る。旗 `reject_customer_password` を真にすれば、フックが `password` の取り方を全部（アプリ・直叩き）で拒否する。メールのコード・Google・パスキー・更新は `event` をそのまま返す。戻しは旗の1行の `UPDATE`（移行 J のヘッダー）。判断は ADR-0476 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-081-customer-password-rejected.spec.ts`、SEC-AUTH-060-AC-01・02）、DB 結合テスト（`tests/integration/db/auth_passkey_stage4_migrations.integration.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-32-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 32） |
+| 優先度 | MUST |
+
+守ること: (1) 旗の行は真（移行 J）。(2) お客さんの `password` は `[customer-password-disabled]` の 403 で、session の行を作らない。(3) お客さんの `otp`・`magiclink`・`oauth`・`passkey`・`token_refresh` は通る。(4) 店員の `password` は旗に関係なく店員の印で拒否される。(5) 移行 J・K は本番のドメインが決まるまで本番に当てない（`docs/06_Operations/db-migrations.md`）。
+
+#### SEC-AUTH-060-AC-01 公開の anon の鍵で GoTrue を直に叩いても、password のトークンは出ず、session が作られない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-060 |
+| 根拠 | 直叩きの道（`supabase-js` の `signInWithPassword`）でも拒否されることを固定する |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-081-customer-password-rejected.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-32-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 32） |
+
+anon の鍵・captcha のトークンつきの `signInWithPassword` が、`session` を返さず、`403`・`[customer-password-disabled]` の誤りになり、`auth.sessions` にその利用者の行が作られないこと。
+
+#### SEC-AUTH-060-AC-02 お客さんのパスキーの入り方は通り、店員の印は付かない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-060 |
+| 根拠 | 旗はパスワードだけを止め、ほかの入り方を止めないことを固定する |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-081-customer-password-rejected.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-32-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 32） |
+
+役割の無い利用者が、認めた鍵1本のパスキーで HTTP 200 で入れて、トークンの `staff_passkeys_ok` が真にならず、更新も HTTP 200 で通ること。
 
 ### SEC-AUTH-061 消したログインの窓口・画面へリンクを残さず、戻り先も消した道筋に着かせない
 

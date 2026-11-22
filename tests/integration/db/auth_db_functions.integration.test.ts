@@ -3,8 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
 
 /**
- * AUTH の DB の関数 6 本（DATA-AUTH-003）。
- * アカウントの照会・セッションの失効・回数の数え・再設定の印の掃除。
+ * AUTH の DB の関数 5 本（DATA-AUTH-003）。
+ * アカウントの照会・セッションの失効・回数の数え。再設定の印の掃除の関数は、移行 K（パスキー段4）で消した。
  * 手元の使い捨て DB でだけ流す。各試験は取引の中で動かし、最後に巻き戻して足した行を残さない。
  */
 describeLocalDb('integration: AUTH の DB の関数', (db) => {
@@ -71,31 +71,6 @@ describeLocalDb('integration: AUTH の DB の関数', (db) => {
     return Number(result.rows[0].count);
   }
 
-  async function insertResetToken(label: string, options: { createdDaysAgo: number; used?: boolean; expired?: boolean }): Promise<string> {
-    const result = await db().query(
-      `insert into public.password_reset_tokens (email, token_hash, expires_at, used, created_at)
-       values ($1, $2, now() + make_interval(mins => $3), $4, now() - make_interval(days => $5)) returning id::text as id`,
-      [`${marker}@example.com`, `${marker}-${label}`, options.expired ? -30 : 30, options.used ?? false, options.createdDaysAgo],
-    );
-    return result.rows[0].id;
-  }
-
-  async function resetTokenIds(): Promise<string[]> {
-    const result = await db().query('select id::text as id from public.password_reset_tokens where email = $1', [
-      `${marker}@example.com`,
-    ]);
-    return result.rows.map((row: { id: string }) => row.id).sort();
-  }
-
-  async function sweepableCount(retainDays: number): Promise<number> {
-    const result = await db().query(
-      `select count(*)::int as count from public.password_reset_tokens
-       where created_at < now() - make_interval(days => greatest($1::integer, 0)) and (used = true or expires_at < now())`,
-      [retainDays],
-    );
-    return result.rows[0].count;
-  }
-
   const SIGNATURES = [
     'public.find_auth_user_id_by_email(text)',
     'public.revoke_auth_session(uuid)',
@@ -103,7 +78,6 @@ describeLocalDb('integration: AUTH の DB の関数', (db) => {
     'public.is_auth_session_active(uuid)',
     'public.increment_rate_limit_counter(inet, text, timestamp with time zone)',
     'public.increment_rate_limit_counter(inet, text, timestamp with time zone, integer)',
-    'public.cleanup_password_reset_tokens(integer)',
   ];
 
   describe('関数の定義と実行の権限', () => {
@@ -325,63 +299,6 @@ describeLocalDb('integration: AUTH の DB の関数', (db) => {
 
       expect(await increment(null, endpoint, bucket, by)).toBe(1);
       expect(await increment(null, endpoint, bucket, by)).toBe(2);
-    });
-  });
-
-  describe('cleanup_password_reset_tokens', () => {
-    test('DATA-AUTH-003 既定の7日より古い、使用済みか期限切れの印だけを消して件数を返す', async () => {
-      const oldUsed = await insertResetToken('old-used', { createdDaysAgo: 10, used: true });
-      const oldExpired = await insertResetToken('old-expired', { createdDaysAgo: 10, expired: true });
-      const oldLive = await insertResetToken('old-live', { createdDaysAgo: 10 });
-      const recentUsed = await insertResetToken('recent-used', { createdDaysAgo: 1, used: true });
-      const recentExpired = await insertResetToken('recent-expired', { createdDaysAgo: 1, expired: true });
-      const sweepable = await sweepableCount(7);
-
-      const result = await db().query('select public.cleanup_password_reset_tokens() as deleted');
-
-      expect(sweepable).toBeGreaterThanOrEqual(2);
-      expect(result.rows[0].deleted).toBe(sweepable);
-      const remaining = await resetTokenIds();
-      expect(remaining).toEqual([oldLive, recentUsed, recentExpired].sort());
-      expect(remaining).not.toContain(oldUsed);
-      expect(remaining).not.toContain(oldExpired);
-    });
-
-    test('DATA-AUTH-003 保持の日数を渡すと、その日数より古い分だけを消す', async () => {
-      const twoDaysUsed = await insertResetToken('two-days-used', { createdDaysAgo: 2, used: true });
-      const halfDayUsed = await db().query(
-        `insert into public.password_reset_tokens (email, token_hash, expires_at, used, created_at)
-         values ($1, $2, now() + interval '30 minutes', true, now() - interval '12 hours') returning id::text as id`,
-        [`${marker}@example.com`, `${marker}-half-day`],
-      );
-
-      await db().query('select public.cleanup_password_reset_tokens(1)');
-
-      expect(await resetTokenIds()).toEqual([halfDayUsed.rows[0].id]);
-      expect(await resetTokenIds()).not.toContain(twoDaysUsed);
-    });
-
-    test.each([0, -3])('DATA-AUTH-003 保持の日数が %s なら 0 日として扱い、いま以前の使用済み・期限切れを全部消す', async (days) => {
-      const recentUsed = await insertResetToken('recent-used', { createdDaysAgo: 1, used: true });
-      const recentExpired = await insertResetToken('recent-expired', { createdDaysAgo: 1, expired: true });
-      const live = await insertResetToken('live', { createdDaysAgo: 1 });
-
-      await db().query('select public.cleanup_password_reset_tokens($1)', [days]);
-
-      const remaining = await resetTokenIds();
-      expect(remaining).toEqual([live]);
-      expect(remaining).not.toContain(recentUsed);
-      expect(remaining).not.toContain(recentExpired);
-    });
-
-    test('DATA-AUTH-003 消す物が無ければ、自分の行は触らず件数は対象の数と一致する', async () => {
-      const live = await insertResetToken('live', { createdDaysAgo: 10 });
-      const sweepable = await sweepableCount(7);
-
-      const result = await db().query('select public.cleanup_password_reset_tokens(7) as deleted');
-
-      expect(result.rows[0].deleted).toBe(sweepable);
-      expect(await resetTokenIds()).toEqual([live]);
     });
   });
 });

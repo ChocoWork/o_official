@@ -84,6 +84,7 @@ describeLocalDb('customer session helper（パスワード無しで会員の JWT
       const signedIn = await anon.auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
       expect(signedIn.data.session).toBeNull();
       expect(signedIn.error).not.toBeNull();
+      expect(signedIn.error?.message.startsWith('[customer-password-disabled]')).toBe(true);
     });
   });
 

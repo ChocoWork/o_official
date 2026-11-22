@@ -78,10 +78,13 @@ for (const viewport of viewports) {
       expect(isStaffPasskeyRequiredError({ status: byPassword.status, message: byPassword.message })).toBe(true);
     });
 
-    test(`FR-AUTH-013-AC-03 お客さんのパスキー・メールのコード・パスワードは入れて（旗は偽）、本物の更新（token_refresh）も通る (${viewport.name})`, async () => {
+    test(`FR-AUTH-013-AC-03 お客さんのパスキー・メールのコードは入れて、パスワードは移行 J の後の旗（真）で [customer-password-disabled] の 403 になり、本物の更新（token_refresh）も通る (${viewport.name})`, async () => {
       const customer = await createCustomerWithPassword();
       const byPassword = await signInWithPasswordGrant(customer.email, customer.password);
-      expect(byPassword.status, 'パスワード').toBe(200);
+      expect(byPassword.status, 'パスワード（移行 J の後は旗が真）').toBe(403);
+      expect(byPassword.message?.startsWith('[customer-password-disabled]'), 'お客さんの印').toBe(true);
+      expect(isStaffPasskeyRequiredError({ status: byPassword.status, message: byPassword.message }), '店員の印ではない').toBe(false);
+      expect(byPassword.accessToken, '拒否された時はトークンが無い').toBeUndefined();
       const byCode = await signInWithEmailCode(customer.email);
       expect(byCode.status, 'メールのコード').toBe(200);
 
@@ -91,9 +94,9 @@ for (const viewport of viewports) {
       expect(byPasskey.claims.staff_passkeys_ok, 'お客さんには店員の印を付けない').not.toBe(true);
 
       // お客さんの本物の更新が通る（フックが token_refresh を邪魔しない）
-      const refreshed = await refreshWith(byPassword.refreshToken as string);
+      const refreshed = await refreshWith(byCode.refreshToken as string);
       expect(refreshed.status, 'お客さんの更新').toBe(200);
-      expect(claimsOf(refreshed.accessToken as string).sub).toBe(claimsOf(byPassword.accessToken as string).sub);
+      expect(claimsOf(refreshed.accessToken as string).sub).toBe(claimsOf(byCode.accessToken as string).sub);
     });
 
     test(`FR-AUTH-013-AC-04 窓を閉じた後の店員の更新は拒否され（同じ更新トークンでも同じ拒否・session の行は残る）、前のアクセストークンは管理の表を読めない (${viewport.name})`, async ({}, testInfo) => {

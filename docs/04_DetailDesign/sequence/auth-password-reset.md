@@ -16,4 +16,4 @@ GoTrue 自身の `/recover`（アプリの外）は残る。ただし、フッ�
 
 ## 未確認事項
 
-- `public.password_reset_tokens`・`public.password_change_challenges` の表と関数の削除は、移行 K（段4の Task 32）が行う。それまでは、アプリからの使い道だけが無い。
+- `public.password_reset_tokens`・`public.password_change_challenges` の表と3つの関数は、移行 K（段4の Task 32。`20261122070500_drop_password_auth_objects.sql`）が消した。手元の DB では適用済み。**本番には、本番のドメインが決まるまで当てない**（[ADR-0476](../../03_BasicDesign/decisions/ADR-0476-passkey-reject-customer-password-and-drop-tables.md)）。本番が K を当てるまでは、アプリからの使い道だけが無い表が残る。

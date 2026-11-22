@@ -50,12 +50,17 @@ describeLocalDb('passkey foundation tables and functions', (db) => {
   const count = async (userId: string): Promise<number> =>
     (await db().query('select public.passkey_approved_count($1) as n', [userId])).rows[0].n;
 
-  test('DATA-AUTH-011 config has one row with the default values', async () => {
+  test('DATA-AUTH-011 config has one row: the default values, with the flag true after migration J (the column default stays false)', async () => {
     const r = await db().query('select * from private.passkey_staff_config');
     expect(r.rows).toEqual([{
       id: true, staff_max_session_seconds: 86400, staff_idle_seconds: 3600, window_minutes: 30,
-      min_approved_passkeys: 2, reject_customer_password: false,
+      min_approved_passkeys: 2, reject_customer_password: true,
     }]);
+    const column = await db().query(
+      `select column_default from information_schema.columns
+        where table_schema = 'private' and table_name = 'passkey_staff_config' and column_name = 'reject_customer_password'`,
+    );
+    expect(column.rows[0].column_default).toBe('false');
     await expect(db().query('insert into private.passkey_staff_config (id) values (false)')).rejects.toBeTruthy();
   });
 
@@ -63,7 +68,7 @@ describeLocalDb('passkey foundation tables and functions', (db) => {
     const r = await db().query('select private.passkey_staff_settings() as s');
     expect(r.rows[0].s).toEqual({
       staff_max_session_seconds: 86400, staff_idle_seconds: 3600, window_minutes: 30,
-      min_approved_passkeys: 2, reject_customer_password: false,
+      min_approved_passkeys: 2, reject_customer_password: true,
     });
     const f = await db().query(
       `select has_function_privilege('authenticated','private.passkey_staff_settings()','EXECUTE') as a,

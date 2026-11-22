@@ -865,7 +865,7 @@ DB結合 [group_g3_cancel](../../../tests/integration/db/group_g3_cancel.integra
 | 領域 | ファイル | 変えたこと |
 | --- | --- | --- |
 | STOCKIST | `db/stockist_table`・`stockist_rls`・`stockist_permissions` | `type` の `is_nullable` は YES、必須の列から `type` を外し、「種別を省いた作成は 23502」を「通り NULL」に書き換えた（Task 2）。管理者の JWT の書き込みは 42501 に直し、service_role で通る確かめは新しい権限の試験（`DATA-STOCKIST-002`）へ移した（Task 5） |
-| AUTH | `db/auth_sessions_table`・`auth_password_reset_tokens_table` | anon・authenticated は表に権限が無い（42501）。service_role で確かめる |
+| AUTH | `db/auth_sessions_table`・`auth_password_reset_tokens_table` | anon・authenticated は表に権限が無い（42501）。service_role で確かめる（`password_reset_tokens` は移行 K で消えた） |
 | ADMIN | `db/admin-misc/admin_rls_policy`・`admin_audit_logs_table`・`admin_revoke_sessions_function`・`admin_item_color_presets_table` | 同上。色見本は authenticated の SELECT だけ・anon は 42501 |
 | LOOK | `db/look_rls`・`look_permissions`・`look_table`・`look_images_bucket` | 書き込みの権限の誤り。`look_items` の読みが「親の LOOK と商品の両方が公開」。見本の画像の道筋を `looks/…` の形に。置き場の期待が「上限なし」から 5 MiB・4 種類（`DATA-LOOK-005`） |
 | NEWS | `db/news_articles_rls`・`news_permissions`・`news_articles_table`・`news_status_state`・`news_images_bucket` | 同上（置き場は `DATA-NEWS-004`）。道筋を `news/…` の形に |
@@ -1453,7 +1453,7 @@ DB用は既存の[予約の遷移](../../../tests/integration/db/group_h_redempt
 | [service-role-auth-client.test.ts](../../../tests/unit/lib/auth/service-role-auth-client.test.ts) | `DD-AUTH-040` | captcha を免除される auth だけの client（セッションを持たない・サービスの鍵）と `isCaptchaRejection`。返す `auth` は 4 関数（`signInWithPassword`・`signInWithOtp`・`signUp`・`resend`）だけで、`admin`・`mfa`・`getSession` に届かない（`supabase-client-isolation.test.ts` も同じ） |
 | [captcha-test-utils.test.ts](../../../tests/unit/e2e/captcha-test-utils.test.ts)（3 本） | `DD-AUTH-040` | E2E・DB 結合の補助 `withDummyCaptcha`（Turnstile のテスト用ダミーのトークンを付ける） |
 | [config-wave6.test.ts](../../../tests/unit/supabase/config-wave6.test.ts)（11 本） | `DD-AUTH-040` | `supabase/config.toml` の目標の値（最小長 16・captcha・確認メール必須・OTP 300 秒・TOTP・確認メールの雛形が `token_hash`・`type=signup` のリンク・自前 SMTP 無し）。波 6 の切り替え〔2026-11-01〕までは `supabase/pending-wave6/config.toml` を読み、今は `supabase/config.toml` を読む |
-| [sec-password-change-challenges.test.ts](../../../tests/unit/migrations/sec-password-change-challenges.test.ts)（22 本） | `DATA-AUTH-009`・`DATA-AUTH-010` | M3 の SQL の静的な確かめ（8 列・部分索引・RLS と方針 3 本・関数 2 本の属性と ACL・自己検査・ROLLBACK） |
+| `sec-password-change-challenges.test.ts`（22 本。2026-11-22 に消した。表と関数を移行 K〔パスキー段4 の Task 32〕で消したため） | `DATA-AUTH-009`・`DATA-AUTH-010`（廃止） | M3 の SQL の静的な確かめ（8 列・部分索引・RLS と方針 3 本・関数 2 本の属性と ACL・自己検査・ROLLBACK） |
 | auth_password_change_challenges.integration.test.ts（DB 結合） | `DATA-AUTH-009`・`DATA-AUTH-010` | `issue` の置き換え・`consume` の `ok`／`invalid`／`locked`／`none`、5 回で施錠、別 session・期限切れ、TTL・ハッシュの形の 22023、anon・authenticated の拒否、ハッシュが hex 64 桁、利用者の削除で消える |
 | password-change-schema.test.ts・password-change-service.test.ts | `DD-AUTH-041` | 入力の形、コードの生成・鍵つきハッシュ・無効化、現行パスワードの確かめの分類〔`invalid`／`unavailable`／`captcha_rejected`〕、メール |
 | password-change-start-route.test.ts・password-change-confirm-route.test.ts | `DD-AUTH-041` | 窓口の順番（回数 → 認証 → CSRF → aal2 → 本人ごとの回数 → 形 → 本体）、応答、監査の符号（`code_invalid`／`code_locked`／`code_unusable` ほか） |
@@ -1473,7 +1473,7 @@ DB用は既存の[予約の遷移](../../../tests/integration/db/group_h_redempt
 | `tests/unit/api/auth/login-route.test.ts`（6 件） | `DD-AUTH-014`・`SEC-AUTH-035-AC-02` | GoTrue の 429 → 429＋`Retry-After: 60`＋監査 `supabase_rate_limited`、5xx／status 0／`AuthRetryableFetchError` → 503＋`Retry-After: 30`＋監査 `supabase_unavailable`、未確認と誤りは同じ 401・同じ本文（列挙の手掛かりを足さない） |
 | `tests/unit/api/admin/create-user-route.test.ts`・`tests/integration/api/admin-create-user-api.test.ts`（2026-11-18 に消した） | `DD-ADMIN-002`（廃止） | 管理の会員作成は `email_confirm: true` で作る（確認メール必須の設定で、作った会員が確認前のまま残らない） |
 | `tests/integration/api/` の auth 系（login・login-resend・register・cookieFlags・site-url-guard・auth-architecture・auth-bot-rate-limit など）と `auth-flow`・`auth-register-flow` | `DD-AUTH-040` | サーバーのモックを auth client（`createServiceRoleAuthClient`）のモックへ追従 |
-| `tests/integration/db/auth_grants_inventory.integration.test.ts` | `DATA-AUTH-006` | 「閉じた表」に `password_change_challenges`、関数の期待に `issue_password_change_challenge`・`consume_password_change_challenge` を足した。M3 を当てた DB でしか通らない |
+| `tests/integration/db/auth_grants_inventory.integration.test.ts` | `DATA-AUTH-006` | 「閉じた表」に `password_change_challenges`、関数の期待に `issue_password_change_challenge`・`consume_password_change_challenge` を足した（M3 を当てた DB でしか通らなかった）。移行 K〔パスキー段4 の Task 32〕で2表・2関数を消したので、期待から外した |
 | `tests/integration/db/{group_g3_postgrest_paths,group_g4_postgrest_paths,order_status_postgrest}.integration.test.ts` | （補助） | `signInWithPassword` にダミーの `captchaToken` |
 
 ### E2E で足した・書き換えた期待、外した `test.fail`
