@@ -53,7 +53,6 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
 
 const { cookies } = require('next/headers');
 
-const MINUTE = 60;
 const DAY = 24 * 60 * 60;
 
 const setNodeEnv = (value: string | undefined) => {
@@ -69,7 +68,6 @@ describe('認証の Cookie は用途ごとに名前・寿命・属性を分け�
     jest.resetAllMocks();
     process.env.JWT_SECRET = 'test-jwt-secret';
     delete process.env.LOGIN_2FA_SESSION_SECRET;
-    delete process.env.PASSWORD_RESET_SESSION_SECRET;
     setNodeEnv('test');
     cookies.mockResolvedValue({ get: jest.fn().mockReturnValue(undefined), getAll: jest.fn().mockReturnValue([]) });
   });
@@ -85,8 +83,6 @@ describe('認証の Cookie は用途ごとに名前・寿命・属性を分け�
       { label: 'refresh token', name: 'sb-refresh-token', nameKey: 'refreshCookieName', optionsKey: 'cookieOptionsForRefresh', maxAge: 7 * DAY, httpOnly: true, sameSite: 'lax' },
       { label: 'CSRF の印', name: 'sb-csrf-token', nameKey: 'csrfCookieName', optionsKey: 'cookieOptionsForCsrf', maxAge: 7 * DAY, httpOnly: false, sameSite: 'lax' },
       { label: '端末の印', name: 'session_id', nameKey: 'sessionCookieName', optionsKey: 'cookieOptionsForSession', maxAge: 30 * DAY, httpOnly: true, sameSite: 'lax' },
-      { label: 'ログインの保留', name: 'sb-login-2fa-session', nameKey: 'loginTwoFactorSessionCookieName', optionsKey: 'cookieOptionsForLoginTwoFactor', maxAge: 5 * MINUTE, httpOnly: true, sameSite: 'strict' },
-      { label: '再設定', name: 'sb-password-reset-session', nameKey: 'passwordResetSessionCookieName', optionsKey: 'cookieOptionsForPasswordReset', maxAge: 10 * MINUTE, httpOnly: true, sameSite: 'strict' },
     ] as const;
 
     test.each(rows)('DATA-AUTH-004 $label の Cookie は名前 $name・HttpOnly=$httpOnly・SameSite=$sameSite・パス / で、渡した寿命を持つ', (row) => {
@@ -100,6 +96,19 @@ describe('認証の Cookie は用途ごとに名前・寿命・属性を分け�
         path: '/',
         maxAge: row.maxAge,
       });
+    });
+
+    test('DATA-AUTH-004 旧のパスワードの道の保留・再設定の Cookie の名前と属性の関数は、パスキー段4で消えている', () => {
+      const lib = cookieLib() as unknown as Record<string, unknown>;
+
+      for (const key of [
+        'loginTwoFactorSessionCookieName',
+        'cookieOptionsForLoginTwoFactor',
+        'passwordResetSessionCookieName',
+        'cookieOptionsForPasswordReset',
+      ]) {
+        expect(lib[key]).toBeUndefined();
+      }
     });
 
     test.each(rows)('DATA-AUTH-004 $label の Cookie は本番だけ Secure を付ける', (row) => {
@@ -148,8 +157,6 @@ describe('認証の Cookie は用途ごとに名前・寿命・属性を分け�
         'sb-refresh-token',
         'sb-access-token',
         'sb-csrf-token',
-        'sb-login-2fa-session',
-        'sb-password-reset-session',
         'cart',
         'wishlist',
         'sb-abcdefgh-auth-token',

@@ -195,7 +195,7 @@ describe('DD-AUTH-032 sanitizeReturnPath と補助', () => {
   });
 
   it('DD-AUTH-032 fallback は確かめずにそのまま返す', () => {
-    expect(sanitizeReturnPath('//evil.example', '/auth/verified', opts)).toBe('/auth/verified');
+    expect(sanitizeReturnPath('//evil.example', '/auth/callback', opts)).toBe('/auth/callback');
   });
 
   it('DD-AUTH-032 通る値は解釈した道筋を返す', () => {

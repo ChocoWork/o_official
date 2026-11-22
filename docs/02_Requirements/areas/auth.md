@@ -7914,7 +7914,7 @@ anon の鍵で `/auth/v1/signup`・`/auth/v1/token?grant_type=password`・`/auth
 | 出どころ | OWASP ASVS 4.0.3 V3.4.1、V3.4.2、V3.4.3 |
 | 優先度 | MUST |
 
-access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、保留の2段目と再設定は HttpOnly・本番で Secure・SameSite=Strict にする。今のコードは満たす（`src/lib/cookie.ts`）。
+access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、メールのコードの保留（`sb-email-code-session`）は HttpOnly・本番で Secure・SameSite=Strict にする（旧の保留・再設定の Cookie はパスキー段4の Task 33 で消した）。今のコードは満たす（`src/lib/cookie.ts`）。
 
 #### SEC-AUTH-024-AC-01 ログインの後の Cookie の属性が決まりどおり
 
@@ -7926,7 +7926,7 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | 確かめ方 | E2E（本番ビルドで、ログインの後の Cookie を読む） |
 | 出どころ | `tests/integration/api/auth/cookieFlags.test.ts` |
 
-`sb-access-token`・`sb-refresh-token` が HttpOnly・SameSite=Lax、`sb-login-2fa-session` が HttpOnly・SameSite=Strict であること。
+`sb-access-token`・`sb-refresh-token` が HttpOnly・SameSite=Lax であること。
 
 ### SEC-AUTH-025 状態を変える認証の窓口は、許可したオリジンからの送信だけを受ける
 

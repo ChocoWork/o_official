@@ -28,7 +28,7 @@ describe('integration: rate_limit_counters', () => {
       await client.query('BEGIN');
 
       const testIp = '127.0.0.1';
-      const endpoint = '/api/auth/login';
+      const endpoint = '/api/auth/email-code/start';
       const bucket = new Date().toISOString();
 
       const firstResult = await client.query(

@@ -37,8 +37,6 @@ async function clearAuthCookies(response: NextResponse): Promise<void> {
     accessCookieName,
     csrfCookieName,
     sessionCookieName,
-    loginTwoFactorSessionCookieName,
-    passwordResetSessionCookieName,
     returnIntentCookieName,
     clearCookieOptions,
   } = await import('@/lib/cookie');
@@ -47,8 +45,6 @@ async function clearAuthCookies(response: NextResponse): Promise<void> {
     refreshCookieName,
     accessCookieName,
     csrfCookieName,
-    loginTwoFactorSessionCookieName,
-    passwordResetSessionCookieName,
     returnIntentCookieName,
   ]) {
     response.cookies.set({ name, value: '', ...clearCookieOptions() });

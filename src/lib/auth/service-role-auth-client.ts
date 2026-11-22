@@ -6,11 +6,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
- * 呼び手が使う 4 つの関数だけを持つ。`.from()`・`.rpc()`・`.storage` と、`auth.admin`・`auth.mfa` などの
+ * 呼び手が使う 2 つの関数（signInWithOtp・resend）だけを持つ。パスワードの道（signInWithPassword・signUp）は、パスキー段4で型にも実体にも残さない。`.from()`・`.rpc()`・`.storage` と、`auth.admin`・`auth.mfa` などの
  * 残りの `auth` の機能（サービスの鍵の見出しで動く利用者の削除・更新・generateLink を含む）を型にも実体にも持たない。
  */
 export type ServiceRoleAuthClient = {
-  auth: Pick<SupabaseClient['auth'], 'signInWithPassword' | 'signInWithOtp' | 'signUp' | 'resend'>;
+  auth: Pick<SupabaseClient['auth'], 'signInWithOtp' | 'resend'>;
 };
 
 /**
@@ -19,10 +19,10 @@ export type ServiceRoleAuthClient = {
  *
  * @impl IMPL-AUTH-228
  * @design DD-AUTH-040
- * @remarks captcha が掛かる窓口（/signup・/token（password）・/otp）をアプリのサーバーが呼ぶ時は、GoTrue の管理者免除で通すためサービスの鍵で呼ぶ。
+ * @remarks captcha が掛かる窓口（/otp・/resend）をアプリのサーバーが呼ぶ時は、GoTrue の管理者免除で通すためサービスの鍵で呼ぶ。
  * アプリの Turnstile の検証は窓口の手前で済んでいて、トークンは 1 回しか使えないので GoTrue へは転送しない。
- * signInWithPassword の後、クライアントは利用者の session をメモリに保持する。そのクライアントで DB や RPC を呼ぶと
- * 利用者の権限で動くか、サービスの権限が混ざる。だから返すのは auth の 4 つの関数（signInWithPassword・signInWithOtp・signUp・resend）だけで、
+ * 認証の呼び出しの後、クライアントは利用者の session をメモリに保持しうる。そのクライアントで DB や RPC を呼ぶと
+ * 利用者の権限で動くか、サービスの権限が混ざる。だから返すのは auth の 2 つの関数（signInWithOtp・resend）だけで、
  * 毎回作り直し、.from()・.rpc()・auth.admin・auth.mfa を持たせない（サービスの鍵の見出しで動く管理 API が、利用者の入力を扱う呼び手から届かないように）。
  * DB・RPC・管理 API は従来の createServiceRoleClient を使い、両者を 1 つの変数に混ぜない。
  */
@@ -43,13 +43,11 @@ export async function createServiceRoleAuthClient(): Promise<ServiceRoleAuthClie
     },
   });
   // from・rpc・storage・auth.admin・auth.mfa を渡さない。client や auth の全体を返すと、呼び手が DB や管理 API へ使い回せてしまう。
-  // 4 つの関数は GoTrueClient の中の this を使うので、auth に束ねて取り出す。
+  // 2 つの関数は GoTrueClient の中の this を使うので、auth に束ねて取り出す。
   const { auth } = client;
   return {
     auth: {
-      signInWithPassword: auth.signInWithPassword.bind(auth),
       signInWithOtp: auth.signInWithOtp.bind(auth),
-      signUp: auth.signUp.bind(auth),
       resend: auth.resend.bind(auth),
     },
   };

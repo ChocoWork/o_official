@@ -212,7 +212,7 @@ export function proxy(request: NextRequest) {
       rejection.headers.set('Cache-Control', 'no-store');
       rejection.headers.set('Referrer-Policy', 'no-referrer');
     }
-    // 認証の応答は、route が自分で no-store を付けない窓口（login・refresh・mfa/* ほか）でも付ける（auth-no-store-policy.ts）
+    // 認証の応答は、route が自分で no-store を付けない窓口（email-code/*・refresh ほか）でも付ける（auth-no-store-policy.ts）
     if (shouldSetNoStore(pathname)) {
       rejection.headers.set('Cache-Control', 'no-store');
     }

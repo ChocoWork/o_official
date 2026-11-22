@@ -43,6 +43,7 @@ export function maskAuditEvent(event: AuditEvent) {
   }
 
   // マスク対象キー（小文字比較）
+  // パスワードの道はパスキー段4で消えたが、将来の誤記が監査に残らないよう password も伏せる守りは残す。
   const sensitiveKeyPatterns = [/password/, /^pass$/, /^pwd$/, /token/, /secret/, /ssn/, /card/, /cvv/, /credit_card/, /pan/, /number/];
 
   if (masked.metadata && typeof masked.metadata === 'object') {

@@ -34,7 +34,7 @@ describe('proxy の CSP', () => {
     return map;
   }
 
-  const PATHS = ['/', '/privacy', '/checkout', '/api/auth/login'];
+  const PATHS = ['/', '/privacy', '/checkout', '/api/auth/email-code/start'];
 
   describe.each(PATHS)('%s', (pathname) => {
     it('DD-HOME-004 Stripe と Turnstile は全頁で同じ許可先に揃え、Stripe 公式の一覧に合わせる', async () => {

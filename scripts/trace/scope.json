@@ -256,8 +256,8 @@
       "src/features/auth/schemas/email-code.ts"
     ],
     "tests": [
-      "tests/unit/components/{LoginModal,RegisterModal,AuthTabs,VerifyOtpClient,Header}.test.tsx",
-      "tests/unit/**/{login-modal,register-modal,auth-tabs,verify-otp-client,site-header,use-turnstile-widget,format-countdown}*.test.{ts,tsx}",
+      "tests/unit/components/Header.test.tsx",
+      "tests/unit/**/{site-header,use-turnstile-widget,format-countdown}*.test.{ts,tsx}",
       "tests/unit/api/auth/**/*.test.{ts,tsx}",
       "tests/unit/app/login/**/*.test.{ts,tsx}",
       "tests/unit/features/auth/return-intent/**/*.test.{ts,tsx}",

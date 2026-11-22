@@ -1903,7 +1903,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 3. CSRF が通れば、自前の行に `revoked_at` を付けて利用者の id を取り、Supabase のセッションを切る
 4. Supabase のセッションを切る手順: JWT の `session_id` が取れれば `revoke_auth_session` で1本を切る。だめなら行の利用者で `revoke_auth_sessions_for_user` を呼び、全部を切ったことを success で残す
 5. 200 を作り、印の回転が返っていれば新しい CSRF の Cookie を置く
-6. 9つの Cookie を消す
+6. 7つの Cookie を消す（旧の保留・再設定の Cookie は段4の Task 33 で一覧から外した）
 7. ライブラリの Cookie を名前の形で探して消す
 
 **分岐と異常フロー:**
@@ -1931,7 +1931,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | # | 観点 | 今の単体テスト |
 | --- | --- | --- |
-| 1 | refresh の Cookie が無くても 200・9つの Cookie の消去（戻り先の Cookie を含む） | 在る（戻り先の分を足す） |
+| 1 | refresh の Cookie が無くても 200・7つの Cookie の消去（戻り先の Cookie を含む） | 在る（戻り先の分を足す） |
 | 2 | CSRF が通り `session_id` で1本を切る | 無い |
 | 3 | CSRF が断っても 200・Cookie の消去・行に触れない | 無い |
 | 4 | `revoke_auth_session` が誤りで全部を切る道へ | 無い |
@@ -2653,14 +2653,14 @@ DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permi
 
 | 向き | 中身 |
 | --- | --- |
-| `createServiceRoleAuthClient`（`IMPL-AUTH-228`） | 入力: 環境変数 `SUPABASE_URL`（無ければ `NEXT_PUBLIC_SUPABASE_URL`）・`SUPABASE_SERVICE_ROLE_KEY`。出力: `{ auth }` だけの client。`auth` は `signInWithPassword`・`signInWithOtp`・`signUp`・`resend` の 4 つの関数（`bind` した物）だけで、`.from()`・`.rpc()`・`.storage`・`auth.admin`・`auth.mfa` などを型にも実体にも持たない（最終レビュー指摘 4、2026-11-01）。毎回新しく作る。auth のオプションは `persistSession: false`・`autoRefreshToken: false`・`detectSessionInUrl: false` |
+| `createServiceRoleAuthClient`（`IMPL-AUTH-228`） | 入力: 環境変数 `SUPABASE_URL`（無ければ `NEXT_PUBLIC_SUPABASE_URL`）・`SUPABASE_SERVICE_ROLE_KEY`。出力: `{ auth }` だけの client。`auth` は `signInWithOtp`・`resend` の 2 つの関数（`bind` した物。`signInWithPassword`・`signUp` はパスキー段4の Task 33 で型にも実体にも外した）だけで、`.from()`・`.rpc()`・`.storage`・`auth.admin`・`auth.mfa` などを型にも実体にも持たない（最終レビュー指摘 4、2026-11-01）。毎回新しく作る。auth のオプションは `persistSession: false`・`autoRefreshToken: false`・`detectSessionInUrl: false` |
 | `isCaptchaRejection`（`IMPL-AUTH-233`） | 入力: Supabase の誤り（`code`・`status`・`message`）か null。出力: 真偽 |
 
 **正常フロー:**
 
-1. 呼び手（`login`・`login/resend`・`register`）が、Turnstile・回数の制限など従来の順番を終えた後で `createServiceRoleAuthClient()` を呼ぶ
-2. `signInWithPassword`・`signInWithOtp`・`signUp` を呼ぶ。supabase-js は `Authorization: Bearer <サービスの鍵>` と `apikey` を全部の要求に付けるので、GoTrue は管理者として captcha を免除する（Task 0 の実測で、旧方式の JWT と `sb_secret_` の両方が通ることを確かめた）
-3. 戻り値の session は Cookie に渡さず捨てる（ログイン）／Confirm email が OFF の時だけ従来の分岐（登録）。DB・RPC・管理 API は従来の `createServiceRoleClient` を別の変数で使う
+1. 呼び手（`email-code/start`・`email-code/resend`）が、Turnstile・回数の制限など従来の順番を終えた後で `createServiceRoleAuthClient()` を呼ぶ
+2. `signInWithOtp`・`resend` を呼ぶ。supabase-js は `Authorization: Bearer <サービスの鍵>` と `apikey` を全部の要求に付けるので、GoTrue は管理者として captcha を免除する（Task 0 の実測で、旧方式の JWT と `sb_secret_` の両方が通ることを確かめた）
+3. コードを送るだけで session は作られない（パスワードの道を外したので、GoTrue 側に session が残らない）。DB・RPC・管理 API は従来の `createServiceRoleClient` を別の変数で使う
 
 **分岐と異常フロー:**
 
@@ -2670,13 +2670,10 @@ DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permi
 | `code === 'captcha_failed'` | `isCaptchaRejection` は真 |
 | `status === 400` で `message` に captcha を含む | 真 |
 | 資格情報の誤り（400 `Invalid login credentials`）・`status` が 400 でない・null・undefined | 偽 |
-| ログインの `signInWithPassword` が captcha の拒否 | 401 にせず 500 `Internal server error`。監査 `login`・error・`supabase_captcha_rejected`（誤りの本文は残さない）。確認コードは送らない |
-| ログインの `signInWithPassword` が GoTrue の 429・5xx・通信の失敗 | captcha の拒否と同じ理由で 401 に丸めない。429＋`Retry-After`＋`supabase_rate_limited`、503＋`Retry-After`＋`supabase_unavailable`（DD-AUTH-014。SEC-AUTH-035-AC-02） |
 | ログインの `signInWithOtp` が captcha の拒否 | 500。監査 `login`・error・`supabase_captcha_rejected`（`resource_id` は利用者の id）。保留の Cookie を発行しない |
 | 再送の `signInWithOtp` が captcha の拒否 | 500。監査 `login`・error・`supabase_captcha_rejected`。保留の Cookie を作り直さない |
-| 登録の `signUp` が captcha の拒否 | 500 `Failed to create user`。監査 `register`・error・`supabase_captcha_rejected`。重複（`already`・`duplicate`）の枝に入れず、本人へのメールも送らない |
 
-**状態・永続化:** 無い。GoTrue 側に `signInWithPassword` の session が 1 本残る（ログインは Cookie に渡さず捨てる。アプリの `sessions` に結び付かないので `is_app_session_active` が偽にする。後始末は回す物）。
+**状態・永続化:** 無い。パスキー段4の Task 33 で `signInWithPassword` を外したので、GoTrue 側に session が残らない。
 
 **認証認可:** captcha の免除は、アプリのサーバーがサービスの鍵を持つことに依る（公式の文書に無い GoTrue の挙動。E2E が毎回確かめる）。`otp/verify`・`confirm`・`oauth/*`・`refresh` の `verifyOtp`・交換・更新は captcha が掛からない窓口なので `createPublicClient` のまま。再送にウィジェットを足さない（署名つきの保留の Cookie と二段の枠が前提）。
 
@@ -2684,11 +2681,11 @@ DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permi
 
 | # | 観点 |
 | --- | --- |
-| 1 | 返り値に `from`・`rpc`・`storage` が無い。キーは `auth` だけで、`auth` のキーは 4 つの関数だけ（`auth.admin`・`auth.mfa`・`getSession` に届かない。本物の SDK でも束ねた関数を取り出して呼べる）。2 回呼ぶと別のオブジェクト |
+| 1 | 返り値に `from`・`rpc`・`storage` が無い。キーは `auth` だけで、`auth` のキーは `signInWithOtp`・`resend` の 2 つの関数だけ（`signInWithPassword`・`signUp` が無い。`auth.admin`・`auth.mfa`・`getSession` に届かない。本物の SDK でも束ねた関数を取り出して呼べる）。2 回呼ぶと別のオブジェクト |
 | 2 | URL・鍵が無いと throw し、鍵の値を文に載せない。`SUPABASE_URL` が無ければ `NEXT_PUBLIC_SUPABASE_URL` を使う |
 | 3 | `createClient` へ渡す auth のオプションが 3 つとも false |
-| 4 | `signInWithPassword` の後に `signInWithOtp` を呼んでも、`/token` と `/otp` の `Authorization` が同じサービスの鍵、`apikey` も同じ |
-| 5 | auth だけの client で `signInWithPassword` した後も、`createServiceRoleClient` の DB 要求がサービスの鍵のまま（混ざらない） |
+| 4 | `signInWithOtp` の後に `resend` を呼んでも、`/otp` と `/resend` の `Authorization` が同じサービスの鍵、`apikey` も同じ |
+| 5 | auth だけの client で `signInWithOtp` した後も、`createServiceRoleClient` の DB 要求がサービスの鍵のまま（混ざらない） |
 | 6 | `isCaptchaRejection` の表（captcha_failed 真、400＋captcha 本文 真、資格情報の誤り 偽、401＋captcha 偽、別の code 偽、null・undefined 偽） |
 | 7 | ログイン（2 回）・再送・登録で captcha の拒否が 5xx＋監査になり、401・重複にならない。通常の誤り（401・重複）は今までどおり |
 | 8 | ログイン・再送は `createServiceRoleAuthClient` を 1 回呼び、`createPublicClient` を呼ばない。形の誤り・保留なしでは呼ばない |

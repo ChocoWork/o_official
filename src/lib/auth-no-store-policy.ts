@@ -11,7 +11,7 @@ const NO_STORE_PATH_PREFIX = '/api/auth';
  *
  * @impl IMPL-AUTH-223
  * @design DD-AUTH-037
- * @remarks トークン・確認コード・TOTP の秘密を含む応答が共有の端末や中継に残らないよう、窓口ごとの付け忘れに頼らず道筋でまとめて付ける。
+ * @remarks トークン・確認コードを含む応答が共有の端末や中継に残らないよう、窓口ごとの付け忘れに頼らず道筋でまとめて付ける。
  * 素の `startsWith` だと `/api/authx` まで当たるので、境目（完全一致か `<prefix>/`）で見る。
  */
 export function shouldSetNoStore(pathname: string): boolean {

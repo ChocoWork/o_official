@@ -162,7 +162,7 @@ sequenceDiagram
   UI->>UI: SDK signOutを試行、global認証表示をfalseへ
 ```
 
-独自8Cookieは`session_id`、`sb-refresh-token`、`sb-access-token`、`sb-csrf-token`、`sb-login-2fa-session`、`sb-password-reset-session`と、ゲストのカート・お気に入りの印`cart`・`wishlist`（[logout](../../../src/app/api/auth/logout/route.ts) の Cookie を消す一覧）。SSR Cookieは`sb-.*-auth-token`と`.数字`の分割Cookieを消去する。DB側例外はログを残してCookie消去に進み、外側例外は500。SDK signOut失敗はUIが吸収する。
+独自7Cookieは`session_id`、`sb-refresh-token`、`sb-access-token`、`sb-csrf-token`、`sb-return-intent`と、ゲストのカート・お気に入りの印`cart`・`wishlist`（[logout](../../../src/app/api/auth/logout/route.ts) の Cookie を消す一覧）。SSR Cookieは`sb-.*-auth-token`と`.数字`の分割Cookieを消去する。DB側例外はログを残してCookie消去に進み、外側例外は500。SDK signOut失敗はUIが吸収する。
 
 local sessions更新の戻り値errorをrouteは検査しない。JWTで特定できずlocal user_idも無い場合は監査のみ、失効RPC errorはログ・監査に残し、200へ進む。API非2xxや通信例外ではLoginContextは失敗を返し、上図のglobal認証表示の解除を実行しない。clientFetchが送信前refreshを試す場合は、その結果がlogoutへ渡るCookieに影響する。
 

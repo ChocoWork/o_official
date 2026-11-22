@@ -55,7 +55,7 @@ AUTH の領域の構成・画面・画面遷移・状態遷移・API・データ
 | Supabase の client | `src/lib/supabase/server.ts` の `createPublicClient`・`createClient`・`createServiceRoleClient` | 匿名の確かめ・利用者の session・service role |
 | ゲストの印・注文の紐付け | `src/features/cart/services/guest-shopping-token.ts`（H）、`src/lib/orders/link-guest-orders.ts`（注文まわりの作り直しが書き換え中） | ログインの保存の後にカート・お気に入り・ゲスト注文を会員へ合わせる |
 | 部品 | `src/components/ui/*`（Drawer・Accordion・Button・StatusBadge・TextField・LiveMessage・SingleSelect など）、`src/lib/social.ts`、`src/lib/mask-email.ts` | 画面の部品 |
-| E2E の道具 | `e2e/auth-2fa-test-utils.ts`・`turnstile-test-utils.ts`・`member-session-helpers.ts` | 会員・決済・配送・返品の E2E も頼るので、AUTH の作業で書き換えない |
+| E2E の道具 | `turnstile-test-utils.ts`・`member-session-helpers.ts`（`setEmailCodeSessionCookie` はパスキー段4の Task 33 で `auth-2fa-test-utils.ts` から移した） | 会員・決済・配送・返品の E2E も頼るので、AUTH の作業で書き換えない |
 
 ## 構成
 
@@ -119,7 +119,7 @@ sequenceDiagram
 ```
 
 - 1段目で得た Supabase の session は捨て、Cookie に入れない。トークンを配るのは2段目を通った時だけ
-- 1段目（パスワードの確かめと確認コードの送信）・再送・会員登録の呼び出しは、Supabase の captcha を免除される管理者資格（サービスの鍵）の auth だけの client で行う。Supabase の captcha をオンにして、アプリを通らない直の呼び出しをトークン無しで 400 にするための前提（ADR-0420、DD-AUTH-040、SEC-AUTH-035）。この client は `signInWithPassword`・`signInWithOtp`・`signUp`・`resend` の 4 つの関数だけを持ち、`auth.admin`・`auth.mfa` には届かない（最終レビュー指摘 4、2026-11-01）。Supabase が captcha を理由に断った時は 5xx と監査に残し、資格情報の誤りに丸めない。1段目のパスワードの確かめで GoTrue が回数の制限（429）を返した時は 429＋`Retry-After`・監査 `supabase_rate_limited`、5xx・通信の失敗は 503・監査 `supabase_unavailable` にし、同じく 401 に丸めない（資格情報の誤り・未確認のメールだけが同じ本文の 401。SEC-AUTH-035-AC-02）。2段目（`verifyOtp`）は captcha が掛からないので匿名の client のまま
+- 1段目（パスワードの確かめと確認コードの送信）・再送・会員登録の呼び出しは、Supabase の captcha を免除される管理者資格（サービスの鍵）の auth だけの client で行う。Supabase の captcha をオンにして、アプリを通らない直の呼び出しをトークン無しで 400 にするための前提（ADR-0420、DD-AUTH-040、SEC-AUTH-035）。この client は `signInWithOtp`・`resend` の 2 つの関数だけを持ち（`signInWithPassword`・`signUp` はパスキー段4の Task 33 で外した）、`auth.admin`・`auth.mfa` には届かない（最終レビュー指摘 4、2026-11-01）。Supabase が captcha を理由に断った時は 5xx と監査に残し、資格情報の誤りに丸めない。1段目のパスワードの確かめで GoTrue が回数の制限（429）を返した時は 429＋`Retry-After`・監査 `supabase_rate_limited`、5xx・通信の失敗は 503・監査 `supabase_unavailable` にし、同じく 401 に丸めない（資格情報の誤り・未確認のメールだけが同じ本文の 401。SEC-AUTH-035-AC-02）。2段目（`verifyOtp`）は captcha が掛からないので匿名の client のまま
 - 宛先のメールはいつも保留の Cookie から取り、本文から受けない（FREQ-336-REQ-03）
 - 保留の取り消し（API-AUTH-004）・再送（API-AUTH-003）・上限での破棄の動きは STATE-AUTH-001
 - Google のログインはこの2段を通らない（FLOW-AUTH-002）。会員の Google ログインに2段目を求めるかは決めていない（SEC-AUTH-008 の会員の部分）
@@ -1833,15 +1833,15 @@ stateDiagram-v2
 - 6つとも anon・authenticated から呼べる状態で、公開の鍵だけで会員の有無・他人のセッションの失効・回数の数えに届く（SEC-AUTH-012 は満たさない）
 - `find_auth_user_id_by_email` は SSO・停止・論理削除の利用者を外して引く（外れた宛先は会員登録で重複として返り、登録済みと同じ 202 にそろえる）
 
-### DATA-AUTH-004 認証の Cookie は用途ごとに名前・寿命・属性を分け、保留と再設定は署名した印にする
+### DATA-AUTH-004 認証の Cookie は用途ごとに名前・寿命・属性を分け、保留は署名した印にする
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-AUTH-024、SEC-AUTH-032、FREQ-320-REQ-02 |
-| 根拠 | スクリプト・平文の通信・別のサイトからの送信で Cookie を盗ませず使わせないため、トークンは HttpOnly・本番で Secure・SameSite を付け、短命の保留と再設定は Strict にする（SEC-AUTH-024）。CSRF の印は画面が読むので HttpOnly にしない。access の寿命を refresh にそろえる（FREQ-320-REQ-02）。保留と再設定はパスワードを通った・リンクを確かめた事実を署名した印で持つ（FREQ-58-REQ-01、ADR-0400、FREQ-335-REQ-04、FREQ-332-REQ-04） |
+| 根拠 | スクリプト・平文の通信・別のサイトからの送信で Cookie を盗ませず使わせないため、トークンは HttpOnly・本番で Secure・SameSite を付け、短命のメールのコードの保留は Strict にする（SEC-AUTH-024）。CSRF の印は画面が読むので HttpOnly にしない。access の寿命を refresh にそろえる（FREQ-320-REQ-02）。保留と再設定はパスワードを通った・リンクを確かめた事実を署名した印で持つ（FREQ-58-REQ-01、ADR-0400、FREQ-335-REQ-04、FREQ-332-REQ-04） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
-| 出どころ | 実装から推定（`src/lib/cookie.ts`、`src/features/auth/services/register.ts`、`login-2fa-session.ts`、`password-reset-session.ts`） |
+| 出どころ | 実装から推定（`src/lib/cookie.ts`、`src/features/auth/services/email-code-session.ts`）。旧の保留・再設定の Cookie の表の2行は、パスキー段4の Task 33 で消した |
 
 | Cookie | 中身 | 寿命 | HttpOnly | SameSite |
 | --- | --- | --- | --- | --- |
@@ -1849,8 +1849,7 @@ stateDiagram-v2
 | `sb-refresh-token` | refresh token | 7日 | あり | Lax |
 | `sb-csrf-token` | CSRF の印 | refresh と同じ | なし | Lax |
 | `session_id` | 端末の印（決済の流れの印。proxy は `/cart`・`/checkout`・`/api/checkout` の応答だけで発行し、ログインの成功のたびに新しい値に回す） | 30日 | あり | Lax |
-| `sb-login-2fa-session` | ログインの保留の署名した印（STATE-AUTH-001） | 5分（iat から 30 分まで） | あり | Strict |
-| `sb-password-reset-session` | 再設定の署名した印（利用者・宛先・印の行） | 10分 | あり | Strict |
+| `sb-email-code-session` | メールのコードの保留の署名した印 | 5分（iat から 30 分まで） | あり | Strict |
 | `sb-return-intent` | 戻り先の控えの番号（DATA-AUTH-005。署名した印ではなく乱数。signup の控えは登録したメールとの結び付けに使う） | login は 15 分、signup は 1 時間（DB の関数の戻り値の秒数） | あり | Lax |
 | `sb-…-auth-token` | Google のログインでライブラリが書く session | ライブラリの既定 | ライブラリの既定 | ライブラリの既定 |
 

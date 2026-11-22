@@ -23,7 +23,6 @@ import type {
  * 宛先は SHOP_ALERT_EMAIL（今の要対応のメールと同じ）。お客様の名前・住所・メールアドレスは入れない。
  */
 export type OpsAlertKind =
-  | 'site_url_invalid'
   | 'webhook_backlog'
   | 'webhook_dead'
   | 'job_stale'

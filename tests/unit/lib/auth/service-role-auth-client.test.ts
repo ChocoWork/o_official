@@ -8,7 +8,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 jest.mock('next/headers', () => ({ cookies: jest.fn(), headers: jest.fn() }));
 
 function fakeAuthFunctions() {
-  return { signInWithPassword: jest.fn(), signInWithOtp: jest.fn(), signUp: jest.fn(), resend: jest.fn() };
+  return { signInWithOtp: jest.fn(), resend: jest.fn() };
 }
 
 describe('DD-AUTH-040 createServiceRoleAuthClient', () => {
@@ -51,7 +51,11 @@ describe('DD-AUTH-040 createServiceRoleAuthClient', () => {
     expect('from' in client).toBe(false);
     expect('rpc' in client).toBe(false);
     expect('storage' in client).toBe(false);
-    expect(typeof client.auth.signInWithPassword).toBe('function');
+    expect(typeof client.auth.signInWithOtp).toBe('function');
+    expect(typeof client.auth.resend).toBe('function');
+    // パスワードの道（signInWithPassword・signUp）はパスキー段4で消した。
+    expect('signInWithPassword' in client.auth).toBe(false);
+    expect('signUp' in client.auth).toBe(false);
   });
 
   test('DD-AUTH-040 呼ぶたびに別のオブジェクトを返す（使い回さない）', async () => {
@@ -82,7 +86,7 @@ describe('DD-AUTH-040 createServiceRoleAuthClient', () => {
   test('DD-AUTH-040 SUPABASE_URL が無ければ NEXT_PUBLIC_SUPABASE_URL を使う', async () => {
     delete process.env.SUPABASE_URL;
     const client = await createServiceRoleAuthClient();
-    await client.auth.signInWithPassword({ email: 'user@example.invalid', password: 'x'.repeat(16) });
+    await client.auth.signInWithOtp({ email: 'user@example.invalid', options: { shouldCreateUser: false } });
     expect(requests).toHaveLength(1);
   });
 
@@ -113,11 +117,11 @@ describe('DD-AUTH-040 createServiceRoleAuthClient', () => {
     const { createServiceRoleAuthClient: fresh } = await import('@/lib/auth/service-role-auth-client');
     const client = await fresh();
     expect(Object.keys(client)).toEqual(['auth']);
-    expect(Object.keys(client.auth).sort()).toEqual(['resend', 'signInWithOtp', 'signInWithPassword', 'signUp']);
+    expect(Object.keys(client.auth).sort()).toEqual(['resend', 'signInWithOtp']);
   });
 
-  test('DD-AUTH-040 auth.admin・auth.mfa などの残りの auth の機能には届かない（4 つの関数だけ）', async () => {
-    const fakeAuth = { ...fakeAuthFunctions(), admin: { deleteUser: jest.fn() }, mfa: {}, getSession: jest.fn() };
+  test('DD-AUTH-040 auth.admin・auth.mfa などの残りの auth の機能には届かない（2 つの関数だけ）', async () => {
+    const fakeAuth = { ...fakeAuthFunctions(), signInWithPassword: jest.fn(), signUp: jest.fn(), admin: { deleteUser: jest.fn() }, mfa: {}, getSession: jest.fn() };
     jest.resetModules();
     jest.doMock('@supabase/supabase-js', () => ({ createClient: () => ({ auth: fakeAuth }) }));
     const { createServiceRoleAuthClient: fresh } = await import('@/lib/auth/service-role-auth-client');
@@ -125,39 +129,40 @@ describe('DD-AUTH-040 createServiceRoleAuthClient', () => {
     expect('admin' in client.auth).toBe(false);
     expect('mfa' in client.auth).toBe(false);
     expect('getSession' in client.auth).toBe(false);
+    expect('signInWithPassword' in client.auth).toBe(false);
+    expect('signUp' in client.auth).toBe(false);
     expect((client.auth as unknown as Record<string, unknown>).admin).toBeUndefined();
   });
 
-  test('DD-AUTH-040 本物の SDK の client でも auth.admin に届かず、4 つの関数は束ねられていて取り出して呼べる', async () => {
+  test('DD-AUTH-040 本物の SDK の client でも auth.admin に届かず、2 つの関数は束ねられていて取り出して呼べる', async () => {
     const client = await createServiceRoleAuthClient();
     expect('admin' in client.auth).toBe(false);
-    expect(Object.keys(client.auth).sort()).toEqual(['resend', 'signInWithOtp', 'signInWithPassword', 'signUp']);
-    const { signInWithPassword } = client.auth;
-    const result = await signInWithPassword({ email: 'user@example.invalid', password: 'x'.repeat(16) });
+    expect(Object.keys(client.auth).sort()).toEqual(['resend', 'signInWithOtp']);
+    const { signInWithOtp } = client.auth;
+    const result = await signInWithOtp({ email: 'user@example.invalid', options: { shouldCreateUser: false } });
     expect(result.error).toBeNull();
-    expect(requests.some(r => r.path.endsWith('/token'))).toBe(true);
+    expect(requests.some(r => r.path.endsWith('/otp'))).toBe(true);
   });
 
-  test('DD-AUTH-040 signInWithPassword の後に signInWithOtp を呼んでも、両方の要求がサービスの鍵のまま', async () => {
+  test('DD-AUTH-040 signInWithOtp の後に resend を呼んでも、両方の要求がサービスの鍵のまま', async () => {
     const client = await createServiceRoleAuthClient();
-    const password = await client.auth.signInWithPassword({ email: 'user@example.invalid', password: 'x'.repeat(16) });
-    expect(password.error).toBeNull();
-    expect(password.data.session).not.toBeNull();
-    await client.auth.signInWithOtp({ email: 'user@example.invalid', options: { shouldCreateUser: false } });
+    const otp = await client.auth.signInWithOtp({ email: 'user@example.invalid', options: { shouldCreateUser: false } });
+    expect(otp.error).toBeNull();
+    await client.auth.resend({ type: 'signup', email: 'user@example.invalid' });
 
-    const token = requests.find(r => r.path.endsWith('/token'));
-    const otp = requests.find(r => r.path.endsWith('/otp'));
-    expect(token).toBeDefined();
-    expect(otp).toBeDefined();
-    expect(token?.authorization).toBe('Bearer fake-service-key');
-    expect(otp?.authorization).toBe('Bearer fake-service-key');
-    expect(token?.apikey).toBe('fake-service-key');
-    expect(otp?.apikey).toBe('fake-service-key');
+    const otpRequest = requests.find(r => r.path.endsWith('/otp'));
+    const resend = requests.find(r => r.path.endsWith('/resend'));
+    expect(otpRequest).toBeDefined();
+    expect(resend).toBeDefined();
+    expect(otpRequest?.authorization).toBe('Bearer fake-service-key');
+    expect(resend?.authorization).toBe('Bearer fake-service-key');
+    expect(otpRequest?.apikey).toBe('fake-service-key');
+    expect(resend?.apikey).toBe('fake-service-key');
   });
 
   test('DD-AUTH-040 auth だけのクライアントを作っても createServiceRoleClient の DB 要求は混ざらない', async () => {
     const authClient = await createServiceRoleAuthClient();
-    await authClient.auth.signInWithPassword({ email: 'user@example.invalid', password: 'x'.repeat(16) });
+    await authClient.auth.signInWithOtp({ email: 'user@example.invalid', options: { shouldCreateUser: false } });
     const admin = await createServiceRoleClient();
     await admin.from('sessions').select('id');
     const rest = requests.filter(r => r.path.startsWith('/rest/'));

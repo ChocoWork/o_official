@@ -58,8 +58,6 @@ const ALWAYS_CLEARED_COOKIES = [
   'sb-refresh-token',
   'sb-access-token',
   'sb-csrf-token',
-  'sb-login-2fa-session',
-  'sb-password-reset-session',
   'sb-return-intent',
   'cart',
   'wishlist',

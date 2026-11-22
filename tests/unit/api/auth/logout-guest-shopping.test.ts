@@ -360,7 +360,7 @@ describe('POST /api/auth/logout: サーバー側のログインの取り消し�
     }
   });
 
-  test('DD-AUTH-028 refresh の Cookie の有る無しに関わらず、9つの Cookie（戻り先の控えを含む）を消す', async () => {
+  test('DD-AUTH-028 refresh の Cookie の有る無しに関わらず、7つの Cookie（戻り先の控えを含む）を消す', async () => {
     const res = await callLogout();
 
     const cleared = res.cookies._cookies.map((cookie) => cookie.name);
@@ -369,8 +369,6 @@ describe('POST /api/auth/logout: サーバー側のログインの取り消し�
       'sb-refresh-token',
       'sb-access-token',
       'sb-csrf-token',
-      'sb-login-2fa-session',
-      'sb-password-reset-session',
       'sb-return-intent',
       'cart',
       'wishlist',

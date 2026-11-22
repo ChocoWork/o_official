@@ -26,8 +26,8 @@ export type VerifiedAccessToken =
    */
   | { ok: false; reason: 'missing' | 'invalid' | 'unavailable' }
   /**
-   * `claims` は署名検証済みの値で、`revoked` の時だけ付く。結び付いていない session を断る窓口が、
-   * 行為者を監査に残すために使う（authorization の根拠には使わない）。
+   * `claims` は署名検証済みの値で、`revoked` の時だけ付く。結び付いていない session を断る時に、
+   * 呼び手が行為者を監査に残せるようにする（authorization の根拠には使わない）。
    */
   | { ok: false; reason: 'revoked'; claims?: JwtPayload };
 

@@ -85,8 +85,6 @@ npm run test:e2e:debug
 
 `e2e/helpers.ts` には共通の処理が含まれています：
 - `generateTestUser()`: ランダムなテストユーザーを生成
-- `registerUser()`: ユーザー登録を実行
-- `loginUser()`: ログインを実行
 - `logoutUser()`: ログアウトを実行
 - `expectLoggedIn()`: ログイン状態を確認
 - `expectLoggedOut()`: 非ログイン状態を確認

@@ -1,5 +1,7 @@
 # テスト仕様
 
+> 2026-11-22 確認日（パスキー段4 Task 33）: 試験の手助けの掃き出し。`e2e/member-session-helpers.ts` の `loginAsMemberLegacy`・`createTestMember` の `password` を消し、`e2e/auth-2fa-test-utils.ts` を消して `setEmailCodeSessionCookie` を `member-session-helpers.ts` へ移し、`e2e/helpers.ts` の `registerUser`・`loginUser` を消した。`createServiceRoleAuthClient` の単体試験（`DD-AUTH-040`）は `signInWithOtp`・`resend` の 2 つだけを確かめる形に直し、`proxy-no-store`・`auth-cookie-data`・`logout` の試験から消した窓口・Cookie の行を外した。`isAuthUserUnconfirmed` の単体試験（呼び手が無かった）は消した。
+
 > 2026-11-22 確認日（パスキー段4 Task 30）: 認証アプリ（TOTP）・MFA のやり直しの窓口と `/auth/verified` を調べる試験を消した（単体 `mfa-*-route`・`verified-page`・`mfa-reset-route`、結合 `auth-mfa-*`・`auth-admin-totp-flow`・`auth-verified-*`・`admin-mfa-reset-api`・`mfa-verify`、E2E `FR-LOGIN-018`・`FR-LOGIN-033` の画面の分・`FR-LOGIN-032` の TOTP の6定義）。`FR-LOGIN-032` は `FR-LOGIN-032-staff-entry-cookie-checks.spec.ts` に名前を替え、`FREQ-316-REQ-02-AC-01` を足した。`FR-LOGIN-080` に TOTP・`/auth/verified`・`mfa/reset` の404（FR-AUTH-053-AC-03）を足した。`ARC-AUTH-015`（行き先）は `tests/integration/api/auth/post-login.test.ts`、`DD-AUTH-060` は `tests/unit/features/auth/passkey/post-login.test.ts` が持つ。下の古い表のうち、消した試験の行は履歴として残す。
 
 > 2026-11-18 確認日（パスキー段2 Task 11）: 下に「パスキー段2のテスト」の節を足した（E2E `FR-LOGIN-055`〜`062` と、単体・結合・DB 結合の主なファイル）。`FR-LOGIN-055` の AC-03 が回数の制限の窓の境で落ちるのを直した（窓の残りが10秒より短ければ次の窓まで待つ）。
@@ -77,7 +79,7 @@
 
 ### 試験の道具
 
-- `e2e/member-session-helpers.ts`: `loginAsMember` はメールのコードの窓口（署名した保留の Cookie → 再送 → 確定）、`loginAsMemberLegacy` は旧の窓口の道（段4で消す。ADR-0469 の「段4で消す一覧」）。コードのメールが届かない時の誤りの文に、再送の窓口が GoTrue の送信の間隔の 429 を 200 に隠すことを書いた
+- `e2e/member-session-helpers.ts`: `loginAsMember` はメールのコードの窓口（署名した保留の Cookie → 再送 → 確定）、`loginAsMemberLegacy` と `e2e/auth-2fa-test-utils.ts` はパスキー段4の Task 33 で消した（`setEmailCodeSessionCookie` はこのファイルへ移した）。コードのメールが届かない時の誤りの文に、再送の窓口が GoTrue の送信の間隔の 429 を 200 に隠すことを書いた
 - `e2e/passkey-virtual-authenticator.ts`: ブラウザの仮想の認証器（FR-LOGIN-059・060 が使う）
 
 ## グループH Task 11 本番buildと手元SupabaseのE2E（2026-10-30）

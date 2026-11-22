@@ -341,7 +341,7 @@ describe('Header', () => {
     expect(within(onLogin.header).getByRole('link', { name: 'ログイン' })).toHaveAttribute('href', '/login');
     onLogin.unmount();
 
-    const onAuth = renderHeader({ loggedIn: false, path: '/auth/verified' });
+    const onAuth = renderHeader({ loggedIn: false, path: '/auth/callback' });
     expect(within(onAuth.header).getByRole('link', { name: 'ログイン' })).toHaveAttribute('href', '/login');
   });
 

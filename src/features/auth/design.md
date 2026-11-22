@@ -25,7 +25,7 @@
 - ARCH-AUTH-11: Privileged MFA (Admin / Supporter)
 
 ## まず出力するセクション（優先順）
-1. OpenAPI スニペット（`/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/password-reset/*`）
+1. OpenAPI スニペット（`/api/auth/email-code/*`, `/api/auth/refresh`。パスワードの登録・ログイン・再設定の窓口はパスキー段4で消えた）
 2. DB マイグレーション草案（sessions テーブル拡張, password_reset_tokens, oauth_accounts）
 3. TypeScript 型 & Zod スキーマ（`src/features/auth/schemas.ts`）
 4. API Route スタブ（`src/app/api/auth/*/route.ts`）

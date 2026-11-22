@@ -26,7 +26,7 @@ describe('DD-AUTH-036 buildLoginHref', () => {
     expect(buildLoginHref('/item/3')).toBe('/login?next=%2Fitem%2F3');
   });
 
-  it.each(['/login', '/auth/verified', '/api/x', '/unknown'])('DD-AUTH-036 %s は next を付けない', (path) => {
+  it.each(['/login', '/auth/callback', '/api/x', '/unknown'])('DD-AUTH-036 %s は next を付けない', (path) => {
     expect(buildLoginHref(path)).toBe('/login');
   });
 
@@ -75,7 +75,7 @@ describe('DD-AUTH-036 useLoginHref', () => {
     expect(result.current).toBe('/login?next=%2Fitem%2F3%3Fcolor%3Dred');
   });
 
-  it.each(['/login', '/auth/verified', '/api/x', '/unknown'])('DD-AUTH-036 %s にいる時は next を付けない', (path) => {
+  it.each(['/login', '/auth/callback', '/api/x', '/unknown'])('DD-AUTH-036 %s にいる時は next を付けない', (path) => {
     setLocation(path, '?a=1');
     mockUsePathname.mockReturnValue(path);
 

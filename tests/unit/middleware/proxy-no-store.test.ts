@@ -38,12 +38,9 @@ describe('proxy の /api/auth の no-store', () => {
   }
 
   const AUTH_PATHS: Array<[string, string]> = [
-    ['POST', '/api/auth/login'],
-    ['POST', '/api/auth/otp/verify'],
+    ['POST', '/api/auth/email-code/start'],
+    ['POST', '/api/auth/email-code/verify'],
     ['POST', '/api/auth/refresh'],
-    ['POST', '/api/auth/mfa/enroll-totp'],
-    ['POST', '/api/auth/mfa/verify'],
-    ['GET', '/api/auth/mfa/status'],
     ['GET', '/api/auth/me'],
   ];
 
@@ -59,7 +56,7 @@ describe('proxy の /api/auth の no-store', () => {
   test('DD-AUTH-037 /api/auth への Origin が違う POST の 403 にも no-store が付く', async () => {
     const proxy = await loadProxy();
 
-    const res = proxy(request('/api/auth/login', { origin: 'https://evil.example' }, 'POST'));
+    const res = proxy(request('/api/auth/email-code/start', { origin: 'https://evil.example' }, 'POST'));
 
     expect(res.status).toBe(403);
     expect(res.headers.get('Cache-Control')).toBe('no-store');

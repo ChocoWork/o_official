@@ -8,7 +8,7 @@
  * 手元のアプリ（本番ビルド）で流す。3つの幅でくり返し、1画面に収まる確かめだけ iPhone SE（375×667）で流す。
  */
 import { expect, test, type Page } from '@playwright/test';
-import { setEmailCodeSessionCookie } from './auth-2fa-test-utils';
+import { setEmailCodeSessionCookie } from './member-session-helpers';
 import { stubTurnstileScript } from './turnstile-test-utils';
 
 test.use({ trace: 'off' });

@@ -4,8 +4,6 @@
 export const refreshCookieName = 'sb-refresh-token';
 export const accessCookieName = 'sb-access-token';
 export const csrfCookieName = 'sb-csrf-token';
-export const passwordResetSessionCookieName = 'sb-password-reset-session';
-export const loginTwoFactorSessionCookieName = 'sb-login-2fa-session';
 export const emailCodeSessionCookieName = 'sb-email-code-session';
 export const sessionCookieName = 'session_id';
 export const returnIntentCookieName = 'sb-return-intent';
@@ -72,26 +70,8 @@ export function generateSessionId() {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export function cookieOptionsForPasswordReset(maxAgeSeconds: number) {
-  return {
-    ...getBaseCookieOptions(),
-    maxAge: maxAgeSeconds,
-    httpOnly: true,
-    sameSite: 'strict' as const,
-  };
-}
-
-export function cookieOptionsForLoginTwoFactor(maxAgeSeconds: number) {
-  return {
-    ...getBaseCookieOptions(),
-    maxAge: maxAgeSeconds,
-    httpOnly: true,
-    sameSite: 'strict' as const,
-  };
-}
-
 /**
- * メールのコードの保留の Cookie の属性（`cookieOptionsForLoginTwoFactor` と同じ）。
+ * メールのコードの保留の Cookie の属性（HttpOnly・SameSite=Strict）。
  */
 export function cookieOptionsForEmailCode(maxAgeSeconds: number) {
   return {
@@ -129,16 +109,12 @@ const cookieHelper = {
   refreshCookieName,
   accessCookieName,
   csrfCookieName,
-  passwordResetSessionCookieName,
-  loginTwoFactorSessionCookieName,
   emailCodeSessionCookieName,
   sessionCookieName,
   cookieOptionsForRefresh,
   cookieOptionsForAccess,
   cookieOptionsForCsrf,
   cookieOptionsForSession,
-  cookieOptionsForPasswordReset,
-  cookieOptionsForLoginTwoFactor,
   cookieOptionsForEmailCode,
   generateSessionId,
   clearCookieOptions,

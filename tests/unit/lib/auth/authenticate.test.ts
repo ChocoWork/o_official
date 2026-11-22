@@ -202,7 +202,7 @@ describe('verifyAccessToken / authenticateRequest', () => {
     });
 
     // 結び付いていない session（アプリを通らずに取った通行証）は RPC が false を返す。
-    // 呼び手（enroll-totp）が断りを監査に残せるよう、署名検証済みの claims を付ける。
+    // 呼び手が断りを監査に残せるよう、署名検証済みの claims を付ける。
     test('DD-AUTH-039 結び付いていない session は revoked で、署名検証済みの claims を付ける', async () => {
       getClaimsMock.mockResolvedValue({ data: { claims: buildClaims() }, error: null });
       rpcMock.mockResolvedValue({ data: false, error: null });

@@ -70,7 +70,7 @@ describe('proxy の session_id の発行', () => {
     '/look/1',
     '/look/1/og',
     '/item/1',
-    '/api/auth/login',
+    '/api/auth/email-code/start',
     '/api/search',
     '/cartx',
     '/checkoutx',

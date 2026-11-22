@@ -1,6 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { randomBytes } from 'node:crypto';
-import { createTestMember, loginAsMemberLegacy } from './member-session-helpers';
+import { createTestMember, loginAsMember } from './member-session-helpers';
 
 /**
  * FR-LOGIN-033 管理の更新の抑制・一般の会員のヘッダー（page.route のモック）
@@ -115,7 +115,7 @@ for (const viewport of viewports) {
       // 本物の会員でログインする（役割は app_metadata から読まれ、一般の会員は user）。回数の制限は試験ごとの送り元で分ける
       const member = await createTestMember('header-role');
       const [a, b, c] = randomBytes(3);
-      await loginAsMemberLegacy(page, member, `10.${a}.${b}.${c}`);
+      await loginAsMember(page, member, `10.${a}.${b}.${c}`);
       expect(((await (await page.request.get('/api/auth/me')).json()) as { user?: { role?: string } }).user?.role).toBe('user');
 
       await page.goto('/');

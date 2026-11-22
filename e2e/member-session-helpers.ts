@@ -2,8 +2,7 @@
  * 会員のログインの手助け。
  * loginAsMember: メールのコードの窓口（/api/auth/email-code/resend → verify。始めの窓口の Turnstile は通さない）で、
  *   署名した保留の Cookie を置いて、本物の発行処理でログインと CSRF の Cookie を揃える。注文などの試験が使う。
- * loginAsMemberLegacy: 旧の窓口を消したので、loginAsMember の別名（名前と引数だけ残す。呼び手の spec が自分のタスクで消える・直るまでの橋。Task 33 で消す）。
- * どちらも、確認コードのメールは手元の Mailpit から Node で読む。
+ * 確認コードのメールは手元の Mailpit から Node で読む。
  * この助けを呼ぶ spec は、ファイルの最上位（test.describe の外）に `test.use({ trace: 'off' })` が必須。
  * 確認コード・ログインの Cookie・保留の Cookie がブラウザの文脈の通信に載り、通信記録に残るため。
  * trace は worker 単位の設定なので、test.describe の中に書くと読み込みで落ちる。
@@ -12,7 +11,8 @@ import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import type { Page } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
-import { setEmailCodeSessionCookie } from './auth-2fa-test-utils';
+import { emailCodeSessionCookieName } from '../src/lib/cookie';
+import { createEmailCodeSessionToken } from '../src/features/auth/services/email-code-session';
 
 export type TestMember = { userId: string; email: string };
 
@@ -45,7 +45,6 @@ export async function createTestMember(label: string): Promise<TestMember> {
   const { data, error } = await localAdmin().auth.admin.createUser({
     email,
     email_confirm: true,
-    password: `E2e-${randomBytes(12).toString('hex')}!`,
   }).catch(() => {
     // SDK の例外に要求の秘密値が含まれても、失敗の報告へ引き継がないため。
     throw new Error('手元の会員を作る要求に失敗した');
@@ -125,12 +124,30 @@ async function expectMemberSession(page: Page, origin: string, member: TestMembe
   }
 }
 
+const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
 /**
- * 旧の窓口（パスワード＋コードの道）は消えたので、loginAsMember（メールのコードの窓口）に付け替えた別名。
- * 名前と引数（forwardedFor を含む）だけ残し、呼び手の spec が自分のタスクで消える・直るまでの橋にする（Task 33 で別名ごと消す）。
+ * メールのコードの流れの保留の Cookie（sb-email-code-session）を置く。
+ * 始めの窓口（Turnstile を伴う）を通さずに、再送・確定の窓口へ入るため。localhost 専用。
+ * 呼び出し前に同一オリジンのページへ遷移していること。
  */
-export async function loginAsMemberLegacy(page: Page, member: TestMember, forwardedFor?: string): Promise<void> {
-  await loginAsMember(page, member, forwardedFor);
+export async function setEmailCodeSessionCookie(page: Page, email: string): Promise<void> {
+  const origin = new URL(page.url()).origin;
+  if (!LOCAL_ORIGIN.test(origin)) {
+    throw new Error(
+      `setEmailCodeSessionCookie は localhost 専用。対象オリジン: ${origin}。` +
+        '本番環境に対して保留の状態を偽造してはいけない。',
+    );
+  }
+  await page.context().addCookies([
+    {
+      name: emailCodeSessionCookieName,
+      value: createEmailCodeSessionToken({ email }),
+      url: origin,
+      httpOnly: true,
+      sameSite: 'Strict',
+    },
+  ]);
 }
 
 /**

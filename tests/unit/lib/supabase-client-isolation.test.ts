@@ -67,11 +67,11 @@ describe('Supabase SDK authentication isolation', () => {
     expect((await admin.auth.getSession()).data.session).toBeNull();
   });
 
-  test('DD-AUTH-040 auth だけのクライアントの signInWithPassword の後も、createServiceRoleClient の DB 要求はサービスの鍵のまま', async () => {
+  test('DD-AUTH-040 auth だけのクライアントの signInWithOtp の後も、createServiceRoleClient の DB 要求はサービスの鍵のまま', async () => {
     const authOnly = await createServiceRoleAuthClient();
     const admin = await createServiceRoleClient();
-    const signedIn = await authOnly.auth.signInWithPassword({ email: 'one@example.invalid', password: 'x'.repeat(16) });
-    expect(signedIn.error).toBeNull();
+    const sent = await authOnly.auth.signInWithOtp({ email: 'one@example.invalid', options: { shouldCreateUser: false } });
+    expect(sent.error).toBeNull();
     await admin.from('sessions').select('id');
     const freshAdmin = await createServiceRoleClient();
     await freshAdmin.from('sessions').select('id');

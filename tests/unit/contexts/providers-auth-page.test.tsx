@@ -39,7 +39,7 @@ describe('Providers の認証の画面の枠（isAuthPage）', () => {
     expect(mainClassFor(pathname)).toContain('min-h-dvh');
   });
 
-  test.each(['/', '/account', '/login/other', '/login/password', '/login/verify', '/auth/password-reset'])(
+  test.each(['/', '/account', '/login/other'])(
     'DD-AUTH-063 %s は真ん中寄せの枠にならない',
     (pathname) => {
       expect(mainClassFor(pathname)).not.toContain('min-h-dvh');

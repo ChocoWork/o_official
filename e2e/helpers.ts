@@ -27,49 +27,6 @@ export function generateTestUser(): TestUser {
 }
 
 /**
- * ユーザー登録を実行
- */
-export async function registerUser(page: Page, user: TestUser) {
-  await page.goto('/login/password');
-  
-  // 登録タブに切り替え
-  await page.click('button:has-text("新規登録")');
-  
-  // フォームに入力
-  if (user.displayName) {
-    await page.fill('input#name', user.displayName);
-  }
-  await page.fill('input#email', user.email);
-  await page.fill('input#password', user.password);
-  
-  // 送信
-  await page.click('button[type="submit"]:has-text("新規登録")');
-  
-  // 成功メッセージまたはリダイレクトを待つ
-  await page.waitForTimeout(2000);
-}
-
-/**
- * ログインを実行
- */
-export async function loginUser(page: Page, email: string, password: string) {
-  await page.goto('/login/password');
-  
-  // ログインタブに切り替え（デフォルトはログインタブ）
-  await page.click('button:has-text("ログイン")');
-  
-  // フォームに入力
-  await page.fill('input#email', email);
-  await page.fill('input#password', password);
-  
-  // 送信
-  await page.click('button[type="submit"]:has-text("ログイン")');
-  
-  // ログイン成功を待つ（ユーザーアイコンが変わる or ページ遷移）
-  await page.waitForTimeout(2000);
-}
-
-/**
  * ログアウトを実行
  */
 export async function logoutUser(page: Page) {

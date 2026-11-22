@@ -120,7 +120,7 @@ describe('/login page', () => {
   test.each([
     ['外の住所', '//evil.example'],
     ['/login', '/login'],
-    ['/auth/verified', '/auth/verified'],
+    ['/auth/callback', '/auth/callback'],
     ['タブを含む値', '/%09/evil.example'],
     ['許可リスト外', '/unknown'],
   ])('DD-AUTH-001 ?next が %s なら returnTo を渡さない', async (_label, next) => {
