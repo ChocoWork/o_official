@@ -4,7 +4,7 @@ jest.mock('server-only', () => ({}), { virtual: true });
 import { randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { DUMMY_CAPTCHA_TOKEN } from '../../../e2e/captcha-test-utils';
-import { bindAppSession } from '../../../e2e/admin-session-test-utils';
+import { bindAppSession, createAdminSessionActor } from '../../../e2e/admin-session-test-utils';
 import { signInCustomerWithoutPassword } from '../../../e2e/customer-session-test-utils';
 import { withCustomerPasswordFlag } from '../../../e2e/passkey-hook-scenarios';
 import { describeLocalDb, isLocalDatabase } from './helpers/local-db';
@@ -84,6 +84,17 @@ describeLocalDb('customer session helper（パスワード無しで会員の JWT
       const signedIn = await anon.auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
       expect(signedIn.data.session).toBeNull();
       expect(signedIn.error).not.toBeNull();
+    });
+  });
+
+  test('旗が真の時も、createAdminSessionActor の user（aal1・aal2）の通行証が作れる', async () => {
+    await withCustomerPasswordFlag(db(), true, async () => {
+      const aal1 = await createAdminSessionActor(db(), 'user', 'aal1');
+      expect(aal1.aal).toBe('aal1');
+      const aal2 = await createAdminSessionActor(db(), 'user', 'aal2');
+      expect(aal2.aal).toBe('aal2');
+      await service.auth.admin.deleteUser(aal1.userId);
+      await service.auth.admin.deleteUser(aal2.userId);
     });
   });
 });

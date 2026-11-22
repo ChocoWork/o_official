@@ -4,11 +4,13 @@
  * bindAppSession の入力の検査・手元以外の拒否・失敗の文面に token を出さないこと、createAdminSessionActor / elevateAdminSessionToAal2 が
  * ログイン・2本目の登録の後の refresh token で結び付けること、bindApp: false では何も書かないこと。
  * 店員（admin・supporter）はパスキーの道（provisionStaff・loginWithPasskey・addApprovedPasskey。DD-AUTH-046）で作り、古い名前の aal2 は認めたパスキー2本、
- * aal1 は1本に読み替える（SR-AUTH-014）。一般の利用者（user）は今のパスワードの道。
+ * aal1 は1本に読み替える（SR-AUTH-014）。一般の利用者（user）はパスワード無しの道（magiclink のトークンの検証）。
  */
 import { createHash, randomUUID } from 'node:crypto';
 
 const mockCreateUser = jest.fn();
+const mockGenerateLink = jest.fn();
+const mockVerifyOtp = jest.fn();
 const mockProvisionStaff = jest.fn();
 const mockLoginWithPasskey = jest.fn();
 const mockAddApprovedPasskey = jest.fn();
@@ -18,7 +20,9 @@ jest.mock('../../../scripts/e2e/passkey-staff', () => ({
   addApprovedPasskey: (...args: unknown[]) => mockAddApprovedPasskey(...args),
 }));
 jest.mock('@supabase/supabase-js', () => ({
-  createClient: jest.fn(() => ({ auth: { admin: { createUser: mockCreateUser }, getUser: jest.fn() } })),
+  createClient: jest.fn(() => ({
+    auth: { admin: { createUser: mockCreateUser, generateLink: mockGenerateLink }, verifyOtp: mockVerifyOtp, getUser: jest.fn() },
+  })),
 }));
 
 import {
@@ -73,6 +77,8 @@ beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'local-anon-key';
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'local-service-role-key';
   mockCreateUser.mockReset();
+  mockGenerateLink.mockReset();
+  mockVerifyOtp.mockReset();
   mockProvisionStaff.mockReset();
   mockLoginWithPasskey.mockReset();
   mockAddApprovedPasskey.mockReset();
@@ -257,25 +263,29 @@ describe('DD-AUTH-039 createAdminSessionActor / elevateAdminSessionToAal2 の結
     expect(db.sessionUpdates()).toHaveLength(0);
   });
 
-  describe('一般の利用者（user）は今のパスワードの道', () => {
-    function stubPasswordAuth(userId: string): void {
+  describe('一般の利用者（user）はパスワード無しの道', () => {
+    function stubPasswordAuth(userId: string, verifiedAal: 'aal1' | 'aal2' = 'aal1'): void {
       mockCreateUser.mockResolvedValue({ data: { user: { id: userId } }, error: null });
-      jest.spyOn(globalThis, 'fetch').mockImplementation(async (input: string | URL | Request) => {
-        const grant = String(input).includes('grant_type=refresh_token');
-        const reply = grant
-          ? { access_token: fakeJwt({ sub: userId, session_id: SESSION_ID, aal: 'aal2', exp: exp() }), refresh_token: 'refresh-after-aal2' }
-          : { access_token: fakeJwt({ sub: userId, session_id: SESSION_ID, aal: 'aal1', exp: exp() }), refresh_token: 'refresh-from-password' };
+      mockGenerateLink.mockResolvedValue({ data: { properties: { hashed_token: 'hashed-token' } }, error: null });
+      mockVerifyOtp.mockResolvedValue({
+        data: {
+          session: { access_token: fakeJwt({ sub: userId, session_id: SESSION_ID, aal: verifiedAal, exp: exp() }), refresh_token: 'refresh-from-magiclink' },
+        },
+        error: null,
+      });
+      jest.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+        const reply = { access_token: fakeJwt({ sub: userId, session_id: SESSION_ID, aal: 'aal2', exp: exp() }), refresh_token: 'refresh-after-aal2' };
         return new Response(JSON.stringify(reply), { status: 200, headers: { 'content-type': 'application/json' } });
       });
     }
 
-    it('aal1 は passkey の道を通らず、パスワードのログインの refresh token で結び付ける', async () => {
+    it('aal1 は passkey の道を通らず、magiclink の検証の refresh token で結び付ける', async () => {
       stubPasswordAuth(USER_ID);
       const db = new FakeDb();
       const actor = await createAdminSessionActor(db.asPg(), 'user', 'aal1');
       expect(mockProvisionStaff).not.toHaveBeenCalled();
       expect(actor).toMatchObject({ role: 'user', aal: 'aal1', appBound: true, authenticators: [] });
-      expect(db.sessionInserts()[0].params).toContain(sha256Hex('refresh-from-password'));
+      expect(db.sessionInserts()[0].params).toContain(sha256Hex('refresh-from-magiclink'));
     });
 
     it('aal2 は session に totp の印を足して refresh した token で結び付ける', async () => {
@@ -286,10 +296,7 @@ describe('DD-AUTH-039 createAdminSessionActor / elevateAdminSessionToAal2 の結
     });
 
     it('頼んだ aal と JWT の aal が合わなければ投げて、行を残さない', async () => {
-      stubPasswordAuth(USER_ID);
-      jest.spyOn(globalThis, 'fetch').mockImplementation(async () =>
-        new Response(JSON.stringify({ access_token: fakeJwt({ sub: USER_ID, session_id: SESSION_ID, aal: 'aal2', exp: exp() }), refresh_token: 'r' }), { status: 200 }),
-      );
+      stubPasswordAuth(USER_ID, 'aal2');
       const db = new FakeDb();
       await expect(createAdminSessionActor(db.asPg(), 'user', 'aal1')).rejects.toThrow();
       expect(db.sessionInserts()).toHaveLength(0);

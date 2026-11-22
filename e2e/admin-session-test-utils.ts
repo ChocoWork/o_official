@@ -20,7 +20,6 @@ import type { Page } from '@playwright/test';
 import { assertLocalDbClient, isLocalUrl } from '../scripts/e2e/environment';
 import { addApprovedPasskey, loginWithPasskey, provisionStaff } from '../scripts/e2e/passkey-staff';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
-import { withDummyCaptcha } from './captcha-test-utils';
 import type { SoftAuthenticator } from './passkey-soft-authenticator';
 
 /** 'user' は管理の役割を持たない一般の利用者（user_roles の行はある。管理 API が断ることを見せるための対照） */
@@ -89,12 +88,11 @@ function uniqueSourceIp(): string {
   return `10.${a}.${b}.${c}`;
 }
 
-async function requestToken(env: LocalAuthEnv, grantType: 'password' | 'refresh_token', body: Record<string, string>): Promise<Required<TokenReply>> {
+async function requestToken(env: LocalAuthEnv, grantType: 'refresh_token', body: Record<string, string>): Promise<Required<TokenReply>> {
   const res = await fetch(`${env.url}/auth/v1/token?grant_type=${grantType}`, {
     method: 'POST',
     headers: { apikey: env.anonKey, 'content-type': 'application/json', 'x-forwarded-for': uniqueSourceIp() },
-    // captcha が有効な Auth に anon の鍵で直に叩く password grant にだけダミーのトークンを付ける（refresh_token は captcha が掛からない）
-    body: JSON.stringify(grantType === 'password' ? withDummyCaptcha(body) : body),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(10_000),
   }).catch(() => {
     throw new Error(`手元の Auth の ${grantType} の要求に失敗した`);
@@ -166,17 +164,16 @@ export async function rebindRefreshToken(
   if (updated.rowCount !== 1) throw new Error('refresh token を合わせる sessions の行が 1 行ではない');
 }
 
-/** 一般の利用者（管理の役割なし）を作り、パスワードのログインで JWT を得る。aal2 を頼まれた時だけ totp の印を足して refresh する */
+/** 一般の利用者（管理の役割なし）を作り、パスワード無しのログイン（magiclink のトークンの検証）で JWT を得る。aal2 を頼まれた時だけ totp の印を足して refresh する */
 async function createMemberTokens(
   db: PgClient,
   env: LocalAuthEnv,
   aal: AdminSessionAal,
 ): Promise<{ userId: string; email: string; tokens: Required<TokenReply> }> {
   const email = `e2e-admin-session-user-${randomUUID().slice(0, 8)}@example.com`;
-  const password = `E2e-${randomBytes(12).toString('hex')}!`;
   const admin = createClient(env.url, env.serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
   const created = await admin.auth.admin
-    .createUser({ email, password, email_confirm: true, app_metadata: { role: 'user' } })
+    .createUser({ email, email_confirm: true, app_metadata: { role: 'user' } })
     .catch(() => {
       throw new Error('手元の管理者を作る要求に失敗した');
     });
@@ -190,7 +187,8 @@ async function createMemberTokens(
     [userId],
   );
   if (assigned.rowCount !== 1) throw new Error('役割 user の行が手元の DB に無い');
-  let tokens = await requestToken(env, 'password', { email, password });
+  const session = await signInWithMagicLink(env, email);
+  let tokens: Required<TokenReply> = { access_token: session.access_token, refresh_token: session.refresh_token };
   const sessionId = readClaims(tokens.access_token).session_id;
   if (!sessionId) throw new Error('JWT に session_id が無い');
   if (aal === 'aal2') tokens = await raiseSessionToAal2(db, env, sessionId, tokens.refresh_token);
