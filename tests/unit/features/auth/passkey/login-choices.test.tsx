@@ -115,9 +115,9 @@ describe('LoginChoices', () => {
     expect(mockGoogle).toHaveBeenCalledWith({ next: '/item/3' });
   });
 
-  test('DD-AUTH-063 registered=1 の案内を status で出す', () => {
-    render(<LoginChoices notice="会員登録が完了しました。ログインしてください。" />);
-    expect(screen.getByText('会員登録が完了しました。ログインしてください。')).toHaveAttribute('role', 'status');
+  test('DD-AUTH-063 渡された案内を status で出す', () => {
+    render(<LoginChoices notice="しばらく操作がなかったため、ログアウトしました。もう一度ログインしてください。" />);
+    expect(screen.getByText('しばらく操作がなかったため、ログアウトしました。もう一度ログインしてください。')).toHaveAttribute('role', 'status');
   });
 
   test('DD-AUTH-063 パスキー成功: refreshAuthState の後に post-login の行き先へ置き換え、勧めの画面を出さない', async () => {

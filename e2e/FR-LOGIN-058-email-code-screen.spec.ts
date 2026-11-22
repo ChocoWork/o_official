@@ -124,6 +124,17 @@ for (const viewport of viewports) {
       await expect(page.getByLabel('確認コード 1桁目')).toBeFocused();
     });
 
+    test(`FREQ-60-AC-01 ${viewport.name}: メールのコードを送った後、再送は待ちの間 disabled で「後に再送可能」の残り時間が出る`, async ({ page }) => {
+      const email = uniqueEmail('resend60');
+      await startPending(page, email);
+
+      await page.goto('/login/code');
+      await expect(page.getByText(ALWAYS_ON_LINE)).toBeVisible();
+      await expect(page.getByRole('button', { name: 'コードを再送する' })).toBeDisabled();
+      await expect(page.getByText(/後に再送可能/)).toBeVisible();
+      await expect(page.getByLabel('確認コード 1桁目')).toBeFocused();
+    });
+
     test(`FR-AUTH-026-AC-04 ${viewport.name}: 入れ直しで /login へ戻り、保留が捨てられて /login/code は /login へ送られる`, async ({ page }) => {
       const email = uniqueEmail('cancel');
       await startPending(page, email);

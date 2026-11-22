@@ -451,7 +451,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | 確認コードが長く生きていると、盗み見られたコードや届いたままのメールが後から使われる窓が広がるため、5分に絞る |
-| 状態 | 廃止 |
+| 状態 | 推定 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -921,7 +921,7 @@ Drawer上部の×ボタンをヘッダーのハンバーガーメニューボタ
 | --- | --- |
 | 上位 | FREQ-60 |
 | 根拠 | FREQ-60 の5分を Supabase の設定で持たせ、再送の待ちとは別の値にした。本番の設定は確かめておらず、手元の Supabase は 3600 秒（状態は推定） |
-| 状態 | 廃止 |
+| 状態 | 推定 |
 | 確かめ方 | レビュー |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-60 の行） |
@@ -1545,7 +1545,7 @@ Origin 検査の実装は proxy に一本化し、ルート個別に同じ検査
 | --- | --- |
 | 上位 | FREQ-328 |
 | 根拠 | Turnstile の下限の幅がグリッドの列へ伝わり、送信ボタンと幅がずれるため |
-| 状態 | 廃止 |
+| 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-328 の行） |
@@ -2592,12 +2592,12 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-60-REQ-01 |
 | 根拠 | FREQ-60-REQ-01 のうち再送の待ちを、「後に再送可能」の表示で確かめる。5分の有効期限そのものはこの条件では確かめない（FR-LOGIN-008-AC-01・02 を起こした） |
-| 状態 | 廃止 |
-| 確かめ方 | E2E |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-058-email-code-screen.spec.ts`） |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-60 の行） |
 
-ログインでOTPを送信した後、再送カウントダウン表示（「後に再送可能」）が表示されること
+メールのコードを送った後の `/login/code` に、再送カウントダウン表示（「後に再送可能」）が表示されること
 
 ### FREQ-61-AC-01 /login にタブが出てログインが選ばれ、PASSWORD（確認）が無い
 
@@ -3782,12 +3782,12 @@ proxy に列挙されていない /api/contact、/api/contact/threads/{id}/reply
 | --- | --- |
 | 上位 | FREQ-328-REQ-02 |
 | 根拠 | FREQ-328-REQ-02 の幅の追従を、Turnstile と送信ボタンの描画の幅の一致で確かめる |
-| 状態 | 廃止 |
+| 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-328 の行） |
 
-/login・/auth/password-reset で Turnstile の描画幅が送信ボタンの幅と一致すること。/login では Google サインインボタンの幅とも一致すること（iPhone SE 375px / tablet 768px / desktop 1280px）
+/login（新しいログイン画面）で Turnstile の描画幅が送信ボタンの幅と一致すること。Google サインインボタンの幅とも一致すること。`e2e/FR-LOGIN-079-login-screens-layout.spec.ts` が3幅で確かめる（iPhone SE 375px / tablet 768px / desktop 1280px）
 
 ### FREQ-328-AC-03 375px で横のスクロールが出ない
 
@@ -7989,12 +7989,12 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | --- | --- |
 | 上位 | THR-AUTH-029 |
 | 根拠 | コードは OTP の期限 300 秒、Confirm email が ON、TOTP が使えること、8 桁のコードを前提にする。手元の設定は波 6 の切り替えまで違い（OTP 8 桁だけ同じ）、E2E・結合の結果は本番の前提を確かめていなかった |
-| 状態 | 廃止 |
+| 状態 | 推定 |
 | 確かめ方 | レビュー（開店の準備で本番のダッシュボードを見る）・E2E |
 | 出どころ | 実装から推定 |
 | 優先度 | MUST |
 
-本番の Supabase Auth は、メール OTP の期限 300 秒、OTP 8 桁、Confirm email を ON、TOTP の登録と確認を有効にする。手元の `supabase/config.toml` も同じ値にそろえ、E2E が本番の前提で動くようにする。手元の設定は 2026-11-01（切り替えの日。手元だけ）にそろえた（`enable_confirmations = true`・`otp_expiry = 300`・`otp_length = 8`・`[auth.mfa.totp]` を有効）。`FR-SIGNUP-002`・`FR-LOGIN-024`・`FR-LOGIN-034` の ENV の印はこの切り替えと同時に外した。本番は未確認で、波 6 の Task 11 が Management API で読んで変える。
+本番の Supabase Auth は、メール OTP の期限 300 秒、OTP 8 桁、Confirm email を ON、TOTP の登録と確認を有効にする。手元の `supabase/config.toml` も同じ値にそろえ、E2E が本番の前提で動くようにする。手元の設定は 2026-11-01（切り替えの日。手元だけ）にそろえた（`enable_confirmations = true`・`otp_expiry = 300`・`otp_length = 8`・`[auth.mfa.totp]` を有効）。`FR-SIGNUP-002`・`FR-LOGIN-024`・`FR-LOGIN-034` の ENV の印はこの切り替えと同時に外した（その試験は段4で消した。この前提は今もメールのコードのログインが頼る。AC-02 を FR-LOGIN-055 が持つ。AC-01 は登録の窓口が無いので廃止）。本番は未確認で、波 6 の Task 11 が Management API で読んで変える。
 
 #### SEC-AUTH-029-AC-01 会員登録の応答が 201 にならない
 
@@ -8014,11 +8014,11 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | --- | --- |
 | 上位 | SEC-AUTH-029 |
 | 根拠 | Supabase 側の期限が 300 秒かを見るため（保留の Cookie の 5 分とは別に） |
-| 状態 | 廃止 |
-| 確かめ方 | E2E（保留の Cookie を作り直しながら、送ってから 5 分を過ぎたコードを送る） |
-| 出どころ | `src/features/auth/services/login-2fa-session.ts` |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-055-email-code-api.spec.ts`。メールのコードを送り、Supabase 側の送信時刻を6分前へずらしてから確定の窓口へ送る） |
+| 出どころ | `src/features/auth/services/email-code-session.ts`、`src/app/api/auth/email-code/verify/route.ts` |
 
-送ってから 5 分を過ぎたコードを送ると 401 になること。
+メールのコードを送ってから 5 分を過ぎたコードを `POST /api/auth/email-code/verify` に送ると 401 になること（保留の Cookie は有効なまま、Supabase 側の期限だけを見る）。
 
 ### SEC-AUTH-030 認証の出来事は成功も失敗も監査に残す
 
@@ -8261,6 +8261,8 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/email-code/
 `signInWithPassword`・`signInWithOtp`・`signUp` が `code: 'captcha_failed'`（または status 400 で本文に captcha を含む誤り）を返した時、ログインは 500 `Internal server error`、再送は 500、登録は 500 `Failed to create user` を返し、`audit_logs` に `outcome: 'error'`・`detail: 'supabase_captcha_rejected'` を 1 行残すこと。誤りの本文は監査に残さないこと。ログインでは確認コードも保留の Cookie も出さず、登録では重複の本人通知のメールを送らないこと。資格情報の誤り（400 `Invalid login credentials`）は今までどおり 401 のままであること。
 
 あわせて、ログインのパスワードの確かめ（`/api/auth/login` の `signInWithPassword`）で GoTrue が回数の制限（`status` 429）を返した時は、401 にせず 429 と `Retry-After` を返し、`audit_logs` に `outcome: 'error'`・`detail: 'supabase_rate_limited'` を 1 行残すこと。GoTrue が 5xx・`status` 0・`AuthRetryableFetchError`（通信の失敗）を返した時は 503 と `Retry-After` を返し、`detail: 'supabase_unavailable'` を残すこと。どちらも誤りの本文を監査に残さず、確認コードも保留の Cookie も出さないこと。理由: アプリのサーバーが全員分の GoTrue の呼び出しを少数の出口の IP から送るので、GoTrue の IP ごとの枠（既定 30 回／5 分）を店の全員で分け合う。枠に当たった時や障害で、正しいパスワードの会員が「パスワードが違う」と言われ、監視に `failure` の行しか残らないのを避ける（captcha の拒否を 401 に丸めない理屈と同じ。最終レビュー指摘 2、2026-11-01）。資格情報の誤りと未確認のメール（400 `email_not_confirmed`）は、同じ状態・同じ本文の 401 のままであること（未確認か誤りかを見分けさせない）。この追加分は単体テスト（`tests/unit/api/auth/login-route.test.ts`。名前の先頭は `DD-AUTH-014 SEC-AUTH-035-AC-02`）で確かめ、GoTrue の 429・5xx を手元で起こす手段が無いので E2E では見られない。
+（段4の Task 28 で廃止。メールのコードの窓口（`email-code/start`・`resend`）の captcha の拒否は 500 と監査 `supabase_captcha_rejected` のままで、DD-AUTH-059 の単体テストと SEC-AUTH-035-AC-01 が持つ）
+
 
 ### SEC-AUTH-036 店員のパスキーの表は private に置いて権限を渡さず、窓は持ち主とセッションの両方で合わせ、認めたパスキーは鍵が実在する分だけ数える
 

@@ -1,6 +1,6 @@
 /**
  * FR-LOGIN-079 ログインの2つの画面（/login・/login/code）の配置: 画面全体の中央・1画面に収まる・横にはみ出さない
- * 対応: FREQ-69-AC-01 / FREQ-69-AC-02 / FREQ-69-AC-03 / FREQ-70-AC-02 / FREQ-71-AC-01 / FREQ-328-AC-03（上位: SR-AUTH-030、FR-AUTH-054）
+ * 対応: FREQ-69-AC-01 / FREQ-69-AC-02 / FREQ-69-AC-03 / FREQ-70-AC-02 / FREQ-71-AC-01 / FREQ-328-AC-02 / FREQ-328-AC-03（上位: SR-AUTH-030、FR-AUTH-054）
  *
  * 旧のパスワードの画面（/login/password）の「見た目の約束」の試験を消した段4で、新しい画面へ移して書き直した（オーナーの答え3は A）。
  * 検査は同じで、向ける画面だけが /login と /login/code に替わる。/login/code は保留の Cookie が無いと /login へ送られるので、
@@ -89,6 +89,27 @@ for (const viewport of viewports) {
       await openScreen(page, '/login');
       const metrics = await layoutMetrics(page);
       expect(metrics.footerTop).toBeGreaterThanOrEqual(viewport.height - 1);
+    });
+
+    test(`FREQ-328-AC-02 /login Turnstile, email submit and Google button have the same width (${viewport.name})`, async ({ page }) => {
+      test.skip(!process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY, 'NEXT_PUBLIC_TURNSTILE_SITE_KEY 未設定時はウィジェット自体を描画しない');
+      await openScreen(page, '/login');
+      const widths = () =>
+        page.evaluate(() => {
+          const width = (el: Element | null) => (el ? el.getBoundingClientRect().width : null);
+          const input = document.querySelector('input[name^="cf-turnstile"]');
+          const container = input?.closest('div.pt-2')?.firstElementChild ?? null;
+          const google = [...document.querySelectorAll('button, a')].find((el) => el.textContent?.includes('Googleでサインイン')) ?? null;
+          return { turnstile: width(container), submit: width(document.querySelector('form button[type="submit"]')), google: width(google) };
+        });
+      await expect(page.locator('input[name^="cf-turnstile"]')).not.toHaveValue('', { timeout: 15000 });
+      await expect
+        .poll(async () => {
+          const { turnstile, submit, google } = await widths();
+          if (!turnstile || submit === null || google === null) return null;
+          return Math.max(Math.abs(turnstile - submit), Math.abs(turnstile - google));
+        }, { timeout: 15000 })
+        .toBeLessThan(1);
     });
 
     test(`FREQ-328-AC-03 /login and /login/code do not scroll horizontally (${viewport.name})`, async ({ page }) => {

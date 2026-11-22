@@ -1,6 +1,6 @@
 /**
  * FR-LOGIN-055 メールのコードのログイン・新規の窓口（POST /api/auth/email-code/start・verify）
- * 対応: FR-AUTH-023-AC-01〜06（守りは SEC-AUTH-048・SEC-AUTH-049）・SEC-AUTH-035-AC-01（captcha が有効でも始めと再送が通る）
+ * 対応: FR-AUTH-023-AC-01〜06（守りは SEC-AUTH-048・SEC-AUTH-049）・SEC-AUTH-035-AC-01（captcha が有効でも始めと再送が通る）・SEC-AUTH-029-AC-02（5分を過ぎたコードは 401）
  *
  * 手元のアプリ（本番ビルド）・手元の Supabase・手元の Mailpit だけで流す HTTP の試験。窓口を `request` で直に呼ぶ（画面は開かない。幅で結果は変わらないが、3つの幅でくり返す）。
  * 要求ごとに別の x-real-ip と origin を付ける（回数の枠を使い切らないため・proxy の Origin の確かめ）。Turnstile は E2E の公式のテスト鍵（常に通る）。
@@ -195,6 +195,30 @@ for (const viewport of viewports) {
       await expect
         .poll(async () => (await readMailpitMessages(member.email)).length, { timeout: 30_000, message: '再送のコードのメールが届く' })
         .toBe(2);
+    });
+
+    test(`SEC-AUTH-029-AC-02 ${viewport.name}: 送ってから 5 分を過ぎたメールのコードを確定の窓口へ送ると 401 になる`, async ({ request }) => {
+      const member = await createTestMember(`sec029-${viewport.name}`);
+      const ip = uniqueIp();
+      const started = await startCode(request, member.email, ip);
+      expect(started.status()).toBe(202);
+      const code = await readLatestCode(member.email, new Set());
+
+      // Supabase 側の送信時刻を 6 分前へずらす（待たずに「送ってから 5 分を過ぎた」状態にする）。保留の Cookie は有効なまま。
+      await withLocalDb(async (db) => {
+        const tokens = await db.query(
+          `update auth.one_time_tokens set created_at = created_at - interval '6 minutes' where user_id = $1`,
+          [member.userId],
+        );
+        expect(tokens.rowCount).toBeGreaterThan(0);
+        await db.query(
+          `update auth.users set recovery_sent_at = recovery_sent_at - interval '6 minutes' where id = $1 and recovery_sent_at is not null`,
+          [member.userId],
+        );
+      });
+
+      const verified = await verifyCode(request, code, ip);
+      expect(verified.status()).toBe(401);
     });
 
     test(`FR-AUTH-023-AC-06 ${viewport.name}: 保留の Cookie が無い確定・再送は 401`, async ({ request }) => {

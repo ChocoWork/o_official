@@ -456,7 +456,7 @@ flowchart LR
 | 対策 | SEC-AUTH-029 |
 | ASVS | ASVS 未対応付け |
 | 根拠 | 本番のダッシュボードの値を見ていない。台帳の開店の準備にあるのは Site URL と 8 桁のコードの型だけ（`docs/05_Quality/reviews/code/2026-09-25-working-diff-security-review.md:268,287`）。保留の Cookie が 5 分なので、OTP の使える窓は Cookie で 5 分に絞られる（推定） |
-| 状態 | 廃止 |
+| 状態 | 推定 |
 | 出どころ | 実装から推定 |
 
 ### THR-AUTH-030 認証の出来事が監査に残らない
