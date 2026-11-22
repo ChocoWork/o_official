@@ -9,7 +9,7 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 
 | 段 | 数 | ID |
 | --- | --- | --- |
-| 要求 | 3 | 既存の `FREQ-25`・`FREQ-508`、新しい `SR-ADMIN-001`（新しい環境で最初の店長を招待の最後の手段から作れる。2026-11-14。2026-11-22 に FR-AUTH-037 の下へ付け替えた） |
+| 要求 | 3 | 既存の `FREQ-25`・`FREQ-508`、新しい `SR-ADMIN-001`（新しい環境で最初の店長を招待の最後の手段から作れる。2026-11-14。2026-11-22 に FR-AUTH-037 を子にした） |
 | 要件 | 4 | 既存の `FREQ-25-REQ-01`・`FREQ-508-REQ-01`・`FR-ADMIN-009`、新しい `FR-ADMIN-010`（最初の店長を作るコマンド。段4 Task 31 で廃止） |
 | 受け入れ条件 | 11 | 既存の `FREQ-25-AC-01`・`FREQ-508-AC-01`〜`03`、新しい `FR-ADMIN-009-AC-01`〜`06`・`FR-ADMIN-010-AC-01`（段4 Task 31 で廃止） |
 | 派生要件 | 8 | `DRV-ADMIN-001`〜`008`（`DRV-ADMIN-001` は 2026-11-18 に廃止） |
@@ -25,7 +25,7 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 | 範囲 | `scripts/trace/scope.json` の ADMIN |
 | 写した元 | `docs/02_Requirements/requirements.md` の「要求と要件のトレーサビリティ」の表の FREQ-25（1つ目の行）、「1.16 管理画面（ADMIN）」節の FR-ADMIN-009、「要求トレーサビリティ追記」の表の FREQ-508。元の行は消していない |
 | 持ち主の決め方 | ADMIN が持つのは FREQ-25 とその子だけで、FREQ-508・FR-ADMIN-009 は ADMIN だけが触れる行。複数の領域が触れる行は、領域どうしで割り当てた持ち主が定義し、ほかは `（範囲外）` で指す |
-| 対象のコード | `src/app/api/admin/revoke-user-sessions/`、`src/app/api/admin/audit-logs/`、`src/app/api/admin/contact/`、`src/app/api/admin/item-color-presets/`、`src/lib/contact/reply-address.ts`、`src/lib/auditCleanup.ts`（14 ファイル。利用者の作成の画面と窓口の3ファイルは 2026-11-18 に消し、最初の店長を作る `scripts/admin/` の3ファイルは 2026-11-22 に消した） |
+| 対象のコード | `src/app/api/admin/revoke-user-sessions/`、`src/app/api/admin/audit-logs/`、`src/app/api/admin/contact/`、`src/app/api/admin/item-color-presets/`、`src/lib/contact/reply-address.ts`、`src/lib/auditCleanup.ts`（11 ファイル。利用者の作成の画面と窓口の3ファイルは 2026-11-18 に消し、最初の店長を作る `scripts/admin/` の3ファイルは 2026-11-22 に消した） |
 | 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない。割当の作業が `src/app/admin/page.tsx` などを書き換え中で、コードの動きはずれうる） |
 
 ### 写した行と写さなかった行
