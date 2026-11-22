@@ -563,7 +563,7 @@ G と H の順番・範囲（G-1〜G-4・H-1）は1章、開店前に直す物�
 | 本物の Google の確認（手順書の節6の5・9。店員が Google で入ろうとした時の拒否の形） | オーナー | 同上 |
 | 一度も入らなかったメールのコードのアカウントの後始末（判断10。選ぶ SQL は [supabase-auth-config.md](../../../06_Operations/supabase-auth-config.md)） | 消す処理は Claude が作り、流すのは調整役（オーナーの許可を得てから） | 開店前 |
 
-**段4（済み。Task 26〜36。2026-11-22。コミットの範囲 `27e0342a..a7393d37`（この直しを含む）。運用の手順書は Task 35、全体の確かめは Task 36）**
+**段4（済み。Task 26〜36。2026-11-22。コミットの範囲 `27e0342a..50e72b5f` と、基準を下げる直し（この文書を含むコミット）。運用の手順書は Task 35、全体の確かめは Task 36）**
 
 消す物の一覧は [ADR-0469](../../../03_BasicDesign/decisions/ADR-0469-passkey-customer-email-code-login.md) の「段4で消す一覧」。`loginAsMember` の古い道（`loginAsMemberLegacy`。呼ぶ試験は FR-LOGIN-030・031・032・033、FR-PWRESET-010、FR-ACCOUNT-046、FR-ADMIN-MISC-008）・`/login/password`・`/login/verify`・`/api/auth/login/{route,resend,cancel}`・`/api/auth/otp/verify`・`/api/auth/register`・`/api/auth/confirm` の登録の確認・`/account/password`・`/api/auth/password/*`・`AuthTabs`・`LoginModal`・`RegisterModal`・`VerifyOtpClient`・旧の保留の Cookie `sb-login-2fa-session`・`login-2fa-session.ts`・付け替えた約30本の E2E と `setLoginTwoFactorCookie`・`FR-ACCOUNT-046`・`FR-PWRESET-*`・`FR-SIGNUP-*`。`createTestMember` の `password` 付きの作り方を外す。
 
@@ -579,7 +579,7 @@ G と H の順番・範囲（G-1〜G-4・H-1）は1章、開店前に直す物�
 - 順番: `db reset`（旗 `reject_customer_password` が真）→ lint（エラー0・警告109）→ typecheck（通過）→ 単体（1001 ファイル・22266 件通過・失敗0）→ DB 結合（`--runInBand`。7358 件通過・3件失敗。失敗は段3b から同じ `unit-binding-refunds`・`group_g3_cancel` の試験の順番で落ちる物で、`db reset` の後に単独で流すと 78 件すべて通る）→ `db reset` → E2E 全件（3幅・約1.1時間）。
 - E2E 全件: 5407 件通過・38 件失敗・26 件飛ばし（5471 件）。比べる元の段3b（Task 25）は 5790 件通過・34 件失敗・47 件飛ばし（5871 件）。名前の一覧の差は、消えた 604 件（`trace:compare-e2e` と同じ。うち 16 件は題・describe の付け替えで、足した側にも同数ある）が段4で消した spec（`FR-LOGIN-001`・`003`・`006`・`008`・`009`・`011〜029`・`032-admin-totp-aal2`（27件。作り直した `032-staff-entry-cookie-checks` に替わった）・`033` の1定義・`034`・`035` の4定義・`036`・`056`・`069`・`031` の消した定義・`FR-PWRESET-*`・`FR-SIGNUP-*`・`FR-ACCOUNT-046`・`FR-ADMIN-MISC-003`・`008` の定義・`FR-UI-008` の2定義・`login-otp-resend-errors`）と、題を書き直した物（`FR-LOGIN-030`・`031`・`037`・`038`・`040`・`050`・`054`・`057`・`060`・`068`）に一致する。足した 204 件は `FR-LOGIN-078`・`079`・`080`・`081` と、`032`・`055`・`058` の作り直し。飛ばし 47 → 26 は、段1aで skip にした定義を消したため。
 - 赤: 段3b から続く 32 件は同じ名前（`FR-HOME-022`・`023`・`024`、`FR-LOOK-ADMIN-001`、`FR-ADMIN-134`）で、パスキー・FR-LOGIN の赤は無い。新しい赤は6件。`FR-ACCOUNT-040`（タブレット）・`FR-ADMIN-083`（デスクトップ）・`FR-ADMIN-105`（モバイルの2件）は、同じ幅で単独で流すと通る（環境）。`FR-ACCOUNT-040` の赤は、ログインの手助けの中で、メールのコードの確認の窓口の回数の制限が 429 を返した物（段3b には無かった）。段4は窓口・回数の制限・手助けの本体を触っておらず、試験ごとに別の IP・会員・Cookie を使うので、段4の原因ではない。`FR-HOME-023` の `SEC-HOME-002-AC-01`（モバイル・デスクトップ）は、全件で溜まった DB のまま単独で流しても落ちる（ITEM の節の2商品の並びが入れ替わる）が、`db reset` の後に単独で流すと3幅とも通る（`src/lib/items/public.ts` が `created_at` だけで並べ、同じ時刻の `fx-` の行に `id` の決め手が無いため、未ログインと管理者で並びが入れ替わる。段4より前からある。段3b でもタブレットで同じ試験が落ちた。段4のコードは触っていない。直し方は問い合わせに `id` の決め手を足すか、試験を集合で比べるか。開店前の項目の「段3b M-2」の隣に置く）。
-- 追跡: `trace:report`・`test:trace-coverage`・`validate-docs` を通した。`validate-trace` は終了コード0で、違反は73件（基準より増えた0件・基準にあって今は無い24件）。基準 `baseline.json` の更新は調整役がオーナーに聞く。
+- 追跡: `trace:report`・`test:trace-coverage`・`validate-docs` を通した。`validate-trace` は終了コード0で、違反は73件（基準より増えた0件・基準にあって今は無い24件）。基準 `baseline.json` は、オーナーの承認（2026-11-22）で 97 から実測の 73 に下げた（`npm run validate-trace -- --update-baseline`。消えた24件だけを消し、足した物は無い）。
 
 **オーナーが確認する物（本番に出す前。段4 Task 36）**
 
