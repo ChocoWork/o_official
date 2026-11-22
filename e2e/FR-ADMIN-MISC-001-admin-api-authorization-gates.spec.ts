@@ -1,5 +1,5 @@
 /**
- * 管理 API の認可の門（ADMIN 領域。強制失効・MFA のリセット・監査ログ・問い合わせ・色見本）。
+ * 管理 API の認可の門（ADMIN 領域。強制失効・監査ログ・問い合わせ・色見本）。
  * SEC-ADMIN-001-AC-01〜03（JWT の無い要求・aal1・サポーター）と SEC-ADMIN-005-AC-01〜02（Origin の検査）を確かめる。
  *
  * 全部 HTTP の層で、画面は開かない。本番ビルドの窓口へ Playwright の request で直に要求するので、viewport は関係しない
@@ -46,11 +46,6 @@ function label(endpoint: Endpoint): string {
 function rangeEndpoints(f: Fixture): Endpoint[] {
   return [
     { method: 'POST', path: '/api/admin/revoke-user-sessions', data: { user_id: f.victim.userId } },
-    {
-      method: 'POST',
-      path: '/api/admin/users/mfa/reset',
-      data: { userId: f.victim.userId, reason: `${f.tag} reason for the e2e check`, confirm: 'RESET_MFA' },
-    },
     { method: 'GET', path: '/api/admin/audit-logs' },
     { method: 'GET', path: '/api/admin/contact' },
     { method: 'GET', path: `/api/admin/contact/${f.inquiryId}` },
@@ -230,10 +225,9 @@ test('SEC-ADMIN-001-AC-03 サポーターは店長だけの窓口を使えない
       const fixture = await seedFixture(db);
       try {
         const supporter = await createAdminSessionActor(db, 'supporter', 'aal2');
-        const [revokeSessions, resetMfa] = rangeEndpoints(fixture);
+        const [revokeSessions] = rangeEndpoints(fixture);
         const adminOnly: Array<{ endpoint: Endpoint; permission: string }> = [
           { endpoint: revokeSessions, permission: 'admin.users.manage' },
-          { endpoint: resetMfa, permission: 'admin.users.manage' },
           { endpoint: { method: 'GET', path: '/api/admin/audit-logs' }, permission: 'admin.audit.read' },
           { endpoint: { method: 'GET', path: '/api/admin/item-color-presets' }, permission: 'admin.items.read' },
           {
@@ -284,7 +278,7 @@ async function expectWritesRefusedByOrigin(
     try {
       const admin = await createAdminSessionActor(db, 'admin', 'aal2');
       const writes = rangeEndpoints(fixture).filter((endpoint) => WRITE_METHODS.has(endpoint.method));
-      expect(writes.map(label)).toHaveLength(9);
+      expect(writes.map(label)).toHaveLength(8);
 
       const control = await probe(
         api,

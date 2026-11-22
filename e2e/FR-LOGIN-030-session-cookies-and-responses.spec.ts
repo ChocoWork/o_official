@@ -258,7 +258,7 @@ for (const viewport of [viewports[2]]) {
       }
     });
 
-    test(`SEC-AUTH-022-AC-02 email-code/verify・refresh・mfa/enroll-totp・mfa/verify・mfa/status の応答に Cache-Control: no-store が付く (${viewport.name})`, async ({
+    test(`SEC-AUTH-022-AC-02 email-code/verify・refresh の応答に Cache-Control: no-store が付く (${viewport.name})`, async ({
       page,
       request,
       baseURL,
@@ -268,7 +268,6 @@ for (const viewport of [viewports[2]]) {
       const anonymousHeaders = () => ({ origin, 'x-real-ip': uniqueSourceIp() });
       const anonymousPost = (path: string, data: unknown) =>
         request.post(url(path), { headers: anonymousHeaders(), data, maxRedirects: 0 });
-      const factorId = '00000000-0000-4000-8000-000000000000';
 
       const { otpVerify } = await loginCapturingOtpVerify(page, 'cache-control');
       const memberPost = (path: string, data?: unknown) =>
@@ -280,19 +279,6 @@ for (const viewport of [viewports[2]]) {
         { label: 'email-code/verify（Cookie なし）', response: await anonymousPost('/api/auth/email-code/verify', { code: '12345678' }) },
         // refresh: 未ログイン・ログイン済み
         { label: 'refresh（未ログイン）', response: await anonymousPost('/api/auth/refresh', {}) },
-        { label: 'mfa/enroll-totp（未ログイン）', response: await anonymousPost('/api/auth/mfa/enroll-totp', {}) },
-        { label: 'mfa/verify（未ログイン）', response: await anonymousPost('/api/auth/mfa/verify', { factorId, code: '123456' }) },
-        {
-          label: 'mfa/status（未ログイン）',
-          response: await request.get(url('/api/auth/mfa/status'), { headers: anonymousHeaders(), maxRedirects: 0 }),
-        },
-        // 会員（管理者でも補助でもない）: mfa の窓口は 403
-        { label: 'mfa/enroll-totp（会員）', response: await memberPost('/api/auth/mfa/enroll-totp', {}) },
-        { label: 'mfa/verify（会員）', response: await memberPost('/api/auth/mfa/verify', { factorId, code: '123456' }) },
-        {
-          label: 'mfa/status（会員）',
-          response: await page.request.get(url('/api/auth/mfa/status'), { maxRedirects: 0 }),
-        },
         // refresh は新しい対に替えるので最後
         { label: 'refresh（ログイン済み）', response: await memberPost('/api/auth/refresh', {}) },
       ];

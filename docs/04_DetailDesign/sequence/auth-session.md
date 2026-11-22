@@ -64,7 +64,7 @@ sequenceDiagram
 
 APIの予期しない例外は200の未認証応答。UIの通信例外・JSONを読めない応答も未認証表示を確定する。認証成功のroleはJWTのapp_metadata.roleから読み、不明値はuser、mfaVerifiedはJWT aal=aal2である。global同期はclientFetchを使わず、meは期限切れtokenにも200を返すため、この同期自体からrefreshや401再送は起動しない。初回503ではisAuthResolved=falseのままで、すでに解決した後の503ではその表示を保つ。
 
-`/auth/verified`が独自に行うme照会とrole別の画面出口は[追加認証画面の入口と出口](auth-login-mfa.md#追加認証画面の入口と出口)を参照する。
+`/auth/verified`（段4で廃止）が行っていたme照会とrole別の画面出口は、窓口とブラウザの判定が引き継いだ（ARC-AUTH-015）。
 
 ## SQ-AUTH-SESSION-REFRESH: token交換
 

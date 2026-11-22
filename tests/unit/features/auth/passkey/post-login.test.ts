@@ -21,11 +21,35 @@ describe('DD-AUTH-060 resolvePostLoginPath', () => {
     await expect(resolvePostLoginPath((async () => json(401, {})) as never, origin)).resolves.toBe('/login');
   });
 
-  test('DD-AUTH-060 失敗の状態・通信の失敗・読めない本文・needsMfa は /auth/verified', async () => {
-    await expect(resolvePostLoginPath((async () => json(500, {})) as never, origin)).resolves.toBe('/auth/verified');
-    await expect(resolvePostLoginPath((async () => { throw new TypeError('x'); }) as never, origin)).resolves.toBe('/auth/verified');
-    await expect(resolvePostLoginPath((async () => new Response('not json', { status: 200 })) as never, origin)).resolves.toBe('/auth/verified');
-    await expect(resolvePostLoginPath((async () => json(200, { needsMfa: true, redirectTo: '/account' })) as never, origin)).resolves.toBe('/auth/verified');
+  test('DD-AUTH-060 失敗の状態・通信の失敗・読めない本文は /login', async () => {
+    await expect(resolvePostLoginPath((async () => json(500, {})) as never, origin)).resolves.toBe('/login');
+    await expect(resolvePostLoginPath((async () => { throw new TypeError('x'); }) as never, origin)).resolves.toBe('/login');
+    await expect(resolvePostLoginPath((async () => new Response('not json', { status: 200 })) as never, origin)).resolves.toBe('/login');
+  });
+
+  test('DD-AUTH-060 needsMfa で認めた鍵が1本の店員は /admin/passkeys?more=1', async () => {
+    const loadStaff = jest.fn(async () => ({ ok: true as const, isStaff: true, approvedCount: 1, passkeys: [] }));
+    await expect(
+      resolvePostLoginPath((async () => json(200, { needsMfa: true, redirectTo: '/login?error=staff_passkey_required' })) as never, origin, loadStaff),
+    ).resolves.toBe('/admin/passkeys?more=1');
+  });
+
+  test.each([
+    ['鍵が2本以上', { ok: true as const, isStaff: true, approvedCount: 2, passkeys: [] }],
+    ['鍵が0本', { ok: true as const, isStaff: true, approvedCount: 0, passkeys: [] }],
+    ['店員でない', { ok: true as const, isStaff: false, approvedCount: 1, passkeys: [] }],
+    ['鍵の数が読めない', { ok: false as const, reason: 'failed' as const }],
+  ])('DD-AUTH-060 needsMfa で %s は /login?error=staff_passkey_required', async (_name, status) => {
+    const loadStaff = jest.fn(async () => status);
+    await expect(
+      resolvePostLoginPath((async () => json(200, { needsMfa: true, redirectTo: '/x' })) as never, origin, loadStaff as never),
+    ).resolves.toBe('/login?error=staff_passkey_required');
+  });
+
+  test('DD-AUTH-060 needsMfa でない成功は鍵の数を読まない', async () => {
+    const loadStaff = jest.fn();
+    await resolvePostLoginPath((async () => json(200, { redirectTo: '/account' })) as never, origin, loadStaff as never);
+    expect(loadStaff).not.toHaveBeenCalled();
   });
 
   test('DD-AUTH-060 成功は redirectTo を sanitizeReturnPath にかけ、外のアドレスは / に倒す', async () => {

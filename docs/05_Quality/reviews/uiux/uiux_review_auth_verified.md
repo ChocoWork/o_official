@@ -1,12 +1,12 @@
 ﻿# AUTH VERIFIED（/auth/verified・MFA）UI/UX レビュー
 
-> 状態: 履歴レビュー | 現行の指摘状態は未再検証
+> 状態: 履歴レビュー（対象の画面・窓口は段4の Task 30〔2026-11-22〕で消した。消したコードへのリンクは外した） | 現行の指摘状態は未再検証
 
 ## 概要
 
 本書は「AUTH VERIFIED（/auth/verified・MFA）UI/UX レビュー」のレビュー時点の記録である。指摘の重大度と修正状態は当時の評価を示し、現在の実装を保証しない。
 
-- 対象: [src/app/auth/verified/page.tsx](../../../../src/app/auth/verified/page.tsx)
+- 対象: src/app/auth/verified/page.tsx
 - 共通 Header/Footer は [uiux_review_home.md](uiux_review_home.md) を参照
 - レビュー基準: `implement-uiux` + ブランド適合（[brand.md](../../../01_Planning/brand.md)）
 
@@ -32,12 +32,12 @@
 
 | # | 指摘場所 | 指摘理由（違反原則） | 修正提案 | 優先度 | 修正ステータス |
 |---|---|---|---|---|---|
-| VF-1 | リンク色（[auth/verified/page.tsx:267](../../../../src/app/auth/verified/page.tsx#L267),[276](../../../../src/app/auth/verified/page.tsx#L276)） | 「ログインページへ」「アカウントへ」が `text-blue-600`。**Key Color外の青**でブランド世界観から逸脱。ブランド適合/反復 | サイト共通のリンク様式（黒+下線アニメ）に統一 | Mid | 対応済 |
-| VF-2 | OTP入力（[auth/verified/page.tsx:328-336](../../../../src/app/auth/verified/page.tsx#L328-L336)） | 単一テキスト入力。LOGINは8桁セグメント入力で**体験が不一致**。反復/一貫性 | LOGINのセグメントOTPと共通化 | Low | 対応済 |
-| VF-3 | シークレット/URI表示（[auth/verified/page.tsx:294-299](../../../../src/app/auth/verified/page.tsx#L294-L299)） | TOTPシークレット/URIを常時プレーン表示で情報過多・煩雑。認知負荷/Progressive Disclosure | 既定はQR優先、シークレットは「手動入力はこちら」で折りたたみ | Low | 対応済 |
-| VF-4 | エラー/状態色（[auth/verified/page.tsx:350](../../../../src/app/auth/verified/page.tsx#L350)） | `text-red-700`。他ページの赤トークンと不統一。反復 | 共通エラートークンに集約 | Low | 対応済 |
-| VF-5 | 進行フィードバック（[auth/verified/page.tsx:259-260](../../../../src/app/auth/verified/page.tsx#L259-L260)） | loading がテキストのみ。`aria-live` も無い。Doherty/アクセシビリティ | スピナー + `role="status"` | Low | 対応済 |
-| VF-6 | factor選択 select（[auth/verified/page.tsx:313-323](../../../../src/app/auth/verified/page.tsx#L313-L323)） | 素の `<select>`（他は SingleSelect 共通）で見た目/挙動が不統一。反復 | 共通 `SingleSelect` に置換 | Low | 対応済 |
+| VF-1 | リンク色（auth/verified/page.tsx:267,276） | 「ログインページへ」「アカウントへ」が `text-blue-600`。**Key Color外の青**でブランド世界観から逸脱。ブランド適合/反復 | サイト共通のリンク様式（黒+下線アニメ）に統一 | Mid | 対応済 |
+| VF-2 | OTP入力（auth/verified/page.tsx:328-336） | 単一テキスト入力。LOGINは8桁セグメント入力で**体験が不一致**。反復/一貫性 | LOGINのセグメントOTPと共通化 | Low | 対応済 |
+| VF-3 | シークレット/URI表示（auth/verified/page.tsx:294-299） | TOTPシークレット/URIを常時プレーン表示で情報過多・煩雑。認知負荷/Progressive Disclosure | 既定はQR優先、シークレットは「手動入力はこちら」で折りたたみ | Low | 対応済 |
+| VF-4 | エラー/状態色（auth/verified/page.tsx:350） | `text-red-700`。他ページの赤トークンと不統一。反復 | 共通エラートークンに集約 | Low | 対応済 |
+| VF-5 | 進行フィードバック（auth/verified/page.tsx:259-260） | loading がテキストのみ。`aria-live` も無い。Doherty/アクセシビリティ | スピナー + `role="status"` | Low | 対応済 |
+| VF-6 | factor選択 select（auth/verified/page.tsx:313-323） | 素の `<select>`（他は SingleSelect 共通）で見た目/挙動が不統一。反復 | 共通 `SingleSelect` に置換 | Low | 対応済 |
 
 ---
 
@@ -64,7 +64,7 @@
 - **VF-4**: `text-red-700` → `text-red-600` + `role="alert"`。
 - **VF-5**: loading に モノクローム `Spinner` + `role="status"`/`aria-live="polite"`。
 - **VF-6**: 素の `<select>` を共通 `SingleSelect`（native・block）へ置換。
-- 実装: [src/app/auth/verified/page.tsx](../../../../src/app/auth/verified/page.tsx)。
+- 実装: src/app/auth/verified/page.tsx。
 
 ---
 

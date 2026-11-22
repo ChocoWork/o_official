@@ -58,14 +58,6 @@ const ROUTES: RouteCase[] = [
     body: { user_id: TARGET_ID },
   },
   {
-    label: '2要素のリセット',
-    load: () => require('@/app/api/admin/users/mfa/reset/route'),
-    method: 'POST',
-    url: 'http://localhost/api/admin/users/mfa/reset',
-    permission: 'admin.users.manage',
-    body: { userId: TARGET_ID, reason: 'lost the device twice', confirm: 'RESET_MFA' },
-  },
-  {
     label: '監査ログの読み出し',
     load: () => require('@/app/api/admin/audit-logs/route'),
     method: 'GET',
@@ -326,7 +318,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
     });
 
     it.each([
-      ['色見本の保存', ROUTES[12]],
+      ['色見本の保存', ROUTES[11]],
     ] as const)(
       'ARC-ADMIN-001 %s は本文の JSON が壊れていると 500 でなく 400 Invalid request になる',
       async (_label, route) => {
@@ -574,8 +566,8 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
       const client = aclClient(aclRows('admin.items.read'));
       createServiceRoleClient.mockResolvedValue(withApprovedCount(client));
 
-      const read = await invoke(ROUTES[11]).result;
-      const write = await invoke(ROUTES[12]).result;
+      const read = await invoke(ROUTES[10]).result;
+      const write = await invoke(ROUTES[11]).result;
 
       expect(write.status).toBe(403);
       expect((await write.json()).permission).toBe('admin.items.manage');

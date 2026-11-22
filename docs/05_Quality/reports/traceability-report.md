@@ -10,9 +10,9 @@
 | --- | ---: |
 | 要件定義書の対象ID | 2523 |
 | 設計にID参照あり | 702 |
-| テストにID参照あり | 1724 |
+| テストにID参照あり | 1718 |
 | 設計にID参照なし | 1821 |
-| テストにID参照なし | 799 |
+| テストにID参照なし | 805 |
 
 ## 参照一覧
 
@@ -236,7 +236,7 @@
 | `FR-LOGIN-004` | 2件（[auth.md](../../03_BasicDesign/areas/auth.md)） | なし |
 | `FR-LOGIN-005` | 2件（[auth.md](../../03_BasicDesign/areas/auth.md)） | 1件（[FR-LOGIN-005-metadata.spec.ts](../../../e2e/FR-LOGIN-005-metadata.spec.ts)） |
 | `FR-LOGIN-006` | 2件（[auth.md](../../03_BasicDesign/areas/auth.md)） | なし |
-| `FR-LOGIN-007` | 4件（[auth.md](../../03_BasicDesign/areas/auth.md)） | 1件（[FR-LOGIN-032-admin-totp-aal2.spec.ts](../../../e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts)） |
+| `FR-LOGIN-007` | 4件（[auth.md](../../03_BasicDesign/areas/auth.md)） | 1件（[FR-LOGIN-032-staff-entry-cookie-checks.spec.ts](../../../e2e/FR-LOGIN-032-staff-entry-cookie-checks.spec.ts)） |
 | `FR-LOGIN-008` | 1件（[auth.md](../../03_BasicDesign/areas/auth.md)） | なし |
 | `FR-LOOK-ALL-001` | 2件（[look.md](../../03_BasicDesign/areas/look.md)） | 2件（[FR-LOOK-ALL-001-published-looks-grid.spec.ts](../../../e2e/FR-LOOK-ALL-001-published-looks-grid.spec.ts)） |
 | `FR-LOOK-ALL-002` | 1件（[look.md](../../03_BasicDesign/areas/look.md)） | 2件（[FR-LOOK-ALL-002-look-card-fields-and-navigation.spec.ts](../../../e2e/FR-LOOK-ALL-002-look-card-fields-and-navigation.spec.ts)） |
@@ -1929,7 +1929,7 @@
 | `FREQ-514-AC-02` | なし | なし |
 | `FREQ-514-AC-03` | なし | なし |
 | `FREQ-515-AC-01` | なし | 2件（[FR-ADMIN-108-select-fields.spec.ts](../../../e2e/FR-ADMIN-108-select-fields.spec.ts)） |
-| `FREQ-515-AC-02` | 1件（[14_login.md](../../04_DetailDesign/pages/14_login.md)） | 2件（[FR-LOGIN-033-verify-screen-and-admin-refresh-mocks.spec.ts](../../../e2e/FR-LOGIN-033-verify-screen-and-admin-refresh-mocks.spec.ts)） |
+| `FREQ-515-AC-02` | 1件（[14_login.md](../../04_DetailDesign/pages/14_login.md)） | なし |
 | `FREQ-515-AC-03` | 1件（[16-1_admin_news.md](../../04_DetailDesign/pages/16-1_admin_news.md)） | 2件（[FR-ADMIN-108-select-fields.spec.ts](../../../e2e/FR-ADMIN-108-select-fields.spec.ts)） |
 | `FREQ-516-AC-01` | なし | なし |
 | `FREQ-516-AC-02` | なし | なし |
@@ -2389,11 +2389,11 @@
 | `FREQ-72-AC-03` | なし | 1件（[FR-ACCOUNT-012-login-gate-brand-design.spec.ts](../../../e2e/FR-ACCOUNT-012-login-gate-brand-design.spec.ts)） |
 | `FREQ-72-AC-04` | なし | 1件（[FR-ACCOUNT-012-login-gate-brand-design.spec.ts](../../../e2e/FR-ACCOUNT-012-login-gate-brand-design.spec.ts)） |
 | `FREQ-72-AC-05` | なし | 1件（[FR-ACCOUNT-012-login-gate-brand-design.spec.ts](../../../e2e/FR-ACCOUNT-012-login-gate-brand-design.spec.ts)） |
-| `FREQ-73-AC-01` | なし | 1件（[FR-LOGIN-018-verified-brand-design.spec.ts](../../../e2e/FR-LOGIN-018-verified-brand-design.spec.ts)） |
-| `FREQ-73-AC-02` | なし | 1件（[FR-LOGIN-018-verified-brand-design.spec.ts](../../../e2e/FR-LOGIN-018-verified-brand-design.spec.ts)） |
-| `FREQ-73-AC-03` | なし | 1件（[FR-LOGIN-018-verified-brand-design.spec.ts](../../../e2e/FR-LOGIN-018-verified-brand-design.spec.ts)） |
-| `FREQ-73-AC-04` | なし | 1件（[FR-LOGIN-018-verified-brand-design.spec.ts](../../../e2e/FR-LOGIN-018-verified-brand-design.spec.ts)） |
-| `FREQ-73-AC-05` | なし | 1件（[FR-LOGIN-018-verified-brand-design.spec.ts](../../../e2e/FR-LOGIN-018-verified-brand-design.spec.ts)） |
+| `FREQ-73-AC-01` | なし | なし |
+| `FREQ-73-AC-02` | なし | なし |
+| `FREQ-73-AC-03` | なし | なし |
+| `FREQ-73-AC-04` | なし | なし |
+| `FREQ-73-AC-05` | なし | なし |
 | `FREQ-74-AC-01` | なし | 1件（[FR-CHECKOUT-013-complete-ui.spec.ts](../../../e2e/FR-CHECKOUT-013-complete-ui.spec.ts)） |
 | `FREQ-74-AC-02` | なし | 1件（[FR-CHECKOUT-013-complete-ui.spec.ts](../../../e2e/FR-CHECKOUT-013-complete-ui.spec.ts)） |
 | `FREQ-74-AC-03` | なし | 1件（[FR-CHECKOUT-013-complete-ui.spec.ts](../../../e2e/FR-CHECKOUT-013-complete-ui.spec.ts)） |

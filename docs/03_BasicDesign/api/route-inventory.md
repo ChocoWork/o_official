@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> パスキー段4 Task 30 確認日: 2026-11-22。認証アプリ（TOTP）と MFA のやり直しの Route Handler を4ファイル・4メソッド消した（`GET /api/auth/mfa/status`・`POST /api/auth/mfa/enroll-totp`・`POST /api/auth/mfa/verify`・`POST /api/admin/users/mfa/reset`。呼ぶ画面・部品・試験も一緒に消した。FR-AUTH-053-AC-03。API-AUTH-016〜018・API-ADMIN-004 は廃止）。（197ファイル・249メソッド、表は196行・248メソッド）。
+>
 > パスキー段4 Task 29 確認日: 2026-11-22。お客さんのパスワードの再設定・変更の Route Handler を6ファイル・7メソッド消した（`POST /api/auth/password-reset/request`・`GET`・`POST /api/auth/password-reset/link`・`GET /api/auth/password-reset/session`・`POST /api/auth/password-reset/confirm`・`POST /api/auth/password/change/start`・`POST /api/auth/password/change/confirm`。呼ぶ画面・部品・試験も一緒に消した。FR-AUTH-053-AC-02。API-AUTH-009〜012・020・021 は廃止）。（201ファイル・253メソッド、表は200行・252メソッド）。
 >
 > パスキー段4 Task 28 確認日: 2026-11-22。お客さんのパスワードのログイン・会員登録・確認リンクの Route Handler を6ファイル・6メソッド消した（`POST /api/auth/login`・`/api/auth/login/resend`・`/api/auth/login/cancel`・`/api/auth/otp/verify`・`/api/auth/register`・`GET /api/auth/confirm`。呼ぶ画面・部品・試験も一緒に消した。FR-AUTH-053。API-AUTH-001〜006 は廃止）。（207ファイル・260メソッド、表は206行・259メソッド）。
@@ -207,7 +209,6 @@
 | `/api/admin/stockists/access` | `GET` | [route.ts](../../../src/app/api/admin/stockists/access/route.ts) （波 4 / 2026-10-28: 取扱店の作成の頁が入口で権限を確かめる。RBAC `admin.stockists.manage`・aal2。送り元の枠 → 認可 → 操作者の枠（読み）の順。成功は本文なしの 204。全応答 `no-store`。拒否は `auditAuthzDenial`。API-STOCKIST-007、[ADR-0269](../decisions/ADR-0269-stockist-create-page-access-gate.md)） |
 | `/api/admin/stockists/[id]` | `DELETE`, `GET`, `PATCH`, `PUT` | [route.ts](../../../src/app/api/admin/stockists/%5Bid%5D/route.ts) |
 | `/api/admin/stockists` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/stockists/route.ts) |
-| `/api/admin/users/mfa/reset` | `POST` | [route.ts](../../../src/app/api/admin/users/mfa/reset/route.ts) |
 | `/api/admin/users` | `GET`, `PATCH` | [route.ts](../../../src/app/api/admin/users/route.ts) |
 | `/api/admin/permissions` | `GET` | [route.ts](../../../src/app/api/admin/permissions/route.ts) |
 | `/api/admin/role-permissions` | `POST` | [route.ts](../../../src/app/api/admin/role-permissions/route.ts) |
@@ -217,9 +218,6 @@
 | `/api/auth/email-code/verify` | `POST` | [route.ts](../../../src/app/api/auth/email-code/verify/route.ts) （段2: 認証前。保留の Cookie 必須。回数制限 `auth:email-code:verify` の IP 30回/600秒・保留の Cookie ごと 5回/600秒・宛先ごと 20回/600秒。店員は 403 `staff_passkey_required`。契約は [API-AUTH-030](../areas/auth.md)） |
 | `/api/auth/logout` | `POST` | [route.ts](../../../src/app/api/auth/logout/route.ts) |
 | `/api/auth/me` | `GET` | [route.ts](../../../src/app/api/auth/me/route.ts) |
-| `/api/auth/mfa/enroll-totp` | `POST` | [route.ts](../../../src/app/api/auth/mfa/enroll-totp/route.ts) |
-| `/api/auth/mfa/status` | `GET` | [route.ts](../../../src/app/api/auth/mfa/status/route.ts) |
-| `/api/auth/mfa/verify` | `POST` | [route.ts](../../../src/app/api/auth/mfa/verify/route.ts) |
 | `/api/auth/oauth/callback` | `GET` | [route.ts](../../../src/app/api/auth/oauth/callback/route.ts) |
 | `/api/auth/oauth/start` | `GET`, `POST` | [route.ts](../../../src/app/api/auth/oauth/start/route.ts) （波1-A: `POST` は会員認証不要。Google ログインの開始。本文の `next` だけを確かめて戻り先の控え（サーバー側）を作り、番号は Cookie だけで渡す。回数制限 `auth:oauth:start` の50回/600秒・監査 `auth.oauth.start`。成功は200 `{url}` で 303 にしない。`GET` は 302 のままで控えを作らず古い控えの Cookie を消す） |
 | `/api/auth/post-login` | `POST` | [route.ts](../../../src/app/api/auth/post-login/route.ts) （波1-A: `authenticateRequest`〔セッションCookie/JWT〕。認証の失敗は `authFailureResponse`〔401/403〕。役割とaalはトークンのclaimsだけから読む。回数制限 `auth:post-login` の60回/600秒〔IPごと〕。本文なしで HttpOnly の `sb-return-intent` Cookie を読み、ログインの確定の後の行き先を答える〔戻り先の控えを1回で使い切る。管理者・サポーターは2段目の後〕。成功は200 `{redirectTo, needsMfa}`〔`Cache-Control: no-store`・`Referrer-Policy: no-referrer`〕、失敗は500 `{error:'Internal server error'}`。控えは1回限りで Cookie を消すか残し、外れた控えは監査に残す） |

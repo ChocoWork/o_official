@@ -208,17 +208,17 @@ describe('POST /api/auth/post-login', () => {
     );
   });
 
-  test('DD-AUTH-035 特権で入口の条件を満たさないなら needsMfa:true と /auth/verified を返し、控えの Cookie には触らない（keep）', async () => {
+  test('DD-AUTH-035 特権で入口の条件を満たさないなら needsMfa:true と /login?error=staff_passkey_required を返し、控えの Cookie には触らない（keep）', async () => {
     mockAuthenticateRequest.mockResolvedValue(verifiedWith({ app_metadata: { role: 'admin' } }));
     mockResolveReturnDestination.mockResolvedValue({
-      path: '/auth/verified',
+      path: '/login?error=staff_passkey_required',
       needsMfa: true,
       action: { kind: 'keep' },
     });
 
     const res: any = await POST(request({ cookie: 'sb-return-intent=x' }));
 
-    expect(await res.json()).toEqual({ redirectTo: '/auth/verified', needsMfa: true });
+    expect(await res.json()).toEqual({ redirectTo: '/login?error=staff_passkey_required', needsMfa: true });
     expect(mockApplyReturnIntentCookie).toHaveBeenCalledWith(res, { kind: 'keep' });
   });
 

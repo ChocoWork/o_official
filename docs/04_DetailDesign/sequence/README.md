@@ -23,7 +23,7 @@
 
 | 文書 | 対象 |
 | --- | --- |
-| [ログイン・追加認証](auth-login-mfa.md) | パスワード後のメールOTP、再送・取消、TOTPとAAL2 |
+| [ログイン・追加認証](auth-login-mfa.md) | 戻り先の控えと使い切り（パスワード・メールOTP・TOTP は段4で廃止） |
 | [会員登録・確認](auth-registration.md) | 登録受付、確認メール、token_hashの検証 |
 | [Google OAuth](auth-oauth.md) | OAuth開始、callback、セッション作成、戻り先 |
 | [パスワード再設定](auth-password-reset.md) | 廃止（段4で窓口・画面を消した）。再設定メール、リンク確認、パスワード更新 |

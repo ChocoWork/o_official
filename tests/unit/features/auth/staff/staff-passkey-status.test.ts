@@ -3,6 +3,8 @@
  */
 import { loadStaffPasskeys } from '@/features/auth/staff/staff-passkey-status';
 
+jest.mock('@/lib/client-fetch', () => ({ clientFetch: jest.fn() }));
+
 const json = (status: number, body: unknown) =>
   Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
 const fetchOf = (impl: () => Promise<Response>) => jest.fn(impl) as unknown as typeof import('@/lib/client-fetch').clientFetch;
@@ -10,6 +12,14 @@ const fetchOf = (impl: () => Promise<Response>) => jest.fn(impl) as unknown as t
 const ITEM = { id: 'a', friendly_name: 'Mac', created_at: '2026-11-01T00:00:00Z', last_used_at: '2026-11-02T00:00:00Z', approved: true };
 
 describe('loadStaffPasskeys', () => {
+  it('DD-AUTH-082 引数なしで呼ぶと既定の clientFetch で窓口 GET /api/auth/passkey を読む（ログインの後の行き先が使う）', async () => {
+    const { clientFetch } = jest.requireMock('@/lib/client-fetch') as { clientFetch: jest.Mock };
+    clientFetch.mockResolvedValueOnce(new Response(JSON.stringify({ isStaff: true, approvedCount: 1, passkeys: [] }), { status: 200 }));
+    const result = await loadStaffPasskeys();
+    expect(clientFetch).toHaveBeenCalledWith('/api/auth/passkey', { method: 'GET' });
+    expect(result).toEqual({ ok: true, isStaff: true, approvedCount: 1, passkeys: [] });
+  });
+
   it('DD-AUTH-082 一覧・店員か・認めた本数を読む。approved は真のときだけ真', async () => {
     const result = await loadStaffPasskeys(
       fetchOf(() => json(200, { isStaff: true, approvedCount: 2, passkeys: [ITEM, { ...ITEM, id: 'b', approved: 'yes' }] })),

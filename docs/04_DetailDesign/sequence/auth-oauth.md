@@ -16,7 +16,7 @@ GoogleログインはSupabaseのPKCE対応SSR clientで開始し、callbackでco
 | OAuth開始 | [start API](../../../src/app/api/auth/oauth/start/route.ts) |
 | callback・role別redirect | [callback API](../../../src/app/api/auth/oauth/callback/route.ts) |
 | 共通保存・戻り先検証 | [初回保存](../../../src/features/auth/services/register.ts)、[戻り先の確かめ](../../../src/features/auth/return-intent/return-path.ts)、[戻り先の控えの開始と解決](../../../src/features/auth/return-intent/return-intent-service.ts)、[origin helper](../../../src/lib/redirect.ts)、[Cookie属性](../../../src/lib/cookie.ts) |
-| 特権roleの後続画面 | [verifiedページ](../../../src/app/auth/verified/page.tsx)、[ログイン・TOTP](auth-login-mfa.md) |
+| 特権roleの後続画面 | `/login?error=staff_passkey_required`（`/auth/verified` は段4で消した。ADR-0475） |
 
 ## SQ-AUTH-OAUTH-START: Googleログインの開始
 
@@ -82,7 +82,7 @@ queryのcode欠落は400、env欠落500、外側例外500。callbackはstateを�
 
 | 項目 | 現行処理 |
 | --- | --- |
-| 戻り先 | nextの既定は`/auth/verified`。一般userがこの既定先を要求した場合は`/account`、admin／supporterは指定された検証済みパス |
+| 戻り先 | 古い形の`next`は読まない。行き先は入口で控えた戻り先だけで決め、admin／supporterは`/login?error=staff_passkey_required`（ADR-0475） |
 | 保存順序 | SDK Cookie準備→独自session_id/access/refresh/CSRF Cookie準備→local sessions INSERT |
 | 保存失敗 | DB成功を保証せず、準備済み303とCookieを返す。初回保存のどの段階で失敗したかによりCookie準備の範囲が異なる |
 | ログイン方式 | メールログインの保留Cookie・OTP APIは通らない。verifiedページに到達した場合のrole／既AAL2／エラー分岐は[追加認証画面の入口と出口](auth-login-mfa.md#追加認証画面の入口と出口)を参照する。特権roleでも指定戻り先が別のパスなら、このcallback自体はverifiedページへ強制しない |
@@ -91,7 +91,7 @@ queryのcode欠落は400、env欠落500、外側例外500。callbackはstateを�
 
 ## SQ-AUTH-OAUTH-RETURN: 戻り先の控えと使い切り（2026-10-25 の設計。開始の POST と画面側は実装済み）
 
-開始契機は Google ボタン。終了結果は戻り先（無ければ `/`）、または管理者・サポーターの `/auth/verified`。設計は [AUTH の構造設計](../../03_BasicDesign/areas/auth.md) の FLOW-AUTH-002・API-AUTH-007・API-AUTH-008、決定は `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`。始めるのを `fetch` の POST にするのは、CSP の `form-action 'self'` がフォームの送信に続くリダイレクトにも当たるため。
+開始契機は Google ボタン。終了結果は戻り先（無ければ `/`）、または管理者・サポーターの `/login?error=staff_passkey_required`。設計は [AUTH の構造設計](../../03_BasicDesign/areas/auth.md) の FLOW-AUTH-002・API-AUTH-007・API-AUTH-008、決定は `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`。始めるのを `fetch` の POST にするのは、CSP の `form-action 'self'` がフォームの送信に続くリダイレクトにも当たるため。
 
 ```mermaid
 sequenceDiagram
@@ -116,7 +116,7 @@ sequenceDiagram
     CB->>Store: 1 回で使い切る
     CB-->>UI: 303 で戻り先か / と Cookie 削除
   else 管理者・サポーター
-    CB-->>UI: 303 で /auth/verified（使い切らない）
+    CB-->>UI: 303 で /login?error=staff_passkey_required（使い切らない）
   end
 ```
 

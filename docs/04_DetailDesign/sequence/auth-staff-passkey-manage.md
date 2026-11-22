@@ -4,7 +4,7 @@
 
 ## 概要
 
-店員のパスキー管理の画面 `/admin/passkeys` と、認めた鍵が1本の店員の「もう1本」の画面。削除の下限は DB の関数 `passkey_delete_with_floor` に一本化し、画面・窓口・DB が同じ数え方で止める。認めた鍵が1本の店員は、`/auth/verified` から `/admin/passkeys?more=1` へ送り、そこから `/auth/verified` へは戻さない。
+店員のパスキー管理の画面 `/admin/passkeys` と、認めた鍵が1本の店員の「もう1本」の画面。削除の下限は DB の関数 `passkey_delete_with_floor` に一本化し、画面・窓口・DB が同じ数え方で止める。認めた鍵が1本の店員は、ログインの後の行き先（`resolvePostLoginPath`）が `/admin/passkeys?more=1` へ送り、そこから `/auth/verified` へは戻さない。
 
 ## 範囲と根拠
 
@@ -24,17 +24,17 @@
 | 上位 | SEC-AUTH-055、SCR-AUTH-015 |
 | 根拠 | 入口で認めた鍵の本数を求めると、1本の店員はここに入れず、もう1本を足せない（足すための画面が足りない人を弾く）。窓口の削除が GoTrue の削除を通ると、数えと削除の間に別の削除が入れる。数えと削除を DB の1つの取引（利用者ごとの錠）にし、店員の削除はそれだけを通す。`/auth/verified` が送り、送った先が `/auth/verified` へ戻すと回り続けるので、行き先の入口は戻さない |
 | 状態 | 推定 |
-| 確かめ方 | 単体テスト（`tests/unit/lib/auth/staff-passkey-page-guard.test.ts`、`staff-passkey-delete.test.ts`、`tests/unit/api/auth/passkey-delete-staff-floor.test.ts`、`passkey-manage-routes.test.ts`、`tests/unit/app/auth/verified-page.test.tsx`、`tests/unit/app/staff/passkeys-page.test.tsx`、`tests/unit/features/auth/staff/staff-passkey-manager.test.tsx`、`staff-one-more-key.test.tsx`）、結合テスト（`tests/integration/ui/auth-staff-passkey-manage-screen.test.tsx`、`tests/integration/db/auth_passkey_staff_roles.integration.test.ts`、`tests/integration/api/auth/passkey-manage.test.ts`）、E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`） |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/staff-passkey-page-guard.test.ts`、`staff-passkey-delete.test.ts`、`tests/unit/api/auth/passkey-delete-staff-floor.test.ts`、`passkey-manage-routes.test.ts`、`tests/unit/app/staff/passkeys-page.test.tsx`、`tests/unit/features/auth/staff/staff-passkey-manager.test.tsx`、`staff-one-more-key.test.tsx`）、結合テスト（`tests/integration/ui/auth-staff-passkey-manage-screen.test.tsx`、`tests/integration/db/auth_passkey_staff_roles.integration.test.ts`、`tests/integration/api/auth/passkey-manage.test.ts`）、E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-9-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 9） |
 
 ```mermaid
 sequenceDiagram
-    participant V as /auth/verified
+    participant V as ログインの後の行き先（resolvePostLoginPath）
     participant P as /admin/passkeys（サーバー）
     participant U as 画面
     participant A as DELETE /api/auth/passkey/{id}
     participant D as DB（passkey_delete_with_floor）
-    V->>V: 入口の条件に足りない店員。GET /api/auth/passkey の approvedCount が1
+    V->>V: needsMfa の時。GET /api/auth/passkey の approvedCount が1
     V-->>P: /admin/passkeys?more=1 へ置き換える
     P->>P: 店員の役割・パスキー24時間・無操作1時間（本数は求めない）
     P-->>U: 認めた鍵が2本未満かつ more=1 なら「もう1本」、それ以外は管理の画面

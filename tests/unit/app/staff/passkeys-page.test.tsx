@@ -35,11 +35,11 @@ describe('DD-AUTH-082 /admin/passkeys のページ（サーバー）', () => {
     expect(metadata.robots).toEqual({ index: false, follow: false });
   });
 
-  test('DD-AUTH-082 入口が外れたら、その行き先（/login ...）へ送る。/auth/verified へは送り返さない', async () => {
+  test('DD-AUTH-082 入口が外れたら、その行き先（/login ...）へ送る。この画面へは送り返さない', async () => {
     mockGuard.mockResolvedValue({ ok: false, redirectTo: '/login?reason=idle' });
     await expect(StaffPasskeysPage({ searchParams: search('1') })).rejects.toThrow('NEXT_REDIRECT:/login?reason=idle');
     expect(mockRedirect).toHaveBeenCalledTimes(1);
-    expect(mockRedirect.mock.calls[0][0]).not.toContain('/auth/verified');
+    expect(mockRedirect.mock.calls[0][0]).not.toContain('/admin/passkeys');
   });
 
   test('DD-AUTH-082 確かめが読めない時は、送らずに「しばらくしてからお試しください。」を出す', async () => {

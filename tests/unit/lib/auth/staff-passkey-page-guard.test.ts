@@ -48,7 +48,7 @@ describe('DD-AUTH-082 requireStaffPasskeyPage', () => {
     await expect(requireStaffPasskeyPage()).resolves.toMatchObject({ ok: true, approvedCount: 2 });
   });
 
-  test('DD-AUTH-082 無限の遷移にならない: 認めた鍵が1本の店員は、/auth/verified へ戻されず ok で画面が出る', async () => {
+  test('DD-AUTH-082 無限の遷移にならない: 認めた鍵が1本の店員は、別の行き先へ戻されず ok で画面が出る', async () => {
     const result = await requireStaffPasskeyPage();
     expect(result).not.toHaveProperty('redirectTo');
     expect(result.ok).toBe(true);

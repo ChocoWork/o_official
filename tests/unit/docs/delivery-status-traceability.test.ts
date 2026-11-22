@@ -166,14 +166,14 @@ test('配送の要対応の解決POSTと1webhookをAPIと入口一覧に記録�
   });
   const routes = walk('src/app/api').filter((file) => file.endsWith('/route.ts'));
   const methods = routes.flatMap((file) => [...read(file).matchAll(/export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b|export\s+const\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/g)]);
-  expect(routes).toHaveLength(201); expect(methods).toHaveLength(253);
-  contains(api, '201ファイル'); contains(api, '253組');
-  contains(api, 'HEAD/OPTIONSは253組に含めない');
+  expect(routes).toHaveLength(197); expect(methods).toHaveLength(249);
+  contains(api, '197ファイル'); contains(api, '249組');
+  contains(api, 'HEAD/OPTIONSは249組に含めない');
   for (const file of files.slice(0, 3)) contains(read(file), '配送の入口・表は E-4 の変更を 2026-10-21 に反映');
-  contains(inventory, '201ファイル・253メソッド');
+  contains(inventory, '197ファイル・249メソッド');
   const entries = inventory.split('\n').filter((line) => /^\| `\/api\//.test(line));
-  expect(entries).toHaveLength(200);
-  expect(entries.flatMap((line) => line.split('|')[2].match(/`(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)`/g) ?? [])).toHaveLength(252);
+  expect(entries).toHaveLength(196);
+  expect(entries.flatMap((line) => line.split('|')[2].match(/`(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)`/g) ?? [])).toHaveLength(248);
   const g4Reads = ['/api/admin/order-items', '/api/admin/order-items/export', '/api/admin/orders/[id]'];
   g4Reads.forEach((route) => {
     contains(api, '`GET ' + route + '`');

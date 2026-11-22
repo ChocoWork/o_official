@@ -116,8 +116,6 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
       { label: 'GET /api/auth/oauth/start', method: 'GET', path: '/api/auth/oauth/start', load: () => require('@/app/api/auth/oauth/start/route').GET, endpoint: 'auth:oauth:start', limit: 50, windowSeconds: 600 },
       { label: 'GET /api/auth/oauth/callback', method: 'GET', path: '/api/auth/oauth/callback', load: () => require('@/app/api/auth/oauth/callback/route').GET, endpoint: 'auth:oauth:callback', limit: 50, windowSeconds: 600 },
       { label: 'POST /api/auth/refresh', method: 'POST', path: '/api/auth/refresh', load: () => require('@/app/api/auth/refresh/route').POST, endpoint: 'auth:refresh', limit: 30, windowSeconds: 600 },
-      { label: 'POST /api/auth/mfa/enroll-totp', method: 'POST', path: '/api/auth/mfa/enroll-totp', load: () => require('@/app/api/auth/mfa/enroll-totp/route').POST, endpoint: 'auth:mfa:enroll-totp', limit: 10, windowSeconds: 600 },
-      { label: 'POST /api/auth/mfa/verify', method: 'POST', path: '/api/auth/mfa/verify', load: () => require('@/app/api/auth/mfa/verify/route').POST, endpoint: 'auth:mfa:verify', limit: 20, windowSeconds: 600 },
     ];
 
     test.each(rows)('ARC-AUTH-005 $label は先頭で枠（$limit 回／$windowSeconds 秒）を数え、超えたら 429 をそのまま返して先へ進まない', async (row) => {
@@ -173,18 +171,6 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
       const res = await GET(request('GET', '/api/auth/me'));
 
       expect(res.status).toBe(200);
-      expect(enforceRateLimit).not.toHaveBeenCalled();
-    });
-
-    test('ARC-AUTH-005 mfa/status は枠を数えない', async () => {
-      createClient.mockResolvedValue({});
-      authenticateRequest.mockResolvedValue({ ok: false, reason: 'unauthenticated' });
-      authFailureResponse.mockReturnValue({ status: 401 });
-      const { GET } = require('@/app/api/auth/mfa/status/route') as { GET: Handler };
-
-      const res = await GET(request('GET', '/api/auth/mfa/status'));
-
-      expect(res.status).toBe(401);
       expect(enforceRateLimit).not.toHaveBeenCalled();
     });
   });

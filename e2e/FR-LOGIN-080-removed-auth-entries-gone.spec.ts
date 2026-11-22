@@ -1,8 +1,8 @@
 /**
  * FR-LOGIN-080 消したパスワードのログイン・会員登録・確認リンクの窓口と画面は 404 で、どこからもリンクが無い
- * 対応: FR-AUTH-053-AC-01 / FR-AUTH-053-AC-02 / SEC-AUTH-061-AC-01（上位: SR-AUTH-030、THR-AUTH-059）
+ * 対応: FR-AUTH-053-AC-01 / FR-AUTH-053-AC-02 / FR-AUTH-053-AC-03 / SEC-AUTH-061-AC-01（上位: SR-AUTH-030、THR-AUTH-059）
  *
- * パスキー段4の Task 28。Task 29 が再設定・変更の窓口と画面（`/auth/password-reset`・`/account/password` ほか）の確かめを足した。後のタスク（TOTP・`/auth/verified`）が、自分の消した物の確かめをここへ足す。
+ * パスキー段4の Task 28。Task 29 が再設定・変更の窓口と画面（`/auth/password-reset`・`/account/password` ほか）の確かめを足した。Task 30 が認証アプリ（TOTP）の窓口・`/auth/verified`・MFA のやり直しの窓口の確かめを足した。
  * 窓口は HTTP で直に叩く（画面は開かない）。Origin を付けて proxy の Origin の確かめを通し、消えたことだけを確かめる。
  * 手元のアプリ（本番ビルド）で流す。3つの幅でくり返す（画面の確かめがあるため）。
  */
@@ -22,6 +22,12 @@ const viewports = [
 
 const REMOVED_SCREENS = ['/login/password', '/login/verify'] as const;
 const REMOVED_RESET_SCREENS = ['/auth/password-reset', '/auth/password-reset/verify', '/account/password'] as const;
+const REMOVED_TOTP_SCREENS = ['/auth/verified'] as const;
+const REMOVED_TOTP_POST_ENTRIES = [
+  '/api/auth/mfa/enroll-totp',
+  '/api/auth/mfa/verify',
+  '/api/admin/users/mfa/reset',
+] as const;
 const REMOVED_POST_ENTRIES = [
   '/api/auth/login',
   '/api/auth/login/resend',
@@ -55,6 +61,13 @@ for (const viewport of viewports) {
       });
     }
 
+    for (const path of REMOVED_TOTP_SCREENS) {
+      test(`FR-AUTH-053-AC-03 ${viewport.name}: 消した認証アプリ（TOTP）の確認の画面 ${path} は 404`, async ({ page }) => {
+        const response = await page.goto(path);
+        expect(response?.status()).toBe(404);
+      });
+    }
+
     const post404 = async (request: APIRequestContext, path: string) => {
       const response = await request.post(path, {
         headers: { origin: ORIGIN, 'x-real-ip': `198.18.${Math.floor(Math.random() * 256)}.${1 + Math.floor(Math.random() * 253)}` },
@@ -79,6 +92,17 @@ for (const viewport of viewports) {
       });
     }
 
+    for (const path of REMOVED_TOTP_POST_ENTRIES) {
+      test(`FR-AUTH-053-AC-03 ${viewport.name}: 消した認証アプリ（TOTP）・MFA のやり直しの窓口 POST ${path} は 404 で、セッションの Cookie を出さない`, async ({ request }) => {
+        await post404(request, path);
+      });
+    }
+
+    test(`FR-AUTH-053-AC-03 ${viewport.name}: 消した認証アプリ（TOTP）の状態の窓口 GET /api/auth/mfa/status は 404`, async ({ request }) => {
+      const response = await request.get('/api/auth/mfa/status', { failOnStatusCode: false, maxRedirects: 0 });
+      expect(response.status()).toBe(404);
+    });
+
     test(`FR-AUTH-053-AC-02 ${viewport.name}: 消した再設定の状態の窓口 GET /api/auth/password-reset/session は 404`, async ({ request }) => {
       const response = await request.get('/api/auth/password-reset/session', { failOnStatusCode: false, maxRedirects: 0 });
       expect(response.status()).toBe(404);
@@ -99,7 +123,7 @@ for (const viewport of viewports) {
       await expect(page.getByLabel(/password/i)).toHaveCount(0);
       await expect(page.getByRole('tab')).toHaveCount(0);
       await expect(page.getByRole('tab', { name: '会員登録' })).toHaveCount(0);
-      await expect(page.locator('a[href*="/login/password"], a[href*="/login/verify"], a[href*="/api/auth/confirm"], a[href*="/auth/password-reset"]')).toHaveCount(0);
+      await expect(page.locator('a[href*="/login/password"], a[href*="/login/verify"], a[href*="/api/auth/confirm"], a[href*="/auth/password-reset"], a[href*="/auth/verified"]')).toHaveCount(0);
     });
 
     test(`SEC-AUTH-061-AC-01 ${viewport.name}: ヘッダーのログインのリンクは /login へ向き、消した画面を指さない`, async ({ page }) => {
@@ -120,7 +144,7 @@ for (const viewport of viewports) {
       await expect(page.getByRole('button', { name: 'メールでコードを受け取る' })).toBeVisible();
     });
 
-    for (const next of ['/login/password', '/login/verify', '/api/auth/confirm'] as const) {
+    for (const next of ['/login/password', '/login/verify', '/api/auth/confirm', '/auth/verified'] as const) {
       test(`SEC-AUTH-061-AC-01 ${viewport.name}: 消した窓口・画面 ${next} を戻り先（next）にしても、ログインの後は / に着く`, async ({ page }) => {
         const ip = `198.19.${Math.floor(Math.random() * 256)}.${1 + Math.floor(Math.random() * 253)}`;
         const headers = { origin: ORIGIN, 'x-real-ip': ip };

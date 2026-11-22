@@ -2,7 +2,7 @@
  * FR-LOGIN-031 Supabase Auth・PostgREST を直接呼ぶ道（アプリの窓口を通らない道）でも、2段階のログイン・DB の権限・登録の決まりが飛ばせない
  * 対応: SEC-AUTH-005-AC-01 / SEC-AUTH-005-AC-02 / SEC-AUTH-010-AC-01 / SEC-AUTH-011-AC-01 / SEC-AUTH-012-AC-01
  *       SEC-AUTH-015-AC-01 / SEC-AUTH-015-AC-02 / SEC-AUTH-015-AC-05 / SEC-AUTH-028-AC-02
- *       SEC-AUTH-005-AC-03 / SEC-AUTH-005-AC-05 / SEC-AUTH-030-AC-03 / SEC-AUTH-031-AC-02 / SEC-AUTH-010-AC-03
+ *       SEC-AUTH-005-AC-03 / SEC-AUTH-005-AC-05 / SEC-AUTH-030-AC-03 / SEC-AUTH-010-AC-03
  *       SEC-AUTH-015-AC-04（波 6。手元の Auth の captcha を有効にした設定で通る。SEC-AUTH-035 の AC は FR-LOGIN-055 へ移した）
  *
  * 手元の Supabase（GoTrue の /auth/v1、PostgREST の /rest/v1）を anon の鍵と、パスワードだけで得た JWT で直接叩く。
@@ -15,8 +15,8 @@
  * 手元で設定できないので、ENV の印（test.fail）のまま残す（本番の設定は Management API の GET で確かめる）。
  * SEC-AUTH-005-AC-02・005-AC-03 の PostgREST の側・010-AC-01・010-AC-03 は、DB の移行 M2（波 5。has_permission に aal2 と結び付いた生きた session を求め、
  * profiles・orders・order_items に RESTRICTIVE の方針を足す）を当てた DB で通る（test.fail は外した。M2 を当てていない DB では赤）。
- * SEC-AUTH-005-AC-01・03・05、SEC-AUTH-030-AC-03、SEC-AUTH-031-AC-02 は波 5 でアプリの窓口が満たす（旗 AUTH_REQUIRE_APP_SESSION は E2E で固定の on）。
- * 段1a の切り替え（Task 9）の後、管理者の010-AC-01・010-AC-03 はパスキーのログイン（認めた1本・2本。古い名前の aal1・aal2）で作る。SEC-AUTH-031-AC-02 は app_metadata.role だけを admin にした利用者（user_roles なし。店員のメールのコードはフックが拒否するため）で確かめる。
+ * SEC-AUTH-005-AC-01・03・05、SEC-AUTH-030-AC-03 は波 5 でアプリの窓口が満たす（旗 AUTH_REQUIRE_APP_SESSION は E2E で固定の on）。
+ * 段1a の切り替え（Task 9）の後、管理者の010-AC-01・010-AC-03 はパスキーのログイン（認めた1本・2本。古い名前の aal1・aal2）で作る。
  * SEC-AUTH-028-AC-02 は満たす。AC ごとに describe を分け、赤を互いに混ぜない。
  * （012 は G-2 の移行 20261024153505 が anon・authenticated の EXECUTE を外すので、その移行を当てた DB では緑になる。
  *  011 は移行 sec_grants_hardening が認証の表の権限を外すので、その移行を当てた DB では緑になる）
@@ -119,9 +119,8 @@ type TokenReply = { access_token?: string; refresh_token?: string };
 /** 既知のパスワードで利用者を作るだけ（通行証は取らない）。admin なら役割 admin も付ける */
 /**
  * admin: 役割 admin を app_metadata と user_roles の両方に付ける（店員。メールのコードの通行証は GoTrue のフックが拒否する）。
- * roleClaimOnly: app_metadata.role だけを admin にし、user_roles は付けない（フックはお客さん扱いで通す。enroll-totp は役割を app_metadata で見る）。
  */
-async function createUnsignedActor(label: string, options: { admin?: boolean; roleClaimOnly?: boolean } = {}): Promise<Omit<Actor, 'accessToken' | 'refreshToken'>> {
+async function createUnsignedActor(label: string, options: { admin?: boolean } = {}): Promise<Omit<Actor, 'accessToken' | 'refreshToken'>> {
   requireLocalEnv();
   const email = newEmail(label);
   const password = newPassword();
@@ -130,7 +129,7 @@ async function createUnsignedActor(label: string, options: { admin?: boolean; ro
       email,
       password,
       email_confirm: true,
-      ...(options.admin || options.roleClaimOnly ? { app_metadata: { role: 'admin' } } : {}),
+      ...(options.admin ? { app_metadata: { role: 'admin' } } : {}),
     })
     .catch(() => {
       throw new Error('手元の利用者を作る要求に失敗した');
@@ -726,7 +725,7 @@ for (const viewport of viewports) {
   });
 }
 
-// ---- SEC-AUTH-030・031（波 5: 結び付けの拒否と、初めての TOTP の登録） ----
+// ---- SEC-AUTH-030（波 5: 結び付けの拒否） ----
 
 /** 監査の行を文字列にした物。トークン・session_id の値が入っていないかを、値そのものを出さずに真偽で比べるため */
 const auditRowTexts = (db: Client, where: string, params: unknown[]): Promise<string[]> =>
@@ -763,50 +762,6 @@ for (const viewport of viewports) {
         expect.soft(text.includes(member.accessToken), '監査の行に access token の値が無い').toBe(false);
         expect.soft(text.includes(authSessionId), '監査の行に session_id の値が無い').toBe(false);
       }
-    });
-  });
-}
-
-for (const viewport of viewports) {
-  test.describe(`SEC-AUTH-031-AC-02 メール OTP だけで取った通行証では初めての TOTP の登録が 401 で断られる (${viewport.name})`, () => {
-    test.use({ viewport: { width: viewport.width, height: viewport.height } });
-
-    test(`SEC-AUTH-031-AC-02 TOTP の無い管理者が /auth/v1/otp と /auth/v1/verify を直接呼んで得た通行証で /api/auth/mfa/enroll-totp を叩くと、401 になり、要素が作られず、mfa_enroll・denied・app_session_required の行が監査に 1 つ増える (${viewport.name})`, async ({ request, baseURL }) => {
-      requireLocalApp(baseURL);
-      const origin = new URL(baseURL ?? '').origin;
-      // app_metadata.role だけを admin にした利用者。user_roles は付けない（付けた店員のメールのコードは GoTrue のフックが拒否するので、
-      // 結び付きの守りを確かめる通行証を作れない。enroll-totp は役割を app_metadata で見るので、この利用者でも守りに届く）。TOTP は登録しない
-      const admin = await createUnsignedActor('otpadmin', { roleClaimOnly: true });
-      const tokens = await requestOtpOnlyTokens(admin.email);
-      const claims = claimsOf(tokens.accessToken);
-      const authSessionId = claims.session_id ?? '';
-      expect(authSessionId, '通行証の session_id（準備）').not.toBe('');
-      expect(claims.aal, '通行証の aal（準備）').toBe('aal1');
-      expect(claims.amr?.some((entry) => entry.method === 'otp'), '通行証の amr に otp がある（準備。amr の確かめでは断れない通行証）').toBe(true);
-      const factorCount = (): Promise<number> =>
-        withDb(async (db) => {
-          const result = await db.query('select count(*)::int as n from auth.mfa_factors where user_id = $1::uuid', [admin.userId]);
-          return result.rows[0].n as number;
-        });
-      expect(await factorCount(), '登録の前は要素が無い（準備）').toBe(0);
-
-      const response = await request.post(new URL('/api/auth/mfa/enroll-totp', origin).toString(), {
-        headers: { ...bearer(tokens.accessToken), origin, 'x-real-ip': uniqueSourceIp() },
-        data: {},
-        failOnStatusCode: false,
-        maxRedirects: 0,
-      });
-      expect(response.status(), '/api/auth/mfa/enroll-totp の status（403 ではなく、結び付けの断りの 401）').toBe(401);
-      await jsonOf(response); // 本文は読み切る
-      expect(await factorCount(), '要素が作られない').toBe(0);
-
-      const texts = await withDb((db) =>
-        auditRowTexts(db, `actor_id::text = $1 and action = 'mfa_enroll' and outcome = 'denied' and detail = 'app_session_required'`, [admin.userId]),
-      );
-      expect(texts.length, '断りの監査の行（mfa_enroll・denied・app_session_required）が 1 つ').toBe(1);
-      expect.soft(texts[0]?.includes(tokens.accessToken), '監査の行に access token の値が無い').toBe(false);
-      expect.soft(texts[0]?.includes(tokens.refreshToken), '監査の行に refresh token の値が無い').toBe(false);
-      expect.soft(texts[0]?.includes(authSessionId), '監査の行に session_id の値が無い').toBe(false);
     });
   });
 }

@@ -22,7 +22,7 @@ const LOGIN_STAFF_REQUIRED = '/login?reason=staff_required';
  * @design DD-AUTH-082
  * @remarks 求めるのは ①有効な店員の役割 ②`amr` のパスキーが24時間以内 ③無操作1時間以内（時刻を進めない `peek`。開き直すだけでは延びない）。
  * **認めた鍵が2本以上かは求めない**（1本の店員が「もう1本」を足しに来るため。0本の人は招待の窓の道でここへ来ない）。
- * 外れたら `/login`（`reason` つき）で、`/auth/verified` へは送り返さない（そこは1本の店員をここへ送るので、戻すと回り続ける）。
+ * 外れたら `/login`（`reason` つき）で、1本の店員はここへ着く（ログインの後の行き先が送る）ので、ここから別の行き先へ戻さない。
  * 無操作・24時間の超過は GoTrue のセッションも終わらせる。確かめの失敗（DB が読めない）は `unavailable` で、`/login` へは送らず終わらせもしない。
  */
 export async function requireStaffPasskeyPage(): Promise<StaffPasskeyPageAccess> {

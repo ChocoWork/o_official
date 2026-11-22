@@ -28,7 +28,7 @@ export function isAppSessionRequired(): boolean {
  *
  * @impl IMPL-AUTH-227
  * @design DD-AUTH-039
- * @remarks 署名は見ない。GoTrue の応答（verifyOtp・token 交換・mfa.verify）にだけ使い、
+ * @remarks 署名は見ない。GoTrue の応答（verifyOtp・token 交換）にだけ使い、
  * リクエストの Cookie や本文から来た token には使わない（検証は verifyAccessToken が行う）。
  * 外から来た token の値を保存すると、結び付いていない session を結び付けた session に洗えてしまう。
  */

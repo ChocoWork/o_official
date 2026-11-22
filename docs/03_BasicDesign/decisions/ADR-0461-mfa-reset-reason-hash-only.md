@@ -1,6 +1,6 @@
 # ADR-0461 MFA リセットの理由の文は監査に残さず、長さとハッシュだけを残す
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: `src/app/api/admin/users/mfa/reset/route.ts`、`src/lib/auth/revoke-user-sessions.ts` | 基準コミット: `77e7f844`
+> 状態: 廃止 | 確認日: 2026-10-26 | 対象: `src/app/api/admin/users/mfa/reset/route.ts`、`src/lib/auth/revoke-user-sessions.ts` | 基準コミット: `77e7f844`
 
 ## 概要
 
@@ -25,7 +25,7 @@
 | --- | --- |
 | 上位 | SEC-ADMIN-008、SEC-ADMIN-014、DRV-ADMIN-002 |
 | 根拠 | 監査ログは長く残り、店長と DB の運用者が読み、`ALERT_AUDIT_URL` を設定すれば外の Webhook にも写る。理由の文には個人の事情が、対象のメールには個人情報が入りうる。対象は `resource_id`（利用者の id）で特定できるので、メールは要らない。理由は後で別の記録の文と突き合わせられるよう、ハッシュと長さだけを残す。全文が要る場合は暗号化の保存が別に要る。ユーザーが 2026-10-26 に推奨の案（長さとハッシュ）を承認した。役割と失効は、権限を外された人の古い `app_metadata` で判定を誤らないことと、2要素を外した後に古い session で入れないことのため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1b-decisions.md`、`.superpowers/sdd/2026-10-25-security-gap-fixes/ADMIN.md`、[OWASP Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html)（機密を記録から外す・伏せる・ハッシュにする）、[Supabase JavaScript Reference: auth.admin.mfa.deleteFactor](https://supabase.com/docs/reference/javascript/auth-admin-deletefactor)、`docs/03_BasicDesign/architecture/hybrid-rbac.md` |
 
 #### 背景
@@ -64,6 +64,7 @@ Shopify のスタッフの 2 段階認証のリセットで、監査にどこま
 
 #### 結果
 
+- 置き換え先: ADR-0471（段3a の店長のやり直しの窓口 `redo`。理由の文は監査に残さず長さだけを残す決めは `redo` が受け継いだ。パスキー段4の Task 30、2026-11-22 に、`mfa/reset` を消したので、この決めは廃止した）
 - 良くなること: 監査と外の Webhook に個人情報が残らない。権限を外された人を取り違えない。リセットの後に奪われた session が生き残らない
 - 悪くなること: 理由の全文は後から読めない（ハッシュと長さで突き合わせるだけ）。ハッシュはソルト無しなので、短い決まった言い回しの理由は候補の文を並べてハッシュすれば推測で当てられる（突き合わせのための選択で、避けるなら鍵付きの HMAC が要る）。失効の失敗は 500 になり、要素は消えたまま（再実行で閉じる）。店長が別の店長の2要素を消せることと、本人への知らせが無いことは変わらない（ユーザーの決め待ち）
 - 見直す条件: 理由の全文を監査に残す要件が出た時（暗号化の保存を別に設計する）。店長どうしのリセットを止める時、本人へ知らせる時

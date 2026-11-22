@@ -21,7 +21,7 @@ ADMIN（管理のそのほか）の領域で考える脅威を、1つずつ `THR
 
 ## 範囲と根拠
 
-- 範囲: `scripts/trace/scope.json` の ADMIN の src（`revoke-user-sessions/**`・`audit-logs/**`・`users/mfa/**`・`contact/**`・`item-color-presets/**`、`src/lib/contact/**`、`src/lib/auditCleanup.ts`）
+- 範囲: `scripts/trace/scope.json` の ADMIN の src（`revoke-user-sessions/**`・`audit-logs/**`・`contact/**`・`item-color-presets/**`、`src/lib/contact/**`、`src/lib/auditCleanup.ts`）
 - 範囲の外だが脅威の入口になるので見た物: `src/lib/auth/admin-rbac.ts`（管理の認可）、`src/lib/audit.ts`（監査の記録と伏せ字）、`src/proxy.ts`（Origin の照合）、`src/features/auth/middleware/rateLimit.ts`（回数の制限）、`src/lib/mail/adapters/*`（メールの送り方）、`supabase/migrations/20260901102912_remote_schema.sql`（表・RLS・表の権限・RPC）、`supabase/migrations/20261023175712_group_g0_permissions.sql`（`has_permission`）
 - 出どころのレビュー: `docs/05_Quality/reviews/security/security_review_admin.md`・`security_review_contact.md`、`docs/05_Quality/reviews/code/2026-04-18-admin-security-review.md`・`2026-04-18-auth-security-review.md`・`2026-04-18-contact-review.md`。どのレビューも当時の記録なので、今の状態は 2026-10-24 にコードを読み直して決めた
 - 全体のセキュリティ要件は `docs/02_Requirements/requirements.md` の 5.4 節（NFR-SEC-001〜012・AC-SEC-001）。ADMIN に当てはまる物は、各項目の根拠に書いた
@@ -171,8 +171,10 @@ flowchart LR
 | 対策 | SEC-ADMIN-008 |
 | ASVS | V7.1.2 |
 | 根拠 | 批評で伏せ字の範囲を確かめた結果。全体の NFR-SEC-010（個人情報のマスキング）に当てはめた |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | 実装から推定 |
+
+廃止（パスキー段4 Task 30、2026-11-22）: 監査ログの平文の個人情報は、MFA のリセットの窓口（消した）とユーザー作成（消した）の記録の話だった。残る窓口の監査は SEC-ADMIN-022 が守る。
 
 ### THR-ADMIN-009 監査ログの IP を送る側が偽る
 
@@ -257,8 +259,10 @@ flowchart LR
 | 対策 | SEC-ADMIN-014（本人への知らせは求めていない。未確認事項） |
 | ASVS | V2.5.7、V2.2.3（どちらも当てはめは推定） |
 | 根拠 | `hybrid-rbac.md` は `app_metadata.role` を「ヒント」とし、重要な操作は DB の ACL を見ると書く（`docs/03_BasicDesign/architecture/hybrid-rbac.md:272-274`）。`api-spec.md` は「sessions 失効」と書く（`docs/03_BasicDesign/api/api-spec.md:193`）。権限の作業は役割の変更で最後の店長と自分自身を守る（`docs/superpowers/specs/2026-10-23-group-g-design.md:598`）が、同じ守りが無い。要求の文書は見つからない（始まりは commit `bbfb6143`） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | 実装から推定 |
+
+廃止（パスキー段4 Task 30、2026-11-22）: MFA のリセットの窓口を消したので、この脅威の入口が無い。
 
 ### THR-ADMIN-015 強制失効で店長を締め出す
 

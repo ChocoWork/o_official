@@ -61,10 +61,10 @@ describe('DD-AUTH-040 手元の Supabase の設定を本番の前提にそろえ
     expect(target.auth.enable_signup).toBe('true');
   });
 
-  it('DD-AUTH-040 TOTP の登録と確認が有効', () => {
+  it('DD-AUTH-040 TOTP の登録と確認が無効（パスキー段4で認証アプリの窓口を消した。ADR-0475）', () => {
     const totp = target['auth.mfa.totp'];
-    expect(totp.enroll_enabled).toBe('true');
-    expect(totp.verify_enabled).toBe('true');
+    expect(totp.enroll_enabled).toBe('false');
+    expect(totp.verify_enabled).toBe('false');
   });
 
   it('DD-AUTH-048 パスキーが有効で、WebAuthn の相手は localhost、出所は localhost の3000番だけ（127.0.0.1 は rp_id が localhost では使えない）', () => {

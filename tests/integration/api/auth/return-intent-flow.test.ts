@@ -162,7 +162,7 @@ describe('ARC-AUTH-010 戻り先は入口で控え、出口で使い切り、出
     const cookieHeader = cookieHeaderOf(entry.action);
 
     const unmet = await resolveReturnDestination({ cookieHeader, purpose: 'login', viewer: admin(false) });
-    expect(unmet).toEqual({ path: '/auth/verified', needsMfa: true, action: { kind: 'keep' } });
+    expect(unmet).toEqual({ path: '/login?error=staff_passkey_required', needsMfa: true, action: { kind: 'keep' } });
     expect(table.consumedCount).toBe(0);
 
     const met = await resolveReturnDestination({ cookieHeader, purpose: 'login', viewer: admin(true) });

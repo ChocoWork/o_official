@@ -96,14 +96,14 @@ for (const viewport of viewports) {
   test.describe(`${viewport.name}`, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
-    test(`FR-AUTH-018-AC-01 認めた鍵が1本の店員は needsMfa:true・/auth/verified で、戻り先の控えは使い切られない (${viewport.name})`, async ({ request }) => {
+    test(`FR-AUTH-018-AC-01 認めた鍵が1本の店員は needsMfa:true・/login?error=staff_passkey_required で、戻り先の控えは使い切られない (${viewport.name})`, async ({ request }) => {
       await withDb(async (db) => {
         for (const role of ['admin', 'supporter'] as const) {
           const actor = await createAdminSessionActor(db, role, 'aal1');
           const token = await issueIntentCookie(request, db, '/item');
           const res = await postLogin(request, actor, token);
           expect(res.status(), role).toBe(200);
-          expect(await res.json(), role).toEqual({ redirectTo: '/auth/verified', needsMfa: true });
+          expect(await res.json(), role).toEqual({ redirectTo: '/login?error=staff_passkey_required', needsMfa: true });
           expect(await isConsumed(db, token), role).toBe(false);
         }
       });
@@ -116,7 +116,7 @@ for (const viewport of viewports) {
         const res = await postLogin(request, actor, token);
         expect(res.status()).toBe(200);
         const body = (await res.json()) as { redirectTo: string; needsMfa: boolean };
-        expect(body).toEqual({ redirectTo: '/auth/verified', needsMfa: true });
+        expect(body).toEqual({ redirectTo: '/login?error=staff_passkey_required', needsMfa: true });
         expect(body.redirectTo.startsWith('/admin')).toBe(false);
         expect(await isConsumed(db, token)).toBe(false);
       });

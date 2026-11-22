@@ -24,7 +24,7 @@ export type ReturnIntentCookieAction =
 export type ResolvedDestination = { path: string; needsMfa: boolean; action: ReturnIntentCookieAction };
 
 const AUDIT_ACTION = 'auth.return_intent';
-const MFA_PATH = '/auth/verified';
+const STAFF_PASSKEY_REQUIRED_PATH = '/login?error=staff_passkey_required';
 const DEFAULT_RETURN_PATH = '/';
 
 async function auditSafely(outcome: 'rejected' | 'error', detail: string): Promise<void> {
@@ -135,7 +135,8 @@ export async function issueReturnIntent(input: {
  * @design DD-AUTH-034
  * @remarks 管理者・サポーターは、パスキーの入口の条件（`staffEntryOk`。amr のパスキー・24時間以内・認めた2本）を満たすまで使い切らず、戻り先を残す。
  * 使い切った値は DB の制約を信用せず、役割と入口の条件を含めて出口の確かめをもう一度通す。
- * 拒否の理由の名前 `admin_requires_privileged_aal2` と `needsMfa`・`/auth/verified` は段4で直す（1b では変えない。ADR-0468）。
+ * 入口の条件に足りない店員の行き先は `/login?error=staff_passkey_required`（認めた鍵が1本の店員をもう1本を足す画面へ送るのは、鍵の数を読めるブラウザ側の `resolvePostLoginPath`。ADR-0475）。
+ * 名前 `needsMfa`・`admin_requires_privileged_aal2` は変えない（意味は「店員の入口の条件を満たすか」。ADR-0475）。
  */
 export async function resolveReturnDestination(input: {
   cookieHeader: string | null;
@@ -147,7 +148,7 @@ export async function resolveReturnDestination(input: {
   const defaultPath = privileged ? '/admin' : '/';
 
   if (privileged && input.viewer.staffEntryOk !== true) {
-    return { path: MFA_PATH, needsMfa: true, action: { kind: 'keep' } };
+    return { path: STAFF_PASSKEY_REQUIRED_PATH, needsMfa: true, action: { kind: 'keep' } };
   }
 
   const fallback = (action: ReturnIntentCookieAction): ResolvedDestination => ({
@@ -183,7 +184,7 @@ export async function resolveReturnDestination(input: {
  * @impl IMPL-AUTH-221
  * @design DD-AUTH-034
  * @remarks DB の制約を信用せず、使い切った値を必ず確かめ直す。外れた時は既定の行き先に倒して控えの Cookie を消す。
- * 管理者・サポーターが入口の条件を満たさない場合の判断（2 段目へ送る）はここで持たず、呼び出し側が先に決める。
+ * 管理者・サポーターが入口の条件を満たさない場合の判断（行き先を店員用の案内へ送る）はここで持たず、呼び出し側が先に決める。
  * 外れた理由の符号だけを監査に残し、道筋は残さない。
  */
 export async function resolveStoredDestination(input: {

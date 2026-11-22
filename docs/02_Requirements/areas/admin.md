@@ -25,7 +25,7 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 | 範囲 | `scripts/trace/scope.json` の ADMIN |
 | 写した元 | `docs/02_Requirements/requirements.md` の「要求と要件のトレーサビリティ」の表の FREQ-25（1つ目の行）、「1.16 管理画面（ADMIN）」節の FR-ADMIN-009、「要求トレーサビリティ追記」の表の FREQ-508。元の行は消していない |
 | 持ち主の決め方 | ADMIN が持つのは FREQ-25 とその子だけで、FREQ-508・FR-ADMIN-009 は ADMIN だけが触れる行。複数の領域が触れる行は、領域どうしで割り当てた持ち主が定義し、ほかは `（範囲外）` で指す |
-| 対象のコード | `src/app/api/admin/revoke-user-sessions/`、`src/app/api/admin/audit-logs/`、`src/app/api/admin/users/mfa/`、`src/app/api/admin/contact/`、`src/app/api/admin/item-color-presets/`、`src/lib/contact/reply-address.ts`、`src/lib/auditCleanup.ts`、`scripts/admin/`（3 ファイル。最初の店長を作るコマンド）（14 ファイル。利用者の作成の画面と窓口の3ファイルは 2026-11-18 に消した） |
+| 対象のコード | `src/app/api/admin/revoke-user-sessions/`、`src/app/api/admin/audit-logs/`、`src/app/api/admin/contact/`、`src/app/api/admin/item-color-presets/`、`src/lib/contact/reply-address.ts`、`src/lib/auditCleanup.ts`、`scripts/admin/`（3 ファイル。最初の店長を作るコマンド）（14 ファイル。利用者の作成の画面と窓口の3ファイルは 2026-11-18 に消した） |
 | 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない。割当の作業が `src/app/admin/page.tsx` などを書き換え中で、コードの動きはずれうる） |
 
 ### 写した行と写さなかった行
@@ -67,7 +67,7 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 | E2E のファイル | テスト名の先頭に付けた受け入れ条件 |
 | --- | --- |
 | FR-ADMIN-MISC-001-admin-api-authorization-gates | SEC-ADMIN-001-AC-01、SEC-ADMIN-001-AC-02、SEC-ADMIN-001-AC-03、SEC-ADMIN-005-AC-01、SEC-ADMIN-005-AC-02 |
-| FR-ADMIN-MISC-003-session-revocation-and-mfa-reset | SEC-ADMIN-007-AC-01、SEC-ADMIN-013-AC-02、SEC-ADMIN-008-AC-01、SEC-ADMIN-009-AC-01、SEC-ADMIN-014-AC-01、SEC-ADMIN-014-AC-02、SEC-ADMIN-015-AC-01、SEC-ADMIN-015-AC-02、SEC-ADMIN-016-AC-01 |
+| FR-ADMIN-MISC-003-session-revocation-and-mfa-reset | SEC-ADMIN-007-AC-01、SEC-ADMIN-013-AC-02、SEC-ADMIN-009-AC-01、SEC-ADMIN-015-AC-01、SEC-ADMIN-015-AC-02、SEC-ADMIN-016-AC-01 |
 | FR-ADMIN-MISC-004-audit-log-read | FREQ-508-AC-01、FREQ-508-AC-02、SEC-ADMIN-011-AC-01、SEC-ADMIN-023-AC-01、SEC-ADMIN-023-AC-02 |
 | FR-ADMIN-MISC-005-item-color-presets-and-direct-db-access | SEC-ADMIN-002-AC-01、SEC-ADMIN-002-AC-02、SEC-ADMIN-003-AC-01、SEC-ADMIN-004-AC-01、SEC-ADMIN-022-AC-01 |
 | FR-ADMIN-MISC-006-contact-management | FR-ADMIN-009-AC-01、FR-ADMIN-009-AC-05、FR-ADMIN-009-AC-02、FR-ADMIN-009-AC-03、FR-ADMIN-009-AC-04、FR-ADMIN-009-AC-06、SEC-ADMIN-019-AC-01、SEC-ADMIN-020-AC-01、SEC-ADMIN-021-AC-01 |
@@ -610,7 +610,7 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | --- | --- |
 | 上位 | THR-ADMIN-008 |
 | 根拠 | 監査ログは長く残り、店長と DB の運用者が読む。対象のメールや理由の文は id や伏せ字で足り、内部の誤りの文はアプリの記録に分ける。全体の NFR-SEC-010（範囲外。個人情報のマスキング）を当てはめた |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | OWASP ASVS 4.0.3 V7.1.2 |
 | 優先度 | MUST |
@@ -627,11 +627,13 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | --- | --- |
 | 上位 | SEC-ADMIN-008 |
 | 根拠 | 今いちばん多く個人情報を書く所を確かめるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
 サポーターの MFA を理由の文付きでリセットした後、その `admin.users.mfa.reset` の行の `metadata` に、対象のメールの住所と理由の文がそのままの字で含まれないこと。理由は長さとハッシュだけが残る。
+
+廃止（パスキー段4 Task 30、2026-11-22）: 「MFA のリセットの記録」の窓口を消した。
 
 #### SEC-ADMIN-008-AC-02 ユーザー作成の失敗の記録に Supabase の誤りの文が出ない
 
@@ -646,6 +648,8 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 登録済みのメールで `/api/admin/create-user` を送り 409 が返った後、その `admin_create_user` の行の `detail` が決まった短い文で、Supabase の誤りの文を含まないこと。
 
 廃止（2026-11-18）: 利用者の作成の画面と窓口（`create-user`）を消した。店員は招待（API-AUTH-033）だけで増やす。番号は使い回さない。
+
+廃止（パスキー段4 Task 30、2026-11-22）: 守っていた2つの記録（MFA のリセット・ユーザー作成の失敗）の窓口がどちらも無い。
 
 ### SEC-ADMIN-009 監査ログの IP は、信頼できる中継が付けた値から取る
 
@@ -830,7 +834,7 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | --- | --- |
 | 上位 | THR-ADMIN-014 |
 | 根拠 | `app_metadata.role` は「ヒント」で、重要な操作は DB の ACL を見る（`docs/03_BasicDesign/architecture/hybrid-rbac.md`）。2要素を消した後に古い session が残ると、2要素を外した意味（作り直し）が崩れる。`api-spec.md` も失効すると書く。店長どうしのリセットの守り（二人目の承認・禁止など）と、リセットの後に対象の本人へ知らせるか（ASVS V2.2.3。当てはめは推定。今のコードは知らせない）はユーザーの決め待ち |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | OWASP ASVS 4.0.3 V2.5.7（当てはめは推定） |
 | 優先度 | MUST |
@@ -846,11 +850,13 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | --- | --- |
 | 上位 | SEC-ADMIN-014 |
 | 根拠 | `app_metadata` が古い時に、役割を取り違えないことを確かめるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
 `app_metadata.role` が `supporter` のままで、`user_roles` の役割を外した人を対象に MFA のリセットを送ると 400 が返り、2要素の登録が残ること。
+
+廃止（パスキー段4 Task 30、2026-11-22）: MFA のリセットの窓口を消した。
 
 #### SEC-ADMIN-014-AC-02 リセットの後、対象の session が全部失効する
 
@@ -858,11 +864,15 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | --- | --- |
 | 上位 | SEC-ADMIN-014 |
 | 根拠 | 2要素を外した後に古い session で入れないことを確かめるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
 サポーターの MFA をリセットして 200 が返った後、そのサポーターのリセット前の JWT で管理 API を要求すると 401 が返ること。
+
+廃止（パスキー段4 Task 30、2026-11-22）: MFA のリセットの窓口を消した。
+
+廃止（パスキー段4 Task 30、2026-11-22）: MFA のリセットの窓口を消した。
 
 ### SEC-ADMIN-015 強制失効は自分自身と存在しない利用者を断る
 
@@ -1201,7 +1211,7 @@ AC-01 と同じ 2 つの読み出しを、`x-real-ip`・偽の `x-forwarded-for`
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | 特権の利用者が認証のアプリを失くすと、ログインの第2要素（FR-LOGIN-007、範囲外）を通れず管理画面に入れなくなる。それを戻す道。取り返しのつかない操作なので、確認の語と 10〜500 字の理由を求め、自分自身と一般の利用者を断る。どの要求にも無い |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | 実装から推定（`src/app/api/admin/users/mfa/reset/route.ts`、2026-05-10 の bbfb6143 から）。`docs/03_BasicDesign/api/api-spec.md` |
 
 - 窓口 `POST /api/admin/users/mfa/reset`: 固定の権限 `admin.users.manage` で守る。利用者の id（UUID）、理由（前後の空白を除き 10〜500 字）、確認の語 `RESET_MFA` を受ける
@@ -1211,6 +1221,8 @@ AC-01 と同じ 2 つの読み出しを、`x-real-ip`・偽の `x-forwarded-for`
 - 失効: 全部消せたら対象の自前と Auth の session を全部失効させる。失敗は 500 で、消した要素は戻さない（`api-spec.md` が書く失効に一致。TM-ADMIN-10）
 - 監査: どの結果も送り元の IP（`x-forwarded-for` の左端）とブラウザの情報付きで1行残す。理由の文・対象のメール・誤りの文は残さず、理由は長さとハッシュだけ（SEC-ADMIN-008）。形の誤りは UUID の形の利用者の id だけ。自分自身・対象なし・特権でない・一覧の誤り・消せない・失効の誤り・成功は理由の長さとハッシュを持つ。固定の文は `target_not_privileged`・`role_lookup_failed`・`session_revocation_failed` など
 - 画面から呼ぶ所は無い
+
+廃止（パスキー段4 Task 30、2026-11-22）: `POST /api/admin/users/mfa/reset` を消した（404。FR-AUTH-053-AC-03）。やり直しは店員のパスキーを全部消す店長の窓口 `redo`（API-AUTH-034）に一本化した。
 
 ### DRV-ADMIN-003 指定の日数より古い監査ログを消す部品を持つ（未使用（削除の判断待ち））
 

@@ -33,60 +33,9 @@
 
 ## ARCH-AUTH-11: Privileged MFA (Admin / Supporter)
 
-### 目的
-- 管理系権限（`admin` / `supporter`）のセッションに対して、各ログインセッションごとの 2 要素認証（MFA）を強制する。
-
-### 脅威モデルと設計方針
-- 認証済みセッション cookie の窃取だけで管理 API に到達されるリスクを低減する。
-- 権限（ACL）と MFA は独立に検証し、どちらか一方のみ満たしても管理 API を許可しない。
-- `admin_mfa_verified` は永続フラグではなく、セッション昇格状態として扱う。
-
-### 運用ルール（いつ立てるか）
-1. ログイン / セッション再生成時
- - `admin` / `supporter` は必ず `admin_mfa_verified=false` と `mfa_verified=false` に初期化する。
-2. MFA 成功時
- - TOTP チャレンジ検証が成功した時点で `admin_mfa_verified=true` と `mfa_verified=true` を設定する。
-3. 非特権ユーザー
- - 上記フラグは評価対象外（更新不要）とする。
-
-### API フロー
-1. `/api/auth/mfa/status`
- - 現在ユーザーの MFA 状態（AAL, verified factor 有無）を返す。
-2. `/api/auth/mfa/enroll-totp`
- - 特権ユーザー向けに TOTP enroll を開始し、QR/secret を返す。
-3. `/api/auth/mfa/verify`
- - factor challenge/verify を実施し、成功時に `admin_mfa_verified` をセットする。
-
-### UI フロー
-1. ログイン成功後は `/auth/verified` を経由する。
-2. 特権ユーザーかつ `mfaVerified=false` の場合、MFA 登録またはコード検証 UI を表示。
-3. 検証成功後に `/admin` へ遷移。
-
-### セキュリティ制御
-- `auth:mfa:enroll-totp`, `auth:mfa:verify` にレート制限を適用。
-- API では `authenticateRequest`（`@/lib/auth/authenticate`）でユーザーを確定する。
-  JWT の署名・exp・iss・aud を JWKS でローカル検証したうえで、`session_id` が
-  `auth.sessions` に生存しているかを RPC で照合する。Supabase 公式が `getClaims` を
-  推奨しているため（getUser は JWT ごとに Auth サーバへ往復する）、旧 `resolveRequestUser`
-  から一本化した。`getClaims` はクレームをデコードするだけで失効を見ないので、
-  失効検知は RPC 側が担う。
-- MFA 系 API の `role` は JWT のクレームから読む。最大 1 時間古くなりうるが、判断の対象は
-  「自分のアカウントに MFA を設定させるか」だけで、管理機能へのアクセスは admin-rbac が
-  DB の ACL で別途判定するため権限は増えない。
-- サービスロール操作はサーバー側のみで実施し、クライアントへ secret key を露出しない。
-
-### 管理者運用: MFAリセット
-1. 管理者は `admin.users.manage` かつ MFA 検証済みセッションでのみ実行可能。
-2. API は `POST /api/admin/users/mfa/reset` を使用し、`userId`, `reason`, `confirm: "RESET_MFA"` を必須とする。
-3. 対象は特権ユーザー（`admin` / `supporter`）のみ許可し、自己リセットは拒否する。
-4. リセット時は Supabase Admin API で対象ユーザーの MFA factors を全削除し、`admin_mfa_verified=false`, `mfa_verified=false` に戻す。
-5. すべての操作結果（成功/失敗）は `audit_logs` に記録し、運用監査証跡を残す。
-
-#### 実行手順（運用）
-1. 管理者が対象ユーザーIDとリセット理由を確認する。
-2. `confirm` に固定値 `RESET_MFA` を指定して API 実行する。
-3. 成功後、対象ユーザーに「再ログイン後に `/auth/verified` で再登録が必要」であることを通知する。
-4. 監査ログで `admin.users.mfa.reset` の成功レコードを確認する。
+パスキー段4（ADR-0475）で、認証アプリ（TOTP）の登録・確認の窓口（`/api/auth/mfa/*`）、確認の画面 `/auth/verified`、MFA のやり直しの窓口
+（`/api/admin/users/mfa/reset`）を消した。店員の入口は、パスキーでログインし、認めた鍵が2本そろっているか（`mfaVerified` の名前は変えない）で決める。
+経緯の記録は ADR-0475 と `docs/03_BasicDesign/areas/auth.md` を参照。
 
 ---
 *注: 詳細設計は構造設計の合意（文末の「次のアクション: 1. 構造設計のレビュー」）を受けてから作成します。続けて詳細設計を生成してよい場合は承認コメントをください。*

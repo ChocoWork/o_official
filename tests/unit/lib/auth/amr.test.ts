@@ -5,7 +5,7 @@
 import { hasSecondFactorAmr, SECOND_FACTOR_AMR_METHODS } from '@/lib/auth/amr';
 
 describe('hasSecondFactorAmr', () => {
-  it.each(['otp', 'magiclink', 'totp', 'oauth', 'sso/saml', 'email/signup'])(
+  it.each(['otp', 'magiclink', 'oauth', 'sso/saml', 'email/signup'])(
     'DD-AUTH-030 %s が amr にあれば真',
     (method) => {
       expect(hasSecondFactorAmr({ amr: [{ method, timestamp: 0 }] })).toBe(true);

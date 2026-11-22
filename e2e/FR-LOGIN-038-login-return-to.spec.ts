@@ -315,7 +315,7 @@ for (const viewport of viewports) {
       await expect(page.getByRole('heading', { name: '2要素認証が必要です' })).toHaveCount(0);
     });
 
-    for (const next of ['/login', '/api/auth/me', '/auth/verified'] as const) {
+    for (const next of ['/login', '/api/auth/me', '/auth/callback'] as const) {
       test(`FR-AUTH-005-AC-06 戻り先が ${next} の時は / へ着く (${viewport.name})`, async ({ page }) => {
         const member = await createMember(`ac06-${viewport.name}`);
         await routeSourceIp(page, uniqueSourceIp());
@@ -332,12 +332,12 @@ for (const viewport of viewports) {
       const ip = uniqueSourceIp();
       const member = await createMember(`ac07-${viewport.name}`);
       await routeSourceIp(page, ip);
-      // 画面からの post-login を止める（後に登録した route が勝つ）。画面は失敗の既定で / へ倒れ、控えは使われずに残る。
+      // 画面からの post-login を止める（後に登録した route が勝つ）。画面は失敗の既定で /login へ倒れ（段4の Task 30。以前は /auth/verified を経て /）、控えは使われずに残る。
       await page.route('**/api/auth/post-login', (route) => route.abort());
 
       await page.goto('/login?next=%2Fstockist');
       await signInOnLoginScreen(page, member);
-      await expectLandedOn(page, '/');
+      await expectLandedOn(page, '/login');
 
       // page.route は page.request に掛からない。残った控えを API で 2 回続けて使う。
       const first = await postJson(page, origin, '/api/auth/post-login', ip);

@@ -79,7 +79,6 @@ AUTH の領域の要求・要件・受け入れ条件・派生要件を、追跡
 | FR-LOGIN-015 | FREQ-68-AC-01・AC-02 |
 | FR-LOGIN-016 | FREQ-69-AC-01〜03 |
 | FR-LOGIN-017 | FREQ-71-AC-01〜03 |
-| FR-LOGIN-018 | FREQ-73-AC-01〜05 |
 | FR-LOGIN-019 | FREQ-89-AC-01〜05 |
 | FR-LOGIN-020 | FREQ-90-AC-01〜04 |
 | FR-LOGIN-021 | FREQ-91-AC-01〜04 |
@@ -249,7 +248,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 状態 | 推定 |
 | 出どころ | ユーザーの発言 2026-11-16（`.superpowers/sdd/2026-11-16-passkey-stage1a-foundation/task-8-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・12 の18・12-2 の8）、`docs/superpowers/plans/2026-11-16-passkey-stage1a-foundation.md`（Task 8、Review Focus 1・2・5）） |
 
-要求の文: 店員（店長・サポーター）が管理の機能を使えるのは、パスキーでログインしてから24時間以内で、認めたパスキーが2本以上ある時だけ。認めたパスキーの本数は、判定のたびに DB で数え、JWT の印は判定に使わない。認めた鍵が消されたら、次の更新を待たずにその場で止まる。段1a の切り替え（Task 9）で、API の窓口（`admin-rbac`）と RLS（`has_permission`）をこの判定につないだ。受け入れ条件は FR-AUTH-012-AC-01〜04（管理の入口。E2E FR-LOGIN-039）、FR-AUTH-013-AC-01〜04（フックの拒否と更新。E2E FR-LOGIN-040）、SEC-AUTH-040（切り替えで抜け道を作らない）。
+要求の文: 店員（店長・サポーター）が管理の機能を使えるのは、パスキーでログインしてから24時間以内で、認めたパスキーが2本以上ある時だけ。認めたパスキーの本数は、判定のたびに DB で数え、JWT の印は判定に使わない。認めた鍵が消されたら、次の更新を待たずにその場で止まる。段1a の切り替え（Task 9）で、API の窓口（`admin-rbac`）と RLS（`has_permission`）をこの判定につないだ。段4の Task 30 で、認証アプリ（TOTP）の窓口と `/auth/verified` を消した（ADR-0475）。店員の入口はこの判定だけで、TOTP の2段目は無い。受け入れ条件は FR-AUTH-012-AC-01〜04（管理の入口。E2E FR-LOGIN-039）、FR-AUTH-013-AC-01〜04（フックの拒否と更新。E2E FR-LOGIN-040）、SEC-AUTH-040（切り替えで抜け道を作らない）。
 
 ### SR-AUTH-015 手元の開発では、専用のブラウザで店員としてパスキーで /admin に入れる
 
@@ -574,11 +573,13 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | Google のログインの後や管理者の確認で必ず通る画面が素の見出しのままだと、ブランドの静かな世界観から浮くため。役割の振り分けと TOTP のために画面は残す |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
 要求の文: Google ログイン等の後に表示される認証確認ページ（`/auth/verified`）を、ブランド（Le Fil des Heures）の世界観に沿った画面に刷新すること（このページはロール判定による振り分け・特権ロールの TOTP 登録/認証のため必要なので廃止せず、見た目のみブランド適合させる）
+
+廃止（パスキー段4 Task 30、2026-11-22）: `/auth/verified` を消した（404。FR-AUTH-053-AC-03）ので、この画面の見た目の要求は無い。
 
 ### FREQ-89 ログインの入力欄を下線・先頭のアイコン・パスワードの表示切替にする
 
@@ -811,11 +812,11 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: ログイン第 2 要素まわりのレビュー指摘を潰すこと（保留セッションの絶対上限、再送の IP 制限、検証入力の削減、監査ログの水増し防止、テスト用偽造の環境限定）
 
-### FREQ-515 管理画面とログインの確認の選択欄で、選んだ値を使う
+### FREQ-515 管理画面の選択欄で、選んだ値を使う
 
 | 属性 | 値 |
 | --- | --- |
-| 根拠 | 選択欄の部品ごとに値の受け方が違い、受け方を誤ると選んだ値と違う値で送られるため（波1 X-1・X-2）。ログインの確認（`/auth/verified`）の認証要素の選択が AUTH の範囲にあるので、全領域の持ち主の割り当て（2026-10-24 の裁定）で AUTH が持つ |
+| 根拠 | 選択欄の部品ごとに値の受け方が違い、受け方を誤ると選んだ値と違う値で送られるため（波1 X-1・X-2）。ログインの確認（`/auth/verified`）の認証要素の選択は、段4で画面ごと消した。管理画面・お知らせの選択欄の分は、全領域の持ち主の割り当て（2026-10-24 の裁定）で AUTH が持つ |
 | 状態 | 推定 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-515 の行） |
@@ -1068,12 +1069,14 @@ Supabase の Email OTP Expiration を300秒に設定すること。UI の再送�
 | --- | --- |
 | 上位 | FREQ-73 |
 | 根拠 | FREQ-73 を、見出しの書体・飾りの線・配置・読み込み中の文言・未認証の時の導線に分けた |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-73 の行） |
 
 素の見出し「認証確認」と汎用余白レイアウトを廃し、ブランドフォント Didot の見出し「Le Fil des Heures」・糸モチーフの細いヘアライン・モノクロ（黒/グレー/白）・十分な余白で構成する。main を画面高いっぱいに使いコンテンツを縦中央に配置し、初期表示で Footer を見せないこと。ローディング文言を「サインインを確認しています…」に整えること。未認証でアクセスした場合は `/login` への導線を表示すること
+
+廃止（パスキー段4 Task 30、2026-11-22）: `/auth/verified` を消した。
 
 ### FREQ-89-REQ-01 TextField に下線の形と右端の要素を足し、ログインの2つの欄に使う
 
@@ -1257,18 +1260,18 @@ Header のカートアイコンのバッジを `<StatusBadge variant="count" cou
 
 管理APIの認可（admin-rbac）は Authorization ヘッダーだけでなく Cookie の access token も受け付ける単一ヘルパ verifyAccessToken を通し、JWT の署名・exp に加えて iss と aud を検証すること
 
-### FREQ-316-REQ-02 2要素の判定を JWT の aal で行い、TOTP の確認で上がったセッションを Cookie に書き戻す
+### FREQ-316-REQ-02 店員の2要素の判定を JWT で行う（段1b から入口の条件。TOTP の確認で上がったセッションの書き戻しは段4で消した）
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FREQ-316 |
-| 根拠 | app_metadata の印は利用者単位で残り続けるので、セッション単位の aal2 で見る。書き戻さないと、確認を通った後も古い aal1 のトークンのままで管理の窓口を通れないため |
+| 根拠 | app_metadata の印は利用者単位で残り続けるので、セッション単位の JWT で見る。段4で TOTP の確認を消したので、確認の後の書き戻しは無い |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-316 の行） |
 
-MFA の判定を app_metadata のフラグではなく JWT の aal クレーム（aal2）で行い、mfa.verify が返す昇格済みセッションを Cookie に書き戻すこと（段1b より前の判定。今の管理の窓口は `aal` を見ず、店員の入口の条件（パスキー・24時間・認めた鍵2本。SR-AUTH-014）で判定する。TOTP の確認と Cookie への書き戻しは段4まで残る）
+店員の2要素の判定を、app_metadata のフラグではなく JWT で行う。今の管理の窓口は `aal` を見ず、店員の入口の条件（パスキー・24時間・認めた鍵2本。SR-AUTH-014）で判定する。TOTP の確認と Cookie への書き戻しは、段4の Task 30 で窓口ごと消した（ADR-0475）。
 
 ### FREQ-316-REQ-03 ログアウトと管理者の強制の失効で Supabase のセッションも切り、管理の窓口は毎回セッションの生存を確かめる
 
@@ -2063,12 +2066,12 @@ verifyOtp の type を email に固定すること。email / magiclink / signup 
 
 e2e の 2FA Cookie 偽造ヘルパを localhost / 127.0.0.1 に対してのみ動作させ、それ以外のオリジンでは例外を投げること。ドキュメントの注意書きだけでなくコードで縛る（本番環境に対して認証前段の有効な状態を作れてはいけない）
 
-### FREQ-515-REQ-01 選択欄は部品に合う受け方で選んだ値を受け、ログインの確認では選んだ認証要素で確かめる
+### FREQ-515-REQ-01 選択欄は部品に合う受け方で選んだ値を受ける
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FREQ-515 |
-| 根拠 | 一覧から選ぶ部品とブラウザの選択欄で値の受け方が違い、取り違えると選んだ値と違う値で送られるため。ログインの確認の認証要素の選択（`src/app/auth/verified/page.tsx`）が AUTH の分 |
+| 根拠 | 一覧から選ぶ部品とブラウザの選択欄で値の受け方が違い、取り違えると選んだ値と違う値で送られるため。ログインの確認の認証要素の選択（`/auth/verified`）は、段4で画面ごと消した |
 | 状態 | 推定 |
 | 確かめ方 | E2E・単体テスト |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
@@ -2182,7 +2185,7 @@ OTP 送信後のカウントダウンタイマー（再送信制限）を実装�
 
 2要素認証（2FA）に対応する。標準ユーザーはパスワード + メール OTP、管理者/サポーターは追加で TOTP を要求する。
 
-今のコード（推定）: メールとパスワードの経路は OTP の後に `/api/auth/me` で役割を見て、admin・supporter を `/auth/verified` へ、ほかを `/account` へ送る。`/auth/verified` が TOTP の登録と確認をし、確認が通ると aal2 のトークンを Cookie へ戻す。Google の経路（`/api/auth/oauth/callback`）はメール OTP を通らずにセッションを作る。手元の Supabase は、波 6 の切り替え（2026-11-01。手元だけ）で TOTP の登録・確認を有効にした（`supabase/config.toml` の `[auth.mfa.totp]`。切り替えまでは無効で、TOTP の流れは手元で動かせなかった）。
+今のコード（段4の Task 30 の後）: ログインの後の行き先は `POST /api/auth/post-login` が返す（認証アプリの確認と `/auth/verified` は消した）。Google の経路（`/api/auth/oauth/callback`）はメール OTP を通らずにセッションを作る。手元の Supabase の TOTP の登録・確認（`supabase/config.toml` の `[auth.mfa.totp]`）は、段4の Task 30 で止めた。
 
 ### FR-LOGIN-008 メール OTP の有効期限を5分にし、再送の待ちは 60 秒を保つ
 
@@ -2427,7 +2430,7 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 5） |
 | 優先度 | MUST |
 
-規則: (1) 店員で `staffEntryOk` が真でなければ、`{ path: '/auth/verified', needsMfa: true, action: keep }`。控えは使い切らない。(2) 店員で真なら、控えが `/admin` 向きでも通り、無ければ `/admin`。(3) お客さんは `staffEntryOk` がどちらでも `needsMfa: false` で、`/admin` 向きの戻り先は断る。(4) `validateReturnPath('/admin', { viewer })` は、店員で `staffEntryOk` が真の時だけ通す。`viewer` を渡さない入口の動きは変えない。(5) `post-login` の `staffEntryOk` は JWT のヒントで、`amr` が欠ける・空・時刻が文字列・未来・24時間超・`staff_passkeys_ok` が偽や文字列 `"true"` なら偽。権限の判定ではない（管理の窓口と RLS が DB で数える）。(6) `oauth/callback` が GoTrue の交換で「店員はパスキーでだけ入れる」の印つきの 403 を受けた時は、監査の `detail` を `staff_passkey_required` にし、誤りの文は残さない。応答は 502 のまま。(7) `needsMfa`・`/auth/verified`・拒否の理由 `admin_requires_privileged_aal2` の名前は 1b では変えない（段4で直す）。
+規則: (1) 店員で `staffEntryOk` が真でなければ、`{ path: '/login?error=staff_passkey_required', needsMfa: true, action: keep }`。控えは使い切らない。(2) 店員で真なら、控えが `/admin` 向きでも通り、無ければ `/admin`。(3) お客さんは `staffEntryOk` がどちらでも `needsMfa: false` で、`/admin` 向きの戻り先は断る。(4) `validateReturnPath('/admin', { viewer })` は、店員で `staffEntryOk` が真の時だけ通す。`viewer` を渡さない入口の動きは変えない。(5) `post-login` の `staffEntryOk` は JWT のヒントで、`amr` が欠ける・空・時刻が文字列・未来・24時間超・`staff_passkeys_ok` が偽や文字列 `"true"` なら偽。権限の判定ではない（管理の窓口と RLS が DB で数える）。(6) `oauth/callback` が GoTrue の交換で「店員はパスキーでだけ入れる」の印つきの 403 を受けた時は、監査の `detail` を `staff_passkey_required` にし、誤りの文は残さない。応答は 502 のまま。(7) `needsMfa`・拒否の理由 `admin_requires_privileged_aal2` の名前は変えない（段4の Task 30 で、変えないと決めた。ADR-0475）。店員が条件を満たさない時の行き先は `/login?error=staff_passkey_required`（`/auth/verified` は消した）。
 
 ### FR-AUTH-019 ログインの終わりの窓口 `POST /api/auth/passkey/login/finish` を足す
 
@@ -3061,12 +3064,14 @@ desktop（1280 幅）で認証カードの縦余白が従来どおり（モバ�
 | --- | --- |
 | 上位 | FREQ-73-REQ-01 |
 | 根拠 | FREQ-73-REQ-01 の見出しの書体を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-73 の行） |
 
 `/auth/verified` に見出し「Le Fil des Heures」が Didot 系セリフフォントで表示されること
+
+廃止（パスキー段4 Task 30、2026-11-22）: `/auth/verified` と、それを調べる E2E（`FR-LOGIN-018`）を消した。
 
 ### FREQ-73-AC-02 未認証で開くと「ログインページへ」のリンクが出る
 
@@ -3074,12 +3079,14 @@ desktop（1280 幅）で認証カードの縦余白が従来どおり（モバ�
 | --- | --- |
 | 上位 | FREQ-73-REQ-01 |
 | 根拠 | FREQ-73-REQ-01 の未認証の時の導線を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-73 の行） |
 
 未認証で `/auth/verified` にアクセスすると「ログインページへ」リンク（`/login`）が表示されること
+
+廃止（パスキー段4 Task 30、2026-11-22）: `/auth/verified` と、それを調べる E2E（`FR-LOGIN-018`）を消した。
 
 ### FREQ-73-AC-03 初めの表示でフッターが見えず、見出しが縦のほぼ中央にある
 
@@ -3087,12 +3094,14 @@ desktop（1280 幅）で認証カードの縦余白が従来どおり（モバ�
 | --- | --- |
 | 上位 | FREQ-73-REQ-01 |
 | 根拠 | FREQ-73-REQ-01 の配置を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-73 の行） |
 
 `/auth/verified` 初期表示で Footer が見えず（上端がビューポート下端以上）、見出しが縦方向にほぼ中央に配置されること
+
+廃止（パスキー段4 Task 30、2026-11-22）: `/auth/verified` と、それを調べる E2E（`FR-LOGIN-018`）を消した。
 
 ### FREQ-73-AC-04 見出しの直下に幅約 1px の縦のヘアラインが出る
 
@@ -3100,12 +3109,14 @@ desktop（1280 幅）で認証カードの縦余白が従来どおり（モバ�
 | --- | --- |
 | 上位 | FREQ-73-REQ-01 |
 | 根拠 | FREQ-73-REQ-01 の糸の飾りを確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-73 の行） |
 
 見出し直下に糸モチーフの細いヘアライン（幅約1pxの縦線）が表示されること
+
+廃止（パスキー段4 Task 30、2026-11-22）: `/auth/verified` と、それを調べる E2E（`FR-LOGIN-018`）を消した。
 
 ### FREQ-73-AC-05 見出しの文字が本文より大きい
 
@@ -3113,12 +3124,14 @@ desktop（1280 幅）で認証カードの縦余白が従来どおり（モバ�
 | --- | --- |
 | 上位 | FREQ-73-REQ-01 |
 | 根拠 | FREQ-73-REQ-01 の対比を、文字の大きさで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-73 の行） |
 
 対比の原則により、見出し「Le Fil des Heures」のフォントサイズが本文（説明文）より大きいこと
+
+廃止（パスキー段4 Task 30、2026-11-22）: `/auth/verified` と、それを調べる E2E（`FR-LOGIN-018`）を消した。
 
 ### FREQ-89-AC-01 Email の欄にメール、Password の欄に鍵のアイコンが出る
 
@@ -3483,17 +3496,17 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で、カートに商�
 
 Authorization の見出しが無く Cookie の access token だけを持つ管理者の要求が管理の窓口を通ること。署名が正しくても iss か aud が違うトークンは 401 になること
 
-### FREQ-316-REQ-02-AC-01 TOTP の確認の後の Cookie の access token が aal2 になり、aal1 のトークンでは管理の窓口が 403 になる
+### FREQ-316-REQ-02-AC-01 入口の条件に足りない店員の JWT（認めた鍵が1本）では管理の窓口が 403 になり、2本の店員では通る
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FREQ-316-REQ-02 |
-| 根拠 | FREQ-316-REQ-02 は要件の表に受け入れ条件が無かったので起こした。書き戻しと aal の判定を、確認の前後の Cookie で確かめる |
+| 根拠 | FREQ-316-REQ-02 は要件の表に受け入れ条件が無かったので起こした。判定が JWT で行われることを、認めた鍵が1本と2本の店員の Cookie で確かめる |
 | 状態 | 推定 |
-| 確かめ方 | 結合テスト |
-| 出どころ | 実装から推定（`src/app/api/auth/mfa/verify/route.ts`、`src/lib/auth/admin-rbac.ts`） |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-032-staff-entry-cookie-checks.spec.ts`。390・768・1280 の3幅でくり返す。FR-LOGIN-007-AC-02 の試験が兼ねる） |
+| 出どころ | 実装から推定（`src/lib/auth/admin-rbac.ts`。段4の Task 30 で TOTP の確認の前提を外した） |
 
-`/api/auth/mfa/verify` が通った後の応答の Cookie の access token の `aal` が `aal2` であること。aal1 のトークンで管理の窓口を呼ぶと 403（MFA required）になること
+認めた鍵が1本の店員（入口の条件に足りない JWT）で管理の窓口を呼ぶと 403（MFA required）になり、認めた鍵が2本の店員では通ること。
 
 ### FREQ-316-REQ-03-AC-01 ログアウトの後、その前の access token で管理の窓口が 401 になる
 
@@ -4334,12 +4347,14 @@ POST /api/auth/otp/verify の本文が code のみであること。本文に em
 | --- | --- |
 | 上位 | FREQ-515-REQ-01 |
 | 根拠 | FREQ-515-REQ-01 のうちログインの確認（`/auth/verified`）の認証要素の選択欄を確かめる。元の行は E2E を置かず単体で確かめるとする |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-515 の行） |
 
 ログインの確認で認証要素が2つ以上ある時、2つ目を選んでコードを送ると、2つ目の認証要素で検証されること（E2E —（単体で検証）、単体 verified-page、担当 波1 Task 9）
+
+廃止（パスキー段4 Task 30、2026-11-22）: ログインの確認の画面 `/auth/verified` を消した。
 
 ### FREQ-515-AC-03 お知らせの作成・編集で選んだカテゴリーで保存される
 
@@ -4466,17 +4481,17 @@ POST /api/auth/otp/verify の本文が code のみであること。本文に em
 
 役割が一般（user）の会員がパスワードと認証コードを通すと `/account` へ移り、TOTP の入力を求められないこと。
 
-### FR-LOGIN-007-AC-02 管理者とサポーターは TOTP を通るまで管理画面へ進めない
+### FR-LOGIN-007-AC-02 管理者とサポーターは入口の条件（認めたパスキー2本）を満たすまで管理画面へ進めない
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-LOGIN-007 |
-| 根拠 | FR-LOGIN-007 の管理者・サポーターの分を、`/auth/verified` で TOTP を求められ、通るまで管理画面へ進めないことで確かめる。手元の Supabase は、波 6 の切り替え（2026-11-01。手元だけ）で TOTP を有効にした（`supabase/config.toml` の `[auth.mfa.totp]`）。切り替えまでは無効なので手元で試せない |
+| 根拠 | FR-LOGIN-007 の管理者・サポーターの分を、認めた鍵が1本の店員は管理画面と管理の窓口で断られ、2本の店員は通ることで確かめる。以前は `/auth/verified` で TOTP を求めた（段4の Task 30 で消した） |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | 要件の文から起こした（FR-LOGIN-007） |
 
-役割が admin か supporter の会員が認証コードを通すと `/auth/verified` へ移り、TOTP の登録か確認を求められること。TOTP を確かめるまで管理画面（`/admin`）の操作へ進めないこと。
+認めた鍵が1本の管理者・サポーターは、管理画面で「2要素認証が必要です」が出て、管理の窓口も 403（MFA required）になる。認めた鍵が2本の店員は通る。
 
 ### FR-LOGIN-008-AC-01 確認の画面に5分の有効期限が出る
 
@@ -4616,7 +4631,7 @@ SNSアイコンのリンク要素が flex かつ items-center justify-center で
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの発言 2026-10-25（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`） |
 
-パスキーで入った後、条件（`amr` のパスキー・24時間・認めた鍵2本）を満たす店員は、戻り先があれば戻り先へ、無ければ `/admin` へ着くこと。満たさない店員は `/auth/verified` へ着き、戻り先は使い切られないこと。
+パスキーで入った後、条件（`amr` のパスキー・24時間・認めた鍵2本）を満たす店員は、戻り先があれば戻り先へ、無ければ `/admin` へ着くこと。満たさない店員は `/login?error=staff_passkey_required`（認めた鍵が1本なら `/admin/passkeys?more=1`）へ着き、戻り先は使い切られないこと。
 
 ### FR-AUTH-005-AC-06 `/login`・`/api/*` などへの戻り先は `/` に着く
 
@@ -5005,7 +5020,7 @@ IP の見出し `x-real-ip` つきで `POST /api/auth/passkey/login/start` を�
 
 `page.goto('/login')` で開いたページの中から、手元の GoTrue の `/auth/v1/passkeys/authentication/options` へ匿名の鍵とダミーの captcha のトークンで `fetch` すると、`securitypolicyviolation` が出ず、`TypeError` にならず HTTP の状態が返ること（200 でなくてよい）。
 
-### FR-AUTH-018-AC-01 認めた鍵が1本の店員は needsMfa:true・/auth/verified に着き、戻り先の控えは使い切られない
+### FR-AUTH-018-AC-01 認めた鍵が1本の店員は needsMfa:true・/login?error=staff_passkey_required が返り、戻り先の控えは使い切られない
 
 | 属性 | 値 |
 | --- | --- |
@@ -5015,7 +5030,7 @@ IP の見出し `x-real-ip` つきで `POST /api/auth/passkey/login/start` を�
 | 確かめ方 | E2E（`e2e/FR-LOGIN-054-passkey-post-login-destination.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/api/auth/post-login-route.test.ts`・`oauth-callback-route.test.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 5） |
 
-認めた鍵が1本のパスキーの店員（admin・supporter）が `POST /api/auth/post-login` を呼ぶと、`{ redirectTo: '/auth/verified', needsMfa: true }` が返り、戻り先の控えの行が使い切られないこと。`oauth/callback` の交換が印つきの 403 で失敗した時は、監査の `detail` が `staff_passkey_required` で、応答は 502 のままであること。
+認めた鍵が1本のパスキーの店員（admin・supporter）が `POST /api/auth/post-login` を呼ぶと、`{ redirectTo: '/login?error=staff_passkey_required', needsMfa: true }` が返り、戻り先の控えの行が使い切られないこと（ブラウザ側 `resolvePostLoginPath` は、認めた鍵がちょうど1本ならこれを `/admin/passkeys?more=1` に替える。段4の Task 30）。`oauth/callback` の交換が印つきの 403 で失敗した時は、監査の `detail` が `staff_passkey_required` で、応答は 502 のままであること。
 
 ### FR-AUTH-018-AC-02 認めた鍵が1本の店員に next=/admin の控えを付けても /admin に着かない
 
@@ -5027,7 +5042,7 @@ IP の見出し `x-real-ip` つきで `POST /api/auth/passkey/login/start` を�
 | 確かめ方 | E2E（`e2e/FR-LOGIN-054-passkey-post-login-destination.spec.ts`、3幅）、単体テスト（`tests/unit/features/auth/return-intent/return-intent-service.test.ts`・`return-path.test.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 5） |
 
-認めた鍵が1本の店員に `/admin` の控えを付けて `post-login` を呼んでも、`redirectTo` は `/auth/verified` で `/admin` で始まらず、控えは使い切られないこと。`amr` が欠ける・24時間を超える・`staff_passkeys_ok` が偽や文字列の店員も `/admin` に着かないこと（単体テスト）。
+認めた鍵が1本の店員に `/admin` の控えを付けて `post-login` を呼んでも、`redirectTo` は `/login?error=staff_passkey_required` で `/admin` で始まらず、控えは使い切られないこと。`amr` が欠ける・24時間を超える・`staff_passkeys_ok` が偽や文字列の店員も `/admin` に着かないこと（単体テスト）。
 
 ### FR-AUTH-018-AC-03 お客さんは needsMfa:false で、認めた鍵が2本の店員は戻り先が無ければ /admin に着く
 
@@ -5125,7 +5140,7 @@ IP の見出し `x-real-ip` つきで `POST /api/auth/passkey/login/start` を�
 
 匿名の supabase-js のクライアントで `startAuthentication`（ダミーの captcha のトークン）を呼び、`userVerification` を `required` に書き換えて認証器で署名し、アプリの終わりに送ると、HTTP 200 で `sb-access-token` の Cookie が付くこと。
 
-### FR-AUTH-019-AC-08 next=/admin つきで入った、認めた鍵2本の店員は /admin に着き、1本の店員は /auth/verified に着く
+### FR-AUTH-019-AC-08 next=/admin つきで入った、認めた鍵2本の店員は /admin に着き、1本の店員は /login?error=staff_passkey_required が返る
 
 | 属性 | 値 |
 | --- | --- |
@@ -5135,7 +5150,7 @@ IP の見出し `x-real-ip` つきで `POST /api/auth/passkey/login/start` を�
 | 確かめ方 | E2E（`e2e/FR-LOGIN-050-passkey-login-finish.spec.ts`。画面を開かない試験で、390・768・1280 の3幅でくり返す）、単体テスト（`issueReturnIntent`・`applyReturnIntentCookie` の呼び出し） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-6-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-1・5-3・5-5）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 6） |
 
-`next=/admin` つきで入った認めた鍵2本の店員が `POST /api/auth/post-login` を呼ぶと `{ redirectTo: '/admin', needsMfa: false }`、1本の店員は `{ redirectTo: '/auth/verified', needsMfa: true }` であること。
+`next=/admin` つきで入った認めた鍵2本の店員が `POST /api/auth/post-login` を呼ぶと `{ redirectTo: '/admin', needsMfa: false }`、1本の店員は `{ redirectTo: '/login?error=staff_passkey_required', needsMfa: true }` であること。
 
 ### FR-AUTH-020-AC-01 窓の中の店員は登録でき、認めた鍵が1本・2本と数えられ、3本目は窓が開いていても始めで403
 
@@ -5942,31 +5957,31 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 
 登録の窓口が `reauth_required`（403 `registration_not_allowed`）を返すと、画面は文と、`/login?next=/admin/passkeys` へのリンク「パスキーでログインし直す」を出す。窓口の答えは通信を差し替えて作る（6分前のログインの印を作るのは難しいため。窓口自体の確かめのうち、応答の形は FR-AUTH-020 の E2E が、5分の境界は単体テスト `tests/unit/lib/auth/passkey-recent-auth.test.ts`（300秒は通り301秒は通らない・時計のずれ）が持ち、結合テスト `tests/integration/api/auth/passkey-register-start.test.ts` は 403 `reauth_required` の応答を持つ）。
 
-### FR-AUTH-046 認めた鍵が1本の店員は、ログインの確認の画面から「もう1本」の画面へ送られ、2本そろうと管理画面に入れる。直に足した鍵は数えない。店員が Google・メールのコードで入ろうとするとパスキーを案内し、古いパスワードは 401 で断り（案内の文は出さない）、TOTP の登録は断る
+### FR-AUTH-046 認めた鍵が1本の店員は、ログインの後の行き先から「もう1本」の画面へ送られ、2本そろうと管理画面に入れる。直に足した鍵は数えない。店員が Google・メールのコードで入ろうとするとパスキーを案内し、古いパスワードは 401 で断る（案内の文は出さない）
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SR-AUTH-027 |
-| 根拠 | SR-AUTH-027 を、`/auth/verified` が窓口 `GET /api/auth/passkey` の `approvedCount`（DB の `passkey_approved_count`）で1本の店員を見分けて `/admin/passkeys?more=1` へ送ることと、「もう1本」の画面にする。JWT の印 `staff_passkeys_ok` は真偽しかないので使わない。TOTP の流れ自体は段4まで残す（1本でない店員は今までどおり）。`/admin/passkeys` は `/auth/verified` へ送り返さない（回り続けない）。画面は SCR-AUTH-015、処理は DD-AUTH-082、守りは SEC-AUTH-055 |
+| 根拠 | SR-AUTH-027 を、ログインの後の行き先（`resolvePostLoginPath`）が窓口 `GET /api/auth/passkey` の `approvedCount`（DB の `passkey_approved_count`）で1本の店員を見分けて `/admin/passkeys?more=1` へ送ることと、「もう1本」の画面にする。JWT の印 `staff_passkeys_ok` は真偽しかないので使わない。1本でない店員は `/login?error=staff_passkey_required` へ送る（段4の Task 30。TOTP の2段目は消した）。`/admin/passkeys` は別の行き先へ送り返さない（回り続けない）。画面は SCR-AUTH-015、処理は DD-AUTH-082、守りは SEC-AUTH-055 |
 | 状態 | 推定 |
-| 確かめ方 | 単体テスト（`tests/unit/app/auth/verified-page.test.tsx`、`tests/unit/features/auth/staff/staff-one-more-key.test.tsx`、`tests/unit/lib/auth/staff-passkey-page-guard.test.ts`、`tests/unit/app/staff/passkeys-page.test.tsx`、`tests/unit/api/auth/oauth-callback-staff.test.ts`、`tests/unit/features/auth/passkey/login-screen-staff-error.test.tsx`、`tests/unit/api/auth/mfa-enroll-totp-retired.test.ts`、`tests/unit/api/auth/passkey-login-finish-end-session-audit.test.ts`）、E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`、FR-AUTH-046-AC-01〜03。`e2e/FR-LOGIN-069-staff-other-paths-rejected.spec.ts`、FR-AUTH-046-AC-04〜06） |
+| 確かめ方 | 単体テスト（`tests/unit/features/auth/staff/staff-one-more-key.test.tsx`、`tests/unit/lib/auth/staff-passkey-page-guard.test.ts`、`tests/unit/app/staff/passkeys-page.test.tsx`、`tests/unit/api/auth/oauth-callback-staff.test.ts`、`tests/unit/features/auth/passkey/login-screen-staff-error.test.tsx`、`tests/unit/api/auth/passkey-login-finish-end-session-audit.test.ts`）、E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`、FR-AUTH-046-AC-01〜03。`e2e/FR-LOGIN-069-staff-other-paths-rejected.spec.ts`、FR-AUTH-046-AC-04） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-9-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 9） |
 | 優先度 | MUST |
 
-規則: (1) 入口の条件に足りない管理者・サポーターで、窓口の `isStaff` が真かつ `approvedCount` がちょうど1なら、`/admin/passkeys?more=1` へ置き換える（post-login が `needsMfa` を返した場合も同じ）。0本・2本・窓口が読めない時は、今までどおり TOTP の2段目を出す。(2) 「もう1本」の画面は、ページが認めた鍵2本未満かつ `?more=1` の時だけ出す。登録が通ったらログインの印を更新し（認めた鍵の本数の印を作り直す）、`/admin` へ移る。更新できなければ移らず、入り直しをすすめる。(3) 窓口を直に叩いて足した鍵（認められていない鍵）は、認めた本数に数えず、その鍵では店員として入れない（403）。画面には出し、「この鍵ではログインできません。心当たりがなければ削除してください。」を添えて、消せる。
-(4) 店員が Google・メールのコード・古いパスワードで入ろうとしても、フックが断りセッションは作られない。Google とメールのコードでは、画面は固定の1文「店員の方は、パスキーでログインしてください。」を出す（メールのコードは確定の画面、Google は戻り先 `/login?error=staff_passkey_required`）。古いパスワードの `/api/auth/login` は、この文を出さず 401 で断り、確認コードの段へ進まない（設計どおり。お客さんと同じ応答で、店員かどうかを漏らさない）。メールのコードの始めの窓口は変えない（登録済みかを漏らさない）。(5) TOTP の登録の窓口 `POST /api/auth/mfa/enroll-totp` は、認証・アプリの結び付きの確かめの後に、店員（`passkey_is_staff`）へ 410 `totp_retired` を返す（パスキーで入った店員が TOTP を登録すると、以後のパスキーの追加・削除が aal2 で止まるため。窓口そのものの削除は段4）。認証に通らない時の 401 は変えない。(6) パスキーのログインの終わりで、断る前の GoTrue のセッションの終了に失敗したら、応答は変えず `auth.passkey.login.end_session_failed` を固定の符号だけで監査に残す（1b の M-2）。
+規則: (1) `post-login` が `needsMfa` を返した時、ログインの後の行き先（`resolvePostLoginPath`）は、窓口の `isStaff` が真かつ `approvedCount` がちょうど1なら `/admin/passkeys?more=1` へ送る。0本・2本以上・窓口が読めない時は `/login?error=staff_passkey_required` へ送る（段4の Task 30。TOTP の2段目は消した）。(2) 「もう1本」の画面は、ページが認めた鍵2本未満かつ `?more=1` の時だけ出す。登録が通ったらログインの印を更新し（認めた鍵の本数の印を作り直す）、`/admin` へ移る。更新できなければ移らず、入り直しをすすめる。(3) 窓口を直に叩いて足した鍵（認められていない鍵）は、認めた本数に数えず、その鍵では店員として入れない（403）。画面には出し、「この鍵ではログインできません。心当たりがなければ削除してください。」を添えて、消せる。
+(4) 店員が Google・メールのコード・古いパスワードで入ろうとしても、フックが断りセッションは作られない。Google とメールのコードでは、画面は固定の1文「店員の方は、パスキーでログインしてください。」を出す（メールのコードは確定の画面、Google は戻り先 `/login?error=staff_passkey_required`）。古いパスワードの `/api/auth/login` は、この文を出さず 401 で断り、確認コードの段へ進まない（設計どおり。お客さんと同じ応答で、店員かどうかを漏らさない）。メールのコードの始めの窓口は変えない（登録済みかを漏らさない）。(5) TOTP の登録の窓口 `POST /api/auth/mfa/enroll-totp` は、段4の Task 30 で窓口ごと消した（404。FR-AUTH-053-AC-03）。以前の 410 `totp_retired` の断りは要らない。(6) パスキーのログインの終わりで、断る前の GoTrue のセッションの終了に失敗したら、応答は変えず `auth.passkey.login.end_session_failed` を固定の符号だけで監査に残す（1b の M-2）。
 
-### FR-AUTH-046-AC-01 認めた鍵が1本の店員が /auth/verified に来ると、「もう1本」の画面に着き、/auth/verified へは戻らない
+### FR-AUTH-046-AC-01 認めた鍵が1本の店員は、ログインの後の行き先として「もう1本」の画面に着き、動かない
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-AUTH-046 |
 | 根拠 | SR-AUTH-027 |
 | 状態 | 推定 |
-| 確かめ方 | E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`。390・768・1280 の3幅でくり返す）。単体テスト（`tests/unit/app/auth/verified-page.test.tsx`、`tests/unit/lib/auth/staff-passkey-page-guard.test.ts`）でも確かめる |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-068-staff-passkey-manage.spec.ts`。390・768・1280 の3幅でくり返す）。単体テスト（`tests/unit/features/auth/passkey/post-login.test.ts`、`tests/unit/lib/auth/staff-passkey-page-guard.test.ts`）でも確かめる |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-9-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 9） |
 
-認めた鍵が1本の店員がパスキーでログインして `/auth/verified` を開くと、`/admin/passkeys?more=1` に着いて見出し「あと1本、登録してください」が出る。着いた後に1.5秒待っても URL は変わらず、`/auth/verified` への要求は最初の1回だけ（無限の遷移にならない）。
+認めた鍵が1本の店員がパスキーでログインして、ログインの後の行き先（`/login/passkey` の勧めの画面が `resolvePostLoginPath` を呼ぶ）へ進むと、`/admin/passkeys?more=1` に着いて見出し「あと1本、登録してください」が出る。着いた後に1.5秒待っても URL は変わらない（無限の遷移にならない）。
 
 ### FR-AUTH-046-AC-02 「もう1本」の画面で2本目を追加すると /admin に入れる
 
@@ -6010,11 +6025,13 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 | --- | --- |
 | 上位 | FR-AUTH-046 |
 | 根拠 | SR-AUTH-027 |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（`e2e/FR-LOGIN-069-staff-other-paths-rejected.spec.ts`。390・768・1280 の3幅でくり返す）。単体テスト（`tests/unit/api/auth/mfa-enroll-totp-retired.test.ts`）でも確かめる |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-10-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 10） |
 
 認めた鍵2本の店員がパスキーでログインして `POST /api/auth/mfa/enroll-totp` を呼ぶと 410 `{"error":"totp_retired"}` を返し、`auth.mfa_factors` に行が作られない。断りは `mfa_enroll`・`denied`・`totp_retired` で監査に残る。店員の判定の DB が使えない時は 503 で閉じる。店員でない管理の役割・お客さんの断りは今までどおり。
+
+廃止（パスキー段4 Task 30、2026-11-22）: TOTP の登録の窓口 `POST /api/auth/mfa/enroll-totp` を消した（404。FR-AUTH-053-AC-03）ので、410 `totp_retired` の断りは無い。
 
 ### FR-AUTH-046-AC-06 認証のない TOTP の登録は 401 のまま（店員かどうかを漏らさない）
 
@@ -6022,11 +6039,13 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、`staff_de
 | --- | --- |
 | 上位 | FR-AUTH-046 |
 | 根拠 | SR-AUTH-027 |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（`e2e/FR-LOGIN-069-staff-other-paths-rejected.spec.ts`。390・768・1280 の3幅でくり返す）。単体テスト（`tests/unit/api/auth/mfa-enroll-totp-retired.test.ts`）でも確かめる |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-10-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 10） |
 
 認証に通らない `POST /api/auth/mfa/enroll-totp` は 401 で、店員の判定を呼ばない（`FR-LOGIN-031` の 401 を変えない）。410 は認証・アプリの結び付き・役割の確かめの後にだけ返す。
+
+廃止（パスキー段4 Task 30、2026-11-22）: TOTP の登録の窓口を消した（404。FR-AUTH-053-AC-03）。
 
 ### FR-AUTH-050 店長が店長でなくなる時（降格・サポーターやお客さんへの変更・やり直し）は、その店長が出した招待も同じ取引で取り消される
 
@@ -6158,7 +6177,7 @@ DB の `staff_invite_cancel` は、開いた招待があれば `true`、2回目�
 | 上位 | SR-AUTH-030 |
 | 根拠 | 段4でお客さんのパスワードのログインと会員登録を消す。窓口や画面が残ると、守りの穴（GoTrue を直に叩くパスワードのログインなど）と維持の手間が残る。消したことと、リンクが残っていないことを固定する |
 | 状態 | 推定 |
-| 確かめ方 | E2E（`e2e/FR-LOGIN-080-removed-auth-entries-gone.spec.ts`、FR-AUTH-053-AC-01。390・768・1280 の3幅でくり返す） |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-080-removed-auth-entries-gone.spec.ts`、FR-AUTH-053-AC-01〜03。390・768・1280 の3幅でくり返す） |
 | 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-28-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 28） |
 | 優先度 | MUST |
 
@@ -6177,6 +6196,18 @@ DB の `staff_invite_cancel` は、開いた招待があれば `true`、2回目�
 `/auth/password-reset`・`/auth/password-reset/verify`・`/account/password` を開くと 404 になる。`POST /api/auth/password-reset/request`・`/api/auth/password-reset/link`・`/api/auth/password-reset/confirm`・`/api/auth/password/change/start`・`/api/auth/password/change/confirm` と `GET /api/auth/password-reset/session` は 404 で、`Set-Cookie` を返さない。`/login` に `/auth/password-reset` へのリンクが無く、`/account` のログイン方法の画面に「パスワードを変更」のリンクが無い（後者は `e2e/FR-LOGIN-060-account-passkeys.spec.ts` の FR-AUTH-029-AC-04）。
 
 
+
+### FR-AUTH-053-AC-03 消した認証アプリ（TOTP）・MFA のやり直しの窓口と `/auth/verified` は 404 で、セッションの Cookie を出さない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-053 |
+| 根拠 | SR-AUTH-030。店員の入口はパスキーの2本だけなので、認証アプリの登録・確認の窓口、確認の画面、店長が店員の2要素を全部消す窓口を残さない（ADR-0475） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-080-removed-auth-entries-gone.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-30-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 30） |
+
+`/auth/verified` を開くと 404 になる。`POST /api/auth/mfa/enroll-totp`・`/api/auth/mfa/verify`・`/api/admin/users/mfa/reset` と `GET /api/auth/mfa/status` は 404 で、`Set-Cookie` を返さない。`/login` に `/auth/verified` へのリンクが無く、戻り先（`next`）に `/auth/verified` を渡しても、ログインの後は `/` に着く（SEC-AUTH-061-AC-01）。
 
 ### FR-AUTH-053-AC-01 消したログインの窓口・画面は 404 で、セッションの Cookie を出さない
 
@@ -7252,7 +7283,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | 出どころ | `docs/superpowers/specs/2026-09-04-login-otp-dedicated-screen-design.md` |
 | 優先度 | MUST |
 
-Google でログインした管理者・サポーターは、入口の条件（パスキーで入った・24時間以内・認めた鍵2本。段1a の移行 E と `admin-rbac` で `aal2` から置き換えた）を満たすまで管理の窓口に入れない（Google の戻りは `amr` にパスキーが無いので入れない。以前は TOTP を済ませる `aal2` が条件。TOTP の流れは段4まで残る）。会員の Google ログインにメール OTP を求めない場合は、その判断を要件に書く。管理の部分は今のコードが満たす（`src/lib/auth/admin-rbac.ts`、`src/app/auth/verified/page.tsx`）。会員の部分は決めていない（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」に載せる）。
+Google でログインした管理者・サポーターは、入口の条件（パスキーで入った・24時間以内・認めた鍵2本。段1a の移行 E と `admin-rbac` で `aal2` から置き換えた）を満たすまで管理の窓口に入れない（Google の戻りは `amr` にパスキーが無いので入れない。以前は TOTP を済ませる `aal2` が条件だった。TOTP の流れは段4で消した）。会員の Google ログインにメール OTP を求めない場合は、その判断を要件に書く。管理の部分は今のコードが満たす（`src/lib/auth/admin-rbac.ts`）。会員の部分は決めていない（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」に載せる）。
 
 #### SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403
 
@@ -7264,7 +7295,7 @@ Google でログインした管理者・サポーターは、入口の条件（�
 | 確かめ方 | E2E（Google の戻りを手元で作り物にし、admin の役割で戻す） |
 | 出どころ | 実装から推定 |
 
-Google の戻りの直後（aal1）に管理の窓口を叩くと 403 になり、`/auth/verified` が TOTP の入力を出すこと。
+Google の戻りの直後（aal1）に管理の窓口を叩くと 403 になり、Google の戻りの店員は `/login?error=staff_passkey_required` へ送られること。
 
 ### SEC-AUTH-009 TOTP の確認はアカウント単位でも回数を制限し、成否を監査に残す
 
@@ -7272,7 +7303,7 @@ Google の戻りの直後（aal1）に管理の窓口を叩くと 403 になり�
 | --- | --- |
 | 上位 | THR-AUTH-009 |
 | 根拠 | ログインと OTP にはアカウント単位の制限と監査があるのに TOTP だけに無く、IP を偽れば管理の3段目を総当たりできる。全体の NFR-SEC-005（範囲外）に当てはめた |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト・E2E |
 | 出どころ | OWASP ASVS 4.0.3 V2.2.1（当てはめは推定）。`docs/05_Quality/reviews/security/security_review_auth_verified.md` |
 | 優先度 | MUST |
@@ -7287,11 +7318,13 @@ Google の戻りの直後（aal1）に管理の窓口を叩くと 403 になり�
 | --- | --- |
 | 上位 | SEC-AUTH-009 |
 | 根拠 | IP を変えても止まるかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト・E2E（手元の Supabase で TOTP を有効にし、送り元を変えながら誤ったコードを送る。枠は challenge より前に数えるので、TOTP が無効な手元でも反転する） |
 | 出どころ | 実装から推定 |
 
 同じ利用者で誤ったコードを6回送ると、6回目が 429 になること。
+
+廃止（パスキー段4 Task 30、2026-11-22）: TOTP の確認の窓口を消した。
 
 #### SEC-AUTH-009-AC-02 TOTP の失敗が監査に残る
 
@@ -7299,11 +7332,15 @@ Google の戻りの直後（aal1）に管理の窓口を叩くと 403 になり�
 | --- | --- |
 | 上位 | SEC-AUTH-009 |
 | 根拠 | 総当たりに気づけるかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト・E2E（送った後に `audit_logs` を service role で読む。チャレンジの失敗の分岐も失敗の行を書くので、TOTP が無効な手元でも反転する） |
 | 出どころ | 実装から推定 |
 
 誤ったコードを送った後に、`audit_logs` に利用者の ID と失敗の行が1つ増えること。
+
+廃止（パスキー段4 Task 30、2026-11-22）: TOTP の確認の窓口 `POST /api/auth/mfa/verify` を消した。
+
+廃止（パスキー段4 Task 30、2026-11-22）: TOTP の確認の窓口を消した。
 
 ### SEC-AUTH-010 管理の権限で触る表は、DB の側でも店員の入口の条件を満たす JWT だけを受ける（段1a の移行 E より前は aal2 の JWT）
 
@@ -7336,11 +7373,13 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 | --- | --- |
 | 上位 | SEC-AUTH-010 |
 | 根拠 | 塞いだ後も管理の操作が壊れないかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
 同じ管理者が入口の条件を満たす JWT（認めた鍵2本。以前は aal2 の JWT）で select した結果に、他人の注文の行が含まれること。
+
+廃止（パスキー段4 Task 30、2026-11-22）: 「TOTP を通した aal2 の管理者」は無い。入口の条件を満たす店員が読める確かめは SEC-AUTH-010-AC-03（`FR-LOGIN-031`）が持つ。
 
 #### SEC-AUTH-010-AC-03 has_permission は店員の入口の条件（認めた鍵2本）を満たし、結び付いた生きた session の時だけ真になる
 
@@ -7968,7 +8007,7 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-028 |
-| 根拠 | ヘッダーの MANAGE・LOADING と `/auth/verified` の振り分けは飾りで、管理の操作はサーバーで断る。役割を `user_metadata` から読むと利用者が書き換えられる |
+| 根拠 | ヘッダーの MANAGE・LOADING と画面の振り分けは飾りで、管理の操作はサーバーで断る。役割を `user_metadata` から読むと利用者が書き換えられる |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | OWASP ASVS 4.0.3 V4.1.1 |
@@ -8042,13 +8081,13 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-030 |
-| 根拠 | 試行や成功が残らないと、TOTP の総当たりや管理の要素の差し替えに気づけない。全体の NFR-SEC-005（範囲外）・NFR-SEC-011（範囲外）に当てはめた |
+| 根拠 | 試行や成功が残らないと、管理の要素の差し替えやパスキーの総当たりに気づけない。全体の NFR-SEC-005（範囲外）・NFR-SEC-011（範囲外）に当てはめた |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト・E2E |
 | 出どころ | OWASP ASVS 4.0.3 V7.1.3 |
 | 優先度 | SHOULD |
 
-ログイン・OTP・TOTP の確認と登録・会員登録・再設定・ログアウト・トークンの更新は、成功と失敗を `audit_logs` に残す。個人情報は伏せてから書く。ログインから再設定・ログアウト・更新までは今のコードが満たす。TOTP の確認（`mfa_verify`）と登録（`mfa_enroll`）の成功の監査は、2026-10-26 に入った。AC-01 はこのコードで行が増える。手元の Supabase の TOTP は 2026-11-01（切り替えの日。手元だけ）に有効にしたので、E2E の ENV の印は外した。再設定の後の失効の失敗は満たさない。結び付けの拒否（`refresh` の `unbound_session` など、`enroll-totp` の `app_session_required`）の監査は 2026-10-29（波 5）に入った（AC-03）。
+ログイン・OTP の確認・会員登録・ログアウト・トークンの更新は、成功と失敗を `audit_logs` に残す。個人情報は伏せてから書く。結び付けの拒否（`refresh` の `unbound_session` など）の監査は 2026-10-29（波 5）に入った（AC-03）。TOTP の登録・確認の監査（AC-01）は、窓口を消した段4の Task 30 で外した。
 
 #### SEC-AUTH-030-AC-01 TOTP の登録と確認の成功が監査に残る
 
@@ -8056,11 +8095,13 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | --- | --- |
 | 上位 | SEC-AUTH-030 |
 | 根拠 | 管理の要素の追加と3段目の成功を追えるかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（手元の Supabase で TOTP を有効にし、登録と確認の後に `audit_logs` を service role で読む） |
 | 出どころ | 実装から推定 |
 
 TOTP の登録と確認の後に、`audit_logs` に利用者の ID と成功の行がそれぞれ1つずつ増えること。
+
+廃止（パスキー段4 Task 30、2026-11-22）: TOTP の登録・確認の窓口を消した。
 
 #### SEC-AUTH-030-AC-02 ログインの失敗が伏せた形で監査に残る
 
@@ -8086,22 +8127,18 @@ TOTP の登録と確認の後に、`audit_logs` に利用者の ID と成功の�
 
 結び付けで断った時に、`audit_logs` に固定の符号（`refresh` の `unbound_session`・`session_lookup_failed`、`mfa_enroll` の `app_session_required`）だけを持つ行が 1 つ増え、その行にトークン・Cookie の値・`session_id` の値・Supabase の誤りの文が無いこと。`mfa_enroll` の行は行為者が分かる時（署名検証済みの claims がある時）だけ書く。
 
-### SEC-AUTH-031 管理者・サポーターの初めての TOTP の登録は、本人の確かめを済ませた経路に限る
+### SEC-AUTH-031 アプリを通らずに取った通行証は、アプリの窓口で断る（初めての TOTP の登録の窓口は段4で消した）
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-031 |
-| 根拠 | 初めての登録が aal1 だけで通ると、パスワードを持つ人が持ち主より先に自分の認証アプリを登録し、aal2 で管理に届く。aal1 は Supabase Auth を直接呼べばメール OTP なしで得られる（THR-AUTH-005） |
+| 根拠 | アプリを通らずに Supabase Auth を直接呼んで取った通行証（`amr` に `otp` が付く）で、アプリの窓口が使えてはいけない。以前は初めての TOTP の登録がこの守りの代表だったが、TOTP の窓口は段4で消した（ADR-0475）。残る守りは、認証の確かめ（`authenticateRequest`）と更新（`refresh`）の結び付け（ADR-0417・0419、SEC-AUTH-005） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト・レビュー |
-| 出どころ | 実装から推定（`src/app/api/auth/mfa/enroll-totp/route.ts`） |
+| 出どころ | 実装から推定（段4の Task 30 で `enroll-totp` の記述を外した） |
 | 優先度 | MUST |
 
-`/api/auth/mfa/enroll-totp` の初めての登録は、メール OTP を通ったログインの session（または管理側で発行・確認した登録の経路）からだけ受ける。登録と未確認の要素の取り外しは監査に残し、本人へメールで知らせる。
-
-局所の守りは今のコードが満たす（2026-10-26 に直した）。通行証の `amr` に 2 段目を通った方法（`otp`・`magiclink`・`totp`・`oauth`・`sso/saml`・`email/signup` のどれか）が 1 つもなければ 403 で断り、`mfa_enroll`（`denied`、detail `second_factor_required`）を監査に残す。`password` だけで得た通行証は数えない（メールの数字は `otp` で記録されることを 2026-10-29 に実測した）。登録の成功は `mfa_enroll`（`success`、detail `totp_factor_enrolled`、resource_id は要素の ID）、未確認の要素の取り外しは `mfa_factor_remove` で残す（`enroll` の字を含めない）。
-
-波 5 の Task 3（2026-10-29）で、Supabase Auth へ OTP だけを直接送って得た通行証（`amr` に `otp` が付く）も断る。認証の確かめ（`authenticateRequest`）が、アプリのログインを通った結び付いた session だけを通す（旗 `AUTH_REQUIRE_APP_SESSION` が有効な間。既定。ADR-0417・0419）。結び付いていない通行証は 401 で、行為者が分かれば `mfa_enroll`（`denied`、detail `app_session_required`）を監査に残す。`amr` の確かめは二重の守りとして残す。本人へのメールの通知は満たさない（波 5 の別件。Q30）。
+アプリを通らず Supabase Auth へ OTP だけを直接送って得た通行証は、アプリのログインを通った結び付いた session だけを受ける確かめ（`authenticateRequest`。旗 `AUTH_REQUIRE_APP_SESSION` が有効な間・既定）で断る。この守りの確かめは SEC-AUTH-005 と SEC-AUTH-030-AC-03（`FR-LOGIN-031`）が持つ。初めての TOTP の登録の窓口（`/api/auth/mfa/enroll-totp`）と、それを守る SEC-AUTH-031-AC-01・AC-02 は、段4の Task 30 で窓口ごと消した。
 
 #### SEC-AUTH-031-AC-01 メール OTP を通っていない aal1 の session では初めての TOTP を登録できない
 
@@ -8109,11 +8146,13 @@ TOTP の登録と確認の後に、`audit_logs` に利用者の ID と成功の�
 | --- | --- |
 | 上位 | SEC-AUTH-031 |
 | 根拠 | パスワードだけで得た session で登録を先取りできないかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト・結合テスト・E2E（TOTP の無い管理者で、Supabase Auth の password grant で得た access token を付けて送る。2 段目の確かめは要素の一覧より前なので、TOTP が無効な手元でも反転する） |
 | 出どころ | 実装から推定 |
 
 TOTP をまだ登録していない管理者が、メール OTP を通らずに得た access token で `/api/auth/mfa/enroll-totp` を呼ぶと断られ、要素が作られないこと。登録の成功と断りが監査に残ること。
+
+廃止（パスキー段4 Task 30、2026-11-22）: 初めての TOTP の登録の窓口を消した。
 
 #### SEC-AUTH-031-AC-02 メール OTP だけ（アプリを通らない）で取った通行証では、初めての TOTP の登録が 401 で断られ、断りが監査に残る
 
@@ -8121,11 +8160,13 @@ TOTP をまだ登録していない管理者が、メール OTP を通らずに�
 | --- | --- |
 | 上位 | SEC-AUTH-031 |
 | 根拠 | `amr` に `otp` が付くので、AC-01 の `amr` の確かめでは、アプリを通らずに OTP だけを直接送って得た通行証を断れない。結び付いた session かどうかで断る（ADR-0417） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト（`enroll-totp` が `revoked`＋claims で 401 を返し、`app_session_required` を 1 行だけ書く）・E2E（`e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`。TOTP の無い管理者で、`/auth/v1/otp` と受け箱のコードと `/auth/v1/verify` で通行証を取り、`enroll-totp` を叩く。要素の一覧より前の確かめなので TOTP が無効な手元でも通る） |
 | 出どころ | `docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md`（Task 3、Review Focus 2） |
 
 旗 `AUTH_REQUIRE_APP_SESSION` が有効な間（既定）、アプリを通らず OTP だけで取った通行証で `/api/auth/mfa/enroll-totp` を呼ぶと 401 が返り、要素が作られないこと。`audit_logs` に `mfa_enroll`・`denied`・detail `app_session_required` の行が 1 つ増え、トークンと `session_id` の値を含まないこと。
+
+廃止（パスキー段4 Task 30、2026-11-22）: 初めての TOTP の登録の窓口を消した。結び付けの断りの確かめは SEC-AUTH-005・SEC-AUTH-030-AC-03（`FR-LOGIN-031`）が持つ。
 
 ### SEC-AUTH-032 戻り先の控えは、番号だけを HttpOnly の Cookie に持ち、表には番号のハッシュだけを持つ
 
@@ -8400,7 +8441,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/email-code/
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 5）（Review Focus 5） |
 | 優先度 | MUST |
 
-守ること: (1) 店員の `staffEntryOk` は、トークンの `claims` だけから出し（本文・見出しは読まない）、`evaluateStaffEntry` が `amr` のパスキー・24時間以内・認めた2本（JWT の印 `staff_passkeys_ok` が真の時だけ）を満たす時だけ真にする。(2) 型の合わない値（文字列の時刻・文字列 `"true"`・欠けた `amr`）は偽（閉じる側）。(3) `validateReturnPath` の出口は `staffEntryOk` が真の店員にだけ `/admin` を通し、お客さん・偽は断る。(4) `oauth/callback`・`confirm` は常に `staffEntryOk: false` を渡し、店員が来ても 2 段目の側に倒す。(5) 店員が条件を満たさない時は、控えを使い切らず `/auth/verified` へ送る。
+守ること: (1) 店員の `staffEntryOk` は、トークンの `claims` だけから出し（本文・見出しは読まない）、`evaluateStaffEntry` が `amr` のパスキー・24時間以内・認めた2本（JWT の印 `staff_passkeys_ok` が真の時だけ）を満たす時だけ真にする。(2) 型の合わない値（文字列の時刻・文字列 `"true"`・欠けた `amr`）は偽（閉じる側）。(3) `validateReturnPath` の出口は `staffEntryOk` が真の店員にだけ `/admin` を通し、お客さん・偽は断る。(4) `oauth/callback`・`confirm` は常に `staffEntryOk: false` を渡し、店員が来ても入口の条件に足りない側に倒す。(5) 店員が条件を満たさない時は、控えを使い切らず `/login?error=staff_passkey_required` へ送る。
 
 残る危険として受け入れること: `staff_passkeys_ok` は最長1時間（次の更新まで）古くなりうるヒントで、認めた鍵が消えた直後の1時間は `/admin` の画面へ着く。その間も管理の窓口と RLS は DB で数えて止めるので、データは見えない（`/api/auth/me` の `mfaVerified` と同じ扱い。SEC-AUTH-039）。
 
@@ -8731,7 +8772,7 @@ NEWS（ニュースの分類）・ITEM（ALL・TOPS・BOTTOMS・OUTERWEAR・ACCE
 
 | 属性 | 値 |
 | --- | --- |
-| 根拠 | 画面（ヘッダー・`/auth/verified`・`/login/verify`）がログインの有無・役割・TOTP の済みを知って、表示と行き先を決めるため。認可と同じ根拠（失効の確かめ・店員の入口の条件。段1b より前は aal2）で答えないと、画面は管理の入口を出すのに API は断る食い違いが起きる（`src/app/api/auth/me/route.ts` のコメント） |
+| 根拠 | 画面（ヘッダー・ログインの後の行き先）がログインの有無・役割・店員の入口の条件の済み（`mfaVerified`。名前は変えない）を知って、表示と行き先を決めるため。認可と同じ根拠（失効の確かめ・店員の入口の条件。段1b より前は aal2）で答えないと、画面は管理の入口を出すのに API は断る食い違いが起きる（`src/app/api/auth/me/route.ts` のコメント） |
 | 状態 | 推定 |
 | 出どころ | 実装から推定（`src/app/api/auth/me/route.ts`） |
 
@@ -8753,9 +8794,9 @@ refresh の Cookie が無い時と、自前の表の行に明示の失効の印�
 | --- | --- |
 | 根拠 | 一般の会員を管理者用の確認の画面に通さず、管理者とサポーターは TOTP の確認（FR-LOGIN-007）へ必ず通すため（推定）。一般の会員の行き先を `/account` にすることを求める要件は無い |
 | 状態 | 推定 |
-| 出どころ | 実装から推定（`src/app/login/verify/VerifyOtpClient.tsx`、`src/app/api/auth/oauth/callback/route.ts`、`src/app/auth/verified/page.tsx`） |
+| 出どころ | 実装から推定（`src/app/login/verify/VerifyOtpClient.tsx`、`src/app/api/auth/oauth/callback/route.ts`。`/auth/verified` は段4で消した） |
 
-メールの経路は OTP の後に `/api/auth/me` を見て、未認証なら `/login`、admin・supporter なら `/auth/verified`、ほかは `/account` へ移る（me の通信が失敗した時も `/account`）。Google の経路は戻りの先が既定のままなら、一般は `/account`、admin・supporter は既定の先へ移る。`/auth/verified` は一般の会員を `/account` へ、店員の入口の条件（`mfaVerified`。段1b より前は aal2）を満たす管理者を管理画面へ送る。
+ログインの後の行き先は `POST /api/auth/post-login` が返す（段4の Task 30 から。ARC-AUTH-015）。`/auth/verified` は消した。
 
 ## 未確認事項
 

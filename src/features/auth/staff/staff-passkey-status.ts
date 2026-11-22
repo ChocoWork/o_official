@@ -21,7 +21,7 @@ function failureOf(status: number): ManageFailureReason {
  * @impl IMPL-AUTH-388
  * @design DD-AUTH-082
  * @remarks 段2の `listPasskeys` が捨てる `approved`・`approvedCount`・`isStaff` を読む。画面が「消すと下限を割る」を窓口と同じ数え方で止めるためと、
- * `/auth/verified` が認めた鍵が1本の店員を見分けるために使う（JWT の印 `staff_passkeys_ok` は真偽しかないので使わない）。
+ * ログインの後の行き先（`resolvePostLoginPath`）が認めた鍵が1本の店員を見分けるために使う（JWT の印 `staff_passkeys_ok` は真偽しかないので使わない）。
  * 本文は読み切る・捨てる（no-store の応答を読まないと E2E の networkidle が来ない）。形の違う応答は `failed`。
  */
 export async function loadStaffPasskeys(fetchApi: typeof clientFetch = clientFetch): Promise<StaffKeyStatus> {

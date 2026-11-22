@@ -126,7 +126,7 @@ describe('Google のログインの戻りの窓口', () => {
     persistSessionAndCookiesMock.mockResolvedValue({ ok: true });
     resolveReturnDestinationMock.mockImplementation(async ({ viewer }: { viewer: { role: string } }) =>
       viewer.role === 'admin' || viewer.role === 'supporter'
-        ? { path: '/auth/verified', needsMfa: true, action: { kind: 'keep' } }
+        ? { path: '/login?error=staff_passkey_required', needsMfa: true, action: { kind: 'keep' } }
         : { path: '/', needsMfa: false, action: { kind: 'keep' } },
     );
     exchangeCodeForSessionMock.mockResolvedValue(exchangeSuccess());
@@ -173,14 +173,14 @@ describe('Google のログインの戻りの窓口', () => {
       });
     });
 
-    it.each(['admin', 'supporter'])('DD-AUTH-021 役割が %s なら入口の条件を満たさない側（staffEntryOk 偽）で解決し、/auth/verified へ送る（控えは使い切らない）', async (role) => {
+    it.each(['admin', 'supporter'])('DD-AUTH-021 役割が %s なら入口の条件を満たさない側（staffEntryOk 偽）で解決し、/login?error=staff_passkey_required へ送る（控えは使い切らない）', async (role) => {
       exchangeCodeForSessionMock.mockResolvedValueOnce(
         exchangeSuccess({ id: 'staff-1', email: 'staff@example.com', app_metadata: { role } })
       );
 
       const res = await callGet(callbackRequest('?code=good', 'sb-return-intent=x'));
 
-      expect(res.headers.get('location')).toBe('http://localhost:3000/auth/verified');
+      expect(res.headers.get('location')).toBe('http://localhost:3000/login?error=staff_passkey_required');
       expect(resolveReturnDestinationMock).toHaveBeenCalledWith({
         cookieHeader: 'sb-return-intent=x',
         purpose: 'login',
@@ -517,7 +517,7 @@ describe('Google のログインの戻りの窓口', () => {
       expect(logAuditMock).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success' }));
     });
 
-    it('DD-AUTH-021 保存に失敗した特権の会員は /auth/verified のまま（控えは使い切らない）', async () => {
+    it('DD-AUTH-021 保存に失敗した特権の会員は /login?error=staff_passkey_required のまま（控えは使い切らない）', async () => {
       persistSessionAndCookiesMock.mockResolvedValueOnce({ ok: false, error: 'db down' });
       exchangeCodeForSessionMock.mockResolvedValueOnce(
         exchangeSuccess({ id: 'staff-1', email: 'staff@example.com', app_metadata: { role: 'admin' } })
@@ -525,7 +525,7 @@ describe('Google のログインの戻りの窓口', () => {
 
       const res = await callGet(callbackRequest('?code=good', 'sb-return-intent=x'));
 
-      expect(res.headers.get('location')).toBe('http://localhost:3000/auth/verified');
+      expect(res.headers.get('location')).toBe('http://localhost:3000/login?error=staff_passkey_required');
       expect(resolveReturnDestinationMock).not.toHaveBeenCalled();
     });
 

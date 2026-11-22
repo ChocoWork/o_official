@@ -138,11 +138,11 @@ describe('DD-AUTH-034 resolveReturnDestination', () => {
     expect(store.consumeReturnIntent).not.toHaveBeenCalled();
   });
 
-  it.each(['admin', 'supporter'] as const)('DD-AUTH-054 %s は入口の条件を満たさないと、保存が /admin でも使い切らず /auth/verified へ送る', async (role) => {
+  it.each(['admin', 'supporter'] as const)('DD-AUTH-054 %s は入口の条件を満たさないと、保存が /admin でも使い切らず /login?error=staff_passkey_required へ送る', async (role) => {
     store.consumeReturnIntent.mockResolvedValue('/admin');
 
     await expect(resolve({ id: 'staff-1', role, staffEntryOk: false })).resolves.toEqual({
-      path: '/auth/verified',
+      path: '/login?error=staff_passkey_required',
       needsMfa: true,
       action: { kind: 'keep' },
     });
@@ -172,14 +172,14 @@ describe('DD-AUTH-034 resolveReturnDestination', () => {
     await expect(resolve(user)).resolves.toEqual({ path: '/', needsMfa: false, action: { kind: 'clear' } });
   });
 
-  it('DD-AUTH-034 店員が入口の条件を満たさないなら /auth/verified・needsMfa・keep で、使い切りを呼ばない', async () => {
+  it('DD-AUTH-034 店員が入口の条件を満たさないなら /login?error=staff_passkey_required・needsMfa・keep で、使い切りを呼ばない', async () => {
     await expect(resolve(adminAal1)).resolves.toEqual({
-      path: '/auth/verified',
+      path: '/login?error=staff_passkey_required',
       needsMfa: true,
       action: { kind: 'keep' },
     });
     await expect(resolve({ ...adminAal1, role: 'supporter' as const })).resolves.toEqual({
-      path: '/auth/verified',
+      path: '/login?error=staff_passkey_required',
       needsMfa: true,
       action: { kind: 'keep' },
     });

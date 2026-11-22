@@ -1,5 +1,5 @@
 /**
- * FR-LOGIN-069 店員が Google・メールのコードで入ろうとするとパスキーを案内する文が出て、どれもセッションが作られず、TOTP の登録は 410 で断られる
+ * FR-LOGIN-069 店員が Google・メールのコードで入ろうとするとパスキーを案内する文が出て、どれもセッションが作られない
  * 対応: FR-AUTH-046-AC-04 / FR-AUTH-046-AC-05 / FR-AUTH-046-AC-06（設計: DD-AUTH-083、SEC-AUTH-037）
  *
  * 手元のアプリ（本番ビルド）・手元の Supabase・手元の Mailpit で流す。店員は provisionStaff（ソフトの認証器）で用意する。
@@ -78,34 +78,6 @@ for (const viewport of viewports) {
       await expect(page.getByRole('button', { name: 'パスキーでログイン' })).toBeVisible();
       await expect(page.getByText(STAFF_MESSAGE)).toHaveCount(0);
       await expect(page.getByText('access_denied')).toHaveCount(0);
-    });
-
-    test(`FR-AUTH-046-AC-05 ${viewport.name}: パスキーで入った店員の TOTP の登録は 410 totp_retired で、要素が作られない`, async ({ page }) => {
-      const staff = await withLocalDb((db) => provisionStaff(db, { role: 'admin', approvedPasskeys: 2 }));
-      const login = await loginViaApp(page.request, { authenticator: staff.authenticators[0], ip: uniqueIp() });
-      expect(login.status).toBe(200);
-
-      const response = await page.request.post('/api/auth/mfa/enroll-totp', {
-        headers: { origin: ORIGIN, 'x-real-ip': uniqueIp() },
-        data: {},
-        failOnStatusCode: false,
-        maxRedirects: 0,
-      });
-
-      expect(response.status()).toBe(410);
-      expect(await response.json()).toEqual({ error: 'totp_retired' });
-      const factors = await withLocalDb((db) => db.query('select count(*)::int as n from auth.mfa_factors where user_id = $1::uuid', [staff.userId]));
-      expect(factors.rows[0].n).toBe(0);
-    });
-
-    test(`FR-AUTH-046-AC-06 ${viewport.name}: 認証のない TOTP の登録は 401 のまま（店員かどうかを漏らさない）`, async ({ request }) => {
-      const response = await request.post('/api/auth/mfa/enroll-totp', {
-        headers: { origin: ORIGIN, 'x-real-ip': uniqueIp() },
-        data: {},
-        failOnStatusCode: false,
-        maxRedirects: 0,
-      });
-      expect(response.status()).toBe(401);
     });
   });
 }

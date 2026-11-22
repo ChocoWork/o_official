@@ -3,8 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { createTestMember, loginAsMemberLegacy } from './member-session-helpers';
 
 /**
- * FR-LOGIN-033 ログインの確認の認証要素の選択・管理の更新の抑制・一般の会員のヘッダー（page.route のモック）
- * FREQ-515-AC-02: 認証要素が2つ以上ある時、2つ目を選んでコードを送ると、2つ目の認証要素で検証される
+ * FR-LOGIN-033 管理の更新の抑制・一般の会員のヘッダー（page.route のモック）
  * FREQ-316-AC-01: 管理APIが401・/api/auth/refresh が429でも、更新の発行が1回以下
  * FREQ-316-AC-02: /api/auth/refresh が401のとき「アクセス権限がありません」が出て、更新の発行が1回以下
  * SEC-AUTH-028-AC-01: 一般の会員のヘッダーとドロワーに MANAGE・LOADING が出ない
@@ -18,10 +17,6 @@ const viewports = [
   { name: 'tablet', width: 768, height: 1024 },
   { name: 'desktop', width: 1280, height: 800 },
 ];
-
-const FIRST_FACTOR_ID = '11111111-1111-4111-8111-111111111111';
-const SECOND_FACTOR_ID = '22222222-2222-4222-8222-222222222222';
-const OTP_CODE = '123456';
 
 async function mockAuthenticatedAdmin(page: Page, mfaVerified: boolean): Promise<void> {
   await page.route('**/api/auth/me', (route) =>
@@ -58,63 +53,9 @@ function countRefreshRequests(page: Page): () => number {
 }
 
 for (const viewport of viewports) {
-  test.describe(`FR-LOGIN-033 ログインの確認・更新の抑制・ヘッダー (${viewport.name})`, () => {
+  test.describe(`FR-LOGIN-033 更新の抑制・ヘッダー (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-    });
-
-    test(`FREQ-515-AC-02 ${viewport.name} (${viewport.width}px): 認証要素が2つあるとき2つ目を選んでコードを送ると2つ目の認証要素で検証される`, async ({ page }) => {
-      await mockAuthenticatedAdmin(page, false);
-      await page.route('**/api/auth/mfa/status', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            data: {
-              role: 'admin',
-              currentLevel: 'aal1',
-              nextLevel: 'aal2',
-              hasVerifiedFactor: true,
-              needsChallenge: true,
-              factors: [
-                { id: FIRST_FACTOR_ID, factorType: 'totp', friendlyName: '認証アプリ1' },
-                { id: SECOND_FACTOR_ID, factorType: 'totp', friendlyName: '認証アプリ2' },
-              ],
-            },
-          }),
-        }),
-      );
-      await page.route('**/api/auth/mfa/verify', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ data: { verified: true } }),
-        }),
-      );
-
-      await page.goto('/auth/verified');
-
-      // 認証要素が2つ以上ある時だけ選択欄が出る。最初は1つ目が選ばれている
-      const factorSelect = page.getByLabel('認証要素');
-      await expect(factorSelect).toBeVisible();
-      await expect(factorSelect).toHaveValue(FIRST_FACTOR_ID);
-
-      // 2つ目を選んでコードを送る
-      await factorSelect.selectOption(SECOND_FACTOR_ID);
-      await expect(factorSelect).toHaveValue(SECOND_FACTOR_ID);
-      await page.getByLabel('認証コード（6〜8桁）').fill(OTP_CODE);
-
-      const verifyRequestPromise = page.waitForRequest(
-        (request) => request.url().includes('/api/auth/mfa/verify') && request.method() === 'POST',
-      );
-      await page.getByRole('button', { name: '2要素認証を完了' }).click();
-      const verifyRequest = await verifyRequestPromise;
-
-      // 送られた認証要素は2つ目（1つ目ではない）
-      const body = JSON.parse(verifyRequest.postData() ?? '{}') as { factorId?: string; code?: string };
-      expect(body.factorId).toBe(SECOND_FACTOR_ID);
-      expect(body.factorId).not.toBe(FIRST_FACTOR_ID);
-      expect(body.code).toBe(OTP_CODE);
     });
 
     test(`FREQ-316-AC-01 ${viewport.name} (${viewport.width}px): 管理APIが401・更新が429でも /api/auth/refresh の発行が1回以下`, async ({ page }) => {

@@ -1,7 +1,7 @@
 /**
  * 通行証の amr（認証方法の記録）から、2 段目を通った方法があるかを読む。
  *
- * パスワードだけで得た通行証は数えない。初めての TOTP の登録を、メールの受け箱などを持つ人に限るために使う。
+ * パスワードだけで得た通行証は数えない。受け箱などを持つ人だけを通すために使う。
  * メールの数字（OTP）は GoTrue が otp で記録する（2026-10-29 に手元の Supabase で実測。magiclink ではなく、更新でも token_refresh は足されない）。
  * magiclink は実測で使われなかったが、メールのリンクの道に備えて数えたままにする。どちらも受け箱を持つ証明で、守りの強さは同じ。
  * この確かめは「アプリを通らない通行証」を断つ物ではない。Supabase Auth へ OTP だけを直に送っても otp が付く。
@@ -11,7 +11,6 @@
 export const SECOND_FACTOR_AMR_METHODS: readonly string[] = [
   'otp',
   'magiclink',
-  'totp',
   'oauth',
   'sso/saml',
   'email/signup',

@@ -22,7 +22,7 @@ export type Session = {
  *
  * 引きの失敗（DB の 5xx・タイムアウト・複数行の PGRST116）は既定では null で返す（行が無い場合と区別できない）。
  * throwOnError を渡すと、その失敗を name が SessionLookupError の Error で投げる。refresh は、失敗を「結び付いていない」と
- * 取り違えて正当な利用者を再ログインに追い込まないために使う。MFA 昇格は GoTrue の検証後に引くので、投げずに null のまま。
+ * 取り違えて正当な利用者を再ログインに追い込まないために使う。
  */
 export async function findSessionByRefreshHash(
   hashOrToken: string,
@@ -66,7 +66,7 @@ export type IssuedSession = {
   previousSessionId?: string | null;
   previousRefreshToken?: string | null;
   /**
-   * 呼び出し側が「前の行は結び付いている」と確かめた時の auth_session_id（refresh は前の行の値、MFA 昇格は検証済みの claims.session_id）。
+   * 呼び出し側が「前の行は結び付いている」と確かめた時の auth_session_id（refresh は前の行の値）。
    * 無い・null なら新しい行は結び付けない。新しい token の session_id を、この確認なしに保存することはしない。
    */
   trustedAuthSessionId?: string | null;
@@ -74,7 +74,7 @@ export type IssuedSession = {
 
 /**
  * 新しく発行されたセッションを Cookie と sessions テーブルへ反映する。
- * トークンを差し替える経路（refresh / MFA 昇格）は必ずここを通し、
+ * トークンを差し替える経路（refresh）は必ずここを通し、
  * Cookie・CSRF・セッション行の更新手順が経路ごとにずれないようにする。
  *
  * DB 書き込みに失敗したら throw する。呼び出し側は監査ログに残したうえで

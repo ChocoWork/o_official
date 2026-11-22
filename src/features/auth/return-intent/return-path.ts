@@ -157,7 +157,7 @@ export function validateReturnPath(raw: unknown, options: ValidateReturnPathOpti
  *
  * @impl IMPL-AUTH-211
  * @design DD-AUTH-032
- * @remarks fallback は確かめない。`/auth/verified` のように戻り先には許さない行き先を、呼び出し側が既定として渡せる。
+ * @remarks fallback は確かめない。`/login?error=staff_passkey_required` のように戻り先には許さない行き先を、呼び出し側が既定として渡せる。
  */
 export function sanitizeReturnPath(
   raw: unknown,

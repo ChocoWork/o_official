@@ -71,7 +71,7 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SEC-AUTH-050、SEC-AUTH-061 |
+| 上位 | SEC-AUTH-050、SEC-AUTH-061、ARC-AUTH-015 |
 | 根拠 | 画面（Task 4〜7）が薄くなるよう、ブラウザの WebAuthn の呼び出しと、1b の窓口を呼ぶ処理を、React を知らない関数に切り出す。実ブラウザの `toJSON()` は `authenticatorAttachment: null` を返しうるので、部品が落とし、窓口の形も `null` を受けて GoTrue へ渡す前に落とす（1b の持ち越し T2 M12）。`passkey-gotrue` に `server-only` を付け（T2 M3）、画面の部品が読まないことを試験で守る。登録の終わりの GoTrue の失敗（502）と形の失敗（400。`uv_required` を含む）は、画面では区別せず `retry` にそろえる（T7 M3。窓口の状態は変えない） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト（`tests/unit/features/auth/passkey/*.test.ts`、`tests/unit/features/auth/schemas/passkey.test.ts`、`tests/unit/api/auth/passkey-{login,register}-finish-route.test.ts`）。1b の E2E（`e2e/FR-LOGIN-050`・`051`）が窓口の直の呼び出しで緑のまま |
@@ -86,7 +86,7 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 | `registerPasskey` | `POST register/start` → `create` → `POST register/finish` → `PATCH /api/auth/passkey/{id}`（失敗は握る） | 403 `registration_not_allowed` の `reauth_required` → `reauth_required`、401 → `unauthorized`、429 → `rate_limited`、502・400 → `retry`、503 → `unavailable`。名前の変更の失敗は `ok: true` で `nameApplied: false` |
 | `listPasskeys`・`renamePasskey`・`deletePasskey` | `clientFetch`（CSRF は `clientFetch` が付ける）で `GET`・`PATCH`・`DELETE` | 401 → `unauthorized`、404 → `not_found`、429 → `rate_limited`、503 → `unavailable`、店員の窓口の 409 で本文が `staff_min_keys` の時だけ `min_keys`（段3b Task 18。お客さんの窓口は返さず、お客さんの画面は今までどおりどの失敗も1つの文）、それ以外 → `failed`。応答の本文は、失敗のどの道でも読み切ってから使う（読まない道では捨てる）（no-store の読み残しで E2E の `networkidle` が来なくなるため）。`listPasskeys` はお客さん専用で、店員の項目（`isStaff`・`approvedCount`・`approved`）は返さない（店員の一覧は `loadStaffPasskeys`）。`renamePasskey`・`deletePasskey` は店員のパスキーの画面（`StaffPasskeyManager`）も使い、店員の削除の 409 は上の `min_keys` として返る |
 | `deviceNameFromUserAgent` | `iPhone`・`iPad`・`Android`・`Mac`・`Windows`・`Linux` を含む順に見る | 無ければ `この端末`。返す名前は固定で、どれも64字より短い |
-| `resolvePostLoginPath` | `POST /api/auth/post-login` | 旧 `VerifyOtpClient` の同名の関数と同じ規則（401 は `/login`、失敗・読めない本文・`needsMfa` は `/auth/verified`、それ以外は `sanitizeReturnPath`） |
+| `resolvePostLoginPath` | `POST /api/auth/post-login`（`needsMfa` の時だけ `GET /api/auth/passkey`） | 401・失敗・読めない本文は `/login`。`needsMfa` は、認めた鍵がちょうど1本の店員なら `/admin/passkeys?more=1`、それ以外は `/login?error=staff_passkey_required`。それ以外は `sanitizeReturnPath`（段4の Task 30。ARC-AUTH-015、ADR-0475） |
 | `dropNullFields`（窓口側） | 応答の最上位の `null` の項目を落とす | GoTrue へ渡す前に、ログイン・登録の終わりの2本が使う |
 
 テスト観点: `parse*FromJSON` が在る環境と無い環境の両方で、既知の base64url が正しい `ArrayBuffer` になる、`toJSON()` が `authenticatorAttachment: null` を返しても戻りに `null` が残らない、4つの `DOMException` の名前の対応、`PublicKeyCredential` が無い環境で `unsupported`、ログに `challenge` が出ない、始め・終わりの状態ごとの `reason`、登録の 403・401・502・400・503 の対応、名前の変更の失敗で `ok: true`・`nameApplied: false`、`null` の応答が窓口で 400 にならず GoTrue へ `null` なしで渡る、`src/features/auth/passkey/**` が `passkey-gotrue`・`passkey-start-config` を読まない。

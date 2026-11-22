@@ -232,7 +232,6 @@
     ],
     "src": [
       "src/app/login/**/*.{ts,tsx}",
-      "src/app/auth/**/*.{ts,tsx}",
       "src/app/api/auth/**/*.ts",
       "src/components/Header.tsx",
       "src/hooks/useTurnstileWidget.ts",
@@ -260,7 +259,6 @@
       "tests/unit/components/{LoginModal,RegisterModal,AuthTabs,VerifyOtpClient,Header}.test.tsx",
       "tests/unit/**/{login-modal,register-modal,auth-tabs,verify-otp-client,site-header,use-turnstile-widget,format-countdown}*.test.{ts,tsx}",
       "tests/unit/api/auth/**/*.test.{ts,tsx}",
-      "tests/unit/app/auth/**/*.test.{ts,tsx}",
       "tests/unit/app/login/**/*.test.{ts,tsx}",
       "tests/unit/features/auth/return-intent/**/*.test.{ts,tsx}",
       "tests/unit/middleware/proxy-no-store.test.ts",
@@ -312,7 +310,6 @@
     "src": [
       "src/app/api/admin/revoke-user-sessions/**/*.ts",
       "src/app/api/admin/audit-logs/**/*.ts",
-      "src/app/api/admin/users/mfa/**/*.ts",
       "src/app/api/admin/contact/**/*.ts",
       "src/app/api/admin/item-color-presets/**/*.ts",
       "src/lib/contact/**/*.ts",
@@ -323,7 +320,6 @@
       "tests/unit/**/*revoke-user-sessions*.test.{ts,tsx}",
       "tests/unit/**/*audit-logs*.test.{ts,tsx}",
       "tests/unit/**/*auditCleanup*.test.{ts,tsx}",
-      "tests/unit/**/*mfa-reset*.test.{ts,tsx}",
       "tests/unit/**/*admin-contact*.test.{ts,tsx}",
       "tests/unit/**/*AdminContact*.test.{ts,tsx}",
       "tests/unit/**/*item-color-preset*.test.{ts,tsx}",

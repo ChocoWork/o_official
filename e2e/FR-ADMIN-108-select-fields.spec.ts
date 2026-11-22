@@ -1,10 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
 import { fulfillJson, mockAdminSession, viewports } from './order-fulfillment-test-utils';
 
-// FREQ-515: 管理画面とログインの確認の選択欄で選んだ値が反映される
+// FREQ-515: 管理画面の選択欄で選んだ値が反映される
 // AC-01: 管理画面のユーザー一覧で役割を選ぶと、選んだ役割で変更が送られること
 // AC-03: お知らせの編集でカテゴリーを選んで更新すると、選んだカテゴリーで保存されること
-// （AC-02 のログインの確認の認証要素は tests/unit/app/auth/verified-page.test.tsx で確かめる）
+// （AC-02 の認証要素の選択を持つ画面は段4で消した）
 
 const USERS = [
   {

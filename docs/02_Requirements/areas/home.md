@@ -1659,6 +1659,6 @@ VIEW ALL のボタンは、呼ぶ側が渡す行き先ごとの読み上げの�
 - 原価の列（SEC-HOME-004）・`items` の権限（SEC-HOME-005）・原価の履歴の表（SEC-HOME-020）の持ち主 ITEM は範囲に無い。HOME で持ち続けるか、ITEM が範囲に入った時に移すかは決めていない。`looks`・`look_items`・`stockists` の分は LOOK・STOCKIST の SEC が持つ
 - 検索の窓の回数の制限・応答のキャッシュ・URL の語の埋め込みは SEARCH の SEC-SEARCH-006・010・021 を正にして、SEC-HOME-011・012・019 を廃止にした。この分け方の確認
 - 原価の履歴の表（SEC-HOME-020）を `src/`・`scripts/` が読んでいないこと（2026-10-26 に確かめた）と、本番にその表の行があるか（行があれば、権限を外すまで原価が公開されていた期間の記録として扱う）。使わないなら表ごと消すかの判断。一般会員の select を権限の誤りでなく「200で0件」にした読み（authenticated に SELECT を付け、方針で絞る）の確認
-- `/api/auth/me` からメールの住所を外した（SEC-HOME-016）。読み手のコード（`src/contexts/LoginContext.tsx`・`src/app/auth/verified/page.tsx`）は応答の `email` を読まないことを 2026-10-26 に確かめた。`id` を外せるかは確かめていない。E2E の補助（`e2e/account-test-utils.ts` ほか）の模擬の応答には `email` が残る（読み手が使わないので壊れない）
+- `/api/auth/me` からメールの住所を外した（SEC-HOME-016）。読み手のコード（`src/contexts/LoginContext.tsx`。`/auth/verified` は段4で消した）は応答の `email` を読まないことを 2026-10-26 に確かめた。`id` を外せるかは確かめていない。E2E の補助（`e2e/account-test-utils.ts` ほか）の模擬の応答には `email` が残る（読み手が使わないので壊れない）
 - セキュリティ要件の優先度は元の文書に値が無いので案（過去のレビューの重さで付けた）
 - 本番の Supabase・中継・環境変数は見ていない（脅威の文書の「未確認事項」）

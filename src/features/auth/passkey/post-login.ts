@@ -5,13 +5,18 @@
  * @packageDocumentation
  */
 import { sanitizeReturnPath } from '@/features/auth/return-intent/return-path';
+import { loadStaffPasskeys } from '@/features/auth/staff/staff-passkey-status';
 
-const MFA_PATH = '/auth/verified';
+/** 認めた鍵が1本の店員を、もう1本を足す画面へ送る先。 */
+const STAFF_ONE_MORE_KEY_PATH = '/admin/passkeys?more=1';
+/** 入口の条件に足りない店員（鍵が1本でない）の行き先。画面の文は既存の固定の文。 */
+const STAFF_PASSKEY_REQUIRED_PATH = '/login?error=staff_passkey_required';
 
 type PostLoginResponse = { redirectTo?: string; needsMfa?: boolean };
 
 /**
- * `POST /api/auth/post-login` を呼び、行き先を返す。401 は `/login`、失敗・読めない本文・`needsMfa` は `/auth/verified`、それ以外は `sanitizeReturnPath`。
+ * `POST /api/auth/post-login` を呼び、行き先を返す。401・失敗・読めない本文は `/login`、`needsMfa`（店員が入口の条件に足りない）は認めた鍵が1本なら
+ * `/admin/passkeys?more=1`、それ以外は `/login?error=staff_passkey_required`、そうでなければ `sanitizeReturnPath`。
  *
  * @impl IMPL-AUTH-305
  * @design DD-AUTH-060
@@ -19,6 +24,7 @@ type PostLoginResponse = { redirectTo?: string; needsMfa?: boolean };
 export async function resolvePostLoginPath(
   fetchApp: typeof fetch = fetch,
   origin: string = window.location.origin,
+  loadStaff: typeof loadStaffPasskeys = loadStaffPasskeys,
 ): Promise<string> {
   try {
     const response = await fetchApp('/api/auth/post-login', {
@@ -33,12 +39,16 @@ export async function resolvePostLoginPath(
     }
     if (!response.ok) {
       await response.arrayBuffer().catch(() => undefined);
-      return MFA_PATH;
+      return '/login';
     }
     const body = (await response.json().catch(() => null)) as PostLoginResponse | null;
-    if (body === null || body.needsMfa === true) return MFA_PATH;
+    if (body === null) return '/login';
+    if (body.needsMfa === true) {
+      const status = await loadStaff();
+      return status.ok && status.isStaff && status.approvedCount === 1 ? STAFF_ONE_MORE_KEY_PATH : STAFF_PASSKEY_REQUIRED_PATH;
+    }
     return sanitizeReturnPath(body.redirectTo, '/', { origin });
   } catch {
-    return MFA_PATH;
+    return '/login';
   }
 }

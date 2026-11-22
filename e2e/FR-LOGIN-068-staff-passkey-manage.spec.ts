@@ -148,21 +148,16 @@ for (const viewport of viewports) {
       await expect(page.getByRole('link', { name: 'パスキーでログインし直す' })).toHaveAttribute('href', '/login?next=%2Fadmin%2Fpasskeys');
     });
 
-    test(`FR-AUTH-046-AC-01 ${viewport.name}: 認めた鍵が1本の店員が /auth/verified に来ると、「もう1本」の画面に着き、/auth/verified へは戻らない`, async ({ page }) => {
+    test(`FR-AUTH-046-AC-01 ${viewport.name}: 認めた鍵が1本の店員は、ログインの後の行き先として「もう1本」の画面に着く`, async ({ page }) => {
       test.setTimeout(120_000);
       const staff = await staffLoggedIn(page, 1);
       cleanup.push(staff.userId);
-      // 回り続けないことの確かめ: /auth/verified への要求（文書も RSC も）を数える。着いた後に増えないこと。
-      const verifiedRequests: string[] = [];
-      page.on('request', (req) => {
-        if (new URL(req.url()).pathname === '/auth/verified') verifiedRequests.push(req.url());
-      });
-      await page.goto('/auth/verified');
+      // ログインの後の行き先（resolvePostLoginPath）を、店員が開いた勧めの画面から通す。着いた後は動かない。
+      await page.goto('/login/passkey');
       await expect(page).toHaveURL(`${ORIGIN}/admin/passkeys?more=1`, NAVIGATION);
       await expect(page.getByRole('heading', { name: 'あと1本、登録してください' })).toBeVisible();
       await page.waitForTimeout(1500);
       expect(page.url()).toBe(`${ORIGIN}/admin/passkeys?more=1`);
-      expect(verifiedRequests).toHaveLength(1);
     });
 
     test(`FR-AUTH-046-AC-02 ${viewport.name}: 「もう1本」の画面で2本目を追加すると /admin に入れる`, async ({ page }) => {

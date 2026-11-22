@@ -480,7 +480,7 @@ describe('Google のログインの画面遷移', () => {
   });
 
   describe('戻りの窓口と行き先', () => {
-    test('FLOW-AUTH-002 戻り先を控えていない一般の会員は /auth/verified を通らず / へ 303 で送る', async () => {
+    test('FLOW-AUTH-002 戻り先を控えていない一般の会員は / へ 303 で送る', async () => {
       mockState.role = 'user';
 
       const res = await comeBack(await start());
@@ -500,13 +500,13 @@ describe('Google のログインの画面遷移', () => {
       expect(locationPath(res)).toBe('/');
     });
 
-    test.each(['admin', 'supporter'] as const)('FLOW-AUTH-002 %s は /auth/verified へ送り、そこで TOTP を通す（控えは使い切らない）', async (role) => {
+    test.each(['admin', 'supporter'] as const)('FLOW-AUTH-002 %s は /login?error=staff_passkey_required へ送る（控えは使い切らない）', async (role) => {
       mockState.role = role;
 
       const res = await comeBack(await startPost('/admin/orders'));
 
       expect(res.status).toBe(303);
-      expect(locationPath(res)).toBe('/auth/verified');
+      expect(locationPath(res)).toBe('/login?error=staff_passkey_required');
       expect(mockConsumeReturnIntent).not.toHaveBeenCalled();
       expect(res.cookies.jar.get('sb-return-intent')).toBeUndefined();
     });

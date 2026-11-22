@@ -191,7 +191,7 @@ sequenceDiagram
     E-->>P: ok の真偽
     P->>R: viewer = { id, role, staffEntryOk }
     alt 店員で staffEntryOk が偽
-        R-->>P: /auth/verified・needsMfa: true・控えは残す
+        R-->>P: /login?error=staff_passkey_required・needsMfa: true・控えは残す（段4の Task 30）
     else 店員で真、またはお客さん
         R->>R: 控えを使い切り、出口の確かめを通す
         R-->>P: 戻り先、無ければ /admin か /
@@ -200,10 +200,10 @@ sequenceDiagram
 ```
 
 - 追跡の単位: 新しい関数 `staffEntryOkFromClaims`（`src/features/auth/return-intent/staff-entry-hint.ts`）が IMPL-AUTH-273。`post-login` が呼び、トークンの claims から `staffEntryOk` を出す（1か所にして試験で固定する）。変えた `resolveReturnDestination`（IMPL-AUTH-216）・`resolveStoredDestination`（IMPL-AUTH-221）・`validateReturnPath`（IMPL-AUTH-206）は、元の `@design` のまま `@remarks` を `aal2` からパスキーの入口の条件に直した
-- 呼び手の形: `ReturnViewer = { role; staffEntryOk: boolean }`（`aal` をやめた）。拒否の理由の名前 `admin_requires_privileged_aal2`、`needsMfa`、行き先 `/auth/verified` は 1b では変えない（意味だけパスキーの条件。段4で直す）
+- 呼び手の形: `ReturnViewer = { role; staffEntryOk: boolean }`（`aal` をやめた）。拒否の理由の名前 `admin_requires_privileged_aal2`、`needsMfa` は変えない（意味だけパスキーの条件。段4の Task 30 で `/auth/verified` を消し、行き先は `/login?error=staff_passkey_required`。ADR-0475）
 - `post-login`: `staffEntryOk = evaluateStaffEntry(claims, approvedCountHint(claims), Date.now() / 1000).ok`。`claims` はトークンからだけ読む。お客さんには使わない（`needsMfa` は店員だけ）
 - `oauth/callback`・`confirm`: `staffEntryOk: false` を渡す。Google・メールのリンクでは店員は入れない（フックが拒否する）ので、来ても 2 段目の側に倒す。`oauth/callback` は、GoTrue の交換が `isStaffPasskeyRequiredError` の誤りで失敗した時、監査の `detail` を `staff_passkey_required` にし誤りの文を残さない（応答は 502 のまま。店員への文言は段3）
-- 本番には段3まで出さない: 認めた鍵が1本の店員が着く先は今のページ（`/auth/verified`）で、「もう1本登録してください」の画面は段3が作る
+- 本番には段3まで出さない: 認めた鍵が1本の店員が着く先は（段4の Task 30 から `resolvePostLoginPath` が決める）`/admin/passkeys?more=1` で、「もう1本登録してください」の画面は段3が作る
 - テスト観点: 店員（admin・supporter）× `staffEntryOk` の真偽の行き先・お客さんは真偽どちらでも `needsMfa: false`・`validateReturnPath('/admin')` が店員で真の時だけ通る・`post-login` が `amr` の欠け・空・文字列の時刻・未来・24時間超・`staff_passkeys_ok` の偽や文字列 `"true"` で偽・パスキーで入った2本の店員は `/admin`・`oauth/callback` の印つき 403 の監査の符号と 502・印の無い 403 は今まで通り
 
 ### DD-AUTH-055 ログインの終わり（`POST /api/auth/passkey/login/finish`）の順番

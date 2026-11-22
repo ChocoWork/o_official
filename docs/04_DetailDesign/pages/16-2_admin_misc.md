@@ -13,7 +13,7 @@
 | `DD-ADMIN-002` | 利用者の作成の窓口（廃止） | （2026-11-18 に消した） |
 | `DD-ADMIN-003` | セッションの強制失効の窓口 | `src/app/api/admin/revoke-user-sessions/route.ts` |
 | `DD-ADMIN-004` | 監査ログの読み出しの窓口 | `src/app/api/admin/audit-logs/route.ts` |
-| `DD-ADMIN-005` | 特権の利用者の2要素のリセットの窓口 | `src/app/api/admin/users/mfa/reset/route.ts` |
+| `DD-ADMIN-005` | 特権の利用者の2要素のリセットの窓口（段4で廃止。窓口を消した） | （無し） |
 | `DD-ADMIN-006` | 問い合わせの一覧の窓口 | `src/app/api/admin/contact/route.ts` |
 | `DD-ADMIN-007` | 問い合わせの詳細と状態の変更の窓口 | `src/app/api/admin/contact/[id]/route.ts` |
 | `DD-ADMIN-008` | 管理の返信の窓口 | `src/app/api/admin/contact/[id]/reply/route.ts` |
@@ -64,7 +64,6 @@
 | --- | --- | --- |
 | `src/app/api/admin/revoke-user-sessions/route.ts` | `<file>` | DD-ADMIN-003 |
 | `src/app/api/admin/audit-logs/route.ts` | `<file>` | DD-ADMIN-004 |
-| `src/app/api/admin/users/mfa/reset/route.ts` | `<file>` | DD-ADMIN-005 |
 | `src/app/api/admin/contact/route.ts` | `<file>` | DD-ADMIN-006 |
 | `src/app/api/admin/contact/[id]/route.ts` | `<file>` | DD-ADMIN-007 |
 | `src/app/api/admin/contact/[id]/reply/route.ts` | `<file>` | DD-ADMIN-008 |
@@ -338,7 +337,7 @@
 | --- | --- |
 | 上位 | API-ADMIN-004、ARC-ADMIN-001、ARC-ADMIN-003、SEC-ADMIN-001 |
 | 根拠 | 2要素の登録を消す機能は Auth の管理の機能で service role でしか呼べないので、`admin.users.manage` と aal2 を確かめてから呼ぶ（API-ADMIN-004、ARC-ADMIN-001、SEC-ADMIN-001）。取り返しがつかないので、確認の語と理由の文を求め、自分自身と特権でない利用者を断る。対象の役割は古くなりうる `app_metadata` でなく DB の ACL（`user_roles`）で決め、2要素を消した後は奪われた session を生かさないよう対象の全 session を失効させる（SEC-ADMIN-014、ADR-0461）。判定の結果は IP とブラウザの情報付きで監査に残すが、理由の文・対象のメール・誤りの文は残さず、理由は長さとハッシュだけにする（SEC-ADMIN-008、ARC-ADMIN-003）。認可の失敗と外側の例外は監査を書かない |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | `src/app/api/admin/users/mfa/reset/route.ts`、`docs/03_BasicDesign/api/api-spec.md`、`docs/superpowers/plans/2026-10-26-wave1b-local-fixes.md`（Task 4） |
 
@@ -404,6 +403,8 @@
 - 失効の部品が throw した時は 500 で、`session_revocation_failed`・消した数を書き、throw の文は監査にも本文にも出ない
 - 検証の失敗・自分自身・対象なし・特権でない・一覧の失敗・削除の失敗・成功の 7 分岐の全部で、監査に入力の理由の文・対象のメール・誤りの文が含まれず、`metadata` に `reason`・`target_email`・`error_message`・`delete_errors` の鍵が無い
 - `createServiceRoleClient` が例外を投げた時は 500 `Internal server error`
+
+廃止（パスキー段4 Task 30、2026-11-22）: `POST /api/admin/users/mfa/reset` を消した（404。FR-AUTH-053-AC-03）。やり直しは店員のパスキーを全部消す店長の窓口 `redo`（API-AUTH-034）に一本化した。
 
 ### DD-ADMIN-006 問い合わせの一覧の窓口
 

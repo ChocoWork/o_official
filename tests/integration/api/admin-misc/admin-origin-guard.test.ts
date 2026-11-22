@@ -53,13 +53,6 @@ const WRITE_ROUTES: Array<{
     body: { user_id: TARGET_ID },
   },
   {
-    label: '2要素のリセット',
-    method: 'POST',
-    path: '/api/admin/users/mfa/reset',
-    load: () => require('@/app/api/admin/users/mfa/reset/route'),
-    body: { userId: TARGET_ID, reason: 'lost the device twice', confirm: 'RESET_MFA' },
-  },
-  {
     label: '問い合わせの状態の変更',
     method: 'PATCH',
     path: `/api/admin/contact/${CONTACT_ID}`,
@@ -119,7 +112,6 @@ const WRITE_ROUTES: Array<{
  */
 const ADMIN_RATE_LIMITED_PATHS = new Set([
   '/api/admin/revoke-user-sessions',
-  '/api/admin/users/mfa/reset',
   '/api/admin/item-color-presets',
   '/api/admin/item-color-presets/1',
   `/api/admin/contact/${CONTACT_ID}`,

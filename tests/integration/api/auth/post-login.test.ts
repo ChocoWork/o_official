@@ -195,15 +195,33 @@ describe('API-AUTH-019 POST /api/auth/post-login', () => {
     expect(await res.json()).toEqual({ redirectTo: '/admin', needsMfa: false });
   });
 
-  test.each(['admin', 'supporter'])('API-AUTH-019 %s・入口の条件を満たさない（aal2 だけでも）と表に触らず /auth/verified と needsMfa:true を返し、控えの Cookie を残す', async (role) => {
+  test.each(['admin', 'supporter'])('API-AUTH-019 %s・入口の条件を満たさない（aal2 だけでも）と表に触らず /login?error=staff_passkey_required と needsMfa:true を返し、控えの Cookie を残す', async (role) => {
     mockAuthenticateRequest.mockResolvedValue(viewer(role, false));
     fakeConsume('/admin/orders');
 
     const res = await callPost(postLoginRequest({ cookie: INTENT_COOKIE }));
 
-    expect(await res.json()).toEqual({ redirectTo: '/auth/verified', needsMfa: true });
+    expect(await res.json()).toEqual({ redirectTo: '/login?error=staff_passkey_required', needsMfa: true });
     expect(mockRpc).not.toHaveBeenCalled();
     expect(intentCookieCalls(res)).toEqual([]);
+  });
+
+  test.each(['admin', 'supporter'])('ARC-AUTH-015 %s・入口の条件を満たさない店員の行き先は /login?error=staff_passkey_required で、消した /auth/verified は返さない', async (role) => {
+    mockAuthenticateRequest.mockResolvedValue(viewer(role, false));
+
+    const res = await callPost(postLoginRequest());
+    const body = await res.json();
+
+    expect(body).toEqual({ redirectTo: '/login?error=staff_passkey_required', needsMfa: true });
+    expect(JSON.stringify(body)).not.toContain('/auth/verified');
+  });
+
+  test('ARC-AUTH-015 お客さんの行き先は戻り先かホームで、needsMfa は偽', async () => {
+    mockAuthenticateRequest.mockResolvedValue(viewer('user', false));
+
+    const res = await callPost(postLoginRequest());
+
+    expect(await res.json()).toEqual({ redirectTo: '/', needsMfa: false });
   });
 
   test('API-AUTH-019 控えの表の rpc が失敗しても 200 で既定の / を返し、Cookie を消す（ログインを止めない）', async () => {

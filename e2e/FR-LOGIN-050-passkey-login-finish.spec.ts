@@ -178,7 +178,7 @@ for (const viewport of viewports) {
       });
     });
 
-    test(`FR-AUTH-019-AC-08 next=/admin つきで入った、認めた鍵2本の店員は /admin に着き、1本の店員は /auth/verified (${viewport.name})`, async ({ request, playwright, baseURL }) => {
+    test(`FR-AUTH-019-AC-08 next=/admin つきで入った、認めた鍵2本の店員は /admin に着き、1本の店員は needsMfa:true・/login?error=staff_passkey_required (${viewport.name})`, async ({ request, playwright, baseURL }) => {
       await withDb(async (db) => {
         const two = await provisionStaff(db, { role: 'admin', approvedPasskeys: 2 });
         const loggedTwo = await loginViaApp(request, { authenticator: two.authenticators[0], ip: uniqueIp(), next: '/admin' });
@@ -194,7 +194,7 @@ for (const viewport of viewports) {
           expect(loggedOne.status).toBe(200);
           const destOne = await api(second, 'post', '/api/auth/post-login');
           expect(destOne.status()).toBe(200);
-          expect(await destOne.json()).toEqual({ redirectTo: '/auth/verified', needsMfa: true });
+          expect(await destOne.json()).toEqual({ redirectTo: '/login?error=staff_passkey_required', needsMfa: true });
         } finally {
           await second.dispose();
         }

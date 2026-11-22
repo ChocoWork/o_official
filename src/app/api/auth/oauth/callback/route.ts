@@ -6,7 +6,7 @@
  * @design DD-AUTH-021
  * @remarks 交換の相手になる PKCE の検証の値は、開始の窓口が Cookie に溜めているので要求から読み直す。
  * 戻り先は URL から読まず、保存の成功の後に Cookie の控えを使い切って 303 の行き先を差し替える（保存の失敗で戻り先だけが焼けるのを防ぐ）。
- * 管理の役割は Google のログインでは入れない（フックが拒否する）ので、来ても必ず 2 段目の画面へ送り、控えは使い切らない（`staffEntryOk: false`）。
+ * 管理の役割は Google のログインでは入れない（フックが拒否する）ので、来ても必ず `/login?error=staff_passkey_required` へ送り、控えは使い切らない（`staffEntryOk: false`）。
  * 店員がフックに断られた時（交換の失敗、または戻りの URL の `error_description`）は、`/login?error=staff_passkey_required` へ 303 で戻す（DD-AUTH-083）。
  * 保存に失敗しても交換は済んでライブラリが Cookie を溜めているため、それを付けた応答を返して利用者を行き止まりにせず、失敗は監査に残す。
  */
@@ -169,7 +169,7 @@ export async function GET(request: Request) {
     const role = isUserRole(user.app_metadata?.role) ? user.app_metadata.role : 'user';
     const isPrivileged = role === 'admin' || role === 'supporter';
     // 保存が成功するまで戻り先は使い切らないので、応答は既定の行き先で先に作る。
-    const defaultPath = isPrivileged ? '/auth/verified' : '/';
+    const defaultPath = isPrivileged ? '/login?error=staff_passkey_required' : '/';
 
     const res = NextResponse.redirect(new URL(defaultPath, origin), { status: 303 });
     res.headers.set('Cache-Control', 'no-store');

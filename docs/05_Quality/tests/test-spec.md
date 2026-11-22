@@ -1,5 +1,7 @@
 # テスト仕様
 
+> 2026-11-22 確認日（パスキー段4 Task 30）: 認証アプリ（TOTP）・MFA のやり直しの窓口と `/auth/verified` を調べる試験を消した（単体 `mfa-*-route`・`verified-page`・`mfa-reset-route`、結合 `auth-mfa-*`・`auth-admin-totp-flow`・`auth-verified-*`・`admin-mfa-reset-api`・`mfa-verify`、E2E `FR-LOGIN-018`・`FR-LOGIN-033` の画面の分・`FR-LOGIN-032` の TOTP の6定義）。`FR-LOGIN-032` は `FR-LOGIN-032-staff-entry-cookie-checks.spec.ts` に名前を替え、`FREQ-316-REQ-02-AC-01` を足した。`FR-LOGIN-080` に TOTP・`/auth/verified`・`mfa/reset` の404（FR-AUTH-053-AC-03）を足した。`ARC-AUTH-015`（行き先）は `tests/integration/api/auth/post-login.test.ts`、`DD-AUTH-060` は `tests/unit/features/auth/passkey/post-login.test.ts` が持つ。下の古い表のうち、消した試験の行は履歴として残す。
+
 > 2026-11-18 確認日（パスキー段2 Task 11）: 下に「パスキー段2のテスト」の節を足した（E2E `FR-LOGIN-055`〜`062` と、単体・結合・DB 結合の主なファイル）。`FR-LOGIN-055` の AC-03 が回数の制限の窓の境で落ちるのを直した（窓の残りが10秒より短ければ次の窓まで待つ）。
 
 > 2026-11-18 確認日（パスキー段2 Task 10）: E2E の手助け `loginAsMember`（`e2e/member-session-helpers.ts`）を、パスワード＋コードの旧の窓口から、メールのコードの窓口（`/api/auth/email-code/resend`・`verify`と署名した保留の Cookie `setEmailCodeSessionCookie`）に付け替えた。旧の中身は `loginAsMemberLegacy` に残し、旧の窓口の性質を確かめる試験 `FR-LOGIN-030`・`031`・`032`・`033`・`FR-PWRESET-010`・`FR-ACCOUNT-046`と、店長（店員）を入れる `FR-ADMIN-MISC-008`（新しい窓口は店員を403で拒む）が使う。`FR-PRIVACY-006`・`FR-LOGIN-037` は会員のセッションを作るだけなので新しい側へ付け替えた。試験の道具の変更で要件・設計・実装の ID は起こさない。代表の E2E（3幅）は、付け替えの前は `FR-LOGIN-055` の tablet の AC-03 が1件落ちた（回数の制限の窓の境をまたいだため。下の「パスキー段2」の節の直し）ほかは緑で、付け替えの後は全部緑。
@@ -909,8 +911,8 @@ DB 結合の「DB なしの形」の試験は `supabase/migrations/` の 6 本�
 
 | ファイル | 先頭の ID | 確かめること |
 | --- | --- | --- |
-| auth: `mfa-verify-route`・`mfa-enroll-totp-route`・`refresh-route`・`otp-verify-route`・`confirm-route`・`register-route` | `DD-AUTH-015`（otp）・`018`（register）・`019`（confirm）・`027`（refresh）・`030`（enroll-totp）・`031`（mfa-verify） | MFA 検証の利用者単位の枠と監査（429・404・challenge の誤り・コードの誤り・成功・保存の失敗。本文 400・401/503・403 は書かない）、初回 TOTP の `amr` の確かめ、refresh の `{ ok: true }`、OTP の `{ user:{id,email,role}, message }`、`confirm` の `type` が `signup` 以外で `verifyOtp` を呼ばないこと・別のブラウザで session を作らず `signOut(local)` すること、`register` の管理の鍵の枝が無いこと・宛先単位の枠（5 回/3600 秒）・201 の本文 |
-| admin: `revoke-user-sessions-route`・`mfa-reset-route` | `DD-ADMIN-003`・`DD-ADMIN-005` | 認可失敗の監査の上限（10 分 20 行）、管理者単位の枠、UUID・自分自身・存在しない利用者、MFA リセットの `user_roles` 判定・理由のハッシュだけを監査に残すこと・全 session の失効 |
+| auth: `refresh-route`・`otp-verify-route`・`confirm-route`・`register-route` | `DD-AUTH-015`（otp）・`018`（register）・`019`（confirm）・`027`（refresh） | MFA 検証の利用者単位の枠と監査（429・404・challenge の誤り・コードの誤り・成功・保存の失敗。本文 400・401/503・403 は書かない）、初回 TOTP の `amr` の確かめ、refresh の `{ ok: true }`、OTP の `{ user:{id,email,role}, message }`、`confirm` の `type` が `signup` 以外で `verifyOtp` を呼ばないこと・別のブラウザで session を作らず `signOut(local)` すること、`register` の管理の鍵の枝が無いこと・宛先単位の枠（5 回/3600 秒）・201 の本文 |
+| admin: `revoke-user-sessions-route`（`mfa-reset-route` は段4で消した） | `DD-ADMIN-003` | 認可失敗の監査の上限（10 分 20 行）、管理者単位の枠、UUID・自分自身・存在しない利用者、MFA リセットの `user_roles` 判定・理由のハッシュだけを監査に残すこと・全 session の失効 |
 | admin: `item-color-presets-route`・`item-color-presets-id-route`（`create-user-route` は 2026-11-18 に消した） | `DD-ADMIN-011`・`DD-ADMIN-012` | 認可の後の枠（認可で断った要求は数えない）、壊れた JSON は 400、色見本の id の形と 0 行の 404 |
 | admin: `admin-contact-route`・`admin-contact-id-route`・`admin-contact-reply-route`・`admin-contact-templates-route`・`admin-contact-templates-id-route`・`audit-logs-route` | `DD-ADMIN-006`（一覧）・`007`（詳細・状態）・`008`（返信）・`009`（テンプレート）・`010`（テンプレート `[id]`）・`004`（監査ログ） | 読み出しの記録（`admin.contact.list`・`admin.contact.read`・`admin.audit_logs.read`。記録が拒まれても 200）、`submitted_ip`・`user_agent` を返さないこと、UUID でない id と 0 行の 404、返信の件名の制御文字・状態の更新の誤り・送り手の設定なし |
 | stockists・news: `stockists-route`・`stockists-id-route`・`news-admin-id-route`・`news-public-service`・`news-route` | `DD-STOCKIST-034`・`035`（stockists の route 2 本）、`DD-NEWS-065`（管理 `[id]`）・`003`（公開の取り出し）・`004`（`/api/news`） | 管理の列の絞り・0 行の 404 と failure の監査・`fields` だけの 400・壊れた JSON。お知らせの公開の取り出しが service role と署名を使わず、応答に `image_url` が無いこと。管理のお知らせの変更の 0 行・形の悪い id（18 桁の境界）の 404 |
@@ -922,8 +924,8 @@ DB 結合の「DB なしの形」の試験は `supabase/migrations/` の 6 本�
 
 | 領域 | ファイル | 確かめること |
 | --- | --- | --- |
-| AUTH | `api/auth/{mfa-verify,refresh,otp-verify,confirm,register,register-enumeration,return-intent-flow}`、`api/auth-{mfa-verify-api,mfa-enroll-totp-api,admin-totp-flow,otp-verify-api,bot-rate-limit,password-rule}`、`api/auth.test.ts`、`auth-flow.test.ts`、`ui/auth-register-flow.test.tsx` | MFA 検証の 6 回目が 429、`amr: otp` の通行証だけが初回 TOTP を登録できる、応答の本文、`confirm` の登録を始めたブラウザだけが session を作る往復（別のメール・Cookie 無し・使用済み・期限）、`register` の管理の鍵が効かない・宛先の枠の数え方と順番 |
-| ADMIN | `api/admin/{revoke-user-sessions,audit-logs}`、`api/admin-misc/{admin-mfa-reset-api,admin-audit-write,admin-authorization-path,admin-origin-guard}`、`api/admin-item-color-presets-{save,delete}-api`、`api/admin-contact-{detail,list,reply,status,templates-create,templates-update,templates-delete}-api` | 窓口ごとの枠（`@/features/auth/middleware/rateLimit` を差し替え）、UUID・0 行の 404、読み出しの記録、MFA リセットの失効。`admin-origin-guard` の回数を数える窓口の一覧に 10 窓口を足した |
+| AUTH | `api/auth/{refresh,otp-verify,confirm,register,register-enumeration,return-intent-flow}`、`api/auth-{otp-verify-api,bot-rate-limit,password-rule}`、`api/auth.test.ts`、`auth-flow.test.ts`、`ui/auth-register-flow.test.tsx` | MFA 検証の 6 回目が 429、`amr: otp` の通行証だけが初回 TOTP を登録できる、応答の本文、`confirm` の登録を始めたブラウザだけが session を作る往復（別のメール・Cookie 無し・使用済み・期限）、`register` の管理の鍵が効かない・宛先の枠の数え方と順番 |
+| ADMIN | `api/admin/{revoke-user-sessions,audit-logs}`、`api/admin-misc/{admin-audit-write,admin-authorization-path,admin-origin-guard}`、`api/admin-item-color-presets-{save,delete}-api`、`api/admin-contact-{detail,list,reply,status,templates-create,templates-update,templates-delete}-api` | 窓口ごとの枠（`@/features/auth/middleware/rateLimit` を差し替え）、UUID・0 行の 404、読み出しの記録、MFA リセットの失効。`admin-origin-guard` の回数を数える窓口の一覧に 10 窓口を足した |
 | STOCKIST | `api/stockist-admin-{create,item-get,item-put,item-patch,item-delete,list}-api`・`api/stockist-admin-write-path`・`api/stockist-admin-guards`（後ろの2本は末尾に `-api` が付かない）、`ui/stockist-public-read-path.test.tsx` | 8 列、404 + failure の監査（success を書かない）、`fields` の 400、公開の取り出しが `createPublicClient` |
 | NEWS・HOME | `api/news-{public-api,image-signing,admin-item-put-api,admin-item-patch-api,admin-item-delete-api,admin-write-path,latest-action}`、`api/home-page-{public-read,proxy-csp}`、`ui/news-*`・`ui/home-page-*` | 公開は署名も service role も使わない、管理の 0 行・不正 id の 404、ホームの取得が 8 件（お知らせは service role を作らない） |
 
@@ -939,7 +941,7 @@ DB 結合は新しく書いていない。控えのハッシュの式は DB の�
 | `ADMIN-MISC-003` | SEC-ADMIN-007-AC-01、SEC-ADMIN-008-AC-01、SEC-ADMIN-014-AC-01・AC-02、SEC-ADMIN-015-AC-01・AC-02 |
 | `ADMIN-MISC-004`・`006`・`007` | SEC-ADMIN-023-AC-01、SEC-ADMIN-020-AC-01・SEC-ADMIN-021-AC-01、SEC-ADMIN-006-AC-01・AC-02・SEC-ADMIN-018-AC-01 |
 | `HOME-023` | SEC-HOME-013 |
-| `LOGIN-030`・`LOGIN-032` | SEC-AUTH-022（本文）、SEC-AUTH-009-AC-01・AC-02、SEC-AUTH-031-AC-01 |
+| `LOGIN-030`・`LOGIN-032` | SEC-AUTH-022（本文）、FR-LOGIN-007-AC-02、FREQ-316-REQ-01・02・03 |
 | `SIGNUP-002`・`SIGNUP-003` | SEC-AUTH-016-AC-03、SEC-AUTH-017-AC-01、SEC-AUTH-006-AC-01、SEC-AUTH-007-AC-01 |
 | `NEWS-SEC-001`・`NEWS-SEC-005` | SEC-NEWS-005（2 本）、SEC-NEWS-007（2 本）、SEC-NEWS-008、SEC-NEWS-016 |
 | `STOCKIST-015`・`STOCKIST-017` | SEC-STOCKIST-009・011・013（2 本）・014（2 本）、SEC-STOCKIST-018 |
@@ -1299,9 +1301,7 @@ SEC-NEWS-007・008 の E2E（`FR-NEWS-SEC-001`）は `/api/news` が `image_url`
 | `tests/unit/features/auth/services/session.test.ts` | `DD-AUTH-027` | `persistNewSession` は trusted がある時だけ `readAuthSessionId(新 token) ?? trusted`、無ければ `null`。`findSessionByRefreshHash` の `throwOnError`（既定は `null`、`throwOnError` は `SessionLookupError`、行なしは `null`） |
 | `tests/unit/services/register.test.ts` | `DD-AUTH-039` | `persistSessionAndCookies` が `auth_session_id` を insert。旗が有効で `session_id` が読めない時は Cookie も insert もせず `ok:false`（`auth_session_id_missing`） |
 | `tests/unit/api/auth/refresh-route.test.ts` | `DD-AUTH-027` | 旗が有効で行なし・`auth_session_id` 空は GoTrue を呼ばず 401 `Session not bound`・3 Cookie を消す・監査 `unbound_session`。引きの失敗は 503 `Session lookup failed`（Cookie を残す）。旗 `off` は従来どおり 200 |
-| `tests/unit/api/auth/mfa-verify-route.test.ts` | `DD-AUTH-039` | 昇格で `trustedAuthSessionId: auth.claims.session_id` を渡して行を引き継ぐ |
 | `tests/unit/lib/auth/authenticate.test.ts` | `DD-AUTH-039` | `checkAuthSessionLiveness` が旗で RPC 名を替える（既定は `is_app_session_active`、`off` は `is_auth_session_active`）。`revoked` に署名検証済みの claims が付く（`unavailable`・`missing`・`invalid` には付かない）。`session_id` 無しは RPC を呼ばず `revoked` |
-| `tests/unit/api/auth/mfa-enroll-totp-route.test.ts` | `DD-AUTH-039` | 結び付いていない通行証は 401・一覧も登録もしない・監査 `mfa_enroll`/`denied`/`app_session_required` が 1 行（`session_id` を含まない）。claims 無しの `revoked` と `missing`・`invalid`・`unavailable` は監査を書かない |
 | `tests/unit/lib/auth/admin-rbac.test.ts` | `DD-AUTH-039` | 結び付いていない session は ACL を持っていても 401 |
 | `tests/unit/scripts/e2e/environment.test.ts`（3 本追加） | （E2E の環境） | `AUTH_REQUIRE_APP_SESSION: 'on'` が固定され親の `off` を上書き、旗の値が印を変える、手元でない Supabase は既存の見張りが止める |
 | `tests/integration/api/auth/{refresh,session-lifecycle,cookieFlags,otp-sdk-flow}.test.ts`、`tests/integration/api/{auth-architecture,auth-cookie-data,auth-login-two-step}.test.ts`、`tests/integration/auth-flow.test.ts` | `DD-AUTH-027`・`DD-AUTH-039` | 旗が既定で有効になるため、fixture を直した（access token に `session_id` を持つ偽 JWT、sessions 行に `auth_session_id`）。「行が無くても refresh が通る」系は旗 `off` の枝に移し、有効の側（401・GoTrue 未呼び出し）の試験を足した |
@@ -1325,7 +1325,6 @@ SEC-NEWS-007・008 の E2E（`FR-NEWS-SEC-001`）は `/api/news` が `image_url`
 | `LOGIN-031` | `SEC-AUTH-005-AC-03`（新規） | anon の鍵で `/auth/v1/otp` → `/auth/v1/verify` を直に呼んだ OTP だけの通行証（amr に otp）で、`/api/auth/me` は `authenticated:false`、`/api/profile`・`/api/orders` は Bearer で 401、Cookie でも 401。PostgREST の側は結び付けた会員を対照に、`profiles`・`orders` が 0 行（M2） |
 | `LOGIN-031` | `SEC-AUTH-005-AC-05`（新規） | password grant の refresh token を `sb-refresh-token` の Cookie に入れた `POST /api/auth/refresh` が 401・3 Cookie を消す・本文に access token 無し・`public.sessions` に行が 0 |
 | `LOGIN-031` | `SEC-AUTH-030-AC-03`（新規） | 上の断りで `audit_logs` に refresh/failure/unbound_session の行が増え、行に refresh token・access token・`session_id` の値が無い |
-| `LOGIN-031` | `SEC-AUTH-031-AC-02`（新規） | TOTP 無しの admin の OTP だけの通行証で `enroll-totp` が 401（403 ではない）、`auth.mfa_factors` 0 のまま、`mfa_enroll`/`denied`/`app_session_required` の行がちょうど 1 つ |
 | `LOGIN-031` | `SEC-AUTH-010-AC-03`（新規） | 結び付けた admin の aal1 の JWT と、同じ session を昇格した aal2 の JWT。aal2 は他人の注文を読め、aal1 は読めない（違いは aal だけ） |
 | `LOGIN-031` | `SEC-AUTH-005-AC-01`・`-AC-02`、`SEC-AUTH-010-AC-01`（`test.fail` を外した） | AC-01: password grant の JWT ではアプリの会員の窓口が 401。AC-02: 同じ JWT で PostgREST の `profiles`・`orders` に本人の行が含まれない（M2）。010-AC-01: admin の aal1 の JWT で `orders` に他人の行が含まれない（M2） |
 | `LOGIN-030` | `SEC-AUTH-005-AC-04`（新規） | 本物のログイン → `/api/profile` 200 → `/api/auth/refresh` 200 を繰り返しても 200 → 写した access token の Bearer も 200 → ログアウト 200 → 同じ Bearer が 401 |

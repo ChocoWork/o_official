@@ -95,7 +95,7 @@
 | パスワード再設定の結果（`AuthResultScreen`） | 結果の見出し（h1） | `tabIndex={-1}` と表示時の `focus()` |
 | 会員登録の確認メール送信（`RegisterModal`） | 完了の文言 | `tabIndex={-1}` と callback ref の `focus()` |
 
-- 読み込み中から次の案内に変わるだけの画面（`auth/verified`）は、同じ `role="status"` の要素の中身を入れ替える
+- 読み込み中から次の案内に変わるだけの画面（以前の `auth/verified`。段4で消した）は、同じ `role="status"` の要素の中身を入れ替える
 - 検証: `tests/unit/components/AuthResultScreen.test.tsx`、`e2e/FR-UI-008-status-messages.spec.ts`（AC-04・AC-05）
 
 ### 選択欄 SingleSelect（dropdown）の combobox（FREQ-379）

@@ -9,14 +9,14 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 範囲 | ID | 単位 |
 | --- | --- | --- |
-| 画面 | `DD-AUTH-001`〜`006` | `/login`、`/login/verify`、`/auth/password-reset`、`/auth/password-reset/verify`、`/auth/verified`、廃止した `/auth/callback` |
+| 画面 | `DD-AUTH-001`〜`006` | `/login`、`/login/verify`、`/auth/password-reset`、`/auth/password-reset/verify`、`/auth/verified`（`DD-AUTH-005`。段4で廃止）、廃止した `/auth/callback` |
 | 部品 | `DD-AUTH-007`〜`013` | ヘッダーとドロワー、ログインと会員登録のフォーム、タブ、結果の画面、Turnstile のフック、再送の残り時間の文 |
 | ログインの窓口 | `DD-AUTH-014`〜`017` | `login`・`otp/verify`・`login/resend`・`login/cancel` |
 | 会員登録の窓口 | `DD-AUTH-018`・`019` | `register`・`confirm` |
 | Google の窓口 | `DD-AUTH-020`・`021` | `oauth/start`・`oauth/callback` |
 | 再設定の窓口 | `DD-AUTH-022`〜`025` | `password-reset/request`・`link`・`session`・`confirm` |
 | セッションの窓口 | `DD-AUTH-026`〜`028` | `me`・`refresh`・`logout` |
-| TOTP の窓口 | `DD-AUTH-029`〜`031` | `mfa/status`・`mfa/enroll-totp`・`mfa/verify` |
+| TOTP の窓口（段4で廃止） | `DD-AUTH-029`〜`031` | `mfa/status`・`mfa/enroll-totp`・`mfa/verify`（消した） |
 | 戻り先の部品と窓口 | `DD-AUTH-032`〜`036` | 戻り先の確かめ、控えの保存、控えの開始と解決、`post-login`、入口のリンクの URL（ARC-AUTH-010） |
 | 応答の見出し | `DD-AUTH-037` | 共有の `src/proxy.ts` が `/api/auth` 配下の応答に付ける `Cache-Control: no-store`（判定だけを `src/lib/auth-no-store-policy.ts` の `shouldSetNoStore` に出して範囲に入れた） |
 | 送り元の IP | `DD-AUTH-038` | 共有の `src/lib/request-ip.ts` の `getClientIp`・`getAuditRequestContext`。回数の制限の鍵（共有の `rateLimit.ts`。鍵が取れない時は `null`、429・503 は `no-store`）と監査の IP・Turnstile の `remoteip` が使う |
@@ -81,7 +81,6 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | `src/app/auth/password-reset/page.tsx` | `<file>` | DD-AUTH-003 |
 | `src/app/auth/password-reset/verify/page.tsx` | `<file>` | DD-AUTH-004 |
 | `src/app/auth/password-reset/verify/VerifyClient.tsx` | `<file>` | DD-AUTH-004 |
-| `src/app/auth/verified/page.tsx` | `<file>` | DD-AUTH-005 |
 | `src/components/Header.tsx` | `<file>` | DD-AUTH-007 |
 | `src/components/LoginModal.tsx` | `<file>` | DD-AUTH-008 |
 | `src/components/RegisterModal.tsx` | `<file>` | DD-AUTH-009 |
@@ -104,9 +103,6 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | `src/app/api/auth/me/route.ts` | `<file>` | DD-AUTH-026 |
 | `src/app/api/auth/refresh/route.ts` | `<file>` | DD-AUTH-027 |
 | `src/app/api/auth/logout/route.ts` | `<file>` | DD-AUTH-028 |
-| `src/app/api/auth/mfa/status/route.ts` | `<file>` | DD-AUTH-029 |
-| `src/app/api/auth/mfa/enroll-totp/route.ts` | `<file>` | DD-AUTH-030 |
-| `src/app/api/auth/mfa/verify/route.ts` | `<file>` | DD-AUTH-031 |
 | `src/app/api/auth/post-login/route.ts` | `<file>` | DD-AUTH-035 |
 | `src/lib/auth-no-store-policy.ts` | `shouldSetNoStore` | DD-AUTH-037 |
 | `src/lib/request-ip.ts` | `getClientIp` | DD-AUTH-038 |
@@ -255,7 +251,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | `verifyOtp` が失敗 | 窓口の文、無ければ「認証コードの確認に失敗しました」 |
 | `verifyOtp` が投げる | 「認証コードの確認に失敗しました」 |
 | me が 200 以外・本文が JSON でない・`authenticated` が真でない | `/login/password`（今のコードは `post-login` が 401 の時にこの行き先を返す。前からの説明のずれ） |
-| me で役割が admin・supporter | `/auth/verified` |
+| me で役割が admin・supporter | （`/auth/verified` は段4で消した。行き先は `post-login` が返す） |
 | me で役割がほか | `/account` |
 | me の通信が投げる | `/account` |
 | 再送が 401 | `/login/password` へ置き換える |
@@ -439,7 +435,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | SCR-AUTH-007、STATE-AUTH-003、ARC-AUTH-010、SEC-AUTH-008、SEC-AUTH-026、SEC-AUTH-028 |
 | 根拠 | 一般の会員を管理者用の確認に通さず、管理者とサポーターには TOTP の確認を必ず通す（SCR-AUTH-007、FLOW-AUTH-001・003、DRV-AUTH-009）。Google でログインした管理者もここを通るので、aal2 になるまで管理画面へ送らない（SEC-AUTH-008 の管理の部分）。振り分けは `/api/auth/me` の役割で行い、画面の判定は表示だけ（SEC-AUTH-028）。見せ方の移り変わりは1回の me の答えで決める（STATE-AUTH-003）。確認が通ったら全体のログインの状態を同期し直してから移る。省くと `/admin` が古い `mfaVerified` を読み、「2要素認証が必要です」を誤って出す（`src/app/auth/verified/page.tsx`） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/auth/verified/page.tsx`）、`docs/04_DetailDesign/sequence/auth-login-mfa.md` の「追加認証画面の入口と出口」 |
 
@@ -520,6 +516,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 11 | 登録のボタンの手動の押下と処理中の字 | 無い |
 | 12 | 頁が閉じた後に me の答えが来ても見せ方を変えない | 無い |
 | 13 | `post-login` の失敗の保険・`needsMfa`・確かめに外れた行き先 | 無い |
+
+廃止（パスキー段4 Task 30、2026-11-22）: `/auth/verified` の画面を消した（404。FR-AUTH-053-AC-03）。ログインの後の行き先は `resolvePostLoginPath`（DD-AUTH-060）と窓口が返す（ARC-AUTH-015、ADR-0475）。
 
 ### DD-AUTH-006 廃止: /auth/callback の頁（古い Google の戻り）
 
@@ -1425,7 +1423,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | API-AUTH-008、ARC-AUTH-001、ARC-AUTH-010、FLOW-AUTH-002、DATA-AUTH-001、SEC-AUTH-026、SEC-AUTH-030、SEC-AUTH-032 |
-| 根拠 | Google から戻った `code` をサーバーの中で session に替え、トークンを画面に渡さない（API-AUTH-008、FLOW-AUTH-002）。一般の会員は TOTP の画面を通さず戻り先か `/` へ送り、管理者とサポーターは `/auth/verified` で TOTP へ通す（DRV-AUTH-009）。送り先は入口で控えた戻り先だけで決め、`next` を読まない（SEC-AUTH-026、SEC-AUTH-032）。保存に失敗しても利用者を JSON で止めず 303 で進め、理由は監査に残す（SEC-AUTH-030） |
+| 根拠 | Google から戻った `code` をサーバーの中で session に替え、トークンを画面に渡さない（API-AUTH-008、FLOW-AUTH-002）。一般の会員は戻り先か `/` へ送り、管理者とサポーターは `/login?error=staff_passkey_required` へ送る（DRV-AUTH-009。段4の Task 30 で `/auth/verified` から付け替えた）。送り先は入口で控えた戻り先だけで決め、`next` を読まない（SEC-AUTH-026、SEC-AUTH-032）。保存に失敗しても利用者を JSON で止めず 303 で進め、理由は監査に残す（SEC-AUTH-030） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/oauth/callback/route.ts`）、`docs/04_DetailDesign/sequence/auth-oauth.md` の SQ-AUTH-OAUTH-CALLBACK |
@@ -1439,7 +1437,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 向き | 中身 |
 | --- | --- |
 | 入力 | `GET /api/auth/oauth/callback`。問い合わせの `code`（1文字以上）と PKCE の Cookie、`sb-return-intent` の Cookie。`next` は読まない。環境変数は DD-AUTH-020 と同じ |
-| 出力 | 303 で戻り先か `/`（管理者・サポーターは `/auth/verified`）へ。`no-store`・`no-referrer`。ライブラリの Cookie と認証の Cookie。戻り先を使い切った時は戻り先の Cookie を消す |
+| 出力 | 303 で戻り先か `/`（管理者・サポーターは `/login?error=staff_passkey_required`）へ。`no-store`・`no-referrer`。ライブラリの Cookie と認証の Cookie。戻り先を使い切った時は戻り先の Cookie を消す |
 | 出力の失敗 | 400（`code` が無い）、429（回数の制限の応答）、500（環境変数・例外）、502（交換の失敗・応答の形の誤り） |
 
 **正常フロー:**
@@ -1448,7 +1446,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 2. 問い合わせの形を確かめる
 3. PKCE の client を作り、`code` を session に替える
 4. 応答の形（access・refresh token、利用者の id、メール）を確かめ、保存に渡す形に詰め直す
-5. 既定の行き先を決める（admin・supporter は `/auth/verified`、一般は `/`）
+5. 既定の行き先を決める（admin・supporter は `/login?error=staff_passkey_required`、一般は `/`）
 6. 303 を作り、ライブラリの Cookie を付ける
 7. ゲストのカート・お気に入りの印を添えてセッションを保存する
 8. 保存に成功したら戻り先を使い切り（`resolveReturnDestination`、用途 `login`、DD-AUTH-034。管理者・サポーターは aal1 扱いで使い切らない）、`Location` を差し替えて戻り先の Cookie を消す
@@ -1468,7 +1466,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 役割が許可の3つに無い・無い | `user` とみなす |
 | 一般で戻り先が使い切れた | 出口の確かめに通した戻り先 |
 | 一般で戻り先の Cookie が無い・用途違い・期限切れ・使用済み・DB の失敗 | `/`。Cookie があれば消す |
-| 管理者・サポーター | `/auth/verified`（戻り先は使い切らない。TOTP の後に `post-login` が使う） |
+| 管理者・サポーター | `/login?error=staff_passkey_required`（戻り先は使い切らない） |
 | 保存の結果が `ok` でない | error（理由が無ければ `unknown`）を残し、作った 303 を返す（戻り先は使い切らない） |
 | 保存が投げる | error を残し、作った 303 を返す |
 | 利用者のメールが無い | 監査は `null` |
@@ -1484,7 +1482,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | # | 観点 |
 | --- | --- |
 | 1 | 一般の会員で戻り先が無ければ 303 `/`・Cookie・success |
-| 2 | 管理者・サポーターなら `/auth/verified` で使い切らない。一般で戻り先があればその道へ 303 して Cookie を消す。古い `next` は無視する |
+| 2 | 管理者・サポーターなら `/login?error=staff_passkey_required` で使い切らない。一般で戻り先があればその道へ 303 して Cookie を消す。古い `next` は無視する |
 | 3 | 役割が無い・許可外 |
 | 4 | 回数の制限の応答と例外 |
 | 5 | `code` が無くて 400 |
@@ -1952,7 +1950,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | API-AUTH-016、ARC-AUTH-003、SCR-AUTH-007 |
 | 根拠 | `/auth/verified` が TOTP を登録させるか確認させるかを決めるため、確かめ済みの要素の有無を答える（API-AUTH-016、SCR-AUTH-007）。役割は自分のアカウントの見せ方の判断にしか使わず、管理の機能への出入りは共有の `admin-rbac` が DB の ACL で別に決めるので、JWT のクレームから読む（ARC-AUTH-003、ADR-0409） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/mfa/status/route.ts`）、`docs/04_DetailDesign/sequence/auth-login-mfa.md` の SQ-AUTH-MFA-STATUS |
 
@@ -2006,13 +2004,15 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 8 | 役割の3つの値とそれ以外 |
 | 9 | client の作成が投げて 500 |
 
+廃止（パスキー段4 Task 30、2026-11-22）: `GET /api/auth/mfa/status` を消した（404）。
+
 ### DD-AUTH-030 TOTP の登録の窓口
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | API-AUTH-017、ARC-AUTH-003、SCR-AUTH-007、SEC-AUTH-030、SEC-AUTH-031 |
 | 根拠 | 管理者とサポーターが TOTP を使えるよう、認証アプリに読ませる QR と秘密を作る。一般の会員には作らせない（API-AUTH-017、ARC-AUTH-003）。確かめ済みの要素がある時は作り直さず、QR を出し直すには今の要素で aal2 を通った後にさせる（乗っ取った人に QR を取り直させない）。前の登録の途中で残った未確認の要素は外してから作る（SCR-AUTH-007 の自動の登録）。役割は JWT のクレームから読む（ADR-0409） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/mfa/enroll-totp/route.ts`）、`docs/04_DetailDesign/sequence/auth-login-mfa.md` の SQ-AUTH-MFA-ENROLL |
 
@@ -2087,13 +2087,15 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 16 | 登録の成功が success（`totp_factor_enrolled`）で残り、秘密を含まない。未確認の要素の取り外しは `mfa_factor_remove` で、`enroll` の字を含む action は `mfa_enroll` だけ |
 | 17 | 確かめが `revoked`＋claims なら 401・要素の一覧も登録もしない・`mfa_enroll`/`denied`/`app_session_required` を 1 行だけ（`session_id` を含まない）。claims が無い `revoked`、`missing`・`invalid`・`unavailable` では書かない（名前の先頭は `DD-AUTH-039`。`SEC-AUTH-031-AC-02`） |
 
+廃止（パスキー段4 Task 30、2026-11-22）: `POST /api/auth/mfa/enroll-totp` を消した（404）。
+
 ### DD-AUTH-031 TOTP の確認の窓口
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | API-AUTH-018、ARC-AUTH-003、SCR-AUTH-007、DATA-AUTH-001、DATA-AUTH-004、SEC-AUTH-008、SEC-AUTH-009、SEC-AUTH-030 |
 | 根拠 | 管理画面に入る前の3段目（API-AUTH-018、ARC-AUTH-003）。確認が通ると Supabase が aal2 のトークン対を返すので、Cookie と `sessions` の行に書き戻さないと管理の窓口の aal2 の判定を通れない（DATA-AUTH-001・004）。Google でログインした管理者もここで aal2 になる（SEC-AUTH-008 の管理の部分）。書き戻しの保存が失敗しても、aal2 はトークン自体が持つので配る（`src/app/api/auth/mfa/verify/route.ts`）。役割は JWT のクレームから読む（ADR-0409） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/mfa/verify/route.ts`）、`docs/04_DetailDesign/sequence/auth-login-mfa.md` の SQ-AUTH-MFA-VERIFY |
 
@@ -2160,6 +2162,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 11 | client の作成が投げて 500 |
 | 12 | 利用者単位の制限は `claims.sub` を鍵に 5回／600秒。6 回目は challenge より前に 429 で `account_rate_limited` を残す。認証に失敗した要求は数えない |
 | 13 | 成功は success（`verified`）、要素が無い・チャレンジの失敗・コードの誤りは failure、書き戻しの失敗は error。コードと誤りの文が監査に無い |
+
+廃止（パスキー段4 Task 30、2026-11-22）: `POST /api/auth/mfa/verify` を消した（404）。
 
 ## 戻り先の詳細設計
 
@@ -2303,7 +2307,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 **正常フロー（解決）:**
 
-1. 管理者・サポーターで aal2 でない → `/auth/verified`・`needsMfa`・`keep`（使い切らない）
+1. 管理者・サポーターで入口の条件に足りない（以前は aal2 でない）→ `/login?error=staff_passkey_required`・`needsMfa`・`keep`（使い切らない）
 2. 見出しに `sb-return-intent` が無い → 既定・`keep`。あるが形に合わない（重複を含む）→ 既定・`clear`
 3. 番号があれば使い切る（失敗・NULL でも `clear`）
 4. 使い切れた戻り先を、閲覧者を渡して確かめ直す（`resolveStoredDestination`）。外れたら既定と、理由の符号だけの監査
@@ -2326,7 +2330,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | # | 観点 |
 | --- | --- |
 | 1 | 開始: 無い・外れ・通る・保存失敗・用途の受け渡し。監査に入力の値が入らない。無い・空・外れは `clear` で、保存を呼ばない |
-| 2 | 解決: 一般・番号あり／なし／形が違う／使い切れない。管理者・サポーターは aal1 で使い切らず `/auth/verified` |
+| 2 | 解決: 一般・番号あり／なし／形が違う／使い切れない。管理者・サポーターは入口の条件に足りない時に使い切らず `/login?error=staff_passkey_required` |
 | 3 | 管理者・サポーター（aal2）で戻り先なし・`/admin`。一般で保存が `/admin` は `/` |
 | 4 | 改ざんされた保存の値が既定に倒れる。例外を投げない |
 | 5 | Cookie の動作の適用（属性、本番だけ Secure、`clear`、`keep`） |
@@ -2369,7 +2373,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 制限の呼び出しが投げる | 握りつぶさず、例外がそのまま届いて認証にも戻り先にも進まない（この窓口は制限の呼び出しを外側の `catch` の外に置いており、Next.js が 500 にする） |
 | 未ログイン | 401。戻り先を解決しない。Cookie に触れない |
 | 認証を確かめられない | 503 と `Retry-After` |
-| 管理者・サポーターで aal2 でない | `redirectTo: '/auth/verified'`・`needsMfa: true`。Cookie は触らない |
+| 管理者・サポーターで入口の条件に足りない | `redirectTo: '/login?error=staff_passkey_required'`・`needsMfa: true`。Cookie は触らない |
 | 本文・見出しに役割を入れて送る | 無視する |
 
 **状態・永続化:** 表への書き込みは DD-AUTH-034 を通す。
@@ -2382,7 +2386,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 1 | 未ログインで 401、確かめを呼ばない。確かめられなくて 503 と `Retry-After` |
 | 2 | 一般の会員で `redirectTo` と `needsMfa: false`。役割と aal が claims 由来で、`x-role` などの見出しを無視する |
-| 3 | 管理者・サポーターで aal1 は `needsMfa: true`・`/auth/verified`・Cookie に触れない |
+| 3 | 管理者・サポーターで入口の条件に足りない時は `needsMfa: true`・`/login?error=staff_passkey_required`・Cookie に触れない |
 | 4 | 使い切った応答で戻り先の Cookie を消す。`no-store`。制限で 429。制限の呼び出しが投げたら握りつぶさず、認証も戻り先も呼ばない |
 
 ### DD-AUTH-036 ログインの入口のリンクの URL を作る（use-login-href.ts）
@@ -2436,7 +2440,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | API-AUTH-014、API-AUTH-016、API-AUTH-017、API-AUTH-018、SEC-AUTH-022 |
+| 上位 | API-AUTH-014、SEC-AUTH-022 |
 | 根拠 | `login`・`otp/verify`・`refresh`・`mfa/*` は窓口が `no-store` を付けず、トークンや TOTP の秘密を含む応答が共有の端末や中継に残る余地があった。窓口ごとの付け忘れを無くすため、共有の proxy が `/api/auth` 配下にまとめて付ける（ADR-0415、SEC-AUTH-022-AC-02） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト・E2E |

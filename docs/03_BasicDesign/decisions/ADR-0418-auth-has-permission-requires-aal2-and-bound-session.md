@@ -6,7 +6,7 @@
 
 `public.has_permission(permission_code)` は今、ACL の表（`user_roles`・`roles`・`role_permissions`・`permissions`）だけを見る。アプリを通らずに anon キーで取った通行証（パスワードだけ・メール OTP だけ・任意の session）でも、その利用者に ACL の権限があれば、PostgREST から管理の表に届く。本体に「JWT の `aal` が `aal2`」と「`session_id` が結び付いた生きた session（ADR-0417）」の検査を足し、これを使う約 100 の RLS の方針を書き換えずに従わせる。`has_permission` を使わず `auth.uid() = user_id` で本人の行を返す `profiles`・`orders`・`order_items` には、結び付いた生きた session を求める `AS RESTRICTIVE` の方針を 1 本ずつ足す。ユーザーの決定は Q2 案 B（全部の表を一度に）。
 
-> `aal2` の部分: 置き換え済み（ADR-0463）。`has_permission` の「`aal` が `aal2`」の検査は、パスキー・24時間以内・認めたパスキー2本以上の判定に置き換わる（有効になるのは段1a の Task 9）。結び付いた生きた session の検査はそのまま。
+> `aal2` の部分: 置き換え済み（ADR-0463）。`has_permission` の「`aal` が `aal2`」の検査は、パスキー・24時間以内・認めたパスキー2本以上の判定に置き換わる（有効になるのは段1a の Task 9）。結び付いた生きた session の検査はそのまま。TOTP の窓口を消した段4（ADR-0475）で、TOTP が `aal2` を上げる前提も無くなった。
 
 ## 範囲と根拠
 

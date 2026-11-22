@@ -1,5 +1,7 @@
 # 画面一覧
 
+> パスキー段4 Task 30 確認日: 2026-11-22。画面ルートを1件消した（`/auth/verified`。認証アプリ（TOTP）の確認とログインの後の振り分けの画面。実測の `src/app/**/page.tsx` は50件）。404になる（FR-AUTH-053-AC-03）。ログインの後の行き先は窓口とブラウザの判定が返す（基本設計の認証 ARC-AUTH-015、ADR-0475）。
+>
 > パスキー段4 Task 29 確認日: 2026-11-22。画面ルートを3件消した（`/auth/password-reset`・`/auth/password-reset/verify`・`/account/password`。実測の `src/app/**/page.tsx` は51件）。パスワードの再設定・変更の画面で、3つとも404になる（FR-AUTH-053-AC-02）。`/account` の画面に「パスワード」のリンクは無い。
 >
 > パスキー段4 Task 28 確認日: 2026-11-22。画面ルートを2件消した（`/login/password`・`/login/verify`。`src/app/**/page.tsx` は54件から52件）。`/login/password` は旧のパスワードのログイン・会員登録、`/login/verify` は旧のコード確認の画面で、どちらも404になる（FR-AUTH-053）。`/login` のヘッダーのログインのリンクと戻り先は `/login`・`/login/code` だけを指す。
@@ -86,7 +88,6 @@
 | `/login` | ログイン（パスキー・Google・メールのコード） | 「パスキーでログイン」・「Googleでサインイン」・メール欄と「メールでコードを受け取る」の3つの入口。`next`（戻り先）・`email`（メール欄の初期値。`tab` は読まない）を受ける（`registered` は読まない。消した確認リンクの印）。有効な保留のCookie（メールのコード）がある場合は `/login/code` へ（旧のパスワードのログインの保留のCookieは読まない）。メールの送信成功で `/login/code`、パスキーの成功で戻り先へ。パスキー未対応の端末ではボタンを出さず一文を出す | [page.tsx](../../../src/app/login/page.tsx) 店員が Google で断られた戻りは `/login?error=staff_passkey_required` で、「店員の方は、パスキーでログインしてください。」を出す（ほかの `error` の値は出さない。段3a Task 10 / DD-AUTH-083） |
 | `/login/code` | メールのコードの入力 | 保留のCookie（メールのコード）が有効な時だけ8桁のコード入力・再送・入れ直しを出す。無い・偽り・期限切れは `/login` へ。成功後は行き先へ（パスキーを勧める時は `/login/passkey`）。検索に載せない | [code/page.tsx](../../../src/app/login/code/page.tsx) |
 | `/login/passkey` | パスキーを作る勧め | メールのコードでログインした直後に「パスキーを作りませんか」を出す（「パスキーを作る」・「あとで」）。ログインしていなければ `/login` へ。店員と、顔認証・指紋・PIN の使えない端末には出さず行き先へ送る。成功しても自動では進まず「続ける」を出す。検索に載せない | [passkey/page.tsx](../../../src/app/login/passkey/page.tsx) |
-| `/auth/verified` | 認証確認・特権ユーザーのTOTP | 一般利用者はアカウントへ自動遷移。admin/supporterはMFA確認済みなら直ちに管理へ、未確認ならTOTP登録・確認後に管理へ。未認証はログイン案内リンク | [page.tsx](../../../src/app/auth/verified/page.tsx) |
 | `/account` | アカウント情報 | プロフィール・配送先・注文・問い合わせの4タブと、お客さんだけの「ログイン方法」タブ（`tab=security`。パスキーの一覧・追加・名前の変更・削除。DD-AUTH-065。`/account/password` へのリンクは段2で外した）。注文詳細へ移動。未ログインは案内リンク、ログアウト成功はホームへ。各編集・返信は同画面 | [page.tsx](../../../src/app/account/page.tsx) |
 | `/account/orders/[id]` | 注文詳細 | 自分の注文を取得し、`/account?tab=orders` に戻る。お問い合わせ、条件付き外部配送追跡へ。再度購入はカート追加後も同画面。商品行の予約注文分岐は下の補足を参照。未ログインは案内リンク | [[id]/page.tsx](../../../src/app/account/orders/%5Bid%5D/page.tsx) |
 | `/staff/invite` | 店員の招待のリンク（段3a Task 6 / DD-AUTH-078） | メールのリンク（`#` に合言葉）から開く。画面を開いただけでは何も送らず、ボタンを押した時だけ受け口 `POST /api/auth/staff/invite/start` を呼び、成功したら `/staff/register` へ移る。使えないリンク・失敗・試行の集中は固定の文を出す。検索に載せない | [page.tsx](../../../src/app/staff/invite/page.tsx)、[StaffInviteScreen](../../../src/features/auth/staff/components/StaffInviteScreen.tsx) |
@@ -132,7 +133,6 @@
 | --- | --- | --- |
 | 顧客向け18ルート、`/ui` | ログインを必須にするページ表示ガードなし。カート・購入はゲストにも提供 | データ取得・入力検証・決済可否は各APIで判断する。空カートのcheckoutは同じURLに案内を表示 |
 | `/login`・`/login/code` | 検証待ちCookie（メールのコード）の有無・有効性で、コード入力への移動／ログインへの戻りを判断 | メールのコードの始め・確定はAPIで実行する |
-| `/auth/verified` | 未認証は同じURLの案内、一般利用者はアカウントへ、特権ロールはTOTP確認へ | MFA済みの特権ロールは管理へ直行する。未認証案内のリンクは利用者が押して移動する |
 | `/account`・注文詳細 | 認証確認中は読込、未ログインは同じURLのログイン案内。ロール限定なし | [注文詳細API](../../../src/app/api/orders/%5Bid%5D/route.ts)は認証と注文所有者の一致を確認する |
 | `/admin` | 認証確認中は読込。未ログイン・admin/supporter以外は権限なし。MFA未確認は2要素認証案内。いずれも同じURLに留まる | ロールで表示タブ・操作候補が変わり、操作APIでも認可を確認する |
 | 管理の8作成・編集ルート | ページ・フォーム固有のログイン／ロール／MFA表示ガードなし。編集ページの取得失敗は同じURLのエラー表示 | フォーム表示は操作許可を意味しない。[管理API認可](../../../src/lib/auth/admin-rbac.ts)で認証、セッション、DBのACL権限、AAL2を確認する |

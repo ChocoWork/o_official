@@ -353,14 +353,14 @@ describe('API-AUTH-008 GET /api/auth/oauth/callback', () => {
       expect(intentCookieCalls(res)).toEqual([expect.objectContaining({ value: '', maxAge: 0 })]);
     });
 
-    test.each(['admin', 'supporter'])('API-AUTH-008 %s は入口の条件を満たさない側なので /auth/verified へ通し、控えは使い切らない', async (role) => {
+    test.each(['admin', 'supporter'])('API-AUTH-008 %s は入口の条件を満たさない側なので /login?error=staff_passkey_required へ通し、控えは使い切らない', async (role) => {
       exchangeCodeForSessionMock.mockResolvedValueOnce(exchanged({ app_metadata: { role } }));
       fakeConsume('/admin/orders');
 
       const res = await callGet(callbackRequest('?code=good-code', { cookie: INTENT_COOKIE }));
 
       expect(res.status).toBe(303);
-      expect(res.headers.get('location')).toBe('http://localhost:3000/auth/verified');
+      expect(res.headers.get('location')).toBe('http://localhost:3000/login?error=staff_passkey_required');
       expect(mockRpc).not.toHaveBeenCalled();
       expect(intentCookieCalls(res)).toEqual([]);
     });
@@ -390,7 +390,7 @@ describe('API-AUTH-008 GET /api/auth/oauth/callback', () => {
       const admin = await callGet(callbackRequest(query));
 
       expect(general.headers.get('location')).toBe('http://localhost:3000/');
-      expect(admin.headers.get('location')).toBe('http://localhost:3000/auth/verified');
+      expect(admin.headers.get('location')).toBe('http://localhost:3000/login?error=staff_passkey_required');
     });
 
     test('API-AUTH-008 ライブラリが溜めた session の Cookie を、移す応答へ付ける', async () => {
