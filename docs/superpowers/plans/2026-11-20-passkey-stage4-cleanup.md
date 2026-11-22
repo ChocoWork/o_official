@@ -21,7 +21,7 @@
 | 28 | お客さんのパスワードのログイン・会員登録・確認メールの窓口を消す | 無し |
 | 29 | パスワードの再設定・変更を消す | 無し |
 | 30 | TOTP・MFA の窓口と `/auth/verified`・MFA のやり直しの窓口を消す | 無し |
-| 31 | 最初の店長のコマンド `admin:bootstrap` を消す（オーナーの答え2が A の時） | 無し |
+| 31 | 最初の店長のコマンド `admin:bootstrap` を消す（オーナーの答え2は A） | 無し |
 | 32 | 移行 J（フックの旗）・K（表と関数を消す）と、フックの試験の反転 | J・K |
 | 33 | 残りの掃き出し（部品の縮小・設定・参照の0件の確かめ） | 無し |
 | 34 | 正本の文書と追跡の廃止の仕上げ | 無し |
@@ -37,7 +37,7 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 | 手助け | 呼ぶ spec（直すタスク） | 消すタスク |
 | --- | --- | --- |
 | `loginAsMemberLegacy`（`member-session-helpers.ts`） | `FR-LOGIN-030`（28・30）、`031`（28・29・30・32 に分ける）、`032`・`033`（30）、`FR-PWRESET-010`・`FR-ACCOUNT-046`（29）、`FR-ADMIN-MISC-008`（31）。**この手助けは中身が古い窓口（`login/resend`・`otp/verify`）を叩くので、Task 28 で中身を `loginAsMember`（メールのコード）に付け替える（名前・引数は残す）。窓口が消えた後も、この5本は自分のタスクで消す・直すまで緑のまま** | 33（別名ごと消す） |
-| `setLoginTwoFactorCookie`・`auth-2fa-test-utils.ts` | `FR-LOGIN-001`・`006`・`008`・`026`・`027`・`028`・`034`・`036`・`055`・`056`、`FR-CHECKOUT-012`、`login-otp-resend-errors`（`026` は 28 と 29 の両方に再設定の分があるので、**28 で呼びを外し、29 で再設定の分を消す**） | 33 |
+| `setLoginTwoFactorCookie`・`auth-2fa-test-utils.ts` | `FR-LOGIN-001`・`006`・`008`・`026`・`027`・`028`・`034`・`036`・`055`・`056`、`FR-CHECKOUT-012`、`login-otp-resend-errors`（`026` は 28 と 29 の両方に再設定の分があるので、**28 で呼びを外し、29 で再設定の分を消す**） | 28（`setLoginTwoFactorCookie`・`clearLoginTwoFactorCookie` と、`login-2fa-session` の import を外す）。ファイルごと消すのは 33（先に `setEmailCodeSessionCookie` を `member-session-helpers.ts` へ移す。`loginAsMember` が使うため） |
 | `createTestMember` の `password` | `FR-LOGIN-031`・`040`・`078`・`081` は、パスワード付きの会員を**自分の spec の中で** `createUser({ password, email_confirm: true })` で作る（拒否・基準の確かめ専用）。ほかは `password` を使わない | 33 |
 | `registerUser`・`loginUser`（`helpers.ts`） | 使う spec は0本（確認済み）。呼び手を grep で0件にしてから消す | 33 |
 | `loginAndOpenAccount`（`account-test-utils.ts`） | 残す（16本の `FR-ACCOUNT-*` が使う）。中身を `/login/password` から `loginAsMember` へ付け替える | 28 |
@@ -59,6 +59,8 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 
 **組み合わせの決め**: 問1が A（確認のリンクの入口を消す）なら、問5は A（確認メールにも8桁の数字を入れる）にする。問5を「ログイン画面からメールのコードでお入りください」と案内するだけの文にしない（確認がまだの人に届くのは確認のメールで、数字が無いと、頼むたびに同じメールが届き、入れなくなる＝行き止まり）。問1が B（リンクを残す）の時だけ、問5は B（今のまま）を選べる。調整役は、答えを受けた時にこの組み合わせを確かめる。**問1の「メールでの新規登録の入口を閉じる」案（旧 D）は、全員のメールのコードのログインも止める見込みが高いので採らない**（Task 26 (d) で記録だけ取る）。
 
+
+**依頼文の作り方**: 調整役が各タスクを依頼文に切り出す時は、そのタスクの節（Files・Interfaces・Steps）と、冒頭の表・Global Constraints・「E2E の対応」表と「jest・DB 結合の対応」表の該当の行・「消す物の一覧」の該当の行・事前の確かめの決め（各タスクの Files の末尾の「**事前の確かめの決め**」）を貼る。付録の文（Task 28・35）は一字一句で貼る。
 
 ## 作り手の判断（違えばオーナーが直す。末尾の「オーナーに聞くこと」に重要な物を再掲）
 
@@ -111,13 +113,14 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 - **消した単位の追跡の項目は、黙って消さず「廃止」にする**（documentation-guide の決まり）。書き方:
   1. 消す単位の `IMPL-`・`DD-`・`API-`・`SCR-`・`FR-`・`SR-`・`SEC-`・`THR-`・AC の「状態」を `廃止` に直し、中身は残す（番号は使い回さない）。**下から上の順**（試験 → AC → IMPL → DD → 構造設計 → 要件）で直す。
   2. 廃止の項目を指している項目は `retired-reference` で落ちる。指している側（子・上位・「関連」）を同じコミットで直す。まだ生きている物が廃止の物を上位に持つなら、上位を生きている物へ付け替える。
-  3. コードから `@impl`・`@design` が消えるので、`missing-impl` の逆（定義だけ残る）は `廃止` にして通す。
+  3. **IMPL は文書に項目が無い（TSDoc にだけある）ので、「IMPL を廃止にする」手は無い**。コードを消すと IMPL の ID も消える。各タスクの「IMPL … を廃止」は、「単位が全部消える DD を廃止にする」に読み替える。コードから `@impl`・`@design` が消えるので、`missing-impl` の逆（定義だけ残る DD）は `廃止` にして通す。
   4. `docs/05_Quality/reports/` は `npm run trace:report` で作り直す。手で直さない。
   5. 「廃止」にした物が、残る物の根拠として必要なら（例: SR-AUTH-014 の説明に残る一文）、文を直す。
   6. **構造設計（`DATA-`・`ARC-`・`API-`・`SCR-`）の扱い**: DD を廃止にする前に、その上位の構造設計を `npm run trace -- <ID>` で見る。下の DD が全部廃止になる（かつ結合テストも全部消える）なら、その構造設計も**同じタスクで**廃止にする。上位の ADR・SEC が廃止になる時も同じ。生き続ける中身があるなら、生きた DD と結合テストに付け替える。これを後のタスクへ回すと、間のコミットで `missing-child` か `retired-reference` の新しい鍵が出る。
 - **コミットの前に** `npm.cmd run validate-trace`・`npm.cmd run test:trace-coverage`・`npm.cmd run validate-docs`。**`validate-trace` の合否は「終了コード0（`scripts/trace/baseline.json` に無い違反の鍵が0件）」**。比べるのは件数でなく違反の鍵の集合なので、合計が97より減っていても、新しい鍵が1つ出れば落ちる。消す spec に付いていた基準の鍵（18件）と、廃止にした AC の `missing-child` は、基準より減る。**減った分は、各タスクの終わりに調整役が許可を得て `npm.cmd run validate-trace -- --update-baseline` で基準を更新する**（次のタスクの新しい鍵が、減った分に紛れないため）。届かない分岐は `test-gaps.md` の節に書く。
 - **コマンド（各タスク共通）**: 単体 `npx.cmd jest <パス>`、型 `npm.cmd run typecheck`、`npm.cmd run lint`、E2E `npx.cmd playwright test e2e/<spec> --project=<名前>` ではなく3幅を含む通常の流し方（`npx.cmd playwright test e2e/FR-LOGIN-080`）、DB 結合 `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx.cmd jest tests/integration/db/<file> --runInBand`（`db reset` の後）。
 - **旗（`reject_customer_password`）を切り替える試験は、DB 全体に効くので `isolated-global`（直列）の project に入れる**（`FR-LOGIN-062`・`071`・`077` と同じ。`playwright.config.ts` の `testIgnore` と `testMatch` の両方）。対象は `FR-LOGIN-078` の AC-03、`081`。普通の project の spec は、旗を触らない。
+- **`docs/05_Quality/reports/test-gaps.md` の「届かない分岐」の節（手書き）**: 消したファイルの行は外し、縮めたファイルの行番号は直す。しないと `test:trace-coverage` が「ずれた」で落ちる。各タスクの Files に、そのタスクの該当を書いた（28: `confirm/route.ts`・`otp/verify`・`register`・`VerifyOtpClient`・`AuthTabs`・`Header.tsx`・`return-path.ts`。29: `password-reset/page.tsx`・`AuthResultScreen`。30: `auth/verified/page.tsx`・`mfa/enroll-totp`・`admin/users/mfa/reset`。31: `scripts/admin/bootstrap.ts`・`bootstrap-core.ts`）。
 - **廃止の手順への追加（最後の試験が消える AC）**: テストを消す・書き直す前に `npm run trace -- <AC>` で子のテストを数える。**最後の1本が消えるなら、その AC を廃止にするか、残す spec に名乗らせ直す**。生きたまま子が0になる AC は、新しい `missing-child` の鍵になる。移す試験（`FR-LOGIN-079`）の名前には、移した AC の ID を必ず付ける（付けないと `untagged-test`）。
 - **番号の予約**（着手時に `grep` で空きを確かめる。2026-11-20 の実測の最大は SR-AUTH-029、FR-AUTH-052、API-AUTH-038、DD-AUTH-091、IMPL-AUTH-425、SEC-AUTH-059、THR-AUTH-057、DATA-AUTH-022、SCR-AUTH-016、ARC-AUTH-014、FLOW-AUTH-005、STATE-AUTH-006、ADR-0474、FR-LOGIN-077。ADR-0480 は別の領域が持つので避ける）:
   `SR-AUTH-030`、`FR-AUTH-053`〜`055`、`DD-AUTH-092`〜`093`（093 は予備）、`IMPL-AUTH-426`〜`428`（予備。新しい TS の単位が無ければ使わない）、`SEC-AUTH-060`〜`061`、`THR-AUTH-058`〜`059`、`ARC-AUTH-015`、`ADR-0475`〜`0476`、E2E は `e2e/FR-LOGIN-078`〜`082`（082 は予備）。`API-AUTH-039`・`DATA-AUTH-023`・`FR-AUTH-056`〜`058` は**予約しない**（作らない。下の親の決めを参照）。
@@ -125,7 +128,7 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
   - `SR-AUTH-030`（パスワードと認証アプリのログインの廃止）← `FR-AUTH-053`（消した窓口・画面が404。AC は `FR-LOGIN-080` が確かめる）・`054`（残す流れが動く。AC は `FR-LOGIN-078`・`079`）・`055`（フックがお客さんの password を拒否。AC は `FR-LOGIN-081`）。試験の手助け（Task 27）は製品の要件でないので ID を作らず、範囲の外の DB 結合（`customer_session_helper.integration.test.ts`。`auth_` で始めない名前）で確かめる。
   - `THR-AUTH-058`（GoTrue を直に叩くパスワードのログインが残る）→ `SEC-AUTH-060`。AC は `SEC-AUTH-060-AC-01`（お客さんの `password` が `[customer-password-disabled]` で拒否される）・`-AC-02`（ほかの方式は通る）で、`FR-LOGIN-081` が名乗る。DB 結合 `auth_passkey_stage4_migrations.integration.test.ts` のテスト名は、既存の `DATA-AUTH-013`（フックの関数）を名乗る。J・K の SQL に DD・IMPL は作らない。
   - `THR-AUTH-059`（消した窓口へのリンクと戻り先が残る）→ `SEC-AUTH-061`。AC は `SEC-AUTH-061-AC-01`（消した画面・窓口に着地しない。`FR-LOGIN-080` が名乗る）。**`THR-AUTH-059`・`SEC-AUTH-061`・`SEC-AUTH-061-AC-01` は Task 28 で作る**（080 を作るタスクのため）。DD は**新しく作らず**、既存の `DD-AUTH-060`（`post-login.ts` の行き先）の上位に `SEC-AUTH-061` と `ARC-AUTH-015` を足す（`@design` は1単位に1つだけで、付け足すと `bad-design-link` になるため。`DD-AUTH-092` は予備のまま使わない）。`return-intent-service.ts` の `@design DD-AUTH-034` は変えない。単体テストは `tests/unit/features/auth/passkey/post-login.test.ts`。
-  - `ARC-AUTH-015`（行き先と、消した窓口・画面の構成）は **Task 30 で作る**。上位は `SEC-AUTH-061` と `ADR-0475`（構造設計の上位には要件・SEC・DRV のどれかが要る）。`ADR-0475`（`/auth/verified` を消し、行き先を判定が返す）も Task 30 で作る。**Task 32 で**、`ARC-AUTH-015` の上位に `ADR-0476` を足し、`ADR-0476`（旗を真にする J と、表を消す K を分ける）を作る。`ADR-0476` の上位は `SEC-AUTH-060`（`THR-AUTH-058`・`SEC-AUTH-060` も Task 32 で作る）。**`ARC-AUTH-015` を名乗る結合テスト**は `tests/integration/api/auth/post-login.test.ts`（行き先の分。Task 30 の Files）。`ARC-AUTH-015` の DD の子は `DD-AUTH-060`。
+  - `ARC-AUTH-015`（行き先と、消した窓口・画面の構成）は **Task 30 で作る**。上位は `SEC-AUTH-061` と `ADR-0475`（構造設計の上位には要件・SEC・DRV のどれかが要る）。`ADR-0475`（`/auth/verified` を消し、行き先を判定が返す）も Task 30 で作る。**Task 32 で** `ADR-0476`（旗を真にする J と、表を消す K を分ける）を作り、その構造設計の子は `DATA-AUTH-013`（`ARC-AUTH-015` ではない）。`ADR-0476` の上位は `SEC-AUTH-060`（`THR-AUTH-058`・`SEC-AUTH-060` も Task 32 で作る）。**`ARC-AUTH-015` を名乗る結合テスト**は `tests/integration/api/auth/post-login.test.ts`（行き先の分。Task 30 の Files）。`ARC-AUTH-015` の DD の子は `DD-AUTH-060`。
 - 追跡の範囲: `scripts/trace/scope.json` の AUTH は `src/app/auth/**`・`src/app/api/auth/**`・`src/features/auth/services/password-change.ts` などを名指しする。**消した物をここから外し（`password-change` の2行など）**、外すたびに `validate-trace` と `test:trace-coverage` を流す。新しい名前が外れる時は足す。
 
 **文面（お客さん・店員に見える物）**
@@ -142,7 +145,7 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 2. **消した物が本当に無いか**: 消した窓口が404（`/api/auth/login` など）、消した画面が404（`/login/password` など）で、どこからもリンクが残らないか。リンクの元（`Header`・`LoginContext`・戻り先・メール・文書）を grep で0件にしたか。
 3. **お客さんの `password` をフックが拒否するか**: 手元の GoTrue へ直に `grant_type=password` を投げて拒否され（拒否の印 `[customer-password-disabled]`）、メールのコード・Google・パスキー・更新は通るか。店員の拒否（`[staff-...]`）の印とは混ざらないか。旗を偽に戻すと、元に戻るか。
 4. **パスワードで JWT を取っていた試験が、旗を真にしても通るか**（Task 27 の替え方が、旗を真にした後の Task 32 で効くか）。
-5. **戻せるか**: J・K に `ROLLBACK` があり、戻しの順（K → J → 古いアプリ）が手順書にあり、古いアプリ（`c336e0b5`）に戻した時にお客さんがパスワードで入れるか。
+5. **J・K の `ROLLBACK` が手元で流れるか**: J・K に `ROLLBACK` の頭書きがあり、手元で流して、戻した後の権限（`relacl`・`proacl`・`proconfig`・方針の数）が K の前と同じか。戻しの順（K → J）が手順書にあるか。（オーナーの答え4: 開店前なので古いアプリへ戻す必要は無い。古いアプリでお客さんがパスワードで入れるかは確かめない。）
 6. **追跡**: 廃止にした項目を指す物が残らないか。最後の試験が消えて子が0になる AC が残らないか。`validate-trace` が終了コード0か（基準に無い鍵が0件）。
 7. **監査の行・表を消していないか**。
 
@@ -159,7 +162,7 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 | 消す（フォルダごと） | `src/app/login/password/`・`src/app/login/verify/`、`src/app/auth/password-reset/`、`src/app/auth/verified/`、`src/app/account/password/`、`src/app/api/auth/{login,otp,register,confirm,mfa,password,password-reset}/`、`src/app/api/admin/users/mfa/` | 28〜30 |
 | 消す（ファイル） | `src/components/{AuthTabs,LoginModal,RegisterModal,AuthResultScreen}.tsx`、`src/features/auth/services/{login-2fa-session,password-change,password-reset-session}.ts`（`register.ts` は縮めるだけ）、`schemas/{login,otp,register,password-change,password-reset}.ts`、`src/lib/pwned-password.ts`、`scripts/admin/bootstrap*.ts` | 28〜31 |
 | 縮める（呼び手が残る） | `src/contexts/LoginContext.tsx`、`src/app/login/page.tsx`、`src/components/Header.tsx`、`src/contexts/Providers.tsx`、`src/features/auth/services/register.ts`・`session.ts`、`schemas/common.ts`、`src/lib/cookie.ts`、`src/lib/auth/service-role-auth-client.ts`、`src/features/auth/return-intent/*`、`src/app/api/auth/{me,post-login,oauth/callback}/route.ts`、`src/lib/audit.ts`（注釈だけ） | 28〜33 |
-| 直す | E2E の手助け `e2e/{member-session-helpers,account-test-utils,helpers,home-grant-test-utils,news-test-utils,passkey-hook-scenarios}.ts`、`auth-2fa-test-utils.ts`（消す） | 27〜30・32 |
+| 直す | E2E の手助け `e2e/{member-session-helpers,account-test-utils,helpers,home-grant-test-utils,news-test-utils,passkey-hook-scenarios}.ts`、`auth-2fa-test-utils.ts`（28 で縮め、33 で消す） | 27〜30・32・33 |
 | 直す | `supabase/config.toml`（手元の TOTP を止める）、`docs/06_Operations/{passkey-production-apply-runbook,passkey-staff-recovery,first-admin-bootstrap,supabase-auth-config,db-migrations}.md` | 31〜35 |
 | 直す | 台帳、`docs/02_Requirements/areas/{auth,admin}.md`、`docs/03_BasicDesign/areas/{auth,admin}.md`、`api/{api-spec,route-inventory}.md`、`ui/{screen-list,screen-flow}.md`、`architecture/system-overview.md`、`docs/04_DetailDesign/pages/{14_login,16-2_admin_misc}.md`、`docs/04_DetailDesign/sequence/auth-*.md`、ADR（0400〜0405・0409・0410・0413・0418・0421・0457・0461・0463 の状態）、`docs/05_Quality/tests/test-spec.md`、`src/features/auth/design.md`、`scripts/trace/{scope,baseline}.json` | 各タスク・34 |
 
@@ -176,7 +179,7 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 | `/login/password`（`src/app/login/password/page.tsx`） | 消す | ADR-0469。リンク元は旧の流れの中だけ | 28 |
 | `/login/verify`（`page.tsx`・`VerifyOtpClient.tsx`） | 消す | 旧の2段目 | 28 |
 | `/api/auth/login`・`login/resend`・`login/cancel`・`/api/auth/otp/verify`・`/api/auth/register` | 消す | パスワードのログイン・登録の窓口。`/login/page.tsx` と `LoginContext` が呼ぶ分は縮める | 28 |
-| `/api/auth/confirm`（会員登録の確認メールのリンク） | 消す（オーナーの答え1が A の時。B なら残す） | パスワード登録が無くなると、確認のメールの送り元が無い。本番に確認前のパスワード登録が残っていれば、手順書で読んで消す（Task 35） | 28 |
+| `/api/auth/confirm`（会員登録の確認メールのリンク） | 消す（オーナーの答え1は A） | パスワード登録が無くなると、確認のメールの送り元が無い。本番に確認前のパスワード登録が残っていれば、手順書で読んで消す（Task 35） | 28 |
 | `AuthTabs`・`LoginModal`・`RegisterModal`・`AuthResultScreen`（と `AuthResultScreen.css`） | 消す | `AuthResultScreen` の呼び手は消す `password-reset/page.tsx` だけ。`Header.tsx` の `LoginModal` は `loginOpen` を立てる所が無いことを確かめて外す | 28・29 |
 | `src/contexts/Providers.tsx` の `isAuthPage` の `/login/verify`・`/login/password` | 縮める | `/login/code`・`/login/passkey` は残す | 28 |
 | `/auth/password-reset`（`page.tsx`・`verify/page.tsx`・`verify/VerifyClient.tsx`）、`/api/auth/password-reset/{request,link,confirm,session}` | 消す | 設計 7。パスワードが無い | 29 |
@@ -185,7 +188,7 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 | `/account/password`（`page.tsx`・`PasswordChangeForm.tsx`）、`/api/auth/password/change/{start,confirm}` | 消す | 設計 7。アカウントの画面からのリンクは段2で外し済み | 29 |
 | `/api/auth/mfa/{enroll-totp,status,verify}`、`/auth/verified` | 消す | 設計 4-2・7。`enroll-totp` は店員向けが既に410 | 30 |
 | `/api/admin/users/mfa/reset` | 消す | `redo` が置き換えた（作り手の判断4） | 30 |
-| `scripts/admin/bootstrap*.ts`・`npm run admin:bootstrap` | 消す（オーナーの答え2が A の時） | パスワード＋TOTP の最初の店長を作る物。段4のアプリでは入れない | 31 |
+| `scripts/admin/bootstrap*.ts`・`npm run admin:bootstrap` | 消す（オーナーの答え2は A） | パスワード＋TOTP の最初の店長を作る物。段4のアプリでは入れない | 31 |
 | `/api/auth/{logout,me,refresh,post-login,oauth/*,passkey/*,email-code/*,staff/*}`、`/login`・`/login/code`・`/login/passkey`、`/admin/passkeys` | 残す | 残る流れ | - |
 
 ### サービス・部品・設定
@@ -236,7 +239,7 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 | `FR-LOGIN-005-metadata` | `/login` の metadata | 残す | - |
 | `FR-LOGIN-006-otp-resend-countdown` | 旧の2段目の再送 | 消す | 28 |
 | `FR-LOGIN-008-password-otp-2fa` | パスワード＋コードの2段 | 消す | 28 |
-| `FR-LOGIN-009-auth-tabs`・`011`・`012`・`014`・`015`・`016`・`019`・`020`・`021`・`022`・`029` | `/login/password` のタブ・色・揃え・下線・階層 | 消す（画面ごと）。ただし「1画面に収まる・真ん中寄せ・階層」の AC は新しい `/login`・`/login/code` に移す（オーナーの答え3が A の時。`FR-LOGIN-079`。B の時は AC を廃止） | 28 |
+| `FR-LOGIN-009-auth-tabs`・`011`・`012`・`014`・`015`・`016`・`019`・`020`・`021`・`022`・`029` | `/login/password` のタブ・色・揃え・下線・階層 | 消す（画面ごと）。ただし「1画面に収まる・真ん中寄せ・階層」の AC は新しい `/login`・`/login/code` に移す（オーナーの答え3は A。`FR-LOGIN-079`） | 28 |
 | `FR-LOGIN-013-password-reset-link-placement` | 再設定のリンクの置き場所 | 消す | 29 |
 | `FR-LOGIN-017-iphone-se-one-screen` | `/login/password` が1画面 | 消す。`/login` の1画面は 079 へ移す | 28 |
 | `FR-LOGIN-018-verified-brand-design` | `/auth/verified` の見た目（5） | 消す | 30 |
@@ -257,18 +260,18 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 | `FR-LOGIN-069-staff-other-paths-rejected`（5） | 店員のほかの道の拒否。`/api/auth/login`・`mfa/enroll-totp` を直に叩く分がある | 書き直す: 消した窓口を直に叩く分は消し、メールのコード・Google の分は残す | 28・30 |
 | `FR-LOGIN-041〜054`・`061〜068`・`070〜077` | パスキー・知らせ・店員の運用 | 残す（`grant_type=password` を使う関数の権限の試験〔047・061・074・075・076〕は Task 27 で手助けを替える） | 27 |
 | `FR-PWRESET-001〜010`（10本） | パスワードの再設定の画面・窓口・実メール | すべて消す。010 は `loginAsMemberLegacy` を使う | 29 |
-| `FR-SIGNUP-001`（`register route removed`）・`002`・`003` | `/login/password?tab=register`・`/api/auth/register`・確認リンク | すべて消す（オーナーの答え1が B なら 003 は残して書き直す） | 28 |
+| `FR-SIGNUP-001`（`register route removed`）・`002`・`003` | `/login/password?tab=register`・`/api/auth/register`・確認リンク | すべて消す（オーナーの答え1は A） | 28 |
 | `FR-UI-008-status-messages`（5） | 操作の結果の案内。`/auth/password-reset`・`/login/password` を使う分がある | 書き直す: 残る画面（`/login/code` の案内）に替える。替えられない分は AC を廃止 | 28・29 |
 | `FR-CHECKOUT-012-account-profile-defaults`（1） | `/login/password` で入ってから確かめる | 書き直す: `loginAsMember` で入る | 28 |
 | `FR-ACCOUNT-046-password-change`（17） | パスワードの変更（ledger の `FR-AUTH-006-AC-06` を含む） | 消す | 29 |
 | `FR-ACCOUNT-001〜029`（`loginAndOpenAccount` を使う16本） | アカウントの画面 | 残す（手助け `account-test-utils.ts` の `loginAndOpenAccount` を、`/login/password` から `loginAsMember` へ付け替える。ここは Task 28） | 28 |
 | `FR-ADMIN-MISC-001`（`mfa/reset` の分） | 管理の窓口の認可 | 書き直す: `mfa/reset` の行を消す | 30 |
 | `FR-ADMIN-MISC-003`（10） | 強制失効と MFA のやり直しの守り | 書き直す: `revoke-user-sessions` の分は残し、`mfa/reset` の分を消す | 30 |
-| `FR-ADMIN-MISC-008-first-admin-bootstrap`（2。skip 1） | 最初の店長のコマンド | 消す（オーナーの答え2が A の時）。B の時は、skip を外して書き直す（コマンドが作る利用者・役割・TOTP 無しを DB で確かめる。ログインは確かめない） | 31 |
+| `FR-ADMIN-MISC-008-first-admin-bootstrap`（2。skip 1） | 最初の店長のコマンド | 消す（オーナーの答え2は A）。Task 28 では触らない | 31 |
 | 関数の権限の試験（`FR-LOGIN-047`・`061`・`074`・`075`・`076`、`FR-LOOK-SEC-002`、`FR-NEWS-SEC-002`・`004`、`FR-PRIVACY-007`、`FR-SEARCH-020`、`FR-STOCKIST-012`・`014`） | `anon.auth.signInWithPassword` で会員の JWT を取る | 書き直す: Task 27 の手助けで取る | 27 |
-| 手助け | `e2e/member-session-helpers.ts`（`loginAsMemberLegacy`・`setLoginTwoFactorCookie`・`createTestMember` の `password`）、`auth-2fa-test-utils.ts`（消す）、`account-test-utils.ts`、`helpers.ts`（`registerUser`・`loginUser`）、`home-grant-test-utils.ts`、`news-test-utils.ts`、`passkey-hook-scenarios.ts`（`signInWithPasswordGrant` は 040・031 の拒否の確かめに使うので残す） | 呼びを外すのは各 spec のタスク、定義を消すのは Task 33（冒頭の表） | 27〜33 |
+| 手助け | `e2e/member-session-helpers.ts`（`loginAsMemberLegacy`・`setLoginTwoFactorCookie`・`createTestMember` の `password`）、`auth-2fa-test-utils.ts`（28 で縮め、33 で消す）、`account-test-utils.ts`、`helpers.ts`（`registerUser`・`loginUser`）、`home-grant-test-utils.ts`、`news-test-utils.ts`、`passkey-hook-scenarios.ts`（`signInWithPasswordGrant` は 040・031 の拒否の確かめに使うので残す） | 呼びを外すのは各 spec のタスク、定義を消すのは Task 33（冒頭の表） | 27〜33 |
 
-**skip の一覧（台帳 1-3）の最後**: skip は7定義（`FR-LOGIN-032` の6、`FR-ADMIN-MISC-008` の1）。032 の6定義は Task 30 で消す。008 の1定義は Task 31 で消す（オーナーの答え2が B なら書き直して外す）。**Task 36 で `grep -rn "test.skip(true" e2e` を取り、段4の理由（`段4で消す機能`）が0件であることを確かめる**。1つでも残れば止める。
+**skip の一覧（台帳 1-3）の最後**: skip は7定義（`FR-LOGIN-032` の6、`FR-ADMIN-MISC-008` の1）。032 の6定義は Task 30 で消す。008 の1定義は Task 31 で消す（オーナーの答え2は A）。**Task 36 で `grep -rn "test.skip(true" e2e` を取り、段4の理由（`段4で消す機能`）が0件であることを確かめる**。1つでも残れば止める。
 
 ## jest・DB 結合の対応（まとめ）
 
@@ -293,16 +296,18 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 **Files:**
 - Create: `e2e/FR-LOGIN-078-legacy-account-email-code-login.spec.ts`。Modify: `playwright.config.ts`（078 を `isolated-global` の `testIgnore`・`testMatch` に足す。旗を切り替える AC-03 が同時に流れる spec を壊さないため）
 - 文書（同じコミット）: `docs/02_Requirements/areas/auth.md` に `SR-AUTH-030`・`FR-AUTH-054`（残す流れが動く。AC は 078 が名乗る。FR に構造設計の子は要らない）。基本設計・脅威の文書は触らない。IMPL は無し（試験だけ）。
-- 基準の記録: `.superpowers/sdd/2026-11-20-passkey-stage4/baseline.md`（実行者が作る。コミットしない）
+- 基準の記録: `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/baseline.md`（実行者が作る。コミットしない）
+
+**事前の確かめの決め**: baseline.md の置き場は `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/`。`FR-LOGIN-058` は Task 28 で画面の1文が変わると落ちるので、Task 26 の基準の一覧に入れてよいが、Task 28 の Step 4 で書き直しを前提に流す。
 
 **Interfaces:**
 - Consumes: 既存の `createTestMember`（今は `password` 付きだが、Task 33 で `password` を消す）。**078 は `createTestMember` に頼らず、spec の中で `createUser({ email, password, email_confirm: true })` で「パスワードで作ったアカウント」を作る**（Task 33 の後も意味が変わらないため）、`loginAsMember`（メールのコード。`/api/auth/email-code/{start,verify}`）、`readLatestCode`、`createAdminSessionActor`。
-- Produces: `FR-LOGIN-078`（3幅）。AC は `FR-AUTH-054-AC-01`〜`03`:
+- Produces: `FR-LOGIN-078`（3幅）。AC は `FR-AUTH-054-AC-01`〜`03`（`FR-AUTH-054` の AC の番号はここで決める。`FR-LOGIN-079` が名乗るのは移した古い AC の ID で、`FR-AUTH-054` の AC は 078 だけが名乗る）。旗を切り替える手助けは `e2e/passkey-hook-scenarios.ts` に `withCustomerPasswordFlag(db: PgClient, value: boolean, body: () => Promise<void>): Promise<void>`（始めの値を読み、`finally` でその値に戻す）の名前と形で足す。Task 32 が同じ関数を使う:
   - AC-01 パスワード付きで作った確認済みのアカウントが、メールのコードで `/account` に入れる。
   - AC-02 同じアカウントに、鍵を足せる勧めの画面（`offerPasskey`）が出る（残す流れ）。
-  - AC-03 店員（`provisionStaff` で作った店長）は、メールのコードで入ろうとすると断られ、固定の文「店員の方は、パスキーでログインしてください。」が出る（旗を真にしても変わらない。FR-LOGIN-069 と重ならない最小の1本）。
+  - AC-03 店員（`provisionStaff` で作った店長）は、メールのコードで入ろうとすると断られ、固定の文「店員の方は、パスキーでログインしてください。」が出る（**旗が真でも断りの文が同じ**であることだけを確かめる。店員の断り自体は `FR-LOGIN-069`〔`FR-AUTH-046-AC-04`〕が持つので、同じ確かめを繰り返さない。テスト名にもそう書く）。
 
-- [ ] **Step 1: 事実を測る（手元の GoTrue）** — 次の (a)〜(e) を実際に流して、結果を `baseline.md` と、後で ADR-0475 の「背景」に書く（推測で書かない）。(a) パスワード付き・確認済みのアカウントに `email-code/start` → 8桁のコードのメールが届き、`verify` で入れる。(b) パスワード付き・**確認前**（`email_confirm: false`）のアカウントに `email-code/start` → 届くのはコードか確認のリンクか（ADR-0469 は「確認のメール」と書く。実測する）。(c) 確認前のアカウントが、確認のリンクを開かずに入れる道があるか。**(d) 記録だけ取る（採るためではない）**: `supabase/config.toml` の `[auth.email] enable_signup = false` に変え、**`npx.cmd supabase stop` → `start` で設定を効かせて**（変えた後と、元に戻した後の両方で。`db reset` では効かない）、次が通るかを記録する: 登録済みの人への `signInWithOtp({ shouldCreateUser: false })`・`auth.admin.createUser`・店員の招待の道（`generateLink` の magiclink → `verifyOtp`）・Task 27 の手助け・Google の新規ログインの始め・直の `/auth/v1/signup`。記録を取った後、**元に戻して `stop` → `start` を済ませ**、(a) を流し直して元の状態に戻ったことを確かめる。見込みは、メールでのログインそのものが止まる（`email_provider_disabled`）。**どれか1つでも落ちたら、この案は採らない（旧の問1 の D）。全部通っても、オーナーへ聞き直すまで採らない**。**(e)** 確認メールの雛形（`supabase/templates/confirmation.html`）に `{{ .Token }}` を入れた手元（`stop` → `start` で効かせる。測り終わったら元に戻して `stop` → `start`）で、確認前のアカウントが `email-code/start` → 届いた8桁の数字を `email-code/verify`（`type: 'email'`）に入れて入れ、確認済みになるか（答え1・5 の A の前提）。**落ちたら、Task 28 を渡す前に調整役が答え1・5 を聞き直す**。
+- [ ] **Step 1: 事実を測る（手元の GoTrue）** — 次の (a)〜(e) を実際に流して、結果を `baseline.md` と、後で ADR-0475 の「背景」に書く（推測で書かない）。(a) パスワード付き・確認済みのアカウントに `email-code/start` → 8桁のコードのメールが届き、`verify` で入れる。(b) パスワード付き・**確認前**（`email_confirm: false`）のアカウントに `email-code/start` → 届くのはコードか確認のリンクか（ADR-0469 は「確認のメール」と書く。実測する）。(c) 確認前のアカウントが、確認のリンクを開かずに入れる道があるか。**(d) 記録だけ取る（採るためではない。採らない決めは済んでいるので、調整役が要否を決めて省いてよい）**: `supabase/config.toml` の `[auth.email] enable_signup = false` に変え、**`npx.cmd supabase stop` → `start` で設定を効かせて**（変えた後と、元に戻した後の両方で。`db reset` では効かない）、次が通るかを記録する: 登録済みの人への `signInWithOtp({ shouldCreateUser: false })`・`auth.admin.createUser`・店員の招待の道（`generateLink` の magiclink → `verifyOtp`）・Task 27 の手助け・Google の新規ログインの始め・直の `/auth/v1/signup`。記録を取った後、**元に戻して `stop` → `start` を済ませ**、(a) を流し直して元の状態に戻ったことを確かめる。見込みは、メールでのログインそのものが止まる（`email_provider_disabled`）。**どれか1つでも落ちたら、この案は採らない（旧の問1 の D）。全部通っても、オーナーへ聞き直すまで採らない**。**(e)** 確認メールの雛形（`supabase/templates/confirmation.html`）に `{{ .Token }}` を入れた手元（`stop` → `start` で効かせる。測り終わったら元に戻して `stop` → `start`）で、確認前のアカウントが `email-code/start` → 届いた8桁の数字を `email-code/verify`（`type: 'email'`）に入れて入れ、確認済みになるか（答え1・5 の A の前提）。**落ちたら、Task 28 を渡す前に調整役が答え1・5 を聞き直す**。
 - [ ] **Step 2: 基準を取る** — 3000番を止め、残す流れの spec を3幅で流し、件数と結果を `baseline.md` に控える: `FR-LOGIN-002`・`044`・`048`・`050`・`055`・`057`・`058`・`060`・`064`・`065`・`066`・`068`・`069`・`070`・`072`。赤があれば「段4と無関係の既存の赤」として別に控え、段4の比較から外す。
 - [ ] **Step 3: 基準の試験を書く**（RED は無い。実装を変えず、今の master で通る確かめを足すだけのため） — 078 を AC-01〜03 で書く。AC-01〜02 は今の master で通る（基準）。AC-03 は、フックの旗を真にした状態でも通ることを確かめる（旗を切り替える手助けを `e2e/passkey-hook-scenarios.ts` に1つ足し、`db` の `UPDATE private.passkey_staff_config` で切り替え、**始めに今の値を読み、`try/finally` でその値に戻す**（Task 26 の時点は偽。J の後に流れても真のまま戻る）。078 は `isolated-global` なので、ほかの spec と同時に流れない。Task 32 が同じ手助けを使う）。
 - [ ] **Step 4: 通ることを確かめる** — 078 を3幅 PASS。`trace:report`・`validate-trace`・`test:trace-coverage`・`validate-docs`。
@@ -316,25 +321,54 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 - Modify: `tests/integration/db/group_g3_postgrest_paths.integration.test.ts`、`group_g4_postgrest_paths.integration.test.ts`、`order_status_postgrest.integration.test.ts`
 - 文書: 無し（試験の手助けは製品のコードでも要件でもないので、ID・追跡の項目を作らない）。
 
+- Modify: `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts` の `createSignedInActor('member')`（:175。`requestToken('password', …)` で会員の actor を作り、`sharedMember()` を :322・344・484・510・552・591 の6か所が使う）を `signInCustomerWithoutPassword` に替える。031 は 28〜32 でも別の直しを受けるが、**手助けの差し替えはこのタスクの責任**（旗を真にした後も 031 の会員の actor が通るため）。
+
+**事前の確かめの決め**: 上のとおり 031 を Task 27 の Modify に加える。
+
 **Interfaces:**
 - Produces（試験の手助け。製品のコードではないので `@impl` は付けない）: `signInCustomerWithoutPassword(email: string): Promise<{ accessToken: string; refreshToken: string; userId: string }>`。実装は `auth.admin.generateLink({ type: 'magiclink', email })` の `hashed_token` を、匿名の鍵のクライアントの `auth.verifyOtp({ token_hash, type: 'magiclink' })` に渡して session を得る（手元の GoTrue だけ。`isLocalUrl` の見張りを通す）。GoTrue の `authentication_method` は `password` 以外になる。フックはお客さんの `password` だけを拒否する（`20261116230000` の `IF NOT v_is_staff` の分岐）ので、旗が真でも拒否されない（レビューでコードを読んで確かめ済み）。`verifyOtp` の `type` は `'email'` でもよい。
-- Consumes: 既存の `createClient`、`localAdmin()`、`requireLocalEnv`。
+- Consumes: 既存の `createClient`、`isLocalUrl`（`scripts/e2e/environment.ts`）。`localAdmin()`・`requireLocalEnv` は各ファイルの中の関数で export されていないので、手元の見張りは手助けの中に書く。
 
 - [ ] **Step 1: 失敗する試験を書く** — (1) `signInCustomerWithoutPassword` が会員の `access_token` を返し、そのトークンで `authenticated` の PostgREST（自分の行）が読める（旗が偽の時）。(2) 旗が真の時も同じトークンが取れる。(3) 旗が真の時、`anon.auth.signInWithPassword` は拒否される（旗を真にしたら落ちる古い取り方の証拠）。**(2)(3) は旗を切り替えるので、DB 結合のこのファイルは `--runInBand` で流し、始めに今の値を読み、`finally` でその値に戻す（J の後は真。偽に決め打ちで戻すと、後に流れる `auth_passkey_*` と 081 が落ちる）**（E2E の spec とは同時に流さない）。置き場: `tests/integration/db/customer_session_helper.integration.test.ts`（`auth_` で始めない名前＝範囲の外）。
 - [ ] **Step 2: 失敗を確かめる** — 手助けが無く FAIL。
-- [ ] **Step 3: 実装する** — 手助けを作り、上の spec・DB 結合の `signInWithPassword` を1つずつ差し替える。`createTestMember` の `password` はまだ消さない（Task 33）。差し替えた後に `grep -rn "signInWithPassword\|grant_type=password" e2e tests/integration` を取り、残るのは `FR-LOGIN-031`・`040`・`passkey-hook-scenarios.ts`（拒否を確かめる側）と、消す物（Task 28〜31）だけであることを報告する。
+- [ ] **Step 3: 実装する** — 手助けを作り、上の spec・DB 結合の `signInWithPassword` を1つずつ差し替える。`createTestMember` の `password` はまだ消さない（Task 33）。差し替えた後に `grep -rn "signInWithPassword\|grant_type=password" e2e tests/integration` を取り、残るのは `FR-LOGIN-031` の拒否を確かめる分（`grant_type=password` の :716・:755）・`040`・`passkey-hook-scenarios.ts`（拒否を確かめる側）と、消す物（Task 28〜31）だけであることを報告する。
 - [ ] **Step 4: 通ることを確かめる** — 触った spec を3幅 PASS、DB 結合 PASS。**旗を真にした確かめ（調整役が流す）**: 手元の DB で `update private.passkey_staff_config set reject_customer_password = true;` を流し、対象の spec を `npx.cmd playwright test <spec> --workers=1` で3幅流し、終わったら必ず `update private.passkey_staff_config set reject_customer_password = false;` に戻す（途中で落ちても戻す。**この手動の確かめは J の前なので、偽に戻してよい**。J の後に同じ確かめをする時は、始めの値に戻す）。これは Task 32 の先取りの確かめで、ほかの spec を同時に流さない。`trace:report` ほか。
 - [ ] **Step 5: コミット** — `test(auth): 会員の JWT をパスワード無しで取る試験の手助けに替える（段4の準備）`
 
 ### Task 28: お客さんのパスワードのログイン・会員登録・確認メールの窓口を消す
 
 **Files:**
-- Delete（呼び手が0であることを確かめてから）: `src/app/login/password/`、`src/app/login/verify/`、`src/app/api/auth/{login,otp,register,confirm}/`（`confirm` はオーナーの答え1で決まる）、`src/components/{AuthTabs,LoginModal,RegisterModal}.tsx`、`src/features/auth/schemas/{login,register}.ts`、`src/features/auth/services/login-2fa-session.ts`（共有部分を切り出した後）、`e2e` の「E2E の対応」表の Task 28 の行の「消す」、jest・DB 結合の対応表の該当
-- Modify: `src/contexts/LoginContext.tsx`（`login`・`verifyOtp`・`register`・旧の再送・取りやめを消し、`loginWithGoogle`・`refreshAuthState`・`logout`・状態を残す）、`src/app/login/page.tsx`（旧の保留の Cookie の分岐〔`/login/verify` への転送〕と `login-2fa-session` の読みを消す）、`src/components/Header.tsx`（`LoginModal` の差し込みと `loginOpen` の状態を消す。ログインのリンクは `/login` へ）、`src/contexts/Providers.tsx`（`isAuthPage` から2つを外す）、`src/features/auth/services/register.ts`（旧の道だけが使う関数を消し、残る呼び手が使う関数だけにする）、`src/features/auth/services/email-code-session.ts`・`src/lib/orders/status/status-session.ts`（`login-2fa-session` から借りている物を自分の側へ移す）、`src/features/auth/return-intent/*`（`signup` の用途の関数を消す）、`src/lib/cookie.ts`（旧の保留の Cookie の名前は Task 33）
-- Create: `e2e/FR-LOGIN-080-removed-auth-entries-gone.spec.ts`（この時点の分。Task 29・30 が足す）、`e2e/FR-LOGIN-079-login-screens-layout.spec.ts`（オーナーの答え3が A の時）
+- Delete（呼び手が0であることを確かめてから）: `src/app/login/password/`、`src/app/login/verify/`、`src/app/api/auth/{login,otp,register,confirm}/`（`confirm` もオーナーの答え1が A なので消す）、`src/components/{AuthTabs,LoginModal,RegisterModal}.tsx`、`src/features/auth/schemas/{login,register}.ts`、`src/features/auth/services/login-2fa-session.ts`（`email-code-session.ts`・`status-session.ts` は写しで import していない。注釈の名指しだけを直す。移す物は無い）、`e2e` の「E2E の対応」表の Task 28 の行の「消す」、jest・DB 結合の対応表の該当
+- Modify: `src/contexts/LoginContext.tsx`（`login`・`verifyOtp`・`register`・旧の再送・取りやめを消し、`loginWithGoogle`・`refreshAuthState`・`logout`・状態を残す）、`src/app/login/page.tsx`（旧の保留の Cookie の分岐〔`/login/verify` への転送〕と `login-2fa-session` の読みを消す）、`src/components/Header.tsx`（`LoginModal` の差し込みと `loginOpen` の状態を消す。ログインのリンクは `/login` へ）、`src/contexts/Providers.tsx`（`isAuthPage` から2つを外す）、`src/features/auth/services/register.ts`（旧の道だけが使う関数を消し、残る呼び手が使う関数だけにする）、`src/features/auth/services/email-code-session.ts`・`src/lib/orders/status/status-session.ts`（`login-2fa-session` を注釈で名指す所だけを直す。import はしていない）、`src/features/auth/return-intent/*`（`signup` の用途の関数を消す）、`src/lib/cookie.ts`（旧の保留の Cookie の名前は Task 33）
+- Create: `e2e/FR-LOGIN-080-removed-auth-entries-gone.spec.ts`（この時点の分。Task 29・30 が足す）、`e2e/FR-LOGIN-079-login-screens-layout.spec.ts`（オーナーの答え3は A）
 - Modify（試験の手助け・spec）: `e2e/account-test-utils.ts`（`loginAndOpenAccount` を `loginAsMember` へ付け替え。`/login/password`・`/login/verify` を呼ぶ道を消す）、「E2E の対応」表の Task 28 の「書き直す」の spec（`loginAsMemberLegacy`・`setLoginTwoFactorCookie` の**呼び**を外す）。**手助けの定義（`member-session-helpers.ts`・`auth-2fa-test-utils.ts`・`helpers.ts`）は消さない。Task 33 が消す**（冒頭の表）。ただし `loginAsMemberLegacy` は、**中身を `loginAsMember` に付け替える**（名前・引数は残す。5本が緑を保つため）
-- Modify（確認メールの雛形・画面の文。オーナーの答え5）: `supabase/templates/confirmation.html`（リンクの先が `/api/auth/confirm`・本文が「最初に登録したときのパスワードをお使いください…」）、`supabase/config.toml` の `[auth.email.template.confirmation]` の注釈、`src/features/auth/passkey/components/EmailCodeEntry.tsx:282` の「コードの無い確認のメールが届いた時は、そのメールのリンクを押してから…」の1文。直し方は**オーナーが2026-11-22 に承認した文（付録）**。答え5（**答えが揃ってから Task 28 を渡す**。「答えの関所」）。答え5が A なら、雛形に8桁の数字（`{{ .Token }}`）を入れ、リンクの先は無くす（答え1が A の時）。画面の1文は、「確認のメールにも同じ8桁の数字があります」の趣旨の文に直す（文はオーナーが決める）。Task 26 の (e) の実測が前提
-- 文書: `FR-AUTH-053`（親 `SR-AUTH-030`）、`THR-AUTH-059`→`SEC-AUTH-061`→`SEC-AUTH-061-AC-01`（`FR-LOGIN-080` が名乗る）を作る、**`SEC-AUTH-035-AC-01` を「captcha が有効でも、アプリのメールのコードの始めと再送が通る」に書き直し、`FR-LOGIN-055` の該当の試験に名乗らせる**（`SEC-AUTH-035` は `DD-AUTH-040`・`ADR-0420`＝captcha を免除される auth だけの client を残すので廃止にしない。`-AC-02` は実行者が `npm run trace -- SEC-AUTH-035-AC-02` で中身を読み、メールのコードの窓口に当てはまれば 055 に名乗らせ、当てはまらなければ廃止にする。どちらも、`FR-LOGIN-031` の2件を消す同じコミットで）、`ADR-0469`（「段4で消す一覧」を「消した」に直し、状態は今の「推定」のまま）、`ADR-0400`・`0401`・`0402`・`0404`・`0410`・`0413`（状態を「廃止」にし、置き換え先に ADR-0475 または ADR-0469 を書く）、`IMPL-AUTH-102・103・124・125・141・142・145・146・161・162・163・164・323` ほか消した単位の IMPL・DD・API・SCR を「廃止」（構造設計は手順6）、`DD-AUTH-061`（旧画面の退避）を廃止、`docs/04_DetailDesign/sequence/auth-registration.md`・`auth-login-mfa.md`（廃止の印）、`14_login.md`・`screen-list.md`・`screen-flow.md`・`api-spec.md`・`route-inventory.md`
+- Modify（確認メールの雛形・画面の文。オーナーの答え5は A。**文は付録のとおり一字一句**）: `supabase/templates/confirmation.html`（見出し「メールアドレスの確認」／「ログインの確認コード: {{ .Token }}」／「ログインの画面にこの8桁の数字を入れると、会員登録が終わります。」／「有効期限は5分です。心当たりがない場合は、このメールを破棄してください。」。リンクとパスワードの案内の文は消す）、`supabase/config.toml` の `[auth.email.template.confirmation]` の注釈、`src/features/auth/passkey/components/EmailCodeEntry.tsx:282` の「コードの無い確認のメールが届いた時は、そのメールのリンクを押してから、もう一度お試しください。」を「「メールアドレスの確認」のメールが届いた時は、そのメールにある8桁の数字を入れてください。」に替える。**この古い1文を確かめている試験と文書も同じコミットで直す**: `e2e/FR-LOGIN-058-email-code-screen.spec.ts:21`（`ALWAYS_ON_LINE`。`FR-AUTH-026-AC-*`）、`tests/unit/features/auth/passkey/email-code-entry.test.tsx:60・249`（`DD-AUTH-062`）、`docs/02_Requirements/areas/auth.md` の `FR-AUTH-023` の規則 (5)・`FR-AUTH-026` の規則 (6) と AC・「段4まで」の理由の文（:6259・:6405・:6441 付近）。Task 26 の (e) の実測が前提。
+- 文書: `FR-AUTH-053`（親 `SR-AUTH-030`）、`THR-AUTH-059`→`SEC-AUTH-061`→`SEC-AUTH-061-AC-01`（`FR-LOGIN-080` が名乗る）を作る、**`SEC-AUTH-035-AC-01` を「captcha が有効でも、アプリのメールのコードの始めと再送が通る」に書き直し、`FR-LOGIN-055` の該当の試験に名乗らせる**（`SEC-AUTH-035` は `DD-AUTH-040`・`ADR-0420`＝captcha を免除される auth だけの client を残すので廃止にしない。`-AC-02` は実行者が `npm run trace -- SEC-AUTH-035-AC-02` で中身を読み、メールのコードの窓口に当てはまれば 055 に名乗らせ、当てはまらなければ廃止にする。どちらも、`FR-LOGIN-031` の2件を消す同じコミットで）、`ADR-0469`（「段4で消す一覧」を「消した」に直し、状態は今の「推定」のまま）、`ADR-0400`・`0401`・`0402`・`0404`・`0410`・`0413`（状態を「廃止」にし、置き換え先に `ADR-0469` を書く）、`IMPL-AUTH-102・103・124・125・141・142・145・146・161・162・163・164・323` ほか消した単位の IMPL・DD・API・SCR を「廃止」（構造設計は手順6）、`DD-AUTH-061`（旧画面の退避）を廃止、`docs/04_DetailDesign/sequence/auth-registration.md`・`auth-login-mfa.md`（廃止の印）、`14_login.md`・`screen-list.md`・`screen-flow.md`・`api-spec.md`・`route-inventory.md`
+
+**事前の確かめの決め（2026-11-22 の事前の確かめ。所見の番号）**:
+- **(所見1)** `e2e/auth-2fa-test-utils.ts` は `login-2fa-session`（Task 28 で消す）を import する。Task 28 で `setLoginTwoFactorCookie`・`clearLoginTwoFactorCookie` と `login-2fa-session` の import を外す（呼び手は Task 28 で外し切る。`026` も 28 で呼びを外す）。`setEmailCodeSessionCookie`（`loginAsMember` が使う）は**残す**。ファイルごと消すのは Task 33。
+- **(所見3)** 消す部品を import・`jest.mock` する試験: 書き直す（mock を外す。消さない。構造設計の結合テストを守るため）— `tests/integration/ui/about-flow.test.tsx:49`・`stockist-public-flow.test.tsx:39`・`auth-header-state.test.tsx:33`・`auth-header-visibility.test.tsx`・`tests/unit/components/site-header.test.tsx`（`jest.mock('@/components/LoginModal')`）、`tests/integration/ui/auth-oauth-flow.test.tsx:3・4`（`LoginModal`・`RegisterModal` の import。`FLOW-AUTH-002` の唯一の結合テスト）、`tests/unit/features/auth/email-code-session.test.ts:11`・`tests/unit/api/auth/email-code-verify-route.test.ts:23`（`login-2fa-session` の import）、`tests/unit/features/auth/email-schema.test.ts:6`（`schemas/login` の import）、`tests/integration/api/auth/site-url-guard.test.ts`・`auth-password-rule.test.ts`（register の分だけ外す。残りは Task 29 で消す）。消す: `tests/integration/api/auth/{otp-sdk-flow,otp-verify,confirm,login-cancel,login-resend}.test.ts`、`tests/integration/auth-flow.test.ts`、`tests/unit/components/VerifyOtpClient.test.tsx`、`tests/unit/schemas/{login,register}.test.ts`、`tests/unit/services/login-2fa-session.test.ts`（置き場は `tests/unit/features/auth/` でなく `tests/unit/` の下）、`LoginModal`・`RegisterModal`・`AuthTabs` の単体。`tests/unit/scripts/trace/coverage-config.test.ts:59`（AUTH の testMatch に `LoginModal.test.tsx` があることを確かめる）は、`scope.json` の tests の型（`{LoginModal,…}`）を **Task 33 まで変えない**（変えるなら同じコミットでこの試験を直す）。
+- **(所見18)** `scripts/trace/scope.json`: Task 28 の Files に足す。外す行は `LoginModal`・`RegisterModal`・`AuthTabs` の3行（`AuthResultScreen` の行は Task 29。ファイルを消すのが Task 29 のため）。
+- **(所見13)** `docs/05_Quality/reports/test-gaps.md` の「届かない分岐」の節の行を、消したファイル（`confirm/route.ts` 5・`otp/verify` 1・`register` 3・`VerifyOtpClient` 1・`AuthTabs` 2）は外し、縮めたファイル（`Header.tsx` 2・`return-path.ts` 4）は行番号を直す。
+- **(所見11)** 置き換え先の ADR は、まだ作っていない ADR-0475 でなく、今ある **`ADR-0469`** にする（`ADR-0400`・`0401`・`0402`・`0404`・`0410`・`0413`）。
+- **(所見4) 構造設計の境（Task 28 で、結合テストが全部消える物の扱い。文書の行に貼る）**:
+
+  | 項目 | 下で消える DD | 下で生きる DD | 結合テスト（Task 28 で消える） | 決め |
+  | --- | --- | --- | --- | --- |
+  | `SCR-AUTH-001`（/login） | 010・061 | 001・063・064 | `auth-login-tabs-screen.test.tsx` | **生かす**。見出し（「旧のタブの画面は /login/password に残す」）を直し、残る `/login` の結合テストを1本 `SCR-AUTH-001` で名乗る（新しく書くか、残す UI の結合テストに名前を足す）。上位の `ADR-0410` を外す |
+  | `FLOW-AUTH-001` | 002・005・008・061 | 001・062・063・064 | `auth-login-flow.test.tsx` | **廃止**。生きる DD は他の上位を持つので、上位の一覧から外すだけ |
+  | `FLOW-AUTH-003` | 009・019 | （005 は Task 30 まで） | `auth-register-flow.test.tsx` | Task 28 で廃止し、`DD-AUTH-005` の上位から外す |
+  | `ARC-AUTH-006` | 009・018（28）、022（29） | 022 が 29 まで | `register-enumeration.test.ts` | Task 28 で廃止し、`DD-AUTH-022` の上位から外す |
+  | `ARC-AUTH-002` | 014・015 | 040 | `auth-login-two-step.test.ts` | 廃止（`DD-AUTH-040` は `ARC-AUTH-005`・`SEC-AUTH-015`・`SEC-AUTH-035` が残る） |
+  | `SCR-AUTH-002`・`003` | 008・009 | 012 | `auth-login-form-screen`・`auth-register-form-screen` | 廃止（`DD-AUTH-012` は `ARC-AUTH-005` が残る） |
+  | `SCR-AUTH-004`（/login/verify） | 002 | 013・062 | `auth-login-verify-screen.test.tsx` | 廃止。**`DD-AUTH-013`（`format-countdown.ts`。`EmailCodeEntry.tsx` が使い続ける）の上位を、生きるメールのコードの窓口（例: `API-AUTH-031` 再送）へ付け替える**（同じコミット） |
+  | `STATE-AUTH-001` | 002・015・016・017 | 001 | `auth-login-pending-state.test.ts` | 廃止 |
+  | `API-AUTH-001`・`002` | 014・015 | 037（no-store） | login・otp の結合テスト | 廃止し、**`DD-AUTH-037` の上位から外す**（Task 33 を待たない） |
+  | `FLOW-AUTH-002`（Google） | 008 | 020・021 | `auth-oauth-flow.test.tsx` | **生かす**。結合テストは消さずに書き直す |
+
+  `ARC-AUTH-005`・`DATA-AUTH-004` は、`auth-bot-rate-limit`・`cookieFlags`・`auth-cookie-data` を書き直して守る。
+- **(所見26)** `FR-LOGIN-080` の AC: `FR-AUTH-053-AC-01`（Task 28。消したログインの窓口・画面の404）・`-AC-02`（Task 29。再設定・変更）・`-AC-03`（Task 30。TOTP・`/auth/verified`）。`FR-LOGIN-079` は**移した古い AC の ID を名乗る**（例: `FREQ-69-AC-03`・`FREQ-70-AC-02`・`FREQ-328-AC-03`）。その上位の REQ は生かす（文を `/login`・`/login/code` 向けに直す）か、`FR-AUTH-054` へ付け替える。
+- **(所見21)** 「`LoginContext` が `login`・`register` を持たない」は、型だけの確かめにせず、実行時に確かめる形（`expect('login' in useLoginValue).toBe(false)` など）にするか、typecheck の合否で代えて試験は足さない。
 
 **Interfaces:**
 - Consumes: Task 26 の基準、Task 27 の手助け。
@@ -342,12 +376,12 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
   - 消した窓口は404、消した画面も404。**どこからもリンクが無い**（`Header`・ログインの画面・メール・戻り先・`sitemap`）。
   - `LoginContext` の公開する型から `login`・`verifyOtp`・`register`・`resendOtp` などを外す。`useLogin()` を使う残りの呼び手（`EmailCodeEntry`・`LoginChoices`・`PasskeyOffer`・`StaffOneMoreKey`・`Header`・`checkout` ほか）が使う物は変えない。
   - `/login` の画面は、旧の保留の Cookie があっても何も特別にしない（`/login/verify` へ送らない）。古い Cookie は無視する（名前を知らない Cookie になる）。
-  - **確認のメールのリンク（`/api/auth/confirm`）は、オーナーの答え1が A なら消す**。消すなら、`/login?registered=1` の案内（旧の登録の確認を別のブラウザで開いた人向け）も画面から消す。B なら窓口と案内を残し、Task 33 で再検討と書く。
+  - **確認のメールのリンク（`/api/auth/confirm`）は、オーナーの答え1が A なので消す**。消すなら、`/login?registered=1` の案内（旧の登録の確認を別のブラウザで開いた人向け）も画面から消す。
 
 - [ ] **Step 0: 消す物の一覧を作る** — 「消す物の一覧」の窓口・画面・サービスの各行について `graphify query` と `grep -rn` を取り、呼び手を報告に貼る。呼び手が消す物以外に残るなら、消さず縮める。
 - [ ] **Step 1: 失敗する試験を書く（消した後の形）** — `FR-LOGIN-080`（3幅）: `GET /login/password`・`/login/verify` が404。`POST /api/auth/login`・`login/resend`・`login/cancel`・`otp/verify`・`register` が404（または405。実測して書く）。`/login` に「パスワード」欄・「会員登録」タブ・`/login/password` へのリンクが無い。ヘッダーのログインのリンクが `/login` へ向く。`FR-LOGIN-078`（Task 26）と `FR-LOGIN-057`・`055`・`058` が通る。jest: `LoginContext` が `login`・`register` を持たない、`login/page` が旧の Cookie で転送しない。
 - [ ] **Step 2: 失敗を確かめる** — 080 は今 FAIL（窓口が生きている）。
-- [ ] **Step 3: 実装する** — 先に呼び手を外し（`LoginContext`・`Header`・`login/page`・`Providers`・手助け）、次に窓口・画面・部品・schemas・サービスを消す。`login-2fa-session` は、`email-code-session`・`status-session` が借りている部分を先に移してから消す。試験の手助けと spec を「E2E の対応」表のとおりに直す・消す。オーナーの答え3が A なら、消す視覚の spec の「1画面に収まる・真ん中寄せ・階層」の AC のうち `/login`・`/login/code` に当てはまる物を 079 へ移す（同じ検査を、移し先の画面に向けて書き直す）。B なら AC を廃止にする。
+- [ ] **Step 3: 実装する** — 先に呼び手を外し（`LoginContext`・`Header`・`login/page`・`Providers`・手助け）、次に窓口・画面・部品・schemas・サービスを消す。`login-2fa-session` は、`email-code-session`・`status-session` が注釈で名指すだけ（import していない）ので、移す物は無く、そのまま消す（注釈は直す）。試験の手助けと spec を「E2E の対応」表のとおりに直す・消す。オーナーの答え3は A なので、消す視覚の spec の「1画面に収まる・真ん中寄せ・階層」の AC のうち `/login`・`/login/code` に当てはまる物を 079 へ移す（同じ検査を、移し先の画面に向けて書き直す）。
 - [ ] **Step 4: 通ることを確かめる** — `FR-LOGIN-080`・`078`・`079`・`055`・`057`・`058`・`002`・`044`・`048`・`050`・`060`・`FR-ACCOUNT-001〜011`（`loginAndOpenAccount` を使う）・`FR-HEADER-*`・`FR-CHECKOUT-012`・`FR-LOGIN-038`（書き直し後）を3幅 PASS。jest（触ったもの）と typecheck・lint。消えたテスト名の一覧が、消した定義と一致する（件数でなく名前の差）。`FR-LOGIN-032`・`033`・`FR-PWRESET-010`・`FR-ACCOUNT-046`・`FR-ADMIN-MISC-008`（`loginAsMemberLegacy` の呼び手）も流して、緑のままであることを確かめる。追跡: 廃止の項目を指す物が無い。`validate-trace` が終了コード0。**消した spec が持っていた基準の鍵が減るので、調整役が許可を得て基準を更新する**。減る件数は、テスト名の一覧の差（`npm run trace:compare-e2e` か JSON の差）で、消した定義と一致することを確かめる。
 - [ ] **Step 5: コミット** — `feat(auth): お客さんのパスワードのログインと会員登録の画面・窓口・試験を消す（パスキー段4）`
 
@@ -356,17 +390,24 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 **Files:**
 - Delete: `src/app/auth/password-reset/`（`page.tsx`・`verify/page.tsx`・`verify/VerifyClient.tsx`）、`src/app/account/password/`、`src/app/api/auth/password-reset/`、`src/app/api/auth/password/`、`src/components/AuthResultScreen.tsx`、`src/features/auth/services/{password-change,password-reset-session}.ts`、`src/features/auth/schemas/{password-change,password-reset}.ts`、`src/lib/pwned-password.ts`、jest・DB 結合・E2E の該当（`FR-PWRESET-001〜010`、`FR-LOGIN-003`・`013`、`FR-ACCOUNT-046`、`FR-LOGIN-023`・`025`・`026` の再設定の分）
 - Modify: `src/features/auth/schemas/common.ts`（`passwordSchema` を消す。`emailSchema` は残す）、`src/features/auth/services/auth-admin-user.ts`（再設定だけが使う関数を消す）、`src/lib/cookie.ts`（再設定の Cookie は Task 33）、`scripts/trace/scope.json`（`password-change.ts`・`schemas/password-change.ts` の2行を外す）、`e2e/FR-LOGIN-037-proxy-origin-csrf.spec.ts`（例を `email-code/start` に替える）、`e2e/FR-LOGIN-060-account-passkeys.spec.ts`（`/account/password` の確かめを「404で、リンクが無い」に）、`FR-UI-008`（再設定の分）
-- 文書: `ADR-0403`・`0405`・`0421`（状態を「廃止」。置き換え先は ADR-0475 の「パスワードを廃止」）、`SEC-AUTH-034`・`FR-AUTH-006`・`SR-AUTH-009` などパスワードの再設定・変更に属する要件・SEC・AC・IMPL（`IMPL-AUTH-104〜106`・`181〜184`・`229〜239`）・DD（`DD-AUTH-041`・`022`・`023`・`025` ほか）を「廃止」。**`SEC-AUTH-015` は GoTrue の直叩きの規則なので廃止にしない**（作り手の判断9）。**`SEC-AUTH-035` は廃止にしない**（Task 28 でメールのコードの AC に書き直し済み）。ここでの直しは、本文の「パスワード変更の現行パスワードの確かめ」の1か所だけ
+- 文書: `ADR-0403`・`0405`・`0421`（状態を「廃止」。置き換え先は `ADR-0469`）、`SEC-AUTH-034`・`FR-AUTH-006`・`SR-AUTH-009` などパスワードの再設定・変更に属する要件・SEC・AC・IMPL（`IMPL-AUTH-104〜106`・`181〜184`・`229〜239`）・DD（`DD-AUTH-041`・`022`・`023`・`025` ほか）を「廃止」。**`SEC-AUTH-015` は GoTrue の直叩きの規則なので廃止にしない**（作り手の判断9）。**`SEC-AUTH-035` は廃止にしない**（Task 28 でメールのコードの AC に書き直し済み）。ここでの直しは、本文の「パスワード変更の現行パスワードの確かめ」の1か所だけ
   - **構造設計（手順6）**: `DATA-AUTH-002`（`password_reset_tokens`）・`DATA-AUTH-009`・`010`（パスワード変更の表と関数）は、下の DD が全部廃止になるので**ここで廃止にする**（表を消すのは K のまま。アプリの使い道が消えるのはこのタスク）。名乗る DB 結合 `auth_password_change_challenges`・`auth_password_reset_token_state`・`auth_password_reset_tokens_table` もここで消す。`ARC-AUTH-007`（16字のパスワードと、メールのリンクの住所）は、パスワードの分を廃止にし、`SEC-AUTH-019`（Host の偽りでリンクを外へ向けさせない。招待・知らせのメールで生き続ける）は、招待のメールの結合テストを持つ既存の構造設計へ付け替える（新しい構造設計は作らない。付け替え先は `npm run trace -- SEC-AUTH-019` と招待の ARC を見て決め、報告に書く）。`auth/site-url-guard.test.ts` は `ARC-AUTH-007` の最後の結合テストなので、消す前にこの付け替えを済ませる
   - `docs/04_DetailDesign/sequence/auth-password-reset.md`（廃止の印）、`docs/06_Operations/supabase-auth-config.md` の再設定・変更の雛形の節（残す物と分ける）、`FR-AUTH-053`。**廃止にする AC の名前を持つ spec（`FR-LOGIN-031` の該当分ほか）は、同じコミットで直す**
 - `FR-LOGIN-080` に、再設定・変更の窓口と画面の404を足す。`src/lib/ops/site-url-alert.ts`・`ops-alert-mail.ts` の `siteUrlInvalidMail` は、呼び手が消えるので消す（`site-url-guard.ts` 自体は残す）。`scope.json` の、消すファイルを名指す型を1行ずつ外す（`password-change.ts`・`schemas/password-change.ts`・`AuthResultScreen` ほか。Task 28 は `LoginModal`・`RegisterModal`・`AuthTabs`・`AuthResultScreen` の4行、Task 30 は `mfa`・`verified` の型）。
+
+**事前の確かめの決め**:
+- **(所見5)** `SCR-AUTH-005`（下に生きる DD-012）・`STATE-AUTH-004`（下に生きる DD-013）は、結合テスト `auth-password-reset-screen`・`auth-password-reset-state` が消えるので、**Task 29 で廃止にする**。`DD-AUTH-013` の上位は Task 28 で付け替え済み（Task 28 の表）。`ARC-AUTH-007` は下の DD-018（28）・025・041（29）が全部消えるので、**半分でなく全部を廃止にする**（`SEC-AUTH-019` は招待のメールの結合テストを持つ既存の構造設計へ付け替える）。
+- **(所見18)** `scripts/trace/scope.json`: `AuthResultScreen` の行と、`password-change`・`schemas/password-change` の行を、ここで外す（Task 28 は3行）。
+- **(所見13)** `docs/05_Quality/reports/test-gaps.md`: `password-reset/page.tsx` 1・`AuthResultScreen` 1 の行を外す。
+- **(所見3)** `site-url-guard.test.ts`・`auth-password-rule.test.ts` の残りは、この Task で消す（register の分は Task 28 で外し済み）。
+- **(所見21)** 「`passwordSchema` が無いこと」の確かめは、型だけにせず、実行時に確かめる形（`expect('passwordSchema' in schemas).toBe(false)` など）にするか、typecheck の合否で代えて試験は足さない。
 
 **Interfaces:**
 - Produces: `/auth/password-reset`・`/auth/password-reset/verify`・`/account/password`・`/api/auth/password-reset/*`・`/api/auth/password/change/*` が404。`/account` の画面に「パスワード」のリンクが無い。
 - **GoTrue 自身の `/recover` は残る**（アプリの外。フックが `password` を拒否するので、再設定してもパスワードでは入れない）。これは手順書に1行書く（Task 35）。
 
 - [ ] **Step 0: 消す物の一覧** — Task 28 と同じ。`auth-admin-user.ts` の呼び手（`admin/staff/invites`・`admin/orders/[id]/history`）が使う関数は残す。
-- [ ] **Step 1: 失敗する試験を書く** — `FR-LOGIN-080` に追加（上の404）。`/account` の鍵の画面（`FR-LOGIN-060`）に、パスワードのリンクが無い確かめ。jest: `emailSchema` が残り `passwordSchema` が無いこと（型の確かめ）。
+- [ ] **Step 1: 失敗する試験を書く** — `FR-LOGIN-080` に追加（上の404）。`/account` の鍵の画面（`FR-LOGIN-060`）に、パスワードのリンクが無い確かめ。jest: `emailSchema` が残り `passwordSchema` が無いこと（実行時に確かめる形。型だけにしない）。
 - [ ] **Step 2: 失敗を確かめる** — FAIL（窓口が生きている）。
 - [ ] **Step 3: 実装する** — 呼び手を外し、窓口・画面・部品・schemas・サービスを消す。`scope.json` の2行を外す。`pwned-password` の呼び手が0であることを確かめてから消す。
 - [ ] **Step 4: 通ることを確かめる** — `FR-LOGIN-080`・`078`・`037`・`060`・`057`・`FR-UI-008`（書き直し後）、`FR-ACCOUNT-*` を3幅 PASS。jest・typecheck・lint。追跡・`validate-trace`・`test:trace-coverage`。
@@ -377,9 +418,17 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 **Files:**
 - Delete: `src/app/api/auth/mfa/`、`src/app/auth/verified/`、`src/app/api/admin/users/mfa/`、`e2e/FR-LOGIN-018-verified-brand-design.spec.ts`、`e2e/FR-LOGIN-033` の画面の分、`e2e/FR-LOGIN-032` の TOTP の分（skip の6定義を含む）、`tests/unit/api/auth/mfa-*`、`tests/unit/app/auth/verified-page.test.tsx`、`tests/integration/ui/auth-verified-*`、`tests/integration/api/auth-mfa-*`・`auth-admin-totp-flow`、`tests/unit/api/admin/mfa-reset-route.test.ts`、`tests/integration/api/admin-misc/admin-mfa-reset-api.test.ts`
 - Rename: `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts` → `e2e/FR-LOGIN-032-staff-entry-cookie-checks.spec.ts`
-- Modify: `src/app/api/auth/post-login/route.ts`・`src/features/auth/passkey/post-login.ts`・`src/features/auth/return-intent/return-intent-service.ts`（行き先に `/auth/verified` を返す所を、認めた鍵が足りない店員なら `/admin/passkeys?more=1`（1本）か `/login?error=staff_passkey_required`（それ以外）へ）、`src/app/api/auth/oauth/callback/route.ts`・`src/features/auth/services/session.ts`（`mfa.verify` の記述）、`src/features/auth/return-intent/staff-entry-hint.ts`、`src/lib/auth/amr.ts`（`totp` の記述）、`src/lib/auth/app-session.ts`（注釈）、`e2e/FR-LOGIN-030`・`038`・`069`・`FR-ADMIN-MISC-001`・`003`、`tests/integration/api/auth/post-login.test.ts`（`ARC-AUTH-015` を名乗る結合テスト。行き先の分）、`tests/unit/features/auth/passkey/post-login.test.ts`（`DD-AUTH-092` を名乗る単体）、`tests/unit/app/staff/passkeys-page.test.tsx`・`tests/unit/lib/auth/staff-passkey-page-guard.test.ts`（`/auth/verified` を指す分）、`supabase/config.toml`（`[auth.mfa.totp]` の `enroll_enabled`・`verify_enabled` を `false`）
-- Create: `docs/03_BasicDesign/decisions/ADR-0475-passkey-stage4-remove-verified-and-totp.md`（上位 `SEC-AUTH-061`〔Task 28 で作成済み〕、構造設計の子 `ARC-AUTH-015`。`ARC-AUTH-015` もここで作り、上位は `SEC-AUTH-061` と `ADR-0475`。`DD-AUTH-060` の上位に `SEC-AUTH-061`・`ARC-AUTH-015` を足す）。内容: `/auth/verified` と TOTP を消す理由、行き先の付け替え、`mfaVerified` の名前を変えない決め（設計 7）、Shopify・業界との比較表と出典（`docs/superpowers/specs/2026-11-07-passkey-auth-design.md` の5章の出典を引く）、Task 26 の測った事実。
-- 文書: `ADR-0409`・`0418`（aal2 の部分を置き換え済みに）、`ADR-0457`・`0461`（MFA のやり直しの窓口が `redo` に置き換わった旨）、`ADR-0463`・`ADR-0468`（「段4でまとめて直す」の文を「変えない」に。名前ごとの決めは作り手の判断2）、`IMPL-AUTH-121`（`/auth/verified`）を「廃止」、`SEC-AUTH-009・010-AC-02・030・031`・`FREQ-316-REQ-02`・`SR-AUTH-014` の TOTP の分、`IMPL-AUTH-203〜205`・`IMPL-ADMIN-105`・`DD-ADMIN-005` を「廃止」、`docs/04_DetailDesign/pages/16-2_admin_misc.md`
+- Modify: `src/app/api/auth/post-login/route.ts`・`src/features/auth/passkey/post-login.ts`・`src/features/auth/return-intent/return-intent-service.ts`（行き先に `/auth/verified` を返す所を、認めた鍵が足りない店員なら `/admin/passkeys?more=1`（1本）か `/login?error=staff_passkey_required`（それ以外）へ）、`src/app/api/auth/oauth/callback/route.ts`・`src/features/auth/services/session.ts`（`mfa.verify` の記述）、`src/features/auth/return-intent/staff-entry-hint.ts`、`src/lib/auth/amr.ts`（`totp` の記述）、`src/lib/auth/app-session.ts`（注釈）、`e2e/FR-LOGIN-030`・`038`・`069`・`FR-ADMIN-MISC-001`・`003`、`tests/integration/api/auth/post-login.test.ts`（`ARC-AUTH-015` を名乗る結合テスト。行き先の分）、`tests/unit/features/auth/passkey/post-login.test.ts`（**`DD-AUTH-060` を名乗る単体**。`DD-AUTH-092` は使わない）、`tests/unit/app/staff/passkeys-page.test.tsx`・`tests/unit/lib/auth/staff-passkey-page-guard.test.ts`（`/auth/verified` を指す分）、`supabase/config.toml`（`[auth.mfa.totp]` の `enroll_enabled`・`verify_enabled` を `false`）
+- Create: `docs/03_BasicDesign/decisions/ADR-0475-passkey-stage4-remove-verified-and-totp.md`（上位 `SEC-AUTH-061`〔Task 28 で作成済み〕、構造設計の子 `ARC-AUTH-015`。`ARC-AUTH-015` もここで作り、上位は `SEC-AUTH-061` と `ADR-0475`。`DD-AUTH-060` の上位に `SEC-AUTH-061`・`ARC-AUTH-015` を足す）。**作る順: ADR-0475 を先に作ってから、これを指す文書（`ARC-AUTH-015` の上位・`ADR-0409` の置き換え先）を直す**。内容: `/auth/verified` と TOTP を消す理由、行き先の付け替え、`mfaVerified` の名前を変えない決め（設計 7）、Shopify・業界との比較表と出典（`docs/superpowers/specs/2026-11-07-passkey-auth-design.md` の5章の出典を引く）、Task 26 の測った事実。
+- 文書: `ADR-0418`（aal2 の部分を置き換え済みに。子 `DATA-AUTH-008` が残る）、**`ADR-0409`（子 `ARC-AUTH-003`・`API-AUTH-016〜018` が全部廃止になるので廃止。置き換え先は `ADR-0475`）、`ADR-0457`・`0461`（子 `API-ADMIN-004` が廃止になるので廃止。置き換え先は段3a の `redo` の ADR）**、`ADR-0463`・`ADR-0468`（「段4でまとめて直す」の文を「変えない」に。名前ごとの決めは作り手の判断2）、`IMPL-AUTH-121`（`/auth/verified`）を「廃止」、`SEC-AUTH-009・010-AC-02・030・031`・`FREQ-316-REQ-02`・`SR-AUTH-014` の TOTP の分、`IMPL-AUTH-203〜205`・`IMPL-ADMIN-105`・`DD-ADMIN-005` を「廃止」、`docs/04_DetailDesign/pages/16-2_admin_misc.md`
+
+**事前の確かめの決め**:
+- **(所見8)** 消す `mfa/reset` の窓口を require する残す管理の結合テスト3本は、消さずに書き直し、`mfa/reset` の分だけ外す: `tests/integration/api/admin-misc/admin-authorization-path.test.ts:62`（`ARC-ADMIN-001`）・`admin-audit-write.test.ts:49`（`ARC-ADMIN-003`）・`admin-origin-guard.test.ts:59`（`ARC-ADMIN-002`）。消す: `tests/integration/api/auth/mfa-verify.test.ts`（`API-AUTH-018`。計画の型に当たらないので名指す）。
+- **(所見8) 文書の廃止**: `API-AUTH-016`〜`018`・`ARC-AUTH-003`・`SCR-AUTH-007`・`STATE-AUTH-003`・`API-ADMIN-004`・`DD-AUTH-005`・`029`〜`031`・`083`、`DD-AUTH-037` の上位から `API-AUTH-016〜018` を同じコミットで外す。`DD-AUTH-082`・`DD-AUTH-039` は、ほかの単体と残るコードの単位があるので生かす（どの DD を廃止にするかは「単位が全部消えるか」を `npm run trace -- <ID>` で確かめて決める）。
+- **(所見16)** `/auth/verified` を名指す注釈を直す: `src/app/admin/passkeys/page.tsx:8`・`src/lib/auth/staff-passkey-page-guard.ts:25`・`src/features/auth/staff/staff-passkey-status.ts:24`・`src/features/auth/return-intent/return-path.ts:160`、`e2e/FR-ADMIN-108-select-fields.spec.ts:7`（消す `verified-page.test.tsx` を指す）。
+- **(所見13)** `docs/05_Quality/reports/test-gaps.md`: `auth/verified/page.tsx` 2・`mfa/enroll-totp` 1・`admin/users/mfa/reset` 1 の行を外す。
+- **(所見19)** `tests/integration/api/auth/post-login.test.ts` に、行き先の試験を **`ARC-AUTH-015` の名前で新しく足す**。今の `API-AUTH-019` の名前は**変えない**（`API-AUTH-019` の唯一の結合テストなので）。
+- **(所見18)** `scope.json` の `mfa`・`verified` の型を外す。
 
 **Interfaces:**
 - Produces: `/auth/verified`・`/api/auth/mfa/{enroll-totp,status,verify}`・`/api/admin/users/mfa/reset` が404。`/api/auth/me` の応答の形（`mfaVerified`）・`/api/auth/post-login` の `needsMfa` の名前は**そのまま**（意味は「店員の入口の条件を満たすか」）。
@@ -392,31 +441,35 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 - [ ] **Step 4: 通ることを確かめる** — 触った spec・`FR-LOGIN-080`・`039`・`044`・`054`・`063`・`066`・`068`・`070`・`072`・`FR-ADMIN-MISC-001`・`003` を3幅 PASS。jest・typecheck・lint。追跡。**skip の6定義が無い**（`grep -c "test.skip(true" e2e/FR-LOGIN-032-*` が0）。
 - [ ] **Step 5: コミット** — `feat(auth): 認証アプリ（TOTP）の窓口・画面と MFA のやり直しの窓口を消す（パスキー段4）`
 
-### Task 31: 最初の店長のコマンド `admin:bootstrap` を消す（オーナーの答え2が A の時。B の時は下の「B の時」）
+### Task 31: 最初の店長のコマンド `admin:bootstrap` を消す（オーナーの答え2は A）
 
 **Files:**
 - Delete: `scripts/admin/bootstrap.ts`・`bootstrap-core.ts`・`bootstrap-deps.ts`、`tests/integration/db/admin-misc/admin_bootstrap.integration.test.ts`、`e2e/FR-ADMIN-MISC-008-first-admin-bootstrap.spec.ts`、`tests/unit/scripts/` の該当（探す）
-- Modify: `package.json`（`admin:bootstrap` の行を消す。**実行者は足さない**。調整役が、Global Constraints の対話の無い手順で、その1行の削除だけをインデックスに入れる。オーナーの `--webpack` の変更は触らない）、`docs/06_Operations/first-admin-bootstrap.md`（コマンドの節を「廃止。最初の店長は招待で作る」に）、`docs/06_Operations/passkey-staff-recovery.md`、`docs/06_Operations/passkey-production-apply-runbook.md`（節4の (3b) の2つ目の枝と、節7の `admin:bootstrap` の行。Task 35）、`tests/unit/scripts/admin/bootstrap-*.test.ts`（消す）
-- 文書: `IMPL-ADMIN-301〜303` を「廃止」、台帳の skip の一覧の最後の1定義
+- Modify: `package.json`（`admin:bootstrap` の行を消す。**実行者は足さない**。調整役が、Global Constraints の対話の無い手順で、その1行の削除だけをインデックスに入れる。オーナーの `--webpack` の変更は触らない）（運用の3文書 `first-admin-bootstrap.md`・`passkey-staff-recovery.md`・`passkey-production-apply-runbook.md` は **Task 35 だけが直す**。Task 31 は grep の結果を報告に貼るだけ）、`tests/unit/scripts/admin/bootstrap-*.test.ts`（消す）
+- 文書: **`DD-ADMIN-016`〜`018`・`ARC-ADMIN-006`・`FR-ADMIN-010-AC-01`・`FR-ADMIN-010` を下から順に廃止**（`FR-ADMIN-MISC-008` の生きた1定義が `FR-ADMIN-010-AC-01` の唯一の E2E、`admin_bootstrap.integration.test.ts` が `ARC-ADMIN-006` の唯一の結合テスト、`bootstrap-{core,cli,deps}.test.ts` が `DD-ADMIN-016〜018` を名乗る）。上位の `SR-ADMIN-001` は他の子が残るか `npm run trace` で確かめる。IMPL は文書に項目が無いので、コードを消すと消える（`IMPL-ADMIN-301〜303`）。台帳の skip の一覧の最後の1定義。`docs/05_Quality/reports/test-gaps.md` の `scripts/admin/bootstrap.ts` 4・`bootstrap-core.ts` 1 の行を外す。
 
-**B の時**: コマンドを残す。`FR-ADMIN-MISC-008` の skip 1定義を外して書き直す（コマンドが利用者・`admin` の役割・`app_metadata.role` を作り、TOTP の要素を作らないことを DB で確かめる。ログインは確かめない）。コマンドに `@remarks` で「パスキーの段4の後は、戻し方の手順書だけが使う」と書く。
 
-- [ ] **Step 1: 確かめる（試験は足さない）** — ファイルや `package.json` の行の有無は試験にしない。`grep -rn "admin:bootstrap" . --include=*.md --include=*.ts --include=*.json --exclude-dir=graphify-out --exclude-dir=node_modules` の結果を報告に貼り、残りの文書の参照を Task 34・35 へ回す。
-- [ ] **Step 2〜4: 失敗を確かめる→消す→通る** — 呼び手（`bootstrap-core` を import する物）が消す物だけであることを確かめ、消す。`grep -rn "admin:bootstrap" . --include=*.md --include=*.ts --include=*.json --exclude-dir=graphify-out --exclude-dir=node_modules` の結果を報告に貼り、残りは Task 34・35 の文書へ回す。
+**Interfaces:**
+- Produces: `scripts/admin/bootstrap*.ts`・`npm run admin:bootstrap`・関連の試験が無い。`FR-ADMIN-010` 系の追跡の項目が廃止になり、`validate-trace` が終了コード0。
+- Consumes: オーナーの答え2（A）と答え6（B。`package.json` の1行の削除は調整役が対話の無い手順で入れる）。
+
+- [ ] **Step 1: 呼び手の grep（1回）** — `grep -rn "admin:bootstrap\|bootstrap-core" . --include=*.md --include=*.ts --include=*.json --exclude-dir=graphify-out --exclude-dir=node_modules` の結果を報告に貼り、呼び手が消す物だけであることを確かめる。ファイルや `package.json` の行の有無は試験にしない。
+- [ ] **Step 2: 消す** — 上の Delete・文書の廃止。`package.json` の行は調整役が入れる（実行者は足さない）。
+- [ ] **Step 3: 確かめる** — typecheck・jest（触ったもの）・Step 1 の grep を取り直して、運用の文書以外の参照が0件。残る文書は Task 35 へ回す。`validate-trace`・`test:trace-coverage`。
 - [ ] **Step 5: コミット** — `feat(auth): 最初の店長のコマンド admin:bootstrap を消す（パスキー段4）`
 
 ### Task 32: 移行 J・K と、フックの試験の反転
 
 **Files:**
 - Create: `supabase/migrations/<時刻>_passkey_reject_customer_password.sql`（J）、`supabase/migrations/<時刻>_drop_password_auth_objects.sql`（K。**A〜J と同じ `supabase/migrations` に置く**。オーナーの答え4: 開店前なので古い仕組みへ戻す必要は無く、「待ち」の置き場は作らない）、`e2e/FR-LOGIN-081-customer-password-rejected.spec.ts`、`tests/integration/db/auth_passkey_stage4_migrations.integration.test.ts`、`docs/03_BasicDesign/decisions/ADR-0476-passkey-reject-customer-password-and-drop-tables.md`
-- Modify: `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`（`grant_type=password` の期待を反転）、`e2e/FR-LOGIN-040-staff-hook-gotrue-rejections.spec.ts`（:83 を反転）、`e2e/passkey-hook-scenarios.ts`（旗を切り替える手助けは Task 26 で作成済み）、`tests/integration/db/auth_passkey_access_token_hook.integration.test.ts`・`auth_passkey_foundation.integration.test.ts`・`auth_passkey_server_fns.integration.test.ts`・`auth_passkey_staff_entry_conditions.integration.test.ts`（旗の既定を前提にしている分）、`src/lib/auth/staff-passkey-defaults.ts`（`@remarks`: `rejectCustomerPassword` は**列の既定値**＝偽を表し、実際の行は J の後は真。ADR-0476 にも書く。`auth_passkey_staff_entry_conditions.integration.test.ts:130`・`auth_passkey_foundation.integration.test.ts:57・66`・`auth_passkey_access_token_hook.integration.test.ts:295` の「行の値」を比べる分は、「J の後は行が真・列の既定は偽」に直す）、`playwright.config.ts`（081 を `isolated-global` に）、**K で落ちる残すテストの書き直し（一覧から消した表・関数を外す。このタスクで直す）**: `tests/integration/db/auth_grants_inventory.integration.test.ts`（:38・:94・:95）、`group_g2_public_function_acl.integration.test.ts`（:14・:187・:195）、`home/home_items_grants.integration.test.ts`（:42）、`auth_db_functions.integration.test.ts`、`group_g2_migration_asserts.integration.test.ts`、`return-receive-per-item-migration.integration.test.ts`、`tests/unit/migrations/sec-password-change-challenges.test.ts`（消す。表と関数が無くなるため）、`docs/06_Operations/db-migrations.md`（J・K の節。大きさ・MD5・前の確かめ・戻し・当てる順）
-- 文書: `FR-AUTH-055`（AC は `FR-LOGIN-081` が名乗る）、`THR-AUTH-058`→`SEC-AUTH-060`（AC-01・02。`FR-LOGIN-081` が名乗る）、DB 結合のテスト名は `DATA-AUTH-013`（フックの関数）を名乗る、`THR-AUTH-058`・`SEC-AUTH-060`・`ADR-0476` を作り、`ARC-AUTH-015` の上位に `ADR-0476` を足す（`DATA-AUTH-002`・`009`・`010` は Task 29 で廃止済み）。J・K の SQL に DD・IMPL は作らない（作り手の判断は「親の決め」）
+- Modify: `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`（`grant_type=password` の期待を反転）、`e2e/FR-LOGIN-040-staff-hook-gotrue-rejections.spec.ts`（:83 を反転）、`e2e/passkey-hook-scenarios.ts`（旗を切り替える手助けは Task 26 で作成済み）、`tests/integration/db/auth_passkey_access_token_hook.integration.test.ts`・`auth_passkey_foundation.integration.test.ts`・`auth_passkey_server_fns.integration.test.ts`・`auth_passkey_staff_entry_conditions.integration.test.ts`（旗の既定を前提にしている分）、`src/lib/auth/staff-passkey-defaults.ts`（`@remarks`: `rejectCustomerPassword` は**列の既定値**＝偽を表し、実際の行は J の後は真。ADR-0476 にも書く。`auth_passkey_staff_entry_conditions.integration.test.ts:130`・`auth_passkey_foundation.integration.test.ts:57・66`・`auth_passkey_access_token_hook.integration.test.ts:296〜303` の「行の値」を比べる分は、「J の後は行が真・列の既定は偽」に直す）、`playwright.config.ts`（081 を `isolated-global` に）、`FR-LOGIN-031` の `SEC-AUTH-012-AC-01`（:583。`cleanup_password_reset_tokens` を rpc で呼び 401・403 を期待する。K の後は関数が無く 404 になるので、この行を外す）、**K で落ちる残すテストの書き直し（一覧から消した表・関数を外す。このタスクで直す）**: `tests/integration/db/auth_grants_inventory.integration.test.ts`（:38・:94・:95）、`group_g2_public_function_acl.integration.test.ts`（:14・:187・:195）、`home/home_items_grants.integration.test.ts`（:42）、`auth_db_functions.integration.test.ts`、`group_g2_migration_asserts.integration.test.ts`、`return-receive-per-item-migration.integration.test.ts`、`tests/unit/migrations/sec-password-change-challenges.test.ts`（消す。表と関数が無くなるため）、`docs/06_Operations/db-migrations.md`（J・K の節。大きさ・MD5・前の確かめ・戻し・当てる順）
+- 文書: `FR-AUTH-055`（AC は `FR-LOGIN-081` が名乗る）、`THR-AUTH-058`→`SEC-AUTH-060`（AC-01・02。`FR-LOGIN-081` が名乗る）、DB 結合のテスト名は `DATA-AUTH-013`（フックの関数）を名乗る、`THR-AUTH-058`・`SEC-AUTH-060`・`ADR-0476` を作る。**`ADR-0476`（旗と K）の構造設計の子は、行き先の `ARC-AUTH-015` ではなく、フックの関数 `DATA-AUTH-013`（上位に `ADR-0464` を既に持つ）にする**（`DATA-AUTH-013` の上位に `ADR-0476` を足す）（`DATA-AUTH-002`・`009`・`010` は Task 29 で廃止済み）。J・K の SQL に DD・IMPL は作らない（作り手の判断は「親の決め」）
 
 **Interfaces:**
 - **J**（旗）:
   - 前の確かめ（`DO $$`）: `private.passkey_staff_config` が1行あり、`public.passkey_access_token_hook` が存在し、`private.passkey_staff_settings()` が `reject_customer_password` を返す。無ければ `PASSKEY_MIGRATION_PRECHECK_FAILED`（A・B が先に当たっていない）。
   - 本体: `UPDATE private.passkey_staff_config SET reject_customer_password = true WHERE id;`。終わりの確かめ: 1行が真。
-  - ヘッダー: `ROLLBACK: UPDATE private.passkey_staff_config SET reject_customer_password = false WHERE id;`。**これは、古いアプリ（`c336e0b5`）に戻す時の最初の手**（Task 35）。
+  - ヘッダー: `ROLLBACK: UPDATE private.passkey_staff_config SET reject_customer_password = false WHERE id;`。**J を取り消す1行**。この頭書きの文はファイルの MD5 に入るので、**Task 32 の前に決めた文をそのまま書く**（上の1行だけ。古いアプリへ戻す話は書かない。オーナーの答え4）。
   - 当てる順: A〜I の後・アプリのデプロイの後（デプロイ前に旗を真にしても、アプリは新しい物しか無いので害は無いが、手順書は「アプリが動いてから」とする。理由: 旗を真にしてからお客さんの入り方に問題が出ても、旗の戻しだけで済む）。
 - **K**（表と関数）:
   - 前の確かめ: 対象の表・関数の存在（無くても `IF EXISTS` で通すが、**行数を `RAISE NOTICE` で出す**。`password_reset_tokens`・`password_change_challenges` の行数が多い時は止めない）。
@@ -434,12 +487,17 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 ### Task 33: 残りの掃き出し（部品の縮小・設定・参照の0件の確かめ）
 
 **Files:**
-- Modify: `src/lib/cookie.ts`（旧の保留・再設定の Cookie の名前を消す）、`src/lib/auth/service-role-auth-client.ts`（`signInWithPassword`・`signUp` を型と実体から外す）、`tests/unit/lib/auth/service-role-auth-client.test.ts`・`tests/unit/lib/supabase-client-isolation.test.ts`、`src/lib/auth-no-store-policy.ts`・`src/proxy.ts`（道筋の一覧から消した窓口を外す。`tests/unit/middleware/proxy-no-store.test.ts`）、`src/lib/audit.ts`（注釈だけ）、`supabase/config.toml`（残す設定の理由を1行ずつ）、`src/features/auth/design.md`、**古い試験の手助けの定義を消す**: `e2e/member-session-helpers.ts` の `loginAsMemberLegacy`・`setLoginTwoFactorCookie`・`createTestMember` の `password`、`e2e/auth-2fa-test-utils.ts`（ファイルごと）、`e2e/helpers.ts` の `registerUser`・`loginUser`（呼び手が0であることを grep で確かめてから）。`scripts/trace/scope.json` に残る、消した型の行（Task 28〜30 で外し切れなかった分）
+- Modify: `src/lib/cookie.ts`（旧の保留・再設定の Cookie の名前を消す）、`src/lib/auth/service-role-auth-client.ts`（`signInWithPassword`・`signUp` を型と実体から外す）、`tests/unit/lib/auth/service-role-auth-client.test.ts`・`tests/unit/lib/supabase-client-isolation.test.ts`、`src/lib/auth-no-store-policy.ts`・`src/proxy.ts`（道筋の一覧から消した窓口を外す。`tests/unit/middleware/proxy-no-store.test.ts`）、`src/lib/audit.ts`（注釈だけ）、`supabase/config.toml`（残す設定の理由を1行ずつ）、`src/features/auth/design.md`、**古い試験の手助けの定義を消す**: `e2e/member-session-helpers.ts` の `loginAsMemberLegacy`・`setLoginTwoFactorCookie`・`createTestMember` の `password`、`e2e/auth-2fa-test-utils.ts`（**先に `setEmailCodeSessionCookie` を `member-session-helpers.ts` へ移してから**ファイルごと。`loginAsMember` が使うため。`setLoginTwoFactorCookie` は Task 28 で外し済み）、`e2e/helpers.ts` の `registerUser`・`loginUser`（呼び手が0であることを grep で確かめてから）。`scripts/trace/scope.json` に残る、消した型の行（Task 28〜30 で外し切れなかった分）
 - 文書: 関連する `IMPL`・`DD` の「関連」
+
+**Interfaces:**
+- Produces: `createServiceRoleAuthClient` の型・実体が `signInWithOtp`・`resend` だけ。`setEmailCodeSessionCookie` は `e2e/member-session-helpers.ts` にあり、`auth-2fa-test-utils.ts` は無い。`loginAsMemberLegacy` の別名・`registerUser`・`loginUser` が無い。上の grep が0件。
+- Consumes: Task 28〜32 で呼び手が外れていること。
+- `docs/05_Quality/reports/test-gaps.md`: 縮めたファイルの行番号を直す。
 
 - [ ] **Step 1: 失敗する試験を書く** — jest: `createServiceRoleAuthClient` が持つ関数が `signInWithOtp`・`resend` だけ（`signInWithPassword`・`signUp` が無い）。`auth-no-store-policy` の一覧に消した窓口が無い。
 - [ ] **Step 2: 失敗を確かめる** — FAIL。
-- [ ] **Step 3: 実装する** — 縮める。次の grep を取り、**0件であること**を報告に貼る（残る物は理由つきで列挙）: `grep -rnE "login-2fa|sb-login-2fa|login/password|login/verify|api/auth/(login|otp|register|confirm|mfa|password)|password-reset|account/password|AuthTabs|LoginModal|RegisterModal|passwordSchema|pwned|enroll-totp|loginAsMemberLegacy|setLoginTwoFactorCookie" src e2e tests scripts docs --include=*.ts --include=*.tsx --include=*.md --include=*.json --include=*.toml --exclude-dir=graphify-out --exclude-dir=node_modules --exclude-dir=.next`（`docs/superpowers/`・`.superpowers/`・廃止の印のある文書の過去の記録・ADR の廃止の節は除く）。`grep -rn "aal2" supabase/migrations` の結果を分類し、「パスワード・TOTP だけの道に属する物が無い」ことを報告する。`grep -rn "create-user" src e2e tests` が0件で、`src/app/api/admin/users/route.ts` が `GET`・`PATCH` だけ（パスワードで作る `POST` が無い）ことを確かめる。
+- [ ] **Step 3: 実装する** — 縮める。次の grep を取り、**0件であること**を報告に貼る（残る物は理由つきで列挙）: `grep -rnE "login-2fa|sb-login-2fa|login/password|login/verify|api/auth/(login|otp|register|confirm|mfa|password)|password-reset|account/password|AuthTabs|LoginModal|RegisterModal|passwordSchema|pwned|enroll-totp|loginAsMemberLegacy|setLoginTwoFactorCookie|auth/verified|admin:bootstrap" src e2e tests scripts docs --include=*.ts --include=*.tsx --include=*.md --include=*.json --include=*.toml --exclude-dir=graphify-out --exclude-dir=node_modules --exclude-dir=.next`（`docs/superpowers/`・`.superpowers/`・廃止の印のある文書の過去の記録・ADR の廃止の節は除く）。`grep -rn "aal2" supabase/migrations` の結果を分類し、「パスワード・TOTP だけの道に属する物が無い」ことを報告する。`grep -rn "create-user" src e2e tests` が0件で、`src/app/api/admin/users/route.ts` が `GET`・`PATCH` だけ（パスワードで作る `POST` が無い）ことを確かめる。
 - [ ] **Step 4: 通ることを確かめる** — jest・typecheck・lint。`FR-LOGIN-078`・`080`・`055` を3幅 PASS。
 - [ ] **Step 5: コミット** — `chore(auth): パスワードと認証アプリの残りの部品・設定・参照を掃き出す（パスキー段4）`
 
@@ -448,6 +506,10 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 **Files:**
 - Modify: `docs/02_Requirements/areas/auth.md`・`admin.md`、`docs/03_BasicDesign/areas/auth.md`・`admin.md`、`docs/03_BasicDesign/api/{api-spec,route-inventory}.md`、`ui/{screen-list,screen-flow}.md`、`architecture/system-overview.md`、`docs/04_DetailDesign/pages/{14_login,16-2_admin_misc}.md`、`docs/04_DetailDesign/sequence/auth-{registration,password-reset,login-mfa,session}.md`、`docs/05_Quality/security/threats/auth.md`、`docs/05_Quality/tests/test-spec.md`、台帳（4-2 の段4の行・skip の一覧・「段4へ」を「済み」に。1-3 を「skip は 0」に）、`docs/02_Requirements/areas/auth.md` の `SR-AUTH-022`（退避）を「廃止」、ADR の一覧（`docs/03_BasicDesign/decisions/README.md`）、`docs/README.md` の索引、`scripts/trace/baseline.json`（調整役が許可を得て `-- --update-baseline`）、`ADR-0463`・`ADR-0468`
 - 各タスクで廃止にした物の取りこぼしを、`npm run trace -- <ID>` と `validate-trace` で探して直す。
+
+**Interfaces:**
+- Produces: `validate-trace` が終了コード0・`test:trace-coverage`・`validate-docs` が通り、廃止にした項目を指す物・最後の試験を失った AC・上位を失った DD が残らない。
+- Consumes: Task 28〜33 の「事前の確かめの決め」と、各タスクが廃止にした項目の一覧（報告）。
 
 - [ ] **Step 1: 失敗する検査** — `npm.cmd run validate-trace`・`test:trace-coverage`・`validate-docs` を流し、廃止にした物を指す `retired-reference`・`missing-child`・リンク切れを一覧にする。
 - [ ] **Step 2: 直す** — 一覧のとおり。`mfaVerified` の名前の決めは ADR-0463・`api-spec.md`・`auth.md` で「変えない」に統一する。`trace:report` で `docs/05_Quality/reports/` を作り直す。
@@ -463,26 +525,34 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 
 1. **概要・節1**: 「A〜I の9本」を「A〜K の11本」に。節1に「10. 本番の `auth.users` の状態を読む（読むだけ）: お客さんの数・確認前のパスワード登録の数・店員の TOTP の要素の数」を足し、読む SQL を載せる。確認前のパスワード登録が1件でもあれば、**消すか確認を済ませるかをオーナーが決める**（オーナーの答え1が A の時の運用（確認メールに数字を入れる前提）。本番の4人は、役割の印が店長の試し用で、お客さんではない。パスワードだけのお客さんと確認前の登録は、記録の上では0人。読んで数える）。
 2. **節2の当てる順**: 4の後（定期処理の登録）と5〜7（最初の店長・E・TOTP を止める）の後に、**アプリを出したら、J まで間を空けない**（お客さんがメールのコードで入れることを確かめたら、すぐ J。J を当てるまでは、GoTrue への直のパスワードの道〔`grant_type=password`〕が開いたままで、他人が先に付けたパスワードで入れる。本番は公開前でお客さんは記録の上で0人なので危険は小さいが、間を空けない）。**8. J**（アプリのデプロイと、お客さんがメールのコードで入れることの確認の後。**調整役がオーナーの許可を得てから**）→ **9. K**（J の後。消した窓口を呼ぶ物が無いことの確認の後）を足す。節2の7（TOTP を止める）は、ダッシュボードの Multi-Factor の TOTP の Enroll・Verify を止める手順（段4のコードは TOTP を使わない）に昇格させ、店員の TOTP の要素の残りの扱い（H の取引・やり直しで消える。残りを読む SQL）を書く。
-2b. **本番のダッシュボードの確認メールの雛形**を、付録の承認済みの文に直す手順（雛形のリンクが `/api/auth/confirm` を指し、本文がパスワードを案内している。`supabase-auth-config.md` の確認の雛形の節。**変えるのはオーナー**。2026-11-06 の決定。オーナーが同じ文に変えると回答済み）。
-2c. **答え5が A の時**: 本番のダッシュボードの確認メールの雛形に `{{ .Token }}`（8桁。有効期限・桁数はメールのコードと同じ）を入れる手順と、確認前のアカウントで数字を入れて入れることの確かめ（調整役がオーナーの許可を得てから。手元の Task 26 (e) と同じ確かめを、本番に当てる前に1回）。
+2b. **本番のダッシュボードの確認メールの雛形**を、付録の承認済みの文（見出し「メールアドレスの確認」／「ログインの確認コード: {{ .Token }}」／「ログインの画面にこの8桁の数字を入れると、会員登録が終わります。」／「有効期限は5分です。心当たりがない場合は、このメールを破棄してください。」。リンクとパスワードの案内の文は無し）を、一字一句そのまま貼って直す手順（雛形のリンクが `/api/auth/confirm` を指し、本文がパスワードを案内している。`supabase-auth-config.md` の確認の雛形の節。**変えるのはオーナー**。2026-11-06 の決定。オーナーが同じ文に変えると回答済み）。
+2c. **答え5は A**: 本番のダッシュボードの確認メールの雛形に `{{ .Token }}`（8桁。有効期限・桁数はメールのコードと同じ）を入れる手順と、確認前のアカウントで数字を入れて入れることの確かめ（調整役がオーナーの許可を得てから。手元の Task 26 (e) と同じ確かめを、本番に当てる前に1回）。
 2d. **本番の権限と手元の権限が同じか**を、当てる前に比べる読むだけの SQL を1行足す（K の戻しの正本は手元の最終の姿なので、本番の `relacl`・`proacl` が手元と同じことを確かめる）。
 3. **節3の表**: J・K の行（前の確かめ・突き合わせ・戻し）。
-4. **節4の戻し方**: 次の**新しい先頭**を足す。(0) **K を戻す**（K の `ROLLBACK` の文。K を当てる前の最終の姿＝締め直した権限を含む。戻した後に `relacl`・`proacl` を読んで確かめる）。(0b) **J を戻す**（`UPDATE private.passkey_staff_config SET reject_customer_password = false WHERE id;`。**古いアプリに戻す前にこれを済ませる**。済ませずに古いアプリへ戻すと、お客さんがパスワードで入れない）。その後に今の (1)〜(11)。K と J の戻しが先に要ることだけを書く（既存の戻しの章は、それ以上は書き換えない。オーナーは頼んでいない）。(3b) の2つ目の枝（`admin:bootstrap`）は、オーナーの答え2が A なら削り、「別のアドレスの店長が要るなら、ダッシュボードで作ってから、(3b) の取引の逆の SQL で有効にする」に替える。**「1つ目の枝の SQL」は、節4の (3b) の「上の1つ目に当てはまらないもの」の 1（取引の逆）の SQL を指す**（1つ目の枝そのものには SQL が無い）。**J を先に戻す理由**: (1) で古いアプリを出してから (2) でフックの登録を外すまでの間も、旗が効いたままだとお客さんが入れない。(2) でフックの登録を外せば旗は効かなくなるので、順番の理由はこの間を守るため。
+4. **節4の戻し方**: **既存の戻しの章（`c336e0b5` へ戻す手順）は、オーナーの答え4（開店前なので古い仕組みへ戻す必要は無い）により、開店前は使わない見込みと1文で書く。使う時は先に K・J を戻す。それ以上は書き換えない。**次の新しい先頭を足す。(0) **K を戻す**（K の `ROLLBACK` の文。K を当てる前の最終の姿＝締め直した権限を含む。戻した後に `relacl`・`proacl` を読んで確かめる）。(0b) **J を戻す**（`UPDATE private.passkey_staff_config SET reject_customer_password = false WHERE id;`。古いアプリへ戻すことがあれば、**その前にこれを済ませる**）。その後に今の (1)〜(11)。K と J の戻しが先に要ることだけを書く（既存の戻しの章は、それ以上は書き換えない。オーナーは頼んでいない）。(3b) の2つ目の枝（`admin:bootstrap`）は、オーナーの答え2が A なら削り、「別のアドレスの店長が要るなら、ダッシュボードで作ってから、(3b) の取引の逆の SQL で有効にする」に替える。**「1つ目の枝の SQL」は、節4の (3b) の「上の1つ目に当てはまらないもの」の 1（取引の逆）の SQL を指す**（1つ目の枝そのものには SQL が無い）。**J を先に戻す理由**: (1) で古いアプリを出してから (2) でフックの登録を外すまでの間も、旗が効いたままだとお客さんが入れない。(2) でフックの登録を外せば旗は効かなくなるので、順番の理由はこの間を守るため。
 5. **節7の残る危険**: 「`admin:bootstrap` が H の `STAFF_INVITE_REQUIRED` を効かせない（段4まで）」の行を消す（コマンドが無くなる）。GoTrue 自身の `/recover`・`/signup` が残ること（フックが `password` を拒否するので入れないこと）を1行足す。
 6. **節9の開店前の残り**: 3b の持ち越し **M-3**（`hardDeadlineMs` の余裕。cron を本番で有効にする時に見直す）・**M-4 のコード側**（心拍の「予算で飛ばした」の扱い）・**M-6**（H のヘッダーの数。H を直す時だけ）を、理由つきで足す（段4では直さない。下の「持ち越しの着地」）。
 7. **`passkey-staff-recovery.md`**: `admin:bootstrap` への言及を直す。
-8. **`first-admin-bootstrap.md`**: 冒頭に「このコマンドは段4で消した（オーナーの答え2が A の時）。履歴のために残す」と書くか、文書ごと「廃止」の印にして `docs/README.md` から外す。
+8. **`first-admin-bootstrap.md`**: 冒頭に「このコマンドは段4で消した（オーナーの答え2は A）。履歴のために残す」と書くか、文書ごと「廃止」の印にして `docs/README.md` から外す。
 9. **`supabase-auth-config.md`**: パスワードの欄（最小16字など）・再設定・変更の雛形・TOTP の手順の節に「段4で要らなくなった」と書き、メールのコード（8桁・5分）の節は残す。TOTP を止める手順を足す。
 10. 「確認日」を更新し、`validate-docs` を通す。
 
+**Interfaces:**
+- Produces: 手順書の当てる順（A〜K。J は「アプリを出したら間を空けない」）・戻しの順（K → J）・最初の店長の手順・本番の確認メールの雛形の直し（付録の文を一字一句）。
+- Consumes: Task 32 の J・K の頭書き、付録の承認済みの文。
+
 - [ ] **Step 1: 失敗する検査** — `grep -n "9本\|A〜I\|admin:bootstrap\|c336e0b5" docs/06_Operations/*.md` を取り、直す所の一覧を報告に貼る。
 - [ ] **Step 2: 直す** — 上の1〜10。戻しの順を1か所の表にまとめ直し、調整役が1行ずつ追える形にする。
-- [ ] **Step 3: 通ることを確かめる** — `validate-docs`。手順書の SQL は流さない（読むだけの `select` と、「調整役がオーナーの許可を得てから」付きの更新だけ）。レビュー担当（Opus）が、手順書の順で追って、途中で止まらずに戻せるかを紙の上で確かめる。
+- [ ] **Step 3: 通ることを確かめる** — `validate-docs`。手順書の SQL は流さない（読むだけの `select` と、「調整役がオーナーの許可を得てから」付きの更新だけ）。手順書の戻しの表の各行に、「前の確かめの SQL」と「成功の印」があることを、レビュー担当が表で確かめる（紙の上の通し読みではなく、各行の項目の有無で）。
 - [ ] **Step 4: コミット** — `docs(ops): パスキーの手順書と戻し方を段4（移行 J・K・パスワードの廃止）に合わせる`
 
 ### Task 36: 最終の確かめ
 
 **Files:** 無し（確かめだけ。台帳の状態欄とオーナーへの一覧を直す）
+
+**Interfaces:**
+- Produces: 台帳の更新と、オーナーが確認する物の一覧。
+- Consumes: Task 26〜35 の結果。Task 33 の grep の型（`auth/verified`・`admin:bootstrap` を含む）を (a) でも使う。
 
 - [ ] **Step 1: 掃き出しの確かめ** — (a) Task 33 の grep が0件。(b) `grep -rn "test.skip(true" e2e` に `段4で消す機能` が0件。(c) `grep -rn "signInWithPassword\|grant_type=password" e2e tests` の残りが、拒否を確かめる側（`FR-LOGIN-031`・`040`・`081`・`passkey-hook-scenarios.ts`）だけ。(d) `ls src/app/login src/app/auth src/app/account` に消した物が無い。
 - [ ] **Step 2: 全体の確かめ（調整役）** — `npm run db:reset` → lint・typecheck・jest 全部。DB 結合（`--runInBand`）。**3000番を止めて、E2E を全件**（本番ビルド・3幅）。比べる元は 3b の `e2e-task25-full.json`。**件数でなく、テスト名の一覧の差**（`npm run trace:compare-e2e` か JSON の差）で比べ、消えた名前が消した定義と一致し、赤が増えない（3幅で回さない spec もあるため）。`trace:report`・`validate-trace`（終了コード0）・`test:trace-coverage`・`validate-docs`。
@@ -499,7 +569,7 @@ Task 28 で手助けを消すと、後のタスクで直す spec が import で�
 | 段3b M-3（パスキーの行が遅いと、点検が60秒に近づく） | 同上 | 残す | 計画の判断で受け入れ済み。段4は worker を触らない。cron を本番で有効にする時に見直す（手順書の節9に足す。Task 35） |
 | 段3b M-4 のコード側（「予算で飛ばした」時も心拍が成功） | 同上 | 残す（手順書の文は 3b で直し済み） | 条件がまれで、webhook の滞留の警告が先に出る。コードは直さない |
 | 段3b M-6（H のヘッダーの私用の関数の数） | 同上 | 残す | 直すと H の MD5 が変わる。H を直す時だけ畳む。段4は H を直さない |
-| 台帳 1-3 の skip の7定義 | 台帳 | 全部「消す機能と一緒に消す」 | 032 の6定義（Task 30）、ADMIN-MISC-008 の1定義（Task 31。オーナーの答え2が B なら書き直して外す） |
+| 台帳 1-3 の skip の7定義 | 台帳 | 全部「消す機能と一緒に消す」 | 032 の6定義（Task 30）、ADMIN-MISC-008 の1定義（Task 31。オーナーの答え2は A） |
 | ADR-0469 の「段4で消す一覧」の全項目 | ADR | 「消す物の一覧」の表で全項目を行に取った | 取りこぼしを足した物: `/auth/verified`（設計 7）、`mfa/reset`、`password-reset`・`password/change`・`pwned-password`・`passwordSchema`、`service-role-auth-client` の2関数、`auth_return_intents` の扱い（残す理由つき） |
 | 段2の持ち越し「未確認の旧登録は確認メールが要る（段4まで）」 | ADR-0469 の「結果」 | オーナーの答え1 | 本番は試し用の4人だけ（設計 8-1）。手順書で読んで決める |
 | 台帳 5章 W-06（法令対応） | 台帳 | 触らない | 監査の表・行を消さない（作り手の判断6） |
