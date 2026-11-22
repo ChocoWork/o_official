@@ -2587,7 +2587,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 未設定・空・その他 | 真（既定で有効） |
 | `persistSessionAndCookies` で旗が有効なのに access token に使える `session_id` が無い | 行を作らず Cookie も渡さず `{ ok: false, error: 'auth_session_id_missing' }`。監査は `auth.session.persist`・error。呼び手のログインは失敗する |
 | 同上で旗が無効 | `auth_session_id` は NULL で行を作り、ログインは通る |
-| `refresh` で旗が有効、行の引きが失敗（`findSessionByRefreshHash(..., { throwOnError: true })` が `SessionLookupError` を投げる） | 503 `Session lookup failed`。Supabase を呼ばず、Cookie を残し、行も差し替えない。監査は `session_lookup_failed`（DD-AUTH-027 の枝）。（旧 `mfa/verify` は GoTrue の検証の後に引くので、投げず従来どおり `null`（発行済みの昇格トークンを失わないため。段4で呼び手を消した） |
+| `refresh` で旗が有効、行の引きが失敗（`findSessionByRefreshHash(..., { throwOnError: true })` が `SessionLookupError` を投げる） | 503 `Session lookup failed`。Supabase を呼ばず、Cookie を残し、行も差し替えない。監査は `session_lookup_failed`（DD-AUTH-027 の枝）。（旧 `mfa/verify` は GoTrue の検証の後に引くので、投げず従来どおり `null`（発行済みの昇格トークンを失わないため。段4で呼び手を消した）） |
 | `readAuthSessionId` に null・空・ドット無し・壊れた base64・JSON でない・配列・`session_id` が無い／文字列でない／uuid でない | null |
 | `refresh` で旗が有効、前の行が無い／`auth_session_id` が空 | 401（DD-AUTH-027 の枝） |
 
