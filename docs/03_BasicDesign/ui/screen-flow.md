@@ -1,5 +1,7 @@
 # 画面遷移図
 
+> パスキー段4 Task 34 確認日: 2026-11-22。Google の戻りの図から、消した `/auth/verified`（TOTP の確認）の行を外し、入口の条件に足りない店員は `/login`（`?error=staff_passkey_required`）へ送る形に直した。
+
 > パスキー段4 Task 29 確認日: 2026-11-22。パスワードの再設定・変更の画面（`/auth/password-reset`・`/auth/password-reset/verify`・`/account/password`）と、その導線の図・節（「パスワード変更からの導線」）を消した。3つとも404になる（FR-AUTH-053-AC-02）。
 >
 > パスキー段4 Task 28 確認日: 2026-11-22。旧のパスワードのログイン・会員登録の画面（`/login/password`・`/login/verify`）と、登録の窓口・確認リンクの窓口（`POST /api/auth/register`・`GET /api/auth/confirm`）、登録確認メールの節点と、それらの遷移を図から消した。再設定の「ログインへ」と、パスワード変更の完了の行き先は `/login` になる。
@@ -214,11 +216,7 @@ flowchart LR
     OAuthStart --> Google
     Google --> OAuthCallback
     OAuthCallback -->|自動: user・通常next| Account
-    OAuthCallback -->|自動: 特権・通常next| AuthVerified
-    AuthVerified -->|自動: user / リンク| Account
-    AuthVerified -->|自動: MFA完了| Admin
-    AuthVerified -. TOTP / 未認証 .-> AuthVerified
-    AuthVerified -->|未認証: リンク| Login
+    OAuthCallback -->|自動: 特権（入口の条件に足りない）| Login
     Account -. 4タブ切替・「ログイン方法」（tab=security。パスキーの一覧・追加・名前・削除） .-> Account
     Account --> OrderDetail
     Account -->|未ログイン: リンク| Login

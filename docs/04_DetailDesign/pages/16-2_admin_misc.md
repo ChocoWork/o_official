@@ -1,6 +1,6 @@
 # 1.16-2 管理のそのほか（ADMIN）詳細設計
 
-> 状態: 推定 | 確認日: 2026-11-22 | 対象: 利用者の作成の画面と窓口・セッションの強制失効・監査ログの読み出しと掃除・2要素のリセット・問い合わせの管理の窓口・返信の宛先の部品・商品の色見本の窓口 | 基準コミット: `4facf63b`
+> 状態: 推定 | 確認日: 2026-11-22 | 対象: セッションの強制失効・監査ログの読み出しと掃除・問い合わせの管理の窓口・返信の宛先の部品・商品の色見本の窓口 | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -52,8 +52,8 @@
 | メールの送り手 | `src/lib/mail.ts` | 管理の返信のメールを送る |
 | 注文番号の形 | `src/lib/orders/order-number.ts` の `toOrderNumber` | 問い合わせの詳細で注文の id を注文番号にする |
 | Supabase の client | `src/lib/supabase/server.ts` の `createServiceRoleClient` | 全部の窓口と掃除の部品の DB・Auth の管理の機能 |
-| 回数の制限 | `src/features/auth/middleware/rateLimit.ts` の `enforceRateLimit`、`src/features/auth/ratelimit/index.ts` の `incrementCounter` | 書き込みの窓口が全部（強制失効・2要素のリセット・ユーザー作成・色見本・問い合わせの状態の変更と返信・テンプレートの作成と更新と削除）、認可を通った管理者の id を鍵に回数を数える（SEC-ADMIN-006）。強制失効の認可失敗の監査の上限（全体で 10 分に 20 行）も `incrementCounter` で数える（ADR-0460） |
-| 全 session の失効 | `src/lib/auth/revoke-user-sessions.ts` の `revokeAllSessionsForUser`（範囲外の共有部品） | 自前の `sessions` の失効の時刻と Auth 側の session の削除を1つにまとめる。強制失効（DD-ADMIN-003）と2要素のリセット（DD-ADMIN-005）が使う |
+| 回数の制限 | `src/features/auth/middleware/rateLimit.ts` の `enforceRateLimit`、`src/features/auth/ratelimit/index.ts` の `incrementCounter` | 書き込みの窓口が全部（強制失効・色見本・問い合わせの状態の変更と返信・テンプレートの作成と更新と削除）、認可を通った管理者の id を鍵に回数を数える（SEC-ADMIN-006）。強制失効の認可失敗の監査の上限（全体で 10 分に 20 行）も `incrementCounter` で数える（ADR-0460） |
+| 全 session の失効 | `src/lib/auth/revoke-user-sessions.ts` の `revokeAllSessionsForUser`（範囲外の共有部品） | 自前の `sessions` の失効の時刻と Auth 側の session の削除を1つにまとめる。強制失効（DD-ADMIN-003）が使う（2要素のリセットの DD-ADMIN-005 は段4で廃止） |
 | 画面の部品 | `src/components/ui/Button/Button.tsx`、`src/components/ui/TextField/TextField.tsx` | 利用者の作成の画面 |
 
 ## 実装の単位
@@ -76,7 +76,7 @@
 | `src/lib/auditCleanup.ts` | `cleanupAuditLogs` | DD-ADMIN-015 |
 
 - 窓口のファイルは、中の GET・POST などが別々の契約でも、単位がファイルなので1つの `DD-` にまとめた。項目の本文で方法ごとに分けて書く
-- 単位にならない物: 強制失効の窓口の中の `auditUnauthorized`・`isTargetNotFound`、2要素のリセットの窓口の中の `isMfaFactorList`・`readRoleCode`・`resolvePrivilegedRole`、問い合わせの一覧の窓口の中の `sanitizeSearchTerm`、`reply-address.ts` の `computeToken`・`safeEqual`（export しない関数。それぞれの項目に含める）、`auditCleanup.ts` の最後の既定の書き出し（後から出す形）
+- 単位にならない物: 強制失効の窓口の中の `auditUnauthorized`・`isTargetNotFound`、問い合わせの一覧の窓口の中の `sanitizeSearchTerm`、`reply-address.ts` の `computeToken`・`safeEqual`（export しない関数。それぞれの項目に含める）、`auditCleanup.ts` の最後の既定の書き出し（後から出す形）
 - `reply-address.ts` の2つは、範囲外の公開の問い合わせ（`src/app/api/contact/route.ts`）と受信（`src/app/api/contact/inbound/route.ts`）も使う。CONTACT の領域が範囲に入る時は、この頁の `DD-ADMIN-013`・`014` を `（範囲外）` で指し、同じ単位に別の `DD-` を作らない
 - 窓口の TSDoc に、メソッドの宣言の形（書き出しの語と関数の名前を並べた文）を書かない。`tests/unit/docs/delivery-status-traceability.test.ts` と `tests/unit/docs/order-status-traceability.test.ts` が `src/app/api` の全部の route.ts をコメントごと読み、その形の数を固定している
 
@@ -94,10 +94,10 @@
 | 認可の中の例外 | 500 `{error:'Internal server error'}` |
 | 通った | `{ok:true, userId, role, actorEmail}`（メールは JWT に無ければ空） |
 
-- 権限: 作成・強制失効・2要素のリセットは `admin.users.manage`、監査ログは `admin.audit.read`、問い合わせの読みは `admin.contact.read`・書きは `admin.contact.manage`、色見本の読みは `admin.items.read`・書きは `admin.items.manage`（DATA-ADMIN-006）
+- 権限: 強制失効は `admin.users.manage`、監査ログは `admin.audit.read`、問い合わせの読みは `admin.contact.read`・書きは `admin.contact.manage`、色見本の読みは `admin.items.read`・書きは `admin.items.manage`（DATA-ADMIN-006）
 - DB: 認可の後に `createServiceRoleClient()` を作る。RLS を通らないので、守りは窓口の認可1つになる（ARC-ADMIN-001、DATA-ADMIN-002）
 - 例外: どの方法も外側の try/catch で 500 `{error:'Internal server error'}` を返し、例外を `console.error` にそのまま渡す
-- 回数の制限: 強制失効（20 回 / 10 分）、2要素のリセット（10 回 / 10 分）、ユーザー作成（20 回 / 10 分）、色見本の保存と削除（60 回 / 10 分。同じ枠を分け合う）、問い合わせの返信（30 回 / 10 分）、問い合わせの状態の変更とテンプレートの作成・更新・削除（60 回 / 10 分。4 つの窓口で同じ枠を分け合う）は、認可の直後・本文を読む前に、認可を通った管理者の id を鍵にして数える（SEC-ADMIN-006）。これで範囲の書き込みの窓口は全部、回数の制限を持つ（TM-ADMIN-36 を解消）。読み出しは数えない。CSRF は proxy の Origin の検査だけで、窓口は `requireCsrfOrDeny` を呼ばない（ARC-ADMIN-002）
+- 回数の制限: 強制失効（20 回 / 10 分）、色見本の保存と削除（60 回 / 10 分。同じ枠を分け合う）、問い合わせの返信（30 回 / 10 分）、問い合わせの状態の変更とテンプレートの作成・更新・削除（60 回 / 10 分。4 つの窓口で同じ枠を分け合う）は、認可の直後・本文を読む前に、認可を通った管理者の id を鍵にして数える（SEC-ADMIN-006）。これで範囲の書き込みの窓口は全部、回数の制限を持つ（TM-ADMIN-36 を解消）。読み出しは数えない。CSRF は proxy の Origin の検査だけで、窓口は `requireCsrfOrDeny` を呼ばない（ARC-ADMIN-002）
 - テストの共通の形: `@/lib/auth/admin-rbac`・`@/lib/supabase/server`・`@/lib/audit` を差し替え、認可が `ok:false` を返す時は認可の応答をそのまま返して DB を作らないこと、外側の catch に落ちる例外（`createServiceRoleClient` が投げる等）で 500 になることを、方法ごとに1件ずつ確かめる
 
 ## 詳細設計

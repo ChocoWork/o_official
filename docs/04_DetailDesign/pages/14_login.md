@@ -36,7 +36,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 範囲 | `scripts/trace/scope.json` の AUTH |
 | 上位の文書 | [AUTH の構造設計](../../03_BasicDesign/areas/auth.md)（`ARC-`・`SCR-`・`FLOW-`・`STATE-`・`API-`・`DATA-AUTH-`）、[AUTH の要件](../../02_Requirements/areas/auth.md)（`SEC-AUTH-`） |
 | 関連文書 | [AUTH の脅威](../../05_Quality/security/threats/auth.md)、`docs/03_BasicDesign/decisions/ADR-0400`〜`ADR-0412`、シーケンス [ログイン・追加認証](../sequence/auth-login-mfa.md)・[Google OAuth](../sequence/auth-oauth.md)・[パスワード再設定](../sequence/auth-password-reset.md)・[会員登録・確認](../sequence/auth-registration.md)・[セッション・API認可](../sequence/auth-session.md) |
-| 対象のコード | 「実装の単位」の表の 33 単位に、2026-10-28 に足した `shouldSetNoStore`（`DD-AUTH-037`）と、2026-10-28（波 4）に足した `getClientIp`・`getAuditRequestContext`（`DD-AUTH-038`）と、2026-10-29（波 5）に足した `isAppSessionRequired`・`readAuthSessionId`（`DD-AUTH-039`）と、2026-11-01（波 6）に足した `createServiceRoleAuthClient`・`isCaptchaRejection`（`DD-AUTH-040`）と、2026-11-01（波 6 の Task 5）に足した窓口 2 本・部品 6 関数（`DD-AUTH-041`）と、同じく波 6 の Task 6 に足した頁と画面の 2 ファイル（`DD-AUTH-042`）を加えた 50 単位 |
+| 対象のコード | 「実装の単位」の表の 32 単位（段4で消したファイルの行を外した。`shouldSetNoStore`・`getClientIp`・`getAuditRequestContext`・`isAppSessionRequired`・`readAuthSessionId`・`createServiceRoleAuthClient`・`isCaptchaRejection` の行を含む）|
 | 調べた時点 | 2026-10-24 の作業ツリー。コードは読んだだけで、動かしての確かめはしていない |
 | 上位の決め方 | 項目の上位は、その単位が受け持つ構造設計と、その単位のコードが満たす `SEC-AUTH-` だけにした。満たさない `SEC-AUTH-` は上位にせず、本文の「認証認可」に「満たさない」と書いた（構造設計と同じ決め方）。要件・ADR・範囲外の ID は上位に書けないので、本文の「対応要件 ID」の括弧と根拠に書いた |
 
@@ -72,8 +72,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | `src/app/staff/register/page.tsx` | `<file>` | DD-AUTH-080 |
 | `src/features/auth/staff/components/StaffRegisterScreen.tsx` | `<file>` | DD-AUTH-080 |
 | `src/features/auth/staff/components/InviteStaffDialog.tsx` | `<file>` | DD-AUTH-084 |
-| `src/features/auth/staff/components/RedoStaffDialog.tsx` | `<file>` | DD-AUTH-084 |
-| `src/features/auth/staff/components/StaffRoleActions.tsx` | `<file>` | DD-AUTH-084 |
+| `src/features/auth/staff/components/RedoStaffDialog.tsx` | `<file>` | DD-AUTH-090 |
+| `src/features/auth/staff/components/StaffRoleActions.tsx` | `<file>` | DD-AUTH-090 |
 | `src/features/auth/staff/staff-user-actions.ts` | `<file>` | DD-AUTH-084 |
 | `src/components/Header.tsx` | `<file>` | DD-AUTH-007 |
 | `src/hooks/useTurnstileWidget.ts` | `useTurnstileWidget` | DD-AUTH-012 |
@@ -1417,7 +1417,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 5. 既定の行き先を決める（admin・supporter は `/login?error=staff_passkey_required`、一般は `/`）
 6. 303 を作り、ライブラリの Cookie を付ける
 7. ゲストのカート・お気に入りの印を添えてセッションを保存する
-8. 保存に成功したら戻り先を使い切り（`resolveReturnDestination`、用途 `login`、DD-AUTH-034。管理者・サポーターは aal1 扱いで使い切らない）、`Location` を差し替えて戻り先の Cookie を消す
+8. 保存に成功したら戻り先を使い切り（`resolveReturnDestination`、用途 `login`、DD-AUTH-034。管理者・サポーターは入口の条件を満たさないので使い切らない）、`Location` を差し替えて戻り先の Cookie を消す
 9. `auth.oauth.callback` の success を残す
 
 **分岐と異常フロー:**
@@ -1720,7 +1720,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | API-AUTH-013、ARC-AUTH-009、SEC-AUTH-028 |
-| 根拠 | 画面の出し分けと窓口の認可の答えがずれないよう、共有の `authenticateRequest` で失効まで確かめ、aal2 も管理の認可と同じ JWT の `aal` で答える（API-AUTH-013、ARC-AUTH-009）。DB の一時の障害で全員をログアウトの見た目に落とさないよう、確かめられない時だけ 503 にして画面に前の状態を保たせる（ADR-0408、FREQ-324（範囲外））。役割は JWT の `app_metadata` からだけ読み、知らない値は `user` にする（SEC-AUTH-028）。全部の応答に `no-store`・`no-referrer` を1か所で付け、分岐を足した時の抜けを防ぐ |
+| 根拠 | 画面の出し分けと窓口の認可の答えがずれないよう、共有の `authenticateRequest` で失効まで確かめ、`mfaVerified` も管理の認可と同じ店員の入口の条件で答える（API-AUTH-013、ARC-AUTH-009）。DB の一時の障害で全員をログアウトの見た目に落とさないよう、確かめられない時だけ 503 にして画面に前の状態を保たせる（ADR-0408、FREQ-324（範囲外））。役割は JWT の `app_metadata` からだけ読み、知らない値は `user` にする（SEC-AUTH-028）。全部の応答に `no-store`・`no-referrer` を1か所で付け、分岐を足した時の抜けを防ぐ |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/me/route.ts`）、`docs/04_DetailDesign/sequence/auth-session.md` の SQ-AUTH-SESSION-ME |
@@ -2153,7 +2153,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 向き | 中身 |
 | --- | --- |
-| 入力 | 戻り先の候補（`unknown`）。基準の origin（省略時は環境変数のサイトの origin。要求の見出しは使わない）。出口では閲覧者の役割と aal |
+| 入力 | 戻り先の候補（`unknown`）。基準の origin（省略時は環境変数のサイトの origin。要求の見出しは使わない）。出口では閲覧者の役割と店員の入口の条件（`staffEntryOk`） |
 | 出力 | 通った時は解釈し直した `pathname + search`（fragment は捨てる）。外れた時は理由の符号（`empty`・`too_long`・`forbidden_char`・`decode_failed`・`not_relative`・`origin_mismatch`・`userinfo`・`excluded_path`・`not_allowed_path`・`resolved_not_local`・`admin_requires_privileged_aal2`）。外れた時に既定の行き先を返す補助の関数も持つ（既定は `/`） |
 
 **正常フロー:**
@@ -2164,8 +2164,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 4. `/` で始まり、2 文字目が `/` でも `\` でもないことを確かめる
 5. 基準の origin で `new URL` に解釈し、origin の一致と userinfo の無いことを確かめる
 6. 解釈後の `pathname + search` が `//`・`/\` で始まらず、512 文字以内で、再解釈しても origin が変わらないことを確かめる
-7. 除外の道筋（`/login`・`/register`・`/auth`・`/api` とその下）を断る。許可リスト（公開の `/`〔完全一致〕・`/item`・`/look`・`/news`・`/stockist`・`/about`・`/search`・`/privacy`・`/contact`、会員の `/account`・`/wishlist`・`/cart`・`/checkout`、管理の `/admin`）に当たらなければ断る。接頭辞は「完全一致か、接頭辞と `/` で始まる」。大文字小文字は区別する
-8. `/admin` は、出口で閲覧者が渡された時に、役割が admin か supporter で aal が `aal2` の時だけ通す。入口（閲覧者なし）では通す
+7. 除外の道筋（`/login`・`/register`・`/auth`・`/api` とその下。`/register`・`/auth` は消した道筋を戻り先にさせないために残す）を断る。許可リスト（公開の `/`〔完全一致〕・`/item`・`/look`・`/news`・`/stockist`・`/about`・`/search`・`/privacy`・`/contact`、会員の `/account`・`/wishlist`・`/cart`・`/checkout`、管理の `/admin`）に当たらなければ断る。接頭辞は「完全一致か、接頭辞と `/` で始まる」。大文字小文字は区別する
+8. `/admin` は、出口で閲覧者が渡された時に、役割が admin か supporter で `staffEntryOk` が真の時だけ通す（断る理由の符号は `admin_requires_privileged_aal2` のまま。名前は変えない）。入口（閲覧者なし）では通す
 9. 解釈し直した `pathname + search` を返す
 
 **分岐と異常フロー:**
@@ -2183,7 +2183,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 **状態・永続化:** 持たない（純粋な関数）。サーバー専用の import をしない（端末の画面からも使う）。
 
-**認証認可:** 閲覧者の役割と aal は呼ぶ側が渡す。`/admin` を役割と aal2 なしで通さない。
+**認証認可:** 閲覧者の役割と `staffEntryOk` は呼ぶ側が渡す。`/admin` を役割と `staffEntryOk` なしで通さない。
 
 **テスト観点:**（単体 `tests/unit/features/auth/return-intent/return-path*.test.ts`。試験名の先頭は `DD-AUTH-032`）
 
@@ -2192,7 +2192,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 1 | 迂回の値（`//`・`\`・`%09`・`%5C`・`%2F%2F`・`..`・`@`・512 字超・デコード失敗）がすべて断られる |
 | 2 | 除外の道筋（`/login`・`/register`・`/auth/*`・`/api/*`）が断られる |
 | 3 | 許可リストの境界（`/itemx`・`/Item`）。通る値は解釈し直した形で返り、fragment が無い |
-| 4 | `/admin` が入口では通り、出口では役割と aal2 が揃った時だけ通る |
+| 4 | `/admin` が入口では通り、出口では役割と `staffEntryOk` が揃った時だけ通る |
 | 5 | 通った全ての値が、同じ origin で `//`・`/\`・`#` で始まらない（不変条件）。例外を投げない（乱数の入力を含む） |
 | 6 | 端末の環境（jsdom）で import でき、`origin` を渡して動く |
 
@@ -2247,7 +2247,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | ARC-AUTH-010、STATE-AUTH-006、SEC-AUTH-007、SEC-AUTH-026、SEC-AUTH-032 |
-| 根拠 | 入口では確かめに通った時だけ控え、出口では使い切った戻り先を役割と aal2 を含めて確かめ直す（SEC-AUTH-026）。管理者・サポーターは aal2 になるまで使い切らない。Cookie の動作（作る・消す・そのまま）を値で返し、呼び出し元がどの応答にも同じ形で付けられるようにする。ログインを止めないため、想定外の例外は捕まえて既定に倒す |
+| 根拠 | 入口では確かめに通った時だけ控え、出口では使い切った戻り先を役割と `staffEntryOk` を含めて確かめ直す（SEC-AUTH-026）。管理者・サポーターは入口の条件を満たすまで使い切らない。Cookie の動作（作る・消す・そのまま）を値で返し、呼び出し元がどの応答にも同じ形で付けられるようにする。ログインを止めないため、想定外の例外は捕まえて既定に倒す |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`、`docs/superpowers/plans/2026-10-25-wave1a-login-return-to.md` |
@@ -2260,9 +2260,9 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 入力（開始） | 入口の `next`（`unknown`）、用途 |
 | 出力（開始） | Cookie の動作（`set`〔番号と秒数〕・`clear`・`keep`）と結果（`created`・`cleared`・`rejected`・`failed`） |
-| 入力（解決） | Cookie の見出し、用途、閲覧者（id・役割・aal） |
+| 入力（解決） | Cookie の見出し、用途、閲覧者（id・役割・`staffEntryOk`） |
 | 出力（解決） | 行き先の道筋、`needsMfa`、Cookie の動作 |
-| 入力・出力（確かめ直し） | 使い切った戻り先、閲覧者（役割・aal）、origin を渡すと、出口の確かめを通した行き先と Cookie の動作（`clear`）を返す（`resolveStoredDestination`。`IMPL-AUTH-221`。非同期。外れた理由の符号を監査に残すため。`resolveReturnDestination` もこれを呼ぶ） |
+| 入力・出力（確かめ直し） | 使い切った戻り先、閲覧者（役割・`staffEntryOk`）、origin を渡すと、出口の確かめを通した行き先と Cookie の動作（`clear`）を返す（`resolveStoredDestination`。`IMPL-AUTH-221`。非同期。外れた理由の符号を監査に残すため。`resolveReturnDestination` もこれを呼ぶ） |
 | 補助 | Cookie の動作を応答に適用する関数（`set` は HttpOnly・Lax・Path=/・秒数・本番は Secure、`clear` は空の値と `maxAge` 0、`keep` は何もしない）。見出しから番号を取り出す関数（形に合う時だけ） |
 
 **正常フロー（開始）:**
@@ -2279,7 +2279,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 2. 見出しに `sb-return-intent` が無い → 既定・`keep`。あるが形に合わない（重複を含む）→ 既定・`clear`
 3. 番号があれば使い切る（失敗・NULL でも `clear`）
 4. 使い切れた戻り先を、閲覧者を渡して確かめ直す（`resolveStoredDestination`）。外れたら既定と、理由の符号だけの監査
-5. 既定は、管理者・サポーター（aal2）は `/admin`、一般は `/`
+5. 既定は、管理者・サポーター（入口の条件を満たす）は `/admin`、一般は `/`
 
 **分岐と異常フロー:**
 
@@ -2291,7 +2291,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 **状態・永続化:** 持たない。表への書き込みは DD-AUTH-033 を通す。道筋・メール・番号を監査に残さない。
 
-**認証認可:** 役割と aal は呼び出した人のトークンの claims から呼ぶ側が渡す。
+**認証認可:** 役割と `staffEntryOk` は呼び出した人のトークンの claims から呼ぶ側が渡す。
 
 **テスト観点:**（単体 `tests/unit/features/auth/return-intent/return-intent-service.test.ts`。試験名の先頭は `DD-AUTH-034`）
 
@@ -2299,11 +2299,11 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 1 | 開始: 無い・外れ・通る・保存失敗・用途の受け渡し。監査に入力の値が入らない。無い・空・外れは `clear` で、保存を呼ばない |
 | 2 | 解決: 一般・番号あり／なし／形が違う／使い切れない。管理者・サポーターは入口の条件に足りない時に使い切らず `/login?error=staff_passkey_required` |
-| 3 | 管理者・サポーター（aal2）で戻り先なし・`/admin`。一般で保存が `/admin` は `/` |
+| 3 | 管理者・サポーター（入口の条件を満たす）で戻り先なし・`/admin`。一般で保存が `/admin` は `/` |
 | 4 | 改ざんされた保存の値が既定に倒れる。例外を投げない |
 | 5 | Cookie の動作の適用（属性、本番だけ Secure、`clear`、`keep`） |
 | 6 | 見出しからの番号の取り出し（他の Cookie が混ざる・形が違う・名前の重複） |
-| 7 | 確かめ直し: 一般の `/account` はそのまま、`/admin`・`//evil.example` は `/`、管理者 aal2 の `/admin` はそのまま。`resolveReturnDestination` の動きは変わらない |
+| 7 | 確かめ直し: 一般の `/account` はそのまま、`/admin`・`//evil.example` は `/`、管理者（入口の条件を満たす）の `/admin` はそのまま。`resolveReturnDestination` の動きは変わらない |
 
 ### DD-AUTH-035 ログインの後の行き先の窓口（post-login/route.ts）
 
@@ -2329,7 +2329,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 1. IP 単位の制限（`auth:post-login`、60回／600秒）を数える
 2. 認証を確かめる（共有の `authenticateRequest`）
-3. 役割（admin・supporter 以外は `user`）と aal を claims から取る
+3. 役割（admin・supporter 以外は `user`）と `staffEntryOk`（`staffEntryOkFromClaims`）を claims から取る
 4. 戻り先を解決する（DD-AUTH-034、用途 `login`）
 5. 200 を作り、Cookie の動作を適用する
 
@@ -2353,7 +2353,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | # | 観点 |
 | --- | --- |
 | 1 | 未ログインで 401、確かめを呼ばない。確かめられなくて 503 と `Retry-After` |
-| 2 | 一般の会員で `redirectTo` と `needsMfa: false`。役割と aal が claims 由来で、`x-role` などの見出しを無視する |
+| 2 | 一般の会員で `redirectTo` と `needsMfa: false`。役割と `staffEntryOk` が claims 由来で、`x-role` などの見出しを無視する |
 | 3 | 管理者・サポーターで入口の条件に足りない時は `needsMfa: true`・`/login?error=staff_passkey_required`・Cookie に触れない |
 | 4 | 使い切った応答で戻り先の Cookie を消す。`no-store`。制限で 429。制限の呼び出しが投げたら握りつぶさず、認証も戻り先も呼ばない |
 
@@ -2437,7 +2437,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | Origin が違う `/api/auth/…` の `POST` | 403 `Forbidden origin` に `no-store` を付ける |
 | `/api/authx`・`/api/authentication/x`（境目の外れ）、`/api/search`、`/news`、`/` | 付けない |
 | `/api/order-status/…` の Origin 拒否 | 今までどおり `no-store` と `Referrer-Policy: no-referrer`（この項目の対象外） |
-| 窓口が自分で `Cache-Control` を付ける（`confirm`・`me` ほか） | 窓口の値も `no-store` で同じ。どちらが残っても変わらない |
+| 窓口が自分で `Cache-Control` を付ける（`me`・`oauth/*`・`email-code/resend`・`email-code/cancel`・`post-login`） | 窓口の値も `no-store` で同じ。どちらが残っても変わらない |
 
 **状態・永続化:** 持たない。
 
@@ -2447,7 +2447,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | # | 観点 |
 | --- | --- |
-| 1 | `login`・`otp/verify`・`refresh`・`mfa/enroll-totp`・`mfa/verify`・`mfa/status`・`me` の応答に `no-store` が付く |
+| 1 | `refresh`・`me` などの `/api/auth/…` の応答に `no-store` が付く |
 | 2 | Origin が違う `/api/auth/login` の `POST` の 403 に `no-store` が付き、`/api/authx` の 403 には付かない |
 | 3 | `/api/authx`・`/api/authentication/x`・`/api/search`・`/api/news`・`/news`・`/`・`/about` には付かない |
 | 4 | 注文の状況の Origin 拒否は `no-store` と `Referrer-Policy: no-referrer` のまま |
@@ -2542,7 +2542,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 **正常フロー（書く側）:**
 
-1. ログインの最後（`otp/verify`・`oauth/callback`・`confirm`・`register`）の共有の `persistSessionAndCookies` が、GoTrue から直に受けた access token の `session_id` を読み、自前の `sessions` の行の `auth_session_id` に入れる
+1. ログインの最後（`email-code/verify`・`oauth/callback`・`passkey/login/finish`）の共有の `persistSessionAndCookies` が、GoTrue から直に受けた access token の `session_id` を読み、自前の `sessions` の行の `auth_session_id` に入れる
 2. 更新（`refresh`）は、前の行が結び付いている時だけ GoTrue を呼び、共有の `persistNewSession` に前の行の `auth_session_id` を `trustedAuthSessionId` として渡す。新しい行は新しい token の `session_id`（無ければ `trustedAuthSessionId`）を持つ
 3. （段4の Task 30 で、TOTP の昇格 `mfa/verify` の呼び手を消した）
 4. `trustedAuthSessionId` が無い `persistNewSession` は `auth_session_id` を NULL で入れる（結び付けない）。新しい token の `session_id` を前の行の確認なしに保存する道はどこにも無い
@@ -2586,12 +2586,12 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 **DB の側（`has_permission` と会員の本人の行の方針。移行 M2、2026-10-29、波 5 の Task 6。未適用）:**
 
-1. `public.has_permission(permission_code)` は、`auth.uid()` が空なら偽、JWT の `aal` が `aal2` でない（`aal` が無ければ `aal1` 扱い）なら偽、ACL の `EXISTS`（G-0 の本体と同じ）が偽なら偽、ACL が真の時だけ `private.app_session_is_live(session_id)` の結果を返す。`session_id` は uuid の形を正規表現で確かめてからキャストし、形が悪い・無い時は例外でなく偽（DATA-AUTH-008、SEC-AUTH-010-AC-03）
+1. `public.has_permission(permission_code)` は、`auth.uid()` が空なら偽、店員の入口の条件（パスキーで入った・24時間以内・認めた鍵2本・無操作。段1a の移行 E で `aal2` の枝を置き換えた。JWT の `aal` は見ない）を満たさないなら偽、ACL の `EXISTS`（G-0 の本体と同じ）が偽なら偽、ACL が真の時だけ `private.app_session_is_live(session_id)` の結果を返す。`session_id` は uuid の形を正規表現で確かめてからキャストし、形が悪い・無い時は例外でなく偽（DATA-AUTH-008、SEC-AUTH-010-AC-03）
 2. `profiles`・`orders`・`order_items` には、`authenticated` 向けの RESTRICTIVE の方針 `"require app bound live session"` を 1 本ずつ足す。式は `(SELECT private.is_app_bound_live_session())`（USING も WITH CHECK も）。結び付いた生きた session の無い `authenticated` は本人の行も 0 行。`anon` は触らず、ゲストの注文は `app.session_id` で読む道のまま
 3. 旗 `AUTH_REQUIRE_APP_SESSION` は DB が読まない。移行を当てた瞬間に効き、戻すのは移行の ROLLBACK（G-0 の本体と `DROP POLICY` 3 本）。当てる前に、M1 とアプリの書く側・読む側が出て、全員がログインし直している必要がある
 4. M1 が無い DB に当てると、何も変えずに `SEC_WAVE5_MIGRATION_ASSERTION_FAILED`（DETAIL は項目名だけ）で止まる
 
-DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permission-aal2.test.ts`。検査の順、G-0 の ACL の `EXISTS` が一字も違わないこと、ROLLBACK の全文、方針 3 本の形）、DB 結合（`tests/integration/db/auth_has_permission_aal2.integration.test.ts`。aal1・`aal` 無し・`session_id` 無し・形が悪い・結び付いていない・失効後・`auth.sessions` 削除後は偽、aal2＋結び付き＋生存で真、ACL の無い人は常に偽、公開の読みは aal1 の会員で止まらない、会員の本人の行は結び付いた時だけ見える）。
+DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permission-aal2.test.ts`。検査の順、G-0 の ACL の `EXISTS` が一字も違わないこと、ROLLBACK の全文、方針 3 本の形）、DB 結合（以前の `auth_has_permission_aal2` の DB 結合の記述。今の入口の条件の試験は DATA-AUTH-016 の試験。以前は aal1・`aal` 無し・`session_id` 無し・形が悪い・結び付いていない・失効後・`auth.sessions` 削除後は偽、aal2＋結び付き＋生存で真、ACL の無い人は常に偽、公開の読みは aal1 の会員で止まらない、会員の本人の行は結び付いた時だけ見える）。
 
 **テスト観点:**（単体 `tests/unit/lib/auth/app-session.test.ts`・`authenticate.test.ts`・`admin-rbac.test.ts`・`tests/unit/features/auth/services/session.test.ts`・`tests/unit/services/register.test.ts`・`tests/unit/api/auth/refresh-route.test.ts`。結合 `tests/integration/api/auth/refresh.test.ts`・`session-lifecycle.test.ts`。名前の先頭は `DD-AUTH-039` か `SEC-AUTH-005-AC-05`）
 
@@ -2612,7 +2612,7 @@ DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permi
 | 上位 | ARC-AUTH-005、SEC-AUTH-015、SEC-AUTH-035 |
 | 根拠 | anon の鍵は公開なので、アプリを通らずに Supabase Auth の窓口（`/signup`・`/token`（password）・`/otp`）を直に叩けば、アプリの Turnstile・回数の制限・漏洩の確かめが飛ばされる。Supabase の captcha をオンにして直の呼び出しをトークン無しで 400 にし、アプリのサーバーは captcha を免除される管理者資格（サービスの鍵）で同じ窓口を呼ぶ（ADR-0420、案 b'）。アプリの Turnstile のトークンは 1 回しか使えず転送できない。呼び出しがサービスの鍵で session を持った client を DB に使い回すと権限が混ざるので、返すのは `auth` だけにする |
 | 状態 | 推定 |
-| 確かめ方 | 単体テスト（`tests/unit/lib/auth/service-role-auth-client.test.ts`。手元の `supabase/config.toml` の目標の版が captcha・最小長 16・確認メール必須・OTP 300 秒・TOTP 有効・変更通知になっていることは `tests/unit/supabase/config-wave6.test.ts`）。E2E は `SEC-AUTH-015-AC-04` が毎回確かめる（波 6 の Task 7・10） |
+| 確かめ方 | 単体テスト（`tests/unit/lib/auth/service-role-auth-client.test.ts`。手元の `supabase/config.toml` の目標の版が captcha・最小長 16・確認メール必須・OTP 300 秒・変更通知になっている（TOTP は段4で無効に戻した）ことは `tests/unit/supabase/config-wave6.test.ts`）。E2E は `SEC-AUTH-015-AC-04` が毎回確かめる（波 6 の Task 7・10） |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`、`wave6-task0-report.md`、`docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md` の Task 2（P1〜P7・P18、ruling 8） |
 
 **対応要件 ID:** SEC-AUTH-035（AC-01・02）、SEC-AUTH-015（AC-04 の本体は GoTrue の captcha。アプリ側の前提がこの項目）（その上は ADR-0420）
@@ -2643,9 +2643,9 @@ DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permi
 
 **状態・永続化:** 無い。パスキー段4の Task 33 で `signInWithPassword` を外したので、GoTrue 側に session が残らない。
 
-**認証認可:** captcha の免除は、アプリのサーバーがサービスの鍵を持つことに依る（公式の文書に無い GoTrue の挙動。E2E が毎回確かめる）。`otp/verify`・`confirm`・`oauth/*`・`refresh` の `verifyOtp`・交換・更新は captcha が掛からない窓口なので `createPublicClient` のまま。再送にウィジェットを足さない（署名つきの保留の Cookie と二段の枠が前提）。
+**認証認可:** captcha の免除は、アプリのサーバーがサービスの鍵を持つことに依る（公式の文書に無い GoTrue の挙動。E2E が毎回確かめる）。`email-code/verify`・`oauth/*`・`refresh` の `verifyOtp`・交換・更新は captcha が掛からない窓口なので `createPublicClient` のまま。再送にウィジェットを足さない（署名つきの保留の Cookie と二段の枠が前提）。
 
-**テスト観点:**（単体 `tests/unit/lib/auth/service-role-auth-client.test.ts`・`tests/unit/lib/supabase-client-isolation.test.ts`・`tests/unit/api/auth/login-route.test.ts`・`login-resend-route.test.ts`・`register-route.test.ts`。結合は窓口の既存の試験を auth だけの client の差し替えに追従。名前の先頭は `DD-AUTH-040`）
+**テスト観点:**（単体 `tests/unit/lib/auth/service-role-auth-client.test.ts`・`tests/unit/lib/supabase-client-isolation.test.ts`・`tests/unit/api/auth/email-code-start-route.test.ts`・`email-code-resend-route.test.ts`（呼び手の窓口）。当時の `login`・`login/resend`・`register` の試験は窓口ごと消えた。名前の先頭は `DD-AUTH-040`）
 
 | # | 観点 |
 | --- | --- |
@@ -2830,10 +2830,10 @@ DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permi
 
 ## 未確認事項
 
-- 本番の Supabase Auth の設定（Email OTP Expiration 300 秒・8 桁・Confirm email・TOTP の有効・最小の長さ・Redirect URLs）。手元の `supabase/config.toml` は OTP 3600 秒・Confirm email 無効・TOTP 無効・最小 6 文字で、DD-AUTH-015・018・030・031 の本番の動きを手元で確かめられない（SEC-AUTH-029）
+- 本番の Supabase Auth の設定（Email OTP Expiration 300 秒・8 桁・Confirm email・最小の長さ・Redirect URLs。TOTP は段4で使わない）。手元の `supabase/config.toml` は OTP 3600 秒・Confirm email 無効・TOTP 無効・最小 6 文字で、DD-AUTH-015・018・030・031 の本番の動きを手元で確かめられない（SEC-AUTH-029）
 - 共有の `logAudit` が投げることがあるか。DD-AUTH-017 のように `try` の外で呼ぶ所は、投げると窓口の応答が 500 になる
 - DD-AUTH-028 で回転した CSRF の印を置いた直後に、消去の一覧で同じ Cookie を消す。後の書き込みが勝つ前提で「回転は効かない」と読んだが、動かしては確かめていない
-- DD-AUTH-005 で me の通信が投げた時に TOTP の見せ方へ移り、自動の登録が走る。未ログインの人に TOTP の登録の失敗の文が出るかは確かめていない
+- DD-AUTH-005（`/auth/verified`。段4で廃止）の未確認事項は、画面ごと消えたので無くなった
 - `src/components/Header.tsx` の `/` の分岐と `src/components/AuthTabs.tsx` の偽の側は、今の定数では届かない。分岐の網羅 100% には `test-gaps.md` の「届かない分岐」に理由を書くか、ユーザーにコードの扱いを決めてもらう
 - 窓口の単体テスト（`tests/unit/api/auth/**`）は `logout` の1本だけ。結合テストの道を単体テストへ写すかは次の段で決める
 - この頁の項目は全部「推定」。ユーザーの確認を受けたら「現行」にする

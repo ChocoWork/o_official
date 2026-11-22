@@ -1,6 +1,6 @@
 # ADMIN の構造設計
 
-> 状態: 推定 | 確認日: 2026-11-14 | 対象: ADMIN（管理のそのほか。利用者の作成・セッションの強制失効・2要素のリセット・監査ログの読み出しと掃除・問い合わせの管理の窓口・商品の色見本） | 基準コミット: `4facf63b`
+> 状態: 推定 | 確認日: 2026-11-22 | 対象: ADMIN（管理のそのほか。セッションの強制失効・監査ログの読み出しと掃除・問い合わせの管理の窓口・商品の色見本） | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -15,9 +15,9 @@ ADMIN の領域の構成・画面・状態遷移・API・データを、追跡�
 | API | 15 | `API-ADMIN-001`〜`015` | 利用者の作成（`API-ADMIN-001` は 2026-11-18 に廃止）・強制失効・監査ログ・2要素のリセット（`API-ADMIN-004` は段4で廃止）・問い合わせの9つ・色見本の3つ |
 | データ | 6 | `DATA-ADMIN-001`〜`006` | 問い合わせの表、管理の表の RLS と付与、監査ログの表、session を消す関数、色見本の表、権限の印 |
 
-- 結論: 範囲の窓口は全部、頭で共有の認可（JWT・session の生存・DB の ACL の権限・aal2）を通し、通った後にだけ service role の client で表と Auth の管理の機能を使う。表の側は、色見本のほかは anon・authenticated の直接の読み書きを方針で断る
+- 結論: 範囲の窓口は全部、頭で共有の認可（JWT・session の生存・DB の ACL の権限・店員の入口の条件。以前は aal2）を通し、通った後にだけ service role の client で表と Auth の管理の機能を使う。表の側は、色見本のほかは anon・authenticated の直接の読み書きを方針で断る
 - 画面は利用者の作成の1つだけ。問い合わせの管理画面は 2026-10-28（波 4）に `/admin` の CONTACT のタブとして足した（共有の頁 `src/app/admin/page.tsx` が範囲外の `ContactSection` を開く。店長とサポーターの両方に出す）。監査ログを読む画面は無く、窓口だけがある（FREQ-508-AC-01 と食い違う。TM-ADMIN-02）。だから `SCR-` は作成の画面だけにし、画面遷移（`FLOW-`）は置かなかった（CONTACT のタブの画面は共有の頁の一部で、`SCR-` は共有文書の画面一覧 `screen-list.md` が持つ）
-- SEC-ADMIN-002 は、波 5（2026-10-29）の移行 M2 を当てた DB で満たす（`has_permission` が aal2 と結び付いた生きた session を求める。AUTH の DATA-AUTH-008・ADR-0418。M2 は 2026-10-29 に本番適用済み）。構造は AUTH が持つので、ここでは上位につながない
+- SEC-ADMIN-002 は、波 5（2026-10-29）の移行 M2 を当てた DB で満たす（`has_permission` が結び付いた生きた session を求める。段1a の移行 E で aal2 の枝は店員の入口の条件に替わった。AUTH の DATA-AUTH-008・ADR-0418。M2 は 2026-10-29 に本番適用済み）。構造は AUTH が持つので、ここでは上位につながない
 - 今のコードが満たさないセキュリティ要件（SEC-ADMIN-007〜010・014〜016・022・023）は、満たす形の構造を持たないので上位につながない。本文では `SEC-ADMIN-NNN を参照` と指すだけにした。どれも受け入れ条件を持つので、下の段が欠けることはない
 - 一部だけ満たす SEC-ADMIN-003 は、満たさない所が項目の中にあるので、どの項目の上位にもしていない
 
@@ -37,7 +37,7 @@ ADMIN の領域の構成・画面・状態遷移・API・データを、追跡�
 
 | 共有部品 | 道 | ADMIN での使われ方 |
 | --- | --- | --- |
-| 管理の認可 | `src/lib/auth/admin-rbac.ts` の `authorizeAdminPermission` | 全部の窓口の頭で、token・session の生存・DB の ACL の権限・aal2 を確かめる |
+| 管理の認可 | `src/lib/auth/admin-rbac.ts` の `authorizeAdminPermission` | 全部の窓口の頭で、token・session の生存・DB の ACL の権限・店員の入口の条件を確かめる |
 | 固定の権限の一覧 | `src/lib/auth/role-permission-catalog.ts` | `admin.users.manage` を店長に固定する（権限の画面で外せない） |
 | CSRF の Origin の検査と守りの見出し | `src/proxy.ts` | `/api` の書き込みの Origin・Referer の照合 |
 | 監査 | `src/lib/audit.ts` の `logAudit` と伏せ字 | 窓口が結果を `audit_logs` に残す |
@@ -52,7 +52,7 @@ ADMIN の領域の構成・画面・状態遷移・API・データを、追跡�
 | 範囲の単位 | 呼ぶ所 |
 | --- | --- |
 | 利用者の作成の窓口 | 2026-11-18 に消した。店員は招待（API-AUTH-033）だけで増やす |
-| 強制失効・2要素のリセット・監査ログの窓口 | 画面からは無い（HTTP では呼べる。TM-ADMIN-21） |
+| 強制失効・監査ログの窓口 | 画面からは無い（HTTP では呼べる。TM-ADMIN-21） |
 | 問い合わせの5つの窓口 | 範囲外の `src/components/ContactSection.tsx` だけ。この部品は 2026-10-28（波 4）から管理の頁 `src/app/admin/page.tsx` の CONTACT のタブが開く（TM-ADMIN-01 は解消） |
 | 色見本の窓口 | 範囲外の商品の編集 `src/app/admin/item/ItemForm.tsx` |
 | 返信の宛先の部品 | 管理の返信（API-ADMIN-008）、範囲外の公開の問い合わせ `src/app/api/contact/route.ts` と受信 `src/app/api/contact/inbound/route.ts` |
@@ -104,7 +104,7 @@ sequenceDiagram
   R-->>B: JSON
 ```
 
-- 認可: 共有の部品が token を確かめ（無ければ 401）、session の生存と DB の ACL を並べて引き（生存を確かめられなければ 503、session が無ければ 401）、権限が無ければ 403、`aal` が `aal2` でなければ 403 と理由 `MFA required` を返す。窓口は応答をそのまま返す
+- 認可: 共有の部品が token を確かめ（無ければ 401）、session の生存と DB の ACL を並べて引き（生存を確かめられなければ 503、session が無ければ 401）、権限が無ければ 403、店員の入口の条件を満たさなければ 403 と理由 `MFA required`（名前は変えない。`aal` は見ない）を返す。窓口は応答をそのまま返す
 - 権限の印: 作成・強制失効は `admin.users.manage`、監査ログは `admin.audit.read`、問い合わせの読みは `admin.contact.read`・書きは `admin.contact.manage`、色見本の読みは `admin.items.read`・書きは `admin.items.manage`（DATA-ADMIN-006）
 - DB: 認可の後に `createServiceRoleClient()` を作る。RLS を通らないので、守りは窓口の認可1つになる
 - 例外: どの窓口も外側の try/catch で 500 `Internal server error` を返す。強制失効・色見本の保存は壊れた JSON を 400 にする（SEC-ADMIN-013）。問い合わせの窓口は、書き込み（状態の変更・返信・テンプレートの作成と更新と削除）の頭で認可の直後に回数を数え、id が UUID でなければ DB に渡さず 404 にする。扱いは各項目を参照
@@ -144,7 +144,7 @@ sequenceDiagram
 | 色見本・テンプレートの一覧 | 書かない | — | — | — |
 
 - IP は共有の `getAuditRequestContext`（`src/lib/request-ip.ts`）が `getClientIp` から取る。Vercel の `x-vercel-forwarded-for` → `x-real-ip` の順（手元の E2E は `CLIENT_IP_HEADER` が立つ時だけ `x-real-ip`）で、`x-forwarded-for` は読まない。形が IP でなければ・取れなければ `null` のまま保存する（SEC-ADMIN-009・SEC-ADMIN-022、ADR-0416・ADR-0462）。ブラウザの名乗りは `user-agent` の見出し。2026-10-28 の波 4 までは窓口ごとに入れる列がまちまちだった（利用者の作成は IP とブラウザを入れず、問い合わせの記録はメールと IP を入れず、色見本は書かず、強制失効は一部の結果にだけ IP を入れ、読み出しの記録は IP を入れなかった）
-- 伏せ字: 共有の部品が `metadata` の鍵の名前（password・token・secret・card・number など）と、`detail` の JWT・長い文字列・`password=` の形を伏せる。ユーザー作成は、外のサービスの誤りの文・理由の文・対象のメールを残さない。ユーザー作成は固定の符号（`email_already_registered`・`create_user_failed`・`pwned_password`・`pwned_check_unavailable:<符号>`）だけを `detail` に残し、2要素のリセットは理由を長さとハッシュだけにする（SEC-ADMIN-008、ADR-0461）
+- 伏せ字: 共有の部品が `metadata` の鍵の名前（password・token・secret・card・number など）と、`detail` の JWT・長い文字列・`password=` の形を伏せる。外のサービスの誤りの文・理由の文・対象のメールを残さない（SEC-ADMIN-008。ユーザー作成は 2026-11-18 に、2要素のリセットは段4で消した。ADR-0461 は廃止）
 - 強制失効は認可に失敗した要求を、全体で 10 分に 20 行まで書き、21 回目はまとめの 1 行（結果 `unauthorized_burst`）、それ以降は書かない。数える部品が壊れた時は書かない（ADR-0460）
 - 色見本は作れた時（201）と消せた時だけ書く。既にある行を返す 200・0 行の 404・誤り・断りは書かない。行為者のメールと IP は管理の変更の全部の結果に入れる（SEC-ADMIN-022）。IP を残す理由と退けた案は ADR-0462
 - 問い合わせの一覧・詳細と監査ログの読み出しは、読めた時に、読んだ人の id・メール・IP・ブラウザの名乗りで 1 行ずつ書く（`admin.contact.list`・`admin.contact.read`・`admin.audit_logs.read`。SEC-ADMIN-023）。名前・メール・本文・件名・検索語は入れない。各窓口の中の小さな関数 `auditReadSafely` が `logAudit` を包み、記録の失敗で読み出しを止めない
@@ -687,7 +687,7 @@ sequenceDiagram
 
 - 以前あった anon の表の付与は、2026-10-26 に外した。anon の select は0件でなく権限の誤り（`42501`）になる
 - 名前の長さの上限（40 字）は窓口だけにある
-- 方針が使う `has_permission` は、波 5 の移行 M2（DATA-AUTH-008）を当てると aal2 と結び付いた生きた session を求めるので、`admin.items.read` を持つ人でも aal1 の JWT や失効の後の JWT では PostgREST から直接読めない（推定。SEC-ADMIN-002-AC-02 を満たす。M2 は 2026-10-29 に本番適用済み）。書き込みは 2026-10-26 から付与が無く、権限の誤り（`42501`）で断られる（SEC-ADMIN-002-AC-01 を満たす）
+- 方針が使う `has_permission` は、波 5 の移行 M2（DATA-AUTH-008）を当てると結び付いた生きた session を求め、段1a の移行 E から店員の入口の条件も求めるので、`admin.items.read` を持つ人でも入口の条件に足りない JWT や失効の後の JWT では PostgREST から直接読めない（推定。SEC-ADMIN-002-AC-02 を満たす。M2 は 2026-10-29 に本番適用済み）。書き込みは 2026-10-26 から付与が無く、権限の誤り（`42501`）で断られる（SEC-ADMIN-002-AC-01 を満たす）
 - 確かめ: `tests/integration/db/admin-misc/admin_item_color_presets_grants.integration.test.ts`、`admin_item_color_presets_table.integration.test.ts`
 - 窓口は service role で読み書きするので、この方針は窓口の道では効かない（ADR-0451）
 

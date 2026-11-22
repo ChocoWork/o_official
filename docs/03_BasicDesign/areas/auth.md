@@ -45,7 +45,7 @@ AUTH の領域の構成・画面・画面遷移・状態遷移・API・データ
 | 入力の形 | `src/features/auth/schemas/*` | 窓口の本文を zod で確かめる。パスワードの 16 文字もここ |
 | 回数の制限 | `src/features/auth/middleware/rateLimit.ts` の `enforceRateLimit` | 窓口が IP 単位・メール単位で数える。送り元は `getClientIp`（下の行）で、取れない時の鍵は `null`（全員が 1 つの枠）。数え場所の失敗は 503（ADR-0009（範囲外））。429・503 は `Cache-Control: private, no-store` と `Retry-After`（2026-10-28、波 4 の Task 2） |
 | 送り元の IP | `src/lib/request-ip.ts` の `getClientIp`・`getAuditRequestContext`（範囲に入れた。DD-AUTH-038、ADR-0416） | `VERCEL=1` か `CLIENT_IP_HEADER` の時だけ `x-vercel-forwarded-for`→`x-real-ip` を読み、`x-forwarded-for` は読まない。回数の制限の鍵と監査の IP が呼ぶ。2026-10-28 に関数を足し、同日に `rateLimit.ts` の鍵・取扱店と管理（強制失効・2 要素のリセット）の監査の IP・Turnstile の `remoteip` を切り替えた。同日（Task 2b）に G/H を除く 13 ファイルの監査の ip・`submitted_ip`（会計・role-permissions・settings/shop・users・items・contact・wishlist・Stripe の Webhook）の直読みと自前の複製も `getClientIp` に寄せた（範囲外の窓口。保存先・変数名は変えない）。同日（Task 2c、G-1 了承済み）に G/H の 12 ファイル（注文の管理 4 窓口・返品 2 部品・配送 1 部品・checkout の 2 窓口とガード・カート 2 窓口。範囲外）の監査の ip の直読みと自前の複製（`getClientIp`・`clientIpOf`）も `getClientIp` に寄せた（読み方だけ。保存先・変数名・回数の制限の呼び出しは変えない。Vercel の外で見出しが無い時の ip は null になる）。下の ARC-AUTH-005 の「IP は `x-forwarded-for` の先頭を信じる」は古い記述 |
-| アカウントの照会 | `src/features/auth/services/auth-admin-user.ts` の `findAuthUserIdByEmail` | 店員の招待・注文履歴のメールでメールからアカウントを引く（会員登録・再設定は段4で消した） |
+| アカウントの照会 | `src/features/auth/services/auth-admin-user.ts` の `findAuthUserIdByEmail` | 店員の招待の発行でメールからアカウントを引く（会員登録・再設定は段4で消した） |
 | Cookie の名前と属性 | `src/lib/cookie.ts` | 認証の Cookie の名前・HttpOnly・SameSite・Secure |
 | 認証の確かめ | `src/lib/auth/authenticate.ts`・`request-token.ts` | `me`・`logout` が access token を確かめる |
 | 管理の認可 | `src/lib/auth/admin-rbac.ts` | 管理の窓口が DB の ACL と店員の入口の条件（パスキー・認めた鍵の本数。`aal` は見ない）で判定する（段1b より前は aal2 で判定した） |
@@ -370,19 +370,17 @@ flowchart LR
 
 ```mermaid
 graph TD
-  LG["/login<br/>SCR-AUTH-001"] --> LF["ログインのフォーム<br/>SCR-AUTH-002"]
-  LG --> RF["会員登録のフォーム<br/>SCR-AUTH-003"]
-  LF --> VF["/login/verify<br/>SCR-AUTH-004"]
-  LF --> PR["/auth/password-reset<br/>SCR-AUTH-005"]
-  PV["/auth/password-reset/verify<br/>SCR-AUTH-006"] --> PR
+  LG["/login<br/>SCR-AUTH-001"] --> CD["/login/code<br/>コードの入力"]
+  LG --> PK["/login/passkey<br/>パスキーの勧め"]
   HD["ヘッダー SCR-AUTH-009"] --> DR["ドロワー SCR-AUTH-010"]
   HD --> LG
-  AC["/account お客様情報"] --> PW["/account/password<br/>SCR-AUTH-011"]
-  PW --> PR
-  PW --> LG
+  AC["/account<br/>ログイン方法 SCR-AUTH-012"] --> LG
+  IV["/staff/invite<br/>SCR-AUTH-013"] --> RG["/staff/register<br/>SCR-AUTH-014"]
+  AD["/admin/passkeys<br/>SCR-AUTH-015"] --> LG
+  UT["/admin ユーザーのタブ<br/>SCR-AUTH-016"] --> IV
 ```
 
-矢印は画面の中のリンク・移動。細かい条件は画面遷移（FLOW-AUTH-001〜005）に書く。ヘッダーとドロワーは全部のページに出る。
+矢印は画面の中のリンク・移動。細かい条件は画面遷移（FLOW-AUTH-002 が Google のログイン。ほかの FLOW-AUTH-001・003〜005 は段4で廃止）に書く。ヘッダーとドロワーは全部のページに出る。
 
 ### SCR-AUTH-001 /login はパスキー・Google・メールのコードの3つの入口を持ち、コードの入力は /login/code で受ける
 
@@ -928,48 +926,36 @@ stateDiagram-v2
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-AUTH-005、SEC-AUTH-032、ADR-0412 |
-| 根拠 | 戻り先を 1 回しか使えない短命の控えにして、盗まれた番号や使い終えた番号の使い回しを防ぐ（SEC-AUTH-032）。管理者・サポーターは入口の条件を満たした後で使うので、満たさない間（`staffEntryOk` が偽。以前は aal1 の間）は作られたまま残す（FR-AUTH-005-AC-05、ADR-0468）。期限は login が 15 分、signup が 1 時間。signup の控えは登録したメールに結び、確認のリンクが session を作る前に使い切る（SEC-AUTH-007、ADR-0413） |
+| 根拠 | 戻り先を 1 回しか使えない短命の控えにして、盗まれた番号や使い終えた番号の使い回しを防ぐ（SEC-AUTH-032）。管理者・サポーターは入口の条件を満たした後で使うので、満たさない間（`staffEntryOk` が偽。以前は aal1 の間）は作られたまま残す（FR-AUTH-005-AC-05、ADR-0468）。期限は login が 15 分。signup の控え（登録したメールに結び、確認のリンクが使い切った物。ADR-0413）は、リンクの窓口を段4で消したので作らない |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`（設計。波 1-A で実装した） |
 
 ```mermaid
 stateDiagram-v2
-  [*] --> 作られた: login・oauth/start の POST・register で確かめに通る
+  [*] --> 作られた: email-code/start・oauth/start の POST で確かめに通る
   作られた --> 作られた: 管理者・サポーターが入口の条件を満たさない間（staffEntryOk が偽）は使い切らない
   作られた --> 使い切られた: 期限内で用途が合う最初の 1 回
-  作られた --> 期限切れ: login は 15 分、signup は 1 時間
+  作られた --> 期限切れ: 15 分
   使い切られた --> [*]: 期限の 1 日後に毎日の掃除で消す
   期限切れ --> [*]: 期限の 1 日後に毎日の掃除で消す
 ```
 
 - 使い切るのは DB の関数 1 回の更新（DATA-AUTH-005）。2 回目・別の用途・期限切れ・存在しない番号は何も返さない
-- signup の控えが使い切られるのは、番号とメールを一緒にハッシュした印が行に当たる時だけ。別のメールの印・Cookie の無い端末では使い切られず、控えは残る（攻撃者のリンクで壊されない）。使い切りは session の保存の前なので、保存が失敗すると戻り先は使用済みになる（行き先は `/`、Cookie は削除、session は失効）
+- 使い切りは session の保存の後に行き先を返す形（`post-login`）か、Google の戻りがその場で行う。保存が失敗すると戻り先は使用済みにならず、行き先は `/` になる。以前の signup の控え（番号とメールを一緒にハッシュする使い切り）は、確認のリンクの窓口ごと廃止した
 - 使い切った行には使った利用者の id を残す。戻り先そのもの・メール・番号は監査に残さない
-- Cookie が消えるのは、使い切った時、入口で戻り先が無い・外れた時、取り消し（cancel）、ログアウト（API-AUTH-004・015）
+- Cookie が消えるのは、使い切った時、入口で戻り先が無い・外れた時、取り消し（`email-code/cancel`）、ログアウト（API-AUTH-032・015）
 
 ## API
 
 | ID | 方法と道 | 呼ぶ所 |
 | --- | --- | --- |
-| API-AUTH-001 | `POST /api/auth/login` | ログインのフォーム（`LoginContext`） |
-| API-AUTH-002 | `POST /api/auth/otp/verify` | `/login/verify`（`LoginContext`） |
-| API-AUTH-003 | `POST /api/auth/login/resend` | `/login/verify` |
-| API-AUTH-004 | `POST /api/auth/login/cancel` | `/login/verify` |
-| API-AUTH-005 | `POST /api/auth/register` | 会員登録のフォーム（`LoginContext`） |
-| API-AUTH-006 | `GET /api/auth/confirm` | 確認のメールのリンク |
-| API-AUTH-007 | `GET`・`POST /api/auth/oauth/start` | ログインのフォーム（`LoginContext` が POST の `fetch` で呼び、返った `url` へページを移す） |
+| API-AUTH-007 | `GET`・`POST /api/auth/oauth/start` | `/login` の Google のボタン（`LoginContext` が POST の `fetch` で呼び、返った `url` へページを移す） |
 | API-AUTH-008 | `GET /api/auth/oauth/callback` | Google と Supabase Auth からの戻り |
-| API-AUTH-009 | `POST /api/auth/password-reset/request` | 再設定のページ |
-| API-AUTH-010 | `GET`・`POST /api/auth/password-reset/link` | メールのリンク（GET）、確認の画面（POST） |
-| API-AUTH-011 | `GET /api/auth/password-reset/session` | 再設定のページ |
-| API-AUTH-012 | `POST /api/auth/password-reset/confirm` | 再設定のページ |
-| API-AUTH-013 | `GET /api/auth/me` | `LoginContext`（`/login/verify` と `/auth/callback` は使わない。行き先は `post-login` が決める） |
+| API-AUTH-013 | `GET /api/auth/me` | `LoginContext`（行き先は `post-login` が決める） |
 | API-AUTH-014 | `POST /api/auth/refresh` | 共有の `client-fetch`（401 の時） |
 | API-AUTH-015 | `POST /api/auth/logout` | `LoginContext` |
-| API-AUTH-019 | `POST /api/auth/post-login` | `resolvePostLoginPath`（確認コードの画面・パスキーのログイン） |
-| API-AUTH-020 | `POST /api/auth/password/change/start` | パスワード変更の画面 `/account/password`（波 6 の Task 6 が作る） |
-| API-AUTH-021 | `POST /api/auth/password/change/confirm` | パスワード変更の画面 `/account/password` |
+| API-AUTH-019 | `POST /api/auth/post-login` | `resolvePostLoginPath`（メールのコードの画面・パスキーのログイン） |
 | API-AUTH-022 | `POST /api/auth/passkey/login/start` | ログインの画面（段2。今は窓口だけ） |
 | API-AUTH-023 | `POST /api/auth/passkey/login/finish` | ログインの画面（段2。今は窓口だけ） |
 | API-AUTH-024 | `POST /api/auth/passkey/register/start` | 登録の画面（段3。今は窓口だけ） |
@@ -988,7 +974,9 @@ stateDiagram-v2
 | API-AUTH-037 | `POST /api/auth/staff/invite/start` | 招待のリンクの画面 `/staff/invite`（段3a の Task 6。SCR-AUTH-013） |
 | API-AUTH-038 | `POST /api/auth/staff/register/complete` | 2本の登録の画面 `/staff/register`（段3a の Task 7。SCR-AUTH-014） |
 
-全部の窓口に共通: 状態を変える `POST` は共有の proxy の Origin の確かめを先に通る。`/api/auth` 配下の全部の応答（Origin 拒否の 403 を含む）に、共有の proxy が `Cache-Control: no-store` を付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037。2026-10-28）。`confirm`・`oauth/*`・`password-reset/link`・`session`・`me`・`login/resend`・`login/cancel`・`post-login` は窓口も自分で同じ値を付ける。
+廃止にした窓口（API-AUTH-001〜006・009〜012・016〜018・020・021）は表から外した。節の本文は当時のまま残す。
+
+全部の窓口に共通: 状態を変える `POST` は共有の proxy の Origin の確かめを先に通る。`/api/auth` 配下の全部の応答（Origin 拒否の 403 を含む）に、共有の proxy が `Cache-Control: no-store` を付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037。2026-10-28）。`oauth/*`・`me`・`email-code/resend`・`email-code/cancel`・`post-login` は窓口も自分で同じ値を付ける。
 
 ### API-AUTH-001 POST /api/auth/login はパスワードを確かめてメールの確認コードを送り、保留の Cookie を返す
 

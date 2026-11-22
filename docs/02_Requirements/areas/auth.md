@@ -288,7 +288,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 状態 | 推定 |
 | 出どころ | ユーザーの発言 2026-11-17（`.superpowers/sdd/2026-11-17-passkey-stage1b-server-endpoints/task-5-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（5-2・6-2）、`docs/superpowers/plans/2026-11-17-passkey-stage1b-server-endpoints.md`（Task 5）） |
 
-要求の文: 店員（管理者・サポーター）は、パスキーの入口の条件を満たす時だけ、ログインの後に `/admin` か `/admin` 向きの戻り先へ送られる。満たさない店員は今の 2 段目の画面（`/auth/verified`）へ送られ、戻り先の控えは使い切られない。お客さんは条件に関わらず 2 段目へ送られない。Google・メールのリンクの戻りの窓口は、店員が来ても必ず 2 段目の側に倒す。受け入れ条件は FR-AUTH-018-AC-01〜03、SEC-AUTH-043、DD-AUTH-054、ADR-0468。
+要求の文: 店員（管理者・サポーター）は、パスキーの入口の条件を満たす時だけ、ログインの後に `/admin` か `/admin` 向きの戻り先へ送られる。満たさない店員は `/login?error=staff_passkey_required`（認めた鍵が1本の店員は `/admin/passkeys?more=1`）へ送られ、戻り先の控えは使い切られない（以前は 2 段目の画面 `/auth/verified`。段4で消した。ADR-0475）。お客さんは条件に関わらず店員の側へ送られない。Google の戻りの窓口は、店員が来ても必ず条件を満たさない側に倒す。受け入れ条件は FR-AUTH-018-AC-01〜03、SEC-AUTH-043、DD-AUTH-054、ADR-0468。
 
 ### SR-AUTH-019 パスキーの登録は、条件を満たす人だけがアプリの窓口で行える
 
@@ -425,6 +425,8 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: ログインをメールアドレス + パスワード + メールOTP の2要素認証にすること
 
+廃止（2026-11-22、パスキー段4）: パスワード + メール OTP の2要素のログインは、窓口ごと消した。お客さんはメールのコード・Google・パスキーで入る（SR-AUTH-030）。店員の入口は SR-AUTH-014。
+
 ### FREQ-59 会員登録とログインを分け、専用の登録ページを設ける
 
 | 属性 | 値 |
@@ -435,6 +437,8 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
 要求の文: 新規登録とログインを分離し、専用の新規登録ページを設けること
+
+廃止（2026-11-22、パスキー段4）: 専用の登録ページ `/register` と登録の窓口は消した（404。FR-AUTH-053-AC-01）。登録はメールのコードのログインと同じ入口（SR-AUTH-021）。
 
 ### FREQ-60 メール OTP の有効期限を5分にする
 
@@ -458,6 +462,8 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 要求の文: ログインと新規登録を1ページに統合し、タブで切り替えられるようにすること
 
+廃止（2026-11-22、パスキー段4）: ログインと登録のタブは消した。`/login` は3つの入口を並べる1画面（SCR-AUTH-001）。
+
 ### FREQ-62 区切り線と切替の文言の余白（廃止）
 
 | 属性 | 値 |
@@ -479,6 +485,8 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
 要求の文: 会員登録とログインを `/login` に一本化し、専用 `/register` ルートを廃止すること（FREQ-59・FREQ-61 のURL分離方針を反転）
+
+廃止（2026-11-22、パスキー段4）: 中身（`/register` が無く `/login` 1つ）は今も正しい。FR-AUTH-053-AC-01 が引き継ぎ、タブの記述は消えたので、この要求は役目を終えた。生きた物を誤って廃止にしたのではない。
 
 ### FREQ-64 認証の画面を角丸の見た目にする
 
@@ -550,7 +558,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 | 属性 | 値 |
 | --- | --- |
-| 根拠 | 認証の流れの途中で見た目が変わると、別のサイトへ飛ばされたように見えて不安になるため。/auth の接頭辞は /auth/verified などと同じまとまりとして残す |
+| 根拠 | 認証の流れの途中で見た目が変わると、別のサイトへ飛ばされたように見えて不安になるため。/auth の接頭辞は /auth/verified などと同じまとまりとして残す（当時。/auth/* は段4で消えた） |
 | 状態 | 現行 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
@@ -2185,7 +2193,7 @@ OTP 送信後のカウントダウンタイマー（再送信制限）を実装�
 | 優先度 | MUST |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「1.14 ログインページ（LOGIN）」節） |
 
-管理者・サポーターは、店員の入口の条件（パスキーで入った・24時間以内・認めた鍵2本。SR-AUTH-014）を満たすまで管理画面に入れない。お客さんは、メールのコード・Google・パスキーで入る（SR-AUTH-030）。
+管理者・サポーターは、店員の入口の条件（パスキーで入った・24時間以内・認めた鍵2本。SR-AUTH-014）を満たすまで管理画面に入れない。
 
 今のコード（段4の Task 30 の後）: ログインの後の行き先は `POST /api/auth/post-login` が返す（認証アプリの確認と `/auth/verified` は消した）。Google の経路（`/api/auth/oauth/callback`）はメール OTP を通らずにセッションを作る。手元の Supabase の TOTP の登録・確認（`supabase/config.toml` の `[auth.mfa.totp]`）は、段4の Task 30 で止めた。
 
@@ -8081,13 +8089,13 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-029 |
-| 根拠 | コードは OTP の期限 300 秒、Confirm email が ON、TOTP が使えること、8 桁のコードを前提にする。手元の設定は波 6 の切り替えまで違い（OTP 8 桁だけ同じ）、E2E・結合の結果は本番の前提を確かめていなかった |
+| 根拠 | コードは OTP の期限 300 秒、Confirm email が ON、8 桁のコードを前提にする（以前は TOTP が使えることも。段4で TOTP は使わない）。手元の設定は波 6 の切り替えまで違い（OTP 8 桁だけ同じ）、E2E・結合の結果は本番の前提を確かめていなかった |
 | 状態 | 推定 |
 | 確かめ方 | レビュー（開店の準備で本番のダッシュボードを見る）・E2E |
 | 出どころ | 実装から推定 |
 | 優先度 | MUST |
 
-本番の Supabase Auth は、メール OTP の期限 300 秒、OTP 8 桁、Confirm email を ON、TOTP の登録と確認を有効にする。手元の `supabase/config.toml` も同じ値にそろえ、E2E が本番の前提で動くようにする。手元の設定は 2026-11-01（切り替えの日。手元だけ）にそろえた（`enable_confirmations = true`・`otp_expiry = 300`・`otp_length = 8`・`[auth.mfa.totp]` を有効）。`FR-SIGNUP-002`・`FR-LOGIN-024`・`FR-LOGIN-034` の ENV の印はこの切り替えと同時に外した（その試験は段4で消した。この前提は今もメールのコードのログインが頼る。AC-02 を FR-LOGIN-055 が持つ。AC-01 は登録の窓口が無いので廃止）。本番は未確認で、波 6 の Task 11 が Management API で読んで変える。
+本番の Supabase Auth は、メール OTP の期限 300 秒、OTP 8 桁、Confirm email を ON にする（TOTP は段4で無効のまま）。手元の `supabase/config.toml` も同じ値にそろえ、E2E が本番の前提で動くようにする。手元の設定は 2026-11-01（切り替えの日。手元だけ）にそろえた（`enable_confirmations = true`・`otp_expiry = 300`・`otp_length = 8`。`[auth.mfa.totp]` も有効にしたが、段4で `false` に戻した）。`FR-SIGNUP-002`・`FR-LOGIN-024`・`FR-LOGIN-034` の ENV の印はこの切り替えと同時に外した（その試験は段4で消した。この前提は今もメールのコードのログインが頼る。AC-02 を FR-LOGIN-055 が持つ。AC-01 は登録の窓口が無いので廃止）。本番は未確認で、波 6 の Task 11 が Management API で読んで変える。
 
 #### SEC-AUTH-029-AC-01 会員登録の応答が 201 にならない
 
@@ -8124,7 +8132,7 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | 出どころ | OWASP ASVS 4.0.3 V7.1.3 |
 | 優先度 | SHOULD |
 
-ログイン・OTP の確認・会員登録・ログアウト・トークンの更新は、成功と失敗を `audit_logs` に残す。個人情報は伏せてから書く。結び付けの拒否（`refresh` の `unbound_session` など）の監査は 2026-10-29（波 5）に入った（AC-03）。TOTP の登録・確認の監査（AC-01）は、窓口を消した段4の Task 30 で外した。
+ログイン（メールのコード・パスキー・Google）・ログアウト・トークンの更新は、成功と失敗を `audit_logs` に残す（会員登録・パスワードの窓口は段4で消した）。個人情報は伏せてから書く。結び付けの拒否（`refresh` の `unbound_session` など）の監査は 2026-10-29（波 5）に入った（AC-03）。TOTP の登録・確認の監査（AC-01）は、窓口を消した段4の Task 30 で外した。
 
 #### SEC-AUTH-030-AC-01 TOTP の登録と確認の成功が監査に残る
 
@@ -8866,9 +8874,9 @@ refresh の Cookie が無い時と、自前の表の行に明示の失効の印�
 
 | 属性 | 値 |
 | --- | --- |
-| 根拠 | 一般の会員を管理者用の確認の画面に通さず、管理者とサポーターは TOTP の確認（FR-LOGIN-007）へ必ず通すため（推定）。一般の会員の行き先を `/account` にすることを求める要件は無い |
+| 根拠 | 一般の会員を店員用の流れに通さず、管理者とサポーターは入口の条件（FR-LOGIN-007。以前は TOTP の確認）を満たすまで管理へ通さないため（推定）。一般の会員の行き先を `/account` にすることを求める要件は無い |
 | 状態 | 推定 |
-| 出どころ | 実装から推定（`src/app/login/verify/VerifyOtpClient.tsx`、`src/app/api/auth/oauth/callback/route.ts`。`/auth/verified` は段4で消した） |
+| 出どころ | 実装から推定（`src/app/api/auth/post-login/route.ts`、`src/app/api/auth/oauth/callback/route.ts`。`/login/verify`・`/auth/verified` は段4で消した） |
 
 ログインの後の行き先は `POST /api/auth/post-login` が返す（段4の Task 30 から。ARC-AUTH-015）。`/auth/verified` は消した。
 

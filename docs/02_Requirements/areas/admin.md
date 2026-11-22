@@ -338,18 +338,18 @@ FR-ADMIN-009 の文から起こした。今のコードで満たすかを「状�
 
 脅威（`docs/05_Quality/security/threats/admin.md` の `THR-ADMIN-001`〜`025`）の対策。上位に書ける種類は `THR-` だけなので、全体の要件 `NFR-SEC-001`〜`012` は根拠に `（範囲外）` の印付きで書いた。全部「推定」で、今のコードが満たさない所は各項目に書き、番号を `TM-ADMIN-NN`（trace-matrix.md の「食い違い」節）で指す。
 
-### SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す
+### SEC-ADMIN-001 管理 API は DB の ACL・有効な session・店員の入口の条件の3つを満たす要求だけを通す
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-ADMIN-001、THR-ADMIN-023、THR-ADMIN-024 |
-| 根拠 | アカウントの作成・失効・2要素の削除・問い合わせの個人情報は、権限を持ち2要素を済ませた人だけが触れるようにするため。共有の秘密1本で通った過去の形（2026-04-18 のレビューの High）に戻さない。管理の画面は誰でも開けるので、守りは API に置く（利用者の作成の画面は 2026-11-18 に消した）。全体の NFR-SEC-005（範囲外。権限管理）と NFR-SEC-008（範囲外。RBAC）を ADMIN に当てはめた |
+| 根拠 | アカウントの作成・失効・2要素の削除・問い合わせの個人情報は、権限を持ち店員の入口の条件（パスキー・24時間以内・認めた鍵2本。以前は2要素認証）を満たす人だけが触れるようにするため。共有の秘密1本で通った過去の形（2026-04-18 のレビューの High）に戻さない。管理の画面は誰でも開けるので、守りは API に置く（利用者の作成の画面は 2026-11-18 に消した）。全体の NFR-SEC-005（範囲外。権限管理）と NFR-SEC-008（範囲外。RBAC）を ADMIN に当てはめた |
 | 状態 | 推定 |
 | 確かめ方 | E2E・結合テスト |
 | 出どころ | OWASP ASVS 4.0.3 V4.1.1、V4.3.1。`docs/05_Quality/reviews/code/2026-04-18-admin-security-review.md` |
 | 優先度 | MUST |
 
-範囲の管理 API（`revoke-user-sessions`・`audit-logs`・`contact/**`・`item-color-presets/**`）は、JWT の検証・session の生存・DB の ACL の権限・`aal2` を全部満たす要求だけを通す。今のコードは満たす（`src/lib/auth/admin-rbac.ts`、各 route.ts の最初の行の認可）。範囲で試すテストは強制失効と監査ログの結合テストだけ（食い違いは trace-matrix.md の「食い違い」節の TM-ADMIN-42）。
+範囲の管理 API（`revoke-user-sessions`・`audit-logs`・`contact/**`・`item-color-presets/**`）は、JWT の検証・session の生存・DB の ACL の権限・店員の入口の条件を全部満たす要求だけを通す（以前は `aal2`。段1b から `aal` は見ない）。（本書の受け入れ条件の「`aal1`／`aal2` の JWT」は、E2E の作り手 `createAdminSessionActor(db, role, 'aal1'|'aal2')` の引数名で、認めた鍵が1本／2本の店員の JWT を指す。段1a から JWT の `aal` は判定に使わない）。今のコードは満たす（`src/lib/auth/admin-rbac.ts`、各 route.ts の最初の行の認可）。範囲で試すテストは強制失効と監査ログの結合テストだけ（食い違いは trace-matrix.md の「食い違い」節の TM-ADMIN-42）。
 
 #### SEC-ADMIN-001-AC-01 JWT の無い要求を 401 で断る
 
@@ -401,18 +401,18 @@ FR-ADMIN-009 の文から起こした。今のコードで満たすかを「状�
 
 廃止（2026-11-18）: 利用者の作成の画面と窓口（`create-user`）を消した。店員は招待（API-AUTH-033）だけで増やす。番号は使い回さない。
 
-### SEC-ADMIN-002 DB の直接の読み書きも aal2 と有効な session を求める
+### SEC-ADMIN-002 DB の直接の読み書きも店員の入口の条件と有効な session を求める
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-ADMIN-002、THR-ADMIN-016 |
-| 根拠 | 2要素認証と強制失効の守りがアプリの窓口だけにあると、パスワードの漏れや失効の後の JWT で PostgREST から色見本に届く。窓口と同じ線を DB にも引く。NEWS の SEC-NEWS-002（範囲外）と同じ形で、`has_permission` は AUTH の SEC-AUTH-010 が波 5 で変える。全体の NFR-SEC-008（範囲外。RBAC）を当てはめた |
+| 根拠 | 店員の入口の条件と強制失効の守りがアプリの窓口だけにあると、パスワードの漏れや失効の後の JWT で PostgREST から色見本に届く。窓口と同じ線を DB にも引く。NEWS の SEC-NEWS-002（範囲外）と同じ形で、`has_permission` は AUTH の SEC-AUTH-010 が波 5 で変える。全体の NFR-SEC-008（範囲外。RBAC）を当てはめた |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | OWASP ASVS 4.0.3 V4.3.1 |
 | 優先度 | MUST |
 
-`item_color_presets` の RLS が通すのは、ACL の権限に加えて JWT の `aal` が `aal2` で、session が有効な要求だけ。読みの側（AC-02）は、波 5 の移行 M2（`has_permission` に aal2 と結び付いた生きた session を求める。SEC-AUTH-010-AC-03、ADR-0418）を当てた DB で満たす（2026-10-29 に E2E の `test.fail` を外した。食い違いだった TM-ADMIN-43 は M2 で解消する。M2 は 2026-10-29 に本番適用済み）。書き込みの側（AC-01）は、2026-10-26 から anon・authenticated に `item_color_presets` の INSERT・UPDATE・DELETE の権限が無い（ADR-0414）ので、aal1 の JWT でも PostgREST から書けず満たす（この移行を当てた DB でだけ満たす）。同じ移行で anon の SELECT も外した（読む方針が authenticated 向けの1本だけで、anon が読める行は元から0件）。
+`item_color_presets` の RLS が通すのは、ACL の権限に加えて店員の入口の条件（段1a の移行 E で `aal2` の枝を置き換えた。JWT の `aal` は見ない）を満たし、session が有効な要求だけ。読みの側（AC-02）は、波 5 の移行 M2（`has_permission` に aal2 と結び付いた生きた session を求める。SEC-AUTH-010-AC-03、ADR-0418）を当てた DB で満たす（2026-10-29 に E2E の `test.fail` を外した。食い違いだった TM-ADMIN-43 は M2 で解消する。M2 は 2026-10-29 に本番適用済み）。書き込みの側（AC-01）は、2026-10-26 から anon・authenticated に `item_color_presets` の INSERT・UPDATE・DELETE の権限が無い（ADR-0414）ので、aal1 の JWT でも PostgREST から書けず満たす（この移行を当てた DB でだけ満たす）。同じ移行で anon の SELECT も外した（読む方針が authenticated 向けの1本だけで、anon が読める行は元から0件）。
 
 #### SEC-ADMIN-002-AC-01 aal1 の JWT で色見本を直接書けない
 
@@ -664,7 +664,7 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | 出どころ | ASVS 未対応付け |
 | 優先度 | SHOULD |
 
-強制失効が監査ログに書く IP は（MFA のリセットは段4で消した）、中継（Vercel など）が付けた値から取り、送る側が足した値を使わない。2026-10-28（波 4）に満たした: 管理の窓口の監査の IP は共有の `src/lib/request-ip.ts` の `getClientIp`（Vercel の `x-vercel-forwarded-for` → `x-real-ip`、手元の E2E は `CLIENT_IP_HEADER` が立つ時だけ `x-real-ip`。`x-forwarded-for` は読まない。ADR-0416）から取る。取れなければ `null` のまま保存する。強制失効の認可で断る行・形の誤り・自分自身・対象なし・誤り・例外・成功の全部、2要素のリセットの全部の行に同じ値が入る。どちらも新しい IP の値は管理者だけが読む（SEC-ADMIN-022・ADR-0462）。本番の中継の振る舞い（Vercel が偽の `x-real-ip` を上書きすること）は、本番の前の preview で実測する（未確認）。
+強制失効が監査ログに書く IP は（MFA のリセットは段4で消した）、中継（Vercel など）が付けた値から取り、送る側が足した値を使わない。2026-10-28（波 4）に満たした: 管理の窓口の監査の IP は共有の `src/lib/request-ip.ts` の `getClientIp`（Vercel の `x-vercel-forwarded-for` → `x-real-ip`、手元の E2E は `CLIENT_IP_HEADER` が立つ時だけ `x-real-ip`。`x-forwarded-for` は読まない。ADR-0416）から取る。取れなければ `null` のまま保存する。強制失効の認可で断る行・形の誤り・自分自身・対象なし・誤り・例外・成功の全部の行に同じ値が入る。新しい IP の値は管理者だけが読む（SEC-ADMIN-022・ADR-0462）。本番の中継の振る舞い（Vercel が偽の `x-real-ip` を上書きすること）は、本番の前の preview で実測する（未確認）。
 
 #### SEC-ADMIN-009-AC-01 送る側が足した IP が監査ログに残らない
 
