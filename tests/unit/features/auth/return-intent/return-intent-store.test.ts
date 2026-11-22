@@ -48,6 +48,12 @@ describe('DD-AUTH-033 戻り先の控えの保存', () => {
     expect(hash).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
   });
 
+  it('DD-AUTH-033 createReturnIntent は rpc の戻り値の秒数をそのまま Max-Age に使う（900 の決め打ちでない）', async () => {
+    mockRpc({ data: 1234, error: null });
+    const result = await createReturnIntent({ returnPath: '/', purpose: 'login' });
+    expect(result?.maxAgeSeconds).toBe(1234);
+  });
+
   it('DD-AUTH-033 createReturnIntent はハッシュだけを rpc に渡し、平文の番号を渡さない', async () => {
     const rpc = mockRpc({ data: 900, error: null });
 

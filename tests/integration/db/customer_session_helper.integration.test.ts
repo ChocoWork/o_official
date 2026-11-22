@@ -100,7 +100,8 @@ describeLocalDb('customer session helper（パスワード無しで会員の JWT
         expect(aal2.aal).toBe('aal2');
       } finally {
         // 落ちた時も作った利用者を残さない
-        for (const id of created) await service.auth.admin.deleteUser(id);
+        // 1人の削除の失敗が、残りの削除と元の失敗を隠さないよう、人ごとに独立して消す
+        for (const id of created) await service.auth.admin.deleteUser(id).catch(() => undefined);
       }
     });
   });

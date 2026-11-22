@@ -1196,6 +1196,8 @@ Task 5 fix round 1（2026-10-29）: 一覧は「使った回数」と「上限�
 
 ## 返品の品ごとの返金（要求定義・2026-11-06）
 
+番号の注意: `DD-ADMIN-024`・`025` は範囲内の `16-2_admin_misc.md`（廃止した最初の店長を作るコマンドの旧 017・018）が持つ。この文書に次の DD を足す時は `DD-ADMIN-026` から始める。
+
 以下はTask 1〜5で実装した契約。DB・PostgREST・単体・画面結合・3幅E2Eの実測は[テスト仕様](../../05_Quality/tests/test-spec.md)に記録し、本番適用・実サービス・メールの実配送とは分ける。根拠は[設計書](../../superpowers/specs/2026-11-06-return-receive-per-item-design.md)3〜6・8章と[要求](../../02_Requirements/requirements.md)FREQ-641。返品はADMINのadmin-misc限定の追跡範囲に含めず、DD-ADMIN-016は欠番のままとする。
 
 ### DD-ADMIN-017 受取の今すぐ分と相談分の金額

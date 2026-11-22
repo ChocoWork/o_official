@@ -1838,7 +1838,7 @@ stateDiagram-v2
 | `sb-csrf-token` | CSRF の印 | refresh と同じ | なし | Lax |
 | `session_id` | 端末の印（決済の流れの印。proxy は `/cart`・`/checkout`・`/api/checkout` の応答だけで発行し、ログインの成功のたびに新しい値に回す） | 30日 | あり | Lax |
 | `sb-email-code-session` | メールのコードの保留の署名した印 | 5分（iat から 30 分まで） | あり | Strict |
-| `sb-return-intent` | 戻り先の控えの番号（DATA-AUTH-005。署名した印ではなく乱数。signup の控えは登録したメールとの結び付けに使う） | login は 15 分、signup は 1 時間（DB の関数の戻り値の秒数） | あり | Lax |
+| `sb-return-intent` | 戻り先の控えの番号（DATA-AUTH-005。署名した印ではなく乱数。段4から login の控えだけ作る。以前の signup の控えは登録したメールとの結び付けに使った） | login は 15 分、signup は 1 時間（DB の関数の戻り値の秒数） | あり | Lax |
 | `sb-…-auth-token` | Google のログインでライブラリが書く session | ライブラリの既定 | ライブラリの既定 | ライブラリの既定 |
 
 - Secure は本番だけ付ける
@@ -1861,9 +1861,9 @@ stateDiagram-v2
 | 列 | 型 | 中身 |
 | --- | --- | --- |
 | `id` | uuid | 主キー（`gen_random_uuid()`） |
-| `token_hash` | text | login は番号の sha256、signup は `sha256(番号 + "\n" + 小文字のメール)`（どちらも小文字の 16 進 64 桁）。一意。番号そのものの列は無い。式は列の型を変えないので移行は要らない（SEC-AUTH-007、ADR-0413） |
+| `token_hash` | text | login は番号の sha256、signup は `sha256(番号 + "\n" + 小文字のメール)`（どちらも小文字の 16 進 64 桁）。一意。番号そのものの列は無い。式は列の型を変えないので移行は要らない（SEC-AUTH-007、ADR-0413）。段4（2026-11-22）から、アプリは signup の行も結び付けのハッシュも作らず、login の式だけを使う。DB は signup を許したまま |
 | `return_path` | text | 戻り先（1〜512 文字、`/` で始まり `//` で始まらない、空白・制御文字・`\` を含まない） |
-| `purpose` | text | `login` か `signup` |
+| `purpose` | text | `login` か `signup`（DB の CHECK は両方を許す。アプリは段4から `login` だけ） |
 | `created_at`・`expires_at` | timestamptz | 作った時刻（既定は `now()`）と期限（`expires_at > created_at`）。`expires_at` に索引 |
 | `consumed_at`・`user_id` | timestamptz・uuid | 使い切った時刻と利用者の id。どちらも同時に入る（片方だけは CHECK で断る）。`auth.users` への外部キーは付けない（利用者を消しても履歴を消さない） |
 

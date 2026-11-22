@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/Button/Button';
  * 注文完了画面の会員登録カード。未ログインのときだけ描画する。
  *
  * メールだけをクエリで渡す。住所や電話を URL に載せると、
- * ブラウザ履歴・Referrer に個人情報が残る。配送先は会員登録の
- * メール確認が済んだあとにサーバー側で profiles へ引き継ぐ。
+ * ブラウザ履歴・Referrer に個人情報が残る。配送先は、ログイン（メールのコードの確認）の後に
+ * サーバー側で注文から profiles へ引き継ぐ（link-guest-orders.ts）。
  */
 export function GuestRegisterPrompt({ email }: { email: string }) {
   const href = `/login?tab=register&email=${encodeURIComponent(email)}`;
