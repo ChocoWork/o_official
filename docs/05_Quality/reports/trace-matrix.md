@@ -1,6 +1,6 @@
 # 追跡の一覧
 
-> 状態: 自動生成 | 生成日: 2026-11-20 | 対象: NEWS・HOME・LOOK・ABOUT・STOCKIST・SEARCH・PRIVACY・AUTH・ADMIN
+> 状態: 自動生成 | 生成日: 2026-11-22 | 対象: NEWS・HOME・LOOK・ABOUT・STOCKIST・SEARCH・PRIVACY・AUTH・ADMIN
 
 ## 概要
 
@@ -915,6 +915,9 @@
 | SR-AUTH-029 店長が店員を招いた・やり直した・降格した時は、ほかの店長全員に知らせる | FR-AUTH-048 宛先が多い知らせの行を、worker の予算で取りこぼさず、1行ごとの期限で全員に送る | FR-AUTH-048-AC-01 宛先が6人以上の知らせの行が、3秒の予算を越えても全員に送られ、予算を越える時は次の行を取らずに行が終わる | `e2e/FR-LOGIN-062-passkey-notification-mail.spec.ts:238` |
 | SR-AUTH-029 店長が店員を招いた・やり直した・降格した時は、ほかの店長全員に知らせる | FR-AUTH-049 死んだ知らせを店に1通で知らせ、知らせの worker が止まったら気づける | FR-AUTH-049-AC-01 点検の2つの DB の関数は、anon・authenticated の鍵では呼べず、service_role の鍵だけが呼べる | `e2e/FR-LOGIN-074-passkey-notification-ops-function-grants.spec.ts:44` |
 | SR-AUTH-029 店長が店員を招いた・やり直した・降格した時は、ほかの店長全員に知らせる | FR-AUTH-049 死んだ知らせを店に1通で知らせ、知らせの worker が止まったら気づける | FR-AUTH-049-AC-02 dead の知らせの行が1つあると、店の知らせの宛先に1通だけ届き、アドレスは入らず、続けて点検が動いても2通目は出ない | `e2e/FR-LOGIN-077-passkey-dead-notification-alert.spec.ts:77` |
+| SR-AUTH-030 パスワードと認証アプリのログインを廃止し、メールのコード・Google・パスキーの流れだけを残す | FR-AUTH-054 パスワードで作ったアカウントも、メールのコードで入れて鍵を足す勧めが出る。店員は旗が真でも同じ断りの文で断られる（残す流れが動く） | FR-AUTH-054-AC-01 パスワード付きで作った確認済みのアカウントが、メールのコードで /account に入れる | `e2e/FR-LOGIN-078-legacy-account-email-code-login.spec.ts:74` |
+| SR-AUTH-030 パスワードと認証アプリのログインを廃止し、メールのコード・Google・パスキーの流れだけを残す | FR-AUTH-054 パスワードで作ったアカウントも、メールのコードで入れて鍵を足す勧めが出る。店員は旗が真でも同じ断りの文で断られる（残す流れが動く） | FR-AUTH-054-AC-02 同じアカウントに、鍵を足せる勧めの画面（offerPasskey）が出る | `e2e/FR-LOGIN-078-legacy-account-email-code-login.spec.ts:96` |
+| SR-AUTH-030 パスワードと認証アプリのログインを廃止し、メールのコード・Google・パスキーの流れだけを残す | FR-AUTH-054 パスワードで作ったアカウントも、メールのコードで入れて鍵を足す勧めが出る。店員は旗が真でも同じ断りの文で断られる（残す流れが動く） | FR-AUTH-054-AC-03 店員は、お客さんの password を拒む旗が真でも、メールのコードで入ろうとすると同じ断りの文で断られる | `e2e/FR-LOGIN-078-legacy-account-email-code-login.spec.ts:107` |
 | THR-AUTH-001 パスワードの総当たり・リスト型攻撃 | SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める | SEC-AUTH-001-AC-01 同じメールで6回目のログインが 429 になる | `e2e/FR-LOGIN-035-login-throttling-and-turnstile.spec.ts:118` |
 | THR-AUTH-001 パスワードの総当たり・リスト型攻撃 | SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める | SEC-AUTH-001-AC-02 Turnstile に落ちた送信はメールの枠を減らさない | `e2e/FR-LOGIN-035-login-throttling-and-turnstile.spec.ts:148` |
 | THR-AUTH-002 メール OTP の総当たり | SEC-AUTH-002 メール OTP の検証は総当たりを保留の宛先単位で止め、上限で保留を捨てる | SEC-AUTH-002-AC-01 誤ったコードを6回送ると保留が消える | `e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts:453` |

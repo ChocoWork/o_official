@@ -248,3 +248,18 @@ export async function deleteOnePasskeyViaGoTrue(input: { accessToken: string; re
   if (removed.error) throw new Error(`パスキーを消せない（status: ${removed.error.status ?? '不明'}）`);
   return 1;
 }
+
+/**
+ * お客さんの password を拒む旗（private.passkey_staff_config.reject_customer_password）を value にして body を流し、終わりに（失敗でも）始めの値へ戻す。
+ * 旗は DB 全体に効くので、呼ぶ spec は isolated-global（直列）に入れる。
+ */
+export async function withCustomerPasswordFlag(db: PgClient, value: boolean, body: () => Promise<void>): Promise<void> {
+  const before = await db.query('select reject_customer_password as flag from private.passkey_staff_config');
+  const original = before.rows[0].flag as boolean;
+  await db.query('update private.passkey_staff_config set reject_customer_password = $1', [value]);
+  try {
+    await body();
+  } finally {
+    await db.query('update private.passkey_staff_config set reject_customer_password = $1', [original]);
+  }
+}

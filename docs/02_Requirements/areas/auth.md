@@ -1,6 +1,6 @@
 # AUTH の要件
 
-> 状態: 推定 | 確認日: 2026-11-20 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-11-22 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -842,6 +842,18 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 要求の文: 店長が店員を招待した・店員のパスキーをやり直した・店員を降格した時は、その操作の取引で知らせの行を1つ積み、本人（操作を受けた人）を除く有効な店長全員に1通ずつ送る。ダッシュボードの最後の手段（`last_resort`）は知らせない。
 
 実装の状況（2026-11-20）: 積み込みは段3b Task 14、送る側は Task 15、`dead` の点検と worker の心拍は Task 17（移行 I）、宛先が多い時の取りこぼしは Task 16 で、手元では実装済み。本番には何も当てていない（移行の当ては[手順書](../../06_Operations/passkey-production-apply-runbook.md)）。状態の欄は、新しく起こした項目の決まりどおり「推定」のまま。
+
+### SR-AUTH-030 パスワードと認証アプリのログインを廃止し、メールのコード・Google・パスキーの流れだけを残す
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | パスキー導入（段1〜3）でログインの手段が増え、パスワードと認証アプリ（TOTP）の道が残ると、守りの穴（GoTrue を直に叩くパスワードのログインなど）と画面・窓口の維持が重複する。段4で廃止する前に、残す流れが今の master で動くことを基準として固定する |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-26-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 26） |
+
+要求の文: お客さんのログインはメールのコード・Google・パスキーだけにし、パスワードと認証アプリのログインの窓口・画面・設定は消す。パスワードで作ったアカウントも、メールのコードで今までどおり入れる。
+
+実装の状況（2026-11-22）: 段4の Task 26 で、残す流れ（`FR-AUTH-054`）の基準の試験を足した。消す側の要件（窓口・画面が無いこと、フックがお客さんの password を拒むこと）は、後のタスクで同じ要求の下に足す。
 
 ## 要件
 
@@ -6133,6 +6145,55 @@ DB の `staff_invite_cancel` は、開いた招待があれば `true`、2回目�
 | 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-18-review.md`（m-2）、`.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-18-brief.md` |
 
 認めていない鍵の削除の窓口が 500 を返すと、管理の画面は「削除できませんでした。もう一度お試しください。」を出し、「削除できませんでした。認めた鍵は2本以上が必要です。」は出さない。鍵は一覧に残る。409 の本文が `staff_min_keys` の時だけ、下限の文を出す。
+
+### FR-AUTH-054 パスワードで作ったアカウントも、メールのコードで入れて鍵を足す勧めが出る。店員は旗が真でも同じ断りの文で断られる（残す流れが動く）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-030 |
+| 根拠 | 段4でパスワードのログインを消した後も、パスワードで作った確認済みのアカウントが入れなくならないことを、消す前の master で固定する。コードを変えず、今の動きを確かめるだけの基準 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-078-legacy-account-email-code-login.spec.ts`、FR-AUTH-054-AC-01〜03。390・768・1280 の3幅でくり返す。旗を切り替えるので `isolated-global`） |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-26-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 26） |
+| 優先度 | MUST |
+
+規則: (1) パスワード付きで作った確認済みのアカウントは、メールのコード（`/api/auth/email-code/start`・`verify`）で入れて `/account` を開ける。(2) 同じアカウントには、鍵を足せる勧めの画面（`offerPasskey`）が出る。(3) 店員は、お客さんの password を拒む旗（`reject_customer_password`）が真でも、メールのコードで入ろうとすると「店員の方は、パスキーでログインしてください。」で断られ、セッションが作られない（店員の断り自体は FR-AUTH-046-AC-04 が持つ）。
+
+### FR-AUTH-054-AC-01 パスワード付きで作った確認済みのアカウントが、メールのコードで /account に入れる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-054 |
+| 根拠 | SR-AUTH-030 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-078-legacy-account-email-code-login.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-26-brief.md`（Task 26） |
+
+`createUser({ email, password, email_confirm: true })` で作ったアカウントに、メールのコードの始めの窓口を呼ぶと 202 で、届いた8桁のコードを確定の窓口に渡すと 200 で本人（役割は `user`）が返り、`/account` が開き、`/api/auth/me` が本人を返す。
+
+### FR-AUTH-054-AC-02 同じアカウントに、鍵を足せる勧めの画面（offerPasskey）が出る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-054 |
+| 根拠 | SR-AUTH-030 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-078-legacy-account-email-code-login.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-26-brief.md`（Task 26） |
+
+鍵を持たない、パスワード付きのアカウントが `/login/code` でコードを入れると、鍵を足せる勧めの画面（`/login/passkey`）に着く。
+
+### FR-AUTH-054-AC-03 店員は、お客さんの password を拒む旗が真でも、メールのコードで入ろうとすると同じ断りの文で断られる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-054 |
+| 根拠 | SR-AUTH-030、FR-AUTH-046-AC-04（店員の断り自体はそちらが持つ） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-078-legacy-account-email-code-login.spec.ts`。390・768・1280 の3幅でくり返す。旗を始めの値へ戻すので `isolated-global`） |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-26-brief.md`（Task 26） |
+
+旗 `reject_customer_password` を真にした状態で、店員（認めた鍵2本）がメールのコードで確定しようとすると、「店員の方は、パスキーでログインしてください。」が出て、セッションは作られない。旗は試験の終わりに始めの値へ戻る。
 
 ### FR-AUTH-047 店長への知らせの3種類（やり直し・招待・降格）を、操作と同じ取引で送り箱に積み、宛先は本人を除く有効な店長全員にする
 
