@@ -1,6 +1,6 @@
 /**
  * FR-LOGIN-055 メールのコードのログイン・新規の窓口（POST /api/auth/email-code/start・verify）
- * 対応: FR-AUTH-023-AC-01〜06（守りは SEC-AUTH-048・SEC-AUTH-049）・SEC-AUTH-035-AC-01（captcha が有効でも始めと再送が通る）・SEC-AUTH-029-AC-02（5分を過ぎたコードは 401）
+ * 対応: SEC-AUTH-027-AC-02（作り物の保留の Cookie は 401）・FR-AUTH-023-AC-01〜06（守りは SEC-AUTH-048・SEC-AUTH-049）・SEC-AUTH-035-AC-01（captcha が有効でも始めと再送が通る）・SEC-AUTH-029-AC-02（5分を過ぎたコードは 401）
  *
  * 手元のアプリ（本番ビルド）・手元の Supabase・手元の Mailpit だけで流す HTTP の試験。窓口を `request` で直に呼ぶ（画面は開かない。幅で結果は変わらないが、3つの幅でくり返す）。
  * 要求ごとに別の x-real-ip と origin を付ける（回数の枠を使い切らないため・proxy の Origin の確かめ）。Turnstile は E2E の公式のテスト鍵（常に通る）。
@@ -164,6 +164,21 @@ for (const viewport of viewports) {
         maxRedirects: 0,
       });
       expect(response.status()).toBe(401);
+    });
+
+    test(`SEC-AUTH-027-AC-02 ${viewport.name}: 署名の合わない（別の用途・作り物の）保留の Cookie を新しい確定の窓口に入れても 401 で、セッションを作らない`, async ({ page }) => {
+      await page.goto('/');
+      await page.context().addCookies([
+        { name: PENDING_COOKIE, value: 'eyJwdXJwb3NlIjoib3JkZXJfc3RhdHVzIn0.forged-signature', url: ORIGIN, httpOnly: true, sameSite: 'Strict' },
+      ]);
+      const response = await page.request.post('/api/auth/email-code/verify', {
+        headers: { origin: ORIGIN, 'x-real-ip': uniqueIp() },
+        data: { code: '12345678' },
+        maxRedirects: 0,
+      });
+      expect(response.status()).toBe(401);
+      const issued = response.headersArray().filter((h) => h.name.toLowerCase() === 'set-cookie' && /sb-access-token=[^;]+/.test(h.value) && !/sb-access-token=;/.test(h.value));
+      expect(issued).toEqual([]);
     });
 
     test(`SEC-AUTH-035-AC-01 ${viewport.name}: captcha が有効でも、アプリのメールのコードの始めは 202、再送は 200 で、コードのメールが届く`, async ({ request }) => {

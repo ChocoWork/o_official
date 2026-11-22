@@ -667,7 +667,7 @@
 | SR-AUTH-021 メールのコードで、お客さんがログインでき、初めてのアドレスなら新規にも登録できる | FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel` | FR-AUTH-023-AC-03 間違ったコードは 1〜5回目が 401、6回目が 429 で、Cookie が消えてその後は 401 | `e2e/FR-LOGIN-055-email-code-api.spec.ts:114` |
 | SR-AUTH-021 メールのコードで、お客さんがログインでき、初めてのアドレスなら新規にも登録できる | FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel` | FR-AUTH-023-AC-04 店員のアドレスで始めは同じ応答、確定は 403 staff_passkey_required でセッションの Cookie が付かない | `e2e/FR-LOGIN-055-email-code-api.spec.ts:134` |
 | SR-AUTH-021 メールのコードで、お客さんがログインでき、初めてのアドレスなら新規にも登録できる | FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel` | FR-AUTH-023-AC-05 旧い保留の Cookie（パスワードの道）を持っていても、新しい確定の窓口は 401 | `e2e/FR-LOGIN-055-email-code-api.spec.ts:155` |
-| SR-AUTH-021 メールのコードで、お客さんがログインでき、初めてのアドレスなら新規にも登録できる | FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel` | FR-AUTH-023-AC-06 保留の Cookie が無い確定・再送は 401 | `e2e/FR-LOGIN-055-email-code-api.spec.ts:224` |
+| SR-AUTH-021 メールのコードで、お客さんがログインでき、初めてのアドレスなら新規にも登録できる | FR-AUTH-023 メールのコードの窓口 `POST /api/auth/email-code/start`・`verify`・`resend`・`cancel` | FR-AUTH-023-AC-06 保留の Cookie が無い確定・再送は 401 | `e2e/FR-LOGIN-055-email-code-api.spec.ts:239` |
 | SR-AUTH-021 メールのコードで、お客さんがログインでき、初めてのアドレスなら新規にも登録できる | FR-AUTH-026 メールのコードの入力画面 `/login/code` | FR-AUTH-026-AC-01 鍵を持つ会員は、メールのコードを入れると、勧めを経ずにログインして戻り先へ着く | `e2e/FR-LOGIN-058-email-code-screen.spec.ts:59`<br>`e2e/FR-LOGIN-058-email-code-screen.spec.ts:82` |
 | SR-AUTH-021 メールのコードで、お客さんがログインでき、初めてのアドレスなら新規にも登録できる | FR-AUTH-026 メールのコードの入力画面 `/login/code` | FR-AUTH-026-AC-02 間違ったコードは「確認コードが無効、または期限切れです。」を出し、入力を続けられる | `e2e/FR-LOGIN-058-email-code-screen.spec.ts:101` |
 | SR-AUTH-021 メールのコードで、お客さんがログインでき、初めてのアドレスなら新規にも登録できる | FR-AUTH-026 メールのコードの入力画面 `/login/code` | FR-AUTH-026-AC-03 いつも出す案内があり、再送は待ちの間押せず、残り時間が出る | `e2e/FR-LOGIN-058-email-code-screen.spec.ts:116` |
@@ -842,9 +842,10 @@
 | THR-AUTH-025 状態を変える認証の窓口への CSRF | SEC-AUTH-025 状態を変える認証の窓口は、許可したオリジンからの送信だけを受ける | SEC-AUTH-025-AC-01 別のオリジンからのメールのコードの開始が 403 | `e2e/FR-LOGIN-037-proxy-origin-csrf.spec.ts:105` |
 | THR-AUTH-026 ログインの後の送り先を使った open redirect | SEC-AUTH-026 ログインの後の送り先は、内部の道だけにする | SEC-AUTH-026-AC-01 `/auth/callback?next=//evil.example` を開いても外へ出ない（画面が無い） | `e2e/FR-LOGIN-030-session-cookies-and-responses.spec.ts:328` |
 | THR-AUTH-026 ログインの後の送り先を使った open redirect | SEC-AUTH-026 ログインの後の送り先は、内部の道だけにする | SEC-AUTH-026-AC-03 ログインの窓口へ外の `next` を送っても `/` に着く | `e2e/FR-LOGIN-038-login-return-to.spec.ts:353` |
+| THR-AUTH-027 1つの鍵で複数の署名を兼ねる | SEC-AUTH-027 署名した Cookie は用途ごとに別の鍵で署名する | SEC-AUTH-027-AC-02 署名の合わない保留の Cookie を新しい確定の窓口に入れても通らない | `e2e/FR-LOGIN-055-email-code-api.spec.ts:169` |
 | THR-AUTH-028 画面の表示だけで管理の入口を出し分ける | SEC-AUTH-028 管理の入口の出し分けは表示だけとし、役割は利用者が書き換えられない所から読む | SEC-AUTH-028-AC-01 一般の会員のヘッダーに MANAGE・LOADING が出ない | `e2e/FR-LOGIN-033-verify-screen-and-admin-refresh-mocks.spec.ts:173` |
 | THR-AUTH-028 画面の表示だけで管理の入口を出し分ける | SEC-AUTH-028 管理の入口の出し分けは表示だけとし、役割は利用者が書き換えられない所から読む | SEC-AUTH-028-AC-02 `user_metadata` に admin を書いた会員は管理の窓口が 403 | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:820` |
-| THR-AUTH-029 本番の Supabase Auth の設定が守りの前提と違う | SEC-AUTH-029 本番の Supabase Auth の設定を、コードの守りの前提に合わせて確かめる | SEC-AUTH-029-AC-02 5 分を過ぎたメール OTP が通らない | `e2e/FR-LOGIN-055-email-code-api.spec.ts:200` |
+| THR-AUTH-029 本番の Supabase Auth の設定が守りの前提と違う | SEC-AUTH-029 本番の Supabase Auth の設定を、コードの守りの前提に合わせて確かめる | SEC-AUTH-029-AC-02 5 分を過ぎたメール OTP が通らない | `e2e/FR-LOGIN-055-email-code-api.spec.ts:215` |
 | THR-AUTH-030 認証の出来事が監査に残らない | SEC-AUTH-030 認証の出来事は成功も失敗も監査に残す | SEC-AUTH-030-AC-01 TOTP の登録と確認の成功が監査に残る | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts:352` |
 | THR-AUTH-030 認証の出来事が監査に残らない | SEC-AUTH-030 認証の出来事は成功も失敗も監査に残す | SEC-AUTH-030-AC-03 結び付けの拒否が固定の符号だけで監査に残る | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:741` |
 | THR-AUTH-031 管理者・サポーターの初めての TOTP の登録を先に取られる | SEC-AUTH-031 管理者・サポーターの初めての TOTP の登録は、本人の確かめを済ませた経路に限る | SEC-AUTH-031-AC-01 メール OTP を通っていない aal1 の session では初めての TOTP を登録できない | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts:369` |
@@ -852,7 +853,7 @@
 | THR-AUTH-032 戻り先の控えの番号の盗み・使い回し・総当たり | SEC-AUTH-032 戻り先の控えは、番号だけを HttpOnly の Cookie に持ち、表には番号のハッシュだけを持つ | SEC-AUTH-032-AC-01 Cookie の属性が決まりどおりで、番号が URL・本文・Location に出ない | `e2e/FR-LOGIN-038-login-return-to.spec.ts:372`<br>`e2e/FR-LOGIN-038-login-return-to.spec.ts:425` |
 | THR-AUTH-032 戻り先の控えの番号の盗み・使い回し・総当たり | SEC-AUTH-032 戻り先の控えは、番号だけを HttpOnly の Cookie に持ち、表には番号のハッシュだけを持つ | SEC-AUTH-032-AC-02 ログアウトで Cookie が消える | `e2e/FR-LOGIN-038-login-return-to.spec.ts:448` |
 | THR-AUTH-033 新しい表・関数に広い権限が自動で付き、権限の一覧が見張られていない | SEC-AUTH-033 公開スキーマの表・列・関数・連番の権限は移行が明示し、一覧を DB 試験で守る | （なし） | （なし） |
-| THR-AUTH-035 Supabase の captcha の拒否が利用者の誤りに紛れ、全員が入れない・登録できない故障が見えない | SEC-AUTH-035 アプリのサーバーの認証の呼び出しは captcha を免除される管理者資格で行い、Supabase の captcha の拒否を利用者の誤りに丸めない | SEC-AUTH-035-AC-01 Supabase の captcha が有効でも、アプリのメールのコードの始めと再送が通る | `e2e/FR-LOGIN-055-email-code-api.spec.ts:169` |
+| THR-AUTH-035 Supabase の captcha の拒否が利用者の誤りに紛れ、全員が入れない・登録できない故障が見えない | SEC-AUTH-035 アプリのサーバーの認証の呼び出しは captcha を免除される管理者資格で行い、Supabase の captcha の拒否を利用者の誤りに丸めない | SEC-AUTH-035-AC-01 Supabase の captcha が有効でも、アプリのメールのコードの始めと再送が通る | `e2e/FR-LOGIN-055-email-code-api.spec.ts:184` |
 | THR-AUTH-036 店員のパスキーの表や窓が書き換えられ、店員でない人が管理の入口の条件を満たす | SEC-AUTH-036 店員のパスキーの表は private に置いて権限を渡さず、窓は持ち主とセッションの両方で合わせ、認めたパスキーは鍵が実在する分だけ数える | （なし） | （なし） |
 | THR-AUTH-037 フックが壊れて全員のログインが止まる、または壊れた入力を店員がすり抜ける | SEC-AUTH-037 フックが壊れると全員のログインが止まるので、フックは例外を投げず、店員は判定できなければ拒否し、権限は supabase_auth_admin だけにする | FR-AUTH-013-AC-02 店員がメールのコードで入ろうとすると 403 で message が印で始まり、パスワードでも 403 | `e2e/FR-LOGIN-040-staff-hook-gotrue-rejections.spec.ts:66` |
 | THR-AUTH-037 フックが壊れて全員のログインが止まる、または壊れた入力を店員がすり抜ける | SEC-AUTH-037 フックが壊れると全員のログインが止まるので、フックは例外を投げず、店員は判定できなければ拒否し、権限は supabase_auth_admin だけにする | FR-AUTH-013-AC-04 窓を閉じた後の店員の更新は拒否され、前のアクセストークンは管理の表を読めない | `e2e/FR-LOGIN-040-staff-hook-gotrue-rejections.spec.ts:99` |

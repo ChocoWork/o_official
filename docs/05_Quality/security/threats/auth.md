@@ -421,14 +421,14 @@ flowchart LR
 
 | 属性 | 値 |
 | --- | --- |
-| 守るもの | 保留の2段目の Cookie、再設定の Cookie、注文の状況のセッション |
-| 脅威 | 1つの鍵が漏れると、3つの印を全部偽れる。用途を取り違えた印を別の窓口に通す |
-| 起こり方 | 専用の鍵が無い時、3つとも `JWT_SECRET` で署名する（`login-2fa-session.ts:27`、`src/features/auth/services/password-reset-session.ts:18`、`src/lib/orders/status/status-session.ts:33`）。payload の `purpose` で用途を分けるので取り違えは断る（`login-2fa-session.ts:97`、`password-reset-session.ts:82`、`status-session.ts:112`） |
-| 影響 | 鍵が漏れると、パスワード無しで2段目の保留を作る・他人のパスワードを変える |
+| 守るもの | メールのコードの保留の Cookie、注文の状況のセッション（旧の保留の2段目と再設定の Cookie は段4で消えた） |
+| 脅威 | 1つの鍵が漏れると、2つの印を両方偽れる。用途を取り違えた印を別の窓口に通す |
+| 起こり方 | 専用の鍵が無い時、2つとも `JWT_SECRET` で署名する（`src/features/auth/services/email-code-session.ts:30`、`src/lib/orders/status/status-session.ts:33`）。payload の `purpose` で用途を分けるので取り違えは断る（`status-session.ts:112`、`email-code-session.ts`） |
+| 影響 | 鍵が漏れると、コード無しで保留を作る・他人の注文の状況を開く |
 | 対策 | SEC-AUTH-027 |
 | ASVS | ASVS 未対応付け |
 | 根拠 | 取り違えは防げているが、鍵の漏れの影響が広い。本番の環境変数に専用の鍵があるかは未確認（本番は未デプロイ）。全体の NFR-SEC-009（範囲外）に当てはめた |
-| 状態 | 廃止 |
+| 状態 | 推定 |
 | 出どころ | 実装から推定 |
 
 ### THR-AUTH-028 画面の表示だけで管理の入口を出し分ける

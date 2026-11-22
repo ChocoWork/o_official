@@ -7931,13 +7931,25 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-027 |
-| 根拠 | 1つの鍵が漏れた時に、保留の2段目・再設定・注文の状況の3つを全部偽れる形にしないため。`purpose` で取り違えは防げているので、鍵を分けるのは被害を小さくする重ね。全体の NFR-SEC-009（範囲外）に当てはめた |
-| 状態 | 廃止 |
-| 確かめ方 | 単体テスト・レビュー（本番の環境変数） |
+| 根拠 | 1つの鍵が漏れた時に、メールのコードの保留の Cookie と注文の状況のセッションを両方偽れる形にしないため。`purpose` で取り違えは防げているので、鍵を分けるのは被害を小さくする重ね。全体の NFR-SEC-009（範囲外）に当てはめた。段4（2026-11-22）で、旧の保留の2段目と再設定の Cookie は消えたが、鍵の決まりは残る2つの印に今も当てはまる |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト・レビュー（本番の環境変数）・E2E（AC-02） |
 | 出どころ | 実装から推定 |
 | 優先度 | SHOULD |
 
-保留の2段目と再設定の Cookie は、専用の鍵が無ければ `JWT_SECRET` に代えず、作るのを止める。印は `purpose` が違えば断る。`purpose` は今のコードが満たす（`src/features/auth/services/login-2fa-session.ts`、`password-reset-session.ts`）。鍵の代わりは満たさない。
+メールのコードの保留の Cookie（`src/features/auth/services/email-code-session.ts`）と注文の状況のセッション（`src/lib/orders/status/status-session.ts`）は、専用の鍵（`LOGIN_2FA_SESSION_SECRET`・`ORDER_STATUS_SESSION_SECRET`）が無ければ `JWT_SECRET` に代えず、作るのを止める。印は `purpose` が違えば断る。`purpose` は今のコードが満たす。鍵の代わりは満たさない（今は両方とも `JWT_SECRET` に代える。段4の後の持ち越し）。
+
+#### SEC-AUTH-027-AC-02 署名の合わない保留の Cookie を新しい確定の窓口に入れても通らない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-027 |
+| 根拠 | 用途の取り違え・作り物の印を断るかを見るため（旧の AC-01 は再設定の Cookie の消去で廃止し、残る印に替えた） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-055-email-code-api.spec.ts`。390・768・1280 の3幅） |
+| 出どころ | 段4の Task 29 の直し（`.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-29-review.md` I-1） |
+
+署名の合わない値（別の用途の印を含む）を `sb-email-code-session` に入れて `POST /api/auth/email-code/verify` を呼ぶと 401 になり、ログインのセッションの Cookie を出さないこと。
 
 #### SEC-AUTH-027-AC-01 再設定の Cookie を保留の2段目の Cookie に入れても通らない
 
@@ -8238,7 +8250,7 @@ TOTP をまだ登録していない管理者が、メール OTP を通らずに�
 | 優先度 | MUST |
 
 captcha が掛かる Supabase Auth の窓口（`/signup`・`/token`（password）・`/otp`）をアプリのサーバーが呼ぶのは 6 か所（ログインのパスワードの確かめと確認コードの送信、ログインの確認コードの再送、会員登録、未確認の会員の確認メールの再送、パスワード変更の現行パスワードの確認）で、どれも `createServiceRoleAuthClient()`（`.from()`・`.rpc()` を持たない、毎回作る auth だけの client。DD-AUTH-040）で呼ぶ。アプリ側の Turnstile の検証・順番・回数の制限は変えない。Supabase が captcha を理由に断った時（`captcha_failed`）は、資格情報の誤り（401）にも重複（202）にもせず、5xx と監査 `supabase_captcha_rejected` にする。
-段4（2026-11-22 の Task 28）で、パスワードのログイン・会員登録・確認メールの再送の窓口を消したので、アプリのサーバーが captcha の掛かる窓口を呼ぶのは、メールのコードの始め・再送（`/api/auth/email-code/start`・`resend`）と、パスワード変更の現行パスワードの確認（Task 29 で消す）に縮んだ。
+段4（2026-11-22 の Task 28）で、パスワードのログイン・会員登録・確認メールの再送の窓口を消したので、アプリのサーバーが captcha の掛かる窓口を呼ぶのは、メールのコードの始め・再送（`/api/auth/email-code/start`・`resend`）に縮んだ（パスワード変更の現行パスワードの確認は、Task 29 で消した）。
 
 
 #### SEC-AUTH-035-AC-01 Supabase の captcha が有効でも、アプリのメールのコードの始めと再送が通る
