@@ -56,7 +56,7 @@ it('scope.json に無い範囲の名前は止める', () => {
 it('testMatch は中括弧を開いて渡す（jest が `/{` を中括弧そのものの字に変えて Windows で当たらなくなるのを避ける）', () => {
   const cfg = loadConfig('AUTH');
   expect(cfg.testMatch.some((p: string) => /[{}]/.test(p))).toBe(false);
-  expect(cfg.testMatch).toContain('<rootDir>/tests/unit/components/Header.test.tsx');
+  expect(cfg.testMatch).toContain('<rootDir>/tests/unit/**/site-header*.test.tsx');
   expect(cfg.testMatch).toContain('<rootDir>/tests/unit/**/format-countdown*.test.ts');
   expect(cfg.testMatch).toContain('<rootDir>/tests/unit/**/use-turnstile-widget*.test.tsx');
 });

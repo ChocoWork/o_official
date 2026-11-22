@@ -10,7 +10,6 @@ const {
   createReturnIntent,
   generateReturnIntentToken,
   hashReturnIntentToken,
-  normalizeBindEmail,
 } = require('@/features/auth/return-intent/return-intent-store');
 
 function mockRpc(result: unknown) {
@@ -68,12 +67,6 @@ describe('DD-AUTH-033 戻り先の控えの保存', () => {
     expect(result!.maxAgeSeconds).toBe(900);
   });
 
-  it('DD-AUTH-033 createReturnIntent は signup の秒数（rpc の戻り値）をそのまま Max-Age に使う', async () => {
-    mockRpc({ data: 3600, error: null });
-    const result = await createReturnIntent({ returnPath: '/', purpose: 'signup' });
-    expect(result?.maxAgeSeconds).toBe(3600);
-  });
-
   it('DD-AUTH-033 createReturnIntent は rpc の error で null を返し、ログに道筋・番号・ハッシュを出さない', async () => {
     const rpc = mockRpc({ data: null, error: { code: '23514', message: 'violates check /secret/path' } });
 
@@ -114,12 +107,12 @@ describe('DD-AUTH-033 戻り先の控えの保存', () => {
   it('DD-AUTH-033 consumeReturnIntent は番号のハッシュ・用途・利用者を渡し、戻り先を返す', async () => {
     const rpc = mockRpc({ data: '/item/3', error: null });
 
-    const result = await consumeReturnIntent({ token: 'x'.repeat(43), purpose: 'signup', userId: 'user-1' });
+    const result = await consumeReturnIntent({ token: 'x'.repeat(43), purpose: 'login', userId: 'user-1' });
 
     expect(result).toBe('/item/3');
     expect(rpc).toHaveBeenCalledWith('consume_auth_return_intent', {
       _token_hash: hashReturnIntentToken('x'.repeat(43)),
-      _purpose: 'signup',
+      _purpose: 'login',
       _user_id: 'user-1',
     });
     expect(JSON.stringify(rpc.mock.calls)).not.toContain('x'.repeat(43));
@@ -145,43 +138,7 @@ describe('DD-AUTH-033 戻り先の控えの保存', () => {
     expect(logged).not.toContain(hashReturnIntentToken('secret-token'));
   });
 
-  it('DD-AUTH-033 bindTo 無しのハッシュは番号だけの sha256 のまま（ログインは変わらない）', () => {
+  it('DD-AUTH-033 ハッシュは番号だけの sha256', () => {
     expect(hashReturnIntentToken('abc')).toBe(require('crypto').createHash('sha256').update('abc').digest('hex'));
-    expect(hashReturnIntentToken('abc', undefined)).toBe(hashReturnIntentToken('abc'));
-  });
-
-  it('DD-AUTH-033 bindTo を渡すと sha256(番号 + 改行 + 小文字のメール) になり、番号だけのハッシュとは違う', () => {
-    const expected = require('crypto').createHash('sha256').update('abc\na@example.com').digest('hex');
-    expect(hashReturnIntentToken('abc', 'a@example.com')).toBe(expected);
-    expect(hashReturnIntentToken('abc', 'a@example.com')).not.toBe(hashReturnIntentToken('abc'));
-  });
-
-  it('DD-AUTH-033 メールの大文字小文字と前後の空白では結び付けが外れない', () => {
-    expect(normalizeBindEmail(' A@Example.com ')).toBe('a@example.com');
-    expect(hashReturnIntentToken('t', 'A@Example.com ')).toBe(hashReturnIntentToken('t', 'a@example.com'));
-  });
-
-  it('DD-AUTH-033 同じ番号で別のメール、同じメールで別の番号は、別のハッシュになる', () => {
-    expect(hashReturnIntentToken('t', 'a@example.com')).not.toBe(hashReturnIntentToken('t', 'b@example.com'));
-    expect(hashReturnIntentToken('t1', 'a@example.com')).not.toBe(hashReturnIntentToken('t2', 'a@example.com'));
-  });
-
-  it('DD-AUTH-033 createReturnIntent に bindTo を渡すと rpc にメール込みのハッシュを渡し、無ければ番号だけのハッシュ', async () => {
-    const rpc = mockRpc({ data: 3600, error: null });
-    const bound = await createReturnIntent({ returnPath: '/', purpose: 'signup', bindTo: 'A@Example.com' });
-    expect(rpc.mock.calls[0][1]._token_hash).toBe(hashReturnIntentToken(bound!.token, 'a@example.com'));
-    expect(rpc.mock.calls[0][1]._token_hash).not.toBe(hashReturnIntentToken(bound!.token));
-
-    const plain = await createReturnIntent({ returnPath: '/', purpose: 'login' });
-    expect(rpc.mock.calls[1][1]._token_hash).toBe(hashReturnIntentToken(plain!.token));
-  });
-
-  it('DD-AUTH-033 consumeReturnIntent に bindTo を渡すと rpc にメール込みのハッシュを渡し、無ければ番号だけのハッシュ', async () => {
-    const rpc = mockRpc({ data: '/stockist', error: null });
-    await consumeReturnIntent({ token: 't'.repeat(43), purpose: 'signup', userId: 'u', bindTo: 'a@example.com' });
-    expect(rpc.mock.calls[0][1]._token_hash).toBe(hashReturnIntentToken('t'.repeat(43), 'a@example.com'));
-
-    await consumeReturnIntent({ token: 't'.repeat(43), purpose: 'login', userId: 'u' });
-    expect(rpc.mock.calls[1][1]._token_hash).toBe(hashReturnIntentToken('t'.repeat(43)));
   });
 });

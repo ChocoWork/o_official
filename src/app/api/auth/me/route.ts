@@ -68,7 +68,7 @@ export async function GET(request: Request) {
     // 管理の入口の条件（パスキー・24時間以内・認めた2本以上）を、画面に出す「ヒント」として判定する（SR-AUTH-014）。
     // 認めた本数は DB で数えず JWT の印 staff_passkeys_ok から取る（真なら足りる数、偽なら0）ので、認めた鍵が消えた後は
     // 最長1時間（次の更新まで）枠が見える。権限の判定は admin-rbac が DB で数えて行うので、API は 403 になる。
-    // 応答の項目名 mfaVerified は段4まで変えない（ADR-0463）。
+    // 応答の項目名 mfaVerified は変えない（ADR-0463）。
     const mfaVerified = evaluateStaffEntry(claims, approvedCountHint(claims), Date.now() / 1000).ok;
 
     return buildResponse({

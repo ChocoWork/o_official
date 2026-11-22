@@ -98,6 +98,14 @@ async function typeCode(page: Page, code: string): Promise<void> {
   await page.getByRole('button', { name: 'ログイン' }).click();
 }
 
+/** /account が会員の画面として開く（未ログインの「ログインが必要です」の画面ではない）ことを確かめる。未ログインでも URL は /account のまま変わらないため */
+async function expectAccountOpenedAsMember(page: Page): Promise<void> {
+  await page.goto('/account');
+  await expect(page).toHaveURL(/\/account(\?|$|\/)/);
+  await expect(page.getByText('読み込み中...')).toBeHidden();
+  await expect(page.getByText('会員情報の確認には、ログインが必要です。')).toBeHidden();
+}
+
 for (const viewport of viewports) {
   test.describe(`FR-LOGIN-078 legacy account email code login (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
@@ -119,8 +127,7 @@ for (const viewport of viewports) {
       expect(body.user.id).toBe(account.userId);
       expect(body.user.role).toBe('user');
 
-      await page.goto('/account');
-      await expect(page).toHaveURL(/\/account(\?|$|\/)/);
+      await expectAccountOpenedAsMember(page);
       const me = (await (await page.request.get('/api/auth/me')).json()) as { authenticated?: boolean; user?: { id?: string } };
       expect(me.authenticated).toBe(true);
       expect(me.user?.id).toBe(account.userId);
@@ -158,8 +165,7 @@ for (const viewport of viewports) {
       });
       expect(verified.status()).toBe(200);
 
-      await page.goto('/account');
-      await expect(page).toHaveURL(/\/account(\?|$|\/)/);
+      await expectAccountOpenedAsMember(page);
       const me = (await (await page.request.get('/api/auth/me')).json()) as { authenticated?: boolean; user?: { id?: string } };
       expect(me.authenticated).toBe(true);
       expect(me.user?.id).toBe(account.userId);
@@ -171,6 +177,9 @@ for (const viewport of viewports) {
     test(`FR-AUTH-054-AC-03 ${viewport.name}: 店員は、お客さんの password を拒む旗が真でも、メールのコードで入ろうとすると同じ断りの文で断られる（店員の断り自体は FR-LOGIN-069 が持つ）`, async ({ page }) => {
       await withLocalDb(async (db) => {
         await withCustomerPasswordFlag(db, true, async () => {
+          // 旗が本当に真の中で確かめる（既定のまま通る確かめにならないように）
+          const flag = await db.query('select reject_customer_password as f from private.passkey_staff_config');
+          expect(flag.rows[0].f).toBe(true);
           const staff = await provisionStaff(db, { role: 'admin', approvedPasskeys: 2 });
           await startCode(page, staff.email);
           const code = await readLatestCode(staff.email, new Set());

@@ -90,12 +90,18 @@ describeLocalDb('customer session helper（パスワード無しで会員の JWT
 
   test('旗が真の時も、createAdminSessionActor の user（aal1・aal2）の通行証が作れる', async () => {
     await withCustomerPasswordFlag(db(), true, async () => {
-      const aal1 = await createAdminSessionActor(db(), 'user', 'aal1');
-      expect(aal1.aal).toBe('aal1');
-      const aal2 = await createAdminSessionActor(db(), 'user', 'aal2');
-      expect(aal2.aal).toBe('aal2');
-      await service.auth.admin.deleteUser(aal1.userId);
-      await service.auth.admin.deleteUser(aal2.userId);
+      const created: string[] = [];
+      try {
+        const aal1 = await createAdminSessionActor(db(), 'user', 'aal1');
+        created.push(aal1.userId);
+        expect(aal1.aal).toBe('aal1');
+        const aal2 = await createAdminSessionActor(db(), 'user', 'aal2');
+        created.push(aal2.userId);
+        expect(aal2.aal).toBe('aal2');
+      } finally {
+        // 落ちた時も作った利用者を残さない
+        for (const id of created) await service.auth.admin.deleteUser(id);
+      }
     });
   });
 });

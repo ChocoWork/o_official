@@ -256,7 +256,6 @@
       "src/features/auth/schemas/email-code.ts"
     ],
     "tests": [
-      "tests/unit/components/Header.test.tsx",
       "tests/unit/**/{site-header,use-turnstile-widget,format-countdown}*.test.{ts,tsx}",
       "tests/unit/api/auth/**/*.test.{ts,tsx}",
       "tests/unit/app/login/**/*.test.{ts,tsx}",

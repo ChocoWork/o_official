@@ -264,7 +264,7 @@ describe('DD-AUTH-039 createAdminSessionActor / elevateAdminSessionToAal2 の結
   });
 
   describe('一般の利用者（user）はパスワード無しの道', () => {
-    function stubPasswordAuth(userId: string, verifiedAal: 'aal1' | 'aal2' = 'aal1'): void {
+    function stubMagicLinkAuth(userId: string, verifiedAal: 'aal1' | 'aal2' = 'aal1'): void {
       mockCreateUser.mockResolvedValue({ data: { user: { id: userId } }, error: null });
       mockGenerateLink.mockResolvedValue({ data: { properties: { hashed_token: 'hashed-token' } }, error: null });
       mockVerifyOtp.mockResolvedValue({
@@ -280,30 +280,35 @@ describe('DD-AUTH-039 createAdminSessionActor / elevateAdminSessionToAal2 の結
     }
 
     it('aal1 は passkey の道を通らず、magiclink の検証の refresh token で結び付ける', async () => {
-      stubPasswordAuth(USER_ID);
+      stubMagicLinkAuth(USER_ID);
       const db = new FakeDb();
       const actor = await createAdminSessionActor(db.asPg(), 'user', 'aal1');
       expect(mockProvisionStaff).not.toHaveBeenCalled();
       expect(actor).toMatchObject({ role: 'user', aal: 'aal1', appBound: true, authenticators: [] });
       expect(db.sessionInserts()[0].params).toContain(sha256Hex('refresh-from-magiclink'));
+      expect(mockGenerateLink).toHaveBeenCalledWith(expect.objectContaining({ type: 'magiclink' }));
+      expect(mockCreateUser.mock.calls[0][0]).not.toHaveProperty('password');
+      expect(globalThis.fetch).not.toHaveBeenCalled();
     });
 
     it('aal2 は session に totp の印を足して refresh した token で結び付ける', async () => {
-      stubPasswordAuth(USER_ID);
+      stubMagicLinkAuth(USER_ID);
       const db = new FakeDb();
       await createAdminSessionActor(db.asPg(), 'user', 'aal2');
       expect(db.sessionInserts()[0].params).toContain(sha256Hex('refresh-after-aal2'));
+      const [url] = (globalThis.fetch as jest.Mock).mock.calls[0];
+      expect(String(url)).toContain('grant_type=refresh_token');
     });
 
     it('頼んだ aal と JWT の aal が合わなければ投げて、行を残さない', async () => {
-      stubPasswordAuth(USER_ID, 'aal2');
+      stubMagicLinkAuth(USER_ID, 'aal2');
       const db = new FakeDb();
       await expect(createAdminSessionActor(db.asPg(), 'user', 'aal1')).rejects.toThrow();
       expect(db.sessionInserts()).toHaveLength(0);
     });
 
     it('bindApp: false では行を作らない', async () => {
-      stubPasswordAuth(USER_ID);
+      stubMagicLinkAuth(USER_ID);
       const db = new FakeDb();
       const actor = await createAdminSessionActor(db.asPg(), 'user', 'aal1', { bindApp: false });
       expect(actor.appBound).toBe(false);

@@ -68,7 +68,7 @@ graph LR
   Z --> ACL[("DB の ACL<br/>auth.sessions")]
   RH -->|service role| T[("contact_*・item_color_presets<br/>sessions")]
   RH -->|service role| AU[("audit_logs")]
-  RH -->|service role の管理の機能| AUTH[("Supabase Auth<br/>利用者・2要素")]
+  RH -->|service role の管理の機能| AUTH[("Supabase Auth<br/>利用者")]
   RH -->|返信だけ| M["メールの送り手"]
   RH --> R["reply-address.ts"]
   C["auditCleanup.ts<br/>（呼ぶ所なし）"] -.->|service role| AU
@@ -81,7 +81,7 @@ graph LR
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-ADMIN-001、FREQ-316-REQ-01（範囲外）、FREQ-316-REQ-02（範囲外）、FREQ-316-REQ-03（範囲外）、NFR-SEC-005（範囲外）、ADR-0450、ADR-0451 |
-| 根拠 | 利用者の作成・他人の session の削除は Auth の管理の機能か service role だけの DB の関数で、利用者の token では呼べないため、認可の後に service role を使う（ADR-0451）。その代わり認可は共有の秘密でなく利用者に結び、権限と2要素と session の生存を毎回確かめて、誰がしたかを監査に残せるようにする（SEC-ADMIN-001、ADR-0450、FREQ-316-REQ-01・02・03） |
+| 根拠 | 他人の session の削除は Auth の管理の機能か service role だけの DB の関数で、利用者の token では呼べないため、認可の後に service role を使う（ADR-0451。利用者の作成の窓口は 2026-11-18 に消した）。その代わり認可は共有の秘密でなく利用者に結び、権限と入口の条件（パスキー・24時間以内・認めた鍵2本）と session の生存を毎回確かめて、誰がしたかを監査に残せるようにする（SEC-ADMIN-001、ADR-0450、FREQ-316-REQ-01・02・03） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（範囲の route.ts の頭の認可、`src/lib/auth/admin-rbac.ts`）、`docs/03_BasicDesign/architecture/hybrid-rbac.md` |

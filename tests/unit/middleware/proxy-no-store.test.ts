@@ -9,7 +9,7 @@ if (typeof (Response as unknown as { json?: unknown }).json !== 'function') {
     });
 }
 
-// /api/auth 配下の応答には、route が自分で付けない窓口（login・otp/verify・refresh・mfa/*）でも
+// /api/auth 配下の応答には、route が自分で付けない窓口（email-code/*・refresh・me ほか）でも
 // proxy が Cache-Control: no-store を付ける。route が自前で付ける窓口は route の値が後から上書きする。
 
 const ORIGIN = 'https://shop.example.com';

@@ -10,7 +10,7 @@
  * GoTrue の宛先ごとの送信の間隔の 429 は 202 に隠す（登録済みの見分けになるため）。監査 `email_code_send_throttled` とログで残す。
  * 順番: IP の枠 → 本文の形 → Turnstile → メール単位の枠（Turnstile の後に数える。先に数えると他人の枠を使い切らせて締め出せる）→ createUser → signInWithOtp。
  * 枠の名前は再送と共有（`auth:email-code:send`）。分けると10分に10通送れてしまう。
- * 旧の会員登録で作った未確認のアドレスには、コードでなく確認メールが届く（段4まで。画面の常時の案内と台帳に書く）。サーバーで確認済みにはしない。
+ * 旧の会員登録で作った未確認のアドレスには、コードでなく確認メールが届く（変えない。画面の常時の案内と台帳に書く）。サーバーで確認済みにはしない。
  * admin の呼び出しは createServiceRoleClient、コードの送信は captcha を免除される createServiceRoleAuthClient。
  */
 import { NextResponse } from 'next/server';

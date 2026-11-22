@@ -2155,7 +2155,7 @@ stateDiagram-v2
 | `[auth.email.template.confirmation]` | 無し（GoTrue の既定） | 件名「メールアドレスの確認」・本文 `supabase/templates/confirmation.html`（`{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=signup`） | 確認の窓口（`/api/auth/confirm`）は query の `token_hash` と `type=signup` を読む（SEC-AUTH-006・007）。既定の `ConfirmationURL`（`/auth/v1/verify`）は印を GoTrue が使い切り、fragment で窓口へ戻すので `missing_token_hash` で落ち、会員登録の確定ができない（レビュー指摘、2026-11-01）。`emailRedirectTo` は `/api/auth/confirm`（query 無し）なので `?` で続ける |
 | `templates/magic_link.html` の本文 | 「有効期限は1時間です」 | 「有効期限は5分です」 | `otp_expiry = 300` の切り替えと同時に直した（2026-11-01 に反映済み）。1時間のままだと利用者に嘘を言う |
 | `[auth.email.notification.password_changed]` | コメントアウト | `enabled = true`・件名「パスワードの変更を受け付けました」・本文 `supabase/templates/password_changed_notification.html` | GoTrue 自身の変更通知。管理 API の変更では送られず（2026-11-01 実測）、直接の `PUT /user` の変更だけを本人に知らせる。アプリの通知「パスワードを変更しました」と件名を変えて見分ける |
-| `[auth.mfa.totp] enroll_enabled・verify_enabled` | false | true | 管理者の aal2 の本物の流れ（SEC-AUTH-029・030） |
+| `[auth.mfa.totp] enroll_enabled・verify_enabled` | false | true（段4で `false` に戻した。下の段4の変更を参照） | 以前は管理者の aal2 の本物の流れ（SEC-AUTH-029・030）。TOTP の窓口を消したので今は要らない |
 | 変えない物 | — | `double_confirm_changes = true`・`enable_signup = true`・`otp_length = 8`・`[auth.rate_limit]`・ポート | アプリの `/signup` と E2E の前提 |
 
 段4（2026-11-22）の変更: `[auth.mfa.totp]` は手元で `false` に戻した（TOTP の窓口を消した）。`[auth.email.template.confirmation]` は確認のリンクの窓口を消したので、リンクを持たず `{{ .Token }}` の8桁を入れさせる文にした（FR-AUTH-054-AC-04）。上の表のその2行は波 6 の切り替えの時点の記録。
@@ -2319,13 +2319,13 @@ flowchart LR
 
 ## 未確認事項
 
-- 本番の Supabase Auth の設定（Email OTP Expiration 300 秒・8 桁・Confirm email・TOTP の有効・最小の長さ・漏洩の照合・captcha・Redirect URLs に古い `/auth/callback` の許可が残っていないか）。手元の `supabase/config.toml` は波 6 の切り替え（2026-11-01。手元だけ）まで OTP 3600 秒・Confirm email 無効・TOTP 無効・最小 6 文字だった。切り替えで本番の前提（OTP 300 秒・Confirm email 有効・TOTP 有効・最小 16・captcha・`secure_password_change`・変更通知）にそろえた。本番の実際の値はまだ読んでいない（SEC-AUTH-029）
+- 本番の Supabase Auth の設定（Email OTP Expiration 300 秒・8 桁・Confirm email・最小の長さ・漏洩の照合・captcha・Redirect URLs に古い `/auth/callback` の許可が残っていないか）。手元の `supabase/config.toml` は波 6 の切り替え（2026-11-01。手元だけ）まで OTP 3600 秒・Confirm email 無効・TOTP 無効・最小 6 文字だった。切り替えで本番の前提（OTP 300 秒・Confirm email 有効・最小 16・captcha・`secure_password_change`・変更通知）にそろえた。本番の実際の値はまだ読んでいない（SEC-AUTH-029。TOTP は段4で要らなくなり、手元は `false` に戻した）
 - Google のログインの会員に2段目を求めるか（SEC-AUTH-008、FR-LOGIN-007 と食い違う）。決まったら FLOW-AUTH-002・API-AUTH-008 を直す
 - Supabase Auth を直接呼ぶ道（SEC-AUTH-015）・確認のリンクの型（SEC-AUTH-006・007）の塞ぎ方。決まったら ARC-AUTH-001・API-AUTH-006 の上位を付け直す。SEC-AUTH-005 は波 5 でアプリの session への結び付けと決めた（ADR-0417）
-- 本物の `mfa.verify`（手元は TOTP が無効）の前後で GoTrue の `session_id` が変わらないこと。手元の補助（`mfa_amr_claims` に `totp` の行を足して更新）では変わらないと実測した（2026-10-29、Task 0）。配備前の preview で管理者 1 人が TOTP を通して確かめる。変わると `mfa/verify` が渡す `trustedAuthSessionId` の前提が崩れる
+- （段4で無くなった）本物の `mfa.verify` の前後で GoTrue の `session_id` が変わらないかの確かめ。`mfa/verify` の窓口を消したので要らない
 - 本番の GoTrue の `auth.sessions` の `not_after`（time-box）の設定。`private.app_session_is_live` は `auth.sessions` の生存も見るので、短いと再ログインが増える
-- `has_permission` が方針の中で行ごとに呼ばれた時の性能（aal2 の管理者だけが 2 回の主キー引き）。M2 を当てる前後で管理画面の一覧（注文・会計）の応答時間を比べる。重いと分かれば Custom Access Token Hook を上乗せする（ADR-0417 の退けた案 (c)）
-- ヘッダーのログインのモーダル・`mfa/status` の使われない欄・`forceReEnroll` を残すか（`unused-code.md` の判断）
+- `has_permission` が方針の中で行ごとに呼ばれた時の性能（入口の条件を満たす店員だけが、認めた鍵の数と session の生存の確かめで DB を引く。以前は aal2 の管理者だけが 2 回の主キー引き）。M2 を当てる前後で管理画面の一覧（注文・会計）の応答時間を比べる。重いと分かれば Custom Access Token Hook を上乗せする（ADR-0417 の退けた案 (c)）
+- （段4で無くなった）ヘッダーのログインのモーダル・`mfa/status`・`forceReEnroll` は、TOTP の窓口と一緒に消した
 - ヘッダーとドロワーの動き（DRV-AUTH-001〜005）を要件として認めるか。認めれば SCR-AUTH-009・010・STATE-AUTH-005・ARC-AUTH-008 の上位が要件になる
 - 本番の DB で、認証の6つの関数（DATA-AUTH-003）の `proacl` に anon・authenticated が残っているか（SEC-AUTH-012）。手元の DB は移行から作ったので残っている
 - Vercel が `x-vercel-forwarded-for`・`x-real-ip` を利用者の付けた値で上書きするか（本番は未デプロイ。最初の preview で実測する）。回数の制限の強さが変わる（SEC-AUTH-013、ADR-0416）

@@ -130,7 +130,7 @@ controller（作業者）が、オーナーの許可のもとで行う。`supaba
 5. `password_required_characters` が空でないか（空でなければオーナーに知らせる。変えるかは別の判断）。
 6. **今の確認メールの雛形と件名**（`mailer_templates_confirmation_content`・`mailer_subjects_confirmation`）と**ログインのコードの雛形と件名**（`mailer_templates_magic_link_content`・`mailer_subjects_magic_link`）。既定のまま（`ConfirmationURL` を含む）か、すでに変えてあるかを報告する。
 7. **`site_url` と `uri_allow_list`**（段4で確認のリンクの窓口を消したので、この確かめは要らなくなった。記録として残す）。アプリの確認の戻り先（`APP_ALLOWED_ORIGINS` の各オリジンの `/api/auth/confirm`）が、Site URL と同じホスト名か `uri_allow_list` に当たるか。当たらなければ段階 A に進まず、オーナーに Redirect URLs を足してもらう（上の「手で変える項目」）。
-8. **確認前の利用者の数**。本番の DB で `select count(*) from auth.users where email_confirmed_at is null and deleted_at is null` を流して報告する（読むだけ）。0 でなければ、`mailer_autoconfirm: false` にした後その人たちは確認が済むまでログインできない（店長が作った会員・試し用の 4 人を含みうる）ので、段階 A に進まずオーナーに知らせ、確認を済ませるか確認済みにするかを決めてもらう。店長が新しく作る会員は、コードが `email_confirm: true` で作るので増えない（DD-ADMIN-002）。
+8. **確認前の利用者の数**。本番の DB で `select count(*) from auth.users where email_confirmed_at is null and deleted_at is null` を流して報告する（読むだけ）。0 でなければ、`mailer_autoconfirm: false` にした後その人たちは確認が済むまでログインできない（店長が作った会員・試し用の 4 人を含みうる）ので、段階 A に進まずオーナーに知らせ、確認を済ませるか確認済みにするかを決めてもらう。新しい会員は、メールのコードの始めが `email_confirm: true` で作るので増えない（FR-AUTH-023。店長が利用者を作る窓口は 2026-11-18 に消した）。
 
 ### 2. 段階 A（captcha 以外）
 

@@ -28,7 +28,7 @@ const adminAal1 = { id: 'admin-1', role: 'admin' as const, staffEntryOk: false }
 const adminAal2 = { id: 'admin-1', role: 'admin' as const, staffEntryOk: true };
 
 type TestViewer = { id: string; role: 'admin' | 'supporter' | 'user'; staffEntryOk: boolean };
-function resolve(viewer: TestViewer, cookieHeader: string | null = COOKIE, purpose: 'login' | 'signup' = 'login') {
+function resolve(viewer: TestViewer, cookieHeader: string | null = COOKIE, purpose: 'login' = 'login') {
   return resolveReturnDestination({ cookieHeader, purpose, viewer, origin: ORIGIN });
 }
 
@@ -68,9 +68,9 @@ describe('DD-AUTH-034 issueReturnIntent', () => {
   it('DD-AUTH-034 通った戻り先は fragment を捨てた道筋と用途を保存へ渡し、set・created を返す', async () => {
     store.createReturnIntent.mockResolvedValue({ token: TOKEN, maxAgeSeconds: 900 });
 
-    const result = await issueReturnIntent({ rawNext: '/item/3?color=red#x', purpose: 'signup', origin: ORIGIN });
+    const result = await issueReturnIntent({ rawNext: '/item/3?color=red#x', purpose: 'login', origin: ORIGIN });
 
-    expect(store.createReturnIntent).toHaveBeenCalledWith({ returnPath: '/item/3?color=red', purpose: 'signup' });
+    expect(store.createReturnIntent).toHaveBeenCalledWith({ returnPath: '/item/3?color=red', purpose: 'login' });
     expect(result).toEqual({ action: { kind: 'set', token: TOKEN, maxAgeSeconds: 900 }, outcome: 'created' });
     expect(audit.default).not.toHaveBeenCalled();
   });
@@ -114,14 +114,6 @@ describe('DD-AUTH-034 resolveReturnDestination', () => {
 
     await expect(resolve(user)).resolves.toEqual({ path: '/item/3', needsMfa: false, action: { kind: 'clear' } });
     expect(store.consumeReturnIntent).toHaveBeenCalledWith({ token: TOKEN, purpose: 'login', userId: 'user-1' });
-  });
-
-  it('DD-AUTH-034 用途 signup をそのまま使い切りへ渡す', async () => {
-    store.consumeReturnIntent.mockResolvedValue('/account');
-
-    await resolve(user, COOKIE, 'signup');
-
-    expect(store.consumeReturnIntent).toHaveBeenCalledWith(expect.objectContaining({ purpose: 'signup' }));
   });
 
   it('DD-AUTH-034 Cookie の見出しに戻り先が無ければ既定の / と keep で、使い切りを呼ばない', async () => {

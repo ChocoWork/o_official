@@ -51,7 +51,6 @@ import {
 } from '@/features/auth/return-intent/return-intent-service';
 
 const LOGIN_TTL_SECONDS = 900;
-const SIGNUP_TTL_SECONDS = 3600;
 
 type Row = { path: string; purpose: string; expiresAtMs: number; consumedBy: string | null };
 
@@ -63,7 +62,7 @@ class FakeIntentTable {
   install() {
     mockRpc.mockImplementation(async (name: string, args: Record<string, string>) => {
       if (name === 'create_auth_return_intent') {
-        const ttl = args._purpose === 'signup' ? SIGNUP_TTL_SECONDS : LOGIN_TTL_SECONDS;
+        const ttl = LOGIN_TTL_SECONDS;
         this.rows.set(args._token_hash, {
           path: args._return_path,
           purpose: args._purpose,
@@ -145,18 +144,6 @@ describe('ARC-AUTH-010 戻り先は入口で控え、出口で使い切り、出
     expect(exit.action).toEqual({ kind: 'clear' });
   });
 
-  test('ARC-AUTH-010 出口は用途を合わせる: 登録の控えはログインの出口で使えず、ログインの控えは確認のリンクで使えない', async () => {
-    const signup = await issueReturnIntent({ rawNext: '/stockist', purpose: 'signup' });
-    const login = await issueReturnIntent({ rawNext: '/about', purpose: 'login' });
-
-    const loginExitWithSignupIntent = await resolveReturnDestination({ cookieHeader: cookieHeaderOf(signup.action), purpose: 'login', viewer: user() });
-    const signupExitWithLoginIntent = await resolveReturnDestination({ cookieHeader: cookieHeaderOf(login.action), purpose: 'signup', viewer: user() });
-
-    expect(loginExitWithSignupIntent.path).toBe('/');
-    expect(signupExitWithLoginIntent.path).toBe('/');
-    expect(table.consumedCount).toBe(0);
-  });
-
   test('ARC-AUTH-010 店員は入口の条件を満たすまで使い切らず 2 段目へ送り、満たしてから戻り先を受け取る', async () => {
     const entry = await issueReturnIntent({ rawNext: '/item', purpose: 'login' });
     const cookieHeader = cookieHeaderOf(entry.action);
@@ -212,10 +199,9 @@ describe('STATE-AUTH-006 戻り先の控えは、作られ、1 回使い切ら�
     expect(table.consumedCount).toBe(1);
   });
 
-  test.each([
-    ['login', LOGIN_TTL_SECONDS],
-    ['signup', SIGNUP_TTL_SECONDS],
-  ] as const)('STATE-AUTH-006 %s の控えは作った %i 秒後に期限切れになり、その直前までは使える', async (purpose, ttl) => {
+  test('STATE-AUTH-006 login の控えは作った 900 秒後に期限切れになり、その直前までは使える', async () => {
+    const purpose = 'login' as const;
+    const ttl = LOGIN_TTL_SECONDS;
     const beforeExpiry = await issueReturnIntent({ rawNext: '/about', purpose });
     table.advanceSeconds(ttl - 1);
     const usable = await resolveReturnDestination({ cookieHeader: cookieHeaderOf(beforeExpiry.action), purpose, viewer: user() });
@@ -228,12 +214,10 @@ describe('STATE-AUTH-006 戻り先の控えは、作られ、1 回使い切ら�
     expect(expired.action).toEqual({ kind: 'clear' });
   });
 
-  test('STATE-AUTH-006 Cookie の Max-Age は期限と同じ秒数（login は 900、signup は 3600）', async () => {
+  test('STATE-AUTH-006 Cookie の Max-Age は期限と同じ秒数（login は 900）', async () => {
     const login = await issueReturnIntent({ rawNext: '/about', purpose: 'login' });
-    const signup = await issueReturnIntent({ rawNext: '/about', purpose: 'signup' });
 
     expect(login.action).toEqual(expect.objectContaining({ kind: 'set', maxAgeSeconds: LOGIN_TTL_SECONDS }));
-    expect(signup.action).toEqual(expect.objectContaining({ kind: 'set', maxAgeSeconds: SIGNUP_TTL_SECONDS }));
   });
 
   test('STATE-AUTH-006 管理者・サポーターが入口の条件を満たさない間は作られたまま残り、使い切られない', async () => {
@@ -244,17 +228,5 @@ describe('STATE-AUTH-006 戻り先の控えは、作られ、1 回使い切ら�
     await resolveReturnDestination({ cookieHeader, purpose: 'login', viewer: { ...admin(false), role: 'supporter' } });
 
     expect(table.consumedCount).toBe(0);
-  });
-
-  test('STATE-AUTH-006 用途が合わない出口では使い切られず、合う出口の最初の 1 回で使い切られる', async () => {
-    const entry = await issueReturnIntent({ rawNext: '/about', purpose: 'signup' });
-    const cookieHeader = cookieHeaderOf(entry.action);
-
-    await resolveReturnDestination({ cookieHeader, purpose: 'login', viewer: user() });
-    expect(table.consumedCount).toBe(0);
-
-    const exit = await resolveReturnDestination({ cookieHeader, purpose: 'signup', viewer: user() });
-    expect(exit.path).toBe('/about');
-    expect(table.consumedCount).toBe(1);
   });
 });

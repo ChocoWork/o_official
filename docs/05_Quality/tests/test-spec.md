@@ -919,7 +919,7 @@ DB 結合の「DB なしの形」の試験は `supabase/migrations/` の 6 本�
 | stockists・news: `stockists-route`・`stockists-id-route`・`news-admin-id-route`・`news-public-service`・`news-route` | `DD-STOCKIST-034`・`035`（stockists の route 2 本）、`DD-NEWS-065`（管理 `[id]`）・`003`（公開の取り出し）・`004`（`/api/news`） | 管理の列の絞り・0 行の 404 と failure の監査・`fields` だけの 400・壊れた JSON。お知らせの公開の取り出しが service role と署名を使わず、応答に `image_url` が無いこと。管理のお知らせの変更の 0 行・形の悪い id（18 桁の境界）の 404 |
 | ほか: `stockist-public-service`（取扱店の公開の取り出し。`createPublicClient` と上限 200）、`home-page.test.tsx`（ITEM を 8 件取る）、`login-page.test.tsx`・`auth-tabs.test.tsx`（`/login?registered=1` の案内）、`PublicNewsGrid.test.tsx` | `DD-STOCKIST-003`・`DD-HOME-001`・`DD-AUTH-001`（login-page）・`DD-AUTH-010`（auth-tabs）・`DD-NEWS-001` | 公開の取り出しの件数の天井、ホームの取得件数、確認リンクを別のブラウザで開いた後の案内（`role="status"`。タブを替えても残る） |
 
-控えの結び付け（SEC-AUTH-007）は `tests/unit/features/auth/return-intent/return-intent-store.test.ts`（`DD-AUTH-033`。bindTo 付きのハッシュの式）と `return-intent-service.test.ts`（`DD-AUTH-034`。`alwaysCreate`・`consumeSignupBinding`・`resolveStoredDestination`）で確かめる。
+控えの結び付け（SEC-AUTH-007）は `tests/unit/features/auth/return-intent/return-intent-store.test.ts`（`DD-AUTH-033`。番号のハッシュ。`bindTo` は段4で消した）と `return-intent-service.test.ts`（`DD-AUTH-034`。`alwaysCreate`・`consumeSignupBinding`・`resolveStoredDestination`）で確かめる。
 
 ### 結合（`tests/integration/`）
 

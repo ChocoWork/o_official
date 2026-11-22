@@ -2212,12 +2212,12 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 向き | 中身 |
 | --- | --- |
-| 入力 | 作る時は戻り先の道筋と用途（`login`・`signup`）と、任意の `bindTo`（登録したメール）。使い切る時は番号・用途・利用者の id と、任意の `bindTo` |
-| 出力 | 作る時は番号と Cookie の秒数（失敗は null）。使い切る時は戻り先の道筋（使えない・失敗は null）。番号の生成と sha256 の関数（`bindTo` を渡すと `sha256(番号 + "\n" + 小文字のメール)`）、メールの正規化（前後の空白を除いて小文字）、番号の形の正規表現も持つ |
+| 入力 | 作る時は戻り先の道筋と用途（`login` だけ）。使い切る時は番号・用途・利用者の id |
+| 出力 | 作る時は番号と Cookie の秒数（失敗は null）。使い切る時は戻り先の道筋（使えない・失敗は null）。番号の生成と sha256 の関数、番号の形の正規表現も持つ |
 
 **正常フロー:**
 
-1. 番号を 32 バイトの乱数（base64url の 43 文字）で作り、sha256（16 進 64 桁）にする。`bindTo` があれば番号とメールを改行でつないでハッシュする（無ければ番号だけで、ログインは変わらない。列の型・関数の引数は同じなので移行は要らない）
+1. 番号を 32 バイトの乱数（base64url の 43 文字）で作り、sha256（16 進 64 桁）にする（番号だけのハッシュ）
 2. service role の client で `create_auth_return_intent(_token_hash, _return_path, _purpose)` を呼び、戻りの秒数を Cookie の秒数にする
 3. 使い切る時は `consume_auth_return_intent(_token_hash, _purpose, _user_id)` を呼び、返った道筋を返す
 
@@ -2236,7 +2236,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | # | 観点 |
 | --- | --- |
-| 1 | 関数に渡す引数に平文の番号が無く、ハッシュが番号の sha256 と一致する。`bindTo` ありは `sha256(番号 + 改行 + 小文字のメール)`、メールの大文字小文字・前後の空白は無視、別のメール・別の番号なら別のハッシュ。作る時・使い切る時の両方で `bindTo` が rpc のハッシュに入る |
+| 1 | 関数に渡す引数に平文の番号が無く、ハッシュが番号の sha256 と一致する |
 | 2 | 秒数が関数の戻りのまま。エラー・例外・数値でない戻りで null |
 | 3 | ログに道筋・番号・ハッシュが出ない |
 | 4 | 番号の形（43 文字・`+`・`/`・`=` なし）。1000 回で重複がない |
@@ -2272,6 +2272,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 3. 保存（DD-AUTH-033）。成功なら `set`、失敗なら `clear` と監査（create_failed）
 
 （2026-11-22、段4の Task 28 で、登録の確認リンクへの結び付け〔`consumeSignupBinding`〕と、`bindTo`・`alwaysCreate` を消した。確認のリンクの窓口が無いため。用途 `signup` の表の側は DB に残す。）
+
+（2026-11-22、段4の最後の直しで、`return-intent-store.ts` の型 `ReturnIntentPurpose` を `'login'` だけに縮め、`bindTo`・`normalizeBindEmail` も消した。作り手も呼び手も無かったため。DB の CHECK は `signup` を許したまま変えない。）
 
 **正常フロー（解決）:**
 
@@ -2448,7 +2450,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | # | 観点 |
 | --- | --- |
 | 1 | `refresh`・`me` などの `/api/auth/…` の応答に `no-store` が付く |
-| 2 | Origin が違う `/api/auth/login` の `POST` の 403 に `no-store` が付き、`/api/authx` の 403 には付かない |
+| 2 | Origin が違う `/api/auth/email-code/start` の `POST` の 403 に `no-store` が付き、`/api/authx` の 403 には付かない |
 | 3 | `/api/authx`・`/api/authentication/x`・`/api/search`・`/api/news`・`/news`・`/`・`/about` には付かない |
 | 4 | 注文の状況の Origin 拒否は `no-store` と `Referrer-Policy: no-referrer` のまま |
 | 5 | `/api/auth` でも CSP・`X-Frame-Options`・`X-Content-Type-Options`・`Referrer-Policy` が付く |
@@ -2586,7 +2588,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 **DB の側（`has_permission` と会員の本人の行の方針。移行 M2、2026-10-29、波 5 の Task 6。未適用）:**
 
-1. `public.has_permission(permission_code)` は、`auth.uid()` が空なら偽、店員の入口の条件（パスキーで入った・24時間以内・認めた鍵2本・無操作。段1a の移行 E で `aal2` の枝を置き換えた。JWT の `aal` は見ない）を満たさないなら偽、ACL の `EXISTS`（G-0 の本体と同じ）が偽なら偽、ACL が真の時だけ `private.app_session_is_live(session_id)` の結果を返す。`session_id` は uuid の形を正規表現で確かめてからキャストし、形が悪い・無い時は例外でなく偽（DATA-AUTH-008、SEC-AUTH-010-AC-03）
+1. `public.has_permission(permission_code)` は、`auth.uid()` が空なら偽、`private.staff_passkey_amr_ok`（パスキーで入った・24時間以内）を満たさないなら偽、ACL の `EXISTS`（G-0 の本体と同じ）が偽なら偽、認めた鍵が2本に足りなければ偽、無操作が長ければ偽、最後に `private.app_session_is_live(session_id)` の結果を返す（段1a の移行 E で `aal2` の枝を置き換えた。JWT の `aal` は見ない。順は移行 E のコメントと同じ「amr の確かめ → ACL → 鍵の数 → 無操作 → session の生存」）。`session_id` は uuid の形を正規表現で確かめてからキャストし、形が悪い・無い時は例外でなく偽（DATA-AUTH-008、SEC-AUTH-010-AC-03）
 2. `profiles`・`orders`・`order_items` には、`authenticated` 向けの RESTRICTIVE の方針 `"require app bound live session"` を 1 本ずつ足す。式は `(SELECT private.is_app_bound_live_session())`（USING も WITH CHECK も）。結び付いた生きた session の無い `authenticated` は本人の行も 0 行。`anon` は触らず、ゲストの注文は `app.session_id` で読む道のまま
 3. 旗 `AUTH_REQUIRE_APP_SESSION` は DB が読まない。移行を当てた瞬間に効き、戻すのは移行の ROLLBACK（G-0 の本体と `DROP POLICY` 3 本）。当てる前に、M1 とアプリの書く側・読む側が出て、全員がログインし直している必要がある
 4. M1 が無い DB に当てると、何も変えずに `SEC_WAVE5_MIGRATION_ASSERTION_FAILED`（DETAIL は項目名だけ）で止まる

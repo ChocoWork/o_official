@@ -332,7 +332,7 @@ export async function authorizeAdminPermissions(required: readonly PermissionCod
     }
 
     // 管理の入口の3つの条件（パスキー・24時間以内・DB で数えた認めたパスキー2本以上。SR-AUTH-014）で判定する。
-    // パスキーのログインは aal1 のままなので aal は見ない。403 の文言 'MFA required' と denial.reason 'mfa' は段4まで変えない（ADR-0463）。
+    // パスキーのログインは aal1 のままなので aal は見ない。403 の文言 'MFA required' と denial.reason 'mfa' は変えない（ADR-0463）。
     const entry = evaluateStaffEntry(claims, approvedCount, Date.now() / 1000);
     if (!entry.ok) {
       console.warn(`[RBAC] MFA required for ${userId}: ${firstRequired}`);

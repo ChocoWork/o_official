@@ -236,28 +236,39 @@ for (const viewport of viewports) {
         .toBe(2);
     });
 
-    test(`SEC-AUTH-029-AC-02 ${viewport.name}: 送ってから 5 分を過ぎたメールのコードを確定の窓口へ送ると 401 になる`, async ({ request }) => {
-      const member = await createTestMember(`sec029-${viewport.name}`);
-      const ip = uniqueIp();
-      const started = await startCode(request, member.email, ip);
-      expect(started.status()).toBe(202);
-      const code = await readLatestCode(member.email, new Set());
+    test(`SEC-AUTH-029-AC-02 ${viewport.name}: 送ってから 5 分を過ぎたメールのコードを確定の窓口へ送ると 401 になり、4 分のコードは 200 で通る`, async ({ request }) => {
+      // Supabase 側の送信時刻を指定の分だけ前へずらす（待たずに経過した状態にする）。保留の Cookie は有効なまま。
+      const sendAndShift = async (label: string, minutes: number) => {
+        const member = await createTestMember(`${label}-${viewport.name}`);
+        const ip = uniqueIp();
+        const started = await startCode(request, member.email, ip);
+        expect(started.status()).toBe(202);
+        const code = await readLatestCode(member.email, new Set());
+        await withLocalDb(async (db) => {
+          const tokens = await db.query(
+            `update auth.one_time_tokens set created_at = created_at - make_interval(mins => $2) where user_id = $1`,
+            [member.userId, minutes],
+          );
+          expect(tokens.rowCount).toBeGreaterThan(0);
+          // GoTrue が期限を見る列。ここが1行も動かないと、401 は時刻のずらしと無関係になる
+          const sent = await db.query(
+            `update auth.users set recovery_sent_at = recovery_sent_at - make_interval(mins => $2) where id = $1 and recovery_sent_at is not null`,
+            [member.userId, minutes],
+          );
+          expect(sent.rowCount).toBe(1);
+        });
+        return { code, ip };
+      };
 
-      // Supabase 側の送信時刻を 6 分前へずらす（待たずに「送ってから 5 分を過ぎた」状態にする）。保留の Cookie は有効なまま。
-      await withLocalDb(async (db) => {
-        const tokens = await db.query(
-          `update auth.one_time_tokens set created_at = created_at - interval '6 minutes' where user_id = $1`,
-          [member.userId],
-        );
-        expect(tokens.rowCount).toBeGreaterThan(0);
-        await db.query(
-          `update auth.users set recovery_sent_at = recovery_sent_at - interval '6 minutes' where id = $1 and recovery_sent_at is not null`,
-          [member.userId],
-        );
-      });
+      // 対照: 4 分前のコードは通る（5 分の境目の手前）
+      const fresh = await sendAndShift('sec029-ok', 4);
+      expect((await verifyCode(request, fresh.code, fresh.ip)).status()).toBe(200);
 
-      const verified = await verifyCode(request, code, ip);
+      const stale = await sendAndShift('sec029', 6);
+      const verified = await verifyCode(request, stale.code, stale.ip);
       expect(verified.status()).toBe(401);
+      // 保留の Cookie の断り（セッションの有効期限が切れました）ではなく、コードそのものの断り
+      expect(((await verified.json()) as { error?: string }).error).toBe('認証コードが無効、または期限切れです。');
     });
 
     test(`FR-AUTH-023-AC-06 ${viewport.name}: 保留の Cookie が無い確定・再送は 401`, async ({ request }) => {
