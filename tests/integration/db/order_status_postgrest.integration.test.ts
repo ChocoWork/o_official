@@ -1,7 +1,7 @@
 /** @jest-environment node */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
-import { DUMMY_CAPTCHA_TOKEN } from '../../../e2e/captcha-test-utils';
+import { signInCustomerWithoutPassword } from '../../../e2e/customer-session-test-utils';
 import { describeLocalDb, isLocalDatabase } from './helpers/local-db';
 import {
   createOrderStatusFixture, createOrderStatusReturnsFixture, orderStatusClock, ORDER_STATUS_PRIVATE_SENTINEL,
@@ -177,14 +177,14 @@ describeLocalDb('integration: 注文状況の新RPCを実際のPostgRESTに通�
     const anon = createClient(apiUrl, LOCAL_ANON_KEY, CLIENT_OPTIONS);
     const authenticated = createClient(apiUrl, LOCAL_ANON_KEY, CLIENT_OPTIONS);
     const email = `order-status-auth-${randomUUID()}@example.invalid`;
-    const password = `OrderStatus-${randomUUID()}-aA1!`;
     let userId: string | undefined;
     try {
-      const created = await client.auth.admin.createUser({ email, password, email_confirm: true });
+      const created = await client.auth.admin.createUser({ email, email_confirm: true });
       if (created.error || !created.data.user) throw new Error('ORDER_STATUS_AUTH_FIXTURE_CREATE_FAILED');
       userId = created.data.user.id;
-      const signedIn = await authenticated.auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
-      if (signedIn.error || !signedIn.data.session) throw new Error('ORDER_STATUS_AUTH_FIXTURE_SIGN_IN_FAILED');
+      const signedIn = await signInCustomerWithoutPassword(email);
+      const adopted = await authenticated.auth.setSession({ access_token: signedIn.accessToken, refresh_token: signedIn.refreshToken });
+      if (adopted.error || !adopted.data.session) throw new Error('ORDER_STATUS_AUTH_FIXTURE_SIGN_IN_FAILED');
       const order = await fixture();
       const token = await rpc('ensure_order_status_link', { _order_id: order.orderId });
       // 欠落したRPCを拒否成功と取り違えないよう、同じ引数でservice_roleの成功を先に確かめる。

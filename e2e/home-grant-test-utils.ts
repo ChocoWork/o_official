@@ -11,12 +11,12 @@
  * 下書きの商品はホームに出ないので created_at は遠い過去にする。
  * 画像は seed の公開の商品の物を写す（ホームの画像の署名・next/image の許可を通すため）。
  */
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { expect, type APIResponse, type Page } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
-import { withDummyCaptcha } from './captcha-test-utils';
+import { signInCustomerWithoutPassword } from './customer-session-test-utils';
 import { PUBLISHED_ITEM_TOP_AT } from './home-test-utils';
 
 export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
@@ -112,14 +112,13 @@ export type MemberActor = { userId: string; accessToken: string };
 
 const createdUserIds: string[] = [];
 
-/** 一般会員（role=user、user_roles なし）を作り、パスワードのログインで得た aal1 の JWT を返す */
+/** 一般会員（role=user、user_roles なし）を作り、パスワード無しのログイン（メールのリンクのトークンの検証）で得た aal1 の JWT を返す */
 export async function createMemberActor(): Promise<MemberActor> {
   requireLocalSupabase();
   const email = `e2e-home-grant-member-${randomUUID().slice(0, 8)}@example.com`;
-  const password = `E2e-${randomBytes(12).toString('hex')}!`;
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, clientOptions);
   const created = await admin.auth.admin
-    .createUser({ email, password, email_confirm: true, app_metadata: { role: 'user' } })
+    .createUser({ email, email_confirm: true, app_metadata: { role: 'user' } })
     .catch(() => {
       throw new Error('手元の一般会員を作る要求に失敗した');
     });
@@ -128,21 +127,11 @@ export async function createMemberActor(): Promise<MemberActor> {
   }
   const userId = created.data.user.id;
   createdUserIds.push(userId);
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-    method: 'POST',
-    // 呼ぶごとに別の送り元として数えさせる（admin-session-test-utils の uniqueSourceIp と同じ注記。x-forwarded-for を送り元に数える作りに頼る分離で、効かなくなっても害は無い）
-    headers: { apikey: ANON_KEY, 'content-type': 'application/json', 'x-forwarded-for': `10.${[...randomBytes(3)].join('.')}` },
-    body: JSON.stringify(withDummyCaptcha({ email, password })),
-    signal: AbortSignal.timeout(10_000),
-  }).catch(() => {
-    throw new Error('手元の Auth のパスワードのログインの要求に失敗した');
-  });
-  if (!res.ok) throw new Error(`手元の Auth のパスワードのログインが通らない: ${res.status}`);
-  const reply = (await res.json().catch(() => ({}))) as { access_token?: string };
-  if (!reply.access_token) throw new Error('手元の Auth の応答に access_token が無い');
-  const claims = JSON.parse(Buffer.from(reply.access_token.split('.')[1] ?? '', 'base64url').toString('utf8')) as { aal?: string; sub?: string };
+  const session = await signInCustomerWithoutPassword(email);
+  const accessToken = session.accessToken;
+  const claims = JSON.parse(Buffer.from(accessToken.split('.')[1] ?? '', 'base64url').toString('utf8')) as { aal?: string; sub?: string };
   if (claims.sub !== userId || claims.aal !== 'aal1') throw new Error('作った JWT の利用者か aal が合わない');
-  return { userId, accessToken: reply.access_token };
+  return { userId, accessToken };
 }
 
 /** 後始末のため、作った利用者の id を登録する（管理者の aal1 の JWT を作る道具が返す物など） */

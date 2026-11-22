@@ -15,7 +15,7 @@
 import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { expect, test, type Page } from '@playwright/test';
-import { DUMMY_CAPTCHA_TOKEN } from './captcha-test-utils';
+import { signInCustomerWithoutPassword } from './customer-session-test-utils';
 import {
   openFilterScope,
   randomLowId,
@@ -32,24 +32,20 @@ test.use({ trace: 'off' });
 const MAPS_SEARCH_PREFIX = 'https://www.google.com/maps/search/?api=1&query=';
 const clientOptions = { auth: { persistSession: false, autoRefreshToken: false } };
 
-// 一般会員は worker ごとに1回だけ、既知のパスワードで作ってログインする（ログインの回数の制限を使い切らない）
+// 一般会員は worker ごとに1回だけ作ってログインする（ログインの回数の制限を使い切らない）
 let memberPromise: Promise<{ userId: string; accessToken: string }> | null = null;
 
 function memberSession(): Promise<{ userId: string; accessToken: string }> {
   memberPromise ??= (async () => {
-    const { url, anonKey, serviceKey } = requireLocalSupabaseEnv();
+    const { url, serviceKey } = requireLocalSupabaseEnv();
     const email = `e2e-stockist012-${Date.now().toString(36)}${randomBytes(3).toString('hex')}@example.com`;
-    const password = `E2e-${randomBytes(12).toString('hex')}!`;
     const admin = createClient(url, serviceKey, clientOptions);
-    const created = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+    const created = await admin.auth.admin.createUser({ email, email_confirm: true });
     if (created.error || !created.data.user) {
       throw new Error(`手元の一般会員を作れない（status: ${created.error?.status ?? '不明'}）`);
     }
-    const signedIn = await createClient(url, anonKey, clientOptions).auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
-    if (signedIn.error || !signedIn.data.session) {
-      throw new Error(`手元の一般会員でログインできない（status: ${signedIn.error?.status ?? '不明'}）`);
-    }
-    return { userId: created.data.user.id, accessToken: signedIn.data.session.access_token };
+    const session = await signInCustomerWithoutPassword(email);
+    return { userId: created.data.user.id, accessToken: session.accessToken };
   })();
   return memberPromise;
 }

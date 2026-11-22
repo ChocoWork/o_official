@@ -71,11 +71,11 @@
 | FREQ-275 ホームの区画の見出しを共通の部品にし、下線を付ける | FREQ-275-REQ-01 5つの区画の見出しを SectionTitle 1つにする | FREQ-275-AC-01 3つの幅で5つの見出しの文字の大きさが同じ | `e2e/FR-NEWS-HOME-001-home-news-section.spec.ts:221`<br>`e2e/FR-HOME-017-section-title-common.spec.ts:56` |
 | FREQ-275 ホームの区画の見出しを共通の部品にし、下線を付ける | FREQ-275-REQ-02 見出しの文字を 1024px 未満で 20px、以上で 28px にする | FREQ-275-AC-02 390・768px で 20px、1280px で 28px | （なし） |
 | FREQ-275 ホームの区画の見出しを共通の部品にし、下線を付ける | FREQ-275-REQ-03 ITEMS・LOOK・NEWS の見出しにも下線を出す | FREQ-275-AC-03 3つの幅で5つの見出しに下線がある | `e2e/FR-NEWS-HOME-001-home-news-section.spec.ts:247` |
-| THR-NEWS-001 公開前の記事が公開の道から漏れる | SEC-NEWS-001 公開の道は公開済みの記事だけを返す | SEC-NEWS-001-AC-01 anon と一般会員の直接の読み出しに非公開の記事が出ない | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:216` |
+| THR-NEWS-001 公開前の記事が公開の道から漏れる | SEC-NEWS-001 公開の道は公開済みの記事だけを返す | SEC-NEWS-001-AC-01 anon と一般会員の直接の読み出しに非公開の記事が出ない | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:202` |
 | THR-NEWS-001 公開前の記事が公開の道から漏れる | SEC-NEWS-001 公開の道は公開済みの記事だけを返す | SEC-NEWS-001-AC-02 公開の画面・API・検索に非公開の記事が出ない | `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts:251` |
-| THR-NEWS-002 権限を持つ人の session で、2要素認証と失効の確かめを飛ばして DB を直接触る | SEC-NEWS-002 DB でも管理の権限を使う操作に、生きている session と2要素認証の済みを求める | SEC-NEWS-002-AC-01 aal1 の session では非公開の記事を直接読めない | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:267` |
-| THR-NEWS-002 権限を持つ人の session で、2要素認証と失効の確かめを飛ばして DB を直接触る | SEC-NEWS-002 DB でも管理の権限を使う操作に、生きている session と2要素認証の済みを求める | SEC-NEWS-002-AC-02 aal1 の session では記事を直接書き換え・消去できない | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:310` |
-| THR-NEWS-002 権限を持つ人の session で、2要素認証と失効の確かめを飛ばして DB を直接触る | SEC-NEWS-002 DB でも管理の権限を使う操作に、生きている session と2要素認証の済みを求める | SEC-NEWS-002-AC-03 ログアウトした session の token では news_articles を直接読めない | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:366` |
+| THR-NEWS-002 権限を持つ人の session で、2要素認証と失効の確かめを飛ばして DB を直接触る | SEC-NEWS-002 DB でも管理の権限を使う操作に、生きている session と2要素認証の済みを求める | SEC-NEWS-002-AC-01 aal1 の session では非公開の記事を直接読めない | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:253` |
+| THR-NEWS-002 権限を持つ人の session で、2要素認証と失効の確かめを飛ばして DB を直接触る | SEC-NEWS-002 DB でも管理の権限を使う操作に、生きている session と2要素認証の済みを求める | SEC-NEWS-002-AC-02 aal1 の session では記事を直接書き換え・消去できない | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:296` |
+| THR-NEWS-002 権限を持つ人の session で、2要素認証と失効の確かめを飛ばして DB を直接触る | SEC-NEWS-002 DB でも管理の権限を使う操作に、生きている session と2要素認証の済みを求める | SEC-NEWS-002-AC-03 ログアウトした session の token では news_articles を直接読めない | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:352` |
 | THR-NEWS-003 画像の置き場が公開になり、非公開の記事の画像が見える | SEC-NEWS-003 画像の置き場は非公開で、その設定を移行で持つ | SEC-NEWS-003-AC-01 移行だけを当てた DB で置き場が非公開になる | （なし） |
 | THR-NEWS-003 画像の置き場が公開になり、非公開の記事の画像が見える | SEC-NEWS-003 画像の置き場は非公開で、その設定を移行で持つ | SEC-NEWS-003-AC-02 公開の URL では記事の画像を開けない | `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts:339` |
 | THR-NEWS-004 外へ出した署名つき URL で、非公開にした後も画像が見える | SEC-NEWS-004 署名つき URL と最適化の画像を、短い期限で失わせる | SEC-NEWS-004-AC-01 署名つき URL の期限が1時間以下 | `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts:352` |
@@ -92,8 +92,8 @@
 | THR-NEWS-008 公開の記事をまとめて吸い出し、DB に負荷をかける | SEC-NEWS-009 公開の読み出しに件数の上限と回数の制限を付ける | SEC-NEWS-009-AC-02 /api/news は10分に61回目を断る | `e2e/FR-NEWS-SEC-003-http-hardening-and-rate-limit.spec.ts:179` |
 | THR-NEWS-008 公開の記事をまとめて吸い出し、DB に負荷をかける | SEC-NEWS-009 公開の読み出しに件数の上限と回数の制限を付ける | SEC-NEWS-009-AC-03 公開の一覧の取り出しは上限を渡さなくても上限で止まる | （なし） |
 | THR-NEWS-008 公開の記事をまとめて吸い出し、DB に負荷をかける | SEC-NEWS-009 公開の読み出しに件数の上限と回数の制限を付ける | SEC-NEWS-009-AC-04 詳細の前後の取り出しは公開済みの全部を読まない | （なし） |
-| THR-NEWS-009 PostgREST・RPC を直接叩いて、アプリの制限を迂回する | SEC-NEWS-010 anon が PostgREST・RPC を直接叩いた時も件数に上限がある | SEC-NEWS-010-AC-01 anon の search_news は大きな件数を求めても上限で止まる | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:413` |
-| THR-NEWS-009 PostgREST・RPC を直接叩いて、アプリの制限を迂回する | SEC-NEWS-010 anon が PostgREST・RPC を直接叩いた時も件数に上限がある | SEC-NEWS-010-AC-02 anon は search_public_news を呼べない | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:436` |
+| THR-NEWS-009 PostgREST・RPC を直接叩いて、アプリの制限を迂回する | SEC-NEWS-010 anon が PostgREST・RPC を直接叩いた時も件数に上限がある | SEC-NEWS-010-AC-01 anon の search_news は大きな件数を求めても上限で止まる | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:399` |
+| THR-NEWS-009 PostgREST・RPC を直接叩いて、アプリの制限を迂回する | SEC-NEWS-010 anon が PostgREST・RPC を直接叩いた時も件数に上限がある | SEC-NEWS-010-AC-02 anon は search_public_news を呼べない | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:422` |
 | THR-NEWS-010 回数の制限の送り元を偽って制限を逃れる | SEC-NEWS-011 回数の制限の送り元は、利用者が偽れない値から取る | SEC-NEWS-011-AC-01 x-forwarded-for を変えても61回目を断る | `e2e/FR-NEWS-SEC-003-http-hardening-and-rate-limit.spec.ts:219` |
 | THR-NEWS-011 入口で確かめない値が取り出しに渡る | SEC-NEWS-012 入口の値を許可の一覧と型で確かめる | SEC-NEWS-012-AC-01 /api/news は許可の一覧に無い分類を取り出しに渡さない | `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts:453` |
 | THR-NEWS-011 入口で確かめない値が取り出しに渡る | SEC-NEWS-012 入口の値を許可の一覧と型で確かめる | SEC-NEWS-012-AC-02 数でない記事の id は 404 になる | `e2e/FR-NEWS-DETAIL-009-detail-edge-cases-and-body-safety.spec.ts:169` |
@@ -120,13 +120,13 @@
 | THR-NEWS-019 取り出しの失敗が「0件」「無い」に見えて気づけない | SEC-NEWS-020 取り出しの失敗を「0件」「無い」と区別する | SEC-NEWS-020-AC-02 管理の1件の取得は DB の失敗を 404 にしない | （なし） |
 | THR-NEWS-019 取り出しの失敗が「0件」「無い」に見えて気づけない | SEC-NEWS-020 取り出しの失敗を「0件」「無い」と区別する | SEC-NEWS-020-AC-03 公開の一覧の取り出しの失敗が記録に残る | （なし） |
 | THR-NEWS-020 管理の窓口を回数の制限なしで叩かれる | SEC-NEWS-021 管理の窓口に回数の制限を付ける | SEC-NEWS-021-AC-01 決めた回数を超えた作成を断る | （なし） |
-| THR-NEWS-021 anon・authenticated に要らない表の権限を付けている | SEC-NEWS-022 anon・authenticated には使う表の権限だけを付ける | SEC-NEWS-022-AC-01 anon は news_articles を空にも書き換えもできない | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:484` |
+| THR-NEWS-021 anon・authenticated に要らない表の権限を付けている | SEC-NEWS-022 anon・authenticated には使う表の権限だけを付ける | SEC-NEWS-022-AC-01 anon は news_articles を空にも書き換えもできない | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:470` |
 | THR-NEWS-022 画像の最適化の中継を、別の Supabase のプロジェクトに使われる | SEC-NEWS-023 画像の最適化の中継は自分のプロジェクトの画像だけを通す | SEC-NEWS-023-AC-01 別のプロジェクトの画像を最適化に通さない | `e2e/FR-NEWS-SEC-003-http-hardening-and-rate-limit.spec.ts:149` |
 | THR-NEWS-023 守りの見出しが無く、枠の中への埋め込み・種類の取り違え・平文の通信を許す | SEC-NEWS-024 全部の応答に守りの見出しを付ける | SEC-NEWS-024-AC-01 NEWS の頁と API に守りの見出しが付く | `e2e/FR-NEWS-SEC-003-http-hardening-and-rate-limit.spec.ts:157` |
 | THR-NEWS-024 編集のページの道筋を書き換えて、管理者の要求を別の窓口へ送らせる | SEC-NEWS-012 入口の値を許可の一覧と型で確かめる | SEC-NEWS-012-AC-01 /api/news は許可の一覧に無い分類を取り出しに渡さない | `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts:453` |
 | THR-NEWS-024 編集のページの道筋を書き換えて、管理者の要求を別の窓口へ送らせる | SEC-NEWS-012 入口の値を許可の一覧と型で確かめる | SEC-NEWS-012-AC-02 数でない記事の id は 404 になる | `e2e/FR-NEWS-DETAIL-009-detail-edge-cases-and-body-safety.spec.ts:169` |
 | THR-NEWS-024 編集のページの道筋を書き換えて、管理者の要求を別の窓口へ送らせる | SEC-NEWS-012 入口の値を許可の一覧と型で確かめる | SEC-NEWS-012-AC-03 編集のページは数でない id で窓口へ要求を送らない | `e2e/FR-NEWS-ADMIN-001-admin-news-screens.spec.ts:483` |
-| THR-NEWS-025 DB の段に入力の制約が無く、直接の書き込みが窓口の確かめを飛ばす | SEC-NEWS-025 表の段で記事の長さと画像の道の形を確かめる | SEC-NEWS-025-AC-01 長すぎる題と置き場の外の道を表が断る | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:450` |
+| THR-NEWS-025 DB の段に入力の制約が無く、直接の書き込みが窓口の確かめを飛ばす | SEC-NEWS-025 表の段で記事の長さと画像の道の形を確かめる | SEC-NEWS-025-AC-01 長すぎる題と置き場の外の道を表が断る | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:436` |
 | SR-HOME-001 訪問者がホームの最初の画面でブランドの世界観を感じ、ブランドの考えへ進める | FR-HOME-001 ヒーローにブランドの世界観を伝える大きな画像を全画面で出す | FR-HOME-001-AC-01 3つの幅で最初の画面いっぱいにヒーローの画像が出て、ブランド名の h1 が重なる | `e2e/FR-HOME-001-hero-banner.spec.ts:11` |
 | SR-HOME-001 訪問者がホームの最初の画面でブランドの世界観を感じ、ブランドの考えへ進める | FR-HOME-003 ABOUT の区画から /about へ進める | FR-HOME-003-AC-01 ABOUT の区画のリンクから /about が開く | `e2e/FR-HOME-021-home-grid-limits-and-links.spec.ts:128` |
 | SR-HOME-002 訪問者がホームから ITEM・LOOK・NEWS・取扱店の新しい物を見て、それぞれの一覧へ進める | FR-HOME-002 ITEM・LOOK・NEWS・ABOUT の4つの区画をスクロールで並べる | FR-HOME-002-AC-01 3つの幅で ITEMS・LOOK・NEWS・ABOUT の区画が出る | `e2e/FR-HOME-002-home-sections.spec.ts:16` |
@@ -340,14 +340,14 @@
 | FREQ-344 詳細で横のスクロールを起こさない | FREQ-344-REQ-01 カルーセルの負の margin を main の余白と同じ -mx-4 にし、頁の横幅を画面に収める | FREQ-344-AC-03 モバイルで固定のナビの下端が画面の下端と一致する | `e2e/FR-LOOK-DETAIL-018-no-horizontal-overflow.spec.ts:77` |
 | THR-LOOK-001 公開前の LOOK が公開の道から漏れる | SEC-LOOK-001 公開の道は公開済みの LOOK だけを返す | SEC-LOOK-001-AC-01 anon と一般会員の直接の読み出しに非公開の LOOK が出ない | `e2e/FR-LOOK-SEC-001-public-visibility.spec.ts:207` |
 | THR-LOOK-001 公開前の LOOK が公開の道から漏れる | SEC-LOOK-001 公開の道は公開済みの LOOK だけを返す | SEC-LOOK-001-AC-02 公開の画面に非公開の LOOK が出ない | `e2e/FR-LOOK-SEC-001-public-visibility.spec.ts:259` |
-| THR-LOOK-002 公開の LOOK に紐づく非公開の商品の ID が読める | SEC-LOOK-002 LOOK の関連の公開の読み出しは、公開の商品の紐づきだけを返す | SEC-LOOK-002-AC-01 anon の直接の読み出しに非公開の商品の紐づきが出ない | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:230` |
-| THR-LOOK-002 公開の LOOK に紐づく非公開の商品の ID が読める | SEC-LOOK-002 LOOK の関連の公開の読み出しは、公開の商品の紐づきだけを返す | SEC-LOOK-002-AC-02 一般会員の直接の読み出しに非公開の商品の紐づきが出ない | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:251` |
-| THR-LOOK-003 権限を持つ人が2要素認証を飛ばして DB を直接書き換える | SEC-LOOK-003 DB でも LOOK の管理の権限を使う操作に2要素認証の済みを求める | SEC-LOOK-003-AC-01 aal1 の session では非公開の LOOK を直接読めない | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:273` |
-| THR-LOOK-003 権限を持つ人が2要素認証を飛ばして DB を直接書き換える | SEC-LOOK-003 DB でも LOOK の管理の権限を使う操作に2要素認証の済みを求める | SEC-LOOK-003-AC-02 aal1 の session では LOOK と関連を直接書き換え・消去できない | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:298` |
-| THR-LOOK-004 anon・authenticated に要らない表の権限を付けている | SEC-LOOK-004 LOOK の表の権限を、使う操作だけに絞る | SEC-LOOK-004-AC-01 anon に LOOK の表の書き込みの権限が無い | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:371` |
-| THR-LOOK-004 anon・authenticated に要らない表の権限を付けている | SEC-LOOK-004 LOOK の表の権限を、使う操作だけに絞る | SEC-LOOK-004-AC-02 authenticated に LOOK の表の要らない権限が無い | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:397` |
-| THR-LOOK-005 画像の置き場が公開になり、非公開の LOOK の画像が見える | SEC-LOOK-005 LOOK の画像の置き場は非公開で、その設定を移行で持つ | SEC-LOOK-005-AC-01 移行だけを当てた DB で置き場が非公開になる | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:408` |
-| THR-LOOK-005 画像の置き場が公開になり、非公開の LOOK の画像が見える | SEC-LOOK-005 LOOK の画像の置き場は非公開で、その設定を移行で持つ | SEC-LOOK-005-AC-02 公開の URL では LOOK の画像を開けない | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:424` |
+| THR-LOOK-002 公開の LOOK に紐づく非公開の商品の ID が読める | SEC-LOOK-002 LOOK の関連の公開の読み出しは、公開の商品の紐づきだけを返す | SEC-LOOK-002-AC-01 anon の直接の読み出しに非公開の商品の紐づきが出ない | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:216` |
+| THR-LOOK-002 公開の LOOK に紐づく非公開の商品の ID が読める | SEC-LOOK-002 LOOK の関連の公開の読み出しは、公開の商品の紐づきだけを返す | SEC-LOOK-002-AC-02 一般会員の直接の読み出しに非公開の商品の紐づきが出ない | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:237` |
+| THR-LOOK-003 権限を持つ人が2要素認証を飛ばして DB を直接書き換える | SEC-LOOK-003 DB でも LOOK の管理の権限を使う操作に2要素認証の済みを求める | SEC-LOOK-003-AC-01 aal1 の session では非公開の LOOK を直接読めない | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:259` |
+| THR-LOOK-003 権限を持つ人が2要素認証を飛ばして DB を直接書き換える | SEC-LOOK-003 DB でも LOOK の管理の権限を使う操作に2要素認証の済みを求める | SEC-LOOK-003-AC-02 aal1 の session では LOOK と関連を直接書き換え・消去できない | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:284` |
+| THR-LOOK-004 anon・authenticated に要らない表の権限を付けている | SEC-LOOK-004 LOOK の表の権限を、使う操作だけに絞る | SEC-LOOK-004-AC-01 anon に LOOK の表の書き込みの権限が無い | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:357` |
+| THR-LOOK-004 anon・authenticated に要らない表の権限を付けている | SEC-LOOK-004 LOOK の表の権限を、使う操作だけに絞る | SEC-LOOK-004-AC-02 authenticated に LOOK の表の要らない権限が無い | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:383` |
+| THR-LOOK-005 画像の置き場が公開になり、非公開の LOOK の画像が見える | SEC-LOOK-005 LOOK の画像の置き場は非公開で、その設定を移行で持つ | SEC-LOOK-005-AC-01 移行だけを当てた DB で置き場が非公開になる | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:394` |
+| THR-LOOK-005 画像の置き場が公開になり、非公開の LOOK の画像が見える | SEC-LOOK-005 LOOK の画像の置き場は非公開で、その設定を移行で持つ | SEC-LOOK-005-AC-02 公開の URL では LOOK の画像を開けない | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:410` |
 | THR-LOOK-006 外へ出した署名つき URL で、非公開にした後も画像が見える | SEC-LOOK-006 非公開にした LOOK の画像の URL を、新しく出さず長く残さない | SEC-LOOK-006-AC-01 非公開にした後に開いた頁に、その LOOK の画像の URL が出ない | `e2e/FR-LOOK-SEC-001-public-visibility.spec.ts:294` |
 | THR-LOOK-006 外へ出した署名つき URL で、非公開にした後も画像が見える | SEC-LOOK-006 非公開にした LOOK の画像の URL を、新しく出さず長く残さない | SEC-LOOK-006-AC-02 詳細の頁の `og:image` が期限の切れる署名つき URL でない | `e2e/FR-LOOK-SEC-001-public-visibility.spec.ts:332` |
 | THR-LOOK-006 外へ出した署名つき URL で、非公開にした後も画像が見える | SEC-LOOK-006 非公開にした LOOK の画像の URL を、新しく出さず長く残さない | SEC-LOOK-006-AC-03 `og:image` の窓口が公開の LOOK の画像だけを短い共有キャッシュで返す | `e2e/FR-LOOK-SEC-001-public-visibility.spec.ts:356` |
@@ -356,7 +356,7 @@
 | THR-LOOK-009 公開の LOOK を毎回全件取り、全部の画像に署名して負荷をかける | SEC-LOOK-009 公開の取り出しに件数の上限をかけ、表示に要る項目だけを返す | SEC-LOOK-009-AC-01 一覧の頁に、一覧で表示しない項目が含まれない | `e2e/FR-LOOK-SEC-001-public-visibility.spec.ts:465` |
 | THR-LOOK-009 公開の LOOK を毎回全件取り、全部の画像に署名して負荷をかける | SEC-LOOK-009 公開の取り出しに件数の上限をかけ、表示に要る項目だけを返す | SEC-LOOK-009-AC-02 上限を超える公開の LOOK があっても、一覧の1回の表示は上限まで | `e2e/FR-LOOK-SEC-005-global-faults.spec.ts:129` |
 | THR-LOOK-010 LOOK の検索の関数を直接叩いて、件数と回数の制限を迂回する | SEC-LOOK-010 LOOK の検索の関数は件数を上限に丸め、使わない関数を閉じる | SEC-LOOK-010-AC-01 大きな件数を求めても上限までしか返らない | （なし） |
-| THR-LOOK-010 LOOK の検索の関数を直接叩いて、件数と回数の制限を迂回する | SEC-LOOK-010 LOOK の検索の関数は件数を上限に丸め、使わない関数を閉じる | SEC-LOOK-010-AC-02 使わない検索の関数を anon が呼べない | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:441` |
+| THR-LOOK-010 LOOK の検索の関数を直接叩いて、件数と回数の制限を迂回する | SEC-LOOK-010 LOOK の検索の関数は件数を上限に丸め、使わない関数を閉じる | SEC-LOOK-010-AC-02 使わない検索の関数を anon が呼べない | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:427` |
 | THR-LOOK-011 回数の制限の送り元を偽って制限を逃れる | SEC-LOOK-011 回数の制限の送り元は信頼できる値から取り、操作者の段を必ず持つ | SEC-LOOK-011-AC-01 送り元の見出しを変えても、同じ操作者の回数は止まる | `e2e/FR-LOOK-SEC-003-admin-api-authz.spec.ts:368` |
 | THR-LOOK-012 管理の窓口の乱用で、置き場と処理を使い切る | SEC-LOOK-012 管理の窓口に、大きさ・枚数・時間あたりの量の上限をかける | SEC-LOOK-012-AC-01 5MB を超える画像は断られ、置き場に残らない | `e2e/FR-LOOK-SEC-004-admin-write-integrity.spec.ts:278` |
 | THR-LOOK-012 管理の窓口の乱用で、置き場と処理を使い切る | SEC-LOOK-012 管理の窓口に、大きさ・枚数・時間あたりの量の上限をかける | SEC-LOOK-012-AC-02 7枚以上の画像は断られる | `e2e/FR-LOOK-SEC-004-admin-write-integrity.spec.ts:290` |
@@ -382,7 +382,7 @@
 | THR-LOOK-021 応答や記録から内部の情報が漏れる | SEC-LOOK-021 応答と記録に、置き場や DB の内部の誤りの文言を出さない | SEC-LOOK-021-AC-01 画像の書き込みの失敗は決まった文言で返る | `e2e/FR-LOOK-SEC-005-global-faults.spec.ts:51` |
 | THR-LOOK-022 取り出しの失敗が「0件」「見つからない」に見えて気づけない | SEC-LOOK-022 取り出しの失敗を「0件」「見つからない」と分けて扱う | SEC-LOOK-022-AC-01 DB の失敗の時、公開の一覧は「LOOK が無い」ではなく誤りの画面を出す | `e2e/FR-LOOK-SEC-005-global-faults.spec.ts:160` |
 | THR-LOOK-022 取り出しの失敗が「0件」「見つからない」に見えて気づけない | SEC-LOOK-022 取り出しの失敗を「0件」「見つからない」と分けて扱う | SEC-LOOK-022-AC-02 管理の1件の取得は、DB の失敗を 404 にしない | `e2e/FR-LOOK-SEC-005-global-faults.spec.ts:193` |
-| THR-LOOK-023 DB の段に入力の制約が無く、直接の書き込みが窓口の確かめを飛ばす | SEC-LOOK-023 表の段で LOOK の長さと画像の道筋の形を確かめる | SEC-LOOK-023-AC-01 長すぎるテーマと置き場の外の道筋を表が断る | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:458` |
+| THR-LOOK-023 DB の段に入力の制約が無く、直接の書き込みが窓口の確かめを飛ばす | SEC-LOOK-023 表の段で LOOK の長さと画像の道筋の形を確かめる | SEC-LOOK-023-AC-01 長すぎるテーマと置き場の外の道筋を表が断る | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:444` |
 | SR-ABOUT-001 訪問者がブランドの思想とものづくりを1つのページで読み、商品と LOOK へ進める | FR-ABOUT-001 ブランド哲学の節を表示する | FR-ABOUT-001-AC-01 ブランド哲学の見出しと文が見える | `e2e/FR-ABOUT-001-brand-philosophy-section.spec.ts:4` |
 | SR-ABOUT-001 訪問者がブランドの思想とものづくりを1つのページで読み、商品と LOOK へ進める | FR-ABOUT-002 服をつくる理由と Founder の言葉の節を表示する | FR-ABOUT-002-AC-01 服をつくる理由の見出しと Founder の名乗りが見える | `e2e/FR-ABOUT-002-quality-craftsmanship-section.spec.ts:4` |
 | SR-ABOUT-001 訪問者がブランドの思想とものづくりを1つのページで読み、商品と LOOK へ進める | FR-ABOUT-003 取り組みの節に3つの原則を番号・日本語見出し・説明付きで載せる | FR-ABOUT-003-AC-01 3つの原則が番号・英語のラベル・日本語の見出し付きで見える | `e2e/FR-ABOUT-003-our-values-icons.spec.ts:4` |
@@ -412,14 +412,14 @@
 | FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-002 各カードに店舗名・住所・電話・営業時間・定休日を載せる | FR-STOCKIST-002-AC-01 640px 以上のカードに5つの情報が出る | `e2e/FR-STOCKIST-002-card-fields.spec.ts:12` |
 | FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-002 各カードに店舗名・住所・電話・営業時間・定休日を載せる | FR-STOCKIST-002-AC-02 モバイルのカードに店舗名と住所が出る | `e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts:81` |
 | FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-002 各カードに店舗名・住所・電話・営業時間・定休日を載せる | FR-STOCKIST-002-AC-03 カードの見出し・区切り線・詳細の間の余白が黄金比で決まる | `e2e/FR-STOCKIST-009-divider-spacing.spec.ts:103` |
-| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-003 公開の店だけを取り、取れない時は空として出す | FR-STOCKIST-003-AC-01 非公開の店が一覧とホームに出ない | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:73` |
+| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-003 公開の店だけを取り、取れない時は空として出す | FR-STOCKIST-003-AC-01 非公開の店が一覧とホームに出ない | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:69` |
 | FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-003 公開の店だけを取り、取れない時は空として出す | FR-STOCKIST-003-AC-02 公開の店が無い時も頁が出て、空の文が出る | `e2e/FR-STOCKIST-017-global-state-windows.spec.ts:74` |
 | FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-004 ホームは最大6件、モバイルは上の3件、タブレット以上で全部を出す | FR-STOCKIST-004-AC-01 モバイルのホームの取扱店は3件まで | `e2e/FR-STOCKIST-004-home-limit-behavior.spec.ts:4` |
 | FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-004 ホームは最大6件、モバイルは上の3件、タブレット以上で全部を出す | FR-STOCKIST-004-AC-02 タブレット以上のホームの取扱店は最大6件を全部出す | `e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts:96` |
 | FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-005 取扱店の頁の title と description を決めて出す | FR-STOCKIST-005-AC-01 取扱店の頁の title と description が出る | `e2e/FR-STOCKIST-005-stockist-metadata.spec.ts:4` |
 | FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-006 言葉の検索・並び替え・ページ分けは今は作らない | FR-STOCKIST-006-AC-01 一覧に言葉の検索・並び替え・ページ分けが無い | `e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts:111` |
 | FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-007 地図のリンク・外のリンク・分類・画像は今は付けない | FR-STOCKIST-007-AC-01 カードに取扱の分類と店の画像・ロゴが無い | `e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts:135` |
-| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-008 カードの区別に id を使い、読み上げで扱いやすくする | FR-STOCKIST-008-AC-01 同じ名前の店が2つあっても両方のカードが出る | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:140` |
+| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-008 カードの区別に id を使い、読み上げで扱いやすくする | FR-STOCKIST-008-AC-01 同じ名前の店が2つあっても両方のカードが出る | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:136` |
 | FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-008 カードの区別に id を使い、読み上げで扱いやすくする | FR-STOCKIST-008-AC-02 各カードの店舗名が見出しとして読める | `e2e/FR-STOCKIST-008-unique-key-and-a11y.spec.ts:5` |
 | FREQ-18 管理画面で取扱店を登録・編集・削除する | FREQ-18-REQ-01 取扱店の管理の機能が動く | FREQ-18-AC-01 取扱店の管理でエラーが出ず登録・編集・削除が終わる | `e2e/FR-STOCKIST-013-admin-stockist-screens.spec.ts:238`<br>`e2e/FR-STOCKIST-013-admin-stockist-screens.spec.ts:261` |
 | FREQ-18 管理画面で取扱店を登録・編集・削除する | FR-ADMIN-006 STOCKIST タブで店の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-006-AC-01 STOCKIST タブに全部の店が公開の状態つきで出る | `e2e/FR-STOCKIST-013-admin-stockist-screens.spec.ts:87` |
@@ -431,22 +431,22 @@
 | FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FREQ-57-REQ-01 ALL・地方・都道府県の入れ子のチェックボックスで絞り込む | FREQ-57-AC-02 都道府県を選ぶとその県の店だけが出る | `e2e/FR-STOCKIST-010-region-prefecture-filter.spec.ts:44` |
 | FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FREQ-57-REQ-01 ALL・地方・都道府県の入れ子のチェックボックスで絞り込む | FREQ-57-AC-03 モバイル・タブレットでは FILTER の引き出しから絞れる | `e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts:198` |
 | FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FR-STOCKIST-010 地方→都道府県の入れ子の絞り込みを出す | FR-STOCKIST-010-AC-01 店の無い地方と県はフィルターに出ない | `e2e/FR-STOCKIST-010-region-prefecture-filter.spec.ts:64` |
-| FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FR-STOCKIST-010 地方→都道府県の入れ子の絞り込みを出す | FR-STOCKIST-010-AC-02 県が1つの地方は1つのチェックボックスで出る | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:158` |
+| FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FR-STOCKIST-010 地方→都道府県の入れ子の絞り込みを出す | FR-STOCKIST-010-AC-02 県が1つの地方は1つのチェックボックスで出る | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:154` |
 | FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FR-STOCKIST-010 地方→都道府県の入れ子の絞り込みを出す | FR-STOCKIST-010-AC-03 ALL を選ぶと絞り込みが解けて全部の店が出る | `e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts:149` |
 | FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FR-STOCKIST-010 地方→都道府県の入れ子の絞り込みを出す | FR-STOCKIST-010-AC-04 1024px 以上は左の列、未満は FILTER のボタンでフィルターを出す | `e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts:178` |
-| THR-STOCKIST-001 非公開の店舗が公開の道から漏れる | SEC-STOCKIST-001 公開の道は公開済みの店舗だけを返す | SEC-STOCKIST-001-AC-01 anon と一般会員の直接の読み出しに非公開の店舗が出ない | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:112` |
-| THR-STOCKIST-001 非公開の店舗が公開の道から漏れる | SEC-STOCKIST-001 公開の道は公開済みの店舗だけを返す | SEC-STOCKIST-001-AC-02 公開の画面に非公開の店舗が出ない | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:92` |
+| THR-STOCKIST-001 非公開の店舗が公開の道から漏れる | SEC-STOCKIST-001 公開の道は公開済みの店舗だけを返す | SEC-STOCKIST-001-AC-01 anon と一般会員の直接の読み出しに非公開の店舗が出ない | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:108` |
+| THR-STOCKIST-001 非公開の店舗が公開の道から漏れる | SEC-STOCKIST-001 公開の道は公開済みの店舗だけを返す | SEC-STOCKIST-001-AC-02 公開の画面に非公開の店舗が出ない | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:88` |
 | THR-STOCKIST-002 公開の取り出しが閲覧者の session の権限で動く | SEC-STOCKIST-002 公開の取り出しは閲覧者の session を引き継がない client で読む | SEC-STOCKIST-002-AC-01 管理の権限でログインしたまま公開の画面を開いても非公開の店舗が出ない | `e2e/FR-STOCKIST-016-direct-db-access-and-session.spec.ts:171` |
 | THR-STOCKIST-003 権限を持つ人の aal1・失効した session の token で DB を直接書き換える | SEC-STOCKIST-003 DB でも管理の権限を使う操作に2要素認証の済みと有効な session を求める | SEC-STOCKIST-003-AC-01 aal1 の session では非公開の店舗を直接読めない | `e2e/FR-STOCKIST-016-direct-db-access-and-session.spec.ts:205` |
 | THR-STOCKIST-003 権限を持つ人の aal1・失効した session の token で DB を直接書き換える | SEC-STOCKIST-003 DB でも管理の権限を使う操作に2要素認証の済みと有効な session を求める | SEC-STOCKIST-003-AC-02 aal1 の session では店舗を直接作る・書き換える・消すことができない | `e2e/FR-STOCKIST-016-direct-db-access-and-session.spec.ts:243` |
 | THR-STOCKIST-003 権限を持つ人の aal1・失効した session の token で DB を直接書き換える | SEC-STOCKIST-003 DB でも管理の権限を使う操作に2要素認証の済みと有効な session を求める | SEC-STOCKIST-003-AC-03 失効させた session の token では店舗を直接書き換えられない | `e2e/FR-STOCKIST-016-direct-db-access-and-session.spec.ts:299` |
-| THR-STOCKIST-004 なりすましの送信で管理の変更をさせる | SEC-STOCKIST-004 変更の窓口は Origin と CSRF の token を確かめ、判定できない時は拒む | SEC-STOCKIST-004-AC-01 別のオリジンからの変更の要求は拒まれる | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:433` |
-| THR-STOCKIST-004 なりすましの送信で管理の変更をさせる | SEC-STOCKIST-004 変更の窓口は Origin と CSRF の token を確かめ、判定できない時は拒む | SEC-STOCKIST-004-AC-02 CSRF の token が無い・違う変更の要求は拒まれる | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:456` |
-| THR-STOCKIST-005 別のサイトからの送信で管理者の回数の枠を使い切らせる | SEC-STOCKIST-005 別のオリジンからの変更の要求は回数の枠を使う前に拒む | SEC-STOCKIST-005-AC-01 別のオリジンからの要求を続けて送っても本人の変更が 429 にならない | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:486` |
-| THR-STOCKIST-006 権限の無い人が管理の窓口を使う | SEC-STOCKIST-006 管理の窓口は署名を確かめた token・有効な session・DB の ACL の権限・aal2 を全部求める | SEC-STOCKIST-006-AC-01 未ログインの要求は 401 になる | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:330` |
-| THR-STOCKIST-006 権限の無い人が管理の窓口を使う | SEC-STOCKIST-006 管理の窓口は署名を確かめた token・有効な session・DB の ACL の権限・aal2 を全部求める | SEC-STOCKIST-006-AC-02 取扱店の権限を持たない管理者は 403 になる | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:353` |
-| THR-STOCKIST-006 権限の無い人が管理の窓口を使う | SEC-STOCKIST-006 管理の窓口は署名を確かめた token・有効な session・DB の ACL の権限・aal2 を全部求める | SEC-STOCKIST-006-AC-03 aal1 の session の要求は 403 になる | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:376` |
-| THR-STOCKIST-006 権限の無い人が管理の窓口を使う | SEC-STOCKIST-006 管理の窓口は署名を確かめた token・有効な session・DB の ACL の権限・aal2 を全部求める | SEC-STOCKIST-006-AC-04 読みの権限だけでは変更できない | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:401` |
+| THR-STOCKIST-004 なりすましの送信で管理の変更をさせる | SEC-STOCKIST-004 変更の窓口は Origin と CSRF の token を確かめ、判定できない時は拒む | SEC-STOCKIST-004-AC-01 別のオリジンからの変更の要求は拒まれる | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:428` |
+| THR-STOCKIST-004 なりすましの送信で管理の変更をさせる | SEC-STOCKIST-004 変更の窓口は Origin と CSRF の token を確かめ、判定できない時は拒む | SEC-STOCKIST-004-AC-02 CSRF の token が無い・違う変更の要求は拒まれる | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:451` |
+| THR-STOCKIST-005 別のサイトからの送信で管理者の回数の枠を使い切らせる | SEC-STOCKIST-005 別のオリジンからの変更の要求は回数の枠を使う前に拒む | SEC-STOCKIST-005-AC-01 別のオリジンからの要求を続けて送っても本人の変更が 429 にならない | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:481` |
+| THR-STOCKIST-006 権限の無い人が管理の窓口を使う | SEC-STOCKIST-006 管理の窓口は署名を確かめた token・有効な session・DB の ACL の権限・aal2 を全部求める | SEC-STOCKIST-006-AC-01 未ログインの要求は 401 になる | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:325` |
+| THR-STOCKIST-006 権限の無い人が管理の窓口を使う | SEC-STOCKIST-006 管理の窓口は署名を確かめた token・有効な session・DB の ACL の権限・aal2 を全部求める | SEC-STOCKIST-006-AC-02 取扱店の権限を持たない管理者は 403 になる | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:348` |
+| THR-STOCKIST-006 権限の無い人が管理の窓口を使う | SEC-STOCKIST-006 管理の窓口は署名を確かめた token・有効な session・DB の ACL の権限・aal2 を全部求める | SEC-STOCKIST-006-AC-03 aal1 の session の要求は 403 になる | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:371` |
+| THR-STOCKIST-006 権限の無い人が管理の窓口を使う | SEC-STOCKIST-006 管理の窓口は署名を確かめた token・有効な session・DB の ACL の権限・aal2 を全部求める | SEC-STOCKIST-006-AC-04 読みの権限だけでは変更できない | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:396` |
 | THR-STOCKIST-007 漏れた session で大量に列挙・書き換える | SEC-STOCKIST-007 管理の窓口は送り元と操作者の2本で回数を制限し、送り元は信頼できる値から取る | SEC-STOCKIST-007-AC-01 変更の21回目は 429 になる | `e2e/FR-STOCKIST-015-admin-api-behaviour.spec.ts:194` |
 | THR-STOCKIST-007 漏れた session で大量に列挙・書き換える | SEC-STOCKIST-007 管理の窓口は送り元と操作者の2本で回数を制限し、送り元は信頼できる値から取る | SEC-STOCKIST-007-AC-02 送り元の見出しを変えても操作者の枠で止まる | `e2e/FR-STOCKIST-015-admin-api-behaviour.spec.ts:208` |
 | THR-STOCKIST-008 表・連番の権限が広く、RLS の外の操作が残る | SEC-STOCKIST-008 表・連番の権限は使う操作だけに絞る | SEC-STOCKIST-008-AC-01 anon・authenticated に表の余分な権限が無い | （なし） |
@@ -459,17 +459,17 @@
 | THR-STOCKIST-014 誤りの応答と記録から内部の様子が漏れる | SEC-STOCKIST-014 誤りの応答は決まった文だけを返し、記録には要る項目だけを書く | SEC-STOCKIST-014-AC-01 検証の誤りの応答に制約の中身が出ない | `e2e/FR-STOCKIST-015-admin-api-behaviour.spec.ts:323` |
 | THR-STOCKIST-014 誤りの応答と記録から内部の様子が漏れる | SEC-STOCKIST-014 誤りの応答は決まった文だけを返し、記録には要る項目だけを書く | SEC-STOCKIST-014-AC-02 JSON でない本文は 400 になる | `e2e/FR-STOCKIST-015-admin-api-behaviour.spec.ts:334` |
 | THR-STOCKIST-015 編集の頁の id で、ほかの管理 API を呼ばせる | SEC-STOCKIST-015 編集の頁は id を正の整数と確かめてから API の道を組む | SEC-STOCKIST-015-AC-01 数でない id の編集の頁は API を呼ばない | `e2e/FR-STOCKIST-013-admin-stockist-screens.spec.ts:294` |
-| THR-STOCKIST-016 店舗の値で公開の画面に台本や別の URL を差し込む | SEC-STOCKIST-016 店舗の値は文字として出し、外へのリンクは決まった形で作る | SEC-STOCKIST-016-AC-01 店名と住所に入れた台本が動かず文字として出る | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:197` |
-| THR-STOCKIST-016 店舗の値で公開の画面に台本や別の URL を差し込む | SEC-STOCKIST-016 店舗の値は文字として出し、外へのリンクは決まった形で作る | SEC-STOCKIST-016-AC-02 住所のリンクは決まった先にだけ向く | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:223` |
+| THR-STOCKIST-016 店舗の値で公開の画面に台本や別の URL を差し込む | SEC-STOCKIST-016 店舗の値は文字として出し、外へのリンクは決まった形で作る | SEC-STOCKIST-016-AC-01 店名と住所に入れた台本が動かず文字として出る | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:193` |
+| THR-STOCKIST-016 店舗の値で公開の画面に台本や別の URL を差し込む | SEC-STOCKIST-016 店舗の値は文字として出し、外へのリンクは決まった形で作る | SEC-STOCKIST-016-AC-02 住所のリンクは決まった先にだけ向く | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:219` |
 | THR-STOCKIST-017 URL の pref で絞り込みを壊す | SEC-STOCKIST-017 URL の pref は県名の許可の一覧で絞る | SEC-STOCKIST-017-AC-01 一覧に無い pref は無視され全件が出る | `e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts:222` |
 | THR-STOCKIST-018 公開の読み出しを大量に叩く | SEC-STOCKIST-018 公開の読み出しは件数と回数に上限を持つ | SEC-STOCKIST-018-AC-01 anon の直接の読み出しが行の上限を超えない | `e2e/FR-STOCKIST-017-global-state-windows.spec.ts:109`<br>`e2e/FR-STOCKIST-017-global-state-windows.spec.ts:126` |
 | THR-STOCKIST-019 権限の無い人が管理の作成・編集の頁を開く | SEC-STOCKIST-019 管理の作成・編集の頁は入口で権限を確かめる | SEC-STOCKIST-019-AC-01 未ログインで管理の作成の頁を開くとフォームが出ない | `e2e/FR-STOCKIST-013-admin-stockist-screens.spec.ts:320`<br>`e2e/FR-STOCKIST-013-admin-stockist-screens.spec.ts:330` |
 | THR-STOCKIST-019 権限の無い人が管理の作成・編集の頁を開く | SEC-STOCKIST-019 管理の作成・編集の頁は入口で権限を確かめる | SEC-STOCKIST-019-AC-02 取扱店の権限を持たない管理者には管理の作成の頁のフォームが出ない | `e2e/FR-STOCKIST-013-admin-stockist-screens.spec.ts:336` |
-| THR-STOCKIST-019 権限の無い人が管理の作成・編集の頁を開く | SEC-STOCKIST-019 管理の作成・編集の頁は入口で権限を確かめる | SEC-STOCKIST-019-AC-03 作成の頁の入口の窓口は店長に 204、サポーターに 403、未ログインに 401 を返す | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:655` |
-| THR-STOCKIST-020 認可で断られる要求を際限なく送り、DB に往復をさせる | SEC-STOCKIST-020 管理の窓口は認可の前に送り元の枠で回数を数える | SEC-STOCKIST-020-AC-01 権限の無い token の要求を続けて送ると 429 になる | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:519` |
-| THR-STOCKIST-021 認可で断られた要求の跡が残らない | SEC-STOCKIST-021 認可で断った管理の要求を監査に残す | SEC-STOCKIST-021-AC-01 権限の無い管理の要求の監査が残る | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:548` |
-| THR-STOCKIST-021 認可で断られた要求の跡が残らない | SEC-STOCKIST-021 認可で断った管理の要求を監査に残す | SEC-STOCKIST-021-AC-02 token の無い 401 は監査に行を増やさない | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:587` |
-| THR-STOCKIST-021 認可で断られた要求の跡が残らない | SEC-STOCKIST-021 認可で断った管理の要求を監査に残す | SEC-STOCKIST-021-AC-03 同じ操作者の拒否の監査は 10 分に 20 行まで、21 回目にまとめの 1 行 | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:627` |
+| THR-STOCKIST-019 権限の無い人が管理の作成・編集の頁を開く | SEC-STOCKIST-019 管理の作成・編集の頁は入口で権限を確かめる | SEC-STOCKIST-019-AC-03 作成の頁の入口の窓口は店長に 204、サポーターに 403、未ログインに 401 を返す | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:650` |
+| THR-STOCKIST-020 認可で断られる要求を際限なく送り、DB に往復をさせる | SEC-STOCKIST-020 管理の窓口は認可の前に送り元の枠で回数を数える | SEC-STOCKIST-020-AC-01 権限の無い token の要求を続けて送ると 429 になる | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:514` |
+| THR-STOCKIST-021 認可で断られた要求の跡が残らない | SEC-STOCKIST-021 認可で断った管理の要求を監査に残す | SEC-STOCKIST-021-AC-01 権限の無い管理の要求の監査が残る | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:543` |
+| THR-STOCKIST-021 認可で断られた要求の跡が残らない | SEC-STOCKIST-021 認可で断った管理の要求を監査に残す | SEC-STOCKIST-021-AC-02 token の無い 401 は監査に行を増やさない | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:582` |
+| THR-STOCKIST-021 認可で断られた要求の跡が残らない | SEC-STOCKIST-021 認可で断った管理の要求を監査に残す | SEC-STOCKIST-021-AC-03 同じ操作者の拒否の監査は 10 分に 20 行まで、21 回目にまとめの 1 行 | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:622` |
 | SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-001 /search?q= で語を URL から受け、3種を横断して探し、種別のタブで切り替える | FR-SEARCH-001-AC-01 /search?q=<語> を開くと入力欄に語が入り、4つのタブが出る | `e2e/FR-SEARCH-001-cross-content-search.spec.ts:5` |
 | SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-001 /search?q= で語を URL から受け、3種を横断して探し、種別のタブで切り替える | FR-SEARCH-001-AC-02 タブを押すと URL の tab が変わり、その種別の結果が出る | `e2e/FR-SEARCH-018-search-page-flows.spec.ts:84` |
 | SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-001 /search?q= で語を URL から受け、3種を横断して探し、種別のタブで切り替える | FR-SEARCH-001-AC-03 tab 付きの URL を開くとそのタブが選ばれている | `e2e/FR-SEARCH-018-search-page-flows.spec.ts:107` |
@@ -492,7 +492,7 @@
 | FREQ-184 検索のページを2カラムの構成にする | FREQ-184-REQ-02 結果の見出しの行と、結果の行の作り、ALL の混ぜ方 | FREQ-184-AC-02 「N RESULTS」「SORT BY」「RELEVANCE」と、行の種別・題・サムネイル・矢印が出る | （なし） |
 | FREQ-184 検索のページを2カラムの構成にする | FREQ-184-REQ-03 初めは8行、LOAD MORE で8行ずつ足し、条件を変えたら戻す | FREQ-184-AC-03 8件を超える時だけ LOAD MORE が出て、押すと行が増える | `e2e/FR-SEARCH-006-two-column-redesign.spec.ts:29`<br>`e2e/FR-SEARCH-006-two-column-redesign.spec.ts:105` |
 | FREQ-186 POPULAR ITEMS を購入数の多い順にし、語が無くても出す | FREQ-186-REQ-01 購入数を paid の注文の数量の合計とし、公開の ITEM を多い順に返す | FREQ-186-AC-01 RPC が paid の数量の合計の順に返し、popularItems は公開の ITEM だけ | `e2e/FR-SEARCH-008-popular-items-by-purchases.spec.ts:23` |
-| FREQ-186 POPULAR ITEMS を購入数の多い順にし、語が無くても出す | FREQ-186-REQ-02 RPC は service_role だけが呼び、購入数を応答に出さない | FREQ-186-AC-02 anon・authenticated に EXECUTE が無く、応答に purchase_count が無い | `e2e/FR-SEARCH-020-search-db-function-grants.spec.ts:225` |
+| FREQ-186 POPULAR ITEMS を購入数の多い順にし、語が無くても出す | FREQ-186-REQ-02 RPC は service_role だけが呼び、購入数を応答に出さない | FREQ-186-AC-02 anon・authenticated に EXECUTE が無く、応答に purchase_count が無い | `e2e/FR-SEARCH-020-search-db-function-grants.spec.ts:222` |
 | FREQ-186 POPULAR ITEMS を購入数の多い順にし、語が無くても出す | FREQ-186-REQ-03 語が無くても検索の窓口を呼び、POPULAR ITEMS を出す | FREQ-186-AC-03 3つの幅で語なしの /search に POPULAR ITEMS と ITEM の行が出る | `e2e/FR-SEARCH-008-popular-items-by-purchases.spec.ts:44` |
 | FREQ-187 preview を付けない検索がプレビュー扱いになる不具合を直す | FREQ-187-REQ-01 preview は文字が 'true' の時だけ真とし、件数と回数の制限を分ける | FREQ-187-AC-01 preview を付けない検索は1種別で3件を超えて返り得る | `e2e/FR-SEARCH-019-search-api-contract-and-headers.spec.ts:50` |
 | FREQ-187 preview を付けない検索がプレビュー扱いになる不具合を直す | FREQ-187-REQ-01 preview は文字が 'true' の時だけ真とし、件数と回数の制限を分ける | FREQ-187-AC-02 preview=true の検索は各種別3件以下 | `e2e/FR-SEARCH-009-preview-flag-parsing.spec.ts:16` |
@@ -535,15 +535,15 @@
 | FREQ-201 ITEM のメタの表示を価格にする | FREQ-201-REQ-02 検索の応答の ITEM の meta を価格の文字にし、購入数は出さない | FREQ-201-AC-03 応答の items の meta が価格の形で、purchase_count が無い | `e2e/FR-SEARCH-017-item-meta-price.spec.ts:59` |
 | THR-SEARCH-001 公開前の商品・ルック・ニュースが検索とサジェストから漏れる | SEC-SEARCH-001 検索とサジェストは公開済みの商品・ルック・ニュースだけを返す | SEC-SEARCH-001-AC-01 検索の結果とサジェストに非公開の物の題が出ない | `e2e/FR-SEARCH-021-search-injected-rows.spec.ts:320` |
 | THR-SEARCH-001 公開前の商品・ルック・ニュースが検索とサジェストから漏れる | SEC-SEARCH-001 検索とサジェストは公開済みの商品・ルック・ニュースだけを返す | SEC-SEARCH-001-AC-02 人気商品に非公開の商品が出ない | `e2e/FR-SEARCH-021-search-injected-rows.spec.ts:265` |
-| THR-SEARCH-002 管理の権限を持つ session では、RLS が下書きを検索の関数に通す | SEC-SEARCH-002 検索の関数は呼び手の権限に関わらず、関数の中で公開済みに絞る | SEC-SEARCH-002-AC-01 管理の読み取りの権限を持つ aal1 の session でも、検索の関数が下書きを返さない | `e2e/FR-SEARCH-020-search-db-function-grants.spec.ts:255` |
+| THR-SEARCH-002 管理の権限を持つ session では、RLS が下書きを検索の関数に通す | SEC-SEARCH-002 検索の関数は呼び手の権限に関わらず、関数の中で公開済みに絞る | SEC-SEARCH-002-AC-01 管理の読み取りの権限を持つ aal1 の session でも、検索の関数が下書きを返さない | `e2e/FR-SEARCH-020-search-db-function-grants.spec.ts:252` |
 | THR-SEARCH-003 検索の語で検索の条件を書き換える | SEC-SEARCH-003 検索の語は関数の引数で渡し、ILIKE の記号を字として扱う | SEC-SEARCH-003-AC-01 記号だけの語で全件が返らない | `e2e/FR-SEARCH-021-search-injected-rows.spec.ts:228`<br>`e2e/FR-SEARCH-021-search-injected-rows.spec.ts:248` |
 | THR-SEARCH-004 入口の確かめの決まりが検索とサジェストで違う | SEC-SEARCH-004 検索とサジェストの入口は同じ決まりで語を確かめる | SEC-SEARCH-004-AC-01 制御文字を含む語は検索でも 400 になる | `e2e/FR-SEARCH-019-search-api-contract-and-headers.spec.ts:61`<br>`e2e/FR-SEARCH-019-search-api-contract-and-headers.spec.ts:68`<br>`e2e/FR-SEARCH-019-search-api-contract-and-headers.spec.ts:73` |
 | THR-SEARCH-005 検索とサジェストを続けて叩き、DB と署名の処理を詰まらせる | SEC-SEARCH-005 公開の検索に回数の制限を掛け、画面は要らない呼び出しをしない | SEC-SEARCH-005-AC-01 上限を超えた検索とサジェストは 429 になる | `e2e/FR-SEARCH-022-search-rate-limit.spec.ts:188` |
 | THR-SEARCH-005 検索とサジェストを続けて叩き、DB と署名の処理を詰まらせる | SEC-SEARCH-005 公開の検索に回数の制限を掛け、画面は要らない呼び出しをしない | SEC-SEARCH-005-AC-02 速く打ってもサジェストは入力が止まってから呼ぶ | `e2e/FR-SEARCH-022-search-rate-limit.spec.ts:214` |
 | THR-SEARCH-006 回数の制限の送り元を偽って制限を逃れる | SEC-SEARCH-006 回数の制限の送り元は、利用者が偽れない値から取る | SEC-SEARCH-006-AC-01 送り元の見出しを変えても制限を逃れられない | `e2e/FR-SEARCH-022-search-rate-limit.spec.ts:279` |
-| THR-SEARCH-007 PostgREST から検索の関数を直接叩き、アプリの制限を迂回する | SEC-SEARCH-007 検索の関数は件数を上限に丸め、直接の呼び出しでも重くならない | SEC-SEARCH-007-AC-01 大きな件数で直接呼んでも上限を超えて返らない | `e2e/FR-SEARCH-020-search-db-function-grants.spec.ts:312` |
-| THR-SEARCH-008 使われていない検索の関数が誰にでも開いている | SEC-SEARCH-008 使わない検索の関数を外へ開かない | SEC-SEARCH-008-AC-01 anon は使わない検索の関数を呼べない | `e2e/FR-SEARCH-020-search-db-function-grants.spec.ts:334` |
-| THR-SEARCH-009 商品ごとの売れ行きが人気商品の道から漏れる | SEC-SEARCH-009 人気商品は購入数を外へ出さず、集める関数は service_role だけが呼べる | SEC-SEARCH-009-AC-01 anon と一般会員は人気商品の関数を呼べない | `e2e/FR-SEARCH-020-search-db-function-grants.spec.ts:344` |
+| THR-SEARCH-007 PostgREST から検索の関数を直接叩き、アプリの制限を迂回する | SEC-SEARCH-007 検索の関数は件数を上限に丸め、直接の呼び出しでも重くならない | SEC-SEARCH-007-AC-01 大きな件数で直接呼んでも上限を超えて返らない | `e2e/FR-SEARCH-020-search-db-function-grants.spec.ts:309` |
+| THR-SEARCH-008 使われていない検索の関数が誰にでも開いている | SEC-SEARCH-008 使わない検索の関数を外へ開かない | SEC-SEARCH-008-AC-01 anon は使わない検索の関数を呼べない | `e2e/FR-SEARCH-020-search-db-function-grants.spec.ts:331` |
+| THR-SEARCH-009 商品ごとの売れ行きが人気商品の道から漏れる | SEC-SEARCH-009 人気商品は購入数を外へ出さず、集める関数は service_role だけが呼べる | SEC-SEARCH-009-AC-01 anon と一般会員は人気商品の関数を呼べない | `e2e/FR-SEARCH-020-search-db-function-grants.spec.ts:341` |
 | THR-SEARCH-009 商品ごとの売れ行きが人気商品の道から漏れる | SEC-SEARCH-009 人気商品は購入数を外へ出さず、集める関数は service_role だけが呼べる | SEC-SEARCH-009-AC-02 検索の応答に購入数が含まれない | `e2e/FR-SEARCH-019-search-api-contract-and-headers.spec.ts:80` |
 | THR-SEARCH-010 検索語と署名つき URL を含む応答が共有のキャッシュに残る | SEC-SEARCH-010 検索とサジェストの応答を共有のキャッシュに残させない | SEC-SEARCH-010-AC-01 検索とサジェストの応答に no-store が付く | `e2e/FR-SEARCH-019-search-api-contract-and-headers.spec.ts:97` |
 | THR-SEARCH-011 検索語が URL と端末に残る | SEC-SEARCH-011 検索語を利用者の端末に保存しない | SEC-SEARCH-011-AC-01 検索の後に端末の保存の場所に検索語が残らない | `e2e/FR-SEARCH-018-search-page-flows.spec.ts:180` |
@@ -565,8 +565,8 @@
 | FREQ-100 プライバシーポリシーに不足していた法的な節を足す | FREQ-100-REQ-01 委託・保有期間・国外移転・開示などの請求・変更・窓口の節を足す | FREQ-100-AC-02 窓口のメールが出る | `e2e/FR-PRIVACY-005-policy-text-viewports.spec.ts:23` |
 | FREQ-101 プライバシーポリシー・利用規約の字の大きさと余白を読みやすくする | FREQ-101-REQ-01 本文の行間を広げ、見出しを大きくし、節の間を空ける | FREQ-101-AC-01 本文の行間が字の大きさの 1.5 倍より広い | `e2e/FR-PRIVACY-004-typography-spacing.spec.ts:15` |
 | FREQ-101 プライバシーポリシー・利用規約の字の大きさと余白を読みやすくする | FREQ-101-REQ-01 本文の行間を広げ、見出しを大きくし、節の間を空ける | FREQ-101-AC-02 節の見出しの字が本文より大きい | `e2e/FR-PRIVACY-005-policy-text-viewports.spec.ts:28` |
-| THR-PRIVACY-001 公開の頁の処理に、設定を変えた担当者のメールが渡る | SEC-PRIVACY-001 設定の関数と表は、anon・一般会員から直接読めない | SEC-PRIVACY-001-AC-01 anon と一般会員の鍵で設定の関数を呼べない | `e2e/FR-PRIVACY-007-settings-postgrest-access.spec.ts:178` |
-| THR-PRIVACY-001 公開の頁の処理に、設定を変えた担当者のメールが渡る | SEC-PRIVACY-001 設定の関数と表は、anon・一般会員から直接読めない | SEC-PRIVACY-001-AC-02 anon と一般会員の鍵で設定の表を読めない | `e2e/FR-PRIVACY-007-settings-postgrest-access.spec.ts:202` |
+| THR-PRIVACY-001 公開の頁の処理に、設定を変えた担当者のメールが渡る | SEC-PRIVACY-001 設定の関数と表は、anon・一般会員から直接読めない | SEC-PRIVACY-001-AC-01 anon と一般会員の鍵で設定の関数を呼べない | `e2e/FR-PRIVACY-007-settings-postgrest-access.spec.ts:173` |
+| THR-PRIVACY-001 公開の頁の処理に、設定を変えた担当者のメールが渡る | SEC-PRIVACY-001 設定の関数と表は、anon・一般会員から直接読めない | SEC-PRIVACY-001-AC-02 anon と一般会員の鍵で設定の表を読めない | `e2e/FR-PRIVACY-007-settings-postgrest-access.spec.ts:197` |
 | THR-PRIVACY-001 公開の頁の処理に、設定を変えた担当者のメールが渡る | SEC-PRIVACY-002 公開の頁は、表示に要る設定の値だけを受け取る | SEC-PRIVACY-002-AC-01 頁に担当者のメールが表示されない | `e2e/FR-PRIVACY-008-tracking-setting-and-read-failure.spec.ts:55` |
 | THR-PRIVACY-002 頁の連打で DB の重い数え上げを走らせる | SEC-PRIVACY-003 頁を開くたびに重い数え上げを走らせない | SEC-PRIVACY-003-AC-01 発送が多くても頁の表示が遅くならない | （なし） |
 | THR-PRIVACY-002 頁の連打で DB の重い数え上げを走らせる | SEC-PRIVACY-004 頁の連打を回数で止める | SEC-PRIVACY-004-AC-01 回数の上限を超えると DB を読まない | （なし） |
@@ -576,8 +576,8 @@
 | THR-PRIVACY-003 公表する委託の一覧が、実際の扱いと食い違う | SEC-PRIVACY-007 方針の応答を共有のキャッシュに残さない | SEC-PRIVACY-007-AC-01 応答の見出しが共有のキャッシュを止める | `e2e/FR-PRIVACY-006-response-headers-and-cookies.spec.ts:24` |
 | THR-PRIVACY-004 DB が使えない間、プライバシーポリシーそのものが読めない | SEC-PRIVACY-008 頁の失敗の時は、中の事情を出さない | SEC-PRIVACY-008-AC-01 失敗の画面に DB の誤りの文が表示されない | `e2e/FR-PRIVACY-009-tracking-setting-read-failure.spec.ts:69` |
 | THR-PRIVACY-004 DB が使えない間、プライバシーポリシーそのものが読めない | SEC-PRIVACY-009 DB が使えない間も、方針を知る道を残す | SEC-PRIVACY-009-AC-01 失敗の画面に窓口の案内が表示される | `e2e/FR-PRIVACY-009-tracking-setting-read-failure.spec.ts:86` |
-| THR-PRIVACY-005 権限の無い者が追跡を切り替え、公表の文を書き換える | SEC-PRIVACY-010 公表の文を変える追跡の切り替えは、aal2 の管理者だけができる | SEC-PRIVACY-010-AC-01 aal1 の管理者は直接も窓口からも切り替えられない | `e2e/FR-PRIVACY-007-settings-postgrest-access.spec.ts:217` |
-| THR-PRIVACY-005 権限の無い者が追跡を切り替え、公表の文を書き換える | SEC-PRIVACY-010 公表の文を変える追跡の切り替えは、aal2 の管理者だけができる | SEC-PRIVACY-010-AC-02 anon と一般会員は切り替えられない | `e2e/FR-PRIVACY-007-settings-postgrest-access.spec.ts:255` |
+| THR-PRIVACY-005 権限の無い者が追跡を切り替え、公表の文を書き換える | SEC-PRIVACY-010 公表の文を変える追跡の切り替えは、aal2 の管理者だけができる | SEC-PRIVACY-010-AC-01 aal1 の管理者は直接も窓口からも切り替えられない | `e2e/FR-PRIVACY-007-settings-postgrest-access.spec.ts:212` |
+| THR-PRIVACY-005 権限の無い者が追跡を切り替え、公表の文を書き換える | SEC-PRIVACY-010 公表の文を変える追跡の切り替えは、aal2 の管理者だけができる | SEC-PRIVACY-010-AC-02 anon と一般会員は切り替えられない | `e2e/FR-PRIVACY-007-settings-postgrest-access.spec.ts:250` |
 | THR-PRIVACY-006 公表の中身が、実際に個人情報を渡す先・使い道と合わない | SEC-PRIVACY-011 個人情報を渡す外部のサービスと使い道を、実際と合わせて公表する | SEC-PRIVACY-011-AC-01 外部サービスの名前が表示される | `e2e/FR-PRIVACY-005-policy-text-viewports.spec.ts:66`<br>`e2e/FR-PRIVACY-005-policy-text-viewports.spec.ts:70`<br>`e2e/FR-PRIVACY-008-tracking-setting-and-read-failure.spec.ts:43` |
 | THR-PRIVACY-006 公表の中身が、実際に個人情報を渡す先・使い道と合わない | SEC-PRIVACY-011 個人情報を渡す外部のサービスと使い道を、実際と合わせて公表する | SEC-PRIVACY-011-AC-02 無い機能の使い道が表示されない | `e2e/FR-PRIVACY-005-policy-text-viewports.spec.ts:77` |
 | THR-PRIVACY-006 公表の中身が、実際に個人情報を渡す先・使い道と合わない | SEC-PRIVACY-012 公表の中身が変わったら、改定日も変わる | SEC-PRIVACY-012-AC-01 追跡をオンにすると改定日がオンにした日になる | `e2e/FR-PRIVACY-008-tracking-setting-and-read-failure.spec.ts:78` |
@@ -710,7 +710,7 @@
 | SR-AUTH-025 パスキーの足し引きの知らせを、積んだ行から取り出して送り、結果を残せる | FR-AUTH-031 パスキーの足し・消し・差し替えの知らせのメールを、お客さん・店員・店長の文面で作って送る | FR-AUTH-031-AC-02 店員が鍵を足すと、本人に店員の文面、ほかの店長に本人のアドレス入りの店長の文面が届き、サポーターには届かない | `e2e/FR-LOGIN-062-passkey-notification-mail.spec.ts:184` |
 | SR-AUTH-025 パスキーの足し引きの知らせを、積んだ行から取り出して送り、結果を残せる | FR-AUTH-031 パスキーの足し・消し・差し替えの知らせのメールを、お客さん・店員・店長の文面で作って送る | FR-AUTH-031-AC-03 知らせのメールは手元の Mailpit だけへ送られる | `e2e/FR-LOGIN-062-passkey-notification-mail.spec.ts:274` |
 | SR-AUTH-026 店長が店員を招き、店員が招待の窓の中で2本の鍵を足してから、役割が有効になる | FR-AUTH-034 招待の表と、発行・消費・取り消し・開いているかの確かめの DB の関数（移行 H の前半） | FR-AUTH-034-AC-01 anon・authenticated は招待の6つの関数を呼べず、service_role でも最後の手段の発行は通らない | `e2e/FR-LOGIN-075-staff-invite-function-grants.spec.ts:52` |
-| SR-AUTH-026 店長が店員を招き、店員が招待の窓の中で2本の鍵を足してから、役割が有効になる | FR-AUTH-035 招待の窓への結びと、2本そろった時の役割の有効化（移行 H の前半） | FR-AUTH-035-AC-01 service_role の鍵では、知らない合言葉・招待・セッションは空・false・決まった文の例外になる | `e2e/FR-LOGIN-075-staff-invite-function-grants.spec.ts:87` |
+| SR-AUTH-026 店長が店員を招き、店員が招待の窓の中で2本の鍵を足してから、役割が有効になる | FR-AUTH-035 招待の窓への結びと、2本そろった時の役割の有効化（移行 H の前半） | FR-AUTH-035-AC-01 service_role の鍵では、知らない合言葉・招待・セッションは空・false・決まった文の例外になる | `e2e/FR-LOGIN-075-staff-invite-function-grants.spec.ts:84` |
 | SR-AUTH-026 店長が店員を招き、店員が招待の窓の中で2本の鍵を足してから、役割が有効になる | FR-AUTH-037 役割の変更を招待に寄せ、降格と店長の最後の手段と鍵の削除の下限を DB の関数にする（移行 H の後半） | FR-AUTH-037-AC-01 anon・authenticated は降格・鍵の削除・役割の変更の関数を呼べず、service_role では知らない操作者・鍵が決まった文になり、最後の手段は PostgREST に無い | `e2e/FR-LOGIN-076-staff-role-function-grants.spec.ts:46` |
 | SR-AUTH-026 店長が店員を招き、店員が招待の窓の中で2本の鍵を足してから、役割が有効になる | FR-AUTH-038 店長が店員を招待する窓口 `POST /api/admin/staff/invites` | FR-AUTH-038-AC-01 新しいアドレスの招待で、アカウントが作られ、メールが1通届き、リンクの合言葉の SHA-256 が表に入る | `e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts:79` |
 | SR-AUTH-026 店長が店員を招き、店員が招待の窓の中で2本の鍵を足してから、役割が有効になる | FR-AUTH-038 店長が店員を招待する窓口 `POST /api/admin/staff/invites` | FR-AUTH-038-AC-02 パスキーとログインを持つお客さんへの招待は鍵・ログインを消してメールの冒頭で知らせ、今の店員は 409 で何も消えず、店長でない人・Origin の無い要求は断られる | `e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts:109`<br>`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts:143` |
@@ -926,11 +926,11 @@
 | THR-AUTH-003 パスワードを通らずにメール OTP だけでログインする | SEC-AUTH-003 OTP の検証は、パスワード確認済みの署名した保留が無ければ断る | SEC-AUTH-003-AC-02 署名を書き換えた保留の Cookie は 401 | `e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts:533` |
 | THR-AUTH-004 保留の2段目の状態を延ばす・宛先を差し替える | SEC-AUTH-004 保留の2段目は 30 分の絶対上限を持ち、再送は保留の宛先にだけ送る | SEC-AUTH-004-AC-01 30 分を過ぎた保留での再送は 401 | `e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts:565` |
 | THR-AUTH-004 保留の2段目の状態を延ばす・宛先を差し替える | SEC-AUTH-004 保留の2段目は 30 分の絶対上限を持ち、再送は保留の宛先にだけ送る | SEC-AUTH-004-AC-02 本文に別の宛先を書いても、再送は保留の宛先にだけ届く | `e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts:584` |
-| THR-AUTH-005 アプリを通らず Supabase Auth を直接呼んでメール OTP の2段目を飛ばす | SEC-AUTH-005 2段階のログインを、Supabase Auth を直接呼ぶ道でも飛ばせないようにする | SEC-AUTH-005-AC-01 Supabase Auth の password grant で得た JWT ではアプリの会員の窓口が通らない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:320` |
-| THR-AUTH-005 アプリを通らず Supabase Auth を直接呼んでメール OTP の2段目を飛ばす | SEC-AUTH-005 2段階のログインを、Supabase Auth を直接呼ぶ道でも飛ばせないようにする | SEC-AUTH-005-AC-02 同じ JWT で PostgREST から `profiles` と注文が読めない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:343` |
-| THR-AUTH-005 アプリを通らず Supabase Auth を直接呼んでメール OTP の2段目を飛ばす | SEC-AUTH-005 2段階のログインを、Supabase Auth を直接呼ぶ道でも飛ばせないようにする | SEC-AUTH-005-AC-03 メール OTP だけ（アプリを通らない）で取った通行証でも、アプリの会員の窓口は通らない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:364`<br>`e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:395` |
+| THR-AUTH-005 アプリを通らず Supabase Auth を直接呼んでメール OTP の2段目を飛ばす | SEC-AUTH-005 2段階のログインを、Supabase Auth を直接呼ぶ道でも飛ばせないようにする | SEC-AUTH-005-AC-01 Supabase Auth の password grant で得た JWT ではアプリの会員の窓口が通らない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:304` |
+| THR-AUTH-005 アプリを通らず Supabase Auth を直接呼んでメール OTP の2段目を飛ばす | SEC-AUTH-005 2段階のログインを、Supabase Auth を直接呼ぶ道でも飛ばせないようにする | SEC-AUTH-005-AC-02 同じ JWT で PostgREST から `profiles` と注文が読めない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:327` |
+| THR-AUTH-005 アプリを通らず Supabase Auth を直接呼んでメール OTP の2段目を飛ばす | SEC-AUTH-005 2段階のログインを、Supabase Auth を直接呼ぶ道でも飛ばせないようにする | SEC-AUTH-005-AC-03 メール OTP だけ（アプリを通らない）で取った通行証でも、アプリの会員の窓口は通らない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:348`<br>`e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:379` |
 | THR-AUTH-005 アプリを通らず Supabase Auth を直接呼んでメール OTP の2段目を飛ばす | SEC-AUTH-005 2段階のログインを、Supabase Auth を直接呼ぶ道でも飛ばせないようにする | SEC-AUTH-005-AC-04 アプリのログインで得た session は、会員の窓口・更新・ログアウトの前後で期待どおりに通り、断られる | `e2e/FR-LOGIN-030-session-cookies-and-responses.spec.ts:208` |
-| THR-AUTH-005 アプリを通らず Supabase Auth を直接呼んでメール OTP の2段目を飛ばす | SEC-AUTH-005 2段階のログインを、Supabase Auth を直接呼ぶ道でも飛ばせないようにする | SEC-AUTH-005-AC-05 結び付いていない session の refresh token では更新が通らず、更新で結び付いた session に洗えない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:436` |
+| THR-AUTH-005 アプリを通らず Supabase Auth を直接呼んでメール OTP の2段目を飛ばす | SEC-AUTH-005 2段階のログインを、Supabase Auth を直接呼ぶ道でも飛ばせないようにする | SEC-AUTH-005-AC-05 結び付いていない session の refresh token では更新が通らず、更新で結び付いた session に洗えない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:420` |
 | THR-AUTH-006 メールの確認のリンクの入口で、パスワードとメール OTP を飛ばす | SEC-AUTH-006 メールの確認のリンクの入口は、会員登録の確認だけを受ける | SEC-AUTH-006-AC-01 マジックリンクの印で確認のリンクを開いても session ができない | `e2e/FR-SIGNUP-003-signup-confirm-link.spec.ts:339` |
 | THR-AUTH-006 メールの確認のリンクの入口で、パスワードとメール OTP を飛ばす | SEC-AUTH-006 メールの確認のリンクの入口は、会員登録の確認だけを受ける | SEC-AUTH-006-AC-02 会員登録の確認の印は、登録を始めたブラウザで開くと今どおり session ができる | `e2e/FR-SIGNUP-003-signup-confirm-link.spec.ts:365` |
 | THR-AUTH-007 他人の端末を攻撃者のアカウントでログインさせる（ログインの CSRF） | SEC-AUTH-007 確認のリンクで、開いた端末を印を作った人以外のアカウントでログインさせない | SEC-AUTH-007-AC-01 登録を始めていないブラウザで確認のリンクを開くと、メールは確認されるがログインしない | `e2e/FR-SIGNUP-003-signup-confirm-link.spec.ts:392` |
@@ -939,20 +939,20 @@
 | THR-AUTH-008 Google でのログインがメール OTP を通らない | SEC-AUTH-008 Google でのログインは、管理者・サポーターに店員の入口の条件（以前は TOTP）を求め、会員の2段目の扱いを明示する | SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | （なし） |
 | THR-AUTH-009 TOTP の総当たり | SEC-AUTH-009 TOTP の確認はアカウント単位でも回数を制限し、成否を監査に残す | SEC-AUTH-009-AC-01 同じ利用者の6回目の TOTP の確認が 429 | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts:299` |
 | THR-AUTH-009 TOTP の総当たり | SEC-AUTH-009 TOTP の確認はアカウント単位でも回数を制限し、成否を監査に残す | SEC-AUTH-009-AC-02 TOTP の失敗が監査に残る | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts:316` |
-| THR-AUTH-010 TOTP を済ませていない管理者の JWT で DB を直接触る | SEC-AUTH-010 管理の権限で触る表は、DB の側でも店員の入口の条件を満たす JWT だけを受ける（段1a の移行 E より前は aal2 の JWT） | SEC-AUTH-010-AC-01 aal1 の管理者の JWT で、他人の注文が読めない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:482` |
+| THR-AUTH-010 TOTP を済ませていない管理者の JWT で DB を直接触る | SEC-AUTH-010 管理の権限で触る表は、DB の側でも店員の入口の条件を満たす JWT だけを受ける（段1a の移行 E より前は aal2 の JWT） | SEC-AUTH-010-AC-01 aal1 の管理者の JWT で、他人の注文が読めない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:466` |
 | THR-AUTH-010 TOTP を済ませていない管理者の JWT で DB を直接触る | SEC-AUTH-010 管理の権限で触る表は、DB の側でも店員の入口の条件を満たす JWT だけを受ける（段1a の移行 E より前は aal2 の JWT） | SEC-AUTH-010-AC-02 入口の条件を満たす管理者の JWT では今どおり読める（段1a の移行 E より前は aal2 の JWT） | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts:331` |
-| THR-AUTH-010 TOTP を済ませていない管理者の JWT で DB を直接触る | SEC-AUTH-010 管理の権限で触る表は、DB の側でも店員の入口の条件を満たす JWT だけを受ける（段1a の移行 E より前は aal2 の JWT） | SEC-AUTH-010-AC-03 has_permission は店員の入口の条件（認めた鍵2本）を満たし、結び付いた生きた session の時だけ真になる | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:509` |
-| THR-AUTH-011 認証の表の権限が広く、RLS の拒否だけで守っている | SEC-AUTH-011 認証の表は anon・authenticated に表の権限を付けない | SEC-AUTH-011-AC-01 anon・会員の JWT で認証の表を読むと権限の誤りになる | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:551` |
-| THR-AUTH-012 直接の RPC で会員の有無を調べる・他人のセッションを切る | SEC-AUTH-012 認証の関数は service role だけが呼べる | SEC-AUTH-012-AC-01 anon・会員の JWT で認証の関数を呼ぶと権限の誤りになる | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:590` |
+| THR-AUTH-010 TOTP を済ませていない管理者の JWT で DB を直接触る | SEC-AUTH-010 管理の権限で触る表は、DB の側でも店員の入口の条件を満たす JWT だけを受ける（段1a の移行 E より前は aal2 の JWT） | SEC-AUTH-010-AC-03 has_permission は店員の入口の条件（認めた鍵2本）を満たし、結び付いた生きた session の時だけ真になる | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:493` |
+| THR-AUTH-011 認証の表の権限が広く、RLS の拒否だけで守っている | SEC-AUTH-011 認証の表は anon・authenticated に表の権限を付けない | SEC-AUTH-011-AC-01 anon・会員の JWT で認証の表を読むと権限の誤りになる | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:535` |
+| THR-AUTH-012 直接の RPC で会員の有無を調べる・他人のセッションを切る | SEC-AUTH-012 認証の関数は service role だけが呼べる | SEC-AUTH-012-AC-01 anon・会員の JWT で認証の関数を呼ぶと権限の誤りになる | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:574` |
 | THR-AUTH-013 回数の制限を IP の偽り・窓の境目で越える、全員を止める | SEC-AUTH-013 回数の制限は偽れない送り元で数え、Supabase 側の枠を全員で潰されないようにする | SEC-AUTH-013-AC-01 `x-forwarded-for` を毎回変えても IP 単位の制限が効く | `e2e/FR-LOGIN-035-login-throttling-and-turnstile.spec.ts:227` |
 | THR-AUTH-013 回数の制限を IP の偽り・窓の境目で越える、全員を止める | SEC-AUTH-013 回数の制限は偽れない送り元で数え、Supabase 側の枠を全員で潰されないようにする | SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | （なし） |
 | THR-AUTH-014 漏洩済み・短いパスワードを使わせる | SEC-AUTH-014 会員登録と再設定は 16 文字以上・72 バイト以内で、漏洩していないパスワードだけを受ける | SEC-AUTH-014-AC-01 漏洩済みのパスワードでの会員登録が 400 | `e2e/FR-SIGNUP-002-register-api-and-password-policy.spec.ts:171` |
 | THR-AUTH-014 漏洩済み・短いパスワードを使わせる | SEC-AUTH-014 会員登録と再設定は 16 文字以上・72 バイト以内で、漏洩していないパスワードだけを受ける | SEC-AUTH-014-AC-02 15 文字のパスワードでの再設定が 400 | `e2e/FR-PWRESET-010-reset-completion-security.spec.ts:157` |
-| THR-AUTH-015 アプリを通らない会員登録・パスワード変更で、パスワードの決まりと Turnstile を飛ばす | SEC-AUTH-015 Supabase Auth を直接呼ぶ会員登録・パスワード変更にも、アプリと同じ決まりを課す | SEC-AUTH-015-AC-01 直接の `/auth/v1/signup` で 15 文字のパスワードの登録ができない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:618` |
-| THR-AUTH-015 アプリを通らない会員登録・パスワード変更で、パスワードの決まりと Turnstile を飛ばす | SEC-AUTH-015 Supabase Auth を直接呼ぶ会員登録・パスワード変更にも、アプリと同じ決まりを課す | SEC-AUTH-015-AC-02 直接の `/auth/v1/user` で再認証なしにパスワードを変えられない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:670` |
+| THR-AUTH-015 アプリを通らない会員登録・パスワード変更で、パスワードの決まりと Turnstile を飛ばす | SEC-AUTH-015 Supabase Auth を直接呼ぶ会員登録・パスワード変更にも、アプリと同じ決まりを課す | SEC-AUTH-015-AC-01 直接の `/auth/v1/signup` で 15 文字のパスワードの登録ができない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:602` |
+| THR-AUTH-015 アプリを通らない会員登録・パスワード変更で、パスワードの決まりと Turnstile を飛ばす | SEC-AUTH-015 Supabase Auth を直接呼ぶ会員登録・パスワード変更にも、アプリと同じ決まりを課す | SEC-AUTH-015-AC-02 直接の `/auth/v1/user` で再認証なしにパスワードを変えられない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:654` |
 | THR-AUTH-015 アプリを通らない会員登録・パスワード変更で、パスワードの決まりと Turnstile を飛ばす | SEC-AUTH-015 Supabase Auth を直接呼ぶ会員登録・パスワード変更にも、アプリと同じ決まりを課す | SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | （なし） |
-| THR-AUTH-015 アプリを通らない会員登録・パスワード変更で、パスワードの決まりと Turnstile を飛ばす | SEC-AUTH-015 Supabase Auth を直接呼ぶ会員登録・パスワード変更にも、アプリと同じ決まりを課す | SEC-AUTH-015-AC-04 トークン無しの直接の `/signup`・`/token`・`/otp` が captcha で断られる | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:708` |
-| THR-AUTH-015 アプリを通らない会員登録・パスワード変更で、パスワードの決まりと Turnstile を飛ばす | SEC-AUTH-015 Supabase Auth を直接呼ぶ会員登録・パスワード変更にも、アプリと同じ決まりを課す | SEC-AUTH-015-AC-05 現行パスワード無しの直接のパスワード変更が断られる | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:650` |
+| THR-AUTH-015 アプリを通らない会員登録・パスワード変更で、パスワードの決まりと Turnstile を飛ばす | SEC-AUTH-015 Supabase Auth を直接呼ぶ会員登録・パスワード変更にも、アプリと同じ決まりを課す | SEC-AUTH-015-AC-04 トークン無しの直接の `/signup`・`/token`・`/otp` が captcha で断られる | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:692` |
+| THR-AUTH-015 アプリを通らない会員登録・パスワード変更で、パスワードの決まりと Turnstile を飛ばす | SEC-AUTH-015 Supabase Auth を直接呼ぶ会員登録・パスワード変更にも、アプリと同じ決まりを課す | SEC-AUTH-015-AC-05 現行パスワード無しの直接のパスワード変更が断られる | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:634` |
 | THR-AUTH-016 会員登録・再設定でアカウントの有無を知られる、メールの踏み台にされる | SEC-AUTH-016 会員登録と再設定は、アカウントの有無で応答の中身と時間を変えない | SEC-AUTH-016-AC-01 登録済みと未登録のメールで会員登録の応答が同じ | `e2e/FR-SIGNUP-002-register-api-and-password-policy.spec.ts:183` |
 | THR-AUTH-016 会員登録・再設定でアカウントの有無を知られる、メールの踏み台にされる | SEC-AUTH-016 会員登録と再設定は、アカウントの有無で応答の中身と時間を変えない | SEC-AUTH-016-AC-02 未登録のメールで再設定を申請してもメールが届かない | `e2e/FR-PWRESET-009-reset-link-lifecycle-real-mail.spec.ts:276` |
 | THR-AUTH-016 会員登録・再設定でアカウントの有無を知られる、メールの踏み台にされる | SEC-AUTH-016 会員登録と再設定は、アカウントの有無で応答の中身と時間を変えない | SEC-AUTH-016-AC-03 同じ宛先への会員登録を続けると、宛先単位の上限で断られる | `e2e/FR-SIGNUP-002-register-api-and-password-policy.spec.ts:202` |
@@ -973,14 +973,14 @@
 | THR-AUTH-026 ログインの後の送り先を使った open redirect | SEC-AUTH-026 ログインの後の送り先は、内部の道だけにする | SEC-AUTH-026-AC-03 ログインの窓口へ外の `next` を送っても `/` に着く | `e2e/FR-LOGIN-038-login-return-to.spec.ts:393` |
 | THR-AUTH-027 1つの鍵で複数の署名を兼ねる | SEC-AUTH-027 署名した Cookie は用途ごとに別の鍵で署名する | SEC-AUTH-027-AC-01 再設定の Cookie を保留の2段目の Cookie に入れても通らない | `e2e/FR-PWRESET-010-reset-completion-security.spec.ts:221` |
 | THR-AUTH-028 画面の表示だけで管理の入口を出し分ける | SEC-AUTH-028 管理の入口の出し分けは表示だけとし、役割は利用者が書き換えられない所から読む | SEC-AUTH-028-AC-01 一般の会員のヘッダーに MANAGE・LOADING が出ない | `e2e/FR-LOGIN-033-verify-screen-and-admin-refresh-mocks.spec.ts:173` |
-| THR-AUTH-028 画面の表示だけで管理の入口を出し分ける | SEC-AUTH-028 管理の入口の出し分けは表示だけとし、役割は利用者が書き換えられない所から読む | SEC-AUTH-028-AC-02 `user_metadata` に admin を書いた会員は管理の窓口が 403 | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:916` |
+| THR-AUTH-028 画面の表示だけで管理の入口を出し分ける | SEC-AUTH-028 管理の入口の出し分けは表示だけとし、役割は利用者が書き換えられない所から読む | SEC-AUTH-028-AC-02 `user_metadata` に admin を書いた会員は管理の窓口が 403 | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:900` |
 | THR-AUTH-029 本番の Supabase Auth の設定が守りの前提と違う | SEC-AUTH-029 本番の Supabase Auth の設定を、コードの守りの前提に合わせて確かめる | SEC-AUTH-029-AC-01 会員登録の応答が 201 にならない | `e2e/FR-SIGNUP-002-register-api-and-password-policy.spec.ts:244` |
 | THR-AUTH-029 本番の Supabase Auth の設定が守りの前提と違う | SEC-AUTH-029 本番の Supabase Auth の設定を、コードの守りの前提に合わせて確かめる | SEC-AUTH-029-AC-02 5 分を過ぎたメール OTP が通らない | `e2e/FR-LOGIN-034-otp-verify-screen-entry-and-expiry.spec.ts:280` |
 | THR-AUTH-030 認証の出来事が監査に残らない | SEC-AUTH-030 認証の出来事は成功も失敗も監査に残す | SEC-AUTH-030-AC-01 TOTP の登録と確認の成功が監査に残る | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts:352` |
 | THR-AUTH-030 認証の出来事が監査に残らない | SEC-AUTH-030 認証の出来事は成功も失敗も監査に残す | SEC-AUTH-030-AC-02 ログインの失敗が伏せた形で監査に残る | `e2e/FR-LOGIN-035-login-throttling-and-turnstile.spec.ts:200` |
-| THR-AUTH-030 認証の出来事が監査に残らない | SEC-AUTH-030 認証の出来事は成功も失敗も監査に残す | SEC-AUTH-030-AC-03 結び付けの拒否が固定の符号だけで監査に残る | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:837` |
+| THR-AUTH-030 認証の出来事が監査に残らない | SEC-AUTH-030 認証の出来事は成功も失敗も監査に残す | SEC-AUTH-030-AC-03 結び付けの拒否が固定の符号だけで監査に残る | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:821` |
 | THR-AUTH-031 管理者・サポーターの初めての TOTP の登録を先に取られる | SEC-AUTH-031 管理者・サポーターの初めての TOTP の登録は、本人の確かめを済ませた経路に限る | SEC-AUTH-031-AC-01 メール OTP を通っていない aal1 の session では初めての TOTP を登録できない | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts:369` |
-| THR-AUTH-031 管理者・サポーターの初めての TOTP の登録を先に取られる | SEC-AUTH-031 管理者・サポーターの初めての TOTP の登録は、本人の確かめを済ませた経路に限る | SEC-AUTH-031-AC-02 メール OTP だけ（アプリを通らない）で取った通行証では、初めての TOTP の登録が 401 で断られ、断りが監査に残る | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:870` |
+| THR-AUTH-031 管理者・サポーターの初めての TOTP の登録を先に取られる | SEC-AUTH-031 管理者・サポーターの初めての TOTP の登録は、本人の確かめを済ませた経路に限る | SEC-AUTH-031-AC-02 メール OTP だけ（アプリを通らない）で取った通行証では、初めての TOTP の登録が 401 で断られ、断りが監査に残る | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:854` |
 | THR-AUTH-032 戻り先の控えの番号の盗み・使い回し・総当たり | SEC-AUTH-032 戻り先の控えは、番号だけを HttpOnly の Cookie に持ち、表には番号のハッシュだけを持つ | SEC-AUTH-032-AC-01 Cookie の属性が決まりどおりで、番号が URL・本文・Location に出ない | `e2e/FR-LOGIN-038-login-return-to.spec.ts:412`<br>`e2e/FR-LOGIN-038-login-return-to.spec.ts:465` |
 | THR-AUTH-032 戻り先の控えの番号の盗み・使い回し・総当たり | SEC-AUTH-032 戻り先の控えは、番号だけを HttpOnly の Cookie に持ち、表には番号のハッシュだけを持つ | SEC-AUTH-032-AC-02 ログアウトで Cookie が消える | `e2e/FR-LOGIN-038-login-return-to.spec.ts:488` |
 | THR-AUTH-033 新しい表・関数に広い権限が自動で付き、権限の一覧が見張られていない | SEC-AUTH-033 公開スキーマの表・列・関数・連番の権限は移行が明示し、一覧を DB 試験で守る | （なし） | （なし） |
@@ -988,8 +988,8 @@
 | THR-AUTH-034 乗っ取った session でパスワードを変えられ、本人が締め出される | SEC-AUTH-034 パスワード変更は現行パスワードとメールのコードを求め、全 session を失効し、通知し、回数を制限し、監査する | SEC-AUTH-034-AC-02 変更の通知のメールがちょうど 1 通届き、パスワードもコードも含まない | `e2e/FR-ACCOUNT-046-password-change.spec.ts:677` |
 | THR-AUTH-034 乗っ取った session でパスワードを変えられ、本人が締め出される | SEC-AUTH-034 パスワード変更は現行パスワードとメールのコードを求め、全 session を失効し、通知し、回数を制限し、監査する | SEC-AUTH-034-AC-03 回数は本人ごと 10 分 5 回で、送り元を変えても数えられる | `e2e/FR-ACCOUNT-046-password-change.spec.ts:702` |
 | THR-AUTH-034 乗っ取った session でパスワードを変えられ、本人が締め出される | SEC-AUTH-034 パスワード変更は現行パスワードとメールのコードを求め、全 session を失効し、通知し、回数を制限し、監査する | SEC-AUTH-034-AC-04 監査に固定の符号だけが残る | `e2e/FR-ACCOUNT-046-password-change.spec.ts:724` |
-| THR-AUTH-035 Supabase の captcha の拒否が利用者の誤りに紛れ、全員が入れない・登録できない故障が見えない | SEC-AUTH-035 アプリのサーバーの認証の呼び出しは captcha を免除される管理者資格で行い、Supabase の captcha の拒否を利用者の誤りに丸めない | SEC-AUTH-035-AC-01 Supabase の captcha が有効でも、アプリのログインと会員登録が通る | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:749` |
-| THR-AUTH-035 Supabase の captcha の拒否が利用者の誤りに紛れ、全員が入れない・登録できない故障が見えない | SEC-AUTH-035 アプリのサーバーの認証の呼び出しは captcha を免除される管理者資格で行い、Supabase の captcha の拒否を利用者の誤りに丸めない | SEC-AUTH-035-AC-02 Supabase の captcha の拒否は、ログイン・再送・登録で 5xx と監査 `supabase_captcha_rejected` になる | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:796` |
+| THR-AUTH-035 Supabase の captcha の拒否が利用者の誤りに紛れ、全員が入れない・登録できない故障が見えない | SEC-AUTH-035 アプリのサーバーの認証の呼び出しは captcha を免除される管理者資格で行い、Supabase の captcha の拒否を利用者の誤りに丸めない | SEC-AUTH-035-AC-01 Supabase の captcha が有効でも、アプリのログインと会員登録が通る | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:733` |
+| THR-AUTH-035 Supabase の captcha の拒否が利用者の誤りに紛れ、全員が入れない・登録できない故障が見えない | SEC-AUTH-035 アプリのサーバーの認証の呼び出しは captcha を免除される管理者資格で行い、Supabase の captcha の拒否を利用者の誤りに丸めない | SEC-AUTH-035-AC-02 Supabase の captcha の拒否は、ログイン・再送・登録で 5xx と監査 `supabase_captcha_rejected` になる | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:780` |
 | THR-AUTH-036 店員のパスキーの表や窓が書き換えられ、店員でない人が管理の入口の条件を満たす | SEC-AUTH-036 店員のパスキーの表は private に置いて権限を渡さず、窓は持ち主とセッションの両方で合わせ、認めたパスキーは鍵が実在する分だけ数える | （なし） | （なし） |
 | THR-AUTH-037 フックが壊れて全員のログインが止まる、または壊れた入力を店員がすり抜ける | SEC-AUTH-037 フックが壊れると全員のログインが止まるので、フックは例外を投げず、店員は判定できなければ拒否し、権限は supabase_auth_admin だけにする | FR-AUTH-013-AC-02 店員がメールのコードで入ろうとすると 403 で message が印で始まり、パスワードでも 403 | `e2e/FR-LOGIN-040-staff-hook-gotrue-rejections.spec.ts:66` |
 | THR-AUTH-037 フックが壊れて全員のログインが止まる、または壊れた入力を店員がすり抜ける | SEC-AUTH-037 フックが壊れると全員のログインが止まるので、フックは例外を投げず、店員は判定できなければ拒否し、権限は supabase_auth_admin だけにする | FR-AUTH-013-AC-04 窓を閉じた後の店員の更新は拒否され、前のアクセストークンは管理の表を読めない | `e2e/FR-LOGIN-040-staff-hook-gotrue-rejections.spec.ts:99` |

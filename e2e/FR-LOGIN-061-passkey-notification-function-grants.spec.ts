@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { expect, test } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
-import { DUMMY_CAPTCHA_TOKEN } from './captcha-test-utils';
+import { signInCustomerWithoutPassword } from './customer-session-test-utils';
 
 test.use({ trace: 'off' });
 
@@ -50,15 +50,12 @@ for (const viewport of viewports) {
       requireLocalEnv();
       const service = createClient(SUPABASE_URL, SERVICE_KEY, clientOptions);
       const email = `fr-login-061-${randomUUID()}@example.com`;
-      const password = `Pw-${randomUUID()}-aA1!`;
-      const created = await service.auth.admin.createUser({ email, password, email_confirm: true });
+      const created = await service.auth.admin.createUser({ email, email_confirm: true });
       expect(created.error).toBeNull();
       const userId = created.data.user?.id as string;
       try {
         const anon = createClient(SUPABASE_URL, ANON_KEY, clientOptions);
-        const signedIn = await anon.auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
-        expect(signedIn.error).toBeNull();
-        const token = signedIn.data.session?.access_token as string;
+        const token = (await signInCustomerWithoutPassword(email)).accessToken;
         const authenticated: SupabaseClient = createClient(SUPABASE_URL, ANON_KEY, {
           ...clientOptions,
           global: { headers: { Authorization: `Bearer ${token}` } },

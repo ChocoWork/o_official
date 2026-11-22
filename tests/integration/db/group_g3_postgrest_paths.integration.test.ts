@@ -3,7 +3,7 @@ jest.mock('server-only', () => ({}), { virtual: true });
 
 import { randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { DUMMY_CAPTCHA_TOKEN } from '../../../e2e/captcha-test-utils';
+import { signInCustomerWithoutPassword } from '../../../e2e/customer-session-test-utils';
 import { connectLocalDb, describeLocalDb, isLocalDatabase } from './helpers/local-db';
 import { withGroupG1FixtureTransaction, setOrderStatusForFixture, seedGroupG1Shipment, seedGroupG1Allocation } from './helpers/group-g1-fixtures';
 import { seedGroupG3ReadyOrder, seedGroupG3Slip, attachGroupG3SlipShipment } from './helpers/group-g3-fixtures';
@@ -65,14 +65,14 @@ describeLocalDb('G-3 real supabase-js -> PostgREST -> SQL read paths', (db) => {
   ];
   beforeAll(async () => {
     const email = `g3-rpc-${randomUUID()}@example.invalid`;
-    const password = `G3-${randomUUID()}-aA1!`;
-    const created = await service.auth.admin.createUser({ email, password, email_confirm: true });
+    const created = await service.auth.admin.createUser({ email, email_confirm: true });
     if (created.error || !created.data.user) throw new Error('G3_AUTH_FIXTURE_CREATE_FAILED');
     authUserId = created.data.user.id;
     actor = authUserId;
     authenticated = createClient(apiUrl, anonKey, options);
-    const signedIn = await authenticated.auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
-    if (signedIn.error || !signedIn.data.session) throw new Error('G3_AUTH_FIXTURE_SIGN_IN_FAILED');
+    const signedIn = await signInCustomerWithoutPassword(email);
+    const adopted = await authenticated.auth.setSession({ access_token: signedIn.accessToken, refresh_token: signedIn.refreshToken });
+    if (adopted.error || !adopted.data.session) throw new Error('G3_AUTH_FIXTURE_SIGN_IN_FAILED');
     await withGroupG1FixtureTransaction(db(), async () => {
       // Reuse the actual authenticated user as the permitted actor; no second auth user is needed.
       await db().query(`insert into public.user_roles(user_id,role_id,active)

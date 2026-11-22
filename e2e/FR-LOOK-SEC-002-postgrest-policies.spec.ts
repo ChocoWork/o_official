@@ -17,12 +17,12 @@
  * - SEC-LOOK-023-AC-01: 201字のテーマと置き場の外の image_urls の insert が CHECK の違反（23514）で断られ、行が増えない
  * 足した行・利用者は試験ごとの finally と afterAll で消す。JWT・パスワードが通信記録に残らないよう trace は切る。
  */
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { expect, test, type APIResponse } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import { createAdminSessionActor, type AdminSessionActor } from './admin-session-test-utils';
-import { withDummyCaptcha } from './captcha-test-utils';
+import { signInCustomerWithoutPassword } from './customer-session-test-utils';
 import { createTestMember } from './member-session-helpers';
 import { withLocalDb } from './order-email-test-utils';
 import { skipPasskeyNotificationsOfUser } from '../scripts/e2e/passkey-staff';
@@ -182,28 +182,14 @@ function aal1Admin(): Promise<AdminSessionActor> {
   return aal1Promise;
 }
 
-// 一般会員（役割なし）の JWT も worker ごとに 1 回だけ作る。createTestMember のパスワードは返らないので、service role で決め直す
+// 一般会員（役割なし）の JWT も worker ごとに 1 回だけ作る。パスワードは使わず、メールのリンクのトークンの検証で取る
 let memberPromise: Promise<string> | null = null;
 function memberAccessToken(): Promise<string> {
   memberPromise ??= (async () => {
     requireLocalEnv();
     const member = await createTestMember('look-sec-002');
     createdUserIds.push(member.userId);
-    const password = `E2e-${randomBytes(12).toString('hex')}!`;
-    const updated = await createClient(SUPABASE_URL, SERVICE_KEY, clientOptions).auth.admin.updateUserById(member.userId, { password });
-    if (updated.error) throw new Error(`手元の会員のパスワードを決められない（status: ${updated.error.status ?? '不明'}）`);
-    const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
-      headers: { apikey: ANON_KEY, 'content-type': 'application/json' },
-      body: JSON.stringify(withDummyCaptcha({ email: member.email, password })),
-      signal: AbortSignal.timeout(10_000),
-    }).catch(() => {
-      throw new Error('手元の会員の password grant の要求に失敗した');
-    });
-    if (!res.ok) throw new Error(`手元の会員の password grant が通らない: ${res.status}`);
-    const reply = (await res.json().catch(() => ({}))) as { access_token?: string };
-    if (!reply.access_token) throw new Error('手元の会員の password grant の応答に token が無い');
-    return reply.access_token;
+    return (await signInCustomerWithoutPassword(member.email)).accessToken;
   })();
   return memberPromise;
 }

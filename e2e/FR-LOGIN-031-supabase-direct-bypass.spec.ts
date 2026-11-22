@@ -38,6 +38,7 @@ import { isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { createAdminSessionActor, elevateAdminSessionToAal2 } from './admin-session-test-utils';
 import { withDummyCaptcha } from './captcha-test-utils';
+import { signInCustomerWithoutPassword } from './customer-session-test-utils';
 import { createTestMember, loginAsMemberLegacy, readLatestCode, readMailpitMessages } from './member-session-helpers';
 
 test.use({ trace: 'off' });
@@ -115,23 +116,6 @@ const newEmail = (label: string): string =>
 const adminUserIds: string[] = [];
 type TokenReply = { access_token?: string; refresh_token?: string };
 
-/** 手元の GoTrue のトークンの要求（Node から。JWT を通信記録に載せない） */
-async function requestToken(grantType: 'password' | 'refresh_token', body: Record<string, string>): Promise<{ accessToken: string; refreshToken: string }> {
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=${grantType}`, {
-    method: 'POST',
-    headers: { apikey: ANON_KEY, 'content-type': 'application/json' },
-    // captcha が有効な Auth に anon の鍵で直に叩く password grant にだけダミーのトークンを付ける（refresh_token は captcha が掛からない）
-    body: JSON.stringify(grantType === 'password' ? withDummyCaptcha(body) : body),
-    signal: AbortSignal.timeout(10_000),
-  }).catch(() => {
-    throw new Error(`手元の Auth の ${grantType} の要求に失敗した`);
-  });
-  if (!res.ok) throw new Error(`手元の Auth の ${grantType} が通らない: ${res.status}`);
-  const reply = (await res.json().catch(() => ({}))) as TokenReply;
-  if (!reply.access_token || !reply.refresh_token) throw new Error(`手元の Auth の ${grantType} の応答に token が無い`);
-  return { accessToken: reply.access_token, refreshToken: reply.refresh_token };
-}
-
 /** 既知のパスワードで利用者を作るだけ（通行証は取らない）。admin なら役割 admin も付ける */
 /**
  * admin: 役割 admin を app_metadata と user_roles の両方に付ける（店員。メールのコードの通行証は GoTrue のフックが拒否する）。
@@ -169,11 +153,11 @@ async function createUnsignedActor(label: string, options: { admin?: boolean; ro
   return { userId, email, password };
 }
 
-/** 既知のパスワードで作った利用者が、パスワードだけで（OTP を通らずに）得た JWT を持つ */
+/** 既知のパスワードで作った利用者が、パスワード無しの道（メールのリンクのトークンの検証。OTP は通らない）で得た JWT を持つ */
 async function createSignedInActor(label: string, options: { admin?: boolean } = {}): Promise<Actor> {
   const created = await createUnsignedActor(label, options);
-  const tokens = await requestToken('password', { email: created.email, password: created.password });
-  return { ...created, ...tokens };
+  const signedIn = await signInCustomerWithoutPassword(created.email);
+  return { ...created, accessToken: signedIn.accessToken, refreshToken: signedIn.refreshToken };
 }
 
 /** GoTrue の送り元の枠（IP ごと）を全部の E2E で使い切らないよう、試験ごとに別の値を付ける */

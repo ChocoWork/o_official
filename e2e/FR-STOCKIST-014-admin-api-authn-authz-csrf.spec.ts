@@ -30,7 +30,7 @@ import { expect, test, type APIRequestContext, type PlaywrightWorkerArgs } from 
 import { isLocalUrl } from '../scripts/e2e/environment';
 import { loginWithPasskey, provisionPasskeyUser, provisionStaff, skipPasskeyNotificationsOfUser } from '../scripts/e2e/passkey-staff';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
-import { DUMMY_CAPTCHA_TOKEN } from './captcha-test-utils';
+import { signInCustomerWithoutPassword } from './customer-session-test-utils';
 import { withLocalDb } from './order-email-test-utils';
 import { withPermissionScenario } from './permission-settings-test-utils';
 
@@ -132,7 +132,7 @@ function decodeClaims(accessToken: string): { aal?: string; session_id?: string;
 /**
  * 本物の GoTrue のログインで得た token の利用者を作る。片づけ（利用者・試験用の役割）は場面に登録する。
  * 店員（admin・supporter・readonly の試験用の役割）は、パスキーを登録して認め（aal2 は2本・aal1 は1本）、パスキーでログインする（SR-AUTH-014）。
- * member はパスワードのログイン。
+ * member はパスワード無しのログイン（メールのリンクのトークンの検証）。
  */
 async function createActor(scenario: Scenario, kind: ActorKind, aal: Aal): Promise<Actor> {
   const authOptions = { auth: { persistSession: false, autoRefreshToken: false } };
@@ -142,18 +142,13 @@ async function createActor(scenario: Scenario, kind: ActorKind, aal: Aal): Promi
   let session: { access_token: string; refresh_token: string };
 
   if (kind === 'member') {
-    const password = `E2e-${randomBytes(12).toString('hex')}!`;
-    const created = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+    const created = await admin.auth.admin.createUser({ email, email_confirm: true });
     if (created.error || !created.data.user) {
       throw new Error(`手元の利用者を作れない（status: ${created.error?.status ?? '不明'}）`);
     }
     userId = created.data.user.id;
-    const gotrue = createClient(SUPABASE_URL, ANON_KEY, authOptions);
-    const signedIn = await gotrue.auth.signInWithPassword({ email, password, options: { captchaToken: DUMMY_CAPTCHA_TOKEN } });
-    if (signedIn.error || !signedIn.data.session) {
-      throw new Error(`手元の利用者でログインできない（status: ${signedIn.error?.status ?? '不明'}）`);
-    }
-    session = signedIn.data.session;
+    const signedIn = await signInCustomerWithoutPassword(email);
+    session = { access_token: signedIn.accessToken, refresh_token: signedIn.refreshToken };
   } else {
     const approvedPasskeys = aal === 'aal2' ? 2 : 1;
     const staff =
