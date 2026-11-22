@@ -2603,16 +2603,16 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 1. 共有の `checkAuthSessionLiveness`（`src/lib/auth/authenticate.ts`）が、中で呼ぶ RPC を旗で替える。旗が有効（既定）なら `is_app_session_active`、無効（`off`・`0`・`false`）なら従来の `is_auth_session_active`。関数の名前・引数・戻り値は変えない（窓口と管理の認可が同じ形で呼び、多数の試験が差し替えているため）
 2. `is_app_session_active(p_session_id)` は、`auth.sessions` に生きた行があり（`not_after` が空か未来）、かつ自前の `sessions` に `auth_session_id` が一致して `user_id` が同じ、失効していない行がある時だけ真（移行 M1。`expires_at` は見ない）。アプリを通らずに取った password や OTP だけの通行証は GoTrue 側では生きていても、自前の行が無いので偽になる
-3. `authenticateRequest` は、`active` なら claims を返し、`revoked`（結び付いていない・失効・`session_id` が無い）なら `{ ok: false, reason: 'revoked', claims }` を返す。`claims` は署名検証済みの値で、断った窓口が行為者を監査に残すために使う。`unavailable` には付けない。`admin-rbac` は `checkAuthSessionLiveness` を呼ぶだけなので触らず、結び付いていない session は ACL を持っていても 401（`denial.reason: 'session'`）になる
-4. （段4の Task 30 で、`enroll-totp` の呼び手を消した。`revoked` に付く claims は、断った窓口が行為者を監査に残すための値として `authenticateRequest` に残る）
+3. `authenticateRequest` は、`active` なら claims を返し、`revoked`（結び付いていない・失効・`session_id` が無い）なら `{ ok: false, reason: 'revoked' }` を返す（断る窓口が行為者を監査に残す claims の添付は、呼び手が無くなったので段4の Task 33 で外した）。`admin-rbac` は `checkAuthSessionLiveness` を呼ぶだけなので触らず、結び付いていない session は ACL を持っていても 401（`denial.reason: 'session'`）になる
+4. （段4の Task 30 で、`enroll-totp` の呼び手を消した。`revoked` に付けていた claims は、使う窓口が無いので Task 33 で外した）
 
 | 条件 | 動き |
 | --- | --- |
 | 旗が未設定・空・`on`・`1`・`true`・その他 | `is_app_session_active` を呼ぶ |
 | 旗が `off`・`OFF`・`0`・`false` | `is_auth_session_active` を呼ぶ（結び付きを求めない） |
-| RPC が偽 | `revoked`＋claims。401 |
+| RPC が偽 | `revoked`。401 |
 | RPC が誤りを返す・例外 | `unavailable`（claims なし）。503＋`Retry-After`。「結び付いていない」と取り違えない（自前の行の引きの失敗も RPC の誤りに含まれる） |
-| JWT に `session_id` が無い | RPC を呼ばず `revoked`＋claims |
+| JWT に `session_id` が無い | RPC を呼ばず `revoked` |
 
 **読む側の認証認可:** 監査に残すのは固定の符号 `app_session_required` だけ。`session_id`・トークンは残さない。旗は DB に置かない（DB 側の `has_permission` の検査は移行 M2 が担う）。
 
@@ -2634,7 +2634,7 @@ DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permi
 | 3 | `persistNewSession`: `trustedAuthSessionId` が無い・null なら `auth_session_id` は null（token に `session_id` があっても）。有れば新しい token の `session_id`、無ければ `trustedAuthSessionId`。insert が先・revoke が後は変わらない。`findSessionByRefreshHash` が `auth_session_id` を引いて返す |
 | 4 | `persistSessionAndCookies`: `session_id` を `auth_session_id` に入れる。旗が有効で `session_id` が無ければ insert せず `ok: false`、旗が無効なら null で入れる |
 | 5 | `refresh`: 旗が有効で 3 通りの未結び付きは Supabase を呼ばず 401（`SEC-AUTH-005-AC-05`）。結び付いた行は更新して `trustedAuthSessionId` を渡す。失効済みは `session_revoked` のまま。旗が無効なら従来どおり。旗が有効で行の引きが失敗（`SessionLookupError`）なら 503・Cookie を残す・Supabase を呼ばない・差し替えない・`session_lookup_failed`。`findSessionByRefreshHash` は既定で DB のエラーを `null` で返し、`throwOnError` で投げる（行が無いのは `null`） |
-| 7 | 読む側（`authenticate.test.ts`）: 旗が未設定で `is_app_session_active`（`p_session_id` を渡す）、`off`・`OFF`・`0`・`false` で `is_auth_session_active`。偽は `revoked`＋検証済みの claims、RPC の誤り・例外は `unavailable`（claims なし）、`session_id` 無しは RPC を呼ばず `revoked`。`missing`・`invalid` に claims は付かない |
+| 7 | 読む側（`authenticate.test.ts`）: 旗が未設定で `is_app_session_active`（`p_session_id` を渡す）、`off`・`OFF`・`0`・`false` で `is_auth_session_active`。偽は `revoked`、RPC の誤り・例外は `unavailable`、`session_id` 無しは RPC を呼ばず `revoked` |
 | 8 | 管理の認可（`admin-rbac.test.ts`）: 結び付いていない session（liveness が `revoked`）は ACL を持っていても 401。`session_id` を渡して確かめる |
 
 ### DD-AUTH-040 captcha を免除される auth だけの client と、captcha の拒否の見分け

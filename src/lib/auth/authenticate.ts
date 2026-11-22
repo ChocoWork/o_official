@@ -24,12 +24,7 @@ export type VerifiedAccessToken =
    * 呼び出し側は `unavailable` を 503 + Retry-After として返すこと。
    * どちらもアクセスは拒否するので fail-closed は保たれる。
    */
-  | { ok: false; reason: 'missing' | 'invalid' | 'unavailable' }
-  /**
-   * `claims` は署名検証済みの値で、`revoked` の時だけ付く。結び付いていない session を断る時に、
-   * 呼び手が行為者を監査に残せるようにする（authorization の根拠には使わない）。
-   */
-  | { ok: false; reason: 'revoked'; claims?: JwtPayload };
+  | { ok: false; reason: 'missing' | 'invalid' | 'unavailable' | 'revoked' };
 
 /** セッションの生存確認の結果。「生きている」「失効した」「確認できない」の3値。 */
 export type SessionLiveness = 'active' | 'revoked' | 'unavailable';
@@ -180,8 +175,7 @@ export const checkAuthSessionLiveness = cache(
  * GoTrueClient.getUser which always sends a request to the Auth server for each JWT."）、
  * こちらへ一本化した。失効検知は上の RPC が担う。
  *
- * 失効（結び付いていない session を含む）の時は `revoked` に署名検証済みの claims を付けて返す。
- * 確認できなかった時（`unavailable`）には付けない。
+ * 失効（結び付いていない session を含む）の時は `revoked`、確認できなかった時は `unavailable` を返す。
  */
 export async function authenticateRequest(request?: Request): Promise<VerifiedAccessToken> {
   const verified = await verifyAccessToken(request);
@@ -194,7 +188,7 @@ export async function authenticateRequest(request?: Request): Promise<VerifiedAc
     return { ok: false, reason: 'unavailable' };
   }
   if (liveness !== 'active') {
-    return { ok: false, reason: 'revoked', claims: verified.claims };
+    return { ok: false, reason: 'revoked' };
   }
 
   return verified;

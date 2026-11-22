@@ -202,14 +202,13 @@ describe('verifyAccessToken / authenticateRequest', () => {
     });
 
     // 結び付いていない session（アプリを通らずに取った通行証）は RPC が false を返す。
-    // 呼び手が断りを監査に残せるよう、署名検証済みの claims を付ける。
-    test('DD-AUTH-039 結び付いていない session は revoked で、署名検証済みの claims を付ける', async () => {
+    test('DD-AUTH-039 結び付いていない session は revoked を返す', async () => {
       getClaimsMock.mockResolvedValue({ data: { claims: buildClaims() }, error: null });
       rpcMock.mockResolvedValue({ data: false, error: null });
 
       const result = await mod.authenticateRequest(requestWith({ cookie: 'sb-access-token=t' }));
 
-      expect(result).toEqual({ ok: false, reason: 'revoked', claims: buildClaims() });
+      expect(result).toEqual({ ok: false, reason: 'revoked' });
     });
 
     // 「失効している」と「失効しているか確認できなかった」を混ぜない。
@@ -225,8 +224,7 @@ describe('verifyAccessToken / authenticateRequest', () => {
       expect(result).toEqual({ ok: false, reason: 'unavailable' });
     });
 
-    // 確かめられなかっただけの時は、行為者の断りを書かせない（claims を付けない）。
-    test('DD-AUTH-039 RPC が例外を投げたら unavailable で、claims は付けない', async () => {
+    test('DD-AUTH-039 RPC が例外を投げたら unavailable を返す', async () => {
       getClaimsMock.mockResolvedValue({ data: { claims: buildClaims() }, error: null });
       rpcMock.mockRejectedValue(new Error('network down'));
 
