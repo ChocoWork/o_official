@@ -7939,7 +7939,7 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 
 メールのコードの保留の Cookie（`src/features/auth/services/email-code-session.ts`）と注文の状況のセッション（`src/lib/orders/status/status-session.ts`）は、専用の鍵（`LOGIN_2FA_SESSION_SECRET`・`ORDER_STATUS_SESSION_SECRET`）が無ければ `JWT_SECRET` に代えず、作るのを止める。印は `purpose` が違えば断る。`purpose` は今のコードが満たす。鍵の代わりは満たさない（今は両方とも `JWT_SECRET` に代える。段4の後の持ち越し）。
 
-#### SEC-AUTH-027-AC-02 署名の合わない保留の Cookie を新しい確定の窓口に入れても通らない
+#### SEC-AUTH-027-AC-02 別の用途の印を新しい確定の窓口に入れても通らない
 
 | 属性 | 値 |
 | --- | --- |
@@ -7949,7 +7949,7 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | 確かめ方 | E2E（`e2e/FR-LOGIN-055-email-code-api.spec.ts`。390・768・1280 の3幅） |
 | 出どころ | 段4の Task 29 の直し（`.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-29-review.md` I-1） |
 
-署名の合わない値（別の用途の印を含む）を `sb-email-code-session` に入れて `POST /api/auth/email-code/verify` を呼ぶと 401 になり、ログインのセッションの Cookie を出さないこと。
+アプリと同じ鍵で正しく署名したが、用途（`purpose`）が違う印（`order_status`・`login_2fa`）を `sb-email-code-session` に入れて `POST /api/auth/email-code/verify` を呼ぶと、「セッションの有効期限が切れました」の 401 になり、ログインのセッションの Cookie を出さないこと。対照として、同じ署名で用途が正しい印は門を通り、コードの誤りの 401 になる。
 
 #### SEC-AUTH-027-AC-01 再設定の Cookie を保留の2段目の Cookie に入れても通らない
 

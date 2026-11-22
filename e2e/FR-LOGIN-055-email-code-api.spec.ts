@@ -6,7 +6,7 @@
  * 要求ごとに別の x-real-ip と origin を付ける（回数の枠を使い切らないため・proxy の Origin の確かめ）。Turnstile は E2E の公式のテスト鍵（常に通る）。
  * 確定の総当たりの枠は「数えてから確かめる」ので、枠の上限 5 を超えた6回目で 429 になる。
  */
-import { randomBytes, randomInt } from 'node:crypto';
+import { createHmac, randomBytes, randomInt } from 'node:crypto';
 import { expect, test, type APIRequestContext, type APIResponse } from '@playwright/test';
 import { createTestMember, readLatestCode, readMailpitMessages } from './member-session-helpers';
 import { withLocalDb } from './order-email-test-utils';
@@ -166,19 +166,43 @@ for (const viewport of viewports) {
       expect(response.status()).toBe(401);
     });
 
-    test(`SEC-AUTH-027-AC-02 ${viewport.name}: 署名の合わない（別の用途・作り物の）保留の Cookie を新しい確定の窓口に入れても 401 で、セッションを作らない`, async ({ page }) => {
+    test(`SEC-AUTH-027-AC-02 ${viewport.name}: 正しく署名した別の用途の保留の Cookie は 401（期限切れの案内）で、同じ署名の正しい用途の Cookie は鍵を通ってコードの誤りの 401 になる`, async ({ page }) => {
       await page.goto('/');
-      await page.context().addCookies([
-        { name: PENDING_COOKIE, value: 'eyJwdXJwb3NlIjoib3JkZXJfc3RhdHVzIn0.forged-signature', url: ORIGIN, httpOnly: true, sameSite: 'Strict' },
-      ]);
-      const response = await page.request.post('/api/auth/email-code/verify', {
-        headers: { origin: ORIGIN, 'x-real-ip': uniqueIp() },
-        data: { code: '12345678' },
-        maxRedirects: 0,
-      });
-      expect(response.status()).toBe(401);
-      const issued = response.headersArray().filter((h) => h.name.toLowerCase() === 'set-cookie' && /sb-access-token=[^;]+/.test(h.value) && !/sb-access-token=;/.test(h.value));
-      expect(issued).toEqual([]);
+      const email = uniqueEmail('purpose');
+      const now = Math.floor(Date.now() / 1000);
+      // アプリと同じ HMAC・同じ鍵で署名する。用途（purpose）だけが違う。
+      const signWithPurpose = (purpose: string) => {
+        const payload = Buffer.from(
+          JSON.stringify({ purpose, email, jti: randomBytes(16).toString('base64url'), iat: now, exp: now + 300 }),
+          'utf8',
+        ).toString('base64url');
+        const secret = process.env.LOGIN_2FA_SESSION_SECRET || process.env.JWT_SECRET || '';
+        return `${payload}.${createHmac('sha256', secret).update(payload).digest('base64url')}`;
+      };
+      const verifyWith = async (value: string) => {
+        await page.context().clearCookies();
+        await page.context().addCookies([
+          { name: PENDING_COOKIE, value, url: ORIGIN, httpOnly: true, sameSite: 'Strict' },
+        ]);
+        return page.request.post('/api/auth/email-code/verify', {
+          headers: { origin: ORIGIN, 'x-real-ip': uniqueIp() },
+          data: { code: '12345678' },
+          maxRedirects: 0,
+        });
+      };
+
+      // 対照: 正しい用途なら保留の Cookie の門を通り、コードの誤りで 401 になる
+      const control = await verifyWith(signWithPurpose('email_code'));
+      expect(control.status()).toBe(401);
+      expect(((await control.json()) as { error?: string }).error).toContain('認証コードが無効');
+
+      for (const purpose of ['order_status', 'login_2fa']) {
+        const wrong = await verifyWith(signWithPurpose(purpose));
+        expect(wrong.status(), purpose).toBe(401);
+        expect(((await wrong.json()) as { error?: string }).error, purpose).toContain('セッションの有効期限が切れました');
+        const issued = wrong.headersArray().filter((h) => h.name.toLowerCase() === 'set-cookie' && /sb-access-token=[^;]+/.test(h.value));
+        expect(issued).toEqual([]);
+      }
     });
 
     test(`SEC-AUTH-035-AC-01 ${viewport.name}: captcha が有効でも、アプリのメールのコードの始めは 202、再送は 200 で、コードのメールが届く`, async ({ request }) => {

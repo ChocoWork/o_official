@@ -879,7 +879,7 @@ flowchart LR
 - `/api/auth/confirm` を他人の端末で開かせた時に、その端末が攻撃者のアカウントでログインしないかは、結合テストの写しと E2E（書いただけで未実行）でしか見ていない。本物の DB の関数との通し・本番の Cookie の動き（`__Host-` の頭が無いことによる cookie tossing を含む）は確かめていない（THR-AUTH-007）
 - Google のログインの後に、`@supabase/ssr` が書く Cookie の名前と属性（THR-AUTH-023）。ブラウザで見ていない
 - 本番の中継（Vercel など）が `x-forwarded-for` を上書きするか、Supabase Auth がアプリのサーバーの IP で数えるか（THR-AUTH-013）。本番のアプリはまだデプロイしていない
-- 本番の環境変数に `LOGIN_2FA_SESSION_SECRET`・`PASSWORD_RESET_SESSION_SECRET`・`ORDER_STATUS_SESSION_SECRET` があるか（THR-AUTH-027）
+- 本番の環境変数に `LOGIN_2FA_SESSION_SECRET`（今はメールのコードの保留の鍵）・`ORDER_STATUS_SESSION_SECRET` があるか（再設定の鍵は段4で要らなくなった）（THR-AUTH-027）
 - 再設定の申請の応答時間が、アカウントの有無で測れるほど違うか（THR-AUTH-016）
 - 本番の Supabase Auth の `double_confirm_changes`（メールの差し替えに新旧両方の確認を求める設定）が ON か。手元は true（`supabase/config.toml:223`）（THR-AUTH-015）
 - 本番に TOTP をまだ登録していない管理者・サポーターがいるか（THR-AUTH-031）。いれば、その間はパスワードだけで管理に届く
