@@ -274,7 +274,7 @@ content_path = "./supabase/templates/confirmation.html"
 
 # Uncomment to customize notification email template
 # GoTrue 自身の変更通知（直接の PUT /user で変えた時だけ届く。管理 API の変更では届かない）。
-# アプリの通知「パスワードを変更しました」と件名を変えて見分ける。
+# アプリのパスワード変更の通知は段4で消したので、GoTrue のこの通知だけが届く。
 [auth.email.notification.password_changed]
 enabled = true
 subject = "パスワードの変更を受け付けました"

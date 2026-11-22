@@ -563,7 +563,7 @@ G と H の順番・範囲（G-1〜G-4・H-1）は1章、開店前に直す物�
 | 本物の Google の確認（手順書の節6の5・9。店員が Google で入ろうとした時の拒否の形） | オーナー | 同上 |
 | 一度も入らなかったメールのコードのアカウントの後始末（判断10。選ぶ SQL は [supabase-auth-config.md](../../../06_Operations/supabase-auth-config.md)） | 消す処理は Claude が作り、流すのは調整役（オーナーの許可を得てから） | 開店前 |
 
-**段4（済み。Task 26〜36。2026-11-22。コミットの範囲 `27e0342a..e40d376a`。運用の手順書は Task 35、全体の確かめは Task 36）**
+**段4（済み。Task 26〜36。2026-11-22。コミットの範囲 `27e0342a..a7393d37`（この直しを含む）。運用の手順書は Task 35、全体の確かめは Task 36）**
 
 消す物の一覧は [ADR-0469](../../../03_BasicDesign/decisions/ADR-0469-passkey-customer-email-code-login.md) の「段4で消す一覧」。`loginAsMember` の古い道（`loginAsMemberLegacy`。呼ぶ試験は FR-LOGIN-030・031・032・033、FR-PWRESET-010、FR-ACCOUNT-046、FR-ADMIN-MISC-008）・`/login/password`・`/login/verify`・`/api/auth/login/{route,resend,cancel}`・`/api/auth/otp/verify`・`/api/auth/register`・`/api/auth/confirm` の登録の確認・`/account/password`・`/api/auth/password/*`・`AuthTabs`・`LoginModal`・`RegisterModal`・`VerifyOtpClient`・旧の保留の Cookie `sb-login-2fa-session`・`login-2fa-session.ts`・付け替えた約30本の E2E と `setLoginTwoFactorCookie`・`FR-ACCOUNT-046`・`FR-PWRESET-*`・`FR-SIGNUP-*`。`createTestMember` の `password` 付きの作り方を外す。
 
@@ -586,9 +586,9 @@ G と H の順番・範囲（G-1〜G-4・H-1）は1章、開店前に直す物�
 1. 移行 J・K は手元だけ。**本番の独自のドメインが決まるまで、本番には当てない**（オーナー決定）。当てるのは調整役で、毎回オーナーの許可を得てから、Supabase の MCP の `apply_migration` で1本ずつ。J は「お客さんのパスワードのログインを止める旗」を真にする1行、K は使わない表2つと関数3つを消す（`CASCADE` なし）。どちらも頭に戻す SQL がある。戻す時の順は K → J（手順書の節4の (0)・(0b)）。
 2. 当てる順は[手順書](../../../06_Operations/passkey-production-apply-runbook.md)の節2・3のとおり。ファイルの版では A → B → C → D → E → F → G → H → I → J → K だが、**実際は A → B → C → D → F → G → H → I の後に E を最後に当てる**（E は権限を奪う側）。J・K は A〜I の後で、アプリのデプロイと、お客さんがメールの数字で入れる確かめの後（J はその確かめの直後。K は J の後）。
 3. 本番のダッシュボードの確認メールの雛形を、**オーナーが**手順書の節2の 2b の文（見出し「メールアドレスの確認」と8桁の数字）に貼り替える。デプロイの前。貼り替えないと、確認前のアカウントに届く雛形のリンクが無効で、パスワードを案内する古い文のままになる。
-4. 手順書の節2の10: 本番の `auth.users` の数を読む（読むだけ。調整役が流して報告）。お客さんの数・確認前のパスワード登録の数・パスワードを持つお客さんの数・店員の TOTP の要素の数。0でなければ、当てる前にオーナーが扱いを決める。
+4. 手順書の節1の10: 本番の `auth.users` の数を読む（読むだけ。調整役が流して報告）。お客さんの数・確認前のパスワード登録の数・パスワードを持つお客さんの数・店員の TOTP の要素の数。0でなければ、当てる前にオーナーが扱いを決める。
 5. お客さんのログインの変わり方: **メールの8桁の数字・パスキー・Google だけ**で入る。パスワードのログイン・パスワードの再設定と変更・認証アプリ（TOTP）・確認メールのリンクは無くなる。確認前の登録の人も、確認メールの8桁の数字で入れる。店員はパスキー（認めた鍵2本）だけ。古い方式へ戻す必要は無い（オーナー回答）。
-6. 開店前に残る物: 定期処理の登録と保留の4本、本番の実機の確かめ（手順書の節6）、一度も入らなかったアカウントの後始末、E2E が作る店長が手元の DB に溜まる件の恒久の直し（段3b M-2）、`password_changed_notification.html` の文の見直し（手順書の節7）。
+6. 開店前に残る物: 定期処理の登録と保留の4本、本番の実機の確かめ（手順書の節6）、一度も入らなかったアカウントの後始末、E2E が作る店長が手元の DB に溜まる件の恒久の直し（段3b M-2）、ホームの ITEM の並びの `id` の決め手（`src/lib/items/public.ts:52` が `created_at` だけで並べ、同じ時刻で並びが入れ替わる。FR-HOME-023 の `SEC-HOME-002-AC-01` の揺れ。段4より前からある。開店前に直す）、`password_changed_notification.html` の文の見直し（手順書の節7）。
 
 **オーナーに伝える物（要件ではない）**
 
