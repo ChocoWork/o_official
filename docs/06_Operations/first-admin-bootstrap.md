@@ -1,13 +1,16 @@
-# 最初の店長を作る手順
+# 最初の店長を作る手順（`admin:bootstrap` は段4で廃止。履歴）
 
-> 状態: 現行 | 確認日: 2026-11-20 | 対象: 新しい環境（検証用）の最初の店長（本番の最初の店長は [passkey-staff-recovery.md](./passkey-staff-recovery.md)）、手元の開発で店員として入る手順（`npm run dev:staff`）。手元の `db reset` の後は、段1a の切り替え（Task 9）からこのコマンドの店長が動かない（下の前提）。コマンド `npm run admin:bootstrap`
+> 状態: 廃止（コマンドの部分。履歴として残す。手元の開発で店員として入る節は現行） | 確認日: 2026-11-22 | 対象: 廃止したコマンド `npm run admin:bootstrap` の記録、手元の開発で店員として入る手順（`npm run dev:staff`）。本番の最初の店長は [passkey-staff-recovery.md](./passkey-staff-recovery.md)
 
-## 本番の最初の店長には使わない
+## 段4で消した
 
-**`npm run admin:bootstrap` は、本番の最初の店長を作る通常の道では使わない。** 本番の最初の店長は、ダッシュボードの SQL エディタから `private.staff_invite_issue_manual` で招待を出し、パスキーを2本登録して作る（[最初の店長と店長本人の最後の手段の手順書](./passkey-staff-recovery.md)）。このコマンドは `user_roles` を直に書くので、H の `STAFF_INVITE_REQUIRED`（招待を通さない店員の追加を断る規則）が効かない。段4まで残る物として、次の用途に限って位置づける。
+**このコマンド（`npm run admin:bootstrap`。`scripts/admin/`）は、段4（2026-11-22）で消した**（オーナーの答え2は A。段4の計画 Task 31）。`package.json` の `admin:bootstrap` の行も無い。以降の文は、**履歴のために残した記録**で、今は流せない。最初の店長も、店長がパスキーを全部なくした時も、ダッシュボードの SQL エディタから `private.staff_invite_issue_manual` で招待を出し、パスキーを2本登録して作る（[最初の店長と店長本人の最後の手段の手順書](./passkey-staff-recovery.md)。**オーナーが自分で流す。AI・MCP・CLI では流さない**）。
 
-- 新しい環境（検証用など）で、招待の流れを使わずに最初の店長が要る時
-- 唯一の例外: 本番の戻しの途中（[当てる手順書の戻し方 (3b)](./passkey-production-apply-runbook.md)）で、利用者がそもそもいない時、または別のメールで店長を作る時。使う条件と手順はその文書に従う。ここには繰り返さない
+- 新しい環境（検証用など）の最初の店長も、同じ手順で招待を出す
+- 本番の戻しの途中で、別のアドレスの店長が要る時は、[当てる手順書の戻し方 (3b)](./passkey-production-apply-runbook.md) に従う（ダッシュボードで利用者を作り、取引の逆の SQL で有効にする）
+- 手元の開発で店員として入るのは、下の「手元の開発で店員として入る」（`npm run dev:staff`）
+
+**以下は、廃止したコマンドの記録（履歴）。流せない。**
 
 ## 概要
 

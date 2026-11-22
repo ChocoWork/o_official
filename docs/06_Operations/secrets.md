@@ -125,9 +125,9 @@ Resend の配達の状態の知らせ（`POST /api/webhook/resend-delivery`）�
 
 ## AUTH_REQUIRE_APP_SESSION（アプリのログインに結び付いた session だけを受ける旗。秘密ではない）
 
-> 確認日: 2026-10-29 | 対象: `src/lib/auth/app-session.ts` の `isAppSessionRequired` | 設計判断: [ADR-0419](../03_BasicDesign/decisions/ADR-0419-auth-require-app-session-flag-default-on.md)
+> 確認日: 2026-11-22 | 対象: `src/lib/auth/app-session.ts` の `isAppSessionRequired` | 設計判断: [ADR-0419](../03_BasicDesign/decisions/ADR-0419-auth-require-app-session-flag-default-on.md)
 
-公開の anon キーだけで取れるパスワードだけ・メール OTP だけの通行証を、会員の窓口が受けないための旗。アプリのログイン（パスワード → メール OTP → 必要なら TOTP）を通ると、自前の `sessions` に GoTrue の `session_id` を残した行ができる。旗が有効な間、窓口と `refresh` はその行に結び付いた session だけを通す。値が `off`・`0`・`false`（大小文字を区別せず、前後の空白は無視）の時だけ無効で、未設定・空・その他は有効（既定）。
+公開の anon キーだけで取れるパスワードだけ・メール OTP だけの通行証を、会員の窓口が受けないための旗。アプリのログイン（メールのコード・Google・パスキー。段4でパスワードと TOTP は無くなった）を通ると、自前の `sessions` に GoTrue の `session_id` を残した行ができる。旗が有効な間、窓口と `refresh` はその行に結び付いた session だけを通す。値が `off`・`0`・`false`（大小文字を区別せず、前後の空白は無視）の時だけ無効で、未設定・空・その他は有効（既定）。
 
 | 環境 | 扱い |
 | --- | --- |
@@ -165,14 +165,14 @@ Vercel の Production の環境変数に、ビルドの前に入れること。*
 
 ## TURNSTILE_SECRET_KEY（アプリの Turnstile の検証の秘密。Supabase の captcha にも同じ値）
 
-> 確認日: 2026-11-01 | 対象: `src/lib/turnstile.ts`、Supabase の captcha | 設計判断: [ADR-0420](../03_BasicDesign/decisions/ADR-0420-auth-supabase-captcha-with-service-role-auth-calls.md) | 手順: [本番の Supabase Auth の設定](supabase-auth-config.md)
+> 確認日: 2026-11-22 | 対象: `src/lib/turnstile.ts`、Supabase の captcha | 設計判断: [ADR-0420](../03_BasicDesign/decisions/ADR-0420-auth-supabase-captcha-with-service-role-auth-calls.md) | 手順: [本番の Supabase Auth の設定](supabase-auth-config.md)
 
-登録・ログイン・パスワード再設定の申請・お問い合わせで、アプリが Cloudflare の Turnstile を検証する秘密（`NEXT_PUBLIC_TURNSTILE_SITE_KEY` は公開の対）。本番で値が無いと、検証は失敗に倒れる。Vercel の環境変数にだけ置く。
+（段4でパスワードの登録・ログイン・再設定の窓口は消えた）メールのコードの始め・お問い合わせなどで、アプリが Cloudflare の Turnstile を検証する秘密（`NEXT_PUBLIC_TURNSTILE_SITE_KEY` は公開の対）。本番で値が無いと、検証は失敗に倒れる。Vercel の環境変数にだけ置く。
 
 - **同じ Cloudflare のウィジェットの秘密を、Supabase の captcha（本番の `security_captcha_secret`）にも入れる。** 理由: アプリの検証（`TURNSTILE_SECRET_KEY`）と Supabase の検証（直接の `/signup`・`/token` を塞ぐ）が、同じウィジェットが発行したトークンだけを通すようにするため。別の秘密を入れると、片方の検証でトークンが拒まれる。値はこの文書にもチャットにもコミットにも書かない。
 - **本番の Supabase の captcha に、Cloudflare のテスト用の秘密（`1x0000000000000000000000000000000AA`。常に通る）を入れない。** 入れると、ダミーのトークンで誰でも直接 `/signup`・`/token` を叩け、captcha が無いのと同じになる。手元の隔離スタックだけがこの値を使う。段階 B の確かめで、anon にダミーのトークンを付けた `/token` が 400 になることを測る。
 - 手元の `.env.local` と `.env.example` の値は、Cloudflare の公開のテスト用（常に通る）で、本番の秘密ではない。
-- アプリのサーバーが GoTrue を呼ぶ 5 か所（ログイン 2 回・ログイン再送・会員登録・パスワード変更の現行パスワードの確認）は service role の鍵で呼び、GoTrue 側の captcha は免除される。アプリはそこへトークンを転送しない（Turnstile のトークンは 1 回しか使えない）。
+- アプリのサーバーが GoTrue を呼ぶ所（段4で、メールのコードの始めと再送の2か所だけになった。以前はログイン・登録・パスワード変更の窓口も）は service role の鍵で呼び、GoTrue 側の captcha は免除される。アプリはそこへトークンを転送しない（Turnstile のトークンは 1 回しか使えない）。
 - 本番の Turnstile のウィジェットは未作成の可能性が高い。無ければ、ウィジェットを作ってから、Vercel の `TURNSTILE_SECRET_KEY` と Supabase の captcha に同じ秘密を入れる（Supabase 側は段階 B。先にアプリの検証を有効にする）。
 
 ## SUPABASE_AUTH_CAPTCHA_SECRET（手元の Supabase の captcha の秘密。手元だけ）

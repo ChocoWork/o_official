@@ -1,6 +1,6 @@
 # 配置構成
 
-> 状態: 現行（本番は未デプロイ） | 確認日: 2026-11-07 | 対象: 本番の構成と設定の正本の置き場、Supabase Auth の設定の順序
+> 状態: 現行（本番は未デプロイ） | 確認日: 2026-11-22 | 対象: 本番の構成と設定の正本の置き場、Supabase Auth の設定の順序
 
 ## 概要
 
@@ -65,7 +65,7 @@ flowchart LR
 
 | 項目 | 内容 |
 | --- | --- |
-| 正本 | 本番の Supabase Auth の設定（確認メール・OTP の期限・最小長・captcha・パスワード変更の再認証・変更通知・TOTP）は、リポジトリの `supabase/config.toml` ではなく、**本番の Management API（`PATCH /v1/projects/{ref}/config/auth`）とダッシュボードが正**。`config.toml` は手元の Supabase の設定で、本番へは自動で届かない |
+| 正本 | 本番の Supabase Auth の設定（確認メール・OTP の期限・最小長・captcha・パスワード変更の再認証・変更通知。TOTP は段4で止める）は、リポジトリの `supabase/config.toml` ではなく、**本番の Management API（`PATCH /v1/projects/{ref}/config/auth`）とダッシュボードが正**。`config.toml` は手元の Supabase の設定で、本番へは自動で届かない |
 | `supabase config push` | 流さない。手元の `config.toml` の全体を本番へ押し出し、`site_url` や captcha の秘密、本番だけの値を上書きする。本番は項目を指定した Management API の `PATCH` で変える |
 | 変える前 | 必ず今の値を読んで控える。目標の値、手順、戻し方、3 回試して通らない時のダッシュボードの手順は[本番の Supabase Auth の設定](supabase-auth-config.md) |
 | 順序 | アプリのコード（認証の呼び出しが service role の鍵に変わった版）→ 確認メールの戻り先が Site URL／Redirect URLs に当たることの確認 → 段階 A（captcha 以外。確認メールの雛形は `mailer_autoconfirm: false` と同じ `PATCH` か、その前）→ 段階 B（captcha）。先に captcha をオンにすると、service role の呼び出しに変わっていないアプリのログインが止まる。普段の開発は本番の Supabase につながるので、同じ順序を守る |

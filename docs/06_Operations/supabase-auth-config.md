@@ -1,6 +1,6 @@
 # 本番の Supabase Auth の設定（captcha・パスワード変更・OTP・MFA）
 
-> 状態: 目標の値と手順（本番への適用は未実施。2026-11-01 に MCP で試して不可。2026-11-06 にオーナーがダッシュボードで変えると決め、「ダッシュボードで変える手順（オーナー向け）」を書いた。確認メールの必須だけは本番がすでに目標の値） | 確認日: 2026-11-20 | 対象: 本番の Supabase プロジェクト `pjidrgofvaglnuuznnyj` の Auth と PostgREST の設定、手元の `supabase/config.toml` との対応 | 設計判断: [ADR-0420](../03_BasicDesign/decisions/ADR-0420-auth-supabase-captcha-with-service-role-auth-calls.md)（captcha）、[ADR-0421](../03_BasicDesign/decisions/ADR-0421-auth-password-change-by-app-window-with-emailed-code.md)（パスワード変更）
+> 状態: 目標の値と手順（本番への適用は未実施。2026-11-01 に MCP で試して不可。2026-11-06 にオーナーがダッシュボードで変えると決め、「ダッシュボードで変える手順（オーナー向け）」を書いた。確認メールの必須だけは本番がすでに目標の値） | 確認日: 2026-11-22 | 対象: 本番の Supabase プロジェクト `pjidrgofvaglnuuznnyj` の Auth と PostgREST の設定、手元の `supabase/config.toml` との対応 | 設計判断: [ADR-0420](../03_BasicDesign/decisions/ADR-0420-auth-supabase-captcha-with-service-role-auth-calls.md)（captcha）、[ADR-0421](../03_BasicDesign/decisions/ADR-0421-auth-password-change-by-app-window-with-emailed-code.md)（パスワード変更。段4で廃止）
 
 ## 概要
 
@@ -14,8 +14,8 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 要件 | `SR-AUTH-009`・`FR-AUTH-006`（パスワード変更）、`SEC-AUTH-015`（直接の道の守り。AC-04・AC-05）、`SEC-AUTH-034`・`SEC-AUTH-035`、`SEC-AUTH-016-AC-01`・`SEC-AUTH-029`（確認メール・OTP の期限）、`SEC-AUTH-030-AC-01`（TOTP） |
-| 関連コード | `src/lib/auth/service-role-auth-client.ts`（captcha を免除される呼び出し）、`src/app/api/auth/password/change/{start,confirm}/route.ts`、`src/lib/build-env-guard.ts` |
+| 要件 | `SR-AUTH-030`・`FR-AUTH-053`・`FR-AUTH-055`・`SEC-AUTH-060`（パスワードと認証アプリのログインの廃止。旗は移行 J。パスワード変更・再設定の要求と、TOTP の監査の要求は段4で廃止した）、`SEC-AUTH-015`（直接の道の守り。AC-01・AC-04・AC-05。パスワード変更の窓口は段4で消えたので、GoTrue の設定の確かめだけが残る）、`SEC-AUTH-035`（captcha を免除される呼び出し）、`SEC-AUTH-029`（OTP の期限） |
+| 関連コード | `src/lib/auth/service-role-auth-client.ts`（captcha を免除される呼び出し。今はメールのコードの始めと再送だけが使う）、`src/lib/build-env-guard.ts`（パスワード変更の窓口 `src/app/api/auth/password/change/{start,confirm}/route.ts` は段4で消した） |
 | 関連文書 | [シークレット管理方針](secrets.md)、[配置構成](deployment-topology.md)、[DB マイグレーション](db-migrations.md) |
 | 根拠 | GoTrue のソース読み（`middleware.go` の管理者免除）、手元の隔離スタックでの実測（2026-11-01）、Management API の公式 OpenAPI（`https://api.supabase.com/api/v1-json`、2026-11-01 取得、`UpdateAuthConfigBody` 235 項目） |
 | 未確認 | 本番の Auth の現在値、本番の `sb_secret_` が captcha を免除されるか、本番の Turnstile のウィジェットの有無、本番の自前 SMTP の設定 |
@@ -46,18 +46,18 @@
 | 確認メールを必須にする | `mailer_autoconfirm` | `false` | `[auth.email] enable_confirmations = true` | `SEC-AUTH-016-AC-01`・`FREQ-320-AC-03`。**本番はすでに目標の値**（2026-11-01 に公開の `GET /auth/v1/settings` で `mailer_autoconfirm=false` を確認。変更不要） |
 | メール OTP の期限（秒） | `mailer_otp_exp` | `300` | `otp_expiry` | `SEC-AUTH-029`。アプリの保留の Cookie も 5 分 |
 | メール OTP の桁数 | `mailer_otp_length` | `8` | `otp_length` | アプリの入力が 8 桁を求める |
-| パスワードの最小長 | `password_min_length` | `16` | `minimum_password_length` | アプリの最小長と同じ。`SEC-AUTH-015-AC-01` |
+| パスワードの最小長 | `password_min_length` | `16` | `minimum_password_length` | `SEC-AUTH-015-AC-01`。**段4で、アプリのパスワードの窓口は無い**ので「アプリの最小長と同じ」は要らなくなった。GoTrue を直に叩く道の守りとして残す（お客さんの `password` は J のフックが拒否する） |
 | パスワードの構成規則 | `password_required_characters` | **変えない** | `password_requirements = ""` | NIST SP 800-63B-4 3.1.1.2 は構成規則を課さない。本番が規則を課していれば変えずにオーナーへ知らせる |
-| パスワード変更に再認証（24 時間より古い session） | `security_update_password_require_reauthentication` | `true` | `secure_password_change` | `SEC-AUTH-015-AC-02` |
-| パスワード変更に現行パスワードを要求 | `security_update_password_require_current_password` | `true` | **鍵が無い**（CLI の `config.toml` では設定できない） | `SEC-AUTH-015-AC-05`。手元の E2E では再現できず、本番は GET の値で確かめる |
+| パスワード変更に再認証（24 時間より古い session） | `security_update_password_require_reauthentication` | `true` | `secure_password_change` | `SEC-AUTH-015-AC-02`。**段4で要らなくなった**（アプリのパスワード変更が無い）。直の `PUT /user` の守りとして残すだけ |
+| パスワード変更に現行パスワードを要求 | `security_update_password_require_current_password` | `true` | **鍵が無い**（CLI の `config.toml` では設定できない） | **段4で要らなくなった**（アプリのパスワード変更が無い）。`SEC-AUTH-015-AC-05`。手元の E2E では再現できず、本番は GET の値で確かめる |
 | メールの変更に新旧両方の確認 | `mailer_secure_email_change_enabled` | `true` | `double_confirm_changes = true` | 今の既定のまま |
-| パスワード変更の通知を有効にする | `mailer_notifications_password_changed_enabled` | `true` | `[auth.email.notification.password_changed] enabled` | 直接の `PUT /user` の変更を本人に知らせる |
+| パスワード変更の通知を有効にする | `mailer_notifications_password_changed_enabled` | `true` | `[auth.email.notification.password_changed] enabled` | 直接の `PUT /user` の変更を本人に知らせる。**アプリのパスワードの再設定・変更が消えたので（段4）、GoTrue の `/recover`・直の `PUT /user` の通知だけが残る** |
 | 同通知の件名 | `mailer_subjects_password_changed_notification` | `パスワードの変更を受け付けました` | `subject` | アプリの通知（「パスワードを変更しました」）と件名を分けて見分ける |
-| 同通知の本文 | `mailer_templates_password_changed_notification_content` | 下の「雛形」 | `content_path`（`supabase/templates/password_changed_notification.html`） | パスワードを本文に入れない |
-| 確認メールの雛形 | `mailer_templates_confirmation_content`（鍵名は GET の応答で確かめる）、件名 `mailer_subjects_confirmation` | 下の「雛形」、件名 `メールアドレスの確認` | `[auth.email.template.confirmation]` | 既定の `ConfirmationURL` だとアプリの確認の窓口が `missing_token_hash` で落ちる。**`mailer_autoconfirm: false` と同じ `PATCH` か、その前に送る**（段階 A の順番）。後に回すと、確認メールが既定のまま届き、新しい会員が登録を確定できない |
+| 同通知の本文 | `mailer_templates_password_changed_notification_content` | 下の「雛形」 | `content_path`（`supabase/templates/password_changed_notification.html`） | パスワードを本文に入れない。**本文の「パスワードを再設定のうえ」は段4の方針と合わない**（お客さんの `password` は J で拒否されるので、再設定しても入れない）。雛形は段4では変えない。見直しは開店前（[手順書の節7・9](./passkey-production-apply-runbook.md)） |
+| 確認メールの雛形 | `mailer_templates_confirmation_content`（鍵名は GET の応答で確かめる）、件名 `mailer_subjects_confirmation` | 下の「雛形」、件名 `メールアドレスの確認` | `[auth.email.template.confirmation]` | **段4（2026-11-22）で、確認のリンクの窓口 `/api/auth/confirm` を消した**ので、雛形はリンクを出さず、`{{ .Token }}`（8桁）を入れる（オーナーの答え5は A）。確認前のアカウントも、ログインの画面にメールの8桁の数字を入れて入る。古い雛形（リンク）のままだと、確認前の人は入れない。**`mailer_autoconfirm: false` と同じ `PATCH` か、その前に送る**（段階 A の順番）。後に回すと、確認メールが古い雛形のまま届く。本番の貼り替えは[手順書の節2の3 の 2b](./passkey-production-apply-runbook.md) |
 | ログインの確認コードの雛形 | `mailer_templates_magic_link_content`、件名 `mailer_subjects_magic_link` | 本文に `{{ .Token }}` を含み、有効期限は「5分」。件名 `ログインの確認コード` | `[auth.email.template.magic_link]` | アプリは本文のコードを入力させる。台帳の「ログインのメールの型」。確認メールの雛形と同じ `PATCH` に入れる |
-| 確認メールの戻り先（読むだけ） | `site_url`・`uri_allow_list` | **変えない。読んで、アプリの戻り先が受け付けられることを確かめる** | `site_url`・`additional_redirect_urls` | 確認メールのリンクは雛形の `{{ .RedirectTo }}`（アプリの `/api/auth/confirm`。`register/route.ts` の `emailRedirectTo`）から作る。GoTrue は戻り先が Site URL と同じホスト名か Redirect URLs（`uri_allow_list`）に当たる時だけ受け付け、外れると Site URL に置き換える。置き換わるとリンクが確認の窓口に届かず、登録を確定できない（www と apex のようにホスト名がずれるだけで起きる。本番では未確認） |
-| TOTP の登録・検証 | `mfa_totp_enroll_enabled`・`mfa_totp_verify_enabled` | `true`・`true` | `[auth.mfa.totp]` | `SEC-AUTH-030-AC-01`・`FREQ-316-REQ-02-AC-01`。管理者の二要素 |
+| 確認メールの戻り先（読むだけ。**段4で要らなくなった**） | `site_url`・`uri_allow_list` | **変えない。段4で確認のリンクの窓口を消したので、戻り先の確かめは要らない**（Site URL は、Supabase 自身が送るメールの住所として別に決める） | `site_url`・`additional_redirect_urls` | 段4まで（記録）: 確認メールのリンクは雛形の `{{ .RedirectTo }}`（アプリの `/api/auth/confirm`）から作っていた。GoTrue は戻り先が Site URL と同じホスト名か Redirect URLs（`uri_allow_list`）に当たる時だけ受け付け、外れると Site URL に置き換える。置き換わるとリンクが確認の窓口に届かず、登録を確定できなかった。段4で窓口とリンクを消したので、この確かめは要らない |
+| TOTP の登録・検証 | `mfa_totp_enroll_enabled`・`mfa_totp_verify_enabled` | **`false`・`false`（段4で止める。手順 4）**。段4のコードは TOTP を使わない | `[auth.mfa.totp]` | 段4まで `true`・`true`（管理者の二要素）。段4で店員はパスキーだけで入る。止める手順と残った要素は[手順書の節2の7](./passkey-production-apply-runbook.md) |
 | パスキーの有効化・RP | パスキーの有効化と WebAuthn の RP（`rp_id`・`rp_origins`。鍵名は Management API の GET の応答で確かめる） | **段3の前に決める**: `rp_id` は本番のドメイン、`rp_origins` は本番のアプリの出所（https）。手元の `localhost` を本番に持ち込まない | `[auth.passkey] enabled`・`[auth.webauthn] rp_id`・`rp_origins`（手元は `localhost`・`http://localhost:3000`） | パスキー設計・[本番への当て方の順と前提](./db-migrations.md)。`supabase config push` は流さない（手元の RP と、本番に無いフックの関数が入るため） |
 | Custom Access Token のフック | ダッシュボードの Auth の Hooks | `public.passkey_access_token_hook` を登録（**移行 B を当てた後**。段3で、E の直前） | `[auth.hook.custom_access_token]` | B より先に登録すると全員のログインが止まる。順は[本番への当て方の順と前提](./db-migrations.md) |
 | メールでのサインインを有効にする | `external_email_enabled` | `true` | `[auth.email] enable_signup` | 変えない（アプリの `/signup` が要る） |
@@ -68,17 +68,16 @@
 
 ### 雛形
 
-確認メール（件名 `メールアドレスの確認`。有効期限の字は `otp_expiry` に合わせて「5分」）。
+確認メール（件名 `メールアドレスの確認`。有効期限の字は `otp_expiry` に合わせて「5分」）。段4（2026-11-22）で、確認のリンクの窓口を消したので、リンクとパスワードの案内は無く、8桁の数字だけを出す（オーナーが承認した文。手元の `supabase/templates/confirmation.html` と同じ。一字一句そのまま使う）。
 
 ```html
 <h2>メールアドレスの確認</h2>
-<p>会員登録を完了するには、次のリンクを開いてください。</p>
-<p><a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=signup">メールアドレスを確認する</a></p>
-<p>ログインには、最初に登録したときのパスワードをお使いください。思い出せない場合は、ログイン画面のパスワードの再設定から設定し直せます。</p>
-<p>リンクの有効期限は5分です。心当たりがない場合は、このメールを破棄してください。</p>
+<p>ログインの確認コード: {{ .Token }}</p>
+<p>ログインの画面にこの8桁の数字を入れると、会員登録が終わります。</p>
+<p>有効期限は5分です。心当たりがない場合は、このメールを破棄してください。</p>
 ```
 
-「最初に登録したときのパスワード」の 1 行は、確認前の会員が別のパスワードで登録し直しても最初のパスワードは変わらない（先回りの乗っ取りの防止。THR-AUTH-016）ため。全員に同じ文を出すので、登録済みかどうかは明かさない。
+（段4まで: リンク `{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=signup` と、「最初に登録したときのパスワード」の案内があった。パスワードの登録・ログインの窓口を消したので、どちらも要らなくなった。）
 
 パスワード変更の通知（GoTrue 側。件名 `パスワードの変更を受け付けました`）。段4の Task 29（2026-11-22）で、アプリのパスワードの再設定・変更（`/auth/password-reset`・`/account/password`）は消えた。この雛形は GoTrue 自身の通知なので残す（GoTrue の `/recover` と直の `PUT /user` は、アプリの外に残る。フックがお客さんの `password` での入室を拒むので、再設定してもパスワードでは入れない）。
 
@@ -98,8 +97,8 @@
 | メール送信の枠（`rate_limit_email_sent`） | 自前の SMTP が有効でないと変えられない | 先に自前の SMTP を設定する | Supabase 既定のメール送信は時間あたりの上限が小さく、宛先も制限されるので、**本番は自前の SMTP（Resend）を設定しないと、一般の会員にログインの確認コードが届かない**。`GET` の `smtp_host` が空でないことを確かめる |
 | 漏洩パスワードの確認 | プラン依存 | ダッシュボードの Authentication → Attack Protection | プランを確認してから。拒まれたら台帳へ |
 | Site URL | 台帳の 1c の別件 | ダッシュボードの Authentication → URL Configuration | 台帳に従う。本番のアプリの正規のホスト名（`APP_ALLOWED_ORIGINS` の先頭）と同じホスト名にする |
-| Redirect URLs（`uri_allow_list`） | 確認メールのリンクの戻り先（アプリの `/api/auth/confirm`）を GoTrue が受け付ける条件。台帳には Site URL（1c）しか無い | ダッシュボードの Authentication → URL Configuration → Redirect URLs | `APP_ALLOWED_ORIGINS` の各オリジンの `/api/auth/confirm` が、Site URL と同じホスト名か Redirect URLs に当たること（www と apex のようにずれるなら Redirect URLs に足す）。段階 A の前提。台帳に行を足す |
-| 確認メールの雛形の `{{ .Token }}` | 台帳の「ログインのメールの型」 | ダッシュボードの Authentication → Emails | ログインの確認コードのメールに `{{ .Token }}` が入っていること |
+| Redirect URLs（`uri_allow_list`。**段4で、確認のリンクの窓口を消したので要らなくなった**） | （段4まで）確認メールのリンクの戻り先（アプリの `/api/auth/confirm`）を GoTrue が受け付ける条件。台帳には Site URL（1c）しか無い | ダッシュボードの Authentication → URL Configuration → Redirect URLs | `APP_ALLOWED_ORIGINS` の各オリジンの `/api/auth/confirm` が、Site URL と同じホスト名か Redirect URLs に当たること（www と apex のようにずれるなら Redirect URLs に足す）。段階 A の前提。台帳に行を足す |
+| 確認メールの雛形の `{{ .Token }}` | 台帳の「ログインのメールの型」。段4で、確認メールにも `{{ .Token }}` を入れる（答え5は A） | ダッシュボードの Authentication → Emails | ログインの確認コードのメールと、確認メール（Confirm sign up）の両方に `{{ .Token }}` が入っていること |
 | Cloudflare の Turnstile のウィジェット | 本番のウィジェットは未作成の可能性が高い | Cloudflare のダッシュボードで作る | 同じ秘密を Vercel の `TURNSTILE_SECRET_KEY` と Supabase の captcha の両方に入れる。無ければ段階 B は保留し、台帳の項目にする |
 | Vercel の `APP_ALLOWED_ORIGINS` | `VERCEL_ENV=production` で未設定だとビルドが落ちる（SEC-ABOUT-007-AC-02） | Vercel の Production の環境変数（ビルドの前） | [シークレット管理方針](secrets.md)の `APP_ALLOWED_ORIGINS` |
 
@@ -130,7 +129,7 @@ controller（作業者）が、オーナーの許可のもとで行う。`supaba
 4. サインインの IP の枠に当たる鍵が応答にあるか（スキーマに無い見込み）。
 5. `password_required_characters` が空でないか（空でなければオーナーに知らせる。変えるかは別の判断）。
 6. **今の確認メールの雛形と件名**（`mailer_templates_confirmation_content`・`mailer_subjects_confirmation`）と**ログインのコードの雛形と件名**（`mailer_templates_magic_link_content`・`mailer_subjects_magic_link`）。既定のまま（`ConfirmationURL` を含む）か、すでに変えてあるかを報告する。
-7. **`site_url` と `uri_allow_list`**。アプリの確認の戻り先（`APP_ALLOWED_ORIGINS` の各オリジンの `/api/auth/confirm`）が、Site URL と同じホスト名か `uri_allow_list` に当たるか。当たらなければ段階 A に進まず、オーナーに Redirect URLs を足してもらう（上の「手で変える項目」）。
+7. **`site_url` と `uri_allow_list`**（段4で確認のリンクの窓口を消したので、この確かめは要らなくなった。記録として残す）。アプリの確認の戻り先（`APP_ALLOWED_ORIGINS` の各オリジンの `/api/auth/confirm`）が、Site URL と同じホスト名か `uri_allow_list` に当たるか。当たらなければ段階 A に進まず、オーナーに Redirect URLs を足してもらう（上の「手で変える項目」）。
 8. **確認前の利用者の数**。本番の DB で `select count(*) from auth.users where email_confirmed_at is null and deleted_at is null` を流して報告する（読むだけ）。0 でなければ、`mailer_autoconfirm: false` にした後その人たちは確認が済むまでログインできない（店長が作った会員・試し用の 4 人を含みうる）ので、段階 A に進まずオーナーに知らせ、確認を済ませるか確認済みにするかを決めてもらう。店長が新しく作る会員は、コードが `email_confirm: true` で作るので増えない（DD-ADMIN-002）。
 
 ### 2. 段階 A（captcha 以外）
@@ -146,7 +145,7 @@ controller（作業者）が、オーナーの許可のもとで行う。`supaba
 | OTP・メール変更 | `mailer_otp_exp`、`mailer_otp_length`、`mailer_secure_email_change_enabled` |
 | パスワード | `password_min_length`、`security_update_password_require_reauthentication`、`security_update_password_require_current_password` |
 | パスワード変更の通知 | `mailer_notifications_password_changed_enabled`、`mailer_subjects_password_changed_notification`、`mailer_templates_password_changed_notification_content` |
-| TOTP | `mfa_totp_enroll_enabled`、`mfa_totp_verify_enabled` |
+| TOTP（**段4で止める側の値は `false`・`false`**。手順 4。下の PATCH に入れるなら、段4の目標の値で送る） | `mfa_totp_enroll_enabled`、`mfa_totp_verify_enabled` |
 
 **この `PATCH` に入れないもの**: 表で「変えない」とした鍵（`password_required_characters`・`external_email_enabled`・`disable_signup`）、読むだけの鍵（`site_url`・`uri_allow_list`・`sessions_single_per_user`・`smtp_host` など）、captcha の 3 鍵（段階 B）、`password_hibp_enabled`（別に 1 回。プラン依存のため）、`max_rows`（別の窓口）。
 
@@ -187,7 +186,9 @@ controller（作業者）が、オーナーの許可のもとで行う。`supaba
 - **保存:** 各ページの「Save」を押してから次へ進む。
 - **控え:** 変える前の値を控える（スクリーンショットでよい）。戻す時に使う。
 
-### 手順 1: メールのログインの設定（パスワード・コード）
+### 手順 1: メールのログインの設定（パスワードの欄は段4で要らなくなった・コード）
+
+段4（2026-11-22）で、アプリのパスワードのログイン・登録・再設定・変更を消した。下の表のパスワードの欄（Secure password change・Require current password when updating・Minimum password length）は、アプリには要らなくなった。GoTrue を直に叩く道の守りとして、設定は残す（お客さんの `password` は移行 J のフックが拒否する）。**メールのコード（Email OTP の期限・桁数）の欄は、新しい流れの前提なので残す**。
 
 住所: `https://supabase.com/dashboard/project/pjidrgofvaglnuuznnyj/auth/providers?provider=Email`
 
@@ -198,10 +199,10 @@ controller（作業者）が、オーナーの許可のもとで行う。`supaba
 | Enable Email provider | メールでのログイン | **オンのまま** | 触らない |
 | Confirm email | 登録の時に確認メールを必須にする | **オンのまま**（本番はすでにオン） | 触らない |
 | Secure email change | メールアドレスの変更で新旧両方に確認を送る | **オン** | オンにする |
-| Secure password change | 古いログインのままのパスワード変更に再確認を求める | **オン** | オンにする |
-| Require current password when updating | パスワード変更で今のパスワードを求める | **オン** | オンにする |
+| Secure password change | 古いログインのままのパスワード変更に再確認を求める | **オン**（段4で、アプリのパスワード変更は無い。直の `PUT /user` の守りとして残す） | オンにする |
+| Require current password when updating | パスワード変更で今のパスワードを求める | **オン**（段4で、アプリのパスワード変更は無い。直の `PUT /user` の守りとして残す） | オンにする |
 | Prevent use of leaked passwords | 漏れたパスワードを拒む | **触らない**（Pro 以上でしか使えない。本番は Free） | — |
-| Minimum password length | パスワードの最低の文字数 | **16** | 16 にする |
+| Minimum password length | パスワードの最低の文字数 | **16**（段4で、アプリのパスワードの窓口は無い。GoTrue を直に叩く道の守りとして残す） | 16 にする |
 | Password Requirements | 記号・大文字などの必須 | **触らない**（既定は必須なし） | 何か必須になっていたら変えずに作業者へ伝える |
 | Email OTP Expiration | ログインの確認コードの期限（秒） | **300** | 300 にする |
 | Email OTP Length | ログインの確認コードの桁数 | **8** | 8 にする |
@@ -226,10 +227,9 @@ controller（作業者）が、オーナーの許可のもとで行う。`supaba
 
 ```html
 <h2>メールアドレスの確認</h2>
-<p>会員登録を完了するには、次のリンクを開いてください。</p>
-<p><a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=signup">メールアドレスを確認する</a></p>
-<p>ログインには、最初に登録したときのパスワードをお使いください。思い出せない場合は、ログイン画面のパスワードの再設定から設定し直せます。</p>
-<p>リンクの有効期限は5分です。心当たりがない場合は、このメールを破棄してください。</p>
+<p>ログインの確認コード: {{ .Token }}</p>
+<p>ログインの画面にこの8桁の数字を入れると、会員登録が終わります。</p>
+<p>有効期限は5分です。心当たりがない場合は、このメールを破棄してください。</p>
 ```
 
 **2-2. Magic link or OTP（ログインの確認コード）**
@@ -247,7 +247,7 @@ controller（作業者）が、オーナーの許可のもとで行う。`supaba
 <p>有効期限は5分です。期限が切れた場合は再送してください。</p>
 ```
 
-`{{ .RedirectTo }}`・`{{ .TokenHash }}`・`{{ .Token }}` は Supabase が送る時に中身へ置き換える印。1 字でも変えるとリンクやコードが壊れるので、そのまま貼る。
+`{{ .Token }}` は Supabase が送る時に8桁の数字へ置き換える印。1 字でも変えるとコードが壊れるので、そのまま貼る（確認メールの雛形のリンク `{{ .RedirectTo }}`・`{{ .TokenHash }}` は、段4で無くした）。
 
 ### 手順 3: パスワード変更の通知のメール
 
@@ -269,11 +269,17 @@ controller（作業者）が、オーナーの許可のもとで行う。`supaba
 
 Security notifications が見当たらない時は、右上の自分のアイコン → **Feature previews** → **Security notification templates** をオンにすると出る（Supabase の 2026 年の変更履歴による）。それでも有効にするスイッチが無ければ、件名と本文だけ直して保存し、作業者に「スイッチが無い」と伝える（有効にするのは Management API でしかできない可能性がある。公式文書は API の手順しか書いていない）。
 
-### 手順 4: 二段階の認証（TOTP）
+### 手順 4: 二段階の認証（TOTP）を止める（段4）
+
+段4（2026-11-22）で、アプリは TOTP を使わなくなった（登録も確認もしない）。店員はパスキーだけで入る。**本番では、TOTP の登録と確認を止める**（**調整役がオーナーの許可を得てから**。止める位置は[手順書の節2の7](./passkey-production-apply-runbook.md)）。
 
 住所: `https://supabase.com/dashboard/project/pjidrgofvaglnuuznnyj/auth/mfa`
 
-左の **Authentication** → **Multi-Factor** を開く。**Authenticator App (TOTP)** が **Enabled**（登録も確認もできる）になっていることを確かめる。既定でオンなので、オンなら何もしない。オフなら Enabled にして保存する。店長の画面の二段階の認証に使う。
+1. 左の **Authentication** → **Multi-Factor** を開く。今の状態（**Authenticator App (TOTP)** の Enroll・Verify がオンか）を控える（戻す時に使う）。
+2. **Authenticator App (TOTP)** の **Enroll**（登録）と **Verify**（確認）を、**両方オフ**にして保存する。画面で1つの切り替えなら、**Disabled** にする。鍵名は `mfa_totp_enroll_enabled`・`mfa_totp_verify_enabled`（`false`・`false`）。
+3. 保存後に、画面を開き直して、両方オフであることを確かめる。見つからない欄は飛ばして、作業者に伝える。
+4. 店員の TOTP の要素の残りは、H の招待・やり直しの取引が消す。残りの数は[手順書の節2の7](./passkey-production-apply-runbook.md)の SQL で読む。
+5. 戻す時（古いアプリへ戻す時だけ）: 両方オンに戻す（[手順書の節4の (2b)](./passkey-production-apply-runbook.md)）。
 
 ### 手順 5: 一度に返す行の上限（読むだけ）
 
@@ -364,7 +370,7 @@ Security notifications が見当たらない時は、右上の自分のアイコ
 | 11. メールのコードの型（`magic_link`）の雛形（段2） | 雛形の本文に `{{ .Token }}`・8桁・5分に頼る | 本番の `magic_link` の雛形に `{{ .Token }}` が在り、`otp_length` が8・`otp_expiry` が300であること |
 | 12. 始めの `(b)` の切り替えの実機の確認と、`/otp` の IP の枠（段2） | `NEXT_PUBLIC_PASSKEY_START_MODE`。サインイン・サインアップの IP ごとの枠（5分30回）が、お客さんの新規と予備の主な道になる | `(b)` の切り替えを実機で確かめる。`/otp` にも `Sb-Forwarded-For` を添えられるか、`createServiceRoleAuthClient` を `sb_secret_` に替える要否を確かめる |
 
-段3b（2026-11-20）: パスキーの移行は A〜I の9本になった（H が店員の招待の表と関数、I が死んだ知らせの点検と worker の心拍）。**当てる順・1本ごとの前の確かめ・戻し方の順・上の表の確認の本番での手順は [パスキーの移行を本番に当てる手順書](./passkey-production-apply-runbook.md)**（節6が設計 8-2 の1〜12と段3b が足した確認）。ダッシュボードの設定（Passkeys・RP・フック）は B を当てた後、E は最後。
+段3b（2026-11-20）: パスキーの移行は A〜I の9本になった（段4で J・K が増えて11本。J はお客さんの `password` を拒否する旗、K はパスワード用の表と関数を消す）（H が店員の招待の表と関数、I が死んだ知らせの点検と worker の心拍）。**当てる順・1本ごとの前の確かめ・戻し方の順・上の表の確認の本番での手順は [パスキーの移行を本番に当てる手順書](./passkey-production-apply-runbook.md)**（節6が設計 8-2 の1〜12と段3b が足した確認）。ダッシュボードの設定（Passkeys・RP・フック）は B を当てた後、E は最後。
 
 ## お客さんのメールのコードのログイン（段2）
 
