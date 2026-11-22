@@ -50,7 +50,7 @@ AUTH の領域の構成・画面・画面遷移・状態遷移・API・データ
 | Origin の確かめ・no-store | `src/proxy.ts` | `/api` の書き換えの要求を許可の一覧の Origin だけで通す（FREQ-327）。`/api/auth` 配下の応答（Origin 拒否の 403 も）に `Cache-Control: no-store` を付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037） |
 | CSRF の印 | `src/lib/csrfMiddleware.ts`・`csrf.ts` | `logout` が二重送信の印を確かめる |
 | 送り先の検証・住所 | `src/lib/redirect.ts` の `getRequestOrigin`、`src/lib/site-url-guard.ts` | メールのリンクの住所。ログインの後の送り先の確かめは `src/features/auth/return-intent/return-path.ts`（DD-AUTH-032）に置き換え、共有関数 `sanitizeRedirectPath` は消す |
-| ボットの確かめ・漏洩の照合・メール | `src/lib/turnstile.ts`・`pwned-password.ts`・`mail.ts`・`src/lib/ops/site-url-alert.ts` | 窓口が呼ぶ |
+| ボットの確かめ・漏洩の照合・メール | `src/lib/turnstile.ts`・`pwned-password.ts`・`mail.ts` | 窓口が呼ぶ |
 | 監査 | `src/lib/audit.ts` の `logAudit` | 認証の出来事を `audit_logs` に残す |
 | Supabase の client | `src/lib/supabase/server.ts` の `createPublicClient`・`createClient`・`createServiceRoleClient` | 匿名の確かめ・利用者の session・service role |
 | ゲストの印・注文の紐付け | `src/features/cart/services/guest-shopping-token.ts`（H）、`src/lib/orders/link-guest-orders.ts`（注文まわりの作り直しが書き換え中） | ログインの保存の後にカート・お気に入り・ゲスト注文を会員へ合わせる |
@@ -148,7 +148,7 @@ sequenceDiagram
 | --- | --- |
 | 上位 | FREQ-319-REQ-03、FREQ-319-REQ-05、FREQ-332-REQ-04、ADR-0403 |
 | 根拠 | 企業のメールのリンクの検査はリンクを先に開くので、開いた時に印を消費すると利用者が永久に再設定できない。消費はパスワードを実際に変える時だけにする（FREQ-319-REQ-03、ADR-0403）。漏れた印でパスワードを変えさせないよう、印は 10 分・1回限りにする（FREQ-332-REQ-04）。最新の1本だけは保証しない（SEC-AUTH-018 は満たさない。前の印を使用済みにするのに失敗しても新しい印を出す。`request/route.ts`） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/password-reset/*/route.ts`、`src/features/auth/services/password-reset-session.ts`） |
 
@@ -183,23 +183,18 @@ flowchart LR
 | `POST /api/auth/login/resend` | なし | 50 回／600 秒（login と同じ枠） | 5 回／600 秒（login と同じ枠、保留の宛先） |
 | `POST /api/auth/otp/verify` | なし | 30 回／600 秒 | 5 回／600 秒（保留の宛先） |
 | `POST /api/auth/register` | あり | 20 回／3600 秒 | 5 回／3600 秒（Turnstile と漏洩の確かめの後、控えの作成と既存会員の照会の前） |
-| `POST /api/auth/password-reset/request` | あり | 10 回／3600 秒 | 5 回／3600 秒（Turnstile の後） |
-| `POST /api/auth/password-reset/link` | なし | 20 回／600 秒 | なし |
-| `POST /api/auth/password-reset/confirm` | なし | 10 回／3600 秒 | なし |
 | `GET /api/auth/confirm` | なし | 50 回／600 秒 | なし |
 | `GET・POST /api/auth/oauth/start`、`GET /api/auth/oauth/callback` | なし | 50 回／600 秒 | なし |
 | `POST /api/auth/refresh` | なし | 30 回／600 秒 | なし |
 | `POST /api/auth/mfa/enroll-totp` | なし | 10 回／600 秒 | なし |
 | `POST /api/auth/mfa/verify` | なし | 20 回／600 秒 | なし |
-| `POST /api/auth/password/change/start` | なし（ログイン中の会員。現行パスワードが要る） | 20 回／600 秒 | 5 回／600 秒（利用者の id。全 IP を合わせた本人ごとの枠。認証と CSRF と aal2 の確かめの後、現行パスワードを試す前） |
-| `POST /api/auth/password/change/confirm` | なし（ログイン中の会員。メールのコードが要る） | 20 回／600 秒 | 5 回／600 秒（利用者の id。認証と CSRF と aal2 の確かめの後、コードを使う前） |
 
 - Turnstile の描画は共通のフック `useTurnstileWidget` が明示の描画（`flexible`、300px より狭い時は縮める）で行い、ログイン・会員登録・再設定の3つのフォームが使う（FREQ-328-REQ-01・02）
 - 本番で Turnstile の鍵が無い時は 403 で断る（`src/lib/turnstile.ts`）
 - 確認コードの再送（`login/resend`）には Turnstile が無い。FREQ-330-REQ-03 は再送にも当てると書くので、上位にしていない
 - 回数の制限（共有の `enforceRateLimit`）は各窓口の先頭で静的に import して呼ぶ。呼び出しが例外を投げた時は握りつぶさず、窓口は先へ進まない（外側の `catch` の 500。外側の `catch` が無い `confirm`・`login/resend`・`post-login` は例外がそのまま届き、`password-reset/link` は既存の流儀の 400 `link_expired`）。数え場所の失敗の 503 は共有部品が返す（SEC-AUTH-013-AC-02、ADR-0009（範囲外）、DD-AUTH-038。2026-10-28、波 4 の Task 4）
 - IP は共有の `getClientIp` が Vercel の見出し（`x-vercel-forwarded-for`→`x-real-ip`）だけから取り、`x-forwarded-for` は読まない（SEC-AUTH-013、ADR-0416。2026-10-28、波 4 の Task 2）。取れない時は `null` の 1 つの枠。AUTH 系の E2E は送り元を `x-real-ip`（E2E のアプリが固定の環境 `CLIENT_IP_HEADER` で信頼する）で分ける（Task 5。共通の補助 `member-session-helpers.ts` を含む）。Supabase Auth はアプリのサーバーの IP で数える（この点は SEC-AUTH-013 を満たさない）
-- 回数の制限の無い窓口: `login/cancel`・`logout`・`me`・`mfa/status`・`password-reset/session`
+- 回数の制限の無い窓口: `login/cancel`・`logout`・`me`・`mfa/status`
 - 状態を変える `POST` は共有の proxy が Origin で確かめる。許可の一覧が無い時に要求の見出しから比べる元を作る所は proxy にある（SEC-AUTH-025 の一覧が無い時の扱いは満たさない）
 - `/api/auth` 配下の応答の `Cache-Control: no-store` は、窓口ごとに書かず共有の proxy が付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037）。窓口が自分で付ける値（いずれも `no-store`）と同じなので、どちらが最終の応答に残っても変わらない
 
@@ -224,7 +219,7 @@ flowchart LR
 | --- | --- |
 | 上位 | FREQ-323-REQ-02、SEC-AUTH-014、SEC-AUTH-019、ADR-0405、NFR-SEC-008（範囲外） |
 | 根拠 | 短い・漏れたパスワードでリスト型攻撃の成功率を上げないため、16 文字以上で HIBP の k-匿名の照合に当たらない物だけを受け、文字の種類の決まりは課さない（FREQ-323-REQ-01・03、SEC-AUTH-014）。Supabase の漏洩の照合は上位のプランにしか無いのでアプリで照合し、照合先が落ちた時は止めずに監査に残す（FREQ-323-REQ-02、ADR-0405）。Host の偽りで店のメールのリンクを外へ向けさせない（SEC-AUTH-019） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/features/auth/schemas/common.ts`、`src/app/api/auth/register/route.ts`、`src/app/api/auth/password-reset/confirm/route.ts`、`src/app/api/auth/password-reset/request/route.ts`） |
 
@@ -445,7 +440,7 @@ graph TD
 | --- | --- |
 | 上位 | FREQ-92-REQ-01、FREQ-319-REQ-04、FREQ-323-REQ-04、FREQ-328-REQ-03、FREQ-328-REQ-04、FREQ-329-REQ-01、FREQ-329-REQ-02、FREQ-329-REQ-05、FREQ-331-REQ-01、FREQ-331-REQ-02、FREQ-331-REQ-03、FREQ-331-REQ-04、FREQ-331-REQ-05、FREQ-331-REQ-06、FREQ-331-REQ-07、FREQ-333-REQ-01、FREQ-333-REQ-02、FREQ-333-REQ-03、FREQ-333-REQ-04、ADR-0411 |
 | 根拠 | 1つの道で、メールを送る前（申請）・リンクから来た後（新しいパスワード）・終わった後（結果）を出し分ける。どれかは再設定の Cookie の有無で決まり、画面は窓口に聞く（FREQ-332 の流れ）。無効・期限切れのリンクは理由を出す（FREQ-319-REQ-04）。送った後はフォームを畳んで結果だけを出し、宛先は出さない（FREQ-329-REQ-01・02）。打ち間違いを捕まえるため新しいパスワードを2回入れさせる（FREQ-333-REQ-01〜04）。結果の画面は図・題・詳細の階層で一目で読めるようにする（FREQ-331-REQ-01〜07） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/auth/password-reset/page.tsx`、`src/components/AuthResultScreen.tsx`、`src/hooks/useTurnstileWidget.ts`） |
 
@@ -463,7 +458,7 @@ graph TD
 | --- | --- |
 | 上位 | FREQ-332-REQ-01、FREQ-332-REQ-02、FREQ-332-REQ-03、FREQ-319-REQ-03、ADR-0403 |
 | 根拠 | リンクの検査が GET で開いても印が潰れないよう、メールのリンクは副作用の無いこの画面へ着き、画面が開いてから確かめの POST を送る（FREQ-319-REQ-03、ADR-0403）。利用者に確認のボタンを押させずに新しいパスワードの欄へ着かせる（FREQ-332-REQ-01・02）。通信の誤りの時だけ再試行の手段を出す（FREQ-332-REQ-03） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/auth/password-reset/verify/page.tsx`、`VerifyClient.tsx`） |
 
@@ -547,7 +542,7 @@ graph TD
 | --- | --- |
 | 上位 | SEC-AUTH-015、SEC-AUTH-034、FR-AUTH-006、ADR-0421 |
 | 根拠 | ログイン中の会員が自分でパスワードを変える窓口が無く、再設定のメールでしか変えられなかった。窓口を 2 つに分けた順（`start` で現行パスワード、`confirm` でコードと新パスワード）をそのまま画面の 2 段にする（API-AUTH-020・021）。1 段目に現行パスワードを要するのは、盗んだ session の持ち主が本人のメールへコードを撒けないようにするため（ADR-0421）。Google だけで登録した会員はパスワードを持たず 1 段目が必ず失敗するので、再設定への案内を誰にでも固定で出して行き止まりにしない |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`、計画 `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md` の Task 6、`src/app/account/password/`（波 6 の Task 6） |
 
@@ -753,7 +748,7 @@ flowchart TD
 | --- | --- |
 | 上位 | SEC-AUTH-015、SEC-AUTH-034、FR-AUTH-006、ADR-0421 |
 | 根拠 | 再設定（FLOW-AUTH-004）はログアウトした人向けで、ログイン中の会員が自分で変える道が無かった。現行パスワードの確かめ（盗んだ session の持ち主の総当たりは本人ごとの回数で止める）→ メールのコード（本人のメールを持つことの確かめ）→ 新パスワード、の順に確かめ、変更後は全 session を失効してログインし直させる（ADR-0421） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | `src/app/account/password/`、`src/app/api/auth/password/change/*/route.ts`（波 6 の Task 5・6） |
 
@@ -806,7 +801,7 @@ stateDiagram-v2
 | --- | --- |
 | 上位 | FREQ-319-REQ-03、FREQ-332-REQ-04、ADR-0403 |
 | 根拠 | 10 分で切れ、パスワードを変えた時に1回だけ消費する（FREQ-332-REQ-04）。リンクを開いただけでは状態を変えない（FREQ-319-REQ-03、ADR-0403） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/password-reset/request/route.ts`、`link/route.ts`、`confirm/route.ts`） |
 
@@ -861,7 +856,7 @@ stateDiagram-v2
 | --- | --- |
 | 上位 | FREQ-329-REQ-01、FREQ-329-REQ-03、FREQ-329-REQ-04、FREQ-329-REQ-05、FREQ-333-REQ-04 |
 | 根拠 | 送った後はフォームを畳んで結果だけを出し（FREQ-329-REQ-01）、再送は 60 秒待たせ、上限なら `Retry-After` を待ちに入れる（FREQ-329-REQ-03・04）。変えた後も同じ結果の画面にする（FREQ-329-REQ-05）。新しいパスワードの見せ方ではメールの欄を出さない（FREQ-333-REQ-04） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/auth/password-reset/page.tsx`） |
 
@@ -1156,7 +1151,7 @@ stateDiagram-v2
 | --- | --- |
 | 上位 | FREQ-319-REQ-01、FREQ-319-REQ-02、FREQ-332-REQ-04、SEC-AUTH-019 |
 | 根拠 | 再設定の入口（FR-LOGIN-003）。アカウントの照会を DB の関数1回にし（FREQ-319-REQ-01）、アカウントが無い宛先には送らず同じ応答にして、店のドメインを第三者へのメールの踏み台にさせない（FREQ-319-REQ-02）。印は 10 分にし、メールに期限を書く（FREQ-332-REQ-04）。リンクは許可した住所でだけ作る（SEC-AUTH-019） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/password-reset/request/route.ts`） |
 
@@ -1177,7 +1172,7 @@ stateDiagram-v2
 | --- | --- |
 | 上位 | FREQ-319-REQ-03、FREQ-319-REQ-04、FREQ-332-REQ-01、FREQ-332-REQ-04、SEC-AUTH-018、ADR-0403 |
 | 根拠 | リンクの検査は GET も JS つきの POST も踏むので、どちらでも印を消費しない（FREQ-319-REQ-03、ADR-0403）。無効・期限切れは理由を返して画面に出させる（FREQ-319-REQ-04）。確かめが通ったら 10 分の再設定の Cookie を出し、画面を新しいパスワードの欄へ進める（FREQ-332-REQ-01・04、SEC-AUTH-018） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/password-reset/link/route.ts`） |
 
@@ -1197,7 +1192,7 @@ stateDiagram-v2
 | --- | --- |
 | 上位 | FREQ-332-REQ-02、FREQ-333-REQ-04 |
 | 根拠 | 再設定のページが新しいパスワードの見せ方にするかを決めるため、Cookie を読めない画面の代わりに有効かどうかを答える（FREQ-332-REQ-02）。新しいパスワードの見せ方ではメールの欄を出さないので、宛先は窓口が返す（FREQ-333-REQ-04） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/password-reset/session/route.ts`） |
 
@@ -1214,7 +1209,7 @@ stateDiagram-v2
 | --- | --- |
 | 上位 | FREQ-319-REQ-03、FREQ-319-REQ-05、FREQ-323-REQ-02、SEC-AUTH-014、SEC-AUTH-018、ADR-0403、ADR-0405 |
 | 根拠 | 印の消費をパスワードを変える直前まで遅らせ、同じリンクから何枚 Cookie が出ても通るのは1つだけにする（FREQ-319-REQ-03、SEC-AUTH-018、ADR-0403）。更新の失敗を成功にせず、変えた後は乗っ取った人のセッションを残さないよう全部を切って本人に知らせる（FREQ-319-REQ-05）。16 文字以上で漏洩していない物だけを受ける（FREQ-323-REQ-01〜03、SEC-AUTH-014、ADR-0405） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/password-reset/confirm/route.ts`） |
 
@@ -1380,7 +1375,7 @@ stateDiagram-v2
 | --- | --- |
 | 上位 | SEC-AUTH-015、SEC-AUTH-034、FR-AUTH-006、ADR-0421 |
 | 根拠 | ログイン中の会員が自分でパスワードを変える 2 段の 1 段目（波 6 の決定）。回数の制限は ARC-AUTH-005 の表に、コードの保存は DATA-AUTH-009・010 に書いた。現行パスワードを先に求めるのは、盗んだ session の持ち主が本人のメールへコードを撒けないようにするため（計画の ruling 4）。確かめは captcha を免除される auth だけの client で行い（DD-AUTH-040）、確かめるたびに GoTrue に増える session はすぐ消す（ruling 5）。現行パスワードの総当たりの窓口にならないよう、IP ごとに加えて本人ごとに回数を制限する（ruling 20）。管理者・サポーターは aal2 を必須にする（ruling 17）。パスワード変更の要件（会員の自己変更・全 session 失効・通知・回数・監査）は Task 7 が `docs/02_Requirements/areas/auth.md` に起こす |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト（`tests/integration/api/auth/password-change.test.ts`。開始と確定を本物の部品でつなぎ、DB の関数だけ写しに差し替える）と単体テスト（`tests/unit/api/auth/password-change-start-route.test.ts`）。画面は DD-AUTH-042、E2E は `FR-ACCOUNT-046`（`e2e/` に在る。波 6 の切り替え〔2026-11-01〕で移した。全件実行の結果は未確認） |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`、計画 `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 5、ruling 4・5・17・20、Review Focus 3・4・7） |
 
@@ -1404,7 +1399,7 @@ stateDiagram-v2
 | --- | --- |
 | 上位 | SEC-AUTH-015、SEC-AUTH-034、FR-AUTH-006、ADR-0421 |
 | 根拠 | 2 段の 2 段目。新しいパスワードは 16 文字以上で漏洩していない物だけを受ける（ARC-AUTH-007 と同じ決まり）。コードの使い切りは DATA-AUTH-010 の関数に閉じ込めた。変更の後はこの端末を含む全 session を失効して認証 Cookie を消し、通知のメールを送る（再設定の確定と同じ形。ASVS 4.0.3 V3.3.3・V2.2.3）。コードは本人確認なので、弱いパスワードで弾かれた人のコードを焼かないよう、書式と漏洩確認をコードの使い切りより前に置く。「新パスワードが現行と同じ」の確かめは置かない（確かめるには現行パスワードの確かめを呼ぶしかなく、コードを持たない要求でも現行パスワードの当否を明かす窓口になる）。この窓口は GoTrue の `signInWithPassword` を一度も呼ばない |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト（`tests/integration/api/auth/password-change.test.ts`）と単体テスト（`tests/unit/api/auth/password-change-confirm-route.test.ts`）。画面は DD-AUTH-042、E2E は `FR-ACCOUNT-046`（`e2e/` に在る。波 6 の切り替え〔2026-11-01〕で移した。全件実行の結果は未確認） |
 | 出どころ | 計画 `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 5、P13・P14・P15、ruling 17〜20、Review Focus 4・5・6） |
 
@@ -1637,7 +1632,7 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-AUTH-038、SEC-AUTH-056、ADR-0471 |
+| 上位 | FR-AUTH-038、SEC-AUTH-019、SEC-AUTH-056、ADR-0471 |
 | 根拠 | 店員を増やす唯一の窓口。アカウントが無ければ作り、在れば同じアカウントを使い、応答を同じにする。今の店員は 409 で、やり直しの守りを迂回させない。発行はメールが送れる設定の時だけ行う |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト（`tests/integration/api/admin-staff-invites-api.test.ts`）、単体テスト（`tests/unit/api/admin/staff/invites-route.test.ts`）、E2E（`e2e/FR-LOGIN-063-staff-invite-redo-api.spec.ts`） |
@@ -1772,7 +1767,7 @@ stateDiagram-v2
 | --- | --- |
 | 上位 | FREQ-319-REQ-03、FREQ-332-REQ-04、ADR-0403、ADR-0414 |
 | 根拠 | Supabase の再設定のメールを使わず自前の印にしたので、印の行を自前で持つ。消費をパスワードの変更まで遅らせるため、使用の印を別の列に持つ（FREQ-319-REQ-03、ADR-0403）。期限は 10 分（FREQ-332-REQ-04） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`supabase/migrations/20260901102912_remote_schema.sql`） |
 
@@ -1794,7 +1789,7 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FREQ-319-REQ-01、FREQ-320-REQ-01、ADR-0414 |
+| 上位 | FREQ-320-REQ-01、ADR-0414 |
 | 根拠 | メールからアカウントを引くのを先頭の 100 件の走査でなく関数1回にし、200 人目以降でも壊れないようにする（FREQ-319-REQ-01）。見つかった・無い・引けなかったを分ける（FREQ-320-REQ-01）。呼べるのを service role だけに絞る要件は SEC-AUTH-012 だが、満たさないので上位にしない |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -1817,7 +1812,7 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SEC-AUTH-024、SEC-AUTH-032、FREQ-320-REQ-02、FREQ-332-REQ-04 |
+| 上位 | SEC-AUTH-024、SEC-AUTH-032、FREQ-320-REQ-02 |
 | 根拠 | スクリプト・平文の通信・別のサイトからの送信で Cookie を盗ませず使わせないため、トークンは HttpOnly・本番で Secure・SameSite を付け、短命の保留と再設定は Strict にする（SEC-AUTH-024）。CSRF の印は画面が読むので HttpOnly にしない。access の寿命を refresh にそろえる（FREQ-320-REQ-02）。保留と再設定はパスワードを通った・リンクを確かめた事実を署名した印で持つ（FREQ-58-REQ-01、ADR-0400、FREQ-335-REQ-04、FREQ-332-REQ-04） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -1951,7 +1946,7 @@ stateDiagram-v2
 | --- | --- |
 | 上位 | SEC-AUTH-015、ADR-0421 |
 | 根拠 | ログイン中の会員が自分でパスワードを変える時、アプリが現行パスワードを確かめた後にメールで 8 桁のコードを送り、変更の確定でもう一度求める（波 6 の決定）。署名つき Cookie だけでは、単回使用・間違いの回数・「新しいコードで前のコードを無効にする」を保てず、並列の推測も数えられない。だから表に置く（計画の ruling 3） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 移行の文面の単体テスト（`tests/unit/migrations/sec-password-change-challenges.test.ts`）、DB 結合テスト（`tests/integration/db/auth_password_change_challenges.integration.test.ts`、`auth_grants_inventory`。M3 を当てた手元の DB で controller が流す） |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`（2026-11-01 のユーザーの答え「パスワードの変更」）、計画 `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 4、ruling 3）、移行 `supabase/migrations/20261101120000_sec_password_change_challenges.sql`（手元は 2026-11-01 の `db reset` で適用済み、本番も 2026-11-01 21:06 頃 JST に適用済み〔Task 11。`db push --linked` の dry-run がこの1本だけを示すのを確かめた。本番の `schema_migrations` は 20 文・`md5(array_to_string(statements, E'\n'))` が `721c73726b8723cd8c4c087585eeb318` で手元の db reset の物と同じ。運用の記録は `docs/06_Operations/db-migrations.md`〕。切り替えまでは `supabase/pending-wave6/` に置いていた） |
 
@@ -1978,7 +1973,7 @@ stateDiagram-v2
 | --- | --- |
 | 上位 | SEC-AUTH-015、ADR-0421 |
 | 根拠 | コードの発行（前のコードを無効にする）と使い切り（間違いの数え上げ）は、並列の呼び出しでも壊れない 1 つの取引でなければならない。アプリが SELECT してから UPDATE する 2 回の往復だと、並列の推測が 5 回を超える。だから DB の関数に閉じ込める |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 移行の文面の単体テスト（`tests/unit/migrations/sec-password-change-challenges.test.ts`）、DB 結合テスト（`tests/integration/db/auth_password_change_challenges.integration.test.ts`、`auth_grants_inventory`） |
 | 出どころ | 計画 `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 4、Review Focus 4）、移行 `supabase/migrations/20261101120000_sec_password_change_challenges.sql` |
 

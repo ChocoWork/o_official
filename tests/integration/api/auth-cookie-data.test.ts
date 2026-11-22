@@ -51,10 +51,7 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
   enforceRateLimit: jest.fn().mockResolvedValue(undefined),
 }));
 
-type Handler = (request: Request) => Promise<any>;
-
 const { cookies } = require('next/headers');
-const { createServiceRoleClient } = require('@/lib/supabase/server');
 
 const MINUTE = 60;
 const DAY = 24 * 60 * 60;
@@ -63,16 +60,6 @@ const setNodeEnv = (value: string | undefined) => {
   (process.env as Record<string, string | undefined>).NODE_ENV = value;
 };
 
-const postJson = (path: string, body: unknown, headers: Record<string, string> = {}) =>
-  new Request(`http://localhost${path}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', ...headers },
-    body: JSON.stringify(body),
-  });
-
-const cookieHeaderFor = (name: string, value: string) => ({ cookie: `${name}=${encodeURIComponent(value)}` });
-
-const resetSession = () => require('@/features/auth/services/password-reset-session') as typeof import('@/features/auth/services/password-reset-session');
 const cookieLib = () => require('@/lib/cookie') as typeof import('@/lib/cookie');
 
 describe('認証の Cookie は用途ごとに名前・寿命・属性を分ける（DATA-AUTH-004）', () => {
@@ -141,45 +128,6 @@ describe('認証の Cookie は用途ごとに名前・寿命・属性を分け�
 
   describe('窓口が実際に出す Cookie', () => {
 
-    test('DATA-AUTH-004 再設定のリンクを確かめると、利用者・宛先・印の行を署名した印を SameSite=Strict・10 分で出す', async () => {
-      const chain: any = {
-        select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        gte: jest.fn().mockReturnThis(),
-        maybeSingle: jest.fn().mockResolvedValue({ data: { id: 'tok1', user_id: 'u1', email: 'user@example.com' }, error: null }),
-      };
-      createServiceRoleClient.mockResolvedValue({ from: jest.fn(() => chain) });
-      const { POST } = require('@/app/api/auth/password-reset/link/route') as { POST: Handler };
-
-      const res = await POST(postJson('/api/auth/password-reset/link', { token: 'raw-reset-token' }));
-
-      expect(res.status).toBe(200);
-      const issued = res.cookies.get('sb-password-reset-session');
-      expect(issued).toEqual(expect.objectContaining({ httpOnly: true, sameSite: 'strict', path: '/', maxAge: 10 * MINUTE }));
-      expect(resetSession().verifyPasswordResetSessionToken(issued.value)).toEqual(
-        expect.objectContaining({ purpose: 'password_reset', userId: 'u1', email: 'user@example.com', tokenId: 'tok1' }),
-      );
-    });
-
-    test('DATA-AUTH-004 再設定の印が無い・壊れている時の session 窓口は、同じ名前を SameSite=Strict で消す', async () => {
-      const { GET } = require('@/app/api/auth/password-reset/session/route') as { GET: Handler };
-
-      const res = await GET(new Request('http://localhost/api/auth/password-reset/session', { headers: cookieHeaderFor('sb-password-reset-session', 'broken.value') }));
-
-      expect(await res.json()).toEqual({ ready: false, email: null });
-      expect(res.cookies.get('sb-password-reset-session')).toEqual(expect.objectContaining({ value: '', sameSite: 'strict', maxAge: 0 }));
-    });
-
-    test('DATA-AUTH-004 生きた再設定の印がある時の session 窓口は、準備ができたと答え、印を消さない', async () => {
-      const token = resetSession().createPasswordResetSessionToken({ userId: 'u1', email: 'user@example.com', tokenId: 'tok1' });
-      const { GET } = require('@/app/api/auth/password-reset/session/route') as { GET: Handler };
-
-      const res = await GET(new Request('http://localhost/api/auth/password-reset/session', { headers: cookieHeaderFor('sb-password-reset-session', token) }));
-
-      expect(await res.json()).toEqual({ ready: true, email: 'user@example.com' });
-      expect(res.cookies.get('sb-password-reset-session')).toBeUndefined();
-    });
-
     test('DATA-AUTH-004 ログアウトは認証の Cookie 全部とゲストのカート・お気に入り、ライブラリの sb-…-auth-token を寿命 0 で消す', async () => {
       cookies.mockResolvedValue({
         get: jest.fn().mockReturnValue(undefined),
@@ -213,20 +161,5 @@ describe('認証の Cookie は用途ごとに名前・寿命・属性を分け�
       expect(res.cookies.get('unrelated-cookie')).toBeUndefined();
       expect(res.cookies.get('sb-abcdefgh-auth-token-code-verifier')).toBeUndefined();
     });
-  });
-
-  describe('署名した印の決まり', () => {
-
-    test('DATA-AUTH-004 再設定の印は、中身を書き換えると署名が合わず読めない', () => {
-      const token = resetSession().createPasswordResetSessionToken({ userId: 'u1', email: 'user@example.com', tokenId: 'tok1' });
-      const [payload, signature] = token.split('.');
-      const forged = Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(payload, 'base64url').toString()), userId: 'victim' }), 'utf8').toString('base64url');
-
-      expect(resetSession().verifyPasswordResetSessionToken(token)).not.toBeNull();
-      expect(resetSession().verifyPasswordResetSessionToken(`${forged}.${signature}`)).toBeNull();
-      expect(resetSession().verifyPasswordResetSessionToken(null)).toBeNull();
-      expect(resetSession().verifyPasswordResetSessionToken('no-dot')).toBeNull();
-    });
-
   });
 });

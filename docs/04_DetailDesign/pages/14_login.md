@@ -50,7 +50,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 回数の制限 | `src/features/auth/middleware/rateLimit.ts` の `enforceRateLimit` | 返り値の有無と例外で分ける |
 | 認証の確かめ | `src/lib/auth/authenticate.ts` の `authenticateRequest`・`authFailureResponse`・`verifyAccessToken` | `ok` と理由で分ける |
 | Cookie の名前と属性 | `src/lib/cookie.ts` | 名前と寿命を借りる |
-| 住所・メール・照合・Turnstile・監査 | `src/lib/redirect.ts`・`site-url-guard.ts`・`mail.ts`・`pwned-password.ts`・`turnstile.ts`・`audit.ts`、`src/lib/ops/site-url-alert.ts` | 返り値で分ける。ログインの後の送り先の確かめは `src/features/auth/return-intent/return-path.ts`（DD-AUTH-032）に置き換え、共有関数 `sanitizeRedirectPath` は消す |
+| 住所・メール・照合・Turnstile・監査 | `src/lib/redirect.ts`・`site-url-guard.ts`・`mail.ts`・`pwned-password.ts`・`turnstile.ts`・`audit.ts` | 返り値で分ける。ログインの後の送り先の確かめは `src/features/auth/return-intent/return-path.ts`（DD-AUTH-032）に置き換え、共有関数 `sanitizeRedirectPath` は消す |
 | ゲストの印・注文の紐付け | `src/features/cart/services/guest-shopping-token.ts`（H）、`src/lib/orders/link-guest-orders.ts`（注文まわりの作り直しが書き換え中） | 呼ぶだけ |
 
 ## 実装の単位
@@ -293,13 +293,13 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | SCR-AUTH-005、STATE-AUTH-004 |
 | 根拠 | 1つの道で、メールを送る前（申請）・リンクから来た後（新しいパスワード）・終わった後（結果）を出し分ける。どれかは HttpOnly の再設定の Cookie で決まるので、画面は窓口に聞く（SCR-AUTH-005、STATE-AUTH-004）。無効・期限切れのリンクは理由を出して URL から外す（FREQ-319-REQ-04）。送った後はフォームを畳み、宛先を出さない（FREQ-329-REQ-01・02）。一致の確かめを長さの後に置き、短いパスワードを2回同じに打った人に「一致しません」の後でまた長さで弾く二度手間をさせない（FREQ-333、`src/app/auth/password-reset/page.tsx`）。Turnstile のトークンは送った時点で使われるので、成否によらず引き直す（FREQ-330、ADR-0411） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/auth/password-reset/page.tsx`） |
 | 旧番号 | IMPL-LOGIN-003 |
 | 旧所在 | `docs/04_DetailDesign/pages/14_login.md`（基準コミットの版）の「機能要件対応表」の FR-LOGIN-003 の行 |
 
-**対応要件 ID:** SCR-AUTH-005、FLOW-AUTH-004、STATE-AUTH-004（その上は FR-LOGIN-003、FREQ-92-REQ-01、FREQ-319-REQ-04、FREQ-323-REQ-04、FREQ-328-REQ-02〜04、FREQ-329-REQ-01〜05、FREQ-331-REQ-01〜07、FREQ-333-REQ-01〜04、ADR-0411）
+**対応要件 ID:** SCR-AUTH-005、STATE-AUTH-004（その上は FREQ-92-REQ-01、FREQ-319-REQ-04、FREQ-323-REQ-04、FREQ-328-REQ-02〜04、FREQ-329-REQ-01〜05、FREQ-331-REQ-01〜07、FREQ-333-REQ-01〜04、ADR-0411）
 
 **入出力:**
 
@@ -388,11 +388,11 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | SCR-AUTH-006、STATE-AUTH-002 |
 | 根拠 | メールのリンクの先では何も消費しない。開いた時に消費すると、企業のメールのリンクの検査が受け取った時に踏んで先に潰し、再送しても同じに潰れて再設定できなくなる（SCR-AUTH-006、STATE-AUTH-002、ADR-0403）。確かめの POST に副作用が無いので確認のボタンを挟まず、開いたら1回だけ自動で送り、新しいパスワードの欄へ進める（FREQ-332-REQ-01・02）。印は1回しか通らない前提なので、再描画や二重の実行で2回送らない印を持つ。通信の誤りの時だけ再試行の手段を出す（FREQ-332-REQ-03） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/auth/password-reset/verify/page.tsx`、`src/app/auth/password-reset/verify/VerifyClient.tsx`） |
 
-**対応要件 ID:** SCR-AUTH-006、FLOW-AUTH-004、STATE-AUTH-002（その上は FREQ-332-REQ-01〜03、FREQ-319-REQ-03、ADR-0403）
+**対応要件 ID:** SCR-AUTH-006、STATE-AUTH-002（その上は FREQ-332-REQ-01〜03、FREQ-319-REQ-03、ADR-0403）
 
 **入出力:**
 
@@ -792,7 +792,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | SCR-AUTH-005 |
 | 根拠 | 再設定のメールを送った後と、パスワードを変えた後の画面を、図・題・詳細・注意書き・操作の階層で一目で読めるようにする（SCR-AUTH-005、FREQ-331-REQ-01〜07）。結果はフォームと入れ替わって出て押したボタンが消えるので、見出しへフォーカスを移して読ませる。中身ごと差し込む status は読まれないことがあり、フォーカスと重ねると二重に読まれるので使わない（FREQ-377（範囲外）、`src/components/AuthResultScreen.tsx`） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/components/AuthResultScreen.tsx`） |
 
@@ -836,7 +836,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | ARC-AUTH-005、SCR-AUTH-005 |
+| 上位 | ARC-AUTH-005 |
 | 根拠 | 自動の描画は Script を読んだ時にしか走らず、タブの切り替えで部品が付け直されると Turnstile が出ないので、明示の描画にする（ARC-AUTH-005、`src/hooks/useTurnstileWidget.ts`）。トークンは使い捨てなので、送るたびに引き直す手段を1か所に集める（FREQ-330-REQ-01・02、ADR-0411）。Turnstile は幅 300px を下回れないので、狭い入れ物では等倍で縮め、ボタンだけが横に張り出すのを防ぐ（FREQ-328-REQ-02・03）。ログイン・会員登録・再設定の3つのフォームが使う（SCR-AUTH-002・003・005） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
@@ -883,7 +883,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 **認証認可:** なし。トークンの確かめはサーバーの共有の `src/lib/turnstile.ts`。
 
-**テスト観点:**（単体テストは無い。E2E `e2e/FR-LOGIN-025`・`026`、`FR-PWRESET-004`）
+**テスト観点:**（単体 `tests/unit/hooks/use-turnstile-widget.test.tsx`）
 
 | # | 観点 |
 | --- | --- |
@@ -898,8 +898,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | STATE-AUTH-004、API-AUTH-031 |
-| 根拠 | ログインの認証コードの再送と、再設定のメールの再送で同じ語彙を使い、待ちの作法を1つにそろえる（SCR-AUTH-004、STATE-AUTH-004、FR-LOGIN-006）。文を変えると E2E `e2e/FR-LOGIN-006` と `e2e/FR-PWRESET-005` の両方が落ちる（`src/lib/format-countdown.ts`） |
+| 上位 | API-AUTH-031 |
+| 根拠 | メールのコードの再送の待ちの文を、1つの関数にそろえる（SCR-AUTH-004、API-AUTH-031）。パスワードの再設定のメールの再送の分は、段4で再設定を消したので無い（`src/lib/format-countdown.ts`） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/lib/format-countdown.ts`） |
@@ -1502,7 +1502,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | API-AUTH-009、ARC-AUTH-004、ARC-AUTH-005、STATE-AUTH-002、DATA-AUTH-002、DATA-AUTH-003、SEC-AUTH-019 |
 | 根拠 | パスワードを忘れた人の入口なのでログインを求められない。代わりに回数の制限と、アカウントの有無で応答を変えないことで濫用を止める（API-AUTH-009、ARC-AUTH-006）。アカウントが無い宛先には印もメールも作らず、店のドメインを第三者へのメールの踏み台にさせない（FREQ-319-REQ-02）。新しいリンクを出す時に前の印を使用済みにするが、最新の1本だけは保証しない（SEC-AUTH-018 は満たさない）。期限は 10 分（STATE-AUTH-002、ARC-AUTH-004）。リンクは許可した住所でだけ作る（SEC-AUTH-019） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/password-reset/request/route.ts`）、`docs/04_DetailDesign/sequence/auth-password-reset.md` の SQ-AUTH-RESET-REQUEST |
 | 旧番号 | IMPL-AUTH-PWR-01 |
@@ -1575,7 +1575,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | API-AUTH-010、ARC-AUTH-004、STATE-AUTH-002、DATA-AUTH-002、DATA-AUTH-004、SEC-AUTH-030 |
 | 根拠 | 企業のメールのリンクの検査は GET も JS つきの POST も踏むので、どちらでも印を消費しない（API-AUTH-010、ARC-AUTH-004、ADR-0403）。GET は確認の画面へ転送するだけ。POST は未使用かつ期限の内の行だけを有効とみなし、通ったら利用者・宛先・印の行を署名した 10 分の再設定の Cookie を出す（STATE-AUTH-002、DATA-AUTH-004）。利用者を引けなかっただけの時に「期限切れ」と言うと、まだ有効なリンクを捨てさせるので 500 にする（FREQ-319-REQ-04）。成否を監査に残す（SEC-AUTH-030） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/password-reset/link/route.ts`）、`docs/04_DetailDesign/sequence/auth-password-reset.md` の SQ-AUTH-RESET-LINK |
 
@@ -1637,7 +1637,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | API-AUTH-011、STATE-AUTH-004、DATA-AUTH-004 |
 | 根拠 | 再設定のページは HttpOnly の Cookie を読めないので、新しいパスワードの見せ方にするかを窓口が答える（API-AUTH-011、STATE-AUTH-004）。新しいパスワードの見せ方ではメールの欄を出さないので、宛先は窓口が返す（FREQ-333-REQ-04）。無効な Cookie はその場で消し、次の読み込みで同じ判定を繰り返させない（DATA-AUTH-004） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/password-reset/session/route.ts`）、`docs/04_DetailDesign/sequence/auth-password-reset.md` の SQ-AUTH-RESET-RESUME |
 
@@ -1680,7 +1680,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | API-AUTH-012、ARC-AUTH-004、ARC-AUTH-007、STATE-AUTH-002、DATA-AUTH-001、DATA-AUTH-002、DATA-AUTH-003、SEC-AUTH-014、SEC-AUTH-018 |
 | 根拠 | 印の消費をパスワードを変える直前まで遅らせ、`used=false` を条件に勝ち取った1つだけを通す（API-AUTH-012、STATE-AUTH-002、SEC-AUTH-018、ADR-0403）。署名した Cookie だけを能力にせず、行がまだ未使用かも確かめる。漏洩の照合は印を確かめた後に置き、偽の印で外の API を叩かせない（ARC-AUTH-007、SEC-AUTH-014、ADR-0405）。変えた後は乗っ取った人のセッションを残さないよう、自前と Supabase の全部を切り、この端末の認証の Cookie も消して本人に知らせる（FREQ-319-REQ-05、DATA-AUTH-001・003） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/password-reset/confirm/route.ts`）、`docs/04_DetailDesign/sequence/auth-password-reset.md` の SQ-AUTH-RESET-CONFIRM |
 
@@ -2697,7 +2697,7 @@ DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permi
 | --- | --- |
 | 上位 | API-AUTH-020、API-AUTH-021、ARC-AUTH-005、ARC-AUTH-007、DATA-AUTH-009、DATA-AUTH-010、SEC-AUTH-015、SEC-AUTH-034 |
 | 根拠 | ログイン中の会員が自分でパスワードを変える窓口が無く、再設定でしか変えられなかった。GoTrue の `secure_password_change` は作成から 24 時間以内の session を再認証なしで許し、窓は設定で変えられないので、アプリの窓口で「現行パスワード＋アプリが送るコード＋全 session 失効＋通知＋回数＋監査」を求める（ADR-0421）。2 段にするのは、1 段目に現行パスワードを要して、盗んだ session の持ち主が本人のメールへコードを撒けないようにするため。コードは DB の表に鍵つきのハッシュで置く（DATA-AUTH-009・010） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テストと、2 つの窓口をつないだ結合テスト（`tests/integration/api/auth/password-change.test.ts`。名前の先頭は `API-AUTH-020`・`API-AUTH-021`）。画面の結合テストは `DD-AUTH-042`、E2E は `e2e/FR-ACCOUNT-046-password-change.spec.ts`（波 6 の切り替え〔2026-11-01〕までは `supabase/pending-wave6/e2e/` に待機していた）。DB 結合は M3 を当てた手元の DB で controller が流す |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`、計画 `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md` の Task 5（P5・P13〜P15、ruling 3〜5・17〜20、Review Focus 3〜7） |
 
@@ -2772,7 +2772,7 @@ DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permi
 | --- | --- |
 | 上位 | SCR-AUTH-011、FLOW-AUTH-005、API-AUTH-020、API-AUTH-021、SEC-AUTH-015、SEC-AUTH-034 |
 | 根拠 | ログイン中の会員が自分でパスワードを変える画面が無く、再設定でしか変えられなかった。窓口を 2 つに分けた順（`start` で現行パスワード、`confirm` でコードと新パスワード）をそのまま画面の 2 段にする。新パスワードの長さと確認欄の一致は送る前に画面で確かめ、コードを送ってから弱いパスワードで弾かれる往復を減らす。Google だけで登録した会員はパスワードを持たず `start` が必ず 401 になるので、段 1 に再設定への案内を誰にでも固定で出して行き止まりにしない（会員がパスワードを持つかを明かさない）。応答は成否によらず本文を読み切る（読まない呼び手が `networkidle` を止める。波 3 の学び） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト（`tests/unit/app/account/password/password-change-form.test.tsx`。名前の先頭は `DD-AUTH-042`）と結合テスト（`tests/integration/ui/auth-password-change.test.tsx`。名前の先頭は、画面の見え方が `SCR-AUTH-011`、段の移り変わりが `FLOW-AUTH-005`。結合テストの名前は構造設計の ID にする決まり）。3 幅の E2E は Task 7（`FR-ACCOUNT-046`。手元の設定の切り替え後に動かす） |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`、計画 `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md` の Task 6（ruling 4・17・18） |
 

@@ -18,7 +18,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
     pathname === "/login" ||
     pathname === "/login/code" ||
     pathname === "/login/passkey" ||
-    pathname === "/auth/password-reset" ||
     pathname === "/staff/invite" ||
     pathname === "/staff/register";
 

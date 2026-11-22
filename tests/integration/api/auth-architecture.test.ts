@@ -51,65 +51,12 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
   enforceRateLimit: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock('@/lib/pwned-password', () => ({
-  checkPwnedPassword: async () => ({ status: 'ok' }),
-  PWNED_PASSWORD_MESSAGE: 'pwned',
-}));
-
-type Handler = (request: Request) => Promise<any>;
-
-const { createClient, createPublicClient, createServiceRoleClient } = require('@/lib/supabase/server');
-const { createServiceRoleAuthClient } = require('@/lib/auth/service-role-auth-client');
 const { authenticateRequest } = require('@/lib/auth/authenticate');
-
-const postJson = (path: string, body: unknown, headers: Record<string, string> = {}) =>
-  new Request(`http://localhost${path}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', ...headers },
-    body: JSON.stringify(body),
-  });
 
 describe('認証の全体の作り（ARC-AUTH-001）', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.JWT_SECRET = 'test-jwt-secret';
-  });
-
-  describe('入力の形は全部の窓口で zod が確かめる', () => {
-    const makeResetCookie = () => {
-      const { createPasswordResetSessionToken } = require('@/features/auth/services/password-reset-session');
-      const token = createPasswordResetSessionToken({ userId: 'u1', email: 'user@example.com', tokenId: 'tok1' });
-      return `sb-password-reset-session=${encodeURIComponent(token)}`;
-    };
-
-    const cases: Array<{ name: string; load: () => Handler; path: string; body: unknown; headers?: () => Record<string, string> }> = [
-      {
-        name: 'password-reset/request',
-        load: () => require('@/app/api/auth/password-reset/request/route').POST,
-        path: '/api/auth/password-reset/request',
-        body: { email: 'not-an-email' },
-      },
-      {
-        name: 'password-reset/confirm',
-        load: () => require('@/app/api/auth/password-reset/confirm/route').POST,
-        path: '/api/auth/password-reset/confirm',
-        body: { new_password: 'short' },
-        headers: () => ({ cookie: makeResetCookie() }),
-      },
-    ];
-
-    test.each(cases)('ARC-AUTH-001 $name は形の合わない本文を 400 の validation_error で断り、Supabase を呼ばない', async ({ load, path, body, headers }) => {
-      const res = await load()(postJson(path, body, headers?.()));
-      const json = await res.json();
-
-      expect(res.status).toBe(400);
-      expect(json.code).toBe('validation_error');
-      expect(Array.isArray(json.detail)).toBe(true);
-      expect(createPublicClient).not.toHaveBeenCalled();
-      expect(createServiceRoleAuthClient).not.toHaveBeenCalled();
-      expect(createServiceRoleClient).not.toHaveBeenCalled();
-      expect(createClient).not.toHaveBeenCalled();
-    });
   });
 
   describe('役割は JWT の app_metadata から読み、無ければ user にする', () => {

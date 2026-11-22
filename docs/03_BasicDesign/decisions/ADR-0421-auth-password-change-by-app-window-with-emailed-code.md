@@ -1,6 +1,6 @@
 # ADR-0421 パスワード変更はアプリの窓口で、現行パスワードとアプリが送るコードを求め、全 session を失効して通知する
 
-> 状態: 現行（アプリ側の窓口と部品と画面は入った。DB の表と関数〔M3〕は手元に適用済み〔2026-11-01 の `db reset`〕で、本番も 2026-11-01 21:06 頃 JST に適用済み〔Task 11〕、E2E `FR-ACCOUNT-046` は `e2e/` に在る、GoTrue 側の設定は手元に反映済み。本番は未変更で、2026-11-01 に MCP からは変えられないと分かった〔`docs/06_Operations/supabase-auth-config.md` の実施記録〕） | 確認日: 2026-11-01 | 対象: `src/app/api/auth/password/change/{start,confirm}/route.ts`、`src/features/auth/services/password-change.ts`、`src/features/auth/schemas/password-change.ts`、`supabase/migrations/20261101120000_sec_password_change_challenges.sql`（DATA-AUTH-009・010） | 基準コミット: `b26d7bb0`（作業ツリー）
+> 状態: 廃止 | 確認日: 2026-11-01 | 対象: `src/app/api/auth/password/change/{start,confirm}/route.ts`、`src/features/auth/services/password-change.ts`、`src/features/auth/schemas/password-change.ts`、`supabase/migrations/20261101120000_sec_password_change_challenges.sql`（DATA-AUTH-009・010） | 基準コミット: `b26d7bb0`（作業ツリー）
 
 ## 概要
 
@@ -25,7 +25,7 @@
 | --- | --- |
 | 上位 | SEC-AUTH-015、SEC-AUTH-034 |
 | 根拠 | 窓口も画面も無く、再設定でしか変えられなかった。GoTrue の `secure_password_change` は session の作成から 24 時間以内なら再認証なしで変更を許し、窓は設定で変えられない。盗んだ session の持ち主が、現行パスワードを知らなくても変えられてしまう。アプリの窓口で「現行パスワード＋アプリが送るコード＋全 session 失効＋通知＋回数」を求めれば、窓口を通る限りこれを守れる。コードは「単回使用」「間違いは 5 回まで」「新しいコードで前を無効にする」を保たねばならず、署名つき Cookie だけではどれも保てないので、表と、行を `FOR UPDATE` で取る関数に置く |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの決定（2026-11-01「パスワードの変更は提案どおり」）、計画の ruling 3〜5・17〜20 |
 
 #### 背景
@@ -58,6 +58,7 @@
 
 #### 結果
 
+- 置き換え先: ADR-0469（段4の Task 29、2026-11-22 に、お客さんのパスワードの再設定・変更の窓口と画面を消したので、この決めは廃止した）
 - 残る危険は 2 つあり、狭める手段が別である（調査 `wave6-research.md` §2-7）。①現行パスワードを**知る**人が GoTrue を直に叩いて変える: その人は現行パスワードを送れるので、「現行パスワードを要求」では止まらない。captcha（人が解けば通る）と GoTrue の変更通知（本人が気付く）で狭め、ログインにメールのコードが要るので実害は小さい。②パスワードを知らずに access token だけを盗んだ人が `PUT /user` で変える: 本番で「現行パスワードを要求」を ON にして塞ぐ（`SEC-AUTH-015-AC-05`。Task 7・11）
 - 窓口を 2 本、DB の表を 1 つ、関数を 2 つ足す。移行 M3 は本番で H の移行の後に当てるのが既定で、窓口と画面を動かす前に当てる必要がある（ruling 16）。表の古い行は `issue` が 1 日より古い物を消すので、掃除の定期処理は要らない
 - 本番のアプリは未デプロイで会員は少なく、2 段の窓口の UX の代償（現行パスワード→メールのコード）は許容する

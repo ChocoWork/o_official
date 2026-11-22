@@ -200,7 +200,7 @@ for (const viewport of viewports) {
       }
     });
 
-    test(`FR-AUTH-029-AC-04 ${viewport.name}: 「ログイン方法」は4つのタブの隣に出て、お客様情報に「パスワードを変更」のリンクが無い。/account/password は直に開くと使える`, async ({ page }) => {
+    test(`FR-AUTH-029-AC-04 ${viewport.name}: 「ログイン方法」は4つのタブの隣に出て、お客様情報に「パスワードを変更」のリンクが無い。/account/password は 404`, async ({ page }) => {
       test.setTimeout(120_000);
       await signInByCode(page, uniqueEmail('tabs'));
       await page.goto('/account?tab=profile');
@@ -211,8 +211,8 @@ for (const viewport of viewports) {
       await expect(page.getByRole('link', { name: 'パスワードを変更' })).toHaveCount(0);
       await expect(page.locator('a[href="/account/password"]')).toHaveCount(0);
 
-      await page.goto('/account/password');
-      await expect(page.getByRole('heading', { level: 1, name: 'パスワードの変更' })).toBeVisible(NAVIGATION);
+      const removed = await page.goto('/account/password');
+      expect(removed?.status()).toBe(404);
     });
 
     test(`FR-AUTH-029-AC-05 ${viewport.name}: 「ログイン方法」のタブを押すと tab=security になり、パスキーの見出しが出る`, async ({ page }) => {

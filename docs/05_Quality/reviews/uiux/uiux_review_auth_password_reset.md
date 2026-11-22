@@ -1,12 +1,12 @@
 ﻿# PASSWORD RESET（/auth/password-reset）UI/UX レビュー
 
-> 状態: 履歴レビュー | 現行の指摘状態は未再検証
+> 状態: 履歴レビュー（対象の画面・窓口は段4の Task 29〔2026-11-22〕で消した。消したコードへのリンクは外した） | 現行の指摘状態は未再検証
 
 ## 概要
 
 本書は「PASSWORD RESET（/auth/password-reset）UI/UX レビュー」のレビュー時点の記録である。指摘の重大度と修正状態は当時の評価を示し、現在の実装を保証しない。
 
-- 対象: [src/app/auth/password-reset/page.tsx](../../../../src/app/auth/password-reset/page.tsx)
+- 対象: src/app/auth/password-reset/page.tsx
 - 共通 Header/Footer は [uiux_review_home.md](uiux_review_home.md) を参照
 - レビュー基準: `implement-uiux` + ブランド適合（[brand.md](../../../01_Planning/brand.md)）
 
@@ -32,12 +32,12 @@
 
 | # | 指摘場所 | 指摘理由（違反原則） | 修正提案 | 優先度 | 修正ステータス |
 |---|---|---|---|---|---|
-| PR-1 | 新パスワード入力（[password-reset/page.tsx:192-200](../../../../src/app/auth/password-reset/page.tsx#L192-L200)） | 表示/非表示トグルが無く、要件（最小文字数等）も非表示。入力ミス・不安。エラー防止/認知負荷 | show/hideトグル + 要件のヒント表示（schemaの条件を明示） | Mid | 対応済 |
-| PR-2 | 成功色（[password-reset/page.tsx:219](../../../../src/app/auth/password-reset/page.tsx#L219)） | `text-green-600` の有彩色。Key Color外。ブランド適合 | 成功はチェックアイコン+黒文字へ | Low | 対応済 |
-| PR-3 | autoComplete（[password-reset/page.tsx:182-200](../../../../src/app/auth/password-reset/page.tsx#L182-L200)） | email/new password に `autoComplete`（email / new-password）未指定。パスワードマネージャ連携/オートフィル | `autoComplete="email"`/`"new-password"` 付与 | Low | 対応済 |
-| PR-4 | 成功後の導線（[password-reset/page.tsx:156-159](../../../../src/app/auth/password-reset/page.tsx#L156-L159)） | 更新成功後「ログインしてください」表示のみで**ログインへのリンク/ボタンが無い**。次アクション/Peak-End | 「ログインへ」CTAを表示 | Mid | 対応済 |
-| PR-5 | 状態通知の aria（[password-reset/page.tsx:218-219](../../../../src/app/auth/password-reset/page.tsx#L218-L219)） | error/message に `role="alert"`/`role="status"` 無し。アクセシビリティ | 役割属性を付与 | Low | 対応済 |
-| PR-6 | エラー集約表示（[password-reset/page.tsx:90-95](../../../../src/app/auth/password-reset/page.tsx#L90-L95)） | Zodのissuesを space 連結で1行表示。複数エラーが読みづらい。可読性 | フィールド単位 or 箇条書きで表示 | Low | 対応済 |
+| PR-1 | 新パスワード入力（password-reset/page.tsx:192-200） | 表示/非表示トグルが無く、要件（最小文字数等）も非表示。入力ミス・不安。エラー防止/認知負荷 | show/hideトグル + 要件のヒント表示（schemaの条件を明示） | Mid | 対応済 |
+| PR-2 | 成功色（password-reset/page.tsx:219） | `text-green-600` の有彩色。Key Color外。ブランド適合 | 成功はチェックアイコン+黒文字へ | Low | 対応済 |
+| PR-3 | autoComplete（password-reset/page.tsx:182-200） | email/new password に `autoComplete`（email / new-password）未指定。パスワードマネージャ連携/オートフィル | `autoComplete="email"`/`"new-password"` 付与 | Low | 対応済 |
+| PR-4 | 成功後の導線（password-reset/page.tsx:156-159） | 更新成功後「ログインしてください」表示のみで**ログインへのリンク/ボタンが無い**。次アクション/Peak-End | 「ログインへ」CTAを表示 | Mid | 対応済 |
+| PR-5 | 状態通知の aria（password-reset/page.tsx:218-219） | error/message に `role="alert"`/`role="status"` 無し。アクセシビリティ | 役割属性を付与 | Low | 対応済 |
+| PR-6 | エラー集約表示（password-reset/page.tsx:90-95） | Zodのissuesを space 連結で1行表示。複数エラーが読みづらい。可読性 | フィールド単位 or 箇条書きで表示 | Low | 対応済 |
 
 ---
 
@@ -64,7 +64,7 @@
 - **PR-4**: 確定成功後に `resetComplete` で「ログインへ」リンク（/login）を表示。文言は「パスワードを更新しました。」に簡素化。
 - **PR-5**: error に `role="alert"`、message に `role="status"` を付与。
 - **PR-6**: Zod issues を `'\n'` 連結 + `whitespace-pre-line` で改行表示に変更。
-- 実装: [src/app/auth/password-reset/page.tsx](../../../../src/app/auth/password-reset/page.tsx)。
+- 実装: src/app/auth/password-reset/page.tsx。
 
 ---
 

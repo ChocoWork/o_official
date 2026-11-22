@@ -1,13 +1,13 @@
 ﻿# auth/password-reset セキュリティレビュー
 
-> 状態: 履歴レビュー | 現行の指摘状態は未再検証
+> 状態: 履歴レビュー（対象の画面・窓口は段4の Task 29〔2026-11-22〕で消した。消したコードへのリンクは外した） | 現行の指摘状態は未再検証
 
 ## 概要
 
 本書は「auth/password-reset セキュリティレビュー」のレビュー時点の記録である。指摘の重大度と修正状態は当時の評価を示し、現在の実装を保証しない。
 
 - レビュー日: 2026-06-27（dynamic workflow / security-check skill + `scripts/page-audit.sh`）
-- 対象: [src/app/auth/password-reset/page.tsx](../../../../src/app/auth/password-reset/page.tsx)、関連: [confirm](../../../../src/app/api/auth/password-reset/confirm/route.ts) / [request](../../../../src/app/api/auth/password-reset/request/route.ts) / [session](../../../../src/app/api/auth/password-reset/session/route.ts)
+- 対象: src/app/auth/password-reset/page.tsx、関連: confirm / request / session
 - レビュー観点: トークン/セッション一回性、パスワードポリシー、CSRF、列挙、Bot対策、レート制限
 - 機械監査スコープ: UI到達クロージャ 9 ファイル / 関連Route Handler 3 件
 
@@ -27,12 +27,12 @@
 
 | ファイル名 | よくない点 | 修正提案 | ステータス | 調査結果 | 優先度 |
 |---|---|---|---|---|---|
-| [src/app/api/auth/password-reset/confirm/route.ts](../../../../src/app/api/auth/password-reset/confirm/route.ts), [src/proxy.ts](../../../../src/proxy.ts) | パスワード変更（POST）に route 層の同一オリジン/CSRF 検証がなく、`proxy.ts` の `STATE_CHANGING_PATH_PREFIXES` も `/api/cart|wishlist|checkout` のみで `/api/auth/*` を含まない。アカウント乗っ取り級の影響面が SameSite Cookie 依存に偏る | `proxy.ts` の保護プレフィックスに `/api/auth/` の状態変更系を追加するか、route で `getRequestOrigin` 同一オリジン検証を行い fail-closed にする | Open | confirm はセッションCookie（`sb-password-reset-session`）で更新。route に csrf/same-origin 検証なし | Low |
-| [src/app/api/auth/password-reset/confirm/route.ts](../../../../src/app/api/auth/password-reset/confirm/route.ts), [src/lib/cookie.ts](../../../../src/lib/cookie.ts) | 上記の主たる緩和はリセットセッションCookieが `SameSite=Strict`・HttpOnly である点。クロスサイトからは送出されないため CSRF 実現は困難 | 現行の Strict を維持。併せて defense-in-depth の same-origin 検証を足すと堅牢 | Partially Fixed | `cookieOptionsForPasswordReset` は `sameSite:'strict'`, `httpOnly:true` を確認 | Info |
-| [src/app/api/auth/password-reset/confirm/route.ts](../../../../src/app/api/auth/password-reset/confirm/route.ts) | confirm にレート制限なし。legacy トークン経路はトークンハッシュ一致＋期限＋used で守られるが、総当たり耐性を多層化する余地 | confirm にも IP/セッション軸のレート制限を付与し、失敗時 audit を残す | Open | request 側は Turnstile+レート制限。confirm 側は未設定 | Low |
-| [src/app/api/auth/password-reset/confirm/route.ts](../../../../src/app/api/auth/password-reset/confirm/route.ts) | トークン一回性・期限・used 管理、セッション経路の Cookie 失効（maxAge 0）まで実装済み。zod 検証・admin API 経由更新も適切 | 現行維持 | Fixed | session 経路: 成功時 Cookie クリア。legacy: `used=true` 更新を確認 | Info |
-| [src/features/auth/schemas/password-reset.ts](../../../../src/features/auth/schemas/password-reset.ts) | 新パスワードは 8〜128 文字長検証のみ（UI helper も「8文字以上」）。複雑性は不問で NIST 準拠だが、流出パスワード照合は未導入 | 長さ重視方針は妥当。可能なら HIBP k-Anonymity 等で漏洩パスワード拒否を追加 | Open | `ResetSessionConfirmSchema` で new_password を長さ検証 | Low |
-| [src/app/auth/password-reset/page.tsx](../../../../src/app/auth/password-reset/page.tsx) | request フォームは Turnstile（Bot対策）必須化、zod 事前検証あり。トークンはURLに残さずセッションCookie方式で confirm | 現行維持 | Fixed | L101-104 Turnstile 必須、L36 session 解決で confirm モード判定 | Info |
+| src/app/api/auth/password-reset/confirm/route.ts, [src/proxy.ts](../../../../src/proxy.ts) | パスワード変更（POST）に route 層の同一オリジン/CSRF 検証がなく、`proxy.ts` の `STATE_CHANGING_PATH_PREFIXES` も `/api/cart|wishlist|checkout` のみで `/api/auth/*` を含まない。アカウント乗っ取り級の影響面が SameSite Cookie 依存に偏る | `proxy.ts` の保護プレフィックスに `/api/auth/` の状態変更系を追加するか、route で `getRequestOrigin` 同一オリジン検証を行い fail-closed にする | Open | confirm はセッションCookie（`sb-password-reset-session`）で更新。route に csrf/same-origin 検証なし | Low |
+| src/app/api/auth/password-reset/confirm/route.ts, [src/lib/cookie.ts](../../../../src/lib/cookie.ts) | 上記の主たる緩和はリセットセッションCookieが `SameSite=Strict`・HttpOnly である点。クロスサイトからは送出されないため CSRF 実現は困難 | 現行の Strict を維持。併せて defense-in-depth の same-origin 検証を足すと堅牢 | Partially Fixed | `cookieOptionsForPasswordReset` は `sameSite:'strict'`, `httpOnly:true` を確認 | Info |
+| src/app/api/auth/password-reset/confirm/route.ts | confirm にレート制限なし。legacy トークン経路はトークンハッシュ一致＋期限＋used で守られるが、総当たり耐性を多層化する余地 | confirm にも IP/セッション軸のレート制限を付与し、失敗時 audit を残す | Open | request 側は Turnstile+レート制限。confirm 側は未設定 | Low |
+| src/app/api/auth/password-reset/confirm/route.ts | トークン一回性・期限・used 管理、セッション経路の Cookie 失効（maxAge 0）まで実装済み。zod 検証・admin API 経由更新も適切 | 現行維持 | Fixed | session 経路: 成功時 Cookie クリア。legacy: `used=true` 更新を確認 | Info |
+| src/features/auth/schemas/password-reset.ts | 新パスワードは 8〜128 文字長検証のみ（UI helper も「8文字以上」）。複雑性は不問で NIST 準拠だが、流出パスワード照合は未導入 | 長さ重視方針は妥当。可能なら HIBP k-Anonymity 等で漏洩パスワード拒否を追加 | Open | `ResetSessionConfirmSchema` で new_password を長さ検証 | Low |
+| src/app/auth/password-reset/page.tsx | request フォームは Turnstile（Bot対策）必須化、zod 事前検証あり。トークンはURLに残さずセッションCookie方式で confirm | 現行維持 | Fixed | L101-104 Turnstile 必須、L36 session 解決で confirm モード判定 | Info |
 
 ---
 

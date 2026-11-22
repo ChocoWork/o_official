@@ -5,9 +5,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  *
  * 「該当なし」と「引けなかった」を必ず区別する。両方を null に潰すと、
  * RPC が落ちた瞬間に呼び出し側が「アカウントが無い」と解釈してしまう:
- *   - password-reset/request は無言で 200 を返し、再設定が全滅しても誰も気づけない
- *   - register は重複検出が消え、409 ガードが無言で無効化される
- * どちらも障害が成功として記録されるため、監視でも検出できない。
+ *   - スタッフの招待は、メールの引けない障害を「アカウントが無い」と扱い、既存の会員への誤った招待を通してしまう
+ * 障害が成功として記録されるため、監視でも検出できない。
  */
 export type AuthUserLookup =
   | { status: 'found'; userId: string }
@@ -29,7 +28,7 @@ export type AuthUserLookup =
  * 全件取得して線形探索するしかないため。
  *
  * 注意: 093 の関数は SSO / banned / 論理削除済みユーザーを除外する。
- * 「パスワードを再設定できるユーザー」を返す関数であり、
+ * 「ログインできるユーザー」を返す関数であり、
  * 「そのメールが登録済みか」とは意味が違う。
  */
 export async function findAuthUserIdByEmail(

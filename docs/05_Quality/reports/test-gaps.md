@@ -44,26 +44,25 @@
 | SEC-PRIVACY-004-AC-01 回数の上限を超えると DB を読まない | E2E | `docs/02_Requirements/areas/privacy.md:363` |
 | SEC-PRIVACY-006-AC-02 鍵が無くても設定がオンなら一文が表示される | E2E | `docs/02_Requirements/areas/privacy.md:425` |
 | SEC-PRIVACY-018-AC-01 運用の文書に迷惑メールの選別と見直しの手順が在る | E2E | `docs/02_Requirements/areas/privacy.md:787` |
-| FREQ-59-AC-01 /register に EMAIL・PASSWORD・PASSWORD（確認）が出る | E2E | `docs/02_Requirements/areas/auth.md:2563` |
-| FREQ-61-AC-02 新規登録タブで PASSWORD（確認）が出て URL が /register になる | E2E | `docs/02_Requirements/areas/auth.md:2615` |
-| FREQ-61-AC-03 /register で新規登録タブが選ばれ、ログインタブで URL が /login になる | E2E | `docs/02_Requirements/areas/auth.md:2628` |
-| FREQ-63-AC-03 「既にアカウントをお持ちの方はこちら」がタブ切替のボタンになる | E2E | `docs/02_Requirements/areas/auth.md:2693` |
-| FREQ-64-AC-01 カードの枠・EMAIL の欄・ログインボタンの角が丸い | E2E | `docs/02_Requirements/areas/auth.md:2706` |
-| FREQ-64-AC-03 カードの枠線が純黒でないグレー | E2E | `docs/02_Requirements/areas/auth.md:2732` |
-| FREQ-64-AC-04 ログインボタンの角が 4px〜12px の中ほどの丸み | E2E | `docs/02_Requirements/areas/auth.md:2745` |
-| FREQ-65-AC-05 タブに区切り線が無い | E2E | `docs/02_Requirements/areas/auth.md:2810` |
-| FREQ-70-AC-01 角丸のカードがあり、送信ボタンの角が 4px〜12px | E2E | `docs/02_Requirements/areas/auth.md:2972` |
-| FREQ-320-AC-01 DB の関数が失敗すると再設定は 500、登録は 503 で、監査が success にならない | E2E | `docs/02_Requirements/areas/auth.md:3610` |
-| FREQ-323-AC-02 HIBP が応答しなくても登録でき、監査に検査不能が残る | E2E | `docs/02_Requirements/areas/auth.md:3675` |
-| FREQ-330-REQ-02-AC-01 ログイン・会員登録・再設定のウィジェットの引き直しが useTurnstileWidget の1か所にある | E2E | `docs/02_Requirements/areas/auth.md:3925` |
-| FREQ-335-AC-03 1回送ると verifyOtp が type email で1回だけ呼ばれる | E2E | `docs/02_Requirements/areas/auth.md:4236` |
-| FREQ-515-AC-01 管理画面のユーザー一覧で選んだ役割で送られ、失敗したら元の役割に戻る | E2E | `docs/02_Requirements/areas/auth.md:4327` |
-| FREQ-515-AC-03 お知らせの作成・編集で選んだカテゴリーで保存される | E2E | `docs/02_Requirements/areas/auth.md:4353` |
-| SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | E2E | `docs/02_Requirements/areas/auth.md:7252` |
-| SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | E2E | `docs/02_Requirements/areas/auth.md:7433` |
-| SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:7525` |
-| SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:7697` |
-| SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:7813` |
+| FREQ-59-AC-01 /register に EMAIL・PASSWORD・PASSWORD（確認）が出る | E2E | `docs/02_Requirements/areas/auth.md:2554` |
+| FREQ-61-AC-02 新規登録タブで PASSWORD（確認）が出て URL が /register になる | E2E | `docs/02_Requirements/areas/auth.md:2606` |
+| FREQ-61-AC-03 /register で新規登録タブが選ばれ、ログインタブで URL が /login になる | E2E | `docs/02_Requirements/areas/auth.md:2619` |
+| FREQ-63-AC-03 「既にアカウントをお持ちの方はこちら」がタブ切替のボタンになる | E2E | `docs/02_Requirements/areas/auth.md:2684` |
+| FREQ-64-AC-01 カードの枠・EMAIL の欄・ログインボタンの角が丸い | E2E | `docs/02_Requirements/areas/auth.md:2697` |
+| FREQ-64-AC-03 カードの枠線が純黒でないグレー | E2E | `docs/02_Requirements/areas/auth.md:2723` |
+| FREQ-64-AC-04 ログインボタンの角が 4px〜12px の中ほどの丸み | E2E | `docs/02_Requirements/areas/auth.md:2736` |
+| FREQ-65-AC-05 タブに区切り線が無い | E2E | `docs/02_Requirements/areas/auth.md:2801` |
+| FREQ-320-AC-01 DB の関数が失敗すると店員の招待は 500 で、監査が success にならない | E2E | `docs/02_Requirements/areas/auth.md:3601` |
+| FREQ-323-AC-02 HIBP が応答しなくても登録でき、監査に検査不能が残る | E2E | `docs/02_Requirements/areas/auth.md:3666` |
+| FREQ-330-REQ-02-AC-01 ログイン・会員登録・再設定のウィジェットの引き直しが useTurnstileWidget の1か所にある | E2E | `docs/02_Requirements/areas/auth.md:3916` |
+| FREQ-335-AC-03 1回送ると verifyOtp が type email で1回だけ呼ばれる | E2E | `docs/02_Requirements/areas/auth.md:4227` |
+| FREQ-515-AC-01 管理画面のユーザー一覧で選んだ役割で送られ、失敗したら元の役割に戻る | E2E | `docs/02_Requirements/areas/auth.md:4318` |
+| FREQ-515-AC-03 お知らせの作成・編集で選んだカテゴリーで保存される | E2E | `docs/02_Requirements/areas/auth.md:4344` |
+| SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | E2E | `docs/02_Requirements/areas/auth.md:7257` |
+| SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | E2E | `docs/02_Requirements/areas/auth.md:7438` |
+| SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:7530` |
+| SEC-AUTH-019-AC-01 サイトの住所が本番で使えない設定なら、招待の発行は 503 で断られ、メールが届かない | E2E | `docs/02_Requirements/areas/auth.md:7702` |
+| SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:7818` |
 | FREQ-508-AC-03 流し直しても付与が重ならず、ほかの結び付きが残り、「監査ログの閲覧」の名前で登録される | E2E | `docs/02_Requirements/areas/admin.md:236` |
 | SEC-ADMIN-003-AC-02 管理の表の権限が anon・authenticated に無い | E2E | `docs/02_Requirements/areas/admin.md:466` |
 | SEC-ADMIN-010-AC-01 監査ログの行を書き換えると検知の確かめで分かる | E2E | `docs/02_Requirements/areas/admin.md:688` |
@@ -96,10 +95,6 @@
 | e2e | `e2e/FR-HEADER-001-drawer-no-site-title.spec.ts:38` | desktop (1280px): Drawer trigger is hidden |
 | e2e | `e2e/FR-HEADER-002-drawer-sns-icon-centering.spec.ts:46` | desktop (1280px): Drawer SNS section is not rendered |
 | e2e | `e2e/FR-HEADER-003-drawer-sns-icon-bw-filter.spec.ts:65` | desktop (1280px): Drawer SNS icons are not rendered |
-| e2e | `e2e/FR-PWRESET-002-password-reset-hardening.spec.ts:57` | the request form is still reachable |
-| e2e | `e2e/FR-PWRESET-002-password-reset-hardening.spec.ts:69` | opening the link with GET forwards to the verify page |
-| e2e | `e2e/FR-PWRESET-002-password-reset-hardening.spec.ts:82` | a link without a token redirects with a reason |
-| e2e | `e2e/FR-PWRESET-002-password-reset-hardening.spec.ts:111` | confirm rejects the removed legacy token payload |
 
 ## 飛ばしている試験
 
@@ -131,14 +126,12 @@
 - `src/features/search/services/search.service.ts:117` `rankText` の「語が空、または分けた語が空なら 0 を返す」側。語は空でなく、記号だけの語も `tokenizeQuery` が語全体を1語に戻すので分けた語は空にならない。確認: 未
 - `src/features/search/services/search.service.ts:131` `rankText` の `normalizedTexts[0] ?? ''` の右側。呼ぶ所が必ず題を先頭に1つ以上の欄を渡す。確認: 未
 - `src/features/search/components/SearchPageClient.tsx:434` 外を押す聞き手の `searchBoxRef.current` が `null` の側は通らない（分岐の網羅の数には入らない）。聞き手は候補のリストが開いている間、つまり検索の箱を描いた後にだけ付くため。確認: 未
-- `src/app/auth/password-reset/page.tsx:234` `PasswordResetPage` の `handleResend` の先頭の `siteKey && !turnstileToken` が真の側は通らない。再送のボタンが同じ描画の値（`disabled={loading || (!!siteKey && !turnstileToken)}`）で押せなくなっており、この関数に入る時点で常に偽のため。確認: 済み
 - `src/app/auth/verified/page.tsx:204` `VerifiedPage` の effect の `authBody?.user?.role` の `authBody?.` が `null` の側、三項の真側の `authBody?.` が `null` の側と `user?.` が `undefined` の側（3分岐）は通らない。直前の `authBody?.authenticated === true` を通った後なので `authBody` は `null` でなく、真側に入るには `role` を持つ `user` が要るため。確認: 済み
 - `src/app/auth/verified/page.tsx:205` `VerifiedPage` の effect の `authBody?.user?.mfaVerified` の `authBody?.` が `null` の側は通らない。理由は 204 行と同じ。確認: 済み
 - `src/features/auth/staff/components/StaffPasskeyManager.tsx:117` `StaffPasskeyManager` の effect の `document.getElementById(refocusTarget)?.focus()` の `getElementById` が `null` の側は通らない。落ちたフォーカスを戻す対象は、直前の操作が置いたボタン（追加・名前の変更・削除・見出し）で、同じ描画の中に必ずあるため。重なった操作で行が消えた時の念のための `?.`（AccountPasskeys と同じ形）。確認: 済み
 - `src/features/auth/staff/components/InviteStaffDialog.tsx:39` `InviteStaffDialog` の `submit` の `busy || trimmed === ""` の真の側は通らない。送るボタンが同じ描画の値（`disabled={busy || email.trim() === ""}`）で押せなくなり、メール欄は `required` で空のまま送れないため、この関数に入る時点で常に偽（二重の送りを防ぐ予備の守り）。確認: 済み
 - `src/features/auth/staff/components/RedoStaffDialog.tsx:45` `RedoStaffDialog` の `submit` の `busy || !canSubmit` の真の側は通らない。送るボタンが同じ描画の値（`disabled={busy || !canSubmit}`）で押せなくなっており、この関数に入る時点で常に偽（二重の送りを防ぐ予備の守り）。確認: 済み
 - `src/features/auth/staff/components/StaffRoleActions.tsx:43` `StaffRoleActions` の `run` の `busy` が真の側は通らない。2つのボタンが同じ描画の値（`disabled={blocked || busy}`）で押せなくなっており、呼ぶ時点で常に偽（二重の送りを防ぐ予備の守り）。確認: 済み
-- `src/components/AuthResultScreen.tsx:114` `AuthResultScreen` の effect の `titleRef.current?.focus()` の `current` が `null` の側は通らない。見出しは条件なしで描かれ、描いた後に走る effect の時点で ref が入っているため。確認: 済み
 - `src/components/Header.tsx:124` `Header` の `isActiveMenuItem` の `href === "/"` の真の側は通らない。呼ぶのはナビの項目・`/loading`・`/admin` だけで `/` が無いため（使われていないコード）。確認: 済み
 - `src/features/auth/return-intent/return-path.ts:114` `validateReturnPath` のデコード後の長さの判断 `decoded.length > RETURN_PATH_MAX_LENGTH` の真の側は通らない。`decodeURIComponent` の結果は元の値より長くならず、元の値は直前で 512 字以内と確かめ済みのため。確認: 未
 - `src/features/auth/return-intent/return-path.ts:129` `validateReturnPath` の `url.origin !== origin` の真の側は通らない。元の値は「`/` で始まり 2 文字目が `/` でも `\` でもない」と確かめ済みで、空白・制御文字も無いので、`new URL(値, origin)` は必ず同じ origin になるため。確認: 未

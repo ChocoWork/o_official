@@ -9,10 +9,10 @@
 | 指標 | 件数 |
 | --- | ---: |
 | 要件定義書の対象ID | 2523 |
-| 設計にID参照あり | 703 |
-| テストにID参照あり | 1757 |
-| 設計にID参照なし | 1820 |
-| テストにID参照なし | 766 |
+| 設計にID参照あり | 702 |
+| テストにID参照あり | 1724 |
+| 設計にID参照なし | 1821 |
+| テストにID参照なし | 799 |
 
 ## 参照一覧
 
@@ -1070,11 +1070,11 @@
 | `FREQ-318-AC-01` | なし | 1件（[FR-UI-004-lk-text-migration.spec.ts](../../../e2e/FR-UI-004-lk-text-migration.spec.ts)） |
 | `FREQ-318-AC-02` | なし | 1件（[FR-UI-004-lk-text-migration.spec.ts](../../../e2e/FR-UI-004-lk-text-migration.spec.ts)） |
 | `FREQ-318-AC-03` | なし | 1件（[FR-UI-004-lk-text-migration.spec.ts](../../../e2e/FR-UI-004-lk-text-migration.spec.ts)） |
-| `FREQ-319-AC-01` | なし | 1件（[FR-PWRESET-002-password-reset-hardening.spec.ts](../../../e2e/FR-PWRESET-002-password-reset-hardening.spec.ts)） |
-| `FREQ-319-AC-02` | なし | 2件（[FR-PWRESET-002-password-reset-hardening.spec.ts](../../../e2e/FR-PWRESET-002-password-reset-hardening.spec.ts)） |
-| `FREQ-319-AC-03` | なし | 2件（[FR-PWRESET-002-password-reset-hardening.spec.ts](../../../e2e/FR-PWRESET-002-password-reset-hardening.spec.ts)） |
-| `FREQ-319-AC-04` | なし | 1件（[FR-PWRESET-002-password-reset-hardening.spec.ts](../../../e2e/FR-PWRESET-002-password-reset-hardening.spec.ts)） |
-| `FREQ-319-AC-05` | なし | 2件（[FR-PWRESET-002-password-reset-hardening.spec.ts](../../../e2e/FR-PWRESET-002-password-reset-hardening.spec.ts)） |
+| `FREQ-319-AC-01` | なし | なし |
+| `FREQ-319-AC-02` | なし | なし |
+| `FREQ-319-AC-03` | なし | なし |
+| `FREQ-319-AC-04` | なし | なし |
+| `FREQ-319-AC-05` | なし | なし |
 | `FREQ-32-AC-01` | なし | 1件（[FR-NEWS-ALL-013-no-card-image.spec.ts](../../../e2e/FR-NEWS-ALL-013-no-card-image.spec.ts)） |
 | `FREQ-320-AC-01` | なし | なし |
 | `FREQ-320-AC-02` | なし | 1件（[FR-LOGIN-030-session-cookies-and-responses.spec.ts](../../../e2e/FR-LOGIN-030-session-cookies-and-responses.spec.ts)） |
@@ -1089,7 +1089,7 @@
 | `FREQ-323-AC-01` | なし | なし |
 | `FREQ-323-AC-02` | なし | なし |
 | `FREQ-323-AC-03` | なし | なし |
-| `FREQ-323-AC-04` | なし | 1件（[FR-PWRESET-003-password-policy.spec.ts](../../../e2e/FR-PWRESET-003-password-policy.spec.ts)） |
+| `FREQ-323-AC-04` | なし | なし |
 | `FREQ-324-AC-01` | なし | なし |
 | `FREQ-324-AC-02` | なし | なし |
 | `FREQ-324-AC-03` | なし | なし |
@@ -1104,34 +1104,34 @@
 | `FREQ-327-AC-02` | なし | 1件（[FR-LOGIN-037-proxy-origin-csrf.spec.ts](../../../e2e/FR-LOGIN-037-proxy-origin-csrf.spec.ts)） |
 | `FREQ-327-AC-03` | なし | 1件（[FR-LOGIN-037-proxy-origin-csrf.spec.ts](../../../e2e/FR-LOGIN-037-proxy-origin-csrf.spec.ts)） |
 | `FREQ-327-AC-04` | なし | 1件（[FR-LOGIN-037-proxy-origin-csrf.spec.ts](../../../e2e/FR-LOGIN-037-proxy-origin-csrf.spec.ts)） |
-| `FREQ-328-AC-01` | なし | 1件（[FR-PWRESET-004-turnstile-widget-render.spec.ts](../../../e2e/FR-PWRESET-004-turnstile-widget-render.spec.ts)） |
-| `FREQ-328-AC-02` | なし | なし |
-| `FREQ-328-AC-03` | なし | 2件（[FR-LOGIN-079-login-screens-layout.spec.ts](../../../e2e/FR-LOGIN-079-login-screens-layout.spec.ts)） |
-| `FREQ-328-AC-04` | なし | 1件（[FR-PWRESET-001-visual-consistency-with-login.spec.ts](../../../e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts)） |
-| `FREQ-329-AC-01` | なし | 1件（[FR-PWRESET-005-reset-mail-sent-screen.spec.ts](../../../e2e/FR-PWRESET-005-reset-mail-sent-screen.spec.ts)） |
-| `FREQ-329-AC-02` | なし | 1件（[FR-PWRESET-005-reset-mail-sent-screen.spec.ts](../../../e2e/FR-PWRESET-005-reset-mail-sent-screen.spec.ts)） |
-| `FREQ-329-AC-03` | なし | 1件（[FR-PWRESET-005-reset-mail-sent-screen.spec.ts](../../../e2e/FR-PWRESET-005-reset-mail-sent-screen.spec.ts)） |
-| `FREQ-329-AC-04` | なし | 1件（[FR-PWRESET-005-reset-mail-sent-screen.spec.ts](../../../e2e/FR-PWRESET-005-reset-mail-sent-screen.spec.ts)） |
-| `FREQ-329-AC-05` | なし | 2件（[FR-PWRESET-001-visual-consistency-with-login.spec.ts](../../../e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts)） |
+| `FREQ-328-AC-01` | なし | なし |
+| `FREQ-328-AC-02` | なし | 1件（[FR-LOGIN-079-login-screens-layout.spec.ts](../../../e2e/FR-LOGIN-079-login-screens-layout.spec.ts)） |
+| `FREQ-328-AC-03` | なし | 1件（[FR-LOGIN-079-login-screens-layout.spec.ts](../../../e2e/FR-LOGIN-079-login-screens-layout.spec.ts)） |
+| `FREQ-328-AC-04` | なし | なし |
+| `FREQ-329-AC-01` | なし | なし |
+| `FREQ-329-AC-02` | なし | なし |
+| `FREQ-329-AC-03` | なし | なし |
+| `FREQ-329-AC-04` | なし | なし |
+| `FREQ-329-AC-05` | なし | なし |
 | `FREQ-33-AC-01` | なし | なし |
 | `FREQ-330-AC-01` | なし | なし |
 | `FREQ-330-AC-02` | なし | なし |
 | `FREQ-330-AC-03` | なし | なし |
-| `FREQ-331-AC-01` | なし | 1件（[FR-PWRESET-006-reset-mail-sent-visual.spec.ts](../../../e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts)） |
-| `FREQ-331-AC-02` | なし | 1件（[FR-PWRESET-006-reset-mail-sent-visual.spec.ts](../../../e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts)） |
-| `FREQ-331-AC-03` | なし | 1件（[FR-PWRESET-006-reset-mail-sent-visual.spec.ts](../../../e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts)） |
-| `FREQ-331-AC-04` | なし | 1件（[FR-PWRESET-006-reset-mail-sent-visual.spec.ts](../../../e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts)） |
-| `FREQ-331-AC-05` | なし | 1件（[FR-PWRESET-006-reset-mail-sent-visual.spec.ts](../../../e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts)） |
-| `FREQ-331-AC-06` | なし | 1件（[FR-PWRESET-006-reset-mail-sent-visual.spec.ts](../../../e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts)） |
-| `FREQ-331-AC-07` | なし | 1件（[FR-PWRESET-006-reset-mail-sent-visual.spec.ts](../../../e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts)） |
-| `FREQ-332-AC-01` | なし | 2件（[FR-PWRESET-002-password-reset-hardening.spec.ts](../../../e2e/FR-PWRESET-002-password-reset-hardening.spec.ts)） |
-| `FREQ-332-AC-02` | なし | 1件（[FR-PWRESET-007-verify-auto-advance.spec.ts](../../../e2e/FR-PWRESET-007-verify-auto-advance.spec.ts)） |
-| `FREQ-332-AC-03` | なし | 1件（[FR-PWRESET-007-verify-auto-advance.spec.ts](../../../e2e/FR-PWRESET-007-verify-auto-advance.spec.ts)） |
-| `FREQ-332-AC-04` | なし | 1件（[FR-PWRESET-009-reset-link-lifecycle-real-mail.spec.ts](../../../e2e/FR-PWRESET-009-reset-link-lifecycle-real-mail.spec.ts)） |
-| `FREQ-333-AC-01` | なし | 1件（[FR-PWRESET-008-confirm-password-match.spec.ts](../../../e2e/FR-PWRESET-008-confirm-password-match.spec.ts)） |
-| `FREQ-333-AC-02` | なし | 1件（[FR-PWRESET-008-confirm-password-match.spec.ts](../../../e2e/FR-PWRESET-008-confirm-password-match.spec.ts)） |
-| `FREQ-333-AC-03` | なし | 1件（[FR-PWRESET-008-confirm-password-match.spec.ts](../../../e2e/FR-PWRESET-008-confirm-password-match.spec.ts)） |
-| `FREQ-333-AC-04` | なし | 1件（[FR-PWRESET-008-confirm-password-match.spec.ts](../../../e2e/FR-PWRESET-008-confirm-password-match.spec.ts)） |
+| `FREQ-331-AC-01` | なし | なし |
+| `FREQ-331-AC-02` | なし | なし |
+| `FREQ-331-AC-03` | なし | なし |
+| `FREQ-331-AC-04` | なし | なし |
+| `FREQ-331-AC-05` | なし | なし |
+| `FREQ-331-AC-06` | なし | なし |
+| `FREQ-331-AC-07` | なし | なし |
+| `FREQ-332-AC-01` | なし | なし |
+| `FREQ-332-AC-02` | なし | なし |
+| `FREQ-332-AC-03` | なし | なし |
+| `FREQ-332-AC-04` | なし | なし |
+| `FREQ-333-AC-01` | なし | なし |
+| `FREQ-333-AC-02` | なし | なし |
+| `FREQ-333-AC-03` | なし | なし |
+| `FREQ-333-AC-04` | なし | なし |
 | `FREQ-334-AC-01` | なし | なし |
 | `FREQ-334-AC-02` | なし | なし |
 | `FREQ-334-AC-03` | なし | なし |
@@ -1297,7 +1297,7 @@
 | `FREQ-377-AC-01` | なし | 1件（[FR-UI-008-status-messages.spec.ts](../../../e2e/FR-UI-008-status-messages.spec.ts)） |
 | `FREQ-377-AC-02` | なし | 1件（[FR-UI-008-status-messages.spec.ts](../../../e2e/FR-UI-008-status-messages.spec.ts)） |
 | `FREQ-377-AC-03` | なし | 1件（[FR-UI-008-status-messages.spec.ts](../../../e2e/FR-UI-008-status-messages.spec.ts)） |
-| `FREQ-377-AC-04` | なし | 1件（[FR-UI-008-status-messages.spec.ts](../../../e2e/FR-UI-008-status-messages.spec.ts)） |
+| `FREQ-377-AC-04` | なし | なし |
 | `FREQ-377-AC-05` | なし | なし |
 | `FREQ-377-AC-06` | なし | なし |
 | `FREQ-378-AC-01` | なし | 1件（[FR-CHECKOUT-033-complete-once-on-return.spec.ts](../../../e2e/FR-CHECKOUT-033-complete-once-on-return.spec.ts)） |
@@ -2285,13 +2285,13 @@
 | `FREQ-584-AC-06` | なし | 1件（[FR-ADMIN-137-accounting-return-arrival.spec.ts](../../../e2e/FR-ADMIN-137-accounting-return-arrival.spec.ts)） |
 | `FREQ-59-AC-01` | なし | なし |
 | `FREQ-59-AC-02` | なし | なし |
-| `FREQ-60-AC-01` | なし | なし |
+| `FREQ-60-AC-01` | なし | 1件（[FR-LOGIN-058-email-code-screen.spec.ts](../../../e2e/FR-LOGIN-058-email-code-screen.spec.ts)） |
 | `FREQ-61-AC-01` | なし | なし |
 | `FREQ-61-AC-02` | なし | なし |
 | `FREQ-61-AC-03` | なし | なし |
 | `FREQ-62-AC-01` | なし | なし |
 | `FREQ-62-AC-02` | なし | なし |
-| `FREQ-63-AC-01` | 1件（[14_login.md](../../04_DetailDesign/pages/14_login.md)） | なし |
+| `FREQ-63-AC-01` | なし | なし |
 | `FREQ-63-AC-02` | なし | なし |
 | `FREQ-63-AC-03` | なし | なし |
 | `FREQ-64-AC-01` | なし | なし |
@@ -2377,10 +2377,10 @@
 | `FREQ-69-AC-02` | なし | 1件（[FR-LOGIN-079-login-screens-layout.spec.ts](../../../e2e/FR-LOGIN-079-login-screens-layout.spec.ts)） |
 | `FREQ-69-AC-03` | なし | 1件（[FR-LOGIN-079-login-screens-layout.spec.ts](../../../e2e/FR-LOGIN-079-login-screens-layout.spec.ts)） |
 | `FREQ-70-AC-01` | なし | なし |
-| `FREQ-70-AC-02` | なし | 2件（[FR-LOGIN-079-login-screens-layout.spec.ts](../../../e2e/FR-LOGIN-079-login-screens-layout.spec.ts)） |
-| `FREQ-70-AC-03` | なし | 1件（[FR-PWRESET-001-visual-consistency-with-login.spec.ts](../../../e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts)） |
-| `FREQ-70-AC-04` | なし | 2件（[FR-PWRESET-001-visual-consistency-with-login.spec.ts](../../../e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts)） |
-| `FREQ-70-AC-07` | なし | 1件（[FR-PWRESET-001-visual-consistency-with-login.spec.ts](../../../e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts)） |
+| `FREQ-70-AC-02` | なし | 1件（[FR-LOGIN-079-login-screens-layout.spec.ts](../../../e2e/FR-LOGIN-079-login-screens-layout.spec.ts)） |
+| `FREQ-70-AC-03` | なし | なし |
+| `FREQ-70-AC-04` | なし | なし |
+| `FREQ-70-AC-07` | なし | なし |
 | `FREQ-71-AC-01` | なし | 1件（[FR-LOGIN-079-login-screens-layout.spec.ts](../../../e2e/FR-LOGIN-079-login-screens-layout.spec.ts)） |
 | `FREQ-71-AC-02` | なし | なし |
 | `FREQ-71-AC-03` | なし | なし |
@@ -2461,9 +2461,9 @@
 | `FREQ-91-AC-02` | なし | なし |
 | `FREQ-91-AC-03` | なし | なし |
 | `FREQ-91-AC-04` | なし | なし |
-| `FREQ-92-AC-01` | なし | 1件（[FR-PWRESET-001-visual-consistency-with-login.spec.ts](../../../e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts)） |
-| `FREQ-92-AC-02` | なし | 1件（[FR-PWRESET-001-visual-consistency-with-login.spec.ts](../../../e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts)） |
-| `FREQ-92-AC-03` | なし | 1件（[FR-PWRESET-001-visual-consistency-with-login.spec.ts](../../../e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts)） |
+| `FREQ-92-AC-01` | なし | なし |
+| `FREQ-92-AC-02` | なし | なし |
+| `FREQ-92-AC-03` | なし | なし |
 | `FREQ-93-AC-01` | なし | なし |
 | `FREQ-93-AC-02` | なし | なし |
 | `FREQ-93-AC-03` | なし | なし |

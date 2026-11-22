@@ -102,8 +102,8 @@ for (const viewport of viewports) {
       expect(overLimit.status(), '31 件目').toBe(429);
     });
 
-    test(`SEC-AUTH-025-AC-01 別のオリジンからの再設定の完了が 403 (${viewport.name})`, async ({ request }) => {
-      const response = await request.post('/api/auth/password-reset/confirm', {
+    test(`SEC-AUTH-025-AC-01 別のオリジンからのメールのコードの開始が 403 (${viewport.name})`, async ({ request }) => {
+      const response = await request.post('/api/auth/email-code/start', {
         headers: { origin: 'https://evil.example' },
         data: {},
       });

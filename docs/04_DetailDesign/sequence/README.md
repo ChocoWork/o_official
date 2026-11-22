@@ -26,7 +26,7 @@
 | [ログイン・追加認証](auth-login-mfa.md) | パスワード後のメールOTP、再送・取消、TOTPとAAL2 |
 | [会員登録・確認](auth-registration.md) | 登録受付、確認メール、token_hashの検証 |
 | [Google OAuth](auth-oauth.md) | OAuth開始、callback、セッション作成、戻り先 |
-| [パスワード再設定](auth-password-reset.md) | 再設定メール、リンク確認、パスワード更新 |
+| [パスワード再設定](auth-password-reset.md) | 廃止（段4で窓口・画面を消した）。再設定メール、リンク確認、パスワード更新 |
 | [セッション・API認可](auth-session.md) | 初期認証状態の照会、refresh、logout、管理APIでの認証・ACL・AAL2確認 |
 | [店員のパスキーの入口](auth-staff-passkey-entry.md) | 店員のパスキーの設定、登録の窓の開閉、認めたパスキーの控えと数え方 |
 | [パスキーのアプリの窓口](auth-passkey-server-endpoints.md) | 窓口が DB の関数を呼ぶ薄い部品、`passkey_approve` の古い行と窓の同時の競り |

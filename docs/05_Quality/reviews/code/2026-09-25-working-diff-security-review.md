@@ -565,6 +565,8 @@ G と H の順番・範囲（G-1〜G-4・H-1）は1章、開店前に直す物�
 
 消す物の一覧は [ADR-0469](../../../03_BasicDesign/decisions/ADR-0469-passkey-customer-email-code-login.md) の「段4で消す一覧」。`loginAsMember` の古い道（`loginAsMemberLegacy`。呼ぶ試験は FR-LOGIN-030・031・032・033、FR-PWRESET-010、FR-ACCOUNT-046、FR-ADMIN-MISC-008）・`/login/password`・`/login/verify`・`/api/auth/login/{route,resend,cancel}`・`/api/auth/otp/verify`・`/api/auth/register`・`/api/auth/confirm` の登録の確認・`/account/password`・`/api/auth/password/*`・`AuthTabs`・`LoginModal`・`RegisterModal`・`VerifyOtpClient`・旧の保留の Cookie `sb-login-2fa-session`・`login-2fa-session.ts`・付け替えた約30本の E2E と `setLoginTwoFactorCookie`・`FR-ACCOUNT-046`・`FR-PWRESET-*`・`FR-SIGNUP-*`。`createTestMember` の `password` 付きの作り方を外す。
 
+**段4 Task 29 済み（2026-11-22）**: お客さんのパスワードの再設定・変更を消した（画面 `/auth/password-reset`・`/auth/password-reset/verify`・`/account/password`、窓口 `/api/auth/password-reset/*`・`/api/auth/password/change/*`、部品、試験 `FR-PWRESET-001〜010`・`FR-ACCOUNT-046`、結合・単体の該当）。404の確かめは `FR-LOGIN-080`（FR-AUTH-053-AC-02）、`/account` にリンクが無い確かめは `FR-LOGIN-060`。廃止にした追跡の項目は SR-AUTH-009・FR-AUTH-006・SEC-AUTH-014・016・018・020・027・034・THR-AUTH-014・016・018・020・027・034・ADR-0403・0405・0421 と、その AC・構造設計・DD。`passwordSchema`・`src/lib/pwned-password.ts` は `admin:bootstrap`（Task 31 が消す）が呼ぶので残した。表 `password_reset_tokens`・`password_change_challenges` と関数は移行 K（Task 32）で消す。
+
 **オーナーに伝える物（要件ではない）**
 
 - 注文のメールの送信の一時停止の間、店への警告は「注文のメールの送信を止めています」と出る。原因がパスキーの知らせのメールの時も同じ文になる

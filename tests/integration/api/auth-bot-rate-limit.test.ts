@@ -59,11 +59,6 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
   enforceRateLimit: jest.fn(),
 }));
 
-jest.mock('@/lib/pwned-password', () => ({
-  checkPwnedPassword: async () => ({ status: 'ok' }),
-  PWNED_PASSWORD_MESSAGE: 'pwned',
-}));
-
 type Handler = (request: Request) => Promise<any>;
 
 const { cookies } = require('next/headers');
@@ -117,9 +112,6 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
       windowSeconds: number;
       headers?: () => Record<string, string>;
     }> = [
-      { label: 'POST /api/auth/password-reset/request', method: 'POST', path: '/api/auth/password-reset/request', load: () => require('@/app/api/auth/password-reset/request/route').POST, endpoint: 'auth:password_reset_request', limit: 10, windowSeconds: 3600 },
-      { label: 'POST /api/auth/password-reset/link', method: 'POST', path: '/api/auth/password-reset/link', load: () => require('@/app/api/auth/password-reset/link/route').POST, endpoint: 'auth:password_reset_link', limit: 20, windowSeconds: 600 },
-      { label: 'POST /api/auth/password-reset/confirm', method: 'POST', path: '/api/auth/password-reset/confirm', load: () => require('@/app/api/auth/password-reset/confirm/route').POST, endpoint: 'auth:password_reset_confirm', limit: 10, windowSeconds: 3600 },
       { label: 'POST /api/auth/oauth/start', method: 'POST', path: '/api/auth/oauth/start', load: () => require('@/app/api/auth/oauth/start/route').POST, endpoint: 'auth:oauth:start', limit: 50, windowSeconds: 600 },
       { label: 'GET /api/auth/oauth/start', method: 'GET', path: '/api/auth/oauth/start', load: () => require('@/app/api/auth/oauth/start/route').GET, endpoint: 'auth:oauth:start', limit: 50, windowSeconds: 600 },
       { label: 'GET /api/auth/oauth/callback', method: 'GET', path: '/api/auth/oauth/callback', load: () => require('@/app/api/auth/oauth/callback/route').GET, endpoint: 'auth:oauth:callback', limit: 50, windowSeconds: 600 },
@@ -147,35 +139,6 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
       expect(createServiceRoleAuthClient).not.toHaveBeenCalled();
       expect(createServiceRoleClient).not.toHaveBeenCalled();
       expect(createClient).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('パスワード再設定の申請はメール単位の枠を Turnstile の後に数える', () => {
-    const resetBody = { email: 'User@Example.com', turnstileToken: 'ts-token' };
-
-    test('ARC-AUTH-005 password-reset/request は Turnstile を通ってから、メールを subject にして 5 回／3600 秒の枠を数える', async () => {
-      enforceRateLimit.mockResolvedValueOnce(undefined).mockResolvedValueOnce(tooMany());
-      const { POST } = require('@/app/api/auth/password-reset/request/route') as { POST: Handler };
-
-      const res = await POST(request('POST', '/api/auth/password-reset/request', resetBody));
-
-      expect(res.status).toBe(429);
-      expect(enforceRateLimit.mock.calls[1][0]).toEqual(
-        expect.objectContaining({ endpoint: 'auth:password_reset_request', limit: 5, windowSeconds: 3600, subject: 'user@example.com' }),
-      );
-      expect(verifyTurnstile.mock.invocationCallOrder[0]).toBeLessThan(enforceRateLimit.mock.invocationCallOrder[1]);
-      expect(createServiceRoleClient).not.toHaveBeenCalled();
-    });
-
-    test('ARC-AUTH-005 password-reset/request は Turnstile に落ちたら 403 で止め、メールの枠を数えない', async () => {
-      verifyTurnstile.mockResolvedValue({ ok: false, error: 'missing_turnstile_token' });
-      const { POST } = require('@/app/api/auth/password-reset/request/route') as { POST: Handler };
-
-      const res = await POST(request('POST', '/api/auth/password-reset/request', resetBody));
-
-      expect(res.status).toBe(403);
-      expect(enforceRateLimit).toHaveBeenCalledTimes(1);
-      expect(createServiceRoleClient).not.toHaveBeenCalled();
     });
   });
 
@@ -222,16 +185,6 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
       const res = await GET(request('GET', '/api/auth/mfa/status'));
 
       expect(res.status).toBe(401);
-      expect(enforceRateLimit).not.toHaveBeenCalled();
-    });
-
-    test('ARC-AUTH-005 password-reset/session は枠を数えずに再設定の Cookie の状態を答える', async () => {
-      const { GET } = require('@/app/api/auth/password-reset/session/route') as { GET: Handler };
-
-      const res = await GET(request('GET', '/api/auth/password-reset/session'));
-
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ ready: false, email: null });
       expect(enforceRateLimit).not.toHaveBeenCalled();
     });
   });

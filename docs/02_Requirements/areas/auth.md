@@ -60,7 +60,7 @@ AUTH の領域の要求・要件・受け入れ条件・派生要件を、追跡
 
 ### E2E と受け入れ条件の対応
 
-範囲の E2E（`e2e/FR-LOGIN-*`・`FR-HEADER-*`・`FR-PWRESET-*`・`FR-SIGNUP-*`・`login-otp-resend-errors`）が試している受け入れ条件。テスト名に ID を付ける時に使う。対応はテストの注と中身から読み取った（推定）。
+範囲の E2E（`e2e/FR-LOGIN-*`・`FR-HEADER-*`・`FR-SIGNUP-*`・`login-otp-resend-errors`。`FR-PWRESET-*`・`FR-ACCOUNT-046` は段4の Task 29 で消した）が試している受け入れ条件。テスト名に ID を付ける時に使う。対応はテストの注と中身から読み取った（推定）。
 
 | E2E のファイル | 受け入れ条件 |
 | --- | --- |
@@ -94,16 +94,7 @@ AUTH の領域の要求・要件・受け入れ条件・派生要件を、追跡
 | FR-HEADER-005・006 | FREQ-28-AC-01、FREQ-29-AC-01 |
 | FR-HEADER-007 | FREQ-239-AC-01〜04 |
 | FR-HEADER-008 | FREQ-309-AC-01〜05 |
-| FR-PWRESET-001 | FREQ-70-AC-02〜04、FREQ-92-AC-01・AC-02、FREQ-328-AC-04、FREQ-329-AC-05（注の FREQ-70-AC-05・07・08 は要件に無い） |
-| FR-PWRESET-002 | FREQ-319-AC-01〜05、FREQ-332-AC-01 |
-| FR-PWRESET-003 | FREQ-323-AC-04 |
-| FR-PWRESET-004 | FREQ-328-AC-01 |
-| FR-PWRESET-005 | FREQ-329-AC-01〜04 と FREQ-333 の一部（テストごとの対応は名前を付ける時に確かめる） |
-| FR-PWRESET-006 | FREQ-331-AC-01〜07 |
-| FR-PWRESET-007 | FREQ-332-AC-01〜03 |
-| FR-PWRESET-008 | FREQ-333-AC-01〜04 |
 | FR-SIGNUP-001 | FREQ-63-AC-01 |
-| FR-ACCOUNT-046（`e2e/FR-ACCOUNT-046-password-change.spec.ts`。波 6 の切り替え〔2026-11-01〕までは `supabase/pending-wave6/e2e/` に `.pending` で待機していた。今は `e2e/` に在り、`scope.json` の AUTH の `e2e` に載っている） | FR-AUTH-006-AC-01〜07、SEC-AUTH-034-AC-01〜04 |
 
 FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-underline-and-dropdown-edges.spec.ts` にある（全領域の持ち主の割り当て）。上の表に無い受け入れ条件には、範囲の E2E が無い。
 
@@ -202,7 +193,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | 会員がパスワードを自分で変える窓口がアプリに無く、忘れた時の再設定（SR-AUTH-002）以外に変える道が無かった。Supabase Auth の `/auth/v1/user` を直接呼ぶ道は、`secure_password_change` が session の作成から 24 時間以内なら再認証なしで変えるのを許す（窓は設定で変えられない）。パスワードを変える機能は、現行と新しいパスワードを求め（ASVS 4.0.3 V2.1.5・V2.1.6）、変えた後に他の session を止め（V3.3.3）、本人に通知する（V2.2.3）べき機能で、乗っ取った session の持ち主に本人を締め出させない守りが要る |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの発言 2026-11-01（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`「パスワードの変更」。現行パスワード＋新しいパスワード〔16 文字以上〕＋アプリが送るメールの数字、変更の後は全 session を失効、通知のメール、本人ごと 10 分 5 回） |
 
 要求の文: ログイン中の会員が、アカウントの画面から、現行のパスワードを確かめたうえで、新しいパスワードに変えられる。本人の確かめは、現行のパスワードと、登録のメールへ届く確認コードの 2 つ。変えた後はこの端末を含む全部の session を失効し、本人に通知のメールを送る。パスワードの変更を繰り返し試す道（現行パスワードの総当たり・コードの総当たり）は回数で止める。
@@ -627,7 +618,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | ログインの見た目を下線に変えたので、再設定のページも同じにして流れの途中で見た目が変わらないようにする（FREQ-70 の角丸のカードを置き換えた） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -682,7 +673,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | 再設定のメールの送信が 500 で全く使えず、パスワードを忘れた会員が自分で戻れなかったため。直すついでに、列挙・メールの踏み台・リンクの使い潰しを防ぐ形にする |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -737,7 +728,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | フォームが残ると送れたか分からず、同じボタンを押して回数の制限に当たるため、結果と再送の手段を別の画面で示す |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -759,7 +750,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | 図・見出し・補足・注意書き・主の操作・逃げ道が同じ強さで並ぶと、次に何をするか読み取れないため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -770,7 +761,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | リンクを開いた後にもう一度ボタンを押させるのは手間で、消費を完了の時へ移したので期限がそのまま漏れの窓になるため（ASVS V2.7.2） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -781,7 +772,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | 見えない欄に1回だけ入れると、打ち間違いに気づかないまま次のログインで入れなくなるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -1129,7 +1120,7 @@ Supabase の Email OTP Expiration を300秒に設定すること。UI の再送�
 | --- | --- |
 | 上位 | FREQ-92 |
 | 根拠 | FREQ-92 を、枠の撤去・欄の形・表示切替・ボタンの形・見出しの書体と列の整列に分けた |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-92 の行） |
@@ -1311,7 +1302,7 @@ MFA の判定を app_metadata のフラグではなく JWT の aal クレーム�
 | --- | --- |
 | 上位 | FREQ-319 |
 | 根拠 | listUsers をレシーバから外して呼ぶと動かず、件数が増えると壊れるため、権限を絞った DB の関数に置き換えた |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-319 の行） |
@@ -1324,7 +1315,7 @@ findAuthUserIdByEmail が auth.admin.listUsers をレシーバから引き剥が
 | --- | --- |
 | 上位 | FREQ-319 |
 | 根拠 | 応答の違いで登録の有無を知られず、当社のドメインから無差別にメールを送らせないため |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-319 の行） |
@@ -1337,7 +1328,7 @@ findAuthUserIdByEmail が auth.admin.listUsers をレシーバから引き剥が
 | --- | --- |
 | 上位 | FREQ-319 |
 | 根拠 | メールのリンクを先に開くスキャナにトークンを潰されないため（FREQ-332 で改訂） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-319 の行） |
@@ -1350,7 +1341,7 @@ findAuthUserIdByEmail が auth.admin.listUsers をレシーバから引き剥が
 | --- | --- |
 | 上位 | FREQ-319 |
 | 根拠 | 黙ってフォームへ戻すと、利用者は何が起きたか分からないため |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-319 の行） |
@@ -1363,7 +1354,7 @@ findAuthUserIdByEmail が auth.admin.listUsers をレシーバから引き剥が
 | --- | --- |
 | 上位 | FREQ-319 |
 | 根拠 | 失敗を成功と言うと利用者が古いパスワードのまま困り、盗まれたセッションが残るとパスワードを変えた意味が無くなるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-319 の行） |
@@ -1467,7 +1458,7 @@ access token を保持する Cookie の Max-Age を、トークンの exp では
 | --- | --- |
 | 上位 | FREQ-323 |
 | 根拠 | 決まりを知らずに送って断られる往復を減らすため。説明文と placeholder で二重に並べない（FREQ-333 で改訂）。再設定の2つの欄は「16+ characters」を示すが、会員登録の欄の placeholder は「Password」「Confirm Password」で 16 文字を示さない（`src/components/RegisterModal.tsx`。SCR-AUTH-003・DD-AUTH-009）。会員登録の分がコードと合わないので推定にした |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-323 の行） |
@@ -1532,7 +1523,7 @@ Origin 検査の実装は proxy に一本化し、ルート個別に同じ検査
 | --- | --- |
 | 上位 | FREQ-328 |
 | 根拠 | 自動の描画はスクリプトの読み込みの時にしか走らず、描かれないことがあるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-328 の行） |
@@ -1571,7 +1562,7 @@ Turnstile を size:flexible で描画してコンテナ幅に追従させ、コ�
 | --- | --- |
 | 上位 | FREQ-328 |
 | 根拠 | ウィジェットが CTA の直前に入るので、入力欄から測る旧い決まりが成り立たないため |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-328 の行） |
@@ -1584,7 +1575,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-329 |
 | 根拠 | 完了したかを一目で分かるようにし、二度押しを防ぐため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-329 の行） |
@@ -1597,7 +1588,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-329 |
 | 根拠 | 再送で前のリンクが使えなくなる理由を知らせ、肩越しに宛先を見られないため |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-329 の行） |
@@ -1610,7 +1601,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-329 |
 | 根拠 | 連打で回数の制限を使い切らないため。残り時間の文言はログインの OTP の再送と同じ実装にする |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-329 の行） |
@@ -1623,7 +1614,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-329 |
 | 根拠 | 押せるまま黙って失敗すると、届かない理由が分からないため |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-329 の行） |
@@ -1636,7 +1627,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-329 |
 | 根拠 | 完了の後にすることは1つなので、補助のリンクでなく主ボタンで示すため（FREQ-70-AC-07 を上書き） |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-329 の行） |
@@ -1688,7 +1679,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-331 |
 | 根拠 | 文字の ✓ は完了以上を伝えず、メールを見に行く次の行動を促さないため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-331 の行） |
@@ -1701,7 +1692,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-331 |
 | 根拠 | h1 が2つ並ぶと、どちらが一番強いか読めないため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-331 の行） |
@@ -1714,7 +1705,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-331 |
 | 根拠 | 2行を1つのまとまりとして本題から沈めるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-331 の行） |
@@ -1727,7 +1718,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-331 |
 | 根拠 | 等しい間隔ではどこがまとまりの切れ目か読めないため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-331 の行） |
@@ -1740,7 +1731,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-331 |
 | 根拠 | 最後の1文字だけが次の行へ落ちると読みにくいため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-331 の行） |
@@ -1753,7 +1744,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-331 |
 | 根拠 | 375px で1行に入る字数の上限が約 17.8 字で、文字を小さくして収める案は読めないため |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-331 の行） |
@@ -1766,7 +1757,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-331 |
 | 根拠 | h1 の行の高さが余白を足すので、margin をそろえても見た目がそろわないため |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-331 の行） |
@@ -1779,7 +1770,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-332 |
 | 根拠 | 二重に送ると無駄な往復が増え、消費の位置を戻した時に正しいリンクが弾かれるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-332 の行） |
@@ -1792,7 +1783,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-332 |
 | 根拠 | 確認の画面を挟む意味が無くなったため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-332 の行） |
@@ -1805,7 +1796,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-332 |
 | 根拠 | 自動の送信しか無いと、一時の失敗で打つ手が無くなるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-332 の行） |
@@ -1818,7 +1809,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-332 |
 | 根拠 | ASVS V2.7.2 に合わせ、最悪の露出を 10 分＋10 分に収めるため |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-332 の行） |
@@ -1831,7 +1822,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-333 |
 | 根拠 | 先に一致を確かめると、短いパスワードを2回同じに打った人が往復を2回することになるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-333 の行） |
@@ -1844,7 +1835,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-333 |
 | 根拠 | 会員登録の確認の欄と同じ作法にし、この画面だけの流儀を作らないため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-333 の行） |
@@ -1857,7 +1848,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-333 |
 | 根拠 | 同じ値を2回流しても守りは増えないため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-333 の行） |
@@ -1870,7 +1861,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-333 |
 | 根拠 | 変えられない読み取りだけの欄があると、入れるべき欄が分かりにくいため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-333 の行） |
@@ -2286,7 +2277,7 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | --- | --- |
 | 上位 | SR-AUTH-009 |
 | 根拠 | SR-AUTH-009 の「現行のパスワードと確認コードで本人を確かめて変える」を、盗んだ session の持ち主がメールの受信箱を持たず、現行パスワードの総当たりもできない形で満たす。窓口を 2 つに分け（`start` で現行パスワードを確かめてコードを送り、`confirm` でコードと新しいパスワードを受ける）、`start` に現行パスワードを要るようにして、本人のメールへコードを撒けないようにする（ADR-0421） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの発言 2026-11-01（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`）、`docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 5〜7） |
 | 優先度 | MUST |
@@ -2975,7 +2966,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-70-REQ-01 |
 | 根拠 | FREQ-70-REQ-01 の角丸を確かめる形だった。FREQ-92-AC-01 がカード無し・直角に置き換えた（状態は推定） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-70 の行） |
@@ -2993,7 +2984,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-70 の行） |
 
-`/auth/password-reset` 初期表示で Footer が見えず（上端がビューポート下端以上）、フォームが縦方向にほぼ中央に配置されること
+`/login/code` 初期表示で Footer が見えず（上端がビューポート下端以上）、フォームが縦方向にほぼ中央に配置されること
 （段4の Task 28 から、同じ検査を新しいログインの確認コードの画面 `/login/code` にも向ける。`e2e/FR-LOGIN-079-login-screens-layout.spec.ts`）
 
 
@@ -3003,7 +2994,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-70-REQ-01 |
 | 根拠 | FREQ-70-REQ-01 のボタンの状態を、/login の FREQ-65 と同じ形で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-70 の行） |
@@ -3016,7 +3007,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-70-REQ-01 |
 | 根拠 | FREQ-70-REQ-01 の対比を、見出しの書体と大きさで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-70 の行） |
@@ -3304,7 +3295,7 @@ Password・Password（確認）の各入力欄に表示切替ボタンがあり�
 | --- | --- |
 | 上位 | FREQ-92-REQ-01 |
 | 根拠 | FREQ-92-REQ-01 の枠の撤去とボタンの形を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-92 の行） |
@@ -3317,7 +3308,7 @@ Password・Password（確認）の各入力欄に表示切替ボタンがあり�
 | --- | --- |
 | 上位 | FREQ-92-REQ-01 |
 | 根拠 | FREQ-92-REQ-01 の欄の形を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-92 の行） |
@@ -3330,7 +3321,7 @@ Email 入力欄が下線のみ（border-bottom のみ）で表示され、先頭
 | --- | --- |
 | 上位 | FREQ-92-REQ-01 |
 | 根拠 | FREQ-92-REQ-01 の見出しの対比を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-92 の行） |
@@ -3548,7 +3539,7 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で、管理APIが401�
 | --- | --- |
 | 上位 | FREQ-319-REQ-01 |
 | 根拠 | FREQ-319-REQ-01 の直しを、送信の応答で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-319 の行） |
@@ -3561,7 +3552,7 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で、管理APIが401�
 | --- | --- |
 | 上位 | FREQ-319-REQ-02 |
 | 根拠 | FREQ-319-REQ-02 を、応答の一致と送信の有無で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-319 の行） |
@@ -3574,7 +3565,7 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で、管理APIが401�
 | --- | --- |
 | 上位 | FREQ-319-REQ-03 |
 | 根拠 | FREQ-319-REQ-03 の消費の時を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-319 の行） |
@@ -3587,7 +3578,7 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で、管理APIが401�
 | --- | --- |
 | 上位 | FREQ-319-REQ-04 |
 | 根拠 | FREQ-319-REQ-04 の理由の表示を、期限切れのリンクを開いた時の文で3つの幅で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-319 の行） |
@@ -3600,14 +3591,14 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で、管理APIが401�
 | --- | --- |
 | 上位 | FREQ-319-REQ-05 |
 | 根拠 | FREQ-319-REQ-05 の失敗の扱いと失効を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-319 の行） |
 
 updateUserById が error を返したとき 500 が返り「パスワードを更新しました」が表示されないこと。また再設定完了後、更新前に取得したアクセストークンで管理 API を叩くと 401 になること
 
-### FREQ-320-AC-01 DB の関数が失敗すると再設定は 500、登録は 503 で、監査が success にならない
+### FREQ-320-AC-01 DB の関数が失敗すると店員の招待は 500 で、監査が success にならない
 
 | 属性 | 値 |
 | --- | --- |
@@ -3618,7 +3609,7 @@ updateUserById が error を返したとき 500 が返り「パスワードを�
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-320 の行） |
 
-find_auth_user_id_by_email が error を返す状況で、/api/auth/password-reset/request が 500、/api/auth/register が 503 を返し、いずれも監査ログの outcome が success にならないこと
+find_auth_user_id_by_email が error を返す状況で、POST /api/admin/staff/invites が 500 を返し、監査ログの outcome が success にならないこと（旧の再設定・会員登録の窓口は、段4の Task 28・29 で消した）
 
 ### FREQ-320-AC-02 sb-access-token の Max-Age が 604800 で、ログアウトで他の端末が切れない
 
@@ -3704,7 +3695,7 @@ HaveIBeenPwned が応答しない状況でも会員登録が成功し、監査�
 | --- | --- |
 | 上位 | FREQ-323-REQ-04 |
 | 根拠 | FREQ-323-REQ-04 の示し方を、2つの欄の placeholder と古い基準の文が無いことで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-323 の行） |
@@ -3769,7 +3760,7 @@ proxy に列挙されていない /api/contact、/api/contact/threads/{id}/reply
 | --- | --- |
 | 上位 | FREQ-328-REQ-01 |
 | 根拠 | FREQ-328-REQ-01 の明示の描画を、ウィジェットが描かれてトークンが出ることで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-328 の行） |
@@ -3810,7 +3801,7 @@ iPhone SE 相当（375px）で document に横スクロールが発生しない�
 | --- | --- |
 | 上位 | FREQ-328-REQ-04 |
 | 根拠 | FREQ-328-REQ-04 の測り方で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-328 の行） |
@@ -3823,7 +3814,7 @@ iPhone SE 相当（375px）で document に横スクロールが発生しない�
 | --- | --- |
 | 上位 | FREQ-329-REQ-01 |
 | 根拠 | FREQ-329-REQ-01 の畳み方を、送信の後に欄とボタンが無いことで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-329 の行） |
@@ -3836,7 +3827,7 @@ iPhone SE 相当（375px）で document に横スクロールが発生しない�
 | --- | --- |
 | 上位 | FREQ-329-REQ-02 |
 | 根拠 | FREQ-329-REQ-02 の注意書きと宛先の扱いを、出る文と出ない宛先で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-329 の行） |
@@ -3849,7 +3840,7 @@ iPhone SE 相当（375px）で document に横スクロールが発生しない�
 | --- | --- |
 | 上位 | FREQ-329-REQ-03 |
 | 根拠 | FREQ-329-REQ-03 の待ちを、送信の直後の残り時間の表示と再送のボタンの無さで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-329 の行） |
@@ -3862,7 +3853,7 @@ iPhone SE 相当（375px）で document に横スクロールが発生しない�
 | --- | --- |
 | 上位 | FREQ-329-REQ-04 |
 | 根拠 | FREQ-329-REQ-04 を、再送が 429 を返す時の文と再送のボタンの無さで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-329 の行） |
@@ -3875,7 +3866,7 @@ iPhone SE 相当（375px）で document に横スクロールが発生しない�
 | --- | --- |
 | 上位 | FREQ-329-REQ-05 |
 | 根拠 | FREQ-329-REQ-05 の完了の画面を、完了の文と主ボタンと欄の無さで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-329 の行） |
@@ -3940,7 +3931,7 @@ OTP の再送信が POST /api/auth/login を叩き直さず、専用の POST /ap
 | --- | --- |
 | 上位 | FREQ-331-REQ-01 |
 | 根拠 | FREQ-331-REQ-01 の図を、送信の後と完了の後で出る図の印（data-testid）で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-331 の行） |
@@ -3953,7 +3944,7 @@ OTP の再送信が POST /api/auth/login を叩き直さず、専用の POST /ap
 | --- | --- |
 | 上位 | FREQ-331-REQ-02 |
 | 根拠 | FREQ-331-REQ-02 を、h1 の数と文と書体で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-331 の行） |
@@ -3966,7 +3957,7 @@ OTP の再送信が POST /api/auth/login を叩き直さず、専用の POST /ap
 | --- | --- |
 | 上位 | FREQ-331-REQ-03 |
 | 根拠 | FREQ-331-REQ-03 のパネルを、注意書きを包む要素の背景の色と文字の寄せで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-331 の行） |
@@ -3979,7 +3970,7 @@ OTP の再送信が POST /api/auth/login を叩き直さず、専用の POST /ap
 | --- | --- |
 | 上位 | FREQ-331-REQ-04 |
 | 根拠 | FREQ-331-REQ-04 の4段を、測った隙間の大小と④の3か所の差で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-331 の行） |
@@ -3992,7 +3983,7 @@ OTP の再送信が POST /api/auth/login を叩き直さず、専用の POST /ap
 | --- | --- |
 | 上位 | FREQ-331-REQ-05 |
 | 根拠 | FREQ-331-REQ-05 を、h1 の描かれた行の数で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-331 の行） |
@@ -4005,7 +3996,7 @@ OTP の再送信が POST /api/auth/login を叩き直さず、専用の POST /ap
 | --- | --- |
 | 上位 | FREQ-331-REQ-06 |
 | 根拠 | FREQ-331-REQ-06 を、注意書きの行の数と各行の描かれた行の数で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-331 の行） |
@@ -4018,7 +4009,7 @@ OTP の再送信が POST /api/auth/login を叩き直さず、専用の POST /ap
 | --- | --- |
 | 上位 | FREQ-331-REQ-07 |
 | 根拠 | FREQ-331-REQ-07 を、まとまりの中の隙間と外の隙間の比で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-331 の行） |
@@ -4031,7 +4022,7 @@ OTP の再送信が POST /api/auth/login を叩き直さず、専用の POST /ap
 | --- | --- |
 | 上位 | FREQ-332-REQ-01 |
 | 根拠 | FREQ-332-REQ-01 の1回だけの自動の送信を、ボタンの無さと link の POST の回数で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-332 の行） |
@@ -4044,7 +4035,7 @@ OTP の再送信が POST /api/auth/login を叩き直さず、専用の POST /ap
 | --- | --- |
 | 上位 | FREQ-332-REQ-02 |
 | 根拠 | FREQ-332-REQ-02 の直行を、link の POST が通った後に出る欄で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-332 の行） |
@@ -4057,7 +4048,7 @@ link の POST が成功する状況で /auth/password-reset/verify?token=... を
 | --- | --- |
 | 上位 | FREQ-332-REQ-03 |
 | 根拠 | FREQ-332-REQ-03 を、link の POST を通信の誤りにした時に出る再試行のボタンで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-332 の行） |
@@ -4070,7 +4061,7 @@ link の POST がネットワークエラーになる状況で、再試行のボ
 | --- | --- |
 | 上位 | FREQ-332-REQ-04 |
 | 根拠 | FREQ-332-REQ-04 の 10 分を、DB の期限・Cookie の Max-Age・メールの本文の3か所で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-332 の行） |
@@ -4083,7 +4074,7 @@ link の POST がネットワークエラーになる状況で、再試行のボ
 | --- | --- |
 | 上位 | FREQ-333-REQ-01 |
 | 根拠 | FREQ-333-REQ-01 を、違う2つの値の時の文と confirm が送られないことで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-333 の行） |
@@ -4096,7 +4087,7 @@ link の POST がネットワークエラーになる状況で、再試行のボ
 | --- | --- |
 | 上位 | FREQ-333-REQ-02 |
 | 根拠 | FREQ-333-REQ-02 を、確認の欄の表示切替と2つの placeholder と説明文の無さで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-333 の行） |
@@ -4109,7 +4100,7 @@ link の POST がネットワークエラーになる状況で、再試行のボ
 | --- | --- |
 | 上位 | FREQ-333-REQ-03 |
 | 根拠 | FREQ-333-REQ-03 を、片方だけの時のボタンの無効と、送る本文のキーで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-333 の行） |
@@ -4122,7 +4113,7 @@ link の POST がネットワークエラーになる状況で、再試行のボ
 | --- | --- |
 | 上位 | FREQ-333-REQ-04 |
 | 根拠 | FREQ-333-REQ-04 を、再設定のモードでメールの欄の要素が無いことで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-333 の行） |
@@ -4657,7 +4648,7 @@ SNSアイコンのリンク要素が flex かつ items-center justify-center で
 | --- | --- |
 | 上位 | FR-AUTH-006 |
 | 根拠 | FR-AUTH-006 の画面の入口と 1 段目を、3 つの幅で確かめる。コードと新しいパスワードの欄が最初から出ると、現行パスワードを確かめる前にコードを探させてしまう |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（mobile 390px・tablet 768px・desktop 1280px） |
 | 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 6・7） |
 
@@ -4669,7 +4660,7 @@ SNSアイコンのリンク要素が flex かつ items-center justify-center で
 | --- | --- |
 | 上位 | FR-AUTH-006 |
 | 根拠 | 現行パスワード → メールのコード → 新しいパスワードの 2 段が、画面と窓口の両方で最後まで通ることを確かめる。変わったことは、古いパスワードのログインが 401、新しいパスワードのログインが通ることで見る |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（画面の道は 3 つの幅。窓口を直に叩く道は desktop） |
 | 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 7） |
 
@@ -4681,7 +4672,7 @@ SNSアイコンのリンク要素が flex かつ items-center justify-center で
 | --- | --- |
 | 上位 | FR-AUTH-006 |
 | 根拠 | 盗んだ session の持ち主が、現行パスワードを知らないまま本人のメールへコードを撒けないようにする。誤りの応答は残りの回数を言わない |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 7、Review Focus 3） |
 
@@ -4693,7 +4684,7 @@ SNSアイコンのリンク要素が flex かつ items-center justify-center で
 | --- | --- |
 | 上位 | FR-AUTH-006 |
 | 根拠 | コードは 8 桁（10 の 8 乗通り）なので、使い捨て・試行回数の上限・最新だけ有効・session への結び付けが無いと、総当たりや使い回しで破られる（Review Focus 4）。使えない理由（違う・期限切れ・5 回超え）は同じ文で答え、残りの回数を言わない |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 7、Review Focus 4） |
 
@@ -4705,7 +4696,7 @@ SNSアイコンのリンク要素が flex かつ items-center justify-center で
 | --- | --- |
 | 上位 | FR-AUTH-006 |
 | 根拠 | 書式の検査と漏洩の照合は、コードを使い切るより前に置く。コードは本人確認なので、弱いパスワードで弾かれた人のコードを焼くと、メールを取り直す手間だけが増える（Review Focus 5）。「現行と同じ」の確かめは置かない（`confirm` が現行パスワードの当否を明かす窓口になるため） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（漏洩の照合は本物の HaveIBeenPwned へ出る） |
 | 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 5・7） |
 
@@ -4717,7 +4708,7 @@ SNSアイコンのリンク要素が flex かつ items-center justify-center で
 | --- | --- |
 | 上位 | FR-AUTH-006 |
 | 根拠 | 窓口は会員の認証が前提。管理者・サポーターは、GoTrue も MFA 済みの利用者に aal2 を求めるので、アプリの窓口も直接の道と同じ強さにする（ruling 17） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 5・7、Review Focus 7） |
 
@@ -4729,7 +4720,7 @@ SNSアイコンのリンク要素が flex かつ items-center justify-center で
 | --- | --- |
 | 上位 | FR-AUTH-006 |
 | 根拠 | Google だけで登録した会員はパスワードを持たず、`start` は必ず 401 になる。行き止まりにせず、再設定でパスワードを決められると案内する。案内は誰にでも出す固定の文にして、会員がパスワードを持つかを明かさない（列挙の防止） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（画面の案内は 3 つの幅。窓口の応答の比べは desktop） |
 | 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 6・7） |
 
@@ -6171,7 +6162,21 @@ DB の `staff_invite_cancel` は、開いた招待があれば `true`、2回目�
 | 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-28-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 28） |
 | 優先度 | MUST |
 
-規則: (1) 消した画面 `/login/password`・`/login/verify` は 404 を返す。(2) 消した窓口 `POST /api/auth/login`・`/api/auth/login/resend`・`/api/auth/login/cancel`・`/api/auth/otp/verify`・`/api/auth/register` と `GET /api/auth/confirm`（確認のメールのリンク）は 404 を返し、セッションの Cookie を出さない。(3) `/login`・ヘッダーのログインのリンク・メール・戻り先のどこにも、消した画面・窓口へのリンクが無い。(4) 確認前のアカウントへ届く確認メールは、リンクではなく8桁のコードを入れさせる（オーナーの答え1・5。FR-AUTH-054-AC-04）。再設定・変更の窓口の分は FR-AUTH-053-AC-02、認証アプリ（TOTP）・`/auth/verified` の分は FR-AUTH-053-AC-03 が後のタスクで足す。
+規則: (1) 消した画面 `/login/password`・`/login/verify` は 404 を返す。(2) 消した窓口 `POST /api/auth/login`・`/api/auth/login/resend`・`/api/auth/login/cancel`・`/api/auth/otp/verify`・`/api/auth/register` と `GET /api/auth/confirm`（確認のメールのリンク）は 404 を返し、セッションの Cookie を出さない。(3) `/login`・ヘッダーのログインのリンク・メール・戻り先のどこにも、消した画面・窓口へのリンクが無い。(4) 確認前のアカウントへ届く確認メールは、リンクではなく8桁のコードを入れさせる（オーナーの答え1・5。FR-AUTH-054-AC-04）。再設定・変更の窓口と画面（`/auth/password-reset`・`/auth/password-reset/verify`・`/account/password`、`/api/auth/password-reset/*`・`/api/auth/password/change/*`）は 404 を返し（FR-AUTH-053-AC-02。段4の Task 29、2026-11-22）、`/account` の画面に「パスワード」のリンクが無い。認証アプリ（TOTP）・`/auth/verified` の分は FR-AUTH-053-AC-03 が後のタスクで足す。
+
+### FR-AUTH-053-AC-02 消した再設定・変更の窓口・画面は 404 で、セッションの Cookie を出さない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-053 |
+| 根拠 | SR-AUTH-030 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-080-removed-auth-entries-gone.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-29-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 29） |
+
+`/auth/password-reset`・`/auth/password-reset/verify`・`/account/password` を開くと 404 になる。`POST /api/auth/password-reset/request`・`/api/auth/password-reset/link`・`/api/auth/password-reset/confirm`・`/api/auth/password/change/start`・`/api/auth/password/change/confirm` と `GET /api/auth/password-reset/session` は 404 で、`Set-Cookie` を返さない。`/login` に `/auth/password-reset` へのリンクが無く、`/account` のログイン方法の画面に「パスワードを変更」のリンクが無い（後者は `e2e/FR-LOGIN-060-account-passkeys.spec.ts` の FR-AUTH-029-AC-04）。
+
+
 
 ### FR-AUTH-053-AC-01 消したログインの窓口・画面は 404 で、セッションの Cookie を出さない
 
@@ -6807,7 +6812,7 @@ A が `POST /api/admin/staff/{id}/demote` で店員 X を降格し、worker が�
 
 長い名前のパスキーがあっても、一覧の行が画面の幅の中で折り返し、横にスクロールしない。「名前を変更」・「削除」・「パスキーを追加」は今の `Button` の `size=md`（`data-ui-button-size="md"`）のままで、幅の外へ出ない。
 
-### FR-AUTH-029-AC-04 「ログイン方法」が4つのタブの隣に出て、お客様情報に「パスワードを変更」のリンクが無く、`/account/password` は直に開くと使える
+### FR-AUTH-029-AC-04 「ログイン方法」が4つのタブの隣に出て、お客様情報に「パスワードを変更」のリンクが無く、`/account/password` は 404
 
 | 属性 | 値 |
 | --- | --- |
@@ -6817,7 +6822,7 @@ A が `POST /api/admin/staff/{id}/demote` で店員 X を降格し、worker が�
 | 確かめ方 | E2E（`e2e/FR-LOGIN-060-account-passkeys.spec.ts`。390・768・1280 の3幅でくり返す。仮想の認証器）、単体テスト（`tests/integration/ui/auth-account-security-tab.test.tsx`） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-7-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 7。判断 1・8、オーナーの決め: 新しいタブ「ログイン方法」） |
 
-お客さんのアカウントのタブは「お客様情報」「配送情報」「購入履歴」「お問い合わせ」「ログイン方法」の順に並ぶ。`/account?tab=profile` の読み込みが終わった後に、「パスワードを変更」のリンクも `/account/password` へのリンクも無い。`/account/password` を直に開くと、見出し「パスワードの変更」が出て使える。店員（`admin`・`supporter`）には「ログイン方法」のタブが出ず、`tab=security` で開いてもお客様情報になる（単体テスト）。
+お客さんのアカウントのタブは「お客様情報」「配送情報」「購入履歴」「お問い合わせ」「ログイン方法」の順に並ぶ。`/account?tab=profile` の読み込みが終わった後に、「パスワードを変更」のリンクも `/account/password` へのリンクも無い。`/account/password` を直に開くと 404 になる（段4の Task 29 で画面を消した）。店員（`admin`・`supporter`）には「ログイン方法」のタブが出ず、`tab=security` で開いてもお客様情報になる（単体テスト）。
 
 ### FR-AUTH-029-AC-05 「ログイン方法」のタブを押すと `tab=security` になり、パスキーの見出しが出る
 
@@ -7448,7 +7453,7 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 | --- | --- |
 | 上位 | THR-AUTH-014 |
 | 根拠 | 短い・漏れたパスワードでリスト型攻撃の成功率を上げないため（FREQ-323）。照合先が落ちた時に通すのは、外の障害で登録を止めない判断。全体の NFR-SEC-008（範囲外）に当てはめた。上限を 72 バイトにするのは、GoTrue（bcrypt）が 72 バイトを超えるパスワードを 400 で断り、アプリの 128 文字の上限だけでは再設定の完了でコードを使い切った後に 500 になるため（2026-11-01 の実測は本文） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト・E2E |
 | 出どころ | OWASP ASVS 4.0.3 V2.1.1、V2.1.7、V2.1.9。`docs/02_Requirements/requirements.md` の FREQ-323 の行 |
 | 優先度 | MUST |
@@ -7475,7 +7480,7 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 | --- | --- |
 | 上位 | SEC-AUTH-014 |
 | 根拠 | 最小の長さが再設定でも効くかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
@@ -7564,7 +7569,7 @@ anon の鍵で `/auth/v1/signup`・`/auth/v1/token?grant_type=password`・`/auth
 | --- | --- |
 | 上位 | THR-AUTH-016 |
 | 根拠 | 会員を狙った詐欺メールや漏れた組の絞り込みに使わせないため（FREQ-320）。会員登録は送信を応答の外に出して時間をそろえたが、再設定はアカウントがある時だけ DB に書いてから返す。会員登録の「すでに登録されています」の通知はアプリが自分で送るので、宛先単位で数えないと既存の会員へメールを送り続けられる（ログインと再設定は宛先単位で数える） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト・E2E |
 | 出どころ | `docs/05_Quality/reviews/security/security_review_signup.md`、`docs/02_Requirements/requirements.md` の FREQ-320 の行 |
 | 優先度 | MUST |
@@ -7589,7 +7594,7 @@ anon の鍵で `/auth/v1/signup`・`/auth/v1/token?grant_type=password`・`/auth
 | --- | --- |
 | 上位 | SEC-AUTH-016 |
 | 根拠 | 他人の宛先への踏み台にさせないかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（手元の Supabase のメールの受け箱で確かめる） |
 | 出どころ | `src/app/api/auth/password-reset/request/route.ts` |
 
@@ -7650,7 +7655,7 @@ anon の鍵で `/auth/v1/signup`・`/auth/v1/token?grant_type=password`・`/auth
 | --- | --- |
 | 上位 | THR-AUTH-018 |
 | 根拠 | 転送・履歴・リンクの検査から漏れた印でパスワードを変えさせないため（FREQ-319・FREQ-332）。消費をパスワードを変えた時に遅らせ、企業のリンクの検査に印を潰させない |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト・E2E |
 | 出どころ | OWASP ASVS 4.0.3 V2.5.6、V2.7.2。`docs/05_Quality/reviews/security/security_review_auth_password_reset.md` |
 | 優先度 | MUST |
@@ -7663,7 +7668,7 @@ anon の鍵で `/auth/v1/signup`・`/auth/v1/token?grant_type=password`・`/auth
 | --- | --- |
 | 上位 | SEC-AUTH-018 |
 | 根拠 | 使い回しを断るかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `e2e/FR-PWRESET-002-password-reset-hardening.spec.ts` |
 
@@ -7675,13 +7680,13 @@ anon の鍵で `/auth/v1/signup`・`/auth/v1/token?grant_type=password`・`/auth
 | --- | --- |
 | 上位 | SEC-AUTH-018 |
 | 根拠 | 有効なリンクを最新の1本に保つかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
 2回申請した後に1本目のリンクを開くと、期限切れの案内になること。
 
-### SEC-AUTH-019 確認・再設定のメールのリンクは許可した住所だけで作る
+### SEC-AUTH-019 招待・知らせのメールのリンクは許可した住所だけで作る
 
 | 属性 | 値 |
 | --- | --- |
@@ -7692,9 +7697,9 @@ anon の鍵で `/auth/v1/signup`・`/auth/v1/token?grant_type=password`・`/auth
 | 出どころ | `docs/superpowers/plans/2026-10-23-launch-fixes-wave1.md` |
 | 優先度 | MUST |
 
-会員登録と再設定は、要求から作った住所が許可の一覧に無ければメールを送らない。今のコードは満たす（`register/route.ts`、`password-reset/request/route.ts`）。
+店員の招待は、サイトの住所の設定が本番で使えない物なら、鍵を消す前に 503 で断り、メールを送らない。今のコードは満たす（`src/app/api/admin/staff/invites/route.ts`、`src/lib/site-url-guard.ts`）。会員登録と再設定のメールは、段4で窓口を消したので無い（2026-11-22）。
 
-#### SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない
+#### SEC-AUTH-019-AC-01 サイトの住所が本番で使えない設定なら、招待の発行は 503 で断られ、メールが届かない
 
 | 属性 | 値 |
 | --- | --- |
@@ -7702,9 +7707,9 @@ anon の鍵で `/auth/v1/signup`・`/auth/v1/token?grant_type=password`・`/auth
 | 根拠 | 住所の差し替えを断るかを見るため |
 | 状態 | 推定 |
 | 確かめ方 | E2E（許可の一覧を設定した本番ビルドで、`x-forwarded-host` を別の名前にして申請する） |
-| 出どころ | `tests/integration/api/auth/site-url-guard.test.ts` |
+| 出どころ | `tests/integration/api/admin-staff-invites-api.test.ts`（API-AUTH-033） |
 
-偽の `x-forwarded-host` を付けて登録済みのメールで申請すると、200 が返り、受け箱に何も届かないこと。
+サイトの住所が本番で使えない設定の時に店長が招待を発行すると、503 が返り、受け箱に何も届かず、相手の鍵も消えないこと。
 
 ### SEC-AUTH-020 パスワードを変えたら、その利用者の全部のセッションを切り、切れなければ気づけるようにする
 
@@ -7712,7 +7717,7 @@ anon の鍵で `/auth/v1/signup`・`/auth/v1/token?grant_type=password`・`/auth
 | --- | --- |
 | 上位 | THR-AUTH-020 |
 | 根拠 | 乗っ取られた人がパスワードを変えた後に、攻撃者のセッションを残さないため。切るのに失敗しても成功で返すのは、パスワードは既に変わっていて 500 の方が利用者に不利だから。その代わり失敗を監査に残す |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト・E2E |
 | 出どころ | OWASP ASVS 4.0.3 V3.3.3。`docs/05_Quality/reviews/code/2026-04-18-auth-security-review.md` |
 | 優先度 | MUST |
@@ -7725,7 +7730,7 @@ anon の鍵で `/auth/v1/signup`・`/auth/v1/token?grant_type=password`・`/auth
 | --- | --- |
 | 上位 | SEC-AUTH-020 |
 | 根拠 | 全部のセッションが切れるかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（端末 A でログインしたまま、端末 B で再設定を完了する） |
 | 出どころ | 実装から推定 |
 
@@ -7852,7 +7857,7 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-025 |
-| 根拠 | 攻撃者のサイトから被害者のブラウザで TOTP の登録や再設定の完了を送らせないため。FREQ-327の proxy に一本化した Origin の確かめを AUTH に当てはめた。許可の一覧が無い時に要求の見出しから比べる元を作ると、確かめが自分の値を信じる形になる |
+| 根拠 | 攻撃者のサイトから被害者のブラウザで、ログインやパスキーの操作を送らせないため。FREQ-327の proxy に一本化した Origin の確かめを AUTH に当てはめた。許可の一覧が無い時に要求の見出しから比べる元を作ると、確かめが自分の値を信じる形になる |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト・E2E |
 | 出どころ | OWASP ASVS 4.0.3 V4.2.2。`docs/05_Quality/reviews/security/security_review_overview.md` |
@@ -7860,7 +7865,7 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 
 `/api/auth/*` の `POST`・`PUT`・`PATCH`・`DELETE` は、Origin（無ければ Referer）が許可の一覧に無ければ 403 で断る。本番で許可の一覧が無い時も、要求の見出しから比べる元を作らない。断る部分は今のコードが満たす（`src/proxy.ts`）。一覧が無い時の扱いは満たさない。
 
-#### SEC-AUTH-025-AC-01 別のオリジンからの再設定の完了が 403
+#### SEC-AUTH-025-AC-01 別のオリジンからのメールのコードの開始が 403
 
 | 属性 | 値 |
 | --- | --- |
@@ -7870,7 +7875,7 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
-`Origin: https://evil.example` を付けて `/api/auth/password-reset/confirm` に送ると 403 になること。
+`Origin: https://evil.example` を付けて `/api/auth/email-code/start` に送ると 403 になること（段4の Task 29 で、消した再設定の窓口から替えた）。
 
 ### SEC-AUTH-026 ログインの後の送り先は、内部の道だけにする
 
@@ -7927,7 +7932,7 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | --- | --- |
 | 上位 | THR-AUTH-027 |
 | 根拠 | 1つの鍵が漏れた時に、保留の2段目・再設定・注文の状況の3つを全部偽れる形にしないため。`purpose` で取り違えは防げているので、鍵を分けるのは被害を小さくする重ね。全体の NFR-SEC-009（範囲外）に当てはめた |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト・レビュー（本番の環境変数） |
 | 出どころ | 実装から推定 |
 | 優先度 | SHOULD |
@@ -7940,7 +7945,7 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | --- | --- |
 | 上位 | SEC-AUTH-027 |
 | 根拠 | 用途の取り違えを断るかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
@@ -8166,7 +8171,7 @@ TOTP をまだ登録していない管理者が、メール OTP を通らずに�
 | --- | --- |
 | 上位 | THR-AUTH-034 |
 | 根拠 | session を乗っ取った人がパスワードを変えると、本人を締め出して居座れる。GoTrue の `secure_password_change` は session の作成から 24 時間以内なら再認証なしで変えるのを許し、その窓は設定で変えられない。だからアプリの窓口が、現行パスワードとメールのコードの 2 つを求め、変えた後は全 session を止め、本人に知らせる（ADR-0421）。会員の 2 段（パスワード＋メールのコード）は NIST SP 800-63B-4 の AAL2 ではない（メールは out-of-band の認証器に使えない。3.1.3.1）。アプリ独自の方針で、AAL2 を名乗らない |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（`e2e/FR-ACCOUNT-046-password-change.spec.ts`）、単体テスト・結合テスト |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`（パスワードの変更）、OWASP ASVS 4.0.3 V2.1.5、V2.1.6、V2.2.3、V3.3.3、NIST SP 800-63B-4 |
 | 優先度 | MUST |
@@ -8179,7 +8184,7 @@ TOTP をまだ登録していない管理者が、メール OTP を通らずに�
 | --- | --- |
 | 上位 | SEC-AUTH-034 |
 | 根拠 | 乗っ取った人の session を残さないため（ASVS V3.3.3）。この端末の session も止めて、新しいパスワードで入り直させる |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 7、Review Focus 6） |
 
@@ -8191,7 +8196,7 @@ TOTP をまだ登録していない管理者が、メール OTP を通らずに�
 | --- | --- |
 | 上位 | SEC-AUTH-034 |
 | 根拠 | 本人が気付けるようにする（ASVS V2.2.3）。GoTrue 側の変更の通知は件名を分けて別に送る（ruling 9）ので、この AC は件名「パスワードを変更しました」だけを数える |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 7、ruling 9） |
 
@@ -8203,7 +8208,7 @@ TOTP をまだ登録していない管理者が、メール OTP を通らずに�
 | --- | --- |
 | 上位 | SEC-AUTH-034 |
 | 根拠 | 盗んだ session の持ち主が `start` で現行パスワードを何度でも試せる窓口にしないため。本人ごとの枠は全 IP を合わせて数える（Review Focus 3） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 5・7） |
 
@@ -8215,7 +8220,7 @@ TOTP をまだ登録していない管理者が、メール OTP を通らずに�
 | --- | --- |
 | 上位 | SEC-AUTH-034 |
 | 根拠 | 監査の行にパスワード・コード・トークン・`session_id` を残すと、監査ログの閲覧者や漏洩から資格情報が出る。残すのは固定の符号だけにする |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（`audit_logs` を手元の DB の接続で直に読む） |
 | 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 5・7） |
 

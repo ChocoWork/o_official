@@ -1,6 +1,6 @@
 # ADR-0405 漏れたパスワードの照合はアプリで HIBP の k-匿名の方式で行い、届かない時は止めずに監査に残す
 
-> 状態: 現行 | 確認日: 2026-10-24 | 対象: `src/app/api/auth/register/route.ts`、`src/app/api/auth/password-reset/confirm/route.ts`、`src/lib/pwned-password.ts`（範囲外の共有部品） | 基準コミット: `4facf63b`
+> 状態: 廃止 | 確認日: 2026-10-24 | 対象: `src/app/api/auth/register/route.ts`、`src/app/api/auth/password-reset/confirm/route.ts`、`src/lib/pwned-password.ts`（範囲外の共有部品） | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -25,7 +25,7 @@
 | --- | --- |
 | 上位 | FREQ-323-REQ-02、SEC-AUTH-014 |
 | 根拠 | Supabase の漏れたパスワードの守り（leaked password protection）は Pro の契約からしか使えないので、同じ守りをアプリに置く（FREQ-323 の行、`register/route.ts`）。パスワードもハッシュの全部も外に出さない。外のサービスの障害で自社の登録・再設定を止めない |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 出どころ | `docs/02_Requirements/requirements.md`（FREQ-323 の行） |
 
 #### 背景
@@ -51,6 +51,7 @@
 
 #### 結果
 
+- 置き換え先: ADR-0469（段4の Task 29、2026-11-22 に、お客さんのパスワードの再設定・変更の窓口と画面を消したので、この決めは廃止した）
 - 良くなること: 無料の契約のままで漏れたパスワードを断れる
 - 悪くなること: HIBP が落ちている間は漏れたパスワードも通る。監査の印で期間を追うしかない
 - 悪くなること: 公開の anon の鍵で Supabase Auth の登録やパスワードの変更を直接呼ぶと、この照合も 16 文字も通らない（推定、SEC-AUTH-015）。手元の Supabase の最小の長さは 6（`supabase/config.toml`）

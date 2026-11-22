@@ -1,6 +1,6 @@
 # ADR-0403 パスワード再設定の印は、リンクを開いた時ではなくパスワードを変える時に消費する
 
-> 状態: 現行 | 確認日: 2026-10-24 | 対象: `src/app/api/auth/password-reset/{request,link,confirm}/route.ts`、`src/app/auth/password-reset/verify/` | 基準コミット: `4facf63b`
+> 状態: 廃止 | 確認日: 2026-10-24 | 対象: `src/app/api/auth/password-reset/{request,link,confirm}/route.ts`、`src/app/auth/password-reset/verify/` | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -25,7 +25,7 @@
 | --- | --- |
 | 上位 | FREQ-319-REQ-03、FREQ-332-REQ-01、FREQ-332-REQ-04 |
 | 根拠 | 会社のメールのリンクの検査は受け取った時にリンクを開き、JS を動かす物は POST も送る。開いた時点で消費すると、利用者が開く前に印が潰れ、再送しても同じく潰れて永久に再設定できない（Supabase の Production Checklist・Delay Token Invalidation、OWASP Forgot Password Cheat Sheet。`link/route.ts`）。消費が完了の時なので、10 分の寿命がそのままリンクの漏れの窓になる（ASVS V2.7.2、`request/route.ts`） |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 出どころ | `docs/02_Requirements/requirements.md` の FREQ-319・FREQ-332 の行、`src/app/api/auth/password-reset/link/route.ts` のコメント |
 
 #### 背景
@@ -53,6 +53,7 @@
 
 #### 結果
 
+- 置き換え先: ADR-0469（段4の Task 29、2026-11-22 に、お客さんのパスワードの再設定・変更の窓口と画面を消したので、この決めは廃止した）
 - 良くなること: 会社のメールでも再設定できる。同じリンクから出た複数の Cookie のうち、パスワードを変えられるのは1つだけ
 - 悪くなること: 消費が遅いので、漏れたリンクは 10 分の間に使える。新しく申請すると前のリンクは普通は無効になるが、無効にするのに失敗した時は前のリンクも残る（最新の1本だけは保証しない。SEC-AUTH-018 は満たさない）
 - 悪くなること: 使われずに期限が切れた行は残る。掃除の DB 関数はあるが呼ぶ所が無い（`supabase/migrations/20260901102912_remote_schema.sql`、台帳の W-06 は後回し）

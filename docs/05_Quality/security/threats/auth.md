@@ -246,7 +246,7 @@ flowchart LR
 | 対策 | SEC-AUTH-014 |
 | ASVS | V2.1.1、V2.1.7、V2.1.9 |
 | 根拠 | アプリの窓口には守りがある（FREQ-323）。照合先が落ちた時に通すのは、外の障害で登録を止めない判断（推定、ADR の候補）。アプリを通らない道は THR-AUTH-015。全体の NFR-SEC-008（範囲外）に当てはめた |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | `docs/02_Requirements/requirements.md` の FREQ-323 の行 |
 
 ### THR-AUTH-015 アプリを通らない会員登録・パスワード変更で、パスワードの決まりと Turnstile を飛ばす
@@ -274,7 +274,7 @@ flowchart LR
 | 対策 | SEC-AUTH-016 |
 | ASVS | ASVS 未対応付け |
 | 根拠 | 公開の道の応答の中身には守りがある（FREQ-320）。会員登録の宛先単位の制限は、2026-10-26 までは無かった（`register/route.ts:47,147-151`。基準コミット時点）。登録の 201 の分岐は Confirm email が OFF の時だけ通り、その時は新規と既存で応答が変わる（`register/route.ts:181-191`、THR-AUTH-029）。管理の経路の 409 は THR-AUTH-017（2026-10-26 に枝ごと削除） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | `docs/05_Quality/reviews/security/security_review_signup.md:57`、`docs/02_Requirements/requirements.md` の FREQ-320 の行 |
 
 ### THR-AUTH-017 管理の登録の経路が公開の窓口に同居する
@@ -302,20 +302,20 @@ flowchart LR
 | 対策 | SEC-AUTH-018 |
 | ASVS | V2.5.6、V2.7.2 |
 | 根拠 | 守りがある（FREQ-319・332）。消費を遅らせるのは、企業のリンクの検査が先に踏んで印を潰すのを防ぐため（`link/route.ts:28-34`）。使われなかった印の行を掃除する関数 `cleanup_password_reset_tokens` はあるが、呼ぶ所が無い（`remote_schema.sql:1378,3926-3928`。台帳の W-06 で後回し）。行はハッシュで、期限の切れた印は通らないので害は小さい（推定） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | `docs/05_Quality/reviews/security/security_review_auth_password_reset.md:30-34`、`docs/05_Quality/reviews/code/2026-09-25-working-diff-security-review.md:306` |
 
 ### THR-AUTH-019 メールのリンクの住所を差し替える
 
 | 属性 | 値 |
 | --- | --- |
-| 守るもの | 確認・再設定のメールのリンクの行き先と、その中の印 |
-| 脅威 | 攻撃者が要求の Host・`x-forwarded-host` を偽り、店のメールの中のリンクを攻撃者のサイトへ向けて印を盗む |
-| 起こり方 | 会員登録・再設定は要求から作った住所でリンクを作る（`register/route.ts:116,155`、`password-reset/request/route.ts:52,118`）。今は許可の一覧に無い住所なら送らない（`register/route.ts:117-120`、`request/route.ts:53-57`） |
-| 影響 | 再設定の印の窃取によるアカウントの乗っ取り |
+| 守るもの | 招待・知らせのメールのリンクの行き先と、その中の合言葉 |
+| 脅威 | 攻撃者が要求の Host・`x-forwarded-host` を偽り、または設定の住所を壊し、店のメールの中のリンクを攻撃者のサイトへ向けて合言葉を盗む |
+| 起こり方 | 店員の招待は設定の住所でリンクを作る（`src/features/auth/staff/staff-invite-send.ts`）。本番で使えない住所なら、鍵を消す前に断り、メールを送らない（`src/lib/site-url-guard.ts`）。会員登録・再設定のメールは、段4で窓口を消したので無い |
+| 影響 | 招待の合言葉の窃取による、店員の役割の乗っ取り |
 | 対策 | SEC-AUTH-019 |
 | ASVS | ASVS 未対応付け |
-| 根拠 | 守りがある（FREQ-509（範囲外）、波1 の J-17 で直した）。結合テストが `x-forwarded-host` の許可を試す（`tests/integration/api/auth/confirm.test.ts:157,170`、`site-url-guard.test.ts:51-97`） |
+| 根拠 | 守りがある（FREQ-509（範囲外）、波1 の J-17 で直した）。結合テストが本番で使えない住所の断りを試す（`tests/integration/api/admin-staff-invites-api.test.ts`） |
 | 状態 | 推定 |
 | 出どころ | `docs/superpowers/plans/2026-10-23-launch-fixes-wave1.md:150` |
 
@@ -330,7 +330,7 @@ flowchart LR
 | 対策 | SEC-AUTH-020 |
 | ASVS | V3.3.3 |
 | 根拠 | 守りがある。失敗でも成功を返すのは、パスワードは既に変わっていて 500 の方が利用者に不利だから（`confirm/route.ts:27-28`） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | `docs/05_Quality/reviews/code/2026-04-18-auth-security-review.md` |
 
 ### THR-AUTH-021 ログアウトしてもサーバーのセッションが残る
@@ -428,7 +428,7 @@ flowchart LR
 | 対策 | SEC-AUTH-027 |
 | ASVS | ASVS 未対応付け |
 | 根拠 | 取り違えは防げているが、鍵の漏れの影響が広い。本番の環境変数に専用の鍵があるかは未確認（本番は未デプロイ）。全体の NFR-SEC-009（範囲外）に当てはめた |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | 実装から推定 |
 
 ### THR-AUTH-028 画面の表示だけで管理の入口を出し分ける
@@ -526,7 +526,7 @@ flowchart LR
 | 対策 | SEC-AUTH-034（`start` で現行パスワードを確かめ、メールの 8 桁のコードを今の session に結んで 10 分・使い捨て・5 回の誤りで使えなくする。`confirm` は書式と漏洩の照合の後にコードを使い切り、変更の後に全 session を失効し、認証の Cookie を消し、通知する。本人ごと 10 分 5 回・IP ごと 20 回。管理者・サポーターは aal2。監査に固定の符号だけ。ADR-0421、DD-AUTH-041、DATA-AUTH-009・010）。GoTrue 側も `secure_password_change`・現行パスワードの要求・変更の通知・最小長 16 を有効にする（SEC-AUTH-015） |
 | ASVS | V2.1.5、V2.1.6、V2.2.3、V3.3.3 |
 | 根拠 | 残る危険は、現行パスワードを知る人が GoTrue を直に叩いて変えることだけ。ただしログインにメールのコードが要るので、パスワードだけを盗まれても入れず、実害は小さい。メールの受信箱とパスワードの両方を盗まれた場合は、正規の 2 段を踏まれるのでアプリでは止められない。会員の 2 段（パスワード＋メール）は NIST SP 800-63B-4 の AAL2 ではなく、アプリ独自の方針である |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-decisions.md`（パスワードの変更）、`docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 5・7、Review Focus 3〜6） |
 
 ### THR-AUTH-035 Supabase の captcha の拒否が利用者の誤りに紛れ、全員が入れない・登録できない故障が見えない

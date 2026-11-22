@@ -20,7 +20,7 @@
   - [migrations/005_create_rate_limit_counters.sql](../../../../migrations/005_create_rate_limit_counters.sql#L12)
   - src/app/api/auth/login/route.ts
   - `src/app/api/auth/identify/route.ts`
-  - [src/app/api/auth/password-reset/request/route.ts](../../../../src/app/api/auth/password-reset/request/route.ts#L37)
+  - src/app/api/auth/password-reset/request/route.ts
 - Issue:
   - subject 指定時に ip を null に落として endpoint 側へ subject を埋め込んでいますが、DB 側の一意制約は UNIQUE(ip, endpoint, bucket) のままです。PostgreSQL の UNIQUE は null を同値扱いしないため、ip=null の行は衝突せず、ON CONFLICT が発火しません。
   - その結果、メールアドレス単位のレート制限は毎回 count=1 の新規行になり、実質的に無効です。
@@ -33,8 +33,8 @@
 ### 2. Password reset breaks for users outside the first 200 accounts
 
 - Files:
-  - [src/app/api/auth/password-reset/request/route.ts](../../../../src/app/api/auth/password-reset/request/route.ts#L44)
-  - [src/app/api/auth/password-reset/confirm/route.ts](../../../../src/app/api/auth/password-reset/confirm/route.ts#L52)
+  - src/app/api/auth/password-reset/request/route.ts
+  - src/app/api/auth/password-reset/confirm/route.ts
 - Issue:
   - request/confirm の両方で listUsers({ page: 1, perPage: 200 }) の先頭 200 件だけを走査して user_id を解決しています。
   - 201 件目以降のユーザーは token 発行時に user_id が入らず、confirm 時も再解決できず 404 になります。

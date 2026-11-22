@@ -2,7 +2,6 @@ import { expect, test, type Page } from '@playwright/test';
 import { mockCartApis, sampleCartItem } from './shop-test-utils';
 import { stubCheckoutSessionApis, stubResumePaymentDone } from './checkout-test-utils';
 import { fillShippingForm, stubPostalCode } from './checkout-flow-helpers';
-import { injectTurnstileToken, stubTurnstileScript } from './turnstile-test-utils';
 
 /**
  * FR-UI-008 操作の結果として出る案内を、確実に読み上げる
@@ -134,28 +133,6 @@ for (const viewport of VIEWPORTS) {
 
       await expect(region).toHaveCount(1);
       await expect(region).toHaveText(/送信完了しました。/);
-    });
-
-    // FREQ-377-AC-04
-    test('パスワード再設定メールを送ると、結果の見出しにフォーカスが移る', async ({ page }) => {
-      await stubTurnstileScript(page);
-      await page.route('**/api/auth/password-reset/session', (route) =>
-        route.fulfill({ status: 200, json: { ready: false } }),
-      );
-      await page.route('**/api/auth/password-reset/request', (route) =>
-        route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }),
-      );
-      await page.goto('/auth/password-reset');
-
-      await injectTurnstileToken(page);
-      await page.locator('#email').fill('user@example.com');
-      await page.getByRole('button', { name: '再設定メールを送信' }).click();
-
-      await expect(
-        page.getByRole('heading', { level: 1, name: '再設定メールを送信しました' }),
-      ).toBeFocused();
-      // フォーカスで読ませるので、同じ内容を status でも読ませない（二重に読まれないように）
-      await expect(page.locator('[data-testid="auth-result-body"][role="status"]')).toHaveCount(0);
     });
   });
 }
