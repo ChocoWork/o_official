@@ -53,7 +53,6 @@
 | FREQ-64-AC-04 ログインボタンの角が 4px〜12px の中ほどの丸み | E2E | `docs/02_Requirements/areas/auth.md:2739` |
 | FREQ-65-AC-05 タブに区切り線が無い | E2E | `docs/02_Requirements/areas/auth.md:2804` |
 | FREQ-320-AC-01 DB の関数が失敗すると店員の招待は 500 で、監査が success にならない | E2E | `docs/02_Requirements/areas/auth.md:3614` |
-| FREQ-323-AC-02 HIBP が応答しなくても登録でき、監査に検査不能が残る | E2E | `docs/02_Requirements/areas/auth.md:3679` |
 | FREQ-330-REQ-02-AC-01 ログイン・会員登録・再設定のウィジェットの引き直しが useTurnstileWidget の1か所にある | E2E | `docs/02_Requirements/areas/auth.md:3929` |
 | FREQ-335-AC-03 1回送ると verifyOtp が type email で1回だけ呼ばれる | E2E | `docs/02_Requirements/areas/auth.md:4240` |
 | FREQ-515-AC-01 管理画面のユーザー一覧で選んだ役割で送られ、失敗したら元の役割に戻る | E2E | `docs/02_Requirements/areas/auth.md:4331` |
@@ -143,11 +142,6 @@
 - `src/lib/look/public.ts:105` `normalizeLookSeasonSelection` の `lastValue ?? 'ALL'` の右側は通らない。0 件を直前で `ALL` として返すので、配列の最後の要素は必ずある。添え字の読みが `undefined` を含む型を満たすためだけの分岐。確認: 未
 - `src/lib/look/server.ts:423` `hydrateLooks` の `signedImageUrlsMap.get(row.id) ?? []` の右側は通らない。全ての LOOK の行を `signedImageUrlsMap` に先に入れてから `map` するため。確認: 未
 - `src/app/api/admin/revoke-user-sessions/route.ts:94` `POST` の `audit` の引数 `extra` の既定値 `= {}` は通らない。呼び出し5か所が全部 `{ resource_id: ... }` を渡し、この関数はファイルの中だけで使うため。確認: 未
-- `scripts/admin/bootstrap-core.ts:58` `bootstrapFirstAdmin` の `passwordParsed.error.issues[0]?.message ?? 'パスワードが正しくありません'` の右側は通らない。`passwordSchema` が失敗した時は必ず issue が1つ以上あるため。確認: 未
-- `scripts/admin/bootstrap.ts:111` `readHiddenFromStdin` の改行の字の分岐は通らない。標準入力を raw モードで読む関数は端末（TTY）が要り、単体テストでは動かさず、`readHidden` を差し替えて確かめるため。確認: 未
-- `scripts/admin/bootstrap.ts:117` `readHiddenFromStdin` の Ctrl+C の分岐は通らない。理由は改行の分岐と同じ。確認: 未
-- `scripts/admin/bootstrap.ts:123` `readHiddenFromStdin` の Backspace の分岐と、通常の字を足す側は通らない。理由は改行の分岐と同じ。確認: 未
-- `scripts/admin/bootstrap.ts:138` ファイルの最後の `require.main === module` の真の側（コマンドとして流した時）は通らない。単体テストは import で読むので常に偽で、真の側は端末つきの実行（E2E・手での確認）でしか通らないため。確認: 未
 - `scripts/dev/passkey-dev-staff.ts:61` の `readLocalConnection` の `DB_URL` が文字列でない側（空文字にする）は通らない。手元の `supabase status` は必ず文字列を返し、単体は `readEnv` を偽物に入れ替えるため。status を読む道そのものは、結合テスト（DATA-AUTH-017）と E2E（FR-AUTH-014-AC-02）が通る。確認: 未
 - `scripts/dev/passkey-dev-staff.ts:85` の `openBrowser` の `context.pages()[0] ?? newPage()` の右側は通らない。`openBrowser` は本物の Chromium を開くので単体では流さず、E2E（FR-AUTH-014-AC-03）は `openBrowser` を入れ替える。調整役が手元で確かめる。確認: 未
 - `scripts/dev/passkey-dev-staff.ts:120` の `main` の引数 `overrides` の既定値 `= {}` は、単体は必ず偽物を渡すので通らない。結合テスト・E2E（AC-02）が既定の道を通る。確認: 未

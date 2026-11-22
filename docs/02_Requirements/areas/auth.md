@@ -696,7 +696,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | Supabase の漏洩の照合は Pro 以上でしか使えないため、同じ守りをアプリに置く。短い・漏れたパスワードは総当たりや使い回しで破られやすい |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -1435,7 +1435,7 @@ access token を保持する Cookie の Max-Age を、トークンの exp では
 | --- | --- |
 | 上位 | FREQ-323 |
 | 根拠 | 外のサービスの障害で自社の登録・再設定を止めないため（fail-open） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-323 の行） |
@@ -3682,7 +3682,7 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で、登録フォー�
 | --- | --- |
 | 上位 | FREQ-323-REQ-02 |
 | 根拠 | FREQ-323-REQ-02 の fail-open を、外の API が応答しない時の登録の成功と監査の記録で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-323 の行） |
@@ -8396,7 +8396,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/email-code/
 
 守ること: (1) 管理の入口は `aal` を見ない。`aal2` でも `amr` に `passkey` が無ければ断る（API・RLS の両方）。(2) JWT の印 `staff_passkeys_ok` が真でも、DB で数えた認めたパスキーが2本未満なら断る。(3) 24時間を過ぎた・61秒以上先の `passkey` の時刻は断る（60秒までのずれは通す）。(4) RPC が数えられない時は 503（閉じる側）、数でない値は0本。(5) 店員のメールのコード・パスワードは GoTrue のフックが拒否する。(6) 試験の道具は、本番に試験専用の入口を作らない（手元の Supabase だけで動く）。
 
-残る危険として受け入れること: 手元で店員がアプリの画面から入れない間（段1b まで）、画面を使う E2E のうち店員のパスワード＋TOTP のログインを通す物は、段4で消す機能として skip にした（台帳の「skip の一覧」）。~~最初の店長のコマンド `admin:bootstrap`（パスワード＋TOTP）は本番用に残し、手元では使わない（`docs/06_Operations/first-admin-bootstrap.md`）。~~（2026-11-20 に置き換え: 2026-11-18 にオーナーが、本番の最初の店長は `private.staff_invite_issue_manual` から作ると決めた。手順は `docs/06_Operations/passkey-staff-recovery.md`。`admin:bootstrap` は本番の進む道では使わず、手順書（`docs/06_Operations/passkey-production-apply-runbook.md`）の戻し方の (3b) の予備だけに残る。）
+残る危険として受け入れること: 手元で店員がアプリの画面から入れない間（段1b まで）、画面を使う E2E のうち店員のパスワード＋TOTP のログインを通す物は、段4で消す機能として skip にした（台帳の「skip の一覧」）。~~最初の店長のコマンド `admin:bootstrap`（パスワード＋TOTP。段4 Task 31 で消した）は本番用に残し、手元では使わない（`docs/06_Operations/first-admin-bootstrap.md`）。~~（2026-11-20 に置き換え: 2026-11-18 にオーナーが、本番の最初の店長は `private.staff_invite_issue_manual` から作ると決めた。手順は `docs/06_Operations/passkey-staff-recovery.md`。`admin:bootstrap` は本番の進む道では使わず、手順書（`docs/06_Operations/passkey-production-apply-runbook.md`）の戻し方の (3b) の予備だけに残る。）
 
 ### SEC-AUTH-041 認めの古い行は黙って通さず、登録の窓の中の認めは同時に呼ばれても上限を超えない
 
@@ -8608,7 +8608,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/email-code/
 
 守ること: (1) `admin_set_user_role` は置き換える前の本体の `md5(prosrc)` を移行の前の確かめで見る（`0cb9f532f16aa5c56c6b425694f7209b`）。変えるのは `STAFF_INVITE_REQUIRED` の1点だけで、署名・権限・持ち主は同じ。(2) `staff_demote` は全体の錠 → 利用者の錠の順で、操作者は錠の後に確かめる。(3) `private.staff_invite_issue_manual` は `postgres` だけが `execute` を持ち、`service_role`・`authenticated`・`anon`・`PUBLIC` には渡さない。表には合言葉の UTF-8 の SHA-256 だけを持ち、監査に合言葉・メールを残さない。(4) `passkey_delete_with_floor` は `passkey_approve` と同じ利用者の錠を取り、数えと削除を同じ錠の中で行う。
 
-残る危険として受け入れること: ダッシュボードの結果の画面に生の合言葉が出る（期限を既定1時間にして縮める）。`admin:bootstrap` は `user_roles` を直に書くので、`STAFF_INVITE_REQUIRED` は効かない（段4まで残る）。
+残る危険として受け入れること: ダッシュボードの結果の画面に生の合言葉が出る（期限を既定1時間にして縮める）。`admin:bootstrap` は `user_roles` を直に書くので `STAFF_INVITE_REQUIRED` は効かなかったが、段4 Task 31（2026-11-22）でコマンドごと消した。
 
 ### SEC-AUTH-055 無操作の時刻は DB の表と関数で見て、書き込みの失敗で通さず、見るだけの呼びで延ばさず、他人の行を上書きしない
 

@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "admin:bootstrap": "tsx scripts/admin/bootstrap.ts",
     "archive:legal:daily": "tsx scripts/legal-archive/run-daily.ts",
     "archive:legal:verify-restore": "tsx scripts/legal-archive/verify-restore.ts",
     "dev": "next dev --turbopack",

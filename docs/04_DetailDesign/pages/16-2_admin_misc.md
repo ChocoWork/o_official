@@ -1001,7 +1001,7 @@ POST:
 | --- | --- |
 | 上位 | ARC-ADMIN-006 |
 | 根拠 | 外への書き込みを持たない1つの関数に判断を集め、止める条件と後始末を、書き込みを差し替えた単体テストで全部確かめる（ARC-ADMIN-006） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | `docs/superpowers/specs/2026-11-14-admin-bootstrap-design.md` |
 
@@ -1030,7 +1030,7 @@ POST:
 | --- | --- |
 | 上位 | ARC-ADMIN-006 |
 | 根拠 | 引数・環境変数・端末の入力と出力を、判断から切り離して持つ。向け先を取り違えて別の環境に書かないよう、パスワードを聞く前にホスト名を出す（ARC-ADMIN-006） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | `docs/superpowers/specs/2026-11-14-admin-bootstrap-design.md` |
 
@@ -1060,7 +1060,7 @@ POST:
 | --- | --- |
 | 上位 | ARC-ADMIN-006 |
 | 根拠 | Supabase への書き込みを1か所に置き、core の判断から切り離す。Auth の誤りの文（メールを含みうる）は返さず status と code だけを渡す（ARC-ADMIN-006） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | `docs/superpowers/specs/2026-11-14-admin-bootstrap-design.md` |
 
