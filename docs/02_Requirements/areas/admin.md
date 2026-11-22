@@ -349,7 +349,7 @@ FR-ADMIN-009 の文から起こした。今のコードで満たすかを「状�
 | 出どころ | OWASP ASVS 4.0.3 V4.1.1、V4.3.1。`docs/05_Quality/reviews/code/2026-04-18-admin-security-review.md` |
 | 優先度 | MUST |
 
-範囲の管理 API（`revoke-user-sessions`・`audit-logs`・`users/mfa/reset`・`contact/**`・`item-color-presets/**`）は、JWT の検証・session の生存・DB の ACL の権限・`aal2` を全部満たす要求だけを通す。今のコードは満たす（`src/lib/auth/admin-rbac.ts`、各 route.ts の最初の行の認可）。範囲で試すテストは強制失効と監査ログの結合テストだけ（食い違いは trace-matrix.md の「食い違い」節の TM-ADMIN-42）。
+範囲の管理 API（`revoke-user-sessions`・`audit-logs`・`contact/**`・`item-color-presets/**`）は、JWT の検証・session の生存・DB の ACL の権限・`aal2` を全部満たす要求だけを通す。今のコードは満たす（`src/lib/auth/admin-rbac.ts`、各 route.ts の最初の行の認可）。範囲で試すテストは強制失効と監査ログの結合テストだけ（食い違いは trace-matrix.md の「食い違い」節の TM-ADMIN-42）。
 
 #### SEC-ADMIN-001-AC-01 JWT の無い要求を 401 で断る
 
@@ -380,12 +380,12 @@ FR-ADMIN-009 の文から起こした。今のコードで満たすかを「状�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-ADMIN-001 |
-| 根拠 | `admin.users.manage`・`admin.audit.read`・`admin.items.read`・`admin.items.manage` を持たない役割が、ユーザー作成・強制失効・MFA のリセット・監査ログ・色見本に届かないことを確かめるため |
+| 根拠 | `admin.users.manage`・`admin.audit.read`・`admin.items.read`・`admin.items.manage` を持たない役割が、ユーザー作成・強制失効・監査ログ・色見本に届かないことを確かめるため |
 | 状態 | 推定 |
 | 確かめ方 | E2E（サポーターの `aal2` の JWT） |
 | 出どころ | 実装から推定 |
 
-サポーターの `aal2` の JWT で `revoke-user-sessions`・`users/mfa/reset`・`audit-logs` と、色見本の `/api/admin/item-color-presets`（GET・POST）・`/api/admin/item-color-presets/[id]`（DELETE）を要求すると 403 が返り、利用者・session・2要素の登録・色見本の行が変わらないこと。
+サポーターの `aal2` の JWT で `revoke-user-sessions`・`audit-logs` と、色見本の `/api/admin/item-color-presets`（GET・POST）・`/api/admin/item-color-presets/[id]`（DELETE）を要求すると 403 が返り、利用者・session・2要素の登録・色見本の行が変わらないこと。
 
 #### SEC-ADMIN-001-AC-04 ユーザー作成の画面を開けても、権限が無ければ作れない
 
@@ -505,7 +505,7 @@ anon の鍵・一般会員の JWT・店長の `aal2` の JWT で別の利用者�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-ADMIN-005 |
-| 根拠 | 管理者が別のサイトを開いた時に、そのサイトがユーザーの作成・締め出し・2要素の削除・客へのメールを起こせないようにするため。CSRF の印を重ねるかは決めていない（NEWS の SEC-NEWS-014（範囲外）と同じ扱い）。全体の NFR-SEC-003（範囲外。CSRF 対策）を当てはめた |
+| 根拠 | 管理者が別のサイトを開いた時に、そのサイトがユーザーの作成・締め出し・客へのメールを起こせないようにするため。CSRF の印を重ねるかは決めていない（NEWS の SEC-NEWS-014（範囲外）と同じ扱い）。全体の NFR-SEC-003（範囲外。CSRF 対策）を当てはめた |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | OWASP ASVS 4.0.3 V4.2.2。`docs/05_Quality/reviews/security/security_review_admin.md` |
@@ -548,9 +548,9 @@ anon の鍵・一般会員の JWT・店長の `aal2` の JWT で別の利用者�
 | 出どころ | OWASP ASVS 4.0.3 V11.1.4。`docs/05_Quality/reviews/security/security_review_admin.md` |
 | 優先度 | SHOULD |
 
-ユーザー作成・強制失効・MFA のリセット・問い合わせの状態の変更と返信・テンプレート・色見本の書き込みは、管理者ごとに決めた時間の幅で決めた回数を超えると 429 を返す。数える鍵は認可を通った管理者の id だけにし、入力の `user_id` や `x-forwarded-for` は使わない。10 分あたりの上限は、ユーザー作成 20・強制失効 20・MFA のリセット 10・返信 30・ほかの問い合わせの書き込み 60・色見本 60（ユーザーが 2026-10-26 に承認）。
+ユーザー作成・強制失効・問い合わせの状態の変更と返信・テンプレート・色見本の書き込みは、管理者ごとに決めた時間の幅で決めた回数を超えると 429 を返す。数える鍵は認可を通った管理者の id だけにし、入力の `user_id` や `x-forwarded-for` は使わない。10 分あたりの上限は、ユーザー作成 20・強制失効 20・返信 30・ほかの問い合わせの書き込み 60・色見本 60（ユーザーが 2026-10-26 に承認）。
 
-- 強制失効（20 回）、MFA のリセット（10 回）、ユーザー作成（20 回）、色見本（60 回。保存と削除で同じ枠を分け合う）、問い合わせの返信（30 回）、問い合わせの状態の変更・テンプレートの作成・更新・削除（60 回。4 つの窓口で同じ枠を分け合う）は 2026-10-26 に満たした。全ての窓口がそろったので、この項目は満たす。認可の直後・本文を読む前に回数を数え、限度器が壊れた時は 503 を返す（握りつぶさない）。認可に失敗した要求は数えない。読み出し（色見本の一覧・問い合わせの一覧と詳細・テンプレートの一覧・監査ログ）は数えない
+- 強制失効（20 回）、ユーザー作成（20 回）、色見本（60 回。保存と削除で同じ枠を分け合う）、問い合わせの返信（30 回）、問い合わせの状態の変更・テンプレートの作成・更新・削除（60 回。4 つの窓口で同じ枠を分け合う）は 2026-10-26 に満たした。全ての窓口がそろったので、この項目は満たす。認可の直後・本文を読む前に回数を数え、限度器が壊れた時は 503 を返す（握りつぶさない）。認可に失敗した要求は数えない。読み出し（色見本の一覧・問い合わせの一覧と詳細・テンプレートの一覧・監査ログ）は数えない
 - 数える鍵は認可を通った管理者の id だけ。送り元の IP は鍵に混ぜないので、`x-forwarded-for` を変えても数え直されない（SEC-ADMIN-006-AC-02）
 
 #### SEC-ADMIN-006-AC-01 回数を超えた書き込みを 429 で断る
@@ -664,7 +664,7 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | 出どころ | ASVS 未対応付け |
 | 優先度 | SHOULD |
 
-強制失効と MFA のリセットが監査ログに書く IP は、中継（Vercel など）が付けた値から取り、送る側が足した値を使わない。2026-10-28（波 4）に満たした: 管理の窓口の監査の IP は共有の `src/lib/request-ip.ts` の `getClientIp`（Vercel の `x-vercel-forwarded-for` → `x-real-ip`、手元の E2E は `CLIENT_IP_HEADER` が立つ時だけ `x-real-ip`。`x-forwarded-for` は読まない。ADR-0416）から取る。取れなければ `null` のまま保存する。強制失効の認可で断る行・形の誤り・自分自身・対象なし・誤り・例外・成功の全部、2要素のリセットの全部の行に同じ値が入る。どちらも新しい IP の値は管理者だけが読む（SEC-ADMIN-022・ADR-0462）。本番の中継の振る舞い（Vercel が偽の `x-real-ip` を上書きすること）は、本番の前の preview で実測する（未確認）。
+強制失効が監査ログに書く IP は（MFA のリセットは段4で消した）、中継（Vercel など）が付けた値から取り、送る側が足した値を使わない。2026-10-28（波 4）に満たした: 管理の窓口の監査の IP は共有の `src/lib/request-ip.ts` の `getClientIp`（Vercel の `x-vercel-forwarded-for` → `x-real-ip`、手元の E2E は `CLIENT_IP_HEADER` が立つ時だけ `x-real-ip`。`x-forwarded-for` は読まない。ADR-0416）から取る。取れなければ `null` のまま保存する。強制失効の認可で断る行・形の誤り・自分自身・対象なし・誤り・例外・成功の全部、2要素のリセットの全部の行に同じ値が入る。どちらも新しい IP の値は管理者だけが読む（SEC-ADMIN-022・ADR-0462）。本番の中継の振る舞い（Vercel が偽の `x-real-ip` を上書きすること）は、本番の前の preview で実測する（未確認）。
 
 #### SEC-ADMIN-009-AC-01 送る側が足した IP が監査ログに残らない
 

@@ -1,6 +1,6 @@
 # AUTH の脅威
 
-> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-11-20 | 対象: ログイン・メール OTP・会員登録・パスワード再設定・Google のログイン・TOTP・ログアウト・トークンの更新・ヘッダー、その裏の Supabase Auth と `sessions`・`password_reset_tokens`・`profiles` の DB | 基準コミット: `973dc336`（読んだのは作業ツリー。本文の `ファイル:行` の行番号は、この基準コミットのコードを指す）
+> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-11-22 | 対象: ログイン（メールのコード・パスキー）・Google のログイン・ログアウト・トークンの更新・ヘッダー、その裏の Supabase Auth と `sessions`・`password_reset_tokens`・`profiles` の DB | 基準コミット: `973dc336`（読んだのは作業ツリー。本文の `ファイル:行` の行番号は、この基準コミットのコードを指す）
 
 ---
 
@@ -52,31 +52,31 @@ flowchart LR
 
 ## 脅威の一覧
 
-### THR-AUTH-001 パスワードの総当たり・リスト型攻撃
+### THR-AUTH-001 ログインの始めの窓口への総当たり・リスト型攻撃（パスワードの窓口は段4で消した）
 
 | 属性 | 値 |
 | --- | --- |
 | 守るもの | 会員・管理者・サポーターのアカウント |
-| 脅威 | 攻撃者が、よくあるパスワードや他のサイトから漏れたメールとパスワードの組を、ログインの窓口に大量に試す |
-| 起こり方 | `/api/auth/login` へ組を送り続ける。IP 単位で 50 回／600 秒、Turnstile を通った後にメール単位で 5 回／600 秒の制限がある（`src/app/api/auth/login/route.ts:12-18,27-44`）。Turnstile は本番で鍵が無ければ断り、本番の外では飛ばす（`src/lib/turnstile.ts:8-14`） |
-| 影響 | アカウントの乗っ取り。会員の住所・注文、管理者なら管理の操作に届く（管理は TOTP が別にある） |
+| 脅威 | 攻撃者が、他のサイトから漏れたメールの一覧などを、ログインの始めの窓口に大量に試す。元はよくあるパスワードや漏れたメールとパスワードの組を `/api/auth/login` に大量に試す脅威で、その窓口は段4で消した |
+| 起こり方 | `/api/auth/email-code/start` へメールを送り続ける。IP 単位で 50 回／600 秒、Turnstile を通った後にメール単位で 5 回／600 秒の制限がある（`src/app/api/auth/email-code/start/route.ts`）。Turnstile は本番で鍵が無ければ断り、本番の外では飛ばす（`src/lib/turnstile.ts:8-14`） |
+| 影響 | アカウントの乗っ取り。会員の住所・注文、管理者なら管理の操作に届く（管理はパスキーの入口の条件が別にある） |
 | 対策 | SEC-AUTH-001 |
 | ASVS | V2.2.1 |
-| 根拠 | 守りがある。メール単位の数え方を Turnstile の後に置くのは、他人のメールで枠を使い切らせる締め出しを防ぐため（`login/route.ts:35-37`）。IP の数え方の弱さは THR-AUTH-013、窓口を通らない道は THR-AUTH-005 で扱う。全体の NFR-SEC-008（範囲外）の強いパスワードの方針に当てはめた |
+| 根拠 | 守りがある。メール単位の数え方を Turnstile の後に置くのは、他人のメールで枠を使い切らせる締め出しを防ぐため（`email-code/start/route.ts`）。IP の数え方の弱さは THR-AUTH-013、窓口を通らない道は THR-AUTH-005 で扱う。全体の NFR-SEC-008（範囲外）の強いパスワードの方針に当てはめた |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/code/2026-04-18-auth-security-review.md`、`docs/05_Quality/reviews/security/security_review_login.md:29-58` |
 
-### THR-AUTH-002 メール OTP の総当たり
+### THR-AUTH-002 メールのコードの総当たり
 
 | 属性 | 値 |
 | --- | --- |
-| 守るもの | ログインの2段目（メールの確認コード） |
-| 脅威 | パスワードを知った攻撃者が、8 桁のコードを当てるまで試す |
-| 起こり方 | `/api/auth/otp/verify` へコードを送り続ける。IP 単位 30 回／600 秒、保留の Cookie の宛先で 5 回／600 秒、上限に当たると保留の Cookie を捨てる（`src/app/api/auth/otp/verify/route.ts:11-17,36-70`）。type は email に固定（`:78-82`） |
-| 影響 | 2段目が破られ、パスワードだけでログインされる |
+| 守るもの | ログインのメールの確認コード |
+| 脅威 | 攻撃者が、8 桁のコードを当てるまで試す |
+| 起こり方 | `/api/auth/email-code/verify` へコードを送り続ける。IP 単位 30 回／600 秒、保留の Cookie ごとに 5 回／600 秒、宛先ごとに 20 回／600 秒、上限に当たると保留の Cookie を捨てる（`src/app/api/auth/email-code/verify/route.ts`）。type は email に固定。以前の `/api/auth/otp/verify` は段4で消した |
+| 影響 | コードを当てられ、他人のアカウントでログインされる |
 | 対策 | SEC-AUTH-002 |
 | ASVS | V2.2.1 |
-| 根拠 | 守りがある。過去のレビューは IP 単位しか無いと指摘し（`security_review_login.md:36`）、FREQ-335 で直した。数える宛先を本文ではなく Cookie から取るのは、他人の枠を潰す締め出しを防ぐため（`otp/verify/route.ts:36-38`） |
+| 根拠 | 守りがある。過去のレビューは IP 単位しか無いと指摘し（`security_review_login.md:36`）、FREQ-335 で直した。数える宛先を本文ではなく Cookie から取るのは、他人の枠を潰す締め出しを防ぐため（`email-code/verify/route.ts`） |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/security/security_review_login.md:36`、`docs/02_Requirements/requirements.md` の FREQ-335 の行 |
 
@@ -108,14 +108,14 @@ flowchart LR
 | 状態 | 廃止 |
 | 出どころ | `docs/02_Requirements/requirements.md` の FREQ-336 の行 |
 
-### THR-AUTH-005 アプリを通らず Supabase Auth を直接呼んでメール OTP の2段目を飛ばす
+### THR-AUTH-005 アプリを通らず Supabase Auth を直接呼んで、アプリのログインを飛ばした通行証を得る
 
 | 属性 | 値 |
 | --- | --- |
 | 守るもの | 2段階のログイン、会員の情報（`profiles` の氏名・電話・住所）と注文の履歴 |
 | 脅威 | 会員のパスワードを知った攻撃者が、公開の anon キーで Supabase Auth を直接呼び、メール OTP を通らずに会員の JWT を得る。メールを読める攻撃者は、パスワード無しの OTP・マジックリンクで JWT を得る |
 | 起こり方 | anon キーは画面に配る公開の値。`/auth/v1/token?grant_type=password` を直接呼べば、パスワードだけで access token と refresh token が返る（Supabase Auth の標準の動き）。アプリの認証は JWT の署名・期限・iss・aud と session の生存だけを見て、どの方法でログインしたか（`amr`）を見ない（`src/lib/auth/authenticate.ts:97-108,139,163`）。PostgREST も同じ JWT を受け、`profiles` の本人の行（`supabase/migrations/20260901102912_remote_schema.sql:3691-3710`）と本人の注文（`:3635`）を返す。Turnstile・アプリの回数の制限も通らない |
-| 対処の状況 | 波 5 の Task 3（2026-10-29）で、アプリの窓口側は塞いだ。認証の確かめ（`authenticateRequest`）と管理の認可（`admin-rbac` の `checkAuthSessionLiveness`）が、アプリのログインを通った session（自前の `sessions` に GoTrue の `session_id` を残した失効していない行があり、GoTrue 側でも生きている）だけを通す（RPC `is_app_session_active`。旗 `AUTH_REQUIRE_APP_SESSION` が有効な間。既定。ADR-0417・0419）。OTP だけで直に取った通行証も断る（`amr` に `otp` が付くため `amr` では断れない）。更新（`refresh`）は結び付いた行の続きにだけ通し、前の行が無い・`auth_session_id` が空の refresh token は GoTrue を呼ぶ前に 401 にする（結び付いていない session が更新で結び付いた session に洗われるのを防ぐ。SEC-AUTH-005-AC-05）。アプリを通らず任意の session（パスワードだけ・OTP だけ・anon キーで作った物）の通行証で PostgREST の直叩きをする道は、移行 M2（`has_permission` と会員の表の RESTRICTIVE の方針）を当てた DB で塞がる（2026-10-29 に E2E の `test.fail` を外した。M2 は 2026-10-29 に本番適用済み）。本物の `mfa.verify` の前後で `session_id` が変わらないことは本番の前の確認として残る（手元の補助では変わらないと実測した。2026-10-29、Task 0）。残る危険は、パスワードとメールの受信箱の両方を盗まれた攻撃者が正規の 2 段（パスワード → メール OTP）を踏む場合で、会員の 2 段はアプリ独自の方針（NIST の AAL2 ではない）であり防げない。管理者は TOTP が上乗せになる。本人へのログインの通知メールは波 5 の別件。E2E は Task 5（2026-10-29）で書いた（`FR-LOGIN-031`：password grant・OTP だけの通行証が窓口で 401、PostgREST で 0 行（M2 の後）、refresh で洗えない。`FR-LOGIN-030`：本物のログインの session が更新・ログアウトの前後で期待どおり。流すのは controller） |
+| 対処の状況 | 波 5 の Task 3（2026-10-29）で、アプリの窓口側は塞いだ。認証の確かめ（`authenticateRequest`）と管理の認可（`admin-rbac` の `checkAuthSessionLiveness`）が、アプリのログインを通った session（自前の `sessions` に GoTrue の `session_id` を残した失効していない行があり、GoTrue 側でも生きている）だけを通す（RPC `is_app_session_active`。旗 `AUTH_REQUIRE_APP_SESSION` が有効な間。既定。ADR-0417・0419）。OTP だけで直に取った通行証も断る（`amr` に `otp` が付くため `amr` では断れない）。更新（`refresh`）は結び付いた行の続きにだけ通し、前の行が無い・`auth_session_id` が空の refresh token は GoTrue を呼ぶ前に 401 にする（結び付いていない session が更新で結び付いた session に洗われるのを防ぐ。SEC-AUTH-005-AC-05）。アプリを通らず任意の session（パスワードだけ・OTP だけ・anon キーで作った物）の通行証で PostgREST の直叩きをする道は、移行 M2（`has_permission` と会員の表の RESTRICTIVE の方針）を当てた DB で塞がる（2026-10-29 に E2E の `test.fail` を外した。M2 は 2026-10-29 に本番適用済み）。本物の `mfa.verify` の前後で `session_id` が変わらないことは本番の前の確認として残る（手元の補助では変わらないと実測した。2026-10-29、Task 0）。残る危険は、メールの受信箱を盗まれた攻撃者が正規のメールのコードの流れを踏む場合で、会員のメールのコードは NIST の AAL2 ではなく防げない（段4で、お客さんの password のログインは移行 J のフックが拒否する。パスワード → メール OTP の2段は消した）。管理者はパスキーの入口の条件が上乗せになる。本人へのログインの通知メールは波 5 の別件。E2E は Task 5（2026-10-29）で書いた（`FR-LOGIN-031`：password grant・OTP だけの通行証が窓口で 401、PostgREST で 0 行（M2 の後）、refresh で洗えない。`FR-LOGIN-030`：本物のログインの session が更新・ログアウトの前後で期待どおり。流すのは controller） |
 | 影響 | FREQ-58・FR-LOGIN-007 の「パスワードとメール OTP の2段階」が、アプリの窓口を通る人にしか効かない。パスワードの漏れだけで、会員の個人情報と注文の履歴に届く。管理は aal2 を求めるので守られる（`src/lib/auth/admin-rbac.ts:240-249`）。ただし DB の側は THR-AUTH-010 |
 | 対策 | SEC-AUTH-005 |
 | ASVS | V4.1.1（当てはめは推定） |
@@ -142,7 +142,7 @@ flowchart LR
 | 属性 | 値 |
 | --- | --- |
 | 守るもの | 利用者がどのアカウントで操作しているか。入力した住所・カード以外の個人情報・お気に入り |
-| 脅威 | 攻撃者が自分のアカウントの確認のリンクを被害者に開かせ、被害者の端末を攻撃者のアカウントでログインさせる。被害者は気づかずに住所を保存し、注文する |
+| 脅威 | 攻撃者が自分のアカウントのログインや確認のリンクを被害者に開かせ、被害者の端末を攻撃者のアカウントでログインさせる。被害者は気づかずに住所を保存し、注文する。確認のリンク（`/api/auth/confirm`）の道は段4で消した |
 | 起こり方 | `/api/auth/confirm` は `GET` で、印が正しければ開いた端末に session の Cookie を書く（`confirm/route.ts:27,56-81`）。開いた人と印を作った人を結ぶ物が無い。`GET` なので proxy の Origin の確かめの外（`src/proxy.ts:147-158`）。Google の戻りは PKCE の検証の Cookie が端末に結ぶので同じ攻撃は通らない（`src/app/api/auth/oauth/start/route.ts:85-98`、`oauth/callback/route.ts:91-106`）。この行の行番号は基準コミット時点の記述。2026-10-26 に、登録の送信で必ず作る控えを「番号 + 登録したメール」のハッシュで結び、`/api/auth/confirm` が session を作る前に、確認した利用者のメールで同じ式を作って控えを使い切るようにした（ADR-0413）。当たらない時は session を作らず、GoTrue 側の session を `signOut({ scope: 'local' })` で失効させ、`/login?registered=1` へ送る。番号だけを結ぶ形では、被害者が自分の登録の途中に攻撃者のメールの確認リンクを同じブラウザで開くと、被害者の有効な Cookie が通ってしまう。メールを式に混ぜたので、別のメールの印では必ず外れる |
 | 影響 | 被害者の住所・電話・注文が攻撃者のアカウントに入り、攻撃者が後で読む。ゲストのカートとお気に入りも攻撃者のアカウントへ合わさる（`confirm/route.ts:78-81`）。残る穴: 控えの Cookie の名前に `__Host-` の頭が無いので、同じ親ドメインの別のサブドメインを攻撃者が持つと、攻撃者のメールに結んだ控えを被害者のブラウザへ投げ込めて、攻撃者のメールの印で session を作らせられる（cookie tossing。波 1-A の設計のまま変えていない）。被害者のブラウザに攻撃者のメールで登録を送らせる道は、`proxy.ts` の Origin の確かめと Turnstile に頼っている |
 | 対策 | SEC-AUTH-007 |
@@ -151,17 +151,17 @@ flowchart LR
 | 状態 | 推定 |
 | 出どころ | 実装から推定（2026-10-24 の読み直し） |
 
-### THR-AUTH-008 Google でのログインがメール OTP を通らない
+### THR-AUTH-008 Google でのログインがメールのコードを通らない
 
 | 属性 | 値 |
 | --- | --- |
-| 守るもの | 2段階のログイン（FR-LOGIN-007） |
-| 脅威 | Google のアカウントを乗っ取った攻撃者が、メール OTP 無しで会員としてログインする |
-| 起こり方 | `/api/auth/oauth/callback` は Google の code を session に替え、そのまま Cookie を書いて `/account` へ送る（`src/app/api/auth/oauth/callback/route.ts:106-174`）。メール OTP の段は無い。管理者・サポーターは `/auth/verified` で TOTP を求める（`src/app/auth/verified/page.tsx:145-161`） |
-| 影響 | 会員は Google の守り（Google 側の2段階）に頼る。管理は aal2 で守られる |
+| 守るもの | 店員の入口の条件（FR-LOGIN-007） |
+| 脅威 | Google のアカウントを乗っ取った攻撃者が、メールのコード無しで会員としてログインする |
+| 起こり方 | `/api/auth/oauth/callback` は Google の code を session に替え、そのまま Cookie を書いて `/account` へ送る（`src/app/api/auth/oauth/callback/route.ts:106-174`）。メールのコードの段は無い。管理者・サポーターは、店員の入口の条件（パスキーで入った・24時間以内・認めた鍵2本）を満たさないと管理の窓口に入れず、Google の戻りの店員は `/login?error=staff_passkey_required` へ送られる（`/auth/verified` と TOTP は段4で消した） |
+| 影響 | 会員は Google の守り（Google 側の2段階）に頼る。管理は店員の入口の条件で守られる |
 | 対策 | SEC-AUTH-008 |
 | ASVS | ASVS 未対応付け |
-| 根拠 | FR-LOGIN-007 は「全員がパスワードとメール OTP」と書くが、OTP の専用画面の設計は Google をスコープ外とした（`docs/superpowers/specs/2026-09-04-login-otp-dedicated-screen-design.md:240-247`）。要件と実装のどちらが正しいかは決めていない。ゲスト注文の紐付け（FREQ-265（範囲外））を呼ばない点は機能の食い違いで、脅威ではない |
+| 根拠 | 元の FR-LOGIN-007 は「全員がパスワードとメール OTP」と書いたが（段4で入口の条件だけに改めた）、OTP の専用画面の設計は Google をスコープ外とした（`docs/superpowers/specs/2026-09-04-login-otp-dedicated-screen-design.md:240-247`）。要件と実装のどちらが正しいかは決めていない。ゲスト注文の紐付け（FREQ-265（範囲外））を呼ばない点は機能の食い違いで、脅威ではない |
 | 状態 | 推定 |
 | 出どころ | 実装から推定 |
 
@@ -251,13 +251,13 @@ flowchart LR
 | 状態 | 廃止 |
 | 出どころ | `docs/02_Requirements/requirements.md` の FREQ-323 の行 |
 
-### THR-AUTH-015 アプリを通らない会員登録・パスワード変更で、パスワードの決まりと Turnstile を飛ばす
+### THR-AUTH-015 アプリを通らない会員登録・パスワード変更で、パスワードの決まりと Turnstile を飛ばす（アプリの窓口は段4で消した）
 
 | 属性 | 値 |
 | --- | --- |
 | 守るもの | パスワードの決まり（16 文字・漏洩の照合）、会員登録のボット対策 |
 | 脅威 | 攻撃者が anon キーで `/auth/v1/signup` を直接呼んで、ボットで大量に登録する。乗っ取った session で `/auth/v1/user` を直接呼び、再認証なしにパスワードを変える。同じ道でアカウントのメールを自分の宛先に差し替え、その後に再設定して乗っ取りを続ける |
-| 起こり方 | 手元の Supabase は 2026-11-01（切り替えの日。手元だけ）まで、登録を許し（`supabase/config.toml:175,220`）、最小の長さ 6・構成の決まり無し（`:181,184`）、captcha は無効（`:213-216`）、パスワード変更に再認証を求めなかった（`secure_password_change = false`、`:227`）。波 6 の切り替えで、最小の長さ 16（構成の決まりは課さない）・captcha（Turnstile）・`secure_password_change` を有効にした（`supabase/config.toml`）。24 時間以内の session には再認証が要らず、この窓は設定で変えられない。「現行パスワードの要求」は Supabase CLI の `config.toml` に鍵が無く手元で設定できない。メールの差し替えに新旧両方の確認を求める設定（`double_confirm_changes`）は手元では true（`:223`）、本番は未確認。アプリの 16 文字・HIBP・Turnstile・回数の制限は `/api/auth/register` と再設定の中にだけある |
+| 起こり方 | 手元の Supabase は 2026-11-01（切り替えの日。手元だけ）まで、登録を許し（`supabase/config.toml:175,220`）、最小の長さ 6・構成の決まり無し（`:181,184`）、captcha は無効（`:213-216`）、パスワード変更に再認証を求めなかった（`secure_password_change = false`、`:227`）。波 6 の切り替えで、最小の長さ 16（構成の決まりは課さない）・captcha（Turnstile）・`secure_password_change` を有効にした（`supabase/config.toml`）。24 時間以内の session には再認証が要らず、この窓は設定で変えられない。「現行パスワードの要求」は Supabase CLI の `config.toml` に鍵が無く手元で設定できない。メールの差し替えに新旧両方の確認を求める設定（`double_confirm_changes`）は手元では true（`:223`）、本番は未確認。アプリの 16 文字・HIBP・Turnstile・回数の制限は `/api/auth/register` と再設定の中にだけあった（その窓口は段4で消した。今は captcha とお客さんの password を拒むフックが止める。SEC-AUTH-060） |
 | 影響 | 短いパスワードの会員ができる。ボットの登録で店のドメインからメールが出る。乗っ取った人がパスワードやメールを変えて本人を締め出す |
 | 対策 | SEC-AUTH-015 |
 | ASVS | V2.1.1、V2.1.7、V3.7.1 |
@@ -892,12 +892,10 @@ flowchart LR
 - 公開の anon キーで `/auth/v1/token`・`/auth/v1/otp`・`/auth/v1/signup`・`/auth/v1/user` を直接呼んで、アプリの守りを飛ばせるかは、実際に叩いて確かめていない（THR-AUTH-005・006・015）
 - 本番の DB で、認証の6つの関数の `proacl` に anon・authenticated が残っているか（THR-AUTH-012）。手元の DB は移行から作ったので残っている
 - `aal1` の JWT で PostgREST から管理の表を読めるかは、実際に叩いて確かめていない（THR-AUTH-010）
-- `/api/auth/confirm` を他人の端末で開かせた時に、その端末が攻撃者のアカウントでログインしないかは、結合テストの写しと E2E（書いただけで未実行）でしか見ていない。本物の DB の関数との通し・本番の Cookie の動き（`__Host-` の頭が無いことによる cookie tossing を含む）は確かめていない（THR-AUTH-007）
+- `/api/auth/confirm` を他人の端末で開かせる道は、窓口ごと段4で消した（THR-AUTH-007）
 - Google のログインの後に、`@supabase/ssr` が書く Cookie の名前と属性（THR-AUTH-023）。ブラウザで見ていない
 - 本番の中継（Vercel など）が `x-forwarded-for` を上書きするか、Supabase Auth がアプリのサーバーの IP で数えるか（THR-AUTH-013）。本番のアプリはまだデプロイしていない
 - 本番の環境変数に `LOGIN_2FA_SESSION_SECRET`（今はメールのコードの保留の鍵）・`ORDER_STATUS_SESSION_SECRET` があるか（再設定の鍵は段4で要らなくなった）（THR-AUTH-027）
-- 再設定の申請の応答時間が、アカウントの有無で測れるほど違うか（THR-AUTH-016）
 - 本番の Supabase Auth の `double_confirm_changes`（メールの差し替えに新旧両方の確認を求める設定）が ON か。手元は true（`supabase/config.toml:223`）（THR-AUTH-015）
-- 本番に TOTP をまだ登録していない管理者・サポーターがいるか（THR-AUTH-031）。いれば、その間はパスワードだけで管理に届く
 - 本番で `sb-return-intent` に `__Host-` の接頭辞を付けるか（別のサブドメインや平文の通信からの差し込みを防ぐ。今の Cookie の名前の付け方と合わないので、この波では決めていない。THR-AUTH-032）
 - 権限の一覧の結合テストの「既知の例外」（会計・問い合わせ・注文・カート・権限の表）が実態と合うか。手元の DB でまだ流していない。流した最初の結果で、落ちた表が本当に例外か・今回直すかを決める（THR-AUTH-033）

@@ -12,21 +12,21 @@
   - テストケース（Unit/Integration/Contract/E2E）
 
 ## 対応するアーキテクチャID
-- ARCH-AUTH-01: Register / Confirm
-- ARCH-AUTH-02: Login
+- ARCH-AUTH-01: Register / Confirm（パスキー段4で窓口ごと廃止。メールのコードの `/api/auth/email-code/*` に一本化）
+- ARCH-AUTH-02: Login（メールのコード・Google・パスキー。パスワードのログインは段4で廃止）
 - ARCH-AUTH-03: Refresh / JTI
-- ARCH-AUTH-04: Password Reset
+- ARCH-AUTH-04: Password Reset（段4で廃止）
 - ARCH-AUTH-05: Logout / Revoke Sessions
 - ARCH-AUTH-06: OAuth
 - ARCH-AUTH-07: CSRF / Cookie
 - ARCH-AUTH-08: Audit Log
 - ARCH-AUTH-09: Rate Limit
 - ARCH-AUTH-10: Secrets Management
-- ARCH-AUTH-11: Privileged MFA (Admin / Supporter)
+- ARCH-AUTH-11: Privileged MFA (Admin / Supporter)（段4で TOTP を廃止。店員の入口はパスキー）
 
 ## まず出力するセクション（優先順）
 1. OpenAPI スニペット（`/api/auth/email-code/*`, `/api/auth/refresh`。パスワードの登録・ログイン・再設定の窓口はパスキー段4で消えた）
-2. DB マイグレーション草案（sessions テーブル拡張, password_reset_tokens, oauth_accounts）
+2. DB マイグレーション草案（sessions テーブル拡張, oauth_accounts（password_reset_tokens は段4の移行 K で消す））
 3. TypeScript 型 & Zod スキーマ（`src/features/auth/schemas.ts`）
 4. API Route スタブ（`src/app/api/auth/*/route.ts`）
 5. テスト計画（Unit / Integration / E2E）

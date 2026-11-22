@@ -1,22 +1,22 @@
 # AUTH の要件
 
-> 状態: 推定 | 確認日: 2026-11-22 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-11-22 | 対象: AUTH（ログイン `/login`・`/login/code`・`/login/passkey`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
 AUTH の領域の要求・要件・受け入れ条件・派生要件を、追跡できる項目（`### <ID> <題>` と属性の表）で書く。
 要求の表（`requirements.md`）の AUTH にかかる行を丸ごと写し、上位の無い要件には新しい要求 `SR-AUTH-` を起こし、受け入れ条件の無い要件には `<要件ID>-AC-NN` を起こした。番号が重なっていたドロワーの4行（FREQ-24〜27 の2つ目）は `SR-AUTH-004`〜`007` と `FR-AUTH-001`〜`004` に振り替えた。要件が求めていないのにコードがしている動きは派生要件 `DRV-AUTH-` に書いた。セキュリティ要件は脅威の文書（`THR-AUTH-001`〜`032`）から1対1で起こした。ログインの後の戻り先（2026-10-25）は `SR-AUTH-008`・`FR-AUTH-005` として新しく起こした。ログイン中の会員のパスワード変更（2026-11-01、波 6）は `SR-AUTH-009`・`FR-AUTH-006`・`SEC-AUTH-034` として新しく起こした。
 
-| 段 | 数 | ID |
+| 段 | 数（2026-11-22 に数え直した） | ID |
 | --- | --- | --- |
-| 要求 | 49 | 既存の `FREQ-` 39（うち廃止 1。FREQ-316・327・515 を含む）、新しい `SR-AUTH-001`〜`010`（うち `004`〜`007` は振り替え） |
-| 要件 | 109 | 既存の `FREQ-NN-REQ-NN` 94（うち廃止 1）、`FR-LOGIN-001`〜`008`、新しい `FR-AUTH-001`〜`007`（`001`〜`004` は振り替え） |
-| 受け入れ条件 | 175 | 既存の `FREQ-NN-AC-NN` 138（うち廃止 2）、新しい `<要件ID>-AC-NN` 37（`FR-…-AC-NN` 32（`FR-AUTH-005-AC-01`〜`07`、`FR-AUTH-006-AC-01`〜`07`、`FR-AUTH-007-AC-01`・`02` を含む）、`FREQ-330-REQ-02-AC-01`、`FREQ-316-REQ-01`〜`03-AC-01`） |
+| 要求 | 69（現行 44・廃止 25） | 既存の `FREQ-` 39、`SR-AUTH-001`〜`030` 30（うち `004`〜`007` は振り替え） |
+| 要件 | 153（現行 84・廃止 69） | 既存の `FREQ-NN-REQ-NN` 94、`FR-LOGIN-001`〜`008`、`FR-AUTH-` 51（`001`〜`055` のうち `024`・`032`・`033`・`036` は欠番。`001`〜`004` は振り替え） |
+| 受け入れ条件 | 327（現行 203・廃止 124） | 既存の `FREQ-NN-AC-NN` と、要件ごとの `<要件ID>-AC-NN`（`FR-…-AC-NN` など） |
 | 派生要件 | 9 | `DRV-AUTH-001`〜`009` |
-| セキュリティ要件 | 36 | `SEC-AUTH-001`〜`036`（上位は脅威の文書 `docs/05_Quality/security/threats/auth.md` の同じ番号）。受け入れ条件 `SEC-AUTH-NNN-AC-NN` 71。全部「推定」 |
+| セキュリティ要件 | 61（現行 51・廃止 10） | `SEC-AUTH-001`〜`061`（上位は脅威の文書 `docs/05_Quality/security/threats/auth.md` の `THR-AUTH-`）。受け入れ条件 `SEC-AUTH-NNN-AC-NN` 75（現行 37・廃止 38） |
 
 - 状態: 写した要求・要件の行は、元の行に理由の記述がある物だけ「現行」。元の行に理由が無く、根拠の「なぜ」を推定で補った行は「推定」。写した受け入れ条件は元の文のままなので「現行」。後の行が置き換えたのに廃止の印が無い行・コードと合わない行・新しく起こした項目・実装から読み取った項目も「推定」。行の中に廃止と書いてある FREQ-62 だけを「廃止」にした。食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節に載せる
-- 結論: ログインの入口・パスワードの再設定・管理者の TOTP を求める元の要求は表に無かった（`SR-AUTH-001`〜`003` を推定で起こした）。`/register` を求める FR-LOGIN-004・FREQ-59・61 と、角丸の見た目の FREQ-64・70 は、後の行が置き換えたのに印が無い。廃止にするかはユーザーに決めてもらう
+- 結論: ログインの入口・パスワードの再設定・管理者の TOTP を求める元の要求は表に無かった（`SR-AUTH-001`〜`003` を推定で起こした。`SR-AUTH-003` は段4で廃止）。`/register` を求める FR-LOGIN-004・FREQ-59・61・63 は段4（2026-11-22）で廃止にした。角丸の見た目の FREQ-64・70 は、後の行が置き換えたのに印が無い。廃止にするかはユーザーに決めてもらう
 
 ## 範囲と根拠
 
@@ -25,8 +25,8 @@ AUTH の領域の要求・要件・受け入れ条件・派生要件を、追跡
 | 範囲 | `scripts/trace/scope.json` の AUTH |
 | 写した元 | `docs/02_Requirements/requirements.md`（1.14 ログインページ、「要求トレーサビリティ追記（ヘッダー Drawer UI 改善）」、「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」の各行）。元の行は消していない |
 | 要求の出どころ | `docs/02_Requirements/stakeholder-requirements.md`。`docs/01_Planning/brand.md` にログイン・会員の記述は無い |
-| 対象のコード | `src/app/login/`、`src/app/auth/`、`src/app/api/auth/`、`src/components/Header.tsx`・`LoginModal.tsx`・`RegisterModal.tsx`・`AuthTabs.tsx`・`AuthResultScreen.tsx`、`src/hooks/useTurnstileWidget.ts`、`src/lib/format-countdown.ts` |
-| 関連文書 | `docs/04_DetailDesign/pages/14_login.md`（表だけで古い記述がある）、`docs/04_DetailDesign/sequence/auth-*.md`、`docs/03_BasicDesign/architecture/auth-structure.md`（過去の初稿）、`supabase/config.toml` の `[auth]` 節（手元の設定） |
+| 対象のコード | `src/app/login/`、`src/app/staff/`、`src/app/api/auth/`、`src/components/Header.tsx`、`src/hooks/useTurnstileWidget.ts`、`src/lib/format-countdown.ts`（`src/app/auth/`・`LoginModal.tsx`・`RegisterModal.tsx`・`AuthTabs.tsx`・`AuthResultScreen.tsx` は段4で消した） |
+| 関連文書 | `docs/04_DetailDesign/pages/14_login.md`（廃止にした流れの記述を当時のまま残している）、`docs/04_DetailDesign/sequence/auth-*.md`、`docs/03_BasicDesign/architecture/auth-structure.md`（過去の初稿）、`supabase/config.toml` の `[auth]` 節（手元の設定） |
 | 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない） |
 | 持ち主 | 全領域の持ち主の割り当てで AUTH が持つ ID と、AUTH の範囲だけが触れる行を定義した。ほかの領域が持つ ID と持ち主の無い ID は定義せず、上位に書く時は `（範囲外）` を付ける |
 | 範囲外の上位 | 全体の非機能要件 `NFR-SEC-*`、管理の `FR-ADMIN-001`、会員の `FR-ACCOUNT-*` は定義を写さない |
@@ -99,15 +99,15 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 
 ## 要求
 
-### SR-AUTH-001 会員がメールとパスワード、または Google のアカウントでログインできる
+### SR-AUTH-001 会員がメールのコード・パスキー、または Google のアカウントでログインできる
 
 | 属性 | 値 |
 | --- | --- |
-| 根拠 | 会員だけの機能（購入の履歴・お気に入り・配送先の保存など）を本人だけが使えるようにするには、本人を確かめて入る入口が要る。stakeholder-requirements.md の目標「セキュリティと法令遵守（個人情報保護）」と「購入導線をシンプルにする」から起こした。要求の表にはログインの入口そのものの要求が無い（FREQ-58 は2要素の形だけ）ので、FR-LOGIN-002・005 の上位として足した |
+| 根拠 | 会員だけの機能（購入の履歴・お気に入り・配送先の保存など）を本人だけが使えるようにするには、本人を確かめて入る入口が要る。stakeholder-requirements.md の目標「セキュリティと法令遵守（個人情報保護）」と「購入導線をシンプルにする」から起こした。要求の表にはログインの入口そのものの要求が無い（段4で廃止した FREQ-58 は2要素の形だけだった）ので、FR-LOGIN-002・005 の上位として足した |
 | 状態 | 推定 |
 | 出どころ | `docs/02_Requirements/stakeholder-requirements.md` の「2. 目標」、実装から推定 |
 
-エンドカスタマー（User）が、メールアドレスとパスワード、または Google のアカウントで会員としてログインし、ログインの画面が何のページかを題と説明で知れること。
+エンドカスタマー（User）が、メールのコード・パスキー、または Google のアカウントで会員としてログインし（パスワードのログインは段4で消した。SR-AUTH-030）、ログインの画面が何のページかを題と説明で知れること。
 
 ### SR-AUTH-002 パスワードを忘れた会員が自分で新しいパスワードに変えられる
 
@@ -124,7 +124,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | 管理画面では全会員の注文・個人情報・権限を扱うので、パスワードとメールが盗まれても入られないよう、端末にある認証アプリ（TOTP）の確認を足す。FR-LOGIN-007 の管理者の分の上位が要求の表に無いので、stakeholder-requirements.md の FREQ-20〜23（管理者・発送管理者の操作）とセキュリティの目標から起こした |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | `docs/02_Requirements/stakeholder-requirements.md` の FREQ-20〜23 と「2. 目標」、`docs/02_Requirements/requirements.md`（FR-LOGIN-007） |
 
 サイト管理者（Admin）と発送管理者（Supporter）が、パスワードとメールの確認コードに加えて認証アプリ（TOTP）の確認を通ってから管理画面に入ること（段1b より前の要求。今の管理の入口は、パスキーで入った・24時間以内・認めた鍵2本の条件に置き換わった。SR-AUTH-014。TOTP の窓口と画面は段4まで残る）。
@@ -419,7 +419,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | パスワードだけでは、漏れたり使い回されたりしたパスワードで他人に会員の情報や注文を見られるため、メールに届くコードを2つ目の要素として足す |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -430,7 +430,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | ログインのたびにアカウントが勝手に作られる形をやめ、登録する意思を分けて確かめるため。ただし後の FREQ-63 が専用ページを廃止し、今は /login のタブで登録する（食い違い。廃止の印が無いので状態は推定） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -452,7 +452,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | ログインと登録を行き来する利用者が、別のページを探さずに同じ画面で切り替えられるようにするため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -474,7 +474,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | 同じ認証の画面に URL が2つあると、案内のリンク・ブックマーク・戻る操作で行き先が分かれるため、/login 1つにまとめる（FREQ-59・61 の URL を分ける方針を反転した） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -554,6 +554,8 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 状態 | 現行 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
+
+段4（2026-11-22）でパスワードの再設定ページは消した。見た目をそろえる対象は、今は `/login/code`（FREQ-70-AC-02）。
 
 要求の文: パスワード再設定ページ（`/auth/password-reset`）の見た目を `/login` と統一すること（`/auth` プレフィックスは `/auth/callback`・`/auth/verified` と同じ認証フロー系グルーピングのため維持）
 
@@ -900,7 +902,7 @@ Drawer上部の×ボタンをヘッダーのハンバーガーメニューボタ
 | --- | --- |
 | 上位 | FREQ-59 |
 | 根拠 | FREQ-59 を、登録の欄・確認メールでの確定・ログインでの自動作成の廃止・ログインからの導線に分けた。/register の部分は FREQ-63 と食い違う（状態は推定） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-59 の行） |
@@ -926,7 +928,7 @@ Supabase の Email OTP Expiration を300秒に設定すること。UI の再送�
 | --- | --- |
 | 上位 | FREQ-61 |
 | 根拠 | FREQ-61 を1つの画面とタブの切り替えに置き換えた。URL の同期（/login ⇄ /register）は FREQ-63 が反転し、今は /login のまま変わらない（状態は推定） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-61 の行） |
@@ -952,7 +954,7 @@ Supabase の Email OTP Expiration を300秒に設定すること。UI の再送�
 | --- | --- |
 | 上位 | FREQ-63 |
 | 根拠 | FREQ-63 を、ルートの廃止・URL を変えないタブ・切替のリンクをボタンにする形に分けた。タブの中の切替のボタン（onSwitchToRegister・onSwitchToLogin）は後の FREQ-90 で撤去した（状態は推定） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-63 の行） |
@@ -1375,7 +1377,7 @@ findAuthUserIdByEmail が auth.admin.listUsers をレシーバから引き剥が
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-320 の行） |
 
-メールアドレスからユーザーを引く処理（findAuthUserIdByEmail）で「該当なし」と「引けなかった」を区別すること。RPC が失敗したとき、パスワード再設定の要求は 500、会員登録は 503 を返し、監査ログの outcome を error にすること（従来はどちらも null に丸め、再設定は 200・登録は重複チェック無しで素通りしていた）
+メールアドレスからユーザーを引く処理（findAuthUserIdByEmail）で「該当なし」と「引けなかった」を区別すること。RPC が失敗したとき、店員の招待の発行は 500 を返し、監査ログの outcome を error にすること（従来はどちらも null に丸めていた。パスワード再設定の要求・会員登録の窓口は段4で消した）。あわせて、メールからのユーザーの引き方は SECURITY DEFINER の関数 `public.find_auth_user_id_by_email`（anon / authenticated から REVOKE 済み）を1回呼ぶだけにし、`auth.admin.listUsers` を引き剥がして呼ばない・件数が増えても壊れない形にすること（旧 FREQ-319-REQ-01 の内容。店員の招待が今も呼ぶ。DATA-AUTH-003）
 
 ### FREQ-320-REQ-02 access token の Cookie の Max-Age を refresh と同じ7日にする
 
@@ -2102,7 +2104,7 @@ e2e の 2FA Cookie 偽造ヘルパを localhost / 127.0.0.1 に対してのみ�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SR-AUTH-001 |
-| 根拠 | メールとパスワードを覚えずに、普段の Google のアカウントで入れるようにし、ログインの手間を減らすため（SR-AUTH-001）。共有の端末でも使うアカウントを選ばせるため、Google へ移る時にアカウントの選択を求める |
+| 根拠 | 別の方法を覚えずに、普段の Google のアカウントで入れるようにし、ログインの手間を減らすため（SR-AUTH-001）。共有の端末でも使うアカウントを選ばせるため、Google へ移る時にアカウントの選択を求める |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | `docs/02_Requirements/requirements.md` |
@@ -2171,19 +2173,19 @@ OTP 送信後のカウントダウンタイマー（再送信制限）を実装�
 
 今のコード（推定）: 待ちは `/login/verify` の画面（`VerifyOtpClient.tsx`）が 60 秒で持ち、経過の時刻から残りを引き直す。レビューの文の `otpSentTime` は今のコードに無い。再送が 429 を返した時は Retry-After の秒数を待ちに入れる（FR-LOGIN-006-AC-02）。
 
-### FR-LOGIN-007 一般はパスワードとメール OTP、管理者とサポーターは TOTP も求める
+### FR-LOGIN-007 管理者とサポーターは、入口の条件（パスキー・24時間以内・認めた鍵2本）を満たすまで管理画面に入れない
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FREQ-58、SR-AUTH-003 |
-| 根拠 | 管理者・サポーターは注文や個人情報をまとめて扱えるので、メールを読まれても入れないよう端末の認証アプリを足す（SR-AUTH-003）。一般の会員の分は FREQ-58 の2要素。ただし Google の経路はメール OTP を通らず、レビューの文の「全ユーザーがパスワード + メール OTP を必須」と合わない（状態は推定） |
+| 上位 | SR-AUTH-014 |
+| 根拠 | 管理者・サポーターは注文や個人情報をまとめて扱えるので、メールを読まれても入れないよう、パスキーで入った・24時間以内・認めた鍵2本の入口の条件を求める（SR-AUTH-014）。元の要件は「一般はパスワード + メール OTP、管理者・サポーターは追加で TOTP」だったが、パスワードのログインと TOTP は段4で消した（FREQ-58・SR-AUTH-003 は廃止）。Google の経路はメール OTP を通らない（状態は推定） |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | `docs/02_Requirements/requirements.md` |
 | 優先度 | MUST |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「1.14 ログインページ（LOGIN）」節） |
 
-2要素認証（2FA）に対応する。標準ユーザーはパスワード + メール OTP、管理者/サポーターは追加で TOTP を要求する。
+管理者・サポーターは、店員の入口の条件（パスキーで入った・24時間以内・認めた鍵2本。SR-AUTH-014）を満たすまで管理画面に入れない。お客さんは、メールのコード・Google・パスキーで入る（SR-AUTH-030）。
 
 今のコード（段4の Task 30 の後）: ログインの後の行き先は `POST /api/auth/post-login` が返す（認証アプリの確認と `/auth/verified` は消した）。Google の経路（`/api/auth/oauth/callback`）はメール OTP を通らずにセッションを作る。手元の Supabase の TOTP の登録・確認（`supabase/config.toml` の `[auth.mfa.totp]`）は、段4の Task 30 で止めた。
 
@@ -2560,7 +2562,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-59-REQ-01 |
 | 根拠 | FREQ-59-REQ-01 の登録ページを欄の表示で確かめる形だった。今の /register は 404（FREQ-63-AC-01）で、この条件は満たされない |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-59 の行） |
@@ -2612,7 +2614,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-61-REQ-01 |
 | 根拠 | FREQ-61-REQ-01 の URL の同期を確かめる形だった。FREQ-63-AC-02 は URL を /login のままにし、今のコードもそう動く（状態は推定） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-61 の行） |
@@ -2625,7 +2627,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-61-REQ-01 |
 | 根拠 | FREQ-61-REQ-01 の逆向きの同期を確かめる形だった。今の /register は 404（FREQ-63-AC-01）で満たされない（状態は推定） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-61 の行） |
@@ -2690,7 +2692,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-63-REQ-01 |
 | 根拠 | FREQ-63-REQ-01 の切替のボタンを確かめる形だった。FREQ-90 がこのボタンを撤去し、今の画面には無い（状態は推定） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-63 の行） |
@@ -6990,18 +6992,18 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、5つの�
 
 E2E のアプリのメール送信は `MAIL_PROVIDER=local` で、送り先は手元の Mailpit だけ（外のメールの設定では E2E が始まらない）。
 
-### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
+### SEC-AUTH-001 メールのコードの始めは、総当たりと送信の踏み台を IP とメールの2段で止める
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-001 |
-| 根拠 | リスト型攻撃でアカウントを乗っ取られないため。メール単位の数え方を Turnstile の後に置き、他人のメールで枠を使い切らせる締め出しも防ぐ。全体の NFR-SEC-008（範囲外）・FREQ-360（範囲外）をログインに当てはめた |
+| 根拠 | リスト型攻撃や大量の送信でアカウントを狙われないため（元はパスワードの総当たり。パスワードの窓口は段4で消した）。メール単位の数え方を Turnstile の後に置き、他人のメールで枠を使い切らせる締め出しも防ぐ。全体の NFR-SEC-008（範囲外）・FREQ-360（範囲外）をログインに当てはめた |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト・E2E |
 | 出どころ | OWASP ASVS 4.0.3 V2.2.1。`docs/05_Quality/reviews/code/2026-04-18-auth-security-review.md` |
 | 優先度 | MUST |
 
-`/api/auth/login` は、IP 単位で 50 回／600 秒、Turnstile を通った後にメール単位で 5 回／600 秒を超えた要求を 429 で断る。本番で Turnstile の鍵が無い時は 403 で断る。今のコードは満たす（`src/app/api/auth/login/route.ts`、`src/lib/turnstile.ts`）。
+`/api/auth/email-code/start` は、IP 単位で 50 回／600 秒、Turnstile を通った後にメール単位で 5 回／600 秒を超えた要求を 429 で断る。本番で Turnstile の鍵が無い時は 403 で断る。今のコードは満たす（`src/app/api/auth/email-code/start/route.ts`、`src/lib/turnstile.ts`）。以前の `/api/auth/login` は段4で消した。
 
 #### SEC-AUTH-001-AC-01 同じメールで6回目のログインが 429 になる
 
@@ -7027,18 +7029,18 @@ E2E のアプリのメール送信は `MAIL_PROVIDER=local` で、送り先は�
 
 Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送信が 429 にならないこと。
 
-### SEC-AUTH-002 メール OTP の検証は総当たりを保留の宛先単位で止め、上限で保留を捨てる
+### SEC-AUTH-002 メールのコードの確認は総当たりを保留の Cookie と宛先の単位で止め、上限で保留を捨てる
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-002 |
-| 根拠 | パスワードを知った相手に8桁のコードを当てさせないため。数える宛先を Cookie から取り、他人の枠を潰させない（FREQ-335） |
+| 根拠 | 8桁のコードを当てさせないため。数える宛先を Cookie から取り、他人の枠を潰させない（FREQ-335） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト・E2E |
 | 出どころ | OWASP ASVS 4.0.3 V2.2.1。`docs/05_Quality/reviews/security/security_review_login.md` |
 | 優先度 | MUST |
 
-`/api/auth/otp/verify` は、IP 単位で 30 回／600 秒、保留の宛先単位で 5 回／600 秒を超えたら 429 で断り、保留の Cookie を消す。type は email だけで確かめる。今のコードは満たす（`src/app/api/auth/otp/verify/route.ts`）。
+`/api/auth/email-code/verify` は、IP 単位で 30 回／600 秒、保留の Cookie ごとに 5 回／600 秒、保留の宛先ごとに 20 回／600 秒を超えたら 429 で断り、保留の Cookie を消す。type は email だけで確かめる。今のコードは満たす（`src/app/api/auth/email-code/verify/route.ts`）。以前の `/api/auth/otp/verify` は段4で消した。
 
 #### SEC-AUTH-002-AC-01 誤ったコードを6回送ると保留が消える
 
@@ -7138,18 +7140,18 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 
 本文に別のメールを入れて再送しても、届くのは保留の宛先だけであること。
 
-### SEC-AUTH-005 2段階のログインを、Supabase Auth を直接呼ぶ道でも飛ばせないようにする
+### SEC-AUTH-005 アプリを通らずに Supabase Auth を直接呼んで取った通行証を、会員の通行証として受けない
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-005 |
-| 根拠 | 2段目の守りがアプリの窓口だけにあると、公開の anon キーでパスワードだけの JWT を得られ、会員の個人情報と注文に届く（FREQ-58・FR-LOGIN-007）。同じく、公開の anon キーで `/auth/v1/otp` と `/auth/v1/verify` を直に呼ぶと、パスワード無しで OTP だけの通行証が取れる（`amr` に `otp` が付き、`amr` ではアプリのログインを通ったかを区別できない。AC-03）。全体の NFR-SEC-005（範囲外）・NFR-SEC-008（範囲外）に当てはめた |
+| 根拠 | 2段目の守りがアプリの窓口だけにあると、公開の anon キーでパスワードだけの JWT を得られ、会員の個人情報と注文に届く（元は2段のログインの守り。FREQ-58 の2段は段4で消した）。同じく、公開の anon キーで `/auth/v1/otp` と `/auth/v1/verify` を直に呼ぶと、パスワード無しで OTP だけの通行証が取れる（`amr` に `otp` が付き、`amr` ではアプリのログインを通ったかを区別できない。AC-03）。全体の NFR-SEC-005（範囲外）・NFR-SEC-008（範囲外）に当てはめた |
 | 状態 | 推定 |
 | 確かめ方 | E2E・レビュー |
 | 出どころ | OWASP ASVS 4.0.3 V4.1.1（当てはめは推定） |
 | 優先度 | MUST |
 
-アプリの認証と、会員の情報・注文を返す RLS は、アプリのログイン（パスワード → メール OTP）を通って作られた session の通行証だけを会員の通行証として受ける。アプリを通らずに Supabase Auth を直接呼んで取った通行証（パスワードだけ・OTP だけ）は、受けない。波 5 で、アプリのログインを通って作られた session（自前の `sessions` に GoTrue の `session_id` を残した行がある）だけを受ける形に決めた（ADR-0417。会員の 2 段はアプリ独自の方針で、NIST の AAL2 ではない）。旗 `AUTH_REQUIRE_APP_SESSION` が有効な間（既定。ADR-0419）、アプリの窓口は満たす（AC-01・AC-03・AC-04・AC-05。2026-10-29、Task 3 の読む側。E2E は Task 5 で書いた。流すのは controller）。DB（PostgREST）の側（AC-02・AC-03）は、移行 M2（`has_permission` と会員の表の方針）を当てた DB で満たす（2026-10-29 に AC-02 の E2E の `test.fail` を外し、AC-03 の PostgREST の試験を足した。M2 は 2026-10-29 に本番適用済み）。
+アプリの認証と、会員の情報・注文を返す RLS は、アプリのログイン（メールのコード・Google・パスキー）を通って作られた session の通行証だけを会員の通行証として受ける。アプリを通らずに Supabase Auth を直接呼んで取った通行証（パスワードだけ・OTP だけ）は、受けない。波 5 で、アプリのログインを通って作られた session（自前の `sessions` に GoTrue の `session_id` を残した行がある）だけを受ける形に決めた（ADR-0417。会員のメールのコード・Google は NIST の AAL2 ではない）。旗 `AUTH_REQUIRE_APP_SESSION` が有効な間（既定。ADR-0419）、アプリの窓口は満たす（AC-01・AC-03・AC-04・AC-05。2026-10-29、Task 3 の読む側。E2E は Task 5 で書いた。流すのは controller）。DB（PostgREST）の側（AC-02・AC-03）は、移行 M2（`has_permission` と会員の表の方針）を当てた DB で満たす（2026-10-29 に AC-02 の E2E の `test.fail` を外し、AC-03 の PostgREST の試験を足した。M2 は 2026-10-29 に本番適用済み）。
 
 #### SEC-AUTH-005-AC-01 Supabase Auth の password grant で得た JWT ではアプリの会員の窓口が通らない
 
@@ -7250,7 +7252,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 
 登録を始めたブラウザ（登録の送信をしたブラウザ。控えの Cookie の番号と、確認した利用者のメールを一緒にハッシュした印が、登録の時に作った控えに当たる。SEC-AUTH-007）で `type=signup` の印を開くと、session の Cookie（`sb-access-token`・`sb-refresh-token`）が書かれ、戻り先（登録の時に控えた物。無ければ `/`）へ 303 で送られること（`redirect_to` は読まない。SEC-AUTH-026-AC-02）。
 
-### SEC-AUTH-007 確認のリンクで、開いた端末を印を作った人以外のアカウントでログインさせない
+### SEC-AUTH-007 メールのリンクや戻りで、開いた端末を印を作った人以外のアカウントでログインさせない
 
 | 属性 | 値 |
 | --- | --- |
@@ -7261,11 +7263,9 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | 出どころ | ユーザーの決定（2026-10-25）。守りの考え方は OWASP ASVS 4.0.3 V4.2.2（当てはめは推定） |
 | 優先度 | SHOULD |
 
-`/api/auth/confirm` は、登録を始めたブラウザで開いた時だけ session を作る。登録を始めていないブラウザで開いた時は、メールの確認（登録の完了）だけを済ませ、session は作らずに `/login` へ送り、登録が終わったのでログインするよう画面で知らせる。登録を始めたブラウザでの動きは SEC-AUTH-006-AC-02。
+登録の確認のリンクの窓口 `/api/auth/confirm` と登録の窓口 `/api/auth/register` は、段4（2026-11-22）で消した（404。FR-AUTH-053-AC-01）。この要求が今も守る物は、Google のログインの戻りと、メールのコードの保留である。Google の戻りは PKCE の検証の Cookie が端末に結ぶ（`src/app/api/auth/oauth/start/route.ts`・`oauth/callback/route.ts`）。メールのコードは、宛先を署名した保留の Cookie が開始したブラウザに結び、コードの確認はいつも Cookie の宛先で行う（`src/features/auth/services/email-code-session.ts`、DD-AUTH-059）。ログインの戻り先の控えは、用途 `login` だけを作る（ARC-AUTH-010）。
 
-この要求は今のコードが満たす（2026-10-26 に直した。ADR-0413）。結び付けは、波 1-A の戻り先の控え（`private.auth_return_intents`・`sb-return-intent` Cookie、用途 `signup`、有効 1 時間）に乗せ、DB の変更なしで「番号 + 登録したメール」を一緒にハッシュして結ぶ。登録の送信（`/api/auth/register`）は、戻り先の有無に関わらず必ず控えを作り（戻り先が無い・不正なら `/`）、番号を Cookie に置く。控えの `token_hash` は `sha256(番号 + "\n" + 小文字のメール)` で、ログインの控え（`sha256(番号)`）とは別の式にした。`/api/auth/register` の 202 は新規の登録・登録済みのメール・重複の例外の 3 通りあり、目印の Cookie は 3 つとも名前・属性・Max-Age を同じにする（応答を同じに保つため。SEC-AUTH-016）。
-
-`/api/auth/confirm` は、`verifyOtp` で確認した利用者のメールから同じ式を作り、session を作る前に控えを使い切る。当たった時だけ session を作り、控えの戻り先へ送る（管理者・サポーターは使い切った戻り先を捨てて `/auth/verified`）。当たらない時（Cookie が無い・番号が合わない・使用済み・期限切れ・別のメールの印）は、`verifyOtp` が GoTrue 側に作った session を `signOut({ scope: 'local' })` で失効させ、Cookie は書かず消さずに `/login?registered=1` へ 303 で送る（攻撃者のリンクを開かせるだけで被害者の進行中の登録の控えを壊させないため）。被害者が登録の途中（控えの Cookie が有効）に、攻撃者のメールの確認リンクを同じブラウザで開いても、番号は合ってもメールが違うのでハッシュが外れ、session は作らない。
+当時の確認のリンクの結び付け（登録のメールを式に混ぜた控え。ADR-0413）は、リンクの窓口ごと廃止した。
 
 #### SEC-AUTH-007-AC-01 登録を始めていないブラウザで確認のリンクを開くと、メールは確認されるがログインしない
 
@@ -7309,30 +7309,30 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 
 ブラウザ A で利用者 X の登録を送った後、同じブラウザ A で別の利用者 Y（別のメール）の `type=signup` の印を開くと、303 で `/login`（`registered=1`）へ送られ、session の Cookie が書かれず、Y のメールは確認済みになり、X の登録の控えの Cookie（`sb-return-intent`）は消えずに残ること。
 
-### SEC-AUTH-008 Google でのログインは、管理者・サポーターに店員の入口の条件（以前は TOTP）を求め、会員の2段目の扱いを明示する
+### SEC-AUTH-008 Google でのログインは、管理者・サポーターに店員の入口の条件（以前は TOTP）を求め、会員の追加の確かめの扱いを明示する
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-008 |
-| 根拠 | Google の経路はメール OTP を通らない。管理は店員の入口の条件（段1b より前は aal2）で守り、会員は Google 側の認証を2段目の代わりにするかを要件として決めて残す。FR-LOGIN-007 の「全員がパスワードとメール OTP」と食い違う（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」に載せる） |
+| 根拠 | Google の経路はメールのコードを通らない。管理は店員の入口の条件（段1b より前は aal2）で守り、会員は Google 側の認証を2段目の代わりにするかを要件として決めて残す。元の要件 FR-LOGIN-007 の「全員がパスワードとメール OTP」は段4で入口の条件だけに改めたので、この食い違いは解消した |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト・E2E |
 | 出どころ | `docs/superpowers/specs/2026-09-04-login-otp-dedicated-screen-design.md` |
 | 優先度 | MUST |
 
-Google でログインした管理者・サポーターは、入口の条件（パスキーで入った・24時間以内・認めた鍵2本。段1a の移行 E と `admin-rbac` で `aal2` から置き換えた）を満たすまで管理の窓口に入れない（Google の戻りは `amr` にパスキーが無いので入れない。以前は TOTP を済ませる `aal2` が条件だった。TOTP の流れは段4で消した）。会員の Google ログインにメール OTP を求めない場合は、その判断を要件に書く。管理の部分は今のコードが満たす（`src/lib/auth/admin-rbac.ts`）。会員の部分は決めていない（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」に載せる）。
+Google でログインした管理者・サポーターは、入口の条件（パスキーで入った・24時間以内・認めた鍵2本。段1a の移行 E と `admin-rbac` で `aal2` から置き換えた）を満たすまで管理の窓口に入れない（Google の戻りは `amr` にパスキーが無いので入れない。以前は TOTP を済ませる `aal2` が条件だった。TOTP の流れは段4で消した）。会員の Google ログインにメールのコードを求めない場合は、その判断を要件に書く。管理の部分は今のコードが満たす（`src/lib/auth/admin-rbac.ts`）。会員の部分は決めていない（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」に載せる）。
 
-#### SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403
+#### SEC-AUTH-008-AC-01 Google でログインした管理者は、管理の窓口が 403
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-AUTH-008 |
-| 根拠 | Google の経路でも管理の3段目が効くかを見るため |
+| 根拠 | Google の経路でも店員の入口の条件が効くかを見るため |
 | 状態 | 推定 |
 | 確かめ方 | E2E（Google の戻りを手元で作り物にし、admin の役割で戻す） |
 | 出どころ | 実装から推定 |
 
-Google の戻りの直後（aal1）に管理の窓口を叩くと 403 になり、Google の戻りの店員は `/login?error=staff_passkey_required` へ送られること。
+Google の戻りの直後に管理の窓口を叩くと 403 になり、Google の戻りの店員は `/login?error=staff_passkey_required` へ送られること。
 
 ### SEC-AUTH-009 TOTP の確認はアカウント単位でも回数を制限し、成否を監査に残す
 
@@ -7577,7 +7577,7 @@ Supabase Auth の設定で、最小の長さを 16（`minimum_password_length`�
 
 手元の設定は 2026-11-01（切り替えの日。手元だけ）に、最小の長さ 16・`secure_password_change`・captcha（`supabase/config.toml`）を本番の前提にそろえた。`double_confirm_changes` は手元で true。「現行パスワードの要求」は Supabase CLI の `config.toml` に鍵が無く手元で設定できない（AC-05 の試験は ENV の印）。本番の設定は未確認で、波 6 の Task 11 が Management API で読んで変える。
 
-`secure_password_change` は、作ってから 24 時間以内の session には再認証を求めない。この窓は設定で変えられない（2026-11-01 に手元の GoTrue で実測）。残る危険は、現行パスワードを知る人が窓の中の session で GoTrue を直に叩いてパスワードを変えることだけで、守りは三つある。ログインにメールのコードが要ること（SEC-AUTH-005）、管理者・サポーターは aal2 が要ること、変更を知らせる GoTrue の通知メールが届くこと。アプリの窓口（`/api/auth/password/change/*`。SEC-AUTH-034）は現行パスワードとメールのコードを求め、全 session を失効する。
+`secure_password_change` は、作ってから 24 時間以内の session には再認証を求めない。この窓は設定で変えられない（2026-11-01 に手元の GoTrue で実測）。残る危険は、現行パスワードを知る人が窓の中の session で GoTrue を直に叩いてパスワードを変えることだけで、守りは三つある。ログインにメールのコードが要ること（SEC-AUTH-005）、管理者・サポーターは店員の入口の条件が要ること、変更を知らせる GoTrue の通知メールが届くこと。アプリのパスワード変更の窓口（`/api/auth/password/change/*`。SEC-AUTH-034）は、段4で消した。直に呼ぶ道は、captcha（アプリのサーバーだけが免除される）と、お客さんの password を拒むフック（移行 J。SEC-AUTH-060）で止める。
 
 #### SEC-AUTH-015-AC-01 直接の `/auth/v1/signup` で 15 文字のパスワードの登録ができない
 
@@ -7767,7 +7767,7 @@ anon の鍵で `/auth/v1/signup`・`/auth/v1/token?grant_type=password`・`/auth
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-019 |
-| 根拠 | Host・`x-forwarded-host` の偽りで、店のメールのリンクを攻撃者のサイトへ向けさせないため。FREQ-509（範囲外）の「本番でサイトの住所が正しくない時はメールを止める」を当てはめた |
+| 根拠 | サイトの住所の設定が本番で使えない・壊れている時に、店のメールのリンクを攻撃者のサイトなど誤った先へ向けさせないため。FREQ-509（範囲外）の「本番でサイトの住所が正しくない時はメールを止める」を当てはめた |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト・E2E |
 | 出どころ | `docs/superpowers/plans/2026-10-23-launch-fixes-wave1.md` |
@@ -7782,7 +7782,7 @@ anon の鍵で `/auth/v1/signup`・`/auth/v1/token?grant_type=password`・`/auth
 | 上位 | SEC-AUTH-019 |
 | 根拠 | 住所の差し替えを断るかを見るため |
 | 状態 | 推定 |
-| 確かめ方 | E2E（許可の一覧を設定した本番ビルドで、`x-forwarded-host` を別の名前にして申請する） |
+| 確かめ方 | 結合テスト（サイトの住所が本番で使えない設定で招待を発行し、503・メール無し・鍵が残ることを見る。E2E は無く、基準に持つ） |
 | 出どころ | `tests/integration/api/admin-staff-invites-api.test.ts`（API-AUTH-033） |
 
 サイトの住所が本番で使えない設定の時に店長が招待を発行すると、503 が返り、受け箱に何も届かず、相手の鍵も消えないこと。
@@ -8875,7 +8875,7 @@ refresh の Cookie が無い時と、自前の表の行に明示の失効の印�
 ## 未確認事項
 
 - 本物の端末・ブラウザが `authenticatorAttachment: null` を送る場合（仮想の認証器では出ない）の確かめ。作る窓口・ログインの終わりの窓口が 400 にしないかを、開店前に実機で確かめる（FR-AUTH-028-AC-01・02、SEC-AUTH-050）
-- `/register` を求める FR-LOGIN-004・FREQ-59 と、URL を `/register` へ同期する FREQ-61-AC-02・03 を廃止にするか（FREQ-63 が反転したと書くが、元の行に印が無い）
+- `/register` を求める FR-LOGIN-004・FREQ-59 と、URL を `/register` へ同期する FREQ-61-AC-02・03 は、2026-11-22（パスキー段4）に廃止にした（`/register` は 404。FR-AUTH-053-AC-01）
 - 後の行が置き換えたと書く FREQ-64（角丸）・FREQ-65-AC-05（塗りだけのタブ）・FREQ-63-AC-03（タブの中の切替のボタン）・FREQ-67-AC-02 の比べる元・FREQ-70-REQ-01・AC-01（角丸のカード）を廃止にするか
 - タブの名前が要件では「新規登録」、画面と E2E では「会員登録」。どちらに合わせるか
 - 本番の Supabase の設定（Email OTP Expiration 300 秒・Confirm email・TOTP の有効・パスワードの最小の長さ・漏洩の照合・captcha）。手元の `supabase/config.toml` は OTP 3600 秒・Confirm email 無効・TOTP 無効・最小 6 文字で、E2E は本番の前提を確かめていない

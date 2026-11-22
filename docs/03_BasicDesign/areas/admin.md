@@ -81,7 +81,7 @@ graph LR
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-ADMIN-001、FREQ-316-REQ-01（範囲外）、FREQ-316-REQ-02（範囲外）、FREQ-316-REQ-03（範囲外）、NFR-SEC-005（範囲外）、ADR-0450、ADR-0451 |
-| 根拠 | 利用者の作成・2要素の削除・他人の session の削除は Auth の管理の機能か service role だけの DB の関数で、利用者の token では呼べないため、認可の後に service role を使う（ADR-0451）。その代わり認可は共有の秘密でなく利用者に結び、権限と2要素と session の生存を毎回確かめて、誰がしたかを監査に残せるようにする（SEC-ADMIN-001、ADR-0450、FREQ-316-REQ-01・02・03） |
+| 根拠 | 利用者の作成・他人の session の削除は Auth の管理の機能か service role だけの DB の関数で、利用者の token では呼べないため、認可の後に service role を使う（ADR-0451）。その代わり認可は共有の秘密でなく利用者に結び、権限と2要素と session の生存を毎回確かめて、誰がしたかを監査に残せるようにする（SEC-ADMIN-001、ADR-0450、FREQ-316-REQ-01・02・03） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（範囲の route.ts の頭の認可、`src/lib/auth/admin-rbac.ts`）、`docs/03_BasicDesign/architecture/hybrid-rbac.md` |
@@ -105,24 +105,24 @@ sequenceDiagram
 ```
 
 - 認可: 共有の部品が token を確かめ（無ければ 401）、session の生存と DB の ACL を並べて引き（生存を確かめられなければ 503、session が無ければ 401）、権限が無ければ 403、`aal` が `aal2` でなければ 403 と理由 `MFA required` を返す。窓口は応答をそのまま返す
-- 権限の印: 作成・強制失効・2要素のリセットは `admin.users.manage`、監査ログは `admin.audit.read`、問い合わせの読みは `admin.contact.read`・書きは `admin.contact.manage`、色見本の読みは `admin.items.read`・書きは `admin.items.manage`（DATA-ADMIN-006）
+- 権限の印: 作成・強制失効は `admin.users.manage`、監査ログは `admin.audit.read`、問い合わせの読みは `admin.contact.read`・書きは `admin.contact.manage`、色見本の読みは `admin.items.read`・書きは `admin.items.manage`（DATA-ADMIN-006）
 - DB: 認可の後に `createServiceRoleClient()` を作る。RLS を通らないので、守りは窓口の認可1つになる
-- 例外: どの窓口も外側の try/catch で 500 `Internal server error` を返す。強制失効・2要素のリセット・色見本の保存は壊れた JSON を 400 にする（SEC-ADMIN-013）。問い合わせの窓口は、書き込み（状態の変更・返信・テンプレートの作成と更新と削除）の頭で認可の直後に回数を数え、id が UUID でなければ DB に渡さず 404 にする。扱いは各項目を参照
+- 例外: どの窓口も外側の try/catch で 500 `Internal server error` を返す。強制失効・色見本の保存は壊れた JSON を 400 にする（SEC-ADMIN-013）。問い合わせの窓口は、書き込み（状態の変更・返信・テンプレートの作成と更新と削除）の頭で認可の直後に回数を数え、id が UUID でなければ DB に渡さず 404 にする。扱いは各項目を参照
 
 ### ARC-ADMIN-002 書き込みの窓口は共有の proxy の Origin の照合で守り、窓口では CSRF の印を見ない
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-ADMIN-005、FREQ-327-REQ-01（範囲外）、FREQ-327-REQ-03（範囲外） |
-| 根拠 | 管理者が別のサイトを開いた時に、そのサイトから利用者の作成・締め出し・2要素の削除・お客様へのメールを起こさせないよう、`/api` の書き込みを全部 Origin の照合にかける（SEC-ADMIN-005、FREQ-327-REQ-01）。照合を `src/proxy.ts` の1か所に置き、窓口ごとの書き忘れを無くす（FREQ-327-REQ-03） |
+| 根拠 | 管理者が別のサイトを開いた時に、そのサイトから利用者の作成・締め出し・お客様へのメールを起こさせないよう、`/api` の書き込みを全部 Origin の照合にかける（SEC-ADMIN-005、FREQ-327-REQ-01）。照合を `src/proxy.ts` の1か所に置き、窓口ごとの書き忘れを無くす（FREQ-327-REQ-03） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/proxy.ts`） |
 
-- 対象: 範囲の POST・PUT・PATCH・DELETE（作成・強制失効・2要素のリセット・問い合わせの状態の変更・返信・テンプレートの作成と更新と削除・色見本の保存と削除）
+- 対象: 範囲の POST・PUT・PATCH・DELETE（作成・強制失効・問い合わせの状態の変更・返信・テンプレートの作成と更新と削除・色見本の保存と削除）
 - 照合: Origin（無ければ Referer の origin）を許可のオリジンと比べ、合わない時とどちらも無い時に 403 `Forbidden origin`。許可のオリジンが設定されていない時は、要求の見出しから比べる元を作り、1度だけ警告を出す
 - 窓口は CSRF の印（`requireCsrfOrDeny`）を見ない。作成の画面も素の `fetch` で印を付けずに送る
-- 回数の制限: 強制失効（20 回 / 10 分）、2要素のリセット（10 回 / 10 分）、ユーザー作成（20 回 / 10 分）、色見本の保存と削除（60 回 / 10 分。同じ枠を分け合う）、問い合わせの返信（30 回 / 10 分）、問い合わせの状態の変更とテンプレートの作成・更新・削除（60 回 / 10 分。4 つの窓口で同じ枠を分け合う）は、認可の直後に、認可を通った管理者の id を鍵にして数える（SEC-ADMIN-006）。これで範囲の書き込みの窓口は全部、回数の制限を持つ（TM-ADMIN-36 を解消）。読み出しは数えない。範囲外の管理の窓口（LOOK・STOCKIST・注文・利用者の役割の変更など）は回数の制限を持つ
+- 回数の制限: 強制失効（20 回 / 10 分）、ユーザー作成（20 回 / 10 分）、色見本の保存と削除（60 回 / 10 分。同じ枠を分け合う）、問い合わせの返信（30 回 / 10 分）、問い合わせの状態の変更とテンプレートの作成・更新・削除（60 回 / 10 分。4 つの窓口で同じ枠を分け合う）は、認可の直後に、認可を通った管理者の id を鍵にして数える（SEC-ADMIN-006）。これで範囲の書き込みの窓口は全部、回数の制限を持つ（TM-ADMIN-36 を解消）。読み出しは数えない。範囲外の管理の窓口（LOOK・STOCKIST・注文・利用者の役割の変更など）は回数の制限を持つ
 
 ### ARC-ADMIN-003 監査ログは各窓口が共有の部品で書き、店長だけが窓口から安全な列で読む
 
@@ -138,14 +138,13 @@ sequenceDiagram
 | --- | --- | --- | --- | --- |
 | 利用者の作成 | 形の誤り（壊れた JSON を含む）・漏洩したパスワード・照合が使えなかった事実・重なり・誤り・成功 | 入れる | 入れる | 入れる |
 | 強制失効 | 認可の失敗（操作した人は空。全体で 10 分に 20 行まで）・形の誤り・自分自身・対象なし・誤り・成功 | 入れる（認可の失敗は空） | 入れる | 入れる |
-| 2要素のリセット | 形の誤り・自分自身・対象なし・特権でない・誤り（役割の問い合わせ・一覧・削除・失効）・成功 | 入れる | 入れる | 入れる |
 | 問い合わせの状態の変更・返信・テンプレートの作成と更新と削除 | 成功（返信はメールの失敗・送り手の設定なし・状態の更新の誤りも）。変更と削除の対象なし（0 行）は失敗（`inquiry_not_found`・`template_not_found`） | 入れる | 入れる | 入れる |
 | 色見本の作成・削除 | 新しく作れた時（201）と消せた時だけ成功の 1 行（`admin.item_color_preset.create`・`admin.item_color_preset.delete`。`resource` は `item_color_preset`、`resource_id` は行の id。色の名前と値は入れない） | 入れる | 入れる | 入れる |
 | 問い合わせの一覧・詳細・監査ログの読み出し | 読めた時だけ成功の 1 行（一覧は絞り込みの条件と検索語の長さ、詳細は問い合わせの id） | 入れる | 入れる | 入れる |
 | 色見本・テンプレートの一覧 | 書かない | — | — | — |
 
 - IP は共有の `getAuditRequestContext`（`src/lib/request-ip.ts`）が `getClientIp` から取る。Vercel の `x-vercel-forwarded-for` → `x-real-ip` の順（手元の E2E は `CLIENT_IP_HEADER` が立つ時だけ `x-real-ip`）で、`x-forwarded-for` は読まない。形が IP でなければ・取れなければ `null` のまま保存する（SEC-ADMIN-009・SEC-ADMIN-022、ADR-0416・ADR-0462）。ブラウザの名乗りは `user-agent` の見出し。2026-10-28 の波 4 までは窓口ごとに入れる列がまちまちだった（利用者の作成は IP とブラウザを入れず、問い合わせの記録はメールと IP を入れず、色見本は書かず、強制失効は一部の結果にだけ IP を入れ、読み出しの記録は IP を入れなかった）
-- 伏せ字: 共有の部品が `metadata` の鍵の名前（password・token・secret・card・number など）と、`detail` の JWT・長い文字列・`password=` の形を伏せる。ユーザー作成と2要素のリセットは、外のサービスの誤りの文・理由の文・対象のメールを残さない。ユーザー作成は固定の符号（`email_already_registered`・`create_user_failed`・`pwned_password`・`pwned_check_unavailable:<符号>`）だけを `detail` に残し、2要素のリセットは理由を長さとハッシュだけにする（SEC-ADMIN-008、ADR-0461）
+- 伏せ字: 共有の部品が `metadata` の鍵の名前（password・token・secret・card・number など）と、`detail` の JWT・長い文字列・`password=` の形を伏せる。ユーザー作成は、外のサービスの誤りの文・理由の文・対象のメールを残さない。ユーザー作成は固定の符号（`email_already_registered`・`create_user_failed`・`pwned_password`・`pwned_check_unavailable:<符号>`）だけを `detail` に残し、2要素のリセットは理由を長さとハッシュだけにする（SEC-ADMIN-008、ADR-0461）
 - 強制失効は認可に失敗した要求を、全体で 10 分に 20 行まで書き、21 回目はまとめの 1 行（結果 `unauthorized_burst`）、それ以降は書かない。数える部品が壊れた時は書かない（ADR-0460）
 - 色見本は作れた時（201）と消せた時だけ書く。既にある行を返す 200・0 行の 404・誤り・断りは書かない。行為者のメールと IP は管理の変更の全部の結果に入れる（SEC-ADMIN-022）。IP を残す理由と退けた案は ADR-0462
 - 問い合わせの一覧・詳細と監査ログの読み出しは、読めた時に、読んだ人の id・メール・IP・ブラウザの名乗りで 1 行ずつ書く（`admin.contact.list`・`admin.contact.read`・`admin.audit_logs.read`。SEC-ADMIN-023）。名前・メール・本文・件名・検索語は入れない。各窓口の中の小さな関数 `auditReadSafely` が `logAudit` を包み、記録の失敗で読み出しを止めない
@@ -667,7 +666,7 @@ sequenceDiagram
 - 関数: 利用者の id（uuid）を受け、`auth.sessions` のその利用者の行を全部消し、消した数を返す。SECURITY DEFINER、`search_path` は空。PUBLIC から実行を外し、postgres と service_role にだけ付ける
 - 自前の `sessions`: 利用者ごとの refresh の印・失効の時刻・CSRF の印などを持つ。利用者を消すと一緒に消える。表の付与は anon・authenticated に無い（2026-10-26 の移行 `sec_grants_hardening`）。失効の時刻を読むのは範囲外の AUTH（`src/app/api/auth/refresh/route.ts`・`logout`・`password-reset/confirm`、`src/features/auth/services/session.ts`）
 - 管理の窓口が session の生存を見るのは `auth.sessions` の側（共有の認可、`src/lib/auth/admin-rbac.ts`）。だから Auth 側を消すと、その人の token は次の要求から管理の窓口で断られる
-- 呼び出しは共有の部品 `revokeAllSessionsForUser`（`src/lib/auth/revoke-user-sessions.ts`、範囲外）にまとめた。自前の表の更新と関数のどちらの誤りも固定の文で throw し、強制失効と2要素のリセットの2つの窓口が使う（ADR-0454、ADR-0461）
+- 呼び出しは共有の部品 `revokeAllSessionsForUser`（`src/lib/auth/revoke-user-sessions.ts`、範囲外）にまとめた。自前の表の更新と関数のどちらの誤りも固定の文で throw し、強制失効の窓口が使う（ADR-0454。2要素のリセットの窓口は段4で消した。ADR-0461 は廃止）
 
 ### DATA-ADMIN-005 色見本の表 `item_color_presets` と RLS
 

@@ -1,6 +1,6 @@
 # 設計判断（ADR）の案内
 
-> 状態: 文書索引 | 確認日: 2026-10-25 | 対象: `docs/03_BasicDesign/decisions/`
+> 状態: 文書索引 | 確認日: 2026-11-22 | 対象: `docs/03_BasicDesign/decisions/`
 
 ## 概要
 
@@ -17,7 +17,7 @@
 | STOCKIST | 0250〜0299 | [stockist](../areas/stockist.md) |
 | SEARCH | 0300〜0349 | [search](../areas/search.md) |
 | PRIVACY | 0350〜0399 | [privacy](../areas/privacy.md) |
-| AUTH | 0400〜0449、0463〜0474（パスキー） | [auth](../areas/auth.md) |
+| AUTH | 0400〜0449、0463〜0476（パスキー） | [auth](../areas/auth.md) |
 | ADMIN | 0450〜0462 | [admin](../areas/admin.md) |
 
 新しい領域を範囲に足すときは、空いている帯を `scope.json` の `docs` の型に合わせて決め、この表に足す。

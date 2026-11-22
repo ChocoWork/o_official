@@ -1,6 +1,6 @@
 # 1.16-2 管理のそのほか（ADMIN）詳細設計
 
-> 状態: 推定 | 確認日: 2026-11-14 | 対象: 利用者の作成の画面と窓口・セッションの強制失効・監査ログの読み出しと掃除・2要素のリセット・問い合わせの管理の窓口・返信の宛先の部品・商品の色見本の窓口 | 基準コミット: `4facf63b`
+> 状態: 推定 | 確認日: 2026-11-22 | 対象: 利用者の作成の画面と窓口・セッションの強制失効・監査ログの読み出しと掃除・2要素のリセット・問い合わせの管理の窓口・返信の宛先の部品・商品の色見本の窓口 | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -46,7 +46,7 @@
 
 | 共有部品 | 道 | ここでの使われ方 |
 | --- | --- | --- |
-| 管理の認可 | `src/lib/auth/admin-rbac.ts` の `authorizeAdminPermission` | 窓口ごとに token・session の生存・DB の ACL の権限・aal2 を確かめる |
+| 管理の認可 | `src/lib/auth/admin-rbac.ts` の `authorizeAdminPermission` | 窓口ごとに token・session の生存・DB の ACL の権限・店員の入口の条件（以前は aal2）を確かめる |
 | Origin の検査 | `src/proxy.ts` | `/api` の書き込みの Origin・Referer を照合する（ARC-ADMIN-002） |
 | 監査 | `src/lib/audit.ts` の `maskAuditEvent`・`logAudit` | 結果を `audit_logs` に残す。書き込みの失敗と例外は警告だけで握りつぶすので、窓口の応答は変わらない |
 | メールの送り手 | `src/lib/mail.ts` | 管理の返信のメールを送る |
@@ -90,7 +90,7 @@
 | session の生存を確かめられない | 503 `{error:'Service temporarily unavailable'}`、`Retry-After: 30` |
 | session が有効でない | 401 `{error:'Unauthorized'}` |
 | DB の ACL に権限が無い | 403 `{error:'Forbidden', permission, role}` |
-| `aal` が `aal2` でない | 403 `{error:'Forbidden', reason:'MFA required', permission, role}` |
+| 店員の入口の条件を満たさない（以前は `aal` が `aal2` でない） | 403 `{error:'Forbidden', reason:'MFA required', permission, role}` |
 | 認可の中の例外 | 500 `{error:'Internal server error'}` |
 | 通った | `{ok:true, userId, role, actorEmail}`（メールは JWT に無ければ空） |
 
@@ -140,7 +140,7 @@
 
 **状態・永続化:** 部品の state（`email`・`password`・`displayName`・`loading`・`message`）だけを持つ。知らせがある時だけ段落を描く。保存は窓口が行う。
 
-**認証認可:** 画面はログイン・役割・2要素を見ず、URL を直に打てば誰でも開ける。入口のリンクは無い。窓口が `admin.users.manage` と aal2 を確かめる。素の `fetch` なので CSRF の印（`x-csrf-token`）を付けず、401 の後の session の更新もしない（ARC-ADMIN-002。TM-ADMIN-33）。背景のパネルは範囲外の `src/app/admin/layout.tsx` が `/admin` だけに出すので、この画面には出ない。
+**認証認可:** 画面はログイン・役割・2要素を見ず、URL を直に打てば誰でも開ける。入口のリンクは無い。窓口が `admin.users.manage` と店員の入口の条件（以前は aal2） を確かめる。素の `fetch` なので CSRF の印（`x-csrf-token`）を付けず、401 の後の session の更新もしない（ARC-ADMIN-002。TM-ADMIN-33）。背景のパネルは範囲外の `src/app/admin/layout.tsx` が `/admin` だけに出すので、この画面には出ない。
 
 **テスト観点:**（`tests/unit/app/admin/create-user/create-user-page.test.tsx`。`fetch` を差し替える）
 
@@ -159,7 +159,7 @@
 | 属性 | 値 |
 | --- | --- |
 | 上位 | API-ADMIN-001、ARC-ADMIN-001、ARC-ADMIN-003、DATA-ADMIN-006、SEC-ADMIN-001 |
-| 根拠 | Auth の利用者を作る機能は service role でしか呼べないので、店長に固定した `admin.users.manage` と aal2 を確かめてから呼ぶ（API-ADMIN-001、ARC-ADMIN-001、DATA-ADMIN-006、SEC-ADMIN-001）。作れた・重なった・失敗したを監査に分けて残し、誰がいつ誰を作ったかをたどれるようにする（ARC-ADMIN-003）。管理者が作る利用者にも会員と同じ 16〜128 字と漏洩の照合を当て、弱いパスワードの口を残さない。大量作成を抑えるため管理者単位で数える。監査には外のサービスの誤りの文（メールを含みうる）を入れず、固定の符号だけを残す |
+| 根拠 | Auth の利用者を作る機能は service role でしか呼べないので、店長に固定した `admin.users.manage` と店員の入口の条件（以前は aal2） を確かめてから呼ぶ（API-ADMIN-001、ARC-ADMIN-001、DATA-ADMIN-006、SEC-ADMIN-001）。作れた・重なった・失敗したを監査に分けて残し、誰がいつ誰を作ったかをたどれるようにする（ARC-ADMIN-003）。管理者が作る利用者にも会員と同じ 16〜128 字と漏洩の照合を当て、弱いパスワードの口を残さない。大量作成を抑えるため管理者単位で数える。監査には外のサービスの誤りの文（メールを含みうる）を入れず、固定の符号だけを残す |
 | 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/admin/create-user/route.ts`）、`docs/03_BasicDesign/api/api-spec.md` |
@@ -197,7 +197,7 @@
 
 **状態・永続化:** 書くのは Supabase Auth の利用者（`auth.users`）と `audit_logs` の1行。監査には全部の結果の行に、操作した人のメールと、送り元の IP・ブラウザの名乗りを入れる（ARC-ADMIN-003、ADR-0462。SEC-ADMIN-022）。`detail` は固定の符号のまま（ADR-0461 の流儀）。
 
-**認証認可:** `admin.users.manage`（店長に固定。DATA-ADMIN-006）と aal2。CSRF は proxy の Origin の照合だけ。パスワードは 16〜128 字（UTF-8 で 72 バイト以内）と漏洩の照合を求める（SEC-ADMIN-012）。回数は認可を通った管理者の id だけを鍵にして数える（SEC-ADMIN-006）。
+**認証認可:** `admin.users.manage`（店長に固定。DATA-ADMIN-006）と店員の入口の条件（以前は aal2）。CSRF は proxy の Origin の照合だけ。パスワードは 16〜128 字（UTF-8 で 72 バイト以内）と漏洩の照合を求める（SEC-ADMIN-012）。回数は認可を通った管理者の id だけを鍵にして数える（SEC-ADMIN-006）。
 
 **テスト観点:**（`tests/unit/api/admin/create-user-route.test.ts`）
 
@@ -266,7 +266,7 @@
 
 **状態・永続化:** `sessions.revoked_at` を書き、`auth.sessions` の行を消し（DATA-ADMIN-004）、`audit_logs` に1行書く。回数と認可失敗の監査の数は `rate_limit_counters` の表の行（DB の関数 `increment_rate_limit_counter`）で数える。全部の結果の監査（認可の失敗・形の誤り・自分自身・対象なし・誤り・成功）に IP とブラウザの名乗りを入れる（成功などの閉包 `audit` にも `ip`・`user_agent` を持たせる。ARC-ADMIN-003、ADR-0462。SEC-ADMIN-022）。
 
-**認証認可:** `admin.users.manage` と aal2。関数は postgres と service_role にだけ実行を付けてある（DATA-ADMIN-004）ので、この窓口の service role の道だけが呼べる。画面から呼ぶ所は無い。
+**認証認可:** `admin.users.manage` と店員の入口の条件（以前は aal2）。関数は postgres と service_role にだけ実行を付けてある（DATA-ADMIN-004）ので、この窓口の service role の道だけが呼べる。画面から呼ぶ所は無い。
 
 **テスト観点:**（`tests/unit/api/admin/revoke-user-sessions-route.test.ts`、`tests/unit/lib/auth/revoke-user-sessions.test.ts`。結合は `tests/integration/api/admin/revoke-user-sessions.test.ts`。失効の部品・回数・カウンターを差し替える）
 
@@ -318,7 +318,7 @@
 
 **状態・永続化:** 読めた時に `audit_logs` へ読んだ記録を 1 行書く。読んだ人の IP とブラウザの名乗りを入れる（IP は `getClientIp` の値。取れなければ `null`。ADR-0462。SEC-ADMIN-023）。
 
-**認証認可:** `admin.audit.read`（初めは店長だけ。DATA-ADMIN-006）と aal2。画面から呼ぶ所は無い（FREQ-508-AC-01 の画面は無い）。
+**認証認可:** `admin.audit.read`（初めは店長だけ。DATA-ADMIN-006）と店員の入口の条件（以前は aal2）。画面から呼ぶ所は無い（FREQ-508-AC-01 の画面は無い）。
 
 **テスト観点:**（`tests/unit/api/admin/audit-logs-route.test.ts`。既存の `tests/integration/api/admin/audit-logs.test.ts` の3件は網羅に数えない）
 
@@ -333,7 +333,7 @@
 | 属性 | 値 |
 | --- | --- |
 | 上位 | API-ADMIN-004、ARC-ADMIN-001、ARC-ADMIN-003、SEC-ADMIN-001 |
-| 根拠 | 2要素の登録を消す機能は Auth の管理の機能で service role でしか呼べないので、`admin.users.manage` と aal2 を確かめてから呼ぶ（API-ADMIN-004、ARC-ADMIN-001、SEC-ADMIN-001）。取り返しがつかないので、確認の語と理由の文を求め、自分自身と特権でない利用者を断る。対象の役割は古くなりうる `app_metadata` でなく DB の ACL（`user_roles`）で決め、2要素を消した後は奪われた session を生かさないよう対象の全 session を失効させる（SEC-ADMIN-014、ADR-0461）。判定の結果は IP とブラウザの情報付きで監査に残すが、理由の文・対象のメール・誤りの文は残さず、理由は長さとハッシュだけにする（SEC-ADMIN-008、ARC-ADMIN-003）。認可の失敗と外側の例外は監査を書かない |
+| 根拠 | 2要素の登録を消す機能は Auth の管理の機能で service role でしか呼べないので、`admin.users.manage` と店員の入口の条件（以前は aal2） を確かめてから呼ぶ（API-ADMIN-004、ARC-ADMIN-001、SEC-ADMIN-001）。取り返しがつかないので、確認の語と理由の文を求め、自分自身と特権でない利用者を断る。対象の役割は古くなりうる `app_metadata` でなく DB の ACL（`user_roles`）で決め、2要素を消した後は奪われた session を生かさないよう対象の全 session を失効させる（SEC-ADMIN-014、ADR-0461）。判定の結果は IP とブラウザの情報付きで監査に残すが、理由の文・対象のメール・誤りの文は残さず、理由は長さとハッシュだけにする（SEC-ADMIN-008、ARC-ADMIN-003）。認可の失敗と外側の例外は監査を書かない |
 | 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | `src/app/api/admin/users/mfa/reset/route.ts`、`docs/03_BasicDesign/api/api-spec.md`、`docs/superpowers/plans/2026-10-26-wave1b-local-fixes.md`（Task 4） |
@@ -381,7 +381,7 @@
 
 **状態・永続化:** 消すのは Auth の2要素の登録（`auth.mfa_factors`）と、対象の自前の `sessions` の失効の時刻・`auth.sessions` の行（DATA-ADMIN-004）。`audit_logs` に1行書き、付帯の情報は `requested_user_id`・`target_role`・`deleted_factor_count`・`total_factors`・`delete_error_factor_ids`・`reason_length`・`reason_sha256` だけ。`reason`・`target_email`・`error_message`・`delete_errors[].message` は残さない（SEC-ADMIN-008、ADR-0461）。
 
-**認証認可:** `admin.users.manage` と aal2。対象の役割を DB の ACL（`user_roles`）で決める（SEC-ADMIN-014）。店長どうしのリセットを止める守りと、本人への知らせは無い（ユーザーの決め待ち。TM-ADMIN-37・40）。画面から呼ぶ所は無い。
+**認証認可:** `admin.users.manage` と店員の入口の条件（以前は aal2）。対象の役割を DB の ACL（`user_roles`）で決める（SEC-ADMIN-014）。店長どうしのリセットを止める守りと、本人への知らせは無い（ユーザーの決め待ち。TM-ADMIN-37・40）。画面から呼ぶ所は無い。
 
 **テスト観点:**（`tests/unit/api/admin/mfa-reset-route.test.ts`。Auth の管理の機能 `getUserById`・`mfa.listFactors`・`mfa.deleteFactor`、`user_roles` の問い合わせ、失効の部品、回数を差し替える。結合は `tests/integration/api/admin-misc/admin-mfa-reset-api.test.ts`）
 
@@ -449,7 +449,7 @@
 
 **状態・永続化:** 読めた時に `audit_logs` へ読んだ記録を 1 行書く。読んだ人の IP とブラウザの名乗りを入れる（IP は `getClientIp` の値。取れなければ `null`。ADR-0462。SEC-ADMIN-023）。
 
-**認証認可:** `admin.contact.read`（初めは店長とサポーター。DATA-ADMIN-006）と aal2。呼ぶのは `src/components/ContactSection.tsx` だけ（管理画面の CONTACT タブが開く。2026-10-28、波 4）。
+**認証認可:** `admin.contact.read`（初めは店長とサポーター。DATA-ADMIN-006）と店員の入口の条件（以前は aal2）。呼ぶのは `src/components/ContactSection.tsx` だけ（管理画面の CONTACT タブが開く。2026-10-28、波 4）。
 
 **テスト観点:**（`tests/unit/api/admin/admin-contact-route.test.ts`。PostgREST の組み立ての鎖を差し替える）
 
@@ -519,7 +519,7 @@ PATCH:
 
 **状態・永続化:** GET は読めた時に `audit_logs` へ読んだ記録を 1 行書く（読んだ人の IP とブラウザの名乗りを入れる。SEC-ADMIN-023）。PATCH は `contact_inquiries.status`・`updated_at` を書き（STATE-ADMIN-001）、`audit_logs` に1行書く。監査には操作した人のメール・IP・ブラウザの名乗りを入れる（成功も 0 行の失敗も。ADR-0462。SEC-ADMIN-022）。割当の作業の移行が注文との結び付きを外した問い合わせは、注文番号が空になる（TM-ADMIN-19）。
 
-**認証認可:** GET は `admin.contact.read`、PATCH は `admin.contact.manage`（どちらも初めは店長とサポーター）と aal2。店長にもサポーターにも IP とブラウザの情報を返さない（SEC-ADMIN-020）。呼ぶのは `src/components/ContactSection.tsx` だけ（管理画面の CONTACT タブが開く。2026-10-28、波 4）。
+**認証認可:** GET は `admin.contact.read`、PATCH は `admin.contact.manage`（どちらも初めは店長とサポーター）と店員の入口の条件（以前は aal2）。店長にもサポーターにも IP とブラウザの情報を返さない（SEC-ADMIN-020）。呼ぶのは `src/components/ContactSection.tsx` だけ（管理画面の CONTACT タブが開く。2026-10-28、波 4）。
 
 **テスト観点:**（`tests/unit/api/admin/admin-contact-id-route.test.ts`。`toOrderNumber` は本物か差し替え）
 
@@ -591,7 +591,7 @@ PATCH:
 
 **状態・永続化:** `contact_messages` に1行足し、`contact_inquiries` の状態と時刻を書き、`audit_logs` に1行書く。保存の後にメールが失敗しても保存は戻さない。監査には操作した人のメール・IP・ブラウザの名乗りを入れる（全部の結果の行。ADR-0462。SEC-ADMIN-022）。
 
-**認証認可:** `admin.contact.manage`（初めは店長とサポーター）と aal2。呼ぶのは `src/components/ContactSection.tsx` だけ（管理画面の CONTACT タブが開く。2026-10-28、波 4）。
+**認証認可:** `admin.contact.manage`（初めは店長とサポーター）と店員の入口の条件（以前は aal2）。呼ぶのは `src/components/ContactSection.tsx` だけ（管理画面の CONTACT タブが開く。2026-10-28、波 4）。
 
 **テスト観点:**（`tests/unit/api/admin/admin-contact-reply-route.test.ts`。`@/lib/mail`・`@/lib/contact/reply-address` を差し替え、`MAIL_FROM_ADDRESS` を出し入れする）
 
@@ -657,7 +657,7 @@ POST:
 
 **状態・永続化:** POST は `contact_reply_templates` に1行足し、`audit_logs` に1行書く。監査には操作した人のメール・IP・ブラウザの名乗りを入れる（ADR-0462。SEC-ADMIN-022）。
 
-**認証認可:** GET は `admin.contact.read`、POST は `admin.contact.manage` と aal2。呼ぶのは `src/components/ContactSection.tsx` だけ（管理画面の CONTACT タブが開く。2026-10-28、波 4）。
+**認証認可:** GET は `admin.contact.read`、POST は `admin.contact.manage` と店員の入口の条件（以前は aal2）。呼ぶのは `src/components/ContactSection.tsx` だけ（管理画面の CONTACT タブが開く。2026-10-28、波 4）。
 
 **テスト観点:**（`tests/unit/api/admin/admin-contact-templates-route.test.ts`）
 
@@ -723,7 +723,7 @@ DELETE:
 
 **状態・永続化:** PUT は `contact_reply_templates` の1行を書き換え、DELETE は1行を消す（戻せない）。どちらも `audit_logs` に1行書き、操作した人のメール・IP・ブラウザの名乗りを入れる（成功も 0 行の失敗も。ADR-0462。SEC-ADMIN-022）。
 
-**認証認可:** `admin.contact.manage`（初めは店長とサポーター）と aal2。呼ぶのは `src/components/ContactSection.tsx` だけ（管理画面の CONTACT タブが開く。2026-10-28、波 4）。
+**認証認可:** `admin.contact.manage`（初めは店長とサポーター）と店員の入口の条件（以前は aal2）。呼ぶのは `src/components/ContactSection.tsx` だけ（管理画面の CONTACT タブが開く。2026-10-28、波 4）。
 
 **テスト観点:**（`tests/unit/api/admin/admin-contact-templates-id-route.test.ts`）
 
@@ -789,7 +789,7 @@ POST:
 
 **状態・永続化:** POST は `item_color_presets` に1行足すか、何も書かない。1行足した時（201）だけ `audit_logs` に1行書く（既にある行を返す 200・誤り・断りは書かない。ADR-0462。SEC-ADMIN-022）。
 
-**認証認可:** GET は `admin.items.read`、POST は `admin.items.manage`（どちらも初めは店長だけ）と aal2。POST は認可を通った管理者の id だけを鍵にして数える（SEC-ADMIN-006）。呼ぶのは範囲外の商品の編集 `src/app/admin/item/ItemForm.tsx`。
+**認証認可:** GET は `admin.items.read`、POST は `admin.items.manage`（どちらも初めは店長だけ）と店員の入口の条件（以前は aal2）。POST は認可を通った管理者の id だけを鍵にして数える（SEC-ADMIN-006）。呼ぶのは範囲外の商品の編集 `src/app/admin/item/ItemForm.tsx`。
 
 **テスト観点:**（`tests/unit/api/admin/item-color-presets-route.test.ts`）
 
@@ -844,7 +844,7 @@ POST:
 
 **状態・永続化:** `item_color_presets` の1行を消す（戻せない）。消せた時だけ `audit_logs` に1行書く（0 行・誤り・形の悪い `id`・断りは書かない。ADR-0462。SEC-ADMIN-022）。
 
-**認証認可:** `admin.items.manage`（初めは店長だけ）と aal2。認可を通った管理者の id だけを鍵にして数える（SEC-ADMIN-006）。呼ぶのは範囲外の `src/app/admin/item/ItemForm.tsx`。
+**認証認可:** `admin.items.manage`（初めは店長だけ）と店員の入口の条件（以前は aal2）。認可を通った管理者の id だけを鍵にして数える（SEC-ADMIN-006）。呼ぶのは範囲外の `src/app/admin/item/ItemForm.tsx`。
 
 **テスト観点:**（`tests/unit/api/admin/item-color-presets-id-route.test.ts`）
 

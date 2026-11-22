@@ -1,6 +1,6 @@
 # テスト仕様
 
-> 2026-11-22 確認日（パスキー段4 Task 33）: 試験の手助けの掃き出し。`e2e/member-session-helpers.ts` の `loginAsMemberLegacy`・`createTestMember` の `password` を消し、`e2e/auth-2fa-test-utils.ts` を消して `setEmailCodeSessionCookie` を `member-session-helpers.ts` へ移し、`e2e/helpers.ts` の `registerUser`・`loginUser` を消した。`createServiceRoleAuthClient` の単体試験（`DD-AUTH-040`）は `signInWithOtp`・`resend` の 2 つだけを確かめる形に直し、`proxy-no-store`・`auth-cookie-data`・`logout` の試験から消した窓口・Cookie の行を外した。`isAuthUserUnconfirmed` の単体試験（呼び手が無かった）は消した。
+> 2026-11-22 確認日（パスキー段4 Task 33）: 試験の手助けの掃き出し。`e2e/member-session-helpers.ts` の `loginAsMemberLegacy`・`createTestMember` の `password` を消し、`e2e/auth-2fa-test-utils.ts` を消して `setEmailCodeSessionCookie` を `member-session-helpers.ts` へ移し、`e2e/helpers.ts` の `registerUser`・`loginUser` を消した。`createServiceRoleAuthClient` の単体試験（`DD-AUTH-040`）は `signInWithOtp` の 1 つだけを確かめる形（`resend` が無いことも確かめる）に直し、`proxy-no-store`・`auth-cookie-data`・`logout` の試験から消した窓口・Cookie の行を外した。`isAuthUserUnconfirmed` の単体試験（呼び手が無かった）は消した。
 
 > 2026-11-22 確認日（パスキー段4 Task 30）: 認証アプリ（TOTP）・MFA のやり直しの窓口と `/auth/verified` を調べる試験を消した（単体 `mfa-*-route`・`verified-page`・`mfa-reset-route`、結合 `auth-mfa-*`・`auth-admin-totp-flow`・`auth-verified-*`・`admin-mfa-reset-api`・`mfa-verify`、E2E `FR-LOGIN-018`・`FR-LOGIN-033` の画面の分・`FR-LOGIN-032` の TOTP の6定義）。`FR-LOGIN-032` は `FR-LOGIN-032-staff-entry-cookie-checks.spec.ts` に名前を替え、`FREQ-316-REQ-02-AC-01` を足した。`FR-LOGIN-080` に TOTP・`/auth/verified`・`mfa/reset` の404（FR-AUTH-053-AC-03）を足した。`ARC-AUTH-015`（行き先）は `tests/integration/api/auth/post-login.test.ts`、`DD-AUTH-060` は `tests/unit/features/auth/passkey/post-login.test.ts` が持つ。下の古い表のうち、消した試験の行は履歴として残す。
 
@@ -1452,7 +1452,7 @@ DB用は既存の[予約の遷移](../../../tests/integration/db/group_h_redempt
 
 | ファイル | 先頭の ID | 確かめること |
 | --- | --- | --- |
-| [service-role-auth-client.test.ts](../../../tests/unit/lib/auth/service-role-auth-client.test.ts) | `DD-AUTH-040` | captcha を免除される auth だけの client（セッションを持たない・サービスの鍵）と `isCaptchaRejection`。返す `auth` は 4 関数（`signInWithPassword`・`signInWithOtp`・`signUp`・`resend`）だけで、`admin`・`mfa`・`getSession` に届かない（`supabase-client-isolation.test.ts` も同じ） |
+| [service-role-auth-client.test.ts](../../../tests/unit/lib/auth/service-role-auth-client.test.ts) | `DD-AUTH-040` | captcha を免除される auth だけの client（セッションを持たない・サービスの鍵）と `isCaptchaRejection`。返す `auth` は 1 関数（`signInWithOtp`）だけで、`admin`・`mfa`・`getSession` に届かない（`supabase-client-isolation.test.ts` も同じ） |
 | [captcha-test-utils.test.ts](../../../tests/unit/e2e/captcha-test-utils.test.ts)（3 本） | `DD-AUTH-040` | E2E・DB 結合の補助 `withDummyCaptcha`（Turnstile のテスト用ダミーのトークンを付ける） |
 | [config-wave6.test.ts](../../../tests/unit/supabase/config-wave6.test.ts)（11 本） | `DD-AUTH-040` | `supabase/config.toml` の目標の値（最小長 16・captcha・確認メール必須・OTP 300 秒・TOTP・確認メールの雛形が `token_hash`・`type=signup` のリンク・自前 SMTP 無し）。波 6 の切り替え〔2026-11-01〕までは `supabase/pending-wave6/config.toml` を読み、今は `supabase/config.toml` を読む |
 | `sec-password-change-challenges.test.ts`（22 本。2026-11-22 に消した。表と関数を移行 K〔パスキー段4 の Task 32〕で消したため） | `DATA-AUTH-009`・`DATA-AUTH-010`（廃止） | M3 の SQL の静的な確かめ（8 列・部分索引・RLS と方針 3 本・関数 2 本の属性と ACL・自己検査・ROLLBACK） |

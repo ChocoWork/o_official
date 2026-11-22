@@ -1,10 +1,10 @@
 # セッション・API認可シーケンス
 
-> 状態: 推定（2026-10-04 にソースと照合し、2026-10-24 に一部を直した。ユーザーの確認は未） | 確認日: 2026-10-24 | 対象: 初期認証表示、refresh、logout、管理API認可
+> 状態: 推定（2026-10-04 にソースと照合し、2026-10-24 に一部を直し、2026-11-22（パスキー段4）に入口の条件の記述を直した。ユーザーの確認は未） | 確認日: 2026-11-22 | 対象: 初期認証表示、refresh、logout、管理API認可
 
 ## 概要
 
-初期認証表示はme APIでJWTとAuth session生存を確認する。refreshはSupabaseのtoken交換後に新Cookieを準備し、新local sessions行を保存して旧行を失効させる。logoutはCookie消去とAuth session失効を試み、通常200を返す。管理API認可はJWT検証後にAuth session生存とDB ACLを並列照会し、生存→ACL→JWT aal2の順に結果を判定する。4つの開始契機を分けて描く。[記載方針](README.md)を参照する。
+初期認証表示はme APIでJWTとAuth session生存を確認する。refreshはSupabaseのtoken交換後に新Cookieを準備し、新local sessions行を保存して旧行を失効させる。logoutはCookie消去とAuth session失効を試み、通常200を返す。管理API認可はJWT検証後にAuth session生存とDB ACLを並列照会し、生存→ACL→店員の入口の条件（パスキー・24時間以内・認めた鍵2本。段1bより前はJWT aal2）の順に結果を判定する。4つの開始契機を分けて描く。[記載方針](README.md)を参照する。
 
 ## 範囲と根拠
 
@@ -62,7 +62,7 @@ sequenceDiagram
   end
 ```
 
-APIの予期しない例外は200の未認証応答。UIの通信例外・JSONを読めない応答も未認証表示を確定する。認証成功のroleはJWTのapp_metadata.roleから読み、不明値はuser、mfaVerifiedはJWT aal=aal2である。global同期はclientFetchを使わず、meは期限切れtokenにも200を返すため、この同期自体からrefreshや401再送は起動しない。初回503ではisAuthResolved=falseのままで、すでに解決した後の503ではその表示を保つ。
+APIの予期しない例外は200の未認証応答。UIの通信例外・JSONを読めない応答も未認証表示を確定する。認証成功のroleはJWTのapp_metadata.roleから読み、不明値はuser、mfaVerifiedは店員の入口の条件（`evaluateStaffEntry`。段1bより前はJWT aal=aal2）を満たすかである（名前は変えない。ADR-0463）。global同期はclientFetchを使わず、meは期限切れtokenにも200を返すため、この同期自体からrefreshや401再送は起動しない。初回503ではisAuthResolved=falseのままで、すでに解決した後の503ではその表示を保つ。
 
 `/auth/verified`（段4で廃止）が行っていたme照会とrole別の画面出口は、窓口とブラウザの判定が引き継いだ（ARC-AUTH-015）。
 
@@ -203,7 +203,7 @@ sequenceDiagram
       API-->>Caller: 401
     else requiredPermissionなし
       API-->>Caller: 403 permission不足
-    else JWT aalがaal2でない
+    else 店員の入口の条件を満たさない
       API-->>Caller: 403 MFA required
     else すべて通過
       API-->>API: userId / role / actorEmailで業務処理を継続
@@ -224,7 +224,7 @@ ACLはservice-roleで`user_roles → roles → role_permissions → permissions.
 | refresh交換・拒否Cookie消去 | [refresh](../../../tests/integration/api/auth/refresh.test.ts) |
 | 更新保存の順序・失敗 | [sessionサービス](../../../tests/unit/features/auth/services/session.test.ts) |
 | logout200・DB失敗・SSR Cookie消去 | [logout](../../../tests/integration/api/auth/logout.test.ts) |
-| 認証・503・ACL・AAL2 | [authenticate](../../../tests/unit/lib/auth/authenticate.test.ts)、[admin RBAC](../../../tests/unit/lib/auth/admin-rbac.test.ts)、[me](../../../tests/integration/api/auth/me.test.ts) |
+| 認証・503・ACL・店員の入口の条件 | [authenticate](../../../tests/unit/lib/auth/authenticate.test.ts)、[admin RBAC](../../../tests/unit/lib/auth/admin-rbac.test.ts)、[me](../../../tests/integration/api/auth/me.test.ts) |
 | CSRF | [CSRF helper](../../../tests/unit/lib/csrf.middleware.test.ts) |
 
 ## 未確認事項

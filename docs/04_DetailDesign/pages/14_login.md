@@ -1,6 +1,6 @@
 # 1.14 ログインと認証（AUTH）詳細設計
 
-> 状態: 推定 | 確認日: 2026-11-18 | 対象: ログイン `/login`・`/login/password`・`/login/code`・`/login/passkey`・`/login/verify`、認証の画面 `/auth/*`、認証の窓口 `/api/auth/*`、サイト共通のヘッダーとドロワー、認証の部品 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-11-22 | 対象: ログイン `/login`・`/login/code`・`/login/passkey`、認証の窓口 `/api/auth/*`、サイト共通のヘッダーとドロワー、認証の部品 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -9,24 +9,24 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 範囲 | ID | 単位 |
 | --- | --- | --- |
-| 画面 | `DD-AUTH-001`〜`006` | `/login`、`/login/verify`、`/auth/password-reset`、`/auth/password-reset/verify`、`/auth/verified`（`DD-AUTH-005`。段4で廃止）、廃止した `/auth/callback` |
-| 部品 | `DD-AUTH-007`〜`013` | ヘッダーとドロワー、ログインと会員登録のフォーム、タブ、結果の画面、Turnstile のフック、再送の残り時間の文 |
-| ログインの窓口 | `DD-AUTH-014`〜`017` | `login`・`otp/verify`・`login/resend`・`login/cancel` |
-| 会員登録の窓口 | `DD-AUTH-018`・`019` | `register`・`confirm` |
+| 画面 | `DD-AUTH-001`（現行）、`002`〜`006`（廃止） | `/login`。廃止は `/login/verify`、`/auth/password-reset`、`/auth/password-reset/verify`、`/auth/verified`、`/auth/callback` |
+| 部品 | `DD-AUTH-007`・`012`・`013`（現行）、`008`〜`011`（廃止） | ヘッダーとドロワー、Turnstile のフック、再送の残り時間の文。廃止はログインと会員登録のフォーム、タブ、結果の画面 |
+| ログインの窓口（廃止） | `DD-AUTH-014`〜`017` | `login`・`otp/verify`・`login/resend`・`login/cancel`（消した） |
+| 会員登録の窓口（廃止） | `DD-AUTH-018`・`019` | `register`・`confirm`（消した） |
 | Google の窓口 | `DD-AUTH-020`・`021` | `oauth/start`・`oauth/callback` |
-| 再設定の窓口 | `DD-AUTH-022`〜`025` | `password-reset/request`・`link`・`session`・`confirm` |
+| 再設定の窓口（廃止） | `DD-AUTH-022`〜`025` | `password-reset/request`・`link`・`session`・`confirm`（消した） |
 | セッションの窓口 | `DD-AUTH-026`〜`028` | `me`・`refresh`・`logout` |
-| TOTP の窓口（段4で廃止） | `DD-AUTH-029`〜`031` | `mfa/status`・`mfa/enroll-totp`・`mfa/verify`（消した） |
+| TOTP の窓口（廃止） | `DD-AUTH-029`〜`031` | `mfa/status`・`mfa/enroll-totp`・`mfa/verify`（消した） |
 | 戻り先の部品と窓口 | `DD-AUTH-032`〜`036` | 戻り先の確かめ、控えの保存、控えの開始と解決、`post-login`、入口のリンクの URL（ARC-AUTH-010） |
 | 応答の見出し | `DD-AUTH-037` | 共有の `src/proxy.ts` が `/api/auth` 配下の応答に付ける `Cache-Control: no-store`（判定だけを `src/lib/auth-no-store-policy.ts` の `shouldSetNoStore` に出して範囲に入れた） |
 | 送り元の IP | `DD-AUTH-038` | 共有の `src/lib/request-ip.ts` の `getClientIp`・`getAuditRequestContext`。回数の制限の鍵（共有の `rateLimit.ts`。鍵が取れない時は `null`、429・503 は `no-store`）と監査の IP・Turnstile の `remoteip` が使う |
-| アプリの session への結び付け | `DD-AUTH-039` | 旗 `AUTH_REQUIRE_APP_SESSION` と GoTrue の `session_id` の読み取り（`src/lib/auth/app-session.ts`）。書く側はログインの保存（`persistSessionAndCookies`）・更新（`refresh`）・TOTP の昇格（`mfa/verify`）。読む側は共有の `checkAuthSessionLiveness` が旗で RPC を替える（`is_app_session_active`）ことと、`authenticateRequest` が失効に claims を付けること、`enroll-totp` の断りの監査（波 5 の Task 3） |
-| captcha の免除 | `DD-AUTH-040` | Supabase の captcha が掛かる窓口（`/signup`・`/token`（password）・`/otp`）を呼ぶ 6 か所（ログイン 2 回・ログインの再送・会員登録・未確認の会員の確認メールの再送・パスワード変更の現行パスワードの確認）が使う auth だけの client（`src/lib/auth/service-role-auth-client.ts`）と、captcha の拒否の見分け。窓口の分岐は `DD-AUTH-014`・`016`・`018` に足した（波 6 の Task 2） |
-| パスワード変更 | `DD-AUTH-041` | ログイン中の会員が自分でパスワードを変える 2 本の窓口 `password/change/start`・`password/change/confirm` と、部品（`src/features/auth/services/password-change.ts` のコードの作成・鍵つきのハッシュ・現行パスワードの確かめ・コードの無効化・メール 2 通）。入力の形は `schemas/password-change.ts`（波 6 の Task 5）。画面は `DD-AUTH-042` |
-| パスワード変更の画面 | `DD-AUTH-042` | `/account/password`（`src/app/account/password/page.tsx` の入口と `PasswordChangeForm.tsx` の 2 段の画面）と、アカウントの「お客様情報」の欄からのリンク（波 6 の Task 6） |
+| アプリの session への結び付け | `DD-AUTH-039` | 旗 `AUTH_REQUIRE_APP_SESSION` と GoTrue の `session_id` の読み取り（`src/lib/auth/app-session.ts`）。書く側はログインの保存（`persistSessionAndCookies`）と更新（`refresh`）。読む側は共有の `checkAuthSessionLiveness` が旗で RPC を替える |
+| captcha の免除 | `DD-AUTH-040` | Supabase の captcha が掛かる窓口（`/otp`）を呼ぶ、メールのコードの始めと再送が使う auth だけの client（`src/lib/auth/service-role-auth-client.ts`。`signInWithOtp` だけを持つ）と、captcha の拒否の見分け |
+| パスワード変更（廃止） | `DD-AUTH-041`・`042` | 窓口・部品・画面（消した） |
 
-- 結論: 範囲の 33 の単位を 31 の項目へつないだ（`/login/verify` と `/auth/password-reset/verify` は頁と端末の部品の2単位を1項目にした）。各項目に入出力・正常と異常の流れ（分岐ごとに条件と動き）・状態と永続化・認証認可・単体テストの観点を書いた
-- 単体テストは 5 本（`LoginModal`・`AuthResultScreen`・`VerifyOtpClient`・`verified-page`・`logout-guest-shopping`）しか無く、窓口の分岐は結合テスト（`tests/integration/api/auth/**`）だけが通す。分岐の網羅 100% にするには、テスト観点の表の「今のテスト」が無い行を単体テストで足す必要がある
+2026-11-22（パスキー段4）に、廃止にした DD の単位のファイルを下の「実装の単位」の表から外した。廃止にした DD の本文は当時のまま残す。パスキーの画面・窓口の DD（`DD-AUTH-060` 以降）は `docs/04_DetailDesign/sequence/auth-passkey-*.md` と各シーケンスの文書にある。
+
+- 結論: 項目ごとに入出力・正常と異常の流れ（分岐ごとに条件と動き）・状態と永続化・認証認可・単体テストの観点を書いた
 - 前の版のこの頁は、古い作業の表（`IMPL-LOGIN-`・`IMPL-OAUTH-`・`IMPL-AUTH-` の番号）と、今のコードと違う計画の記述（`identify` の窓口、`oauth_requests` の表、リンクを開いた時の印の消費など）だった。範囲の単位に当たる番号は各項目の「旧番号」に移し、当たらない番号は「引き継がなかった古い番号」の表に理由を書いた。前の版の本文は基準コミットの git の履歴で読める
 
 ## 範囲と根拠
@@ -44,8 +44,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 共有部品 | 道 | 詳細設計での扱い |
 | --- | --- | --- |
-| ログインの状態の文脈 | `src/contexts/LoginContext.tsx` | 画面から `login`・`register`・`verifyOtp`・`loginWithGoogle`・`refreshAuthState` を呼ぶ |
-| 署名した保留・再設定の印 | `src/features/auth/services/login-2fa-session.ts`・`password-reset-session.ts` | 印の作り方・寿命・確かめ方は共有部品。項目は「有効か無効か」で分ける |
+| ログインの状態の文脈 | `src/contexts/LoginContext.tsx` | 画面から `loginWithGoogle`・`refreshAuthState`・`logout` を呼ぶ |
+| 署名した保留の印 | `src/features/auth/services/email-code-session.ts` | 印の作り方・寿命・確かめ方は共有部品。項目は「有効か無効か」で分ける |
 | セッションの保存 | `src/features/auth/services/register.ts` の `persistSessionAndCookies`、`session.ts` の `persistNewSession`・`findSessionByRefreshHash` | 結果の `ok` と例外で分ける |
 | 回数の制限 | `src/features/auth/middleware/rateLimit.ts` の `enforceRateLimit` | 返り値の有無と例外で分ける |
 | 認証の確かめ | `src/lib/auth/authenticate.ts` の `authenticateRequest`・`authFailureResponse`・`verifyAccessToken` | `ok` と理由で分ける |
@@ -62,7 +62,6 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | `src/app/login/page.tsx` | `<file>` | DD-AUTH-001 |
 | `src/features/auth/passkey/components/LoginChoices.tsx` | `<file>` | DD-AUTH-063 |
 | `src/features/auth/passkey/components/EmailCodeStartForm.tsx` | `<file>` | DD-AUTH-063 |
-| `src/app/login/password/page.tsx` | `<file>` | DD-AUTH-061 |
 | `src/app/login/code/page.tsx` | `<file>` | DD-AUTH-062 |
 | `src/features/auth/passkey/components/EmailCodeEntry.tsx` | `<file>` | DD-AUTH-062 |
 | `src/app/login/passkey/page.tsx` | `<file>` | DD-AUTH-064 |
@@ -76,30 +75,11 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | `src/features/auth/staff/components/RedoStaffDialog.tsx` | `<file>` | DD-AUTH-084 |
 | `src/features/auth/staff/components/StaffRoleActions.tsx` | `<file>` | DD-AUTH-084 |
 | `src/features/auth/staff/staff-user-actions.ts` | `<file>` | DD-AUTH-084 |
-| `src/app/login/verify/page.tsx` | `<file>` | DD-AUTH-002 |
-| `src/app/login/verify/VerifyOtpClient.tsx` | `<file>` | DD-AUTH-002 |
-| `src/app/auth/password-reset/page.tsx` | `<file>` | DD-AUTH-003 |
-| `src/app/auth/password-reset/verify/page.tsx` | `<file>` | DD-AUTH-004 |
-| `src/app/auth/password-reset/verify/VerifyClient.tsx` | `<file>` | DD-AUTH-004 |
 | `src/components/Header.tsx` | `<file>` | DD-AUTH-007 |
-| `src/components/LoginModal.tsx` | `<file>` | DD-AUTH-008 |
-| `src/components/RegisterModal.tsx` | `<file>` | DD-AUTH-009 |
-| `src/components/AuthTabs.tsx` | `<file>` | DD-AUTH-010 |
-| `src/components/AuthResultScreen.tsx` | `<file>` | DD-AUTH-011 |
 | `src/hooks/useTurnstileWidget.ts` | `useTurnstileWidget` | DD-AUTH-012 |
 | `src/lib/format-countdown.ts` | `formatResendCountdown` | DD-AUTH-013 |
-| `src/app/api/auth/login/route.ts` | `<file>` | DD-AUTH-014 |
-| `src/app/api/auth/otp/verify/route.ts` | `<file>` | DD-AUTH-015 |
-| `src/app/api/auth/login/resend/route.ts` | `<file>` | DD-AUTH-016 |
-| `src/app/api/auth/login/cancel/route.ts` | `<file>` | DD-AUTH-017 |
-| `src/app/api/auth/register/route.ts` | `<file>` | DD-AUTH-018 |
-| `src/app/api/auth/confirm/route.ts` | `<file>` | DD-AUTH-019 |
 | `src/app/api/auth/oauth/start/route.ts` | `<file>` | DD-AUTH-020 |
 | `src/app/api/auth/oauth/callback/route.ts` | `<file>` | DD-AUTH-021 |
-| `src/app/api/auth/password-reset/request/route.ts` | `<file>` | DD-AUTH-022 |
-| `src/app/api/auth/password-reset/link/route.ts` | `<file>` | DD-AUTH-023 |
-| `src/app/api/auth/password-reset/session/route.ts` | `<file>` | DD-AUTH-024 |
-| `src/app/api/auth/password-reset/confirm/route.ts` | `<file>` | DD-AUTH-025 |
 | `src/app/api/auth/me/route.ts` | `<file>` | DD-AUTH-026 |
 | `src/app/api/auth/refresh/route.ts` | `<file>` | DD-AUTH-027 |
 | `src/app/api/auth/logout/route.ts` | `<file>` | DD-AUTH-028 |
@@ -111,23 +91,11 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | `src/lib/auth/app-session.ts` | `readAuthSessionId` | DD-AUTH-039 |
 | `src/lib/auth/service-role-auth-client.ts` | `createServiceRoleAuthClient` | DD-AUTH-040 |
 | `src/lib/auth/service-role-auth-client.ts` | `isCaptchaRejection` | DD-AUTH-040 |
-| `src/app/api/auth/password/change/start/route.ts` | `<file>` | DD-AUTH-041 |
-| `src/app/api/auth/password/change/confirm/route.ts` | `<file>` | DD-AUTH-041 |
-| `src/features/auth/services/password-change.ts` | `generatePasswordChangeCode` | DD-AUTH-041 |
-| `src/features/auth/services/password-change.ts` | `hashPasswordChangeCode` | DD-AUTH-041 |
-| `src/features/auth/services/password-change.ts` | `voidPasswordChangeChallenge` | DD-AUTH-041 |
-| `src/features/auth/services/password-change.ts` | `verifyCurrentPassword` | DD-AUTH-041 |
-| `src/features/auth/services/password-change.ts` | `sendPasswordChangeCodeMail` | DD-AUTH-041 |
-| `src/features/auth/services/password-change.ts` | `sendPasswordChangedNotice` | DD-AUTH-041 |
-| `src/app/account/password/page.tsx` | `<file>` | DD-AUTH-042 |
-| `src/app/account/password/PasswordChangeForm.tsx` | `<file>` | DD-AUTH-042 |
 
 - `src/lib/auth-no-store-policy.ts` の `shouldSetNoStore` は `IMPL-AUTH-223`（2026-10-28）。共有の `src/proxy.ts` が呼ぶ。`proxy` 全体は CSP・Origin の検査も持つ共有部品で、範囲の単位にしないので、`/api/auth` かどうかの判定だけを小さな関数に出して範囲に入れた（`scripts/trace/scope.json` の AUTH の `src` と、試験 `tests/unit/middleware/proxy-no-store.test.ts` を `tests` に足した）。ADR-0415 の置き場所
 - `src/lib/request-ip.ts` の `getClientIp`・`getAuditRequestContext` は `IMPL-AUTH-224`・`IMPL-AUTH-225`（2026-10-28、波 4。1 つの `@impl` は 1 つの単位にだけ付けるので 2 つに分けた）。回数の制限の鍵（共有の `rateLimit.ts`）と、取扱店・管理・LOOK・NEWS の監査の IP が呼ぶ共有の関数で、範囲に入れた（`scripts/trace/scope.json` の AUTH の `src` と、試験 `tests/unit/lib/request-ip.test.ts` を `tests` に足した）。ADR-0416 の置き場所
 - `src/lib/auth/app-session.ts` の `isAppSessionRequired`・`readAuthSessionId` は `IMPL-AUTH-226`・`IMPL-AUTH-227`（2026-10-29、波 5。1 つの `@impl` は 1 つの単位にだけ付けるので 2 つに分けた）。ログインの保存・更新・昇格が結び付けの旗と `session_id` の読み取りで使う（`scripts/trace/scope.json` の AUTH の `src` と、試験 `tests/unit/lib/auth/app-session.test.ts` を `tests` に足した）。ADR-0417・0419 の置き場所。`persistSessionAndCookies`・`persistNewSession` は範囲外の共有部品（`src/features/auth/services/`）で、単位にしない
 - `src/lib/auth/service-role-auth-client.ts` の `createServiceRoleAuthClient`・`isCaptchaRejection` は `IMPL-AUTH-228`・`IMPL-AUTH-233`（2026-11-01、波 6。1 つの `@impl` は 1 つの単位にだけ付けるので 2 つに分けた。計画の割当表は 228 を 2 つ分として置いたため、229〜232 を避けて 233 にした）。ログイン（2 回）・再送・登録が captcha を免除される呼び出しに使う（`scripts/trace/scope.json` の AUTH の `src` と、試験 `tests/unit/lib/auth/service-role-auth-client.test.ts` を `tests` に足した）。ADR-0420 の置き場所
-- `src/app/api/auth/password/change/{start,confirm}/route.ts` は `IMPL-AUTH-230`・`IMPL-AUTH-231`、`src/features/auth/services/password-change.ts` の 6 関数は `IMPL-AUTH-229`・`234`〜`238`（2026-11-01、波 6 の Task 5。計画の割当表は部品の全体に `229` を 1 つ置いたが、1 つの `@impl` は 1 つの単位にだけ付けるので 6 つに分けた。`232` は Task 6 の画面に残し、`233` は使用済みなので `234` 以降を使った）。対応は `generatePasswordChangeCode`＝229、`hashPasswordChangeCode`＝234、`voidPasswordChangeChallenge`＝235、`verifyCurrentPassword`＝236、`sendPasswordChangeCodeMail`＝237、`sendPasswordChangedNotice`＝238。`schemas/password-change.ts` は関数の単位を持たない（`z.object` の定数）。`scripts/trace/scope.json` の AUTH の `src` に部品 2 つを、`tests` に `tests/unit/features/auth/password-change*.test.ts` を足した。ADR-0421 の置き場所
-- `src/app/account/password/PasswordChangeForm.tsx` は `IMPL-AUTH-232`、`src/app/account/password/page.tsx` は `IMPL-AUTH-239`（2026-11-01、波 6 の Task 6。計画の割当表は頁を本体と同じ `IMPL-AUTH-232` の「薄い入口」としたが、`validate-trace` は同じ `@impl` を 2 つの単位に付けると `duplicate-impl` にするので、頁に次の空き番号 `239` を付けた。`233`〜`238` は使用済み）。`scripts/trace/scope.json` の AUTH の `src` に `src/app/account/password/**/*.{ts,tsx}` を足した（試験 `tests/integration/ui/auth-password-change.test.tsx` は既存の `tests/integration/ui/auth-*.test.{ts,tsx}` で届く）。`src/app/account/page.tsx` は範囲外の共有部品で、リンクを 1 つ足しただけなので単位にしない
 - 戻り先の部品（`src/features/auth/return-intent/` の `return-path.ts`・`return-intent-store.ts`・`return-intent-service.ts`・`use-login-href.ts`）は、DD-AUTH-032・033・034・036 につなぐ。単位（symbol）はコードを書く時に確定する（コードはまだ無いので、この表には書かない）
 - `src/app/` の `page`・`route` と `.tsx` はファイル全体で1つの単位なので、中の metadata の関数・Route Handler の関数・小さな関数・定数はその単位に含める。`.ts` の `useTurnstileWidget` と `formatResendCountdown` だけが関数の単位
 - 新しい `@impl` は `IMPL-AUTH-101` から振る（前の版の `IMPL-AUTH-SEC-009` などと字の上で混ざらないようにするため）。33 の単位すべてに `@impl`（`IMPL-AUTH-101`〜`205`）と `@design` を付けた
@@ -835,12 +803,12 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | ARC-AUTH-005 |
-| 根拠 | 自動の描画は Script を読んだ時にしか走らず、タブの切り替えで部品が付け直されると Turnstile が出ないので、明示の描画にする（ARC-AUTH-005、`src/hooks/useTurnstileWidget.ts`）。トークンは使い捨てなので、送るたびに引き直す手段を1か所に集める（FREQ-330-REQ-01・02、ADR-0411）。Turnstile は幅 300px を下回れないので、狭い入れ物では等倍で縮め、ボタンだけが横に張り出すのを防ぐ（FREQ-328-REQ-02・03）。ログイン・会員登録・再設定の3つのフォームが使う（SCR-AUTH-002・003・005） |
+| 根拠 | 自動の描画は Script を読んだ時にしか走らず、タブの切り替えで部品が付け直されると Turnstile が出ないので、明示の描画にする（ARC-AUTH-005、`src/hooks/useTurnstileWidget.ts`）。トークンは使い捨てなので、送るたびに引き直す手段を1か所に集める（FREQ-330-REQ-01・02、ADR-0411）。Turnstile は幅 300px を下回れないので、狭い入れ物では等倍で縮め、ボタンだけが横に張り出すのを防ぐ（FREQ-328-REQ-02・03）。メールのコードの始めのフォームが使う（SCR-AUTH-001。ログイン・会員登録・再設定の3つのフォームは段4で消した） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/hooks/useTurnstileWidget.ts`） |
 
-**対応要件 ID:** ARC-AUTH-005、SCR-AUTH-002・003・005（その上は FREQ-328-REQ-01〜03、FREQ-330-REQ-01・02、ADR-0411）
+**対応要件 ID:** ARC-AUTH-005、SCR-AUTH-001（その上は FREQ-328-REQ-01〜03、FREQ-330-REQ-01・02、ADR-0411）
 
 **入出力:**
 
@@ -897,12 +865,12 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | API-AUTH-031 |
-| 根拠 | メールのコードの再送の待ちの文を、1つの関数にそろえる（SCR-AUTH-004、API-AUTH-031）。パスワードの再設定のメールの再送の分は、段4で再設定を消したので無い（`src/lib/format-countdown.ts`） |
+| 根拠 | メールのコードの再送の待ちの文を、1つの関数にそろえる（SCR-AUTH-001、API-AUTH-031）。パスワードの再設定のメールの再送の分は、段4で再設定を消したので無い（`src/lib/format-countdown.ts`） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/lib/format-countdown.ts`） |
 
-**対応要件 ID:** SCR-AUTH-004、STATE-AUTH-004（その上は FR-LOGIN-006、FREQ-329-REQ-03）
+**対応要件 ID:** SCR-AUTH-001、API-AUTH-031（その上は FR-LOGIN-006、FREQ-329-REQ-03）
 
 **入出力:**
 
@@ -1772,7 +1740,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 1. 共有の `authenticateRequest` で JWT と失効を確かめる（`src/app/api/auth/me/route.ts`）
 2. 役割を `app_metadata.role` から読み、許可の3つでなければ `user`
-3. `mfaVerified` を `aal === 'aal2'` で決める
+3. `mfaVerified` を店員の入口の条件（`evaluateStaffEntry`。`amr` のパスキー・24時間以内・JWT のヒントの認めた鍵2本）を満たすかで決める（名前は変えない。ADR-0463）
 4. 200 で返す。`user` は `id`・`role`・`mfaVerified` だけで、メールのクレームは返さない
 
 **分岐と異常フロー:**
@@ -1783,7 +1751,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 確かめが通らず、ほかの理由（無い・無効・失効） | 200 `{ authenticated: false }` |
 | 役割が admin・supporter・user のどれか | その役割 |
 | 役割が無い・ほかの値 | `user` |
-| `aal` が `aal2` | `mfaVerified: true`、ほかは `false` |
+| 店員の入口の条件を満たす | `mfaVerified: true`、ほかは `false` |
 | メールのクレームがある・無い | どちらも応答の `user` にメールの項目は無い |
 | 例外 | 記録して 200 `{ authenticated: false }` |
 
@@ -1795,8 +1763,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | # | 観点 |
 | --- | --- |
-| 1 | 確かめが通り、役割 admin・aal2 で `mfaVerified: true` |
-| 2 | 役割が無い・知らない値で `user`、aal1 で `false` |
+| 1 | 確かめが通り、役割 admin で入口の条件の印があれば `mfaVerified: true` |
+| 2 | 役割が無い・知らない値で `user`、入口の条件に足りなければ `false` |
 | 3 | メールのクレームがあっても無くても、`user` のキーは `id`・`role`・`mfaVerified` ちょうどで、メールの字が応答に無い |
 | 4 | 理由が `unavailable` で 503・`Retry-After`・`no-store`・`no-referrer` |
 | 5 | 理由がほかで 200 `{ authenticated: false }` |
@@ -1893,7 +1861,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 向き | 中身 |
 | --- | --- |
 | 入力 | `POST /api/auth/logout`。本文は読まない。Cookie の refresh token・CSRF の印（見出しと Cookie の二重送信、共有の `requireCsrfOrDeny` が読む）・access token（共有の `verifyAccessToken` が期限切れも許して読む） |
-| 出力 200 | いつも `{ ok: true }`。`session_id`・refresh・access・CSRF・保留・再設定・戻り先（`sb-return-intent`）・カート・お気に入りの Cookie と、名前が `sb-…-auth-token`（後ろに `.数字` が付く物も）のライブラリの Cookie を消す |
+| 出力 200 | いつも `{ ok: true }`。`session_id`・refresh・access・CSRF・戻り先（`sb-return-intent`）・カート・お気に入りの Cookie と、名前が `sb-…-auth-token`（後ろに `.数字` が付く物も）のライブラリの Cookie を消す |
 | 出力 500 | 応答を作る所の例外だけ |
 
 **正常フロー:**
@@ -2342,7 +2310,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | API-AUTH-019、ARC-AUTH-010、SEC-AUTH-026、SEC-AUTH-032 |
-| 根拠 | 確認コードの確定と TOTP の確定は端末が移るので、行き先をサーバーが決めて返す（API-AUTH-019）。役割と aal は呼び出した人のトークンの claims から読み、本文や見出しを信じない。使い切りは DD-AUTH-034 に任せ、2 回目は使えない（SEC-AUTH-032） |
+| 根拠 | 確認コードの確定とパスキーの確定は端末が移るので、行き先をサーバーが決めて返す（API-AUTH-019）。役割と店員の入口の条件は呼び出した人のトークンの claims から読み、本文や見出しを信じない。使い切りは DD-AUTH-034 に任せ、2 回目は使えない（SEC-AUTH-032） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`、`docs/superpowers/plans/2026-10-25-wave1a-login-return-to.md` |
@@ -2441,12 +2409,12 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | API-AUTH-014、SEC-AUTH-022 |
-| 根拠 | `login`・`otp/verify`・`refresh`・`mfa/*` は窓口が `no-store` を付けず、トークンや TOTP の秘密を含む応答が共有の端末や中継に残る余地があった。窓口ごとの付け忘れを無くすため、共有の proxy が `/api/auth` 配下にまとめて付ける（ADR-0415、SEC-AUTH-022-AC-02） |
+| 根拠 | `refresh` などは窓口が `no-store` を付けず（当時は `login`・`otp/verify`・`mfa/*` も）、トークンや TOTP の秘密を含む応答が共有の端末や中継に残る余地があった。窓口ごとの付け忘れを無くすため、共有の proxy が `/api/auth` 配下にまとめて付ける（ADR-0415、SEC-AUTH-022-AC-02） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト・E2E |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/design-final.md`（R10）、`docs/superpowers/plans/2026-10-28-wave3-csp-images-session.md` の Task 10 |
 
-**対応要件 ID:** API-AUTH-001・002・014・016・017・018、SEC-AUTH-022（その上は ADR-0415）
+**対応要件 ID:** API-AUTH-014・030、SEC-AUTH-022（その上は ADR-0415）
 
 **入出力:**
 
@@ -2465,7 +2433,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 条件 | 動き |
 | --- | --- |
-| `/api/auth/login`・`otp/verify`・`refresh`・`mfa/*`・`me` など `/api/auth/…` | `no-store` を付ける |
+| `/api/auth/refresh`・`me`・`email-code/*` など `/api/auth/…` | `no-store` を付ける |
 | Origin が違う `/api/auth/…` の `POST` | 403 `Forbidden origin` に `no-store` を付ける |
 | `/api/authx`・`/api/authentication/x`（境目の外れ）、`/api/search`、`/news`、`/` | 付けない |
 | `/api/order-status/…` の Origin 拒否 | 今までどおり `no-store` と `Referrer-Policy: no-referrer`（この項目の対象外） |
@@ -2473,7 +2441,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 **状態・永続化:** 持たない。
 
-**認証認可:** 無い。見出しを足すだけで、認証の判定は窓口（DD-AUTH-014〜031）が行う。
+**認証認可:** 無い。見出しを足すだけで、認証の判定は窓口（DD-AUTH-020〜028 と、パスキー・メールのコードの窓口の DD）が行う。
 
 **テスト観点:**（単体 `tests/unit/middleware/proxy-no-store.test.ts`。名前の先頭は `DD-AUTH-037`。E2E は `e2e/FR-LOGIN-030`）
 
@@ -2532,7 +2500,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 回数の制限の 429・503 | `Retry-After` に加えて `Cache-Control: private, no-store` を付ける（`withNoStore`）。`NextResponse` が使えない環境の `Response` の枝にも付ける。利用者ごとの回数の状態を共有のキャッシュに残さないため（SEC-AUTH-013）。本文を読まずに捨てる `fetch` が要求を開いたまま残す件は呼び手側で直した（波 4 の Task 1b） |
 | E2E の送り元（2026-10-28、波 4 の Task 5） | AUTH 系の E2E（`FR-LOGIN-*`・`FR-PWRESET-*`・`FR-SIGNUP-*` 13 ファイルと共通の補助 `member-session-helpers.ts`）は送り元の見出しを `x-real-ip` で付ける（E2E のアプリは固定の環境 `CLIENT_IP_HEADER` で信頼する）。`x-forwarded-for` は読まれないので、SEC-AUTH-013-AC-01（`FR-LOGIN-035`）は固定の `x-real-ip` を付けて `x-forwarded-for` だけを毎回変えて 31 回目が 429 になることを見る |
 | 取扱店の監査（`stockists/route.ts`・`[id]/route.ts` の 4 か所）・強制失効・2 要素のリセット | `clientIp` を `getClientIp(request)` から取る。取れなければ `null` のまま監査へ |
-| Turnstile の `remoteip`（`login`・`password-reset/request`・`register`） | `getClientIp(request)`。取れなければ `null` を渡す |
+| Turnstile の `remoteip`（`email-code/start`） | `getClientIp(request)`。取れなければ `null` を渡す |
 | 認証の窓口の制限の呼び出し（`src/app/api/auth/` の 14 窓口・19 か所。2026-10-28、波 4 の Task 4） | `await import('@/features/auth/middleware/rateLimit')` を先頭の静的な `import { enforceRateLimit }` に替え、`try/catch`（`console.error('Rate limit middleware error ...')`）を外した。呼び出しが投げたら握りつぶさず先へ進まない（外側の `catch` の 500。外側の `catch` が無い窓口は例外がそのまま届く）。数えの DB の失敗は今も `enforceRateLimit` が自分で 503 にする。窓口の外の動的 import（`cart`・`checkout`・`contact`・`news`・`search`・`suggest`）は握りつぶさないので替えない |
 
 **テスト観点:**（単体 `tests/unit/lib/request-ip.test.ts`。名前の先頭は `DD-AUTH-038`）
