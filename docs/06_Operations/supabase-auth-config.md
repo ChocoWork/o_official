@@ -1,10 +1,10 @@
-# 本番の Supabase Auth の設定（captcha・パスワード変更・OTP・MFA）
+# 本番の Supabase Auth の設定（captcha・OTP。パスワード変更・MFA〔TOTP〕は段4で要らなくなった）
 
 > 状態: 目標の値と手順（本番への適用は未実施。2026-11-01 に MCP で試して不可。2026-11-06 にオーナーがダッシュボードで変えると決め、「ダッシュボードで変える手順（オーナー向け）」を書いた。確認メールの必須だけは本番がすでに目標の値） | 確認日: 2026-11-22 | 対象: 本番の Supabase プロジェクト `pjidrgofvaglnuuznnyj` の Auth と PostgREST の設定、手元の `supabase/config.toml` との対応 | 設計判断: [ADR-0420](../03_BasicDesign/decisions/ADR-0420-auth-supabase-captcha-with-service-role-auth-calls.md)（captcha）、[ADR-0421](../03_BasicDesign/decisions/ADR-0421-auth-password-change-by-app-window-with-emailed-code.md)（パスワード変更。段4で廃止）
 
 ## 概要
 
-守りの穴の波 6 で、Supabase の captcha を有効にし、アプリのパスワード変更の窓口を GoTrue の設定と組み合わせる。手元の `supabase/config.toml` は本番の前提にそろえるが、**本番の Auth の設定は `config.toml` ではなく本番の Management API かダッシュボードが正**である。この文書は、本番の目標の値、API に鍵が無い・プラン依存で手で変える項目、変える手順と戻し方、3 回試して通らなかった時のダッシュボードの手順をまとめる。
+段4（2026-11-22）で、アプリのパスワードのログイン・登録・再設定・変更と TOTP を消した。**パスワード変更の窓口・パスワードの欄・TOTP の手順は、段4で要らなくなった**（記録として残す。TOTP は止める）。**メールのコード（8桁・5分）の節は、今の流れの前提なので残す**。守りの穴の波 6 で、Supabase の captcha を有効にし、アプリのパスワード変更の窓口を GoTrue の設定と組み合わせた（この窓口は段4で消えた）。手元の `supabase/config.toml` は本番の前提にそろえるが、**本番の Auth の設定は `config.toml` ではなく本番の Management API かダッシュボードが正**である。この文書は、本番の目標の値、API に鍵が無い・プラン依存で手で変える項目、変える手順と戻し方、3 回試して通らなかった時のダッシュボードの手順をまとめる。
 
 - 本番のアプリは未デプロイ（Vercel にプロジェクト無し）。本番の Auth の現在値は未読。
 - 本番を変える作業は、オーナーの許可のもとで 1 項目ずつ行う。許可なしに変えない。
@@ -43,7 +43,7 @@
 | captcha を有効にする | `security_captcha_enabled` | `true` | `[auth.captcha] enabled` | ADR-0420。**段階 B**。アプリが service role で呼ぶ版が動いてから |
 | captcha の提供元 | `security_captcha_provider` | `turnstile` | `[auth.captcha] provider` | 同上 |
 | captcha の秘密 | `security_captcha_secret` | アプリの `TURNSTILE_SECRET_KEY` と**同じ** Cloudflare のウィジェットの秘密 | `secret = "env(SUPABASE_AUTH_CAPTCHA_SECRET)"`（手元は公開のテスト用の値） | 値は文書に書かない。Cloudflare のウィジェットが無ければ作ってから。**Cloudflare のテスト用の秘密（`1x0000…AA`、常に通る）を本番に入れない**（入れるとダミーのトークンで誰でも直接 `/signup`・`/token` を叩け、captcha が無いのと同じ。段階 B の確かめ 5 で測る） |
-| 確認メールを必須にする | `mailer_autoconfirm` | `false` | `[auth.email] enable_confirmations = true` | `SEC-AUTH-016-AC-01`・`FREQ-320-AC-03`。**本番はすでに目標の値**（2026-11-01 に公開の `GET /auth/v1/settings` で `mailer_autoconfirm=false` を確認。変更不要） |
+| 確認メールを必須にする | `mailer_autoconfirm` | `false` | `[auth.email] enable_confirmations = true` | `FR-AUTH-054-AC-04`（確認前のアカウントにも8桁のコードの確認メールが届く。段4）。**本番はすでに目標の値**（2026-11-01 に公開の `GET /auth/v1/settings` で `mailer_autoconfirm=false` を確認。変更不要） |
 | メール OTP の期限（秒） | `mailer_otp_exp` | `300` | `otp_expiry` | `SEC-AUTH-029`。アプリの保留の Cookie も 5 分 |
 | メール OTP の桁数 | `mailer_otp_length` | `8` | `otp_length` | アプリの入力が 8 桁を求める |
 | パスワードの最小長 | `password_min_length` | `16` | `minimum_password_length` | `SEC-AUTH-015-AC-01`。**段4で、アプリのパスワードの窓口は無い**ので「アプリの最小長と同じ」は要らなくなった。GoTrue を直に叩く道の守りとして残す（お客さんの `password` は J のフックが拒否する） |
@@ -60,11 +60,11 @@
 | TOTP の登録・検証 | `mfa_totp_enroll_enabled`・`mfa_totp_verify_enabled` | **`false`・`false`（段4で止める。手順 4）**。段4のコードは TOTP を使わない | `[auth.mfa.totp]` | 段4まで `true`・`true`（管理者の二要素）。段4で店員はパスキーだけで入る。止める手順と残った要素は[手順書の節2の7](./passkey-production-apply-runbook.md) |
 | パスキーの有効化・RP | パスキーの有効化と WebAuthn の RP（`rp_id`・`rp_origins`。鍵名は Management API の GET の応答で確かめる） | **段3の前に決める**: `rp_id` は本番のドメイン、`rp_origins` は本番のアプリの出所（https）。手元の `localhost` を本番に持ち込まない | `[auth.passkey] enabled`・`[auth.webauthn] rp_id`・`rp_origins`（手元は `localhost`・`http://localhost:3000`） | パスキー設計・[本番への当て方の順と前提](./db-migrations.md)。`supabase config push` は流さない（手元の RP と、本番に無いフックの関数が入るため） |
 | Custom Access Token のフック | ダッシュボードの Auth の Hooks | `public.passkey_access_token_hook` を登録（**移行 B を当てた後**。段3で、E の直前） | `[auth.hook.custom_access_token]` | B より先に登録すると全員のログインが止まる。順は[本番への当て方の順と前提](./db-migrations.md) |
-| メールでのサインインを有効にする | `external_email_enabled` | `true` | `[auth.email] enable_signup` | 変えない（アプリの `/signup` が要る） |
+| メールでのサインインを有効にする | `external_email_enabled` | `true` | `[auth.email] enable_signup` | 変えない（段4でアプリの `/signup` は無くなった。GoTrue の `/signup` と、メールのコードの始めの `createUser` は残る） |
 | 新規のサインアップを許す | `disable_signup` | `false` | `[auth] enable_signup = true` | 変えない |
-| 漏洩パスワードの確認 | `password_hibp_enabled` | `true` | 手元に無い | **プラン依存**（Supabase の公式は Pro 以上。本番の組織は Free〔2026-11-06 に MCP の `get_organization` で確認〕なので今は使えない）。拒まれたら台帳へ。アプリ側の `checkPwnedPassword` は登録・再設定・変更の窓口を守るが、直接の `/signup`・`/user` には効かない |
+| 漏洩パスワードの確認 | `password_hibp_enabled` | `true` | 手元に無い | **プラン依存**（Supabase の公式は Pro 以上。本番の組織は Free〔2026-11-06 に MCP の `get_organization` で確認〕なので今は使えない）。拒まれたら台帳へ。アプリ側の `checkPwnedPassword`（段4でパスワードの窓口が消え、要らなくなった）は、以前は登録・再設定・変更の窓口を守っていたが、直接の `/signup`・`/user` には効かなかった |
 | PostgREST の最大行数 | `max_rows`（`PATCH /v1/projects/{ref}/postgrest`） | `1000`（今の値が 1000 より大きい時だけ下げる） | `[api] max_rows` | 手元は 1000 |
-| 一人一端末 | `sessions_single_per_user` | `false` のまま（キーが無い時も「オフ」として進む） | 手元に無い | `true` だと、パスワード変更の「現行パスワードの確認」の `signInWithPassword` が今の session を消し、確認コードが結んだ `session_id` が死ぬ。`true` なら段階 A に進まずオーナーに知らせる |
+| 一人一端末 | `sessions_single_per_user` | `false` のまま（キーが無い時も「オフ」として進む） | 手元に無い | （段4でアプリのパスワード変更は無い。記録）`true` だと、以前のパスワード変更の「現行パスワードの確認」の `signInWithPassword` が今の session を消し、確認コードが結んだ `session_id` が死ぬ。`true` なら段階 A に進まずオーナーに知らせる |
 
 ### 雛形
 
@@ -109,7 +109,7 @@ controller（作業者）が、オーナーの許可のもとで行う。`supaba
 ### 前提
 
 1. アプリのコード（auth の呼び出しが service role の鍵に変わった版）が `master` にあり、普段の開発がそれで動いている。
-2. 手元の切り替え（`config.toml` の差し替えと E2E）が済み、アプリのログイン・登録が captcha 有効でも通る（`SEC-AUTH-035-AC-01`）。
+2. 手元の切り替え（`config.toml` の差し替えと E2E）が済み、アプリのログイン（段4からはメールのコード・Google・パスキー。パスワードの登録・ログインは無い）が captcha 有効でも通る（`SEC-AUTH-035-AC-01`）。
 3. オーナーの許可がある（本番の Auth の設定の変更）。
 4. 個人用のアクセストークン `sbp_...`（ダッシュボードの Account → Access Tokens で作る。`auth:write` を含む）が、**作業者のシェルの環境変数 `SUPABASE_ACCESS_TOKEN` にだけ**ある。ファイル・文書・ログに書かない。
 5. 段階 B のために、本番の Turnstile の秘密が環境変数 `TURNSTILE_PROD_SECRET` にだけある（無ければ段階 B は保留）。
@@ -299,7 +299,7 @@ Security notifications が見当たらない時は、右上の自分のアイコ
 | Site URL・Redirect URLs（URL Configuration） | 本番の URL ができてから | アプリの確認の戻り先の住所が決まっていない |
 | Rate Limits（サインイン・サインアップの回数） | 開店前 | 全員が Vercel の出口から呼ぶので、上げる値を開店前に決める |
 | SMTP Settings | 開店前 | 手順 6 で今の姿を見るだけ |
-| Prevent use of leaked passwords | Pro に上げた時 | Free では使えない。アプリの登録・再設定・変更の画面は、アプリが自分で漏れたパスワードを拒んでいる |
+| Prevent use of leaked passwords | Pro に上げた時 | Free では使えない。（段4で、アプリのパスワードの登録・再設定・変更の画面は無くなった。以前はアプリが自分で漏れたパスワードを拒んでいた） |
 
 ### 終わったら
 

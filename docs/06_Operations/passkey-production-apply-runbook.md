@@ -6,11 +6,11 @@
 
 この手順書は、パスキーの移行11本（A〜K）を本番へ当てる順・確かめ・戻し方を1か所にまとめる。A〜I は段1〜3b で作った。**J・K は段4（2026-11-22）で足した**: J はお客さんの `password` でのログインをフックで拒否する旗を真にする（1行の `UPDATE`）。K は使わなくなったパスワード用の表2つと関数3つを消す。なお、2026-11-19 にオーナーが、GoTrue を直に叩く鍵の削除の穴を認めた（22b は行わない）。各移行の中身と手元の確認は [db-migrations.md](./db-migrations.md) の各節が正本で、ここはそれを順に流すための手順にする。
 
-- 当てるのは調整役だけで、**オーナーの許可を得た時だけ**。本番へ向けて流す SQL・操作には「調整役がオーナーの許可を得てから」と書く。書いていない SQL は読むだけの `select`。
+- 当てるのは調整役だけで、**オーナーの許可を得た時だけ**。本番へ向けて流す SQL・操作には「調整役がオーナーの許可を得てから」と書く。書いていない SQL は読むだけの `select`。**読むだけの `select` は、調整役が当てる作業の中で流し、結果をオーナーに報告する（その都度の許可は要らない）。書き込み（`UPDATE`・戻しの `ROLLBACK`・`apply_migration`・設定の変更）は、必ず「調整役がオーナーの許可を得てから」。**
 - 移行は Supabase の MCP の `apply_migration` で1本ずつ当てる。`supabase db push`（どの形でも）と `workflow_dispatch` は流さない。
 - 本番の独自のドメインが決まるまで、1本も当てない（オーナー決定 2026-11-16・2026-11-19）。J・K も A〜I と同じで、手元だけにあり、本番には当てていない。
 - この master を、手順の途中でアプリとして本番にデプロイしない。デプロイは節2の決まった位置で行う（店員のパスワード＋TOTP の入り方は、この master のアプリと移行・フックで止まる。段4で、パスワードと認証アプリ〔TOTP〕のログインの窓口・画面とコマンド `admin:bootstrap` を消した）。
-- **アプリをデプロイしたら、J まで間を空けない**（節2の8）。J を当てるまでは、GoTrue への直のパスワードの道（`grant_type=password`）が開いたままで、他人が先に付けたパスワードで入れる。
+- **お客さんがメールのコードで入れることを確かめたら、すぐ J を当てる**（節2の8。デプロイの後の 4〜7 が済んでから、2c の確かめを行い、それが済んだらそれ以上の間を空けない）。J を当てるまでは、GoTrue への直のパスワードの道（`grant_type=password`）が開いたままで、他人が先に付けたパスワードで入れる。
 
 ## 1. 前提（全部そろうまで1本も当てない）
 
@@ -54,8 +54,8 @@
           and exists (select 1 from public.user_roles ur join public.roles r on r.id = ur.role_id
                        where ur.user_id = f.user_id and r.code in ('admin', 'supporter'))) as staff_totp_factors;
     ```
-    - 記録の上では、本番の4人は役割の印が店長の試し用で、お客さんではない。パスワードだけのお客さんと確認前の登録は0人。**読んで数え、記録と違えば止めて報告する**。
-    - **`unconfirmed_signups` が1件でもあれば、消すか、確認を済ませるかを、オーナーが決める**（オーナーの答え1は A。確認メールに8桁の数字を入れる運用が前提で、確認前の人もその数字で入れる。決まるまで J を当てない）。消す・確認済みにするのも**調整役がオーナーの許可を得てから**。
+    - **記録は2つあり、食い違う**。段4の計画の記録: 本番の4人は役割の印が店長の試し用で、お客さんではなく、パスワードだけのお客さんと確認前の登録は0人。[supabase-auth-config.md](./supabase-auth-config.md) の2026-11-01 の読みの記録: 生きている利用者8人、うち未確認2人（`@example.com` の試験用の会員）。**どちらの記録も当てにせず、この SQL の読みが決める**。確認前の登録が1件でもあれば、J の前にオーナーが決める（次の項）。
+    - **`unconfirmed_signups` が1件でもあれば、消すか、確認を済ませるかを、オーナーが決める**（オーナーの答え1は A。確認メールに8桁の数字を入れる運用が前提で、確認前の人もその数字で入れる。決まるまで J を当てない。**確認前のアカウントは、必ず J の前にオーナーへ渡す**）。消す・確認済みにするのも**調整役がオーナーの許可を得てから**。
     - `customers_with_password` は、J を当てると `password` で入れなくなる人の数（メールのコード・Google・パスキーで入る）。0でなければ、オーナーに知らせる。
 11. **本番の権限が手元の最終の姿と同じ**（K の戻しの正本は手元の最終の姿なので、K を当てる前に比べる。読むだけ）。本番の `relacl`・`proacl`・`proconfig`・方針の数が、手元と同じであること。違えば K を当てず、報告する（K の戻しで戻る権限が、本番の今の権限と食い違う）。
     ```sql
@@ -64,13 +64,14 @@
       from pg_class c
      where c.oid in ('public.password_reset_tokens'::regclass, 'public.password_change_challenges'::regclass)
      order by c.relname;
-    select p.proname, p.proacl::text, p.proconfig::text, p.prosecdef, pg_get_userbyid(p.proowner) as owner
+    select p.proname, p.proacl::text, array_to_string(p.proconfig, ',') = 'search_path=""' as search_path_empty,
+           p.prosecdef, pg_get_userbyid(p.proowner) as owner
       from pg_proc p
      where p.pronamespace = 'public'::regnamespace
        and p.proname in ('issue_password_change_challenge', 'consume_password_change_challenge', 'cleanup_password_reset_tokens')
      order by p.proname;
     ```
-    期待（手元で K の前に控えた値）: 2表とも `relacl` が `{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}`・RLS 有効（`relrowsecurity` が `t`）・`policies` が3。3関数とも `proacl` が `{postgres=X/postgres,service_role=X/postgres}`・`proconfig` が `{search_path=""}`・`prosecdef` が `t`・`owner` が `postgres`。**この SQL（読むだけ）も、本番へは調整役がオーナーの許可を得てから流す**。
+    期待（手元で K の前に控えた値）: 2表とも `relacl` が `{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}`・RLS 有効（`relrowsecurity` が `t`）・`policies` が3。3関数とも `proacl` が `{postgres=X/postgres,service_role=X/postgres}`・`search_path_empty` が `true`（`proconfig` が `search_path=""` の1要素。引用符の表示に左右されない比べ方）・`prosecdef` が `t`・`owner` が `postgres`。この SQL は読むだけなので、調整役が当てる作業の中で流す。
 
 ## 2. 当てる順
 
@@ -87,7 +88,7 @@
      <p>ログインの画面にこの8桁の数字を入れると、会員登録が終わります。</p>
      <p>有効期限は5分です。心当たりがない場合は、このメールを破棄してください。</p>
      ```
-   - **2c. 答え5は A**: 確認前のアカウントの確認メールにも `{{ .Token }}`（8桁。有効期限・桁数はメールのコードと同じ。`mailer_otp_length` が8・`mailer_otp_exp` が300）が入る。デプロイの後、**確認前のアカウントで、メールの数字を入れて入れることを1回確かめる**（手元の Task 26 (e) と同じ確かめを、J を当てる前に本番で1回。**調整役がオーナーの許可を得てから**。確かめに使うアドレスはオーナーのもので、本番の `auth.users` に1行できる。終わったら、そのアカウントを管理 API で消すかをオーナーが決める）。入れなければ J を当てない。
+   - **2c. 答え5は A**: 確認前のアカウントの確認メールにも `{{ .Token }}`（8桁。有効期限・桁数はメールのコードと同じ。`mailer_otp_length` が8・`mailer_otp_exp` が300）が入る。デプロイの後、**確認前のアカウントで、メールの数字を入れて入れることを1回確かめる**（手元の Task 26 (e) と同じ確かめを、J を当てる前に本番で1回。**調整役がオーナーの許可を得てから**。確かめには、節1の10の読みで見つけた**既存の確認前のアカウント**を使う〔オーナーの許可を得て、その持ち主の数字で入る〕。**新しく作る道は無い**: アプリは段4で、確認前のアカウントを作れなくなった（メールのコードの始めは、確認済みで作る）。節1の10の読みで確認前のアカウントが0件なら、**この確かめは対象が無い。『確認前のアカウントは0件、アプリはもう作れないので、2c は対象なし』と記録して、次へ進む**）。入れない場合は J を当てない。
 4. `supabase/pending/schedule_stripe_webhook_worker.sql` を、新しい版の移行として当てる（`supabase/pending/README.md` の手順。**アプリのデプロイの後**。登録した時点から入口が毎分呼ばれる。死んだ知らせの点検と worker の心拍は、この毎分の入口の終わりで動くので、I はこの前に当てておく）。
    - **これは Stripe の webhook の worker も本番で動かし始める**。開店の準備の行3の保留の定期処理4本と一緒に、オーナーと決める。
    - 前提は Vault の `cron_secret`・`app_base_url`（名前の存在だけを確かめ、値は見ない）。
@@ -103,18 +104,18 @@
    ```
    **E は権限を奪う側**（`has_permission` を切り替え、全員の管理の権限をパスキーの入り方だけに絞る）なので、他の物と一緒に「害の無い物」に入れない。当てたら、最初の店長が `/admin` に入れることを確かめる。
 7. **TOTP を止める**（ダッシュボード。**調整役がオーナーの許可を得てから**）。段4のコードは TOTP を使わない（登録も確認もしない）ので、**Authentication → Multi-Factor の Authenticator App (TOTP) の Enroll と Verify を、両方オフにする**（鍵名は `mfa_totp_enroll_enabled`・`mfa_totp_verify_enabled`。手順は [supabase-auth-config.md](./supabase-auth-config.md) の「手順 4」）。止める前の値を控える（戻す時に使う）。戻す時は節4の (2b)。
-   - **店員の TOTP の要素の残り**: H の招待・やり直しの取引が、招待された人の要素を消す。招待・やり直しをしない店員の要素は残る（Verify を止めたので使えない。害は無いが、数を読んで記録する）。残りを読む（読むだけ。**調整役がオーナーの許可を得てから**本番へ流す）。
+   - **店員の TOTP の要素の残り**: H の招待・やり直しの取引が、招待された人の要素を消す。招待・やり直しをしない店員の要素は残る（Verify を止めたので使えない。害は無いが、数を読んで記録する）。残りを読む（読むだけ。調整役が流し、結果を報告する）。
      ```sql
      select count(distinct f.user_id) as users, count(*) as factors
        from auth.mfa_factors f
       where f.factor_type = 'totp';
      ```
      全員が招待かやり直しで入り直したなら `factors` は0になる。0でなければ、残りを消すかをオーナーが決める（消すのも**調整役がオーナーの許可を得てから**。普段はアプリの招待・やり直しに任せ、手で消さない）。
-8. **J を当てる**（**調整役がオーナーの許可を得てから**）。**アプリをデプロイしたら、J まで間を空けない**。順は次のとおり。
+8. **J を当てる**（**調整役がオーナーの許可を得てから**）。**お客さんがメールのコードで入れることを確かめたら、すぐ J を当てる**。順は次のとおり（デプロイ〔3〕の後に 4〜7 があり、時間がかかることがある。間を空けないのは、2c の確かめが済んでから J までの間）。
    1. アプリをデプロイし（節2の3）、確認メールの雛形（上の 2b）が貼り替わっていること。
    2. **お客さんがメールのコードで入れることを確かめる**（上の 2c の確かめ）。
-   3. すぐ J を当てる（節3の表の J の行。前の確かめ → `apply_migration` → 突き合わせ → 成功の印）。
-   - 間を空けない理由: J を当てるまでは、GoTrue への直のパスワードの道（`grant_type=password`）が開いたままで、他人が先に付けたパスワードで入れる。本番は公開前でお客さんは記録の上で0人なので危険は小さいが、間を空けない。
+   3. 確かめが済んだら、**すぐ** J を当てる（節3の表の J の行。前の確かめ → `apply_migration` → 突き合わせ → 成功の印）。
+   - すぐ当てる理由: J を当てるまでは、GoTrue への直のパスワードの道（`grant_type=password`）が開いたままで、他人が先に付けたパスワードで入れる。本番は公開前でお客さんは記録の上で0人なので危険は小さいが、すぐ当てる。
    - 外れたら: 当てない。J を当てた後に問題が出たら、節4の (0b)（旗の戻し）で戻る。
 9. **K を当てる**（**調整役がオーナーの許可を得てから**）。**J の後**。デプロイしたアプリが、消した窓口（パスワードの再設定・変更の窓口と、パスワードのログインの窓口）を呼ぶ物が無いことを確かめてから（アプリのログに、消した窓口への呼び出しや、消した表・関数を呼ぶ失敗が無いこと）。前の確かめに節1の10・11を含める。当てた後、成功の印は節3の表の K の行。
 
@@ -132,7 +133,7 @@
    - MCP の `apply_migration` で当てると、本番はファイル全体を1つの文として記録する。だから `n_statements` は1で、`statements[1]` の MD5 はファイルの MD5 と同じになる（`n_statements` が1でなければ、この前提が崩れているので止める）。
    - **手元の `db reset` の値とは比べない**。手元は CLI が文を分けて記録するので `md5(statements[1])` が別の値になる（各節の「手元の値（参考）」）。
    - 違えば、当てる途中で字が変わっている（全角の空白など）。止めて報告する。
-5. ファイルの名前を、当てた版に付け替える（[db-migrations.md](./db-migrations.md) の「MCP の apply_migration で当てた場合」と同じ）。付け替えると手元の順は当てた順（A→…→I→E）になる。**間に作った移行が passkey の物に依存していないか**を、付け替えの後の `db reset` で確かめる。
+5. ファイルの名前を、当てた版に付け替える（[db-migrations.md](./db-migrations.md) の「MCP の apply_migration で当てた場合」と同じ）。付け替えると手元の順は当てた順（A→…→I→E→J→K）になる。**間に作った移行が passkey の物に依存していないか**を、付け替えの後の `db reset` で確かめる。
    - **付け替えたら、古いファイル名と古い版への参照を全部そろえる**（会計の移行の前例 Ruling T15b-apply。[db-migrations.md](./db-migrations.md) の「付け直したら、ファイル名を固定で書いた試験と文書の参照も同じ版にそろえる」）。`grep -rn <古い版> tests e2e src docs scripts` を流し、該当を全部、同じコミットで新しい版に直す。ファイルを名前で読む結合試験（`tests/integration/db/auth_passkey_*` と `auth_has_permission_passkey*` の `readFileSync`）、`src/lib/auth/staff-passkey-*.ts` の注釈、`db-migrations.md` の各節が該当する。直した後に、その結合試験を `--runInBand` で流す。
 6. 前の確かめで途中で止まったら、止めて、すでに当てた物は戻さない（単独で権限を奪わない物から先に当てる順にしてあるため）。
 
@@ -269,13 +270,13 @@ select count(*) from public.password_change_challenges;
 | (6) | **G** | `select count(*) from information_schema.columns where table_schema='private' and table_name='passkey_notification_outbox' and column_name in ('lease_token','lease_expires_at','last_error_code','sent_at','finished_at');` が `5` | 同じ SQL が `0` |
 | (7) | **F** | `select to_regprocedure('public.passkey_is_staff(uuid)') is not null;` が `true` | `select to_regprocedure('public.passkey_is_staff(uuid)') is null and (select md5(prosrc) from pg_proc where oid = 'public.passkey_approve(uuid,uuid,text)'::regprocedure) = 'e0b5dc02ecfcb5533cd91a00edc55fe4';` が `true` |
 | (8) | **D**（E を戻した後） | `select to_regprocedure('private.staff_idle_ok(uuid)') is not null;` が `true` | 同じ SQL が `false`。`select to_regclass('private.staff_session_activity');` が `null` |
-| (9) | **C**（先に関数を空にし、引き金の削除はサポートに依頼） | `select count(*) from pg_trigger where tgname = 'passkey_credentials_notify' and not tgisinternal;` が `1` | 関数を空にした後: `select prosrc from pg_proc where oid = 'private.passkey_credentials_notify()'::regprocedure;` が `RETURN NULL` だけ。引き金の削除（サポート）の後: 上の `count(*)` が `0`、`select to_regprocedure('private.passkey_credentials_notify()');` が `null` |
+| (9) | **C**（先に関数を空にし、引き金の削除はサポートに依頼） | `select count(*) from pg_trigger where tgname = 'passkey_credentials_notify' and not tgisinternal;` が `1` | 関数を空にした後: `select btrim(regexp_replace(prosrc, '\s+', ' ', 'g')) = 'BEGIN RETURN NULL; END' from pg_proc where oid = 'private.passkey_credentials_notify()'::regprocedure;` が `true`（空白の違いを畳んだ上で、本文が `BEGIN RETURN NULL; END` の1文だけ）。引き金の削除（サポート）の後: 上の `count(*)` が `0`、`select to_regprocedure('private.passkey_credentials_notify()');` が `null` |
 | (10) | **B**（フックの登録を外した後） | `select to_regprocedure('public.passkey_access_token_hook(jsonb)') is not null;` が `true` | 同じ SQL が `false` |
 | (11) | **A**（C の引き金が無くなった後） | `select to_regclass('private.passkey_staff_config') is not null;` が `true` | `select to_regclass('private.passkey_staff_config') is null;` が `true` |
 
 (0)・(0b) は、K・J を当てた後に戻す時だけ要る。K・J を当てる前に戻すなら、(1) から始める。**J を (1) より先に戻す理由**: (1) で古いアプリを出してから (2) でフックの登録を外すまでの間も、旗が効いたままだと、お客さんが入れない。(2) でフックの登録を外せば旗は効かなくなるので、この順の理由は、その間を守るため。K を先に戻す理由は、K の戻しが消した表・関数を作り直す（古いアプリが呼ぶ）ためで、J の前に済ませる。
 
-**(0) の本文**（K を戻す）: K のファイルの頭書きの `ROLLBACK` の文（`BEGIN;` から `COMMIT;` まで。1つの取引）を、そのまま流す（**調整役がオーナーの許可を得てから**）。K を当てる前の最終の姿（締め直した権限を含む）に作り直す。`20260901102912` の文を代わりに流さない（`anon`・`authenticated` への権限が戻ってしまう）。流した後に、節1の11の SQL で `relacl`・`proacl` を読み、期待と同じことを確かめる。**消した行は戻らない**（中身は期限つきの確認用のハッシュだけ）。
+**(0) の本文**（K を戻す）: K のファイルの頭書きの `ROLLBACK` の文（`BEGIN;` から `COMMIT;` まで。1つの取引）を流す。**頭書きは SQL のコメントなので、各行の先頭の `--   ` を外してから流す**（1行で外す例。Git Bash で、K のファイルから `BEGIN;` 〜 `COMMIT;` の範囲を取り、先頭を外す: `sed -n '/^--   BEGIN;/,/^--   COMMIT;/p' supabase/migrations/20261122070500_drop_password_auth_objects.sql | sed 's/^--   //'`。本体の `BEGIN;`〔先頭に `--` が無い〕は範囲に入らない。結合試験 `auth_passkey_stage4_migrations` も同じ外し方をしている）（**調整役がオーナーの許可を得てから**）。K を当てる前の最終の姿（締め直した権限を含む）に作り直す。`20260901102912` の文を代わりに流さない（`anon`・`authenticated` への権限が戻ってしまう）。流した後に、節1の11の SQL で `relacl`・`proacl` を読み、期待と同じことを確かめる。**消した行は戻らない**（中身は期限つきの確認用のハッシュだけ）。
 
 **(0b) の本文**（J を戻す）: `UPDATE private.passkey_staff_config SET reject_customer_password = false WHERE id;`（**調整役がオーナーの許可を得てから**）。古いアプリへ戻すことがあれば、**その前にこれを済ませる**。
 
