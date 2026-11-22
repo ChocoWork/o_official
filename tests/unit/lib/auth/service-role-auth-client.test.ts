@@ -8,7 +8,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 jest.mock('next/headers', () => ({ cookies: jest.fn(), headers: jest.fn() }));
 
 function fakeAuthFunctions() {
-  return { signInWithOtp: jest.fn(), resend: jest.fn() };
+  return { signInWithOtp: jest.fn() };
 }
 
 describe('DD-AUTH-040 createServiceRoleAuthClient', () => {
@@ -52,8 +52,8 @@ describe('DD-AUTH-040 createServiceRoleAuthClient', () => {
     expect('rpc' in client).toBe(false);
     expect('storage' in client).toBe(false);
     expect(typeof client.auth.signInWithOtp).toBe('function');
-    expect(typeof client.auth.resend).toBe('function');
-    // パスワードの道（signInWithPassword・signUp）はパスキー段4で消した。
+    // パスワードの道（signInWithPassword・signUp）と、呼び手が無い resend はパスキー段4で消した。
+    expect('resend' in client.auth).toBe(false);
     expect('signInWithPassword' in client.auth).toBe(false);
     expect('signUp' in client.auth).toBe(false);
   });
@@ -117,11 +117,11 @@ describe('DD-AUTH-040 createServiceRoleAuthClient', () => {
     const { createServiceRoleAuthClient: fresh } = await import('@/lib/auth/service-role-auth-client');
     const client = await fresh();
     expect(Object.keys(client)).toEqual(['auth']);
-    expect(Object.keys(client.auth).sort()).toEqual(['resend', 'signInWithOtp']);
+    expect(Object.keys(client.auth).sort()).toEqual(['signInWithOtp']);
   });
 
-  test('DD-AUTH-040 auth.admin・auth.mfa などの残りの auth の機能には届かない（2 つの関数だけ）', async () => {
-    const fakeAuth = { ...fakeAuthFunctions(), signInWithPassword: jest.fn(), signUp: jest.fn(), admin: { deleteUser: jest.fn() }, mfa: {}, getSession: jest.fn() };
+  test('DD-AUTH-040 auth.admin・auth.mfa などの残りの auth の機能には届かない（signInWithOtp だけ）', async () => {
+    const fakeAuth = { ...fakeAuthFunctions(), signInWithPassword: jest.fn(), signUp: jest.fn(), resend: jest.fn(), admin: { deleteUser: jest.fn() }, mfa: {}, getSession: jest.fn() };
     jest.resetModules();
     jest.doMock('@supabase/supabase-js', () => ({ createClient: () => ({ auth: fakeAuth }) }));
     const { createServiceRoleAuthClient: fresh } = await import('@/lib/auth/service-role-auth-client');
@@ -131,33 +131,32 @@ describe('DD-AUTH-040 createServiceRoleAuthClient', () => {
     expect('getSession' in client.auth).toBe(false);
     expect('signInWithPassword' in client.auth).toBe(false);
     expect('signUp' in client.auth).toBe(false);
+    expect('resend' in client.auth).toBe(false);
     expect((client.auth as unknown as Record<string, unknown>).admin).toBeUndefined();
   });
 
-  test('DD-AUTH-040 本物の SDK の client でも auth.admin に届かず、2 つの関数は束ねられていて取り出して呼べる', async () => {
+  test('DD-AUTH-040 本物の SDK の client でも auth.admin に届かず、signInWithOtp は束ねられていて取り出して呼べる', async () => {
     const client = await createServiceRoleAuthClient();
     expect('admin' in client.auth).toBe(false);
-    expect(Object.keys(client.auth).sort()).toEqual(['resend', 'signInWithOtp']);
+    expect(Object.keys(client.auth).sort()).toEqual(['signInWithOtp']);
     const { signInWithOtp } = client.auth;
     const result = await signInWithOtp({ email: 'user@example.invalid', options: { shouldCreateUser: false } });
     expect(result.error).toBeNull();
     expect(requests.some(r => r.path.endsWith('/otp'))).toBe(true);
   });
 
-  test('DD-AUTH-040 signInWithOtp の後に resend を呼んでも、両方の要求がサービスの鍵のまま', async () => {
+  test('DD-AUTH-040 signInWithOtp の要求はサービスの鍵で送られ、2 回呼んでも鍵は混ざらない', async () => {
     const client = await createServiceRoleAuthClient();
-    const otp = await client.auth.signInWithOtp({ email: 'user@example.invalid', options: { shouldCreateUser: false } });
-    expect(otp.error).toBeNull();
-    await client.auth.resend({ type: 'signup', email: 'user@example.invalid' });
+    const first = await client.auth.signInWithOtp({ email: 'user@example.invalid', options: { shouldCreateUser: false } });
+    expect(first.error).toBeNull();
+    await client.auth.signInWithOtp({ email: 'other@example.invalid', options: { shouldCreateUser: false } });
 
-    const otpRequest = requests.find(r => r.path.endsWith('/otp'));
-    const resend = requests.find(r => r.path.endsWith('/resend'));
-    expect(otpRequest).toBeDefined();
-    expect(resend).toBeDefined();
-    expect(otpRequest?.authorization).toBe('Bearer fake-service-key');
-    expect(resend?.authorization).toBe('Bearer fake-service-key');
-    expect(otpRequest?.apikey).toBe('fake-service-key');
-    expect(resend?.apikey).toBe('fake-service-key');
+    const otp = requests.filter(r => r.path.endsWith('/otp'));
+    expect(otp).toHaveLength(2);
+    for (const request of otp) {
+      expect(request.authorization).toBe('Bearer fake-service-key');
+      expect(request.apikey).toBe('fake-service-key');
+    }
   });
 
   test('DD-AUTH-040 auth だけのクライアントを作っても createServiceRoleClient の DB 要求は混ざらない', async () => {

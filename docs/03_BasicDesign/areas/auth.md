@@ -119,7 +119,7 @@ sequenceDiagram
 ```
 
 - 1段目で得た Supabase の session は捨て、Cookie に入れない。トークンを配るのは2段目を通った時だけ
-- 1段目（パスワードの確かめと確認コードの送信）・再送・会員登録の呼び出しは、Supabase の captcha を免除される管理者資格（サービスの鍵）の auth だけの client で行う。Supabase の captcha をオンにして、アプリを通らない直の呼び出しをトークン無しで 400 にするための前提（ADR-0420、DD-AUTH-040、SEC-AUTH-035）。この client は `signInWithOtp`・`resend` の 2 つの関数だけを持ち（`signInWithPassword`・`signUp` はパスキー段4の Task 33 で外した）、`auth.admin`・`auth.mfa` には届かない（最終レビュー指摘 4、2026-11-01）。Supabase が captcha を理由に断った時は 5xx と監査に残し、資格情報の誤りに丸めない。1段目のパスワードの確かめで GoTrue が回数の制限（429）を返した時は 429＋`Retry-After`・監査 `supabase_rate_limited`、5xx・通信の失敗は 503・監査 `supabase_unavailable` にし、同じく 401 に丸めない（資格情報の誤り・未確認のメールだけが同じ本文の 401。SEC-AUTH-035-AC-02）。2段目（`verifyOtp`）は captcha が掛からないので匿名の client のまま
+- 1段目（パスワードの確かめと確認コードの送信）・再送・会員登録の呼び出しは、Supabase の captcha を免除される管理者資格（サービスの鍵）の auth だけの client で行う。Supabase の captcha をオンにして、アプリを通らない直の呼び出しをトークン無しで 400 にするための前提（ADR-0420、DD-AUTH-040、SEC-AUTH-035）。この client は `signInWithOtp` の 1 つの関数だけを持ち（`signInWithPassword`・`signUp`・`resend` はパスキー段4の Task 33 で外した）、`auth.admin`・`auth.mfa` には届かない（最終レビュー指摘 4、2026-11-01）。Supabase が captcha を理由に断った時は 5xx と監査に残し、資格情報の誤りに丸めない。1段目のパスワードの確かめで GoTrue が回数の制限（429）を返した時は 429＋`Retry-After`・監査 `supabase_rate_limited`、5xx・通信の失敗は 503・監査 `supabase_unavailable` にし、同じく 401 に丸めない（資格情報の誤り・未確認のメールだけが同じ本文の 401。SEC-AUTH-035-AC-02）。2段目（`verifyOtp`）は captcha が掛からないので匿名の client のまま
 - 宛先のメールはいつも保留の Cookie から取り、本文から受けない（FREQ-336-REQ-03）
 - 保留の取り消し（API-AUTH-004）・再送（API-AUTH-003）・上限での破棄の動きは STATE-AUTH-001
 - Google のログインはこの2段を通らない（FLOW-AUTH-002）。会員の Google ログインに2段目を求めるかは決めていない（SEC-AUTH-008 の会員の部分）
