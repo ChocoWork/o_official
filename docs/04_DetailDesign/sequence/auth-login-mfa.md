@@ -45,6 +45,7 @@ sequenceDiagram
   UI->>Verify: POST /api/auth/email-code/verify
   Verify-->>UI: 200 と認証Cookie
   UI->>Post: POST /api/auth/post-login
+  Note over UI,Post: 店員はメールのコードで入れない（フックが拒否する）。下の店員の枝には、パスキーのログインの後で着く
   alt お客さん
     Post->>Store: 1 回で使い切る
     Post-->>UI: 戻り先か / と Cookie 削除

@@ -4,7 +4,7 @@
  * @packageDocumentation
  * @impl IMPL-AUTH-363
  * @design DD-AUTH-076
- * @remarks 取り返しがつかないので、確認の語と理由（10〜500字）を求める（ADR-0471）。監査には理由の文を残さず、長さ（`reason_length`）だけを残す（SEC-ADMIN-008）。自分自身・最後の店長は DB が断る。今の役割は発行の前に読んで控え、役割が無い人（店員でない人）は DB の発行を呼ばずに 409 `not_staff` で断る。監査には理由の長さだけを残す。
+ * @remarks 取り返しがつかないので、確認の語と理由（10〜500字）を求める（ADR-0471）。監査には理由の文を残さず、長さ（`reason_length`）だけを残す（SEC-ADMIN-008）。自分自身・最後の店長は DB が断る。今の役割は発行の前に読んで控え、役割が無い人（店員でない人）は DB の発行を呼ばずに 409 `not_staff` で断る。
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
