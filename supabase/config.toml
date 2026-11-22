@@ -247,8 +247,8 @@ otp_expiry = 300
 subject = "ログインの確認コード"
 content_path = "./supabase/templates/magic_link.html"
 
-# 会員登録の確認メール。アプリの確認の窓口（/api/auth/confirm）は query の token_hash と type=signup を読む。
-# GoTrue の既定の ConfirmationURL（/auth/v1/verify）だと、印が GoTrue で使い切られ fragment で戻るため窓口で落ちる。
+# 確認前のアカウントがメールのコードのログインを始めた時に届く確認メール。リンクは付けず、本文の8桁のコード（{{ .Token }}）を入力させる。
+# コードを入れると確認済みになる（アプリの確認のリンクの窓口は消した。ADR-0469）。
 [auth.email.template.confirmation]
 subject = "メールアドレスの確認"
 content_path = "./supabase/templates/confirmation.html"

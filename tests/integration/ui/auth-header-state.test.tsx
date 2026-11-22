@@ -30,11 +30,6 @@ jest.mock('next/link', () => ({
   ),
 }));
 
-jest.mock('@/components/LoginModal', () => ({
-  __esModule: true,
-  default: () => null,
-}));
-
 function setScrollY(value: number) {
   Object.defineProperty(window, 'scrollY', { value, configurable: true, writable: true });
 }

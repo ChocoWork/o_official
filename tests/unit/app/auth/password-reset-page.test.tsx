@@ -348,7 +348,7 @@ describe("PasswordResetPage 申請", () => {
     expect(screen.getByText("迷惑メールフォルダをご確認ください")).toBeInTheDocument();
     expect(screen.getByText("再送信すると前回のリンクは無効です")).toBeInTheDocument();
     expect(screen.queryByText(/user@example\.com/)).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "ログインへ" })).toHaveAttribute("href", "/login/password");
+    expect(screen.getByRole("link", { name: "ログインへ" })).toHaveAttribute("href", "/login");
     expect(screen.getByRole("button", { name: "別のアドレスで送信" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Email")).not.toBeInTheDocument();
   });
@@ -800,7 +800,7 @@ describe("PasswordResetPage 新しいパスワード", () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "パスワード再設定" })).not.toBeInTheDocument();
     expect(screen.getByText("新しいパスワードでログインしてください。")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "ログインへ" })).toHaveAttribute("href", "/login/password");
+    expect(screen.getByRole("link", { name: "ログインへ" })).toHaveAttribute("href", "/login");
     expect(screen.queryByLabelText("New Password (16+ characters)")).not.toBeInTheDocument();
     expect(screen.queryByText(/user@example\.com/)).not.toBeInTheDocument();
   });

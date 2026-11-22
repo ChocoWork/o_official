@@ -20,16 +20,9 @@ interface LoginContextType {
   /** `/api/auth/me` が未認証の理由を返した時の値（店員の無操作1時間は 'idle'）。それ以外は null */
   authReason: string | null;
   refreshAuthState: () => Promise<void>;
-  login: (email: string, password: string, turnstileToken?: string, options?: { next?: string }) => Promise<{ success: boolean; error?: string; message?: string }>;
-  register: (email: string, password: string, turnstileToken?: string, options?: { next?: string }) => Promise<{ success: boolean; error?: string; message?: string }>;
-  verifyOtp: (code: string) => Promise<{ success: boolean; error?: string; message?: string }>;
   loginWithGoogle: (params?: { next?: string }) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<{ success: boolean; error?: string }>;
 }
-
-type OtpVerifySuccessBody = {
-  message?: string;
-};
 
 type AuthStateResponseBody = {
   authenticated?: boolean;
@@ -99,116 +92,6 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
       applyAuthState(false);
     }
   }, [applyAuthState]);
-
-  const login = async (email: string, password: string, turnstileToken?: string, options?: { next?: string }) => {
-    try {
-      const { LoginRequestSchema } = await import('@/features/auth/schemas/login');
-      const parsed = LoginRequestSchema.safeParse({ email, password, turnstileToken });
-      if (!parsed.success) {
-        return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ') };
-      }
-
-      const resp = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ email, password, turnstileToken, ...(options?.next ? { next: options.next } : {}) }),
-      });
-
-      const body: unknown = await resp.json().catch(() => null);
-      if (!resp.ok) {
-        const message =
-          typeof body === 'object' && body && 'error' in body && typeof (body as { error?: unknown }).error === 'string'
-            ? (body as { error: string }).error
-            : 'ログインに失敗しました';
-        return { success: false, error: message };
-      }
-
-      const message =
-        typeof body === 'object' && body && 'message' in body && typeof (body as { message?: unknown }).message === 'string'
-          ? (body as { message: string }).message
-          : '認証コードを送信しました。メールに届いたコードを入力してください。';
-
-      return { success: true, message };
-    } catch (e) {
-      console.error('Login error', e);
-      return { success: false, error: '内部エラーが発生しました' };
-    }
-  };
-
-  const register = async (email: string, password: string, turnstileToken?: string, options?: { next?: string }) => {
-    try {
-      const { RegisterRequestSchema } = await import('@/features/auth/schemas/register');
-      const parsed = RegisterRequestSchema.safeParse({ email, password, turnstileToken });
-      if (!parsed.success) {
-        return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ') };
-      }
-
-      const resp = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, turnstileToken, ...(options?.next ? { next: options.next } : {}) }),
-      });
-
-      const body: unknown = await resp.json().catch(() => null);
-      if (!resp.ok) {
-        const message =
-          typeof body === 'object' && body && 'error' in body && typeof (body as { error?: unknown }).error === 'string'
-            ? (body as { error: string }).error
-            : '登録に失敗しました';
-        return { success: false, error: message };
-      }
-
-      const message =
-        typeof body === 'object' && body && 'message' in body && typeof (body as { message?: unknown }).message === 'string'
-          ? (body as { message: string }).message
-          : '確認メールを送信しました。メールのリンクから登録を完了してください。';
-
-      return { success: true, message };
-    } catch (e) {
-      console.error('Register error', e);
-      return { success: false, error: '内部エラーが発生しました' };
-    }
-  };
-
-  const verifyOtp = async (code: string) => {
-    try {
-      // 宛先はサーバーが 2FA Cookie から取る。クライアントは code だけを送る。
-      const { OtpVerifyRequestSchema } = await import('@/features/auth/schemas/otp');
-      const parsed = OtpVerifyRequestSchema.safeParse({ code });
-      if (!parsed.success) {
-        return { success: false, error: parsed.error.issues.map((i) => i.message).join(' ') };
-      }
-
-      const resp = await fetch('/api/auth/otp/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ code }),
-      });
-
-      const body: unknown = await resp.json().catch(() => null);
-      if (!resp.ok) {
-        const message =
-          typeof body === 'object' && body && 'error' in body && typeof (body as { error?: unknown }).error === 'string'
-            ? (body as { error: string }).error
-            : '認証に失敗しました';
-        return { success: false, error: message };
-      }
-
-      const successBody = typeof body === 'object' && body ? (body as OtpVerifySuccessBody) : null;
-      const message =
-        typeof successBody?.message === 'string'
-          ? successBody.message
-          : '認証に成功しました。';
-
-      await syncAuthState();
-      return { success: true, message };
-    } catch (e) {
-      console.error('OTP verify error', e);
-      return { success: false, error: '内部エラーが発生しました' };
-    }
-  };
 
   const loginWithGoogle = async (params?: { next?: string }) => {
     const failure = { success: false, error: 'OAuthログインに失敗しました' };
@@ -305,9 +188,6 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
         isAuthResolved,
         authReason,
         refreshAuthState: syncAuthState,
-        login,
-        register,
-        verifyOtp,
         loginWithGoogle,
         logout,
       }}

@@ -6,7 +6,7 @@ import type { OrderStatusSession } from '@/lib/orders/status/status-types';
 
 /**
  * 電話番号の下4桁で確かめた印（Cookie）。形は base64url(JSON).base64url(HMAC-SHA256)（共通の約束 C-2）。
- * login-2fa-session.ts と同じ組み立て（署名 → 照合の順）だが、あちらの関数は呼ばない。
+ * 署名 → 照合の順に組み立てる（メールのコードの保留の Cookie と同じ組み立て）が、あちらの関数は呼ばない。
  * 生のトークンも電話番号も入れない。トークンは SHA-256 の16進の先頭16文字だけを入れ、読む側が渡されたトークンから作り直して比べる。
  * Cookie は注文ごとの path で出し、別の注文へ移しても通らない（注文・トークン・DB の期限を読む時に全て照合する）。
  */

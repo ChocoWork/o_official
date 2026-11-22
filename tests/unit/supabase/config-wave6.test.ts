@@ -97,7 +97,7 @@ describe('DD-AUTH-040 手元の Supabase の設定を本番の前提にそろえ
     expect(template.content_path).toBe('"./supabase/templates/magic_link.html"');
   });
 
-  it('DD-AUTH-040 会員登録の確認メールは token_hash と type=signup を持つ確認の窓口へのリンク（GoTrue の既定のリンクにしない）', () => {
+  it('DD-AUTH-040 確認前のアカウントの確認メールは、リンクとパスワードの案内を持たず、本文の8桁のコード（{{ .Token }}）を入力させる', () => {
     const template = target['auth.email.template.confirmation'];
     expect(template).toBeDefined();
     const contentPath = /^"\.\/(.+)"$/.exec(template.content_path)?.[1];
@@ -105,8 +105,10 @@ describe('DD-AUTH-040 手元の Supabase の設定を本番の前提にそろえ
     const file = path.join(ROOT, contentPath as string);
     expect(fs.existsSync(file)).toBe(true);
     const body = fs.readFileSync(file, 'utf8');
-    expect(body).toContain('{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=signup');
-    expect(body).not.toMatch(/\{\{\s*\.(ConfirmationURL|Token|Password)\b/);
+    expect(body).toContain('{{ .Token }}');
+    expect(body).not.toMatch(/\{\{\s*\.(ConfirmationURL|TokenHash|RedirectTo|SiteURL|Password)\b/);
+    expect(body).not.toMatch(/<a\s/i);
+    expect(body).not.toContain('パスワード');
   });
 
   it('DD-AUTH-040 自前の SMTP は有効にしない（手元のメールは mailpit）', () => {

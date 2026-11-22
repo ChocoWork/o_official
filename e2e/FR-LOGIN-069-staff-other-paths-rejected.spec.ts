@@ -1,19 +1,18 @@
 /**
- * FR-LOGIN-069 店員が Google・メールのコードで入ろうとするとパスキーを案内する文が出て、古いパスワードは 401 で断られ、どれもセッションが作られず、TOTP の登録は 410 で断られる
+ * FR-LOGIN-069 店員が Google・メールのコードで入ろうとするとパスキーを案内する文が出て、どれもセッションが作られず、TOTP の登録は 410 で断られる
  * 対応: FR-AUTH-046-AC-04 / FR-AUTH-046-AC-05 / FR-AUTH-046-AC-06（設計: DD-AUTH-083、SEC-AUTH-037）
  *
  * 手元のアプリ（本番ビルド）・手元の Supabase・手元の Mailpit で流す。店員は provisionStaff（ソフトの認証器）で用意する。
  * 要求ごとに別の x-real-ip と origin を付ける（回数の枠を使い切らないため・proxy の Origin の確かめ）。Turnstile は E2E の公式のテスト鍵（常に通る）。
  * Google は、本物の Google を通さず、GoTrue がフックの拒否を戻りの URL に付けて返す形を模した値を、戻りの窓口に直に渡して確かめる（実機は段3b）。
- * メール・パスワード・トークンが通信記録に残らないよう trace は切る。
+ * メール・トークンが通信記録に残らないよう trace は切る。
  */
-import { randomBytes, randomInt } from 'node:crypto';
+import { randomInt } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
 import { provisionStaff } from '../scripts/e2e/passkey-staff';
 import { readLatestCode } from './member-session-helpers';
 import { withLocalDb } from './order-email-test-utils';
 import { loginViaApp } from './passkey-app-api';
-import { setStaffPassword } from './passkey-hook-scenarios';
 
 test.use({ trace: 'off' });
 
@@ -30,10 +29,6 @@ const viewports = [
 
 function uniqueIp(): string {
   return `198.${randomInt(16, 20)}.${randomInt(0, 256)}.${randomInt(1, 255)}`;
-}
-
-function uniqueEmail(label: string): string {
-  return `e2e-staff-other-${label}-${Date.now().toString(36)}${randomBytes(3).toString('hex')}@example.com`;
 }
 
 async function isAuthenticated(page: Page): Promise<boolean> {
@@ -83,22 +78,6 @@ for (const viewport of viewports) {
       await expect(page.getByRole('button', { name: 'パスキーでログイン' })).toBeVisible();
       await expect(page.getByText(STAFF_MESSAGE)).toHaveCount(0);
       await expect(page.getByText('access_denied')).toHaveCount(0);
-    });
-
-    test(`FR-AUTH-046-AC-04 ${viewport.name}: 店員が古いパスワードの道（/login/password）で入ろうとしても、セッションが作られない`, async ({ page }) => {
-      const staff = await withLocalDb((db) => provisionStaff(db, { role: 'admin', approvedPasskeys: 2 }));
-      const password = await setStaffPassword(staff.userId);
-
-      const response = await page.request.post('/api/auth/login', {
-        headers: { origin: ORIGIN, 'x-real-ip': uniqueIp() },
-        data: { email: staff.email, password, turnstileToken: VALID_TURNSTILE_TOKEN },
-        failOnStatusCode: false,
-        maxRedirects: 0,
-      });
-
-      expect(response.status()).toBe(401);
-      expect(((await response.json()) as { step?: string }).step).toBeUndefined();
-      expect(await isAuthenticated(page)).toBe(false);
     });
 
     test(`FR-AUTH-046-AC-05 ${viewport.name}: パスキーで入った店員の TOTP の登録は 410 totp_retired で、要素が作られない`, async ({ page }) => {

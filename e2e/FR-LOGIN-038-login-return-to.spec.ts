@@ -1,12 +1,12 @@
 /**
  * FR-LOGIN-038 ログインの後の戻り先（サーバーに控え、番号だけを HttpOnly の Cookie で渡す）
- * 対応: FR-AUTH-005-AC-01〜07 / SEC-AUTH-026-AC-02・AC-03 / SEC-AUTH-032-AC-01・AC-02
+ * 対応: FR-AUTH-005-AC-01〜07 / SEC-AUTH-026-AC-03 / SEC-AUTH-032-AC-01・AC-02
  *
  * 設計: ADR-0412（docs/03_BasicDesign/decisions/ADR-0412-return-intent-server-side-cookie-id.md）。
- * ログインを始める POST（/api/auth/login・/api/auth/oauth/start・/api/auth/register）が戻り先を確かめて控え、
- * 番号は Cookie sb-return-intent にだけ置く。出口（POST /api/auth/post-login・確認のリンク・Google の戻り）で使い切る。
+ * ログインを始める POST（/api/auth/email-code/start・/api/auth/oauth/start）が戻り先を確かめて控え、
+ * 番号は Cookie sb-return-intent にだけ置く。出口（POST /api/auth/post-login・Google の戻り）で使い切る。
  *
- * 手元の Supabase とメール受け（Mailpit）だけで流す。会員は画面から入れるようにパスワード付きで作る。
+ * 手元の Supabase とメール受け（Mailpit）だけで流す。会員は createTestMember で作り、/login のメール欄から8桁のコードで入る。
  * - 画面の幅は 3 つ（390・768・1280）すべてで流す。幅の例外は使わない。
  * - 店員（FR-AUTH-005-AC-05）は、パスキーのログインの終わりの窓口（loginViaApp。next を控えて Cookie に付ける）と POST /api/auth/post-login で確かめる。
  * - Google の本物の画面は開かない。開始の窓口の応答（200 と url と Cookie）だけを確かめる。
@@ -14,14 +14,13 @@
  * Cookie・確認コードが通信記録に残らないよう trace は切る。失敗の報告にも番号の値を出さない（真偽だけで比べる）。
  */
 import { randomBytes } from 'node:crypto';
-import { createClient } from '@supabase/supabase-js';
 import { expect, test, type APIResponse, type Page, type Response } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import { provisionStaff } from '../scripts/e2e/passkey-staff';
 import { loginViaApp } from './passkey-app-api';
-import { readLatestCode, readMailpitMessages } from './member-session-helpers';
+import { createTestMember, readLatestCode, readMailpitMessages, type TestMember } from './member-session-helpers';
 import { withLocalDb } from './order-email-test-utils';
-import { injectTurnstileToken } from './turnstile-test-utils';
+import { injectTurnstileToken, stubTurnstileScript } from './turnstile-test-utils';
 
 test.use({ trace: 'off', video: 'off', screenshot: 'off' });
 test.describe.configure({ timeout: 180_000 });
@@ -83,57 +82,42 @@ function expectClearedReturnIntent(headers: ReadonlyArray<{ name: string; value:
 
 // ---- 会員 ----
 
-type Member = { userId: string; email: string; password: string };
+type Member = TestMember;
 
-function localAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key || !isLocalUrl(url)) throw new Error('会員を作れるのは手元の Supabase だけ');
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-}
-
-/** 画面から入るので、パスワードを知っている会員を手元の Supabase にだけ作る。role を渡すと DB の役割もそろえる。 */
-async function createMember(label: string): Promise<Member> {
-  const email = `e2e-return-${label}-${Date.now().toString(36)}${randomBytes(3).toString('hex')}@example.com`;
-  const password = `E2e-${randomBytes(12).toString('hex')}!`;
-  const { data, error } = await localAdmin()
-    .auth.admin.createUser({ email, password, email_confirm: true })
-    .catch(() => {
-      // SDK の例外に秘密値が含まれても、失敗の報告へ引き継がないため。
-      throw new Error('手元の会員を作る要求に失敗した');
-    });
-  if (error || !data.user) {
-    throw new Error(`手元の会員を作れない（status: ${error?.status ?? '不明'}, code: ${error?.code ?? '不明'}）`);
-  }
-  return { userId: data.user.id, email, password };
+/** メールのコードで入る会員を、手元の Supabase にだけ作る。 */
+function createMember(label: string): Promise<Member> {
+  return createTestMember(label);
 }
 
 // ---- 画面からのログイン ----
 
 /** 画面から送る /api/auth/* に、試験ごとの送り元を付ける（回数の制限を共有の枠で使い切らないため）。 */
 async function routeSourceIp(page: Page, ip: string): Promise<void> {
-  for (const pattern of ['**/api/auth/login', '**/api/auth/otp/verify', '**/api/auth/post-login']) {
+  await stubTurnstileScript(page);
+  for (const pattern of ['**/api/auth/email-code/start', '**/api/auth/email-code/verify', '**/api/auth/post-login']) {
     await page.route(pattern, async (route) => {
       await route.continue({ headers: { ...route.request().headers(), 'x-real-ip': ip } });
     });
   }
 }
 
-/** 今開いている /login の画面で、パスワードと確認コードを入れてサインインする。サインインを押すところまで。 */
+/** 今開いている /login の画面で、メールを入れ、届いた確認コードを入れてログインし、鍵を足す勧めの画面は「あとで」で通る。 */
 async function signInOnLoginScreen(page: Page, member: Member): Promise<void> {
   // 新しく届いたメールだけを確認コードとして読むため、送る前に既存のメールを控える。
   const previousIds = new Set((await readMailpitMessages(member.email)).map((message) => message.ID));
   await injectTurnstileToken(page);
-  await page.getByLabel('EMAIL').fill(member.email);
-  await page.getByLabel('PASSWORD').fill(member.password);
-  await page.getByRole('button', { name: 'ログイン' }).click();
+  await page.getByLabel('Email').fill(member.email);
+  await page.getByRole('button', { name: 'メールでコードを受け取る' }).click();
 
-  await expect(page).toHaveURL(/\/login\/verify$/);
+  await expect(page).toHaveURL(/\/login\/code$/);
   const code = await readLatestCode(member.email, previousIds);
   for (let index = 0; index < 8; index += 1) {
-    await page.getByLabel(`認証コード ${index + 1} 桁目`).fill(code[index]);
+    await page.getByLabel(`確認コード ${index + 1}桁目`).fill(code[index]);
   }
-  await page.getByRole('button', { name: 'サインイン' }).click();
+  await page.getByRole('button', { name: 'ログイン' }).click();
+
+  // 確定の後は鍵を足す勧めの画面（/login/passkey）が先に出る。「あとで」で戻り先の解決（post-login）へ進む。
+  await page.getByRole('button', { name: 'あとで' }).click();
 }
 
 /** ログインし終えた後の着地を、pathname + search で待つ。 */
@@ -184,20 +168,19 @@ function postJson(page: Page, origin: string, path: string, ip: string, data?: u
   });
 }
 
-/** パスワードの段（POST /api/auth/login）を API で通す。next は本文にそのまま入れる。 */
+/** メールのコードの始め（POST /api/auth/email-code/start）を API で通す。next は本文にそのまま入れる。 */
 function startLoginByApi(page: Page, origin: string, member: Member, ip: string, body: ApiLoginBody = {}): Promise<APIResponse> {
-  return postJson(page, origin, '/api/auth/login', ip, {
+  return postJson(page, origin, '/api/auth/email-code/start', ip, {
     email: member.email,
-    password: member.password,
     turnstileToken: 'e2e-probe',
     ...body,
   });
 }
 
-/** 確認コードの段（メールの 8 桁 → POST /api/auth/otp/verify）まで API で通す。 */
+/** 確認コードの段（メールの 8 桁 → POST /api/auth/email-code/verify）まで API で通す。 */
 async function finishOtpByApi(page: Page, origin: string, member: Member, ip: string, previousIds: ReadonlySet<string>): Promise<void> {
   const code = await readLatestCode(member.email, previousIds);
-  const verify = await postJson(page, origin, '/api/auth/otp/verify', ip, { code });
+  const verify = await postJson(page, origin, '/api/auth/email-code/verify', ip, { code });
   expect(verify.status(), '確認コードが通る').toBe(200);
 }
 
@@ -220,8 +203,6 @@ for (const viewport of viewports) {
       await expect(headerLogin).toHaveAttribute('href', '/login?next=%2Fstockist%3Ffrom%3De2e');
       await headerLogin.click();
       await expect(page).toHaveURL(/\/login\?next=/);
-      // 旧のパスワードの画面は /login/password。リンクが運んだ戻り先（next）はそのまま持ち越す。
-      await page.goto(page.url().replace('/login?', '/login/password?'));
 
       await signInOnLoginScreen(page, member);
 
@@ -238,19 +219,17 @@ for (const viewport of viewports) {
       await expect(gateLogin).toHaveAttribute('href', '/login?next=%2Faccount');
       await gateLogin.click();
       await expect(page).toHaveURL(/\/login\?next=/);
-      // 旧のパスワードの画面は /login/password。リンクが運んだ戻り先（next）はそのまま持ち越す。
-      await page.goto(page.url().replace('/login?', '/login/password?'));
 
       await signInOnLoginScreen(page, member);
 
       await expectLandedOn(page, '/account');
     });
 
-    test(`FR-AUTH-005-AC-03 /login/password を直接開いてログインすると / へ着く (${viewport.name})`, async ({ page }) => {
+    test(`FR-AUTH-005-AC-03 /login を直接開いてログインすると / へ着く (${viewport.name})`, async ({ page }) => {
       const member = await createMember(`ac03-${viewport.name}`);
       await routeSourceIp(page, uniqueSourceIp());
 
-      await page.goto('/login/password');
+      await page.goto('/login');
       await signInOnLoginScreen(page, member);
 
       await expectLandedOn(page, '/');
@@ -269,7 +248,7 @@ for (const viewport of viewports) {
         await routeSourceIp(page, uniqueSourceIp());
         const watch = await watchOutsideTraffic(page, origin);
 
-        await page.goto(`/login/password?next=${next}`);
+        await page.goto(`/login?next=${next}`);
         await signInOnLoginScreen(page, member);
 
         await expectLandedOn(page, '/');
@@ -288,7 +267,7 @@ for (const viewport of viewports) {
 
       const response = await startLoginByApi(page, origin, member, uniqueSourceIp(), { next: '//evil.example' });
 
-      expect(response.status(), 'ログインそのものは止まらない').toBe(200);
+      expect(response.status(), 'ログインそのものは止まらない（コードを送って 202）').toBe(202);
       expectClearedReturnIntent(response.headersArray(), 'next=//evil.example');
     });
 
@@ -341,7 +320,7 @@ for (const viewport of viewports) {
         const member = await createMember(`ac06-${viewport.name}`);
         await routeSourceIp(page, uniqueSourceIp());
 
-        await page.goto(`/login/password?next=${encodeURIComponent(next)}`);
+        await page.goto(`/login?next=${encodeURIComponent(next)}`);
         await signInOnLoginScreen(page, member);
 
         await expectLandedOn(page, '/');
@@ -356,7 +335,7 @@ for (const viewport of viewports) {
       // 画面からの post-login を止める（後に登録した route が勝つ）。画面は失敗の既定で / へ倒れ、控えは使われずに残る。
       await page.route('**/api/auth/post-login', (route) => route.abort());
 
-      await page.goto('/login/password?next=%2Fstockist');
+      await page.goto('/login?next=%2Fstockist');
       await signInOnLoginScreen(page, member);
       await expectLandedOn(page, '/');
 
@@ -371,25 +350,6 @@ for (const viewport of viewports) {
       expect(((await second.json()) as { redirectTo?: string }).redirectTo, '2 回目は使えず既定').toBe('/');
     });
 
-    for (const redirectTo of ['%2F%09%2Fevil.example', '//evil.example', '/.//evil.example'] as const) {
-      test(`SEC-AUTH-026-AC-02 確認のリンクの redirect_to=${redirectTo} では外へ出ず、店の /login へ送る (${viewport.name})`, async ({ request, baseURL }) => {
-        const origin = originOf(baseURL);
-        for (const tokenQuery of ['', '&token_hash=invalid-token&type=signup']) {
-          const response = await request.get(`/api/auth/confirm?redirect_to=${redirectTo}${tokenQuery}`, {
-            maxRedirects: 0,
-            failOnStatusCode: false,
-            headers: { 'x-real-ip': uniqueSourceIp() },
-          });
-          expect(response.status(), '303 で送る').toBe(303);
-          const location = response.headers()['location'];
-          expect(location, 'Location がある').toBeTruthy();
-          const target = new URL(location, origin);
-          expect(target.origin, 'Location は店のサイトの中').toBe(origin);
-          expect(target.pathname, '固定の /login').toBe('/login');
-        }
-      });
-    }
-
     test(`SEC-AUTH-026-AC-03 ログインの窓口へ外の next を送って成功させても、確認コードの後の行き先は / になる (${viewport.name})`, async ({
       page,
       baseURL,
@@ -401,7 +361,7 @@ for (const viewport of viewports) {
       const previousIds = await mailIdsOf(member.email);
 
       const login = await startLoginByApi(page, origin, member, ip, { next: '//evil.example' });
-      expect(login.status(), '外の next でもログインは進む').toBe(200);
+      expect(login.status(), '外の next でもログインは進む（コードを送って 202）').toBe(202);
       await finishOtpByApi(page, origin, member, ip, previousIds);
 
       const destination = await postJson(page, origin, '/api/auth/post-login', ip);
@@ -428,7 +388,7 @@ for (const viewport of viewports) {
         seen.push(response.url());
         const location = response.headers()['location'];
         if (location) seen.push(location);
-        const isLoginPost = new URL(response.url()).pathname === '/api/auth/login' && response.request().method() === 'POST';
+        const isLoginPost = new URL(response.url()).pathname === '/api/auth/email-code/start' && response.request().method() === 'POST';
         if (isLoginPost) {
           headerReads.push(response.headersArray().then((headers) => (loginHeaders = headers)).catch(() => undefined));
         }
@@ -440,7 +400,7 @@ for (const viewport of viewports) {
         }
       });
 
-      await page.goto('/login/password?next=%2Fstockist');
+      await page.goto('/login?next=%2Fstockist');
       await signInOnLoginScreen(page, member);
       await expectLandedOn(page, '/stockist');
       await Promise.allSettled(headerReads);
@@ -485,7 +445,7 @@ for (const viewport of viewports) {
       expect((body.url as string).includes(issued?.value ?? ''), '番号が authorize の url に出ない').toBe(false);
     });
 
-    test(`SEC-AUTH-032-AC-02 ログインの中断（cancel）とログアウトで、控えの Cookie が Max-Age=0 で消える (${viewport.name})`, async ({
+    test(`SEC-AUTH-032-AC-02 メールのコードの中断（cancel）とログアウトで、控えの Cookie が Max-Age=0 で消える (${viewport.name})`, async ({
       page,
       baseURL,
     }) => {
@@ -495,10 +455,10 @@ for (const viewport of viewports) {
       // 中断: next つきで確認コードの入力前（保留）まで進み、cancel で消える。
       const cancelled = await createMember(`sec032b-cancel-${viewport.name}`);
       const started = await startLoginByApi(page, origin, cancelled, uniqueSourceIp(), { next: '/stockist' });
-      expect(started.status()).toBe(200);
+      expect(started.status()).toBe(202);
       expect(setCookiesNamed(started.headersArray(), RETURN_INTENT_COOKIE).at(-1)?.value ?? '', '開始で控えの Cookie が置かれる').not.toBe('');
-      const cancel = await postJson(page, origin, '/api/auth/login/cancel', uniqueSourceIp());
-      expect(cancel.status()).toBe(200);
+      const cancel = await postJson(page, origin, '/api/auth/email-code/cancel', uniqueSourceIp());
+      expect(cancel.status()).toBe(204);
       expectClearedReturnIntent(cancel.headersArray(), 'cancel');
 
       // ログアウト: ログインを終えた端末（戻り先は使い切っていない）で、ログアウトの応答が消す。
@@ -506,7 +466,7 @@ for (const viewport of viewports) {
       const ip = uniqueSourceIp();
       const previousIds = await mailIdsOf(loggedIn.email);
       const second = await startLoginByApi(page, origin, loggedIn, ip, { next: '/stockist' });
-      expect(second.status()).toBe(200);
+      expect(second.status()).toBe(202);
       await finishOtpByApi(page, origin, loggedIn, ip, previousIds);
       const csrf = (await page.context().cookies(origin)).find((cookie) => cookie.name === CSRF_COOKIE)?.value;
       if (!csrf) throw new Error('CSRF の Cookie が無い');

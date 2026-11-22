@@ -28,6 +28,7 @@ import { expect, test, type APIRequestContext, type APIResponse, type Page } fro
 import { isLocalUrl } from '../scripts/e2e/environment';
 import { createAdminSessionActor, placeAdminCookies } from './admin-session-test-utils';
 import { loginAsMemberLegacy } from './member-session-helpers';
+import { withDummyCaptcha } from './captcha-test-utils';
 import { withLocalDb } from './order-email-test-utils';
 import { skipPasskeyNotificationsOfUser } from '../scripts/e2e/passkey-staff';
 
@@ -43,10 +44,8 @@ const apiOnlyViewports = [viewports[2]] as const;
 
 const START_PATH = '/api/auth/password/change/start';
 const CONFIRM_PATH = '/api/auth/password/change/confirm';
-const LOGIN_PATH = '/api/auth/login';
 const ME_PATH = '/api/auth/me';
 const REFRESH_PATH = '/api/auth/refresh';
-const VALID_TURNSTILE_TOKEN = 'test-turnstile-token';
 
 const CODE_MAIL_SUBJECT = 'パスワード変更の確認コード';
 const NOTICE_MAIL_SUBJECT = 'パスワードを変更しました';
@@ -286,10 +285,15 @@ async function startAndReadCode(page: Page, origin: string, member: Member, sour
 }
 
 /** アプリのログインの1段目（パスワードの確かめ）。誤りは 401、合えば 200（確認コードのメールが出る） */
-function postLogin(request: APIRequestContext, origin: string, email: string, password: string): Promise<APIResponse> {
-  return request.post(new URL(LOGIN_PATH, origin).toString(), {
-    headers: { origin, 'x-real-ip': uniqueSourceIp() },
-    data: { email, password, turnstileToken: VALID_TURNSTILE_TOKEN },
+/** アプリのパスワードのログインの窓口は消したので、GoTrue の password grant を直に叩いて、パスワードが通る・通らないを確かめる（captcha はダミーのトークンで通す）。 */
+function postLogin(request: APIRequestContext, _origin: string, email: string, password: string): Promise<APIResponse> {
+  return request.post(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    headers: {
+      apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
+      'Content-Type': 'application/json',
+      'x-forwarded-for': uniqueSourceIp(),
+    },
+    data: withDummyCaptcha({ email, password }),
     maxRedirects: 0,
   });
 }
@@ -398,9 +402,9 @@ for (const viewport of viewports) {
       await page.getByLabel('新しいパスワード', { exact: true }).fill(replacement);
       await page.getByLabel('新しいパスワード（確認）', { exact: true }).fill(replacement);
       await page.getByRole('button', { name: 'パスワードを変更する' }).click();
-      await expect(page).toHaveURL(/\/login\/password/, { timeout: 30_000 });
+      await expect(page).toHaveURL(/\/login(\?|$)/, { timeout: 30_000 });
 
-      expect((await postLogin(request, origin, member.email, member.password)).status(), '古いパスワードのログイン').toBe(401);
+      expect((await postLogin(request, origin, member.email, member.password)).status(), '古いパスワードのログイン（GoTrue の password grant は 400）').toBe(400);
       expect((await postLogin(request, origin, member.email, replacement)).status(), '新しいパスワードのログイン').toBe(200);
     });
 
@@ -439,7 +443,7 @@ for (const viewport of apiOnlyViewports) {
       expect(confirmed.status(), 'confirm の status').toBe(200);
       expect(await jsonOf(confirmed), 'confirm の本文').toEqual({ ok: true });
 
-      expect((await postLogin(request, origin, member.email, member.password)).status(), '古いパスワードのログイン').toBe(401);
+      expect((await postLogin(request, origin, member.email, member.password)).status(), '古いパスワードのログイン（GoTrue の password grant は 400）').toBe(400);
       expect((await postLogin(request, origin, member.email, replacement)).status(), '新しいパスワードのログイン').toBe(200);
     });
 

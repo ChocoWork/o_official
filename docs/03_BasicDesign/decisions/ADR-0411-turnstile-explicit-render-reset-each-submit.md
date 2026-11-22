@@ -23,7 +23,7 @@
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FREQ-328-REQ-01、FREQ-328-REQ-02、FREQ-330-REQ-01、FREQ-330-REQ-02 |
+| 上位 | FREQ-328-REQ-01、FREQ-330-REQ-02 |
 | 根拠 | 自動の描画はスクリプトの読み込みの時にしか走らず、タブの切り替えなどで部品を付け直すと描かれない（FREQ-328、`useTurnstileWidget.ts`）。サーバーの確かめ（siteverify）はトークンを引き換えるので、同じトークンの2回目は 403 になり、失敗して同じ画面に留まった時の再試行が必ず断られる。リセットを呼ぶ側ごとに書くと漏れる（FREQ-330、Supabase の CAPTCHA の案内と Cloudflare の reset の案内） |
 | 状態 | 現行 |
 | 出どころ | `docs/02_Requirements/requirements.md`（FREQ-328・FREQ-330 の行） |

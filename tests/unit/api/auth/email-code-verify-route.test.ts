@@ -20,7 +20,6 @@ import { linkGuestOrdersByEmail } from '@/lib/orders/link-guest-orders';
 import { listPasskeys } from '@/lib/auth/passkey-gotrue';
 import { logAudit } from '@/lib/audit';
 import { createEmailCodeSessionToken } from '@/features/auth/services/email-code-session';
-import { createLoginTwoFactorSessionToken } from '@/features/auth/services/login-2fa-session';
 
 const rateLimit = enforceRateLimit as jest.Mock;
 const publicClient = createPublicClient as jest.Mock;
@@ -86,7 +85,7 @@ describe('DD-AUTH-059 POST /api/auth/email-code/verify', () => {
   });
 
   test('DD-AUTH-059 旧い保留の Cookie（login_2fa）は 401', async () => {
-    const legacy = `sb-login-2fa-session=${encodeURIComponent(createLoginTwoFactorSessionToken({ userId: 'u', email: EMAIL }))}`;
+    const legacy = `sb-login-2fa-session=${encodeURIComponent('legacy-pending-value')}`;
     expect((await POST(req({ code: '12345678' }, legacy))).status).toBe(401);
     expect(verifyOtp).not.toHaveBeenCalled();
   });

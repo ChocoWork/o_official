@@ -37,7 +37,7 @@
 
 ### 1.1 画面
 
-`/login` は [AuthTabs](../../../src/components/AuthTabs.tsx) を描画する。tablist（ログイン / 会員登録）の下の tabpanel に [LoginModal](../../../src/components/LoginModal.tsx) が入り、LoginModal が資格情報ステップと OTP ステップを同一の `<form>` で切り替える（`onSubmit={otpSent ? handleVerifyOtp : handleLogin}`）。Email 欄は `disabled` のまま残り、送信ボタンの文言だけが「ログイン」から「サインイン」へ変わる。
+`/login` は AuthTabs を描画する。tablist（ログイン / 会員登録）の下の tabpanel に LoginModal が入り、LoginModal が資格情報ステップと OTP ステップを同一の `<form>` で切り替える（`onSubmit={otpSent ? handleVerifyOtp : handleLogin}`）。Email 欄は `disabled` のまま残り、送信ボタンの文言だけが「ログイン」から「サインイン」へ変わる。
 
 LoginModal は [Header](../../../src/components/Header.tsx) からも本物のモーダルとして開かれる。
 
@@ -50,7 +50,7 @@ LoginModal は [Header](../../../src/components/Header.tsx) からも本物の�
 | `POST /api/auth/login`      | パスワード検証 → OTP 送信 → 署名 Cookie `sb-login-2fa-session` を発行。セッションは発行しない    |
 | `POST /api/auth/otp/verify` | 2FA Cookie を必須とし、`pending.email !== email` も照合したうえで OTP を検証し、セッションを確定 |
 
-Cookie は `httpOnly` / `SameSite=Strict`、TTL 10 分（[login-2fa-session.ts](../../../src/features/auth/services/login-2fa-session.ts)）。
+Cookie は `httpOnly` / `SameSite=Strict`、TTL 10 分（login-2fa-session.ts）。
 
 このため、専用ルート化にあたって新しいサーバー状態は必要ない。
 

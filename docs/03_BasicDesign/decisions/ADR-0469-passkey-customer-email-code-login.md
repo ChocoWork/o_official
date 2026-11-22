@@ -84,7 +84,9 @@
 - 良くなること: 旧の試験を中身を変えずに緑のまま保てる。段4で旧の画面と試験を一緒に消せる
 - 悪くなること: Task 3 の終わりから Task 5 までの間、`/login` と `/login/password` の中身が重なっていた
 
-##### 段4で消す一覧
+##### 段4で消した物の一覧
+
+段4の Task 28（2026-11-22）で、下の画面・窓口・部品・試験を消した。確認のメールのリンクの窓口（`/api/auth/confirm`）も消し、確認前のアカウントの確認メールは、リンクをやめて本文の8桁のコードを入れさせる形に替えた（オーナーの答え1・5 は A。確認前のアカウントがメールのコードで入れて確認済みになることは、手元の Auth で測った。FR-AUTH-054-AC-04）。旧の画面の「1画面に収まる・真ん中寄せ」の検査は、新しい `/login`・`/login/code` へ移した（答え3 は A。`e2e/FR-LOGIN-079-login-screens-layout.spec.ts`）。再設定・変更・TOTP・手助けの分は、後のタスクで消す。
 
 - 画面: `src/app/login/password/page.tsx`（旧の中身は Task 5 で `src/app/login/page.tsx` から消えたので、ここだけ）、`src/app/login/verify/`、`src/components/AuthTabs.tsx`・`LoginModal.tsx`・`RegisterModal.tsx`
 - 共有: `src/contexts/Providers.tsx` の `isAuthPage` の `/login/verify`・`/login/password`

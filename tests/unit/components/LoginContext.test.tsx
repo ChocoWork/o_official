@@ -19,7 +19,7 @@ jest.mock('@/lib/browser-location', () => ({
 }));
 
 const TestConsumer = () => {
-  const { isLoggedIn, isAdmin, isAuthResolved, login, register, verifyOtp, loginWithGoogle, logout } = useLogin();
+  const { isLoggedIn, isAdmin, isAuthResolved, loginWithGoogle, logout } = useLogin();
   const [googleResult, setGoogleResult] = React.useState('none');
 
   return (
@@ -27,15 +27,6 @@ const TestConsumer = () => {
       <div>logged:{isLoggedIn ? 'yes' : 'no'}</div>
       <div>admin:{isAdmin ? 'yes' : 'no'}</div>
       <div>resolved:{isAuthResolved ? 'yes' : 'no'}</div>
-      <button onClick={() => void login('user@example.com', 'password123456789')}>login</button>
-      <button onClick={() => void login('user@example.com', 'password123456789', undefined, { next: '/item/3' })}>
-        login-next
-      </button>
-      <button onClick={() => void register('user@example.com', 'password123456789')}>register</button>
-      <button onClick={() => void register('user@example.com', 'password123456789', undefined, { next: '/item/3' })}>
-        register-next
-      </button>
-      <button onClick={() => void verifyOtp('12345678')}>verify-otp</button>
       <button onClick={() => void loginWithGoogle({ next: '/account' })}>google-login</button>
       <button onClick={() => void loginWithGoogle()}>google-login-plain</button>
       <button
@@ -103,133 +94,25 @@ describe('LoginContext', () => {
     expect(screen.getByText('admin:yes')).toBeInTheDocument();
   });
 
-  test('login posts credentials to the login endpoint', async () => {
-    const user = userEvent.setup();
+  test('DD-AUTH-001 LoginContext はパスワードのログイン・会員登録・旧のコード確認の関数を持たない（段4で消した）', async () => {
+    const holder: { value: Record<string, unknown> } = { value: {} };
+    const Probe = () => {
+      holder.value = useLogin() as unknown as Record<string, unknown>;
+      return null;
+    };
 
     render(
       <LoginProvider>
-        <TestConsumer />
+        <Probe />
       </LoginProvider>
     );
 
-    await user.click(screen.getByText('login'));
-
-    await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({
-          email: 'user@example.com',
-          password: 'password123456789',
-          turnstileToken: undefined,
-        }),
-      });
-    });
-  });
-
-  test('verifyOtp success marks the user as logged in', async () => {
-    const user = userEvent.setup();
-
-    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === '/api/auth/otp/verify') {
-        return {
-          ok: true,
-          json: async () => ({
-            message: '認証に成功しました。',
-          }),
-        } as Response;
-      }
-
-      if (url === '/api/auth/me') {
-        return {
-          ok: true,
-          json: async () => ({
-            authenticated: true,
-            user: {
-              role: 'user',
-              mfaVerified: false,
-            },
-          }),
-        } as Response;
-      }
-
-      return {
-        ok: true,
-        json: async () => ({ message: 'ok' }),
-      } as Response;
-    }) as jest.Mock;
-
-    render(
-      <LoginProvider>
-        <TestConsumer />
-      </LoginProvider>
-    );
-
-    await user.click(screen.getByText('verify-otp'));
-
-    await waitFor(() => expect(screen.getByText('logged:yes')).toBeInTheDocument());
-    expect(global.fetch).toHaveBeenCalledWith('/api/auth/me', {
-      method: 'GET',
-      cache: 'no-store',
-      credentials: 'same-origin',
-    });
-  });
-
-  test('FLOW-AUTH-001 login は next があれば本文に含め、無ければ含めない', async () => {
-    const user = userEvent.setup();
-
-    render(
-      <LoginProvider>
-        <TestConsumer />
-      </LoginProvider>
-    );
-
-    await user.click(screen.getByText('login-next'));
-    await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({
-          email: 'user@example.com',
-          password: 'password123456789',
-          next: '/item/3',
-        }),
-      });
-    });
-
-    await user.click(screen.getByText('login'));
-    await waitFor(() => {
-      const bodies = (global.fetch as jest.Mock).mock.calls
-        .filter(([input]) => input === '/api/auth/login')
-        .map(([, init]) => JSON.parse((init as RequestInit).body as string) as Record<string, unknown>);
-      expect(bodies).toHaveLength(2);
-      expect(bodies[1]).not.toHaveProperty('next');
-    });
-  });
-
-  test('FLOW-AUTH-003 register は next があれば本文に含め、無ければ含めない。redirect_to は送らない', async () => {
-    const user = userEvent.setup();
-
-    render(
-      <LoginProvider>
-        <TestConsumer />
-      </LoginProvider>
-    );
-
-    await user.click(screen.getByText('register-next'));
-    await user.click(screen.getByText('register'));
-
-    await waitFor(() => {
-      const bodies = (global.fetch as jest.Mock).mock.calls
-        .filter(([input]) => input === '/api/auth/register')
-        .map(([, init]) => JSON.parse((init as RequestInit).body as string) as Record<string, unknown>);
-      expect(bodies).toHaveLength(2);
-      expect(bodies[0]).toEqual({ email: 'user@example.com', password: 'password123456789', next: '/item/3' });
-      expect(bodies[1]).toEqual({ email: 'user@example.com', password: 'password123456789' });
-    });
+    await waitFor(() => expect(typeof holder.value.refreshAuthState).toBe('function'));
+    expect('login' in holder.value).toBe(false);
+    expect('register' in holder.value).toBe(false);
+    expect('verifyOtp' in holder.value).toBe(false);
+    expect(typeof holder.value.loginWithGoogle).toBe('function');
+    expect(typeof holder.value.logout).toBe('function');
   });
 
   describe('FLOW-AUTH-002 loginWithGoogle', () => {
@@ -353,13 +236,6 @@ describe('LoginContext', () => {
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
 
-      if (url === '/api/auth/otp/verify') {
-        return {
-          ok: true,
-          json: async () => ({ message: '認証に成功しました。' }),
-        } as Response;
-      }
-
       if (url === '/api/auth/me') {
         return {
           ok: true,
@@ -392,7 +268,7 @@ describe('LoginContext', () => {
       </LoginProvider>
     );
 
-    await user.click(screen.getByText('verify-otp'));
+    // 初めの状態の確かめ（/api/auth/me）で、ログイン済みになる
     await waitFor(() => expect(screen.getByText('logged:yes')).toBeInTheDocument());
 
     await user.click(screen.getByText('logout'));

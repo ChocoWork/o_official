@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> パスキー段4 Task 28 確認日: 2026-11-22。お客さんのパスワードのログイン・会員登録・確認リンクの Route Handler を6ファイル・6メソッド消した（`POST /api/auth/login`・`/api/auth/login/resend`・`/api/auth/login/cancel`・`/api/auth/otp/verify`・`/api/auth/register`・`GET /api/auth/confirm`。呼ぶ画面・部品・試験も一緒に消した。FR-AUTH-053。API-AUTH-001〜006 は廃止）。（207ファイル・260メソッド、表は206行・259メソッド）。
+
 > パスキー段3a Task 7 確認日: 2026-11-18。Route Handler を1ファイル・1メソッド足した（213ファイル・266メソッド、表は212行・265メソッド）。`POST /api/auth/staff/register/complete`（2本の登録の終わり）。契約は [基本設計の認証](../areas/auth.md) の API-AUTH-038。
 >
 > パスキー段3a Task 6 確認日: 2026-11-18。Route Handler を1ファイル・1メソッド足した（212ファイル・265メソッド、表は211行・264メソッド）。`POST /api/auth/staff/invite/start`（招待のリンクの受け口）。契約は [基本設計の認証](../areas/auth.md) の API-AUTH-037。
@@ -207,14 +209,10 @@
 | `/api/admin/users` | `GET`, `PATCH` | [route.ts](../../../src/app/api/admin/users/route.ts) |
 | `/api/admin/permissions` | `GET` | [route.ts](../../../src/app/api/admin/permissions/route.ts) |
 | `/api/admin/role-permissions` | `POST` | [route.ts](../../../src/app/api/admin/role-permissions/route.ts) |
-| `/api/auth/confirm` | `GET` | [route.ts](../../../src/app/api/auth/confirm/route.ts) |
 | `/api/auth/email-code/cancel` | `POST` | [route.ts](../../../src/app/api/auth/email-code/cancel/route.ts) （段2: 認証前。保留の Cookie と戻り先の控えを消して 204。枠は無い。契約は [API-AUTH-032](../areas/auth.md)） |
 | `/api/auth/email-code/resend` | `POST` | [route.ts](../../../src/app/api/auth/email-code/resend/route.ts) （段2: 認証前。保留の Cookie 必須（無ければ 401）。回数制限は始めと共有の `auth:email-code:send` の IP 50回/600秒・宛先 5回/600秒。Cookie を元の iat・jti で付け直す。契約は [API-AUTH-031](../areas/auth.md)） |
 | `/api/auth/email-code/start` | `POST` | [route.ts](../../../src/app/api/auth/email-code/start/route.ts) （段2: 認証前。Turnstile 必須。登録の有無で応答を変えず常に 202。回数制限 `auth:email-code:send` の IP 50回/600秒・宛先 5回/600秒。契約は [API-AUTH-029](../areas/auth.md)） |
 | `/api/auth/email-code/verify` | `POST` | [route.ts](../../../src/app/api/auth/email-code/verify/route.ts) （段2: 認証前。保留の Cookie 必須。回数制限 `auth:email-code:verify` の IP 30回/600秒・保留の Cookie ごと 5回/600秒・宛先ごと 20回/600秒。店員は 403 `staff_passkey_required`。契約は [API-AUTH-030](../areas/auth.md)） |
-| `/api/auth/login/cancel` | `POST` | [route.ts](../../../src/app/api/auth/login/cancel/route.ts) |
-| `/api/auth/login/resend` | `POST` | [route.ts](../../../src/app/api/auth/login/resend/route.ts) |
-| `/api/auth/login` | `POST` | [route.ts](../../../src/app/api/auth/login/route.ts) |
 | `/api/auth/logout` | `POST` | [route.ts](../../../src/app/api/auth/logout/route.ts) |
 | `/api/auth/me` | `GET` | [route.ts](../../../src/app/api/auth/me/route.ts) |
 | `/api/auth/mfa/enroll-totp` | `POST` | [route.ts](../../../src/app/api/auth/mfa/enroll-totp/route.ts) |
@@ -222,7 +220,6 @@
 | `/api/auth/mfa/verify` | `POST` | [route.ts](../../../src/app/api/auth/mfa/verify/route.ts) |
 | `/api/auth/oauth/callback` | `GET` | [route.ts](../../../src/app/api/auth/oauth/callback/route.ts) |
 | `/api/auth/oauth/start` | `GET`, `POST` | [route.ts](../../../src/app/api/auth/oauth/start/route.ts) （波1-A: `POST` は会員認証不要。Google ログインの開始。本文の `next` だけを確かめて戻り先の控え（サーバー側）を作り、番号は Cookie だけで渡す。回数制限 `auth:oauth:start` の50回/600秒・監査 `auth.oauth.start`。成功は200 `{url}` で 303 にしない。`GET` は 302 のままで控えを作らず古い控えの Cookie を消す） |
-| `/api/auth/otp/verify` | `POST` | [route.ts](../../../src/app/api/auth/otp/verify/route.ts) |
 | `/api/auth/post-login` | `POST` | [route.ts](../../../src/app/api/auth/post-login/route.ts) （波1-A: `authenticateRequest`〔セッションCookie/JWT〕。認証の失敗は `authFailureResponse`〔401/403〕。役割とaalはトークンのclaimsだけから読む。回数制限 `auth:post-login` の60回/600秒〔IPごと〕。本文なしで HttpOnly の `sb-return-intent` Cookie を読み、ログインの確定の後の行き先を答える〔戻り先の控えを1回で使い切る。管理者・サポーターは2段目の後〕。成功は200 `{redirectTo, needsMfa}`〔`Cache-Control: no-store`・`Referrer-Policy: no-referrer`〕、失敗は500 `{error:'Internal server error'}`。控えは1回限りで Cookie を消すか残し、外れた控えは監査に残す） |
 | `/api/auth/password-reset/confirm` | `POST` | [route.ts](../../../src/app/api/auth/password-reset/confirm/route.ts) |
 | `/api/auth/password-reset/link` | `GET`, `POST` | [route.ts](../../../src/app/api/auth/password-reset/link/route.ts) |
@@ -237,7 +234,6 @@
 | `/api/auth/passkey/[id]` | `PATCH`, `DELETE` | [route.ts](../../../src/app/api/auth/passkey/%5Bid%5D/route.ts) （段1b: 認証後（CSRF あり）。回数制限 `auth:passkey:rename`・`delete` の IP 60回/600秒。`id` が uuid でなければ 400。`PATCH` は名前の変更（1〜64字かつ UTF-8 で120バイト以内。契約は [API-AUTH-027](../areas/auth.md)）、`DELETE` は削除（店員は認めた鍵を2本未満にする削除を 409 で止める。他人の鍵・存在しない鍵は 404。契約は [API-AUTH-028](../areas/auth.md)）） |
 | `/api/auth/password/change/start` | `POST` | [route.ts](../../../src/app/api/auth/password/change/start/route.ts) （波 6: 会員認証＋CSRF、admin・supporter は aal2 必須。現行パスワードを確かめ、メールに8桁の確認コードを送る。回数制限 `auth:password_change_start` の IP 20回/600秒・本人ごと 5回/600秒、監査 `password_change_start`。API-AUTH-020） |
 | `/api/auth/refresh` | `POST` | [route.ts](../../../src/app/api/auth/refresh/route.ts) |
-| `/api/auth/register` | `POST` | [route.ts](../../../src/app/api/auth/register/route.ts) |
 | `/api/auth/staff/invite/start` | `POST` | [route.ts](../../../src/app/api/auth/staff/invite/start/route.ts) （パスキー段3a Task 6: 認証前。招待の合言葉（`#` の断片から画面が送る）を使い切り、役割の無いセッションを作って窓に結ぶ。IP 20回/600秒・合言葉のハッシュごと 5回/600秒。契約は [API-AUTH-037](../areas/auth.md)） |
 | `/api/auth/staff/register/complete` | `POST` | [route.ts](../../../src/app/api/auth/staff/register/complete/route.ts) （パスキー段3a Task 7: 招待の窓の中のセッション＋CSRF。`staff_role_activate` で役割を有効にし、全ログインを終わらせて Cookie を消す。IP 20回/600秒・本人ごと 10回/600秒。契約は [API-AUTH-038](../areas/auth.md)） |
 | `/api/cart/add` | `POST` | [route.ts](../../../src/app/api/cart/add/route.ts) |

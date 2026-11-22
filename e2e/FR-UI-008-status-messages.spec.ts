@@ -157,30 +157,5 @@ for (const viewport of VIEWPORTS) {
       // フォーカスで読ませるので、同じ内容を status でも読ませない（二重に読まれないように）
       await expect(page.locator('[data-testid="auth-result-body"][role="status"]')).toHaveCount(0);
     });
-
-    // FREQ-377-AC-05
-    test('会員登録の確認メールを送ると、完了の文言にフォーカスが移る', async ({ page }) => {
-      const password = 'Passw0rd!2026-focus-check';
-      await stubTurnstileScript(page);
-      await page.route('**/api/auth/register', (route) =>
-        route.fulfill({
-          status: 200,
-          json: { message: '確認メールを送信しました。メールのリンクから登録を完了してください。' },
-        }),
-      );
-      await page.goto('/login/password');
-      await page.getByRole('tab', { name: '会員登録' }).click();
-
-      const panel = page.getByRole('tabpanel');
-      await injectTurnstileToken(page);
-      await panel.getByLabel('Email').fill('new-member@example.com');
-      await panel.getByLabel('Password', { exact: true }).fill(password);
-      await panel.getByLabel('Confirm Password', { exact: true }).fill(password);
-      await panel.getByRole('button', { name: /登録|会員登録/ }).first().click();
-
-      await expect(
-        page.getByText('確認メールを送信しました。メールのリンクから登録を完了してください。'),
-      ).toBeFocused();
-    });
   });
 }

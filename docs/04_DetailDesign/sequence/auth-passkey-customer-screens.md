@@ -61,7 +61,7 @@ sequenceDiagram
 
 保留の Cookie（`sb-email-code-session`）: メールと乱数 `jti` と発行時刻を HMAC で署名する。`userId` を持たない（登録済みかどうかを Cookie から読ませない）。属性は旧の保留の Cookie と同じ（HttpOnly・SameSite=Strict・5分）。再送では発行時刻と `jti` を引き継ぎ、絶対の上限（30分）で打ち切る。署名の目的（`purpose`）が旧と違うので、旧い Cookie の値を新しい窓口に渡しても、その逆も読めない。
 
-旧の会員登録（`signUp`）で作って確認していないアドレス: 始めは同じ 202 を返す（応答を変えない）。GoTrue は確認のメール（リンク型）を送るのでコードは届かない。`/login/code` の画面は、アカウントの状態にかかわらず、いつも「コードの無い確認のメールが届いた時は、そのメールのリンクを押してから、もう一度お試しください。」と案内する。サーバーで確認済みにはしない（パスワードを先に付けた他人が、そのアドレスでログインできてしまうため）。旧の登録は段4まで残る。本人がリンクを押した後は、先にパスワードを付けた他人の旧の登録が確認済みになる危険が、段2の前と同じく残る。
+パスワード付きで作って確認していないアドレス: 始めは同じ 202 を返す（応答を変えない）。GoTrue は「メールアドレスの確認」のメールを送る。本文はリンクを持たず、8桁のコード（`{{ .Token }}`）を入れさせる（段4で確認のリンクの窓口を消した。FR-AUTH-054-AC-04）。`/login/code` の画面は、アカウントの状態にかかわらず、いつも「「メールアドレスの確認」のメールが届いた時は、そのメールにある8桁の数字を入れてください。」と案内する。サーバーで確認済みにはしない（コードを入れられるのは、メールを読める本人だけにするため）。コードを入れると確認済みになる。
 
 GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前に認証のメールを受けた既存のアドレスだけで起きるので、429 のまま返すと未登録と見分けがつく。代わりにプロジェクト全体の送信の上限でも「送った」と見えるが、監査とログに残り、画面の再送（60秒後）で戻れる。
 
@@ -71,7 +71,7 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SEC-AUTH-050 |
+| 上位 | SEC-AUTH-050、SEC-AUTH-061 |
 | 根拠 | 画面（Task 4〜7）が薄くなるよう、ブラウザの WebAuthn の呼び出しと、1b の窓口を呼ぶ処理を、React を知らない関数に切り出す。実ブラウザの `toJSON()` は `authenticatorAttachment: null` を返しうるので、部品が落とし、窓口の形も `null` を受けて GoTrue へ渡す前に落とす（1b の持ち越し T2 M12）。`passkey-gotrue` に `server-only` を付け（T2 M3）、画面の部品が読まないことを試験で守る。登録の終わりの GoTrue の失敗（502）と形の失敗（400。`uv_required` を含む）は、画面では区別せず `retry` にそろえる（T7 M3。窓口の状態は変えない） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト（`tests/unit/features/auth/passkey/*.test.ts`、`tests/unit/features/auth/schemas/passkey.test.ts`、`tests/unit/api/auth/passkey-{login,register}-finish-route.test.ts`）。1b の E2E（`e2e/FR-LOGIN-050`・`051`）が窓口の直の呼び出しで緑のまま |
@@ -98,7 +98,7 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 | --- | --- |
 | 上位 | SCR-AUTH-001、FLOW-AUTH-001 |
 | 根拠 | `/login` を新しい画面に作り替える前に、パスワードの旧の画面を `/login/password` へ動かし、中身を変えずに旧の画面を操作する試験の URL だけを付け替える。旧の流れが新しい画面に飛ばされて旧のフォームを探して落ちるのを防ぎ、段4で旧を丸ごと消せるようにする（調整役の判断 2・I-2） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト（`tests/unit/app/login/login-page.test.tsx`、`tests/unit/contexts/providers-auth-page.test.tsx`、`tests/unit/components/auth-tabs.test.tsx`、`tests/unit/components/VerifyOtpClient.test.tsx`、`tests/unit/components/register-modal.test.tsx`、`tests/unit/app/login/login-verify-page.test.tsx`）、E2E（`e2e/FR-LOGIN-056-legacy-login-relocated.spec.ts`） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-3-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 3。調整役の判断 2・I-2） |
 
@@ -122,7 +122,7 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SCR-AUTH-004、FLOW-AUTH-001、API-AUTH-030、API-AUTH-031、API-AUTH-032 |
+| 上位 | API-AUTH-030、API-AUTH-031、API-AUTH-032、SCR-AUTH-001 |
 | 根拠 | 旧の `/login/verify`（DD-AUTH-002）の動きを写し、窓口だけを `email-code/*` にする。旧の部品を共有に直さないのは、段4で旧を丸ごと消すため（作り手の判断 5）。成功の行き先は、確定の窓口の応答の `offerPasskey` だけで決める。一覧や検索の別の呼び出しをしないので、窓口が失敗側に倒れた時（`offerPasskey` が偽）は、静かに「勧めない」へ退く |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト（`tests/unit/features/auth/passkey/email-code-entry.test.tsx`、`tests/unit/app/login/code-page.test.tsx`）、E2E（`e2e/FR-LOGIN-058-email-code-screen.spec.ts`） |
@@ -133,7 +133,7 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 | 単位 | 動き |
 | --- | --- |
 | `src/app/login/code/page.tsx` | 保留の Cookie（`sb-email-code-session`）を `verifyEmailCodeSessionToken` で確かめる → 無い・偽り・期限切れは同じく `/login` へ転送（確かめない人に HTML を見せない）→ 有効なら保留のメールを部品へ渡す。`robots` は noindex・nofollow |
-| `EmailCodeEntry`（開いた時） | 最初の欄にフォーカス。再送の待ちを今から60秒で始め、1秒ごとに経過の時刻から残りを引き直す。説明は `maskEmail` で伏せたメールと「8桁・5分以内」。いつも「コードの無い確認のメールが届いた時は、そのメールのリンクを押してから、もう一度お試しください。」を出す（アカウントの状態で変えない。FR-AUTH-023・DD-AUTH-059 と同じ案内） |
+| `EmailCodeEntry`（開いた時） | 最初の欄にフォーカス。再送の待ちを今から60秒で始め、1秒ごとに経過の時刻から残りを引き直す。説明は `maskEmail` で伏せたメールと「8桁・5分以内」。いつも「「メールアドレスの確認」のメールが届いた時は、そのメールにある8桁の数字を入れてください。」を出す（アカウントの状態で変えない。FR-AUTH-023・DD-AUTH-059 と同じ案内） |
 | 欄 | 数字だけ。打つと次の欄へ。貼り付けは、その欄から8桁まで割り振る。Backspace は空の欄なら前の欄を空にして戻る。矢印で移る |
 | 「ログイン」 | 8桁そろうまで `disabled`。送ると `POST /api/auth/email-code/verify { code }`（応答の本文は必ず読む） |
 | 確定の 200 | 移動が終わるまで入力・送信を止めたままにする（二度目の確定は保留が無く 401 になる）。`refreshAuthState()` → `offerPasskey` が真 かつ `isPasskeySupported()` が真なら `router.replace('/login/passkey')`。それ以外は `resolvePostLoginPath()`（DD-AUTH-060）の行き先へ `router.replace`（戻るで入力画面へ戻れない） |
@@ -151,7 +151,7 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SCR-AUTH-001、FLOW-AUTH-001、API-AUTH-029、API-AUTH-030、SEC-AUTH-048 |
+| 上位 | SCR-AUTH-001、API-AUTH-029、API-AUTH-030、SEC-AUTH-048 |
 | 根拠 | 旧のタブの画面（メール・パスワード）を `/login/password` に退避した（DD-AUTH-061）うえで、`/login` をパスキー・Google・メールのコードの3つの入口に作り替える。パスキーを持つ人は鍵1つで入り、持たない人と初めての人はメールのコードで入る。見出しは今の画面に無いので足さず、スクリーンリーダーのためにだけ視覚的に隠した「ログイン」を置く（作り手の判断 6）。ボット検証の枠は1つで、パスキー（始めの方式が `browser` の時）とメールで共有する。始めの方式 `server` は窓口がボット検証をしないので渡さない（判断 13）。応答の読み残しで通信が閉じない問題を避けるため、どの道でも本文を読むか捨てる |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト（`tests/unit/features/auth/passkey/login-choices.test.tsx`、`tests/unit/features/auth/passkey/email-code-start-form.test.tsx`、`tests/unit/app/login/page.test.tsx`）、E2E（`e2e/FR-LOGIN-057-login-screen.spec.ts`） |
@@ -177,7 +177,7 @@ GoTrue の宛先ごとの送信の間隔の 429 を 202 に隠す理由: 直前�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SCR-AUTH-001、FLOW-AUTH-001、API-AUTH-024、API-AUTH-025 |
+| 上位 | SCR-AUTH-001、API-AUTH-024、API-AUTH-025 |
 | 根拠 | メールのコードで入った直後が、パスキーを案内する一番自然な機会になる。勧めは post-login の前に出し（戻り先を使い切らない）、作れない端末・店員・鍵を持つ人には出さない（鍵を持つ人は確定の窓口が `offerPasskey` を偽にする）。成功の後は自動で進まず、「続ける」へフォーカスを移して読む時間を奪わない（WCAG 2.2.1。`/login/code` の自動の戻しを外したのと同じ）。1b の持ち越し T2 M12 は、仮想の認証器の往復の E2E で、本物のブラウザの応答の形が作る・ログインの両方の窓口を通ることまで確かめる（仮想の認証器は `platform` を返し `null` は出ない。`null` を落とす分岐は Task 2 の単体。`null` を送る実機は開店前に確かめる）。ボタンの大きさは、リポジトリの `Button`（md）に従う |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト（`tests/unit/features/auth/passkey/passkey-offer.test.tsx`、`tests/unit/app/login/passkey-page.test.tsx`）、E2E（`e2e/FR-LOGIN-059-passkey-offer-real-browser.spec.ts`、`e2e/FR-LOGIN-058-email-code-screen.spec.ts`） |

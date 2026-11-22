@@ -89,36 +89,30 @@ export function readReturnIntentToken(cookieHeader: string | null): string | nul
  * @impl IMPL-AUTH-208
  * @design DD-AUTH-034
  * @remarks 戻り先が無い・不正・保存の失敗でも、前の試みの古い Cookie が残って使われないよう必ず clear を返す。
- * alwaysCreate（登録の確認リンクの結び付け用）が真の時は、戻り先が無い・不正でも既定の '/' で控えを作る
- * （控えの有無で登録済みかどうかが分からないようにするため。不正の理由の監査は残す）。
- * bindTo には登録したメールを渡し、番号とメールを一緒にハッシュした控えにする（SEC-AUTH-007、ADR-0413）。
  */
 export async function issueReturnIntent(input: {
   rawNext: unknown;
   purpose: ReturnIntentPurpose;
   origin?: string;
-  bindTo?: string;
-  alwaysCreate?: boolean;
 }): Promise<{ action: ReturnIntentCookieAction; outcome: 'created' | 'cleared' | 'rejected' | 'failed' }> {
   try {
     let returnPath = DEFAULT_RETURN_PATH;
 
     if (input.rawNext === undefined || input.rawNext === null || input.rawNext === '') {
-      if (!input.alwaysCreate) return { action: { kind: 'clear' }, outcome: 'cleared' };
+      return { action: { kind: 'clear' }, outcome: 'cleared' };
     } else {
       const checked = validateReturnPath(input.rawNext, { origin: input.origin });
       if (checked.ok) {
         returnPath = checked.path;
       } else {
         await auditSafely('rejected', checked.reason);
-        if (!input.alwaysCreate) return { action: { kind: 'clear' }, outcome: 'rejected' };
+        return { action: { kind: 'clear' }, outcome: 'rejected' };
       }
     }
 
     const created = await createReturnIntent({
       returnPath,
       purpose: input.purpose,
-      ...(input.bindTo === undefined ? {} : { bindTo: input.bindTo }),
     });
     if (!created) {
       await auditSafely('error', 'create_failed');
@@ -210,33 +204,4 @@ export async function resolveStoredDestination(input: {
     };
   }
   return { path: checked.path, needsMfa: false, action: { kind: 'clear' } };
-}
-
-/**
- * 登録の確認リンクを、登録を始めたブラウザで開いたかを確かめて控えを使い切る。
- *
- * @impl IMPL-AUTH-220
- * @design DD-AUTH-034
- * @remarks Cookie の番号と、確認した利用者のメールを一緒にハッシュした印が signup の未使用の行に当たった時だけ bound を返す
- * （番号だけが当たる形では、被害者の有効な Cookie が攻撃者の印で通る。ADR-0413）。
- * session を作る前に呼ぶ。Cookie は触らず、DB を呼ぶのは番号が 1 つで形が合う時だけ。例外は投げない。
- */
-export async function consumeSignupBinding(input: {
-  cookieHeader: string | null;
-  email: string;
-  userId: string;
-}): Promise<{ bound: true; storedPath: string } | { bound: false }> {
-  try {
-    const token = readReturnIntentToken(input.cookieHeader);
-    if (!token || !input.email) return { bound: false };
-    const stored = await consumeReturnIntent({
-      token,
-      purpose: 'signup',
-      userId: input.userId,
-      bindTo: input.email,
-    });
-    return stored === null ? { bound: false } : { bound: true, storedPath: stored };
-  } catch {
-    return { bound: false };
-  }
 }

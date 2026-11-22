@@ -31,7 +31,7 @@
 
 | ファイル名 | よくない点 | 修正提案 | ステータス | 調査結果 | 優先度 |
 |---|---|---|---|---|---|
-| [src/app/api/auth/login/route.ts](../../../../src/app/api/auth/login/route.ts), [src/app/api/auth/refresh/route.ts](../../../../src/app/api/auth/refresh/route.ts), [src/app/api/auth/register/route.ts](../../../../src/app/api/auth/register/route.ts) | Cookie 運用と並行して `access_token` を JSON 本文で返却している | 本文からトークンを除去し、認証は HttpOnly Cookie に統一する | Open | 3 経路とも本文返却を確認 | Medium |
+| src/app/api/auth/login/route.ts, [src/app/api/auth/refresh/route.ts](../../../../src/app/api/auth/refresh/route.ts), src/app/api/auth/register/route.ts | Cookie 運用と並行して `access_token` を JSON 本文で返却している | 本文からトークンを除去し、認証は HttpOnly Cookie に統一する | Open | 3 経路とも本文返却を確認 | Medium |
 | [src/app/api/profile/route.ts](../../../../src/app/api/profile/route.ts), [src/app/api/orders/route.ts](../../../../src/app/api/orders/route.ts) | account 機微 API で `Cache-Control: no-store` が未統一 | profile/orders の全応答で no-store を明示する | Open | `auth/me` は設定済みだが profile/orders は不足 | Medium |
 | [src/features/auth/services/register.ts](../../../../src/features/auth/services/register.ts) | セッション永続化で await 漏れ由来の不整合余地 | token hash 計算を await 徹底し、回帰テストを追加する | Open | 実装上の整合性リスクを確認 | Medium |
 | [src/features/auth/middleware/rateLimit.ts](../../../../src/features/auth/middleware/rateLimit.ts) | IP 抽出の信頼境界がインフラ設定依存 | trusted proxy 条件を明文化し、未信頼経路のヘッダ値は不採用にする | Open | 悪用可否は環境依存 | Low |

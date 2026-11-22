@@ -1,6 +1,6 @@
 # ADR-0404 会員登録は登録済みの宛先でも同じ 202 を返し、登録済みであることは本人にだけメールで伝える
 
-> 状態: 現行 | 確認日: 2026-10-24 | 対象: `src/app/api/auth/register/route.ts`、`src/components/RegisterModal.tsx` | 基準コミット: `4facf63b`
+> 状態: 廃止 | 確認日: 2026-10-24 | 対象: `src/app/api/auth/register/route.ts`、`src/components/RegisterModal.tsx` | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -25,7 +25,7 @@
 | --- | --- |
 | 上位 | FREQ-320-REQ-01、FREQ-320-REQ-03、FREQ-320-REQ-04 |
 | 根拠 | 409 を返すと、宛先を投げるだけで会員かどうかが分かり、会員を狙った詐欺メールや漏れたメールとパスワードの組の絞り込みに使われる（OWASP WSTG-IDNT-04、`register/route.ts`、`security_review_signup.md`）。登録済みであることは、Supabase の既定の動きに合わせて本人へのメールだけで伝える（`register/route.ts`） |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 出どころ | `docs/02_Requirements/requirements.md` の FREQ-320 の行、`src/app/api/auth/register/route.ts` のコメント |
 
 #### 背景
@@ -50,6 +50,7 @@
 
 #### 結果
 
+- 置き換え先: ADR-0469（段4の Task 28、2026-11-22 に、パスワードのログイン・会員登録・確認リンクの窓口と画面を消したので、この決めは廃止した）
 - 良くなること: 公開の登録の応答から会員かどうかを知られない
 - 悪くなること: Supabase の確認メールが OFF だと、新しい宛先は 201 とトークンを返し、登録済みは 202 になって判別できる（`register/route.ts`）。運用で ON を保つ必要がある
 - 悪くなること: 手元の Supabase は確認メールが OFF（`supabase/config.toml`）で、手元の E2E・結合は 201 の道を通る。本番の前提を手元で確かめていない

@@ -59,13 +59,11 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
 }));
 
 describe('Auth cookie flags (integration, mocked)', () => {
-  let loginHandler: any;
   let refreshHandler: any;
   let logoutHandler: any;
   const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 
   beforeAll(() => {
-    loginHandler = require('@/app/api/auth/login/route').POST;
     refreshHandler = require('@/app/api/auth/refresh/route').POST;
     logoutHandler = require('@/app/api/auth/logout/route').POST;
   });
@@ -78,34 +76,6 @@ describe('Auth cookie flags (integration, mocked)', () => {
     jest.resetAllMocks();
     // default: no cookie
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue(undefined) });
-  });
-
-  test('DATA-AUTH-004 login (step 1) sets pending-2FA cookie HttpOnly=true, SameSite=strict and issues no session cookies', async () => {
-    (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
-    process.env.JWT_SECRET = 'test-jwt-secret';
-
-    // 新フロー: パスワード検証 + OTP 送信のみ（セッション Cookie は発行しない）
-    const { createServiceRoleAuthClient } = require('@/lib/auth/service-role-auth-client');
-    createServiceRoleAuthClient.mockResolvedValue({
-      auth: {
-        signInWithPassword: jest.fn().mockResolvedValue({ data: { session: { access_token: 'a', refresh_token: 'r', expires_at: new Date().toISOString() }, user: { id: 'u1', email: 'u@example.com' } }, error: null }),
-        signInWithOtp: jest.fn().mockResolvedValue({ data: {}, error: null }),
-      },
-    });
-
-    // call handler
-    const req: any = { headers: { get: () => null }, json: async () => ({ email: 'u@example.com', password: 'passw0rd12345678' }) };
-    const res: any = await loginHandler(req);
-
-    const pendingCookie = res.cookies.get('sb-login-2fa-session');
-    expect(pendingCookie).toBeDefined();
-    expect(pendingCookie.httpOnly).toBe(true);
-    expect(pendingCookie.sameSite).toBe('strict');
-    expect(pendingCookie.secure).toBe(true);
-
-    // セッション Cookie は step 1 では発行されない（OTP 検証時に発行）
-    expect(res.cookies.get('sb-refresh-token')).toBeUndefined();
-    expect(res.cookies.get('sb-access-token')).toBeUndefined();
   });
 
   test('DATA-AUTH-004 refresh sets new refresh cookie and csrf cookie with proper flags', async () => {

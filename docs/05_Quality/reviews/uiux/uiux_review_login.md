@@ -6,7 +6,7 @@
 
 本書は「LOGIN（ログイン）UI/UX レビュー」のレビュー時点の記録である。指摘の重大度と修正状態は当時の評価を示し、現在の実装を保証しない。
 
-- 対象: [src/app/login/page.tsx](../../../../src/app/login/page.tsx) / 実体 [src/components/LoginModal.tsx](../../../../src/components/LoginModal.tsx)
+- 対象: [src/app/login/page.tsx](../../../../src/app/login/page.tsx) / 実体 src/components/LoginModal.tsx
 - 共通 Header/Footer は [uiux_review_home.md](uiux_review_home.md) を参照
 - レビュー基準: `implement-uiux` + ブランド適合（[brand.md](../../../01_Planning/brand.md)）
 
@@ -33,10 +33,10 @@ EC直販の入口。コアペルソナは購買意欲が高くLTVも高いため
 | # | 指摘場所 | 指摘理由（違反原則） | 修正提案 | 優先度 | 修正ステータス |
 |---|---|---|---|---|---|
 | LG-1 | ページ構造（[login/page.tsx:19-23](../../../../src/app/login/page.tsx#L19-L23)） | `LoginModal open={true}` をそのまま全画面に表示。**h1/見出し・ブランド枠が無く**、いきなりGoogleボタンから始まる。視覚的階層/現在地/ブランド適合 | 「LOGIN」見出し(h1) + 一言のウェルカム/ブランド要素で枠付け | Mid | 対応済 |
-| LG-2 | 成功/エラー色（[LoginModal.tsx:402-403](../../../../src/components/LoginModal.tsx#L402-L403)） | `text-green-600`/`text-red-600` の有彩色。特に成功緑は Key Color 外。ブランド適合（モノクローム） | 成功はチェックアイコン+黒文字、エラーは最小限の赤に | Low | 対応済 |
-| LG-3 | OTP入力幅（[LoginModal.tsx:342-362](../../../../src/components/LoginModal.tsx#L342-L362)） | 8桁 × `w-10`(40px)+gap を横並び。375px幅で `max-w-md` 内に収まらず折返し/窮屈の懸念。モバイル最適化/Fitts | 極小幅でボックス幅を可変（clamp）または2段折返しを許容 | Mid | 対応済 |
-| LG-4 | パスワード再設定リンク（[LoginModal.tsx:373-383](../../../../src/components/LoginModal.tsx#L373-L383)） | ログインはOTP/Googleでパスワードレスなのに「パスワードを忘れた方はこちら」。メンタルモデル不一致で混乱 | 文言を実態に合わせる（例: 「サインインできない場合」）か、パスワード方式の位置づけを明確化 | Low | 対応済 |
-| LG-5 | メール入力（[LoginModal.tsx:300](../../../../src/components/LoginModal.tsx#L300)） | 他フォームは `TextField` 共通コンポーネントだが、ここは素の `<input>`。`autoComplete="email"` も未指定。反復/オートフィル | `TextField` へ統一し `autoComplete="email"` 付与 | Low | 対応済 |
+| LG-2 | 成功/エラー色（LoginModal.tsx:402-403） | `text-green-600`/`text-red-600` の有彩色。特に成功緑は Key Color 外。ブランド適合（モノクローム） | 成功はチェックアイコン+黒文字、エラーは最小限の赤に | Low | 対応済 |
+| LG-3 | OTP入力幅（LoginModal.tsx:342-362） | 8桁 × `w-10`(40px)+gap を横並び。375px幅で `max-w-md` 内に収まらず折返し/窮屈の懸念。モバイル最適化/Fitts | 極小幅でボックス幅を可変（clamp）または2段折返しを許容 | Mid | 対応済 |
+| LG-4 | パスワード再設定リンク（LoginModal.tsx:373-383） | ログインはOTP/Googleでパスワードレスなのに「パスワードを忘れた方はこちら」。メンタルモデル不一致で混乱 | 文言を実態に合わせる（例: 「サインインできない場合」）か、パスワード方式の位置づけを明確化 | Low | 対応済 |
+| LG-5 | メール入力（LoginModal.tsx:300） | 他フォームは `TextField` 共通コンポーネントだが、ここは素の `<input>`。`autoComplete="email"` も未指定。反復/オートフィル | `TextField` へ統一し `autoComplete="email"` 付与 | Low | 対応済 |
 | LG-6 | 成功メッセージの行き先 | OTP送信成功メッセージは出るが、OTP欄へのフォーカス移動はするものの、視線誘導（成功→入力）が弱い。連続性 | 成功通知とOTP欄の近接/順序を意識（現状focusはあるので軽微） | Low | 対応済 |
 
 ---
@@ -64,7 +64,7 @@ EC直販の入口。コアペルソナは購買意欲が高くLTVも高いため
 - **LG-4**: 「パスワードを忘れた方はこちら」→「サインインできない場合」に変更（パスワードレス実態と整合）。
 - **LG-5**: 素の `<input>` を共通 `TextField` へ統一し `autoComplete="email"` を付与。`emailRef` を制御 state（`email`）へ置換。
 - **LG-6**: success に `role="status"` を付与（OTP欄への autofocus は従来どおり維持し、連続性を補強）。
-- 実装: [src/components/LoginModal.tsx](../../../../src/components/LoginModal.tsx) / [src/app/login/page.tsx](../../../../src/app/login/page.tsx)。
+- 実装: src/components/LoginModal.tsx / [src/app/login/page.tsx](../../../../src/app/login/page.tsx)。
 
 ---
 

@@ -1,6 +1,6 @@
 /**
- * FR-LOGIN-078 パスワードで作ったアカウント（確認済み）が、メールのコードで /account に入れ、鍵を足す勧めの画面が出る。店員は旗が真でも同じ断りの文で断られる
- * 対応: FR-AUTH-054-AC-01 / FR-AUTH-054-AC-02 / FR-AUTH-054-AC-03（上位: SR-AUTH-030）
+ * FR-LOGIN-078 パスワードで作ったアカウント（確認済み・確認前）が、メールのコードで /account に入れ、鍵を足す勧めの画面が出る。店員は旗が真でも同じ断りの文で断られる
+ * 対応: FR-AUTH-054-AC-01 / FR-AUTH-054-AC-02 / FR-AUTH-054-AC-03 / FR-AUTH-054-AC-04（上位: SR-AUTH-030）
  *
  * パスワードとコードのログインを消す前の基準で、消した後も意味が変わらない残す流れ。アカウントは spec の中で
  * `createUser({ email, password, email_confirm: true })` で作る（createTestMember に頼らない）。
@@ -12,7 +12,7 @@ import { randomBytes, randomInt } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { expect, test, type Page } from '@playwright/test';
 import { provisionStaff } from '../scripts/e2e/passkey-staff';
-import { readLatestCode } from './member-session-helpers';
+import { readLatestCode, readMailpitMessages } from './member-session-helpers';
 import { withLocalDb } from './order-email-test-utils';
 import { withCustomerPasswordFlag } from './passkey-hook-scenarios';
 
@@ -44,6 +44,39 @@ async function createPasswordAccount(label: string): Promise<{ userId: string; e
     });
   if (created.error || !created.data.user) throw new Error(`手元のアカウントを作れない（status: ${created.error?.status ?? '不明'}）`);
   return { userId: created.data.user.id, email };
+}
+
+/** パスワード付き・確認前（email_confirm: false）のアカウントを手元の Supabase に作る（確認のメールは作った時には送られない） */
+async function createUnconfirmedAccount(label: string): Promise<{ userId: string; email: string }> {
+  const email = `e2e-legacy-${label}-${Date.now().toString(36)}${randomBytes(3).toString('hex')}@example.com`;
+  const created = await localAdmin().auth.admin
+    .createUser({ email, password: `E2e-${randomBytes(12).toString('hex')}!`, email_confirm: false })
+    .catch(() => {
+      throw new Error('手元のアカウントを作る要求に失敗した');
+    });
+  if (created.error || !created.data.user) throw new Error(`手元のアカウントを作れない（status: ${created.error?.status ?? '不明'}）`);
+  return { userId: created.data.user.id, email };
+}
+
+function localAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+/** 宛先に届いた最初のメールの件名・本文（テキストと HTML）を Mailpit から Node で読む（コードをブラウザの通信記録に載せないため）。 */
+async function readFirstMail(email: string): Promise<{ subject: string; text: string; html: string }> {
+  const base = process.env.MAIL_LOCAL_URL ?? '';
+  await expect
+    .poll(async () => (await readMailpitMessages(email)).length, { timeout: 30_000, message: '確認のメールが届く' })
+    .toBeGreaterThan(0);
+  const [first] = await readMailpitMessages(email);
+  const response = await fetch(new URL(`/api/v1/message/${encodeURIComponent(first.ID)}`, base), {
+    signal: AbortSignal.timeout(5_000),
+    redirect: 'manual',
+  });
+  const body = (await response.json()) as { Subject?: string; Text?: string; HTML?: string };
+  return { subject: body.Subject ?? '', text: body.Text ?? '', html: body.HTML ?? '' };
 }
 
 /** メールのコードを始める（202）。作った直後は GoTrue の送信の間隔（手元は1秒）の中なので、過ぎるまで待ってから呼ぶ */
@@ -101,6 +134,37 @@ for (const viewport of viewports) {
       await typeCode(page, code);
 
       await expect(page).toHaveURL(/\/login\/passkey/);
+    });
+
+    test(`FR-AUTH-054-AC-04 ${viewport.name}: 確認前のアカウントにも、リンクの無い8桁のコードの確認メールが届き、そのコードで /account に入れて確認済みになる`, async ({ page }) => {
+      const account = await createUnconfirmedAccount('unconfirmed');
+      const before = await localAdmin().auth.admin.getUserById(account.userId);
+      expect(before.data.user?.email_confirmed_at ?? null, '作った直後は確認前（準備）').toBeNull();
+
+      // /login/code の入口（POST /api/auth/email-code/start）を通す
+      await startCode(page, account.email);
+      const mail = await readFirstMail(account.email);
+      expect(mail.subject, '確認前のアカウントには「メールアドレスの確認」のメールが届く').toBe('メールアドレスの確認');
+      const mailText = `${mail.text}\n${mail.html.replace(/<[^>]*>/g, ' ')}`;
+      expect(mailText.match(/\b(\d{8})\b/), '本文に8桁のコードがある').not.toBeNull();
+      expect(/https?:\/\//.test(mail.text) || /<a\s/i.test(mail.html) || /href=/i.test(mail.html), '本文にリンクが無い').toBe(false);
+      expect(mailText.includes('パスワード'), '本文にパスワードの案内が無い').toBe(false);
+
+      const code = await readLatestCode(account.email, new Set());
+      const verified = await page.request.post('/api/auth/email-code/verify', {
+        headers: { origin: ORIGIN, 'x-real-ip': uniqueIp() },
+        data: { code },
+        maxRedirects: 0,
+      });
+      expect(verified.status()).toBe(200);
+
+      await page.goto('/account');
+      await expect(page).toHaveURL(/\/account(\?|$|\/)/);
+      const me = (await (await page.request.get('/api/auth/me')).json()) as { authenticated?: boolean; user?: { id?: string } };
+      expect(me.authenticated).toBe(true);
+      expect(me.user?.id).toBe(account.userId);
+      const after = await localAdmin().auth.admin.getUserById(account.userId);
+      expect(after.data.user?.email_confirmed_at ?? null, 'コードを入れると確認済みになる').not.toBeNull();
     });
 
     // 店員の断り自体は FR-LOGIN-069（FR-AUTH-046-AC-04）が持つ。ここでは、旗が真でも断りの文が同じことだけを確かめる（確かめを繰り返さない）。

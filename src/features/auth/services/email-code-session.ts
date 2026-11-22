@@ -5,7 +5,7 @@ import { emailCodeSessionCookieName } from '@/lib/cookie';
  * メールのコードのログイン・新規の保留の Cookie の署名と読み取り（src/features/auth/services/email-code-session.ts）。
  *
  * @packageDocumentation
- * @remarks 旧の保留の Cookie（login-2fa-session.ts）の写し。違いは2つ。
+ * @remarks 旧の保留の Cookie（パスワードのログインの2段目。段4で消した）の形を引き継ぐ。特徴は2つ。
  * (1) `userId` を持たない（メールだけ。登録済みかどうかを Cookie から読ませない）。
  * (2) 乱数の `jti` を持つ。確定の総当たりの枠を Cookie ごとに数えるため（`email + ':' + jti`）。再送では引き継ぐ。
  * `purpose` の値が旧と違うので、旧い Cookie の値を新しい窓口へ渡しても、その逆も `null` になる。

@@ -18,7 +18,7 @@ test.use({ trace: 'off' });
 
 const ORIGIN = 'http://localhost:3000';
 const VALID_TURNSTILE_TOKEN = 'test-turnstile-token';
-const ALWAYS_ON_LINE = 'コードの無い確認のメールが届いた時は、そのメールのリンクを押してから、もう一度お試しください。';
+const ALWAYS_ON_LINE = '「メールアドレスの確認」のメールが届いた時は、そのメールにある8桁の数字を入れてください。';
 
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },

@@ -113,11 +113,9 @@ const sendMail = require('@/lib/mail');
 const { verifyTurnstile } = require('@/lib/turnstile');
 const { checkPwnedPassword, PWNED_PASSWORD_MESSAGE } = require('@/lib/pwned-password');
 const { notifySiteUrlInvalid } = require('@/lib/ops/site-url-alert');
-const { createServiceRoleClient } = require('@/lib/supabase/server');
 const { passwordSchema } = require('@/features/auth/schemas/common');
 const { createPasswordResetSessionToken } = require('@/features/auth/services/password-reset-session');
 
-let registerPost: any;
 let requestPost: any;
 let confirmPost: any;
 
@@ -130,10 +128,6 @@ function json(url: string, body: unknown, headers: Record<string, string> = {}) 
     headers: { 'content-type': 'application/json', ...headers },
     body: JSON.stringify(body),
   });
-}
-
-function register(password: string, url = 'http://localhost/api/auth/register') {
-  return registerPost(json(url, { email: 'new@example.com', password, turnstileToken: 't' }));
 }
 
 function resetCookie() {
@@ -151,7 +145,6 @@ function requestReset(url = 'http://localhost/api/auth/password-reset/request') 
 
 describe('ARC-AUTH-007 新しいパスワードは 16 文字以上で漏洩していない物だけを受け、メールのリンクは許可した住所で作る', () => {
   beforeAll(async () => {
-    registerPost = (await import('@/app/api/auth/register/route')).POST;
     requestPost = (await import('@/app/api/auth/password-reset/request/route')).POST;
     confirmPost = (await import('@/app/api/auth/password-reset/confirm/route')).POST;
   });
@@ -270,83 +263,6 @@ describe('ARC-AUTH-007 新しいパスワードは 16 文字以上で漏洩し�
       await confirm(GOOD_PASSWORD);
 
       expect(writes).toEqual([]);
-    });
-  });
-
-  describe('会員登録', () => {
-    test('ARC-AUTH-007 漏洩していない 16 文字以上のパスワードなら登録に進む', async () => {
-      const res = await register(GOOD_PASSWORD);
-
-      expect(res.status).toBe(202);
-      expect(checkPwnedPassword).toHaveBeenCalledWith(GOOD_PASSWORD);
-      expect(signUpCalls).toHaveLength(1);
-      expect(signUpCalls[0][0]).toEqual(expect.objectContaining({ email: 'new@example.com', password: GOOD_PASSWORD }));
-    });
-
-    test('ARC-AUTH-007 漏洩していれば 400 で断り、アカウントの照会も作成もしない', async () => {
-      checkPwnedPassword.mockResolvedValue({ status: 'pwned', count: 42 });
-
-      const res = await register(GOOD_PASSWORD);
-
-      expect(res.status).toBe(400);
-      expect(await res.json()).toEqual({ error: PWNED_PASSWORD_MESSAGE });
-      expect(createServiceRoleClient).not.toHaveBeenCalled();
-      expect(signUpCalls).toEqual([]);
-      expect(logAudit).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'register', outcome: 'failure', detail: 'pwned_password' })
-      );
-    });
-
-    test('ARC-AUTH-007 照合先が落ちていれば止めずに登録を進め、監査に error を残す', async () => {
-      checkPwnedPassword.mockResolvedValue({ status: 'unavailable', reason: 'TimeoutError' });
-
-      const res = await register(GOOD_PASSWORD);
-
-      expect(res.status).toBe(202);
-      expect(signUpCalls).toHaveLength(1);
-      expect(logAudit).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'register', outcome: 'error', detail: 'pwned_check_unavailable:TimeoutError' })
-      );
-    });
-
-    test('ARC-AUTH-007 16 文字に満たなければ照合先を呼ばずに 400', async () => {
-      const res = await register('short-pass-15ch');
-
-      expect(res.status).toBe(400);
-      expect(checkPwnedPassword).not.toHaveBeenCalled();
-      expect(signUpCalls).toEqual([]);
-    });
-
-    test('ARC-AUTH-007 Turnstile が通らなければ照合先を呼ばない', async () => {
-      verifyTurnstile.mockResolvedValueOnce({ ok: false, error: 'bad' });
-
-      const res = await register(GOOD_PASSWORD);
-
-      expect(res.status).toBe(403);
-      expect(checkPwnedPassword).not.toHaveBeenCalled();
-    });
-
-    test('ARC-AUTH-007 許可していない住所なら 503 で止め、照合先も登録も呼ばず運用へ知らせる', async () => {
-      process.env.VERCEL_ENV = 'production';
-
-      const res = await register(GOOD_PASSWORD);
-      await flushAfter();
-
-      expect(res.status).toBe(503);
-      expect(checkPwnedPassword).not.toHaveBeenCalled();
-      expect(signUpCalls).toEqual([]);
-      expect(notifySiteUrlInvalid).toHaveBeenCalledTimes(1);
-    });
-
-    test('ARC-AUTH-007 本番で許可した住所なら、確認のリンクはその住所で作る', async () => {
-      process.env.VERCEL_ENV = 'production';
-      process.env.NEXT_PUBLIC_BASE_URL = 'https://shop.example.com';
-
-      const res = await register(GOOD_PASSWORD, 'https://shop.example.com/api/auth/register');
-
-      expect(res.status).toBe(202);
-      expect(signUpCalls[0][0].options.emailRedirectTo).toMatch(/^https:\/\/shop\.example\.com\/api\/auth\/confirm/);
-      expect(notifySiteUrlInvalid).not.toHaveBeenCalled();
     });
   });
 

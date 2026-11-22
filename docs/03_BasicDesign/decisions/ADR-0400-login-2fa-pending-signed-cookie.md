@@ -1,6 +1,6 @@
 # ADR-0400 ログインの2段目の保留は署名した短命の Cookie に持ち、/login/verify はサーバーで門にする
 
-> 状態: 現行 | 確認日: 2026-10-24 | 対象: `src/app/api/auth/login/route.ts`、`src/app/login/page.tsx`、`src/app/login/verify/page.tsx`、`src/features/auth/services/login-2fa-session.ts`（範囲外の共有部品） | 基準コミット: `4facf63b`
+> 状態: 廃止 | 確認日: 2026-10-24 | 対象: `src/app/api/auth/login/route.ts`、`src/app/login/page.tsx`、`src/app/login/verify/page.tsx`、`src/features/auth/services/login-2fa-session.ts`（範囲外の共有部品） | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -25,7 +25,7 @@
 | --- | --- |
 | 上位 | FREQ-334-REQ-01、FREQ-334-REQ-03、FREQ-335-REQ-04、FREQ-336-REQ-01、SEC-AUTH-003、SEC-AUTH-004 |
 | 根拠 | 確認コードの段を画面の状態だけに持つと、再読み込み・戻る・タブの切り替えで入力が消え、生きた保留のまま2通目のコードを送ってアカウントの回数を使うため（spec の「解決する欠陥」1〜3）。パスワードを飛ばしたコードだけのログインも、署名した保留が無ければ断れる（SEC-AUTH-003） |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 出どころ | `docs/superpowers/specs/2026-09-04-login-otp-dedicated-screen-design.md`、`docs/02_Requirements/requirements.md` の FREQ-334〜336 の行 |
 
 #### 背景
@@ -54,6 +54,7 @@
 
 #### 結果
 
+- 置き換え先: ADR-0469（段4の Task 28、2026-11-22 に、パスワードのログイン・会員登録・確認リンクの窓口と画面を消したので、この決めは廃止した）
 - 良くなること: 再読み込みしても入力の画面が残る。URL で今どちらの段にいるか分かる。パスワードを通らずにコードだけで入る道が無い
 - 悪くなること: Cookie の 300 秒は Supabase の設定と手で合わせる。設定を変えたら定数も変える（spec 5.4）。手元の Supabase は有効期限が 3600 秒（`supabase/config.toml`）で、本番の前提を手元で確かめられない
 - 悪くなること: 署名の鍵は専用の環境変数が無ければ `JWT_SECRET` を使う（`login-2fa-session.ts`）。用途の印で取り違えは防ぐが、SEC-AUTH-027 の「用途ごとに別の鍵」とは合わない

@@ -8,7 +8,6 @@ import {
   readEmailCodeSessionFromCookieHeader,
   emailCodeSessionAbsoluteMaxAgeSeconds,
 } from '@/features/auth/services/email-code-session';
-import { createLoginTwoFactorSessionToken, verifyLoginTwoFactorSessionToken } from '@/features/auth/services/login-2fa-session';
 
 const ORIGINAL_ENV = { ...process.env };
 const now = () => Math.floor(Date.now() / 1000);
@@ -66,11 +65,16 @@ describe('DD-AUTH-059 emailCodeSession', () => {
     expect(verifyEmailCodeSessionToken(token)).toBeNull();
   });
 
-  test('DD-AUTH-059 旧い保留の Cookie の値は新しい窓口で null、新しい値は旧で null', () => {
-    const legacy = createLoginTwoFactorSessionToken({ userId: 'u1', email: 'a@example.com' });
-    const fresh = createEmailCodeSessionToken({ email: 'a@example.com' });
-    expect(verifyEmailCodeSessionToken(legacy)).toBeNull();
-    expect(verifyLoginTwoFactorSessionToken(fresh)).toBeNull();
+  test('DD-AUTH-059 用途の違う署名つきの値（旧のパスワードのログインの保留の形）は null', () => {
+    const payload = Buffer.from(
+      JSON.stringify({ purpose: 'login_2fa', userId: 'u1', email: 'a@example.com', iat: now(), exp: now() + 300 }),
+      'utf8',
+    ).toString('base64url');
+    const signature = require('crypto')
+      .createHmac('sha256', 'test-secret-for-email-code')
+      .update(payload)
+      .digest('base64url');
+    expect(verifyEmailCodeSessionToken(`${payload}.${signature}`)).toBeNull();
   });
 
   test('DD-AUTH-059 Cookie の見出しから読める。名前が違う・無い時は null', () => {

@@ -23,7 +23,7 @@
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FREQ-323-REQ-01、FREQ-323-REQ-02、SEC-AUTH-014 |
+| 上位 | FREQ-323-REQ-02、SEC-AUTH-014 |
 | 根拠 | Supabase の漏れたパスワードの守り（leaked password protection）は Pro の契約からしか使えないので、同じ守りをアプリに置く（FREQ-323 の行、`register/route.ts`）。パスワードもハッシュの全部も外に出さない。外のサービスの障害で自社の登録・再設定を止めない |
 | 状態 | 現行 |
 | 出どころ | `docs/02_Requirements/requirements.md`（FREQ-323 の行） |

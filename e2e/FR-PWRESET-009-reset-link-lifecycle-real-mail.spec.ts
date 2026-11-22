@@ -98,11 +98,6 @@ for (const viewport of viewports) {
     test('FREQ-70-AC-04 the heading uses the same font as the login tabs and is the largest text on the page', async ({ page }) => {
       await stubTurnstileScript(page);
 
-      await page.goto('/login/password');
-      const loginTabFamily = await page
-        .getByRole('tab', { name: 'ログイン' })
-        .evaluate((el) => getComputedStyle(el).fontFamily);
-
       await page.goto('/auth/password-reset');
       const heading = page.getByRole('heading', { level: 1 });
       await expect(heading).toContainText('パスワード再設定');
@@ -131,9 +126,7 @@ for (const viewport of viewports) {
         };
       });
 
-      const firstFamily = (family: string) => family.split(',')[0].trim().replace(/^["']|["']$/g, '').toLowerCase();
-      // /login のタブと同じ書体で、acumin-pro 系のサンセリフ
-      expect(firstFamily(metrics.headingFamily)).toBe(firstFamily(loginTabFamily));
+      // acumin-pro 系のサンセリフ（比べる元だった旧の /login/password のタブは段4で消えた）
       expect(metrics.headingFamily.toLowerCase()).toContain('acumin-pro');
       // 対比: 本文・入力欄より大きく、ページ内の他の文字より小さくない
       expect(metrics.headingSize).toBeGreaterThan(metrics.inputSize);

@@ -1,6 +1,6 @@
 # ADR-0410 ログインと会員登録は /login の1つの画面のタブにまとめ、/register の頁は置かない
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: `src/app/login/page.tsx`、`src/components/AuthTabs.tsx`、`src/components/RegisterModal.tsx` | 基準コミット: `4facf63b`
+> 状態: 廃止 | 確認日: 2026-10-24 | 対象: `src/app/login/page.tsx`、`src/components/AuthTabs.tsx`、`src/components/RegisterModal.tsx` | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -25,7 +25,7 @@
 | --- | --- |
 | 上位 | FREQ-63-REQ-01 |
 | 根拠 | FREQ-59 で `/register` を分け、FREQ-61 でタブと URL（`/login` と `/register`）を合わせたが、FREQ-63 でこの URL を分ける方針を逆にし、入口を `/login` 1つにした（FREQ-63 の行の「FREQ-59・FREQ-61 のURL分離方針を反転」） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | `docs/02_Requirements/requirements.md`（FREQ-63 の行） |
 
 #### 背景
@@ -48,6 +48,7 @@
 
 #### 結果
 
+- 置き換え先: ADR-0469（段4の Task 28、2026-11-22 に、パスワードのログイン・会員登録・確認リンクの窓口と画面を消したので、この決めは廃止した）
 - 良くなること: 入口が1つになり、タブの切り替えで頁を読み直さない
 - 悪くなること: タブの選択は URL に残らない。会員登録のタブを共有したい時は `tab=register` を付ける
 - 文書: FREQ-59・FREQ-61 と FR-LOGIN-004 の `/register` の記述は、FREQ-63 が置き換えたのに廃止の印が無い（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」節）

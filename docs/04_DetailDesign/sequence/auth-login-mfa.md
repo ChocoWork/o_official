@@ -1,6 +1,6 @@
 # ログイン・追加認証シーケンス
 
-> 状態: 推定（2026-10-04 にソースと照合し、2026-10-24 に一部を直した。ユーザーの確認は未） | 確認日: 2026-10-25 | 対象: パスワード、メールOTP、特権TOTP
+> 状態: 推定（パスワードとメールOTPの節は、2026-11-22 のパスキー段4の Task 28 で廃止した。TOTP の節は Task 30 で扱う） | 確認日: 2026-11-22 | 対象: 特権TOTP（パスワード、メールOTPは廃止）
 
 ## 概要
 
@@ -12,178 +12,15 @@
 
 | 対象 | 実コード参照 |
 | --- | --- |
-| パスワード、OTP検証 | [login API](../../../src/app/api/auth/login/route.ts)、[OTP API](../../../src/app/api/auth/otp/verify/route.ts) |
-| 再送、取消、保留Cookie | [resend API](../../../src/app/api/auth/login/resend/route.ts)、[cancel API](../../../src/app/api/auth/login/cancel/route.ts)、[保留Cookieサービス](../../../src/features/auth/services/login-2fa-session.ts) |
 | TOTP | [status API](../../../src/app/api/auth/mfa/status/route.ts)、[enroll API](../../../src/app/api/auth/mfa/enroll-totp/route.ts)、[verify API](../../../src/app/api/auth/mfa/verify/route.ts) |
 | セッション、認証ガード | [初回保存](../../../src/features/auth/services/register.ts)、[更新保存](../../../src/features/auth/services/session.ts)、[認証検証](../../../src/lib/auth/authenticate.ts)、[Cookie属性](../../../src/lib/cookie.ts) |
-| 呼び出し元 | [LoginContext](../../../src/contexts/LoginContext.tsx)、[OTP画面](../../../src/app/login/verify/VerifyOtpClient.tsx)、[TOTP画面](../../../src/app/auth/verified/page.tsx) |
+| 呼び出し元 | [LoginContext](../../../src/contexts/LoginContext.tsx)、[TOTP画面](../../../src/app/auth/verified/page.tsx) |
 
 状態変更APIは[proxy](../../../src/proxy.ts)のOrigin／Referer検査を先に通る。不正なOriginは403。[rate limiter](../../../src/features/auth/middleware/rateLimit.ts)は上限超過を429、カウンタDB障害を503とし、いずれもRetry-Afterを返す。OTPのaccount枠はhelperの503も429へ変換する例外があり、SQ-AUTH-LOGIN-OTPに記す。詳細なAPI認可は[セッション・API認可](auth-session.md)を参照する。
 
-## SQ-AUTH-LOGIN-PASSWORD: パスワード確認とOTP送信
+## 廃止: パスワード確認とOTP送信・メールOTPの検証・OTP再送・OTP待ちの取消（2026-11-22）
 
-開始契機はログインフォームの送信。事前条件はメール・パスワードと、設定時のTurnstile token。終了結果はOTP待ちCookieを持つ状態、またはエラー応答である。
-
-```mermaid
-sequenceDiagram
-  actor User as 利用者
-  participant UI as ブラウザ
-  participant API as login API
-  participant Bot as Turnstile検証
-  participant DB as レート制限RPC
-  participant Auth as Supabase Auth
-  User->>UI: メール・パスワードを送信
-  UI->>API: POST /api/auth/login
-  API->>DB: IP制限 50回 / 600秒
-  API->>API: 入力検証
-  API->>Bot: verifyTurnstile
-  Bot-->>API: 検証結果
-  API->>DB: email制限 5回 / 600秒
-  API->>Auth: signInWithPassword
-  Auth-->>API: user / session またはerror
-  alt 資格情報が不正・user/sessionなし
-    API-->>UI: 401
-  else パスワード確認成功
-    API->>Auth: signInWithOtp（shouldCreateUser=false）
-    Auth-->>API: 送信受付結果
-    alt OTP送信失敗
-      API-->>UI: 500
-    else OTP送信受付成功
-      API->>API: 署名済み sb-login-2fa-session を準備
-      API-->>UI: 200 step=otp + 保留Cookie
-      UI->>UI: /login/verify へreplace
-    end
-  end
-```
-
-この段階で独自のaccess／refresh Cookieとlocal `sessions`行は作らない。入力不正は400、Turnstile失敗は403。保留CookieはuserId・email・iat・expをHMAC SHA256で署名し、Max-Ageは300秒。検証ではexpと「発行から1800秒を超えたか」を確認する。メール到達はAPIの送信受付成功とは別で、今回確認していない。
-
-## SQ-AUTH-LOGIN-OTP: メールOTPの検証
-
-開始契機はOTP入力フォームの送信。事前条件は有効な保留Cookieとcode。APIは本文のemailを使わず、Cookieの宛先を使う。終了結果は200の認証完了、または検証・保存エラーである。
-
-```mermaid
-sequenceDiagram
-  actor User as 利用者
-  participant UI as OTP画面
-  participant API as OTP API
-  participant Auth as Supabase Auth
-  participant DB as Postgres / RPC
-  User->>UI: 8桁のOTPを送信
-  UI->>API: POST /api/auth/otp/verify（code）
-  API->>DB: IP制限 30回 / 600秒
-  API->>API: code・保留Cookieを検証
-  API->>DB: Cookie email制限 5回 / 600秒
-  alt account上限超過 または カウンタDB障害
-    API-->>UI: 429 + 保留Cookie消去
-  else 許可
-    API->>Auth: public client verifyOtp（type=email）
-    Auth-->>API: user / session またはerror
-    alt 無効・期限切れOTP
-      API-->>UI: 401
-    else 検証成功
-      API->>API: 保留Cookie消去と認証Cookieをレスポンスへ準備
-      API->>DB: sessions INSERT（refresh / CSRFのhash）
-      alt 保存失敗
-        API-->>UI: 新しい500応答
-      else 保存成功
-        API->>DB: メール確認済みguest注文の紐付け・監査
-        API-->>UI: 200 user / message + Cookie
-        UI->>API: GET /api/auth/me (LoginContextのglobal同期)
-        API-->>UI: 認証状態 / 503
-        Note over UI: global同期の503は前の表示状態を維持
-        UI->>API: GET /api/auth/me (OTP画面の戻り先判定)
-        API-->>UI: 認証状態・role / 非2xx
-        alt 未認証・非2xx (503を含む)
-          UI->>UI: /loginへreplace
-        else 認証済みadmin/supporter
-          UI->>UI: /auth/verifiedへreplace
-        else 一般user または 2回目照会の通信例外
-          UI->>UI: /accountへreplace
-        end
-      end
-    end
-  end
-```
-
-IP枠のカウンタDB障害はhelperの503をそのまま返す。account枠はhelperが返す429/503のどちらも新しい429へ変換し、Retry-Afterを引き継いで保留Cookieを消去する。helper呼出し自体の例外は各try/catchでログを残し、その枠の拒否応答を返さず後続へ進む。
-
-OTP成功後のme照会は2回ある。LoginContextのglobal同期は503で前の表示を維持し、通信例外なら未認証表示にする。その後のOTP画面の戻り先判定は非2xx/未認証で/login、認証済み特権roleで/auth/verified、それ以外と通信例外で/accountとなる。
-
-保留Cookie読取りがnullを返す不在・署名不一致・期限切れは401。CookieのURL decodeや署名秘密取得がthrowした場合は外側catchの500である。code Schemaはtrim後8文字で、UIは数字8桁を入力させる。保存に失敗すると、準備済みCookie付き200レスポンスを返さず、新しい500レスポンスを返す。OTPの非2xx・通信失敗は画面内エラーになり、検証操作では自動的に/loginへ戻らない。account上限でCookieが消えた後の再読込みは、サーバー側のverifyページguardが/loginへ送る。[初回保存](../../../src/features/auth/services/register.ts)の順序は`session_id`→access→refresh→CSRFのCookie準備→hash計算→DB INSERTである。
-
-ゲスト注文紐付けは失敗しても認証を止めない。紐付いた注文がある場合は、最新注文の配送先・氏名からprofilesの未設定住所・表示名も補完する。既存値は上書きせず、profileの照会・保存失敗も認証成功と注文の紐付けを戻さない。
-
-## SQ-AUTH-LOGIN-RESEND: OTP再送
-
-開始契機は再送ボタン。事前条件は有効な保留Cookie。終了結果は送信受付200と保留Cookie更新、またはエラーである。
-
-```mermaid
-sequenceDiagram
-  actor User as 利用者
-  participant UI as OTP画面
-  participant API as resend API
-  participant DB as レート制限RPC
-  participant Auth as Supabase Auth
-  User->>UI: 再送
-  UI->>API: POST /api/auth/login/resend（本文なし）
-  API->>API: 保留Cookie検証・宛先取得
-  alt 保留Cookie無効
-    API-->>UI: 401
-    UI->>UI: /loginへreplace
-  else 有効
-    API->>DB: login共通枠 IP50・email5 / 600秒
-    API->>Auth: signInWithOtp（shouldCreateUser=false）
-    Auth-->>API: 送信受付結果
-    alt 送信失敗
-      API-->>UI: 500（Cookieを延長しない）
-    else 受付成功
-      API->>API: 元のiatを保持しexpを再発行
-      API-->>UI: 200 ok=true + 保留Cookie
-      UI->>UI: 入力を消去・60秒cooldownを開始
-    end
-  end
-```
-
-再送もloginと同じカウンタ枠を消費する。UIは429でRetry-Afterに合わせ待機、503で一時障害表示、その他で送信失敗表示となる。UIの60秒待機はAPIの5回／600秒制限とは別である。保留Cookieのdecode・署名秘密取得、Auth呼出し、再発行にthrowが起きた場合、このrouteには外側catchがなく、上図の401／500 JSONへ変換する処理はない。メール送信受付後の再発行例外では、送信済みでも保留Cookie更新まで到達しない場合がある。
-
-## SQ-AUTH-LOGIN-CANCEL: OTP待ちの取消
-
-開始契機は「別のメールアドレス」の操作。事前条件は不要で、保留Cookie不在でも200を返す。終了結果はCookie消去指示とログイン画面への移動である。
-
-```mermaid
-sequenceDiagram
-  actor User as 利用者
-  participant UI as OTP画面
-  participant API as cancel API
-  participant DB as audit_logs
-  User->>UI: 別のメールアドレスを使う
-  UI->>API: POST /api/auth/login/cancel
-  API->>API: 保留Cookie読取り・消去指示を準備
-  opt 有効な保留Cookieがある
-    API->>DB: login cancelled / otp_step_abandoned
-  end
-  API-->>UI: 200 ok=true + 保留Cookie消去
-  UI->>UI: /loginへreplace
-```
-
-API固有のレート制限はない。上図はCookie読取りが結果を返す経路である。Cookieのdecode・署名秘密取得例外にはroute内のcatchがなく、消去準備へ進まない。UIはHTTP非2xxも検査せず、fetchの通信例外を吸収して`/login`へ移動するため、移動だけからサーバーCookie消去の成功を判断しない。[loginページ](../../../src/app/login/page.tsx)は有効保留Cookieがあれば再び`/login/verify`へ送る。
-
-### 追加認証画面の入口と出口
-
-`/auth/verified`はOTP成功・登録確認・OAuth後の到達や直接表示で起動し、最初に独自のGET /api/auth/meを行う。[global認証表示の初期同期](auth-session.md#sq-auth-session-me-初期認証表示の同期)とは別の照会で、clientFetchによるrefreshは使わない。
-
-| 判定・操作 | UIの処理・出口 |
-| --- | --- |
-| me非2xx（503を含む）・authenticated=false・読めないJSON | unauthenticated modeを表示し、/loginへのリンクを出す。自動redirectはしない |
-| 認証済み一般user | 完了案内を表示し、800ms後に/accountへreplace |
-| 認証済みadmin／supporter、meのmfaVerified=true | status／enroll／verifyを呼ばず/adminへreplace |
-| 認証済みadmin／supporter、mfaVerified=false | statusを照会し、verified factorがあればコード入力、無ければ登録案内にする。UIはstatusのneedsChallengeを分岐条件に使わない |
-| 初期meの通信例外・statusの非2xx／解析例外／通信例外 | mfa-challenge modeと確認失敗メッセージ。factor一覧等が空なら次の自動enroll条件も満たす |
-| 自動enroll | mfa-challenge modeで未試行・非処理中・QR／登録factorIdなし・verifiedFactors空のとき一度実行。未登録が確認できた場合だけには限定されない |
-| enroll非2xx・data欠落・通信例外 | 画面内エラー。409は既登録の案内、その他は登録失敗の案内。自動試行後も条件を満たせば手動登録ボタンを表示する |
-| verify非2xx・verified≠true・通信例外 | 画面内エラーを表示し、遷移しない |
-| verify成功 | global状態を再同期した後/adminへreplaceする。再同期が503で前の表示を維持した場合や通信例外で未認証表示になった場合もreplaceへ進む |
+パスキー段4の Task 28 で、`POST /api/auth/login`・`/api/auth/otp/verify`・`/api/auth/login/resend`・`/api/auth/login/cancel` を消した（404。FR-AUTH-053-AC-01）。`SQ-AUTH-LOGIN-PASSWORD`・`SQ-AUTH-LOGIN-OTP`・`SQ-AUTH-LOGIN-RESEND`・`SQ-AUTH-LOGIN-CANCEL` の図は、コードが無いので残さない。お客さんのログインは、メールのコード・Google・パスキーだけ（[会員向けの画面の処理](auth-passkey-customer-screens.md)）。旧い保留の Cookie `sb-login-2fa-session` は読まない。
 
 ## SQ-AUTH-MFA-STATUS: 追加認証状態の取得
 
@@ -343,10 +180,10 @@ sequenceDiagram
 
 | 観点 | テスト |
 | --- | --- |
-| login・OTPと宛先・回数制限 | [login](../../../tests/integration/api/auth/login.test.ts)、[OTP](../../../tests/integration/api/auth/otp-verify.test.ts) |
-| 再送・取消・署名期限 | [resend](../../../tests/integration/api/auth/login-resend.test.ts)、[cancel](../../../tests/integration/api/auth/login-cancel.test.ts)、[保留Cookie](../../../tests/unit/services/login-2fa-session.test.ts) |
+| login・OTPと宛先・回数制限 | login、OTP |
+| 再送・取消・署名期限 | resend、cancel、保留Cookie |
 | MFA後のCookie・DB失敗 | [MFA verify](../../../tests/integration/api/auth/mfa-verify.test.ts) |
-| 画面ガード・再送表示 | [OTP専用画面](../../../e2e/FR-LOGIN-027-otp-dedicated-screen.spec.ts)、[OTP保護](../../../e2e/FR-LOGIN-028-otp-verify-hardening.spec.ts)、[再送エラー](../../../e2e/login-otp-resend-errors.spec.ts) |
+| 画面ガード・再送表示 | OTP専用画面、OTP保護、再送エラー |
 
 ## 未確認事項
 

@@ -46,11 +46,6 @@ jest.mock('@/contexts/LoginContext', () => ({
 jest.mock('@/contexts/CartContext', () => ({
   useCart: () => ({ cartCount: 0 }),
 }));
-jest.mock('@/components/LoginModal', () => ({
-  __esModule: true,
-  default: () => null,
-}));
-
 jest.mock('@/lib/items/public', () => ({
   getPublishedItems: jest.fn().mockResolvedValue([]),
   getPublishedItemsCount: jest.fn().mockResolvedValue(0),

@@ -155,10 +155,10 @@ for (const viewport of viewports) {
       expect(new URL(page.url()).searchParams.get('provider')).toBe('google');
     });
 
-    test(`FR-AUTH-027-AC-06 ${viewport.name}: 横にはみ出さず、?email はメール欄の初めの値、?registered=1 は案内、旧の画面は今のまま`, async ({ page }) => {
+    test(`FR-AUTH-027-AC-06 ${viewport.name}: 横にはみ出さず、?email はメール欄の初めの値。消した確認リンクの印（?registered=1）は案内を出さない`, async ({ page }) => {
       await page.goto('/login?tab=register&email=hanako%40example.com&registered=1');
       await expect(page.getByLabel('Email')).toHaveValue('hanako@example.com');
-      await expect(page.getByText('会員登録が完了しました。ログインしてください。')).toBeVisible();
+      await expect(page.getByText('会員登録が完了しました。ログインしてください。')).toHaveCount(0);
       await expect(page.getByRole('tab')).toHaveCount(0);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       expect(overflow).toBeLessThanOrEqual(0);
@@ -167,10 +167,6 @@ for (const viewport of viewports) {
         expect(submit).not.toBeNull();
         expect(submit!.y + submit!.height).toBeLessThanOrEqual(viewport.height);
       }
-
-      await page.goto('/login/password');
-      await expect(page.getByRole('tab', { name: 'ログイン' })).toBeVisible();
-      await expect(page.getByLabel('PASSWORD')).toBeVisible();
     });
   });
 }

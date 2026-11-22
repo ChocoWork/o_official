@@ -1,6 +1,4 @@
 export {};
-// GoTrue の access token の形（DD-AUTH-039）。AUTH_REQUIRE_APP_SESSION が既定で有効なので、ログインの保存には session_id が要る。
-const SECRET_ACCESS = `secret-access.${Buffer.from(JSON.stringify({ session_id: '4c36ef0b-0332-42d8-b210-3326fc20c240' })).toString('base64url')}.s`;
 jest.mock('server-only', () => ({}), { virtual: true });
 
 jest.mock('next/server', () => ({
@@ -77,96 +75,6 @@ describe('認証の全体の作り（ARC-AUTH-001）', () => {
     process.env.JWT_SECRET = 'test-jwt-secret';
   });
 
-  test('ARC-AUTH-001 ログインの窓口はパスワードの確かめに auth だけの client（captcha を免除）だけを使い、Cookie に触れる client は作らない', async () => {
-    const signInWithPassword = jest.fn().mockResolvedValue({
-      data: { session: { access_token: 'a', refresh_token: 'r' }, user: { id: 'u1', email: 'user@example.com' } },
-      error: null,
-    });
-    const signInWithOtp = jest.fn().mockResolvedValue({ error: null });
-    createServiceRoleAuthClient.mockResolvedValue({ auth: { signInWithPassword, signInWithOtp } });
-
-    const { POST } = require('@/app/api/auth/login/route') as { POST: Handler };
-    const res = await POST(postJson('/api/auth/login', { email: 'user@example.com', password: 'password123456789' }));
-
-    expect(res.status).toBe(200);
-    expect(createServiceRoleAuthClient).toHaveBeenCalledTimes(1);
-    expect(createPublicClient).not.toHaveBeenCalled();
-    expect(createClient).not.toHaveBeenCalled();
-    expect(createServiceRoleClient).not.toHaveBeenCalled();
-    expect(signInWithPassword).toHaveBeenCalledWith({ email: 'user@example.com', password: 'password123456789' });
-  });
-
-  test('ARC-AUTH-001 パスワードの段を通っても本文にトークンを返さず、セッションの Cookie も出さない', async () => {
-    createServiceRoleAuthClient.mockResolvedValue({
-      auth: {
-        signInWithPassword: jest.fn().mockResolvedValue({
-          data: { session: { access_token: SECRET_ACCESS, refresh_token: 'secret-refresh' }, user: { id: 'u1', email: 'user@example.com' } },
-          error: null,
-        }),
-        signInWithOtp: jest.fn().mockResolvedValue({ error: null }),
-      },
-    });
-
-    const { POST } = require('@/app/api/auth/login/route') as { POST: Handler };
-    const res = await POST(postJson('/api/auth/login', { email: 'user@example.com', password: 'password123456789' }));
-    const serialized = JSON.stringify(await res.json());
-
-    expect(serialized).not.toContain('secret-access');
-    expect(serialized).not.toContain('secret-refresh');
-    expect(res.cookies.get('sb-access-token')).toBeUndefined();
-    expect(res.cookies.get('sb-refresh-token')).toBeUndefined();
-    expect(res.cookies.get('session_id')).toBeUndefined();
-  });
-
-  test('ARC-AUTH-001 確認コードの検証に成功すると、トークンは HttpOnly の Cookie に入り、本文には出ない', async () => {
-    const session = { access_token: SECRET_ACCESS, refresh_token: 'secret-refresh', expires_at: Date.now() + 3600 };
-    const user = { id: 'u1', email: 'user@example.com' };
-    createPublicClient.mockResolvedValue({
-      auth: { verifyOtp: jest.fn().mockResolvedValue({ data: { session, user }, error: null }) },
-    });
-    const insert = jest.fn().mockResolvedValue({ error: null });
-    createServiceRoleClient.mockResolvedValue({ from: jest.fn(() => ({ insert })) });
-
-    const { createLoginTwoFactorSessionToken } = require('@/features/auth/services/login-2fa-session');
-    const pending = createLoginTwoFactorSessionToken({ userId: 'u1', email: 'user@example.com' });
-
-    const { POST } = require('@/app/api/auth/otp/verify/route') as { POST: Handler };
-    const res = await POST(
-      postJson('/api/auth/otp/verify', { code: '12345678' }, { cookie: `sb-login-2fa-session=${encodeURIComponent(pending)}` }),
-    );
-
-    expect(res.status).toBe(200);
-    const serialized = JSON.stringify(await res.json());
-    expect(serialized).not.toContain('secret-access');
-    expect(serialized).not.toContain('secret-refresh');
-
-    expect(res.cookies.get('sb-access-token')).toEqual(expect.objectContaining({ value: SECRET_ACCESS, httpOnly: true }));
-    expect(res.cookies.get('sb-refresh-token')).toEqual(expect.objectContaining({ value: 'secret-refresh', httpOnly: true }));
-    expect(res.cookies.get('sb-csrf-token')).toEqual(expect.objectContaining({ httpOnly: false }));
-    // sessions の表には refresh token そのものでなくハッシュだけを控える。
-    const stored = insert.mock.calls[0][0][0];
-    expect(stored.refresh_token_hash).toEqual(expect.any(String));
-    expect(stored.refresh_token_hash).not.toBe('secret-refresh');
-    expect(JSON.stringify(stored)).not.toContain('secret-refresh');
-  });
-
-  test('ARC-AUTH-001 確認コードの検証が失敗したら、トークンの Cookie を出さず 401 を返す', async () => {
-    createPublicClient.mockResolvedValue({
-      auth: { verifyOtp: jest.fn().mockResolvedValue({ data: { session: null, user: null }, error: { message: 'expired' } }) },
-    });
-    const { createLoginTwoFactorSessionToken } = require('@/features/auth/services/login-2fa-session');
-    const pending = createLoginTwoFactorSessionToken({ userId: 'u1', email: 'user@example.com' });
-
-    const { POST } = require('@/app/api/auth/otp/verify/route') as { POST: Handler };
-    const res = await POST(
-      postJson('/api/auth/otp/verify', { code: '12345678' }, { cookie: `sb-login-2fa-session=${encodeURIComponent(pending)}` }),
-    );
-
-    expect(res.status).toBe(401);
-    expect(res.cookies.get('sb-access-token')).toBeUndefined();
-    expect(res.cookies.get('sb-refresh-token')).toBeUndefined();
-  });
-
   describe('入力の形は全部の窓口で zod が確かめる', () => {
     const makeResetCookie = () => {
       const { createPasswordResetSessionToken } = require('@/features/auth/services/password-reset-session');
@@ -175,24 +83,6 @@ describe('認証の全体の作り（ARC-AUTH-001）', () => {
     };
 
     const cases: Array<{ name: string; load: () => Handler; path: string; body: unknown; headers?: () => Record<string, string> }> = [
-      {
-        name: 'login',
-        load: () => require('@/app/api/auth/login/route').POST,
-        path: '/api/auth/login',
-        body: { email: 'not-an-email', password: 'short' },
-      },
-      {
-        name: 'register',
-        load: () => require('@/app/api/auth/register/route').POST,
-        path: '/api/auth/register',
-        body: { email: 'not-an-email', password: 'short' },
-      },
-      {
-        name: 'otp/verify',
-        load: () => require('@/app/api/auth/otp/verify/route').POST,
-        path: '/api/auth/otp/verify',
-        body: { code: '123' },
-      },
       {
         name: 'password-reset/request',
         load: () => require('@/app/api/auth/password-reset/request/route').POST,

@@ -1,6 +1,4 @@
 import { expect, Page } from '@playwright/test';
-import { injectTurnstileToken } from './turnstile-test-utils';
-import { setLoginTwoFactorCookie } from './auth-2fa-test-utils';
 import { CART_API_URL, toCartJson } from './shop-test-utils';
 
 /**
@@ -8,27 +6,6 @@ import { CART_API_URL, toCartJson } from './shop-test-utils';
  * 中身の要る spec は、呼んだ後に自分の route を登録する（後に登録した方が勝つ）。
  */
 export async function mockOtpAuthentication(page: Page, email = 'user@example.com') {
-  await page.route('**/api/auth/login', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        step: 'otp',
-        message: '認証コードを送信しました。メールに届いたコードを入力してください。',
-      }),
-    });
-  });
-
-  await page.route('**/api/auth/otp/verify', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        message: '認証に成功しました。',
-      }),
-    });
-  });
-
   // ログインの後の行き先はサーバーが戻り先を使い切って返す（POST /api/auth/post-login）。
   // 偽の印のままだと実 API は 401 で /login へ倒れるので、/account の門から入った会員の戻り先として固定する。
   await page.route('**/api/auth/post-login', async (route) => {
@@ -83,30 +60,13 @@ export async function mockOtpAuthentication(page: Page, email = 'user@example.co
   });
 }
 
-export async function loginAndOpenAccount(page: Page, email = 'user@example.com') {
-  await page.goto('/login/password');
-
-  await injectTurnstileToken(page);
-
-  // /api/auth/login はモックなので本物の 2FA Cookie が発行されない。
-  // /login/verify はサーバーで Cookie を検証するため、テスト側で置く。
-  await setLoginTwoFactorCookie(page, email);
-
-  await page.getByLabel('EMAIL').fill(email);
-  await page.getByLabel('PASSWORD').fill('Password123456789!');
-  await page.getByRole('button', { name: 'ログイン' }).click();
-
-  // FREQ-334: 認証コードの入力は専用画面
-  await page.waitForURL('**/login/verify');
-
-  for (let index = 0; index < 8; index += 1) {
-    await page.getByLabel(`認証コード ${index + 1} 桁目`).fill(String((index + 1) % 10));
-  }
-
-  await page.getByRole('button', { name: 'サインイン' }).click();
-  // 行き先は mockOtpAuthentication の post-login の戻り先（/account の門から入った会員）
-  await page.waitForURL('**/account');
-
+/**
+ * 認証を固定した（mockOtpAuthentication）まま /account を開く。
+ * パスワードのログイン画面は消したので、画面での入力はせず、ログインの Cookie（偽の値）を置いて /account へ入る。
+ * 本物のメールのコードのログインは loginAsMember（member-session-helpers.ts）が使う。
+ */
+export async function loginAndOpenAccount(page: Page, _email = 'user@example.com') {
+  await page.goto('/login');
   const origin = new URL(page.url()).origin;
   await page.context().addCookies([
     { name: 'sb-access-token', value: 'test-access-token', url: origin, httpOnly: true, sameSite: 'Lax' },

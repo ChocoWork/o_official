@@ -18,7 +18,7 @@
   - [src/features/auth/ratelimit/index.ts](../../../../src/features/auth/ratelimit/index.ts#L16)
   - [migrations/033_auth_security_hardening.sql](../../../../migrations/033_auth_security_hardening.sql#L48)
   - [migrations/005_create_rate_limit_counters.sql](../../../../migrations/005_create_rate_limit_counters.sql#L12)
-  - [src/app/api/auth/login/route.ts](../../../../src/app/api/auth/login/route.ts#L29)
+  - src/app/api/auth/login/route.ts
   - `src/app/api/auth/identify/route.ts`
   - [src/app/api/auth/password-reset/request/route.ts](../../../../src/app/api/auth/password-reset/request/route.ts#L37)
 - Issue:

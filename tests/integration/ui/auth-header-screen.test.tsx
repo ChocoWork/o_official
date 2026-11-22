@@ -34,11 +34,6 @@ jest.mock('next/link', () => ({
   ),
 }));
 
-jest.mock('@/components/LoginModal', () => ({
-  __esModule: true,
-  default: ({ open }: { open: boolean }) => <div data-testid="login-modal" data-open={String(open)} />,
-}));
-
 function renderHeader(options: { path?: string; loggedIn?: boolean; role?: Role; cartCount?: number } = {}) {
   mockPathname = options.path ?? '/';
   mockLogin = { isLoggedIn: options.loggedIn ?? false, userRole: options.role ?? null };
@@ -262,12 +257,14 @@ describe('SCR-AUTH-009 ヘッダー', () => {
     expect(header).toHaveClass('site-chrome');
   });
 
-  it('SCR-AUTH-009 ログインのモーダルは持つが開く所が無く、ログインしていてもいなくても閉じたまま', () => {
+  it('SCR-AUTH-009 ログインのモーダルは持たず、ログインのリンクは /login へ向く（ログインしていれば /account）', () => {
     const out = renderHeader({ loggedIn: false });
-    expect(out.getByTestId('login-modal')).toHaveAttribute('data-open', 'false');
+    expect(out.queryByTestId('login-modal')).toBeNull();
+    expect(within(out.header).getByRole('link', { name: 'ログイン' })).toHaveAttribute('href', '/login');
     out.unmount();
 
     const inn = renderHeader({ loggedIn: true, role: 'user' });
-    expect(inn.getByTestId('login-modal')).toHaveAttribute('data-open', 'false');
+    expect(inn.queryByTestId('login-modal')).toBeNull();
+    expect(within(inn.header).getByRole('link', { name: 'アカウント' })).toHaveAttribute('href', '/account');
   });
 });

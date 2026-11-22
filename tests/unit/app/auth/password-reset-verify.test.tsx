@@ -138,7 +138,7 @@ describe('パスワード再設定のリンクの確かめの部品', () => {
       await screen.findByText('リンクの確認に失敗しました。時間をおいて再度お試しください。'),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'もう一度試す' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'ログインへ' })).toHaveAttribute('href', '/login/password');
+    expect(screen.getByRole('link', { name: 'ログインへ' })).toHaveAttribute('href', '/login');
     expect(screen.queryByText('確認中...')).not.toBeInTheDocument();
     expect(mockReplace).not.toHaveBeenCalled();
     expect(consoleError).toHaveBeenCalledWith(expect.any(Error));

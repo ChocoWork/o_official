@@ -1,11 +1,10 @@
 import React from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
 import LoginPage, { generateMetadata } from '@/app/login/page';
-import { emailCodeSessionCookieName, loginTwoFactorSessionCookieName } from '@/lib/cookie';
+import { emailCodeSessionCookieName } from '@/lib/cookie';
 
 const mockCookieGet = jest.fn();
 const mockVerifyEmailCode = jest.fn();
-const mockVerifyLegacy = jest.fn();
 const mockRedirect = jest.fn((path: string) => {
   throw new Error(`NEXT_REDIRECT:${path}`);
 });
@@ -18,9 +17,6 @@ jest.mock('next/navigation', () => ({
 }));
 jest.mock('@/features/auth/services/email-code-session', () => ({
   verifyEmailCodeSessionToken: (token: unknown) => mockVerifyEmailCode(token),
-}));
-jest.mock('@/features/auth/services/login-2fa-session', () => ({
-  verifyLoginTwoFactorSessionToken: (token: unknown) => mockVerifyLegacy(token),
 }));
 jest.mock('@/features/auth/passkey/components/LoginChoices', () => ({
   __esModule: true,
@@ -57,7 +53,6 @@ describe('/login page', () => {
     jest.clearAllMocks();
     mockCookieGet.mockImplementation((name: string) => ({ value: `cookie:${name}` }));
     mockVerifyEmailCode.mockReturnValue(null);
-    mockVerifyLegacy.mockReturnValue(null);
   });
 
   test('DD-AUTH-001 新しい保留の Cookie が有効なら /login/code へ転送し、問い合わせを読まない', async () => {
@@ -73,20 +68,16 @@ describe('/login page', () => {
     expect(screen.queryByTestId('login-choices')).not.toBeInTheDocument();
   });
 
-  test('DD-AUTH-001 旧い保留の Cookie が有効なら /login/verify へ転送する', async () => {
-    mockVerifyLegacy.mockReturnValue({ email: 'one@example.invalid' });
+  test('DD-AUTH-001 旧のパスワードのログインの保留の Cookie があっても、何も特別にせず画面を描く（/login/verify へ送らない）', async () => {
+    mockCookieGet.mockImplementation((name: string) =>
+      name === 'sb-login-2fa-session' ? { value: 'legacy-pending' } : undefined,
+    );
 
-    await expect(LoginPage({ searchParams: Promise.resolve({}) })).rejects.toThrow('NEXT_REDIRECT:/login/verify');
+    const choices = await renderPage({});
 
-    expect(mockCookieGet).toHaveBeenCalledWith(loginTwoFactorSessionCookieName);
-    expect(mockRedirect).toHaveBeenCalledWith('/login/verify');
-  });
-
-  test('DD-AUTH-001 両方が有効なら新しい方（/login/code）を先にする', async () => {
-    mockVerifyEmailCode.mockReturnValue({ email: 'one@example.invalid' });
-    mockVerifyLegacy.mockReturnValue({ email: 'one@example.invalid' });
-
-    await expect(LoginPage({ searchParams: Promise.resolve({}) })).rejects.toThrow('NEXT_REDIRECT:/login/code');
+    expect(mockRedirect).not.toHaveBeenCalled();
+    expect(mockCookieGet).not.toHaveBeenCalledWith('sb-login-2fa-session');
+    expect(choices).toBeInTheDocument();
   });
 
   test('DD-AUTH-001 Cookie が無ければ確かめに undefined を渡して画面を描く', async () => {
@@ -95,7 +86,6 @@ describe('/login page', () => {
     const choices = await renderPage({});
 
     expect(mockVerifyEmailCode).toHaveBeenCalledWith(undefined);
-    expect(mockVerifyLegacy).toHaveBeenCalledWith(undefined);
     expect(mockRedirect).not.toHaveBeenCalled();
     expect(choices).toBeInTheDocument();
   });
@@ -150,27 +140,10 @@ describe('/login page', () => {
     expect(choices).toHaveAttribute('data-notice', 'しばらく操作がなかったため、ログアウトしました。もう一度ログインしてください。');
   });
 
-  test('DD-AUTH-001 ?registered=1 なら固定の案内の文を notice として渡す', async () => {
-    const choices = await renderPage({ registered: '1' });
-
-    expect(choices).toHaveAttribute('data-notice', '会員登録が完了しました。ログインしてください。');
-  });
-
-  test.each([
-    ['0', { registered: '0' }],
-    ['空', { registered: '' }],
-    ['配列', { registered: ['1', '1'] }],
-    ['未指定', {}],
-  ])('DD-AUTH-001 registered が %s なら notice を渡さない', async (_label, params) => {
-    const choices = await renderPage(params);
-
-    expect(choices).toHaveAttribute('data-has-notice', 'false');
-  });
-
-  test('DD-AUTH-001 registered と一緒のメールは案内の文に混ぜない', async () => {
+  test('DD-AUTH-001 ?registered=1 は消した確認リンクの印なので、案内の文を出さない', async () => {
     const choices = await renderPage({ registered: '1', email: 'x@example.com' });
 
-    expect(choices.getAttribute('data-notice')).not.toContain('x@example.com');
+    expect(choices).toHaveAttribute('data-has-notice', 'false');
   });
 
   test('DD-AUTH-001 metadata が title・新しい description・OG を返す', async () => {

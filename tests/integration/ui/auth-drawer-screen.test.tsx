@@ -46,11 +46,6 @@ jest.mock('next/link', () => ({
   ),
 }));
 
-jest.mock('@/components/LoginModal', () => ({
-  __esModule: true,
-  default: () => null,
-}));
-
 function renderHeader(options: { path?: string; role?: Role } = {}) {
   mockPathname = options.path ?? '/';
   mockLogin = { isLoggedIn: (options.role ?? null) !== null, userRole: options.role ?? null };

@@ -1,5 +1,7 @@
 # 画面遷移図
 
+> パスキー段4 Task 28 確認日: 2026-11-22。旧のパスワードのログイン・会員登録の画面（`/login/password`・`/login/verify`）と、登録の窓口・確認リンクの窓口（`POST /api/auth/register`・`GET /api/auth/confirm`）、登録確認メールの節点と、それらの遷移を図から消した。再設定の「ログインへ」と、パスワード変更の完了の行き先は `/login` になる。
+>
 > パスキー段3b Task 22 確認日: 2026-11-20。`/staff/invite`・`/staff/register`（段3a で足した画面）の導線を、末尾の「店員の招待からの導線（FR-AUTH-035・DD-AUTH-078・080）」に示した。上の全画面図の節点は足していない。
 >
 > パスキー段3a Task 5 確認日: 2026-11-18。画面 `/admin/create-user` と、その図の節点・遷移を消した。店員の招待・やり直しの画面は段3a の後のタスクで足す。
@@ -84,8 +86,6 @@ flowchart LR
         Login["/login（パスキー・Google・メールのコード）"]
         LoginCode["/login/code メールのコードの入力"]
         LoginPasskey["/login/passkey パスキーを作る勧め"]
-        LoginPassword["/login/password 旧のログイン・会員登録（段4まで）"]
-        LoginVerify["/login/verify メール OTP（旧）"]
         AuthVerified["/auth/verified"]
         PasswordReset["/auth/password-reset"]
         PasswordResetVerify["/auth/password-reset/verify"]
@@ -118,9 +118,6 @@ flowchart LR
     OAuthStart["API: /api/auth/oauth/start"]
     Google["外部: Google OAuth"]
     OAuthCallback["API: /api/auth/oauth/callback"]
-    RegisterApi["POST /api/auth/register"]
-    ConfirmationEmail["登録確認メール"]
-    ConfirmApi["GET /api/auth/confirm"]
     Stripe["Stripe: 決済 / 外部認証"]
     CheckoutError["checkout/error.tsx"]
     MetaConnect["API: /api/admin/kpi/meta/connect"]
@@ -214,16 +211,6 @@ flowchart LR
     LoginPasskey -->|作る→続ける / あとで| Account
     LoginPasskey -->|ログインしていない| Login
     Login -->|パスキーでログイン: 成功| Account
-    LoginPassword -->|自動: ログイン / 検証待ち| LoginVerify
-    LoginVerify -->|自動: user / 通信例外| Account
-    LoginVerify -->|自動: admin / supporter| AuthVerified
-    LoginVerify -->|検証切れ / 再確認失敗 / やり直し| LoginPassword
-    LoginPassword -. 登録タブ / 完了 .-> LoginPassword
-    LoginPassword -->|登録POST| RegisterApi
-    RegisterApi -. 受付結果表示 .-> LoginPassword
-    RegisterApi --> ConfirmationEmail
-    ConfirmationEmail -->|メールの確認リンク| ConfirmApi
-    ConfirmApi -->|自動: 登録の戻り先| AuthVerified
     Login -->|Googleログイン開始| OAuthStart
     OAuthStart --> Google
     Google --> OAuthCallback
@@ -233,13 +220,12 @@ flowchart LR
     AuthVerified -->|自動: MFA完了| Admin
     AuthVerified -. TOTP / 未認証 .-> AuthVerified
     AuthVerified -->|未認証: リンク| Login
-    LoginPassword --> PasswordReset
     PasswordReset -->|メールのtoken| PasswordResetVerify
     PasswordResetVerify -->|自動: 確認結果| PasswordReset
-    PasswordResetVerify -->|通信失敗: リンク| LoginPassword
+    PasswordResetVerify -->|通信失敗: リンク| Login
     PasswordResetVerify -. 通信再試行 .-> PasswordResetVerify
     PasswordReset -. 入力 / メール / 更新 .-> PasswordReset
-    PasswordReset -->|完了: ログイン| LoginPassword
+    PasswordReset -->|完了: ログイン| Login
     Account -. 4タブ切替・「ログイン方法」（tab=security。パスキーの一覧・追加・名前・削除） .-> Account
     Account --> OrderDetail
     Account -->|未ログイン: リンク| Login
@@ -325,7 +311,7 @@ flowchart LR
 | ホーム・一覧・検索 | [ホーム](../../../src/app/page.tsx)、[公開商品一覧](../../../src/features/items/components/PublicItemGrid.tsx)、[公開LOOK一覧](../../../src/features/look/components/PublicLookGrid.tsx)、[公開NEWS一覧](../../../src/features/news/components/PublicNewsGrid.tsx)、[ホーム検索](../../../src/features/search/components/SearchHomePreview.tsx)、[検索画面](../../../src/features/search/components/SearchPageClient.tsx) |
 | 詳細・保存・取扱店 | [商品詳細](../../../src/app/item/%5Bid%5D/ItemDetailClient.tsx)、[関連商品](../../../src/features/items/components/RelatedItems.tsx)、[LOOK詳細](../../../src/app/look/%5Bid%5D/page.tsx)、[NEWS詳細](../../../src/app/news/%5Bid%5D/page.tsx)、[保存一覧](../../../src/app/wishlist/page.tsx)、[取扱店](../../../src/features/stockist/components/PublicStockistGrid.tsx) |
 | 購入 | [カート](../../../src/app/cart/page.tsx)、[注文概要](../../../src/app/cart/_components/OrderSummary.tsx)、[チェックアウト](../../../src/app/checkout/page.tsx)、[最終確認画面](../../../src/app/checkout/_components/FinalConfirmationStep.tsx)、[place-order](../../../src/app/api/checkout/place-order/route.ts)、[resume](../../../src/app/api/checkout/resume/route.ts)、[ゲスト登録案内](../../../src/features/checkout/components/GuestRegisterPrompt.tsx)、[エラー境界](../../../src/app/checkout/error.tsx) |
-| 認証・再設定 | [LoginContext](../../../src/contexts/LoginContext.tsx)、[ログイン](../../../src/app/login/page.tsx)、[OTP確認](../../../src/app/login/verify/VerifyOtpClient.tsx)、[OAuth callback API](../../../src/app/api/auth/oauth/callback/route.ts)、[認証確認](../../../src/app/auth/verified/page.tsx)、[登録メール確認API](../../../src/app/api/auth/confirm/route.ts)、[再設定メールAPI](../../../src/app/api/auth/password-reset/request/route.ts)、[再設定リンク確認](../../../src/app/auth/password-reset/verify/VerifyClient.tsx) |
+| 認証・再設定 | [LoginContext](../../../src/contexts/LoginContext.tsx)、[ログイン](../../../src/app/login/page.tsx)、[OAuth callback API](../../../src/app/api/auth/oauth/callback/route.ts)、[認証確認](../../../src/app/auth/verified/page.tsx)、[再設定メールAPI](../../../src/app/api/auth/password-reset/request/route.ts)、[再設定リンク確認](../../../src/app/auth/password-reset/verify/VerifyClient.tsx) |
 | アカウント | [アカウント](../../../src/app/account/page.tsx)、[注文詳細](../../../src/app/account/orders/%5Bid%5D/page.tsx)、[返品・交換の申し込み](../../../src/app/account/orders/%5Bid%5D/return/page.tsx)、[再度購入](../../../src/features/account/hooks/useReorder.ts) |
 | 管理・開発補助 | [管理ページ](../../../src/app/admin/page.tsx)、[ITEMフォーム](../../../src/app/admin/item/ItemForm.tsx)、[LOOKフォーム](../../../src/app/admin/look/LookForm.tsx)、[NEWSフォーム](../../../src/app/admin/news/NewsForm.tsx)、[STOCKISTフォーム](../../../src/app/admin/stockist/StockistForm.tsx)、[UI](../../../src/app/ui/page.tsx)、[LOADING](../../../src/app/loading/page.tsx) |
 | Meta | [接続UI](../../../src/components/MetaKpiConnection.tsx)、[接続API](../../../src/app/api/admin/kpi/meta/connect/route.ts)、[callback API](../../../src/app/api/admin/kpi/meta/callback/route.ts) |
@@ -508,13 +494,13 @@ flowchart TD
 
 ## パスワード変更からの導線（波 6 / FR-AUTH-006）
 
-確認日: 2026-11-18（成功の行き先を `/login/password` に変更。それ以前は 2026-11-01）。入口は `/account/password` を直に開くこと（段2〔2026-11-18〕でアカウントの画面のリンクは外した。アカウントの新しいタブ「ログイン方法」は DD-AUTH-065）。段の切り替え（現行パスワード → コードと新しいパスワード）は同じルートの状態で、URLは変わらない。成功すると全端末の session が失効し、ログインの状態を引き直して `/login/password`（旧のパスワードの画面。段4まで）へ移る。設計の正本は `docs/03_BasicDesign/areas/auth.md` の SCR-AUTH-011・FLOW-AUTH-005。
+確認日: 2026-11-22（成功の行き先を `/login` に変更。旧の `/login/password` は段4で消した。それ以前は 2026-11-18・2026-11-01）。入口は `/account/password` を直に開くこと（段2〔2026-11-18〕でアカウントの画面のリンクは外した。アカウントの新しいタブ「ログイン方法」は DD-AUTH-065）。段の切り替え（現行パスワード → コードと新しいパスワード）は同じルートの状態で、URLは変わらない。成功すると全端末の session が失効し、ログインの状態を引き直して `/login/password`（旧のパスワードの画面。段4まで）へ移る。設計の正本は `docs/03_BasicDesign/areas/auth.md` の SCR-AUTH-011・FLOW-AUTH-005。
 
 ```mermaid
 flowchart TD
   A["直に開く（アカウントのリンクは段2で外した）"] -.-> P["/account/password"]
   P -->|1 現行パスワード → コードをメールに送る| P
-  P -->|2 コードと新しいパスワード → 変更成功（全 session 失効）| LP["/login/password（旧の画面。段4まで）"]
+  P -->|2 コードと新しいパスワード → 変更成功（全 session 失効）| LP["/login"]
   P -->|未ログイン| L["/login"]
   P -.->|Google だけの会員の案内: リンク| R["/auth/password-reset"]
 ```

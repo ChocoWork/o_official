@@ -40,8 +40,8 @@ flowchart LR
 | アプリのメール配送 | MAIL_PROVIDERでSES/Resend選択、未指定のコード上の既定はSES。再設定・注文・通知等を送る | [選択](../../src/lib/mail.ts)、[SES](../../src/lib/mail/adapters/ses.ts)、[Resend](../../src/lib/mail/adapters/resend.ts) |
 | 問い合わせ受信 | ResendからSvix形式の署名付きWebhookを受け、問い合わせへ相関付けする。送信用provider選択とは独立 | [受信API](../../src/app/api/contact/inbound/route.ts) |
 | Meta | OAuth接続・管理KPIの手動/Cron同期。接続情報・設定と権限が必要 | [接続](../../src/app/api/admin/kpi/meta/connect/route.ts)、[Graph API](../../src/lib/meta/graph-client.ts)、[同期](../../src/lib/meta/sync-kpi.ts) |
-| Turnstile | ブラウザwidgetとサーバーsiteverify。productionでsecret未設定なら検証拒否 | [ログインUI](../../src/components/LoginModal.tsx)、[検証](../../src/lib/turnstile.ts) |
-| Pwned Passwords | SHA-1先頭5文字で登録・再設定パスワードを照合。サービス障害時の続行は呼出し側の条件 | [照合](../../src/lib/pwned-password.ts)、[登録](../../src/app/api/auth/register/route.ts) |
+| Turnstile | ブラウザwidgetとサーバーsiteverify。productionでsecret未設定なら検証拒否 | ログインUI、[検証](../../src/lib/turnstile.ts) |
+| Pwned Passwords | SHA-1先頭5文字で登録・再設定パスワードを照合。サービス障害時の続行は呼出し側の条件 | [照合](../../src/lib/pwned-password.ts)、登録 |
 | ZipCloud | 郵便番号のメモリ/DB cache miss時に住所検索する | [住所検索](../../src/features/checkout/services/postal-code.service.ts) |
 | S3互換保存先 | 保存CLIの追加保存先。bucket/regionの両方で生成、両方未設定なら生成しない、片方だけなら設定エラー | [保存CLI](../../scripts/legal-archive/run-daily.ts)、[S3 adapter](../../src/lib/legal-archive/s3-storage.ts) |
 | 監査通知 | 設定された通知URLへ監査情報を送る任意経路 | [監査](../../src/lib/audit.ts) |

@@ -28,11 +28,9 @@ jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(async () => ({ rpc: mockRpc, from: mockFrom, auth: { admin: { createUser: mockCreateUser } } })),
 }));
 
-import { POST as register } from '@/app/api/auth/register/route';
 import { POST as reset } from '@/app/api/auth/password-reset/request/route';
 import sendMail from '@/lib/mail';
 import { notifySiteUrlInvalid } from '@/lib/ops/site-url-alert';
-import { createServiceRoleClient } from '@/lib/supabase/server';
 
 function request(path: string, origin = 'https://unlisted.example.test') {
   return new Request(`${origin}/api/auth/${path}`, {
@@ -41,7 +39,7 @@ function request(path: string, origin = 'https://unlisted.example.test') {
   });
 }
 
-// ARC-AUTH-007 の住所の見張り。会員登録は 503、再設定の申請は同じ 200 を返して、どちらも送らず運用へ知らせる
+// ARC-AUTH-007 の住所の見張り。再設定の申請は同じ 200 を返して、送らず運用へ知らせる
 describe('ARC-AUTH-007 認証メールに実際に入る origin の確認', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -68,48 +66,34 @@ describe('ARC-AUTH-007 認証メールに実際に入る origin の確認', () =
     expect(notifySiteUrlInvalid).toHaveBeenCalledTimes(1);
   });
 
-  it.each([null, 'existing-user'])('ARC-AUTH-007 登録は本番の不正な origin で503。確認・登録済み通知を送らずアカウントも作らない (case %#)', async (userId) => {
-    mockRpc.mockResolvedValue({ data: userId, error: null });
-    const response = await register(request('register'));
-    await flush();
-    expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({ error: 'ただいま会員登録を受け付けられません。時間をおいてお試しください。' });
-    expect(mockSignUp).not.toHaveBeenCalled();
-    expect(mockCreateUser).not.toHaveBeenCalled();
-    expect(sendMail).not.toHaveBeenCalled();
-    expect(createServiceRoleClient).not.toHaveBeenCalled();
-    expect(notifySiteUrlInvalid).toHaveBeenCalledTimes(1);
-  });
-
-  it.each(['register', 'password-reset/request'])('ARC-AUTH-007 設定が正常でも実際の origin が http なら送らない (%s)', async (path) => {
+  it('ARC-AUTH-007 設定が正常でも実際の origin が http なら送らない', async () => {
     process.env.NEXT_PUBLIC_SITE_URL = 'https://shop.example.test';
     process.env.APP_ALLOWED_ORIGINS = 'http://allowed.example.test';
-    const response = await (path === 'register' ? register : reset)(request(path, 'http://allowed.example.test'));
+    const response = await reset(request('password-reset/request', 'http://allowed.example.test'));
     await flush();
-    expect(response.status).toBe(path === 'register' ? 503 : 200);
-    expect(mockSignUp).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
     expect(sendMail).not.toHaveBeenCalled();
     expect(notifySiteUrlInvalid).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['register', 'password-reset/request'])('ARC-AUTH-007 設定が未設定でも実際の origin が許可済みの https なら送る (%s)', async (path) => {
+  it('ARC-AUTH-007 設定が未設定でも実際の origin が許可済みの https なら送る', async () => {
     const origin = 'https://allowed.example.test';
     process.env.APP_ALLOWED_ORIGINS = origin;
-    if (path !== 'register') mockRpc.mockResolvedValue({ data: 'existing-user', error: null });
-    const response = await (path === 'register' ? register : reset)(request(path, origin));
+    mockRpc.mockResolvedValue({ data: 'existing-user', error: null });
+    const response = await reset(request('password-reset/request', origin));
     await flush();
-    expect(response.status).toBe(path === 'register' ? 202 : 200);
-    expect(path === 'register' ? mockSignUp : sendMail).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(200);
+    expect(sendMail).toHaveBeenCalledTimes(1);
     expect(notifySiteUrlInvalid).not.toHaveBeenCalled();
   });
 
-  it.each(['register', 'password-reset/request'])('ARC-AUTH-007 手元の localhost は従来どおり送れる (%s)', async (path) => {
+  it('ARC-AUTH-007 手元の localhost は従来どおり送れる', async () => {
     delete process.env.VERCEL_ENV;
-    if (path !== 'register') mockRpc.mockResolvedValue({ data: 'existing-user', error: null });
-    const response = await (path === 'register' ? register : reset)(request(path, 'http://localhost:3000'));
+    mockRpc.mockResolvedValue({ data: 'existing-user', error: null });
+    const response = await reset(request('password-reset/request', 'http://localhost:3000'));
     await flush();
-    expect(response.status).toBe(path === 'register' ? 202 : 200);
-    expect(path === 'register' ? mockSignUp : sendMail).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(200);
+    expect(sendMail).toHaveBeenCalledTimes(1);
     expect(notifySiteUrlInvalid).not.toHaveBeenCalled();
   });
 });

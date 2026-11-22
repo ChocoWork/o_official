@@ -36,11 +36,6 @@ jest.mock('@/contexts/LoginContext', () => ({
 jest.mock('@/contexts/CartContext', () => ({
   useCart: () => ({ cartCount: 0 }),
 }));
-jest.mock('@/components/LoginModal', () => ({
-  __esModule: true,
-  default: () => null,
-}));
-
 const SHOP: PublicStockist = {
   id: 1,
   name: 'Atelier Quiet',

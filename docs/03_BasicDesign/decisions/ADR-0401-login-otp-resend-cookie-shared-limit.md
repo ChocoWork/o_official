@@ -1,6 +1,6 @@
 # ADR-0401 確認コードの再送は保留の Cookie だけで受け、ログインと同じアカウント単位の枠で数える
 
-> 状態: 現行 | 確認日: 2026-10-24 | 対象: `src/app/api/auth/login/resend/route.ts`、`src/app/login/verify/VerifyOtpClient.tsx` | 基準コミット: `4facf63b`
+> 状態: 廃止 | 確認日: 2026-10-24 | 対象: `src/app/api/auth/login/resend/route.ts`、`src/app/login/verify/VerifyOtpClient.tsx` | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -25,7 +25,7 @@
 | --- | --- |
 | 上位 | FREQ-334-REQ-05、FREQ-336-REQ-02、SEC-AUTH-004 |
 | 根拠 | 専用の画面にパスワードは無く、持たせてもいけない。パスワードが通ったことは保留の Cookie が示す。本文の宛先を信じると、他人の宛先へ店のドメインからメールを送らせる道になる。抑えたいのは1つのアカウントへ送るメールの総量なので、ログインと枠を分けると 5 通 + 5 通で 10 通送れてしまう（spec 5.2、`resend/route.ts`） |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 出どころ | `docs/superpowers/specs/2026-09-04-login-otp-dedicated-screen-design.md` の 5.2、`docs/02_Requirements/requirements.md` の FREQ-334・FREQ-336 の行 |
 
 #### 背景
@@ -51,6 +51,7 @@
 
 #### 結果
 
+- 置き換え先: ADR-0469（段4の Task 28、2026-11-22 に、パスワードのログイン・会員登録・確認リンクの窓口と画面を消したので、この決めは廃止した）
 - 良くなること: 専用の画面からパスワード無しで再送できる。1 アカウントへ送るコードの総量が 10 分に 5 通で止まる
 - 悪くなること: 再送が枠を使うので、再送を重ねた人はログインのやり直しも 10 分待たされる
 - 文書: FREQ-330-REQ-03 は「OTP の再送」にもボットの確かめのトークンを使い捨てで当てると書くが、今の再送の窓口はトークンを受け取らない（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」節に載せる）

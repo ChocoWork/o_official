@@ -279,7 +279,7 @@ export default function EmailCodeEntry({ email }: { email: string }) {
           </p>
         ) : null}
         <p className="mt-[5px] lk-text-xs leading-relaxed text-[#474747]">
-          コードの無い確認のメールが届いた時は、そのメールのリンクを押してから、もう一度お試しください。
+          「メールアドレスの確認」のメールが届いた時は、そのメールにある8桁の数字を入れてください。
         </p>
 
         <form className="mt-5" onSubmit={handleVerify} aria-busy={loading}>

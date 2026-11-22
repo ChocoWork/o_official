@@ -2,7 +2,7 @@
  * 会員のログインの手助け。
  * loginAsMember: メールのコードの窓口（/api/auth/email-code/resend → verify。始めの窓口の Turnstile は通さない）で、
  *   署名した保留の Cookie を置いて、本物の発行処理でログインと CSRF の Cookie を揃える。注文などの試験が使う。
- * loginAsMemberLegacy: 旧の窓口（/api/auth/login/resend → /api/auth/otp/verify）の道。旧の窓口の性質を確かめる試験だけが使う。段4で消す。
+ * loginAsMemberLegacy: 旧の窓口を消したので、loginAsMember の別名（名前と引数だけ残す。呼び手の spec が自分のタスクで消える・直るまでの橋。Task 33 で消す）。
  * どちらも、確認コードのメールは手元の Mailpit から Node で読む。
  * この助けを呼ぶ spec は、ファイルの最上位（test.describe の外）に `test.use({ trace: 'off' })` が必須。
  * 確認コード・ログインの Cookie・保留の Cookie がブラウザの文脈の通信に載り、通信記録に残るため。
@@ -12,7 +12,7 @@ import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import type { Page } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
-import { setEmailCodeSessionCookie, setLoginTwoFactorCookie } from './auth-2fa-test-utils';
+import { setEmailCodeSessionCookie } from './auth-2fa-test-utils';
 
 export type TestMember = { userId: string; email: string };
 
@@ -126,51 +126,11 @@ async function expectMemberSession(page: Page, origin: string, member: TestMembe
 }
 
 /**
- * 旧の窓口（パスワード＋コードの道: /api/auth/login/resend・/api/auth/otp/verify）で会員のログインを揃える。
- * 旧の窓口の性質を確かめる試験だけが使う。それ以外は loginAsMember（メールのコードの窓口）を使う。
- * forwardedFor を渡すと、回数の制限を数える送り元（x-real-ip）として確認コードの送信・検証の要求に付ける。
- * 試験ごとに別の値を渡せば、見出しの無い要求が集まる「送り元なし」の枠を全部の E2E で使い切らない。
- * 手元の E2E サーバーだけで効く（固定の環境の CLIENT_IP_HEADER=x-real-ip で x-real-ip を信頼する。x-forwarded-for は読まれない）。
+ * 旧の窓口（パスワード＋コードの道）は消えたので、loginAsMember（メールのコードの窓口）に付け替えた別名。
+ * 名前と引数（forwardedFor を含む）だけ残し、呼び手の spec が自分のタスクで消える・直るまでの橋にする（Task 33 で別名ごと消す）。
  */
 export async function loginAsMemberLegacy(page: Page, member: TestMember, forwardedFor?: string): Promise<void> {
-  if (!isLocalUrl(process.env.NEXT_PUBLIC_SUPABASE_URL) || process.env.MAIL_PROVIDER !== 'local') {
-    throw new Error('会員のログインは手元の Supabase とメール送信だけで使える');
-  }
-  localMailUrl();
-  if (page.url() === 'about:blank') {
-    await page.goto('/');
-  }
-  const origin = new URL(page.url()).origin;
-  if (!isLocalUrl(origin)) {
-    throw new Error('会員のログイン先は手元のアプリに限る');
-  }
-  await setLoginTwoFactorCookie(page, member.email, member.userId);
-  // アプリと Mailpit の時計がずれても、再送前からあるメールを選ばないため。
-  const previousMessageIds = new Set((await readMailpitMessages(member.email)).map((message) => message.ID));
-  // 渡された時だけ付ける。渡さない既存の呼び出しは、これまでと同じ要求になる。
-  const sourceHeaders: Record<string, string> = forwardedFor === undefined ? {} : { 'x-real-ip': forwardedFor };
-  // page.request の baseURL と表示中のページが違っても、確認済みの手元へだけ送るため。
-  const resend = await page.request.post(new URL('/api/auth/login/resend', origin).toString(), {
-    headers: { origin, ...sourceHeaders },
-    maxRedirects: 0,
-  }).catch(() => {
-    throw new Error('確認コードを送る要求に失敗した');
-  });
-  if (!resend.ok()) {
-    throw new Error(`確認コードを送れない: ${resend.status()}`);
-  }
-  const code = await readLatestCode(member.email, previousMessageIds);
-  const verify = await page.request.post(new URL('/api/auth/otp/verify', origin).toString(), {
-    headers: { origin, ...sourceHeaders },
-    data: { code },
-    maxRedirects: 0,
-  }).catch(() => {
-    throw new Error('確認コードを検証する要求に失敗した');
-  });
-  if (!verify.ok()) {
-    throw new Error(`確認コードが通らない: ${verify.status()}`);
-  }
-  await expectMemberSession(page, origin, member);
+  await loginAsMember(page, member, forwardedFor);
 }
 
 /**

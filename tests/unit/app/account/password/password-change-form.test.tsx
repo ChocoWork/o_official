@@ -322,7 +322,7 @@ describe('DD-AUTH-042 パスワード変更の画面の分岐', () => {
     expect(screen.getByLabelText('現行のパスワード')).toHaveValue('');
   });
 
-  it('DD-AUTH-042 ログイン状態の引き直しが失敗しても /login/password へ移る', async () => {
+  it('DD-AUTH-042 ログイン状態の引き直しが失敗しても /login へ移る', async () => {
     const user = userEvent.setup();
     await toStage2(user);
     mockClientFetch.mockResolvedValueOnce(response(200, { ok: true }));
@@ -330,7 +330,7 @@ describe('DD-AUTH-042 パスワード変更の画面の分岐', () => {
 
     await submitStage2(user);
 
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/login/password'));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/login'));
     expect(mockRefreshAuthState).toHaveBeenCalledTimes(1);
   });
 

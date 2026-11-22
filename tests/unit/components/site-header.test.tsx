@@ -50,17 +50,6 @@ jest.mock('next/link', () => ({
 }));
 
 // ログインのモーダルは開く所が無い。渡された開閉の値と閉じる関数だけ見る。
-jest.mock('@/components/LoginModal', () => ({
-  __esModule: true,
-  default: ({ open, onClose }: { open: boolean; onClose?: () => void }) => (
-    <div data-testid="login-modal" data-open={String(open)}>
-      <button type="button" onClick={onClose}>
-        mock-login-close
-      </button>
-    </div>
-  ),
-}));
-
 function setScrollY(value: number) {
   Object.defineProperty(window, 'scrollY', {
     value,
@@ -515,17 +504,9 @@ describe('Header', () => {
     }
   });
 
-  it('DD-AUTH-007 ログインのモーダルはいつも閉じていて、閉じる関数を呼んでも閉じたまま', () => {
+  it('DD-AUTH-007 ヘッダーはログインのモーダルを持たない（ログインのリンクは /login へ向く）', () => {
     renderHeader({ loggedIn: false });
-    const modal = screen.getByTestId('login-modal');
-    expect(modal).toHaveAttribute('data-open', 'false');
-
-    fireEvent.click(screen.getByRole('button', { name: 'mock-login-close' }));
-    expect(screen.getByTestId('login-modal')).toHaveAttribute('data-open', 'false');
-  });
-
-  it('DD-AUTH-007 ログインしている時もログインのモーダルは閉じたまま', () => {
-    renderHeader({ loggedIn: true, role: 'user' });
-    expect(screen.getByTestId('login-modal')).toHaveAttribute('data-open', 'false');
+    expect(screen.queryByTestId('login-modal')).toBeNull();
+    expect(screen.getAllByRole('link', { name: 'ログイン' })[0]).toHaveAttribute('href', '/login');
   });
 });

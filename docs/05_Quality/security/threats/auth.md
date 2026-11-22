@@ -91,7 +91,7 @@ flowchart LR
 | 対策 | SEC-AUTH-003 |
 | ASVS | ASVS 未対応付け |
 | 根拠 | アプリの窓口には守りがある。Cookie の署名は HMAC と定数時間の比べ方（`src/features/auth/services/login-2fa-session.ts:82-92`）。同じ迂回をアプリの外で行う道は THR-AUTH-005 で扱う |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | `docs/superpowers/specs/2026-09-04-login-otp-dedicated-screen-design.md`（実装から推定で照らした） |
 
 ### THR-AUTH-004 保留の2段目の状態を延ばす・宛先を差し替える
@@ -105,7 +105,7 @@ flowchart LR
 | 対策 | SEC-AUTH-004 |
 | ASVS | V3.3.2 |
 | 根拠 | 守りがある（FREQ-336）。30 分は「5 分の期限と 60 秒の待ちで約 5 回の再送」に合わせた値（`login-2fa-session.ts:12-14`） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | `docs/02_Requirements/requirements.md` の FREQ-336 の行 |
 
 ### THR-AUTH-005 アプリを通らず Supabase Auth を直接呼んでメール OTP の2段目を飛ばす
@@ -134,7 +134,7 @@ flowchart LR
 | 対策 | SEC-AUTH-006 |
 | ASVS | ASVS 未対応付け |
 | 根拠 | FREQ-335 はログインの OTP の検証で type を email に固定したが、確認のリンクの入口は4つの型を受けたまま。会員登録の確認に要るのは `signup` だけ（`src/app/api/auth/register/route.ts:155-165`）。 |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | 実装から推定 |
 
 ### THR-AUTH-007 他人の端末を攻撃者のアカウントでログインさせる（ログインの CSRF）
@@ -288,7 +288,7 @@ flowchart LR
 | 対策 | SEC-AUTH-017 |
 | ASVS | ASVS 未対応付け |
 | 根拠 | 過去のレビューが「管理と公開が同じ窓口」と指摘し、今も同じ（`security_review_signup.md:59`）。管理のユーザー作成は別の窓口 `/api/admin/create-user`（範囲外）にある |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | `docs/05_Quality/reviews/security/security_review_signup.md:59` |
 
 ### THR-AUTH-018 パスワード再設定のリンクの漏れ・使い回し
@@ -456,7 +456,7 @@ flowchart LR
 | 対策 | SEC-AUTH-029 |
 | ASVS | ASVS 未対応付け |
 | 根拠 | 本番のダッシュボードの値を見ていない。台帳の開店の準備にあるのは Site URL と 8 桁のコードの型だけ（`docs/05_Quality/reviews/code/2026-09-25-working-diff-security-review.md:268,287`）。保留の Cookie が 5 分なので、OTP の使える窓は Cookie で 5 分に絞られる（推定） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | 実装から推定 |
 
 ### THR-AUTH-030 認証の出来事が監査に残らない
@@ -853,6 +853,20 @@ flowchart LR
 | 根拠 | 段3b の Task 14（オーナーが2026-11-19に店長への知らせを決めた） |
 | 状態 | 推定 |
 | 出どころ | `.superpowers/sdd/2026-11-19-passkey-stage3b-staff-ops/task-14-brief.md`、`docs/superpowers/plans/2026-11-19-passkey-stage3b-staff-ops.md`（Task 14） |
+
+### THR-AUTH-059 消したログインの窓口・画面へのリンクと戻り先が残り、利用者が行き止まりや旧の流れに着く
+
+| 属性 | 値 |
+| --- | --- |
+| 守るもの | ログインの入口の一貫（お客さんが着く先）・戻り先の確かめ |
+| 脅威 | (1) ヘッダー・画面・メール・戻り先に、消した `/login/password`・`/login/verify`・`/api/auth/confirm` へのリンクが残り、利用者が 404 に着く、または古い確認メールのリンクから旧の流れを再現しようとする。(2) 旧のパスワードのログインの保留の Cookie が残り、ログインの画面が特別な動きをする |
+| 起こり方 | 消す物の呼び手を取りこぼす・メールの雛形にリンクが残る・戻り先の確かめが消した道筋を通す |
+| 影響 | お客さんが入れない・行き先を失う。古い確認メールを手がかりに、消した窓口を探る道が残る |
+| 対策 | SEC-AUTH-061（消した画面・窓口へのリンクを残さず、戻り先の確かめが消した道筋を `/login` と `/api` の接頭辞で外し、旧の Cookie を無視する）、DD-AUTH-060。確認のメールの雛形はリンクを持たず8桁のコードだけを入れさせる |
+| ASVS | V3.7.1・V5.1.5（当てはめは推定） |
+| 根拠 | 段4の Task 28（お客さんのパスワードのログインを消した） |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-28-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 28） |
 
 ## 未確認事項
 

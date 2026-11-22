@@ -58,7 +58,7 @@
 | ファイル | 受け入れ条件 | 確かめること |
 | --- | --- | --- |
 | [FR-LOGIN-055](../../../e2e/FR-LOGIN-055-email-code-api.spec.ts) | FR-AUTH-023-AC-01〜06 | 画面を開かない HTTP の試験。未登録で始めて確定するとログインできる・登録済みと未登録で応答が同じ・間違ったコードは5回まで401で6回目が429・店員は確定が403・旧い保留の Cookie と無い Cookie は401。AC-03 は回数の制限の窓（UTC を10分で切る固定の窓）の境をまたぐと6回目が429にならないので、数え始める前に窓の残りが10秒より短ければ次の窓まで待つ |
-| [FR-LOGIN-056](../../../e2e/FR-LOGIN-056-legacy-login-relocated.spec.ts) | FR-AUTH-025-AC-01〜04 | 旧の画面 `/login/password` が旧と同じ・検索に載らない・戻り先が閉じる |
+| FR-LOGIN-056 | FR-AUTH-025-AC-01〜04 | 旧の画面 `/login/password` が旧と同じ・検索に載らない・戻り先が閉じる |
 | [FR-LOGIN-057](../../../e2e/FR-LOGIN-057-login-screen.spec.ts) | FR-AUTH-027-AC-01〜06 | 新しい `/login` の3つの入口・パスキーの始め・未対応のブラウザ・メールのコード・Google・390px |
 | [FR-LOGIN-058](../../../e2e/FR-LOGIN-058-email-code-screen.spec.ts) | FR-AUTH-026-AC-01〜05 | `/login/code` の確定・誤り・案内と再送の待ち・入れ直し・390px |
 | [FR-LOGIN-059](../../../e2e/FR-LOGIN-059-passkey-offer-real-browser.spec.ts) | FR-AUTH-028-AC-01〜07 | パスキーを作る勧め `/login/passkey`。ブラウザの仮想の認証器で、作る・ログアウトして入る・鍵を持つ人には出さない・本人確認ができない認証器・「あとで」・未対応のブラウザ・ログインしていない人 |

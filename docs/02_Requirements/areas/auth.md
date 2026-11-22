@@ -124,7 +124,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | パスワードを使うログインにしたので、忘れた人が店へ問い合わせずに戻れる道が要る。FR-LOGIN-003 の上位が要求の表に無いので足した（FREQ-319 は再設定の直しの要求で、再設定を求める元の要求ではない） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | `docs/02_Requirements/stakeholder-requirements.md` の「2. 目標」、実装から推定 |
 
 パスワードを忘れた会員が、ログインの画面から再設定のページへ移り、メールで受け取ったリンクから新しいパスワードを決められること。
@@ -337,7 +337,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | `/login` を新しい画面（メールのコード・パスキー・Google）に作り替えても、パスワードの店員・お客さんの入口と、旧の画面を操作する試験は段4まで動かし続ける必要がある。旧の画面を別の住所へ動かし、検索に載せず、旧の流れの中の行き先をそこで閉じれば、中身を変えずに緑を保てる（設計 9）。お客さんに見せる行き先は新しい `/login` のままにする |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの発言 2026-11-17（`.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-3-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 3。調整役の判断 2・I-2）） |
 
 要求の文: 今のパスワードのログイン・会員登録の画面を `/login/password` で開けるようにする。見た目と動きは今と同じにし、検索に載せない。旧の流れの中の戻り先（保留の無いコード入力、取りやめ、登録の完了の案内）は `/login/password` に閉じる。
@@ -451,7 +451,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | 確認コードが長く生きていると、盗み見られたコードや届いたままのメールが後から使われる窓が広がるため、5分に絞る |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -517,7 +517,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | パスワードを思い出せない人が見る場所はパスワードの欄なので、近くにまとめて探さずに済むようにする（近接の原則） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -528,7 +528,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | 押してほしいボタンが一番強く見えないと、次に何をすればよいか迷うため（対比の原則。note のログインの画面を参考） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -539,7 +539,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | 並ぶボタンの高さや文字がばらばらだと、整っていない画面に見え、どれが主かも読み取りにくいため（近接・整列の原則） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -594,7 +594,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | 四方の枠の欄は重く見えるため、下線だけの静かな欄にし、アイコンで何を入れる欄かを一目で分かるようにする。寸法は黄金比から導いてそろえる |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -605,7 +605,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | 枠とタブの塗りと切替のリンクが重なると、同じ切り替えの手段が2つ並び画面が重くなるため、下線のタブ1つにまとめる（FREQ-63 のタブの中の切替の基準を置き換えた） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -616,7 +616,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | 2つのタブで欄やボタンの形が違うと、別の画面に移ったように見えるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -792,7 +792,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | タブの中の一つの状態だと、戻る操作や再読み込みでパスワードの画面に戻り、生きた 2FA の Cookie のまま2通目の OTP を送ってアカウントの回数を使い切るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -814,7 +814,7 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | 保留のセッションに上限が無い・再送に IP の制限が無い・偽れる入力が残る・監査を水増しできる・テスト用の偽造が本番にも効く、の5つの穴を塞ぐため |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節） |
 
@@ -856,6 +856,8 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 実装の状況（2026-11-22）: 段4の Task 26 で、残す流れ（`FR-AUTH-054`）の基準の試験を足した。消す側の要件（窓口・画面が無いこと、フックがお客さんの password を拒むこと）は、後のタスクで同じ要求の下に足す。
 
 ## 要件
+実装の状況（2026-11-22）: 段4の Task 28 で、お客さんのパスワードのログイン・会員登録・確認リンクの窓口と画面を消した（FR-AUTH-053）。確認前のアカウントの確認メールは、リンクをやめて8桁のコードを入れさせる形に替えた（FR-AUTH-054-AC-04）。
+
 
 ### 要求の表から写した要件
 
@@ -893,7 +895,7 @@ Drawer上部の×ボタンをヘッダーのハンバーガーメニューボタ
 | --- | --- |
 | 上位 | FREQ-58 |
 | 根拠 | FREQ-58 の2要素を、パスワード→コードの順と、パスワードを通った印を短命の署名 Cookie に持たせる形に決めた。印が無いとコードだけでログインできてしまうため |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-58 の行） |
@@ -919,7 +921,7 @@ Drawer上部の×ボタンをヘッダーのハンバーガーメニューボタ
 | --- | --- |
 | 上位 | FREQ-60 |
 | 根拠 | FREQ-60 の5分を Supabase の設定で持たせ、再送の待ちとは別の値にした。本番の設定は確かめておらず、手元の Supabase は 3600 秒（状態は推定） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | レビュー |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-60 の行） |
@@ -997,7 +999,7 @@ Supabase の Email OTP Expiration を300秒に設定すること。UI の再送�
 | --- | --- |
 | 上位 | FREQ-66 |
 | 根拠 | FREQ-66 の「直下」を、ボタンより上・欄との間隔をボタンとの間隔より狭く・右寄せの3つに分けた |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-66 の行） |
@@ -1010,7 +1012,7 @@ Supabase の Email OTP Expiration を300秒に設定すること。UI の再送�
 | --- | --- |
 | 上位 | FREQ-67 |
 | 根拠 | FREQ-67 の優先度を、文字の大きさと高さの順に置き換えた。会員登録タブも同じ順にする |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-67 の行） |
@@ -1023,7 +1025,7 @@ Supabase の Email OTP Expiration を300秒に設定すること。UI の再送�
 | --- | --- |
 | 上位 | FREQ-68 |
 | 根拠 | FREQ-68 を、同じフォームの中とタブの間の2つのそろえ方に分けた。主ボタンの優先度は黒の地で示す |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-68 の行） |
@@ -1088,7 +1090,7 @@ Supabase の Email OTP Expiration を300秒に設定すること。UI の再送�
 | --- | --- |
 | 上位 | FREQ-89 |
 | 根拠 | FREQ-89 を、共通の部品の拡張と、ログインの Email・Password への当てはめ、色の決まりに分けた |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-89 の行） |
@@ -1101,7 +1103,7 @@ Supabase の Email OTP Expiration を300秒に設定すること。UI の再送�
 | --- | --- |
 | 上位 | FREQ-90 |
 | 根拠 | FREQ-90 を、タブの見た目・カードの枠の撤去・切替のボタンの撤去の3つにした |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-90 の行） |
@@ -1114,7 +1116,7 @@ Supabase の Email OTP Expiration を300秒に設定すること。UI の再送�
 | --- | --- |
 | 上位 | FREQ-91 |
 | 根拠 | FREQ-91 を、欄の形・表示切替・並びの順・OR の弱め方・ボタンの形と大きさに分けた |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-91 の行） |
@@ -1400,7 +1402,7 @@ access token を保持する Cookie の Max-Age を、トークンの exp では
 | --- | --- |
 | 上位 | FREQ-320 |
 | 根拠 | 応答の違いで会員かどうかを知られないため。409 は廃止する |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-320 の行） |
@@ -1413,7 +1415,7 @@ access token を保持する Cookie の Max-Age を、トークンの exp では
 | --- | --- |
 | 上位 | FREQ-320 |
 | 根拠 | 画面の文言からも登録の有無を判らせないため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-320 の行） |
@@ -1426,7 +1428,7 @@ access token を保持する Cookie の Max-Age を、トークンの exp では
 | --- | --- |
 | 上位 | FREQ-323 |
 | 根拠 | パスワードもハッシュの全部も外へ出さずに漏洩を確かめるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-323 の行） |
@@ -1452,7 +1454,7 @@ access token を保持する Cookie の Max-Age を、トークンの exp では
 | --- | --- |
 | 上位 | FREQ-323 |
 | 根拠 | NIST SP 800-63B と ASVS 2.1.9 が構成の決まりを勧めず、強さは長さと漏洩の照合で持たせるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-323 の行） |
@@ -1543,7 +1545,7 @@ Origin 検査の実装は proxy に一本化し、ルート個別に同じ検査
 | --- | --- |
 | 上位 | FREQ-328 |
 | 根拠 | Turnstile の下限の幅がグリッドの列へ伝わり、送信ボタンと幅がずれるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-328 の行） |
@@ -1647,7 +1649,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-330 |
 | 根拠 | 失敗して同じ画面に留まる時こそ、再試行で同じトークンを使ってしまうため |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-330 の行） |
@@ -1673,7 +1675,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-330 |
 | 根拠 | 経路が1つでも漏れると、そこだけ再試行が断られるため。検証を省く環境では 403 で確かめられないので、トークンの値が変わることで確かめる。ただし OTP の再送は FREQ-334 で経路が変わり、2FA の Cookie を門にして Turnstile を受けない（`src/app/api/auth/login/resend/route.ts`。ADR-0401・0411、ARC-AUTH-005）。再送の分はコードと合わないので推定にした |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-330 の行） |
@@ -1881,7 +1883,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-334 |
 | 根拠 | Cookie の不在・改竄・期限切れを同じ扱いにして、アカウントの存在を示さないため。判定の前に入力の画面の HTML を送らない |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-334 の行） |
@@ -1894,7 +1896,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-334 |
 | 根拠 | push だと戻るで /login に戻れ、2通目の OTP でアカウントの制限を消費するため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-334 の行） |
@@ -1907,7 +1909,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-334 |
 | 根拠 | 資格情報のフォームを見せると、もう一度ログインを押せてしまうため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-334 の行） |
@@ -1920,7 +1922,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-334 |
 | 根拠 | 誰宛てか本人には分かり、ローカル部の長さは漏らさないため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-334 の行） |
@@ -1933,7 +1935,7 @@ Bot 検証ウィジェットが CTA の直前に入るため、13px グリッド
 | --- | --- |
 | 上位 | FREQ-334 |
 | 根拠 | 宛先は Cookie から取れるので、本文に取ると偽れる入力が増えるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-334 の行） |
@@ -1946,7 +1948,7 @@ OTP の再送をパスワード不要にすること。再送は 2FA Cookie 由�
 | --- | --- |
 | 上位 | FREQ-334 |
 | 根拠 | 画面の状態を戻すだけでは Cookie が残るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-334 の行） |
@@ -1959,7 +1961,7 @@ OTP の再送をパスワード不要にすること。再送は 2FA Cookie 由�
 | --- | --- |
 | 上位 | FREQ-335 |
 | 根拠 | subject を Cookie 由来にし、他人の枠を潰す DoS を防ぐため。制限は Cookie の検証の後に置く |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-335 の行） |
@@ -1972,7 +1974,7 @@ OTP の再送をパスワード不要にすること。再送は 2FA Cookie 由�
 | --- | --- |
 | 上位 | FREQ-335 |
 | 根拠 | 試行の窓を1回のログインの試みに閉じるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-335 の行） |
@@ -1998,7 +2000,7 @@ verifyOtp の type を email に固定すること。email / magiclink / signup 
 | --- | --- |
 | 上位 | FREQ-335 |
 | 根拠 | Cookie だけが長いと、コードが切れているのに入力の画面が生きている窓ができるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-335 の行） |
@@ -2011,7 +2013,7 @@ verifyOtp の type を email に固定すること。email / magiclink / signup 
 | --- | --- |
 | 上位 | FREQ-336 |
 | 根拠 | 引き継がないと再送で窓が延び、上限が意味を失うため（ASVS V3.3.2） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-336 の行） |
@@ -2024,7 +2026,7 @@ verifyOtp の type を email に固定すること。email / magiclink / signup 
 | --- | --- |
 | 上位 | FREQ-336 |
 | 根拠 | /api/auth/login と同じ二段の制限にそろえるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-336 の行） |
@@ -2037,7 +2039,7 @@ verifyOtp の type を email に固定すること。email / magiclink / signup 
 | --- | --- |
 | 上位 | FREQ-336 |
 | 根拠 | 偽れる入力そのものを無くすため |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-336 の行） |
@@ -2050,7 +2052,7 @@ verifyOtp の type を email に固定すること。email / magiclink / signup 
 | --- | --- |
 | 上位 | FREQ-336 |
 | 根拠 | 捨てる物が無い時に書くと監査の行を水増しできるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-336 の行） |
@@ -2063,7 +2065,7 @@ verifyOtp の type を email に固定すること。email / magiclink / signup 
 | --- | --- |
 | 上位 | FREQ-336 |
 | 根拠 | 本番に対して認証の前段の有効な状態を作れてはいけないため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-336 の行） |
@@ -2093,7 +2095,7 @@ e2e の 2FA Cookie 偽造ヘルパを localhost / 127.0.0.1 に対してのみ�
 | --- | --- |
 | 上位 | FREQ-58 |
 | 根拠 | パスワードだけのログインでは、漏れたパスワードで他人に入られるため、メールに届くコードで本人を確かめる（FREQ-58 と同じ中身で、FREQ-58-REQ-01 と重なる） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `docs/02_Requirements/requirements.md` |
 | 優先度 | MUST |
@@ -2121,7 +2123,7 @@ Google OAuth によるソーシャルログインボタンを表示する。
 | --- | --- |
 | 上位 | SR-AUTH-002 |
 | 根拠 | パスワードを忘れた会員が、店へ問い合わせずに自分で戻れるようにするため（SR-AUTH-002） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `docs/02_Requirements/requirements.md` |
 | 優先度 | SHOULD |
@@ -2135,7 +2137,7 @@ Google OAuth によるソーシャルログインボタンを表示する。
 | --- | --- |
 | 上位 | FREQ-59 |
 | 根拠 | 登録とログインを分け、ログインでアカウントを勝手に作らないため（FREQ-59 と同じ中身）。専用の /register は FREQ-63 で廃止され、`docs/04_DetailDesign/pages/14_login.md` は WONT と書く（食い違い。状態は推定） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `docs/02_Requirements/requirements.md` |
 | 優先度 | MUST |
@@ -2165,7 +2167,7 @@ Google OAuth によるソーシャルログインボタンを表示する。
 | --- | --- |
 | 上位 | FREQ-60 |
 | 根拠 | 再送を連打されると回数の制限を使い切り、メールも何通も届くため、送った後に待ちの時間を置く（FREQ-60 の「再送のクールダウン 60 秒」） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `docs/02_Requirements/requirements.md` |
 | 優先度 | MUST |
@@ -2197,7 +2199,7 @@ OTP 送信後のカウントダウンタイマー（再送信制限）を実装�
 | --- | --- |
 | 上位 | FREQ-60 |
 | 根拠 | コードの寿命を短くして漏れの窓を狭めるため（FREQ-60 と同じ中身で、FREQ-60-REQ-01 と重なる）。本番の Supabase の設定は確かめていない（状態は推定） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `docs/02_Requirements/requirements.md` |
 | 優先度 | MUST |
@@ -2538,7 +2540,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-58-REQ-01 |
 | 根拠 | FREQ-58-REQ-01 の1段目の入口があることを、2つの欄の表示で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-58 の行） |
@@ -2551,7 +2553,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-58-REQ-01 |
 | 根拠 | FREQ-58-REQ-01 の2段目へ進むことを、コードの欄の表示で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-58 の行） |
@@ -2577,7 +2579,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-59-REQ-01 |
 | 根拠 | FREQ-59-REQ-01 の導線を表示で確かめる。今の導線はタブで、名前は「会員登録」（「新規登録」ではない） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-59 の行） |
@@ -2590,7 +2592,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-60-REQ-01 |
 | 根拠 | FREQ-60-REQ-01 のうち再送の待ちを、「後に再送可能」の表示で確かめる。5分の有効期限そのものはこの条件では確かめない（FR-LOGIN-008-AC-01・02 を起こした） |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-60 の行） |
@@ -2603,7 +2605,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-61-REQ-01 |
 | 根拠 | FREQ-61-REQ-01 の初めの状態を、タブの選択と欄の有無で確かめる。今のタブの名前は「新規登録」ではなく「会員登録」（状態は推定） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-61 の行） |
@@ -2668,7 +2670,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-63-REQ-01 |
 | 根拠 | FREQ-63-REQ-01 のルートの廃止を、404 の応答で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-63 の行） |
@@ -2681,7 +2683,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-63-REQ-01 |
 | 根拠 | FREQ-63-REQ-01 の URL を変えないタブを確かめる。今のタブの名前は「会員登録」（状態は推定） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-63 の行） |
@@ -2720,7 +2722,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-64-REQ-01 |
 | 根拠 | FREQ-64 の「導線は設けない」を、その文言が無いことで確かめる。下線の見た目に変わった後も成り立つ |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-64 の行） |
@@ -2759,7 +2761,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-65-REQ-01 |
 | 根拠 | FREQ-65-REQ-01 のタブの塗り分けを、非選択のタブの色で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-65 の行） |
@@ -2772,7 +2774,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-65-REQ-01 |
 | 根拠 | FREQ-65-REQ-01 の無効の条件を、空の時の disabled で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-65 の行） |
@@ -2785,7 +2787,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-65-REQ-01 |
 | 根拠 | FREQ-65-REQ-01 の有効になる条件を、入れた後の enabled で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-65 の行） |
@@ -2798,7 +2800,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-65-REQ-01 |
 | 根拠 | FREQ-65-REQ-01 の登録の側の無効の条件を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-65 の行） |
@@ -2824,7 +2826,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-66-REQ-01 |
 | 根拠 | FREQ-66-REQ-01 の位置の上下を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-66 の行） |
@@ -2837,7 +2839,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-66-REQ-01 |
 | 根拠 | FREQ-66-REQ-01 の近さを、2つの縦の間隔の大小で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-66 の行） |
@@ -2850,7 +2852,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-66-REQ-01 |
 | 根拠 | FREQ-66-REQ-01 の右寄せを、右端の位置で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-66 の行） |
@@ -2863,7 +2865,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-67-REQ-01 |
 | 根拠 | FREQ-67-REQ-01 の主ボタンと入力欄の順を、文字の大きさで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-67 の行） |
@@ -2876,7 +2878,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-67-REQ-01 |
 | 根拠 | FREQ-67-REQ-01 の最下位を確かめる。比べる元の「会員登録はこちら」は FREQ-90 で撤去され、E2E はタブの見出しと比べている（状態は推定） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-67 の行） |
@@ -2889,7 +2891,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-67-REQ-01 |
 | 根拠 | FREQ-67-REQ-01 の主ボタンの高さを、入力欄・Google ボタンと比べて確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-67 の行） |
@@ -2902,7 +2904,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-68-REQ-01 |
 | 根拠 | FREQ-68-REQ-01 の同じフォームの中のそろえを確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-68 の行） |
@@ -2915,7 +2917,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-68-REQ-01 |
 | 根拠 | FREQ-68-REQ-01 のタブの間のそろえを確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-68 の行） |
@@ -2934,6 +2936,8 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-69 の行） |
 
 `/login` 初期表示で Footer の上端がビューポート下端以上（＝Footer が見えない）であること
+（段4の Task 28 で、旧の `/login/password` の検査を新しい画面へ移した。同じ検査を `e2e/FR-LOGIN-079-login-screens-layout.spec.ts` が `/login`・`/login/code` に向けて持つ。タブは消えたので、検査は画面全体で行う）
+
 
 ### FREQ-69-AC-02 main の下端がビューポートの下端に届く
 
@@ -2947,6 +2951,8 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-69 の行） |
 
 `/login` の main の下端がビューポート下端に到達している（main が画面下まで占める）こと
+（段4の Task 28 で、旧の `/login/password` の検査を新しい画面へ移した。同じ検査を `e2e/FR-LOGIN-079-login-screens-layout.spec.ts` が `/login`・`/login/code` に向けて持つ。タブは消えたので、検査は画面全体で行う）
+
 
 ### FREQ-69-AC-03 フォームが縦のほぼ中央にあり、ヘッダーに重ならない
 
@@ -2960,6 +2966,8 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-69 の行） |
 
 `/login` のフォーム（認証カード）が縦方向にほぼ中央（中心のずれがビューポート高の15%以内）に配置され、ヘッダに重ならないこと
+（段4の Task 28 で、旧の `/login/password` の検査を新しい画面へ移した。同じ検査を `e2e/FR-LOGIN-079-login-screens-layout.spec.ts` が `/login`・`/login/code` に向けて持つ。タブは消えたので、検査は画面全体で行う）
+
 
 ### FREQ-70-AC-01 角丸のカードがあり、送信ボタンの角が 4px〜12px
 
@@ -2986,6 +2994,8 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-70 の行） |
 
 `/auth/password-reset` 初期表示で Footer が見えず（上端がビューポート下端以上）、フォームが縦方向にほぼ中央に配置されること
+（段4の Task 28 から、同じ検査を新しいログインの確認コードの画面 `/login/code` にも向ける。`e2e/FR-LOGIN-079-login-screens-layout.spec.ts`）
+
 
 ### FREQ-70-AC-03 EMAIL が空の間は送信ボタンが無効で、入れると有効になる
 
@@ -3025,6 +3035,8 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-71 の行） |
 
 375×667 で `/login`（ログインタブ）の認証カード下端がビューポート下端以下に収まり、Footer が見えない（初期表示でスクロール不要）こと
+（段4の Task 28 で、旧の `/login/password` の検査を新しい画面へ移した。同じ検査を `e2e/FR-LOGIN-079-login-screens-layout.spec.ts` が `/login`・`/login/code` に向けて持つ。タブは消えたので、検査は画面全体で行う）
+
 
 ### FREQ-71-AC-02 1280 幅でモバイル用の縮みが効かない
 
@@ -3032,7 +3044,7 @@ Drawerを開いた際、×ボタンの中心X座標がハンバーガーメニ�
 | --- | --- |
 | 上位 | FREQ-71-REQ-01 |
 | 根拠 | FREQ-71-REQ-01 の「sm 以上は保つ」を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-71 の行） |
@@ -3045,7 +3057,7 @@ desktop（1280 幅）で認証カードの縦余白が従来どおり（モバ�
 | --- | --- |
 | 上位 | FREQ-71-REQ-01 |
 | 根拠 | FREQ-71-REQ-01 の会員登録タブの収まりを確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-71 の行） |
@@ -3123,7 +3135,7 @@ desktop（1280 幅）で認証カードの縦余白が従来どおり（モバ�
 | --- | --- |
 | 上位 | FREQ-89-REQ-01 |
 | 根拠 | FREQ-89-REQ-01 の先頭のアイコンを確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-89 の行） |
@@ -3136,7 +3148,7 @@ desktop（1280 幅）で認証カードの縦余白が従来どおり（モバ�
 | --- | --- |
 | 上位 | FREQ-89-REQ-01 |
 | 根拠 | FREQ-89-REQ-01 の下線の形を、border-bottom だけであることで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-89 の行） |
@@ -3149,7 +3161,7 @@ desktop（1280 幅）で認証カードの縦余白が従来どおり（モバ�
 | --- | --- |
 | 上位 | FREQ-89-REQ-01 |
 | 根拠 | FREQ-89-REQ-01 の右端の切替を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-89 の行） |
@@ -3162,7 +3174,7 @@ Password 入力欄の右端に表示切替ボタンがあり、押すと入力 t
 | --- | --- |
 | 上位 | FREQ-89-REQ-01 |
 | 根拠 | FREQ-89-REQ-01 のアイコン径（√φ 倍）を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-89 の行） |
@@ -3175,7 +3187,7 @@ Password 入力欄の右端に表示切替ボタンがあり、押すと入力 t
 | --- | --- |
 | 上位 | FREQ-89-REQ-01 |
 | 根拠 | FREQ-89-REQ-01 の余白の導き方を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-89 の行） |
@@ -3188,7 +3200,7 @@ Password 入力欄の右端に表示切替ボタンがあり、押すと入力 t
 | --- | --- |
 | 上位 | FREQ-90-REQ-01 |
 | 根拠 | FREQ-90-REQ-01 のタブの形と枠の撤去を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-90 の行） |
@@ -3201,7 +3213,7 @@ Password 入力欄の右端に表示切替ボタンがあり、押すと入力 t
 | --- | --- |
 | 上位 | FREQ-90-REQ-01 |
 | 根拠 | FREQ-90-REQ-01 のログインの側の切替の撤去を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-90 の行） |
@@ -3214,7 +3226,7 @@ Password 入力欄の右端に表示切替ボタンがあり、押すと入力 t
 | --- | --- |
 | 上位 | FREQ-90-REQ-01 |
 | 根拠 | FREQ-90-REQ-01 の登録の側の切替の撤去を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-90 の行） |
@@ -3227,7 +3239,7 @@ Password 入力欄の右端に表示切替ボタンがあり、押すと入力 t
 | --- | --- |
 | 上位 | FREQ-90-REQ-01 |
 | 根拠 | FREQ-90 の整列の原則を、左右の端の位置で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-90 の行） |
@@ -3240,7 +3252,7 @@ Password 入力欄の右端に表示切替ボタンがあり、押すと入力 t
 | --- | --- |
 | 上位 | FREQ-91-REQ-01 |
 | 根拠 | FREQ-91-REQ-01 の先頭のアイコンを確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-91 の行） |
@@ -3253,7 +3265,7 @@ Password 入力欄の右端に表示切替ボタンがあり、押すと入力 t
 | --- | --- |
 | 上位 | FREQ-91-REQ-01 |
 | 根拠 | FREQ-91-REQ-01 の下線の形を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-91 の行） |
@@ -3266,7 +3278,7 @@ Password 入力欄の右端に表示切替ボタンがあり、押すと入力 t
 | --- | --- |
 | 上位 | FREQ-91-REQ-01 |
 | 根拠 | FREQ-91-REQ-01 の表示切替を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-91 の行） |
@@ -3279,7 +3291,7 @@ Password・Password（確認）の各入力欄に表示切替ボタンがあり�
 | --- | --- |
 | 上位 | FREQ-91-REQ-01 |
 | 根拠 | FREQ-91-REQ-01 の並びの順を確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-91 の行） |
@@ -3627,7 +3639,7 @@ find_auth_user_id_by_email が error を返す状況で、/api/auth/password-res
 | --- | --- |
 | 上位 | FREQ-320-REQ-03 |
 | 根拠 | FREQ-320-REQ-03 を、状態と本文の一致と語の有無で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-320 の行） |
@@ -3640,7 +3652,7 @@ find_auth_user_id_by_email が error を返す状況で、/api/auth/password-res
 | --- | --- |
 | 上位 | FREQ-320-REQ-04 |
 | 根拠 | FREQ-320-REQ-04 を、登録の後の画面に登録済みを示す語が無いことで3つの幅で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-320 の行） |
@@ -3653,7 +3665,7 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で、登録フォー�
 | --- | --- |
 | 上位 | FREQ-323-REQ-01 |
 | 根拠 | FREQ-323-REQ-01 の拒否と k-匿名を、400 の応答と外へ送る URL の中身で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-323 の行） |
@@ -3679,7 +3691,7 @@ HaveIBeenPwned が応答しない状況でも会員登録が成功し、監査�
 | --- | --- |
 | 上位 | FREQ-323-REQ-03 |
 | 根拠 | FREQ-323-REQ-03 を境の値で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-323 の行） |
@@ -3770,7 +3782,7 @@ proxy に列挙されていない /api/contact、/api/contact/threads/{id}/reply
 | --- | --- |
 | 上位 | FREQ-328-REQ-02 |
 | 根拠 | FREQ-328-REQ-02 の幅の追従を、Turnstile と送信ボタンの描画の幅の一致で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-328 の行） |
@@ -3789,6 +3801,8 @@ proxy に列挙されていない /api/contact、/api/contact/threads/{id}/reply
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-328 の行） |
 
 iPhone SE 相当（375px）で document に横スクロールが発生しないこと
+（段4の Task 28 で、旧の `/login/password` の検査を新しい画面へ移した。同じ検査を `e2e/FR-LOGIN-079-login-screens-layout.spec.ts` が `/login`・`/login/code` に向けて持つ。タブは消えたので、検査は画面全体で行う）
+
 
 ### FREQ-328-AC-04 送信ボタンの直前の要素との間隔が 21px
 
@@ -3874,7 +3888,7 @@ iPhone SE 相当（375px）で document に横スクロールが発生しない�
 | --- | --- |
 | 上位 | FREQ-330-REQ-01 |
 | 根拠 | FREQ-330-REQ-01 をログインの経路で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-330 の行） |
@@ -3887,7 +3901,7 @@ iPhone SE 相当（375px）で document に横スクロールが発生しない�
 | --- | --- |
 | 上位 | FREQ-330-REQ-03 |
 | 根拠 | FREQ-330-REQ-03 のうち再送の経路を確かめる（FREQ-334 で改訂。再送は 2FA の Cookie で門を置くので Turnstile を要さない） |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-330 の行） |
@@ -3900,7 +3914,7 @@ OTP の再送信が POST /api/auth/login を叩き直さず、専用の POST /ap
 | --- | --- |
 | 上位 | FREQ-330-REQ-01、FREQ-330-REQ-03 |
 | 根拠 | FREQ-330-REQ-01 を再設定の経路でも確かめ、FREQ-330-REQ-03 の全経路の当てはめの1つにする |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-330 の行） |
@@ -4121,7 +4135,7 @@ link の POST がネットワークエラーになる状況で、再試行のボ
 | --- | --- |
 | 上位 | FREQ-334-REQ-01 |
 | 根拠 | FREQ-334-REQ-01 の門を、Cookie なしで開いた時の移り先と入力欄が一度も出ないことで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-334 の行） |
@@ -4134,7 +4148,7 @@ link の POST がネットワークエラーになる状況で、再試行のボ
 | --- | --- |
 | 上位 | FREQ-334-REQ-02 |
 | 根拠 | FREQ-334-REQ-02 の replace を、着いた先とブラウザの戻るの結果で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-334 の行） |
@@ -4147,7 +4161,7 @@ link の POST がネットワークエラーになる状況で、再試行のボ
 | --- | --- |
 | 上位 | FREQ-334-REQ-03 |
 | 根拠 | FREQ-334-REQ-03 を、有効な Cookie で /login を開いた時の移り先で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-334 の行） |
@@ -4160,7 +4174,7 @@ link の POST がネットワークエラーになる状況で、再試行のボ
 | --- | --- |
 | 上位 | FREQ-334-REQ-04 |
 | 根拠 | FREQ-334-REQ-04 の伏せ方を、画面に出る宛先の文字で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-334 の行） |
@@ -4173,7 +4187,7 @@ link の POST がネットワークエラーになる状況で、再試行のボ
 | --- | --- |
 | 上位 | FREQ-334-REQ-05 |
 | 根拠 | FREQ-334-REQ-05 を、再送の送り先と本文の中身で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-334 の行） |
@@ -4186,7 +4200,7 @@ link の POST がネットワークエラーになる状況で、再試行のボ
 | --- | --- |
 | 上位 | FREQ-334-REQ-06 |
 | 根拠 | FREQ-334-REQ-06 の Cookie の破棄を、やり直しの後に /login/verify を直に開いた結果で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-334 の行） |
@@ -4199,7 +4213,7 @@ link の POST がネットワークエラーになる状況で、再試行のボ
 | --- | --- |
 | 上位 | FREQ-335-REQ-01 |
 | 根拠 | FREQ-335-REQ-01 のアカウント単位の制限を、6回目の 429 と別のアカウントの枠が減らないことで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-335 の行） |
@@ -4212,7 +4226,7 @@ link の POST がネットワークエラーになる状況で、再試行のボ
 | --- | --- |
 | 上位 | FREQ-335-REQ-02 |
 | 根拠 | FREQ-335-REQ-02 の Cookie の破棄を、上限の後に /login/verify を開いた時の移り先で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-335 の行） |
@@ -4238,7 +4252,7 @@ link の POST がネットワークエラーになる状況で、再試行のボ
 | --- | --- |
 | 上位 | FREQ-335-REQ-04 |
 | 根拠 | FREQ-335-REQ-04 の寿命を、ログインが出す Cookie の Max-Age の値で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-335 の行） |
@@ -4251,7 +4265,7 @@ POST /api/auth/login が発行する sb-login-2fa-session の Max-Age が 300 �
 | --- | --- |
 | 上位 | FREQ-336-REQ-01 |
 | 根拠 | FREQ-336-REQ-01 の絶対の上限を、30 分を超えたトークンの検証と再送の後の iat で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-336 の行） |
@@ -4264,7 +4278,7 @@ POST /api/auth/login が発行する sb-login-2fa-session の Max-Age が 300 �
 | --- | --- |
 | 上位 | FREQ-336-REQ-02 |
 | 根拠 | FREQ-336-REQ-02 の二段の制限を、呼ばれる制限の種類と IP の上限の時の応答で確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-336 の行） |
@@ -4277,7 +4291,7 @@ resend が subject 無しの IP 単位制限と subject 付きのアカウント
 | --- | --- |
 | 上位 | FREQ-336-REQ-03 |
 | 根拠 | FREQ-336-REQ-03 を、本文の形と、email を混ぜても宛先の判定が変わらないことで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-336 の行） |
@@ -4290,7 +4304,7 @@ POST /api/auth/otp/verify の本文が code のみであること。本文に em
 | --- | --- |
 | 上位 | FREQ-336-REQ-04 |
 | 根拠 | FREQ-336-REQ-04 を、Cookie なしで cancel を呼んだ時の応答と監査の行の無さで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-336 の行） |
@@ -4303,7 +4317,7 @@ POST /api/auth/otp/verify の本文が code のみであること。本文に em
 | --- | --- |
 | 上位 | FREQ-336-REQ-05 |
 | 根拠 | FREQ-336-REQ-05 の環境の限定を、localhost でない宛先で道具が例外を投げることで確かめる |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-336 の行） |
@@ -4359,7 +4373,7 @@ POST /api/auth/otp/verify の本文が code のみであること。本文に em
 | --- | --- |
 | 上位 | FR-LOGIN-001 |
 | 根拠 | FR-LOGIN-001 の2段の順を、画面の移り方と、1段目だけではログインした状態にならないことで確かめる |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 要件の文から起こした（FR-LOGIN-001） |
 
@@ -4371,7 +4385,7 @@ POST /api/auth/otp/verify の本文が code のみであること。本文に em
 | --- | --- |
 | 上位 | FR-LOGIN-001 |
 | 根拠 | FR-LOGIN-001 の「OTP だけのログインを防ぐ」を、2FA の Cookie なしの検証が断られることで確かめる |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 要件の文から起こした（FR-LOGIN-001） |
 
@@ -4395,7 +4409,7 @@ POST /api/auth/otp/verify の本文が code のみであること。本文に em
 | --- | --- |
 | 上位 | FR-LOGIN-003 |
 | 根拠 | FR-LOGIN-003 の再設定のページへの入口を、リンクの行き先で確かめる |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 要件の文から起こした（FR-LOGIN-003） |
 
@@ -4407,7 +4421,7 @@ POST /api/auth/otp/verify の本文が code のみであること。本文に em
 | --- | --- |
 | 上位 | FR-LOGIN-004 |
 | 根拠 | FR-LOGIN-004 のうち今も成り立つ「メールとパスワードでアカウントを作り、確認メールで確定する」を確かめる。手元の Supabase は、波 6 の切り替え（2026-11-01。手元だけ）で Confirm email を有効にし、確認メールの雛形を `token_hash` と `type=signup` を持つ確認の窓口へのリンクにした（`supabase/config.toml` の `enable_confirmations`・`[auth.email.template.confirmation]`。切り替えまでは無効で、本番の前提〔有効〕と違った）（状態は推定） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 要件の文から起こした（FR-LOGIN-004） |
 
@@ -4431,7 +4445,7 @@ POST /api/auth/otp/verify の本文が code のみであること。本文に em
 | --- | --- |
 | 上位 | FR-LOGIN-006 |
 | 根拠 | FR-LOGIN-006 の待ちの時間を、送った直後と 60 秒後の再送のボタンの有無で確かめる |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 要件の文から起こした（FR-LOGIN-006） |
 
@@ -4443,7 +4457,7 @@ POST /api/auth/otp/verify の本文が code のみであること。本文に em
 | --- | --- |
 | 上位 | FR-LOGIN-006 |
 | 根拠 | FR-LOGIN-006 の再送の制限が断った時に、利用者が理由と待つ時間を知れることを確かめる。E2E `e2e/login-otp-resend-errors.spec.ts` が試している動きから起こした |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 要件の文から起こした（FR-LOGIN-006） |
 
@@ -4455,7 +4469,7 @@ POST /api/auth/otp/verify の本文が code のみであること。本文に em
 | --- | --- |
 | 上位 | FR-LOGIN-007 |
 | 根拠 | FR-LOGIN-007 の一般の会員の分を、TOTP を求められずに会員ページへ着くことで確かめる |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 要件の文から起こした（FR-LOGIN-007） |
 
@@ -4479,7 +4493,7 @@ POST /api/auth/otp/verify の本文が code のみであること。本文に em
 | --- | --- |
 | 上位 | FR-LOGIN-008 |
 | 根拠 | FR-LOGIN-008 の5分を、利用者に知らせる文の表示で確かめる |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 要件の文から起こした（FR-LOGIN-008） |
 
@@ -4491,7 +4505,7 @@ POST /api/auth/otp/verify の本文が code のみであること。本文に em
 | --- | --- |
 | 上位 | FR-LOGIN-008 |
 | 根拠 | FR-LOGIN-008 の5分の期限が実際に効くことを、期限の後の入力が通らないことで確かめる。今この性質を試すテストが無い |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 要件の文から起こした（FR-LOGIN-008） |
 
@@ -6146,6 +6160,31 @@ DB の `staff_invite_cancel` は、開いた招待があれば `true`、2回目�
 
 認めていない鍵の削除の窓口が 500 を返すと、管理の画面は「削除できませんでした。もう一度お試しください。」を出し、「削除できませんでした。認めた鍵は2本以上が必要です。」は出さない。鍵は一覧に残る。409 の本文が `staff_min_keys` の時だけ、下限の文を出す。
 
+### FR-AUTH-053 パスワードのログイン・会員登録・確認リンクの窓口と画面は 404 で、どこからもリンクが無い
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-030 |
+| 根拠 | 段4でお客さんのパスワードのログインと会員登録を消す。窓口や画面が残ると、守りの穴（GoTrue を直に叩くパスワードのログインなど）と維持の手間が残る。消したことと、リンクが残っていないことを固定する |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-080-removed-auth-entries-gone.spec.ts`、FR-AUTH-053-AC-01。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-28-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 28） |
+| 優先度 | MUST |
+
+規則: (1) 消した画面 `/login/password`・`/login/verify` は 404 を返す。(2) 消した窓口 `POST /api/auth/login`・`/api/auth/login/resend`・`/api/auth/login/cancel`・`/api/auth/otp/verify`・`/api/auth/register` と `GET /api/auth/confirm`（確認のメールのリンク）は 404 を返し、セッションの Cookie を出さない。(3) `/login`・ヘッダーのログインのリンク・メール・戻り先のどこにも、消した画面・窓口へのリンクが無い。(4) 確認前のアカウントへ届く確認メールは、リンクではなく8桁のコードを入れさせる（オーナーの答え1・5。FR-AUTH-054-AC-04）。再設定・変更の窓口の分は FR-AUTH-053-AC-02、認証アプリ（TOTP）・`/auth/verified` の分は FR-AUTH-053-AC-03 が後のタスクで足す。
+
+### FR-AUTH-053-AC-01 消したログインの窓口・画面は 404 で、セッションの Cookie を出さない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-053 |
+| 根拠 | SR-AUTH-030 |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-080-removed-auth-entries-gone.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-28-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 28） |
+
+`/login/password`・`/login/verify` を開くと 404 になる。`POST /api/auth/login`・`/api/auth/login/resend`・`/api/auth/login/cancel`・`/api/auth/otp/verify`・`/api/auth/register` は 404 で、`Set-Cookie` を返さない。`GET /api/auth/confirm`（`token_hash`・`redirect_to` の付いた形を含む）も 404 になる。
+
 ### FR-AUTH-054 パスワードで作ったアカウントも、メールのコードで入れて鍵を足す勧めが出る。店員は旗が真でも同じ断りの文で断られる（残す流れが動く）
 
 | 属性 | 値 |
@@ -6153,7 +6192,7 @@ DB の `staff_invite_cancel` は、開いた招待があれば `true`、2回目�
 | 上位 | SR-AUTH-030 |
 | 根拠 | 段4でパスワードのログインを消した後も、パスワードで作った確認済みのアカウントが入れなくならないことを、消す前の master で固定する。コードを変えず、今の動きを確かめるだけの基準 |
 | 状態 | 推定 |
-| 確かめ方 | E2E（`e2e/FR-LOGIN-078-legacy-account-email-code-login.spec.ts`、FR-AUTH-054-AC-01〜03。390・768・1280 の3幅でくり返す。旗を切り替えるので `isolated-global`） |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-078-legacy-account-email-code-login.spec.ts`、FR-AUTH-054-AC-01〜04。390・768・1280 の3幅でくり返す。旗を切り替えるので `isolated-global`） |
 | 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-26-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 26） |
 | 優先度 | MUST |
 
@@ -6194,6 +6233,18 @@ DB の `staff_invite_cancel` は、開いた招待があれば `true`、2回目�
 | 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-26-brief.md`（Task 26） |
 
 旗 `reject_customer_password` を真にした状態で、店員（認めた鍵2本）がメールのコードで確定しようとすると、「店員の方は、パスキーでログインしてください。」が出て、セッションは作られない。旗は試験の終わりに始めの値へ戻る。
+
+### FR-AUTH-054-AC-04 確認前のアカウントにも、リンクの無い8桁のコードの確認メールが届き、そのコードで /account に入れて確認済みになる
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-054 |
+| 根拠 | SR-AUTH-030、ADR-0469（確認のリンクの窓口を消したので、確認前のアカウントはコードで入る。オーナーの答え1・5） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-078-legacy-account-email-code-login.spec.ts`。390・768・1280 の3幅でくり返す。旗は触らないが同じ spec なので `isolated-global`） |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-28-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 28） |
+
+`createUser({ email, password, email_confirm: false })` で作った確認前のアカウントに、メールのコードの始めの窓口（`/login/code` の入口）を呼ぶと、「メールアドレスの確認」の件名のメールが届く。本文に8桁のコードがあり、リンクとパスワードの案内の文は無い。そのコードを確定の窓口（`POST /api/auth/email-code/verify`）に渡すと 200 で、`/account` が開き、`/api/auth/me` が本人を返し、`email_confirmed_at` が入って確認済みになる。
 
 ### FR-AUTH-047 店長への知らせの3種類（やり直し・招待・降格）を、操作と同じ取引で送り箱に積み、宛先は本人を除く有効な店長全員にする
 
@@ -6317,7 +6368,7 @@ A が `POST /api/admin/staff/{id}/demote` で店員 X を降格し、worker が�
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1。作り手の判断 3・4、調整役の判断 3） |
 | 優先度 | MUST |
 
-規則: (1) 始め: 回数の制限（IP 50回/10分）→ 本文の形（400）→ Turnstile（403）→ 宛先ごとの回数の制限（5回/10分）→ 登録の有無を調べずに、確認済み・パスワード無し・印 `email_code_signup_pending` つきでアカウントを作る（登録済みなら `email_exists` で断られるので握る。`email_address_invalid` は 400）→ コードを送る（GoTrue の宛先ごとの送信の間隔の 429 は、登録済みの見分けになるので 202 に隠し、監査 `email_code_send_throttled` とログに残す。GoTrue の 5xx は 503）→ 保留の Cookie と戻り先の控え。成功は常に 202。未登録・登録済み・店員で、本文・状態・Set-Cookie の名前と属性が同じ。(2) 確定: 宛先は保留の Cookie だけから取る。回数の制限は保留の Cookie ごと（5回/10分）と宛先ごと（20回/10分）。使い切ったら Cookie を消して 429。店員は 403 `staff_passkey_required`（セッションも Cookie も作らない）。成功で印を外し、`offerPasskey`（お客さんで、鍵が0本と確かめられた時だけ真）を返す。(3) 再送: 保留の Cookie 必須。始めと同じ枠（10分に始め＋再送で5通まで）。GoTrue の 429 は成功と同じ 200・本文・Cookie の付け直しに隠し（保留の Cookie は Turnstile を通せば誰でも任意のアドレス宛てに持てるので、429 を返すと既存のアドレスと見分けられる）、監査 `email_code_send_throttled` とログに残す。5xx は 503。早すぎる再送は「送った」と見えてメールが届かない（画面の60秒の待ちが GoTrue の間隔に合う）。Cookie を元の発行時刻と乱数で付け直す。(4) 取りやめ: Cookie を消して 204。(5) 旧の会員登録（`signUp`）で作って確認していないアドレスには、コードでなく確認のメールが届く（段4まで）。画面の `/login/code` は、いつも「コードの無い確認のメールが届いた時は、そのメールのリンクを押してから、もう一度お試しください。」と案内する（アカウントの状態で出し分けない）。サーバーで確認済みにはしない（パスワードを先に付けた他人が、その人のアドレスで入れてしまうため）。
+規則: (1) 始め: 回数の制限（IP 50回/10分）→ 本文の形（400）→ Turnstile（403）→ 宛先ごとの回数の制限（5回/10分）→ 登録の有無を調べずに、確認済み・パスワード無し・印 `email_code_signup_pending` つきでアカウントを作る（登録済みなら `email_exists` で断られるので握る。`email_address_invalid` は 400）→ コードを送る（GoTrue の宛先ごとの送信の間隔の 429 は、登録済みの見分けになるので 202 に隠し、監査 `email_code_send_throttled` とログに残す。GoTrue の 5xx は 503）→ 保留の Cookie と戻り先の控え。成功は常に 202。未登録・登録済み・店員で、本文・状態・Set-Cookie の名前と属性が同じ。(2) 確定: 宛先は保留の Cookie だけから取る。回数の制限は保留の Cookie ごと（5回/10分）と宛先ごと（20回/10分）。使い切ったら Cookie を消して 429。店員は 403 `staff_passkey_required`（セッションも Cookie も作らない）。成功で印を外し、`offerPasskey`（お客さんで、鍵が0本と確かめられた時だけ真）を返す。(3) 再送: 保留の Cookie 必須。始めと同じ枠（10分に始め＋再送で5通まで）。GoTrue の 429 は成功と同じ 200・本文・Cookie の付け直しに隠し（保留の Cookie は Turnstile を通せば誰でも任意のアドレス宛てに持てるので、429 を返すと既存のアドレスと見分けられる）、監査 `email_code_send_throttled` とログに残す。5xx は 503。早すぎる再送は「送った」と見えてメールが届かない（画面の60秒の待ちが GoTrue の間隔に合う）。Cookie を元の発行時刻と乱数で付け直す。(4) 取りやめ: Cookie を消して 204。(5) パスワード付きで作って確認していないアドレスには、「メールアドレスの確認」の件名のメールが届く。本文はリンクを持たず、8桁のコードを入れさせる（段4で確認のリンクの窓口を消した。コードを入れると確認済みになる。FR-AUTH-054-AC-04）。画面の `/login/code` は、いつも「「メールアドレスの確認」のメールが届いた時は、そのメールにある8桁の数字を入れてください。」と案内する（アカウントの状態で出し分けない）。サーバーで確認済みにはしない（コードを入れられるのは、メールを読める本人だけにするため）。
 
 ### FR-AUTH-023-AC-01 未登録のアドレスで始め、メールのコードで確定するとログインでき、`/api/auth/me` が本人を返す
 
@@ -6397,7 +6448,7 @@ A が `POST /api/admin/staff/{id}/demote` で店員 X を降格し、worker が�
 | --- | --- |
 | 上位 | SR-AUTH-022 |
 | 根拠 | SR-AUTH-022 を、`src/app/login/password/page.tsx` に旧の `/login` の中身を移すことにする。判断は DD-AUTH-061・ADR-0469。`src/app/login/page.tsx` は Task 5 で新しい画面に作り替えた（FR-AUTH-027） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト（`tests/unit/app/login/login-page.test.tsx`、`tests/unit/contexts/providers-auth-page.test.tsx`、`tests/unit/components/auth-tabs.test.tsx`）、E2E（`e2e/FR-LOGIN-056-legacy-login-relocated.spec.ts`、FR-AUTH-025-AC-01〜04） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-3-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 3。調整役の判断 2・I-2） |
 | 優先度 | MUST |
@@ -6410,7 +6461,7 @@ A が `POST /api/admin/staff/{id}/demote` で店員 X を降格し、worker が�
 | --- | --- |
 | 上位 | FR-AUTH-025 |
 | 根拠 | SR-AUTH-022 |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（`e2e/FR-LOGIN-056-legacy-login-relocated.spec.ts`。390・768・1280 の3幅でくり返す） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-3-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 3。調整役の判断 2・I-2） |
 
@@ -6422,7 +6473,7 @@ A が `POST /api/admin/staff/{id}/demote` で店員 X を降格し、worker が�
 | --- | --- |
 | 上位 | FR-AUTH-025 |
 | 根拠 | SR-AUTH-022 |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（`e2e/FR-LOGIN-056-legacy-login-relocated.spec.ts`。390・768・1280 の3幅でくり返す） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-3-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 3。調整役の判断 2・I-2） |
 
@@ -6434,7 +6485,7 @@ A が `POST /api/admin/staff/{id}/demote` で店員 X を降格し、worker が�
 | --- | --- |
 | 上位 | FR-AUTH-025 |
 | 根拠 | SR-AUTH-022 |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（`e2e/FR-LOGIN-056-legacy-login-relocated.spec.ts`。390・768・1280 の3幅でくり返す） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-3-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 3。調整役の判断 2・I-2） |
 
@@ -6446,7 +6497,7 @@ A が `POST /api/admin/staff/{id}/demote` で店員 X を降格し、worker が�
 | --- | --- |
 | 上位 | FR-AUTH-025 |
 | 根拠 | SR-AUTH-022 |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（`e2e/FR-LOGIN-056-legacy-login-relocated.spec.ts`。390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/components/VerifyOtpClient.test.tsx`、`tests/unit/components/register-modal.test.tsx`、`tests/unit/app/login/login-verify-page.test.tsx`） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-3-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 3。調整役の判断 2・I-2） |
 
@@ -6463,7 +6514,7 @@ A が `POST /api/admin/staff/{id}/demote` で店員 X を降格し、worker が�
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-4-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 4。作り手の判断 5） |
 | 優先度 | MUST |
 
-規則: (1) ページは保留の Cookie（`sb-email-code-session`）をサーバーで確かめ、無い・偽り・期限切れは同じく `/login` へ送り、確かめない人に入力画面の HTML を見せない。検索に載せない。(2) 見出しは「確認コードを入力してください」、説明は「{マスクしたメール} に8桁のコードをお送りしました。5分以内に入力してください。」。8つの1桁の欄（数字だけ・貼り付けで8桁を割り振る・Backspace で前へ・最初の欄が `autoComplete="one-time-code"`）。ラベルは各欄に「確認コード {n}桁目」。(3) 「ログイン」は8桁そろうまで押せない。「コードを再送する」は60秒の残り時間（`formatResendCountdown`）が0になるまで押せない。「メールアドレスを入れ直す」は取りやめの窓口を呼んで `/login` へ戻る。(4) 確定の応答: 401 のコードの誤りは「確認コードが無効、または期限切れです。」（入力を続けられる）、401 の保留の Cookie 切れは「時間がたちました。もう一度メールアドレスを入れてください。」と「ログイン画面へ戻る」（自動では戻さない）、429 は「試行が集中しています。しばらくしてからやり直してください。」と「ログイン画面へ戻る」（入力を閉じる）、403 `staff_passkey_required` は「店員の方は、パスキーでログインしてください。」（再送・入力を止め、「ログイン画面へ戻る」だけ）。(5) 成功は先に `refreshAuthState()` で画面の状態を更新し、`offerPasskey` が真で `isPasskeySupported()` が真なら `/login/passkey` へ、それ以外は `resolvePostLoginPath()` の行き先へ `router.replace` する（戻るで入力画面へ戻れない）。(6) どの訪問者にも、アカウントの状態にかかわらず、いつも「コードの無い確認のメールが届いた時は、そのメールのリンクを押してから、もう一度お試しください。」を出す（FR-AUTH-023・DD-AUTH-059 の案内。段4まで、旧の会員登録で作った未確認のアドレスにはコードでなくリンクのメールが届くため）。(7) エラーは `LiveMessage`、送信中は `aria-busy` と `disabled`。画面を開いたら最初の欄にフォーカスする。(8) 窓口の応答の本文は、どの道でも読むか捨てる（no-store の読み残しで `networkidle` が来なくなるため）。
+規則: (1) ページは保留の Cookie（`sb-email-code-session`）をサーバーで確かめ、無い・偽り・期限切れは同じく `/login` へ送り、確かめない人に入力画面の HTML を見せない。検索に載せない。(2) 見出しは「確認コードを入力してください」、説明は「{マスクしたメール} に8桁のコードをお送りしました。5分以内に入力してください。」。8つの1桁の欄（数字だけ・貼り付けで8桁を割り振る・Backspace で前へ・最初の欄が `autoComplete="one-time-code"`）。ラベルは各欄に「確認コード {n}桁目」。(3) 「ログイン」は8桁そろうまで押せない。「コードを再送する」は60秒の残り時間（`formatResendCountdown`）が0になるまで押せない。「メールアドレスを入れ直す」は取りやめの窓口を呼んで `/login` へ戻る。(4) 確定の応答: 401 のコードの誤りは「確認コードが無効、または期限切れです。」（入力を続けられる）、401 の保留の Cookie 切れは「時間がたちました。もう一度メールアドレスを入れてください。」と「ログイン画面へ戻る」（自動では戻さない）、429 は「試行が集中しています。しばらくしてからやり直してください。」と「ログイン画面へ戻る」（入力を閉じる）、403 `staff_passkey_required` は「店員の方は、パスキーでログインしてください。」（再送・入力を止め、「ログイン画面へ戻る」だけ）。(5) 成功は先に `refreshAuthState()` で画面の状態を更新し、`offerPasskey` が真で `isPasskeySupported()` が真なら `/login/passkey` へ、それ以外は `resolvePostLoginPath()` の行き先へ `router.replace` する（戻るで入力画面へ戻れない）。(6) どの訪問者にも、アカウントの状態にかかわらず、いつも「「メールアドレスの確認」のメールが届いた時は、そのメールにある8桁の数字を入れてください。」を出す（FR-AUTH-023・DD-AUTH-059 の案内。確認前のアドレスには「メールアドレスの確認」のメールが届き、その本文の8桁の数字を入れると確認済みになるため）。(7) エラーは `LiveMessage`、送信中は `aria-busy` と `disabled`。画面を開いたら最初の欄にフォーカスする。(8) 窓口の応答の本文は、どの道でも読むか捨てる（no-store の読み残しで `networkidle` が来なくなるため）。
 
 ### FR-AUTH-026-AC-01 鍵を持つ会員は、メールのコードを入れると、勧めを経ずにログインして戻り先へ着く
 
@@ -6499,7 +6550,7 @@ A が `POST /api/admin/staff/{id}/demote` で店員 X を降格し、worker が�
 | 確かめ方 | E2E（`e2e/FR-LOGIN-058-email-code-screen.spec.ts`。390・768・1280 の3幅でくり返す）、単体テスト（`tests/unit/features/auth/passkey/email-code-entry.test.tsx`、`tests/unit/app/login/code-page.test.tsx`） |
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-4-brief.md`、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 4。作り手の判断 5） |
 
-`/login/code` にいつも「コードの無い確認のメールが届いた時は、そのメールのリンクを押してから、もう一度お試しください。」が出る。「コードを再送する」は待ちの間押せず、「N分 NN秒後に再送可能」が出る。最初の欄にフォーカスがある。
+`/login/code` にいつも「「メールアドレスの確認」のメールが届いた時は、そのメールにある8桁の数字を入れてください。」が出る。「コードを再送する」は待ちの間押せず、「N分 NN秒後に再送可能」が出る。最初の欄にフォーカスがある。
 
 ### FR-AUTH-026-AC-04 入れ直しで `/login` へ戻り、保留が捨てられる。保留の Cookie が無ければ `/login` へ送られ、入力欄を見せない
 
@@ -6885,7 +6936,7 @@ E2E のアプリのメール送信は `MAIL_PROVIDER=local` で、送り先は�
 | --- | --- |
 | 上位 | SEC-AUTH-001 |
 | 根拠 | アカウント単位の枠が効くかを、IP を変えても確かめるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（手元の Supabase で、送り元を変えながら同じメールに誤ったパスワードを送る） |
 | 出どころ | 実装から推定 |
 
@@ -6897,7 +6948,7 @@ E2E のアプリのメール送信は `MAIL_PROVIDER=local` で、送り先は�
 | --- | --- |
 | 上位 | SEC-AUTH-001 |
 | 根拠 | ボット判定を通らない相手に他人の枠を潰させないため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `src/app/api/auth/login/route.ts` |
 
@@ -6922,7 +6973,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | --- | --- |
 | 上位 | SEC-AUTH-002 |
 | 根拠 | 窓が明けた後に同じ試行の続きを許さないため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `src/app/api/auth/otp/verify/route.ts` |
 
@@ -6934,7 +6985,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | --- | --- |
 | 上位 | SEC-AUTH-002 |
 | 根拠 | 本文の宛先で他人の枠を潰させないため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `tests/integration/api/auth/otp-verify.test.ts` |
 
@@ -6946,7 +6997,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | --- | --- |
 | 上位 | THR-AUTH-003 |
 | 根拠 | メールを読めるだけの相手に、パスワードの段を飛ばさせないため（FREQ-58・FREQ-334） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト・E2E |
 | 出どころ | `docs/superpowers/specs/2026-09-04-login-otp-dedicated-screen-design.md` |
 | 優先度 | MUST |
@@ -6959,7 +7010,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | --- | --- |
 | 上位 | SEC-AUTH-003 |
 | 根拠 | パスワードを通らない OTP だけのログインを断るかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
@@ -6971,7 +7022,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | --- | --- |
 | 上位 | SEC-AUTH-003 |
 | 根拠 | 保留の偽造を断るかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
@@ -6983,7 +7034,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | --- | --- |
 | 上位 | THR-AUTH-004 |
 | 根拠 | 再送の繰り返しで総当たりの窓を延ばさせず、他人へのメールの踏み台にさせないため（FREQ-336） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト・E2E |
 | 出どころ | OWASP ASVS 4.0.3 V3.3.2。`docs/02_Requirements/requirements.md` の FREQ-336 の行 |
 | 優先度 | MUST |
@@ -6996,7 +7047,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | --- | --- |
 | 上位 | SEC-AUTH-004 |
 | 根拠 | 絶対上限が効くかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（時刻を進めるか、iat を 30 分前にした保留を作る） |
 | 出どころ | 実装から推定 |
 
@@ -7008,7 +7059,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | --- | --- |
 | 上位 | SEC-AUTH-004 |
 | 根拠 | 他人の宛先へ送らせないかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（手元の Supabase のメールの受け箱で確かめる） |
 | 出どころ | `tests/integration/api/auth/login-resend.test.ts` |
 
@@ -7093,7 +7144,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | --- | --- |
 | 上位 | THR-AUTH-006 |
 | 根拠 | マジックリンク・再設定の型のリンクでパスワードと OTP を飛ばさせないため。FREQ-335 で OTP の検証の type を email に固定したのと同じ考え方を確認のリンクに広げる |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト・E2E |
 | 出どころ | 実装から推定。signup の条件はユーザーの決定（2026-10-25） |
 | 優先度 | MUST |
@@ -7108,7 +7159,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | --- | --- |
 | 上位 | SEC-AUTH-006 |
 | 根拠 | パスワード無しのログインを断るかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト・結合テスト・E2E（手元の Supabase の `/auth/v1/otp` でマジックリンクを出し、その token_hash と `type=magiclink` で `/api/auth/confirm` を開く） |
 | 出どころ | 実装から推定 |
 
@@ -7120,7 +7171,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | --- | --- |
 | 上位 | SEC-AUTH-006 |
 | 根拠 | 塞いだ後も会員登録の確認が壊れないかを見るため。登録を始めていないブラウザで開いた時は SEC-AUTH-007-AC-01 |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（ブラウザ A で登録を送信し、同じブラウザ A で確認のリンクを開く） |
 | 出どころ | ユーザーの決定（2026-10-25）。`tests/integration/api/auth/confirm.test.ts` |
 
@@ -7149,7 +7200,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | --- | --- |
 | 上位 | SEC-AUTH-007 |
 | 根拠 | ログインの CSRF を断りつつ、別のブラウザで開いても登録が終わるようにするため |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（ブラウザ A で登録を送信して得たリンクを、Cookie の無い別のブラウザ B で開く）・結合テスト（`tests/integration/api/auth/confirm.test.ts`） |
 | 出どころ | ユーザーの決定（2026-10-25）。`e2e/FR-SIGNUP-003-signup-confirm-link.spec.ts` |
 
@@ -7167,7 +7218,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | --- | --- |
 | 上位 | SEC-AUTH-007 |
 | 根拠 | 波 1-A の暫定（別のブラウザでも session を作って `/` へ送る）を置き換えた後も、戻り先が別のブラウザで使われないことを見るため |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（ブラウザ A で戻り先つきの登録を送信し、Cookie の無いブラウザ B で開く）・結合テスト |
 | 出どころ | ユーザーの決定（2026-10-25・10-26）。`e2e/FR-SIGNUP-003-signup-confirm-link.spec.ts` |
 
@@ -7179,7 +7230,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | --- | --- |
 | 上位 | SEC-AUTH-007 |
 | 根拠 | 番号だけを控えに結ぶと、被害者が自分の登録の途中（控えの Cookie が有効）に、攻撃者のメールの確認リンクを同じブラウザで開いた時に、攻撃者のアカウントでログインさせられる（login CSRF が残る）ため。ADR-0413 |
-| 状態 | 現行 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト（`confirm.test.ts` の「控えの番号は合うが別のメールの印」）・E2E（ブラウザ A で利用者 X の登録を送り、同じブラウザ A で別の利用者 Y の印を開く） |
 | 出どころ | 波 1-B の計画の読み P1（2026-10-26）。controller が確かめる |
 
@@ -7412,7 +7463,7 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 | --- | --- |
 | 上位 | SEC-AUTH-014 |
 | 根拠 | 漏洩の照合が効くかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（HIBP を作り物にして「漏洩あり」を返す） |
 | 出どころ | `e2e/FR-PWRESET-003-password-policy.spec.ts` |
 
@@ -7526,7 +7577,7 @@ anon の鍵で `/auth/v1/signup`・`/auth/v1/token?grant_type=password`・`/auth
 | --- | --- |
 | 上位 | SEC-AUTH-016 |
 | 根拠 | 応答の中身で有無が分からないかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `e2e/FR-LOGIN-024-register-no-account-enumeration.spec.ts`、`tests/integration/api/auth/register-enumeration.test.ts` |
 
@@ -7550,7 +7601,7 @@ anon の鍵で `/auth/v1/signup`・`/auth/v1/token?grant_type=password`・`/auth
 | --- | --- |
 | 上位 | SEC-AUTH-016 |
 | 根拠 | 登録済みの宛先へ通知のメールを送り続けさせないかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト・結合テスト・E2E（送り元の IP を変えながら同じ登録済みのメールで送る。6 回目から 429） |
 | 出どころ | `src/app/api/auth/register/route.ts` |
 
@@ -7562,7 +7613,7 @@ anon の鍵で `/auth/v1/signup`・`/auth/v1/token?grant_type=password`・`/auth
 | --- | --- |
 | 上位 | SEC-AUTH-016 |
 | 根拠 | 波 6 で確認のリンクの有効期限を 5 分にする（`otp_expiry = 300`）と、開かないまま切れた未確認の会員は、ログインできず、「すでに登録されています」の案内にも従えず、自分で抜け出せない。開店前に新しい会員が締め出されるのを防ぐ。応答を変えると未確認の会員の有無が分かるので、列挙対策（SEC-AUTH-016）は保つ |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト・結合テスト（確認の有無の引き方・送り直しの呼び出し・応答と Cookie の同一・失敗時の監査）。E2E `FR-SIGNUP-003`（手元で未確認の会員を作り、同じメールで画面から登録し直すと 202 で、受け箱に確認メールが届き、そのリンクで確認済みになる。3 幅） |
 | 出どころ | `src/app/api/auth/register/route.ts`、`src/features/auth/services/auth-admin-user.ts`、`.superpowers/sdd/2026-10-25-security-gap-fixes/wave6-task-8-review.md` の指摘 1 |
 
@@ -7574,7 +7625,7 @@ anon の鍵で `/auth/v1/signup`・`/auth/v1/token?grant_type=password`・`/auth
 | --- | --- |
 | 上位 | THR-AUTH-017 |
 | 根拠 | 管理の鍵が漏れると、ボット対策も列挙対策も無い登録の窓が公開の窓口に開く。鍵の比べ方が定数時間でない。src から呼ぶ所は無く、管理のユーザー作成は別の窓口（範囲外）にある |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト・E2E |
 | 出どころ | `docs/05_Quality/reviews/security/security_review_signup.md` |
 | 優先度 | SHOULD |
@@ -7587,7 +7638,7 @@ anon の鍵で `/auth/v1/signup`・`/auth/v1/token?grant_type=password`・`/auth
 | --- | --- |
 | 上位 | SEC-AUTH-017 |
 | 根拠 | 管理の経路での列挙ができないかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト・結合テスト・E2E |
 | 出どころ | 実装から推定 |
 
@@ -7852,7 +7903,7 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | --- | --- |
 | 上位 | SEC-AUTH-026 |
 | 根拠 | 確認のメールのリンクの `redirect_to` を出口に使わなくなったかを、タブ文字を使った迂回で見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md` |
 
@@ -7938,7 +7989,7 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | --- | --- |
 | 上位 | THR-AUTH-029 |
 | 根拠 | コードは OTP の期限 300 秒、Confirm email が ON、TOTP が使えること、8 桁のコードを前提にする。手元の設定は波 6 の切り替えまで違い（OTP 8 桁だけ同じ）、E2E・結合の結果は本番の前提を確かめていなかった |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | レビュー（開店の準備で本番のダッシュボードを見る）・E2E |
 | 出どころ | 実装から推定 |
 | 優先度 | MUST |
@@ -7951,7 +8002,7 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | --- | --- |
 | 上位 | SEC-AUTH-029 |
 | 根拠 | Confirm email が ON かを、応答から確かめるため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `src/app/api/auth/register/route.ts` |
 
@@ -7963,7 +8014,7 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | --- | --- |
 | 上位 | SEC-AUTH-029 |
 | 根拠 | Supabase 側の期限が 300 秒かを見るため（保留の Cookie の 5 分とは別に） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E（保留の Cookie を作り直しながら、送ってから 5 分を過ぎたコードを送る） |
 | 出どころ | `src/features/auth/services/login-2fa-session.ts` |
 
@@ -8000,7 +8051,7 @@ TOTP の登録と確認の後に、`audit_logs` に利用者の ID と成功の�
 | --- | --- |
 | 上位 | SEC-AUTH-030 |
 | 根拠 | 失敗が残り、パスワードが記録に入らないかを見るため |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | E2E |
 | 出どころ | `src/lib/audit.ts` |
 
@@ -8182,18 +8233,20 @@ TOTP をまだ登録していない管理者が、メール OTP を通らずに�
 | 優先度 | MUST |
 
 captcha が掛かる Supabase Auth の窓口（`/signup`・`/token`（password）・`/otp`）をアプリのサーバーが呼ぶのは 6 か所（ログインのパスワードの確かめと確認コードの送信、ログインの確認コードの再送、会員登録、未確認の会員の確認メールの再送、パスワード変更の現行パスワードの確認）で、どれも `createServiceRoleAuthClient()`（`.from()`・`.rpc()` を持たない、毎回作る auth だけの client。DD-AUTH-040）で呼ぶ。アプリ側の Turnstile の検証・順番・回数の制限は変えない。Supabase が captcha を理由に断った時（`captcha_failed`）は、資格情報の誤り（401）にも重複（202）にもせず、5xx と監査 `supabase_captcha_rejected` にする。
+段4（2026-11-22 の Task 28）で、パスワードのログイン・会員登録・確認メールの再送の窓口を消したので、アプリのサーバーが captcha の掛かる窓口を呼ぶのは、メールのコードの始め・再送（`/api/auth/email-code/start`・`resend`）と、パスワード変更の現行パスワードの確認（Task 29 で消す）に縮んだ。
 
-#### SEC-AUTH-035-AC-01 Supabase の captcha が有効でも、アプリのログインと会員登録が通る
+
+#### SEC-AUTH-035-AC-01 Supabase の captcha が有効でも、アプリのメールのコードの始めと再送が通る
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-AUTH-035 |
 | 根拠 | 管理者資格の免除が効いているかを見るため。効かないと、captcha をオンにした瞬間に全員が入れなくなる |
 | 状態 | 推定 |
-| 確かめ方 | E2E（`e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts` の試験が、直接の password grant が captcha で 400 になる会員でも、アプリの `/api/auth/login` が 200、`/api/auth/register` が 202 で利用者ができることを見る。既存のログイン・会員登録の spec〔`FR-LOGIN-008` ほか〕も captcha を有効にした手元で通ること。手元の切り替え〔波 6、2026-11-01〕で切り替えた設定のもとで通る〔全件実行の結果は未確認〕）。本番は段階 B の確かめ |
-| 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 0 の GATE、Task 10・11） |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-055-email-code-api.spec.ts` の試験が、同じ宛先への直接の `/auth/v1/otp` が captcha で 400 になる環境でも、アプリの始めは 202、再送は 200 で、コードのメールが届くことを確かめる）。手元の切り替え（波 6、2026-11-01）で通る |
+| 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 0 の GATE、Task 10・11）、`.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-28-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 28） |
 
-Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（パスワードの確かめと確認コードの送信）・`/api/auth/login/resend`・`/api/auth/register` が、captcha のトークンを Supabase へ渡さずに通ること。
+Supabase の captcha が有効な環境で、アプリの `/api/auth/email-code/start`（コードの送信）・`/api/auth/email-code/resend` が、captcha のトークンを Supabase へ渡さずに通ること。
 
 #### SEC-AUTH-035-AC-02 Supabase の captcha の拒否は、ログイン・再送・登録で 5xx と監査 `supabase_captcha_rejected` になる
 
@@ -8201,7 +8254,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | --- | --- |
 | 上位 | SEC-AUTH-035 |
 | 根拠 | 免除が効かなくなった時に、401（パスワードの誤り）や 202（重複）に丸めると監視に上がらない。故障として見せる |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト（`tests/unit/api/auth/login-route.test.ts`・`login-resend-route.test.ts`・`register-route.test.ts`、`tests/unit/lib/auth/service-role-auth-client.test.ts`。名前の先頭は `DD-AUTH-040`）。E2E（`e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`）は、最後の文だけを見る（captcha が有効でも、誤ったパスワードのログインが 401 のままで、監査が `login`・`failure` のまま `supabase_captcha_rejected` にならない）。5xx になる側は免除が効かない環境を手元の Supabase に作る手段が無いので、E2E では見られない（免除が効かない時は本番の段階 B の確かめで見つける） |
 | 出どころ | `docs/superpowers/plans/2026-11-01-wave6-captcha-password-change-config.md`（Task 2、Review Focus 2） |
 
@@ -8403,7 +8456,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 出どころ | `.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-1-brief.md`、`docs/superpowers/specs/2026-11-07-passkey-auth-design.md`（6-1）、`docs/superpowers/plans/2026-11-17-passkey-stage2-customers.md`（Task 1。作り手の判断 3・4、調整役の判断 3）（作り手の判断） |
 | 優先度 | MUST |
 
-守ること: (1) 始めは、未登録・登録済み・登録済みで未確認・店員のどれでも、同じ状態・同じ本文・同じ Set-Cookie の名前と属性を返す。登録の有無を調べない（作ってみて `email_exists` を握る）。(2) `email_confirmed_at` を本人の確かめの印として読む所（注文の引き継ぎ `linkGuestOrdersByEmail` の門）は、確定・パスキー・確認の窓口の後でだけ呼ばれる。始めの窓口はそこを呼ばない。(3) 印 `email_code_signup_pending` を、作る時に付け、確定で外す。外す失敗はログインを止めず、監査の符号だけ残す。(4) 旧の会員登録で作って確認していないアドレスの始めは、サーバーで確認済みにしない（パスワードを先に付けた他人の道を作らないため）。コードの無い確認のメールが届くので、画面は常に「コードの無い確認のメールが届いた時は、そのメールのリンクを押してから、もう一度お試しください。」と案内する。本人がリンクを押した後は、先にパスワードを付けた他人の旧の登録が確認済みになる危険が、段2の前と同じく残る（旧のパスワードのログインは段4まで）。
+守ること: (1) 始めは、未登録・登録済み・登録済みで未確認・店員のどれでも、同じ状態・同じ本文・同じ Set-Cookie の名前と属性を返す。登録の有無を調べない（作ってみて `email_exists` を握る）。(2) `email_confirmed_at` を本人の確かめの印として読む所（注文の引き継ぎ `linkGuestOrdersByEmail` の門）は、確定・パスキー・確認の窓口の後でだけ呼ばれる。始めの窓口はそこを呼ばない。(3) 印 `email_code_signup_pending` を、作る時に付け、確定で外す。外す失敗はログインを止めず、監査の符号だけ残す。(4) パスワード付きで作って確認していないアドレスの始めは、サーバーで確認済みにしない（コードを入れられるのは、メールを読める本人だけにするため）。「メールアドレスの確認」のメールが届くので、画面は常に「「メールアドレスの確認」のメールが届いた時は、そのメールにある8桁の数字を入れてください。」と案内する。段4でパスワードのログインを消したので、先にパスワードを付けた他人がそのパスワードで入る道は無く、確認のリンクを押させる危険（段2の前から残っていた）も無くなった。
 
 残る危険として受け入れること: 始めは GoTrue の宛先ごとの送信の間隔の 429（直前に認証のメールを受けた既存のアドレスだけで起きる）を 202 に隠すので、応答からは見分けられない。代わりに、プロジェクト全体の送信の上限で 429 になった時も、利用者には「送った」と見えてメールが届かない。画面の再送（60秒後）で戻れ、監査 `email_code_send_throttled` とログで気付ける。再送の GoTrue の 429 も同じく隠す。隠した道はメールの送信を飛ばすので、応答が速く、時間の差が出うる（時間は揃えない）。新規と登録済みでは、GoTrue への呼び出しの数が違い、時間の差が出うる。応答の本文・状態・Cookie は同じで、時間の差の完全な消去はしない（回数の制限と Turnstile が前に立つ）。一度も入らなかったアカウントは、印つきで残る。後始末の定期処理は段2では作らず、開店前の項目にする（調整役の判断 I-8）。
 
@@ -8565,6 +8618,31 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/login`（�
 | 優先度 | MUST |
 
 守ること: (1) 積むのは `private.passkey_enqueue_staff_notice` の1つ（持ち主 `postgres`・`SECURITY DEFINER`・`search_path` 空・`anon`・`authenticated`・`service_role`・`PUBLIC` に `execute` なし。3種類以外の `kind` は 22023）。(2) 呼ぶのは `staff_invite_issue_core`（`redo`・`invite`・`promote`）と `staff_demote` で、錠 190519 と利用者の錠を持った後の同じ取引。(3) `last_resort` は積まない。(4) 宛先は `passkey_notification_recipients` が送る時に決め、本人（`user_id`）・`deleted_at` のある人・`banned_until` が先の人・期限切れまたは無効の役割・アドレスが空の人を除き、アドレスの小文字の重複は1通にする。(5) 点検（FR-AUTH-049）のメールは件数・種類・失敗コード・時刻だけで、アドレスも本文も入れない。点検の2本の DB の関数（移行 I）は `service_role` だけが実行でき、アドレス・本文の列を返さない。
+
+### SEC-AUTH-061 消したログインの窓口・画面へリンクを残さず、戻り先も消した道筋に着かせない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-059 |
+| 根拠 | 窓口を消しても、リンクや戻り先が残ると利用者が404に着く。戻り先の確かめは `/login`・`/auth`・`/api` を接頭辞で外すので、消した `/login/password`・`/login/verify`・`/api/auth/confirm` は戻り先に選ばれず、ログインの後は既定の行き先へ着く。確認のメールの雛形はリンクを持たない |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-080-removed-auth-entries-gone.spec.ts`、SEC-AUTH-061-AC-01）、単体テスト（`tests/unit/features/auth/passkey/post-login.test.ts`、`tests/unit/features/auth/return-intent/return-path.test.ts`） |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-28-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 28） |
+| 優先度 | MUST |
+
+守ること: (1) `/login`・ヘッダーに、消した画面・窓口へのリンクを置かない。(2) 戻り先（`next`）が消した画面・窓口でも、ログインの後は `/` に着く。(3) 旧のパスワードのログインの保留の Cookie（`sb-login-2fa-session`）は読まず、`/login` は転送しない。
+
+#### SEC-AUTH-061-AC-01 消した画面・窓口に着地しない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-061 |
+| 根拠 | 消したことを、リンクの有無と戻り先の動きで固定する |
+| 状態 | 推定 |
+| 確かめ方 | E2E（`e2e/FR-LOGIN-080-removed-auth-entries-gone.spec.ts`。390・768・1280 の3幅でくり返す） |
+| 出どころ | `.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-28-brief.md`、`docs/superpowers/plans/2026-11-20-passkey-stage4-cleanup.md`（Task 28） |
+
+`/login` に「パスワード」の欄・「会員登録」のタブ・`/login/password`・`/login/verify` へのリンクが無い。ヘッダーのログインのリンクは `/login` へ向く。戻り先（`next`）に `/login/password`・`/login/verify`・`/api/auth/confirm` を渡してメールのコードで入っても、ログインの後の行き先は `/` になる。旧の保留の Cookie を持っていても `/login` は転送せず、そのまま描く。
 
 ## 派生要件
 

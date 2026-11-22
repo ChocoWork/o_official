@@ -13,7 +13,7 @@
 ## Priority 1 (Must Fix) ⛔
 
 - [High] IPベースレート制限回避の余地
-  - 対象: [src/features/auth/middleware/rateLimit.ts](../../../../src/features/auth/middleware/rateLimit.ts), [src/app/api/auth/login/route.ts](../../../../src/app/api/auth/login/route.ts)
+  - 対象: [src/features/auth/middleware/rateLimit.ts](../../../../src/features/auth/middleware/rateLimit.ts), src/app/api/auth/login/route.ts
   - 問題: `x-forwarded-for` / `x-real-ip` を無条件に採用しており、信頼境界が未固定な環境ではヘッダ偽装で制限回避が可能。
   - 影響: ブルートフォース耐性の低下、アカウント防御の実効性低下。
   - 修正案: 信頼済みプロキシ経由時のみ転送ヘッダを採用し、それ以外は接続元IPを使用。WAF/Ingress で転送ヘッダの上書き運用を必須化。
@@ -21,7 +21,7 @@
 ## Recommended Changes
 
 - [Medium] login成功判定の fail-open 解消
-  - 対象: [src/app/api/auth/login/route.ts](../../../../src/app/api/auth/login/route.ts)
+  - 対象: src/app/api/auth/login/route.ts
   - 問題: Cookie発行/セッション永続化失敗を catch で握りつぶし 200 を返す。
   - 修正案: sessions 永続化と refresh/csrf Cookie 設定失敗時は 500/503 を返し、Cookie も明示クリアして fail-closed。
 

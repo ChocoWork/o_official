@@ -1,7 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import LoginModal from '@/components/LoginModal';
-import RegisterModal from '@/components/RegisterModal';
+import LoginChoices from '@/features/auth/passkey/components/LoginChoices';
 import { LoginProvider } from '@/contexts/LoginContext';
 import { GET as oauthStart, POST as oauthStartPost } from '@/app/api/auth/oauth/start/route';
 import { GET as oauthCallback } from '@/app/api/auth/oauth/callback/route';
@@ -276,7 +275,7 @@ describe('Google のログインの画面遷移', () => {
   describe('画面から開始の窓口へ', () => {
     test('FLOW-AUTH-002 ログインの画面の Google のボタンは開始の窓口へ POST し、返った Google の住所へ移る', async () => {
       routeFetchToOauthStart();
-      await mount(<LoginModal open={true} />);
+      await mount(<LoginChoices />);
 
       fireEvent.click(screen.getByRole('button', { name: /Googleでサインイン/ }));
 
@@ -289,20 +288,10 @@ describe('Google のログインの画面遷移', () => {
       expect(mockCreateReturnIntent).not.toHaveBeenCalled();
     });
 
-    test('FLOW-AUTH-002 会員登録の画面の Google のボタンも同じ窓口へ POST して移る', async () => {
-      routeFetchToOauthStart();
-      await mount(<RegisterModal />);
-
-      fireEvent.click(screen.getByRole('button', { name: /Googleで登録/ }));
-
-      await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
-      expect(new URL(mockNavigate.mock.calls[0][0] as string).origin).toBe('https://accounts.example.test');
-    });
-
     test('FLOW-AUTH-002 戻り先つきの画面から、控えて Google へ移り、戻りで元の頁へ着く（番号は URL に載らない）', async () => {
       mockState.role = 'user';
       routeFetchToOauthStart();
-      await mount(<LoginModal open={true} returnTo="/item/3?color=red" />);
+      await mount(<LoginChoices returnTo="/item/3?color=red" />);
 
       fireEvent.click(screen.getByRole('button', { name: /Googleでサインイン/ }));
 
@@ -314,21 +303,11 @@ describe('Google のログインの画面遷移', () => {
       expect(locationPath(res)).toBe('/item/3?color=red');
     });
 
-    test('FLOW-AUTH-002 戻り先つきの会員登録の画面も、Google のログインの戻り先として控える', async () => {
-      routeFetchToOauthStart();
-      await mount(<RegisterModal returnTo="/account" />);
-
-      fireEvent.click(screen.getByRole('button', { name: /Googleで登録/ }));
-
-      await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
-      expect(mockCreateReturnIntent).toHaveBeenCalledWith({ returnPath: '/account', purpose: 'login' });
-    });
-
     test('FLOW-AUTH-002 開始の窓口が失敗したら移らない', async () => {
       routeFetchToOauthStart();
       mockState.authorizeError = true;
       const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
-      await mount(<LoginModal open={true} />);
+      await mount(<LoginChoices />);
 
       fireEvent.click(screen.getByRole('button', { name: /Googleでサインイン/ }));
 
@@ -342,7 +321,7 @@ describe('Google のログインの画面遷移', () => {
 
     test('FLOW-AUTH-002 画面はパスワードの窓口を呼ばず、認証コードの画面へも移らない', async () => {
       routeFetchToOauthStart();
-      await mount(<LoginModal open={true} />);
+      await mount(<LoginChoices />);
 
       fireEvent.click(screen.getByRole('button', { name: /Googleでサインイン/ }));
 

@@ -80,7 +80,7 @@ graph LR
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-LOGIN-001、FR-LOGIN-002、FR-LOGIN-003、SEC-AUTH-024、SEC-AUTH-028、NFR-SEC-003（範囲外） |
+| 上位 | FR-LOGIN-002、SEC-AUTH-024、SEC-AUTH-028、NFR-SEC-003（範囲外） |
 | 根拠 | トークンを画面の JS に持たせると差し込まれたスクリプトに盗まれるので、Supabase Auth を窓口の中で呼び、結果を HttpOnly の Cookie に入れる（SEC-AUTH-024）。画面の出し分けは表示だけにし、役割は窓口が JWT の `app_metadata` から読む（SEC-AUTH-028）。入力の形は全部の窓口で zod で確かめる（NFR-SEC-003） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -99,7 +99,7 @@ graph LR
 | --- | --- |
 | 上位 | FR-LOGIN-001、FREQ-58-REQ-01、FREQ-334-REQ-01、FREQ-335-REQ-04、FREQ-336-REQ-01、SEC-AUTH-003、SEC-AUTH-004、SEC-AUTH-035、ADR-0400、ADR-0420 |
 | 根拠 | メールを読めるだけの相手にパスワードの段を飛ばさせないため、1段目を通ったことを HMAC で署名した Cookie に残し、2段目はその Cookie が無ければ断る（FREQ-58-REQ-01、SEC-AUTH-003）。保留を React の状態でなく Cookie に置くと、`/login/verify` をサーバーで門にでき、再読み込みでも続きから入れる（ADR-0400）。Cookie の寿命は5分、再送で延ばしても最初から30分で切る（FREQ-335-REQ-04、FREQ-336-REQ-01、SEC-AUTH-004） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/login/route.ts`、`otp/verify/route.ts`、`login/resend/route.ts`、`src/features/auth/services/login-2fa-session.ts`）、`docs/superpowers/specs/2026-09-04-login-otp-dedicated-screen-design.md` |
 
@@ -146,7 +146,7 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-LOGIN-003、FREQ-319-REQ-03、FREQ-319-REQ-05、FREQ-332-REQ-04、ADR-0403 |
+| 上位 | FREQ-319-REQ-03、FREQ-319-REQ-05、FREQ-332-REQ-04、ADR-0403 |
 | 根拠 | 企業のメールのリンクの検査はリンクを先に開くので、開いた時に印を消費すると利用者が永久に再設定できない。消費はパスワードを実際に変える時だけにする（FREQ-319-REQ-03、ADR-0403）。漏れた印でパスワードを変えさせないよう、印は 10 分・1回限りにする（FREQ-332-REQ-04）。最新の1本だけは保証しない（SEC-AUTH-018 は満たさない。前の印を使用済みにするのに失敗しても新しい印を出す。`request/route.ts`） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -171,7 +171,7 @@ flowchart LR
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SEC-AUTH-001、SEC-AUTH-002、FREQ-330-REQ-01、FREQ-330-REQ-02、FREQ-327-REQ-01、FREQ-327-REQ-03、FREQ-360-REQ-02（範囲外）、ADR-0411、ADR-0415、ADR-0416 |
+| 上位 | SEC-AUTH-001、SEC-AUTH-002、FREQ-330-REQ-02、FREQ-327-REQ-01、FREQ-327-REQ-03、FREQ-360-REQ-02（範囲外）、ADR-0411、ADR-0415、ADR-0416 |
 | 根拠 | パスワードの総当たりとメールの送信の踏み台を止めるため、IP 単位とメール単位の2段で数え、メール単位は Turnstile の後に数えて他人の枠を潰させない（SEC-AUTH-001、FREQ-360-REQ-02（範囲外））。Turnstile のトークンは1回しか使えないので、送るたびに成否によらず引き直し、引き直しの手段を共通のフックに集める（FREQ-330-REQ-01・02、ADR-0411）。状態を変える `POST` の Origin の確かめは窓口に書かず、共有の proxy の1か所に任せる（FREQ-327-REQ-01・03） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -209,7 +209,7 @@ flowchart LR
 | --- | --- |
 | 上位 | FREQ-319-REQ-02、FREQ-320-REQ-01、FREQ-320-REQ-03、FREQ-320-REQ-04、ADR-0404 |
 | 根拠 | 任意のメールを投げて会員かどうかを調べさせないため、登録済みでも新規と同じ 202 を返し、登録済みであることは本人にだけメールで伝える（FREQ-320-REQ-03・04、ADR-0404）。再設定はアカウントが無ければ印もメールも作らず、有る時と同じ 200 を返す（FREQ-319-REQ-02）。照会が失敗した時は「無い」に丸めず 503・500 にする（FREQ-320-REQ-01） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/register/route.ts`、`src/app/api/auth/password-reset/request/route.ts`） |
 
@@ -222,7 +222,7 @@ flowchart LR
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FREQ-323-REQ-01、FREQ-323-REQ-02、FREQ-323-REQ-03、SEC-AUTH-014、SEC-AUTH-019、ADR-0405、NFR-SEC-008（範囲外） |
+| 上位 | FREQ-323-REQ-02、SEC-AUTH-014、SEC-AUTH-019、ADR-0405、NFR-SEC-008（範囲外） |
 | 根拠 | 短い・漏れたパスワードでリスト型攻撃の成功率を上げないため、16 文字以上で HIBP の k-匿名の照合に当たらない物だけを受け、文字の種類の決まりは課さない（FREQ-323-REQ-01・03、SEC-AUTH-014）。Supabase の漏洩の照合は上位のプランにしか無いのでアプリで照合し、照合先が落ちた時は止めずに監査に残す（FREQ-323-REQ-02、ADR-0405）。Host の偽りで店のメールのリンクを外へ向けさせない（SEC-AUTH-019） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -299,7 +299,7 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-AUTH-005、SEC-AUTH-026、SEC-AUTH-032、SEC-AUTH-007、ADR-0412、ADR-0413、ADR-0468 |
+| 上位 | FR-AUTH-005、SEC-AUTH-026、SEC-AUTH-032、SEC-AUTH-007、ADR-0412、ADR-0468 |
 | 根拠 | ログインの後の行き先を URL の値で決めると、外の住所へ送る罠にも、確認のメールや Referer を通した改ざんにも使われる（SEC-AUTH-026）。行き先は入口で確かめてサーバーに控え、端末には番号だけを HttpOnly の Cookie で持たせ、出口で 1 回だけ使う（FR-AUTH-005、SEC-AUTH-032、ADR-0412）。管理者・サポーターは入口の条件（`staffEntryOk`。`amr` のパスキー・24時間以内・認めた鍵2本の JWT のヒント。ADR-0468）を満たすまで使い切らず、出口でも役割と `staffEntryOk` を見て確かめ直す（FR-AUTH-005-AC-05）。段1b より前は `aal2`（TOTP）で見ていた。TOTP の流れは段4まで残る |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -370,25 +370,22 @@ graph TD
 
 矢印は画面の中のリンク・移動。細かい条件は画面遷移（FLOW-AUTH-001〜005）に書く。ヘッダーとドロワーは全部のページに出る。
 
-### SCR-AUTH-001 /login はパスキー・Google・メールのコードの3つの入口を持つ画面にし、旧のタブの画面は /login/password に残す
+### SCR-AUTH-001 /login はパスキー・Google・メールのコードの3つの入口を持ち、コードの入力は /login/code で受ける
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-LOGIN-005、FREQ-63-REQ-01、FREQ-90-REQ-01、FREQ-69-REQ-01、FREQ-71-REQ-01、FREQ-334-REQ-03、FR-AUTH-005、FR-AUTH-025、FR-AUTH-027、ADR-0410 |
-| 根拠 | ログインと会員登録を別のページにすると導線が分かれるので、`/login` の1つの画面のタブで切り替え、`/register` は置かない（FREQ-63-REQ-01、ADR-0410）。タブは下線の形にし、カードの枠と切替のリンクを消す（FREQ-90-REQ-01）。認証コードの入力の途中で戻ってきた人にもう一度パスワードを打たせると2通目のコードが飛ぶので、保留が有効なら `/login/verify` へ送る（FREQ-334-REQ-03） |
+| 上位 | FR-LOGIN-005、FREQ-69-REQ-01、FREQ-71-REQ-01、FR-AUTH-005、FR-AUTH-027、DRV-AUTH-006 |
+| 根拠 | ログインの入口を1つの画面にまとめ、パスワードの欄・会員登録のタブ・旧のコード確認の画面（`/login/verify`）は持たない（段4で消した。ADR-0469）。認証コードの入力の途中で戻ってきた人にもう一度フォームを見せると2通目のコードが飛ぶので、保留の Cookie が有効なら `/login/code` へ送る（DD-AUTH-001） |
 | 状態 | 推定 |
-| 確かめ方 | 結合テスト |
-| 出どころ | 実装から推定（`src/app/login/page.tsx`、`src/components/AuthTabs.tsx`） |
+| 確かめ方 | 結合テスト（`tests/integration/ui/auth-login-screen.test.tsx`）、E2E（`e2e/FR-LOGIN-057-login-screen.spec.ts`、`e2e/FR-LOGIN-079-login-screens-layout.spec.ts`） |
+| 出どころ | 実装から推定（`src/app/login/page.tsx`、`src/features/auth/passkey/components/LoginChoices.tsx`） |
 
-- 段2 Task 5（2026-11-18）から、`/login` は新しい画面（FR-AUTH-027、DD-AUTH-063、ADR-0469）。上から「パスキーでログイン」・OR・「Googleでサインイン」・OR・メール欄と「メールでコードを受け取る」を並べる。下の「タブ」「会員登録のフォーム」の箇条書きは、旧のタブの画面 `/login/password`（FR-AUTH-025、DD-AUTH-061）の今の動きの説明として残す（段4で消す）
-- サーバーの描画: 題「LOGIN | Le Fil des Heures」・説明・OG の画像を返す（FR-LOGIN-005。説明は新しい `/login` が「パスキー、Google アカウント、メールで受け取るコードでサインインできます。」）。新しい保留の Cookie が有効なら `/login/code`、旧い保留の Cookie が有効なら `/login/verify` へ送る
-- `?next=` を受ける。文字列なら戻り先の確かめ（DD-AUTH-032）に通し、通った道筋だけをタブの部品の `returnTo` に渡す（外れたら捨てる。値を画面に出さない）。ログイン・会員登録・Google の送信で本文の `next` に載せる（FR-AUTH-005）
-- `?tab=register` で会員登録のタブから始め、`?email=` が文字列なら会員登録の欄に入れる（注文の完了からの案内、FREQ-266（範囲外））。新しい `/login` は `tab` を読まず、`email` をメール欄の初めの値にするだけ
-- タブ: `tablist` に「ログイン」「会員登録」。左右の矢印で切り替える。選んだタブは黒の太い下線、選ばないタブはグレーの文字と細い下線
-- タブを切り替えると URL を置き換える（`?tab=`・`?email=` が消える）。段2 Task 3 から、置き換え先は `/login/password`（旧のパスワードの画面は `/login/password` へ退避した。DD-AUTH-061、ADR-0469。`/login` は Task 5 で新しい画面に作り替えた）。`/register` へは変えない
-- 画面の高さ: main を画面の高さ以上にしてフォームを縦横の中央に置き、上下にヘッダーのずれの分の余白を取る（FREQ-69-REQ-01）。この main の指定は共有の `src/contexts/Providers.tsx` が `/login`・`/login/verify`・`/login/password`・`/login/code`・`/login/passkey`・`/auth/password-reset` の6つに当てる（`/login/password`・`/login/code`・`/login/passkey` は段2 Task 3 で足した）。`sm` より狭い時だけ縦の余白と欄の高さを縮める（FREQ-71-REQ-01）
-- 中身はログインのフォーム（SCR-AUTH-002）か会員登録のフォーム（SCR-AUTH-003）
-- `/register` へ来た時の動きはアプリのページが無いことで決まる（404。FREQ-63-AC-01）
+- `/login`（DD-AUTH-001、DD-AUTH-063、ADR-0469）: 上から「パスキーでログイン」・OR・「Googleでサインイン」・OR・メール欄と「メールでコードを受け取る」を並べる。タブも会員登録のフォームも持たない（はじめての方も、同じ方法でアカウントを作れる）。
+- `/login/code`（DD-AUTH-062）: 8桁の入力欄・再送・メールの入れ直しを出す。保留の Cookie が無い・偽り・期限切れなら `/login` へ送る。8つの欄の入力の作法は DRV-AUTH-006。
+- サーバーの描画: 題「LOGIN | Le Fil des Heures」・説明・OG の画像を返す（FR-LOGIN-005）。保留の Cookie が有効なら `/login/code` へ送る。旧のパスワードのログインの保留の Cookie は見ない（段4で消した）。
+- `?next=` を受ける。文字列なら戻り先の確かめ（DD-AUTH-032）に通し、通った道筋だけを `returnTo` に渡す（外れたら捨てる。値を画面に出さない）。メールのコードの始め・Google の送信・パスキーの終わりの窓口で本文の `next` に載せる（FR-AUTH-005）。
+- 画面の高さ: main を画面の高さ以上にしてフォームを縦横の中央に置き、上下にヘッダーのずれの分の余白を取る（FREQ-69-REQ-01）。この main の指定は共有の `src/contexts/Providers.tsx` が `/login`・`/login/code`・`/login/passkey`・`/auth/password-reset`・`/staff/invite`・`/staff/register` に当てる。
+- `/login/password`・`/login/verify` は画面ごと消した（404。FR-AUTH-053-AC-01）。`/register` へ来た時の動きもアプリのページが無いことで決まる（404）。
 
 ### SCR-AUTH-002 ログインのフォームはメール・パスワード・ボットの確かめと、再設定と Google の入口を持つ
 
@@ -396,7 +393,7 @@ graph TD
 | --- | --- |
 | 上位 | FR-LOGIN-001、FR-LOGIN-002、FREQ-65-REQ-01、FREQ-66-REQ-01、FREQ-67-REQ-01、FREQ-68-REQ-01、FREQ-89-REQ-01、FREQ-334-REQ-02、FREQ-328-REQ-01、ADR-0411 |
 | 根拠 | 1段目の入力をここに集め、パスワードの確かめが通ったら認証コードの専用の画面へ置き換えて移る（FR-LOGIN-001、FREQ-334-REQ-02）。忘れた人の入口はパスワードの欄の直下に右寄せで置き、主のボタンを一番大きくして優先度を見せる（FREQ-66・67-REQ-01）。未入力の間は送れなくする（FREQ-65-REQ-01 のボタンの部分）。Turnstile は共通のフックで描き、送るたびに引き直す（FREQ-328-REQ-01、ADR-0411） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/components/LoginModal.tsx`） |
 
@@ -413,7 +410,7 @@ graph TD
 | --- | --- |
 | 上位 | FREQ-91-REQ-01、FREQ-320-REQ-04、FREQ-330-REQ-01、ADR-0411 |
 | 根拠 | 登録の3つの欄をログインのタブと同じ下線とアイコンにし、並びを フォーム→OR→Google にそろえる（FREQ-91-REQ-01）。登録済みかどうかを画面で判らせないため、送った後は誰にでも同じ確認のメールの案内を出す（FREQ-320-REQ-04）。Turnstile は送るたびに引き直す（FREQ-330-REQ-01、ADR-0411） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/components/RegisterModal.tsx`） |
 
@@ -430,7 +427,7 @@ graph TD
 | --- | --- |
 | 上位 | FREQ-334-REQ-01、FREQ-334-REQ-04、FREQ-334-REQ-05、FREQ-334-REQ-06、FR-LOGIN-006、FR-LOGIN-008、DRV-AUTH-006、ADR-0400 |
 | 根拠 | 保留の判定をサーバーに置き、判定の前に入力の画面の HTML を送らない。保留が無い・偽り・期限切れは全部同じに `/login` へ送り、アカウントの有無を示さない（FREQ-334-REQ-01、ADR-0400）。宛先は伏せて出し、再送はパスワード無しで保留の宛先に送り、別の宛先でやり直す時は保留を捨てる（FREQ-334-REQ-04〜06）。再送の待ちは 60 秒（FR-LOGIN-006・008） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/login/verify/page.tsx`、`src/app/login/verify/VerifyOtpClient.tsx`、`src/lib/format-countdown.ts`） |
 
@@ -446,7 +443,7 @@ graph TD
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FREQ-92-REQ-01、FREQ-319-REQ-04、FREQ-323-REQ-04、FREQ-328-REQ-02、FREQ-328-REQ-03、FREQ-328-REQ-04、FREQ-329-REQ-01、FREQ-329-REQ-02、FREQ-329-REQ-05、FREQ-331-REQ-01、FREQ-331-REQ-02、FREQ-331-REQ-03、FREQ-331-REQ-04、FREQ-331-REQ-05、FREQ-331-REQ-06、FREQ-331-REQ-07、FREQ-333-REQ-01、FREQ-333-REQ-02、FREQ-333-REQ-03、FREQ-333-REQ-04、ADR-0411 |
+| 上位 | FREQ-92-REQ-01、FREQ-319-REQ-04、FREQ-323-REQ-04、FREQ-328-REQ-03、FREQ-328-REQ-04、FREQ-329-REQ-01、FREQ-329-REQ-02、FREQ-329-REQ-05、FREQ-331-REQ-01、FREQ-331-REQ-02、FREQ-331-REQ-03、FREQ-331-REQ-04、FREQ-331-REQ-05、FREQ-331-REQ-06、FREQ-331-REQ-07、FREQ-333-REQ-01、FREQ-333-REQ-02、FREQ-333-REQ-03、FREQ-333-REQ-04、ADR-0411 |
 | 根拠 | 1つの道で、メールを送る前（申請）・リンクから来た後（新しいパスワード）・終わった後（結果）を出し分ける。どれかは再設定の Cookie の有無で決まり、画面は窓口に聞く（FREQ-332 の流れ）。無効・期限切れのリンクは理由を出す（FREQ-319-REQ-04）。送った後はフォームを畳んで結果だけを出し、宛先は出さない（FREQ-329-REQ-01・02）。打ち間違いを捕まえるため新しいパスワードを2回入れさせる（FREQ-333-REQ-01〜04）。結果の画面は図・題・詳細の階層で一目で読めるようにする（FREQ-331-REQ-01〜07） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -639,7 +636,7 @@ graph TD
 | --- | --- |
 | 上位 | FR-LOGIN-001、FREQ-334-REQ-02、FREQ-334-REQ-03、FREQ-334-REQ-06、DRV-AUTH-009、FR-AUTH-005 |
 | 根拠 | パスワードの確かめが通ったら認証コードの専用の画面へ置き換えて移り、戻るで資格情報のフォームへ戻らないようにする（FREQ-334-REQ-02）。保留の間に `/login` へ来たら続きへ送り、やり直す時だけ保留を捨てて戻す（FREQ-334-REQ-03・06）。一般の会員を管理者用の確認に通さない（DRV-AUTH-009）。確定の後の行き先は、入口で控えた戻り先を `post-login` が使い切って決める（FR-AUTH-005、ARC-AUTH-010） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/components/LoginModal.tsx`、`src/app/login/page.tsx`、`src/app/login/verify/VerifyOtpClient.tsx`） |
 
@@ -703,7 +700,7 @@ sequenceDiagram
 | --- | --- |
 | 上位 | FREQ-63-REQ-01、FREQ-320-REQ-03、FREQ-320-REQ-04、FREQ-265-REQ-01（範囲外）、FR-AUTH-005、SEC-AUTH-006、SEC-AUTH-007、ADR-0410、ADR-0413 |
 | 根拠 | 登録の入口は `/login` のタブだけにする（FREQ-63-REQ-01、ADR-0410）。登録はメールの持ち主が確認のリンクを開いた時に終わらせ、登録済みの宛先には案内のメールだけを送る（FREQ-320-REQ-03・04）。確認でログインした時にゲストで買った注文を会員へ引き継ぐ（FREQ-265（範囲外）） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/components/RegisterModal.tsx`、`src/contexts/LoginContext.tsx`、`src/app/api/auth/register/route.ts`、`src/app/api/auth/confirm/route.ts`） |
 
@@ -728,7 +725,7 @@ flowchart LR
 | --- | --- |
 | 上位 | FR-LOGIN-003、FREQ-319-REQ-03、FREQ-319-REQ-04、FREQ-332-REQ-01、FREQ-332-REQ-02、FREQ-329-REQ-05、ADR-0403 |
 | 根拠 | 忘れた人が店へ問い合わせずに戻れる道を作る（FR-LOGIN-003）。リンクの検査に印を潰させないため、リンクの先は副作用の無い確認の画面にし、印の消費はパスワードを変える時まで遅らせる（FREQ-319-REQ-03、ADR-0403）。確認の画面からは自動で新しいパスワードの欄へ進める（FREQ-332-REQ-01・02）。無効なリンクは理由を出し（FREQ-319-REQ-04）、終わったら「ログインへ」を主の操作にする（FREQ-329-REQ-05） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/auth/password-reset/**`、`src/app/api/auth/password-reset/*/route.ts`） |
 
@@ -783,7 +780,7 @@ flowchart TD
 | --- | --- |
 | 上位 | FREQ-335-REQ-02、FREQ-335-REQ-04、FREQ-336-REQ-01、FREQ-334-REQ-06、SEC-AUTH-002、SEC-AUTH-004、ADR-0400、ADR-0402 |
 | 根拠 | 確認コードの有効期限（300 秒）より長く保留を残さない（FREQ-335-REQ-04）。再送で起点を延ばせると総当たりの窓が延びるので、最初の発行の時刻を引き継いで 30 分で切る（FREQ-336-REQ-01、SEC-AUTH-004）。コードの総当たりの上限に達したら試行の窓ごと閉じる（FREQ-335-REQ-02、SEC-AUTH-002、ADR-0402） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/features/auth/services/login-2fa-session.ts`、`src/app/api/auth/otp/verify/route.ts`、`login/resend/route.ts`、`login/cancel/route.ts`） |
 
@@ -984,7 +981,7 @@ stateDiagram-v2
 | --- | --- |
 | 上位 | FR-LOGIN-001、FREQ-58-REQ-01、FR-AUTH-005、SEC-AUTH-001、SEC-AUTH-030、SEC-AUTH-032、ADR-0400、ADR-0412 |
 | 根拠 | 2段のログインの1段目（FR-LOGIN-001、FREQ-58-REQ-01）。パスワードの総当たりを IP とメールの2段で止め、メール単位は Turnstile の後に数える（SEC-AUTH-001）。この段ではトークンを配らず、パスワードを通った印だけを署名した Cookie に残す（ADR-0400）。成否を監査に残す（SEC-AUTH-030） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/login/route.ts`、`src/features/auth/schemas/login.ts`） |
 
@@ -1006,7 +1003,7 @@ stateDiagram-v2
 | --- | --- |
 | 上位 | FR-LOGIN-001、FREQ-58-REQ-01、FREQ-335-REQ-01、FREQ-335-REQ-02、FREQ-335-REQ-03、FREQ-336-REQ-03、SEC-AUTH-002、SEC-AUTH-003、SEC-AUTH-022、SEC-AUTH-030、FREQ-428-REQ-01（範囲外）、ADR-0402 |
 | 根拠 | 2段のログインの2段目（FR-LOGIN-001）。保留の Cookie が無ければ断り、宛先は Cookie からだけ取る（SEC-AUTH-003、FREQ-336-REQ-03）。総当たりを保留の宛先単位で止め、上限で保留を捨て、コードの種類を email に固定する（FREQ-335-REQ-01〜03、SEC-AUTH-002、ADR-0402）。確定の後にゲストのカート・お気に入りを会員へ合わせる（FREQ-428（範囲外）） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/otp/verify/route.ts`） |
 
@@ -1027,7 +1024,7 @@ stateDiagram-v2
 | --- | --- |
 | 上位 | FREQ-334-REQ-05、FREQ-336-REQ-01、FREQ-336-REQ-02、SEC-AUTH-003、SEC-AUTH-004、ADR-0401 |
 | 根拠 | パスワードを通ったことは保留の Cookie が示すので、再送にパスワードを求めず、宛先は Cookie から取って本文を見ない（FREQ-334-REQ-05、SEC-AUTH-003）。他人へのメールの踏み台にさせず、1つのアカウントへ送る総量を抑えるため、ログインと同じ枠で IP とメールの2段で数える（FREQ-336-REQ-02、ADR-0401）。発行の時刻を引き継いで 30 分の上限を延ばさない（FREQ-336-REQ-01、SEC-AUTH-004） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/login/resend/route.ts`） |
 
@@ -1047,7 +1044,7 @@ stateDiagram-v2
 | --- | --- |
 | 上位 | FREQ-334-REQ-06、FREQ-336-REQ-04、SEC-AUTH-032 |
 | 根拠 | 別の宛先でやり直す時に前の保留を残さない（FREQ-334-REQ-06）。回数の制限の無い窓口なので、捨てる物が無い時に監査を書くと行を水増しできる。有効な保留があった時だけ残す（FREQ-336-REQ-04） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/login/cancel/route.ts`） |
 
@@ -1065,7 +1062,7 @@ stateDiagram-v2
 | --- | --- |
 | 上位 | FREQ-320-REQ-01、FREQ-320-REQ-03、FREQ-323-REQ-01、FREQ-323-REQ-02、FREQ-323-REQ-03、FR-AUTH-005、SEC-AUTH-014、SEC-AUTH-016、SEC-AUTH-017、SEC-AUTH-019、SEC-AUTH-007、SEC-AUTH-022、SEC-AUTH-032、ADR-0404、ADR-0405、ADR-0412、ADR-0413 |
 | 根拠 | 会員登録の入口。登録済みかどうかを応答の中身と時間で判らせず、本人にだけメールで知らせる（FREQ-320-REQ-03、ADR-0404）。照会の失敗を「無い」に丸めない（FREQ-320-REQ-01）。16 文字以上で漏洩していないパスワードだけを受ける（FREQ-323-REQ-01〜03、SEC-AUTH-014、ADR-0405）。メールのリンクは許可した住所でだけ作る（SEC-AUTH-019） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/register/route.ts`、`src/features/auth/schemas/register.ts`） |
 
@@ -1091,7 +1088,7 @@ stateDiagram-v2
 | --- | --- |
 | 上位 | FREQ-265-REQ-01（範囲外）、FREQ-428-REQ-01（範囲外）、FR-AUTH-005、SEC-AUTH-006、SEC-AUTH-007、SEC-AUTH-026、SEC-AUTH-030、SEC-AUTH-032、ADR-0413 |
 | 根拠 | 会員登録を確認のリンクで終わらせ、登録を始めた端末ではそのままログインさせる入口（別の端末では確認だけ済ませる。SEC-AUTH-007）。確認でログインした時にゲストの注文とカート・お気に入りを会員へ引き継ぐ（FREQ-265・428（範囲外））。送り先はリンクの値を読まず、登録した端末の戻り先の控えだけで決める（SEC-AUTH-026、SEC-AUTH-032）。成否を監査に残す（SEC-AUTH-030） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/confirm/route.ts`） |
 
@@ -1157,7 +1154,7 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-LOGIN-003、FREQ-319-REQ-01、FREQ-319-REQ-02、FREQ-332-REQ-04、SEC-AUTH-019 |
+| 上位 | FREQ-319-REQ-01、FREQ-319-REQ-02、FREQ-332-REQ-04、SEC-AUTH-019 |
 | 根拠 | 再設定の入口（FR-LOGIN-003）。アカウントの照会を DB の関数1回にし（FREQ-319-REQ-01）、アカウントが無い宛先には送らず同じ応答にして、店のドメインを第三者へのメールの踏み台にさせない（FREQ-319-REQ-02）。印は 10 分にし、メールに期限を書く（FREQ-332-REQ-04）。リンクは許可した住所でだけ作る（SEC-AUTH-019） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -1215,7 +1212,7 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FREQ-319-REQ-03、FREQ-319-REQ-05、FREQ-323-REQ-01、FREQ-323-REQ-02、FREQ-323-REQ-03、SEC-AUTH-014、SEC-AUTH-018、ADR-0403、ADR-0405 |
+| 上位 | FREQ-319-REQ-03、FREQ-319-REQ-05、FREQ-323-REQ-02、SEC-AUTH-014、SEC-AUTH-018、ADR-0403、ADR-0405 |
 | 根拠 | 印の消費をパスワードを変える直前まで遅らせ、同じリンクから何枚 Cookie が出ても通るのは1つだけにする（FREQ-319-REQ-03、SEC-AUTH-018、ADR-0403）。更新の失敗を成功にせず、変えた後は乗っ取った人のセッションを残さないよう全部を切って本人に知らせる（FREQ-319-REQ-05）。16 文字以上で漏洩していない物だけを受ける（FREQ-323-REQ-01〜03、SEC-AUTH-014、ADR-0405） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -1566,7 +1563,7 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-AUTH-023、SEC-AUTH-048、SEC-AUTH-049、ADR-0469 |
+| 上位 | FR-AUTH-023、SEC-AUTH-048、SEC-AUTH-049、ADR-0469、ADR-0420 |
 | 根拠 | メールのコードのログイン・新規の始め。確認済み・パスワード無しでアカウントを作り（登録済みなら断りを握る）、全員に同じくコードを送る。未登録・登録済み・店員で、状態・本文・Set-Cookie の名前と属性が同じ。ボット検査（Turnstile）はこの窓口だけ |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト（`tests/integration/api/auth/email-code-start.test.ts`）、単体テスト（`tests/unit/api/auth/email-code-start-route.test.ts`）、E2E（`e2e/FR-LOGIN-055-email-code-api.spec.ts`） |
@@ -1820,7 +1817,7 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SEC-AUTH-024、SEC-AUTH-032、FREQ-320-REQ-02、FREQ-335-REQ-04、FREQ-332-REQ-04、FREQ-58-REQ-01、ADR-0400 |
+| 上位 | SEC-AUTH-024、SEC-AUTH-032、FREQ-320-REQ-02、FREQ-332-REQ-04 |
 | 根拠 | スクリプト・平文の通信・別のサイトからの送信で Cookie を盗ませず使わせないため、トークンは HttpOnly・本番で Secure・SameSite を付け、短命の保留と再設定は Strict にする（SEC-AUTH-024）。CSRF の印は画面が読むので HttpOnly にしない。access の寿命を refresh にそろえる（FREQ-320-REQ-02）。保留と再設定はパスワードを通った・リンクを確かめた事実を署名した印で持つ（FREQ-58-REQ-01、ADR-0400、FREQ-335-REQ-04、FREQ-332-REQ-04） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |

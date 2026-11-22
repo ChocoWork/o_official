@@ -1,6 +1,4 @@
 export {};
-// GoTrue の access token の形（DD-AUTH-039）。AUTH_REQUIRE_APP_SESSION が既定で有効なので、ログインの保存には session_id が要る。
-const ACCESS_1 = `access-1.${Buffer.from(JSON.stringify({ session_id: '4c36ef0b-0332-42d8-b210-3326fc20c240' })).toString('base64url')}.s`;
 jest.mock('server-only', () => ({}), { virtual: true });
 
 jest.mock('next/server', () => ({
@@ -55,10 +53,8 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
 
 type Handler = (request: Request) => Promise<any>;
 
-const crypto = require('crypto') as typeof import('crypto');
 const { cookies } = require('next/headers');
-const { createPublicClient, createServiceRoleClient } = require('@/lib/supabase/server');
-const { createServiceRoleAuthClient } = require('@/lib/auth/service-role-auth-client');
+const { createServiceRoleClient } = require('@/lib/supabase/server');
 
 const MINUTE = 60;
 const DAY = 24 * 60 * 60;
@@ -76,16 +72,8 @@ const postJson = (path: string, body: unknown, headers: Record<string, string> =
 
 const cookieHeaderFor = (name: string, value: string) => ({ cookie: `${name}=${encodeURIComponent(value)}` });
 
-const twoFactor = () => require('@/features/auth/services/login-2fa-session') as typeof import('@/features/auth/services/login-2fa-session');
 const resetSession = () => require('@/features/auth/services/password-reset-session') as typeof import('@/features/auth/services/password-reset-session');
 const cookieLib = () => require('@/lib/cookie') as typeof import('@/lib/cookie');
-
-/** 署名つきの印を、署名だけ正しい任意の中身で作る。 */
-const signPayload = (payload: Record<string, unknown>) => {
-  const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-  const signature = crypto.createHmac('sha256', 'test-jwt-secret').update(encoded).digest('base64url');
-  return `${encoded}.${signature}`;
-};
 
 describe('認証の Cookie は用途ごとに名前・寿命・属性を分ける（DATA-AUTH-004）', () => {
   const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
@@ -152,65 +140,6 @@ describe('認証の Cookie は用途ごとに名前・寿命・属性を分け�
   });
 
   describe('窓口が実際に出す Cookie', () => {
-    test('DATA-AUTH-004 ログインの 1 段目は、保留の署名した印を SameSite=Strict・5 分で出し、中身に用途と宛先を持つ', async () => {
-      createServiceRoleAuthClient.mockResolvedValue({
-        auth: {
-          signInWithPassword: jest.fn().mockResolvedValue({
-            data: { session: { access_token: 'a', refresh_token: 'r' }, user: { id: 'u1', email: 'user@example.com' } },
-            error: null,
-          }),
-          signInWithOtp: jest.fn().mockResolvedValue({ error: null }),
-        },
-      });
-      const { POST } = require('@/app/api/auth/login/route') as { POST: Handler };
-
-      const res = await POST(postJson('/api/auth/login', { email: 'user@example.com', password: 'password123456789' }));
-
-      const pending = res.cookies.get('sb-login-2fa-session');
-      expect(pending).toEqual(expect.objectContaining({ httpOnly: true, sameSite: 'strict', path: '/', maxAge: 5 * MINUTE }));
-      const claims = twoFactor().verifyLoginTwoFactorSessionToken(pending.value);
-      expect(claims).toEqual(expect.objectContaining({ purpose: 'login_2fa', userId: 'u1', email: 'user@example.com' }));
-      expect(claims!.exp - claims!.iat).toBe(5 * MINUTE);
-    });
-
-    test('DATA-AUTH-004 確認コードの検証に成功すると、access・refresh・CSRF は 7 日、端末の印は 30 日で出し、保留の印は捨てる', async () => {
-      setNodeEnv('production');
-      const session = { access_token: ACCESS_1, refresh_token: 'refresh-1', expires_at: Date.now() + 3600 };
-      createPublicClient.mockResolvedValue({
-        auth: { verifyOtp: jest.fn().mockResolvedValue({ data: { session, user: { id: 'u1', email: 'user@example.com' } }, error: null }) },
-      });
-      createServiceRoleClient.mockResolvedValue({ from: jest.fn(() => ({ insert: jest.fn().mockResolvedValue({ error: null }) })) });
-      const pendingToken = twoFactor().createLoginTwoFactorSessionToken({ userId: 'u1', email: 'user@example.com' });
-      const { POST } = require('@/app/api/auth/otp/verify/route') as { POST: Handler };
-
-      const res = await POST(postJson('/api/auth/otp/verify', { code: '12345678' }, cookieHeaderFor('sb-login-2fa-session', pendingToken)));
-
-      expect(res.status).toBe(200);
-      expect(res.cookies.get('sb-access-token')).toEqual(expect.objectContaining({ httpOnly: true, secure: true, sameSite: 'lax', maxAge: 7 * DAY }));
-      expect(res.cookies.get('sb-refresh-token')).toEqual(expect.objectContaining({ httpOnly: true, secure: true, sameSite: 'lax', maxAge: 7 * DAY }));
-      expect(res.cookies.get('sb-csrf-token')).toEqual(expect.objectContaining({ httpOnly: false, secure: true, sameSite: 'lax', maxAge: 7 * DAY }));
-      const device = res.cookies.get('session_id');
-      expect(device).toEqual(expect.objectContaining({ httpOnly: true, sameSite: 'lax', maxAge: 30 * DAY }));
-      expect(device.value).toMatch(/^[0-9a-f]{32}$/);
-      // 使い終わった保留の印は、同じ名前で寿命 0 にして消す。
-      expect(res.cookies.get('sb-login-2fa-session')).toEqual(expect.objectContaining({ value: '', maxAge: 0 }));
-    });
-
-    test('DATA-AUTH-004 認証コードの再送は保留の印を出し直すが、最初の iat を引き継ぐ', async () => {
-      const firstIssuedAt = Math.floor(Date.now() / 1000) - 10 * MINUTE;
-      const pendingToken = twoFactor().createLoginTwoFactorSessionToken({ userId: 'u1', email: 'user@example.com', issuedAt: firstIssuedAt });
-      createServiceRoleAuthClient.mockResolvedValue({ auth: { signInWithOtp: jest.fn().mockResolvedValue({ error: null }) } });
-      const { POST } = require('@/app/api/auth/login/resend/route') as { POST: Handler };
-
-      const res = await POST(postJson('/api/auth/login/resend', {}, cookieHeaderFor('sb-login-2fa-session', pendingToken)));
-
-      expect(res.status).toBe(200);
-      const reissued = res.cookies.get('sb-login-2fa-session');
-      expect(reissued).toEqual(expect.objectContaining({ httpOnly: true, sameSite: 'strict', maxAge: 5 * MINUTE }));
-      const claims = twoFactor().verifyLoginTwoFactorSessionToken(reissued.value);
-      expect(claims!.iat).toBe(firstIssuedAt);
-      expect(claims!.exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
-    });
 
     test('DATA-AUTH-004 再設定のリンクを確かめると、利用者・宛先・印の行を署名した印を SameSite=Strict・10 分で出す', async () => {
       const chain: any = {
@@ -287,17 +216,6 @@ describe('認証の Cookie は用途ごとに名前・寿命・属性を分け�
   });
 
   describe('署名した印の決まり', () => {
-    test('DATA-AUTH-004 保留の印は、中身を 1 文字でも書き換えると署名が合わず読めない', () => {
-      const token = twoFactor().createLoginTwoFactorSessionToken({ userId: 'u1', email: 'user@example.com' });
-      const [payload, signature] = token.split('.');
-      const forged = Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(payload, 'base64url').toString()), email: 'victim@example.com' }), 'utf8').toString('base64url');
-
-      expect(twoFactor().verifyLoginTwoFactorSessionToken(token)).not.toBeNull();
-      expect(twoFactor().verifyLoginTwoFactorSessionToken(`${forged}.${signature}`)).toBeNull();
-      expect(twoFactor().verifyLoginTwoFactorSessionToken(`${payload}.`)).toBeNull();
-      expect(twoFactor().verifyLoginTwoFactorSessionToken('')).toBeNull();
-      expect(twoFactor().verifyLoginTwoFactorSessionToken(undefined)).toBeNull();
-    });
 
     test('DATA-AUTH-004 再設定の印は、中身を書き換えると署名が合わず読めない', () => {
       const token = resetSession().createPasswordResetSessionToken({ userId: 'u1', email: 'user@example.com', tokenId: 'tok1' });
@@ -310,103 +228,5 @@ describe('認証の Cookie は用途ごとに名前・寿命・属性を分け�
       expect(resetSession().verifyPasswordResetSessionToken('no-dot')).toBeNull();
     });
 
-    test('DATA-AUTH-004 用途が違う印は、同じ鍵で署名されていても断る', () => {
-      const pending = twoFactor().createLoginTwoFactorSessionToken({ userId: 'u1', email: 'user@example.com' });
-      const reset = resetSession().createPasswordResetSessionToken({ userId: 'u1', email: 'user@example.com', tokenId: 'tok1' });
-
-      expect(resetSession().verifyPasswordResetSessionToken(pending)).toBeNull();
-      expect(twoFactor().verifyLoginTwoFactorSessionToken(reset)).toBeNull();
-      expect(twoFactor().readLoginTwoFactorSessionFromCookieHeader(`sb-login-2fa-session=${encodeURIComponent(reset)}`)).toBeNull();
-      expect(resetSession().readPasswordResetSessionFromCookieHeader(`sb-password-reset-session=${encodeURIComponent(pending)}`)).toBeNull();
-    });
-
-    test('DATA-AUTH-004 必要な項目が欠けた印は、署名が正しくても断る（iat の無い旧い形を含む）', () => {
-      const now = Math.floor(Date.now() / 1000);
-      const legacy = signPayload({ purpose: 'login_2fa', userId: 'u1', email: 'user@example.com', exp: now + 300 });
-      const noUser = signPayload({ purpose: 'login_2fa', email: 'user@example.com', iat: now, exp: now + 300 });
-      const resetNoTokenId = signPayload({ purpose: 'password_reset', userId: 'u1', email: 'user@example.com', exp: now + 300 });
-
-      expect(twoFactor().verifyLoginTwoFactorSessionToken(legacy)).toBeNull();
-      expect(twoFactor().verifyLoginTwoFactorSessionToken(noUser)).toBeNull();
-      expect(resetSession().verifyPasswordResetSessionToken(resetNoTokenId)).toBeNull();
-    });
-
-    test('DATA-AUTH-004 署名は合っていても JSON として読めない中身は断る', () => {
-      const encoded = Buffer.from('not-json', 'utf8').toString('base64url');
-      const signature = crypto.createHmac('sha256', 'test-jwt-secret').update(encoded).digest('base64url');
-
-      expect(twoFactor().verifyLoginTwoFactorSessionToken(`${encoded}.${signature}`)).toBeNull();
-      expect(resetSession().verifyPasswordResetSessionToken(`${encoded}.${signature}`)).toBeNull();
-    });
-
-    test('DATA-AUTH-004 保留の印は 5 分で切れ、再設定の印は 10 分で切れる', () => {
-      const issuedAt = Date.now();
-      const pending = twoFactor().createLoginTwoFactorSessionToken({ userId: 'u1', email: 'user@example.com' });
-      const reset = resetSession().createPasswordResetSessionToken({ userId: 'u1', email: 'user@example.com', tokenId: 'tok1' });
-      const nowSpy = jest.spyOn(Date, 'now');
-
-      nowSpy.mockReturnValue(issuedAt + 5 * MINUTE * 1000 - 5000);
-      expect(twoFactor().verifyLoginTwoFactorSessionToken(pending)).not.toBeNull();
-      nowSpy.mockReturnValue(issuedAt + 5 * MINUTE * 1000 + 1000);
-      expect(twoFactor().verifyLoginTwoFactorSessionToken(pending)).toBeNull();
-
-      nowSpy.mockReturnValue(issuedAt + 10 * MINUTE * 1000 - 5000);
-      expect(resetSession().verifyPasswordResetSessionToken(reset)).not.toBeNull();
-      nowSpy.mockReturnValue(issuedAt + 10 * MINUTE * 1000 + 1000);
-      expect(resetSession().verifyPasswordResetSessionToken(reset)).toBeNull();
-    });
-
-    test('DATA-AUTH-004 保留の印は再送で exp が延びても、最初の iat から 30 分で切れる', () => {
-      const start = Date.now();
-      const nowSpy = jest.spyOn(Date, 'now');
-      const firstIat = Math.floor(start / 1000);
-
-      // 29 分後に再送して出し直した印（exp は延びるが iat は最初のまま）。
-      nowSpy.mockReturnValue(start + 29 * MINUTE * 1000);
-      const reissued = twoFactor().createLoginTwoFactorSessionToken({ userId: 'u1', email: 'user@example.com', issuedAt: firstIat });
-
-      nowSpy.mockReturnValue(start + 30 * MINUTE * 1000);
-      expect(twoFactor().verifyLoginTwoFactorSessionToken(reissued)).not.toBeNull();
-      nowSpy.mockReturnValue(start + 30 * MINUTE * 1000 + 2000);
-      expect(twoFactor().verifyLoginTwoFactorSessionToken(reissued)).toBeNull();
-      expect(twoFactor().loginTwoFactorSessionAbsoluteMaxAgeSeconds).toBe(30 * MINUTE);
-    });
-
-    test('DATA-AUTH-004 専用の鍵があればそれで署名し、無ければ JWT_SECRET を使う', () => {
-      process.env.LOGIN_2FA_SESSION_SECRET = 'dedicated-2fa-secret';
-      process.env.PASSWORD_RESET_SESSION_SECRET = 'dedicated-reset-secret';
-      const pending = twoFactor().createLoginTwoFactorSessionToken({ userId: 'u1', email: 'user@example.com' });
-      const reset = resetSession().createPasswordResetSessionToken({ userId: 'u1', email: 'user@example.com', tokenId: 'tok1' });
-
-      expect(twoFactor().verifyLoginTwoFactorSessionToken(pending)).not.toBeNull();
-      expect(resetSession().verifyPasswordResetSessionToken(reset)).not.toBeNull();
-
-      // 専用の鍵を外すと JWT_SECRET に戻り、専用の鍵で署名した印は読めなくなる。
-      delete process.env.LOGIN_2FA_SESSION_SECRET;
-      delete process.env.PASSWORD_RESET_SESSION_SECRET;
-      expect(twoFactor().verifyLoginTwoFactorSessionToken(pending)).toBeNull();
-      expect(resetSession().verifyPasswordResetSessionToken(reset)).toBeNull();
-
-      const fallbackSigned = twoFactor().createLoginTwoFactorSessionToken({ userId: 'u1', email: 'user@example.com' });
-      expect(twoFactor().verifyLoginTwoFactorSessionToken(fallbackSigned)).not.toBeNull();
-    });
-
-    test('DATA-AUTH-004 署名の鍵がどこにも無ければ、印を作れず例外にする', () => {
-      delete process.env.JWT_SECRET;
-
-      expect(() => twoFactor().createLoginTwoFactorSessionToken({ userId: 'u1', email: 'user@example.com' })).toThrow('Login 2FA session secret is not configured');
-      expect(() => resetSession().createPasswordResetSessionToken({ userId: 'u1', email: 'user@example.com', tokenId: 'tok1' })).toThrow('Password reset session secret is not configured');
-    });
-
-    test('DATA-AUTH-004 Cookie の見出しから印を取る時は、名前が違う Cookie と URL エンコードを正しく扱う', () => {
-      const pending = twoFactor().createLoginTwoFactorSessionToken({ userId: 'u1', email: 'user@example.com' });
-
-      expect(twoFactor().readLoginTwoFactorSessionFromCookieHeader(null)).toBeNull();
-      expect(twoFactor().readLoginTwoFactorSessionFromCookieHeader('other=1; session_id=abc')).toBeNull();
-      expect(twoFactor().readLoginTwoFactorSessionFromCookieHeader(`other=1; sb-login-2fa-session=${encodeURIComponent(pending)}; x=2`)).toEqual(
-        expect.objectContaining({ userId: 'u1' }),
-      );
-      expect(resetSession().readPasswordResetSessionFromCookieHeader(undefined)).toBeNull();
-    });
   });
 });

@@ -102,33 +102,6 @@ for (const viewport of viewports) {
       expect(hasHorizontalOverflow).toBe(false);
     });
 
-    test('uses the same field and button sizing contract as login', async ({ page }) => {
-      // FREQ-70-AC-05: 共通UIのsize propsをloginと揃え、直値で上書きしない
-      const resetEmail = page.locator('#email').locator('xpath=..').locator('xpath=..');
-      const resetSubmit = page.getByRole('button', { name: '再設定メールを送信' });
-
-      await expect(resetEmail).toHaveAttribute('data-ui-size', 'sm');
-      await expect(resetSubmit).toHaveAttribute('data-ui-size', 'md');
-
-      const resetMetrics = {
-        field: await page.locator('#email').boundingBox(),
-        button: await resetSubmit.boundingBox(),
-      };
-
-      await page.goto('/login/password');
-      const loginEmail = page.locator('#email');
-      const loginSubmit = page.getByRole('button', { name: 'ログイン', exact: true });
-      const loginMetrics = {
-        field: await loginEmail.boundingBox(),
-        button: await loginSubmit.boundingBox(),
-      };
-
-      expect(Math.abs(resetMetrics.field!.width - loginMetrics.field!.width)).toBeLessThan(1);
-      expect(Math.abs(resetMetrics.field!.height - loginMetrics.field!.height)).toBeLessThan(1);
-      expect(Math.abs(resetMetrics.button!.width - loginMetrics.button!.width)).toBeLessThan(1);
-      expect(Math.abs(resetMetrics.button!.height - loginMetrics.button!.height)).toBeLessThan(1);
-    });
-
     test('FREQ-328-AC-04 repeats the login form 13px grid and LiftKit type hierarchy', async ({ page }) => {
       // FREQ-328-AC-04: 13pxグリッド＋CTA前8px（計21px）の近接階層を反復する。
       // Bot 検証ウィジェットが CTA の直前に入るため、入力欄からではなく

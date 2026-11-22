@@ -1,5 +1,7 @@
 # 画面一覧
 
+> パスキー段4 Task 28 確認日: 2026-11-22。画面ルートを2件消した（`/login/password`・`/login/verify`。`src/app/**/page.tsx` は54件から52件）。`/login/password` は旧のパスワードのログイン・会員登録、`/login/verify` は旧のコード確認の画面で、どちらも404になる（FR-AUTH-053）。`/login` のヘッダーのログインのリンクと戻り先は `/login`・`/login/code` だけを指す。
+>
 > パスキー段3b Task 22 確認日: 2026-11-20。`/staff/invite`・`/staff/register` の行を、認証・アカウント画面の表に足した（10ルートから12ルート。段3a の Task 9 の注にあった「行が無い」の2ルート）。
 >
 > パスキー段3a Task 11 確認日: 2026-11-19。画面ルートの数は変えない。`/admin` の「ユーザー」タブ（`UserSection`）に、店長の店員の操作を足した（「店員を招待」、店員の行の認めた鍵の本数・「パスキーを全部消してやり直す」・「お客さんに戻す」、招待中の行の「招待を取り消す」、お客さんの行の役割の選択は「店員にする」の確認の後に PATCH）。基本設計の認証 SCR-AUTH-016、詳細設計 DD-AUTH-084。
@@ -79,11 +81,9 @@
 
 | パス | 画面・役割 | 導線・同一画面内の状態 | 実装 |
 | --- | --- | --- | --- |
-| `/login` | ログイン（パスキー・Google・メールのコード） | 「パスキーでログイン」・「Googleでサインイン」・メール欄と「メールでコードを受け取る」の3つの入口。`next`（戻り先）・`email`（メール欄の初期値。`tab` は読まない）・`registered=1`（登録完了の案内）を受ける。有効な保留のCookieがある場合は新（メールのコード）なら `/login/code`、旧（パスワード）なら `/login/verify` へ。メールの送信成功で `/login/code`、パスキーの成功で戻り先へ。パスキー未対応の端末ではボタンを出さず一文を出す | [page.tsx](../../../src/app/login/page.tsx) 店員が Google で断られた戻りは `/login?error=staff_passkey_required` で、「店員の方は、パスキーでログインしてください。」を出す（ほかの `error` の値は出さない。段3a Task 10 / DD-AUTH-083） |
+| `/login` | ログイン（パスキー・Google・メールのコード） | 「パスキーでログイン」・「Googleでサインイン」・メール欄と「メールでコードを受け取る」の3つの入口。`next`（戻り先）・`email`（メール欄の初期値。`tab` は読まない）を受ける（`registered` は読まない。消した確認リンクの印）。有効な保留のCookie（メールのコード）がある場合は `/login/code` へ（旧のパスワードのログインの保留のCookieは読まない）。メールの送信成功で `/login/code`、パスキーの成功で戻り先へ。パスキー未対応の端末ではボタンを出さず一文を出す | [page.tsx](../../../src/app/login/page.tsx) 店員が Google で断られた戻りは `/login?error=staff_passkey_required` で、「店員の方は、パスキーでログインしてください。」を出す（ほかの `error` の値は出さない。段3a Task 10 / DD-AUTH-083） |
 | `/login/code` | メールのコードの入力 | 保留のCookie（メールのコード）が有効な時だけ8桁のコード入力・再送・入れ直しを出す。無い・偽り・期限切れは `/login` へ。成功後は行き先へ（パスキーを勧める時は `/login/passkey`）。検索に載せない | [code/page.tsx](../../../src/app/login/code/page.tsx) |
 | `/login/passkey` | パスキーを作る勧め | メールのコードでログインした直後に「パスキーを作りませんか」を出す（「パスキーを作る」・「あとで」）。ログインしていなければ `/login` へ。店員と、顔認証・指紋・PIN の使えない端末には出さず行き先へ送る。成功しても自動では進まず「続ける」を出す。検索に載せない | [passkey/page.tsx](../../../src/app/login/passkey/page.tsx) |
-| `/login/password` | 旧のログイン・会員登録（パスワード。段4まで残す） | 旧の `/login` の中身（Task 5 で `/login` は新しい画面に作り替えた）。パスワードの再設定・変更の完了の行き先。`tab=register`・`email`・`next`・`registered` を受ける。タブを替えても URL は `/login/password`。検索に載せない（`noindex`）。有効な検証待ちCookieがある場合は `/login/verify` へ | [password/page.tsx](../../../src/app/login/password/page.tsx) |
-| `/login/verify` | ログインメールOTP確認 | 8桁OTP、再送、エラーを表示。成功後の認証再確認で一般利用者はアカウント、admin/supporterは認証確認へ。再確認が未認証ならログイン、通信例外ならアカウントへ。検証セッションなし・再送401・やり直す操作もログインへ | [page.tsx](../../../src/app/login/verify/page.tsx) |
 | `/auth/verified` | 認証確認・特権ユーザーのTOTP | 一般利用者はアカウントへ自動遷移。admin/supporterはMFA確認済みなら直ちに管理へ、未確認ならTOTP登録・確認後に管理へ。未認証はログイン案内リンク | [page.tsx](../../../src/app/auth/verified/page.tsx) |
 | `/auth/password-reset` | パスワード再設定 | メール送信、リンクエラー、新パスワード入力、更新完了を同画面に表示。送信・更新完了からログインへ。errorクエリは案内後に除去 | [page.tsx](../../../src/app/auth/password-reset/page.tsx) |
 | `/auth/password-reset/verify` | 再設定リンク確認 | `token` をPOSTで確認し再設定画面へ。token不在・確認失敗もエラー付き再設定URLへ。通信例外では同画面の再試行とログイン案内 | [page.tsx](../../../src/app/auth/password-reset/verify/page.tsx) |
@@ -132,7 +132,7 @@
 | 対象 | 現在のページ側の表示条件 | データ・操作との区別 |
 | --- | --- | --- |
 | 顧客向け18ルート、`/ui` | ログインを必須にするページ表示ガードなし。カート・購入はゲストにも提供 | データ取得・入力検証・決済可否は各APIで判断する。空カートのcheckoutは同じURLに案内を表示 |
-| `/login`・`/login/verify` | 検証待ちCookieの有無・有効性でOTP確認への移動／ログインへの戻りを判断 | メール・パスワードの検証とOTPの検証はAPIで実行する |
+| `/login`・`/login/code` | 検証待ちCookie（メールのコード）の有無・有効性で、コード入力への移動／ログインへの戻りを判断 | メールのコードの始め・確定はAPIで実行する |
 | `/auth/verified` | 未認証は同じURLの案内、一般利用者はアカウントへ、特権ロールはTOTP確認へ | MFA済みの特権ロールは管理へ直行する。未認証案内のリンクは利用者が押して移動する |
 | `/account`・注文詳細・`/account/password` | 認証確認中は読込、未ログインは同じURLのログイン案内（`/account/password` は戻り先つきの `/login` へ送る案内）。ロール限定なし | [注文詳細API](../../../src/app/api/orders/%5Bid%5D/route.ts)は認証と注文所有者の一致を確認する |
 | `/admin` | 認証確認中は読込。未ログイン・admin/supporter以外は権限なし。MFA未確認は2要素認証案内。いずれも同じURLに留まる | ロールで表示タブ・操作候補が変わり、操作APIでも認可を確認する |
@@ -161,7 +161,6 @@
 | `/stockist` | `pref`：カンマ区切りの都道府県 | 地方・都道府県の選択を同じルートに反映 |
 | `/search` | `q`、`tab=all/item/look/news` | 検索・結果種別の切替でクエリをreplace。追加表示・入力候補は同画面内の状態 |
 | `/login` | `next`、`email`、`registered=1` | 戻り先、メール欄の初期値、登録完了の案内。`tab` は読まない（付いていても同じ画面） |
-| `/login/password` | `tab=register`、`email`、`next`、`registered=1` | 初期タブと登録メール初期値。タブ操作後のURLは両方 `/login/password`。フォーム送信結果は同画面 |
 | `/auth/password-reset` | `error=link_invalid/link_expired` | 案内を表示後にクエリを除去。メール入力・新パスワード入力・送信／更新完了も同じルート |
 | `/auth/password-reset/verify` | `token` | 自動確認の入力。確認結果に応じて再設定画面へ移動 |
 | `/account` | `tab=profile/shipping/orders/inquiries/security` | 無指定・未知値はprofile。`security`（ログイン方法）はお客さんだけで、店員はprofileへ。`address` はshippingへ正規化。タブ切替でreplaceし、他のクエリを保持 |
@@ -184,7 +183,7 @@
 | 分類 | 確認元 |
 | --- | --- |
 | 公開画面の絞り込み・詳細 | [PublicItemGrid](../../../src/features/items/components/PublicItemGrid.tsx)、[PublicLookGrid](../../../src/features/look/components/PublicLookGrid.tsx)、[PublicNewsGrid](../../../src/features/news/components/PublicNewsGrid.tsx)、[PublicStockistGrid](../../../src/features/stockist/components/PublicStockistGrid.tsx)、[SearchPageClient](../../../src/features/search/components/SearchPageClient.tsx)、[RelatedItems](../../../src/features/items/components/RelatedItems.tsx) |
-| 認証 | [LoginContext](../../../src/contexts/LoginContext.tsx)、[AuthTabs](../../../src/components/AuthTabs.tsx)、[OTP確認](../../../src/app/login/verify/VerifyOtpClient.tsx)、[再設定リンク確認](../../../src/app/auth/password-reset/verify/VerifyClient.tsx)、[認証シーケンス](../../04_DetailDesign/sequence/auth-login-mfa.md) |
+| 認証 | [LoginContext](../../../src/contexts/LoginContext.tsx)、[再設定リンク確認](../../../src/app/auth/password-reset/verify/VerifyClient.tsx)、[認証シーケンス](../../04_DetailDesign/sequence/auth-login-mfa.md) |
 | 注文・アカウント | [ゲスト登録案内](../../../src/features/checkout/components/GuestRegisterPrompt.tsx)、[再度購入](../../../src/features/account/hooks/useReorder.ts)、[配送業者](../../../src/lib/orders/shipping-carriers.ts)、[問い合わせタブ](../../../src/components/AccountInquiries.tsx)、[注文商品行](../../../src/features/account/components/OrderItemRow.tsx) |
 | 管理の戻り先 | [ItemForm](../../../src/app/admin/item/ItemForm.tsx)、[LookForm](../../../src/app/admin/look/LookForm.tsx)、[NewsForm](../../../src/app/admin/news/NewsForm.tsx)、[StockistForm](../../../src/app/admin/stockist/StockistForm.tsx) |
 | 管理タブ・Meta | [AdminTabs](../../../src/components/AdminTabs.tsx)、[AdminSideNav](../../../src/components/AdminSideNav.tsx)、[Meta接続UI](../../../src/components/MetaKpiConnection.tsx)、[Meta callback](../../../src/app/api/admin/kpi/meta/callback/route.ts)、[ACCOUNTING](../../../src/components/CostProfitSection.tsx)、[証憑閲覧API](../../../src/app/api/admin/kpi/cost-profit/receipt/route.ts) |

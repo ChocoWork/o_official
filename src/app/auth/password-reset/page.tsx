@@ -376,7 +376,7 @@ export default function PasswordResetPage() {
             title="パスワードを更新しました"
             detail="新しいパスワードでログインしてください。"
             action={
-              <Button href="/login/password" className="auth-action w-full" size="md">
+              <Button href="/login" className="auth-action w-full" size="md">
                 ログインへ
               </Button>
             }
@@ -429,7 +429,7 @@ export default function PasswordResetPage() {
                   別のアドレスで送信
                 </button>
                 <Link
-                  href="/login/password"
+                  href="/login"
                   className="lk-text-xs underline underline-offset-4 hover:text-[#474747] transition-colors"
                 >
                   ログインへ

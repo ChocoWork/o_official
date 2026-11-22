@@ -145,61 +145,60 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SCR-AUTH-001、FLOW-AUTH-001、STATE-AUTH-001、SEC-AUTH-007 |
-| 根拠 | 入力の途中で戻ってきた人にもう一度フォームを見せると、もう一度送って2通目のコードを出し、枠を無駄に使う。新しい保留の Cookie（メールのコード）が有効なら描く前に `/login/code`、旧い保留の Cookie（パスワード）が有効なら `/login/verify` へ送る（SCR-AUTH-001、STATE-AUTH-001）。注文の完了からの案内（`?tab=register&email=`）は、`tab` を読まず `email` だけをメール欄の初めの値にする（FREQ-266（範囲外））。題・説明・OG の画像をサーバーで返す（FR-LOGIN-005。説明は新しい文）。確認のメールのリンクを登録を始めたブラウザ以外で開いた人は `/login?registered=1` へ送られるので、固定の案内の文を渡して登録が終わったことを知らせる（SEC-AUTH-007、ADR-0413）。2026-11-18（段2 Task 5）に、旧のタブの画面の中身を `/login/password`（DD-AUTH-061）へ移し、この項目を新しい `/login` のページに書き直した |
+| 上位 | SCR-AUTH-001、SEC-AUTH-007 |
+| 根拠 | 入力の途中で戻ってきた人にもう一度フォームを見せると、もう一度送って2通目のコードを出し、枠を無駄に使う。保留の Cookie（メールのコード）が有効なら描く前に `/login/code` へ送る（SCR-AUTH-001）。注文の完了からの案内（`?tab=register&email=`）は、`tab` を読まず `email` だけをメール欄の初めの値にする（FREQ-266（範囲外））。題・説明・OG の画像をサーバーで返す（FR-LOGIN-005）。2026-11-22（段4 Task 28）に、旧のパスワードのログインの保留の Cookie の分岐（`/login/verify` への転送）と、確認のリンクを別のブラウザで開いた人への案内（`?registered=1`）を消した（確認のリンクの窓口が無い。FR-AUTH-053） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト（`tests/unit/app/login/page.test.tsx`）、E2E（`e2e/FR-LOGIN-057-login-screen.spec.ts`） |
-| 出どころ | `src/app/login/page.tsx`、`.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-5-brief.md` |
+| 出どころ | `src/app/login/page.tsx`、`.superpowers/sdd/2026-11-17-passkey-stage2-customers/task-5-brief.md`、`.superpowers/sdd/2026-11-20-passkey-stage4-cleanup/task-28-brief.md` |
 | 旧番号 | IMPL-LOGIN-001、IMPL-LOGIN-004 |
 | 旧所在 | `docs/04_DetailDesign/pages/14_login.md`（基準コミットの版）の「機能要件対応表」の FR-LOGIN-001・FR-LOGIN-005 の行（「`LoginModal` の呼び出しのみ」は今の作りと違う） |
 
-**対応要件 ID:** SCR-AUTH-001、FLOW-AUTH-001、STATE-AUTH-001、SEC-AUTH-007（その上は FR-AUTH-027、FR-LOGIN-005、FREQ-334-REQ-03、ADR-0410、ADR-0413、FREQ-266-REQ-01（範囲外））
+**対応要件 ID:** SCR-AUTH-001、SEC-AUTH-007（その上は FR-AUTH-027、FR-LOGIN-005、ADR-0413（廃止）、FREQ-266-REQ-01（範囲外））
 
 **入出力:**
 
 | 向き | 中身 |
 | --- | --- |
-| 入力 | `GET /login`。Cookie `sb-email-code-session`・`sb-login-2fa-session`、問い合わせの `email`・`next`（ログインの後の戻り先）・`registered`（`tab` は読まない） |
-| 出力（頁） | 部品 `LoginChoices`（DD-AUTH-063）に初めのメール（文字列か空）、戻り先の確かめ（DD-AUTH-032）を通った道筋だけを `returnTo` として渡す。外れた値は画面に出さず捨てる。`registered` が文字列の `1` の時だけ、固定の案内の文「会員登録が完了しました。ログインしてください。」を `notice` として渡す。値そのものは画面に出さない |
-| 出力（転送） | 新しい保留が有効なら `/login/code`、旧い保留が有効なら `/login/verify` へのサーバーの転送 |
+| 入力 | `GET /login`。Cookie `sb-email-code-session`、問い合わせの `email`・`next`（ログインの後の戻り先）・`reason`・`error`（`tab`・`registered` は読まない） |
+| 出力（頁） | 部品 `LoginChoices`（DD-AUTH-063）に初めのメール（文字列か空）、戻り先の確かめ（DD-AUTH-032）を通った道筋だけを `returnTo` として渡す。外れた値は画面に出さず捨てる。`reason=idle` の時だけ、店員の無操作でログアウトした旨の固定の文を `notice` として渡す。値そのものは画面に出さない |
+| 出力（転送） | 保留が有効なら `/login/code` へのサーバーの転送 |
 | 出力（metadata） | title「LOGIN \| Le Fil des Heures」、description「Le Fil des Heures のログインページです。パスキー、Google アカウント、メールで受け取るコードでサインインできます。」、og:title・og:description は同じ字、og:image は `/mainphoto.png`（`src/app/login/page.tsx`） |
 
 **正常フロー:**
 
 1. metadata の関数は分岐を持たず、固定の値を返す（`src/app/login/page.tsx`）
-2. 頁の関数は Cookie を読み、共有の `verifyEmailCodeSessionToken` と `verifyLoginTwoFactorSessionToken` で保留を確かめる
-3. どちらも無効なら問い合わせを待って読み、メールの初めの値と戻り先を決める
+2. 頁の関数は Cookie を読み、共有の `verifyEmailCodeSessionToken` で保留を確かめる
+3. 無効なら問い合わせを待って読み、メールの初めの値と戻り先を決める
 4. `LoginChoices` を描く
 
 **分岐と異常フロー:**
 
 | 条件 | 動き |
 | --- | --- |
-| 新しい保留の印が有効 | `/login/code` へ転送。問い合わせを読まない。旧い保留も有効でも、こちらを先にする |
-| 旧い保留の印が有効（新しい保留は無い） | `/login/verify` へ転送 |
+| 保留の印が有効 | `/login/code` へ転送。問い合わせを読まない |
 | 保留の印が無い・偽り・期限切れ | 頁を描く |
+| 旧のパスワードのログインの保留の Cookie（`sb-login-2fa-session`） | 読まない。何も特別にしない（転送しない） |
 | `email` が文字列 | その値をメール欄の初めの値に渡す |
 | `email` が配列・無い | 空 |
 | `tab` | 読まない（`register` が付いていても同じ画面） |
 | `next` が確かめ（DD-AUTH-032）を通った | その道筋を `returnTo` に渡す |
 | `next` が外れた・配列だった・無い | `returnTo` を渡さない |
-| `registered` が `1` | 案内の文を `notice` に渡す |
-| `registered` が `1` 以外（`0`・空・配列）・無い | `notice` を渡さない |
+| `registered` | 読まない。`1` が付いていても案内を出さない（消した確認リンクの印） |
 
-**状態・永続化:** 状態を持たず、書かない。保留の印の確かめは共有部品（署名・用途・期限、STATE-AUTH-001）。
+**状態・永続化:** 状態を持たず、書かない。保留の印の確かめは共有部品（署名・用途・期限）。
 
-**認証認可:** ログインを求めない。保留の Cookie は HttpOnly でサーバーだけが読む。`/register` の頁は無い（404。FREQ-63-AC-01）。
+**認証認可:** ログインを求めない。保留の Cookie は HttpOnly でサーバーだけが読む。`/register` の頁は無い（404）。
 
 **テスト観点:**（単体 `tests/unit/app/login/page.test.tsx`）
 
 | # | 観点 |
 | --- | --- |
-| 1 | 新しい保留が有効なら `/login/code` へ転送し、問い合わせを読まない。旧い保留が有効なら `/login/verify`。両方有効なら `/login/code` |
-| 2 | Cookie が無い・偽りなら転送せず `LoginChoices` を描く |
+| 1 | 保留が有効なら `/login/code` へ転送し、問い合わせを読まない |
+| 2 | Cookie が無い・偽りなら転送せず `LoginChoices` を描く。旧の保留の Cookie があっても転送せず、その Cookie の名前を読まない |
 | 3 | `?tab=register&email=a@example.com` でもメールだけを渡す。`email` が配列・無いなら空 |
 | 4 | `?next` が確かめを通れば通った道筋だけを `returnTo` に渡し、外れ・配列・無いなら渡さない |
 | 5 | metadata の関数が title・新しい description・OG を返す |
-| 6 | `registered=1` で案内の文を `notice` として渡す。`0`・空・配列・未指定では渡さない。メールなどほかの値を案内に混ぜない |
+| 6 | `registered=1` が付いていても案内の文を渡さない。`reason=idle` では無操作の固定の文を渡す |
 
 ### DD-AUTH-002 /login/verify の頁と認証コードの入力の部品
 
@@ -207,7 +206,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | SCR-AUTH-004、FLOW-AUTH-001、STATE-AUTH-001 |
 | 根拠 | 保留の判定をサーバーに置き、判定の前に入力の画面の HTML を送らない。保留が無い・偽り・期限切れを全部同じに `/login/password` へ送り、アカウントの有無を示さない（SCR-AUTH-004、`src/app/login/verify/page.tsx`）。入力の状態を Cookie だけに寄せ、再読み込みで資格情報のフォームへ戻って2通目のコードを送る道を閉じる（STATE-AUTH-001、`VerifyOtpClient.tsx`）。再送はパスワードも宛先も送らず、やり直しはサーバーに保留を捨てさせる（FREQ-334-REQ-05・06）。確定の後は役割で行き先を分ける（FLOW-AUTH-001） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/login/verify/page.tsx`、`src/app/login/verify/VerifyOtpClient.tsx`）、`docs/superpowers/specs/2026-09-04-login-otp-dedicated-screen-design.md` |
 | 旧番号 | IMPL-LOGIN-005、IMPL-AUTH-OTP-02 |
@@ -292,7 +291,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SCR-AUTH-005、FLOW-AUTH-004、STATE-AUTH-004 |
+| 上位 | SCR-AUTH-005、STATE-AUTH-004 |
 | 根拠 | 1つの道で、メールを送る前（申請）・リンクから来た後（新しいパスワード）・終わった後（結果）を出し分ける。どれかは HttpOnly の再設定の Cookie で決まるので、画面は窓口に聞く（SCR-AUTH-005、STATE-AUTH-004）。無効・期限切れのリンクは理由を出して URL から外す（FREQ-319-REQ-04）。送った後はフォームを畳み、宛先を出さない（FREQ-329-REQ-01・02）。一致の確かめを長さの後に置き、短いパスワードを2回同じに打った人に「一致しません」の後でまた長さで弾く二度手間をさせない（FREQ-333、`src/app/auth/password-reset/page.tsx`）。Turnstile のトークンは送った時点で使われるので、成否によらず引き直す（FREQ-330、ADR-0411） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
@@ -387,7 +386,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SCR-AUTH-006、FLOW-AUTH-004、STATE-AUTH-002 |
+| 上位 | SCR-AUTH-006、STATE-AUTH-002 |
 | 根拠 | メールのリンクの先では何も消費しない。開いた時に消費すると、企業のメールのリンクの検査が受け取った時に踏んで先に潰し、再送しても同じに潰れて再設定できなくなる（SCR-AUTH-006、STATE-AUTH-002、ADR-0403）。確かめの POST に副作用が無いので確認のボタンを挟まず、開いたら1回だけ自動で送り、新しいパスワードの欄へ進める（FREQ-332-REQ-01・02）。印は1回しか通らない前提なので、再描画や二重の実行で2回送らない印を持つ。通信の誤りの時だけ再試行の手段を出す（FREQ-332-REQ-03） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
@@ -438,7 +437,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SCR-AUTH-007、STATE-AUTH-003、FLOW-AUTH-001、FLOW-AUTH-003、ARC-AUTH-010、SEC-AUTH-008、SEC-AUTH-026、SEC-AUTH-028 |
+| 上位 | SCR-AUTH-007、STATE-AUTH-003、ARC-AUTH-010、SEC-AUTH-008、SEC-AUTH-026、SEC-AUTH-028 |
 | 根拠 | 一般の会員を管理者用の確認に通さず、管理者とサポーターには TOTP の確認を必ず通す（SCR-AUTH-007、FLOW-AUTH-001・003、DRV-AUTH-009）。Google でログインした管理者もここを通るので、aal2 になるまで管理画面へ送らない（SEC-AUTH-008 の管理の部分）。振り分けは `/api/auth/me` の役割で行い、画面の判定は表示だけ（SEC-AUTH-028）。見せ方の移り変わりは1回の me の答えで決める（STATE-AUTH-003）。確認が通ったら全体のログインの状態を同期し直してから移る。省くと `/admin` が古い `mfaVerified` を読み、「2要素認証が必要です」を誤って出す（`src/app/auth/verified/page.tsx`） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
@@ -614,7 +613,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | SCR-AUTH-002、FLOW-AUTH-001、FLOW-AUTH-002、ARC-AUTH-005 |
 | 根拠 | 1段目の入力をここに集め、パスワードの確かめが通ったら認証コードの専用の画面へ置き換えて移る。`push` だと戻るで資格情報のフォームへ戻り、生きた保留の Cookie のまま2通目のコードを送れる（SCR-AUTH-002、FLOW-AUTH-001、`src/components/LoginModal.tsx`）。Turnstile のトークンは送った時点で使われるので、成否によらず引き直す（ARC-AUTH-005、ADR-0411）。Google の入口は窓口から始める（FLOW-AUTH-002） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/components/LoginModal.tsx`） |
 | 旧番号 | IMPL-AUTH-OTP-09 |
@@ -675,7 +674,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | SCR-AUTH-003、FLOW-AUTH-003、ARC-AUTH-005、ARC-AUTH-006 |
 | 根拠 | 登録の3つの欄をログインのタブと同じ下線とアイコンにし、並びを フォーム→OR→Google にそろえる（SCR-AUTH-003、FREQ-91-REQ-01）。登録済みかどうかを画面で判らせないため、送った後は誰にでも同じ確認のメールの案内を出す（ARC-AUTH-006、FREQ-320-REQ-04）。送るとフォームごと入れ替わって押したボタンが消えるので、完了の文へフォーカスを移して読ませる（FREQ-377（範囲外））。Turnstile は送るたびに引き直す（ARC-AUTH-005、ADR-0411）。確認のメールのリンクからログインへ進む（FLOW-AUTH-003） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/components/RegisterModal.tsx`） |
 
@@ -738,7 +737,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | SCR-AUTH-001、SEC-AUTH-007 |
 | 根拠 | ログインと会員登録を別のページにすると導線が分かれるので、1つの画面のタブで切り替え、`/register` は置かない（SCR-AUTH-001、ADR-0410）。このタブは旧のパスワードの画面 `/login/password`（段2 Task 3 で `/login` から移した。DD-AUTH-061。新しい `/login` はタブを持たない。DD-AUTH-063）の部品として段4まで残る。切り替えても URL は `/login/password` のままにする（FREQ-63-REQ-01）。左右の矢印で隣のタブへ移れる tablist にする。確認のリンクを別のブラウザで開いた人への案内（`notice`）を、URL の query が `replaceState` で消えても、タブを替えても残す（SEC-AUTH-007） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/components/AuthTabs.tsx`） |
 
@@ -837,7 +836,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | ARC-AUTH-005、SCR-AUTH-002、SCR-AUTH-003、SCR-AUTH-005 |
+| 上位 | ARC-AUTH-005、SCR-AUTH-005 |
 | 根拠 | 自動の描画は Script を読んだ時にしか走らず、タブの切り替えで部品が付け直されると Turnstile が出ないので、明示の描画にする（ARC-AUTH-005、`src/hooks/useTurnstileWidget.ts`）。トークンは使い捨てなので、送るたびに引き直す手段を1か所に集める（FREQ-330-REQ-01・02、ADR-0411）。Turnstile は幅 300px を下回れないので、狭い入れ物では等倍で縮め、ボタンだけが横に張り出すのを防ぐ（FREQ-328-REQ-02・03）。ログイン・会員登録・再設定の3つのフォームが使う（SCR-AUTH-002・003・005） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
@@ -899,7 +898,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SCR-AUTH-004、STATE-AUTH-004 |
+| 上位 | STATE-AUTH-004、API-AUTH-031 |
 | 根拠 | ログインの認証コードの再送と、再設定のメールの再送で同じ語彙を使い、待ちの作法を1つにそろえる（SCR-AUTH-004、STATE-AUTH-004、FR-LOGIN-006）。文を変えると E2E `e2e/FR-LOGIN-006` と `e2e/FR-PWRESET-005` の両方が落ちる（`src/lib/format-countdown.ts`） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
@@ -941,7 +940,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | API-AUTH-001、ARC-AUTH-002、ARC-AUTH-005、ARC-AUTH-010、DATA-AUTH-004、SEC-AUTH-001、SEC-AUTH-030、SEC-AUTH-032 |
 | 根拠 | パスワードの段を通ったことだけを署名した Cookie に残し、トークンは2段目まで配らない（API-AUTH-001、ARC-AUTH-002、ADR-0400）。総当たりを IP とメールの2段で止め、メールの枠は Turnstile の後に数えて、他人のメールを送るだけで枠を潰させない（SEC-AUTH-001、ARC-AUTH-005）。成否を監査に残す（SEC-AUTH-030）。確認コードを送れた後に、ログインの後の戻り先を入口で確かめて控える（ARC-AUTH-010、SEC-AUTH-032）。パスワードの誤りやボットで表の行を増やさない |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/login/route.ts`）、`docs/04_DetailDesign/sequence/auth-login-mfa.md` の SQ-AUTH-LOGIN-PASSWORD |
 | 旧番号 | IMPL-AUTH-LOGIN-01、IMPL-AUTH-OTP-01 |
@@ -1019,7 +1018,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | API-AUTH-002、ARC-AUTH-001、ARC-AUTH-002、STATE-AUTH-001、DATA-AUTH-001、DATA-AUTH-004、DATA-AUTH-006、SEC-AUTH-002、SEC-AUTH-003、SEC-AUTH-022、SEC-AUTH-030 |
 | 根拠 | パスワードを通った署名した保留が無ければ断り、宛先も保留からだけ取って本文の値を信じない（SEC-AUTH-003、FREQ-336-REQ-03）。総当たりを保留の宛先単位で止め、上限で保留ごと捨てて窓を閉じる（SEC-AUTH-002、STATE-AUTH-001、ADR-0402）。コードは `type: 'email'` の1回だけで確かめ、別の用途の印を2要素目として受けない（FREQ-335-REQ-03）。確定したら認証の Cookie と `sessions` の行を作り、ゲストの注文・カートを会員へ合わせる（API-AUTH-002、DATA-AUTH-001） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/otp/verify/route.ts`）、`docs/04_DetailDesign/sequence/auth-login-mfa.md` の SQ-AUTH-LOGIN-OTP |
 
@@ -1088,7 +1087,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | API-AUTH-003、STATE-AUTH-001、DATA-AUTH-004、SEC-AUTH-003、SEC-AUTH-004 |
 | 根拠 | パスワードを通ったことは保留の Cookie が示すので、再送にパスワードを求めず、宛先は Cookie から取って本文を見ない。本文のメールを信じると他人の宛先へ店のドメインからメールを送らせる（SEC-AUTH-003、API-AUTH-003）。1つのアカウントへ送る総量を抑えるため、ログインと同じ枠で IP とメールの2段で数える（ADR-0401）。作り直す印は元の発行の時刻を引き継ぎ、30分の上限を延ばさない（SEC-AUTH-004、STATE-AUTH-001） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/login/resend/route.ts`）、`docs/04_DetailDesign/sequence/auth-login-mfa.md` の SQ-AUTH-LOGIN-RESEND |
 
@@ -1144,7 +1143,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | API-AUTH-004、STATE-AUTH-001、STATE-AUTH-006、SEC-AUTH-030、SEC-AUTH-032 |
 | 根拠 | 別の宛先でやり直す時に前の保留を残さない（API-AUTH-004、STATE-AUTH-001）。回数の制限の無い窓口なので、捨てる物が無い時に監査を書くと行を水増しできる。有効な保留を捨てた時だけ残す（FREQ-336-REQ-04、SEC-AUTH-030） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/login/cancel/route.ts`）、`docs/04_DetailDesign/sequence/auth-login-mfa.md` の SQ-AUTH-LOGIN-CANCEL |
 
@@ -1188,7 +1187,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | API-AUTH-005、ARC-AUTH-005、ARC-AUTH-006、ARC-AUTH-007、ARC-AUTH-010、DATA-AUTH-003、SEC-AUTH-007、SEC-AUTH-014、SEC-AUTH-016、SEC-AUTH-017、SEC-AUTH-019、SEC-AUTH-022、SEC-AUTH-026、SEC-AUTH-032 |
 | 根拠 | 任意のメールで会員かどうかを調べさせないため、登録済みでも新規と同じ 202 を返し、登録済みは本人にだけ応答の外でメールで伝える（API-AUTH-005、ARC-AUTH-006、ADR-0404）。照会の失敗を「無い」に丸めず止める（FREQ-320-REQ-01、DATA-AUTH-003）。メール送信の手前に Turnstile を置いてボットに送信を叩かせない（ARC-AUTH-005）。16 文字以上で漏洩していないパスワードだけを受け、照合先が落ちたら止めずに監査に残す（SEC-AUTH-014、ARC-AUTH-007、ADR-0405）。確認のリンクは許可した住所でだけ作る（SEC-AUTH-019）。戻り先は Turnstile と漏洩の確かめの後で既存会員の照会の前に控え、3 つの 202 の枝で Cookie の形を同じにする（ARC-AUTH-010、SEC-AUTH-032）。控えは戻り先が無い・外れた時も既定の `/` で必ず作り、登録したメールに結ぶ。確認のリンクを登録を始めたブラウザで開いた時だけ session を作るため（SEC-AUTH-007、ADR-0413） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/register/route.ts`）、`docs/04_DetailDesign/sequence/auth-registration.md` の SQ-AUTH-REGISTER-PUBLIC |
 | 旧番号 | IMPL-AUTH-REG-01 |
@@ -1282,7 +1281,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 上位 | API-AUTH-006、ARC-AUTH-001、ARC-AUTH-010、FLOW-AUTH-003、DATA-AUTH-001、SEC-AUTH-006、SEC-AUTH-007、SEC-AUTH-026、SEC-AUTH-030、SEC-AUTH-032 |
 | 根拠 | 会員登録を確認のリンクで終わらせ、登録を始めた端末ではそのままログインさせる入口（API-AUTH-006、FLOW-AUTH-003）。別の端末や別のメールの印では、メールの確認だけ済ませて session を作らない（攻撃者のリンクで被害者の端末を攻撃者のアカウントにログインさせないため。SEC-AUTH-007、ADR-0413）。印や理由を URL・応答に残さないよう、結び付いた成功は戻り先か `/`、結び付かない成功は `/login?registered=1`、失敗は固定の `/login` へ 303 で移し、理由は監査だけに残す（SEC-AUTH-030）。送り先はリンクの値を読まず、登録した端末の戻り先の控えだけで決める（SEC-AUTH-026、SEC-AUTH-032）。ログインしたらゲストの注文・カートを会員へ引き継ぐ（FREQ-265・428（範囲外）） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/confirm/route.ts`）、`docs/04_DetailDesign/sequence/auth-registration.md` の SQ-AUTH-REGISTER-CONFIRM |
 | 旧番号 | IMPL-AUTH-CONF-01、IMPL-AUTH-CONF-02 |
@@ -1501,7 +1500,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | API-AUTH-009、ARC-AUTH-004、ARC-AUTH-005、ARC-AUTH-006、STATE-AUTH-002、DATA-AUTH-002、DATA-AUTH-003、SEC-AUTH-019 |
+| 上位 | API-AUTH-009、ARC-AUTH-004、ARC-AUTH-005、STATE-AUTH-002、DATA-AUTH-002、DATA-AUTH-003、SEC-AUTH-019 |
 | 根拠 | パスワードを忘れた人の入口なのでログインを求められない。代わりに回数の制限と、アカウントの有無で応答を変えないことで濫用を止める（API-AUTH-009、ARC-AUTH-006）。アカウントが無い宛先には印もメールも作らず、店のドメインを第三者へのメールの踏み台にさせない（FREQ-319-REQ-02）。新しいリンクを出す時に前の印を使用済みにするが、最新の1本だけは保証しない（SEC-AUTH-018 は満たさない）。期限は 10 分（STATE-AUTH-002、ARC-AUTH-004）。リンクは許可した住所でだけ作る（SEC-AUTH-019） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
@@ -2276,37 +2275,31 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | ARC-AUTH-010、STATE-AUTH-006、SEC-AUTH-007、SEC-AUTH-026、SEC-AUTH-032 |
-| 根拠 | 入口では確かめに通った時だけ控え（登録だけは戻り先が無くても必ず控え、登録したメールに結ぶ。SEC-AUTH-007、ADR-0413）、出口では使い切った戻り先を役割と aal2 を含めて確かめ直す（SEC-AUTH-026）。管理者・サポーターは aal2 になるまで使い切らない。Cookie の動作（作る・消す・そのまま）を値で返し、呼び出し元がどの応答にも同じ形で付けられるようにする（登録の 3 つの 202 の同一性。ARC-AUTH-006）。ログインを止めないため、想定外の例外は捕まえて既定に倒す |
+| 根拠 | 入口では確かめに通った時だけ控え、出口では使い切った戻り先を役割と aal2 を含めて確かめ直す（SEC-AUTH-026）。管理者・サポーターは aal2 になるまで使い切らない。Cookie の動作（作る・消す・そのまま）を値で返し、呼び出し元がどの応答にも同じ形で付けられるようにする。ログインを止めないため、想定外の例外は捕まえて既定に倒す |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`、`docs/superpowers/plans/2026-10-25-wave1a-login-return-to.md` |
 
-**対応要件 ID:** ARC-AUTH-010、STATE-AUTH-006、SEC-AUTH-007・026・032（その上は FR-AUTH-005、ADR-0412、ADR-0413）
+**対応要件 ID:** ARC-AUTH-010、STATE-AUTH-006、SEC-AUTH-007・026・032（その上は FR-AUTH-005、ADR-0412。登録の確認リンクへの結び付け〔ADR-0413〕は段4の Task 28 で消した）
 
 **入出力:**
 
 | 向き | 中身 |
 | --- | --- |
-| 入力（開始） | 入口の `next`（`unknown`）、用途、任意の `bindTo`（登録したメール）と `alwaysCreate`（真なら戻り先が無い・外れでも `/` で作る） |
+| 入力（開始） | 入口の `next`（`unknown`）、用途 |
 | 出力（開始） | Cookie の動作（`set`〔番号と秒数〕・`clear`・`keep`）と結果（`created`・`cleared`・`rejected`・`failed`） |
 | 入力（解決） | Cookie の見出し、用途、閲覧者（id・役割・aal） |
 | 出力（解決） | 行き先の道筋、`needsMfa`、Cookie の動作 |
-| 入力（結び付け） | Cookie の見出し、確認した利用者のメールと id（`consumeSignupBinding`。`IMPL-AUTH-220`） |
-| 出力（結び付け） | `{ bound: true, storedPath }` か `{ bound: false }`。例外を投げず、Cookie は触らない |
 | 入力・出力（確かめ直し） | 使い切った戻り先、閲覧者（役割・aal）、origin を渡すと、出口の確かめを通した行き先と Cookie の動作（`clear`）を返す（`resolveStoredDestination`。`IMPL-AUTH-221`。非同期。外れた理由の符号を監査に残すため。`resolveReturnDestination` もこれを呼ぶ） |
 | 補助 | Cookie の動作を応答に適用する関数（`set` は HttpOnly・Lax・Path=/・秒数・本番は Secure、`clear` は空の値と `maxAge` 0、`keep` は何もしない）。見出しから番号を取り出す関数（形に合う時だけ） |
 
 **正常フロー（開始）:**
 
-1. `next` が無い・空 → `clear`（監査なし）。ただし `alwaysCreate` なら戻り先 `/` で 3. へ進む
-2. 戻り先の確かめ（DD-AUTH-032）。外れたら理由の符号だけの監査（`auth.return_intent` の rejected）を残し、`alwaysCreate` なら戻り先 `/` で 3. へ進む。そうでなければ `clear`
-3. 保存（DD-AUTH-033。`bindTo` があれば渡す）。成功なら `set`、失敗なら `clear` と監査（create_failed）
+1. `next` が無い・空 → `clear`（監査なし）
+2. 戻り先の確かめ（DD-AUTH-032）。外れたら理由の符号だけの監査（`auth.return_intent` の rejected）を残し、`clear`
+3. 保存（DD-AUTH-033）。成功なら `set`、失敗なら `clear` と監査（create_failed）
 
-**正常フロー（結び付け。確認のリンク）:**
-
-1. 見出しの番号が無い・形が違う・複数 → `bound: false`（DB を呼ばない）。確認した利用者のメールが空でも `bound: false`
-2. 番号があれば、用途 `signup`・`bindTo` に利用者のメールで使い切る（DD-AUTH-033）。null・例外 → `bound: false`
-3. 戻り先が返れば `bound: true` と `storedPath`
+（2026-11-22、段4の Task 28 で、登録の確認リンクへの結び付け〔`consumeSignupBinding`〕と、`bindTo`・`alwaysCreate` を消した。確認のリンクの窓口が無いため。用途 `signup` の表の側は DB に残す。）
 
 **正常フロー（解決）:**
 
@@ -2332,14 +2325,13 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | # | 観点 |
 | --- | --- |
-| 1 | 開始: 無い・外れ・通る・保存失敗・用途の受け渡し。監査に入力の値が入らない。`alwaysCreate` なら無い・空・外れでも `/` で作り（外れは監査 1 回）、`bindTo` を保存へ渡す。`alwaysCreate` 無し（ログイン）は今までどおり |
+| 1 | 開始: 無い・外れ・通る・保存失敗・用途の受け渡し。監査に入力の値が入らない。無い・空・外れは `clear` で、保存を呼ばない |
 | 2 | 解決: 一般・番号あり／なし／形が違う／使い切れない。管理者・サポーターは aal1 で使い切らず `/auth/verified` |
 | 3 | 管理者・サポーター（aal2）で戻り先なし・`/admin`。一般で保存が `/admin` は `/` |
 | 4 | 改ざんされた保存の値が既定に倒れる。例外を投げない |
 | 5 | Cookie の動作の適用（属性、本番だけ Secure、`clear`、`keep`） |
 | 6 | 見出しからの番号の取り出し（他の Cookie が混ざる・形が違う・名前の重複） |
-| 7 | 結び付け: Cookie 無し・複数・メールが空・使い切りが null・例外は `bound: false`（使い切りを呼ばない場合を含む）。当たれば `bound: true` と `storedPath`、使い切りが用途 `signup`・`bindTo` つきで呼ばれる |
-| 8 | 確かめ直し: 一般の `/account` はそのまま、`/admin`・`//evil.example` は `/`、管理者 aal2 の `/admin` はそのまま。`resolveReturnDestination` の動きは変わらない |
+| 7 | 確かめ直し: 一般の `/account` はそのまま、`/admin`・`//evil.example` は `/`、管理者 aal2 の `/admin` はそのまま。`resolveReturnDestination` の動きは変わらない |
 
 ### DD-AUTH-035 ログインの後の行き先の窓口（post-login/route.ts）
 
@@ -2444,7 +2436,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | API-AUTH-001、API-AUTH-002、API-AUTH-014、API-AUTH-016、API-AUTH-017、API-AUTH-018、SEC-AUTH-022 |
+| 上位 | API-AUTH-014、API-AUTH-016、API-AUTH-017、API-AUTH-018、SEC-AUTH-022 |
 | 根拠 | `login`・`otp/verify`・`refresh`・`mfa/*` は窓口が `no-store` を付けず、トークンや TOTP の秘密を含む応答が共有の端末や中継に残る余地があった。窓口ごとの付け忘れを無くすため、共有の proxy が `/api/auth` 配下にまとめて付ける（ADR-0415、SEC-AUTH-022-AC-02） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト・E2E |
@@ -2561,7 +2553,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | ARC-AUTH-009、DATA-AUTH-001、DATA-AUTH-007、DATA-AUTH-008、SEC-AUTH-005、SEC-AUTH-010、SEC-AUTH-030、SEC-AUTH-031 |
+| 上位 | ARC-AUTH-009、DATA-AUTH-001、DATA-AUTH-007、DATA-AUTH-008、SEC-AUTH-005、SEC-AUTH-010、SEC-AUTH-030、SEC-AUTH-031、DATA-AUTH-006 |
 | 根拠 | 公開の anon キーで password や OTP の通行証が取れ、`amr` ではアプリのログインを通ったかを区別できない。アプリが作った session だけを受けるため、ログインの最後に GoTrue の `session_id` を自前の `sessions.auth_session_id` に残し、更新と TOTP の昇格は結び付いた行の続きにだけ引き継ぐ（ADR-0417）。旗は既定で有効（ADR-0419） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト・結合テスト・E2E（下の「E2E」の節） |
@@ -2647,7 +2639,7 @@ DB の側の試験観点: 移行の文面（`tests/unit/migrations/sec-has-permi
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | ARC-AUTH-002、ARC-AUTH-005、SEC-AUTH-015、SEC-AUTH-035 |
+| 上位 | ARC-AUTH-005、SEC-AUTH-015、SEC-AUTH-035 |
 | 根拠 | anon の鍵は公開なので、アプリを通らずに Supabase Auth の窓口（`/signup`・`/token`（password）・`/otp`）を直に叩けば、アプリの Turnstile・回数の制限・漏洩の確かめが飛ばされる。Supabase の captcha をオンにして直の呼び出しをトークン無しで 400 にし、アプリのサーバーは captcha を免除される管理者資格（サービスの鍵）で同じ窓口を呼ぶ（ADR-0420、案 b'）。アプリの Turnstile のトークンは 1 回しか使えず転送できない。呼び出しがサービスの鍵で session を持った client を DB に使い回すと権限が混ざるので、返すのは `auth` だけにする |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト（`tests/unit/lib/auth/service-role-auth-client.test.ts`。手元の `supabase/config.toml` の目標の版が captcha・最小長 16・確認メール必須・OTP 300 秒・TOTP 有効・変更通知になっていることは `tests/unit/supabase/config-wave6.test.ts`）。E2E は `SEC-AUTH-015-AC-04` が毎回確かめる（波 6 の Task 7・10） |

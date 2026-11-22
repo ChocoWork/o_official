@@ -15,7 +15,6 @@ import Link from "next/link";
 import React, { useState } from "react";
 import { usePathname } from "next/navigation";
 import { Accordion } from "@/components/ui/Accordion/Accordion";
-import LoginModal from "@/components/LoginModal";
 import { useLogin } from "@/contexts/LoginContext";
 import { useLoginHref } from "@/features/auth/return-intent/use-login-href";
 import { useCart } from "@/contexts/CartContext";
@@ -81,7 +80,6 @@ function buildDrawerFilterHref(
 }
 
 const Header = () => {
-  const [loginOpen, setLoginOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isHidden, setIsHidden] = useState(false);
   const pathname = usePathname();
@@ -407,11 +405,6 @@ const Header = () => {
           </div>
         </div>
       </Drawer>
-
-      <LoginModal
-        open={loginOpen && !isLoggedIn}
-        onClose={() => setLoginOpen(false)}
-      />
     </>
   );
 };

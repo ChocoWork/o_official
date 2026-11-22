@@ -57,7 +57,7 @@ describe('EmailCodeEntry', () => {
     render(<EmailCodeEntry email={EMAIL} />);
     expect(screen.getByRole('heading', { name: '確認コードを入力してください' })).toBeInTheDocument();
     expect(screen.getByText('o***@example.invalid に8桁のコードをお送りしました。5分以内に入力してください。', { exact: false })).toBeInTheDocument();
-    expect(screen.getByText('コードの無い確認のメールが届いた時は、そのメールのリンクを押してから、もう一度お試しください。')).toBeInTheDocument();
+    expect(screen.getByText('「メールアドレスの確認」のメールが届いた時は、そのメールにある8桁の数字を入れてください。')).toBeInTheDocument();
     const first = inputs()[0];
     expect(first).toHaveAttribute('autocomplete', 'one-time-code');
     expect(first).toHaveAttribute('inputmode', 'numeric');
@@ -246,7 +246,7 @@ describe('EmailCodeEntry', () => {
   test('DD-AUTH-062 伏せたメールが空なら宛先の文を出さない（いつも出す案内は残る）', () => {
     render(<EmailCodeEntry email="not-an-email" />);
     expect(screen.queryByText(/お送りしました/)).not.toBeInTheDocument();
-    expect(screen.getByText(/コードの無い確認のメール/)).toBeInTheDocument();
+    expect(screen.getByText(/「メールアドレスの確認」のメールが届いた時は/)).toBeInTheDocument();
   });
 
   test('DD-AUTH-062 本文が配列・JSON でない 200 は勧めずに行き先へ置き換える', async () => {

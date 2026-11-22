@@ -3,7 +3,7 @@ import { Page } from '@playwright/test';
 /**
  * Turnstile のテスト用トークンを注入する。
  *
- * window.onTurnstileSuccess は LoginModal / RegisterModal がハイドレーション後に
+ * window.onTurnstileSuccess は ログイン画面の部品（useTurnstileWidget）がハイドレーション後に
  * 登録するフック（src/hooks/useTurnstileWidget.ts）。goto 直後に呼ぶと未登録で、
  * `?.()` が無言で何もせずに終わり、送信がクライアント側の
  * 「ボット検証を完了してください」で止まる。並列実行時に顕在化する。

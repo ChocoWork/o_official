@@ -31,19 +31,17 @@ function mainClassFor(pathname: string): string {
 describe('Providers の認証の画面の枠（isAuthPage）', () => {
   test.each([
     '/login',
-    '/login/verify',
-    '/login/password',
     '/login/code',
     '/login/passkey',
     '/auth/password-reset',
     '/staff/invite',
     '/staff/register',
-  ])('DD-AUTH-061 %s は真ん中寄せの枠になる', (pathname) => {
+  ])('DD-AUTH-063 %s は真ん中寄せの枠になる', (pathname) => {
     expect(mainClassFor(pathname)).toContain('min-h-dvh');
   });
 
-  test.each(['/', '/account', '/login/other', '/login/password/extra'])(
-    'DD-AUTH-061 %s は真ん中寄せの枠にならない',
+  test.each(['/', '/account', '/login/other', '/login/password', '/login/verify'])(
+    'DD-AUTH-063 %s は真ん中寄せの枠にならない',
     (pathname) => {
       expect(mainClassFor(pathname)).not.toContain('min-h-dvh');
     },

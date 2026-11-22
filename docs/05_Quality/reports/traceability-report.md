@@ -1,6 +1,6 @@
 # 要件IDの参照状況
 
-> 状態: 自動生成 | 生成日: 2026-11-15 | 対象: リポジトリ内の文字列参照
+> 状態: 自動生成 | 生成日: 2026-11-22 | 対象: リポジトリ内の文字列参照
 
 ## 概要
 
@@ -8,11 +8,11 @@
 
 | 指標 | 件数 |
 | --- | ---: |
-| 要件定義書の対象ID | 2508 |
-| 設計にID参照あり | 701 |
-| テストにID参照あり | 1809 |
-| 設計にID参照なし | 1807 |
-| テストにID参照なし | 699 |
+| 要件定義書の対象ID | 2523 |
+| 設計にID参照あり | 703 |
+| テストにID参照あり | 1757 |
+| 設計にID参照なし | 1820 |
+| テストにID参照なし | 766 |
 
 ## 参照一覧
 
@@ -112,7 +112,7 @@
 | `FR-ADMIN-105` | なし | 1件（[FR-ADMIN-105-cancel-reasons.spec.ts](../../../e2e/FR-ADMIN-105-cancel-reasons.spec.ts)） |
 | `FR-ADMIN-106` | なし | 1件（[FR-ADMIN-106-refund-failure-note-required.spec.ts](../../../e2e/FR-ADMIN-106-refund-failure-note-required.spec.ts)） |
 | `FR-ADMIN-107` | なし | 2件（[FR-ADMIN-107-dialog-order-number-close.spec.ts](../../../e2e/FR-ADMIN-107-dialog-order-number-close.spec.ts)） |
-| `FR-ADMIN-108` | 1件（[ADR-0018-admin-category-select-onvaluechange.md](../../03_BasicDesign/decisions/ADR-0018-admin-category-select-onvaluechange.md)） | 2件（[FR-ADMIN-108-select-fields.spec.ts](../../../e2e/FR-ADMIN-108-select-fields.spec.ts)） |
+| `FR-ADMIN-108` | 3件（[auth.md](../../03_BasicDesign/areas/auth.md)） | 2件（[FR-ADMIN-108-select-fields.spec.ts](../../../e2e/FR-ADMIN-108-select-fields.spec.ts)） |
 | `FR-ADMIN-109` | 2件（[ADR-0007-news-permissions-not-default-for-supporter.md](../../03_BasicDesign/decisions/ADR-0007-news-permissions-not-default-for-supporter.md)） | 4件（[FR-ADMIN-109-permission-settings.spec.ts](../../../e2e/FR-ADMIN-109-permission-settings.spec.ts)） |
 | `FR-ADMIN-110` | なし | 4件（[FR-ADMIN-069-made-to-order-completion.spec.ts](../../../e2e/FR-ADMIN-069-made-to-order-completion.spec.ts)） |
 | `FR-ADMIN-111` | なし | 1件（[FR-ADMIN-111-inventory-fifo.spec.ts](../../../e2e/FR-ADMIN-111-inventory-fifo.spec.ts)） |
@@ -132,12 +132,13 @@
 | `FR-ADMIN-125` | なし | 1件（[FR-ADMIN-125-discount-assignments.spec.ts](../../../e2e/FR-ADMIN-125-discount-assignments.spec.ts)） |
 | `FR-ADMIN-126` | なし | 1件（[FR-ADMIN-126-discount-permissions.spec.ts](../../../e2e/FR-ADMIN-126-discount-permissions.spec.ts)） |
 | `FR-ADMIN-127` | なし | 1件（[FR-ADMIN-127-discount-refund-amounts.spec.ts](../../../e2e/FR-ADMIN-127-discount-refund-amounts.spec.ts)） |
-| `FR-ADMIN-137` | 1件（[screen-list.md](../../03_BasicDesign/ui/screen-list.md)） | 1件（[FR-ADMIN-137-accounting-return-arrival.spec.ts](../../../e2e/FR-ADMIN-137-accounting-return-arrival.spec.ts)） |
+| `FR-ADMIN-137` | 1件（[screen-list.md](../../03_BasicDesign/ui/screen-list.md)） | 2件（[FR-ADMIN-137-accounting-return-arrival.spec.ts](../../../e2e/FR-ADMIN-137-accounting-return-arrival.spec.ts)） |
 | `FR-ADMIN-138` | なし | 1件（[FR-ADMIN-138-accounting-refund-journals.spec.ts](../../../e2e/FR-ADMIN-138-accounting-refund-journals.spec.ts)） |
 | `FR-ADMIN-139` | なし | 2件（[FR-ADMIN-137-accounting-return-arrival.spec.ts](../../../e2e/FR-ADMIN-137-accounting-return-arrival.spec.ts)） |
 | `FR-ADMIN-140` | なし | 1件（[FR-ADMIN-140-accounting-return-settings.spec.ts](../../../e2e/FR-ADMIN-140-accounting-return-settings.spec.ts)） |
 | `FR-ADMIN-164` | 4件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 2件（[FR-ADMIN-164-return-receive-per-item.spec.ts](../../../e2e/FR-ADMIN-164-return-receive-per-item.spec.ts)） |
 | `FR-ADMIN-165` | 2件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 1件（[FR-ADMIN-165-unit-binding-receive.spec.ts](../../../e2e/FR-ADMIN-165-unit-binding-receive.spec.ts)） |
+| `FR-AUTH-027` | 4件（[auth.md](../../03_BasicDesign/areas/auth.md)） | 1件（[FR-LOGIN-057-login-screen.spec.ts](../../../e2e/FR-LOGIN-057-login-screen.spec.ts)） |
 | `FR-CART-001` | 1件（[12_cart.md](../../04_DetailDesign/pages/12_cart.md)） | 1件（[FR-CART-001-008-cart-ui-and-actions.spec.ts](../../../e2e/FR-CART-001-008-cart-ui-and-actions.spec.ts)） |
 | `FR-CART-002` | 1件（[12_cart.md](../../04_DetailDesign/pages/12_cart.md)） | 1件（[FR-CART-002-005-006-007-summary-session-empty.spec.ts](../../../e2e/FR-CART-002-005-006-007-summary-session-empty.spec.ts)） |
 | `FR-CART-003` | 1件（[12_cart.md](../../04_DetailDesign/pages/12_cart.md)） | なし |
@@ -164,7 +165,7 @@
 | `FR-CHECKOUT-009` | 2件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 2件（[FR-CHECKOUT-009-webhook-idempotency.spec.ts](../../../e2e/FR-CHECKOUT-009-webhook-idempotency.spec.ts)） |
 | `FR-CHECKOUT-010` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-010-postal-code-cache.spec.ts](../../../e2e/FR-CHECKOUT-010-postal-code-cache.spec.ts)） |
 | `FR-CHECKOUT-011` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-011-tax-calculation-wont.spec.ts](../../../e2e/FR-CHECKOUT-011-tax-calculation-wont.spec.ts)） |
-| `FR-CHECKOUT-012` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-012-account-profile-defaults.spec.ts](../../../e2e/FR-CHECKOUT-012-account-profile-defaults.spec.ts)） |
+| `FR-CHECKOUT-012` | 2件（[ADR-0469-passkey-customer-email-code-login.md](../../03_BasicDesign/decisions/ADR-0469-passkey-customer-email-code-login.md)） | 1件（[FR-CHECKOUT-012-account-profile-defaults.spec.ts](../../../e2e/FR-CHECKOUT-012-account-profile-defaults.spec.ts)） |
 | `FR-CHECKOUT-031` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-031-promo-code-label.spec.ts](../../../e2e/FR-CHECKOUT-031-promo-code-label.spec.ts)） |
 | `FR-CHECKOUT-032` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-CHECKOUT-032-promo-error-a11y.spec.ts](../../../e2e/FR-CHECKOUT-032-promo-error-a11y.spec.ts)） |
 | `FR-CHECKOUT-039` | 1件（[checkout-payment.md](../../04_DetailDesign/sequence/checkout-payment.md)） | 1件（[FR-CHECKOUT-039-promotion-code-server.spec.ts](../../../e2e/FR-CHECKOUT-039-promotion-code-server.spec.ts)） |
@@ -229,14 +230,14 @@
 | `FR-ITEM-DETAIL-068` | なし | 1件（[FR-ITEM-DETAIL-068-discount-advertising.spec.ts](../../../e2e/FR-ITEM-DETAIL-068-discount-advertising.spec.ts)） |
 | `FR-ITEM-DETAIL-070` | 1件（[05_item_detail.md](../../04_DetailDesign/pages/05_item_detail.md)） | 1件（[FR-ITEM-DETAIL-070-discount-return-note.spec.ts](../../../e2e/FR-ITEM-DETAIL-070-discount-return-note.spec.ts)） |
 | `FR-LEGAL-008` | 1件（[13_checkout.md](../../04_DetailDesign/pages/13_checkout.md)） | 1件（[FR-LEGAL-008-discount-return-policy.spec.ts](../../../e2e/FR-LEGAL-008-discount-return-policy.spec.ts)） |
-| `FR-LOGIN-001` | 2件（[auth.md](../../03_BasicDesign/areas/auth.md)） | 2件（[FR-LOGIN-001-otp-turnstile.spec.ts](../../../e2e/FR-LOGIN-001-otp-turnstile.spec.ts)） |
+| `FR-LOGIN-001` | 3件（[auth.md](../../03_BasicDesign/areas/auth.md)） | なし |
 | `FR-LOGIN-002` | 3件（[auth.md](../../03_BasicDesign/areas/auth.md)） | 1件（[FR-LOGIN-002-google-oauth.spec.ts](../../../e2e/FR-LOGIN-002-google-oauth.spec.ts)） |
-| `FR-LOGIN-003` | 3件（[auth.md](../../03_BasicDesign/areas/auth.md)） | 1件（[FR-LOGIN-003-password-reset-link.spec.ts](../../../e2e/FR-LOGIN-003-password-reset-link.spec.ts)） |
-| `FR-LOGIN-004` | 2件（[auth.md](../../03_BasicDesign/areas/auth.md)） | 1件（[FR-SIGNUP-003-signup-confirm-link.spec.ts](../../../e2e/FR-SIGNUP-003-signup-confirm-link.spec.ts)） |
+| `FR-LOGIN-003` | 2件（[auth.md](../../03_BasicDesign/areas/auth.md)） | なし |
+| `FR-LOGIN-004` | 2件（[auth.md](../../03_BasicDesign/areas/auth.md)） | なし |
 | `FR-LOGIN-005` | 2件（[auth.md](../../03_BasicDesign/areas/auth.md)） | 1件（[FR-LOGIN-005-metadata.spec.ts](../../../e2e/FR-LOGIN-005-metadata.spec.ts)） |
-| `FR-LOGIN-006` | 2件（[auth.md](../../03_BasicDesign/areas/auth.md)） | 3件（[FR-LOGIN-006-otp-resend-countdown.spec.ts](../../../e2e/FR-LOGIN-006-otp-resend-countdown.spec.ts)） |
-| `FR-LOGIN-007` | 4件（[auth.md](../../03_BasicDesign/areas/auth.md)） | 2件（[FR-LOGIN-032-admin-totp-aal2.spec.ts](../../../e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts)） |
-| `FR-LOGIN-008` | 1件（[auth.md](../../03_BasicDesign/areas/auth.md)） | 3件（[FR-LOGIN-008-password-otp-2fa.spec.ts](../../../e2e/FR-LOGIN-008-password-otp-2fa.spec.ts)） |
+| `FR-LOGIN-006` | 2件（[auth.md](../../03_BasicDesign/areas/auth.md)） | なし |
+| `FR-LOGIN-007` | 4件（[auth.md](../../03_BasicDesign/areas/auth.md)） | 1件（[FR-LOGIN-032-admin-totp-aal2.spec.ts](../../../e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts)） |
+| `FR-LOGIN-008` | 1件（[auth.md](../../03_BasicDesign/areas/auth.md)） | なし |
 | `FR-LOOK-ALL-001` | 2件（[look.md](../../03_BasicDesign/areas/look.md)） | 2件（[FR-LOOK-ALL-001-published-looks-grid.spec.ts](../../../e2e/FR-LOOK-ALL-001-published-looks-grid.spec.ts)） |
 | `FR-LOOK-ALL-002` | 1件（[look.md](../../03_BasicDesign/areas/look.md)） | 2件（[FR-LOOK-ALL-002-look-card-fields-and-navigation.spec.ts](../../../e2e/FR-LOOK-ALL-002-look-card-fields-and-navigation.spec.ts)） |
 | `FR-LOOK-ALL-003` | 3件（[look.md](../../03_BasicDesign/areas/look.md)） | 1件（[FR-LOOK-ALL-003-look-list-render-capacity.spec.ts](../../../e2e/FR-LOOK-ALL-003-look-list-render-capacity.spec.ts)） |
@@ -1077,17 +1078,17 @@
 | `FREQ-32-AC-01` | なし | 1件（[FR-NEWS-ALL-013-no-card-image.spec.ts](../../../e2e/FR-NEWS-ALL-013-no-card-image.spec.ts)） |
 | `FREQ-320-AC-01` | なし | なし |
 | `FREQ-320-AC-02` | なし | 1件（[FR-LOGIN-030-session-cookies-and-responses.spec.ts](../../../e2e/FR-LOGIN-030-session-cookies-and-responses.spec.ts)） |
-| `FREQ-320-AC-03` | なし | 1件（[FR-LOGIN-024-register-no-account-enumeration.spec.ts](../../../e2e/FR-LOGIN-024-register-no-account-enumeration.spec.ts)） |
-| `FREQ-320-AC-04` | なし | 1件（[FR-LOGIN-024-register-no-account-enumeration.spec.ts](../../../e2e/FR-LOGIN-024-register-no-account-enumeration.spec.ts)） |
+| `FREQ-320-AC-03` | なし | なし |
+| `FREQ-320-AC-04` | なし | なし |
 | `FREQ-321-AC-01` | なし | なし |
 | `FREQ-321-AC-02` | なし | なし |
 | `FREQ-321-AC-03` | なし | なし |
 | `FREQ-322-AC-01` | なし | 1件（[FR-CART-020-rpc-not-directly-callable.spec.ts](../../../e2e/FR-CART-020-rpc-not-directly-callable.spec.ts)） |
 | `FREQ-322-AC-02` | なし | なし |
 | `FREQ-322-AC-03` | なし | 1件（[FR-CART-020-rpc-not-directly-callable.spec.ts](../../../e2e/FR-CART-020-rpc-not-directly-callable.spec.ts)） |
-| `FREQ-323-AC-01` | なし | 1件（[FR-SIGNUP-002-register-api-and-password-policy.spec.ts](../../../e2e/FR-SIGNUP-002-register-api-and-password-policy.spec.ts)） |
+| `FREQ-323-AC-01` | なし | なし |
 | `FREQ-323-AC-02` | なし | なし |
-| `FREQ-323-AC-03` | なし | 1件（[FR-SIGNUP-002-register-api-and-password-policy.spec.ts](../../../e2e/FR-SIGNUP-002-register-api-and-password-policy.spec.ts)） |
+| `FREQ-323-AC-03` | なし | なし |
 | `FREQ-323-AC-04` | なし | 1件（[FR-PWRESET-003-password-policy.spec.ts](../../../e2e/FR-PWRESET-003-password-policy.spec.ts)） |
 | `FREQ-324-AC-01` | なし | なし |
 | `FREQ-324-AC-02` | なし | なし |
@@ -1104,8 +1105,8 @@
 | `FREQ-327-AC-03` | なし | 1件（[FR-LOGIN-037-proxy-origin-csrf.spec.ts](../../../e2e/FR-LOGIN-037-proxy-origin-csrf.spec.ts)） |
 | `FREQ-327-AC-04` | なし | 1件（[FR-LOGIN-037-proxy-origin-csrf.spec.ts](../../../e2e/FR-LOGIN-037-proxy-origin-csrf.spec.ts)） |
 | `FREQ-328-AC-01` | なし | 1件（[FR-PWRESET-004-turnstile-widget-render.spec.ts](../../../e2e/FR-PWRESET-004-turnstile-widget-render.spec.ts)） |
-| `FREQ-328-AC-02` | なし | 1件（[FR-LOGIN-025-turnstile-width-fit.spec.ts](../../../e2e/FR-LOGIN-025-turnstile-width-fit.spec.ts)） |
-| `FREQ-328-AC-03` | なし | 2件（[FR-LOGIN-025-turnstile-width-fit.spec.ts](../../../e2e/FR-LOGIN-025-turnstile-width-fit.spec.ts)） |
+| `FREQ-328-AC-02` | なし | なし |
+| `FREQ-328-AC-03` | なし | 2件（[FR-LOGIN-079-login-screens-layout.spec.ts](../../../e2e/FR-LOGIN-079-login-screens-layout.spec.ts)） |
 | `FREQ-328-AC-04` | なし | 1件（[FR-PWRESET-001-visual-consistency-with-login.spec.ts](../../../e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts)） |
 | `FREQ-329-AC-01` | なし | 1件（[FR-PWRESET-005-reset-mail-sent-screen.spec.ts](../../../e2e/FR-PWRESET-005-reset-mail-sent-screen.spec.ts)） |
 | `FREQ-329-AC-02` | なし | 1件（[FR-PWRESET-005-reset-mail-sent-screen.spec.ts](../../../e2e/FR-PWRESET-005-reset-mail-sent-screen.spec.ts)） |
@@ -1113,9 +1114,9 @@
 | `FREQ-329-AC-04` | なし | 1件（[FR-PWRESET-005-reset-mail-sent-screen.spec.ts](../../../e2e/FR-PWRESET-005-reset-mail-sent-screen.spec.ts)） |
 | `FREQ-329-AC-05` | なし | 2件（[FR-PWRESET-001-visual-consistency-with-login.spec.ts](../../../e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts)） |
 | `FREQ-33-AC-01` | なし | なし |
-| `FREQ-330-AC-01` | なし | 1件（[FR-LOGIN-026-turnstile-token-single-use.spec.ts](../../../e2e/FR-LOGIN-026-turnstile-token-single-use.spec.ts)） |
-| `FREQ-330-AC-02` | なし | 1件（[FR-LOGIN-026-turnstile-token-single-use.spec.ts](../../../e2e/FR-LOGIN-026-turnstile-token-single-use.spec.ts)） |
-| `FREQ-330-AC-03` | なし | 1件（[FR-LOGIN-026-turnstile-token-single-use.spec.ts](../../../e2e/FR-LOGIN-026-turnstile-token-single-use.spec.ts)） |
+| `FREQ-330-AC-01` | なし | なし |
+| `FREQ-330-AC-02` | なし | なし |
+| `FREQ-330-AC-03` | なし | なし |
 | `FREQ-331-AC-01` | なし | 1件（[FR-PWRESET-006-reset-mail-sent-visual.spec.ts](../../../e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts)） |
 | `FREQ-331-AC-02` | なし | 1件（[FR-PWRESET-006-reset-mail-sent-visual.spec.ts](../../../e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts)） |
 | `FREQ-331-AC-03` | なし | 1件（[FR-PWRESET-006-reset-mail-sent-visual.spec.ts](../../../e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts)） |
@@ -1131,21 +1132,21 @@
 | `FREQ-333-AC-02` | なし | 1件（[FR-PWRESET-008-confirm-password-match.spec.ts](../../../e2e/FR-PWRESET-008-confirm-password-match.spec.ts)） |
 | `FREQ-333-AC-03` | なし | 1件（[FR-PWRESET-008-confirm-password-match.spec.ts](../../../e2e/FR-PWRESET-008-confirm-password-match.spec.ts)） |
 | `FREQ-333-AC-04` | なし | 1件（[FR-PWRESET-008-confirm-password-match.spec.ts](../../../e2e/FR-PWRESET-008-confirm-password-match.spec.ts)） |
-| `FREQ-334-AC-01` | なし | 1件（[FR-LOGIN-027-otp-dedicated-screen.spec.ts](../../../e2e/FR-LOGIN-027-otp-dedicated-screen.spec.ts)） |
-| `FREQ-334-AC-02` | なし | 1件（[FR-LOGIN-034-otp-verify-screen-entry-and-expiry.spec.ts](../../../e2e/FR-LOGIN-034-otp-verify-screen-entry-and-expiry.spec.ts)） |
-| `FREQ-334-AC-03` | なし | 1件（[FR-LOGIN-034-otp-verify-screen-entry-and-expiry.spec.ts](../../../e2e/FR-LOGIN-034-otp-verify-screen-entry-and-expiry.spec.ts)） |
-| `FREQ-334-AC-04` | なし | 1件（[FR-LOGIN-027-otp-dedicated-screen.spec.ts](../../../e2e/FR-LOGIN-027-otp-dedicated-screen.spec.ts)） |
-| `FREQ-334-AC-05` | なし | 1件（[FR-LOGIN-027-otp-dedicated-screen.spec.ts](../../../e2e/FR-LOGIN-027-otp-dedicated-screen.spec.ts)） |
-| `FREQ-334-AC-06` | なし | 1件（[FR-LOGIN-027-otp-dedicated-screen.spec.ts](../../../e2e/FR-LOGIN-027-otp-dedicated-screen.spec.ts)） |
-| `FREQ-335-AC-01` | なし | 1件（[FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts](../../../e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts)） |
-| `FREQ-335-AC-02` | なし | 1件（[FR-LOGIN-028-otp-verify-hardening.spec.ts](../../../e2e/FR-LOGIN-028-otp-verify-hardening.spec.ts)） |
+| `FREQ-334-AC-01` | なし | なし |
+| `FREQ-334-AC-02` | なし | なし |
+| `FREQ-334-AC-03` | なし | なし |
+| `FREQ-334-AC-04` | なし | なし |
+| `FREQ-334-AC-05` | なし | なし |
+| `FREQ-334-AC-06` | なし | なし |
+| `FREQ-335-AC-01` | なし | なし |
+| `FREQ-335-AC-02` | なし | なし |
 | `FREQ-335-AC-03` | なし | なし |
-| `FREQ-335-AC-04` | なし | 1件（[FR-LOGIN-035-login-throttling-and-turnstile.spec.ts](../../../e2e/FR-LOGIN-035-login-throttling-and-turnstile.spec.ts)） |
-| `FREQ-336-AC-01` | なし | 1件（[FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts](../../../e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts)） |
-| `FREQ-336-AC-02` | なし | 1件（[FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts](../../../e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts)） |
-| `FREQ-336-AC-03` | なし | 1件（[FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts](../../../e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts)） |
-| `FREQ-336-AC-04` | なし | 1件（[FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts](../../../e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts)） |
-| `FREQ-336-AC-05` | なし | 1件（[FR-LOGIN-028-otp-verify-hardening.spec.ts](../../../e2e/FR-LOGIN-028-otp-verify-hardening.spec.ts)） |
+| `FREQ-335-AC-04` | なし | なし |
+| `FREQ-336-AC-01` | なし | なし |
+| `FREQ-336-AC-02` | なし | なし |
+| `FREQ-336-AC-03` | なし | なし |
+| `FREQ-336-AC-04` | なし | なし |
+| `FREQ-336-AC-05` | なし | なし |
 | `FREQ-337-AC-01` | なし | 1件（[FR-LOOK-ALL-038-mobile-related-item-group-gap.spec.ts](../../../e2e/FR-LOOK-ALL-038-mobile-related-item-group-gap.spec.ts)） |
 | `FREQ-337-AC-02` | なし | 1件（[FR-LOOK-ALL-038-mobile-related-item-group-gap.spec.ts](../../../e2e/FR-LOOK-ALL-038-mobile-related-item-group-gap.spec.ts)） |
 | `FREQ-337-AC-03` | なし | 1件（[FR-LOOK-ALL-038-mobile-related-item-group-gap.spec.ts](../../../e2e/FR-LOOK-ALL-038-mobile-related-item-group-gap.spec.ts)） |
@@ -1297,7 +1298,7 @@
 | `FREQ-377-AC-02` | なし | 1件（[FR-UI-008-status-messages.spec.ts](../../../e2e/FR-UI-008-status-messages.spec.ts)） |
 | `FREQ-377-AC-03` | なし | 1件（[FR-UI-008-status-messages.spec.ts](../../../e2e/FR-UI-008-status-messages.spec.ts)） |
 | `FREQ-377-AC-04` | なし | 1件（[FR-UI-008-status-messages.spec.ts](../../../e2e/FR-UI-008-status-messages.spec.ts)） |
-| `FREQ-377-AC-05` | なし | 1件（[FR-UI-008-status-messages.spec.ts](../../../e2e/FR-UI-008-status-messages.spec.ts)） |
+| `FREQ-377-AC-05` | なし | なし |
 | `FREQ-377-AC-06` | なし | なし |
 | `FREQ-378-AC-01` | なし | 1件（[FR-CHECKOUT-033-complete-once-on-return.spec.ts](../../../e2e/FR-CHECKOUT-033-complete-once-on-return.spec.ts)） |
 | `FREQ-379-AC-01` | なし | 1件（[FR-UI-009-select-combobox.spec.ts](../../../e2e/FR-UI-009-select-combobox.spec.ts)） |
@@ -2249,8 +2250,8 @@
 | `FREQ-579-AC-06` | 1件（[accounting-refund.md](../../04_DetailDesign/states/accounting-refund.md)） | 6件（[accounting_p3_refund_order_independence.integration.test.ts](../../../tests/integration/db/accounting_p3_refund_order_independence.integration.test.ts)） |
 | `FREQ-579-AC-07` | なし | 3件（[accounting_p3_refund_allocations.integration.test.ts](../../../tests/integration/db/accounting_p3_refund_allocations.integration.test.ts)） |
 | `FREQ-579-AC-08` | なし | 1件（[accounting_p3_refund_posting.integration.test.ts](../../../tests/integration/db/accounting_p3_refund_posting.integration.test.ts)） |
-| `FREQ-58-AC-01` | なし | 2件（[FR-LOGIN-008-password-otp-2fa.spec.ts](../../../e2e/FR-LOGIN-008-password-otp-2fa.spec.ts)） |
-| `FREQ-58-AC-02` | なし | 1件（[FR-LOGIN-008-password-otp-2fa.spec.ts](../../../e2e/FR-LOGIN-008-password-otp-2fa.spec.ts)） |
+| `FREQ-58-AC-01` | なし | なし |
+| `FREQ-58-AC-02` | なし | なし |
 | `FREQ-580-AC-01` | なし | 9件（[FR-ADMIN-139-accounting-dispute-holds-offset.spec.ts](../../../e2e/FR-ADMIN-139-accounting-dispute-holds-offset.spec.ts)） |
 | `FREQ-580-AC-02` | なし | 4件（[FR-ADMIN-139-accounting-dispute-holds-offset.spec.ts](../../../e2e/FR-ADMIN-139-accounting-dispute-holds-offset.spec.ts)） |
 | `FREQ-580-AC-03` | なし | 2件（[accounting_p3_refund_writers.integration.test.ts](../../../tests/integration/db/accounting_p3_refund_writers.integration.test.ts)） |
@@ -2260,7 +2261,7 @@
 | `FREQ-581-AC-02` | なし | 3件（[FR-ADMIN-139-accounting-dispute-holds-offset.spec.ts](../../../e2e/FR-ADMIN-139-accounting-dispute-holds-offset.spec.ts)） |
 | `FREQ-581-AC-03` | なし | 3件（[FR-ADMIN-139-accounting-dispute-holds-offset.spec.ts](../../../e2e/FR-ADMIN-139-accounting-dispute-holds-offset.spec.ts)） |
 | `FREQ-581-AC-04` | なし | 1件（[accounting_p3_dispute_offset.integration.test.ts](../../../tests/integration/db/accounting_p3_dispute_offset.integration.test.ts)） |
-| `FREQ-581-AC-05` | なし | 4件（[accounting_p3_dispute_offset.integration.test.ts](../../../tests/integration/db/accounting_p3_dispute_offset.integration.test.ts)） |
+| `FREQ-581-AC-05` | なし | 3件（[accounting_p3_dispute_offset.integration.test.ts](../../../tests/integration/db/accounting_p3_dispute_offset.integration.test.ts)） |
 | `FREQ-581-AC-06` | なし | 2件（[accounting_p3_dispute_offset.integration.test.ts](../../../tests/integration/db/accounting_p3_dispute_offset.integration.test.ts)） |
 | `FREQ-581-AC-07` | なし | 2件（[accounting_p3_dispute_offset.integration.test.ts](../../../tests/integration/db/accounting_p3_dispute_offset.integration.test.ts)） |
 | `FREQ-581-AC-08` | 1件（[accounting-refund.md](../../04_DetailDesign/states/accounting-refund.md)） | 1件（[accounting_p3_dispute_order_independence.integration.test.ts](../../../tests/integration/db/accounting_p3_dispute_order_independence.integration.test.ts)） |
@@ -2283,18 +2284,18 @@
 | `FREQ-584-AC-05` | なし | 6件（[refund-bank-transfer-form.test.tsx](../../../tests/unit/components/cost-profit/refund-bank-transfer-form.test.tsx)） |
 | `FREQ-584-AC-06` | なし | 1件（[FR-ADMIN-137-accounting-return-arrival.spec.ts](../../../e2e/FR-ADMIN-137-accounting-return-arrival.spec.ts)） |
 | `FREQ-59-AC-01` | なし | なし |
-| `FREQ-59-AC-02` | なし | 1件（[FR-SIGNUP-001-register-page.spec.ts](../../../e2e/FR-SIGNUP-001-register-page.spec.ts)） |
-| `FREQ-60-AC-01` | なし | 1件（[FR-LOGIN-006-otp-resend-countdown.spec.ts](../../../e2e/FR-LOGIN-006-otp-resend-countdown.spec.ts)） |
-| `FREQ-61-AC-01` | なし | 1件（[FR-LOGIN-009-auth-tabs.spec.ts](../../../e2e/FR-LOGIN-009-auth-tabs.spec.ts)） |
+| `FREQ-59-AC-02` | なし | なし |
+| `FREQ-60-AC-01` | なし | なし |
+| `FREQ-61-AC-01` | なし | なし |
 | `FREQ-61-AC-02` | なし | なし |
 | `FREQ-61-AC-03` | なし | なし |
 | `FREQ-62-AC-01` | なし | なし |
 | `FREQ-62-AC-02` | なし | なし |
-| `FREQ-63-AC-01` | 2件（[auth.md](../../03_BasicDesign/areas/auth.md)） | 1件（[FR-SIGNUP-001-register-page.spec.ts](../../../e2e/FR-SIGNUP-001-register-page.spec.ts)） |
-| `FREQ-63-AC-02` | なし | 1件（[FR-LOGIN-009-auth-tabs.spec.ts](../../../e2e/FR-LOGIN-009-auth-tabs.spec.ts)） |
+| `FREQ-63-AC-01` | 1件（[14_login.md](../../04_DetailDesign/pages/14_login.md)） | なし |
+| `FREQ-63-AC-02` | なし | なし |
 | `FREQ-63-AC-03` | なし | なし |
 | `FREQ-64-AC-01` | なし | なし |
-| `FREQ-64-AC-02` | なし | 1件（[FR-LOGIN-011-auth-rounded-design.spec.ts](../../../e2e/FR-LOGIN-011-auth-rounded-design.spec.ts)） |
+| `FREQ-64-AC-02` | なし | なし |
 | `FREQ-64-AC-03` | なし | なし |
 | `FREQ-64-AC-04` | なし | なし |
 | `FREQ-641-AC-01` | なし | 2件（[FR-ADMIN-164-return-receive-per-item.spec.ts](../../../e2e/FR-ADMIN-164-return-receive-per-item.spec.ts)） |
@@ -2345,30 +2346,44 @@
 | `FREQ-642-AC-35` | 2件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 8件（[FR-ADMIN-167-return-restocking-fee-waiver.spec.ts](../../../e2e/FR-ADMIN-167-return-restocking-fee-waiver.spec.ts)） |
 | `FREQ-642-AC-36` | 1件（[05_item_detail.md](../../04_DetailDesign/pages/05_item_detail.md)） | 2件（[FR-ITEM-DETAIL-071-discount-return-note-disclosure.spec.ts](../../../e2e/FR-ITEM-DETAIL-071-discount-return-note-disclosure.spec.ts)） |
 | `FREQ-642-AC-37` | 4件（[api-spec.md](../../03_BasicDesign/api/api-spec.md)） | 7件（[FR-ADMIN-168-unit-binding-refund-retry.spec.ts](../../../e2e/FR-ADMIN-168-unit-binding-refund-retry.spec.ts)） |
-| `FREQ-65-AC-01` | なし | 1件（[FR-LOGIN-012-auth-tab-and-button-states.spec.ts](../../../e2e/FR-LOGIN-012-auth-tab-and-button-states.spec.ts)） |
-| `FREQ-65-AC-02` | なし | 1件（[FR-LOGIN-012-auth-tab-and-button-states.spec.ts](../../../e2e/FR-LOGIN-012-auth-tab-and-button-states.spec.ts)） |
-| `FREQ-65-AC-03` | なし | 2件（[FR-LOGIN-012-auth-tab-and-button-states.spec.ts](../../../e2e/FR-LOGIN-012-auth-tab-and-button-states.spec.ts)） |
-| `FREQ-65-AC-04` | なし | 1件（[FR-LOGIN-012-auth-tab-and-button-states.spec.ts](../../../e2e/FR-LOGIN-012-auth-tab-and-button-states.spec.ts)） |
-| `FREQ-65-AC-05` | なし | 1件（[FR-LOGIN-012-auth-tab-and-button-states.spec.ts](../../../e2e/FR-LOGIN-012-auth-tab-and-button-states.spec.ts)） |
-| `FREQ-66-AC-01` | なし | 2件（[FR-LOGIN-013-password-reset-link-placement.spec.ts](../../../e2e/FR-LOGIN-013-password-reset-link-placement.spec.ts)） |
-| `FREQ-66-AC-02` | なし | 1件（[FR-LOGIN-013-password-reset-link-placement.spec.ts](../../../e2e/FR-LOGIN-013-password-reset-link-placement.spec.ts)） |
-| `FREQ-66-AC-03` | なし | 2件（[FR-LOGIN-013-password-reset-link-placement.spec.ts](../../../e2e/FR-LOGIN-013-password-reset-link-placement.spec.ts)） |
-| `FREQ-67-AC-01` | なし | 1件（[FR-LOGIN-014-auth-contrast-hierarchy.spec.ts](../../../e2e/FR-LOGIN-014-auth-contrast-hierarchy.spec.ts)） |
-| `FREQ-67-AC-02` | なし | 1件（[FR-LOGIN-014-auth-contrast-hierarchy.spec.ts](../../../e2e/FR-LOGIN-014-auth-contrast-hierarchy.spec.ts)） |
-| `FREQ-67-AC-03` | なし | 1件（[FR-LOGIN-014-auth-contrast-hierarchy.spec.ts](../../../e2e/FR-LOGIN-014-auth-contrast-hierarchy.spec.ts)） |
-| `FREQ-68-AC-01` | なし | 1件（[FR-LOGIN-015-auth-button-alignment.spec.ts](../../../e2e/FR-LOGIN-015-auth-button-alignment.spec.ts)） |
-| `FREQ-68-AC-02` | なし | 2件（[FR-LOGIN-015-auth-button-alignment.spec.ts](../../../e2e/FR-LOGIN-015-auth-button-alignment.spec.ts)） |
-| `FREQ-69-AC-01` | なし | 2件（[FR-LOGIN-016-auth-full-height-centered.spec.ts](../../../e2e/FR-LOGIN-016-auth-full-height-centered.spec.ts)） |
-| `FREQ-69-AC-02` | なし | 2件（[FR-LOGIN-016-auth-full-height-centered.spec.ts](../../../e2e/FR-LOGIN-016-auth-full-height-centered.spec.ts)） |
-| `FREQ-69-AC-03` | なし | 2件（[FR-LOGIN-016-auth-full-height-centered.spec.ts](../../../e2e/FR-LOGIN-016-auth-full-height-centered.spec.ts)） |
+| `FREQ-643-AC-01` | なし | 1件（[accounting_p3_pending_auto_posting.integration.test.ts](../../../tests/integration/db/accounting_p3_pending_auto_posting.integration.test.ts)） |
+| `FREQ-643-AC-02` | なし | 1件（[accounting_p3_pending_auto_posting.integration.test.ts](../../../tests/integration/db/accounting_p3_pending_auto_posting.integration.test.ts)） |
+| `FREQ-643-AC-03` | なし | 1件（[accounting_p3_pending_auto_posting.integration.test.ts](../../../tests/integration/db/accounting_p3_pending_auto_posting.integration.test.ts)） |
+| `FREQ-643-AC-04` | なし | 1件（[accounting_p3_pending_auto_posting.integration.test.ts](../../../tests/integration/db/accounting_p3_pending_auto_posting.integration.test.ts)） |
+| `FREQ-643-AC-05` | なし | 1件（[accounting_p3_pending_auto_posting.integration.test.ts](../../../tests/integration/db/accounting_p3_pending_auto_posting.integration.test.ts)） |
+| `FREQ-643-AC-06` | なし | 1件（[accounting_p3_pending_auto_posting.integration.test.ts](../../../tests/integration/db/accounting_p3_pending_auto_posting.integration.test.ts)） |
+| `FREQ-643-AC-07` | なし | 1件（[accounting_p3_pending_auto_posting.integration.test.ts](../../../tests/integration/db/accounting_p3_pending_auto_posting.integration.test.ts)） |
+| `FREQ-643-AC-08` | なし | 1件（[accounting_p3_pending_auto_posting.integration.test.ts](../../../tests/integration/db/accounting_p3_pending_auto_posting.integration.test.ts)） |
+| `FREQ-643-AC-09` | なし | 2件（[accounting_p3_pending_auto_posting.integration.test.ts](../../../tests/integration/db/accounting_p3_pending_auto_posting.integration.test.ts)） |
+| `FREQ-643-AC-10` | なし | 1件（[accounting_p3_pending_auto_posting_concurrency.integration.test.ts](../../../tests/integration/db/accounting_p3_pending_auto_posting_concurrency.integration.test.ts)） |
+| `FREQ-643-AC-11` | なし | 1件（[accounting_p3_pending_auto_posting.integration.test.ts](../../../tests/integration/db/accounting_p3_pending_auto_posting.integration.test.ts)） |
+| `FREQ-643-AC-12` | なし | 3件（[accounting_p3_migration_asserts.integration.test.ts](../../../tests/integration/db/accounting_p3_migration_asserts.integration.test.ts)） |
+| `FREQ-643-AC-13` | なし | 1件（[FR-ADMIN-169-pending-auto-posting.spec.ts](../../../e2e/FR-ADMIN-169-pending-auto-posting.spec.ts)） |
+| `FREQ-643-AC-14` | 1件（[screen-list.md](../../03_BasicDesign/ui/screen-list.md)） | 1件（[pending-view.test.tsx](../../../tests/unit/components/cost-profit/pending-view.test.tsx)） |
+| `FREQ-65-AC-01` | なし | なし |
+| `FREQ-65-AC-02` | なし | なし |
+| `FREQ-65-AC-03` | なし | なし |
+| `FREQ-65-AC-04` | なし | なし |
+| `FREQ-65-AC-05` | なし | なし |
+| `FREQ-66-AC-01` | なし | なし |
+| `FREQ-66-AC-02` | なし | なし |
+| `FREQ-66-AC-03` | なし | なし |
+| `FREQ-67-AC-01` | なし | なし |
+| `FREQ-67-AC-02` | なし | なし |
+| `FREQ-67-AC-03` | なし | なし |
+| `FREQ-68-AC-01` | なし | なし |
+| `FREQ-68-AC-02` | なし | なし |
+| `FREQ-69-AC-01` | なし | 1件（[FR-LOGIN-079-login-screens-layout.spec.ts](../../../e2e/FR-LOGIN-079-login-screens-layout.spec.ts)） |
+| `FREQ-69-AC-02` | なし | 1件（[FR-LOGIN-079-login-screens-layout.spec.ts](../../../e2e/FR-LOGIN-079-login-screens-layout.spec.ts)） |
+| `FREQ-69-AC-03` | なし | 1件（[FR-LOGIN-079-login-screens-layout.spec.ts](../../../e2e/FR-LOGIN-079-login-screens-layout.spec.ts)） |
 | `FREQ-70-AC-01` | なし | なし |
-| `FREQ-70-AC-02` | なし | 2件（[FR-LOGIN-023-auth-viewport-centering.spec.ts](../../../e2e/FR-LOGIN-023-auth-viewport-centering.spec.ts)） |
+| `FREQ-70-AC-02` | なし | 2件（[FR-LOGIN-079-login-screens-layout.spec.ts](../../../e2e/FR-LOGIN-079-login-screens-layout.spec.ts)） |
 | `FREQ-70-AC-03` | なし | 1件（[FR-PWRESET-001-visual-consistency-with-login.spec.ts](../../../e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts)） |
 | `FREQ-70-AC-04` | なし | 2件（[FR-PWRESET-001-visual-consistency-with-login.spec.ts](../../../e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts)） |
 | `FREQ-70-AC-07` | なし | 1件（[FR-PWRESET-001-visual-consistency-with-login.spec.ts](../../../e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts)） |
-| `FREQ-71-AC-01` | なし | 1件（[FR-LOGIN-017-iphone-se-one-screen.spec.ts](../../../e2e/FR-LOGIN-017-iphone-se-one-screen.spec.ts)） |
-| `FREQ-71-AC-02` | なし | 1件（[FR-LOGIN-017-iphone-se-one-screen.spec.ts](../../../e2e/FR-LOGIN-017-iphone-se-one-screen.spec.ts)） |
-| `FREQ-71-AC-03` | なし | 1件（[FR-LOGIN-017-iphone-se-one-screen.spec.ts](../../../e2e/FR-LOGIN-017-iphone-se-one-screen.spec.ts)） |
+| `FREQ-71-AC-01` | なし | 1件（[FR-LOGIN-079-login-screens-layout.spec.ts](../../../e2e/FR-LOGIN-079-login-screens-layout.spec.ts)） |
+| `FREQ-71-AC-02` | なし | なし |
+| `FREQ-71-AC-03` | なし | なし |
 | `FREQ-72-AC-01` | なし | 1件（[FR-ACCOUNT-012-login-gate-brand-design.spec.ts](../../../e2e/FR-ACCOUNT-012-login-gate-brand-design.spec.ts)） |
 | `FREQ-72-AC-02` | なし | 1件（[FR-ACCOUNT-012-login-gate-brand-design.spec.ts](../../../e2e/FR-ACCOUNT-012-login-gate-brand-design.spec.ts)） |
 | `FREQ-72-AC-03` | なし | 1件（[FR-ACCOUNT-012-login-gate-brand-design.spec.ts](../../../e2e/FR-ACCOUNT-012-login-gate-brand-design.spec.ts)） |
@@ -2433,28 +2448,28 @@
 | `FREQ-88-AC-02` | なし | なし |
 | `FREQ-88-AC-03` | なし | なし |
 | `FREQ-88-AC-04` | なし | なし |
-| `FREQ-89-AC-01` | なし | 1件（[FR-LOGIN-019-underline-input-fields.spec.ts](../../../e2e/FR-LOGIN-019-underline-input-fields.spec.ts)） |
-| `FREQ-89-AC-02` | なし | 1件（[FR-LOGIN-019-underline-input-fields.spec.ts](../../../e2e/FR-LOGIN-019-underline-input-fields.spec.ts)） |
-| `FREQ-89-AC-03` | なし | 1件（[FR-LOGIN-019-underline-input-fields.spec.ts](../../../e2e/FR-LOGIN-019-underline-input-fields.spec.ts)） |
-| `FREQ-89-AC-04` | なし | 1件（[FR-LOGIN-019-underline-input-fields.spec.ts](../../../e2e/FR-LOGIN-019-underline-input-fields.spec.ts)） |
-| `FREQ-89-AC-05` | なし | 1件（[FR-LOGIN-019-underline-input-fields.spec.ts](../../../e2e/FR-LOGIN-019-underline-input-fields.spec.ts)） |
-| `FREQ-90-AC-01` | なし | 3件（[FR-LOGIN-011-auth-rounded-design.spec.ts](../../../e2e/FR-LOGIN-011-auth-rounded-design.spec.ts)） |
-| `FREQ-90-AC-02` | なし | 2件（[FR-LOGIN-009-auth-tabs.spec.ts](../../../e2e/FR-LOGIN-009-auth-tabs.spec.ts)） |
-| `FREQ-90-AC-03` | なし | 1件（[FR-LOGIN-020-tab-underline-no-switch-links.spec.ts](../../../e2e/FR-LOGIN-020-tab-underline-no-switch-links.spec.ts)） |
-| `FREQ-90-AC-04` | なし | 2件（[FR-LOGIN-020-tab-underline-no-switch-links.spec.ts](../../../e2e/FR-LOGIN-020-tab-underline-no-switch-links.spec.ts)） |
-| `FREQ-91-AC-01` | なし | 1件（[FR-LOGIN-021-register-underline-fields.spec.ts](../../../e2e/FR-LOGIN-021-register-underline-fields.spec.ts)） |
-| `FREQ-91-AC-02` | なし | 1件（[FR-LOGIN-021-register-underline-fields.spec.ts](../../../e2e/FR-LOGIN-021-register-underline-fields.spec.ts)） |
-| `FREQ-91-AC-03` | なし | 1件（[FR-LOGIN-021-register-underline-fields.spec.ts](../../../e2e/FR-LOGIN-021-register-underline-fields.spec.ts)） |
-| `FREQ-91-AC-04` | なし | 1件（[FR-LOGIN-021-register-underline-fields.spec.ts](../../../e2e/FR-LOGIN-021-register-underline-fields.spec.ts)） |
+| `FREQ-89-AC-01` | なし | なし |
+| `FREQ-89-AC-02` | なし | なし |
+| `FREQ-89-AC-03` | なし | なし |
+| `FREQ-89-AC-04` | なし | なし |
+| `FREQ-89-AC-05` | なし | なし |
+| `FREQ-90-AC-01` | なし | なし |
+| `FREQ-90-AC-02` | なし | なし |
+| `FREQ-90-AC-03` | なし | なし |
+| `FREQ-90-AC-04` | なし | なし |
+| `FREQ-91-AC-01` | なし | なし |
+| `FREQ-91-AC-02` | なし | なし |
+| `FREQ-91-AC-03` | なし | なし |
+| `FREQ-91-AC-04` | なし | なし |
 | `FREQ-92-AC-01` | なし | 1件（[FR-PWRESET-001-visual-consistency-with-login.spec.ts](../../../e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts)） |
 | `FREQ-92-AC-02` | なし | 1件（[FR-PWRESET-001-visual-consistency-with-login.spec.ts](../../../e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts)） |
 | `FREQ-92-AC-03` | なし | 1件（[FR-PWRESET-001-visual-consistency-with-login.spec.ts](../../../e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts)） |
 | `FREQ-93-AC-01` | なし | なし |
 | `FREQ-93-AC-02` | なし | なし |
 | `FREQ-93-AC-03` | なし | なし |
-| `FREQ-94-AC-01` | なし | 1件（[FR-LOGIN-023-auth-viewport-centering.spec.ts](../../../e2e/FR-LOGIN-023-auth-viewport-centering.spec.ts)） |
-| `FREQ-94-AC-02` | なし | 1件（[FR-LOGIN-023-auth-viewport-centering.spec.ts](../../../e2e/FR-LOGIN-023-auth-viewport-centering.spec.ts)） |
-| `FREQ-94-AC-03` | なし | 1件（[FR-LOGIN-023-auth-viewport-centering.spec.ts](../../../e2e/FR-LOGIN-023-auth-viewport-centering.spec.ts)） |
+| `FREQ-94-AC-01` | なし | なし |
+| `FREQ-94-AC-02` | なし | なし |
+| `FREQ-94-AC-03` | なし | なし |
 | `FREQ-95-AC-01` | なし | なし |
 | `FREQ-96-AC-01` | なし | なし |
 | `FREQ-97-AC-01` | なし | 1件（[FR-ACCOUNT-027-profile-edit-underline-fields.spec.ts](../../../e2e/FR-ACCOUNT-027-profile-edit-underline-fields.spec.ts)） |

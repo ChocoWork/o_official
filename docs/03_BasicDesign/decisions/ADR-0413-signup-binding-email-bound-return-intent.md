@@ -1,6 +1,6 @@
 # ADR-0413 確認リンクの結び付けは、控えの番号と登録したメールを一緒にハッシュする
 
-> 状態: 推定（案内の文は案。ユーザーに画面を見せて確かめる） | 確認日: 2026-10-26 | 対象: `src/features/auth/return-intent/`、`src/app/api/auth/{register,confirm}/route.ts`、`src/app/login/page.tsx`、`src/components/AuthTabs.tsx` | 基準コミット: `77e7f844`
+> 状態: 廃止 | 確認日: 2026-10-26 | 対象: `src/features/auth/return-intent/`、`src/app/api/auth/{register,confirm}/route.ts`、`src/app/login/page.tsx`、`src/components/AuthTabs.tsx` | 基準コミット: `77e7f844`
 
 ## 概要
 
@@ -25,7 +25,7 @@
 | --- | --- |
 | 上位 | SEC-AUTH-007、SEC-AUTH-016、FR-AUTH-005 |
 | 根拠 | `/api/auth/confirm` は `GET` で、印が正しければ開いた端末に session の Cookie を書く。開いた人と印を作った人を結ぶ物が無いと、攻撃者が自分のアカウントの確認のリンクを被害者に開かせ、被害者の端末を攻撃者のアカウントでログインさせられる（login CSRF。THR-AUTH-007）。ユーザーが 2026-10-25・10-26 に「登録を送ったブラウザで開いた時だけログインさせる」と決めた。決定の「控えの Cookie が DB の行と合う」を、番号だけでなくメールまで合うと狭く読む（計画の P1） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1b-decisions.md`、`docs/superpowers/plans/2026-10-26-wave1b-local-fixes.md`、[OWASP Cross-Site Request Forgery Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)（Login CSRF の節）、[Shopify Customer sign-in links and redirects](https://shopify.dev/docs/storefronts/themes/sign-in) |
 
 #### 背景
@@ -60,6 +60,7 @@
 
 #### 結果
 
+- 置き換え先: ADR-0469（段4の Task 28、2026-11-22 に、パスワードのログイン・会員登録・確認リンクの窓口と画面を消したので、この決めは廃止した）
 - 良くなること: 他人の端末で攻撃者の確認のリンクを開かせても、攻撃者のアカウントでログインしない。登録の途中の被害者のブラウザでも、メールが違えば外れる。移行も鍵の追加も要らない
 - 悪くなること: 別のブラウザで確認のリンクを開いた人は、その場でログインできない（`/login` で手でログインする）。登録の後に別のログインを始めると Cookie（`sb-return-intent`、login と signup で名前が共通）が上書きされ、同じブラウザで開いても `/login?registered=1` になる（安全な側への劣化）。使い切りが session の前なので、保存の失敗で戻り先だけが使用済みになる
 - 残る穴（直さない）: (1) Cookie の名前に `__Host-` の頭が無いので、同じ親ドメインの別のサブドメインを攻撃者が持つと、攻撃者のメールに結んだ控えを被害者のブラウザへ投げ込める（cookie tossing。波 1-A の設計のまま）。(2) 被害者のブラウザに攻撃者のメールで登録を送らせる道は、`proxy.ts` の Origin の確かめと Turnstile に頼っている

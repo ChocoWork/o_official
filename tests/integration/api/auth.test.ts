@@ -44,16 +44,12 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
   enforceRateLimit: jest.fn().mockResolvedValue(undefined),
 }));
 
-let loginHandler: any;
-let registerHandler: any;
 let pwRequestHandler: any;
 let pwConfirmHandler: any;
 
 describe('Auth API integration (mocked supabase)', () => {
   beforeAll(() => {
     // require after mocking next/server
-    loginHandler = require('@/app/api/auth/login/route').POST;
-    registerHandler = require('@/app/api/auth/register/route').POST;
     pwRequestHandler = require('@/app/api/auth/password-reset/request/route').POST;
     pwConfirmHandler = require('@/app/api/auth/password-reset/confirm/route').POST;
   });
@@ -70,80 +66,6 @@ describe('Auth API integration (mocked supabase)', () => {
   });
 
   afterEach(() => jest.resetAllMocks());
-
-  test('ARC-AUTH-001 login (step 1) verifies password, sends OTP and returns step=otp', async () => {
-    const { createServiceRoleAuthClient } = require('@/lib/auth/service-role-auth-client');
-    const signInWithOtp = jest.fn().mockResolvedValue({ error: null });
-    const fakeClient = {
-      auth: {
-        signInWithPassword: jest.fn().mockResolvedValue({
-          data: { session: { access_token: 'a', refresh_token: 'r', expires_at: Date.now() }, user: { id: 'u', email: 'user@example.com' } },
-          error: null,
-        }),
-        signInWithOtp,
-      },
-    };
-    createServiceRoleAuthClient.mockResolvedValue(fakeClient);
-
-    const req = new Request('http://localhost/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'user@example.com', password: 'password123456789' }) });
-
-    const res: any = await loginHandler(req);
-    const body = await res.json();
-    expect(res.status).toBe(200);
-    expect(body.step).toBe('otp');
-    expect(body.access_token).toBeUndefined();
-    expect(signInWithOtp).toHaveBeenCalledWith({ email: 'user@example.com', options: { shouldCreateUser: false } });
-    expect(res.cookies.get('sb-login-2fa-session')).toBeDefined();
-  });
-
-  test('ARC-AUTH-001 login invalid credentials returns 401', async () => {
-    const { createServiceRoleAuthClient } = require('@/lib/auth/service-role-auth-client');
-    const fakeClient = {
-      auth: {
-        signInWithPassword: jest.fn().mockResolvedValue({ data: null, error: { message: 'invalid' } }),
-        signInWithOtp: jest.fn().mockResolvedValue({ error: null }),
-      },
-    };
-    createServiceRoleAuthClient.mockResolvedValue(fakeClient);
-
-    const req = new Request('http://localhost/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'user@example.com', password: 'wrongpass12345678' }) });
-
-    const res: any = await loginHandler(req);
-    expect(res.status).toBe(401);
-  });
-
-  test('ARC-AUTH-001 register は管理の見出し（x-admin-token）を付けても公開の登録で、createUser を呼ばず 202 を返す', async () => {
-    process.env.ADMIN_API_KEY = 'adm';
-    const { createServiceRoleClient } = require('@/lib/supabase/server');
-    const { createServiceRoleAuthClient } = require('@/lib/auth/service-role-auth-client');
-    const createUser = jest.fn();
-    createServiceRoleClient.mockReturnValue({
-      rpc: jest.fn().mockResolvedValue({ data: null, error: null }),
-      auth: { admin: { createUser } },
-    });
-    const signUp = jest.fn().mockResolvedValue({ data: { session: null, user: { id: 'u1' } }, error: null });
-    createServiceRoleAuthClient.mockResolvedValue({ auth: { signUp } });
-
-    const req = new Request('http://localhost/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-token': 'adm' }, body: JSON.stringify({ email: 'new@example.com', password: 'password123456789' }) });
-
-    const res: any = await registerHandler(req);
-    expect(res.status).toBe(202);
-    expect(createUser).not.toHaveBeenCalled();
-    expect(signUp).toHaveBeenCalledTimes(1);
-    delete process.env.ADMIN_API_KEY;
-  });
-
-  test('ARC-AUTH-001 register は ADMIN_API_KEY が未設定でも管理の見出しで 500 にならず、公開の登録として 202 を返す', async () => {
-    delete process.env.ADMIN_API_KEY;
-    const { createServiceRoleClient } = require('@/lib/supabase/server');
-    const { createServiceRoleAuthClient } = require('@/lib/auth/service-role-auth-client');
-    createServiceRoleClient.mockReturnValue({ rpc: jest.fn().mockResolvedValue({ data: null, error: null }) });
-    createServiceRoleAuthClient.mockResolvedValue({ auth: { signUp: jest.fn().mockResolvedValue({ data: { session: null, user: { id: 'u1' } }, error: null }) } });
-    const req = new Request('http://localhost/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-token': 'anything' }, body: JSON.stringify({ email: 'new@example.com', password: 'password123456789' }) });
-
-    const res: any = await registerHandler(req);
-    expect(res.status).toBe(202);
-  });
 
   test('ARC-AUTH-001 password reset request inserts token and returns 200', async () => {
     const { createServiceRoleClient } = require('@/lib/supabase/server');

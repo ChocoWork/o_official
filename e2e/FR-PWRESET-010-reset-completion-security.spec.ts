@@ -26,8 +26,8 @@ type Viewport = (typeof viewports)[number];
 
 const APP_ORIGIN = 'http://localhost:3000';
 const RESET_COOKIE = 'sb-password-reset-session';
-const LOGIN_2FA_COOKIE = 'sb-login-2fa-session';
-const MISSING_PENDING_MESSAGE = 'セッションの有効期限が切れました。もう一度ログインしてください。';
+const EMAIL_CODE_COOKIE = 'sb-email-code-session';
+const MISSING_PENDING_MESSAGE = 'セッションの有効期限が切れました。もう一度メールアドレスを入力してください。';
 
 /** 回数の制限は送り元ごとに数える。試験ごとに別の値を使い、全部の E2E が共有する枠を使い切らない。 */
 function uniqueSource(): string {
@@ -219,7 +219,7 @@ for (const viewport of viewports) {
     );
 
     test(
-      'SEC-AUTH-027-AC-01 a password reset cookie put into the pending second step cookie is rejected',
+      'SEC-AUTH-027-AC-01 a password reset cookie put into the pending email code cookie is rejected',
       async ({ browser }) => {
         test.setTimeout(60_000);
         const member = await createTestMember('pwreset-010-027');
@@ -230,24 +230,24 @@ for (const viewport of viewports) {
           // 有効な再設定の Cookie の値
           const resetCookieValue = await issueResetCookie(resetter, member, source);
 
-          // その値を sb-login-2fa-session に入れて OTP を送る
+          // その値を sb-email-code-session（メールのコードの保留の Cookie）に入れてコードを送る
           await attacker.addCookies([
             {
-              name: LOGIN_2FA_COOKIE,
+              name: EMAIL_CODE_COOKIE,
               value: resetCookieValue,
               url: APP_ORIGIN,
               httpOnly: true,
               sameSite: 'Strict',
             },
           ]);
-          const verified = await attacker.request.post('/api/auth/otp/verify', {
+          const verified = await attacker.request.post('/api/auth/email-code/verify', {
             headers: { origin: APP_ORIGIN, 'x-real-ip': source },
             data: { code: '00000000' },
             maxRedirects: 0,
           });
 
           expect(verified.status()).toBe(401);
-          // 確認コードの誤りではなく、2段目の Cookie として断られたこと
+          // 確認コードの誤りではなく、保留の Cookie として断られたこと
           expect(((await verified.json()) as { error?: string }).error).toBe(MISSING_PENDING_MESSAGE);
           // ログインのセッションが発行されていないこと
           const issued = (await attacker.cookies(APP_ORIGIN)).map((entry) => entry.name);

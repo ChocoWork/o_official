@@ -1,6 +1,6 @@
 /**
  * FR-LOGIN-055 メールのコードのログイン・新規の窓口（POST /api/auth/email-code/start・verify）
- * 対応: FR-AUTH-023-AC-01〜06（守りは SEC-AUTH-048・SEC-AUTH-049）
+ * 対応: FR-AUTH-023-AC-01〜06（守りは SEC-AUTH-048・SEC-AUTH-049）・SEC-AUTH-035-AC-01（captcha が有効でも始めと再送が通る）
  *
  * 手元のアプリ（本番ビルド）・手元の Supabase・手元の Mailpit だけで流す HTTP の試験。窓口を `request` で直に呼ぶ（画面は開かない。幅で結果は変わらないが、3つの幅でくり返す）。
  * 要求ごとに別の x-real-ip と origin を付ける（回数の枠を使い切らないため・proxy の Origin の確かめ）。Turnstile は E2E の公式のテスト鍵（常に通る）。
@@ -8,8 +8,7 @@
  */
 import { randomBytes, randomInt } from 'node:crypto';
 import { expect, test, type APIRequestContext, type APIResponse } from '@playwright/test';
-import { createTestMember, readLatestCode } from './member-session-helpers';
-import { setLoginTwoFactorCookie } from './auth-2fa-test-utils';
+import { createTestMember, readLatestCode, readMailpitMessages } from './member-session-helpers';
 import { withLocalDb } from './order-email-test-utils';
 import { provisionStaff } from '../scripts/e2e/passkey-staff';
 
@@ -155,13 +154,47 @@ for (const viewport of viewports) {
 
     test(`FR-AUTH-023-AC-05 ${viewport.name}: 旧い保留の Cookie（パスワードの道）を持っていても、新しい確定の窓口は 401`, async ({ page }) => {
       await page.goto('/');
-      await setLoginTwoFactorCookie(page, uniqueEmail('legacy'));
+      // 旧のパスワードのログインの保留の Cookie（アプリはもう発行しない）と同じ名前の値を置く
+      await page.context().addCookies([
+        { name: 'sb-login-2fa-session', value: 'legacy-pending-value', url: ORIGIN, httpOnly: true, sameSite: 'Strict' },
+      ]);
       const response = await page.request.post('/api/auth/email-code/verify', {
         headers: { origin: ORIGIN, 'x-real-ip': uniqueIp() },
         data: { code: '12345678' },
         maxRedirects: 0,
       });
       expect(response.status()).toBe(401);
+    });
+
+    test(`SEC-AUTH-035-AC-01 ${viewport.name}: captcha が有効でも、アプリのメールのコードの始めは 202、再送は 200 で、コードのメールが届く`, async ({ request }) => {
+      const member = await createTestMember(`captcha-${viewport.name}`);
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
+      // 対照: 同じ宛先への直接の /auth/v1/otp は captcha のトークン無しで断られる（アプリの窓口が管理者資格で通っていることの裏）
+      const direct = await request.post(`${supabaseUrl}/auth/v1/otp`, {
+        headers: { apikey: anonKey, 'Content-Type': 'application/json', 'x-forwarded-for': uniqueIp() },
+        data: { email: member.email, create_user: false },
+      });
+      expect(direct.status(), '直接の /auth/v1/otp の status（準備）').toBe(400);
+      expect(await direct.text(), '直接の /auth/v1/otp の本文が captcha の断り').toMatch(/captcha/i);
+
+      const ip = uniqueIp();
+      const started = await startCode(request, member.email, ip);
+      expect(started.status(), 'アプリの始めの status').toBe(202);
+      await expect
+        .poll(async () => (await readMailpitMessages(member.email)).length, { timeout: 30_000, message: '始めのコードのメールが届く' })
+        .toBe(1);
+
+      // GoTrue の送信の間隔（手元は 1 秒）を超えてから再送する
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      const resend = await request.post('/api/auth/email-code/resend', {
+        headers: { origin: ORIGIN, 'x-real-ip': ip },
+        maxRedirects: 0,
+      });
+      expect(resend.status(), 'アプリの再送の status').toBe(200);
+      await expect
+        .poll(async () => (await readMailpitMessages(member.email)).length, { timeout: 30_000, message: '再送のコードのメールが届く' })
+        .toBe(2);
     });
 
     test(`FR-AUTH-023-AC-06 ${viewport.name}: 保留の Cookie が無い確定・再送は 401`, async ({ request }) => {

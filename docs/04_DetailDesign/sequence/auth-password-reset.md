@@ -207,7 +207,7 @@ ready=trueはフォームを表示するためのCookie判定であり、confirm
 | --- | --- |
 | hash・期限・列挙対策・link非消費・claim競合・更新失敗 | [password reset統合テスト](../../../tests/integration/api/auth/password-reset.test.ts) |
 | 入力Schema | [reset Schema](../../../tests/unit/schemas/password-reset.test.ts) |
-| リンク・画面導線 | [reset hardening](../../../e2e/FR-PWRESET-002-password-reset-hardening.spec.ts)、[resetリンク](../../../e2e/FR-LOGIN-003-password-reset-link.spec.ts) |
+| リンク・画面導線 | [reset hardening](../../../e2e/FR-PWRESET-002-password-reset-hardening.spec.ts)、resetリンク |
 
 ## 未確認事項
 

@@ -3,7 +3,7 @@
  * 対応: SEC-AUTH-005-AC-01 / SEC-AUTH-005-AC-02 / SEC-AUTH-010-AC-01 / SEC-AUTH-011-AC-01 / SEC-AUTH-012-AC-01
  *       SEC-AUTH-015-AC-01 / SEC-AUTH-015-AC-02 / SEC-AUTH-015-AC-05 / SEC-AUTH-028-AC-02
  *       SEC-AUTH-005-AC-03 / SEC-AUTH-005-AC-05 / SEC-AUTH-030-AC-03 / SEC-AUTH-031-AC-02 / SEC-AUTH-010-AC-03
- *       SEC-AUTH-015-AC-04 / SEC-AUTH-035-AC-01 / SEC-AUTH-035-AC-02（波 6。手元の Auth の captcha を有効にした設定で通る）
+ *       SEC-AUTH-015-AC-04（波 6。手元の Auth の captcha を有効にした設定で通る。SEC-AUTH-035 の AC は FR-LOGIN-055 へ移した）
  *
  * 手元の Supabase（GoTrue の /auth/v1、PostgREST の /rest/v1）を anon の鍵と、パスワードだけで得た JWT で直接叩く。
  * アプリの窓口（/api/auth/me・/api/profile・/api/orders・/api/admin/users）は Bearer で叩く。画面は開かない。
@@ -39,7 +39,7 @@ import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { createAdminSessionActor, elevateAdminSessionToAal2 } from './admin-session-test-utils';
 import { withDummyCaptcha } from './captcha-test-utils';
 import { signInCustomerWithoutPassword } from './customer-session-test-utils';
-import { createTestMember, loginAsMemberLegacy, readLatestCode, readMailpitMessages } from './member-session-helpers';
+import { createTestMember, loginAsMember, readLatestCode, readMailpitMessages } from './member-session-helpers';
 
 test.use({ trace: 'off' });
 
@@ -726,86 +726,6 @@ for (const viewport of viewports) {
   });
 }
 
-for (const viewport of viewports) {
-  test.describe(`SEC-AUTH-035-AC-01 captcha が有効でもアプリのログインと会員登録が通る (${viewport.name})`, () => {
-    test.use({ viewport: { width: viewport.width, height: viewport.height } });
-
-    test(`SEC-AUTH-035-AC-01 直接の password grant が captcha で断られる会員でも、アプリの /api/auth/login は 200（確認コードの段）になり、/api/auth/register は 202 で利用者ができる (${viewport.name})`, async ({ request, baseURL }) => {
-      requireLocalApp(baseURL);
-      const origin = new URL(baseURL ?? '').origin;
-      const turnstileToken = 'test-turnstile-token';
-      const member = await createUnsignedActor('app-login');
-      // 対照: 同じ資格情報の直接の password grant は captcha で断られる（アプリの窓口が管理者資格で通っていることの裏）
-      const direct = await request.post(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-        headers: { apikey: ANON_KEY, 'Content-Type': 'application/json', 'x-forwarded-for': uniqueForwardedFor() },
-        data: { email: member.email, password: member.password },
-      });
-      expect(direct.status(), '直接の password grant の status（準備）').toBe(400);
-
-      const login = await request.post(new URL('/api/auth/login', origin).toString(), {
-        headers: { origin, 'x-real-ip': uniqueSourceIp() },
-        data: { email: member.email, password: member.password, turnstileToken },
-        maxRedirects: 0,
-      });
-      expect(login.status(), 'アプリのログインの status').toBe(200);
-      expect(await jsonOf(login), 'アプリのログインの本文').toMatchObject({ step: 'otp' });
-
-      const registerEmail = newEmail('app-register');
-      try {
-        const register = await request.post(new URL('/api/auth/register', origin).toString(), {
-          headers: { origin, 'x-real-ip': uniqueSourceIp() },
-          data: { email: registerEmail, password: newPassword(), turnstileToken },
-          maxRedirects: 0,
-        });
-        expect(register.status(), 'アプリの会員登録の status').toBe(202);
-        await withDb(async (db) => {
-          const found = await db.query('select count(*)::int as n from auth.users where email = $1', [registerEmail]);
-          expect(found.rows[0].n, '登録した宛先の利用者の行').toBe(1);
-        });
-      } finally {
-        await withDb(async (db) => {
-          await db.query('delete from auth.users where email = $1', [registerEmail]);
-        });
-      }
-    });
-  });
-}
-
-for (const viewport of viewports) {
-  test.describe(`SEC-AUTH-035-AC-02 資格情報の誤りは captcha の拒否に丸められず 401 のまま (${viewport.name})`, () => {
-    test.use({ viewport: { width: viewport.width, height: viewport.height } });
-
-    // captcha の拒否を 5xx と supabase_captcha_rejected にする側は、免除が効かない環境を手元に作れないので単体テストが受け持つ（DD-AUTH-040）。
-    // ここでは captcha が有効な環境で、普通のパスワードの誤りが誤って 5xx や captcha の拒否にならないこと（見分けが逆向きに崩れないこと）を見る。
-    test(`SEC-AUTH-035-AC-02 captcha が有効でも、アプリのログインに誤ったパスワードを送ると 401 で、監査は login・failure のまま supabase_captcha_rejected にならない (${viewport.name})`, async ({ request, baseURL }) => {
-      requireLocalApp(baseURL);
-      const origin = new URL(baseURL ?? '').origin;
-      const member = await createUnsignedActor('captcha-wrong-pw');
-      const wrong = `Wrong-${randomBytes(10).toString('hex')}-Pw!`;
-
-      const login = await request.post(new URL('/api/auth/login', origin).toString(), {
-        headers: { origin, 'x-real-ip': uniqueSourceIp() },
-        data: { email: member.email, password: wrong, turnstileToken: 'test-turnstile-token' },
-        maxRedirects: 0,
-      });
-      expect(login.status(), '誤ったパスワードのログインの status').toBe(401);
-      expect(await login.json(), '誤ったパスワードのログインの本文').toEqual({ error: 'メールアドレスまたはパスワードが正しくありません。' });
-
-      await withDb(async (db) => {
-        const outcomes = await db.query(`select a.outcome from public.audit_logs a where a.actor_email = $1 and a.action = 'login'`, [member.email]);
-        expect(
-          outcomes.rows.map((row) => row.outcome as string),
-          'ログインの監査の outcome（failure の行があり、error の道に落ちていない）',
-        ).toContain('failure');
-        const rows = await auditRowTexts(db, `a.actor_email = $1 and a.action = 'login'`, [member.email]);
-        expect(rows.length, 'ログインの監査の行').toBeGreaterThan(0);
-        expect(rows.some((row) => row.includes('supabase_captcha_rejected')), 'captcha の拒否の符号が無い').toBe(false);
-        expect(rows.some((row) => row.includes(wrong)), '監査の行に送ったパスワードが無い').toBe(false);
-      });
-    });
-  });
-}
-
 // ---- SEC-AUTH-030・031（波 5: 結び付けの拒否と、初めての TOTP の登録） ----
 
 /** 監査の行を文字列にした物。トークン・session_id の値が入っていないかを、値そのものを出さずに真偽で比べるため */
@@ -905,7 +825,7 @@ for (const viewport of viewports) {
       // JWT はアプリの窓口（メールの確認コード）を通して得る。GoTrue のパスワード grant で直に得た JWT は
       // SEC-AUTH-005-AC-01 が拒否する対象なので、この試験の前提にしない。
       const member = await createTestMember('metarole');
-      await loginAsMemberLegacy(page, member, source);
+      await loginAsMember(page, member, source);
       const cookieValue = async (name: string) =>
         (await page.context().cookies(origin)).find((cookie) => cookie.name === name)?.value;
       const accessToken = await cookieValue('sb-access-token');
