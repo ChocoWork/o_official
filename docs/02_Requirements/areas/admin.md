@@ -9,13 +9,13 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 
 | 段 | 数 | ID |
 | --- | --- | --- |
-| 要求 | 3 | 既存の `FREQ-25`・`FREQ-508`、新しい `SR-ADMIN-001`（新しい環境で最初の店長を作れる。2026-11-14） |
-| 要件 | 4 | 既存の `FREQ-25-REQ-01`・`FREQ-508-REQ-01`・`FR-ADMIN-009`、新しい `FR-ADMIN-010`（最初の店長を作るコマンド） |
-| 受け入れ条件 | 11 | 既存の `FREQ-25-AC-01`・`FREQ-508-AC-01`〜`03`、新しい `FR-ADMIN-009-AC-01`〜`06`・`FR-ADMIN-010-AC-01` |
+| 要求 | 3 | 既存の `FREQ-25`・`FREQ-508`、新しい `SR-ADMIN-001`（新しい環境で最初の店長を招待の最後の手段から作れる。2026-11-14。2026-11-22 に FR-AUTH-037 の下へ付け替えた） |
+| 要件 | 4 | 既存の `FREQ-25-REQ-01`・`FREQ-508-REQ-01`・`FR-ADMIN-009`、新しい `FR-ADMIN-010`（最初の店長を作るコマンド。段4 Task 31 で廃止） |
+| 受け入れ条件 | 11 | 既存の `FREQ-25-AC-01`・`FREQ-508-AC-01`〜`03`、新しい `FR-ADMIN-009-AC-01`〜`06`・`FR-ADMIN-010-AC-01`（段4 Task 31 で廃止） |
 | 派生要件 | 8 | `DRV-ADMIN-001`〜`008`（`DRV-ADMIN-001` は 2026-11-18 に廃止） |
 | セキュリティ要件 | 23 | `SEC-ADMIN-001`〜`023`（受け入れ条件 41 件の `SEC-ADMIN-NNN-AC-NN` を含む。全部「推定」） |
 
-- 状態: 全部「推定」（2026-11-14 に足した `SR-ADMIN-001`・`FR-ADMIN-010` はオーナーが決めたので「現行」）。元の行に理由が書かれていない物は根拠の「なぜ」を書き手が補い、コードと合わない行・新しく起こした項目・実装から読み取った項目も、ユーザーの確認を受けていない。ユーザーが確認したら「現行」にする。どちらが正しいかは決めず、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節（`TM-ADMIN-NN`）に載せた。今のコードがセキュリティ要件を満たさない所は、その `SEC-ADMIN-NNN` の項目に1回だけ書く
+- 状態: 全部「推定」（2026-11-14 に足した `SR-ADMIN-001` はオーナーが決めたので「現行」。`FR-ADMIN-010` とその AC は段4 Task 31 で「廃止」）。元の行に理由が書かれていない物は根拠の「なぜ」を書き手が補い、コードと合わない行・新しく起こした項目・実装から読み取った項目も、ユーザーの確認を受けていない。ユーザーが確認したら「現行」にする。どちらが正しいかは決めず、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節（`TM-ADMIN-NN`）に載せた。今のコードがセキュリティ要件を満たさない所は、その `SEC-ADMIN-NNN` の項目に1回だけ書く
 - 結論: 問い合わせの管理（FREQ-25・FR-ADMIN-009）は、2026-10-28（波 4）に管理画面へ CONTACT のタブを足して画面からも動くようにした。監査ログ（FREQ-508）は読む画面が無い。利用者の作成・2要素のリセット・強制失効・色見本・監査ログの掃除は、どの要求にも書かれていない。画面を足すか、要件を直すかは、ユーザーに決めてもらう
 
 ## 範囲と根拠
@@ -25,7 +25,7 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 | 範囲 | `scripts/trace/scope.json` の ADMIN |
 | 写した元 | `docs/02_Requirements/requirements.md` の「要求と要件のトレーサビリティ」の表の FREQ-25（1つ目の行）、「1.16 管理画面（ADMIN）」節の FR-ADMIN-009、「要求トレーサビリティ追記」の表の FREQ-508。元の行は消していない |
 | 持ち主の決め方 | ADMIN が持つのは FREQ-25 とその子だけで、FREQ-508・FR-ADMIN-009 は ADMIN だけが触れる行。複数の領域が触れる行は、領域どうしで割り当てた持ち主が定義し、ほかは `（範囲外）` で指す |
-| 対象のコード | `src/app/api/admin/revoke-user-sessions/`、`src/app/api/admin/audit-logs/`、`src/app/api/admin/contact/`、`src/app/api/admin/item-color-presets/`、`src/lib/contact/reply-address.ts`、`src/lib/auditCleanup.ts`、`scripts/admin/`（3 ファイル。最初の店長を作るコマンド）（14 ファイル。利用者の作成の画面と窓口の3ファイルは 2026-11-18 に消した） |
+| 対象のコード | `src/app/api/admin/revoke-user-sessions/`、`src/app/api/admin/audit-logs/`、`src/app/api/admin/contact/`、`src/app/api/admin/item-color-presets/`、`src/lib/contact/reply-address.ts`、`src/lib/auditCleanup.ts`（14 ファイル。利用者の作成の画面と窓口の3ファイルは 2026-11-18 に消し、最初の店長を作る `scripts/admin/` の3ファイルは 2026-11-22 に消した） |
 | 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない。割当の作業が `src/app/admin/page.tsx` などを書き換え中で、コードの動きはずれうる） |
 
 ### 写した行と写さなかった行
@@ -72,7 +72,7 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 | FR-ADMIN-MISC-005-item-color-presets-and-direct-db-access | SEC-ADMIN-002-AC-01、SEC-ADMIN-002-AC-02、SEC-ADMIN-003-AC-01、SEC-ADMIN-004-AC-01、SEC-ADMIN-022-AC-01 |
 | FR-ADMIN-MISC-006-contact-management | FR-ADMIN-009-AC-01、FR-ADMIN-009-AC-05、FR-ADMIN-009-AC-02、FR-ADMIN-009-AC-03、FR-ADMIN-009-AC-04、FR-ADMIN-009-AC-06、SEC-ADMIN-019-AC-01、SEC-ADMIN-020-AC-01、SEC-ADMIN-021-AC-01 |
 | FR-ADMIN-MISC-007-contact-reply-mail-and-threading | FREQ-25-AC-01、SEC-ADMIN-006-AC-01、SEC-ADMIN-006-AC-02、SEC-ADMIN-017-AC-01、SEC-ADMIN-018-AC-01、SEC-ADMIN-022-AC-02 |
-| FR-ADMIN-MISC-008-first-admin-bootstrap | FR-ADMIN-010-AC-01 |
+| FR-ADMIN-MISC-008-first-admin-bootstrap（段4 Task 31 で消した） | （無し。FR-ADMIN-010-AC-01 は廃止） |
 
 E2E が無い受け入れ条件（`missing-child` と同じ）: `FREQ-508-AC-03`、`SEC-ADMIN-003-AC-02`、`SEC-ADMIN-010-AC-01`・`AC-02`、`SEC-ADMIN-017-AC-02`、`SEC-ADMIN-021-AC-02`。`FREQ-508-AC-03` は DB 結合 `tests/integration/db/audit_read_permission.integration.test.ts` が確かめる。
 
@@ -102,15 +102,15 @@ E2E が無い受け入れ条件（`missing-child` と同じ）: `FREQ-508-AC-03`
 
 要求の文: 監査ログを読む権限を店長に付ける機能を提供すること（波1 K-3）
 
-### SR-ADMIN-001 新しい環境で、最初の店長を作れる
+### SR-ADMIN-001 新しい環境で、最初の店長を招待の最後の手段から作れる
 
 | 属性 | 値 |
 | --- | --- |
-| 根拠 | 新しい環境（手元の `db reset` の後・検証用・作り直した本番）には店長が1人もおらず、店長だけが使える招待の窓口（API-AUTH-033）に入る道が無い。環境を作る人が最初の1人を作れないと、管理画面を使い始められない |
-| 状態 | 廃止 |
-| 出どころ | ユーザーの発言（オーナー 2026-11-14。使う場面は新しい環境を作る時だけ、やり方は手元で流すコマンド）、`docs/superpowers/specs/2026-11-14-admin-bootstrap-design.md` |
+| 根拠 | 新しい環境（手元の `db reset` の後・検証用・作り直した本番）には店長が1人もおらず、店長だけが使える招待の窓口（API-AUTH-033）に入る道が無い。最初の1人を作れないと、管理画面を使い始められない。2026-11-18 のオーナーの決めで、その1人は `private.staff_invite_issue_manual`（ダッシュボードの SQL 専用。FR-AUTH-037）から作る |
+| 状態 | 現行 |
+| 出どころ | ユーザーの発言（オーナー 2026-11-14。使う場面は新しい環境を作る時だけ）、オーナーの決め 2026-11-18（`docs/06_Operations/passkey-staff-recovery.md` の節1）。段4 Task 31（2026-11-22）で、手元で流すコマンド `admin:bootstrap`（FR-ADMIN-010）の道は消した |
 
-要求の文: 環境を作る人が、新しい環境で最初の店長を作れること。
+要求の文: 店長が1人もいない新しい環境で、環境を作る人（オーナー）がダッシュボードの SQL で `private.staff_invite_issue_manual` を流し、その合言葉で最初の店長がパスキー2本を登録して店長になれること。
 
 ## 要件
 

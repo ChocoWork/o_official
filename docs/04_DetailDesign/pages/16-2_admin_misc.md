@@ -4,7 +4,7 @@
 
 ## 概要
 
-管理のそのほか（ADMIN）の範囲にある 17 ファイル・18 単位を、詳細設計の項目（`DD-ADMIN-001`〜`018`）で書く（`DD-ADMIN-016`〜`018` は 2026-11-14 に足した最初の店長を作るコマンド。`scripts/admin/` の3ファイル・3単位）。2026-10-28（波 4）から、管理の監査には全部の結果の行に行為者のメール・IP・ブラウザの名乗りを付ける（共通の決めは ARC-ADMIN-003 と ADR-0462。IP の取り出しは DD-AUTH-038）。
+管理のそのほか（ADMIN）の範囲にある 14 ファイル・15 単位を、詳細設計の項目（`DD-ADMIN-001`〜`018`）で書く（`DD-ADMIN-016`〜`018` は 2026-11-14 に足した最初の店長を作るコマンドで、段4 Task 31（2026-11-22）で廃止した。`scripts/admin/` の3ファイル・3単位を消した）。2026-10-28（波 4）から、管理の監査には全部の結果の行に行為者のメール・IP・ブラウザの名乗りを付ける（共通の決めは ARC-ADMIN-003 と ADR-0462。IP の取り出しは DD-AUTH-038）。
 中身は 2026-10-24 の作業ツリーのコードを読んで起こした今の動きで、ユーザーの確認を受けていないので全部「推定」にした。構造設計・要件とコードが食い違う所は決めずに今のコードの動きを書き、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節（`TM-ADMIN-NN`）に載せた。今のコードがセキュリティ要件を満たさない所は、その `SEC-ADMIN-NNN` の項目に1回だけ書き、ここでは `SEC-ADMIN-NNN を参照` と指す。
 
 | ID | 題 | 単位 |
@@ -24,9 +24,9 @@
 | `DD-ADMIN-013` | 返信の宛先を作る | `src/lib/contact/reply-address.ts` の `buildReplyAddress` |
 | `DD-ADMIN-014` | 返信の宛先を確かめる | `src/lib/contact/reply-address.ts` の `parseReplyAddress` |
 | `DD-ADMIN-015` | 古い監査ログを消す（未使用（削除の判断待ち）） | `src/lib/auditCleanup.ts` の `cleanupAuditLogs` |
-| `DD-ADMIN-016` | 最初の店長を作る判断 | `scripts/admin/bootstrap-core.ts` の `bootstrapFirstAdmin` |
-| `DD-ADMIN-017` | 最初の店長を作るコマンドの入口 | `scripts/admin/bootstrap.ts` の `runBootstrapCli` |
-| `DD-ADMIN-018` | 最初の店長を作る書き込みの束 | `scripts/admin/bootstrap-deps.ts` の `createBootstrapDeps` |
+| `DD-ADMIN-016` | 最初の店長を作る判断（段4で廃止。コマンドを消した） | （無し） |
+| `DD-ADMIN-017` | 最初の店長を作るコマンドの入口（段4で廃止。コマンドを消した） | （無し） |
+| `DD-ADMIN-018` | 最初の店長を作る書き込みの束（段4で廃止。コマンドを消した） | （無し） |
 
 - 結論: 窓口は全部、頭で共有の認可（`authorizeAdminPermission`）を通し、通った後にだけ service role の client で表と Auth の管理の機能を使う。画面は利用者の作成の1つだけで、画面には守りが無い
 - 今のコードは、存在しない id への変更を 200 の成功として返す（問い合わせ・テンプレート）、一部の DB の書き込みの誤りを見ない、などの動きを持つ（強制失効・2要素のリセット・作成・色見本は 2026-10-26 に直した）。届かないセキュリティ要件は上位に書かず、本文では `SEC-ADMIN-NNN を参照` と指す（構造設計と同じ決め方）
@@ -74,9 +74,6 @@
 | `src/lib/contact/reply-address.ts` | `buildReplyAddress` | DD-ADMIN-013 |
 | `src/lib/contact/reply-address.ts` | `parseReplyAddress` | DD-ADMIN-014 |
 | `src/lib/auditCleanup.ts` | `cleanupAuditLogs` | DD-ADMIN-015 |
-| `scripts/admin/bootstrap-core.ts` | `bootstrapFirstAdmin` | DD-ADMIN-016 |
-| `scripts/admin/bootstrap.ts` | `runBootstrapCli` | DD-ADMIN-017 |
-| `scripts/admin/bootstrap-deps.ts` | `createBootstrapDeps` | DD-ADMIN-018 |
 
 - 窓口のファイルは、中の GET・POST などが別々の契約でも、単位がファイルなので1つの `DD-` にまとめた。項目の本文で方法ごとに分けて書く
 - 単位にならない物: 強制失効の窓口の中の `auditUnauthorized`・`isTargetNotFound`、2要素のリセットの窓口の中の `isMfaFactorList`・`readRoleCode`・`resolvePrivilegedRole`、問い合わせの一覧の窓口の中の `sanitizeSearchTerm`、`reply-address.ts` の `computeToken`・`safeEqual`（export しない関数。それぞれの項目に含める）、`auditCleanup.ts` の最後の既定の書き出し（後から出す形）

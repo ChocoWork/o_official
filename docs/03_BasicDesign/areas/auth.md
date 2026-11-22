@@ -50,7 +50,7 @@ AUTH の領域の構成・画面・画面遷移・状態遷移・API・データ
 | Origin の確かめ・no-store | `src/proxy.ts` | `/api` の書き換えの要求を許可の一覧の Origin だけで通す（FREQ-327）。`/api/auth` 配下の応答（Origin 拒否の 403 も）に `Cache-Control: no-store` を付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037） |
 | CSRF の印 | `src/lib/csrfMiddleware.ts`・`csrf.ts` | `logout` が二重送信の印を確かめる |
 | 送り先の検証・住所 | `src/lib/redirect.ts` の `getRequestOrigin`、`src/lib/site-url-guard.ts` | メールのリンクの住所。ログインの後の送り先の確かめは `src/features/auth/return-intent/return-path.ts`（DD-AUTH-032）に置き換え、共有関数 `sanitizeRedirectPath` は消す |
-| ボットの確かめ・漏洩の照合・メール | `src/lib/turnstile.ts`・`pwned-password.ts`・`mail.ts` | 窓口が呼ぶ |
+| ボットの確かめ・メール | `src/lib/turnstile.ts`・`mail.ts` | 窓口が呼ぶ |
 | 監査 | `src/lib/audit.ts` の `logAudit` | 認証の出来事を `audit_logs` に残す |
 | Supabase の client | `src/lib/supabase/server.ts` の `createPublicClient`・`createClient`・`createServiceRoleClient` | 匿名の確かめ・利用者の session・service role |
 | ゲストの印・注文の紐付け | `src/features/cart/services/guest-shopping-token.ts`（H）、`src/lib/orders/link-guest-orders.ts`（注文まわりの作り直しが書き換え中） | ログインの保存の後にカート・お気に入り・ゲスト注文を会員へ合わせる |

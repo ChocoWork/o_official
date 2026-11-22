@@ -884,6 +884,7 @@
 | FREQ-508 監査ログを読む権限を店長に付ける | FREQ-508-REQ-01 監査ログの権限を登録して店長だけに付け、ほかの結び付きを保つ | FREQ-508-AC-01 店長だけに閲覧の権限が付き、権限のある店長に監査ログの一覧が表示される | `e2e/FR-ADMIN-MISC-004-audit-log-read.spec.ts:136` |
 | FREQ-508 監査ログを読む権限を店長に付ける | FREQ-508-REQ-01 監査ログの権限を登録して店長だけに付け、ほかの結び付きを保つ | FREQ-508-AC-02 店長以外には付けず、権限が無ければ店長でも 403 で監査ログを読まない | `e2e/FR-ADMIN-MISC-004-audit-log-read.spec.ts:172` |
 | FREQ-508 監査ログを読む権限を店長に付ける | FREQ-508-REQ-01 監査ログの権限を登録して店長だけに付け、ほかの結び付きを保つ | FREQ-508-AC-03 流し直しても付与が重ならず、ほかの結び付きが残り、「監査ログの閲覧」の名前で登録される | （なし） |
+| SR-ADMIN-001 新しい環境で、最初の店長を招待の最後の手段から作れる | FR-AUTH-037 役割の変更を招待に寄せ、降格と店長の最後の手段と鍵の削除の下限を DB の関数にする（移行 H の後半） | FR-AUTH-037-AC-01 anon・authenticated は降格・鍵の削除・役割の変更の関数を呼べず、service_role では知らない操作者・鍵が決まった文になり、最後の手段は PostgREST に無い | `e2e/FR-LOGIN-076-staff-role-function-grants.spec.ts:46` |
 | THR-ADMIN-001 権限の無い人が管理 API を直接呼ぶ | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-01 JWT の無い要求を 401 で断る | `e2e/FR-ADMIN-MISC-001-admin-api-authorization-gates.spec.ts:155` |
 | THR-ADMIN-001 権限の無い人が管理 API を直接呼ぶ | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-02 2要素を済ませていない session の JWT を 403 で断る | `e2e/FR-ADMIN-MISC-001-admin-api-authorization-gates.spec.ts:190` |
 | THR-ADMIN-001 権限の無い人が管理 API を直接呼ぶ | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-03 サポーターは店長だけの窓口を使えない | `e2e/FR-ADMIN-MISC-001-admin-api-authorization-gates.spec.ts:220` |

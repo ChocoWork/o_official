@@ -9,7 +9,7 @@ ADMIN の領域の構成・画面・状態遷移・API・データを、追跡�
 
 | 種類 | 数 | ID | 中身 |
 | --- | --- | --- | --- |
-| 構成 | 6 | `ARC-ADMIN-001`〜`006` | 認可と service role、Origin の照合、監査ログの書き方と読み方、返信の宛先の印、監査ログの掃除の部品、最初の店長を作るコマンドの分け方 |
+| 構成 | 6 | `ARC-ADMIN-001`〜`006` | 認可と service role、Origin の照合、監査ログの書き方と読み方、返信の宛先の印、監査ログの掃除の部品、最初の店長を作るコマンドの分け方（ARC-ADMIN-006。段4 Task 31 で廃止） |
 | 画面 | 1 | `SCR-ADMIN-001` | 利用者の作成 `/admin/create-user`（2026-11-18 に廃止） |
 | 状態遷移 | 1 | `STATE-ADMIN-001` | 問い合わせの状態 |
 | API | 15 | `API-ADMIN-001`〜`015` | 利用者の作成（`API-ADMIN-001` は 2026-11-18 に廃止）・強制失効・監査ログ・2要素のリセット（`API-ADMIN-004` は段4で廃止）・問い合わせの9つ・色見本の3つ |
@@ -28,7 +28,7 @@ ADMIN の領域の構成・画面・状態遷移・API・データを、追跡�
 | 範囲 | `scripts/trace/scope.json` の ADMIN |
 | 上位の文書 | [ADMIN の要件](../../02_Requirements/areas/admin.md)（要件・`SEC-ADMIN-`・`DRV-ADMIN-`）、`docs/03_BasicDesign/decisions/ADR-0450`〜`ADR-0459` |
 | 範囲外の上位 | FREQ-316-REQ-01・03、FREQ-327-REQ-01（持ち主は AUTH）、FREQ-540-REQ-01（持ち主なし。割当の作業が書き換え中）、FREQ-24-REQ-01、FR-CONTACT-011〜013、FREQ-402-REQ-02、NFR-SEC-005（持ち主なし）。FREQ-316・327 は AUTH が定義し、FREQ-540 は誰も定義していない（`（範囲外）` で指すだけ） |
-| 対象のコード | `src/app/api/admin/revoke-user-sessions/`、`src/app/api/admin/audit-logs/`、`src/app/api/admin/contact/`（5 ファイル）、`src/app/api/admin/item-color-presets/`（2 ファイル）、`src/lib/contact/reply-address.ts`、`src/lib/auditCleanup.ts`、`scripts/admin/`（3 ファイル。ARC-ADMIN-006）（14 ファイル。利用者の作成の画面と窓口の3ファイルは 2026-11-18 に消した） |
+| 対象のコード | `src/app/api/admin/revoke-user-sessions/`、`src/app/api/admin/audit-logs/`、`src/app/api/admin/contact/`（5 ファイル）、`src/app/api/admin/item-color-presets/`（2 ファイル）、`src/lib/contact/reply-address.ts`、`src/lib/auditCleanup.ts`（14 ファイル。利用者の作成の画面と窓口の3ファイルは 2026-11-18 に消し、最初の店長を作る `scripts/admin/` の3ファイルは 2026-11-22 に消した） |
 | 対象の DB | `supabase/migrations/20260901102912_remote_schema.sql`（表・RLS・付与・関数）、`supabase/migrations/20261023061453_audit_read_permission.sql`、`supabase/migrations/20261023175712_group_g0_permissions.sql`（権限の印と初めの割り当て） |
 | 関連文書 | `docs/03_BasicDesign/api/api-spec.md`、`docs/03_BasicDesign/ui/screen-list.md`、`docs/03_BasicDesign/architecture/hybrid-rbac.md` |
 | 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない。割当の作業が問い合わせの表の `order_id` を書き換える移行を作業中） |

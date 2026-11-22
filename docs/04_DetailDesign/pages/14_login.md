@@ -50,7 +50,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 回数の制限 | `src/features/auth/middleware/rateLimit.ts` の `enforceRateLimit` | 返り値の有無と例外で分ける |
 | 認証の確かめ | `src/lib/auth/authenticate.ts` の `authenticateRequest`・`authFailureResponse`・`verifyAccessToken` | `ok` と理由で分ける |
 | Cookie の名前と属性 | `src/lib/cookie.ts` | 名前と寿命を借りる |
-| 住所・メール・照合・Turnstile・監査 | `src/lib/redirect.ts`・`site-url-guard.ts`・`mail.ts`・`pwned-password.ts`・`turnstile.ts`・`audit.ts` | 返り値で分ける。ログインの後の送り先の確かめは `src/features/auth/return-intent/return-path.ts`（DD-AUTH-032）に置き換え、共有関数 `sanitizeRedirectPath` は消す |
+| 住所・メール・照合・Turnstile・監査 | `src/lib/redirect.ts`・`site-url-guard.ts`・`mail.ts`・`turnstile.ts`・`audit.ts` | 返り値で分ける。ログインの後の送り先の確かめは `src/features/auth/return-intent/return-path.ts`（DD-AUTH-032）に置き換え、共有関数 `sanitizeRedirectPath` は消す |
 | ゲストの印・注文の紐付け | `src/features/cart/services/guest-shopping-token.ts`（H）、`src/lib/orders/link-guest-orders.ts`（注文まわりの作り直しが書き換え中） | 呼ぶだけ |
 
 ## 実装の単位

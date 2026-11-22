@@ -4,7 +4,7 @@
 
 ## 概要
 
-確認日: 2026-10-03（「Stripe 非同期処理」の行と「Stripe Webhook の処理」の図は、2026-10-07 に確認し直した。「HTTP ジョブ登録」の行は、照合の登録が抜けていたので足し、同じ日に確認し直した。「外部表示・リンク」の行の UI 見本の画像と、Proxy の CSP の許可先の記述は、2026-10-28 に直した）。対象ソース: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`（確認し直した行と図は `b54976d2`。「HTTP ジョブ登録」の行は、保留中の SQL 3本を `0781d3ff` で読んで確かめた）。
+確認日: 2026-11-22（漏洩パスワードの照合 HIBP を外した。パスキー段4 Task 31）。以前の確認日: 2026-10-03（「Stripe 非同期処理」の行と「Stripe Webhook の処理」の図は、2026-10-07 に確認し直した。「HTTP ジョブ登録」の行は、照合の登録が抜けていたので足し、同じ日に確認し直した。「外部表示・リンク」の行の UI 見本の画像と、Proxy の CSP の許可先の記述は、2026-10-28 に直した）。対象ソース: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`（確認し直した行と図は `b54976d2`。「HTTP ジョブ登録」の行は、保留中の SQL 3本を `0781d3ff` で読んで確かめた）。
 
 会計の計画3（2026-11-15）: 末尾に「会計の返金・返品の事実と計上係の流れ（計画3）」の節を足した（返品・返金の事実を残す流れ、計上係の呼ぶ順〔返品→返金→dispute〕、鍵の順は変えないこと、判断待ちの止め）。手元の DB で確認済み・本番未適用。
 
@@ -37,7 +37,7 @@ flowchart TB
 
   subgraph external["外部サービス"]
     SB["Supabase<br/>Auth / Postgres・RPC・キュー<br/>Storage / pg_cron"]
-    Services["外部 API・メール<br/>Stripe / SES・Resend / Meta<br/>Turnstile / HIBP / ZipCloud<br/>設定時: 監査通知 URL"]
+    Services["外部 API・メール<br/>Stripe / SES・Resend / Meta<br/>Turnstile / ZipCloud<br/>設定時: 監査通知 URL"]
     Resources["ブラウザの外部表示・遷移<br/>Google OAuth・Maps / 外部画像<br/>SNS・配送追跡"]
     S3["S3 互換の追加保存先"]
   end
@@ -103,7 +103,7 @@ flowchart TB
 | Stripe 非同期処理 | 署名検証後、18種（既存の13種と `charge.dispute.*` の5種。Stripe の宛先に足すまで dispute の知らせは届かない）のイベントだけを DB 永続化する（鍵と違うモードの知らせは保存しない）。応答の後に `after()` で worker を1回動かし、毎分の Cron 呼び出しも同じ worker を起動する。worker は、取り出せる Stripe の知らせが無くなるか35秒たつまで、1件ずつ claim して注文・返金・会計を同期し、完了 / 失敗を記録する。続いて、処理した知らせがあった時だけ会計の計上係を1回（20件）流し（失敗しても worker は失敗にしない）、注文のメールを10秒の予算で送り、その後に店への知らせの点検と配達の見回りを行う（入口の実行上限は60秒）。DB RPC が重複排除・lease・再試行（9回目の失敗で退避）を管理 | [入口](../../../src/app/api/webhook/stripe/route.ts)、[worker](../../../src/app/api/cron/process-stripe-webhooks/route.ts)、[繰り返し](../../../src/lib/stripe/webhook-drain.ts)、[processor](../../../src/lib/stripe/webhook-processor.ts)、[キュー migration](../../../supabase/migrations/20260925000303_add_stripe_webhook_queue.sql)、[退避 migration](../../../supabase/migrations/20261007030242_webhook_queue_dead_letter.sql) |
 | メール | `MAIL_PROVIDER` による SES / Resend 選択（未指定時のコード上の既定は SES）。問い合わせの Resend / Svix 受信経路は別 | [送信選択](../../../src/lib/mail.ts)、[SES](../../../src/lib/mail/adapters/ses.ts)、[Resend](../../../src/lib/mail/adapters/resend.ts)、[受信](../../../src/app/api/contact/inbound/route.ts) |
 | Meta KPI | OAuth 接続、手動 / Cron の Graph API 同期。アプリ設定・暗号化鍵・保存済み接続が必要。月の KPI の表 `admin_kpi_monthly_records` は 2026-11-08 の S13（`20261108220000`）が `supabase/migrations/` で定義する（旧 `migrations/063` の食い違いを解消。本番は未適用）。Meta の接続・同期記録の表（`admin_meta_kpi_connections`・`admin_meta_kpi_sync_runs`）の DDL は旧 `migrations/` にだけあり、現行 `supabase/migrations/` での定義は確認できない（実 DB の有無は未確認。作るかはオーナーが決める） | [config](../../../src/lib/meta/config.ts)、[接続](../../../src/app/api/admin/kpi/meta/connect/route.ts)、[callback](../../../src/app/api/admin/kpi/meta/callback/route.ts)、[手動同期](../../../src/app/api/admin/kpi/meta/sync/route.ts)、[同期](../../../src/lib/meta/sync-kpi.ts)、[Graph client](../../../src/lib/meta/graph-client.ts)、[旧 KPI DDL](../../../migrations/063_create_admin_kpi_monthly_records.sql)、[旧 Meta DDL](../../../migrations/079_create_meta_kpi_integration.sql) |
-| Bot・漏洩・住所検査 | Turnstile widget と siteverify（production で secret 未設定なら拒否）。HIBP へ SHA-1 の先頭5文字を送信。ZipCloud は郵便番号の DB / プロセス内キャッシュにない場合に照会 | LoginModal、[Turnstile](../../../src/lib/turnstile.ts)、登録 API、HIBP（照合の部品は段4 Task 31 で消した）、[郵便番号 API](../../../src/app/api/checkout/postal-code/route.ts)、[住所検索](../../../src/features/checkout/services/postal-code.service.ts) |
+| Bot・住所検査 | Turnstile widget と siteverify（production で secret 未設定なら拒否）。ZipCloud は郵便番号の DB / プロセス内キャッシュにない場合に照会 | LoginModal、[Turnstile](../../../src/lib/turnstile.ts)、登録 API、[郵便番号 API](../../../src/app/api/checkout/postal-code/route.ts)、[住所検索](../../../src/features/checkout/services/postal-code.service.ts) |
 | Storage | 商品・NEWS・LOOK画像、`finance-receipts` の証憑保存・署名 URL 発行 | [商品画像](../../../src/app/api/admin/items/route.ts)、[NEWS画像](../../../src/lib/storage/news-images.ts)、[LOOK画像](../../../src/app/api/admin/looks/route.ts)、[証憑](../../../src/app/api/admin/kpi/cost-profit/receipt/route.ts) |
 | 法定保存 | API は export / status のみ。別プロセスの CLI が CSV・既存 DB dump・manifest を Supabase Storage に保存し、S3 bucket / region 設定時は追加保存。この CLI に DB dump 生成処理はない | [run-daily](../../../scripts/legal-archive/run-daily.ts)、[export](../../../src/app/api/cron/legal-archive/export/route.ts)、[status](../../../src/app/api/cron/legal-archive/status/route.ts)、[Supabase保存](../../../src/lib/legal-archive/supabase-storage.ts)、[S3保存](../../../src/lib/legal-archive/s3-storage.ts)、[保存・検証](../../../src/lib/legal-archive/storage.ts) |
 | 監査・rate limit | 監査は DB 保存、`ALERT_AUDIT_URL` 設定時はマスク済み記録を POST。rate limit は DB カウンター | [audit](../../../src/lib/audit.ts)、[rateLimit](../../../src/features/auth/middleware/rateLimit.ts)、[DBカウンター](../../../src/features/auth/ratelimit/index.ts) |

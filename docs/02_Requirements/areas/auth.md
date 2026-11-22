@@ -5436,14 +5436,14 @@ anon の鍵と本物のログイン済みのお客さんの鍵では、6つの�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SR-AUTH-026 |
+| 上位 | SR-AUTH-026、SR-ADMIN-001 |
 | 根拠 | SR-AUTH-026 を、移行 H の後半（`private.admin_set_user_role` の作り直し・`public.staff_demote`・`private.staff_invite_issue_manual`・`public.passkey_delete_with_floor`）にする。守りは SEC-AUTH-054、処理は DD-AUTH-073、呼び手の理由の写しは IMPL-AUTH-347〜349 |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト（`tests/integration/db/auth_passkey_staff_roles.integration.test.ts`、`tests/integration/db/role_permissions.integration.test.ts`）、単体テスト（`tests/unit/lib/auth/staff-passkey-invite-errors.test.ts`）、E2E（`e2e/FR-LOGIN-076-staff-role-function-grants.spec.ts`、FR-AUTH-037-AC-01） |
 | 出どころ | `.superpowers/sdd/2026-11-18-passkey-stage3-staff/task-2b-brief.md`、`docs/superpowers/plans/2026-11-18-passkey-stage3-staff.md`（Task 2b） |
 | 優先度 | MUST |
 
-規則: (1) `admin_set_user_role` は、役割が `admin`・`supporter` で、その人が今の有効な店員（有効で期限内の `admin`・`supporter` の行）でない時、`STAFF_INVITE_REQUIRED`（`42501`）で断る。お客さん・期限切れ・無効だった役割を戻す道は招待の発行に落ちる。店員どうしの入れ替えと `user` への変更は今のまま通る。(2) `staff_demote` は全体の錠 `190519` → その人の錠の順に取り、錠の後で操作者が今も有効な店長で `admin.users.manage` を持つか確かめる。最後の店長・自分自身は断る。役割を `user` にし、認めた鍵の行を消し、鍵は残し、開いている招待を取り消し、窓を閉じる。(3) `private.staff_invite_issue_manual` はダッシュボードの SQL 専用で、`postgres` だけが実行でき、既定1時間の合言葉を返し、監査に発行の1行（対象の id だけ）を残す。最後の1人の店長にも通る。(4) `passkey_delete_with_floor` はその人の錠を取り、今の店員なら、消した後の認めた鍵が `min_approved_passkeys` 未満になる削除を `STAFF_MIN_KEYS` で断る。お客さんは最後の1本も消せる。
+規則: (1) `admin_set_user_role` は、役割が `admin`・`supporter` で、その人が今の有効な店員（有効で期限内の `admin`・`supporter` の行）でない時、`STAFF_INVITE_REQUIRED`（`42501`）で断る。お客さん・期限切れ・無効だった役割を戻す道は招待の発行に落ちる。店員どうしの入れ替えと `user` への変更は今のまま通る。(2) `staff_demote` は全体の錠 `190519` → その人の錠の順に取り、錠の後で操作者が今も有効な店長で `admin.users.manage` を持つか確かめる。最後の店長・自分自身は断る。役割を `user` にし、認めた鍵の行を消し、鍵は残し、開いている招待を取り消し、窓を閉じる。(3) `private.staff_invite_issue_manual` はダッシュボードの SQL 専用で、`postgres` だけが実行でき、既定1時間の合言葉を返し、監査に発行の1行（対象の id だけ）を残す。最後の1人の店長にも通る。店長が0人の新しい環境の最初の店長も、この関数から作る（SR-ADMIN-001。段4 Task 31 でコマンド `admin:bootstrap` の道は消した）。(4) `passkey_delete_with_floor` はその人の錠を取り、今の店員なら、消した後の認めた鍵が `min_approved_passkeys` 未満になる削除を `STAFF_MIN_KEYS` で断る。お客さんは最後の1本も消せる。
 
 ### FR-AUTH-037-AC-01 anon・authenticated は降格・鍵の削除・役割の変更の関数を呼べず、service_role では知らない操作者・鍵が決まった文になり、最後の手段は PostgREST に無い
 
@@ -8396,7 +8396,7 @@ Supabase の captcha が有効な環境で、アプリの `/api/auth/email-code/
 
 守ること: (1) 管理の入口は `aal` を見ない。`aal2` でも `amr` に `passkey` が無ければ断る（API・RLS の両方）。(2) JWT の印 `staff_passkeys_ok` が真でも、DB で数えた認めたパスキーが2本未満なら断る。(3) 24時間を過ぎた・61秒以上先の `passkey` の時刻は断る（60秒までのずれは通す）。(4) RPC が数えられない時は 503（閉じる側）、数でない値は0本。(5) 店員のメールのコード・パスワードは GoTrue のフックが拒否する。(6) 試験の道具は、本番に試験専用の入口を作らない（手元の Supabase だけで動く）。
 
-残る危険として受け入れること: 手元で店員がアプリの画面から入れない間（段1b まで）、画面を使う E2E のうち店員のパスワード＋TOTP のログインを通す物は、段4で消す機能として skip にした（台帳の「skip の一覧」）。~~最初の店長のコマンド `admin:bootstrap`（パスワード＋TOTP。段4 Task 31 で消した）は本番用に残し、手元では使わない（`docs/06_Operations/first-admin-bootstrap.md`）。~~（2026-11-20 に置き換え: 2026-11-18 にオーナーが、本番の最初の店長は `private.staff_invite_issue_manual` から作ると決めた。手順は `docs/06_Operations/passkey-staff-recovery.md`。`admin:bootstrap` は本番の進む道では使わず、手順書（`docs/06_Operations/passkey-production-apply-runbook.md`）の戻し方の (3b) の予備だけに残る。）
+残る危険として受け入れること: 手元で店員がアプリの画面から入れない間（段1b まで）、画面を使う E2E のうち店員のパスワード＋TOTP のログインを通す物は、段4で消す機能として skip にした（台帳の「skip の一覧」）。~~最初の店長のコマンド `admin:bootstrap`（パスワード＋TOTP）は本番用に残し、手元では使わない（`docs/06_Operations/first-admin-bootstrap.md`）。~~（2026-11-20 に置き換え: 2026-11-18 にオーナーが、本番の最初の店長は `private.staff_invite_issue_manual` から作ると決めた。手順は `docs/06_Operations/passkey-staff-recovery.md`。`admin:bootstrap` は本番の進む道では使わず、手順書（`docs/06_Operations/passkey-production-apply-runbook.md`）の戻し方の (3b) の予備だけに残る。→ 段4 Task 31（2026-11-22）でコマンドを消したので、(3b) の予備も無い。戻し方は Task 35 で直す。最後の手段は `private.staff_invite_issue_manual`。）
 
 ### SEC-AUTH-041 認めの古い行は黙って通さず、登録の窓の中の認めは同時に呼ばれても上限を超えない
 

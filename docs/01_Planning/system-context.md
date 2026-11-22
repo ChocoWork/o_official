@@ -1,6 +1,6 @@
 # システムコンテキスト
 
-> 確認日: 2026-10-04 | 対象: Le Fil des HeuresのEC・管理・保存ツール | 根拠: リポジトリ内の実装
+> 確認日: 2026-11-22（パスワードの登録・再設定が無くなったので、漏洩パスワードの照合 HIBP を外した。パスキー段4 Task 31）。以前の確認日: 2026-10-04 | 対象: Le Fil des HeuresのEC・管理・保存ツール | 根拠: リポジトリ内の実装
 
 ## 概要
 
@@ -20,7 +20,6 @@ flowchart LR
   Resend[Resend<br/>問い合わせ受信Webhook] --> System
   System <--> Meta[Meta<br/>OAuth接続・KPI取得]
   System --> Bot[Cloudflare Turnstile<br/>bot検査]
-  System --> HIBP[Pwned Passwords<br/>漏洩パスワード照合]
   System --> Zip[ZipCloud<br/>郵便番号住所検索]
   System -. 設定時の保存CLI .-> S3[S3互換の追加保存先]
   System -. 設定時 .-> Audit[監査通知URL]
@@ -41,7 +40,6 @@ flowchart LR
 | 問い合わせ受信 | ResendからSvix形式の署名付きWebhookを受け、問い合わせへ相関付けする。送信用provider選択とは独立 | [受信API](../../src/app/api/contact/inbound/route.ts) |
 | Meta | OAuth接続・管理KPIの手動/Cron同期。接続情報・設定と権限が必要 | [接続](../../src/app/api/admin/kpi/meta/connect/route.ts)、[Graph API](../../src/lib/meta/graph-client.ts)、[同期](../../src/lib/meta/sync-kpi.ts) |
 | Turnstile | ブラウザwidgetとサーバーsiteverify。productionでsecret未設定なら検証拒否 | ログインUI、[検証](../../src/lib/turnstile.ts) |
-| Pwned Passwords | SHA-1先頭5文字で登録・再設定パスワードを照合。サービス障害時の続行は呼出し側の条件 | 登録（消した。パスキー段4 Task 31） |
 | ZipCloud | 郵便番号のメモリ/DB cache miss時に住所検索する | [住所検索](../../src/features/checkout/services/postal-code.service.ts) |
 | S3互換保存先 | 保存CLIの追加保存先。bucket/regionの両方で生成、両方未設定なら生成しない、片方だけなら設定エラー | [保存CLI](../../scripts/legal-archive/run-daily.ts)、[S3 adapter](../../src/lib/legal-archive/s3-storage.ts) |
 | 監査通知 | 設定された通知URLへ監査情報を送る任意経路 | [監査](../../src/lib/audit.ts) |
