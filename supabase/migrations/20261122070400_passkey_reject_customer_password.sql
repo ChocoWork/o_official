@@ -14,12 +14,22 @@
 BEGIN;
 
 DO $$
+DECLARE
+  v_rows bigint;
+  v_has_key boolean;
 BEGIN
+  -- nested IFs: an OR in one IF is planned as a whole and would fail with 42P01 / 42883 when A or B is missing
   IF to_regclass('private.passkey_staff_config') IS NULL
-     OR (SELECT count(*) FROM private.passkey_staff_config) <> 1
      OR to_regprocedure('public.passkey_access_token_hook(jsonb)') IS NULL
-     OR to_regprocedure('private.passkey_staff_settings()') IS NULL
-     OR (SELECT private.passkey_staff_settings() ? 'reject_customer_password') IS NOT TRUE THEN
+     OR to_regprocedure('private.passkey_staff_settings()') IS NULL THEN
+    RAISE EXCEPTION 'PASSKEY_MIGRATION_PRECHECK_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_reject_customer_password_precheck';
+  END IF;
+  EXECUTE 'SELECT count(*) FROM private.passkey_staff_config' INTO v_rows;
+  IF v_rows <> 1 THEN
+    RAISE EXCEPTION 'PASSKEY_MIGRATION_PRECHECK_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_reject_customer_password_precheck';
+  END IF;
+  EXECUTE 'SELECT private.passkey_staff_settings() ? ''reject_customer_password''' INTO v_has_key;
+  IF v_has_key IS NOT TRUE THEN
     RAISE EXCEPTION 'PASSKEY_MIGRATION_PRECHECK_FAILED' USING ERRCODE = '55000', DETAIL = 'passkey_reject_customer_password_precheck';
   END IF;
 END

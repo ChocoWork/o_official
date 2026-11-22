@@ -106,7 +106,7 @@ export default defineConfig({
        * 変えてしまう）は、同時に流れる他の試験を壊すので、下の isolated-global に分けて、
        * 他の全部が終わった後に流す。
        */
-      testIgnore: /FR-(STOCKIST-017|SEARCH-022|LOOK-SEC-005|PRIVACY-009|ADMIN-12[4-7]|ADMIN-140|ADMIN-16[5-8]|CHECKOUT-05[4-8]|CART-025|ITEM-DETAIL-068|ACCOUNT-045|LOGIN-062|LOGIN-071|LOGIN-077|LOGIN-078|LOGIN-081)-.*.spec\.ts/,
+      testIgnore: /FR-(STOCKIST-017|SEARCH-022|LOOK-SEC-005|PRIVACY-009|ADMIN-12[4-7]|ADMIN-140|ADMIN-16[5-8]|CHECKOUT-05[4-8]|CART-025|ITEM-DETAIL-068|ACCOUNT-045|LOGIN-062|LOGIN-071|LOGIN-077|LOGIN-078|LOGIN-081)-.*\.spec\.ts/,
       teardown: 'isolated-global',
     },
     /*
@@ -117,7 +117,7 @@ export default defineConfig({
      */
     {
       name: 'isolated-global',
-      testMatch: /FR-(STOCKIST-017|SEARCH-022|LOOK-SEC-005|PRIVACY-009|ADMIN-12[4-7]|ADMIN-140|ADMIN-16[5-8]|CHECKOUT-05[4-8]|CART-025|ITEM-DETAIL-068|ACCOUNT-045|LOGIN-062|LOGIN-071|LOGIN-077|LOGIN-078|LOGIN-081)-.*.spec\.ts/,
+      testMatch: /FR-(STOCKIST-017|SEARCH-022|LOOK-SEC-005|PRIVACY-009|ADMIN-12[4-7]|ADMIN-140|ADMIN-16[5-8]|CHECKOUT-05[4-8]|CART-025|ITEM-DETAIL-068|ACCOUNT-045|LOGIN-062|LOGIN-071|LOGIN-077|LOGIN-078|LOGIN-081)-.*\.spec\.ts/,
       fullyParallel: false,
       workers: 1,
       use: { ...devices['Desktop Chrome'] },

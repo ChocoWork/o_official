@@ -110,6 +110,9 @@
 --     RETURN deleted;
 --   END;
 --   $function$;
+--   ALTER FUNCTION public.issue_password_change_challenge(uuid, uuid, text, integer) OWNER TO postgres;
+--   ALTER FUNCTION public.consume_password_change_challenge(uuid, uuid, text) OWNER TO postgres;
+--   ALTER FUNCTION public.cleanup_password_reset_tokens(integer) OWNER TO postgres;
 --   REVOKE ALL ON FUNCTION public.issue_password_change_challenge(uuid, uuid, text, integer),
 --     public.consume_password_change_challenge(uuid, uuid, text), public.cleanup_password_reset_tokens(integer) FROM PUBLIC, anon, authenticated;
 --   GRANT EXECUTE ON FUNCTION public.issue_password_change_challenge(uuid, uuid, text, integer),

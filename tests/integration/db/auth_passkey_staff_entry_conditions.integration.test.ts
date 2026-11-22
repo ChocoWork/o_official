@@ -130,6 +130,11 @@ describeLocalDb('passkey staff entry condition functions', () => {
       // defaultStaffPasskeySettings.rejectCustomerPassword is the column default (false); the real row is true after migration J
       reject_customer_password: true,
     });
+    const column = await db().query(
+      `select column_default from information_schema.columns
+        where table_schema = 'private' and table_name = 'passkey_staff_config' and column_name = 'reject_customer_password'`,
+    );
+    expect(column.rows[0].column_default).toBe(String(d.rejectCustomerPassword));
   });
 
   test('DATA-AUTH-016 24時間と本数は設定の表から読む（表を変えると判定が変わる）', async () => {

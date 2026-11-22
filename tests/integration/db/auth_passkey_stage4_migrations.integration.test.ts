@@ -44,6 +44,15 @@ function migrationFile(suffix: string): string {
   return readFileSync(join(MIGRATIONS, name), 'utf8');
 }
 
+/** The first DO block of J (its precheck), run as-is. */
+function precheckOfJ(): string {
+  const sql = migrationFile('_passkey_reject_customer_password.sql');
+  const start = sql.indexOf('DO $$');
+  const end = sql.indexOf('$$;', start) + 3;
+  if (start < 0 || end < 3) throw new Error('the precheck block is missing from J');
+  return sql.slice(start, end);
+}
+
 /** The SQL between "--   BEGIN;" and "--   COMMIT;" in the header of K (the ROLLBACK), with the comment marker removed. */
 function rollbackSqlOfK(): string {
   const lines = migrationFile('_drop_password_auth_objects.sql').split('\n');
@@ -154,6 +163,37 @@ describeLocalDb('passkey stage 4 migrations J and K', () => {
     });
   });
 
+  describe('J: the precheck', () => {
+    async function precheckOutcome(setup: string | null): Promise<{ code?: string; message?: string; detail?: string } | null> {
+      await db().query('savepoint pre');
+      try {
+        if (setup) await db().query(setup);
+        await db().query(precheckOfJ());
+        return null;
+      } catch (error) {
+        const caught = error as { code?: string; message?: string; detail?: string };
+        return { code: caught.code, message: caught.message, detail: caught.detail };
+      } finally {
+        await db().query('rollback to savepoint pre');
+        await db().query('release savepoint pre');
+      }
+    }
+    const FAILED = { code: '55000', message: 'PASSKEY_MIGRATION_PRECHECK_FAILED', detail: 'passkey_reject_customer_password_precheck' };
+
+    test('DATA-AUTH-013 the precheck passes on the migrated DB', async () => {
+      expect(await precheckOutcome(null)).toBeNull();
+    });
+
+    test.each([
+      ['the config table is missing (A not applied)', 'alter table private.passkey_staff_config rename to passkey_staff_config_x'],
+      ['the hook function is missing (B not applied)', 'alter function public.passkey_access_token_hook(jsonb) rename to passkey_access_token_hook_x'],
+      ['the settings function is missing', 'alter function private.passkey_staff_settings() rename to passkey_staff_settings_x'],
+      ['the config table has no row', 'delete from private.passkey_staff_config'],
+    ])('DATA-AUTH-013 PASSKEY_MIGRATION_PRECHECK_FAILED when %s', async (_name, setup) => {
+      expect(await precheckOutcome(setup)).toEqual(FAILED);
+    });
+  });
+
   describe('K: the dropped objects', () => {
     test('DATA-AUTH-013 after K the two tables and three functions are gone, and the audit and rate-limit tables remain', async () => {
       for (const table of DROPPED_TABLES) {
@@ -171,10 +211,8 @@ describeLocalDb('passkey stage 4 migrations J and K', () => {
     });
 
     test('DATA-AUTH-013 the ROLLBACK block of K brings back the tables and functions with the same ACL, config and policies as before K', async () => {
-      // the objects belong to postgres in production; this connection is supabase_admin, so run the block as postgres
-      await db().query('set local role postgres');
+      // run as supabase_admin (a superuser) on purpose: the OWNER TO postgres lines in the block must put the owners right
       await db().query(rollbackSqlOfK());
-      await db().query('reset role');
 
       for (const table of DROPPED_TABLES) {
         const rel = await db().query(
